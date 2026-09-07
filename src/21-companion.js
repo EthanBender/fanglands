@@ -8,7 +8,9 @@
   const CAGE_POS = { x: 148, y: 34 };
   const INN_WAIT = { sera: { x: 123, y: 48 }, garrick: { x: 127, y: 47 } }; // where a dismissed hero waits (inside the inn; interior is x 123–128, y 45–48)
   const GOBLIN_TYPES = ['goblin', 'sapper', 'brute', 'walker'];
-  const FOLLOW_SPEED = 180, STOP_DIST = 60, SNAP_DIST = 12 * TILE, DOWN_TIME = 30, COMP_LEVEL = 12;
+  const FOLLOW_SPEED = 180, STOP_DIST = 60, SNAP_DIST = 12 * TILE, DOWN_TIME = 30;
+  // Companions scale with the knight: a hired hero fights at combat level +4, never below 12 (a fixed 12 did under 1 dps to a dragon).
+  const COMP_LEVEL = () => Math.max(12, combatLevel() + 4);
 
   const HEROES = {
     sera: {
@@ -237,7 +239,7 @@
           live.moving = false;
           if (live.attackCd <= 0) {
             live.attackCd = 0.9; live.attackT = 0.22;
-            const attRoll = (COMP_LEVEL + 8) * (64 + def.look.weapon.weapon.att), maxHit = 2 + Math.floor((COMP_LEVEL + 8) * (def.look.weapon.weapon.str + 64) / 300);
+            const attRoll = (COMP_LEVEL() + 8) * (64 + def.look.weapon.weapon.att), maxHit = 2 + Math.floor((COMP_LEVEL() + 8) * (def.look.weapon.weapon.str + 64) / 300);
             hitMonster(m, rollHit(attRoll, (mdef.def + 8) * 64, maxHit), 14);
           }
         }
@@ -251,7 +253,7 @@
     // do not stand on the knight
     if (dp < 22 && dp > 0) { const e = { x: c.x, y: c.y, r: 13 }; moveEntity(e, (c.x - player.x) / dp * 40 * dt, (c.y - player.y) / dp * 40 * dt, 'person'); c.x = e.x; c.y = e.y; }
     // monsters next to the hero (and not next to the knight) hit the hero instead
-    const defRoll = (COMP_LEVEL + 8) * (64 + def.defBonus);
+    const defRoll = (COMP_LEVEL() + 8) * (64 + def.defBonus);
     for (const m of monsters) {
       if (m.dead || m.state !== 'chase' || (m.stunT || 0) > 0) continue; const mdef = MONSTER_DEFS[m.type]; if (mdef.harmless) continue;
       const dc = dist(m.x, m.y, c.x, c.y), dpm = dist(m.x, m.y, player.x, player.y);

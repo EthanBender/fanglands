@@ -20,7 +20,7 @@
       note: 'Six lumps of iron ore. The forge eats more than I do.', thanks: 'Good ore. Heavy. The forge will sing tonight. Take your coin.' },
     { id: 'dorran', tag: 'Dorran', giver: 'Dorran the innkeeper', title: 'Pelts for the inn', kind: 'item', item: 'wolf_pelt', n: 3, short: 'wolf pelts', reward: { coins: 120 },
       note: 'Three wolf pelts for the beds upstairs. The guests keep moaning about the cold.', thanks: 'Warm as a summer night, these. No more moaning guests. Coin, as promised.' },
-    { id: 'pim', tag: 'Pim', giver: 'Pim the tinker', title: 'Powder run', kind: 'item', item: 'blast_powder', n: 3, short: 'blast powder', reward: { coins: 100, xp: ['crafting', 60] },
+    { id: 'pim', tag: 'Pim', giver: 'Pim the tinker', title: 'Powder run', kind: 'item', item: 'blast_powder', n: 3, short: 'blast powder', reward: { coins: 100, xp: ['crafting', 200] },
       note: "Three blast powder. Don't shake it. Don't drop it. Don't ask.", thanks: "Oh lovely, still in one piece. Both of us. Here's your coin, and mind your eyebrows." },
     { id: 'rosalind', tag: 'Rosalind', giver: 'Rosalind', title: 'Pie filling', kind: 'item', item: 'raw_beef', n: 5, short: 'raw beef', reward: { coins: 70, xp: ['cooking', 60] },
       note: "Five raw beef and there's a pie in it for the whole street.", thanks: 'Five beef, fresh. The whole street eats pie tonight. Thank you, knight.' },
@@ -42,6 +42,8 @@
       note: "Five wolves, knight. They've been at the sheep again.", thanks: 'Five wolves down. The sheep can sleep, and so can I. Here.' },
     { id: 'captain', tag: 'Captain', giver: 'Captain Roderick', title: 'Goblin bounty', kind: 'kill', types: GOBLIN_TYPES, n: 10, short: 'goblins', reward: { coins: 250 },
       note: 'Ten goblins, any size. The watch pays by the head.', thanks: 'Ten heads. The watch pays, and the watch remembers. Good work, knight.' },
+    { id: 'thessaly', tag: 'Thessaly', giver: 'Thessaly the weaver', title: 'Wool for the loom', kind: 'item', item: 'wool', n: 10, short: 'wool', reward: { coins: 40, xp: ['crafting', 300] },
+      note: 'Ten wool, clean. The loom is hungry and the sheep are a long way from the jungle.', thanks: 'Ten wool. Soft as cloud. Watch how the loom takes it, and you will learn something of the craft.' },
   ];
   const byId = {}; for (const q of BOARD_QUESTS) byId[q.id] = q;
 
