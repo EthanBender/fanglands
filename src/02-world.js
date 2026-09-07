@@ -24,6 +24,7 @@ const REGIONS = [
   { name: 'Goblin Camp', sub: 'Their machines are here', x0: 140, y0: 18, x1: 159, y1: 42 },
   { name: 'Wolfwood', sub: 'Keep to the paths', x0: 0, y0: 62, x1: 159, y1: 95 },
   { name: 'Goblin Fields', sub: 'The road east', x0: 21, y0: 0, x1: 159, y1: 61 },
+  { name: 'The Wilds', sub: 'Uncharted', x0: 0, y0: 0, x1: MAP_W - 1, y1: MAP_H - 1 },
 ];
 const regionAt = (tx, ty) => REGIONS.find(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1) || REGIONS[REGIONS.length - 1];
 

@@ -12,8 +12,8 @@ window.FANGLANDS = {
   // ---- bot helpers ----
   bfs(sx, sy, tx, ty) {
     const W = MAP_W, H = MAP_H;
-    const prev = new Int32Array(W * H).fill(-1); const q = [sy * W + sx]; prev[sy * W + sx] = sy * W + sx;
-    while (q.length) { const c = q.shift(); const cx = c % W, cy = (c / W) | 0; if (cx === tx && cy === ty) break;
+    const prev = new Int32Array(W * H).fill(-1); const q = [sy * W + sx]; prev[sy * W + sx] = sy * W + sx; let qi = 0;
+    while (qi < q.length) { const c = q[qi++]; const cx = c % W, cy = (c / W) | 0; if (cx === tx && cy === ty) break;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = cx + dx, ny = cy + dy; if (!inMap(nx, ny)) continue; const n = ny * W + nx; if (prev[n] !== -1) continue; if (SOLID.has(map[n]) && !(nx === tx && ny === ty)) continue; prev[n] = c; q.push(n); } }
     if (prev[ty * W + tx] === -1) return null; const path = []; let c = ty * W + tx; while (c !== sy * W + sx) { path.push([c % W, (c / W) | 0]); c = prev[c]; } return path.reverse();
   },
@@ -43,7 +43,10 @@ window.FANGLANDS = {
   nearestTile(types, from = player) { let best = null; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (types.includes(map[idx(x, y)])) { const d = dist(tc(x), tc(y), from.x, from.y); if (!best || d < best.d) best = { x, y, d }; } return best; },
   goAdjacent(tx, ty, max = 3000) { for (const [dx, dy] of [[0, 1], [-1, 0], [1, 0], [0, -1]]) { const ax = tx + dx, ay = ty + dy; if (inMap(ax, ay) && !SOLID.has(map[idx(ax, ay)])) { const r = this.walkTo(ax, ay, max); if (typeof r === 'number') { this.face(tx, ty); return r; } } } return 'nopath'; },
   calm() { for (const m of monsters) { if (!MONSTER_DEFS[m.type].aggro) { m.angry = false; m.state = 'idle'; m.x = m.home.x; m.y = m.home.y; m.hp = m.maxHp; } } },
-  talk(id) { const n = NPCS.find(n => n.id === id); const cands = []; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const x = n.x + dx, y = n.y + dy; if ((dx || dy) && inMap(x, y) && !SOLID.has(tileAt(x, y))) cands.push({ x, y, d: Math.hypot(dx, dy) + (insideBuilding(x, y) === insideBuilding(n.x, n.y) ? 0 : 10) }); } cands.sort((a, b) => a.d - b.d); let r = 'nopath'; for (const c of cands) { r = this.walkTo(c.x, c.y, 4000); if (typeof r === 'number') break; } this.face(n.x, n.y); this.press('KeyE'); this.sim(2, []); return r; },
+  talk(id) { const n = NPCS.find(n => n.id === id); const cands = []; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const x = n.x + dx, y = n.y + dy; if ((dx || dy) && inMap(x, y) && !SOLID.has(tileAt(x, y))) cands.push({ x, y, d: Math.hypot(dx, dy) + (insideBuilding(x, y) === insideBuilding(n.x, n.y) ? 0 : 10) }); } cands.sort((a, b) => a.d - b.d); let r = 'nopath'; for (const c of cands) { r = this.walkTo(c.x, c.y, 4000); if (typeof r === 'number') break; }
+    // wandering villagers can stand between the bot and its target: move them aside first
+    for (const v of NPCS) if (v.wander && v !== n && dist(v.px, v.py, player.x, player.y) < 4 * TILE) { v.px = v.home.x + 6 * TILE; v.py = v.home.y; v.wanderT = 8; v.dir = null; }
+    this.face(n.x, n.y); this.press('KeyE'); this.sim(2, []); return r; },
   untilAction(max, done) { let s = 0; while (s < max && !done()) { this.step([]); s++; } render(); return s < max ? s : 'timeout'; },
   selfTest() {
     const F = this; const report = {};
@@ -83,7 +86,7 @@ window.FANGLANDS = {
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y); F.press('KeyE'); F.untilAction(900, () => countItem('wood') >= 2); }
     openPanel('craft'); render(); const crafted = F.clickButton('2 Logs → 4 Planks'); closePanel();
     check('craft planks from the pack', crafted && countItem('plank') === 4 && countItem('wood') === 0, { plank: countItem('plank') });
-    F.fight(3000); F.sim(30, ['KeyA']); player.facing = { x: 1, y: 0 }; { const ft = frontTile(player, 40); F.press('KeyQ'); F.sim(3, []); check('place a plank', countItem('plank') === 3 && tileAt(ft.tx, ft.ty) === T.PLANK, { after: tileAt(ft.tx, ft.ty) }); F.press('KeyE'); F.sim(2, []); check('pick a placed plank back up', countItem('plank') === 4 && tileAt(ft.tx, ft.ty) === T.GRASS, { tile: tileAt(ft.tx, ft.ty) }); }
+    F.fight(3000); { const o = openSpot(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); F.tp(o.x, o.y); } player.facing = { x: 1, y: 0 }; { const ft = frontTile(player, 40); F.press('KeyQ'); F.sim(3, []); check('place a plank', countItem('plank') === 3 && tileAt(ft.tx, ft.ty) === T.PLANK, { after: tileAt(ft.tx, ft.ty) }); F.press('KeyE'); F.sim(2, []); check('pick a placed plank back up', countItem('plank') === 4 && tileAt(ft.tx, ft.ty) === T.GRASS, { tile: tileAt(ft.tx, ft.ty) }); }
     { const a = player.inv[0], b = player.inv[2]; openPanel('inventory'); render(); F.clickButton('slot0'); F.clickButton('slot2'); closePanel(); check('rearrange the pack (tap, tap = swap)', JSON.stringify(player.inv[2]) === JSON.stringify(a) && JSON.stringify(player.inv[0]) === JSON.stringify(b), {}); }
     { const inv0 = player.inv.map(s => s ? { ...s } : null); for (let i = 0; i < INV_SLOTS; i++) if (!player.inv[i]) player.inv[i] = { id: 'stone', qty: 50 }; const left = addItem('wool', 3); check('pack has limited slots', left === 3, { left }); player.inv = inv0; }
     // ---------- drop tables ----------
@@ -118,7 +121,7 @@ window.FANGLANDS = {
       F.walkTo(104, 38, 500); F.face(104, 37); F.press('KeyE'); const ok2 = panel === 'station' && panelArg === 'alchemy' && F.clickButton('Blast powder + Goblin scrap → Goblin bomb'); closePanel();
       check('workbench makes a bow and arrows; alchemy makes a bomb', ok1 && ok2 && countItem('shortbow') === 1 && countItem('stone_arrow') === 5 && countItem('bomb') === 1 && player.skills.crafting.xp === cx0 + 63, { bow: countItem('shortbow'), arrows: countItem('stone_arrow'), bomb: countItem('bomb'), cxp: player.skills.crafting.xp }); }
     { F.walkTo(102, 38, 500); F.face(102, 37); F.press('KeyE'); const ok = panel === 'station' && panelArg === 'workshop'; render(); const c = F.clickButton('Iron bar + 2 Planks → Goblin trap'); closePanel(); check('workshop makes a goblin trap (Crafting 3)', ok && c && countItem('goblin_trap') === 1, { ok, trap: countItem('goblin_trap') }); }
-    { const o = openSpot(40, 20); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); gob.x = player.x + 120; gob.y = player.y; gob.state = 'idle'; gob.hp = gob.maxHp; gob.stunT = 0; player.facing = { x: 1, y: 0 };
+    { const o = openSpot(40, 20); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); gob.x = player.x + 120; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.hp = gob.maxHp; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; player.facing = { x: 1, y: 0 };
       const bs = player.inv.findIndex(s => s && s.id === 'shortbow'); equipItem(bs); give('stone_arrow', 30); const a0 = countItem('stone_arrow'); const rx0 = player.skills.range.xp; let hit = false; for (let i = 0; i < 14 && !hit; i++) { gob.x = player.x + 120; gob.y = player.y; gob.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(40, []); if (gob.hp < gob.maxHp) hit = true; }
       check('range: bow shoots arrows, consumes them, Range xp', hit && countItem('stone_arrow') < a0 && player.skills.range.xp > rx0, { arrows: countItem('stone_arrow'), rxp: player.skills.range.xp });
       const hp0 = gob.hp; gob.x = player.x + 90; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; gob.stunT = 0; const bslot = player.inv.findIndex(s => s && s.id === 'bomb'); player.attackCd = 0; useItem(bslot); F.sim(60, []); check('bomb: throw, explode, area damage', countItem('bomb') === 0 && gob.hp < hp0, { hp0, hp: gob.hp });

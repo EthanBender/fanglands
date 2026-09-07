@@ -25,8 +25,9 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
 - World: `BUILDINGS.push({...})` (same shape as the existing ones; `stone`, `door`/`doorTop`, `f` furniture),
   `NPCS.push(initNpc({ id, name, x, y, tunic, hair, role, ... }))`, `REGIONS.unshift({ name, sub, x0, y0, x1, y1 })`,
   and `HOOKS.world.push((rnd, api) => { ... })` to carve terrain: `api.setTile/tileAt/spawnList(type, [[x,y],...])/road(points, tile, width, chance)/pen(...)`.
-  The map is `MAP_W`×`MAP_H` = 160×96 tiles. Free land: south-east (x 118–156, y 64–92 is Wolfwood forest, carve it),
-  north-east above the camp (x 122–158, y 1–16), far west of Wolfwood (x 2–26, y 64–94).
+  The map is `MAP_W`×`MAP_H` = 200×140 tiles. Built land ends at x 160 / y 96. Everything beyond is default
+  grass/forest for features to carve: the east strip (x 160–199, y 0–95) and the whole south (y 96–139).
+  `WALK_OVER` (a Set in 00-core) lets the player cross tiles it contains (e.g. `WALK_OVER.add(T.WATER)` while hover armour is worn).
 - Quests: `QUEST_DEFS.my = { name }`, `HOOKS.questText.my = () => '...'`, `HOOKS.activeQuests.push(() => cond ? ['my'] : [])`.
   Main story after stage 8: `HOOKS.mainQuest[9] = { text: () => '...', onEnter: () => { say(...); } }`; call `advanceQuest(9)`.
 - Behaviour: `HOOKS.update.push(dt => ...)`, `HOOKS.use.push((t, tx, ty, building) => handled)`,
@@ -54,6 +55,12 @@ Register checks: `HOOKS.selfTest.push((check, F, h) => { ... check('name', boole
 `F.untilAction(max, () => cond)`, `F.nearestTile([T.X])`. `h.give(id, qty)`, `h.peace(true)` (monsters ignore you), `h.openSpot(x, y)`.
 Checks run inside the browser: the integrator runs `FANGLANDS.selfTest()` after merging. Keep checks deterministic:
 teleport with `F.tp`, set monster positions/hp directly, use `h.peace(true)` around timed actions.
+
+## Verify locally (headless)
+
+`node tools/headless.js` builds nothing; it loads `index.html` with a stubbed DOM/canvas and runs `FANGLANDS.selfTest()`,
+printing every check. Run `./build.sh && node tools/headless.js` after every change. Drawing code is not exercised (the
+canvas is a stub), so read your draw code carefully.
 
 ## Verify locally
 

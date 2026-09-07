@@ -162,7 +162,7 @@ function advanceQuest(stage) {
 // ---------- save / load ----------
 function save() {
   try {
-    const data = { player, quest, swordTaken, deathKeep, mapDiffs: [...mapDiffs.entries()], regrow, crops, fires, time };
+    const data = { player, quest, swordTaken, deathKeep, mapDiffs: [...mapDiffs.entries()], regrow, crops, fires, time, mapW: MAP_W };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch (e) { /* storage unavailable: play on without saving */ }
 }
@@ -179,9 +179,11 @@ function load() {
     if (!Array.isArray(player.bank)) player.bank = [];
     quest = Object.assign({ stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }, d.quest || {});
     swordTaken = !!d.swordTaken; deathKeep = d.deathKeep || null;
-    mapDiffs = new Map(d.mapDiffs || []);
+    // saves from a narrower map: tile indices are row-major, so remap them onto the current width
+    const oldW = d.mapW || 160; const remap = i => oldW === MAP_W ? i : (i % oldW) + Math.floor(i / oldW) * MAP_W;
+    mapDiffs = new Map((d.mapDiffs || []).map(([i, t]) => [remap(i), t]));
     for (const [i, t] of mapDiffs) map[i] = t;
-    regrow = Array.isArray(d.regrow) ? d.regrow : []; crops = Array.isArray(d.crops) ? d.crops : []; fires = Array.isArray(d.fires) ? d.fires : [];
+    regrow = (Array.isArray(d.regrow) ? d.regrow : []).map(r => ({ ...r, i: remap(r.i) })); crops = (Array.isArray(d.crops) ? d.crops : []).map(c => ({ ...c, i: remap(c.i) })); fires = (Array.isArray(d.fires) ? d.fires : []).map(f => ({ ...f, i: remap(f.i) }));
     time = typeof d.time === 'number' ? d.time : 0;
     recomputeMaxHp();
     return true;

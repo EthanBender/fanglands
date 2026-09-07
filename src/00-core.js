@@ -24,7 +24,7 @@ function mulberry32(seed) {
 
 // ---------- constants ----------
 const TILE = 48;
-const MAP_W = 160, MAP_H = 96;
+const MAP_W = 200, MAP_H = 140;
 const WORLD_SEED = 20260907;
 const CAVE_EXIT_X = 20;
 const SAVE_KEY = 'fanglands.save.v2';
@@ -42,8 +42,9 @@ const SOLID = new Set([T.WALL, T.WATER, T.TREE, T.OAK, T.STUMP, T.ROCK, T.IRON, 
   T.CART, T.AXESTUMP, T.STONECIRCLE, T.GOLDPILE, T.OVEN]);
 const PUSH_THROUGH = new Set([T.DOOR, T.GATE, T.PORTCULLIS, T.COFFINDOOR]); // people push through these; animals and goblins cannot
 const PLACEABLE_ON = new Set([T.GRASS, T.DIRT, T.SAND, T.CAVE, T.COBBLE, T.FLOOR, T.SOIL, T.ASHES]);
+const WALK_OVER = new Set(); // tiles the player can currently cross (e.g. water while hover armour is worn); features add/remove
 // solid for people, solid for beasts
-const solidFor = (t, who) => SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person');
+const solidFor = (t, who) => (who === 'person' && WALK_OVER.has(t)) ? false : SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person');
 
 // ---------- extension hooks (feature files in src/2x-*.js register here; core never needs editing) ----------
 const HOOKS = {
