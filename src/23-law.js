@@ -148,8 +148,7 @@ HOOKS.hud.push((g, narrow) => {
   const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
   const touch = typeof isTouch !== 'undefined' && isTouch, short = touch && VH < 500;
   let y = HUD.leftY; // shared left-HUD cursor (under the HP box; hooks stack instead of overprinting)
-  if (touch && !short) y = Math.max(y, narrow ? 84 + qh + 8 + 56 : 148); // below the hotbar on touch layouts
-  else if (narrow && qh) y = Math.max(y, 84 + qh + 8);
+  { const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; y = Math.max(y, _touchFloor); } // below the hotbar on touch layouts (HUD_LAYOUT from 13-ux)
   const tag = (text, fill, stroke, color) => {
     g.font = 'bold 12px sans-serif'; const tw = Math.ceil(g.measureText(text).width) + 24;
     roundRect(g, 14, y, tw, 24, 8); g.fillStyle = fill; g.fill(); g.strokeStyle = stroke; g.lineWidth = 1.5; g.stroke();

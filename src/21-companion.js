@@ -320,8 +320,7 @@
     const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
     const short = isTouch && VH < 500;
     let y = HUD.leftY; // shared left-HUD cursor: stack under whatever the law and boss bars already drew
-    if (narrow && qh) y = Math.max(y, 84 + qh + 8);
-    if (isTouch && !short) { const hy = narrow ? 84 + qh + 8 : 90; y = Math.max(y, hy + 44 + 12); }
+    { const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; y = Math.max(y, _touchFloor); }
     HUD.leftY = y + 24 + 6;
     const label = c.downT > 0 ? `${def.name} · back in ${Math.ceil(c.downT)}s` : c.mode === 'stay' ? `${def.name} · waiting` : `${def.name} ${Math.ceil(c.hp)}/${def.hp}`;
     g.font = 'bold 12px sans-serif'; g.textAlign = 'left';

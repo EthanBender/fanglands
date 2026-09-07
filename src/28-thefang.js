@@ -438,7 +438,7 @@
     const m = fang(); if (!m || m.dead || dist(m.x, m.y, player.x, player.y) > 12 * TILE) return;
     const C = EL[m.element || 'fire'], w = Math.min(236, VW - 28), h = 48, x = 14;
     const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
-    const y = Math.max(HUD.leftY, isTouch ? (narrow ? 84 + qh + 8 + 62 : 152) : 84); // shared left-HUD cursor: under the companion / wanted tags
+    const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; const y = Math.max(HUD.leftY, _touchFloor, 84); // shared left-HUD cursor: under the companion / wanted tags
     HUD.leftY = y + h + 6;
     roundRect(g, x, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = C.col; g.lineWidth = 1.5; g.stroke();
     g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText('THE FANG', x + 12, y + 19);

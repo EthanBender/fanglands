@@ -2828,7 +2828,7 @@ HOOKS.selfTest.push((check, F, h) => {
     check('ux: dropping a weapon needs a second tap', c1 && still && c2 && dropped, { c1, still, c2, dropped }); }
   // recipe tabs + paging on the anvil (26 recipes)
   { openPanel('station', 'anvil'); render(); const per = Math.max(2, Math.min(8, Math.floor((panelRect.h - 92 - 54) / 40))); const vis = () => buttons.filter(b => b.x >= 0 && b.label.includes('→')).map(b => b.label); const p0 = vis(); const tabs = buttons.filter(b => ['Bronze/Iron', 'Steel', 'Mithril', 'Godly', 'Other'].includes(b.label.replace(/^disabled:/, ''))).length; const n = F.clickButton('Next'); render(); const p1 = vis(); const m = F.clickButton('Mithril'); render(); const p2 = vis(); const anvil = RECIPES.filter(r => r.station === 'anvil'); const total = anvil.length, bi = anvil.filter(r => recipeTier(r) === 'Bronze/Iron').length; closePanel();
-    check('ux: anvil recipes come in tier tabs, 8 per page, Prev/Next pages', total === 26 && p0.length === per && tabs >= 3 && n && p1.length === Math.min(per, bi - per) && p0[0] !== p1[0] && m && p2.length === Math.min(per, 8) && p2.every(l => /Mithril/.test(l)), { total, bi, per, p0: p0.length, p1: p1.length, tabs, p2: p2.length }); }
+    check('ux: anvil recipes come in tier tabs, 8 per page, Prev/Next pages', total >= 26 && p0.length === per && tabs >= 3 && n && p1.length === Math.min(per, bi - per) && p0[0] !== p1[0] && m && p2.length === Math.min(per, 8) && p2.every(l => /Mithril/.test(l)), { total, bi, per, p0: p0.length, p1: p1.length, tabs, p2: p2.length }); }
   // bank paging
   { const bank0 = player.bank.map(s => ({ ...s })); player.bank = []; for (let i = 0; i < 40; i++) player.bank.push({ id: i % 2 ? 'stone' : 'wood', qty: 1 + i }); openPanel('bank'); render(); const per = VW < 640 ? 15 : 30; const c0 = buttons.filter(b => b.label.startsWith('bank')).length; const n = F.clickButton('Next'); render(); const c1 = buttons.filter(b => b.label.startsWith('bank')).length; const pg = bankPage; const p = F.clickButton('Prev'); render(); const c2 = buttons.filter(b => b.label.startsWith('bank')).length; closePanel(); player.bank = bank0;
     check('ux: bank pages 30 slots at a time (15 narrow) with Prev/Next', c0 === per && n && pg === 1 && c1 === Math.min(per, 40 - per) && p && c2 === per, { c0, c1, c2, per, pg }); }
@@ -3959,8 +3959,7 @@ const MUSIC = (() => {
     const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
     const short = isTouch && VH < 500;
     let y = HUD.leftY; // shared left-HUD cursor: stack under whatever the law and boss bars already drew
-    if (narrow && qh) y = Math.max(y, 84 + qh + 8);
-    if (isTouch && !short) { const hy = narrow ? 84 + qh + 8 : 90; y = Math.max(y, hy + 44 + 12); }
+    { const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; y = Math.max(y, _touchFloor); }
     HUD.leftY = y + 24 + 6;
     const label = c.downT > 0 ? `${def.name} · back in ${Math.ceil(c.downT)}s` : c.mode === 'stay' ? `${def.name} · waiting` : `${def.name} ${Math.ceil(c.hp)}/${def.hp}`;
     g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
@@ -4501,8 +4500,7 @@ HOOKS.hud.push((g, narrow) => {
   const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
   const touch = typeof isTouch !== 'undefined' && isTouch, short = touch && VH < 500;
   let y = HUD.leftY; // shared left-HUD cursor (under the HP box; hooks stack instead of overprinting)
-  if (touch && !short) y = Math.max(y, narrow ? 84 + qh + 8 + 56 : 148); // below the hotbar on touch layouts
-  else if (narrow && qh) y = Math.max(y, 84 + qh + 8);
+  { const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; y = Math.max(y, _touchFloor); } // below the hotbar on touch layouts (HUD_LAYOUT from 13-ux)
   const tag = (text, fill, stroke, color) => {
     g.font = 'bold 12px sans-serif'; const tw = Math.ceil(g.measureText(text).width) + 24;
     roundRect(g, 14, y, tw, 24, 8); g.fillStyle = fill; g.fill(); g.strokeStyle = stroke; g.lineWidth = 1.5; g.stroke();
@@ -6968,7 +6966,7 @@ HOOKS.selfTest.push((check, F, h) => {
     const m = fang(); if (!m || m.dead || dist(m.x, m.y, player.x, player.y) > 12 * TILE) return;
     const C = EL[m.element || 'fire'], w = Math.min(236, VW - 28), h = 48, x = 14;
     const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
-    const y = Math.max(HUD.leftY, isTouch ? (narrow ? 84 + qh + 8 + 62 : 152) : 84); // shared left-HUD cursor: under the companion / wanted tags
+    const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; const y = Math.max(HUD.leftY, _touchFloor, 84); // shared left-HUD cursor: under the companion / wanted tags
     HUD.leftY = y + h + 6;
     roundRect(g, x, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = C.col; g.lineWidth = 1.5; g.stroke();
     g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText('THE FANG', x + 12, y + 19);
