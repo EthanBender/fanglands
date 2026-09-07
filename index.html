@@ -10154,7 +10154,7 @@ HOOKS.selfTest.push((check, F, h) => {
 
   // ---------- geometry ----------
   const AER = { id: 'aerie', name: 'Aerie', sub: 'The city above the clouds', w: 50, h: 34 };
-  const SHRINE_T = { x: 58, y: 3 }, STEP_T = { x: 58, y: 4 };
+  const SHRINE_T = { x: 65, y: 3 }, STEP_T = { x: 65, y: 4 }; // east of the Agility cliff course (x 46–62), which carves the quarry's north edge
   const ENTRY = [25, 30], LEAP_T = [25, 31];
   const HALL = { x0: 17, y0: 3, x1: 33, y1: 12 };            // the great hall (marble floor, castle-wall fragments)
   const FORGE_P = { x0: 35, y0: 15, x1: 41, y1: 21 };         // Halcyon's platform
@@ -10462,7 +10462,7 @@ HOOKS.selfTest.push((check, F, h) => {
     h.peace(true); closePanel(); if (INSTANCES.active()) INSTANCES.leave();
     const st0 = quest.stage, wren0 = quest.wren, sky0 = JSON.stringify(q);
     // the shrine stands on the quarry heights
-    check('sky: wind shrine on the Grey Quarry heights at (58,3) with a step below; Godly recipes are off the anvil', tileAt(SHRINE_T.x, SHRINE_T.y) === WIND_SHRINE && tileAt(STEP_T.x, STEP_T.y) === T.DIRT && regionAt(SHRINE_T.x, SHRINE_T.y).name === 'Grey Quarry' && !RECIPES.some(r => r.station === 'anvil' && /^godly_/.test(r.out)) && RECIPES.filter(r => /^godly_/.test(r.out)).length === 4, { tile: tileAt(SHRINE_T.x, SHRINE_T.y), step: tileAt(STEP_T.x, STEP_T.y), anvilGodly: RECIPES.filter(r => r.station === 'anvil' && /^godly_/.test(r.out)).length });
+    check('sky: wind shrine on the Grey Quarry heights at (65,3) with a step below; Godly recipes are off the anvil', tileAt(SHRINE_T.x, SHRINE_T.y) === WIND_SHRINE && tileAt(STEP_T.x, STEP_T.y) === T.DIRT && regionAt(SHRINE_T.x, SHRINE_T.y).name === 'Grey Quarry' && !RECIPES.some(r => r.station === 'anvil' && /^godly_/.test(r.out)) && RECIPES.filter(r => /^godly_/.test(r.out)).length === 4, { tile: tileAt(SHRINE_T.x, SHRINE_T.y), step: tileAt(STEP_T.x, STEP_T.y), anvilGodly: RECIPES.filter(r => r.station === 'anvil' && /^godly_/.test(r.out)).length });
     // without the flute the wind is silent
     while (countItem('wind_flute')) removeItem('wind_flute', 1); q.stage = 0; q.wisps = 0;
     drain(); F.tp(STEP_T.x, STEP_T.y); F.face(SHRINE_T.x, SHRINE_T.y); F.press('KeyE'); F.sim(2, []);
