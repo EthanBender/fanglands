@@ -3,12 +3,16 @@
 A 2D top-down knight adventure. Textured shapes, not pixels. Goblins with machines.
 A dragon only legends have heard about.
 
-- **Play:** open `index.html` in any browser. No install, no build.
+- **Play:** open `index.html` in any browser. No install.
+- **Edit:** the source lives in `src/*.js` (one module per system). Run `./build.sh` to
+  rebuild `index.html` (it just concatenates the modules and syntax-checks them).
 - **Design:** `docs/GAME_DESIGN.md` (the spec) and `docs/ROADMAP.md` (what's next).
 - **Chapter 1:** wake in the cave, take the wooden sword, follow the Voice, beat
   three goblins, find the signpost.
 - **Chapter 2:** Thistledown. Shops, bank, fishing, cooking, training dummies,
-  Tobin's loaf, the Duke's task, and Death's Coffin when you fall.
+  Tobin's loaf, the Duke's task, and Death's House when you fall.
+- **Chapter 3:** Goblin tech. Smith iron at Brakka's, craft bows, bombs and traps at Pim's,
+  farm, make fires, then bring down the Goblin Walker in the camp east of town and pilot it.
 - **Self-check:** open the browser console and run `FANGLANDS.selfTest()`.
 
 ## Controls
@@ -18,12 +22,15 @@ A dragon only legends have heard about.
 | Move | WASD / arrows | left-side stick |
 | Swing | Space | SWING |
 | Use / chop / mine / read | E | USE |
-| Place plank / campfire | Q | Bag → Place |
+| Place plank / door / bed / lodestone / trap | Q | Bag → Place |
 | Eat / use pack slots 1–5 | 1–5 | tap the hotbar |
 | Pack | I | BAG |
 | Craft | C | CRAFT |
 | Skills | Tab | SKILLS |
-| Quests | J | — |
+| Quests | J | QUESTS |
+| World map | M or click the minimap | tap the minimap |
+| Home (lodestone) | H | Bag → Home |
+| Climb out of the walker | X | EXIT |
 | Menu | Esc | MENU |
 
 Progress saves in the browser automatically.

@@ -261,6 +261,66 @@ Three sizes of quest, Zelda-style:
 while, a fine)? **[open]** Bank fee or free? **[open]** Should the coffin fee
 also scale with how far away you died (the designer mentioned distance)?
 
+## 9c. Systems added from the third design chat (2026-09-07, night)
+
+- **Combat is probabilistic, RuneScape-style.** Every swing rolls accuracy
+  (your Melee level and weapon accuracy against the monster's defence) and then
+  damage from 1 up to a max hit set by Melee level and weapon strength. Misses
+  show as a blue "miss". Monsters roll the same way against your Defence and
+  armour. Max hit at level 1 with the wooden sword is 4.
+- **Gear matters.** Equipment slots: weapon, helm, body, legs, shield. Equipping
+  moves the item out of the pack into the worn column. Weapons have perks:
+  daggers are swift, the warhammer knocks back, the battleaxe cleaves a wide arc,
+  the shortbow shoots arrows. Tiers so far: wooden, bronze (found), iron, steel.
+- **Levelling pace slowed.** Melee XP is 4 per point of damage, no kill bonus.
+  Gathering is timed with a success chance per swing, one log or ore at a time.
+- **Aggression.** Goblins see 4.5 tiles, and stop attacking you once your combat
+  level passes twice their level plus one. Higher-level monsters (brutes lv 9,
+  wolves lv 6, the walker lv 18) hurt more and show a red level tag.
+- **Tools gate gathering.** A bronze axe sits in a stump outside the cave; a
+  bronze pickaxe lies in the cart at Grey Quarry. Iron tools are smithed.
+- **Stumps and rubble.** A chopped tree leaves a stump that regrows; a mined
+  rock leaves rubble that settles back into rock.
+- **Firemaking.** Light logs on open ground for a fire that burns 90 seconds,
+  then cook on it. **Farming.** Hoe grass to soil, plant potato seed, three
+  growth stages, harvest 2 to 4 potatoes.
+- **Station-gated crafting.** Pack: planks only. Workbench: bow, arrows, door,
+  bed, workbench, lodestone. Tinker's table: traps, iron arrows. Alchemy table:
+  bombs. Forge: smelt ore into bars. Anvil (needs a hammer): iron and steel gear
+  with a hammer-strike animation.
+- **Drop tables.** Every monster has always-drops, a weighted table, and a rare
+  table with its own 1-in-N chance. Rare drops get a gold banner.
+- **Goblin tech, medieval.** Sappers throw sticky bombs, brutes hit hard, the
+  Goblin Walker is a barrel on iron legs with a boiler. Kill it and it leaves a
+  wreck; repair it with 3 iron bars and 4 scrap, then climb in and pilot it.
+- **Range, bombs, traps.** Old Wren in Wolfwood strings you a bow for 5 spider
+  silk. Bombs explode on contact. Traps spring on any beast that steps on them.
+- **Enterable buildings.** Push through doors; the roof lifts away inside.
+  Shops, bank, smithy, tinker's workshop, inn, houses, all furnished. NPCs stand
+  behind their counters. No talking through walls.
+- **Castle Thistledown** with corner spire towers, a portcullis, and the keep
+  where the Duke sits.
+- **Death's House.** A stone building with a coffin-shaped door. Inside, Death
+  himself, a big ghost with a scythe, among his gold piles, beside the chest
+  that holds what you dropped. Cheap stacks free, valuables a quarter, and he
+  takes the fee from the coins you dropped first.
+- **Town life.** Six villagers wander the streets with chatter. Two market
+  stalls (Greta's seeds, Fennick who buys pelts and tusks at full price).
+- **Minimap** top right; tap it or press M for the world map with region labels
+  and the quest marker. **Area banners** name every region you enter.
+- **Quests** are tracked on demand from the quest tab; nothing sits on screen
+  unless you track it.
+- **Coins are an item** in the pack. **Pack rearranges** by tap, tap.
+- **Base building.** Lodestone sets home (H teleports, 5-minute cooldown). A bed
+  within a few tiles of a lodestone sets your respawn. Doors and gates push
+  through for people but hold animals and goblins.
+- **Wilderness Easter eggs.** The last knight's grave, a stone circle that
+  heals, a ruined watchtower with a chest, Old Wren's hut, mushrooms and flowers.
+
+**[open]** Barrelbeast and Hollowford are Chapter 4. **[open]** Should there be
+a consequence for killing guards? **[open]** Dwarves for mithril, elves for
+Range training, boats to islands are still to place.
+
 ## 10. Build order
 
 See `ROADMAP.md`. Short version: v0 is the opening (cave, voice, sword, first
@@ -279,3 +339,7 @@ goblin, levels, break/craft/place blocks). Everything else stacks on that.
 | 2026-09-07 | Limited-slot pack + bank; food heals on use. XP curve = RuneScape table. |
 | 2026-09-07 | Death keeps the pack; cheap stacks free, valuables 25%. Sword never lost. |
 | 2026-09-07 | Woodcutting/Mining/Fishing/Cooking are skills and gate content. |
+| 2026-09-07 | Combat rolls RuneScape-style; gear + stats set accuracy and max hit. XP pace cut. |
+| 2026-09-07 | Death lives in a stone house with a coffin door, a scythe, gold piles and a chest. |
+| 2026-09-07 | Buildings are enterable and furnished; the Duke sits in a castle keep. |
+| 2026-09-07 | Goblin tech is medieval: barrels, boilers, iron legs. The walker can be repaired and piloted. |

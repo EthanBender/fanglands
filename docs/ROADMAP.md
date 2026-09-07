@@ -26,18 +26,30 @@ Each version is playable on its own. We never leave the game broken between vers
 - [x] Tobin's loaf side quest; neutral guards (men and women); sheep, cows, cave spiders
 - [x] Self-test covers all of the above (28 checks)
 
-## v2 — Steel and Goblin Tech
-- [ ] Anvil + hammer: craft ruined and iron gear (hammer-strike animation), Smithing skill
-- [ ] Armour slots and Defence reducing damage per piece
-- [ ] Hero companion #1 joins you
-- [ ] Goblin sapper (sticky bombs), goblin bulldozer
-- [ ] The road to Hollowford, the ruined town, the Barrelbeast boss fight
-- [ ] World map screen with discovered places and quest marker
+## v2 — Goblin Tech (DONE 2026-09-07)
+- [x] RuneScape-style RNG combat, equipment slots, weapon perks, iron + steel tiers
+- [x] Forge + anvil with hammer animation (Smithing), workbench, tinker's table, alchemy table
+- [x] Firemaking, Farming, tool-gated Woodcutting/Mining with stumps and rubble that regrow
+- [x] Drop tables with rarity, coins as an item, pack rearranging
+- [x] Goblin sappers (sticky bombs), brutes, the Goblin Walker: kill, wreck, repair, pilot
+- [x] Bows and arrows (Range), bombs, goblin traps
+- [x] Bigger map (160×96): Grey Quarry, Wolfwood, Goblin Camp, Easter eggs
+- [x] Thistledown rebuilt: streets, enterable furnished buildings, market stalls, villagers, castle + keep
+- [x] Death's House (stone, coffin door, ghost with scythe, gold piles, chest)
+- [x] Minimap + world map, area banners, quest tracking on demand
+- [x] Lodestone home teleport, beds as respawn, push-through doors and gates
+- [x] Aggro stops at higher combat level; XP pace cut hard
+- [x] Self-test: 52 checks, source split into src/ modules with build.sh
 
-## v3 — Range and Building
-- [ ] Range skill + bows (elves?)
-- [ ] Base building expanded: more block types, doors, beds (respawn point)
-- [ ] More side and tiny quests
+## v3 — Hollowford
+- [ ] The road east past the camp, the ruined town, the Barrelbeast boss fight
+- [ ] Goblin bulldozer, more mech variants to repair and pilot
+- [ ] Hero companion #1 joins you
+- [ ] Consequences for attacking guards
+
+## v3b — More skills and quests
+- [ ] More side and tiny quests, more block types for bases
+- [ ] Mithril tier (dwarves), Range training (elves)
 
 ## v4 — The Hidden Cities
 - [ ] Dwarven city underground (mithril, big anvil)
