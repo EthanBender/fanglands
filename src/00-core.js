@@ -24,7 +24,7 @@ function mulberry32(seed) {
 
 // ---------- constants ----------
 const TILE = 48;
-const MAP_W = 200, MAP_H = 140;
+const MAP_W = 260, MAP_H = 180;
 const WORLD_SEED = 20260907;
 const CAVE_EXIT_X = 20;
 const SAVE_KEY = 'fanglands.save.v2';

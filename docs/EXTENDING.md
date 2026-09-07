@@ -25,8 +25,8 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
 - World: `BUILDINGS.push({...})` (same shape as the existing ones; `stone`, `door`/`doorTop`, `f` furniture),
   `NPCS.push(initNpc({ id, name, x, y, tunic, hair, role, ... }))`, `REGIONS.unshift({ name, sub, x0, y0, x1, y1 })`,
   and `HOOKS.world.push((rnd, api) => { ... })` to carve terrain: `api.setTile/tileAt/spawnList(type, [[x,y],...])/road(points, tile, width, chance)/pen(...)`.
-  The map is `MAP_W`×`MAP_H` = 200×140 tiles. Built land ends at x 160 / y 96. Everything beyond is default
-  grass/forest for features to carve: the east strip (x 160–199, y 0–95) and the whole south (y 96–139).
+  The map is `MAP_W`×`MAP_H` = 260×180 tiles. Built land: x 0–199, y 0–139 (the Grey Sea fills x 162–199, y 0–95).
+  Free for features to carve: the far east beyond the sea (x 200–259, y 0–179: reach it by Harl's ferry) and the south band (y 140–179).
   `WALK_OVER` (a Set in 00-core) lets the player cross tiles it contains (e.g. `WALK_OVER.add(T.WATER)` while hover armour is worn).
 - Quests: `QUEST_DEFS.my = { name }`, `HOOKS.questText.my = () => '...'`, `HOOKS.activeQuests.push(() => cond ? ['my'] : [])`.
   Main story after stage 8: `HOOKS.mainQuest[9] = { text: () => '...', onEnter: () => { say(...); } }`; call `advanceQuest(9)`.
