@@ -24,13 +24,15 @@ const LOADOUTS = [
   { name: 'Ch3: lv10 iron sword + iron helm/body', melee: 10, def: 8, weapon: 'iron_sword', armour: ['iron_helm', 'iron_body', 'iron_legs', 'iron_shield'] },
   { name: 'Ch4: lv20 steel sword + iron set', melee: 20, def: 16, weapon: 'steel_sword', armour: ['iron_helm', 'iron_body', 'iron_legs', 'iron_shield'] },
   { name: 'Ch4b: lv30 mithril sword + steel body', melee: 30, def: 25, weapon: 'mithril_sword', armour: ['steel_helm', 'steel_body', 'iron_legs', 'iron_shield'] },
+  { name: 'Ch5a: lv35 mithril sword + scale helm/shield + mithril body', melee: 35, def: 30, weapon: 'mithril_sword', armour: ['scale_helm', 'mithril_body', 'mithril_legs', 'scale_shield'] },
   { name: 'Ch5: lv45 mithril battleaxe + mithril set', melee: 45, def: 40, weapon: 'mithril_battleaxe', armour: ['mithril_helm', 'mithril_body', 'mithril_legs', 'mithril_shield'] },
   { name: 'End: lv60 Fang + godly set', melee: 60, def: 55, weapon: 'fang_of_the_fang', armour: ['godly_helm', 'godly_body', 'godly_legs', 'godly_shield'] },
 ];
 const setLoadout = L => ev(`player.skills.melee.xp = XP_TABLE[${L.melee}]; player.skills.defence.xp = XP_TABLE[${L.def}]; player.equip = { weapon: ${JSON.stringify(L.weapon)}, helm: null, body: null, legs: null, shield: null }; ${L.armour.map(a => `player.equip[ITEMS['${a}'].armour.slot] = '${a}';`).join(' ')} player.mech = null; recomputeMaxHp(); ({ att: playerAttackRoll(), max: playerMaxHit(), def: playerDefRoll(), hp: player.maxHp, cd: ITEMS['${L.weapon}'].weapon.cd })`);
-const MONS = ['spider', 'goblin', 'boar', 'wolf', 'sapper', 'brute', 'guard_m', 'walker', 'bulldozer', 'barrelbeast', 'dwarf_guard', 'elf_sentinel', 'green_dragon', 'red_dragon', 'the_fang'].filter(k => DEFS[k]);
+const MONS = ['spider', 'goblin', 'boar', 'wolf', 'sapper', 'brute', 'guard_m', 'walker', 'bulldozer', 'barrelbeast', 'dwarf_guard', 'elf_sentinel', 'ash_drake', 'green_dragon', 'red_dragon', 'the_fang'].filter(k => DEFS[k]);
 console.log('\n== COMBAT: expected seconds to kill / HP lost per kill (player must eat if HP lost > maxHp) ==');
 for (const L of LOADOUTS) {
+  if (!ITEMS[L.weapon] || L.armour.some(a => !ITEMS[a])) { console.log(`\n-- ${L.name}: skipped (item id missing in this build)`); continue; }
   const p = setLoadout(L);
   const rows = [];
   for (const k of MONS) {
@@ -44,6 +46,7 @@ for (const L of LOADOUTS) {
   console.log(rows.join('\n'));
 }
 console.log('\n== XP: kills needed per level band (melee 4xp/dmg, no kill bonus) ==');
+if (DEFS.ash_drake) console.log(`kill bonus (30-ashdrake): level x 10 xp for level >= 10 — ash drake ${DEFS.ash_drake.hp * 4 + DEFS.ash_drake.level * 10} xp/kill, green dragon ${DEFS.green_dragon.hp * 4 + DEFS.green_dragon.level * 10}, red dragon ${DEFS.red_dragon.hp * 4 + DEFS.red_dragon.level * 10}, walker ${DEFS.walker.hp * 4 + DEFS.walker.level * 10}`);
 for (const lv of [2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 99]) console.log(`level ${String(lv).padStart(2)}: ${XP[lv].toLocaleString().padStart(11)} xp  = ${(XP[lv] / (12 * 4)).toFixed(0).padStart(6)} goblins  / ${(XP[lv] / (45 * 4)).toFixed(0).padStart(5)} brutes / ${(XP[lv] / (260 * 4)).toFixed(0).padStart(4)} green dragons`);
 console.log('\n== GATHERING: expected seconds per log/ore (success chance per swing × swing time) ==');
 const gather = (lv, req, tier, base = 2.2) => { const chance = Math.min(0.9, 0.35 + (lv - req) * 0.02 + tier * 0.1); return Math.max(0.9, base - tier * 0.4) / chance; };

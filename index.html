@@ -180,11 +180,11 @@ const RECIPES = [
   { out: 'stone_arrow', qty: 5, needs: [['wood', 1], ['stone', 1]], station: 'workbench', skill: 'crafting', lv: 1, xp: 8, label: 'Logs + Stone → 5 Stone arrows' },
   { out: 'shortbow', qty: 1, needs: [['wood', 2], ['spider_silk', 1]], station: 'workbench', skill: 'crafting', lv: 1, xp: 25, label: '2 Logs + Spider silk → Shortbow' },
   { out: 'door', qty: 1, needs: [['plank', 4]], station: 'workbench', skill: 'crafting', lv: 2, xp: 15, label: '4 Planks → Door' },
-  { out: 'bed', qty: 1, needs: [['plank', 4], ['wool', 2]], station: 'workbench', skill: 'crafting', lv: 3, xp: 30, label: '4 Planks + 2 Wool → Bed' },
-  { out: 'workbench', qty: 1, needs: [['plank', 8]], station: 'workbench', skill: 'crafting', lv: 4, xp: 40, label: '8 Planks → Workbench (for your base)' },
-  { out: 'lodestone', qty: 1, needs: [['stone', 5], ['iron_bar', 1]], station: 'workbench', skill: 'crafting', lv: 5, xp: 60, label: '5 Stone + Iron bar → Lodestone' },
-  { out: 'goblin_trap', qty: 1, needs: [['iron_bar', 1], ['plank', 2]], station: 'workshop', skill: 'crafting', lv: 3, xp: 30, label: 'Iron bar + 2 Planks → Goblin trap' },
-  { out: 'iron_arrow', qty: 10, needs: [['iron_bar', 1], ['wood', 2]], station: 'workshop', skill: 'crafting', lv: 5, xp: 20, label: 'Iron bar + 2 Logs → 10 Iron arrows' },
+  { out: 'bed', qty: 1, needs: [['plank', 4], ['wool', 2]], station: 'workbench', skill: 'crafting', lv: 3, xp: 60, label: '4 Planks + 2 Wool → Bed' },
+  { out: 'workbench', qty: 1, needs: [['plank', 8]], station: 'workbench', skill: 'crafting', lv: 4, xp: 60, label: '8 Planks → Workbench (for your base)' },
+  { out: 'lodestone', qty: 1, needs: [['stone', 5], ['iron_bar', 1]], station: 'workbench', skill: 'crafting', lv: 5, xp: 120, label: '5 Stone + Iron bar → Lodestone' },
+  { out: 'goblin_trap', qty: 1, needs: [['iron_bar', 1], ['plank', 2]], station: 'workshop', skill: 'crafting', lv: 3, xp: 60, label: 'Iron bar + 2 Planks → Goblin trap' },
+  { out: 'iron_arrow', qty: 10, needs: [['iron_bar', 1], ['wood', 2]], station: 'workshop', skill: 'crafting', lv: 5, xp: 30, label: 'Iron bar + 2 Logs → 10 Iron arrows' },
   { out: 'bomb', qty: 1, needs: [['blast_powder', 1], ['goblin_scrap', 1]], station: 'alchemy', skill: 'crafting', lv: 2, xp: 30, label: 'Blast powder + Goblin scrap → Goblin bomb' },
   // smithing (anvil, needs a hammer)
   { out: 'iron_dagger', qty: 1, needs: [['iron_bar', 1]], station: 'anvil', skill: 'smithing', lv: 1, xp: 25, label: '1 bar → Iron dagger' },
@@ -234,9 +234,9 @@ const MONSTER_DEFS = {
     drops: { always: [['coins', 3, 9]], table: [['nothing', 0, 0, 30], ['goblin_scrap', 1, 1, 18], ['bread', 1, 1, 8], ['potato_seed', 1, 3, 10], ['blast_powder', 1, 1, 5], ['ruined_helm', 1, 1, 3], ['ruined_body', 1, 1, 2], ['bronze_dagger', 1, 1, 4]], rare: { chance: 40, table: [['iron_dagger', 1, 1, 3], ['iron_helm', 1, 1, 1]] } } },
   sapper: { name: 'Goblin sapper', level: 7, r: 12, hp: 24, att: 8, maxHit: 5, def: 6, speed: 110, aggro: true, sight: 6 * TILE, respawn: 40, thrower: true,
     drops: { always: [['coins', 6, 14], ['blast_powder', 1, 2]], table: [['nothing', 0, 0, 20], ['goblin_scrap', 1, 2, 20], ['bomb', 1, 1, 6], ['iron_ore', 1, 2, 8]], rare: { chance: 30, table: [['iron_warhammer', 1, 1, 1]] } } },
-  brute: { name: 'Goblin brute', level: 9, r: 15, hp: 45, att: 10, maxHit: 8, def: 8, speed: 105, aggro: true, sight: 5 * TILE, respawn: 45,
+  brute: { name: 'Goblin brute', level: 9, r: 15, hp: 45, att: 10, maxHit: 8, def: 7, speed: 105, aggro: true, sight: 5 * TILE, respawn: 45,
     drops: { always: [['coins', 8, 20]], table: [['nothing', 0, 0, 24], ['goblin_scrap', 1, 3, 20], ['iron_ore', 1, 2, 12], ['ruined_body', 1, 1, 6], ['coal', 1, 1, 6]], rare: { chance: 25, table: [['iron_sword', 1, 1, 2], ['iron_body', 1, 1, 1]] } } },
-  walker: { name: 'Goblin walker', level: 18, r: 22, hp: 130, att: 18, maxHit: 13, def: 16, speed: 70, aggro: true, sight: 6 * TILE, respawn: 240, mech: true,
+  walker: { name: 'Goblin walker', level: 18, r: 22, hp: 110, att: 18, maxHit: 11, def: 12, speed: 70, aggro: true, sight: 6 * TILE, respawn: 240, mech: true,
     drops: { always: [['goblin_scrap', 4, 8], ['iron_ore', 2, 4]], table: [['iron_bar', 1, 2, 10], ['blast_powder', 1, 3, 10], ['coal', 1, 2, 6]], rare: { chance: 6, table: [['iron_battleaxe', 1, 1, 1], ['iron_warhammer', 1, 1, 1]] } } },
   wolf: { name: 'Wolf', level: 6, r: 13, hp: 22, att: 7, maxHit: 5, def: 4, speed: 175, aggro: true, sight: 6 * TILE, respawn: 35,
     drops: { always: [['wolf_pelt', 1, 1]], table: [['nothing', 0, 0, 8], ['raw_beef', 1, 1, 4]] } },
@@ -2993,7 +2993,9 @@ const MUSIC = (() => {
   const CAGE_POS = { x: 148, y: 34 };
   const INN_WAIT = { sera: { x: 123, y: 48 }, garrick: { x: 127, y: 47 } }; // where a dismissed hero waits (inside the inn; interior is x 123–128, y 45–48)
   const GOBLIN_TYPES = ['goblin', 'sapper', 'brute', 'walker'];
-  const FOLLOW_SPEED = 180, STOP_DIST = 60, SNAP_DIST = 12 * TILE, DOWN_TIME = 30, COMP_LEVEL = 12;
+  const FOLLOW_SPEED = 180, STOP_DIST = 60, SNAP_DIST = 12 * TILE, DOWN_TIME = 30;
+  // Companions scale with the knight: a hired hero fights at combat level +4, never below 12 (a fixed 12 did under 1 dps to a dragon).
+  const COMP_LEVEL = () => Math.max(12, combatLevel() + 4);
 
   const HEROES = {
     sera: {
@@ -3222,7 +3224,7 @@ const MUSIC = (() => {
           live.moving = false;
           if (live.attackCd <= 0) {
             live.attackCd = 0.9; live.attackT = 0.22;
-            const attRoll = (COMP_LEVEL + 8) * (64 + def.look.weapon.weapon.att), maxHit = 2 + Math.floor((COMP_LEVEL + 8) * (def.look.weapon.weapon.str + 64) / 300);
+            const attRoll = (COMP_LEVEL() + 8) * (64 + def.look.weapon.weapon.att), maxHit = 2 + Math.floor((COMP_LEVEL() + 8) * (def.look.weapon.weapon.str + 64) / 300);
             hitMonster(m, rollHit(attRoll, (mdef.def + 8) * 64, maxHit), 14);
           }
         }
@@ -3236,7 +3238,7 @@ const MUSIC = (() => {
     // do not stand on the knight
     if (dp < 22 && dp > 0) { const e = { x: c.x, y: c.y, r: 13 }; moveEntity(e, (c.x - player.x) / dp * 40 * dt, (c.y - player.y) / dp * 40 * dt, 'person'); c.x = e.x; c.y = e.y; }
     // monsters next to the hero (and not next to the knight) hit the hero instead
-    const defRoll = (COMP_LEVEL + 8) * (64 + def.defBonus);
+    const defRoll = (COMP_LEVEL() + 8) * (64 + def.defBonus);
     for (const m of monsters) {
       if (m.dead || m.state !== 'chase' || (m.stunT || 0) > 0) continue; const mdef = MONSTER_DEFS[m.type]; if (mdef.harmless) continue;
       const dc = dist(m.x, m.y, c.x, c.y), dpm = dist(m.x, m.y, player.x, player.y);
@@ -5328,6 +5330,7 @@ HOOKS.selfTest.push((check, F, h) => {
   const PATH = [[60, 94], [60, 100], [56, 104], [48, 105], [36, 105]];      // Wolfwood → the Ashfields → toward the lair
   const FARM_PATH = [[60, 100], [63, 103], [69, 103]];
   const DRAGONS = new Set(['green_dragon', 'red_dragon']);
+  const DR_POTATO_PRICE = ITEMS.potato ? ITEMS.potato.value : 3, DR_POTATO_MAX = 20;   // Dunstan buys potatoes at their value, 20 per hand-in
   const GOLD = '#f5e6a8';
 
   // Inserted right after the first region (Deepholm, whose self-test wants to stay REGIONS[0]) rather than unshifted:
@@ -5348,16 +5351,25 @@ HOOKS.selfTest.push((check, F, h) => {
     godly_body: { name: 'Godly platebody', value: 5200, color: GOLD, shape: 'body', stack: 1, armour: { slot: 'body', def: 55 } },
     godly_legs: { name: 'Godly platelegs', value: 3800, color: GOLD, shape: 'legs', stack: 1, armour: { slot: 'legs', def: 38 } },
     godly_shield: { name: 'Godly shield', value: 3000, color: GOLD, shape: 'shield', stack: 1, armour: { slot: 'shield', def: 28 } },
+    scale_plate: { name: 'Scale plate', value: 90, color: '#3f8a4a', shape: 'bar' },
+    scale_helm: { name: 'Scale helm', value: 260, color: '#3f8a4a', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 12 } },
+    scale_shield: { name: 'Scale shield', value: 420, color: '#3f8a4a', shape: 'shield', stack: 1, armour: { slot: 'shield', def: 16 } },
   });
   if (!ITEMS.mithril_bar) ITEMS.mithril_bar = { name: 'Mithril bar', value: 120, color: '#7aa0d0', shape: 'bar' }; // the dwarves file normally defines it
-  for (const k of ['dragon_dung', 'dragon_scale', 'dragon_bone', 'obsidian', 'fireproof_salve', 'godly_helm', 'godly_body', 'godly_legs', 'godly_shield', 'mithril_bar']) {
+  for (const k of ['dragon_dung', 'dragon_scale', 'dragon_bone', 'obsidian', 'fireproof_salve', 'godly_helm', 'godly_body', 'godly_legs', 'godly_shield', 'scale_plate', 'scale_helm', 'scale_shield', 'mithril_bar']) {
     ITEMS[k].id = k; if (!ITEMS[k].stack) ITEMS[k].stack = ITEMS[k].armour ? 1 : 50;
   }
   RECIPES.push(
-    { out: 'godly_helm', qty: 1, needs: [['dragon_scale', 6], ['mithril_bar', 2], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 40, xp: 500, label: '6 Dragon scales + 2 Mithril bars + Obsidian → Godly winged helm' },
-    { out: 'godly_shield', qty: 1, needs: [['dragon_scale', 6], ['mithril_bar', 2], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 42, xp: 500, label: '6 Dragon scales + 2 Mithril bars + Obsidian → Godly shield' },
-    { out: 'godly_legs', qty: 1, needs: [['dragon_scale', 7], ['mithril_bar', 3], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 44, xp: 500, label: '7 Dragon scales + 3 Mithril bars + Obsidian → Godly platelegs' },
-    { out: 'godly_body', qty: 1, needs: [['dragon_scale', 8], ['mithril_bar', 3], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 48, xp: 500, label: '8 Dragon scales + 3 Mithril bars + Obsidian → Godly platebody' },
+    { out: 'godly_helm', qty: 1, needs: [['dragon_scale', 6], ['mithril_bar', 2], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 32, xp: 500, label: '6 Dragon scales + 2 Mithril bars + Obsidian → Godly winged helm' },
+    { out: 'godly_shield', qty: 1, needs: [['dragon_scale', 6], ['mithril_bar', 2], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 34, xp: 500, label: '6 Dragon scales + 2 Mithril bars + Obsidian → Godly shield' },
+    { out: 'godly_legs', qty: 1, needs: [['dragon_scale', 7], ['mithril_bar', 3], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 36, xp: 500, label: '7 Dragon scales + 3 Mithril bars + Obsidian → Godly platelegs' },
+    { out: 'godly_body', qty: 1, needs: [['dragon_scale', 8], ['mithril_bar', 3], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 40, xp: 500, label: '8 Dragon scales + 3 Mithril bars + Obsidian → Godly platebody' },
+  );
+  // the Smithing 28–40 filler between mithril (30) and Godly (32–40): dragon scales smelt into plates, plates smith into scale gear
+  SMELT.push({ out: 'scale_plate', needs: [['dragon_scale', 3]], lv: 28, xp: 60, label: '3 Dragon scales → Scale plate' });
+  RECIPES.push(
+    { out: 'scale_helm', qty: 1, needs: [['scale_plate', 1]], station: 'anvil', skill: 'smithing', lv: 29, xp: 90, label: '1 Scale plate → Scale helm' },
+    { out: 'scale_shield', qty: 1, needs: [['scale_plate', 2]], station: 'anvil', skill: 'smithing', lv: 30, xp: 180, label: '2 Scale plates → Scale shield' },
   );
   SHOPS.dung = { name: "Dunstan's Dung Farm", stock: [['baked_potato', 8], ['potato_seed', 2]], buys: ['dragon_dung'], rate: 1 };
 
@@ -5367,8 +5379,8 @@ HOOKS.selfTest.push((check, F, h) => {
     table: [['nothing', 0, 0, 5], ['dragon_bone', 1, 2, 6], ['coal', 1, 3, 5]],
     rare: { chance: 6, table: [['mithril_bar', 2, 2, 1]] },
   });
-  MONSTER_DEFS.green_dragon = { name: 'Green dragon', level: 45, r: 26, hp: 260, att: 40, maxHit: 20, def: 36, speed: 95, aggro: true, sight: 7 * TILE, respawn: 300, drops: dragonDrops(60, 140, 1, 3) };
-  MONSTER_DEFS.red_dragon = { name: 'Red dragon', level: 60, r: 28, hp: 420, att: 55, maxHit: 28, def: 50, speed: 100, aggro: true, sight: 7 * TILE, respawn: 360, drops: dragonDrops(100, 200, 2, 4) };
+  MONSTER_DEFS.green_dragon = { name: 'Green dragon', level: 45, r: 26, hp: 220, att: 40, maxHit: 20, def: 36, speed: 95, aggro: true, sight: 7 * TILE, respawn: 300, drops: dragonDrops(60, 140, 1, 3) };
+  MONSTER_DEFS.red_dragon = { name: 'Red dragon', level: 60, r: 28, hp: 420, att: 55, maxHit: 24, def: 50, speed: 100, aggro: true, sight: 7 * TILE, respawn: 360, drops: dragonDrops(100, 200, 2, 4) };
 
   // A four-legged dragon seen from above: long neck and head forward, tail behind, wings on the back
   // (folded at rest, beating when it walks), horns, red eyes, an open jaw while it breathes fire.
@@ -5458,6 +5470,7 @@ HOOKS.selfTest.push((check, F, h) => {
       q.stage = 1;
       say("A knight! Out here! Mind the dragons, they're the whole point. Dragon dung: best fertiliser in the Fanglands. Potatoes the size of your head.", n.name);
       say("Bring me five dragon dung and I'll pay you a hundred and fifty coins, and brew you something for the heat. The dragons drop it. You'll know it when you see it.", n.name);
+      say("Drakes. Small ones, wingless. They leave dung all over my field. Start with those; the big green ones south of here breathe fire.", n.name);
       if (quest.stage === 12) advanceQuest(13); else save();
     } else if (q.stage === 1) {
       if (countItem('dragon_dung') >= 5) {
@@ -5469,12 +5482,12 @@ HOOKS.selfTest.push((check, F, h) => {
         say("Fireproof salve. Ash, dung, and a thing I don't tell people. Dragon fire will only half-bite you now, and the heat in the far south-west won't cook you. Go carefully.", n.name);
         levelBanner = { text: 'QUEST COMPLETE', sub: 'Dragon Dung', t: 3 };
         if (quest.stage === 12 || quest.stage === 13) advanceQuest(14); else save();
-      } else say(`Five dragon dung. You've got ${countItem('dragon_dung')}. They're south of here, in the ash. Big, green, and they breathe fire, so mind yourself.`, n.name);
+      } else say(`Five dragon dung. You've got ${countItem('dragon_dung')}. The drakes round my field drop it, and they don't breathe fire. The big green ones south of here do, so mind yourself.`, n.name);
     } else {
       if (q.salve && (quest.stage === 12 || quest.stage === 13)) advanceQuest(14);
-      const pot = countItem('potato');
-      if (pot > 0) { removeItem('potato', pot); q.potatoes += pot; giveOrDrop('coins', pot * 10, player.x, player.y); say(`Potatoes! ${pot} of them. Ten coins each, that's ${pot * 10}. Baked ones are eight, if you're hungry. And I'll buy dung at the counter.`, n.name); }
-      else say("Potatoes? I pay ten coins a potato, grown anywhere. Dung I buy at the counter. Baked potato's eight, and seed if you want to farm the field.", n.name);
+      const pot = Math.min(DR_POTATO_MAX, countItem('potato')); // he pays what a potato is worth (Greta sells at 3), twenty a visit: no arbitrage
+      if (pot > 0) { removeItem('potato', pot); q.potatoes += pot; giveOrDrop('coins', pot * DR_POTATO_PRICE, player.x, player.y); say(`Potatoes! ${pot} of them. ${DR_POTATO_PRICE} coins each, that's ${pot * DR_POTATO_PRICE}.${countItem('potato') > 0 ? ' Twenty is all I can use today.' : ''} Baked ones are eight, if you're hungry. And I'll buy dung at the counter.`, n.name); }
+      else say(`Potatoes? I pay ${DR_POTATO_PRICE} coins a potato, up to twenty a visit. Dung I buy at the counter. Baked potato's eight, and seed if you want to farm the field.`, n.name);
       openPanel('shop', 'dung');
     }
   };
@@ -5551,7 +5564,7 @@ HOOKS.selfTest.push((check, F, h) => {
     if (t === DR_OBSIDIAN) {
       const tier = hasTool('pickaxe');
       if (!tier) { notify('Obsidian. Black glass from the lava. You need a pickaxe to work it.'); return true; }
-      if (skillLv('mining') < 35) { notify('You need Mining level 35 for obsidian.'); return true; }
+      if (skillLv('mining') < 28) { notify('You need Mining level 28 for obsidian.'); return true; }
       if (!canFit('obsidian', 1)) { notify('Your pack is full.'); return true; }
       player.action = { type: 'mine_obsidian', tx, ty, t: 0, need: Math.max(1.0, 2.6 - tier * 0.4), tier };
       return true;
@@ -5784,7 +5797,7 @@ HOOKS.selfTest.push((check, F, h) => {
       check('dragons: standing beside lava burns 1 hp a second, with a warning', !!side && player.hp <= hp0 - 2 && DR.stats.lavaWarn > warn0, { lava, side, hp0, hp: player.hp }); F.tp(60, 100); }
     // dragons live here
     { const ds = monsters.filter(isDragon), gr = ds.filter(m => m.type === 'green_dragon'), rd = ds.filter(m => m.type === 'red_dragon');
-      check('dragons: four green and two red dragons sleep in the Ashfields (lv 45 / lv 60, fire-breathing, aggressive)', gr.length === 4 && rd.length === 2 && ds.every(m => inAshfields(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)) && !inFang(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)) && m.angry) && MONSTER_DEFS.green_dragon.hp === 260 && MONSTER_DEFS.red_dragon.hp === 420 && MONSTER_DEFS.green_dragon.level === 45 && MONSTER_DEFS.red_dragon.level === 60, { green: gr.length, red: rd.length }); }
+      check('dragons: four green and two red dragons sleep in the Ashfields (lv 45 / lv 60, fire-breathing, aggressive)', gr.length === 4 && rd.length === 2 && ds.every(m => inAshfields(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)) && !inFang(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)) && m.angry) && MONSTER_DEFS.green_dragon.hp === 220 && MONSTER_DEFS.red_dragon.hp === 420 && MONSTER_DEFS.red_dragon.maxHit === 24 && MONSTER_DEFS.green_dragon.level === 45 && MONSTER_DEFS.red_dragon.level === 60, { green: gr.length, red: rd.length }); }
     // fire breath, then half damage with the salve
     { const q = dq(); const spot = ashSpot(72, 124); F.tp(spot.x, spot.y); player.facing = { x: 1, y: 0 };
       const others = monsters.filter(m => !m.dead && m !== monsters.find(isDragon)); for (const m of others) { m.stunT = 999; }
@@ -5812,26 +5825,26 @@ HOOKS.selfTest.push((check, F, h) => {
       check('dragons: five dung → 150 coins, the fireproof salve is applied ("Hold still"), story at 14', q.stage === 2 && q.salve === true && coins() === c0 + 150 && countItem('dragon_dung') === 0 && player.skills.farming.xp === fx0 + 150 && quest.stage === 14 && /Fang/.test(questText('main')) && !activeQuests().includes('dragons'), { stage: q.stage, salve: q.salve, coins: coins() - c0, main: quest.stage });
       while (countItem('potato') > 0) removeItem('potato', countItem('potato')); h.give('potato', 3); const c1 = coins(); drain(); F.face(DUNSTAN_T.x, DUNSTAN_T.y); F.press('KeyE'); F.sim(2, []);
       const shopOpen = panel === 'shop' && panelArg === 'dung'; closePanel();
-      check('dragons: Dunstan buys potatoes at 10 coins each and opens his stall (baked potato 8)', coins() === c1 + 30 && countItem('potato') === 0 && shopOpen && SHOPS.dung.stock.some(([id, p]) => id === 'baked_potato' && p === 8), { coins: coins() - c1, shopOpen, panel, panelArg }); }
+      check('dragons: Dunstan buys potatoes at 3 coins each (their value) and opens his stall (baked potato 8)', coins() === c1 + 9 && countItem('potato') === 0 && shopOpen && SHOPS.dung.stock.some(([id, p]) => id === 'baked_potato' && p === 8), { coins: coins() - c1, shopOpen, panel, panelArg }); }
     // obsidian: pickaxe + Mining 35
     { const r = F.nearestTile([DR_OBSIDIAN], { x: tc(60), y: tc(100) }); const side = r && besideTile(r.x, r.y); let noPick = false, lowLv = false, started = false, steps = 'skipped', o0 = 0, mx0 = 0;
       if (side) { F.tp(side.x, side.y); F.face(r.x, r.y);
         const stash = []; for (let i = 0; i < INV_SLOTS; i++) { const s = player.inv[i]; if (s && ITEMS[s.id].tool === 'pickaxe') { stash.push([i, s]); player.inv[i] = null; } } const eqw = player.equip.weapon; if (eqw && ITEMS[eqw].tool === 'pickaxe') player.equip.weapon = null;
         F.press('KeyE'); F.sim(2, []); noPick = !player.action && notice && /pickaxe/.test(notice.text);
         for (const [i, s] of stash) player.inv[i] = s; if (eqw && ITEMS[eqw].tool === 'pickaxe') player.equip.weapon = eqw; if (!hasTool('pickaxe')) h.give('bronze_pickaxe', 1);
-        const mxSaved = player.skills.mining.xp; player.skills.mining.xp = XP_TABLE[34]; F.face(r.x, r.y); F.press('KeyE'); F.sim(2, []); lowLv = !player.action && notice && /Mining level 35/.test(notice.text);
-        player.skills.mining.xp = Math.max(mxSaved, XP_TABLE[35]); o0 = countItem('obsidian'); mx0 = player.skills.mining.xp; F.face(r.x, r.y); F.press('KeyE'); started = player.action && player.action.type === 'mine_obsidian';
+        const mxSaved = player.skills.mining.xp; player.skills.mining.xp = XP_TABLE[27]; F.face(r.x, r.y); F.press('KeyE'); F.sim(2, []); lowLv = !player.action && notice && /Mining level 28/.test(notice.text);
+        player.skills.mining.xp = Math.max(mxSaved, XP_TABLE[28]); o0 = countItem('obsidian'); mx0 = player.skills.mining.xp; F.face(r.x, r.y); F.press('KeyE'); started = player.action && player.action.type === 'mine_obsidian';
         steps = F.untilAction(600, () => countItem('obsidian') > o0); player.action = null; }
-      check('dragons: obsidian needs a pickaxe, then Mining 35; mining it gives obsidian and 120 xp', !!side && noPick && lowLv && started && typeof steps === 'number' && countItem('obsidian') === o0 + 1 && player.skills.mining.xp === mx0 + 120, { r, side, noPick, lowLv, started, steps, obsidian: countItem('obsidian') }); }
+      check('dragons: obsidian needs a pickaxe, then Mining 28; mining it gives obsidian and 120 xp', !!side && noPick && lowLv && started && typeof steps === 'number' && countItem('obsidian') === o0 + 1 && player.skills.mining.xp === mx0 + 120, { r, side, noPick, lowLv, started, steps, obsidian: countItem('obsidian') }); }
     // the godly platebody at Brakka's anvil
     { h.clearJunk(); for (let n = 0; n < 5 && player.inv.filter(s => !s).length < 5; n++) { const i = player.inv.findIndex(s => s && !ITEMS[s.id].armour && !ITEMS[s.id].weapon && !ITEMS[s.id].tool && s.id !== 'coins' && !s.id.startsWith('dragon') && s.id !== 'obsidian'); if (i < 0) break; player.inv[i] = null; }
       while (countItem('dragon_scale') < 8) h.give('dragon_scale', 1); while (countItem('mithril_bar') < 3) h.give('mithril_bar', 1); while (countItem('obsidian') < 1) h.give('obsidian', 1); if (!hasTool('hammer')) h.give('hammer', 1);
-      if (player.skills.smithing.xp < XP_TABLE[48]) player.skills.smithing.xp = XP_TABLE[48];
+      if (player.skills.smithing.xp < XP_TABLE[40]) player.skills.smithing.xp = XP_TABLE[40];
       const sc0 = countItem('dragon_scale'), mb0 = countItem('mithril_bar'), ob0 = countItem('obsidian'), b0 = countItem('godly_body'), sx0 = player.skills.smithing.xp;
       F.tp(93, 39); F.walkTo(94, 39, 500); F.face(94, 38); F.press('KeyE'); const open = panel === 'station' && panelArg === 'anvil';
       let viaButton = F.clickButton('8 Dragon scales + 3 Mithril bars + Obsidian → Godly platebody'); if (!viaButton) craft(RECIPES.find(r => r.out === 'godly_body')); // the anvil list is cut short on small screens
       const steps = F.untilAction(300, () => countItem('godly_body') > b0); closePanel();
-      check('dragons: 8 dragon scales + 3 mithril bars + obsidian smith a Godly platebody at the anvil (Smithing 48, 500 xp)', open && typeof steps === 'number' && countItem('godly_body') === b0 + 1 && countItem('dragon_scale') === sc0 - 8 && countItem('mithril_bar') === mb0 - 3 && countItem('obsidian') === ob0 - 1 && player.skills.smithing.xp === sx0 + 500 && ITEMS.godly_body.armour.def === 55, { open, viaButton, steps, body: countItem('godly_body'), xp: player.skills.smithing.xp - sx0 }); }
+      check('dragons: 8 dragon scales + 3 mithril bars + obsidian smith a Godly platebody at the anvil (Smithing 40, 500 xp)', open && typeof steps === 'number' && countItem('godly_body') === b0 + 1 && countItem('dragon_scale') === sc0 - 8 && countItem('mithril_bar') === mb0 - 3 && countItem('obsidian') === ob0 - 1 && player.skills.smithing.xp === sx0 + 500 && ITEMS.godly_body.armour.def === 55, { open, viaButton, steps, body: countItem('godly_body'), xp: player.skills.smithing.xp - sx0 }); }
     // the winged helm equips (the wings are drawn by HOOKS.draw when player.equip.helm has wings: true)
     { const prev = player.equip.helm; if (prev) { player.equip.helm = null; } h.give('godly_helm', 1); const slot = player.inv.findIndex(s => s && s.id === 'godly_helm'); if (slot >= 0) equipItem(slot);
       check('dragons: the Godly winged helm equips (def 30, wings drawn on the knight)', player.equip.helm === 'godly_helm' && ITEMS.godly_helm.wings === true && ITEMS.godly_helm.armour.def === 30 && gearBonus('def') >= 30, { helm: player.equip.helm, slot });
@@ -6378,7 +6391,7 @@ HOOKS.selfTest.push((check, F, h) => {
       note: 'Six lumps of iron ore. The forge eats more than I do.', thanks: 'Good ore. Heavy. The forge will sing tonight. Take your coin.' },
     { id: 'dorran', tag: 'Dorran', giver: 'Dorran the innkeeper', title: 'Pelts for the inn', kind: 'item', item: 'wolf_pelt', n: 3, short: 'wolf pelts', reward: { coins: 120 },
       note: 'Three wolf pelts for the beds upstairs. The guests keep moaning about the cold.', thanks: 'Warm as a summer night, these. No more moaning guests. Coin, as promised.' },
-    { id: 'pim', tag: 'Pim', giver: 'Pim the tinker', title: 'Powder run', kind: 'item', item: 'blast_powder', n: 3, short: 'blast powder', reward: { coins: 100, xp: ['crafting', 60] },
+    { id: 'pim', tag: 'Pim', giver: 'Pim the tinker', title: 'Powder run', kind: 'item', item: 'blast_powder', n: 3, short: 'blast powder', reward: { coins: 100, xp: ['crafting', 200] },
       note: "Three blast powder. Don't shake it. Don't drop it. Don't ask.", thanks: "Oh lovely, still in one piece. Both of us. Here's your coin, and mind your eyebrows." },
     { id: 'rosalind', tag: 'Rosalind', giver: 'Rosalind', title: 'Pie filling', kind: 'item', item: 'raw_beef', n: 5, short: 'raw beef', reward: { coins: 70, xp: ['cooking', 60] },
       note: "Five raw beef and there's a pie in it for the whole street.", thanks: 'Five beef, fresh. The whole street eats pie tonight. Thank you, knight.' },
@@ -6400,6 +6413,8 @@ HOOKS.selfTest.push((check, F, h) => {
       note: "Five wolves, knight. They've been at the sheep again.", thanks: 'Five wolves down. The sheep can sleep, and so can I. Here.' },
     { id: 'captain', tag: 'Captain', giver: 'Captain Roderick', title: 'Goblin bounty', kind: 'kill', types: GOBLIN_TYPES, n: 10, short: 'goblins', reward: { coins: 250 },
       note: 'Ten goblins, any size. The watch pays by the head.', thanks: 'Ten heads. The watch pays, and the watch remembers. Good work, knight.' },
+    { id: 'thessaly', tag: 'Thessaly', giver: 'Thessaly the weaver', title: 'Wool for the loom', kind: 'item', item: 'wool', n: 10, short: 'wool', reward: { coins: 40, xp: ['crafting', 300] },
+      note: 'Ten wool, clean. The loom is hungry and the sheep are a long way from the jungle.', thanks: 'Ten wool. Soft as cloud. Watch how the loom takes it, and you will learn something of the craft.' },
   ];
   const byId = {}; for (const q of BOARD_QUESTS) byId[q.id] = q;
 
@@ -6594,6 +6609,174 @@ HOOKS.selfTest.push((check, F, h) => {
     // several taken: the tracked line prefers a ready job and counts the rest
     { const open3 = openQuests(); const t = questText('board'); check('board: quest tab line shows one job with progress and how many more are taken', open3.length >= 3 && /^[A-Za-z]+: [a-z ]+ \d+\/\d+/.test(t) && new RegExp(`\\(\\+${open3.length - 1} more\\)`).test(t), { open: open3.map(q => q.id), text: t }); }
     closePanel(); player.action = null; drain(); h.peace(false); F.sim(2, []);
+  });
+}
+
+// ---- src/30-ashdrake.js ----
+// ============================================================================
+// ASH DRAKES + progression helpers (balance wave, audit 2026-09-07 §2)
+// 1. The ash drake: a level-30 wingless, fire-less drake that lives round Dunstan's dung farm and
+//    drops dragon dung every time, so the main quest's "five dung" no longer needs a level-45 kill.
+// 2. Kill bonus XP: every monster of level 10 and up pays level × 10 XP on death (melee, or Range
+//    if a bow killed it), on top of the 4 XP per point of damage the core already gives. Bosses now
+//    pay in progress as well as loot. Companion kills are skipped when the companion file marks them
+//    (window.__companionHit).
+// 3. Kid mode: while `window.__kidmode` is true the knight gets a quarter of every hit back at once.
+//    Semantics: it is a global flag, off by default, nothing in the core reads it; set it from the
+//    console (`__kidmode = true`) or from a future settings toggle. It does not change monsters,
+//    drops, or XP, only how much a hit costs. Because HOOKS.hurt runs after the damage is applied
+//    but BEFORE the core's death check, a barely-lethal hit becomes a survived one. Direct hp writes
+//    that bypass hurtPlayer (lava burn) are caught by an update-tick tracker instead.
+// Feature file: registers everything through HOOKS, edits no core file. One block, no leaked names.
+// ============================================================================
+{
+  const AD_SPAWNS = [[52, 100], [56, 110], [74, 110], [80, 100]];   // round Dunstan's farm (58–79 × 96–107), on the ash
+  const AD_KILL_BONUS_MIN_LEVEL = 10, AD_KILL_BONUS_PER_LEVEL = 10;
+  const AD_KID_HEAL = 0.25;
+  const AD = { stats: { bonuses: 0, last: null, kidHeals: 0 }, lastHp: null };
+
+  // ---------- the monster ----------
+  // dung every time (the on-ramp), coins, and a scale one kill in four or so; no fire, no wings
+  const dungOrCoins = ITEMS.dragon_dung ? ['dragon_dung', 1, 1] : ['coins', 5, 10];
+  MONSTER_DEFS.ash_drake = {
+    name: 'Ash drake', level: 30, r: 22, hp: 120, att: 26, maxHit: 12, def: 20, speed: 100, aggro: true, sight: 5 * TILE, respawn: 120,
+    drops: { always: [dungOrCoins, ['coins', 30, 60]], table: [['dragon_scale', 1, 1, 3], ['coal', 1, 2, 4], ['nothing', 0, 0, 6]].filter(r => r[0] === 'nothing' || ITEMS[r[0]]) },
+  };
+
+  // A stocky four-legged drake seen from above: low wide body, short thick neck, blunt head, a short
+  // tail, small back spines, no wings. Grey-green hide dusted with ash, red eyes.
+  HOOKS.drawMonster.ash_drake = (g, e, hurt) => {
+    const ang = Math.atan2(e.facing.y, e.facing.x), t = e.walkT || 0, moving = !!e.moving, biting = e.attackT > 0;
+    const body = hurt ? '#ffb0b0' : '#5f7a5a', dark = hurt ? '#d98080' : '#38493a', belly = hurt ? '#f0c0c0' : '#7d907a';
+    const ash = hurt ? '#f8dada' : '#b8bdb5', spine = hurt ? '#c07070' : '#2c3a2e', claw = '#d9d0c0';
+    const tw = Math.sin(time * 3 + (moving ? t * 0.5 : 0)) * 4;   // tail sway
+    g.save(); g.rotate(ang);
+    // shadow
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(-2, 0, 26, 17, 0, 0, 7); g.fill();
+    // tail: short and thick, tapering
+    g.strokeStyle = body; g.lineCap = 'round'; g.lineWidth = 9; g.beginPath(); g.moveTo(-16, 0); g.quadraticCurveTo(-26, tw, -34, tw * 0.6); g.stroke();
+    g.lineWidth = 4; g.beginPath(); g.moveTo(-34, tw * 0.6); g.lineTo(-42, tw); g.stroke();
+    // legs: four, splayed wide, stepping
+    g.strokeStyle = dark; g.lineWidth = 6;
+    for (let k = 0; k < 4; k++) {
+      const side = k % 2 ? 1 : -1, front = k < 2, bx = front ? 9 : -9;
+      const ph = moving ? Math.sin(t + (front ? 0 : Math.PI) + (side > 0 ? Math.PI : 0)) * 5 : 0;
+      g.beginPath(); g.moveTo(bx, side * 8); g.lineTo(bx + ph, side * 17); g.lineTo(bx + ph + 2, side * 22); g.stroke();
+      g.fillStyle = claw; for (let c = -1; c <= 1; c++) { g.beginPath(); g.arc(bx + ph + 2 + c * 3, side * 24, 1.3, 0, 7); g.fill(); }
+    }
+    // body: low and wide, a lighter belly stripe along the flank
+    g.fillStyle = body; g.beginPath(); g.ellipse(0, 0, 21, 15, 0, 0, 7); g.fill();
+    g.fillStyle = belly; g.beginPath(); g.ellipse(-2, 0, 15, 8, 0, 0, 7); g.fill();
+    // ash dust: pale flecks settled on the back
+    g.fillStyle = ash; for (const [ox, oy, r] of [[-12, -6, 2], [-6, 8, 1.6], [3, -9, 1.8], [9, 6, 1.4], [-15, 4, 1.2], [12, -3, 1.2], [-3, 2, 1]]) { g.beginPath(); g.arc(ox, oy, r, 0, 7); g.fill(); }
+    // small back spines along the ridge
+    g.fillStyle = spine; for (let s = -14; s <= 10; s += 6) { g.beginPath(); g.moveTo(s - 2, -1); g.lineTo(s, -6); g.lineTo(s + 2, -1); g.closePath(); g.fill(); }
+    // neck + blunt head
+    g.strokeStyle = body; g.lineWidth = 11; g.beginPath(); g.moveTo(16, 0); g.lineTo(24, 0); g.stroke();
+    g.fillStyle = body; g.beginPath(); g.ellipse(30, 0, 9, 7.5, 0, 0, 7); g.fill();
+    g.fillStyle = dark; g.beginPath(); g.ellipse(36, 0, 5, 4.5, 0, 0, 7); g.fill(); // snout
+    if (biting) { g.fillStyle = '#2a1a1a'; g.beginPath(); g.moveTo(38, -3); g.lineTo(43, 0); g.lineTo(38, 3); g.closePath(); g.fill(); } // open jaw
+    g.strokeStyle = spine; g.lineWidth = 2.5; g.lineCap = 'round'; g.beginPath(); g.moveTo(27, -5); g.lineTo(23, -10); g.moveTo(27, 5); g.lineTo(23, 10); g.stroke(); // stub horns
+    g.fillStyle = '#ff2a2a'; g.beginPath(); g.arc(32, -3.5, 1.7, 0, 7); g.arc(32, 3.5, 1.7, 0, 7); g.fill(); // red eyes
+    g.fillStyle = '#1a1a1a'; g.beginPath(); g.arc(39, -1.4, 0.7, 0, 7); g.arc(39, 1.4, 0.7, 0, 7); g.fill(); // nostrils
+    g.restore();
+  };
+
+  // ---------- world ----------
+  // The dragons file (27) carves the Ashfields before this runs; clear a 3x3 of open ash under each
+  // drake so none wakes inside a dead tree, obsidian or a lava pool. Without that file they sit on grass.
+  HOOKS.world.push((rnd, api) => {
+    const ours = ['ASH', 'LAVA', 'OBSIDIAN', 'DEADTREE', 'DRAGONBONES'].filter(n => n in T).map(n => T[n]);
+    if ('ASH' in T) for (const [x, y] of AD_SPAWNS) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (ours.includes(api.tileAt(x + dx, y + dy))) api.setTile(x + dx, y + dy, T.ASH);
+    api.spawnList('ash_drake', AD_SPAWNS);
+  });
+
+  // ---------- kill bonus XP ----------
+  HOOKS.kill.push(m => {
+    const def = MONSTER_DEFS[m.type]; if (!def || (def.level | 0) < AD_KILL_BONUS_MIN_LEVEL || window.__companionHit) return;
+    const xp = def.level * AD_KILL_BONUS_PER_LEVEL;
+    const skill = weaponDef() && weaponDef().weapon && weaponDef().weapon.ranged && !player.mech ? 'range' : 'melee';
+    // a boss kill's own banner (CHAPTER 4 COMPLETE, THE FANG IS SLAIN) was set by an earlier kill hook; a level-up
+    // in the same tick must not overwrite it, so the level is announced beside the knight instead
+    const banner = levelBanner;
+    gainXp(skill, xp);
+    if (banner && banner.t > 0 && banner.sub !== 'Level up' && levelBanner !== banner) { levelBanner = banner; floatText(player.x, player.y - 58, `${skill === 'range' ? 'Range' : 'Melee'} level ${skillLv(skill)}!`, '#ffd166', 14); }
+    AD.stats.bonuses++; AD.stats.last = { type: m.type, xp, skill };
+    floatText(m.x, m.y - m.r - 22, `+${xp} ${skill === 'range' ? 'Range' : 'Melee'} xp`, '#58a6ff', 13);
+  });
+
+  // ---------- kid mode ----------
+  const kidHeal = lost => {
+    const heal = Math.min(Math.ceil(lost * AD_KID_HEAL), player.maxHp - player.hp); if (heal <= 0) return 0;
+    player.hp += heal; AD.stats.kidHeals++; floatText(player.x, player.y - 40, `+${heal} kid mode`, '#7ee787', 12); return heal;
+  };
+  HOOKS.hurt.push(dmg => { if (!window.__kidmode || player.dead) return; kidHeal(dmg); AD.lastHp = player.hp; });
+  HOOKS.update.push(() => {
+    if (!window.__kidmode || player.dead) { AD.lastHp = player.hp; return; }
+    const drop = AD.lastHp === null ? 0 : AD.lastHp - player.hp;
+    if (drop >= 1) kidHeal(drop);   // hp written directly (lava burn); hits through hurtPlayer were already healed above
+    AD.lastHp = player.hp;
+  });
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
+    const meleeWeapon = () => { const w = weaponDef(); if (w && w.weapon && !w.weapon.ranged) return; if (countItem('iron_dagger') < 1) h.give('iron_dagger', 1); equipItem(player.inv.findIndex(s => s && s.id === 'iron_dagger')); };
+    const killByHand = m => { m.hp = 1; m.stunT = 0; for (let i = 0; i < 80 && !m.dead; i++) { m.x = player.x + 40; m.y = player.y; m.stunT = 0; m.state = 'idle'; player.attackCd = 0; F.press('Space'); F.sim(3, []); } return m.dead; };
+    h.peace(true); window.__kidmode = false;
+    // 1. drakes spawn round the farm with the def
+    const drakes = monsters.filter(m => m.type === 'ash_drake'), d = MONSTER_DEFS.ash_drake;
+    check('ashdrake: four wingless level-30 drakes wake round Dunstan\'s farm on open ground (hp 120, no fire, aggressive, dung every kill)',
+      drakes.length === 4 && d.level === 30 && d.hp === 120 && d.maxHit === 12 && d.def === 20 && drakes.every(m => m.angry && !SOLID.has(tileAt(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))) && Math.abs(m.home.x / TILE - 66) < 20 && m.home.y / TILE > 96)
+        && d.drops.always.some(r => r[0] === 'dragon_dung' && r[1] === 1 && r[2] === 1) && d.drops.table.some(r => r[0] === 'dragon_scale'),
+      { drakes: drakes.length, homes: drakes.map(m => [Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE), tileAt(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))]) });
+    // 2. kill one: dung on the ground, and the kill bonus (300 melee xp for level 30)
+    { const m = drakes[0]; const hx = Math.floor(m.home.x / TILE), hy = Math.floor(m.home.y / TILE); F.tp(hx, hy); player.facing = { x: 1, y: 0 }; meleeWeapon();
+      const d0 = countItem('dragon_dung'), mx0 = player.skills.melee.xp, b0 = AD.stats.bonuses; const dead = killByHand(m);
+      const dung = drops.some(x => x.id === 'dragon_dung' && dist(x.x, x.y, player.x, player.y) < 120) || countItem('dragon_dung') > d0;
+      check('ashdrake: a slain drake always drops dragon dung', dead && dung, { dead, dung, near: drops.filter(x => dist(x.x, x.y, player.x, player.y) < 120).map(x => x.id) });
+      check('ashdrake: kill bonus — a level-30 kill pays +300 Melee xp on top of damage xp', dead && AD.stats.bonuses === b0 + 1 && AD.stats.last && AD.stats.last.type === 'ash_drake' && AD.stats.last.xp === 300 && player.skills.melee.xp >= mx0 + 300 + 4, { bonuses: AD.stats.bonuses - b0, last: AD.stats.last, gained: player.skills.melee.xp - mx0 });
+      m.x = m.home.x; m.y = m.home.y; }
+    { const gob = monsters.find(m => m.type === 'goblin' && !m.dead); const o = h.openSpot(40, 20); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 };
+      const b0 = AD.stats.bonuses, mx0 = player.skills.melee.xp; const dead = killByHand(gob);
+      check('ashdrake: kill bonus — a level-2 goblin pays no bonus (only the 4 xp per damage)', dead && AD.stats.bonuses === b0 && player.skills.melee.xp - mx0 <= 4 * playerMaxHit() * 3, { dead, bonuses: AD.stats.bonuses - b0, gained: player.skills.melee.xp - mx0 }); gob.x = gob.home.x; gob.y = gob.home.y; }
+    // 3. kid mode: a quarter of each hit back, a barely-lethal hit survived, direct hp writes caught by the tracker
+    { F.tp(60, 100); F.sim(2, []); window.__kidmode = true; player.hp = Math.min(player.maxHp, 40); const hp0 = player.hp;
+      hurtPlayer(20, player.x + 10, player.y, true); const afterHit = player.hp;
+      F.sim(1, []); player.hp -= 8; F.sim(1, []); const afterBurn = player.hp;
+      player.hp = 10; hurtPlayer(12, player.x + 10, player.y, true); const survived = !player.dead && player.hp === 1;
+      window.__kidmode = false; player.hp = player.maxHp; AD.lastHp = null;
+      check('ashdrake: kid mode (window.__kidmode) heals 25% of every hit at once, catches direct hp burns, and turns a barely-lethal hit into 1 hp', afterHit === hp0 - 15 && afterBurn >= hp0 - 15 - 8 + 2 && afterBurn < hp0 - 15 - 8 + 3 && survived, { hp0, afterHit, afterBurn, survived, heals: AD.stats.kidHeals }); }
+    // 4. Dunstan pays 3 a potato, 20 a visit
+    { const dun = NPCS.find(n => n.id === 'dunstan'); const q = quest.dragons || (quest.dragons = {}); if ((q.stage | 0) < 2) { q.stage = 2; q.salve = true; }
+      while (countItem('potato') > 0) removeItem('potato', countItem('potato')); h.clearJunk(); h.give('potato', 25); const c0 = coins();
+      F.tp(dun.x, dun.y + 1); F.face(dun.x, dun.y); drain(); F.press('KeyE'); F.sim(2, []); const first = coins() - c0, left1 = countItem('potato'); closePanel();
+      F.face(dun.x, dun.y); drain(); F.press('KeyE'); F.sim(2, []); const second = coins() - c0 - first, left2 = countItem('potato'); closePanel(); drain();
+      check('ashdrake: Dunstan buys potatoes at 3 coins (their value), at most 20 per hand-in', dun && first === 60 && left1 === 5 && second === 15 && left2 === 0 && ITEMS.potato.value === 3, { first, left1, second, left2 }); }
+    // 5. the Godly gate is 32–40 now
+    { const lv = RECIPES.filter(r => r.out.startsWith('godly_')).map(r => r.lv).sort((a, b) => a - b);
+      check('ashdrake: Godly recipes sit at Smithing 32 / 34 / 36 / 40 (was 40–48)', lv.join(',') === '32,34,36,40' && lv.every(x => x >= 32 && x <= 40), { lv }); }
+    // 6. the 28–40 filler: 3 scales smelt into a plate at Brakka's forge (Smithing 28), a plate smiths into a scale helm (29)
+    { h.clearJunk(); while (countItem('dragon_scale') < 3) h.give('dragon_scale', 1); if (!hasTool('hammer')) h.give('hammer', 1);
+      if (player.skills.smithing.xp < XP_TABLE[29]) player.skills.smithing.xp = XP_TABLE[29];
+      const sc0 = countItem('dragon_scale'), p0 = countItem('scale_plate'), h0 = countItem('scale_helm'), sx0 = player.skills.smithing.xp;
+      F.tp(93, 39); F.walkTo(92, 38, 500); F.face(92, 37); F.press('KeyE'); const forge = panel === 'station' && panelArg === 'forge';
+      const c1 = F.clickButton('3 Dragon scales → Scale plate'); const s1 = F.untilAction(300, () => countItem('scale_plate') > p0); closePanel();
+      const sx1 = player.skills.smithing.xp;
+      F.walkTo(94, 39, 500); F.face(94, 38); F.press('KeyE'); const anvil = panel === 'station' && panelArg === 'anvil';
+      let viaButton = F.clickButton('1 Scale plate → Scale helm'); if (!viaButton) craft(RECIPES.find(r => r.out === 'scale_helm')); // the anvil list is cut short on small screens
+      const s2 = F.untilAction(300, () => countItem('scale_helm') > h0); closePanel();
+      const smelt = SMELT.find(r => r.out === 'scale_plate'), helm = RECIPES.find(r => r.out === 'scale_helm'), shield = RECIPES.find(r => r.out === 'scale_shield');
+      check('ashdrake: 3 dragon scales smelt into a scale plate (Smithing 28, 60 xp); a plate smiths into a scale helm (29, def 12); 2 plates → scale shield (30, def 16)',
+        forge && c1 && typeof s1 === 'number' && anvil && typeof s2 === 'number' && countItem('dragon_scale') === sc0 - 3 && countItem('scale_plate') === p0 && countItem('scale_helm') === h0 + 1
+          && sx1 === sx0 + 60 && player.skills.smithing.xp === sx1 + 90 && smelt.lv === 28 && helm.lv === 29 && shield.lv === 30 && shield.needs[0][1] === 2 && ITEMS.scale_helm.armour.def === 12 && ITEMS.scale_shield.armour.def === 16 && ITEMS.scale_plate.value === 90,
+        { forge, c1, s1, anvil, viaButton, s2, plates: countItem('scale_plate'), helms: countItem('scale_helm'), xp: [sx1 - sx0, player.skills.smithing.xp - sx1] });
+      removeItem('scale_helm', 1); }
+    // 7. the walker on-ramp and the Chapter 5 dragons carry the audit's numbers
+    check('ashdrake: walker 110 hp / def 12 / max hit 11, brute def 7, green dragon 220 hp, red dragon max hit 24',
+      MONSTER_DEFS.walker.hp === 110 && MONSTER_DEFS.walker.def === 12 && MONSTER_DEFS.walker.maxHit === 11 && MONSTER_DEFS.brute.def === 7 && MONSTER_DEFS.green_dragon.hp === 220 && MONSTER_DEFS.red_dragon.maxHit === 24,
+      { walker: [MONSTER_DEFS.walker.hp, MONSTER_DEFS.walker.def, MONSTER_DEFS.walker.maxHit], brute: MONSTER_DEFS.brute.def });
+    h.peace(false);
   });
 }
 
