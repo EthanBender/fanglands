@@ -16,7 +16,7 @@ const touch = { stickId: null, ox: 0, oy: 0, dx: 0, dy: 0, active: false, taps: 
 const buttons = []; // on-screen hit rects: {x,y,w,h,label,action}
 let minimapRect = null;
 function pointerDown(x, y, id) {
-  for (const b of buttons) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { b.action(); return; }
+  for (const b of buttons) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { sfx('ui'); b.action(); return; }
   if (minimapRect && x >= minimapRect.x && x <= minimapRect.x + minimapRect.w && y >= minimapRect.y && y <= minimapRect.y + minimapRect.h) { panel === 'map' ? closePanel() : openPanel('map'); return; }
   if (panel && !isTouch) { closePanel(); return; }
   if (dialog.cur && y > VH - 150 && Math.abs(x - VW / 2) < 360) { advanceDialog(); return; }

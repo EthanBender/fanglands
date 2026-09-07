@@ -64,7 +64,7 @@ function playerAttack() {
   player.action = null;
   const w = weaponDef();
   if (w && w.weapon.ranged && !player.mech) { shootArrow(w); return; }
-  player.attackT = 0.22; player.attackCd = player.mech ? 0.8 : w ? w.weapon.cd : 0.6;
+  player.attackT = 0.22; player.attackCd = player.mech ? 0.8 : w ? w.weapon.cd : 0.6; sfx('swing');
   const perk = player.mech ? 'knockback' : w && w.weapon.perk;
   const reach = player.mech ? 70 : w ? 58 : 36, arc = perk === 'cleave' ? -0.3 : 0.35;
   let hitSomething = false;
@@ -88,7 +88,7 @@ function playerAttack() {
 function shootArrow(w) {
   const a = arrowSlot(); if (a < 0) { notify('No arrows. Craft stone arrows at a workbench (logs + stone).'); return; }
   player.attackT = 0.22; player.attackCd = w.weapon.cd;
-  const arrowId = player.inv[a].id; removeItem(arrowId, 1);
+  const arrowId = player.inv[a].id; removeItem(arrowId, 1); sfx('bow');
   projectiles.push({ kind: 'arrow', x: player.x + player.facing.x * 16, y: player.y + player.facing.y * 16, vx: player.facing.x * 420, vy: player.facing.y * 420, t: 0, life: 0.9, str: ITEMS[arrowId].arrow.str, owner: 'player' });
 }
 function throwBomb(slot) {
@@ -97,7 +97,7 @@ function throwBomb(slot) {
   projectiles.push({ kind: 'bomb', x: player.x, y: player.y, vx: player.facing.x * 300, vy: player.facing.y * 300, t: 0, life: 0.6, owner: 'player' });
 }
 function explode(x, y, radius, dmgMin, dmgMax, owner) {
-  burst(x, y, '#ff8a1a', 26, 200); burst(x, y, '#3a3a3a', 14, 120); floatText(x, y - 20, 'BOOM', '#ff8a1a', 18);
+  burst(x, y, '#ff8a1a', 26, 200); burst(x, y, '#3a3a3a', 14, 120); floatText(x, y - 20, 'BOOM', '#ff8a1a', 18); sfx('boom');
   if (owner === 'player') { for (const m of monsters) if (!m.dead && dist(m.x, m.y, x, y) < radius + m.r) hitMonster(m, rint(dmgMin, dmgMax), 30, true); }
   else if (dist(player.x, player.y, x, y) < radius + player.r) hurtPlayer(rint(dmgMin, dmgMax), x, y, true);
 }
@@ -106,8 +106,8 @@ function hitMonster(m, dmg, knock = 14, fromBomb = false) {
   m.hurtT = 0.18; m.angry = true; if (!def.harmless) m.state = 'chase';
   const kx = (m.x - player.x), ky = (m.y - player.y), kd = Math.hypot(kx, ky) || 1;
   moveEntity(m, kx / kd * knock, ky / kd * knock, 'beast');
-  if (dmg <= 0) { floatText(m.x, m.y - m.r - 6, 'miss', '#8fb4ff', 13); return; }
-  m.hp -= dmg;
+  if (dmg <= 0) { floatText(m.x, m.y - m.r - 6, 'miss', '#8fb4ff', 13); sfx('miss'); return; }
+  m.hp -= dmg; sfx('hit');
   floatText(m.x, m.y - m.r - 6, `-${dmg}`, '#ffd166');
   burst(m.x, m.y, bloodColor(m.type), 6, 70);
   recordHit(dmg);
@@ -140,7 +140,7 @@ function hurtPlayer(dmg, fromX, fromY, sure = false) {
   const kx = player.x - fromX, ky = player.y - fromY, kd = Math.hypot(kx, ky) || 1;
   moveEntity(player, kx / kd * 12, ky / kd * 12, playerWho());
   if (player.mech) { player.mech.hp -= dmg; floatText(player.x, player.y - 34, `-${dmg} (walker)`, '#ffb347'); if (player.mech.hp <= 0) wreckMech(); return; }
-  player.hp -= dmg;
+  player.hp -= dmg; sfx('hurt');
   floatText(player.x, player.y - 24, `-${dmg}`, '#ff6b6b');
   gainXp('defence', Math.ceil(dmg * 1.5));
   for (const h of HOOKS.hurt) h(dmg, fromX, fromY);
@@ -148,7 +148,7 @@ function hurtPlayer(dmg, fromX, fromY, sure = false) {
 }
 function respawnPoint() { return player.bedSpawn || (player.visitedVillage ? VILLAGE_SPAWN : SPAWN); }
 function die() {
-  player.hp = 0; player.dead = true; player.deadT = 0; player.deaths += 1; closePanel(); player.action = null;
+  player.hp = 0; player.dead = true; player.deadT = 0; player.deaths += 1; closePanel(); player.action = null; sfx('death');
   if (player.mech) { player.mech = null; }
   const items = player.inv.filter(Boolean);
   const lostPrevious = deathKeep && deathKeep.items.length > 0;
@@ -180,7 +180,7 @@ function finishGather() {
   const chance = Math.min(0.9, 0.35 + (skillLv(g.skill) - g.lv) * 0.02 + a.tier * 0.1);
   burst(tc(a.tx), tc(a.ty), g.tool === 'axe' ? '#8b5a2b' : '#9a9da5', 6, 60);
   if (Math.random() > chance) { player.action = { ...a, t: 0 }; return; } // swing again
-  giveOrDrop(g.item, 1, player.x, player.y); gainXp(g.skill, g.xp);
+  giveOrDrop(g.item, 1, player.x, player.y); gainXp(g.skill, g.xp); sfx('chop');
   if (Math.random() < g.fall) { changeTile(a.tx, a.ty, g.leaves); regrow.push({ i: idx(a.tx, a.ty), t, timer: g.regrow }); }
   else player.action = { ...a, t: 0 };
   save();
@@ -197,7 +197,7 @@ function finishFishing() {
   if (Math.random() > chance) return;
   const trout = lv >= 5 && Math.random() < 0.45;
   const id = trout ? 'raw_trout' : 'raw_shrimp';
-  giveOrDrop(id, 1, player.x, player.y); gainXp('fishing', trout ? 30 : 10);
+  giveOrDrop(id, 1, player.x, player.y); gainXp('fishing', trout ? 30 : 10); sfx('fish');
   burst(tc(a.tx), tc(a.ty), '#bfe3ff', 8, 50);
 }
 function startCook() {
@@ -224,7 +224,7 @@ function startLightFire(logId) {
 function finishLightFire() {
   const a = player.action; player.action = null;
   if (!countItem(a.log)) return;
-  removeItem(a.log, 1); changeTile(a.tx, a.ty, T.FIRE); fires.push({ i: idx(a.tx, a.ty), timer: 90, under: a.under });
+  removeItem(a.log, 1); changeTile(a.tx, a.ty, T.FIRE); fires.push({ i: idx(a.tx, a.ty), timer: 90, under: a.under }); sfx('fire');
   gainXp('firemaking', ITEMS[a.log].burn); burst(tc(a.tx), tc(a.ty), '#ffb347', 14, 80); save();
 }
 // ---------- farming ----------
@@ -255,7 +255,7 @@ function craft(recipe) {
   finishCraft(recipe); return true;
 }
 function finishCraft(recipe) {
-  addItem(recipe.out, recipe.qty); if (recipe.skill) gainXp(recipe.skill, recipe.xp);
+  addItem(recipe.out, recipe.qty); if (recipe.skill) gainXp(recipe.skill, recipe.xp); sfx(recipe.station === 'anvil' ? 'anvil' : 'craft');
   floatText(player.x, player.y - 30, `+${recipe.qty} ${ITEMS[recipe.out].name}`, ITEMS[recipe.out].color); burst(player.x + player.facing.x * 30, player.y + player.facing.y * 30, '#ffd166', 8, 60); save();
 }
 function placeAction(id) {
@@ -287,7 +287,7 @@ function useItem(slot) {
   const def = ITEMS[s.id];
   if (def.heal) {
     if (player.hp >= player.maxHp) { notify('You are at full health.'); return; }
-    player.hp = Math.min(player.maxHp, player.hp + def.heal); removeItem(s.id, 1); floatText(player.x, player.y - 30, `+${def.heal}`, '#7ee787'); burst(player.x, player.y, '#7ee787', 6, 40);
+    player.hp = Math.min(player.maxHp, player.hp + def.heal); removeItem(s.id, 1); floatText(player.x, player.y - 30, `+${def.heal}`, '#7ee787'); burst(player.x, player.y, '#7ee787', 6, 40); sfx('eat');
   } else if (def.weapon || def.armour) { if (player.mech) { notify('Climb out of the walker first (X).'); return; } equipItem(slot); }
   else if (def.throwable) throwBomb(slot);
   else if (def.place) placeAction(s.id);

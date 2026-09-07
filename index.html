@@ -615,7 +615,7 @@ function floatText(x, y, text, color = '#fff', size = 15) { floaters.push({ x, y
 function burst(x, y, color, n = 10, speed = 90) {
   for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = speed * (0.3 + Math.random()); particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0.5 + Math.random() * 0.4, color, r: 2 + Math.random() * 2.5 }); }
 }
-function openPanel(name, arg = null) { panel = name; panelArg = arg; selectedSlot = -1; }
+function openPanel(name, arg = null) { panel = name; panelArg = arg; selectedSlot = -1; sfx('open'); }
 function closePanel() { panel = null; panelArg = null; selectedSlot = -1; }
 
 // ---------- inventory ----------
@@ -674,7 +674,7 @@ function gainXp(key, amount) {
   const after = levelForXp(s.xp);
   if (after > before) {
     const name = SKILL_DEFS.find(d => d.key === key).name;
-    levelBanner = { text: `${name} level ${after}!`, sub: 'Level up', t: 2.6 };
+    levelBanner = { text: `${name} level ${after}!`, sub: 'Level up', t: 2.6 }; sfx('levelup');
     recomputeMaxHp();
     player.hp = Math.min(player.maxHp, player.hp + Math.ceil(player.maxHp * 0.3));
     burst(player.x, player.y, '#ffe066', 24, 140);
@@ -707,7 +707,7 @@ function questText(id = 'main') {
 function activeQuests() { const q = ['main']; if (quest.bread === 'active') q.push('bread'); if (quest.wren === 'active') q.push('wren'); for (const f of HOOKS.activeQuests) q.push(...f()); return q; }
 function advanceQuest(stage) {
   if (stage <= quest.stage) return;
-  quest.stage = stage;
+  quest.stage = stage; sfx('quest');
   if (stage === 1) { say("You're finally awake.", 'The Voice'); say("There. In the light. Take it. You will need it.", 'The Voice'); }
   if (stage === 2) { say("A wooden sword. It will do for now. Follow my voice, knight. The way out is east.", 'The Voice'); }
   if (stage === 3) { say("Goblins. They have been getting bolder. Show them what a knight is.", 'The Voice'); say("Swing with Space. Not every swing lands. That is what levels are for.", 'The Voice'); }
@@ -782,7 +782,7 @@ const touch = { stickId: null, ox: 0, oy: 0, dx: 0, dy: 0, active: false, taps: 
 const buttons = []; // on-screen hit rects: {x,y,w,h,label,action}
 let minimapRect = null;
 function pointerDown(x, y, id) {
-  for (const b of buttons) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { b.action(); return; }
+  for (const b of buttons) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { sfx('ui'); b.action(); return; }
   if (minimapRect && x >= minimapRect.x && x <= minimapRect.x + minimapRect.w && y >= minimapRect.y && y <= minimapRect.y + minimapRect.h) { panel === 'map' ? closePanel() : openPanel('map'); return; }
   if (panel && !isTouch) { closePanel(); return; }
   if (dialog.cur && y > VH - 150 && Math.abs(x - VW / 2) < 360) { advanceDialog(); return; }
@@ -881,7 +881,7 @@ function playerAttack() {
   player.action = null;
   const w = weaponDef();
   if (w && w.weapon.ranged && !player.mech) { shootArrow(w); return; }
-  player.attackT = 0.22; player.attackCd = player.mech ? 0.8 : w ? w.weapon.cd : 0.6;
+  player.attackT = 0.22; player.attackCd = player.mech ? 0.8 : w ? w.weapon.cd : 0.6; sfx('swing');
   const perk = player.mech ? 'knockback' : w && w.weapon.perk;
   const reach = player.mech ? 70 : w ? 58 : 36, arc = perk === 'cleave' ? -0.3 : 0.35;
   let hitSomething = false;
@@ -905,7 +905,7 @@ function playerAttack() {
 function shootArrow(w) {
   const a = arrowSlot(); if (a < 0) { notify('No arrows. Craft stone arrows at a workbench (logs + stone).'); return; }
   player.attackT = 0.22; player.attackCd = w.weapon.cd;
-  const arrowId = player.inv[a].id; removeItem(arrowId, 1);
+  const arrowId = player.inv[a].id; removeItem(arrowId, 1); sfx('bow');
   projectiles.push({ kind: 'arrow', x: player.x + player.facing.x * 16, y: player.y + player.facing.y * 16, vx: player.facing.x * 420, vy: player.facing.y * 420, t: 0, life: 0.9, str: ITEMS[arrowId].arrow.str, owner: 'player' });
 }
 function throwBomb(slot) {
@@ -914,7 +914,7 @@ function throwBomb(slot) {
   projectiles.push({ kind: 'bomb', x: player.x, y: player.y, vx: player.facing.x * 300, vy: player.facing.y * 300, t: 0, life: 0.6, owner: 'player' });
 }
 function explode(x, y, radius, dmgMin, dmgMax, owner) {
-  burst(x, y, '#ff8a1a', 26, 200); burst(x, y, '#3a3a3a', 14, 120); floatText(x, y - 20, 'BOOM', '#ff8a1a', 18);
+  burst(x, y, '#ff8a1a', 26, 200); burst(x, y, '#3a3a3a', 14, 120); floatText(x, y - 20, 'BOOM', '#ff8a1a', 18); sfx('boom');
   if (owner === 'player') { for (const m of monsters) if (!m.dead && dist(m.x, m.y, x, y) < radius + m.r) hitMonster(m, rint(dmgMin, dmgMax), 30, true); }
   else if (dist(player.x, player.y, x, y) < radius + player.r) hurtPlayer(rint(dmgMin, dmgMax), x, y, true);
 }
@@ -923,8 +923,8 @@ function hitMonster(m, dmg, knock = 14, fromBomb = false) {
   m.hurtT = 0.18; m.angry = true; if (!def.harmless) m.state = 'chase';
   const kx = (m.x - player.x), ky = (m.y - player.y), kd = Math.hypot(kx, ky) || 1;
   moveEntity(m, kx / kd * knock, ky / kd * knock, 'beast');
-  if (dmg <= 0) { floatText(m.x, m.y - m.r - 6, 'miss', '#8fb4ff', 13); return; }
-  m.hp -= dmg;
+  if (dmg <= 0) { floatText(m.x, m.y - m.r - 6, 'miss', '#8fb4ff', 13); sfx('miss'); return; }
+  m.hp -= dmg; sfx('hit');
   floatText(m.x, m.y - m.r - 6, `-${dmg}`, '#ffd166');
   burst(m.x, m.y, bloodColor(m.type), 6, 70);
   recordHit(dmg);
@@ -957,7 +957,7 @@ function hurtPlayer(dmg, fromX, fromY, sure = false) {
   const kx = player.x - fromX, ky = player.y - fromY, kd = Math.hypot(kx, ky) || 1;
   moveEntity(player, kx / kd * 12, ky / kd * 12, playerWho());
   if (player.mech) { player.mech.hp -= dmg; floatText(player.x, player.y - 34, `-${dmg} (walker)`, '#ffb347'); if (player.mech.hp <= 0) wreckMech(); return; }
-  player.hp -= dmg;
+  player.hp -= dmg; sfx('hurt');
   floatText(player.x, player.y - 24, `-${dmg}`, '#ff6b6b');
   gainXp('defence', Math.ceil(dmg * 1.5));
   for (const h of HOOKS.hurt) h(dmg, fromX, fromY);
@@ -965,7 +965,7 @@ function hurtPlayer(dmg, fromX, fromY, sure = false) {
 }
 function respawnPoint() { return player.bedSpawn || (player.visitedVillage ? VILLAGE_SPAWN : SPAWN); }
 function die() {
-  player.hp = 0; player.dead = true; player.deadT = 0; player.deaths += 1; closePanel(); player.action = null;
+  player.hp = 0; player.dead = true; player.deadT = 0; player.deaths += 1; closePanel(); player.action = null; sfx('death');
   if (player.mech) { player.mech = null; }
   const items = player.inv.filter(Boolean);
   const lostPrevious = deathKeep && deathKeep.items.length > 0;
@@ -997,7 +997,7 @@ function finishGather() {
   const chance = Math.min(0.9, 0.35 + (skillLv(g.skill) - g.lv) * 0.02 + a.tier * 0.1);
   burst(tc(a.tx), tc(a.ty), g.tool === 'axe' ? '#8b5a2b' : '#9a9da5', 6, 60);
   if (Math.random() > chance) { player.action = { ...a, t: 0 }; return; } // swing again
-  giveOrDrop(g.item, 1, player.x, player.y); gainXp(g.skill, g.xp);
+  giveOrDrop(g.item, 1, player.x, player.y); gainXp(g.skill, g.xp); sfx('chop');
   if (Math.random() < g.fall) { changeTile(a.tx, a.ty, g.leaves); regrow.push({ i: idx(a.tx, a.ty), t, timer: g.regrow }); }
   else player.action = { ...a, t: 0 };
   save();
@@ -1014,7 +1014,7 @@ function finishFishing() {
   if (Math.random() > chance) return;
   const trout = lv >= 5 && Math.random() < 0.45;
   const id = trout ? 'raw_trout' : 'raw_shrimp';
-  giveOrDrop(id, 1, player.x, player.y); gainXp('fishing', trout ? 30 : 10);
+  giveOrDrop(id, 1, player.x, player.y); gainXp('fishing', trout ? 30 : 10); sfx('fish');
   burst(tc(a.tx), tc(a.ty), '#bfe3ff', 8, 50);
 }
 function startCook() {
@@ -1041,7 +1041,7 @@ function startLightFire(logId) {
 function finishLightFire() {
   const a = player.action; player.action = null;
   if (!countItem(a.log)) return;
-  removeItem(a.log, 1); changeTile(a.tx, a.ty, T.FIRE); fires.push({ i: idx(a.tx, a.ty), timer: 90, under: a.under });
+  removeItem(a.log, 1); changeTile(a.tx, a.ty, T.FIRE); fires.push({ i: idx(a.tx, a.ty), timer: 90, under: a.under }); sfx('fire');
   gainXp('firemaking', ITEMS[a.log].burn); burst(tc(a.tx), tc(a.ty), '#ffb347', 14, 80); save();
 }
 // ---------- farming ----------
@@ -1072,7 +1072,7 @@ function craft(recipe) {
   finishCraft(recipe); return true;
 }
 function finishCraft(recipe) {
-  addItem(recipe.out, recipe.qty); if (recipe.skill) gainXp(recipe.skill, recipe.xp);
+  addItem(recipe.out, recipe.qty); if (recipe.skill) gainXp(recipe.skill, recipe.xp); sfx(recipe.station === 'anvil' ? 'anvil' : 'craft');
   floatText(player.x, player.y - 30, `+${recipe.qty} ${ITEMS[recipe.out].name}`, ITEMS[recipe.out].color); burst(player.x + player.facing.x * 30, player.y + player.facing.y * 30, '#ffd166', 8, 60); save();
 }
 function placeAction(id) {
@@ -1104,7 +1104,7 @@ function useItem(slot) {
   const def = ITEMS[s.id];
   if (def.heal) {
     if (player.hp >= player.maxHp) { notify('You are at full health.'); return; }
-    player.hp = Math.min(player.maxHp, player.hp + def.heal); removeItem(s.id, 1); floatText(player.x, player.y - 30, `+${def.heal}`, '#7ee787'); burst(player.x, player.y, '#7ee787', 6, 40);
+    player.hp = Math.min(player.maxHp, player.hp + def.heal); removeItem(s.id, 1); floatText(player.x, player.y - 30, `+${def.heal}`, '#7ee787'); burst(player.x, player.y, '#7ee787', 6, 40); sfx('eat');
   } else if (def.weapon || def.armour) { if (player.mech) { notify('Climb out of the walker first (X).'); return; } equipItem(slot); }
   else if (def.throwable) throwBomb(slot);
   else if (def.place) placeAction(s.id);
@@ -1267,6 +1267,7 @@ function update(dt) {
     if (pressed.has('KeyC')) toggle('craft');
     if (pressed.has('KeyJ')) toggle('quests');
     if (pressed.has('KeyM')) toggle('map');
+    if (pressed.has('Slash') || pressed.has('F1')) toggle('help');
     if (pressed.has('KeyH')) goHome();
     if (pressed.has('KeyX')) exitMech();
     if (pressed.has('Enter') && dialog.cur) advanceDialog();
@@ -1341,7 +1342,7 @@ function update(dt) {
       d.t += dt;
       if (dist(d.x, d.y, player.x, player.y) < player.r + 12) {
         const left = addItem(d.id, d.qty);
-        if (left < d.qty) floatText(player.x, player.y - 30, `+${d.qty - left} ${ITEMS[d.id].name}`, ITEMS[d.id].color);
+        if (left < d.qty) { floatText(player.x, player.y - 30, `+${d.qty - left} ${ITEMS[d.id].name}`, ITEMS[d.id].color); sfx(d.id === 'coins' ? 'coins' : 'pickup'); }
         if (left > 0) { d.qty = left; if (!d.warned) { notify('Your pack is full.'); d.warned = true; } } else d.taken = true;
       }
     }
@@ -1980,7 +1981,7 @@ function drawHud(g) {
     buttons.push({ x: sx, y: hy, w: hb, h: hb, label: 'hot' + i, action: () => useItem(i) });
   }
   button(g, hx + 5 * (hb + hgap), hy, 54, hb, isTouch ? 'BAG' : 'Bag (I)', () => panel === 'inventory' ? closePanel() : openPanel('inventory'), '#21262d');
-  if (!isTouch) { g.fillStyle = 'rgba(230,237,243,0.75)'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(player.mech ? 'WASD move · Space stomp · E crush planks · X climb out' : 'WASD move · Space swing · E use / talk · Q place · 1-5 use · I bag · C craft · Tab skills · J quests · M map · H home · Esc menu', VW / 2, VH - 16); }
+  if (!isTouch) { g.fillStyle = 'rgba(230,237,243,0.75)'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(player.mech ? 'WASD move · Space stomp · E crush planks · X climb out' : 'WASD move · Space swing · E use / talk · Q place · 1-5 use · I bag · C craft · Tab skills · J quests · M map · H home · ? help · Esc menu', VW / 2, VH - 16); }
   // touch controls
   if (isTouch) {
     if (touch.active) { g.fillStyle = 'rgba(255,255,255,0.15)'; g.beginPath(); g.arc(touch.ox, touch.oy, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.4)'; g.beginPath(); g.arc(touch.ox + touch.dx * 60, touch.oy + touch.dy * 60, 26, 0, 7); g.fill(); }
@@ -1993,6 +1994,7 @@ function drawHud(g) {
     }
     button(g, narrow ? VW - 74 : VW / 2 - 30, narrow ? 44 : 14, 60, 26, 'MENU', () => { paused = !paused; }, '#21262d');
     button(g, narrow ? VW - 74 : VW / 2 + 36, narrow ? 76 : 14, 60, 26, 'SKILLS', () => panel === 'skills' ? closePanel() : openPanel('skills'), '#21262d');
+    button(g, narrow ? VW - 74 : VW / 2 + 102, narrow ? 108 : 14, 60, 26, 'HELP', () => panel === 'help' ? closePanel() : openPanel('help'), '#21262d');
   }
   for (const h of HOOKS.hud) h(g, narrow);
   drawPanels(g, narrow, short, qh, hb);
@@ -2028,8 +2030,9 @@ function drawHud(g) {
     roundRect(g, px, py, pw, ph, 12); g.fillStyle = 'rgba(10,14,22,0.96)'; g.fill(); g.strokeStyle = '#30363d'; g.stroke();
     g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 40);
     g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 60);
-    button(g, px + 24, py + 84, pw - 48, 42, 'Resume', () => { paused = false; });
-    button(g, px + 24, py + 136, pw - 48, 42, 'New game (erases save)', () => { newGame(); }, '#8b2e2e');
+    button(g, px + 24, py + 78, pw - 48, 36, 'Resume', () => { paused = false; });
+    button(g, px + 24, py + 120, pw - 48, 36, audioMuted ? 'Sound: off' : 'Sound: on', toggleMute, '#21262d');
+    button(g, px + 24, py + 162, pw - 48, 36, 'New game (erases save)', () => { newGame(); }, '#8b2e2e');
     g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 208);
     g.fillText('Progress saves automatically in this browser.', VW / 2, py + 228);
   }
@@ -2050,6 +2053,13 @@ function drawPanels(g, narrow, short, qh, hb) {
       g.fillStyle = '#2a2f3a'; roundRect(g, px + 12, y + 15, pw - 24, 5, 3); g.fill();
       if (!locked) { const cur = sk.xp - xpForLevel(lv), need = xpForLevel(lv + 1) - xpForLevel(lv); g.fillStyle = '#58a6ff'; roundRect(g, px + 12, y + 15, (pw - 24) * clamp(cur / need, 0, 1), 5, 3); g.fill(); g.fillStyle = '#6e7681'; g.font = '9px sans-serif'; g.fillText(`${cur} / ${need} xp`, px + 12, y + 29); }
     });
+  }
+  if (panel === 'help') {
+    const rows = isTouch
+      ? [['Left side of screen', 'drag to move'], ['SWING', 'attack / hit a dummy'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['Hotbar', 'tap a slot to eat or use it'], ['CRAFT / SKILLS / QUESTS', 'panels'], ['Minimap', 'tap for the world map'], ['MENU', 'sound, new game']]
+      : [['WASD / arrows', 'move'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Enter', 'next line of talk'], ['Esc', 'menu (sound, new game)']];
+    const { px, py, w } = panelBox(g, 480, 90 + rows.length * 26, 'How to play', 'Every skill trains by doing. Die and Death keeps your pack.');
+    rows.forEach(([k, v], i) => { const y = py + 78 + i * 26; g.fillStyle = '#f5c542'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(k, px + 18, y); g.fillStyle = '#c9d1d9'; g.font = '13px sans-serif'; g.fillText(v, px + 190, y); });
   }
   if (panel === 'quests') {
     const list = activeQuests(); const done = []; if (quest.bread === 'done') done.push('bread'); if (quest.wren === 'done') done.push('wren');
@@ -2331,6 +2341,59 @@ window.FANGLANDS = {
     return report;
   },
 };
+
+// ---- src/12-audio.js ----
+// ============================================================================
+// AUDIO — tiny synthesised sound effects (no files). Starts on the first tap/key.
+// ============================================================================
+let audioCtx = null, audioMuted = false;
+try { audioMuted = localStorage.getItem('fanglands.muted') === '1'; } catch (e) { }
+function audioStart() {
+  if (audioCtx) return;
+  try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audioCtx = null; }
+}
+window.addEventListener('keydown', audioStart); window.addEventListener('pointerdown', audioStart); window.addEventListener('touchstart', audioStart);
+function toggleMute() { audioMuted = !audioMuted; try { localStorage.setItem('fanglands.muted', audioMuted ? '1' : '0'); } catch (e) { } }
+// one voice: type, start freq, end freq, duration, gain, optional noise
+function tone(type, f0, f1, dur, gain = 0.08, when = 0) {
+  if (!audioCtx || audioMuted) return;
+  const t = audioCtx.currentTime + when;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+  g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+function noise(dur, gain = 0.06, when = 0, lp = 1200) {
+  if (!audioCtx || audioMuted) return;
+  const t = audioCtx.currentTime + when, n = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate); const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+  const s = audioCtx.createBufferSource(); s.buffer = buf; const f = audioCtx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp;
+  const g = audioCtx.createGain(); g.gain.value = gain; s.connect(f); f.connect(g); g.connect(audioCtx.destination); s.start(t);
+}
+const SFX = {
+  swing: () => noise(0.09, 0.05, 0, 2500),
+  hit: () => { noise(0.06, 0.08, 0, 900); tone('square', 180, 90, 0.08, 0.05); },
+  miss: () => tone('sine', 520, 380, 0.07, 0.03),
+  hurt: () => { tone('sawtooth', 160, 70, 0.18, 0.07); noise(0.1, 0.05, 0, 600); },
+  pickup: () => { tone('triangle', 660, 990, 0.08, 0.05); tone('triangle', 990, 1320, 0.1, 0.04, 0.07); },
+  coins: () => { tone('sine', 1320, 1760, 0.06, 0.04); tone('sine', 1760, 2200, 0.08, 0.03, 0.05); },
+  eat: () => { tone('triangle', 300, 200, 0.12, 0.05); tone('triangle', 260, 180, 0.12, 0.04, 0.12); },
+  craft: () => { tone('square', 880, 660, 0.05, 0.04); tone('square', 660, 880, 0.08, 0.04, 0.08); },
+  anvil: () => { tone('square', 1400, 900, 0.05, 0.05); noise(0.05, 0.04, 0, 3000); },
+  levelup: () => { [523, 659, 784, 1047].forEach((f, i) => tone('triangle', f, f, 0.18, 0.06, i * 0.09)); },
+  quest: () => { [392, 523, 659, 784, 1047].forEach((f, i) => tone('triangle', f, f, 0.22, 0.06, i * 0.1)); },
+  ui: () => tone('sine', 880, 880, 0.04, 0.03),
+  open: () => tone('sine', 660, 880, 0.06, 0.03),
+  death: () => { tone('sawtooth', 220, 40, 0.9, 0.08); tone('sawtooth', 165, 30, 1.1, 0.06, 0.1); },
+  boom: () => { noise(0.35, 0.12, 0, 400); tone('sine', 120, 30, 0.4, 0.1); },
+  chop: () => { noise(0.05, 0.07, 0, 1400); tone('square', 240, 160, 0.05, 0.04); },
+  fish: () => { tone('sine', 400, 900, 0.12, 0.04); noise(0.12, 0.03, 0.05, 800); },
+  fire: () => noise(0.4, 0.05, 0, 700),
+  boss: () => { [110, 98, 82].forEach((f, i) => tone('sawtooth', f, f * 0.9, 0.5, 0.08, i * 0.35)); },
+  bow: () => { tone('sine', 900, 300, 0.12, 0.05); noise(0.05, 0.04, 0, 3000); },
+};
+const sfx = name => { const f = SFX[name]; if (f) try { f(); } catch (e) { } };
 
 // ---- src/20-hollowford.js ----
 // ============================================================================

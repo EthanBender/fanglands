@@ -54,7 +54,7 @@ function floatText(x, y, text, color = '#fff', size = 15) { floaters.push({ x, y
 function burst(x, y, color, n = 10, speed = 90) {
   for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = speed * (0.3 + Math.random()); particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0.5 + Math.random() * 0.4, color, r: 2 + Math.random() * 2.5 }); }
 }
-function openPanel(name, arg = null) { panel = name; panelArg = arg; selectedSlot = -1; }
+function openPanel(name, arg = null) { panel = name; panelArg = arg; selectedSlot = -1; sfx('open'); }
 function closePanel() { panel = null; panelArg = null; selectedSlot = -1; }
 
 // ---------- inventory ----------
@@ -113,7 +113,7 @@ function gainXp(key, amount) {
   const after = levelForXp(s.xp);
   if (after > before) {
     const name = SKILL_DEFS.find(d => d.key === key).name;
-    levelBanner = { text: `${name} level ${after}!`, sub: 'Level up', t: 2.6 };
+    levelBanner = { text: `${name} level ${after}!`, sub: 'Level up', t: 2.6 }; sfx('levelup');
     recomputeMaxHp();
     player.hp = Math.min(player.maxHp, player.hp + Math.ceil(player.maxHp * 0.3));
     burst(player.x, player.y, '#ffe066', 24, 140);
@@ -146,7 +146,7 @@ function questText(id = 'main') {
 function activeQuests() { const q = ['main']; if (quest.bread === 'active') q.push('bread'); if (quest.wren === 'active') q.push('wren'); for (const f of HOOKS.activeQuests) q.push(...f()); return q; }
 function advanceQuest(stage) {
   if (stage <= quest.stage) return;
-  quest.stage = stage;
+  quest.stage = stage; sfx('quest');
   if (stage === 1) { say("You're finally awake.", 'The Voice'); say("There. In the light. Take it. You will need it.", 'The Voice'); }
   if (stage === 2) { say("A wooden sword. It will do for now. Follow my voice, knight. The way out is east.", 'The Voice'); }
   if (stage === 3) { say("Goblins. They have been getting bolder. Show them what a knight is.", 'The Voice'); say("Swing with Space. Not every swing lands. That is what levels are for.", 'The Voice'); }

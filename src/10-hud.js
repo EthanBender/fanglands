@@ -85,7 +85,7 @@ function drawHud(g) {
     buttons.push({ x: sx, y: hy, w: hb, h: hb, label: 'hot' + i, action: () => useItem(i) });
   }
   button(g, hx + 5 * (hb + hgap), hy, 54, hb, isTouch ? 'BAG' : 'Bag (I)', () => panel === 'inventory' ? closePanel() : openPanel('inventory'), '#21262d');
-  if (!isTouch) { g.fillStyle = 'rgba(230,237,243,0.75)'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(player.mech ? 'WASD move · Space stomp · E crush planks · X climb out' : 'WASD move · Space swing · E use / talk · Q place · 1-5 use · I bag · C craft · Tab skills · J quests · M map · H home · Esc menu', VW / 2, VH - 16); }
+  if (!isTouch) { g.fillStyle = 'rgba(230,237,243,0.75)'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(player.mech ? 'WASD move · Space stomp · E crush planks · X climb out' : 'WASD move · Space swing · E use / talk · Q place · 1-5 use · I bag · C craft · Tab skills · J quests · M map · H home · ? help · Esc menu', VW / 2, VH - 16); }
   // touch controls
   if (isTouch) {
     if (touch.active) { g.fillStyle = 'rgba(255,255,255,0.15)'; g.beginPath(); g.arc(touch.ox, touch.oy, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.4)'; g.beginPath(); g.arc(touch.ox + touch.dx * 60, touch.oy + touch.dy * 60, 26, 0, 7); g.fill(); }
@@ -98,6 +98,7 @@ function drawHud(g) {
     }
     button(g, narrow ? VW - 74 : VW / 2 - 30, narrow ? 44 : 14, 60, 26, 'MENU', () => { paused = !paused; }, '#21262d');
     button(g, narrow ? VW - 74 : VW / 2 + 36, narrow ? 76 : 14, 60, 26, 'SKILLS', () => panel === 'skills' ? closePanel() : openPanel('skills'), '#21262d');
+    button(g, narrow ? VW - 74 : VW / 2 + 102, narrow ? 108 : 14, 60, 26, 'HELP', () => panel === 'help' ? closePanel() : openPanel('help'), '#21262d');
   }
   for (const h of HOOKS.hud) h(g, narrow);
   drawPanels(g, narrow, short, qh, hb);
@@ -133,8 +134,9 @@ function drawHud(g) {
     roundRect(g, px, py, pw, ph, 12); g.fillStyle = 'rgba(10,14,22,0.96)'; g.fill(); g.strokeStyle = '#30363d'; g.stroke();
     g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 40);
     g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 60);
-    button(g, px + 24, py + 84, pw - 48, 42, 'Resume', () => { paused = false; });
-    button(g, px + 24, py + 136, pw - 48, 42, 'New game (erases save)', () => { newGame(); }, '#8b2e2e');
+    button(g, px + 24, py + 78, pw - 48, 36, 'Resume', () => { paused = false; });
+    button(g, px + 24, py + 120, pw - 48, 36, audioMuted ? 'Sound: off' : 'Sound: on', toggleMute, '#21262d');
+    button(g, px + 24, py + 162, pw - 48, 36, 'New game (erases save)', () => { newGame(); }, '#8b2e2e');
     g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 208);
     g.fillText('Progress saves automatically in this browser.', VW / 2, py + 228);
   }
@@ -155,6 +157,13 @@ function drawPanels(g, narrow, short, qh, hb) {
       g.fillStyle = '#2a2f3a'; roundRect(g, px + 12, y + 15, pw - 24, 5, 3); g.fill();
       if (!locked) { const cur = sk.xp - xpForLevel(lv), need = xpForLevel(lv + 1) - xpForLevel(lv); g.fillStyle = '#58a6ff'; roundRect(g, px + 12, y + 15, (pw - 24) * clamp(cur / need, 0, 1), 5, 3); g.fill(); g.fillStyle = '#6e7681'; g.font = '9px sans-serif'; g.fillText(`${cur} / ${need} xp`, px + 12, y + 29); }
     });
+  }
+  if (panel === 'help') {
+    const rows = isTouch
+      ? [['Left side of screen', 'drag to move'], ['SWING', 'attack / hit a dummy'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['Hotbar', 'tap a slot to eat or use it'], ['CRAFT / SKILLS / QUESTS', 'panels'], ['Minimap', 'tap for the world map'], ['MENU', 'sound, new game']]
+      : [['WASD / arrows', 'move'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Enter', 'next line of talk'], ['Esc', 'menu (sound, new game)']];
+    const { px, py, w } = panelBox(g, 480, 90 + rows.length * 26, 'How to play', 'Every skill trains by doing. Die and Death keeps your pack.');
+    rows.forEach(([k, v], i) => { const y = py + 78 + i * 26; g.fillStyle = '#f5c542'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(k, px + 18, y); g.fillStyle = '#c9d1d9'; g.font = '13px sans-serif'; g.fillText(v, px + 190, y); });
   }
   if (panel === 'quests') {
     const list = activeQuests(); const done = []; if (quest.bread === 'done') done.push('bread'); if (quest.wren === 'done') done.push('wren');

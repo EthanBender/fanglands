@@ -11,6 +11,7 @@ function update(dt) {
     if (pressed.has('KeyC')) toggle('craft');
     if (pressed.has('KeyJ')) toggle('quests');
     if (pressed.has('KeyM')) toggle('map');
+    if (pressed.has('Slash') || pressed.has('F1')) toggle('help');
     if (pressed.has('KeyH')) goHome();
     if (pressed.has('KeyX')) exitMech();
     if (pressed.has('Enter') && dialog.cur) advanceDialog();
@@ -85,7 +86,7 @@ function update(dt) {
       d.t += dt;
       if (dist(d.x, d.y, player.x, player.y) < player.r + 12) {
         const left = addItem(d.id, d.qty);
-        if (left < d.qty) floatText(player.x, player.y - 30, `+${d.qty - left} ${ITEMS[d.id].name}`, ITEMS[d.id].color);
+        if (left < d.qty) { floatText(player.x, player.y - 30, `+${d.qty - left} ${ITEMS[d.id].name}`, ITEMS[d.id].color); sfx(d.id === 'coins' ? 'coins' : 'pickup'); }
         if (left > 0) { d.qty = left; if (!d.warned) { notify('Your pack is full.'); d.warned = true; } } else d.taken = true;
       }
     }
