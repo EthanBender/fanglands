@@ -24,7 +24,12 @@
   const LOC = {
     dock: { name: 'the dock', blurb: 'The mainland, and the road back to Thistledown.', dock: rect(162, 13, 166, 15), boat: { x: 167, y: 14 }, harl: { x: 165, y: 14 }, land: { x: 164, y: 14 }, lantern: { x: 166, y: 13 }, face: { x: -1, y: 0 } },
     gull: { name: 'Gull Isle', price: 10, blurb: 'Palms, lobster, and a hermit who hates company.', dock: rect(171, 12, 172, 14), boat: { x: 170, y: 13 }, harl: { x: 172, y: 13 }, land: { x: 173, y: 13 }, lantern: { x: 171, y: 12 }, face: { x: 1, y: 0 } },
-    ironclad: { name: 'Ironclad Isle', price: 25, combat: 8, blurb: 'A goblin wreck. Five of them still guard it.', dock: rect(178, 49, 179, 51), boat: { x: 177, y: 50 }, harl: { x: 179, y: 50 }, land: { x: 180, y: 50 }, lantern: { x: 178, y: 49 }, face: { x: 1, y: 0 } },
+    ironclad: { name: 'Ironclad Isle', price: 25, combat: 8, blurb: 'A goblin wreck. Five of them still guard it.', dock: rect(178, 49, 179, 51), boat: { x: 177, y: 50 }, harl: { x: 179, y: 50 }, land: { x: 180, y: 50 }, lantern: { x: 178, y: 49 }, face: { x: 1, y: 0 },
+      refuse: "Ironclad's crawling with goblins, knight. Come back when you can hold your own. Combat level eight." },
+    // the far side of the sea: Grubmarket and Castle Gnash (src/33-goblincity.js carves the land and owns everything east of the strait).
+    // stay: Harl waits while the knight is anywhere in this rect (its towns are their own regions, so the region-name check alone would row him home)
+    farshore: { name: 'The Far Shore', price: 40, combat: 10, blurb: 'Goblin country. A market, a castle, and a tinker with ideas.', dock: rect(204, 29, 205, 31), boat: { x: 203, y: 30 }, harl: { x: 205, y: 30 }, land: { x: 206, y: 30 }, lantern: { x: 204, y: 29 }, face: { x: 1, y: 0 },
+      stay: { x0: 200, y0: 1, x1: 258, y1: 96 }, refuse: "The Far Shore is goblin country, knight. All of it. Combat level ten, or I row you straight back." },
   };
   const GULL = { cx: 178.5, cy: 13, rx: 6, ry: 6.5, region: { name: 'Gull Isle', sub: 'Palms, lobster and a hermit', x0: 169, y0: 5, x1: 186, y1: 21 } };
   const IRON = { cx: 187.5, cy: 50, rx: 8.5, ry: 9, dirt: true, region: { name: 'Ironclad Isle', sub: 'A goblin wreck, and what it guards', x0: 176, y0: 39, x1: 197, y1: 61 } };
@@ -68,6 +73,7 @@
     "Sea's calm today. It won't stay that way. Pick an island.",
     'Old Pete on Gull Isle owes me a lobster. Tell him Harl said so.',
     'Goblins built a ship once. Built it badly. Ironclad Isle is where it ended up.',
+    'Forty coins gets you the Far Shore. Goblins with shops, goblins with a castle. Mind your purse and your neck.',
   ] };
   const PETE = { id: 'pete', name: 'Salt Pete', x: PETE_T.x, y: PETE_T.y, px: tc(PETE_T.x), py: tc(PETE_T.y), facing: { x: 0, y: 1 }, lines: [
     'Lobster pots. Sixty coins. Drop one at a buoy and wait. Fishing twenty-five, or the lobsters laugh at you.',
@@ -100,7 +106,7 @@
     const q = bq(); const L = LOC[to]; const price = to === 'dock' ? 0 : L.price;
     if (L.combat && combatLevel() < L.combat) {
       notify(`Harl won't row you to ${L.name} below combat level ${L.combat} (you are ${combatLevel()}).`);
-      say("Ironclad's crawling with goblins, knight. Come back when you can hold your own. Combat level eight.", HARL.name); return;
+      say(L.refuse || `Come back when you can hold your own. Combat level ${L.combat}.`, HARL.name); return;
     }
     if (!payCoins(price)) { notify(`Harl wants ${price} coins for ${L.name}. You have ${coins()}.`); return; }
     closePanel(); dialog.queue.length = 0; dialog.cur = null;
@@ -119,6 +125,8 @@
     }
     save();
   }
+  // still "at" a moored place: in its region, on the grey water, inside a dungeon (16-instances), or anywhere inside its stay rect (the Far Shore has towns with their own regions)
+  const atMoor = L => { if (window.__instance || player.region === L.name || player.region === 'The Grey Sea') return true; if (!L.stay) return false; const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE); return tx >= L.stay.x0 && tx <= L.stay.x1 && ty >= L.stay.y0 && ty <= L.stay.y1; };
   const wreckGoblins = () => monsters.filter(m => (m.type === 'brute' || m.type === 'sapper') && inRegion(IRON.region, Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)));
 
   // ---------- world ----------
@@ -205,7 +213,7 @@
   HOOKS.update.push(dt => {
     const q = bq();
     // Harl rows home if the knight leaves an island without him (died there, hovered off, an old save): nobody is stranded at an empty dock
-    if (!q.sailing && !player.dead && q.where !== 'dock' && LOC[q.where] && player.region !== LOC[q.where].name && player.region !== 'The Grey Sea') { q.where = 'dock'; save(); }
+    if (!q.sailing && !player.dead && q.where !== 'dock' && LOC[q.where] && !atMoor(LOC[q.where])) { q.where = 'dock'; save(); }
     if (q.sailing) {
       const s = q.sailing;
       if (typeof s.fx !== 'number') { arrive(); return; }
@@ -231,8 +239,8 @@
   HOOKS.panel.sailing = () => { }; // blocks movement and use while the crossing overlay (HOOKS.hud) plays
   HOOKS.panel.ferry = (g, narrow) => {
     const q = bq(); const here = q.where;
-    const { px, py, w, h } = panelBox(g, 460, 330, "Old Harl's Ferry", `${coins()} coins · you are at ${LOC[here].name}`);
-    const dests = ['gull', 'ironclad', 'dock'].filter(k => k !== here);
+    const { px, py, w, h } = panelBox(g, 460, 400, "Old Harl's Ferry", `${coins()} coins · you are at ${LOC[here].name}`);
+    const dests = ['gull', 'ironclad', 'farshore', 'dock'].filter(k => k !== here);
     let y = py + 64;
     for (const k of dests) {
       const L = LOC[k]; const price = k === 'dock' ? 0 : L.price; const gated = L.combat && combatLevel() < L.combat;
