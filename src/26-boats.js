@@ -1,6 +1,6 @@
 // ============================================================================
 // THE GREY SEA — Old Harl's ferry, Gull Isle and Ironclad Isle
-// "people that offer to take you to islands, all sorts of places" — Colin
+// "people that offer to take you to islands, all sorts of places" — Cohen
 // Feature file. Registers everything through HOOKS; edits no core file.
 // Everything lives in one block so no name leaks into the shared script scope.
 // ============================================================================

@@ -1,5 +1,5 @@
 // ============================================================================
-// FEATURE: THE GOBLIN BULLDOZER — Colin's second machine
+// FEATURE: THE GOBLIN BULLDOZER — Cohen's second machine
 // A wide, low goblin engine: a wooden deck bound in iron, four iron-shod wheels, a boiler on the
 // back and a plow blade as wide as a door on the front. It charges, and it flattens what it hits.
 // Kill it → a wreck. Repair the wreck (4 iron bars + 6 goblin scrap) → drive it. Everything here

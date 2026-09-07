@@ -30,7 +30,7 @@ window.FANGLANDS.title = title;
   const stamp = () => { const at = Math.max(Date.now(), title.lastAt + 1); title.lastAt = at; return at; };
   title.chapterFor = chapterFor; title.slotKey = SLOT_KEY;
 
-  // ---------- first run: Colin's existing progress (legacy key) becomes Slot 1 ----------
+  // ---------- first run: Cohen's existing progress (legacy key) becomes Slot 1 ----------
   // only on a true first run (no slot has ever been saved): otherwise a deleted Slot 1 would come back from the legacy mirror
   { const legacy = lsGet(SAVE_KEY); if (legacy && !lsGet(SLOT_KEY(1)) && lsGet(CUR_KEY) == null) { lsSet(SLOT_KEY(1), legacy); lsSet(AT_KEY(1), stamp()); } }
   { const cur = +lsGet(CUR_KEY); title.slot = cur >= 1 && cur <= 3 ? cur : 1; }
@@ -119,7 +119,7 @@ window.FANGLANDS.title = title;
     const y0 = Math.round(Math.max(ty + (narrow ? 44 : 52), Math.min(narrow ? ty + 52 : VH * 0.36, VH - (3 * (ch + gap) + 60))));
     g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,0.75)';
     g.font = `800 ${narrow ? 44 : short ? 48 : 72}px ${DISPLAY}`; g.strokeText('FANGLANDS', VW / 2, ty); g.fillStyle = '#f5c542'; g.fillText('FANGLANDS', VW / 2, ty);
-    g.font = `600 ${narrow ? 14 : 18}px ${DISPLAY}`; g.lineWidth = 4; g.strokeText('A game by Colin', VW / 2, ty + (narrow ? 24 : 30)); g.fillStyle = '#c9a36a'; g.fillText('A game by Colin', VW / 2, ty + (narrow ? 24 : 30));
+    g.font = `600 ${narrow ? 14 : 18}px ${DISPLAY}`; g.lineWidth = 4; g.strokeText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30)); g.fillStyle = '#c9a36a'; g.fillText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30));
     // knight (left margin) and walker (right margin), bobbing slowly; scaled to the room beside the cards
     const bob = Math.sin(title.t * 1.6) * 4, bob2 = Math.sin(title.t * 1.6 + 1.3) * 4;
     const margin = cx, midY = y0 + (3 * (ch + gap) - gap) / 2, below = y0 + 3 * (ch + gap) + 60 + 70; // narrow screens: sprites sit under the cards

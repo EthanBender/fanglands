@@ -266,7 +266,7 @@
     say('You walked out of a cave with a wooden sword. You walk into this castle with the tooth of The Fang.', 'The Voice');
     say('The goblins are broken, Hollowford breathes, the dwarves forge again, and the dragon of legend is a story children will tell. You are the knight of legend. The Fanglands are at peace.', 'The Voice');
     levelBanner = { text: 'FANGLANDS', sub: 'Chapter 5 · The Fang', t: 3 };
-    credits = { t: 3, lines: [['A game by Colin', 'with a little help'], ['Thank you for playing', 'More is being built']] };
+    credits = { t: 3, lines: [['A game by Cohen', 'with a little help'], ['Thank you for playing', 'More is being built']] };
     burst(player.x, player.y, '#f5c542', 40, 200);
   } };
 
@@ -551,7 +551,7 @@
     // home to the castle: stage 16 and the credits
     { drain(); F.tp(112, 48); F.sim(3, []); const s16 = quest.stage === 16 && !!levelBanner && levelBanner.text === 'FANGLANDS';
       F.sim(200, []); const b2 = levelBanner && levelBanner.text; F.sim(200, []); const b3 = levelBanner && levelBanner.text;
-      check('fang: entering Castle Thistledown at stage 15 → stage 16, credits: FANGLANDS / A game by Colin / Thank you for playing', s16 && b2 === 'A game by Colin' && b3 === 'Thank you for playing', { stage: quest.stage, s16, b2, b3 }); }
+      check('fang: entering Castle Thistledown at stage 15 → stage 16, credits: FANGLANDS / A game by Cohen / Thank you for playing', s16 && b2 === 'A game by Cohen' && b3 === 'Thank you for playing', { stage: quest.stage, s16, b2, b3 }); }
     { const st = quest.stage; const texts = [15, 16].map(s => { quest.stage = s; return questText('main'); }); quest.stage = st;
       check('fang: quest log reads for stages 15–16', /Duke Ferrin/.test(texts[0]) && /knight of legend/.test(texts[1]), { texts }); }
     player.skills.defence.xp = defXp0; player.hp = Math.min(player.hp, player.maxHp); player.hurtT = 0; thawAll(); FIREBALLS.length = 0; STRIKES.length = 0; credits = null; h.peace(false);
