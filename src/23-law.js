@@ -32,7 +32,8 @@ function lawOffend(level) {
     save();
   }
 }
-HOOKS.hit.push((m, dmg) => {
+HOOKS.hit.push((m, dmg, source) => {
+  if (source && source !== 'player') return; // your hero's swings are not your offences
   if (!lawIsGuard(m) || !inVillageBounds(m.x, m.y)) return;
   lawOffend(law().wanted + 1);
 });
@@ -93,7 +94,7 @@ HOOKS.update.push(dt => {
         if (dist(m.x, m.y, player.x, player.y) < LAW_ARM_RANGE) { m.angry = true; m.state = 'chase'; }
       }
     }
-    if (L.wanted >= 2 && (panel === 'shop' || panel === 'bank')) { closePanel(); notify('Not while the watch is after you.'); }
+    if (L.wanted >= 2 && (panel === 'shop' || panel === 'bank') && inVillageBounds(player.x, player.y)) { closePanel(); notify('Not while the watch is after you.'); } // only Thistledown's own shops know the watch
   } else if (lawArmed) lawStandDown();
 });
 
@@ -146,9 +147,9 @@ HOOKS.hud.push((g, narrow) => {
   const L = law();
   const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
   const touch = typeof isTouch !== 'undefined' && isTouch, short = touch && VH < 500;
-  let y = 84; // under the HP box
-  if (touch && !short) y = narrow ? 84 + qh + 8 + 56 : 148; // below the hotbar on touch layouts
-  else if (narrow && qh) y = 84 + qh + 8;
+  let y = HUD.leftY; // shared left-HUD cursor (under the HP box; hooks stack instead of overprinting)
+  if (touch && !short) y = Math.max(y, narrow ? 84 + qh + 8 + 56 : 148); // below the hotbar on touch layouts
+  else if (narrow && qh) y = Math.max(y, 84 + qh + 8);
   const tag = (text, fill, stroke, color) => {
     g.font = 'bold 12px sans-serif'; const tw = Math.ceil(g.measureText(text).width) + 24;
     roundRect(g, 14, y, tw, 24, 8); g.fillStyle = fill; g.fill(); g.strokeStyle = stroke; g.lineWidth = 1.5; g.stroke();
@@ -156,6 +157,7 @@ HOOKS.hud.push((g, narrow) => {
   };
   if (L.wanted > 0) tag(`WANTED ${lawStars(L.wanted)}  ${Math.ceil(L.timer)}s`, 'rgba(120,20,20,0.85)', '#f85149', '#fff');
   if (L.fines > 0) tag(`Fine: ${lawFine()} coins`, 'rgba(90,60,10,0.85)', '#d29922', '#ffd166');
+  HUD.leftY = y; // each tag already advanced y by its height + 6
 });
 
 // ---------- quest entry ----------

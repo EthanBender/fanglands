@@ -174,8 +174,9 @@
     if (onIce && player.speed === 175) player.speed = 90; else if (!onIce && player.speed === 90) player.speed = 175;
     for (const p of ICE_PATCHES) { p.t -= dt; if (p.t <= 0) thaw(p); }
     for (let i = ICE_PATCHES.length - 1; i >= 0; i--) if (ICE_PATCHES[i].t <= 0) ICE_PATCHES.splice(i, 1);
-    // the boss
+    // the boss: slain once, slain for good (no 15-minute farm of a 3,000-coin weapon; a reload spawns it, this puts it back down)
     const m = fang();
+    if (m && fq.slain) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; }
     if (m && !m.dead) {
       if (!m.element) { m.element = 'fire'; m.elemT = 0; }
       m.elemT = (m.elemT || 0) + dt;
@@ -221,16 +222,22 @@
   // death: an enormous burst, the banner, the loot, and the story moves on
   HOOKS.kill.push(m => {
     if (m.type !== 'the_fang') return;
-    const fq = FQ(); fq.slain = true;
+    const fq = FQ(); const first = !fq.slain; fq.slain = true;
     for (const [c, n, s] of [['#ff6a1a', 60, 280], ['#8fd3ff', 40, 220], ['#d8c8ff', 40, 220], ['#b0a08a', 30, 160], ['#f5c542', 50, 320]]) burst(m.x, m.y, c, n, s);
     levelBanner = { text: 'THE FANG IS SLAIN', sub: 'Chapter 5 complete', t: 5 };
-    const loot = [['coins', 1000], ['fang_of_the_fang', 1], ['mithril_bar', 4]]; if (ITEMS.dragon_scale) loot.push(['dragon_scale', 10]);
+    const loot = first ? [['coins', 1000], ['fang_of_the_fang', 1], ['mithril_bar', 4]] : []; if (first && ITEMS.dragon_scale) loot.push(['dragon_scale', 10]); // the legendary loot drops once
     for (const [id, q] of loot) if (ITEMS[id]) drops.push({ x: m.x + rint(-30, 30), y: m.y + rint(-30, 30), id, qty: q, t: 0, rare: id === 'fang_of_the_fang' });
     say('The Fang falls. The mountain shakes with it. Its great tooth lies loose in the ash: take it. No blade in the Fanglands will bite like it.', 'The Voice');
     thawAll(); FIREBALLS.length = 0; STRIKES.length = 0; m.element = 'fire'; m.elemT = 0; MONSTER_DEFS.the_fang.maxHit = 32;
     if (quest.stage < 15) advanceQuest(15); else save();
   });
 
+  // the Duke learns of the kill from you, not from your footsteps: at stage 15 talking to him ends the story (the castle-entry trigger stays as a fallback)
+  HOOKS.talkBefore.duke = n => {
+    if (quest.stage === 15) { say('The Fang? Slain? Then the old songs were waiting for you, knight. Thistledown owes you more than a keep can hold.', n.name); say('Sit. Eat. Tomorrow the whole town hears it from my mouth. Tonight, hear it from me: thank you.', n.name); advanceQuest(16); return true; }
+    if (quest.stage >= 16) { say('The knight of legend, in my hall. Rest, friend. The Fanglands are at peace because of you.', n.name); return true; }
+    return false;
+  };
   // ---------- main quest, stages 14–16 ----------
   if (!HOOKS.mainQuest[14]) HOOKS.mainQuest[14] = { text: () => "Find The Fang's lair: a sealed gate at the far south of dragon country." };
   HOOKS.mainQuest[15] = { text: () => 'The Fang is slain. Return to Duke Ferrin.', onEnter: () => {
@@ -431,7 +438,8 @@
     const m = fang(); if (!m || m.dead || dist(m.x, m.y, player.x, player.y) > 12 * TILE) return;
     const C = EL[m.element || 'fire'], w = Math.min(236, VW - 28), h = 48, x = 14;
     const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
-    const y = isTouch ? (narrow ? 84 + qh + 8 + 62 : 152) : 84;
+    const y = Math.max(HUD.leftY, isTouch ? (narrow ? 84 + qh + 8 + 62 : 152) : 84); // shared left-HUD cursor: under the companion / wanted tags
+    HUD.leftY = y + h + 6;
     roundRect(g, x, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = C.col; g.lineWidth = 1.5; g.stroke();
     g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText('THE FANG', x + 12, y + 19);
     g.fillStyle = C.col; g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillText(C.name.toUpperCase() + (m.element === 'stone' ? ' · wait it out' : ''), x + w - 12, y + 19);

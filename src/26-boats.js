@@ -204,6 +204,8 @@
   // ---------- update: the crossing, and the lobster pot ----------
   HOOKS.update.push(dt => {
     const q = bq();
+    // Harl rows home if the knight leaves an island without him (died there, hovered off, an old save): nobody is stranded at an empty dock
+    if (!q.sailing && !player.dead && q.where !== 'dock' && LOC[q.where] && player.region !== LOC[q.where].name && player.region !== 'The Grey Sea') { q.where = 'dock'; save(); }
     if (q.sailing) {
       const s = q.sailing;
       if (typeof s.fx !== 'number') { arrive(); return; }

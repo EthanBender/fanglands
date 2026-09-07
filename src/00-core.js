@@ -43,8 +43,10 @@ const SOLID = new Set([T.WALL, T.WATER, T.TREE, T.OAK, T.STUMP, T.ROCK, T.IRON, 
 const PUSH_THROUGH = new Set([T.DOOR, T.GATE, T.PORTCULLIS, T.COFFINDOOR]); // people push through these; animals and goblins cannot
 const PLACEABLE_ON = new Set([T.GRASS, T.DIRT, T.SAND, T.CAVE, T.COBBLE, T.FLOOR, T.SOIL, T.ASHES]);
 const WALK_OVER = new Set(); // tiles the player can currently cross (e.g. water while hover armour is worn); features add/remove
-// solid for people, solid for beasts
-const solidFor = (t, who) => (who === 'person' && WALK_OVER.has(t)) ? false : SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person');
+// who: 'player' (the knight on foot: pushes through doors, honours WALK_OVER), 'person' (companions, guards, villagers: doors yes, WALK_OVER no), 'beast' (monsters and machines)
+const solidFor = (t, who) => (who === 'player' && WALK_OVER.has(t)) ? false : SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person' && who !== 'player');
+// shared left-HUD cursor: the core resets HUD.leftY to 82 every tick; HUD hooks that draw under the HP box start at HUD.leftY and advance it by their height (+6) so they stack
+const HUD = { leftY: 82 };
 
 // ---------- extension hooks (feature files in src/2x-*.js register here; core never needs editing) ----------
 const HOOKS = {
@@ -55,7 +57,8 @@ const HOOKS = {
   panel: {},        // panel[name] = fn(g, narrow) — custom panels (openPanel(name))
   use: [],          // fn(t, tx, ty, building) → true if handled — runs before "Nothing to use here"
   talk: {},         // talk[role] = fn(npc) — NPC roles the core does not know
-  hit: [],          // fn(monster, dmg) — player hit a monster
+  talkBefore: {},   // talkBefore[role] = fn(npc) → true if handled — runs at the top of talkTo, lets features extend core roles (e.g. the Duke)
+  hit: [],          // fn(monster, dmg, source) — a monster was hit; source is 'player' or 'companion'
   kill: [],         // fn(monster) — monster died
   hurt: [],         // fn(dmg, fromX, fromY) — player got hurt
   drawMonster: {},  // drawMonster[type] = fn(g, e, hurt) — sprite for a new monster type (already translated to e.x,e.y)

@@ -31,6 +31,7 @@ let areaBanner = null; // {name, sub, t}
 let dialog = { queue: [], cur: null, shown: 0, t: 0 };
 let notice = null;
 let mapDiffs = new Map();
+const miniDirtyTiles = new Set(); // tile indices changed since the minimap was last painted (changeTile adds; refreshMini repaints only these)
 const blockHp = new Map(); // legacy hits map (dummy etc.)
 let regrow = []; // {i, t, timer}
 let crops = []; // {i, stage, t}
@@ -48,7 +49,12 @@ function spawnMonsters() {
     });
   }
 }
-function say(text, who = 'The Voice') { dialog.queue.push({ text, who }); }
+function say(text, who = 'The Voice') {
+  const last = dialog.queue.length ? dialog.queue[dialog.queue.length - 1] : dialog.cur;
+  if (last && last.text === text) return; // the same line twice in a row is a bug, not a speech
+  if (dialog.queue.length >= 8) return;   // a runaway hook must not queue a minute of talk
+  dialog.queue.push({ text, who });
+}
 function notify(text) { notice = { text, t: 2.8 }; }
 function floatText(x, y, text, color = '#fff', size = 15) { floaters.push({ x, y, text, color, size, t: 1.1, vy: -38 }); }
 function burst(x, y, color, n = 10, speed = 90) {
@@ -60,18 +66,21 @@ function closePanel() { panel = null; panelArg = null; selectedSlot = -1; }
 // ---------- inventory ----------
 function countItem(id) { let n = 0; for (const s of player.inv) if (s && s.id === id) n += s.qty; return n; }
 const coins = () => countItem('coins');
+// returns how many did not fit. Coins never fail: what does not fit is dropped at the knight's feet (picked up as soon as there is room), so callers that ignore the return value cannot lose money.
 function addItem(id, qty = 1) {
   const def = ITEMS[id]; let left = qty;
   for (const s of player.inv) if (s && s.id === id && s.qty < def.stack && left > 0) { const take = Math.min(def.stack - s.qty, left); s.qty += take; left -= take; }
   for (let i = 0; i < player.inv.length && left > 0; i++) if (!player.inv[i]) { const take = Math.min(def.stack, left); player.inv[i] = { id, qty: take }; left -= take; }
+  if (left > 0 && id === 'coins') { drops.push({ x: player.x + rint(-6, 6), y: player.y + rint(-6, 6), id, qty: left, t: 0, warned: true }); notify('Your pack is full. The coins fell at your feet.'); return 0; }
   return left;
 }
+function roomFor(id) { const def = ITEMS[id]; let room = 0; for (const s of player.inv) { if (!s) room += def.stack; else if (s.id === id) room += def.stack - s.qty; } return room; }
 function removeItem(id, qty = 1) {
   let left = qty;
   for (let i = player.inv.length - 1; i >= 0 && left > 0; i--) { const s = player.inv[i]; if (s && s.id === id) { const take = Math.min(s.qty, left); s.qty -= take; left -= take; if (s.qty <= 0) player.inv[i] = null; } }
   return qty - left;
 }
-function canFit(id, qty) { const def = ITEMS[id]; let room = 0; for (const s of player.inv) { if (!s) room += def.stack; else if (s.id === id) room += def.stack - s.qty; } return room >= qty; }
+function canFit(id, qty) { return roomFor(id) >= qty; }
 function giveOrDrop(id, qty, x, y, quiet = false) {
   const left = addItem(id, qty);
   if (left > 0) { drops.push({ x: x + rint(-10, 10), y: y + rint(-10, 10), id, qty: left, t: 0 }); notify('Your pack is full. It fell to the ground.'); }
@@ -162,7 +171,8 @@ function advanceQuest(stage) {
 // ---------- save / load ----------
 function save() {
   try {
-    const data = { player, quest, swordTaken, deathKeep, mapDiffs: [...mapDiffs.entries()], regrow, crops, fires, time, mapW: MAP_W };
+    // tiles go out by NAME (see tileId in 03-textures): numeric ids shift when feature files come and go
+    const data = { player, quest, swordTaken, deathKeep, mapDiffs: [...mapDiffs.entries()].map(([i, t]) => [i, tileName(t)]), regrow: regrow.map(r => ({ ...r, t: tileName(r.t) })), crops, fires: fires.map(f => ({ ...f, under: f.under === undefined ? undefined : tileName(f.under) })), time, mapW: MAP_W };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch (e) { /* storage unavailable: play on without saving */ }
 }
@@ -178,21 +188,35 @@ function load() {
     if (!Array.isArray(player.inv) || player.inv.length !== INV_SLOTS) { const inv = new Array(INV_SLOTS).fill(null); (player.inv || []).forEach((s, i) => { if (i < INV_SLOTS) inv[i] = s; }); player.inv = inv; }
     if (!Array.isArray(player.bank)) player.bank = [];
     quest = Object.assign({ stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }, d.quest || {});
-    swordTaken = !!d.swordTaken; deathKeep = d.deathKeep || null;
+    swordTaken = !!d.swordTaken; deathKeep = d.deathKeep && Array.isArray(d.deathKeep.items) ? d.deathKeep : null;
+    // items that no longer exist (a feature file removed, a renamed id) are dropped rather than crashing every panel that draws them
+    { let dropped = 0; const known = s => s && ITEMS[s.id] ? true : (s ? (dropped++, false) : false);
+      player.inv = player.inv.map(s => known(s) ? s : null);
+      player.bank = player.bank.filter(known);
+      for (const k in player.equip) if (player.equip[k] && !ITEMS[player.equip[k]]) { player.equip[k] = null; dropped++; }
+      if (deathKeep) { deathKeep.items = deathKeep.items.filter(known); if (!deathKeep.items.length) deathKeep = null; }
+      if (dropped) notify(`${dropped} unknown item${dropped > 1 ? 's' : ''} from an older save could not be loaded.`); }
     // saves from a narrower map: tile indices are row-major, so remap them onto the current width
     const oldW = d.mapW || 160; const remap = i => oldW === MAP_W ? i : (i % oldW) + Math.floor(i / oldW) * MAP_W;
-    mapDiffs = new Map((d.mapDiffs || []).map(([i, t]) => [remap(i), t]));
+    // tiles come in by name (or as raw ids from older saves); a name nobody knows any more is skipped
+    mapDiffs = new Map((d.mapDiffs || []).map(([i, t]) => [remap(i), tileId(t)]).filter(([, t]) => t !== null));
     for (const [i, t] of mapDiffs) map[i] = t;
-    regrow = (Array.isArray(d.regrow) ? d.regrow : []).map(r => ({ ...r, i: remap(r.i) })); crops = (Array.isArray(d.crops) ? d.crops : []).map(c => ({ ...c, i: remap(c.i) })); fires = (Array.isArray(d.fires) ? d.fires : []).map(f => ({ ...f, i: remap(f.i) }));
+    regrow = (Array.isArray(d.regrow) ? d.regrow : []).map(r => ({ ...r, i: remap(r.i), t: tileId(r.t) })).filter(r => r.t !== null);
+    crops = (Array.isArray(d.crops) ? d.crops : []).map(c => ({ ...c, i: remap(c.i) }));
+    fires = (Array.isArray(d.fires) ? d.fires : []).map(f => { const u = f.under === undefined ? undefined : tileId(f.under); return { ...f, i: remap(f.i), under: u === null ? undefined : u }; });
     time = typeof d.time === 'number' ? d.time : 0;
     recomputeMaxHp();
+    // a save taken during the death animation (or a corrupted one) must not wake the knight dead, at 0 hp, or inside a wall
+    if (!(player.hp > 0) || d.player.dead) { player.hp = player.maxHp; const sp = respawnPoint(); player.x = sp.x; player.y = sp.y; player.mech = null; player.r = 13; player.speed = 175; }
+    else if (collides(player.x, player.y, player.r, player.mech ? 'beast' : 'player')) { const sp = safeSpot(player.x, player.y, player.r, player.mech ? 'beast' : 'player') || respawnPoint(); player.x = sp.x; player.y = sp.y; }
+    miniDirty = true;
     return true;
   } catch (e) { return false; }
 }
 function newGame() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) { }
   map.fill(0); generateWorld();
-  mapDiffs = new Map(); regrow = []; crops = []; fires = []; blockHp.clear();
+  mapDiffs = new Map(); regrow = []; crops = []; fires = []; blockHp.clear(); miniDirtyTiles.clear(); miniDirty = true;
   player = newPlayer(); quest = { stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }; swordTaken = false; deathKeep = null;
   drops = []; particles = []; floaters = []; projectiles = []; dialog = { queue: [], cur: null, shown: 0, t: 0 };
   for (const n of NPCS) { n.px = n.home.x; n.py = n.home.y; }
@@ -200,4 +224,4 @@ function newGame() {
   time = 0; introT = 0; areaBanner = null; levelBanner = null;
   for (const h of HOOKS.newGame) h();
 }
-function changeTile(tx, ty, t) { setTile(tx, ty, t); mapDiffs.set(idx(tx, ty), t); blockHp.delete(idx(tx, ty)); }
+function changeTile(tx, ty, t) { setTile(tx, ty, t); mapDiffs.set(idx(tx, ty), t); blockHp.delete(idx(tx, ty)); miniDirtyTiles.add(idx(tx, ty)); }

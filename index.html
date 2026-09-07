@@ -56,8 +56,10 @@ const SOLID = new Set([T.WALL, T.WATER, T.TREE, T.OAK, T.STUMP, T.ROCK, T.IRON, 
 const PUSH_THROUGH = new Set([T.DOOR, T.GATE, T.PORTCULLIS, T.COFFINDOOR]); // people push through these; animals and goblins cannot
 const PLACEABLE_ON = new Set([T.GRASS, T.DIRT, T.SAND, T.CAVE, T.COBBLE, T.FLOOR, T.SOIL, T.ASHES]);
 const WALK_OVER = new Set(); // tiles the player can currently cross (e.g. water while hover armour is worn); features add/remove
-// solid for people, solid for beasts
-const solidFor = (t, who) => (who === 'person' && WALK_OVER.has(t)) ? false : SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person');
+// who: 'player' (the knight on foot: pushes through doors, honours WALK_OVER), 'person' (companions, guards, villagers: doors yes, WALK_OVER no), 'beast' (monsters and machines)
+const solidFor = (t, who) => (who === 'player' && WALK_OVER.has(t)) ? false : SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person' && who !== 'player');
+// shared left-HUD cursor: the core resets HUD.leftY to 82 every tick; HUD hooks that draw under the HP box start at HUD.leftY and advance it by their height (+6) so they stack
+const HUD = { leftY: 82 };
 
 // ---------- extension hooks (feature files in src/2x-*.js register here; core never needs editing) ----------
 const HOOKS = {
@@ -68,7 +70,8 @@ const HOOKS = {
   panel: {},        // panel[name] = fn(g, narrow) — custom panels (openPanel(name))
   use: [],          // fn(t, tx, ty, building) → true if handled — runs before "Nothing to use here"
   talk: {},         // talk[role] = fn(npc) — NPC roles the core does not know
-  hit: [],          // fn(monster, dmg) — player hit a monster
+  talkBefore: {},   // talkBefore[role] = fn(npc) → true if handled — runs at the top of talkTo, lets features extend core roles (e.g. the Duke)
+  hit: [],          // fn(monster, dmg, source) — a monster was hit; source is 'player' or 'companion'
   kill: [],         // fn(monster) — monster died
   hurt: [],         // fn(dmg, fromX, fromY) — player got hurt
   drawMonster: {},  // drawMonster[type] = fn(g, e, hurt) — sprite for a new monster type (already translated to e.x,e.y)
@@ -550,6 +553,9 @@ const MINI = {};
   for (const c in m) for (const t of m[c]) MINI[t] = c;
 }
 
+// tile ids ↔ names. Saves store tile NAMES (feature files add tiles at load time, so numeric ids depend on which files load, in which order).
+const tileName = id => { for (const k in T) if (T[k] === id) return k; return id; };
+const tileId = v => typeof v === 'number' ? v : (typeof v === 'string' && v in T) ? T[v] : null; // old numeric saves are used as they are; unknown names → null
 // feature files can add tile kinds at load time: const MY = addTile('MY_TILE', { solid: true, tex: 'cobble', mini: '#888', push: false, placeableOn: false });
 function addTile(name, opt = {}) {
   if (name in T) { console.warn('addTile: "' + name + '" already exists; returning the existing id'); return T[name]; }
@@ -593,6 +599,7 @@ let areaBanner = null; // {name, sub, t}
 let dialog = { queue: [], cur: null, shown: 0, t: 0 };
 let notice = null;
 let mapDiffs = new Map();
+const miniDirtyTiles = new Set(); // tile indices changed since the minimap was last painted (changeTile adds; refreshMini repaints only these)
 const blockHp = new Map(); // legacy hits map (dummy etc.)
 let regrow = []; // {i, t, timer}
 let crops = []; // {i, stage, t}
@@ -610,7 +617,12 @@ function spawnMonsters() {
     });
   }
 }
-function say(text, who = 'The Voice') { dialog.queue.push({ text, who }); }
+function say(text, who = 'The Voice') {
+  const last = dialog.queue.length ? dialog.queue[dialog.queue.length - 1] : dialog.cur;
+  if (last && last.text === text) return; // the same line twice in a row is a bug, not a speech
+  if (dialog.queue.length >= 8) return;   // a runaway hook must not queue a minute of talk
+  dialog.queue.push({ text, who });
+}
 function notify(text) { notice = { text, t: 2.8 }; }
 function floatText(x, y, text, color = '#fff', size = 15) { floaters.push({ x, y, text, color, size, t: 1.1, vy: -38 }); }
 function burst(x, y, color, n = 10, speed = 90) {
@@ -622,18 +634,21 @@ function closePanel() { panel = null; panelArg = null; selectedSlot = -1; }
 // ---------- inventory ----------
 function countItem(id) { let n = 0; for (const s of player.inv) if (s && s.id === id) n += s.qty; return n; }
 const coins = () => countItem('coins');
+// returns how many did not fit. Coins never fail: what does not fit is dropped at the knight's feet (picked up as soon as there is room), so callers that ignore the return value cannot lose money.
 function addItem(id, qty = 1) {
   const def = ITEMS[id]; let left = qty;
   for (const s of player.inv) if (s && s.id === id && s.qty < def.stack && left > 0) { const take = Math.min(def.stack - s.qty, left); s.qty += take; left -= take; }
   for (let i = 0; i < player.inv.length && left > 0; i++) if (!player.inv[i]) { const take = Math.min(def.stack, left); player.inv[i] = { id, qty: take }; left -= take; }
+  if (left > 0 && id === 'coins') { drops.push({ x: player.x + rint(-6, 6), y: player.y + rint(-6, 6), id, qty: left, t: 0, warned: true }); notify('Your pack is full. The coins fell at your feet.'); return 0; }
   return left;
 }
+function roomFor(id) { const def = ITEMS[id]; let room = 0; for (const s of player.inv) { if (!s) room += def.stack; else if (s.id === id) room += def.stack - s.qty; } return room; }
 function removeItem(id, qty = 1) {
   let left = qty;
   for (let i = player.inv.length - 1; i >= 0 && left > 0; i--) { const s = player.inv[i]; if (s && s.id === id) { const take = Math.min(s.qty, left); s.qty -= take; left -= take; if (s.qty <= 0) player.inv[i] = null; } }
   return qty - left;
 }
-function canFit(id, qty) { const def = ITEMS[id]; let room = 0; for (const s of player.inv) { if (!s) room += def.stack; else if (s.id === id) room += def.stack - s.qty; } return room >= qty; }
+function canFit(id, qty) { return roomFor(id) >= qty; }
 function giveOrDrop(id, qty, x, y, quiet = false) {
   const left = addItem(id, qty);
   if (left > 0) { drops.push({ x: x + rint(-10, 10), y: y + rint(-10, 10), id, qty: left, t: 0 }); notify('Your pack is full. It fell to the ground.'); }
@@ -724,7 +739,8 @@ function advanceQuest(stage) {
 // ---------- save / load ----------
 function save() {
   try {
-    const data = { player, quest, swordTaken, deathKeep, mapDiffs: [...mapDiffs.entries()], regrow, crops, fires, time, mapW: MAP_W };
+    // tiles go out by NAME (see tileId in 03-textures): numeric ids shift when feature files come and go
+    const data = { player, quest, swordTaken, deathKeep, mapDiffs: [...mapDiffs.entries()].map(([i, t]) => [i, tileName(t)]), regrow: regrow.map(r => ({ ...r, t: tileName(r.t) })), crops, fires: fires.map(f => ({ ...f, under: f.under === undefined ? undefined : tileName(f.under) })), time, mapW: MAP_W };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch (e) { /* storage unavailable: play on without saving */ }
 }
@@ -740,21 +756,35 @@ function load() {
     if (!Array.isArray(player.inv) || player.inv.length !== INV_SLOTS) { const inv = new Array(INV_SLOTS).fill(null); (player.inv || []).forEach((s, i) => { if (i < INV_SLOTS) inv[i] = s; }); player.inv = inv; }
     if (!Array.isArray(player.bank)) player.bank = [];
     quest = Object.assign({ stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }, d.quest || {});
-    swordTaken = !!d.swordTaken; deathKeep = d.deathKeep || null;
+    swordTaken = !!d.swordTaken; deathKeep = d.deathKeep && Array.isArray(d.deathKeep.items) ? d.deathKeep : null;
+    // items that no longer exist (a feature file removed, a renamed id) are dropped rather than crashing every panel that draws them
+    { let dropped = 0; const known = s => s && ITEMS[s.id] ? true : (s ? (dropped++, false) : false);
+      player.inv = player.inv.map(s => known(s) ? s : null);
+      player.bank = player.bank.filter(known);
+      for (const k in player.equip) if (player.equip[k] && !ITEMS[player.equip[k]]) { player.equip[k] = null; dropped++; }
+      if (deathKeep) { deathKeep.items = deathKeep.items.filter(known); if (!deathKeep.items.length) deathKeep = null; }
+      if (dropped) notify(`${dropped} unknown item${dropped > 1 ? 's' : ''} from an older save could not be loaded.`); }
     // saves from a narrower map: tile indices are row-major, so remap them onto the current width
     const oldW = d.mapW || 160; const remap = i => oldW === MAP_W ? i : (i % oldW) + Math.floor(i / oldW) * MAP_W;
-    mapDiffs = new Map((d.mapDiffs || []).map(([i, t]) => [remap(i), t]));
+    // tiles come in by name (or as raw ids from older saves); a name nobody knows any more is skipped
+    mapDiffs = new Map((d.mapDiffs || []).map(([i, t]) => [remap(i), tileId(t)]).filter(([, t]) => t !== null));
     for (const [i, t] of mapDiffs) map[i] = t;
-    regrow = (Array.isArray(d.regrow) ? d.regrow : []).map(r => ({ ...r, i: remap(r.i) })); crops = (Array.isArray(d.crops) ? d.crops : []).map(c => ({ ...c, i: remap(c.i) })); fires = (Array.isArray(d.fires) ? d.fires : []).map(f => ({ ...f, i: remap(f.i) }));
+    regrow = (Array.isArray(d.regrow) ? d.regrow : []).map(r => ({ ...r, i: remap(r.i), t: tileId(r.t) })).filter(r => r.t !== null);
+    crops = (Array.isArray(d.crops) ? d.crops : []).map(c => ({ ...c, i: remap(c.i) }));
+    fires = (Array.isArray(d.fires) ? d.fires : []).map(f => { const u = f.under === undefined ? undefined : tileId(f.under); return { ...f, i: remap(f.i), under: u === null ? undefined : u }; });
     time = typeof d.time === 'number' ? d.time : 0;
     recomputeMaxHp();
+    // a save taken during the death animation (or a corrupted one) must not wake the knight dead, at 0 hp, or inside a wall
+    if (!(player.hp > 0) || d.player.dead) { player.hp = player.maxHp; const sp = respawnPoint(); player.x = sp.x; player.y = sp.y; player.mech = null; player.r = 13; player.speed = 175; }
+    else if (collides(player.x, player.y, player.r, player.mech ? 'beast' : 'player')) { const sp = safeSpot(player.x, player.y, player.r, player.mech ? 'beast' : 'player') || respawnPoint(); player.x = sp.x; player.y = sp.y; }
+    miniDirty = true;
     return true;
   } catch (e) { return false; }
 }
 function newGame() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) { }
   map.fill(0); generateWorld();
-  mapDiffs = new Map(); regrow = []; crops = []; fires = []; blockHp.clear();
+  mapDiffs = new Map(); regrow = []; crops = []; fires = []; blockHp.clear(); miniDirtyTiles.clear(); miniDirty = true;
   player = newPlayer(); quest = { stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }; swordTaken = false; deathKeep = null;
   drops = []; particles = []; floaters = []; projectiles = []; dialog = { queue: [], cur: null, shown: 0, t: 0 };
   for (const n of NPCS) { n.px = n.home.x; n.py = n.home.y; }
@@ -762,7 +792,7 @@ function newGame() {
   time = 0; introT = 0; areaBanner = null; levelBanner = null;
   for (const h of HOOKS.newGame) h();
 }
-function changeTile(tx, ty, t) { setTile(tx, ty, t); mapDiffs.set(idx(tx, ty), t); blockHp.delete(idx(tx, ty)); }
+function changeTile(tx, ty, t) { setTile(tx, ty, t); mapDiffs.set(idx(tx, ty), t); blockHp.delete(idx(tx, ty)); miniDirtyTiles.add(idx(tx, ty)); }
 
 // ---- src/05-input.js ----
 // ============================================================================
@@ -835,12 +865,29 @@ function moveEntity(e, dx, dy, who = 'person') {
   if (dy && !collides(e.x, e.y + dy, e.r, who)) e.y += dy;
   e.x = clamp(e.x, e.r, MAP_W * TILE - e.r); e.y = clamp(e.y, e.r, MAP_H * TILE - e.r);
 }
-const playerWho = () => player.mech ? 'beast' : 'person';
+const playerWho = () => player.mech ? 'beast' : 'player';
+// the given point if it is free, else the nearest free tile centre in an expanding ring (up to 6 tiles); null if nothing is free
+function safeSpot(x, y, r = 13, who = 'person') {
+  if (!collides(x, y, r, who)) return { x, y };
+  const ctx = Math.floor(x / TILE), cty = Math.floor(y / TILE);
+  for (let ring = 0; ring <= 6; ring++) {
+    let best = null;
+    for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+      const tx = ctx + dx, ty = cty + dy; if (!inMap(tx, ty)) continue;
+      const px = tc(tx), py = tc(ty); if (collides(px, py, r, who)) continue;
+      const d = dist(x, y, px, py); if (!best || d < best.d) best = { x: px, y: py, d };
+    }
+    if (best) return { x: best.x, y: best.y };
+  }
+  return null;
+}
 function circleHitsTile(x, y, r, tx, ty) {
   const cx = clamp(x, tx * TILE, tx * TILE + TILE), cy = clamp(y, ty * TILE, ty * TILE + TILE);
   return dist(x, y, cx, cy) < r;
 }
-const INTERESTING = t => [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.PLANK, T.FIRE, T.OVEN, T.SIGN, T.WATER, T.DUMMY, T.GRAVE, T.SOIL, T.CROP, T.ANVIL, T.FORGE, T.WORKBENCH, T.ALCHEMY, T.WORKSHOP, T.CHEST, T.LODESTONE, T.BED, T.WRECK, T.MECH, T.CART, T.AXESTUMP, T.STONECIRCLE, T.GOLDPILE, T.COUNTER, T.THRONE, T.TRAP, T.STUMP, T.RUBBLE].includes(t);
+const INTERESTING_TILES = new Set([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.PLANK, T.FIRE, T.OVEN, T.SIGN, T.WATER, T.DUMMY, T.GRAVE, T.SOIL, T.CROP, T.ANVIL, T.FORGE, T.WORKBENCH, T.ALCHEMY, T.WORKSHOP, T.CHEST, T.LODESTONE, T.BED, T.WRECK, T.MECH, T.CART, T.AXESTUMP, T.STONECIRCLE, T.GOLDPILE, T.COUNTER, T.THRONE, T.TRAP, T.STUMP, T.RUBBLE]);
+const INTERESTING = t => INTERESTING_TILES.has(t);
 function frontTile(e, reach = 36) {
   const own = { tx: Math.floor(e.x / TILE), ty: Math.floor(e.y / TILE) };
   const step = { tx: own.tx + Math.round(e.facing.x), ty: own.ty + Math.round(e.facing.y) };
@@ -873,7 +920,7 @@ function playerMaxHit(ranged = false) {
 }
 function playerAttackRoll(ranged = false) { return ranged ? (skillLv('range') + 8) * (64 + gearBonus('att')) : (skillLv('melee') + 8) * (64 + gearBonus('att') + (player.mech ? 20 : 0)); }
 function playerDefRoll() { return (skillLv('defence') + 8) * (64 + gearBonus('def') + (player.mech ? 30 : 0)); }
-function rollHit(attRoll, defRoll, maxHit) { return Math.random() < accuracy(attRoll, defRoll) ? rint(1, maxHit) : 0; }
+function rollHit(attRoll, defRoll, maxHit) { if (!(maxHit > 0)) return 0; return Math.random() < accuracy(attRoll, defRoll) ? rint(1, maxHit) : 0; }
 function recordHit(dmg) { if (dmg > player.highestHit) { player.highestHit = dmg; if (dmg > 1) floatText(player.x, player.y - 44, `New highest hit: ${dmg}!`, '#ffd166', 13); } }
 const bloodColor = type => ({ goblin: '#7ac943', sapper: '#7ac943', brute: '#5a9a33', boar: '#b5651d', spider: '#5a5a6a', sheep: '#f2f2ec', cow: '#8b5a3a', wolf: '#7a7068', walker: '#8f96a3' })[type] || '#c0504d';
 
@@ -919,7 +966,8 @@ function explode(x, y, radius, dmgMin, dmgMax, owner) {
   if (owner === 'player') { for (const m of monsters) if (!m.dead && dist(m.x, m.y, x, y) < radius + m.r) hitMonster(m, rint(dmgMin, dmgMax), 30, true); }
   else if (dist(player.x, player.y, x, y) < radius + player.r) hurtPlayer(rint(dmgMin, dmgMax), x, y, true);
 }
-function hitMonster(m, dmg, knock = 14, fromBomb = false) {
+// source: 'player' (XP, highest hit, offences) or 'companion' (none of those; HOOKS.hit receives it as the third argument)
+function hitMonster(m, dmg, knock = 14, fromBomb = false, source = 'player') {
   const def = MONSTER_DEFS[m.type];
   m.hurtT = 0.18; m.angry = true; if (!def.harmless) m.state = 'chase';
   const kx = (m.x - player.x), ky = (m.y - player.y), kd = Math.hypot(kx, ky) || 1;
@@ -928,9 +976,9 @@ function hitMonster(m, dmg, knock = 14, fromBomb = false) {
   m.hp -= dmg; sfx('hit');
   floatText(m.x, m.y - m.r - 6, `-${dmg}`, '#ffd166');
   burst(m.x, m.y, bloodColor(m.type), 6, 70);
-  recordHit(dmg);
-  for (const h of HOOKS.hit) h(m, dmg);
-  if (!fromBomb) gainXp(weaponDef() && weaponDef().weapon.ranged && !player.mech ? 'range' : 'melee', dmg * 4);
+  if (source === 'player') recordHit(dmg);
+  for (const h of HOOKS.hit) h(m, dmg, source);
+  if (!fromBomb && source === 'player') gainXp(weaponDef() && weaponDef().weapon.ranged && !player.mech ? 'range' : 'melee', dmg * 4);
   if (m.hp <= 0) killMonster(m);
 }
 function rollDrops(def, x, y) {
@@ -964,15 +1012,18 @@ function hurtPlayer(dmg, fromX, fromY, sure = false) {
   for (const h of HOOKS.hurt) h(dmg, fromX, fromY);
   if (player.hp <= 0) die();
 }
-function respawnPoint() { return player.bedSpawn || (player.visitedVillage ? VILLAGE_SPAWN : SPAWN); }
+// bedSpawn is the bed's own tile; the knight wakes on the nearest free tile next to it (a bed against a wall must not put him in the wall)
+function respawnPoint() { const p = player.bedSpawn || (player.visitedVillage ? VILLAGE_SPAWN : SPAWN); return safeSpot(p.x, p.y, 13, 'person') || safeSpot(VILLAGE_SPAWN.x, VILLAGE_SPAWN.y, 13, 'person') || SPAWN; }
 function die() {
   player.hp = 0; player.dead = true; player.deadT = 0; player.deaths += 1; closePanel(); player.action = null; sfx('death');
   if (player.mech) { player.mech = null; }
   const items = player.inv.filter(Boolean);
   const lostPrevious = deathKeep && deathKeep.items.length > 0;
-  deathKeep = items.length ? { items } : null;
+  // an empty pack does not replace the chest: what Death holds from last time stays where it is
+  if (items.length) deathKeep = { items };
   player.inv = new Array(INV_SLOTS).fill(null);
-  if (deathKeep) say(lostPrevious ? "You fell again. What Death held before is his now. What you carried, he keeps in his chest. Find his house." : "You fell. Death has your pack in his chest. His house has a coffin for a door. One stands by the cave, one in Thistledown.", 'The Voice');
+  if (items.length) say(lostPrevious ? "You fell again. What Death held before is his now. What you carried, he keeps in his chest. Find his house." : "You fell. Death has your pack in his chest. His house has a coffin for a door. One stands by the cave, one in Thistledown.", 'The Voice');
+  else if (lostPrevious) say('You fell with empty hands. Death still keeps what he had. Get up, knight.', 'The Voice');
   else say('You fell. Get up, knight.', 'The Voice');
 }
 
@@ -1063,18 +1114,31 @@ function harvest(tx, ty) {
   const n = rint(2, 4); giveOrDrop('potato', n, player.x, player.y); gainXp('farming', 15 * n); burst(tc(tx), tc(ty), '#c9a66b', 10, 60); save();
 }
 // ---------- crafting and stations ----------
+// smithing and smelting are timed: materials stay in the pack until the hammer falls (finishCraft), so a cancelled swing (moving, a hit, closing the panel) costs nothing
 function craft(recipe) {
+  if (player.action && (player.action.type === 'smith' || player.action.type === 'smelt')) { notify('Still working. Wait for the hammer.'); return false; }
   if (recipe.skill && skillLv(recipe.skill) < recipe.lv) { notify(`Needs ${SKILL_DEFS.find(s => s.key === recipe.skill).name} ${recipe.lv}.`); return false; }
   for (const [id, q] of recipe.needs) if (countItem(id) < q) { notify(`Need ${q} ${ITEMS[id].name}.`); return false; }
   if (recipe.station === 'anvil' && !hasTool('hammer')) { notify('You need a hammer (Marta or Brakka sells one).'); return false; }
-  for (const [id, q] of recipe.needs) removeItem(id, q);
-  if (!canFit(recipe.out, recipe.qty)) { for (const [id, q] of recipe.needs) addItem(id, q); notify('Your pack is full.'); return false; }
+  if (!craftFits(recipe)) { notify('Your pack is full.'); return false; }
   if (recipe.station === 'anvil' || recipe.station === 'forge') { player.action = { type: recipe.station === 'anvil' ? 'smith' : 'smelt', t: 0, need: recipe.station === 'anvil' ? 1.8 : 1.5, recipe }; return true; }
-  finishCraft(recipe); return true;
+  return finishCraft(recipe);
+}
+// does the product fit once the materials are gone? (a 1-bar dagger fits in the bar's own slot)
+function craftFits(recipe) {
+  const inv0 = player.inv.map(s => s ? { ...s } : null);
+  for (const [id, q] of recipe.needs) removeItem(id, q);
+  const ok = canFit(recipe.out, recipe.qty);
+  for (let i = 0; i < inv0.length; i++) player.inv[i] = inv0[i];
+  return ok;
 }
 function finishCraft(recipe) {
+  for (const [id, q] of recipe.needs) if (countItem(id) < q) { notify(`Need ${q} ${ITEMS[id].name}.`); return false; }
+  if (!craftFits(recipe)) { notify('Your pack is full.'); return false; }
+  for (const [id, q] of recipe.needs) removeItem(id, q);
   addItem(recipe.out, recipe.qty); if (recipe.skill) gainXp(recipe.skill, recipe.xp); sfx(recipe.station === 'anvil' ? 'anvil' : 'craft');
   floatText(player.x, player.y - 30, `+${recipe.qty} ${ITEMS[recipe.out].name}`, ITEMS[recipe.out].color); burst(player.x + player.facing.x * 30, player.y + player.facing.y * 30, '#ffd166', 8, 60); save();
+  return true;
 }
 function placeAction(id) {
   if (player.dead || player.mech) return;
@@ -1092,12 +1156,12 @@ function placeAction(id) {
   changeTile(tx, ty, t2);
   for (let k = 0; k < 12 && circleHitsTile(player.x, player.y, player.r + 1, tx, ty) && SOLID.has(t2); k++) {
     const nx = player.x - player.facing.x * 2.5, ny = player.y - player.facing.y * 2.5;
-    if (collides(nx, ny, player.r)) break;
+    if (collides(nx, ny, player.r, 'player')) break;
     player.x = nx; player.y = ny;
   }
   if (SOLID.has(t2) && circleHitsTile(player.x, player.y, player.r + 1, tx, ty)) { changeTile(tx, ty, t); player.x = ox; player.y = oy; notify('No room. Step back a little.'); return; }
   removeItem(id, 1); burst(tc(tx), tc(ty), '#c8a06a', 8, 50);
-  if (t2 === T.LODESTONE) { player.home = { x: tc(tx), y: tc(ty) + TILE }; notify('Lodestone placed. This is home now. Press H to return (5 minute cooldown).'); }
+  if (t2 === T.LODESTONE) { player.home = safeSpot(tc(tx), tc(ty) + TILE, 13, 'person') || { x: tc(tx), y: tc(ty) + TILE }; notify('Lodestone placed. This is home now. Press H to return (5 minute cooldown).'); }
   save();
 }
 function useItem(slot) {
@@ -1146,8 +1210,8 @@ function useAction() {
   if (t === T.WORKBENCH) { openPanel('station', 'workbench'); return; }
   if (t === T.WORKSHOP) { openPanel('station', 'workshop'); return; }
   if (t === T.ALCHEMY) { openPanel('station', 'alchemy'); return; }
-  if (t === T.LODESTONE) { player.home = { x: tc(tx), y: tc(ty) + TILE }; notify('Home set here. Press H to return (5 minute cooldown).'); save(); return; }
-  if (t === T.BED) { const near = nearestTileOfType(tx, ty, T.LODESTONE, 6); if (b && b.id !== undefined && !player.home) { /* inn / house beds */ } if (near || (b && b.id === 'inn' && player.innRested)) { player.bedSpawn = { x: tc(tx), y: tc(ty) + TILE }; player.hp = player.maxHp; say(near ? 'You sleep. The lodestone hums. You will wake here if you fall.' : 'You sleep well. You will wake here if you fall.', 'The Voice'); save(); } else notify(b && b.id === 'inn' ? 'Pay Dorran for the room first.' : 'A bed needs a lodestone within a few tiles to hold your spirit. Craft one at a workbench.'); return; }
+  if (t === T.LODESTONE) { player.home = safeSpot(tc(tx), tc(ty) + TILE, 13, 'person') || { x: tc(tx), y: tc(ty) + TILE }; notify('Home set here. Press H to return (5 minute cooldown).'); save(); return; }
+  if (t === T.BED) { const near = nearestTileOfType(tx, ty, T.LODESTONE, 6); if (b && b.id !== undefined && !player.home) { /* inn / house beds */ } if (near || (b && b.id === 'inn' && player.innRested)) { player.bedSpawn = { x: tc(tx), y: tc(ty) }; player.hp = player.maxHp; say(near ? 'You sleep. The lodestone hums. You will wake here if you fall.' : 'You sleep well. You will wake here if you fall.', 'The Voice'); save(); } else notify(b && b.id === 'inn' ? 'Pay Dorran for the room first.' : 'A bed needs a lodestone within a few tiles to hold your spirit. Craft one at a workbench.'); return; }
   if (t === T.WRECK) { repairMech(tx, ty); return; }
   if (t === T.MECH) { enterMech(tx, ty); return; }
   if (t === T.TRAP) { changeTile(tx, ty, T.GRASS); giveOrDrop('goblin_trap', 1, player.x, player.y); return; }
@@ -1172,7 +1236,9 @@ function goHome() {
   const left = HOME_COOLDOWN - (time - player.homeCd);
   if (left > 0) { notify(`The lodestone is still cold. ${Math.ceil(left)}s.`); return; }
   if (player.mech) { notify('Climb out of the walker first.'); return; }
-  burst(player.x, player.y, '#7ec8ff', 30, 160); player.x = player.home.x; player.y = player.home.y; player.homeCd = time; player.action = null;
+  const spot = safeSpot(player.home.x, player.home.y, 13, 'player'); // a plank placed under the lodestone later must not make H a trap
+  if (!spot) { notify('Home is buried. Clear the ground around the lodestone.'); return; }
+  burst(player.x, player.y, '#7ec8ff', 30, 160); player.x = spot.x; player.y = spot.y; player.homeCd = time; player.action = null;
   burst(player.x, player.y, '#7ec8ff', 30, 160); notify('Home.'); save();
 }
 // ---------- the goblin walker ----------
@@ -1185,26 +1251,35 @@ function enterMech(tx, ty) {
   changeTile(tx, ty, T.DIRT); player.mech = { hp: 130, maxHp: 130 }; player.x = tc(tx); player.y = tc(ty); player.r = 20; player.speed = 115; player.action = null;
   notify('You are in the walker. Space stomps (knockback). X climbs out. Doors are too small for it.'); save();
 }
+// the pilot never lands inside a tree or a wall: the walker is parked, then the knight takes the nearest free spot; no free spot = no climbing out
 function exitMech() {
   if (!player.mech) return;
   const { tx, ty } = frontTile(player, 44); const t = tileAt(tx, ty);
   const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) };
   const spot = PLACEABLE_ON.has(t) && !(tx === own.tx && ty === own.ty) ? { tx, ty } : own;
-  const hp = player.mech.hp; player.mech = null; player.r = 13; player.speed = 175;
-  changeTile(spot.tx, spot.ty, T.MECH); player.mechHp = hp;
-  if (spot.tx === own.tx && spot.ty === own.ty) { player.x -= player.facing.x * TILE; player.y -= player.facing.y * TILE; }
+  const onOwn = spot.tx === own.tx && spot.ty === own.ty, prev = tileAt(spot.tx, spot.ty), mech = player.mech;
+  changeTile(spot.tx, spot.ty, T.MECH);
+  const want = onOwn ? { x: player.x - player.facing.x * TILE, y: player.y - player.facing.y * TILE } : { x: player.x, y: player.y };
+  const free = safeSpot(want.x, want.y, 13, 'player');
+  if (!free) { changeTile(spot.tx, spot.ty, prev); notify('No room to climb out here. Drive somewhere open.'); return; }
+  player.mech = null; player.r = 13; player.speed = 175; player.mechHp = mech.hp;
+  player.x = free.x; player.y = free.y;
   notify('You climb out. The walker waits.'); save();
 }
 function wreckMech() {
   const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) };
   player.mech = null; player.r = 13; player.speed = 175;
-  if (PLACEABLE_ON.has(tileAt(own.tx, own.ty))) changeTile(own.tx, own.ty, T.WRECK);
-  player.x -= player.facing.x * TILE; player.y -= player.facing.y * TILE;
+  const prev = tileAt(own.tx, own.ty), placeable = PLACEABLE_ON.has(prev);
+  if (placeable) changeTile(own.tx, own.ty, T.WRECK);
+  let free = safeSpot(player.x - player.facing.x * TILE, player.y - player.facing.y * TILE, 13, 'player');
+  if (!free && placeable) { changeTile(own.tx, own.ty, prev); free = safeSpot(player.x, player.y, 13, 'player'); } // no room for both: the wreck is lost, the knight is not
+  if (free) { player.x = free.x; player.y = free.y; }
   burst(player.x, player.y, '#ff8a1a', 30, 160); say('The walker gives out under you. It can be repaired again: iron bars and scrap.', 'The Voice');
 }
 // ---------- talking ----------
 function talkTo(n) {
   { const dx = n.px - player.x, dy = n.py - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
+  if (HOOKS.talkBefore[n.role] && HOOKS.talkBefore[n.role](n)) return; // a feature file may take over a core role for some stages
   if (n.role === 'shop') { const lines = { general: "Rods, axes, bread, a bit of everything. What do you need, knight?", bakery: "Fresh from the oven. Bread is 8. The pie is worth every coin.", seeds: "Potato seed, two coins. A hoe if you haven't one. Till, plant, wait, eat.", smith: "Bring me a hammer and iron bars and I'll show you the anvil. Ore goes in the forge first." }; say(lines[n.shop] || 'Buying or selling?', n.name); openPanel('shop', n.shop); }
   else if (n.role === 'trader') { say("Pelts, tusks, wool, silk, goblin scrap. I pay full price, no haggling.", n.name); openPanel('shop', 'trader'); }
   else if (n.role === 'bank') { say("Your pack is small and the world is big. Leave what you like with me. It will be here.", n.name); openPanel('bank'); }
@@ -1240,17 +1315,27 @@ function coffinFee() {
   let fee = 0; for (const s of deathKeep.items) { if (s.id === 'coins') continue; const v = ITEMS[s.id].value * s.qty; if (v >= 20) fee += Math.ceil(v * 0.25); }
   return fee;
 }
+// the fee is charged per item, only for what actually fits in the pack; what stays in the chest keeps its fee for next time (no double charge)
+const itemFee = (id, qty) => { if (id === 'coins') return 0; const v = ITEMS[id].value * qty; return v >= 20 ? Math.ceil(v * 0.25) : 0; };
 function reclaimFromDeath() {
-  let fee = coffinFee();
+  if (!deathKeep) return;
   // Death takes his share from the coins he already holds, then from your pack
-  const held = deathKeep.items.find(s => s.id === 'coins');
-  if (held) { const take = Math.min(held.qty, fee); held.qty -= take; fee -= take; if (held.qty <= 0) deathKeep.items = deathKeep.items.filter(s => s !== held); }
-  if (fee > 0 && coins() < fee) { notify(`Death wants ${fee} more coins. You have ${coins()}.`); return; }
-  if (fee > 0) payCoins(fee);
-  const left = [];
-  for (const s of deathKeep.items) { const rest = addItem(s.id, s.qty); if (rest > 0) left.push({ id: s.id, qty: rest }); }
+  const held = deathKeep.items.find(s => s.id === 'coins'); let purse = held ? held.qty : 0;
+  const left = []; let took = 0, short = 0;
+  for (const s of deathKeep.items) {
+    if (s.id === 'coins') continue;
+    const can = Math.min(s.qty, roomFor(s.id));
+    const fee = itemFee(s.id, can);
+    if (can <= 0) { left.push({ id: s.id, qty: s.qty }); continue; }
+    if (fee > purse + coins()) { left.push({ id: s.id, qty: s.qty }); short = Math.max(short, fee - purse - coins()); continue; }
+    const fromPurse = Math.min(purse, fee); purse -= fromPurse; if (fee - fromPurse > 0) payCoins(fee - fromPurse);
+    addItem(s.id, can); took += can;
+    if (can < s.qty) left.push({ id: s.id, qty: s.qty - can });
+  }
+  if (purse > 0) { addItem('coins', purse); took += purse; } // never fails: coins that do not fit land at your feet
   deathKeep = left.length ? { items: left } : null;
-  say(left.length ? "Your pack is full. I will keep the rest. For now." : "Take them. We will meet again. Everyone does.", 'Death');
+  if (!took && short > 0) { notify(`Death wants ${short} more coins. You have ${coins()}.`); return; }
+  say(left.length ? (short > 0 ? "Coin first, knight. I keep the rest until you have it." : "Your pack is full. I will keep the rest. For now.") : "Take them. We will meet again. Everyone does.", 'Death');
   if (!deathKeep) closePanel();
   save();
 }
@@ -1259,8 +1344,9 @@ function reclaimFromDeath() {
 // ============================================================================
 // UPDATE LOOP
 // ============================================================================
+const REGROW_FROM = new Set([T.STUMP, T.RUBBLE, T.ASHES, T.GRASS, T.DIRT]); // a regrow only fires onto bare ground or its own intermediate tile: a door placed on ashes stays a door
 function update(dt) {
-  time += dt;
+  time += dt; HUD.leftY = 82;
   if (pressed.has('Escape')) { if (panel) closePanel(); else paused = !paused; }
   if (!paused) {
     const toggle = name => panel === name ? closePanel() : openPanel(name);
@@ -1287,7 +1373,14 @@ function update(dt) {
 
   // world timers: regrowth, crops, fires
   let dirty = false;
-  for (const r of regrow) { r.timer -= dt; if (r.timer <= 0) { const tx = r.i % MAP_W, ty = Math.floor(r.i / MAP_W); if (dist(player.x, player.y, tc(tx), tc(ty)) > 2.5 * TILE) { changeTile(tx, ty, r.t); r.done = true; dirty = true; } else r.timer = 5; } }
+  for (const r of regrow) {
+    r.timer -= dt; if (r.timer > 0) continue;
+    const tx = r.i % MAP_W, ty = Math.floor(r.i / MAP_W);
+    if (!REGROW_FROM.has(tileAt(tx, ty))) { r.done = true; dirty = true; continue; } // something was built there since: the world moved on
+    const occupied = circleHitsTile(player.x, player.y, player.r + 2, tx, ty) || monsters.some(m => !m.dead && circleHitsTile(m.x, m.y, m.r + 2, tx, ty)) || NPCS.some(n => circleHitsTile(n.px, n.py, 14, tx, ty));
+    if (occupied || dist(player.x, player.y, tc(tx), tc(ty)) <= 2.5 * TILE) { r.timer = 5; continue; } // nobody gets a tree grown through them
+    changeTile(tx, ty, r.t); r.done = true; dirty = true;
+  }
   if (dirty) regrow = regrow.filter(r => !r.done);
   for (const c of crops) { c.t += dt; if (c.stage < 3 && c.t > 40) { c.t = 0; c.stage += 1; } }
   for (const f of fires) { f.timer -= dt; if (f.timer <= 0 && !f.done) { const tx = f.i % MAP_W, ty = Math.floor(f.i / MAP_W); if (tileAt(tx, ty) === T.FIRE) changeTile(tx, ty, T.ASHES); regrow.push({ i: f.i, t: f.under === T.FLOOR ? T.DIRT : (f.under ?? T.DIRT), timer: 30 }); f.done = true; } }
@@ -1343,7 +1436,10 @@ function update(dt) {
     for (const d of drops) {
       d.t += dt;
       if (dist(d.x, d.y, player.x, player.y) < player.r + 12) {
-        const left = addItem(d.id, d.qty);
+        // coins never fail in addItem (the rest lands at your feet), so only ask for what fits here or the pile would be re-dropped every frame
+        const take = d.id === 'coins' ? Math.min(d.qty, roomFor('coins')) : d.qty;
+        if (take <= 0) { if (!d.warned) { notify('Your pack is full.'); d.warned = true; } continue; }
+        const left = addItem(d.id, take) + (d.qty - take);
         if (left < d.qty) { floatText(player.x, player.y - 30, `+${d.qty - left} ${ITEMS[d.id].name}`, ITEMS[d.id].color); sfx(d.id === 'coins' ? 'coins' : 'pickup'); }
         if (left > 0) { d.qty = left; if (!d.warned) { notify('Your pack is full.'); d.warned = true; } } else d.taken = true;
       }
@@ -1355,7 +1451,15 @@ function update(dt) {
   const cb = combatLevel();
   for (const m of monsters) {
     const def = MONSTER_DEFS[m.type];
-    if (m.dead) { m.deadT += dt; m.respawnT -= dt; if (m.respawnT <= 0 && dist(player.x, player.y, m.home.x, m.home.y) > 4 * TILE) { m.dead = false; m.hp = m.maxHp; m.x = m.home.x; m.y = m.home.y; m.angry = def.aggro; m.state = 'idle'; burst(m.x, m.y, 'rgba(255,255,255,0.6)', 10, 60); } continue; }
+    if (m.dead) {
+      m.deadT += dt; m.respawnT -= dt;
+      if (m.respawnT <= 0 && dist(player.x, player.y, m.home.x, m.home.y) > 4 * TILE) {
+        const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast'); // a wreck, a plank or a regrown tree on the home tile must not embed the monster
+        if (!sp) { m.respawnT = 5; continue; }
+        m.dead = false; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.angry = def.aggro; m.state = 'idle'; burst(m.x, m.y, 'rgba(255,255,255,0.6)', 10, 60);
+      }
+      continue;
+    }
     m.attackCd = Math.max(0, m.attackCd - dt); m.hurtT = Math.max(0, m.hurtT - dt); m.stunT = Math.max(0, (m.stunT || 0) - dt);
     // traps
     { const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); if (tileAt(tx, ty) === T.TRAP && !def.human) { changeTile(tx, ty, T.GRASS); m.hp -= 12; m.stunT = 2; m.hurtT = 0.3; floatText(m.x, m.y - m.r - 6, '-12 trap', '#ffd166'); burst(m.x, m.y, '#8f96a3', 12, 90); if (m.hp <= 0) { killMonster(m); continue; } } }
@@ -1397,6 +1501,7 @@ function update(dt) {
       m.walkT += dt * 8;
     }
     m.attackT = Math.max(0, (m.attackT || 0) - dt);
+    if (dp > VW) continue; // pairwise separation only matters on screen: 170 monsters squared every frame is not
     for (const o of monsters) { if (o === m || o.dead) continue; const d = dist(m.x, m.y, o.x, o.y); if (d < m.r + o.r && d > 0) moveEntity(m, (m.x - o.x) / d * 1.5, (m.y - o.y) / d * 1.5, 'beast'); }
   }
 
@@ -1421,11 +1526,11 @@ function update(dt) {
     if (p.kind === 'sticky' && p.t >= p.life) { p.vx = p.vy = 0; if (p.t >= p.life + p.fuse) { explode(p.x, p.y, 56, 3, 8, 'monster'); p.done = true; } continue; }
     p.x += p.vx * dt; p.y += p.vy * dt;
     const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
-    if (SOLID.has(tileAt(tx, ty)) && tileAt(tx, ty) !== T.WATER) { if (p.kind === 'bomb') explode(p.x, p.y, 64, 6, 14, 'player'); else if (p.kind === 'arrow' && Math.random() < 0.5) drops.push({ x: p.x - p.vx * 0.02, y: p.y - p.vy * 0.02, id: p.str > 5 ? 'iron_arrow' : 'stone_arrow', qty: 1, t: 0 }); p.done = true; continue; }
+    if (SOLID.has(tileAt(tx, ty)) && tileAt(tx, ty) !== T.WATER) { if (p.kind === 'bomb') explode(p.x, p.y, 64, 6, 14, 'player'); else if (p.kind === 'arrow' && p.owner === 'player' && Math.random() < 0.5) drops.push({ x: p.x - p.vx * 0.02, y: p.y - p.vy * 0.02, id: p.str > 5 ? 'iron_arrow' : 'stone_arrow', qty: 1, t: 0 }); p.done = true; continue; }
     if (p.kind === 'bomb') { for (const m of monsters) { if (!m.dead && dist(p.x, p.y, m.x, m.y) < m.r + 6) { explode(p.x, p.y, 64, 6, 14, 'player'); p.done = true; break; } } if (p.done) continue; }
-    if (p.kind === 'arrow') { for (const m of monsters) { if (m.dead) continue; if (dist(p.x, p.y, m.x, m.y) < m.r + 7 || dist(p.x - p.vx * dt * 0.5, p.y - p.vy * dt * 0.5, m.x, m.y) < m.r + 7) { const dmg = rollHit(playerAttackRoll(true), (MONSTER_DEFS[m.type].def + 8) * 64, playerMaxHit(true)); hitMonster(m, dmg, 8); p.done = true; break; } } }
+    if (p.kind === 'arrow' && p.owner === 'player') { for (const m of monsters) { if (m.dead) continue; if (dist(p.x, p.y, m.x, m.y) < m.r + 7 || dist(p.x - p.vx * dt * 0.5, p.y - p.vy * dt * 0.5, m.x, m.y) < m.r + 7) { const dmg = rollHit(playerAttackRoll(true), (MONSTER_DEFS[m.type].def + 8) * 64, playerMaxHit(true)); hitMonster(m, dmg, 8); p.done = true; break; } } }
     if (p.kind === 'bomb' && p.t >= p.life) { explode(p.x, p.y, 64, 6, 14, 'player'); p.done = true; }
-    if (p.kind === 'arrow' && p.t >= p.life) { if (Math.random() < 0.5) drops.push({ x: p.x, y: p.y, id: p.str > 5 ? 'iron_arrow' : 'stone_arrow', qty: 1, t: 0 }); p.done = true; }
+    if (p.kind === 'arrow' && p.t >= p.life) { if (p.owner === 'player' && Math.random() < 0.5) drops.push({ x: p.x, y: p.y, id: p.str > 5 ? 'iron_arrow' : 'stone_arrow', qty: 1, t: 0 }); p.done = true; }
   }
   projectiles = projectiles.filter(p => !p.done);
 
@@ -1781,16 +1886,23 @@ function drawDrop(g, d) {
 // RENDER: world, lighting, minimap
 // ============================================================================
 const cam = { x: 0, y: 0 };
+const RENDER_FURNITURE = new Set([T.COUNTER, T.TABLE, T.BED, T.SHELF, T.ANVIL, T.FORGE, T.OVEN, T.WORKBENCH, T.WORKSHOP, T.ALCHEMY, T.THRONE, T.CHEST, T.GOLDPILE, T.STALL, T.LODESTONE, T.WRECK, T.MECH, T.CART, T.AXESTUMP, T.STONECIRCLE]); // hoisted: was an array literal built every tile every frame
 const darkLayer = document.createElement('canvas');
-// minimap: one pixel per tile, refreshed when tiles change
+// minimap: one pixel per tile. Painted in full once (boot, new game, load, or when a feature sets miniDirty); after that only the tiles
+// changeTile touched (miniDirtyTiles) are repainted, so a chopped tree costs one pixel and not a 28,000-cell sweep.
 const miniCanvas = document.createElement('canvas'); miniCanvas.width = MAP_W; miniCanvas.height = MAP_H;
 let miniDirty = true, miniDiffCount = -1;
 function refreshMini() {
   const g = miniCanvas.getContext('2d');
-  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { g.fillStyle = MINI[map[idx(x, y)]] || '#4c9134'; g.fillRect(x, y, 1, 1); }
-  for (const b of BUILDINGS) { g.fillStyle = b.roof; g.fillRect(b.x, b.y, b.w, b.h); }
-  miniDirty = false; miniDiffCount = mapDiffs.size;
+  if (miniDirty) {
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { g.fillStyle = MINI[map[idx(x, y)]] || '#4c9134'; g.fillRect(x, y, 1, 1); }
+    for (const b of BUILDINGS) { g.fillStyle = b.roof; g.fillRect(b.x, b.y, b.w, b.h); }
+  } else {
+    for (const i of miniDirtyTiles) { const x = i % MAP_W, y = Math.floor(i / MAP_W); const b = buildingAt(x, y); g.fillStyle = b ? b.roof : (MINI[map[i]] || '#4c9134'); g.fillRect(x, y, 1, 1); }
+  }
+  miniDirtyTiles.clear(); miniDirty = false; miniDiffCount = mapDiffs.size;
 }
+const miniNeedsPaint = () => miniDirty || miniDirtyTiles.size > 0;
 function render() {
   if (window.innerWidth !== VW || window.innerHeight !== VH) resize();
   const g = ctx;
@@ -1825,11 +1937,12 @@ function render() {
   for (const d of drops) if (d.x > cam.x - 40 && d.x < cam.x + VW + 40 && d.y > cam.y - 40 && d.y < cam.y + VH + 40) drawDrop(g, d);
   if (!swordTaken) drawSword(g);
   const items = [];
+  const FURNITURE = RENDER_FURNITURE;
   const PROPS = { [T.TREE]: (tx, ty) => drawTreeProp(g, tx, ty, false), [T.OAK]: (tx, ty) => drawTreeProp(g, tx, ty, true), [T.ROCK]: (tx, ty) => drawRockProp(g, tx, ty, 'stone'), [T.IRON]: (tx, ty) => drawRockProp(g, tx, ty, 'iron'), [T.COAL]: (tx, ty) => drawRockProp(g, tx, ty, 'coal'), [T.SIGN]: (tx, ty) => drawSignProp(g, tx, ty), [T.FIRE]: (tx, ty) => drawFireProp(g, tx, ty), [T.DUMMY]: (tx, ty) => drawDummyProp(g, tx, ty), [T.GRAVE]: (tx, ty) => drawGraveProp(g, tx, ty) };
   for (let ty = y0; ty <= y1 + 2; ty++) for (let tx = x0; tx <= x1; tx++) {
     const t = tileAt(tx, ty);
     if (PROPS[t]) items.push({ y: ty * TILE + TILE - 4, draw: () => PROPS[t](tx, ty) });
-    else if ([T.COUNTER, T.TABLE, T.BED, T.SHELF, T.ANVIL, T.FORGE, T.OVEN, T.WORKBENCH, T.WORKSHOP, T.ALCHEMY, T.THRONE, T.CHEST, T.GOLDPILE, T.STALL, T.LODESTONE, T.WRECK, T.MECH, T.CART, T.AXESTUMP, T.STONECIRCLE].includes(t)) items.push({ y: ty * TILE + TILE - 6, draw: () => drawFurniture(g, tx, ty, t) });
+    else if (FURNITURE.has(t)) items.push({ y: ty * TILE + TILE - 6, draw: () => drawFurniture(g, tx, ty, t) });
   }
   // castle towers
   for (const [cx, cy] of [[CASTLE.x, CASTLE.y], [CASTLE.x + CASTLE.w - 1, CASTLE.y], [CASTLE.x, CASTLE.y + CASTLE.h - 1], [CASTLE.x + CASTLE.w - 1, CASTLE.y + CASTLE.h - 1]]) if (cx >= x0 - 1 && cx <= x1 + 1 && cy >= y0 - 2 && cy <= y1 + 2) items.push({ y: cy * TILE + TILE, draw: () => drawTower(g, tc(cx), tc(cy)) });
@@ -1880,7 +1993,7 @@ function render() {
   drawHud(g);
 }
 function drawMinimap(g, x, y, size) {
-  if (miniDirty || miniDiffCount !== mapDiffs.size) refreshMini();
+  if (miniNeedsPaint()) refreshMini();
   const tilesAcross = 44, scale = size / tilesAcross;
   const cx = player.x / TILE, cy = player.y / TILE;
   const sx = clamp(cx - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(cy - tilesAcross / 2, 0, MAP_H - tilesAcross);
@@ -2336,6 +2449,61 @@ window.FANGLANDS = {
     // ---------- save / load ----------
     save(); const snap = JSON.stringify({ q: quest, inv: player.inv, eq: player.equip, bank: player.bank, hh: player.highestHit, diffs: mapDiffs.size, home: player.home, crops: crops.length });
     { const lv = skillLv('melee'); player = newPlayer(); quest = { stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }; const ok = load(); check('save/load round-trip', ok && skillLv('melee') === lv && JSON.stringify({ q: quest, inv: player.inv, eq: player.equip, bank: player.bank, hh: player.highestHit, diffs: mapDiffs.size, home: player.home, crops: crops.length }) === snap, { loaded: ok }); }
+    // ---------- core fix pass (audit 2026-09-07): safe spots, smithing refunds, load safety, coins, regrow, tile-name saves ----------
+    peace(true);
+    const invSnap = () => player.inv.map(s => s ? { ...s } : null);
+    { // a bed against a wall: you wake beside it, never inside the wall
+      const o = openSpot(30, 30); const bx = o.x, by = o.y; const t0 = tileAt(bx, by), t1 = tileAt(bx, by + 1), t2 = tileAt(bx, by - 1);
+      changeTile(bx, by, T.BED); changeTile(bx, by + 1, T.WALL); changeTile(bx, by - 1, T.WALL);
+      player.bedSpawn = { x: tc(bx), y: tc(by) }; const p = respawnPoint();
+      const inv0 = invSnap(), dk0 = deathKeep; deathKeep = null;
+      hurtPlayer(player.hp + 999, player.x + 10, player.y, true); F.sim(200, []);
+      check('safeSpot: a bed against a wall respawns you on the nearest free tile', !collides(p.x, p.y, 13, 'person') && dist(p.x, p.y, tc(bx), tc(by)) <= 1.5 * TILE && !player.dead && !collides(player.x, player.y, 13, 'person') && dist(player.x, player.y, tc(bx), tc(by)) <= 1.5 * TILE, { bed: [bx, by], p: [p.x / TILE - 0.5, p.y / TILE - 0.5], at: [+(player.x / TILE).toFixed(1), +(player.y / TILE).toFixed(1)] });
+      player.inv = inv0; deathKeep = dk0; player.bedSpawn = null; changeTile(bx, by, t0); changeTile(bx, by + 1, t1); changeTile(bx, by - 1, t2); }
+    { // smithing: a second tap is refused, cancelling refunds (the bar never left), the bar goes when the dagger lands
+      const inv0 = invSnap(); const rec = RECIPES.find(r => r.out === 'iron_dagger');
+      player.inv = player.inv.map(s => s && (s.id === 'iron_bar' || s.id === 'iron_dagger') ? null : s); if (!hasTool('hammer')) give('hammer', 1); give('iron_bar', 1);
+      const c1 = craft(rec), c2 = craft(rec); const pending = !!player.action && player.action.type === 'smith'; const barsAfterTwo = countItem('iron_bar');
+      F.sim(5, ['KeyA']); const cancelled = !player.action, barsAfterCancel = countItem('iron_bar');
+      const c3 = craft(rec); const r = F.untilAction(200, () => countItem('iron_dagger') >= 1);
+      check('smithing: double-tap refused, cancelled swing keeps the bar, bar spent only when the dagger lands', c1 && !c2 && pending && barsAfterTwo === 1 && cancelled && barsAfterCancel === 1 && c3 && typeof r === 'number' && countItem('iron_dagger') === 1 && countItem('iron_bar') === 0, { c1, c2, pending, barsAfterTwo, cancelled, barsAfterCancel, r, dagger: countItem('iron_dagger'), bars: countItem('iron_bar') });
+      player.inv = inv0; }
+    { // coins never vanish: a full pack drops them at your feet, and the pickup loop does not thrash on them
+      const inv0 = invSnap(), c0 = coins(); for (let i = 0; i < INV_SLOTS; i++) if (!player.inv[i] || player.inv[i].id === 'coins') player.inv[i] = { id: 'stone', qty: 50 };
+      const n0 = drops.length; const left = addItem('coins', 7); const d = drops.slice(n0).find(x => x.id === 'coins' && x.qty === 7);
+      F.sim(3, []); const stays = !!d && drops.includes(d) && coins() === 0;
+      player.inv = inv0; F.sim(3, []); const picked = !!d && !drops.includes(d) && coins() === c0 + 7;
+      check('coins: addItem with a full pack drops them at your feet, they wait, then come back when there is room', left === 0 && !!d && dist(d.x, d.y, player.x, player.y) < 20 && stays && picked, { left, dropped: !!d, stays, picked, coins: coins(), c0 });
+      removeItem('coins', 7); drops = drops.filter(x => x !== d); }
+    { // regrow: a door placed on ashes stays a door; a stump under a goblin waits; a monster whose home is now solid respawns beside it
+      const o = openSpot(50, 30); const x = o.x, y = o.y; const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home }, respawnT: gob.respawnT };
+      changeTile(x, y, T.ASHES); regrow.push({ i: idx(x, y), t: T.GRASS, timer: 0.05 }); changeTile(x, y, T.DOOR);
+      changeTile(x + 1, y, T.STUMP); regrow.push({ i: idx(x + 1, y), t: T.TREE, timer: 0.05 }); gob.dead = false; gob.x = tc(x + 1); gob.y = tc(y); gob.stunT = 5; gob.home = { x: tc(x + 1), y: tc(y) };
+      F.tp(x, y - 1); F.sim(10, []);
+      const door = tileAt(x, y) === T.DOOR, gone = !regrow.some(r => r.i === idx(x, y)), waits = tileAt(x + 1, y) === T.STUMP && regrow.some(r => r.i === idx(x + 1, y) && r.timer > 3);
+      regrow = regrow.filter(r => r.i !== idx(x + 1, y)); gob.stunT = 0; gob.dead = true; gob.respawnT = 0.1; gob.home = { x: tc(x - 1), y: tc(y) }; changeTile(x - 1, y, T.PLANK); F.tp(x + 8, y); F.sim(30, []);
+      const beside = !gob.dead && !collides(gob.x, gob.y, gob.r, 'beast') && dist(gob.x, gob.y, tc(x - 1), tc(y)) <= 1.5 * TILE;
+      check('regrow: a placed door survives, an occupied stump waits, a monster respawns beside a blocked home', door && gone && waits && beside, { door, gone, waits, beside, at: [x, y] });
+      gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.home = gs.home; gob.respawnT = gs.respawnT; gob.state = 'idle'; changeTile(x, y, T.GRASS); changeTile(x + 1, y, T.GRASS); changeTile(x - 1, y, T.GRASS); }
+    { // load(): a save taken mid-death wakes you alive on a safe tile; unknown item ids are dropped, not crashed on
+      const inv0 = invSnap(), eq0 = { ...player.equip }, dk0 = deathKeep; player.bedSpawn = null; deathKeep = null; save();
+      const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); raw.player.hp = 0; raw.player.dead = true; raw.player.x = tc(0); raw.player.y = tc(0); localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+      const ok = load();
+      check('load: a save taken mid-death wakes you at full hp on a free tile', ok && player.hp === player.maxHp && !player.dead && !collides(player.x, player.y, 13, 'person'), { ok, hp: player.hp, at: [+(player.x / TILE).toFixed(1), +(player.y / TILE).toFixed(1)] });
+      raw.player.hp = player.maxHp; raw.player.dead = false; raw.player.x = player.x; raw.player.y = player.y;
+      raw.player.inv[0] = { id: 'ghost_item', qty: 1 }; raw.player.bank.push({ id: 'nope', qty: 2 }); raw.player.equip.shield = 'ghost_shield'; raw.deathKeep = { items: [{ id: 'gone', qty: 1 }, { id: 'wood', qty: 1 }] }; localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+      notice = null; const ok2 = load();
+      const clean = player.inv.every(s => !s || ITEMS[s.id]) && player.bank.every(s => ITEMS[s.id]) && player.equip.shield === null && !!deathKeep && deathKeep.items.length === 1 && deathKeep.items[0].id === 'wood';
+      check("load: unknown item ids are dropped from pack, bank, equipment and Death's chest, with one notice", ok2 && clean && !!notice && /unknown item/.test(notice.text), { ok2, clean, notice: notice && notice.text });
+      player.inv = inv0; player.equip = eq0; deathKeep = dk0; recomputeMaxHp(); save(); }
+    { // save: tiles by name; numeric (older) saves and unknown names still load
+      const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); const named = raw.mapDiffs.length > 0 && raw.mapDiffs.every(([, t]) => typeof t === 'string' && t in T) && raw.regrow.every(r => typeof r.t === 'string' && r.t in T);
+      const before = JSON.stringify([...mapDiffs.entries()]), rg = JSON.stringify(regrow.map(r => [r.i, r.t]));
+      const ok1 = load(); const same = JSON.stringify([...mapDiffs.entries()]) === before && JSON.stringify(regrow.map(r => [r.i, r.t])) === rg;
+      raw.mapDiffs = raw.mapDiffs.map(([i, t]) => [i, T[t]]); raw.regrow = raw.regrow.map(r => ({ ...r, t: T[r.t] })); raw.mapDiffs.push([idx(1, 1), 'NO_SUCH_TILE']); localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+      const ok2 = load(); const same2 = JSON.stringify([...mapDiffs.entries()]) === before;
+      check('save: tiles are stored by name and resolved back; numeric saves and unknown names still load', named && ok1 && same && ok2 && same2, { named, diffs: raw.mapDiffs.length, sample: raw.mapDiffs[0], same, same2 }); save(); }
+    peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
     const fails = Object.values(report).filter(v => v.startsWith('FAIL')).length;
     report.summary = fails ? `${fails} FAILED of ${Object.keys(report).length}` : `ALL ${Object.keys(report).length} PASS`;
@@ -2494,7 +2662,9 @@ const sfx = name => { const f = SFX[name]; if (f) try { f(); } catch (e) { } };
     if (quest.stage === 9 && hf.beastKilled) advanceQuest(10);
     if (quest.stage === 10 && hf.rewarded) advanceQuest(11);
     for (const m of monsters) {
-      if (m.type !== 'barrelbeast' || m.dead) continue;
+      if (m.type !== 'barrelbeast') continue;
+      if (hf.beastKilled) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; continue; } // a boss dies once: no 10-minute farm, no second wreck, no new beast in a "safe" town
+      if (m.dead) continue;
       const p2 = m.hp <= m.maxHp * 0.5;
       if (!p2) { m.phase2 = false; continue; }
       if (!m.phase2) { m.phase2 = true; m.bombCd = 0.8; floatText(m.x, m.y - m.r - 30, 'The boiler screams!', '#ff8a1a', 14); burst(m.x, m.y - 20, '#ff8a1a', 20, 120); say('Its boiler is cracked. Now it will spit. Keep moving, knight.', 'The Voice'); }
@@ -2513,7 +2683,7 @@ const sfx = name => { const f = SFX[name]; if (f) try { f(); } catch (e) { } };
     const hf = HF(); hf.beastKilled = true;
     const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); let spot = null;
     for (let r = 0; r <= 2 && !spot; r++) for (let dy = -r; dy <= r && !spot; dy++) for (let dx = -r; dx <= r && !spot; dx++) if (PLACEABLE_ON.has(tileAt(tx + dx, ty + dy)) && !insideBuilding(tx + dx, ty + dy)) spot = { tx: tx + dx, ty: ty + dy };
-    if (spot) { changeTile(spot.tx, spot.ty, T.WRECK); hf.wreck = [spot.tx, spot.ty]; }
+    if (spot && !(hf.wreck && tileAt(hf.wreck[0], hf.wreck[1]) === T.WRECK)) { changeTile(spot.tx, spot.ty, T.WRECK); hf.wreck = [spot.tx, spot.ty]; } // the wreck is placed once
     burst(m.x, m.y, '#ff8a1a', 40, 220); burst(m.x, m.y, '#3a3a3a', 24, 140);
     say('The Barrelbeast tips, groans, and comes apart. Boiler, barrel, four iron legs. The goblin crew runs for the trees.', 'The Voice');
     say('The wreck stays. Iron bars and scrap would set it walking again, smaller. Hollowford is quiet now. Go to the chapel and tell them.', 'The Voice');
@@ -2719,7 +2889,7 @@ const sfx = name => { const f = SFX[name]; if (f) try { f(); } catch (e) { } };
   const CAGE = addTile('CAGE', { solid: true, tex: 'dirt', mini: '#8f96a3' });
   const CAGE_POS = { x: 148, y: 34 };
   const INN_WAIT = { sera: { x: 123, y: 48 }, garrick: { x: 127, y: 47 } }; // where a dismissed hero waits (inside the inn; interior is x 123–128, y 45–48)
-  const GOBLIN_TYPES = ['goblin', 'sapper', 'brute', 'walker'];
+  const GOBLIN_TYPES = ['goblin', 'sapper', 'brute', 'walker', 'bulldozer'];
   const FOLLOW_SPEED = 180, STOP_DIST = 60, SNAP_DIST = 12 * TILE, DOWN_TIME = 30, COMP_LEVEL = 12;
 
   const HEROES = {
@@ -2911,9 +3081,24 @@ const sfx = name => { const f = SFX[name]; if (f) try { f(); } catch (e) { } };
   }
 
   // ---------- update ----------
+  // the hero's arrows are scored here with the hero's own rolls (the core only scores the knight's arrows), so they never train the knight or offend the watch
+  function companionArrows(dt) {
+    const bow = HEROES.sera.look.weapon.weapon, attRoll = (COMP_LEVEL + 8) * (64 + bow.att), maxHit = 1 + Math.floor((COMP_LEVEL + 8) * (5 + 64) / 320);
+    for (const p of projectiles) {
+      if (p.kind !== 'arrow' || p.owner !== 'companion' || p.done) continue;
+      for (const m of monsters) {
+        if (m.dead) continue;
+        if (dist(p.x, p.y, m.x, m.y) < m.r + 7 || dist(p.x - p.vx * dt * 0.5, p.y - p.vy * dt * 0.5, m.x, m.y) < m.r + 7) {
+          hitMonster(m, rollHit(attRoll, (MONSTER_DEFS[m.type].def + 8) * 64, maxHit), 8, false, 'companion'); p.done = true; break;
+        }
+      }
+    }
+    if (projectiles.some(p => p.done)) projectiles = projectiles.filter(p => !p.done);
+  }
   HOOKS.update.push(dt => {
     const c = comp();
     if (live.id !== c.id) { resetLive(c.id); syncHeroNpcs(); }
+    companionArrows(dt);
     if (!c.id) return;
     const def = HEROES[c.id];
     live.hurtT = Math.max(0, live.hurtT - dt); live.attackT = Math.max(0, live.attackT - dt); live.attackCd = Math.max(0, live.attackCd - dt); live.sinceHurt += dt;
@@ -2940,7 +3125,7 @@ const sfx = name => { const f = SFX[name]; if (f) try { f(); } catch (e) { } };
         if (live.attackCd <= 0 && dc <= 5.5 * TILE) {
           live.attackCd = 0.8; live.attackT = 0.22;
           const dx = m.x - c.x, dy = m.y - c.y, d = Math.hypot(dx, dy) || 1;
-          projectiles.push({ kind: 'arrow', x: c.x + dx / d * 16, y: c.y + dy / d * 16, vx: dx / d * 420, vy: dy / d * 420, t: 0, life: 0.9, str: 5, owner: 'player' });
+          projectiles.push({ kind: 'arrow', x: c.x + dx / d * 16, y: c.y + dy / d * 16, vx: dx / d * 420, vy: dy / d * 420, t: 0, life: 0.9, str: 5, owner: 'companion' });
         }
       } else {
         const reach = m.r + 13 + 6;
@@ -2950,7 +3135,7 @@ const sfx = name => { const f = SFX[name]; if (f) try { f(); } catch (e) { } };
           if (live.attackCd <= 0) {
             live.attackCd = 0.9; live.attackT = 0.22;
             const attRoll = (COMP_LEVEL + 8) * (64 + def.look.weapon.weapon.att), maxHit = 2 + Math.floor((COMP_LEVEL + 8) * (def.look.weapon.weapon.str + 64) / 300);
-            hitMonster(m, rollHit(attRoll, (mdef.def + 8) * 64, maxHit), 14);
+            hitMonster(m, rollHit(attRoll, (mdef.def + 8) * 64, maxHit), 14, false, 'companion'); // the hero's swing: no knight XP, no "highest hit", no wanted stars
           }
         }
       }
@@ -3014,9 +3199,10 @@ const sfx = name => { const f = SFX[name]; if (f) try { f(); } catch (e) { } };
     const def = HEROES[c.id];
     const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
     const short = isTouch && VH < 500;
-    let y = 82;
-    if (narrow && qh) y = 84 + qh + 8;
+    let y = HUD.leftY; // shared left-HUD cursor: stack under whatever the law and boss bars already drew
+    if (narrow && qh) y = Math.max(y, 84 + qh + 8);
     if (isTouch && !short) { const hy = narrow ? 84 + qh + 8 : 90; y = Math.max(y, hy + 44 + 12); }
+    HUD.leftY = y + 24 + 6;
     const label = c.downT > 0 ? `${def.name} · back in ${Math.ceil(c.downT)}s` : c.mode === 'stay' ? `${def.name} · waiting` : `${def.name} ${Math.ceil(c.hp)}/${def.hp}`;
     g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
     const w = Math.ceil(g.measureText(label).width) + 44;
@@ -3440,7 +3626,8 @@ function lawOffend(level) {
     save();
   }
 }
-HOOKS.hit.push((m, dmg) => {
+HOOKS.hit.push((m, dmg, source) => {
+  if (source && source !== 'player') return; // your hero's swings are not your offences
   if (!lawIsGuard(m) || !inVillageBounds(m.x, m.y)) return;
   lawOffend(law().wanted + 1);
 });
@@ -3501,7 +3688,7 @@ HOOKS.update.push(dt => {
         if (dist(m.x, m.y, player.x, player.y) < LAW_ARM_RANGE) { m.angry = true; m.state = 'chase'; }
       }
     }
-    if (L.wanted >= 2 && (panel === 'shop' || panel === 'bank')) { closePanel(); notify('Not while the watch is after you.'); }
+    if (L.wanted >= 2 && (panel === 'shop' || panel === 'bank') && inVillageBounds(player.x, player.y)) { closePanel(); notify('Not while the watch is after you.'); } // only Thistledown's own shops know the watch
   } else if (lawArmed) lawStandDown();
 });
 
@@ -3554,9 +3741,9 @@ HOOKS.hud.push((g, narrow) => {
   const L = law();
   const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
   const touch = typeof isTouch !== 'undefined' && isTouch, short = touch && VH < 500;
-  let y = 84; // under the HP box
-  if (touch && !short) y = narrow ? 84 + qh + 8 + 56 : 148; // below the hotbar on touch layouts
-  else if (narrow && qh) y = 84 + qh + 8;
+  let y = HUD.leftY; // shared left-HUD cursor (under the HP box; hooks stack instead of overprinting)
+  if (touch && !short) y = Math.max(y, narrow ? 84 + qh + 8 + 56 : 148); // below the hotbar on touch layouts
+  else if (narrow && qh) y = Math.max(y, 84 + qh + 8);
   const tag = (text, fill, stroke, color) => {
     g.font = 'bold 12px sans-serif'; const tw = Math.ceil(g.measureText(text).width) + 24;
     roundRect(g, 14, y, tw, 24, 8); g.fillStyle = fill; g.fill(); g.strokeStyle = stroke; g.lineWidth = 1.5; g.stroke();
@@ -3564,6 +3751,7 @@ HOOKS.hud.push((g, narrow) => {
   };
   if (L.wanted > 0) tag(`WANTED ${lawStars(L.wanted)}  ${Math.ceil(L.timer)}s`, 'rgba(120,20,20,0.85)', '#f85149', '#fff');
   if (L.fines > 0) tag(`Fine: ${lawFine()} coins`, 'rgba(90,60,10,0.85)', '#d29922', '#ffd166');
+  HUD.leftY = y; // each tag already advanced y by its height + 6
 });
 
 // ---------- quest entry ----------
@@ -4703,6 +4891,8 @@ HOOKS.selfTest.push((check, F, h) => {
   // ---------- update: the crossing, and the lobster pot ----------
   HOOKS.update.push(dt => {
     const q = bq();
+    // Harl rows home if the knight leaves an island without him (died there, hovered off, an old save): nobody is stranded at an empty dock
+    if (!q.sailing && !player.dead && q.where !== 'dock' && LOC[q.where] && player.region !== LOC[q.where].name && player.region !== 'The Grey Sea') { q.where = 'dock'; save(); }
     if (q.sailing) {
       const s = q.sailing;
       if (typeof s.fx !== 'number') { arrive(); return; }
@@ -5744,8 +5934,9 @@ HOOKS.selfTest.push((check, F, h) => {
     if (onIce && player.speed === 175) player.speed = 90; else if (!onIce && player.speed === 90) player.speed = 175;
     for (const p of ICE_PATCHES) { p.t -= dt; if (p.t <= 0) thaw(p); }
     for (let i = ICE_PATCHES.length - 1; i >= 0; i--) if (ICE_PATCHES[i].t <= 0) ICE_PATCHES.splice(i, 1);
-    // the boss
+    // the boss: slain once, slain for good (no 15-minute farm of a 3,000-coin weapon; a reload spawns it, this puts it back down)
     const m = fang();
+    if (m && fq.slain) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; }
     if (m && !m.dead) {
       if (!m.element) { m.element = 'fire'; m.elemT = 0; }
       m.elemT = (m.elemT || 0) + dt;
@@ -5791,16 +5982,22 @@ HOOKS.selfTest.push((check, F, h) => {
   // death: an enormous burst, the banner, the loot, and the story moves on
   HOOKS.kill.push(m => {
     if (m.type !== 'the_fang') return;
-    const fq = FQ(); fq.slain = true;
+    const fq = FQ(); const first = !fq.slain; fq.slain = true;
     for (const [c, n, s] of [['#ff6a1a', 60, 280], ['#8fd3ff', 40, 220], ['#d8c8ff', 40, 220], ['#b0a08a', 30, 160], ['#f5c542', 50, 320]]) burst(m.x, m.y, c, n, s);
     levelBanner = { text: 'THE FANG IS SLAIN', sub: 'Chapter 5 complete', t: 5 };
-    const loot = [['coins', 1000], ['fang_of_the_fang', 1], ['mithril_bar', 4]]; if (ITEMS.dragon_scale) loot.push(['dragon_scale', 10]);
+    const loot = first ? [['coins', 1000], ['fang_of_the_fang', 1], ['mithril_bar', 4]] : []; if (first && ITEMS.dragon_scale) loot.push(['dragon_scale', 10]); // the legendary loot drops once
     for (const [id, q] of loot) if (ITEMS[id]) drops.push({ x: m.x + rint(-30, 30), y: m.y + rint(-30, 30), id, qty: q, t: 0, rare: id === 'fang_of_the_fang' });
     say('The Fang falls. The mountain shakes with it. Its great tooth lies loose in the ash: take it. No blade in the Fanglands will bite like it.', 'The Voice');
     thawAll(); FIREBALLS.length = 0; STRIKES.length = 0; m.element = 'fire'; m.elemT = 0; MONSTER_DEFS.the_fang.maxHit = 32;
     if (quest.stage < 15) advanceQuest(15); else save();
   });
 
+  // the Duke learns of the kill from you, not from your footsteps: at stage 15 talking to him ends the story (the castle-entry trigger stays as a fallback)
+  HOOKS.talkBefore.duke = n => {
+    if (quest.stage === 15) { say('The Fang? Slain? Then the old songs were waiting for you, knight. Thistledown owes you more than a keep can hold.', n.name); say('Sit. Eat. Tomorrow the whole town hears it from my mouth. Tonight, hear it from me: thank you.', n.name); advanceQuest(16); return true; }
+    if (quest.stage >= 16) { say('The knight of legend, in my hall. Rest, friend. The Fanglands are at peace because of you.', n.name); return true; }
+    return false;
+  };
   // ---------- main quest, stages 14–16 ----------
   if (!HOOKS.mainQuest[14]) HOOKS.mainQuest[14] = { text: () => "Find The Fang's lair: a sealed gate at the far south of dragon country." };
   HOOKS.mainQuest[15] = { text: () => 'The Fang is slain. Return to Duke Ferrin.', onEnter: () => {
@@ -6001,7 +6198,8 @@ HOOKS.selfTest.push((check, F, h) => {
     const m = fang(); if (!m || m.dead || dist(m.x, m.y, player.x, player.y) > 12 * TILE) return;
     const C = EL[m.element || 'fire'], w = Math.min(236, VW - 28), h = 48, x = 14;
     const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
-    const y = isTouch ? (narrow ? 84 + qh + 8 + 62 : 152) : 84;
+    const y = Math.max(HUD.leftY, isTouch ? (narrow ? 84 + qh + 8 + 62 : 152) : 84); // shared left-HUD cursor: under the companion / wanted tags
+    HUD.leftY = y + h + 6;
     roundRect(g, x, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = C.col; g.lineWidth = 1.5; g.stroke();
     g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText('THE FANG', x + 12, y + 19);
     g.fillStyle = C.col; g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillText(C.name.toUpperCase() + (m.element === 'stone' ? ' · wait it out' : ''), x + w - 12, y + 19);

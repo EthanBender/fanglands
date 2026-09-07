@@ -7,7 +7,7 @@
   const CAGE = addTile('CAGE', { solid: true, tex: 'dirt', mini: '#8f96a3' });
   const CAGE_POS = { x: 148, y: 34 };
   const INN_WAIT = { sera: { x: 123, y: 48 }, garrick: { x: 127, y: 47 } }; // where a dismissed hero waits (inside the inn; interior is x 123–128, y 45–48)
-  const GOBLIN_TYPES = ['goblin', 'sapper', 'brute', 'walker'];
+  const GOBLIN_TYPES = ['goblin', 'sapper', 'brute', 'walker', 'bulldozer'];
   const FOLLOW_SPEED = 180, STOP_DIST = 60, SNAP_DIST = 12 * TILE, DOWN_TIME = 30, COMP_LEVEL = 12;
 
   const HEROES = {
@@ -199,9 +199,24 @@
   }
 
   // ---------- update ----------
+  // the hero's arrows are scored here with the hero's own rolls (the core only scores the knight's arrows), so they never train the knight or offend the watch
+  function companionArrows(dt) {
+    const bow = HEROES.sera.look.weapon.weapon, attRoll = (COMP_LEVEL + 8) * (64 + bow.att), maxHit = 1 + Math.floor((COMP_LEVEL + 8) * (5 + 64) / 320);
+    for (const p of projectiles) {
+      if (p.kind !== 'arrow' || p.owner !== 'companion' || p.done) continue;
+      for (const m of monsters) {
+        if (m.dead) continue;
+        if (dist(p.x, p.y, m.x, m.y) < m.r + 7 || dist(p.x - p.vx * dt * 0.5, p.y - p.vy * dt * 0.5, m.x, m.y) < m.r + 7) {
+          hitMonster(m, rollHit(attRoll, (MONSTER_DEFS[m.type].def + 8) * 64, maxHit), 8, false, 'companion'); p.done = true; break;
+        }
+      }
+    }
+    if (projectiles.some(p => p.done)) projectiles = projectiles.filter(p => !p.done);
+  }
   HOOKS.update.push(dt => {
     const c = comp();
     if (live.id !== c.id) { resetLive(c.id); syncHeroNpcs(); }
+    companionArrows(dt);
     if (!c.id) return;
     const def = HEROES[c.id];
     live.hurtT = Math.max(0, live.hurtT - dt); live.attackT = Math.max(0, live.attackT - dt); live.attackCd = Math.max(0, live.attackCd - dt); live.sinceHurt += dt;
@@ -228,7 +243,7 @@
         if (live.attackCd <= 0 && dc <= 5.5 * TILE) {
           live.attackCd = 0.8; live.attackT = 0.22;
           const dx = m.x - c.x, dy = m.y - c.y, d = Math.hypot(dx, dy) || 1;
-          projectiles.push({ kind: 'arrow', x: c.x + dx / d * 16, y: c.y + dy / d * 16, vx: dx / d * 420, vy: dy / d * 420, t: 0, life: 0.9, str: 5, owner: 'player' });
+          projectiles.push({ kind: 'arrow', x: c.x + dx / d * 16, y: c.y + dy / d * 16, vx: dx / d * 420, vy: dy / d * 420, t: 0, life: 0.9, str: 5, owner: 'companion' });
         }
       } else {
         const reach = m.r + 13 + 6;
@@ -238,7 +253,7 @@
           if (live.attackCd <= 0) {
             live.attackCd = 0.9; live.attackT = 0.22;
             const attRoll = (COMP_LEVEL + 8) * (64 + def.look.weapon.weapon.att), maxHit = 2 + Math.floor((COMP_LEVEL + 8) * (def.look.weapon.weapon.str + 64) / 300);
-            hitMonster(m, rollHit(attRoll, (mdef.def + 8) * 64, maxHit), 14);
+            hitMonster(m, rollHit(attRoll, (mdef.def + 8) * 64, maxHit), 14, false, 'companion'); // the hero's swing: no knight XP, no "highest hit", no wanted stars
           }
         }
       }
@@ -302,9 +317,10 @@
     const def = HEROES[c.id];
     const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
     const short = isTouch && VH < 500;
-    let y = 82;
-    if (narrow && qh) y = 84 + qh + 8;
+    let y = HUD.leftY; // shared left-HUD cursor: stack under whatever the law and boss bars already drew
+    if (narrow && qh) y = Math.max(y, 84 + qh + 8);
     if (isTouch && !short) { const hy = narrow ? 84 + qh + 8 : 90; y = Math.max(y, hy + 44 + 12); }
+    HUD.leftY = y + 24 + 6;
     const label = c.downT > 0 ? `${def.name} · back in ${Math.ceil(c.downT)}s` : c.mode === 'stay' ? `${def.name} · waiting` : `${def.name} ${Math.ceil(c.hp)}/${def.hp}`;
     g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
     const w = Math.ceil(g.measureText(label).width) + 44;

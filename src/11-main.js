@@ -151,6 +151,61 @@ window.FANGLANDS = {
     // ---------- save / load ----------
     save(); const snap = JSON.stringify({ q: quest, inv: player.inv, eq: player.equip, bank: player.bank, hh: player.highestHit, diffs: mapDiffs.size, home: player.home, crops: crops.length });
     { const lv = skillLv('melee'); player = newPlayer(); quest = { stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }; const ok = load(); check('save/load round-trip', ok && skillLv('melee') === lv && JSON.stringify({ q: quest, inv: player.inv, eq: player.equip, bank: player.bank, hh: player.highestHit, diffs: mapDiffs.size, home: player.home, crops: crops.length }) === snap, { loaded: ok }); }
+    // ---------- core fix pass (audit 2026-09-07): safe spots, smithing refunds, load safety, coins, regrow, tile-name saves ----------
+    peace(true);
+    const invSnap = () => player.inv.map(s => s ? { ...s } : null);
+    { // a bed against a wall: you wake beside it, never inside the wall
+      const o = openSpot(30, 30); const bx = o.x, by = o.y; const t0 = tileAt(bx, by), t1 = tileAt(bx, by + 1), t2 = tileAt(bx, by - 1);
+      changeTile(bx, by, T.BED); changeTile(bx, by + 1, T.WALL); changeTile(bx, by - 1, T.WALL);
+      player.bedSpawn = { x: tc(bx), y: tc(by) }; const p = respawnPoint();
+      const inv0 = invSnap(), dk0 = deathKeep; deathKeep = null;
+      hurtPlayer(player.hp + 999, player.x + 10, player.y, true); F.sim(200, []);
+      check('safeSpot: a bed against a wall respawns you on the nearest free tile', !collides(p.x, p.y, 13, 'person') && dist(p.x, p.y, tc(bx), tc(by)) <= 1.5 * TILE && !player.dead && !collides(player.x, player.y, 13, 'person') && dist(player.x, player.y, tc(bx), tc(by)) <= 1.5 * TILE, { bed: [bx, by], p: [p.x / TILE - 0.5, p.y / TILE - 0.5], at: [+(player.x / TILE).toFixed(1), +(player.y / TILE).toFixed(1)] });
+      player.inv = inv0; deathKeep = dk0; player.bedSpawn = null; changeTile(bx, by, t0); changeTile(bx, by + 1, t1); changeTile(bx, by - 1, t2); }
+    { // smithing: a second tap is refused, cancelling refunds (the bar never left), the bar goes when the dagger lands
+      const inv0 = invSnap(); const rec = RECIPES.find(r => r.out === 'iron_dagger');
+      player.inv = player.inv.map(s => s && (s.id === 'iron_bar' || s.id === 'iron_dagger') ? null : s); if (!hasTool('hammer')) give('hammer', 1); give('iron_bar', 1);
+      const c1 = craft(rec), c2 = craft(rec); const pending = !!player.action && player.action.type === 'smith'; const barsAfterTwo = countItem('iron_bar');
+      F.sim(5, ['KeyA']); const cancelled = !player.action, barsAfterCancel = countItem('iron_bar');
+      const c3 = craft(rec); const r = F.untilAction(200, () => countItem('iron_dagger') >= 1);
+      check('smithing: double-tap refused, cancelled swing keeps the bar, bar spent only when the dagger lands', c1 && !c2 && pending && barsAfterTwo === 1 && cancelled && barsAfterCancel === 1 && c3 && typeof r === 'number' && countItem('iron_dagger') === 1 && countItem('iron_bar') === 0, { c1, c2, pending, barsAfterTwo, cancelled, barsAfterCancel, r, dagger: countItem('iron_dagger'), bars: countItem('iron_bar') });
+      player.inv = inv0; }
+    { // coins never vanish: a full pack drops them at your feet, and the pickup loop does not thrash on them
+      const inv0 = invSnap(), c0 = coins(); for (let i = 0; i < INV_SLOTS; i++) if (!player.inv[i] || player.inv[i].id === 'coins') player.inv[i] = { id: 'stone', qty: 50 };
+      const n0 = drops.length; const left = addItem('coins', 7); const d = drops.slice(n0).find(x => x.id === 'coins' && x.qty === 7);
+      F.sim(3, []); const stays = !!d && drops.includes(d) && coins() === 0;
+      player.inv = inv0; F.sim(3, []); const picked = !!d && !drops.includes(d) && coins() === c0 + 7;
+      check('coins: addItem with a full pack drops them at your feet, they wait, then come back when there is room', left === 0 && !!d && dist(d.x, d.y, player.x, player.y) < 20 && stays && picked, { left, dropped: !!d, stays, picked, coins: coins(), c0 });
+      removeItem('coins', 7); drops = drops.filter(x => x !== d); }
+    { // regrow: a door placed on ashes stays a door; a stump under a goblin waits; a monster whose home is now solid respawns beside it
+      const o = openSpot(50, 30); const x = o.x, y = o.y; const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home }, respawnT: gob.respawnT };
+      changeTile(x, y, T.ASHES); regrow.push({ i: idx(x, y), t: T.GRASS, timer: 0.05 }); changeTile(x, y, T.DOOR);
+      changeTile(x + 1, y, T.STUMP); regrow.push({ i: idx(x + 1, y), t: T.TREE, timer: 0.05 }); gob.dead = false; gob.x = tc(x + 1); gob.y = tc(y); gob.stunT = 5; gob.home = { x: tc(x + 1), y: tc(y) };
+      F.tp(x, y - 1); F.sim(10, []);
+      const door = tileAt(x, y) === T.DOOR, gone = !regrow.some(r => r.i === idx(x, y)), waits = tileAt(x + 1, y) === T.STUMP && regrow.some(r => r.i === idx(x + 1, y) && r.timer > 3);
+      regrow = regrow.filter(r => r.i !== idx(x + 1, y)); gob.stunT = 0; gob.dead = true; gob.respawnT = 0.1; gob.home = { x: tc(x - 1), y: tc(y) }; changeTile(x - 1, y, T.PLANK); F.tp(x + 8, y); F.sim(30, []);
+      const beside = !gob.dead && !collides(gob.x, gob.y, gob.r, 'beast') && dist(gob.x, gob.y, tc(x - 1), tc(y)) <= 1.5 * TILE;
+      check('regrow: a placed door survives, an occupied stump waits, a monster respawns beside a blocked home', door && gone && waits && beside, { door, gone, waits, beside, at: [x, y] });
+      gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.home = gs.home; gob.respawnT = gs.respawnT; gob.state = 'idle'; changeTile(x, y, T.GRASS); changeTile(x + 1, y, T.GRASS); changeTile(x - 1, y, T.GRASS); }
+    { // load(): a save taken mid-death wakes you alive on a safe tile; unknown item ids are dropped, not crashed on
+      const inv0 = invSnap(), eq0 = { ...player.equip }, dk0 = deathKeep; player.bedSpawn = null; deathKeep = null; save();
+      const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); raw.player.hp = 0; raw.player.dead = true; raw.player.x = tc(0); raw.player.y = tc(0); localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+      const ok = load();
+      check('load: a save taken mid-death wakes you at full hp on a free tile', ok && player.hp === player.maxHp && !player.dead && !collides(player.x, player.y, 13, 'person'), { ok, hp: player.hp, at: [+(player.x / TILE).toFixed(1), +(player.y / TILE).toFixed(1)] });
+      raw.player.hp = player.maxHp; raw.player.dead = false; raw.player.x = player.x; raw.player.y = player.y;
+      raw.player.inv[0] = { id: 'ghost_item', qty: 1 }; raw.player.bank.push({ id: 'nope', qty: 2 }); raw.player.equip.shield = 'ghost_shield'; raw.deathKeep = { items: [{ id: 'gone', qty: 1 }, { id: 'wood', qty: 1 }] }; localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+      notice = null; const ok2 = load();
+      const clean = player.inv.every(s => !s || ITEMS[s.id]) && player.bank.every(s => ITEMS[s.id]) && player.equip.shield === null && !!deathKeep && deathKeep.items.length === 1 && deathKeep.items[0].id === 'wood';
+      check("load: unknown item ids are dropped from pack, bank, equipment and Death's chest, with one notice", ok2 && clean && !!notice && /unknown item/.test(notice.text), { ok2, clean, notice: notice && notice.text });
+      player.inv = inv0; player.equip = eq0; deathKeep = dk0; recomputeMaxHp(); save(); }
+    { // save: tiles by name; numeric (older) saves and unknown names still load
+      const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); const named = raw.mapDiffs.length > 0 && raw.mapDiffs.every(([, t]) => typeof t === 'string' && t in T) && raw.regrow.every(r => typeof r.t === 'string' && r.t in T);
+      const before = JSON.stringify([...mapDiffs.entries()]), rg = JSON.stringify(regrow.map(r => [r.i, r.t]));
+      const ok1 = load(); const same = JSON.stringify([...mapDiffs.entries()]) === before && JSON.stringify(regrow.map(r => [r.i, r.t])) === rg;
+      raw.mapDiffs = raw.mapDiffs.map(([i, t]) => [i, T[t]]); raw.regrow = raw.regrow.map(r => ({ ...r, t: T[r.t] })); raw.mapDiffs.push([idx(1, 1), 'NO_SUCH_TILE']); localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+      const ok2 = load(); const same2 = JSON.stringify([...mapDiffs.entries()]) === before;
+      check('save: tiles are stored by name and resolved back; numeric saves and unknown names still load', named && ok1 && same && ok2 && same2, { named, diffs: raw.mapDiffs.length, sample: raw.mapDiffs[0], same, same2 }); save(); }
+    peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
     const fails = Object.values(report).filter(v => v.startsWith('FAIL')).length;
     report.summary = fails ? `${fails} FAILED of ${Object.keys(report).length}` : `ALL ${Object.keys(report).length} PASS`;

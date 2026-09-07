@@ -17,12 +17,29 @@ function moveEntity(e, dx, dy, who = 'person') {
   if (dy && !collides(e.x, e.y + dy, e.r, who)) e.y += dy;
   e.x = clamp(e.x, e.r, MAP_W * TILE - e.r); e.y = clamp(e.y, e.r, MAP_H * TILE - e.r);
 }
-const playerWho = () => player.mech ? 'beast' : 'person';
+const playerWho = () => player.mech ? 'beast' : 'player';
+// the given point if it is free, else the nearest free tile centre in an expanding ring (up to 6 tiles); null if nothing is free
+function safeSpot(x, y, r = 13, who = 'person') {
+  if (!collides(x, y, r, who)) return { x, y };
+  const ctx = Math.floor(x / TILE), cty = Math.floor(y / TILE);
+  for (let ring = 0; ring <= 6; ring++) {
+    let best = null;
+    for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+      const tx = ctx + dx, ty = cty + dy; if (!inMap(tx, ty)) continue;
+      const px = tc(tx), py = tc(ty); if (collides(px, py, r, who)) continue;
+      const d = dist(x, y, px, py); if (!best || d < best.d) best = { x: px, y: py, d };
+    }
+    if (best) return { x: best.x, y: best.y };
+  }
+  return null;
+}
 function circleHitsTile(x, y, r, tx, ty) {
   const cx = clamp(x, tx * TILE, tx * TILE + TILE), cy = clamp(y, ty * TILE, ty * TILE + TILE);
   return dist(x, y, cx, cy) < r;
 }
-const INTERESTING = t => [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.PLANK, T.FIRE, T.OVEN, T.SIGN, T.WATER, T.DUMMY, T.GRAVE, T.SOIL, T.CROP, T.ANVIL, T.FORGE, T.WORKBENCH, T.ALCHEMY, T.WORKSHOP, T.CHEST, T.LODESTONE, T.BED, T.WRECK, T.MECH, T.CART, T.AXESTUMP, T.STONECIRCLE, T.GOLDPILE, T.COUNTER, T.THRONE, T.TRAP, T.STUMP, T.RUBBLE].includes(t);
+const INTERESTING_TILES = new Set([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.PLANK, T.FIRE, T.OVEN, T.SIGN, T.WATER, T.DUMMY, T.GRAVE, T.SOIL, T.CROP, T.ANVIL, T.FORGE, T.WORKBENCH, T.ALCHEMY, T.WORKSHOP, T.CHEST, T.LODESTONE, T.BED, T.WRECK, T.MECH, T.CART, T.AXESTUMP, T.STONECIRCLE, T.GOLDPILE, T.COUNTER, T.THRONE, T.TRAP, T.STUMP, T.RUBBLE]);
+const INTERESTING = t => INTERESTING_TILES.has(t);
 function frontTile(e, reach = 36) {
   const own = { tx: Math.floor(e.x / TILE), ty: Math.floor(e.y / TILE) };
   const step = { tx: own.tx + Math.round(e.facing.x), ty: own.ty + Math.round(e.facing.y) };
@@ -55,7 +72,7 @@ function playerMaxHit(ranged = false) {
 }
 function playerAttackRoll(ranged = false) { return ranged ? (skillLv('range') + 8) * (64 + gearBonus('att')) : (skillLv('melee') + 8) * (64 + gearBonus('att') + (player.mech ? 20 : 0)); }
 function playerDefRoll() { return (skillLv('defence') + 8) * (64 + gearBonus('def') + (player.mech ? 30 : 0)); }
-function rollHit(attRoll, defRoll, maxHit) { return Math.random() < accuracy(attRoll, defRoll) ? rint(1, maxHit) : 0; }
+function rollHit(attRoll, defRoll, maxHit) { if (!(maxHit > 0)) return 0; return Math.random() < accuracy(attRoll, defRoll) ? rint(1, maxHit) : 0; }
 function recordHit(dmg) { if (dmg > player.highestHit) { player.highestHit = dmg; if (dmg > 1) floatText(player.x, player.y - 44, `New highest hit: ${dmg}!`, '#ffd166', 13); } }
 const bloodColor = type => ({ goblin: '#7ac943', sapper: '#7ac943', brute: '#5a9a33', boar: '#b5651d', spider: '#5a5a6a', sheep: '#f2f2ec', cow: '#8b5a3a', wolf: '#7a7068', walker: '#8f96a3' })[type] || '#c0504d';
 
@@ -101,7 +118,8 @@ function explode(x, y, radius, dmgMin, dmgMax, owner) {
   if (owner === 'player') { for (const m of monsters) if (!m.dead && dist(m.x, m.y, x, y) < radius + m.r) hitMonster(m, rint(dmgMin, dmgMax), 30, true); }
   else if (dist(player.x, player.y, x, y) < radius + player.r) hurtPlayer(rint(dmgMin, dmgMax), x, y, true);
 }
-function hitMonster(m, dmg, knock = 14, fromBomb = false) {
+// source: 'player' (XP, highest hit, offences) or 'companion' (none of those; HOOKS.hit receives it as the third argument)
+function hitMonster(m, dmg, knock = 14, fromBomb = false, source = 'player') {
   const def = MONSTER_DEFS[m.type];
   m.hurtT = 0.18; m.angry = true; if (!def.harmless) m.state = 'chase';
   const kx = (m.x - player.x), ky = (m.y - player.y), kd = Math.hypot(kx, ky) || 1;
@@ -110,9 +128,9 @@ function hitMonster(m, dmg, knock = 14, fromBomb = false) {
   m.hp -= dmg; sfx('hit');
   floatText(m.x, m.y - m.r - 6, `-${dmg}`, '#ffd166');
   burst(m.x, m.y, bloodColor(m.type), 6, 70);
-  recordHit(dmg);
-  for (const h of HOOKS.hit) h(m, dmg);
-  if (!fromBomb) gainXp(weaponDef() && weaponDef().weapon.ranged && !player.mech ? 'range' : 'melee', dmg * 4);
+  if (source === 'player') recordHit(dmg);
+  for (const h of HOOKS.hit) h(m, dmg, source);
+  if (!fromBomb && source === 'player') gainXp(weaponDef() && weaponDef().weapon.ranged && !player.mech ? 'range' : 'melee', dmg * 4);
   if (m.hp <= 0) killMonster(m);
 }
 function rollDrops(def, x, y) {
@@ -146,15 +164,18 @@ function hurtPlayer(dmg, fromX, fromY, sure = false) {
   for (const h of HOOKS.hurt) h(dmg, fromX, fromY);
   if (player.hp <= 0) die();
 }
-function respawnPoint() { return player.bedSpawn || (player.visitedVillage ? VILLAGE_SPAWN : SPAWN); }
+// bedSpawn is the bed's own tile; the knight wakes on the nearest free tile next to it (a bed against a wall must not put him in the wall)
+function respawnPoint() { const p = player.bedSpawn || (player.visitedVillage ? VILLAGE_SPAWN : SPAWN); return safeSpot(p.x, p.y, 13, 'person') || safeSpot(VILLAGE_SPAWN.x, VILLAGE_SPAWN.y, 13, 'person') || SPAWN; }
 function die() {
   player.hp = 0; player.dead = true; player.deadT = 0; player.deaths += 1; closePanel(); player.action = null; sfx('death');
   if (player.mech) { player.mech = null; }
   const items = player.inv.filter(Boolean);
   const lostPrevious = deathKeep && deathKeep.items.length > 0;
-  deathKeep = items.length ? { items } : null;
+  // an empty pack does not replace the chest: what Death holds from last time stays where it is
+  if (items.length) deathKeep = { items };
   player.inv = new Array(INV_SLOTS).fill(null);
-  if (deathKeep) say(lostPrevious ? "You fell again. What Death held before is his now. What you carried, he keeps in his chest. Find his house." : "You fell. Death has your pack in his chest. His house has a coffin for a door. One stands by the cave, one in Thistledown.", 'The Voice');
+  if (items.length) say(lostPrevious ? "You fell again. What Death held before is his now. What you carried, he keeps in his chest. Find his house." : "You fell. Death has your pack in his chest. His house has a coffin for a door. One stands by the cave, one in Thistledown.", 'The Voice');
+  else if (lostPrevious) say('You fell with empty hands. Death still keeps what he had. Get up, knight.', 'The Voice');
   else say('You fell. Get up, knight.', 'The Voice');
 }
 
@@ -245,18 +266,31 @@ function harvest(tx, ty) {
   const n = rint(2, 4); giveOrDrop('potato', n, player.x, player.y); gainXp('farming', 15 * n); burst(tc(tx), tc(ty), '#c9a66b', 10, 60); save();
 }
 // ---------- crafting and stations ----------
+// smithing and smelting are timed: materials stay in the pack until the hammer falls (finishCraft), so a cancelled swing (moving, a hit, closing the panel) costs nothing
 function craft(recipe) {
+  if (player.action && (player.action.type === 'smith' || player.action.type === 'smelt')) { notify('Still working. Wait for the hammer.'); return false; }
   if (recipe.skill && skillLv(recipe.skill) < recipe.lv) { notify(`Needs ${SKILL_DEFS.find(s => s.key === recipe.skill).name} ${recipe.lv}.`); return false; }
   for (const [id, q] of recipe.needs) if (countItem(id) < q) { notify(`Need ${q} ${ITEMS[id].name}.`); return false; }
   if (recipe.station === 'anvil' && !hasTool('hammer')) { notify('You need a hammer (Marta or Brakka sells one).'); return false; }
-  for (const [id, q] of recipe.needs) removeItem(id, q);
-  if (!canFit(recipe.out, recipe.qty)) { for (const [id, q] of recipe.needs) addItem(id, q); notify('Your pack is full.'); return false; }
+  if (!craftFits(recipe)) { notify('Your pack is full.'); return false; }
   if (recipe.station === 'anvil' || recipe.station === 'forge') { player.action = { type: recipe.station === 'anvil' ? 'smith' : 'smelt', t: 0, need: recipe.station === 'anvil' ? 1.8 : 1.5, recipe }; return true; }
-  finishCraft(recipe); return true;
+  return finishCraft(recipe);
+}
+// does the product fit once the materials are gone? (a 1-bar dagger fits in the bar's own slot)
+function craftFits(recipe) {
+  const inv0 = player.inv.map(s => s ? { ...s } : null);
+  for (const [id, q] of recipe.needs) removeItem(id, q);
+  const ok = canFit(recipe.out, recipe.qty);
+  for (let i = 0; i < inv0.length; i++) player.inv[i] = inv0[i];
+  return ok;
 }
 function finishCraft(recipe) {
+  for (const [id, q] of recipe.needs) if (countItem(id) < q) { notify(`Need ${q} ${ITEMS[id].name}.`); return false; }
+  if (!craftFits(recipe)) { notify('Your pack is full.'); return false; }
+  for (const [id, q] of recipe.needs) removeItem(id, q);
   addItem(recipe.out, recipe.qty); if (recipe.skill) gainXp(recipe.skill, recipe.xp); sfx(recipe.station === 'anvil' ? 'anvil' : 'craft');
   floatText(player.x, player.y - 30, `+${recipe.qty} ${ITEMS[recipe.out].name}`, ITEMS[recipe.out].color); burst(player.x + player.facing.x * 30, player.y + player.facing.y * 30, '#ffd166', 8, 60); save();
+  return true;
 }
 function placeAction(id) {
   if (player.dead || player.mech) return;
@@ -274,12 +308,12 @@ function placeAction(id) {
   changeTile(tx, ty, t2);
   for (let k = 0; k < 12 && circleHitsTile(player.x, player.y, player.r + 1, tx, ty) && SOLID.has(t2); k++) {
     const nx = player.x - player.facing.x * 2.5, ny = player.y - player.facing.y * 2.5;
-    if (collides(nx, ny, player.r)) break;
+    if (collides(nx, ny, player.r, 'player')) break;
     player.x = nx; player.y = ny;
   }
   if (SOLID.has(t2) && circleHitsTile(player.x, player.y, player.r + 1, tx, ty)) { changeTile(tx, ty, t); player.x = ox; player.y = oy; notify('No room. Step back a little.'); return; }
   removeItem(id, 1); burst(tc(tx), tc(ty), '#c8a06a', 8, 50);
-  if (t2 === T.LODESTONE) { player.home = { x: tc(tx), y: tc(ty) + TILE }; notify('Lodestone placed. This is home now. Press H to return (5 minute cooldown).'); }
+  if (t2 === T.LODESTONE) { player.home = safeSpot(tc(tx), tc(ty) + TILE, 13, 'person') || { x: tc(tx), y: tc(ty) + TILE }; notify('Lodestone placed. This is home now. Press H to return (5 minute cooldown).'); }
   save();
 }
 function useItem(slot) {
@@ -328,8 +362,8 @@ function useAction() {
   if (t === T.WORKBENCH) { openPanel('station', 'workbench'); return; }
   if (t === T.WORKSHOP) { openPanel('station', 'workshop'); return; }
   if (t === T.ALCHEMY) { openPanel('station', 'alchemy'); return; }
-  if (t === T.LODESTONE) { player.home = { x: tc(tx), y: tc(ty) + TILE }; notify('Home set here. Press H to return (5 minute cooldown).'); save(); return; }
-  if (t === T.BED) { const near = nearestTileOfType(tx, ty, T.LODESTONE, 6); if (b && b.id !== undefined && !player.home) { /* inn / house beds */ } if (near || (b && b.id === 'inn' && player.innRested)) { player.bedSpawn = { x: tc(tx), y: tc(ty) + TILE }; player.hp = player.maxHp; say(near ? 'You sleep. The lodestone hums. You will wake here if you fall.' : 'You sleep well. You will wake here if you fall.', 'The Voice'); save(); } else notify(b && b.id === 'inn' ? 'Pay Dorran for the room first.' : 'A bed needs a lodestone within a few tiles to hold your spirit. Craft one at a workbench.'); return; }
+  if (t === T.LODESTONE) { player.home = safeSpot(tc(tx), tc(ty) + TILE, 13, 'person') || { x: tc(tx), y: tc(ty) + TILE }; notify('Home set here. Press H to return (5 minute cooldown).'); save(); return; }
+  if (t === T.BED) { const near = nearestTileOfType(tx, ty, T.LODESTONE, 6); if (b && b.id !== undefined && !player.home) { /* inn / house beds */ } if (near || (b && b.id === 'inn' && player.innRested)) { player.bedSpawn = { x: tc(tx), y: tc(ty) }; player.hp = player.maxHp; say(near ? 'You sleep. The lodestone hums. You will wake here if you fall.' : 'You sleep well. You will wake here if you fall.', 'The Voice'); save(); } else notify(b && b.id === 'inn' ? 'Pay Dorran for the room first.' : 'A bed needs a lodestone within a few tiles to hold your spirit. Craft one at a workbench.'); return; }
   if (t === T.WRECK) { repairMech(tx, ty); return; }
   if (t === T.MECH) { enterMech(tx, ty); return; }
   if (t === T.TRAP) { changeTile(tx, ty, T.GRASS); giveOrDrop('goblin_trap', 1, player.x, player.y); return; }
@@ -354,7 +388,9 @@ function goHome() {
   const left = HOME_COOLDOWN - (time - player.homeCd);
   if (left > 0) { notify(`The lodestone is still cold. ${Math.ceil(left)}s.`); return; }
   if (player.mech) { notify('Climb out of the walker first.'); return; }
-  burst(player.x, player.y, '#7ec8ff', 30, 160); player.x = player.home.x; player.y = player.home.y; player.homeCd = time; player.action = null;
+  const spot = safeSpot(player.home.x, player.home.y, 13, 'player'); // a plank placed under the lodestone later must not make H a trap
+  if (!spot) { notify('Home is buried. Clear the ground around the lodestone.'); return; }
+  burst(player.x, player.y, '#7ec8ff', 30, 160); player.x = spot.x; player.y = spot.y; player.homeCd = time; player.action = null;
   burst(player.x, player.y, '#7ec8ff', 30, 160); notify('Home.'); save();
 }
 // ---------- the goblin walker ----------
@@ -367,26 +403,35 @@ function enterMech(tx, ty) {
   changeTile(tx, ty, T.DIRT); player.mech = { hp: 130, maxHp: 130 }; player.x = tc(tx); player.y = tc(ty); player.r = 20; player.speed = 115; player.action = null;
   notify('You are in the walker. Space stomps (knockback). X climbs out. Doors are too small for it.'); save();
 }
+// the pilot never lands inside a tree or a wall: the walker is parked, then the knight takes the nearest free spot; no free spot = no climbing out
 function exitMech() {
   if (!player.mech) return;
   const { tx, ty } = frontTile(player, 44); const t = tileAt(tx, ty);
   const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) };
   const spot = PLACEABLE_ON.has(t) && !(tx === own.tx && ty === own.ty) ? { tx, ty } : own;
-  const hp = player.mech.hp; player.mech = null; player.r = 13; player.speed = 175;
-  changeTile(spot.tx, spot.ty, T.MECH); player.mechHp = hp;
-  if (spot.tx === own.tx && spot.ty === own.ty) { player.x -= player.facing.x * TILE; player.y -= player.facing.y * TILE; }
+  const onOwn = spot.tx === own.tx && spot.ty === own.ty, prev = tileAt(spot.tx, spot.ty), mech = player.mech;
+  changeTile(spot.tx, spot.ty, T.MECH);
+  const want = onOwn ? { x: player.x - player.facing.x * TILE, y: player.y - player.facing.y * TILE } : { x: player.x, y: player.y };
+  const free = safeSpot(want.x, want.y, 13, 'player');
+  if (!free) { changeTile(spot.tx, spot.ty, prev); notify('No room to climb out here. Drive somewhere open.'); return; }
+  player.mech = null; player.r = 13; player.speed = 175; player.mechHp = mech.hp;
+  player.x = free.x; player.y = free.y;
   notify('You climb out. The walker waits.'); save();
 }
 function wreckMech() {
   const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) };
   player.mech = null; player.r = 13; player.speed = 175;
-  if (PLACEABLE_ON.has(tileAt(own.tx, own.ty))) changeTile(own.tx, own.ty, T.WRECK);
-  player.x -= player.facing.x * TILE; player.y -= player.facing.y * TILE;
+  const prev = tileAt(own.tx, own.ty), placeable = PLACEABLE_ON.has(prev);
+  if (placeable) changeTile(own.tx, own.ty, T.WRECK);
+  let free = safeSpot(player.x - player.facing.x * TILE, player.y - player.facing.y * TILE, 13, 'player');
+  if (!free && placeable) { changeTile(own.tx, own.ty, prev); free = safeSpot(player.x, player.y, 13, 'player'); } // no room for both: the wreck is lost, the knight is not
+  if (free) { player.x = free.x; player.y = free.y; }
   burst(player.x, player.y, '#ff8a1a', 30, 160); say('The walker gives out under you. It can be repaired again: iron bars and scrap.', 'The Voice');
 }
 // ---------- talking ----------
 function talkTo(n) {
   { const dx = n.px - player.x, dy = n.py - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
+  if (HOOKS.talkBefore[n.role] && HOOKS.talkBefore[n.role](n)) return; // a feature file may take over a core role for some stages
   if (n.role === 'shop') { const lines = { general: "Rods, axes, bread, a bit of everything. What do you need, knight?", bakery: "Fresh from the oven. Bread is 8. The pie is worth every coin.", seeds: "Potato seed, two coins. A hoe if you haven't one. Till, plant, wait, eat.", smith: "Bring me a hammer and iron bars and I'll show you the anvil. Ore goes in the forge first." }; say(lines[n.shop] || 'Buying or selling?', n.name); openPanel('shop', n.shop); }
   else if (n.role === 'trader') { say("Pelts, tusks, wool, silk, goblin scrap. I pay full price, no haggling.", n.name); openPanel('shop', 'trader'); }
   else if (n.role === 'bank') { say("Your pack is small and the world is big. Leave what you like with me. It will be here.", n.name); openPanel('bank'); }
@@ -422,17 +467,27 @@ function coffinFee() {
   let fee = 0; for (const s of deathKeep.items) { if (s.id === 'coins') continue; const v = ITEMS[s.id].value * s.qty; if (v >= 20) fee += Math.ceil(v * 0.25); }
   return fee;
 }
+// the fee is charged per item, only for what actually fits in the pack; what stays in the chest keeps its fee for next time (no double charge)
+const itemFee = (id, qty) => { if (id === 'coins') return 0; const v = ITEMS[id].value * qty; return v >= 20 ? Math.ceil(v * 0.25) : 0; };
 function reclaimFromDeath() {
-  let fee = coffinFee();
+  if (!deathKeep) return;
   // Death takes his share from the coins he already holds, then from your pack
-  const held = deathKeep.items.find(s => s.id === 'coins');
-  if (held) { const take = Math.min(held.qty, fee); held.qty -= take; fee -= take; if (held.qty <= 0) deathKeep.items = deathKeep.items.filter(s => s !== held); }
-  if (fee > 0 && coins() < fee) { notify(`Death wants ${fee} more coins. You have ${coins()}.`); return; }
-  if (fee > 0) payCoins(fee);
-  const left = [];
-  for (const s of deathKeep.items) { const rest = addItem(s.id, s.qty); if (rest > 0) left.push({ id: s.id, qty: rest }); }
+  const held = deathKeep.items.find(s => s.id === 'coins'); let purse = held ? held.qty : 0;
+  const left = []; let took = 0, short = 0;
+  for (const s of deathKeep.items) {
+    if (s.id === 'coins') continue;
+    const can = Math.min(s.qty, roomFor(s.id));
+    const fee = itemFee(s.id, can);
+    if (can <= 0) { left.push({ id: s.id, qty: s.qty }); continue; }
+    if (fee > purse + coins()) { left.push({ id: s.id, qty: s.qty }); short = Math.max(short, fee - purse - coins()); continue; }
+    const fromPurse = Math.min(purse, fee); purse -= fromPurse; if (fee - fromPurse > 0) payCoins(fee - fromPurse);
+    addItem(s.id, can); took += can;
+    if (can < s.qty) left.push({ id: s.id, qty: s.qty - can });
+  }
+  if (purse > 0) { addItem('coins', purse); took += purse; } // never fails: coins that do not fit land at your feet
   deathKeep = left.length ? { items: left } : null;
-  say(left.length ? "Your pack is full. I will keep the rest. For now." : "Take them. We will meet again. Everyone does.", 'Death');
+  if (!took && short > 0) { notify(`Death wants ${short} more coins. You have ${coins()}.`); return; }
+  say(left.length ? (short > 0 ? "Coin first, knight. I keep the rest until you have it." : "Your pack is full. I will keep the rest. For now.") : "Take them. We will meet again. Everyone does.", 'Death');
   if (!deathKeep) closePanel();
   save();
 }
