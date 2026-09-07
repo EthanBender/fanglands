@@ -144,8 +144,8 @@ function questText(id = 'main') {
     case 0: return 'Wake up.';
     case 1: return 'Find the sword in the light.';
     case 2: return 'Follow the Voice out of the cave (east).';
-    case 3: return `First Blood: defeat goblins (${quest.kills}/3).`;
-    case 4: return 'Follow the dirt road east to the signpost.';
+    case 3: return `First Blood: defeat goblins (${quest.kills}/3). ${keyName('Space')} to swing.`;
+    case 4: return `Follow the dirt road east to the signpost. ${keyName('E')} to read it.`;
     case 5: return 'Follow the road to Thistledown. Find the Duke in the castle keep.';
     case 6: return `Train for the Duke: Melee 5 (${skillLv('melee')}), Woodcutting 3 (${skillLv('woodcutting')}).`;
     case 7: return quest.walkerKilled ? 'The walker is down. Report to Duke Ferrin.' : 'Scout the Goblin Camp east of Thistledown and bring down their walker.';
@@ -158,11 +158,11 @@ function advanceQuest(stage) {
   quest.stage = stage; sfx('quest');
   if (stage === 1) { say("You're finally awake.", 'The Voice'); say("There. In the light. Take it. You will need it.", 'The Voice'); }
   if (stage === 2) { say("A wooden sword. It will do for now. Follow my voice, knight. The way out is east.", 'The Voice'); }
-  if (stage === 3) { say("Goblins. They have been getting bolder. Show them what a knight is.", 'The Voice'); say("Swing with Space. Not every swing lands. That is what levels are for.", 'The Voice'); }
-  if (stage === 4) { say("Good. Follow the dirt road east. There is a signpost. Open your quests (J) if you lose the thread.", 'The Voice'); say("The goblins have machines now. Barrels that walk. You will see what they did to Hollowford.", 'The Voice'); }
-  if (stage === 5) { say("Thistledown still stands. Its Duke sits in the castle at the south end of town. Keep to the road.", 'The Voice'); levelBanner = { text: 'CHAPTER 1 COMPLETE', sub: 'The Cave', t: 4 }; }
-  if (stage === 6) { say("A knight? Then Hollowford may yet be avenged. But not by a level-one sword arm.", 'Duke Ferrin'); say("Train. Reach Melee 5 and Woodcutting 3. Brakka's forge and Hale's yard are yours. Then come back to me.", 'Duke Ferrin'); }
-  if (stage === 7) { say("You have grown. Now the real work. East of the village the goblins hold a camp, and something walks in it. A barrel on iron legs.", 'Duke Ferrin'); say("Bring it down. Pim in the workshop can make you traps and bombs. Brakka can make you steel. Go.", 'Duke Ferrin'); levelBanner = { text: 'CHAPTER 2 COMPLETE', sub: 'Thistledown', t: 4 }; }
+  if (stage === 3) { say("Goblins. They have been getting bolder. Show them what a knight is.", 'The Voice'); say(`${touchMode() ? 'Tap SWING to swing your sword' : 'Swing with Space'}. Not every swing lands. That is what levels are for.`, 'The Voice'); }
+  if (stage === 4) { say(`Good. Follow the dirt road east. There is a signpost. ${touchMode() ? 'Tap QUESTS' : 'Open your quests (J)'} if you lose the thread. The gold ring on the map is where to go.`, 'The Voice'); say("The goblins have machines now. Barrels that walk. You will see what they did to Hollowford.", 'The Voice'); }
+  if (stage === 5) { say(`Thistledown still stands. Its Duke sits in the castle at the south end of town. Keep to the road, and ${touchMode() ? 'tap USE' : 'press E'} to talk to people.`, 'The Voice'); levelBanner = { text: 'CHAPTER 1 COMPLETE', sub: 'The Cave', t: 4 }; }
+  if (stage === 6) { say("A knight? Then Hollowford may yet be avenged. But not by a level-one sword arm.", 'Duke Ferrin'); say(`Train. Reach Melee 5 and Woodcutting 3. Brakka's forge and Hale's yard are yours. Face a tree with an axe and ${touchMode() ? 'tap USE' : 'press E'}. Then come back to me.`, 'Duke Ferrin'); }
+  if (stage === 7) { say("You have grown. Now the real work. East of the village the goblins hold a camp, and something walks in it. A barrel on iron legs.", 'Duke Ferrin'); say(`Bring it down. Pim in the workshop can make you traps and bombs. Brakka can make you steel. Follow the gold ring on ${keyName('M')}. Go.`, 'Duke Ferrin'); levelBanner = { text: 'CHAPTER 2 COMPLETE', sub: 'Thistledown', t: 4 }; }
   if (stage === 8) { say("The walker is down? Then their machines can die. And what a goblin can build, a knight can repair.", 'Duke Ferrin'); levelBanner = { text: 'CHAPTER 3 COMPLETE', sub: 'Goblin Tech', t: 4 }; if (!HOOKS.mainQuest[9]) say("This is the end of Chapter 3. Chapter 4 is being built: the road to Hollowford, and the Barrelbeast.", 'Fanglands'); }
   if (HOOKS.mainQuest[stage] && HOOKS.mainQuest[stage].onEnter) HOOKS.mainQuest[stage].onEnter();
   save();

@@ -15,11 +15,14 @@ const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const touch = { stickId: null, ox: 0, oy: 0, dx: 0, dy: 0, active: false, taps: [] };
 const buttons = []; // on-screen hit rects: {x,y,w,h,label,action}
 let minimapRect = null;
+// Order: on-screen buttons (disabled ones are inert rects) → pause menu swallows the rest → minimap → the dialogue box itself
+// (dialogRect, set by drawHud; never the joystick zone) → an open panel (inside: absorbed, outside: closes) → joystick / attack.
 function pointerDown(x, y, id) {
-  for (const b of buttons) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { sfx('ui'); b.action(); return; }
+  for (let i = buttons.length - 1; i >= 0; i--) { const b = buttons[i]; if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { sfx('ui'); b.action(); return; } } // last registered = drawn on top = wins (panels over HUD)
+  if (paused) return;
   if (minimapRect && x >= minimapRect.x && x <= minimapRect.x + minimapRect.w && y >= minimapRect.y && y <= minimapRect.y + minimapRect.h) { panel === 'map' ? closePanel() : openPanel('map'); return; }
-  if (panel && !isTouch) { closePanel(); return; }
-  if (dialog.cur && y > VH - 150 && Math.abs(x - VW / 2) < 360) { advanceDialog(); return; }
+  if (dialog.cur && dialogHit(x, y)) { advanceDialog(); return; }
+  if (panel) { if (!inRect(x, y, panelRect)) closePanel(); return; }
   if (isTouch && x < VW * 0.5 && touch.stickId === null) { touch.stickId = id; touch.ox = x; touch.oy = y; touch.dx = 0; touch.dy = 0; touch.active = true; return; }
   if (isTouch) touch.taps.push('attack');
 }
