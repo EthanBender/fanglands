@@ -3,12 +3,17 @@
 // ============================================================================
 generateWorld();
 spawnMonsters();
-const loaded = load();
-if (loaded) { notify('Welcome back, knight.'); introT = 5; }
+title.open();                       // boot lands on the title screen; a slot is loaded from there (src/14-title.js)
+title.bootActive = title.active;    // recorded before any input, checked by the self-test
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  try { update(dt); render(); } catch (err) { console.error(err); }
+  try {
+    if (!title.active && paused && pressed.has('KeyT')) title.toTitle();
+    if (title.active) title.tick(dt); // title up: no update(), keys and taps are swallowed
+    else update(dt);
+    render();                         // world backdrop + HUD; drawHud draws the title while it is up
+  } catch (err) { console.error(err); }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
