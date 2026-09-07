@@ -306,9 +306,10 @@ function useAction() {
   if (player.dead) return;
   if (player.mech) { const ft = frontTile(player); if (tileAt(ft.tx, ft.ty) === T.PLANK) { changeTile(ft.tx, ft.ty, T.GRASS); burst(tc(ft.tx), tc(ft.ty), '#8b5a2b', 12, 80); notify('The walker crushes the planks.'); } else notify('Press X to climb out of the walker.'); return; }
   const npc = npcInFront();
-  if (npc) { talkTo(npc); return; }
   const { tx, ty } = frontTile(player);
   const t = tileAt(tx, ty);
+  // a wandering villager standing in front of a board, station or door does not block it
+  if (npc && !(npc.wander && (SOLID.has(t) || PUSH_THROUGH.has(t)))) { talkTo(npc); return; }
   const b = buildingAt(tx, ty);
   if (t === T.SIGN) { say("→ THISTLEDOWN, 1 mile.   → GREY QUARRY, north.   → HOLLOWFORD (crossed out, burned at the edges).", 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
   if (t === T.CHEST) { if (b && b.coffin) { openPanel('coffin'); return; } if (b && b.id === 'bank') { openPanel('bank'); return; } openLootChest(tx, ty); return; }
