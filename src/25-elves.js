@@ -18,7 +18,8 @@
 
   // ---------- geometry ----------
   // Territory: the south-east, x 100–199, y 96–139. Nothing here carves outside it.
-  const JR = { x0: 100, y0: 96, x1: 199, y1: 139 };            // The Jungle
+  const JR = { x0: 100, y0: 96, x1: 199, y1: 139 };            // The Jungle (the original carve; its rnd stream lays out the city, so this rect never changes)
+  const JS = { x0: 100, y0: 139, x1: 198, y1: 178 };            // the jungle's southern reach: the same trees and ferns down to the map's tree border (own rnd stream)
   const CR = { x0: 127, y0: 115, x1: 165, y1: 134 };            // Sylvaris (inside the ring wall)
   const RING = { x0: 126, y0: 114, x1: 166, y1: 135 };          // the wall of jungle around the city
   const GAP = { x: 137, y: 114 };                               // the one way in
@@ -40,14 +41,14 @@
   const BOARS = [[112, 104], [172, 118], [110, 128]];
 
   const inRect = (r, tx, ty) => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1;
-  const inJungle = (tx, ty) => inRect(JR, tx, ty);
+  const inJungle = (tx, ty) => inRect(JR, tx, ty) || inRect(JS, tx, ty);
   const inCity = (tx, ty) => inRect(CR, tx, ty);
   // Inserted just ahead of the catch-all 'The Wilds' rather than at index 0: regionAt still finds them first for
   // these tiles (nothing else covers the south-east) and the dwarves' self-test keeps Deepholm at REGIONS[0].
   {
     const wild = Math.max(0, REGIONS.findIndex(r => r.name === 'The Wilds'));
     REGIONS.splice(wild, 0, { name: 'Sylvaris', sub: 'The city in the trees', x0: CR.x0, y0: CR.y0, x1: CR.x1, y1: CR.y1 },
-      { name: 'The Jungle', sub: 'Vast, green, watching', x0: JR.x0, y0: JR.y0, x1: JR.x1, y1: JR.y1 });
+      { name: 'The Jungle', sub: 'Vast, green, watching', x0: JR.x0, y0: JR.y0, x1: JR.x1, y1: JS.y1 });
   }
 
   // ---------- items, recipes, shops ----------
@@ -185,6 +186,14 @@
     for (const [x, y] of BOARS) clear3(x, y);
     api.spawnList('elf_sentinel', SENTINELS); api.spawnList('boar', BOARS);
     for (const e of ELVES) if (SOLID.has(at(e.x, e.y))) set(e.x, e.y, EL_PLATFORM);
+    // 10. the jungle runs on south (y 139–178) at the same density; a separate stream keeps everything above exactly as it was.
+    // The ring wall, the gap and the totem are all north of here, so the one-way-in rule is untouched.
+    { const rs = mulberry32(2610);
+      for (let y = JS.y0; y <= JS.y1; y++) for (let x = JS.x0; x <= JS.x1; x++) {
+        if (!soft(x, y)) continue;
+        const r = rs();
+        set(x, y, r < 0.40 ? EL_JUNGLE : r < 0.52 ? EL_FERN : r < 0.62 ? T.DIRT : T.GRASS);
+      } }
   });
 
   // ---------- use: elves, the totem, jungle trees, the loom, the targets ----------

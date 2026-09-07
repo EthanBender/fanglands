@@ -208,6 +208,7 @@
 
   // ---------- world ----------
   const NATURAL = [T.GRASS, T.DIRT, T.TREE, T.OAK, T.STUMP, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.RUBBLE];
+  const DR_ASH_COVER = 0.40; // share of dragon country (outside the lair) left under ash once the patches are cut
   const OURS = () => [DR_ASH, DR_LAVA, DR_OBSIDIAN, DR_DEADTREE, DR_BONES];
   HOOKS.world.push((rnd, api) => {
     const ours = OURS();
@@ -250,6 +251,20 @@
     track(PATH, 1); track(FARM_PATH, 0);
     // the approach to the lair stays open ash
     for (let y = APPROACH.y0; y <= APPROACH.y1; y++) for (let x = APPROACH.x0; x <= APPROACH.x1; x++) { if (inFang(x, y)) continue; const t = api.tileAt(x, y); if (ours.includes(t) && t !== DR_ASH) api.setTile(x, y, DR_ASH); }
+    // ash in patches, not a blanket: a smooth noise field keeps the deepest drifts (about 40% of dragon country) and lets scorched
+    // grass and bare dirt show through between them. Lava, obsidian, bones, the shrine, the tracks and the farm were all laid on the
+    // full ash above and stay put; the approach to the lair stays clear ash. Deterministic: ranked by noise, no rnd draws.
+    { const noise = (x, y) => Math.sin(x * 0.23 + 0.7) * Math.cos(y * 0.19 + 0.3) + 0.6 * Math.sin((x + y) * 0.12 + 1.1) + 0.5 * Math.sin(x * 0.09 - y * 0.15);
+      const cands = []; let area = 0, keep = 0;
+      for (let y = AF.y0; y <= AF.y1 - 1; y++) for (let x = Math.max(1, AF.x0); x <= AF.x1; x++) {
+        if (inFang(x, y)) continue; area++;
+        if (api.tileAt(x, y) !== DR_ASH) continue;
+        if (inRect(APPROACH, x, y)) { keep++; continue; }
+        cands.push({ x, y, n: noise(x, y) });
+      }
+      cands.sort((a, b) => b.n - a.n);
+      const want = Math.max(0, Math.round(area * DR_ASH_COVER) - keep);
+      for (let i = want; i < cands.length; i++) { const c = cands[i]; api.setTile(c.x, c.y, (c.n * 7) % 1 > 0.75 ? T.DIRT : T.GRASS); } }
     // dragons: nothing from the forest spawns in dragon country; clear a 3x3 of ash under each dragon
     for (let i = MONSTER_SPAWNS.length - 1; i >= 0; i--) { const s = MONSTER_SPAWNS[i]; if (inAshfields(s.tx, s.ty) && !inFang(s.tx, s.ty)) MONSTER_SPAWNS.splice(i, 1); }
     for (const [x, y] of [...GREEN_SPAWNS, ...RED_SPAWNS]) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (ours.includes(api.tileAt(x + dx, y + dy))) api.setTile(x + dx, y + dy, DR_ASH);
@@ -489,7 +504,7 @@
     h.peace(true);
     // region + path
     { let ash = 0, lava = 0, obs = 0; for (let y = AF.y0; y <= AF.y1; y++) for (let x = AF.x0; x <= AF.x1; x++) { if (inFang(x, y)) continue; const t = tileAt(x, y); if (t === DR_ASH) ash++; else if (t === DR_LAVA) lava++; else if (t === DR_OBSIDIAN) obs++; }
-      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(60, 110).name === 'The Ashfields' && regionAt(60, 94).name === 'Wolfwood' && ash > 1500 && lava >= 40 && obs >= 30, { at60_110: regionAt(60, 110).name, at60_94: regionAt(60, 94).name, ash, lava, obs }); }
+      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(60, 110).name === 'The Ashfields' && regionAt(60, 94).name === 'Wolfwood' && ash > 900 && ash < 2200 && lava >= 40 && obs >= 30, { at60_110: regionAt(60, 110).name, at60_94: regionAt(60, 94).name, ash, lava, obs }); }
     { const toFarm = F.bfs(60, 94, DUNSTAN_T.x, DUNSTAN_T.y + 1), toLair = F.bfs(60, 94, 36, 105);
       check('dragons: the path from Wolfwood (60,94) reaches the farm and the approach to the lair', !!toFarm && !!toLair && tileAt(60, 96) === T.DIRT, { farm: toFarm && toFarm.length, lair: toLair && toLair.length }); }
     // lava burns

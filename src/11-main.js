@@ -270,6 +270,98 @@ window.FANGLANDS = {
       F.tp(103, 39); F.walkTo(100, 38, 500); F.face(100, 37); F.press('KeyE'); const open = panel === 'station' && panelArg === 'workbench'; const c = F.clickButton('2 Oak logs + Spider silk → Oak bow'); closePanel();
       check('oak bow crafts at a workbench (Crafting 8: 2 oak logs + silk, 40 xp)', open && c && countItem('oak_bow') === 1 && countItem('oak_log') === 0 && countItem('spider_silk') === 0 && player.skills.crafting.xp === XP_TABLE[8] + 40, { open, c, bow: countItem('oak_bow'), cxp: player.skills.crafting.xp - XP_TABLE[8] });
       player.inv = inv0; player.skills.crafting.xp = cxp; }
+    // ---------- Cohen's batch (2026-09-07): crafting xp, food, icons, machines, ash, jungle ----------
+    { // planks are the first Crafting xp: 2 logs → 4 planks, +6 xp from the pack
+      const inv0 = invSnap(); player.inv = player.inv.map(s => s && (s.id === 'wood' || s.id === 'plank') ? null : s); give('wood', 2);
+      const cx0 = player.skills.crafting.xp; const rec = RECIPES.find(r => r.out === 'plank'); const ok = craft(rec);
+      check('crafting: planks give Crafting xp (2 logs → 4 planks, +6 xp, from the pack)', ok && rec.station === null && rec.skill === 'crafting' && rec.xp === 6 && countItem('plank') === 4 && player.skills.crafting.xp === cx0 + 6, { ok, planks: countItem('plank'), gained: player.skills.crafting.xp - cx0 });
+      player.inv = inv0; }
+    { // berry bushes: about 60 on the grass, E picks 1–3 berries, the bush goes bare, and it is ripe again after the regrow timer
+      const B = T.BERRY_BUSH; let n = 0, bad = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === B) { n++; if (inVillageBounds(tc(x), tc(y)) || (x >= 142 && x <= 158 && y >= 20 && y <= 40) || buildingAt(x, y)) bad++; }
+      const inv0 = invSnap(); player.inv = player.inv.map(s => s && s.id === 'berries' ? null : s);
+      const bush = F.nearestTile([B], { x: tc(60), y: tc(30) }); let side = null;
+      if (bush) for (const [dx, dy] of [[0, 1], [0, -1], [-1, 0], [1, 0]]) if (!side && inMap(bush.x + dx, bush.y + dy) && !SOLID.has(tileAt(bush.x + dx, bush.y + dy))) side = { x: bush.x + dx, y: bush.y + dy };
+      let picked = 0, bare = false, again = 0;
+      if (side) { F.tp(side.x, side.y); F.face(bush.x, bush.y); F.press('KeyE'); F.sim(2, []); picked = countItem('berries'); notice = null; F.press('KeyE'); F.sim(2, []); bare = countItem('berries') === picked && !!notice && /bare/.test(notice.text) && FOOD.bushes.has(idx(bush.x, bush.y));
+        FOOD.bushes.get(idx(bush.x, bush.y)).timer = 0.01; F.sim(2, []); F.press('KeyE'); F.sim(2, []); again = countItem('berries') - picked; }
+      check('food: ~60 berry bushes on open grass (none in Thistledown, the camp or a building); E picks 1–3 berries, the bush goes bare, then regrows and picks again', n >= 50 && n <= 60 && bad === 0 && !!side && picked >= 1 && picked <= 3 && bare && again >= 1 && again <= 3 && ITEMS.berries.heal === 2 && ITEMS.berries.value === 2 && FOOD.BUSH_REGROW === 120, { n, bad, bush: bush && [bush.x, bush.y], picked, bare, again });
+      player.inv = inv0; }
+    { // wheat: Greta sells the seed, it plants on soil like a potato, the crop remembers what it is, harvest gives wheat
+      const inv0 = invSnap(); clearJunk(); player.inv = player.inv.map(s => s && (s.id === 'wheat' || s.id === 'wheat_seed') ? null : s); if (!hasTool('hoe')) give('bronze_hoe', 1); give('wheat_seed', 1);
+      const o = openSpot(70, 30); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y }; if (tileAt(gt.x, gt.y) !== T.SOIL) changeTile(gt.x, gt.y, T.SOIL);
+      F.face(gt.x, gt.y); F.press('KeyE'); F.sim(2, []); const c = crops.find(c => c.i === idx(gt.x, gt.y)); const planted = tileAt(gt.x, gt.y) === T.CROP && !!c && c.crop === 'wheat' && countItem('wheat_seed') === 0;
+      if (c) c.stage = 3; F.press('KeyE'); F.sim(2, []);
+      check('food: wheat seed (Greta, 2c) plants like a potato, the crop entry says wheat, harvest gives 2–4 wheat', SHOPS.seeds.stock.some(([id, p]) => id === 'wheat_seed' && p === 2) && ITEMS.wheat_seed.seed === 'wheat' && planted && countItem('wheat') >= 2 && countItem('wheat') <= 4 && tileAt(gt.x, gt.y) === T.SOIL, { planted, wheat: countItem('wheat'), crop: c && c.crop });
+      changeTile(gt.x, gt.y, T.GRASS); player.inv = inv0; }
+    { // flour at a workbench: 2 wheat → 1 flour, Crafting 1, 4 xp
+      const inv0 = invSnap(); player.inv = player.inv.map(s => s && (s.id === 'wheat' || s.id === 'flour') ? null : s); give('wheat', 2); const cx0 = player.skills.crafting.xp;
+      const rec = RECIPES.find(r => r.out === 'flour'); const ok = !!rec && rec.station === 'workbench' && craft(rec);
+      check('food: 2 wheat → flour at a workbench (Crafting 1, 4 xp)', ok && countItem('flour') === 1 && countItem('wheat') === 0 && player.skills.crafting.xp === cx0 + 4, { ok, flour: countItem('flour'), gained: player.skills.crafting.xp - cx0 });
+      player.inv = inv0; }
+    { // pies at the bakery oven: E with flour + berries opens the oven panel; the pie lands with Cooking xp; without flour E just cooks
+      const inv0 = invSnap(); clearJunk(); player.inv = player.inv.map(s => s && ['berries', 'flour', 'berry_pie', 'raw_beef', 'raw_trout'].includes(s.id) ? null : s);
+      const bakery = BUILDINGS.find(b => b.id === 'bakery'); const ov = bakery.f.find(f => f[0] === T.OVEN); const ox = bakery.x + ov[1], oy = bakery.y + ov[2];
+      F.tp(ox, oy + 1); F.face(ox, oy); closePanel(); player.action = null;
+      F.press('KeyE'); F.sim(1, []); const plain = panel !== 'oven'; closePanel(); player.action = null;
+      give('berries', 4); give('flour', 1); const cook0 = player.skills.cooking.xp;
+      F.press('KeyE'); const opened = panel === 'oven' && !!insideBuilding(ox, oy + 1); const clicked = F.clickButton('4 Berries + Flour → Berry pie'); closePanel();
+      const pie = RECIPES.find(r => r.out === 'berry_pie'), meat = RECIPES.find(r => r.out === 'meat_pie'), fish = RECIPES.find(r => r.out === 'fish_pie');
+      const defs = !!pie && pie.station === 'oven' && pie.skill === 'cooking' && !!meat && meat.station === 'oven' && meat.lv === 8 && meat.xp === 60 && !!fish && fish.station === 'oven' && fish.lv === 12 && ITEMS.fish_pie.heal === 14 && ITEMS.berry_pie.heal === 10 && ITEMS.berry_pie.value === 30;
+      check('food: the bakery oven bakes a berry pie (4 berries + flour) with Cooking xp; meat and fish pies are oven recipes; no flour = the plain cook', plain && opened && clicked && countItem('berry_pie') === 1 && countItem('berries') === 0 && countItem('flour') === 0 && player.skills.cooking.xp === cook0 + pie.xp && defs, { plain, opened, clicked, pie: countItem('berry_pie'), gained: player.skills.cooking.xp - cook0, defs });
+      player.inv = inv0; }
+    { // draw paths: the pickaxe icon, a parked walker tile (empty seat) and the wreck all draw without throwing (the harness canvas is a stub)
+      let icon = true, mech = true; try { drawItemIcon(ctx, 'bronze_pickaxe', 0, 0, 18); drawItemIcon(ctx, 'berries', 0, 0, 18); drawItemIcon(ctx, 'wheat', 0, 0, 18); drawItemIcon(ctx, 'flour', 0, 0, 18); } catch (e) { icon = false; }
+      const o = openSpot(50, 30); try { drawFurniture(ctx, o.x + 1, o.y, T.MECH); drawFurniture(ctx, o.x + 1, o.y, T.WRECK); changeTile(o.x + 1, o.y, T.MECH); F.tp(o.x, o.y); render(); } catch (e) { mech = false; }
+      changeTile(o.x + 1, o.y, T.GRASS);
+      check('draw: pickaxe/berry/wheat/flour icons and the parked walker (MECH) + wreck tiles draw without error', icon && mech, { icon, mech }); }
+    { // the bulldozer blade: tree → stump (regrow, a log), rock → rubble (regrow, stone), the next pass grinds them flat; fences and gates hold
+      const o = openSpot(56, 40); const e = { x: tc(o.x), y: tc(o.y), r: 22 }; const dir = { x: 1, y: 0 }; const d0 = drops.length;
+      changeTile(o.x + 1, o.y, T.TREE); dozerPlow(e, dir, false); const stump = tileAt(o.x + 1, o.y) === T.STUMP && regrow.some(r => r.i === idx(o.x + 1, o.y) && r.t === T.TREE) && drops.slice(d0).some(d => d.id === 'wood');
+      dozerPlow(e, dir, false); const ground = tileAt(o.x + 1, o.y) === T.GRASS;
+      changeTile(o.x + 1, o.y, T.ROCK); dozerPlow(e, dir, false); const rubble = tileAt(o.x + 1, o.y) === T.RUBBLE && regrow.some(r => r.i === idx(o.x + 1, o.y) && r.t === T.ROCK) && drops.slice(d0).some(d => d.id === 'stone');
+      dozerPlow(e, dir, false); const ground2 = tileAt(o.x + 1, o.y) === T.GRASS;
+      changeTile(o.x + 1, o.y, T.FENCE); dozerPlow(e, dir, false); const fence = tileAt(o.x + 1, o.y) === T.FENCE; changeTile(o.x + 1, o.y, T.GATE); dozerPlow(e, dir, false); const gate = tileAt(o.x + 1, o.y) === T.GATE;
+      check('bulldozer: tree → stump (regrow + log), rock → rubble (regrow + stone), the next pass grinds them flat; fences and gates are never flattened', stump && ground && rubble && ground2 && fence && gate, { stump, ground, rubble, ground2, fence, gate });
+      changeTile(o.x + 1, o.y, T.GRASS); regrow = regrow.filter(r => r.i !== idx(o.x + 1, o.y)); drops = drops.filter((d, i) => i < d0); }
+    { // a goblin-driven bulldozer still rams goblins in its way, at half the knight's damage (3–6)
+      const o = openSpot(60, 40); F.tp(o.x - 12, o.y + 12); const dz = monsters.find(m => m.type === 'bulldozer'); const gob = monsters.find(m => m.type === 'goblin' && !m.dead);
+      const ds = dz && { x: dz.x, y: dz.y, home: dz.home, dead: dz.dead, hp: dz.hp, state: dz.state, respawnT: dz.respawnT, deadT: dz.deadT }; const gs = { x: gob.x, y: gob.y, home: gob.home, hp: gob.hp, state: gob.state, dead: gob.dead, respawnT: gob.respawnT };
+      let ok = false, info = { dozer: !!dz };
+      if (dz) {
+        dz.dead = false; dz.hp = dz.maxHp; dz.x = tc(o.x) - 40; dz.y = tc(o.y); dz.home = { x: dz.x, y: dz.y }; dz.state = 'idle'; dz.stunT = 0; dz.chargeT = 1; dz.chargeDir = { x: 1, y: 0 }; dz.chargeHit = false; dz.rammed = [];
+        gob.dead = false; gob.hp = 30; gob.maxHp = 30; gob.x = tc(o.x) + 30; gob.y = tc(o.y); gob.home = { x: gob.x, y: gob.y }; gob.stunT = 5; gob.state = 'idle';
+        F.sim(20, []); ok = !gob.dead && gob.hp >= 24 && gob.hp <= 27; info = { dead: gob.dead, took: 30 - gob.hp };
+        dz.chargeT = 0; Object.assign(dz, ds); gob.maxHp = MONSTER_DEFS.goblin.hp;
+      }
+      check('friendly fire: a goblin-driven bulldozer rams a goblin in its path for half damage (3–6)', ok, info);
+      Object.assign(gob, gs); gob.stunT = 0; }
+    { // the core parks the machine you are in: X from the bulldozer leaves T.DOZER, a wrecked bulldozer leaves T.DOZER_WRECK; the walker keeps T.MECH / T.WRECK
+      const o = openSpot(44, 24); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; player.action = null; const r0 = player.r, s0 = player.speed;
+      player.mech = { hp: 110, maxHp: 110, kind: 'dozer' }; player.r = 22; player.speed = 130; notice = null; exitMech();
+      const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
+      const dozer = !player.mech && !!nearestTileOfType(ptx, pty, T.DOZER, 2) && !nearestTileOfType(ptx, pty, T.MECH, 2) && !!notice && /bulldozer/.test(notice.text); const dn = notice && notice.text;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (tileAt(ptx + dx, pty + dy) === T.DOZER) changeTile(ptx + dx, pty + dy, T.GRASS);
+      F.tp(o.x, o.y); player.mech = { hp: 110, maxHp: 110, kind: 'dozer' }; player.r = 22; dialog.queue.length = 0; dialog.cur = null; wreckMech();
+      const wtx = Math.floor(player.x / TILE), wty = Math.floor(player.y / TILE); const wreck = !player.mech && !!nearestTileOfType(wtx, wty, T.DOZER_WRECK, 2) && !nearestTileOfType(wtx, wty, T.WRECK, 2) && (dialog.cur && /bulldozer gives out/.test(dialog.cur.text) || dialog.queue.some(d => /bulldozer gives out/.test(d.text)));
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (tileAt(wtx + dx, wty + dy) === T.DOZER_WRECK) changeTile(wtx + dx, wty + dy, T.GRASS);
+      F.tp(o.x, o.y); player.mech = { hp: 130, maxHp: 130 }; player.r = 20; notice = null; exitMech(); const mtx = Math.floor(player.x / TILE), mty = Math.floor(player.y / TILE);
+      const walker = !player.mech && !!nearestTileOfType(mtx, mty, T.MECH, 2) && !nearestTileOfType(mtx, mty, T.DOZER, 2) && !!notice && /walker/.test(notice.text);
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (tileAt(mtx + dx, mty + dy) === T.MECH) changeTile(mtx + dx, mty + dy, T.GRASS);
+      dialog.queue.length = 0; dialog.cur = null; player.r = r0; player.speed = s0; player.mech = null;
+      check('machines: X from the bulldozer parks T.DOZER and a wrecked bulldozer leaves T.DOZER_WRECK (never walker tiles); the walker still parks T.MECH', dozer && wreck && walker, { dozer, wreck, walker, dn }); }
+    { // walker and bulldozer come back after an hour, even inside the camp (the camp's 1800 s never shortens it)
+      const wk = monsters.find(m => m.type === 'walker'); const ws = { x: wk.x, y: wk.y, dead: wk.dead, hp: wk.hp, respawnT: wk.respawnT, deadT: wk.deadT, state: wk.state }; const k0 = player.kills, wq = quest.walkerKilled;
+      wk.dead = false; wk.hp = 1; wk.x = tc(VILLAGE.x0); wk.y = tc(20); dialog.queue.length = 0; dialog.cur = null; const d0 = drops.length; killMonster(wk); const rt = wk.respawnT; const noWreck = tileAt(VILLAGE.x0, 20) === T.FENCE;
+      check('machines: walker and bulldozer respawn 3600 s (a killed camp walker waits at least an hour)', MONSTER_DEFS.walker.respawn === 3600 && MONSTER_DEFS.bulldozer.respawn === 3600 && rt >= 3600 && noWreck, { rt, noWreck });
+      Object.assign(wk, ws); player.kills = k0; quest.walkerKilled = wq; drops = drops.filter((d, i) => i < d0); dialog.queue.length = 0; dialog.cur = null; }
+    { // the Ashfields: ash in patches (25–60% of dragon country outside the lair), grass and dirt between; lava and obsidian still there
+      let ash = 0, area = 0, lava = 0, obs = 0, green = 0; const inFang = (x, y) => x >= 2 && x <= 34 && y >= 108 && y <= 138;
+      for (let y = 96; y <= 138; y++) for (let x = 1; x <= 99; x++) { if (inFang(x, y)) continue; area++; const t = tileAt(x, y); if (t === T.ASH) ash++; else if (t === T.LAVA) lava++; else if (t === T.OBSIDIAN) obs++; else if (t === T.GRASS || t === T.DIRT) green++; }
+      const cover = ash / area;
+      check('ashfields: ash lies in patches — 25–60% of dragon country, grass and dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.6 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, green, lava, obs }); }
+    { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
+      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = 140; y <= 178; y++) for (let x = 100; x <= 198; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === 150) row150++; } else if (t === T.FERN) ferns++; }
+      check('jungle: the biome continues south (y 140–178, x 100–198) at the same density; jungle trees stand at y 150', row150 >= 20 && trees / band > 0.3 && trees / band < 0.5 && ferns / band > 0.06 && regionAt(150, 160).name === 'The Jungle' && regionAt(133, 120).name === 'Sylvaris', { row150, trees: +(trees / band).toFixed(2), ferns: +(ferns / band).toFixed(2), region: regionAt(150, 160).name }); }
     peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
     const fails = Object.values(report).filter(v => v.startsWith('FAIL')).length;
