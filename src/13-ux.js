@@ -125,7 +125,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // dialogue: box rect is the tap zone, no auto-advance before 4 + len/9 s, log keeps lines
   { const saved = { cur: dialog.cur, q: dialog.queue.slice() }; dialog.queue.length = 0; dialog.cur = null; paused = false; closePanel();
     const n0 = dialogLog.length; say('Testing the box. Tap it to continue, knight.', 'The Voice'); F.step([]); render();
-    const cur = dialog.cur && dialog.cur.text; const r = dialogRect && { ...dialogRect }; const logged = dialogLog.length === n0 + 1 && dialogLog[dialogLog.length - 1].text === cur;
+    const cur = dialog.cur && dialog.cur.text; const r = dialogRect && { ...dialogRect }; const logged = dialogLog.length >= Math.min(30, n0 + 1) && dialogLog[dialogLog.length - 1].text === cur; // the log is capped at 30
     pointerDown(r ? r.x - 5 : -1, r ? r.y - 5 : -1, 'mouse'); const stillThere = !!dialog.cur;
     pointerDown(r.x + r.w / 2, r.y + r.h / 2, 'mouse'); const gone = !dialog.cur;
     say('A'.repeat(90), 'The Voice'); F.step([]); F.sim(60 * 9, []); const notYet = !!dialog.cur; F.sim(60 * 6, []); const autoLater = !dialog.cur;
