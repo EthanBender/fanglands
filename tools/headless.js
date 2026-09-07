@@ -27,6 +27,7 @@ for (let n = 0; n < runs; n++) {
   const t0 = Date.now();
   const r = g.FANGLANDS.selfTest();
   const fails = Object.entries(r).filter(([k, v]) => String(v).startsWith('FAIL'));
+  if (process.env.DUMP_NAMES) require('fs').writeFileSync(process.env.DUMP_NAMES + '.' + (n + 1), Object.keys(r).join('\n')); // DUMP_NAMES=path → one file per run listing every check name (spot conditional or duplicate names)
   console.log(`run ${n + 1}: ${r.summary} (${Date.now() - t0} ms)`);
   for (const [k, v] of fails) console.log('  ' + k + ': ' + v);
   if (fails.length) bad++;
