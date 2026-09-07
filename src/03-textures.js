@@ -90,7 +90,8 @@ const MINI = {};
 
 // feature files can add tile kinds at load time: const MY = addTile('MY_TILE', { solid: true, tex: 'cobble', mini: '#888', push: false, placeableOn: false });
 function addTile(name, opt = {}) {
-  const id = Object.keys(T).length; T[name] = id;
+  if (name in T) { console.warn('addTile: "' + name + '" already exists; returning the existing id'); return T[name]; }
+  const id = Math.max(...Object.values(T)) + 1; T[name] = id;
   if (opt.solid) SOLID.add(id); if (opt.push) PUSH_THROUGH.add(id); if (opt.placeableOn) PLACEABLE_ON.add(id);
   TEX_NAME[id] = opt.tex || 'grass'; MINI[id] = opt.mini || '#4c9134';
   return id;
