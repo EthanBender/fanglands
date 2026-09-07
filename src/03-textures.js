@@ -88,6 +88,9 @@ const MINI = {};
   for (const c in m) for (const t of m[c]) MINI[t] = c;
 }
 
+// tile ids ↔ names. Saves store tile NAMES (feature files add tiles at load time, so numeric ids depend on which files load, in which order).
+const tileName = id => { for (const k in T) if (T[k] === id) return k; return id; };
+const tileId = v => typeof v === 'number' ? v : (typeof v === 'string' && v in T) ? T[v] : null; // old numeric saves are used as they are; unknown names → null
 // feature files can add tile kinds at load time: const MY = addTile('MY_TILE', { solid: true, tex: 'cobble', mini: '#888', push: false, placeableOn: false });
 function addTile(name, opt = {}) {
   if (name in T) { console.warn('addTile: "' + name + '" already exists; returning the existing id'); return T[name]; }

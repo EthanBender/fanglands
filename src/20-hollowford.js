@@ -94,7 +94,9 @@
     if (quest.stage === 9 && hf.beastKilled) advanceQuest(10);
     if (quest.stage === 10 && hf.rewarded) advanceQuest(11);
     for (const m of monsters) {
-      if (m.type !== 'barrelbeast' || m.dead) continue;
+      if (m.type !== 'barrelbeast') continue;
+      if (hf.beastKilled) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; continue; } // a boss dies once: no 10-minute farm, no second wreck, no new beast in a "safe" town
+      if (m.dead) continue;
       const p2 = m.hp <= m.maxHp * 0.5;
       if (!p2) { m.phase2 = false; continue; }
       if (!m.phase2) { m.phase2 = true; m.bombCd = 0.8; floatText(m.x, m.y - m.r - 30, 'The boiler screams!', '#ff8a1a', 14); burst(m.x, m.y - 20, '#ff8a1a', 20, 120); say('Its boiler is cracked. Now it will spit. Keep moving, knight.', 'The Voice'); }
@@ -113,7 +115,7 @@
     const hf = HF(); hf.beastKilled = true;
     const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); let spot = null;
     for (let r = 0; r <= 2 && !spot; r++) for (let dy = -r; dy <= r && !spot; dy++) for (let dx = -r; dx <= r && !spot; dx++) if (PLACEABLE_ON.has(tileAt(tx + dx, ty + dy)) && !insideBuilding(tx + dx, ty + dy)) spot = { tx: tx + dx, ty: ty + dy };
-    if (spot) { changeTile(spot.tx, spot.ty, T.WRECK); hf.wreck = [spot.tx, spot.ty]; }
+    if (spot && !(hf.wreck && tileAt(hf.wreck[0], hf.wreck[1]) === T.WRECK)) { changeTile(spot.tx, spot.ty, T.WRECK); hf.wreck = [spot.tx, spot.ty]; } // the wreck is placed once
     burst(m.x, m.y, '#ff8a1a', 40, 220); burst(m.x, m.y, '#3a3a3a', 24, 140);
     say('The Barrelbeast tips, groans, and comes apart. Boiler, barrel, four iron legs. The goblin crew runs for the trees.', 'The Voice');
     say('The wreck stays. Iron bars and scrap would set it walking again, smaller. Hollowford is quiet now. Go to the chapel and tell them.', 'The Voice');

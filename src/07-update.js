@@ -1,8 +1,9 @@
 // ============================================================================
 // UPDATE LOOP
 // ============================================================================
+const REGROW_FROM = new Set([T.STUMP, T.RUBBLE, T.ASHES, T.GRASS, T.DIRT]); // a regrow only fires onto bare ground or its own intermediate tile: a door placed on ashes stays a door
 function update(dt) {
-  time += dt;
+  time += dt; HUD.leftY = 82;
   if (pressed.has('Escape')) { if (panel) closePanel(); else paused = !paused; }
   if (!paused) {
     const toggle = name => panel === name ? closePanel() : openPanel(name);
@@ -29,7 +30,14 @@ function update(dt) {
 
   // world timers: regrowth, crops, fires
   let dirty = false;
-  for (const r of regrow) { r.timer -= dt; if (r.timer <= 0) { const tx = r.i % MAP_W, ty = Math.floor(r.i / MAP_W); if (dist(player.x, player.y, tc(tx), tc(ty)) > 2.5 * TILE) { changeTile(tx, ty, r.t); r.done = true; dirty = true; } else r.timer = 5; } }
+  for (const r of regrow) {
+    r.timer -= dt; if (r.timer > 0) continue;
+    const tx = r.i % MAP_W, ty = Math.floor(r.i / MAP_W);
+    if (!REGROW_FROM.has(tileAt(tx, ty))) { r.done = true; dirty = true; continue; } // something was built there since: the world moved on
+    const occupied = circleHitsTile(player.x, player.y, player.r + 2, tx, ty) || monsters.some(m => !m.dead && circleHitsTile(m.x, m.y, m.r + 2, tx, ty)) || NPCS.some(n => circleHitsTile(n.px, n.py, 14, tx, ty));
+    if (occupied || dist(player.x, player.y, tc(tx), tc(ty)) <= 2.5 * TILE) { r.timer = 5; continue; } // nobody gets a tree grown through them
+    changeTile(tx, ty, r.t); r.done = true; dirty = true;
+  }
   if (dirty) regrow = regrow.filter(r => !r.done);
   for (const c of crops) { c.t += dt; if (c.stage < 3 && c.t > 40) { c.t = 0; c.stage += 1; } }
   for (const f of fires) { f.timer -= dt; if (f.timer <= 0 && !f.done) { const tx = f.i % MAP_W, ty = Math.floor(f.i / MAP_W); if (tileAt(tx, ty) === T.FIRE) changeTile(tx, ty, T.ASHES); regrow.push({ i: f.i, t: f.under === T.FLOOR ? T.DIRT : (f.under ?? T.DIRT), timer: 30 }); f.done = true; } }
@@ -85,7 +93,10 @@ function update(dt) {
     for (const d of drops) {
       d.t += dt;
       if (dist(d.x, d.y, player.x, player.y) < player.r + 12) {
-        const left = addItem(d.id, d.qty);
+        // coins never fail in addItem (the rest lands at your feet), so only ask for what fits here or the pile would be re-dropped every frame
+        const take = d.id === 'coins' ? Math.min(d.qty, roomFor('coins')) : d.qty;
+        if (take <= 0) { if (!d.warned) { notify('Your pack is full.'); d.warned = true; } continue; }
+        const left = addItem(d.id, take) + (d.qty - take);
         if (left < d.qty) { floatText(player.x, player.y - 30, `+${d.qty - left} ${ITEMS[d.id].name}`, ITEMS[d.id].color); sfx(d.id === 'coins' ? 'coins' : 'pickup'); }
         if (left > 0) { d.qty = left; if (!d.warned) { notify('Your pack is full.'); d.warned = true; } } else d.taken = true;
       }
@@ -97,7 +108,15 @@ function update(dt) {
   const cb = combatLevel();
   for (const m of monsters) {
     const def = MONSTER_DEFS[m.type];
-    if (m.dead) { m.deadT += dt; m.respawnT -= dt; if (m.respawnT <= 0 && dist(player.x, player.y, m.home.x, m.home.y) > 4 * TILE) { m.dead = false; m.hp = m.maxHp; m.x = m.home.x; m.y = m.home.y; m.angry = def.aggro; m.state = 'idle'; burst(m.x, m.y, 'rgba(255,255,255,0.6)', 10, 60); } continue; }
+    if (m.dead) {
+      m.deadT += dt; m.respawnT -= dt;
+      if (m.respawnT <= 0 && dist(player.x, player.y, m.home.x, m.home.y) > 4 * TILE) {
+        const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast'); // a wreck, a plank or a regrown tree on the home tile must not embed the monster
+        if (!sp) { m.respawnT = 5; continue; }
+        m.dead = false; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.angry = def.aggro; m.state = 'idle'; burst(m.x, m.y, 'rgba(255,255,255,0.6)', 10, 60);
+      }
+      continue;
+    }
     m.attackCd = Math.max(0, m.attackCd - dt); m.hurtT = Math.max(0, m.hurtT - dt); m.stunT = Math.max(0, (m.stunT || 0) - dt);
     // traps
     { const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); if (tileAt(tx, ty) === T.TRAP && !def.human) { changeTile(tx, ty, T.GRASS); m.hp -= 12; m.stunT = 2; m.hurtT = 0.3; floatText(m.x, m.y - m.r - 6, '-12 trap', '#ffd166'); burst(m.x, m.y, '#8f96a3', 12, 90); if (m.hp <= 0) { killMonster(m); continue; } } }
@@ -139,6 +158,7 @@ function update(dt) {
       m.walkT += dt * 8;
     }
     m.attackT = Math.max(0, (m.attackT || 0) - dt);
+    if (dp > VW) continue; // pairwise separation only matters on screen: 170 monsters squared every frame is not
     for (const o of monsters) { if (o === m || o.dead) continue; const d = dist(m.x, m.y, o.x, o.y); if (d < m.r + o.r && d > 0) moveEntity(m, (m.x - o.x) / d * 1.5, (m.y - o.y) / d * 1.5, 'beast'); }
   }
 
@@ -163,11 +183,11 @@ function update(dt) {
     if (p.kind === 'sticky' && p.t >= p.life) { p.vx = p.vy = 0; if (p.t >= p.life + p.fuse) { explode(p.x, p.y, 56, 3, 8, 'monster'); p.done = true; } continue; }
     p.x += p.vx * dt; p.y += p.vy * dt;
     const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
-    if (SOLID.has(tileAt(tx, ty)) && tileAt(tx, ty) !== T.WATER) { if (p.kind === 'bomb') explode(p.x, p.y, 64, 6, 14, 'player'); else if (p.kind === 'arrow' && Math.random() < 0.5) drops.push({ x: p.x - p.vx * 0.02, y: p.y - p.vy * 0.02, id: p.str > 5 ? 'iron_arrow' : 'stone_arrow', qty: 1, t: 0 }); p.done = true; continue; }
+    if (SOLID.has(tileAt(tx, ty)) && tileAt(tx, ty) !== T.WATER) { if (p.kind === 'bomb') explode(p.x, p.y, 64, 6, 14, 'player'); else if (p.kind === 'arrow' && p.owner === 'player' && Math.random() < 0.5) drops.push({ x: p.x - p.vx * 0.02, y: p.y - p.vy * 0.02, id: p.str > 5 ? 'iron_arrow' : 'stone_arrow', qty: 1, t: 0 }); p.done = true; continue; }
     if (p.kind === 'bomb') { for (const m of monsters) { if (!m.dead && dist(p.x, p.y, m.x, m.y) < m.r + 6) { explode(p.x, p.y, 64, 6, 14, 'player'); p.done = true; break; } } if (p.done) continue; }
-    if (p.kind === 'arrow') { for (const m of monsters) { if (m.dead) continue; if (dist(p.x, p.y, m.x, m.y) < m.r + 7 || dist(p.x - p.vx * dt * 0.5, p.y - p.vy * dt * 0.5, m.x, m.y) < m.r + 7) { const dmg = rollHit(playerAttackRoll(true), (MONSTER_DEFS[m.type].def + 8) * 64, playerMaxHit(true)); hitMonster(m, dmg, 8); p.done = true; break; } } }
+    if (p.kind === 'arrow' && p.owner === 'player') { for (const m of monsters) { if (m.dead) continue; if (dist(p.x, p.y, m.x, m.y) < m.r + 7 || dist(p.x - p.vx * dt * 0.5, p.y - p.vy * dt * 0.5, m.x, m.y) < m.r + 7) { const dmg = rollHit(playerAttackRoll(true), (MONSTER_DEFS[m.type].def + 8) * 64, playerMaxHit(true)); hitMonster(m, dmg, 8); p.done = true; break; } } }
     if (p.kind === 'bomb' && p.t >= p.life) { explode(p.x, p.y, 64, 6, 14, 'player'); p.done = true; }
-    if (p.kind === 'arrow' && p.t >= p.life) { if (Math.random() < 0.5) drops.push({ x: p.x, y: p.y, id: p.str > 5 ? 'iron_arrow' : 'stone_arrow', qty: 1, t: 0 }); p.done = true; }
+    if (p.kind === 'arrow' && p.t >= p.life) { if (p.owner === 'player' && Math.random() < 0.5) drops.push({ x: p.x, y: p.y, id: p.str > 5 ? 'iron_arrow' : 'stone_arrow', qty: 1, t: 0 }); p.done = true; }
   }
   projectiles = projectiles.filter(p => !p.done);
 

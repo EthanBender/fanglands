@@ -82,7 +82,7 @@ const RECIPES = [
   { out: 'lodestone', qty: 1, needs: [['stone', 5], ['iron_bar', 1]], station: 'workbench', skill: 'crafting', lv: 5, xp: 120, label: '5 Stone + Iron bar → Lodestone' },
   { out: 'goblin_trap', qty: 1, needs: [['iron_bar', 1], ['plank', 2]], station: 'workshop', skill: 'crafting', lv: 3, xp: 60, label: 'Iron bar + 2 Planks → Goblin trap' },
   { out: 'iron_arrow', qty: 10, needs: [['iron_bar', 1], ['wood', 2]], station: 'workshop', skill: 'crafting', lv: 5, xp: 30, label: 'Iron bar + 2 Logs → 10 Iron arrows' },
-  { out: 'bomb', qty: 1, needs: [['blast_powder', 1], ['goblin_scrap', 1]], station: 'alchemy', skill: 'crafting', lv: 2, xp: 30, label: 'Blast powder + Goblin scrap → Goblin bomb' },
+  { out: 'bomb', qty: 1, needs: [['blast_powder', 1], ['goblin_scrap', 1]], station: 'alchemy', skill: 'crafting', lv: 2, xp: 45, label: 'Blast powder + Goblin scrap → Goblin bomb' },
   // smithing (anvil, needs a hammer)
   { out: 'iron_dagger', qty: 1, needs: [['iron_bar', 1]], station: 'anvil', skill: 'smithing', lv: 1, xp: 25, label: '1 bar → Iron dagger' },
   { out: 'iron_axe', qty: 1, needs: [['iron_bar', 1]], station: 'anvil', skill: 'smithing', lv: 2, xp: 25, label: '1 bar → Iron axe' },

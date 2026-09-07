@@ -2,16 +2,23 @@
 // RENDER: world, lighting, minimap
 // ============================================================================
 const cam = { x: 0, y: 0 };
+const RENDER_FURNITURE = new Set([T.COUNTER, T.TABLE, T.BED, T.SHELF, T.ANVIL, T.FORGE, T.OVEN, T.WORKBENCH, T.WORKSHOP, T.ALCHEMY, T.THRONE, T.CHEST, T.GOLDPILE, T.STALL, T.LODESTONE, T.WRECK, T.MECH, T.CART, T.AXESTUMP, T.STONECIRCLE]); // hoisted: was an array literal built every tile every frame
 const darkLayer = document.createElement('canvas');
-// minimap: one pixel per tile, refreshed when tiles change
+// minimap: one pixel per tile. Painted in full once (boot, new game, load, or when a feature sets miniDirty); after that only the tiles
+// changeTile touched (miniDirtyTiles) are repainted, so a chopped tree costs one pixel and not a 28,000-cell sweep.
 const miniCanvas = document.createElement('canvas'); miniCanvas.width = MAP_W; miniCanvas.height = MAP_H;
 let miniDirty = true, miniDiffCount = -1;
 function refreshMini() {
   const g = miniCanvas.getContext('2d');
-  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { g.fillStyle = MINI[map[idx(x, y)]] || '#4c9134'; g.fillRect(x, y, 1, 1); }
-  for (const b of BUILDINGS) { g.fillStyle = b.roof; g.fillRect(b.x, b.y, b.w, b.h); }
-  miniDirty = false; miniDiffCount = mapDiffs.size;
+  if (miniDirty) {
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { g.fillStyle = MINI[map[idx(x, y)]] || '#4c9134'; g.fillRect(x, y, 1, 1); }
+    for (const b of BUILDINGS) { g.fillStyle = b.roof; g.fillRect(b.x, b.y, b.w, b.h); }
+  } else {
+    for (const i of miniDirtyTiles) { const x = i % MAP_W, y = Math.floor(i / MAP_W); const b = buildingAt(x, y); g.fillStyle = b ? b.roof : (MINI[map[i]] || '#4c9134'); g.fillRect(x, y, 1, 1); }
+  }
+  miniDirtyTiles.clear(); miniDirty = false; miniDiffCount = mapDiffs.size;
 }
+const miniNeedsPaint = () => miniDirty || miniDirtyTiles.size > 0;
 function render() {
   if (window.innerWidth !== VW || window.innerHeight !== VH) resize();
   const g = ctx;
@@ -46,11 +53,12 @@ function render() {
   for (const d of drops) if (d.x > cam.x - 40 && d.x < cam.x + VW + 40 && d.y > cam.y - 40 && d.y < cam.y + VH + 40) drawDrop(g, d);
   if (!swordTaken) drawSword(g);
   const items = [];
+  const FURNITURE = RENDER_FURNITURE;
   const PROPS = { [T.TREE]: (tx, ty) => drawTreeProp(g, tx, ty, false), [T.OAK]: (tx, ty) => drawTreeProp(g, tx, ty, true), [T.ROCK]: (tx, ty) => drawRockProp(g, tx, ty, 'stone'), [T.IRON]: (tx, ty) => drawRockProp(g, tx, ty, 'iron'), [T.COAL]: (tx, ty) => drawRockProp(g, tx, ty, 'coal'), [T.SIGN]: (tx, ty) => drawSignProp(g, tx, ty), [T.FIRE]: (tx, ty) => drawFireProp(g, tx, ty), [T.DUMMY]: (tx, ty) => drawDummyProp(g, tx, ty), [T.GRAVE]: (tx, ty) => drawGraveProp(g, tx, ty) };
   for (let ty = y0; ty <= y1 + 2; ty++) for (let tx = x0; tx <= x1; tx++) {
     const t = tileAt(tx, ty);
     if (PROPS[t]) items.push({ y: ty * TILE + TILE - 4, draw: () => PROPS[t](tx, ty) });
-    else if ([T.COUNTER, T.TABLE, T.BED, T.SHELF, T.ANVIL, T.FORGE, T.OVEN, T.WORKBENCH, T.WORKSHOP, T.ALCHEMY, T.THRONE, T.CHEST, T.GOLDPILE, T.STALL, T.LODESTONE, T.WRECK, T.MECH, T.CART, T.AXESTUMP, T.STONECIRCLE].includes(t)) items.push({ y: ty * TILE + TILE - 6, draw: () => drawFurniture(g, tx, ty, t) });
+    else if (FURNITURE.has(t)) items.push({ y: ty * TILE + TILE - 6, draw: () => drawFurniture(g, tx, ty, t) });
   }
   // castle towers
   for (const [cx, cy] of [[CASTLE.x, CASTLE.y], [CASTLE.x + CASTLE.w - 1, CASTLE.y], [CASTLE.x, CASTLE.y + CASTLE.h - 1], [CASTLE.x + CASTLE.w - 1, CASTLE.y + CASTLE.h - 1]]) if (cx >= x0 - 1 && cx <= x1 + 1 && cy >= y0 - 2 && cy <= y1 + 2) items.push({ y: cy * TILE + TILE, draw: () => drawTower(g, tc(cx), tc(cy)) });
@@ -101,7 +109,7 @@ function render() {
   drawHud(g);
 }
 function drawMinimap(g, x, y, size) {
-  if (miniDirty || miniDiffCount !== mapDiffs.size) refreshMini();
+  if (miniNeedsPaint()) refreshMini();
   const tilesAcross = 44, scale = size / tilesAcross;
   const cx = player.x / TILE, cy = player.y / TILE;
   const sx = clamp(cx - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(cy - tilesAcross / 2, 0, MAP_H - tilesAcross);
