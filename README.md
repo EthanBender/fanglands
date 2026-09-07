@@ -15,7 +15,10 @@ A dragon only legends have heard about.
   farm, make fires, then bring down the Goblin Walker in the camp east of town and pilot it.
 - **Chapter 4:** Hollowford and the Barrelbeast. Plus: a hero companion, the goblin bulldozer,
   the town watch, and Deepholm under the quarry.
-- **Self-check:** open the browser console and run `FANGLANDS.selfTest()` (103 checks).
+- **Chapter 5:** the jungle and the elf city, the Grey Sea and its islands, dragon country,
+  Godly Plated armour, and The Fang.
+- **Self-check:** open the browser console and run `FANGLANDS.selfTest()` (170 checks), or
+  `node tools/headless.js` from a terminal.
 - **Adding features:** see `docs/EXTENDING.md`. One file per feature under `src/2x-*.js`, registered through hooks.
 
 ## Controls
@@ -34,6 +37,7 @@ A dragon only legends have heard about.
 | World map | M or click the minimap | tap the minimap |
 | Home (lodestone) | H | Bag → Home |
 | Climb out of the walker | X | EXIT |
-| Menu | Esc | MENU |
+| Help | ? | HELP |
+| Menu (sound, new game) | Esc | MENU |
 
 Progress saves in the browser automatically.

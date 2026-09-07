@@ -339,8 +339,35 @@ also scale with how far away you died (the designer mentioned distance)?
   Thrain (relight the forge: 5 coal + 3 iron bars) and Brunhild's shop. Mithril
   bars need coal; mithril gear needs Smithing 22 to 30.
 
-**[open]** Elves, boats, dragons and The Fang are next. **[open]** Should the
-Barrelbeast wreck become a drivable siege machine?
+## 9e. The rest of the original spec (2026-09-07, second wave of five agents)
+
+- **The Jungle and Sylvaris.** A vast jungle south of Hollowford with giant
+  vine-hung trees (Woodcutting 15 for jungle logs). The elf city is hidden
+  behind a wall of jungle with a single gap marked by a carved totem. Stilt
+  huts, leaf walls, rope bridges over the river, lanterns. Queen Aelith, Lira
+  the archery master (targets train Range, yew bow, elven arrows), Thessaly
+  the weaver, whose loom makes the **hover armour**: you float, move faster,
+  and cross water.
+- **The Grey Sea.** A dock at the end of a road north of the Goblin Camp. Old
+  Harl ferries you to Gull Isle (palms, Salt Pete, lobster pots at Fishing 25,
+  a message in a bottle) and Ironclad Isle (a goblin shipwreck and a strongbox
+  that opens once its guards are dead).
+- **The Ashfields.** Dragon country in the south-west: ash, lava that burns,
+  obsidian (Mining 35), dead trees and dragon bones. Dunstan the dragon dung
+  farmer wants five dragon dung, pays, and salves you against fire. Green and
+  red dragons breathe fire. **Godly Plated armour** (winged helm, plate, legs,
+  shield) is smithed from dragon scales, mithril and obsidian at Smithing 40+.
+- **The Fang.** A sealed lair in the far south-west that opens once you are
+  salved. Inside: heat, magma, and the giant elemental dragon that cycles
+  fire, ice, storm and stone every 25 seconds. Slaying it drops the Fang itself
+  as a weapon, opens the hoard, and returning to the Duke rolls the credits.
+- **Notice board.** Fourteen tiny quests from villagers, taken and handed in at
+  the board in the square (and a second board by the cave road).
+- **Sound and help.** Synthesised effects for swings, hits, pickups, level-ups,
+  crafting and menus, a mute toggle, and a How to Play panel.
+
+**[open]** Should the Barrelbeast wreck become a drivable siege machine?
+**[open]** A title screen and save slots. **[open]** Music.
 
 ## 10. Build order
 

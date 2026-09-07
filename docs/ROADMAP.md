@@ -49,11 +49,22 @@ Each version is playable on its own. We never leave the game broken between vers
 - [x] Deepholm: dwarven undercity under Grey Quarry via the mine shaft, dark with lamps, mithril rocks (Mining 20), mithril bars and gear (Smithing 20–30), King Thrain's quest, Brunhild's shop (`src/24-dwarves.js`)
 - [x] Self-test: 103 checks
 
-## v4 — next
-- [ ] Elves: jungle biome, tree-hut city with rope bridges, Range training
-- [ ] Boats to islands from a dock
-- [ ] Dragon country, the dragon dung farmer, dragons, Godly Plated armour (winged helm), magic hover armour, The Fang
-- [ ] More mechs to repair, more side and tiny quests, more block types for bases
+## v4 — The whole original scope (DONE 2026-09-07, second wave of five agents)
+- [x] Map 200×140, saves remapped; headless test runner (`node tools/headless.js`)
+- [x] Sound effects (synthesised, no files) with a mute toggle; Help panel (? / HELP)
+- [x] Notice board with 14 tiny quests, taken and handed in at the board (`src/29-quests.js`)
+- [x] The Jungle and Sylvaris: hidden elf city of stilt huts and rope bridges, jungle logs (WC 15), archery targets for Range, Lira's bows, the Queen's quest, Thessaly's loom and hover armour that floats over water (`src/25-elves.js`)
+- [x] The Grey Sea: dock, Old Harl's ferry, Gull Isle (lobster, Salt Pete, message in a bottle), Ironclad Isle (goblin shipwreck, strongbox) (`src/26-boats.js`)
+- [x] The Ashfields: lava, obsidian (Mining 35), Dunstan the dragon dung farmer and the fireproof salve, green and red dragons with fire breath, Godly Plated armour with the winged helm (`src/27-dragons.js`)
+- [x] The Fang's lair: sealed gate, heat, the giant elemental dragon cycling fire / ice / storm / stone, the hoard, the ending and credits (`src/28-thefang.js`)
+- [x] Self-test: 170 checks
+
+## v5 — polish and depth (ideas)
+- [ ] A save-slot picker and a title screen
+- [ ] Balance pass on the late game with a real playthrough
+- [ ] More mechs and goblin machines; a drivable Barrelbeast
+- [ ] More tiny quests, more block types for bases, a second hero
+- [ ] Music (synthesised loops per region)
 
 
 ## v4 — The Hidden Cities
