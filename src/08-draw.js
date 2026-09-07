@@ -19,7 +19,7 @@ function drawHuman(g, e, look) {
   if (look.weapon) drawWeaponInHand(g, e, ang, look.weapon.shape, look.weapon.color);
   else if (look.spear) { const a = ang + (e.attackT > 0 ? -0.2 : 0.75); g.save(); g.rotate(a); g.fillStyle = '#8a6a3a'; g.fillRect(-14, -1.5, 40, 3); g.fillStyle = '#c9ccd3'; g.beginPath(); g.moveTo(26, -4); g.lineTo(36, 0); g.lineTo(26, 4); g.closePath(); g.fill(); g.restore(); }
   else if (look.fists && e.attackT > 0) { const swing = 1 - e.attackT / 0.22; g.fillStyle = '#e8b790'; g.beginPath(); g.arc(Math.cos(ang) * (10 + swing * 16), Math.sin(ang) * (10 + swing * 16), 4, 0, 7); g.fill(); }
-  if (look.tool) { const sw = look.toolSwing ? Math.sin(time * 14) * 0.6 : 0; g.save(); g.rotate(ang - 0.7 + sw); g.fillStyle = '#8a6a3a'; g.fillRect(2, -1.5, 26, 3); g.fillStyle = look.toolColor || '#b8863a'; if (look.tool === 'axe') { g.beginPath(); g.moveTo(20, -3); g.quadraticCurveTo(30, -10, 30, 0); g.quadraticCurveTo(30, 10, 20, 3); g.closePath(); g.fill(); } else if (look.tool === 'pickaxe') { g.beginPath(); g.moveTo(24, -2); g.quadraticCurveTo(30, -8, 34, -6); g.lineTo(30, 0); g.lineTo(34, 6); g.quadraticCurveTo(30, 8, 24, 2); g.closePath(); g.fill(); } else if (look.tool === 'hammer') { g.fillRect(20, -6, 10, 12); } else if (look.tool === 'hoe') { g.fillRect(24, -5, 5, 10); } g.restore(); }
+  if (look.tool) { const sw = look.toolSwing ? Math.sin(time * 14) * 0.6 : 0; g.save(); g.rotate(ang - 0.7 + sw); g.fillStyle = '#8a6a3a'; g.fillRect(2, -1.5, 26, 3); g.fillStyle = look.toolColor || '#b8863a'; if (look.tool === 'axe') { g.beginPath(); g.moveTo(20, -3); g.quadraticCurveTo(30, -10, 30, 0); g.quadraticCurveTo(30, 10, 20, 3); g.closePath(); g.fill(); } else if (look.tool === 'pickaxe') { g.strokeStyle = look.toolColor || '#b8863a'; g.lineWidth = 3.5; g.lineCap = 'round'; g.beginPath(); g.arc(20, 0, 9, -1.15, 1.15); g.stroke(); g.fillStyle = '#5a4a3a'; g.fillRect(25, -3, 4, 6); } else if (look.tool === 'hammer') { g.fillRect(20, -6, 10, 12); } else if (look.tool === 'hoe') { g.fillRect(24, -5, 5, 10); } g.restore(); }
   if (look.rod) { g.save(); g.rotate(ang - 0.6); g.strokeStyle = '#8a6a3a'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(4, 0); g.lineTo(34, -4); g.stroke(); g.strokeStyle = '#e9eef5'; g.lineWidth = 1; g.beginPath(); g.moveTo(34, -4); g.lineTo(44, 10 + Math.sin(time * 3) * 2); g.stroke(); g.restore(); }
   // body
   g.fillStyle = hurt ? '#ff9a9a' : look.tunic; g.beginPath(); g.ellipse(0, 3, 12, 11, 0, 0, 7); g.fill();
@@ -68,6 +68,7 @@ function drawMech(g, e, hurt, pilot) {
   g.fillStyle = 'rgba(220,220,230,0.5)'; g.beginPath(); g.arc(-12 + Math.sin(time * 5) * 2, -22 - (time * 20) % 8, 4, 0, 7); g.fill(); // steam
   g.save(); g.rotate(ang); g.fillStyle = '#3a3a42'; g.fillRect(14, -4, e.attackT > 0 ? 30 : 18, 8); g.fillStyle = '#8f96a3'; g.fillRect(e.attackT > 0 ? 40 : 28, -7, 8, 14); g.restore();
   if (pilot) { g.save(); g.translate(0, -6); g.scale(0.7, 0.7); drawHuman(g, { facing: e.facing, hurtT: 0, attackT: 0 }, pilot); g.restore(); }
+  else if (e.parked) { g.fillStyle = '#5a3a1e'; roundRect(g, -6, -12, 12, 10, 3); g.fill(); g.fillStyle = '#3a2a14'; g.fillRect(-6, -4, 12, 3); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(-4, -10, 8, 5); } // empty seat: nobody aboard
   else { g.fillStyle = '#6fbf3f'; g.beginPath(); g.arc(0, -8, 6, 0, 7); g.fill(); g.fillStyle = '#d62828'; g.beginPath(); g.arc(-2, -9, 1.3, 0, 7); g.arc(2, -9, 1.3, 0, 7); g.fill(); }
   g.restore();
 }
@@ -224,7 +225,8 @@ function drawGraveProp(g, tx, ty) {
   g.strokeStyle = '#4a4d54'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx, cy - 14); g.lineTo(cx, cy - 2); g.moveTo(cx - 4, cy - 10); g.lineTo(cx + 4, cy - 10); g.stroke();
 }
 function drawCropProp(g, tx, ty) {
-  const cx = tc(tx), cy = tc(ty); const c = crops.find(c => c.i === idx(tx, ty)); const stage = c ? c.stage : 0;
+  const cx = tc(tx), cy = tc(ty); const c = crops.find(c => c.i === idx(tx, ty)); const stage = c ? c.stage : 0, wheat = !!c && c.crop === 'wheat';
+  if (wheat) { g.strokeStyle = stage >= 2 ? '#b8a04a' : '#7fa83a'; g.lineWidth = 1.6; g.lineCap = 'round'; for (let k = 0; k < 5; k++) { const x = cx - 16 + k * 8, h = 5 + stage * 6; g.beginPath(); g.moveTo(x, cy + 10); g.lineTo(x + (k % 2 ? 1.5 : -1.5), cy + 10 - h); g.stroke(); if (stage >= 2) { g.fillStyle = stage >= 3 ? '#e8c04a' : '#c9b860'; for (let j = 0; j < 3; j++) { g.beginPath(); g.ellipse(x + (k % 2 ? 1.5 : -1.5), cy + 8 - h + j * 2.5, 2.2, 1.3, 0, 0, 7); g.fill(); } } } return; }
   g.strokeStyle = '#4c9134'; g.lineWidth = 2; g.lineCap = 'round';
   for (let k = 0; k < 3; k++) { const x = cx - 12 + k * 12, h = 4 + stage * 5; g.beginPath(); g.moveTo(x, cy + 8); g.lineTo(x, cy + 8 - h); g.stroke(); if (stage >= 1) { g.fillStyle = '#5aa33e'; g.beginPath(); g.ellipse(x - 3, cy + 6 - h * 0.6, 3, 2, -0.5, 0, 7); g.ellipse(x + 3, cy + 4 - h * 0.8, 3, 2, 0.5, 0, 7); g.fill(); } }
   if (stage >= 3) { g.fillStyle = '#e8e26b'; for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(cx - 12 + k * 12, cy - 12, 2.5, 0, 7); g.fill(); } }
@@ -248,7 +250,7 @@ function drawFurniture(g, tx, ty, t) {
   else if (t === T.STALL) { g.fillStyle = '#6b4a2a'; g.fillRect(x + 4, y + 20, TILE - 8, 20); g.fillStyle = '#a5763f'; g.fillRect(x + 4, y + 18, TILE - 8, 6); for (let k = 0; k < 4; k++) { g.fillStyle = k % 2 ? '#c0504d' : '#f2f2ec'; g.fillRect(x + k * 12, y - 6, 12, 14); } g.fillStyle = '#5a3a1e'; g.fillRect(x + 2, y + 8, 3, 12); g.fillRect(x + TILE - 5, y + 8, 3, 12); g.fillStyle = '#e8c04a'; g.beginPath(); g.arc(x + 14, y + 14, 3, 0, 7); g.arc(x + 30, y + 14, 3, 0, 7); g.fill(); }
   else if (t === T.LODESTONE) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 14, 14, 6, 0, 0, 7); g.fill(); g.fillStyle = '#4a5a72'; g.beginPath(); g.moveTo(cx - 12, cy + 12); g.lineTo(cx - 6, cy - 16); g.lineTo(cx + 6, cy - 16); g.lineTo(cx + 12, cy + 12); g.closePath(); g.fill(); const gl = 0.5 + Math.sin(time * 3) * 0.3; g.fillStyle = `rgba(126,200,255,${gl})`; g.beginPath(); g.moveTo(cx - 5, cy + 6); g.lineTo(cx - 2, cy - 10); g.lineTo(cx + 2, cy - 10); g.lineTo(cx + 5, cy + 6); g.closePath(); g.fill(); }
   else if (t === T.TRAP) { g.strokeStyle = '#8f96a3'; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, 14, 0, Math.PI); g.stroke(); g.beginPath(); g.arc(cx, cy, 14, Math.PI, 0); g.stroke(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; g.beginPath(); g.moveTo(cx + Math.cos(a) * 14, cy + Math.sin(a) * 14); g.lineTo(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8); g.stroke(); } g.fillStyle = '#c47a3a'; g.beginPath(); g.arc(cx, cy, 3, 0, 7); g.fill(); }
-  else if (t === T.WRECK || t === T.MECH) { const e = { x: cx, y: cy, r: 20, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }; g.save(); g.translate(cx, cy); if (t === T.WRECK) { g.rotate(0.35); g.globalAlpha = 0.85; } drawMech(g, e, false, null); if (t === T.WRECK) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.beginPath(); g.arc(0, -8, 7, 0, 7); g.fill(); } g.restore(); if (t === T.WRECK) { g.fillStyle = 'rgba(80,80,90,0.5)'; g.beginPath(); g.arc(cx + 12 + Math.sin(time * 2) * 3, cy - 30 - (time * 12 % 10), 5, 0, 7); g.fill(); } }
+  else if (t === T.WRECK || t === T.MECH) { const e = { x: cx, y: cy, r: 20, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, parked: t === T.MECH }; g.save(); g.translate(cx, cy); if (t === T.WRECK) { g.rotate(0.35); g.globalAlpha = 0.85; } drawMech(g, e, false, null); if (t === T.WRECK) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.beginPath(); g.arc(0, -8, 7, 0, 7); g.fill(); } g.restore(); if (t === T.WRECK) { g.fillStyle = 'rgba(80,80,90,0.5)'; g.beginPath(); g.arc(cx + 12 + Math.sin(time * 2) * 3, cy - 30 - (time * 12 % 10), 5, 0, 7); g.fill(); } }
   else if (t === T.CART) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 14, 20, 6, 0, 0, 7); g.fill(); g.fillStyle = '#6b4a2a'; g.fillRect(cx - 18, cy - 8, 36, 18); g.fillStyle = '#8a5a2b'; g.fillRect(cx - 16, cy - 6, 32, 14); g.fillStyle = '#3a3a42'; g.beginPath(); g.arc(cx - 10, cy + 12, 6, 0, 7); g.arc(cx + 10, cy + 12, 6, 0, 7); g.fill(); if (!player.tookPick) { g.save(); g.translate(cx + 2, cy - 4); g.rotate(-0.6); g.fillStyle = '#8a6a3a'; g.fillRect(-10, -1.5, 22, 3); g.fillStyle = '#b8863a'; g.beginPath(); g.moveTo(10, -2); g.quadraticCurveTo(16, -8, 20, -6); g.lineTo(16, 0); g.lineTo(20, 6); g.quadraticCurveTo(16, 8, 10, 2); g.closePath(); g.fill(); g.restore(); } }
   else if (t === T.AXESTUMP) { drawStumpProp(g, tx, ty); g.save(); g.translate(cx + 2, cy - 12); g.rotate(-1.1); g.fillStyle = '#8a6a3a'; g.fillRect(-4, -1.5, 26, 3); g.fillStyle = '#b8863a'; g.beginPath(); g.moveTo(18, -3); g.quadraticCurveTo(28, -10, 28, 0); g.quadraticCurveTo(28, 10, 18, 3); g.closePath(); g.fill(); g.restore(); const gr = g.createRadialGradient(cx, cy - 8, 4, cx, cy - 8, 40); gr.addColorStop(0, 'rgba(255,245,200,0.35)'); gr.addColorStop(1, 'rgba(255,245,200,0)'); g.fillStyle = gr; g.beginPath(); g.arc(cx, cy - 8, 40, 0, 7); g.fill(); }
   else if (t === T.STONECIRCLE) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 14, 12, 5, 0, 0, 7); g.fill(); g.fillStyle = '#6e7178'; g.beginPath(); g.moveTo(cx - 10, cy + 14); g.lineTo(cx - 8, cy - 22); g.lineTo(cx + 6, cy - 24); g.lineTo(cx + 10, cy + 14); g.closePath(); g.fill(); g.strokeStyle = `rgba(181,140,255,${0.4 + Math.sin(time * 2 + tx) * 0.3})`; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 2, cy - 14); g.lineTo(cx + 2, cy - 4); g.lineTo(cx - 2, cy + 4); g.stroke(); }
@@ -274,6 +276,7 @@ function drawBuilding(g, b) {
   g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1; for (let ry = y + 10; ry < y + h - 16; ry += 10) { g.beginPath(); g.moveTo(x, ry); g.lineTo(x + w, ry); g.stroke(); }
   g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y + (h - 16) / 2 - 2, w, 4);
   if (!b.coffin) { g.fillStyle = '#7a5a3a'; g.fillRect(x + w - 30, y + 8, 12, 22); g.fillStyle = '#3a2a1a'; g.fillRect(x + w - 32, y + 6, 16, 4); }
+  else drawWeathering(g, b, x, y, w, h);
   // a north door (the keep) sits on the shadowed side: draw its frame on the top edge of the roof so it reads from outside, lanterns either side
   if (b.doorTop !== undefined) {
     const dx = x + b.doorTop * TILE;
@@ -285,6 +288,31 @@ function drawBuilding(g, b) {
   }
   if (b.door !== undefined) { const dx = x + b.door * TILE; drawLantern(g, dx + 5, y + h - 10, b.coffin); drawLantern(g, dx + 43, y + h - 10, b.coffin); }
   if (b.sign) { g.fillStyle = b.coffin ? '#2a2a33' : '#efe2c4'; g.fillRect(x + w / 2 - 36, y + h - 34, 72, 16); g.strokeStyle = b.coffin ? '#8b8b9a' : '#6b4a2a'; g.strokeRect(x + w / 2 - 36, y + h - 34, 72, 16); g.fillStyle = b.coffin ? '#b58cff' : '#3a2a1a'; g.font = `700 10px ${DISPLAY}`; g.textAlign = 'center'; g.fillText(b.sign, x + w / 2, y + h - 22); }
+}
+// Death's houses are old: moss creeping over the stone base and up the roof edge, a cracked wall, slipped dark slates, and a raven on the ridge.
+// Still standing, though. Drawn over the roof strip, before the door lanterns and the sign.
+function drawWeathering(g, b, x, y, w, h) {
+  const seed = b.x * 31 + b.y * 17;
+  // moss on the base band and the roof foot
+  g.fillStyle = 'rgba(70,120,50,0.55)';
+  for (let k = 0; k < 7; k++) { const mx = x + 8 + ((seed * (k + 3)) % (w - 16)), my = y + h - 14 + ((seed + k * 5) % 9); g.beginPath(); g.ellipse(mx, my, 6 + (k % 3) * 2, 3 + (k % 2), 0, 0, 7); g.fill(); }
+  g.fillStyle = 'rgba(60,110,45,0.45)';
+  for (let k = 0; k < 4; k++) { const mx = x + 6 + ((seed * (k + 7)) % (w - 12)); g.beginPath(); g.ellipse(mx, y + h - 20, 5, 6, 0, 0, 7); g.fill(); }
+  // a crack running down the wall and a couple of dark, slipped slates on the roof
+  g.strokeStyle = 'rgba(20,20,26,0.75)'; g.lineWidth = 1.5; g.lineCap = 'round';
+  const cx0 = x + 12 + (seed % Math.max(1, w - 60)); g.beginPath(); g.moveTo(cx0, y + h - 16); g.lineTo(cx0 + 3, y + h - 10); g.lineTo(cx0 - 2, y + h - 5); g.lineTo(cx0 + 2, y + h); g.stroke();
+  g.beginPath(); g.moveTo(x + w - 20, y + 6); g.lineTo(x + w - 24, y + 16); g.lineTo(x + w - 19, y + 26); g.stroke();
+  g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x + 14, y + 14, 12, 7); g.fillRect(x + w - 40, y + 30, 14, 7); g.fillRect(x + 30, y + h - 40, 10, 6);
+  // the raven on the ridge line (roof mid-band), watching the door
+  const rx = x + w - 26, ry = y + (h - 16) / 2 - 2, tilt = Math.sin(time * 1.3 + seed) * 0.08;
+  g.save(); g.translate(rx, ry); g.rotate(tilt);
+  g.fillStyle = '#0e0e14'; g.beginPath(); g.ellipse(0, -4, 7, 4, 0, 0, 7); g.fill(); // body
+  g.beginPath(); g.moveTo(5, -4); g.lineTo(13, -1); g.lineTo(6, -2); g.closePath(); g.fill(); // tail
+  g.beginPath(); g.arc(-6, -8, 3.2, 0, 7); g.fill(); // head
+  g.fillStyle = '#8a8a5a'; g.beginPath(); g.moveTo(-9, -8); g.lineTo(-14, -7); g.lineTo(-9, -6); g.closePath(); g.fill(); // beak
+  g.fillStyle = '#b58cff'; g.beginPath(); g.arc(-7, -9, 0.8, 0, 7); g.fill(); // an eye that catches the lantern
+  g.strokeStyle = '#0e0e14'; g.lineWidth = 1; g.beginPath(); g.moveTo(-2, 0); g.lineTo(-2, 2); g.moveTo(2, 0); g.lineTo(2, 2); g.stroke(); // feet
+  g.restore();
 }
 // a small iron lantern hung beside a door frame at (x, y): hook, cage, a warm flame behind the glass. Death's houses burn violet.
 // The pool of light it throws on the step is drawn by drawDoorstep (tile pass), because the fixture itself sits under the roof strip.
@@ -348,7 +376,10 @@ function drawItemIcon(g, id, x, y, size = 18) {
     case 'dagger': g.save(); g.rotate(-0.8); g.beginPath(); g.moveTo(-2, -2); g.lineTo(10, 0); g.lineTo(-2, 2); g.closePath(); g.fill(); g.fillStyle = '#4a2e13'; g.fillRect(-8, -1.5, 6, 3); g.restore(); break;
     case 'axe': case 'battleaxe': g.save(); g.rotate(-0.8); g.fillStyle = '#6b4a2a'; g.fillRect(-10, -1.5, 18, 3); g.fillStyle = def.color; g.beginPath(); g.moveTo(4, -3); g.quadraticCurveTo(12, -9, 12, 0); g.quadraticCurveTo(12, 9, 4, 3); g.closePath(); g.fill(); if (def.shape === 'battleaxe') { g.beginPath(); g.moveTo(4, -3); g.quadraticCurveTo(-4, -9, -4, 0); g.quadraticCurveTo(-4, 9, 4, 3); g.closePath(); g.fill(); } g.restore(); break;
     case 'warhammer': g.save(); g.rotate(-0.8); g.fillStyle = '#6b4a2a'; g.fillRect(-10, -1.5, 18, 3); g.fillStyle = def.color; g.fillRect(4, -5, 7, 10); g.restore(); break;
-    case 'pickaxe': g.save(); g.rotate(-0.8); g.fillStyle = '#8a6a3a'; g.fillRect(-9, -1.5, 18, 3); g.fillStyle = def.color; g.beginPath(); g.moveTo(6, -2); g.quadraticCurveTo(10, -7, 13, -5); g.lineTo(10, 0); g.lineTo(13, 5); g.quadraticCurveTo(10, 7, 6, 2); g.closePath(); g.fill(); g.restore(); break;
+    case 'pickaxe': g.save(); g.rotate(-0.3); g.fillStyle = '#8a6a3a'; g.fillRect(-1.5, -8, 3, 19); g.strokeStyle = def.color; g.lineWidth = 3.5; g.lineCap = 'round'; g.beginPath(); g.arc(0, 0, 9.5, Math.PI * 1.12, Math.PI * 1.88); g.stroke(); g.fillStyle = '#5a4a3a'; g.fillRect(-3, -9, 6, 4); g.restore(); break; // head across the top, both points curving down
+    case 'wheat': g.strokeStyle = '#a8862a'; g.lineWidth = 1.5; g.lineCap = 'round'; for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(k * 5, 9); g.lineTo(k * 4, -2); g.stroke(); g.fillStyle = def.color; for (let j = 0; j < 4; j++) { g.beginPath(); g.ellipse(k * 4 - 1.5, -3 - j * 2.2, 1.6, 1.1, -0.6, 0, 7); g.ellipse(k * 4 + 1.5, -3 - j * 2.2, 1.6, 1.1, 0.6, 0, 7); g.fill(); } } break;
+    case 'flour': g.fillStyle = '#e9e2d0'; g.beginPath(); g.moveTo(-8, 8); g.lineTo(-7, -3); g.quadraticCurveTo(-4, -8, 0, -8); g.quadraticCurveTo(4, -8, 7, -3); g.lineTo(8, 8); g.closePath(); g.fill(); g.stroke(); g.strokeStyle = '#8a6a3a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(-5, -4); g.lineTo(5, -4); g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(-2, 2, 1.2, 0, 7); g.arc(3, 4, 1, 0, 7); g.fill(); break;
+    case 'berries': for (const [px, py] of [[-4, -3], [4, -2], [-2, 4], [5, 5], [0, 0]]) { g.fillStyle = def.color; g.beginPath(); g.arc(px, py, 3.4, 0, 7); g.fill(); g.stroke(); g.fillStyle = 'rgba(255,255,255,0.45)'; g.beginPath(); g.arc(px - 1, py - 1, 1, 0, 7); g.fill(); } g.fillStyle = '#3f7d2b'; g.beginPath(); g.ellipse(-7, -7, 4, 2, -0.7, 0, 7); g.fill(); break;
     case 'hoe': g.save(); g.rotate(-0.8); g.fillStyle = '#8a6a3a'; g.fillRect(-9, -1.5, 18, 3); g.fillStyle = def.color; g.fillRect(8, -4, 3, 8); g.restore(); break;
     case 'hammer': g.save(); g.rotate(-0.8); g.fillStyle = '#8a6a3a'; g.fillRect(-9, -1.5, 16, 3); g.fillStyle = '#5a5a62'; g.fillRect(5, -5, 6, 10); g.restore(); break;
     case 'bow': g.strokeStyle = def.color; g.lineWidth = 2.5; g.beginPath(); g.arc(-3, 0, 9, -1.2, 1.2); g.stroke(); g.strokeStyle = '#e9eef5'; g.lineWidth = 1; g.beginPath(); g.moveTo(-3 + Math.cos(-1.2) * 9, Math.sin(-1.2) * 9); g.lineTo(-3 + Math.cos(1.2) * 9, Math.sin(1.2) * 9); g.stroke(); break;

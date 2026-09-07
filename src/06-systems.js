@@ -162,7 +162,7 @@ function killMonster(m) {
   burst(m.x, m.y, bloodColor(m.type), 16, 120);
   rollDrops(d, m.x, m.y);
   for (const h of HOOKS.kill) h(m);
-  if (isCampMonster(m)) { m.respawnT = CAMP_RESPAWN; checkCampCleared(); }
+  if (isCampMonster(m)) { m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN); checkCampCleared(); } // machines keep their own longer respawn
   if (m.type === 'goblin' && quest.stage === 3) { quest.kills += 1; if (quest.kills >= 3) advanceQuest(4); else save(); }
   if (d.mech) { const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); if (PLACEABLE_ON.has(tileAt(tx, ty))) changeTile(tx, ty, T.WRECK); say('The walker falls in a heap of barrel and iron. A goblin scrambles out and runs. The wreck stays. Bring iron bars and scrap, and it could walk again.', 'The Voice'); if (quest.stage === 7) { quest.walkerKilled = true; save(); } }
 }
@@ -173,7 +173,7 @@ function hurtPlayer(dmg, fromX, fromY, sure = false) {
   player.hurtT = 0.25; player.sinceHurt = 0; player.action = null;
   const kx = player.x - fromX, ky = player.y - fromY, kd = Math.hypot(kx, ky) || 1;
   moveEntity(player, kx / kd * 12, ky / kd * 12, playerWho());
-  if (player.mech) { player.mech.hp -= dmg; floatText(player.x, player.y - 34, `-${dmg} (walker)`, '#ffb347'); if (player.mech.hp <= 0) wreckMech(); return; }
+  if (player.mech) { player.mech.hp -= dmg; floatText(player.x, player.y - 34, `-${dmg} (${mechName()})`, '#ffb347'); if (player.mech.hp <= 0) wreckMech(); return; }
   player.hp -= dmg; sfx('hurt');
   floatText(player.x, player.y - 24, `-${dmg}`, '#ff6b6b');
   gainXp('defence', Math.ceil(dmg * 1.5));
@@ -273,13 +273,15 @@ function finishTill() { const a = player.action; player.action = null; changeTil
 function plantSeed(tx, ty) {
   const slot = player.inv.findIndex(s => s && ITEMS[s.id].seed);
   if (slot < 0) { notify('Tilled soil. Plant a seed here (Greta sells potato seed; goblins drop it too).'); return; }
-  removeItem(player.inv[slot].id, 1); changeTile(tx, ty, T.CROP); crops.push({ i: idx(tx, ty), stage: 0, t: 0 }); gainXp('farming', 8); floatText(player.x, player.y - 30, 'Planted', '#7ee787'); save();
+  const seedId = player.inv[slot].id, cropId = ITEMS[seedId].seed; // 'potato' | 'wheat' (01-items): the crop entry remembers what was planted
+  removeItem(seedId, 1); changeTile(tx, ty, T.CROP); crops.push({ i: idx(tx, ty), stage: 0, t: 0, crop: cropId }); gainXp('farming', 8); floatText(player.x, player.y - 30, 'Planted', '#7ee787'); save();
 }
 function harvest(tx, ty) {
   const c = crops.find(c => c.i === idx(tx, ty));
   if (!c || c.stage < 3) { notify(c ? 'Still growing. Come back soon.' : 'Nothing to harvest.'); return; }
   crops = crops.filter(x => x !== c); changeTile(tx, ty, T.SOIL);
-  const n = rint(2, 4); giveOrDrop('potato', n, player.x, player.y); gainXp('farming', 15 * n); burst(tc(tx), tc(ty), '#c9a66b', 10, 60); save();
+  const cropId = c.crop && ITEMS[c.crop] ? c.crop : 'potato'; // older saves have no crop field: they were all potatoes
+  const n = rint(2, 4); giveOrDrop(cropId, n, player.x, player.y); gainXp('farming', 15 * n); burst(tc(tx), tc(ty), ITEMS[cropId].color, 10, 60); save();
 }
 // ---------- crafting and stations ----------
 // smithing and smelting are timed: materials stay in the pack until the hammer falls (finishCraft), so a cancelled swing (moving, a hit, closing the panel) costs nothing
@@ -343,6 +345,8 @@ function useItem(slot) {
   else if (def.place) placeAction(s.id);
   else if (def.burn) startLightFire(s.id);
   else if (def.seed) notify('Plant it: till grass with a hoe (E), then press E on the soil.');
+  else if (s.id === 'wheat') notify('Two wheat make flour at a workbench.');
+  else if (s.id === 'flour') notify('Take it to an oven with berries, raw beef or raw trout for a pie.');
   else if (def.tool === 'rod') notify('Stand at the water and press E to fish.');
   else if (def.tool === 'axe') notify('Face a tree and press E.');
   else if (def.tool === 'pickaxe') notify('Face a rock and press E.');
@@ -370,6 +374,7 @@ function useAction() {
   if (t === T.AXESTUMP) { if (!player.tookAxe) { player.tookAxe = true; changeTile(tx, ty, T.STUMP); giveOrDrop('bronze_axe', 1, player.x, player.y); say('A bronze axe, left in a stump. Someone came this way before you. Trees are yours now.', 'The Voice'); save(); } return; }
   if (t === T.CART) { if (!player.tookPick) { player.tookPick = true; giveOrDrop('bronze_pickaxe', 1, player.x, player.y); notify('A bronze pickaxe from the miners’ cart. Face a rock and press E.'); save(); } else notify('An empty miners’ cart.'); return; }
   if (t === T.WATER) { startFishing(tx, ty); return; }
+  if (t === T.OVEN && HOOKS.panel.oven && countItem('flour') > 0 && RECIPES.some(r => r.station === 'oven' && r.needs.some(([id]) => id !== 'flour' && countItem(id) > 0))) { openPanel('oven'); return; } // pies (34-food): flour + a filling
   if (t === T.FIRE || t === T.OVEN) { startCook(); return; }
   if (t === T.SOIL) { plantSeed(tx, ty); return; }
   if (t === T.CROP) { harvest(tx, ty); return; }
@@ -419,36 +424,42 @@ function enterMech(tx, ty) {
   changeTile(tx, ty, T.DIRT); player.mech = { hp: 130, maxHp: 130 }; player.x = tc(tx); player.y = tc(ty); player.r = 20; player.speed = 115; player.action = null;
   notify('You are in the walker. Space stomps (knockback). X climbs out. Doors are too small for it.'); save();
 }
-// the pilot never lands inside a tree or a wall: the walker is parked, then the knight takes the nearest free spot; no free spot = no climbing out
+// player.mech.kind: undefined = the walker (T.MECH / T.WRECK); 'dozer' = the bulldozer (22-bulldozer registers T.DOZER / T.DOZER_WRECK on T)
+const mechName = () => player.mech && player.mech.kind === 'dozer' ? 'bulldozer' : 'walker';
+const mechParkTile = () => player.mech && player.mech.kind === 'dozer' && T.DOZER !== undefined ? T.DOZER : T.MECH;
+const mechWreckTile = () => player.mech && player.mech.kind === 'dozer' && T.DOZER_WRECK !== undefined ? T.DOZER_WRECK : T.WRECK;
+// the pilot never lands inside a tree or a wall: the machine is parked, then the knight takes the nearest free spot; no free spot = no climbing out
 function exitMech() {
   if (!player.mech) return;
+  const name = mechName(), parkTile = mechParkTile();
   const { tx, ty } = frontTile(player, 44); const t = tileAt(tx, ty);
   const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) };
   const spot = PLACEABLE_ON.has(t) && !(tx === own.tx && ty === own.ty) ? { tx, ty } : own;
   const onOwn = spot.tx === own.tx && spot.ty === own.ty, prev = tileAt(spot.tx, spot.ty), mech = player.mech;
-  changeTile(spot.tx, spot.ty, T.MECH);
+  changeTile(spot.tx, spot.ty, parkTile);
   const want = onOwn ? { x: player.x - player.facing.x * TILE, y: player.y - player.facing.y * TILE } : { x: player.x, y: player.y };
   const free = safeSpot(want.x, want.y, 13, 'player');
   if (!free) { changeTile(spot.tx, spot.ty, prev); notify('No room to climb out here. Drive somewhere open.'); return; }
   player.mech = null; player.r = 13; player.speed = 175; player.mechHp = mech.hp;
   player.x = free.x; player.y = free.y;
-  notify('You climb out. The walker waits.'); save();
+  notify(name === 'bulldozer' ? 'You climb down. The bulldozer waits.' : 'You climb out. The walker waits.'); save();
 }
 function wreckMech() {
   const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) };
+  const name = mechName(), wreckTile = mechWreckTile();
   player.mech = null; player.r = 13; player.speed = 175;
   const prev = tileAt(own.tx, own.ty), placeable = PLACEABLE_ON.has(prev);
-  if (placeable) changeTile(own.tx, own.ty, T.WRECK);
+  if (placeable) changeTile(own.tx, own.ty, wreckTile);
   let free = safeSpot(player.x - player.facing.x * TILE, player.y - player.facing.y * TILE, 13, 'player');
   if (!free && placeable) { changeTile(own.tx, own.ty, prev); free = safeSpot(player.x, player.y, 13, 'player'); } // no room for both: the wreck is lost, the knight is not
   if (free) { player.x = free.x; player.y = free.y; }
-  burst(player.x, player.y, '#ff8a1a', 30, 160); say('The walker gives out under you. It can be repaired again: iron bars and scrap.', 'The Voice');
+  burst(player.x, player.y, '#ff8a1a', 30, 160); say(`The ${name} gives out under you. It can be repaired again: iron bars and scrap.`, 'The Voice');
 }
 // ---------- talking ----------
 function talkTo(n) {
   { const dx = n.px - player.x, dy = n.py - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
   if (HOOKS.talkBefore[n.role] && HOOKS.talkBefore[n.role](n)) return; // a feature file may take over a core role for some stages
-  if (n.role === 'shop') { const lines = { general: "Rods, axes, bread, a bit of everything. What do you need, knight?", bakery: "Fresh from the oven. Bread is 8. The pie is worth every coin.", seeds: "Potato seed, two coins. A hoe if you haven't one. Till, plant, wait, eat.", smith: "Bring me a hammer and iron bars and I'll show you the anvil. Ore goes in the forge first." }; say(lines[n.shop] || 'Buying or selling?', n.name); openPanel('shop', n.shop); }
+  if (n.role === 'shop') { const lines = { general: "Rods, axes, bread, a bit of everything. What do you need, knight?", bakery: "Fresh from the oven. Bread is 8. The pie is worth every coin.", seeds: "Potato seed or wheat seed, two coins. A hoe if you haven't one. Till, plant, wait, eat. Wheat makes flour, and flour makes pies.", smith: "Bring me a hammer and iron bars and I'll show you the anvil. Ore goes in the forge first." }; say(lines[n.shop] || 'Buying or selling?', n.name); openPanel('shop', n.shop); }
   else if (n.role === 'trader') { say("Pelts, tusks, wool, silk, goblin scrap. I pay full price, no haggling.", n.name); openPanel('shop', 'trader'); }
   else if (n.role === 'bank') { say("Your pack is small and the world is big. Leave what you like with me. It will be here.", n.name); openPanel('bank'); }
   else if (n.role === 'inn') { if (coins() >= 5) { payCoins(5); player.hp = player.maxHp; player.innRested = true; say("Five coins. Hot stew and a bed by the fire. Sleep in it if you want to wake here.", n.name); burst(player.x, player.y, '#7ee787', 10, 40); save(); } else say("A bed's five coins. Come back with coin.", n.name); }

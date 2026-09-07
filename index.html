@@ -131,6 +131,8 @@ const ITEMS = {
   wolf_pelt: { name: 'Wolf pelt', value: 14, color: '#7a7068', shape: 'pelt' },
   boar_tusk: { name: 'Boar tusk', value: 12, color: '#f2e9d8', shape: 'tusk' },
   potato_seed: { name: 'Potato seed', value: 2, color: '#b8a070', shape: 'seed', seed: 'potato' },
+  wheat_seed: { name: 'Wheat seed', value: 2, color: '#d8c070', shape: 'seed', seed: 'wheat' }, // grows like potatoes; flour at a workbench, pies at an oven (34-food)
+  wheat: { name: 'Wheat', value: 3, color: '#e0b84a', shape: 'wheat' },
   // food
   raw_beef: { name: 'Raw beef', value: 5, color: '#c0504d', shape: 'meat', cook: 'cooked_beef' },
   cooked_beef: { name: 'Cooked beef', value: 12, color: '#8b4a2b', shape: 'meat', heal: 8 },
@@ -193,7 +195,7 @@ const EQUIP_SLOTS = ['weapon', 'helm', 'body', 'legs', 'shield'];
 
 // recipes: station null = from the pack. skill/lv gate + xp.
 const RECIPES = [
-  { out: 'plank', qty: 4, needs: [['wood', 2]], station: null, label: '2 Logs → 4 Planks' },
+  { out: 'plank', qty: 4, needs: [['wood', 2]], station: null, skill: 'crafting', lv: 1, xp: 6, label: '2 Logs → 4 Planks' }, // the first Crafting xp a new knight can earn
   { out: 'stone_arrow', qty: 5, needs: [['wood', 1], ['stone', 1]], station: 'workbench', skill: 'crafting', lv: 1, xp: 8, label: 'Logs + Stone → 5 Stone arrows' },
   { out: 'shortbow', qty: 1, needs: [['wood', 2], ['spider_silk', 1]], station: 'workbench', skill: 'crafting', lv: 1, xp: 25, label: '2 Logs + Spider silk → Shortbow' },
   { out: 'oak_bow', qty: 1, needs: [['oak_log', 2], ['spider_silk', 1]], station: 'workbench', skill: 'crafting', lv: 8, xp: 40, label: '2 Oak logs + Spider silk → Oak bow' },
@@ -233,7 +235,7 @@ const SMELT = [
 const SHOPS = {
   general: { name: "Marta's General Store", stock: [['fishing_rod', 60], ['hammer', 5], ['bread', 10], ['shrimp', 8], ['bronze_axe', 25], ['bronze_pickaxe', 30], ['bronze_helm', 30], ['bronze_shield', 40]] },
   bakery: { name: "Rosalind's Bakery", stock: [['bread', 8], ['meat_pie', 25], ['baked_potato', 6]] },
-  seeds: { name: "Greta's Seed Stall", stock: [['potato_seed', 2], ['bronze_hoe', 15], ['potato', 3]] },
+  seeds: { name: "Greta's Seed Stall", stock: [['potato_seed', 2], ['wheat_seed', 2], ['bronze_hoe', 15], ['potato', 3]] },
   smith: { name: "Brakka's Smithy", stock: [['hammer', 5], ['iron_dagger', 80], ['iron_helm', 120], ['bronze_body', 60], ['bronze_legs', 45]] },
 };
 
@@ -260,7 +262,7 @@ const MONSTER_DEFS = {
     drops: { always: [['coins', 6, 14], ['blast_powder', 1, 2]], table: [['nothing', 0, 0, 20], ['goblin_scrap', 1, 2, 20], ['bomb', 1, 1, 6], ['iron_ore', 1, 2, 8]], rare: { chance: 30, table: [['iron_warhammer', 1, 1, 1]] } } },
   brute: { name: 'Goblin brute', level: 9, r: 15, hp: 45, att: 10, maxHit: 8, def: 7, speed: 105, aggro: true, sight: 5 * TILE, respawn: 45,
     drops: { always: [['coins', 8, 20]], table: [['nothing', 0, 0, 24], ['goblin_scrap', 1, 3, 20], ['iron_ore', 1, 2, 12], ['ruined_body', 1, 1, 6], ['coal', 1, 1, 6]], rare: { chance: 25, table: [['iron_sword', 1, 1, 2], ['iron_body', 1, 1, 1]] } } },
-  walker: { name: 'Goblin walker', level: 18, r: 22, hp: 110, att: 18, maxHit: 11, def: 12, speed: 70, aggro: true, sight: 6 * TILE, respawn: 240, mech: true,
+  walker: { name: 'Goblin walker', level: 18, r: 22, hp: 110, att: 18, maxHit: 11, def: 12, speed: 70, aggro: true, sight: 6 * TILE, respawn: 3600, mech: true,
     drops: { always: [['goblin_scrap', 4, 8], ['iron_ore', 2, 4]], table: [['iron_bar', 1, 2, 10], ['blast_powder', 1, 3, 10], ['coal', 1, 2, 6]], rare: { chance: 6, table: [['iron_battleaxe', 1, 1, 1], ['iron_warhammer', 1, 1, 1]] } } },
   wolf: { name: 'Wolf', level: 6, r: 13, hp: 22, att: 7, maxHit: 5, def: 4, speed: 175, aggro: true, sight: 6 * TILE, respawn: 35,
     drops: { always: [['wolf_pelt', 1, 1]], table: [['nothing', 0, 0, 8], ['raw_beef', 1, 1, 4]] } },
@@ -1067,7 +1069,7 @@ function killMonster(m) {
   burst(m.x, m.y, bloodColor(m.type), 16, 120);
   rollDrops(d, m.x, m.y);
   for (const h of HOOKS.kill) h(m);
-  if (isCampMonster(m)) { m.respawnT = CAMP_RESPAWN; checkCampCleared(); }
+  if (isCampMonster(m)) { m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN); checkCampCleared(); } // machines keep their own longer respawn
   if (m.type === 'goblin' && quest.stage === 3) { quest.kills += 1; if (quest.kills >= 3) advanceQuest(4); else save(); }
   if (d.mech) { const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); if (PLACEABLE_ON.has(tileAt(tx, ty))) changeTile(tx, ty, T.WRECK); say('The walker falls in a heap of barrel and iron. A goblin scrambles out and runs. The wreck stays. Bring iron bars and scrap, and it could walk again.', 'The Voice'); if (quest.stage === 7) { quest.walkerKilled = true; save(); } }
 }
@@ -1078,7 +1080,7 @@ function hurtPlayer(dmg, fromX, fromY, sure = false) {
   player.hurtT = 0.25; player.sinceHurt = 0; player.action = null;
   const kx = player.x - fromX, ky = player.y - fromY, kd = Math.hypot(kx, ky) || 1;
   moveEntity(player, kx / kd * 12, ky / kd * 12, playerWho());
-  if (player.mech) { player.mech.hp -= dmg; floatText(player.x, player.y - 34, `-${dmg} (walker)`, '#ffb347'); if (player.mech.hp <= 0) wreckMech(); return; }
+  if (player.mech) { player.mech.hp -= dmg; floatText(player.x, player.y - 34, `-${dmg} (${mechName()})`, '#ffb347'); if (player.mech.hp <= 0) wreckMech(); return; }
   player.hp -= dmg; sfx('hurt');
   floatText(player.x, player.y - 24, `-${dmg}`, '#ff6b6b');
   gainXp('defence', Math.ceil(dmg * 1.5));
@@ -1178,13 +1180,15 @@ function finishTill() { const a = player.action; player.action = null; changeTil
 function plantSeed(tx, ty) {
   const slot = player.inv.findIndex(s => s && ITEMS[s.id].seed);
   if (slot < 0) { notify('Tilled soil. Plant a seed here (Greta sells potato seed; goblins drop it too).'); return; }
-  removeItem(player.inv[slot].id, 1); changeTile(tx, ty, T.CROP); crops.push({ i: idx(tx, ty), stage: 0, t: 0 }); gainXp('farming', 8); floatText(player.x, player.y - 30, 'Planted', '#7ee787'); save();
+  const seedId = player.inv[slot].id, cropId = ITEMS[seedId].seed; // 'potato' | 'wheat' (01-items): the crop entry remembers what was planted
+  removeItem(seedId, 1); changeTile(tx, ty, T.CROP); crops.push({ i: idx(tx, ty), stage: 0, t: 0, crop: cropId }); gainXp('farming', 8); floatText(player.x, player.y - 30, 'Planted', '#7ee787'); save();
 }
 function harvest(tx, ty) {
   const c = crops.find(c => c.i === idx(tx, ty));
   if (!c || c.stage < 3) { notify(c ? 'Still growing. Come back soon.' : 'Nothing to harvest.'); return; }
   crops = crops.filter(x => x !== c); changeTile(tx, ty, T.SOIL);
-  const n = rint(2, 4); giveOrDrop('potato', n, player.x, player.y); gainXp('farming', 15 * n); burst(tc(tx), tc(ty), '#c9a66b', 10, 60); save();
+  const cropId = c.crop && ITEMS[c.crop] ? c.crop : 'potato'; // older saves have no crop field: they were all potatoes
+  const n = rint(2, 4); giveOrDrop(cropId, n, player.x, player.y); gainXp('farming', 15 * n); burst(tc(tx), tc(ty), ITEMS[cropId].color, 10, 60); save();
 }
 // ---------- crafting and stations ----------
 // smithing and smelting are timed: materials stay in the pack until the hammer falls (finishCraft), so a cancelled swing (moving, a hit, closing the panel) costs nothing
@@ -1248,6 +1252,8 @@ function useItem(slot) {
   else if (def.place) placeAction(s.id);
   else if (def.burn) startLightFire(s.id);
   else if (def.seed) notify('Plant it: till grass with a hoe (E), then press E on the soil.');
+  else if (s.id === 'wheat') notify('Two wheat make flour at a workbench.');
+  else if (s.id === 'flour') notify('Take it to an oven with berries, raw beef or raw trout for a pie.');
   else if (def.tool === 'rod') notify('Stand at the water and press E to fish.');
   else if (def.tool === 'axe') notify('Face a tree and press E.');
   else if (def.tool === 'pickaxe') notify('Face a rock and press E.');
@@ -1275,6 +1281,7 @@ function useAction() {
   if (t === T.AXESTUMP) { if (!player.tookAxe) { player.tookAxe = true; changeTile(tx, ty, T.STUMP); giveOrDrop('bronze_axe', 1, player.x, player.y); say('A bronze axe, left in a stump. Someone came this way before you. Trees are yours now.', 'The Voice'); save(); } return; }
   if (t === T.CART) { if (!player.tookPick) { player.tookPick = true; giveOrDrop('bronze_pickaxe', 1, player.x, player.y); notify('A bronze pickaxe from the miners’ cart. Face a rock and press E.'); save(); } else notify('An empty miners’ cart.'); return; }
   if (t === T.WATER) { startFishing(tx, ty); return; }
+  if (t === T.OVEN && HOOKS.panel.oven && countItem('flour') > 0 && RECIPES.some(r => r.station === 'oven' && r.needs.some(([id]) => id !== 'flour' && countItem(id) > 0))) { openPanel('oven'); return; } // pies (34-food): flour + a filling
   if (t === T.FIRE || t === T.OVEN) { startCook(); return; }
   if (t === T.SOIL) { plantSeed(tx, ty); return; }
   if (t === T.CROP) { harvest(tx, ty); return; }
@@ -1324,36 +1331,42 @@ function enterMech(tx, ty) {
   changeTile(tx, ty, T.DIRT); player.mech = { hp: 130, maxHp: 130 }; player.x = tc(tx); player.y = tc(ty); player.r = 20; player.speed = 115; player.action = null;
   notify('You are in the walker. Space stomps (knockback). X climbs out. Doors are too small for it.'); save();
 }
-// the pilot never lands inside a tree or a wall: the walker is parked, then the knight takes the nearest free spot; no free spot = no climbing out
+// player.mech.kind: undefined = the walker (T.MECH / T.WRECK); 'dozer' = the bulldozer (22-bulldozer registers T.DOZER / T.DOZER_WRECK on T)
+const mechName = () => player.mech && player.mech.kind === 'dozer' ? 'bulldozer' : 'walker';
+const mechParkTile = () => player.mech && player.mech.kind === 'dozer' && T.DOZER !== undefined ? T.DOZER : T.MECH;
+const mechWreckTile = () => player.mech && player.mech.kind === 'dozer' && T.DOZER_WRECK !== undefined ? T.DOZER_WRECK : T.WRECK;
+// the pilot never lands inside a tree or a wall: the machine is parked, then the knight takes the nearest free spot; no free spot = no climbing out
 function exitMech() {
   if (!player.mech) return;
+  const name = mechName(), parkTile = mechParkTile();
   const { tx, ty } = frontTile(player, 44); const t = tileAt(tx, ty);
   const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) };
   const spot = PLACEABLE_ON.has(t) && !(tx === own.tx && ty === own.ty) ? { tx, ty } : own;
   const onOwn = spot.tx === own.tx && spot.ty === own.ty, prev = tileAt(spot.tx, spot.ty), mech = player.mech;
-  changeTile(spot.tx, spot.ty, T.MECH);
+  changeTile(spot.tx, spot.ty, parkTile);
   const want = onOwn ? { x: player.x - player.facing.x * TILE, y: player.y - player.facing.y * TILE } : { x: player.x, y: player.y };
   const free = safeSpot(want.x, want.y, 13, 'player');
   if (!free) { changeTile(spot.tx, spot.ty, prev); notify('No room to climb out here. Drive somewhere open.'); return; }
   player.mech = null; player.r = 13; player.speed = 175; player.mechHp = mech.hp;
   player.x = free.x; player.y = free.y;
-  notify('You climb out. The walker waits.'); save();
+  notify(name === 'bulldozer' ? 'You climb down. The bulldozer waits.' : 'You climb out. The walker waits.'); save();
 }
 function wreckMech() {
   const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) };
+  const name = mechName(), wreckTile = mechWreckTile();
   player.mech = null; player.r = 13; player.speed = 175;
   const prev = tileAt(own.tx, own.ty), placeable = PLACEABLE_ON.has(prev);
-  if (placeable) changeTile(own.tx, own.ty, T.WRECK);
+  if (placeable) changeTile(own.tx, own.ty, wreckTile);
   let free = safeSpot(player.x - player.facing.x * TILE, player.y - player.facing.y * TILE, 13, 'player');
   if (!free && placeable) { changeTile(own.tx, own.ty, prev); free = safeSpot(player.x, player.y, 13, 'player'); } // no room for both: the wreck is lost, the knight is not
   if (free) { player.x = free.x; player.y = free.y; }
-  burst(player.x, player.y, '#ff8a1a', 30, 160); say('The walker gives out under you. It can be repaired again: iron bars and scrap.', 'The Voice');
+  burst(player.x, player.y, '#ff8a1a', 30, 160); say(`The ${name} gives out under you. It can be repaired again: iron bars and scrap.`, 'The Voice');
 }
 // ---------- talking ----------
 function talkTo(n) {
   { const dx = n.px - player.x, dy = n.py - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
   if (HOOKS.talkBefore[n.role] && HOOKS.talkBefore[n.role](n)) return; // a feature file may take over a core role for some stages
-  if (n.role === 'shop') { const lines = { general: "Rods, axes, bread, a bit of everything. What do you need, knight?", bakery: "Fresh from the oven. Bread is 8. The pie is worth every coin.", seeds: "Potato seed, two coins. A hoe if you haven't one. Till, plant, wait, eat.", smith: "Bring me a hammer and iron bars and I'll show you the anvil. Ore goes in the forge first." }; say(lines[n.shop] || 'Buying or selling?', n.name); openPanel('shop', n.shop); }
+  if (n.role === 'shop') { const lines = { general: "Rods, axes, bread, a bit of everything. What do you need, knight?", bakery: "Fresh from the oven. Bread is 8. The pie is worth every coin.", seeds: "Potato seed or wheat seed, two coins. A hoe if you haven't one. Till, plant, wait, eat. Wheat makes flour, and flour makes pies.", smith: "Bring me a hammer and iron bars and I'll show you the anvil. Ore goes in the forge first." }; say(lines[n.shop] || 'Buying or selling?', n.name); openPanel('shop', n.shop); }
   else if (n.role === 'trader') { say("Pelts, tusks, wool, silk, goblin scrap. I pay full price, no haggling.", n.name); openPanel('shop', 'trader'); }
   else if (n.role === 'bank') { say("Your pack is small and the world is big. Leave what you like with me. It will be here.", n.name); openPanel('bank'); }
   else if (n.role === 'inn') { if (coins() >= 5) { payCoins(5); player.hp = player.maxHp; player.innRested = true; say("Five coins. Hot stew and a bed by the fire. Sleep in it if you want to wake here.", n.name); burst(player.x, player.y, '#7ee787', 10, 40); save(); } else say("A bed's five coins. Come back with coin.", n.name); }
@@ -1643,7 +1656,7 @@ function drawHuman(g, e, look) {
   if (look.weapon) drawWeaponInHand(g, e, ang, look.weapon.shape, look.weapon.color);
   else if (look.spear) { const a = ang + (e.attackT > 0 ? -0.2 : 0.75); g.save(); g.rotate(a); g.fillStyle = '#8a6a3a'; g.fillRect(-14, -1.5, 40, 3); g.fillStyle = '#c9ccd3'; g.beginPath(); g.moveTo(26, -4); g.lineTo(36, 0); g.lineTo(26, 4); g.closePath(); g.fill(); g.restore(); }
   else if (look.fists && e.attackT > 0) { const swing = 1 - e.attackT / 0.22; g.fillStyle = '#e8b790'; g.beginPath(); g.arc(Math.cos(ang) * (10 + swing * 16), Math.sin(ang) * (10 + swing * 16), 4, 0, 7); g.fill(); }
-  if (look.tool) { const sw = look.toolSwing ? Math.sin(time * 14) * 0.6 : 0; g.save(); g.rotate(ang - 0.7 + sw); g.fillStyle = '#8a6a3a'; g.fillRect(2, -1.5, 26, 3); g.fillStyle = look.toolColor || '#b8863a'; if (look.tool === 'axe') { g.beginPath(); g.moveTo(20, -3); g.quadraticCurveTo(30, -10, 30, 0); g.quadraticCurveTo(30, 10, 20, 3); g.closePath(); g.fill(); } else if (look.tool === 'pickaxe') { g.beginPath(); g.moveTo(24, -2); g.quadraticCurveTo(30, -8, 34, -6); g.lineTo(30, 0); g.lineTo(34, 6); g.quadraticCurveTo(30, 8, 24, 2); g.closePath(); g.fill(); } else if (look.tool === 'hammer') { g.fillRect(20, -6, 10, 12); } else if (look.tool === 'hoe') { g.fillRect(24, -5, 5, 10); } g.restore(); }
+  if (look.tool) { const sw = look.toolSwing ? Math.sin(time * 14) * 0.6 : 0; g.save(); g.rotate(ang - 0.7 + sw); g.fillStyle = '#8a6a3a'; g.fillRect(2, -1.5, 26, 3); g.fillStyle = look.toolColor || '#b8863a'; if (look.tool === 'axe') { g.beginPath(); g.moveTo(20, -3); g.quadraticCurveTo(30, -10, 30, 0); g.quadraticCurveTo(30, 10, 20, 3); g.closePath(); g.fill(); } else if (look.tool === 'pickaxe') { g.strokeStyle = look.toolColor || '#b8863a'; g.lineWidth = 3.5; g.lineCap = 'round'; g.beginPath(); g.arc(20, 0, 9, -1.15, 1.15); g.stroke(); g.fillStyle = '#5a4a3a'; g.fillRect(25, -3, 4, 6); } else if (look.tool === 'hammer') { g.fillRect(20, -6, 10, 12); } else if (look.tool === 'hoe') { g.fillRect(24, -5, 5, 10); } g.restore(); }
   if (look.rod) { g.save(); g.rotate(ang - 0.6); g.strokeStyle = '#8a6a3a'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(4, 0); g.lineTo(34, -4); g.stroke(); g.strokeStyle = '#e9eef5'; g.lineWidth = 1; g.beginPath(); g.moveTo(34, -4); g.lineTo(44, 10 + Math.sin(time * 3) * 2); g.stroke(); g.restore(); }
   // body
   g.fillStyle = hurt ? '#ff9a9a' : look.tunic; g.beginPath(); g.ellipse(0, 3, 12, 11, 0, 0, 7); g.fill();
@@ -1692,6 +1705,7 @@ function drawMech(g, e, hurt, pilot) {
   g.fillStyle = 'rgba(220,220,230,0.5)'; g.beginPath(); g.arc(-12 + Math.sin(time * 5) * 2, -22 - (time * 20) % 8, 4, 0, 7); g.fill(); // steam
   g.save(); g.rotate(ang); g.fillStyle = '#3a3a42'; g.fillRect(14, -4, e.attackT > 0 ? 30 : 18, 8); g.fillStyle = '#8f96a3'; g.fillRect(e.attackT > 0 ? 40 : 28, -7, 8, 14); g.restore();
   if (pilot) { g.save(); g.translate(0, -6); g.scale(0.7, 0.7); drawHuman(g, { facing: e.facing, hurtT: 0, attackT: 0 }, pilot); g.restore(); }
+  else if (e.parked) { g.fillStyle = '#5a3a1e'; roundRect(g, -6, -12, 12, 10, 3); g.fill(); g.fillStyle = '#3a2a14'; g.fillRect(-6, -4, 12, 3); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(-4, -10, 8, 5); } // empty seat: nobody aboard
   else { g.fillStyle = '#6fbf3f'; g.beginPath(); g.arc(0, -8, 6, 0, 7); g.fill(); g.fillStyle = '#d62828'; g.beginPath(); g.arc(-2, -9, 1.3, 0, 7); g.arc(2, -9, 1.3, 0, 7); g.fill(); }
   g.restore();
 }
@@ -1848,7 +1862,8 @@ function drawGraveProp(g, tx, ty) {
   g.strokeStyle = '#4a4d54'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx, cy - 14); g.lineTo(cx, cy - 2); g.moveTo(cx - 4, cy - 10); g.lineTo(cx + 4, cy - 10); g.stroke();
 }
 function drawCropProp(g, tx, ty) {
-  const cx = tc(tx), cy = tc(ty); const c = crops.find(c => c.i === idx(tx, ty)); const stage = c ? c.stage : 0;
+  const cx = tc(tx), cy = tc(ty); const c = crops.find(c => c.i === idx(tx, ty)); const stage = c ? c.stage : 0, wheat = !!c && c.crop === 'wheat';
+  if (wheat) { g.strokeStyle = stage >= 2 ? '#b8a04a' : '#7fa83a'; g.lineWidth = 1.6; g.lineCap = 'round'; for (let k = 0; k < 5; k++) { const x = cx - 16 + k * 8, h = 5 + stage * 6; g.beginPath(); g.moveTo(x, cy + 10); g.lineTo(x + (k % 2 ? 1.5 : -1.5), cy + 10 - h); g.stroke(); if (stage >= 2) { g.fillStyle = stage >= 3 ? '#e8c04a' : '#c9b860'; for (let j = 0; j < 3; j++) { g.beginPath(); g.ellipse(x + (k % 2 ? 1.5 : -1.5), cy + 8 - h + j * 2.5, 2.2, 1.3, 0, 0, 7); g.fill(); } } } return; }
   g.strokeStyle = '#4c9134'; g.lineWidth = 2; g.lineCap = 'round';
   for (let k = 0; k < 3; k++) { const x = cx - 12 + k * 12, h = 4 + stage * 5; g.beginPath(); g.moveTo(x, cy + 8); g.lineTo(x, cy + 8 - h); g.stroke(); if (stage >= 1) { g.fillStyle = '#5aa33e'; g.beginPath(); g.ellipse(x - 3, cy + 6 - h * 0.6, 3, 2, -0.5, 0, 7); g.ellipse(x + 3, cy + 4 - h * 0.8, 3, 2, 0.5, 0, 7); g.fill(); } }
   if (stage >= 3) { g.fillStyle = '#e8e26b'; for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(cx - 12 + k * 12, cy - 12, 2.5, 0, 7); g.fill(); } }
@@ -1872,7 +1887,7 @@ function drawFurniture(g, tx, ty, t) {
   else if (t === T.STALL) { g.fillStyle = '#6b4a2a'; g.fillRect(x + 4, y + 20, TILE - 8, 20); g.fillStyle = '#a5763f'; g.fillRect(x + 4, y + 18, TILE - 8, 6); for (let k = 0; k < 4; k++) { g.fillStyle = k % 2 ? '#c0504d' : '#f2f2ec'; g.fillRect(x + k * 12, y - 6, 12, 14); } g.fillStyle = '#5a3a1e'; g.fillRect(x + 2, y + 8, 3, 12); g.fillRect(x + TILE - 5, y + 8, 3, 12); g.fillStyle = '#e8c04a'; g.beginPath(); g.arc(x + 14, y + 14, 3, 0, 7); g.arc(x + 30, y + 14, 3, 0, 7); g.fill(); }
   else if (t === T.LODESTONE) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 14, 14, 6, 0, 0, 7); g.fill(); g.fillStyle = '#4a5a72'; g.beginPath(); g.moveTo(cx - 12, cy + 12); g.lineTo(cx - 6, cy - 16); g.lineTo(cx + 6, cy - 16); g.lineTo(cx + 12, cy + 12); g.closePath(); g.fill(); const gl = 0.5 + Math.sin(time * 3) * 0.3; g.fillStyle = `rgba(126,200,255,${gl})`; g.beginPath(); g.moveTo(cx - 5, cy + 6); g.lineTo(cx - 2, cy - 10); g.lineTo(cx + 2, cy - 10); g.lineTo(cx + 5, cy + 6); g.closePath(); g.fill(); }
   else if (t === T.TRAP) { g.strokeStyle = '#8f96a3'; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, 14, 0, Math.PI); g.stroke(); g.beginPath(); g.arc(cx, cy, 14, Math.PI, 0); g.stroke(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; g.beginPath(); g.moveTo(cx + Math.cos(a) * 14, cy + Math.sin(a) * 14); g.lineTo(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8); g.stroke(); } g.fillStyle = '#c47a3a'; g.beginPath(); g.arc(cx, cy, 3, 0, 7); g.fill(); }
-  else if (t === T.WRECK || t === T.MECH) { const e = { x: cx, y: cy, r: 20, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }; g.save(); g.translate(cx, cy); if (t === T.WRECK) { g.rotate(0.35); g.globalAlpha = 0.85; } drawMech(g, e, false, null); if (t === T.WRECK) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.beginPath(); g.arc(0, -8, 7, 0, 7); g.fill(); } g.restore(); if (t === T.WRECK) { g.fillStyle = 'rgba(80,80,90,0.5)'; g.beginPath(); g.arc(cx + 12 + Math.sin(time * 2) * 3, cy - 30 - (time * 12 % 10), 5, 0, 7); g.fill(); } }
+  else if (t === T.WRECK || t === T.MECH) { const e = { x: cx, y: cy, r: 20, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, parked: t === T.MECH }; g.save(); g.translate(cx, cy); if (t === T.WRECK) { g.rotate(0.35); g.globalAlpha = 0.85; } drawMech(g, e, false, null); if (t === T.WRECK) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.beginPath(); g.arc(0, -8, 7, 0, 7); g.fill(); } g.restore(); if (t === T.WRECK) { g.fillStyle = 'rgba(80,80,90,0.5)'; g.beginPath(); g.arc(cx + 12 + Math.sin(time * 2) * 3, cy - 30 - (time * 12 % 10), 5, 0, 7); g.fill(); } }
   else if (t === T.CART) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 14, 20, 6, 0, 0, 7); g.fill(); g.fillStyle = '#6b4a2a'; g.fillRect(cx - 18, cy - 8, 36, 18); g.fillStyle = '#8a5a2b'; g.fillRect(cx - 16, cy - 6, 32, 14); g.fillStyle = '#3a3a42'; g.beginPath(); g.arc(cx - 10, cy + 12, 6, 0, 7); g.arc(cx + 10, cy + 12, 6, 0, 7); g.fill(); if (!player.tookPick) { g.save(); g.translate(cx + 2, cy - 4); g.rotate(-0.6); g.fillStyle = '#8a6a3a'; g.fillRect(-10, -1.5, 22, 3); g.fillStyle = '#b8863a'; g.beginPath(); g.moveTo(10, -2); g.quadraticCurveTo(16, -8, 20, -6); g.lineTo(16, 0); g.lineTo(20, 6); g.quadraticCurveTo(16, 8, 10, 2); g.closePath(); g.fill(); g.restore(); } }
   else if (t === T.AXESTUMP) { drawStumpProp(g, tx, ty); g.save(); g.translate(cx + 2, cy - 12); g.rotate(-1.1); g.fillStyle = '#8a6a3a'; g.fillRect(-4, -1.5, 26, 3); g.fillStyle = '#b8863a'; g.beginPath(); g.moveTo(18, -3); g.quadraticCurveTo(28, -10, 28, 0); g.quadraticCurveTo(28, 10, 18, 3); g.closePath(); g.fill(); g.restore(); const gr = g.createRadialGradient(cx, cy - 8, 4, cx, cy - 8, 40); gr.addColorStop(0, 'rgba(255,245,200,0.35)'); gr.addColorStop(1, 'rgba(255,245,200,0)'); g.fillStyle = gr; g.beginPath(); g.arc(cx, cy - 8, 40, 0, 7); g.fill(); }
   else if (t === T.STONECIRCLE) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 14, 12, 5, 0, 0, 7); g.fill(); g.fillStyle = '#6e7178'; g.beginPath(); g.moveTo(cx - 10, cy + 14); g.lineTo(cx - 8, cy - 22); g.lineTo(cx + 6, cy - 24); g.lineTo(cx + 10, cy + 14); g.closePath(); g.fill(); g.strokeStyle = `rgba(181,140,255,${0.4 + Math.sin(time * 2 + tx) * 0.3})`; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 2, cy - 14); g.lineTo(cx + 2, cy - 4); g.lineTo(cx - 2, cy + 4); g.stroke(); }
@@ -1898,6 +1913,7 @@ function drawBuilding(g, b) {
   g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1; for (let ry = y + 10; ry < y + h - 16; ry += 10) { g.beginPath(); g.moveTo(x, ry); g.lineTo(x + w, ry); g.stroke(); }
   g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y + (h - 16) / 2 - 2, w, 4);
   if (!b.coffin) { g.fillStyle = '#7a5a3a'; g.fillRect(x + w - 30, y + 8, 12, 22); g.fillStyle = '#3a2a1a'; g.fillRect(x + w - 32, y + 6, 16, 4); }
+  else drawWeathering(g, b, x, y, w, h);
   // a north door (the keep) sits on the shadowed side: draw its frame on the top edge of the roof so it reads from outside, lanterns either side
   if (b.doorTop !== undefined) {
     const dx = x + b.doorTop * TILE;
@@ -1909,6 +1925,31 @@ function drawBuilding(g, b) {
   }
   if (b.door !== undefined) { const dx = x + b.door * TILE; drawLantern(g, dx + 5, y + h - 10, b.coffin); drawLantern(g, dx + 43, y + h - 10, b.coffin); }
   if (b.sign) { g.fillStyle = b.coffin ? '#2a2a33' : '#efe2c4'; g.fillRect(x + w / 2 - 36, y + h - 34, 72, 16); g.strokeStyle = b.coffin ? '#8b8b9a' : '#6b4a2a'; g.strokeRect(x + w / 2 - 36, y + h - 34, 72, 16); g.fillStyle = b.coffin ? '#b58cff' : '#3a2a1a'; g.font = `700 10px ${DISPLAY}`; g.textAlign = 'center'; g.fillText(b.sign, x + w / 2, y + h - 22); }
+}
+// Death's houses are old: moss creeping over the stone base and up the roof edge, a cracked wall, slipped dark slates, and a raven on the ridge.
+// Still standing, though. Drawn over the roof strip, before the door lanterns and the sign.
+function drawWeathering(g, b, x, y, w, h) {
+  const seed = b.x * 31 + b.y * 17;
+  // moss on the base band and the roof foot
+  g.fillStyle = 'rgba(70,120,50,0.55)';
+  for (let k = 0; k < 7; k++) { const mx = x + 8 + ((seed * (k + 3)) % (w - 16)), my = y + h - 14 + ((seed + k * 5) % 9); g.beginPath(); g.ellipse(mx, my, 6 + (k % 3) * 2, 3 + (k % 2), 0, 0, 7); g.fill(); }
+  g.fillStyle = 'rgba(60,110,45,0.45)';
+  for (let k = 0; k < 4; k++) { const mx = x + 6 + ((seed * (k + 7)) % (w - 12)); g.beginPath(); g.ellipse(mx, y + h - 20, 5, 6, 0, 0, 7); g.fill(); }
+  // a crack running down the wall and a couple of dark, slipped slates on the roof
+  g.strokeStyle = 'rgba(20,20,26,0.75)'; g.lineWidth = 1.5; g.lineCap = 'round';
+  const cx0 = x + 12 + (seed % Math.max(1, w - 60)); g.beginPath(); g.moveTo(cx0, y + h - 16); g.lineTo(cx0 + 3, y + h - 10); g.lineTo(cx0 - 2, y + h - 5); g.lineTo(cx0 + 2, y + h); g.stroke();
+  g.beginPath(); g.moveTo(x + w - 20, y + 6); g.lineTo(x + w - 24, y + 16); g.lineTo(x + w - 19, y + 26); g.stroke();
+  g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x + 14, y + 14, 12, 7); g.fillRect(x + w - 40, y + 30, 14, 7); g.fillRect(x + 30, y + h - 40, 10, 6);
+  // the raven on the ridge line (roof mid-band), watching the door
+  const rx = x + w - 26, ry = y + (h - 16) / 2 - 2, tilt = Math.sin(time * 1.3 + seed) * 0.08;
+  g.save(); g.translate(rx, ry); g.rotate(tilt);
+  g.fillStyle = '#0e0e14'; g.beginPath(); g.ellipse(0, -4, 7, 4, 0, 0, 7); g.fill(); // body
+  g.beginPath(); g.moveTo(5, -4); g.lineTo(13, -1); g.lineTo(6, -2); g.closePath(); g.fill(); // tail
+  g.beginPath(); g.arc(-6, -8, 3.2, 0, 7); g.fill(); // head
+  g.fillStyle = '#8a8a5a'; g.beginPath(); g.moveTo(-9, -8); g.lineTo(-14, -7); g.lineTo(-9, -6); g.closePath(); g.fill(); // beak
+  g.fillStyle = '#b58cff'; g.beginPath(); g.arc(-7, -9, 0.8, 0, 7); g.fill(); // an eye that catches the lantern
+  g.strokeStyle = '#0e0e14'; g.lineWidth = 1; g.beginPath(); g.moveTo(-2, 0); g.lineTo(-2, 2); g.moveTo(2, 0); g.lineTo(2, 2); g.stroke(); // feet
+  g.restore();
 }
 // a small iron lantern hung beside a door frame at (x, y): hook, cage, a warm flame behind the glass. Death's houses burn violet.
 // The pool of light it throws on the step is drawn by drawDoorstep (tile pass), because the fixture itself sits under the roof strip.
@@ -1972,7 +2013,10 @@ function drawItemIcon(g, id, x, y, size = 18) {
     case 'dagger': g.save(); g.rotate(-0.8); g.beginPath(); g.moveTo(-2, -2); g.lineTo(10, 0); g.lineTo(-2, 2); g.closePath(); g.fill(); g.fillStyle = '#4a2e13'; g.fillRect(-8, -1.5, 6, 3); g.restore(); break;
     case 'axe': case 'battleaxe': g.save(); g.rotate(-0.8); g.fillStyle = '#6b4a2a'; g.fillRect(-10, -1.5, 18, 3); g.fillStyle = def.color; g.beginPath(); g.moveTo(4, -3); g.quadraticCurveTo(12, -9, 12, 0); g.quadraticCurveTo(12, 9, 4, 3); g.closePath(); g.fill(); if (def.shape === 'battleaxe') { g.beginPath(); g.moveTo(4, -3); g.quadraticCurveTo(-4, -9, -4, 0); g.quadraticCurveTo(-4, 9, 4, 3); g.closePath(); g.fill(); } g.restore(); break;
     case 'warhammer': g.save(); g.rotate(-0.8); g.fillStyle = '#6b4a2a'; g.fillRect(-10, -1.5, 18, 3); g.fillStyle = def.color; g.fillRect(4, -5, 7, 10); g.restore(); break;
-    case 'pickaxe': g.save(); g.rotate(-0.8); g.fillStyle = '#8a6a3a'; g.fillRect(-9, -1.5, 18, 3); g.fillStyle = def.color; g.beginPath(); g.moveTo(6, -2); g.quadraticCurveTo(10, -7, 13, -5); g.lineTo(10, 0); g.lineTo(13, 5); g.quadraticCurveTo(10, 7, 6, 2); g.closePath(); g.fill(); g.restore(); break;
+    case 'pickaxe': g.save(); g.rotate(-0.3); g.fillStyle = '#8a6a3a'; g.fillRect(-1.5, -8, 3, 19); g.strokeStyle = def.color; g.lineWidth = 3.5; g.lineCap = 'round'; g.beginPath(); g.arc(0, 0, 9.5, Math.PI * 1.12, Math.PI * 1.88); g.stroke(); g.fillStyle = '#5a4a3a'; g.fillRect(-3, -9, 6, 4); g.restore(); break; // head across the top, both points curving down
+    case 'wheat': g.strokeStyle = '#a8862a'; g.lineWidth = 1.5; g.lineCap = 'round'; for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(k * 5, 9); g.lineTo(k * 4, -2); g.stroke(); g.fillStyle = def.color; for (let j = 0; j < 4; j++) { g.beginPath(); g.ellipse(k * 4 - 1.5, -3 - j * 2.2, 1.6, 1.1, -0.6, 0, 7); g.ellipse(k * 4 + 1.5, -3 - j * 2.2, 1.6, 1.1, 0.6, 0, 7); g.fill(); } } break;
+    case 'flour': g.fillStyle = '#e9e2d0'; g.beginPath(); g.moveTo(-8, 8); g.lineTo(-7, -3); g.quadraticCurveTo(-4, -8, 0, -8); g.quadraticCurveTo(4, -8, 7, -3); g.lineTo(8, 8); g.closePath(); g.fill(); g.stroke(); g.strokeStyle = '#8a6a3a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(-5, -4); g.lineTo(5, -4); g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(-2, 2, 1.2, 0, 7); g.arc(3, 4, 1, 0, 7); g.fill(); break;
+    case 'berries': for (const [px, py] of [[-4, -3], [4, -2], [-2, 4], [5, 5], [0, 0]]) { g.fillStyle = def.color; g.beginPath(); g.arc(px, py, 3.4, 0, 7); g.fill(); g.stroke(); g.fillStyle = 'rgba(255,255,255,0.45)'; g.beginPath(); g.arc(px - 1, py - 1, 1, 0, 7); g.fill(); } g.fillStyle = '#3f7d2b'; g.beginPath(); g.ellipse(-7, -7, 4, 2, -0.7, 0, 7); g.fill(); break;
     case 'hoe': g.save(); g.rotate(-0.8); g.fillStyle = '#8a6a3a'; g.fillRect(-9, -1.5, 18, 3); g.fillStyle = def.color; g.fillRect(8, -4, 3, 8); g.restore(); break;
     case 'hammer': g.save(); g.rotate(-0.8); g.fillStyle = '#8a6a3a'; g.fillRect(-9, -1.5, 16, 3); g.fillStyle = '#5a5a62'; g.fillRect(5, -5, 6, 10); g.restore(); break;
     case 'bow': g.strokeStyle = def.color; g.lineWidth = 2.5; g.beginPath(); g.arc(-3, 0, 9, -1.2, 1.2); g.stroke(); g.strokeStyle = '#e9eef5'; g.lineWidth = 1; g.beginPath(); g.moveTo(-3 + Math.cos(-1.2) * 9, Math.sin(-1.2) * 9); g.lineTo(-3 + Math.cos(1.2) * 9, Math.sin(1.2) * 9); g.stroke(); break;
@@ -2805,6 +2849,98 @@ window.FANGLANDS = {
       F.tp(103, 39); F.walkTo(100, 38, 500); F.face(100, 37); F.press('KeyE'); const open = panel === 'station' && panelArg === 'workbench'; const c = F.clickButton('2 Oak logs + Spider silk → Oak bow'); closePanel();
       check('oak bow crafts at a workbench (Crafting 8: 2 oak logs + silk, 40 xp)', open && c && countItem('oak_bow') === 1 && countItem('oak_log') === 0 && countItem('spider_silk') === 0 && player.skills.crafting.xp === XP_TABLE[8] + 40, { open, c, bow: countItem('oak_bow'), cxp: player.skills.crafting.xp - XP_TABLE[8] });
       player.inv = inv0; player.skills.crafting.xp = cxp; }
+    // ---------- Cohen's batch (2026-09-07): crafting xp, food, icons, machines, ash, jungle ----------
+    { // planks are the first Crafting xp: 2 logs → 4 planks, +6 xp from the pack
+      const inv0 = invSnap(); player.inv = player.inv.map(s => s && (s.id === 'wood' || s.id === 'plank') ? null : s); give('wood', 2);
+      const cx0 = player.skills.crafting.xp; const rec = RECIPES.find(r => r.out === 'plank'); const ok = craft(rec);
+      check('crafting: planks give Crafting xp (2 logs → 4 planks, +6 xp, from the pack)', ok && rec.station === null && rec.skill === 'crafting' && rec.xp === 6 && countItem('plank') === 4 && player.skills.crafting.xp === cx0 + 6, { ok, planks: countItem('plank'), gained: player.skills.crafting.xp - cx0 });
+      player.inv = inv0; }
+    { // berry bushes: about 60 on the grass, E picks 1–3 berries, the bush goes bare, and it is ripe again after the regrow timer
+      const B = T.BERRY_BUSH; let n = 0, bad = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === B) { n++; if (inVillageBounds(tc(x), tc(y)) || (x >= 142 && x <= 158 && y >= 20 && y <= 40) || buildingAt(x, y)) bad++; }
+      const inv0 = invSnap(); player.inv = player.inv.map(s => s && s.id === 'berries' ? null : s);
+      const bush = F.nearestTile([B], { x: tc(60), y: tc(30) }); let side = null;
+      if (bush) for (const [dx, dy] of [[0, 1], [0, -1], [-1, 0], [1, 0]]) if (!side && inMap(bush.x + dx, bush.y + dy) && !SOLID.has(tileAt(bush.x + dx, bush.y + dy))) side = { x: bush.x + dx, y: bush.y + dy };
+      let picked = 0, bare = false, again = 0;
+      if (side) { F.tp(side.x, side.y); F.face(bush.x, bush.y); F.press('KeyE'); F.sim(2, []); picked = countItem('berries'); notice = null; F.press('KeyE'); F.sim(2, []); bare = countItem('berries') === picked && !!notice && /bare/.test(notice.text) && FOOD.bushes.has(idx(bush.x, bush.y));
+        FOOD.bushes.get(idx(bush.x, bush.y)).timer = 0.01; F.sim(2, []); F.press('KeyE'); F.sim(2, []); again = countItem('berries') - picked; }
+      check('food: ~60 berry bushes on open grass (none in Thistledown, the camp or a building); E picks 1–3 berries, the bush goes bare, then regrows and picks again', n >= 50 && n <= 60 && bad === 0 && !!side && picked >= 1 && picked <= 3 && bare && again >= 1 && again <= 3 && ITEMS.berries.heal === 2 && ITEMS.berries.value === 2 && FOOD.BUSH_REGROW === 120, { n, bad, bush: bush && [bush.x, bush.y], picked, bare, again });
+      player.inv = inv0; }
+    { // wheat: Greta sells the seed, it plants on soil like a potato, the crop remembers what it is, harvest gives wheat
+      const inv0 = invSnap(); clearJunk(); player.inv = player.inv.map(s => s && (s.id === 'wheat' || s.id === 'wheat_seed') ? null : s); if (!hasTool('hoe')) give('bronze_hoe', 1); give('wheat_seed', 1);
+      const o = openSpot(70, 30); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y }; if (tileAt(gt.x, gt.y) !== T.SOIL) changeTile(gt.x, gt.y, T.SOIL);
+      F.face(gt.x, gt.y); F.press('KeyE'); F.sim(2, []); const c = crops.find(c => c.i === idx(gt.x, gt.y)); const planted = tileAt(gt.x, gt.y) === T.CROP && !!c && c.crop === 'wheat' && countItem('wheat_seed') === 0;
+      if (c) c.stage = 3; F.press('KeyE'); F.sim(2, []);
+      check('food: wheat seed (Greta, 2c) plants like a potato, the crop entry says wheat, harvest gives 2–4 wheat', SHOPS.seeds.stock.some(([id, p]) => id === 'wheat_seed' && p === 2) && ITEMS.wheat_seed.seed === 'wheat' && planted && countItem('wheat') >= 2 && countItem('wheat') <= 4 && tileAt(gt.x, gt.y) === T.SOIL, { planted, wheat: countItem('wheat'), crop: c && c.crop });
+      changeTile(gt.x, gt.y, T.GRASS); player.inv = inv0; }
+    { // flour at a workbench: 2 wheat → 1 flour, Crafting 1, 4 xp
+      const inv0 = invSnap(); player.inv = player.inv.map(s => s && (s.id === 'wheat' || s.id === 'flour') ? null : s); give('wheat', 2); const cx0 = player.skills.crafting.xp;
+      const rec = RECIPES.find(r => r.out === 'flour'); const ok = !!rec && rec.station === 'workbench' && craft(rec);
+      check('food: 2 wheat → flour at a workbench (Crafting 1, 4 xp)', ok && countItem('flour') === 1 && countItem('wheat') === 0 && player.skills.crafting.xp === cx0 + 4, { ok, flour: countItem('flour'), gained: player.skills.crafting.xp - cx0 });
+      player.inv = inv0; }
+    { // pies at the bakery oven: E with flour + berries opens the oven panel; the pie lands with Cooking xp; without flour E just cooks
+      const inv0 = invSnap(); clearJunk(); player.inv = player.inv.map(s => s && ['berries', 'flour', 'berry_pie', 'raw_beef', 'raw_trout'].includes(s.id) ? null : s);
+      const bakery = BUILDINGS.find(b => b.id === 'bakery'); const ov = bakery.f.find(f => f[0] === T.OVEN); const ox = bakery.x + ov[1], oy = bakery.y + ov[2];
+      F.tp(ox, oy + 1); F.face(ox, oy); closePanel(); player.action = null;
+      F.press('KeyE'); F.sim(1, []); const plain = panel !== 'oven'; closePanel(); player.action = null;
+      give('berries', 4); give('flour', 1); const cook0 = player.skills.cooking.xp;
+      F.press('KeyE'); const opened = panel === 'oven' && !!insideBuilding(ox, oy + 1); const clicked = F.clickButton('4 Berries + Flour → Berry pie'); closePanel();
+      const pie = RECIPES.find(r => r.out === 'berry_pie'), meat = RECIPES.find(r => r.out === 'meat_pie'), fish = RECIPES.find(r => r.out === 'fish_pie');
+      const defs = !!pie && pie.station === 'oven' && pie.skill === 'cooking' && !!meat && meat.station === 'oven' && meat.lv === 8 && meat.xp === 60 && !!fish && fish.station === 'oven' && fish.lv === 12 && ITEMS.fish_pie.heal === 14 && ITEMS.berry_pie.heal === 10 && ITEMS.berry_pie.value === 30;
+      check('food: the bakery oven bakes a berry pie (4 berries + flour) with Cooking xp; meat and fish pies are oven recipes; no flour = the plain cook', plain && opened && clicked && countItem('berry_pie') === 1 && countItem('berries') === 0 && countItem('flour') === 0 && player.skills.cooking.xp === cook0 + pie.xp && defs, { plain, opened, clicked, pie: countItem('berry_pie'), gained: player.skills.cooking.xp - cook0, defs });
+      player.inv = inv0; }
+    { // draw paths: the pickaxe icon, a parked walker tile (empty seat) and the wreck all draw without throwing (the harness canvas is a stub)
+      let icon = true, mech = true; try { drawItemIcon(ctx, 'bronze_pickaxe', 0, 0, 18); drawItemIcon(ctx, 'berries', 0, 0, 18); drawItemIcon(ctx, 'wheat', 0, 0, 18); drawItemIcon(ctx, 'flour', 0, 0, 18); } catch (e) { icon = false; }
+      const o = openSpot(50, 30); try { drawFurniture(ctx, o.x + 1, o.y, T.MECH); drawFurniture(ctx, o.x + 1, o.y, T.WRECK); changeTile(o.x + 1, o.y, T.MECH); F.tp(o.x, o.y); render(); } catch (e) { mech = false; }
+      changeTile(o.x + 1, o.y, T.GRASS);
+      check('draw: pickaxe/berry/wheat/flour icons and the parked walker (MECH) + wreck tiles draw without error', icon && mech, { icon, mech }); }
+    { // the bulldozer blade: tree → stump (regrow, a log), rock → rubble (regrow, stone), the next pass grinds them flat; fences and gates hold
+      const o = openSpot(56, 40); const e = { x: tc(o.x), y: tc(o.y), r: 22 }; const dir = { x: 1, y: 0 }; const d0 = drops.length;
+      changeTile(o.x + 1, o.y, T.TREE); dozerPlow(e, dir, false); const stump = tileAt(o.x + 1, o.y) === T.STUMP && regrow.some(r => r.i === idx(o.x + 1, o.y) && r.t === T.TREE) && drops.slice(d0).some(d => d.id === 'wood');
+      dozerPlow(e, dir, false); const ground = tileAt(o.x + 1, o.y) === T.GRASS;
+      changeTile(o.x + 1, o.y, T.ROCK); dozerPlow(e, dir, false); const rubble = tileAt(o.x + 1, o.y) === T.RUBBLE && regrow.some(r => r.i === idx(o.x + 1, o.y) && r.t === T.ROCK) && drops.slice(d0).some(d => d.id === 'stone');
+      dozerPlow(e, dir, false); const ground2 = tileAt(o.x + 1, o.y) === T.GRASS;
+      changeTile(o.x + 1, o.y, T.FENCE); dozerPlow(e, dir, false); const fence = tileAt(o.x + 1, o.y) === T.FENCE; changeTile(o.x + 1, o.y, T.GATE); dozerPlow(e, dir, false); const gate = tileAt(o.x + 1, o.y) === T.GATE;
+      check('bulldozer: tree → stump (regrow + log), rock → rubble (regrow + stone), the next pass grinds them flat; fences and gates are never flattened', stump && ground && rubble && ground2 && fence && gate, { stump, ground, rubble, ground2, fence, gate });
+      changeTile(o.x + 1, o.y, T.GRASS); regrow = regrow.filter(r => r.i !== idx(o.x + 1, o.y)); drops = drops.filter((d, i) => i < d0); }
+    { // a goblin-driven bulldozer still rams goblins in its way, at half the knight's damage (3–6)
+      const o = openSpot(60, 40); F.tp(o.x - 12, o.y + 12); const dz = monsters.find(m => m.type === 'bulldozer'); const gob = monsters.find(m => m.type === 'goblin' && !m.dead);
+      const ds = dz && { x: dz.x, y: dz.y, home: dz.home, dead: dz.dead, hp: dz.hp, state: dz.state, respawnT: dz.respawnT, deadT: dz.deadT }; const gs = { x: gob.x, y: gob.y, home: gob.home, hp: gob.hp, state: gob.state, dead: gob.dead, respawnT: gob.respawnT };
+      let ok = false, info = { dozer: !!dz };
+      if (dz) {
+        dz.dead = false; dz.hp = dz.maxHp; dz.x = tc(o.x) - 40; dz.y = tc(o.y); dz.home = { x: dz.x, y: dz.y }; dz.state = 'idle'; dz.stunT = 0; dz.chargeT = 1; dz.chargeDir = { x: 1, y: 0 }; dz.chargeHit = false; dz.rammed = [];
+        gob.dead = false; gob.hp = 30; gob.maxHp = 30; gob.x = tc(o.x) + 30; gob.y = tc(o.y); gob.home = { x: gob.x, y: gob.y }; gob.stunT = 5; gob.state = 'idle';
+        F.sim(20, []); ok = !gob.dead && gob.hp >= 24 && gob.hp <= 27; info = { dead: gob.dead, took: 30 - gob.hp };
+        dz.chargeT = 0; Object.assign(dz, ds); gob.maxHp = MONSTER_DEFS.goblin.hp;
+      }
+      check('friendly fire: a goblin-driven bulldozer rams a goblin in its path for half damage (3–6)', ok, info);
+      Object.assign(gob, gs); gob.stunT = 0; }
+    { // the core parks the machine you are in: X from the bulldozer leaves T.DOZER, a wrecked bulldozer leaves T.DOZER_WRECK; the walker keeps T.MECH / T.WRECK
+      const o = openSpot(44, 24); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; player.action = null; const r0 = player.r, s0 = player.speed;
+      player.mech = { hp: 110, maxHp: 110, kind: 'dozer' }; player.r = 22; player.speed = 130; notice = null; exitMech();
+      const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
+      const dozer = !player.mech && !!nearestTileOfType(ptx, pty, T.DOZER, 2) && !nearestTileOfType(ptx, pty, T.MECH, 2) && !!notice && /bulldozer/.test(notice.text); const dn = notice && notice.text;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (tileAt(ptx + dx, pty + dy) === T.DOZER) changeTile(ptx + dx, pty + dy, T.GRASS);
+      F.tp(o.x, o.y); player.mech = { hp: 110, maxHp: 110, kind: 'dozer' }; player.r = 22; dialog.queue.length = 0; dialog.cur = null; wreckMech();
+      const wtx = Math.floor(player.x / TILE), wty = Math.floor(player.y / TILE); const wreck = !player.mech && !!nearestTileOfType(wtx, wty, T.DOZER_WRECK, 2) && !nearestTileOfType(wtx, wty, T.WRECK, 2) && (dialog.cur && /bulldozer gives out/.test(dialog.cur.text) || dialog.queue.some(d => /bulldozer gives out/.test(d.text)));
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (tileAt(wtx + dx, wty + dy) === T.DOZER_WRECK) changeTile(wtx + dx, wty + dy, T.GRASS);
+      F.tp(o.x, o.y); player.mech = { hp: 130, maxHp: 130 }; player.r = 20; notice = null; exitMech(); const mtx = Math.floor(player.x / TILE), mty = Math.floor(player.y / TILE);
+      const walker = !player.mech && !!nearestTileOfType(mtx, mty, T.MECH, 2) && !nearestTileOfType(mtx, mty, T.DOZER, 2) && !!notice && /walker/.test(notice.text);
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (tileAt(mtx + dx, mty + dy) === T.MECH) changeTile(mtx + dx, mty + dy, T.GRASS);
+      dialog.queue.length = 0; dialog.cur = null; player.r = r0; player.speed = s0; player.mech = null;
+      check('machines: X from the bulldozer parks T.DOZER and a wrecked bulldozer leaves T.DOZER_WRECK (never walker tiles); the walker still parks T.MECH', dozer && wreck && walker, { dozer, wreck, walker, dn }); }
+    { // walker and bulldozer come back after an hour, even inside the camp (the camp's 1800 s never shortens it)
+      const wk = monsters.find(m => m.type === 'walker'); const ws = { x: wk.x, y: wk.y, dead: wk.dead, hp: wk.hp, respawnT: wk.respawnT, deadT: wk.deadT, state: wk.state }; const k0 = player.kills, wq = quest.walkerKilled;
+      wk.dead = false; wk.hp = 1; wk.x = tc(VILLAGE.x0); wk.y = tc(20); dialog.queue.length = 0; dialog.cur = null; const d0 = drops.length; killMonster(wk); const rt = wk.respawnT; const noWreck = tileAt(VILLAGE.x0, 20) === T.FENCE;
+      check('machines: walker and bulldozer respawn 3600 s (a killed camp walker waits at least an hour)', MONSTER_DEFS.walker.respawn === 3600 && MONSTER_DEFS.bulldozer.respawn === 3600 && rt >= 3600 && noWreck, { rt, noWreck });
+      Object.assign(wk, ws); player.kills = k0; quest.walkerKilled = wq; drops = drops.filter((d, i) => i < d0); dialog.queue.length = 0; dialog.cur = null; }
+    { // the Ashfields: ash in patches (25–60% of dragon country outside the lair), grass and dirt between; lava and obsidian still there
+      let ash = 0, area = 0, lava = 0, obs = 0, green = 0; const inFang = (x, y) => x >= 2 && x <= 34 && y >= 108 && y <= 138;
+      for (let y = 96; y <= 138; y++) for (let x = 1; x <= 99; x++) { if (inFang(x, y)) continue; area++; const t = tileAt(x, y); if (t === T.ASH) ash++; else if (t === T.LAVA) lava++; else if (t === T.OBSIDIAN) obs++; else if (t === T.GRASS || t === T.DIRT) green++; }
+      const cover = ash / area;
+      check('ashfields: ash lies in patches — 25–60% of dragon country, grass and dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.6 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, green, lava, obs }); }
+    { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
+      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = 140; y <= 178; y++) for (let x = 100; x <= 198; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === 150) row150++; } else if (t === T.FERN) ferns++; }
+      check('jungle: the biome continues south (y 140–178, x 100–198) at the same density; jungle trees stand at y 150', row150 >= 20 && trees / band > 0.3 && trees / band < 0.5 && ferns / band > 0.06 && regionAt(150, 160).name === 'The Jungle' && regionAt(133, 120).name === 'Sylvaris', { row150, trees: +(trees / band).toFixed(2), ferns: +(ferns / band).toFixed(2), region: regionAt(150, 160).name }); }
     peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
     const fails = Object.values(report).filter(v => v.startsWith('FAIL')).length;
@@ -5224,7 +5360,8 @@ HOOKS.selfTest.push((check, F, h) => {
 // A wide, low goblin engine: a wooden deck bound in iron, four iron-shod wheels, a boiler on the
 // back and a plow blade as wide as a door on the front. It charges, and it flattens what it hits.
 // Kill it → a wreck. Repair the wreck (4 iron bars + 6 goblin scrap) → drive it. Everything here
-// registers through HOOKS; no core file is edited.
+// registers through HOOKS. The core's exitMech / wreckMech (06) read player.mech.kind === 'dozer' and
+// park T.DOZER / T.DOZER_WRECK themselves (addTile registers both names on T).
 // ============================================================================
 
 // ---------- tiles ----------
@@ -5237,34 +5374,42 @@ const T_DOZER = addTile('DOZER', { solid: true, tex: 'dirt', mini: '#6b6b7a' });
 // NOTE: deliberately NOT `mech: true` — the core's killMonster would place a walker T.WRECK, speak the
 // walker's line and tick the walker quest flag. The bulldozer's wreck is placed in HOOKS.kill instead.
 MONSTER_DEFS.bulldozer = {
-  name: 'Goblin bulldozer', level: 14, r: 22, hp: 110, att: 15, maxHit: 10, def: 14, speed: 60, aggro: true, sight: 5 * TILE, respawn: 300,
+  name: 'Goblin bulldozer', level: 14, r: 22, hp: 110, att: 15, maxHit: 10, def: 14, speed: 60, aggro: true, sight: 5 * TILE, respawn: 3600,
   drops: { always: [['goblin_scrap', 3, 6], ['iron_ore', 1, 3]], table: [['iron_bar', 1, 2, 10], ['blast_powder', 1, 2, 8], ['coal', 1, 2, 6]], rare: { chance: 8, table: [['iron_warhammer', 1, 1, 1]] } },
 };
 const DOZER_CHARGE_EVERY = 5, DOZER_CHARGE_TIME = 1, DOZER_CHARGE_SPEED = 220;
 const DOZER_HP = 110, DOZER_REPAIR = [['iron_bar', 4], ['goblin_scrap', 6]];
+const DOZER_RAM_MIN = 3, DOZER_RAM_MAX = 6; // a goblin-driven charge on another monster: half of what the knight takes (6–12)
 
 // two of them: one in the Goblin Camp, one roaming the fields (the thicket north of the road)
 HOOKS.world.push((rnd, api) => { api.spawnList('bulldozer', [[146, 38], [70, 8]]); });
 
 // ---------- flattening ----------
-// What the blade flattens, and what falls out of it. Everything becomes grass.
-const DOZER_FLATTENS = new Map([[T.PLANK, 'plank'], [T.FENCE, null], [T.GATE, null], [T.TREE, 'wood'], [T.OAK, 'oak_log'], [T.CROP, null]]);
+// "Only stone and wood": the blade takes planks, trees and rocks. Fences and gates (village, pens, Dunstan's field) hold everywhere.
+// A tree leaves a stump and a rock leaves rubble, each with a regrow entry; the next pass of the blade grinds a stump or rubble flat
+// (they are solid, so the machine could not drive on otherwise). What falls out: { item, leaves, regrow seconds }.
+const DOZER_FLATTENS = new Map([
+  [T.PLANK, { item: 'plank', leaves: T.GRASS }], [T.CROP, { item: null, leaves: T.GRASS }],
+  [T.TREE, { item: 'wood', leaves: T.STUMP, regrow: 120 }], [T.OAK, { item: 'oak_log', leaves: T.STUMP, regrow: 120 }],
+  [T.ROCK, { item: 'stone', leaves: T.RUBBLE, regrow: 120 }],
+  [T.STUMP, { item: null, leaves: T.GRASS }], [T.RUBBLE, { item: null, leaves: T.GRASS }],
+]);
 // Probe a few points in front of the blade (two distances × three across, the blade is wide) and flatten
-// what is there. byPlayer: loot goes to the pack (giveOrDrop) instead of the ground. Returns tiles flattened.
+// what is there; each tile is touched once per call, so a tree becomes a stump on this pass and grass on the
+// next. byPlayer: loot goes to the pack (giveOrDrop) instead of the ground. Returns tiles flattened.
 function dozerPlow(e, dir, byPlayer) {
-  let n = 0;
+  let n = 0; const done = new Set();
   const sx = -dir.y, sy = dir.x; // across the blade
   for (const ahead of [e.r + 6, e.r + 22]) for (const side of [-14, 0, 14]) {
     const tx = Math.floor((e.x + dir.x * ahead + sx * side) / TILE), ty = Math.floor((e.y + dir.y * ahead + sy * side) / TILE);
-    const t = tileAt(tx, ty);
-    if (!DOZER_FLATTENS.has(t)) continue;
-    if ((t === T.FENCE || t === T.GATE) && inVillageBounds(tc(tx), tc(ty))) continue; // Thistledown's fence holds; the guards would not like that
-    changeTile(tx, ty, T.GRASS);
-    burst(tc(tx), tc(ty), t === T.TREE || t === T.OAK ? '#3d8a38' : t === T.CROP ? '#5aa33e' : '#8b5a2b', 12, 90);
+    const t = tileAt(tx, ty), f = DOZER_FLATTENS.get(t), key = idx(tx, ty);
+    if (!f || done.has(key)) continue;
+    done.add(key);
+    changeTile(tx, ty, f.leaves);
+    burst(tc(tx), tc(ty), t === T.TREE || t === T.OAK ? '#3d8a38' : t === T.CROP ? '#5aa33e' : t === T.ROCK || t === T.RUBBLE ? '#9a9da5' : '#8b5a2b', 12, 90);
     if (t === T.CROP) crops = crops.filter(c => c.i !== idx(tx, ty));
-    if (t === T.TREE || t === T.OAK) regrow.push({ i: idx(tx, ty), t, timer: 120 }); // the wood grows back, slowly
-    const item = DOZER_FLATTENS.get(t);
-    if (item) { if (byPlayer) giveOrDrop(item, 1, player.x, player.y); else drops.push({ x: tc(tx), y: tc(ty), id: item, qty: 1, t: 0 }); }
+    if (f.regrow) regrow.push({ i: key, t, timer: f.regrow }); // the wood and the rock come back, slowly (a regrow fires onto grass too)
+    if (f.item) { if (byPlayer) giveOrDrop(f.item, 1, player.x, player.y); else drops.push({ x: tc(tx), y: tc(ty), id: f.item, qty: 1, t: 0 }); }
     n++;
   }
   return n;
@@ -5287,7 +5432,7 @@ function repairDozer(tx, ty) {
 }
 function enterDozer(tx, ty) {
   changeTile(tx, ty, T.DIRT); player.mech = { hp: DOZER_HP, maxHp: DOZER_HP, kind: 'dozer' }; player.x = tc(tx); player.y = tc(ty); player.r = 22; player.speed = 130; player.action = null;
-  notify('You are on the bulldozer. Drive into trees, fences and planks to flatten them. Space shoves. X climbs down.'); save();
+  notify('You are on the bulldozer. Drive into trees, rocks and planks to flatten them. Space shoves. X climbs down.'); save();
 }
 HOOKS.use.push((t, tx, ty) => {
   if (t === T_DOZER_WRECK) { repairDozer(tx, ty); return true; }
@@ -5295,44 +5440,18 @@ HOOKS.use.push((t, tx, ty) => {
   return false;
 });
 
-// ---------- update: charging bulldozers, the driven bulldozer, and the exit fix-up ----------
-// Exit fix-up. The core handles X (exitMech) and mech death (wreckMech) before HOOKS.update runs, and both
-// place WALKER tiles (T.MECH / T.WRECK) because they do not know about the bulldozer. So each tick while
-// driving we remember where the player was (`dozerSnap`); the tick the mech goes away we work out which
-// tile the core just placed and swap it for the bulldozer's own tile:
-//   - exitMech places T.MECH on the player's own tile (then steps the player back one tile) or, if that
-//     tile is placeable, on frontTile(player, 44). Own tile is checked first: the player was standing on
-//     it, so it cannot have been a parked walker already.
-//   - wreckMech places T.WRECK on the player's own tile and steps the player back one tile along facing,
-//     so the wreck sits at (player + facing * TILE).
-// Dying in the bulldozer loses it, exactly like the walker (die() clears player.mech, no tile).
-let dozerWas = false, dozerSnap = null;
-function afterDozerLeft(snap) {
-  if (player.dead) return;
-  const wx = Math.floor((player.x + player.facing.x * TILE) / TILE), wy = Math.floor((player.y + player.facing.y * TILE) / TILE);
-  if (tileAt(wx, wy) === T.WRECK && dialog.queue.some(d => /walker gives out/.test(d.text))) {
-    changeTile(wx, wy, T_DOZER_WRECK);
-    dialog.queue = dialog.queue.filter(d => !/walker gives out/.test(d.text));
-    say('The bulldozer gives out under you. It can be repaired again: iron bars and scrap.', 'The Voice');
-    return;
-  }
-  const own = { tx: Math.floor(snap.x / TILE), ty: Math.floor(snap.y / TILE) };
-  const ft = frontTile(snap, 44);
-  const spot = tileAt(own.tx, own.ty) === T.MECH ? own : tileAt(ft.tx, ft.ty) === T.MECH ? ft : null;
-  if (!spot) return;
-  changeTile(spot.tx, spot.ty, T_DOZER);
-  notify('You climb down. The bulldozer waits.'); save();
-}
+// ---------- update: charging bulldozers and the driven bulldozer ----------
+// Climbing down (X → exitMech) and a wreck (wreckMech) are the core's: both read player.mech.kind and park
+// T.DOZER / T.DOZER_WRECK for the bulldozer, with their own "bulldozer" lines. Dying in the bulldozer loses it,
+// exactly like the walker (die() clears player.mech, no tile).
 HOOKS.update.push(dt => {
   const inDozer = !!(player.mech && player.mech.kind === 'dozer');
-  if (dozerWas && !inDozer && dozerSnap) afterDozerLeft(dozerSnap);
   if (inDozer && !player.dead) {
     if (player.moving) dozerPlow(player, player.facing, true); // a slow lumber machine: trees go into the pack as logs
     // the core's messages say "walker"; fix the ones it shows while the bulldozer is driven
     if (notice && /walker/i.test(notice.text)) notice.text = notice.text.replace(/walker/gi, 'bulldozer');
     for (const f of floaters) if (/\(walker\)$/.test(f.text)) f.text = f.text.replace('(walker)', '(bulldozer)');
   }
-  dozerWas = inDozer; dozerSnap = inDozer ? { x: player.x, y: player.y, r: player.r, facing: { x: player.facing.x, y: player.facing.y } } : null;
 
   // bulldozer monsters: every 5 s of chasing, a 1 s straight-line charge that flattens what it touches
   for (const m of monsters) {
@@ -5350,12 +5469,13 @@ HOOKS.update.push(dt => {
         for (let k = 0; k < 6; k++) moveEntity(player, d.x * 10, d.y * 10, playerWho()); // shoved 60px, sliding until something stops it
         burst(player.x, player.y, '#8f96a3', 14, 130); floatText(player.x, player.y - 40, 'RAMMED', '#ffb347', 14);
       }
-      // friendly fire: anything else on the blade's line is rammed once per charge — 6–12 through hitMonster (so a kill drops loot, source
-      // 'monster' = no XP for the knight), then shoved 60px along the charge, not away from the knight, and left reeling for a moment
+      // friendly fire: anything else on the blade's line is rammed once per charge — at HALF the knight's 6–12 (3–6: the goblin driver
+      // pulls up for his own kind, a little) through hitMonster (so a kill drops loot, source 'monster' = no XP for the knight), then
+      // shoved 60px along the charge, not away from the knight, and left reeling for a moment
       m.rammed = m.rammed || [];
       for (const o of monsters) {
         if (o === m || o.dead || m.rammed.includes(o) || dist(m.x, m.y, o.x, o.y) >= m.r + o.r + 4) continue;
-        m.rammed.push(o); hitMonster(o, rint(6, 12), 0, true, 'monster');
+        m.rammed.push(o); hitMonster(o, rint(DOZER_RAM_MIN, DOZER_RAM_MAX), 0, true, 'monster');
         if (!o.dead) { for (let k = 0; k < 6; k++) moveEntity(o, d.x * 10, d.y * 10, 'beast'); o.stunT = Math.max(o.stunT || 0, 0.4); floatText(o.x, o.y - o.r - 18, 'RAMMED', '#ffb347', 12); }
         burst(o.x, o.y, '#8f96a3', 10, 110);
       }
@@ -5372,8 +5492,6 @@ HOOKS.update.push(dt => {
     } else m.chargeCd = DOZER_CHARGE_EVERY;
   }
 });
-HOOKS.newGame.push(() => { dozerWas = false; dozerSnap = null; });
-
 // ---------- HUD: the core writes "Walker hp/max" for any mech; re-badge it while driving the bulldozer ----------
 HOOKS.hud.push(g => {
   if (!player.mech || player.mech.kind !== 'dozer') return;
@@ -5479,7 +5597,7 @@ HOOKS.draw.unshift((g, items, cam) => {
 // ---------- self-test ----------
 HOOKS.selfTest.push((check, F, h) => {
   const dz = monsters.filter(m => m.type === 'bulldozer');
-  check('bulldozer: two spawn (camp + fields) with the right def', dz.length === 2 && dz.every(m => m.maxHp === 110 && m.r === 22 && m.speed === 60) && MONSTER_DEFS.bulldozer.level === 14 && MONSTER_DEFS.bulldozer.maxHit === 10 && MONSTER_DEFS.bulldozer.def === 14 && MONSTER_DEFS.bulldozer.sight === 5 * TILE && MONSTER_DEFS.bulldozer.respawn === 300 && !MONSTER_DEFS.bulldozer.mech,
+  check('bulldozer: two spawn (camp + fields) with the right def', dz.length === 2 && dz.every(m => m.maxHp === 110 && m.r === 22 && m.speed === 60) && MONSTER_DEFS.bulldozer.level === 14 && MONSTER_DEFS.bulldozer.maxHit === 10 && MONSTER_DEFS.bulldozer.def === 14 && MONSTER_DEFS.bulldozer.sight === 5 * TILE && MONSTER_DEFS.bulldozer.respawn === 3600 && !MONSTER_DEFS.bulldozer.mech,
     { n: dz.length, homes: dz.map(m => [Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)]) });
   { let scrap = 0, ore = 0; for (let i = 0; i < 40; i++) { const b = drops.length; rollDrops(MONSTER_DEFS.bulldozer, -999, -999); const got = drops.slice(b); if (got.some(d => d.id === 'goblin_scrap' && d.qty >= 3 && d.qty <= 6)) scrap++; if (got.some(d => d.id === 'iron_ore')) ore++; } drops = drops.filter(d => d.x > 0); check('bulldozer: always drops 3-6 scrap + iron ore', scrap === 40 && ore === 40, { scrap, ore }); }
   // a flat grass lane (o.x-1 .. o.x+9, o.y-1 .. o.y+1) in the open fields south of the road, west of the animal pens
@@ -5512,10 +5630,10 @@ HOOKS.selfTest.push((check, F, h) => {
     F.face(wt.x, wt.y); F.press('KeyE'); F.sim(2, []);
     const piloting = !!player.mech && player.mech.kind === 'dozer' && player.mech.hp === 110 && player.r === 22 && player.speed === 130 && tileAt(wt.x, wt.y) === T.DIRT;
     check('bulldozer: climb on → player.mech.kind === "dozer"', piloting, { mech: player.mech, r: player.r, speed: player.speed });
-    // drive into a tree: flattened to grass, one log in the pack
+    // drive into a tree: stump first, ground flat on the next pass, one log in the pack
     changeTile(wt.x + 1, wt.y, T.TREE); const w0 = countItem('wood'); F.sim(60, ['KeyD']);
-    check('bulldozer: driving flattens a tree → grass, +1 logs, regrows later', tileAt(wt.x + 1, wt.y) === T.GRASS && countItem('wood') === w0 + 1 && regrow.some(r => r.i === idx(wt.x + 1, wt.y) && r.t === T.TREE), { tile: tileAt(wt.x + 1, wt.y), wood: countItem('wood'), w0, px: +(player.x / TILE).toFixed(1) });
-    // climb down with X: the core parks a walker tile, the fix-up turns it into a DOZER tile
+    check('bulldozer: driving flattens a tree → stump → grass, +1 logs, regrows later', tileAt(wt.x + 1, wt.y) === T.GRASS && countItem('wood') === w0 + 1 && regrow.some(r => r.i === idx(wt.x + 1, wt.y) && r.t === T.TREE), { tile: tileAt(wt.x + 1, wt.y), wood: countItem('wood'), w0, px: +(player.x / TILE).toFixed(1) });
+    // climb down with X: the core reads player.mech.kind and parks a DOZER tile
     F.press('KeyX'); F.sim(2, []);
     const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
     const parked = nearestTileOfType(ptx, pty, T_DOZER, 2), walkerNear = nearestTileOfType(ptx, pty, T.MECH, 2);
@@ -6127,7 +6245,8 @@ HOOKS.selfTest.push((check, F, h) => {
 
   // ---------- geometry ----------
   // Territory: the south-east, x 100–199, y 96–139. Nothing here carves outside it.
-  const JR = { x0: 100, y0: 96, x1: 199, y1: 139 };            // The Jungle
+  const JR = { x0: 100, y0: 96, x1: 199, y1: 139 };            // The Jungle (the original carve; its rnd stream lays out the city, so this rect never changes)
+  const JS = { x0: 100, y0: 139, x1: 198, y1: 178 };            // the jungle's southern reach: the same trees and ferns down to the map's tree border (own rnd stream)
   const CR = { x0: 127, y0: 115, x1: 165, y1: 134 };            // Sylvaris (inside the ring wall)
   const RING = { x0: 126, y0: 114, x1: 166, y1: 135 };          // the wall of jungle around the city
   const GAP = { x: 137, y: 114 };                               // the one way in
@@ -6149,14 +6268,14 @@ HOOKS.selfTest.push((check, F, h) => {
   const BOARS = [[112, 104], [172, 118], [110, 128]];
 
   const inRect = (r, tx, ty) => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1;
-  const inJungle = (tx, ty) => inRect(JR, tx, ty);
+  const inJungle = (tx, ty) => inRect(JR, tx, ty) || inRect(JS, tx, ty);
   const inCity = (tx, ty) => inRect(CR, tx, ty);
   // Inserted just ahead of the catch-all 'The Wilds' rather than at index 0: regionAt still finds them first for
   // these tiles (nothing else covers the south-east) and the dwarves' self-test keeps Deepholm at REGIONS[0].
   {
     const wild = Math.max(0, REGIONS.findIndex(r => r.name === 'The Wilds'));
     REGIONS.splice(wild, 0, { name: 'Sylvaris', sub: 'The city in the trees', x0: CR.x0, y0: CR.y0, x1: CR.x1, y1: CR.y1 },
-      { name: 'The Jungle', sub: 'Vast, green, watching', x0: JR.x0, y0: JR.y0, x1: JR.x1, y1: JR.y1 });
+      { name: 'The Jungle', sub: 'Vast, green, watching', x0: JR.x0, y0: JR.y0, x1: JR.x1, y1: JS.y1 });
   }
 
   // ---------- items, recipes, shops ----------
@@ -6294,6 +6413,14 @@ HOOKS.selfTest.push((check, F, h) => {
     for (const [x, y] of BOARS) clear3(x, y);
     api.spawnList('elf_sentinel', SENTINELS); api.spawnList('boar', BOARS);
     for (const e of ELVES) if (SOLID.has(at(e.x, e.y))) set(e.x, e.y, EL_PLATFORM);
+    // 10. the jungle runs on south (y 139–178) at the same density; a separate stream keeps everything above exactly as it was.
+    // The ring wall, the gap and the totem are all north of here, so the one-way-in rule is untouched.
+    { const rs = mulberry32(2610);
+      for (let y = JS.y0; y <= JS.y1; y++) for (let x = JS.x0; x <= JS.x1; x++) {
+        if (!soft(x, y)) continue;
+        const r = rs();
+        set(x, y, r < 0.40 ? EL_JUNGLE : r < 0.52 ? EL_FERN : r < 0.62 ? T.DIRT : T.GRASS);
+      } }
   });
 
   // ---------- use: elves, the totem, jungle trees, the loom, the targets ----------
@@ -7356,6 +7483,7 @@ HOOKS.selfTest.push((check, F, h) => {
 
   // ---------- world ----------
   const NATURAL = [T.GRASS, T.DIRT, T.TREE, T.OAK, T.STUMP, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.RUBBLE];
+  const DR_ASH_COVER = 0.40; // share of dragon country (outside the lair) left under ash once the patches are cut
   const OURS = () => [DR_ASH, DR_LAVA, DR_OBSIDIAN, DR_DEADTREE, DR_BONES];
   HOOKS.world.push((rnd, api) => {
     const ours = OURS();
@@ -7398,6 +7526,20 @@ HOOKS.selfTest.push((check, F, h) => {
     track(PATH, 1); track(FARM_PATH, 0);
     // the approach to the lair stays open ash
     for (let y = APPROACH.y0; y <= APPROACH.y1; y++) for (let x = APPROACH.x0; x <= APPROACH.x1; x++) { if (inFang(x, y)) continue; const t = api.tileAt(x, y); if (ours.includes(t) && t !== DR_ASH) api.setTile(x, y, DR_ASH); }
+    // ash in patches, not a blanket: a smooth noise field keeps the deepest drifts (about 40% of dragon country) and lets scorched
+    // grass and bare dirt show through between them. Lava, obsidian, bones, the shrine, the tracks and the farm were all laid on the
+    // full ash above and stay put; the approach to the lair stays clear ash. Deterministic: ranked by noise, no rnd draws.
+    { const noise = (x, y) => Math.sin(x * 0.23 + 0.7) * Math.cos(y * 0.19 + 0.3) + 0.6 * Math.sin((x + y) * 0.12 + 1.1) + 0.5 * Math.sin(x * 0.09 - y * 0.15);
+      const cands = []; let area = 0, keep = 0;
+      for (let y = AF.y0; y <= AF.y1 - 1; y++) for (let x = Math.max(1, AF.x0); x <= AF.x1; x++) {
+        if (inFang(x, y)) continue; area++;
+        if (api.tileAt(x, y) !== DR_ASH) continue;
+        if (inRect(APPROACH, x, y)) { keep++; continue; }
+        cands.push({ x, y, n: noise(x, y) });
+      }
+      cands.sort((a, b) => b.n - a.n);
+      const want = Math.max(0, Math.round(area * DR_ASH_COVER) - keep);
+      for (let i = want; i < cands.length; i++) { const c = cands[i]; api.setTile(c.x, c.y, (c.n * 7) % 1 > 0.75 ? T.DIRT : T.GRASS); } }
     // dragons: nothing from the forest spawns in dragon country; clear a 3x3 of ash under each dragon
     for (let i = MONSTER_SPAWNS.length - 1; i >= 0; i--) { const s = MONSTER_SPAWNS[i]; if (inAshfields(s.tx, s.ty) && !inFang(s.tx, s.ty)) MONSTER_SPAWNS.splice(i, 1); }
     for (const [x, y] of [...GREEN_SPAWNS, ...RED_SPAWNS]) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (ours.includes(api.tileAt(x + dx, y + dy))) api.setTile(x + dx, y + dy, DR_ASH);
@@ -7637,7 +7779,7 @@ HOOKS.selfTest.push((check, F, h) => {
     h.peace(true);
     // region + path
     { let ash = 0, lava = 0, obs = 0; for (let y = AF.y0; y <= AF.y1; y++) for (let x = AF.x0; x <= AF.x1; x++) { if (inFang(x, y)) continue; const t = tileAt(x, y); if (t === DR_ASH) ash++; else if (t === DR_LAVA) lava++; else if (t === DR_OBSIDIAN) obs++; }
-      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(60, 110).name === 'The Ashfields' && regionAt(60, 94).name === 'Wolfwood' && ash > 1500 && lava >= 40 && obs >= 30, { at60_110: regionAt(60, 110).name, at60_94: regionAt(60, 94).name, ash, lava, obs }); }
+      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(60, 110).name === 'The Ashfields' && regionAt(60, 94).name === 'Wolfwood' && ash > 900 && ash < 2200 && lava >= 40 && obs >= 30, { at60_110: regionAt(60, 110).name, at60_94: regionAt(60, 94).name, ash, lava, obs }); }
     { const toFarm = F.bfs(60, 94, DUNSTAN_T.x, DUNSTAN_T.y + 1), toLair = F.bfs(60, 94, 36, 105);
       check('dragons: the path from Wolfwood (60,94) reaches the farm and the approach to the lair', !!toFarm && !!toLair && tileAt(60, 96) === T.DIRT, { farm: toFarm && toFarm.length, lair: toLair && toLair.length }); }
     // lava burns
@@ -8272,6 +8414,8 @@ HOOKS.selfTest.push((check, F, h) => {
       note: 'Ten goblins, any size. The watch pays by the head.', thanks: 'Ten heads. The watch pays, and the watch remembers. Good work, knight.' },
     { id: 'thessaly', tag: 'Thessaly', giver: 'Thessaly the weaver', title: 'Wool for the loom', kind: 'item', item: 'wool', n: 10, short: 'wool', reward: { coins: 40, xp: ['crafting', 300] },
       note: 'Ten wool, clean. The loom is hungry and the sheep are a long way from the jungle.', thanks: 'Ten wool. Soft as cloud. Watch how the loom takes it, and you will learn something of the craft.' },
+    { id: 'pies', tag: 'Pies', giver: 'Rosalind', title: 'Berry pies for the bakery', kind: 'item', item: 'berry_pie', n: 3, short: 'berry pies', reward: { coins: 120, xp: ['cooking', 100] },
+      note: 'Three berry pies. Bushes by the road, flour from wheat, and my ovens are yours. I want to taste yours before I sell them.', thanks: 'Three berry pies, and the crust holds. You could bake for a living, knight. Coin, and a trick or two of the oven.' },
   ];
   const byId = {}; for (const q of BOARD_QUESTS) byId[q.id] = q;
 
@@ -8463,6 +8607,11 @@ HOOKS.selfTest.push((check, F, h) => {
     { const per = Math.max(2, Math.min(6, Math.floor((VH - 20 - 150) / ROW_H))); const l2 = `Take: ${BOARD_QUESTS[per].tag}`, l1 = 'Take: Brakka';
       bq().page = 0; open(); const p0 = bq().page; const prevOff = !F.clickButton('Prev'); const next = F.clickButton('Next'); const p1 = bq().page; const onPage2 = !!buttons.find(b => b.label === l2); const prev = F.clickButton('Prev'); const p2 = bq().page; const onPage1 = !!buttons.find(b => b.label === l1);
       check('board: six jobs a page, Next and Prev turn the pages (Prev is off on the first page)', prevOff && next && p0 === 0 && p1 === 1 && onPage2 && prev && p2 === 0 && onPage1 && BOARD_QUESTS.length >= 12, { p0, p1, p2, onPage2, onPage1, jobs: BOARD_QUESTS.length }); }
+    // Rosalind's berry pies: three pies → 120 coins + 100 Cooking xp
+    { const q = byId.pies; const ok = !!q && q.kind === 'item' && q.item === 'berry_pie' && q.n === 3 && q.reward.coins === 120 && q.reward.xp[0] === 'cooking' && q.reward.xp[1] === 100 && q.giver === 'Rosalind' && !!ITEMS.berry_pie;
+      bq().page = pageOf(q); open(); const took = F.clickButton('Take: Pies'); closePanel(); ensureRoom(2); h.give('berry_pie', 3); F.sim(2, []);
+      const c0 = coins(), x0 = player.skills.cooking.xp; drain(); open(); const clicked = F.clickButton('Hand in: Pies'); F.sim(2, []);
+      check("board: Rosalind's berry pie job — 3 berry pies pay 120 coins + 100 Cooking xp", ok && took && clicked && bq().done.pies && countItem('berry_pie') === 0 && coins() === c0 + 120 && player.skills.cooking.xp === x0 + 100, { ok, took, clicked, coins: coins() - c0, xp: player.skills.cooking.xp - x0 }); closePanel(); }
     // several taken: the tracked line prefers a ready job and counts the rest
     { const open3 = openQuests(); const t = questText('board'); check('board: quest tab line shows one job with progress and how many more are taken', open3.length >= 3 && /^[A-Za-z]+: [a-z ]+ \d+\/\d+/.test(t) && new RegExp(`\\(\\+${open3.length - 1} more\\)`).test(t), { open: open3.map(q => q.id), text: t }); }
     closePanel(); player.action = null; drain(); h.peace(false); F.sim(2, []);
@@ -9345,6 +9494,118 @@ HOOKS.selfTest.push((check, F, h) => {
       }
     }
     player.hp = Math.min(hp0, player.maxHp); player.hurtT = 0; h.peace(false); projectiles = [];
+  });
+}
+
+// ---- src/34-food.js ----
+// ============================================================================
+// FEATURE: FOOD — berry bushes, wheat, flour and pies
+// Berry bushes grow wild on the grass between the villages: E picks 1–3 berries and the bush goes bare for two
+// minutes. Wheat seed (Greta, 01-items) grows like potatoes; two wheat make flour at a workbench; flour and a filling
+// make a pie at an oven (Rosalind's bakery). The core's T.OVEN branch (06) opens the 'oven' panel below when the
+// knight holds flour and a filling, and cooks raw food the plain way otherwise. Bush state is not saved: every
+// bush is ripe again on load, which is fine.
+// ============================================================================
+{
+  // ---------- items ----------
+  Object.assign(ITEMS, {
+    berries: { name: 'Berries', value: 2, color: '#c0294a', shape: 'berries', heal: 2 },
+    flour: { name: 'Flour', value: 8, color: '#e9e2d0', shape: 'flour' },
+    berry_pie: { name: 'Berry pie', value: 30, color: '#a8434a', shape: 'pie', heal: 10 },
+    fish_pie: { name: 'Fish pie', value: 35, color: '#c9a56a', shape: 'pie', heal: 14 },
+  });
+  for (const k of ['berries', 'flour', 'berry_pie', 'fish_pie']) { ITEMS[k].id = k; ITEMS[k].stack = 50; }
+
+  // ---------- recipes ----------
+  RECIPES.push(
+    { out: 'flour', qty: 1, needs: [['wheat', 2]], station: 'workbench', skill: 'crafting', lv: 1, xp: 4, label: '2 Wheat → Flour' },
+    { out: 'berry_pie', qty: 1, needs: [['berries', 4], ['flour', 1]], station: 'oven', skill: 'cooking', lv: 1, xp: 40, label: '4 Berries + Flour → Berry pie' },
+    { out: 'meat_pie', qty: 1, needs: [['raw_beef', 1], ['flour', 1]], station: 'oven', skill: 'cooking', lv: 8, xp: 60, label: 'Flour + Raw beef → Meat pie' },
+    { out: 'fish_pie', qty: 1, needs: [['raw_trout', 1], ['flour', 1]], station: 'oven', skill: 'cooking', lv: 12, xp: 80, label: 'Flour + Raw trout → Fish pie' },
+  );
+
+  // ---------- the oven panel: pies ----------
+  // Opened by the core's T.OVEN branch (06) when the knight holds flour and any filling; craft() handles the rest.
+  HOOKS.panel.oven = (g, narrow) => {
+    const list = RECIPES.filter(r => r.station === 'oven');
+    const { px, py, w } = panelBox(g, 420, 62 + list.length * 40 + 24, 'Oven — pies', `Cooking level ${skillLv('cooking')} · flour and a filling go in, a pie comes out`);
+    list.forEach((r, i) => {
+      const y = py + 62 + i * 40, has = r.needs.every(([id, q]) => countItem(id) >= q), lvOk = skillLv(r.skill) >= r.lv;
+      button(g, px + 18, y, w - 36, 34, r.label + (r.lv > 1 ? `  (lv ${r.lv})` : ''), () => craft(r), has && lvOk ? '#238636' : '#2a2f3a', has && lvOk);
+    });
+  };
+
+  // ---------- berry bushes ----------
+  const T_BERRY = addTile('BERRY_BUSH', { solid: true, tex: 'grass', mini: '#3f7d2b' });
+  // bare bushes by tile index → { timer } seconds until ripe again. Not persisted.
+  const FOOD = window.FOOD = { bushes: new Map(), BUSH_REGROW: 120, BUSH_COUNT: 60, tile: T_BERRY };
+  const bushBare = i => { const b = FOOD.bushes.get(i); return !!b && b.timer > 0; };
+
+  // ~60 bushes on open grass, away from the villages, the camp, every building, every spawn and the roads
+  HOOKS.world.push((rnd0, api) => {
+    const rs = mulberry32(3404); // own stream: where the bushes land does not depend on what carved before
+    const NO_REGION = new Set(['The Cave', 'Thistledown', 'Castle Thistledown', 'Goblin Camp', 'Hollowford', 'Sylvaris', 'The Jungle', 'The Ashfields', 'Deepholm']);
+    const near = new Set();
+    for (const s of MONSTER_SPAWNS) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) near.add(idx(s.tx + dx, s.ty + dy));
+    for (const n of NPCS) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) near.add(idx(n.x + dx, n.y + dy));
+    const nearBuilding = (x, y) => BUILDINGS.some(b => x >= b.x - 3 && x <= b.x + b.w + 2 && y >= b.y - 3 && y <= b.y + b.h + 2);
+    const nearPath = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = api.tileAt(x + dx, y + dy); if (t === T.DIRT || t === T.COBBLE || t === T.SAND || t === T.WATER) return true; } return false; };
+    const cands = [];
+    for (let y = 2; y <= 137; y++) for (let x = CAVE_EXIT_X + 4; x <= 197; x++) {
+      if (api.tileAt(x, y) !== T.GRASS || near.has(idx(x, y)) || NO_REGION.has(regionAt(x, y).name)) continue;
+      if (Math.abs(x - SIGN_TILE.x) < 4 && Math.abs(y - SIGN_TILE.y) < 4) continue;
+      if (nearBuilding(x, y) || nearPath(x, y)) continue;
+      cands.push([x, y]);
+    }
+    for (let i = cands.length - 1; i > 0; i--) { const j = Math.floor(rs() * (i + 1)); const t = cands[i]; cands[i] = cands[j]; cands[j] = t; }
+    const placed = [];
+    for (const [x, y] of cands) {
+      if (placed.length >= FOOD.BUSH_COUNT) break;
+      if (placed.some(([px, py]) => Math.max(Math.abs(px - x), Math.abs(py - y)) < 5)) continue;
+      api.setTile(x, y, T_BERRY); placed.push([x, y]);
+    }
+  });
+
+  HOOKS.use.push((t, tx, ty) => {
+    if (t !== T_BERRY) return false;
+    const i = idx(tx, ty);
+    if (bushBare(i)) { notify('Picked bare. The berries grow back in a couple of minutes.'); return true; }
+    if (!canFit('berries', 1)) { notify('Your pack is full.'); return true; }
+    const n = rint(1, 3);
+    giveOrDrop('berries', n, player.x, player.y); FOOD.bushes.set(i, { timer: FOOD.BUSH_REGROW });
+    floatText(player.x, player.y - 30, `+${n} Berries`, ITEMS.berries.color); burst(tc(tx), tc(ty), '#c0294a', 8, 60); sfx('pickup');
+    return true;
+  });
+  HOOKS.update.push(dt => { for (const [i, b] of FOOD.bushes) { b.timer -= dt; if (b.timer <= 0) FOOD.bushes.delete(i); } });
+  HOOKS.newGame.push(() => { FOOD.bushes.clear(); });
+
+  // ---------- drawing ----------
+  // a round bush: dark leaf-balls with lighter tops; ripe = red berries with a shine; bare = duller, a few pale stalks where the berries were
+  const drawBush = (g, tx, ty) => {
+    const cx = tc(tx), cy = tc(ty), bare = bushBare(idx(tx, ty)), sway = Math.sin(time * 1.6 + tx * 0.9 + ty * 0.4) * 0.8;
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 16, 19, 6, 0, 0, 7); g.fill();
+    g.fillStyle = '#5a3a1e'; g.fillRect(cx - 2, cy + 4, 4, 12);
+    const balls = [[-9, 2, 11], [9, 3, 10], [0, -6, 12], [-5, 8, 8], [6, 9, 8]];
+    for (const [ox, oy, r] of balls) { g.fillStyle = bare ? '#3a6a2a' : '#2f6a28'; g.beginPath(); g.arc(cx + ox + sway * 0.4, cy + oy, r, 0, 7); g.fill(); }
+    for (const [ox, oy, r] of balls) { g.fillStyle = bare ? '#5a8a3a' : '#4c9134'; g.beginPath(); g.arc(cx + ox - 2 + sway * 0.4, cy + oy - 3, r * 0.6, 0, 7); g.fill(); }
+    if (!bare) {
+      for (const [ox, oy] of [[-10, -2], [-3, -10], [6, -6], [11, 2], [-6, 6], [3, 3], [9, 9], [-1, -3]]) {
+        g.fillStyle = '#c0294a'; g.beginPath(); g.arc(cx + ox + sway * 0.4, cy + oy, 2.4, 0, 7); g.fill();
+        g.fillStyle = 'rgba(255,255,255,0.5)'; g.beginPath(); g.arc(cx + ox - 0.8 + sway * 0.4, cy + oy - 0.8, 0.8, 0, 7); g.fill();
+      }
+    } else {
+      g.strokeStyle = '#a8c07a'; g.lineWidth = 1; for (const [ox, oy] of [[-8, -3], [4, -7], [9, 4]]) { g.beginPath(); g.moveTo(cx + ox, cy + oy + 3); g.lineTo(cx + ox + 1, cy + oy - 2); g.stroke(); }
+    }
+  };
+  HOOKS.draw.push((g, items, cam) => {
+    const x0 = Math.max(0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE) + 1);
+    const y0 = Math.max(0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE) + 2);
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) if (tileAt(tx, ty) === T_BERRY) items.push({ y: ty * TILE + TILE - 4, draw: () => drawBush(g, tx, ty) });
+    if (!player.dead && !player.mech) items.push({ y: 1e9 + 4, draw: () => { // use-highlight: the core only highlights its own tiles
+      if (npcInFront()) return;
+      const { tx, ty } = frontTile(player);
+      if (tileAt(tx, ty) === T_BERRY) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+    } });
   });
 }
 

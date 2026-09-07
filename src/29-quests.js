@@ -44,6 +44,8 @@
       note: 'Ten goblins, any size. The watch pays by the head.', thanks: 'Ten heads. The watch pays, and the watch remembers. Good work, knight.' },
     { id: 'thessaly', tag: 'Thessaly', giver: 'Thessaly the weaver', title: 'Wool for the loom', kind: 'item', item: 'wool', n: 10, short: 'wool', reward: { coins: 40, xp: ['crafting', 300] },
       note: 'Ten wool, clean. The loom is hungry and the sheep are a long way from the jungle.', thanks: 'Ten wool. Soft as cloud. Watch how the loom takes it, and you will learn something of the craft.' },
+    { id: 'pies', tag: 'Pies', giver: 'Rosalind', title: 'Berry pies for the bakery', kind: 'item', item: 'berry_pie', n: 3, short: 'berry pies', reward: { coins: 120, xp: ['cooking', 100] },
+      note: 'Three berry pies. Bushes by the road, flour from wheat, and my ovens are yours. I want to taste yours before I sell them.', thanks: 'Three berry pies, and the crust holds. You could bake for a living, knight. Coin, and a trick or two of the oven.' },
   ];
   const byId = {}; for (const q of BOARD_QUESTS) byId[q.id] = q;
 
@@ -235,6 +237,11 @@
     { const per = Math.max(2, Math.min(6, Math.floor((VH - 20 - 150) / ROW_H))); const l2 = `Take: ${BOARD_QUESTS[per].tag}`, l1 = 'Take: Brakka';
       bq().page = 0; open(); const p0 = bq().page; const prevOff = !F.clickButton('Prev'); const next = F.clickButton('Next'); const p1 = bq().page; const onPage2 = !!buttons.find(b => b.label === l2); const prev = F.clickButton('Prev'); const p2 = bq().page; const onPage1 = !!buttons.find(b => b.label === l1);
       check('board: six jobs a page, Next and Prev turn the pages (Prev is off on the first page)', prevOff && next && p0 === 0 && p1 === 1 && onPage2 && prev && p2 === 0 && onPage1 && BOARD_QUESTS.length >= 12, { p0, p1, p2, onPage2, onPage1, jobs: BOARD_QUESTS.length }); }
+    // Rosalind's berry pies: three pies → 120 coins + 100 Cooking xp
+    { const q = byId.pies; const ok = !!q && q.kind === 'item' && q.item === 'berry_pie' && q.n === 3 && q.reward.coins === 120 && q.reward.xp[0] === 'cooking' && q.reward.xp[1] === 100 && q.giver === 'Rosalind' && !!ITEMS.berry_pie;
+      bq().page = pageOf(q); open(); const took = F.clickButton('Take: Pies'); closePanel(); ensureRoom(2); h.give('berry_pie', 3); F.sim(2, []);
+      const c0 = coins(), x0 = player.skills.cooking.xp; drain(); open(); const clicked = F.clickButton('Hand in: Pies'); F.sim(2, []);
+      check("board: Rosalind's berry pie job — 3 berry pies pay 120 coins + 100 Cooking xp", ok && took && clicked && bq().done.pies && countItem('berry_pie') === 0 && coins() === c0 + 120 && player.skills.cooking.xp === x0 + 100, { ok, took, clicked, coins: coins() - c0, xp: player.skills.cooking.xp - x0 }); closePanel(); }
     // several taken: the tracked line prefers a ready job and counts the rest
     { const open3 = openQuests(); const t = questText('board'); check('board: quest tab line shows one job with progress and how many more are taken', open3.length >= 3 && /^[A-Za-z]+: [a-z ]+ \d+\/\d+/.test(t) && new RegExp(`\\(\\+${open3.length - 1} more\\)`).test(t), { open: open3.map(q => q.id), text: t }); }
     closePanel(); player.action = null; drain(); h.peace(false); F.sim(2, []);

@@ -3,7 +3,8 @@
 // A wide, low goblin engine: a wooden deck bound in iron, four iron-shod wheels, a boiler on the
 // back and a plow blade as wide as a door on the front. It charges, and it flattens what it hits.
 // Kill it → a wreck. Repair the wreck (4 iron bars + 6 goblin scrap) → drive it. Everything here
-// registers through HOOKS; no core file is edited.
+// registers through HOOKS. The core's exitMech / wreckMech (06) read player.mech.kind === 'dozer' and
+// park T.DOZER / T.DOZER_WRECK themselves (addTile registers both names on T).
 // ============================================================================
 
 // ---------- tiles ----------
@@ -16,34 +17,42 @@ const T_DOZER = addTile('DOZER', { solid: true, tex: 'dirt', mini: '#6b6b7a' });
 // NOTE: deliberately NOT `mech: true` — the core's killMonster would place a walker T.WRECK, speak the
 // walker's line and tick the walker quest flag. The bulldozer's wreck is placed in HOOKS.kill instead.
 MONSTER_DEFS.bulldozer = {
-  name: 'Goblin bulldozer', level: 14, r: 22, hp: 110, att: 15, maxHit: 10, def: 14, speed: 60, aggro: true, sight: 5 * TILE, respawn: 300,
+  name: 'Goblin bulldozer', level: 14, r: 22, hp: 110, att: 15, maxHit: 10, def: 14, speed: 60, aggro: true, sight: 5 * TILE, respawn: 3600,
   drops: { always: [['goblin_scrap', 3, 6], ['iron_ore', 1, 3]], table: [['iron_bar', 1, 2, 10], ['blast_powder', 1, 2, 8], ['coal', 1, 2, 6]], rare: { chance: 8, table: [['iron_warhammer', 1, 1, 1]] } },
 };
 const DOZER_CHARGE_EVERY = 5, DOZER_CHARGE_TIME = 1, DOZER_CHARGE_SPEED = 220;
 const DOZER_HP = 110, DOZER_REPAIR = [['iron_bar', 4], ['goblin_scrap', 6]];
+const DOZER_RAM_MIN = 3, DOZER_RAM_MAX = 6; // a goblin-driven charge on another monster: half of what the knight takes (6–12)
 
 // two of them: one in the Goblin Camp, one roaming the fields (the thicket north of the road)
 HOOKS.world.push((rnd, api) => { api.spawnList('bulldozer', [[146, 38], [70, 8]]); });
 
 // ---------- flattening ----------
-// What the blade flattens, and what falls out of it. Everything becomes grass.
-const DOZER_FLATTENS = new Map([[T.PLANK, 'plank'], [T.FENCE, null], [T.GATE, null], [T.TREE, 'wood'], [T.OAK, 'oak_log'], [T.CROP, null]]);
+// "Only stone and wood": the blade takes planks, trees and rocks. Fences and gates (village, pens, Dunstan's field) hold everywhere.
+// A tree leaves a stump and a rock leaves rubble, each with a regrow entry; the next pass of the blade grinds a stump or rubble flat
+// (they are solid, so the machine could not drive on otherwise). What falls out: { item, leaves, regrow seconds }.
+const DOZER_FLATTENS = new Map([
+  [T.PLANK, { item: 'plank', leaves: T.GRASS }], [T.CROP, { item: null, leaves: T.GRASS }],
+  [T.TREE, { item: 'wood', leaves: T.STUMP, regrow: 120 }], [T.OAK, { item: 'oak_log', leaves: T.STUMP, regrow: 120 }],
+  [T.ROCK, { item: 'stone', leaves: T.RUBBLE, regrow: 120 }],
+  [T.STUMP, { item: null, leaves: T.GRASS }], [T.RUBBLE, { item: null, leaves: T.GRASS }],
+]);
 // Probe a few points in front of the blade (two distances × three across, the blade is wide) and flatten
-// what is there. byPlayer: loot goes to the pack (giveOrDrop) instead of the ground. Returns tiles flattened.
+// what is there; each tile is touched once per call, so a tree becomes a stump on this pass and grass on the
+// next. byPlayer: loot goes to the pack (giveOrDrop) instead of the ground. Returns tiles flattened.
 function dozerPlow(e, dir, byPlayer) {
-  let n = 0;
+  let n = 0; const done = new Set();
   const sx = -dir.y, sy = dir.x; // across the blade
   for (const ahead of [e.r + 6, e.r + 22]) for (const side of [-14, 0, 14]) {
     const tx = Math.floor((e.x + dir.x * ahead + sx * side) / TILE), ty = Math.floor((e.y + dir.y * ahead + sy * side) / TILE);
-    const t = tileAt(tx, ty);
-    if (!DOZER_FLATTENS.has(t)) continue;
-    if ((t === T.FENCE || t === T.GATE) && inVillageBounds(tc(tx), tc(ty))) continue; // Thistledown's fence holds; the guards would not like that
-    changeTile(tx, ty, T.GRASS);
-    burst(tc(tx), tc(ty), t === T.TREE || t === T.OAK ? '#3d8a38' : t === T.CROP ? '#5aa33e' : '#8b5a2b', 12, 90);
+    const t = tileAt(tx, ty), f = DOZER_FLATTENS.get(t), key = idx(tx, ty);
+    if (!f || done.has(key)) continue;
+    done.add(key);
+    changeTile(tx, ty, f.leaves);
+    burst(tc(tx), tc(ty), t === T.TREE || t === T.OAK ? '#3d8a38' : t === T.CROP ? '#5aa33e' : t === T.ROCK || t === T.RUBBLE ? '#9a9da5' : '#8b5a2b', 12, 90);
     if (t === T.CROP) crops = crops.filter(c => c.i !== idx(tx, ty));
-    if (t === T.TREE || t === T.OAK) regrow.push({ i: idx(tx, ty), t, timer: 120 }); // the wood grows back, slowly
-    const item = DOZER_FLATTENS.get(t);
-    if (item) { if (byPlayer) giveOrDrop(item, 1, player.x, player.y); else drops.push({ x: tc(tx), y: tc(ty), id: item, qty: 1, t: 0 }); }
+    if (f.regrow) regrow.push({ i: key, t, timer: f.regrow }); // the wood and the rock come back, slowly (a regrow fires onto grass too)
+    if (f.item) { if (byPlayer) giveOrDrop(f.item, 1, player.x, player.y); else drops.push({ x: tc(tx), y: tc(ty), id: f.item, qty: 1, t: 0 }); }
     n++;
   }
   return n;
@@ -66,7 +75,7 @@ function repairDozer(tx, ty) {
 }
 function enterDozer(tx, ty) {
   changeTile(tx, ty, T.DIRT); player.mech = { hp: DOZER_HP, maxHp: DOZER_HP, kind: 'dozer' }; player.x = tc(tx); player.y = tc(ty); player.r = 22; player.speed = 130; player.action = null;
-  notify('You are on the bulldozer. Drive into trees, fences and planks to flatten them. Space shoves. X climbs down.'); save();
+  notify('You are on the bulldozer. Drive into trees, rocks and planks to flatten them. Space shoves. X climbs down.'); save();
 }
 HOOKS.use.push((t, tx, ty) => {
   if (t === T_DOZER_WRECK) { repairDozer(tx, ty); return true; }
@@ -74,44 +83,18 @@ HOOKS.use.push((t, tx, ty) => {
   return false;
 });
 
-// ---------- update: charging bulldozers, the driven bulldozer, and the exit fix-up ----------
-// Exit fix-up. The core handles X (exitMech) and mech death (wreckMech) before HOOKS.update runs, and both
-// place WALKER tiles (T.MECH / T.WRECK) because they do not know about the bulldozer. So each tick while
-// driving we remember where the player was (`dozerSnap`); the tick the mech goes away we work out which
-// tile the core just placed and swap it for the bulldozer's own tile:
-//   - exitMech places T.MECH on the player's own tile (then steps the player back one tile) or, if that
-//     tile is placeable, on frontTile(player, 44). Own tile is checked first: the player was standing on
-//     it, so it cannot have been a parked walker already.
-//   - wreckMech places T.WRECK on the player's own tile and steps the player back one tile along facing,
-//     so the wreck sits at (player + facing * TILE).
-// Dying in the bulldozer loses it, exactly like the walker (die() clears player.mech, no tile).
-let dozerWas = false, dozerSnap = null;
-function afterDozerLeft(snap) {
-  if (player.dead) return;
-  const wx = Math.floor((player.x + player.facing.x * TILE) / TILE), wy = Math.floor((player.y + player.facing.y * TILE) / TILE);
-  if (tileAt(wx, wy) === T.WRECK && dialog.queue.some(d => /walker gives out/.test(d.text))) {
-    changeTile(wx, wy, T_DOZER_WRECK);
-    dialog.queue = dialog.queue.filter(d => !/walker gives out/.test(d.text));
-    say('The bulldozer gives out under you. It can be repaired again: iron bars and scrap.', 'The Voice');
-    return;
-  }
-  const own = { tx: Math.floor(snap.x / TILE), ty: Math.floor(snap.y / TILE) };
-  const ft = frontTile(snap, 44);
-  const spot = tileAt(own.tx, own.ty) === T.MECH ? own : tileAt(ft.tx, ft.ty) === T.MECH ? ft : null;
-  if (!spot) return;
-  changeTile(spot.tx, spot.ty, T_DOZER);
-  notify('You climb down. The bulldozer waits.'); save();
-}
+// ---------- update: charging bulldozers and the driven bulldozer ----------
+// Climbing down (X → exitMech) and a wreck (wreckMech) are the core's: both read player.mech.kind and park
+// T.DOZER / T.DOZER_WRECK for the bulldozer, with their own "bulldozer" lines. Dying in the bulldozer loses it,
+// exactly like the walker (die() clears player.mech, no tile).
 HOOKS.update.push(dt => {
   const inDozer = !!(player.mech && player.mech.kind === 'dozer');
-  if (dozerWas && !inDozer && dozerSnap) afterDozerLeft(dozerSnap);
   if (inDozer && !player.dead) {
     if (player.moving) dozerPlow(player, player.facing, true); // a slow lumber machine: trees go into the pack as logs
     // the core's messages say "walker"; fix the ones it shows while the bulldozer is driven
     if (notice && /walker/i.test(notice.text)) notice.text = notice.text.replace(/walker/gi, 'bulldozer');
     for (const f of floaters) if (/\(walker\)$/.test(f.text)) f.text = f.text.replace('(walker)', '(bulldozer)');
   }
-  dozerWas = inDozer; dozerSnap = inDozer ? { x: player.x, y: player.y, r: player.r, facing: { x: player.facing.x, y: player.facing.y } } : null;
 
   // bulldozer monsters: every 5 s of chasing, a 1 s straight-line charge that flattens what it touches
   for (const m of monsters) {
@@ -129,12 +112,13 @@ HOOKS.update.push(dt => {
         for (let k = 0; k < 6; k++) moveEntity(player, d.x * 10, d.y * 10, playerWho()); // shoved 60px, sliding until something stops it
         burst(player.x, player.y, '#8f96a3', 14, 130); floatText(player.x, player.y - 40, 'RAMMED', '#ffb347', 14);
       }
-      // friendly fire: anything else on the blade's line is rammed once per charge — 6–12 through hitMonster (so a kill drops loot, source
-      // 'monster' = no XP for the knight), then shoved 60px along the charge, not away from the knight, and left reeling for a moment
+      // friendly fire: anything else on the blade's line is rammed once per charge — at HALF the knight's 6–12 (3–6: the goblin driver
+      // pulls up for his own kind, a little) through hitMonster (so a kill drops loot, source 'monster' = no XP for the knight), then
+      // shoved 60px along the charge, not away from the knight, and left reeling for a moment
       m.rammed = m.rammed || [];
       for (const o of monsters) {
         if (o === m || o.dead || m.rammed.includes(o) || dist(m.x, m.y, o.x, o.y) >= m.r + o.r + 4) continue;
-        m.rammed.push(o); hitMonster(o, rint(6, 12), 0, true, 'monster');
+        m.rammed.push(o); hitMonster(o, rint(DOZER_RAM_MIN, DOZER_RAM_MAX), 0, true, 'monster');
         if (!o.dead) { for (let k = 0; k < 6; k++) moveEntity(o, d.x * 10, d.y * 10, 'beast'); o.stunT = Math.max(o.stunT || 0, 0.4); floatText(o.x, o.y - o.r - 18, 'RAMMED', '#ffb347', 12); }
         burst(o.x, o.y, '#8f96a3', 10, 110);
       }
@@ -151,8 +135,6 @@ HOOKS.update.push(dt => {
     } else m.chargeCd = DOZER_CHARGE_EVERY;
   }
 });
-HOOKS.newGame.push(() => { dozerWas = false; dozerSnap = null; });
-
 // ---------- HUD: the core writes "Walker hp/max" for any mech; re-badge it while driving the bulldozer ----------
 HOOKS.hud.push(g => {
   if (!player.mech || player.mech.kind !== 'dozer') return;
@@ -258,7 +240,7 @@ HOOKS.draw.unshift((g, items, cam) => {
 // ---------- self-test ----------
 HOOKS.selfTest.push((check, F, h) => {
   const dz = monsters.filter(m => m.type === 'bulldozer');
-  check('bulldozer: two spawn (camp + fields) with the right def', dz.length === 2 && dz.every(m => m.maxHp === 110 && m.r === 22 && m.speed === 60) && MONSTER_DEFS.bulldozer.level === 14 && MONSTER_DEFS.bulldozer.maxHit === 10 && MONSTER_DEFS.bulldozer.def === 14 && MONSTER_DEFS.bulldozer.sight === 5 * TILE && MONSTER_DEFS.bulldozer.respawn === 300 && !MONSTER_DEFS.bulldozer.mech,
+  check('bulldozer: two spawn (camp + fields) with the right def', dz.length === 2 && dz.every(m => m.maxHp === 110 && m.r === 22 && m.speed === 60) && MONSTER_DEFS.bulldozer.level === 14 && MONSTER_DEFS.bulldozer.maxHit === 10 && MONSTER_DEFS.bulldozer.def === 14 && MONSTER_DEFS.bulldozer.sight === 5 * TILE && MONSTER_DEFS.bulldozer.respawn === 3600 && !MONSTER_DEFS.bulldozer.mech,
     { n: dz.length, homes: dz.map(m => [Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)]) });
   { let scrap = 0, ore = 0; for (let i = 0; i < 40; i++) { const b = drops.length; rollDrops(MONSTER_DEFS.bulldozer, -999, -999); const got = drops.slice(b); if (got.some(d => d.id === 'goblin_scrap' && d.qty >= 3 && d.qty <= 6)) scrap++; if (got.some(d => d.id === 'iron_ore')) ore++; } drops = drops.filter(d => d.x > 0); check('bulldozer: always drops 3-6 scrap + iron ore', scrap === 40 && ore === 40, { scrap, ore }); }
   // a flat grass lane (o.x-1 .. o.x+9, o.y-1 .. o.y+1) in the open fields south of the road, west of the animal pens
@@ -291,10 +273,10 @@ HOOKS.selfTest.push((check, F, h) => {
     F.face(wt.x, wt.y); F.press('KeyE'); F.sim(2, []);
     const piloting = !!player.mech && player.mech.kind === 'dozer' && player.mech.hp === 110 && player.r === 22 && player.speed === 130 && tileAt(wt.x, wt.y) === T.DIRT;
     check('bulldozer: climb on → player.mech.kind === "dozer"', piloting, { mech: player.mech, r: player.r, speed: player.speed });
-    // drive into a tree: flattened to grass, one log in the pack
+    // drive into a tree: stump first, ground flat on the next pass, one log in the pack
     changeTile(wt.x + 1, wt.y, T.TREE); const w0 = countItem('wood'); F.sim(60, ['KeyD']);
-    check('bulldozer: driving flattens a tree → grass, +1 logs, regrows later', tileAt(wt.x + 1, wt.y) === T.GRASS && countItem('wood') === w0 + 1 && regrow.some(r => r.i === idx(wt.x + 1, wt.y) && r.t === T.TREE), { tile: tileAt(wt.x + 1, wt.y), wood: countItem('wood'), w0, px: +(player.x / TILE).toFixed(1) });
-    // climb down with X: the core parks a walker tile, the fix-up turns it into a DOZER tile
+    check('bulldozer: driving flattens a tree → stump → grass, +1 logs, regrows later', tileAt(wt.x + 1, wt.y) === T.GRASS && countItem('wood') === w0 + 1 && regrow.some(r => r.i === idx(wt.x + 1, wt.y) && r.t === T.TREE), { tile: tileAt(wt.x + 1, wt.y), wood: countItem('wood'), w0, px: +(player.x / TILE).toFixed(1) });
+    // climb down with X: the core reads player.mech.kind and parks a DOZER tile
     F.press('KeyX'); F.sim(2, []);
     const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
     const parked = nearestTileOfType(ptx, pty, T_DOZER, 2), walkerNear = nearestTileOfType(ptx, pty, T.MECH, 2);

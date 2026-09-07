@@ -25,6 +25,8 @@ const ITEMS = {
   wolf_pelt: { name: 'Wolf pelt', value: 14, color: '#7a7068', shape: 'pelt' },
   boar_tusk: { name: 'Boar tusk', value: 12, color: '#f2e9d8', shape: 'tusk' },
   potato_seed: { name: 'Potato seed', value: 2, color: '#b8a070', shape: 'seed', seed: 'potato' },
+  wheat_seed: { name: 'Wheat seed', value: 2, color: '#d8c070', shape: 'seed', seed: 'wheat' }, // grows like potatoes; flour at a workbench, pies at an oven (34-food)
+  wheat: { name: 'Wheat', value: 3, color: '#e0b84a', shape: 'wheat' },
   // food
   raw_beef: { name: 'Raw beef', value: 5, color: '#c0504d', shape: 'meat', cook: 'cooked_beef' },
   cooked_beef: { name: 'Cooked beef', value: 12, color: '#8b4a2b', shape: 'meat', heal: 8 },
@@ -87,7 +89,7 @@ const EQUIP_SLOTS = ['weapon', 'helm', 'body', 'legs', 'shield'];
 
 // recipes: station null = from the pack. skill/lv gate + xp.
 const RECIPES = [
-  { out: 'plank', qty: 4, needs: [['wood', 2]], station: null, label: '2 Logs → 4 Planks' },
+  { out: 'plank', qty: 4, needs: [['wood', 2]], station: null, skill: 'crafting', lv: 1, xp: 6, label: '2 Logs → 4 Planks' }, // the first Crafting xp a new knight can earn
   { out: 'stone_arrow', qty: 5, needs: [['wood', 1], ['stone', 1]], station: 'workbench', skill: 'crafting', lv: 1, xp: 8, label: 'Logs + Stone → 5 Stone arrows' },
   { out: 'shortbow', qty: 1, needs: [['wood', 2], ['spider_silk', 1]], station: 'workbench', skill: 'crafting', lv: 1, xp: 25, label: '2 Logs + Spider silk → Shortbow' },
   { out: 'oak_bow', qty: 1, needs: [['oak_log', 2], ['spider_silk', 1]], station: 'workbench', skill: 'crafting', lv: 8, xp: 40, label: '2 Oak logs + Spider silk → Oak bow' },
@@ -127,7 +129,7 @@ const SMELT = [
 const SHOPS = {
   general: { name: "Marta's General Store", stock: [['fishing_rod', 60], ['hammer', 5], ['bread', 10], ['shrimp', 8], ['bronze_axe', 25], ['bronze_pickaxe', 30], ['bronze_helm', 30], ['bronze_shield', 40]] },
   bakery: { name: "Rosalind's Bakery", stock: [['bread', 8], ['meat_pie', 25], ['baked_potato', 6]] },
-  seeds: { name: "Greta's Seed Stall", stock: [['potato_seed', 2], ['bronze_hoe', 15], ['potato', 3]] },
+  seeds: { name: "Greta's Seed Stall", stock: [['potato_seed', 2], ['wheat_seed', 2], ['bronze_hoe', 15], ['potato', 3]] },
   smith: { name: "Brakka's Smithy", stock: [['hammer', 5], ['iron_dagger', 80], ['iron_helm', 120], ['bronze_body', 60], ['bronze_legs', 45]] },
 };
 
@@ -154,7 +156,7 @@ const MONSTER_DEFS = {
     drops: { always: [['coins', 6, 14], ['blast_powder', 1, 2]], table: [['nothing', 0, 0, 20], ['goblin_scrap', 1, 2, 20], ['bomb', 1, 1, 6], ['iron_ore', 1, 2, 8]], rare: { chance: 30, table: [['iron_warhammer', 1, 1, 1]] } } },
   brute: { name: 'Goblin brute', level: 9, r: 15, hp: 45, att: 10, maxHit: 8, def: 7, speed: 105, aggro: true, sight: 5 * TILE, respawn: 45,
     drops: { always: [['coins', 8, 20]], table: [['nothing', 0, 0, 24], ['goblin_scrap', 1, 3, 20], ['iron_ore', 1, 2, 12], ['ruined_body', 1, 1, 6], ['coal', 1, 1, 6]], rare: { chance: 25, table: [['iron_sword', 1, 1, 2], ['iron_body', 1, 1, 1]] } } },
-  walker: { name: 'Goblin walker', level: 18, r: 22, hp: 110, att: 18, maxHit: 11, def: 12, speed: 70, aggro: true, sight: 6 * TILE, respawn: 240, mech: true,
+  walker: { name: 'Goblin walker', level: 18, r: 22, hp: 110, att: 18, maxHit: 11, def: 12, speed: 70, aggro: true, sight: 6 * TILE, respawn: 3600, mech: true,
     drops: { always: [['goblin_scrap', 4, 8], ['iron_ore', 2, 4]], table: [['iron_bar', 1, 2, 10], ['blast_powder', 1, 3, 10], ['coal', 1, 2, 6]], rare: { chance: 6, table: [['iron_battleaxe', 1, 1, 1], ['iron_warhammer', 1, 1, 1]] } } },
   wolf: { name: 'Wolf', level: 6, r: 13, hp: 22, att: 7, maxHit: 5, def: 4, speed: 175, aggro: true, sight: 6 * TILE, respawn: 35,
     drops: { always: [['wolf_pelt', 1, 1]], table: [['nothing', 0, 0, 8], ['raw_beef', 1, 1, 4]] } },
