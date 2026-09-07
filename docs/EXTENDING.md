@@ -35,6 +35,14 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   `HOOKS.panel.my_panel = (g, narrow) => { const { px, py, w, h } = panelBox(g, 460, 300, 'Title', 'sub'); button(g, ...); }`.
 - State: keep feature state inside `quest.myFeature = {...}` or `player.myFeature = {...}` — both are saved and
   loaded automatically (they are plain JSON). Reset it in `HOOKS.newGame`.
+- More hooks: `HOOKS.talkBefore.my_role = npc => handled` runs before the core dialogue; `HOOKS.mapTarget.push(() => ({ x, y, label }))`
+  puts a marker on the world map; `HOOKS.hurt.push((e, dmg, source) => ...)` sees every hit the player takes.
+- Instances (`src/16-instances.js`): `INSTANCES.define('my_cave', { name, sub, w, h, build(setTile, rnd), spawns: [[type, x, y]], exit: [x, y], door: [x, y], step: [x, y], boss, onClear })`;
+  a `door` places a DUNGEON_DOOR tile at world-gen and E on it enters, or call `INSTANCES.enter('my_cave')` yourself and `INSTANCES.leave()`. The instance map replaces `map` while active; the save always records the overworld.
+- Tap-to-move (`src/17-tap.js`): a tapped tile in `INTERESTING_TILES` gets walked to and used; a tapped monster gets fought. Add your
+  own solid tiles to `INTERESTING_TILES` so a tap on them works on the iPad.
+- Touch: every keyboard action needs a button — register one with `buttons.push({ x, y, w, h, label, action })` from a `HOOKS.hud` draw, and
+  write key hints with `keyName('KeyE')` so touch players read "E" or "USE" as appropriate.
 
 ## Useful core functions
 

@@ -66,23 +66,37 @@ See `docs/AUDIT-2026-09-07.html` (78 findings from three reviews + `tools/balanc
 3. Rebalance: walker on-ramp, ash drake lv 30, Godly at Smithing 32–40, hover at Crafting 12, Fang 800 hp/def 50, kill XP bonus, companions scale.
 4. Features: Hollowford rebuilt, title screen + save slots, region music.
 
-## v5 — polish and depth (ideas)
-- [ ] A save-slot picker and a title screen
+## v5 — Core fix + UX + balance (DONE 2026-09-07, audit follow-up)
+- [x] Core fix pass from the audit (respawn/lodestone/mech-exit into obstacles, Harl stranded, death-chest reload, smithing double-tap, boss respawn farms, coin loss, coffin fee, regrow overwrite, saves by tile name, `talkBefore` hook)
+- [x] UX: auto-tracked story + map targets, dialogue box that waits, "Said" log, touch key names, two-tap confirmations, panel paging/tabs, kid mode, banner queue (`src/13-ux.js`)
+- [x] Title screen + three save slots (`src/14-title.js`); region music sequencer, key N (`src/15-music.js`)
+- [x] Rebalance: ash drake lv 30 drops dung every time, kill bonus XP, Godly at Smithing 32–40, Fang 900 hp (`src/30-ashdrake.js`)
+- [x] Rebuilding Hollowford: seven projects paid in planks/stone/bars (`src/31-rebuild.js`)
+
+## v6 — Dad's feedback (DONE 2026-09-07)
+- [x] Instances: caves, dungeons and boss arenas as separate maps (`src/16-instances.js`); every hotkey has an on-screen button on iOS
+- [x] Tap-to-move, RuneScape style: tap a tree to walk over and chop it, tap a goblin to fight it (`src/17-tap.js`)
+- [x] Friendly fire (sapper bombs and the dozer hurt goblins), sappers drop bombs, slower goblin-camp respawns, more armour/weapon tiers, the crossed-out sign renders struck through, no spawns on Death's door, doormats on north-facing doors
+- [x] Map 260×180 with the far east and the south band opened for features
+
+## v7 — Cohen's feedback (DONE 2026-09-07, third and fourth waves of agents)
+- [x] The Barrelbeast, driven: cracks and strengthens, lightning rod, low-HP lightning phase, Tinkerton resupply (`src/32-beast.js`)
+- [x] The Far Shore: Grubmarket, Castle Gnash, the goblin king's gold, neutral mechs, "A Tinker Gone Wrong" and the Gnasher arena (`src/33-goblincity.js`)
+- [x] Food: berry bushes, wheat, flour, pies at the oven (`src/34-food.js`)
+- [x] Day/night with zombies after dark, the Afterlands where night never ends, vampires (`src/35-night.js`)
+- [x] Song of Above: Aerie, the winged folk, Queen Seraphel, Godly Plated forged from dragon scale (`src/36-skycity.js`)
+- [x] Dragon Killers: rare dragon items, the Ashfields gated behind stage 11, the group that summons The Fang (`src/37-dragonkillers.js`)
+- [x] Agility courses and shortcuts, Hitpoints to 100, level-100 skill capes with abilities (`src/38-agility.js`)
+- [x] Bulldozer upgrades: blueprints, the bay behind Brakka's, drill / iron drill / ram plate / big boiler (`src/40-dozerup.js`)
+- [x] Trapped survivors under the chapel, freed with a hammer; the Hollowford Guild with jobs, ranks, a chest and a cape (`src/41-guild.js`)
+- [x] World blending: organic coast, a river, dithered biome edges, forest clumping (`src/39-worldblend.js`)
+- [x] Self-test: 375+ checks, `node tools/headless.js index.html 3`
+
+## Backlog (not started)
+- [ ] Night zombies kept out of Grubmarket and Castle Gnash
+- [ ] One-tap talk for feature NPC lists (goblins, dwarves, elves) in tap-to-move
+- [ ] Fast travel / mounts; a second hero; more base block types
 - [ ] Balance pass on the late game with a real playthrough
-- [ ] More mechs and goblin machines; a drivable Barrelbeast
-- [ ] More tiny quests, more block types for bases, a second hero
-- [ ] Music (synthesised loops per region)
-
-
-## v4 — The Hidden Cities
-- [ ] Dwarven city underground (mithril, big anvil)
-- [ ] Jungle biome + secret elf tree city
-- [ ] Boats to islands
-
-## v5 — Dragons
-- [ ] Dragon country, dragon dung farmer
-- [ ] Godly plated armour (winged helmet), magic hover armour
-- [ ] The Fang
 
 ## Parked (from the design chat)
 - 3D camera, looking up/down, clouds
