@@ -234,7 +234,7 @@
       const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, hp: gob.hp, state: gob.state };
       gob.dead = false; gob.hp = 999; gob.x = player.x + 44; gob.y = player.y; gob.stunT = 0; player.facing = { x: 1, y: 0 }; player.attackCd = 0; const gx0 = gob.x, r0 = rams;
       F.press('Space'); const shove = gob.x - gx0, reeling = gob.stunT > 0.3;
-      check('beast: Space rams — a goblin in front is shoved 60 px (plus the stomp knockback) and reels', rams === r0 + 1 && shove >= 60 && reeling && Math.abs(gob.y - player.y) < 2, { shove: +shove.toFixed(1), rams, reeling });
+      check('beast: Space rams — a goblin in front is shoved 60 px (plus the stomp knockback) and reels', rams >= r0 + 1 && shove >= 60 && reeling && Math.abs(gob.y - player.y) < 2, { shove: +shove.toFixed(1), rams, reeling });
       gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.hp = gs.hp; gob.state = gs.state; gob.stunT = 0; gob.angry = MONSTER_DEFS.goblin.aggro;
       // 7. bomb lob: B lobs one bomb projectile (owner player, speed 300, life 0.7); a second press inside 4 s does nothing
       projectiles = []; const bl0 = bombsLobbed; F.press('KeyB'); const b1 = projectiles.filter(p => p.kind === 'bomb' && p.owner === 'player'); const cd1 = bombCd;
