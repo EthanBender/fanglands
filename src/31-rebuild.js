@@ -7,8 +7,10 @@
 // State lives in quest.rebuild = { progress: {id: {item: n}}, done: {id: true}, title, wellAt, nudged }.
 // Every tile change goes through changeTile so it persists in the save.
 // Note: the core survivor NPCs (Tam, Nell, Pip) stay in the crypt — 20-hollowford owns them. Once the
-// first house is built this file draws its own copies of the three in the square (and two returning
-// villagers); the crypt copies still answer E with their own lines. Acceptable and noted.
+// crypt bars are broken (quest.hollowford.freed, 20-hollowford) OR the first house is built this file draws
+// its own copies of the three in the square (villagers come with the house); the crypt copies still answer E
+// with their own lines. At guild rank 4 (41-guild) the three work in the guild hall instead, so the square
+// copies step aside. Acceptable and noted.
 // ============================================================================
 {
   // ---------- places ----------
@@ -157,10 +159,13 @@
     { name: 'Wenna', tunic: '#5a6a7a', hair: '#e0c080', woman: true, lines: ['Nell says the roof goes on before the rain. Nell says a lot of things.', 'I came back the day I heard the well was working.', 'A bell tower next, they say. I miss the bell. I never thought I would miss a bell.'] },
   ];
   const mkPerson = (d, x, y) => ({ name: d.name, tunic: d.tunic, hair: d.hair, beard: !!d.beard, woman: !!d.woman, lines: d.lines, after: d.after, px: tc(x), py: tc(y), home: { x: tc(x), y: tc(y) }, facing: { x: 0, y: 1 }, walkT: 0, moving: false, wanderT: Math.random() * 3, dir: null });
+  const freed = () => !!(quest.hollowford && quest.hollowford.freed);           // the crypt bars are broken (20-hollowford)
+  const atGuild = () => !!(quest.guild && quest.guild.founded && quest.guild.rank >= 4); // the three work in the guild hall (41-guild)
   const placePeople = () => {
-    if (!RB().done.house) { resetPeople(); return; }
-    if (!survivors.length) survivors = Object.values(SURVIVOR_LOOKS).map(d => mkPerson(d, d.x, d.y));
-    if (!villagers.length) villagers = [mkPerson(VILLAGER_DEFS[0], 137, 79), mkPerson(VILLAGER_DEFS[1], 142, 79)];
+    const r = RB();
+    if (!r.done.house && !freed()) { resetPeople(); return; }
+    if (atGuild()) survivors = []; else if (!survivors.length) survivors = Object.values(SURVIVOR_LOOKS).map(d => mkPerson(d, d.x, d.y));
+    if (!r.done.house) villagers = []; else if (!villagers.length) villagers = [mkPerson(VILLAGER_DEFS[0], 137, 79), mkPerson(VILLAGER_DEFS[1], 142, 79)];
   };
   const people = () => survivors.concat(villagers);
   const personInFront = () => {
@@ -181,7 +186,7 @@
 
   HOOKS.update.push(dt => {
     const r = RB();
-    if (r.done.house && !survivors.length) placePeople();
+    if ((r.done.house || freed()) && ((!survivors.length && !atGuild()) || (survivors.length && atGuild()) || (r.done.house && !villagers.length))) placePeople();
     if (!r.nudged && unlocked() && !player.dead && player.region === 'Hollowford' && dist(player.x, player.y, tc(BOARD_POS.x), tc(BOARD_POS.y)) < 7 * TILE) { r.nudged = true; notify("A board stands in the square: Nell's plan for rebuilding Hollowford. Press E on it."); save(); }
     for (const v of villagers) {
       v.wanderT -= dt; const dHome = dist(v.px, v.py, v.home.x, v.home.y);

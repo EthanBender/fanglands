@@ -4554,15 +4554,24 @@ HOOKS.selfTest.push((check, F, h) => {
   const HF_SQUARE = { x: 140, y: 80 }; // the cracked well
   const HF_HATCH = { x: 147, y: 70 };  // Pip's cellar
   const HF_BEAST_HOME = { x: 140, y: 86 };
-  // feature state lives in quest.hollowford (saved with the quest); created lazily for old saves
-  const HF = () => quest.hollowford || (quest.hollowford = { rewarded: false, beastKilled: false, wreck: null });
-  HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null }; });
+  // feature state lives in quest.hollowford (saved with the quest); created lazily for old saves.
+  // freed / barHits: Cohen's "Under the Chapel" — the survivors are barred into the crypt by goblin iron until the knight breaks it (3 hammer hits).
+  const HF = () => { const h = quest.hollowford || (quest.hollowford = { rewarded: false, beastKilled: false, wreck: null }); if (typeof h.freed !== 'boolean') h.freed = false; if (typeof h.barHits !== 'number') h.barHits = 0; return h; };
+  HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null, freed: false, barHits: 0 }; });
 
   // ---------- tiles ----------
   const T_SCORCH = addTile('SCORCH', { placeableOn: true, tex: 'scorch', mini: '#3a3330' }); // burned ground
   const T_WELL = addTile('WELL', { solid: true, tex: 'scorch', mini: '#8d9098' });            // cracked town well
   const T_HATCH = addTile('HATCH', { tex: 'dirt', mini: '#6b4a2a' });                          // cellar hatch (walk over it)
   const T_BEAM = addTile('BEAM', { solid: true, tex: 'scorch', mini: '#2a2420' });             // fallen charred roof beam
+  const T_BARS = addTile('CRYPT_BARS', { solid: true, tex: 'floor', mini: '#8f96a3' });       // goblin scrap-iron across the crypt entrance
+  INTERESTING_TILES.add(T_BARS); // the core draws the E highlight on it and frontTile reaches for it
+  // the crypt is the west (FLOOR) end of the chapel, x 125–128, y 85–90. The bars close it off from the doorway step (128,85) and along the nave side (x 129).
+  const BAR_TILES = [[128, 85], [129, 85], [129, 86], [129, 87], [129, 88], [129, 89], [129, 90]];
+  const JAILERS = [[126, 83], [130, 83]]; // two goblin brutes posted outside the chapel door
+  const BAR_HITS = 3;
+  const barsStand = () => BAR_TILES.some(([x, y]) => tileAt(x, y) === T_BARS);
+  const isJailer = m => m.type === 'brute' && JAILERS.some(([x, y]) => Math.abs(m.home.x - tc(x)) < 1 && Math.abs(m.home.y - tc(y)) < 1);
   { // scorched-earth ground texture, same procedural style as the core tiles
     const rnd = mulberry32(4041);
     for (let v = 0; v < 3; v++) makeTex('scorch' + v, g => {
@@ -4681,6 +4690,7 @@ HOOKS.selfTest.push((check, F, h) => {
     if (quest.stage === 9 && hf.beastKilled) advanceQuest(10);
     if (quest.stage === 10 && hf.rewarded) advanceQuest(11);
     for (const m of monsters) {
+      if (hf.freed && m.dead && isJailer(m)) { m.respawnT = Infinity; continue; } // the jailers have nothing left to guard: killed once the crypt is open, they stay dead
       if (m.type !== 'barrelbeast') continue;
       if (hf.beastKilled) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; continue; } // a boss dies once: no 10-minute farm, no second wreck, no new beast in a "safe" town
       if (m.dead) continue;
@@ -4767,24 +4777,48 @@ HOOKS.selfTest.push((check, F, h) => {
   // ---------- survivors ----------
   NPCS.push(initNpc({ id: 'tam', name: 'Old Tam', x: 126, y: 88, tunic: '#5a5048', hair: '#d9d0c0', beard: true, role: 'survivor', leader: true }));
   NPCS.push(initNpc({ id: 'nell', name: 'Nell', x: 128, y: 89, tunic: '#6a4a4a', hair: '#3a2a1a', woman: true, role: 'survivor',
-    lines: ["Don't go near the square. It stands in the square.", 'We had a well. It stood on the well.', 'Tam knows what to do. Tam always knows.'],
-    after: ["It's really gone? Pip, it's gone!", 'I can hear birds again.', "We'll need planks. So many planks."] }));
+    lines: ["Don't go near the square. It stands in the square.", 'We had a well. It stood on the well.', 'Tam knows what to do. Tam always knows.', 'The goblins barred us in. Scrap iron, bolted through the stone. We can hear it hum when the beast walks past.'],
+    after: ["It's really gone? Pip, it's gone!", 'I can hear birds again.', "We'll need planks. So many planks.", 'The bars. Knight, the bars. A hammer would have them off, if you have one.'],
+    freed: ['Out. We are OUT. I keep saying it.', 'I am fetching what we saved from the altar. Then the square, and sun.', 'Tam has ideas. Tam always has ideas. Something about a guild.'] }));
   NPCS.push(initNpc({ id: 'pip', name: 'Pip', x: 126, y: 86, tunic: '#4a5a6a', hair: '#c9843a', role: 'survivor',
-    lines: ['I saw it. It has goblins ON it. On TOP of it.', "I'm not scared. Nell is scared.", 'My house had a cellar. I hid under the hatch for two days.'],
-    after: ['You broke it! Can I see the wreck? Can I?', "When I'm big I'm going to be a knight.", 'Nell says we can go outside now.'] }));
+    lines: ['I saw it. It has goblins ON it. On TOP of it.', "I'm not scared. Nell is scared.", 'My house had a cellar. I hid under the hatch for two days.', 'The big goblins put bars on the stairs. I tried to squeeze through. My head fits. My shoulders don\'t.'],
+    after: ['You broke it! Can I see the wreck? Can I?', "When I'm big I'm going to be a knight.", 'Nell says we can go outside now.', 'Hit the bars! Hit them with a hammer! Three good ones, Tam says.'],
+    freed: ['You SMASHED them. Clang, clang, CLANG. I counted.', 'I am allowed in the square now. Nell said. I am going as soon as I find my other shoe.', 'Tam says I can be in the guild. A real one. With a board.'] }));
   HOOKS.talk.survivor = n => {
     const hf = HF();
-    if (!n.leader) { say(pick(hf.beastKilled ? n.after : n.lines), n.name); return; }
-    if (!hf.beastKilled) { say('Keep your voice down, knight. It walks past every hour. A barrel the size of a house on iron legs, and goblins riding on top of it.', n.name); say('It stood on our well. It walked through the chapel wall. Bring it down and Hollowford can breathe again.', n.name); }
+    if (!n.leader) { say(pick(hf.freed && n.freed ? n.freed : hf.beastKilled ? n.after : n.lines), n.name); return; }
+    if (!hf.beastKilled) { say('Keep your voice down, knight. It walks past every hour. A barrel the size of a house on iron legs, and goblins riding on top of it.', n.name); say('It stood on our well. It walked through the chapel wall. Bring it down and Hollowford can breathe again.', n.name); say('They barred us in down here with scrap from their machine. Goblin iron. Nothing breaks it while the beast is near.', n.name); }
     else if (!hf.rewarded) {
       hf.rewarded = true; giveOrDrop('coins', 200, player.x, player.y); giveOrDrop('steel_helm', 1, player.x, player.y); gainXp('defence', 120);
       say("It's down? The Barrelbeast is DOWN? Nell. Pip. Come up, it's down.", n.name);
       say("Here. Two hundred coins, all Hollowford has left, and the captain's steel helm. He'd want a knight to wear it. Thank you.", n.name);
       burst(player.x, player.y, '#f5c542', 24, 120);
       if (quest.stage === 10) advanceQuest(11); else save();
-    } else say("We're digging out the well. When Hollowford has a roof again, there'll be a chair in it for you, knight.", n.name);
+    } else if (hf.freed) say(pick(["We're in the square most of the day now. I come down for what we saved, and for the quiet.", 'A guild, knight. When there is a roof to put it under. Folk who do things, and a board to say what.', "Pip counted your hammer blows. He tells everyone. Three, he says. Three and the bars went."]), n.name);
+    else say("We're digging out the well, once we're past these bars. When Hollowford has a roof again, there'll be a chair in it for you, knight.", n.name);
+  };
+  // the bars: locked while the beast walks; three hammer blows once it is dead
+  const breakBars = () => {
+    const hf = HF();
+    for (const [x, y] of BAR_TILES) if (tileAt(x, y) === T_BARS) changeTile(x, y, T.FLOOR);
+    hf.freed = true; hf.barHits = BAR_HITS;
+    burst(tc(129), tc(87), '#8f96a3', 30, 160); burst(tc(128), tc(85), '#8f96a3', 16, 120); sfx('quest');
+    levelBanner = { text: 'UNDER THE CHAPEL', sub: 'The survivors are free', t: 3.5 };
+    say('The last bolt shears. The bars fold over like a dropped gate. Behind them, three faces, blinking at the light.', 'The Voice');
+    say("Knight. KNIGHT. It's open. Nell, Pip, up the steps, go on, go on. Sun. Get some sun.", 'Old Tam');
+    say('I am going to the square. I am going to stand in the middle of it.', 'Nell');
+    save();
   };
   HOOKS.use.push((t, tx, ty) => {
+    if (t === T_BARS) {
+      const hf = HF();
+      if (!hf.beastKilled) { say('The bars are goblin iron. They hum with the machine nearby.', 'Crypt bars'); return true; }
+      if (!hasTool('hammer')) { say('Goblin iron, bolted through the stone. Cold now, and quiet. A hammer would do it.', 'Crypt bars'); return true; }
+      hf.barHits = Math.min(BAR_HITS, (hf.barHits || 0) + 1); sfx('anvil'); burst(tc(tx), tc(ty), '#c9ccd3', 10, 110); player.attackT = 0.2;
+      if (hf.barHits >= BAR_HITS) breakBars();
+      else { floatText(tc(tx), tc(ty) - 30, 'CLANG', '#c9ccd3', 15); notify(`The bolts shear. ${BAR_HITS - hf.barHits} more blow${BAR_HITS - hf.barHits > 1 ? 's' : ''}.`); save(); }
+      return true;
+    }
     if (t === T_WELL) { say(HF().rewarded ? 'The survivors are clearing the well. Water again, soon.' : 'Cracked and dry. Something very heavy stood on it.', 'The Well'); return true; }
     if (t === T_HATCH) { say(HF().beastKilled ? 'The hatch stands open. Whoever hid here has gone up to the chapel.' : 'A cellar hatch, barred from below. A small voice: "Go away. No. Wait. Are you a knight? The chapel. Tam is in the chapel. Go quietly."', 'Cellar hatch'); return true; }
     if (t === T_BEAM) { notify('A charred roof beam. Still warm.'); return true; }
@@ -4831,6 +4865,8 @@ HOOKS.selfTest.push((check, F, h) => {
     set(133, 86, T.RUBBLE); set(133, 87, T_SCORCH); set(133, 88, T.RUBBLE); // where the beast walked through the wall
     set(131, 86, T.RUBBLE); set(130, 89, T.RUBBLE); set(132, 88, T_BEAM); set(131, 85, T_BEAM);
     set(126, 90, T.TABLE); set(125, 85, T.SHELF);                         // the altar and what they saved
+    for (const [x, y] of BAR_TILES) set(x, y, T_BARS);                    // goblin iron across the crypt steps (Under the Chapel)
+    for (const [x, y] of JAILERS) set(x, y, T_SCORCH);                    // the jailers' posts stay clear of stumps
     // the square: cracked well, fallen beams
     set(HF_SQUARE.x, HF_SQUARE.y, T_WELL); set(136, 76, T_BEAM); set(144, 82, T_BEAM);
     // burned trees on the outskirts (never beside a street or a doorway)
@@ -4845,8 +4881,14 @@ HOOKS.selfTest.push((check, F, h) => {
     api.spawnList('goblin', [[140, 70], [133, 78], [148, 78], [153, 89]]);
     api.spawnList('sapper', [[143, 66], [130, 80]]);
     api.spawnList('brute', [[150, 74], [128, 75]]);
+    api.spawnList('brute', JAILERS); // the crypt's jailers
     api.spawnList('barrelbeast', [[HF_BEAST_HOME.x, HF_BEAST_HOME.y]]);
   });
+
+  // ---------- Under the Chapel (tiny quest) ----------
+  QUEST_DEFS.crypt = { name: 'Under the Chapel' };
+  HOOKS.activeQuests.push(() => quest.stage >= 9 && !HF().freed ? ['crypt'] : []);
+  HOOKS.questText.crypt = () => { const hf = HF(); return hf.freed ? 'Done.' : !hf.beastKilled ? 'The survivors are barred into the chapel crypt behind goblin iron. It will not break while the Barrelbeast walks.' : `Break the goblin bars in the chapel with a hammer (${Math.min(hf.barHits || 0, BAR_HITS)}/${BAR_HITS} blows).`; };
 
   // ---------- props ----------
   const drawWell = (g, tx, ty) => {
@@ -4880,6 +4922,19 @@ HOOKS.selfTest.push((check, F, h) => {
     else { for (let k = 0; k < 3; k++) { g.fillStyle = k % 2 ? '#5a3a1e' : '#6b4a2a'; g.fillRect(x + 8, y + 10 + k * 10, 32, 9); } g.fillStyle = '#3a3a42'; g.fillRect(x + 8, y + 13, 32, 3); g.fillRect(x + 8, y + 31, 32, 3); g.strokeStyle = '#8f96a3'; g.lineWidth = 2; g.beginPath(); g.arc(x + 24, y + 25, 4, 0, 7); g.stroke(); }
     g.fillStyle = 'rgba(15,12,10,0.35)'; g.beginPath(); g.ellipse(x + 14, y + 12, 10, 5, 0.3, 0, 7); g.fill(); // soot
   };
+  // goblin scrap-iron bars: uneven uprights, a bent cross-brace, rivets, and a faint hum-glow while the beast lives
+  const drawBars = (g, tx, ty) => {
+    const x = tx * TILE, y = ty * TILE, live = !HF().beastKilled, v = (tx * 7 + ty * 5) % 3;
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(x + 4, y + TILE - 8, TILE - 8, 6);
+    if (live) { g.fillStyle = `rgba(200,180,255,${0.08 + Math.sin(time * 6 + tx) * 0.05})`; g.fillRect(x + 2, y - 6, TILE - 4, TILE + 6); }
+    g.strokeStyle = '#3a3a42'; g.lineWidth = 5; g.lineCap = 'round';
+    for (let k = 0; k < 4; k++) { const bx = x + 8 + k * 11 + (v === k ? 2 : 0); g.beginPath(); g.moveTo(bx, y + TILE - 6); g.lineTo(bx + (k === v ? 3 : -1), y - 10); g.stroke(); }
+    g.strokeStyle = '#5a5a62'; g.lineWidth = 4; g.beginPath(); g.moveTo(x + 4, y + 14 + v * 4); g.lineTo(x + TILE - 4, y + 10 + v * 6); g.stroke();
+    g.beginPath(); g.moveTo(x + 4, y + TILE - 12); g.lineTo(x + TILE - 4, y + TILE - 14); g.stroke();
+    g.fillStyle = '#8f96a3'; for (let k = 0; k < 4; k++) { const bx = x + 8 + k * 11 + (v === k ? 2 : 0); g.beginPath(); g.arc(bx, y + 12 + v * 5, 2, 0, 7); g.arc(bx, y + TILE - 13, 2, 0, 7); g.fill(); }
+    g.fillStyle = '#9fd3ff'; g.beginPath(); g.arc(x + 30 + v * 4, y + 24, 2.2, 0, 7); g.fill(); // a scrap of the beast's own plating, riveted on
+    if (live) { g.strokeStyle = `rgba(220,200,255,${0.25 + Math.sin(time * 9 + ty) * 0.2})`; g.lineWidth = 1; g.beginPath(); g.moveTo(x + 8, y + 2); g.lineTo(x + TILE - 8, y + 4); g.stroke(); }
+  };
   const drawSoot = (g, tx, ty, t) => {
     const x = tx * TILE, y = ty * TILE, v = (tx * 7 + ty * 3) % 3;
     const grad = g.createLinearGradient(0, y, 0, y + TILE); grad.addColorStop(0, 'rgba(20,16,14,0.55)'); grad.addColorStop(1, 'rgba(20,16,14,0.18)'); g.fillStyle = grad; g.fillRect(x, y, TILE, TILE);
@@ -4900,6 +4955,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const t = tileAt(tx, ty);
       if (t === T_WELL) items.push({ y: ty * TILE + TILE - 6, draw: () => drawWell(g, tx, ty) });
       else if (t === T_BEAM) items.push({ y: ty * TILE + TILE - 8, draw: () => drawBeam(g, tx, ty) });
+      else if (t === T_BARS) items.push({ y: ty * TILE + TILE - 4, draw: () => drawBars(g, tx, ty) });
       else if (t === T_HATCH) items.push({ y: ty * TILE - 2 * TILE, draw: () => drawHatch(g, tx, ty) }); // ground level: before anything standing near it
       else if ((t === T.HWALL || t === T.CWALL) && hfIn(tx, ty)) items.push({ y: ty * TILE - 2 * TILE, draw: () => drawSoot(g, tx, ty, t) });
       else if (t === T_SCORCH && hfIn(tx, ty) && (tx * 31 + ty * 17) % 13 === 0) items.push({ y: ty * TILE + TILE + 60, draw: () => drawSmoke(g, tx, ty) });
@@ -4918,6 +4974,12 @@ HOOKS.selfTest.push((check, F, h) => {
       check('Barrelbeast spawned in Hollowford: lv 28, 400 hp, max hit 16, def 24, speed 55, aggro, sight 7, respawn 600, boss drops', !!bb && d.level === 28 && d.hp === 400 && d.maxHit === 16 && d.def === 24 && d.speed === 55 && d.aggro && d.sight === 7 * TILE && d.respawn === 600 && d.drops.always.length === 4 && d.drops.rare.chance === 3 && regionAt(Math.floor(bb.home.x / TILE), Math.floor(bb.home.y / TILE)).name === 'Hollowford' && typeof HOOKS.drawMonster.barrelbeast === 'function', { found: !!bb, hp: bb && bb.maxHp }); }
     { const before = quest.stage; if (quest.stage < 8) quest.stage = 8; hf.beastKilled = false; hf.rewarded = false; F.tp(140, 68); F.sim(3, []);
       check('entering Hollowford after Chapter 3 opens Chapter 4 (stage 9, area banner)', quest.stage === 9 && player.region === 'Hollowford' && !!areaBanner && areaBanner.name === 'Hollowford', { before, stage: quest.stage, banner: areaBanner && areaBanner.name }); }
+    // Under the Chapel: the crypt is barred and two brutes stand outside; before the beast is dead the bars refuse
+    { for (const [x, y] of BAR_TILES) if (tileAt(x, y) !== T_BARS) changeTile(x, y, T_BARS); hf.freed = false; hf.barHits = 0;
+      const jailers = monsters.filter(isJailer); const noPath = F.bfs(128, 84, 126, 88) === null; const solid = SOLID.has(T_BARS) && BAR_TILES.every(([x, y]) => tileAt(x, y) === T_BARS);
+      if (!hasTool('hammer')) h.give('hammer', 1);
+      dialog.queue.length = 0; dialog.cur = null; closePanel(); F.tp(128, 84); F.face(128, 85); F.press('KeyE'); F.sim(2, []); const hum = !!dialog.cur && /goblin iron.*hum/.test(dialog.cur.text);
+      check('crypt: goblin bars seal the crypt (7 solid CRYPT_BARS, no path from the door to Tam), two brute jailers outside; before the beast is dead E says they hum', solid && noPath && jailers.length === 2 && hum && barsStand() && !hf.freed && activeQuests().includes('crypt') && /Barrelbeast walks/.test(questText('crypt')), { solid, noPath, jailers: jailers.length, hum, text: dialog.cur && dialog.cur.text, quest: questText('crypt') }); dialog.queue.length = 0; dialog.cur = null; }
     { const bb = monsters.find(m => m.type === 'barrelbeast'); F.tp(137, 86); bb.dead = false; bb.hp = 150; bb.phase2 = false; bb.stunT = 0; bb.x = player.x + 4 * TILE; bb.y = player.y; bb.home = { x: bb.x, y: bb.y }; bb.state = 'idle';
       const hp0 = player.hp; player.hp = 5000; h.peace(false); const n0 = bb.bombsFired || 0; F.sim(240, []); const fired = (bb.bombsFired || 0) - n0; const sticky = projectiles.some(p => p.kind === 'sticky' && p.owner === 'monster');
       h.peace(true); projectiles = []; player.hp = Math.min(hp0, player.maxHp); player.hurtT = 0;
@@ -4926,6 +4988,14 @@ HOOKS.selfTest.push((check, F, h) => {
       for (let i = 0; i < 80 && !bb.dead; i++) { bb.x = player.x + 50; bb.y = player.y; bb.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); }
       const w = hf.wreck;
       check('Barrelbeast dies into its own wreck (BEAST_WRECK): CHAPTER 4 COMPLETE banner, stage 10', bb.dead && hf.beastKilled && !!w && tileAt(w[0], w[1]) === (T.BEAST_WRECK ?? T.WRECK) && quest.stage === 10 && !!levelBanner && levelBanner.text === 'CHAPTER 4 COMPLETE', { dead: bb.dead, wreck: w, stage: quest.stage, banner: levelBanner && levelBanner.text }); }
+    // Under the Chapel: with the beast dead, three hammer blows on the bars free the survivors; they appear in the square at once (31-rebuild keys on freed)
+    { const drain = () => { dialog.queue.length = 0; dialog.cur = null; }; if (!hasTool('hammer')) h.give('hammer', 1); hf.freed = false; hf.barHits = 0; for (const [x, y] of BAR_TILES) if (tileAt(x, y) !== T_BARS) changeTile(x, y, T_BARS);
+      closePanel(); F.tp(128, 84); F.face(128, 85); const hits = []; levelBanner = null;
+      for (let k = 0; k < 3; k++) { drain(); F.press('KeyE'); F.sim(2, []); hits.push([hf.barHits, barsStand()]); }
+      const open = BAR_TILES.every(([x, y]) => tileAt(x, y) === T.FLOOR), path = F.bfs(128, 84, 126, 88), banner = levelBanner && levelBanner.text;
+      F.sim(3, []); F.tp(137, 82); F.face(137, 81); drain(); F.press('KeyE'); F.sim(2, []); const sq = dialog.cur && dialog.cur.who;
+      const crypt = NPCS.find(n => n.id === 'pip'); drain(); F.tp(127, 86); F.face(126, 86); F.press('KeyE'); F.sim(2, []); const freedLine = dialog.cur && crypt.freed.includes(dialog.cur.text);
+      check('crypt: after the kill, three E presses with a hammer break the bars (1/3, 2/3, then FLOOR), freed flag + UNDER THE CHAPEL banner, the quest clears, Tam stands in the square at once, the crypt Pip has new lines', hits[0][0] === 1 && hits[0][1] && hits[1][0] === 2 && hits[1][1] && hits[2][0] === 3 && open && hf.freed && !!path && banner === 'UNDER THE CHAPEL' && !activeQuests().includes('crypt') && sq === 'Old Tam' && !!freedLine, { hits, open, freed: hf.freed, path: path && path.length, banner, sq, freedLine, text: dialog.cur && dialog.cur.text }); drain(); }
     { let free = player.inv.filter(s => !s).length; for (let i = player.inv.length - 1; i >= 0 && free < 2; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour) { player.inv[i] = null; free++; } }
       const c0 = coins(); const r = F.talk('tam');
       check('survivor leader rewards the knight after the kill: 200 coins + steel helm, stage 11', typeof r === 'number' && hf.rewarded && (coins() === c0 + 200 || drops.some(d => d.id === 'coins' && d.qty === 200)) && (countItem('steel_helm') >= 1 || drops.some(d => d.id === 'steel_helm')) && quest.stage === 11, { r, coins: coins() - c0, helm: countItem('steel_helm'), stage: quest.stage }); }
@@ -8906,8 +8976,10 @@ HOOKS.selfTest.push((check, F, h) => {
 // State lives in quest.rebuild = { progress: {id: {item: n}}, done: {id: true}, title, wellAt, nudged }.
 // Every tile change goes through changeTile so it persists in the save.
 // Note: the core survivor NPCs (Tam, Nell, Pip) stay in the crypt — 20-hollowford owns them. Once the
-// first house is built this file draws its own copies of the three in the square (and two returning
-// villagers); the crypt copies still answer E with their own lines. Acceptable and noted.
+// crypt bars are broken (quest.hollowford.freed, 20-hollowford) OR the first house is built this file draws
+// its own copies of the three in the square (villagers come with the house); the crypt copies still answer E
+// with their own lines. At guild rank 4 (41-guild) the three work in the guild hall instead, so the square
+// copies step aside. Acceptable and noted.
 // ============================================================================
 {
   // ---------- places ----------
@@ -9056,10 +9128,13 @@ HOOKS.selfTest.push((check, F, h) => {
     { name: 'Wenna', tunic: '#5a6a7a', hair: '#e0c080', woman: true, lines: ['Nell says the roof goes on before the rain. Nell says a lot of things.', 'I came back the day I heard the well was working.', 'A bell tower next, they say. I miss the bell. I never thought I would miss a bell.'] },
   ];
   const mkPerson = (d, x, y) => ({ name: d.name, tunic: d.tunic, hair: d.hair, beard: !!d.beard, woman: !!d.woman, lines: d.lines, after: d.after, px: tc(x), py: tc(y), home: { x: tc(x), y: tc(y) }, facing: { x: 0, y: 1 }, walkT: 0, moving: false, wanderT: Math.random() * 3, dir: null });
+  const freed = () => !!(quest.hollowford && quest.hollowford.freed);           // the crypt bars are broken (20-hollowford)
+  const atGuild = () => !!(quest.guild && quest.guild.founded && quest.guild.rank >= 4); // the three work in the guild hall (41-guild)
   const placePeople = () => {
-    if (!RB().done.house) { resetPeople(); return; }
-    if (!survivors.length) survivors = Object.values(SURVIVOR_LOOKS).map(d => mkPerson(d, d.x, d.y));
-    if (!villagers.length) villagers = [mkPerson(VILLAGER_DEFS[0], 137, 79), mkPerson(VILLAGER_DEFS[1], 142, 79)];
+    const r = RB();
+    if (!r.done.house && !freed()) { resetPeople(); return; }
+    if (atGuild()) survivors = []; else if (!survivors.length) survivors = Object.values(SURVIVOR_LOOKS).map(d => mkPerson(d, d.x, d.y));
+    if (!r.done.house) villagers = []; else if (!villagers.length) villagers = [mkPerson(VILLAGER_DEFS[0], 137, 79), mkPerson(VILLAGER_DEFS[1], 142, 79)];
   };
   const people = () => survivors.concat(villagers);
   const personInFront = () => {
@@ -9080,7 +9155,7 @@ HOOKS.selfTest.push((check, F, h) => {
 
   HOOKS.update.push(dt => {
     const r = RB();
-    if (r.done.house && !survivors.length) placePeople();
+    if ((r.done.house || freed()) && ((!survivors.length && !atGuild()) || (survivors.length && atGuild()) || (r.done.house && !villagers.length))) placePeople();
     if (!r.nudged && unlocked() && !player.dead && player.region === 'Hollowford' && dist(player.x, player.y, tc(BOARD_POS.x), tc(BOARD_POS.y)) < 7 * TILE) { r.nudged = true; notify("A board stands in the square: Nell's plan for rebuilding Hollowford. Press E on it."); save(); }
     for (const v of villagers) {
       v.wanderT -= dt; const dHome = dist(v.px, v.py, v.home.x, v.home.y);
@@ -12230,6 +12305,437 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     if (player.mech) { player.mech = null; player.r = 13; player.speed = 175; }
     player.inv = inv0; player.skills.crafting.xp = craft0; player.dozerUp = up0; h.peace(false);
+  });
+}
+
+// ---- src/41-guild.js ----
+// ============================================================================
+// THE HOLLOWFORD GUILD (feature file; registers through HOOKS only, edits no core file)
+// Cohen: "the house that the people are in — they should be trapped; in a quest you free them and you
+// create a guild where they do stuff." The trapping and freeing live in 20-hollowford (Under the Chapel);
+// this file is the guild. Once the crypt is open (quest.hollowford.freed) AND the first house stands
+// (quest.rebuild.done.house, 31-rebuild), Old Tam founds The Hollowford Guild in the burned house on the
+// east street: a hall with GUILD over the door, a job board and a storage chest inside.
+//   Jobs (repeatable, 10 minutes of game time between repeats of the same job):
+//     Escort   — Pip follows you to the notice board in Thistledown's square (120 coins)
+//     Timber   — deliver 20 planks (80 coins + 100 Crafting xp)
+//     Scrap    — deliver 15 goblin scrap (150 coins)
+//     Wolves   — kill 5 wolves after taking the job (200 coins + 100 Melee xp)
+//   Rank: every 3 jobs — Recruit, Member, Warden, Captain, Guildmaster. Warden opens the guild chest
+//   (20 stacks), Captain sells the guild cape (500 coins, def 8), Guildmaster puts Tam, Nell and Pip to work
+//   in the hall (they walk between the board, the chest and the door).
+// State: quest.guild = { founded, rank, jobsDone, cooldowns: {id: time}, active: {id, kills} | null, chest: [20], nudged }.
+// The hall ruin is carved at world gen; founding rebuilds it through changeTile so it persists in the save.
+// ============================================================================
+{
+  // ---------- places ----------
+  const HALL = { id: 'guild_hall', x: 150, y: 66, w: 7, h: 6, name: 'The Hollowford Guild', roof: '#7a2e2e', sign: 'GUILD', door: 3 };
+  const T_GBOARD = addTile('GUILD_BOARD', { solid: true, tex: 'floor', mini: '#8a6a3a' });
+  const T_GCHEST = addTile('GUILD_CHEST', { solid: true, tex: 'floor', mini: '#c9a02a' });
+  INTERESTING_TILES.add(T_GBOARD); INTERESTING_TILES.add(T_GCHEST); // the core E highlight and reach
+  HALL.f = [[T.SHELF, 1, 1], [T_GBOARD, 3, 1], [T_GCHEST, 5, 1], [T.TABLE, 1, 3], [T.RUG, 3, 3]];
+  const BOARD_POS = { x: HALL.x + 3, y: HALL.y + 1 }, CHEST_POS = { x: HALL.x + 5, y: HALL.y + 1 }, DOOR_POS = { x: HALL.x + HALL.door, y: HALL.y + HALL.h - 1 };
+  const STEP_PATH = [[153, 72], [152, 72], [151, 72], [150, 72], [150, 73], [150, 74], [150, 75], [150, 76]]; // the doorstep down to the east street (y 77)
+  const WAYPOINTS = [[152, 68], [155, 68], [153, 70]]; // where the staff walk: in front of the board, the chest, and inside the door
+  const TOWN_BOARD = { x: 105, y: 27 };                // Thistledown's notice board (29-quests)
+  const HF_RECT = { x0: 122, y0: 66, x1: 156, y1: 92 };
+  const inHall = (tx, ty) => tx >= HALL.x && tx < HALL.x + HALL.w && ty >= HALL.y && ty < HALL.y + HALL.h;
+  const hallInside = (tx, ty) => tx > HALL.x && tx < HALL.x + HALL.w - 1 && ty > HALL.y && ty < HALL.y + HALL.h - 1;
+
+  // ---------- rules ----------
+  const COOLDOWN = 600, CHEST_SLOTS = 20, JOBS_PER_RANK = 3;
+  const RANKS = ['Recruit', 'Member', 'Warden', 'Captain', 'Guildmaster'];
+  const CHEST_RANK = 2, CAPE_RANK = 3, STAFF_RANK = 4, CAPE_PRICE = 500;
+  const CAPE_SLOT = EQUIP_SLOTS.includes('cape') ? 'cape' : 'body';
+  ITEMS.guild_cape = { id: 'guild_cape', name: 'Guild cape', value: CAPE_PRICE, color: '#7a2e2e', shape: 'cape', stack: 1, armour: { slot: CAPE_SLOT, def: 8 } };
+  const JOBS = [
+    { id: 'escort', tag: 'Escort', title: 'Escort Pip', kind: 'escort', reward: { coins: 120 }, who: 'Pip',
+      blurb: 'Walk Pip to the notice board in Thistledown. He wants to read every paper on it.', need: 'Walk him to the notice board in Thistledown square',
+      taken: "I'm ready. I've got my boots on. Both of them. Which way is Thistledown?", thanks: 'Look at all the PAPERS. Somebody wants ten potatoes. Somebody wants WOLVES. Thank you for walking me. Tam said to pay you.' },
+    { id: 'timber', tag: 'Timber', title: 'Timber run', kind: 'deliver', item: 'plank', n: 20, reward: { coins: 80, xp: ['crafting', 100] }, who: 'Nell',
+      blurb: 'Twenty planks for the hall. Floors, shelves, a bench that does not wobble.', thanks: 'Twenty planks, straight ones. The floor goes in tonight. Coin from the guild purse.' },
+    { id: 'scrap', tag: 'Scrap', title: 'Scrap run', kind: 'deliver', item: 'goblin_scrap', n: 15, reward: { coins: 150 }, who: 'Nell',
+      blurb: 'Fifteen goblin scrap. Hinges, latches, a lock for the chest. Goblins carry the best iron.', thanks: 'Fifteen. Every piece of this was pointed at us once. Now it holds our door shut. Here.' },
+    { id: 'wolf', tag: 'Wolves', title: 'Wolf patrol', kind: 'kill', type: 'wolf', n: 5, reward: { coins: 200, xp: ['melee', 100] }, who: 'Old Tam',
+      blurb: 'Five wolves off the roads while the job is yours. Ones you got before you took it do not count.', thanks: 'Five wolves. The road to Thistledown is a road again. The guild pays, and the guild remembers.' },
+  ];
+  const byId = {}; for (const j of JOBS) byId[j.id] = j;
+  const RANK_LINES = [null,
+    'A Member. Say it in the square and see who buys you a drink. Two more ranks and the chest is yours.',
+    'Warden of the Hollowford Guild. The chest in the hall is open to you now. Twenty stacks, and nobody touches them but you.',
+    'Captain. There is a cape on the board with the guild colour on it. Five hundred coins, and worth every one.',
+    'Guildmaster. Guildmaster! Nell, Pip, the knight runs the guild now. Right. Then we had better get to work.'];
+
+  // ---------- state ----------
+  const fresh = () => ({ founded: false, rank: 0, jobsDone: 0, cooldowns: {}, active: null, chest: new Array(CHEST_SLOTS).fill(null), nudged: false });
+  const G = () => {
+    if (!quest.guild) quest.guild = fresh();
+    const g = quest.guild;
+    if (!g.cooldowns || typeof g.cooldowns !== 'object') g.cooldowns = {};
+    if (typeof g.rank !== 'number') g.rank = 0; if (typeof g.jobsDone !== 'number') g.jobsDone = 0; g.rank = clamp(g.rank | 0, 0, RANKS.length - 1);
+    if (g.active && !byId[g.active.id]) g.active = null;
+    if (!Array.isArray(g.chest) || g.chest.length !== CHEST_SLOTS) { const c = new Array(CHEST_SLOTS).fill(null); (Array.isArray(g.chest) ? g.chest : []).forEach((s, i) => { if (i < CHEST_SLOTS && s && ITEMS[s.id]) c[i] = s; }); g.chest = c; }
+    else for (let i = 0; i < CHEST_SLOTS; i++) if (g.chest[i] && !ITEMS[g.chest[i].id]) g.chest[i] = null; // an item from a removed feature file
+    return g;
+  };
+  let escort = null; // Pip on the road: { px, py, facing, walkT, moving, stuckT } (transient; rebuilt from quest.guild.active on load)
+  let staff = [];    // Tam, Nell and Pip in the hall at rank 4 (transient)
+  HOOKS.newGame.push(() => { quest.guild = fresh(); escort = null; staff = []; });
+
+  const freed = () => !!(quest.hollowford && quest.hollowford.freed);
+  const houseDone = () => !!(quest.rebuild && quest.rebuild.done && quest.rebuild.done.house);
+  const canFound = () => freed() && houseDone();
+  const rankName = () => RANKS[G().rank];
+  const jobsToRank = r => Math.max(0, r * JOBS_PER_RANK - G().jobsDone);
+  const readyAt = j => (typeof G().cooldowns[j.id] === 'number' ? G().cooldowns[j.id] : -1e9) + COOLDOWN;
+  const cooling = j => time < readyAt(j);
+  const coolText = j => { const s = Math.max(1, Math.ceil(readyAt(j) - time)); return s >= 60 ? `Ready in ${Math.ceil(s / 60)}m` : `Ready in ${s}s`; };
+  const isActive = j => !!G().active && G().active.id === j.id;
+  const skillName = key => SKILL_DEFS.find(s => s.key === key).name;
+  const rewardText = j => { const r = j.reward, parts = []; if (r.coins) parts.push(`${r.coins} coins`); if (r.xp) parts.push(`${r.xp[1]} ${skillName(r.xp[0])} xp`); return parts.join(' + '); };
+  const progressText = j => {
+    if (j.kind === 'deliver') return `Bring ${j.n} ${ITEMS[j.item].name} (${Math.min(j.n, countItem(j.item))}/${j.n})`;
+    if (j.kind === 'kill') return isActive(j) ? `Wolves ${Math.min(j.n, G().active.kills || 0)}/${j.n}` : `Defeat ${j.n} wolves after taking the job`;
+    return isActive(j) ? 'Pip is with you: walk to the notice board in Thistledown' : j.need;
+  };
+
+  // ---------- the hall ----------
+  const build = b => {
+    for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) {
+      const edge = x === b.x || y === b.y || x === b.x + b.w - 1 || y === b.y + b.h - 1;
+      changeTile(x, y, edge ? T.HWALL : T.FLOOR);
+    }
+    changeTile(b.x + b.door, b.y + b.h - 1, T.DOOR);
+    for (const [t, rx, ry] of b.f || []) changeTile(b.x + rx, b.y + ry, t);
+    if (SOLID.has(tileAt(b.x + b.door, b.y + b.h))) changeTile(b.x + b.door, b.y + b.h, T.DIRT);
+    burst(tc(b.x + b.w / 2), tc(b.y + b.h / 2), '#d8a95e', 30, 140);
+  };
+  const found = () => {
+    const g = G(); g.founded = true; build(HALL);
+    levelBanner = { text: 'THE HOLLOWFORD GUILD', sub: 'Founded by Old Tam', t: 4.5 }; sfx('quest'); burst(tc(DOOR_POS.x), tc(DOOR_POS.y), '#7a2e2e', 40, 180);
+    say("A roof over the three of us, and folk coming back down the road. That's a town. Now a town needs a guild.", 'Old Tam');
+    say("The burned house on the east street, past Pip's old cellar. Nell has put a board in it and I have put GUILD over the door. Jobs on the board, knight. Do them and rise: Recruit, Member, Warden, Captain. And one day, Guildmaster.", 'Old Tam');
+    save();
+  };
+
+  // ---------- jobs ----------
+  const rankUp = nr => {
+    const g = G(); g.rank = nr;
+    levelBanner = { text: `GUILD RANK: ${RANKS[nr].toUpperCase()}`, sub: 'The Hollowford Guild', t: 4.5 }; sfx('levelup'); burst(player.x, player.y, '#7a2e2e', 40, 180); burst(player.x, player.y, '#f5c542', 20, 120);
+    if (RANK_LINES[nr]) say(RANK_LINES[nr], 'Old Tam');
+    if (nr >= STAFF_RANK) staff = [];
+  };
+  const completeJob = j => {
+    const g = G(); const r = j.reward;
+    if (j.kind === 'deliver') removeItem(j.item, j.n);
+    if (isActive(j)) g.active = null;
+    if (j.id === 'escort') escort = null;
+    g.cooldowns[j.id] = time; g.jobsDone += 1;
+    if (r.coins) { giveOrDrop('coins', r.coins, player.x, player.y, true); floatText(player.x, player.y - 30, `+${r.coins} coins`, '#ffd166'); }
+    if (r.xp) { gainXp(r.xp[0], r.xp[1]); floatText(player.x, player.y - 46, `+${r.xp[1]} ${skillName(r.xp[0])} xp`, '#58a6ff', 13); }
+    say(j.thanks, j.who);
+    levelBanner = { text: 'GUILD JOB DONE', sub: `${j.title} · ${g.jobsDone} job${g.jobsDone === 1 ? '' : 's'} · ${rankName()}`, t: 2.6 }; burst(player.x, player.y, '#ffe066', 16, 110); sfx('quest');
+    const nr = Math.min(RANKS.length - 1, Math.floor(g.jobsDone / JOBS_PER_RANK));
+    if (nr > g.rank) rankUp(nr);
+    save();
+  };
+  const deliver = j => {
+    if (cooling(j)) { notify(`${j.title}: ${coolText(j).toLowerCase()}.`); return false; }
+    if (countItem(j.item) < j.n) { notify(`${j.title} needs ${j.n} ${ITEMS[j.item].name}. You have ${countItem(j.item)}.`); return false; }
+    completeJob(j); return true;
+  };
+  const besidePlayer = () => safeSpot(player.x - player.facing.x * 40, player.y - player.facing.y * 40, 13, 'person') || { x: player.x, y: player.y };
+  const spawnEscort = () => { const p = besidePlayer(); escort = { px: p.x, py: p.y, facing: { x: 0, y: 1 }, walkT: 0, moving: false, stuckT: 0 }; };
+  const takeJob = j => {
+    const g = G();
+    if (cooling(j)) { notify(`${j.title}: ${coolText(j).toLowerCase()}.`); return false; }
+    if (g.active) { notify(`One job at a time. ${byId[g.active.id].title} first, or cancel it on the board.`); return false; }
+    g.active = { id: j.id, kills: 0 };
+    if (j.kind === 'escort') { spawnEscort(); say(j.taken, 'Pip'); }
+    else notify(`Taken: ${j.title}. ${progressText(j)}.`);
+    floatText(player.x, player.y - 30, j.title, '#ffe9a8', 13); save(); return true;
+  };
+  const cancelJob = () => { const g = G(); if (!g.active) return; const j = byId[g.active.id]; g.active = null; if (j.id === 'escort') { escort = null; say("Oh. All right. I'll wait in the hall. Next time?", 'Pip'); } else notify(`${j.title} put back on the board.`); save(); };
+  HOOKS.kill.push(m => {
+    const g = G(); const j = byId.wolf;
+    if (!g.founded || !isActive(j) || m.type !== j.type) return;
+    g.active.kills = (g.active.kills || 0) + 1;
+    if (g.active.kills >= j.n) completeJob(j); else { notify(`Wolf patrol: ${g.active.kills}/${j.n}.`); save(); }
+  });
+
+  // ---------- chest ----------
+  const chestAdd = (id, qty) => {
+    const g = G(); const def = ITEMS[id]; let left = qty;
+    for (const s of g.chest) if (s && s.id === id && s.qty < def.stack && left > 0) { const take = Math.min(def.stack - s.qty, left); s.qty += take; left -= take; }
+    for (let i = 0; i < g.chest.length && left > 0; i++) if (!g.chest[i]) { const take = Math.min(def.stack, left); g.chest[i] = { id, qty: take }; left -= take; }
+    return left;
+  };
+  const chestCount = () => G().chest.filter(Boolean).length;
+
+  // ---------- cape ----------
+  const buyCape = () => {
+    const g = G();
+    if (g.rank < CAPE_RANK) { notify(`The guild cape is for Captains. ${jobsToRank(CAPE_RANK)} more jobs.`); return false; }
+    if (coins() < CAPE_PRICE) { notify(`The guild cape is ${CAPE_PRICE} coins. You have ${coins()}.`); return false; }
+    if (!canFit('guild_cape', 1)) { notify('Your pack is full.'); return false; }
+    payCoins(CAPE_PRICE); addItem('guild_cape', 1);
+    levelBanner = { text: 'GUILD CAPE', sub: 'Hollowford red, defence +8', t: 3.5 }; sfx('levelup'); burst(player.x, player.y, '#7a2e2e', 30, 160);
+    say('Hollowford red. Wear it where the goblins can see it.', 'Old Tam'); save(); return true;
+  };
+
+  // ---------- people: Pip on the road, the staff in the hall ----------
+  const LOOKS = {
+    tam: { name: 'Old Tam', tunic: '#5a5048', hair: '#d9d0c0', beard: true, lines: ['Guildmaster. I keep the books, you keep the roads. Fair.', 'A board, a chest, a door that shuts. I have wanted this since the fire.', 'Nell says the sign is crooked. The sign is fine.'] },
+    nell: { name: 'Nell', tunic: '#6a4a4a', hair: '#3a2a1a', woman: true, lines: ['I sort the chest. Do not put fish in it. Somebody put fish in it.', 'The board wants jobs. I write them. You do them. That is a guild.', 'The sign is crooked. Tam says it is fine. It is crooked.'] },
+    pip: { name: 'Pip', tunic: '#4a5a6a', hair: '#c9843a', lines: ['I am guild staff. I sweep. I am VERY good at sweeping.', 'Can we go to the notice board again? I did not finish reading it.', 'Guildmaster! Guildmaster! That is you. I am telling everyone.'] },
+  };
+  const mkStaff = (id, wp) => Object.assign({ id, px: tc(WAYPOINTS[wp][0]), py: tc(WAYPOINTS[wp][1]), wp, waitT: 1 + Math.random() * 2, facing: { x: 0, y: 1 }, walkT: 0, moving: false }, LOOKS[id]);
+  const staffUpdate = dt => {
+    const g = G();
+    if (!g.founded || g.rank < STAFF_RANK) { if (staff.length) staff = []; return; }
+    if (!staff.length) staff = [mkStaff('tam', 0), mkStaff('nell', 1), mkStaff('pip', 2)];
+    for (const s of staff) {
+      if (s.waitT > 0) { s.waitT -= dt; s.moving = false; continue; }
+      const [wx, wy] = WAYPOINTS[(s.wp + 1) % WAYPOINTS.length]; const tx = tc(wx), ty = tc(wy); const dx = tx - s.px, dy = ty - s.py, d = Math.hypot(dx, dy);
+      if (d < 3) { s.wp = (s.wp + 1) % WAYPOINTS.length; s.px = tx; s.py = ty; s.waitT = 2 + Math.random() * 3; s.moving = false; s.facing = { x: 0, y: s.wp === 2 ? 1 : -1 }; continue; }
+      const step = Math.min(d, 42 * dt); s.px += dx / d * step; s.py += dy / d * step; // the hall floor between the waypoints is clear by construction
+      s.facing = { x: dx / d, y: dy / d }; s.moving = true; s.walkT += dt * 8;
+    }
+  };
+  const escortUpdate = dt => {
+    const g = G(); const j = byId.escort;
+    if (!g.founded || !isActive(j)) { if (escort) escort = null; return; }
+    if (!escort) spawnEscort();
+    const dp = dist(escort.px, escort.py, player.x, player.y);
+    if (dp > 12 * TILE || (escort.stuckT > 2.5 && dp > 3 * TILE)) { const p = besidePlayer(); escort.px = p.x; escort.py = p.y; escort.stuckT = 0; burst(escort.px, escort.py, '#ffe9a8', 10, 60); }
+    if (dp > 60) {
+      const tx = player.x - player.facing.x * 44, ty = player.y - player.facing.y * 44; const dx = tx - escort.px, dy = ty - escort.py, d = Math.hypot(dx, dy) || 1;
+      const e = { x: escort.px, y: escort.py, r: 13 }; const step = Math.min(d, 170 * dt); moveEntity(e, dx / d * step, dy / d * step, 'person');
+      const moved = Math.abs(e.x - escort.px) > 0.01 || Math.abs(e.y - escort.py) > 0.01;
+      if (moved) { escort.px = e.x; escort.py = e.y; escort.facing = { x: dx / d, y: dy / d }; escort.moving = true; escort.walkT += dt * 8; escort.stuckT = 0; } else { escort.moving = false; escort.stuckT += dt; }
+    } else { escort.moving = false; escort.stuckT = 0; }
+    if (dist(player.x, player.y, tc(TOWN_BOARD.x), tc(TOWN_BOARD.y)) < 3 * TILE && dist(escort.px, escort.py, player.x, player.y) < 4 * TILE) completeJob(j);
+  };
+  const staffInFront = () => {
+    let best = null;
+    for (const p of staff) { const dx = p.px - player.x, dy = p.py - player.y, d = Math.hypot(dx, dy); if (d > 64 || d < 1) continue; const dot = (dx / d) * player.facing.x + (dy / d) * player.facing.y; if (dot < 0.4) continue; if (!best || d < best.d) best = { p, d }; }
+    return best && best.p;
+  };
+
+  // ---------- update ----------
+  HOOKS.update.push(dt => {
+    const g = G();
+    if (!g.founded && !player.dead && canFound()) found();
+    if (!g.founded) return;
+    if (!g.nudged && !player.dead && player.region === 'Hollowford' && dist(player.x, player.y, tc(DOOR_POS.x), tc(DOOR_POS.y)) < 8 * TILE) { g.nudged = true; notify('The guild hall stands on the east street, GUILD over the door. The board inside has jobs on it.'); save(); }
+    escortUpdate(dt); staffUpdate(dt);
+  });
+
+  // ---------- use ----------
+  HOOKS.use.push((t, tx, ty) => {
+    const g = G();
+    if (t === T_GBOARD) { openPanel('guild'); return true; }
+    if (t === T_GCHEST) {
+      if (g.rank < CHEST_RANK) { say(`Guild property. The chest opens for Wardens and up. You are a ${rankName()}: ${jobsToRank(CHEST_RANK)} more job${jobsToRank(CHEST_RANK) === 1 ? '' : 's'}.`, 'Guild chest'); return true; }
+      openPanel('guild_chest'); return true;
+    }
+    const p = staffInFront(); if (p) { p.facing = { x: Math.sign(player.x - p.px) || 0, y: Math.sign(player.y - p.py) || 1 }; p.waitT = Math.max(p.waitT, 2); say(pick(p.lines), p.name); return true; }
+    return false;
+  });
+
+  // ---------- world: the burned house that becomes the hall, and its path to the street ----------
+  HOOKS.world.push((rnd, api) => {
+    const set = api.setTile;
+    for (let y = HALL.y; y < HALL.y + HALL.h; y++) for (let x = HALL.x; x < HALL.x + HALL.w; x++) {
+      const edge = x === HALL.x || x === HALL.x + HALL.w - 1 || y === HALL.y || y === HALL.y + HALL.h - 1, corner = (x === HALL.x || x === HALL.x + HALL.w - 1) && (y === HALL.y || y === HALL.y + HALL.h - 1), r = rnd();
+      if (edge) set(x, y, corner || r < 0.6 ? T.HWALL : r < 0.78 ? T.RUBBLE : T.ASHES);
+      else set(x, y, r < 0.12 ? T.RUBBLE : r < 0.5 ? T.ASHES : (T.SCORCH ?? T.DIRT));
+    }
+    set(DOOR_POS.x, DOOR_POS.y, T.ASHES); set(DOOR_POS.x, DOOR_POS.y - 1, T.ASHES); // the doorway and the step inside
+    for (const [x, y] of STEP_PATH) set(x, y, T.DIRT);
+  });
+
+  // ---------- panels ----------
+  const ROW_H = 66;
+  const fit = (g, text, maxW) => { let s = text; while (s.length > 8 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s === text ? text : s + '…'; };
+  HOOKS.panel.guild = (g, narrow) => {
+    const gd = G(); const next = gd.rank < RANKS.length - 1 ? `${jobsToRank(gd.rank + 1)} job${jobsToRank(gd.rank + 1) === 1 ? '' : 's'} to ${RANKS[gd.rank + 1]}` : 'the top of the guild';
+    const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : 600, 96 + JOBS.length * ROW_H + 62, 'The Hollowford Guild', `${rankName()} · ${gd.jobsDone} job${gd.jobsDone === 1 ? '' : 's'} done · ${next}`);
+    const bw = narrow ? 100 : 130, textW = w - 36 - bw - 24;
+    JOBS.forEach((j, i) => {
+      const y = py + 66 + i * ROW_H; const act = isActive(j), cool = cooling(j), can = j.kind === 'deliver' ? countItem(j.item) >= j.n && !cool : !cool && !gd.active;
+      roundRect(g, px + 18, y, w - 36, ROW_H - 6, 8); g.fillStyle = act ? 'rgba(88,166,255,0.12)' : cool ? 'rgba(255,255,255,0.03)' : can ? 'rgba(126,231,135,0.08)' : 'rgba(255,255,255,0.05)'; g.fill();
+      if (can && !act) { g.strokeStyle = 'rgba(126,231,135,0.45)'; g.lineWidth = 1; g.stroke(); }
+      g.textAlign = 'left'; g.fillStyle = cool ? '#6e7681' : '#e6edf3'; g.font = 'bold 13px sans-serif'; g.fillText(fit(g, `${j.title}  · ${j.who}`, textW), px + 30, y + 18);
+      g.fillStyle = cool ? '#4b535d' : '#c9d1d9'; g.font = 'italic 12px sans-serif'; g.fillText(fit(g, `“${j.blurb}”`, textW), px + 30, y + 35);
+      g.font = '11px sans-serif'; g.fillStyle = cool ? '#4b535d' : act ? '#58a6ff' : '#8b949e'; g.fillText(fit(g, `${cool ? coolText(j) : progressText(j)} · Reward: ${rewardText(j)}`, textW), px + 30, y + 51);
+      const bx = px + w - 18 - bw, by = y + 15;
+      if (cool) button(g, bx, by, bw, 30, coolText(j), () => { }, '#2a2f3a', false);
+      else if (j.kind === 'deliver') button(g, bx, by, bw, 30, `Deliver: ${j.tag}`, () => deliver(j), '#238636', can);
+      else if (act) button(g, bx, by, bw, 30, `Cancel: ${j.tag}`, cancelJob, '#6e2a2a');
+      else button(g, bx, by, bw, 30, `Take: ${j.tag}`, () => takeJob(j), '#238636', can);
+    });
+    const fy = py + h - 44;
+    const capeOn = gd.rank >= CAPE_RANK;
+    button(g, px + 18, fy, narrow ? 120 : 150, 30, narrow ? `Cape ${CAPE_PRICE}` : `Buy cape (${CAPE_PRICE})`, buyCape, capeOn && coins() >= CAPE_PRICE ? '#7a2e2e' : '#2a2f3a', capeOn);
+    button(g, px + w - 18 - 100, fy, 100, 30, 'Close', closePanel, '#21262d');
+    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center';
+    g.fillText(fit(g, capeOn ? `Captain's cape: Hollowford red, defence +${ITEMS.guild_cape.armour.def}. Every 3 jobs is a rank.` : gd.rank >= CHEST_RANK ? 'The guild chest by the wall is yours. Captains may buy the cape.' : `Every 3 jobs is a rank. Warden opens the chest, Captain earns the cape.`, w - 36 - (narrow ? 120 : 150) - 100 - 20), px + w / 2 + 20, fy + 20);
+  };
+  let chestPage = 0;
+  HOOKS.panel.guild_chest = (g, narrow) => {
+    const gd = G(); const cols = narrow ? 5 : 10, size = narrow ? 44 : 46, gap = 6, rows = Math.ceil(CHEST_SLOTS / cols), invRows = Math.ceil(INV_SLOTS / cols);
+    const { px, py, w } = panelBox(g, cols * (size + gap) + 30, 78 + rows * (size + gap) + 34 + invRows * (size + gap) + 24, 'Guild chest', `${chestCount()} / ${CHEST_SLOTS} stacks · tap to move items · ${rankName()}`);
+    for (let i = 0; i < CHEST_SLOTS; i++) {
+      const cx = px + 18 + (i % cols) * (size + gap), cy = py + 66 + Math.floor(i / cols) * (size + gap), s = gd.chest[i];
+      drawSlot(g, cx, cy, size, s, false);
+      buttons.push({ x: cx, y: cy, w: size, h: size, label: 'gchest' + i, action: () => { const c = gd.chest[i]; if (!c) return; const left = addItem(c.id, c.qty); c.qty = left; if (!left) gd.chest[i] = null; else notify('Your pack is full.'); sfx('pickup'); save(); } });
+    }
+    const iy = py + 66 + rows * (size + gap) + 8;
+    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText('Your pack (tap an item to store it)', px + 18, iy + 12);
+    drawInvGrid(g, px + 18, iy + 22, cols, size, gap, i => { const s = player.inv[i]; if (!s) return; const left = chestAdd(s.id, s.qty); if (left === s.qty) { notify('The chest is full.'); return; } s.qty = left; if (!left) player.inv[i] = null; sfx('pickup'); save(); });
+  };
+
+  // ---------- quest tab ----------
+  QUEST_DEFS.guild = { name: 'The Hollowford Guild' };
+  HOOKS.activeQuests.push(() => G().founded && G().active ? ['guild'] : []);
+  HOOKS.questText.guild = () => { const g = G(); if (!g.founded) return 'Free the survivors and build the first house, and Tam will found a guild.'; const j = g.active && byId[g.active.id]; return j ? `${j.title}: ${progressText(j)} · ${rankName()}` : `${rankName()} · jobs on the board in the guild hall, Hollowford's east street.`; };
+
+  // ---------- drawing ----------
+  const drawGuildBoard = (g, tx, ty, mark) => {
+    const cx = tc(tx), cy = tc(ty);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 18, 20, 5, 0, 0, 7); g.fill();
+    g.fillStyle = '#5a3e1e'; g.fillRect(cx - 18, cy - 26, 5, 46); g.fillRect(cx + 13, cy - 26, 5, 46);
+    g.fillStyle = '#8a6a3a'; g.fillRect(cx - 23, cy - 34, 46, 31); g.strokeStyle = '#4a2e13'; g.lineWidth = 1.5; g.strokeRect(cx - 23, cy - 34, 46, 31);
+    g.fillStyle = '#7a2e2e'; g.fillRect(cx - 23, cy - 40, 46, 7); g.fillStyle = '#f5c542'; g.font = `700 6px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('GUILD', cx, cy - 34.5); // the red header board
+    const papers = [[-19, -30, 11, 13, -0.08], [-5, -31, 10, 12, 0.06], [8, -29, 11, 14, -0.04], [-13, -16, 12, 10, 0.05], [3, -15, 13, 9, -0.06]];
+    for (const [ox, oy, pw, ph, rot] of papers) {
+      g.save(); g.translate(cx + ox + pw / 2, cy + oy + ph / 2); g.rotate(rot);
+      g.fillStyle = '#efe6cf'; g.fillRect(-pw / 2, -ph / 2, pw, ph);
+      g.strokeStyle = 'rgba(80,60,30,0.5)'; g.lineWidth = 0.8; for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(-pw / 2 + 2, -ph / 2 + 3.5 + k * 3); g.lineTo(pw / 2 - 2, -ph / 2 + 3.5 + k * 3); g.stroke(); }
+      g.fillStyle = '#7a2e2e'; g.beginPath(); g.arc(0, -ph / 2 + 1.5, 1.5, 0, 7); g.fill();
+      g.restore();
+    }
+    if (mark) { const bob = Math.sin(time * 4) * 2; g.font = `800 16px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText('!', cx, cy - 50 + bob); g.fillStyle = '#f5c542'; g.fillText('!', cx, cy - 50 + bob); }
+  };
+  const drawGuildChest = (g, tx, ty) => {
+    const cx = tc(tx), cy = tc(ty), open = G().rank >= CHEST_RANK;
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(cx, cy + 14, 20, 6, 0, 0, 7); g.fill();
+    g.fillStyle = '#6b4a2a'; g.fillRect(cx - 18, cy - 8, 36, 22); g.fillStyle = '#8a5a2b'; g.fillRect(cx - 18, cy - 16, 36, 10);
+    g.fillStyle = '#3a3a42'; g.fillRect(cx - 18, cy - 4, 36, 3); g.fillRect(cx - 18, cy + 8, 36, 3); g.fillRect(cx - 13, cy - 16, 3, 30); g.fillRect(cx + 10, cy - 16, 3, 30);
+    g.fillStyle = '#7a2e2e'; g.beginPath(); g.arc(cx, cy + 2, 4.5, 0, 7); g.fill(); g.fillStyle = '#f5c542'; g.font = `700 6px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('G', cx, cy + 4);
+    g.fillStyle = open ? '#c9a02a' : '#8f96a3'; g.fillRect(cx - 3, cy - 8, 6, 6); if (!open) { g.strokeStyle = '#c9ccd3'; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy - 9, 3, Math.PI, 0); g.stroke(); } // the lock, gold once it opens for you
+  };
+  const drawPerson = (g, p) => {
+    const e = { x: p.px, y: p.py, r: 13, facing: p.facing, hurtT: 0, attackT: 0, moving: p.moving, walkT: p.walkT };
+    const near = dist(player.x, player.y, e.x, e.y) < 110;
+    if (near && !p.moving) e.facing = { x: Math.sign(player.x - e.x) || 0, y: Math.sign(player.y - e.y) || 1 };
+    g.save(); g.translate(e.x, e.y + (p.moving ? Math.sin(p.walkT) * 2 : 0));
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill();
+    drawHuman(g, e, { tunic: p.tunic, hair: p.hair, woman: p.woman, beard: p.beard, shoulder: '#7a2e2e' });
+    g.restore();
+    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(p.name, e.x, e.y - 26); g.fillStyle = '#ffe9a8'; g.fillText(p.name, e.x, e.y - 26); }
+  };
+  const drawPennant = g => { // the guild colour over the door, with the rank's stripes
+    const cx = tc(DOOR_POS.x), top = HALL.y * TILE + 14, wave = Math.sin(time * 2.2) * 2, stripes = G().rank;
+    g.fillStyle = '#4a3218'; g.fillRect(cx - 1, top - 20, 2, 26);
+    g.fillStyle = '#7a2e2e'; g.beginPath(); g.moveTo(cx, top - 20); g.lineTo(cx + 22 + wave, top - 14); g.lineTo(cx, top - 6); g.closePath(); g.fill();
+    g.fillStyle = '#f5c542'; for (let k = 0; k < stripes; k++) g.fillRect(cx + 3 + k * 4, top - 14, 2, 3);
+  };
+  HOOKS.draw.push((g, items, cam) => {
+    const gd = G();
+    const x0 = Math.max(0, Math.floor(cam.x / TILE)), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE));
+    const y0 = Math.max(0, Math.floor(cam.y / TILE)), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE) + 3);
+    if (escort && escort.px > cam.x - 60 && escort.px < cam.x + VW + 60 && escort.py > cam.y - 60 && escort.py < cam.y + VH + 60) items.push({ y: escort.py + 13, draw: () => drawPerson(g, Object.assign({}, LOOKS.pip, escort)) });
+    if (x1 < HF_RECT.x0 || x0 > HF_RECT.x1 || y1 < HF_RECT.y0 || y0 > HF_RECT.y1) return;
+    const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
+    const mark = gd.founded && JOBS.some(j => !cooling(j) && (j.kind === 'deliver' ? countItem(j.item) >= j.n : false));
+    for (let ty = Math.max(y0, HALL.y); ty < Math.min(y1 + 1, HALL.y + HALL.h); ty++) for (let tx = Math.max(x0, HALL.x); tx < Math.min(x1 + 1, HALL.x + HALL.w); tx++) {
+      const t = tileAt(tx, ty);
+      if (t === T_GBOARD) items.push({ y: ty * TILE + TILE - 6, draw: () => drawGuildBoard(g, tx, ty, mark) });
+      else if (t === T_GCHEST) items.push({ y: ty * TILE + TILE - 6, draw: () => drawGuildChest(g, tx, ty) });
+    }
+    for (const s of staff) items.push({ y: s.py + 13, draw: () => drawPerson(g, s) });
+    if (gd.founded && !inHall(ptx, pty) && (HALL.x + HALL.w) * TILE > cam.x && HALL.x * TILE < cam.x + VW && (HALL.y + HALL.h) * TILE > cam.y && HALL.y * TILE < cam.y + VH) items.push({ y: (HALL.y + HALL.h) * TILE - 1, draw: () => { drawBuilding(g, HALL); drawPennant(g); } });
+    if (!player.dead && !player.mech && staff.length) items.push({ y: 1e9 + 4, draw: () => {
+      if (npcInFront()) return;
+      const p = staffInFront(); if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 20, 0, 7); g.stroke(); g.setLineDash([]); }
+    } });
+  });
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
+    const open = () => { openPanel('guild'); render(); };
+    const pressAt = (sx, sy, tx, ty) => { closePanel(); F.tp(sx, sy); F.face(tx, ty); drain(); F.press('KeyE'); F.sim(2, []); };
+    const clearItem = id => removeItem(id, countItem(id));
+    const ensureRoom = n => { for (let i = player.inv.length - 1; i >= 0 && player.inv.filter(s => !s).length < n; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour && !ITEMS[s.id].tool) player.inv[i] = null; } };
+    const timberRun = () => { clearItem('plank'); h.give('plank', 20); G().cooldowns.timber = -1e9; open(); const c = F.clickButton('Deliver: Timber'); F.sim(2, []); return c; };
+    // snapshot what the test touches
+    const snap = new Map(); for (let y = HALL.y - 1; y <= HALL.y + HALL.h + 6; y++) for (let x = HALL.x - 1; x <= HALL.x + HALL.w; x++) snap.set(idx(x, y), tileAt(x, y));
+    const g0 = quest.guild, rb0 = JSON.stringify(quest.rebuild || null), hf0 = quest.hollowford && quest.hollowford.freed, cape0 = player.equip[CAPE_SLOT], hp0 = player.hp;
+    h.peace(true); closePanel(); player.action = null; drain(); ensureRoom(4); quest.guild = fresh(); escort = null; staff = []; levelBanner = null;
+    if (!quest.hollowford) quest.hollowford = { rewarded: false, beastKilled: false, wreck: null }; quest.hollowford.freed = true; quest.hollowford.beastKilled = true;
+    if (!quest.rebuild) quest.rebuild = { progress: {}, done: {}, title: null, wellAt: -1e9, nudged: false }; if (!quest.rebuild.done) quest.rebuild.done = {};
+    // before founding: a burned ruin on the east street; freed + first house founds the guild and rebuilds it as the hall
+    { quest.rebuild.done.house = false; F.tp(140, 78); F.sim(3, []); const ruin = tileAt(HALL.x, HALL.y) === T.HWALL && tileAt(BOARD_POS.x, BOARD_POS.y) !== T_GBOARD && !G().founded;
+      quest.rebuild.done.house = true; levelBanner = null; F.sim(3, []);
+      const built = tileAt(HALL.x, HALL.y) === T.HWALL && tileAt(HALL.x + HALL.w - 1, HALL.y + HALL.h - 1) === T.HWALL && tileAt(152, 68) === T.FLOOR && tileAt(DOOR_POS.x, DOOR_POS.y) === T.DOOR && tileAt(BOARD_POS.x, BOARD_POS.y) === T_GBOARD && tileAt(CHEST_POS.x, CHEST_POS.y) === T_GCHEST && STEP_PATH.every(([x, y]) => tileAt(x, y) === T.DIRT) && !!F.bfs(DOOR_POS.x, DOOR_POS.y + 1, 140, 78);
+      check('guild: a burned ruin on the east street (150–156, 66–71) until the crypt is open and the first house stands; then Tam founds The Hollowford Guild: HWALL hall, FLOOR, DOOR (153,71), GUILD_BOARD (153,67), GUILD_CHEST (155,67), a dirt path to the street, banner', ruin && G().founded && built && !!levelBanner && levelBanner.text === 'THE HOLLOWFORD GUILD' && CAPE_SLOT === (EQUIP_SLOTS.includes('cape') ? 'cape' : 'body'), { ruin, founded: G().founded, built, banner: levelBanner && levelBanner.text, capeSlot: CAPE_SLOT }); drain(); }
+    // the board opens the guild panel; the chest refuses below Warden
+    { pressAt(BOARD_POS.x, BOARD_POS.y + 1, BOARD_POS.x, BOARD_POS.y); const labels = buttons.map(b => b.label.replace(/^disabled:/, '')); const opened = panel === 'guild' && ['Take: Escort', 'Deliver: Timber', 'Deliver: Scrap', 'Take: Wolves'].every(l => labels.includes(l));
+      pressAt(CHEST_POS.x, CHEST_POS.y + 1, CHEST_POS.x, CHEST_POS.y); const refused = panel !== 'guild_chest' && !!dialog.cur && /Wardens/.test(dialog.cur.text);
+      check('guild: E on the board opens the guild panel with the four jobs; E on the chest refuses below Warden', opened && refused && questText('guild').includes('Recruit'), { opened, labels: labels.filter(l => /Take|Deliver/.test(l)), refused, text: dialog.cur && dialog.cur.text }); drain(); closePanel(); }
+    // Timber run: greyed with 19 planks, pays with 20, then cools for 10 minutes of game time
+    { clearItem('plank'); h.give('plank', 19); open(); const early = F.clickButton('Deliver: Timber'); const greyed = !!buttons.find(b => b.label === 'disabled:Deliver: Timber');
+      h.give('plank', 1); const c0 = coins(), x0 = player.skills.crafting.xp; drain(); open(); const clicked = F.clickButton('Deliver: Timber'); F.sim(2, []);
+      const paid = coins() === c0 + 80 || drops.some(d => d.id === 'coins' && d.qty === 80); const cool = cooling(byId.timber); render(); const coolBtn = buttons.find(b => /^disabled:Ready in/.test(b.label)); const coolTxt = coolBtn && coolBtn.label;
+      G().cooldowns.timber = time - COOLDOWN - 1; render(); const back = !cooling(byId.timber) && !!buttons.find(b => b.label === 'disabled:Deliver: Timber' || b.label === 'Deliver: Timber');
+      check('guild: Timber run — Deliver is greyed with 19 planks; 20 planks pay 80 coins + 100 Crafting xp (planks gone, 1 job done); the job cools for 10 minutes of game time ("Ready in 10m") and comes back after', !early && greyed && clicked && countItem('plank') === 0 && paid && player.skills.crafting.xp === x0 + 100 && G().jobsDone === 1 && cool && /Ready in 10m/.test(coolTxt || '') && back && dialog.cur && dialog.cur.who === 'Nell', { early, greyed, clicked, planks: countItem('plank'), coins: coins() - c0, xp: player.skills.crafting.xp - x0, jobs: G().jobsDone, cool, coolTxt, back, who: dialog.cur && dialog.cur.who }); drain(); closePanel(); }
+    // Scrap run
+    { clearItem('goblin_scrap'); h.give('goblin_scrap', 15); const c0 = coins(); open(); const clicked = F.clickButton('Deliver: Scrap'); F.sim(2, []);
+      check('guild: Scrap run — 15 goblin scrap pay 150 coins (2 jobs done)', clicked && countItem('goblin_scrap') === 0 && (coins() === c0 + 150 || drops.some(d => d.id === 'coins' && d.qty === 150)) && G().jobsDone === 2, { clicked, scrap: countItem('goblin_scrap'), coins: coins() - c0, jobs: G().jobsDone }); drain(); closePanel(); }
+    // Wolf patrol: kills before taking the job do not count; five after it pay; the third job makes a Member
+    { const w = monsters.find(m => m.type === 'wolf'); const wolfAt = () => { w.dead = false; w.hp = 1; w.stunT = 0; w.state = 'idle'; w.x = player.x + 40; w.y = player.y; };
+      F.tp(60, 70); wolfAt(); hitMonster(w, 5, 0); F.sim(2, []); const before = !G().active && G().jobsDone === 2;
+      open(); const took = F.clickButton('Take: Wolves'); closePanel(); F.sim(1, []); const active = !!G().active && G().active.id === 'wolf' && activeQuests().includes('guild') && /Wolves 0\/5/.test(questText('guild'));
+      const c0 = coins(), x0 = player.skills.melee.xp; const counts = []; drain(); levelBanner = null;
+      for (let k = 0; k < 5; k++) { wolfAt(); hitMonster(w, 5, 0); F.sim(2, []); counts.push(G().active ? G().active.kills : 'done'); }
+      const paid = coins() === c0 + 200 || drops.some(d => d.id === 'coins' && d.qty === 200);
+      check('guild: Wolf patrol — a wolf killed before taking the job does not count; five after it pay 200 coins + 100 Melee xp; the third job ranks you up to Member with a banner', before && took && active && counts.join(',') === '1,2,3,4,done' && !G().active && paid && player.skills.melee.xp >= x0 + 100 && G().jobsDone === 3 && G().rank === 1 && !!levelBanner && levelBanner.text === 'GUILD RANK: MEMBER' && rankName() === 'Member', { before, took, active, counts, coins: coins() - c0, xp: player.skills.melee.xp - x0, jobs: G().jobsDone, rank: G().rank, banner: levelBanner && levelBanner.text }); drain(); }
+    // rank 2: the chest stores and returns a stack, and survives save/load
+    { open(); const capeEarly = !F.clickButton('Buy cape'); closePanel(); const runs = [timberRun(), timberRun(), timberRun()]; closePanel();
+      const warden = G().rank === 2 && G().jobsDone === 6 && !!levelBanner && levelBanner.text === 'GUILD RANK: WARDEN';
+      clearItem('goblin_scrap'); h.give('goblin_scrap', 7); const slot = player.inv.findIndex(s => s && s.id === 'goblin_scrap');
+      pressAt(CHEST_POS.x, CHEST_POS.y + 1, CHEST_POS.x, CHEST_POS.y); const opened = panel === 'guild_chest'; const dep = F.clickButton('slot' + slot); const stored = G().chest[0] && G().chest[0].id === 'goblin_scrap' && G().chest[0].qty === 7 && countItem('goblin_scrap') === 0;
+      save(); const chestSnap = JSON.stringify(G().chest); quest.guild = null; escort = null; staff = []; const ok = load(); F.sim(2, []); const kept = JSON.stringify(G().chest) === chestSnap && G().rank === 2 && G().founded;
+      openPanel('guild_chest'); render(); const wd = F.clickButton('gchest0'); const back = countItem('goblin_scrap') === 7 && !G().chest[0];
+      check('guild: three more Timber runs make a Warden; the chest opens, stores a stack of 7 scrap (slot 0), keeps it through save/load, and gives it back; the cape is not for sale yet', capeEarly && runs.every(Boolean) && warden && opened && dep && stored && ok && kept && wd && back, { capeEarly, runs, warden, rank: G().rank, opened, dep, stored, ok, kept, wd, back, banner: levelBanner && levelBanner.text }); closePanel(); drain(); }
+    // rank 3: the guild cape
+    { const runs = [timberRun(), timberRun(), timberRun()]; closePanel(); const captain = G().rank === 3 && G().jobsDone === 9;
+      clearItem('guild_cape'); ensureRoom(2); const c0 = coins(); h.give('coins', Math.max(0, CAPE_PRICE - c0)); const c1 = coins(); open(); const bought = F.clickButton('Buy cape'); const inPack = countItem('guild_cape') === 1 && coins() === c1 - CAPE_PRICE;
+      const def = ITEMS.guild_cape; const d0 = gearBonus('def'); const slot = player.inv.findIndex(s => s && s.id === 'guild_cape'); closePanel(); equipItem(slot); const worn = player.equip[CAPE_SLOT] === 'guild_cape' && countItem('guild_cape') === 0 && gearBonus('def') >= d0 + 8 - (cape0 && ITEMS[cape0] && ITEMS[cape0].armour ? ITEMS[cape0].armour.def : 0);
+      check('guild: three more runs make a Captain; Buy cape takes 500 coins for a Guild cape (def 8, cape slot when 38-agility adds it, else body); equipping it works', runs.every(Boolean) && captain && bought && inPack && def.armour.def === 8 && def.value === 500 && def.armour.slot === CAPE_SLOT && worn && !!levelBanner, { runs, captain, rank: G().rank, bought, inPack, worn, slot: def.armour.slot, def: gearBonus('def') - d0 }); drain(); }
+    // rank 4: the staff work in the hall; the square copies step aside; E on one talks
+    { const runs = [timberRun(), timberRun(), timberRun()]; closePanel(); const master = G().rank === 4 && G().jobsDone === 12 && !!levelBanner && levelBanner.text === 'GUILD RANK: GUILDMASTER';
+      F.tp(153, 69); F.sim(3, []); const start = staff.map(s => [s.px, s.py]); F.sim(420, []);
+      const moved = staff.length === 3 && staff.every((s, i) => dist(s.px, s.py, start[i][0], start[i][1]) > 20 || s.wp !== [0, 1, 2][i]) && staff.every(s => hallInside(Math.floor(s.px / TILE), Math.floor(s.py / TILE)));
+      const names = staff.map(s => s.name).sort().join(',');
+      const s = staff[0]; s.px = tc(154); s.py = tc(69); s.waitT = 9; s.moving = false; drain(); F.tp(154, 70); F.face(154, 69); F.press('KeyE'); F.sim(2, []); const spoke = !!dialog.cur && dialog.cur.who === s.name && s.lines.includes(dialog.cur.text);
+      drain(); F.tp(137, 82); F.face(137, 81); F.press('KeyE'); F.sim(2, []); const squareGone = !(dialog.cur && ['Old Tam', 'Nell', 'Pip'].includes(dialog.cur.who));
+      check('guild: three more runs make a Guildmaster; Tam, Nell and Pip work in the hall, walking a loop between the board, the chest and the door (all three moved, all inside), E on one gets a line, and the square copies step aside', runs.every(Boolean) && master && moved && names === 'Nell,Old Tam,Pip' && spoke && squareGone, { runs, master, rank: G().rank, moved, names, spoke, squareGone, who: dialog.cur && dialog.cur.who, banner: levelBanner && levelBanner.text }); drain(); }
+    // Escort: Pip follows, snaps when far, and the job completes at Thistledown's notice board
+    { G().cooldowns.escort = -1e9; G().active = null; escort = null; F.tp(153, 69); open(); const took = F.clickButton('Take: Escort'); closePanel(); F.sim(2, []);
+      const near0 = !!escort && dist(escort.px, escort.py, player.x, player.y) < 3 * TILE && !!dialog.cur && dialog.cur.who === 'Pip';
+      F.tp(140, 78); F.sim(60, ['KeyA']); const follows = !!escort && dist(escort.px, escort.py, player.x, player.y) < 5 * TILE && activeQuests().includes('guild') && /Pip is with you/.test(questText('guild'));
+      const c0 = coins(); drain(); F.tp(TOWN_BOARD.x, TOWN_BOARD.y + 2); F.sim(6, []);
+      const done = !G().active && !escort && (coins() === c0 + 120 || drops.some(d => d.id === 'coins' && d.qty === 120)) && G().jobsDone === 13 && !!dialog.cur && dialog.cur.who === 'Pip';
+      check('guild: Escort Pip — taking the job puts Pip at your side; he follows (snapping when far); at the notice board in Thistledown the job completes for 120 coins', took && near0 && follows && done, { took, near0, follows, done, active: G().active, coins: coins() - c0, jobs: G().jobsDone }); drain(); }
+    // put things back
+    for (const [i, t] of snap) if (map[i] !== t) changeTile(i % MAP_W, Math.floor(i / MAP_W), t);
+    if (player.equip[CAPE_SLOT] === 'guild_cape') player.equip[CAPE_SLOT] = cape0 || null; clearItem('guild_cape'); recomputeMaxHp();
+    quest.guild = g0 || fresh(); quest.rebuild = rb0 === 'null' ? undefined : JSON.parse(rb0); if (quest.rebuild === undefined) delete quest.rebuild; quest.hollowford.freed = hf0; escort = null; staff = []; chestPage = 0;
+    closePanel(); drain(); levelBanner = null; player.hp = Math.min(Math.max(hp0, 1), player.maxHp); h.peace(false); F.sim(2, []);
   });
 }
 
