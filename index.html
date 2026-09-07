@@ -2498,7 +2498,7 @@ window.FANGLANDS = {
       const ok = load();
       check('load: a save taken mid-death wakes you at full hp on a free tile', ok && player.hp === player.maxHp && !player.dead && !collides(player.x, player.y, 13, 'person'), { ok, hp: player.hp, at: [+(player.x / TILE).toFixed(1), +(player.y / TILE).toFixed(1)] });
       raw.player.hp = player.maxHp; raw.player.dead = false; raw.player.x = player.x; raw.player.y = player.y;
-      raw.player.inv[0] = { id: 'ghost_item', qty: 1 }; raw.player.bank.push({ id: 'nope', qty: 2 }); raw.player.equip.shield = 'ghost_shield'; raw.deathKeep = { items: [{ id: 'gone', qty: 1 }, { id: 'wood', qty: 1 }] }; localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+      raw.player.inv[0] = { id: 'ghost_item', qty: 1 }; raw.player.bank.push({ id: 'nope', qty: 2 }); raw.player.equip.shield = 'ghost_shield'; raw.deathKeep = { items: [{ id: 'gone', qty: 1 }, { id: 'wood', qty: 1 }] }; localStorage.setItem(SAVE_KEY, JSON.stringify(raw)); try { const cur = localStorage.getItem('fanglands.slot.current'); if (cur) localStorage.setItem('fanglands.slot.' + cur, JSON.stringify(raw)); } catch (e) { } // the save-slot layer (14-title) reads its own key first
       notice = null; const ok2 = load();
       const clean = player.inv.every(s => !s || ITEMS[s.id]) && player.bank.every(s => ITEMS[s.id]) && player.equip.shield === null && !!deathKeep && deathKeep.items.length === 1 && deathKeep.items[0].id === 'wood';
       check("load: unknown item ids are dropped from pack, bank, equipment and Death's chest, with one notice", ok2 && clean && !!notice && /unknown item/.test(notice.text), { ok2, clean, notice: notice && notice.text });
