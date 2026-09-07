@@ -12270,7 +12270,7 @@ HOOKS.selfTest.push((check, F, h) => {
       check(P + 'drill: driving into a rock gives +1 stone, +17 Mining xp, leaves rubble that regrows', typeof r1 === 'number' && rubble && gotStone && xp17 && willRegrow, { r1, tile: tileName(tileAt(rx, o.y)), stone: countItem('stone') - s0, xp: player.skills.mining.xp - mx0, willRegrow, px: +(player.x / TILE).toFixed(1) });
       // no iron drill yet: an iron rock stops the machine (solid, untouched); the iron drill mines it (+1 iron ore, +35 Mining xp)
       F.sim(40, ['KeyD']); // grind the rubble flat and roll on
-      const ix = Math.floor(player.x / TILE) + 2; changeTile(ix, o.y, T.IRON); const px0 = player.x;
+      const ix = Math.floor(player.x / TILE) + 2; changeTile(ix, o.y, T.IRON); const px0 = player.x; dozerHintT = -1e9; // the hint throttles to one per 4 s; an earlier rock hint may still be inside that window
       F.sim(60, ['KeyD']); const stopped = tileAt(ix, o.y) === T.IRON && player.x < tc(ix) - TILE / 2 && !!notice && /iron drill/i.test(notice.text);
       player.dozerUp.irondrill = true; const io0 = countItem('iron_ore'), mx1 = player.skills.mining.xp;
       const r2 = drive(240, () => tileAt(ix, o.y) !== T.IRON);
