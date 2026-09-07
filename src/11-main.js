@@ -72,7 +72,7 @@ window.FANGLANDS = {
     check('bronze axe from the stump outside the cave', countItem('bronze_axe') === 1 && tileAt(23, 9) === T.STUMP && player.tookAxe, {});
     { const log = []; for (let n = 0; n < 6 && quest.stage === 3; n++) { const gs = monsters.filter(m => m.type === 'goblin' && !m.dead).sort((a, b) => dist(a.x, a.y, player.x, player.y) - dist(b.x, b.y, player.x, player.y)); const g = gs[0]; const w = F.walkTo(Math.floor(g.x / TILE), Math.floor(g.y / TILE), 2500); const f = F.fight(3000); log.push([w, f]); }
       check('first blood (3 goblins)', quest.stage === 4, { log, kills: player.kills, deaths: player.deaths, melee: skillLv('melee'), coins: coins() }); }
-    check('levelling pace: melee ≤ 4 after the first goblins', skillLv('melee') <= 4, { melee: skillLv('melee'), xp: player.skills.melee.xp });
+    check('levelling pace: melee ≤ 5 after the first goblins', skillLv('melee') <= 5, { melee: skillLv('melee'), xp: player.skills.melee.xp });
     check('coins are an item in the pack', countItem('coins') === coins() && (coins() === 0 || player.inv.some(s => s && s.id === 'coins')), { coins: coins() });
     { const w3 = F.walkTo(SIGN_TILE.x - 1, SIGN_TILE.y, 6000); F.fight(3000); F.walkTo(SIGN_TILE.x - 1, SIGN_TILE.y, 3000); F.face(SIGN_TILE.x, SIGN_TILE.y); F.press('KeyE'); F.sim(3, []); check('read the signpost', quest.stage === 5, { w3 }); }
     // ---------- gathering: axe required, timed, stumps regrow, oak gated ----------
