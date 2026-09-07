@@ -13,22 +13,31 @@ Each version is playable on its own. We never leave the game broken between vers
 - [x] Quest tracker: "First Blood" then a signpost toward the first town
 - [x] Auto-save in the browser (progress survives reload)
 
-## v1 — The Road to Town
-- [ ] First town with 2–3 NPCs and one shop (buy food, sell scrap)
-- [ ] Anvil + hammer: craft ruined and iron gear (hammer-strike animation)
-- [ ] Armour slots and Defence actually reducing damage per piece
+## v1 — Thistledown (DONE 2026-09-07)
+- [x] Map extended east; Thistledown village with fence, square, seven buildings
+- [x] 16-slot pack, stackable items, hotbar 1–5, drop, full-pack handling
+- [x] Bank (Aldous), General Store (Marta), Bakery (Rosalind), sell at 60%
+- [x] RuneScape XP curve; Woodcutting, Mining, Fishing, Cooking as real skills
+- [x] Oaks / iron rocks gated by level; trees and rocks regrow
+- [x] Fishing at ponds with a rod; cooking at campfires; food heals
+- [x] Death's Coffin at any grave: free for cheap stacks, 25% for valuables
+- [x] Training dummies + highest-hit record (less XP than fighting)
+- [x] Duke Ferrin main quest gated on Melee 5 + Woodcutting 3
+- [x] Tobin's loaf side quest; neutral guards (men and women); sheep, cows, cave spiders
+- [x] Self-test covers all of the above (28 checks)
+
+## v2 — Steel and Goblin Tech
+- [ ] Anvil + hammer: craft ruined and iron gear (hammer-strike animation), Smithing skill
+- [ ] Armour slots and Defence reducing damage per piece
 - [ ] Hero companion #1 joins you
-- [ ] Save/load slots, pause menu
-
-## v2 — Goblin Tech
 - [ ] Goblin sapper (sticky bombs), goblin bulldozer
-- [ ] The town the Barrelbeast destroyed, the Barrelbeast boss fight
+- [ ] The road to Hollowford, the ruined town, the Barrelbeast boss fight
 - [ ] World map screen with discovered places and quest marker
-- [ ] Side quests + tiny quests system
 
-## v3 — Skills
-- [ ] Fishing, Cooking, Range unlocked through quests
+## v3 — Range and Building
+- [ ] Range skill + bows (elves?)
 - [ ] Base building expanded: more block types, doors, beds (respawn point)
+- [ ] More side and tiny quests
 
 ## v4 — The Hidden Cities
 - [ ] Dwarven city underground (mithril, big anvil)

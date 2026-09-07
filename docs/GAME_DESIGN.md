@@ -229,6 +229,38 @@ Three sizes of quest, Zelda-style:
 
 ---
 
+## 9b. Systems added from the second design chat (2026-09-07, evening)
+
+- **Pack with limited slots.** 16 slots, stackable materials (50 per stack),
+  tools and weapons take a slot each. Keys 1–5 use the first five slots, so
+  food can be eaten mid-fight. Full pack means loot stays on the ground.
+- **Bank.** Aldous in Thistledown keeps 48 stacks. Deposit by tapping a pack
+  slot, withdraw by tapping a vault slot. The equipped weapon stays with you.
+- **Shops.** Marta's General Store (fishing rod, bread, cooked shrimp,
+  campfire kit) and Rosalind's Bakery (bread, meat pie). Shops buy anything at
+  60% of value.
+- **Skills, RuneScape curve.** Level N needs the classic table (83 xp for
+  level 2, 1,154 for level 10). Woodcutting and Mining are real skills; oaks
+  need Woodcutting 5, iron rocks need Mining 5. Fishing needs a rod. Cooking
+  needs a campfire. Trees and rocks grow back after a minute.
+- **Gating by skill, not just combat.** The Duke's task needs Woodcutting 3.
+  The oaks and iron rocks are locked by level. More gates come with Smithing.
+- **Death's Coffin.** On death the pack goes to Death; the wooden sword stays
+  so you are never stuck. Any grave in the ground (one by the cave, three in
+  the Thistledown graveyard) opens the coffin. Stacks worth under 20 gold come
+  back free; valuables cost 25% of their worth. Dying again replaces what
+  Death held. Gold is never lost on death now.
+- **Training yard.** Sergeant Hale's three dummies show your damage and record
+  your highest hit. Dummy XP is a quarter of real fighting.
+- **Village life.** Houses cannot be broken; placed planks can. Tobin's loaf
+  quest (side quest), Duke Ferrin (main quest), neutral men and women guards
+  who fight back hard, sheep and cows in pens, harmless cave spiders.
+- **Respawn** moves to Thistledown once you have visited it.
+
+**[open]** Should killing guards have a consequence (guards hostile for a
+while, a fine)? **[open]** Bank fee or free? **[open]** Should the coffin fee
+also scale with how far away you died (the designer mentioned distance)?
+
 ## 10. Build order
 
 See `ROADMAP.md`. Short version: v0 is the opening (cave, voice, sword, first
@@ -244,3 +276,6 @@ goblin, levels, break/craft/place blocks). Everything else stacks on that.
 | 2026-09-07 | Not a medieval-mech game. Goblins have the machines, the player is a knight. |
 | 2026-09-07 | Elves are tree-hut elves, not crystal elves. |
 | 2026-09-07 | Player crafts all armour; shops sell materials and other goods. |
+| 2026-09-07 | Limited-slot pack + bank; food heals on use. XP curve = RuneScape table. |
+| 2026-09-07 | Death keeps the pack; cheap stacks free, valuables 25%. Sword never lost. |
+| 2026-09-07 | Woodcutting/Mining/Fishing/Cooking are skills and gate content. |
