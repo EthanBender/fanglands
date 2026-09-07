@@ -58,10 +58,13 @@ function update(dt) {
   } else {
     const iv = inputVector();
     const blocked = panel && !['skills', 'quests', 'map'].includes(panel);
-    player.moving = iv.m > 0 && !blocked;
+    // keys and the stick win; a tap-to-move path (17-tap) only drives the knight while nothing manual is held, and any manual input clears it
+    if (iv.m > 0 && typeof tapActive === 'function' && tapActive()) tapCancel('manual');
+    const mv = iv.m > 0 ? iv : (!blocked && typeof tapVector === 'function' ? tapVector(dt) : null);
+    player.moving = !!mv && mv.m > 0 && !blocked;
     if (player.moving) {
-      player.facing = { x: iv.x, y: iv.y }; player.action = null;
-      moveEntity(player, iv.x * player.speed * iv.m * dt, iv.y * player.speed * iv.m * dt, playerWho());
+      player.facing = { x: mv.x, y: mv.y }; player.action = null;
+      moveEntity(player, mv.x * player.speed * mv.m * dt, mv.y * player.speed * mv.m * dt, playerWho());
       player.walkT += dt * 9;
     }
     player.attackT = Math.max(0, player.attackT - dt); player.attackCd = Math.max(0, player.attackCd - dt); player.hurtT = Math.max(0, player.hurtT - dt);
