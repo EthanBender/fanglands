@@ -129,6 +129,15 @@ HOOKS.update.push(dt => {
         for (let k = 0; k < 6; k++) moveEntity(player, d.x * 10, d.y * 10, playerWho()); // shoved 60px, sliding until something stops it
         burst(player.x, player.y, '#8f96a3', 14, 130); floatText(player.x, player.y - 40, 'RAMMED', '#ffb347', 14);
       }
+      // friendly fire: anything else on the blade's line is rammed once per charge — 6–12 through hitMonster (so a kill drops loot, source
+      // 'monster' = no XP for the knight), then shoved 60px along the charge, not away from the knight, and left reeling for a moment
+      m.rammed = m.rammed || [];
+      for (const o of monsters) {
+        if (o === m || o.dead || m.rammed.includes(o) || dist(m.x, m.y, o.x, o.y) >= m.r + o.r + 4) continue;
+        m.rammed.push(o); hitMonster(o, rint(6, 12), 0, true, 'monster');
+        if (!o.dead) { for (let k = 0; k < 6; k++) moveEntity(o, d.x * 10, d.y * 10, 'beast'); o.stunT = Math.max(o.stunT || 0, 0.4); floatText(o.x, o.y - o.r - 18, 'RAMMED', '#ffb347', 12); }
+        burst(o.x, o.y, '#8f96a3', 10, 110);
+      }
       if (m.chargeT <= 0) m.chargeT = 0;
       continue;
     }
@@ -136,7 +145,7 @@ HOOKS.update.push(dt => {
       m.chargeCd = (m.chargeCd === undefined ? DOZER_CHARGE_EVERY : m.chargeCd) - dt;
       if (m.chargeCd <= 0) {
         const dx = player.x - m.x, dy = player.y - m.y, d = Math.hypot(dx, dy) || 1;
-        m.chargeCd = DOZER_CHARGE_EVERY; m.chargeT = DOZER_CHARGE_TIME; m.chargeDir = { x: dx / d, y: dy / d }; m.chargeHit = false; m.charges = (m.charges || 0) + 1;
+        m.chargeCd = DOZER_CHARGE_EVERY; m.chargeT = DOZER_CHARGE_TIME; m.chargeDir = { x: dx / d, y: dy / d }; m.chargeHit = false; m.rammed = []; m.charges = (m.charges || 0) + 1;
         floatText(m.x, m.y - m.r - 30, 'CHARGE!', '#ff8a1a', 15); burst(m.x - dx / d * 24, m.y - dy / d * 24, '#a8875a', 12, 70);
       }
     } else m.chargeCd = DOZER_CHARGE_EVERY;

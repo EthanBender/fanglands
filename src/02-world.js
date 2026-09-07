@@ -202,6 +202,28 @@ function generateWorld() {
   spawnList('goblin', [[144, 24], [144, 36], [156, 38], [151, 22]]);
   spawnList('walker', [[152, 30]]);
   for (const h of HOOKS.world) h(rnd, { setTile, tileAt, spawnList, road, pen });
+  // nothing wakes on a doorstep: a spawn (posted guards excepted — they stand at gates on purpose) within 3 tiles of any door moves to the
+  // nearest open tile that is 4+ tiles from every building and clear of doors. The goblin on Death's House step at (27,14) is the one this is for.
+  {
+    const doors = [];
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const t = map[idx(x, y)]; if (t === T.DOOR || t === T.COFFINDOOR || t === T.PORTCULLIS) doors.push([x, y]); }
+    for (const b of BUILDINGS) { if (b.door !== undefined) doors.push([b.x + b.door, b.y + b.h - 1]); if (b.doorTop !== undefined) doors.push([b.x + b.doorTop, b.y]); }
+    const rectDist = (x, y, b) => Math.hypot(Math.max(b.x - x, 0, x - (b.x + b.w - 1)), Math.max(b.y - y, 0, y - (b.y + b.h - 1)));
+    const nearDoor = (x, y) => doors.some(([dx, dy]) => Math.hypot(dx - x, dy - y) <= 3);
+    const open = (x, y) => inMap(x, y) && !SOLID.has(tileAt(x, y)) && !PUSH_THROUGH.has(tileAt(x, y)) && !buildingAt(x, y) && !nearDoor(x, y) && BUILDINGS.every(b => rectDist(x, y, b) >= 4);
+    for (const s of MONSTER_SPAWNS) {
+      if (MONSTER_DEFS[s.type].human || !nearDoor(s.tx, s.ty)) continue;
+      let best = null;
+      for (let ring = 1; ring <= 12 && !best; ring++) for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+        const x = s.tx + dx, y = s.ty + dy; if (!open(x, y)) continue;
+        const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d };
+      }
+      if (best) { s.movedFrom = [s.tx, s.ty]; s.tx = best.x; s.ty = best.y; }
+    }
+  }
+  // the Goblin Camp's own monsters (inside the palisade, feature spawns included) respawn slowly and only while the knight is far — see killMonster / update
+  for (const s of MONSTER_SPAWNS) if (s.tx >= 142 && s.tx <= 158 && s.ty >= 20 && s.ty <= 40) s.camp = true;
   for (const s of MONSTER_SPAWNS) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const t = tileAt(s.tx + dx, s.ty + dy);
     if ([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM].includes(t)) setTile(s.tx + dx, s.ty + dy, T.GRASS);

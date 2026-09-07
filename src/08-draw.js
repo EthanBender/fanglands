@@ -274,7 +274,40 @@ function drawBuilding(g, b) {
   g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1; for (let ry = y + 10; ry < y + h - 16; ry += 10) { g.beginPath(); g.moveTo(x, ry); g.lineTo(x + w, ry); g.stroke(); }
   g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y + (h - 16) / 2 - 2, w, 4);
   if (!b.coffin) { g.fillStyle = '#7a5a3a'; g.fillRect(x + w - 30, y + 8, 12, 22); g.fillStyle = '#3a2a1a'; g.fillRect(x + w - 32, y + 6, 16, 4); }
+  // a north door (the keep) sits on the shadowed side: draw its frame on the top edge of the roof so it reads from outside, lanterns either side
+  if (b.doorTop !== undefined) {
+    const dx = x + b.doorTop * TILE;
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(dx + 6, y, 36, 24);
+    g.fillStyle = '#5a3a1e'; g.fillRect(dx + 12, y, 24, 18); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(dx + 23, y, 2, 18);
+    g.fillStyle = b.stone ? '#8a8d95' : '#e0cfa0'; g.fillRect(dx + 8, y + 18, 32, 4);
+    g.fillStyle = '#f5c542'; g.beginPath(); g.arc(dx + 30, y + 9, 2, 0, 7); g.fill();
+    drawLantern(g, dx + 5, y + 10); drawLantern(g, dx + 43, y + 10);
+  }
+  if (b.door !== undefined) { const dx = x + b.door * TILE; drawLantern(g, dx + 5, y + h - 10, b.coffin); drawLantern(g, dx + 43, y + h - 10, b.coffin); }
   if (b.sign) { g.fillStyle = b.coffin ? '#2a2a33' : '#efe2c4'; g.fillRect(x + w / 2 - 36, y + h - 34, 72, 16); g.strokeStyle = b.coffin ? '#8b8b9a' : '#6b4a2a'; g.strokeRect(x + w / 2 - 36, y + h - 34, 72, 16); g.fillStyle = b.coffin ? '#b58cff' : '#3a2a1a'; g.font = `700 10px ${DISPLAY}`; g.textAlign = 'center'; g.fillText(b.sign, x + w / 2, y + h - 22); }
+}
+// a small iron lantern hung beside a door frame at (x, y): hook, cage, a warm flame behind the glass. Death's houses burn violet.
+// The pool of light it throws on the step is drawn by drawDoorstep (tile pass), because the fixture itself sits under the roof strip.
+function drawLantern(g, x, y, coffin) {
+  const flick = 0.78 + Math.sin(time * 5 + x * 0.3) * 0.14;
+  g.fillStyle = '#2a2a30'; g.fillRect(x - 1, y - 8, 2, 4); g.fillRect(x - 4, y - 4, 8, 9);
+  g.fillStyle = coffin ? `rgba(180,140,255,${flick})` : `rgba(255,200,90,${flick})`; g.fillRect(x - 2.5, y - 2.5, 5, 6);
+  g.fillStyle = '#2a2a30'; g.fillRect(x - 5, y + 5, 10, 1.5);
+}
+// the step tile outside a door: a woven mat against the threshold and the lanterns' glow on the ground. up = the door is on the tile SOUTH of
+// this step (a north-facing door like the keep's); otherwise the door is north of the step. Called from the tile pass after the textures.
+function drawDoorstep(g, tx, ty, up, coffin) {
+  const x = tx * TILE, y = ty * TILE, edgeY = up ? y + TILE : y;
+  const glow = g.createRadialGradient(x + TILE / 2, edgeY, 3, x + TILE / 2, edgeY, 36);
+  glow.addColorStop(0, coffin ? 'rgba(160,120,255,0.30)' : 'rgba(255,190,90,0.32)'); glow.addColorStop(1, coffin ? 'rgba(160,120,255,0)' : 'rgba(255,190,90,0)');
+  g.fillStyle = glow; g.fillRect(x - 12, edgeY - 36, TILE + 24, 72);
+  if (SOLID.has(tileAt(tx, ty))) return; // a rock or a pond on the step: light, but no mat
+  const my = up ? y + TILE - 19 : y + 3;
+  g.fillStyle = coffin ? '#3a3540' : '#9a7444'; roundRect(g, x + 9, my, 30, 16, 3); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.28)'; g.lineWidth = 1;
+  for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x + 10, my + k * 4); g.lineTo(x + 38, my + k * 4); g.stroke(); }
+  for (let k = 1; k < 6; k++) { g.beginPath(); g.moveTo(x + 9 + k * 5, my + 1); g.lineTo(x + 9 + k * 5, my + 15); g.stroke(); }
+  g.strokeStyle = coffin ? 'rgba(180,140,255,0.35)' : 'rgba(255,235,180,0.35)'; roundRect(g, x + 9, my, 30, 16, 3); g.stroke();
 }
 function drawSword(g) {
   const { x, y } = SWORD_POS; const pulse = 0.85 + Math.sin(time * 3) * 0.15;

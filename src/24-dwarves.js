@@ -49,10 +49,12 @@
   RECIPES.push(
     { out: 'mithril_sword', qty: 1, needs: [['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 22, xp: 100, label: '2 mithril bars → Mithril sword' },
     { out: 'mithril_helm', qty: 1, needs: [['mithril_bar', 1]], station: 'anvil', skill: 'smithing', lv: 22, xp: 50, label: '1 mithril bar → Mithril helm' },
+    { out: 'mithril_dagger', qty: 1, needs: [['mithril_bar', 1]], station: 'anvil', skill: 'smithing', lv: 23, xp: 50, label: '1 mithril bar → Mithril dagger' },
     { out: 'mithril_pickaxe', qty: 1, needs: [['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 24, xp: 100, label: '2 mithril bars → Mithril pickaxe' },
     { out: 'mithril_axe', qty: 1, needs: [['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 24, xp: 100, label: '2 mithril bars → Mithril axe' },
     { out: 'mithril_shield', qty: 1, needs: [['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 25, xp: 100, label: '2 mithril bars → Mithril shield' },
     { out: 'mithril_legs', qty: 1, needs: [['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 26, xp: 100, label: '2 mithril bars → Mithril platelegs' },
+    { out: 'mithril_warhammer', qty: 1, needs: [['mithril_bar', 3]], station: 'anvil', skill: 'smithing', lv: 27, xp: 150, label: '3 mithril bars → Mithril warhammer (knockback)' },
     { out: 'mithril_battleaxe', qty: 1, needs: [['mithril_bar', 3]], station: 'anvil', skill: 'smithing', lv: 28, xp: 150, label: '3 mithril bars → Mithril battleaxe (cleave)' },
     { out: 'mithril_body', qty: 1, needs: [['mithril_bar', 3]], station: 'anvil', skill: 'smithing', lv: 30, xp: 150, label: '3 mithril bars → Mithril platebody' },
   );

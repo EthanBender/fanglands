@@ -50,6 +50,13 @@ function render() {
     else if (t === T.RUBBLE) drawRubbleProp(g, tx, ty);
     else if (t === T.STUMP) drawStumpProp(g, tx, ty);
   }
+  // doormats + lantern glow on the step outside every door, drawn after the textures so the next tile's ground does not paint over them.
+  // Doors one row off-screen still light a visible step, so scan one row wider. The keep's door is on its top wall: the step is north of it.
+  for (let ty = y0 - 1; ty <= y1 + 1; ty++) for (let tx = x0; tx <= x1; tx++) {
+    const t = tileAt(tx, ty); if (t !== T.DOOR && t !== T.COFFINDOOR) continue;
+    const b = buildingAt(tx, ty); const up = !!b && ty === b.y && b.doorTop !== undefined && tx === b.x + b.doorTop;
+    drawDoorstep(g, tx, up ? ty - 1 : ty + 1, up, t === T.COFFINDOOR);
+  }
   for (const d of drops) if (d.x > cam.x - 40 && d.x < cam.x + VW + 40 && d.y > cam.y - 40 && d.y < cam.y + VH + 40) drawDrop(g, d);
   if (!swordTaken) drawSword(g);
   const items = [];

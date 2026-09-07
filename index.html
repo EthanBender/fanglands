@@ -148,6 +148,8 @@ const ITEMS = {
   iron_axe: { name: 'Iron axe', value: 56, color: '#a9adb5', shape: 'axe', stack: 1, tool: 'axe', tier: 2, weapon: { str: 8, att: 4, cd: 0.6 } },
   bronze_pickaxe: { name: 'Bronze pickaxe', value: 20, color: '#b8863a', shape: 'pickaxe', stack: 1, tool: 'pickaxe', tier: 1 },
   iron_pickaxe: { name: 'Iron pickaxe', value: 70, color: '#a9adb5', shape: 'pickaxe', stack: 1, tool: 'pickaxe', tier: 2 },
+  steel_axe: { name: 'Steel axe', value: 150, color: '#d5d9e0', shape: 'axe', stack: 1, tool: 'axe', tier: 2, weapon: { str: 14, att: 8, cd: 0.6 } },
+  steel_pickaxe: { name: 'Steel pickaxe', value: 190, color: '#d5d9e0', shape: 'pickaxe', stack: 1, tool: 'pickaxe', tier: 2 },
   bronze_hoe: { name: 'Bronze hoe', value: 15, color: '#b8863a', shape: 'hoe', stack: 1, tool: 'hoe', tier: 1 },
   hammer: { name: 'Hammer', value: 5, color: '#8a7a6a', shape: 'hammer', stack: 1, tool: 'hammer', tier: 1 },
   fishing_rod: { name: 'Fishing rod', value: 40, color: '#a07a4a', shape: 'rod', stack: 1, tool: 'rod', tier: 1 },
@@ -160,19 +162,31 @@ const ITEMS = {
   iron_battleaxe: { name: 'Iron battleaxe', value: 160, color: '#a9adb5', shape: 'battleaxe', stack: 1, weapon: { str: 13, att: 6, cd: 0.75, perk: 'cleave' } },
   steel_sword: { name: 'Steel sword', value: 320, color: '#d5d9e0', shape: 'sword', stack: 1, weapon: { str: 16, att: 14, cd: 0.45 } },
   steel_battleaxe: { name: 'Steel battleaxe', value: 420, color: '#d5d9e0', shape: 'battleaxe', stack: 1, weapon: { str: 21, att: 10, cd: 0.75, perk: 'cleave' } },
+  steel_dagger: { name: 'Steel dagger', value: 160, color: '#d5d9e0', shape: 'dagger', stack: 1, weapon: { str: 9, att: 12, cd: 0.3, perk: 'swift' } },
+  steel_warhammer: { name: 'Steel warhammer', value: 400, color: '#d5d9e0', shape: 'warhammer', stack: 1, weapon: { str: 20, att: 9, cd: 0.7, perk: 'knockback' } },
+  // mithril weapons live here with the rest of the gear; their recipes are in 24-dwarves.js beside the other mithril smithing
+  mithril_dagger: { name: 'Mithril dagger', value: 450, color: '#7aa0d0', shape: 'dagger', stack: 1, weapon: { str: 15, att: 22, cd: 0.3, perk: 'swift' } },
+  mithril_warhammer: { name: 'Mithril warhammer', value: 1100, color: '#7aa0d0', shape: 'warhammer', stack: 1, weapon: { str: 32, att: 18, cd: 0.7, perk: 'knockback' } },
   shortbow: { name: 'Shortbow', value: 50, color: '#a07a4a', shape: 'bow', stack: 1, weapon: { str: 0, att: 6, cd: 0.6, ranged: true } },
+  oak_bow: { name: 'Oak bow', value: 120, color: '#8a5a2b', shape: 'bow', stack: 1, weapon: { str: 0, att: 10, cd: 0.58, ranged: true } },
   stone_arrow: { name: 'Stone arrows', value: 1, color: '#b8bcc4', shape: 'arrow', arrow: { str: 5 } },
   iron_arrow: { name: 'Iron arrows', value: 3, color: '#a9adb5', shape: 'arrow', arrow: { str: 9 } },
   bomb: { name: 'Goblin bomb', value: 40, color: '#2f2f35', shape: 'bomb', throwable: true },
   // armour
   ruined_helm: { name: 'Ruined helm', value: 12, color: '#6e5a4a', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 2 } },
   ruined_body: { name: 'Ruined chainmail', value: 24, color: '#6e5a4a', shape: 'body', stack: 1, armour: { slot: 'body', def: 4 } },
+  bronze_helm: { name: 'Bronze helm', value: 24, color: '#b8863a', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 3 } },
+  bronze_body: { name: 'Bronze platebody', value: 48, color: '#b8863a', shape: 'body', stack: 1, armour: { slot: 'body', def: 7 } },
+  bronze_legs: { name: 'Bronze platelegs', value: 36, color: '#b8863a', shape: 'legs', stack: 1, armour: { slot: 'legs', def: 5 } },
+  bronze_shield: { name: 'Bronze shield', value: 32, color: '#b8863a', shape: 'shield', stack: 1, armour: { slot: 'shield', def: 4 } },
   iron_helm: { name: 'Iron helm', value: 90, color: '#a9adb5', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 5 } },
   iron_body: { name: 'Iron platebody', value: 240, color: '#a9adb5', shape: 'body', stack: 1, armour: { slot: 'body', def: 12 } },
   iron_legs: { name: 'Iron platelegs', value: 170, color: '#a9adb5', shape: 'legs', stack: 1, armour: { slot: 'legs', def: 8 } },
   iron_shield: { name: 'Iron shield', value: 150, color: '#a9adb5', shape: 'shield', stack: 1, armour: { slot: 'shield', def: 7 } },
   steel_helm: { name: 'Steel helm', value: 260, color: '#d5d9e0', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 9 } },
   steel_body: { name: 'Steel platebody', value: 620, color: '#d5d9e0', shape: 'body', stack: 1, armour: { slot: 'body', def: 20 } },
+  steel_legs: { name: 'Steel platelegs', value: 440, color: '#d5d9e0', shape: 'legs', stack: 1, armour: { slot: 'legs', def: 14 } },
+  steel_shield: { name: 'Steel shield', value: 390, color: '#d5d9e0', shape: 'shield', stack: 1, armour: { slot: 'shield', def: 12 } },
 };
 for (const k in ITEMS) { ITEMS[k].id = k; if (!ITEMS[k].stack) ITEMS[k].stack = ITEMS[k].arrow ? 1000 : 50; }
 const EQUIP_SLOTS = ['weapon', 'helm', 'body', 'legs', 'shield'];
@@ -182,6 +196,7 @@ const RECIPES = [
   { out: 'plank', qty: 4, needs: [['wood', 2]], station: null, label: '2 Logs → 4 Planks' },
   { out: 'stone_arrow', qty: 5, needs: [['wood', 1], ['stone', 1]], station: 'workbench', skill: 'crafting', lv: 1, xp: 8, label: 'Logs + Stone → 5 Stone arrows' },
   { out: 'shortbow', qty: 1, needs: [['wood', 2], ['spider_silk', 1]], station: 'workbench', skill: 'crafting', lv: 1, xp: 25, label: '2 Logs + Spider silk → Shortbow' },
+  { out: 'oak_bow', qty: 1, needs: [['oak_log', 2], ['spider_silk', 1]], station: 'workbench', skill: 'crafting', lv: 8, xp: 40, label: '2 Oak logs + Spider silk → Oak bow' },
   { out: 'door', qty: 1, needs: [['plank', 4]], station: 'workbench', skill: 'crafting', lv: 2, xp: 15, label: '4 Planks → Door' },
   { out: 'bed', qty: 1, needs: [['plank', 4], ['wool', 2]], station: 'workbench', skill: 'crafting', lv: 3, xp: 60, label: '4 Planks + 2 Wool → Bed' },
   { out: 'workbench', qty: 1, needs: [['plank', 8]], station: 'workbench', skill: 'crafting', lv: 4, xp: 60, label: '8 Planks → Workbench (for your base)' },
@@ -200,9 +215,15 @@ const RECIPES = [
   { out: 'iron_warhammer', qty: 1, needs: [['iron_bar', 3]], station: 'anvil', skill: 'smithing', lv: 8, xp: 75, label: '3 bars → Iron warhammer (knockback)' },
   { out: 'iron_battleaxe', qty: 1, needs: [['iron_bar', 3]], station: 'anvil', skill: 'smithing', lv: 9, xp: 75, label: '3 bars → Iron battleaxe (cleave)' },
   { out: 'iron_body', qty: 1, needs: [['iron_bar', 3]], station: 'anvil', skill: 'smithing', lv: 10, xp: 75, label: '3 bars → Iron platebody' },
+  { out: 'steel_dagger', qty: 1, needs: [['steel_bar', 1]], station: 'anvil', skill: 'smithing', lv: 11, xp: 37, label: '1 steel bar → Steel dagger' },
   { out: 'steel_helm', qty: 1, needs: [['steel_bar', 1]], station: 'anvil', skill: 'smithing', lv: 12, xp: 37, label: '1 steel bar → Steel helm' },
+  { out: 'steel_axe', qty: 1, needs: [['steel_bar', 1]], station: 'anvil', skill: 'smithing', lv: 12, xp: 37, label: '1 steel bar → Steel axe' },
+  { out: 'steel_shield', qty: 1, needs: [['steel_bar', 2]], station: 'anvil', skill: 'smithing', lv: 13, xp: 75, label: '2 steel bars → Steel shield' },
   { out: 'steel_sword', qty: 1, needs: [['steel_bar', 2]], station: 'anvil', skill: 'smithing', lv: 14, xp: 75, label: '2 steel bars → Steel sword' },
+  { out: 'steel_pickaxe', qty: 1, needs: [['steel_bar', 2]], station: 'anvil', skill: 'smithing', lv: 14, xp: 75, label: '2 steel bars → Steel pickaxe' },
+  { out: 'steel_legs', qty: 1, needs: [['steel_bar', 2]], station: 'anvil', skill: 'smithing', lv: 15, xp: 75, label: '2 steel bars → Steel platelegs' },
   { out: 'steel_battleaxe', qty: 1, needs: [['steel_bar', 3]], station: 'anvil', skill: 'smithing', lv: 16, xp: 112, label: '3 steel bars → Steel battleaxe' },
+  { out: 'steel_warhammer', qty: 1, needs: [['steel_bar', 3]], station: 'anvil', skill: 'smithing', lv: 17, xp: 112, label: '3 steel bars → Steel warhammer (knockback)' },
   { out: 'steel_body', qty: 1, needs: [['steel_bar', 3]], station: 'anvil', skill: 'smithing', lv: 18, xp: 112, label: '3 steel bars → Steel platebody' },
 ];
 const SMELT = [
@@ -210,10 +231,10 @@ const SMELT = [
   { out: 'steel_bar', needs: [['iron_ore', 1], ['coal', 1]], lv: 10, xp: 17, label: 'Iron ore + Coal → Steel bar' },
 ];
 const SHOPS = {
-  general: { name: "Marta's General Store", stock: [['fishing_rod', 60], ['hammer', 5], ['bread', 10], ['shrimp', 8], ['bronze_axe', 25], ['bronze_pickaxe', 30]] },
+  general: { name: "Marta's General Store", stock: [['fishing_rod', 60], ['hammer', 5], ['bread', 10], ['shrimp', 8], ['bronze_axe', 25], ['bronze_pickaxe', 30], ['bronze_helm', 30], ['bronze_shield', 40]] },
   bakery: { name: "Rosalind's Bakery", stock: [['bread', 8], ['meat_pie', 25], ['baked_potato', 6]] },
   seeds: { name: "Greta's Seed Stall", stock: [['potato_seed', 2], ['bronze_hoe', 15], ['potato', 3]] },
-  smith: { name: "Brakka's Smithy", stock: [['hammer', 5], ['iron_dagger', 80], ['iron_helm', 120]] },
+  smith: { name: "Brakka's Smithy", stock: [['hammer', 5], ['iron_dagger', 80], ['iron_helm', 120], ['bronze_body', 60], ['bronze_legs', 45]] },
 };
 
 // ---------- skills ----------
@@ -458,6 +479,28 @@ function generateWorld() {
   spawnList('goblin', [[144, 24], [144, 36], [156, 38], [151, 22]]);
   spawnList('walker', [[152, 30]]);
   for (const h of HOOKS.world) h(rnd, { setTile, tileAt, spawnList, road, pen });
+  // nothing wakes on a doorstep: a spawn (posted guards excepted — they stand at gates on purpose) within 3 tiles of any door moves to the
+  // nearest open tile that is 4+ tiles from every building and clear of doors. The goblin on Death's House step at (27,14) is the one this is for.
+  {
+    const doors = [];
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const t = map[idx(x, y)]; if (t === T.DOOR || t === T.COFFINDOOR || t === T.PORTCULLIS) doors.push([x, y]); }
+    for (const b of BUILDINGS) { if (b.door !== undefined) doors.push([b.x + b.door, b.y + b.h - 1]); if (b.doorTop !== undefined) doors.push([b.x + b.doorTop, b.y]); }
+    const rectDist = (x, y, b) => Math.hypot(Math.max(b.x - x, 0, x - (b.x + b.w - 1)), Math.max(b.y - y, 0, y - (b.y + b.h - 1)));
+    const nearDoor = (x, y) => doors.some(([dx, dy]) => Math.hypot(dx - x, dy - y) <= 3);
+    const open = (x, y) => inMap(x, y) && !SOLID.has(tileAt(x, y)) && !PUSH_THROUGH.has(tileAt(x, y)) && !buildingAt(x, y) && !nearDoor(x, y) && BUILDINGS.every(b => rectDist(x, y, b) >= 4);
+    for (const s of MONSTER_SPAWNS) {
+      if (MONSTER_DEFS[s.type].human || !nearDoor(s.tx, s.ty)) continue;
+      let best = null;
+      for (let ring = 1; ring <= 12 && !best; ring++) for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+        const x = s.tx + dx, y = s.ty + dy; if (!open(x, y)) continue;
+        const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d };
+      }
+      if (best) { s.movedFrom = [s.tx, s.ty]; s.tx = best.x; s.ty = best.y; }
+    }
+  }
+  // the Goblin Camp's own monsters (inside the palisade, feature spawns included) respawn slowly and only while the knight is far — see killMonster / update
+  for (const s of MONSTER_SPAWNS) if (s.tx >= 142 && s.tx <= 158 && s.ty >= 20 && s.ty <= 40) s.camp = true;
   for (const s of MONSTER_SPAWNS) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const t = tileAt(s.tx + dx, s.ty + dy);
     if ([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM].includes(t)) setTile(s.tx + dx, s.ty + dy, T.GRASS);
@@ -970,7 +1013,22 @@ function throwBomb(slot) {
 function explode(x, y, radius, dmgMin, dmgMax, owner) {
   burst(x, y, '#ff8a1a', 26, 200); burst(x, y, '#3a3a3a', 14, 120); floatText(x, y - 20, 'BOOM', '#ff8a1a', 18); sfx('boom');
   if (owner === 'player') { for (const m of monsters) if (!m.dead && dist(m.x, m.y, x, y) < radius + m.r) hitMonster(m, rint(dmgMin, dmgMax), 30, true); }
-  else if (dist(player.x, player.y, x, y) < radius + player.r) hurtPlayer(rint(dmgMin, dmgMax), x, y, true);
+  else {
+    if (dist(player.x, player.y, x, y) < radius + player.r) hurtPlayer(rint(dmgMin, dmgMax), x, y, true);
+    // friendly fire: a goblin bomb does not care whose side you are on. Everything else in the blast takes 3–8 (source 'monster': no XP for the knight)
+    for (const m of monsters) if (!m.dead && dist(m.x, m.y, x, y) < radius + m.r) hitMonster(m, rint(3, 8), 20, true, 'monster');
+  }
+}
+// ---------- the Goblin Camp ----------
+// Spawns inside the palisade carry `camp: true` (02-world). A dead camp monster stays down for 30 minutes and only comes back while
+// the knight is 40+ tiles away, so a cleared camp stays cleared for a proper while. quest.campCleared gates the banner to once per clear.
+const CAMP_RESPAWN = 1800;
+function isCampMonster(m) { const tx = Math.floor(m.home.x / TILE), ty = Math.floor(m.home.y / TILE); return MONSTER_SPAWNS.some(s => s.camp && s.tx === tx && s.ty === ty); }
+function checkCampCleared() {
+  const cm = monsters.filter(isCampMonster);
+  if (!cm.length || cm.some(m => !m.dead)) return false;
+  if (!quest.campCleared) { quest.campCleared = true; levelBanner = { text: 'GOBLIN CAMP CLEARED', sub: 'They will not be back for a while', t: 4 }; sfx('levelup'); save(); }
+  return true;
 }
 // source: 'player' (XP, highest hit, offences) or 'companion' (none of those; HOOKS.hit receives it as the third argument)
 function hitMonster(m, dmg, knock = 14, fromBomb = false, source = 'player') {
@@ -1001,6 +1059,7 @@ function killMonster(m) {
   burst(m.x, m.y, bloodColor(m.type), 16, 120);
   rollDrops(d, m.x, m.y);
   for (const h of HOOKS.kill) h(m);
+  if (isCampMonster(m)) { m.respawnT = CAMP_RESPAWN; checkCampCleared(); }
   if (m.type === 'goblin' && quest.stage === 3) { quest.kills += 1; if (quest.kills >= 3) advanceQuest(4); else save(); }
   if (d.mech) { const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); if (PLACEABLE_ON.has(tileAt(tx, ty))) changeTile(tx, ty, T.WRECK); say('The walker falls in a heap of barrel and iron. A goblin scrambles out and runs. The wreck stays. Bring iron bars and scrap, and it could walk again.', 'The Voice'); if (quest.stage === 7) { quest.walkerKilled = true; save(); } }
 }
@@ -1199,7 +1258,7 @@ function useAction() {
   // a wandering villager standing in front of a board, station or door does not block it
   if (npc && !(npc.wander && (SOLID.has(t) || PUSH_THROUGH.has(t)))) { talkTo(npc); return; }
   const b = buildingAt(tx, ty);
-  if (t === T.SIGN) { say("→ THISTLEDOWN, 1 mile.   → GREY QUARRY, north.   → HOLLOWFORD (crossed out, burned at the edges).", 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
+  if (t === T.SIGN) { say("→ THISTLEDOWN, 1 mile.   → GREY QUARRY, north.   → H̶O̶L̶L̶O̶W̶F̶O̶R̶D̶ (scorched)", 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
   if (t === T.CHEST) { if (b && b.coffin) { openPanel('coffin'); return; } if (b && b.id === 'bank') { openPanel('bank'); return; } openLootChest(tx, ty); return; }
   if (t === T.GOLDPILE) { notify("Death's gold. He is watching. Leave it."); return; }
   if (t === T.GRAVE) { say('Here lies the last knight of Hollowford. The road took him. The road takes everyone.', 'Gravestone'); return; }
@@ -1460,10 +1519,12 @@ function update(dt) {
     const def = MONSTER_DEFS[m.type];
     if (m.dead) {
       m.deadT += dt; m.respawnT -= dt;
-      if (m.respawnT <= 0 && dist(player.x, player.y, m.home.x, m.home.y) > 4 * TILE) {
+      const camp = m.respawnT <= 0 && isCampMonster(m); // the Goblin Camp refills only after 30 min AND while the knight is 40+ tiles off (see checkCampCleared)
+      if (m.respawnT <= 0 && dist(player.x, player.y, m.home.x, m.home.y) > (camp ? 40 : 4) * TILE) {
         const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast'); // a wreck, a plank or a regrown tree on the home tile must not embed the monster
         if (!sp) { m.respawnT = 5; continue; }
         m.dead = false; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.angry = def.aggro; m.state = 'idle'; burst(m.x, m.y, 'rgba(255,255,255,0.6)', 10, 60);
+        if (camp && quest.campCleared) quest.campCleared = false; // the camp is filling again: the next full clear earns the banner again
       }
       continue;
     }
@@ -1826,7 +1887,40 @@ function drawBuilding(g, b) {
   g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1; for (let ry = y + 10; ry < y + h - 16; ry += 10) { g.beginPath(); g.moveTo(x, ry); g.lineTo(x + w, ry); g.stroke(); }
   g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y + (h - 16) / 2 - 2, w, 4);
   if (!b.coffin) { g.fillStyle = '#7a5a3a'; g.fillRect(x + w - 30, y + 8, 12, 22); g.fillStyle = '#3a2a1a'; g.fillRect(x + w - 32, y + 6, 16, 4); }
+  // a north door (the keep) sits on the shadowed side: draw its frame on the top edge of the roof so it reads from outside, lanterns either side
+  if (b.doorTop !== undefined) {
+    const dx = x + b.doorTop * TILE;
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(dx + 6, y, 36, 24);
+    g.fillStyle = '#5a3a1e'; g.fillRect(dx + 12, y, 24, 18); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(dx + 23, y, 2, 18);
+    g.fillStyle = b.stone ? '#8a8d95' : '#e0cfa0'; g.fillRect(dx + 8, y + 18, 32, 4);
+    g.fillStyle = '#f5c542'; g.beginPath(); g.arc(dx + 30, y + 9, 2, 0, 7); g.fill();
+    drawLantern(g, dx + 5, y + 10); drawLantern(g, dx + 43, y + 10);
+  }
+  if (b.door !== undefined) { const dx = x + b.door * TILE; drawLantern(g, dx + 5, y + h - 10, b.coffin); drawLantern(g, dx + 43, y + h - 10, b.coffin); }
   if (b.sign) { g.fillStyle = b.coffin ? '#2a2a33' : '#efe2c4'; g.fillRect(x + w / 2 - 36, y + h - 34, 72, 16); g.strokeStyle = b.coffin ? '#8b8b9a' : '#6b4a2a'; g.strokeRect(x + w / 2 - 36, y + h - 34, 72, 16); g.fillStyle = b.coffin ? '#b58cff' : '#3a2a1a'; g.font = `700 10px ${DISPLAY}`; g.textAlign = 'center'; g.fillText(b.sign, x + w / 2, y + h - 22); }
+}
+// a small iron lantern hung beside a door frame at (x, y): hook, cage, a warm flame behind the glass. Death's houses burn violet.
+// The pool of light it throws on the step is drawn by drawDoorstep (tile pass), because the fixture itself sits under the roof strip.
+function drawLantern(g, x, y, coffin) {
+  const flick = 0.78 + Math.sin(time * 5 + x * 0.3) * 0.14;
+  g.fillStyle = '#2a2a30'; g.fillRect(x - 1, y - 8, 2, 4); g.fillRect(x - 4, y - 4, 8, 9);
+  g.fillStyle = coffin ? `rgba(180,140,255,${flick})` : `rgba(255,200,90,${flick})`; g.fillRect(x - 2.5, y - 2.5, 5, 6);
+  g.fillStyle = '#2a2a30'; g.fillRect(x - 5, y + 5, 10, 1.5);
+}
+// the step tile outside a door: a woven mat against the threshold and the lanterns' glow on the ground. up = the door is on the tile SOUTH of
+// this step (a north-facing door like the keep's); otherwise the door is north of the step. Called from the tile pass after the textures.
+function drawDoorstep(g, tx, ty, up, coffin) {
+  const x = tx * TILE, y = ty * TILE, edgeY = up ? y + TILE : y;
+  const glow = g.createRadialGradient(x + TILE / 2, edgeY, 3, x + TILE / 2, edgeY, 36);
+  glow.addColorStop(0, coffin ? 'rgba(160,120,255,0.30)' : 'rgba(255,190,90,0.32)'); glow.addColorStop(1, coffin ? 'rgba(160,120,255,0)' : 'rgba(255,190,90,0)');
+  g.fillStyle = glow; g.fillRect(x - 12, edgeY - 36, TILE + 24, 72);
+  if (SOLID.has(tileAt(tx, ty))) return; // a rock or a pond on the step: light, but no mat
+  const my = up ? y + TILE - 19 : y + 3;
+  g.fillStyle = coffin ? '#3a3540' : '#9a7444'; roundRect(g, x + 9, my, 30, 16, 3); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.28)'; g.lineWidth = 1;
+  for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x + 10, my + k * 4); g.lineTo(x + 38, my + k * 4); g.stroke(); }
+  for (let k = 1; k < 6; k++) { g.beginPath(); g.moveTo(x + 9 + k * 5, my + 1); g.lineTo(x + 9 + k * 5, my + 15); g.stroke(); }
+  g.strokeStyle = coffin ? 'rgba(180,140,255,0.35)' : 'rgba(255,235,180,0.35)'; roundRect(g, x + 9, my, 30, 16, 3); g.stroke();
 }
 function drawSword(g) {
   const { x, y } = SWORD_POS; const pulse = 0.85 + Math.sin(time * 3) * 0.15;
@@ -1940,6 +2034,13 @@ function render() {
     else if (t === T.CROP) drawCropProp(g, tx, ty);
     else if (t === T.RUBBLE) drawRubbleProp(g, tx, ty);
     else if (t === T.STUMP) drawStumpProp(g, tx, ty);
+  }
+  // doormats + lantern glow on the step outside every door, drawn after the textures so the next tile's ground does not paint over them.
+  // Doors one row off-screen still light a visible step, so scan one row wider. The keep's door is on its top wall: the step is north of it.
+  for (let ty = y0 - 1; ty <= y1 + 1; ty++) for (let tx = x0; tx <= x1; tx++) {
+    const t = tileAt(tx, ty); if (t !== T.DOOR && t !== T.COFFINDOOR) continue;
+    const b = buildingAt(tx, ty); const up = !!b && ty === b.y && b.doorTop !== undefined && tx === b.x + b.doorTop;
+    drawDoorstep(g, tx, up ? ty - 1 : ty + 1, up, t === T.COFFINDOOR);
   }
   for (const d of drops) if (d.x > cam.x - 40 && d.x < cam.x + VW + 40 && d.y > cam.y - 40 && d.y < cam.y + VH + 40) drawDrop(g, d);
   if (!swordTaken) drawSword(g);
@@ -2510,6 +2611,71 @@ window.FANGLANDS = {
       raw.mapDiffs = raw.mapDiffs.map(([i, t]) => [i, T[t]]); raw.regrow = raw.regrow.map(r => ({ ...r, t: T[r.t] })); raw.mapDiffs.push([idx(1, 1), 'NO_SUCH_TILE']); localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
       const ok2 = load(); const same2 = JSON.stringify([...mapDiffs.entries()]) === before;
       check('save: tiles are stored by name and resolved back; numeric saves and unknown names still load', named && ok1 && same && ok2 && same2, { named, diffs: raw.mapDiffs.length, sample: raw.mapDiffs[0], same, same2 }); save(); }
+    // ---------- player feedback pass (2026-09-07): friendly fire, camp respawns, doorsteps, the signpost, gear tiers ----------
+    peace(true);
+    { // a sapper's sticky bomb hurts the goblin standing beside the blast, and the knight earns nothing for it
+      const o = openSpot(40, 20); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); const gs = { x: gob.x, y: gob.y, home: gob.home, hp: gob.hp, state: gob.state };
+      gob.x = player.x + 300; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.hp = gob.maxHp; gob.stunT = 5; gob.state = 'idle';
+      const mx0 = player.skills.melee.xp, rx0 = player.skills.range.xp, hp0 = player.hp;
+      projectiles.push({ kind: 'sticky', x: gob.x + 20, y: gob.y, vx: 0, vy: 0, t: 0, life: 0, fuse: 0.05, owner: 'monster' }); F.sim(10, []);
+      check('friendly fire: a sapper sticky bomb hurts the goblin beside the blast (3–8), no xp to the knight', gob.hp < gob.maxHp && gob.hp >= gob.maxHp - 8 && player.skills.melee.xp === mx0 && player.skills.range.xp === rx0 && player.hp === hp0 && !projectiles.some(p => p.kind === 'sticky'), { hp: gob.hp, max: gob.maxHp });
+      Object.assign(gob, { x: gs.x, y: gs.y, home: gs.home, hp: gs.hp, state: gs.state, stunT: 0 }); }
+    { // the bulldozer's charge runs down an hp-1 goblin in its path; it dies through killMonster (kills counted, drops rolled)
+      const o = openSpot(60, 40); F.tp(o.x - 12, o.y + 12); const dz = monsters.find(m => m.type === 'bulldozer'); const gob = monsters.find(m => m.type === 'goblin' && !m.dead);
+      const ds = dz && { x: dz.x, y: dz.y, home: dz.home, dead: dz.dead, hp: dz.hp, state: dz.state, respawnT: dz.respawnT, deadT: dz.deadT }; const gs = { x: gob.x, y: gob.y, home: gob.home, hp: gob.hp, state: gob.state, dead: gob.dead, respawnT: gob.respawnT };
+      let ok = false, info = { dozer: !!dz };
+      if (dz) {
+        dz.dead = false; dz.hp = dz.maxHp; dz.x = tc(o.x) - 40; dz.y = tc(o.y); dz.home = { x: dz.x, y: dz.y }; dz.state = 'idle'; dz.stunT = 0; dz.chargeT = 1; dz.chargeDir = { x: 1, y: 0 }; dz.chargeHit = false; dz.rammed = [];
+        gob.dead = false; gob.hp = 1; gob.x = tc(o.x) + 30; gob.y = tc(o.y); gob.home = { x: gob.x, y: gob.y }; gob.stunT = 5; gob.state = 'idle';
+        const k0 = player.kills, d0 = drops.length; F.sim(20, []); ok = gob.dead && player.kills === k0 + 1 && drops.length > d0; info = { dead: gob.dead, kills: player.kills - k0, drops: drops.length - d0 };
+        dz.chargeT = 0; Object.assign(dz, ds);
+      }
+      check('friendly fire: the bulldozer charge kills an hp-1 goblin in its path (drops roll)', ok, info);
+      Object.assign(gob, gs); gob.stunT = 0; drops = drops.filter(d => dist(d.x, d.y, tc(o.x), tc(o.y)) > 3 * TILE); }
+    { // the Goblin Camp: flagged spawns, 30-minute respawn that waits for the knight to be 40+ tiles off, one CLEARED banner per clear
+      const inCamp = s => s.tx >= 142 && s.tx <= 158 && s.ty >= 20 && s.ty <= 40; const camp = MONSTER_SPAWNS.filter(s => s.camp); const cm = monsters.filter(isCampMonster);
+      const flagged = camp.length >= 12 && camp.every(inCamp) && MONSTER_SPAWNS.every(s => !!s.camp === inCamp(s)) && cm.length === camp.length;
+      const snap = cm.map(m => ({ m, dead: m.dead, hp: m.hp, respawnT: m.respawnT, deadT: m.deadT, state: m.state, x: m.x, y: m.y }));
+      F.tp(60, 40); quest.campCleared = false; levelBanner = null; const last = cm.find(m => m.type === 'goblin');
+      for (const m of cm) { m.dead = true; m.deadT = 0; m.respawnT = 999; }
+      last.dead = false; last.hp = 1; last.x = last.home.x; last.y = last.home.y; killMonster(last);
+      const banner = !!levelBanner && levelBanner.text === 'GOBLIN CAMP CLEARED' && levelBanner.sub === 'They will not be back for a while' && quest.campCleared === true, slow = last.respawnT === 1800;
+      levelBanner = null; last.respawnT = 0; F.tp(120, 30); F.sim(5, []); const waits = last.dead; // 30 tiles away: still too close
+      F.tp(60, 40); F.sim(5, []); const back = !last.dead && quest.campCleared === false;
+      for (const m of cm) { m.dead = true; m.deadT = 0; } last.dead = false; last.hp = 1; killMonster(last); const again = !!levelBanner && levelBanner.text === 'GOBLIN CAMP CLEARED';
+      check('goblin camp: spawns flagged camp, 1800 s respawn only while 40+ tiles away, CAMP CLEARED banner once per clear', flagged && banner && slow && waits && back && again, { camp: camp.length, flagged, banner, slow, waits, back, again });
+      for (const s of snap) Object.assign(s.m, { dead: s.dead, hp: s.hp, respawnT: s.respawnT, deadT: s.deadT, state: s.state, x: s.x, y: s.y }); quest.campCleared = false; levelBanner = null; drops = drops.filter(d => dist(d.x, d.y, last.home.x, last.home.y) > 3 * TILE); }
+    { // no monster wakes on a doorstep (posted guards excepted); the goblin that sat on Death's House door at (27,14) moved off it
+      const doors = []; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const t = map[idx(x, y)]; if ((t === T.DOOR || t === T.COFFINDOOR || t === T.PORTCULLIS) && !mapDiffs.has(idx(x, y))) doors.push([x, y]); }
+      for (const b of BUILDINGS) { if (b.door !== undefined) doors.push([b.x + b.door, b.y + b.h - 1]); if (b.doorTop !== undefined) doors.push([b.x + b.doorTop, b.y]); }
+      const bad = MONSTER_SPAWNS.filter(s => !MONSTER_DEFS[s.type].human && doors.some(([x, y]) => Math.hypot(x - s.tx, y - s.ty) <= 3));
+      const moved = MONSTER_SPAWNS.find(s => s.movedFrom && s.movedFrom[0] === 27 && s.movedFrom[1] === 14); const dh = BUILDINGS.find(b => b.id === 'death1');
+      const far = !!moved && Math.hypot(Math.max(dh.x - moved.tx, 0, moved.tx - (dh.x + dh.w - 1)), Math.max(dh.y - moved.ty, 0, moved.ty - (dh.y + dh.h - 1))) >= 4 && !SOLID.has(tileAt(moved.tx, moved.ty)) && !buildingAt(moved.tx, moved.ty);
+      check("no spawn within 3 tiles of a door; the goblin on Death's doorstep (27,14) moved 4+ tiles from the house onto open ground", bad.length === 0 && far, { bad: bad.map(s => [s.type, s.tx, s.ty]), moved: moved && [moved.tx, moved.ty] }); }
+    { // the signpost shows the struck-out name, not a note saying it was crossed out
+      dialog.queue.length = 0; dialog.cur = null; F.tp(SIGN_TILE.x - 1, SIGN_TILE.y); F.face(SIGN_TILE.x, SIGN_TILE.y); F.press('KeyE'); F.sim(2, []);
+      const txt = (dialog.cur && dialog.cur.text) || ''; const struck = 'HOLLOWFORD'.split('').map(c => c + '̶').join('');
+      check('signpost: HOLLOWFORD is struck through (U+0336 after every letter) and scorched, never "crossed out"', txt.includes('̶') && txt.includes(struck) && /scorched/.test(txt) && !/crossed out/.test(txt) && /THISTLEDOWN, 1 mile/.test(txt), { txt });
+      dialog.queue.length = 0; dialog.cur = null; }
+    { // gear tiers: every new item exists with the stated stats, colour, shape, stack 1, id; recipes at the stated level; bronze in the shops; sappers can drop bombs
+      const A = { bronze_helm: ['helm', 3, '#b8863a'], bronze_body: ['body', 7, '#b8863a'], bronze_legs: ['legs', 5, '#b8863a'], bronze_shield: ['shield', 4, '#b8863a'], steel_legs: ['legs', 14, '#d5d9e0'], steel_shield: ['shield', 12, '#d5d9e0'] };
+      const armour = Object.entries(A).every(([id, [slot, def, col]]) => { const it = ITEMS[id]; return it && it.id === id && it.stack === 1 && it.shape === slot && it.color === col && it.armour && it.armour.slot === slot && it.armour.def === def; });
+      const W = { steel_dagger: [9, 12, 0.3, 'swift', 'dagger', '#d5d9e0'], steel_axe: [14, 8, 0.6, undefined, 'axe', '#d5d9e0'], steel_warhammer: [20, 9, 0.7, 'knockback', 'warhammer', '#d5d9e0'], mithril_dagger: [15, 22, 0.3, 'swift', 'dagger', '#7aa0d0'], mithril_warhammer: [32, 18, 0.7, 'knockback', 'warhammer', '#7aa0d0'] };
+      const weapons = Object.entries(W).every(([id, [str, att, cd, perk, shape, col]]) => { const it = ITEMS[id], w = it && it.weapon; return w && it.id === id && it.stack === 1 && it.shape === shape && it.color === col && w.str === str && w.att === att && w.cd === cd && w.perk === perk; });
+      const tools = ITEMS.steel_axe.tool === 'axe' && ITEMS.steel_axe.tier === 2 && ITEMS.steel_pickaxe && ITEMS.steel_pickaxe.id === 'steel_pickaxe' && ITEMS.steel_pickaxe.tool === 'pickaxe' && ITEMS.steel_pickaxe.tier === 2 && ITEMS.steel_pickaxe.shape === 'pickaxe' && ITEMS.steel_pickaxe.stack === 1 && ITEMS.steel_pickaxe.color === '#d5d9e0';
+      const ob = ITEMS.oak_bow; const bow = !!ob && ob.id === 'oak_bow' && ob.weapon.ranged === true && ob.weapon.att === 10 && ob.weapon.cd === 0.58 && ob.value === 120 && ob.shape === 'bow' && ob.stack === 1;
+      const R = { steel_legs: [15, 2, 'steel_bar'], steel_shield: [13, 2, 'steel_bar'], steel_dagger: [11, 1, 'steel_bar'], steel_axe: [12, 1, 'steel_bar'], steel_warhammer: [17, 3, 'steel_bar'], steel_pickaxe: [14, 2, 'steel_bar'], mithril_dagger: [23, 1, 'mithril_bar'], mithril_warhammer: [27, 3, 'mithril_bar'] };
+      const recipes = Object.entries(R).every(([id, [lv, n, bar]]) => RECIPES.some(r => r.out === id && r.qty === 1 && r.station === 'anvil' && r.skill === 'smithing' && r.lv === lv && r.needs.length === 1 && r.needs[0][0] === bar && r.needs[0][1] === n));
+      const br = RECIPES.find(r => r.out === 'oak_bow'); const bowRecipe = !!br && br.station === 'workbench' && br.skill === 'crafting' && br.lv === 8 && br.xp === 40 && JSON.stringify(br.needs) === '[["oak_log",2],["spider_silk",1]]';
+      const has = (shop, id, price) => SHOPS[shop].stock.some(([i, p]) => i === id && p === price);
+      const shops = has('general', 'bronze_helm', 30) && has('general', 'bronze_shield', 40) && has('smith', 'bronze_body', 60) && has('smith', 'bronze_legs', 45);
+      const sapper = MONSTER_DEFS.sapper.drops.table.some(([id, a, b, w]) => id === 'bomb' && a === 1 && b === 1 && w >= 4);
+      check('gear tiers: bronze set (shops), steel legs/shield/dagger/axe/warhammer/pickaxe, mithril dagger/warhammer, oak bow — stats, colours, recipes; sappers drop bombs', armour && weapons && tools && bow && recipes && bowRecipe && shops && sapper, { armour, weapons, tools, bow, recipes, bowRecipe, shops, sapper }); }
+    { // the oak bow crafts at the Tinker's workbench
+      clearJunk(); const inv0 = invSnap(), cxp = player.skills.crafting.xp; player.inv = player.inv.map(s => s && ['oak_log', 'spider_silk', 'oak_bow'].includes(s.id) ? null : s); give('oak_log', 2); give('spider_silk', 1); player.skills.crafting.xp = XP_TABLE[8];
+      F.tp(103, 39); F.walkTo(100, 38, 500); F.face(100, 37); F.press('KeyE'); const open = panel === 'station' && panelArg === 'workbench'; const c = F.clickButton('2 Oak logs + Spider silk → Oak bow'); closePanel();
+      check('oak bow crafts at a workbench (Crafting 8: 2 oak logs + silk, 40 xp)', open && c && countItem('oak_bow') === 1 && countItem('oak_log') === 0 && countItem('spider_silk') === 0 && player.skills.crafting.xp === XP_TABLE[8] + 40, { open, c, bow: countItem('oak_bow'), cxp: player.skills.crafting.xp - XP_TABLE[8] });
+      player.inv = inv0; player.skills.crafting.xp = cxp; }
     peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
     const fails = Object.values(report).filter(v => v.startsWith('FAIL')).length;
@@ -3702,6 +3868,15 @@ HOOKS.update.push(dt => {
         for (let k = 0; k < 6; k++) moveEntity(player, d.x * 10, d.y * 10, playerWho()); // shoved 60px, sliding until something stops it
         burst(player.x, player.y, '#8f96a3', 14, 130); floatText(player.x, player.y - 40, 'RAMMED', '#ffb347', 14);
       }
+      // friendly fire: anything else on the blade's line is rammed once per charge — 6–12 through hitMonster (so a kill drops loot, source
+      // 'monster' = no XP for the knight), then shoved 60px along the charge, not away from the knight, and left reeling for a moment
+      m.rammed = m.rammed || [];
+      for (const o of monsters) {
+        if (o === m || o.dead || m.rammed.includes(o) || dist(m.x, m.y, o.x, o.y) >= m.r + o.r + 4) continue;
+        m.rammed.push(o); hitMonster(o, rint(6, 12), 0, true, 'monster');
+        if (!o.dead) { for (let k = 0; k < 6; k++) moveEntity(o, d.x * 10, d.y * 10, 'beast'); o.stunT = Math.max(o.stunT || 0, 0.4); floatText(o.x, o.y - o.r - 18, 'RAMMED', '#ffb347', 12); }
+        burst(o.x, o.y, '#8f96a3', 10, 110);
+      }
       if (m.chargeT <= 0) m.chargeT = 0;
       continue;
     }
@@ -3709,7 +3884,7 @@ HOOKS.update.push(dt => {
       m.chargeCd = (m.chargeCd === undefined ? DOZER_CHARGE_EVERY : m.chargeCd) - dt;
       if (m.chargeCd <= 0) {
         const dx = player.x - m.x, dy = player.y - m.y, d = Math.hypot(dx, dy) || 1;
-        m.chargeCd = DOZER_CHARGE_EVERY; m.chargeT = DOZER_CHARGE_TIME; m.chargeDir = { x: dx / d, y: dy / d }; m.chargeHit = false; m.charges = (m.charges || 0) + 1;
+        m.chargeCd = DOZER_CHARGE_EVERY; m.chargeT = DOZER_CHARGE_TIME; m.chargeDir = { x: dx / d, y: dy / d }; m.chargeHit = false; m.rammed = []; m.charges = (m.charges || 0) + 1;
         floatText(m.x, m.y - m.r - 30, 'CHARGE!', '#ff8a1a', 15); burst(m.x - dx / d * 24, m.y - dy / d * 24, '#a8875a', 12, 70);
       }
     } else m.chargeCd = DOZER_CHARGE_EVERY;
@@ -4128,10 +4303,12 @@ HOOKS.selfTest.push((check, F, h) => {
   RECIPES.push(
     { out: 'mithril_sword', qty: 1, needs: [['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 22, xp: 100, label: '2 mithril bars → Mithril sword' },
     { out: 'mithril_helm', qty: 1, needs: [['mithril_bar', 1]], station: 'anvil', skill: 'smithing', lv: 22, xp: 50, label: '1 mithril bar → Mithril helm' },
+    { out: 'mithril_dagger', qty: 1, needs: [['mithril_bar', 1]], station: 'anvil', skill: 'smithing', lv: 23, xp: 50, label: '1 mithril bar → Mithril dagger' },
     { out: 'mithril_pickaxe', qty: 1, needs: [['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 24, xp: 100, label: '2 mithril bars → Mithril pickaxe' },
     { out: 'mithril_axe', qty: 1, needs: [['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 24, xp: 100, label: '2 mithril bars → Mithril axe' },
     { out: 'mithril_shield', qty: 1, needs: [['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 25, xp: 100, label: '2 mithril bars → Mithril shield' },
     { out: 'mithril_legs', qty: 1, needs: [['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 26, xp: 100, label: '2 mithril bars → Mithril platelegs' },
+    { out: 'mithril_warhammer', qty: 1, needs: [['mithril_bar', 3]], station: 'anvil', skill: 'smithing', lv: 27, xp: 150, label: '3 mithril bars → Mithril warhammer (knockback)' },
     { out: 'mithril_battleaxe', qty: 1, needs: [['mithril_bar', 3]], station: 'anvil', skill: 'smithing', lv: 28, xp: 150, label: '3 mithril bars → Mithril battleaxe (cleave)' },
     { out: 'mithril_body', qty: 1, needs: [['mithril_bar', 3]], station: 'anvil', skill: 'smithing', lv: 30, xp: 150, label: '3 mithril bars → Mithril platebody' },
   );

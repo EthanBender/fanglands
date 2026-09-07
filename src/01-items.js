@@ -42,6 +42,8 @@ const ITEMS = {
   iron_axe: { name: 'Iron axe', value: 56, color: '#a9adb5', shape: 'axe', stack: 1, tool: 'axe', tier: 2, weapon: { str: 8, att: 4, cd: 0.6 } },
   bronze_pickaxe: { name: 'Bronze pickaxe', value: 20, color: '#b8863a', shape: 'pickaxe', stack: 1, tool: 'pickaxe', tier: 1 },
   iron_pickaxe: { name: 'Iron pickaxe', value: 70, color: '#a9adb5', shape: 'pickaxe', stack: 1, tool: 'pickaxe', tier: 2 },
+  steel_axe: { name: 'Steel axe', value: 150, color: '#d5d9e0', shape: 'axe', stack: 1, tool: 'axe', tier: 2, weapon: { str: 14, att: 8, cd: 0.6 } },
+  steel_pickaxe: { name: 'Steel pickaxe', value: 190, color: '#d5d9e0', shape: 'pickaxe', stack: 1, tool: 'pickaxe', tier: 2 },
   bronze_hoe: { name: 'Bronze hoe', value: 15, color: '#b8863a', shape: 'hoe', stack: 1, tool: 'hoe', tier: 1 },
   hammer: { name: 'Hammer', value: 5, color: '#8a7a6a', shape: 'hammer', stack: 1, tool: 'hammer', tier: 1 },
   fishing_rod: { name: 'Fishing rod', value: 40, color: '#a07a4a', shape: 'rod', stack: 1, tool: 'rod', tier: 1 },
@@ -54,19 +56,31 @@ const ITEMS = {
   iron_battleaxe: { name: 'Iron battleaxe', value: 160, color: '#a9adb5', shape: 'battleaxe', stack: 1, weapon: { str: 13, att: 6, cd: 0.75, perk: 'cleave' } },
   steel_sword: { name: 'Steel sword', value: 320, color: '#d5d9e0', shape: 'sword', stack: 1, weapon: { str: 16, att: 14, cd: 0.45 } },
   steel_battleaxe: { name: 'Steel battleaxe', value: 420, color: '#d5d9e0', shape: 'battleaxe', stack: 1, weapon: { str: 21, att: 10, cd: 0.75, perk: 'cleave' } },
+  steel_dagger: { name: 'Steel dagger', value: 160, color: '#d5d9e0', shape: 'dagger', stack: 1, weapon: { str: 9, att: 12, cd: 0.3, perk: 'swift' } },
+  steel_warhammer: { name: 'Steel warhammer', value: 400, color: '#d5d9e0', shape: 'warhammer', stack: 1, weapon: { str: 20, att: 9, cd: 0.7, perk: 'knockback' } },
+  // mithril weapons live here with the rest of the gear; their recipes are in 24-dwarves.js beside the other mithril smithing
+  mithril_dagger: { name: 'Mithril dagger', value: 450, color: '#7aa0d0', shape: 'dagger', stack: 1, weapon: { str: 15, att: 22, cd: 0.3, perk: 'swift' } },
+  mithril_warhammer: { name: 'Mithril warhammer', value: 1100, color: '#7aa0d0', shape: 'warhammer', stack: 1, weapon: { str: 32, att: 18, cd: 0.7, perk: 'knockback' } },
   shortbow: { name: 'Shortbow', value: 50, color: '#a07a4a', shape: 'bow', stack: 1, weapon: { str: 0, att: 6, cd: 0.6, ranged: true } },
+  oak_bow: { name: 'Oak bow', value: 120, color: '#8a5a2b', shape: 'bow', stack: 1, weapon: { str: 0, att: 10, cd: 0.58, ranged: true } },
   stone_arrow: { name: 'Stone arrows', value: 1, color: '#b8bcc4', shape: 'arrow', arrow: { str: 5 } },
   iron_arrow: { name: 'Iron arrows', value: 3, color: '#a9adb5', shape: 'arrow', arrow: { str: 9 } },
   bomb: { name: 'Goblin bomb', value: 40, color: '#2f2f35', shape: 'bomb', throwable: true },
   // armour
   ruined_helm: { name: 'Ruined helm', value: 12, color: '#6e5a4a', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 2 } },
   ruined_body: { name: 'Ruined chainmail', value: 24, color: '#6e5a4a', shape: 'body', stack: 1, armour: { slot: 'body', def: 4 } },
+  bronze_helm: { name: 'Bronze helm', value: 24, color: '#b8863a', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 3 } },
+  bronze_body: { name: 'Bronze platebody', value: 48, color: '#b8863a', shape: 'body', stack: 1, armour: { slot: 'body', def: 7 } },
+  bronze_legs: { name: 'Bronze platelegs', value: 36, color: '#b8863a', shape: 'legs', stack: 1, armour: { slot: 'legs', def: 5 } },
+  bronze_shield: { name: 'Bronze shield', value: 32, color: '#b8863a', shape: 'shield', stack: 1, armour: { slot: 'shield', def: 4 } },
   iron_helm: { name: 'Iron helm', value: 90, color: '#a9adb5', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 5 } },
   iron_body: { name: 'Iron platebody', value: 240, color: '#a9adb5', shape: 'body', stack: 1, armour: { slot: 'body', def: 12 } },
   iron_legs: { name: 'Iron platelegs', value: 170, color: '#a9adb5', shape: 'legs', stack: 1, armour: { slot: 'legs', def: 8 } },
   iron_shield: { name: 'Iron shield', value: 150, color: '#a9adb5', shape: 'shield', stack: 1, armour: { slot: 'shield', def: 7 } },
   steel_helm: { name: 'Steel helm', value: 260, color: '#d5d9e0', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 9 } },
   steel_body: { name: 'Steel platebody', value: 620, color: '#d5d9e0', shape: 'body', stack: 1, armour: { slot: 'body', def: 20 } },
+  steel_legs: { name: 'Steel platelegs', value: 440, color: '#d5d9e0', shape: 'legs', stack: 1, armour: { slot: 'legs', def: 14 } },
+  steel_shield: { name: 'Steel shield', value: 390, color: '#d5d9e0', shape: 'shield', stack: 1, armour: { slot: 'shield', def: 12 } },
 };
 for (const k in ITEMS) { ITEMS[k].id = k; if (!ITEMS[k].stack) ITEMS[k].stack = ITEMS[k].arrow ? 1000 : 50; }
 const EQUIP_SLOTS = ['weapon', 'helm', 'body', 'legs', 'shield'];
@@ -76,6 +90,7 @@ const RECIPES = [
   { out: 'plank', qty: 4, needs: [['wood', 2]], station: null, label: '2 Logs → 4 Planks' },
   { out: 'stone_arrow', qty: 5, needs: [['wood', 1], ['stone', 1]], station: 'workbench', skill: 'crafting', lv: 1, xp: 8, label: 'Logs + Stone → 5 Stone arrows' },
   { out: 'shortbow', qty: 1, needs: [['wood', 2], ['spider_silk', 1]], station: 'workbench', skill: 'crafting', lv: 1, xp: 25, label: '2 Logs + Spider silk → Shortbow' },
+  { out: 'oak_bow', qty: 1, needs: [['oak_log', 2], ['spider_silk', 1]], station: 'workbench', skill: 'crafting', lv: 8, xp: 40, label: '2 Oak logs + Spider silk → Oak bow' },
   { out: 'door', qty: 1, needs: [['plank', 4]], station: 'workbench', skill: 'crafting', lv: 2, xp: 15, label: '4 Planks → Door' },
   { out: 'bed', qty: 1, needs: [['plank', 4], ['wool', 2]], station: 'workbench', skill: 'crafting', lv: 3, xp: 60, label: '4 Planks + 2 Wool → Bed' },
   { out: 'workbench', qty: 1, needs: [['plank', 8]], station: 'workbench', skill: 'crafting', lv: 4, xp: 60, label: '8 Planks → Workbench (for your base)' },
@@ -94,9 +109,15 @@ const RECIPES = [
   { out: 'iron_warhammer', qty: 1, needs: [['iron_bar', 3]], station: 'anvil', skill: 'smithing', lv: 8, xp: 75, label: '3 bars → Iron warhammer (knockback)' },
   { out: 'iron_battleaxe', qty: 1, needs: [['iron_bar', 3]], station: 'anvil', skill: 'smithing', lv: 9, xp: 75, label: '3 bars → Iron battleaxe (cleave)' },
   { out: 'iron_body', qty: 1, needs: [['iron_bar', 3]], station: 'anvil', skill: 'smithing', lv: 10, xp: 75, label: '3 bars → Iron platebody' },
+  { out: 'steel_dagger', qty: 1, needs: [['steel_bar', 1]], station: 'anvil', skill: 'smithing', lv: 11, xp: 37, label: '1 steel bar → Steel dagger' },
   { out: 'steel_helm', qty: 1, needs: [['steel_bar', 1]], station: 'anvil', skill: 'smithing', lv: 12, xp: 37, label: '1 steel bar → Steel helm' },
+  { out: 'steel_axe', qty: 1, needs: [['steel_bar', 1]], station: 'anvil', skill: 'smithing', lv: 12, xp: 37, label: '1 steel bar → Steel axe' },
+  { out: 'steel_shield', qty: 1, needs: [['steel_bar', 2]], station: 'anvil', skill: 'smithing', lv: 13, xp: 75, label: '2 steel bars → Steel shield' },
   { out: 'steel_sword', qty: 1, needs: [['steel_bar', 2]], station: 'anvil', skill: 'smithing', lv: 14, xp: 75, label: '2 steel bars → Steel sword' },
+  { out: 'steel_pickaxe', qty: 1, needs: [['steel_bar', 2]], station: 'anvil', skill: 'smithing', lv: 14, xp: 75, label: '2 steel bars → Steel pickaxe' },
+  { out: 'steel_legs', qty: 1, needs: [['steel_bar', 2]], station: 'anvil', skill: 'smithing', lv: 15, xp: 75, label: '2 steel bars → Steel platelegs' },
   { out: 'steel_battleaxe', qty: 1, needs: [['steel_bar', 3]], station: 'anvil', skill: 'smithing', lv: 16, xp: 112, label: '3 steel bars → Steel battleaxe' },
+  { out: 'steel_warhammer', qty: 1, needs: [['steel_bar', 3]], station: 'anvil', skill: 'smithing', lv: 17, xp: 112, label: '3 steel bars → Steel warhammer (knockback)' },
   { out: 'steel_body', qty: 1, needs: [['steel_bar', 3]], station: 'anvil', skill: 'smithing', lv: 18, xp: 112, label: '3 steel bars → Steel platebody' },
 ];
 const SMELT = [
@@ -104,10 +125,10 @@ const SMELT = [
   { out: 'steel_bar', needs: [['iron_ore', 1], ['coal', 1]], lv: 10, xp: 17, label: 'Iron ore + Coal → Steel bar' },
 ];
 const SHOPS = {
-  general: { name: "Marta's General Store", stock: [['fishing_rod', 60], ['hammer', 5], ['bread', 10], ['shrimp', 8], ['bronze_axe', 25], ['bronze_pickaxe', 30]] },
+  general: { name: "Marta's General Store", stock: [['fishing_rod', 60], ['hammer', 5], ['bread', 10], ['shrimp', 8], ['bronze_axe', 25], ['bronze_pickaxe', 30], ['bronze_helm', 30], ['bronze_shield', 40]] },
   bakery: { name: "Rosalind's Bakery", stock: [['bread', 8], ['meat_pie', 25], ['baked_potato', 6]] },
   seeds: { name: "Greta's Seed Stall", stock: [['potato_seed', 2], ['bronze_hoe', 15], ['potato', 3]] },
-  smith: { name: "Brakka's Smithy", stock: [['hammer', 5], ['iron_dagger', 80], ['iron_helm', 120]] },
+  smith: { name: "Brakka's Smithy", stock: [['hammer', 5], ['iron_dagger', 80], ['iron_helm', 120], ['bronze_body', 60], ['bronze_legs', 45]] },
 };
 
 // ---------- skills ----------

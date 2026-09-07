@@ -205,6 +205,71 @@ window.FANGLANDS = {
       raw.mapDiffs = raw.mapDiffs.map(([i, t]) => [i, T[t]]); raw.regrow = raw.regrow.map(r => ({ ...r, t: T[r.t] })); raw.mapDiffs.push([idx(1, 1), 'NO_SUCH_TILE']); localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
       const ok2 = load(); const same2 = JSON.stringify([...mapDiffs.entries()]) === before;
       check('save: tiles are stored by name and resolved back; numeric saves and unknown names still load', named && ok1 && same && ok2 && same2, { named, diffs: raw.mapDiffs.length, sample: raw.mapDiffs[0], same, same2 }); save(); }
+    // ---------- player feedback pass (2026-09-07): friendly fire, camp respawns, doorsteps, the signpost, gear tiers ----------
+    peace(true);
+    { // a sapper's sticky bomb hurts the goblin standing beside the blast, and the knight earns nothing for it
+      const o = openSpot(40, 20); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); const gs = { x: gob.x, y: gob.y, home: gob.home, hp: gob.hp, state: gob.state };
+      gob.x = player.x + 300; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.hp = gob.maxHp; gob.stunT = 5; gob.state = 'idle';
+      const mx0 = player.skills.melee.xp, rx0 = player.skills.range.xp, hp0 = player.hp;
+      projectiles.push({ kind: 'sticky', x: gob.x + 20, y: gob.y, vx: 0, vy: 0, t: 0, life: 0, fuse: 0.05, owner: 'monster' }); F.sim(10, []);
+      check('friendly fire: a sapper sticky bomb hurts the goblin beside the blast (3–8), no xp to the knight', gob.hp < gob.maxHp && gob.hp >= gob.maxHp - 8 && player.skills.melee.xp === mx0 && player.skills.range.xp === rx0 && player.hp === hp0 && !projectiles.some(p => p.kind === 'sticky'), { hp: gob.hp, max: gob.maxHp });
+      Object.assign(gob, { x: gs.x, y: gs.y, home: gs.home, hp: gs.hp, state: gs.state, stunT: 0 }); }
+    { // the bulldozer's charge runs down an hp-1 goblin in its path; it dies through killMonster (kills counted, drops rolled)
+      const o = openSpot(60, 40); F.tp(o.x - 12, o.y + 12); const dz = monsters.find(m => m.type === 'bulldozer'); const gob = monsters.find(m => m.type === 'goblin' && !m.dead);
+      const ds = dz && { x: dz.x, y: dz.y, home: dz.home, dead: dz.dead, hp: dz.hp, state: dz.state, respawnT: dz.respawnT, deadT: dz.deadT }; const gs = { x: gob.x, y: gob.y, home: gob.home, hp: gob.hp, state: gob.state, dead: gob.dead, respawnT: gob.respawnT };
+      let ok = false, info = { dozer: !!dz };
+      if (dz) {
+        dz.dead = false; dz.hp = dz.maxHp; dz.x = tc(o.x) - 40; dz.y = tc(o.y); dz.home = { x: dz.x, y: dz.y }; dz.state = 'idle'; dz.stunT = 0; dz.chargeT = 1; dz.chargeDir = { x: 1, y: 0 }; dz.chargeHit = false; dz.rammed = [];
+        gob.dead = false; gob.hp = 1; gob.x = tc(o.x) + 30; gob.y = tc(o.y); gob.home = { x: gob.x, y: gob.y }; gob.stunT = 5; gob.state = 'idle';
+        const k0 = player.kills, d0 = drops.length; F.sim(20, []); ok = gob.dead && player.kills === k0 + 1 && drops.length > d0; info = { dead: gob.dead, kills: player.kills - k0, drops: drops.length - d0 };
+        dz.chargeT = 0; Object.assign(dz, ds);
+      }
+      check('friendly fire: the bulldozer charge kills an hp-1 goblin in its path (drops roll)', ok, info);
+      Object.assign(gob, gs); gob.stunT = 0; drops = drops.filter(d => dist(d.x, d.y, tc(o.x), tc(o.y)) > 3 * TILE); }
+    { // the Goblin Camp: flagged spawns, 30-minute respawn that waits for the knight to be 40+ tiles off, one CLEARED banner per clear
+      const inCamp = s => s.tx >= 142 && s.tx <= 158 && s.ty >= 20 && s.ty <= 40; const camp = MONSTER_SPAWNS.filter(s => s.camp); const cm = monsters.filter(isCampMonster);
+      const flagged = camp.length >= 12 && camp.every(inCamp) && MONSTER_SPAWNS.every(s => !!s.camp === inCamp(s)) && cm.length === camp.length;
+      const snap = cm.map(m => ({ m, dead: m.dead, hp: m.hp, respawnT: m.respawnT, deadT: m.deadT, state: m.state, x: m.x, y: m.y }));
+      F.tp(60, 40); quest.campCleared = false; levelBanner = null; const last = cm.find(m => m.type === 'goblin');
+      for (const m of cm) { m.dead = true; m.deadT = 0; m.respawnT = 999; }
+      last.dead = false; last.hp = 1; last.x = last.home.x; last.y = last.home.y; killMonster(last);
+      const banner = !!levelBanner && levelBanner.text === 'GOBLIN CAMP CLEARED' && levelBanner.sub === 'They will not be back for a while' && quest.campCleared === true, slow = last.respawnT === 1800;
+      levelBanner = null; last.respawnT = 0; F.tp(120, 30); F.sim(5, []); const waits = last.dead; // 30 tiles away: still too close
+      F.tp(60, 40); F.sim(5, []); const back = !last.dead && quest.campCleared === false;
+      for (const m of cm) { m.dead = true; m.deadT = 0; } last.dead = false; last.hp = 1; killMonster(last); const again = !!levelBanner && levelBanner.text === 'GOBLIN CAMP CLEARED';
+      check('goblin camp: spawns flagged camp, 1800 s respawn only while 40+ tiles away, CAMP CLEARED banner once per clear', flagged && banner && slow && waits && back && again, { camp: camp.length, flagged, banner, slow, waits, back, again });
+      for (const s of snap) Object.assign(s.m, { dead: s.dead, hp: s.hp, respawnT: s.respawnT, deadT: s.deadT, state: s.state, x: s.x, y: s.y }); quest.campCleared = false; levelBanner = null; drops = drops.filter(d => dist(d.x, d.y, last.home.x, last.home.y) > 3 * TILE); }
+    { // no monster wakes on a doorstep (posted guards excepted); the goblin that sat on Death's House door at (27,14) moved off it
+      const doors = []; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const t = map[idx(x, y)]; if ((t === T.DOOR || t === T.COFFINDOOR || t === T.PORTCULLIS) && !mapDiffs.has(idx(x, y))) doors.push([x, y]); }
+      for (const b of BUILDINGS) { if (b.door !== undefined) doors.push([b.x + b.door, b.y + b.h - 1]); if (b.doorTop !== undefined) doors.push([b.x + b.doorTop, b.y]); }
+      const bad = MONSTER_SPAWNS.filter(s => !MONSTER_DEFS[s.type].human && doors.some(([x, y]) => Math.hypot(x - s.tx, y - s.ty) <= 3));
+      const moved = MONSTER_SPAWNS.find(s => s.movedFrom && s.movedFrom[0] === 27 && s.movedFrom[1] === 14); const dh = BUILDINGS.find(b => b.id === 'death1');
+      const far = !!moved && Math.hypot(Math.max(dh.x - moved.tx, 0, moved.tx - (dh.x + dh.w - 1)), Math.max(dh.y - moved.ty, 0, moved.ty - (dh.y + dh.h - 1))) >= 4 && !SOLID.has(tileAt(moved.tx, moved.ty)) && !buildingAt(moved.tx, moved.ty);
+      check("no spawn within 3 tiles of a door; the goblin on Death's doorstep (27,14) moved 4+ tiles from the house onto open ground", bad.length === 0 && far, { bad: bad.map(s => [s.type, s.tx, s.ty]), moved: moved && [moved.tx, moved.ty] }); }
+    { // the signpost shows the struck-out name, not a note saying it was crossed out
+      dialog.queue.length = 0; dialog.cur = null; F.tp(SIGN_TILE.x - 1, SIGN_TILE.y); F.face(SIGN_TILE.x, SIGN_TILE.y); F.press('KeyE'); F.sim(2, []);
+      const txt = (dialog.cur && dialog.cur.text) || ''; const struck = 'HOLLOWFORD'.split('').map(c => c + '̶').join('');
+      check('signpost: HOLLOWFORD is struck through (U+0336 after every letter) and scorched, never "crossed out"', txt.includes('̶') && txt.includes(struck) && /scorched/.test(txt) && !/crossed out/.test(txt) && /THISTLEDOWN, 1 mile/.test(txt), { txt });
+      dialog.queue.length = 0; dialog.cur = null; }
+    { // gear tiers: every new item exists with the stated stats, colour, shape, stack 1, id; recipes at the stated level; bronze in the shops; sappers can drop bombs
+      const A = { bronze_helm: ['helm', 3, '#b8863a'], bronze_body: ['body', 7, '#b8863a'], bronze_legs: ['legs', 5, '#b8863a'], bronze_shield: ['shield', 4, '#b8863a'], steel_legs: ['legs', 14, '#d5d9e0'], steel_shield: ['shield', 12, '#d5d9e0'] };
+      const armour = Object.entries(A).every(([id, [slot, def, col]]) => { const it = ITEMS[id]; return it && it.id === id && it.stack === 1 && it.shape === slot && it.color === col && it.armour && it.armour.slot === slot && it.armour.def === def; });
+      const W = { steel_dagger: [9, 12, 0.3, 'swift', 'dagger', '#d5d9e0'], steel_axe: [14, 8, 0.6, undefined, 'axe', '#d5d9e0'], steel_warhammer: [20, 9, 0.7, 'knockback', 'warhammer', '#d5d9e0'], mithril_dagger: [15, 22, 0.3, 'swift', 'dagger', '#7aa0d0'], mithril_warhammer: [32, 18, 0.7, 'knockback', 'warhammer', '#7aa0d0'] };
+      const weapons = Object.entries(W).every(([id, [str, att, cd, perk, shape, col]]) => { const it = ITEMS[id], w = it && it.weapon; return w && it.id === id && it.stack === 1 && it.shape === shape && it.color === col && w.str === str && w.att === att && w.cd === cd && w.perk === perk; });
+      const tools = ITEMS.steel_axe.tool === 'axe' && ITEMS.steel_axe.tier === 2 && ITEMS.steel_pickaxe && ITEMS.steel_pickaxe.id === 'steel_pickaxe' && ITEMS.steel_pickaxe.tool === 'pickaxe' && ITEMS.steel_pickaxe.tier === 2 && ITEMS.steel_pickaxe.shape === 'pickaxe' && ITEMS.steel_pickaxe.stack === 1 && ITEMS.steel_pickaxe.color === '#d5d9e0';
+      const ob = ITEMS.oak_bow; const bow = !!ob && ob.id === 'oak_bow' && ob.weapon.ranged === true && ob.weapon.att === 10 && ob.weapon.cd === 0.58 && ob.value === 120 && ob.shape === 'bow' && ob.stack === 1;
+      const R = { steel_legs: [15, 2, 'steel_bar'], steel_shield: [13, 2, 'steel_bar'], steel_dagger: [11, 1, 'steel_bar'], steel_axe: [12, 1, 'steel_bar'], steel_warhammer: [17, 3, 'steel_bar'], steel_pickaxe: [14, 2, 'steel_bar'], mithril_dagger: [23, 1, 'mithril_bar'], mithril_warhammer: [27, 3, 'mithril_bar'] };
+      const recipes = Object.entries(R).every(([id, [lv, n, bar]]) => RECIPES.some(r => r.out === id && r.qty === 1 && r.station === 'anvil' && r.skill === 'smithing' && r.lv === lv && r.needs.length === 1 && r.needs[0][0] === bar && r.needs[0][1] === n));
+      const br = RECIPES.find(r => r.out === 'oak_bow'); const bowRecipe = !!br && br.station === 'workbench' && br.skill === 'crafting' && br.lv === 8 && br.xp === 40 && JSON.stringify(br.needs) === '[["oak_log",2],["spider_silk",1]]';
+      const has = (shop, id, price) => SHOPS[shop].stock.some(([i, p]) => i === id && p === price);
+      const shops = has('general', 'bronze_helm', 30) && has('general', 'bronze_shield', 40) && has('smith', 'bronze_body', 60) && has('smith', 'bronze_legs', 45);
+      const sapper = MONSTER_DEFS.sapper.drops.table.some(([id, a, b, w]) => id === 'bomb' && a === 1 && b === 1 && w >= 4);
+      check('gear tiers: bronze set (shops), steel legs/shield/dagger/axe/warhammer/pickaxe, mithril dagger/warhammer, oak bow — stats, colours, recipes; sappers drop bombs', armour && weapons && tools && bow && recipes && bowRecipe && shops && sapper, { armour, weapons, tools, bow, recipes, bowRecipe, shops, sapper }); }
+    { // the oak bow crafts at the Tinker's workbench
+      clearJunk(); const inv0 = invSnap(), cxp = player.skills.crafting.xp; player.inv = player.inv.map(s => s && ['oak_log', 'spider_silk', 'oak_bow'].includes(s.id) ? null : s); give('oak_log', 2); give('spider_silk', 1); player.skills.crafting.xp = XP_TABLE[8];
+      F.tp(103, 39); F.walkTo(100, 38, 500); F.face(100, 37); F.press('KeyE'); const open = panel === 'station' && panelArg === 'workbench'; const c = F.clickButton('2 Oak logs + Spider silk → Oak bow'); closePanel();
+      check('oak bow crafts at a workbench (Crafting 8: 2 oak logs + silk, 40 xp)', open && c && countItem('oak_bow') === 1 && countItem('oak_log') === 0 && countItem('spider_silk') === 0 && player.skills.crafting.xp === XP_TABLE[8] + 40, { open, c, bow: countItem('oak_bow'), cxp: player.skills.crafting.xp - XP_TABLE[8] });
+      player.inv = inv0; player.skills.crafting.xp = cxp; }
     peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
     const fails = Object.values(report).filter(v => v.startsWith('FAIL')).length;
