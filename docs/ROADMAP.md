@@ -59,6 +59,13 @@ Each version is playable on its own. We never leave the game broken between vers
 - [x] The Fang's lair: sealed gate, heat, the giant elemental dragon cycling fire / ice / storm / stone, the hoard, the ending and credits (`src/28-thefang.js`)
 - [x] Self-test: 170 checks
 
+## Audit 2026-09-07
+See `docs/AUDIT-2026-09-07.html` (78 findings from three reviews + `tools/balance.js`). Next wave in priority order:
+1. Core fix pass: inn-bed respawn in wall, lodestone into solid, mech exit into obstacle, Harl stranded, reload-during-death wipes chest, smithing double-tap, Fang/Barrelbeast respawn farms, potato arbitrage, coin loss on sell, double coffin fee, regrow overwrite, hover walk-over player-only, shared left-HUD cursor, saves by tile name, talk-before hook.
+2. Core UX pass: auto-track main quest + map targets, dialogue pacing/log/pause, key-name helper for touch, confirmations, panel paging/tabs, phone layout collisions, ground drops saved.
+3. Rebalance: walker on-ramp, ash drake lv 30, Godly at Smithing 32–40, hover at Crafting 12, Fang 800 hp/def 50, kill XP bonus, companions scale.
+4. Features: Hollowford rebuilt, title screen + save slots, region music.
+
 ## v5 — polish and depth (ideas)
 - [ ] A save-slot picker and a title screen
 - [ ] Balance pass on the late game with a real playthrough

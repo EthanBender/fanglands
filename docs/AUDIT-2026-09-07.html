@@ -1,0 +1,246 @@
+<title>Fanglands Audit</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Lora:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper: #f6f2e8; --ink: #1c1b18; --muted: #6b6558; --rule: #d9d1bf; --card: #fbf9f3;
+    --gold: #a97a1a; --gold-soft: #f2e3b5; --moss: #3f7d2b; --moss-soft: #dfeccf; --ember: #b23a2f; --ember-soft: #f4d6d1;
+    --amber: #b8730f; --amber-soft: #f6e3bf; --slate: #56606b; --slate-soft: #e1e5e9; --violet: #5a2e7a;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --paper: #12151b; --ink: #e8e3d6; --muted: #a39b8a; --rule: #2c3038; --card: #191d24;
+    --gold: #e0b84a; --gold-soft: #3a3016; --moss: #7ec25c; --moss-soft: #1d2e18; --ember: #ef7a6c; --ember-soft: #3a1f1c;
+    --amber: #e6a33c; --amber-soft: #3a2b12; --slate: #b4bcc6; --slate-soft: #232a33; --violet: #c9a6ea;
+  } }
+  :root[data-theme="dark"] {
+    --paper: #12151b; --ink: #e8e3d6; --muted: #a39b8a; --rule: #2c3038; --card: #191d24;
+    --gold: #e0b84a; --gold-soft: #3a3016; --moss: #7ec25c; --moss-soft: #1d2e18; --ember: #ef7a6c; --ember-soft: #3a1f1c;
+    --amber: #e6a33c; --amber-soft: #3a2b12; --slate: #b4bcc6; --slate-soft: #232a33; --violet: #c9a6ea;
+  }
+  body { background: var(--paper); color: var(--ink); font-family: "Lora", Georgia, serif; font-size: 16px; line-height: 1.55; }
+  main { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1, h2, h3 { font-family: "Cinzel", "Trajan Pro", Georgia, serif; text-wrap: balance; letter-spacing: 0.01em; }
+  h1 { font-size: 34px; font-weight: 800; margin: 0 0 6px; }
+  h2 { font-size: 22px; font-weight: 800; margin: 48px 0 12px; padding-top: 18px; border-top: 2px solid var(--rule); }
+  h3 { font-size: 16px; font-weight: 600; margin: 26px 0 8px; color: var(--violet); }
+  .eyebrow { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .lede { font-size: 18px; color: var(--muted); max-width: 66ch; margin: 0 0 22px; font-style: italic; }
+  p { max-width: 68ch; }
+  ul, ol { max-width: 70ch; padding-left: 22px; } li { margin: 4px 0; }
+  code { font-family: "JetBrains Mono", monospace; font-size: 0.86em; background: var(--slate-soft); padding: 1px 5px; border-radius: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 22px 0 6px; }
+  .stat { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; }
+  .stat b { display: block; font-family: "Cinzel", serif; font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  .sev { display: inline-block; font-family: "JetBrains Mono", monospace; font-size: 10.5px; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 999px; font-weight: 500; white-space: nowrap; }
+  .crit { background: var(--ember-soft); color: var(--ember); } .high { background: var(--amber-soft); color: var(--amber); } .med { background: var(--gold-soft); color: var(--gold); } .low { background: var(--slate-soft); color: var(--slate); } .ok { background: var(--moss-soft); color: var(--moss); }
+  .wrap { overflow-x: auto; margin: 12px 0 18px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+  th { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+  td.n { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  td.where { font-family: "JetBrains Mono", monospace; font-size: 12px; white-space: nowrap; color: var(--muted); }
+  .finding { border-left: 3px solid var(--rule); padding: 2px 0 2px 14px; margin: 14px 0; }
+  .finding.c { border-color: var(--ember); } .finding.h { border-color: var(--amber); } .finding.m { border-color: var(--gold); } .finding.l { border-color: var(--slate); }
+  .finding .t { font-weight: 600; }
+  .finding .d { color: var(--muted); font-size: 15px; margin-top: 2px; }
+  .callout { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 16px 18px; margin: 18px 0; }
+  .callout h3 { margin-top: 0; }
+  .bar { height: 8px; border-radius: 4px; background: var(--slate-soft); position: relative; overflow: hidden; min-width: 90px; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } @media (max-width: 640px) { .two { grid-template-columns: 1fr; } }
+  footer { margin-top: 56px; padding-top: 14px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; }
+</style>
+<main>
+  <div class="eyebrow">Fanglands · master b40d120 · 2026-09-07</div>
+  <h1>Fanglands Audit</h1>
+  <p class="lede">What ten agents and two days built, what is broken, what the numbers say about balance, where a ten-year-old gets lost, and what to build next.</p>
+
+  <div class="grid">
+    <div class="stat"><b>6,284</b><span>lines of source in 25 modules</span></div>
+    <div class="stat"><b>170</b><span>self-test checks, all passing</span></div>
+    <div class="stat"><b>18</b><span>regions on a 200 × 140 map</span></div>
+    <div class="stat"><b>86</b><span>items · 40 recipes · 11 skills</span></div>
+    <div class="stat"><b>18</b><span>monster types · 95 spawns</span></div>
+    <div class="stat"><b>26</b><span>named NPCs · 9 shops · 21 buildings</span></div>
+  </div>
+
+  <div class="callout">
+    <h3>The short version</h3>
+    <ul>
+      <li><b>Every item from Colin's three design conversations exists in the game.</b> The main story runs from the cave to The Fang across 17 quest stages, and the self-test plays all of it.</li>
+      <li><b>Five defects can trap a player permanently</b> (a respawn point inside a wall, a home teleport into solid rock, climbing out of a machine into a tree, a ferryman who never comes back, and a save reload that erases Death's chest). All five have one-line fixes.</li>
+      <li><b>The economy has three farms</b> (the Fang and the Barrelbeast respawn with their legendary loot, and Dunstan buys potatoes for three times Greta's price) and <b>the anvil panel hides 12 of its 26 recipes</b> on any screen shorter than 1,140 px, including every Godly Plated piece.</li>
+      <li><b>Balance is right for the first hour and wrong after it.</b> Chapter 3's walker and the two dragons the main quest sends you to are out of reach at the levels the story hands you, and the two features Colin named as "what makes it different" sit behind the two biggest grind walls.</li>
+      <li><b>Nothing on screen tells a new player where to go</b>: the main quest is untracked by default, and the world map's quest marker stops updating after Chapter 3.</li>
+    </ul>
+  </div>
+
+  <h2>1 · Defects</h2>
+  <p>Three independent code reviews (core systems, the ten feature files, and player experience) found 78 items. The ones below are confirmed by reading the code and are worth fixing; the full lists with line numbers are in the review transcripts. Counts by severity:</p>
+  <div class="wrap"><table>
+    <tr><th>Severity</th><th>Count</th><th>What it means</th></tr>
+    <tr><td><span class="sev crit">critical</span></td><td class="n">2</td><td>Soft-locks or destroyed progress with no recovery</td></tr>
+    <tr><td><span class="sev high">high</span></td><td class="n">8</td><td>Lost items, unreachable content, or infinite loot</td></tr>
+    <tr><td><span class="sev med">medium</span></td><td class="n">22</td><td>Wrong behaviour a player will notice</td></tr>
+    <tr><td><span class="sev low">low</span></td><td class="n">46</td><td>Polish, dead code, edge cases</td></tr>
+  </table></div>
+
+  <h3>Soft-locks and lost progress</h3>
+  <div class="finding c"><div class="t"><span class="sev crit">critical</span> Sleeping in the inn bed sets your respawn point inside the inn's south wall.</div><div class="d">The bed is on the last interior row; the respawn spot is "one tile below the bed", which is the wall. Die once afterwards and you wake embedded in stone. <span class="where">06-systems.js:332 · 02-world.js:38</span></div></div>
+  <div class="finding c"><div class="t"><span class="sev crit">critical</span> The anvil panel silently truncates: 26 recipes, no paging.</div><div class="d">On a 768 px laptop you see about 17. Every mithril weapon past the dagger and all four Godly pieces are unreachable from the UI; both feature self-tests work around it by calling the craft function directly. <span class="where">10-hud.js:258</span></div></div>
+  <div class="finding h"><div class="t"><span class="sev high">high</span> A lodestone can teleport you into a solid tile.</div><div class="d">Home is "the tile below the lodestone" with no check; a lodestone on a house floor against the south wall, or a plank placed under it later, makes the H key a trap. <span class="where">06-systems.js:282, 357</span></div></div>
+  <div class="finding h"><div class="t"><span class="sev high">high</span> Climbing out of a walker or bulldozer pushes you one tile backwards with no collision check.</div><div class="d">Facing a tree or palisade when you press X leaves the knight inside it. The goblin camp, where machines live, is full of both. <span class="where">06-systems.js:377, 384</span></div></div>
+  <div class="finding h"><div class="t"><span class="sev high">high</span> Old Harl gets stranded on an island.</div><div class="d">His position follows the last place you sailed to; die on Ironclad Isle, respawn in town, and there is nobody at the dock. The islands are gone for that save unless you own hover armour. <span class="where">26-boats.js:78, 112</span></div></div>
+  <div class="finding h"><div class="t"><span class="sev high">high</span> Reloading during the death animation resurrects you at 0 HP, and the next death wipes Death's chest.</div><div class="d">The save runs every 15 s and on page close; a save inside the 2.6 s death window stores hp 0 and the death spot. Dying again with an empty pack replaces the chest with nothing. <span class="where">99-boot.js:15 · 04-state.js:175 · 06-systems.js:153</span></div></div>
+  <div class="finding h"><div class="t"><span class="sev high">high</span> Smithing eats materials on a double-tap or any interruption.</div><div class="d">Bars are removed before the 1.8 s hammer animation; a second tap removes a second set, and moving or taking a hit cancels the action without a refund. <span class="where">06-systems.js:252</span></div></div>
+
+  <h3>Farms and exploits</h3>
+  <div class="finding h"><div class="t"><span class="sev high">high</span> The Fang respawns every 15 minutes and drops its legendary weapon each time.</div><div class="d">Monsters are not saved, so a reload brings it back instantly; the Fang sells for 3,000 coins. <span class="where">28-thefang.js:60, 222</span></div></div>
+  <div class="finding h"><div class="t"><span class="sev high">high</span> The Barrelbeast respawns every 10 minutes with steel bars and coins, leaving a new wreck each time.</div><div class="d">Survivors say the town is safe while a new boss walks the square. <span class="where">20-hollowford.js:38, 111</span></div></div>
+  <div class="finding h"><div class="t"><span class="sev high">high</span> Potato arbitrage: Greta sells at 3, Dunstan buys at 10.</div><div class="d">A full pack is 1,000 potatoes, so one trip earns 7,000 coins. <span class="where">27-dragons.js:179 · 01-items.js:109</span></div></div>
+  <div class="finding m"><div class="t"><span class="sev med">medium</span> Selling with a full pack and no coin stack destroys the coins.</div><div class="d">The return value of adding coins is ignored. <span class="where">10-hud.js:250</span></div></div>
+  <div class="finding m"><div class="t"><span class="sev med">medium</span> Death charges his fee again on items that did not fit the first time.</div><div class="d"><span class="where">06-systems.js:431</span></div></div>
+
+  <h3>Feature interactions</h3>
+  <div class="finding m"><div class="t"><span class="sev med">medium</span> Companion, wanted tag and boss bar all draw on the same pixels under the HP box.</div><div class="d">Bring Garrick into the Fang's lair, or hit a guard with a hero, and the labels overprint. Needs a shared left-HUD cursor the hooks advance. <span class="where">21-companion.js:305 · 23-law.js:149 · 28-thefang.js:434</span></div></div>
+  <div class="finding m"><div class="t"><span class="sev med">medium</span> Your hero escalates your wanted level and trains your Melee.</div><div class="d">Companion hits go through the player's hit hook, so Garrick's swings raise stars, pay fines, and give you XP and "highest hit". <span class="where">21-companion.js:231, 241</span></div></div>
+  <div class="finding m"><div class="t"><span class="sev med">medium</span> Hover armour walks across the sea, skipping the ferry gate, and can strand you if removed mid-crossing.</div><div class="d">The nudge-to-shore only searches 12 tiles; the sea is 38 wide. <span class="where">25-elves.js:229, 254</span></div></div>
+  <div class="finding m"><div class="t"><span class="sev med">medium</span> The Thistledown watch closes every shop in the world.</div><div class="d">Brunhild, Lira, Thessaly and Dunstan refuse you while wanted in a town they have never heard of. <span class="where">23-law.js:96</span></div></div>
+  <div class="finding m"><div class="t"><span class="sev med">medium</span> The Duke never learns you slew The Fang.</div><div class="d">His dialogue is stale from stage 8 on ("Hollowford waits"), and the ending fires on walking into the castle, not on speaking to him. Features cannot extend core NPC roles. <span class="where">06-systems.js:401 · 28-thefang.js:218</span></div></div>
+  <div class="finding m"><div class="t"><span class="sev med">medium</span> Saves store tile ids that depend on which feature files load, in which order.</div><div class="d">Remove or renumber one feature and every saved stump, wreck and rubble points at the wrong tile. Save tile names, not numbers. <span class="where">03-textures.js:94 · 04-state.js:165</span></div></div>
+  <div class="finding m"><div class="t"><span class="sev med">medium</span> Regrowing trees and rocks overwrite whatever is on the tile now.</div><div class="d">A door placed on ashes vanishes 30 s later; a wolf standing on a stump when the tree returns is embedded forever. <span class="where">07-update.js:32</span></div></div>
+  <div class="finding m"><div class="t"><span class="sev med">medium</span> Hover armour lets guards, sentinels and heroes cross water too, then strands them.</div><div class="d">Walk-over applies to every "person" mover, not only the player. <span class="where">00-core.js:47</span></div></div>
+  <div class="finding l"><div class="t"><span class="sev low">low</span> Leftover placeholder text is live.</div><div class="d">The final quest line and the credits both say "More is being built"; the pause menu caps at "Chapter 3"; Ada still says the Duke pays for scrap. <span class="where">28-thefang.js:239, 243 · 10-hud.js:136 · 02-world.js:74</span></div></div>
+
+  <p>The reviews also checked and found solid: inventory stack maths, shop and bank coin paths, quest stages (monotonic, no skips), trap and stun, projectile bounds, save remapping across map widths, the aggression cutoff, map territories (no two features write the same tile) and region precedence (every nested region beats its container).</p>
+
+  <h2>2 · Balance</h2>
+  <p>Numbers below come from a simulator that loads the built game and applies its own combat formulas (<code>tools/balance.js</code>, committed). "Taken" is the HP a fight costs; when it exceeds the knight's HP the fight needs food, a companion, traps or a higher level.</p>
+
+  <h3>The intended path, fight by fight</h3>
+  <div class="wrap"><table>
+    <tr><th>Story beat</th><th>Likely knight</th><th>Enemy</th><th>Time to kill</th><th>HP taken</th><th>Knight HP</th><th>Verdict</th></tr>
+    <tr><td>First Blood</td><td>Lv 1, wooden sword</td><td>Goblin lv 2</td><td class="n">4.7 s</td><td class="n">5</td><td class="n">25</td><td><span class="sev ok">good</span></td></tr>
+    <tr><td>The Duke's task</td><td>Lv 5, iron dagger</td><td>Brute lv 9</td><td class="n">12 s</td><td class="n">31</td><td class="n">45</td><td><span class="sev med">tight</span></td></tr>
+    <tr><td>Chapter 3: the walker</td><td>Lv 5–10, iron sword + helm + body</td><td>Goblin Walker lv 18</td><td class="n">40 s</td><td class="n">93</td><td class="n">71</td><td><span class="sev high">out of reach</span></td></tr>
+    <tr><td>Chapter 4: Hollowford</td><td>Lv 20, steel sword + iron set</td><td>Barrelbeast lv 28</td><td class="n">68 s</td><td class="n">247</td><td class="n">123</td><td><span class="sev high">food-spam only</span></td></tr>
+    <tr><td>Chapter 5: five dung</td><td>Lv 30, mithril sword + steel body</td><td>Green dragon lv 45</td><td class="n">30 s</td><td class="n">123</td><td class="n">179</td><td><span class="sev ok">good</span></td></tr>
+    <tr><td>Red dragons</td><td>Lv 45, mithril battleaxe + set</td><td>Red dragon lv 60</td><td class="n">60 s</td><td class="n">236</td><td class="n">269</td><td><span class="sev med">tight</span></td></tr>
+    <tr><td>The Fang</td><td>Lv 45, mithril set</td><td>The Fang lv 80</td><td class="n">282 s</td><td class="n">1,775</td><td class="n">269</td><td><span class="sev high">impossible</span></td></tr>
+    <tr><td>The Fang</td><td>Lv 60, Godly set + the Fang's own weapon</td><td>The Fang lv 80</td><td class="n">71 s</td><td class="n">222</td><td class="n">359</td><td><span class="sev ok">good, but circular</span></td></tr>
+  </table></div>
+  <p>Two gaps stand out. The Duke sends a Melee-5 knight at a level-18 machine with no on-ramp, and the story jumps from a level-28 boss to level-45 dragons with nothing at 30 to 40. The Fang is tuned for a knight in full Godly plate at about level 60, and the weapon that makes the fight comfortable drops from the Fang itself.</p>
+
+  <h3>How long the gates take</h3>
+  <div class="wrap"><table>
+    <tr><th>Gate</th><th>Requirement</th><th>XP needed</th><th>Realistic effort</th><th>Verdict</th></tr>
+    <tr><td>Melee 60 for a fair Fang fight</td><td>Combat XP at 4 per damage</td><td class="n">273,742</td><td>5,700 goblins or 263 green dragons (about 2.5 h of dragons)</td><td><span class="sev high">grind wall</span></td></tr>
+    <tr><td>Godly Plated armour</td><td>Smithing 40 / 42 / 44 / 48</td><td class="n">37,224 to 83,014</td><td>Roughly 100 to 300 mithril bodies smithed and sold, 3 to 5 h of one loop</td><td><span class="sev high">grind wall</span></td></tr>
+    <tr><td>Hover armour</td><td>Crafting 25</td><td class="n">7,842</td><td>About 196 workbenches (2 h); the whole story only awards ~330 Crafting XP</td><td><span class="sev high">grind wall</span></td></tr>
+    <tr><td>Obsidian</td><td>Mining 35</td><td class="n">22,406</td><td>About 220 mithril ore after reaching 20</td><td><span class="sev med">steep</span></td></tr>
+    <tr><td>Lobster</td><td>Fishing 25</td><td class="n">7,842</td><td>About 400 catches, 30 min</td><td><span class="sev ok">fine</span></td></tr>
+    <tr><td>Mithril, jungle logs, coal</td><td>Mining 20, Woodcutting 15, Mining 10</td><td class="n">1,154 to 4,470</td><td>10 to 15 min each</td><td><span class="sev ok">fine</span></td></tr>
+  </table></div>
+  <p>Gathering itself is well paced: 1.5 to 4 seconds per log or ore depending on the tool, which is 20,000 to 60,000 XP an hour and makes the low gates quick. The problem is only the three headline gates, which sit far past anything the story funds.</p>
+
+  <h3>Recommended numbers</h3>
+  <ul>
+    <li>Give the Duke's Chapter 3 task a middle step: a bulldozer or brute bounty at Melee 8, and have him send you to Ironclad Isle for the iron battleaxe and steel bars before the walker.</li>
+    <li>Add a level-30 wingless "ash drake" near Dunstan's farm that drops dung every time, so the main quest does not require a level-45 kill; keep green and red dragons as optional loot.</li>
+    <li>Godly Plated at Smithing 32 / 34 / 36 / 40, with a dragon-scale smelting recipe as the 30-to-40 filler. Hover armour at Crafting 12, with the Queen's quest paying 300 Crafting XP.</li>
+    <li>The Fang: 800 HP and defence 50, or keep the stats and make the four elements teach dodging so the fight is skill, not food. No respawn after the kill; the Barrelbeast likewise.</li>
+    <li>A kill bonus of 10 XP per monster level for anything level 10 and up, so bosses pay in progress as well as loot.</li>
+    <li>Companions scale with the knight's combat level; at a fixed level 12 they do under 1 damage a second to a dragon.</li>
+  </ul>
+
+  <h2>3 · Player experience</h2>
+  <h3>Where a ten-year-old gets lost</h3>
+  <p>The first twenty minutes are well guided: the Voice names each step from the sword to the Duke, and the "not yet" lines show live numbers. After Thistledown the guidance falls away.</p>
+  <ul>
+    <li><b>The main quest is invisible until tracked.</b> Nothing is on screen by default and nothing says "press Track". Auto-track the main quest at new game and on every chapter change.</li>
+    <li><b>The world map lies after Chapter 3.</b> The gold marker knows stages 0 to 7 and then points at the Duke forever. Features need a way to register a map target for their stages.</li>
+    <li><b>Deepholm has no surface hint.</b> One villager mentions coal in the quarry; nobody mentions a mine shaft. A line from Brakka and a Voice line near the shaft would do it.</li>
+    <li><b>Nobody sends you to the jungle.</b> The totem hint is good once you are there, but no surface NPC mentions elves, the loom or the hover armour. The Hollowford survivors are the natural place.</li>
+    <li><b>The notice board is never mentioned.</b> Its marker only appears when a job is ready. The cave-road board deserves a Voice line.</li>
+    <li><b>The Fang's gate says "sealed" and nothing else.</b> A salved player can reach it before stage 14; the line should point at Dunstan.</li>
+    <li><b>Heroes are found only by bumping into them.</b> Sera's cage is behind the level-18 walker, so the first companion cannot help with the first hard fight; Garrick at the inn is unmentioned. Dorran should say a retired guard drinks in his inn.</li>
+  </ul>
+
+  <h3>Text and dialogue</h3>
+  <ul>
+    <li><b>Dialogue auto-advances too fast for a child.</b> The Duke's 103-character training line is gone in 8 seconds; a ten-year-old reads about 10 characters a second. There is no dialogue log, and any tap in the bottom band skips a line on touch. Wait for a tap, grow the box for wrapped lines, add a "last said" tab to the quest panel, and pause monsters while the Voice speaks.</li>
+    <li><b>Notices and quest lines truncate on phones.</b> The notice box holds about 51 characters on a 375 px phone; 25 notices exceed it, including the machine controls. The quest panel cuts lines at about 30 characters on phones.</li>
+    <li><b>Banners fight.</b> A rare drop banner is overwritten by the chapter banner in the same tick; area banner, level banner, notice and two Voice lines can all show at once entering Hollowford.</li>
+    <li><b>Key names in speech.</b> The Voice says "Swing with Space" and "Open your quests (J)"; Wren says "Space shoots"; twelve notices name keys. On touch the buttons are called SWING, USE and QUESTS. A key-name helper would fix all of them at once.</li>
+    <li><b>Tone.</b> The Voice, Death, the Duke, Thrain, Aelith, Harl and Dunstan are consistent. Tobin's "Dude. Dude." is the one modern line, and it is Colin's own, so it stays.</li>
+  </ul>
+
+  <h3>Touch and small screens</h3>
+  <ul>
+    <li>On a 375 px phone the MENU, SKILLS and HELP buttons draw on top of the minimap, and the BAG button overlaps SKILLS.</li>
+    <li>Home (H) has no standing touch button; it only appears after selecting an item in the bag.</li>
+    <li>Panels close only via a 30 × 26 px "×"; the map panel promises "tap anywhere" and does not. Tapping the map swings the sword.</li>
+    <li>The bank shows 15 of 60 vault slots on a phone; the anvil shows 6 of 26 recipes in landscape.</li>
+    <li>Disabled buttons on desktop are not registered, so clicking a greyed recipe closes the whole panel.</li>
+  </ul>
+
+  <h3>Kid-friendliness</h3>
+  <ul>
+    <li><b>"New game (erases save)" is one unconfirmed tap.</b> The most dangerous control in the game needs a second tap.</li>
+    <li><b>Drop and Sell have no confirmation</b>, and things on the ground are not saved, so a refresh loses overflow loot.</li>
+    <li><b>A second death replaces Death's chest.</b> The design doc promises coins are never lost; with coins as a pack item, two deaths in the camp lose the first purse. Death should keep every pack, or coins should never enter the chest.</li>
+    <li><b>Dying in a piloted machine loses it</b>, and nothing says it comes back in four minutes.</li>
+    <li>The grind walls are boring rather than hard: mine, buy coal, smelt, smith, sell, repeat.</li>
+  </ul>
+
+  <h2>4 · Expansions, ranked by value for effort</h2>
+  <p>Every item fits Colin's spec and the hook architecture, so each can be one agent's file.</p>
+  <div class="wrap"><table>
+    <tr><th>#</th><th>What</th><th>Why</th><th>Effort</th></tr>
+    <tr><td class="n">1</td><td>Auto-track the main quest; map targets and a minimap compass arrow for every stage and tracked side quest</td><td>Fixes the biggest "where do I go" problem with the panel that already exists</td><td>S</td></tr>
+    <tr><td class="n">2</td><td>Confirmations for New game, Drop and Sell of gear; save ground drops</td><td>Removes the three ways a kid loses things by accident</td><td>S</td></tr>
+    <tr><td class="n">3</td><td>Dialogue waits for a tap, grows with the text, keeps a log, and pauses monsters while the Voice speaks</td><td>Reading-speed fix; instructions become recoverable</td><td>S–M</td></tr>
+    <tr><td class="n">4</td><td>Key-name helper so every hint says USE, SWING or BAG on touch; tap-outside closes panels; 44 px close targets; standing HOME button</td><td>Touch parity</td><td>S</td></tr>
+    <tr><td class="n">5</td><td>Recipe panels with tier tabs (Iron · Steel · Mithril · Godly) and paging; bank paging</td><td>Makes 12 hidden recipes and 30 bank slots reachable</td><td>S–M</td></tr>
+    <tr><td class="n">6</td><td>The rebalance in section 2</td><td>Turns the two headline features from grind walls into rewards</td><td>S</td></tr>
+    <tr><td class="n">7</td><td>Level-30 ash drake near Dunstan's farm</td><td>Main-quest on-ramp between level 28 and 45</td><td>M</td></tr>
+    <tr><td class="n">8</td><td>Companions scale with the knight and accept a weapon from the bag</td><td>Makes heroes matter in Chapter 5</td><td>S</td></tr>
+    <tr><td class="n">9</td><td>Two more heroes as quest rewards: a dwarf berserker from Thrain, an elf archer from Lira</td><td>The hero table already exists</td><td>M</td></tr>
+    <tr><td class="n">10</td><td>Rebuild Hollowford: board jobs that visibly turn ruins into houses, ending in a free bed and lodestone</td><td>Emotional payoff already set up by the survivors' lines</td><td>M</td></tr>
+    <tr><td class="n">11</td><td>Title screen, three save slots, Continue</td><td>Protects the save; on the roadmap</td><td>M</td></tr>
+    <tr><td class="n">12</td><td>Region music loops from the synth that already exists</td><td>Atmosphere at low cost</td><td>M</td></tr>
+    <tr><td class="n">13</td><td>Waystones: touch one per region, then travel between them from the map</td><td>Late-game walks between Deepholm, the Ashfields, Sylvaris and town are long</td><td>M</td></tr>
+    <tr><td class="n">14</td><td>Armour visuals per tier: greaves, shoulder plates, helmet shapes, a tier-coloured swing trail</td><td>"You craft every piece" needs to be seen</td><td>M</td></tr>
+    <tr><td class="n">15</td><td>Boss bars for the Barrelbeast and dragons; monster level shown before aggro</td><td>Tells the player what they are walking into</td><td>S</td></tr>
+    <tr><td class="n">16</td><td>Base kit: stone wall, torch, chest, fence, gate, carpet; goblin raids on the base at night</td><td>The spec's "build any way you want" and its open raid question</td><td>L</td></tr>
+    <tr><td class="n">17</td><td>Drivable Barrelbeast siege machine from its wreck</td><td>Spec open question; the walker pattern exists</td><td>M</td></tr>
+    <tr><td class="n">18</td><td>Wild roster: cave bats, a jungle panther, a sea serpent that attacks the ferry</td><td>The spec asked for non-goblin monsters; the crossing is currently a cutscene</td><td>M</td></tr>
+    <tr><td class="n">19</td><td>Cooking depth: meat pie at an oven, lobster at Pete's fire, carrots and wheat from Greta</td><td>Rewards the food strategy the bosses already need</td><td>S–M</td></tr>
+    <tr><td class="n">20</td><td>Kid mode in the menu: less damage, no coffin fee, dialogue waits</td><td>Frustration valve</td><td>S</td></tr>
+    <tr><td class="n">21</td><td>First-time station cards the first time you face an anvil, forge, loom or board</td><td>Replaces the missing tutorial for every station</td><td>S</td></tr>
+    <tr><td class="n">22</td><td>Achievements and a stats page; skill capes at 99</td><td>Long-tail motivation, RuneScape flavour Colin named</td><td>S–M</td></tr>
+    <tr><td class="n">23</td><td>A Magic skill: elf runes, a rune staff from the loom, fire and ice bolts</td><td>Spec open question; gives Range and Magic a purpose against dragons</td><td>L</td></tr>
+    <tr><td class="n">24</td><td>Day and night: lanterns already draw, wolves bolder at night</td><td>Atmosphere; makes Wren's fire job mean something</td><td>M</td></tr>
+  </table></div>
+
+  <h2>5 · Suggested next wave</h2>
+  <p>A third wave of agents, in the order that unblocks the most. The first two are fixes and belong in the core, so they go first and alone; the rest are independent feature files.</p>
+  <ol>
+    <li><b>Core fix pass</b> (one agent, core only): the seven soft-lock and loss defects, the three farms, coin loss on sell, the double fee, regrow overwriting, hover walk-over for the player only, a shared left-HUD cursor, saves by tile name, a talk-before hook so features can extend the Duke.</li>
+    <li><b>Core UX pass</b> (one agent, core only): auto-track and map targets, dialogue pacing and log, key-name helper, confirmations, panel paging and tabs, the phone layout collisions, ground drops saved.</li>
+    <li><b>Rebalance</b> (one agent, mostly data): the numbers in section 2 plus the ash drake and companion scaling.</li>
+    <li><b>Hollowford rebuilt</b> (feature file 30).</li>
+    <li><b>Title screen, save slots and region music</b> (feature files 31 and 32).</li>
+  </ol>
+
+  <h2>6 · Tech debt worth knowing</h2>
+  <ul>
+    <li>The in-browser suite now takes about 30 s and the headless runner about 60 s; both are fine but the browser tool's limit means the suite has to be started asynchronously. Splitting the self-test into core and per-feature runs would let a single feature's checks run in seconds.</li>
+    <li>Three feature files draw their own projectiles because the core renders every non-arrow projectile as a bomb; a projectile draw hook would remove that duplication.</li>
+    <li>Region ordering is held together by four files inserting at computed positions to keep one test's assumption that Deepholm is first. The test should assert on region lookups, not array order.</li>
+    <li>Two hot spots on the 200 × 140 map: pairwise monster separation over all 170 monsters every frame, and a full 28,000-cell minimap repaint whenever a new tile is first changed. Both have easy fixes.</li>
+    <li>Wandering villagers only wander inside Thistledown, so dwarves and elves stand still.</li>
+  </ul>
+
+  <footer>Sources: three read-only review agents (core, feature interactions, player experience), the balance simulator at <code>tools/balance.js</code>, and the 170-check self-test at commit b40d120. Play the current build at the usual link.</footer>
+</main>
