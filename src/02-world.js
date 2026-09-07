@@ -77,7 +77,8 @@ const NPCS = [
   { id: 'v5', name: 'Elsie', x: 128, y: 34, tunic: '#8a5a7a', hair: '#e0c080', woman: true, wander: true, role: 'villager', lines: ['Greta will sell you seed. Potatoes grow anywhere.', "The bank never loses a thing. Aldous counts twice.", 'I saw a goblin barrel walk. Walk!'] },
   { id: 'v6', name: 'Finn', x: 114, y: 40, tunic: '#4a5a8a', hair: '#3a2a1a', wander: true, role: 'villager', lines: ['Sergeant Hale drills at dawn. The dummies never win.', 'A bed and a lodestone and you can call anywhere home.', 'Pim can turn scrap and powder into something loud.'] },
 ];
-for (const n of NPCS) { n.px = tc(n.x); n.py = tc(n.y); n.home = { x: n.px, y: n.py }; n.facing = { x: 0, y: 1 }; n.walkT = 0; n.moving = false; n.wanderT = Math.random() * 3; n.hurtT = 0; n.attackT = 0; n.r = 13; }
+function initNpc(n) { n.px = tc(n.x); n.py = tc(n.y); n.home = { x: n.px, y: n.py }; n.facing = { x: 0, y: 1 }; n.walkT = 0; n.moving = false; n.wanderT = Math.random() * 3; n.hurtT = 0; n.attackT = 0; n.r = 13; return n; }
+for (const n of NPCS) initNpc(n);
 
 const MONSTER_SPAWNS = [];
 const spawnList = (type, list) => { for (const [x, y] of list) MONSTER_SPAWNS.push({ type, tx: x, ty: y }); };
@@ -199,6 +200,7 @@ function generateWorld() {
   spawnList('sapper', [[146, 26], [154, 34], [150, 38]]); spawnList('brute', [[148, 30], [153, 24], [155, 30]]);
   spawnList('goblin', [[144, 24], [144, 36], [156, 38], [151, 22]]);
   spawnList('walker', [[152, 30]]);
+  for (const h of HOOKS.world) h(rnd, { setTile, tileAt, spawnList, road, pen });
   for (const s of MONSTER_SPAWNS) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const t = tileAt(s.tx + dx, s.ty + dy);
     if ([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM].includes(t)) setTile(s.tx + dx, s.ty + dy, T.GRASS);
@@ -206,6 +208,5 @@ function generateWorld() {
   // NPC tiles walkable
   for (const n of NPCS) if (SOLID.has(tileAt(n.x, n.y))) setTile(n.x, n.y, insideBuilding(n.x, n.y) ? T.FLOOR : T.GRASS);
 }
-generateWorld();
 const isCaveTile = (tx, ty) => tx <= CAVE_EXIT_X && ty <= 15;
 const inVillageBounds = (x, y) => x > VILLAGE.x0 * TILE && x < (VILLAGE.x1 + 1) * TILE && y > VILLAGE.y0 * TILE && y < (VILLAGE.y1 + 1) * TILE;

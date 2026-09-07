@@ -87,3 +87,11 @@ const MINI = {};
     '#a5763f': [T.PLANK, T.DOOR, T.COFFINDOOR], '#d9c88a': [T.SAND], '#8f929a': [T.COBBLE, T.PORTCULLIS], '#b9a98a': [T.HWALL], '#c9a56b': [T.FLOOR, T.COUNTER, T.TABLE, T.BED, T.SHELF, T.ANVIL, T.FORGE, T.WORKBENCH, T.ALCHEMY, T.WORKSHOP, T.THRONE, T.CHEST, T.RUG, T.GOLDPILE, T.OVEN], '#6e7178': [T.CWALL], '#8a6a3a': [T.FENCE, T.GATE, T.STALL], '#ff8a1a': [T.FIRE], '#5a5d64': [T.GRAVE], '#5a3d26': [T.SOIL, T.CROP], '#7ec8ff': [T.LODESTONE], '#6b6b7a': [T.WRECK, T.MECH] };
   for (const c in m) for (const t of m[c]) MINI[t] = c;
 }
+
+// feature files can add tile kinds at load time: const MY = addTile('MY_TILE', { solid: true, tex: 'cobble', mini: '#888', push: false, placeableOn: false });
+function addTile(name, opt = {}) {
+  const id = Object.keys(T).length; T[name] = id;
+  if (opt.solid) SOLID.add(id); if (opt.push) PUSH_THROUGH.add(id); if (opt.placeableOn) PLACEABLE_ON.add(id);
+  TEX_NAME[id] = opt.tex || 'grass'; MINI[id] = opt.mini || '#4c9134';
+  return id;
+}

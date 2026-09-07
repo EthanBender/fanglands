@@ -174,5 +174,6 @@ function update(dt) {
   particles = particles.filter(p => p.t > 0);
   for (const f of floaters) { f.t -= dt; f.y += f.vy * dt; }
   floaters = floaters.filter(f => f.t > 0);
+  for (const h of HOOKS.update) h(dt);
   pressed.clear();
 }

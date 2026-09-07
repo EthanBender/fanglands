@@ -99,6 +99,7 @@ function drawHud(g) {
     button(g, narrow ? VW - 74 : VW / 2 - 30, narrow ? 44 : 14, 60, 26, 'MENU', () => { paused = !paused; }, '#21262d');
     button(g, narrow ? VW - 74 : VW / 2 + 36, narrow ? 76 : 14, 60, 26, 'SKILLS', () => panel === 'skills' ? closePanel() : openPanel('skills'), '#21262d');
   }
+  for (const h of HOOKS.hud) h(g, narrow);
   drawPanels(g, narrow, short, qh, hb);
   // dialog
   if (dialog.cur) {
@@ -140,6 +141,7 @@ function drawHud(g) {
 }
 function drawPanels(g, narrow, short, qh, hb) {
   const gridCols = narrow ? 5 : 10;
+  if (panel && HOOKS.panel[panel]) { HOOKS.panel[panel](g, narrow); return; }
   if (panel === 'skills') {
     const pw = 270, ph = 40 + SKILL_DEFS.length * 34;
     const px = 14, py = narrow ? 84 + qh + 8 + (isTouch ? hb + 20 : 0) : 90;

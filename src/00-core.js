@@ -45,6 +45,26 @@ const PLACEABLE_ON = new Set([T.GRASS, T.DIRT, T.SAND, T.CAVE, T.COBBLE, T.FLOOR
 // solid for people, solid for beasts
 const solidFor = (t, who) => SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person');
 
+// ---------- extension hooks (feature files in src/2x-*.js register here; core never needs editing) ----------
+const HOOKS = {
+  world: [],        // fn(rnd, api) — runs at the end of generateWorld; api = { setTile, tileAt, spawnList, road }
+  update: [],       // fn(dt) — runs every tick after the core update
+  draw: [],         // fn(g, items, cam) — push {y, draw} entries into the y-sorted world list
+  hud: [],          // fn(g, narrow) — extra HUD after the core HUD, before panels
+  panel: {},        // panel[name] = fn(g, narrow) — custom panels (openPanel(name))
+  use: [],          // fn(t, tx, ty, building) → true if handled — runs before "Nothing to use here"
+  talk: {},         // talk[role] = fn(npc) — NPC roles the core does not know
+  hit: [],          // fn(monster, dmg) — player hit a monster
+  kill: [],         // fn(monster) — monster died
+  hurt: [],         // fn(dmg, fromX, fromY) — player got hurt
+  drawMonster: {},  // drawMonster[type] = fn(g, e, hurt) — sprite for a new monster type (already translated to e.x,e.y)
+  questText: {},    // questText[id] = fn() → string for extra quest ids
+  activeQuests: [], // fn() → [ids]
+  mainQuest: {},    // mainQuest[stage] = { text, onEnter: fn() } for main-quest stages beyond the core
+  selfTest: [],     // fn(check, F, helpers) — extra self-test checks
+  newGame: [],      // fn() — reset feature state
+};
+
 // ---------- canvas ----------
 const DISPLAY = '"Cinzel", "Trajan Pro", Georgia, serif';
 if (document.fonts && document.fonts.load) { document.fonts.load('800 34px "Cinzel"').catch(() => { }); }

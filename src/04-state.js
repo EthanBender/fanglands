@@ -48,8 +48,6 @@ function spawnMonsters() {
     });
   }
 }
-spawnMonsters();
-
 function say(text, who = 'The Voice') { dialog.queue.push({ text, who }); }
 function notify(text) { notice = { text, t: 2.8 }; }
 function floatText(x, y, text, color = '#fff', size = 15) { floaters.push({ x, y, text, color, size, t: 1.1, vy: -38 }); }
@@ -130,6 +128,7 @@ const QUEST_DEFS = {
   wren: { name: "Wren's Silk" },
 };
 function questText(id = 'main') {
+  if (HOOKS.questText[id]) return HOOKS.questText[id]();
   if (id === 'bread') return quest.bread === 'done' ? 'Done.' : countItem('bread') ? 'Bring Tobin his loaf of bread.' : 'Tobin wants a loaf of bread (bakery, 8 coins).';
   if (id === 'wren') return quest.wren === 'done' ? 'Done.' : `Bring Old Wren 5 spider silk (${Math.min(5, countItem('spider_silk'))}/5). Cave spiders drop it.`;
   switch (quest.stage) {
@@ -141,10 +140,10 @@ function questText(id = 'main') {
     case 5: return 'Follow the road to Thistledown. Find the Duke in the castle keep.';
     case 6: return `Train for the Duke: Melee 5 (${skillLv('melee')}), Woodcutting 3 (${skillLv('woodcutting')}).`;
     case 7: return quest.walkerKilled ? 'The walker is down. Report to Duke Ferrin.' : 'Scout the Goblin Camp east of Thistledown and bring down their walker.';
-    default: return 'Chapter 3 complete. The road to Hollowford is being built.';
+    default: return HOOKS.mainQuest[quest.stage] ? HOOKS.mainQuest[quest.stage].text() : 'Chapter 3 complete. The road to Hollowford is being built.';
   }
 }
-function activeQuests() { const q = ['main']; if (quest.bread === 'active') q.push('bread'); if (quest.wren === 'active') q.push('wren'); return q; }
+function activeQuests() { const q = ['main']; if (quest.bread === 'active') q.push('bread'); if (quest.wren === 'active') q.push('wren'); for (const f of HOOKS.activeQuests) q.push(...f()); return q; }
 function advanceQuest(stage) {
   if (stage <= quest.stage) return;
   quest.stage = stage;
@@ -155,7 +154,8 @@ function advanceQuest(stage) {
   if (stage === 5) { say("Thistledown still stands. Its Duke sits in the castle at the south end of town. Keep to the road.", 'The Voice'); levelBanner = { text: 'CHAPTER 1 COMPLETE', sub: 'The Cave', t: 4 }; }
   if (stage === 6) { say("A knight? Then Hollowford may yet be avenged. But not by a level-one sword arm.", 'Duke Ferrin'); say("Train. Reach Melee 5 and Woodcutting 3. Brakka's forge and Hale's yard are yours. Then come back to me.", 'Duke Ferrin'); }
   if (stage === 7) { say("You have grown. Now the real work. East of the village the goblins hold a camp, and something walks in it. A barrel on iron legs.", 'Duke Ferrin'); say("Bring it down. Pim in the workshop can make you traps and bombs. Brakka can make you steel. Go.", 'Duke Ferrin'); levelBanner = { text: 'CHAPTER 2 COMPLETE', sub: 'Thistledown', t: 4 }; }
-  if (stage === 8) { say("The walker is down? Then their machines can die. And what a goblin can build, a knight can repair.", 'Duke Ferrin'); say("This is the end of Chapter 3. Chapter 4 is being built: the road to Hollowford, and the Barrelbeast.", 'Fanglands'); levelBanner = { text: 'CHAPTER 3 COMPLETE', sub: 'Goblin Tech', t: 4 }; }
+  if (stage === 8) { say("The walker is down? Then their machines can die. And what a goblin can build, a knight can repair.", 'Duke Ferrin'); levelBanner = { text: 'CHAPTER 3 COMPLETE', sub: 'Goblin Tech', t: 4 }; if (!HOOKS.mainQuest[9]) say("This is the end of Chapter 3. Chapter 4 is being built: the road to Hollowford, and the Barrelbeast.", 'Fanglands'); }
+  if (HOOKS.mainQuest[stage] && HOOKS.mainQuest[stage].onEnter) HOOKS.mainQuest[stage].onEnter();
   save();
 }
 
@@ -196,5 +196,6 @@ function newGame() {
   for (const n of NPCS) { n.px = n.home.x; n.py = n.home.y; }
   spawnMonsters(); paused = false; closePanel();
   time = 0; introT = 0; areaBanner = null; levelBanner = null;
+  for (const h of HOOKS.newGame) h();
 }
 function changeTile(tx, ty, t) { setTile(tx, ty, t); mapDiffs.set(idx(tx, ty), t); blockHp.delete(idx(tx, ty)); }

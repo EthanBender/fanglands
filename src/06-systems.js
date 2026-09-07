@@ -111,6 +111,7 @@ function hitMonster(m, dmg, knock = 14, fromBomb = false) {
   floatText(m.x, m.y - m.r - 6, `-${dmg}`, '#ffd166');
   burst(m.x, m.y, bloodColor(m.type), 6, 70);
   recordHit(dmg);
+  for (const h of HOOKS.hit) h(m, dmg);
   if (!fromBomb) gainXp(weaponDef() && weaponDef().weapon.ranged && !player.mech ? 'range' : 'melee', dmg * 4);
   if (m.hp <= 0) killMonster(m);
 }
@@ -127,6 +128,7 @@ function killMonster(m) {
   player.kills += 1;
   burst(m.x, m.y, bloodColor(m.type), 16, 120);
   rollDrops(d, m.x, m.y);
+  for (const h of HOOKS.kill) h(m);
   if (m.type === 'goblin' && quest.stage === 3) { quest.kills += 1; if (quest.kills >= 3) advanceQuest(4); else save(); }
   if (d.mech) { const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); if (PLACEABLE_ON.has(tileAt(tx, ty))) changeTile(tx, ty, T.WRECK); say('The walker falls in a heap of barrel and iron. A goblin scrambles out and runs. The wreck stays. Bring iron bars and scrap, and it could walk again.', 'The Voice'); if (quest.stage === 7) { quest.walkerKilled = true; save(); } }
 }
@@ -141,6 +143,7 @@ function hurtPlayer(dmg, fromX, fromY, sure = false) {
   player.hp -= dmg;
   floatText(player.x, player.y - 24, `-${dmg}`, '#ff6b6b');
   gainXp('defence', Math.ceil(dmg * 1.5));
+  for (const h of HOOKS.hurt) h(dmg, fromX, fromY);
   if (player.hp <= 0) die();
 }
 function respawnPoint() { return player.bedSpawn || (player.visitedVillage ? VILLAGE_SPAWN : SPAWN); }
@@ -333,6 +336,7 @@ function useAction() {
   if (GATHER[t]) { startGather(tx, ty); return; }
   if (t === T.STUMP || t === T.RUBBLE) { notify(t === T.STUMP ? 'A stump. It will grow back.' : 'Rubble. The rock will settle again.'); return; }
   if (t === T.PLANK) { changeTile(tx, ty, T.GRASS); giveOrDrop('plank', 1, player.x, player.y); burst(tc(tx), tc(ty), '#8b5a2b', 6, 60); save(); return; }
+  for (const h of HOOKS.use) if (h(t, tx, ty, b)) return;
   if (t === T.GRASS || t === T.DIRT) { if (hasTool('hoe') && !inVillageBounds(tc(tx), tc(ty)) || (t === T.GRASS && hasTool('hoe'))) { startTill(tx, ty); return; } }
   notify('Nothing to use here. Face a tree, rock, water, fire, station or person and press E.');
 }
@@ -409,6 +413,7 @@ function talkTo(n) {
     } else say("Best bread in Thistledown. Thanks again, knight.", n.name);
   }
   else if (n.role === 'villager') say(pick(n.lines), n.name);
+  else if (HOOKS.talk[n.role]) HOOKS.talk[n.role](n);
 }
 // ---------- death's chest ----------
 function coffinFee() {

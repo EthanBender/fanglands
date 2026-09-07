@@ -63,6 +63,7 @@ function render() {
   }
   if (!player.dead) items.push({ y: player.y + player.r, draw: () => drawCharacter(g, player, player.mech ? 'playermech' : 'player') });
   else items.push({ y: player.y + player.r, draw: () => { g.save(); g.globalAlpha = Math.max(0.15, 1 - player.deadT / 1.5); g.translate(player.x, player.y); g.rotate(1.4); g.translate(-player.x, -player.y); drawCharacter(g, player, 'player'); g.restore(); } });
+  for (const h of HOOKS.draw) h(g, items, cam);
   items.sort((a, b) => a.y - b.y);
   for (const it of items) it.draw();
   for (const p of projectiles) {

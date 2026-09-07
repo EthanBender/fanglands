@@ -1,18 +1,6 @@
 // ============================================================================
 // MAIN LOOP + HARNESS + SELF-TEST
 // ============================================================================
-const loaded = load();
-if (loaded) { notify('Welcome back, knight.'); introT = 5; }
-let last = performance.now();
-function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  try { update(dt); render(); } catch (err) { console.error(err); }
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
-window.addEventListener('beforeunload', save);
-setInterval(save, 15000);
-
 window.FANGLANDS = {
   get player() { return player; }, get monsters() { return monsters; }, get quest() { return quest; }, get dialog() { return dialog; }, get panel() { return panel; }, get deathKeep() { return deathKeep; }, get notice() { return notice; }, get regrow() { return regrow; }, get crops() { return crops; }, get areaBanner() { return areaBanner; },
   map, T, TILE, MAP_W, MAP_H, ITEMS, NPCS, BUILDINGS, REGIONS, tileAt, isCaveTile, SPAWN, SWORD_POS, SIGN_TILE, newGame, addItem, removeItem, countItem, levelForXp, XP_TABLE, skillLv, combatLevel, playerMaxHit, rollDrops, openPanel, closePanel, changeTile,
@@ -160,6 +148,7 @@ window.FANGLANDS = {
     // ---------- save / load ----------
     save(); const snap = JSON.stringify({ q: quest, inv: player.inv, eq: player.equip, bank: player.bank, hh: player.highestHit, diffs: mapDiffs.size, home: player.home, crops: crops.length });
     { const lv = skillLv('melee'); player = newPlayer(); quest = { stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }; const ok = load(); check('save/load round-trip', ok && skillLv('melee') === lv && JSON.stringify({ q: quest, inv: player.inv, eq: player.equip, bank: player.bank, hh: player.highestHit, diffs: mapDiffs.size, home: player.home, crops: crops.length }) === snap, { loaded: ok }); }
+    for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
     const fails = Object.values(report).filter(v => v.startsWith('FAIL')).length;
     report.summary = fails ? `${fails} FAILED of ${Object.keys(report).length}` : `ALL ${Object.keys(report).length} PASS`;
     console.table(report);

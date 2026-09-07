@@ -138,7 +138,7 @@ function drawCharacter(g, e, kind) {
     g.strokeStyle = '#d8d0c0'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(10, -6); g.lineTo(9, -12); g.moveTo(10, 6); g.lineTo(9, 12); g.stroke();
     g.fillStyle = '#222'; g.beginPath(); g.arc(14, -3.5, 1.4, 0, 7); g.arc(14, 3.5, 1.4, 0, 7); g.fill();
     g.restore();
-  }
+  } else if (HOOKS.drawMonster[kind]) HOOKS.drawMonster[kind](g, e, hurt);
   g.restore();
 }
 function drawNpc(g, n) {
