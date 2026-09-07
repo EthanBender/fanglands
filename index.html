@@ -5391,25 +5391,46 @@ HOOKS.world.push((rnd, api) => { api.spawnList('bulldozer', [[146, 38], [70, 8]]
 const DOZER_FLATTENS = new Map([
   [T.PLANK, { item: 'plank', leaves: T.GRASS }], [T.CROP, { item: null, leaves: T.GRASS }],
   [T.TREE, { item: 'wood', leaves: T.STUMP, regrow: 120 }], [T.OAK, { item: 'oak_log', leaves: T.STUMP, regrow: 120 }],
-  [T.ROCK, { item: 'stone', leaves: T.RUBBLE, regrow: 120 }],
+  [T.ROCK, { item: 'stone', leaves: T.RUBBLE, regrow: 120 }], // a goblin charge leaves the stone lying; the knight's blade pulverises it unless a drill is fitted (below)
   [T.STUMP, { item: null, leaves: T.GRASS }], [T.RUBBLE, { item: null, leaves: T.GRASS }],
 ]);
+// ---------- upgrades (Cohen's design, fitted at the bay in 40-dozerup.js) ----------
+// player.dozerUp = { drill, irondrill, ram, boiler } rides with the knight and applies to any bulldozer he drives.
+//   drill:     rocks the blade touches are mined — stone into the pack + Mining xp, tile → rubble (regrows)
+//   irondrill: iron and coal rocks too (the base blade cannot pass them at all)
+//   ram:       Space hits twice as hard and shoves half again as far; a stump or rubble left by the blade is ground flat in the same pass
+//   boiler:    speed 130 → 170, hp 110 → 180 on climbing on
+const dozerUp = () => (player.dozerUp || {});
+const DOZER_BOILER_HP = 180, DOZER_BOILER_SPEED = 170, DOZER_RAM_EXTRA_KNOCK = 23; // the core stomp knocks 46; ×1.5 = 69
+const DOZER_DRILL = { [T.ROCK]: { item: 'stone', xp: 17, need: 'drill', label: 'A drill' }, [T.IRON]: { item: 'iron_ore', xp: 35, need: 'irondrill', label: 'An iron drill' }, [T.COAL]: { item: 'coal', xp: 50, need: 'irondrill', label: 'An iron drill' } };
+let dozerHintT = -1e9;
+function dozerHint(text) { if (time - dozerHintT < 4) return; dozerHintT = time; notify(text); }
 // Probe a few points in front of the blade (two distances × three across, the blade is wide) and flatten
 // what is there; each tile is touched once per call, so a tree becomes a stump on this pass and grass on the
 // next. byPlayer: loot goes to the pack (giveOrDrop) instead of the ground. Returns tiles flattened.
 function dozerPlow(e, dir, byPlayer) {
   let n = 0; const done = new Set();
+  const up = byPlayer ? dozerUp() : {}; // the goblins' machines carry no upgrades
   const sx = -dir.y, sy = dir.x; // across the blade
   for (const ahead of [e.r + 6, e.r + 22]) for (const side of [-14, 0, 14]) {
     const tx = Math.floor((e.x + dir.x * ahead + sx * side) / TILE), ty = Math.floor((e.y + dir.y * ahead + sy * side) / TILE);
-    const t = tileAt(tx, ty), f = DOZER_FLATTENS.get(t), key = idx(tx, ty);
+    const t = tileAt(tx, ty), key = idx(tx, ty), drill = byPlayer ? DOZER_DRILL[t] : null;
+    let f = DOZER_FLATTENS.get(t);
+    if (drill) {
+      if (up[drill.need]) f = { item: drill.item, leaves: T.RUBBLE, regrow: 120, xp: drill.xp }; // the drill bites in: the ore goes into the pack, with Mining xp
+      else { if (f) f = { ...f, item: null }; if (!done.has(key)) dozerHint(f ? 'The blade pulverises the rock. A drill would save the stone.' : `${drill.label} would bite into that ${GATHER[t] ? GATHER[t].label : 'rock'}.`); } // no drill: rock is smashed to rubble, the stone lost
+    }
     if (!f || done.has(key)) continue;
     done.add(key);
     changeTile(tx, ty, f.leaves);
-    burst(tc(tx), tc(ty), t === T.TREE || t === T.OAK ? '#3d8a38' : t === T.CROP ? '#5aa33e' : t === T.ROCK || t === T.RUBBLE ? '#9a9da5' : '#8b5a2b', 12, 90);
+    if (up.ram && (f.leaves === T.STUMP || f.leaves === T.RUBBLE)) changeTile(tx, ty, T.GRASS); // ram plate: the stump or rubble is ground flat in the same pass
+    burst(tc(tx), tc(ty), t === T.TREE || t === T.OAK ? '#3d8a38' : t === T.CROP ? '#5aa33e' : t === T.ROCK || t === T.RUBBLE || t === T.IRON || t === T.COAL ? '#9a9da5' : '#8b5a2b', 12, 90);
     if (t === T.CROP) crops = crops.filter(c => c.i !== idx(tx, ty));
     if (f.regrow) regrow.push({ i: key, t, timer: f.regrow }); // the wood and the rock come back, slowly (a regrow fires onto grass too)
-    if (f.item) { if (byPlayer) giveOrDrop(f.item, 1, player.x, player.y); else drops.push({ x: tc(tx), y: tc(ty), id: f.item, qty: 1, t: 0 }); }
+    if (f.item) {
+      if (byPlayer) { giveOrDrop(f.item, 1, player.x, player.y); if (f.xp) gainXp('mining', f.xp); }
+      else drops.push({ x: tc(tx), y: tc(ty), id: f.item, qty: 1, t: 0 });
+    }
     n++;
   }
   return n;
@@ -5431,9 +5452,22 @@ function repairDozer(tx, ty) {
   say('Wooden deck, iron bands, a boiler, and a plow blade as wide as a door. Goblin-built, knight-sized. Press E to climb on.', 'The Voice'); save();
 }
 function enterDozer(tx, ty) {
-  changeTile(tx, ty, T.DIRT); player.mech = { hp: DOZER_HP, maxHp: DOZER_HP, kind: 'dozer' }; player.x = tc(tx); player.y = tc(ty); player.r = 22; player.speed = 130; player.action = null;
-  notify('You are on the bulldozer. Drive into trees, rocks and planks to flatten them. Space shoves. X climbs down.'); save();
+  const up = dozerUp(), hp = up.boiler ? DOZER_BOILER_HP : DOZER_HP;
+  changeTile(tx, ty, T.DIRT); player.mech = { hp, maxHp: hp, kind: 'dozer' }; player.x = tc(tx); player.y = tc(ty); player.r = 22; player.speed = up.boiler ? DOZER_BOILER_SPEED : 130; player.action = null;
+  const fitted = ['drill', 'irondrill', 'ram', 'boiler'].filter(k => up[k]);
+  notify(fitted.length ? `You are on the bulldozer (${fitted.map(k => ({ drill: 'drill', irondrill: 'iron drill', ram: 'ram plate', boiler: 'big boiler' })[k]).join(', ')}). Space shoves. X climbs down.` : 'You are on the bulldozer. Drive into trees, rocks and planks to flatten them. Space shoves. X climbs down.'); save();
 }
+// ram plate: the core stomp (Space, playerAttack) rolled its damage and knocked the target 46 px; the plate lands the same again and
+// shoves half again as far. Runs inside hitMonster (HOOKS.hit fires before its kill check, so a doubled hit that drops the target
+// to 0 is killed by the core once — never here). Only the stomp: attackT is exactly 0.22 on the tick Space fires, and the target is in reach.
+HOOKS.hit.push((m, dmg, source) => {
+  if (source !== 'player' || dmg <= 0 || m.dead || !player.mech || player.mech.kind !== 'dozer' || !dozerUp().ram || player.attackT !== 0.22) return;
+  if (dist(player.x, player.y, m.x, m.y) > 70 + 46 + m.r + 8) return;
+  m.hp -= dmg;
+  const kx = m.x - player.x, ky = m.y - player.y, kd = Math.hypot(kx, ky) || 1;
+  moveEntity(m, kx / kd * DOZER_RAM_EXTRA_KNOCK, ky / kd * DOZER_RAM_EXTRA_KNOCK, 'beast');
+  floatText(m.x, m.y - m.r - 22, `-${dmg} RAM`, '#ffb347', 13); burst(m.x, m.y, '#8f96a3', 8, 100);
+});
 HOOKS.use.push((t, tx, ty) => {
   if (t === T_DOZER_WRECK) { repairDozer(tx, ty); return true; }
   if (t === T_DOZER) { enterDozer(tx, ty); return true; }
@@ -5500,14 +5534,18 @@ HOOKS.hud.push(g => {
   const w = Math.max(g.measureText(`Walker ${player.mech.hp}/${player.mech.maxHp}`).width, g.measureText(label).width);
   g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186, 47, w + 10, 19, 5); g.fill(); g.strokeStyle = 'rgba(255,179,71,0.35)'; g.lineWidth = 1; g.stroke();
   g.fillStyle = '#ffb347'; g.fillText(label, 190, 60);
+  const up = dozerUp(), parts = [up.drill && (up.irondrill ? 'iron drill' : 'drill'), up.ram && 'ram', up.boiler && 'boiler'].filter(Boolean);
+  if (parts.length) { const t = parts.join(' · '); g.font = 'bold 11px sans-serif'; const cw = g.measureText(t).width; g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186 + w + 16, 47, cw + 12, 19, 5); g.fill(); g.strokeStyle = 'rgba(59,111,182,0.7)'; g.stroke(); g.fillStyle = '#9cc4ff'; g.fillText(t, 192 + w + 16, 60); }
 });
 
 // ---------- art ----------
 // Medieval goblin tech only: wood, iron bands, rivets, a boiler. Drawn around 0,0; the machine rotates to
 // e.facing, the driver stays upright like every other rider. Wheels are seen from above as treads whose
 // iron shoes scroll with e.walkT. pilot = a playerLook() for the knight; e.parked = nobody aboard.
-function drawDozer(g, e, hurt, pilot) {
+// up = the fitted upgrades to show ({ drill, irondrill, ram, boiler }); only the driven machine carries them (they are the knight's, not the machine's).
+function drawDozer(g, e, hurt, pilot, up = null) {
   const ang = Math.atan2(e.facing.y, e.facing.x), c = Math.cos(ang), s = Math.sin(ang);
+  const bigBoiler = !!(up && up.boiler);
   const rolling = e.moving || e.chargeT > 0, charging = e.chargeT > 0;
   const shudder = rolling ? Math.sin(e.walkT * 2.1) * 0.8 : 0;
   const lunge = e.attackT > 0 ? (1 - e.attackT / 0.22) * 10 : 0;
@@ -5529,12 +5567,22 @@ function drawDozer(g, e, hurt, pilot) {
   g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1.2; for (const oy of [-14, -7, 0, 7, 14]) { g.beginPath(); g.moveTo(-28, oy); g.lineTo(20, oy); g.stroke(); }
   g.strokeStyle = '#3a3a42'; g.lineWidth = 3; for (const ox of [-8, 12]) { g.beginPath(); g.moveTo(ox, -21); g.lineTo(ox, 21); g.stroke(); }
   g.fillStyle = '#c9ccd3'; for (const [rx, ry] of [[-8, -17], [-8, 17], [12, -17], [12, 17]]) { g.beginPath(); g.arc(rx, ry, 1.5, 0, 7); g.fill(); }
-  // boiler on the back: riveted iron drum, firebox glow, smokestack
-  g.fillStyle = '#5a5a62'; roundRect(g, -31, -13, 18, 26, 6); g.fill();
-  g.fillStyle = 'rgba(255,255,255,0.15)'; roundRect(g, -29, -11, 5, 22, 3); g.fill();
-  g.strokeStyle = '#3a3a42'; g.lineWidth = 2; g.beginPath(); g.moveTo(-31, -4); g.lineTo(-13, -4); g.moveTo(-31, 4); g.lineTo(-13, 4); g.stroke();
-  g.fillStyle = `rgba(255,140,40,${0.5 + Math.sin(time * 6) * 0.2})`; g.fillRect(-16, -3, 4, 6);
-  g.fillStyle = '#3a3a42'; g.beginPath(); g.arc(-22, -9, 4, 0, 7); g.fill(); g.fillStyle = '#1e1e24'; g.beginPath(); g.arc(-22, -9, 2, 0, 7); g.fill();
+  // boiler on the back: riveted iron drum, firebox glow, smokestack (the big boiler upgrade: a fatter drum, three bands, a wider stack, a pressure dial)
+  if (bigBoiler) {
+    g.fillStyle = '#4e4e58'; roundRect(g, -35, -17, 24, 34, 8); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.15)'; roundRect(g, -33, -15, 6, 30, 3); g.fill();
+    g.strokeStyle = '#2e2e36'; g.lineWidth = 2.4; g.beginPath(); for (const oy of [-8, 0, 8]) { g.moveTo(-35, oy); g.lineTo(-11, oy); } g.stroke();
+    g.fillStyle = '#c9ccd3'; for (const [rx, ry] of [[-31, -12], [-15, -12], [-31, 12], [-15, 12]]) { g.beginPath(); g.arc(rx, ry, 1.4, 0, 7); g.fill(); }
+    g.fillStyle = `rgba(255,140,40,${0.6 + Math.sin(time * 8) * 0.25})`; g.fillRect(-16, -4, 5, 8);
+    g.fillStyle = '#3a3a42'; g.beginPath(); g.arc(-24, -11, 5.5, 0, 7); g.fill(); g.fillStyle = '#1e1e24'; g.beginPath(); g.arc(-24, -11, 3, 0, 7); g.fill();
+    g.fillStyle = '#e8e2c8'; g.beginPath(); g.arc(-24, 10, 3.2, 0, 7); g.fill(); g.strokeStyle = '#c0392b'; g.lineWidth = 1; g.beginPath(); g.moveTo(-24, 10); g.lineTo(-24 + Math.cos(time * 3) * 2.4, 10 + Math.sin(time * 3) * 2.4); g.stroke();
+  } else {
+    g.fillStyle = '#5a5a62'; roundRect(g, -31, -13, 18, 26, 6); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.15)'; roundRect(g, -29, -11, 5, 22, 3); g.fill();
+    g.strokeStyle = '#3a3a42'; g.lineWidth = 2; g.beginPath(); g.moveTo(-31, -4); g.lineTo(-13, -4); g.moveTo(-31, 4); g.lineTo(-13, 4); g.stroke();
+    g.fillStyle = `rgba(255,140,40,${0.5 + Math.sin(time * 6) * 0.2})`; g.fillRect(-16, -3, 4, 6);
+    g.fillStyle = '#3a3a42'; g.beginPath(); g.arc(-22, -9, 4, 0, 7); g.fill(); g.fillStyle = '#1e1e24'; g.beginPath(); g.arc(-22, -9, 2, 0, 7); g.fill();
+  }
   // driver's bench
   g.fillStyle = '#5a3a1e'; roundRect(g, -6, -9, 12, 18, 3); g.fill();
   // push arms + the blade: a big angled iron plow, curved forward, riveted, worn bright at the edge
@@ -5544,6 +5592,19 @@ function drawDozer(g, e, hurt, pilot) {
   g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1; g.beginPath(); g.moveTo(29, -23); g.quadraticCurveTo(41, -12, 41, 0); g.quadraticCurveTo(41, 12, 29, 23); g.stroke();
   g.strokeStyle = '#8f96a3'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(25, -29); g.quadraticCurveTo(46, -18, 46, 0); g.quadraticCurveTo(46, 18, 25, 29); g.stroke();
   g.fillStyle = '#c9ccd3'; for (const [rx, ry] of [[32, -18], [37, -7], [37, 7], [32, 18]]) { g.beginPath(); g.arc(rx, ry, 1.6, 0, 7); g.fill(); }
+  if (up && up.ram) { // ram plate: a thick riveted iron slab bolted over the blade's face, two spikes at the corners
+    g.fillStyle = '#2f2f38'; g.beginPath(); g.moveTo(30, -26); g.quadraticCurveTo(49, -16, 49, 0); g.quadraticCurveTo(49, 16, 30, 26); g.lineTo(33, 18); g.quadraticCurveTo(42, 9, 42, 0); g.quadraticCurveTo(42, -9, 33, -18); g.closePath(); g.fill();
+    g.strokeStyle = '#8f96a3'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(31, -25); g.quadraticCurveTo(49, -16, 49, 0); g.quadraticCurveTo(49, 16, 31, 25); g.stroke();
+    g.fillStyle = '#c9ccd3'; for (const [rx, ry] of [[36, -14], [42, -5], [42, 5], [36, 14]]) { g.beginPath(); g.arc(rx, ry, 1.8, 0, 7); g.fill(); }
+    g.fillStyle = '#8f96a3'; g.beginPath(); g.moveTo(38, -22); g.lineTo(52, -26); g.lineTo(43, -15); g.closePath(); g.moveTo(38, 22); g.lineTo(52, 26); g.lineTo(43, 15); g.closePath(); g.fill();
+  }
+  if (up && up.drill) { // drill cone on the blade's nose: spinning stripes while rolling; the iron drill is steel-bright with teeth
+    const iron = !!up.irondrill, spin = rolling ? (e.walkT * 6) % 8 : 0;
+    g.fillStyle = iron ? '#d5d9e0' : '#6e6e78'; g.beginPath(); g.moveTo(44, -9); g.lineTo(66 + lunge * 0.5, 0); g.lineTo(44, 9); g.closePath(); g.fill();
+    g.strokeStyle = iron ? '#5a5a62' : '#2e2e36'; g.lineWidth = 1.4; for (let k = 0; k < 3; k++) { const px = 46 + ((k * 8 + spin) % 20); const hw = 9 * (1 - (px - 44) / 22); g.beginPath(); g.moveTo(px, -hw); g.lineTo(px + 3, hw); g.stroke(); }
+    if (iron) { g.fillStyle = '#3a3a42'; for (const [tx, ty] of [[50, -7], [56, -4], [50, 7], [56, 4]]) { g.beginPath(); g.arc(tx, ty, 1.3, 0, 7); g.fill(); } }
+    g.fillStyle = '#3a3a42'; roundRect(g, 41, -5, 5, 10, 2); g.fill(); // the collar the cone turns in
+  }
   g.restore();
   g.restore();
   // driver (screen space, upright): the knight, or a goblin in a leather cap with one goggle
@@ -5559,7 +5620,7 @@ function drawDozer(g, e, hurt, pilot) {
   }
   // steam from the stack (stack sits at (-22,-9) in the rotated frame; steam rises in screen space)
   const stx = -22 * c + 9 * s, sty = -22 * s - 9 * c;
-  for (let k = 0; k < (charging ? 4 : 2); k++) { const ph = (time * (charging ? 34 : 20) + k * 5) % 10; g.fillStyle = `rgba(220,220,230,${0.55 - ph * 0.045})`; g.beginPath(); g.arc(stx + Math.sin(time * 5 + k * 2) * 2.5, sty - 8 - ph, 3.2 + ph * 0.35, 0, 7); g.fill(); }
+  for (let k = 0; k < (charging ? 4 : 2) + (bigBoiler ? 1 : 0); k++) { const ph = (time * (charging ? 34 : 20) + k * 5) % 10; g.fillStyle = `rgba(220,220,230,${0.55 - ph * 0.045})`; g.beginPath(); g.arc(stx + Math.sin(time * 5 + k * 2) * 2.5, sty - 8 - ph, 3.2 + ph * 0.35, 0, 7); g.fill(); }
 }
 HOOKS.drawMonster.bulldozer = (g, e, hurt) => drawDozer(g, e, hurt, null);
 
@@ -5583,7 +5644,7 @@ HOOKS.draw.unshift((g, items, cam) => {
   const y0 = Math.max(0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE) + 2);
   for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tileAt(tx, ty); if (t === T_DOZER || t === T_DOZER_WRECK) items.push({ y: ty * TILE + TILE - 6, draw: () => drawDozerTile(g, tx, ty, t) }); }
   if (!player.dead && player.mech && player.mech.kind === 'dozer') {
-    const draw = () => { g.save(); g.translate(player.x, player.y); drawDozer(g, player, player.hurtT > 0, playerLook()); g.restore(); };
+    const draw = () => { g.save(); g.translate(player.x, player.y); drawDozer(g, player, player.hurtT > 0, playerLook(), dozerUp()); g.restore(); };
     const last = items[items.length - 1];
     if (last && last.y === player.y + player.r) last.draw = draw;
     else items.push({ y: player.y + player.r + 1, draw });
@@ -5626,7 +5687,8 @@ HOOKS.selfTest.push((check, F, h) => {
     const ga = F.goAdjacent(wt.x, wt.y, 800); F.press('KeyE'); F.sim(2, []);
     const repaired = tileAt(wt.x, wt.y) === T_DOZER;
     check('bulldozer: repair the wreck with 4 bars + 6 scrap → DOZER tile', g1 === 0 && g2 === 0 && typeof ga === 'number' && repaired && countItem('iron_bar') === b0 - 4 && countItem('goblin_scrap') === s0 - 6, { ga, repaired, bars: countItem('iron_bar'), scrap: countItem('goblin_scrap') });
-    // climb on
+    // climb on (no upgrades fitted here: 40-dozerup tests its own)
+    const upSaved = player.dozerUp; player.dozerUp = null;
     F.face(wt.x, wt.y); F.press('KeyE'); F.sim(2, []);
     const piloting = !!player.mech && player.mech.kind === 'dozer' && player.mech.hp === 110 && player.r === 22 && player.speed === 130 && tileAt(wt.x, wt.y) === T.DIRT;
     check('bulldozer: climb on → player.mech.kind === "dozer"', piloting, { mech: player.mech, r: player.r, speed: player.speed });
@@ -5638,6 +5700,7 @@ HOOKS.selfTest.push((check, F, h) => {
     const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
     const parked = nearestTileOfType(ptx, pty, T_DOZER, 2), walkerNear = nearestTileOfType(ptx, pty, T.MECH, 2);
     check('bulldozer: X climbs down → a DOZER tile (no walker tile), mech cleared', !player.mech && !!parked && !walkerNear && player.r === 13 && player.speed === 175 && !!notice && /bulldozer/.test(notice.text), { parked: parked && [parked.tx, parked.ty], walkerNear, r: player.r, notice: notice && notice.text });
+    player.dozerUp = upSaved;
   }
   h.peace(false);
 });
@@ -11856,6 +11919,317 @@ HOOKS.selfTest.push((check, F, h) => {
       check('agility: the Hitpoints cape adds 10% max health', mh0 === 123 && mh1 === 135, { mh0, mh1 });
       unequip('cape'); player.skills.hitpoints = hpx; player.skills.melee = mc; player.skills.woodcutting = wc; player.inv = inv0; }
     restore(s0); h.peace(false);
+  });
+}
+
+// ---- src/40-dozerup.js ----
+// ============================================================================
+// FEATURE: BULLDOZER UPGRADES — Cohen's design
+// "Since you can rebuild the bulldozers and claim one for yourself, you should be able to upgrade them: a drill
+// attachment on the front so you can get stone, then upgrade it so you can get iron, so it makes resource collecting
+// easier. You have to work for and build all the upgrades. Also upgrades so you can ram harder. Unlock them by getting
+// blueprints as rare drops from the machines' owners."
+// Four blueprints drop from the goblins who own the machines. Each one, plus materials and a Crafting level, is fitted at
+// the bulldozer bay: a mechanic's pit in the smithy yard behind Brakka's. Upgrades live on the knight (player.dozerUp)
+// and ride with him onto any bulldozer he drives; 22-bulldozer.js reads them (plow, Space, climb-on, sprite).
+// Registers through HOOKS only; touches no core file. window.DOZERUP exposes the tables for other features and the self-test.
+// ============================================================================
+{
+  // ---------- blueprints ----------
+  const BLUE = '#3b6fb6';
+  Object.assign(ITEMS, {
+    blueprint_drill: { name: 'Blueprint: drill', value: 200, color: BLUE, shape: 'plank', stack: 1 },
+    blueprint_irondrill: { name: 'Blueprint: iron drill', value: 400, color: BLUE, shape: 'plank', stack: 1 },
+    blueprint_ram: { name: 'Blueprint: ram plate', value: 300, color: BLUE, shape: 'plank', stack: 1 },
+    blueprint_boiler: { name: 'Blueprint: big boiler', value: 500, color: BLUE, shape: 'plank', stack: 1 },
+  });
+  const BLUEPRINTS = ['blueprint_drill', 'blueprint_irondrill', 'blueprint_ram', 'blueprint_boiler'];
+  for (const k of BLUEPRINTS) { ITEMS[k].id = k; ITEMS[k].stack = 1; }
+
+  // ---------- the upgrades ----------
+  // requires: another upgrade that must be fitted first (the iron drill bolts onto the drill).
+  const UPGRADES = [
+    { id: 'drill', name: 'Drill', blueprint: 'blueprint_drill', needs: [['iron_bar', 4], ['goblin_scrap', 6]], lv: 10, xp: 150,
+      blurb: 'A spinning iron cone on the blade. Rocks you drive into are mined: stone into the pack, Mining xp.',
+      line: 'An iron cone on the nose of the blade, geared to the front axle. It turns when the wheels turn. Rocks will not like it.' },
+    { id: 'irondrill', name: 'Iron drill', blueprint: 'blueprint_irondrill', needs: [['steel_bar', 6], ['coal', 4]], lv: 20, xp: 300, requires: 'drill',
+      blurb: 'Steel teeth on the drill. Iron rocks and coal rocks too, straight into the pack.',
+      line: 'Steel teeth set into the cone, hardened in coal. Iron and coal rock give up their ore to it.' },
+    { id: 'ram', name: 'Ram plate', blueprint: 'blueprint_ram', needs: [['iron_bar', 4], ['blast_powder', 2]], lv: 15, xp: 200,
+      blurb: 'A riveted iron slab over the blade. Space hits twice as hard and shoves half again as far. Stumps and rubble go flat in one pass.',
+      line: 'Four bars of iron beaten into a slab, blast-riveted over the blade. Whatever it meets goes the other way, quickly.' },
+    { id: 'boiler', name: 'Big boiler', blueprint: 'blueprint_boiler', needs: [['mithril_bar', 2], ['coal', 4]], lv: 25, xp: 400,
+      blurb: 'A mithril-banded drum with twice the pressure. Speed 130 → 170. Hull 110 → 180.',
+      line: 'A wider drum, banded in mithril so it can hold twice the steam. The wheels have never turned this fast. The hull is thicker to match.' },
+  ];
+  const upgradeById = id => UPGRADES.find(u => u.id === id);
+  const DU = () => player.dozerUp || (player.dozerUp = { drill: false, irondrill: false, ram: false, boiler: false });
+  // "missing" = the knight neither carries the blueprint (pack or bank) nor has fitted the upgrade
+  const hasBlueprint = id => countItem(id) > 0 || player.bank.some(b => b.id === id) || !!(player.dozerUp && player.dozerUp[UPGRADES.find(u => u.blueprint === id).id]);
+  const missingBlueprints = () => BLUEPRINTS.filter(id => !hasBlueprint(id));
+
+  // ---------- drops: the machines' owners ----------
+  // chance: 1 in N per kill. pool: which blueprints. Missing ones are preferred; missingOnly pools drop nothing when the knight has them all.
+  // The bosses (Barrelbeast, Gnasher) hand over the boiler blueprint every time it is missing — the first kill is guaranteed, and a lost one can be earned back.
+  const BLUEPRINT_DROPS = {
+    sapper: { chance: 25, pool: ['blueprint_drill'] },
+    brute: { chance: 30, pool: ['blueprint_ram'] },
+    bulldozer: { chance: 6, pool: BLUEPRINTS, missingOnly: true },
+    walker: { chance: 8, pool: ['blueprint_irondrill', 'blueprint_boiler'] },
+    barrelbeast: { chance: 1, pool: ['blueprint_boiler'], missingOnly: true },
+    gnasher: { chance: 1, pool: ['blueprint_boiler'], missingOnly: true },
+  };
+  let blueprintsDropped = 0, pendingBanner = null;
+  HOOKS.update.push(() => { if (pendingBanner && !levelBanner) { levelBanner = pendingBanner; pendingBanner = null; } });
+  // Rolls a blueprint for a killed monster; returns the item id dropped, or null. Split from the hook so the self-test can force it.
+  function rollBlueprint(m) {
+    const d = BLUEPRINT_DROPS[m.type]; if (!d) return null;
+    if (d.chance > 1 && Math.random() >= 1 / d.chance) return null;
+    const missing = d.pool.filter(id => !hasBlueprint(id));
+    const from = missing.length ? missing : d.missingOnly ? [] : d.pool;
+    if (!from.length) return null;
+    const id = pick(from);
+    drops.push({ x: m.x + rint(-14, 14), y: m.y + rint(-14, 14), id, qty: 1, t: 0, rare: true });
+    // RARE DROP banner — unless another banner is up (a boss kill's CHAPTER COMPLETE): then it waits its turn (HOOKS.update below)
+    const banner = { text: 'RARE DROP', sub: ITEMS[id].name, t: 3 };
+    if (levelBanner && levelBanner.t > 0 && levelBanner.text !== 'RARE DROP') pendingBanner = banner; else levelBanner = banner;
+    burst(m.x, m.y, '#f5c542', 30, 160); burst(m.x, m.y, BLUE, 16, 120);
+    blueprintsDropped++;
+    return id;
+  }
+  HOOKS.kill.push(m => { rollBlueprint(m); });
+
+  // ---------- the bay ----------
+  // A mechanic's pit in the smithy yard: the two-row grass strip between Brakka's south wall and the road. (96, 43) keeps the
+  // smithy door lane (x 93) clear; if another feature has built there, the nearest free grass tile in the strip is used instead.
+  const T_BAY = addTile('DOZER_BAY', { solid: true, tex: 'cobble', mini: '#5a5a62' });
+  const BAY_WANT = [96, 43];
+  let bayPos = null;
+  HOOKS.world.push((rnd, api) => {
+    const free = (x, y) => inMap(x, y) && api.tileAt(x, y) === T.GRASS && !insideBuilding(x, y);
+    const spots = [BAY_WANT, [97, 43], [95, 43], [98, 43], [96, 42], [97, 42], [95, 42], [98, 42], [94, 43], [94, 42]];
+    const s = spots.find(([x, y]) => free(x, y));
+    if (!s) { bayPos = null; return; }
+    api.setTile(s[0], s[1], T_BAY); bayPos = { x: s[0], y: s[1] };
+  });
+  HOOKS.use.push((t, tx, ty) => { if (t !== T_BAY) return false; openPanel('dozerup'); return true; });
+
+  // ---------- fitting ----------
+  // Returns { ok, why } without touching anything; fitUpgrade() does the work and reports through notify/say.
+  function canFitUpgrade(u) {
+    const up = DU();
+    if (up[u.id]) return { ok: false, why: `The ${u.name.toLowerCase()} is already fitted.` };
+    if (u.requires && !up[u.requires]) return { ok: false, why: `Fit the ${upgradeById(u.requires).name.toLowerCase()} first.` };
+    if (countItem(u.blueprint) < 1) return { ok: false, why: `You need the blueprint for the ${u.name.toLowerCase()}. The goblins who own the machines carry them.` };
+    if (skillLv('crafting') < u.lv) return { ok: false, why: `You need Crafting level ${u.lv} to fit the ${u.name.toLowerCase()}.` };
+    const short = u.needs.filter(([id, q]) => countItem(id) < q);
+    if (short.length) return { ok: false, why: `The ${u.name.toLowerCase()} needs ${u.needs.map(([id, q]) => `${q} ${ITEMS[id].name.toLowerCase()}`).join(' and ')} (you have ${u.needs.map(([id]) => countItem(id)).join(' and ')}).` };
+    return { ok: true, why: '' };
+  }
+  function fitUpgrade(u) {
+    const c = canFitUpgrade(u);
+    if (!c.ok) { notify(c.why); return false; }
+    removeItem(u.blueprint, 1);
+    for (const [id, q] of u.needs) removeItem(id, q);
+    DU()[u.id] = true;
+    gainXp('crafting', u.xp);
+    burst(player.x, player.y, '#ffb347', 24, 120); burst(player.x, player.y, BLUE, 12, 90); sfx('levelup');
+    levelBanner = { text: 'UPGRADE FITTED', sub: u.name, t: 3 };
+    say(u.line + (player.mech && player.mech.kind === 'dozer' ? '' : ' It goes on the next bulldozer you climb onto.'), 'The Voice');
+    save();
+    return true;
+  }
+
+  // ---------- panel ----------
+  HOOKS.panel.dozerup = (g, narrow) => {
+    const up = DU();
+    const rowH = clamp(Math.floor((VH - 20 - 150) / UPGRADES.length), 60, 78);
+    const fitted = UPGRADES.filter(u => up[u.id]).length;
+    const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : 620, 96 + UPGRADES.length * rowH + 52, 'Bulldozer bay', `Fit upgrades onto the bulldozer · ${fitted} of ${UPGRADES.length} fitted · they ride with you onto any bulldozer`);
+    const fit = (text, maxW) => { let s = text; while (s.length > 8 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s === text ? text : s + '…'; };
+    const bw = narrow ? 92 : 118, textW = w - 36 - bw - 24;
+    UPGRADES.forEach((u, i) => {
+      const y = py + 66 + i * rowH, isDone = !!up[u.id], c = isDone ? { ok: false } : canFitUpgrade(u), hasBp = countItem(u.blueprint) > 0;
+      roundRect(g, px + 18, y, w - 36, rowH - 6, 8); g.fillStyle = isDone ? 'rgba(59,111,182,0.14)' : c.ok ? 'rgba(126,231,135,0.10)' : 'rgba(255,255,255,0.05)'; g.fill();
+      if (c.ok) { g.strokeStyle = 'rgba(126,231,135,0.45)'; g.lineWidth = 1; g.stroke(); }
+      if (isDone) { g.strokeStyle = 'rgba(59,111,182,0.6)'; g.lineWidth = 1; g.stroke(); }
+      drawItemIcon(g, u.blueprint, px + 36, y + rowH / 2 - 3, 16);
+      g.textAlign = 'left'; g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.fillText(fit(`${u.name}${isDone ? '  · fitted' : ''}`, textW - 30), px + 56, y + 18);
+      g.fillStyle = isDone ? '#8b949e' : '#c9d1d9'; g.font = '12px sans-serif'; g.fillText(fit(u.blurb, textW - 30), px + 56, y + 35);
+      const needs = `${hasBp ? 'Blueprint ✓' : 'Blueprint ✗'} · ${u.needs.map(([id, q]) => `${q} ${ITEMS[id].name.toLowerCase()} (${countItem(id)})`).join(' · ')} · Crafting ${u.lv}${u.requires ? ` · needs ${upgradeById(u.requires).name.toLowerCase()}` : ''}`;
+      g.font = '11px sans-serif'; g.fillStyle = isDone ? '#4b535d' : c.ok ? '#7ee787' : '#8b949e'; g.fillText(fit(isDone ? 'Fitted. It stays with you.' : needs, textW - 30), px + 56, y + 51);
+      const bx = px + w - 18 - bw, by = y + Math.floor(rowH / 2) - 18;
+      if (isDone) button(g, bx, by, bw, 30, 'Fitted', () => { }, '#2a2f3a', false);
+      else button(g, bx, by, bw, 30, `Fit: ${u.name}`, () => { fitUpgrade(u); }, c.ok ? '#238636' : '#2a2f3a', c.ok);
+    });
+    const fy = py + h - 44;
+    button(g, px + w - 18 - 100, fy, 100, 30, 'Close', closePanel, '#21262d');
+    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(fit('Blueprints drop from the goblins who own the machines: sappers, brutes, walkers, bulldozers, the Barrelbeast.', w - 36 - 110), px + 18, fy + 20);
+  };
+
+  // ---------- drawing: the pit ----------
+  function drawBay(g, tx, ty) {
+    const cx = tc(tx), cy = tc(ty);
+    // the pit: a dark rectangular hole edged with iron, planks over one end
+    g.fillStyle = '#5a5a62'; roundRect(g, cx - 22, cy - 18, 44, 36, 4); g.fill();
+    g.fillStyle = '#15161c'; roundRect(g, cx - 18, cy - 14, 36, 28, 3); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.12)'; g.lineWidth = 1; g.beginPath(); g.moveTo(cx - 18, cy - 8); g.lineTo(cx + 18, cy - 8); g.moveTo(cx - 18, cy + 4); g.lineTo(cx + 18, cy + 4); g.stroke();
+    g.fillStyle = '#7a4a2a'; for (const ox of [-16, -10]) g.fillRect(cx + ox, cy - 14, 5, 28);
+    // tool rack along the top edge: a spanner, a hammer, an oil can, a coil of chain
+    g.strokeStyle = '#c9ccd3'; g.lineWidth = 2; g.lineCap = 'round'; g.beginPath(); g.moveTo(cx - 4, cy - 12); g.lineTo(cx + 4, cy - 2); g.stroke(); g.beginPath(); g.arc(cx - 5, cy - 13, 2.6, 0, 7); g.stroke();
+    g.strokeStyle = '#8a6a3a'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx + 9, cy - 12); g.lineTo(cx + 13, cy + 0); g.stroke(); g.fillStyle = '#3a3a42'; g.fillRect(cx + 6, cy - 15, 7, 4);
+    g.fillStyle = '#4a7a3a'; roundRect(g, cx + 8, cy + 5, 7, 8, 2); g.fill(); g.fillRect(cx + 10, cy + 2, 3, 3);
+    g.strokeStyle = '#8f96a3'; g.lineWidth = 1.5; for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(cx - 6 + k * 4, cy + 9, 2.2, 0, 7); g.stroke(); }
+    // a spare wheel leaning on the corner and a smear of grease
+    g.fillStyle = '#2f2a26'; g.beginPath(); g.arc(cx - 20, cy + 16, 6, 0, 7); g.fill(); g.fillStyle = '#5a4a3a'; g.beginPath(); g.arc(cx - 20, cy + 16, 3.5, 0, 7); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx + 16, cy + 18, 7, 3, 0, 0, 7); g.fill();
+    // blue blueprint pinned to a post when something can be fitted right now
+    if (!player.mech && UPGRADES.some(u => !DU()[u.id] && canFitUpgrade(u).ok)) { const bob = Math.sin(time * 4) * 2; g.fillStyle = BLUE; g.fillRect(cx - 5, cy - 34 + bob, 10, 7); g.fillStyle = '#e6edf3'; g.fillRect(cx - 3, cy - 32 + bob, 6, 1); g.fillRect(cx - 3, cy - 30 + bob, 4, 1); }
+  }
+  HOOKS.draw.push((g, items, cam) => {
+    if (!bayPos || tileAt(bayPos.x, bayPos.y) !== T_BAY) return;
+    const { x: tx, y: ty } = bayPos;
+    if (tx * TILE < cam.x - 80 || tx * TILE > cam.x + VW + 80 || ty * TILE < cam.y - 80 || ty * TILE > cam.y + VH + 80) return;
+    items.push({ y: ty * TILE + TILE - 10, draw: () => drawBay(g, tx, ty) });
+    if (!player.dead && !player.mech) { // use-highlight (the core only highlights its own INTERESTING tiles)
+      const ft = frontTile(player);
+      if (ft.tx === tx && ft.ty === ty) items.push({ y: 1e9, draw: () => { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); } });
+    }
+  });
+  HOOKS.newGame.push(() => { blueprintsDropped = 0; pendingBanner = null; });
+
+  window.DOZERUP = { UPGRADES, BLUEPRINTS, BLUEPRINT_DROPS, tile: T_BAY, get bay() { return bayPos; }, rollBlueprint, fitUpgrade, canFitUpgrade, hasBlueprint, missingBlueprints, get dropped() { return blueprintsDropped; } };
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'dozerup: ';
+    // 1. items + drop table
+    check(P + 'four blueprints (plank shape, blue, stack 1, values 200/400/300/500) and the drop chance table',
+      BLUEPRINTS.every(id => ITEMS[id] && ITEMS[id].id === id && ITEMS[id].stack === 1 && ITEMS[id].shape === 'plank' && ITEMS[id].color === BLUE)
+      && ITEMS.blueprint_drill.value === 200 && ITEMS.blueprint_irondrill.value === 400 && ITEMS.blueprint_ram.value === 300 && ITEMS.blueprint_boiler.value === 500
+      && BLUEPRINT_DROPS.sapper.chance === 25 && BLUEPRINT_DROPS.sapper.pool.join() === 'blueprint_drill'
+      && BLUEPRINT_DROPS.brute.chance === 30 && BLUEPRINT_DROPS.brute.pool.join() === 'blueprint_ram'
+      && BLUEPRINT_DROPS.bulldozer.chance === 6 && BLUEPRINT_DROPS.bulldozer.pool.length === 4 && BLUEPRINT_DROPS.bulldozer.missingOnly === true
+      && BLUEPRINT_DROPS.walker.chance === 8 && BLUEPRINT_DROPS.walker.pool.join() === 'blueprint_irondrill,blueprint_boiler'
+      && BLUEPRINT_DROPS.barrelbeast.chance === 1 && BLUEPRINT_DROPS.barrelbeast.pool.join() === 'blueprint_boiler' && BLUEPRINT_DROPS.gnasher.chance === 1
+      && HOOKS.kill.length > 0,
+      { drops: Object.fromEntries(Object.entries(BLUEPRINT_DROPS).map(([k, v]) => [k, v.chance])) });
+    // 2. forced drops: Math.random stubbed low → a blueprint drops with the RARE DROP banner; stubbed high → nothing; bulldozer with none missing → nothing
+    {
+      const rnd = Math.random; const bank0 = player.bank.map(s => ({ ...s })); const inv0 = player.inv.map(s => s ? { ...s } : null); const up0 = player.dozerUp;
+      player.bank = []; player.inv = player.inv.map(s => s && BLUEPRINTS.includes(s.id) ? null : s); player.dozerUp = { drill: false, irondrill: false, ram: false, boiler: false };
+      const at = { x: -900, y: -900 }; drops = drops.filter(d => d.x > -500);
+      const d0 = drops.length;
+      Math.random = () => 0; levelBanner = null;
+      const r1 = rollBlueprint({ type: 'sapper', ...at }), r2 = rollBlueprint({ type: 'brute', ...at }), r3 = rollBlueprint({ type: 'walker', ...at }), r4 = rollBlueprint({ type: 'barrelbeast', ...at });
+      const banner = levelBanner && levelBanner.text === 'RARE DROP';
+      const rareAll = drops.slice(d0).every(d => d.rare && BLUEPRINTS.includes(d.id));
+      Math.random = () => 0.999;
+      const n1 = rollBlueprint({ type: 'sapper', ...at }), n2 = rollBlueprint({ type: 'bulldozer', ...at }), n3 = rollBlueprint({ type: 'goblin', ...at });
+      Math.random = () => 0;
+      const w1 = rollBlueprint({ type: 'bulldozer', ...at }); // all four missing → any one
+      player.dozerUp = { drill: true, irondrill: true, ram: true, boiler: true };
+      const full = rollBlueprint({ type: 'bulldozer', ...at }), fullBoss = rollBlueprint({ type: 'barrelbeast', ...at }), fullSapper = rollBlueprint({ type: 'sapper', ...at }); // fitted = not missing: nothing from the machines, still a spare from the sapper
+      Math.random = rnd;
+      check(P + 'forced drops (Math.random stubbed): sapper → drill, brute → ram, walker → iron drill or boiler, Barrelbeast → boiler; high roll → nothing; bulldozer/boss drop nothing when none is missing',
+        r1 === 'blueprint_drill' && r2 === 'blueprint_ram' && ['blueprint_irondrill', 'blueprint_boiler'].includes(r3) && r4 === 'blueprint_boiler' && banner && rareAll
+        && n1 === null && n2 === null && n3 === null && BLUEPRINTS.includes(w1) && full === null && fullBoss === null && fullSapper === 'blueprint_drill',
+        { r1, r2, r3, r4, banner, n1, n2, n3, w1, full, fullBoss, fullSapper });
+      drops = drops.filter(d => d.x > -500); levelBanner = null; player.bank = bank0; player.inv = inv0; player.dozerUp = up0;
+    }
+    // 3. the bay tile exists in the smithy yard and E opens the panel
+    const bay = bayPos;
+    check(P + 'DOZER_BAY tile registered (solid, cobble) and carved in the smithy yard by (96, 43)', T.DOZER_BAY === T_BAY && SOLID.has(T_BAY) && !!bay && tileAt(bay.x, bay.y) === T_BAY && Math.abs(bay.x - 96) <= 2 && Math.abs(bay.y - 43) <= 1 && !insideBuilding(bay.x, bay.y), { bay });
+    if (!bay) return;
+    h.peace(true); closePanel();
+    const inv0 = player.inv.map(s => s ? { ...s } : null), craft0 = player.skills.crafting.xp, up0 = player.dozerUp;
+    player.dozerUp = { drill: false, irondrill: false, ram: false, boiler: false };
+    h.clearJunk(); { let free = player.inv.filter(s => !s).length; for (let i = player.inv.length - 1; i >= 0 && free < 8; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour) { player.inv[i] = null; free++; } } }
+    for (const id of BLUEPRINTS) removeItem(id, 99);
+    F.tp(bay.x, bay.y + 1); F.face(bay.x, bay.y); player.mech = null; player.r = 13; player.speed = 175;
+    F.press('KeyE'); const opened = panel === 'dozerup';
+    render();
+    const rows = buttons.filter(b => /^(disabled:)?Fit: /.test(b.label)).length;
+    check(P + 'E at the bay opens the Bulldozer bay panel with a row per upgrade', opened && rows === 4 && !!panelRect, { opened, rows, panel });
+    // 4. fitting: each upgrade refuses without the blueprint / level / materials, and fits with them (blueprint + materials consumed, crafting xp)
+    const fitOne = (u, mats) => {
+      player.skills.crafting.xp = XP_TABLE[Math.max(1, u.lv - 1)];
+      for (const [id] of u.needs) removeItem(id, 99); removeItem(u.blueprint, 99);
+      const noBp = canFitUpgrade(u); const nb = fitUpgrade(u); const nbNotice = notice && notice.text;
+      h.give(u.blueprint, 1); const noLv = canFitUpgrade(u); const nl = fitUpgrade(u); const nlNotice = notice && notice.text;
+      player.skills.crafting.xp = XP_TABLE[u.lv]; const noMat = canFitUpgrade(u); const nm = fitUpgrade(u); const nmNotice = notice && notice.text;
+      render(); const greyed = buttons.some(b => b.label === 'disabled:Fit: ' + u.name) && !F.clickButton('Fit: ' + u.name);
+      for (const [id, q] of u.needs) h.give(id, q);
+      const before = Object.fromEntries(u.needs.map(([id]) => [id, countItem(id)])), x0 = player.skills.crafting.xp;
+      render(); const clicked = F.clickButton('Fit: ' + u.name);
+      const consumed = u.needs.every(([id, q]) => countItem(id) === before[id] - q) && countItem(u.blueprint) === 0;
+      const ok = !noBp.ok && /blueprint/i.test(nbNotice || '') && nb === false && !noLv.ok && new RegExp(`Crafting level ${u.lv}`).test(nlNotice || '') && nl === false
+        && !noMat.ok && /needs/.test(nmNotice || '') && nm === false && greyed && clicked && !!player.dozerUp[u.id] && consumed && player.skills.crafting.xp === x0 + u.xp;
+      check(P + `fit the ${u.name.toLowerCase()} — refused without blueprint, level ${u.lv}, materials; fitted with them (${u.needs.map(([id, q]) => q + ' ' + id).join(' + ')})`, ok,
+        { nb, nbNotice, nl, nlNotice, nm, nmNotice, greyed, clicked, fitted: player.dozerUp[u.id], consumed, xp: player.skills.crafting.xp - x0 });
+    };
+    for (const u of UPGRADES) fitOne(u);
+    // the iron drill needs the drill first
+    { player.dozerUp.irondrill = false; player.dozerUp.drill = false; h.give('blueprint_irondrill', 1); h.give('steel_bar', 6); h.give('coal', 4); player.skills.crafting.xp = XP_TABLE[20];
+      const c = canFitUpgrade(upgradeById('irondrill')); const r = fitUpgrade(upgradeById('irondrill'));
+      check(P + 'the iron drill refuses until the drill is fitted', !c.ok && /drill first/.test(c.why) && r === false && !player.dozerUp.irondrill, { why: c.why, r });
+      removeItem('blueprint_irondrill', 99); removeItem('steel_bar', 6); removeItem('coal', 4); player.dozerUp.drill = true; player.dozerUp.irondrill = true; }
+    closePanel();
+    // 5. driving with the upgrades: a parked bulldozer on a clear grass lane in the open fields
+    const o = h.openSpot(58, 50);
+    const natural = [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.DIRT, T.STUMP, T.RUBBLE, T.SAND, T.SOIL];
+    for (let yy = o.y - 1; yy <= o.y + 1; yy++) for (let xx = o.x - 2; xx <= o.x + 12; xx++) if (natural.includes(tileAt(xx, yy))) changeTile(xx, yy, T.GRASS);
+    regrow = regrow.filter(r => { const tx = r.i % MAP_W, ty = Math.floor(r.i / MAP_W); return !(ty >= o.y - 1 && ty <= o.y + 1 && tx >= o.x - 2 && tx <= o.x + 12); });
+    for (const m of monsters) if (!m.dead && Math.abs(m.x - tc(o.x + 5)) < 9 * TILE && Math.abs(m.y - tc(o.y)) < 3 * TILE) { m.x = m.home.x; m.y = m.home.y; if (Math.abs(m.x - tc(o.x + 5)) < 9 * TILE && Math.abs(m.y - tc(o.y)) < 3 * TILE) { m.x = tc(o.x - 30); m.y = tc(o.y + 30); } }
+    changeTile(o.x, o.y, T.DOZER);
+    player.dozerUp = { drill: true, irondrill: false, ram: false, boiler: false };
+    F.tp(o.x - 1, o.y); F.face(o.x, o.y); player.facing = { x: 1, y: 0 }; F.press('KeyE'); F.sim(2, []);
+    const driving = () => !!(player.mech && player.mech.kind === 'dozer');
+    const drive = (max, done) => { let n = 0; while (n < max && !done()) { F.step(['KeyD']); n++; } render(); return n < max ? n : 'timeout'; }; // drive east until done() (F.untilAction holds no keys)
+    check(P + 'climb onto a bulldozer without the boiler: speed 130, hull 110', driving() && player.speed === 130 && player.mech.hp === 110 && player.mech.maxHp === 110, { mech: player.mech, speed: player.speed });
+    if (driving()) {
+      // drill: a rock two tiles ahead → stone in the pack, Mining xp 17, rubble left (it regrows into rock)
+      const rx = o.x + 2; changeTile(rx, o.y, T.ROCK); const s0 = countItem('stone'), mx0 = player.skills.mining.xp;
+      const r1 = drive(240, () => tileAt(rx, o.y) !== T.ROCK);
+      const rubble = tileAt(rx, o.y) === T.RUBBLE, gotStone = countItem('stone') === s0 + 1, xp17 = player.skills.mining.xp === mx0 + 17, willRegrow = regrow.some(r => r.i === idx(rx, o.y) && r.t === T.ROCK);
+      check(P + 'drill: driving into a rock gives +1 stone, +17 Mining xp, leaves rubble that regrows', typeof r1 === 'number' && rubble && gotStone && xp17 && willRegrow, { r1, tile: tileName(tileAt(rx, o.y)), stone: countItem('stone') - s0, xp: player.skills.mining.xp - mx0, willRegrow, px: +(player.x / TILE).toFixed(1) });
+      // no iron drill yet: an iron rock stops the machine (solid, untouched); the iron drill mines it (+1 iron ore, +35 Mining xp)
+      F.sim(40, ['KeyD']); // grind the rubble flat and roll on
+      const ix = Math.floor(player.x / TILE) + 2; changeTile(ix, o.y, T.IRON); const px0 = player.x;
+      F.sim(60, ['KeyD']); const stopped = tileAt(ix, o.y) === T.IRON && player.x < tc(ix) - TILE / 2 && !!notice && /iron drill/i.test(notice.text);
+      player.dozerUp.irondrill = true; const io0 = countItem('iron_ore'), mx1 = player.skills.mining.xp;
+      const r2 = drive(240, () => tileAt(ix, o.y) !== T.IRON);
+      check(P + 'iron drill: an iron rock stops the plain drill (hint), then is mined (+1 iron ore, +35 Mining xp, rubble)', stopped && typeof r2 === 'number' && tileAt(ix, o.y) === T.RUBBLE && countItem('iron_ore') === io0 + 1 && player.skills.mining.xp === mx1 + 35, { stopped, r2, tile: tileName(tileAt(ix, o.y)), ore: countItem('iron_ore') - io0, xp: player.skills.mining.xp - mx1, moved: +(player.x - px0).toFixed(0), notice: notice && notice.text });
+      F.sim(40, ['KeyD']);
+      // coal too
+      const cx = Math.floor(player.x / TILE) + 2; changeTile(cx, o.y, T.COAL); const c0 = countItem('coal'), mx2 = player.skills.mining.xp;
+      const r3 = drive(240, () => tileAt(cx, o.y) !== T.COAL);
+      check(P + 'iron drill: a coal rock is mined too (+1 coal, +50 Mining xp)', typeof r3 === 'number' && countItem('coal') === c0 + 1 && player.skills.mining.xp === mx2 + 50, { r3, coal: countItem('coal') - c0, xp: player.skills.mining.xp - mx2 });
+      F.sim(40, ['KeyD']);
+      // ram: with Math.random pinned, Space on a goblin hits X without the plate and exactly 2X with it, and shoves it 46 → ≥ 60 px; a rock goes rock → grass in one pass
+      const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, hp: gob.hp, state: gob.state };
+      const rnd = Math.random; Math.random = () => 0.5;
+      const swing = () => { gob.dead = false; gob.hp = 999; gob.x = player.x + 44; gob.y = player.y; gob.stunT = 0; player.facing = { x: 1, y: 0 }; player.attackCd = 0; player.attackT = 0; const gx0 = gob.x; F.press('Space'); return { dmg: 999 - gob.hp, shove: gob.x - gx0 }; };
+      player.dozerUp.ram = false; const a = swing(); F.sim(60, []);
+      player.dozerUp.ram = true; const b = swing(); F.sim(60, []);
+      Math.random = rnd;
+      gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.hp = gs.hp; gob.state = gs.state; gob.stunT = 0; gob.angry = MONSTER_DEFS.goblin.aggro;
+      check(P + 'ram plate: Space hits a goblin for exactly double and shoves it half again as far', a.dmg > 0 && b.dmg === a.dmg * 2 && a.shove >= 44 && a.shove < 60 && b.shove >= 60, { without: a, with: b });
+      const qx = Math.floor(player.x / TILE) + 2; changeTile(qx, o.y, T.ROCK); const s1 = countItem('stone');
+      const r4 = drive(240, () => tileAt(qx, o.y) !== T.ROCK);
+      check(P + 'ram plate: rubble is ground flat in the same pass (rock → grass, stone still mined, still regrows)', typeof r4 === 'number' && tileAt(qx, o.y) === T.GRASS && countItem('stone') === s1 + 1 && regrow.some(r => r.i === idx(qx, o.y) && r.t === T.ROCK), { r4, tile: tileName(tileAt(qx, o.y)), stone: countItem('stone') - s1 });
+      // boiler: climb down, fit, climb back on → speed 170, hull 180
+      F.sim(20, []); F.press('KeyX'); F.sim(2, []);
+      const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE); const parked = nearestTileOfType(ptx, pty, T.DOZER, 2);
+      player.dozerUp.boiler = true;
+      if (parked) { F.face(parked.tx, parked.ty); F.press('KeyE'); F.sim(2, []); }
+      check(P + 'big boiler: climbing on gives speed 170 and hull 180/180 (HUD lists the fitted parts)', !!parked && driving() && player.speed === 170 && player.mech.hp === 180 && player.mech.maxHp === 180 && /bulldozer/i.test(notice ? notice.text : ''), { parked: parked && [parked.tx, parked.ty], mech: player.mech, speed: player.speed, notice: notice && notice.text });
+      // saved with the knight: player.dozerUp round-trips through save/load
+      { save(); const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); check(P + 'upgrades are saved on the player (player.dozerUp)', !!raw.player.dozerUp && raw.player.dozerUp.drill === true && raw.player.dozerUp.boiler === true, { saved: raw.player.dozerUp }); }
+      F.press('KeyX'); F.sim(2, []);
+    }
+    if (player.mech) { player.mech = null; player.r = 13; player.speed = 175; }
+    player.inv = inv0; player.skills.crafting.xp = craft0; player.dozerUp = up0; h.peace(false);
   });
 }
 
