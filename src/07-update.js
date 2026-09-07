@@ -20,7 +20,7 @@ function update(dt) {
   if (paused) { pressed.clear(); return; }
 
   if (!dialog.cur && dialog.queue.length) { dialog.cur = dialog.queue.shift(); dialog.shown = 0; dialog.t = 0; }
-  if (dialog.cur) { dialog.t += dt; dialog.shown = Math.min(dialog.cur.text.length, Math.floor(dialog.t * 34)); if (dialog.t > 2.4 + dialog.cur.text.length / 18) advanceDialog(); }
+  if (dialog.cur) { dialog.t += dt; dialog.shown = Math.min(dialog.cur.text.length, Math.floor(dialog.t * 34)); if (dialog.t > 4 + dialog.cur.text.length / 9) advanceDialog(); } // waits for a tap; the timer is only a safety net for a kid who does not know to tap
   if (notice) { notice.t -= dt; if (notice.t <= 0) notice = null; }
   if (levelBanner) { levelBanner.t -= dt; if (levelBanner.t <= 0) levelBanner = null; }
   if (areaBanner) { areaBanner.t -= dt; if (areaBanner.t <= 0) areaBanner = null; }
