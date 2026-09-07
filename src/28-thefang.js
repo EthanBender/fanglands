@@ -499,7 +499,7 @@
       const hp0 = player.hp; h.peace(false); F.sim(2, []); const warned = STRIKES.length === 1 && STRIKES[0].t < 1; h.peace(true); F.sim(70, []);
       check('fang: storm — a warning circle for 1 s, then lightning for 18–30 if you stay', warned && m.strikeHits >= 1 && hp0 - player.hp >= 18 && hp0 - player.hp <= 30, { warned, hits: m.strikeHits, dmg: hp0 - player.hp }); STRIKES.length = 0; }
     // stone
-    { m.element = 'stone'; m.elemT = 0; m.hp = 1000; F.sim(60, []); const regen = m.hp >= 1007 && m.hp <= 1009, hard = MONSTER_DEFS.the_fang.maxHit === 48;
+    { m.element = 'stone'; m.elemT = 0; m.hp = 600; F.sim(60, []); const regen = m.hp >= 607 && m.hp <= 609, hard = MONSTER_DEFS.the_fang.maxHit === 48;
       floaters.length = 0; m.stoneTip = 0; hitMonster(m, 5); const tip = floaters.some(f => /Stone skin/.test(f.text));
       m.element = 'fire'; F.sim(1, []); check('fang: stone — regenerates 8 hp/s, bites at 1.5× (max hit 48), tells you to wait it out', regen && hard && tip && MONSTER_DEFS.the_fang.maxHit === 32, { hp: m.hp, hard, tip }); }
     // the kill
