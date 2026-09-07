@@ -41,15 +41,20 @@ Each version is playable on its own. We never leave the game broken between vers
 - [x] Aggro stops at higher combat level; XP pace cut hard
 - [x] Self-test: 52 checks, source split into src/ modules with build.sh
 
-## v3 — Hollowford
-- [ ] The road east past the camp, the ruined town, the Barrelbeast boss fight
-- [ ] Goblin bulldozer, more mech variants to repair and pilot
-- [ ] Hero companion #1 joins you
-- [ ] Consequences for attacking guards
+## v3 — Five features in parallel (DONE 2026-09-07, five agents, one feature file each)
+- [x] Chapter 4: Hollowford ruins south of the camp, survivors in the chapel crypt, the Barrelbeast boss (two phases, wreck on death), main quest stages 8–11 (`src/20-hollowford.js`)
+- [x] Hero companion: free Sera the ranger from the camp cage, or hire Garrick at the inn; follow/stay/dismiss, they fight, fall back and return (`src/21-companion.js`)
+- [x] Goblin bulldozer: charges and flattens planks, fences, trees and crops; wreck, repair (4 bars + 6 scrap), drive it as a lumber machine (`src/22-bulldozer.js`)
+- [x] The Watch: wanted stars for attacking guards in town, hostile guards, shops refuse, gate reinforcements, Captain Roderick settles fines and buys goblin scrap, arrest on death (`src/23-law.js`)
+- [x] Deepholm: dwarven undercity under Grey Quarry via the mine shaft, dark with lamps, mithril rocks (Mining 20), mithril bars and gear (Smithing 20–30), King Thrain's quest, Brunhild's shop (`src/24-dwarves.js`)
+- [x] Self-test: 103 checks
 
-## v3b — More skills and quests
-- [ ] More side and tiny quests, more block types for bases
-- [ ] Mithril tier (dwarves), Range training (elves)
+## v4 — next
+- [ ] Elves: jungle biome, tree-hut city with rope bridges, Range training
+- [ ] Boats to islands from a dock
+- [ ] Dragon country, the dragon dung farmer, dragons, Godly Plated armour (winged helm), magic hover armour, The Fang
+- [ ] More mechs to repair, more side and tiny quests, more block types for bases
+
 
 ## v4 — The Hidden Cities
 - [ ] Dwarven city underground (mithril, big anvil)

@@ -13,7 +13,10 @@ A dragon only legends have heard about.
   Tobin's loaf, the Duke's task, and Death's House when you fall.
 - **Chapter 3:** Goblin tech. Smith iron at Brakka's, craft bows, bombs and traps at Pim's,
   farm, make fires, then bring down the Goblin Walker in the camp east of town and pilot it.
-- **Self-check:** open the browser console and run `FANGLANDS.selfTest()`.
+- **Chapter 4:** Hollowford and the Barrelbeast. Plus: a hero companion, the goblin bulldozer,
+  the town watch, and Deepholm under the quarry.
+- **Self-check:** open the browser console and run `FANGLANDS.selfTest()` (103 checks).
+- **Adding features:** see `docs/EXTENDING.md`. One file per feature under `src/2x-*.js`, registered through hooks.
 
 ## Controls
 

@@ -317,9 +317,30 @@ also scale with how far away you died (the designer mentioned distance)?
 - **Wilderness Easter eggs.** The last knight's grave, a stone circle that
   heals, a ruined watchtower with a chest, Old Wren's hut, mushrooms and flowers.
 
-**[open]** Barrelbeast and Hollowford are Chapter 4. **[open]** Should there be
-a consequence for killing guards? **[open]** Dwarves for mithril, elves for
-Range training, boats to islands are still to place.
+## 9d. Built in parallel (2026-09-07, five agents)
+
+- **Hollowford and the Barrelbeast** (Chapter 4). The burned town lies south of
+  the Goblin Camp. Three survivors hide in the chapel crypt. The Barrelbeast is
+  a huge iron-banded barrel on four legs with a boiler, a goblin crew and a
+  spiked ram; below half health it spits sticky bombs. It leaves a wreck.
+- **Hero companion.** Sera the ranger is caged in the Goblin Camp; clear the
+  camp and free her. Garrick, a retired guard, hires on at the inn for 150
+  coins once you are combat level 6. One hero at a time: follow, stay, dismiss.
+  They fight, take hits, fall back at zero and return after 30 seconds.
+- **Goblin bulldozer.** A plow on iron-shod wheels that charges and flattens
+  planks, fences, trees and crops. Wreck it, repair it, drive it: it becomes a
+  slow lumber machine.
+- **The Watch.** Hitting guards in town earns wanted stars; guards turn hostile,
+  shops refuse at two stars, reinforcements at three. Captain Roderick by the
+  castle gate settles fines and pays for goblin scrap. Dying while wanted is an
+  arrest: stars become a fine.
+- **Deepholm.** The dwarven undercity, reached by the mine shaft at Grey Quarry.
+  Dark halls lit by lamps, mithril galleries (Mining 20), a great forge, King
+  Thrain (relight the forge: 5 coal + 3 iron bars) and Brunhild's shop. Mithril
+  bars need coal; mithril gear needs Smithing 22 to 30.
+
+**[open]** Elves, boats, dragons and The Fang are next. **[open]** Should the
+Barrelbeast wreck become a drivable siege machine?
 
 ## 10. Build order
 
