@@ -7636,6 +7636,7 @@ HOOKS.selfTest.push((check, F, h) => {
     [12, 116], [24, 116], [11, 124], [25, 124], [8, 131], [28, 131], [8, 137], [28, 137]];
   const HOARD_SPOTS = [[11, 133], [25, 133], [15, 133], [21, 133], [10, 136], [26, 136], [13, 136], [23, 136]];
   const CHEST_T = { x: 18, y: 136 };
+  const CIRCLE_T = { x: 18, y: 117 };   // the summoning circle: The Fang comes up when the dragon horn is sounded here (Dragon Killers)
   // the region goes in front of the first region that overlaps the lair (dragon country, or The Wilds), not at index 0:
   // regionAt() takes the first match, and earlier features check their own region sits first
   { const overlaps = r => r.x1 >= LAIR.x0 && r.x0 <= LAIR.x1 && r.y1 >= LAIR.y0 && r.y0 <= LAIR.y1; const at = REGIONS.findIndex(overlaps);
@@ -7650,10 +7651,11 @@ HOOKS.selfTest.push((check, F, h) => {
   const BONES = addTile('LAIR_BONES', { tex: 'cave', mini: '#d9d0c0' });
   const HOARD = addTile('FANG_HOARD', { solid: true, tex: 'cave', mini: '#f5c542' });
   const FANG_CHEST = addTile('FANG_CHEST', { solid: true, tex: 'cave', mini: '#8a5a2b' });
+  const SUMMON_CIRCLE = addTile('SUMMON_CIRCLE', { solid: true, tex: 'cave', mini: '#b58cff' });
 
   // ---------- state ----------
   // saved: quest.fang. runtime only: ice patches, fireballs, lightning strikes, credits timer, heat timer
-  const fresh = () => ({ gateOpen: false, warned: false, slain: false, seen: false, looted: [], chest: false });
+  const fresh = () => ({ gateOpen: false, warned: false, slain: false, seen: false, looted: [], chest: false, summoned: false });
   const FQ = () => quest.fang || (quest.fang = fresh());
   const ICE_PATCHES = [];   // {tx, ty, t}
   const FIREBALLS = [];     // {kind:'fangfire', x, y, vx, vy, t, life, dmg}
@@ -7667,6 +7669,8 @@ HOOKS.selfTest.push((check, F, h) => {
   // ---------- items ----------
   ITEMS.fang_of_the_fang = { name: 'Fang of the Fang', value: 5000, color: '#f5f0d8', shape: 'dagger', stack: 1, weapon: { str: 40, att: 40, cd: 0.4, perk: 'swift' } };
   ITEMS.fang_of_the_fang.id = 'fang_of_the_fang';
+  ITEMS.dragon_horn = { name: 'Dragon horn', value: 1500, color: '#e8dcc0', shape: 'tusk', stack: 1 }; // the Duke's gift to the Dragon Killers: sounds The Fang up from under the lava
+  ITEMS.dragon_horn.id = 'dragon_horn';
 
   // ---------- the elements ----------
   const ELEMENTS = ['fire', 'ice', 'storm', 'stone'];
@@ -7780,6 +7784,19 @@ HOOKS.selfTest.push((check, F, h) => {
     m.attackT = 0.25; m.fired = (m.fired || 0) + 1; burst(m.x + dx / d * 70, m.y + dy / d * 70, '#ff8a1a', 10, 90);
   };
 
+  // the summoning: the horn on the circle wakes The Fang at its home, roaring
+  function summonFang() {
+    const fq = FQ(), m = fang(); if (!m) return false;
+    fq.summoned = true;
+    const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast') || m.home;
+    m.dead = false; m.deadT = 0; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.state = 'idle'; m.angry = true; m.stunT = 0; m.element = 'fire'; m.elemT = 0; m.fireCd = 1.5;
+    levelBanner = { text: 'THE FANG ANSWERS', sub: 'Only legends have heard of it', t: 4.5 }; sfx('boss');
+    for (const [c, n, sp2] of [['#ff6a1a', 60, 280], ['#b58cff', 40, 220], ['#3a3a42', 30, 160]]) burst(m.x, m.y, c, n, sp2);
+    burst(player.x, player.y, '#b58cff', 20, 120); floatText(m.x, m.y - m.r - 40, 'ROAR', '#ff6a1a', 22);
+    say('The horn sounds and the lava answers. The ground splits, and THE FANG rises out of it, roaring. Now, knight. Now.', 'The Voice');
+    save(); return true;
+  }
+
   HOOKS.update.push(dt => {
     const fq = FQ();
     const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
@@ -7798,6 +7815,7 @@ HOOKS.selfTest.push((check, F, h) => {
     // the boss: slain once, slain for good (no 15-minute farm of a 3,000-coin weapon; a reload spawns it, this puts it back down)
     const m = fang();
     if (m && fq.slain) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; }
+    else if (m && !fq.summoned) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; } // it sleeps under the lava until the dragon horn sounds on the circle
     if (m && !m.dead) {
       if (!m.element) { m.element = 'fire'; m.elemT = 0; }
       m.elemT = (m.elemT || 0) + dt;
@@ -7855,13 +7873,14 @@ HOOKS.selfTest.push((check, F, h) => {
 
   // the Duke learns of the kill from you, not from your footsteps: at stage 15 talking to him ends the story (the castle-entry trigger stays as a fallback)
   HOOKS.talkBefore.duke = n => {
-    if (quest.stage === 15) { say('The Fang? Slain? Then the old songs were waiting for you, knight. Thistledown owes you more than a keep can hold.', n.name); say('Sit. Eat. Tomorrow the whole town hears it from my mouth. Tonight, hear it from me: thank you.', n.name); advanceQuest(16); return true; }
+    if (quest.stage === 14 && window.DRAGON_KILLERS) return window.DRAGON_KILLERS.duke(n); // 37-dragonkillers: the Song, the group, the horn
+    if (quest.stage === 15) { say('The Fang? Slain? Then the old songs were waiting for you, knight. Thistledown owes you more than a keep can hold. The Dragon Killers will be sung about for a hundred years.', n.name); say('Sit. Eat. Tomorrow the whole town hears it from my mouth. Tonight, hear it from me: thank you.', n.name); advanceQuest(16); return true; }
     if (quest.stage >= 16) { say('The knight of legend, in my hall. Rest, friend. The Fanglands are at peace because of you.', n.name); return true; }
     return false;
   };
   // ---------- main quest, stages 14–16 ----------
   if (!HOOKS.mainQuest[14]) HOOKS.mainQuest[14] = { text: () => "Find The Fang's lair: a sealed gate at the far south of dragon country." };
-  HOOKS.mainQuest[15] = { text: () => 'The Fang is slain. Return to Duke Ferrin.', onEnter: () => {
+  HOOKS.mainQuest[15] = { text: () => 'The Fang is slain. The Dragon Killers ride home: return to Duke Ferrin.', onEnter: () => {
     say('It is done. The dragon of legend is dead by your hand. Go home, knight. Thistledown should hear it from you.', 'The Voice');
   } };
   HOOKS.mainQuest[16] = { text: () => 'You are the knight of legend. Fanglands is at peace. (More is being built.)', onEnter: () => {
@@ -7875,6 +7894,13 @@ HOOKS.selfTest.push((check, F, h) => {
   // ---------- use: the gate, the hoard, the chest, the scenery ----------
   HOOKS.use.push((t, tx, ty) => {
     if (t === LAIR_GATE) { if (quest.stage >= 14) openGate(false); else say('Sealed. The heat behind it would cook a knight in his plate.', 'The Gate'); return true; }
+    if (t === SUMMON_CIRCLE) {
+      const fq = FQ();
+      if (fq.slain) { say('The circle is cold. What it called is dead, and stays dead.', 'Summoning circle'); return true; }
+      if (fq.summoned && fang() && !fang().dead) { say('The runes burn. The Fang is already awake, and it is behind you.', 'Summoning circle'); return true; }
+      if (!countItem('dragon_horn')) { say('A ring of runes worn into the stone. Something is meant to be sounded here. The Duke would know.', 'Summoning circle'); return true; }
+      summonFang(); return true;
+    }
     if (t === HOARD) {
       const fq = FQ();
       if (!fq.slain) { say("The Fang's hoard. Gold from a hundred kingdoms, and it sleeps on every coin. Not yet.", 'The Voice'); return true; }
@@ -7909,6 +7935,7 @@ HOOKS.selfTest.push((check, F, h) => {
     for (let i = 0; i < 40; i++) { const x = 4 + Math.floor(rnd() * 29), y = 110 + Math.floor(rnd() * 19); if (api.tileAt(x, y) === T.CAVE && (x < 15 || x > 21)) set(x, y, BONES); }
     for (const [x, y] of HOARD_SPOTS) set(x, y, HOARD);
     set(CHEST_T.x, CHEST_T.y, FANG_CHEST);
+    set(CIRCLE_T.x, CIRCLE_T.y, SUMMON_CIRCLE);
     // nothing else spawns in the lair; the dragon sleeps at its centre
     for (let i = MONSTER_SPAWNS.length - 1; i >= 0; i--) { const s = MONSTER_SPAWNS[i]; if (inLair(s.tx, s.ty)) MONSTER_SPAWNS.splice(i, 1); }
     api.spawnList('the_fang', [[FANG_HOME.x, FANG_HOME.y]]);
@@ -7960,6 +7987,14 @@ HOOKS.selfTest.push((check, F, h) => {
     g.fillStyle = '#fff2a8'; for (const [ox, oy] of [[-8, 2], [4, -6], [8, 4], [-2, -2]]) { g.beginPath(); g.arc(cx + ox, cy + oy, 2, 0, 7); g.fill(); }
     const gem = (tx + ty) % 3; g.fillStyle = ['#e63946', '#58a6ff', '#7ee787'][gem]; g.beginPath(); g.moveTo(cx + 6, cy - 10); g.lineTo(cx + 10, cy - 6); g.lineTo(cx + 6, cy - 2); g.lineTo(cx + 2, cy - 6); g.closePath(); g.fill();
     const s = Math.sin(time * 5 + tx * 2 + ty); if (s > 0.8) { g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 1.5; const sx = cx - 6 + gem * 5, sy = cy - 4; g.beginPath(); g.moveTo(sx - 5, sy); g.lineTo(sx + 5, sy); g.moveTo(sx, sy - 5); g.lineTo(sx, sy + 5); g.stroke(); }
+  }
+  function drawCircle(g, tx, ty) {
+    const cx = tc(tx), cy = tc(ty), fq = FQ(), horn = countItem('dragon_horn') > 0 && !fq.slain && !fq.summoned, gl = horn ? 0.6 + Math.sin(time * 3) * 0.3 : 0.25 + Math.sin(time * 1.5) * 0.1;
+    const gr = g.createRadialGradient(cx, cy, 4, cx, cy, 40); gr.addColorStop(0, `rgba(181,140,255,${gl * 0.5})`); gr.addColorStop(1, 'rgba(181,140,255,0)'); g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, 40, 0, 7); g.fill();
+    g.strokeStyle = `rgba(181,140,255,${gl})`; g.lineWidth = 2.5; g.beginPath(); g.arc(cx, cy, 18, 0, 7); g.stroke(); g.lineWidth = 1.2; g.beginPath(); g.arc(cx, cy, 11, 0, 7); g.stroke();
+    for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + time * 0.3; g.beginPath(); g.moveTo(cx + Math.cos(a) * 11, cy + Math.sin(a) * 11); g.lineTo(cx + Math.cos(a) * 18, cy + Math.sin(a) * 18); g.stroke(); }
+    g.fillStyle = `rgba(245,240,216,${gl})`; g.beginPath(); g.moveTo(cx - 4, cy - 6); g.lineTo(cx + 1, cy + 6); g.lineTo(cx + 3, cy - 6); g.closePath(); g.fill(); // a fang carved at the centre
+    if (horn) for (let k = 0; k < 3; k++) { const ph = (time * 0.6 + k * 0.33) % 1; g.fillStyle = `rgba(181,140,255,${0.7 * (1 - ph)})`; g.beginPath(); g.arc(cx + Math.sin(time * 2 + k * 2) * 10, cy - ph * 36, 2, 0, 7); g.fill(); }
   }
   function drawFangChest(g, tx, ty, opened) {
     const x = tx * TILE, y = ty * TILE;
@@ -8023,6 +8058,7 @@ HOOKS.selfTest.push((check, F, h) => {
     for (const p of FIREBALLS) lights.push({ x: p.x, y: p.y, r: 70 });
     for (const s of STRIKES) if (s.t >= 1) lights.push({ x: s.x, y: s.y, r: 240 });
     if (FQ().gateOpen) lights.push({ x: tc(GATE.x), y: tc(GATE.y), r: 120 });
+    lights.push({ x: tc(CIRCLE_T.x), y: tc(CIRCLE_T.y), r: 90 });
     for (const L of lights) {
       const sx = L.x - cam.x, sy = L.y - cam.y; if (sx < -L.r || sy < -L.r || sx > VW + L.r || sy > VH + L.r) continue;
       const gr = dg.createRadialGradient(sx, sy, 8, sx, sy, L.r); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
@@ -8030,7 +8066,7 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(fangDark, 0, 0); g.restore();
   }
-  const USABLE = [LAIR_GATE, HOARD, FANG_CHEST, MAGMA, OBSIDIAN, BONES];
+  const USABLE = [LAIR_GATE, HOARD, FANG_CHEST, MAGMA, OBSIDIAN, BONES, SUMMON_CIRCLE];
   HOOKS.draw.push((g, items) => {
     const x0 = Math.max(0, Math.floor(cam.x / TILE)), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE));
     const y0 = Math.max(0, Math.floor(cam.y / TILE)), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE) + 2);
@@ -8044,6 +8080,7 @@ HOOKS.selfTest.push((check, F, h) => {
       else if (t === OBSIDIAN) items.push({ y: ty * TILE + TILE - 4, draw: () => drawPillar(g, tx, ty) });
       else if (t === HOARD) items.push({ y: ty * TILE + TILE - 6, draw: () => drawHoard(g, tx, ty, fq.looted.includes(tx + ',' + ty)) });
       else if (t === FANG_CHEST) items.push({ y: ty * TILE + TILE - 6, draw: () => drawFangChest(g, tx, ty, fq.chest) });
+      else if (t === SUMMON_CIRCLE) items.push({ y: -1e8 + ty * TILE + 2, draw: () => drawCircle(g, tx, ty) });
     }
     if (GATE.y >= y0 && GATE.y <= y1 && GATE.x1 >= x0 && GATE.x0 <= x1) { const open = tileAt(GATE.x, GATE.y) !== LAIR_GATE; items.push({ y: open ? -1e8 + GATE.y * TILE + 2 : GATE.y * TILE + TILE - 4, draw: () => drawGate(g, open) }); }
     for (const p of FIREBALLS) items.push({ y: p.y + 12, draw: () => drawFireball(g, p) });
@@ -8072,6 +8109,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
     const fq = FQ(); h.peace(true); FIREBALLS.length = 0; STRIKES.length = 0; thawAll();
+    fq.summoned = true; // the boss checks below want the dragon up: the horn-and-circle path is tested by 37-dragonkillers
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
     const iceCount = () => { let n = 0; for (let y = LAIR.y0; y <= LAIR.y1; y++) for (let x = LAIR.x0; x <= LAIR.x1; x++) if (tileAt(x, y) === ICE) n++; return n; };
     const defXp0 = player.skills.defence.xp; player.skills.defence.xp = XP_TABLE[skillLv('defence')]; // a level-up mid-fight would clamp the test hp back to maxHp
@@ -8081,7 +8119,7 @@ HOOKS.selfTest.push((check, F, h) => {
       for (let y = LAIR.y0; y <= LAIR.y1; y++) { if (tileAt(LAIR.x0, y) !== T.WALL || tileAt(LAIR.x1, y) !== T.WALL) ring = false; }
       for (let y = LAIR.y0 + 1; y < LAIR.y1; y++) for (let x = LAIR.x0 + 1; x < LAIR.x1; x++) { const t = tileAt(x, y); if (t === T.CAVE) cave++; else if (t === MAGMA) magma++; else if (t === OBSIDIAN) pillars++; else if (t === HOARD) hoard++; }
       for (let x = GATE.x0; x <= GATE.x1; x++) if (tileAt(x, GATE.y) === LAIR_GATE || tileAt(x, GATE.y) === T.CAVE) gate++;
-      check('fang: lair carved (WALL ring, CAVE interior, gate at (18,108), magma, pillars, hoard, chest)', ring && cave > 400 && gate === 3 && magma === MAGMA_SPOTS.length && pillars === PILLARS.length && hoard === HOARD_SPOTS.length && tileAt(CHEST_T.x, CHEST_T.y) === FANG_CHEST && regionAt(18, 120).name === LAIR_NAME, { ring, cave, gate, magma, pillars, hoard }); }
+      check('fang: lair carved (WALL ring, CAVE interior, gate at (18,108), magma, pillars, hoard, chest, summoning circle)', ring && cave > 400 && gate === 3 && magma === MAGMA_SPOTS.length && pillars === PILLARS.length && hoard === HOARD_SPOTS.length && tileAt(CHEST_T.x, CHEST_T.y) === FANG_CHEST && tileAt(CIRCLE_T.x, CIRCLE_T.y) === SUMMON_CIRCLE && regionAt(18, 120).name === LAIR_NAME, { ring, cave, gate, magma, pillars, hoard }); }
     // the gate refuses below stage 14 and opens at 14
     { const st0 = quest.stage; for (let x = GATE.x0; x <= GATE.x1; x++) if (tileAt(x, GATE.y) !== LAIR_GATE) changeTile(x, GATE.y, LAIR_GATE); fq.gateOpen = false;
       quest.stage = 13; drain(); F.tp(GATE.x, GATE.y - 1); F.face(GATE.x, GATE.y); F.press('KeyE'); F.sim(2, []);
@@ -8999,6 +9037,658 @@ HOOKS.selfTest.push((check, F, h) => {
     // put the town back the way it was
     for (const [i, t] of snap) if (map[i] !== t) changeTile(i % MAP_W, Math.floor(i / MAP_W), t);
     quest.rebuild = rb0 || fresh(); resetPeople(); quest.stage = Math.max(quest.stage, st0); clearPack(); closePanel(); drain(); player.hp = Math.min(Math.max(hp0, 1), player.maxHp); levelBanner = null; h.peace(false); F.sim(2, []);
+  });
+}
+
+// ---- src/36-skycity.js ----
+// ============================================================================
+// SONG OF ABOVE — Aerie, the hidden city of the winged folk above the clouds (Cohen's design A).
+// An INSTANCE reached from a wind shrine on the Grey Quarry heights (E on it with the wind flute).
+// Queen Seraphel wants 5 dragon scales + 3 cloud essence, sings the Song, and Master Halcyon then
+// forges the Godly Plated set from dragon scale + mithril + obsidian (no anvil). The four Godly
+// recipes leave Brakka's anvil list at load. Feature file: HOOKS only, edits no core file.
+// ============================================================================
+{
+  // ---------- tiles (ids captured locally) ----------
+  const CLOUD = addTile('CLOUD', { tex: 'sand', mini: '#eef3fa' });                          // the cloud floor: walkable
+  const SKY = addTile('SKY', { solid: true, tex: 'water', mini: '#8fd0ff' });                // open air around the cloud
+  const WISP = addTile('CLOUD_WISP', { solid: true, tex: 'sand', mini: '#dff0ff' });         // pickup: cloud essence, regrows
+  const LEAP = addTile('CLOUD_LEAP', { solid: true, tex: 'sand', mini: '#9ac2ff' });         // the way down
+  const WIND_SHRINE = addTile('WIND_SHRINE', { solid: true, tex: 'cave', mini: '#bfe3ff' }); // the way up (Grey Quarry)
+
+  // ---------- geometry ----------
+  const AER = { id: 'aerie', name: 'Aerie', sub: 'The city above the clouds', w: 50, h: 34 };
+  const SHRINE_T = { x: 58, y: 3 }, STEP_T = { x: 58, y: 4 };
+  const ENTRY = [25, 30], LEAP_T = [25, 31];
+  const HALL = { x0: 17, y0: 3, x1: 33, y1: 12 };            // the great hall (marble floor, castle-wall fragments)
+  const FORGE_P = { x0: 35, y0: 15, x1: 41, y1: 21 };         // Halcyon's platform
+  const SENTINELS = [[12, 10], [38, 10], [12, 24], [38, 24]];
+  const WISPS = [[8, 17], [25, 27], [42, 20]];
+  const WISP_REGROW = 45;
+  const SKY_NPCS = [
+    { id: 'seraphel', name: 'Queen Seraphel', x: 25, y: 6, tunic: '#e9eef5', hair: '#f5e6a8', crown: true, woman: true, role: 'sky_queen', wing: 1.35 },
+    { id: 'halcyon', name: 'Master Halcyon', x: 38, y: 18, tunic: '#5a6a8a', hair: '#d9d0c0', beard: true, apron: true, role: 'sky_smith', wing: 1.1 },
+  ];
+  for (const n of SKY_NPCS) { n.px = tc(n.x); n.py = tc(n.y); n.facing = { x: 0, y: 1 }; }
+  const active = () => window.INSTANCES && INSTANCES.active() === AER.id;
+
+  // ---------- items ----------
+  Object.assign(ITEMS, {
+    wind_flute: { name: 'Wind flute', value: 300, color: '#e9eef5', shape: 'rod', stack: 1 },
+    cloud_essence: { name: 'Cloud essence', value: 120, color: '#dff0ff', shape: 'powder' },
+  });
+  ITEMS.wind_flute.id = 'wind_flute'; ITEMS.cloud_essence.id = 'cloud_essence'; ITEMS.cloud_essence.stack = 50;
+  // Godly Plated is forged in Aerie now, not at Brakka's anvil: the four recipes (registered by the Ashfields file, which loads
+  // earlier) leave the anvil list. They keep their objects, re-stationed to 'skyforge' (no station panel lists that), so
+  // `RECIPES.find(r => r.out === 'godly_body')` used by older self-tests still resolves.
+  for (const r of RECIPES) if (/^godly_/.test(r.out) && r.station === 'anvil') r.station = 'skyforge';
+  // Halcyon's own table: dragon scale + mithril + obsidian, Smithing 30, no anvil, no hammer
+  const FORGE = [
+    { out: 'godly_helm', scales: 8, mithril: 2, label: '8 Dragon scales + 2 Mithril bars + Obsidian → Godly winged helm' },
+    { out: 'godly_body', scales: 12, mithril: 4, label: '12 Dragon scales + 4 Mithril bars + Obsidian → Godly platebody' },
+    { out: 'godly_legs', scales: 10, mithril: 3, label: '10 Dragon scales + 3 Mithril bars + Obsidian → Godly platelegs' },
+    { out: 'godly_shield', scales: 8, mithril: 2, label: '8 Dragon scales + 2 Mithril bars + Obsidian → Godly shield' },
+  ];
+  const FORGE_LV = 30, FORGE_XP = 500;
+  const forgeNeeds = f => [['dragon_scale', f.scales], ['mithril_bar', f.mithril], ['obsidian', 1]];
+  const canForge = f => skillLv('smithing') >= FORGE_LV && forgeNeeds(f).every(([id, q]) => countItem(id) >= q);
+  function forge(f) {
+    if (!ITEMS[f.out]) { notify('Halcyon frowns: the pattern for that is lost.'); return false; }
+    if (skillLv('smithing') < FORGE_LV) { notify(`Needs Smithing ${FORGE_LV}.`); return false; }
+    for (const [id, q] of forgeNeeds(f)) if (countItem(id) < q) { notify(`Need ${q} ${ITEMS[id].name}.`); return false; }
+    const inv0 = player.inv.map(s => s ? { ...s } : null);
+    for (const [id, q] of forgeNeeds(f)) removeItem(id, q);
+    if (!canFit(f.out, 1)) { for (let i = 0; i < inv0.length; i++) player.inv[i] = inv0[i]; notify('Your pack is full.'); return false; }
+    addItem(f.out, 1); gainXp('smithing', FORGE_XP); sfx('anvil');
+    burst(player.x, player.y, '#f5e6a8', 24, 120); floatText(player.x, player.y - 30, `+1 ${ITEMS[f.out].name}`, '#f5e6a8');
+    save(); return true;
+  }
+
+  // ---------- sky sentinels: neutral winged guards ----------
+  MONSTER_DEFS.sky_sentinel = { name: 'Sky sentinel', level: 35, r: 12, hp: 160, att: 36, maxHit: 15, def: 32, speed: 165, aggro: false, sight: 6 * TILE, respawn: 120, human: true,
+    drops: { always: [['coins', 20, 40]], table: [['nothing', 0, 0, 1], ['cloud_essence', 1, 1, 1]] } };
+
+  // feathered wings, like the godly helm's but larger: three feathers a side, a slow flap
+  function skWings(g, scale, flap, tone) {
+    g.save(); g.scale(scale, scale); g.translate(0, -2);
+    for (const s of [-1, 1]) {
+      g.save(); g.scale(s, 1); g.rotate(-flap);
+      g.fillStyle = tone || '#fff6dc'; g.strokeStyle = '#c9b676'; g.lineWidth = 0.8;
+      for (let f = 0; f < 4; f++) { const a = -0.25 - f * 0.3, L = 26 - f * 4; const ex = 9 + Math.cos(a) * L, ey = Math.sin(a) * L;
+        g.beginPath(); g.moveTo(9, 0); g.quadraticCurveTo(9 + Math.cos(a) * L * 0.55, Math.sin(a) * L * 0.55 - 5, ex, ey); g.quadraticCurveTo(9 + Math.cos(a) * L * 0.55 + 2, Math.sin(a) * L * 0.55 + 3, 9, 4); g.closePath(); g.fill(); g.stroke(); }
+      g.fillStyle = '#e8d9a0'; g.beginPath(); g.arc(9, 1, 2.5, 0, 7); g.fill();
+      g.restore();
+    }
+    g.restore();
+  }
+  HOOKS.drawMonster.sky_sentinel = (g, e, hurt) => {
+    const flap = Math.sin(time * 2.2 + (e.walkT || 0) * 0.3) * 0.12 + (e.moving ? Math.sin(e.walkT * 0.5) * 0.3 : 0);
+    skWings(g, 1.05, flap, hurt ? '#ffd0d0' : '#f4f0e0');
+    drawHuman(g, e, { tunic: '#c9d6ea', hair: '#e8d9a0', helm: '#dfe6f0', spear: true, shoulder: '#9ab0d0', skin: '#f0d8c0' });
+  };
+
+  // ---------- quest state ----------
+  QUEST_DEFS.sky = { name: 'Song of Above' };
+  const freshSky = () => ({ stage: 0, wisps: 0, forged: 0 });
+  const SQ = () => { let q = quest.sky; if (!q || typeof q !== 'object') q = quest.sky = freshSky(); return q; };
+  const skyDone = () => SQ().stage === 'done';
+  const SKYW = []; // regrowing wisps while inside: {tx, ty, t}
+  HOOKS.newGame.push(() => { quest.sky = freshSky(); SKYW.length = 0; });
+  HOOKS.questText.sky = () => {
+    const q = SQ();
+    if (q.stage === 'done') return 'Done.';
+    if (q.stage === 2) return `Bring Queen Seraphel 5 dragon scales (${Math.min(5, countItem('dragon_scale'))}/5) and 3 cloud essence (${Math.min(3, countItem('cloud_essence'))}/3). Sentinels drop it; wisps hold it.`;
+    return countItem('wind_flute') ? 'Play the wind flute at the wind shrine on the Grey Quarry heights (north-west of Thistledown).' : 'Old Wren gave you a wind flute. Find it, or ask him again.';
+  };
+  HOOKS.activeQuests.push(() => { const s = SQ().stage; return s === 1 || s === 2 ? ['sky'] : []; });
+  HOOKS.mapTarget.push(() => { const s = SQ().stage; return s === 1 || s === 2 ? { x: SHRINE_T.x, y: SHRINE_T.y, label: 'The wind shrine', id: 'sky' } : null; });
+
+  // ---------- Old Wren: the song the wind people sing (runs before the core hermit dialogue) ----------
+  HOOKS.talkBefore.hermit = n => {
+    const q = SQ();
+    if (quest.wren !== 'done') return false;
+    if (q.stage === 0) {
+      q.stage = 1;
+      say("The bow treating you well? Good. Then hear an old man's other secret. Some nights, when the wind comes off the quarry, it sings. Not wolves. People. Winged people, above the clouds.", n.name);
+      say("They call it the Song of Above. My grandmother carved this flute from a feather-bone. Play it at the wind shrine on the highest rock of the Grey Quarry, and the wind will carry you up.", n.name);
+      giveOrDrop('wind_flute', 1, player.x, player.y);
+      levelBanner = { text: 'NEW QUEST', sub: 'Song of Above', t: 3 }; sfx('quest'); save();
+      return true;
+    }
+    if (q.stage === 1) { say(countItem('wind_flute') ? "The wind shrine. Highest rock in the Grey Quarry, north of the road. Stand before it and play." : "Lost the flute already? Look in your pack, knight. It came from my grandmother.", n.name); return true; }
+    if (q.stage === 2) { say("Dragon scales and cloud essence, for a queen. Sounds like a knight's errand to me.", n.name); return true; }
+    return false; // the song is sung: the core's own line
+  };
+
+  // ---------- Aerie: the instance ----------
+  const inCloud = (x, y) => { const dx = (x - 25) / 23.5, dy = (y - 17) / 15.5; return dx * dx + dy * dy <= 1 + Math.sin(x * 1.9 + y * 1.3) * 0.08; };
+  function buildAerie(set, rnd, at) {
+    for (let y = 0; y < AER.h; y++) for (let x = 0; x < AER.w; x++) set(x, y, inCloud(x, y) ? CLOUD : SKY);
+    // the great hall: marble floor, a ring of castle-wall fragments, open to the south
+    for (let y = HALL.y0; y <= HALL.y1; y++) for (let x = HALL.x0; x <= HALL.x1; x++) set(x, y, T.FLOOR);
+    for (let x = HALL.x0; x <= HALL.x1; x++) { if (x !== HALL.x0 + 4 && x !== HALL.x1 - 4) set(x, HALL.y0, T.CWALL); if (x < 24 || x > 26) set(x, HALL.y1, T.CWALL); }
+    for (let y = HALL.y0; y <= HALL.y1; y++) { if (y % 3 !== 1) { set(HALL.x0, y, T.CWALL); set(HALL.x1, y, T.CWALL); } }
+    for (const [x, y] of [[21, 7], [29, 7], [21, 10], [29, 10]]) set(x, y, T.CWALL);            // pillars
+    for (const [x, y] of [[24, 4], [26, 4], [25, 4]]) set(x, y, T.CWALL);                        // the dais wall behind the queen
+    // Halcyon's platform and the walk to it
+    for (let y = FORGE_P.y0; y <= FORGE_P.y1; y++) for (let x = FORGE_P.x0; x <= FORGE_P.x1; x++) set(x, y, T.FLOOR);
+    for (const [x, y] of [[FORGE_P.x0, FORGE_P.y0], [FORGE_P.x1, FORGE_P.y0], [FORGE_P.x0, FORGE_P.y1], [FORGE_P.x1, FORGE_P.y1], [39, 16], [40, 16]]) set(x, y, T.CWALL);
+    // marble walks from the entry to the hall and the forge
+    for (let y = HALL.y1 + 1; y <= ENTRY[1]; y++) set(25, y, T.FLOOR);
+    for (let x = 26; x < FORGE_P.x0; x++) set(x, 18, T.FLOOR);
+    // small marble islands with wall fragments, for the eye
+    for (const [cx, cy] of [[8, 8], [42, 6], [6, 26], [44, 28]]) { for (let y = cy - 1; y <= cy + 1; y++) for (let x = cx - 1; x <= cx + 1; x++) if (at(x, y) === CLOUD) set(x, y, T.FLOOR); if (at(cx, cy - 1) === T.FLOOR) set(cx, cy - 1, T.CWALL); }
+    for (const [x, y] of WISPS) set(x, y, WISP);
+    set(LEAP_T[0], LEAP_T[1], LEAP); set(ENTRY[0], ENTRY[1], CLOUD);
+    for (const n of SKY_NPCS) set(n.x, n.y, T.FLOOR);
+  }
+  const aerie = INSTANCES.define(AER.id, {
+    name: AER.name, sub: AER.sub, w: AER.w, h: AER.h, dark: false, build: buildAerie,
+    spawns: SENTINELS.map(([x, y]) => ['sky_sentinel', x, y]), entry: ENTRY,
+    voice: 'Above the clouds. The winged folk have watched the Fanglands for a thousand years. Listen: they sing.',
+  });
+  aerie.tiles[ENTRY[1] * AER.w + ENTRY[0]] = CLOUD; // define() paints the entry tile CAVE; a cloud has no cave floor
+
+  // ---------- the wind shrine in the Grey Quarry ----------
+  HOOKS.world.push((rnd, api) => {
+    const soft = [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.STUMP, T.RUBBLE];
+    for (let y = SHRINE_T.y - 1; y <= SHRINE_T.y + 2; y++) for (let x = SHRINE_T.x - 2; x <= SHRINE_T.x + 2; x++) if (soft.includes(api.tileAt(x, y))) api.setTile(x, y, T.GRASS);
+    api.setTile(SHRINE_T.x, SHRINE_T.y, WIND_SHRINE); api.setTile(STEP_T.x, STEP_T.y, T.DIRT);
+  });
+  function liftToAerie() {
+    burst(player.x, player.y, '#dff0ff', 40, 220); burst(player.x, player.y, '#ffffff', 20, 140); sfx('levelup');
+    if (!INSTANCES.enter(AER.id, [STEP_T.x, STEP_T.y])) { notify('The wind stirs, but will not lift you now.'); return false; }
+    say('The flute sings and the wind answers. It takes you like a leaf, up through the grey, into the light.', 'The Voice');
+    save(); return true;
+  }
+  function leapDown() {
+    INSTANCES.leave(); burst(player.x, player.y, '#dff0ff', 30, 160); sfx('open');
+    notify("You leap from the cloud's edge. The wind sets you down by the shrine.");
+  }
+
+  // ---------- talking to the winged folk (own list: E in front of them) ----------
+  function inFront() {
+    let best = null;
+    for (const e of SKY_NPCS) {
+      const d = dist(player.x, player.y, e.px, e.py); if (d > 96) continue;
+      const dot = ((e.px - player.x) * player.facing.x + (e.py - player.y) * player.facing.y) / (d || 1);
+      if (dot < 0.2 && d > 30) continue;
+      if (!best || d < best.d) best = { e, d };
+    }
+    return best ? best.e : null;
+  }
+  function talk(e) {
+    { const dx = e.px - player.x, dy = e.py - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
+    const q = SQ();
+    if (e.role === 'sky_queen') {
+      if (q.stage !== 'done' && q.stage < 2) {
+        q.stage = 2;
+        say("A knight, carried up on Wren's old flute. The wind does not lift just anyone. Welcome to Aerie, the city above the clouds.", e.name);
+        say("You have heard of the Song of Above. It is not a tune, it is a forging-song: sung over dragon scale, it makes metal that dragons cannot bite. But the Song needs a voice and a price.", e.name);
+        say("Bring me five dragon scales and three cloud essence. Our sentinels carry essence; the wisps on the cloud's edge hold it too. Then I will sing, and Master Halcyon will forge for you.", e.name);
+        save();
+      } else if (q.stage === 2) {
+        if (countItem('dragon_scale') >= 5 && countItem('cloud_essence') >= 3) {
+          removeItem('dragon_scale', 5); removeItem('cloud_essence', 3); q.stage = 'done';
+          giveOrDrop('coins', 400, player.x, player.y); gainXp('smithing', 300);
+          say("Scale, and cloud. Stand still, knight, and listen.", e.name);
+          say("~ Above the grey, above the fire, the wind remembers what was ours; the scale that burned now burns no more, the sky is plate, the plate is sky ~", 'The Song of Above');
+          say("It is sung. Halcyon's forge is open to you: dragon scale, the dwarves' blue metal and a shard of obsidian for each piece. Wear it, and go down to the thing that sleeps under the lava.", e.name);
+          levelBanner = { text: 'QUEST COMPLETE', sub: 'Song of Above', t: 3.5 }; sfx('quest'); burst(player.x, player.y, '#f5e6a8', 40, 200); save();
+        } else say(`Five dragon scales and three cloud essence. You carry ${countItem('dragon_scale')} scales and ${countItem('cloud_essence')} essence. The sentinels below the hall drop essence, and the wisps at the cloud's edge grow it back.`, e.name);
+      } else say("The Song is sung and Halcyon's hammer is yours. The Fang will not like what you wear, knight. Good.", e.name);
+    } else if (e.role === 'sky_smith') {
+      if (q.stage !== 'done') { say("Scale and mithril I can shape. But without the Queen's Song it is only armour, and the Fang eats armour. Bring her what she asks first.", e.name); return; }
+      say("The Song is in the metal now. Eight to twelve dragon scales a piece, mithril bars, and a shard of obsidian to hold the fire. No anvil: the cloud is my anvil.", e.name);
+      openPanel('halcyon');
+    }
+  }
+  HOOKS.use.push((t, tx, ty) => {
+    if (t === WIND_SHRINE) {
+      if (active()) return true;
+      if (!countItem('wind_flute')) { say('The wind is silent. The shrine waits for a song it knows.', 'Wind shrine'); return true; }
+      liftToAerie(); return true;
+    }
+    if (!active()) return false;
+    const n = inFront(); if (n) { talk(n); return true; }
+    if (t === LEAP) { leapDown(); return true; }
+    if (t === WISP) {
+      if (!canFit('cloud_essence', 1)) { notify('Your pack is full.'); return true; }
+      setTile(tx, ty, CLOUD); miniDirtyTiles.add(idx(tx, ty)); SKYW.push({ tx, ty, t: WISP_REGROW }); SQ().wisps++;
+      giveOrDrop('cloud_essence', 1, player.x, player.y); burst(tc(tx), tc(ty), '#dff0ff', 14, 80); sfx('pickup'); return true;
+    }
+    if (t === SKY) { notify('Open air. A long way down.'); return true; }
+    if (t === CLOUD) { notify('Cloud. It holds, somehow.'); return true; }
+    return false;
+  });
+  HOOKS.update.push(dt => {
+    if (!active()) { if (SKYW.length) SKYW.length = 0; return; }
+    for (const w of SKYW) { w.t -= dt; if (w.t <= 0 && tileAt(w.tx, w.ty) === CLOUD && !circleHitsTile(player.x, player.y, player.r + 2, w.tx, w.ty)) { setTile(w.tx, w.ty, WISP); miniDirtyTiles.add(idx(w.tx, w.ty)); burst(tc(w.tx), tc(w.ty), '#dff0ff', 8, 50); w.done = true; } }
+    for (let i = SKYW.length - 1; i >= 0; i--) if (SKYW[i].done) SKYW.splice(i, 1);
+  });
+
+  // ---------- Halcyon's forge panel ----------
+  HOOKS.panel.halcyon = (g, narrow) => {
+    const { px, py, w, h } = panelBox(g, 460, 300, "Halcyon's Sky Forge", `Smithing level ${skillLv('smithing')} · needs ${FORGE_LV} · no anvil, no hammer`);
+    g.fillStyle = '#c9d1d9'; g.font = '12px sans-serif'; g.textAlign = 'left';
+    g.fillText(`You carry ${countItem('dragon_scale')} dragon scales, ${countItem('mithril_bar')} mithril bars, ${countItem('obsidian')} obsidian.`, px + 18, py + 74);
+    FORGE.forEach((f, i) => { const y = py + 88 + i * 40; const ok = canForge(f); button(g, px + 18, y, w - 36, 34, f.label + `  (lv ${FORGE_LV})`, () => forge(f), ok ? '#238636' : '#2a2f3a', ok); });
+    if (skillLv('smithing') < FORGE_LV) { g.fillStyle = '#ff6b6b'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(`Smithing ${FORGE_LV} is needed for Godly plate.`, px + 18, py + h - 14); }
+  };
+
+  // ---------- drawing ----------
+  const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
+  function drawSky(g, tx, ty) {
+    const x = tx * TILE, y = ty * TILE;
+    g.fillStyle = '#8fd0ff'; g.fillRect(x, y, TILE, TILE);
+    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(x, y + TILE * 0.6, TILE, TILE * 0.4);
+    const r = hash(tx, ty);
+    if (r < 0.12) { const drift = (time * 6 + tx * 5) % (TILE * 3) - TILE; g.fillStyle = 'rgba(255,255,255,0.55)'; for (const [ox, oy, rr] of [[0, 0, 7], [9, -2, 9], [18, 1, 6], [8, 4, 6]]) { g.beginPath(); g.arc(x + 10 + ox + drift, y + 20 + oy + r * 20, rr, 0, 7); g.fill(); } }
+  }
+  function drawCloud(g, tx, ty) {
+    const x = tx * TILE, y = ty * TILE, r = hash(tx, ty);
+    g.fillStyle = '#eef3fa'; g.fillRect(x, y, TILE, TILE);
+    g.fillStyle = 'rgba(255,255,255,0.85)'; for (const [ox, oy, rr] of [[12 + r * 8, 14, 12], [30, 22 + r * 6, 14], [20, 34, 11], [38, 10, 8]]) { g.beginPath(); g.arc(x + ox, y + oy, rr, 0, 7); g.fill(); }
+    // blue shadow where the cloud ends
+    const below = tileAt(tx, ty + 1), right = tileAt(tx + 1, ty), left = tileAt(tx - 1, ty);
+    if (below === SKY || below === T.WALL) { const gr = g.createLinearGradient(0, y + TILE - 14, 0, y + TILE); gr.addColorStop(0, 'rgba(120,160,220,0)'); gr.addColorStop(1, 'rgba(110,150,215,0.55)'); g.fillStyle = gr; g.fillRect(x, y + TILE - 14, TILE, 14); }
+    if (right === SKY || right === T.WALL) { g.fillStyle = 'rgba(120,160,220,0.3)'; g.fillRect(x + TILE - 6, y, 6, TILE); }
+    if (left === SKY || left === T.WALL) { g.fillStyle = 'rgba(120,160,220,0.18)'; g.fillRect(x, y, 4, TILE); }
+    g.fillStyle = `rgba(190,215,245,${0.18 + r * 0.12})`; g.beginPath(); g.ellipse(x + 26, y + 30, 14, 5, 0, 0, 7); g.fill();
+  }
+  function drawWisp(g, tx, ty) {
+    const cx = tc(tx), cy = tc(ty), t = time * 1.6 + tx;
+    const gr = g.createRadialGradient(cx, cy, 2, cx, cy, 30); gr.addColorStop(0, 'rgba(230,245,255,0.6)'); gr.addColorStop(1, 'rgba(230,245,255,0)'); g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, 30, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 3; g.lineCap = 'round';
+    for (let k = 0; k < 3; k++) { const a = t + k * 2.1; g.beginPath(); g.arc(cx + Math.cos(a) * 5, cy - 6 + Math.sin(a) * 4, 9 + k * 2, a, a + 2.4); g.stroke(); }
+    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(cx + Math.cos(t * 2) * 4, cy - 8 + Math.sin(t * 3) * 3, 3, 0, 7); g.fill();
+  }
+  function drawLeap(g, tx, ty) {
+    const x = tx * TILE, y = ty * TILE, cx = tc(tx);
+    g.fillStyle = '#d9dfe8'; g.fillRect(x + 4, y + 4, TILE - 8, 12); g.fillStyle = '#b9c2cf'; g.fillRect(x + 4, y + 14, TILE - 8, 3);
+    g.strokeStyle = `rgba(255,255,255,${0.5 + Math.sin(time * 4) * 0.3})`; g.lineWidth = 2; for (let k = 0; k < 3; k++) { const ph = (time * 0.8 + k * 0.33) % 1; g.beginPath(); g.moveTo(cx - 14 + k * 12, y + 20 + ph * 22); g.quadraticCurveTo(cx - 8 + k * 12, y + 26 + ph * 22, cx - 2 + k * 12, y + 22 + ph * 22); g.stroke(); }
+    if (dist(player.x, player.y, cx, tc(ty)) < 160) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.6)'; g.strokeText(`Leap · ${keyName('E')}`, cx, y - 4); g.fillStyle = '#ffe9a8'; g.fillText(`Leap · ${keyName('E')}`, cx, y - 4); }
+  }
+  function drawShrine(g, tx, ty) {
+    const cx = tc(tx), cy = tc(ty);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 14, 18, 7, 0, 0, 7); g.fill();
+    g.fillStyle = '#6e7178'; g.fillRect(cx - 14, cy, 28, 14); g.fillStyle = '#8d9098'; g.fillRect(cx - 16, cy - 4, 32, 5);
+    g.fillStyle = '#7d8088'; g.beginPath(); g.moveTo(cx - 8, cy - 4); g.lineTo(cx - 6, cy - 40); g.lineTo(cx + 6, cy - 40); g.lineTo(cx + 8, cy - 4); g.closePath(); g.fill();
+    g.fillStyle = '#a9adb5'; g.fillRect(cx - 6, cy - 40, 3, 36);
+    const gl = 0.5 + Math.sin(time * 2.5) * 0.3, hasFlute = countItem('wind_flute') > 0;
+    g.strokeStyle = `rgba(191,227,255,${hasFlute ? gl : 0.35})`; g.lineWidth = 2; g.lineCap = 'round';
+    g.beginPath(); g.arc(cx, cy - 24, 6, 0.4, 5.2); g.stroke(); g.beginPath(); g.arc(cx + 2, cy - 22, 3, 1, 5.8); g.stroke(); // the wind rune
+    g.strokeStyle = `rgba(255,255,255,${0.35 + gl * 0.3})`; g.lineWidth = 1.5;
+    for (let k = 0; k < 3; k++) { const ph = (time * 0.7 + k * 0.33) % 1, a = ph * Math.PI * 2 + k; g.beginPath(); g.arc(cx, cy - 22, 14 + ph * 16, a, a + 1.6); g.stroke(); }
+  }
+  function drawSkyNpc(g, n) {
+    const e = { x: n.px, y: n.py, r: 13, facing: n.facing, hurtT: 0, attackT: 0, moving: false, walkT: 0 };
+    const near = dist(player.x, player.y, e.x, e.y) < 110;
+    if (near) e.facing = { x: Math.sign(player.x - e.x) || 0, y: Math.sign(player.y - e.y) || 1 };
+    const hover = Math.sin(time * 1.8 + n.x) * 1.5;
+    g.save(); g.translate(e.x, e.y + hover);
+    g.fillStyle = 'rgba(80,110,170,0.25)'; g.beginPath(); g.ellipse(0, 12 - hover, 12, 5, 0, 0, 7); g.fill();
+    skWings(g, n.wing, Math.sin(time * 1.6 + n.x) * 0.15, n.role === 'sky_queen' ? '#fffaf0' : '#f0e8d8');
+    drawHuman(g, e, { tunic: n.tunic, hair: n.hair, crown: n.crown, woman: n.woman, beard: n.beard, apron: n.apron, shoulder: n.role === 'sky_queen' ? '#c9a36a' : '#7a8aa0', skin: '#f0d8c0', tool: n.role === 'sky_smith' ? 'hammer' : undefined, toolColor: '#c9ccd3' });
+    g.restore();
+    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(n.name, e.x, e.y - 28); g.fillStyle = '#ffe9a8'; g.fillText(n.name, e.x, e.y - 28); }
+  }
+  HOOKS.draw.push((g, items, cam) => {
+    const x0 = Math.max(0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE) + 1);
+    const y0 = Math.max(0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE) + 2);
+    const inside = active();
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+      const t = tileAt(tx, ty);
+      if (inside && (t === SKY || tx >= AER.w || ty >= AER.h)) items.push({ y: -1e8 + ty * TILE - 1, draw: () => drawSky(g, tx, ty) });
+      else if (t === CLOUD) items.push({ y: -1e8 + ty * TILE, draw: () => drawCloud(g, tx, ty) });
+      else if (t === WISP) { items.push({ y: -1e8 + ty * TILE, draw: () => drawCloud(g, tx, ty) }); items.push({ y: ty * TILE + TILE - 6, draw: () => drawWisp(g, tx, ty) }); }
+      else if (t === LEAP) { items.push({ y: -1e8 + ty * TILE, draw: () => drawCloud(g, tx, ty) }); items.push({ y: ty * TILE + 6, draw: () => drawLeap(g, tx, ty) }); }
+      else if (t === WIND_SHRINE) items.push({ y: ty * TILE + TILE - 6, draw: () => drawShrine(g, tx, ty) });
+    }
+    if (inside) for (const n of SKY_NPCS) if (n.px > cam.x - 60 && n.px < cam.x + VW + 60 && n.py > cam.y - 60 && n.py < cam.y + VH + 60) items.push({ y: n.py + 13, draw: () => drawSkyNpc(g, n) });
+    // use-highlight for our tiles and our people
+    if (!player.dead && !player.mech && !npcInFront()) items.push({ y: 1e9 + 3, draw: () => {
+      const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
+      const n = inside ? inFront() : null;
+      if (n) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.arc(n.px, n.py, 22, 0, 7); g.stroke(); g.setLineDash([]); }
+      else if (t === WIND_SHRINE || (inside && (t === LEAP || t === WISP))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+    } });
+  });
+
+  // ---------- debug handle ----------
+  window.SKYCITY = { CLOUD, SKY, WISP, LEAP, WIND_SHRINE, SHRINE_T, STEP_T, ENTRY, LEAP_T, WISPS, SKY_NPCS, FORGE, SQ, skyDone, forge, talk, inFront };
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const q = SQ(); const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
+    const makeRoom = n => { h.clearJunk(); for (let i = player.inv.length - 1; i >= 0 && player.inv.filter(s => !s).length < n; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour && !ITEMS[s.id].tool && !/^(dragon|wind|cloud|obsidian|mithril)/.test(s.id)) player.inv[i] = null; } };
+    const give = (id, n) => { while (countItem(id) < n) { if (h.give(id, 1) > 0) { makeRoom(2); if (h.give(id, 1) > 0) break; } } };
+    h.peace(true); closePanel(); if (INSTANCES.active()) INSTANCES.leave();
+    const st0 = quest.stage, wren0 = quest.wren, sky0 = JSON.stringify(q);
+    // the shrine stands on the quarry heights
+    check('sky: wind shrine on the Grey Quarry heights at (58,3) with a step below; Godly recipes are off the anvil', tileAt(SHRINE_T.x, SHRINE_T.y) === WIND_SHRINE && tileAt(STEP_T.x, STEP_T.y) === T.DIRT && regionAt(SHRINE_T.x, SHRINE_T.y).name === 'Grey Quarry' && !RECIPES.some(r => r.station === 'anvil' && /^godly_/.test(r.out)) && RECIPES.filter(r => /^godly_/.test(r.out)).length === 4, { tile: tileAt(SHRINE_T.x, SHRINE_T.y), step: tileAt(STEP_T.x, STEP_T.y), anvilGodly: RECIPES.filter(r => r.station === 'anvil' && /^godly_/.test(r.out)).length });
+    // without the flute the wind is silent
+    while (countItem('wind_flute')) removeItem('wind_flute', 1); q.stage = 0; q.wisps = 0;
+    drain(); F.tp(STEP_T.x, STEP_T.y); F.face(SHRINE_T.x, SHRINE_T.y); F.press('KeyE'); F.sim(2, []);
+    check('sky: E on the shrine without the flute — the wind is silent', !INSTANCES.active() && !!dialog.cur && /wind is silent/.test(dialog.cur.text), { text: dialog.cur && dialog.cur.text, inst: INSTANCES.active() });
+    // Old Wren gives the flute once the silk quest is done
+    { quest.wren = 'done'; makeRoom(3); drain(); F.tp(30, 81); const r = F.talk('wren'); F.sim(2, []);
+      check('sky: Old Wren (silk done) tells of the Song of Above and gives the wind flute; quest active, map target on the shrine', typeof r === 'number' && q.stage === 1 && countItem('wind_flute') === 1 && activeQuests().includes('sky') && /flute/.test(questText('sky')) && mapTargets().some(t => t.id === 'sky'), { r, stage: q.stage, flute: countItem('wind_flute'), who: dialog.cur && dialog.cur.who }); }
+    // up to Aerie
+    { drain(); F.tp(STEP_T.x, STEP_T.y); F.face(SHRINE_T.x, SHRINE_T.y); F.press('KeyE'); F.sim(3, []);
+      const sents = monsters.filter(m => m.type === 'sky_sentinel');
+      let cloud = 0, sky = 0, floor = 0, wisps = 0; for (let y = 0; y < AER.h; y++) for (let x = 0; x < AER.w; x++) { const t = tileAt(x, y); if (t === CLOUD) cloud++; else if (t === SKY) sky++; else if (t === T.FLOOR) floor++; else if (t === WISP) wisps++; }
+      const path = F.bfs(ENTRY[0], ENTRY[1], 25, 7), pathForge = F.bfs(ENTRY[0], ENTRY[1], 38, 19);
+      check('sky: the flute lifts you to Aerie — a 50×34 cloud instance (region + banner), 4 neutral level-35 sentinels, marble hall, 3 wisps, the leap tile', INSTANCES.active() === AER.id && player.region === AER.name && !!areaBanner && areaBanner.name === AER.name && sents.length === 4 && sents.every(m => !m.angry && !m.dead) && MONSTER_DEFS.sky_sentinel.level === 35 && MONSTER_DEFS.sky_sentinel.human && !MONSTER_DEFS.sky_sentinel.aggro && cloud > 800 && sky > 300 && floor > 150 && wisps === 3 && tileAt(LEAP_T[0], LEAP_T[1]) === LEAP && !!path && !!pathForge && !aerie.dark, { inst: INSTANCES.active(), region: player.region, sentinels: sents.length, cloud, sky, floor, wisps, path: path && path.length, forge: pathForge && pathForge.length }); }
+    // Seraphel's task, then the song
+    { drain(); F.tp(25, 7); F.face(25, 6); F.press('KeyE'); F.sim(2, []); const asked = q.stage === 2 && dialog.cur && dialog.cur.who === 'Queen Seraphel' && /scales/.test(questText('sky'));
+      while (countItem('dragon_scale') > 0) removeItem('dragon_scale', countItem('dragon_scale')); while (countItem('cloud_essence') > 0) removeItem('cloud_essence', countItem('cloud_essence'));
+      drain(); F.face(25, 6); F.press('KeyE'); F.sim(2, []); const notYet = q.stage === 2 && dialog.cur && /carry 0 scales/.test(dialog.cur.text);
+      makeRoom(4); give('dragon_scale', 5); give('cloud_essence', 3); const c0 = coins();
+      drain(); F.face(25, 6); F.press('KeyE'); F.sim(2, []);
+      check('sky: Seraphel asks for 5 dragon scales + 3 cloud essence, then sings the Song (quest done, 400 coins)', asked && notYet && q.stage === 'done' && skyDone() && countItem('dragon_scale') === 0 && countItem('cloud_essence') === 0 && (coins() === c0 + 400 || drops.some(d => d.id === 'coins' && d.qty === 400)) && !activeQuests().includes('sky') && questText('sky') === 'Done.' && !!levelBanner && levelBanner.sub === 'Song of Above', { asked, notYet, stage: q.stage, coins: coins() - c0, banner: levelBanner && levelBanner.sub }); }
+    // Halcyon forges a godly helm: Smithing 30, 8 scales + 2 mithril + obsidian, no anvil, no hammer
+    { makeRoom(4); give('dragon_scale', 8); give('mithril_bar', 2); give('obsidian', 1);
+      const hammerSlots = []; for (let i = 0; i < player.inv.length; i++) { const s = player.inv[i]; if (s && ITEMS[s.id].tool === 'hammer') { hammerSlots.push([i, s]); player.inv[i] = null; } }
+      const sx0 = player.skills.smithing.xp; if (skillLv('smithing') < FORGE_LV) player.skills.smithing.xp = XP_TABLE[FORGE_LV];
+      const helm0 = countItem('godly_helm'), sc0 = countItem('dragon_scale'), mb0 = countItem('mithril_bar'), ob0 = countItem('obsidian'), xp0 = player.skills.smithing.xp;
+      drain(); F.tp(38, 19); F.face(38, 18); F.press('KeyE'); F.sim(1, []); const opened = panel === 'halcyon'; render();
+      const clicked = F.clickButton('8 Dragon scales + 2 Mithril bars + Obsidian → Godly winged helm'); F.sim(2, []);
+      check('sky: Halcyon\'s panel forges a Godly winged helm from 8 scales + 2 mithril + obsidian (Smithing 30, 500 xp), without hammer or anvil', opened && clicked && countItem('godly_helm') === helm0 + 1 && countItem('dragon_scale') === sc0 - 8 && countItem('mithril_bar') === mb0 - 2 && countItem('obsidian') === ob0 - 1 && player.skills.smithing.xp === xp0 + FORGE_XP && !hasTool('hammer') && FORGE.map(f => f.scales).join(',') === '8,12,10,8' && FORGE.map(f => f.mithril).join(',') === '2,4,3,2', { opened, clicked, helm: countItem('godly_helm') - helm0, xp: player.skills.smithing.xp - xp0 });
+      closePanel(); removeItem('godly_helm', 1); for (const [i, s] of hammerSlots) if (!player.inv[i]) player.inv[i] = s; else addItem(s.id, s.qty); player.skills.smithing.xp = Math.max(sx0, player.skills.smithing.xp); }
+    // a wisp gives essence and grows back
+    { const [wx, wy] = WISPS[1]; makeRoom(2); const e0 = countItem('cloud_essence'); F.tp(wx, wy - 1); F.face(wx, wy); F.press('KeyE'); F.sim(2, []);
+      const took = countItem('cloud_essence') === e0 + 1 && tileAt(wx, wy) === CLOUD && SKYW.length === 1;
+      F.tp(25, 20); F.sim(Math.ceil(WISP_REGROW * 60) + 5, []); const back = tileAt(wx, wy) === WISP && SKYW.length === 0;
+      check('sky: E on a cloud wisp gives cloud essence; it grows back after 45 s', took && back, { took, back, essence: countItem('cloud_essence') - e0, tile: tileAt(wx, wy) }); while (countItem('cloud_essence') > e0) removeItem('cloud_essence', 1); }
+    // the leap goes home to the shrine
+    { F.tp(ENTRY[0], ENTRY[1]); F.face(LEAP_T[0], LEAP_T[1]); F.press('KeyE'); F.sim(2, []);
+      const at = [Math.floor(player.x / TILE), Math.floor(player.y / TILE)];
+      check('sky: E on the leap tile returns you to the shrine step', INSTANCES.active() === null && at[0] === STEP_T.x && at[1] === STEP_T.y && tileAt(SHRINE_T.x, SHRINE_T.y) === WIND_SHRINE, { at, inst: INSTANCES.active() }); }
+    // quest log text for the Godly gear stays truthful: it lists Aerie, not the anvil
+    check('sky: the Song of Above quest is registered with texts for every stage', QUEST_DEFS.sky.name === 'Song of Above' && typeof HOOKS.questText.sky === 'function' && ITEMS.wind_flute.stack === 1 && ITEMS.cloud_essence.stack === 50 && ITEMS.godly_helm.armour.def === 30, {});
+    if (INSTANCES.active()) INSTANCES.leave(); quest.wren = wren0; quest.stage = st0; closePanel(); drain(); h.peace(false); save();
+    void sky0;
+  });
+}
+
+// ---- src/37-dragonkillers.js ----
+// ============================================================================
+// DRAGON KILLERS — the end quest (Cohen's designs B and C).
+//  • Dragon items: dragons drop them rarely, bosses very rarely (the stronger the boss, the better the odds), The Fang 1 in 3.
+//  • Gating: Warden Brann bars the road into the Ashfields at (60,96) until Hollowford is avenged (stage 11); a tree line
+//    along Wolfwood's southern edge (y 95) makes the road the only way in. The lair gate still needs stage 14; Aerie needs the flute.
+//  • The group: at stage 14 with the Song of Above sung, Duke Ferrin forms the Dragon Killers — your companion, Sergeant Hale and
+//    Sir Garrick — and gives you the dragon horn. Hale and Garrick appear beside you inside the lair as 'ally_knight' monsters
+//    (neutral, untouchable) and hit The Fang every 1.2 s while within two tiles of it. The Fang itself is summoned on the lair's
+//    circle (28-thefang owns the circle, the horn item and the summoning). After the kill the allies go home.
+// Feature file: HOOKS only. The Duke's stage-14 talk is delegated here by 28-thefang through window.DRAGON_KILLERS.duke.
+// ============================================================================
+{
+  const LAIR_NAME = "The Fang's Lair";
+  const RED = '#c0504d';
+
+  // ---------- dragon items ----------
+  Object.assign(ITEMS, {
+    dragon_helm: { name: 'Dragon helm', value: 6000, color: RED, shape: 'helm', stack: 1, armour: { slot: 'helm', def: 40 } },
+    dragon_spear: { name: 'Dragon spear', value: 8000, color: RED, shape: 'warhammer', stack: 1, weapon: { str: 45, att: 44, cd: 0.5, perk: 'knockback' } },
+    dragon_shield: { name: 'Dragon shield', value: 6000, color: RED, shape: 'shield', stack: 1, armour: { slot: 'shield', def: 36 } },
+    dragon_body: { name: 'Dragon platebody', value: 9000, color: RED, shape: 'body', stack: 1, armour: { slot: 'body', def: 70 } },
+  });
+  if (!ITEMS.dragon_horn) ITEMS.dragon_horn = { name: 'Dragon horn', value: 1500, color: '#e8dcc0', shape: 'tusk', stack: 1 };
+  for (const k of ['dragon_helm', 'dragon_spear', 'dragon_shield', 'dragon_body', 'dragon_horn']) { ITEMS[k].id = k; ITEMS[k].stack = 1; }
+  const DRAGON_ITEMS = ['dragon_spear', 'dragon_helm', 'dragon_shield', 'dragon_body'];
+
+  // ---------- drop chances ----------
+  const FIXED = { green_dragon: 1 / 150, red_dragon: 1 / 60, ash_drake: 1 / 300, the_fang: 1 / 3 };
+  const BOSSES = ['walker', 'bulldozer', 'barrelbeast', 'brood_mother', 'gnasher', 'count_ashvane'];
+  function chance(type) {
+    if (type in FIXED) return FIXED[type];
+    if (BOSSES.includes(type) && MONSTER_DEFS[type]) return Math.min(1 / 20, (MONSTER_DEFS[type].level || 0) / 1500);
+    return 0;
+  }
+  const stats = { drops: 0, last: null };
+  HOOKS.kill.push(m => {
+    const c = chance(m.type);
+    if (!c || Math.random() >= c) return;
+    const id = DRAGON_ITEMS[Math.floor(Math.random() * DRAGON_ITEMS.length)];
+    drops.push({ x: m.x + rint(-14, 14), y: m.y + rint(-14, 14), id, qty: 1, t: 0, rare: true });
+    // the RARE DROP banner, unless a bigger one (THE FANG IS SLAIN, DUNGEON CLEARED: t 4–5) is up; the float and the sparks say it regardless
+    if (!levelBanner || levelBanner.t <= 3) levelBanner = { text: 'RARE DROP', sub: ITEMS[id].name, t: 3.5 };
+    floatText(m.x, m.y - m.r - 30, ITEMS[id].name + '!', RED, 17); sfx('quest');
+    burst(m.x, m.y, RED, 30, 160); burst(m.x, m.y, '#f5c542', 20, 120);
+    stats.drops++; stats.last = id;
+  });
+
+  // ---------- quest state ----------
+  const freshDK = () => ({ formed: false, gate: false, slainWith: false });
+  const DK = () => { let q = quest.dk; if (!q || typeof q !== 'object') q = quest.dk = freshDK(); return q; };
+  const skyDone = () => !!(quest.sky && quest.sky.stage === 'done');
+  const fangQ = () => quest.fang || {};
+  HOOKS.newGame.push(() => { quest.dk = freshDK(); });
+
+  // ---------- the warden's gate on the road into the Ashfields ----------
+  const WARDEN_GATE = addTile('WARDEN_GATE', { solid: true, tex: 'dirt', mini: '#8a6a3a' });
+  const GATE_T = [[59, 96], [60, 96], [61, 96]];
+  const WARDEN_POST = { x: 60, y: 95 }, WARDEN_ASIDE = { x: 62, y: 97 }; // he stands on the road before his gate (the core clears the tile under an NPC, so not on the gate itself)
+  const warden = initNpc({ id: 'brann', name: 'Warden Brann', x: WARDEN_POST.x, y: WARDEN_POST.y, tunic: '#4a4f5a', hair: '#3a2a1a', helmet: true, beard: true, role: 'warden' });
+  NPCS.push(warden);
+  const gateClosed = () => GATE_T.some(([x, y]) => tileAt(x, y) === WARDEN_GATE);
+  HOOKS.world.push((rnd, api) => {
+    // Wolfwood's southern edge grows thick: y 95 is trees except the road, so the warden's gate is the only way south
+    // (and the jungle's western edge, x 100, closes the way round from the east)
+    const open = t => !SOLID.has(t) && !PUSH_THROUGH.has(t);
+    for (let x = 1; x <= 99; x++) { if (x >= 59 && x <= 61) continue; if (open(api.tileAt(x, 95))) api.setTile(x, 95, T.TREE); }
+    for (let y = 96; y <= 138; y++) if (open(api.tileAt(100, y))) api.setTile(100, y, T.TREE);
+    for (let x = 59; x <= 61; x++) if (open(api.tileAt(x, 95))) api.setTile(x, 95, T.DIRT);
+    for (const [x, y] of GATE_T) api.setTile(x, y, WARDEN_GATE);
+  });
+  function openGate(quiet) {
+    for (const [x, y] of GATE_T) if (tileAt(x, y) === WARDEN_GATE) changeTile(x, y, T.DIRT);
+    if (!quiet) { burst(tc(60), tc(96), '#8a6a3a', 24, 120); sfx('open'); }
+    const q = DK(); if (!q.gate) { q.gate = true; if (!quiet) say("Hollowford avenged? Then the Duke's order is lifted. The road south is yours, knight. It goes to Dunstan's farm, and past that, to the dragons.", warden.name); save(); }
+  }
+  function closeGate() { for (const [x, y] of GATE_T) if (tileAt(x, y) !== WARDEN_GATE) changeTile(x, y, WARDEN_GATE); }
+  function placeWarden() {
+    const want = gateClosed() ? WARDEN_POST : WARDEN_ASIDE, px = tc(want.x), py = tc(want.y);
+    if (warden.px !== px || warden.py !== py) { warden.px = px; warden.py = py; warden.home = { x: px, y: py }; warden.facing = gateClosed() ? { x: 0, y: -1 } : { x: -1, y: 0 }; }
+  }
+  HOOKS.talk.warden = n => {
+    if (gateClosed()) { say("Turn back, traveller. South of here is the Ashfields, and the Ashfields are dragon country. The Duke's order: nobody passes until Hollowford is settled.", n.name); say(quest.stage >= 8 ? "Hollowford still burns, last I heard. Go and see to it, and I will open this road myself." : "There is a village east of Thistledown that needs a knight more than the dragons do.", n.name); }
+    else say("Road's open. Straight down to Dunstan's dung farm, then it is ash and dragons all the way to the lava. Mind yourself, knight.", n.name);
+  };
+  HOOKS.use.push(t => { if (t === WARDEN_GATE) { HOOKS.talk.warden(warden); return true; } return false; });
+
+  // ---------- main quest texts and map target for stage 14 ----------
+  const prev14 = HOOKS.mainQuest[14] || {};
+  HOOKS.mainQuest[14] = { ...prev14, text: () => {
+    const s = quest.sky ? quest.sky.stage : 0;
+    if (s !== 'done') return s === 1 ? 'The Fang waits. First, the Song of Above: play the wind flute at the wind shrine on the Grey Quarry heights.' : s === 2 ? 'The Fang waits. First, the Song of Above: bring Queen Seraphel of Aerie 5 dragon scales and 3 cloud essence.' : 'Salved against fire. The Fang waits, but first: Old Wren in Wolfwood knows the Song of Above.';
+    if (!DK().formed) return 'Gather the Dragon Killers: speak to Duke Ferrin.';
+    if (fangQ().summoned) return 'The Fang answers the horn. Kill it, with the Dragon Killers at your side!';
+    return "Ride with the Dragon Killers to The Fang's lair in the far south-west and sound the dragon horn on the summoning circle.";
+  } };
+  { const base14 = MAP_TARGETS[14] || { x: 18, y: 108, label: "The Fang's lair" };
+    Object.defineProperty(MAP_TARGETS, 14, { configurable: true, enumerable: true, get() {
+      const s = quest.sky ? quest.sky.stage : 0;
+      if (s !== 'done') return s === 1 || s === 2 ? { x: 58, y: 3, label: 'The wind shrine' } : { x: 30, y: 78, label: 'Old Wren' };
+      if (!DK().formed) return { x: 112, y: 49, label: 'Duke Ferrin' };
+      return base14;
+    } }); }
+
+  // ---------- the Duke forms the Dragon Killers (called by 28-thefang's talkBefore.duke at stage 14) ----------
+  const compId = () => (player.companion && player.companion.id) || null;
+  const compName = () => compId() === 'sera' ? 'Sera' : compId() === 'garrick' ? 'Garrick' : null;
+  function duke(n) {
+    const q = DK();
+    if (!skyDone()) {
+      say("The Fang? No sword arm alone has ever come back from that lair, knight. There is an old song that says the sky itself once fought it.", n.name);
+      say(quest.sky && quest.sky.stage ? "The Song of Above. You carry Wren's flute; go up and have it sung. Then come back to me and I will give you a company." : "Old Wren, in Wolfwood, hums it: the Song of Above. Ask him. Have it sung, and come back to me.", n.name);
+      return true;
+    }
+    if (!q.formed) {
+      q.formed = true;
+      const names = [compName(), 'Sergeant Hale', compId() === 'garrick' ? null : 'Sir Garrick'].filter(Boolean);
+      say("Sung? Then Thistledown rides. I name you the Dragon Killers: " + names.join(', ') + " and you, knight, at the head.", n.name);
+      say("Hale and Garrick will meet you inside the lair. And take this: a dragon horn, from the last one that tried. The Fang sleeps under the lava. Sound the horn on the old circle in its lair and it will come up to answer.", n.name);
+      giveOrDrop('dragon_horn', 1, player.x, player.y);
+      levelBanner = { text: 'THE DRAGON KILLERS', sub: names.join(' · ') + ' · you', t: 4.5 }; sfx('quest'); burst(player.x, player.y, '#f5c542', 40, 200);
+      save(); return true;
+    }
+    say("The Dragon Killers are yours, knight. Hale and Garrick wait for you inside the lair. Sound the horn on the circle, and the Fang will come.", n.name);
+    return true;
+  }
+
+  // ---------- allies ----------
+  MONSTER_DEFS.ally_knight = { name: 'Dragon Killer', level: 30, r: 13, hp: 999, att: 40, maxHit: 15, def: 40, speed: 170, aggro: false, harmless: true, sight: 0, respawn: 1e9, human: true, drops: {} };
+  const ALLY_DEFS = [
+    { id: 'hale', name: 'Sergeant Hale', look: { tunic: '#4a4f5a', hair: '#2a1a0a', helm: '#8f96a3', spear: true, shoulder: '#8f96a3' } },
+    { id: 'garrick', name: 'Sir Garrick', look: { tunic: '#7a2e2e', hair: '#8a7a6a', helm: '#c9ccd3', beard: true, weapon: ITEMS.steel_sword || ITEMS.iron_sword, shoulder: '#c9ccd3' } },
+  ];
+  const ALLY_CD = 1.2, ALLY_ATT = (30 + 8) * (64 + 40), ALLY_MAX = 15;
+  const allies = () => monsters.filter(m => m.type === 'ally_knight');
+  const wantedAllies = () => ALLY_DEFS.filter(d => d.id !== compId());
+  function freeSpotNear(x, y) {
+    if (!collides(x, y, 13, 'person')) return { x, y };
+    for (let r = 1; r < 8; r++) for (let a = 0; a < 12; a++) { const ang = a / 12 * Math.PI * 2; const nx = x + Math.cos(ang) * r * 18, ny = y + Math.sin(ang) * r * 18; if (!collides(nx, ny, 13, 'person')) return { x: nx, y: ny }; }
+    return { x, y };
+  }
+  function spawnAlly(def, i) {
+    const side = i % 2 ? 1 : -1, p = freeSpotNear(player.x - player.facing.x * 44 + player.facing.y * 34 * side, player.y - player.facing.y * 44 - player.facing.x * 34 * side);
+    const m = { type: 'ally_knight', x: p.x, y: p.y, home: { x: p.x, y: p.y }, r: 13, hp: 999, maxHp: 999, speed: 170, angry: false, state: 'idle', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 0, y: 1 }, walkT: 0, moving: false, stunT: 0,
+      ally: def.id, allyName: def.name, allyCd: 0.6 + i * 0.4, allySwings: 0, stuckT: 0 };
+    monsters.push(m); burst(m.x, m.y, '#9fe0b0', 16, 90); floatText(m.x, m.y - 30, def.name, '#9fe0b0', 13);
+    return m;
+  }
+  function removeAllies(farewell) {
+    const list = allies(); if (!list.length) return;
+    for (const m of list) { burst(m.x, m.y, '#9fe0b0', 12, 70); if (farewell) floatText(m.x, m.y - 30, 'Well fought, knight!', '#9fe0b0', 13); }
+    monsters = monsters.filter(m => m.type !== 'ally_knight');
+  }
+  function stepToward(m, tx, ty, dt, stopAt) {
+    const dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy);
+    if (d <= stopAt) { m.moving = false; return; }
+    const ux = dx / d, uy = dy / d, step = Math.min(m.speed * dt, d - stopAt), bx = m.x, by = m.y;
+    moveEntity(m, ux * step, uy * step, 'person');
+    if (Math.abs(m.x - bx) < 0.01 && Math.abs(m.y - by) < 0.01) { const s = Math.floor(time * 0.7) % 2 ? 1 : -1; moveEntity(m, -uy * step * s, ux * step * s, 'person'); m.stuckT += dt; } else m.stuckT = 0;
+    m.facing = { x: ux, y: uy }; m.moving = true; m.walkT += dt * 8;
+  }
+  HOOKS.update.push(dt => {
+    const q = DK(), fq = fangQ();
+    const inLair = player.region === LAIR_NAME && !(window.INSTANCES && INSTANCES.active());
+    // the warden's road
+    if (quest.stage >= 11 && gateClosed()) openGate(false);
+    placeWarden();
+    // the group appears inside the lair while the hunt is on, and goes home when it is over
+    const present = allies();
+    const want = q.formed && inLair && !fq.slain && !player.dead;
+    if (want) wantedAllies().forEach((d, i) => { if (!present.some(m => m.ally === d.id)) spawnAlly(d, i); });
+    else if (present.length) removeAllies(false);
+    if (!want) return;
+    const fang = monsters.find(o => o.type === 'the_fang' && !o.dead);
+    allies().forEach((m, i) => {
+      // untouchable, never hostile, never driven by the core's wander
+      m.hp = m.maxHp; m.dead = false; m.stunT = 0; m.state = 'idle'; m.angry = false; m.wanderT = 99; m.wander = { x: 0, y: 0 };
+      m.allyCd = Math.max(0, (m.allyCd || 0) - dt);
+      const dp = dist(m.x, m.y, player.x, player.y);
+      if (fang) {
+        const d = dist(m.x, m.y, fang.x, fang.y), inRange = d <= fang.r + 2 * TILE;
+        if (!inRange) stepToward(m, fang.x, fang.y, dt, fang.r + m.r + 12);
+        else { m.moving = false; m.facing = { x: (fang.x - m.x) / (d || 1), y: (fang.y - m.y) / (d || 1) }; }
+        if (inRange && m.allyCd <= 0) {
+          m.allyCd = ALLY_CD; m.attackT = 0.22; m.allySwings = (m.allySwings || 0) + 1;
+          hitMonster(fang, rollHit(ALLY_ATT, (MONSTER_DEFS.the_fang.def + 8) * 64, ALLY_MAX), 10, true, 'monster');
+        }
+      } else {
+        const side = i % 2 ? 1 : -1, tx = player.x - player.facing.x * 50 + player.facing.y * 34 * side, ty = player.y - player.facing.y * 50 - player.facing.x * 34 * side;
+        if (dp > 12 * TILE || (m.stuckT > 2.5 && dp > 4 * TILE)) { const p = freeSpotNear(tx, ty); m.x = p.x; m.y = p.y; m.stuckT = 0; burst(m.x, m.y, '#9fe0b0', 8, 50); }
+        else if (dist(m.x, m.y, tx, ty) > 24) stepToward(m, tx, ty, dt, 8);
+        else { m.moving = false; if (dp > 1) m.facing = { x: (player.x - m.x) / dp, y: (player.y - m.y) / dp }; }
+      }
+      if (dp < 22 && dp > 0) moveEntity(m, (m.x - player.x) / dp * 40 * dt, (m.y - player.y) / dp * 40 * dt, 'person');
+    });
+  });
+  HOOKS.kill.push(m => {
+    if (m.type !== 'the_fang') return;
+    const q = DK(); if (!q.formed) return;
+    q.slainWith = true;
+    if (allies().length) { say("Hale wipes his blade. 'Sergeant Hale reporting: dragon dead. Thistledown will not believe a word of it.' The Dragon Killers turn for home.", 'Sergeant Hale'); removeAllies(true); }
+  });
+  HOOKS.drawMonster.ally_knight = (g, e, hurt) => {
+    const def = ALLY_DEFS.find(d => d.id === e.ally) || ALLY_DEFS[0];
+    drawHuman(g, e, def.look);
+    g.font = 'bold 10px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(e.allyName || def.name, 0, 26); g.fillStyle = '#9fe0b0'; g.fillText(e.allyName || def.name, 0, 26);
+  };
+
+  // ---------- debug handle (28-thefang's Duke talk calls .duke at stage 14) ----------
+  window.DRAGON_KILLERS = { chance, DK, duke, allies, ALLY_DEFS, WARDEN_GATE, GATE_T, openGate, closeGate, warden, stats, DRAGON_ITEMS };
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
+    const said = re => [dialog.cur, ...dialog.queue].some(l => l && re.test(l.text));
+    const makeRoom = n => { h.clearJunk(); for (let i = player.inv.length - 1; i >= 0 && player.inv.filter(s => !s).length < n; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour && !ITEMS[s.id].tool && !/^dragon/.test(s.id)) player.inv[i] = null; } };
+    h.peace(true); closePanel(); if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
+    const st0 = quest.stage, dk0 = JSON.stringify(DK());
+    // items and chances
+    check('dk: dragon items exist (helm def 40, spear str 45 / att 44 / knockback, shield def 36, body def 70, red)', ITEMS.dragon_helm.armour.def === 40 && ITEMS.dragon_helm.value === 6000 && ITEMS.dragon_spear.weapon.str === 45 && ITEMS.dragon_spear.weapon.att === 44 && ITEMS.dragon_spear.weapon.cd === 0.5 && ITEMS.dragon_spear.weapon.perk === 'knockback' && ITEMS.dragon_spear.shape === 'warhammer' && ITEMS.dragon_spear.value === 8000 && ITEMS.dragon_shield.armour.def === 36 && ITEMS.dragon_body.armour.def === 70 && ITEMS.dragon_body.value === 9000 && [ITEMS.dragon_helm, ITEMS.dragon_spear, ITEMS.dragon_shield, ITEMS.dragon_body].every(d => d.color === RED && d.stack === 1) && !!ITEMS.dragon_horn && !!ITEMS.dragon_bone, {});
+    check('dk: drop chances — green 1/150, red 1/60, Fang 1/3, bosses min(1/20, level/1500), nothing for the rest', chance('green_dragon') === 1 / 150 && chance('red_dragon') === 1 / 60 && chance('the_fang') === 1 / 3 && chance('barrelbeast') === Math.min(1 / 20, MONSTER_DEFS.barrelbeast.level / 1500) && chance('walker') === MONSTER_DEFS.walker.level / 1500 && chance('brood_mother') === MONSTER_DEFS.brood_mother.level / 1500 && chance('bulldozer') === MONSTER_DEFS.bulldozer.level / 1500 && chance('barrelbeast') > chance('walker') && chance('goblin') === 0 && chance('wolf') === 0, { barrelbeast: chance('barrelbeast'), walker: chance('walker') });
+    // a forced kill (Math.random → 0) drops the dragon spear with the RARE DROP banner
+    { const m = monsters.find(x => x.type === 'red_dragon'); const rnd0 = Math.random; let dropped = false, banner = null, rare = false, drops0 = stats.drops;
+      if (m) { const keep = { x: m.x, y: m.y, home: { ...m.home } }; m.dead = false; m.hp = 5; m.stunT = 0; m.x = player.x + 300; m.y = player.y; drops = drops.filter(d => d.id !== 'dragon_spear');
+        try { Math.random = () => 0; hitMonster(m, 5, 0, true, 'monster'); } finally { Math.random = rnd0; }
+        const d = drops.find(x => x.id === 'dragon_spear'); dropped = !!d; rare = !!(d && d.rare); banner = levelBanner && levelBanner.text + ' / ' + levelBanner.sub;
+        drops = drops.filter(x => !['dragon_spear', 'mithril_bar', 'dragon_dung', 'dragon_scale', 'coins'].includes(x.id) || dist(x.x, x.y, m.x, m.y) > 60);
+        m.dead = false; m.hp = m.maxHp; m.x = keep.x; m.y = keep.y; m.home = keep.home; m.state = 'idle'; }
+      check('dk: a red dragon killed with Math.random stubbed to 0 drops a dragon spear (rare, RARE DROP banner)', !!m && dropped && rare && stats.drops === drops0 + 1 && stats.last === 'dragon_spear' && /^RARE DROP \/ Dragon spear$/.test(banner || ''), { found: !!m, dropped, rare, banner }); }
+    // the warden's gate: closed below stage 11, opens at 11
+    { closeGate(); quest.stage = 7; F.sim(2, []); // 7: below 11 and nothing auto-advances it (Hollowford's file walks 8→11 on its own once the beast is dead)
+      const closed = GATE_T.every(([x, y]) => tileAt(x, y) === WARDEN_GATE) && SOLID.has(WARDEN_GATE) && collides(tc(60), tc(96), 13, 'player') && Math.floor(warden.px / TILE) === WARDEN_POST.x && Math.floor(warden.py / TILE) === WARDEN_POST.y;
+      let treeLine = 0; for (let x = 1; x <= 99; x++) if (x < 59 || x > 61) { const t = tileAt(x, 95); if (SOLID.has(t)) treeLine++; } for (let y = 96; y <= 138; y++) if (SOLID.has(tileAt(100, y))) treeLine++;
+      drain(); F.tp(60, 93); F.face(60, 94); F.press('KeyE'); F.sim(2, []); const spoke = dialog.cur && dialog.cur.who === 'Warden Brann' && /Turn back/.test(dialog.cur.text);
+      const blocked = !F.bfs(60, 94, 60, 98);
+      quest.stage = 11; DK().gate = false; drain(); F.sim(2, []);
+      const opened = GATE_T.every(([x, y]) => tileAt(x, y) === T.DIRT) && !collides(tc(60), tc(96), 13, 'player') && !!F.bfs(60, 94, 60, 98) && Math.floor(warden.px / TILE) === WARDEN_ASIDE.x && DK().gate === true && said(/road south is yours/);
+      check('dk: Warden Brann bars the road into the Ashfields (59..61,96) below stage 11 — trees close Wolfwood\'s edge — and the gate opens at stage 11', closed && treeLine === 96 + 43 && spoke && blocked && opened, { closed, treeLine, spoke, blocked, opened, gate: GATE_T.map(([x, y]) => tileAt(x, y)) });
+      quest.stage = st0; F.sim(1, []); }
+    // the Duke forms the group at stage 14 once the Song is sung
+    { quest.stage = 14; quest.sky = Object.assign(quest.sky || {}, { stage: 2 }); quest.dk = freshDK(); if (quest.fang) quest.fang.summoned = false; while (countItem('dragon_horn') > 0) removeItem('dragon_horn', countItem('dragon_horn')); makeRoom(2);
+      drain(); F.tp(111, 48); const r1 = F.talk('duke'); const early = !DK().formed && dialog.cur && dialog.cur.who === 'Duke Ferrin' && said(/Song of Above/) && /Song of Above|wind shrine|Seraphel/.test(questText('main')) && MAP_TARGETS[14].label === 'The wind shrine';
+      quest.sky.stage = 'done'; const dukeTarget = /Dragon Killers/.test(questText('main')) && MAP_TARGETS[14].label === 'Duke Ferrin';
+      drain(); const r2 = F.talk('duke'); F.sim(2, []);
+      const horn = countItem('dragon_horn') === 1 || drops.some(d => d.id === 'dragon_horn');
+      check('dk: at stage 14 the Duke wants the Song first; with it sung he forms the Dragon Killers (Hale, Garrick, your companion) and gives the dragon horn', typeof r1 === 'number' && early && dukeTarget && typeof r2 === 'number' && DK().formed && horn && !!levelBanner && levelBanner.text === 'THE DRAGON KILLERS' && /summoning circle|lair/.test(questText('main')) && MAP_TARGETS[14].label === "The Fang's lair", { r1, r2, early, dukeTarget, formed: DK().formed, horn, banner: levelBanner && levelBanner.text });
+      for (const d of drops) if (d.id === 'dragon_horn') { d.taken = true; addItem('dragon_horn', 1); } drops = drops.filter(d => !d.taken); }
+    // allies appear in the lair; The Fang is absent until the horn sounds on the circle
+    const fq = quest.fang; const fang = monsters.find(m => m.type === 'the_fang');
+    if (!fq || !fang || !window.INSTANCES) { check('dk: The Fang and its lair are present for the group tests', false, { fq: !!fq, fang: !!fang }); quest.stage = st0; h.peace(false); return; }
+    const slain0 = fq.slain;
+    { fq.slain = false; fq.summoned = false; removeAllies(false); F.tp(18, 112); F.sim(3, []);
+      const list = allies(), want = wantedAllies();
+      const spawned = list.length === want.length && want.every(d => list.some(m => m.ally === d.id && m.allyName === d.name)) && list.every(m => !m.angry && !m.dead && dist(m.x, m.y, player.x, player.y) < 4 * TILE) && MONSTER_DEFS.ally_knight.level === 30 && MONSTER_DEFS.ally_knight.human && !MONSTER_DEFS.ally_knight.aggro && MONSTER_DEFS.ally_knight.harmless;
+      const absent = fang.dead && fang.respawnT === Infinity;
+      check('dk: entering the lair with the group formed spawns Hale and Garrick beside you (lv 30, neutral, human); The Fang is absent until summoned', spawned && absent, { allies: list.map(m => m.allyName), want: want.map(d => d.name), fangDead: fang.dead, region: player.region }); }
+    { const circle = F.nearestTile([T.SUMMON_CIRCLE], { x: tc(18), y: tc(118) }); let noHorn = false, answered = false, banner = null;
+      if (circle) { const hornSlot = player.inv.findIndex(s => s && s.id === 'dragon_horn'); const hornStack = hornSlot >= 0 ? player.inv[hornSlot] : null; if (hornSlot >= 0) player.inv[hornSlot] = null;
+        F.tp(circle.x, circle.y - 1); F.face(circle.x, circle.y); drain(); F.press('KeyE'); F.sim(2, []); noHorn = fang.dead && !fq.summoned && dialog.cur && /sounded|horn|Duke/.test(dialog.cur.text);
+        if (hornStack) player.inv[hornSlot] = hornStack; else addItem('dragon_horn', 1);
+        drain(); F.face(circle.x, circle.y); F.press('KeyE'); F.sim(2, []); answered = !fang.dead && fq.summoned === true && fang.hp === fang.maxHp; banner = levelBanner && levelBanner.text; }
+      check('dk: the summoning circle needs the dragon horn; sounding it brings The Fang up (THE FANG ANSWERS)', !!circle && noHorn && answered && banner === 'THE FANG ANSWERS', { circle, noHorn, answered, banner }); }
+    // the allies hit the Fang while within two tiles of it
+    { fang.dead = false; fang.hp = fang.maxHp; fang.element = 'fire'; fang.elemT = 0; fang.state = 'idle'; fang.stunT = 0; fang.x = tc(18); fang.y = tc(121); F.tp(18, 116);
+      for (const m of allies()) { m.x = fang.x + rint(-30, 30); m.y = fang.y - fang.r - 20; m.allyCd = 0; m.allySwings = 0; }
+      const rnd0 = Math.random; try { Math.random = () => 0.1; F.sim(150, []); } finally { Math.random = rnd0; }
+      const swings = allies().reduce((s, m) => s + (m.allySwings || 0), 0);
+      check('dk: allies within two tiles of The Fang swing at it every 1.2 s and it takes the hits; they take none', swings >= 2 && fang.hp < fang.maxHp && allies().every(m => m.hp === m.maxHp && !m.dead), { swings, hp: fang.hp, allies: allies().length }); }
+    // the kill: stage 15, the allies go home, the quest log names the Dragon Killers
+    { quest.stage = 14; F.tp(18, 114); player.facing = { x: 0, y: 1 }; fang.hp = 1; fang.element = 'fire'; fang.elemT = 0; fang.state = 'idle'; fang.stunT = 0; drops = drops.filter(d => d.id !== 'fang_of_the_fang');
+      for (let i = 0; i < 150 && !fang.dead; i++) { fang.x = player.x; fang.y = player.y + 70; fang.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); }
+      F.sim(3, []);
+      check('dk: killing the summoned Fang with the group → stage 15, the Dragon Killers go home, the log reads for it', fang.dead && fq.slain && quest.stage === 15 && allies().length === 0 && DK().slainWith && /Dragon Killers/.test(questText('main')) && /Duke Ferrin/.test(questText('main')), { dead: fang.dead, stage: quest.stage, allies: allies().length, text: questText('main') });
+      drops = drops.filter(d => !(['coins', 'fang_of_the_fang', 'mithril_bar', 'dragon_scale'].includes(d.id) && dist(d.x, d.y, fang.x, fang.y) < 120)); }
+    // tidy: the Fang stays slain as the lair's own test left it; the group is formed and done
+    fq.slain = slain0 || fq.slain; quest.stage = st0; while (countItem('dragon_horn') > 0) removeItem('dragon_horn', 1); removeAllies(false); F.tp(111, 48); F.sim(2, []); drain(); closePanel(); h.peace(false); save();
+    void dk0;
   });
 }
 

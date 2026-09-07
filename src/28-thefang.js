@@ -15,6 +15,7 @@
     [12, 116], [24, 116], [11, 124], [25, 124], [8, 131], [28, 131], [8, 137], [28, 137]];
   const HOARD_SPOTS = [[11, 133], [25, 133], [15, 133], [21, 133], [10, 136], [26, 136], [13, 136], [23, 136]];
   const CHEST_T = { x: 18, y: 136 };
+  const CIRCLE_T = { x: 18, y: 117 };   // the summoning circle: The Fang comes up when the dragon horn is sounded here (Dragon Killers)
   // the region goes in front of the first region that overlaps the lair (dragon country, or The Wilds), not at index 0:
   // regionAt() takes the first match, and earlier features check their own region sits first
   { const overlaps = r => r.x1 >= LAIR.x0 && r.x0 <= LAIR.x1 && r.y1 >= LAIR.y0 && r.y0 <= LAIR.y1; const at = REGIONS.findIndex(overlaps);
@@ -29,10 +30,11 @@
   const BONES = addTile('LAIR_BONES', { tex: 'cave', mini: '#d9d0c0' });
   const HOARD = addTile('FANG_HOARD', { solid: true, tex: 'cave', mini: '#f5c542' });
   const FANG_CHEST = addTile('FANG_CHEST', { solid: true, tex: 'cave', mini: '#8a5a2b' });
+  const SUMMON_CIRCLE = addTile('SUMMON_CIRCLE', { solid: true, tex: 'cave', mini: '#b58cff' });
 
   // ---------- state ----------
   // saved: quest.fang. runtime only: ice patches, fireballs, lightning strikes, credits timer, heat timer
-  const fresh = () => ({ gateOpen: false, warned: false, slain: false, seen: false, looted: [], chest: false });
+  const fresh = () => ({ gateOpen: false, warned: false, slain: false, seen: false, looted: [], chest: false, summoned: false });
   const FQ = () => quest.fang || (quest.fang = fresh());
   const ICE_PATCHES = [];   // {tx, ty, t}
   const FIREBALLS = [];     // {kind:'fangfire', x, y, vx, vy, t, life, dmg}
@@ -46,6 +48,8 @@
   // ---------- items ----------
   ITEMS.fang_of_the_fang = { name: 'Fang of the Fang', value: 5000, color: '#f5f0d8', shape: 'dagger', stack: 1, weapon: { str: 40, att: 40, cd: 0.4, perk: 'swift' } };
   ITEMS.fang_of_the_fang.id = 'fang_of_the_fang';
+  ITEMS.dragon_horn = { name: 'Dragon horn', value: 1500, color: '#e8dcc0', shape: 'tusk', stack: 1 }; // the Duke's gift to the Dragon Killers: sounds The Fang up from under the lava
+  ITEMS.dragon_horn.id = 'dragon_horn';
 
   // ---------- the elements ----------
   const ELEMENTS = ['fire', 'ice', 'storm', 'stone'];
@@ -159,6 +163,19 @@
     m.attackT = 0.25; m.fired = (m.fired || 0) + 1; burst(m.x + dx / d * 70, m.y + dy / d * 70, '#ff8a1a', 10, 90);
   };
 
+  // the summoning: the horn on the circle wakes The Fang at its home, roaring
+  function summonFang() {
+    const fq = FQ(), m = fang(); if (!m) return false;
+    fq.summoned = true;
+    const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast') || m.home;
+    m.dead = false; m.deadT = 0; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.state = 'idle'; m.angry = true; m.stunT = 0; m.element = 'fire'; m.elemT = 0; m.fireCd = 1.5;
+    levelBanner = { text: 'THE FANG ANSWERS', sub: 'Only legends have heard of it', t: 4.5 }; sfx('boss');
+    for (const [c, n, sp2] of [['#ff6a1a', 60, 280], ['#b58cff', 40, 220], ['#3a3a42', 30, 160]]) burst(m.x, m.y, c, n, sp2);
+    burst(player.x, player.y, '#b58cff', 20, 120); floatText(m.x, m.y - m.r - 40, 'ROAR', '#ff6a1a', 22);
+    say('The horn sounds and the lava answers. The ground splits, and THE FANG rises out of it, roaring. Now, knight. Now.', 'The Voice');
+    save(); return true;
+  }
+
   HOOKS.update.push(dt => {
     const fq = FQ();
     const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
@@ -177,6 +194,7 @@
     // the boss: slain once, slain for good (no 15-minute farm of a 3,000-coin weapon; a reload spawns it, this puts it back down)
     const m = fang();
     if (m && fq.slain) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; }
+    else if (m && !fq.summoned) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; } // it sleeps under the lava until the dragon horn sounds on the circle
     if (m && !m.dead) {
       if (!m.element) { m.element = 'fire'; m.elemT = 0; }
       m.elemT = (m.elemT || 0) + dt;
@@ -234,13 +252,14 @@
 
   // the Duke learns of the kill from you, not from your footsteps: at stage 15 talking to him ends the story (the castle-entry trigger stays as a fallback)
   HOOKS.talkBefore.duke = n => {
-    if (quest.stage === 15) { say('The Fang? Slain? Then the old songs were waiting for you, knight. Thistledown owes you more than a keep can hold.', n.name); say('Sit. Eat. Tomorrow the whole town hears it from my mouth. Tonight, hear it from me: thank you.', n.name); advanceQuest(16); return true; }
+    if (quest.stage === 14 && window.DRAGON_KILLERS) return window.DRAGON_KILLERS.duke(n); // 37-dragonkillers: the Song, the group, the horn
+    if (quest.stage === 15) { say('The Fang? Slain? Then the old songs were waiting for you, knight. Thistledown owes you more than a keep can hold. The Dragon Killers will be sung about for a hundred years.', n.name); say('Sit. Eat. Tomorrow the whole town hears it from my mouth. Tonight, hear it from me: thank you.', n.name); advanceQuest(16); return true; }
     if (quest.stage >= 16) { say('The knight of legend, in my hall. Rest, friend. The Fanglands are at peace because of you.', n.name); return true; }
     return false;
   };
   // ---------- main quest, stages 14–16 ----------
   if (!HOOKS.mainQuest[14]) HOOKS.mainQuest[14] = { text: () => "Find The Fang's lair: a sealed gate at the far south of dragon country." };
-  HOOKS.mainQuest[15] = { text: () => 'The Fang is slain. Return to Duke Ferrin.', onEnter: () => {
+  HOOKS.mainQuest[15] = { text: () => 'The Fang is slain. The Dragon Killers ride home: return to Duke Ferrin.', onEnter: () => {
     say('It is done. The dragon of legend is dead by your hand. Go home, knight. Thistledown should hear it from you.', 'The Voice');
   } };
   HOOKS.mainQuest[16] = { text: () => 'You are the knight of legend. Fanglands is at peace. (More is being built.)', onEnter: () => {
@@ -254,6 +273,13 @@
   // ---------- use: the gate, the hoard, the chest, the scenery ----------
   HOOKS.use.push((t, tx, ty) => {
     if (t === LAIR_GATE) { if (quest.stage >= 14) openGate(false); else say('Sealed. The heat behind it would cook a knight in his plate.', 'The Gate'); return true; }
+    if (t === SUMMON_CIRCLE) {
+      const fq = FQ();
+      if (fq.slain) { say('The circle is cold. What it called is dead, and stays dead.', 'Summoning circle'); return true; }
+      if (fq.summoned && fang() && !fang().dead) { say('The runes burn. The Fang is already awake, and it is behind you.', 'Summoning circle'); return true; }
+      if (!countItem('dragon_horn')) { say('A ring of runes worn into the stone. Something is meant to be sounded here. The Duke would know.', 'Summoning circle'); return true; }
+      summonFang(); return true;
+    }
     if (t === HOARD) {
       const fq = FQ();
       if (!fq.slain) { say("The Fang's hoard. Gold from a hundred kingdoms, and it sleeps on every coin. Not yet.", 'The Voice'); return true; }
@@ -288,6 +314,7 @@
     for (let i = 0; i < 40; i++) { const x = 4 + Math.floor(rnd() * 29), y = 110 + Math.floor(rnd() * 19); if (api.tileAt(x, y) === T.CAVE && (x < 15 || x > 21)) set(x, y, BONES); }
     for (const [x, y] of HOARD_SPOTS) set(x, y, HOARD);
     set(CHEST_T.x, CHEST_T.y, FANG_CHEST);
+    set(CIRCLE_T.x, CIRCLE_T.y, SUMMON_CIRCLE);
     // nothing else spawns in the lair; the dragon sleeps at its centre
     for (let i = MONSTER_SPAWNS.length - 1; i >= 0; i--) { const s = MONSTER_SPAWNS[i]; if (inLair(s.tx, s.ty)) MONSTER_SPAWNS.splice(i, 1); }
     api.spawnList('the_fang', [[FANG_HOME.x, FANG_HOME.y]]);
@@ -339,6 +366,14 @@
     g.fillStyle = '#fff2a8'; for (const [ox, oy] of [[-8, 2], [4, -6], [8, 4], [-2, -2]]) { g.beginPath(); g.arc(cx + ox, cy + oy, 2, 0, 7); g.fill(); }
     const gem = (tx + ty) % 3; g.fillStyle = ['#e63946', '#58a6ff', '#7ee787'][gem]; g.beginPath(); g.moveTo(cx + 6, cy - 10); g.lineTo(cx + 10, cy - 6); g.lineTo(cx + 6, cy - 2); g.lineTo(cx + 2, cy - 6); g.closePath(); g.fill();
     const s = Math.sin(time * 5 + tx * 2 + ty); if (s > 0.8) { g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 1.5; const sx = cx - 6 + gem * 5, sy = cy - 4; g.beginPath(); g.moveTo(sx - 5, sy); g.lineTo(sx + 5, sy); g.moveTo(sx, sy - 5); g.lineTo(sx, sy + 5); g.stroke(); }
+  }
+  function drawCircle(g, tx, ty) {
+    const cx = tc(tx), cy = tc(ty), fq = FQ(), horn = countItem('dragon_horn') > 0 && !fq.slain && !fq.summoned, gl = horn ? 0.6 + Math.sin(time * 3) * 0.3 : 0.25 + Math.sin(time * 1.5) * 0.1;
+    const gr = g.createRadialGradient(cx, cy, 4, cx, cy, 40); gr.addColorStop(0, `rgba(181,140,255,${gl * 0.5})`); gr.addColorStop(1, 'rgba(181,140,255,0)'); g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, 40, 0, 7); g.fill();
+    g.strokeStyle = `rgba(181,140,255,${gl})`; g.lineWidth = 2.5; g.beginPath(); g.arc(cx, cy, 18, 0, 7); g.stroke(); g.lineWidth = 1.2; g.beginPath(); g.arc(cx, cy, 11, 0, 7); g.stroke();
+    for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + time * 0.3; g.beginPath(); g.moveTo(cx + Math.cos(a) * 11, cy + Math.sin(a) * 11); g.lineTo(cx + Math.cos(a) * 18, cy + Math.sin(a) * 18); g.stroke(); }
+    g.fillStyle = `rgba(245,240,216,${gl})`; g.beginPath(); g.moveTo(cx - 4, cy - 6); g.lineTo(cx + 1, cy + 6); g.lineTo(cx + 3, cy - 6); g.closePath(); g.fill(); // a fang carved at the centre
+    if (horn) for (let k = 0; k < 3; k++) { const ph = (time * 0.6 + k * 0.33) % 1; g.fillStyle = `rgba(181,140,255,${0.7 * (1 - ph)})`; g.beginPath(); g.arc(cx + Math.sin(time * 2 + k * 2) * 10, cy - ph * 36, 2, 0, 7); g.fill(); }
   }
   function drawFangChest(g, tx, ty, opened) {
     const x = tx * TILE, y = ty * TILE;
@@ -402,6 +437,7 @@
     for (const p of FIREBALLS) lights.push({ x: p.x, y: p.y, r: 70 });
     for (const s of STRIKES) if (s.t >= 1) lights.push({ x: s.x, y: s.y, r: 240 });
     if (FQ().gateOpen) lights.push({ x: tc(GATE.x), y: tc(GATE.y), r: 120 });
+    lights.push({ x: tc(CIRCLE_T.x), y: tc(CIRCLE_T.y), r: 90 });
     for (const L of lights) {
       const sx = L.x - cam.x, sy = L.y - cam.y; if (sx < -L.r || sy < -L.r || sx > VW + L.r || sy > VH + L.r) continue;
       const gr = dg.createRadialGradient(sx, sy, 8, sx, sy, L.r); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
@@ -409,7 +445,7 @@
     }
     g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(fangDark, 0, 0); g.restore();
   }
-  const USABLE = [LAIR_GATE, HOARD, FANG_CHEST, MAGMA, OBSIDIAN, BONES];
+  const USABLE = [LAIR_GATE, HOARD, FANG_CHEST, MAGMA, OBSIDIAN, BONES, SUMMON_CIRCLE];
   HOOKS.draw.push((g, items) => {
     const x0 = Math.max(0, Math.floor(cam.x / TILE)), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE));
     const y0 = Math.max(0, Math.floor(cam.y / TILE)), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE) + 2);
@@ -423,6 +459,7 @@
       else if (t === OBSIDIAN) items.push({ y: ty * TILE + TILE - 4, draw: () => drawPillar(g, tx, ty) });
       else if (t === HOARD) items.push({ y: ty * TILE + TILE - 6, draw: () => drawHoard(g, tx, ty, fq.looted.includes(tx + ',' + ty)) });
       else if (t === FANG_CHEST) items.push({ y: ty * TILE + TILE - 6, draw: () => drawFangChest(g, tx, ty, fq.chest) });
+      else if (t === SUMMON_CIRCLE) items.push({ y: -1e8 + ty * TILE + 2, draw: () => drawCircle(g, tx, ty) });
     }
     if (GATE.y >= y0 && GATE.y <= y1 && GATE.x1 >= x0 && GATE.x0 <= x1) { const open = tileAt(GATE.x, GATE.y) !== LAIR_GATE; items.push({ y: open ? -1e8 + GATE.y * TILE + 2 : GATE.y * TILE + TILE - 4, draw: () => drawGate(g, open) }); }
     for (const p of FIREBALLS) items.push({ y: p.y + 12, draw: () => drawFireball(g, p) });
@@ -451,6 +488,7 @@
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
     const fq = FQ(); h.peace(true); FIREBALLS.length = 0; STRIKES.length = 0; thawAll();
+    fq.summoned = true; // the boss checks below want the dragon up: the horn-and-circle path is tested by 37-dragonkillers
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
     const iceCount = () => { let n = 0; for (let y = LAIR.y0; y <= LAIR.y1; y++) for (let x = LAIR.x0; x <= LAIR.x1; x++) if (tileAt(x, y) === ICE) n++; return n; };
     const defXp0 = player.skills.defence.xp; player.skills.defence.xp = XP_TABLE[skillLv('defence')]; // a level-up mid-fight would clamp the test hp back to maxHp
@@ -460,7 +498,7 @@
       for (let y = LAIR.y0; y <= LAIR.y1; y++) { if (tileAt(LAIR.x0, y) !== T.WALL || tileAt(LAIR.x1, y) !== T.WALL) ring = false; }
       for (let y = LAIR.y0 + 1; y < LAIR.y1; y++) for (let x = LAIR.x0 + 1; x < LAIR.x1; x++) { const t = tileAt(x, y); if (t === T.CAVE) cave++; else if (t === MAGMA) magma++; else if (t === OBSIDIAN) pillars++; else if (t === HOARD) hoard++; }
       for (let x = GATE.x0; x <= GATE.x1; x++) if (tileAt(x, GATE.y) === LAIR_GATE || tileAt(x, GATE.y) === T.CAVE) gate++;
-      check('fang: lair carved (WALL ring, CAVE interior, gate at (18,108), magma, pillars, hoard, chest)', ring && cave > 400 && gate === 3 && magma === MAGMA_SPOTS.length && pillars === PILLARS.length && hoard === HOARD_SPOTS.length && tileAt(CHEST_T.x, CHEST_T.y) === FANG_CHEST && regionAt(18, 120).name === LAIR_NAME, { ring, cave, gate, magma, pillars, hoard }); }
+      check('fang: lair carved (WALL ring, CAVE interior, gate at (18,108), magma, pillars, hoard, chest, summoning circle)', ring && cave > 400 && gate === 3 && magma === MAGMA_SPOTS.length && pillars === PILLARS.length && hoard === HOARD_SPOTS.length && tileAt(CHEST_T.x, CHEST_T.y) === FANG_CHEST && tileAt(CIRCLE_T.x, CIRCLE_T.y) === SUMMON_CIRCLE && regionAt(18, 120).name === LAIR_NAME, { ring, cave, gate, magma, pillars, hoard }); }
     // the gate refuses below stage 14 and opens at 14
     { const st0 = quest.stage; for (let x = GATE.x0; x <= GATE.x1; x++) if (tileAt(x, GATE.y) !== LAIR_GATE) changeTile(x, GATE.y, LAIR_GATE); fq.gateOpen = false;
       quest.stage = 13; drain(); F.tp(GATE.x, GATE.y - 1); F.face(GATE.x, GATE.y); F.press('KeyE'); F.sim(2, []);
