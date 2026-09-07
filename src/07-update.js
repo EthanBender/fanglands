@@ -110,10 +110,12 @@ function update(dt) {
     const def = MONSTER_DEFS[m.type];
     if (m.dead) {
       m.deadT += dt; m.respawnT -= dt;
-      if (m.respawnT <= 0 && dist(player.x, player.y, m.home.x, m.home.y) > 4 * TILE) {
+      const camp = m.respawnT <= 0 && isCampMonster(m); // the Goblin Camp refills only after 30 min AND while the knight is 40+ tiles off (see checkCampCleared)
+      if (m.respawnT <= 0 && dist(player.x, player.y, m.home.x, m.home.y) > (camp ? 40 : 4) * TILE) {
         const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast'); // a wreck, a plank or a regrown tree on the home tile must not embed the monster
         if (!sp) { m.respawnT = 5; continue; }
         m.dead = false; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.angry = def.aggro; m.state = 'idle'; burst(m.x, m.y, 'rgba(255,255,255,0.6)', 10, 60);
+        if (camp && quest.campCleared) quest.campCleared = false; // the camp is filling again: the next full clear earns the banner again
       }
       continue;
     }

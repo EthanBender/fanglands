@@ -116,7 +116,22 @@ function throwBomb(slot) {
 function explode(x, y, radius, dmgMin, dmgMax, owner) {
   burst(x, y, '#ff8a1a', 26, 200); burst(x, y, '#3a3a3a', 14, 120); floatText(x, y - 20, 'BOOM', '#ff8a1a', 18); sfx('boom');
   if (owner === 'player') { for (const m of monsters) if (!m.dead && dist(m.x, m.y, x, y) < radius + m.r) hitMonster(m, rint(dmgMin, dmgMax), 30, true); }
-  else if (dist(player.x, player.y, x, y) < radius + player.r) hurtPlayer(rint(dmgMin, dmgMax), x, y, true);
+  else {
+    if (dist(player.x, player.y, x, y) < radius + player.r) hurtPlayer(rint(dmgMin, dmgMax), x, y, true);
+    // friendly fire: a goblin bomb does not care whose side you are on. Everything else in the blast takes 3–8 (source 'monster': no XP for the knight)
+    for (const m of monsters) if (!m.dead && dist(m.x, m.y, x, y) < radius + m.r) hitMonster(m, rint(3, 8), 20, true, 'monster');
+  }
+}
+// ---------- the Goblin Camp ----------
+// Spawns inside the palisade carry `camp: true` (02-world). A dead camp monster stays down for 30 minutes and only comes back while
+// the knight is 40+ tiles away, so a cleared camp stays cleared for a proper while. quest.campCleared gates the banner to once per clear.
+const CAMP_RESPAWN = 1800;
+function isCampMonster(m) { const tx = Math.floor(m.home.x / TILE), ty = Math.floor(m.home.y / TILE); return MONSTER_SPAWNS.some(s => s.camp && s.tx === tx && s.ty === ty); }
+function checkCampCleared() {
+  const cm = monsters.filter(isCampMonster);
+  if (!cm.length || cm.some(m => !m.dead)) return false;
+  if (!quest.campCleared) { quest.campCleared = true; levelBanner = { text: 'GOBLIN CAMP CLEARED', sub: 'They will not be back for a while', t: 4 }; sfx('levelup'); save(); }
+  return true;
 }
 // source: 'player' (XP, highest hit, offences) or 'companion' (none of those; HOOKS.hit receives it as the third argument)
 function hitMonster(m, dmg, knock = 14, fromBomb = false, source = 'player') {
@@ -147,6 +162,7 @@ function killMonster(m) {
   burst(m.x, m.y, bloodColor(m.type), 16, 120);
   rollDrops(d, m.x, m.y);
   for (const h of HOOKS.kill) h(m);
+  if (isCampMonster(m)) { m.respawnT = CAMP_RESPAWN; checkCampCleared(); }
   if (m.type === 'goblin' && quest.stage === 3) { quest.kills += 1; if (quest.kills >= 3) advanceQuest(4); else save(); }
   if (d.mech) { const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); if (PLACEABLE_ON.has(tileAt(tx, ty))) changeTile(tx, ty, T.WRECK); say('The walker falls in a heap of barrel and iron. A goblin scrambles out and runs. The wreck stays. Bring iron bars and scrap, and it could walk again.', 'The Voice'); if (quest.stage === 7) { quest.walkerKilled = true; save(); } }
 }
@@ -345,7 +361,7 @@ function useAction() {
   // a wandering villager standing in front of a board, station or door does not block it
   if (npc && !(npc.wander && (SOLID.has(t) || PUSH_THROUGH.has(t)))) { talkTo(npc); return; }
   const b = buildingAt(tx, ty);
-  if (t === T.SIGN) { say("→ THISTLEDOWN, 1 mile.   → GREY QUARRY, north.   → HOLLOWFORD (crossed out, burned at the edges).", 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
+  if (t === T.SIGN) { say("→ THISTLEDOWN, 1 mile.   → GREY QUARRY, north.   → H̶O̶L̶L̶O̶W̶F̶O̶R̶D̶ (scorched)", 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
   if (t === T.CHEST) { if (b && b.coffin) { openPanel('coffin'); return; } if (b && b.id === 'bank') { openPanel('bank'); return; } openLootChest(tx, ty); return; }
   if (t === T.GOLDPILE) { notify("Death's gold. He is watching. Leave it."); return; }
   if (t === T.GRAVE) { say('Here lies the last knight of Hollowford. The road took him. The road takes everyone.', 'Gravestone'); return; }
