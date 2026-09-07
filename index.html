@@ -6940,6 +6940,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const b0 = AD.stats.bonuses, mx0 = player.skills.melee.xp; const dead = killByHand(gob);
       check('ashdrake: kill bonus — a level-2 goblin pays no bonus (only the 4 xp per damage)', dead && AD.stats.bonuses === b0 && player.skills.melee.xp - mx0 <= 4 * playerMaxHit() * 3, { dead, bonuses: AD.stats.bonuses - b0, gained: player.skills.melee.xp - mx0 }); gob.x = gob.home.x; gob.y = gob.home.y; }
     // 3. kid mode: a quarter of each hit back, a barely-lethal hit survived, direct hp writes caught by the tracker
+    player.skills.defence.xp = XP_TABLE[skillLv('defence')]; // no level-up heal can land during these hits
     { F.tp(60, 100); F.sim(2, []); window.__kidmode = true; player.hp = Math.min(player.maxHp, 40); const hp0 = player.hp;
       hurtPlayer(20, player.x + 10, player.y, true); const afterHit = player.hp;
       F.sim(1, []); player.hp -= 8; F.sim(1, []); const afterBurn = player.hp;
