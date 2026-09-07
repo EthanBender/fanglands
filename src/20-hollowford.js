@@ -11,15 +11,24 @@
   const HF_SQUARE = { x: 140, y: 80 }; // the cracked well
   const HF_HATCH = { x: 147, y: 70 };  // Pip's cellar
   const HF_BEAST_HOME = { x: 140, y: 86 };
-  // feature state lives in quest.hollowford (saved with the quest); created lazily for old saves
-  const HF = () => quest.hollowford || (quest.hollowford = { rewarded: false, beastKilled: false, wreck: null });
-  HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null }; });
+  // feature state lives in quest.hollowford (saved with the quest); created lazily for old saves.
+  // freed / barHits: Cohen's "Under the Chapel" — the survivors are barred into the crypt by goblin iron until the knight breaks it (3 hammer hits).
+  const HF = () => { const h = quest.hollowford || (quest.hollowford = { rewarded: false, beastKilled: false, wreck: null }); if (typeof h.freed !== 'boolean') h.freed = false; if (typeof h.barHits !== 'number') h.barHits = 0; return h; };
+  HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null, freed: false, barHits: 0 }; });
 
   // ---------- tiles ----------
   const T_SCORCH = addTile('SCORCH', { placeableOn: true, tex: 'scorch', mini: '#3a3330' }); // burned ground
   const T_WELL = addTile('WELL', { solid: true, tex: 'scorch', mini: '#8d9098' });            // cracked town well
   const T_HATCH = addTile('HATCH', { tex: 'dirt', mini: '#6b4a2a' });                          // cellar hatch (walk over it)
   const T_BEAM = addTile('BEAM', { solid: true, tex: 'scorch', mini: '#2a2420' });             // fallen charred roof beam
+  const T_BARS = addTile('CRYPT_BARS', { solid: true, tex: 'floor', mini: '#8f96a3' });       // goblin scrap-iron across the crypt entrance
+  INTERESTING_TILES.add(T_BARS); // the core draws the E highlight on it and frontTile reaches for it
+  // the crypt is the west (FLOOR) end of the chapel, x 125–128, y 85–90. The bars close it off from the doorway step (128,85) and along the nave side (x 129).
+  const BAR_TILES = [[128, 85], [129, 85], [129, 86], [129, 87], [129, 88], [129, 89], [129, 90]];
+  const JAILERS = [[126, 83], [130, 83]]; // two goblin brutes posted outside the chapel door
+  const BAR_HITS = 3;
+  const barsStand = () => BAR_TILES.some(([x, y]) => tileAt(x, y) === T_BARS);
+  const isJailer = m => m.type === 'brute' && JAILERS.some(([x, y]) => Math.abs(m.home.x - tc(x)) < 1 && Math.abs(m.home.y - tc(y)) < 1);
   { // scorched-earth ground texture, same procedural style as the core tiles
     const rnd = mulberry32(4041);
     for (let v = 0; v < 3; v++) makeTex('scorch' + v, g => {
@@ -138,6 +147,7 @@
     if (quest.stage === 9 && hf.beastKilled) advanceQuest(10);
     if (quest.stage === 10 && hf.rewarded) advanceQuest(11);
     for (const m of monsters) {
+      if (hf.freed && m.dead && isJailer(m)) { m.respawnT = Infinity; continue; } // the jailers have nothing left to guard: killed once the crypt is open, they stay dead
       if (m.type !== 'barrelbeast') continue;
       if (hf.beastKilled) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; continue; } // a boss dies once: no 10-minute farm, no second wreck, no new beast in a "safe" town
       if (m.dead) continue;
@@ -224,24 +234,48 @@
   // ---------- survivors ----------
   NPCS.push(initNpc({ id: 'tam', name: 'Old Tam', x: 126, y: 88, tunic: '#5a5048', hair: '#d9d0c0', beard: true, role: 'survivor', leader: true }));
   NPCS.push(initNpc({ id: 'nell', name: 'Nell', x: 128, y: 89, tunic: '#6a4a4a', hair: '#3a2a1a', woman: true, role: 'survivor',
-    lines: ["Don't go near the square. It stands in the square.", 'We had a well. It stood on the well.', 'Tam knows what to do. Tam always knows.'],
-    after: ["It's really gone? Pip, it's gone!", 'I can hear birds again.', "We'll need planks. So many planks."] }));
+    lines: ["Don't go near the square. It stands in the square.", 'We had a well. It stood on the well.', 'Tam knows what to do. Tam always knows.', 'The goblins barred us in. Scrap iron, bolted through the stone. We can hear it hum when the beast walks past.'],
+    after: ["It's really gone? Pip, it's gone!", 'I can hear birds again.', "We'll need planks. So many planks.", 'The bars. Knight, the bars. A hammer would have them off, if you have one.'],
+    freed: ['Out. We are OUT. I keep saying it.', 'I am fetching what we saved from the altar. Then the square, and sun.', 'Tam has ideas. Tam always has ideas. Something about a guild.'] }));
   NPCS.push(initNpc({ id: 'pip', name: 'Pip', x: 126, y: 86, tunic: '#4a5a6a', hair: '#c9843a', role: 'survivor',
-    lines: ['I saw it. It has goblins ON it. On TOP of it.', "I'm not scared. Nell is scared.", 'My house had a cellar. I hid under the hatch for two days.'],
-    after: ['You broke it! Can I see the wreck? Can I?', "When I'm big I'm going to be a knight.", 'Nell says we can go outside now.'] }));
+    lines: ['I saw it. It has goblins ON it. On TOP of it.', "I'm not scared. Nell is scared.", 'My house had a cellar. I hid under the hatch for two days.', 'The big goblins put bars on the stairs. I tried to squeeze through. My head fits. My shoulders don\'t.'],
+    after: ['You broke it! Can I see the wreck? Can I?', "When I'm big I'm going to be a knight.", 'Nell says we can go outside now.', 'Hit the bars! Hit them with a hammer! Three good ones, Tam says.'],
+    freed: ['You SMASHED them. Clang, clang, CLANG. I counted.', 'I am allowed in the square now. Nell said. I am going as soon as I find my other shoe.', 'Tam says I can be in the guild. A real one. With a board.'] }));
   HOOKS.talk.survivor = n => {
     const hf = HF();
-    if (!n.leader) { say(pick(hf.beastKilled ? n.after : n.lines), n.name); return; }
-    if (!hf.beastKilled) { say('Keep your voice down, knight. It walks past every hour. A barrel the size of a house on iron legs, and goblins riding on top of it.', n.name); say('It stood on our well. It walked through the chapel wall. Bring it down and Hollowford can breathe again.', n.name); }
+    if (!n.leader) { say(pick(hf.freed && n.freed ? n.freed : hf.beastKilled ? n.after : n.lines), n.name); return; }
+    if (!hf.beastKilled) { say('Keep your voice down, knight. It walks past every hour. A barrel the size of a house on iron legs, and goblins riding on top of it.', n.name); say('It stood on our well. It walked through the chapel wall. Bring it down and Hollowford can breathe again.', n.name); say('They barred us in down here with scrap from their machine. Goblin iron. Nothing breaks it while the beast is near.', n.name); }
     else if (!hf.rewarded) {
       hf.rewarded = true; giveOrDrop('coins', 200, player.x, player.y); giveOrDrop('steel_helm', 1, player.x, player.y); gainXp('defence', 120);
       say("It's down? The Barrelbeast is DOWN? Nell. Pip. Come up, it's down.", n.name);
       say("Here. Two hundred coins, all Hollowford has left, and the captain's steel helm. He'd want a knight to wear it. Thank you.", n.name);
       burst(player.x, player.y, '#f5c542', 24, 120);
       if (quest.stage === 10) advanceQuest(11); else save();
-    } else say("We're digging out the well. When Hollowford has a roof again, there'll be a chair in it for you, knight.", n.name);
+    } else if (hf.freed) say(pick(["We're in the square most of the day now. I come down for what we saved, and for the quiet.", 'A guild, knight. When there is a roof to put it under. Folk who do things, and a board to say what.', "Pip counted your hammer blows. He tells everyone. Three, he says. Three and the bars went."]), n.name);
+    else say("We're digging out the well, once we're past these bars. When Hollowford has a roof again, there'll be a chair in it for you, knight.", n.name);
+  };
+  // the bars: locked while the beast walks; three hammer blows once it is dead
+  const breakBars = () => {
+    const hf = HF();
+    for (const [x, y] of BAR_TILES) if (tileAt(x, y) === T_BARS) changeTile(x, y, T.FLOOR);
+    hf.freed = true; hf.barHits = BAR_HITS;
+    burst(tc(129), tc(87), '#8f96a3', 30, 160); burst(tc(128), tc(85), '#8f96a3', 16, 120); sfx('quest');
+    levelBanner = { text: 'UNDER THE CHAPEL', sub: 'The survivors are free', t: 3.5 };
+    say('The last bolt shears. The bars fold over like a dropped gate. Behind them, three faces, blinking at the light.', 'The Voice');
+    say("Knight. KNIGHT. It's open. Nell, Pip, up the steps, go on, go on. Sun. Get some sun.", 'Old Tam');
+    say('I am going to the square. I am going to stand in the middle of it.', 'Nell');
+    save();
   };
   HOOKS.use.push((t, tx, ty) => {
+    if (t === T_BARS) {
+      const hf = HF();
+      if (!hf.beastKilled) { say('The bars are goblin iron. They hum with the machine nearby.', 'Crypt bars'); return true; }
+      if (!hasTool('hammer')) { say('Goblin iron, bolted through the stone. Cold now, and quiet. A hammer would do it.', 'Crypt bars'); return true; }
+      hf.barHits = Math.min(BAR_HITS, (hf.barHits || 0) + 1); sfx('anvil'); burst(tc(tx), tc(ty), '#c9ccd3', 10, 110); player.attackT = 0.2;
+      if (hf.barHits >= BAR_HITS) breakBars();
+      else { floatText(tc(tx), tc(ty) - 30, 'CLANG', '#c9ccd3', 15); notify(`The bolts shear. ${BAR_HITS - hf.barHits} more blow${BAR_HITS - hf.barHits > 1 ? 's' : ''}.`); save(); }
+      return true;
+    }
     if (t === T_WELL) { say(HF().rewarded ? 'The survivors are clearing the well. Water again, soon.' : 'Cracked and dry. Something very heavy stood on it.', 'The Well'); return true; }
     if (t === T_HATCH) { say(HF().beastKilled ? 'The hatch stands open. Whoever hid here has gone up to the chapel.' : 'A cellar hatch, barred from below. A small voice: "Go away. No. Wait. Are you a knight? The chapel. Tam is in the chapel. Go quietly."', 'Cellar hatch'); return true; }
     if (t === T_BEAM) { notify('A charred roof beam. Still warm.'); return true; }
@@ -288,6 +322,8 @@
     set(133, 86, T.RUBBLE); set(133, 87, T_SCORCH); set(133, 88, T.RUBBLE); // where the beast walked through the wall
     set(131, 86, T.RUBBLE); set(130, 89, T.RUBBLE); set(132, 88, T_BEAM); set(131, 85, T_BEAM);
     set(126, 90, T.TABLE); set(125, 85, T.SHELF);                         // the altar and what they saved
+    for (const [x, y] of BAR_TILES) set(x, y, T_BARS);                    // goblin iron across the crypt steps (Under the Chapel)
+    for (const [x, y] of JAILERS) set(x, y, T_SCORCH);                    // the jailers' posts stay clear of stumps
     // the square: cracked well, fallen beams
     set(HF_SQUARE.x, HF_SQUARE.y, T_WELL); set(136, 76, T_BEAM); set(144, 82, T_BEAM);
     // burned trees on the outskirts (never beside a street or a doorway)
@@ -302,8 +338,14 @@
     api.spawnList('goblin', [[140, 70], [133, 78], [148, 78], [153, 89]]);
     api.spawnList('sapper', [[143, 66], [130, 80]]);
     api.spawnList('brute', [[150, 74], [128, 75]]);
+    api.spawnList('brute', JAILERS); // the crypt's jailers
     api.spawnList('barrelbeast', [[HF_BEAST_HOME.x, HF_BEAST_HOME.y]]);
   });
+
+  // ---------- Under the Chapel (tiny quest) ----------
+  QUEST_DEFS.crypt = { name: 'Under the Chapel' };
+  HOOKS.activeQuests.push(() => quest.stage >= 9 && !HF().freed ? ['crypt'] : []);
+  HOOKS.questText.crypt = () => { const hf = HF(); return hf.freed ? 'Done.' : !hf.beastKilled ? 'The survivors are barred into the chapel crypt behind goblin iron. It will not break while the Barrelbeast walks.' : `Break the goblin bars in the chapel with a hammer (${Math.min(hf.barHits || 0, BAR_HITS)}/${BAR_HITS} blows).`; };
 
   // ---------- props ----------
   const drawWell = (g, tx, ty) => {
@@ -337,6 +379,19 @@
     else { for (let k = 0; k < 3; k++) { g.fillStyle = k % 2 ? '#5a3a1e' : '#6b4a2a'; g.fillRect(x + 8, y + 10 + k * 10, 32, 9); } g.fillStyle = '#3a3a42'; g.fillRect(x + 8, y + 13, 32, 3); g.fillRect(x + 8, y + 31, 32, 3); g.strokeStyle = '#8f96a3'; g.lineWidth = 2; g.beginPath(); g.arc(x + 24, y + 25, 4, 0, 7); g.stroke(); }
     g.fillStyle = 'rgba(15,12,10,0.35)'; g.beginPath(); g.ellipse(x + 14, y + 12, 10, 5, 0.3, 0, 7); g.fill(); // soot
   };
+  // goblin scrap-iron bars: uneven uprights, a bent cross-brace, rivets, and a faint hum-glow while the beast lives
+  const drawBars = (g, tx, ty) => {
+    const x = tx * TILE, y = ty * TILE, live = !HF().beastKilled, v = (tx * 7 + ty * 5) % 3;
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(x + 4, y + TILE - 8, TILE - 8, 6);
+    if (live) { g.fillStyle = `rgba(200,180,255,${0.08 + Math.sin(time * 6 + tx) * 0.05})`; g.fillRect(x + 2, y - 6, TILE - 4, TILE + 6); }
+    g.strokeStyle = '#3a3a42'; g.lineWidth = 5; g.lineCap = 'round';
+    for (let k = 0; k < 4; k++) { const bx = x + 8 + k * 11 + (v === k ? 2 : 0); g.beginPath(); g.moveTo(bx, y + TILE - 6); g.lineTo(bx + (k === v ? 3 : -1), y - 10); g.stroke(); }
+    g.strokeStyle = '#5a5a62'; g.lineWidth = 4; g.beginPath(); g.moveTo(x + 4, y + 14 + v * 4); g.lineTo(x + TILE - 4, y + 10 + v * 6); g.stroke();
+    g.beginPath(); g.moveTo(x + 4, y + TILE - 12); g.lineTo(x + TILE - 4, y + TILE - 14); g.stroke();
+    g.fillStyle = '#8f96a3'; for (let k = 0; k < 4; k++) { const bx = x + 8 + k * 11 + (v === k ? 2 : 0); g.beginPath(); g.arc(bx, y + 12 + v * 5, 2, 0, 7); g.arc(bx, y + TILE - 13, 2, 0, 7); g.fill(); }
+    g.fillStyle = '#9fd3ff'; g.beginPath(); g.arc(x + 30 + v * 4, y + 24, 2.2, 0, 7); g.fill(); // a scrap of the beast's own plating, riveted on
+    if (live) { g.strokeStyle = `rgba(220,200,255,${0.25 + Math.sin(time * 9 + ty) * 0.2})`; g.lineWidth = 1; g.beginPath(); g.moveTo(x + 8, y + 2); g.lineTo(x + TILE - 8, y + 4); g.stroke(); }
+  };
   const drawSoot = (g, tx, ty, t) => {
     const x = tx * TILE, y = ty * TILE, v = (tx * 7 + ty * 3) % 3;
     const grad = g.createLinearGradient(0, y, 0, y + TILE); grad.addColorStop(0, 'rgba(20,16,14,0.55)'); grad.addColorStop(1, 'rgba(20,16,14,0.18)'); g.fillStyle = grad; g.fillRect(x, y, TILE, TILE);
@@ -357,6 +412,7 @@
       const t = tileAt(tx, ty);
       if (t === T_WELL) items.push({ y: ty * TILE + TILE - 6, draw: () => drawWell(g, tx, ty) });
       else if (t === T_BEAM) items.push({ y: ty * TILE + TILE - 8, draw: () => drawBeam(g, tx, ty) });
+      else if (t === T_BARS) items.push({ y: ty * TILE + TILE - 4, draw: () => drawBars(g, tx, ty) });
       else if (t === T_HATCH) items.push({ y: ty * TILE - 2 * TILE, draw: () => drawHatch(g, tx, ty) }); // ground level: before anything standing near it
       else if ((t === T.HWALL || t === T.CWALL) && hfIn(tx, ty)) items.push({ y: ty * TILE - 2 * TILE, draw: () => drawSoot(g, tx, ty, t) });
       else if (t === T_SCORCH && hfIn(tx, ty) && (tx * 31 + ty * 17) % 13 === 0) items.push({ y: ty * TILE + TILE + 60, draw: () => drawSmoke(g, tx, ty) });
@@ -375,6 +431,12 @@
       check('Barrelbeast spawned in Hollowford: lv 28, 400 hp, max hit 16, def 24, speed 55, aggro, sight 7, respawn 600, boss drops', !!bb && d.level === 28 && d.hp === 400 && d.maxHit === 16 && d.def === 24 && d.speed === 55 && d.aggro && d.sight === 7 * TILE && d.respawn === 600 && d.drops.always.length === 4 && d.drops.rare.chance === 3 && regionAt(Math.floor(bb.home.x / TILE), Math.floor(bb.home.y / TILE)).name === 'Hollowford' && typeof HOOKS.drawMonster.barrelbeast === 'function', { found: !!bb, hp: bb && bb.maxHp }); }
     { const before = quest.stage; if (quest.stage < 8) quest.stage = 8; hf.beastKilled = false; hf.rewarded = false; F.tp(140, 68); F.sim(3, []);
       check('entering Hollowford after Chapter 3 opens Chapter 4 (stage 9, area banner)', quest.stage === 9 && player.region === 'Hollowford' && !!areaBanner && areaBanner.name === 'Hollowford', { before, stage: quest.stage, banner: areaBanner && areaBanner.name }); }
+    // Under the Chapel: the crypt is barred and two brutes stand outside; before the beast is dead the bars refuse
+    { for (const [x, y] of BAR_TILES) if (tileAt(x, y) !== T_BARS) changeTile(x, y, T_BARS); hf.freed = false; hf.barHits = 0;
+      const jailers = monsters.filter(isJailer); const noPath = F.bfs(128, 84, 126, 88) === null; const solid = SOLID.has(T_BARS) && BAR_TILES.every(([x, y]) => tileAt(x, y) === T_BARS);
+      if (!hasTool('hammer')) h.give('hammer', 1);
+      dialog.queue.length = 0; dialog.cur = null; closePanel(); F.tp(128, 84); F.face(128, 85); F.press('KeyE'); F.sim(2, []); const hum = !!dialog.cur && /goblin iron.*hum/.test(dialog.cur.text);
+      check('crypt: goblin bars seal the crypt (7 solid CRYPT_BARS, no path from the door to Tam), two brute jailers outside; before the beast is dead E says they hum', solid && noPath && jailers.length === 2 && hum && barsStand() && !hf.freed && activeQuests().includes('crypt') && /Barrelbeast walks/.test(questText('crypt')), { solid, noPath, jailers: jailers.length, hum, text: dialog.cur && dialog.cur.text, quest: questText('crypt') }); dialog.queue.length = 0; dialog.cur = null; }
     { const bb = monsters.find(m => m.type === 'barrelbeast'); F.tp(137, 86); bb.dead = false; bb.hp = 150; bb.phase2 = false; bb.stunT = 0; bb.x = player.x + 4 * TILE; bb.y = player.y; bb.home = { x: bb.x, y: bb.y }; bb.state = 'idle';
       const hp0 = player.hp; player.hp = 5000; h.peace(false); const n0 = bb.bombsFired || 0; F.sim(240, []); const fired = (bb.bombsFired || 0) - n0; const sticky = projectiles.some(p => p.kind === 'sticky' && p.owner === 'monster');
       h.peace(true); projectiles = []; player.hp = Math.min(hp0, player.maxHp); player.hurtT = 0;
@@ -383,6 +445,14 @@
       for (let i = 0; i < 80 && !bb.dead; i++) { bb.x = player.x + 50; bb.y = player.y; bb.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); }
       const w = hf.wreck;
       check('Barrelbeast dies into its own wreck (BEAST_WRECK): CHAPTER 4 COMPLETE banner, stage 10', bb.dead && hf.beastKilled && !!w && tileAt(w[0], w[1]) === (T.BEAST_WRECK ?? T.WRECK) && quest.stage === 10 && !!levelBanner && levelBanner.text === 'CHAPTER 4 COMPLETE', { dead: bb.dead, wreck: w, stage: quest.stage, banner: levelBanner && levelBanner.text }); }
+    // Under the Chapel: with the beast dead, three hammer blows on the bars free the survivors; they appear in the square at once (31-rebuild keys on freed)
+    { const drain = () => { dialog.queue.length = 0; dialog.cur = null; }; if (!hasTool('hammer')) h.give('hammer', 1); hf.freed = false; hf.barHits = 0; for (const [x, y] of BAR_TILES) if (tileAt(x, y) !== T_BARS) changeTile(x, y, T_BARS);
+      closePanel(); F.tp(128, 84); F.face(128, 85); const hits = []; levelBanner = null;
+      for (let k = 0; k < 3; k++) { drain(); F.press('KeyE'); F.sim(2, []); hits.push([hf.barHits, barsStand()]); }
+      const open = BAR_TILES.every(([x, y]) => tileAt(x, y) === T.FLOOR), path = F.bfs(128, 84, 126, 88), banner = levelBanner && levelBanner.text;
+      F.sim(3, []); F.tp(137, 82); F.face(137, 81); drain(); F.press('KeyE'); F.sim(2, []); const sq = dialog.cur && dialog.cur.who;
+      const crypt = NPCS.find(n => n.id === 'pip'); drain(); F.tp(127, 86); F.face(126, 86); F.press('KeyE'); F.sim(2, []); const freedLine = dialog.cur && crypt.freed.includes(dialog.cur.text);
+      check('crypt: after the kill, three E presses with a hammer break the bars (1/3, 2/3, then FLOOR), freed flag + UNDER THE CHAPEL banner, the quest clears, Tam stands in the square at once, the crypt Pip has new lines', hits[0][0] === 1 && hits[0][1] && hits[1][0] === 2 && hits[1][1] && hits[2][0] === 3 && open && hf.freed && !!path && banner === 'UNDER THE CHAPEL' && !activeQuests().includes('crypt') && sq === 'Old Tam' && !!freedLine, { hits, open, freed: hf.freed, path: path && path.length, banner, sq, freedLine, text: dialog.cur && dialog.cur.text }); drain(); }
     { let free = player.inv.filter(s => !s).length; for (let i = player.inv.length - 1; i >= 0 && free < 2; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour) { player.inv[i] = null; free++; } }
       const c0 = coins(); const r = F.talk('tam');
       check('survivor leader rewards the knight after the kill: 200 coins + steel helm, stage 11', typeof r === 'number' && hf.rewarded && (coins() === c0 + 200 || drops.some(d => d.id === 'coins' && d.qty === 200)) && (countItem('steel_helm') >= 1 || drops.some(d => d.id === 'steel_helm')) && quest.stage === 11, { r, coins: coins() - c0, helm: countItem('steel_helm'), stage: quest.stage }); }
