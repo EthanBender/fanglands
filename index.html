@@ -15200,6 +15200,10 @@ window.SETTINGS = SETTINGS;
 // Agility 32 for this log", "You fell! Agility 40 for this gap"). Nothing here is silent: every obstacle below its
 // level costs health and says the number you need.
 //
+// And, like the yard's fence and the quarry's rock, each loop is WALLED, with one way in beside its start flag.
+// That wall is the level requirement: without it you can walk the flags from the outside and take the xp at
+// Agility 1, and a knight crossing the field gets slipped by a balance log over and over until it kills him.
+//
 // Feature file: registers through HOOKS only. The only other file touched is 38-agility.js, which gained
 // window.AGILITY (the registration API) and a per-course lap purse. Everything lives in one block so no name leaks.
 // Save state: none of its own — the laps live in quest.agility, kept by 38-agility.
@@ -15242,6 +15246,25 @@ window.SETTINGS = SETTINGS;
   // the goblins' scaffold: over the scrap yard's north fence, its south fence, and Tinkerton's compound wall
   const SCAFFOLD = [[245, 20], [250, 32], [254, 36]];
 
+  // ---------- the wall round each loop ----------
+  // Every shipped course is walled in. The Thistledown yard is fenced with one gate (38-agility, T.FENCE round
+  // x 86-102 / y 50-54, T.GATE at 93,54) and the Grey Quarry ledge is cut into solid rock (T.WALL round x 46-62 /
+  // y 1-4). That wall is not decoration: it is what stops a knight wandering onto a balance log by accident and
+  // slipping over and over until it kills him. These two courses get the same wall — a rail right round the loop,
+  // from x0-1 to x1+1 and from north-1 to south+1, with exactly one way in, put beside the start flag so the first
+  // thing you meet is the flag and its message, never an obstacle.
+  const CAN_DOOR = [121, 101], CAN_APPROACH = [121, 100];   // in off the jungle, straight down onto the canopy start flag
+  const ROOF_DOOR = [225, 19], ROOF_APPROACH = [224, 19];   // in off the market cobbles, straight onto the roof start flag
+  const ringOf = R => {
+    const out = [];
+    for (let x = R.x0 - 1; x <= R.x1 + 1; x++) { out.push([x, R.north - 1]); out.push([x, R.south + 1]); }
+    for (let y = R.north; y <= R.south; y++) { out.push([R.x0 - 1, y]); out.push([R.x1 + 1, y]); }
+    return out;
+  };
+  const notDoor = d => ([x, y]) => !(x === d[0] && y === d[1]);
+  const CAN_RING = ringOf(CAN).filter(notDoor(CAN_DOOR));
+  const ROOF_RING = ringOf(ROOF).filter(notDoor(ROOF_DOOR));
+
   const CAN_TRACK = [], ROOF_TRACK = [];   // every walkable tile of each loop, in no particular order
   for (const [R, out] of [[CAN, CAN_TRACK], [ROOF, ROOF_TRACK]]) {
     for (let x = R.x0; x <= R.x1; x++) { out.push([x, R.north]); out.push([x, R.south]); }
@@ -15272,6 +15295,14 @@ window.SETTINGS = SETTINGS;
     for (const [t, cells] of [[AG_LOG, CAN_LOGS], [AG_NET, CAN_NETS], [AG_GAP, CAN_GAP1], [AG_GAP, CAN_GAP2],
       [AG_LOG, ROOF_LOGS], [AG_NET, ROOF_NETS], [AG_GAP, ROOF_GAP1], [AG_GAP, ROOF_GAP2]]) for (const [x, y] of cells) set(x, y, t);
     for (const [x, y] of [...CAN_MARKS, ...ROOF_MARKS]) set(x, y, AG_MARK);
+    // the wall, and the one way in. A ring cell that is already solid — a goblin hut's back wall, the scrap-yard
+    // fence, a wall of jungle — is left alone and counted as the wall; everything else becomes rail or ridge.
+    const shut = (x, y) => { const t = api.tileAt(x, y); return SOLID.has(t) && !PUSH_THROUGH.has(t); };
+    for (const [x, y] of CAN_RING) if (!shut(x, y)) set(x, y, CAN_RAIL);
+    for (const [x, y] of ROOF_RING) if (!shut(x, y)) set(x, y, ROOF_RIDGE);
+    set(CAN_DOOR[0], CAN_DOOR[1], CAN_DECK); set(ROOF_DOOR[0], ROOF_DOOR[1], ROOF_DECK);
+    if (shut(CAN_APPROACH[0], CAN_APPROACH[1])) set(CAN_APPROACH[0], CAN_APPROACH[1], T.DIRT);
+    if (shut(ROOF_APPROACH[0], ROOF_APPROACH[1])) set(ROOF_APPROACH[0], ROOF_APPROACH[1], T.DIRT);
     // shortcuts. Both stay in SOLID for good: they only open for the knight, through WALK_OVER, at the level below.
     set(VINE.x, VINE.y, CAN_VINE);
     for (const [x, y] of SCAFFOLD) set(x, y, GC_SCAFFOLD);
@@ -15307,8 +15338,8 @@ window.SETTINGS = SETTINGS;
   HOOKS.use.push((t, tx, ty) => {
     if (t === CAN_VINE) { if (agLv() < VINE_LV) { notify(`The vine ladder needs Agility ${VINE_LV}. You are ${agLv()}.`); return true; } return stepOver(tx, ty, 'ladder'); }
     if (t === GC_SCAFFOLD) { if (agLv() < SCAF_LV) { notify(`This scaffold needs Agility ${SCAF_LV}. You are ${agLv()}.`); return true; } return stepOver(tx, ty, 'scaffold'); }
-    if (t === CAN_RAIL) { notify('A rail of woven vine. The run goes round it, not through it.'); return true; }
-    if (t === ROOF_RIDGE) { notify('The roof ridge. Scrap iron over a beam. The run goes round it.'); return true; }
+    if (t === CAN_RAIL) { notify('A rail of woven vine. The run goes round it, and the only way on is the gap above the start flag.'); return true; }
+    if (t === ROOF_RIDGE) { notify('Scrap iron over a beam. The run goes round it, and the only way up is the gap beside the start flag.'); return true; }
     if (t === CAN_DECK) { notify(`Sylvaris canopy run. Touch the flags in order. Agility ${CANOPY_LV} for a full lap.`); return true; }
     if (t === ROOF_DECK) { notify(`Grubmarket rooftop run. Touch the flags in order. Agility ${ROOF_LV} for a full lap.`); return true; }
     return false;
@@ -15414,7 +15445,7 @@ window.SETTINGS = SETTINGS;
     add('agility', 'Grubmarket rooftop run (lap)', ROOF_LV, ROOFTOP.xp, lapSecs(ROOF_MARKS), `logs at 48, the first gap at 52, the alley jump at ${ROOF_LV}`);
   });
 
-  window.AGILITY2 = { CANOPY, ROOFTOP, CAN, ROOF, VINE, SCAFFOLD, CANOPY_LV, VINE_LV, ROOF_LV, SCAF_LV, TILES: { CAN_DECK, CAN_RAIL, CAN_VINE, ROOF_DECK, ROOF_RIDGE, GC_SCAFFOLD } };
+  window.AGILITY2 = { CANOPY, ROOFTOP, CAN, ROOF, VINE, SCAFFOLD, CANOPY_LV, VINE_LV, ROOF_LV, SCAF_LV, CAN_DOOR, ROOF_DOOR, CAN_RING, ROOF_RING, TILES: { CAN_DECK, CAN_RAIL, CAN_VINE, ROOF_DECK, ROOF_RIDGE, GC_SCAFFOLD } };
 
   // ---------- self-test ----------
   const P = 'agility2: ';
@@ -15434,12 +15465,13 @@ window.SETTINGS = SETTINGS;
       const c = CO && CO.comp(); if (c && c.id) { c.x = player.x + 12 * TILE; c.y = player.y + 12 * TILE; }
       notice = null; floaters.length = 0;
     };
-    // a BFS the knight could actually walk: solid stops it, doors and gates do not, and `open` lists the shortcut
-    // tiles to treat as climbable. Returns the number of steps, or -1 when there is no way at all.
-    const walkLen = (sx, sy, tx, ty, open = []) => {
+    // a BFS the knight could actually walk: solid stops it, doors and gates do not, `open` lists the shortcut
+    // tiles to treat as climbable, and `shut` lists tiles this walk refuses to enter (the obstacle tiles, when the
+    // question is whether the course can be got round without meeting one). Returns the steps, or -1 for no way.
+    const route = (sx, sy, tx, ty, open = [], shut = []) => {
       const W = MAP_W, H = MAP_H, prev = new Int32Array(W * H).fill(-1), q = [sy * W + sx];
       prev[sy * W + sx] = sy * W + sx;
-      const pass = t => open.includes(t) || !SOLID.has(t) || PUSH_THROUGH.has(t);
+      const pass = t => !shut.includes(t) && (open.includes(t) || !SOLID.has(t) || PUSH_THROUGH.has(t));
       for (let qi = 0; qi < q.length; qi++) {
         const c = q[qi], cx = c % W, cy = (c / W) | 0; if (cx === tx && cy === ty) break;
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -15448,16 +15480,71 @@ window.SETTINGS = SETTINGS;
           prev[n] = c; q.push(n);
         }
       }
-      if (prev[ty * W + tx] === -1) return -1;
-      let len = 0, c = ty * W + tx; while (c !== sy * W + sx) { len++; c = prev[c]; }
-      return len;
+      if (prev[ty * W + tx] === -1) return null;
+      const path = []; let c = ty * W + tx; while (c !== sy * W + sx) { path.push([c % W, (c / W) | 0]); c = prev[c]; }
+      return path.reverse();
     };
-    // walk one full lap by touching the flags in order, the way 38-agility's yard check does
-    const lap = (course, marks) => {
+    const walkLen = (sx, sy, tx, ty, open = [], shut = []) => { const p = route(sx, sy, tx, ty, open, shut); return p ? p.length : -1; };
+    // touch a list of flags by teleporting onto them. This is only ever used to prove the ORDER rule (flags out of
+    // order pay nothing); a lap that is meant to prove the course can be run is walked, below.
+    const tpLap = (course, marks) => {
       const st = AGI.state(); st.next[course] = 0; const laps0 = st.laps[course], xp0 = player.skills.agility.xp, c0 = coins();
-      for (const i of [0, 1, 2, 3, 4, 0]) { const [x, y] = marks[i]; F.tp(x, y); F.step([]); }
+      for (const [x, y] of marks) { F.tp(x, y); F.step([]); }
       return { xp: player.skills.agility.xp - xp0, laps: st.laps[course] - laps0, coins: coins() - c0 };
     };
+    // WALK a lap: start on the ground outside the one entrance and run the flags in order, no teleporting. `guard`
+    // tops the knight's health up between short stretches, so a course he is too low for can slip him as often as
+    // it likes without a death cascading through every later check — what is being measured is the lap counter.
+    const walkLeg = (x, y, budget, guard) => {
+      if (!guard) return F.walkTo(x, y, budget);
+      // a knight who is not agile enough goes ROUND an obstacle whenever the ground lets him — that is exactly how
+      // an unwalled course gets farmed at level 1. First he tries a way round that touches no obstacle and no other
+      // course flag (crossing the start flag out of turn would only reset his lap), then any way round at all, and
+      // only when there is none does he take the obstacle on the chin.
+      const here = tileOf();
+      const round = route(here.tx, here.ty, x, y, [], [AG_LOG, AG_GAP, AG_MARK]) || route(here.tx, here.ty, x, y, [], [AG_LOG, AG_GAP]);
+      if (round) { for (const [wx, wy] of round) { player.hp = player.maxHp; F.walkTo(wx, wy, 120); } player.hp = player.maxHp; return 'round ' + round.length; }
+      let r = 'timeout';
+      for (let s = 0; s < budget; s += 60) { player.hp = player.maxHp; r = F.walkTo(x, y, 60); if (r !== 'timeout') break; }
+      player.hp = player.maxHp; return r;
+    };
+    const walkLap = (course, marks, from, guard = false, budget = 1500) => {
+      const st = AGI.state(); st.next[course] = 0;
+      const laps0 = st.laps[course], xp0 = player.skills.agility.xp, c0 = coins(), hp0 = player.hp;
+      F.tp(from[0], from[1]); F.step([]);
+      const legs = [];
+      for (const [x, y] of [marks[0], marks[1], marks[2], marks[3], marks[4], marks[0]]) legs.push(walkLeg(x, y, budget, guard));
+      return { xp: player.skills.agility.xp - xp0, laps: st.laps[course] - laps0, coins: coins() - c0, hurt: guard ? 0 : hp0 - player.hp, legs };
+    };
+    // lean on one key from a spot on open ground, the way a ten-year-old does, and report where it left you and
+    // what it cost. Health is topped up every 20 ticks so a broken wall shows as damage instead of as a death.
+    const holdFrom = (fx, fy, code, ticks = 180) => {
+      player.dead = false; player.hp = player.maxHp; F.tp(fx, fy); F.step([]);
+      let lost = 0;
+      for (let i = 0; i < ticks; i += 20) { F.sim(20, [code]); lost += player.maxHp - player.hp; player.hp = player.maxHp; if (player.dead) { player.dead = false; break; } }
+      return { at: tileOf(), lost };
+    };
+    const onTrack = (R, r) => r.at.tx >= R.x0 && r.at.tx <= R.x1 && r.at.ty >= R.north && r.at.ty <= R.south;
+    const stayedOut = (R, r) => r.lost === 0 && !onTrack(R, r);
+
+    // ---- the canopy loop is walled, with one way in ----
+    // The two shipped courses are enclosed: the Thistledown yard is fenced with a single gate and the Grey Quarry
+    // ledge is cut into rock, so no amount of leaning on one key drops you onto a balance log. Without that wall a
+    // level-40 course is only a suggestion — you can walk the flags from the outside and take the xp, and a knight
+    // crossing the field gets slipped over and over until the coffin fee. So: no hole in the ring bar the door, no
+    // way to reach flag 1 without meeting an obstacle, and a held key on open ground costs nothing.
+    { setLv(1);
+      const hole = ([x, y]) => !SOLID.has(tileAt(x, y)) || PUSH_THROUGH.has(tileAt(x, y));
+      const holes = CAN_RING.filter(hole);
+      const doorOpen = !SOLID.has(tileAt(CAN_DOOR[0], CAN_DOOR[1])) && !SOLID.has(tileAt(CAN_APPROACH[0], CAN_APPROACH[1]));
+      const sneak = walkLen(CAN_APPROACH[0], CAN_APPROACH[1], CAN_MARKS[1][0], CAN_MARKS[1][1], [], [AG_LOG, AG_GAP]);
+      const north = holdFrom(124, 100, 'KeyS');          // straight at the balance logs from the jungle floor
+      const south = holdFrom(127, 106, 'KeyW');
+      const east = holdFrom(136, 102, 'KeyA');
+      const inDoor = holdFrom(CAN_APPROACH[0], CAN_APPROACH[1], 'KeyS');
+      check(P + 'the canopy loop is walled the whole way round with one way in: holding a key on the jungle floor never puts you on a balance log, and flag 1 cannot be reached without an obstacle',
+        holes.length === 0 && doorOpen && sneak === -1 && stayedOut(CAN, north) && stayedOut(CAN, south) && stayedOut(CAN, east) && onTrack(CAN, inDoor) && inDoor.lost === 0,
+        { holes, doorOpen, sneak, north, south, east, inDoor }); }
 
     // ---- the canopy run exists, is walkable, and is carved where it should be ----
     { const deck = CAN_TRACK.filter(([x, y]) => [CAN_DECK, AG_LOG, AG_NET, AG_GAP, AG_MARK].includes(tileAt(x, y))).length;
@@ -15481,13 +15568,19 @@ window.SETTINGS = SETTINGS;
       const jumped = player.hp === player.maxHp && said(/Jump!/) && st.next.canopy === 4;
       check(P + `the canopy run's east leap fails informatively below Agility ${CANOPY_LV} (2 damage, back to the start flag, lap lost) and clears at ${CANOPY_LV}`,
         fell && backAtStart && jumped, { fell, backAtStart, jumped, hp: player.hp, maxHp: player.maxHp }); }
-    { setLv(CANOPY_LV); h.give('coins', 1);
+    { setLv(CANOPY_LV); h.give('coins', 1); player.hp = player.maxHp;
       const st = AGI.state(); st.laps.canopy = CANOPY.bonusEvery - 1;
-      const r = lap('canopy', CAN_MARKS);
-      const st2 = AGI.state(); st2.next.canopy = 0; const bad = lap('canopy', [CAN_MARKS[0], CAN_MARKS[2], CAN_MARKS[1], CAN_MARKS[3], CAN_MARKS[4], CAN_MARKS[0]].slice(0, 5));
-      check(P + `a canopy lap pays ${CANOPY.xp} Agility xp and ${CANOPY.bonus} coins every ${CANOPY.bonusEvery} laps; the flags out of order pay nothing`,
-        r.xp === CANOPY.xp && r.laps === 1 && r.coins === CANOPY.bonus && bad.xp === 0 && bad.laps === 0,
-        { lapXp: r.xp, laps: r.laps, bonus: r.coins, outOfOrder: bad.xp, name: CANOPY.name }); }
+      const r = walkLap('canopy', CAN_MARKS, CAN_APPROACH);          // in through the door and round on foot, no teleporting
+      const st2 = AGI.state(); st2.next.canopy = 0; const bad = tpLap('canopy', [CAN_MARKS[0], CAN_MARKS[2], CAN_MARKS[1], CAN_MARKS[3], CAN_MARKS[4]]);
+      check(P + `a canopy lap WALKED at Agility ${CANOPY_LV} pays ${CANOPY.xp} Agility xp and ${CANOPY.bonus} coins every ${CANOPY.bonusEvery} laps; the flags out of order pay nothing`,
+        r.xp === CANOPY.xp && r.laps === 1 && r.coins === CANOPY.bonus && r.hurt === 0 && bad.xp === 0 && bad.laps === 0,
+        { lapXp: r.xp, laps: r.laps, bonus: r.coins, legs: r.legs, hurt: r.hurt, outOfOrder: bad.xp, name: CANOPY.name }); }
+    // ---- and the same walk at Agility 1 pays nothing at all: the course refuses you ----
+    { setLv(1); const st = AGI.state(); st.laps.canopy = 0; st.next.canopy = 0;
+      const r = walkLap('canopy', CAN_MARKS, CAN_APPROACH, true, 600);
+      check(P + `Agility 1 cannot walk a canopy lap: the logs at 32 and the leap at ${CANOPY_LV} turn you back, so no lap is credited and no xp is paid`,
+        r.laps === 0 && r.xp === 0 && r.coins === 0 && AGI.state().next.canopy <= 1,
+        { laps: r.laps, xp: r.xp, coins: r.coins, legs: r.legs, nextFlag: AGI.state().next.canopy, stoppedAt: tileOf() }); }
 
     // ---- the vine ladder: shut below 45, and a real short cut into Sylvaris at 45 ----
     { const outside = [VINE.x, VINE.y - 1], inside = [VINE.x, VINE.y + 1];
@@ -15505,16 +15598,32 @@ window.SETTINGS = SETTINGS;
         tileAt(VINE.x, VINE.y) === CAN_VINE && SOLID.has(CAN_VINE) && shut && climbed && eRefused && eClimbed && over > 0 && roundabout > over + 15,
         { blockedY, climbedY, shut, climbed, eRefused, eClimbed, stepsRound: roundabout, stepsOver: over, saved: roundabout - over }); }
 
+    // ---- the rooftop loop is walled, with one way in ----
+    { setLv(1);
+      const hole = ([x, y]) => !SOLID.has(tileAt(x, y)) || PUSH_THROUGH.has(tileAt(x, y));
+      const holes = ROOF_RING.filter(hole);
+      const doorOpen = !SOLID.has(tileAt(ROOF_DOOR[0], ROOF_DOOR[1])) && !SOLID.has(tileAt(ROOF_APPROACH[0], ROOF_APPROACH[1]));
+      const sneak = walkLen(ROOF_APPROACH[0], ROOF_APPROACH[1], ROOF_MARKS[1][0], ROOF_MARKS[1][1], [], [AG_LOG, AG_GAP]);
+      const north = holdFrom(229, 17, 'KeyS');           // straight at the balance logs off the market grass
+      const south = holdFrom(233, 23, 'KeyW');
+      const east = holdFrom(242, 19, 'KeyA');
+      const inDoor = holdFrom(ROOF_APPROACH[0], ROOF_APPROACH[1], 'KeyD', 40);
+      check(P + 'the rooftop loop is walled the whole way round with one way in: holding a key in the market never puts you on a balance log, and flag 1 cannot be reached without an obstacle',
+        holes.length === 0 && doorOpen && sneak === -1 && stayedOut(ROOF, north) && stayedOut(ROOF, south) && stayedOut(ROOF, east) && onTrack(ROOF, inDoor) && inDoor.lost === 0,
+        { holes, doorOpen, sneak, north, south, east, inDoor }); }
+
     // ---- the rooftop run exists, is walkable, and is carved where it should be ----
     { const deck = ROOF_TRACK.filter(([x, y]) => [ROOF_DECK, AG_LOG, AG_NET, AG_GAP, AG_MARK].includes(tileAt(x, y))).length;
       let ridge = 0; for (let x = ROOF.x0 + 1; x <= ROOF.x1 - 1; x++) if (tileAt(x, ROOF.mid) === ROOF_RIDGE) ridge++;
       const pieces = ROOF_MARKS.every(([x, y]) => tileAt(x, y) === AG_MARK) && ROOF_LOGS.every(([x, y]) => tileAt(x, y) === AG_LOG)
         && ROOF_NETS.every(([x, y]) => tileAt(x, y) === AG_NET) && tileAt(235, 21) === AG_GAP && tileAt(240, 20) === AG_GAP;
       const reach = F.bfs(206, 30, ROOF_MARKS[0][0], ROOF_MARKS[0][1]);        // from Harl's far landing into the market and up
-      setLv(ROOF_LV); F.tp(ROOF.x0, ROOF.north - 1); const walked = F.walkTo(ROOF_MARKS[2][0], ROOF_MARKS[2][1], 3000);
-      check(P + 'the Grubmarket rooftop run is carved along the market roofs (panels, ridge, logs, nets, two gaps, five flags) and you can walk to it from the ferry landing',
-        deck === ROOF_TRACK.length && ridge === ROOF.x1 - ROOF.x0 - 1 && pieces && !!reach && typeof walked === 'number' && tileOf().tx === ROOF_MARKS[2][0],
-        { deck, track: ROOF_TRACK.length, ridge, pieces, reach: reach && reach.length, walked, at: tileOf() }); }
+      setLv(ROOF_LV); F.tp(ROOF_APPROACH[0], ROOF_APPROACH[1]);
+      const walkedIn = F.walkTo(ROOF_MARKS[0][0], ROOF_MARKS[0][1], 3000);     // in off the cobbles, through the one door
+      const walked = F.walkTo(ROOF_MARKS[2][0], ROOF_MARKS[2][1], 3000);
+      check(P + 'the Grubmarket rooftop run is carved along the market roofs (panels, ridge, logs, nets, two gaps, five flags) and you can walk in to it from the ferry landing',
+        deck === ROOF_TRACK.length && ridge === ROOF.x1 - ROOF.x0 - 1 && pieces && !!reach && typeof walkedIn === 'number' && typeof walked === 'number' && tileOf().tx === ROOF_MARKS[2][0],
+        { deck, track: ROOF_TRACK.length, ridge, pieces, reach: reach && reach.length, walkedIn, walked, at: tileOf() }); }
 
     // ---- below 60 the alley jump drops you; at 60 a lap pays 800 xp ----
     { setLv(ROOF_LV - 1); const st = AGI.state(); st.next.rooftop = 4; floaters.length = 0;
@@ -15527,13 +15636,19 @@ window.SETTINGS = SETTINGS;
       const jumped = player.hp === player.maxHp && said(/Jump!/) && st.next.rooftop === 4;
       check(P + `the rooftop run's alley jump fails informatively below Agility ${ROOF_LV} (2 damage, back to the start flag, lap lost) and clears at ${ROOF_LV}`,
         fell && backAtStart && jumped, { fell, backAtStart, jumped, hp: player.hp, maxHp: player.maxHp }); }
-    { setLv(ROOF_LV); h.give('coins', 1);
+    { setLv(ROOF_LV); h.give('coins', 1); player.hp = player.maxHp;
       const st = AGI.state(); st.laps.rooftop = ROOFTOP.bonusEvery - 1;
-      const r = lap('rooftop', ROOF_MARKS);
-      const st2 = AGI.state(); st2.next.rooftop = 0; const bad = lap('rooftop', [ROOF_MARKS[0], ROOF_MARKS[2], ROOF_MARKS[1], ROOF_MARKS[3], ROOF_MARKS[4]]);
-      check(P + `a rooftop lap pays ${ROOFTOP.xp} Agility xp and ${ROOFTOP.bonus} coins every ${ROOFTOP.bonusEvery} laps; the flags out of order pay nothing`,
-        r.xp === ROOFTOP.xp && r.laps === 1 && r.coins === ROOFTOP.bonus && bad.xp === 0 && bad.laps === 0,
-        { lapXp: r.xp, laps: r.laps, bonus: r.coins, outOfOrder: bad.xp, name: ROOFTOP.name }); }
+      const r = walkLap('rooftop', ROOF_MARKS, ROOF_APPROACH);       // in through the door and round on foot, no teleporting
+      const st2 = AGI.state(); st2.next.rooftop = 0; const bad = tpLap('rooftop', [ROOF_MARKS[0], ROOF_MARKS[2], ROOF_MARKS[1], ROOF_MARKS[3], ROOF_MARKS[4]]);
+      check(P + `a rooftop lap WALKED at Agility ${ROOF_LV} pays ${ROOFTOP.xp} Agility xp and ${ROOFTOP.bonus} coins every ${ROOFTOP.bonusEvery} laps; the flags out of order pay nothing`,
+        r.xp === ROOFTOP.xp && r.laps === 1 && r.coins === ROOFTOP.bonus && r.hurt === 0 && bad.xp === 0 && bad.laps === 0,
+        { lapXp: r.xp, laps: r.laps, bonus: r.coins, legs: r.legs, hurt: r.hurt, outOfOrder: bad.xp, name: ROOFTOP.name }); }
+    // ---- and the same walk at Agility 1 pays nothing at all: the course refuses you ----
+    { setLv(1); const st = AGI.state(); st.laps.rooftop = 0; st.next.rooftop = 0;
+      const r = walkLap('rooftop', ROOF_MARKS, ROOF_APPROACH, true, 600);
+      check(P + `Agility 1 cannot walk a rooftop lap: the logs at 48 and the alley jump at ${ROOF_LV} turn you back, so no lap is credited and no xp is paid`,
+        r.laps === 0 && r.xp === 0 && r.coins === 0 && AGI.state().next.rooftop <= 1,
+        { laps: r.laps, xp: r.xp, coins: r.coins, legs: r.legs, nextFlag: AGI.state().next.rooftop, stoppedAt: tileOf() }); }
 
     // ---- the goblins' scaffold: shut below 70, and a real short cut from the scrap yard to Tinkerton's compound ----
     { const rungs = SCAFFOLD.every(([x, y]) => tileAt(x, y) === GC_SCAFFOLD);
