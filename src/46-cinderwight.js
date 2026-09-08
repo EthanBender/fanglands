@@ -332,7 +332,9 @@
     const af = REGIONS.find(r => r.name === 'The Ashfields'), lair = REGIONS.find(r => r.name === "The Fang's Lair");
     const homeT = m => ({ x: Math.floor(m.home.x / TILE), y: Math.floor(m.home.y / TILE) });
     const ws = monsters.filter(m => m.type === WIGHT);
-    const hp0 = player.hp, mech0 = player.mech;
+    const hp0 = player.hp, mech0 = player.mech, r0 = player.r, speed0 = player.speed;
+    // these checks are made on foot: a mech soaks the scald, and an instance will not take one through the door
+    if (player.mech) { player.mech = null; player.r = 13; player.speed = typeof BASE_SPEED !== 'undefined' ? BASE_SPEED : 175; }
     h.peace(true); window.__kidmode = false;
 
     // 1. the creature and where it stands
@@ -377,6 +379,11 @@
         return h.openSpot(cx, cy);
       };
       const o = findLane(66, 52), m = ws[0];
+      // a hired hero swings at whatever stands beside the knight, ember included, so park them well away
+      // for this block (they are put back exactly as they were at the end of it)
+      const C = (window.FANGLANDS && FANGLANDS.companion && FANGLANDS.companion.comp) ? FANGLANDS.companion.comp() : null;
+      const cBack = C && C.id ? { mode: C.mode, x: C.x, y: C.y } : null;
+      if (cBack) { C.mode = 'stay'; C.x = tc(o.x) - 30 * TILE; C.y = tc(o.y); }
       const back = { x: m.x, y: m.y, home: { x: m.home.x, y: m.home.y }, dead: m.dead, hp: m.hp };
       const others = monsters.filter(x => x !== m && !x.dead && dist(x.x, x.y, tc(o.x), tc(o.y)) < 16 * TILE);
       const otherStun = others.map(x => x.stunT || 0); for (const x of others) x.stunT = 999;
@@ -446,6 +453,7 @@
       m.dead = back.dead; m.hp = back.dead ? 0 : back.hp; m.x = back.home.x; m.y = back.home.y; m.home = back.home; m.speed = D.speed;
       m.state = 'idle'; m.stunT = 0; m.coldT = 0; m.kindleT = KINDLE_EVERY; m.attackCd = 0;
       others.forEach((x, i) => { x.stunT = otherStun[i]; });
+      if (cBack) { C.mode = cBack.mode; C.x = cBack.x; C.y = cBack.y; }
       player.hp = Math.min(hp0, player.maxHp); player.hurtT = 0; }
 
     // 5. the drop table: what it pays, and the odds add up to 100
@@ -485,6 +493,6 @@
         && typeof walked === 'number' && region === 'The Afterlands' && left === true && window.__instance === null,
         { listed: listed.map(([, x, y]) => [x, y]), entered, inside, walkSteps: walked, region, left, instance: window.__instance }); }
 
-    player.hp = Math.min(hp0, player.maxHp); player.mech = mech0; player.hurtT = 0; h.peace(false);
+    player.hp = Math.min(hp0, player.maxHp); player.mech = mech0; player.r = r0; player.speed = speed0; player.hurtT = 0; h.peace(false);
   });
 }
