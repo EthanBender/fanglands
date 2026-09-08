@@ -15080,7 +15080,12 @@ window.SETTINGS = SETTINGS;
   // searched out from these at world-gen so nothing wakes in lava, obsidian or a dead tree.
   const ASH_ANCHORS = [[88, 122], [70, 126], [46, 122]];
   const MIN_Y = 116, MIN_X = 44, SPOT_APART = 8;
-  const AFTER_ANCHORS = [[16, 12], [42, 32]];   // inside the Afterlands (60 x 40): west of the chapel, south-east of the graveyard
+  // Inside the Afterlands (60 x 40). Both sit in the empty southern flats, well clear of the two routes the
+  // instance is built around — the crypt steps (30,3) down to the graveyard (13,27), and the crypt steps
+  // across to Count Ashvane (46,18). A wight sees eight tiles and breaks its leash fourteen from home, so
+  // neither spot can reach a knight walking either route, and a level-40 quest boss stays a level-40 fight.
+  // The self-test measures both distances off the live tile grid; do not move these without rerunning it.
+  const AFTER_ANCHORS = [[26, 36], [52, 36]];   // resolve to (26,36) south of the graveyard and (53,35) south of the chapel
   const ASH_SPOTS = [], AFTER_SPOTS = [];
   const STATS = { kindled: 0, broken: 0, burnedOut: 0, healed: 0, heatHits: 0, lastHeat: 0, coldHits: 0, lastCold: 0 };
   const CQ = () => quest.cinderwight || (quest.cinderwight = { taught: false });
@@ -15304,7 +15309,17 @@ window.SETTINGS = SETTINGS;
   HOOKS.newGame.push(() => { quest.cinderwight = { taught: false }; for (const k in STATS) STATS[k] = 0; });
 
   // ---------- HUD: what it is doing, while it is near ----------
-  HOOKS.hud.push(g => {
+  // The core already paints a generic boss bar for anything level 25 or better with 300+ hp inside twelve
+  // tiles (10-hud.js drawBossBars), and a cinderwight passes that rule, so the core bar is already showing
+  // its name, its level and its hit points at HUD_LAYOUT.bossBarY. This panel never repeats any of that and
+  // never sits on top of it: it steps down past the bars and carries only the mechanic — what to do right
+  // now, and how much ember is left. If no bar is up for this wight (further than twelve tiles, or two other
+  // big things took the only two bar slots) it puts the hit points back so the panel still reads on its own.
+  const BOSS_H = 48, BOSS_GAP = 8;   // one core boss bar, and the gap the core leaves under it
+  const bossBarList = () => monsters.filter(b => !b.dead && b.type !== 'the_fang' && MONSTER_DEFS[b.type]
+    && MONSTER_DEFS[b.type].level >= 25 && MONSTER_DEFS[b.type].hp >= 300
+    && dist(b.x, b.y, player.x, player.y) <= 12 * TILE).slice(0, 2);
+  function wightPanel(g) {
     let best = null;
     for (const m of monsters) {
       if (m.type !== WIGHT || m.dead) continue;
@@ -15315,25 +15330,34 @@ window.SETTINGS = SETTINGS;
     }
     if (!best) return;
     const { m, feeding } = best, heart = heartOf(m);
+    const bars = bossBarList(), onBar = bars.indexOf(m) >= 0;
     const col = feeding ? '#ff8a3a' : '#8fd3ff';
-    const w = Math.min(236, VW - 28), h = feeding ? 60 : 48, x = 14;
     const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null;
+    const w = lay && lay.short ? 180 : Math.min(236, VW - 28), x = 14;
+    const hpRow = !onBar;                        // only when the core bar is not already showing them
+    const emberY = hpRow ? 42 : 27;              // where the ember bar sits inside the panel
+    const h = feeding ? emberY + 18 : hpRow ? 48 : 28;
     const touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
-    const y = Math.max(HUD.leftY, touchFloor, 84);   // shared left-HUD cursor: stack under whatever drew above
+    // the boss bars are drawn before every HUD hook and do not move the shared cursor, so step past them here
+    const bossFloor = (bars.length && lay) ? lay.bossBarY + bars.length * (BOSS_H + BOSS_GAP) : 0;
+    const y = Math.max(HUD.leftY, touchFloor, bossFloor, 84);   // shared left-HUD cursor: stack under whatever drew above
     HUD.leftY = y + h + 6;
     roundRect(g, x, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = col; g.lineWidth = 1.5; g.stroke();
     g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText('CINDERWIGHT', x + 12, y + 19);
     g.fillStyle = col; g.font = 'bold 11px sans-serif'; g.textAlign = 'right';
     g.fillText(feeding ? 'BREAK THE HEART' : 'COLD · HIT IT NOW', x + w - 12, y + 19);
-    g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, y + 27, w - 24, 11, 5); g.fill();
-    g.fillStyle = '#e63946'; roundRect(g, x + 12, y + 27, (w - 24) * clamp(m.hp / m.maxHp, 0, 1), 11, 5); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(m.hp)} / ${m.maxHp}`, x + w / 2, y + 36);
-    if (feeding && heart) {
-      g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, y + 42, w - 24, 9, 4); g.fill();
-      g.fillStyle = col; roundRect(g, x + 12, y + 42, (w - 24) * clamp(heart.hp / heart.maxHp, 0, 1), 9, 4); g.fill();
-      g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`heart ${Math.ceil(heart.hp)} / ${heart.maxHp}`, x + w / 2, y + 50);
+    if (hpRow) {
+      g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, y + 27, w - 24, 11, 5); g.fill();
+      g.fillStyle = '#e63946'; roundRect(g, x + 12, y + 27, (w - 24) * clamp(m.hp / m.maxHp, 0, 1), 11, 5); g.fill();
+      g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(m.hp)} / ${m.maxHp}`, x + w / 2, y + 36);
     }
-  });
+    if (feeding && heart) {
+      g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, y + emberY, w - 24, 9, 4); g.fill();
+      g.fillStyle = col; roundRect(g, x + 12, y + emberY, (w - 24) * clamp(heart.hp / heart.maxHp, 0, 1), 9, 4); g.fill();
+      g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`heart ${Math.ceil(heart.hp)} / ${heart.maxHp}`, x + w / 2, y + emberY + 8);
+    }
+  }
+  HOOKS.hud.push(wightPanel);
 
   // ---------- the book (44-wiki) ----------
   // Both pages build themselves out of MONSTER_DEFS and the spawn lists; what a page cannot work out on
@@ -15364,7 +15388,7 @@ window.SETTINGS = SETTINGS;
   });
 
   window.CINDERWIGHT = {
-    WIGHT, HEART, ASH_SPOTS, AFTER_SPOTS, heartOf, kindle,
+    WIGHT, HEART, ASH_SPOTS, AFTER_SPOTS, heartOf, kindle, panel: wightPanel,
     NUMBERS: { KINDLE_EVERY, KINDLE_AFTER_BREAK, HEART_HP, HEART_LIFE, FEED_HEAL, HEAT_EVERY, HEAT_R, HEAT_MIN, HEAT_MAX, TETHER, COLD_STUN, COLD_TIME },
     get stats() { return { ...STATS }; },
   };
@@ -15447,6 +15471,40 @@ window.SETTINGS = SETTINGS;
         planted && CINDERWIGHT.NUMBERS.KINDLE_EVERY === 14,
         { planted: !!heart, heartHp: heart && heart.hp, awayFromKnight: heart && +(dist(heart.x, heart.y, player.x, player.y) - dist(m.x, m.y, player.x, player.y)).toFixed(1) });
 
+
+      // 4a-ii. the panel must not print on top of the core's boss bar. 10-hud.js paints a generic bar for
+      // anything level 25+ with 300+ hp inside twelve tiles, and a cinderwight is one of those, so both used
+      // to land on the same rectangle. Recorded here for real: every fillText the core bar and this panel
+      // emit for one frame. No two may share a point, the panel must start below the bar, and while the bar
+      // is up the panel must not repeat the hit points. Take any other big monster out of the list first so
+      // the bar under test is certainly this wight's (the core shows at most two).
+      { const roster = monsters.slice();
+        for (const b of roster) {
+          if (b === m || b.dead || b.type === 'the_fang' || !MONSTER_DEFS[b.type]) continue;
+          if (MONSTER_DEFS[b.type].level < 25 || MONSTER_DEFS[b.type].hp < 300) continue;
+          if (dist(b.x, b.y, player.x, player.y) > 12 * TILE) continue;
+          const i = monsters.indexOf(b); if (i >= 0) monsters.splice(i, 1);
+        }
+        const marks = [], nop = () => { };
+        const rec = new Proxy({}, { get: (t, k) => k === 'measureText' ? (() => ({ width: 10 }))
+          : k === 'fillText' ? ((s, tx, ty) => { marks.push({ s, x: Math.round(tx), y: Math.round(ty) }); })
+          : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: nop }))
+          : typeof k === 'string' ? nop : undefined, set: () => true });
+        const leftBack = HUD.leftY;
+        HUD.leftY = 82; drawBossBars(rec, HUD_LAYOUT.bossBarY);      // the core draws its bars first, every frame
+        const nBar = marks.length, barred = marks.some(t => t.s === 'CINDERWIGHT');
+        CINDERWIGHT.panel(rec);
+        HUD.leftY = leftBack; monsters.length = 0; for (const b of roster) monsters.push(b);
+        const mine = marks.slice(nBar);
+        const top = mine.length ? Math.min(...mine.map(t => t.y)) : -1;
+        const hpLines = mine.filter(t => /^\d+ \/ \d+$/.test(t.s)).length;
+        let clash = null;
+        for (let i = 0; i < marks.length && !clash; i++) for (let j = i + 1; j < marks.length && !clash; j++)
+          if (marks[i].x === marks[j].x && marks[i].y === marks[j].y) clash = [marks[i].s, marks[j].s, marks[i].x, marks[i].y];
+        check(P + 'its HUD panel stacks under the core boss bar: nothing overprints, and it does not repeat the hit points the bar already shows',
+          barred && nBar >= 3 && mine.length >= 2 && !clash && top >= HUD_LAYOUT.bossBarY + 48 + 8 && hpLines === 0
+          && mine.some(t => t.s === 'BREAK THE HEART') && mine.some(t => /^heart \d+ \/ \d+$/.test(t.s)),
+          { bossBarTexts: nBar, bossBarDrewWight: barred, panelTexts: mine.map(t => [t.s, t.x, t.y]), panelTopY: top, bossBarY: HUD_LAYOUT.bossBarY, repeatedHpLines: hpLines, clash }); }
       // 4b. while it burns: 14 hp a second back, and the ash scalds
       if (heart) {
         m.hp = 300; const before = m.hp; F.sim(60, []); const healed = m.hp - before;
@@ -15522,20 +15580,37 @@ window.SETTINGS = SETTINGS;
     // 6. two of them walk the Afterlands, and you can reach one from the crypt steps
     { const inst = window.INSTANCES && typeof INSTANCES.get === 'function' ? INSTANCES.get('afterlands') : null;
       const listed = inst ? inst.spawns.filter(s => s[0] === WIGHT) : [];
-      let entered = false, inside = 0, walked = null, left = false, region = null;
+      let entered = false, inside = 0, walked = null, left = false, region = null, nearRoute = -1, fromCount = -1, routeLens = null;
       if (inst && !player.mech && !window.__instance) {
         entered = INSTANCES.enter('afterlands', [14, 70]);
         if (entered) {
           region = player.region;
           const there = monsters.filter(m => m.type === WIGHT && !m.dead); inside = there.length;
-          if (there.length) { const t = there.map(homeT).sort((a, b) => a.x - b.x || a.y - b.y)[0]; walked = F.walkTo(t.x, t.y, 8000); }
+          // Measured on the live tile grid, not assumed: how close does either wight sit to the two routes the
+          // Afterlands is built around? 35-night's own self-test asserts both of them — the crypt steps to Count
+          // Ashvane, and the crypt steps to the graveyard at (13,27). A wight sees eight tiles and chases, so a
+          // wight parked near either route turns a level-40 quest boss into a level-66 fight for a knight who is
+          // only walking past. It also breaks its leash fourteen tiles from home, so it must start further off
+          // than that from the count or it can follow you into that fight anyway.
+          const ent = inst.entry, boss = inst.spawns.find(s => s[0] === inst.boss) || [null, 46, 18];
+          const routes = [F.bfs(ent[0], ent[1], boss[1], boss[2]), F.bfs(ent[0], ent[1], 13, 27)];
+          routeLens = routes.map(r => (r ? r.length : 0));
+          const homes = there.map(homeT);
+          if (homes.length && routes.every(Boolean)) {
+            nearRoute = Math.min(...homes.map(p => Math.min(...routes.map(r => Math.min(...r.map(([rx, ry]) => dist(rx, ry, p.x, p.y)))))));
+            fromCount = Math.min(...homes.map(p => dist(p.x, p.y, boss[1], boss[2])));
+          }
+          if (there.length) { const t = homes.slice().sort((a, b) => a.x - b.x || a.y - b.y)[0]; walked = F.walkTo(t.x, t.y, 8000); }
           left = INSTANCES.leave();
         }
       }
       check(P + 'two cinderwights stand in the Afterlands on ground its own build left open, and one is walkable from the crypt steps',
         listed.length === 2 && listed.every(([, x, y]) => !SOLID.has(inst.tiles[y * inst.w + x])) && entered === true && inside === 2
         && typeof walked === 'number' && region === 'The Afterlands' && left === true && window.__instance === null,
-        { listed: listed.map(([, x, y]) => [x, y]), entered, inside, walkSteps: walked, region, left, instance: window.__instance }); }
+        { listed: listed.map(([, x, y]) => [x, y]), entered, inside, walkSteps: walked, region, left, instance: window.__instance });
+      check(P + 'neither Afterlands wight sits on a quest route: both are more than 10 tiles off the walk to Count Ashvane and the walk to the graveyard (it sees 8), and more than 14 tiles from the count (its leash), so the count stays a level-40 fight',
+        nearRoute > 10 && fromCount > 14 && !!routeLens && routeLens.every(n => n > 10),
+        { nearestRouteTiles: +nearRoute.toFixed(1), fromCountTiles: +fromCount.toFixed(1), routeLens }); }
 
     // 7. the book tells you how the fight goes, on both pages, with the odds it really rolls
     { const w = window.WIKI ? WIKI.get('monsters', WIGHT) : null, hh = window.WIKI ? WIKI.get('monsters', HEART) : null;
