@@ -216,6 +216,7 @@
     const s0 = { ...player.skills.farming }, f0 = { ...player.skills.fishing }, d0 = { ...player.skills.defence }, c0 = { ...player.skills.cooking };
     // seeds are level-gated, and the best one the knight can plant is the one that goes in
     { const o = h.openSpot(70, 30); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y };
+      const bag = player.inv.slice(); player.inv = player.inv.map(() => null); // an empty pack: under --play the bot arrives with 20 full slots and the seed never lands
       changeTile(gt.x, gt.y, T.SOIL); crops = crops.filter(c => c.i !== idx(gt.x, gt.y));
       for (const id of ['potato_seed', 'herb_seed']) { while (countItem(id)) removeItem(id, 1); }
       give('herb_seed', 2); player.skills.farming.xp = 0;
@@ -228,7 +229,8 @@
       // harvest pays the crop's own rate, not the potato's 15
       if (c) { c.stage = 3; const x0 = player.skills.farming.xp, h0 = countItem('herbs'); F.face(gt.x, gt.y); F.press('KeyE'); F.sim(3, []);
         const got = countItem('herbs') - h0, gained = player.skills.farming.xp - x0;
-        check(P + 'a herb harvest pays 45 Farming xp a unit (a potato pays 15)', got >= 2 && gained === 45 * got, { got, gained, perUnit: got ? gained / got : 0 }); } }
+        check(P + 'a herb harvest pays 45 Farming xp a unit (a potato pays 15)', got >= 2 && gained === 45 * got, { got, gained, perUnit: got ? gained / got : 0 }); }
+      player.inv = bag; }
     clearJunk && clearJunk();
     // fishing: the river holds pike from level 12, the sea swordfish from 40; the pond still gives shrimp
     { const w = F.nearestTile([T.WATER]); const river = PROGRESSION.waterKind(w.x, w.y);
