@@ -123,10 +123,11 @@ function drawHud(g) {
   }
   // touch controls
   if (isTouch) {
+    const mx = x => window.__stickRight === true ? VW - x : x; // Settings › Move stick side: right-handed players get the stick on the right and the buttons on the left (src/43-settings.js)
     if (touch.active) { g.fillStyle = 'rgba(255,255,255,0.15)'; g.beginPath(); g.arc(touch.ox, touch.oy, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.4)'; g.beginPath(); g.arc(touch.ox + touch.dx * 60, touch.oy + touch.dy * 60, 26, 0, 7); g.fill(); }
-    else { g.fillStyle = 'rgba(255,255,255,0.08)'; g.beginPath(); g.arc(110, VH - 110, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText('MOVE', 110, VH - 106); }
-    const defs = [['SWING', () => touch.taps.push('attack'), 70, VW - 70, VH - 100], ['USE', () => touch.taps.push('use'), 52, VW - 160, VH - 66], [player.mech ? 'EXIT' : 'CRAFT', () => player.mech ? exitMech() : (panel === 'craft' ? closePanel() : openPanel('craft')), 52, VW - 160, VH - 160], ['QUESTS', () => panel === 'quests' ? closePanel() : openPanel('quests'), 52, VW - 70, VH - 200]];
-    if (player.home && !player.mech) defs.push(['HOME', goHome, 52, VW - 160, VH - 254]);
+    else { g.fillStyle = 'rgba(255,255,255,0.08)'; g.beginPath(); g.arc(mx(110), VH - 110, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText('MOVE', mx(110), VH - 106); }
+    const defs = [['SWING', () => touch.taps.push('attack'), 70, mx(VW - 70), VH - 100], ['USE', () => touch.taps.push('use'), 52, mx(VW - 160), VH - 66], [player.mech ? 'EXIT' : 'CRAFT', () => player.mech ? exitMech() : (panel === 'craft' ? closePanel() : openPanel('craft')), 52, mx(VW - 160), VH - 160], ['QUESTS', () => panel === 'quests' ? closePanel() : openPanel('quests'), 52, mx(VW - 70), VH - 200]];
+    if (player.home && !player.mech) defs.push(['HOME', goHome, 52, mx(VW - 160), VH - 254]);
     for (const [label, action, r, x, y] of defs) {
       g.fillStyle = 'rgba(255,255,255,0.14)'; g.beginPath(); g.arc(x, y, r / 2 + 8, 0, 7); g.fill();
       g.fillStyle = '#fff'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText(label, x, y + 4);
@@ -181,12 +182,13 @@ function drawHud(g) {
     g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 40);
     g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 60);
     button(g, px + 24, py + 78, pw - 48, 36, 'Resume', () => { paused = false; });
-    button(g, px + 24, py + 120, pw - 48, 36, audioMuted ? 'Sound: off' : 'Sound: on', toggleMute, '#21262d');
-    button(g, px + 24, py + 162, pw - 48, 36, window.__kidmode ? 'Kid mode: on' : 'Kid mode: off', toggleKidMode, '#21262d');
+    // sound, music, kid mode and the rest live in the Settings panel (src/43-settings.js); the panel draws under the pause overlay, so unpause to show it
+    button(g, px + 24, py + 120, pw - 48, 36, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
     const erase = confirmActive('newgame');
-    button(g, px + 24, py + 204, pw - 48, 36, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 254);
-    g.fillText('Progress saves automatically in this browser.', VW / 2, py + 272);
+    button(g, px + 24, py + 162, pw - 48, 36, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
+    g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, py + 209);
+    g.fillStyle = '#6e7681'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 229); // VH/2 + 83: 31-rebuild repaints this line with the town title
+    g.fillText('Progress saves automatically in this browser.', VW / 2, py + 247);
   }
 }
 // small arrow on the minimap edge pointing at the tracked quest's target (or a ring when the target is on the minimap)
