@@ -117,12 +117,19 @@
 
   // ---------- Fennick: the offer, and his stall is still one button away ----------
   // He is a plain trader again the moment she is sold, so nothing about him changes for the rest of the game.
+  // 50-economy.js claims this same role for Fennick's standing order, and this file loads after it, so wrap
+  // what is already there instead of replacing it: the order is spoken first and still pays, and if that
+  // handler ever takes the talk over outright its answer stands and the rail never opens on top of it.
+  {
+  const prevTrader = HOOKS.talkBefore.trader;
   HOOKS.talkBefore.trader = n => {
+    if (prevTrader && prevTrader(n)) return true;
     if (n.id !== 'fennick' || H().owned) return false;
     say(`Pelts, tusks, scrap, aye. But look at your boots, knight. That grey mare on my rail has walked the Hollowford road twice and never spooked. ${HORSE_PRICE} coins and the road gets half as long.`, n.name);
     openPanel('stable');
     return true;
   };
+  }
   HOOKS.panel.stable = (g, narrow) => {
     const { px, py, w, h } = panelBox(g, Math.min(440, VW - 20), 250, "Fennick's rail", `A grey mare — ${HORSE_PRICE} coins`);
     const lines = [
@@ -287,6 +294,10 @@
     }
     const near = !player.dead && !riding() && H().owned && !player.mech && !!horseNear();
     if (!riding() && !near) return;
+    // HOOKS.hud runs before the panels are drawn, and a click is matched against the button list before it is
+    // matched against the open panel — so a button drawn under a panel would still eat the click. Draw nothing
+    // while anything is over the world: the panel sits right on top of this rect (Skills starts at x 14, y 90).
+    if (panel || paused) return;
     const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null;
     const touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
     const h = isTouch ? 44 : 34, w = 132, x = 14, y = Math.max(HUD.leftY, touchFloor, 84);
@@ -532,6 +543,29 @@
       check(P + `${keyName('X')} parks her as a mare (never a walker wreck), and the RIDE / GET DOWN button does the same job`,
         up && parkedByX && noWreck && rideBtn && upAgain && downBtn && downAgain,
         { up, why: rideWhy, parkedByX, noWreck, rideBtn, upAgain, downBtn, downAgain, at: at1 && [at1.tx, at1.ty] }); }
+
+    // 5b. that button is only real while the world is clear. HOOKS.hud draws before the panels, and a click is
+    // matched against the button list before the open panel, so a button left drawn under a panel would still
+    // eat the click and throw the knight off his horse. With Skills open the button must not be registered at
+    // all, and the click must be swallowed by the panel it landed on.
+    { const up = ride(); render();
+      dialog.cur = null; dialog.queue.length = 0;
+      const btn = buttons.find(b => b.label === 'GET DOWN');
+      openPanel('skills'); render();
+      const gone = !buttons.some(b => b.label === 'RIDE' || b.label === 'GET DOWN');
+      const pr = panelRect && { ...panelRect };
+      // a point inside both the panel and the rect the button had: exactly where the ghost used to win
+      const cx = btn && pr ? Math.max(btn.x, pr.x) + 4 : -1, cy = btn && pr ? Math.max(btn.y, pr.y) + 4 : -1;
+      const overlaps = !!btn && !!pr && cx < Math.min(btn.x + btn.w, pr.x + pr.w) && cy < Math.min(btn.y + btn.h, pr.y + pr.h);
+      if (overlaps) pointerDown(cx, cy, 'mouse');
+      F.sim(2, []); // let the click land the way a real one would, over a frame
+      const stillUp = riding(), stillOpen = panel === 'skills';
+      closePanel(); render();
+      const back = buttons.some(b => b.label === 'GET DOWN') && riding();
+      F.press('KeyX'); F.sim(2, []); // leave the lane the way the checks below expect it: on foot, mare parked
+      check(P + 'no ghost RIDE / GET DOWN button under an open panel — a click on Skills stays on Skills and never throws you off',
+        up && !!btn && overlaps && gone && stillUp && stillOpen && back && !riding(),
+        { up, why: rideWhy, btn: btn && [btn.x, btn.y, btn.w, btn.h], panel: pr, click: [cx, cy], overlaps, gone, stillUp, stillOpen, back }); }
 
     // 6. the R key rides and gets down
     { clearLane(); F.tp(o.x, o.y); F.step([]); liftHorse(); const parked = parkAt(o.x + 1, o.y);
