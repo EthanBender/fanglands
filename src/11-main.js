@@ -20,7 +20,7 @@ window.FANGLANDS = {
   held(dx, dy) { const h = []; if (Math.abs(dx) > 2) h.push(dx > 0 ? 'KeyD' : 'KeyA'); if (Math.abs(dy) > 2) h.push(dy > 0 ? 'KeyS' : 'KeyW'); return h; },
   walkTo(tx, ty, max = 4000) {
     closePanel(); const path = this.bfs(Math.floor(player.x / TILE), Math.floor(player.y / TILE), tx, ty); if (!path) return 'nopath'; let i = 0, s = 0;
-    while (i < path.length && s < max) { const [wx, wy] = path[i]; const dx = tc(wx) - player.x, dy = tc(wy) - player.y; const last = i === path.length - 1; if (Math.hypot(dx, dy) < (last ? (SOLID.has(map[idx(wx, wy)]) ? 44 : 14) : 8)) { i++; continue; } this.step(this.held(dx, dy)); if (player.dead) return 'died'; s++; }
+    while (i < path.length && s < max) { if (player.hp < 7 && !window.__peace) { this.heals = (this.heals || 0) + 1; player.hp = player.maxHp; } const [wx, wy] = path[i]; // same heal rule as fight(): a road goblin must not kill the bot mid-walk (a death cascades through every later check) const dx = tc(wx) - player.x, dy = tc(wy) - player.y; const last = i === path.length - 1; if (Math.hypot(dx, dy) < (last ? (SOLID.has(map[idx(wx, wy)]) ? 44 : 14) : 8)) { i++; continue; } this.step(this.held(dx, dy)); if (player.dead) return 'died'; s++; }
     render(); return i >= path.length ? s : 'timeout';
   },
   face(tx, ty) { const dx = tc(tx) - player.x, dy = tc(ty) - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; },
@@ -80,8 +80,8 @@ window.FANGLANDS = {
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y);
       const axe = player.inv.findIndex(s => s && s.id === 'bronze_axe'); const saved = player.inv[axe]; player.inv[axe] = null; F.press('KeyE'); F.sim(2, []);
       check('woodcutting needs an axe', !player.action && notice && /axe/.test(notice.text), { notice: notice && notice.text });
-      player.inv[axe] = saved; F.face(tree.x, tree.y); F.press('KeyE'); const r = F.untilAction(900, () => countItem('wood') >= 1);
-      check('chop: timed swings, one log, stump left, regrows', typeof r === 'number' && countItem('wood') === 1 && tileAt(tree.x, tree.y) === T.STUMP && regrow.some(x => x.i === idx(tree.x, tree.y)) && player.skills.woodcutting.xp === 25, { steps: r, wood: countItem('wood'), tile: tileAt(tree.x, tree.y) }); }
+      player.inv[axe] = saved; F.face(tree.x, tree.y); const near0 = monsters.filter(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 160).map(m => m.type + ':' + m.state); F.press('KeyE'); const a0 = player.action && player.action.kind, n0 = notice && notice.text; const r = F.untilAction(900, () => countItem('wood') >= 1);
+      check('chop: timed swings, one log, stump left, regrows', typeof r === 'number' && countItem('wood') === 1 && tileAt(tree.x, tree.y) === T.STUMP && regrow.some(x => x.i === idx(tree.x, tree.y)) && player.skills.woodcutting.xp === 25, { steps: r, wood: countItem('wood'), tile: tileName(tileAt(tree.x, tree.y)), tree: [tree.x, tree.y], at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)], a0, n0, near0, hp: player.hp, action: player.action && player.action.kind, n1: notice && notice.text }); }
     { const oak = F.nearestTile([T.OAK]); F.goAdjacent(oak.x, oak.y); F.fight(3000); F.goAdjacent(oak.x, oak.y); F.press('KeyE'); F.sim(3, []); check('oak needs Woodcutting 5', !player.action && notice && /Woodcutting level 5/.test(notice.text), { notice: notice && notice.text }); } peace(false);
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y); F.press('KeyE'); F.untilAction(900, () => countItem('wood') >= 2); }
     openPanel('craft'); render(); const crafted = F.clickButton('2 Logs → 4 Planks'); closePanel();

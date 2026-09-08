@@ -165,13 +165,8 @@ window.FANGLANDS.title = title;
       g.globalAlpha = clamp(a, 0, 1); g.textAlign = 'right'; g.fillStyle = '#3fb950'; g.font = 'bold 12px sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)';
       g.strokeText('Saved', VW - 16, VH - 36); g.fillText('Saved', VW - 16, VH - 36); g.globalAlpha = 1;
     }
-    if (paused) {
-      // sits just under the core pause box (300×250, centred); unshift so it beats any hotbar rect under it
-      const pw = 300, px = VW / 2 - pw / 2, by = Math.min(VH - 46, VH / 2 + 125 + 10);
-      button(g, px + 24, by, pw - 48, 36, isTouch ? 'Title screen' : 'Title screen (T)', title.toTitle, '#3a4150');
-      buttons.unshift(buttons.pop());
-    }
   });
+  HOOKS.pauseMenu.push((g, x, y, w, h) => button(g, x, y, w, h, isTouch ? 'Title screen' : 'Title screen (T)', title.toTitle, '#3a4150')); // a slot in the core pause menu (10-hud), so the button is drawn after the menu resets `buttons` and is tappable
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {

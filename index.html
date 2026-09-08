@@ -69,6 +69,8 @@ const HUD = { leftY: 82 };
 
 // ---------- extension hooks (feature files in src/2x-*.js register here; core never needs editing) ----------
 const HOOKS = {
+  pauseMenu: [],
+  keyHelp: [], // { action, codes: ['KeyK'] } — a feature's desktop keys, listed by the Settings panel's Controls line // (g, x, y, w, h) → draw one 36 px button row in the pause menu (slots between Settings and New game)
   world: [],        // fn(rnd, api) — runs at the end of generateWorld; api = { setTile, tileAt, spawnList, road }
   update: [],       // fn(dt) — runs every tick after the core update
   draw: [],         // fn(g, items, cam) — push {y, draw} entries into the y-sorted world list
@@ -2351,18 +2353,19 @@ function drawHud(g) {
   if (paused) {
     buttons.length = 0; minimapRect = null; dialogRect = null; panelRect = null; // nothing under the menu is tappable
     g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0, 0, VW, VH);
-    const pw = 300, ph = 292, px = VW / 2 - pw / 2, py = VH / 2 - ph / 2;
+    const pw = 300, ph = 310, px = VW / 2 - pw / 2, py = VH / 2 - ph / 2; // the stats line sits at VH/2 + 83 (py + 238): 31-rebuild repaints it with the town's name
     roundRect(g, px, py, pw, ph, 12); g.fillStyle = 'rgba(10,14,22,0.96)'; g.fill(); g.strokeStyle = '#30363d'; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 40);
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 60);
-    button(g, px + 24, py + 78, pw - 48, 36, 'Resume', () => { paused = false; });
+    g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 34);
+    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 52);
+    button(g, px + 24, py + 66, pw - 48, 36, 'Resume', () => { paused = false; });
     // sound, music, kid mode and the rest live in the Settings panel (src/43-settings.js); the panel draws under the pause overlay, so unpause to show it
-    button(g, px + 24, py + 120, pw - 48, 36, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
+    button(g, px + 24, py + 106, pw - 48, 36, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
+    let by = py + 146; for (const f of HOOKS.pauseMenu) { f(g, px + 24, by, pw - 48, 36); by += 40; } // feature buttons (14-title: Title screen) — registered here, after the buttons reset above, so they are tappable
     const erase = confirmActive('newgame');
-    button(g, px + 24, py + 162, pw - 48, 36, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
-    g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, py + 209);
-    g.fillStyle = '#6e7681'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 229); // VH/2 + 83: 31-rebuild repaints this line with the town title
-    g.fillText('Progress saves automatically in this browser.', VW / 2, py + 247);
+    button(g, px + 24, by, pw - 48, 36, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
+    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 238);
+    g.fillStyle = '#8b949e'; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, py + 256);
+    g.fillStyle = '#6e7681'; g.fillText('Progress saves automatically in this browser.', VW / 2, py + 274);
   }
 }
 // small arrow on the minimap edge pointing at the tracked quest's target (or a ring when the target is on the minimap)
@@ -2416,8 +2419,8 @@ function drawPanels(g, narrow, short, qh, hb) {
   }
   if (panel === 'help') {
     const rows = isTouch
-      ? [['Tap the world', 'walk there · tap a tree, rock, water or person to use it · tap a monster to fight'], ['Hold on a thing', 'shows what it is, then acts when you let go'], ['Left side of screen', 'drag to move (or tap to walk)'], ['SWING', 'attack, shoot, stomp, hit a dummy (or double-tap the world)'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['Hotbar', 'tap a slot to eat or use it'], ['Bag › Place', 'put down a plank, door, bed, lodestone or trap'], ['CRAFT / SKILLS / QUESTS', 'panels · QUESTS also shows what was Said'], ['HOME', 'teleport to your lodestone (5 min)'], ['EXIT', 'climb out of a walker or bulldozer'], ['Machines', 'USE a wreck to repair it, USE again to climb in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Minimap', 'tap the minimap for the world map'], ['MENU', 'sound, kid mode, new game']]
-      : [['WASD / arrows', 'move'], ['Click the world', 'walk there · click a tree, rock, water, person or monster to use / fight it'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Machines', 'E on a wreck repairs it, E again climbs in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Enter', 'next line of talk (or click the box)'], ['Minimap', 'click the minimap (or M) for the world map'], ['Esc', 'menu (sound, kid mode, new game)']];
+      ? [['Tap the world', 'walk there · tap a tree, rock, water or person to use it · tap a monster to fight'], ['Hold on a thing', 'shows what it is, then acts when you let go'], ['Left side of screen', 'drag to move (or tap to walk)'], ['SWING', 'attack, shoot, stomp, hit a dummy (or double-tap the world)'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['Hotbar', 'tap a slot to eat or use it'], ['Bag › Place', 'put down a plank, door, bed, lodestone or trap'], ['CRAFT / SKILLS / QUESTS', 'panels · QUESTS also shows what was Said'], ['HOME', 'teleport to your lodestone (5 min)'], ['EXIT', 'climb out of a walker or bulldozer'], ['Machines', 'USE a wreck to repair it, USE again to climb in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Minimap', 'tap the minimap for the world map'], ['MENU', 'settings, title screen, new game']]
+      : [['WASD / arrows', 'move'], ['Click the world', 'walk there · click a tree, rock, water, person or monster to use / fight it'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Machines', 'E on a wreck repairs it, E again climbs in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Enter', 'next line of talk (or click the box)'], ['Minimap', 'click the minimap (or M) for the world map'], ['Esc', 'menu (settings, title screen, new game)']];
     const rh = Math.min(26, Math.floor((VH - 120) / rows.length));
     const { px, py, w } = panelBox(g, 500, 90 + rows.length * rh, 'How to play', 'Every skill trains by doing. Die and Death keeps your pack.');
     rows.forEach(([k, v], i) => { const y = py + 78 + i * rh; g.fillStyle = '#f5c542'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(k, px + 18, y); g.fillStyle = '#c9d1d9'; g.font = narrow ? '11px sans-serif' : '13px sans-serif'; g.fillText(v, px + (narrow ? 150 : 190), y); });
@@ -2661,8 +2664,8 @@ window.FANGLANDS = {
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y);
       const axe = player.inv.findIndex(s => s && s.id === 'bronze_axe'); const saved = player.inv[axe]; player.inv[axe] = null; F.press('KeyE'); F.sim(2, []);
       check('woodcutting needs an axe', !player.action && notice && /axe/.test(notice.text), { notice: notice && notice.text });
-      player.inv[axe] = saved; F.face(tree.x, tree.y); F.press('KeyE'); const r = F.untilAction(900, () => countItem('wood') >= 1);
-      check('chop: timed swings, one log, stump left, regrows', typeof r === 'number' && countItem('wood') === 1 && tileAt(tree.x, tree.y) === T.STUMP && regrow.some(x => x.i === idx(tree.x, tree.y)) && player.skills.woodcutting.xp === 25, { steps: r, wood: countItem('wood'), tile: tileAt(tree.x, tree.y) }); }
+      player.inv[axe] = saved; F.face(tree.x, tree.y); const near0 = monsters.filter(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 160).map(m => m.type + ':' + m.state); F.press('KeyE'); const a0 = player.action && player.action.kind, n0 = notice && notice.text; const r = F.untilAction(900, () => countItem('wood') >= 1);
+      check('chop: timed swings, one log, stump left, regrows', typeof r === 'number' && countItem('wood') === 1 && tileAt(tree.x, tree.y) === T.STUMP && regrow.some(x => x.i === idx(tree.x, tree.y)) && player.skills.woodcutting.xp === 25, { steps: r, wood: countItem('wood'), tile: tileName(tileAt(tree.x, tree.y)), tree: [tree.x, tree.y], at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)], a0, n0, near0, hp: player.hp, action: player.action && player.action.kind, n1: notice && notice.text }); }
     { const oak = F.nearestTile([T.OAK]); F.goAdjacent(oak.x, oak.y); F.fight(3000); F.goAdjacent(oak.x, oak.y); F.press('KeyE'); F.sim(3, []); check('oak needs Woodcutting 5', !player.action && notice && /Woodcutting level 5/.test(notice.text), { notice: notice && notice.text }); } peace(false);
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y); F.press('KeyE'); F.untilAction(900, () => countItem('wood') >= 2); }
     openPanel('craft'); render(); const crafted = F.clickButton('2 Logs → 4 Planks'); closePanel();
@@ -3336,13 +3339,8 @@ window.FANGLANDS.title = title;
       g.globalAlpha = clamp(a, 0, 1); g.textAlign = 'right'; g.fillStyle = '#3fb950'; g.font = 'bold 12px sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)';
       g.strokeText('Saved', VW - 16, VH - 36); g.fillText('Saved', VW - 16, VH - 36); g.globalAlpha = 1;
     }
-    if (paused) {
-      // sits just under the core pause box (300×250, centred); unshift so it beats any hotbar rect under it
-      const pw = 300, px = VW / 2 - pw / 2, by = Math.min(VH - 46, VH / 2 + 125 + 10);
-      button(g, px + 24, by, pw - 48, 36, isTouch ? 'Title screen' : 'Title screen (T)', title.toTitle, '#3a4150');
-      buttons.unshift(buttons.pop());
-    }
   });
+  HOOKS.pauseMenu.push((g, x, y, w, h) => button(g, x, y, w, h, isTouch ? 'Title screen' : 'Title screen (T)', title.toTitle, '#3a4150')); // a slot in the core pause menu (10-hud), so the button is drawn after the menu resets `buttons` and is tappable
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -13274,7 +13272,8 @@ const SETTINGS = (() => {
     { const src = String(inputVector); const codes = []; const re = /keys\.has\('(\w+)'\)/g; let m; while ((m = re.exec(src))) codes.push(m[1]);
       const ls = codes.filter(c => c.startsWith('Key')).map(keyLabel); const letters = 'WASD'.split('').filter(l => ls.includes(l)).concat(ls.filter(l => !'WASD'.includes(l))).join(''), arrows = codes.some(c => c.startsWith('Arrow'));
       if (letters || arrows) { out.push({ action: 'Move', codes: [], label: letters + (letters && arrows ? ' or arrows' : arrows ? 'arrows' : '') }); codes.forEach(c => seen.add(c)); } }
-    const sources = [String(update)]; for (const h of HOOKS.update) sources.push(String(h)); if (typeof frame === 'function') sources.push(String(frame));
+    const sources = []; { let u = update; while (typeof u === 'function' && u.__inner) u = u.__inner; sources.push(String(u)); } // wrappers (44-wiki) hand back the wrapped function as __inner; only the core handler is parsed — features declare their keys in HOOKS.keyHelp for (const h of HOOKS.update) sources.push(String(h)); if (typeof frame === 'function') sources.push(String(frame));
+    for (const k of HOOKS.keyHelp) for (const c of k.codes) add(c, k.action); // features: HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] })
     const re = /pressed\.has\('([A-Za-z0-9]+)'(?:\s*\+\s*k)?\)/g;
     for (const src of sources) {
       let m; while ((m = re.exec(src))) {
@@ -13430,7 +13429,7 @@ const SETTINGS = (() => {
       { const map = keyMap(); const find = a => map.find(r => r.action === a); const e = find('Use / talk'), sp = find('Swing'), st = find('Settings'), mu = find('Music'), mv = find('Move');
         const codes = []; const re = /pressed\.has\('([A-Za-z0-9]+)'/g; let m; while ((m = re.exec(String(update)))) codes.push(m[1]); const all = codes.every(c => map.some(r => r.codes.includes(c)));
         window.__forceTouch = true; const t = controlsText(); window.__forceTouch = false; const d = controlsText(); window.__forceTouch = prevTouch;
-        check('settings: the Controls line is built from the real key handlers (E use, Space swing, comma settings, N music, WASD move) and every key 07-update reads is listed; touch shows button names', !!e && e.codes.includes('KeyE') && !!sp && sp.codes.includes('Space') && !!st && st.codes.includes('Comma') && !!mu && mu.codes.includes('KeyN') && !!mv && /WASD/.test(mv.label) && all && /SWING/.test(t) && /USE/.test(t) && /Swing: Space/.test(d), { e: e && e.codes, sp: sp && sp.codes, st: st && st.codes, mu: mu && mu.codes, mv: mv && mv.label, all, t }); }
+        check('settings: the Controls line is built from the real key handlers (E use, Space swing, comma settings, N music, WASD move) and every key 07-update reads is listed; touch shows button names', !!e && e.codes.includes('KeyE') && !!sp && sp.codes.includes('Space') && !!st && st.codes.includes('Comma') && !!mu && mu.codes.includes('KeyN') && !!mv && /WASD/.test(mv.label) && all && /SWING/.test(t) && /USE/.test(t) && /Swing: Space/.test(d), { e: e && e.codes, sp: sp && sp.codes, st: st && st.codes, mu: mu && mu.codes, mv: mv && mv.label, all, t, d }); }
       // layout at four viewports: panel (every page) and pause menu — no two buttons overlap, everything inside the screen
       { const own = k => Object.getOwnPropertyDescriptor(window, k); const saved = { w: own('innerWidth'), h: own('innerHeight') }; const problems = [];
         const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
@@ -13917,6 +13916,8 @@ window.SETTINGS = SETTINGS;
     }
     return _update(dt);
   };
+  update.__inner = _update;
+  HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] }); // 43-settings walks this chain to read the real key handlers
 
   // ---------- buttons: WIKI on the HUD, Wiki under an item in the pack ----------
   // Placement (never over another button, the minimap or the quest box):

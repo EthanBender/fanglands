@@ -153,7 +153,9 @@ const SETTINGS = (() => {
     { const src = String(inputVector); const codes = []; const re = /keys\.has\('(\w+)'\)/g; let m; while ((m = re.exec(src))) codes.push(m[1]);
       const ls = codes.filter(c => c.startsWith('Key')).map(keyLabel); const letters = 'WASD'.split('').filter(l => ls.includes(l)).concat(ls.filter(l => !'WASD'.includes(l))).join(''), arrows = codes.some(c => c.startsWith('Arrow'));
       if (letters || arrows) { out.push({ action: 'Move', codes: [], label: letters + (letters && arrows ? ' or arrows' : arrows ? 'arrows' : '') }); codes.forEach(c => seen.add(c)); } }
-    const sources = [String(update)]; for (const h of HOOKS.update) sources.push(String(h)); if (typeof frame === 'function') sources.push(String(frame));
+    // wrappers (44-wiki) hand back the wrapped function as __inner; only the core handler is parsed — features declare their keys in HOOKS.keyHelp
+    const sources = []; { let u = update; while (typeof u === 'function' && u.__inner) u = u.__inner; sources.push(String(u)); } for (const h of HOOKS.update) sources.push(String(h)); if (typeof frame === 'function') sources.push(String(frame));
+    for (const k of HOOKS.keyHelp) for (const c of k.codes) add(c, k.action); // features: HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] })
     const re = /pressed\.has\('([A-Za-z0-9]+)'(?:\s*\+\s*k)?\)/g;
     for (const src of sources) {
       let m; while ((m = re.exec(src))) {
@@ -309,7 +311,7 @@ const SETTINGS = (() => {
       { const map = keyMap(); const find = a => map.find(r => r.action === a); const e = find('Use / talk'), sp = find('Swing'), st = find('Settings'), mu = find('Music'), mv = find('Move');
         const codes = []; const re = /pressed\.has\('([A-Za-z0-9]+)'/g; let m; while ((m = re.exec(String(update)))) codes.push(m[1]); const all = codes.every(c => map.some(r => r.codes.includes(c)));
         window.__forceTouch = true; const t = controlsText(); window.__forceTouch = false; const d = controlsText(); window.__forceTouch = prevTouch;
-        check('settings: the Controls line is built from the real key handlers (E use, Space swing, comma settings, N music, WASD move) and every key 07-update reads is listed; touch shows button names', !!e && e.codes.includes('KeyE') && !!sp && sp.codes.includes('Space') && !!st && st.codes.includes('Comma') && !!mu && mu.codes.includes('KeyN') && !!mv && /WASD/.test(mv.label) && all && /SWING/.test(t) && /USE/.test(t) && /Swing: Space/.test(d), { e: e && e.codes, sp: sp && sp.codes, st: st && st.codes, mu: mu && mu.codes, mv: mv && mv.label, all, t }); }
+        check('settings: the Controls line is built from the real key handlers (E use, Space swing, comma settings, N music, WASD move) and every key 07-update reads is listed; touch shows button names', !!e && e.codes.includes('KeyE') && !!sp && sp.codes.includes('Space') && !!st && st.codes.includes('Comma') && !!mu && mu.codes.includes('KeyN') && !!mv && /WASD/.test(mv.label) && all && /SWING/.test(t) && /USE/.test(t) && /Swing: Space/.test(d), { e: e && e.codes, sp: sp && sp.codes, st: st && st.codes, mu: mu && mu.codes, mv: mv && mv.label, all, t, d }); }
       // layout at four viewports: panel (every page) and pause menu — no two buttons overlap, everything inside the screen
       { const own = k => Object.getOwnPropertyDescriptor(window, k); const saved = { w: own('innerWidth'), h: own('innerHeight') }; const problems = [];
         const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
