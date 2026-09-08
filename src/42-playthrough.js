@@ -221,6 +221,7 @@
     add('crafting', 'repair the walker (once per wreck)', 1, 120, 0, '3 bars + 4 scrap'); if (window.DOZERUP) for (const u of DOZERUP.UPGRADES) add('crafting', `dozer upgrade: ${u.name}`, u.lv, u.xp, 0, 'blueprint + parts, once (40-dozerup)');
     add('crafting', "Pim's powder run / Thessaly's wool (once each)", 1, 300, 0, 'notice board'); if (ITEMS.jungle_log) add('crafting', 'Queen Aelith (once)', 1, 150, 0, 'quest');
     add('range', 'arrows on a goblin (4 xp per damage)', 1, 4 * 3, 0.6, 'stone arrows, avg hit 3'); add('range', "Wren's silk (once)", 1, 60, 0, 'quest'); if (ITEMS.elven_arrow) add('range', "Lira's twenty (once)", 1, 500, 0, 'quest');
+    for (const f of HOOKS.xpSource) { try { f(add); } catch (e) { } } // features declare their own (45-progression)
     kill('goblin', 'goblin soldier', 1, 'walk + kill;'); kill('wolf', 'wolf', 6); kill('sapper', 'goblin sapper', 7); kill('brute', 'goblin brute', 9); kill('walker', 'goblin walker', 18);
     if (MONSTER_DEFS.barrelbeast) add('melee', 'the Barrelbeast (once)', 28, killXp('barrelbeast'), 0, 'boss, dies once');
     if (MONSTER_DEFS.ash_drake) kill('ash_drake', 'ash drake', 30); if (MONSTER_DEFS.green_dragon) kill('green_dragon', 'green dragon', 45); if (MONSTER_DEFS.red_dragon) kill('red_dragon', 'red dragon', 60);
