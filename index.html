@@ -69,6 +69,8 @@ const HUD = { leftY: 82 };
 
 // ---------- extension hooks (feature files in src/2x-*.js register here; core never needs editing) ----------
 const HOOKS = {
+  pauseMenu: [],
+  keyHelp: [], // { action, codes: ['KeyK'] } — a feature's desktop keys, listed by the Settings panel's Controls line // (g, x, y, w, h) → draw one 36 px button row in the pause menu (slots between Settings and New game)
   world: [],        // fn(rnd, api) — runs at the end of generateWorld; api = { setTile, tileAt, spawnList, road }
   update: [],       // fn(dt) — runs every tick after the core update
   draw: [],         // fn(g, items, cam) — push {y, draw} entries into the y-sorted world list
@@ -2351,18 +2353,19 @@ function drawHud(g) {
   if (paused) {
     buttons.length = 0; minimapRect = null; dialogRect = null; panelRect = null; // nothing under the menu is tappable
     g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0, 0, VW, VH);
-    const pw = 300, ph = 292, px = VW / 2 - pw / 2, py = VH / 2 - ph / 2;
+    const pw = 300, ph = 310, px = VW / 2 - pw / 2, py = VH / 2 - ph / 2; // the stats line sits at VH/2 + 83 (py + 238): 31-rebuild repaints it with the town's name
     roundRect(g, px, py, pw, ph, 12); g.fillStyle = 'rgba(10,14,22,0.96)'; g.fill(); g.strokeStyle = '#30363d'; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 40);
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 60);
-    button(g, px + 24, py + 78, pw - 48, 36, 'Resume', () => { paused = false; });
+    g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 34);
+    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 52);
+    button(g, px + 24, py + 66, pw - 48, 36, 'Resume', () => { paused = false; });
     // sound, music, kid mode and the rest live in the Settings panel (src/43-settings.js); the panel draws under the pause overlay, so unpause to show it
-    button(g, px + 24, py + 120, pw - 48, 36, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
+    button(g, px + 24, py + 106, pw - 48, 36, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
+    let by = py + 146; for (const f of HOOKS.pauseMenu) { f(g, px + 24, by, pw - 48, 36); by += 40; } // feature buttons (14-title: Title screen) — registered here, after the buttons reset above, so they are tappable
     const erase = confirmActive('newgame');
-    button(g, px + 24, py + 162, pw - 48, 36, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
-    g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, py + 209);
-    g.fillStyle = '#6e7681'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 229); // VH/2 + 83: 31-rebuild repaints this line with the town title
-    g.fillText('Progress saves automatically in this browser.', VW / 2, py + 247);
+    button(g, px + 24, by, pw - 48, 36, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
+    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 238);
+    g.fillStyle = '#8b949e'; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, py + 256);
+    g.fillStyle = '#6e7681'; g.fillText('Progress saves automatically in this browser.', VW / 2, py + 274);
   }
 }
 // small arrow on the minimap edge pointing at the tracked quest's target (or a ring when the target is on the minimap)
@@ -2416,8 +2419,8 @@ function drawPanels(g, narrow, short, qh, hb) {
   }
   if (panel === 'help') {
     const rows = isTouch
-      ? [['Tap the world', 'walk there · tap a tree, rock, water or person to use it · tap a monster to fight'], ['Hold on a thing', 'shows what it is, then acts when you let go'], ['Left side of screen', 'drag to move (or tap to walk)'], ['SWING', 'attack, shoot, stomp, hit a dummy (or double-tap the world)'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['Hotbar', 'tap a slot to eat or use it'], ['Bag › Place', 'put down a plank, door, bed, lodestone or trap'], ['CRAFT / SKILLS / QUESTS', 'panels · QUESTS also shows what was Said'], ['HOME', 'teleport to your lodestone (5 min)'], ['EXIT', 'climb out of a walker or bulldozer'], ['Machines', 'USE a wreck to repair it, USE again to climb in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Minimap', 'tap the minimap for the world map'], ['MENU', 'sound, kid mode, new game']]
-      : [['WASD / arrows', 'move'], ['Click the world', 'walk there · click a tree, rock, water, person or monster to use / fight it'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Machines', 'E on a wreck repairs it, E again climbs in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Enter', 'next line of talk (or click the box)'], ['Minimap', 'click the minimap (or M) for the world map'], ['Esc', 'menu (sound, kid mode, new game)']];
+      ? [['Tap the world', 'walk there · tap a tree, rock, water or person to use it · tap a monster to fight'], ['Hold on a thing', 'shows what it is, then acts when you let go'], ['Left side of screen', 'drag to move (or tap to walk)'], ['SWING', 'attack, shoot, stomp, hit a dummy (or double-tap the world)'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['Hotbar', 'tap a slot to eat or use it'], ['Bag › Place', 'put down a plank, door, bed, lodestone or trap'], ['CRAFT / SKILLS / QUESTS', 'panels · QUESTS also shows what was Said'], ['HOME', 'teleport to your lodestone (5 min)'], ['EXIT', 'climb out of a walker or bulldozer'], ['Machines', 'USE a wreck to repair it, USE again to climb in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Minimap', 'tap the minimap for the world map'], ['MENU', 'settings, title screen, new game']]
+      : [['WASD / arrows', 'move'], ['Click the world', 'walk there · click a tree, rock, water, person or monster to use / fight it'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Machines', 'E on a wreck repairs it, E again climbs in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Enter', 'next line of talk (or click the box)'], ['Minimap', 'click the minimap (or M) for the world map'], ['Esc', 'menu (settings, title screen, new game)']];
     const rh = Math.min(26, Math.floor((VH - 120) / rows.length));
     const { px, py, w } = panelBox(g, 500, 90 + rows.length * rh, 'How to play', 'Every skill trains by doing. Die and Death keeps your pack.');
     rows.forEach(([k, v], i) => { const y = py + 78 + i * rh; g.fillStyle = '#f5c542'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(k, px + 18, y); g.fillStyle = '#c9d1d9'; g.font = narrow ? '11px sans-serif' : '13px sans-serif'; g.fillText(v, px + (narrow ? 150 : 190), y); });
@@ -2601,7 +2604,8 @@ window.FANGLANDS = {
   held(dx, dy) { const h = []; if (Math.abs(dx) > 2) h.push(dx > 0 ? 'KeyD' : 'KeyA'); if (Math.abs(dy) > 2) h.push(dy > 0 ? 'KeyS' : 'KeyW'); return h; },
   walkTo(tx, ty, max = 4000) {
     closePanel(); const path = this.bfs(Math.floor(player.x / TILE), Math.floor(player.y / TILE), tx, ty); if (!path) return 'nopath'; let i = 0, s = 0;
-    while (i < path.length && s < max) { const [wx, wy] = path[i]; const dx = tc(wx) - player.x, dy = tc(wy) - player.y; const last = i === path.length - 1; if (Math.hypot(dx, dy) < (last ? (SOLID.has(map[idx(wx, wy)]) ? 44 : 14) : 8)) { i++; continue; } this.step(this.held(dx, dy)); if (player.dead) return 'died'; s++; }
+    // same heal rule as fight(): a road goblin must not kill the bot mid-walk (a death cascades through every later check)
+    while (i < path.length && s < max) { if (player.hp < 7 && !window.__peace) { this.heals = (this.heals || 0) + 1; player.hp = player.maxHp; } const [wx, wy] = path[i]; const dx = tc(wx) - player.x, dy = tc(wy) - player.y; const last = i === path.length - 1; if (Math.hypot(dx, dy) < (last ? (SOLID.has(map[idx(wx, wy)]) ? 44 : 14) : 8)) { i++; continue; } this.step(this.held(dx, dy)); if (player.dead) return 'died'; s++; }
     render(); return i >= path.length ? s : 'timeout';
   },
   face(tx, ty) { const dx = tc(tx) - player.x, dy = tc(ty) - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; },
@@ -2661,8 +2665,8 @@ window.FANGLANDS = {
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y);
       const axe = player.inv.findIndex(s => s && s.id === 'bronze_axe'); const saved = player.inv[axe]; player.inv[axe] = null; F.press('KeyE'); F.sim(2, []);
       check('woodcutting needs an axe', !player.action && notice && /axe/.test(notice.text), { notice: notice && notice.text });
-      player.inv[axe] = saved; F.face(tree.x, tree.y); F.press('KeyE'); const r = F.untilAction(900, () => countItem('wood') >= 1);
-      check('chop: timed swings, one log, stump left, regrows', typeof r === 'number' && countItem('wood') === 1 && tileAt(tree.x, tree.y) === T.STUMP && regrow.some(x => x.i === idx(tree.x, tree.y)) && player.skills.woodcutting.xp === 25, { steps: r, wood: countItem('wood'), tile: tileAt(tree.x, tree.y) }); }
+      player.inv[axe] = saved; F.face(tree.x, tree.y); const near0 = monsters.filter(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 160).map(m => m.type + ':' + m.state); F.press('KeyE'); const a0 = player.action && player.action.kind, n0 = notice && notice.text; const r = F.untilAction(900, () => countItem('wood') >= 1);
+      check('chop: timed swings, one log, stump left, regrows', typeof r === 'number' && countItem('wood') === 1 && tileAt(tree.x, tree.y) === T.STUMP && regrow.some(x => x.i === idx(tree.x, tree.y)) && player.skills.woodcutting.xp === 25, { steps: r, wood: countItem('wood'), tile: tileName(tileAt(tree.x, tree.y)), tree: [tree.x, tree.y], at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)], a0, n0, near0, hp: player.hp, action: player.action && player.action.kind, n1: notice && notice.text }); }
     { const oak = F.nearestTile([T.OAK]); F.goAdjacent(oak.x, oak.y); F.fight(3000); F.goAdjacent(oak.x, oak.y); F.press('KeyE'); F.sim(3, []); check('oak needs Woodcutting 5', !player.action && notice && /Woodcutting level 5/.test(notice.text), { notice: notice && notice.text }); }
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y); F.press('KeyE'); F.untilAction(900, () => countItem('wood') >= 2); } peace(false); // the second log is timed too: a goblin's hit cancels the swing and every plank check after it fails
     openPanel('craft'); render(); const crafted = F.clickButton('2 Logs → 4 Planks'); closePanel();
@@ -3336,13 +3340,8 @@ window.FANGLANDS.title = title;
       g.globalAlpha = clamp(a, 0, 1); g.textAlign = 'right'; g.fillStyle = '#3fb950'; g.font = 'bold 12px sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)';
       g.strokeText('Saved', VW - 16, VH - 36); g.fillText('Saved', VW - 16, VH - 36); g.globalAlpha = 1;
     }
-    if (paused) {
-      // sits just under the core pause box (300×250, centred); unshift so it beats any hotbar rect under it
-      const pw = 300, px = VW / 2 - pw / 2, by = Math.min(VH - 46, VH / 2 + 125 + 10);
-      button(g, px + 24, by, pw - 48, 36, isTouch ? 'Title screen' : 'Title screen (T)', title.toTitle, '#3a4150');
-      buttons.unshift(buttons.pop());
-    }
   });
+  HOOKS.pauseMenu.push((g, x, y, w, h) => button(g, x, y, w, h, isTouch ? 'Title screen' : 'Title screen (T)', title.toTitle, '#3a4150')); // a slot in the core pause menu (10-hud), so the button is drawn after the menu resets `buttons` and is tappable
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -4228,6 +4227,13 @@ const tap = {
   blockedT: 0, repathed: false, wantMove: false, lastX: 0, lastY: 0, repathT: 0, reissueT: 0, reissues: 0,
   lastTap: null,     // {x, y, at} for double-tap
 };
+// Feature people. Files with their own NPC lists (24-dwarves, 25-elves, 33-goblincity's townsfolk, 41-guild's staff, 36-skycity's winged folk)
+// push one function here that returns the live list [{ x, y, r, id, name, talk }] in pixels — empty when out of reach (inside a dungeon,
+// or before the guild has staff). talk() is the same call the feature's E handler makes, so a tap opens exactly the line E opens.
+const TAP_PEOPLE = [];
+function tapPeople() { const out = []; TAP_PEOPLE.forEach((f, li) => { const l = f(); if (l) for (const p of l) if (p && p.talk) { p.list = li; out.push(p); } }); return out; } // list + id name one person (ids repeat across features: the guild's Pip, the goblins' pip)
+// the winged folk export their list and talk handler on window.SKYCITY (they are only reachable inside the Aerie instance)
+TAP_PEOPLE.push(() => (window.SKYCITY && window.INSTANCES && INSTANCES.active() === 'aerie') ? SKYCITY.SKY_NPCS.map(n => ({ x: n.px, y: n.py, r: 13, id: n.id, name: n.name, talk: () => SKYCITY.talk(n) })) : []);
 const TAP_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const TAP_WALLS = new Set([T.WALL, T.HWALL, T.CWALL, T.FENCE, T.STALL, T.TABLE, T.SHELF]);
 const TAP_NAMES = { TREE: 'Tree', OAK: 'Oak', ROCK: 'Rock', IRON: 'Iron rock', COAL: 'Coal rock', WATER: 'Water', FIRE: 'Fire', OVEN: 'Oven', ANVIL: 'Anvil', FORGE: 'Forge', WORKBENCH: 'Workbench', WORKSHOP: "Tinker's table", ALCHEMY: 'Alchemy table', CHEST: 'Chest', SIGN: 'Signpost', DUMMY: 'Training dummy', GRAVE: 'Gravestone', SOIL: 'Tilled soil', CROP: 'Crop', BED: 'Bed', LODESTONE: 'Lodestone', WRECK: 'Wrecked walker', MECH: 'Goblin walker', CART: "Miners' cart", AXESTUMP: 'Axe in a stump', STONECIRCLE: 'Standing stones', GOLDPILE: "Death's gold", TRAP: 'Goblin trap', STUMP: 'Stump', RUBBLE: 'Rubble', PLANK: 'Plank', DOOR: 'Door', GATE: 'Gate', PORTCULLIS: 'Portcullis', COFFINDOOR: 'Coffin door', COUNTER: 'Counter', THRONE: 'Throne', TABLE: 'Table', SHELF: 'Shelf', STALL: 'Stall', WALL: 'Wall', HWALL: 'Wall', CWALL: 'Wall', FENCE: 'Fence', FLOWERS: 'Flowers', MUSHROOM: 'Mushrooms', ASHES: 'Ashes', GRASS: 'Grass', DIRT: 'Dirt', SAND: 'Sand', COBBLE: 'Cobbles', FLOOR: 'Floor', CAVE: 'Cave floor', RUG: 'Rug' };
@@ -4290,6 +4296,8 @@ function tapPick(sx, sy) {
   if (best) return { kind: 'monster', monster: best.monster, wx, wy, tx, ty };
   for (const n of NPCS) { const d = dist(wx, wy, n.px, n.py); if (d <= 20 && (!best || d < best.d)) best = { d, npc: n }; }
   if (best) return { kind: 'npc', npc: best.npc, wx, wy, tx, ty };
+  for (const p of tapPeople()) { const d = dist(wx, wy, p.x, p.y); if (d <= 20 && (!best || d < best.d)) best = { d, person: p }; }
+  if (best) return { kind: 'person', person: best.person, wx, wy, tx, ty };
   for (const d of drops) { const dd = dist(wx, wy, d.x, d.y); if (dd <= 16 && (!best || dd < best.d)) best = { d: dd, drop: d }; }
   if (best) return { kind: 'item', drop: best.drop, wx, wy, tx, ty };
   if (!inMap(tx, ty)) return null;
@@ -4303,6 +4311,7 @@ function tapLabelFor(p) {
   if (!p) return null;
   if (p.kind === 'monster') { const def = MONSTER_DEFS[p.monster.type]; return `${def.name} · lv ${def.level}`; }
   if (p.kind === 'npc') return p.npc.name;
+  if (p.kind === 'person') return p.person.name;
   if (p.kind === 'item') { const def = ITEMS[p.drop.id]; return def ? (p.drop.qty > 1 ? `${def.name} × ${p.drop.qty}` : def.name) : 'Something'; }
   const b = buildingAt(p.tx, p.ty); const t = p.t;
   if (b && (TAP_WALLS.has(t) || PUSH_THROUGH.has(t))) return b.name || tapTileName(t);
@@ -4329,6 +4338,11 @@ function tapAt(sx, sy) {
     const n = p.npc; path = tapPathTo(Math.floor(n.px / TILE), Math.floor(n.py / TILE), true);
     if (!path && dist(player.x, player.y, n.px, n.py) > 64) { notify("You can't get there."); return false; }
     tap.kind = 'npc'; tap.target = n; tap.goal = { tx: Math.floor(n.px / TILE), ty: Math.floor(n.py / TILE) }; tapSetPath(path || []); tapMark(n.px, n.py, '#f5c542'); return true;
+  }
+  if (p.kind === 'person') {
+    const q = p.person; path = tapPathTo(Math.floor(q.x / TILE), Math.floor(q.y / TILE), true);
+    if (!path && dist(player.x, player.y, q.x, q.y) > 64) { notify("You can't get there."); return false; }
+    tap.kind = 'person'; tap.target = q; tap.goal = { tx: Math.floor(q.x / TILE), ty: Math.floor(q.y / TILE) }; tapSetPath(path || []); tapMark(q.x, q.y, '#f5c542'); return true;
   }
   if (p.kind === 'item') {
     const d = p.drop; path = tapPathTo(Math.floor(d.x / TILE), Math.floor(d.y / TILE), false);
@@ -4393,7 +4407,7 @@ HOOKS.update.push(dt => {
     if (tap.blockedT > 0.5) {
       tap.blockedT = 0;
       if (tap.repathed || !tap.goal) { tapCancel('blocked'); return; }
-      tap.repathed = true; const adj = tap.kind === 'use' || tap.kind === 'npc'; const np = tapPathTo(tap.goal.tx, tap.goal.ty, adj);
+      tap.repathed = true; const adj = tap.kind === 'use' || tap.kind === 'npc' || tap.kind === 'person'; const np = tapPathTo(tap.goal.tx, tap.goal.ty, adj);
       if (!np) { tapCancel('blocked'); return; } tapSetPath(np);
     }
   }
@@ -4425,6 +4439,25 @@ HOOKS.update.push(dt => {
       if (tap.repathed) { tapFace(n.px, n.py); if (d <= 118) useAction(); tapCancel('done'); return; }
       tap.repathed = true; const gt = { tx: Math.floor(n.px / TILE), ty: Math.floor(n.py / TILE) }; const np = tapPathTo(gt.tx, gt.ty, true);
       if (!np || !np.length) { tapFace(n.px, n.py); if (d <= 118) useAction(); tapCancel('done'); return; }
+      tap.goal = gt; tapSetPath(np);
+    }
+    return;
+  }
+  if (tap.kind === 'person') {
+    const q0 = tap.target; if (!q0) { tapCancel('done'); return; }
+    const q = tapPeople().find(p => p.list === q0.list && p.id === q0.id); if (!q) { tapCancel('lost'); return; } // the live one: the guild staff walk, a dungeon door hides the townsfolk
+    if (tap.marker) { tap.marker.x = q.x; tap.marker.y = q.y; }
+    const own = tapTile(), same = insideBuilding(own.tx, own.ty) === insideBuilding(Math.floor(q.x / TILE), Math.floor(q.y / TILE)); // no talking through walls
+    const d = dist(player.x, player.y, q.x, q.y);
+    if (d <= 64 && same) {
+      tapSetPath(null); player.walkPath = null; tapFace(q.x, q.y); player.moving = false;
+      if (player.mech) useAction(); else q.talk();
+      tapCancel('done'); return;
+    }
+    if (!tap.path || !tap.path.length) {
+      if (tap.repathed) { tapFace(q.x, q.y); if (d <= 100 && !player.mech) q.talk(); tapCancel('done'); return; }
+      tap.repathed = true; const gt = { tx: Math.floor(q.x / TILE), ty: Math.floor(q.y / TILE) }; const np = tapPathTo(gt.tx, gt.ty, true);
+      if (!np || !np.length) { tapFace(q.x, q.y); if (d <= 100 && !player.mech) q.talk(); tapCancel('done'); return; }
       tap.goal = gt; tapSetPath(np);
     }
     return;
@@ -4539,6 +4572,32 @@ HOOKS.selfTest.push((check, F, h) => {
   // 9. double-tap = swing
   { const o = h.openSpot(40, 24); clearArea(o); F.tp(o.x, o.y); F.step([]); player.attackCd = 0; player.attackT = 0; const [sx, sy] = screen(tc(o.x + 2), tc(o.y)); pointerDown(sx, sy, 12); pointerUp(12); F.step([]); pointerDown(sx, sy, 13); pointerUp(13);
     check('tap: a double-tap swings', player.attackT > 0, { attackT: player.attackT }); tapCancel('manual'); F.sim(40, []); }
+  // 10. feature people (TAP_PEOPLE): a tap on a dwarf, an elf, a goblin townsgoblin, the winged queen or the guild staff walks up and opens the very line E opens
+  { const drainD = () => { dialog.cur = null; dialog.queue.length = 0; };
+    const firstLine = () => { const d = dialog.cur || dialog.queue[0]; return d ? d.who + ' | ' + d.text : null; };
+    const viaE = (px, py, tx, ty) => { closePanel(); F.tp(px, py); F.step([]); F.face(tx, ty); drainD(); F.press('KeyE'); F.sim(2, []); const l = firstLine(); closePanel(); drainD(); return l; };
+    const viaTap = (px, py, wx, wy, max = 400) => { closePanel(); F.tp(px, py); F.step([]); drainD(); tap.lastTap = null; tapCancel('manual'); tapWorld(wx, wy); const kind = tap.kind, who = tap.target && tap.target.name; let s = 0; while (s < max && tap.kind === 'person') { F.step([]); s++; } F.step([]); const l = firstLine(); closePanel(); drainD(); return { kind, who, s, line: l, at: [+(player.x / TILE).toFixed(1), +(player.y / TILE).toFixed(1)] }; };
+    const same = (name, e, t, extra) => check(`tap: ${name} — a tap walks up and opens the same first line E opens`, !!e && t.kind === 'person' && t.line === e && t.s < 400, Object.assign({ e, tap: t }, extra || {}));
+    const inst = () => window.INSTANCES ? INSTANCES.active() : null; if (inst()) INSTANCES.leave();
+    // dwarves (24): Brunhild the smith in Deepholm's forge hall, before the forge is lit
+    if (typeof quest.dwarf !== 'undefined' || REGIONS.some(r => r.name === 'Deepholm')) { const snap = JSON.stringify(quest.dwarf === undefined ? null : quest.dwarf); quest.dwarf = { stage: 0, chests: [], visited: true }; clearArea({ x: 12, y: 83 });
+      const e = viaE(12, 82, 12, 81); const t = viaTap(12, 85, tc(12), tc(81)); same('Brunhild (24-dwarves)', e, t); quest.dwarf = JSON.parse(snap); if (quest.dwarf === null) delete quest.dwarf; }
+    // elves (25): Thessaly the weaver in Sylvaris, before the Queen's task is done
+    if (REGIONS.some(r => r.name === 'Sylvaris')) { const snap = JSON.stringify(quest.elves === undefined ? null : quest.elves); if (!quest.elves) { F.tp(133, 128); F.step([]); } if (quest.elves) quest.elves.stage = 0; clearArea({ x: 133, y: 129 });
+      const e = viaE(132, 129, 133, 129); const t = viaTap(130, 129, tc(133), tc(129)); same('Thessaly (25-elves)', e, t); quest.elves = JSON.parse(snap); if (quest.elves === null) delete quest.elves; }
+    // the goblin townsfolk (33): Grubb the cook inside his cookhouse, mid-quest without the beef
+    if (REGIONS.some(r => r.name === 'Grubmarket')) { const snap = JSON.stringify(quest.tinker === undefined ? null : quest.tinker); quest.tinker = { stage: 1, parts: {}, visited: true, rematch: false, kills: 0 }; clearArea({ x: 216, y: 24 });
+      const e = viaE(216, 24, 216, 23); const t = viaTap(215, 24, tc(216), tc(23)); same('Grubb the cook (33-goblincity)', e, t); quest.tinker = JSON.parse(snap); if (quest.tinker === null) delete quest.tinker; }
+    // the winged folk (36): Queen Seraphel in the Aerie's hall, asked and not yet paid
+    if (window.SKYCITY && window.INSTANCES && INSTANCES.get && INSTANCES.get('aerie')) { const snap = JSON.stringify(quest.sky === undefined ? null : quest.sky); const ok = INSTANCES.enter('aerie', [62, 7]); F.sim(2, []); const q = SKYCITY.SQ(); q.stage = 2;
+      const e = ok ? viaE(25, 7, 25, 6) : null; const t = ok ? viaTap(25, 9, tc(25), tc(6)) : { kind: null }; same('Queen Seraphel (36-skycity, inside the Aerie)', e, t, { entered: ok, inst: inst() }); if (inst()) INSTANCES.leave(); drainD(); quest.sky = JSON.parse(snap); if (quest.sky === null) delete quest.sky; }
+    // the guild staff (41): Pip inside the hall door at rank 4 (pick() pinned so both probes draw the same line)
+    if (typeof quest.rebuild !== 'undefined' || BUILDINGS.some(b => b.id === 'guild_hall') || REGIONS.some(r => r.name === 'Hollowford')) { const snap = JSON.stringify(quest.guild === undefined ? null : quest.guild); const R = Math.random; Math.random = () => 0;
+      quest.guild = Object.assign({}, quest.guild || {}, { founded: true, rank: 4, jobsDone: 12, cooldowns: {}, active: null }); F.tp(153, 71); F.sim(2, []); clearArea({ x: 153, y: 70 });
+      const e = viaE(153, 71, 153, 70); const t = viaTap(153, 71, tc(153), tc(70)); Math.random = R; same('Pip of the guild staff (41-guild)', e, t); quest.guild = JSON.parse(snap); if (quest.guild === null) delete quest.guild; F.sim(2, []); }
+    // a long-press on one of them names them
+    { window.__forceTouch = true; const people = tapPeople(); window.__forceTouch = false; check('tap: TAP_PEOPLE is a registry of functions returning live people (x, y, id, name, talk)', Array.isArray(TAP_PEOPLE) && TAP_PEOPLE.length >= 1 && people.every(p => typeof p.x === 'number' && typeof p.talk === 'function' && typeof p.name === 'string'), { lists: TAP_PEOPLE.length, live: people.length }); }
+  }
   unpark(); window.__forceTouch = prevTouch; h.peace(false); touch.press = null; dialog.cur = dc; dialog.queue.push(...dq); tapCancel('manual');
 });
 
@@ -6075,6 +6134,7 @@ HOOKS.selfTest.push((check, F, h) => {
     { id: 'hilde', name: 'Hilde', x: 10, y: 90, tunic: '#7a4a3a', hair: '#e0c080', woman: true, role: 'dwarf_villager', lines: ['King Thrain has sat that throne since before the goblins came.', 'The guards are for show. Mostly.', 'A mithril platebody takes three bars and a Smithing of thirty. Then nothing in the Fanglands touches you.'] },
   ];
   for (const d of DWARVES) { d.px = tc(d.x); d.py = tc(d.y); d.facing = { x: 0, y: 1 }; }
+  if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => DWARVES.map(d => ({ x: d.px, y: d.py, r: 13, id: d.id, name: d.name, talk: () => dwTalk(d) }))); // 17-tap: a tap on a dwarf walks up and talks
   function dwInFront() {
     let best = null;
     for (const d of DWARVES) {
@@ -6457,6 +6517,7 @@ HOOKS.selfTest.push((check, F, h) => {
     { id: 'faelan', name: 'Faelan', x: 150, y: 132, tunic: '#3a5a2a', hair: '#d9c88a', role: 'elf_villager', lines: ['The river is the second door. Only the light-footed use it.', 'Lira can teach any pair of hands to hold a bow straight. Twenty hits and she owes you.', "Thessaly's loom weaves silk into cloth that forgets it has weight. The Queen decides who wears it."] },
   ];
   for (const e of ELVES) { e.px = tc(e.x); e.py = tc(e.y); e.facing = { x: 0, y: 1 }; }
+  if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => ELVES.map(e => ({ x: e.px, y: e.py, r: 13, id: e.id, name: e.name, talk: () => elTalk(e) }))); // 17-tap: a tap on an elf walks up and talks
   function elInFront() {
     let best = null;
     for (const e of ELVES) {
@@ -9841,6 +9902,7 @@ HOOKS.selfTest.push((check, F, h) => {
     return hidden() ? null : { x: n.x, y: n.y };
   };
   const folkPx = n => { const t = folkTile(n); return t ? { px: tc(t.x), py: tc(t.y) } : null; };
+  if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => FOLK.map(n => { const p = folkPx(n); return p && { x: p.px, y: p.py, r: 13, id: n.id, name: n.name, talk: () => gcTalk(n) }; }).filter(Boolean)); // 17-tap: a tap on a townsgoblin walks up and talks
   function folkInFront() {
     let best = null;
     for (const n of FOLK) {
@@ -10509,6 +10571,11 @@ HOOKS.selfTest.push((check, F, h) => {
     ['count_ashvane', AF_COUNT[0], AF_COUNT[1]],
   ];
   const NO_SPAWN_REGIONS = new Set(['Thistledown', 'Castle Thistledown', 'Deepholm', 'The Cave', "The Fang's Lair", 'Sylvaris', 'Hollowford']);
+  // where the dead may neither rise nor wander: the regions above plus the goblin city (33-goblincity: Grubmarket holds the market, the scrap
+  // yard and Tinkerton's compound; Castle Gnash the castle). The rects are read from REGIONS by name at runtime, never copied here.
+  const NO_GO_NAMES = new Set([...NO_SPAWN_REGIONS, 'Grubmarket', 'Castle Gnash']);
+  const noGoRects = () => REGIONS.filter(r => NO_GO_NAMES.has(r.name));
+  const inNoGo = (tx, ty) => inVillageBounds(tc(tx), tc(ty)) || isCaveTile(tx, ty) || noGoRects().some(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1);
   const OWN_DARK_REGIONS = ['Deepholm', "The Fang's Lair"]; // regions that draw their own darkness (24-dwarves, 28-thefang)
 
   // ---------- tiles (ids captured locally) ----------
@@ -10617,7 +10684,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const tx = Math.round(px + Math.cos(a) * d), ty = Math.round(py + Math.sin(a) * d);
       if (!inMap(tx, ty)) continue;
       const t = tileAt(tx, ty);
-      if (SOLID.has(t) || PUSH_THROUGH.has(t) || buildingAt(tx, ty) || inVillageBounds(tc(tx), tc(ty)) || isCaveTile(tx, ty)) continue;
+      if (SOLID.has(t) || PUSH_THROUGH.has(t) || buildingAt(tx, ty) || inNoGo(tx, ty)) continue;
       if (NO_SPAWN_REGIONS.has(regionAt(tx, ty).name)) continue;
       if (collides(tc(tx), tc(ty), 13, 'beast')) continue;
       if (monsters.some(m => !m.dead && dist(m.x, m.y, tc(tx), tc(ty)) < 30)) continue;
@@ -10666,7 +10733,13 @@ HOOKS.selfTest.push((check, F, h) => {
     for (let i = monsters.length - 1; i >= 0; i--) {
       const m = monsters[i]; if (!m.night) continue;
       if (m.dead && m.deadT > 0.8) { monsters.splice(i, 1); continue; }   // the dead of the night never respawn
-      if (ph !== 'night') { crumble(m); monsters.splice(i, 1); }          // dawn
+      if (ph !== 'night') { crumble(m); monsters.splice(i, 1); continue; } // dawn
+      // a zombie that steps over the line into a village, a city or a castle turns back: it is put back on its last tile outside and sent home
+      if (m.dead) continue;
+      if (inNoGo(Math.floor(m.x / TILE), Math.floor(m.y / TILE))) {
+        if (m.lastOut) { m.x = m.lastOut.x; m.y = m.lastOut.y; }
+        m.state = 'return'; m.wander = { x: 0, y: 0 }; m.wanderT = 1.5; m.facing = { x: -m.facing.x, y: -m.facing.y }; m.turned = (m.turned || 0) + 1;
+      } else m.lastOut = { x: m.x, y: m.y };
     }
     if (ph !== 'night') spawnT = 0;
     if (ph === 'dusk' && !N().told && !player.dead && !NO_SPAWN_REGIONS.has(player.region)) { N().told = true; say('The light is going. When it is dark the dead walk. Not many. Stay near a fire, or show them your sword. They fall to dust at dawn.', 'The Voice'); }
@@ -10870,7 +10943,7 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   // ---------- test / debug handle ----------
-  window.NIGHT = { DAY, LIGHT, DUSK, phase, alpha, overlay: overlayAlpha, dayT, alive: nightAlive, resetTimer: () => { spawnT = 0; }, timer: () => spawnT, canSpawn, tiles: { crypt: T_CRYPT, deadTree: T_DEAD } };
+  window.NIGHT = { DAY, LIGHT, DUSK, phase, alpha, overlay: overlayAlpha, dayT, alive: nightAlive, resetTimer: () => { spawnT = 0; }, timer: () => spawnT, canSpawn, inNoGo, noGoRects, tiles: { crypt: T_CRYPT, deadTree: T_DEAD } };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -10912,6 +10985,30 @@ HOOKS.selfTest.push((check, F, h) => {
     { F.tp(112, 33); player.dayTime = LIGHT + DUSK + 1; NIGHT.resetTimer(); h.peace(false); F.sim(SPAWN_EVERY * 60 + 30, []); const n = nightMs().length; const can = NIGHT.canSpawn();
       check('night: nothing rises inside Thistledown (village bounds + region), the timer never fires there', n === 0 && !can && player.region === 'Thistledown', { n, can, region: player.region });
       player.dayTime = 0; F.sim(3, []); h.peace(true); }
+    // never inside the goblin city: with the knight in Grubmarket the dead rise on the shore outside the city rects, never in them, and one
+    // that is sent across the line turns back (the rects come from REGIONS by name, as the spawner reads them)
+    { const city = REGIONS.filter(r => r.name === 'Grubmarket' || r.name === 'Castle Gnash');
+      if (city.length === 2) {
+        const inCity = (tx, ty) => city.some(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1);
+        const tileOf = m => [Math.floor(m.x / TILE), Math.floor(m.y / TILE)];
+        leave(); closePanel(); F.tp(215, 30); F.sim(2, []); drain(); player.dayTime = LIGHT + DUSK + 1; NIGHT.resetTimer(); h.peace(false); player.hp = 100000;
+        const seen = new Set(); let inside = 0, ticks = 0; const can = NIGHT.canSpawn();
+        for (let i = 0; i < SPAWN_EVERY * 60 * 5 + 30; i++) {
+          F.step([]); ticks++;
+          for (const m of nightMs()) { if (m.dead) continue; seen.add(m); if (inCity(...tileOf(m))) inside++; }
+        }
+        const rose = seen.size; const homes = [...seen].map(m => [Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)]);
+        const homesOutside = homes.every(([x, y]) => !inCity(x, y)) && homes.every(([x, y]) => !NIGHT.inNoGo(x, y));
+        check('night: with the knight in Grubmarket the dead still rise (on the shore, outside the city rects) and none is ever inside Grubmarket or Castle Gnash', can && player.region === 'Grubmarket' && rose >= 1 && inside === 0 && homesOutside, { can, region: player.region, rose, inside, homes, ticks });
+        // the line: a zombie set on the road just west of the market, hungry for a knight standing inside it, is turned back every time it crosses
+        const z = [...seen].find(m => !m.dead) || null; let held = false, turned = 0, crossedTo = null;
+        if (z) { for (const m of nightMs()) if (m !== z) m.stunT = 999; const gm = city.find(r => r.name === 'Grubmarket');
+          F.tp(gm.x0 + 2, 30); z.x = tc(gm.x0 - 1); z.y = tc(30); z.home = { x: z.x, y: z.y }; z.lastOut = null; z.state = 'idle'; z.stunT = 0; z.turned = 0; z.angry = true; z.hp = z.maxHp;
+          let never = true; for (let i = 0; i < 240; i++) { F.step([]); if (inCity(...tileOf(z))) { never = false; crossedTo = tileOf(z); } }
+          turned = z.turned; held = never && !z.dead && tileOf(z)[0] < gm.x0; }
+        check('night: a zombie chasing a knight into Grubmarket is turned back at the city line (never inside after a tick, sent home)', !!z && held && turned >= 1, { found: !!z, held, turned, crossedTo, at: z && tileOf(z), state: z && z.state });
+        for (const m of nightMs()) m.stunT = 999; player.dayTime = 0; F.sim(3, []); h.peace(true); drops = drops.filter(d => dist(d.x, d.y, tc(215), tc(30)) > 30 * TILE); }
+      else check('night: the goblin city regions (33-goblincity) are present for the no-go check', false, { names: REGIONS.map(r => r.name) }); }
     // one darkness at a time: Deepholm, the starting cave and dark instances keep their own lights
     { player.dayTime = LIGHT + DUSK + 1; F.tp(14, 80); F.sim(2, []); const dh = NIGHT.overlay(), dhRegion = player.region; F.tp(4, 7); F.sim(2, []); const cave = NIGHT.overlay();
       const o = h.openSpot(40, 20); F.tp(o.x, o.y); F.sim(2, []); const open = NIGHT.overlay();
@@ -12003,7 +12100,8 @@ HOOKS.selfTest.push((check, F, h) => {
 // ============================================================================
 // WORLD BLEND — the last pass over the finished map, so the land reads as one place and not a row of
 // postage stamps: an organic coastline with coves and a sandy rim, a river from Miller's Pond to the
-// Grey Sea (plank bridges where it crosses the roads), dithered biome edges (the Ashfields, the Jungle,
+// Grey Sea (plank bridges where it crosses the roads), the same coast treatment on the Far Shore's strait
+// (33-goblincity), dithered biome edges (the Ashfields, the Jungle,
 // Wolfwood, the Goblin Camp's ring, Grey Quarry), clumped woods on the open fields, and feathered grass
 // edges at draw time. Feature file: registers through HOOKS only and edits no core file. Its world hook
 // runs after every other feature's (file order), so it sees the finished map and only softens it.
@@ -12014,6 +12112,7 @@ HOOKS.selfTest.push((check, F, h) => {
   const Tn = n => (n in T ? T[n] : -1);
   const ASH = Tn('ASH'), JUNGLE = Tn('JUNGLE'), FERN = Tn('FERN'), BRIDGE = Tn('BRIDGE'), DOCK = Tn('DOCK'), WARDEN_GATE = Tn('WARDEN_GATE'), BERRY = Tn('BERRY_BUSH'), DEADTREE = Tn('DEADTREE'), SCORCH = Tn('SCORCH'), OBSIDIAN = Tn('OBSIDIAN');
   const PLANKS = BRIDGE >= 0 ? BRIDGE : DOCK >= 0 ? DOCK : T.DIRT;   // what carries a road over the river
+  const KEEPT = new Set([DOCK, Tn('BOAT'), Tn('SEAROCK'), Tn('DUNGEON_DOOR')].filter(v => v >= 0)); // placed by 26-boats / 16-instances: never rewritten
   const SEA = { x0: 162, y0: 0, x1: 199, y1: 95 };
   const VILL = { x0: 85, y0: 14, x1: 140, y1: 56 };
   const PAL = { x0: 142, y0: 20, x1: 158, y1: 40 };                   // the goblin palisade
@@ -12063,7 +12162,7 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.world.push((rnd0, api) => {
     const rnd = mulberry32(SEED);   // own stream: the result does not depend on how many draws the features before this made
     const set = api.setTile, at = api.tileAt;
-    const S = BL.stats = { coast: { toWater: 0, toLand: 0, south: 0 }, rim: 0, river: { tiles: 0, bridges: 0, banks: 0 }, relocated: [], dither: { ash: 0, column: 0, jungle: 0, wolfwood: 0, camp: 0, quarry: 0, hollowford: 0, deepholm: 0, lair: 0 }, clump: { cleared: 0, added: 0 }, reach: null, repairs: [], pockets: [], buildingsSame: null, villageSame: null };
+    const S = BL.stats = { coast: { toWater: 0, toLand: 0, south: 0, far: 0 }, rim: 0, river: { tiles: 0, bridges: 0, banks: 0 }, relocated: [], dither: { ash: 0, column: 0, jungle: 0, wolfwood: 0, camp: 0, quarry: 0, hollowford: 0, deepholm: 0, lair: 0 }, clump: { cleared: 0, added: 0 }, reach: null, repairs: [], pockets: [], buildingsSame: null, villageSame: null };
     const sumRect = (x0, y0, x1, y1, s) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) s = (Math.imul(s, 31) + at(x, y)) | 0; return s; };
     const sumBuildings = () => { let s = 7; for (const b of BUILDINGS) s = sumRect(b.x, b.y, b.x + b.w - 1, b.y + b.h - 1, s); return s; };
     const sumVillage = () => sumRect(VILL.x0, VILL.y0, VILL.x1, VILL.y1, 11);
@@ -12097,6 +12196,10 @@ HOOKS.selfTest.push((check, F, h) => {
     mark(125, 113, 167, 136); mark(126, 111, 147, 114);    // Sylvaris' ring wall, the open ground before the gap
     mark(162, 40, 163, 40);                                // the boats' shore check
     mark(51, 41, 62, 50);                                  // the bulldozer's test lane south of the pens, as the core scattered it
+    // the Far Shore (33-goblincity, reached by 26-boats): Harl's far dock, boat and lantern, the landing step and the road off it, four tiles all round;
+    // every hut there is a BUILDINGS entry (guarded above) and every townsgoblin stands east of x 214, beyond the strait pass's reach (x ≤ 210)
+    const FAR = REGIONS.find(r => r.name === 'The Far Shore') || null;
+    if (FAR) mark(200, 26, 211, 34);
     const spawnG = new Uint8Array(MAP_W * MAP_H);
     const markSpawns = () => { spawnG.fill(0); for (const s of MONSTER_SPAWNS) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inMap(s.tx + dx, s.ty + dy)) spawnG[idx(s.tx + dx, s.ty + dy)] = 1; };
     markSpawns();
@@ -12125,6 +12228,23 @@ HOOKS.selfTest.push((check, F, h) => {
       const v = (SEA.y1 + 0.5 - y) + (cn(x + 200, y) * 2 - 1) * 5, t = at(x, y);
       if (v > 0) { if (y > SEA.y1 && JUNGLY.has(t)) { set(x, y, T.WATER); seaMade.add(idx(x, y)); S.coast.south++; } }
       else if (y <= SEA.y1 && t === T.WATER) { set(x, y, T.SAND); S.coast.south++; }
+    }
+    // ---- 1b. the Far Shore's strait: 33-goblincity carves water at x 200–203 and a sand strip at 204–206, both ruler-straight, y 4–95. The straight
+    // beach is forgotten (grass; the shore rocks stay), then the water's edge wanders about x 205 by the same noise, with coves and headlands.
+    // The strait must stay mostly water (33's own check counts it), so the edge is biased east and the headlands kept small.
+    if (FAR) {
+      const FEDGE = 205, FCOVES = [[206, 12, 3, 1], [206, 46, 3, 1], [206, 66, 3.5, 1], [206, 90, 3, 1], [202, 40, 2.5, -1], [201, 60, 3, -1], [202, 80, 2.5, -1]]; // [x, y, r, +1 cove / −1 headland]
+      const FAR_LAND = new Set([T.GRASS, T.SAND, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, T.ROCK]);
+      for (let y = 4; y <= 95; y++) for (let x = 200; x <= 203; x++) if (at(x, y) === T.WATER) seaMade.add(idx(x, y)); // the strait counts as sea for the rim
+      for (let y = 4; y <= 95; y++) for (let x = 200; x <= 210; x++) {
+        if (!free(x, y) || KEEPT.has(at(x, y))) continue;
+        let v = (FEDGE - x) + (cn(x + 300, y) * 2 - 1) * 3;   // > 0: water
+        for (const [cx, cy, r, sg] of FCOVES) { const d = dist(x, y, cx, cy); if (d < r + 1.5) v += sg * (r + 1.5 - d) * 2.5; }
+        const t = at(x, y);
+        if (v > 0) { if (FAR_LAND.has(t)) { set(x, y, T.WATER); seaMade.add(idx(x, y)); S.coast.far++; } }
+        else if (t === T.WATER) { set(x, y, T.GRASS); seaMade.delete(idx(x, y)); S.coast.far++; }
+        else if (t === T.SAND) set(x, y, T.GRASS);            // the old beach; the rim pass below lays the new one along the new edge
+      }
     }
     const isSea = (x, y) => at(x, y) === T.WATER && (inRect(SEA, x, y) || seaMade.has(idx(x, y)));
 
@@ -12180,6 +12300,7 @@ HOOKS.selfTest.push((check, F, h) => {
     const rn = makeNoise(SEED + 5, 5);
     const ring1 = [];
     for (let y = 0; y <= 99; y++) for (let x = 148; x <= 199; x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y]);
+    if (FAR) for (let y = 4; y <= 95; y++) for (let x = 200; x <= 211; x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y]); // the strait's new edge
     for (const [x, y] of ring1) { set(x, y, T.SAND); S.rim++; }
     for (const [x, y] of ring1) for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (free(nx, ny) && RIMMABLE.has(at(nx, ny)) && rn(nx, ny) > 0.5) { set(nx, ny, T.SAND); S.rim++; } }
     set(162, 40, T.SAND); // the boats' shore check (also guarded, belt and braces)
@@ -12371,6 +12492,17 @@ HOOKS.selfTest.push((check, F, h) => {
     check('blend: Thistledown and every building are untouched by the pass (checksums before and after)', S.buildingsSame === true && S.villageSame === true, { buildings: S.buildingsSame, village: S.villageSame });
     { let ash = 0, grass = 0; for (let y = 93; y <= 99; y++) for (let x = 10; x <= 90; x++) { const t = tileAt(x, y); if (t === ASH) ash++; else if (GRASSY.has(t)) grass++; }
       check('blend: the Ashfields edge is dithered (ash and grass both stand in rows 93–99, x 10–90)', ash > 20 && grass > 20, { ash, grass, dither: S.dither }); }
+    if (REGIONS.some(r => r.name === 'The Far Shore')) {
+      // the strait: 33-goblincity's water at x 200–203 met its sand at 204 along a ruler line; now the water's east edge wanders
+      { const xs = new Set(); let rim = 0, water = 0; for (let y = 6; y <= 94; y++) for (let x = 210; x >= 198; x--) if (tileAt(x, y) === T.WATER) { xs.add(x); break; }
+        for (let y = 4; y <= 95; y++) for (let x = 200; x <= 211; x++) { const t = tileAt(x, y); if (t === T.SAND && N4.some(([dx, dy]) => tileAt(x + dx, y + dy) === T.WATER)) rim++; }
+        for (let y = 1; y <= 96; y++) for (let x = 200; x <= 203; x++) if (tileAt(x, y) === T.WATER) water++;
+        check("blend: the Far Shore's strait wanders too (8+ distinct shoreline columns over y 6–94: coves and headlands) with a sand rim along it, and stays mostly water", xs.size >= 8 && rim >= 40 && water > 300, { distinct: xs.size, cols: [...xs].sort((a, b) => a - b), rim, water, far: S.coast.far }); }
+      // the ferry's far dock (26-boats: dock 204–205 × 29–31, boat 203,30, landing step 206,30) is untouched and the landing still walks into town
+      { const L = { x: 206, y: 30 }; const a = F.bfs(L.x, L.y, 219, 33), b = F.bfs(L.x, L.y, 216, 26);
+        const dock = tileAt(204, 30) === DOCK && tileAt(205, 30) === DOCK && tileAt(203, 30) === Tn('BOAT') && tileAt(L.x, L.y) === T.SAND && tileAt(L.x + 1, L.y) === T.DIRT;
+        check("blend: Harl's far dock, boat and landing step are untouched, and the landing still reaches Grubmarket's square and Grubb's doorstep on foot", dock && !!a && !!b, { dock, square: a && a.length, doorstep: b && b.length }); }
+    }
     { let trees = 0, clumped = 0; for (let y = 1; y <= 61; y++) for (let x = 21; x <= 159; x++) { if (!TREES.has(tileAt(x, y)) || regionAt(x, y).name !== 'Goblin Fields') continue; trees++; if (N8.filter(([dx, dy]) => TREES.has(tileAt(x + dx, y + dy))).length >= 2) clumped++; }
       check('blend: the trees of Goblin Fields stand in copses, not an even scatter (half or more have two tree neighbours)', trees > 200 && clumped / trees >= 0.5, { trees, clumped: +(clumped / trees).toFixed(2), clump: S.clump }); }
   });
@@ -12900,6 +13032,7 @@ HOOKS.selfTest.push((check, F, h) => {
     for (const p of staff) { const dx = p.px - player.x, dy = p.py - player.y, d = Math.hypot(dx, dy); if (d > 64 || d < 1) continue; const dot = (dx / d) * player.facing.x + (dy / d) * player.facing.y; if (dot < 0.4) continue; if (!best || d < best.d) best = { p, d }; }
     return best && best.p;
   };
+  if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => staff.map(p => ({ x: p.px, y: p.py, r: 13, id: p.id, name: p.name, talk: () => useAction() }))); // 17-tap: a tap on the staff walks up; facing them, E's own path (HOOKS.use → staffInFront) talks
 
   // ---------- update ----------
   HOOKS.update.push(dt => {
@@ -13821,7 +13954,9 @@ const SETTINGS = (() => {
     { const src = String(inputVector); const codes = []; const re = /keys\.has\('(\w+)'\)/g; let m; while ((m = re.exec(src))) codes.push(m[1]);
       const ls = codes.filter(c => c.startsWith('Key')).map(keyLabel); const letters = 'WASD'.split('').filter(l => ls.includes(l)).concat(ls.filter(l => !'WASD'.includes(l))).join(''), arrows = codes.some(c => c.startsWith('Arrow'));
       if (letters || arrows) { out.push({ action: 'Move', codes: [], label: letters + (letters && arrows ? ' or arrows' : arrows ? 'arrows' : '') }); codes.forEach(c => seen.add(c)); } }
-    const sources = [String(update)]; for (const h of HOOKS.update) sources.push(String(h)); if (typeof frame === 'function') sources.push(String(frame));
+    // wrappers (44-wiki) hand back the wrapped function as __inner; only the core handler is parsed — features declare their keys in HOOKS.keyHelp
+    const sources = []; { let u = update; while (typeof u === 'function' && u.__inner) u = u.__inner; sources.push(String(u)); } for (const h of HOOKS.update) sources.push(String(h)); if (typeof frame === 'function') sources.push(String(frame));
+    for (const k of HOOKS.keyHelp) for (const c of k.codes) add(c, k.action); // features: HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] })
     const re = /pressed\.has\('([A-Za-z0-9]+)'(?:\s*\+\s*k)?\)/g;
     for (const src of sources) {
       let m; while ((m = re.exec(src))) {
@@ -13977,7 +14112,7 @@ const SETTINGS = (() => {
       { const map = keyMap(); const find = a => map.find(r => r.action === a); const e = find('Use / talk'), sp = find('Swing'), st = find('Settings'), mu = find('Music'), mv = find('Move');
         const codes = []; const re = /pressed\.has\('([A-Za-z0-9]+)'/g; let m; while ((m = re.exec(String(update)))) codes.push(m[1]); const all = codes.every(c => map.some(r => r.codes.includes(c)));
         window.__forceTouch = true; const t = controlsText(); window.__forceTouch = false; const d = controlsText(); window.__forceTouch = prevTouch;
-        check('settings: the Controls line is built from the real key handlers (E use, Space swing, comma settings, N music, WASD move) and every key 07-update reads is listed; touch shows button names', !!e && e.codes.includes('KeyE') && !!sp && sp.codes.includes('Space') && !!st && st.codes.includes('Comma') && !!mu && mu.codes.includes('KeyN') && !!mv && /WASD/.test(mv.label) && all && /SWING/.test(t) && /USE/.test(t) && /Swing: Space/.test(d), { e: e && e.codes, sp: sp && sp.codes, st: st && st.codes, mu: mu && mu.codes, mv: mv && mv.label, all, t }); }
+        check('settings: the Controls line is built from the real key handlers (E use, Space swing, comma settings, N music, WASD move) and every key 07-update reads is listed; touch shows button names', !!e && e.codes.includes('KeyE') && !!sp && sp.codes.includes('Space') && !!st && st.codes.includes('Comma') && !!mu && mu.codes.includes('KeyN') && !!mv && /WASD/.test(mv.label) && all && /SWING/.test(t) && /USE/.test(t) && /Swing: Space/.test(d), { e: e && e.codes, sp: sp && sp.codes, st: st && st.codes, mu: mu && mu.codes, mv: mv && mv.label, all, t, d }); }
       // layout at four viewports: panel (every page) and pause menu — no two buttons overlap, everything inside the screen
       { const own = k => Object.getOwnPropertyDescriptor(window, k); const saved = { w: own('innerWidth'), h: own('innerHeight') }; const problems = [];
         const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
@@ -14464,6 +14599,8 @@ window.SETTINGS = SETTINGS;
     }
     return _update(dt);
   };
+  update.__inner = _update;
+  HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] }); // 43-settings walks this chain to read the real key handlers
 
   // ---------- buttons: WIKI on the HUD, Wiki under an item in the pack ----------
   // Placement (never over another button, the minimap or the quest box):

@@ -177,18 +177,19 @@ function drawHud(g) {
   if (paused) {
     buttons.length = 0; minimapRect = null; dialogRect = null; panelRect = null; // nothing under the menu is tappable
     g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0, 0, VW, VH);
-    const pw = 300, ph = 292, px = VW / 2 - pw / 2, py = VH / 2 - ph / 2;
+    const pw = 300, ph = 310, px = VW / 2 - pw / 2, py = VH / 2 - ph / 2; // the stats line sits at VH/2 + 83 (py + 238): 31-rebuild repaints it with the town's name
     roundRect(g, px, py, pw, ph, 12); g.fillStyle = 'rgba(10,14,22,0.96)'; g.fill(); g.strokeStyle = '#30363d'; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 40);
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 60);
-    button(g, px + 24, py + 78, pw - 48, 36, 'Resume', () => { paused = false; });
+    g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 34);
+    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 52);
+    button(g, px + 24, py + 66, pw - 48, 36, 'Resume', () => { paused = false; });
     // sound, music, kid mode and the rest live in the Settings panel (src/43-settings.js); the panel draws under the pause overlay, so unpause to show it
-    button(g, px + 24, py + 120, pw - 48, 36, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
+    button(g, px + 24, py + 106, pw - 48, 36, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
+    let by = py + 146; for (const f of HOOKS.pauseMenu) { f(g, px + 24, by, pw - 48, 36); by += 40; } // feature buttons (14-title: Title screen) — registered here, after the buttons reset above, so they are tappable
     const erase = confirmActive('newgame');
-    button(g, px + 24, py + 162, pw - 48, 36, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
-    g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, py + 209);
-    g.fillStyle = '#6e7681'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 229); // VH/2 + 83: 31-rebuild repaints this line with the town title
-    g.fillText('Progress saves automatically in this browser.', VW / 2, py + 247);
+    button(g, px + 24, by, pw - 48, 36, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
+    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 238);
+    g.fillStyle = '#8b949e'; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, py + 256);
+    g.fillStyle = '#6e7681'; g.fillText('Progress saves automatically in this browser.', VW / 2, py + 274);
   }
 }
 // small arrow on the minimap edge pointing at the tracked quest's target (or a ring when the target is on the minimap)
@@ -242,8 +243,8 @@ function drawPanels(g, narrow, short, qh, hb) {
   }
   if (panel === 'help') {
     const rows = isTouch
-      ? [['Tap the world', 'walk there · tap a tree, rock, water or person to use it · tap a monster to fight'], ['Hold on a thing', 'shows what it is, then acts when you let go'], ['Left side of screen', 'drag to move (or tap to walk)'], ['SWING', 'attack, shoot, stomp, hit a dummy (or double-tap the world)'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['Hotbar', 'tap a slot to eat or use it'], ['Bag › Place', 'put down a plank, door, bed, lodestone or trap'], ['CRAFT / SKILLS / QUESTS', 'panels · QUESTS also shows what was Said'], ['HOME', 'teleport to your lodestone (5 min)'], ['EXIT', 'climb out of a walker or bulldozer'], ['Machines', 'USE a wreck to repair it, USE again to climb in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Minimap', 'tap the minimap for the world map'], ['MENU', 'sound, kid mode, new game']]
-      : [['WASD / arrows', 'move'], ['Click the world', 'walk there · click a tree, rock, water, person or monster to use / fight it'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Machines', 'E on a wreck repairs it, E again climbs in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Enter', 'next line of talk (or click the box)'], ['Minimap', 'click the minimap (or M) for the world map'], ['Esc', 'menu (sound, kid mode, new game)']];
+      ? [['Tap the world', 'walk there · tap a tree, rock, water or person to use it · tap a monster to fight'], ['Hold on a thing', 'shows what it is, then acts when you let go'], ['Left side of screen', 'drag to move (or tap to walk)'], ['SWING', 'attack, shoot, stomp, hit a dummy (or double-tap the world)'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['Hotbar', 'tap a slot to eat or use it'], ['Bag › Place', 'put down a plank, door, bed, lodestone or trap'], ['CRAFT / SKILLS / QUESTS', 'panels · QUESTS also shows what was Said'], ['HOME', 'teleport to your lodestone (5 min)'], ['EXIT', 'climb out of a walker or bulldozer'], ['Machines', 'USE a wreck to repair it, USE again to climb in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Minimap', 'tap the minimap for the world map'], ['MENU', 'settings, title screen, new game']]
+      : [['WASD / arrows', 'move'], ['Click the world', 'walk there · click a tree, rock, water, person or monster to use / fight it'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Machines', 'E on a wreck repairs it, E again climbs in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Enter', 'next line of talk (or click the box)'], ['Minimap', 'click the minimap (or M) for the world map'], ['Esc', 'menu (settings, title screen, new game)']];
     const rh = Math.min(26, Math.floor((VH - 120) / rows.length));
     const { px, py, w } = panelBox(g, 500, 90 + rows.length * rh, 'How to play', 'Every skill trains by doing. Die and Death keeps your pack.');
     rows.forEach(([k, v], i) => { const y = py + 78 + i * rh; g.fillStyle = '#f5c542'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(k, px + 18, y); g.fillStyle = '#c9d1d9'; g.font = narrow ? '11px sans-serif' : '13px sans-serif'; g.fillText(v, px + (narrow ? 150 : 190), y); });

@@ -47,6 +47,9 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   where section is `monsters | items | recipes | skills | places | quests`; give a `lines: ['text', { t, c, link: { s, id } }]` array to write the
   page yourself. `WIKI.get(section, id)` reads a page, `WIKI.open(section, id)` opens the book on it. Drop tables kept inside a closure need
   exposing on `window` (see `DOZERUP.BLUEPRINT_DROPS`, `DRAGON_KILLERS.chance`, `SKYCITY.FORGE`) or a `WIKI.add` call.
+  own solid tiles to `INTERESTING_TILES` so a tap on them works on the iPad. A feature with its own people list (not `NPCS`) registers it once:
+  `TAP_PEOPLE.push(() => MY_PEOPLE.map(p => ({ x: p.px, y: p.py, r: 13, id: p.id, name: p.name, talk: () => myTalk(p) })))` — return the live
+  list in pixels (empty when out of reach) and the same talk call your E handler makes; a tap then walks adjacent and talks.
 - Touch: every keyboard action needs a button — register one with `buttons.push({ x, y, w, h, label, action })` from a `HOOKS.hud` draw, and
   write key hints with `keyName('KeyE')` so touch players read "E" or "USE" as appropriate.
 

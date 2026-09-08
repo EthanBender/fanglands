@@ -87,6 +87,7 @@
     { id: 'hilde', name: 'Hilde', x: 10, y: 90, tunic: '#7a4a3a', hair: '#e0c080', woman: true, role: 'dwarf_villager', lines: ['King Thrain has sat that throne since before the goblins came.', 'The guards are for show. Mostly.', 'A mithril platebody takes three bars and a Smithing of thirty. Then nothing in the Fanglands touches you.'] },
   ];
   for (const d of DWARVES) { d.px = tc(d.x); d.py = tc(d.y); d.facing = { x: 0, y: 1 }; }
+  if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => DWARVES.map(d => ({ x: d.px, y: d.py, r: 13, id: d.id, name: d.name, talk: () => dwTalk(d) }))); // 17-tap: a tap on a dwarf walks up and talks
   function dwInFront() {
     let best = null;
     for (const d of DWARVES) {

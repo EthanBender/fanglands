@@ -451,6 +451,8 @@
     }
     return _update(dt);
   };
+  update.__inner = _update;
+  HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] }); // 43-settings walks this chain to read the real key handlers
 
   // ---------- buttons: WIKI on the HUD, Wiki under an item in the pack ----------
   // Placement (never over another button, the minimap or the quest box):

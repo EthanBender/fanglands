@@ -19,6 +19,13 @@ const tap = {
   blockedT: 0, repathed: false, wantMove: false, lastX: 0, lastY: 0, repathT: 0, reissueT: 0, reissues: 0,
   lastTap: null,     // {x, y, at} for double-tap
 };
+// Feature people. Files with their own NPC lists (24-dwarves, 25-elves, 33-goblincity's townsfolk, 41-guild's staff, 36-skycity's winged folk)
+// push one function here that returns the live list [{ x, y, r, id, name, talk }] in pixels — empty when out of reach (inside a dungeon,
+// or before the guild has staff). talk() is the same call the feature's E handler makes, so a tap opens exactly the line E opens.
+const TAP_PEOPLE = [];
+function tapPeople() { const out = []; TAP_PEOPLE.forEach((f, li) => { const l = f(); if (l) for (const p of l) if (p && p.talk) { p.list = li; out.push(p); } }); return out; } // list + id name one person (ids repeat across features: the guild's Pip, the goblins' pip)
+// the winged folk export their list and talk handler on window.SKYCITY (they are only reachable inside the Aerie instance)
+TAP_PEOPLE.push(() => (window.SKYCITY && window.INSTANCES && INSTANCES.active() === 'aerie') ? SKYCITY.SKY_NPCS.map(n => ({ x: n.px, y: n.py, r: 13, id: n.id, name: n.name, talk: () => SKYCITY.talk(n) })) : []);
 const TAP_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const TAP_WALLS = new Set([T.WALL, T.HWALL, T.CWALL, T.FENCE, T.STALL, T.TABLE, T.SHELF]);
 const TAP_NAMES = { TREE: 'Tree', OAK: 'Oak', ROCK: 'Rock', IRON: 'Iron rock', COAL: 'Coal rock', WATER: 'Water', FIRE: 'Fire', OVEN: 'Oven', ANVIL: 'Anvil', FORGE: 'Forge', WORKBENCH: 'Workbench', WORKSHOP: "Tinker's table", ALCHEMY: 'Alchemy table', CHEST: 'Chest', SIGN: 'Signpost', DUMMY: 'Training dummy', GRAVE: 'Gravestone', SOIL: 'Tilled soil', CROP: 'Crop', BED: 'Bed', LODESTONE: 'Lodestone', WRECK: 'Wrecked walker', MECH: 'Goblin walker', CART: "Miners' cart", AXESTUMP: 'Axe in a stump', STONECIRCLE: 'Standing stones', GOLDPILE: "Death's gold", TRAP: 'Goblin trap', STUMP: 'Stump', RUBBLE: 'Rubble', PLANK: 'Plank', DOOR: 'Door', GATE: 'Gate', PORTCULLIS: 'Portcullis', COFFINDOOR: 'Coffin door', COUNTER: 'Counter', THRONE: 'Throne', TABLE: 'Table', SHELF: 'Shelf', STALL: 'Stall', WALL: 'Wall', HWALL: 'Wall', CWALL: 'Wall', FENCE: 'Fence', FLOWERS: 'Flowers', MUSHROOM: 'Mushrooms', ASHES: 'Ashes', GRASS: 'Grass', DIRT: 'Dirt', SAND: 'Sand', COBBLE: 'Cobbles', FLOOR: 'Floor', CAVE: 'Cave floor', RUG: 'Rug' };
@@ -81,6 +88,8 @@ function tapPick(sx, sy) {
   if (best) return { kind: 'monster', monster: best.monster, wx, wy, tx, ty };
   for (const n of NPCS) { const d = dist(wx, wy, n.px, n.py); if (d <= 20 && (!best || d < best.d)) best = { d, npc: n }; }
   if (best) return { kind: 'npc', npc: best.npc, wx, wy, tx, ty };
+  for (const p of tapPeople()) { const d = dist(wx, wy, p.x, p.y); if (d <= 20 && (!best || d < best.d)) best = { d, person: p }; }
+  if (best) return { kind: 'person', person: best.person, wx, wy, tx, ty };
   for (const d of drops) { const dd = dist(wx, wy, d.x, d.y); if (dd <= 16 && (!best || dd < best.d)) best = { d: dd, drop: d }; }
   if (best) return { kind: 'item', drop: best.drop, wx, wy, tx, ty };
   if (!inMap(tx, ty)) return null;
@@ -94,6 +103,7 @@ function tapLabelFor(p) {
   if (!p) return null;
   if (p.kind === 'monster') { const def = MONSTER_DEFS[p.monster.type]; return `${def.name} · lv ${def.level}`; }
   if (p.kind === 'npc') return p.npc.name;
+  if (p.kind === 'person') return p.person.name;
   if (p.kind === 'item') { const def = ITEMS[p.drop.id]; return def ? (p.drop.qty > 1 ? `${def.name} × ${p.drop.qty}` : def.name) : 'Something'; }
   const b = buildingAt(p.tx, p.ty); const t = p.t;
   if (b && (TAP_WALLS.has(t) || PUSH_THROUGH.has(t))) return b.name || tapTileName(t);
@@ -120,6 +130,11 @@ function tapAt(sx, sy) {
     const n = p.npc; path = tapPathTo(Math.floor(n.px / TILE), Math.floor(n.py / TILE), true);
     if (!path && dist(player.x, player.y, n.px, n.py) > 64) { notify("You can't get there."); return false; }
     tap.kind = 'npc'; tap.target = n; tap.goal = { tx: Math.floor(n.px / TILE), ty: Math.floor(n.py / TILE) }; tapSetPath(path || []); tapMark(n.px, n.py, '#f5c542'); return true;
+  }
+  if (p.kind === 'person') {
+    const q = p.person; path = tapPathTo(Math.floor(q.x / TILE), Math.floor(q.y / TILE), true);
+    if (!path && dist(player.x, player.y, q.x, q.y) > 64) { notify("You can't get there."); return false; }
+    tap.kind = 'person'; tap.target = q; tap.goal = { tx: Math.floor(q.x / TILE), ty: Math.floor(q.y / TILE) }; tapSetPath(path || []); tapMark(q.x, q.y, '#f5c542'); return true;
   }
   if (p.kind === 'item') {
     const d = p.drop; path = tapPathTo(Math.floor(d.x / TILE), Math.floor(d.y / TILE), false);
@@ -184,7 +199,7 @@ HOOKS.update.push(dt => {
     if (tap.blockedT > 0.5) {
       tap.blockedT = 0;
       if (tap.repathed || !tap.goal) { tapCancel('blocked'); return; }
-      tap.repathed = true; const adj = tap.kind === 'use' || tap.kind === 'npc'; const np = tapPathTo(tap.goal.tx, tap.goal.ty, adj);
+      tap.repathed = true; const adj = tap.kind === 'use' || tap.kind === 'npc' || tap.kind === 'person'; const np = tapPathTo(tap.goal.tx, tap.goal.ty, adj);
       if (!np) { tapCancel('blocked'); return; } tapSetPath(np);
     }
   }
@@ -216,6 +231,25 @@ HOOKS.update.push(dt => {
       if (tap.repathed) { tapFace(n.px, n.py); if (d <= 118) useAction(); tapCancel('done'); return; }
       tap.repathed = true; const gt = { tx: Math.floor(n.px / TILE), ty: Math.floor(n.py / TILE) }; const np = tapPathTo(gt.tx, gt.ty, true);
       if (!np || !np.length) { tapFace(n.px, n.py); if (d <= 118) useAction(); tapCancel('done'); return; }
+      tap.goal = gt; tapSetPath(np);
+    }
+    return;
+  }
+  if (tap.kind === 'person') {
+    const q0 = tap.target; if (!q0) { tapCancel('done'); return; }
+    const q = tapPeople().find(p => p.list === q0.list && p.id === q0.id); if (!q) { tapCancel('lost'); return; } // the live one: the guild staff walk, a dungeon door hides the townsfolk
+    if (tap.marker) { tap.marker.x = q.x; tap.marker.y = q.y; }
+    const own = tapTile(), same = insideBuilding(own.tx, own.ty) === insideBuilding(Math.floor(q.x / TILE), Math.floor(q.y / TILE)); // no talking through walls
+    const d = dist(player.x, player.y, q.x, q.y);
+    if (d <= 64 && same) {
+      tapSetPath(null); player.walkPath = null; tapFace(q.x, q.y); player.moving = false;
+      if (player.mech) useAction(); else q.talk();
+      tapCancel('done'); return;
+    }
+    if (!tap.path || !tap.path.length) {
+      if (tap.repathed) { tapFace(q.x, q.y); if (d <= 100 && !player.mech) q.talk(); tapCancel('done'); return; }
+      tap.repathed = true; const gt = { tx: Math.floor(q.x / TILE), ty: Math.floor(q.y / TILE) }; const np = tapPathTo(gt.tx, gt.ty, true);
+      if (!np || !np.length) { tapFace(q.x, q.y); if (d <= 100 && !player.mech) q.talk(); tapCancel('done'); return; }
       tap.goal = gt; tapSetPath(np);
     }
     return;
@@ -330,5 +364,31 @@ HOOKS.selfTest.push((check, F, h) => {
   // 9. double-tap = swing
   { const o = h.openSpot(40, 24); clearArea(o); F.tp(o.x, o.y); F.step([]); player.attackCd = 0; player.attackT = 0; const [sx, sy] = screen(tc(o.x + 2), tc(o.y)); pointerDown(sx, sy, 12); pointerUp(12); F.step([]); pointerDown(sx, sy, 13); pointerUp(13);
     check('tap: a double-tap swings', player.attackT > 0, { attackT: player.attackT }); tapCancel('manual'); F.sim(40, []); }
+  // 10. feature people (TAP_PEOPLE): a tap on a dwarf, an elf, a goblin townsgoblin, the winged queen or the guild staff walks up and opens the very line E opens
+  { const drainD = () => { dialog.cur = null; dialog.queue.length = 0; };
+    const firstLine = () => { const d = dialog.cur || dialog.queue[0]; return d ? d.who + ' | ' + d.text : null; };
+    const viaE = (px, py, tx, ty) => { closePanel(); F.tp(px, py); F.step([]); F.face(tx, ty); drainD(); F.press('KeyE'); F.sim(2, []); const l = firstLine(); closePanel(); drainD(); return l; };
+    const viaTap = (px, py, wx, wy, max = 400) => { closePanel(); F.tp(px, py); F.step([]); drainD(); tap.lastTap = null; tapCancel('manual'); tapWorld(wx, wy); const kind = tap.kind, who = tap.target && tap.target.name; let s = 0; while (s < max && tap.kind === 'person') { F.step([]); s++; } F.step([]); const l = firstLine(); closePanel(); drainD(); return { kind, who, s, line: l, at: [+(player.x / TILE).toFixed(1), +(player.y / TILE).toFixed(1)] }; };
+    const same = (name, e, t, extra) => check(`tap: ${name} — a tap walks up and opens the same first line E opens`, !!e && t.kind === 'person' && t.line === e && t.s < 400, Object.assign({ e, tap: t }, extra || {}));
+    const inst = () => window.INSTANCES ? INSTANCES.active() : null; if (inst()) INSTANCES.leave();
+    // dwarves (24): Brunhild the smith in Deepholm's forge hall, before the forge is lit
+    if (typeof quest.dwarf !== 'undefined' || REGIONS.some(r => r.name === 'Deepholm')) { const snap = JSON.stringify(quest.dwarf === undefined ? null : quest.dwarf); quest.dwarf = { stage: 0, chests: [], visited: true }; clearArea({ x: 12, y: 83 });
+      const e = viaE(12, 82, 12, 81); const t = viaTap(12, 85, tc(12), tc(81)); same('Brunhild (24-dwarves)', e, t); quest.dwarf = JSON.parse(snap); if (quest.dwarf === null) delete quest.dwarf; }
+    // elves (25): Thessaly the weaver in Sylvaris, before the Queen's task is done
+    if (REGIONS.some(r => r.name === 'Sylvaris')) { const snap = JSON.stringify(quest.elves === undefined ? null : quest.elves); if (!quest.elves) { F.tp(133, 128); F.step([]); } if (quest.elves) quest.elves.stage = 0; clearArea({ x: 133, y: 129 });
+      const e = viaE(132, 129, 133, 129); const t = viaTap(130, 129, tc(133), tc(129)); same('Thessaly (25-elves)', e, t); quest.elves = JSON.parse(snap); if (quest.elves === null) delete quest.elves; }
+    // the goblin townsfolk (33): Grubb the cook inside his cookhouse, mid-quest without the beef
+    if (REGIONS.some(r => r.name === 'Grubmarket')) { const snap = JSON.stringify(quest.tinker === undefined ? null : quest.tinker); quest.tinker = { stage: 1, parts: {}, visited: true, rematch: false, kills: 0 }; clearArea({ x: 216, y: 24 });
+      const e = viaE(216, 24, 216, 23); const t = viaTap(215, 24, tc(216), tc(23)); same('Grubb the cook (33-goblincity)', e, t); quest.tinker = JSON.parse(snap); if (quest.tinker === null) delete quest.tinker; }
+    // the winged folk (36): Queen Seraphel in the Aerie's hall, asked and not yet paid
+    if (window.SKYCITY && window.INSTANCES && INSTANCES.get && INSTANCES.get('aerie')) { const snap = JSON.stringify(quest.sky === undefined ? null : quest.sky); const ok = INSTANCES.enter('aerie', [62, 7]); F.sim(2, []); const q = SKYCITY.SQ(); q.stage = 2;
+      const e = ok ? viaE(25, 7, 25, 6) : null; const t = ok ? viaTap(25, 9, tc(25), tc(6)) : { kind: null }; same('Queen Seraphel (36-skycity, inside the Aerie)', e, t, { entered: ok, inst: inst() }); if (inst()) INSTANCES.leave(); drainD(); quest.sky = JSON.parse(snap); if (quest.sky === null) delete quest.sky; }
+    // the guild staff (41): Pip inside the hall door at rank 4 (pick() pinned so both probes draw the same line)
+    if (typeof quest.rebuild !== 'undefined' || BUILDINGS.some(b => b.id === 'guild_hall') || REGIONS.some(r => r.name === 'Hollowford')) { const snap = JSON.stringify(quest.guild === undefined ? null : quest.guild); const R = Math.random; Math.random = () => 0;
+      quest.guild = Object.assign({}, quest.guild || {}, { founded: true, rank: 4, jobsDone: 12, cooldowns: {}, active: null }); F.tp(153, 71); F.sim(2, []); clearArea({ x: 153, y: 70 });
+      const e = viaE(153, 71, 153, 70); const t = viaTap(153, 71, tc(153), tc(70)); Math.random = R; same('Pip of the guild staff (41-guild)', e, t); quest.guild = JSON.parse(snap); if (quest.guild === null) delete quest.guild; F.sim(2, []); }
+    // a long-press on one of them names them
+    { window.__forceTouch = true; const people = tapPeople(); window.__forceTouch = false; check('tap: TAP_PEOPLE is a registry of functions returning live people (x, y, id, name, talk)', Array.isArray(TAP_PEOPLE) && TAP_PEOPLE.length >= 1 && people.every(p => typeof p.x === 'number' && typeof p.talk === 'function' && typeof p.name === 'string'), { lists: TAP_PEOPLE.length, live: people.length }); }
+  }
   unpark(); window.__forceTouch = prevTouch; h.peace(false); touch.press = null; dialog.cur = dc; dialog.queue.push(...dq); tapCancel('manual');
 });

@@ -50,6 +50,8 @@ const HUD = { leftY: 82 };
 
 // ---------- extension hooks (feature files in src/2x-*.js register here; core never needs editing) ----------
 const HOOKS = {
+  pauseMenu: [],
+  keyHelp: [], // { action, codes: ['KeyK'] } — a feature's desktop keys, listed by the Settings panel's Controls line // (g, x, y, w, h) → draw one 36 px button row in the pause menu (slots between Settings and New game)
   world: [],        // fn(rnd, api) — runs at the end of generateWorld; api = { setTile, tileAt, spawnList, road }
   update: [],       // fn(dt) — runs every tick after the core update
   draw: [],         // fn(g, items, cam) — push {y, draw} entries into the y-sorted world list
