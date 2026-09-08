@@ -124,10 +124,12 @@
     return _playerAttack.apply(this, arguments);
   };
   // the shield itself, held out in front of the knight while it is up
-  HOOKS.draw.push(list => {
+  // 09-render calls each draw hook as h(g, items, cam), and later runs every item's draw() with NO
+  // arguments. So the handler takes (g, items) and the item closes over g.
+  function drawShield(g, items) {
     if (!(BLOCK.t > 0) || player.dead || player.mech) return;
     const sh = shieldOn(); if (!sh) return;
-    list.push({ y: player.y + 1, draw: g => {
+    items.push({ y: player.y + 1, draw: () => {
       g.save(); g.translate(player.x + player.facing.x * 15, player.y + player.facing.y * 15 - 6);
       g.rotate(Math.atan2(player.facing.y, player.facing.x));
       g.fillStyle = sh.color; g.beginPath();
@@ -135,7 +137,8 @@
       g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 1.2; g.stroke();
       g.restore();
     } });
-  });
+  }
+  HOOKS.draw.push(drawShield);
   // every key needs a button: BLOCK sits with the other action buttons on touch, under the Wiki button on a desktop
   function blockRect() {
     if (!isTouch) return { x: 274, y: 46, w: 92, h: 26, label: 'Block (R)' };
@@ -187,6 +190,58 @@
     const s0 = { ...player.skills.farming }, d0 = { ...player.skills.defence }, c0 = { ...player.skills.crafting };
     const eq0 = { ...player.equip }, kid0 = !!window.__kidmode;
     window.__kidmode = false; h.peace(true);
+    // ---- the shield is actually drawn ----
+    // The headless canvas is a Proxy that answers every name with a no-op, so a draw hook can push its item
+    // into the CONTEXT by mistake and nothing complains. This check does not trust that: it hands the hook a
+    // real array as the second argument and a context that writes down every call it is given, then runs the
+    // item's draw() with no arguments, exactly the way 09-render does. It fails if the shield never lands in
+    // the list, and it fails if the item's draw needs an argument it will never be handed.
+    { const t0 = BLOCK.t, eq1 = player.equip.shield, dead0 = player.dead, mech0 = player.mech;
+      BLOCK.t = 0.5; player.dead = false; player.mech = false; player.equip.shield = 'steel_shield';
+      const painted = [];
+      const probe = new Proxy({}, {
+        get: (t, k) => typeof k !== 'string' ? undefined
+          : k === 'measureText' ? () => ({ width: 10 })
+            : (...a) => { painted.push(k); },
+        set: () => true,
+      });
+      const list = [];
+      let hookErr = null;
+      try { drawShield(probe, list, cam); } catch (e) { hookErr = String((e && e.message) || e); }
+      const pushed = !hookErr && list.length === 1 && typeof list[0].draw === 'function';
+      const stray = painted.slice(); // anything the hook itself called on the context — should be nothing
+      painted.length = 0;
+      let drawErr = null;
+      if (pushed) { try { list[0].draw(); } catch (e) { drawErr = String((e && e.message) || e); } }
+      const drew = pushed && !drawErr && painted.includes('fill') && painted.includes('stroke') && painted.includes('restore');
+      // and with the shield down the hook draws nothing at all
+      BLOCK.t = 0; const down = [];
+      drawShield(probe, down, cam);
+      BLOCK.t = t0; player.equip.shield = eq1; player.dead = dead0; player.mech = mech0;
+      recomputeMaxHp(); player.hp = player.maxHp;
+      check(P + 'the raised shield is put in the draw list and paints with no arguments; with the shield down nothing is drawn',
+        drew && down.length === 0 && stray.length === 0,
+        { hookErr, pushed, listed: list.length, stray, drawErr, painted: painted.length, whenDown: down.length }); }
+
+    // ---- the same mistake, guarded for every feature file ----
+    // 09-render calls each hook as h(g, items, cam) and then each item's draw() with no arguments. A hook
+    // written with one parameter gets the canvas instead of the list and takes the whole frame down with it —
+    // the world, the HUD, everything. One parameter is always the bug, so no hook is allowed to have one.
+    { const thin = [], needy = [], probe = new Proxy({}, {
+      get: (t, k) => typeof k !== 'string' ? undefined : k === 'measureText' ? () => ({ width: 10 })
+        : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : () => { },
+      set: () => true,
+    });
+      HOOKS.draw.forEach((h, i) => {
+        const who = i + ':' + (h.name || 'anonymous');
+        if (h.length < 2) thin.push(who + ' takes ' + h.length);
+        const list = [];
+        try { h(probe, list, cam); } catch (e) { /* a hook that will not run on a probe canvas is not this check's business */ }
+        for (const it of list) if (it && typeof it.draw === 'function' && it.draw.length > 0) needy.push(who + ' pushed a draw wanting ' + it.draw.length);
+      });
+      check(P + 'every draw hook takes at least (g, items), and every item it lists draws with no arguments',
+        thin.length === 0 && needy.length === 0, { hooks: HOOKS.draw.length, thin, needy }); }
+
 
     // ---- the shield block ----
     { const o = h.openSpot(70, 34); F.tp(o.x, o.y); F.sim(2, []);

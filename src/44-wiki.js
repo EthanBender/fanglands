@@ -255,6 +255,38 @@
     const d = ensure(); const q = wk.search.trim().toLowerCase(), L = wk.letter;
     return d.order[section].filter(id => { const n = d[section][id].name.toLowerCase(); return q ? n.includes(q) : L ? n.startsWith(L.toLowerCase()) : true; });
   };
+  // ---------- portrait ----------
+  // Draws the thing itself at the top of its page and returns the new y. A monster is drawn by the game's own
+  // drawCharacter, facing the reader, so a creature added by a feature file gets its real sprite for free.
+  const PORTRAIT_SECTIONS = new Set(['monsters', 'items']);
+  function drawPortrait(g, x, y, w, narrow) {
+    const d = ensure(), e = d[wk.section] && d[wk.section][wk.id];
+    if (!e || !PORTRAIT_SECTIONS.has(wk.section)) return y;
+    const size = narrow ? 52 : 64;
+    roundRect(g, x, y, size, size, 8); g.fillStyle = 'rgba(126,200,255,0.06)'; g.fill();
+    g.strokeStyle = 'rgba(126,200,255,0.22)'; g.lineWidth = 1; g.stroke();
+    g.save();
+    g.beginPath(); g.rect(x, y, size, size); g.clip();
+    try {
+      if (wk.section === 'items') drawItemIcon(g, wk.id, x + size / 2, y + size / 2, size * 0.55);
+      else {
+        const def = MONSTER_DEFS[wk.id];
+        const r = def ? (def.r || 13) : 13;
+        // a character is drawn roughly from -1.3r (helmet, raised weapon) to +0.9r (feet, shadow), so its visual
+        // middle sits about a fifth of r above the origin. Fit that whole extent in the box, then re-centre on it.
+        const scale = Math.min(1.8, (size * 0.8) / (2.2 * Math.max(9, r)));
+        g.translate(x + size / 2, y + size / 2 + r * scale * 0.2);
+        g.scale(scale, scale);
+        // a still, face-on pose: no bobbing, no swing, no hurt flash, so the picture is the creature at rest
+        const pose = { x: 0, y: 0, r, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, hp: def ? def.hp : 10, maxHp: def ? def.hp : 10, type: wk.id, stunT: 0 };
+        drawCharacter(g, pose, wk.id);
+      }
+    } catch (err) { /* a feature sprite that wants state we do not have: the frame stays, empty, rather than breaking the page */ }
+    g.restore();
+    // the portrait gets its own band: the body rows below span the full width, so anything overlapping it would clash
+    return y + size + 8;
+  }
+
   function open(section, id, push = true) {
     ensure();
     if (!SECTIONS.includes(section)) section = 'monsters';
@@ -422,6 +454,10 @@
       let title = e.name; while (title.length > 6 && g.measureText(title).width > detW - (wk.section === 'items' ? 30 : 0) - (narrow ? 0 : 76)) title = title.slice(0, -2) + '…';
       if (wk.section === 'items') { drawItemIcon(g, wk.id, detX + 12, dy + 12, 22); g.fillText(title, detX + 30, dy + 19); } else g.fillText(title, detX, dy + 19);
       dy += 30;
+      // a portrait, so you know what you are reading about by the look of it: the real sprite the game draws,
+      // in a framed box at the top of the page. Monsters use drawCharacter (which dispatches to HOOKS.drawMonster
+      // for feature creatures); items use their own icon; everything else gets no box rather than a blank one.
+      dy = drawPortrait(g, detX, dy, detW, narrow);
       // lay the page out as wrapped rows, then show one screen of them
       g.font = '12px sans-serif';
       const rows = [];

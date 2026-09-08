@@ -195,10 +195,13 @@
     burst(player.x, player.y, '#bfe3ff', 12, 70); save();
     return true;
   });
-  HOOKS.draw.push(list => { // two posts and a rope, drawn on the bank
+  // 09-render calls every draw hook as h(g, items, cam) and later runs each item's draw() with NO arguments,
+  // so the handler takes (g, items) and each item closes over g. Taking one parameter made `list` the canvas
+  // context and the posts never drew at all.
+  HOOKS.draw.push((g, items) => { // two posts and a rope, drawn on the bank
     for (const c of CROSSINGS) for (const p of [c.a, c.b]) {
       if (p.x < cam.x / TILE - 2 || p.x > (cam.x + VW) / TILE + 2 || p.y < cam.y / TILE - 2 || p.y > (cam.y + VH) / TILE + 2) continue;
-      list.push({ y: tc(p.y), draw: g => {
+      items.push({ y: tc(p.y), draw: () => {
         const x = tc(p.x), y = tc(p.y);
         g.fillStyle = '#6b4f2a'; g.fillRect(x - 3, y - 14, 6, 22);
         g.fillStyle = '#8a6a3a'; g.fillRect(x - 5, y - 16, 10, 4);

@@ -94,7 +94,7 @@
   HOOKS.questText.sky = () => {
     const q = SQ();
     if (q.stage === 'done') return 'Done.';
-    if (q.stage === 2) return `Bring Queen Seraphel 5 dragon scales (${Math.min(5, countItem('dragon_scale'))}/5) and 3 cloud essence (${Math.min(3, countItem('cloud_essence'))}/3). Sentinels drop it; wisps hold it.`;
+    if (q.stage === 2) return `Bring Queen Seraphel 5 dragon scales (${Math.min(5, countItem('dragon_scale'))}/5) and 3 cloud essence (${Math.min(3, countItem('cloud_essence'))}/3). Ash drakes at Dunstan's farm shed scale, three drakes for one at the very worst. Sentinels drop essence; wisps hold it.`;
     return countItem('wind_flute') ? 'Play the wind flute at the wind shrine on the Grey Quarry heights (north-west of Thistledown).' : 'Old Wren gave you a wind flute. Find it, or ask him again.';
   };
   HOOKS.activeQuests.push(() => { const s = SQ().stage; return s === 1 || s === 2 ? ['sky'] : []; });
@@ -192,7 +192,7 @@
           say("~ Above the grey, above the fire, the wind remembers what was ours; the scale that burned now burns no more, the sky is plate, the plate is sky ~", 'The Song of Above');
           say("It is sung. Halcyon's forge is open to you: dragon scale, the dwarves' blue metal and a shard of obsidian for each piece. Wear it, and go down to the thing that sleeps under the lava.", e.name);
           levelBanner = { text: 'QUEST COMPLETE', sub: 'Song of Above', t: 3.5 }; sfx('quest'); burst(player.x, player.y, '#f5e6a8', 40, 200); save();
-        } else say(`Five dragon scales and three cloud essence. You carry ${countItem('dragon_scale')} scales and ${countItem('cloud_essence')} essence. The sentinels below the hall drop essence, and the wisps at the cloud's edge grow it back.`, e.name);
+        } else say(`Five dragon scales and three cloud essence. You carry ${countItem('dragon_scale')} scales and ${countItem('cloud_essence')} essence. Scale comes off the ash drakes on the grey below: no drake-hide holds out past the third. The sentinels here drop essence, and the wisps at the cloud's edge grow it back.`, e.name);
       } else say("The Song is sung and Halcyon's hammer is yours. The Fang will not like what you wear, knight. Good.", e.name);
     } else if (e.role === 'sky_smith') {
       if (q.stage !== 'done') { say("Scale and mithril I can shape. But without the Queen's Song it is only armour, and the Fang eats armour. Bring her what she asks first.", e.name); return; }
