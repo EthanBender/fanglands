@@ -181,6 +181,8 @@
         say('Now hold still.', n.name);
         q.salve = true; burst(player.x, player.y, '#ff9a4a', 26, 130); floatText(player.x, player.y - 34, 'Fireproof salve', '#ff9a4a', 15);
         say("Fireproof salve. Ash, dung, and a thing I don't tell people. Dragon fire will only half-bite you now, and the heat in the far south-west won't cook you. Go carefully.", n.name);
+        // the scale rule, said out loud at the moment the knight starts wanting scales (46-scales.js owns the tally)
+        say("And you'll be wanting scales next. Everyone is. A drake's hide is ash-cracked, so keep cutting: three drakes is the most it ever takes before a whole plate comes away. The big green ones carry more, but they burn.", n.name);
         levelBanner = { text: 'QUEST COMPLETE', sub: 'Dragon Dung', t: 3 };
         if (quest.stage === 12 || quest.stage === 13) advanceQuest(14); else save();
       } else say(`Five dragon dung. You've got ${countItem('dragon_dung')}. The drakes round my field drop it, and they don't breathe fire. The big green ones south of here do, so mind yourself.`, n.name);

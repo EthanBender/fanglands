@@ -1406,7 +1406,7 @@ function coffinFee() {
   return fee;
 }
 // the fee is charged per item, only for what actually fits in the pack; what stays in the chest keeps its fee for next time (no double charge)
-const itemFee = (id, qty) => { if (id === 'coins') return 0; const v = ITEMS[id].value * qty; return v >= 20 ? Math.ceil(v * 0.25) : 0; };
+function itemFee(id, qty) { if (id === 'coins') return 0; const v = ITEMS[id].value * qty; return v >= 20 ? Math.ceil(v * 0.25) : 0; } // a declaration, not a const arrow: 50-economy wraps it to scale the fee with the knight
 function reclaimFromDeath() {
   if (!deathKeep) return;
   // Death takes his share from the coins he already holds, then from your pack
@@ -2724,7 +2724,10 @@ window.FANGLANDS = {
       const kept = deathKeep && deathKeep.items.map(s => s.id).sort().join(',');
       check('death: pack to Death, gear stays on, respawn in the village', !player.dead && dist(player.x, player.y, VILLAGE_SPAWN.x, VILLAGE_SPAWN.y) < 5 && kept === 'coins,goblin_scrap,wood' && player.equip.weapon !== null, { kept });
       const w = F.walkTo(134, 51, 4000); const inside = !!insideBuilding(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); F.face(134, 50); F.press('KeyE'); const open = panel === 'coffin'; const fee = coffinFee(); const rec = F.clickButton('Reclaim everything');
-      check("Death's chest: cheap free, valuables 25%, fee from the dropped purse first", typeof w === 'number' && inside && open && fee === 8 && rec && coins() === 92 && countItem('goblin_scrap') === 2 && countItem('wood') === 3 && !deathKeep, { w, inside, open, fee, coins: coins() }); closePanel(); }
+      // the fee scales with the knight (50-economy): a twelfth of an item's value below combat 10, a quarter later.
+      // At the level this test runs, 2 goblin scrap is the only thing worth charging for, so the fee is small but real.
+      const share = window.ECONOMY ? ECONOMY.feeShare() : 0.25, want = Math.min(Math.ceil(8 * (share / 0.25)), window.ECONOMY ? ECONOMY.feeCap() : 8);
+      check("Death's chest: cheap free, valuables charged at the knight's own share, fee from the dropped purse first", typeof w === 'number' && inside && open && fee === want && rec && coins() === 100 - want && countItem('goblin_scrap') === 2 && countItem('wood') === 3 && !deathKeep, { w, inside, open, fee, want, share, coins: coins() }); closePanel(); }
     // ---------- the goblin walker: kill, wreck, repair, pilot ----------
     peace(true); { const wk = monsters.find(m => m.type === 'walker'); F.tp(150, 28); wk.hp = 1; wk.x = player.x + 40; wk.y = player.y; player.facing = { x: 1, y: 0 }; for (let i = 0; i < 60 && !wk.dead; i++) { wk.x = player.x + 40; wk.y = player.y; wk.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); } const wt = F.nearestTile([T.WRECK]) || { x: 150, y: 28 }; check('walker dies into a wreck, quest notes it', wk.dead && tileAt(wt.x, wt.y) === T.WRECK && quest.walkerKilled, { wreck: tileAt(wt.x, wt.y) === T.WRECK, dead: wk.dead });
       give('iron_bar', 3); give('goblin_scrap', 4); F.goAdjacent(wt.x, wt.y, 800); F.press('KeyE'); F.sim(2, []); const repaired = tileAt(wt.x, wt.y) === T.MECH; F.press('KeyE'); F.sim(2, []); const piloting = !!player.mech; F.sim(30, ['KeyA']); const moved = Math.abs(player.x - tc(wt.x)) > 20; F.press('KeyX'); F.sim(2, []); const parked = !player.mech && !!F.nearestTile([T.MECH]);
@@ -7661,6 +7664,8 @@ HOOKS.selfTest.push((check, F, h) => {
         say('Now hold still.', n.name);
         q.salve = true; burst(player.x, player.y, '#ff9a4a', 26, 130); floatText(player.x, player.y - 34, 'Fireproof salve', '#ff9a4a', 15);
         say("Fireproof salve. Ash, dung, and a thing I don't tell people. Dragon fire will only half-bite you now, and the heat in the far south-west won't cook you. Go carefully.", n.name);
+        // the scale rule, said out loud at the moment the knight starts wanting scales (46-scales.js owns the tally)
+        say("And you'll be wanting scales next. Everyone is. A drake's hide is ash-cracked, so keep cutting: three drakes is the most it ever takes before a whole plate comes away. The big green ones carry more, but they burn.", n.name);
         levelBanner = { text: 'QUEST COMPLETE', sub: 'Dragon Dung', t: 3 };
         if (quest.stage === 12 || quest.stage === 13) advanceQuest(14); else save();
       } else say(`Five dragon dung. You've got ${countItem('dragon_dung')}. The drakes round my field drop it, and they don't breathe fire. The big green ones south of here do, so mind yourself.`, n.name);
@@ -11162,7 +11167,7 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.questText.sky = () => {
     const q = SQ();
     if (q.stage === 'done') return 'Done.';
-    if (q.stage === 2) return `Bring Queen Seraphel 5 dragon scales (${Math.min(5, countItem('dragon_scale'))}/5) and 3 cloud essence (${Math.min(3, countItem('cloud_essence'))}/3). Sentinels drop it; wisps hold it.`;
+    if (q.stage === 2) return `Bring Queen Seraphel 5 dragon scales (${Math.min(5, countItem('dragon_scale'))}/5) and 3 cloud essence (${Math.min(3, countItem('cloud_essence'))}/3). Ash drakes at Dunstan's farm shed scale, three drakes for one at the very worst. Sentinels drop essence; wisps hold it.`;
     return countItem('wind_flute') ? 'Play the wind flute at the wind shrine on the Grey Quarry heights (north-west of Thistledown).' : 'Old Wren gave you a wind flute. Find it, or ask him again.';
   };
   HOOKS.activeQuests.push(() => { const s = SQ().stage; return s === 1 || s === 2 ? ['sky'] : []; });
@@ -11260,7 +11265,7 @@ HOOKS.selfTest.push((check, F, h) => {
           say("~ Above the grey, above the fire, the wind remembers what was ours; the scale that burned now burns no more, the sky is plate, the plate is sky ~", 'The Song of Above');
           say("It is sung. Halcyon's forge is open to you: dragon scale, the dwarves' blue metal and a shard of obsidian for each piece. Wear it, and go down to the thing that sleeps under the lava.", e.name);
           levelBanner = { text: 'QUEST COMPLETE', sub: 'Song of Above', t: 3.5 }; sfx('quest'); burst(player.x, player.y, '#f5e6a8', 40, 200); save();
-        } else say(`Five dragon scales and three cloud essence. You carry ${countItem('dragon_scale')} scales and ${countItem('cloud_essence')} essence. The sentinels below the hall drop essence, and the wisps at the cloud's edge grow it back.`, e.name);
+        } else say(`Five dragon scales and three cloud essence. You carry ${countItem('dragon_scale')} scales and ${countItem('cloud_essence')} essence. Scale comes off the ash drakes on the grey below: no drake-hide holds out past the third. The sentinels here drop essence, and the wisps at the cloud's edge grow it back.`, e.name);
       } else say("The Song is sung and Halcyon's hammer is yours. The Fang will not like what you wear, knight. Good.", e.name);
     } else if (e.role === 'sky_smith') {
       if (q.stage !== 'done') { say("Scale and mithril I can shape. But without the Queen's Song it is only armour, and the Fang eats armour. Bring her what she asks first.", e.name); return; }
@@ -14405,6 +14410,38 @@ window.SETTINGS = SETTINGS;
     const d = ensure(); const q = wk.search.trim().toLowerCase(), L = wk.letter;
     return d.order[section].filter(id => { const n = d[section][id].name.toLowerCase(); return q ? n.includes(q) : L ? n.startsWith(L.toLowerCase()) : true; });
   };
+  // ---------- portrait ----------
+  // Draws the thing itself at the top of its page and returns the new y. A monster is drawn by the game's own
+  // drawCharacter, facing the reader, so a creature added by a feature file gets its real sprite for free.
+  const PORTRAIT_SECTIONS = new Set(['monsters', 'items']);
+  function drawPortrait(g, x, y, w, narrow) {
+    const d = ensure(), e = d[wk.section] && d[wk.section][wk.id];
+    if (!e || !PORTRAIT_SECTIONS.has(wk.section)) return y;
+    const size = narrow ? 52 : 64;
+    roundRect(g, x, y, size, size, 8); g.fillStyle = 'rgba(126,200,255,0.06)'; g.fill();
+    g.strokeStyle = 'rgba(126,200,255,0.22)'; g.lineWidth = 1; g.stroke();
+    g.save();
+    g.beginPath(); g.rect(x, y, size, size); g.clip();
+    try {
+      if (wk.section === 'items') drawItemIcon(g, wk.id, x + size / 2, y + size / 2, size * 0.55);
+      else {
+        const def = MONSTER_DEFS[wk.id];
+        const r = def ? (def.r || 13) : 13;
+        // a character is drawn roughly from -1.3r (helmet, raised weapon) to +0.9r (feet, shadow), so its visual
+        // middle sits about a fifth of r above the origin. Fit that whole extent in the box, then re-centre on it.
+        const scale = Math.min(1.8, (size * 0.8) / (2.2 * Math.max(9, r)));
+        g.translate(x + size / 2, y + size / 2 + r * scale * 0.2);
+        g.scale(scale, scale);
+        // a still, face-on pose: no bobbing, no swing, no hurt flash, so the picture is the creature at rest
+        const pose = { x: 0, y: 0, r, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, hp: def ? def.hp : 10, maxHp: def ? def.hp : 10, type: wk.id, stunT: 0 };
+        drawCharacter(g, pose, wk.id);
+      }
+    } catch (err) { /* a feature sprite that wants state we do not have: the frame stays, empty, rather than breaking the page */ }
+    g.restore();
+    // the portrait gets its own band: the body rows below span the full width, so anything overlapping it would clash
+    return y + size + 8;
+  }
+
   function open(section, id, push = true) {
     ensure();
     if (!SECTIONS.includes(section)) section = 'monsters';
@@ -14572,6 +14609,10 @@ window.SETTINGS = SETTINGS;
       let title = e.name; while (title.length > 6 && g.measureText(title).width > detW - (wk.section === 'items' ? 30 : 0) - (narrow ? 0 : 76)) title = title.slice(0, -2) + '…';
       if (wk.section === 'items') { drawItemIcon(g, wk.id, detX + 12, dy + 12, 22); g.fillText(title, detX + 30, dy + 19); } else g.fillText(title, detX, dy + 19);
       dy += 30;
+      // a portrait, so you know what you are reading about by the look of it: the real sprite the game draws,
+      // in a framed box at the top of the page. Monsters use drawCharacter (which dispatches to HOOKS.drawMonster
+      // for feature creatures); items use their own icon; everything else gets no box rather than a blank one.
+      dy = drawPortrait(g, detX, dy, detW, narrow);
       // lay the page out as wrapped rows, then show one screen of them
       g.font = '12px sans-serif';
       const rows = [];
@@ -14906,10 +14947,13 @@ window.SETTINGS = SETTINGS;
     burst(player.x, player.y, '#bfe3ff', 12, 70); save();
     return true;
   });
-  HOOKS.draw.push(list => { // two posts and a rope, drawn on the bank
+  // 09-render calls every draw hook as h(g, items, cam) and later runs each item's draw() with NO arguments,
+  // so the handler takes (g, items) and each item closes over g. Taking one parameter made `list` the canvas
+  // context and the posts never drew at all.
+  HOOKS.draw.push((g, items) => { // two posts and a rope, drawn on the bank
     for (const c of CROSSINGS) for (const p of [c.a, c.b]) {
       if (p.x < cam.x / TILE - 2 || p.x > (cam.x + VW) / TILE + 2 || p.y < cam.y / TILE - 2 || p.y > (cam.y + VH) / TILE + 2) continue;
-      list.push({ y: tc(p.y), draw: g => {
+      items.push({ y: tc(p.y), draw: () => {
         const x = tc(p.x), y = tc(p.y);
         g.fillStyle = '#6b4f2a'; g.fillRect(x - 3, y - 14, 6, 22);
         g.fillStyle = '#8a6a3a'; g.fillRect(x - 5, y - 16, 10, 4);
@@ -15505,6 +15549,313 @@ window.SETTINGS = SETTINGS;
         { name: w && w.name, where: w && w.where, tablePct: w && +w.tablePct.toFixed(2), heart: hh && hh.name, heartWhere: hh && hh.where.length }); }
 
     player.hp = Math.min(hp0, player.maxHp); player.mech = mech0; player.r = r0; player.speed = speed0; player.hurtT = 0; h.peace(false);
+  });
+}
+
+// ---- src/46-scales.js ----
+// ============================================================================
+// THE ASH-ROTTEN HIDE — the dragon scale grind, fixed (audit 2026-09-08, "Sixty ash drakes for five
+// dragon scales"). The bot's own playthrough killed 60 ash drakes to collect the five scales Queen
+// Seraphel asks for in the Song of Above: the scale sits on a 3-in-13 table roll, and bad luck on a
+// table roll has no floor. A ten-year-old gives up long before sixty.
+//
+// The design — one rule, said out loud: an ash drake is ash-caked and its plates are cracked, so a
+// knight who keeps cutting always levers one loose in the end. A running tally counts the drakes that
+// gave nothing; the third one gives a scale up whatever the dice said, and the tally resets.
+//   • The drake's own drop table is untouched — dragon scale 3, coal 4, nothing 6 out of 13 — so scales
+//     are not made common. A green dragon still drops 1 to 3 every single kill and is still the way to
+//     farm the 34 scales the Godly Plated set wants.
+//   • The rare dragon items in 37-dragonkillers (spear, helm, shield, platebody) keep their exact odds.
+//     This file adds dragon_scale and nothing else, and never reads or writes DRAGON_KILLERS.chance.
+// What it buys, measured in the self-test below: five scales cost 15 drakes at the very worst and 11.79
+// on average over 400 seeded hunts, where the old table alone averaged 21.67 with no ceiling at all.
+// The tally is shown over every kill — "Cracked plate (1 of 3)" — so the rule is readable rather than
+// hidden maths, Dunstan says it out loud when he hands over the salve (27-dragons.js), the Song of
+// Above quest text repeats it (36-skycity.js), and the wiki's ash drake page states it.
+// Feature file: HOOKS only, one core function wrapped by reassignment, no core file edited.
+// ============================================================================
+{
+  const SC_PITY = 3;                                  // drakes that gave nothing before one is guaranteed
+  const SC_WANT = 5;                                  // the scales Queen Seraphel asks for
+  const scFresh = () => ({ dry: 0, prised: 0, kills: 0 });
+  const SC = () => { let q = quest.scales; if (!q || typeof q !== 'object') q = quest.scales = scFresh(); return q; };
+  HOOKS.newGame.push(() => { quest.scales = scFresh(); });
+
+  // ---------- the tally ----------
+  // rollDrops is the one place a monster's loot is decided, so the guarantee sits exactly where the
+  // table roll it backs up sits: the scale lands with the rest of the kill's loot, on the ground, in the
+  // same frame. Only ash drakes are counted — green and red dragons already drop 1 to 4 scales every
+  // kill, so a tally on them would mean nothing.
+  const _scRollDrops = rollDrops;
+  rollDrops = function (def, x, y) {
+    const n0 = drops.length;
+    _scRollDrops(def, x, y);
+    if (def !== MONSTER_DEFS.ash_drake) return;
+    const q = SC(); q.kills++;
+    for (let i = n0; i < drops.length; i++) if (drops[i].id === 'dragon_scale') { q.dry = 0; return; }   // the table paid: start again
+    if (++q.dry < SC_PITY) { floatText(x, y - 30, `Cracked plate (${q.dry} of ${SC_PITY})`, '#b8bdb5', 12); return; }
+    q.dry = 0; q.prised++;
+    drops.push({ x: x + rint(-14, 14), y: y + rint(-14, 14), id: 'dragon_scale', qty: 1, t: 0, rare: false });
+    floatText(x, y - 30, 'Scale prised loose', '#3f8a4a', 14); burst(x, y, '#3f8a4a', 14, 90);
+  };
+
+  // ---------- the book says the rule too ----------
+  // WIKI.add merges over the page the wiki builds itself, so the drop table, the places and the respawn
+  // line all stay as generated; only the blurb line changes (the generated one is kept as its first sentence).
+  if (window.WIKI) WIKI.add('monsters', {
+    id: 'ash_drake', name: 'Ash drake',
+    blurb: `It attacks you on sight. Its hide is ash-cracked: every drake that gives no scale loosens the next, and the third in a row always gives one up. The ${SC_WANT} scales for the Song of Above cost ${SC_PITY * SC_WANT} drakes at the very worst.`,
+  });
+
+  window.SCALES = { PITY: SC_PITY, WANT: SC_WANT, state: SC };
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const keep = quest.scales ? { ...SC() } : null;
+    const FAR = -999;                                                   // loot rolled off the map, filtered away after
+    const clear = () => { drops = drops.filter(d => d.x > -500); };
+    const scalesDown = () => drops.reduce((s, d) => s + (d.x < -500 && d.id === 'dragon_scale' ? d.qty : 0), 0);
+    // how many drake kills to five scales, with the dice pinned
+    const runToFive = rand => {
+      const real = Math.random; let kills = 0;
+      quest.scales = scFresh(); clear();
+      try { Math.random = rand; while (scalesDown() < SC_WANT && kills < 500) { rollDrops(MONSTER_DEFS.ash_drake, FAR, FAR); kills++; } }
+      finally { Math.random = real; clear(); }
+      return kills;
+    };
+    // mulberry32: a fixed seed, so the average below is the same number on every run
+    const seeded = a => () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+    const worst = runToFive(() => 0.99);                                // 0.99 of 13 = 12.87: the table never reaches the scale row
+    const best = runToFive(() => 0.1);                                  // 0.1 of 13 = 1.3: the table gives a scale every kill
+    const TRIALS = 400, rng = seeded(20260908); let total = 0;
+    for (let i = 0; i < TRIALS; i++) total += runToFive(rng);
+    const mean = total / TRIALS;
+    check(`scales: five dragon scales cost ${SC_PITY * SC_WANT} ash drakes at the very worst and ${mean.toFixed(2)} on average over ${TRIALS} seeded hunts (the audit's run needed 60)`,
+      worst === SC_PITY * SC_WANT && best === SC_WANT && mean >= 10 && mean <= 15,
+      { worst, best, mean: +mean.toFixed(3), trials: TRIALS, band: '10 to 15', tableRow: 'dragon scale 3 of 13' });
+
+    // the tally is visible, it resets on a guaranteed scale and on a lucky one, and only drakes count
+    { const real = Math.random, f0 = floaters.length; const said = []; let scale3 = 0;
+      quest.scales = scFresh(); clear();
+      try {
+        Math.random = () => 0.99;
+        for (let k = 0; k < SC_PITY; k++) { rollDrops(MONSTER_DEFS.ash_drake, FAR, FAR); said.push(floaters.slice(f0).map(f => f.text).join(' ')); floaters.length = f0; }
+        scale3 = scalesDown();
+        const afterGuaranteed = SC().dry, prised = SC().prised;
+        rollDrops(MONSTER_DEFS.ash_drake, FAR, FAR); const dry1 = SC().dry;                       // dry again
+        Math.random = () => 0.1; rollDrops(MONSTER_DEFS.ash_drake, FAR, FAR); const afterLucky = SC().dry;   // the table pays: tally resets
+        Math.random = () => 0.99; const kills0 = SC().kills, sc0 = scalesDown(); rollDrops(MONSTER_DEFS.green_dragon, FAR, FAR);
+        const greenScales = scalesDown() - sc0;                                                    // 1 to 3 every kill, from its own always row
+        check('scales: the tally shows on every kill ("Cracked plate (1 of 3)", "(2 of 3)", then "Scale prised loose"), resets on a lucky table scale too, and counts drakes only',
+          said[0] === 'Cracked plate (1 of 3)' && said[1] === 'Cracked plate (2 of 3)' && said[2] === 'Scale prised loose' && scale3 === 1 && afterGuaranteed === 0 && prised === 1
+            && dry1 === 1 && afterLucky === 0 && sc0 === 2 && SC().kills === kills0 && greenScales === 3,
+          { said, scaleOnThird: scale3, dry1, afterLucky, drakeScales: sc0, greenScales, drakeKillsFromDragon: SC().kills - kills0, prised });
+      } finally { Math.random = real; floaters.length = f0; clear(); } }
+
+    // 37-dragonkillers is untouched: its odds, its item list, and the drake's own drop table
+    { const real = Math.random; const dropped = new Set();
+      quest.scales = scFresh(); clear();
+      try { Math.random = () => 0.99; for (let k = 0; k < 300; k++) rollDrops(MONSTER_DEFS.ash_drake, FAR, FAR); for (const d of drops) if (d.x < -500) dropped.add(d.id); }
+      finally { Math.random = real; clear(); }
+      const DKc = window.DRAGON_KILLERS && DRAGON_KILLERS.chance;
+      const table = MONSTER_DEFS.ash_drake.drops.table.map(r => r.join(':')).join(' '), always = MONSTER_DEFS.ash_drake.drops.always.map(r => r.join(':')).join(' ');
+      const onlyScale = [...dropped].sort().join(',') === 'coins,dragon_dung,dragon_scale';
+      check('scales: the rare dragon items keep their exact odds (green 1/150, red 1/60, ash drake 1/300, Fang 1/3, bosses level/1500 capped at 1/20); the drake table is unchanged (scale 3, coal 4, nothing 6 of 13) and 300 tally kills add dragon scales and nothing else',
+        typeof DKc === 'function' && DKc('green_dragon') === 1 / 150 && DKc('red_dragon') === 1 / 60 && DKc('ash_drake') === 1 / 300 && DKc('the_fang') === 1 / 3
+          && DKc('barrelbeast') === Math.min(1 / 20, MONSTER_DEFS.barrelbeast.level / 1500) && DKc('walker') === MONSTER_DEFS.walker.level / 1500 && DKc('goblin') === 0 && DKc('ash_drake') < 1 / 20
+          && DRAGON_KILLERS.DRAGON_ITEMS.join(',') === 'dragon_spear,dragon_helm,dragon_shield,dragon_body'
+          && table === 'dragon_scale:1:1:3 coal:1:2:4 nothing:0:0:6' && always === 'dragon_dung:1:1 coins:30:60' && !MONSTER_DEFS.ash_drake.drops.rare && onlyScale,
+        { ashDrake: DKc && DKc('ash_drake'), green: DKc && DKc('green_dragon'), table, always, addedByTally: [...dropped].sort() }); }
+
+    // the book carries the rule, and the drakes are still where they were
+    check('scales: the wiki ash drake page states the three-drake rule, and the four drakes still stand round Dunstan\'s farm',
+      !!(window.WIKI && WIKI.get('monsters', 'ash_drake') && /third in a row always gives one up/.test(WIKI.get('monsters', 'ash_drake').blurb || '') && WIKI.get('monsters', 'ash_drake').name === 'Ash drake')
+        && WIKI.get('monsters', 'ash_drake').drops.some(r => r.id === 'dragon_scale' && Math.abs(r.pct - 3 / 13 * 100) < 0.01)
+        && monsters.filter(m => m.type === 'ash_drake').length === 4,
+      { blurb: window.WIKI && WIKI.get('monsters', 'ash_drake') && WIKI.get('monsters', 'ash_drake').blurb, drakes: monsters.filter(m => m.type === 'ash_drake').length });
+
+    quest.scales = keep || scFresh();
+  });
+}
+
+// ---- src/50-economy.js ----
+// ============================================================================
+// WRECKS AND MONEY — three things a player hit in a real session
+//  1. A wrecked machine pinned the knight. "I just killed a wrecked walker but it blew up on me and the
+//     wrecked walker has me pinned, I can't move. The wrecked machines should not impede pathing."
+//     Every wreck tile (walker, bulldozer, Barrelbeast) is now walk-over for the knight, and pressing E
+//     while standing on one repairs it, so nothing can ever fence you in. Monsters still treat it as solid.
+//  2. Death's fee was unpayable early. "The early game death's coffer fees are too cumbersome, I can't
+//     easily make 300-1000 gold in the early game." Death now takes a share that grows with the knight:
+//     a twelfth early, a quarter once you are a real fighter, and never more than a cap he names out loud.
+//  3. There was nowhere to earn coins by skilling. "There should be avenues to make gp skilling too."
+//     Every shopkeeper now pays full price for the trade they actually deal in, and Fennick posts a
+//     standing order that refreshes: bring him what he is short of, take coins and a bonus.
+// Feature file: registers through HOOKS only, edits no core file. window.ECONOMY exposes the tables.
+// ============================================================================
+{
+  // ---------- 1. wrecks never block ----------
+  // The knight walks over a wreck; a monster or a companion still walks around it. That is exactly what
+  // WALK_OVER means in 00-core (`solidFor(t, 'player')` consults it), so the pathing fix is one line per tile.
+  const WRECK_NAMES = ['WRECK', 'DOZER_WRECK', 'BEAST_WRECK'];
+  const wreckIds = () => WRECK_NAMES.filter(n => n in T).map(n => T[n]);
+  for (const id of wreckIds()) WALK_OVER.add(id);
+  // A feature that registers its wreck tile after this file loads still gets the fix on the first tick.
+  let wreckWatch = 0;
+  HOOKS.update.push(dt => { if ((wreckWatch -= dt) > 0) return; wreckWatch = 2; for (const id of wreckIds()) WALK_OVER.add(id); });
+
+  // Standing on a wreck, E repairs the one under your feet: the core looks at the tile you face, and while
+  // you are standing on the wreck that tile is the ground beyond it.
+  const _useAction = useAction;
+  useAction = function () {
+    if (!player.dead && !player.mech) {
+      const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE), here = tileAt(tx, ty);
+      const front = frontTile(player), facing = tileAt(front.tx, front.ty);
+      if (wreckIds().includes(here) && !wreckIds().includes(facing) && !npcInFront()) {
+        for (const h of HOOKS.use) if (h(here, tx, ty, buildingAt(tx, ty))) return; // the dozer and the beast own their own wrecks
+        if (here === T.WRECK) { repairMech(tx, ty); return; }
+      }
+    }
+    return _useAction.apply(this, arguments);
+  };
+
+  // ---------- 2. Death's fee grows with the knight ----------
+  // The core charges a quarter of the value of everything worth 20 or more. At combat level 3 with a steel
+  // helm in the chest that is hundreds of coins the knight has no way to earn. The share now ramps, and a
+  // cap keeps the first deaths survivable: 60 coins at combat 1, 260 at combat 10, 1,060 at combat 50.
+  const FEE_BANDS = [[10, 1 / 12], [20, 1 / 6], [Infinity, 1 / 4]]; // combat level below → share of value
+  const feeShare = () => { const cb = combatLevel(); for (const [lv, share] of FEE_BANDS) if (cb < lv) return share; return 0.25; };
+  const feeCap = () => 40 + combatLevel() * 20;
+  const _coffinFee = coffinFee;
+  coffinFee = function () {
+    const full = _coffinFee.apply(this, arguments);
+    if (!full) return full; // kid mode and an empty chest both return 0 already
+    const scaled = Math.ceil(full * (feeShare() / 0.25));
+    return Math.min(scaled, feeCap());
+  };
+  // The per-item fee has to use the same share, or reclaiming one item at a time would cost more than the total.
+  const _itemFee = itemFee;
+  itemFee = function (id, qty) {
+    const full = _itemFee.apply(this, arguments);
+    return full ? Math.min(Math.ceil(full * (feeShare() / 0.25)), feeCap()) : full;
+  };
+  // Death says what he is doing, so the ramp is visible rather than mysterious.
+  const _talkTo = talkTo;
+  talkTo = function (npc) {
+    const r = _talkTo.apply(this, arguments);
+    if (npc && npc.role === 'death' && deathKeep && combatLevel() < 20) {
+      say(`You are young yet, so I take a smaller share: ${Math.round(feeShare() * 100)} in the hundred, and never more than ${feeCap()} coins at once. Grow, and my price grows with you.`, 'Death');
+    }
+    return r;
+  };
+
+  // ---------- 3. coins from skilling ----------
+  // (a) Fennick pays full price for what a skill produces, not just for what a fighter loots.
+  // 06-systems opens his stall as openPanel('shop', 'trader') and 10-hud falls back to an inline stall
+  // because SHOPS.trader does not exist. Registering it here supersedes that fallback with the same shape
+  // (buys + rate 1 = full price for everything on the list), on a list that now includes gathered goods.
+  SHOPS.trader = {
+    name: "Fennick's Stall",
+    stock: [['bronze_axe', 25], ['bronze_pickaxe', 30], ['fishing_rod', 60]],
+    rate: 1,
+    buys: ['wolf_pelt', 'boar_tusk', 'wool', 'spider_silk', 'goblin_scrap', 'coal', 'wood', 'oak_log', 'iron_ore', 'stone', 'raw_shrimp', 'potato'].filter(id => ITEMS[id]),
+  };
+
+  // (b) Fennick's standing order: a repeatable delivery that refreshes, so skilling always has a buyer.
+  // Six orders rotate. Each asks for something a skill produces, pays the goods' value plus a flat bonus,
+  // and cannot be handed in twice without a new order. This is the reliable early-game coin tap.
+  const ORDERS = [
+    { id: 'logs', item: 'wood', n: 15, bonus: 40, line: 'The sawmill wants logs and I want the middleman fee. Fifteen.' },
+    { id: 'ore', item: 'iron_ore', n: 10, bonus: 60, line: 'Brakka is short of iron again. Ten lumps and I will see you right.' },
+    { id: 'fish', item: 'raw_shrimp', n: 12, bonus: 35, line: 'Salt Pete pays for shrimp by the dozen. Bring me twelve.' },
+    { id: 'coal', item: 'coal', n: 8, bonus: 70, line: 'Coal. Eight loads. The forge eats it faster than I can carry it.' },
+    { id: 'spuds', item: 'potato', n: 20, bonus: 45, line: 'Twenty potatoes. Do not ask what for. The inn asked, that is all.' },
+    { id: 'silk', item: 'spider_silk', n: 6, bonus: 90, line: 'Six lengths of spider silk. Thessaly pays, and I take my cut.' },
+  ];
+  const orderState = () => { if (!quest.orders) quest.orders = { i: 0, done: 0, taken: false }; return quest.orders; };
+  const currentOrder = () => ORDERS[orderState().i % ORDERS.length];
+  const orderPay = o => Math.max(1, ITEMS[o.item] ? ITEMS[o.item].value * o.n + o.bonus : o.bonus);
+  HOOKS.newGame.push(() => { quest.orders = { i: 0, done: 0, taken: false }; });
+
+  // Spoken before the stall opens, never instead of it: the core's trader branch still runs, so Fennick
+  // sells and buys exactly as before. Returning false is what keeps the shop panel reachable.
+  HOOKS.talkBefore.trader = npc => {
+    if (npc.id !== 'fennick') return false;
+    const s = orderState(), o = currentOrder();
+    if (countItem(o.item) >= o.n) {
+      removeItem(o.item, o.n); const pay = orderPay(o);
+      addItem('coins', pay); s.i++; s.done++; s.taken = true;
+      floatText(player.x, player.y - 34, `+${pay} coins`, '#ffd166', 15);
+      say(`That is the lot. ${pay} coins, and my thanks. ${currentOrder().line}`, npc.name); save();
+    } else if (!s.taken) { s.taken = true; say(`${o.line} ${orderPay(o)} coins when you bring them, and there is always another order after.`, npc.name); save(); }
+    else say(`${o.line} You have ${countItem(o.item)} of ${o.n}.`, npc.name);
+    return false; // let the core open the stall
+  };
+
+  HOOKS.questText.orders = () => { const o = currentOrder(), s = orderState(); return `Fennick's order: ${o.n} ${ITEMS[o.item] ? ITEMS[o.item].name : o.item} for ${orderPay(o)} coins. You have ${countItem(o.item)}. Orders filled: ${s.done}.`; };
+  HOOKS.activeQuests.push(() => (quest.orders && quest.orders.taken ? ['orders'] : []));
+  QUEST_DEFS.orders = { name: "Fennick's order" };
+  HOOKS.mapTarget.push(() => (quest.orders && quest.orders.taken ? { x: 116, y: 27, label: 'Fennick', id: 'orders' } : null));
+
+  window.ECONOMY = { feeShare, feeCap, FEE_BANDS, ORDERS, currentOrder, orderPay, orderState, wreckIds };
+
+  // ---------- self-test ----------
+  const P = 'economy: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    // wrecks never pin the knight
+    { const o = h.openSpot(60, 24); F.tp(o.x, o.y);
+      const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE);
+      const ring = [[tx + 1, ty], [tx - 1, ty], [tx, ty + 1], [tx, ty - 1]];
+      const was = ring.map(([x, y]) => tileAt(x, y));
+      for (const [x, y] of ring) changeTile(x, y, T.WRECK);
+      const boxedIn = ring.every(([x, y]) => solidFor(tileAt(x, y), 'player'));
+      const canLeave = !collides(tc(tx + 1), tc(ty), 13, 'player');
+      const monsterBlocked = collides(tc(tx + 1), tc(ty), 13, 'beast');
+      ring.forEach(([x, y], i) => changeTile(x, y, was[i]));
+      check(P + 'a ring of wrecks never pins the knight (walk-over for the player, still solid for monsters)', !boxedIn && canLeave && monsterBlocked, { boxedIn, canLeave, monsterBlocked }); }
+    // standing on a wreck, E repairs it
+    { const o = h.openSpot(62, 26); F.tp(o.x, o.y);
+      const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE), was = tileAt(tx, ty);
+      changeTile(tx, ty, T.WRECK); h.give('iron_bar', 3); h.give('goblin_scrap', 4);
+      player.facing = { x: 0, y: -1 }; const n0 = notice && notice.text;
+      useAction(); const acted = (notice && notice.text) !== n0 || tileAt(tx, ty) !== T.WRECK || !!player.mech;
+      if (player.mech) { player.mech = null; player.r = 13; player.speed = 175; }
+      changeTile(tx, ty, was);
+      check(P + 'E while standing on a wreck repairs the wreck under your feet', acted, { acted, notice: notice && notice.text }); }
+    // Death's fee ramps with the knight and is capped
+    { const kid = window.__kidmode; window.__kidmode = false;
+      const keep = deathKeep, m0 = { ...player.skills.melee }, d0 = { ...player.skills.defence }, h0 = player.skills.hitpoints ? { ...player.skills.hitpoints } : null;
+      deathKeep = { items: [{ id: 'steel_helm', qty: 1 }, { id: 'iron_body', qty: 1 }] };
+      const raw = deathKeep.items.reduce((s, it) => s + (ITEMS[it.id] ? Math.ceil(ITEMS[it.id].value * it.qty * 0.25) : 0), 0);
+      player.skills.melee.xp = 0; player.skills.defence.xp = 0; if (player.skills.hitpoints) player.skills.hitpoints.xp = 0;
+      const lowCb = combatLevel(), low = coffinFee(), lowCap = ECONOMY.feeCap();
+      player.skills.melee.xp = XP_TABLE[60]; player.skills.defence.xp = XP_TABLE[60];
+      const highCb = combatLevel(), high = coffinFee();
+      player.skills.melee = m0; player.skills.defence = d0; if (h0) player.skills.hitpoints = h0;
+      deathKeep = keep; window.__kidmode = kid;
+      check(P + "Death's fee is a twelfth early and a quarter later, and never over the cap he names", low < raw && low <= lowCap && high > low && lowCb < highCb, { raw, low, lowCap, lowCb, high, highCb }); }
+    // Fennick pays full price, and his list now covers gathered goods too
+    { const sh = SHOPS.trader;
+      const gathered = ['wood', 'iron_ore', 'raw_shrimp', 'potato', 'stone'].filter(id => ITEMS[id]);
+      const covered = gathered.filter(id => sh && sh.buys.includes(id));
+      const kept = ['wolf_pelt', 'boar_tusk', 'wool', 'spider_silk', 'goblin_scrap', 'coal'].filter(id => ITEMS[id] && sh.buys.includes(id));
+      check(P + 'Fennick pays full price and his list covers gathered goods as well as loot', !!sh && sh.rate === 1 && covered.length === gathered.length && kept.length === 6, { rate: sh && sh.rate, covered, kept: kept.length, list: sh && sh.buys.length }); }
+    // Fennick's standing order pays and rolls on
+    { const fennick = NPCS.find(n => n.id === 'fennick');
+      if (!fennick) { check(P + "Fennick's standing order pays for gathered goods and rolls on to the next", false, { fennick: null }); }
+      else {
+        quest.orders = { i: 0, done: 0, taken: false };
+        const o = ECONOMY.currentOrder();
+        HOOKS.talkBefore.trader(fennick); const took = quest.orders.taken;
+        const bag = player.inv.slice(); player.inv = player.inv.map(() => null); // an empty pack: give() needs free slots, and a full one must never spin the suite
+        for (let i = 0; i < 12 && countItem(o.item) < o.n; i++) h.give(o.item, o.n);
+        const c0 = coins(), have0 = countItem(o.item);
+        HOOKS.talkBefore.trader(fennick);
+        const paid = coins() - c0, gone = have0 - countItem(o.item), rolled = ECONOMY.currentOrder().id !== o.id;
+        player.inv = bag;
+        check(P + "Fennick's standing order pays for gathered goods and rolls on to the next", took && paid === ECONOMY.orderPay(o) && gone === o.n && rolled && quest.orders.done === 1, { took, paid, want: ECONOMY.orderPay(o), gone, need: o.n, rolled, done: quest.orders.done });
+        quest.orders = { i: 0, done: 0, taken: false };
+      } }
   });
 }
 
