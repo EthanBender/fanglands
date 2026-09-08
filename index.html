@@ -14733,9 +14733,11 @@ window.SETTINGS = SETTINGS;
     greater_poultice: { name: 'Greater poultice', value: 260, color: '#4fbf6a', shape: 'powder', heal: 45 },
     scale_cloak: { name: 'Scale cloak', value: 900, color: '#4a7a5a', shape: 'cape', stack: 1, armour: { slot: EQUIP_SLOTS.includes('cape') ? 'cape' : 'body', def: 12 } },
     golden_bread: { name: 'Golden loaf', value: 90, color: '#f0d878', shape: 'bread', heal: 24 },
+    obsidian_blade: { name: 'Obsidian blade', value: 1400, color: '#2f2a3a', shape: 'sword', stack: 1, weapon: { att: 30, maxHit: 17 } },
+    obsidian_helm: { name: 'Obsidian helm', value: 800, color: '#332d3f', shape: 'helm', stack: 1, armour: { slot: 'head', def: 26 } },
   });
   for (const id of ['herb_seed', 'herbs', 'goldenwheat_seed', 'golden_wheat', 'dragonfruit_seed', 'dragonfruit', 'raw_pike', 'pike', 'raw_salmon', 'salmon',
-    'raw_swordfish', 'swordfish', 'raw_shark', 'shark', 'herb_poultice', 'greater_poultice', 'scale_cloak', 'golden_bread']) {
+    'raw_swordfish', 'swordfish', 'raw_shark', 'shark', 'herb_poultice', 'greater_poultice', 'scale_cloak', 'golden_bread', 'obsidian_blade', 'obsidian_helm']) {
     ITEMS[id].id = id; if (ITEMS[id].stack === undefined) ITEMS[id].stack = 50;
   }
 
@@ -14821,6 +14823,10 @@ window.SETTINGS = SETTINGS;
     { out: 'scale_cloak', qty: 1, needs: [['dragon_scale', 2], ['spider_silk', 4]], station: 'workbench', skill: 'crafting', lv: 30, xp: 320, label: '2 Dragon scales + 4 Spider silk → Scale cloak' },
     { out: 'greater_poultice', qty: 1, needs: [['dragonfruit', 1], ['herbs', 4], ['spider_silk', 2]], station: 'workbench', skill: 'crafting', lv: 45, xp: 600, label: 'Dragonfruit + 4 Herbs + 2 Silk → Greater poultice' },
   );
+  if (ITEMS.obsidian && ITEMS.mithril_bar) RECIPES.push(
+    { out: 'obsidian_blade', qty: 1, needs: [['obsidian', 2], ['mithril_bar', 2]], station: 'anvil', skill: 'smithing', lv: 45, xp: 900, label: '2 Obsidian + 2 Mithril bars → Obsidian blade' },
+    { out: 'obsidian_helm', qty: 1, needs: [['obsidian', 2], ['mithril_bar', 1]], station: 'anvil', skill: 'smithing', lv: 42, xp: 620, label: '2 Obsidian + Mithril bar → Obsidian helm' },
+  );
   if (RECIPES.some(r => r.station === 'oven')) RECIPES.push({ out: 'golden_bread', qty: 1, needs: [['golden_wheat', 2], ['flour', 1]], station: 'oven', skill: 'cooking', lv: 20, xp: 200, label: '2 Golden wheat + Flour → Golden loaf' });
 
   // ---------- tell the audit what was added (42-playthrough reads HOOKS.xpSource) ----------
@@ -14834,11 +14840,73 @@ window.SETTINGS = SETTINGS;
     add('fishing', 'shark (deep sea)', 60, 350, 4.0, 'the Grey Sea');
     add('cooking', 'cook a pike', 12, 55, 1.2, 'a fire or a range'); add('cooking', 'cook a salmon', 20, 80, 1.2, '');
     add('cooking', 'cook a swordfish', 40, 170, 1.2, ''); add('cooking', 'cook a shark', 60, 320, 1.2, '');
+    for (const c of CROSSINGS) add('agility', `river crossing (${c.width === 1 ? 'narrow' : c.width + ' tiles'}) at ${c.a.x},${c.a.y}`, c.lv, c.xp, 6, 'a shortcut across the river; the post on either bank');
+    add('smithing', '2 Obsidian + 2 Mithril bars → Obsidian blade', 45, 900, 24, 'anvil; obsidian at gather rates');
     add('defence', 'a level 10+ kill (level x 4)', 1, 10 * DEF_KILL_PER, 12, 'a brute at the level it opens; scales with the monster');
     add('defence', 'a dragon kill (level x 4)', 1, 45 * DEF_KILL_PER, 30, 'a green dragon');
   });
 
-  window.PROGRESSION = { CATCH, waterKind, seedLv, DEF_KILL_MIN, DEF_KILL_PER };
+  // ---------- agility: crossings on the river (nothing between level 1 and the cliff course at 30) ----------
+  // A post on each bank, never a water tile: the world blend's river and its bridges are untouched. E on a post
+  // with the Agility it asks for leaps the knight to the far post — a real shortcut across the river, and a lap's xp.
+  const CROSS = addTile('RIVER_POST', { solid: true, tex: 'grass', mini: '#9a7a4a' });
+  const CROSSINGS = []; // { a: {x,y}, b: {x,y}, lv, xp, width }
+  const CROSS_TIERS = [{ lv: 12, xp: 90 }, { lv: 22, xp: 160 }, { lv: 35, xp: 260 }];
+  HOOKS.world.push((rnd, api) => {
+    CROSSINGS.length = 0;
+    const water = t => t === T.WATER, land = t => t === T.GRASS || t === T.DIRT || t === T.SAND;
+    const near = (x, y, r, pred) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (pred(api.tileAt(x + dx, y + dy))) return true; return false; };
+    const cands = [], BRIDGE = ('BRIDGE' in T ? T.BRIDGE : -1), DOCK = ('DOCK' in T ? T.DOCK : -1);
+    // scan the river band (the sea starts about x 150) for a west-to-east span of water 1-3 wide with dry land on both banks
+    for (let y = 20; y < 140; y++) {
+      for (let x = 20; x < 148; x++) {
+        if (!water(api.tileAt(x, y)) || !land(api.tileAt(x - 1, y)) || water(api.tileAt(x - 2, y))) continue;
+        let w = 0; while (w < 4 && water(api.tileAt(x + w, y))) w++;
+        if (w < 1 || w > 3 || !land(api.tileAt(x + w, y)) || water(api.tileAt(x + w + 1, y))) continue;
+        if (near(x, y, 6, t => t === BRIDGE || t === DOCK || t === T.COBBLE)) continue;   // clear of a bridge, a dock and any road
+        if (near(x - 1, y, 1, t => SOLID.has(t) && t !== T.WATER) || near(x + w, y, 1, t => SOLID.has(t) && t !== T.WATER)) continue; // both banks stay walkable
+        cands.push({ x, y, w });
+      }
+    }
+    // three crossings, narrowest first, each at least 12 tiles from the ones already taken
+    cands.sort((p, q) => p.w - q.w || p.x - q.x);
+    const taken = [];
+    for (const c of cands) { if (taken.length >= CROSS_TIERS.length) break; if (taken.some(t => Math.hypot(t.x - c.x, t.y - c.y) < 12)) continue; taken.push(c); }
+    taken.sort((p, q) => p.w - q.w);
+    for (let i = 0; i < CROSS_TIERS.length && i < taken.length; i++) {
+      const c = taken[i], t = CROSS_TIERS[i];
+      const a = { x: c.x - 1, y: c.y }, b = { x: c.x + c.w, y: c.y };
+      api.setTile(a.x, a.y, CROSS); api.setTile(b.x, b.y, CROSS);
+      CROSSINGS.push({ a, b, lv: t.lv, xp: t.xp, width: c.w });
+    }
+  });
+  const crossingAt = (tx, ty) => { for (const c of CROSSINGS) { if (c.a.x === tx && c.a.y === ty) return { c, from: 'a' }; if (c.b.x === tx && c.b.y === ty) return { c, from: 'b' }; } return null; };
+  if (typeof INTERESTING_TILES !== 'undefined') INTERESTING_TILES.add(CROSS); // so a tap on the iPad walks to it and uses it
+  HOOKS.use.push((t, tx, ty) => {
+    if (t !== CROSS) return false;
+    const hit = crossingAt(tx, ty); if (!hit) return false;
+    const { c, from } = hit, lv = skillLv('agility');
+    if (lv < c.lv) { notify(`A crossing post. Leaping the river here needs Agility ${c.lv}. You are ${lv}.`); return true; }
+    const to = from === 'a' ? c.b : c.a;
+    player.x = tc(to.x + (from === 'a' ? 1 : -1)); player.y = tc(to.y); // land on the dry tile beyond the far post
+    gainXp('agility', c.xp); sfx('ui');
+    floatText(player.x, player.y - 34, `Across! +${c.xp} Agility xp`, '#7ee787', 15);
+    burst(player.x, player.y, '#bfe3ff', 12, 70); save();
+    return true;
+  });
+  HOOKS.draw.push(list => { // two posts and a rope, drawn on the bank
+    for (const c of CROSSINGS) for (const p of [c.a, c.b]) {
+      if (p.x < cam.x / TILE - 2 || p.x > (cam.x + VW) / TILE + 2 || p.y < cam.y / TILE - 2 || p.y > (cam.y + VH) / TILE + 2) continue;
+      list.push({ y: tc(p.y), draw: g => {
+        const x = tc(p.x), y = tc(p.y);
+        g.fillStyle = '#6b4f2a'; g.fillRect(x - 3, y - 14, 6, 22);
+        g.fillStyle = '#8a6a3a'; g.fillRect(x - 5, y - 16, 10, 4);
+        g.strokeStyle = 'rgba(200,180,140,0.7)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, y - 12); g.lineTo(x + (p === c.a ? 10 : -10), y - 8); g.stroke();
+      } });
+    }
+  });
+
+  window.PROGRESSION = { CATCH, waterKind, seedLv, DEF_KILL_MIN, DEF_KILL_PER, CROSSINGS, CROSS, CROSS_TIERS };
 
   // ---------- self-test ----------
   const P = 'progression: ';
@@ -14893,6 +14961,19 @@ window.SETTINGS = SETTINGS;
       const y0 = player.skills.defence.xp; for (const f of HOOKS.kill) f({ type: 'goblin', dead: true, x: player.x, y: player.y, r: 10 });
       const small = player.skills.defence.xp - y0;
       check(P + 'a level 10+ kill teaches Defence (level x 4); a goblin (level 3) does not', got === hard.level * 4 && small === 0, { hardType, level: hard.level, got, small }); }
+    // the river crossings: three posts, level-gated, and the leap actually lands you on the far bank
+    { const cs = PROGRESSION.CROSSINGS;
+      let gated = false, leapt = false, landed = null, xpGot = 0, farSide = false;
+      if (cs.length) { const c = cs[0]; const a0 = { ...player.skills.agility };
+        player.skills.agility.xp = 0; F.tp(c.a.x - 1, c.a.y); F.face(c.a.x, c.a.y); F.press('KeyE'); F.sim(2, []);
+        gated = Math.floor(player.x / TILE) === c.a.x - 1 && !!notice && new RegExp('Agility ' + c.lv).test(notice.text);
+        player.skills.agility.xp = XP_TABLE[c.lv]; const x0 = player.skills.agility.xp;
+        F.face(c.a.x, c.a.y); F.press('KeyE'); F.sim(2, []);
+        landed = [Math.floor(player.x / TILE), Math.floor(player.y / TILE)];
+        xpGot = player.skills.agility.xp - x0; leapt = landed[0] > c.b.x - 1; farSide = !SOLID.has(tileAt(landed[0], landed[1]));
+        player.skills.agility = a0; }
+      check(P + 'three river crossings: a post on each bank, the leap is refused below its Agility level and lands you on the far bank', cs.length === 3 && cs.every(c => tileAt(c.a.x, c.a.y) === PROGRESSION.CROSS && tileAt(c.b.x, c.b.y) === PROGRESSION.CROSS) && gated && leapt && farSide && xpGot === cs[0].xp,
+        { n: cs.length, levels: cs.map(c => c.lv), widths: cs.map(c => c.width), gated, leapt, landed, farSide, xpGot }); }
     // the new recipes are real and reachable
     { const ids = ['herb_poultice', 'scale_cloak', 'greater_poultice'];
       const rs = ids.map(id => RECIPES.find(r => r.out === id));
