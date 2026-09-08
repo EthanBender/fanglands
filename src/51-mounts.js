@@ -257,7 +257,7 @@
   });
 
   // ---------- update: the R key, her rest, and the core's walker wording ----------
-  HOOKS.keyHelp.push({ action: 'Ride or get down', codes: ['KeyR'] }); // 43-settings lists this on the Controls line
+  HOOKS.keyHelp.push({ action: 'Ride or get down', codes: ['KeyG'] }); // 43-settings lists this on the Controls line
   HOOKS.update.push(dt => {
     const r = riding();
     if (rideWas !== r && typeof tapCancel === 'function') tapCancel('manual'); // the old path was built for the wrong body
@@ -268,7 +268,7 @@
     handled = false; rideWas = r;
 
     const blocked = panel && !['skills', 'quests', 'map'].includes(panel);
-    if (!blocked && !player.dead && (pressed.has('KeyR') || tapped('ride'))) tryRide();
+    if (!blocked && !player.dead && (pressed.has('KeyG') || tapped('ride'))) tryRide();
 
     if (riding()) { // asked again: tryRide() just above may have put the knight down this very tick
       if (player.speed !== HORSE_SPEED) player.speed = HORSE_SPEED; // hover armour / agility / webs all reset speed for the knight on foot
@@ -485,7 +485,7 @@
     { const post = POST && tileAt(POST.x, POST.y) === T_HITCH;
       let mares = 0; for (let i = 0; i < MAP_W * MAP_H; i++) if (map[i] === T_HORSE) mares++;
       check(P + 'a hitching rail stands by Fennick, no mare is given away, and R is a declared key',
-        !!post && mares === 0 && H().owned === false && INTERESTING_TILES.has(T_HORSE) && INTERESTING_TILES.has(T_HITCH) && HOOKS.keyHelp.some(k => k.codes.includes('KeyR')),
+        !!post && mares === 0 && H().owned === false && INTERESTING_TILES.has(T_HORSE) && INTERESTING_TILES.has(T_HITCH) && HOOKS.keyHelp.some(k => k.codes.includes('KeyG')),
         { post: POST && [POST.x, POST.y], mares, owned: H().owned, lane: [o.x, o.y] }); }
 
     // 2. Fennick sells her: refused without the coins, bought with them, and his stall is still one button away
@@ -569,8 +569,8 @@
 
     // 6. the R key rides and gets down
     { clearLane(); F.tp(o.x, o.y); F.step([]); liftHorse(); const parked = parkAt(o.x + 1, o.y);
-      F.press('KeyR'); F.sim(2, []); const up = riding();
-      F.press('KeyR'); F.sim(2, []); const down = !riding() && !!horseAt();
+      F.press('KeyG'); F.sim(2, []); const up = riding();
+      F.press('KeyG'); F.sim(2, []); const down = !riding() && !!horseAt();
       check(P + 'the R key rides her and gets you down again', parked && up && down, { parked, up, down, notice: notice && notice.text }); }
 
     // 7. every refusal, for real
@@ -595,7 +595,7 @@
       clearLane(); F.tp(o.x, o.y); F.step([]); liftHorse(); parkAt(o.x + 1, o.y);
       // inside another machine
       player.mech = { hp: 130, maxHp: 130 }; player.r = 20; player.speed = 115;
-      const inMech = refusal(() => { F.press('KeyR'); F.sim(1, []); });
+      const inMech = refusal(() => { F.press('KeyG'); F.sim(1, []); });
       const inMechOk = !riding() && !!player.mech && !!inMech && /walker/i.test(inMech);
       player.mech = null; player.r = BASE_R; player.speed = BASE_SPEED; F.sim(1, []);
       // on water, in hover armour (the only way a knight stands on it at all)
@@ -604,14 +604,14 @@
       let onWater = null, onWaterOk = false;
       if (wt) { player.equip.body = 'hover_armour'; F.sim(2, []);
         F.tp(wt.x, wt.y); F.sim(1, []);
-        onWater = refusal(() => { F.press('KeyR'); F.sim(1, []); });
+        onWater = refusal(() => { F.press('KeyG'); F.sim(1, []); });
         onWaterOk = !riding() && !!onWater && /water|hover/i.test(onWater);
         player.equip.body = null; F.sim(2, []); player.x = px0; player.y = py0; player.speed = BASE_SPEED; F.sim(1, []); }
       // down a dungeon
       let inDen = null, inDenOk = false, entered = false;
       if (window.INSTANCES && INSTANCES.get) {
         for (const id of ['spider_den', 'aerie']) { if (entered || !INSTANCES.get(id)) continue; entered = INSTANCES.enter(id); F.sim(2, []); }
-        if (entered) { inDen = refusal(() => { F.press('KeyR'); F.sim(1, []); }); inDenOk = !riding() && !!inDen && /outside|open/i.test(inDen); INSTANCES.leave(); F.sim(2, []); }
+        if (entered) { inDen = refusal(() => { F.press('KeyG'); F.sim(1, []); }); inDenOk = !riding() && !!inDen && /outside|open/i.test(inDen); INSTANCES.leave(); F.sim(2, []); }
       }
       F.tp(o.x, o.y); F.sim(2, []);
       check(P + 'she refuses indoors, inside another machine, on water (hover armour or not) and down a dungeon',
