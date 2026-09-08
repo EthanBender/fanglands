@@ -38,6 +38,7 @@ A dragon only legends have heard about.
 | Home (lodestone) | H | Bag → Home |
 | Climb out of the walker | X | EXIT |
 | Help | ? | HELP |
+| Wiki (monsters, items, recipes, skills, places, quests) | K (K facing a monster opens its page) | WIKI |
 | Menu (sound, new game) | Esc | MENU |
 
 Progress saves in the browser automatically.
