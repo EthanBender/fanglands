@@ -227,7 +227,18 @@
     // ---- custom pages ----
     for (const s of SECTIONS) for (const id in custom[s]) out[s][id] = Object.assign(out[s][id] ? { ...out[s][id] } : { id, name: id }, custom[s][id]);
     // ---- order: monsters by level, items by name, recipes by station then level, skills as defined, places as defined, quests as defined ----
-    out.order.monsters = Object.keys(out.monsters).sort((a, b) => (out.monsters[a].level - out.monsters[b].level) || out.monsters[a].name.localeCompare(out.monsters[b].name));
+    // one row per creature, not per code type: guard_m/guard_f are both "Town guard", and a zombie has a calm twin
+    // in the Afterlands. Same name + same level and hp = the same thing to a reader, so the twin's places are folded
+    // into the first page and only that page is listed. Both ids still open it, so drop cross-links keep working.
+    { const byName = {};
+      for (const type of Object.keys(out.monsters)) { const e = out.monsters[type], key = `${e.name}|${e.level}|${e.hp}|${e.maxHit}`;
+        if (!byName[key]) { byName[key] = type; continue; }
+        const keep = out.monsters[byName[key]];
+        for (const w of e.where) if (!keep.where.includes(w)) keep.where.push(w);
+        out.monsters[type] = { ...e, aliasOf: byName[key] };
+      }
+      out.order.monsters = Object.keys(out.monsters).filter(t => !out.monsters[t].aliasOf)
+        .sort((a, b) => (out.monsters[a].level - out.monsters[b].level) || out.monsters[a].name.localeCompare(out.monsters[b].name)); }
     out.order.items = Object.keys(out.items).sort((a, b) => out.items[a].name.localeCompare(out.items[b].name));
     const stOrder = ['null', 'workbench', 'workshop', 'alchemy', 'oven', 'forge', 'anvil', 'loom', 'skyforge', 'dozerbay'];
     out.order.recipes = Object.keys(out.recipes).sort((a, b) => { const A = out.recipes[a], B = out.recipes[b]; return (stOrder.indexOf(String(A.station)) - stOrder.indexOf(String(B.station))) || (A.lv - B.lv) || A.name.localeCompare(B.name); });
@@ -249,6 +260,7 @@
     if (!SECTIONS.includes(section)) section = 'monsters';
     if (push && wk.id && (wk.section !== section || wk.id !== id)) { wk.history.push({ s: wk.section, id: wk.id }); if (wk.history.length > 20) wk.history.shift(); }
     wk.section = section; wk.detailPage = 0;
+    if (id && data[section][id] && data[section][id].aliasOf) id = data[section][id].aliasOf; // a folded twin (guard_f, zombie_calm) opens the page it was folded into
     if (id && data[section][id]) { wk.id = id; wk.view = 'detail'; const list = listFor(section); const i = list.indexOf(id); if (i < 0) { wk.search = ''; wk.letter = ''; } }
     else { wk.id = null; wk.view = 'list'; }
     if (panel !== 'wiki') openPanel('wiki');
