@@ -20,6 +20,10 @@
 //   drawItemIcon    — draws the 'cape' item shape (the core draws a disc for unknown shapes)
 // Save state: quest.agility = { laps: { yard, cliff }, next: { yard, cliff } } (reset in HOOKS.newGame); player.hpSeeded
 // marks a save whose Hitpoints xp was seeded once from its Melee + Range xp (older saves predate the skill).
+//
+// window.AGILITY (the bottom of this file) lets a later feature file register its own course on this machinery —
+// the same flags, laps, xp, obstacle tiles, slip/fall messages and drawing. 48-agility2 adds two courses through it.
+// A course may carry `bonus` and `bonusEvery`; without them it gets the default LAP_BONUS every LAP_BONUS_EVERY laps.
 // ============================================================================
 {
   // ---------- skills ----------
@@ -179,7 +183,8 @@
       if (nx === N + 1) {
         a.laps[m.course] += 1; a.next[m.course] = 1;
         gainXp('agility', c.xp); floatText(player.x, player.y - 34, `Lap ${a.laps[m.course]}! +${c.xp} Agility xp`, '#7ee787', 16); burst(player.x, player.y, '#7ee787', 16, 100); sfx('quest');
-        if (a.laps[m.course] % LAP_BONUS_EVERY === 0) { giveOrDrop('coins', LAP_BONUS, player.x, player.y); notify(`${LAP_BONUS_EVERY} laps of the ${c.name}: ${LAP_BONUS} coins.`); }
+        const every = c.bonusEvery || LAP_BONUS_EVERY, bonus = c.bonus || LAP_BONUS;   // a registered course may set its own purse
+        if (a.laps[m.course] % every === 0) { giveOrDrop('coins', bonus, player.x, player.y); notify(`${every} laps of the ${c.name}: ${bonus} coins.`); }
         save();
       } else { a.next[m.course] = 1; floatText(player.x, player.y - 34, nx === 0 ? `${c.name}: touch the flags in order` : 'Go!', '#f5c542', 14); }
     } else if (m.i === nx) { a.next[m.course] = nx + 1; floatText(player.x, player.y - 34, `Flag ${m.i} of ${N}`, '#f5c542', 14); sfx('pickup'); }
@@ -315,6 +320,17 @@
     g.strokeStyle = 'rgba(245,197,66,0.8)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(t1.x, t1.y); g.quadraticCurveTo(mid.x, mid.y, t2.x, t2.y); g.stroke();
     g.restore();
   }
+
+  // ---------- courses registered by other feature files ----------
+  // Everything a new course needs from this file. Register at load time (before the world is generated) and the
+  // HOOKS.world pass above lays the flags and obstacles down with the yard's and the cliff's.
+  window.AGILITY = {
+    TILES: { LOG: AG_LOG, NET: AG_NET, GAP: AG_GAP, MARK: AG_MARK, STONE: AG_STONE, CLIMB: AG_CLIMB },
+    COURSES, LAP_BONUS_EVERY, LAP_BONUS, level: agLv, state: AG,
+    // def = { name, xp, marks: [[x, y], ...], bonus?, bonusEvery? }; marks[0] is the start/finish flag
+    addCourse(id, def) { COURSES[id] = def; def.marks.forEach(([x, y], i) => MARKS.set(key(x, y), { course: id, i })); return def; },
+    addObstacles(id, t, lv, cells) { obst(id, t, lv, cells); },
+  };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
