@@ -1,7 +1,8 @@
 // ============================================================================
 // WORLD BLEND — the last pass over the finished map, so the land reads as one place and not a row of
 // postage stamps: an organic coastline with coves and a sandy rim, a river from Miller's Pond to the
-// Grey Sea (plank bridges where it crosses the roads), dithered biome edges (the Ashfields, the Jungle,
+// Grey Sea (plank bridges where it crosses the roads), the same coast treatment on the Far Shore's strait
+// (33-goblincity), dithered biome edges (the Ashfields, the Jungle,
 // Wolfwood, the Goblin Camp's ring, Grey Quarry), clumped woods on the open fields, and feathered grass
 // edges at draw time. Feature file: registers through HOOKS only and edits no core file. Its world hook
 // runs after every other feature's (file order), so it sees the finished map and only softens it.
@@ -12,6 +13,7 @@
   const Tn = n => (n in T ? T[n] : -1);
   const ASH = Tn('ASH'), JUNGLE = Tn('JUNGLE'), FERN = Tn('FERN'), BRIDGE = Tn('BRIDGE'), DOCK = Tn('DOCK'), WARDEN_GATE = Tn('WARDEN_GATE'), BERRY = Tn('BERRY_BUSH'), DEADTREE = Tn('DEADTREE'), SCORCH = Tn('SCORCH'), OBSIDIAN = Tn('OBSIDIAN');
   const PLANKS = BRIDGE >= 0 ? BRIDGE : DOCK >= 0 ? DOCK : T.DIRT;   // what carries a road over the river
+  const KEEPT = new Set([DOCK, Tn('BOAT'), Tn('SEAROCK'), Tn('DUNGEON_DOOR')].filter(v => v >= 0)); // placed by 26-boats / 16-instances: never rewritten
   const SEA = { x0: 162, y0: 0, x1: 199, y1: 95 };
   const VILL = { x0: 85, y0: 14, x1: 140, y1: 56 };
   const PAL = { x0: 142, y0: 20, x1: 158, y1: 40 };                   // the goblin palisade
@@ -61,7 +63,7 @@
   HOOKS.world.push((rnd0, api) => {
     const rnd = mulberry32(SEED);   // own stream: the result does not depend on how many draws the features before this made
     const set = api.setTile, at = api.tileAt;
-    const S = BL.stats = { coast: { toWater: 0, toLand: 0, south: 0 }, rim: 0, river: { tiles: 0, bridges: 0, banks: 0 }, relocated: [], dither: { ash: 0, column: 0, jungle: 0, wolfwood: 0, camp: 0, quarry: 0, hollowford: 0, deepholm: 0, lair: 0 }, clump: { cleared: 0, added: 0 }, reach: null, repairs: [], pockets: [], buildingsSame: null, villageSame: null };
+    const S = BL.stats = { coast: { toWater: 0, toLand: 0, south: 0, far: 0 }, rim: 0, river: { tiles: 0, bridges: 0, banks: 0 }, relocated: [], dither: { ash: 0, column: 0, jungle: 0, wolfwood: 0, camp: 0, quarry: 0, hollowford: 0, deepholm: 0, lair: 0 }, clump: { cleared: 0, added: 0 }, reach: null, repairs: [], pockets: [], buildingsSame: null, villageSame: null };
     const sumRect = (x0, y0, x1, y1, s) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) s = (Math.imul(s, 31) + at(x, y)) | 0; return s; };
     const sumBuildings = () => { let s = 7; for (const b of BUILDINGS) s = sumRect(b.x, b.y, b.x + b.w - 1, b.y + b.h - 1, s); return s; };
     const sumVillage = () => sumRect(VILL.x0, VILL.y0, VILL.x1, VILL.y1, 11);
@@ -95,6 +97,10 @@
     mark(125, 113, 167, 136); mark(126, 111, 147, 114);    // Sylvaris' ring wall, the open ground before the gap
     mark(162, 40, 163, 40);                                // the boats' shore check
     mark(51, 41, 62, 50);                                  // the bulldozer's test lane south of the pens, as the core scattered it
+    // the Far Shore (33-goblincity, reached by 26-boats): Harl's far dock, boat and lantern, the landing step and the road off it, four tiles all round;
+    // every hut there is a BUILDINGS entry (guarded above) and every townsgoblin stands east of x 214, beyond the strait pass's reach (x ≤ 210)
+    const FAR = REGIONS.find(r => r.name === 'The Far Shore') || null;
+    if (FAR) mark(200, 26, 211, 34);
     const spawnG = new Uint8Array(MAP_W * MAP_H);
     const markSpawns = () => { spawnG.fill(0); for (const s of MONSTER_SPAWNS) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inMap(s.tx + dx, s.ty + dy)) spawnG[idx(s.tx + dx, s.ty + dy)] = 1; };
     markSpawns();
@@ -123,6 +129,23 @@
       const v = (SEA.y1 + 0.5 - y) + (cn(x + 200, y) * 2 - 1) * 5, t = at(x, y);
       if (v > 0) { if (y > SEA.y1 && JUNGLY.has(t)) { set(x, y, T.WATER); seaMade.add(idx(x, y)); S.coast.south++; } }
       else if (y <= SEA.y1 && t === T.WATER) { set(x, y, T.SAND); S.coast.south++; }
+    }
+    // ---- 1b. the Far Shore's strait: 33-goblincity carves water at x 200–203 and a sand strip at 204–206, both ruler-straight, y 4–95. The straight
+    // beach is forgotten (grass; the shore rocks stay), then the water's edge wanders about x 205 by the same noise, with coves and headlands.
+    // The strait must stay mostly water (33's own check counts it), so the edge is biased east and the headlands kept small.
+    if (FAR) {
+      const FEDGE = 205, FCOVES = [[206, 12, 3, 1], [206, 46, 3, 1], [206, 66, 3.5, 1], [206, 90, 3, 1], [202, 40, 2.5, -1], [201, 60, 3, -1], [202, 80, 2.5, -1]]; // [x, y, r, +1 cove / −1 headland]
+      const FAR_LAND = new Set([T.GRASS, T.SAND, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, T.ROCK]);
+      for (let y = 4; y <= 95; y++) for (let x = 200; x <= 203; x++) if (at(x, y) === T.WATER) seaMade.add(idx(x, y)); // the strait counts as sea for the rim
+      for (let y = 4; y <= 95; y++) for (let x = 200; x <= 210; x++) {
+        if (!free(x, y) || KEEPT.has(at(x, y))) continue;
+        let v = (FEDGE - x) + (cn(x + 300, y) * 2 - 1) * 3;   // > 0: water
+        for (const [cx, cy, r, sg] of FCOVES) { const d = dist(x, y, cx, cy); if (d < r + 1.5) v += sg * (r + 1.5 - d) * 2.5; }
+        const t = at(x, y);
+        if (v > 0) { if (FAR_LAND.has(t)) { set(x, y, T.WATER); seaMade.add(idx(x, y)); S.coast.far++; } }
+        else if (t === T.WATER) { set(x, y, T.GRASS); seaMade.delete(idx(x, y)); S.coast.far++; }
+        else if (t === T.SAND) set(x, y, T.GRASS);            // the old beach; the rim pass below lays the new one along the new edge
+      }
     }
     const isSea = (x, y) => at(x, y) === T.WATER && (inRect(SEA, x, y) || seaMade.has(idx(x, y)));
 
@@ -178,6 +201,7 @@
     const rn = makeNoise(SEED + 5, 5);
     const ring1 = [];
     for (let y = 0; y <= 99; y++) for (let x = 148; x <= 199; x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y]);
+    if (FAR) for (let y = 4; y <= 95; y++) for (let x = 200; x <= 211; x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y]); // the strait's new edge
     for (const [x, y] of ring1) { set(x, y, T.SAND); S.rim++; }
     for (const [x, y] of ring1) for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (free(nx, ny) && RIMMABLE.has(at(nx, ny)) && rn(nx, ny) > 0.5) { set(nx, ny, T.SAND); S.rim++; } }
     set(162, 40, T.SAND); // the boats' shore check (also guarded, belt and braces)
@@ -369,6 +393,17 @@
     check('blend: Thistledown and every building are untouched by the pass (checksums before and after)', S.buildingsSame === true && S.villageSame === true, { buildings: S.buildingsSame, village: S.villageSame });
     { let ash = 0, grass = 0; for (let y = 93; y <= 99; y++) for (let x = 10; x <= 90; x++) { const t = tileAt(x, y); if (t === ASH) ash++; else if (GRASSY.has(t)) grass++; }
       check('blend: the Ashfields edge is dithered (ash and grass both stand in rows 93–99, x 10–90)', ash > 20 && grass > 20, { ash, grass, dither: S.dither }); }
+    if (REGIONS.some(r => r.name === 'The Far Shore')) {
+      // the strait: 33-goblincity's water at x 200–203 met its sand at 204 along a ruler line; now the water's east edge wanders
+      { const xs = new Set(); let rim = 0, water = 0; for (let y = 6; y <= 94; y++) for (let x = 210; x >= 198; x--) if (tileAt(x, y) === T.WATER) { xs.add(x); break; }
+        for (let y = 4; y <= 95; y++) for (let x = 200; x <= 211; x++) { const t = tileAt(x, y); if (t === T.SAND && N4.some(([dx, dy]) => tileAt(x + dx, y + dy) === T.WATER)) rim++; }
+        for (let y = 1; y <= 96; y++) for (let x = 200; x <= 203; x++) if (tileAt(x, y) === T.WATER) water++;
+        check("blend: the Far Shore's strait wanders too (8+ distinct shoreline columns over y 6–94: coves and headlands) with a sand rim along it, and stays mostly water", xs.size >= 8 && rim >= 40 && water > 300, { distinct: xs.size, cols: [...xs].sort((a, b) => a - b), rim, water, far: S.coast.far }); }
+      // the ferry's far dock (26-boats: dock 204–205 × 29–31, boat 203,30, landing step 206,30) is untouched and the landing still walks into town
+      { const L = { x: 206, y: 30 }; const a = F.bfs(L.x, L.y, 219, 33), b = F.bfs(L.x, L.y, 216, 26);
+        const dock = tileAt(204, 30) === DOCK && tileAt(205, 30) === DOCK && tileAt(203, 30) === Tn('BOAT') && tileAt(L.x, L.y) === T.SAND && tileAt(L.x + 1, L.y) === T.DIRT;
+        check("blend: Harl's far dock, boat and landing step are untouched, and the landing still reaches Grubmarket's square and Grubb's doorstep on foot", dock && !!a && !!b, { dock, square: a && a.length, doorstep: b && b.length }); }
+    }
     { let trees = 0, clumped = 0; for (let y = 1; y <= 61; y++) for (let x = 21; x <= 159; x++) { if (!TREES.has(tileAt(x, y)) || regionAt(x, y).name !== 'Goblin Fields') continue; trees++; if (N8.filter(([dx, dy]) => TREES.has(tileAt(x + dx, y + dy))).length >= 2) clumped++; }
       check('blend: the trees of Goblin Fields stand in copses, not an even scatter (half or more have two tree neighbours)', trees > 200 && clumped / trees >= 0.5, { trees, clumped: +(clumped / trees).toFixed(2), clump: S.clump }); }
   });

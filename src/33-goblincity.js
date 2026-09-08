@@ -155,6 +155,7 @@
     return hidden() ? null : { x: n.x, y: n.y };
   };
   const folkPx = n => { const t = folkTile(n); return t ? { px: tc(t.x), py: tc(t.y) } : null; };
+  if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => FOLK.map(n => { const p = folkPx(n); return p && { x: p.px, y: p.py, r: 13, id: n.id, name: n.name, talk: () => gcTalk(n) }; }).filter(Boolean)); // 17-tap: a tap on a townsgoblin walks up and talks
   function folkInFront() {
     let best = null;
     for (const n of FOLK) {

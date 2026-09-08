@@ -40,6 +40,7 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
 - Instances (`src/16-instances.js`): `INSTANCES.define('my_cave', { name, sub, w, h, build(setTile, rnd), spawns: [[type, x, y]], exit: [x, y], door: [x, y], step: [x, y], boss, onClear })`;
   a `door` places a DUNGEON_DOOR tile at world-gen and E on it enters, or call `INSTANCES.enter('my_cave')` yourself and `INSTANCES.leave()`. The instance map replaces `map` while active; the save always records the overworld.
 - Tap-to-move (`src/17-tap.js`): a tapped tile in `INTERESTING_TILES` gets walked to and used; a tapped monster gets fought. Add your
+<<<<<<< HEAD
   own solid tiles to `INTERESTING_TILES` so a tap on them works on the iPad.
 - Wiki (`src/44-wiki.js`): the in-game book builds itself from the live tables the first time it opens (K, the WIKI button, or the Wiki button
   under a pack item), so anything you add to `MONSTER_DEFS`, `ITEMS`, `RECIPES`, `SMELT`, `SHOPS`, `REGIONS`, `QUEST_DEFS`, spawn lists and
@@ -47,6 +48,11 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   where section is `monsters | items | recipes | skills | places | quests`; give a `lines: ['text', { t, c, link: { s, id } }]` array to write the
   page yourself. `WIKI.get(section, id)` reads a page, `WIKI.open(section, id)` opens the book on it. Drop tables kept inside a closure need
   exposing on `window` (see `DOZERUP.BLUEPRINT_DROPS`, `DRAGON_KILLERS.chance`, `SKYCITY.FORGE`) or a `WIKI.add` call.
+=======
+  own solid tiles to `INTERESTING_TILES` so a tap on them works on the iPad. A feature with its own people list (not `NPCS`) registers it once:
+  `TAP_PEOPLE.push(() => MY_PEOPLE.map(p => ({ x: p.px, y: p.py, r: 13, id: p.id, name: p.name, talk: () => myTalk(p) })))` — return the live
+  list in pixels (empty when out of reach) and the same talk call your E handler makes; a tap then walks adjacent and talks.
+>>>>>>> feat/backlog
 - Touch: every keyboard action needs a button — register one with `buttons.push({ x, y, w, h, label, action })` from a `HOOKS.hud` draw, and
   write key hints with `keyName('KeyE')` so touch players read "E" or "USE" as appropriate.
 

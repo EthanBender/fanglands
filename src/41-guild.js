@@ -210,6 +210,7 @@
     for (const p of staff) { const dx = p.px - player.x, dy = p.py - player.y, d = Math.hypot(dx, dy); if (d > 64 || d < 1) continue; const dot = (dx / d) * player.facing.x + (dy / d) * player.facing.y; if (dot < 0.4) continue; if (!best || d < best.d) best = { p, d }; }
     return best && best.p;
   };
+  if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => staff.map(p => ({ x: p.px, y: p.py, r: 13, id: p.id, name: p.name, talk: () => useAction() }))); // 17-tap: a tap on the staff walks up; facing them, E's own path (HOOKS.use → staffInFront) talks
 
   // ---------- update ----------
   HOOKS.update.push(dt => {
