@@ -294,15 +294,17 @@
   });
 
   // ---------- the book (44-wiki) ----------
-  // The wight builds its own page from MONSTER_DEFS and its spawns. The heart has no spawn list of its
-  // own, so its page is written here rather than left blank.
+  // Both pages build themselves out of MONSTER_DEFS and the spawn lists; what a page cannot work out on
+  // its own is written here and merged over it — how the fight actually goes, and where the heart appears.
   if (window.WIKI && typeof WIKI.add === 'function') {
-    const H = MONSTER_DEFS[HEART];
     WIKI.add('monsters', {
-      id: HEART, name: H.name, level: H.level, hp: H.hp, maxHit: H.maxHit, att: H.att, def: H.def, speed: H.speed,
-      aggro: false, human: false, harmless: true, mech: false, respawn: H.respawn, boss: false, drops: [], tablePct: 0,
+      id: WIGHT, name: MONSTER_DEFS[WIGHT].name,   // add() defaults name to the id, so it is passed back in
+      blurb: `It comes at you the moment it sees you, and it fights with its own heart. About ${KINDLE_EVERY} seconds into the fight it pulls the ember out of its chest and puts it on the ground behind itself — watch its chest go dark, that is the tell. While that ember burns the wight heals ${FEED_HEAL} hp a second, the ash within two tiles of it scalds you for ${HEAT_MIN}-${HEAT_MAX} a second, and it will not go more than three tiles from the ember. Break the ember and the wight goes cold: ${COLD_STUN} seconds stunned, ${COLD_TIME} seconds where every hit lands twice, and no new heart for ${KINDLE_AFTER_BREAK}. Leave the ember alone and it burns out after ${HEART_LIFE} seconds, with the wight ${FEED_HEAL * HEART_LIFE} hp better off. Bring food.`,
+    });
+    WIKI.add('monsters', {
+      id: HEART, name: MONSTER_DEFS[HEART].name,
       where: ['The Ashfields — wherever a cinderwight is fighting', 'The Afterlands — the same'],
-      blurb: `Not a creature of its own: a cinderwight's heart, taken out and set on the ground so the wight can drink the heat back. While it burns the wight heals ${FEED_HEAL} hp a second and the ash within two tiles of the wight scalds you for ${HEAT_MIN}-${HEAT_MAX}. It has ${HEART_HP} hit points and almost no defence, so a swing or two breaks it. Break it and the wight is stunned for ${COLD_STUN} seconds and cold for ${COLD_TIME}, and while it is cold every hit lands twice. Left alone the ember burns out after ${HEART_LIFE} seconds.`,
+      blurb: `Not a creature of its own: a cinderwight's heart, taken out and set on the ground so the wight can drink the heat back. It has ${HEART_HP} hit points and almost no defence, so a swing or two breaks it, and breaking it is how you beat the wight. It carries nothing: the loot is on the wight.`,
     });
   }
 
@@ -492,6 +494,17 @@
         listed.length === 2 && listed.every(([, x, y]) => !SOLID.has(inst.tiles[y * inst.w + x])) && entered === true && inside === 2
         && typeof walked === 'number' && region === 'The Afterlands' && left === true && window.__instance === null,
         { listed: listed.map(([, x, y]) => [x, y]), entered, inside, walkSteps: walked, region, left, instance: window.__instance }); }
+
+    // 7. the book tells you how the fight goes, on both pages, with the odds it really rolls
+    { const w = window.WIKI ? WIKI.get('monsters', WIGHT) : null, hh = window.WIKI ? WIKI.get('monsters', HEART) : null;
+      const drop = id => w && w.drops.find(r => r.id === id);
+      check(P + 'the wiki page names it, puts it in both places, explains the heart, and lists the drop odds it really rolls',
+        !!w && w.name === 'Cinderwight' && w.level === 66 && w.where.includes('The Ashfields') && w.where.includes('The Afterlands')
+        && /ember/.test(w.blurb) && /heals 14 hp a second/.test(w.blurb) && Math.abs(w.tablePct - 100) < 0.01
+        && !!drop('coins') && drop('coins').pct === 100 && !!drop('obsidian') && Math.abs(drop('obsidian').pct - 25) < 0.01
+        && !!drop('vampire_fang') && Math.abs(drop('vampire_fang').pct - 2.5) < 0.01
+        && !!hh && hh.name === 'Cinder heart' && hh.drops.length === 0 && hh.where.length === 2 && /breaking it is how you beat the wight/.test(hh.blurb),
+        { name: w && w.name, where: w && w.where, tablePct: w && +w.tablePct.toFixed(2), heart: hh && hh.name, heartWhere: hh && hh.where.length }); }
 
     player.hp = Math.min(hp0, player.maxHp); player.mech = mech0; player.r = r0; player.speed = speed0; player.hurtT = 0; h.peace(false);
   });
