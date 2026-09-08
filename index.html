@@ -10507,6 +10507,11 @@ HOOKS.selfTest.push((check, F, h) => {
     ['count_ashvane', AF_COUNT[0], AF_COUNT[1]],
   ];
   const NO_SPAWN_REGIONS = new Set(['Thistledown', 'Castle Thistledown', 'Deepholm', 'The Cave', "The Fang's Lair", 'Sylvaris', 'Hollowford']);
+  // where the dead may neither rise nor wander: the regions above plus the goblin city (33-goblincity: Grubmarket holds the market, the scrap
+  // yard and Tinkerton's compound; Castle Gnash the castle). The rects are read from REGIONS by name at runtime, never copied here.
+  const NO_GO_NAMES = new Set([...NO_SPAWN_REGIONS, 'Grubmarket', 'Castle Gnash']);
+  const noGoRects = () => REGIONS.filter(r => NO_GO_NAMES.has(r.name));
+  const inNoGo = (tx, ty) => inVillageBounds(tc(tx), tc(ty)) || isCaveTile(tx, ty) || noGoRects().some(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1);
   const OWN_DARK_REGIONS = ['Deepholm', "The Fang's Lair"]; // regions that draw their own darkness (24-dwarves, 28-thefang)
 
   // ---------- tiles (ids captured locally) ----------
@@ -10615,7 +10620,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const tx = Math.round(px + Math.cos(a) * d), ty = Math.round(py + Math.sin(a) * d);
       if (!inMap(tx, ty)) continue;
       const t = tileAt(tx, ty);
-      if (SOLID.has(t) || PUSH_THROUGH.has(t) || buildingAt(tx, ty) || inVillageBounds(tc(tx), tc(ty)) || isCaveTile(tx, ty)) continue;
+      if (SOLID.has(t) || PUSH_THROUGH.has(t) || buildingAt(tx, ty) || inNoGo(tx, ty)) continue;
       if (NO_SPAWN_REGIONS.has(regionAt(tx, ty).name)) continue;
       if (collides(tc(tx), tc(ty), 13, 'beast')) continue;
       if (monsters.some(m => !m.dead && dist(m.x, m.y, tc(tx), tc(ty)) < 30)) continue;
@@ -10664,7 +10669,13 @@ HOOKS.selfTest.push((check, F, h) => {
     for (let i = monsters.length - 1; i >= 0; i--) {
       const m = monsters[i]; if (!m.night) continue;
       if (m.dead && m.deadT > 0.8) { monsters.splice(i, 1); continue; }   // the dead of the night never respawn
-      if (ph !== 'night') { crumble(m); monsters.splice(i, 1); }          // dawn
+      if (ph !== 'night') { crumble(m); monsters.splice(i, 1); continue; } // dawn
+      // a zombie that steps over the line into a village, a city or a castle turns back: it is put back on its last tile outside and sent home
+      if (m.dead) continue;
+      if (inNoGo(Math.floor(m.x / TILE), Math.floor(m.y / TILE))) {
+        if (m.lastOut) { m.x = m.lastOut.x; m.y = m.lastOut.y; }
+        m.state = 'return'; m.wander = { x: 0, y: 0 }; m.wanderT = 1.5; m.facing = { x: -m.facing.x, y: -m.facing.y }; m.turned = (m.turned || 0) + 1;
+      } else m.lastOut = { x: m.x, y: m.y };
     }
     if (ph !== 'night') spawnT = 0;
     if (ph === 'dusk' && !N().told && !player.dead && !NO_SPAWN_REGIONS.has(player.region)) { N().told = true; say('The light is going. When it is dark the dead walk. Not many. Stay near a fire, or show them your sword. They fall to dust at dawn.', 'The Voice'); }
@@ -10868,7 +10879,7 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   // ---------- test / debug handle ----------
-  window.NIGHT = { DAY, LIGHT, DUSK, phase, alpha, overlay: overlayAlpha, dayT, alive: nightAlive, resetTimer: () => { spawnT = 0; }, timer: () => spawnT, canSpawn, tiles: { crypt: T_CRYPT, deadTree: T_DEAD } };
+  window.NIGHT = { DAY, LIGHT, DUSK, phase, alpha, overlay: overlayAlpha, dayT, alive: nightAlive, resetTimer: () => { spawnT = 0; }, timer: () => spawnT, canSpawn, inNoGo, noGoRects, tiles: { crypt: T_CRYPT, deadTree: T_DEAD } };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -10910,6 +10921,30 @@ HOOKS.selfTest.push((check, F, h) => {
     { F.tp(112, 33); player.dayTime = LIGHT + DUSK + 1; NIGHT.resetTimer(); h.peace(false); F.sim(SPAWN_EVERY * 60 + 30, []); const n = nightMs().length; const can = NIGHT.canSpawn();
       check('night: nothing rises inside Thistledown (village bounds + region), the timer never fires there', n === 0 && !can && player.region === 'Thistledown', { n, can, region: player.region });
       player.dayTime = 0; F.sim(3, []); h.peace(true); }
+    // never inside the goblin city: with the knight in Grubmarket the dead rise on the shore outside the city rects, never in them, and one
+    // that is sent across the line turns back (the rects come from REGIONS by name, as the spawner reads them)
+    { const city = REGIONS.filter(r => r.name === 'Grubmarket' || r.name === 'Castle Gnash');
+      if (city.length === 2) {
+        const inCity = (tx, ty) => city.some(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1);
+        const tileOf = m => [Math.floor(m.x / TILE), Math.floor(m.y / TILE)];
+        leave(); closePanel(); F.tp(215, 30); F.sim(2, []); drain(); player.dayTime = LIGHT + DUSK + 1; NIGHT.resetTimer(); h.peace(false); player.hp = 100000;
+        const seen = new Set(); let inside = 0, ticks = 0; const can = NIGHT.canSpawn();
+        for (let i = 0; i < SPAWN_EVERY * 60 * 5 + 30; i++) {
+          F.step([]); ticks++;
+          for (const m of nightMs()) { if (m.dead) continue; seen.add(m); if (inCity(...tileOf(m))) inside++; }
+        }
+        const rose = seen.size; const homes = [...seen].map(m => [Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)]);
+        const homesOutside = homes.every(([x, y]) => !inCity(x, y)) && homes.every(([x, y]) => !NIGHT.inNoGo(x, y));
+        check('night: with the knight in Grubmarket the dead still rise (on the shore, outside the city rects) and none is ever inside Grubmarket or Castle Gnash', can && player.region === 'Grubmarket' && rose >= 1 && inside === 0 && homesOutside, { can, region: player.region, rose, inside, homes, ticks });
+        // the line: a zombie set on the road just west of the market, hungry for a knight standing inside it, is turned back every time it crosses
+        const z = [...seen].find(m => !m.dead) || null; let held = false, turned = 0, crossedTo = null;
+        if (z) { for (const m of nightMs()) if (m !== z) m.stunT = 999; const gm = city.find(r => r.name === 'Grubmarket');
+          F.tp(gm.x0 + 2, 30); z.x = tc(gm.x0 - 1); z.y = tc(30); z.home = { x: z.x, y: z.y }; z.lastOut = null; z.state = 'idle'; z.stunT = 0; z.turned = 0; z.angry = true; z.hp = z.maxHp;
+          let never = true; for (let i = 0; i < 240; i++) { F.step([]); if (inCity(...tileOf(z))) { never = false; crossedTo = tileOf(z); } }
+          turned = z.turned; held = never && !z.dead && tileOf(z)[0] < gm.x0; }
+        check('night: a zombie chasing a knight into Grubmarket is turned back at the city line (never inside after a tick, sent home)', !!z && held && turned >= 1, { found: !!z, held, turned, crossedTo, at: z && tileOf(z), state: z && z.state });
+        for (const m of nightMs()) m.stunT = 999; player.dayTime = 0; F.sim(3, []); h.peace(true); drops = drops.filter(d => dist(d.x, d.y, tc(215), tc(30)) > 30 * TILE); }
+      else check('night: the goblin city regions (33-goblincity) are present for the no-go check', false, { names: REGIONS.map(r => r.name) }); }
     // one darkness at a time: Deepholm, the starting cave and dark instances keep their own lights
     { player.dayTime = LIGHT + DUSK + 1; F.tp(14, 80); F.sim(2, []); const dh = NIGHT.overlay(), dhRegion = player.region; F.tp(4, 7); F.sim(2, []); const cave = NIGHT.overlay();
       const o = h.openSpot(40, 20); F.tp(o.x, o.y); F.sim(2, []); const open = NIGHT.overlay();
