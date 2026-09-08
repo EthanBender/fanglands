@@ -38,6 +38,7 @@
   // items given by people, chests and quests (id → [text]). 06-systems, 16-instances, 20, 25, 26, 29, 33, 35, 36, 37, 38, 41.
   const GIVEN = {
     wooden_sword: ['In the light, in the cave where you woke'],
+    fireproof_salve: ['Dunstan the dung farmer rubs it on you after five dragon dung (it stays on you; it is never carried)'],
     bronze_axe: ['In the stump outside the cave (E)'],
     bronze_pickaxe: ['In the cart at Grey Quarry (E)'],
     coins: ['The chest in the ruined watchtower (Wolfwood): 60', 'Notice board jobs and guild jobs', 'The strongbox on Ironclad Isle: 120', 'The Fang, first kill: 1000'],
