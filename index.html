@@ -2604,7 +2604,8 @@ window.FANGLANDS = {
   held(dx, dy) { const h = []; if (Math.abs(dx) > 2) h.push(dx > 0 ? 'KeyD' : 'KeyA'); if (Math.abs(dy) > 2) h.push(dy > 0 ? 'KeyS' : 'KeyW'); return h; },
   walkTo(tx, ty, max = 4000) {
     closePanel(); const path = this.bfs(Math.floor(player.x / TILE), Math.floor(player.y / TILE), tx, ty); if (!path) return 'nopath'; let i = 0, s = 0;
-    while (i < path.length && s < max) { if (player.hp < 7 && !window.__peace) { this.heals = (this.heals || 0) + 1; player.hp = player.maxHp; } const [wx, wy] = path[i]; // same heal rule as fight(): a road goblin must not kill the bot mid-walk (a death cascades through every later check) const dx = tc(wx) - player.x, dy = tc(wy) - player.y; const last = i === path.length - 1; if (Math.hypot(dx, dy) < (last ? (SOLID.has(map[idx(wx, wy)]) ? 44 : 14) : 8)) { i++; continue; } this.step(this.held(dx, dy)); if (player.dead) return 'died'; s++; }
+    // same heal rule as fight(): a road goblin must not kill the bot mid-walk (a death cascades through every later check)
+    while (i < path.length && s < max) { if (player.hp < 7 && !window.__peace) { this.heals = (this.heals || 0) + 1; player.hp = player.maxHp; } const [wx, wy] = path[i]; const dx = tc(wx) - player.x, dy = tc(wy) - player.y; const last = i === path.length - 1; if (Math.hypot(dx, dy) < (last ? (SOLID.has(map[idx(wx, wy)]) ? 44 : 14) : 8)) { i++; continue; } this.step(this.held(dx, dy)); if (player.dead) return 'died'; s++; }
     render(); return i >= path.length ? s : 'timeout';
   },
   face(tx, ty) { const dx = tc(tx) - player.x, dy = tc(ty) - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; },
