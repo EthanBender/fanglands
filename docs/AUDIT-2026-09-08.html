@@ -1,0 +1,249 @@
+<title>The Walkable World</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Lora:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper: #f6f2e8; --ink: #1c1b18; --muted: #6b6558; --rule: #d9d1bf; --card: #fbf9f3;
+    --gold: #a97a1a; --gold-soft: #f2e3b5; --moss: #3f7d2b; --moss-soft: #dfeccf; --ember: #b23a2f; --ember-soft: #f4d6d1;
+    --amber: #b8730f; --amber-soft: #f6e3bf; --slate: #56606b; --slate-soft: #e1e5e9; --violet: #5a2e7a;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --paper: #12151b; --ink: #e8e3d6; --muted: #a39b8a; --rule: #2c3038; --card: #191d24;
+    --gold: #e0b84a; --gold-soft: #3a3016; --moss: #7ec25c; --moss-soft: #1d2e18; --ember: #ef7a6c; --ember-soft: #3a1f1c;
+    --amber: #e6a33c; --amber-soft: #3a2b12; --slate: #b4bcc6; --slate-soft: #232a33; --violet: #c9a6ea;
+  } }
+  :root[data-theme="dark"] {
+    --paper: #12151b; --ink: #e8e3d6; --muted: #a39b8a; --rule: #2c3038; --card: #191d24;
+    --gold: #e0b84a; --gold-soft: #3a3016; --moss: #7ec25c; --moss-soft: #1d2e18; --ember: #ef7a6c; --ember-soft: #3a1f1c;
+    --amber: #e6a33c; --amber-soft: #3a2b12; --slate: #b4bcc6; --slate-soft: #232a33; --violet: #c9a6ea;
+  }
+  body { background: var(--paper); color: var(--ink); font-family: "Lora", Georgia, serif; font-size: 16px; line-height: 1.55; }
+  main { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1, h2, h3 { font-family: "Cinzel", "Trajan Pro", Georgia, serif; text-wrap: balance; letter-spacing: 0.01em; }
+  h1 { font-size: 34px; font-weight: 800; margin: 0 0 6px; }
+  h2 { font-size: 22px; font-weight: 800; margin: 48px 0 12px; padding-top: 18px; border-top: 2px solid var(--rule); }
+  h3 { font-size: 16px; font-weight: 600; margin: 26px 0 8px; color: var(--violet); }
+  .eyebrow { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .lede { font-size: 18px; color: var(--muted); max-width: 66ch; margin: 0 0 22px; font-style: italic; }
+  p { max-width: 68ch; }
+  ul, ol { max-width: 70ch; padding-left: 22px; } li { margin: 4px 0; }
+  code { font-family: "JetBrains Mono", monospace; font-size: 0.86em; background: var(--slate-soft); padding: 1px 5px; border-radius: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 22px 0 6px; }
+  .stat { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; }
+  .stat b { display: block; font-family: "Cinzel", serif; font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  .sev { display: inline-block; font-family: "JetBrains Mono", monospace; font-size: 10.5px; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 999px; font-weight: 500; white-space: nowrap; }
+  .crit { background: var(--ember-soft); color: var(--ember); } .high { background: var(--amber-soft); color: var(--amber); } .med { background: var(--gold-soft); color: var(--gold); } .low { background: var(--slate-soft); color: var(--slate); } .ok { background: var(--moss-soft); color: var(--moss); }
+  .wrap { overflow-x: auto; margin: 12px 0 18px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+  th { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+  td.n { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  td.where { font-family: "JetBrains Mono", monospace; font-size: 12px; white-space: nowrap; color: var(--muted); }
+  .finding { border-left: 3px solid var(--rule); padding: 2px 0 2px 14px; margin: 14px 0; }
+  .finding.c { border-color: var(--ember); } .finding.h { border-color: var(--amber); } .finding.m { border-color: var(--gold); } .finding.l { border-color: var(--slate); }
+  .finding .t { font-weight: 600; }
+  .finding .d { color: var(--muted); font-size: 15px; margin-top: 2px; }
+  .callout { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 16px 18px; margin: 18px 0; }
+  .callout h3 { margin-top: 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } @media (max-width: 640px) { .two { grid-template-columns: 1fr; } }
+  /* before → after: one row per skill, the bar length is hours to level 99 on a shared scale */
+  .ba { display: grid; grid-template-columns: 96px 1fr 74px; gap: 8px 12px; align-items: center; margin: 16px 0 6px; font-size: 14px; }
+  .ba .sk { font-weight: 600; }
+  .ba .track { position: relative; height: 20px; }
+  .ba .track i { position: absolute; top: 2px; height: 7px; border-radius: 4px; left: 0; }
+  .ba .track i.was { background: var(--ember-soft); border: 1px solid var(--ember); top: 1px; }
+  .ba .track i.now { background: var(--moss); top: 11px; height: 7px; }
+  .ba .num { font-family: "JetBrains Mono", monospace; font-size: 12.5px; font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+  .legend { font-size: 12.5px; color: var(--muted); margin: 2px 0 0; }
+  .legend b { font-weight: 500; } .legend .k { display: inline-block; width: 22px; height: 7px; border-radius: 4px; vertical-align: middle; margin: 0 4px 2px 10px; }
+  footer { margin-top: 56px; padding-top: 14px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; }
+</style>
+<main>
+  <div class="eyebrow">Fanglands · master 4cf59ef · 2026-09-08</div>
+  <h1>The Walkable World</h1>
+  <p class="lede">Can a ten-year-old actually walk this world end to end, reach everyone in it, and level every skill without hitting a wall? A bot played the whole story to find out.</p>
+
+  <div class="grid">
+    <div class="stat"><b>259</b><span>places checked for reachability</span></div>
+    <div class="stat"><b>0</b><span>unreachable</span></div>
+    <div class="stat"><b>16</b><span>quest stage the bot reached, of 16</span></div>
+    <div class="stat"><b>438</b><span>self-test checks, all passing</span></div>
+    <div class="stat"><b>98</b><span>skill gates measured against their XP sources</span></div>
+    <div class="stat"><b>7</b><span>progression defects found and fixed</span></div>
+  </div>
+
+  <div class="callout">
+    <h3>The short version</h3>
+    <ul>
+      <li><b>The world is fully connected.</b> Every named person, door, dungeon entrance, quest marker, boat landing and monster spawn can be walked to from the cave where the knight wakes. Nothing is stranded.</li>
+      <li><b>The whole story is completable by walking.</b> A bot with no teleports played stage 0 to stage 16 in 40 minutes of game time, killed 100 monsters, died zero times, and slew The Fang.</li>
+      <li><b>Progression was the broken part, not the map.</b> Farming needed 7,491 hours to master. Defence needed 1,328. Agility had 29 levels with nothing new to do. All three are fixed and the numbers are in this report.</li>
+      <li><b>One real navigation bug.</b> The map marker for the Ashfields chapters pointed at a tile four squares off Dunstan's hut, so the compass aimed at empty ash.</li>
+    </ul>
+  </div>
+
+  <h2>How the world was checked</h2>
+  <p>The audit floods the freshly generated map with a breadth-first search from every place the game actually puts the player: the cave where you wake, the ladder down to Deepholm, and each of the boat landings. A target counts as reached when the search arrives at it or at a tile beside it, because doors, signposts, boards and shrines are solid things you stand next to. Story gates are honoured: a target behind the warden's gate is only reachable once the stage that opens it has passed.</p>
+
+  <div class="wrap">
+    <table>
+      <caption class="eyebrow" style="text-align:left;padding-bottom:6px">Reachability by kind of target</caption>
+      <thead><tr><th>Kind</th><th class="n">Targets</th><th class="n">Unreachable</th><th class="n">Behind a story gate</th><th class="n">Longest walk</th></tr></thead>
+      <tbody>
+        <tr><td>Named people</td><td class="n">55</td><td class="n">0</td><td class="n">3</td><td class="n">274 tiles</td></tr>
+        <tr><td>Building doors</td><td class="n">30</td><td class="n">0</td><td class="n">1</td><td class="n">210</td></tr>
+        <tr><td>Dungeon entrances</td><td class="n">6</td><td class="n">0</td><td class="n">0</td><td class="n">89</td></tr>
+        <tr><td>Quest map markers</td><td class="n">14</td><td class="n">0</td><td class="n">3</td><td class="n">237</td></tr>
+        <tr><td>Landmarks, boards, shrines, gates</td><td class="n">124</td><td class="n">0</td><td class="n">13</td><td class="n">282</td></tr>
+        <tr><td>Boat landings</td><td class="n">4</td><td class="n">0</td><td class="n">0</td><td class="n">197</td></tr>
+        <tr><td>Monster spawns</td><td class="n">26</td><td class="n">0</td><td class="n">10</td><td class="n">250</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Inside the four dungeons the same search runs from the entrance to the exit, the boss, the chest and anyone living there. Fifteen targets, all reachable. The thirty gated targets are all correct: Old Tam and Pip sit behind the crypt bars until you break them, Dunstan and the lair markers sit behind Warden Brann's gate until Hollowford is avenged, and The Fang's hoard sits behind the lair gate.</p>
+
+  <h3>The main quest, stage by stage</h3>
+  <p>Each of the seventeen stages was walked from where the previous one leaves you. Every gate on the route is opened by an earlier stage, never a later one, so the chain cannot deadlock.</p>
+
+  <div class="wrap">
+    <table>
+      <thead><tr><th class="n">Stage</th><th>What you must reach</th><th class="where">Tile</th><th>Gate</th></tr></thead>
+      <tbody>
+        <tr><td class="n">0–2</td><td>Wake, take the wooden sword from the light, walk out of the cave</td><td class="where">4,7 → 22,7</td><td>—</td></tr>
+        <tr><td class="n">3</td><td>Three goblins on the road</td><td class="where">27,3 · 27,18 · 34,10</td><td>—</td></tr>
+        <tr><td class="n">4</td><td>The signpost</td><td class="where">65,27</td><td>—</td></tr>
+        <tr><td class="n">5–6</td><td>Duke Ferrin in the keep, Hale's dummy, a tree</td><td class="where">112,49</td><td>—</td></tr>
+        <tr><td class="n">7</td><td>The goblin walker in the camp, then the Duke</td><td class="where">152,30</td><td>—</td></tr>
+        <tr><td class="n">8–9</td><td>The edge of Hollowford, then the Barrelbeast</td><td class="where">140,86</td><td>—</td></tr>
+        <tr><td class="n">10</td><td>Old Tam in the chapel crypt</td><td class="where">126,88</td><td>Crypt bars: a hammer, beast dead</td></tr>
+        <tr><td class="n">11</td><td>Into the Ashfields</td><td class="where">60,97</td><td>Warden Brann's gate: stage 11</td></tr>
+        <tr><td class="n">12–13</td><td>Dunstan, then four ash drakes for their dung</td><td class="where">67,104</td><td>—</td></tr>
+        <tr><td class="n">14</td><td>Old Wren, the wind shrine, the Duke, the lair gate, the summoning circle, The Fang</td><td class="where">18,121</td><td>Lair gate: stage 14</td></tr>
+        <tr><td class="n">15–16</td><td>Home to the Duke, and the credits</td><td class="where">112,49</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>The bot played the whole game</h2>
+  <p>Behind a flag (<code>node tools/headless.js index.html 1 --play</code>) the self-test stops checking and starts playing. It walks with the movement keys, fights with the swing key, talks by facing people, and crafts by clicking the real panel buttons. It is allowed to teleport only where the game itself teleports you: into a dungeon, or onto Harl's ferry.</p>
+
+  <div class="grid">
+    <div class="stat"><b>16 / 16</b><span>final quest stage</span></div>
+    <div class="stat"><b>0</b><span>deaths</span></div>
+    <div class="stat"><b>0</b><span>stages that needed a teleport</span></div>
+    <div class="stat"><b>142,621</b><span>movement steps walked</span></div>
+    <div class="stat"><b>39.6 min</b><span>of game time</span></div>
+    <div class="stat"><b>100</b><span>monsters killed on the way</span></div>
+  </div>
+
+  <p>The run reaches Melee 38 and Defence 22 by the end, eats 119 meals, and finishes with The Fang dead. The only place it visibly grinds is the dragon scales: it killed <b>60 ash drakes</b> to collect the five the Song of Above asks for. That is the sharpest remaining difficulty spike in the game and it is listed below as an open finding, not a fixed one.</p>
+
+  <h2>Progression: what was broken</h2>
+  <p>For every level the game asks for anywhere, the audit finds the best experience source available <em>below</em> that level and computes, at the code's own rates, how long the level takes. Four skills were far outside the pack, and two had long stretches where nothing new opened up. All of the fixes below are new things to do in the world. None of them multiplies an existing number.</p>
+
+  <h3>Hours to master a skill, before and after</h3>
+  <div class="ba" role="img" aria-label="Hours to level 99 before and after the fixes: farming 7491 to 476, defence 1328 to 603, smithing 876 to 97, crafting 573 to 422, agility 168 to 84, fishing 161 to 41, cooking 145 to 14.">
+    <div class="sk">Farming</div><div class="track"><i class="was" style="width:100%"></i><i class="now" style="width:6.4%"></i></div><div class="num">7491 → 476</div>
+    <div class="sk">Defence</div><div class="track"><i class="was" style="width:17.7%"></i><i class="now" style="width:8.1%"></i></div><div class="num">1328 → 603</div>
+    <div class="sk">Smithing</div><div class="track"><i class="was" style="width:11.7%"></i><i class="now" style="width:1.3%"></i></div><div class="num">876 → 97</div>
+    <div class="sk">Crafting</div><div class="track"><i class="was" style="width:7.6%"></i><i class="now" style="width:5.6%"></i></div><div class="num">573 → 422</div>
+    <div class="sk">Agility</div><div class="track"><i class="was" style="width:2.2%"></i><i class="now" style="width:1.1%"></i></div><div class="num">168 → 84</div>
+    <div class="sk">Fishing</div><div class="track"><i class="was" style="width:2.1%"></i><i class="now" style="width:0.5%"></i></div><div class="num">161 → 41</div>
+    <div class="sk">Cooking</div><div class="track"><i class="was" style="width:1.9%"></i><i class="now" style="width:0.2%"></i></div><div class="num">145 → 14</div>
+  </div>
+  <p class="legend"><b>Hours to level 99 at the best available rate.</b><span class="k" style="background:var(--ember-soft);border:1px solid var(--ember)"></span>before<span class="k" style="background:var(--moss)"></span>after. Bars share one scale, so Farming's old 7,491 hours sets the full width. Melee, mining, woodcutting, range and firemaking were already in the 60 to 181 hour band and were left alone.</p>
+
+  <h3>Stretches with nothing new to do</h3>
+  <p>A dead band is a run of levels where no new source of experience opens. Ten or more is a wall a child will feel.</p>
+  <div class="wrap">
+    <table>
+      <thead><tr><th>Skill</th><th class="n">Before</th><th class="n">After</th><th>What was added</th></tr></thead>
+      <tbody>
+        <tr><td>Agility</td><td class="n">29 levels</td><td class="n">9</td><td>Three river crossings, at Agility 12, 22 and 35</td></tr>
+        <tr><td>Fishing</td><td class="n">20</td><td class="n">5</td><td>Pike and salmon in the river, swordfish and shark in the deep sea</td></tr>
+        <tr><td>Smithing</td><td class="n">10</td><td class="n">12</td><td>Obsidian helm and blade at the anvil (the band moved up, from 30–40 to 30–42)</td></tr>
+        <tr><td>Melee</td><td class="n">20</td><td class="n">20</td><td>Not addressed. Nothing new appears between level 60 and The Fang at 80</td></tr>
+        <tr><td>Mining, Woodcutting</td><td class="n">10</td><td class="n">10</td><td>Not addressed. Both are inside the acceptable band already</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>What was fixed</h2>
+
+  <div class="finding h">
+    <div class="t"><span class="sev high">Navigation</span> The Ashfields map marker pointed at empty ash</div>
+    <div class="d">Chapters 11 to 13 aimed the compass and the world map at tile 66,100. Dunstan's hut is at 67,104. A child following the arrow arrived at nothing, in the one region where wandering means dragons. Fixed in <code>src/13-ux.js</code>, both the stage markers and the side-quest marker.</div>
+  </div>
+
+  <div class="finding c">
+    <div class="t"><span class="sev crit">Progression</span> Farming could not be levelled: one crop for the whole game</div>
+    <div class="d">Potatoes were the only thing that could be planted, at 1,740 experience an hour, which is 7,491 hours to master the skill. Three new crops now grow on the same soil and need a real Farming level to plant: herbs at 15, golden wheat at 35, dragonfruit at 55. Greta sells the seeds. Herbs make poultices, golden wheat makes a loaf that heals 24, dragonfruit heals 22 on its own.</div>
+  </div>
+
+  <div class="finding h">
+    <div class="t"><span class="sev high">Progression</span> Defence had one source, and it was standing still and being hit</div>
+    <div class="d">The only way to raise Defence was to take damage. A knight who fights well levelled it slowest. A hard kill now teaches Defence: any monster of level 10 or above pays its level times four, the same shape as the existing Melee bonus. The level-up announcement is deliberately kept out of the way of a boss banner, so killing the Barrelbeast still says what it should.</div>
+  </div>
+
+  <div class="finding h">
+    <div class="t"><span class="sev high">Progression</span> Nothing to fish between level 5 and level 25, nothing to cook but trout</div>
+    <div class="d">Pike arrive at Fishing 12 and salmon at 20, both in the river the world blend cut from Miller's Pond to the sea. Swordfish at 40 and shark at 60 live in the deep sea. Cooking now pays what the fish is worth instead of a flat 30 for everything, which is why mastering Cooking fell from 145 hours to 14.</div>
+  </div>
+
+  <div class="finding h">
+    <div class="t"><span class="sev high">Progression</span> Agility had 29 levels with nothing new, and no shortcuts</div>
+    <div class="d">Between the Thistledown yard course at level 1 and the Grey Quarry cliffs at 30, nothing opened. Three crossings now span the river at Agility 12, 22 and 35, each marked by a post on both banks. They are real shortcuts across a river that otherwise has to be walked around. No water tile was touched, so the world blend's river, its bridges and its checks are unchanged.</div>
+  </div>
+
+  <div class="finding m">
+    <div class="t"><span class="sev med">Progression</span> Smithing ended at mithril</div>
+    <div class="d">Past the mithril warhammer there was nothing repeatable to forge, leaving 876 hours to master. An obsidian helm at Smithing 42 and an obsidian blade at 45 now use the obsidian already mined in the Ashfields. Mastering Smithing fell to 97 hours.</div>
+  </div>
+
+  <div class="finding m">
+    <div class="t"><span class="sev med">Correctness</span> A full pack silently ate a catch and its experience</div>
+    <div class="d">Found while adding the new fish. The core drops a fish at your feet when the pack is full and still pays the experience; the first version of the new catch code refused it instead. It now matches the core.</div>
+  </div>
+
+  <h2>Found, not fixed</h2>
+
+  <div class="finding h">
+    <div class="t"><span class="sev high">Balance</span> Sixty ash drakes for five dragon scales</div>
+    <div class="d">The bot's own log: it killed 60 drakes to collect the five scales the Song of Above asks for, because the scale sits on a rare table. This is the single sharpest grind in the game. The fix is either a guaranteed scale from a named drake, or raising the drop rate for the quest's five and leaving it rare afterwards.</div>
+  </div>
+
+  <div class="finding m">
+    <div class="t"><span class="sev med">Progression</span> Defence, Farming and Crafting still sit above the pack</div>
+    <div class="d">After the fixes they are 603, 476 and 422 hours to master, against 41 to 181 for everything else. They are now finishable rather than impossible, but a further pass wants a higher-tier repeatable source in each: a shield-block source for Defence, a fourth crop above dragonfruit, and a high-level crafting item that consumes something plentiful.</div>
+  </div>
+
+  <div class="finding m">
+    <div class="t"><span class="sev med">Balance</span> Melee has nothing new between 60 and The Fang at 80</div>
+    <div class="d">Ash drakes at 780 experience a kill carry the player the whole way. It works, but the last twenty levels have no new monster to meet. A single new creature in the Ashfields or the Afterlands at level 65 to 70 would close it.</div>
+  </div>
+
+  <div class="finding l">
+    <div class="t"><span class="sev low">Duplication</span> Two ways to forge Godly Plated, at different levels</div>
+    <div class="d">Master Halcyon forges the set in Aerie at Smithing 30; the anvil recipes ask 32 to 40. This is deliberate as a fallback for a player who has not found the sky city, but the two paths should probably agree on a number.</div>
+  </div>
+
+  <h2>What to build next</h2>
+  <ol>
+    <li>Make the five quest dragon scales reachable without sixty kills.</li>
+    <li>A level 65 to 70 monster, so Melee's last stretch has a new face in it.</li>
+    <li>A shield-block source for Defence, so armour and defence reinforce each other.</li>
+    <li>A fourth crop and one high-level crafting sink, closing the last two outliers.</li>
+    <li>Agility courses in the jungle and on Grubmarket's roofs, for the 9 levels still empty.</li>
+    <li>Reconcile the two Godly Plated smithing levels.</li>
+    <li>Run <code>--play</code> in continuous integration, so a stranded person or a broken stage is caught the day it lands.</li>
+    <li>Extend the playthrough past the credits, into the Afterlands and the Dragon Killers ending.</li>
+    <li>Teach the bot to buy from shops, so the economy gets the same treatment as the map.</li>
+    <li>A second bot run with kid mode on, to check the easier path is also completable.</li>
+  </ol>
+
+  <footer>
+    Fanglands · audit of master 4cf59ef, 8 September 2026 · 438 self-test checks · the playthrough is <code>node tools/headless.js index.html 1 --play</code> and takes 56 seconds ·
+    the checks live in <code>src/42-playthrough.js</code>, the fixes in <code>src/45-progression.js</code> · previous audit: <code>docs/AUDIT-2026-09-07.html</code>
+  </footer>
+</main>

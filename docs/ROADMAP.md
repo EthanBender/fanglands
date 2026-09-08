@@ -92,11 +92,21 @@ See `docs/AUDIT-2026-09-07.html` (78 findings from three reviews + `tools/balanc
 - [x] World blending: organic coast, a river, dithered biome edges, forest clumping (`src/39-worldblend.js`)
 - [x] Self-test: 375+ checks, `node tools/headless.js index.html 3`
 
+## v8 — Settings, Wiki, audit (DONE 2026-09-08)
+- [x] Settings panel off the pause menu: sound, music, kid mode, tap-to-walk, joystick side, text size, talk speed, damage numbers, screen shake, monster levels, minimap, reset (`src/43-settings.js`)
+- [x] In-game Wiki (K or the WIKI button): 33 monsters with exact drop percentages, 164 items with every way to get them, 60 recipes, 13 skills, 25 places, 15 quests, cross-linked and searchable (`src/44-wiki.js`)
+- [x] Playthrough audit: 259 places checked for reachability, the main quest chain walked stage by stage, 98 skill gates measured (`src/42-playthrough.js`); `node tools/headless.js index.html 1 --play` plays the whole story
+- [x] Progression fixes: herb / golden wheat / dragonfruit crops, river and deep-sea fish, per-fish cooking xp, Defence from hard kills, poultices and a scale cloak, obsidian smithing, three river crossings for Agility (`src/45-progression.js`)
+- [x] Backlog: zombies kept out of the goblin city, one-tap talk for feature people, the Far Shore's coast blended
+- [x] Report: `docs/AUDIT-2026-09-08.html`. Self-test: 438 checks
+
 ## Backlog (not started)
-- [ ] Night zombies kept out of Grubmarket and Castle Gnash
-- [ ] One-tap talk for feature NPC lists (goblins, dwarves, elves) in tap-to-move
+- [ ] The five quest dragon scales need ~60 ash drake kills (audit 2026-09-08, sharpest grind in the game)
+- [ ] A level 65–70 monster: Melee has nothing new between 60 and The Fang at 80
+- [ ] Defence, Farming and Crafting still 3–5x the other skills' hours to master
+- [ ] Agility courses in the jungle and on Grubmarket's roofs (9 levels still empty)
 - [ ] Fast travel / mounts; a second hero; more base block types
-- [ ] Balance pass on the late game with a real playthrough
+- [ ] Run `--play` in CI so a stranded NPC or broken stage is caught the day it lands
 
 ## Parked (from the design chat)
 - 3D camera, looking up/down, clouds
