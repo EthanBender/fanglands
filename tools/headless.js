@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// Headless self-test: node tools/headless.js [index.html] [runs]
+// Headless self-test: node tools/headless.js [index.html] [runs] [--play]
 // Loads the built game with a stubbed DOM/canvas and runs FANGLANDS.selfTest(). Drawing is a no-op.
+// --play sets window.__fullPlaythrough so src/42-playthrough.js also runs the bot through the main quest 0→16 (minutes, not seconds).
 const fs = require('fs'), vm = require('vm'), path = require('path');
-const file = process.argv[2] || path.join(__dirname, '..', 'index.html');
-const runs = +(process.argv[3] || 1);
+const args = process.argv.slice(2).filter(a => a !== '--play'), play = process.argv.includes('--play');
+const file = args[0] || path.join(__dirname, '..', 'index.html');
+const runs = +(args[1] || 1);
 const html = fs.readFileSync(file, 'utf8');
 const script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
 const noop = () => { };
@@ -19,7 +21,7 @@ const g = {
   performance: { now: () => Date.now() }, console: Object.assign(Object.create(console), { table: () => { } }), navigator: { maxTouchPoints: 0 },
   document: { getElementById: () => mkCanvas(), createElement: () => mkCanvas(), fonts: null },
 };
-g.window = g;
+g.window = g; g.__fullPlaythrough = play;
 vm.createContext(g);
 vm.runInContext(script, g, { filename: 'index.html' });
 let bad = 0;
@@ -30,6 +32,7 @@ for (let n = 0; n < runs; n++) {
   if (process.env.DUMP_NAMES) require('fs').writeFileSync(process.env.DUMP_NAMES + '.' + (n + 1), Object.keys(r).join('\n')); // DUMP_NAMES=path → one file per run listing every check name (spot conditional or duplicate names)
   console.log(`run ${n + 1}: ${r.summary} (${Date.now() - t0} ms)`);
   for (const [k, v] of fails) console.log('  ' + k + ': ' + v);
+  if (play) { const k = Object.keys(r).find(k => /full bot playthrough/.test(k)); if (k) console.log('  playthrough: ' + r[k]); const log = g.PLAYTHROUGH && g.PLAYTHROUGH.PLAY.log; if (log) console.log('  ' + log.join('\n  ')); }
   if (fails.length) bad++;
 }
 process.exit(bad ? 1 : 0);

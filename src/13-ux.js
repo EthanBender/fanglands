@@ -70,7 +70,7 @@ const MAP_TARGETS = {
   5: { x: 112, y: 49, label: 'Duke Ferrin' }, 6: { x: 112, y: 49, label: 'Duke Ferrin' },
   7: { x: 152, y: 30, label: 'The goblin walker' },
   8: { x: 140, y: 76, label: 'Hollowford' }, 9: { x: 140, y: 76, label: 'Hollowford' }, 10: { x: 140, y: 76, label: 'Hollowford' },
-  11: { x: 66, y: 100, label: 'Dunstan, the Ashfields' }, 12: { x: 66, y: 100, label: 'Dunstan, the Ashfields' }, 13: { x: 66, y: 100, label: 'Dunstan, the Ashfields' },
+  11: { x: 67, y: 104, label: 'Dunstan, the Ashfields' }, 12: { x: 67, y: 104, label: 'Dunstan, the Ashfields' }, 13: { x: 67, y: 104, label: 'Dunstan, the Ashfields' },
   14: { x: 18, y: 108, label: "The Fang's lair" },
   15: { x: 112, y: 49, label: 'Duke Ferrin' }, 16: { x: 112, y: 49, label: 'Castle Thistledown' },
 };
@@ -85,7 +85,7 @@ HOOKS.mapTarget.push(() => quest.bread === 'active' ? { x: 110, y: 33, label: 'T
 HOOKS.mapTarget.push(() => quest.wren === 'active' ? { x: 30, y: 78, label: 'Old Wren', id: 'wren' } : null);
 HOOKS.mapTarget.push(() => { const a = activeQuests(); return a.includes('board') ? { x: 105, y: 27, label: 'Notice board', id: 'board' } : null; });
 HOOKS.mapTarget.push(() => activeQuests().includes('law') ? { x: 110, y: 41, label: 'Captain of the Watch', id: 'law' } : null);
-HOOKS.mapTarget.push(() => activeQuests().includes('dragons') ? { x: 66, y: 100, label: 'Dunstan', id: 'dragons' } : null);
+HOOKS.mapTarget.push(() => activeQuests().includes('dragons') ? { x: 67, y: 104, label: 'Dunstan', id: 'dragons' } : null);
 function mapTargets() { const out = []; for (const f of HOOKS.mapTarget) { let t = null; try { t = f(); } catch (e) { t = null; } if (t && typeof t.x === 'number' && typeof t.y === 'number') out.push(t); } return out; }
 function trackedTarget() { if (!quest.tracked) return null; return mapTargets().find(t => t.id === quest.tracked) || null; }
 

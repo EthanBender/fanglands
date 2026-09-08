@@ -49,10 +49,21 @@ console.log('\n== XP: kills needed per level band (melee 4xp/dmg, no kill bonus)
 if (DEFS.ash_drake) console.log(`kill bonus (30-ashdrake): level x 10 xp for level >= 10 — ash drake ${DEFS.ash_drake.hp * 4 + DEFS.ash_drake.level * 10} xp/kill, green dragon ${DEFS.green_dragon.hp * 4 + DEFS.green_dragon.level * 10}, red dragon ${DEFS.red_dragon.hp * 4 + DEFS.red_dragon.level * 10}, walker ${DEFS.walker.hp * 4 + DEFS.walker.level * 10}`);
 for (const lv of [2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 99]) console.log(`level ${String(lv).padStart(2)}: ${XP[lv].toLocaleString().padStart(11)} xp  = ${(XP[lv] / (12 * 4)).toFixed(0).padStart(6)} goblins  / ${(XP[lv] / (45 * 4)).toFixed(0).padStart(5)} brutes / ${(XP[lv] / (260 * 4)).toFixed(0).padStart(4)} green dragons`);
 console.log('\n== GATHERING: expected seconds per log/ore (success chance per swing × swing time) ==');
+// the core's GATHER table (chance-based swings) and the feature gathers (every swing lands: jungle 25-elves, mithril 24-dwarves, obsidian 27-dragons), levels read from the code
 const gather = (lv, req, tier, base = 2.2) => { const chance = Math.min(0.9, 0.35 + (lv - req) * 0.02 + tier * 0.1); return Math.max(0.9, base - tier * 0.4) / chance; };
-for (const [name, req, xp] of [['tree', 1, 25], ['oak', 5, 37], ['jungle', 15, 60], ['rock', 1, 17], ['iron', 5, 35], ['coal', 10, 50], ['mithril', 20, 80], ['obsidian', 35, 120]]) {
-  const rows = [1, 2, 3].map(t => { const s = gather(Math.max(req, 1), req, t); return `tier${t}: ${s.toFixed(1)}s (${(3600 / s * xp).toFixed(0)} xp/h)`; });
-  console.log(`${name.padEnd(9)} req ${String(req).padStart(2)}  ${rows.join('   ')}`);
+const GATHER = ev('GATHER'), TT = ev('T');
+const core = Object.entries(GATHER).map(([t, g]) => [g.label, g.lv, g.xp, null]);
+const feats = [['jungle', 15, 60, 2.6], ['mithril', 20, 80, 2.4], ['obsidian', 28, 120, 2.6]].filter(([n]) => (n === 'jungle' ? 'JUNGLE' : n === 'mithril' ? 'MITHRIL' : 'OBSIDIAN') in TT);
+for (const [name, req, xp, always] of [...core, ...feats]) {
+  const rows = [1, 2, 3].map(t => { const s = always ? Math.max(1.0, always - t * 0.4) : gather(Math.max(req, 1), req, t); return `tier${t}: ${s.toFixed(1)}s (${(3600 / s * xp).toFixed(0)} xp/h)`; });
+  console.log(`${name.padEnd(10)} req ${String(req).padStart(2)}  ${rows.join('   ')}${always ? '  [every swing lands]' : ''}`);
+}
+if (ev('typeof PLAYTHROUGH') === 'object') {
+  console.log('\n== PROGRESSION: every skill gate, the best XP source below it, hours from level 1 at that rate (src/42-playthrough.js, same formulas) ==');
+  const p = ev('PLAYTHROUGH.progression()');
+  for (const r of p.rows) if (r.kind !== 'cape') console.log(`${r.skill.padEnd(12)} ${String(r.lv).padStart(2)}  ${r.what.slice(0, 58).padEnd(58)}  ${(r.best || '-').slice(0, 44).padEnd(44)} ${r.rate ? String(r.rate).padStart(7) + ' xp/h' : r.passive ? '     passive' : '        once'}  ${r.hours !== null ? r.hours.toFixed(2).padStart(7) + ' h' : '        -'}`);
+  console.log('\nwidest stretch of levels with no new XP source (10+ is a dead band):');
+  for (const k in p.bands) if (p.bands[k].gap >= 10) console.log(`  ${k.padEnd(12)} ${p.bands[k].gap} levels: nothing new after ${p.bands[k].lastNew} until ${p.bands[k].at}`);
 }
 console.log('\n== ECONOMY ==');
 const val = id => ITEMS[id] ? ITEMS[id].value : NaN;
