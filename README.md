@@ -38,7 +38,12 @@ A dragon only legends have heard about.
 | Home (lodestone) | H | Bag → Home |
 | Climb out of the walker | X | EXIT |
 | Help | ? | HELP |
+<<<<<<< HEAD
 | Wiki (monsters, items, recipes, skills, places, quests) | K (K facing a monster opens its page) | WIKI |
 | Menu (sound, new game) | Esc | MENU |
+=======
+| Menu (settings, new game) | Esc | MENU |
+| Settings (sound, music, kid mode, tap-to-walk, stick side, text size, talk speed, damage numbers, shake, monster levels, minimap) | , or Esc → Settings | MENU → Settings |
+>>>>>>> feat/settings
 
 Progress saves in the browser automatically.
