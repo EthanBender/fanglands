@@ -95,6 +95,7 @@
     { id: 'faelan', name: 'Faelan', x: 150, y: 132, tunic: '#3a5a2a', hair: '#d9c88a', role: 'elf_villager', lines: ['The river is the second door. Only the light-footed use it.', 'Lira can teach any pair of hands to hold a bow straight. Twenty hits and she owes you.', "Thessaly's loom weaves silk into cloth that forgets it has weight. The Queen decides who wears it."] },
   ];
   for (const e of ELVES) { e.px = tc(e.x); e.py = tc(e.y); e.facing = { x: 0, y: 1 }; }
+  if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => ELVES.map(e => ({ x: e.px, y: e.py, r: 13, id: e.id, name: e.name, talk: () => elTalk(e) }))); // 17-tap: a tap on an elf walks up and talks
   function elInFront() {
     let best = null;
     for (const e of ELVES) {
