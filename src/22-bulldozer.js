@@ -327,7 +327,7 @@ HOOKS.selfTest.push((check, F, h) => {
   if (wt) {
     // repair: 4 iron bars + 6 goblin scrap
     h.clearJunk(); const g1 = h.give('iron_bar', 4), g2 = h.give('goblin_scrap', 6); const b0 = countItem('iron_bar'), s0 = countItem('goblin_scrap');
-    const ga = F.goAdjacent(wt.x, wt.y, 800); F.press('KeyE'); F.sim(2, []);
+    const ga = F.goAdjacent(wt.x, wt.y, 800); F.press('KeyE'); F.sim(2, []); if (panel === 'salvage') { render(); F.clickButton('Repair it and drive it'); F.sim(2, []); }
     const repaired = tileAt(wt.x, wt.y) === T_DOZER;
     check('bulldozer: repair the wreck with 4 bars + 6 scrap → DOZER tile', g1 === 0 && g2 === 0 && typeof ga === 'number' && repaired && countItem('iron_bar') === b0 - 4 && countItem('goblin_scrap') === s0 - 6, { ga, repaired, bars: countItem('iron_bar'), scrap: countItem('goblin_scrap') });
     // climb on (no upgrades fitted here: 40-dozerup tests its own)

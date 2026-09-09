@@ -223,7 +223,7 @@
       // 4. repair: 6 iron bars + 10 goblin scrap + 2 blast powder → BEAST tile
       h.clearJunk(); { let free = player.inv.filter(s => !s).length; for (let i = player.inv.length - 1; i >= 0 && free < 4; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour) { player.inv[i] = null; free++; } } }
       const g1 = h.give('iron_bar', 6), g2 = h.give('goblin_scrap', 10), g3 = h.give('blast_powder', 2); const b0 = countItem('iron_bar'), s0c = countItem('goblin_scrap'), p0 = countItem('blast_powder');
-      const ga = F.goAdjacent(wt.x, wt.y, 800); F.press('KeyE'); F.sim(2, []);
+      const ga = F.goAdjacent(wt.x, wt.y, 800); F.press('KeyE'); F.sim(2, []); if (panel === 'salvage') { render(); F.clickButton('Repair it and drive it'); F.sim(2, []); }
       const repaired = tileAt(wt.x, wt.y) === T_BEAST;
       check('beast: repair the wreck with 6 bars + 10 scrap + 2 blast powder → BEAST tile', g1 === 0 && g2 === 0 && g3 === 0 && typeof ga === 'number' && repaired && countItem('iron_bar') === b0 - 6 && countItem('goblin_scrap') === s0c - 10 && countItem('blast_powder') === p0 - 2, { ga, repaired, bars: countItem('iron_bar'), scrap: countItem('goblin_scrap'), powder: countItem('blast_powder') });
       // 5. climb up

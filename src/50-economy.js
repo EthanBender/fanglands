@@ -145,7 +145,8 @@
       const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE), was = tileAt(tx, ty);
       changeTile(tx, ty, T.WRECK); h.give('iron_bar', 3); h.give('goblin_scrap', 4);
       player.facing = { x: 0, y: -1 }; const n0 = notice && notice.text;
-      useAction(); const acted = (notice && notice.text) !== n0 || tileAt(tx, ty) !== T.WRECK || !!player.mech;
+      useAction(); if (panel === 'salvage') { render(); F.clickButton('Repair it and drive it'); F.sim(2, []); }
+      const acted = (notice && notice.text) !== n0 || tileAt(tx, ty) !== T.WRECK || !!player.mech;
       if (player.mech) { player.mech = null; player.r = 13; player.speed = 175; }
       changeTile(tx, ty, was);
       check(P + 'E while standing on a wreck repairs the wreck under your feet', acted, { acted, notice: notice && notice.text }); }
