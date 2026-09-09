@@ -17768,6 +17768,9 @@ window.SETTINGS = SETTINGS;
   const T_SEAM = addTile('COAL_SEAM', { solid: true, tex: 'cave', mini: '#2b2b33' });   // a live face of coal, mined on a timer
   const T_PROP = addTile('PIT_PROP', { solid: true, tex: 'cave', mini: '#7a5a32' });    // a roof prop: hit it to reset the roof
   const T_HAUL = addTile('HAUL_CART', { solid: true, tex: 'cave', mini: '#a5763f' });   // the cart at the seam: what you fill, and the way out
+  const T_PILLAR = addTile('MINE_PILLAR', { solid: true, tex: 'cave', mini: '#55585f' }); // a worked pillar of rock left standing — drawn as a column, never as wall
+  const T_SPOIL = addTile('MINE_SPOIL', { tex: 'cave', mini: '#3a3a42' });                // spilled coal and spoil underfoot, walked over
+  const T_TIMBER = addTile('MINE_TIMBER', { tex: 'cave', mini: '#5a4530' });              // old sleepers and offcuts stacked against the wall
 
   for (const t of [T_CART, T_SEAM, T_PROP, T_HAUL]) INTERESTING_TILES.add(t); // so a tap on the iPad reaches them
 
@@ -17793,25 +17796,79 @@ window.SETTINGS = SETTINGS;
   // A wide gallery: rock walls, a floor of rail and stone, the haul cart by the way out, four props down the
   // middle. Faces of coal are opened by the run itself, not by the builder, so every shift is laid out fresh.
   const FACE_SPOTS = [];
+  const PILLARS = [], LITTER = [];
+  // A worked-out gallery, not a grid: the seam is followed in wandering runs from the rail head, the runs open
+  // into irregular chambers where the coal was richest, and pillars of rock are left standing where the roof
+  // needed holding. Torches go up where the miners actually worked, so the light comes from somewhere.
   function buildMine(setTile, rnd) {
-    FACE_SPOTS.length = 0;
-    for (let y = 0; y < MINE.h; y++) for (let x = 0; x < MINE.w; x++) {
-      const edge = x === 0 || y === 0 || x === MINE.w - 1 || y === MINE.h - 1;
-      setTile(x, y, edge ? T.WALL : T.CAVE);
+    FACE_SPOTS.length = 0; PILLARS.length = 0; LITTER.length = 0;
+    // build() writes through setTile into the instance grid, which is NOT the live map yet — tileAt would read
+    // the overworld. So the builder keeps its own copy and reads that.
+    const grid = new Array(MINE.w * MINE.h).fill(T.WALL);
+    const at = (x, y) => (x < 0 || y < 0 || x >= MINE.w || y >= MINE.h) ? T.WALL : grid[y * MINE.w + x];
+    const put = (x, y, t) => { if (x < 0 || y < 0 || x >= MINE.w || y >= MINE.h) return; grid[y * MINE.w + x] = t; setTile(x, y, t); };
+    for (let y = 0; y < MINE.h; y++) for (let x = 0; x < MINE.w; x++) put(x, y, T.WALL);
+    const open = [];
+    const carve = (cx, cy, r) => {
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const x = cx + dx, y = cy + dy;
+        if (x < 1 || y < 1 || x >= MINE.w - 1 || y >= MINE.h - 1) continue;
+        if (dx * dx + dy * dy > r * r + r) continue;                 // a rounded bite, not a square
+        if (at(x, y) !== T.CAVE) { put(x, y, T.CAVE); open.push([x, y]); }
+      }
+    };
+    carve(ENTRY[0] + 1, ENTRY[1], 2);
+    const runs = [{ x: ENTRY[0] + 2, y: ENTRY[1], dx: 1, dy: 0 }, { x: ENTRY[0] + 2, y: ENTRY[1], dx: 1, dy: -1 }, { x: ENTRY[0] + 2, y: ENTRY[1], dx: 1, dy: -0.4 }];
+    for (const run of runs) {
+      let x = run.x, y = run.y, dx = run.dx, dy = run.dy;
+      for (let step = 0; step < 46; step++) {
+        dx += (rnd() - 0.5) * 0.5; dy += (rnd() - 0.5) * 0.7;
+        const m = Math.hypot(dx, dy) || 1; dx /= m; dy /= m;
+        if (x > MINE.w - 5) dx = -Math.abs(dx); if (x < 4) dx = Math.abs(dx);
+        if (y > MINE.h - 4) dy = -Math.abs(dy); if (y < 3) dy = Math.abs(dy);
+        x += dx; y += dy;
+        carve(Math.round(x), Math.round(y), rnd() < 0.18 ? 3 : 1);    // now and then it opens into a chamber
+      }
     }
-    // pillars of rock left standing, the way a real gallery is worked
-    for (let py = 4; py <= MINE.h - 5; py += 5) for (let px = 5; px <= MINE.w - 6; px += 6) {
-      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) setTile(px + dx, py + dy, T.WALL);
+    for (let x = 1; x < MINE.w - 2; x++) if (at(x, ENTRY[1]) === T.CAVE) put(x, ENTRY[1], T_RAIL);
+    for (const [x, y] of [ENTRY, EXIT, HAUL, [EXIT[0] + 1, EXIT[1]], [HAUL[0] + 1, HAUL[1]]]) put(x, y, T.CAVE);
+    put(HAUL[0], HAUL[1], T_HAUL);
+    const roomy = (x, y) => { let n = 0; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (at(x + dx, y + dy) === T.CAVE) n++; return n; };
+    for (const [x, y] of open) {
+      if (PILLARS.length >= 7) break;
+      if (y === ENTRY[1] || at(x, y) !== T.CAVE || roomy(x, y) < 20) continue;
+      if (Math.abs(x - EXIT[0]) < 5 && Math.abs(y - EXIT[1]) < 5) continue;
+      if (PILLARS.some(p => Math.abs(p[0] - x) < 5 || Math.abs(p[1] - y) < 4)) continue;
+      put(x, y, T_PILLAR); PILLARS.push([x, y]);
     }
-    for (let x = 1; x < MINE.w - 1; x++) setTile(x, ENTRY[1], T_RAIL);          // the line in
-    setTile(HAUL[0], HAUL[1], T_HAUL);                                          // the haul cart, beside the way out
-    const props = [[8, 6], [16, 10], [22, 6], [12, 15], [24, 14]];
-    for (const [x, y] of props) setTile(x, y, T_PROP);
-    // every open floor tile that is not on the rail line is a place a face can open
+    const props = [];
+    for (const [x, y] of open) {
+      if (props.length >= 5) break;
+      if (at(x, y) !== T.CAVE || y === ENTRY[1] || roomy(x, y) < 14) continue;
+      if (props.some(p => Math.hypot(p[0] - x, p[1] - y) < 7) || PILLARS.some(p => Math.hypot(p[0] - x, p[1] - y) < 3)) continue;
+      put(x, y, T_PROP); props.push([x, y]);
+    }
+    let torches = 0;
+    for (const [x, y] of open) {
+      if (torches >= 9) break;
+      if (at(x, y) !== T.CAVE) continue;
+      let wall = 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (at(x + dx, y + dy) === T.WALL) wall++;
+      if (wall < 2) continue;                                          // a torch is bracketed to a wall, not stood in the open
+      if (LITTER.some(l => Math.hypot(l[0] - x, l[1] - y) < 6)) continue;
+      put(x, y, T.TORCH); LITTER.push([x, y]); torches++;
+    }
+    for (const [x, y] of open) {
+      if (at(x, y) !== T.CAVE) continue;
+      const r = rnd();
+      if (r < 0.055) put(x, y, T_SPOIL);
+      else if (r < 0.075) { let wall = 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (at(x + dx, y + dy) === T.WALL) wall++; if (wall >= 1) put(x, y, T_TIMBER); }
+    }
     for (let y = 2; y < MINE.h - 2; y++) for (let x = 2; x < MINE.w - 2; x++) {
-      if (y === ENTRY[1] || SOLID.has(tileAt(x, y))) continue;
-      if (Math.abs(x - EXIT[0]) < 3 && Math.abs(y - EXIT[1]) < 3) continue;     // keep the way out clear
-      if (Math.abs(x - HAUL[0]) < 2 && Math.abs(y - HAUL[1]) < 2) continue;     // and the haul cart's mouth
+      const t = at(x, y);
+      if (t !== T.CAVE && t !== T_SPOIL) continue;
+      if (y === ENTRY[1]) continue;
+      if (Math.abs(x - EXIT[0]) < 3 && Math.abs(y - EXIT[1]) < 3) continue;
+      if (Math.abs(x - HAUL[0]) < 2 && Math.abs(y - HAUL[1]) < 2) continue;
       FACE_SPOTS.push([x, y]);
     }
   }
@@ -17987,6 +18044,42 @@ window.SETTINGS = SETTINGS;
         g.fillStyle = `rgba(255,180,60,${pulse})`; g.beginPath(); g.arc(cx + 2, cy - 2, 2.2, 0, 7); g.fill();
       } });
     }
+    // pillars: a worked column, not a slab of wall — a wide base, a tapered shaft, a cap under the roof,
+    // timber bracing lashed round it and a real shadow, so a child can tell at a glance what he is looking at
+    for (const [px, py] of PILLARS) {
+      if (!seen(px) || tileAt(px, py) !== T_PILLAR) continue;
+      items.push({ y: tc(py) + 8, draw: () => {
+        const x = tc(px), y = tc(py), h = TILE / 2;
+        g.fillStyle = 'rgba(0,0,0,0.45)'; g.beginPath(); g.ellipse(x, y + h - 4, 15, 6, 0, 0, 7); g.fill();
+        g.fillStyle = '#4a4d54'; g.beginPath(); g.ellipse(x, y + h - 6, 14, 6, 0, 0, 7); g.fill();      // base
+        g.fillStyle = '#5f636b'; g.beginPath();                                                          // tapered shaft
+        g.moveTo(x - 12, y + h - 6); g.lineTo(x - 8, y - h + 6); g.lineTo(x + 8, y - h + 6); g.lineTo(x + 12, y + h - 6); g.closePath(); g.fill();
+        g.fillStyle = '#6d717a'; g.fillRect(x - 8, y - h + 6, 6, TILE - 12);                             // lit face
+        g.fillStyle = '#3f424a'; g.fillRect(x + 4, y - h + 6, 4, TILE - 12);                             // shaded face
+        g.fillStyle = '#787c86'; g.beginPath(); g.ellipse(x, y - h + 6, 11, 5, 0, 0, 7); g.fill();       // cap under the roof
+        g.strokeStyle = '#6b4f2a'; g.lineWidth = 3;                                                       // timber bracing
+        g.beginPath(); g.moveTo(x - 11, y + 2); g.lineTo(x + 11, y + 2); g.moveTo(x - 10, y - 8); g.lineTo(x + 10, y - 8); g.stroke();
+      } });
+    }
+    // spoil underfoot and stacked timber against the rock
+    for (let ty = Math.max(0, Math.floor(cam.y / TILE) - 1); ty <= Math.ceil((cam.y + VH) / TILE) + 1; ty++)
+      for (let tx = Math.max(0, Math.floor(cam.x / TILE) - 1); tx <= Math.ceil((cam.x + VW) / TILE) + 1; tx++) {
+        const t = tileAt(tx, ty);
+        if (t !== T_SPOIL && t !== T_TIMBER) continue;
+        const sx = tc(tx), sy = tc(ty), kind = t;
+        items.push({ y: sy - 6, draw: () => {
+          if (kind === T_SPOIL) {
+            g.fillStyle = '#2b2b33';
+            for (const [ox, oy, r] of [[-7, 3, 4], [2, -2, 5], [8, 5, 3], [-2, 7, 3]]) { g.beginPath(); g.arc(sx + ox, sy + oy, r, 0, 7); g.fill(); }
+            g.fillStyle = 'rgba(120,124,134,0.35)'; g.beginPath(); g.arc(sx + 3, sy - 3, 1.6, 0, 7); g.fill();
+          } else {
+            g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(sx - 13, sy + 6, 26, 4);
+            g.fillStyle = '#5a4530'; g.fillRect(sx - 13, sy - 2, 26, 5);
+            g.fillStyle = '#6b5238'; g.fillRect(sx - 11, sy - 8, 22, 5);
+            g.fillStyle = '#4a3826'; g.fillRect(sx - 9, sy - 13, 18, 4);
+          }
+        } });
+      }
     const hx = HAUL[0], hy = HAUL[1];
     if (tileAt(hx, hy) === T_HAUL) items.push({ y: tc(hy), draw: () => drawCart(g, tc(hx), tc(hy), run.coal) });
   });
