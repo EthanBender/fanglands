@@ -371,9 +371,14 @@ HOOKS.selfTest.push((check, F, h) => {
     const viaTap = (px, py, wx, wy, max = 400) => { closePanel(); F.tp(px, py); F.step([]); drainD(); tap.lastTap = null; tapCancel('manual'); tapWorld(wx, wy); const kind = tap.kind, who = tap.target && tap.target.name; let s = 0; while (s < max && tap.kind === 'person') { F.step([]); s++; } F.step([]); const l = firstLine(); closePanel(); drainD(); return { kind, who, s, line: l, at: [+(player.x / TILE).toFixed(1), +(player.y / TILE).toFixed(1)] }; };
     const same = (name, e, t, extra) => check(`tap: ${name} — a tap walks up and opens the same first line E opens`, !!e && t.kind === 'person' && t.line === e && t.s < 400, Object.assign({ e, tap: t }, extra || {}));
     const inst = () => window.INSTANCES ? INSTANCES.active() : null; if (inst()) INSTANCES.leave();
-    // dwarves (24): Brunhild the smith in Deepholm's forge hall, before the forge is lit
-    if (typeof quest.dwarf !== 'undefined' || REGIONS.some(r => r.name === 'Deepholm')) { const snap = JSON.stringify(quest.dwarf === undefined ? null : quest.dwarf); quest.dwarf = { stage: 0, chests: [], visited: true }; clearArea({ x: 12, y: 83 });
-      const e = viaE(12, 82, 12, 81); const t = viaTap(12, 85, tc(12), tc(81)); same('Brunhild (24-dwarves)', e, t); quest.dwarf = JSON.parse(snap); if (quest.dwarf === null) delete quest.dwarf; }
+    // dwarves (24): Brunhild the smith in Deepholm's forge hall, before the forge is lit.
+    // Deepholm is an instance now, so the probe walks in through the shaft first — same smith, same forge hall,
+    // same three tiles apart, in the undercity's own coordinates (the old ones minus 70 rows).
+    if (window.DEEPHOLM) { const snap = JSON.stringify(quest.dwarf === undefined ? null : quest.dwarf); quest.dwarf = { stage: 0, chests: [], visited: true };
+      const entered = DEEPHOLM.enter(); F.sim(2, []); clearArea({ x: 12, y: 13 });
+      const e = entered ? viaE(12, 12, 12, 11) : null; const t = entered ? viaTap(12, 15, tc(12), tc(11)) : { kind: null };
+      same('Brunhild (24-dwarves, inside Deepholm)', e, t, { entered, inst: inst() });
+      if (inst()) INSTANCES.leave(); drainD(); quest.dwarf = JSON.parse(snap); if (quest.dwarf === null) delete quest.dwarf; }
     // elves (25): Thessaly the weaver in Sylvaris, before the Queen's task is done
     if (REGIONS.some(r => r.name === 'Sylvaris')) { const snap = JSON.stringify(quest.elves === undefined ? null : quest.elves); if (!quest.elves) { F.tp(133, 128); F.step([]); } if (quest.elves) quest.elves.stage = 0; clearArea({ x: 133, y: 129 });
       const e = viaE(132, 129, 133, 129); const t = viaTap(130, 129, tc(133), tc(129)); same('Thessaly (25-elves)', e, t); quest.elves = JSON.parse(snap); if (quest.elves === null) delete quest.elves; }

@@ -49,20 +49,22 @@
   const passWithGates = names => { const ids = names.map(n => gateId[n]); return t => !SOLID.has(t) || ids.includes(t); };
 
   // ---------- where the game puts you down without walking: the roots ----------
+  // Deepholm used to be a root of its own (the shaft dropped you into a block of the overworld at 2–26, 72–94).
+  // It is an instance now (24-dwarves), so what it holds is audited by instanceConnectivity below and the only
+  // thing the overworld still owes it is the shaft itself — which the `shaft` root check keeps honest.
   const ROOTS = {
     cave: { at: [Math.floor(SPAWN.x / TILE), Math.floor(SPAWN.y / TILE)], via: 'the cave start' },
-    deepholm: { at: [14, 75], via: 'the Grey Quarry shaft (56,6)' },
     gull: { at: [173, 13], via: "Harl's ferry (10 coins)" },
     ironclad: { at: [180, 50], via: "Harl's ferry (25 coins, combat 8)" },
     farshore: { at: [206, 30], via: "Harl's ferry (40 coins, combat 10)" },
   };
-  const rootFor = (x, y) => x >= 200 ? 'farshore' : (x >= 2 && x <= 26 && y >= 72 && y <= 94) ? 'deepholm' : (x >= 169 && x <= 186 && y >= 5 && y <= 21) ? 'gull' : (x >= 176 && x <= 197 && y >= 39 && y <= 61) ? 'ironclad' : 'cave';
+  const rootFor = (x, y) => x >= 200 ? 'farshore' : (x >= 169 && x <= 186 && y >= 5 && y <= 21) ? 'gull' : (x >= 176 && x <= 197 && y >= 39 && y <= 61) ? 'ironclad' : 'cave';
 
   // ---------- the targets ----------
   // feature NPCs that live in their own lists (25-elves, 24-dwarves, 26-boats, 33-goblincity, 31-rebuild, 41-guild): known tiles from those files
   const CLOSURE_NPCS = [
     ['Queen Aelith', 133, 119], ['Lira', 158, 119], ['Thessaly', 133, 129], ['Faelan', 150, 132],
-    ['King Thrain', 14, 93], ['Brunhild', 12, 81], ['Dagny', 16, 76], ['Orik', 16, 85], ['Hilde', 10, 90],
+    // the dwarves moved into the Deepholm instance with the undercity: they are walked to in instanceConnectivity
     ['Old Harl (dock)', 165, 14], ['Salt Pete', 181, 14],
     ['Tinkerton (castle gate)', 226, 52], ['Grubb', 216, 23], ['Nix', 230, 23], ['Old Snaggle', 216, 37], ['Pip-squeak', 222, 33], ['King Gnash', 224, 67], ['Mudge', 234, 32], ['Skritch', 219, 27], ['Ratchet', 230, 27],
     ['Old Tam (rebuilt square)', 137, 81], ['Nell (rebuilt square)', 140, 77], ['Pip (rebuilt square)', 142, 81],
@@ -108,7 +110,8 @@
       return { ...t, strict, open, dist: open >= 0 ? open : strict, gate, via: ROOTS[t.root].via };
     });
     // the roots themselves: the shaft and Harl must be reachable from the cave, or the root is a fiction
-    const rootOk = { cave: true, deepholm: reachOf(dists.cave, 56, 6) >= 0, gull: reachOf(dists.cave, 165, 14) >= 0, ironclad: reachOf(dists.cave, 165, 14) >= 0, farshore: reachOf(dists.cave, 165, 14) >= 0 };
+    // (`shaft` is not a root any more — Deepholm is an instance — but the walk to its door is still the thing to prove)
+    const rootOk = { cave: true, shaft: reachOf(dists.cave, 56, 6) >= 0, gull: reachOf(dists.cave, 165, 14) >= 0, ironclad: reachOf(dists.cave, 165, 14) >= 0, farshore: reachOf(dists.cave, 165, 14) >= 0 };
     for (const r of rows) if (!rootOk[r.root]) { r.strict = -1; r.open = -1; r.gate = null; }
     const unreachable = rows.filter(r => r.open < 0).map(r => `${r.name} @${r.x},${r.y} [${r.group}, from ${r.root}]`);
     const gated = rows.filter(r => r.strict < 0 && r.open >= 0).map(r => `${r.name} @${r.x},${r.y} behind ${r.gate || 'a story gate'}`);
@@ -120,6 +123,13 @@
     const out = [];
     if (!window.INSTANCES) return out;
     const KNOWN = { aerie: [['Queen Seraphel', 25, 6], ['Master Halcyon', 38, 18], ['the leap down', 25, 31]], tinker_lab: [['Tinkerton (lab)', 4, 3], ['the Gnasher rug', 12, 9], ['the arena lever', 21, 15]], afterlands: [['the fire', 30, 8], ['Count Ashvane', 46, 18], ['the crypt door out', 30, 2]], spider_den: [['the chest', 3, 26], ['the Brood Mother', 12, 22]] };
+    // Deepholm's people and its way out (24-dwarves): they used to be overworld targets at 2–26, 72–94, and
+    // the same walk is proved here instead — from the foot of the ladder to every dwarf and back to the ladder.
+    if (window.DEEPHOLM) KNOWN.deepholm = [...DEEPHOLM.DWARVES.map(d => [d.name, d.x, d.y]), ['the ladder out', DEEPHOLM.LADDER.x, DEEPHOLM.LADDER.y],
+      ...(window.COALMINE ? [['the coal cart', COALMINE.CART_T.x, COALMINE.CART_T.y]] : [])];
+    // landmark tiles that used to be swept off the overworld map and now live inside an instance: swept there
+    // instead, to the same cap, so the audit still walks to every chest, throne, rock, forge and anvil of them
+    const LANDMARKS_IN = { deepholm: ['LADDER_UP', 'DWARF_CHEST', 'DWARF_THRONE', 'MITHRIL', 'FORGE', 'ANVIL', 'COAL_CART'] };
     for (const id of INSTANCES.list()) {
       const inst = INSTANCES.get(id); const W = inst.w, H = inst.h, tiles = inst.tiles;
       const dist = new Int32Array(W * H).fill(-1), q = []; const s = inst.entry[1] * W + inst.entry[0]; dist[s] = 0; q.push(s);
@@ -129,6 +139,7 @@
       if (inst.exit) want.push(['the exit', inst.exit[0], inst.exit[1]]);
       for (const [type, x, y] of inst.spawns) if (type === inst.boss) want.push([MONSTER_DEFS[type].name, x, y]);
       for (const w of KNOWN[id] || []) want.push(w);
+      for (const n of LANDMARKS_IN[id] || []) { const t = Tn(n); if (t < 0) continue; let c = 0; for (let y = 0; y < H && c < LANDMARK_CAP; y++) for (let x = 0; x < W && c < LANDMARK_CAP; x++) if (tiles[y * W + x] === t) { c++; want.push([`${n} #${c}`, x, y]); } }
       for (const [name, x, y] of want) out.push({ instance: inst.name, name, x, y, dist: at(x, y) });
     }
     return out;
@@ -532,7 +543,7 @@
     { const c = connectivity(); const groups = ['npc', 'door', 'instance', 'maptarget', 'landmark', 'landing', 'spawn'];
       for (const g of groups) { const rows = c.rows.filter(r => r.group === g), bad = rows.filter(r => r.open < 0); check(P + `${g}: every target is walkable from where the game puts you (${rows.length})`, bad.length === 0, { n: rows.length, unreachable: bad.map(r => `${r.name} @${r.x},${r.y}`), gated: rows.filter(r => r.strict < 0 && r.open >= 0).length }); }
       if (c.unreachable.length) check(P + 'unreachable targets', false, { unreachable: c.unreachable });
-      check(P + 'the roots hold: the shaft and Old Harl are reachable from the cave', c.rootOk.deepholm && c.rootOk.gull, c.rootOk); }
+      check(P + 'the roots hold: the shaft and Old Harl are reachable from the cave', c.rootOk.shaft && c.rootOk.gull, c.rootOk); }
     { const rows = instanceConnectivity(), bad = rows.filter(r => r.dist < 0); check(P + `instances: entry reaches the exit, the boss, the chest and the folk inside (${rows.length})`, bad.length === 0, { n: rows.length, unreachable: bad.map(r => `${r.instance}: ${r.name} @${r.x},${r.y}`) }); }
     { const rows = chain(), bad = rows.filter(r => !r.ok); check(P + 'main quest chain: every stage 0→16 walks from the last, story gates opened by a prior stage', bad.length === 0, { stages: rows.length, tiles: rows.reduce((s, r) => s + r.dist, 0), bad: bad.map(r => ({ stage: r.stage, legs: r.legs.filter(l => !l.ok).map(l => `${l.from}→${l.to} dist ${l.dist} gate ${l.gate} opens ${l.opensAt}`) })), gates: rows.filter(r => r.legs.some(l => l.gate)).map(r => `${r.stage}: ${r.legs.filter(l => l.gate).map(l => l.gate + '@' + l.opensAt).join(',')}`) }); }
     { const p = progression(), dead = p.rows.filter(r => r.dead && r.kind !== 'cape'); check(P + `progression: every skill gate has an XP source below it (${p.rows.length} gates)`, dead.length === 0, { gates: p.rows.length, dead: dead.map(r => `${r.skill} ${r.lv} ${r.what}`) });
