@@ -361,9 +361,12 @@ window.FANGLANDS = {
       Object.assign(wk, ws); player.kills = k0; quest.walkerKilled = wq; drops = drops.filter((d, i) => i < d0); dialog.queue.length = 0; dialog.cur = null; }
     { // the Ashfields: ash in patches (25–60% of dragon country outside the lair), grass and dirt between; lava and obsidian still there
       let ash = 0, area = 0, lava = 0, obs = 0, green = 0; const inFang = (x, y) => x >= 2 && x <= 34 && y >= 108 && y <= 138;
-      for (let y = 96; y <= 138; y++) for (let x = 1; x <= 99; x++) { if (inFang(x, y)) continue; area++; const t = tileAt(x, y); if (t === T.ASH) ash++; else if (t === T.LAVA) lava++; else if (t === T.OBSIDIAN) obs++; else if (t === T.GRASS || t === T.DIRT) green++; }
+      for (let y = 96; y <= 138; y++) for (let x = 1; x <= 99; x++) { if (inFang(x, y)) continue; area++; const t = tileAt(x, y); if (t === T.ASH) ash++; else if (t === T.LAVA) lava++; else if (t === T.OBSIDIAN) obs++; else if (t === T.GRASS || t === T.DIRT || ('SCORCH' in T && t === T.SCORCH)) green++; }
       const cover = ash / area;
-      check('ashfields: ash lies in patches — 25–60% of dragon country, grass and dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.6 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, green, lava, obs }); }
+      // the owner's call: no grass in the Ashfields (56-ashfields burns what was left), so the ground between the
+      // ash is scorch and bare dirt now rather than green. The intent of the check is unchanged: ash must be
+      // patchy rather than a flat sheet, there must be open ground between it, and lava and obsidian must survive.
+      check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
     { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
       let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = 140; y <= 178; y++) for (let x = 100; x <= 198; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === 150) row150++; } else if (t === T.FERN) ferns++; }
       check('jungle: the biome continues south (y 140–178, x 100–198) at the same density; jungle trees stand at y 150', row150 >= 20 && trees / band > 0.3 && trees / band < 0.5 && ferns / band > 0.06 && regionAt(150, 160).name === 'The Jungle' && regionAt(133, 120).name === 'Sylvaris', { row150, trees: +(trees / band).toFixed(2), ferns: +(ferns / band).toFixed(2), region: regionAt(150, 160).name }); }

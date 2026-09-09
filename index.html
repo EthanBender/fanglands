@@ -2947,9 +2947,12 @@ window.FANGLANDS = {
       Object.assign(wk, ws); player.kills = k0; quest.walkerKilled = wq; drops = drops.filter((d, i) => i < d0); dialog.queue.length = 0; dialog.cur = null; }
     { // the Ashfields: ash in patches (25–60% of dragon country outside the lair), grass and dirt between; lava and obsidian still there
       let ash = 0, area = 0, lava = 0, obs = 0, green = 0; const inFang = (x, y) => x >= 2 && x <= 34 && y >= 108 && y <= 138;
-      for (let y = 96; y <= 138; y++) for (let x = 1; x <= 99; x++) { if (inFang(x, y)) continue; area++; const t = tileAt(x, y); if (t === T.ASH) ash++; else if (t === T.LAVA) lava++; else if (t === T.OBSIDIAN) obs++; else if (t === T.GRASS || t === T.DIRT) green++; }
+      for (let y = 96; y <= 138; y++) for (let x = 1; x <= 99; x++) { if (inFang(x, y)) continue; area++; const t = tileAt(x, y); if (t === T.ASH) ash++; else if (t === T.LAVA) lava++; else if (t === T.OBSIDIAN) obs++; else if (t === T.GRASS || t === T.DIRT || ('SCORCH' in T && t === T.SCORCH)) green++; }
       const cover = ash / area;
-      check('ashfields: ash lies in patches — 25–60% of dragon country, grass and dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.6 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, green, lava, obs }); }
+      // the owner's call: no grass in the Ashfields (56-ashfields burns what was left), so the ground between the
+      // ash is scorch and bare dirt now rather than green. The intent of the check is unchanged: ash must be
+      // patchy rather than a flat sheet, there must be open ground between it, and lava and obsidian must survive.
+      check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
     { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
       let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = 140; y <= 178; y++) for (let x = 100; x <= 198; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === 150) row150++; } else if (t === T.FERN) ferns++; }
       check('jungle: the biome continues south (y 140–178, x 100–198) at the same density; jungle trees stand at y 150', row150 >= 20 && trees / band > 0.3 && trees / band < 0.5 && ferns / band > 0.06 && regionAt(150, 160).name === 'The Jungle' && regionAt(133, 120).name === 'Sylvaris', { row150, trees: +(trees / band).toFixed(2), ferns: +(ferns / band).toFixed(2), region: regionAt(150, 160).name }); }
@@ -18538,6 +18541,72 @@ window.SETTINGS = SETTINGS;
         player.skills.agility = a0;
         check(P + 'a split in the camp palisade on the town side is refused below Agility 15 and vaults you inside at 15', refused && over && paid && tappable && solid, { at: [v.x, v.y], refused, over, paid, tappable, solid });
       } }
+  });
+}
+
+// ---- src/56-ashfields.js ----
+// ============================================================================
+// THE ASHFIELDS ARE ASH — owner, looking at the map: "there should not be grass in the ash fields"
+// The field was carved as ash patches laid over ordinary grass, so 1,412 of its tiles were still green —
+// more green than grey — with bright grass sitting right against the lava. This runs last at world-gen and
+// burns what is left: ash mostly, scorched ground and bare dirt in patches, so it reads as a field that
+// burned rather than a flat grey sheet. The seam along the north edge keeps its dithering, because that is
+// what makes the Ashfields fade into Wolfwood instead of starting at a ruled line (39-worldblend).
+// Feature file: registers through HOOKS only, edits no core file. window.ASHFIELDS exposes the tally.
+// ============================================================================
+{
+  const SEAM_ROWS = 4;        // rows at the north edge that keep their blend with the wood above
+  const SEAM_KEEP = 0.55;     // how much of the seam's grass survives, so the dither still reads
+  const GREEN = () => [T.GRASS, T.FLOWERS, T.MUSHROOM].filter(t => t !== undefined);
+  const tally = { burned: 0, keptSeam: 0, before: 0 };
+
+  // a burnt field is not one colour: ash over most of it, scorch where it caught, bare dirt where it did not
+  function burntTile(rnd) {
+    const r = rnd();
+    if (r < 0.60) return 'ASH' in T ? T.ASH : T.DIRT;
+    if (r < 0.85 && 'SCORCH' in T) return T.SCORCH;
+    return T.DIRT;
+  }
+
+  HOOKS.world.push((rnd, api) => {
+    const r = REGIONS.find(x => /Ashfield/i.test(x.name));
+    if (!r) return;
+    tally.burned = 0; tally.keptSeam = 0; tally.before = 0;
+    const green = new Set(GREEN());
+    for (let y = r.y0; y <= r.y1; y++) {
+      const inSeam = y < r.y0 + SEAM_ROWS;
+      for (let x = r.x0; x <= r.x1; x++) {
+        const t = api.tileAt(x, y);
+        if (!green.has(t)) continue;
+        tally.before++;
+        if (buildingAt(x, y)) continue;                     // Dunstan's hut and anything else standing keeps its ground
+        if (inSeam && rnd() < SEAM_KEEP) { tally.keptSeam++; continue; }
+        api.setTile(x, y, burntTile(rnd));
+        tally.burned++;
+      }
+    }
+  });
+
+  window.ASHFIELDS = { tally, SEAM_ROWS, SEAM_KEEP };
+
+  const P = 'ashfields: ';
+  HOOKS.selfTest.push(check => {
+    const r = REGIONS.find(x => /Ashfield/i.test(x.name));
+    if (!r) { check(P + 'the Ashfields are ash, not grass', false, { region: null }); return; }
+    const count = {};
+    let deepGreen = 0, seamGreen = 0;
+    for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
+      const n = tileName(tileAt(x, y));
+      count[n] = (count[n] || 0) + 1;
+      if (n === 'GRASS' || n === 'FLOWERS' || n === 'MUSHROOM') {
+        if (y < r.y0 + ASHFIELDS.SEAM_ROWS) seamGreen++; else deepGreen++;
+      }
+    }
+    // nothing green below the seam, and the seam itself still dithers into the wood above
+    check(P + 'no grass anywhere in the Ashfields below the seam, and the seam still fades into the wood', deepGreen === 0 && seamGreen > 0, { deepGreen, seamGreen, burned: ASHFIELDS.tally.burned, wasGreen: ASHFIELDS.tally.before });
+    // and it is a burnt field, not one flat grey sheet
+    const ash = count.ASH || 0, scorch = count.SCORCH || 0, dirt = count.DIRT || 0;
+    check(P + 'the burnt ground is a mix of ash, scorch and bare dirt rather than one flat colour', ash > 0 && scorch > 0 && dirt > 0 && ash > scorch && ash > dirt, { ash, scorch, dirt, lava: count.LAVA || 0 });
   });
 }
 
