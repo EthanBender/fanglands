@@ -496,7 +496,7 @@ function coffinFee() {
   return fee;
 }
 // the fee is charged per item, only for what actually fits in the pack; what stays in the chest keeps its fee for next time (no double charge)
-function itemFee(id, qty) { if (id === 'coins') return 0; const v = ITEMS[id].value * qty; return v >= 20 ? Math.ceil(v * 0.25) : 0; } // a declaration, not a const arrow: 50-economy wraps it to scale the fee with the knight
+function itemFee(id, qty) { if (window.__kidmode) return 0; if (id === 'coins') return 0; const v = ITEMS[id].value * qty; return v >= 20 ? Math.ceil(v * 0.25) : 0; } // kid mode is free here too, or the coffin's free-looking button would charge and return nothing. A declaration, not a const arrow: 50-economy wraps it to scale the fee with the knight
 function reclaimFromDeath() {
   if (!deathKeep) return;
   // Death takes his share from the coins he already holds, then from your pack

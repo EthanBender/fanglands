@@ -1406,7 +1406,7 @@ function coffinFee() {
   return fee;
 }
 // the fee is charged per item, only for what actually fits in the pack; what stays in the chest keeps its fee for next time (no double charge)
-function itemFee(id, qty) { if (id === 'coins') return 0; const v = ITEMS[id].value * qty; return v >= 20 ? Math.ceil(v * 0.25) : 0; } // a declaration, not a const arrow: 50-economy wraps it to scale the fee with the knight
+function itemFee(id, qty) { if (window.__kidmode) return 0; if (id === 'coins') return 0; const v = ITEMS[id].value * qty; return v >= 20 ? Math.ceil(v * 0.25) : 0; } // kid mode is free here too, or the coffin's free-looking button would charge and return nothing. A declaration, not a const arrow: 50-economy wraps it to scale the fee with the knight
 function reclaimFromDeath() {
   if (!deathKeep) return;
   // Death takes his share from the coins he already holds, then from your pack
@@ -16677,19 +16677,27 @@ window.SETTINGS = SETTINGS;
   const FEE_BANDS = [[10, 1 / 12], [20, 1 / 6], [Infinity, 1 / 4]]; // combat level below → share of value
   const feeShare = () => { const cb = combatLevel(); for (const [lv, share] of FEE_BANDS) if (cb < lv) return share; return 0.25; };
   const feeCap = () => 40 + combatLevel() * 20;
-  const _coffinFee = coffinFee;
-  coffinFee = function () {
-    const full = _coffinFee.apply(this, arguments);
-    if (!full) return full; // kid mode and an empty chest both return 0 already
-    const scaled = Math.ceil(full * (feeShare() / 0.25));
-    return Math.min(scaled, feeCap());
+  // The chest's headline price and the per-item prices must agree exactly, or "Reclaim everything for N coins"
+  // takes N and still leaves an item behind. So the total is DEFINED as the sum of the per-item fees, and the
+  // cap is applied as a share the whole chest shares, never per item (three capped items would each pay the cap).
+  const chestValue = () => {
+    if (!deathKeep) return 0;
+    let v = 0;
+    for (const s of deathKeep.items) { if (s.id === 'coins' || !ITEMS[s.id]) continue; const val = ITEMS[s.id].value * s.qty; if (val >= 20) v += val; }
+    return v;
   };
-  // The per-item fee has to use the same share, or reclaiming one item at a time would cost more than the total.
-  const _itemFee = itemFee;
+  const effShare = () => { const raw = chestValue(); const base = feeShare(); return raw > 0 ? Math.min(base, feeCap() / raw) : base; };
   itemFee = function (id, qty) {
-    const full = _itemFee.apply(this, arguments);
-    return full ? Math.min(Math.ceil(full * (feeShare() / 0.25)), feeCap()) : full;
+    if (window.__kidmode || id === 'coins' || !ITEMS[id]) return 0;
+    const v = ITEMS[id].value * qty;
+    return v >= 20 ? Math.ceil(v * effShare()) : 0;
   };
+  coffinFee = function () {
+    if (window.__kidmode || !deathKeep) return 0;
+    let f = 0; for (const s of deathKeep.items) f += itemFee(s.id, s.qty);
+    return f;
+  };
+
   // Death says what he is doing, so the ramp is visible rather than mysterious.
   const _talkTo = talkTo;
   talkTo = function (npc) {
@@ -16785,6 +16793,29 @@ window.SETTINGS = SETTINGS;
       player.skills.melee = m0; player.skills.defence = d0; if (h0) player.skills.hitpoints = h0;
       deathKeep = keep; window.__kidmode = kid;
       check(P + "Death's fee is a twelfth early and a quarter later, and never over the cap he names", low < raw && low <= lowCap && high > low && lowCb < highCb, { raw, low, lowCap, lowCb, high, highCb }); }
+    // kid mode: the coffin button says free, so reclaim must actually be free and give everything back
+    { const kid = window.__kidmode, keep = deathKeep;
+      window.__kidmode = true;
+      deathKeep = { items: [{ id: 'steel_helm', qty: 1 }, { id: 'iron_body', qty: 1 }] };
+      const total = coffinFee(), per = deathKeep.items.map(s2 => itemFee(s2.id, s2.qty));
+      const bag = player.inv.slice(); player.inv = player.inv.map(() => null);
+      const c0 = coins(); reclaimFromDeath();
+      const gotAll = countItem('steel_helm') === 1 && countItem('iron_body') === 1, chestEmpty = !deathKeep, paid = c0 - coins();
+      player.inv = bag; deathKeep = keep; window.__kidmode = kid;
+      check(P + 'kid mode: the chest really is free — everything comes back and nothing is charged', total === 0 && per.every(x => x === 0) && gotAll && chestEmpty && paid === 0, { total, per, gotAll, chestEmpty, paid }); }
+    // the headline price and the per-item prices can never disagree, or "reclaim everything" leaves something behind
+    { const kid = window.__kidmode, keep = deathKeep, m0 = { ...player.skills.melee }, d0 = { ...player.skills.defence };
+      window.__kidmode = false;
+      let worst = null;
+      for (const lv of [1, 12, 25, 60]) {
+        player.skills.melee.xp = XP_TABLE[lv]; player.skills.defence.xp = XP_TABLE[lv];
+        deathKeep = { items: [{ id: 'steel_helm', qty: 1 }, { id: 'iron_body', qty: 1 }, { id: 'iron_dagger', qty: 1 }, { id: 'mithril_bar', qty: 3 }].filter(s2 => ITEMS[s2.id]) };
+        const total = coffinFee(), sum = deathKeep.items.reduce((a, s2) => a + itemFee(s2.id, s2.qty), 0);
+        if (total !== sum && !worst) worst = { lv, total, sum };
+        if (total > ECONOMY.feeCap() && !worst) worst = { lv, total, cap: ECONOMY.feeCap() };
+      }
+      player.skills.melee = m0; player.skills.defence = d0; deathKeep = keep; window.__kidmode = kid;
+      check(P + 'the coffin total is exactly the sum of the per-item fees, and never over the cap, at every combat level', !worst, { worst }); }
     // Fennick pays full price, and his list now covers gathered goods too
     { const sh = SHOPS.trader;
       const gathered = ['wood', 'iron_ore', 'raw_shrimp', 'potato', 'stone'].filter(id => ITEMS[id]);
