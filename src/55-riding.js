@@ -15,11 +15,18 @@
   // ---------- A. the companion rides ----------
   const comp = () => (player.companion && typeof player.companion === 'object' ? player.companion : null);
   const onMachine = () => !!player.mech;
+  // She hangs off the SIDE, not the back. Behind the machine put her at a lower y when it faced north (so the
+  // draw sort painted her on top of the roof) and a higher y when it faced south (so the machine painted over
+  // her and she vanished underneath). Side-mounted, with a small downward bias, she is beside the hull at every
+  // facing and always painted just after it — clinging to the rail, leaning out, rather than sitting on it.
+  const RIDE_SIDE = 21, RIDE_BACK = 5, RIDE_DEPTH = 6;
   const riderOffset = () => {
-    // one and a bit tiles behind the machine, on the back plate
     const f = player.facing || { x: 1, y: 0 };
     const d = Math.hypot(f.x, f.y) || 1;
-    return { x: player.x - (f.x / d) * 26, y: player.y - (f.y / d) * 26 };
+    const fx = f.x / d, fy = f.y / d;
+    const sx = -fy, sy = fx;                                  // ninety degrees off the line of travel
+    const bob = player.moving ? Math.sin(time * 11) * 1.6 : 0; // she swings a little while it rolls
+    return { x: player.x + sx * RIDE_SIDE - fx * RIDE_BACK, y: player.y + sy * RIDE_SIDE - fy * RIDE_BACK + RIDE_DEPTH + bob };
   };
   // 21-companion moves the hero in its own update; this file loads later, so its hook runs after and has the
   // last word on where she ends up. Nothing about her bow, her rolls or her hurt changes — she just holds on.
@@ -36,12 +43,16 @@
     const c = comp();
     if (!c || !c.id || !c.riding || !onMachine()) return;
     const p = riderOffset();
-    items.push({ y: p.y - 1, draw: () => {
+    // a running board under her boots and a grab rail from the hull to her hands, so she reads as hanging on
+    items.push({ y: p.y - 2, draw: () => {
       const f = player.facing || { x: 1, y: 0 }, d = Math.hypot(f.x, f.y) || 1;
-      const bx = player.x - (f.x / d) * 20, by = player.y - (f.y / d) * 20;
-      g.fillStyle = '#4a4a52'; g.beginPath(); g.ellipse(bx, by + 8, 11, 4.5, 0, 0, 7); g.fill();
-      g.strokeStyle = '#8a8f98'; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(bx - 8, by + 2); g.lineTo(bx - 8, by - 9); g.moveTo(bx + 8, by + 2); g.lineTo(bx + 8, by - 9); g.stroke();
+      const fx = f.x / d, fy = f.y / d, sx = -fy, sy = fx;
+      const bx = player.x + sx * 13, by = player.y + sy * 13 + 4;      // where the board meets the hull
+      g.strokeStyle = '#4a4a52'; g.lineWidth = 5; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(bx, by + 4); g.lineTo(p.x, p.y + 5); g.stroke();          // the running board
+      g.strokeStyle = '#9aa0a8'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(bx - fx * 4, by - 8); g.lineTo(p.x - fx * 2, p.y - 9); g.stroke();  // the rail she grips
+      g.lineCap = 'butt';
     } });
   });
 
@@ -191,12 +202,13 @@
       for (const u of HOOKS.update) u(0.016);
       const c = player.companion, want = RIDING.riderOffset();
       const rides = c.riding === true && Math.abs(c.x - want.x) < 1 && Math.abs(c.y - want.y) < 1;
-      const behind = c.x < player.x;                       // facing east, so she is on the west end of the machine
+      const beside = Math.abs(c.y - player.y) > 12 && Math.abs(c.x - player.x) < 12; // facing east, so she is off one flank, not out the back
+      const paintedAfter = c.y > player.y;                  // a greater sort y means the machine is painted first and never covers her
       player.mech = null;
       for (const u of HOOKS.update) u(0.016);
       const dismounts = player.companion.riding === false;
       player.companion = c0; player.mech = m0; player.speed = s0; player.r = r0;
-      check(P + 'your companion rides the back of the machine instead of being left behind, and lets go when you climb down', rides && behind && dismounts, { rides, behind, dismounts }); }
+      check(P + 'your companion hangs off the flank of the machine, painted over the hull rather than under it, and lets go when you climb down', rides && beside && paintedAfter && dismounts, { rides, beside, paintedAfter, dismounts, dx: Math.round(c.x - player.x), dy: Math.round(c.y - player.y) }); }
     // B. full steam winds up, runs, hurts what it hits, and goes on cooldown
     { const m0 = player.mech, s0 = player.speed, r0 = player.r, up0 = player.dozerUp;
       RIDING.resetCool();
