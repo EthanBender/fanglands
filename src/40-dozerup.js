@@ -297,7 +297,7 @@
       F.sim(20, []); F.press('KeyX'); F.sim(2, []);
       const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE); const parked = nearestTileOfType(ptx, pty, T.DOZER, 2);
       player.dozerUp.boiler = true;
-      if (parked) { F.face(parked.tx, parked.ty); F.press('KeyE'); F.sim(2, []); }
+      if (parked) { F.goAdjacent(parked.tx, parked.ty, 600); F.face(parked.tx, parked.ty); F.press('KeyE'); F.sim(2, []); } // it can park two tiles off; E only reaches the tile you face
       check(P + 'big boiler: climbing on gives speed 170 and hull 180/180 (HUD lists the fitted parts)', !!parked && driving() && player.speed === 170 && player.mech.hp === 180 && player.mech.maxHp === 180 && /bulldozer/i.test(notice ? notice.text : ''), { parked: parked && [parked.tx, parked.ty], mech: player.mech, speed: player.speed, notice: notice && notice.text });
       // saved with the knight: player.dozerUp round-trips through save/load
       { save(); const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); check(P + 'upgrades are saved on the player (player.dozerUp)', !!raw.player.dozerUp && raw.player.dozerUp.drill === true && raw.player.dozerUp.boiler === true, { saved: raw.player.dozerUp }); }

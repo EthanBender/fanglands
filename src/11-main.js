@@ -355,8 +355,8 @@ window.FANGLANDS = {
       check('machines: X from the bulldozer parks T.DOZER and a wrecked bulldozer leaves T.DOZER_WRECK (never walker tiles); the walker still parks T.MECH', dozer && wreck && walker, { dozer, wreck, walker, dn }); }
     { // walker and bulldozer come back after an hour, even inside the camp (the camp's 1800 s never shortens it)
       const wk = monsters.find(m => m.type === 'walker'); const ws = { x: wk.x, y: wk.y, dead: wk.dead, hp: wk.hp, respawnT: wk.respawnT, deadT: wk.deadT, state: wk.state }; const k0 = player.kills, wq = quest.walkerKilled;
-      wk.dead = false; wk.hp = 1; wk.x = tc(VILLAGE.x0); wk.y = tc(20); dialog.queue.length = 0; dialog.cur = null; const d0 = drops.length; killMonster(wk); const rt = wk.respawnT; const noWreck = tileAt(VILLAGE.x0, 20) === T.FENCE;
-      check('machines: walker and bulldozer respawn 3600 s (a killed camp walker waits at least an hour)', MONSTER_DEFS.walker.respawn === 3600 && MONSTER_DEFS.bulldozer.respawn === 3600 && rt >= 3600 && noWreck, { rt, noWreck });
+      wk.dead = false; wk.hp = 1; wk.x = tc(VILLAGE.x0); wk.y = tc(20); dialog.queue.length = 0; dialog.cur = null; const d0 = drops.length; const wallWas = tileAt(VILLAGE.x0, 20); killMonster(wk); const rt = wk.respawnT; const noWreck = tileAt(VILLAGE.x0, 20) === wallWas; // the town wall tile must be left alone, whatever it is
+      check('machines: walker and bulldozer respawn 3600 s (a killed camp walker waits at least an hour)', MONSTER_DEFS.walker.respawn === 3600 && MONSTER_DEFS.bulldozer.respawn === 3600 && rt >= 3600 && noWreck, { rt, noWreck, wallWas: tileName(wallWas) });
       Object.assign(wk, ws); player.kills = k0; quest.walkerKilled = wq; drops = drops.filter((d, i) => i < d0); dialog.queue.length = 0; dialog.cur = null; }
     { // the Ashfields: ash in patches (25–60% of dragon country outside the lair), grass and dirt between; lava and obsidian still there
       let ash = 0, area = 0, lava = 0, obs = 0, green = 0; const inFang = (x, y) => x >= 2 && x <= 34 && y >= 108 && y <= 138;

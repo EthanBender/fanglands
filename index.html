@@ -303,7 +303,7 @@ const REGIONS = [
   { name: 'Thistledown', sub: 'A village that still stands', x0: 85, y0: 14, x1: 140, y1: 56 },
   { name: 'Grey Quarry', sub: 'Iron and coal in the rock', x0: 46, y0: 1, x1: 62, y1: 14 },
   { name: "Miller's Pond", sub: 'Shrimp, and trout for the patient', x0: 36, y0: 30, x1: 50, y1: 44 },
-  { name: 'Goblin Camp', sub: 'Their machines are here', x0: 140, y0: 18, x1: 159, y1: 42 },
+  { name: 'Goblin Camp', sub: 'Their machines are here', x0: 145, y0: 18, x1: 159, y1: 42 },
   { name: 'Wolfwood', sub: 'Keep to the paths', x0: 0, y0: 62, x1: 159, y1: 95 },
   { name: 'Goblin Fields', sub: 'The road east', x0: 21, y0: 0, x1: 159, y1: 61 },
   { name: 'The Wilds', sub: 'Uncharted', x0: 0, y0: 0, x1: MAP_W - 1, y1: MAP_H - 1 },
@@ -470,8 +470,9 @@ function generateWorld() {
   const pen = (x0, y0, x1, y1, gx, gy) => { for (let x = x0; x <= x1; x++) { setTile(x, y0, T.FENCE); setTile(x, y1, T.FENCE); } for (let y = y0; y <= y1; y++) { setTile(x0, y, T.FENCE); setTile(x1, y, T.FENCE); } for (let y = y0 + 1; y < y1; y++) for (let x = x0 + 1; x < x1; x++) setTile(x, y, T.GRASS); setTile(gx, gy, T.GATE); };
   pen(72, 40, 80, 46, 80, 43); pen(72, 14, 80, 21, 80, 17);
   // goblin camp: palisade with a west gap, scrap heaps, a fire
-  for (let y = 20; y <= 40; y++) for (let x = 142; x <= 158; x++) { const edge = x === 142 || x === 158 || y === 20 || y === 40; if (edge && !(x === 142 && Math.abs(y - 30) <= 1)) setTile(x, y, T.FENCE); else if (tileAt(x, y) === T.GRASS && rnd() < 0.25) setTile(x, y, T.DIRT); }
-  setTile(150, 30, T.FIRE); for (const [px, py] of [[146, 24], [154, 25], [147, 36], [155, 35]]) setTile(px, py, T.PLANK);
+  // the palisade's west wall stands well clear of Thistledown's east wall (x 140): a 6-tile field between them, not 1
+  for (let y = 20; y <= 40; y++) for (let x = 147; x <= 158; x++) { const edge = x === 147 || x === 158 || y === 20 || y === 40; if (edge && !(x === 147 && Math.abs(y - 30) <= 1)) setTile(x, y, T.FENCE); else if (tileAt(x, y) === T.GRASS && rnd() < 0.25) setTile(x, y, T.DIRT); }
+  setTile(150, 30, T.FIRE); for (const [px, py] of [[151, 24], [154, 25], [150, 36], [155, 35]]) setTile(px, py, T.PLANK); // inside the palisade's new west wall
   // ---- monsters ----
   spawnList('spider', [[3, 12], [7, 3], [11, 12], [14, 9], [6, 6]]);
   spawnList('goblin', [[27, 3], [34, 10], [27, 14], [40, 14], [40, 8], [47, 20], [52, 28], [58, 22], [55, 34], [62, 30], [48, 44], [66, 18], [72, 26], [60, 52], [100, 60], [116, 60], [40, 54], [30, 44], [70, 50], [80, 8]]);
@@ -2940,8 +2941,8 @@ window.FANGLANDS = {
       check('machines: X from the bulldozer parks T.DOZER and a wrecked bulldozer leaves T.DOZER_WRECK (never walker tiles); the walker still parks T.MECH', dozer && wreck && walker, { dozer, wreck, walker, dn }); }
     { // walker and bulldozer come back after an hour, even inside the camp (the camp's 1800 s never shortens it)
       const wk = monsters.find(m => m.type === 'walker'); const ws = { x: wk.x, y: wk.y, dead: wk.dead, hp: wk.hp, respawnT: wk.respawnT, deadT: wk.deadT, state: wk.state }; const k0 = player.kills, wq = quest.walkerKilled;
-      wk.dead = false; wk.hp = 1; wk.x = tc(VILLAGE.x0); wk.y = tc(20); dialog.queue.length = 0; dialog.cur = null; const d0 = drops.length; killMonster(wk); const rt = wk.respawnT; const noWreck = tileAt(VILLAGE.x0, 20) === T.FENCE;
-      check('machines: walker and bulldozer respawn 3600 s (a killed camp walker waits at least an hour)', MONSTER_DEFS.walker.respawn === 3600 && MONSTER_DEFS.bulldozer.respawn === 3600 && rt >= 3600 && noWreck, { rt, noWreck });
+      wk.dead = false; wk.hp = 1; wk.x = tc(VILLAGE.x0); wk.y = tc(20); dialog.queue.length = 0; dialog.cur = null; const d0 = drops.length; const wallWas = tileAt(VILLAGE.x0, 20); killMonster(wk); const rt = wk.respawnT; const noWreck = tileAt(VILLAGE.x0, 20) === wallWas; // the town wall tile must be left alone, whatever it is
+      check('machines: walker and bulldozer respawn 3600 s (a killed camp walker waits at least an hour)', MONSTER_DEFS.walker.respawn === 3600 && MONSTER_DEFS.bulldozer.respawn === 3600 && rt >= 3600 && noWreck, { rt, noWreck, wallWas: tileName(wallWas) });
       Object.assign(wk, ws); player.kills = k0; quest.walkerKilled = wq; drops = drops.filter((d, i) => i < d0); dialog.queue.length = 0; dialog.cur = null; }
     { // the Ashfields: ash in patches (25–60% of dragon country outside the lair), grass and dirt between; lava and obsidian still there
       let ash = 0, area = 0, lava = 0, obs = 0, green = 0; const inFang = (x, y) => x >= 2 && x <= 34 && y >= 108 && y <= 138;
@@ -12830,7 +12831,7 @@ HOOKS.selfTest.push((check, F, h) => {
       F.sim(20, []); F.press('KeyX'); F.sim(2, []);
       const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE); const parked = nearestTileOfType(ptx, pty, T.DOZER, 2);
       player.dozerUp.boiler = true;
-      if (parked) { F.face(parked.tx, parked.ty); F.press('KeyE'); F.sim(2, []); }
+      if (parked) { F.goAdjacent(parked.tx, parked.ty, 600); F.face(parked.tx, parked.ty); F.press('KeyE'); F.sim(2, []); } // it can park two tiles off; E only reaches the tile you face
       check(P + 'big boiler: climbing on gives speed 170 and hull 180/180 (HUD lists the fitted parts)', !!parked && driving() && player.speed === 170 && player.mech.hp === 180 && player.mech.maxHp === 180 && /bulldozer/i.test(notice ? notice.text : ''), { parked: parked && [parked.tx, parked.ty], mech: player.mech, speed: player.speed, notice: notice && notice.text });
       // saved with the knight: player.dozerUp round-trips through save/load
       { save(); const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); check(P + 'upgrades are saved on the player (player.dozerUp)', !!raw.player.dozerUp && raw.player.dozerUp.drill === true && raw.player.dozerUp.boiler === true, { saved: raw.player.dozerUp }); }
