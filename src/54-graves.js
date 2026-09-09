@@ -11,9 +11,10 @@
 // ============================================================================
 {
   // ---------- the marker ----------
-  // Walk-over on purpose: a solid one would fence the knight in exactly the way the wrecks used to.
-  const T_CROSS = addTile('GRAVE_MARKER', { tex: 'grass', mini: '#8a6a3a' });
-  INTERESTING_TILES.add(T_CROSS);
+  // It is NOT a tile. A tile carries one texture, so a grave tile painted grass turned dirt roads and ash
+  // fields green underneath the cross. The cross is drawn over whatever ground it stands on, with a mound of
+  // turned earth under it, and the list in quest.graves is the only record. Nothing about the ground changes,
+  // so it can never block a path either.
 
   const MAX_MARKERS = 40;        // the map remembers your last forty kills, not every kill you ever made
   const MARKER_LIFE = 900;       // game seconds a cross stands if nothing rises from it (two nights)
@@ -29,24 +30,19 @@
   HOOKS.newGame.push(() => { quest.graves = []; });
 
   // markers are saved as plain tile coordinates and re-laid on load, so nothing depends on a tile id
+  const BURIABLE = () => [T.GRASS, T.DIRT, T.SAND, T.SCORCH, T.ASH].filter(t => t !== undefined);
+  const markerAt = (tx, ty) => marks().find(m => m.x === tx && m.y === ty) || null;
   const layMarker = (tx, ty) => {
     if (!inMap(tx, ty)) return false;
-    const t = tileAt(tx, ty);
-    if (![T.GRASS, T.DIRT, T.SAND, T.SCORCH].includes(t)) return false; // SCORCH is added by 20-hollowford; undefined simply never matches
+    if (!BURIABLE().includes(tileAt(tx, ty))) return false;   // you cannot bury anyone in a wall or a river
     if (buildingAt(tx, ty)) return false;
     const list = marks();
     if (list.some(m => m.x === tx && m.y === ty)) return false;
-    changeTile(tx, ty, T_CROSS);
-    list.push({ x: tx, y: ty, t: 0, was: tileName(t) });
-    while (list.length > MAX_MARKERS) { const old = list.shift(); clearMarker(old, true); }
+    list.push({ x: tx, y: ty, t: 0 });
+    while (list.length > MAX_MARKERS) list.shift();           // the oldest is simply forgotten; no ground to put back
     return true;
   };
-  function clearMarker(m, quiet) {
-    if (!m) return;
-    if (tileAt(m.x, m.y) === T_CROSS) changeTile(m.x, m.y, (m.was && tileId(m.was) !== null) ? tileId(m.was) : T.GRASS);
-    if (!quiet) burst(tc(m.x), tc(m.y), '#6a5a3a', 8, 50);
-  }
-  const removeMarker = m => { const list = marks(); const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); clearMarker(m); };
+  const removeMarker = m => { const list = marks(); const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); burst(tc(m.x), tc(m.y), '#6a5a3a', 8, 50); };
 
   // ---------- a goblin falls, a cross goes up ----------
   HOOKS.kill.push(m => {
@@ -65,7 +61,7 @@
     sweep += dt; if (sweep < 1) return; const step = sweep; sweep = 0;
     for (const m of list.slice()) {
       m.t = (m.t || 0) + step;
-      if (tileAt(m.x, m.y) !== T_CROSS) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); continue; } // something built over it
+      if (!BURIABLE().includes(tileAt(m.x, m.y)) || buildingAt(m.x, m.y)) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); continue; } // something was built over it
       if (m.t > MARKER_LIFE) removeMarker(m);
     }
   });
@@ -77,8 +73,7 @@
     if (!night()) return null;
     const list = marks(); if (!list.length) return null;
     const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
-    const near = list.filter(m => tileAt(m.x, m.y) === T_CROSS
-      && Math.abs(m.x - px) <= RISE_RADIUS && Math.abs(m.y - py) <= RISE_RADIUS
+    const near = list.filter(m => Math.abs(m.x - px) <= RISE_RADIUS && Math.abs(m.y - py) <= RISE_RADIUS
       && dist(tc(m.x), tc(m.y), player.x, player.y) > 3 * TILE
       && !(window.NIGHT && NIGHT.inNoGo && NIGHT.inNoGo(m.x, m.y))
       && !collides(tc(m.x), tc(m.y), 13, 'beast'));
@@ -106,9 +101,9 @@
   });
 
   // ---------- the cross itself ----------
-  HOOKS.use.push(t => {
-    if (t !== T_CROSS) return false;
-    notify(night() ? 'A goblin fell here. The ground is loose tonight.' : 'A goblin fell here. Someone pushed a cross into the ground for it.');
+  HOOKS.use.push((t, tx, ty) => {
+    if (!markerAt(tx, ty)) return false;
+    notify(night() ? 'A goblin fell here. The ground is loose tonight.' : 'A goblin fell here. Someone pushed a cross into the turned earth for it.');
     return true;
   });
 
@@ -117,12 +112,16 @@
     const x0 = cam.x / TILE - 2, x1 = (cam.x + VW) / TILE + 2, y0 = cam.y / TILE - 2, y1 = (cam.y + VH) / TILE + 2;
     for (const m of list) {
       if (m.x < x0 || m.x > x1 || m.y < y0 || m.y > y1) continue;
-      if (tileAt(m.x, m.y) !== T_CROSS) continue;
       const restless = night();
       items.push({ y: tc(m.y), draw: () => {
         const x = tc(m.x), y = tc(m.y);
-        g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(x, y + 9, 8, 3.5, 0, 0, 7); g.fill();
-        g.fillStyle = '#6b4f2a'; g.fillRect(x - 1.6, y - 12, 3.2, 21);
+        // a low mound of turned earth, as if something was buried, then the cross pushed into it
+        g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(x, y + 10, 11, 4.5, 0, 0, 7); g.fill();
+        g.fillStyle = '#5a4530'; g.beginPath(); g.ellipse(x, y + 8, 10, 4.5, 0, 0, 7); g.fill();
+        g.fillStyle = '#6b5238'; g.beginPath(); g.ellipse(x - 1, y + 7, 8, 3.4, 0, 0, 7); g.fill();
+        g.fillStyle = '#4a3826';
+        for (const [ox, oy, r] of [[-5, 8, 1.8], [4, 9, 1.5], [0, 6, 1.4], [6, 6, 1.2]]) { g.beginPath(); g.arc(x + ox, y + oy, r, 0, 7); g.fill(); }
+        g.fillStyle = '#6b4f2a'; g.fillRect(x - 1.6, y - 12, 3.2, 20);
         g.fillStyle = '#7a5a32'; g.fillRect(x - 6, y - 7, 12, 3);
         if (restless) { // the ground remembers after dark
           const p = 0.35 + Math.sin(time * 3 + m.x + m.y) * 0.2;
@@ -161,7 +160,7 @@
     floatText(m.x, m.y - 34, 'Off the grave', '#8b949e', 12);
   });
 
-  window.GRAVES = { tile: T_CROSS, MAX_MARKERS, MARKER_LIFE, RISE_RADIUS, marks, layMarker, removeMarker, riseSpot, isGoblinKin, zombieDrops };
+  window.GRAVES = { markerAt, MAX_MARKERS, MARKER_LIFE, RISE_RADIUS, marks, layMarker, removeMarker, riseSpot, isGoblinKin, zombieDrops };
 
   // ---------- self-test ----------
   const P = 'graves: ';
@@ -173,14 +172,15 @@
       const tx = Math.floor(player.x / TILE) + 6, ty = Math.floor(player.y / TILE); // clear of the 3-tile 'not under your feet' rule in riseSpot
       const was = tileAt(tx, ty); changeTile(tx, ty, T.GRASS);
       for (const hk of HOOKS.kill) hk({ type: 'goblin', dead: true, x: tc(tx), y: tc(ty), r: 12 });
-      const laid = tileAt(tx, ty) === GRAVES.tile, listed = GRAVES.marks().some(m => m.x === tx && m.y === ty);
+      const listed = GRAVES.marks().some(m => m.x === tx && m.y === ty), laid = listed;
+      const groundKept = tileAt(tx, ty) === T.GRASS;                       // the cross must NOT repaint the ground
       const walkable = !solidFor(tileAt(tx, ty), 'player') && !collides(tc(tx), tc(ty), 13, 'player');
       // a sheep leaves nothing
       const sx = tx + 2; const sWas = tileAt(sx, ty); changeTile(sx, ty, T.GRASS);
       for (const hk of HOOKS.kill) hk({ type: 'sheep', dead: true, x: tc(sx), y: tc(ty), r: 12 });
-      const noSheepCross = tileAt(sx, ty) !== GRAVES.tile;
+      const noSheepCross = !GRAVES.markerAt(sx, ty);
       changeTile(sx, ty, sWas);
-      check(P + 'a fallen goblin leaves a cross you can walk over; a sheep leaves nothing', laid && listed && walkable && noSheepCross, { laid, listed, walkable, noSheepCross });
+      check(P + 'a fallen goblin leaves a cross that sits on the ground it fell on, walkable, without repainting it; a sheep leaves nothing', laid && listed && groundKept && walkable && noSheepCross, { laid, listed, groundKept, ground: tileName(tileAt(tx, ty)), walkable, noSheepCross });
       // and after dark a zombie comes up on it, taking the cross with it
       if (laid && window.NIGHT) {
         const t0 = player.dayTime;
@@ -190,7 +190,7 @@
         monsters.push(z);
         for (const u of HOOKS.update) u(0.016);
         const rose = Math.floor(z.x / TILE) === tx && Math.floor(z.y / TILE) === ty;
-        const crossGone = tileAt(tx, ty) !== GRAVES.tile, unlisted = !GRAVES.marks().some(m => m.x === tx && m.y === ty);
+        const unlisted = !GRAVES.marks().some(m => m.x === tx && m.y === ty), crossGone = unlisted;
         monsters.splice(monsters.indexOf(z), 1); player.dayTime = t0;
         check(P + 'after dark a zombie comes up out of a grave near you, and the cross goes with it', isNight && rose && crossGone && unlisted && z.fromGrave === true, { isNight, rose, crossGone, unlisted, fromGrave: !!z.fromGrave });
       } else check(P + 'after dark a zombie comes up out of a grave near you, and the cross goes with it', false, { laid, night: !!window.NIGHT });
@@ -206,7 +206,7 @@
         peak = Math.max(peak, GRAVES.marks().length);
       }
       const capped = peak <= GRAVES.MAX_MARKERS && GRAVES.marks().length <= GRAVES.MAX_MARKERS;
-      const cleaned = GRAVES.marks().every(m => tileAt(m.x, m.y) === GRAVES.tile);
+      const cleaned = GRAVES.marks().every(m => !buildingAt(m.x, m.y));   // nothing is listed on ground it cannot sit on
       for (const m of GRAVES.marks().slice()) GRAVES.removeMarker(m);
       const allGone = GRAVES.marks().length === 0;
       check(P + 'the ground keeps at most forty crosses, and the oldest is tidied away rather than left standing', laid > GRAVES.MAX_MARKERS && capped && cleaned && allGone, { laid, peak, kept: capped, cleaned, allGone }); }

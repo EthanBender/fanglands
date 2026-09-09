@@ -56,13 +56,27 @@
     } });
   });
 
-  // ---------- B. FULL STEAM: the dozer's special ----------
+  // ---------- B. every machine has a special, and you hold Space to charge it ----------
+  // The owner: "every machine should have a special attack, and it should be triggerable by holding the space
+  // bar as well. Obviously the space bar does the normal attack, but if you hold it, it should charge your
+  // special. Having a little button in the corner is kind of really hard to use — on a computer it does not
+  // make sense. Keep it there for the iPhone users of course."
+  // So: a tap of Space is still the ordinary attack. Hold it past the charge time and the special fires on
+  // release. The corner button stays, but only on touch — a desktop player never sees it.
+  const HOLD_TO_CHARGE = 0.42;   // seconds of held Space before the special takes over from the ordinary swing
   const WIND = 1.0;              // seconds winding the boiler up before it goes
   const RUN = 1.15;              // seconds barrelling forward
   const SPEED = 430;             // pixels a second while it runs (the machine drives at 130-170)
   const COOL = 18, COOL_BOILER = 12;
   const HIT_DMG = [14, 22], HIT_KNOCK = 90;
-  const drivingDozer = () => !!player.mech && player.mech.kind === 'dozer';
+  const machineKind = () => (player.mech ? (player.mech.kind || 'walker') : null);
+  // every machine gets one, and each one is the machine's own trick rather than a reskin of the dozer's
+  const SPECIALS = {
+    dozer: { name: 'Full steam', hint: 'winds the boiler, then barrels forward', cool: COOL },
+    walker: { name: 'Quake stomp', hint: 'plants both feet and shakes the ground', cool: 16 },
+    beast: { name: 'Barrel roll', hint: 'spins on the spot and flattens everything round it', cool: 20 },
+  };
+  const drivingDozer = () => machineKind() === 'dozer';
   const upg = () => (player.dozerUp || {});
 
   let sp = null, cool = 0;
@@ -70,23 +84,42 @@
   HOOKS.newGame.push(() => { sp = null; cool = 0; });
 
   function startSteam() {
-    if (!drivingDozer()) { notify('Full steam is a machine trick. Climb onto the bulldozer first.'); return; }
+    const kind = machineKind();
+    if (!kind) { notify('A special is a machine trick. Climb onto a machine first.'); return; }
     if (sp) return;
-    if (cool > 0) { notify(`The boiler is still building. ${Math.ceil(cool)}s.`); return; }
+    const def = SPECIALS[kind] || SPECIALS.walker;
+    if (cool > 0) { notify(`${def.name} is still building. ${Math.ceil(cool)}s.`); return; }
     const f = player.facing || { x: 1, y: 0 }, d = Math.hypot(f.x, f.y) || 1;
-    sp = { phase: 'wind', t: 0, dir: { x: f.x / d, y: f.y / d }, hit: new Set(), moved: 0 };
-    notify('Full steam. Hold on.');
+    sp = { kind, phase: 'wind', t: 0, dir: { x: f.x / d, y: f.y / d }, hit: new Set(), moved: 0 };
+    notify(kind === 'dozer' ? 'Full steam. Hold on.' : `${def.name}. ${def.hint}.`);
     sfx('open');
   }
-  HOOKS.keyHelp.push({ action: 'Full steam (on a bulldozer)', codes: ['KeyV'] });
+  HOOKS.keyHelp.push({ action: 'Machine special (hold Space, or V)', codes: ['KeyV'] });
+
+  // Holding Space charges it. The core fires the ordinary attack on the Space PRESS, so a tap is unchanged;
+  // this only takes over once the key has been down past HOLD_TO_CHARGE, and it fires on release.
+  let held = 0, firedFromHold = false;
+  HOOKS.update.push(dt => {
+    if (!machineKind() || sp) { held = 0; firedFromHold = false; return; }
+    if (keys.has('Space')) {
+      held += dt;
+      if (held >= HOLD_TO_CHARGE && !firedFromHold && cool <= 0) {
+        // hold long enough and it goes the moment you let go — the wind-up is the special's own
+        firedFromHold = true;
+      }
+      return;
+    }
+    if (firedFromHold) { firedFromHold = false; held = 0; startSteam(); return; }
+    held = 0;
+  });
 
   HOOKS.update.push(dt => {
     if (cool > 0) cool = Math.max(0, cool - dt);
     if (!sp) {
-      if (drivingDozer() && (pressed.has('KeyV') || tapped('steam'))) { pressed.delete('KeyV'); startSteam(); }
+      if (machineKind() && (pressed.has('KeyV') || tapped('steam'))) { pressed.delete('KeyV'); startSteam(); }
       return;
     }
-    if (!drivingDozer() || player.dead) { sp = null; return; }
+    if (!machineKind() || player.dead) { sp = null; return; }
     sp.t += dt;
     if (sp.phase === 'wind') {
       // it shakes and smokes, and it will not steer: the commitment is the point
@@ -94,7 +127,36 @@
       if (sp.t >= WIND) { sp.phase = 'run'; sp.t = 0; sfx('hurt'); }
       return;
     }
-    // running: shove the machine along its line, flatten what the blade flattens, throw anything alive aside
+    if (sp.kind === 'walker') { // QUAKE STOMP: it plants both feet and the ground goes out in a ring
+      const reach = 40 + sp.t * 190;
+      for (const m of monsters) {
+        if (m.dead || sp.hit.has(m)) continue;
+        const d2 = dist(m.x, m.y, player.x, player.y);
+        if (d2 > reach || d2 > 230) continue;
+        sp.hit.add(m);
+        hitMonster(m, rint(12, 19), 70, false, 'player');
+        m.stunT = Math.max(m.stunT || 0, 1.4);
+        burst(m.x, m.y, '#8a8f98', 12, 80);
+      }
+      if (Math.random() < 0.9) burst(player.x + rint(-40, 40), player.y + rint(-30, 30), '#6e7178', 3, 60);
+      if (window.IMPACT && IMPACT.wave) IMPACT.wave(player.x, player.y, 1);
+      if (sp.t >= RUN) { burst(player.x, player.y, '#f5c542', 22, 130); sfx('mine'); floatText(player.x, player.y - 40, 'Quake', '#f5c542', 15); cool = SPECIALS.walker.cool; sp = null; }
+      return;
+    }
+    if (sp.kind === 'beast') { // BARREL ROLL: it spins where it stands and everything round it goes flying
+      player.spinT = (player.spinT || 0) + dt * 14;
+      for (const m of monsters) {
+        if (m.dead || dist(m.x, m.y, player.x, player.y) > 78) continue;
+        if (sp.hit.has(m) && (m.rollT || 0) > time - 0.28) continue;
+        sp.hit.add(m); m.rollT = time;
+        hitMonster(m, rint(10, 16), 105, false, 'player');
+        burst(m.x, m.y, '#d29922', 10, 90);
+      }
+      if (Math.random() < 0.8) burst(player.x + rint(-30, 30), player.y + rint(-30, 30), '#a5763f', 3, 70);
+      if (sp.t >= RUN * 1.4) { burst(player.x, player.y, '#f5c542', 24, 140); sfx('mine'); floatText(player.x, player.y - 44, 'Barrel roll', '#f5c542', 15); player.spinT = 0; cool = SPECIALS.beast.cool; sp = null; }
+      return;
+    }
+    // FULL STEAM: shove the machine along its line, flatten what the blade flattens, throw anything alive aside
     const step = SPEED * dt;
     const before = { x: player.x, y: player.y };
     moveEntity(player, sp.dir.x * step, sp.dir.y * step, 'player');
@@ -118,16 +180,17 @@
       }
       burst(player.x, player.y, '#f5c542', 22, 130); sfx('mine');
       floatText(player.x, player.y - 40, stalled ? 'Dead stop' : 'Full steam', '#f5c542', 15);
-      cool = upg().boiler ? COOL_BOILER : COOL;
+      cool = (sp.kind === 'dozer' && upg().boiler) ? COOL_BOILER : (SPECIALS[sp.kind] || SPECIALS.walker).cool;
       sp = null;
     }
   });
 
   // the on-screen button, so it works on an iPad, and a small state chip while it is live
   HOOKS.hud.push((g, narrow) => {
-    if (!drivingDozer()) return;
+    if (!machineKind()) return;
+    if (!touchMode()) return; // on a desktop the key is the control; a corner button there is just confusing
     const w = 66, h = 30, x = narrow ? 12 : 12, y = Math.max(HUD_LAYOUT.hotbarY - 42, 120);
-    const label = sp ? (sp.phase === 'wind' ? 'WIND' : 'GO') : cool > 0 ? `${Math.ceil(cool)}s` : 'STEAM';
+    const label = sp ? (sp.phase === 'wind' ? 'WIND' : 'GO') : cool > 0 ? `${Math.ceil(cool)}s` : 'SPECIAL';
     button(g, x, y, w, h, label, () => { touch.taps.push('steam'); }, sp ? '#d29922' : cool > 0 ? '#21262d' : '#8b2e2e', !sp && cool <= 0);
     if (sp) {
       const f = sp.phase === 'wind' ? sp.t / WIND : 1 - sp.t / RUN;
@@ -190,7 +253,7 @@
 
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => add('agility', 'vault the goblin camp palisade (town side)', VAULT_LV, VAULT_XP, 5, 'a shortcut in from Thistledown instead of the walk to the gate'));
 
-  window.RIDING = { riderOffset, WIND, RUN, SPEED, COOL, COOL_BOILER, HIT_DMG, VAULT_LV, VAULT_XP, vault, tile: T_VAULT, startSteam, get special() { return sp; }, get cooldown() { return cool; }, resetCool: () => { cool = 0; sp = null; } };
+  window.RIDING = { riderOffset, WIND, RUN, SPEED, COOL, COOL_BOILER, HIT_DMG, VAULT_LV, VAULT_XP, vault, tile: T_VAULT, startSteam, SPECIALS, HOLD_TO_CHARGE, machineKind, get special() { return sp; }, get cooldown() { return cool; }, resetCool: () => { cool = 0; sp = null; } };
 
   // ---------- self-test ----------
   const P = 'riding: ';
@@ -229,7 +292,7 @@
       const ran = player.x - x0, hurt = hp0 - target.hp, cd = RIDING.cooldown > 0;
       // and it will not fire again until the boiler builds
       notice = null; RIDING.startSteam();
-      const onCooldown = !RIDING.special && !!notice && /boiler is still building/i.test(notice.text);
+      const onCooldown = !RIDING.special && !!notice && /is still building/i.test(notice.text);
       monsters.splice(monsters.indexOf(target), 1);
       RIDING.resetCool(); player.mech = m0; player.speed = s0; player.r = r0; player.dozerUp = up0;
       check(P + 'full steam winds the boiler up, barrels the machine forward, hurts what it runs into and then has to build again', refusedOnFoot && winding && ran > 60 && hurt >= 14 && cd && onCooldown, { refusedOnFoot, winding, ran: Math.round(ran), hurt, cd, onCooldown }); }

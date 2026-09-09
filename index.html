@@ -18175,9 +18175,10 @@ window.SETTINGS = SETTINGS;
 // ============================================================================
 {
   // ---------- the marker ----------
-  // Walk-over on purpose: a solid one would fence the knight in exactly the way the wrecks used to.
-  const T_CROSS = addTile('GRAVE_MARKER', { tex: 'grass', mini: '#8a6a3a' });
-  INTERESTING_TILES.add(T_CROSS);
+  // It is NOT a tile. A tile carries one texture, so a grave tile painted grass turned dirt roads and ash
+  // fields green underneath the cross. The cross is drawn over whatever ground it stands on, with a mound of
+  // turned earth under it, and the list in quest.graves is the only record. Nothing about the ground changes,
+  // so it can never block a path either.
 
   const MAX_MARKERS = 40;        // the map remembers your last forty kills, not every kill you ever made
   const MARKER_LIFE = 900;       // game seconds a cross stands if nothing rises from it (two nights)
@@ -18193,24 +18194,19 @@ window.SETTINGS = SETTINGS;
   HOOKS.newGame.push(() => { quest.graves = []; });
 
   // markers are saved as plain tile coordinates and re-laid on load, so nothing depends on a tile id
+  const BURIABLE = () => [T.GRASS, T.DIRT, T.SAND, T.SCORCH, T.ASH].filter(t => t !== undefined);
+  const markerAt = (tx, ty) => marks().find(m => m.x === tx && m.y === ty) || null;
   const layMarker = (tx, ty) => {
     if (!inMap(tx, ty)) return false;
-    const t = tileAt(tx, ty);
-    if (![T.GRASS, T.DIRT, T.SAND, T.SCORCH].includes(t)) return false; // SCORCH is added by 20-hollowford; undefined simply never matches
+    if (!BURIABLE().includes(tileAt(tx, ty))) return false;   // you cannot bury anyone in a wall or a river
     if (buildingAt(tx, ty)) return false;
     const list = marks();
     if (list.some(m => m.x === tx && m.y === ty)) return false;
-    changeTile(tx, ty, T_CROSS);
-    list.push({ x: tx, y: ty, t: 0, was: tileName(t) });
-    while (list.length > MAX_MARKERS) { const old = list.shift(); clearMarker(old, true); }
+    list.push({ x: tx, y: ty, t: 0 });
+    while (list.length > MAX_MARKERS) list.shift();           // the oldest is simply forgotten; no ground to put back
     return true;
   };
-  function clearMarker(m, quiet) {
-    if (!m) return;
-    if (tileAt(m.x, m.y) === T_CROSS) changeTile(m.x, m.y, (m.was && tileId(m.was) !== null) ? tileId(m.was) : T.GRASS);
-    if (!quiet) burst(tc(m.x), tc(m.y), '#6a5a3a', 8, 50);
-  }
-  const removeMarker = m => { const list = marks(); const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); clearMarker(m); };
+  const removeMarker = m => { const list = marks(); const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); burst(tc(m.x), tc(m.y), '#6a5a3a', 8, 50); };
 
   // ---------- a goblin falls, a cross goes up ----------
   HOOKS.kill.push(m => {
@@ -18229,7 +18225,7 @@ window.SETTINGS = SETTINGS;
     sweep += dt; if (sweep < 1) return; const step = sweep; sweep = 0;
     for (const m of list.slice()) {
       m.t = (m.t || 0) + step;
-      if (tileAt(m.x, m.y) !== T_CROSS) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); continue; } // something built over it
+      if (!BURIABLE().includes(tileAt(m.x, m.y)) || buildingAt(m.x, m.y)) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); continue; } // something was built over it
       if (m.t > MARKER_LIFE) removeMarker(m);
     }
   });
@@ -18241,8 +18237,7 @@ window.SETTINGS = SETTINGS;
     if (!night()) return null;
     const list = marks(); if (!list.length) return null;
     const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
-    const near = list.filter(m => tileAt(m.x, m.y) === T_CROSS
-      && Math.abs(m.x - px) <= RISE_RADIUS && Math.abs(m.y - py) <= RISE_RADIUS
+    const near = list.filter(m => Math.abs(m.x - px) <= RISE_RADIUS && Math.abs(m.y - py) <= RISE_RADIUS
       && dist(tc(m.x), tc(m.y), player.x, player.y) > 3 * TILE
       && !(window.NIGHT && NIGHT.inNoGo && NIGHT.inNoGo(m.x, m.y))
       && !collides(tc(m.x), tc(m.y), 13, 'beast'));
@@ -18270,9 +18265,9 @@ window.SETTINGS = SETTINGS;
   });
 
   // ---------- the cross itself ----------
-  HOOKS.use.push(t => {
-    if (t !== T_CROSS) return false;
-    notify(night() ? 'A goblin fell here. The ground is loose tonight.' : 'A goblin fell here. Someone pushed a cross into the ground for it.');
+  HOOKS.use.push((t, tx, ty) => {
+    if (!markerAt(tx, ty)) return false;
+    notify(night() ? 'A goblin fell here. The ground is loose tonight.' : 'A goblin fell here. Someone pushed a cross into the turned earth for it.');
     return true;
   });
 
@@ -18281,12 +18276,16 @@ window.SETTINGS = SETTINGS;
     const x0 = cam.x / TILE - 2, x1 = (cam.x + VW) / TILE + 2, y0 = cam.y / TILE - 2, y1 = (cam.y + VH) / TILE + 2;
     for (const m of list) {
       if (m.x < x0 || m.x > x1 || m.y < y0 || m.y > y1) continue;
-      if (tileAt(m.x, m.y) !== T_CROSS) continue;
       const restless = night();
       items.push({ y: tc(m.y), draw: () => {
         const x = tc(m.x), y = tc(m.y);
-        g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(x, y + 9, 8, 3.5, 0, 0, 7); g.fill();
-        g.fillStyle = '#6b4f2a'; g.fillRect(x - 1.6, y - 12, 3.2, 21);
+        // a low mound of turned earth, as if something was buried, then the cross pushed into it
+        g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(x, y + 10, 11, 4.5, 0, 0, 7); g.fill();
+        g.fillStyle = '#5a4530'; g.beginPath(); g.ellipse(x, y + 8, 10, 4.5, 0, 0, 7); g.fill();
+        g.fillStyle = '#6b5238'; g.beginPath(); g.ellipse(x - 1, y + 7, 8, 3.4, 0, 0, 7); g.fill();
+        g.fillStyle = '#4a3826';
+        for (const [ox, oy, r] of [[-5, 8, 1.8], [4, 9, 1.5], [0, 6, 1.4], [6, 6, 1.2]]) { g.beginPath(); g.arc(x + ox, y + oy, r, 0, 7); g.fill(); }
+        g.fillStyle = '#6b4f2a'; g.fillRect(x - 1.6, y - 12, 3.2, 20);
         g.fillStyle = '#7a5a32'; g.fillRect(x - 6, y - 7, 12, 3);
         if (restless) { // the ground remembers after dark
           const p = 0.35 + Math.sin(time * 3 + m.x + m.y) * 0.2;
@@ -18325,7 +18324,7 @@ window.SETTINGS = SETTINGS;
     floatText(m.x, m.y - 34, 'Off the grave', '#8b949e', 12);
   });
 
-  window.GRAVES = { tile: T_CROSS, MAX_MARKERS, MARKER_LIFE, RISE_RADIUS, marks, layMarker, removeMarker, riseSpot, isGoblinKin, zombieDrops };
+  window.GRAVES = { markerAt, MAX_MARKERS, MARKER_LIFE, RISE_RADIUS, marks, layMarker, removeMarker, riseSpot, isGoblinKin, zombieDrops };
 
   // ---------- self-test ----------
   const P = 'graves: ';
@@ -18337,14 +18336,15 @@ window.SETTINGS = SETTINGS;
       const tx = Math.floor(player.x / TILE) + 6, ty = Math.floor(player.y / TILE); // clear of the 3-tile 'not under your feet' rule in riseSpot
       const was = tileAt(tx, ty); changeTile(tx, ty, T.GRASS);
       for (const hk of HOOKS.kill) hk({ type: 'goblin', dead: true, x: tc(tx), y: tc(ty), r: 12 });
-      const laid = tileAt(tx, ty) === GRAVES.tile, listed = GRAVES.marks().some(m => m.x === tx && m.y === ty);
+      const listed = GRAVES.marks().some(m => m.x === tx && m.y === ty), laid = listed;
+      const groundKept = tileAt(tx, ty) === T.GRASS;                       // the cross must NOT repaint the ground
       const walkable = !solidFor(tileAt(tx, ty), 'player') && !collides(tc(tx), tc(ty), 13, 'player');
       // a sheep leaves nothing
       const sx = tx + 2; const sWas = tileAt(sx, ty); changeTile(sx, ty, T.GRASS);
       for (const hk of HOOKS.kill) hk({ type: 'sheep', dead: true, x: tc(sx), y: tc(ty), r: 12 });
-      const noSheepCross = tileAt(sx, ty) !== GRAVES.tile;
+      const noSheepCross = !GRAVES.markerAt(sx, ty);
       changeTile(sx, ty, sWas);
-      check(P + 'a fallen goblin leaves a cross you can walk over; a sheep leaves nothing', laid && listed && walkable && noSheepCross, { laid, listed, walkable, noSheepCross });
+      check(P + 'a fallen goblin leaves a cross that sits on the ground it fell on, walkable, without repainting it; a sheep leaves nothing', laid && listed && groundKept && walkable && noSheepCross, { laid, listed, groundKept, ground: tileName(tileAt(tx, ty)), walkable, noSheepCross });
       // and after dark a zombie comes up on it, taking the cross with it
       if (laid && window.NIGHT) {
         const t0 = player.dayTime;
@@ -18354,7 +18354,7 @@ window.SETTINGS = SETTINGS;
         monsters.push(z);
         for (const u of HOOKS.update) u(0.016);
         const rose = Math.floor(z.x / TILE) === tx && Math.floor(z.y / TILE) === ty;
-        const crossGone = tileAt(tx, ty) !== GRAVES.tile, unlisted = !GRAVES.marks().some(m => m.x === tx && m.y === ty);
+        const unlisted = !GRAVES.marks().some(m => m.x === tx && m.y === ty), crossGone = unlisted;
         monsters.splice(monsters.indexOf(z), 1); player.dayTime = t0;
         check(P + 'after dark a zombie comes up out of a grave near you, and the cross goes with it', isNight && rose && crossGone && unlisted && z.fromGrave === true, { isNight, rose, crossGone, unlisted, fromGrave: !!z.fromGrave });
       } else check(P + 'after dark a zombie comes up out of a grave near you, and the cross goes with it', false, { laid, night: !!window.NIGHT });
@@ -18370,7 +18370,7 @@ window.SETTINGS = SETTINGS;
         peak = Math.max(peak, GRAVES.marks().length);
       }
       const capped = peak <= GRAVES.MAX_MARKERS && GRAVES.marks().length <= GRAVES.MAX_MARKERS;
-      const cleaned = GRAVES.marks().every(m => tileAt(m.x, m.y) === GRAVES.tile);
+      const cleaned = GRAVES.marks().every(m => !buildingAt(m.x, m.y));   // nothing is listed on ground it cannot sit on
       for (const m of GRAVES.marks().slice()) GRAVES.removeMarker(m);
       const allGone = GRAVES.marks().length === 0;
       check(P + 'the ground keeps at most forty crosses, and the oldest is tidied away rather than left standing', laid > GRAVES.MAX_MARKERS && capped && cleaned && allGone, { laid, peak, kept: capped, cleaned, allGone }); }
@@ -18451,13 +18451,27 @@ window.SETTINGS = SETTINGS;
     } });
   });
 
-  // ---------- B. FULL STEAM: the dozer's special ----------
+  // ---------- B. every machine has a special, and you hold Space to charge it ----------
+  // The owner: "every machine should have a special attack, and it should be triggerable by holding the space
+  // bar as well. Obviously the space bar does the normal attack, but if you hold it, it should charge your
+  // special. Having a little button in the corner is kind of really hard to use — on a computer it does not
+  // make sense. Keep it there for the iPhone users of course."
+  // So: a tap of Space is still the ordinary attack. Hold it past the charge time and the special fires on
+  // release. The corner button stays, but only on touch — a desktop player never sees it.
+  const HOLD_TO_CHARGE = 0.42;   // seconds of held Space before the special takes over from the ordinary swing
   const WIND = 1.0;              // seconds winding the boiler up before it goes
   const RUN = 1.15;              // seconds barrelling forward
   const SPEED = 430;             // pixels a second while it runs (the machine drives at 130-170)
   const COOL = 18, COOL_BOILER = 12;
   const HIT_DMG = [14, 22], HIT_KNOCK = 90;
-  const drivingDozer = () => !!player.mech && player.mech.kind === 'dozer';
+  const machineKind = () => (player.mech ? (player.mech.kind || 'walker') : null);
+  // every machine gets one, and each one is the machine's own trick rather than a reskin of the dozer's
+  const SPECIALS = {
+    dozer: { name: 'Full steam', hint: 'winds the boiler, then barrels forward', cool: COOL },
+    walker: { name: 'Quake stomp', hint: 'plants both feet and shakes the ground', cool: 16 },
+    beast: { name: 'Barrel roll', hint: 'spins on the spot and flattens everything round it', cool: 20 },
+  };
+  const drivingDozer = () => machineKind() === 'dozer';
   const upg = () => (player.dozerUp || {});
 
   let sp = null, cool = 0;
@@ -18465,23 +18479,42 @@ window.SETTINGS = SETTINGS;
   HOOKS.newGame.push(() => { sp = null; cool = 0; });
 
   function startSteam() {
-    if (!drivingDozer()) { notify('Full steam is a machine trick. Climb onto the bulldozer first.'); return; }
+    const kind = machineKind();
+    if (!kind) { notify('A special is a machine trick. Climb onto a machine first.'); return; }
     if (sp) return;
-    if (cool > 0) { notify(`The boiler is still building. ${Math.ceil(cool)}s.`); return; }
+    const def = SPECIALS[kind] || SPECIALS.walker;
+    if (cool > 0) { notify(`${def.name} is still building. ${Math.ceil(cool)}s.`); return; }
     const f = player.facing || { x: 1, y: 0 }, d = Math.hypot(f.x, f.y) || 1;
-    sp = { phase: 'wind', t: 0, dir: { x: f.x / d, y: f.y / d }, hit: new Set(), moved: 0 };
-    notify('Full steam. Hold on.');
+    sp = { kind, phase: 'wind', t: 0, dir: { x: f.x / d, y: f.y / d }, hit: new Set(), moved: 0 };
+    notify(kind === 'dozer' ? 'Full steam. Hold on.' : `${def.name}. ${def.hint}.`);
     sfx('open');
   }
-  HOOKS.keyHelp.push({ action: 'Full steam (on a bulldozer)', codes: ['KeyV'] });
+  HOOKS.keyHelp.push({ action: 'Machine special (hold Space, or V)', codes: ['KeyV'] });
+
+  // Holding Space charges it. The core fires the ordinary attack on the Space PRESS, so a tap is unchanged;
+  // this only takes over once the key has been down past HOLD_TO_CHARGE, and it fires on release.
+  let held = 0, firedFromHold = false;
+  HOOKS.update.push(dt => {
+    if (!machineKind() || sp) { held = 0; firedFromHold = false; return; }
+    if (keys.has('Space')) {
+      held += dt;
+      if (held >= HOLD_TO_CHARGE && !firedFromHold && cool <= 0) {
+        // hold long enough and it goes the moment you let go — the wind-up is the special's own
+        firedFromHold = true;
+      }
+      return;
+    }
+    if (firedFromHold) { firedFromHold = false; held = 0; startSteam(); return; }
+    held = 0;
+  });
 
   HOOKS.update.push(dt => {
     if (cool > 0) cool = Math.max(0, cool - dt);
     if (!sp) {
-      if (drivingDozer() && (pressed.has('KeyV') || tapped('steam'))) { pressed.delete('KeyV'); startSteam(); }
+      if (machineKind() && (pressed.has('KeyV') || tapped('steam'))) { pressed.delete('KeyV'); startSteam(); }
       return;
     }
-    if (!drivingDozer() || player.dead) { sp = null; return; }
+    if (!machineKind() || player.dead) { sp = null; return; }
     sp.t += dt;
     if (sp.phase === 'wind') {
       // it shakes and smokes, and it will not steer: the commitment is the point
@@ -18489,7 +18522,36 @@ window.SETTINGS = SETTINGS;
       if (sp.t >= WIND) { sp.phase = 'run'; sp.t = 0; sfx('hurt'); }
       return;
     }
-    // running: shove the machine along its line, flatten what the blade flattens, throw anything alive aside
+    if (sp.kind === 'walker') { // QUAKE STOMP: it plants both feet and the ground goes out in a ring
+      const reach = 40 + sp.t * 190;
+      for (const m of monsters) {
+        if (m.dead || sp.hit.has(m)) continue;
+        const d2 = dist(m.x, m.y, player.x, player.y);
+        if (d2 > reach || d2 > 230) continue;
+        sp.hit.add(m);
+        hitMonster(m, rint(12, 19), 70, false, 'player');
+        m.stunT = Math.max(m.stunT || 0, 1.4);
+        burst(m.x, m.y, '#8a8f98', 12, 80);
+      }
+      if (Math.random() < 0.9) burst(player.x + rint(-40, 40), player.y + rint(-30, 30), '#6e7178', 3, 60);
+      if (window.IMPACT && IMPACT.wave) IMPACT.wave(player.x, player.y, 1);
+      if (sp.t >= RUN) { burst(player.x, player.y, '#f5c542', 22, 130); sfx('mine'); floatText(player.x, player.y - 40, 'Quake', '#f5c542', 15); cool = SPECIALS.walker.cool; sp = null; }
+      return;
+    }
+    if (sp.kind === 'beast') { // BARREL ROLL: it spins where it stands and everything round it goes flying
+      player.spinT = (player.spinT || 0) + dt * 14;
+      for (const m of monsters) {
+        if (m.dead || dist(m.x, m.y, player.x, player.y) > 78) continue;
+        if (sp.hit.has(m) && (m.rollT || 0) > time - 0.28) continue;
+        sp.hit.add(m); m.rollT = time;
+        hitMonster(m, rint(10, 16), 105, false, 'player');
+        burst(m.x, m.y, '#d29922', 10, 90);
+      }
+      if (Math.random() < 0.8) burst(player.x + rint(-30, 30), player.y + rint(-30, 30), '#a5763f', 3, 70);
+      if (sp.t >= RUN * 1.4) { burst(player.x, player.y, '#f5c542', 24, 140); sfx('mine'); floatText(player.x, player.y - 44, 'Barrel roll', '#f5c542', 15); player.spinT = 0; cool = SPECIALS.beast.cool; sp = null; }
+      return;
+    }
+    // FULL STEAM: shove the machine along its line, flatten what the blade flattens, throw anything alive aside
     const step = SPEED * dt;
     const before = { x: player.x, y: player.y };
     moveEntity(player, sp.dir.x * step, sp.dir.y * step, 'player');
@@ -18513,16 +18575,17 @@ window.SETTINGS = SETTINGS;
       }
       burst(player.x, player.y, '#f5c542', 22, 130); sfx('mine');
       floatText(player.x, player.y - 40, stalled ? 'Dead stop' : 'Full steam', '#f5c542', 15);
-      cool = upg().boiler ? COOL_BOILER : COOL;
+      cool = (sp.kind === 'dozer' && upg().boiler) ? COOL_BOILER : (SPECIALS[sp.kind] || SPECIALS.walker).cool;
       sp = null;
     }
   });
 
   // the on-screen button, so it works on an iPad, and a small state chip while it is live
   HOOKS.hud.push((g, narrow) => {
-    if (!drivingDozer()) return;
+    if (!machineKind()) return;
+    if (!touchMode()) return; // on a desktop the key is the control; a corner button there is just confusing
     const w = 66, h = 30, x = narrow ? 12 : 12, y = Math.max(HUD_LAYOUT.hotbarY - 42, 120);
-    const label = sp ? (sp.phase === 'wind' ? 'WIND' : 'GO') : cool > 0 ? `${Math.ceil(cool)}s` : 'STEAM';
+    const label = sp ? (sp.phase === 'wind' ? 'WIND' : 'GO') : cool > 0 ? `${Math.ceil(cool)}s` : 'SPECIAL';
     button(g, x, y, w, h, label, () => { touch.taps.push('steam'); }, sp ? '#d29922' : cool > 0 ? '#21262d' : '#8b2e2e', !sp && cool <= 0);
     if (sp) {
       const f = sp.phase === 'wind' ? sp.t / WIND : 1 - sp.t / RUN;
@@ -18585,7 +18648,7 @@ window.SETTINGS = SETTINGS;
 
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => add('agility', 'vault the goblin camp palisade (town side)', VAULT_LV, VAULT_XP, 5, 'a shortcut in from Thistledown instead of the walk to the gate'));
 
-  window.RIDING = { riderOffset, WIND, RUN, SPEED, COOL, COOL_BOILER, HIT_DMG, VAULT_LV, VAULT_XP, vault, tile: T_VAULT, startSteam, get special() { return sp; }, get cooldown() { return cool; }, resetCool: () => { cool = 0; sp = null; } };
+  window.RIDING = { riderOffset, WIND, RUN, SPEED, COOL, COOL_BOILER, HIT_DMG, VAULT_LV, VAULT_XP, vault, tile: T_VAULT, startSteam, SPECIALS, HOLD_TO_CHARGE, machineKind, get special() { return sp; }, get cooldown() { return cool; }, resetCool: () => { cool = 0; sp = null; } };
 
   // ---------- self-test ----------
   const P = 'riding: ';
@@ -18624,7 +18687,7 @@ window.SETTINGS = SETTINGS;
       const ran = player.x - x0, hurt = hp0 - target.hp, cd = RIDING.cooldown > 0;
       // and it will not fire again until the boiler builds
       notice = null; RIDING.startSteam();
-      const onCooldown = !RIDING.special && !!notice && /boiler is still building/i.test(notice.text);
+      const onCooldown = !RIDING.special && !!notice && /is still building/i.test(notice.text);
       monsters.splice(monsters.indexOf(target), 1);
       RIDING.resetCool(); player.mech = m0; player.speed = s0; player.r = r0; player.dozerUp = up0;
       check(P + 'full steam winds the boiler up, barrels the machine forward, hurts what it runs into and then has to build again', refusedOnFoot && winding && ran > 60 && hurt >= 14 && cd && onCooldown, { refusedOnFoot, winding, ran: Math.round(ran), hurt, cd, onCooldown }); }
