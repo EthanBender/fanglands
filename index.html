@@ -16785,21 +16785,39 @@ window.SETTINGS = SETTINGS;
   // The chest's headline price and the per-item prices must agree exactly, or "Reclaim everything for N coins"
   // takes N and still leaves an item behind. So the total is DEFINED as the sum of the per-item fees, and the
   // cap is applied as a share the whole chest shares, never per item (three capped items would each pay the cap).
-  const chestValue = () => {
-    if (!deathKeep) return 0;
-    let v = 0;
-    for (const s of deathKeep.items) { if (s.id === 'coins' || !ITEMS[s.id]) continue; const val = ITEMS[s.id].value * s.qty; if (val >= 20) v += val; }
-    return v;
+  // The chest's headline price and the per-item prices must agree EXACTLY, and the total must never pass the
+  // cap. Scaling each item independently could not do both: four items each rounded up put the sum a few coins
+  // over the cap. So the whole chest is priced once — a target that is already capped — and then split across
+  // the items by largest remainder, which makes the parts sum to the total by construction.
+  const chargeable = () => {
+    if (!deathKeep) return [];
+    return deathKeep.items.filter(s2 => s2.id !== 'coins' && ITEMS[s2.id] && ITEMS[s2.id].value * s2.qty >= 20);
   };
-  const effShare = () => { const raw = chestValue(); const base = feeShare(); return raw > 0 ? Math.min(base, feeCap() / raw) : base; };
+  function feeTable() {
+    if (window.__kidmode) return {};
+    const items = chargeable(); if (!items.length) return {};
+    const raw = items.reduce((a, s2) => a + ITEMS[s2.id].value * s2.qty, 0);
+    if (raw <= 0) return {};
+    const target = Math.min(Math.ceil(raw * feeShare()), feeCap());
+    const parts = items.map(s2 => ({ id: s2.id, exact: (ITEMS[s2.id].value * s2.qty) / raw * target }));
+    const out = {}; let used = 0;
+    for (const p2 of parts) { const f = Math.floor(p2.exact); out[p2.id] = (out[p2.id] || 0) + f; used += f; }
+    parts.sort((a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)));
+    for (let i = 0; used < target && i < parts.length; i++, used++) out[parts[i].id]++;
+    return out;
+  }
   itemFee = function (id, qty) {
     if (window.__kidmode || id === 'coins' || !ITEMS[id]) return 0;
+    const table = feeTable();
+    if (id in table) return table[id];
+    // an item that is not in the chest (a caller asking the price of something else) keeps the plain scaled rate
     const v = ITEMS[id].value * qty;
-    return v >= 20 ? Math.ceil(v * effShare()) : 0;
+    return v >= 20 ? Math.min(Math.ceil(v * feeShare()), feeCap()) : 0;
   };
   coffinFee = function () {
     if (window.__kidmode || !deathKeep) return 0;
-    let f = 0; for (const s of deathKeep.items) f += itemFee(s.id, s.qty);
+    const table = feeTable();
+    let f = 0; for (const k in table) f += table[k];
     return f;
   };
 
