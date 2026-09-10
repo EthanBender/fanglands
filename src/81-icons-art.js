@@ -55,29 +55,38 @@
 
   // --- shrimp: a comma of a body, segmented, fan tail, whiskers out front
   const shrimpBody = (g, col, dy) => {
+    const A0 = Math.PI * 1.15, A1 = Math.PI * 2.35, R = 6.8, r = 3.3;   // the curl: a thick band of shell, head high-left, tail low-right
+    const at = (a, rad) => [Math.cos(a) * rad, Math.sin(a) * rad];
     g.save(); g.translate(0, dy);
     g.fillStyle = col;
-    g.beginPath(); g.moveTo(6.4, -3.6); g.quadraticCurveTo(-2.6, -5.6, -6.4, -0.6);
-    g.quadraticCurveTo(-8.4, 3.6, -3.6, 4.6); g.quadraticCurveTo(0.6, 5.2, 2.6, 2.6);
-    g.quadraticCurveTo(0.6, 3.4, -1.4, 1.6); g.quadraticCurveTo(0.4, -1.4, 6.4, -3.6); g.closePath();
-    g.fill(); g.strokeStyle = OUT; g.lineWidth = 1.2; g.stroke();
-    line(g, dk(0.3), 1.1);                       // the shell segments
-    for (const [ax, ay, a0, a1] of [[-3.6, -1.6, 0.5, 2.4], [-5.2, 0.8, 0.2, 2.2]]) { g.beginPath(); g.arc(ax, ay, 3, a0, a1); g.stroke(); }
-    g.fillStyle = col;                           // the tail fan
-    g.beginPath(); g.moveTo(6.4, -3.6); g.lineTo(9, -6.4); g.lineTo(9.4, -1.6); g.closePath(); g.fill(); g.strokeStyle = OUT; g.stroke();
+    g.beginPath(); g.arc(0, 0, R, A0, A1); g.arc(0, 0, r, A1, A0, true); g.closePath(); g.fill(); g.strokeStyle = OUT; g.lineWidth = 1.2; g.stroke();
+    const hO = at(A0, R), hI = at(A0, r), tO = at(A1, R), tI = at(A1, r);
+    g.beginPath(); g.moveTo(hO[0], hO[1]); g.lineTo(-7.8, -7); g.lineTo(-3.6, -8.6);   // the head, wedged onto the front of the curl
+    g.lineTo(-0.8, -5.2); g.lineTo(hI[0], hI[1]); g.closePath(); g.fill(); g.stroke();
+    g.beginPath(); g.moveTo(-7.8, -7); g.lineTo(-9.4, -8.4); g.lineTo(-5.2, -8.2); g.closePath(); g.fill(); g.stroke();   // the rostrum
+    g.beginPath(); g.moveTo(tO[0], tO[1]); g.lineTo(6.4, 8.4); g.lineTo(3.4, 8.8);     // the tail fan, three blades
+    g.lineTo(1.4, 7.4); g.lineTo(tI[0], tI[1]); g.closePath(); g.fill(); g.stroke();
+    line(g, dk(0.32), 1.2);
+    for (let k = 1; k < 5; k++) { const a = A0 + (A1 - A0) * k / 5, o = at(a, R - 0.4), i2 = at(a, r + 0.4);   // the shell segments
+      g.beginPath(); g.moveTo(o[0], o[1]); g.lineTo(i2[0], i2[1]); g.stroke(); }
+    line(g, dk(0.45), 1.1, 'round');
+    for (let k = 1; k < 4; k++) { const a = A0 + (A1 - A0) * (k + 0.5) / 5, i2 = at(a, r - 0.2), e = at(a, r - 2);  // the legs, under the belly
+      g.beginPath(); g.moveTo(i2[0], i2[1]); g.lineTo(e[0], e[1]); g.stroke(); }
+    line(g, dk(0.34), 1.1); g.beginPath(); g.moveTo(3.4, 8.6); g.lineTo(4.6, 6); g.stroke();
     g.restore();
   };
   set('raw_shrimp', (g, size, item) => {
     shrimpBody(g, item.color, 0.6);
-    line(g, dk(0.5), 1, 'round');                // two whiskers, still on it
-    g.beginPath(); g.moveTo(-6.4, -1); g.quadraticCurveTo(-8.6, -5, -5.4, -7.6); g.moveTo(-6, 0.6); g.quadraticCurveTo(-9.4, -1.6, -8.6, -5.4); g.stroke();
-    wetEye(g, -5, 0.6);
+    line(g, dk(0.5), 1, 'round');                // the two antennae, still on it
+    g.beginPath(); g.moveTo(-7.4, -7.4); g.quadraticCurveTo(-9.6, -3.4, -7, -0.4);
+    g.moveTo(-6.4, -8); g.quadraticCurveTo(-3.4, -9.6, 0.4, -8.4); g.stroke();
+    wetEye(g, -5.2, -5.8);
   });
   set('shrimp', (g, size, item) => {
-    plate(g); steam(g, -1.6);
-    shrimpBody(g, item.color, -0.8);
-    grill(g, -3.6, 1.4, -0.6, 2);
-    cookedEye(g, -4.6, -0.8);
+    plate(g); steam(g, -2.4);
+    shrimpBody(g, item.color, -1.4);
+    grill(g, -3.4, 3.4, -3.4, 2);
+    cookedEye(g, -5.2, -7.4);
   });
 
   // --- trout: fusiform, forked tail, spotted flank, the little adipose fin
@@ -287,8 +296,11 @@
     g.fillStyle = item.color;
     g.beginPath(); g.moveTo(-6.8, 6.4); g.quadraticCurveTo(-8, -5, 0, -7.4); g.quadraticCurveTo(8, -5, 6.8, 6.4);
     g.lineTo(3.4, 6.4); g.lineTo(3.4, 0.4); g.quadraticCurveTo(0, -2.4, -3.4, 0.4); g.lineTo(-3.4, 6.4); g.closePath(); g.fill(); g.strokeStyle = OUT; g.lineWidth = 1.2; g.stroke();
+    g.fillStyle = item.color;                                                                             // the nasal, splitting the opening into two eye slots
+    g.beginPath(); g.moveTo(-1.1, -1.6); g.lineTo(1.1, -1.6); g.lineTo(1.1, 6.4); g.lineTo(-1.1, 6.4); g.closePath(); g.fill(); line(g, OUT, 1.2); g.stroke();
     line(g, dk(0.3), 1.2);
     g.beginPath(); g.moveTo(0, -7.2); g.lineTo(0, -2.4); g.stroke();                                      // the comb
+    g.fillStyle = '#141821'; g.fillRect(-3.2, 0.4, 2, 2.2); g.fillRect(1.2, 0.4, 2, 2.2);                 // the slots you see out of
     g.fillStyle = lt(0.32); g.beginPath(); g.moveTo(-6, 4.4); g.quadraticCurveTo(-6.6, -4, -1.4, -6.2);
     g.quadraticCurveTo(-4.4, -3.4, -4, 4.4); g.closePath(); g.fill();
   });
@@ -486,10 +498,14 @@
   // --- godly: an ornate cuirass. Winged pauldrons, a laurel on the chest, a scalloped hem
   set('godly_body', (g, size, item) => {
     g.fillStyle = item.color;
-    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 4.4, -6.4); g.quadraticCurveTo(s * 9, -6.4, s * 9, -2.4);
-      g.quadraticCurveTo(s * 7, -3.4, s * 4.4, -3.4); g.closePath(); g.fill(); g.strokeStyle = OUT; g.lineWidth = 1.2; g.stroke(); }
-    g.beginPath(); g.moveTo(-5.4, -7); g.quadraticCurveTo(0, -8.6, 5.4, -7); g.lineTo(5.4, 3.4);
-    g.lineTo(3.4, 6.4); g.lineTo(1.2, 3.6); g.lineTo(-1.2, 6.4); g.lineTo(-3.4, 3.6); g.lineTo(-5.4, 6.4); g.closePath(); g.fill(); g.stroke();
+    g.beginPath(); g.moveTo(-4.6, -7); g.quadraticCurveTo(0, -8.6, 4.6, -7); g.lineTo(4.6, 3.4);
+    g.lineTo(3, 6.4); g.lineTo(1, 3.6); g.lineTo(-1, 6.4); g.lineTo(-3, 3.6); g.lineTo(-4.6, 6.4); g.closePath(); g.fill(); g.strokeStyle = OUT; g.lineWidth = 1.2; g.stroke();
+    for (const s of [-1, 1]) {                                                                                   // the wings, drawn over the plate so they are not lost in it
+      g.beginPath(); g.moveTo(s * 3.4, -6.6); g.quadraticCurveTo(s * 8.4, -7.4, s * 9.2, -2.6);
+      g.quadraticCurveTo(s * 6.4, -1.4, s * 3.4, -2.4); g.closePath(); g.fill(); g.stroke();
+      line(g, dk(0.4), 1.2);
+      for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(s * (4.4 + k * 1.6), -6.2 + k * 0.5); g.lineTo(s * (5 + k * 1.6), -2.6); g.stroke(); }
+      g.fillStyle = item.color; }
     line(g, '#fff6c8', 1.4);                                                                                    // the laurel
     g.beginPath(); g.arc(0, 0.4, 3.4, 0.5, 2.64); g.stroke();
     g.beginPath(); g.arc(0, 0.4, 3.4, 3.64, 5.78); g.stroke();
@@ -601,8 +617,9 @@
   });
   set('godly_legs', (g, size, item) => {
     g.fillStyle = item.color;
-    g.beginPath(); g.moveTo(-6.4, -6.4); g.quadraticCurveTo(0, -8.4, 6.4, -6.4); g.lineTo(5.4, 8.4);
-    g.lineTo(1.6, 8.4); g.quadraticCurveTo(0, 2.4, -1.6, 8.4); g.lineTo(-5.4, 8.4); g.closePath(); g.fill(); g.strokeStyle = OUT; g.lineWidth = 1.2; g.stroke();
+    g.beginPath(); g.moveTo(-6.4, -6.4); g.quadraticCurveTo(0, -8.4, 6.4, -6.4); g.lineTo(5.4, 8.6);
+    g.lineTo(1.8, 8.6); g.lineTo(0.9, -0.4); g.lineTo(-0.9, -0.4); g.lineTo(-1.8, 8.6); g.lineTo(-5.4, 8.6);
+    g.closePath(); g.fill(); g.strokeStyle = OUT; g.lineWidth = 1.2; g.stroke();
     g.fillStyle = '#fff6c8'; g.beginPath(); g.moveTo(-6.6, -5.4); g.lineTo(6.6, -5.4); g.lineTo(6.2, -2.4);
     g.lineTo(-6.2, -2.4); g.closePath(); g.fill();                                                                // the gold belt
     g.fillStyle = item.color; g.beginPath(); g.arc(0, -3.9, 1.4, 0, 7); g.fill();
@@ -1066,11 +1083,11 @@
   });
   set('yew_bow', (g, size, item) => {                             // a longbow: tall, barely curved, horn nocks top and bottom
     line(g, item.color, 2.4, 'round');
-    g.beginPath(); g.moveTo(-1.4, -9); g.quadraticCurveTo(-4.4, 0, -1.4, 9); g.stroke();
-    line(g, STEEL_L, 1.1); g.beginPath(); g.moveTo(-1.4, -9); g.lineTo(-1.4, 9); g.stroke();
-    g.fillStyle = '#e8dcc0'; for (const y of [-9, 9]) { g.beginPath(); g.arc(-1.4, y, 1.2, 0, 7); g.fill(); }   // the nocks
-    g.fillStyle = GRIP; g.fillRect(-4.6, -2.6, 2.4, 5.2);
-    g.fillStyle = '#f5c542'; g.beginPath(); g.arc(-3.4, 0, 1, 0, 7); g.fill();
+    g.beginPath(); g.moveTo(3.4, -9); g.quadraticCurveTo(-7.4, 0, 3.4, 9); g.stroke();                          // a deep D, drawn tall
+    line(g, STEEL_L, 1.2); g.beginPath(); g.moveTo(3.4, -9); g.lineTo(3.4, 9); g.stroke();                      // and the string well clear of it
+    g.fillStyle = '#e8dcc0'; for (const y of [-9, 9]) { g.beginPath(); g.arc(3.4, y, 1.3, 0, 7); g.fill(); }    // the horn nocks
+    g.fillStyle = GRIP; g.fillRect(-5.6, -2.8, 2.8, 5.6);
+    g.fillStyle = '#f5c542'; g.beginPath(); g.arc(-4.2, 0, 1, 0, 7); g.fill();
   });
   set('stone_arrow', (g, size, item) => {                         // a chipped flint head lashed to a rough shaft
     line(g, WOOD, 1.6, 'round'); g.beginPath(); g.moveTo(-8, 8); g.lineTo(4.4, -4.4); g.stroke();
@@ -1333,9 +1350,10 @@
   });
   set('cloudberry', (g, size, item) => {                          // an aggregate berry: little drupelets, on its own puff of cloud
     g.fillStyle = 'rgba(210,232,250,0.7)'; g.beginPath(); g.ellipse(0, 7, 7.4, 2.2, 0, 0, 7); g.fill();
-    g.fillStyle = item.color; g.beginPath(); g.arc(0, 0.4, 5.4, 0, 7); g.fill(); line(g, OUT, 1.2); g.stroke();
-    line(g, dk(0.26), 1.1);                                                                                         // the drupelets that make it one berry
-    for (const [x, y] of [[-2.6, -1.6], [1, -2.4], [3, 0.4], [-3.4, 1.6], [0.4, 1.4], [2, 3.4], [-1.4, 4]]) { g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.stroke(); }
+    g.fillStyle = item.color;                                                                                       // the drupelets: a cluster of beads, the way a cloudberry grows
+    for (const [x, y, r] of [[-2.8, -1.8, 2.4], [1.2, -2.6, 2.3], [3.4, 0.6, 2.3], [-3.6, 1.8, 2.3], [0.2, 1.2, 2.5], [2.2, 3.6, 2.2], [-1.6, 4.2, 2.2]]) {
+      g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); line(g, OUT, 1.1); g.stroke();
+      g.fillStyle = lt(0.42); g.beginPath(); g.arc(x - r * 0.32, y - r * 0.32, 1, 0, 7); g.fill(); g.fillStyle = item.color; }
     g.fillStyle = '#6fae5a'; g.beginPath(); g.moveTo(-1.4, -5); g.lineTo(-5.4, -7.4); g.lineTo(-1.4, -7.4);
     g.lineTo(1.4, -8.4); g.lineTo(1.4, -5); g.closePath(); g.fill();                                                 // the calyx
     g.fillStyle = lt(0.5); g.beginPath(); g.arc(-2.6, -1.6, 1.1, 0, 7); g.fill();
@@ -1526,12 +1544,14 @@
     }
   });
   set('mithril_ore', (g, size, item) => {                         // blue crystal growing straight out of the stone
-    cobble(g, '#5d6470');
+    cobble(g, '#33383f');
     g.fillStyle = item.color;
     for (const [x, y, w, h] of [[-3.4, -1.4, 2.4, 6.4], [1, -3.4, 2.6, 7.4], [4.4, 0.4, 2, 5]]) {
       g.beginPath(); g.moveTo(x - w / 2, y + h / 2); g.lineTo(x - w / 2, y - h / 2 + 1.4); g.lineTo(x, y - h / 2);
       g.lineTo(x + w / 2, y - h / 2 + 1.4); g.lineTo(x + w / 2, y + h / 2); g.closePath(); g.fill(); line(g, OUT, 1.1); g.stroke(); g.fillStyle = item.color; }
-    g.fillStyle = lt(0.45); g.beginPath(); g.moveTo(0.2, -6.8); g.lineTo(1.2, -6.2); g.lineTo(1.2, -1.4); g.lineTo(0.2, -1.4); g.closePath(); g.fill();
+    g.fillStyle = '#a8cdf2';                                                                                       // the lit face of each crystal, so it reads against the stone
+    for (const [x, y, h] of [[-3.4, -1.4, 6.4], [1, -3.4, 7.4], [4.4, 0.4, 5]]) {
+      g.beginPath(); g.moveTo(x - 0.5, y - h / 2 + 0.8); g.lineTo(x + 0.4, y - h / 2 + 0.4); g.lineTo(x + 0.4, y + h / 2 - 0.6); g.lineTo(x - 0.5, y + h / 2 - 0.6); g.closePath(); g.fill(); }
   });
   set('obsidian', (g, size, item) => {                            // volcanic glass: one shard, sharp all the way round
     g.fillStyle = item.color;
