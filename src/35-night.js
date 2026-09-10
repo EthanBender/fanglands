@@ -466,8 +466,14 @@
         check('night: a zombie chasing a knight into Grubmarket is turned back at the city line (never inside after a tick, sent home)', !!z && held && turned >= 1, { found: !!z, held, turned, crossedTo, at: z && tileOf(z), state: z && z.state });
         for (const m of nightMs()) m.stunT = 999; player.dayTime = 0; F.sim(3, []); h.peace(true); drops = drops.filter(d => dist(d.x, d.y, tc(215), tc(30)) > 30 * TILE); }
       else check('night: the goblin city regions (33-goblincity) are present for the no-go check', false, { names: REGIONS.map(r => r.name) }); }
-    // one darkness at a time: Deepholm, the starting cave and dark instances keep their own lights
-    { player.dayTime = LIGHT + DUSK + 1; F.tp(14, 80); F.sim(2, []); const dh = NIGHT.overlay(), dhRegion = player.region; F.tp(4, 7); F.sim(2, []); const cave = NIGHT.overlay();
+    // one darkness at a time: Deepholm, the starting cave and dark instances keep their own lights.
+    // Deepholm is an instance now (24-dwarves), so the probe climbs down the shaft to stand in it.
+    { player.dayTime = LIGHT + DUSK + 1;
+      const wasIn = window.INSTANCES && INSTANCES.active(); if (wasIn) INSTANCES.leave();
+      const inDh = !!(window.DEEPHOLM && DEEPHOLM.enter()); if (inDh) F.tp(DEEPHOLM.ENTRY[0], DEEPHOLM.ENTRY[1]); F.sim(2, []);
+      const dh = inDh ? NIGHT.overlay() : 1, dhRegion = player.region;
+      if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
+      F.tp(4, 7); F.sim(2, []); const cave = NIGHT.overlay();
       const o = h.openSpot(40, 20); F.tp(o.x, o.y); F.sim(2, []); const open = NIGHT.overlay();
       check('night: the overlay is 0.55 in the open after dark and 0 in Deepholm and the starting cave (they draw their own darkness)', open === NIGHT_ALPHA && dh === 0 && dhRegion === 'Deepholm' && cave === 0, { open, dh, dhRegion, cave });
       player.dayTime = 0; F.sim(3, []); }

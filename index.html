@@ -4588,9 +4588,14 @@ HOOKS.selfTest.push((check, F, h) => {
     const viaTap = (px, py, wx, wy, max = 400) => { closePanel(); F.tp(px, py); F.step([]); drainD(); tap.lastTap = null; tapCancel('manual'); tapWorld(wx, wy); const kind = tap.kind, who = tap.target && tap.target.name; let s = 0; while (s < max && tap.kind === 'person') { F.step([]); s++; } F.step([]); const l = firstLine(); closePanel(); drainD(); return { kind, who, s, line: l, at: [+(player.x / TILE).toFixed(1), +(player.y / TILE).toFixed(1)] }; };
     const same = (name, e, t, extra) => check(`tap: ${name} — a tap walks up and opens the same first line E opens`, !!e && t.kind === 'person' && t.line === e && t.s < 400, Object.assign({ e, tap: t }, extra || {}));
     const inst = () => window.INSTANCES ? INSTANCES.active() : null; if (inst()) INSTANCES.leave();
-    // dwarves (24): Brunhild the smith in Deepholm's forge hall, before the forge is lit
-    if (typeof quest.dwarf !== 'undefined' || REGIONS.some(r => r.name === 'Deepholm')) { const snap = JSON.stringify(quest.dwarf === undefined ? null : quest.dwarf); quest.dwarf = { stage: 0, chests: [], visited: true }; clearArea({ x: 12, y: 83 });
-      const e = viaE(12, 82, 12, 81); const t = viaTap(12, 85, tc(12), tc(81)); same('Brunhild (24-dwarves)', e, t); quest.dwarf = JSON.parse(snap); if (quest.dwarf === null) delete quest.dwarf; }
+    // dwarves (24): Brunhild the smith in Deepholm's forge hall, before the forge is lit.
+    // Deepholm is an instance now, so the probe walks in through the shaft first — same smith, same forge hall,
+    // same three tiles apart, in the undercity's own coordinates (the old ones minus 70 rows).
+    if (window.DEEPHOLM) { const snap = JSON.stringify(quest.dwarf === undefined ? null : quest.dwarf); quest.dwarf = { stage: 0, chests: [], visited: true };
+      const entered = DEEPHOLM.enter(); F.sim(2, []); clearArea({ x: 12, y: 13 });
+      const e = entered ? viaE(12, 12, 12, 11) : null; const t = entered ? viaTap(12, 15, tc(12), tc(11)) : { kind: null };
+      same('Brunhild (24-dwarves, inside Deepholm)', e, t, { entered, inst: inst() });
+      if (inst()) INSTANCES.leave(); drainD(); quest.dwarf = JSON.parse(snap); if (quest.dwarf === null) delete quest.dwarf; }
     // elves (25): Thessaly the weaver in Sylvaris, before the Queen's task is done
     if (REGIONS.some(r => r.name === 'Sylvaris')) { const snap = JSON.stringify(quest.elves === undefined ? null : quest.elves); if (!quest.elves) { F.tp(133, 128); F.step([]); } if (quest.elves) quest.elves.stage = 0; clearArea({ x: 133, y: 129 });
       const e = viaE(132, 129, 133, 129); const t = viaTap(130, 129, tc(133), tc(129)); same('Thessaly (25-elves)', e, t); quest.elves = JSON.parse(snap); if (quest.elves === null) delete quest.elves; }
@@ -6069,20 +6074,33 @@ HOOKS.selfTest.push((check, F, h) => {
   const DW_CHEST = addTile('DWARF_CHEST', { solid: true, tex: 'cave', mini: '#8a5a2b' });
 
   // ---------- geometry ----------
-  // The undercity fills the far south-west. It starts at y 72 so the last knight's grave (12, 70) stays in Wolfwood.
-  const DH = { x0: 2, y0: 72, x1: 26, y1: 94 };
-  const SHAFT_T = { x: 56, y: 6 };   // Grey Quarry mine shaft; you stand on (56, 7) to use it
-  const LADDER_T = { x: 14, y: 74 }; // Deepholm entrance hall; you land on (14, 75)
-  const THRONE_T = { x: 14, y: 93 };
-  const FORGES = [[10, 80], [18, 80]], ANVILS = [[11, 82], [17, 82]];
-  const PILLARS = [[9, 81], [19, 81], [9, 85], [19, 85]];
-  const LAMPS = [[11, 73], [17, 73], [5, 76], [23, 76], [6, 82], [22, 82], [6, 84], [22, 84], [9, 88], [19, 88], [9, 93], [19, 93]];
-  const MITHRIL_ROCKS = [[3, 73], [5, 73], [8, 74], [3, 76], [8, 77], [4, 78], [20, 73], [23, 73], [25, 74], [20, 76], [25, 77], [24, 78]];
-  const CHESTS = [[6, 86], [22, 86]];
+  // Deepholm is underground, so it is not on the overworld map at all: it is an instance of its own
+  // (16-instances). The mine shaft at Grey Quarry is its door — E on the shaft goes down; the ladder in
+  // the entrance hall (or L, or the LEAVE button) comes back up onto the shaft's step tile.
+  // The undercity's layout is the one it always had, moved as one piece: what used to stand at world
+  // (x, y) now stands at instance (x, y − 70), so every hall, gallery, lamp, rock, forge, anvil, chest
+  // and dwarf keeps exactly the same shape, spacing and neighbours. Only the surface it hid under is gone.
+  const DH_ID = 'deepholm';
+  // 29 × 27 tiles: two of solid rock all round the undercity, and wide enough that 16-instances hides
+  // Death and his house (25–30, 10–14) while you are down here instead of standing them in the forge hall.
+  const DH_W = 29, DH_H = 27;
+  const DH = { x0: 2, y0: 2, x1: 26, y1: 24 };     // the undercity's walls, in instance tiles
+  const SHAFT_T = { x: 56, y: 6 };                 // Grey Quarry mine shaft, on the overworld map
+  const SHAFT_STEP = [SHAFT_T.x, SHAFT_T.y + 1];   // you stand here to use it, and land back here on the way out
+  const LADDER_T = { x: 14, y: 4 };                // Deepholm entrance hall; you arrive on (14, 5)
+  const THRONE_T = { x: 14, y: 23 };
+  const FORGES = [[10, 10], [18, 10]], ANVILS = [[11, 12], [17, 12]];
+  const PILLARS = [[9, 11], [19, 11], [9, 15], [19, 15]];
+  const LAMPS = [[11, 3], [17, 3], [5, 6], [23, 6], [6, 12], [22, 12], [6, 14], [22, 14], [9, 18], [19, 18], [9, 23], [19, 23]];
+  const MITHRIL_ROCKS = [[3, 3], [5, 3], [8, 4], [3, 6], [8, 7], [4, 8], [20, 3], [23, 3], [25, 4], [20, 6], [25, 7], [24, 8]];
+  const CHESTS = [[6, 16], [22, 16]];
+  const GUARDS = [[12, 21], [16, 21]];             // the king's two, spawned with the instance
   const MITHRIL = '#7aa0d0';
 
-  REGIONS.unshift({ name: 'Deepholm', sub: 'The dwarven undercity', x0: DH.x0, y0: DH.y0, x1: DH.x1, y1: DH.y1 });
-  const inDeepholm = (tx, ty) => tx >= DH.x0 && tx <= DH.x1 && ty >= DH.y0 && ty <= DH.y1;
+  // Deepholm's own region is unshifted by 16-instances while you are inside and taken away when you leave,
+  // so nothing on the surface answers to the name any more.
+  const inside = () => !!(window.INSTANCES && INSTANCES.active() === DH_ID);
+  const inDeepholm = (tx, ty) => inside() && tx >= DH.x0 && tx <= DH.x1 && ty >= DH.y0 && ty <= DH.y1;
 
   // ---------- items ----------
   Object.assign(ITEMS, {
@@ -6133,18 +6151,24 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.newGame.push(() => { quest.dwarf = { stage: 0, chests: [], visited: false }; });
   HOOKS.questText.dwarf = () => dq().stage >= 2 ? 'Done.' : `Bring King Thrain 5 coal (${Math.min(5, countItem('coal'))}/5) and 3 iron bars (${Math.min(3, countItem('iron_bar'))}/3) to relight the great forge of Deepholm.`;
   HOOKS.activeQuests.push(() => dq().stage === 1 ? ['dwarf'] : []);
+  // The world map used to print DEEPHOLM across the south-west, which is how you remembered where it was.
+  // The undercity is off the map now, so the map marks its door instead — once you have found the door.
+  HOOKS.mapTarget.push(() => dq().visited ? { x: SHAFT_T.x, y: SHAFT_T.y, label: 'Deepholm (the mine shaft)', id: 'deepholm' } : null);
 
   // ---------- the dwarves (own list: drawn short, never wander, talked to through HOOKS.use) ----------
   const DWARVES = [
     { id: 'thrain', name: 'King Thrain', x: THRONE_T.x, y: THRONE_T.y, tunic: '#7a2e2e', hair: '#d9d0c0', crown: true, shoulder: '#c9a36a', role: 'dwarf_king', sortY: 10 },
-    { id: 'brunhild', name: 'Brunhild the smith', x: 12, y: 81, tunic: '#5a4a3a', hair: '#c9843a', apron: true, helm: '#8f96a3', role: 'dwarf_shop', shop: 'dwarf' },
-    { id: 'dagny', name: 'Dagny', x: 16, y: 76, tunic: '#8a5a2a', hair: '#3a2a1a', helm: '#8f96a3', role: 'dwarf_villager', lines: ["Mind the ladder. It's older than the king.", 'Coal from the quarry above keeps our lamps lit. Bring some down if you are passing.', 'The blue rock in the galleries is mithril. Any pick will work it, if your arm is strong enough. Mining twenty.'] },
-    { id: 'orik', name: 'Orik', x: 16, y: 85, tunic: '#6a3a2a', hair: '#7a3a1a', role: 'dwarf_villager', lines: ['Mithril bars need two coal each. Two. Not one.', "Brunhild won't trade while the great forge is cold. Talk to the king, south past the guards.", 'Steel bends. Mithril does not.'] },
-    { id: 'hilde', name: 'Hilde', x: 10, y: 90, tunic: '#7a4a3a', hair: '#e0c080', woman: true, role: 'dwarf_villager', lines: ['King Thrain has sat that throne since before the goblins came.', 'The guards are for show. Mostly.', 'A mithril platebody takes three bars and a Smithing of thirty. Then nothing in the Fanglands touches you.'] },
+    { id: 'brunhild', name: 'Brunhild the smith', x: 12, y: 11, tunic: '#5a4a3a', hair: '#c9843a', apron: true, helm: '#8f96a3', role: 'dwarf_shop', shop: 'dwarf' },
+    { id: 'dagny', name: 'Dagny', x: 16, y: 6, tunic: '#8a5a2a', hair: '#3a2a1a', helm: '#8f96a3', role: 'dwarf_villager', lines: ["Mind the ladder. It's older than the king.", 'Coal from the quarry above keeps our lamps lit. Bring some down if you are passing.', 'The blue rock in the galleries is mithril. Any pick will work it, if your arm is strong enough. Mining twenty.'] },
+    { id: 'orik', name: 'Orik', x: 16, y: 15, tunic: '#6a3a2a', hair: '#7a3a1a', role: 'dwarf_villager', lines: ['Mithril bars need two coal each. Two. Not one.', "Brunhild won't trade while the great forge is cold. Talk to the king, south past the guards.", 'Steel bends. Mithril does not.'] },
+    { id: 'hilde', name: 'Hilde', x: 10, y: 20, tunic: '#7a4a3a', hair: '#e0c080', woman: true, role: 'dwarf_villager', lines: ['King Thrain has sat that throne since before the goblins came.', 'The guards are for show. Mostly.', 'A mithril platebody takes three bars and a Smithing of thirty. Then nothing in the Fanglands touches you.'] },
   ];
   for (const d of DWARVES) { d.px = tc(d.x); d.py = tc(d.y); d.facing = { x: 0, y: 1 }; }
-  if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => DWARVES.map(d => ({ x: d.px, y: d.py, r: 13, id: d.id, name: d.name, talk: () => dwTalk(d) }))); // 17-tap: a tap on a dwarf walks up and talks
+  // 17-tap: a tap on a dwarf walks up and talks. The list is empty on the surface — the dwarves only exist
+  // while the instance is open, and their tiles are the overworld's own cave and Death's House otherwise.
+  if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => inside() ? DWARVES.map(d => ({ x: d.px, y: d.py, r: 13, id: d.id, name: d.name, talk: () => dwTalk(d) })) : []);
   function dwInFront() {
+    if (!inside()) return null;
     let best = null;
     for (const d of DWARVES) {
       const dd = dist(player.x, player.y, d.px, d.py); if (dd > 80) continue;
@@ -6174,52 +6198,81 @@ HOOKS.selfTest.push((check, F, h) => {
     } else say(pick(d.lines), d.name);
   }
 
-  // ---------- world ----------
-  const carve = (api, x0, y0, x1, y1, t) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) api.setTile(x, y, t); };
+  // ---------- the undercity itself: an instance, built once at load ----------
+  // Same halls, same relative layout as when this was carved into the overworld — every rectangle below is
+  // the old one with 70 taken off its rows. Nothing here touches `map`; 16-instances writes these tiles in
+  // when you climb down and puts the overworld back when you climb out.
+  function buildDeepholm(set) {
+    const carve = (x0, y0, x1, y1, t) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, t); };
+    carve(DH.x0, DH.y0, DH.x1, DH.y1, T.WALL);                    // solid rock, then the halls cut out of it
+    carve(11, 3, 17, 7, T.CAVE);                                  // entrance hall (ladder)
+    carve(13, 8, 15, 17, T.CAVE);                                 // the avenue, north to south
+    carve(6, 10, 22, 16, T.CAVE);                                 // the great forge hall
+    carve(3, 3, 8, 8, T.CAVE); carve(6, 9, 7, 9, T.CAVE);         // west mithril gallery + passage
+    carve(20, 3, 25, 8, T.CAVE); carve(21, 9, 22, 9, T.CAVE);     // east mithril gallery + passage
+    carve(8, 18, 20, 23, T.CAVE);                                 // throne hall
+    carve(13, 20, 15, 22, T.RUG);
+    for (const [x, y] of PILLARS) set(x, y, T.WALL);
+    for (const [x, y] of FORGES) set(x, y, T.FORGE);
+    for (const [x, y] of ANVILS) set(x, y, T.ANVIL);
+    for (const [x, y] of LAMPS) set(x, y, DW_LAMP);
+    for (const [x, y] of MITHRIL_ROCKS) set(x, y, DW_MITHRIL);
+    for (const [x, y] of CHESTS) set(x, y, DW_CHEST);
+    set(THRONE_T.x, THRONE_T.y, DW_THRONE);
+    set(LADDER_T.x, LADDER_T.y, DW_LADDER);
+  }
+  if (window.INSTANCES) INSTANCES.define(DH_ID, {
+    name: 'Deepholm', sub: 'The dwarven undercity', w: DH_W, h: DH_H,
+    build: buildDeepholm,
+    entry: [LADDER_T.x, LADDER_T.y + 1],       // you step off the ladder here
+    step: SHAFT_STEP,                          // and back onto the shaft's step tile in Grey Quarry
+    exit: null,                                // no daylight ladder tile: DW_LADDER below is the way out
+    dark: false,                               // this file draws Deepholm's own lamplight, further down
+    spawns: GUARDS.map(([x, y]) => ['dwarf_guard', x, y]),   // nothing from the forest gets in; the king's guards hold the throne hall
+  });
+
+  // ---------- world: rebuild the undercity, and put the shaft at Grey Quarry ----------
   HOOKS.world.push((rnd, api) => {
-    carve(api, DH.x0, DH.y0, DH.x1, DH.y1, T.WALL);
-    carve(api, 11, 73, 17, 77, T.CAVE);                                   // entrance hall (ladder)
-    carve(api, 13, 78, 15, 87, T.CAVE);                                   // the avenue, north to south
-    carve(api, 6, 80, 22, 86, T.CAVE);                                    // the great forge hall
-    carve(api, 3, 73, 8, 78, T.CAVE); carve(api, 6, 79, 7, 79, T.CAVE);   // west mithril gallery + passage
-    carve(api, 20, 73, 25, 78, T.CAVE); carve(api, 21, 79, 22, 79, T.CAVE); // east mithril gallery + passage
-    carve(api, 8, 88, 20, 93, T.CAVE);                                    // throne hall
-    carve(api, 13, 90, 15, 92, T.RUG);
-    for (const [x, y] of PILLARS) api.setTile(x, y, T.WALL);
-    for (const [x, y] of FORGES) api.setTile(x, y, T.FORGE);
-    for (const [x, y] of ANVILS) api.setTile(x, y, T.ANVIL);
-    for (const [x, y] of LAMPS) api.setTile(x, y, DW_LAMP);
-    for (const [x, y] of MITHRIL_ROCKS) api.setTile(x, y, DW_MITHRIL);
-    for (const [x, y] of CHESTS) api.setTile(x, y, DW_CHEST);
-    api.setTile(THRONE_T.x, THRONE_T.y, DW_THRONE);
-    api.setTile(LADDER_T.x, LADDER_T.y, DW_LADDER);
-    // the shaft at Grey Quarry, with a clear lane up from the miners' cart so it can always be reached
+    // Deepholm's own tiles are laid again from scratch on every world-gen, exactly as the overworld is.
+    // Without this a new game would inherit whatever a later feature wrote into the undercity on the last
+    // one — 53-coalmine berths its cart by scanning for open floor, so its rails would pile up run on run.
+    const inst = window.INSTANCES && INSTANCES.get(DH_ID);
+    if (inst) {
+      inst.tiles.fill(T.WALL);
+      const set = (x, y, t) => { if (x >= 0 && y >= 0 && x < inst.w && y < inst.h) inst.tiles[y * inst.w + x] = t; };
+      buildDeepholm(set);
+      set(inst.entry[0], inst.entry[1], T.CAVE);                                                     // you must be able to stand where you arrive
+      for (const [x, y] of GUARDS) if (SOLID.has(inst.tiles[y * inst.w + x])) set(x, y, T.CAVE);      // and so must the guards
+    }
+    // a clear lane up from the miners' cart so the shaft can always be reached
     const clearable = [T.ROCK, T.IRON, T.COAL, T.GRASS, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM];
     const lane = [[53, 13], [55, 13]];
     for (let y = 8; y <= 12; y++) lane.push([54, y], [55, y]);
     for (let y = 5; y <= 7; y++) for (let x = 55; x <= 57; x++) lane.push([x, y]);
     for (const [x, y] of lane) if (clearable.includes(api.tileAt(x, y))) api.setTile(x, y, T.DIRT);
     api.setTile(SHAFT_T.x, SHAFT_T.y, DW_SHAFT);
-    // nothing from the forest spawns inside the undercity; the king's guards do
-    for (let i = MONSTER_SPAWNS.length - 1; i >= 0; i--) { const s = MONSTER_SPAWNS[i]; if (inDeepholm(s.tx, s.ty)) MONSTER_SPAWNS.splice(i, 1); }
-    api.spawnList('dwarf_guard', [[12, 91], [16, 91]]);
   });
 
   // ---------- use: dwarves, shaft, ladder, mithril, chests ----------
-  const dwTeleport = (tx, ty, facingY, text) => {
-    player.action = null; burst(player.x, player.y, '#c9a36a', 16, 90);
-    player.x = tc(tx); player.y = tc(ty); player.facing = { x: 0, y: facingY };
-    burst(player.x, player.y, '#c9a36a', 16, 90); notify(text); save();
-  };
+  // the shaft and the ladder are solid and worth walking to, so a tap on the iPad reaches them (17-tap)
+  if (typeof INTERESTING_TILES !== 'undefined') for (const t of [DW_SHAFT, DW_LADDER, DW_MITHRIL, DW_CHEST, DW_THRONE]) INTERESTING_TILES.add(t);
   HOOKS.use.push((t, tx, ty) => {
     const d = dwInFront();
     if (d) { dwTalk(d); return true; }
     if (t === DW_SHAFT) {
-      dwTeleport(LADDER_T.x, LADDER_T.y + 1, -1, 'You climb down the shaft into Deepholm.');
-      const q = dq(); if (!q.visited) { q.visited = true; say("Deepholm. The dwarves went under the quarry when the goblins came. Their king still holds court, and their great forge has been cold since.", 'The Voice'); save(); }
+      if (!window.INSTANCES) { notify('The shaft goes down into the dark. Nothing answers.'); return true; }
+      if (INSTANCES.active() === DH_ID) return true;                     // already down there; the ladder is the way back
+      if (!INSTANCES.enter(DH_ID, SHAFT_STEP)) { notify('You cannot climb down right now.'); return true; }
+      notify('You climb down the shaft into Deepholm.');
+      const q = dq(); if (!q.visited) { q.visited = true; say("Deepholm. The dwarves went under the quarry when the goblins came. Their king still holds court, and their great forge has been cold since.", 'The Voice'); }
+      save();
       return true;
     }
-    if (t === DW_LADDER) { dwTeleport(SHAFT_T.x, SHAFT_T.y + 1, -1, 'You climb the ladder up into Grey Quarry.'); return true; }
+    if (t === DW_LADDER) {
+      if (!inside()) { notify('A ladder of old wood, bolted to the rock.'); return true; }
+      INSTANCES.leave(); notify('You climb the ladder up into Grey Quarry.'); save();
+      return true;
+    }
     if (t === DW_MITHRIL) {
       const tier = hasTool('pickaxe');
       if (!tier) { notify('Mithril. You need a pickaxe to work it.'); return true; }
@@ -6323,19 +6376,18 @@ HOOKS.selfTest.push((check, F, h) => {
   }
   // darkness: an offscreen layer, holes cut with destination-out (the core's cave technique).
   // Drawn as the last world item rather than in HOOKS.hud so the HUD (HP, minimap, hotbar) stays readable underground.
+  // Nothing of Deepholm is on the surface any more, so this only ever runs while the instance is open:
+  // the whole screen is underground, and the lamps, the forges and the ladder shaft are the only light.
   const dwDark = document.createElement('canvas');
   function dwDrawDark(g) {
-    const inside = player.region === 'Deepholm';
-    const rx = DH.x0 * TILE - cam.x, ry = DH.y0 * TILE - cam.y, rw = (DH.x1 - DH.x0 + 1) * TILE, rh = (DH.y1 - DH.y0 + 1) * TILE;
-    if (!inside && (rx > VW || ry > VH || rx + rw < 0 || ry + rh < 0)) return;
     if (dwDark.width !== canvas.width || dwDark.height !== canvas.height) { dwDark.width = canvas.width; dwDark.height = canvas.height; }
     const dg = dwDark.getContext('2d');
     dg.setTransform(DPR, 0, 0, DPR, 0, 0); dg.globalCompositeOperation = 'source-over'; dg.clearRect(0, 0, VW, VH);
     dg.fillStyle = 'rgba(4,6,14,0.55)';
-    if (inside) dg.fillRect(0, 0, VW, VH); else dg.fillRect(rx, ry, rw, rh);
+    dg.fillRect(0, 0, VW, VH);
     dg.globalCompositeOperation = 'destination-out';
     const lights = [];
-    if (inside) lights.push({ x: player.x, y: player.y, r: 150 });
+    lights.push({ x: player.x, y: player.y, r: 150 });
     for (const [lx, ly] of LAMPS) lights.push({ x: tc(lx) + 10, y: tc(ly) - 12, r: 130 });
     for (const [fx, fy] of FORGES) lights.push({ x: tc(fx), y: tc(fy), r: 100 });
     lights.push({ x: tc(LADDER_T.x), y: tc(LADDER_T.y), r: 110 });
@@ -6359,7 +6411,8 @@ HOOKS.selfTest.push((check, F, h) => {
       else if (t === DW_THRONE) items.push({ y: ty * TILE + TILE - 6, draw: () => dwDrawThrone(g, tx, ty) });
       else if (t === DW_CHEST) items.push({ y: ty * TILE + TILE - 6, draw: () => dwDrawChest(g, tx, ty, dq().chests.includes(tx + ',' + ty)) });
     }
-    for (const d of DWARVES) if (d.px > cam.x - 60 && d.px < cam.x + VW + 60 && d.py > cam.y - 60 && d.py < cam.y + VH + 60) items.push({ y: d.py + 13 + (d.sortY || 0), draw: () => dwDrawDwarf(g, d) });
+    // the dwarves stand in Deepholm and only there: on the surface those tiles are the starting cave and Death's House
+    if (inside()) for (const d of DWARVES) if (d.px > cam.x - 60 && d.px < cam.x + VW + 60 && d.py > cam.y - 60 && d.py < cam.y + VH + 60) items.push({ y: d.py + 13 + (d.sortY || 0), draw: () => dwDrawDwarf(g, d) });
     // the pickaxe in hand while mining mithril (the core only animates its own 'mine' action)
     const a = player.action;
     if (a && a.type === 'mine_mithril' && !player.dead) items.push({ y: player.y + player.r + 0.01, draw: () => {
@@ -6367,7 +6420,7 @@ HOOKS.selfTest.push((check, F, h) => {
       g.save(); g.translate(player.x, player.y); g.rotate(ang - 0.7 + sw); g.fillStyle = '#8a6a3a'; g.fillRect(2, -1.5, 26, 3);
       g.fillStyle = a.tier >= 3 ? MITHRIL : a.tier === 2 ? '#a9adb5' : '#b8863a'; g.beginPath(); g.moveTo(24, -2); g.quadraticCurveTo(30, -8, 34, -6); g.lineTo(30, 0); g.lineTo(34, 6); g.quadraticCurveTo(30, 8, 24, 2); g.closePath(); g.fill(); g.restore();
     } });
-    items.push({ y: 1e9, draw: () => dwDrawDark(g) });
+    if (inside()) items.push({ y: 1e9, draw: () => dwDrawDark(g) });
     // interaction highlight for our own tiles and dwarves (the core only highlights what it knows)
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const d = dwInFront();
@@ -6377,15 +6430,38 @@ HOOKS.selfTest.push((check, F, h) => {
     } });
   });
 
+  // ---------- what the rest of the game needs to find Deepholm now that it is off the map ----------
+  window.DEEPHOLM = {
+    ID: DH_ID, W: DH_W, H: DH_H, rect: DH, SHAFT: SHAFT_T, SHAFT_STEP, LADDER: LADDER_T, ENTRY: [LADDER_T.x, LADDER_T.y + 1],
+    THRONE: THRONE_T, FORGES, ANVILS, LAMPS, MITHRIL_ROCKS, CHESTS, GUARDS, DWARVES, inside,
+    tiles: { shaft: DW_SHAFT, ladder: DW_LADDER, mithril: DW_MITHRIL, chest: DW_CHEST, throne: DW_THRONE, lamp: DW_LAMP },
+    // read/write the undercity's own tile map (16-instances copies it into `map` on every entry, so a
+    // feature that wants to stand something inside Deepholm writes it here at world-gen, not into `map`)
+    at: (x, y) => { const i = window.INSTANCES && INSTANCES.get(DH_ID); return (i && x >= 0 && y >= 0 && x < i.w && y < i.h) ? i.tiles[y * i.w + x] : T.WALL; },
+    set: (x, y, t) => { const i = window.INSTANCES && INSTANCES.get(DH_ID); if (i && x >= 0 && y >= 0 && x < i.w && y < i.h) i.tiles[y * i.w + x] = t; },
+    enter: () => !!(window.INSTANCES && (INSTANCES.active() === DH_ID || INSTANCES.enter(DH_ID, SHAFT_STEP))),
+  };
+
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
     h.peace(true);
-    check('dwarves: Deepholm region in the south-west', REGIONS[0].name === 'Deepholm' && regionAt(14, 80).name === 'Deepholm' && regionAt(12, 70).name === 'Wolfwood', { first: REGIONS[0].name, at1480: regionAt(14, 80).name });
+    if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
+    // Deepholm is an instance now, so it is a place you are IN rather than a rectangle of the surface: the
+    // region only exists while you are down there, and the ground it used to sit on is Wolfwood again.
+    { const surface = regionAt(14, 80).name, grave = regionAt(12, 70).name, listed = REGIONS.some(r => r.name === 'Deepholm');
+      DEEPHOLM.enter(); const down = regionAt(LADDER_T.x, LADDER_T.y + 1).name, first = REGIONS[0].name; INSTANCES.leave();
+      check('dwarves: Deepholm is its own region while you are in it, and no part of the surface answers to the name', !listed && surface === 'Wolfwood' && grave === 'Wolfwood' && down === 'Deepholm' && first === 'Deepholm' && !REGIONS.some(r => r.name === 'Deepholm'), { listedOnSurface: listed, at1480: surface, at1270: grave, inside: down, firstWhileIn: first }); }
     // shaft down, ladder up
     { F.tp(54, 14); const w = F.goAdjacent(SHAFT_T.x, SHAFT_T.y, 1500); F.face(SHAFT_T.x, SHAFT_T.y); F.press('KeyE'); F.sim(3, []);
-      check('dwarves: mine shaft at Grey Quarry drops you into Deepholm', typeof w === 'number' && player.region === 'Deepholm' && tileAt(SHAFT_T.x, SHAFT_T.y) === DW_SHAFT && Math.floor(player.x / TILE) === LADDER_T.x && Math.floor(player.y / TILE) === LADDER_T.y + 1, { w, region: player.region, tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) });
+      check('dwarves: mine shaft at Grey Quarry drops you into Deepholm', typeof w === 'number' && player.region === 'Deepholm' && INSTANCES.active() === DH_ID && Math.floor(player.x / TILE) === LADDER_T.x && Math.floor(player.y / TILE) === LADDER_T.y + 1, { w, region: player.region, inst: INSTANCES.active(), tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) });
       F.face(LADDER_T.x, LADDER_T.y); F.press('KeyE'); F.sim(3, []);
-      check('dwarves: ladder climbs back up beside the shaft', player.region === 'Grey Quarry' && Math.floor(player.x / TILE) === SHAFT_T.x && Math.floor(player.y / TILE) === SHAFT_T.y + 1, { region: player.region, tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }); }
+      check('dwarves: ladder climbs back up beside the shaft', player.region === 'Grey Quarry' && INSTANCES.active() === null && tileAt(SHAFT_T.x, SHAFT_T.y) === DW_SHAFT && Math.floor(player.x / TILE) === SHAFT_T.x && Math.floor(player.y / TILE) === SHAFT_T.y + 1, { region: player.region, inst: INSTANCES.active(), tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }); }
+    // the world map marks the shaft once you have been down it, in place of the region label the surface lost
+    { const v0 = dq().visited; dq().visited = false; const before = mapTargets().some(t => t.id === 'deepholm');
+      dq().visited = true; const after = mapTargets().find(t => t.id === 'deepholm');
+      check('dwarves: the world map marks the mine shaft as the way to Deepholm, once you have been down it', !before && !!after && after.x === SHAFT_T.x && after.y === SHAFT_T.y && /Deepholm/.test(after.label), { before, after });
+      dq().visited = v0; }
+    DEEPHOLM.enter();
     // mithril rocks + mining gates
     { let rocks = 0; for (let y = DH.y0; y <= DH.y1; y++) for (let x = DH.x0; x <= DH.x1; x++) if (tileAt(x, y) === DW_MITHRIL) rocks++; check('dwarves: mithril rocks in the galleries', rocks >= 10, { rocks }); }
     { F.tp(LADDER_T.x, LADDER_T.y + 1); const r = F.nearestTile([DW_MITHRIL]); const w = F.goAdjacent(r.x, r.y, 2500); F.face(r.x, r.y);
@@ -6415,15 +6491,22 @@ HOOKS.selfTest.push((check, F, h) => {
     { const drain = () => { dialog.queue.length = 0; dialog.cur = null; }; // earlier lines (the Voice on the way down) would otherwise sit in front
       dq().stage = 0; drain(); F.tp(THRONE_T.x, THRONE_T.y - 1); F.face(THRONE_T.x, THRONE_T.y); F.press('KeyE'); F.sim(3, []);
       const asked = dq().stage === 1 && dialog.cur && dialog.cur.who === 'King Thrain' && activeQuests().includes('dwarf') && /coal/.test(questText('dwarf'));
-      drain(); F.tp(13, 81); F.face(12, 81); closePanel(); F.press('KeyE'); F.sim(3, []); const refused = panel !== 'shop' && dialog.cur && /cold/.test(dialog.cur.text);
+      drain(); F.tp(13, 11); F.face(12, 11); closePanel(); F.press('KeyE'); F.sim(3, []); const refused = panel !== 'shop' && dialog.cur && /cold/.test(dialog.cur.text);
       check('dwarves: King Thrain asks for 5 coal + 3 iron bars; Brunhild refuses to trade before', asked, { stage: dq().stage, who: dialog.cur && dialog.cur.who, refused });
       check('dwarves: Brunhild will not trade by a cold forge', refused, { panel, refused });
       while (countItem('coal') < 5) h.give('coal', 1); while (countItem('iron_bar') < 3) h.give('iron_bar', 1); const coal0 = countItem('coal'), bars0 = countItem('iron_bar'), c0 = coins(), sx0 = player.skills.smithing.xp;
       F.tp(THRONE_T.x, THRONE_T.y - 1); F.face(THRONE_T.x, THRONE_T.y); F.press('KeyE'); F.sim(3, []);
       check('dwarves: the king takes the coal and iron, pays 300 coins and 200 Smithing xp', dq().stage === 2 && coins() === c0 + 300 && player.skills.smithing.xp === sx0 + 200 && countItem('coal') === coal0 - 5 && countItem('iron_bar') === bars0 - 3 && !activeQuests().includes('dwarf'), { stage: dq().stage, coins: coins() - c0, xp: player.skills.smithing.xp - sx0 });
-      F.tp(13, 81); F.face(12, 81); F.press('KeyE'); F.sim(2, []); const open = panel === 'shop' && panelArg === 'dwarf'; const coalB = countItem('coal'); const bought = F.clickButton('Buy 25'); closePanel();
+      F.tp(13, 11); F.face(12, 11); F.press('KeyE'); F.sim(2, []); const open = panel === 'shop' && panelArg === 'dwarf'; const coalB = countItem('coal'); const bought = F.clickButton('Buy 25'); closePanel();
       check("dwarves: Brunhild's shop opens after the quest and sells coal (and a mithril pickaxe at 900)", open && bought && countItem('coal') === coalB + 1 && SHOPS.dwarf.stock.some(([id, p]) => id === 'mithril_pickaxe' && p === 900), { open, bought, coal: countItem('coal') }); }
-    { const g = monsters.filter(m => m.type === 'dwarf_guard'); check('dwarves: two neutral dwarf guards hold the throne hall', g.length === 2 && g.every(m => !m.angry && inDeepholm(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))), { guards: g.length }); }
+    // the guards come with the instance now, so they stand in the throne hall while you are down there and nowhere at all when you are not
+    { const g = monsters.filter(m => m.type === 'dwarf_guard');
+      const homes = g.map(m => [Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)]);
+      const held = g.length === 2 && g.every(m => !m.angry && inDeepholm(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)));
+      INSTANCES.leave();
+      const none = !monsters.some(m => m.type === 'dwarf_guard') && !MONSTER_SPAWNS.some(s => s.type === 'dwarf_guard');
+      check('dwarves: two neutral dwarf guards hold the throne hall, and none of them stand on the surface', held && none, { guards: g.length, homes, surface: !none }); }
+    if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
     h.peace(false);
   });
 }
@@ -11020,8 +11103,14 @@ HOOKS.selfTest.push((check, F, h) => {
         check('night: a zombie chasing a knight into Grubmarket is turned back at the city line (never inside after a tick, sent home)', !!z && held && turned >= 1, { found: !!z, held, turned, crossedTo, at: z && tileOf(z), state: z && z.state });
         for (const m of nightMs()) m.stunT = 999; player.dayTime = 0; F.sim(3, []); h.peace(true); drops = drops.filter(d => dist(d.x, d.y, tc(215), tc(30)) > 30 * TILE); }
       else check('night: the goblin city regions (33-goblincity) are present for the no-go check', false, { names: REGIONS.map(r => r.name) }); }
-    // one darkness at a time: Deepholm, the starting cave and dark instances keep their own lights
-    { player.dayTime = LIGHT + DUSK + 1; F.tp(14, 80); F.sim(2, []); const dh = NIGHT.overlay(), dhRegion = player.region; F.tp(4, 7); F.sim(2, []); const cave = NIGHT.overlay();
+    // one darkness at a time: Deepholm, the starting cave and dark instances keep their own lights.
+    // Deepholm is an instance now (24-dwarves), so the probe climbs down the shaft to stand in it.
+    { player.dayTime = LIGHT + DUSK + 1;
+      const wasIn = window.INSTANCES && INSTANCES.active(); if (wasIn) INSTANCES.leave();
+      const inDh = !!(window.DEEPHOLM && DEEPHOLM.enter()); if (inDh) F.tp(DEEPHOLM.ENTRY[0], DEEPHOLM.ENTRY[1]); F.sim(2, []);
+      const dh = inDh ? NIGHT.overlay() : 1, dhRegion = player.region;
+      if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
+      F.tp(4, 7); F.sim(2, []); const cave = NIGHT.overlay();
       const o = h.openSpot(40, 20); F.tp(o.x, o.y); F.sim(2, []); const open = NIGHT.overlay();
       check('night: the overlay is 0.55 in the open after dark and 0 in Deepholm and the starting cave (they draw their own darkness)', open === NIGHT_ALPHA && dh === 0 && dhRegion === 'Deepholm' && cave === 0, { open, dh, dhRegion, cave });
       player.dayTime = 0; F.sim(3, []); }
@@ -13330,20 +13419,22 @@ HOOKS.selfTest.push((check, F, h) => {
   const passWithGates = names => { const ids = names.map(n => gateId[n]); return t => !SOLID.has(t) || ids.includes(t); };
 
   // ---------- where the game puts you down without walking: the roots ----------
+  // Deepholm used to be a root of its own (the shaft dropped you into a block of the overworld at 2–26, 72–94).
+  // It is an instance now (24-dwarves), so what it holds is audited by instanceConnectivity below and the only
+  // thing the overworld still owes it is the shaft itself — which the `shaft` root check keeps honest.
   const ROOTS = {
     cave: { at: [Math.floor(SPAWN.x / TILE), Math.floor(SPAWN.y / TILE)], via: 'the cave start' },
-    deepholm: { at: [14, 75], via: 'the Grey Quarry shaft (56,6)' },
     gull: { at: [173, 13], via: "Harl's ferry (10 coins)" },
     ironclad: { at: [180, 50], via: "Harl's ferry (25 coins, combat 8)" },
     farshore: { at: [206, 30], via: "Harl's ferry (40 coins, combat 10)" },
   };
-  const rootFor = (x, y) => x >= 200 ? 'farshore' : (x >= 2 && x <= 26 && y >= 72 && y <= 94) ? 'deepholm' : (x >= 169 && x <= 186 && y >= 5 && y <= 21) ? 'gull' : (x >= 176 && x <= 197 && y >= 39 && y <= 61) ? 'ironclad' : 'cave';
+  const rootFor = (x, y) => x >= 200 ? 'farshore' : (x >= 169 && x <= 186 && y >= 5 && y <= 21) ? 'gull' : (x >= 176 && x <= 197 && y >= 39 && y <= 61) ? 'ironclad' : 'cave';
 
   // ---------- the targets ----------
   // feature NPCs that live in their own lists (25-elves, 24-dwarves, 26-boats, 33-goblincity, 31-rebuild, 41-guild): known tiles from those files
   const CLOSURE_NPCS = [
     ['Queen Aelith', 133, 119], ['Lira', 158, 119], ['Thessaly', 133, 129], ['Faelan', 150, 132],
-    ['King Thrain', 14, 93], ['Brunhild', 12, 81], ['Dagny', 16, 76], ['Orik', 16, 85], ['Hilde', 10, 90],
+    // the dwarves moved into the Deepholm instance with the undercity: they are walked to in instanceConnectivity
     ['Old Harl (dock)', 165, 14], ['Salt Pete', 181, 14],
     ['Tinkerton (castle gate)', 226, 52], ['Grubb', 216, 23], ['Nix', 230, 23], ['Old Snaggle', 216, 37], ['Pip-squeak', 222, 33], ['King Gnash', 224, 67], ['Mudge', 234, 32], ['Skritch', 219, 27], ['Ratchet', 230, 27],
     ['Old Tam (rebuilt square)', 137, 81], ['Nell (rebuilt square)', 140, 77], ['Pip (rebuilt square)', 142, 81],
@@ -13389,7 +13480,8 @@ HOOKS.selfTest.push((check, F, h) => {
       return { ...t, strict, open, dist: open >= 0 ? open : strict, gate, via: ROOTS[t.root].via };
     });
     // the roots themselves: the shaft and Harl must be reachable from the cave, or the root is a fiction
-    const rootOk = { cave: true, deepholm: reachOf(dists.cave, 56, 6) >= 0, gull: reachOf(dists.cave, 165, 14) >= 0, ironclad: reachOf(dists.cave, 165, 14) >= 0, farshore: reachOf(dists.cave, 165, 14) >= 0 };
+    // (`shaft` is not a root any more — Deepholm is an instance — but the walk to its door is still the thing to prove)
+    const rootOk = { cave: true, shaft: reachOf(dists.cave, 56, 6) >= 0, gull: reachOf(dists.cave, 165, 14) >= 0, ironclad: reachOf(dists.cave, 165, 14) >= 0, farshore: reachOf(dists.cave, 165, 14) >= 0 };
     for (const r of rows) if (!rootOk[r.root]) { r.strict = -1; r.open = -1; r.gate = null; }
     const unreachable = rows.filter(r => r.open < 0).map(r => `${r.name} @${r.x},${r.y} [${r.group}, from ${r.root}]`);
     const gated = rows.filter(r => r.strict < 0 && r.open >= 0).map(r => `${r.name} @${r.x},${r.y} behind ${r.gate || 'a story gate'}`);
@@ -13401,6 +13493,13 @@ HOOKS.selfTest.push((check, F, h) => {
     const out = [];
     if (!window.INSTANCES) return out;
     const KNOWN = { aerie: [['Queen Seraphel', 25, 6], ['Master Halcyon', 38, 18], ['the leap down', 25, 31]], tinker_lab: [['Tinkerton (lab)', 4, 3], ['the Gnasher rug', 12, 9], ['the arena lever', 21, 15]], afterlands: [['the fire', 30, 8], ['Count Ashvane', 46, 18], ['the crypt door out', 30, 2]], spider_den: [['the chest', 3, 26], ['the Brood Mother', 12, 22]] };
+    // Deepholm's people and its way out (24-dwarves): they used to be overworld targets at 2–26, 72–94, and
+    // the same walk is proved here instead — from the foot of the ladder to every dwarf and back to the ladder.
+    if (window.DEEPHOLM) KNOWN.deepholm = [...DEEPHOLM.DWARVES.map(d => [d.name, d.x, d.y]), ['the ladder out', DEEPHOLM.LADDER.x, DEEPHOLM.LADDER.y],
+      ...(window.COALMINE ? [['the coal cart', COALMINE.CART_T.x, COALMINE.CART_T.y]] : [])];
+    // landmark tiles that used to be swept off the overworld map and now live inside an instance: swept there
+    // instead, to the same cap, so the audit still walks to every chest, throne, rock, forge and anvil of them
+    const LANDMARKS_IN = { deepholm: ['LADDER_UP', 'DWARF_CHEST', 'DWARF_THRONE', 'MITHRIL', 'FORGE', 'ANVIL', 'COAL_CART'] };
     for (const id of INSTANCES.list()) {
       const inst = INSTANCES.get(id); const W = inst.w, H = inst.h, tiles = inst.tiles;
       const dist = new Int32Array(W * H).fill(-1), q = []; const s = inst.entry[1] * W + inst.entry[0]; dist[s] = 0; q.push(s);
@@ -13410,6 +13509,7 @@ HOOKS.selfTest.push((check, F, h) => {
       if (inst.exit) want.push(['the exit', inst.exit[0], inst.exit[1]]);
       for (const [type, x, y] of inst.spawns) if (type === inst.boss) want.push([MONSTER_DEFS[type].name, x, y]);
       for (const w of KNOWN[id] || []) want.push(w);
+      for (const n of LANDMARKS_IN[id] || []) { const t = Tn(n); if (t < 0) continue; let c = 0; for (let y = 0; y < H && c < LANDMARK_CAP; y++) for (let x = 0; x < W && c < LANDMARK_CAP; x++) if (tiles[y * W + x] === t) { c++; want.push([`${n} #${c}`, x, y]); } }
       for (const [name, x, y] of want) out.push({ instance: inst.name, name, x, y, dist: at(x, y) });
     }
     return out;
@@ -13813,7 +13913,7 @@ HOOKS.selfTest.push((check, F, h) => {
     { const c = connectivity(); const groups = ['npc', 'door', 'instance', 'maptarget', 'landmark', 'landing', 'spawn'];
       for (const g of groups) { const rows = c.rows.filter(r => r.group === g), bad = rows.filter(r => r.open < 0); check(P + `${g}: every target is walkable from where the game puts you (${rows.length})`, bad.length === 0, { n: rows.length, unreachable: bad.map(r => `${r.name} @${r.x},${r.y}`), gated: rows.filter(r => r.strict < 0 && r.open >= 0).length }); }
       if (c.unreachable.length) check(P + 'unreachable targets', false, { unreachable: c.unreachable });
-      check(P + 'the roots hold: the shaft and Old Harl are reachable from the cave', c.rootOk.deepholm && c.rootOk.gull, c.rootOk); }
+      check(P + 'the roots hold: the shaft and Old Harl are reachable from the cave', c.rootOk.shaft && c.rootOk.gull, c.rootOk); }
     { const rows = instanceConnectivity(), bad = rows.filter(r => r.dist < 0); check(P + `instances: entry reaches the exit, the boss, the chest and the folk inside (${rows.length})`, bad.length === 0, { n: rows.length, unreachable: bad.map(r => `${r.instance}: ${r.name} @${r.x},${r.y}`) }); }
     { const rows = chain(), bad = rows.filter(r => !r.ok); check(P + 'main quest chain: every stage 0→16 walks from the last, story gates opened by a prior stage', bad.length === 0, { stages: rows.length, tiles: rows.reduce((s, r) => s + r.dist, 0), bad: bad.map(r => ({ stage: r.stage, legs: r.legs.filter(l => !l.ok).map(l => `${l.from}→${l.to} dist ${l.dist} gate ${l.gate} opens ${l.opensAt}`) })), gates: rows.filter(r => r.legs.some(l => l.gate)).map(r => `${r.stage}: ${r.legs.filter(l => l.gate).map(l => l.gate + '@' + l.opensAt).join(',')}`) }); }
     { const p = progression(), dead = p.rows.filter(r => r.dead && r.kind !== 'cape'); check(P + `progression: every skill gate has an XP source below it (${p.rows.length} gates)`, dead.length === 0, { gates: p.rows.length, dead: dead.map(r => `${r.skill} ${r.lv} ${r.what}`) });
@@ -17945,7 +18045,12 @@ window.SETTINGS = SETTINGS;
       if (!hasTool('pickaxe')) { notify('The cart runs down to the old seam. You would want a pickaxe first.'); return true; }
       const s = st();
       if (!s.told) { s.told = true; say('The coal road. It runs down to the seam the goblins cut us off from. Fill the cart and bring it up — the forge is hungry.', 'Deepholm'); }
-      INSTANCES.enter(MINE.id, [tx, ty + 1]);
+      // CHANGED with the underground move: the cart stands INSIDE the Deepholm instance now, and one
+      // instance cannot be opened from inside another, so 58-underground steps us out of Deepholm, down
+      // into the seam, and back into Deepholm beside this cart when the shift ends. Off the coal road
+      // (no Deepholm, no hop) it is the plain entry it always was.
+      const hopped = !!(window.UNDERGROUND && UNDERGROUND.rideFrom(MINE.id, [tx, ty + 1]));
+      if (!hopped && !INSTANCES.enter(MINE.id, [tx, ty + 1])) { notify('You cannot ride down right now.'); return true; }
       startRun();
       return true;
     }
@@ -18005,27 +18110,28 @@ window.SETTINGS = SETTINGS;
 
   // ---------- the cart and the rails in Deepholm ----------
   HOOKS.world.push((rnd, api) => {
-    // Deepholm's hall is carved by 24-dwarves before this runs, so pick a berth rather than guess one: the
-    // east-most floor tile with open floor beneath it (you stand there to use the cart) and a clear run west
-    // for the sleepers. Nothing already standing is overwritten.
-    const dh = REGIONS.find(r => r.name === 'Deepholm');
-    const open = (x, y) => { const t = api.tileAt(x, y); return t === T.CAVE || t === T.DIRT || t === T.FLOOR; };
+    // CHANGED with the underground move: Deepholm is an instance of its own (24-dwarves), so its halls are
+    // no longer part of `map` and there is nothing to scan on the surface. The berth is picked the same way
+    // as before — the east-most floor tile with open floor beneath it (you stand there to use the cart) and
+    // a clear run west for the sleepers — but read and written through window.DEEPHOLM, which is the
+    // undercity's own tile map. The relative berth is unchanged: the same tile in the same hall.
+    const dh = window.DEEPHOLM;
+    if (!dh) return;
+    const open = (x, y) => { const t = dh.at(x, y); return t === T.CAVE || t === T.DIRT || t === T.FLOOR; };
     let best = null;
-    if (dh) {
-      for (let y = dh.y0 + 1; y <= dh.y1 - 1 && !best; y++) {
-        for (let x = dh.x1 - 1; x >= dh.x0 + 6; x--) {
-          if (!open(x, y) || !open(x, y + 1)) continue;
-          let west = 0; while (west < 5 && open(x - 1 - west, y)) west++;
-          if (west < 3) continue;
-          if (NPCS.some(n => Math.abs(n.x - x) < 3 && Math.abs(n.y - y) < 3)) continue;
-          best = { x, y, west }; break;
-        }
+    for (let y = dh.rect.y0 + 1; y <= dh.rect.y1 - 1 && !best; y++) {
+      for (let x = dh.rect.x1 - 1; x >= dh.rect.x0 + 6; x--) {
+        if (!open(x, y) || !open(x, y + 1)) continue;
+        let west = 0; while (west < 5 && open(x - 1 - west, y)) west++;
+        if (west < 3) continue;
+        if (dh.DWARVES.some(n => Math.abs(n.x - x) < 3 && Math.abs(n.y - y) < 3)) continue;
+        best = { x, y, west }; break;
       }
     }
     if (!best) return;                                  // no berth: no cart, rather than a cart in a wall
     CART_T.x = best.x; CART_T.y = best.y;
-    for (let d = 1; d <= best.west; d++) api.setTile(best.x - d, best.y, T_RAIL);
-    api.setTile(best.x, best.y, T_CART);
+    for (let d = 1; d <= best.west; d++) dh.set(best.x - d, best.y, T_RAIL);
+    dh.set(best.x, best.y, T_CART);
   });
 
   HOOKS.draw.push((g, items) => {
@@ -18100,13 +18206,20 @@ window.SETTINGS = SETTINGS;
   const P = 'coalmine: ';
   HOOKS.selfTest.push((check, F, h) => {
     if (!window.INSTANCES) { check(P + 'the coal road needs the instance system', false, {}); return; }
+    if (!window.DEEPHOLM) { check(P + 'the coal road needs Deepholm', false, {}); return; }
     const q0 = quest.coalmine ? { ...quest.coalmine } : null;
-    // the cart stands in Deepholm on its rails, and refuses you without a pickaxe
-    { const onMap = tileAt(COALMINE.CART_T.x, COALMINE.CART_T.y) === COALMINE.tiles.cart;
+    // CHANGED with the underground move: the cart stands inside the Deepholm instance, so the check walks
+    // down there to look at it instead of reading the surface map. Same intent: cart on rails, in Deepholm,
+    // on a tile you can stand beside and tap; and it must not stand anywhere on the surface.
+    if (INSTANCES.active() && INSTANCES.active() !== DEEPHOLM.ID) INSTANCES.leave();
+    { let surface = false; for (let y = 0; y < MAP_H && !surface; y++) for (let x = 0; x < MAP_W; x++) if (tileAt(x, y) === COALMINE.tiles.cart) { surface = true; break; }
+      DEEPHOLM.enter();
+      const onMap = tileAt(COALMINE.CART_T.x, COALMINE.CART_T.y) === COALMINE.tiles.cart;
       const rails = [1, 2, 3, 4, 5].filter(d => tileAt(COALMINE.CART_T.x - d, COALMINE.CART_T.y) === COALMINE.tiles.rail).length;
       const tappable = INTERESTING_TILES.has(COALMINE.tiles.cart);
       const standable = !SOLID.has(tileAt(COALMINE.CART_T.x, COALMINE.CART_T.y + 1));
-      check(P + 'a coal cart stands on rails at the east end of Deepholm, on a tile you can walk up to and tap', onMap && rails >= 2 && tappable && standable, { onMap, rails, tappable, standable }); }
+      const inHall = COALMINE.CART_T.x >= DEEPHOLM.rect.x0 && COALMINE.CART_T.x <= DEEPHOLM.rect.x1 && COALMINE.CART_T.y >= DEEPHOLM.rect.y0 && COALMINE.CART_T.y <= DEEPHOLM.rect.y1;
+      check(P + 'a coal cart stands on rails at the east end of Deepholm, on a tile you can walk up to and tap', onMap && rails >= 2 && tappable && standable && inHall && !surface, { onMap, rails, tappable, standable, inHall, onSurface: surface, at: [COALMINE.CART_T.x, COALMINE.CART_T.y] }); }
     // riding it opens the seam: a live gallery with faces, props and a haul cart
     { const bag = player.inv.slice();
       const pick = player.inv.findIndex(s2 => s2 && s2.id === 'bronze_pickaxe');
@@ -18151,11 +18264,16 @@ window.SETTINGS = SETTINGS;
         const r3 = COALMINE.run; r3.coal = 21; player.hp = player.maxHp;
         const coal0 = countItem('coal'), mx1 = player.skills.mining.xp;
         COALMINE.endRun('test');
+        // CHANGED with the underground move: "back up" now means back into Deepholm beside the cart, and
+        // 58-underground's hop lands you there on the tick after the shift ends — so let a tick run.
+        F.sim(3, []);
         const paid = countItem('coal') - coal0, out = INSTANCES.active() !== COALMINE.MINE.id, best = COALMINE.state().best >= 21, xp2 = player.skills.mining.xp - mx1;
-        check(P + 'the haul cart pays the coal out, banks your best shift and takes you back up', paid === 21 && out && best && xp2 === 21 * 12, { paid, out, best: COALMINE.state().best, xp2 });
+        const inDeepholm = INSTANCES.active() === DEEPHOLM.ID, at = [Math.floor(player.x / TILE), Math.floor(player.y / TILE)];
+        const beside = at[0] === COALMINE.CART_T.x && at[1] === COALMINE.CART_T.y + 1;
+        check(P + 'the haul cart pays the coal out, banks your best shift and takes you back up', paid === 21 && out && best && xp2 === 21 * 12 && inDeepholm && beside, { paid, out, best: COALMINE.state().best, xp2, inDeepholm, at, cart: [COALMINE.CART_T.x, COALMINE.CART_T.y] });
       } else check(P + 'the haul cart pays the coal out, banks your best shift and takes you back up', false, { noRun: true });
       player.inv = bag;
-      if (INSTANCES.active() === COALMINE.MINE.id) INSTANCES.leave();
+      if (INSTANCES.active()) INSTANCES.leave();   // out of the seam or out of Deepholm: back on the surface either way
     }
     if (q0) quest.coalmine = q0;
   });
@@ -18847,6 +18965,261 @@ window.SETTINGS = SETTINGS;
     { const outside = [VILLAGE.x0 - 4, 32], inside = [112, 33];
       const path = F.bfs(outside[0], outside[1], inside[0], inside[1]);
       check(P + 'the wall does not seal the town: you can still walk in from outside through a gate', !!path && path.length > 0, { steps: path ? path.length : 'nopath', from: outside, to: inside }); }
+  });
+}
+
+// ---- src/58-underground.js ----
+// ============================================================================
+// UNDERGROUND — what the surface owes to a place that went under it
+// Owner's ask: "Deepholm is underground, it should not appear on the main map, it should be its own map.
+// This should apply for all instances and all indoor stuff that's not a building with roof removal. This
+// will also give you more space on the main map for more overworld development."
+//
+// 24-dwarves moved the undercity into an instance of its own. Two things are left over, and both live here
+// so the move is one readable piece of work:
+//
+//   1. THE GROUND IT LEFT BEHIND. Deepholm used to be a 25 × 23 block of rock and hall at x 2–26, y 72–94,
+//      right in the middle of Wolfwood. 02-world already grows ordinary wood over the whole map before any
+//      feature carves it, and 39-worldblend never touched the rectangle (it marks it hard), so the floor of
+//      the wood under Deepholm was there all along and is simply uncovered now. What is NOT ordinary is the
+//      ring of rock outcrops 39-worldblend scatters "at the foot of Deepholm's walls" (1–3 tiles outside the
+//      rectangle): with no walls there is no foot, and a ring of grey stone hugging a rectangle of nothing is
+//      exactly the ghost the owner does not want. Those go back to wood here, in Wolfwood's own mix.
+//
+//   2. THE COAL ROAD. 53-coalmine's cart stands inside Deepholm and rides you down to the seam — but an
+//      instance cannot be opened from inside another one. This file hops: out of Deepholm, down to the seam,
+//      and back into Deepholm beside the cart when the shift ends.
+//
+// Feature file: registers through HOOKS only and edits no core file. window.UNDERGROUND exposes the hop.
+// ============================================================================
+{
+  // the rectangle Deepholm used to occupy on the overworld, and the band 39-worldblend rocked up round it
+  const OLD = { x0: 2, y0: 72, x1: 26, y1: 94 };
+  const RING = 3;
+  const rectDist = (x, y) => Math.max(OLD.x0 - x, 0, x - OLD.x1, OLD.y0 - y, y - OLD.y1);
+  const STATS = { softened: 0, ring: 0, ash: 0 };
+
+  // ---------- 1. give the rectangle back to Wolfwood ----------
+  // Runs last of all the world hooks (file order), so it sees the finished map: 24-dwarves has stopped
+  // carving, 39-worldblend has blended, 53-coalmine has berthed its cart inside the instance.
+  HOOKS.world.push((rnd0, api) => {
+    const rnd = mulberry32(0x0deb01);      // its own stream: what the passes before this drew must not move the result
+    STATS.softened = 0; STATS.ring = 0;
+    // Wolfwood's own mix, as 02-world lays it: about a quarter wood (oaks 3 in 10 of that), a few mushrooms,
+    // the rest open grass. A tile picked this way sits in the wood without anyone being able to point at it.
+    const wood = () => { const r = rnd(); return r < 0.26 ? (rnd() < 0.3 ? T.OAK : T.TREE) : r < 0.30 ? T.MUSHROOM : T.GRASS; };
+    for (let y = OLD.y0 - RING; y <= OLD.y1 + RING; y++) for (let x = OLD.x0; x <= OLD.x1 + RING; x++) {
+      if (!inMap(x, y) || x < 1 || y < 1 || x > MAP_W - 2 || y > MAP_H - 2) continue;
+      const d = rectDist(x, y); if (d < 1 || d > RING) continue;
+      STATS.ring++;
+      if (buildingAt(x, y) || api.tileAt(x, y) !== T.ROCK) continue;   // only the grey outcrops go; iron and coal are ordinary Wolfwood
+      api.setTile(x, y, wood()); STATS.softened++;
+    }
+
+    // The other thing the rectangle blocked: 39-worldblend drifts the Ashfields' ash up into Wolfwood's last
+    // three rows (y 92–94) right across the map — except here, because it may not write inside a rectangle it
+    // marks hard. That left the drift stopping dead at a straight line down x 26. It runs through now, at the
+    // density it has on the far side of the line, measured row by row so it always matches rather than guesses.
+    const ASH = ('ASH' in T) ? T.ASH : -1;
+    const GRASSY = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM]);
+    STATS.ash = 0;
+    if (ASH >= 0) for (let y = 92; y <= 94; y++) {
+      let ash = 0, open = 0;
+      for (let x = OLD.x1 + 1; x <= 99; x++) { const t = api.tileAt(x, y); if (t === ASH) ash++; else if (GRASSY.has(t)) open++; }
+      const p = (ash + open) ? ash / (ash + open) : 0;
+      for (let x = OLD.x0; x <= OLD.x1; x++) if (GRASSY.has(api.tileAt(x, y)) && !buildingAt(x, y) && rnd() < p) { api.setTile(x, y, ASH); STATS.ash++; }
+    }
+  });
+
+  // ---------- 2. the hop: one instance to another and back ----------
+  // INSTANCES.enter refuses while another instance is open (and rightly: there is one `map`). A ride that
+  // starts underground therefore leaves first — which puts the knight on the shaft step in Grey Quarry —
+  // opens the second instance from there, and comes back down when that one closes.
+  let hop = null;                          // { back: instance id, at: [tx, ty] inside it, via: the instance we rode into }
+  HOOKS.newGame.push(() => { hop = null; });
+
+  function standAt(tx, ty) {
+    player.action = null; player.x = tc(tx); player.y = tc(ty); player.facing = { x: 0, y: -1 };
+    const s = safeSpot(player.x, player.y, player.r, 'player'); if (s) { player.x = s.x; player.y = s.y; }
+  }
+  // ride from the instance you are standing in into `toId`, and remember the tile to come back to.
+  // Returns false when there is nothing to hop out of, so the caller can enter the ordinary way.
+  function rideFrom(toId, back) {
+    if (!window.INSTANCES || !window.DEEPHOLM || player.dead) return false;
+    const from = INSTANCES.active();
+    if (from !== DEEPHOLM.ID) return false;
+    INSTANCES.leave();                                       // up the shaft: the surface, standing on the shaft step
+    if (!INSTANCES.enter(toId)) {                            // the ride was refused: put the knight back where he was
+      INSTANCES.enter(DEEPHOLM.ID, DEEPHOLM.SHAFT_STEP); standAt(back[0], back[1]); return false;
+    }
+    hop = { back: from, at: [back[0], back[1]], via: toId };
+    return true;
+  }
+  // the ride ended (the shift ran out, the haul cart was called, the ladder was climbed, L was pressed):
+  // the knight is back on the surface, so take him back down to the tile he rode from.
+  HOOKS.update.push(() => {
+    if (!hop || !window.INSTANCES) return;
+    if (INSTANCES.active() === hop.via) return;               // still down at the seam
+    const h = hop; hop = null;
+    if (player.dead || INSTANCES.active()) return;            // died down there, or ended up somewhere else: leave him where he is
+    if (INSTANCES.enter(h.back, DEEPHOLM.SHAFT_STEP)) { standAt(h.at[0], h.at[1]); burst(player.x, player.y, '#c9a36a', 14, 80); }
+  });
+  // a save never describes an instance (16-instances), so a load in the middle of a ride must not drag the
+  // knight back underground: the save put him on the surface and that is where he stays.
+  const _load = load;
+  load = () => { hop = null; return _load(); };
+
+  window.UNDERGROUND = { OLD, RING, rideFrom, stats: () => ({ ...STATS }), get hop() { return hop; } };
+
+  // ---------- the book ----------
+  // 44-wiki builds Deepholm's page from the live tables. As a region it read its forge and anvil straight off
+  // the overworld map; as an instance those tiles are not on `map`, and the dwarves have never been in NPCS.
+  // Both are written in here so the page says everything it said before, and the people it never listed.
+  if (window.WIKI && window.DEEPHOLM) WIKI.add('places', {
+    id: 'deepholm', name: 'Deepholm', sub: 'The dwarven undercity', kind: 'instance',
+    npcs: DEEPHOLM.DWARVES.map(d => d.name + (d.shop && SHOPS[d.shop] ? ` — ${SHOPS[d.shop].name}` : '')),
+    stations: ['Forge', 'Anvil'],
+    buildings: ['The great forge hall', "King Thrain's throne hall", 'The mithril galleries'],
+  });
+
+  // ---------- self-test ----------
+  const P = 'underground: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    if (!window.INSTANCES || !window.DEEPHOLM) { check(P + 'Deepholm needs the instance system', false, {}); return; }
+    const D = window.DEEPHOLM;
+    const tileOf = () => [Math.floor(player.x / TILE), Math.floor(player.y / TILE)];
+    const onStep = () => { const [x, y] = tileOf(); return x === D.SHAFT_STEP[0] && y === D.SHAFT_STEP[1]; };
+    const sum = () => { let s = 0; for (let i = 0; i < map.length; i++) s = (Math.imul(s, 31) + map[i]) | 0; return s; };
+    h.peace(true);
+    if (INSTANCES.active()) INSTANCES.leave();
+    const rg0 = regrow, fr0 = fires; regrow = []; fires = [];      // the surface must hold still while its checksum is compared
+    const sum0 = sum(), n0 = monsters.length;
+
+    // ---- the shaft is the door, and the way out puts you back on its step ----
+    { F.tp(54, 14); const w = F.goAdjacent(D.SHAFT.x, D.SHAFT.y, 1500); F.face(D.SHAFT.x, D.SHAFT.y); F.press('KeyE'); F.sim(2, []);
+      const inside = INSTANCES.active() === D.ID, at = tileOf(), banner = !!areaBanner && areaBanner.name === 'Deepholm';
+      const swapped = tileAt(D.LADDER.x, D.LADDER.y) === D.tiles.ladder && tileAt(D.THRONE.x, D.THRONE.y) === D.tiles.throne && tileAt(0, 0) === T.WALL;
+      const guards = monsters.filter(m => m.type === 'dwarf_guard').length;
+      // Death and his house stand at (25–30, 10–14) on the surface: inside the undercity they are put away
+      const deathAway = !NPCS.some(n => n.id === 'death1') && !BUILDINGS.some(b => b.id === 'death1');
+      // the shaft, the ladder and everything solid worth using down there are tap-to-move targets on an iPad
+      const tappable = [D.tiles.shaft, D.tiles.ladder, D.tiles.mithril, D.tiles.chest, D.tiles.throne].every(t => INTERESTING_TILES.has(t));
+      F.press('KeyL'); F.sim(2, []);
+      const out = INSTANCES.active() === null && onStep() && sum() === sum0 && monsters.length === n0 && NPCS.some(n => n.id === 'death1') && BUILDINGS.some(b => b.id === 'death1');
+      check(P + 'E on the Grey Quarry shaft opens Deepholm (its own map, its own guards, Death put away, shaft and ladder tappable); L climbs out onto the shaft step with the surface exactly as it was',
+        typeof w === 'number' && inside && banner && swapped && guards === 2 && deathAway && tappable && at[0] === D.ENTRY[0] && at[1] === D.ENTRY[1] && out,
+        { walked: w, inside, banner, swapped, guards, deathAway, tappable, entry: at, out, onStep: onStep(), same: sum() === sum0 }); }
+
+    // ---- everyone and everything down there is reachable on foot from the ladder ----
+    { D.enter(); F.tp(D.ENTRY[0], D.ENTRY[1]);
+      const want = [];
+      for (const d of D.DWARVES) want.push([d.name, d.x, d.y]);
+      want.push(["King Thrain's throne", D.THRONE.x, D.THRONE.y], ['the ladder out', D.LADDER.x, D.LADDER.y]);
+      D.FORGES.forEach(([x, y], i) => want.push(['forge ' + (i + 1), x, y]));
+      D.ANVILS.forEach(([x, y], i) => want.push(['anvil ' + (i + 1), x, y]));
+      D.CHESTS.forEach(([x, y], i) => want.push(['dwarven chest ' + (i + 1), x, y]));
+      D.LAMPS.forEach(([x, y], i) => want.push(['lamp ' + (i + 1), x, y]));
+      D.MITHRIL_ROCKS.forEach(([x, y], i) => want.push(['mithril rock ' + (i + 1), x, y]));
+      D.GUARDS.forEach(([x, y], i) => want.push(['guard post ' + (i + 1), x, y]));
+      if (window.COALMINE) want.push(['the coal cart', COALMINE.CART_T.x, COALMINE.CART_T.y]);
+      // a target that is solid (a rock, a chest, the throne, a lamp) counts when a tile beside it is walkable-to
+      const beside = (x, y) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => F.bfs(D.ENTRY[0], D.ENTRY[1], x + dx, y + dy)).filter(Boolean);
+      const bad = want.filter(([, x, y]) => !beside(x, y).length).map(([n, x, y]) => `${n} @${x},${y}`);
+      // and one of them walked for real, not just flooded to
+      const walked = F.goAdjacent(D.THRONE.x, D.THRONE.y, 2500);
+      const rug = tileAt(13, 21) === T.RUG;
+      check(P + `every dwarf, lamp, rock, forge, anvil, chest, guard post and the coal cart is walkable from the ladder (${want.length}), and the knight can walk to the throne`,
+        bad.length === 0 && typeof walked === 'number' && rug, { targets: want.length, unreachable: bad, walkedToThrone: walked, throneRug: rug });
+      INSTANCES.leave(); }
+
+    // ---- nothing of Deepholm is left on the surface ----
+    { const gone = { LAMP: 0, LADDER_UP: 0, MITHRIL: 0, DWARF_THRONE: 0, DWARF_CHEST: 0, COAL_CART: 0, COAL_RAIL: 0 };
+      const ids = { LAMP: D.tiles.lamp, LADDER_UP: D.tiles.ladder, MITHRIL: D.tiles.mithril, DWARF_THRONE: D.tiles.throne, DWARF_CHEST: D.tiles.chest,
+        COAL_CART: window.COALMINE ? COALMINE.tiles.cart : -1, COAL_RAIL: window.COALMINE ? COALMINE.tiles.rail : -1 };
+      let shafts = 0;
+      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const t = map[idx(x, y)]; if (t === D.tiles.shaft) shafts++; for (const k in ids) if (t === ids[k]) gone[k]++; }
+      const nobody = !D.DWARVES.some(d => NPCS.some(n => n.id === d.id));
+      check(P + 'the only thing Deepholm leaves on the overworld is the shaft at Grey Quarry: no lamp, ladder, mithril, throne, chest, cart or rail, and no dwarf in NPCS',
+        shafts === 1 && Object.values(gone).every(v => v === 0) && nobody && tileAt(D.SHAFT.x, D.SHAFT.y) === D.tiles.shaft && !SOLID.has(tileAt(D.SHAFT_STEP[0], D.SHAFT_STEP[1])),
+        { shafts, leftOver: gone, nobody, step: tileAt(D.SHAFT_STEP[0], D.SHAFT_STEP[1]) }); }
+
+    // ---- the vacated rectangle is ordinary Wolfwood: walkable, joined to the rest of the map, and it looks it ----
+    { const U = window.UNDERGROUND, O = U.OLD;
+      const mix = {}; let solid = 0, floor = 0, alien = 0;
+      const WOODY = new Set([T.GRASS, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, T.DIRT, T.ROCK, T.IRON, T.COAL, T.STUMP, ('ASH' in T) ? T.ASH : T.GRASS]);
+      for (let y = O.y0; y <= O.y1; y++) for (let x = O.x0; x <= O.x1; x++) {
+        const t = map[idx(x, y)];
+        mix[t] = (mix[t] || 0) + 1;
+        if (!WOODY.has(t)) alien++;
+        if (SOLID.has(t)) solid++; else floor++;
+      }
+      // How thick the wood stands, over land only and never through a building. 02-world only scatters forest
+      // from x 21 east (CAVE_EXIT_X + 1), so Wolfwood's western columns are open meadow all the way down the
+      // map and its eastern ones are thick wood — which is why the rectangle is measured against the SAME
+      // columns just north of it and the SAME rows just east of it, rather than against one flat number.
+      // (roads, paths and drifted ash are left out of the count: the forest pass only ever planted on grass)
+      const PLANTED = new Set([T.GRASS, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, T.ROCK, T.IRON, T.COAL]);
+      const dens = (x0, y0, x1, y1) => { let t = 0, n = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const v = map[idx(x, y)]; if (!PLANTED.has(v) || buildingAt(x, y)) continue; n++; if (v === T.TREE || v === T.OAK) t++; } return n ? t / n : -1; };
+      const westIn = dens(2, 72, 20, 94), westOut = dens(2, 62, 20, 71);       // the open western meadow, inside the old rectangle and just north of it
+      const eastIn = dens(21, 72, 26, 94), eastOut = dens(27, 72, 45, 94);     // the thick eastern wood, inside the old rectangle and just east of it
+      const matches = Math.abs(westIn - westOut) <= 0.08 && Math.abs(eastIn - eastOut) <= 0.15 && eastOut > 0.1;
+      // and the Ashfields' drift crosses the old rectangle instead of stopping at its wall
+      let ashIn = 0, ashOut = 0;
+      for (let y = 92; y <= 94; y++) { for (let x = 2; x <= 26; x++) if (map[idx(x, y)] === T.ASH) ashIn++; for (let x = 27; x <= 60; x++) if (map[idx(x, y)] === T.ASH) ashOut++; }
+      // a flood over the whole map from the cave road: every open tile in the rectangle must be in it
+      const seen = new Uint8Array(MAP_W * MAP_H), q = [];
+      const pass = t => !SOLID.has(t) || PUSH_THROUGH.has(t);
+      const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); if (seen[i] || !pass(map[i])) return; seen[i] = 1; q.push(i); };
+      push(21, 7);
+      for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; push(x + 1, y); push(x - 1, y); push(x, y + 1); push(x, y - 1); }
+      let stranded = 0; for (let y = O.y0; y <= O.y1; y++) for (let x = O.x0; x <= O.x1; x++) if (pass(map[idx(x, y)]) && !seen[idx(x, y)]) stranded++;
+      // the ghost of the massif: 39-worldblend's outcrops at the foot of walls that are not there any more
+      let ringRock = 0, woodRock = 0;
+      for (let y = O.y0 - U.RING; y <= O.y1 + U.RING; y++) for (let x = O.x0; x <= O.x1 + U.RING; x++) {
+        const d = Math.max(O.x0 - x, 0, x - O.x1, O.y0 - y, y - O.y1);
+        if (inMap(x, y) && d >= 1 && d <= U.RING && map[idx(x, y)] === T.ROCK) ringRock++;
+      }
+      for (let y = 70; y <= 94; y++) for (let x = 34; x <= 110; x++) if (map[idx(x, y)] === T.ROCK) woodRock++;  // the same wood, well clear of the old rectangle
+      const region = regionAt(14, 83).name, spawns = MONSTER_SPAWNS.filter(s => s.tx >= O.x0 && s.tx <= O.x1 && s.ty >= O.y0 && s.ty <= O.y1).length;
+      check(P + '575 tiles of Wolfwood come back at x 2–26, y 72–94: no wall, nothing stranded, the wood as thick inside the old rectangle as it is on each side of it, the ash still drifting through its last rows, and no ring of outcrops round a rectangle of nothing',
+        alien === 0 && (mix[T.WALL] || 0) === 0 && stranded === 0 && floor + solid === 575 && floor >= 500 && matches && region === 'Wolfwood' && ringRock === 0 && woodRock > 10 && spawns >= 1 && ashIn > 0 && ashOut > 0,
+        { open: floor, solid, alien, walls: mix[T.WALL] || 0, stranded, region, spawnsBack: spawns, ringRock, ringChecked: U.stats().ring, ringSoftened: U.stats().softened, woodRock,
+          woodInside: { west: +westIn.toFixed(3), east: +eastIn.toFixed(3) }, woodBeside: { west: +westOut.toFixed(3), east: +eastOut.toFixed(3) }, ashDrift: { inside: ashIn, beside: ashOut, laid: U.stats().ash } }); }
+
+    // ---- save and reload while you are down there ----
+    { D.enter(); F.tp(D.THRONE.x, D.THRONE.y - 2); const wasIn = INSTANCES.active() === D.ID;
+      save(); const raw = JSON.parse(localStorage.getItem(SAVE_KEY));
+      const still = INSTANCES.active() === D.ID;
+      const ok = load(); F.sim(2, []);
+      check(P + 'saving inside Deepholm writes the surface with the knight on the shaft step; a reload lands him there, outside, with the overworld back',
+        wasIn && still && raw.player.x === tc(D.SHAFT_STEP[0]) && raw.player.y === tc(D.SHAFT_STEP[1]) && raw.player.region !== 'Deepholm' && ok && INSTANCES.active() === null && onStep() && player.region === 'Grey Quarry' && sum() === sum0,
+        { wasIn, still, saved: [raw.player.x / TILE - 0.5, raw.player.y / TILE - 0.5], savedRegion: raw.player.region, loaded: ok, at: tileOf(), region: player.region, same: sum() === sum0 }); }
+
+    // ---- the coal road: the cart is in Deepholm, it rides down, and the shift ends back beside it ----
+    if (window.COALMINE) {
+      const q0 = quest.coalmine ? { ...quest.coalmine } : null;
+      D.enter();
+      const c = COALMINE.CART_T;
+      if (!hasTool('pickaxe')) h.give('bronze_pickaxe', 1);
+      F.tp(c.x, c.y + 1); F.face(c.x, c.y);
+      const cartHere = tileAt(c.x, c.y) === COALMINE.tiles.cart;
+      F.press('KeyE'); F.sim(2, []);
+      const down = INSTANCES.active() === COALMINE.MINE.id, hopping = !!UNDERGROUND.hop && UNDERGROUND.hop.back === D.ID;
+      const run = COALMINE.run, faces = run ? run.faces.length : 0;
+      let mined = 0;
+      if (run && run.faces.length) { const [fx, fy] = run.faces[0]; F.tp(fx + 1, fy); F.face(fx, fy); F.press('KeyE'); if (player.action) player.action.t = player.action.need; F.sim(2, []); mined = run.coal; }
+      if (COALMINE.run) COALMINE.endRun('test');
+      F.sim(3, []);
+      const back = INSTANCES.active() === D.ID, at = tileOf(), beside = at[0] === c.x && at[1] === c.y + 1;
+      check(P + 'the coal cart still stands in Deepholm and still works: E rides you down to the seam, a face still pays coal, and the end of the shift puts you back beside the cart underground',
+        cartHere && down && hopping && faces === COALMINE.SEAM_LIVE && mined >= 2 && back && beside && !UNDERGROUND.hop,
+        { cartHere, rodeDown: down, hopping, faces, mined, backInDeepholm: back, at, cart: [c.x, c.y] });
+      INSTANCES.leave();
+      if (q0) quest.coalmine = q0;
+    }
+
+    if (INSTANCES.active()) INSTANCES.leave();
+    regrow = rg0; fires = fr0; save(); h.peace(false);
   });
 }
 

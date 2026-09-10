@@ -192,7 +192,12 @@
       if (!hasTool('pickaxe')) { notify('The cart runs down to the old seam. You would want a pickaxe first.'); return true; }
       const s = st();
       if (!s.told) { s.told = true; say('The coal road. It runs down to the seam the goblins cut us off from. Fill the cart and bring it up — the forge is hungry.', 'Deepholm'); }
-      INSTANCES.enter(MINE.id, [tx, ty + 1]);
+      // CHANGED with the underground move: the cart stands INSIDE the Deepholm instance now, and one
+      // instance cannot be opened from inside another, so 58-underground steps us out of Deepholm, down
+      // into the seam, and back into Deepholm beside this cart when the shift ends. Off the coal road
+      // (no Deepholm, no hop) it is the plain entry it always was.
+      const hopped = !!(window.UNDERGROUND && UNDERGROUND.rideFrom(MINE.id, [tx, ty + 1]));
+      if (!hopped && !INSTANCES.enter(MINE.id, [tx, ty + 1])) { notify('You cannot ride down right now.'); return true; }
       startRun();
       return true;
     }
@@ -252,27 +257,28 @@
 
   // ---------- the cart and the rails in Deepholm ----------
   HOOKS.world.push((rnd, api) => {
-    // Deepholm's hall is carved by 24-dwarves before this runs, so pick a berth rather than guess one: the
-    // east-most floor tile with open floor beneath it (you stand there to use the cart) and a clear run west
-    // for the sleepers. Nothing already standing is overwritten.
-    const dh = REGIONS.find(r => r.name === 'Deepholm');
-    const open = (x, y) => { const t = api.tileAt(x, y); return t === T.CAVE || t === T.DIRT || t === T.FLOOR; };
+    // CHANGED with the underground move: Deepholm is an instance of its own (24-dwarves), so its halls are
+    // no longer part of `map` and there is nothing to scan on the surface. The berth is picked the same way
+    // as before — the east-most floor tile with open floor beneath it (you stand there to use the cart) and
+    // a clear run west for the sleepers — but read and written through window.DEEPHOLM, which is the
+    // undercity's own tile map. The relative berth is unchanged: the same tile in the same hall.
+    const dh = window.DEEPHOLM;
+    if (!dh) return;
+    const open = (x, y) => { const t = dh.at(x, y); return t === T.CAVE || t === T.DIRT || t === T.FLOOR; };
     let best = null;
-    if (dh) {
-      for (let y = dh.y0 + 1; y <= dh.y1 - 1 && !best; y++) {
-        for (let x = dh.x1 - 1; x >= dh.x0 + 6; x--) {
-          if (!open(x, y) || !open(x, y + 1)) continue;
-          let west = 0; while (west < 5 && open(x - 1 - west, y)) west++;
-          if (west < 3) continue;
-          if (NPCS.some(n => Math.abs(n.x - x) < 3 && Math.abs(n.y - y) < 3)) continue;
-          best = { x, y, west }; break;
-        }
+    for (let y = dh.rect.y0 + 1; y <= dh.rect.y1 - 1 && !best; y++) {
+      for (let x = dh.rect.x1 - 1; x >= dh.rect.x0 + 6; x--) {
+        if (!open(x, y) || !open(x, y + 1)) continue;
+        let west = 0; while (west < 5 && open(x - 1 - west, y)) west++;
+        if (west < 3) continue;
+        if (dh.DWARVES.some(n => Math.abs(n.x - x) < 3 && Math.abs(n.y - y) < 3)) continue;
+        best = { x, y, west }; break;
       }
     }
     if (!best) return;                                  // no berth: no cart, rather than a cart in a wall
     CART_T.x = best.x; CART_T.y = best.y;
-    for (let d = 1; d <= best.west; d++) api.setTile(best.x - d, best.y, T_RAIL);
-    api.setTile(best.x, best.y, T_CART);
+    for (let d = 1; d <= best.west; d++) dh.set(best.x - d, best.y, T_RAIL);
+    dh.set(best.x, best.y, T_CART);
   });
 
   HOOKS.draw.push((g, items) => {
@@ -347,13 +353,20 @@
   const P = 'coalmine: ';
   HOOKS.selfTest.push((check, F, h) => {
     if (!window.INSTANCES) { check(P + 'the coal road needs the instance system', false, {}); return; }
+    if (!window.DEEPHOLM) { check(P + 'the coal road needs Deepholm', false, {}); return; }
     const q0 = quest.coalmine ? { ...quest.coalmine } : null;
-    // the cart stands in Deepholm on its rails, and refuses you without a pickaxe
-    { const onMap = tileAt(COALMINE.CART_T.x, COALMINE.CART_T.y) === COALMINE.tiles.cart;
+    // CHANGED with the underground move: the cart stands inside the Deepholm instance, so the check walks
+    // down there to look at it instead of reading the surface map. Same intent: cart on rails, in Deepholm,
+    // on a tile you can stand beside and tap; and it must not stand anywhere on the surface.
+    if (INSTANCES.active() && INSTANCES.active() !== DEEPHOLM.ID) INSTANCES.leave();
+    { let surface = false; for (let y = 0; y < MAP_H && !surface; y++) for (let x = 0; x < MAP_W; x++) if (tileAt(x, y) === COALMINE.tiles.cart) { surface = true; break; }
+      DEEPHOLM.enter();
+      const onMap = tileAt(COALMINE.CART_T.x, COALMINE.CART_T.y) === COALMINE.tiles.cart;
       const rails = [1, 2, 3, 4, 5].filter(d => tileAt(COALMINE.CART_T.x - d, COALMINE.CART_T.y) === COALMINE.tiles.rail).length;
       const tappable = INTERESTING_TILES.has(COALMINE.tiles.cart);
       const standable = !SOLID.has(tileAt(COALMINE.CART_T.x, COALMINE.CART_T.y + 1));
-      check(P + 'a coal cart stands on rails at the east end of Deepholm, on a tile you can walk up to and tap', onMap && rails >= 2 && tappable && standable, { onMap, rails, tappable, standable }); }
+      const inHall = COALMINE.CART_T.x >= DEEPHOLM.rect.x0 && COALMINE.CART_T.x <= DEEPHOLM.rect.x1 && COALMINE.CART_T.y >= DEEPHOLM.rect.y0 && COALMINE.CART_T.y <= DEEPHOLM.rect.y1;
+      check(P + 'a coal cart stands on rails at the east end of Deepholm, on a tile you can walk up to and tap', onMap && rails >= 2 && tappable && standable && inHall && !surface, { onMap, rails, tappable, standable, inHall, onSurface: surface, at: [COALMINE.CART_T.x, COALMINE.CART_T.y] }); }
     // riding it opens the seam: a live gallery with faces, props and a haul cart
     { const bag = player.inv.slice();
       const pick = player.inv.findIndex(s2 => s2 && s2.id === 'bronze_pickaxe');
@@ -398,11 +411,16 @@
         const r3 = COALMINE.run; r3.coal = 21; player.hp = player.maxHp;
         const coal0 = countItem('coal'), mx1 = player.skills.mining.xp;
         COALMINE.endRun('test');
+        // CHANGED with the underground move: "back up" now means back into Deepholm beside the cart, and
+        // 58-underground's hop lands you there on the tick after the shift ends — so let a tick run.
+        F.sim(3, []);
         const paid = countItem('coal') - coal0, out = INSTANCES.active() !== COALMINE.MINE.id, best = COALMINE.state().best >= 21, xp2 = player.skills.mining.xp - mx1;
-        check(P + 'the haul cart pays the coal out, banks your best shift and takes you back up', paid === 21 && out && best && xp2 === 21 * 12, { paid, out, best: COALMINE.state().best, xp2 });
+        const inDeepholm = INSTANCES.active() === DEEPHOLM.ID, at = [Math.floor(player.x / TILE), Math.floor(player.y / TILE)];
+        const beside = at[0] === COALMINE.CART_T.x && at[1] === COALMINE.CART_T.y + 1;
+        check(P + 'the haul cart pays the coal out, banks your best shift and takes you back up', paid === 21 && out && best && xp2 === 21 * 12 && inDeepholm && beside, { paid, out, best: COALMINE.state().best, xp2, inDeepholm, at, cart: [COALMINE.CART_T.x, COALMINE.CART_T.y] });
       } else check(P + 'the haul cart pays the coal out, banks your best shift and takes you back up', false, { noRun: true });
       player.inv = bag;
-      if (INSTANCES.active() === COALMINE.MINE.id) INSTANCES.leave();
+      if (INSTANCES.active()) INSTANCES.leave();   // out of the seam or out of Deepholm: back on the surface either way
     }
     if (q0) quest.coalmine = q0;
   });
