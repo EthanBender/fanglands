@@ -2,7 +2,10 @@
 // THE FAR SHORE — Grubmarket, Castle Gnash and Tinkerton's lab (the goblin city over the Grey Sea)
 // Reached by Old Harl's ferry (26-boats: destination 'farshore', 40 coins, combat 10). Goblins here are
 // townsfolk, not soldiers: they sell, they cook, they want favours. Two quests:
-//   'A Tinker Gone Wrong' (quest.tinker) — four parts from four goblins, then the Gnasher wakes and you fight it
+//   'A Tinker Gone Wrong' (quest.tinker) — Tinkerton is met OUTSIDE, at the corner of Grubmarket's gate, and
+//                          talking to him is how a knight gets in at all (66-storm builds the wall and holds the
+//                          leaves shut); then four parts from four goblins — the errands that make you friends
+//                          here — and the Gnasher wakes and you fight it
 //   'Gold for Gnash'      (quest.gnash)  — 500 coins of tribute opens the king's treasury, once
 // The lab interior is an instance (16-instances: 'tinker_lab', 24×18, boss 'gnasher') behind the hut's door; the
 // Gnasher wakes and fights in there, and the rematch lever is in there too. Should the instance system ever be
@@ -34,7 +37,7 @@
   const LAB_DOOR = { x: 247, y: 41 }, LAB_STEP = { x: 247, y: 42 };     // the hut door (a DUNGEON_DOOR when the instance system is present) and the step outside it
   const BEAST_T = { x: 253, y: 47 };                  // where a re-supplied Barrelbeast is handed over (window.BEAST.giveTile)
   const THRONE_T = { x: 224, y: 67 }, CHEST_T = { x: 228, y: 68 };
-  const TINK_GATE = { x: 226, y: 52 };
+  const TINK_GATE = { x: 211, y: 32 };   // the corner of Grubmarket's gate, OUTSIDE the wall (66-storm builds the wall and the leaves)
   // the lab interior: instance coordinates (24×18) — or, without instances, the overworld hut and yard
   const LAB_W = 24, LAB_H = 18, LAB_ENTRY = [12, 16], LAB_EXIT = [12, 17];
   const TINK_LAB = HAS_INST ? { x: 4, y: 3 } : { x: 247, y: 39 };
@@ -102,7 +105,7 @@
   const GN_ARM_EVERY = 2, GN_ARM_REACH = 1.5 * TILE, GN_BOMB_EVERY = 5;
 
   // ---------- state ----------
-  const freshT = () => ({ stage: 0, parts: {}, visited: false, rematch: false, kills: 0 });
+  const freshT = () => ({ stage: 0, parts: {}, visited: false, rematch: false, kills: 0, friends: 0, bundle: false });
   const freshG = () => ({ stage: 0, tribute: false, treasury: false });
   const TQ = () => { const q = quest.tinker || (quest.tinker = freshT()); if (!q.parts) q.parts = {}; return q; };
   const GQ = () => quest.gnash || (quest.gnash = freshG());
@@ -114,8 +117,8 @@
     const q = TQ();
     if (q.stage >= 3) return "Done. The lever in Tinkerton's lab (the Arena now) wakes the Gnasher again: 150 coins a rematch.";
     if (q.stage === 2) return "The Gnasher is loose inside Tinkerton's lab, east of Grubmarket. Bring it down.";
-    if (q.stage === 1) { const got = PART_IDS.filter(id => q.parts[id]).length; return `Parts for the Gnasher (${got}/4): Grubb (5 cooked beef), Nix (10 goblin scrap), Old Snaggle (3 spider silk), Pip-squeak (bread). Carry them (${partsHeld()}/4) to Tinkerton's lab, east of the market.`; }
-    return 'Tinkerton, outside the gate of Castle Gnash, wants help building a machine.';
+    if (q.stage === 1) { const got = PART_IDS.filter(id => q.parts[id]).length; return `Make friends in Grubmarket (${got}/4 parts): Grubb (5 cooked beef), Nix (10 goblin scrap), Old Snaggle (3 spider silk), Pip-squeak (bread). Carry them (${partsHeld()}/4) to Tinkerton's lab, east of the market.`; }
+    return "Tinkerton tends the lamp at the corner of Grubmarket's gate, over the water. The gate is shut to knights and he is the way in: talk to him.";
   };
   HOOKS.questText.gnash = () => GQ().tribute ? 'Done.' : `Bring King Gnash 500 coins of tribute (you carry ${coins()}). His guards do not like visitors who have not paid.`;
   HOOKS.activeQuests.push(() => { const out = []; const t = TQ().stage; if (t === 1 || t === 2) out.push('tinker'); const g = GQ(); if (g.stage === 1 && !g.tribute) out.push('gnash'); return out; });
@@ -176,9 +179,11 @@
     if (n.role === 'tinker') {
       if (tq.stage === 0) {
         tq.stage = 1; sfx('quest');
-        say('A knight! From over the water! Perfect. PERFECT. I am Tinkerton, and I am building a machine.', n.name);
+        say('Stop. Do not knock. The two behind those leaves will not open for a knight, and I would not either, and I keep the lamp.', n.name);
+        say('Unless you are not a knight. Unless you are my helper. I am Tinkerton, I mind this gate, and I am building a machine.', n.name);
         say('The Gnasher. Iron body on treads, a boiler, two arms, and a chute that drops bombs. King Gnash says it is a waste of scrap. King Gnash is wrong.', n.name);
-        say('I need four parts, and four goblins in Grubmarket have them. Grubb the cook wants cooked beef. Nix the scrapper wants scrap. Old Snaggle wants spider silk. Pip-squeak wants bread.', n.name);
+        say('I need four parts, and four goblins in Grubmarket have them. Grubb the cook wants cooked beef. Nix the scrapper wants scrap. Old Snaggle wants spider silk. Pip-squeak wants bread. Be decent to them: they are my neighbours, and they will remember it.', n.name);
+        say('HELPER! WITH ME! ... there. Walk in behind me and do not look at the spears.', n.name);
         say('Bring all four to my lab. East of the market, past the scrap yard, inside the big wall. You cannot miss the wall. I built it after the last machine.', n.name);
         levelBanner = { text: 'NEW QUEST', sub: 'A Tinker Gone Wrong', t: 3 }; save();
       } else if (tq.stage === 1) {
@@ -193,9 +198,19 @@
         if (countItem(f.item) >= f.n) {
           if (!canFit(f.part, 1)) { notify('Your pack is full.'); return; }
           removeItem(f.item, f.n); tq.parts[f.part] = true; addItem(f.part, 1);
+          tq.friends = PART_IDS.filter(id => tq.parts[id]).length;
           floatText(player.x, player.y - 30, `+${ITEMS[f.part].name}`, ITEMS[f.part].color); burst(player.x, player.y, '#ffe066', 12, 90); sfx('pickup');
           say(f.thanks, n.name);
-          if (PART_IDS.every(id => tq.parts[id])) say("That is all four parts. Tinkerton's lab is east of the market, past the scrap yard, inside the wall. Go in through the door.", 'The Voice');
+          floatText(player.x, player.y - 52, `Friends in Grubmarket ${tq.friends}/4`, '#7ee787', 13);
+          if (PART_IDS.every(id => tq.parts[id])) {
+            say("That is all four parts. Tinkerton's lab is east of the market, past the scrap yard, inside the wall. Go in through the door.", 'The Voice');
+            if (!tq.bundle) {   // four favours done: the market clubs together, and the knight is somebody here now
+              tq.bundle = true;
+              giveOrDrop('goblin_scrap', 10, player.x, player.y); giveOrDrop('cooked_beef', 2, player.x, player.y);
+              say("And the four of them club together behind your back: ten of Nix's scrap and two of Grubb's beef, pushed into your hands at the stalls. Grubmarket has decided about you.", 'The Voice');
+              levelBanner = { text: 'FRIENDS IN GRUBMARKET', sub: 'All four goblins owe you one', t: 3 }; sfx('quest');
+            }
+          }
           save();
         } else say(`${f.ask} (${countItem(f.item)}/${f.n})`, n.name);
       } else say(pick(n.after), n.name);
@@ -616,10 +631,12 @@
       F.tp(216, 30); F.sim(3, []); const stays = bq.where === 'farshore';
       check("goblincity: Harl waits at the far dock with 'Back to the dock', and does not row home while you are in Grubmarket", typeof a2 === 'number' && open2 && back && stays, { a2, open2, back, stays, region: player.region });
     } else check('goblincity: the ferry (26-boats) is loaded', false, {});
-    // Tinkerton starts the quest at the castle gate
+    // Tinkerton is met outside, at the corner of the city gate, and that talk is what opens it
     quest.tinker = freshT(); for (const id of PART_IDS) removeItem(id, countItem(id)); removeItem('tinker_goggles', countItem('tinker_goggles'));
-    { F.tp(225, 52); F.face(TINK_GATE.x, TINK_GATE.y); drain(); F.press('KeyE'); F.sim(2, []);
-      check("goblincity: Tinkerton outside Castle Gnash's gate starts 'A Tinker Gone Wrong' (four parts from four goblins)", TQ().stage === 1 && dialog.cur && dialog.cur.who === 'Tinkerton' && activeQuests().includes('tinker') && /Grubb/.test(questText('tinker')) && !!levelBanner && levelBanner.sub === 'A Tinker Gone Wrong', { stage: TQ().stage, who: dialog.cur && dialog.cur.who, text: questText('tinker') }); }
+    { const shutBefore = !!window.CITYGATE && !CITYGATE.open();
+      F.tp(TINK_GATE.x - 1, TINK_GATE.y); F.face(TINK_GATE.x, TINK_GATE.y); drain(); F.press('KeyE'); F.sim(2, []);
+      const outside = !window.CITYGATE || TINK_GATE.x < CITYGATE.WALL.x0;   // the corner he tends is on the landing side of the city wall
+      check("goblincity: Tinkerton, met outside at the corner of the city gate, starts 'A Tinker Gone Wrong' (four parts from four goblins) and opens the city", TQ().stage === 1 && dialog.cur && dialog.cur.who === 'Tinkerton' && outside && shutBefore && (!window.CITYGATE || CITYGATE.open()) && activeQuests().includes('tinker') && /Grubb/.test(questText('tinker')) && !!levelBanner && levelBanner.sub === 'A Tinker Gone Wrong', { stage: TQ().stage, who: dialog.cur && dialog.cur.who, outside, shutBefore, open: !!window.CITYGATE && CITYGATE.open(), text: questText('tinker') }); }
     // the four favours
     const handIn = (id, sx, sy) => { const n = FOLK.find(n => n.id === id), f = FAVOURS[id]; makeRoom(3); F.tp(sx, sy); F.face(n.x, n.y); drain(); F.press('KeyE'); F.sim(2, []); return f; };
     { const f = handIn('grubb', 216, 24); const refused = !TQ().parts.boiler && said(/beef/) && countItem('boiler') === 0;

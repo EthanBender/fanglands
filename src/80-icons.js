@@ -589,12 +589,16 @@
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
-    // 1. THE GATE. This fails while any two items still draw the same picture. It is the wave's scoreboard:
-    //    every icon an artist lands takes items out of `implicated` until the number reaches zero.
+    // 1. THE GATE. This was loosened to a ratchet (`implicated <= 152`) while the art was still being drawn,
+    //    with a note to turn it back into a flat zero once it landed. It has landed: src/81-icons-art.js draws
+    //    the remaining 167, so this is a flat zero again and fails the moment any two items share a drawing.
     const a = audit();
     check('icons: every item draws a different picture (no two items share one drawing)',
       a.duplicates.length === 0,
       { total: a.total, unique: a.unique, stillSharing: a.implicated, groups: a.groups.length, worst: a.groups.slice(0, 4).map(gr => gr.length + '×' + gr.slice(0, 3).join('/')) });
+    // and the standing report the ratchet came with, kept so the number is on the board every run
+    check('icons: how many items still share a drawing, and how many have their own', true,
+      { done: a.total - a.implicated, remaining: a.implicated, withoutArt: a.missing.length, of: a.total, goal: 0 });
 
     // 2. the registry actually overrides, and an unregistered item is left exactly as it was.
     //    This probed with stone while stone had no art. Once every item is drawn there is no unregistered item

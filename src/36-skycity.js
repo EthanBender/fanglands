@@ -1,6 +1,8 @@
 // ============================================================================
 // SONG OF ABOVE — Aerie, the hidden city of the winged folk above the clouds (Cohen's design A).
-// An INSTANCE reached from a wind shrine on the Grey Quarry heights (E on it with the wind flute).
+// An INSTANCE reached from a wind shrine on the Grey Quarry heights (E on it with the wind flute — and,
+// since 66-storm, only once the storm between the shrine and the city has been broken: the flute alone
+// now lifts the knight into THE STORM, and the way up is the updraft the Thunderbird's death opens).
 // Queen Seraphel wants 5 dragon scales + 3 cloud essence, sings the Song, and Master Halcyon then
 // forges the Godly Plated set from dragon scale + mithril + obsidian (no anvil). The four Godly
 // recipes leave Brakka's anvil list at load. Feature file: HOOKS only, edits no core file.
@@ -95,7 +97,9 @@
     const q = SQ();
     if (q.stage === 'done') return 'Done.';
     if (q.stage === 2) return `Bring Queen Seraphel 5 dragon scales (${Math.min(5, countItem('dragon_scale'))}/5) and 3 cloud essence (${Math.min(3, countItem('cloud_essence'))}/3). Ash drakes at Dunstan's farm shed scale, three drakes for one at the very worst. Sentinels drop essence; wisps hold it.`;
-    return countItem('wind_flute') ? 'Play the wind flute at the wind shrine on the Grey Quarry heights (north-west of Thistledown).' : 'Old Wren gave you a wind flute. Find it, or ask him again.';
+    if (!countItem('wind_flute')) return 'Old Wren gave you a wind flute. Find it, or ask him again.';
+    const stormLeft = !(quest.storm && quest.storm.beaten);
+    return 'Play the wind flute at the wind shrine on the Grey Quarry heights (north-west of Thistledown).' + (stormLeft ? ' The wind carries you into the storm under Aerie: put down the Thunderbird turning in it and the way up opens.' : ' The storm is broken; the wind goes straight up.');
   };
   HOOKS.activeQuests.push(() => { const s = SQ().stage; return s === 1 || s === 2 ? ['sky'] : []; });
   HOOKS.mapTarget.push(() => { const s = SQ().stage; return s === 1 || s === 2 ? { x: SHRINE_T.x, y: SHRINE_T.y, label: 'The wind shrine', id: 'sky' } : null; });
@@ -152,10 +156,12 @@
     for (let y = SHRINE_T.y - 1; y <= SHRINE_T.y + 2; y++) for (let x = SHRINE_T.x - 2; x <= SHRINE_T.x + 2; x++) if (soft.includes(api.tileAt(x, y))) api.setTile(x, y, T.GRASS);
     api.setTile(SHRINE_T.x, SHRINE_T.y, WIND_SHRINE); api.setTile(STEP_T.x, STEP_T.y, T.DIRT);
   });
-  function liftToAerie() {
+  function liftToAerie(from) {
     burst(player.x, player.y, '#dff0ff', 40, 220); burst(player.x, player.y, '#ffffff', 20, 140); sfx('levelup');
     if (!INSTANCES.enter(AER.id, [STEP_T.x, STEP_T.y])) { notify('The wind stirs, but will not lift you now.'); return false; }
-    say('The flute sings and the wind answers. It takes you like a leaf, up through the grey, into the light.', 'The Voice');
+    say(from === 'storm'
+      ? 'The updraft takes you off the broken storm like a leaf off a river, up through the last of the black, and into the light.'
+      : 'The flute sings and the wind answers. It takes you like a leaf, up through the grey, into the light.', 'The Voice');
     save(); return true;
   }
   function leapDown() {
@@ -180,7 +186,7 @@
     if (e.role === 'sky_queen') {
       if (q.stage !== 'done' && q.stage < 2) {
         q.stage = 2;
-        say("A knight, carried up on Wren's old flute. The wind does not lift just anyone. Welcome to Aerie, the city above the clouds.", e.name);
+        say("A knight, carried up on Wren's old flute — and through the storm, which is more than any of my sentinels has managed this year. The wind does not lift just anyone. Welcome to Aerie, the city above the clouds.", e.name);
         say("You have heard of the Song of Above. It is not a tune, it is a forging-song: sung over dragon scale, it makes metal that dragons cannot bite. But the Song needs a voice and a price.", e.name);
         say("Bring me five dragon scales and three cloud essence. Our sentinels carry essence; the wisps on the cloud's edge hold it too. Then I will sing, and Master Halcyon will forge for you.", e.name);
         save();
@@ -204,6 +210,8 @@
     if (t === WIND_SHRINE) {
       if (active()) return true;
       if (!countItem('wind_flute')) { say('The wind is silent. The shrine waits for a song it knows.', 'Wind shrine'); return true; }
+      // 66-storm: while the storm under Aerie still stands, the wind takes you into it instead of over it
+      if (window.STORM && typeof STORM.shrine === 'function' && STORM.shrine()) return true;
       liftToAerie(); return true;
     }
     if (!active()) return false;
@@ -313,7 +321,7 @@
   });
 
   // ---------- debug handle ----------
-  window.SKYCITY = { CLOUD, SKY, WISP, LEAP, WIND_SHRINE, SHRINE_T, STEP_T, ENTRY, LEAP_T, WISPS, SKY_NPCS, FORGE, SQ, skyDone, forge, talk, inFront };
+  window.SKYCITY = { CLOUD, SKY, WISP, LEAP, WIND_SHRINE, SHRINE_T, STEP_T, ENTRY, LEAP_T, WISPS, SKY_NPCS, FORGE, SQ, skyDone, forge, talk, inFront, liftToAerie };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -331,12 +339,20 @@
     // Old Wren gives the flute once the silk quest is done
     { quest.wren = 'done'; makeRoom(3); drain(); F.tp(30, 81); const r = F.talk('wren'); F.sim(2, []);
       check('sky: Old Wren (silk done) tells of the Song of Above and gives the wind flute; quest active, map target on the shrine', typeof r === 'number' && q.stage === 1 && countItem('wind_flute') === 1 && activeQuests().includes('sky') && /flute/.test(questText('sky')) && mapTargets().some(t => t.id === 'sky'), { r, stage: q.stage, flute: countItem('wind_flute'), who: dialog.cur && dialog.cur.who }); }
-    // up to Aerie
+    // the storm under Aerie (66-storm) is the way up now: the flute alone lifts you into it, not over it
+    { drain(); if (window.STORM) quest.storm = { beaten: false, taught: true, bolts: 0, dodged: 0, hits: 0, kills: 0 };
+      while (countItem('wind_flute') < 1) h.give('wind_flute', 1);
+      F.tp(STEP_T.x, STEP_T.y); F.face(SHRINE_T.x, SHRINE_T.y); F.press('KeyE'); F.sim(3, []);
+      const inst = INSTANCES.active();
+      check('sky: the flute alone no longer opens Aerie — the wind carries you into the storm below it', !window.STORM || (inst === STORM.ST.id && inst !== AER.id && /storm/i.test(questText('sky'))), { inst, storm: !!window.STORM, text: questText('sky') });
+      if (INSTANCES.active()) INSTANCES.leave();
+      if (window.STORM) quest.storm.beaten = true; }
+    // up to Aerie, with the storm behind you
     { drain(); F.tp(STEP_T.x, STEP_T.y); F.face(SHRINE_T.x, SHRINE_T.y); F.press('KeyE'); F.sim(3, []);
       const sents = monsters.filter(m => m.type === 'sky_sentinel');
       let cloud = 0, sky = 0, floor = 0, wisps = 0; for (let y = 0; y < AER.h; y++) for (let x = 0; x < AER.w; x++) { const t = tileAt(x, y); if (t === CLOUD) cloud++; else if (t === SKY) sky++; else if (t === T.FLOOR) floor++; else if (t === WISP) wisps++; }
       const path = F.bfs(ENTRY[0], ENTRY[1], 25, 7), pathForge = F.bfs(ENTRY[0], ENTRY[1], 38, 19);
-      check('sky: the flute lifts you to Aerie — a 50×34 cloud instance (region + banner), 4 neutral level-35 sentinels, marble hall, 3 wisps, the leap tile', INSTANCES.active() === AER.id && player.region === AER.name && !!areaBanner && areaBanner.name === AER.name && sents.length === 4 && sents.every(m => !m.angry && !m.dead) && MONSTER_DEFS.sky_sentinel.level === 35 && MONSTER_DEFS.sky_sentinel.human && !MONSTER_DEFS.sky_sentinel.aggro && cloud > 800 && sky > 300 && floor > 150 && wisps === 3 && tileAt(LEAP_T[0], LEAP_T[1]) === LEAP && !!path && !!pathForge && !aerie.dark, { inst: INSTANCES.active(), region: player.region, sentinels: sents.length, cloud, sky, floor, wisps, path: path && path.length, forge: pathForge && pathForge.length }); }
+      check('sky: with the storm broken the flute lifts you to Aerie — a 50×34 cloud instance (region + banner), 4 neutral level-35 sentinels, marble hall, 3 wisps, the leap tile', INSTANCES.active() === AER.id && player.region === AER.name && !!areaBanner && areaBanner.name === AER.name && sents.length === 4 && sents.every(m => !m.angry && !m.dead) && MONSTER_DEFS.sky_sentinel.level === 35 && MONSTER_DEFS.sky_sentinel.human && !MONSTER_DEFS.sky_sentinel.aggro && cloud > 800 && sky > 300 && floor > 150 && wisps === 3 && tileAt(LEAP_T[0], LEAP_T[1]) === LEAP && !!path && !!pathForge && !aerie.dark, { inst: INSTANCES.active(), region: player.region, sentinels: sents.length, cloud, sky, floor, wisps, path: path && path.length, forge: pathForge && pathForge.length }); }
     // Seraphel's task, then the song
     { drain(); F.tp(25, 7); F.face(25, 6); F.press('KeyE'); F.sim(2, []); const asked = q.stage === 2 && dialog.cur && dialog.cur.who === 'Queen Seraphel' && /scales/.test(questText('sky'));
       while (countItem('dragon_scale') > 0) removeItem('dragon_scale', countItem('dragon_scale')); while (countItem('cloud_essence') > 0) removeItem('cloud_essence', countItem('cloud_essence'));
