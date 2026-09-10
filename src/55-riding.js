@@ -96,21 +96,28 @@
   }
   HOOKS.keyHelp.push({ action: 'Machine special (hold Space, or V)', codes: ['KeyV'] });
 
-  // Holding Space charges it. The core fires the ordinary attack on the Space PRESS, so a tap is unchanged;
-  // this only takes over once the key has been down past HOLD_TO_CHARGE, and it fires on release.
-  let held = 0, firedFromHold = false;
+  // Holding charges it, and BOTH controls hold: Space on a keyboard, the beacon on a touch screen. The core
+  // fires the ordinary attack on the Space press, so a tap is unchanged — this only takes over once the input
+  // has been down past HOLD_TO_CHARGE, and it fires on release. `held` is public so the art can show the charge.
+  let held = 0, firedFromHold = false, holdSource = null;
+  let beaconRect = null;                                   // set by the HUD each frame on touch
+  const inBeacon = p => !!beaconRect && p && p.x >= beaconRect.x && p.x <= beaconRect.x + beaconRect.w && p.y >= beaconRect.y && p.y <= beaconRect.y + beaconRect.h;
+  // charge 0..1 while winding up by hand, then the special's own wind-up takes over
+  const chargeFrac = () => (sp ? (sp.phase === 'wind' ? sp.t / WIND : 1) : Math.max(0, Math.min(1, (held - HOLD_TO_CHARGE) / 0.55)));
+  const armed = () => firedFromHold;
   HOOKS.update.push(dt => {
-    if (!machineKind() || sp) { held = 0; firedFromHold = false; return; }
-    if (keys.has('Space')) {
+    if (!machineKind() || sp) { held = 0; firedFromHold = false; holdSource = null; return; }
+    const key = keys.has('Space');
+    const touchHold = touchMode() && !!touch.press && inBeacon(touch.press);
+    const down = key || touchHold;
+    if (down) {
+      if (!holdSource) holdSource = key ? 'key' : 'touch';
       held += dt;
-      if (held >= HOLD_TO_CHARGE && !firedFromHold && cool <= 0) {
-        // hold long enough and it goes the moment you let go — the wind-up is the special's own
-        firedFromHold = true;
-      }
+      if (held >= HOLD_TO_CHARGE && !firedFromHold && cool <= 0) firedFromHold = true;
       return;
     }
-    if (firedFromHold) { firedFromHold = false; held = 0; startSteam(); return; }
-    held = 0;
+    if (firedFromHold) { firedFromHold = false; held = 0; holdSource = null; startSteam(); return; }
+    held = 0; holdSource = null;
   });
 
   HOOKS.update.push(dt => {
@@ -185,19 +192,104 @@
     }
   });
 
+  // ---------- what the machine looks like while it charges ----------
+  // The owner: "there is just no visual feedback that it works, or if it is on cooldown. Maybe flames start
+  // growing out of the back of it, and then it starts flashing when it is ready to go. Maybe like a red
+  // emergency services light on top of it. Maybe the light gets burnt out and there is smoke coming out of it
+  // until it is ready to go again, and then the light fixes itself."
+  // So: a beacon on the roof. It sweeps slowly when the special is ready, spins up and brightens as you hold,
+  // flashes hard the moment it is armed, and burns out into a smoking stub for the whole cooldown before it
+  // sputters back to life. The exhaust grows flames the longer you hold, and roars while it runs.
+  let fixT = 0, lastCool = 0;
+  HOOKS.update.push(dt => {
+    if (fixT > 0) fixT = Math.max(0, fixT - dt);
+    if (lastCool > 0 && cool <= 0) fixT = 0.9;             // the light picks itself back up
+    lastCool = cool;
+  });
+
+  HOOKS.draw.push((g, items) => {
+    if (!machineKind() || player.dead) return;
+    const f = player.facing || { x: 1, y: 0 }, d = Math.hypot(f.x, f.y) || 1;
+    const fx = f.x / d, fy = f.y / d;
+    const charge = chargeFrac(), winding = !!sp && sp.phase === 'wind', running = !!sp && sp.phase === 'run';
+    const holding = held >= HOLD_TO_CHARGE || winding;
+    const broken = cool > 0 && !sp;
+
+    // the exhaust: flames out the back, growing with the charge, roaring while it runs
+    if (holding || running) {
+      const len = running ? 26 : 8 + charge * 18;
+      items.push({ y: player.y + 1, draw: () => {
+        const bx = player.x - fx * (player.r + 4), by = player.y - fy * (player.r + 4);
+        for (let i = 0; i < (running ? 5 : 3); i++) {
+          const t2 = (i + 1) / (running ? 5 : 3), L = len * t2 * (0.75 + Math.random() * 0.5);
+          g.fillStyle = i === 0 ? 'rgba(255,236,180,0.95)' : t2 < 0.7 ? 'rgba(245,160,60,0.8)' : 'rgba(200,70,30,0.5)';
+          g.beginPath(); g.ellipse(bx - fx * L * 0.5, by - fy * L * 0.5, 5 - i * 0.6, L * 0.5, Math.atan2(fy, fx), 0, 7); g.fill();
+        }
+      } });
+      if (running && Math.random() < 0.5) burst(player.x - fx * 26, player.y - fy * 26, '#6e7178', 2, 60);
+    }
+
+    // the beacon on the roof
+    items.push({ y: player.y + player.r + 2, draw: () => {
+      const bx = player.x, by = player.y - player.r - 6;
+      g.fillStyle = '#3a3a42'; g.fillRect(bx - 5, by + 4, 10, 4);            // the mount
+      if (broken) {
+        // burnt out: a dark stub with smoke curling off it, sputtering as it comes back
+        const near = cool < 2.2;
+        g.fillStyle = near && Math.sin(time * 22) > 0.4 ? '#8a3a2a' : '#2b2b33';
+        g.beginPath(); g.arc(bx, by, 5, 0, 7); g.fill();
+        g.strokeStyle = 'rgba(120,124,134,0.5)'; g.lineWidth = 2; g.lineCap = 'round';
+        g.beginPath();
+        const w1 = Math.sin(time * 2.2) * 3;
+        g.moveTo(bx, by - 4); g.quadraticCurveTo(bx + w1, by - 12, bx - w1, by - 20); g.stroke();
+        g.lineCap = 'butt';
+        return;
+      }
+      if (fixT > 0) { // it fixes itself with a pop of light
+        const a = fixT / 0.9;
+        g.fillStyle = `rgba(255,240,200,${a})`; g.beginPath(); g.arc(bx, by, 5 + (1 - a) * 10, 0, 7); g.fill();
+      }
+      // a sweeping emergency light: slow when idle, faster and brighter as it charges, hard flashes when armed
+      const spin = time * (armed() ? 26 : winding ? 14 + charge * 12 : 2.4 + charge * 10);
+      const lit = armed() ? (Math.sin(time * 26) > 0 ? 1 : 0.15) : 0.55 + charge * 0.45;
+      g.save(); g.translate(bx, by);
+      g.fillStyle = `rgba(220,60,45,${0.20 * lit})`; g.beginPath(); g.arc(0, 0, 15 + charge * 7, 0, 7); g.fill();
+      g.rotate(spin);
+      g.fillStyle = `rgba(255,120,90,${0.32 * lit})`;                        // the sweep of the beam
+      g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, 22 + charge * 10, -0.42, 0.42); g.closePath(); g.fill();
+      g.restore();
+      g.fillStyle = `rgb(${Math.round(190 + 65 * lit)},${Math.round(40 + 60 * lit)},${Math.round(35 + 40 * lit)})`;
+      g.beginPath(); g.arc(bx, by, 5, 0, 7); g.fill();
+      g.fillStyle = `rgba(255,225,215,${0.55 * lit})`; g.beginPath(); g.arc(bx - 1.4, by - 1.6, 1.8, 0, 7); g.fill();
+    } });
+  });
+
   // the on-screen button, so it works on an iPad, and a small state chip while it is live
   HOOKS.hud.push((g, narrow) => {
     if (!machineKind()) return;
     if (!touchMode()) return; // on a desktop the key is the control; a corner button there is just confusing
-    const w = 66, h = 30, x = narrow ? 12 : 12, y = Math.max(HUD_LAYOUT.hotbarY - 42, 120);
-    const label = sp ? (sp.phase === 'wind' ? 'WIND' : 'GO') : cool > 0 ? `${Math.ceil(cool)}s` : 'SPECIAL';
-    button(g, x, y, w, h, label, () => { touch.taps.push('steam'); }, sp ? '#d29922' : cool > 0 ? '#21262d' : '#8b2e2e', !sp && cool <= 0);
-    if (sp) {
-      const f = sp.phase === 'wind' ? sp.t / WIND : 1 - sp.t / RUN;
-      g.fillStyle = '#21262d'; g.fillRect(x, y + h + 4, w, 5);
-      g.fillStyle = sp.phase === 'wind' ? '#d29922' : '#f5c542';
-      g.fillRect(x, y + h + 4, w * Math.max(0, Math.min(1, f)), 5);
+    // A HOLD target, not a tap: it is deliberately NOT a button() entry, because 05-input fires a button on
+    // press and would never see the release. It publishes its rect and the update loop watches touch.press
+    // against it, so holding it charges exactly the way holding Space does.
+    const R = 30, pad = 16;
+    const cx = window.__stickRight ? pad + R : VW - pad - R;   // opposite the move stick, wherever that is
+    const cy = Math.max(HUD_LAYOUT.hotbarY - R - 16, 140);
+    beaconRect = { x: cx - R, y: cy - R, w: R * 2, h: R * 2 };
+    const charge = chargeFrac(), broken = cool > 0 && !sp;
+    const lit = armed() ? (Math.sin(time * 26) > 0 ? 1 : 0.2) : broken ? 0.15 : 0.5 + charge * 0.5;
+    g.beginPath(); g.arc(cx, cy, R, 0, 7);
+    g.fillStyle = broken ? 'rgba(20,22,28,0.85)' : `rgba(${Math.round(120 + 90 * lit)},${Math.round(30 + 30 * lit)},28,0.85)`;
+    g.fill();
+    g.strokeStyle = broken ? '#3a3a42' : `rgba(255,140,110,${0.4 + 0.5 * lit})`; g.lineWidth = 2; g.stroke();
+    // the charge ring fills as you hold
+    if (!broken && (charge > 0 || sp)) {
+      g.strokeStyle = armed() || sp ? '#f5c542' : '#d29922'; g.lineWidth = 4;
+      g.beginPath(); g.arc(cx, cy, R - 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, sp ? 1 : charge)); g.stroke();
     }
+    g.textAlign = 'center'; g.font = 'bold 11px sans-serif';
+    g.fillStyle = broken ? '#6e7681' : '#ffe9e0';
+    g.fillText(sp ? (sp.phase === 'wind' ? 'WIND' : 'GO') : broken ? `${Math.ceil(cool)}s` : armed() ? 'LET GO' : 'HOLD', cx, cy + 4);
+    g.textAlign = 'left';
   });
 
   // ---------- C. over the palisade, on the town side ----------
@@ -253,7 +345,7 @@
 
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => add('agility', 'vault the goblin camp palisade (town side)', VAULT_LV, VAULT_XP, 5, 'a shortcut in from Thistledown instead of the walk to the gate'));
 
-  window.RIDING = { riderOffset, WIND, RUN, SPEED, COOL, COOL_BOILER, HIT_DMG, VAULT_LV, VAULT_XP, vault, tile: T_VAULT, startSteam, SPECIALS, HOLD_TO_CHARGE, machineKind, get special() { return sp; }, get cooldown() { return cool; }, resetCool: () => { cool = 0; sp = null; } };
+  window.RIDING = { riderOffset, chargeFrac, armed, get beaconRect() { return beaconRect; }, WIND, RUN, SPEED, COOL, COOL_BOILER, HIT_DMG, VAULT_LV, VAULT_XP, vault, tile: T_VAULT, startSteam, SPECIALS, HOLD_TO_CHARGE, machineKind, get special() { return sp; }, get cooldown() { return cool; }, resetCool: () => { cool = 0; sp = null; } };
 
   // ---------- self-test ----------
   const P = 'riding: ';
