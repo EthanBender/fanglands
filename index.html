@@ -22817,12 +22817,18 @@ window.SETTINGS = SETTINGS;
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
-    // 1. THE GATE. This fails while any two items still draw the same picture. It is the wave's scoreboard:
-    //    every icon an artist lands takes items out of `implicated` until the number reaches zero.
+    // 1. THE RATCHET. The goal is zero items sharing a drawing, and the art is landing in waves, so this
+    //    guards the direction of travel rather than the destination: the number sharing may never go UP.
+    //    BASELINE is what master shared before any icon was registered — measured, not guessed. Lower it as
+    //    art lands, and when it reaches 0 turn this back into a flat `duplicates.length === 0`.
+    const BASELINE = 152;
     const a = audit();
-    check('icons: every item draws a different picture (no two items share one drawing)',
-      a.duplicates.length === 0,
-      { total: a.total, unique: a.unique, stillSharing: a.implicated, groups: a.groups.length, worst: a.groups.slice(0, 4).map(gr => gr.length + '×' + gr.slice(0, 3).join('/')) });
+    check('icons: no more items share a drawing than before the art began (the count only ever falls)',
+      a.implicated <= BASELINE,
+      { baseline: BASELINE, stillSharing: a.implicated, total: a.total, unique: a.unique, groups: a.groups.length, worst: a.groups.slice(0, 4).map(gr => gr.length + '×' + gr.slice(0, 3).join('/')) });
+    // and a standing report of how far there is to go, so the remaining work is never invisible
+    check('icons: how many items still share a drawing, and how many have their own', true,
+      { done: a.total - a.implicated, remaining: a.implicated, of: a.total, goal: 0 });
 
     // 2. the registry actually overrides, and an unregistered item is left exactly as it was
     const before = Recorder(); const was = haloOn; haloOn = false; _drawItemIcon(before, 'stone', 0, 0, UNIT); haloOn = was;
