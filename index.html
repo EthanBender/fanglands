@@ -19882,6 +19882,14 @@ window.SETTINGS = SETTINGS;
   const markTiles = () => { const out = []; for (const name in TILE_MARKS) { const id = tileId(name); if (id !== null) out.push([id, TILE_MARKS[name]]); } return out; };
 
   const shopName = key => (SHOPS[key] && SHOPS[key].name) || null;
+  // who lives inside which instance, so their marker can be hung on that instance's door
+  const INSIDE = { brunhild: 'deepholm', thrain: 'deepholm', dagny: 'deepholm', orik: 'deepholm', hilde: 'deepholm' };
+  const INSIDE_TILES = { LADDER_UP: 'deepholm', COAL_CART: 'deepholm' }; // moved underground with Deepholm
+  const instanceDoor = id => {
+    if (!window.INSTANCES || !INSTANCES.get) return null;
+    const inst = INSTANCES.get(id); if (!inst) return null;
+    return inst.door || (inst.step ? [inst.step[0], inst.step[1] - 1] : null);
+  };
   // a shopkeeper or a quest giver standing indoors is marked on the door: that is where a knight walks to
   function spotFor(n) {
     const b = insideBuilding(n.x, n.y);
@@ -19926,12 +19934,26 @@ window.SETTINGS = SETTINGS;
       else if (n.role === 'bank') { const b = insideBuilding(n.x, n.y); put('bank', s.x, s.y, (b && b.name) || n.name); }
     }
     // 3. shopkeepers and rulers on a feature's own list (17-tap's people registry finds them live)
+    const placed = new Set();
     if (typeof tapPeople === 'function') {
       for (const p of tapPeople()) {
         const def = PEOPLE[p.id]; if (!def) continue;
         const label = def.shop ? shopName(def.shop) : def.label;
-        if (label) put(def.kind, Math.floor(p.x / TILE), Math.floor(p.y / TILE), label);
+        if (label) { put(def.kind, Math.floor(p.x / TILE), Math.floor(p.y / TILE), label); placed.add(p.id); }
       }
+    }
+    // Some of those people now live inside an INSTANCE — Deepholm became its own map — so they are not on the
+    // overworld to be found. Their marker goes on the door you go through to reach them, which is what a player
+    // needs anyway: the mark says the smith is down the shaft, not that she has vanished.
+    for (const id in INSIDE) {
+      if (placed.has(id)) continue;
+      const def = PEOPLE[id]; if (!def) continue;
+      const label = def.shop ? shopName(def.shop) : def.label; if (!label) continue;
+      // beside the door, never ON it: the door already carries the 'way down' mark and one marker per tile wins
+      const door = instanceDoor(INSIDE[id]); if (!door) continue;
+      const inst = INSTANCES.get(INSIDE[id]);
+      const spot = (inst && inst.step) ? inst.step : [door[0], door[1] + 1];
+      put(def.kind, spot[0], spot[1], label);
     }
     if (shopName(PETE.shop)) put('shop', PETE.x, PETE.y, shopName(PETE.shop));
     // 4. quest givers among the core NPCs (only the leader of a huddle, so four survivors are one marker)
@@ -20233,14 +20255,21 @@ window.SETTINGS = SETTINGS;
       // ---- every instance door, every shaft, ladder and shrine ----
       { const doors = [], bad = [];
         for (const id of INSTANCES.list()) { const inst = INSTANCES.get(id); if (!inst.door) continue; doors.push(id); const m = at(inst.door[0], inst.door[1]); if (!m || m.kind !== 'down' || m.label !== inst.name) bad.push(id + ':' + (m ? m.kind + '/' + m.label : 'none')); }
-        const tileMark = (name, kind) => { const t = tileId(name); if (t === null) return 'no tile'; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === t) { const m = at(x, y); return m && m.kind === kind ? true : 'missing at ' + x + ',' + y; } return 'no such tile on the map'; };
+        const tileMark = (name, kind) => { const t = tileId(name); if (t === null) return 'no tile';
+          // a tile that now lives inside an instance is not on the overworld map: say so plainly rather than failing
+          if (window.INSTANCES && INSTANCES.get && INSIDE_TILES[name]) { const inst = INSTANCES.get(INSIDE_TILES[name]); if (inst && (inst.tiles || []).includes(t)) return 'inside ' + INSIDE_TILES[name]; } for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === t) { const m = at(x, y); return m && m.kind === kind ? true : 'missing at ' + x + ',' + y; } return 'no such tile on the map'; };
         const shaft = tileMark('SHAFT', 'down'), ladder = tileMark('LADDER_UP', 'up'), shrine = tileMark('WIND_SHRINE', 'up'), cart = tileMark('COAL_CART', 'down');
         const cartAt = window.COALMINE && at(COALMINE.CART_T.x, COALMINE.CART_T.y); // 53-coalmine picks the berth at world-gen
         const ups = all().filter(m => m.kind === 'up').length, downs = all().filter(m => m.kind === 'down').length, docks = all().filter(m => m.kind === 'dock').length;
-        check(P + 'every instance door is a way down under the name of the place, and the mine shaft, the Deepholm ladder, the wind shrine and the coal cart are all marked; every mooring is a dock',
-          doors.length >= 2 && bad.length === 0 && shaft === true && ladder === true && shrine === true && cart === true
-          && !!cartAt && cartAt.kind === 'down' && ups >= 2 && downs >= doors.length + 2 && docks === 4,
-          { doors, bad, shaft, ladder, shrine, cart, cartAt: cartAt && [cartAt.x, cartAt.y], ups, downs, docks }); }
+        // The ladder and the coal cart went underground when Deepholm became its own map (58-underground), so
+        // they are no longer overworld tiles to mark — the SHAFT is what leads to them, and that must be marked.
+        // The intent is unchanged: every way down off the overworld is marked, and nothing that moved is lost.
+        const movedUnderground = ladder === 'inside deepholm' && cart === 'inside deepholm';
+        const smithBelow = all().some(m => m.kind === 'shop' && m.label === (SHOPS.dwarf && SHOPS.dwarf.name));
+        check(P + 'every instance door is a way down under the name of the place; the shaft and the wind shrine are marked, and what moved into Deepholm is marked at the shaft rather than lost',
+          doors.length >= 2 && bad.length === 0 && shaft === true && shrine === true && movedUnderground && smithBelow
+          && ups >= 1 && downs >= doors.length + 1 && docks === 4,
+          { doors, bad, shaft, shrine, ladder, cart, movedUnderground, smithBelow, ups, downs, docks }); }
       // ---- quest givers ----
       { const boardId = tileId('BOARD'); const boards = [];
         for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === boardId) boards.push([x, y]);
