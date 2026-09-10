@@ -19265,7 +19265,8 @@ window.SETTINGS = SETTINGS;
     if (paused || panel) return;
     const r = boxRect(), id = tracked();
     if (!r || !id) return;
-    button(g, r.x, r.y, r.w, r.h, 'questbox:open', () => openPanel('quest_detail'), 'rgba(0,0,0,0)');
+    // a hit area, not a drawn control: button() paints its label, which would print "questbox:open" over the box
+    buttons.push({ x: r.x, y: r.y, w: r.w, h: r.h, label: 'questbox:open', action: () => openPanel('quest_detail') });
     // the chevron: two strokes in the corner, quiet enough not to fight the text
     g.strokeStyle = 'rgba(139,148,158,0.85)'; g.lineWidth = 2; g.lineCap = 'round';
     const cx = r.x + r.w - 16, cy = r.y + r.h / 2;
@@ -19274,40 +19275,46 @@ window.SETTINGS = SETTINGS;
   });
 
   // J already opens the quest list; this is the one the box opens, and it leads with the quest you are on
+  const HEAD = 74, LINE = 20, ROW = 34, FOOT = 52, PAD = 18;
   HOOKS.panel.quest_detail = (g, narrow) => {
     const id = tracked();
     const all = (typeof activeQuests === 'function' ? activeQuests() : []).filter(q => QUEST_DEFS[q]);
     const others = all.filter(q => q !== id);
     const body = id ? textOf(id) : '';
-    const w = narrow ? Math.min(VW - 28, 360) : 440;
-    const lines = Math.max(1, dialogLines(g, body, w - 44));
-    const h = 132 + lines * 20 + others.length * 34;
+    const w = narrow ? Math.min(VW - 24, 380) : 460;
+    const inner = w - PAD * 2;
+    g.font = '14px sans-serif';
+    const lines = body ? Math.max(1, dialogLines(g, body, inner)) : 0;
+    const target = id && typeof trackedTarget === 'function' ? trackedTarget() : null;
+    // measured, not guessed: header, the instruction, the marker line, the list, then the footer
+    const listH = others.length ? 22 + others.length * ROW : 0;
+    const h = Math.min(VH - 24, HEAD + lines * LINE + (target ? 30 : 6) + listH + FOOT);
     const { px, py } = panelBox(g, w, h, id ? nameOf(id) : 'Your quests', id ? 'What to do next' : 'Nothing tracked right now');
 
-    let y = py + 58;
-    if (id) {
+    let y = py + HEAD;                                   // panelBox writes its subtitle at py + 50
+    if (body) {
       g.fillStyle = '#e6edf3'; g.font = '14px sans-serif'; g.textAlign = 'left';
-      wrapText(g, body, px + 22, y, w - 44, 20);
-      y += lines * 20 + 10;
-      // where the marker is pointing, in words, because the arrow alone does not say what it is
-      const t = typeof trackedTarget === 'function' ? trackedTarget() : null;
-      if (t) {
-        const tiles = Math.round(dist(player.x, player.y, tc(t.x), tc(t.y)) / TILE);
-        g.fillStyle = '#f5c542'; g.font = 'bold 12px sans-serif';
-        g.fillText(`Go to ${t.label || 'the marker'} — ${tiles} tiles away`, px + 22, y);
-      }
-      y += 22;
+      wrapText(g, body, px + PAD, y, inner, LINE);
+      y += lines * LINE;
     }
+    if (target) {
+      const tiles = Math.round(dist(player.x, player.y, tc(target.x), tc(target.y)) / TILE);
+      g.fillStyle = '#f5c542'; g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
+      g.fillText(`Head for ${target.label || 'the marker'} — ${tiles} tiles away`, px + PAD, y + 18);
+      y += 30;
+    } else y += 6;
 
     if (others.length) {
       g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left';
-      g.fillText('ALSO ON THE GO', px + 22, y); y += 8;
+      g.fillText('ALSO ON THE GO', px + PAD, y + 12);
+      y += 22;
       for (const q of others) {
-        button(g, px + 20, y, w - 40, 28, nameOf(q), () => { quest.tracked = q; quest.untrackedByPlayer = false; save(); }, '#21262d');
-        y += 34;
+        if (y + 28 > py + h - FOOT) break;               // never run under the footer
+        button(g, px + PAD, y, inner, 28, nameOf(q), () => { quest.tracked = q; quest.untrackedByPlayer = false; save(); }, '#21262d');
+        y += ROW;
       }
     }
-    button(g, px + 20, py + h - 46, w - 40, 32, 'Close', () => closePanel());
+    button(g, px + PAD, py + h - 44, inner, 32, 'Close', () => closePanel());
   };
 
   window.QUESTBOX = { boxRect, tracked };
