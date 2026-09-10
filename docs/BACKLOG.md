@@ -49,6 +49,9 @@ something specific (named) · **OPEN** not started.
 | Goblin camp pushed off the town wall | 6 tiles of field, was 1 |
 | **Deepholm is its own map** | the shaft is the door; 575 overworld tiles reclaimed |
 | Quest helper opens | full instruction, marker in words, other quests tappable |
+| Machine charge feedback | roof beacon sweeps, spins up, flashes when armed, burns out and smokes on cooldown; exhaust flames grow with the hold; touch control is a real hold |
+| **Quest items are reclaimable** | a soft lock: Wren said he was handing the flute back and gave nothing. General register now — a quest item declares its giver, and asking hands it back; a banked one is named, not duplicated |
+| Dozer outruns walking | it drove at 130 against a walk of 175. 205 now, 250 with the boiler |
 
 ---
 

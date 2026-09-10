@@ -261,7 +261,7 @@
     F.tp(o.x - 1, o.y); F.face(o.x, o.y); player.facing = { x: 1, y: 0 }; F.press('KeyE'); F.sim(2, []);
     const driving = () => !!(player.mech && player.mech.kind === 'dozer');
     const drive = (max, done) => { let n = 0; while (n < max && !done()) { F.step(['KeyD']); n++; } render(); return n < max ? n : 'timeout'; }; // drive east until done() (F.untilAction holds no keys)
-    check(P + 'climb onto a bulldozer without the boiler: speed 130, hull 110', driving() && player.speed === 130 && player.mech.hp === 110 && player.mech.maxHp === 110, { mech: player.mech, speed: player.speed });
+    check(P + 'climb onto a bulldozer without the boiler: it outruns a walking knight (205 against 175), hull 110', driving() && player.speed === 205 && player.speed > 175 && player.mech.hp === 110 && player.mech.maxHp === 110, { mech: player.mech, speed: player.speed });
     if (driving()) {
       // drill: a rock two tiles ahead → stone in the pack, Mining xp 17, rubble left (it regrows into rock)
       const rx = o.x + 2; changeTile(rx, o.y, T.ROCK); const s0 = countItem('stone'), mx0 = player.skills.mining.xp;
@@ -298,7 +298,7 @@
       const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE); const parked = nearestTileOfType(ptx, pty, T.DOZER, 2);
       player.dozerUp.boiler = true;
       if (parked) { F.goAdjacent(parked.tx, parked.ty, 600); F.face(parked.tx, parked.ty); F.press('KeyE'); F.sim(2, []); } // it can park two tiles off; E only reaches the tile you face
-      check(P + 'big boiler: climbing on gives speed 170 and hull 180/180 (HUD lists the fitted parts)', !!parked && driving() && player.speed === 170 && player.mech.hp === 180 && player.mech.maxHp === 180 && /bulldozer/i.test(notice ? notice.text : ''), { parked: parked && [parked.tx, parked.ty], mech: player.mech, speed: player.speed, notice: notice && notice.text });
+      check(P + 'big boiler: climbing on gives speed 250 and hull 180/180 (HUD lists the fitted parts)', !!parked && driving() && player.speed === 250 && player.mech.hp === 180 && player.mech.maxHp === 180 && /bulldozer/i.test(notice ? notice.text : ''), { parked: parked && [parked.tx, parked.ty], mech: player.mech, speed: player.speed, notice: notice && notice.text });
       // saved with the knight: player.dozerUp round-trips through save/load
       { save(); const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); check(P + 'upgrades are saved on the player (player.dozerUp)', !!raw.player.dozerUp && raw.player.dozerUp.drill === true && raw.player.dozerUp.boiler === true, { saved: raw.player.dozerUp }); }
       F.press('KeyX'); F.sim(2, []);

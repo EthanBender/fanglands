@@ -44,7 +44,8 @@ const DOZER_FLATTENS = new Map([
 //   ram:       Space hits twice as hard and shoves half again as far; a stump or rubble left by the blade is ground flat in the same pass
 //   boiler:    speed 130 → 170, hp 110 → 180 on climbing on
 const dozerUp = () => (player.dozerUp || {});
-const DOZER_BOILER_HP = 180, DOZER_BOILER_SPEED = 170, DOZER_RAM_EXTRA_KNOCK = 23; // the core stomp knocks 46; ×1.5 = 69
+const DOZER_SPEED = 205;   // the knight walks at 175: a machine that is slower than walking is not worth driving
+const DOZER_BOILER_HP = 180, DOZER_BOILER_SPEED = 250, DOZER_RAM_EXTRA_KNOCK = 23; // the core stomp knocks 46; ×1.5 = 69
 const DOZER_DRILL = { [T.ROCK]: { item: 'stone', xp: 17, need: 'drill', label: 'A drill' }, [T.IRON]: { item: 'iron_ore', xp: 35, need: 'irondrill', label: 'An iron drill' }, [T.COAL]: { item: 'coal', xp: 50, need: 'irondrill', label: 'An iron drill' } };
 let dozerHintT = -1e9;
 function dozerHint(text) { if (time - dozerHintT < 4) return; dozerHintT = time; notify(text); }
@@ -96,7 +97,7 @@ function repairDozer(tx, ty) {
 }
 function enterDozer(tx, ty) {
   const up = dozerUp(), hp = up.boiler ? DOZER_BOILER_HP : DOZER_HP;
-  changeTile(tx, ty, T.DIRT); player.mech = { hp, maxHp: hp, kind: 'dozer' }; player.x = tc(tx); player.y = tc(ty); player.r = 22; player.speed = up.boiler ? DOZER_BOILER_SPEED : 130; player.action = null;
+  changeTile(tx, ty, T.DIRT); player.mech = { hp, maxHp: hp, kind: 'dozer' }; player.x = tc(tx); player.y = tc(ty); player.r = 22; player.speed = up.boiler ? DOZER_BOILER_SPEED : DOZER_SPEED; player.action = null;
   const fitted = ['drill', 'irondrill', 'ram', 'boiler'].filter(k => up[k]);
   notify(fitted.length ? `You are on the bulldozer (${fitted.map(k => ({ drill: 'drill', irondrill: 'iron drill', ram: 'ram plate', boiler: 'big boiler' })[k]).join(', ')}). Space shoves. X climbs down.` : 'You are on the bulldozer. Drive into trees, rocks and planks to flatten them. Space shoves. X climbs down.'); save();
 }
@@ -333,7 +334,7 @@ HOOKS.selfTest.push((check, F, h) => {
     // climb on (no upgrades fitted here: 40-dozerup tests its own)
     const upSaved = player.dozerUp; player.dozerUp = null;
     F.face(wt.x, wt.y); F.press('KeyE'); F.sim(2, []);
-    const piloting = !!player.mech && player.mech.kind === 'dozer' && player.mech.hp === 110 && player.r === 22 && player.speed === 130 && tileAt(wt.x, wt.y) === T.DIRT;
+    const piloting = !!player.mech && player.mech.kind === 'dozer' && player.mech.hp === 110 && player.r === 22 && player.speed === DOZER_SPEED && tileAt(wt.x, wt.y) === T.DIRT;
     check('bulldozer: climb on → player.mech.kind === "dozer"', piloting, { mech: player.mech, r: player.r, speed: player.speed });
     // drive into a tree: stump first, ground flat on the next pass, one log in the pack
     changeTile(wt.x + 1, wt.y, T.TREE); const w0 = countItem('wood'); F.sim(60, ['KeyD']);
