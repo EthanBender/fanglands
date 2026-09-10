@@ -18983,6 +18983,136 @@ window.SETTINGS = SETTINGS;
     g.fillStyle = ph === 'night' ? '#7ee787' : '#d29922'; g.fillText(label, 42, y + 16);
   });
 
+  // ---------- the pack icons ----------
+  // src/80-icons.js hands every item its own drawing and fails the build while any two draw the same picture.
+  // It loads after this file, so the eleven new items hand their art over at world-gen — the first moment at
+  // which every feature file is up. Re-registering is harmless: the registry is keyed by item id.
+  // The design box is 18 units across, drawn inside -9..+9, and nothing may be under 2 units or it vanishes
+  // in a 13 px hotbar slot.
+  const knob = (g, x, y) => { g.beginPath(); g.arc(x - 1.5, y, 2.1, 0, 7); g.arc(x + 1.5, y, 2.1, 0, 7); g.fill(); };
+  const iconSkull = (g, x, y, r) => {
+    g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(x, y + r * 0.78, r * 0.62, r * 0.46, 0, 0, 7); g.fill();
+    const eyes = g.fillStyle; g.fillStyle = 'rgba(15,15,10,0.85)';
+    g.beginPath(); g.arc(x - r * 0.38, y - r * 0.08, r * 0.3 + 1, 0, 7); g.arc(x + r * 0.38, y - r * 0.08, r * 0.3 + 1, 0, 7); g.fill();
+    g.fillStyle = eyes;
+  };
+  const BONE_ICONS = {
+    // a plain bone: a shaft with a pair of knobs at each end — nothing else in the pack is shaped like it
+    bone: (g, size, item) => {
+      g.fillStyle = item.color;
+      g.save(); g.rotate(-0.42);
+      g.fillRect(-5, -2, 10, 4); knob(g, -5.6, 0); knob(g, 5.6, 0);
+      g.restore();
+      g.fillStyle = 'rgba(0,0,0,0.22)'; g.save(); g.rotate(-0.42); g.fillRect(-4, 0.6, 8, 2); g.restore();
+    },
+    // a bone driven into the ground with a skull on it and a cold flame off the crown
+    bone_torch: (g, size, item) => {
+      g.fillStyle = item.color;
+      g.fillRect(-1.5, 0, 3, 7); knob(g, 0, 7);
+      iconSkull(g, 0, -2.6, 4);
+      g.fillStyle = 'rgba(150,240,175,0.9)';
+      g.beginPath(); g.moveTo(-2.4, -5.8); g.quadraticCurveTo(-1, -8.4, 0, -8.2); g.quadraticCurveTo(1, -8.4, 2.4, -5.8); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(230,255,235,0.95)';
+      g.beginPath(); g.arc(0, -6.6, 1.2, 0, 7); g.fill();
+    },
+    // three uprights and two rails, lashed
+    bone_fence: (g, size, item) => {
+      g.fillStyle = item.color;
+      for (const x of [-6, 0, 6]) { g.fillRect(x - 1.4, -6, 2.8, 13); knob(g, x, -6.6); knob(g, x, 7.2); }
+      g.fillRect(-8.4, -3.6, 16.8, 2.2); g.fillRect(-8.4, 2, 16.8, 2.2);
+      g.fillStyle = 'rgba(70,55,30,0.75)';
+      for (const x of [-6, 0, 6]) { g.fillRect(x - 2.2, -3.9, 4.4, 2.8); g.fillRect(x - 2.2, 1.7, 4.4, 2.8); }
+    },
+    // three skulls stacked, jaws and all
+    skull_pile: (g, size, item) => {
+      g.fillStyle = item.color;
+      iconSkull(g, -4.2, 3.4, 4.4); iconSkull(g, 4.2, 3.6, 4.2); iconSkull(g, 0, -4, 4.6);
+      g.fillStyle = 'rgba(0,0,0,0.2)';
+      g.beginPath(); g.ellipse(0, 8.4, 8.4, 1.6, 0, 0, 7); g.fill();
+    },
+    // two great bones curving up to meet under a skull
+    bone_arch: (g, size, item) => {
+      g.strokeStyle = item.color; g.lineWidth = 2.6; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(-6.2, 7.2); g.quadraticCurveTo(-7.4, -2.8, -2.4, -5); g.stroke();
+      g.beginPath(); g.moveTo(6.2, 7.2); g.quadraticCurveTo(7.4, -2.8, 2.4, -5); g.stroke();
+      g.fillStyle = item.color;
+      g.beginPath(); g.ellipse(-6.2, 7.2, 2.6, 1.4, 0, 0, 7); g.ellipse(6.2, 7.2, 2.6, 1.4, 0, 0, 7); g.fill();
+      iconSkull(g, 0, -5.4, 3.2);
+      g.strokeStyle = 'rgba(70,55,30,0.75)'; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(-3.6, -2.4); g.lineTo(3.6, -2.4); g.stroke();
+    },
+    // a high seat: a fan of ribs behind a slab, on bone legs
+    bone_throne: (g, size, item) => {
+      g.strokeStyle = item.color; g.lineWidth = 1.6; g.lineCap = 'round';
+      for (const a of [-0.5, -0.25, 0, 0.25, 0.5]) { g.beginPath(); g.moveTo(Math.sin(a) * 2, 0); g.quadraticCurveTo(Math.sin(a) * 5, -4.4, Math.sin(a) * 6.6, -7.4); g.stroke(); }
+      g.fillStyle = 'rgba(110,113,120,0.95)'; g.fillRect(-7, 0, 14, 3);
+      g.fillStyle = item.color;
+      g.fillRect(-6.6, 3, 2.6, 4.4); g.fillRect(4, 3, 2.6, 4.4); knob(g, -5.3, 7); knob(g, 5.3, 7);
+      g.fillStyle = 'rgba(245,197,66,0.95)';
+      g.beginPath(); g.moveTo(-3.2, -7.6); g.lineTo(-3.2, -9.2); g.lineTo(-1.1, -8); g.lineTo(0, -9.2); g.lineTo(1.1, -8); g.lineTo(3.2, -9.2); g.lineTo(3.2, -7.6); g.closePath(); g.fill();
+    },
+    // a pointed hood with nothing inside it but two lights
+    necro_hood: (g, size, item) => {
+      g.fillStyle = item.color;
+      g.beginPath(); g.moveTo(0, -9.4); g.quadraticCurveTo(7.4, -4, 7, 6.6);
+      g.lineTo(4.4, 8.4); g.lineTo(-4.4, 8.4); g.lineTo(-7, 6.6);
+      g.quadraticCurveTo(-7.4, -4, 0, -9.4); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = 'rgba(10,8,14,0.92)';
+      g.beginPath(); g.ellipse(0, 2, 4.2, 5, 0, 0, 7); g.fill();
+      g.fillStyle = 'rgba(126,231,200,0.95)';
+      g.beginPath(); g.arc(-1.7, 1.4, 1.1, 0, 7); g.arc(1.7, 1.4, 1.1, 0, 7); g.fill();
+    },
+    // a long robe: shoulders, a cowl collar, a cord at the waist and a hem that pools
+    necro_robe: (g, size, item) => {
+      g.fillStyle = item.color;
+      g.beginPath(); g.moveTo(-4.4, -8); g.lineTo(4.4, -8); g.lineTo(7.4, -3.4);
+      g.lineTo(6, 8.6); g.lineTo(-6, 8.6); g.lineTo(-7.4, -3.4); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = 'rgba(255,255,255,0.16)';
+      g.beginPath(); g.moveTo(-4.4, -8); g.lineTo(0, -4.4); g.lineTo(4.4, -8); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(126,231,200,0.85)'; g.fillRect(-6.6, 0.4, 13.2, 2.2);
+      g.fillStyle = 'rgba(0,0,0,0.3)';
+      g.beginPath(); g.moveTo(-6, 8.6); g.quadraticCurveTo(0, 5.4, 6, 8.6); g.closePath(); g.fill();
+    },
+    // two legs bound round and round in cloth strips
+    necro_wraps: (g, size, item) => {
+      g.fillStyle = item.color;
+      g.fillRect(-6.8, -8, 5.2, 16); g.fillRect(1.6, -8, 5.2, 16);
+      g.strokeStyle = 'rgba(255,255,255,0.28)'; g.lineWidth = 1.4;
+      for (const y of [-5.4, -1.8, 1.8, 5.4]) {
+        g.beginPath(); g.moveTo(-7, y); g.lineTo(-1.4, y - 1.6); g.stroke();
+        g.beginPath(); g.moveTo(1.4, y - 1.6); g.lineTo(7, y); g.stroke();
+      }
+      g.fillStyle = 'rgba(126,231,200,0.8)'; g.fillRect(-6.8, 6.4, 5.2, 2); g.fillRect(1.6, 6.4, 5.2, 2);
+    },
+    // a lantern with a wisp shut inside it
+    soul_lantern: (g, size, item) => {
+      g.strokeStyle = 'rgba(120,124,132,0.95)'; g.lineWidth = 1.4;
+      g.beginPath(); g.arc(0, -7.4, 2.4, Math.PI, 0); g.stroke();
+      g.fillStyle = 'rgba(120,124,132,0.95)'; g.fillRect(-5.4, -6, 10.8, 2.4); g.fillRect(-5.4, 6, 10.8, 2.6);
+      g.fillStyle = item.color;
+      g.beginPath(); g.moveTo(-4.2, -3.6); g.lineTo(4.2, -3.6); g.lineTo(4.8, 6); g.lineTo(-4.8, 6); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(240,255,250,0.95)';
+      g.beginPath(); g.ellipse(0, 0.8, 2, 3, 0, 0, 7); g.fill();
+      g.strokeStyle = 'rgba(60,64,70,0.9)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(-4.5, 1.2); g.lineTo(4.5, 1.2); g.stroke();
+    },
+    // a stave: a long shaft, a skull bound to the head, a bound grip
+    bone_stave: (g, size, item) => {
+      g.fillStyle = item.color;
+      g.save(); g.rotate(0.38);
+      g.fillRect(-1.4, -3, 2.8, 12);
+      g.restore();
+      g.fillStyle = 'rgba(70,55,30,0.8)';
+      g.save(); g.rotate(0.38); g.fillRect(-2.4, 2.4, 4.8, 2.4); g.restore();
+      g.fillStyle = item.color;
+      iconSkull(g, -1.8, -5, 4.4);
+      g.fillStyle = 'rgba(126,231,200,0.9)';
+      g.beginPath(); g.arc(-3.4, -5.4, 1.1, 0, 7); g.arc(-0.2, -5.4, 1.1, 0, 7); g.fill();
+    },
+  };
+  HOOKS.world.push(() => { if (window.ICONS && ICONS.set) for (const id in BONE_ICONS) ICONS.set(id, BONE_ICONS[id]); });
+
   // the book: the auto page reads MONSTER_SPAWNS, and none of these three is ever spawned into the world —
   // they only ever come up out of a grave. WIKI.add merges over the built page and leaves the drops alone.
   if (window.WIKI) {
