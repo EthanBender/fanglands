@@ -18518,9 +18518,13 @@ window.SETTINGS = SETTINGS;
     if (player.dead || window.__peace) return;
     if (dist(m.x, m.y, player.x, player.y) > SLAM.hit) return;
     const def = MONSTER_DEFS[BRUTE];
+    const hp0 = player.hp;
     hurtPlayer(rollHit((def.att + 8) * 64, playerDefRoll(), def.maxHit), m.x, m.y);
+    m.slamDmg = hp0 - player.hp;
+    const bx = player.x, by = player.y;
     const kx = player.x - m.x, ky = player.y - m.y, kd = Math.hypot(kx, ky) || 1;
     moveEntity(player, kx / kd * SLAM.knock, ky / kd * SLAM.knock, playerWho());
+    m.threw = dist(bx, by, player.x, player.y);
   }
   function bruteTick(dt) {
     for (const m of monsters) {
@@ -18553,7 +18557,7 @@ window.SETTINGS = SETTINGS;
     if (ph === 'dusk') armed = true;
     if (ph === 'day') { armed = false; built = false; }
     if (ph === 'night' && armed && !built) { schedule(); built = true; }
-    if (prevPhase === 'night' && ph !== 'night') settleAtDawn();
+    if (prevPhase === 'night' && ph === 'day') settleAtDawn();   // a real dawn only: night always runs into day
     prevPhase = ph; lastT = t;
 
     // a grave that something got built over is gone; the rest just age. Once a second is often enough — forty
@@ -19065,13 +19069,13 @@ window.SETTINGS = SETTINGS;
       const near = [[px + 5, py, 'cross'], [px + 7, py, 'grave'], [px + 5, py + 3, 'headstone'], [px + 8, py - 3, 'cross'], [px + 9, py + 2, 'grave']];
       // three he will never get near
       const far = [[px + 25, py, 'cross'], [px + 27, py + 2, 'grave'], [px + 26, py - 3, 'cross']];
+      player.hp = 100000;
+      player.dayTime = NIGHT.LIGHT + NIGHT.DUSK - 2;             // the last of the dusk: the night is armed the way play arms it
+      F.sim(2, []);
       let nearLaid = 0, farLaid = 0;
       for (const [x, y, g2] of near) if (put(x, y, g2)) nearLaid++;
       for (const [x, y, g2] of far) if (put(x, y, g2)) farLaid++;
       const laid = GRAVES.marks().length;
-      player.hp = 100000;
-      player.dayTime = NIGHT.LIGHT + NIGHT.DUSK - 2;             // the last of the dusk: the night is armed the way play arms it
-      F.sim(2, []);
       const w = GRAVES.window();
       let sched = null;
       for (let i = 0; i < 60 * 130 && phase() !== 'day'; i++) {
@@ -19104,23 +19108,28 @@ window.SETTINGS = SETTINGS;
       const soft = d.maxHit === 5 && d.maxHit < z.maxHit && d.speed < z.speed;
       const heavy = GRAVES.weightOf('headstone') === 2 && GRAVES.weightOf('cross') === 1;
       h.peace(false); player.hp = 100000;
+      const room = clearPatch(Math.floor(player.x / TILE), Math.floor(player.y / TILE), 2);   // room to be thrown
+      const parked = [];
+      for (const mm of monsters) if (!mm.dead && dist(mm.x, mm.y, player.x, player.y) < 12 * TILE) { parked.push([mm, mm.x, mm.y, mm.state]); mm.x = player.x - 2000; mm.y = player.y; mm.state = 'return'; }
       const rnd = Math.random; Math.random = () => 0;                     // pin the rolls: the slam lands, for 1
       const m = makeRisen(GRAVES.BRUTE, Math.floor(player.x / TILE) + 2, Math.floor(player.y / TILE), 'headstone');
       m.fromGrave = false;                                                // a specimen, not one of tonight's: daylight must not sweep it
       m.x = player.x + 60; m.y = player.y; m.home = { x: m.x, y: m.y }; m.state = 'chase'; m.slamCd = 0;
       monsters.push(m);
-      const px0 = player.x, py0 = player.y, hpBefore = player.hp;
       let wound = false;
       for (let i = 0; i < 60 * 3 && !(m.slams > 0); i++) { F.step([]); if (m.windT > 0) wound = true; }
-      const thrown = Math.round(dist(px0, py0, player.x, player.y));
-      const hurtBySlam = player.hp < hpBefore;
+      const thrown = Math.round(m.threw || 0);
+      const hurtBySlam = m.slamDmg > 0;
       const staggered = m.stagT > 0;
       const hp1 = m.hp; hitMonster(m, 10, 0, false, 'player'); const took = hp1 - m.hp;
       Math.random = rnd;
-      { const i = monsters.indexOf(m); if (i >= 0) monsters.splice(i, 1); } h.peace(true); player.hp = hp0; player.dayTime = day0;
+      { const i = monsters.indexOf(m); if (i >= 0) monsters.splice(i, 1); }
+      for (const [mm, x, y, st] of parked) { mm.x = x; mm.y = y; mm.state = st; }
+      putBack(room);
+      h.peace(true); player.hp = hp0; player.dayTime = day0;
       check(P + "the Zombie brute is two tiles across, 320 hp against the grave zombie's 90, hits for at most 5 — and its stone slam throws you, then leaves it stuck long enough that every hit lands twice",
-        big && tanky && soft && heavy && wound && m.slams >= 1 && thrown > 30 && hurtBySlam && staggered && took === 20,
-        { sprite: GRAVES.BRUTE_SPRITE, r: d.r, hp: d.hp, maxHit: d.maxHit, zombieMaxHit: z.maxHit, speed: d.speed, zombieSpeed: z.speed, windUp: SLAM.wind, wound, slams: m.slams, thrownPx: thrown, hurtBySlam, staggered, stuckFor: SLAM.stagger, damageWhileStuck: took, capWeight: GRAVES.weightOf('headstone') });
+        big && tanky && soft && heavy && wound && m.slams >= 1 && thrown > 30 && hurtBySlam && m.slamDmg <= d.maxHit && staggered && took === 20,
+        { sprite: GRAVES.BRUTE_SPRITE, r: d.r, hp: d.hp, maxHit: d.maxHit, zombieMaxHit: z.maxHit, speed: d.speed, zombieSpeed: z.speed, windUp: SLAM.wind, wound, slams: m.slams, thrownPx: thrown, slamDmg: m.slamDmg, staggered, stuckFor: SLAM.stagger, damageWhileStuck: took, capWeight: GRAVES.weightOf('headstone') });
       reset(); }
 
     // ---- 5. bones drop off the risen, build five things, and one of them goes in the ground ----
