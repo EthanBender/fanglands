@@ -70,6 +70,7 @@ something specific (named) · **OPEN** not started.
 | **Sylvaris grown into the jungle** | Bigger, districts with reasons to visit, integrated rather than bolted on, a repeatable reason to return. |
 | **Bulldozer bay as a facility** | Tunnel you drive the dozer into, knight walks out, machine parked inside a real workshop with the upgrade stations around it. |
 | **HUD redesign** | One grid, one container, one colour language, hierarchy, controls that look pressable. |
+| **Aerie, part two** | `88-aerie.js`. Lighting is a per-instance mode now (the core's starting-cave scrim was landing on every instance as a dark rectangle — Deepholm and Aerie's great hall both). Aerie grows 50x34 to 78x50 over three levels: the Span, the Crown, the Underside below the drop. The Spire Run (Agility 40), the Rookery, the Windward Market, the Catch, the Songstone. Stormglass, skyhawk feathers, Skysinger, Skyhawk arrows, the Gale cloak. Godly Plated stays exclusive to the sky forge and the anvil now says so. |
 
 ---
 
