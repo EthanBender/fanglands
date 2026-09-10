@@ -39,6 +39,13 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   puts a marker on the world map; `HOOKS.hurt.push((e, dmg, source) => ...)` sees every hit the player takes.
 - Instances (`src/16-instances.js`): `INSTANCES.define('my_cave', { name, sub, w, h, build(setTile, rnd), spawns: [[type, x, y]], exit: [x, y], door: [x, y], step: [x, y], boss, onClear })`;
   a `door` places a DUNGEON_DOOR tile at world-gen and E on it enters, or call `INSTANCES.enter('my_cave')` yourself and `INSTANCES.leave()`. The instance map replaces `map` while active; the save always records the overworld.
+- Lighting (`src/89-lighting.js`): dark places read one registry. `LIGHTS.add({ tile: 'MY_BRAZIER', r, lift, color, tint, flicker, speed, ox, oy })`
+  registers a tile kind as a light — `tile` is the tile NAME, `r` is its reach in pixels, `color` is what it burns and `tint` how much of that
+  colour washes the ground. `LIGHTS.addSource(fn)` adds a light that is not a tile (the knight, a boss, a fireball): `fn(out, scene)` pushes
+  `{ kind: 'point', x, y, r, lift, tint, color, rgb }`. `LIGHTS.scene(instanceId, { ambient: { color, alpha }, player, rooms: [{ name, x0, y0, x1, y1, lift, color, tint }] })`
+  gives a place its darkness and its room lights (soft ellipses that light a whole hall). An instance declared `dark: true` with no scene gets a
+  plain cave. `LIGHTS.sample(worldX, worldY)` and `LIGHTS.survey(x0, y0, x1, y1)` report the overlay alpha and its colour in numbers — the same
+  maths the painter draws, so self-tests can quote what the screen shows.
 - Tap-to-move (`src/17-tap.js`): a tapped tile in `INTERESTING_TILES` gets walked to and used; a tapped monster gets fought. Add your
   own solid tiles to `INTERESTING_TILES` so a tap on them works on the iPad.
 - Wiki (`src/44-wiki.js`): the in-game book builds itself from the live tables the first time it opens (K, the WIKI button, or the Wiki button
