@@ -87,12 +87,12 @@ function drawHud(g) {
   }
   // tracked quest (only when tracked). Placement: desktop → left of the minimap; phone → under the MENU stack;
   // landscape phone (short) → under the HP box; tablet → beside the hotbar. Never under the MENU/SKILLS/HELP row.
-  let qh = 0;
+  let qh = 0, qx = 0, qw = 0;   // qx/qw are published on HUD_LAYOUT so 67-questbox can put its expand control over the box
   const qy = !isTouch ? 14 : narrow ? topStackBottom + 10 : short ? 84 : 90;
   if (quest.tracked && activeQuests().includes(quest.tracked)) {
     const qt = questText(quest.tracked); g.font = 'bold 13px sans-serif';
-    const qw = !isTouch ? Math.min(360, Math.max(260, g.measureText(qt).width + 40)) : narrow ? VW - 28 : short ? Math.min(300, VW / 2 - 40) : clamp(VW - 334 - mmSize - 14 - 24, 200, 360);
-    qh = 54; const qx = !isTouch ? VW - mmSize - 14 - qw - 12 : narrow || short ? 14 : 334;
+    qw = !isTouch ? Math.min(360, Math.max(260, g.measureText(qt).width + 40)) : narrow ? VW - 28 : short ? Math.min(300, VW / 2 - 40) : clamp(VW - 334 - mmSize - 14 - 24, 200, 360);
+    qh = 54; qx = !isTouch ? VW - mmSize - 14 - qw - 12 : narrow || short ? 14 : 334;
     roundRect(g, qx, qy, qw, qh, 10); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
     g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(QUEST_DEFS[quest.tracked].name.toUpperCase(), qx + 20, qy + 18);
     g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif';
@@ -112,7 +112,7 @@ function drawHud(g) {
     buttons.push({ x: sx, y: hy, w: hb, h: hb, label: 'hot' + i, action: () => useItem(i) });
   }
   button(g, hx + 5 * (hb + hgap), hy, 54, hb, isTouch ? 'BAG' : 'Bag (I)', () => panel === 'inventory' ? closePanel() : openPanel('inventory'), '#21262d');
-  Object.assign(HUD_LAYOUT, { narrow, short, hotbarY: hy, hotbarH: hb, questY: qy, questH: qh, noticeY, topStackBottom, bossBarY: isTouch ? (narrow ? hy + hb + 12 : short ? 84 + (qh ? qh + 8 : 0) : 152) : 84 });
+  Object.assign(HUD_LAYOUT, { narrow, short, hotbarY: hy, hotbarH: hb, questY: qy, questH: qh, questX: qx, questW: qw, noticeY, topStackBottom, bossBarY: isTouch ? (narrow ? hy + hb + 12 : short ? 84 + (qh ? qh + 8 : 0) : 152) : 84 });
   if (!isTouch) { g.fillStyle = 'rgba(230,237,243,0.75)'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(player.mech ? 'WASD move · click to walk · Space stomp · E crush planks · X climb out' : 'WASD move · click to walk · Space swing · E use / talk · Q place · 1-5 use · I bag · C craft · Tab skills · J quests · M map · H home · ? help · Esc menu', VW / 2, VH - 16); }
   else if (!short) { // touch: one line between the stick and the buttons; it shortens on phones instead of running under them (landscape phones have no free edge for it)
     const maxW = Math.max(120, VW - 460); g.fillStyle = 'rgba(230,237,243,0.7)'; g.font = '11px sans-serif'; g.textAlign = 'center';
