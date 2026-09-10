@@ -642,9 +642,9 @@
       const next = list.filter(m => m.rise != null).sort((a, b) => a.rise - b.rise)[0];
       const wait = next ? (next.rise - dayT() + DAY()) % DAY() : null;
       notify(`Bone throne. ${list.length} grave${list.length === 1 ? '' : 's'} still standing. ${q.rose} came up where you could see them, ${q.walked} climbed out somewhere else.`);
-      say(next
-        ? `${list.length} of them out there tonight. The first one opens in about ${minutes(wait)}.`
-        : 'Nothing left in the ground tonight. Go and make some more.', 'The seat of bones');
+      say(next ? `${list.length} of them out there tonight. The first one opens in about ${minutes(wait)}.`
+        : list.length ? `${list.length} went in the ground today. Not one of them opens before midnight.`
+          : 'Nothing left in the ground. Go and make some more.', 'The seat of bones');
       return true;
     }
     if (t === T_TORCH) { notify('The flame is cold and it never goes out. The dark keeps off it.'); return true; }
