@@ -835,7 +835,7 @@
       h.give('bone', 80); h.give('wood', 4); h.give('stone', 4); h.give('grave_dust', 4);   // 4 + 3 + 6 + 12 + 40 = 65 bones for the five
       const made = [];
       for (const r of recs) {
-        if (!r.needs.every(([id, n]) => countItem(id) >= n)) { made.push(false); continue; }
+        if (!r || !r.needs.every(([id, n]) => countItem(id) >= n)) { made.push(false); continue; }
         for (const [id, n] of r.needs) removeItem(id, n);
         addItem(r.out, r.qty); made.push(countItem(r.out) >= r.qty);
       }
