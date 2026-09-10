@@ -499,16 +499,32 @@
       // dragon scales from the drakes (one in four kills or so)
       hunt('ash_drake', 'dragon_scale', 5, 60);
       note(`scales ${countItem('dragon_scale')}, melee ${skillLv('melee')}`);
-      // up to Aerie
-      if (useAt(62, 6) && window.INSTANCES && INSTANCES.active() === 'aerie') {
-        note('in Aerie'); drain();
-        for (const [x, y] of [[8, 17], [25, 27], [42, 20]]) if (countItem('cloud_essence') < 3) { useAt(x, y); }
+      // up to Aerie — by way of the storm (66-storm): the flute now sets the knight down on the thunderhead and
+      // the Thunderbird has to come down before the updraft into the city opens. A death puts him back in his bed,
+      // so the walk and the flute are done again; the storm keeps the wounds it already has.
+      useAt(62, 6);
+      if (window.STORM && window.INSTANCES && INSTANCES.active() === 'stormfront') {
+        note('in the storm'); drain();
+        const beaten = () => !!(quest.storm && quest.storm.beaten);
+        for (let k = 0; k < 16 && !beaten() && !over(); k++) {
+          if (INSTANCES.active() !== 'stormfront') { drain(); if (!useAt(62, 6) || INSTANCES.active() !== 'stormfront') break; note('back up into the storm'); }
+          const b = monsters.find(m => m.type === 'thunderbird' && !m.dead); if (!b) break;
+          if (b.phase === 'high') { for (let w = 0; w < 60; w++) { heal(); tick(); } continue; }   // in the cloud no sword reaches it: eat and wait it out (the bolts keep falling)
+          brawl(['thunderbird'], 2500, 40 * TILE);
+        }
+        loot(6 * TILE); tidy(4);
+        note(`storm beaten: ${beaten()}, essence ${countItem('cloud_essence')}, coins ${coins()}, feather ${countItem('storm_feather')}, free ${player.inv.filter(s => !s).length}, hp ${Math.round(player.hp)}`);
+        if (beaten() && INSTANCES.active() === 'stormfront') { useAt(20, 2); sim(3); }     // the updraft up into Aerie
+      }
+      if (window.INSTANCES && INSTANCES.active() === 'aerie') {
+        note('in Aerie'); drain(); tidy(4);
+        for (const [x, y] of [[8, 17], [25, 27], [42, 20]]) if (countItem('cloud_essence') < 3) { tidy(2); useAt(x, y); }
         // Queen Seraphel stands at (25,6); the winged folk answer E within two tiles, so stand right under her
         for (let k = 0; k < 2; k++) { closePanel(); walk(25, 7); F().face(25, 6); F().press('KeyE'); PLAY.steps++; sim(2); drain(); }
         note(`sky ${quest.sky && quest.sky.stage}, essence ${countItem('cloud_essence')}`);
         useAt(25, 31); sim(3);
       }
-      if (window.INSTANCES && INSTANCES.active()) { INSTANCES.leave(); note('left Aerie by the API (the leap tile was not reached)'); }
+      if (window.INSTANCES && INSTANCES.active()) { INSTANCES.leave(); note('left the sky by the API (the leap tile was not reached)'); }
       note(`back on the ground: ${player.region} at ${ptx()},${pty()}`);
       talk('duke'); drain(); note(`dragon killers formed: ${quest.dk && quest.dk.formed}, horn ${countItem('dragon_horn')}`);
       walk(18, 107); useAt(18, 108); drain(); walk(18, 116); F().face(18, 117); F().press('KeyE'); PLAY.steps++; sim(3); drain();
