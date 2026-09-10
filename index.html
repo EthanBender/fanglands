@@ -19156,7 +19156,7 @@ window.SETTINGS = SETTINGS;
       player.inv = bag;
       check(P + 'a skeleton drops bones; four bones and a log make a bone torch, and the fence, skull pile, arch and throne all come off the same pile; a torch goes in the ground and every piece answers a tap',
         boned && allThere && made.every(Boolean) && placed && tappable && gateOpen,
-        { boned, allThere, made, placed, tappable, gateOpen, builds: recs.map(r => r.label) });
+        { boned, allThere, made, placed, tappable, gateOpen, builds: recs.map(r => (r ? r.label : 'missing')) });
       reset(); }
 
     // ---- 6. the necromancy kit: 1 kill in 20 ----
