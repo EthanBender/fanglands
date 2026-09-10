@@ -254,9 +254,12 @@
       const absent = fang.dead && fang.respawnT === Infinity;
       check('dk: entering the lair with the group formed spawns Hale and Garrick beside you (lv 30, neutral, human); The Fang is absent until summoned', spawned && absent, { allies: list.map(m => m.allyName), want: want.map(d => d.name), fangDead: fang.dead, region: player.region }); }
     { const circle = F.nearestTile([T.SUMMON_CIRCLE], { x: tc(18), y: tc(118) }); let noHorn = false, answered = false, banner = null;
+      // the horn is an unlock, so it lives on the keyring rather than in a pack slot (68-questitems) — take it
+      // off both to test the refusal, and put it back exactly where it was
       if (circle) { const hornSlot = player.inv.findIndex(s => s && s.id === 'dragon_horn'); const hornStack = hornSlot >= 0 ? player.inv[hornSlot] : null; if (hornSlot >= 0) player.inv[hornSlot] = null;
+        const wasOnRing = !!(window.KEYRING && KEYRING.held('dragon_horn')); if (wasOnRing) removeItem('dragon_horn', 1);
         F.tp(circle.x, circle.y - 1); F.face(circle.x, circle.y); drain(); F.press('KeyE'); F.sim(2, []); noHorn = fang.dead && !fq.summoned && dialog.cur && /sounded|horn|Duke/.test(dialog.cur.text);
-        if (hornStack) player.inv[hornSlot] = hornStack; else addItem('dragon_horn', 1);
+        if (wasOnRing) KEYRING.add('dragon_horn'); else if (hornStack) player.inv[hornSlot] = hornStack; else addItem('dragon_horn', 1);
         drain(); F.face(circle.x, circle.y); F.press('KeyE'); F.sim(2, []); answered = !fang.dead && fq.summoned === true && fang.hp === fang.maxHp; banner = levelBanner && levelBanner.text; }
       check('dk: the summoning circle needs the dragon horn; sounding it brings The Fang up (THE FANG ANSWERS)', !!circle && noHorn && answered && banner === 'THE FANG ANSWERS', { circle, noHorn, answered, banner }); }
     // the allies hit the Fang while within two tiles of it

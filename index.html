@@ -11827,9 +11827,12 @@ HOOKS.selfTest.push((check, F, h) => {
       const absent = fang.dead && fang.respawnT === Infinity;
       check('dk: entering the lair with the group formed spawns Hale and Garrick beside you (lv 30, neutral, human); The Fang is absent until summoned', spawned && absent, { allies: list.map(m => m.allyName), want: want.map(d => d.name), fangDead: fang.dead, region: player.region }); }
     { const circle = F.nearestTile([T.SUMMON_CIRCLE], { x: tc(18), y: tc(118) }); let noHorn = false, answered = false, banner = null;
+      // the horn is an unlock, so it lives on the keyring rather than in a pack slot (68-questitems) — take it
+      // off both to test the refusal, and put it back exactly where it was
       if (circle) { const hornSlot = player.inv.findIndex(s => s && s.id === 'dragon_horn'); const hornStack = hornSlot >= 0 ? player.inv[hornSlot] : null; if (hornSlot >= 0) player.inv[hornSlot] = null;
+        const wasOnRing = !!(window.KEYRING && KEYRING.held('dragon_horn')); if (wasOnRing) removeItem('dragon_horn', 1);
         F.tp(circle.x, circle.y - 1); F.face(circle.x, circle.y); drain(); F.press('KeyE'); F.sim(2, []); noHorn = fang.dead && !fq.summoned && dialog.cur && /sounded|horn|Duke/.test(dialog.cur.text);
-        if (hornStack) player.inv[hornSlot] = hornStack; else addItem('dragon_horn', 1);
+        if (wasOnRing) KEYRING.add('dragon_horn'); else if (hornStack) player.inv[hornSlot] = hornStack; else addItem('dragon_horn', 1);
         drain(); F.face(circle.x, circle.y); F.press('KeyE'); F.sim(2, []); answered = !fang.dead && fq.summoned === true && fang.hp === fang.maxHp; banner = levelBanner && levelBanner.text; }
       check('dk: the summoning circle needs the dragon horn; sounding it brings The Fang up (THE FANG ANSWERS)', !!circle && noHorn && answered && banner === 'THE FANG ANSWERS', { circle, noHorn, answered, banner }); }
     // the allies hit the Fang while within two tiles of it
@@ -22823,100 +22826,154 @@ window.SETTINGS = SETTINGS;
 
 // ---- src/68-questitems.js ----
 // ============================================================================
-// LOST PROPERTY — a quest item can always be got back
-// Owner, stuck: "Trying to do the quest to get to the sky city, lost the flute or never got it. Tried talking
-// to Wren again to get it back — he seems to say something that would indicate I got it back, but it's not
-// appearing in my inventory. Quest items should have a persistent state where if the player loses them, they
-// can always reclaim them from somewhere."
-// He was right, and it was a soft lock: 36-skycity's Wren says "look in your pack, knight" and gives nothing,
-// so a dropped or sold flute ended the Song of Above for good. This file is the general rule rather than one
-// patch: a quest item declares who it came from and when it is needed, and talking to that person while you
-// need it and do not have it hands it back. Anything in the bank is named rather than duplicated.
-// Feature file: registers through HOOKS only. window.QUESTITEMS holds the register.
+// THE KEYRING — the things that open places are never carried, and never lost
+// Owner: "Quest items that give you unlocks — for example the flute that you use to get to the shrine into
+// the upper city — instead of those being items that you have to bring with you, I think they should just
+// persist in a kind of secondary locked-in inventory, where you just have it with you all the time and it
+// doesn't take up an inventory slot."
+// So an unlock is no longer loot. The moment it is given it goes onto the knight's keyring: it costs no pack
+// slot, cannot be dropped, sold, banked, eaten by a full pack or taken by Death, and cannot be lost.
+//
+// The trick that makes this cost nothing elsewhere: every gate in the game already asks countItem('wind_flute'),
+// so countItem is wrapped to see the keyring too. The shrine, the quest text, the wiki and the audit all keep
+// working untouched — none of them needs to know the flute moved.
+// Feature file: registers through HOOKS only. window.KEYRING is the register.
 // ============================================================================
 {
-  const REG = [];
-  const inBank = id => (Array.isArray(player.bank) ? player.bank.some(s => s && s.id === id && s.qty > 0) : false);
-  const carried = id => countItem(id) > 0;
+  // id -> { name, note } — what an unlock is, and why the knight keeps it
+  const KEYS = {};
+  const ring = () => { if (!Array.isArray(player.keyring)) player.keyring = []; return player.keyring; };
+  const held = id => ring().includes(id);
+  const add = id => { if (!KEYS[id] || held(id)) return false; ring().push(id); RING.add(id); return true; };
+  const register = (id, note) => { if (ITEMS[id]) KEYS[id] = { id, note: note || '' }; };
 
-  // register({ id, from, needed, line, spare }) — `from` is an NPC id, `needed` says the quest still wants it
-  const register = def => { if (def && def.id && def.from) REG.push(def); };
-  const forNpc = npcId => REG.filter(r => r.from === npcId);
-  const missing = r => { try { return r.needed() && !carried(r.id); } catch (e) { return false; } };
+  HOOKS.newGame.push(() => { player.keyring = []; RING.clear(); });
 
-  // Runs before the core's dialogue for every role, so it works whoever the giver happens to be.
-  const ROLES = new Set();
-  function install() {
-    for (const r of REG) {
-      const npc = NPCS.find(n => n.id === r.from);
-      const role = npc ? npc.role : r.role;
-      if (!role || ROLES.has(role)) continue;
-      ROLES.add(role);
-      const prev = HOOKS.talkBefore[role];
-      HOOKS.talkBefore[role] = n => {
-        for (const rr of forNpc(n.id)) {
-          if (!missing(rr)) continue;
-          if (inBank(rr.id)) { say(`${ITEMS[rr.id] ? ITEMS[rr.id].name : rr.id} is in your bank, knight. Fetch it from there.`, n.name); return true; }
-          if (!canFit(rr.id, 1)) { say(`Your pack is full. Make room and I will hand it over.`, n.name); return true; }
-          giveOrDrop(rr.id, 1, player.x, player.y);
-          floatText(player.x, player.y - 34, ITEMS[rr.id] ? ITEMS[rr.id].name : rr.id, '#7ee787', 14);
-          say(rr.line || `Here. Do not lose it again.`, n.name);
-          save();
-          return true;
-        }
-        return prev ? prev(n) : false;
-      };
+  // ---------- what lives on the ring ----------
+  register('wind_flute', 'Old Wren\'s. The wind shrine listens for it.');
+  register('dragon_horn', 'The Duke\'s. It calls The Fang to the circle.');
+
+  // ---------- every gate keeps working ----------
+  // countItem is one of the hottest functions in the game — the HUD, the drop code and every gate call it
+  // constantly. These wrappers therefore take their arguments explicitly and call through directly: an early
+  // version used `.apply(this, arguments)`, which deoptimises the call site and took the test suite from
+  // 30 seconds to over 400. A Set keeps the ring lookup O(1) for the same reason.
+  const RING = new Set();
+  const syncRing = () => { RING.clear(); for (const id of ring()) RING.add(id); };
+  syncRing();
+  const onRing = id => RING.has(id);
+
+  const _countItem = countItem;
+  countItem = function (id) { const n = _countItem(id); return (RING.has(id) && KEYS[id]) ? n + 1 : n; };
+
+  // Anything given to the knight that belongs on the ring goes there instead of into the pack.
+  const _addItem = addItem;
+  addItem = function (id, qty) { if (KEYS[id]) { if (add(id)) announce(id); return qty === undefined ? 1 : qty; } return _addItem(id, qty); };
+  const _giveOrDrop = giveOrDrop;
+  giveOrDrop = function (id, qty, x, y) { if (KEYS[id]) { if (add(id)) announce(id); return; } return _giveOrDrop(id, qty, x, y); };
+  // A full pack can never stop one arriving.
+  const _canFit = canFit;
+  canFit = function (id, qty) { return KEYS[id] ? true : _canFit(id, qty); };
+  // Nothing a PLAYER does can take one off you, and that needs no guard: a keyring item is never in a pack
+  // slot, so it cannot be dropped, sold, banked or handed to Death (death takes player.inv). Deliberate code
+  // that clears one — a quest reset — must still work, so removeItem takes it off the ring when the pack has
+  // none. Guarding removeItem instead was a real bug: 36-skycity resets with
+  // `while (countItem('wind_flute')) removeItem('wind_flute', 1)`, which never terminated and hung the suite.
+  const _removeItem = removeItem;
+  removeItem = function (id, qty) {
+    if (KEYS[id] && _countItem(id) === 0 && RING.has(id)) {
+      RING.delete(id);
+      const list = ring(); const i = list.indexOf(id); if (i >= 0) list.splice(i, 1);
+      return 1;
     }
+    return _removeItem(id, qty);
+  };
+
+  function announce(id) {
+    const it = ITEMS[id];
+    floatText(player.x, player.y - 40, `${it ? it.name : id} — kept on your keyring`, '#f5c542', 14);
+    notify(`${it ? it.name : id} goes on your keyring. It costs you no pack space and you cannot lose it.`);
+    save();
   }
 
-  // ---------- what is registered ----------
-  // The wind flute: Old Wren gives it at stage 1 of the Song of Above, and the shrine will not open without it.
-  register({
-    id: 'wind_flute', from: 'wren', role: 'hermit',
-    needed: () => {
-      const q = quest.sky;
-      return !!q && q.stage >= 1 && !q.sang;                 // wanted from the moment he gives it until the Song is sung
-    },
-    line: 'Lost it? Grandmother made three. Here is another, and there are no more after this one — so mind it.',
+  // A save from before the keyring existed, or one where the flute is still loose in the pack or the bank:
+  // move it onto the ring on load, so nobody has to start again.
+  function absorb() {
+    for (const id in KEYS) {
+      let found = false;
+      for (let i = 0; i < player.inv.length; i++) { const s = player.inv[i]; if (s && s.id === id) { player.inv[i] = null; found = true; } }
+      if (Array.isArray(player.bank)) for (let i = 0; i < player.bank.length; i++) { const s = player.bank[i]; if (s && s.id === id) { player.bank[i] = null; found = true; } }
+      if (found) add(id);
+    }
+    if (Array.isArray(player.bank)) player.bank = player.bank.filter(Boolean);
+    syncRing();   // a load replaces player.keyring wholesale
+  }
+  const _load = load;
+  load = function () { const r = _load.apply(this, arguments); try { absorb(); } catch (e) { } return r; };
+  absorb();
+
+  // ---------- it is visible, so a child knows he has it ----------
+  // Drawn under the pack grid rather than in it: on the ring, not in the bag.
+  HOOKS.hud.push(g => {
+    if (panel !== 'inventory' || paused) return;
+    const list = ring().filter(id => ITEMS[id]);
+    if (!list.length || !panelRect) return;
+    const { x, y, w, h } = panelRect;
+    const by = y + h - 40;
+    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left';
+    g.fillText('KEYRING — always with you, no pack space', x + 18, by - 6);
+    let kx = x + 18;
+    for (const id of list) {
+      roundRect(g, kx, by, 34, 34, 7); g.fillStyle = 'rgba(245,197,66,0.10)'; g.fill();
+      g.strokeStyle = 'rgba(245,197,66,0.55)'; g.lineWidth = 1; g.stroke();
+      drawItemIcon(g, id, kx + 17, by + 17, 15);
+      buttons.push({ x: kx, y: by, w: 34, h: 34, label: 'keyring:' + id, action: () => notify(`${ITEMS[id].name}. ${KEYS[id].note}`) });
+      kx += 40;
+    }
+    g.textAlign = 'left';
   });
 
-  HOOKS.world.push(() => install());   // NPCS are built by then; runs once per world generation
-  install();                            // and once now, for a game already in progress
+  window.KEYRING = { KEYS, ring, held, add, register, absorb };
 
-  window.QUESTITEMS = { register, REG, missing, inBank, forNpc };
-
-  const P = 'questitems: ';
+  const P = 'keyring: ';
   HOOKS.selfTest.push((check, F, h) => {
-    const wren = NPCS.find(n => n.id === 'wren');
-    if (!wren) { check(P + 'a lost quest item can be got back from whoever gave it', false, { wren: null }); return; }
-    const q0 = quest.sky ? JSON.parse(JSON.stringify(quest.sky)) : null;
-    const bag = player.inv.slice();
-    // stand in the Song of Above with no flute: the shrine is shut and the quest cannot move
-    quest.sky = { ...(quest.sky || {}), stage: 1, sang: false };
+    const bag = player.inv.slice(), r0 = ring().slice();
+    player.keyring = []; player.inv = player.inv.map(() => null);
+
+    // given once, it goes on the ring and not into the pack
+    giveOrDrop('wind_flute', 1, player.x, player.y);
+    const onRing = KEYRING.held('wind_flute'), notInBag = !player.inv.some(s => s && s.id === 'wind_flute');
+    const gatesSeeIt = countItem('wind_flute') === 1;              // this is what every gate in the game asks
+    check(P + 'an unlock goes on the keyring, not into the pack, and every gate still sees it', onRing && notInBag && gatesSeeIt, { onRing, notInBag, gatesSeeIt, slotsUsed: player.inv.filter(Boolean).length });
+
+    // a full pack cannot stop one arriving, and it costs no slot
+    player.inv = player.inv.map(() => ({ id: 'stone', qty: 50 }));
+    player.keyring = [];
+    const fits = canFit('wind_flute', 1);
+    giveOrDrop('wind_flute', 1, player.x, player.y);
+    const arrived = KEYRING.held('wind_flute') && countItem('wind_flute') === 1;
+    const noSlotTaken = player.inv.every(s => s && s.id === 'stone');
+    check(P + 'a full pack cannot stop an unlock arriving, and it takes no slot', fits && arrived && noSlotTaken, { fits, arrived, noSlotTaken });
+
+    // and nothing takes it away again
     player.inv = player.inv.map(() => null);
-    const before = countItem('wind_flute');
-    const spoke = HOOKS.talkBefore[wren.role] ? HOOKS.talkBefore[wren.role](wren) : false;
-    const back = countItem('wind_flute');
-    check(P + 'a flute lost after Old Wren gave it is handed back when you ask him, not just talked about', before === 0 && spoke === true && back === 1, { before, spoke, back });
+    // it is not in a pack slot, so no selling, dropping or banking can reach it — that is the guarantee
+    const inNoSlot = !player.inv.some(s2 => s2 && s2.id === 'wind_flute');
+    const survivedRemove = inNoSlot && countItem('wind_flute') === 1;
+    const keep = deathKeep; deathKeep = null;
+    hurtPlayer(player.maxHp + 999, player.x + 10, player.y, true); F.sim(60, []);
+    const survivedDeath = countItem('wind_flute') === 1 && (!deathKeep || !deathKeep.items.some(s => s.id === 'wind_flute'));
+    player.hp = player.maxHp; player.dead = false; deathKeep = keep;
+    check(P + 'an unlock cannot be dropped, sold, spent or taken by Death', survivedRemove && survivedDeath, { survivedRemove, survivedDeath });
 
-    // and he does not hand out a second one while you are carrying it
-    const second = HOOKS.talkBefore[wren.role] ? HOOKS.talkBefore[wren.role](wren) : false;
-    check(P + 'he does not hand out a second one while you already carry it', countItem('wind_flute') === 1, { held: countItem('wind_flute'), spokeAgain: second });
+    // an old save with the flute loose in the pack moves it onto the ring rather than leaving it to be lost
+    player.keyring = []; player.inv = player.inv.map(() => null);
+    player.inv[0] = { id: 'wind_flute', qty: 1 };
+    KEYRING.absorb();
+    const migrated = KEYRING.held('wind_flute') && !player.inv.some(s => s && s.id === 'wind_flute');
+    check(P + 'a save that still has the flute loose in the pack moves it onto the keyring on load', migrated, { migrated, ring: ring().slice() });
 
-    // if it is sitting in the bank he says so rather than minting another
-    player.inv = player.inv.map(() => null);
-    const bank0 = Array.isArray(player.bank) ? player.bank.slice() : [];
-    if (!Array.isArray(player.bank)) player.bank = [];
-    player.bank.push({ id: 'wind_flute', qty: 1 });
-    notice = null; dialog.queue.length = 0; dialog.cur = null;
-    if (HOOKS.talkBefore[wren.role]) HOOKS.talkBefore[wren.role](wren);
-    const said = (dialog.cur && dialog.cur.text) || (dialog.queue[0] && dialog.queue[0].text) || '';
-    const namedBank = /bank/i.test(said) && countItem('wind_flute') === 0;
-    player.bank = bank0;
-    dialog.queue.length = 0; dialog.cur = null;
-
-    player.inv = bag; if (q0) quest.sky = q0; else delete quest.sky;
-    check(P + 'a quest item sitting in the bank is named, not duplicated', namedBank, { said: said.slice(0, 80), carried: countItem('wind_flute') });
+    player.inv = bag; player.keyring = r0;
   });
 }
 
