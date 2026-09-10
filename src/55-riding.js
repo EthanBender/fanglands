@@ -123,17 +123,20 @@
     }
   });
 
-  // the on-screen button, so it works on an iPad, and a small state chip while it is live
+  // MIGRATED to the HUD kit (src/59-hudkit.js). Full steam belongs to the machine, so it sits on the left
+  // column directly under the machine's own meter and its fitted parts, as a finger-sized control on the
+  // grid — not a 66x30 button pinned 42 px above the hotbar. Amber while it winds and runs (wait), neutral
+  // when it is ready to press again.
   HOOKS.hud.push((g, narrow) => {
-    if (!drivingDozer()) return;
-    const w = 66, h = 30, x = narrow ? 12 : 12, y = Math.max(HUD_LAYOUT.hotbarY - 42, 120);
-    const label = sp ? (sp.phase === 'wind' ? 'WIND' : 'GO') : cool > 0 ? `${Math.ceil(cool)}s` : 'STEAM';
-    button(g, x, y, w, h, label, () => { touch.taps.push('steam'); }, sp ? '#d29922' : cool > 0 ? '#21262d' : '#8b2e2e', !sp && cool <= 0);
-    if (sp) {
+    if (!drivingDozer() || paused || panel) return; // on the left column: a panel is drawn right over it
+    const label = sp ? (sp.phase === 'wind' ? 'WINDING' : 'FULL STEAM') : cool > 0 ? `STEAM ${Math.ceil(cool)}s` : 'FULL STEAM (V)';
+    const s = HK.slot(HK.row() + (sp ? 7 : 0));
+    const bh = HK.row(), bw = HK.ctrlW();
+    HK.control(g, s.x, s.y, bw, bh, touchMode() ? label.replace(' (V)', '') : label, () => { touch.taps.push('steam'); },
+      { tone: sp ? HK.C.WARN : null, enabled: !sp && cool <= 0, on: !sp && cool <= 0, hit: 'STEAM' });
+    if (sp) { // how far through the wind-up / the run it is: amber, because it is a thing you wait for
       const f = sp.phase === 'wind' ? sp.t / WIND : 1 - sp.t / RUN;
-      g.fillStyle = '#21262d'; g.fillRect(x, y + h + 4, w, 5);
-      g.fillStyle = sp.phase === 'wind' ? '#d29922' : '#f5c542';
-      g.fillRect(x, y + h + 4, w * Math.max(0, Math.min(1, f)), 5);
+      HK.bar(g, s.x, s.y + bh + 2, bw, 5, Math.max(0, Math.min(1, f)), HK.C.WARN);
     }
   });
 

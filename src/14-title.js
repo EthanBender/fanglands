@@ -162,7 +162,7 @@ window.FANGLANDS.title = title;
     const el = (performance.now() - title.savedAt) / 1000;
     if (el >= 0 && el < 1.2) {
       const a = el < 0.2 ? el / 0.2 : 1 - (el - 0.2) / 1;
-      g.globalAlpha = clamp(a, 0, 1); g.textAlign = 'right'; g.fillStyle = '#3fb950'; g.font = 'bold 12px sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)';
+      g.globalAlpha = clamp(a, 0, 1); g.textAlign = 'right'; g.fillStyle = HK.C.GOOD; g.font = 'bold 12px sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; // green means "fine", here as everywhere
       g.strokeText('Saved', VW - 16, VH - 36); g.fillText('Saved', VW - 16, VH - 36); g.globalAlpha = 1;
     }
   });

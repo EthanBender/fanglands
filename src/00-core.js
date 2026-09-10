@@ -45,8 +45,10 @@ const PLACEABLE_ON = new Set([T.GRASS, T.DIRT, T.SAND, T.CAVE, T.COBBLE, T.FLOOR
 const WALK_OVER = new Set(); // tiles the player can currently cross (e.g. water while hover armour is worn); features add/remove
 // who: 'player' (the knight on foot: pushes through doors, honours WALK_OVER), 'person' (companions, guards, villagers: doors yes, WALK_OVER no), 'beast' (monsters and machines)
 const solidFor = (t, who) => (who === 'player' && WALK_OVER.has(t)) ? false : SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person' && who !== 'player');
-// shared left-HUD cursor: the core resets HUD.leftY to 82 every tick; HUD hooks that draw under the HP box start at HUD.leftY and advance it by their height (+6) so they stack
-const HUD = { leftY: 82 };
+// Shared left-HUD cursor. drawHud sets it to the bottom of the status plate every frame and HUD hooks claim
+// their row through HK.slot() (src/59-hudkit.js), which advances it. leftCol is the column that cursor is in:
+// the stack wraps into a second column rather than running into the joystick or off the bottom of the screen.
+const HUD = { leftY: 82, leftCol: 0 };
 
 // ---------- extension hooks (feature files in src/2x-*.js register here; core never needs editing) ----------
 const HOOKS = {

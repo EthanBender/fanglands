@@ -169,16 +169,26 @@ HOOKS.update.push(dt => {
     } else m.chargeCd = DOZER_CHARGE_EVERY;
   }
 });
-// ---------- HUD: the core writes "Walker hp/max" for any mech; re-badge it while driving the bulldozer ----------
+// ---------- HUD ----------
+// MIGRATED to the HUD kit (src/59-hudkit.js). This used to be the worst pair of shapes on the screen: an
+// orange-outlined pill reading "Bulldozer 109/110" and, right beside it, a blue-outlined pill reading
+// "drill" — two unrelated colours for two things that are not opposites, both floating at hardcoded x=186.
+// Now: the machine's hp is a health meter inside the status plate (the machine IS your health while you are
+// in it, so it reads on the same green/amber/red ramp), and the fitted parts are a plain neutral chip,
+// because a fitted drill is a fact, not a warning.
+hudMechName(() => player.mech && player.mech.kind === 'dozer' ? 'Bulldozer' : null); // names the second meter in the status plate
 HOOKS.hud.push(g => {
   if (!player.mech || player.mech.kind !== 'dozer') return;
-  g.font = '13px sans-serif'; g.textAlign = 'left';
-  const label = `Bulldozer ${player.mech.hp}/${player.mech.maxHp}`;
-  const w = Math.max(g.measureText(`Walker ${player.mech.hp}/${player.mech.maxHp}`).width, g.measureText(label).width);
-  g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186, 47, w + 10, 19, 5); g.fill(); g.strokeStyle = 'rgba(255,179,71,0.35)'; g.lineWidth = 1; g.stroke();
-  g.fillStyle = '#ffb347'; g.fillText(label, 190, 60);
-  const up = dozerUp(), parts = [up.drill && (up.irondrill ? 'iron drill' : 'drill'), up.ram && 'ram', up.boiler && 'boiler'].filter(Boolean);
-  if (parts.length) { const t = parts.join(' · '); g.font = 'bold 11px sans-serif'; const cw = g.measureText(t).width; g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186 + w + 16, 47, cw + 12, 19, 5); g.fill(); g.strokeStyle = 'rgba(59,111,182,0.7)'; g.stroke(); g.fillStyle = '#9cc4ff'; g.fillText(t, 192 + w + 16, 60); }
+  const up = dozerUp(), parts = [up.drill && (up.irondrill ? 'Iron drill' : 'Drill'), up.ram && 'Ram', up.boiler && 'Boiler'].filter(Boolean);
+  if (!parts.length) return;
+  const pad = 8, s = HK.slot(HK.chipH());
+  HK.plate(g, s.x, s.y, s.w, s.h);
+  g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.fillText('FITTED', s.x + pad + 4, s.y + s.h / 2);
+  const lw = Math.ceil(g.measureText('FITTED').width) + 10;
+  g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK;
+  g.fillText(parts.join(' · '), s.x + pad + 4 + lw, s.y + s.h / 2);
+  g.textBaseline = 'alphabetic';
 });
 
 // ---------- art ----------

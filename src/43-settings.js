@@ -122,12 +122,10 @@ const SETTINGS = (() => {
   { const _drawMinimap = drawMinimap, _drawCompass = drawCompass;
     drawMinimap = function () { if (S.minimap) return _drawMinimap.apply(this, arguments); };
     drawCompass = function () { if (S.minimap) return _drawCompass.apply(this, arguments); }; }
-  HOOKS.hud.push(g => {
-    if (S.minimap) return;
-    minimapRect = null; // no tap opens the map by accident where the minimap used to be
-    const mmSize = VW < 640 ? 96 : 150, mmx = VW - mmSize - 14;
-    button(g, mmx + mmSize - 64, 14, 64, 28, 'MAP', () => panel === 'map' ? closePanel() : openPanel('map'), '#21262d');
-  });
+  // MIGRATED to the HUD kit: with the minimap off, MAP is a control like any other, so it joins the control
+  // rail under the (now empty) minimap corner instead of being a lone button pinned to the minimap's edge.
+  HOOKS.hud.push(() => { if (!S.minimap) minimapRect = null; }); // no tap opens the map where the minimap used to be
+  hudControl({ id: 'map', sort: 50, label: () => 'MAP', show: () => !S.minimap && !paused, on: () => panel === 'map', action: () => panel === 'map' ? closePanel() : openPanel('map') });
 
   // ---------- talk speed: 07-update reveals 34 characters a second; this hook runs right after it every tick ----------
   const SPEECH_RATE = { slow: 18, normal: 34, fast: 90 };
@@ -258,9 +256,14 @@ const SETTINGS = (() => {
         check('settings: tap to walk off means a tap never walks or uses; on brings it back', noPath && still && path, { noPath, still, path }); }
       // stick side
       { window.__forceTouch = true; touch.stickId = null; touch.active = false; touch.press = null; const sy = VH - 100;
-        set('stick', 'right'); render(); pointerDown(VW * 0.75, sy, 7); const rOn = touch.stickId === 7 && touch.active; touch.press = null; pointerUp(7); pointerDown(VW * 0.25, sy, 8); const lOff = touch.stickId === null; touch.press = null; pointerUp(8);
+        // The question here is which half of the screen starts the stick, so each tap is made against a freshly
+        // drawn frame with the on-screen buttons cleared: at these coordinates the touch layout's thumb cluster
+        // (SWING, BLOCK) is sitting right where the test taps, and a button would swallow the press and hide
+        // whatever pointerDown actually did with it. Clearing them tests the stick-side rule and nothing else.
+        const tapAtStick = (x, id) => { render(); buttons.length = 0; pointerDown(x, sy, id); };
+        set('stick', 'right'); tapAtStick(VW * 0.75, 7); const rOn = touch.stickId === 7 && touch.active; touch.press = null; pointerUp(7); tapAtStick(VW * 0.25, 8); const lOff = touch.stickId === null; touch.press = null; pointerUp(8);
         const zoneR = joystickZone(VW - 100, VH - 60) && !joystickZone(100, VH - 60) && window.__stickRight === true;
-        set('stick', 'left'); pointerDown(VW * 0.25, sy, 9); const lOn = touch.stickId === 9; touch.press = null; pointerUp(9); pointerDown(VW * 0.75, sy, 10); const rOff = touch.stickId === null; touch.press = null; pointerUp(10);
+        set('stick', 'left'); tapAtStick(VW * 0.25, 9); const lOn = touch.stickId === 9; touch.press = null; pointerUp(9); tapAtStick(VW * 0.75, 10); const rOff = touch.stickId === null; touch.press = null; pointerUp(10);
         const zoneL = joystickZone(100, VH - 60) && !joystickZone(VW - 100, VH - 60) && window.__stickRight === false;
         window.__forceTouch = prevTouch;
         check('settings: stick side right starts the stick on the right half only (and the dialogue-safe zone moves); left is the core behaviour', rOn && lOff && zoneR && lOn && rOff && zoneL, { rOn, lOff, zoneR, lOn, rOff, zoneL }); }

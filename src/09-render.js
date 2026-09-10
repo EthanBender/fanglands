@@ -128,5 +128,5 @@ function drawMinimap(g, x, y, size) {
   if (player.home) dot(player.home.x, player.home.y, '#7ec8ff', 3);
   dot(player.x, player.y, '#ffffff', 3.5);
   g.restore();
-  g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 1.5; roundRect(g, x, y, size, size, 10); g.stroke();
+  g.strokeStyle = HK.C.CTRL_EDGE; g.lineWidth = 1.5; roundRect(g, x, y, size, size, HK.R); g.stroke(); // tapping it opens the map, so it wears the kit's pressable edge (src/59-hudkit.js)
 }

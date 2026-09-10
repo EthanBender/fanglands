@@ -200,10 +200,9 @@ const MUSIC = (() => {
     want = choose();
     if (timer === null) timer = setInterval(() => { try { tick(); } catch (e) { } }, TICK_MS) ?? true;
   });
-  HOOKS.hud.push((g) => {
-    if (!isTouch) return;
-    button(g, VW - 74, VH - 46, 64, 26, enabled ? 'MUSIC' : 'MUSIC off', toggle, enabled ? '#21262d' : '#3a2a2a');
-  });
+  // MIGRATED to the HUD kit: the music toggle was a 64x26 button parked in the bottom-right corner, matching
+  // nothing and too small for a finger. It is a rarely-touched switch, so it belongs in the control rail.
+  hudControl({ id: 'music', sort: 60, label: () => enabled ? 'MUSIC' : 'MUSIC OFF', show: () => touchMode() && !paused, on: () => enabled, action: toggle });
 
   // ---------- self-test (fake AudioContext that counts calls) ----------
   HOOKS.selfTest.push((check, F, h) => {

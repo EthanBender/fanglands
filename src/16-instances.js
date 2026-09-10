@@ -427,18 +427,21 @@
     } });
   });
   // HUD: where you are and how to get out
+  // MIGRATED to the HUD kit (src/59-hudkit.js): a neutral chip on the left column's grid — where you are is
+  // a fact, not a warning — with LEAVE as a proper finger-sized control on its own row underneath.
   HOOKS.hud.push((g, narrow) => {
     if (!active) return;
-    const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null, touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
-    const inst = active.inst, y = Math.max(HUD.leftY, touchFloor, 84), w = narrow && isTouch ? VW - 108 : 250, h = isTouch ? 52 : 40; // shared left-HUD cursor, under the law / companion tags and clear of the touch hotbar
-    roundRect(g, 14, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
-    g.fillStyle = '#e6edf3'; g.font = `700 13px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(inst.name.toUpperCase(), 26, y + 18);
+    if (panel || paused) return; // the chip and its LEAVE control sit where a panel lands
+    const inst = active.inst, pad = 9;
+    const s = HK.slot(pad * 2 + HK.LINE() + 2 + HK.LINE());
+    HK.plate(g, s.x, s.y, s.w, s.h);
+    g.fillStyle = HK.C.INK; g.font = `700 13px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(inst.name.toUpperCase(), s.x + pad + 4, s.y + pad + HK.LINE() - 3);
     const alive = monsters.filter(m => !m.dead).length;
-    g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.fillText(inst.boss && !active.cleared ? `${alive} left · boss alive` : active.cleared ? 'cleared' : `${alive} left`, 26, y + 32);
-    if (active.webT > 0) { g.fillStyle = '#e9eef5'; g.fillText(`webbed ${active.webT.toFixed(1)}s`, 130, y + 32); }
-    if (isTouch) button(g, 14 + w - 74, y + 12, 62, 28, 'LEAVE', () => { leaveInstance(); notify('You climb back out into the light.'); }, '#7a2e2e');
-    else { g.fillStyle = '#8b949e'; g.textAlign = 'right'; g.fillText('L to leave', 14 + w - 12, y + 18); }
-    HUD.leftY = y + h + 6;
+    g.fillStyle = HK.C.DIM; g.font = '11px sans-serif';
+    g.fillText(inst.boss && !active.cleared ? `${alive} left · boss alive` : active.cleared ? 'cleared' : `${alive} left`, s.x + pad + 4, s.y + pad + HK.LINE() * 2);
+    if (active.webT > 0) { g.textAlign = 'right'; g.fillStyle = HK.C.WARN; g.fillText(`webbed ${active.webT.toFixed(1)}s`, s.x + s.w - pad - 4, s.y + pad + HK.LINE() * 2); g.textAlign = 'left'; }
+    if (touchMode()) { const b = HK.slot(HK.row()); button(g, b.x, b.y, HK.ctrlW(), b.h, 'LEAVE', () => { leaveInstance(); notify('You climb back out into the light.'); }, '#21262d'); }
+    else { g.fillStyle = HK.C.DIM; g.textAlign = 'right'; g.fillText('L to leave', s.x + s.w - pad - 4, s.y + pad + HK.LINE() - 3); g.textAlign = 'left'; }
   });
 
   // ============================================================================

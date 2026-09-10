@@ -174,23 +174,19 @@
   });
 
   // ---------- the shift clock on screen ----------
+  // MIGRATED to the HUD kit (src/59-hudkit.js). The shift clock was a lone box floating at the top centre
+  // of the screen, in its own size, with its own outline that turned red. It is now a chip in the left
+  // column with everything else that is happening to you right now: the roof is a meter on the same
+  // green/amber/red ramp as your health, and the coal you have cut is a quiet second line.
   HOOKS.hud.push((g, narrow) => {
     if (!running()) return;
-    const w = narrow ? 150 : 190, x = VW / 2 - w / 2, y = Math.max(HUD_LAYOUT.topStackBottom + 8, 92);
-    roundRect(g, x, y, w, 44, 8); g.fillStyle = 'rgba(10,14,22,0.86)'; g.fill();
-    g.strokeStyle = run.roof < ROOF_WARN ? '#c0392b' : '#30363d'; g.lineWidth = run.roof < ROOF_WARN ? 2 : 1; g.stroke();
-    g.textAlign = 'left'; g.font = 'bold 13px sans-serif'; g.fillStyle = '#e6edf3';
-    g.fillText(`${run.coal} coal`, x + 12, y + 18);
-    g.textAlign = 'right'; g.fillStyle = '#8b949e'; g.font = '12px sans-serif';
-    g.fillText(`${Math.max(0, Math.ceil(run.t))}s`, x + w - 12, y + 18);
-    // the roof bar: full is safe, empty is rock on your head
-    const bw = w - 24, f = Math.max(0, Math.min(1, run.roof / PROP_RESET));
-    g.fillStyle = '#21262d'; g.fillRect(x + 12, y + 26, bw, 8);
-    g.fillStyle = f > 0.45 ? '#3fb950' : f > 0.2 ? '#d29922' : '#c0392b';
-    g.fillRect(x + 12, y + 26, bw * f, 8);
-    g.textAlign = 'left'; g.font = '10px sans-serif'; g.fillStyle = '#6e7681';
-    g.fillText('roof', x + 12, y + 42);
-    g.textAlign = 'center';
+    const pad = 9, f = Math.max(0, Math.min(1, run.roof / PROP_RESET));
+    const tone = f > 0.45 ? HK.C.GOOD : f > 0.2 ? HK.C.WARN : HK.C.BAD;
+    const s = HK.slot(pad * 2 + HK.meterH() + HK.GUT + HK.LINE());
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: run.roof < ROOF_WARN ? HK.C.BAD : null });
+    const ix = s.x + pad + 2, iw = s.w - pad * 2 - 2;
+    const used = HK.meter(g, ix, s.y + pad, iw, { label: 'ROOF', value: `${Math.max(0, Math.ceil(run.t))}s`, template: '000s', frac: f, tone });
+    HK.readout(g, ix, s.y + pad + used + HK.GUT, iw, [{ label: 'COAL CUT', value: `${run.coal}` }]);
   });
 
   // ---------- the cart and the rails in Deepholm ----------

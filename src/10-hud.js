@@ -1,27 +1,33 @@
 // ============================================================================
 // HUD AND PANELS
 // ============================================================================
+// An item tile, not a container: the one other shape in the HUD, at HK.R_SLOT. "Selected" is drawn as a
+// RAISED tile (brighter fill, a light edge) rather than a blue one — the kit's rule is that colour carries
+// meaning and selection is not a meaning, it is a state of the control. (src/59-hudkit.js)
 function drawSlot(g, x, y, size, slot, selected) {
-  roundRect(g, x, y, size, size, 6); g.fillStyle = selected ? 'rgba(88,166,255,0.25)' : 'rgba(255,255,255,0.06)'; g.fill();
-  g.strokeStyle = selected ? '#58a6ff' : 'rgba(255,255,255,0.12)'; g.lineWidth = selected ? 2 : 1; g.stroke();
+  roundRect(g, x, y, size, size, HK.R_SLOT); g.fillStyle = selected ? 'rgba(233,240,248,0.20)' : 'rgba(233,240,248,0.06)'; g.fill();
+  g.strokeStyle = selected ? HK.C.CTRL_EDGE : HK.C.EDGE; g.lineWidth = selected ? 2 : 1; g.stroke();
   if (slot) {
     drawItemIcon(g, slot.id, x + size / 2, y + size / 2 - 2, size * 0.5);
-    if (slot.qty > 1) { g.fillStyle = '#e6edf3'; g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillText(slot.qty > 9999 ? Math.floor(slot.qty / 1000) + 'k' : slot.qty, x + size - 4, y + size - 4); }
+    if (slot.qty > 1) { g.fillStyle = HK.C.INK; g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillText(slot.qty > 9999 ? Math.floor(slot.qty / 1000) + 'k' : slot.qty, x + size - 4, y + size - 4); }
   }
 }
 // Disabled buttons are still registered (as inert hit rects, label prefixed 'disabled:') so a tap on a greyed button does not fall through to the panel/world.
+// One pressable style for the whole game, drawn by HK.control: a raised plate with a light edge, so a
+// control never looks like a readout. The legacy colour argument is kept (no call site had to change) but
+// it is now read as a MEANING — green = go, red = danger, amber = wait, anything else = a neutral control —
+// which is what turned thirty hand-picked hex codes into one language. (src/59-hudkit.js)
 function button(g, x, y, w, h, label, action, color = '#238636', enabled = true) {
-  roundRect(g, x, y, w, h, 8); g.fillStyle = enabled ? color : '#2a2f3a'; g.fill();
-  g.fillStyle = enabled ? '#fff' : '#6e7681'; g.font = 'bold 13px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, x + w / 2, y + h / 2); g.textBaseline = 'alphabetic';
-  buttons.push(enabled ? { x, y, w, h, label, action } : { x, y, w, h, label: 'disabled:' + label, action: () => { }, disabled: true });
+  HK.control(g, x, y, w, h, label, action, { tone: HK.toneOf(color), enabled });
 }
 function panelBox(g, w, h, title, subtitle) {
   w = Math.min(w, VW - 20); h = Math.min(h, VH - 20);
   const px = Math.round(VW / 2 - w / 2), py = Math.round(Math.max(10, VH / 2 - h / 2 - 20));
-  roundRect(g, px, py, w, h, 12); g.fillStyle = 'rgba(10,14,22,0.95)'; g.fill(); g.strokeStyle = '#30363d'; g.lineWidth = 1; g.stroke();
-  g.fillStyle = '#e6edf3'; g.font = `700 17px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(title, px + 18, py + 30);
-  if (subtitle) { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(subtitle, px + 18, py + 50); }
-  button(g, px + w - 56, py + 10, 44, 36, '×', closePanel, '#21262d');
+  // the same plate as every HUD chip, only near-opaque: a panel covers the world on purpose
+  HK.plate(g, px, py, w, h, { top: 'rgba(17,21,30,0.96)', bottom: 'rgba(11,14,21,0.94)' });
+  g.fillStyle = HK.C.INK; g.font = `700 17px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(title, px + 18, py + 30);
+  if (subtitle) { g.fillStyle = HK.C.DIM; g.font = '12px sans-serif'; g.fillText(subtitle, px + 18, py + 50); }
+  const cb = HK.row(); button(g, px + w - cb - 12, py + 10, cb, cb, '×', closePanel, '#21262d');
   panelRect = { x: px, y: py, w, h };
   return { px, py, w, h };
 }
@@ -58,85 +64,88 @@ function itemBlurb(def) {
 function drawHud(g) {
   buttons.length = 0; minimapRect = null; dialogRect = null; panelRect = null;
   g.textBaseline = 'alphabetic';
-  const narrow = VW < 640, short = isTouch && VH < 500;
-  const mmSize = narrow ? 96 : 150, mmx = VW - mmSize - 14, mmy = 14;
-  // HP + combat + coins (never under the minimap)
-  const hpw = narrow && isTouch ? Math.min(250, mmx - 14 - 10) : 250;
-  roundRect(g, 14, 14, hpw, 62, 10); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
-  const barW = Math.min(196, hpw - 62);
-  g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText('HP', 26, 34);
-  g.fillStyle = '#2a2f3a'; roundRect(g, 52, 22, barW, 14, 6); g.fill();
-  g.fillStyle = player.hp / player.maxHp > 0.5 ? '#3fb950' : player.hp / player.maxHp > 0.25 ? '#d29922' : '#f85149'; roundRect(g, 52, 22, barW * clamp(player.hp / player.maxHp, 0, 1), 14, 6); g.fill();
-  g.fillStyle = '#fff'; g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(player.hp)} / ${player.maxHp}`, 52 + barW / 2, 33);
-  g.textAlign = 'left'; g.font = '13px sans-serif'; g.fillStyle = '#f5c542'; drawItemIcon(g, 'coins', 32, 56, 13); g.fillText(`${coins()}`, 44, 60);
-  g.fillStyle = '#c9d1d9'; g.fillText(`Combat ${combatLevel()}`, 120, 60);
-  if (player.mech) { g.fillStyle = '#ffb347'; g.fillText(`Walker ${player.mech.hp}/${player.mech.maxHp}`, 190, 60); }
-  else if (window.__kidmode) { g.fillStyle = '#7ec8ff'; g.font = 'bold 11px sans-serif'; g.fillText('Kid mode', 190, 60); }
+  // touchMode() rather than isTouch: identical on a real device, but a test can force either layout, which
+  // is what lets the HUD-kit layout audit render the iPad HUD headlessly (src/59-hudkit.js).
+  const isT = touchMode();
+  const narrow = VW < 640, short = isT && VH < 500;
+  const mmSize = HK.mmSize(), mmx = HK.mmX(), mmy = 14;
+  // ---- the status plate: health first and biggest, the machine you are in second, coins and combat quiet ----
+  const statusBottom = HK.status(g);
+  HUD.leftY = statusBottom + HK.GUT; HUD.leftCol = 0; // the left column starts under the plate — set, not maxed: drawHud owns this cursor
   // minimap (top-right) + compass toward the tracked quest
-  drawMinimap(g, mmx, mmy, mmSize); minimapRect = { x: mmx, y: mmy, w: mmSize, h: mmSize };
+  drawMinimap(g, mmx, mmy, mmSize); minimapRect = panel ? null : { x: mmx, y: mmy, w: mmSize, h: mmSize }; // a panel owns the screen: no tap falls through to the map
   drawCompass(g, mmx, mmy, mmSize);
-  g.fillStyle = 'rgba(230,237,243,0.6)'; g.font = '10px sans-serif'; g.textAlign = 'center'; g.fillText(isTouch ? 'tap for map' : 'M for map', mmx + mmSize / 2, mmy + mmSize + 12);
-  // phone: MENU / SKILLS / HELP stack under the minimap; the quest box, notice slot and hotbar follow below
-  let topStackBottom = 76;
-  if (isTouch && narrow) {
-    const bx = VW - 74, by = mmy + mmSize + 16;
-    button(g, bx, by, 60, 28, 'MENU', () => { paused = !paused; }, '#21262d');
-    button(g, bx, by + 34, 60, 28, 'SKILLS', () => panel === 'skills' ? closePanel() : openPanel('skills'), '#21262d');
-    button(g, bx, by + 68, 60, 28, 'HELP', () => panel === 'help' ? closePanel() : openPanel('help'), '#21262d');
-    topStackBottom = by + 68 + 28;
-  }
-  // tracked quest (only when tracked). Placement: desktop → left of the minimap; phone → under the MENU stack;
-  // landscape phone (short) → under the HP box; tablet → beside the hotbar. Never under the MENU/SKILLS/HELP row.
+  g.fillStyle = 'rgba(233,240,248,0.55)'; g.font = '10px sans-serif'; g.textAlign = 'center'; g.fillText(isT ? 'tap for map' : 'M for map', mmx + mmSize / 2, mmy + mmSize + 12);
+  // The control rail (MENU / SKILLS / HELP / WIKI / MAP / MUSIC) is registered with hudControl() below and
+  // drawn by the kit's own HOOKS.hud entry, last, over everything. Its band is reserved here so the quest
+  // box and the hotbar can stack under it exactly as they used to.
+  const topStackBottom = isT && narrow ? HK.railBottom() : Math.max(statusBottom, 76);
+  // Tracked quest. It is a readout, not a control, so it gets a plate and no edge. Placement is on the grid:
+  // desktop → the top-right band, left of the minimap; narrow phone → full width under the rail; every other
+  // touch layout → the second column, at the top, right of the left column and left of the minimap. (It used
+  // to sit under the HP box on a landscape phone, which the taller status plate would have run into.)
   let qh = 0;
-  const qy = !isTouch ? 14 : narrow ? topStackBottom + 10 : short ? 84 : 90;
+  const col2 = HK.colX(1);                 // the second column's left edge (shifted right of a mirrored thumb cluster)
+  const qy = !isT ? 14 : narrow ? topStackBottom + 10 : 14;
   if (quest.tracked && activeQuests().includes(quest.tracked)) {
     const qt = questText(quest.tracked); g.font = 'bold 13px sans-serif';
-    const qw = !isTouch ? Math.min(360, Math.max(260, g.measureText(qt).width + 40)) : narrow ? VW - 28 : short ? Math.min(300, VW / 2 - 40) : clamp(VW - 334 - mmSize - 14 - 24, 200, 360);
-    qh = 54; const qx = !isTouch ? VW - mmSize - 14 - qw - 12 : narrow || short ? 14 : 334;
-    roundRect(g, qx, qy, qw, qh, 10); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(QUEST_DEFS[quest.tracked].name.toUpperCase(), qx + 20, qy + 18);
-    g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif';
-    let shown = qt; while (shown.length > 8 && g.measureText(shown + '…').width > qw - 40) shown = shown.slice(0, -1); g.fillText(shown === qt ? qt : shown + '…', qx + 20, qy + 40);
+    const qw = !isT ? Math.min(360, Math.max(260, g.measureText(qt).width + 40)) : narrow ? VW - 28 : clamp(mmx - col2 - 12, 200, 360);
+    qh = 54; const qx = !isT ? VW - mmSize - 14 - qw - 12 : narrow ? 14 : col2;
+    HK.plate(g, qx, qy, qw, qh);
+    g.fillStyle = HK.C.DIM; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(QUEST_DEFS[quest.tracked].name.toUpperCase(), qx + HK.PAD + 4, qy + 20);
+    g.fillStyle = HK.C.INK; g.font = 'bold 13px sans-serif';
+    let shown = qt; while (shown.length > 8 && g.measureText(shown + '…').width > qw - 40) shown = shown.slice(0, -1); g.fillText(shown === qt ? qt : shown + '…', qx + HK.PAD + 4, qy + 42);
   }
   const questSlotH = narrow ? 54 : qh; // phones reserve the quest slot so the hotbar does not jump
-  const noticeY = narrow ? qy + questSlotH + 8 : short ? 46 : 84; // short: the strip between the HP box and the minimap, clear of the quest box and dialogue
-  // hotbar: first five pack slots (keys 1–5)
+  // hotbar: first five pack slots (keys 1–5). One plate, one gutter, slots on the grid.
   const hb = 44, hgap = 6, hw = 5 * (hb + hgap) + 60;
-  const hx = short ? VW / 2 - hw / 2 + 30 : isTouch ? 14 : VW / 2 - hw / 2;
-  const hy = short ? VH - 58 : isTouch ? (narrow ? noticeY + 32 + 10 : 90) : VH - 96;
-  roundRect(g, hx - 6, hy - 6, hw + 6, hb + 12, 10); g.fillStyle = 'rgba(10,14,22,0.7)'; g.fill();
+  const hx = short ? VW / 2 - hw / 2 + 30 : isT ? HK.M() + 6 : VW / 2 - hw / 2; // +6: the plate is drawn at hx-6, so its edge lands on the column's
+  // a tablet's hotbar hangs off the bottom of the status plate; the notice then goes under the hotbar
+  // rather than across it (at the old fixed y = 84 the two overlapped on every tablet)
+  const hbTop = short ? VH - 58 : isT ? (narrow ? null : statusBottom + HK.GUT + 6) : VH - 96;
+  // the notice slot: a narrow phone stacks it under the quest box; every other touch layout puts it in the
+  // second column right under the quest slot (centred, it used to land across the left column's chips);
+  // desktop keeps it centred at the top, where nothing else lives.
+  const noticeY = narrow ? qy + questSlotH + 8 : isT ? 14 + 54 + HK.GUT : 84;
+  const hy = (isT && narrow) ? noticeY + 32 + 10 : hbTop;
+  HK.plate(g, hx - 6, hy - 6, hw + 6, hb + 12);
   for (let i = 0; i < 5; i++) {
     const sx = hx + i * (hb + hgap);
     drawSlot(g, sx, hy, hb, player.inv[i], false);
-    if (!isTouch) { g.fillStyle = '#8b949e'; g.font = '9px sans-serif'; g.textAlign = 'left'; g.fillText(i + 1, sx + 3, hy + 10); }
+    if (!isT) { g.fillStyle = HK.C.DIM; g.font = '9px sans-serif'; g.textAlign = 'left'; g.fillText(i + 1, sx + 3, hy + 10); }
     buttons.push({ x: sx, y: hy, w: hb, h: hb, label: 'hot' + i, action: () => useItem(i) });
   }
-  button(g, hx + 5 * (hb + hgap), hy, 54, hb, isTouch ? 'BAG' : 'Bag (I)', () => panel === 'inventory' ? closePanel() : openPanel('inventory'), '#21262d');
-  Object.assign(HUD_LAYOUT, { narrow, short, hotbarY: hy, hotbarH: hb, questY: qy, questH: qh, noticeY, topStackBottom, bossBarY: isTouch ? (narrow ? hy + hb + 12 : short ? 84 + (qh ? qh + 8 : 0) : 152) : 84 });
-  if (!isTouch) { g.fillStyle = 'rgba(230,237,243,0.75)'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(player.mech ? 'WASD move · click to walk · Space stomp · E crush planks · X climb out' : 'WASD move · click to walk · Space swing · E use / talk · Q place · 1-5 use · I bag · C craft · Tab skills · J quests · M map · H home · ? help · Esc menu', VW / 2, VH - 16); }
+  button(g, hx + 5 * (hb + hgap), hy, 54, hb, isT ? 'BAG' : 'Bag (I)', () => panel === 'inventory' ? closePanel() : openPanel('inventory'), '#21262d');
+  // the boss bar joins the left column like every other chip, so nothing has to guess where it ended
+  const bossBarY = Math.max(HUD.leftY, HK.stackFloor());
+  // where a wrapped chip lands: under whatever the second column already holds (quest, notice, the rail)
+  const col2Top = isT && !narrow ? Math.max(HK.railBottom(), noticeY + 32) + HK.GUT : 14;
+  Object.assign(HUD_LAYOUT, { narrow, short, hotbarY: hy, hotbarH: hb, questY: qy, questH: qh, noticeY, topStackBottom, bossBarY, col2Top });
+  if (!isT) { g.fillStyle = 'rgba(233,240,248,0.72)'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(player.mech ? 'WASD move · click to walk · Space stomp · E crush planks · X climb out' : 'WASD move · click to walk · Space swing · E use / talk · Q place · 1-5 use · I bag · C craft · Tab skills · J quests · M map · H home · ? help · Esc menu', VW / 2, VH - 16); }
   else if (!short) { // touch: one line between the stick and the buttons; it shortens on phones instead of running under them (landscape phones have no free edge for it)
-    const maxW = Math.max(120, VW - 460); g.fillStyle = 'rgba(230,237,243,0.7)'; g.font = '11px sans-serif'; g.textAlign = 'center';
-    let t = 'Tap to walk · tap a tree, rock, water or person to use it · tap a monster to fight · SWING · USE · BAG';
-    if (g.measureText(t).width > maxW) t = 'Tap to walk · tap things to use them · tap a monster to fight';
-    while (g.measureText(t).width > maxW && t.length > 12) t = t.slice(0, -2) + '…';
+    // the longest of three whole sentences that fits, rather than one sentence chopped mid-word: a phone was
+    // showing "Tap to walk · tap thing…", which teaches nothing and looks broken
+    const maxW = Math.max(120, VW - 460); g.fillStyle = 'rgba(233,240,248,0.68)'; g.font = '11px sans-serif'; g.textAlign = 'center';
+    const lines = ['Tap to walk · tap a tree, rock, water or person to use it · tap a monster to fight · SWING · USE · BAG',
+      'Tap to walk · tap things to use them · tap a monster to fight', 'Tap to walk · tap things to use them', 'Tap to walk'];
+    const t = lines.find(l => g.measureText(l).width <= maxW) || lines[lines.length - 1];
     g.fillText(t, VW / 2, VH - 8);
   }
-  // touch controls
-  if (isTouch) {
+  // touch controls: the thumb cluster. Round because they are held-down actions, not menu entries — the one
+  // deliberate exception to the plate, and it is a whole class of control, not a one-off.
+  if (isT) {
     const mx = x => window.__stickRight === true ? VW - x : x; // Settings › Move stick side: right-handed players get the stick on the right and the buttons on the left (src/43-settings.js)
-    if (touch.active) { g.fillStyle = 'rgba(255,255,255,0.15)'; g.beginPath(); g.arc(touch.ox, touch.oy, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.4)'; g.beginPath(); g.arc(touch.ox + touch.dx * 60, touch.oy + touch.dy * 60, 26, 0, 7); g.fill(); }
-    else { g.fillStyle = 'rgba(255,255,255,0.08)'; g.beginPath(); g.arc(mx(110), VH - 110, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText('MOVE', mx(110), VH - 106); }
-    const defs = [['SWING', () => touch.taps.push('attack'), 70, mx(VW - 70), VH - 100], ['USE', () => touch.taps.push('use'), 52, mx(VW - 160), VH - 66], [player.mech ? 'EXIT' : 'CRAFT', () => player.mech ? exitMech() : (panel === 'craft' ? closePanel() : openPanel('craft')), 52, mx(VW - 160), VH - 160], ['QUESTS', () => panel === 'quests' ? closePanel() : openPanel('quests'), 52, mx(VW - 70), VH - 200]];
-    if (player.home && !player.mech) defs.push(['HOME', goHome, 52, mx(VW - 160), VH - 254]);
-    for (const [label, action, r, x, y] of defs) {
-      g.fillStyle = 'rgba(255,255,255,0.14)'; g.beginPath(); g.arc(x, y, r / 2 + 8, 0, 7); g.fill();
-      g.fillStyle = '#fff'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText(label, x, y + 4);
-      buttons.push({ x: x - r / 2 - 8, y: y - r / 2 - 8, w: r + 16, h: r + 16, label, action });
-    }
-    if (!narrow) {
-      button(g, VW / 2 - 30, 14, 60, 26, 'MENU', () => { paused = !paused; }, '#21262d');
-      button(g, VW / 2 + 36, 14, 60, 26, 'SKILLS', () => panel === 'skills' ? closePanel() : openPanel('skills'), '#21262d');
-      button(g, VW / 2 + 102, 14, 60, 26, 'HELP', () => panel === 'help' ? closePanel() : openPanel('help'), '#21262d');
+    if (touch.active) { g.fillStyle = 'rgba(233,240,248,0.14)'; g.beginPath(); g.arc(touch.ox, touch.oy, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(233,240,248,0.38)'; g.beginPath(); g.arc(touch.ox + touch.dx * 60, touch.oy + touch.dy * 60, 26, 0, 7); g.fill(); }
+    else HK.disc(g, mx(110), VH - 110, 60, 'MOVE', { quiet: true }); // the idle stick: a control, but the quietest one on screen
+    // seats 0-4 of the kit's thumb grid; features take the ones the core does not (32-beast: 4, 47-outliers: 5)
+    const defs = [[0, 'SWING', () => touch.taps.push('attack')], [1, 'USE', () => touch.taps.push('use')],
+      [2, player.mech ? 'EXIT' : 'CRAFT', () => player.mech ? exitMech() : (panel === 'craft' ? closePanel() : openPanel('craft'))],
+      [3, 'QUESTS', () => panel === 'quests' ? closePanel() : openPanel('quests')]];
+    if (player.home && !player.mech) defs.push([4, 'HOME', goHome]);
+    for (const [seat, label, action] of defs) {
+      const p = HK.thumbSeat(seat);
+      HK.disc(g, p.x, p.y, p.r, label);   // the same scrim, raise and edge as every other pressable
+      buttons.push({ x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2, label, action });
     }
   }
   drawBossBars(g, HUD_LAYOUT.bossBarY);
@@ -146,16 +155,27 @@ function drawHud(g) {
   if (dialog.cur) {
     const dw = short ? Math.max(260, VW - 400) : Math.min(720, VW - 40), dx = VW / 2 - dw / 2;
     g.font = '16px sans-serif'; const lines = dialogLines(g, dialog.cur.text, dw - 36); const dh = 60 + lines * 20;
-    const dy = short ? 150 : clamp(VH - dh - (isTouch ? (narrow ? 300 : 250) : 130), narrow ? 150 : 90, VH - dh - 10);
+    const dy = short ? 150 : clamp(VH - dh - (isT ? (narrow ? 300 : 250) : 130), narrow ? 150 : 90, VH - dh - 10);
+    // Who is speaking is a real distinction, so it keeps a colour — but as a 3 px rule down the left edge
+    // (the kit's tone rule), not as a full outline competing with the state colours.
     const col = dialog.cur.who === 'The Voice' ? '#b58cff' : dialog.cur.who === 'Death' ? '#8fa2b8' : '#c9a36a';
-    roundRect(g, dx, dy, dw, dh, 12); g.fillStyle = 'rgba(10,14,22,0.92)'; g.fill(); g.strokeStyle = col; g.lineWidth = 2; g.stroke();
-    g.fillStyle = col; g.font = 'bold 12px sans-serif'; g.textAlign = 'left'; g.fillText(dialog.cur.who.toUpperCase(), dx + 18, dy + 24);
-    g.fillStyle = '#e6edf3'; g.font = '16px sans-serif';
+    HK.plate(g, dx, dy, dw, dh, { top: 'rgba(17,21,30,0.92)', bottom: 'rgba(11,14,21,0.88)', tone: col });
+    g.fillStyle = HK.C.DIM; g.font = 'bold 12px sans-serif'; g.textAlign = 'left'; g.fillText(dialog.cur.who.toUpperCase(), dx + 18, dy + 24);
+    g.fillStyle = HK.C.INK; g.font = '16px sans-serif';
     wrapText(g, dialog.cur.text.slice(0, dialog.shown), dx + 18, dy + 48, dw - 36, 20);
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'right'; g.fillText(isTouch ? 'tap here to continue' : 'Enter or click here to continue', dx + dw - 14, dy + dh - 10);
+    g.fillStyle = 'rgba(211,220,232,0.65)'; g.font = '11px sans-serif'; g.textAlign = 'right'; g.fillText(isT ? 'tap here to continue' : 'Enter or click here to continue', dx + dw - 14, dy + dh - 10);
     dialogRect = { x: dx, y: dy, w: dw, h: dh };
   }
-  if (notice) { g.fillStyle = `rgba(10,14,22,${clamp(notice.t, 0, 0.85)})`; const nw = short ? Math.min(520, VW - 274 - mmSize - 24) : Math.min(VW - 20, 520), nx = short ? 274 : VW / 2 - nw / 2; roundRect(g, nx, noticeY, nw, 32, 8); g.fill(); g.fillStyle = `rgba(230,237,243,${clamp(notice.t, 0, 1)})`; g.font = '13px sans-serif'; g.textAlign = 'center'; let t = notice.text; while (g.measureText(t).width > nw - 20 && t.length > 8) t = t.slice(0, -2) + '…'; g.fillText(t, nx + nw / 2, noticeY + 21); }
+  // notice: the same plate, faded in and out by notice.t. On a landscape phone it sits in the second column
+  // under the quest slot, so it never lands on the status plate or the minimap.
+  if (notice) {
+    const nx0 = HK.colX(1);                              // the second column
+    const nw = isT && !narrow ? clamp(mmx - nx0 - 12, 200, 520) : Math.min(VW - 20, 520), nx = isT && !narrow ? nx0 : VW / 2 - nw / 2;
+    const a = clamp(notice.t, 0, 1);
+    g.globalAlpha = a; HK.plate(g, nx, noticeY, nw, 32); g.globalAlpha = 1;
+    g.fillStyle = `rgba(242,246,250,${a})`; g.font = '13px sans-serif'; g.textAlign = 'center';
+    let t = notice.text; while (g.measureText(t).width > nw - 20 && t.length > 8) t = t.slice(0, -2) + '…'; g.fillText(t, nx + nw / 2, noticeY + 21);
+  }
   if (areaBanner) {
     const a = clamp(Math.min(areaBanner.t, 0.8) * 1.5, 0, 1);
     g.globalAlpha = a; g.fillStyle = '#e6edf3'; g.font = `800 ${narrow ? 22 : 30}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,0.7)';
@@ -177,19 +197,21 @@ function drawHud(g) {
   if (paused) {
     buttons.length = 0; minimapRect = null; dialogRect = null; panelRect = null; // nothing under the menu is tappable
     g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0, 0, VW, VH);
-    const pw = 300, ph = 310, px = VW / 2 - pw / 2, py = VH / 2 - ph / 2; // the stats line sits at VH/2 + 83 (py + 238): 31-rebuild repaints it with the town's name
-    roundRect(g, px, py, pw, ph, 12); g.fillStyle = 'rgba(10,14,22,0.96)'; g.fill(); g.strokeStyle = '#30363d'; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 34);
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 52);
-    button(g, px + 24, py + 66, pw - 48, 36, 'Resume', () => { paused = false; });
+    // geometry from HK.pauseBox() so the rows are finger-sized on touch and the stats line stays findable:
+    // 31-rebuild repaints that line with the town's name and asks the kit for the same y.
+    const { px, py, pw, ph, bh, step, firstY, statsY } = HK.pauseBox();
+    HK.plate(g, px, py, pw, ph, { top: 'rgba(17,21,30,0.97)', bottom: 'rgba(11,14,21,0.95)' });
+    g.fillStyle = HK.C.INK; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 34);
+    g.fillStyle = HK.C.DIM; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 52);
+    button(g, px + 24, firstY, pw - 48, bh, 'Resume', () => { paused = false; });
     // sound, music, kid mode and the rest live in the Settings panel (src/43-settings.js); the panel draws under the pause overlay, so unpause to show it
-    button(g, px + 24, py + 106, pw - 48, 36, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
-    let by = py + 146; for (const f of HOOKS.pauseMenu) { f(g, px + 24, by, pw - 48, 36); by += 40; } // feature buttons (14-title: Title screen) — registered here, after the buttons reset above, so they are tappable
+    button(g, px + 24, firstY + step, pw - 48, bh, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
+    let by = firstY + step * 2; for (const f of HOOKS.pauseMenu) { f(g, px + 24, by, pw - 48, bh); by += step; } // feature buttons (14-title: Title screen) — registered here, after the buttons reset above, so they are tappable
     const erase = confirmActive('newgame');
-    button(g, px + 24, by, pw - 48, 36, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 238);
-    g.fillStyle = '#8b949e'; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, py + 256);
-    g.fillStyle = '#6e7681'; g.fillText('Progress saves automatically in this browser.', VW / 2, py + 274);
+    button(g, px + 24, by, pw - 48, bh, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
+    g.fillStyle = 'rgba(211,220,232,0.7)'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, statsY);
+    g.fillStyle = HK.C.DIM; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, statsY + 18);
+    g.fillStyle = 'rgba(211,220,232,0.7)'; g.fillText('Progress saves automatically in this browser.', VW / 2, statsY + 36);
   }
 }
 // small arrow on the minimap edge pointing at the tracked quest's target (or a ring when the target is on the minimap)
@@ -209,18 +231,22 @@ function drawCompass(g, x, y, size) {
   g.fillStyle = '#f5c542'; g.beginPath(); g.moveTo(8, 0); g.lineTo(-5, -6); g.lineTo(-2, 0); g.lineTo(-5, 6); g.closePath(); g.fill();
   g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); g.restore();
 }
-// generic boss bar for any big monster nearby (features that draw their own, like the Fang, are skipped)
+// Generic boss bar for any big monster nearby (features that draw their own, like the Fang, are skipped).
+// Now a chip in the left column like everything else: same plate, same width, a BAD rule down the left edge
+// because a boss on you IS the danger state, and the same label / value / bar block as your own health.
+// It advances HUD.leftY, so no feature has to guess how many bars are above it any more.
 function drawBossBars(g, y) {
   const bosses = monsters.filter(m => !m.dead && m.type !== 'the_fang' && MONSTER_DEFS[m.type] && MONSTER_DEFS[m.type].level >= 25 && MONSTER_DEFS[m.type].hp >= 300 && dist(m.x, m.y, player.x, player.y) <= 12 * TILE).slice(0, 2);
-  bosses.forEach((m, i) => {
-    const def = MONSTER_DEFS[m.type], w = HUD_LAYOUT.short ? 180 : Math.min(236, VW - 28), h = 48, x = 14, by = y + i * (h + 8);
-    roundRect(g, x, by, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = '#ff6b6b'; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(def.name.toUpperCase(), x + 12, by + 19);
-    g.fillStyle = '#ff6b6b'; g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillText(`LV ${def.level}`, x + w - 12, by + 19);
-    g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, by + 27, w - 24, 11, 5); g.fill();
-    g.fillStyle = '#e63946'; roundRect(g, x + 12, by + 27, (w - 24) * clamp(m.hp / m.maxHp, 0, 1), 11, 5); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(m.hp)} / ${m.maxHp}`, x + w / 2, by + 36);
-  });
+  HUD.leftY = Math.max(HUD.leftY, y);
+  for (const m of bosses) {
+    const def = MONSTER_DEFS[m.type], pad = 10;
+    const s = HK.slot(pad * 2 + HK.meterH());
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: HK.C.BAD });
+    HK.meter(g, s.x + pad + 2, s.y + pad, s.w - pad * 2 - 2, {
+      label: `${def.name.toUpperCase()} · lv ${def.level}`, value: `${Math.ceil(m.hp)} / ${m.maxHp}`, template: `${m.maxHp} / ${m.maxHp}`,
+      frac: clamp(m.hp / m.maxHp, 0, 1), tone: HK.C.BAD,
+    });
+  }
 }
 function drawPanels(g, narrow, short, qh, hb) {
   const gridCols = narrow ? 5 : 10;
@@ -242,7 +268,7 @@ function drawPanels(g, narrow, short, qh, hb) {
     });
   }
   if (panel === 'help') {
-    const rows = isTouch
+    const rows = touchMode()
       ? [['Tap the world', 'walk there · tap a tree, rock, water or person to use it · tap a monster to fight'], ['Hold on a thing', 'shows what it is, then acts when you let go'], ['Left side of screen', 'drag to move (or tap to walk)'], ['SWING', 'attack, shoot, stomp, hit a dummy (or double-tap the world)'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['Hotbar', 'tap a slot to eat or use it'], ['Bag › Place', 'put down a plank, door, bed, lodestone or trap'], ['CRAFT / SKILLS / QUESTS', 'panels · QUESTS also shows what was Said'], ['HOME', 'teleport to your lodestone (5 min)'], ['EXIT', 'climb out of a walker or bulldozer'], ['Machines', 'USE a wreck to repair it, USE again to climb in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Minimap', 'tap the minimap for the world map'], ['MENU', 'settings, title screen, new game']]
       : [['WASD / arrows', 'move'], ['Click the world', 'walk there · click a tree, rock, water, person or monster to use / fight it'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Machines', 'E on a wreck repairs it, E again climbs in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Enter', 'next line of talk (or click the box)'], ['Minimap', 'click the minimap (or M) for the world map'], ['Esc', 'menu (settings, title screen, new game)']];
     const rh = Math.min(26, Math.floor((VH - 120) / rows.length));
@@ -293,8 +319,11 @@ function drawPanels(g, narrow, short, qh, hb) {
   if (panel === 'inventory') {
     const cols = gridCols, size = narrow ? 44 : 46, gap = 6;
     const eqw = 70;
-    const { px, py, w, h } = panelBox(g, cols * (size + gap) + 30 + eqw, narrow ? 440 : 300, 'Your pack', `${player.inv.filter(Boolean).length} / ${INV_SLOTS} slots · tap one, then another, to swap`);
-    if (player.home) button(g, px + w - 56 - 84, py + 14, 74, 28, isTouch ? 'HOME' : 'Home (H)', goHome, '#21262d');
+    // rowH: the kit's control height — 44 on touch, so every button in the pack is finger-sized. The panel
+    // grows by the difference rather than letting the action row spill past its own box.
+    const rowH = HK.row(), grow = (rowH - 30) * 2;
+    const { px, py, w, h } = panelBox(g, cols * (size + gap) + 30 + eqw, (narrow ? 440 : 300) + grow, 'Your pack', `${player.inv.filter(Boolean).length} / ${INV_SLOTS} slots · tap one, then another, to swap`);
+    if (player.home) button(g, px + w - HK.row() - 12 - 86, py + 10, 78, rowH, touchMode() ? 'HOME' : 'Home (H)', goHome, '#21262d');
     const gy = drawInvGrid(g, px + 18 + eqw, py + 66, cols, size, gap, i => { selectedSlot = selectedSlot === i ? -1 : i; }, true);
     // equipment column
     g.fillStyle = '#8b949e'; g.font = 'bold 10px sans-serif'; g.textAlign = 'left'; g.fillText('WORN', px + 18, py + 62);
@@ -312,11 +341,11 @@ function drawPanels(g, narrow, short, qh, hb) {
       g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(itemBlurb(def), px + 18 + eqw, gy + 48);
       let bx = px + 18 + eqw; const by = gy + 58;
       const act = def.heal ? 'Eat' : (def.weapon || def.armour) ? 'Equip' : def.place ? 'Place' : def.burn ? 'Light fire' : def.throwable ? 'Throw' : null;
-      if (act) { button(g, bx, by, 90, 30, act, () => { const i = selectedSlot; useItem(i); if (act !== 'Equip') return; selectedSlot = -1; }); bx += 98; }
+      if (act) { button(g, bx, by, 90, rowH, act, () => { const i = selectedSlot; useItem(i); if (act !== 'Equip') return; selectedSlot = -1; }); bx += 98; }
       const doDrop = () => { const q = player.inv[selectedSlot]; if (!q) return; drops.push({ x: player.x + player.facing.x * 30, y: player.y + player.facing.y * 30, id: q.id, qty: q.qty, t: 0 }); player.inv[selectedSlot] = null; selectedSlot = -1; save(); };
       const arm = needsConfirm(def) && confirmActive('drop');
-      button(g, bx, by, arm ? 130 : 80, 30, arm ? 'Tap again to drop' : 'Drop', () => { if (needsConfirm(def)) confirmTap('drop', doDrop); else doDrop(); }, arm ? '#c0392b' : '#8b2e2e');
-    } else { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(isTouch ? 'Tap an item. Tap a worn piece to take it off. The hotbar uses the first five slots.' : 'Tap an item. Tap a worn piece to take it off. Keys 1–5 use the first five slots.', px + 18 + eqw, gy + 30); }
+      button(g, bx, by, arm ? 130 : 80, rowH, arm ? 'Tap again to drop' : 'Drop', () => { if (needsConfirm(def)) confirmTap('drop', doDrop); else doDrop(); }, arm ? '#c0392b' : '#8b2e2e');
+    } else { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(touchMode() ? 'Tap an item. Tap a worn piece to take it off. The hotbar uses the first five slots.' : 'Tap an item. Tap a worn piece to take it off. Keys 1–5 use the first five slots.', px + 18 + eqw, gy + 30); }
   }
   if (panel === 'bank') {
     const cols = gridCols, size = 40, gap = 5, rows = 3, per = cols * rows, pages = Math.max(1, Math.ceil(BANK_SLOTS / per));
@@ -399,6 +428,13 @@ function drawPanels(g, narrow, short, qh, hb) {
     }
   }
 }
+// The three menu buttons the touch layout needs join the control rail under the minimap instead of being
+// three loose buttons stacked in a corner on a phone and a different three at the top of the screen on a
+// tablet. hudControl() is a hoisted declaration from src/59-hudkit.js, so this runs at load time.
+hudControl({ id: 'menu', sort: 10, label: () => 'MENU', show: () => touchMode(), on: () => paused, action: () => { paused = !paused; } });
+hudControl({ id: 'skills', sort: 20, label: () => 'SKILLS', show: () => touchMode(), on: () => panel === 'skills', action: () => panel === 'skills' ? closePanel() : openPanel('skills') });
+hudControl({ id: 'help', sort: 30, label: () => 'HELP', show: () => touchMode(), on: () => panel === 'help', action: () => panel === 'help' ? closePanel() : openPanel('help') });
+
 function wrapText(g, text, x, y, maxW, lh) {
   const words = text.split(' '); let line = '';
   for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { g.fillText(line, x, y); line = w; y += lh; } else line = test; }

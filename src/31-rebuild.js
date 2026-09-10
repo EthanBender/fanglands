@@ -379,13 +379,15 @@
     drawHud = function (g) {
       coreDrawHud(g);
       const title = quest.rebuild && quest.rebuild.title; if (!paused || !title) return;
-      const pw = 300, ph = 250, px = VW / 2 - pw / 2, py = VH / 2 - ph / 2;
-      g.fillStyle = 'rgba(10,14,22,1)'; g.fillRect(px + 2, py + 196, pw - 4, 18);
+      // the stats line used to be the magic number VH/2 + 83 in both this file and 10-hud; both now ask the
+      // HUD kit for the same y, so a finger-sized pause-menu row cannot silently split them (src/59-hudkit.js)
+      const { px, pw, statsY } = HK.pauseBox();
+      g.fillStyle = 'rgba(13,16,24,1)'; g.fillRect(px + 2, statsY - 12, pw - 4, 18);
       g.font = '11px sans-serif'; g.textBaseline = 'alphabetic';
       let stats = `Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`;
       const gap = ' · '; if (g.measureText(title + gap + stats).width > pw - 16) stats = `Kills ${player.kills} · Deaths ${player.deaths}`;
       const tw = g.measureText(title).width, gw = g.measureText(gap).width, sw = g.measureText(stats).width, x0 = VW / 2 - (tw + gw + sw) / 2;
-      g.textAlign = 'left'; g.fillStyle = '#f5c542'; g.fillText(title, x0, py + 208); g.fillStyle = '#6e7681'; g.fillText(gap + stats, x0 + tw, py + 208);
+      g.textAlign = 'left'; g.fillStyle = HK.C.GOLD; g.fillText(title, x0, statsY); g.fillStyle = 'rgba(211,220,232,0.7)'; g.fillText(gap + stats, x0 + tw, statsY);
       g.textAlign = 'center';
     };
   }
