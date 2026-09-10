@@ -215,7 +215,8 @@
     burst(m.x, m.y + 12, '#6a5a3a', 26, 150); burst(m.x, m.y + 12, '#9a9a8a', 14, 110);
     floatText(m.x, m.y - m.r - 24, 'SLAM', '#ff6b6b', 16); sfx('boom');
     if (player.dead || window.__peace) return;
-    if (dist(m.x, m.y, player.x, player.y) > SLAM.hit) return;
+    m.slamDist = Math.round(dist(m.x, m.y, player.x, player.y));
+    if (m.slamDist > SLAM.hit) return;
     const def = MONSTER_DEFS[BRUTE];
     const hp0 = player.hp;
     hurtPlayer(rollHit((def.att + 8) * 64, playerDefRoll(), def.maxHit), m.x, m.y);
@@ -816,7 +817,10 @@
       m.x = player.x + 60; m.y = player.y; m.home = { x: m.x, y: m.y }; m.state = 'chase'; m.slamCd = 0;
       monsters.push(m);
       let wound = false;
-      for (let i = 0; i < 60 * 3 && !(m.slams > 0); i++) { F.step([]); if (m.windT > 0) wound = true; }
+      for (let i = 0; i < 60 * 3 && !(m.slams > 0); i++) {
+        if (!(m.stagT > 0)) { m.x = player.x + 60; m.y = player.y; }   // held at arm's length: the suite runs on a world the bot has stirred up
+        F.step([]); if (m.windT > 0) wound = true;
+      }
       const thrown = Math.round(m.threw || 0);
       const hurtBySlam = m.slamDmg > 0;
       const staggered = m.stagT > 0;
@@ -828,7 +832,7 @@
       h.peace(true); player.hp = hp0; player.dayTime = day0;
       check(P + "the Zombie brute is two tiles across, 320 hp against the grave zombie's 90, hits for at most 5 — and its stone slam throws you, then leaves it stuck long enough that every hit lands twice",
         big && tanky && soft && heavy && wound && m.slams >= 1 && thrown > 30 && hurtBySlam && m.slamDmg <= d.maxHit && staggered && took === 20,
-        { sprite: GRAVES.BRUTE_SPRITE, r: d.r, hp: d.hp, maxHit: d.maxHit, zombieMaxHit: z.maxHit, speed: d.speed, zombieSpeed: z.speed, windUp: SLAM.wind, wound, slams: m.slams, thrownPx: thrown, slamDmg: m.slamDmg, staggered, stuckFor: SLAM.stagger, damageWhileStuck: took, capWeight: GRAVES.weightOf('headstone') });
+        { sprite: GRAVES.BRUTE_SPRITE, r: d.r, hp: d.hp, maxHit: d.maxHit, zombieMaxHit: z.maxHit, speed: d.speed, zombieSpeed: z.speed, windUp: SLAM.wind, wound, slams: m.slams, thrownPx: thrown, slamDmg: m.slamDmg, slamReach: m.slamDist, hitInside: SLAM.hit, staggered, stuckFor: SLAM.stagger, damageWhileStuck: took, capWeight: GRAVES.weightOf('headstone') });
       reset(); }
 
     // ---- 5. bones drop off the risen, build five things, and one of them goes in the ground ----
