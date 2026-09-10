@@ -1,12 +1,13 @@
 // ============================================================================
-// ITEM ART — the 167 icons the framework left undrawn
+// ITEM ART — the 168 icons the framework left undrawn
 // src/81-icons-art.js. Feature file: registers through ICONS.set, edits no core file.
 //
 // src/80-icons.js built the registry, the rarity halo and the audit. It drew 26 icons — the fifteen capes and
 // the eleven items that drew as something they are not — and left 167 items still falling through to the shape
 // switch in src/08-draw.js, where a shrimp and a shark are the same picture and eleven helms are one helm.
+// A storm feather landed on master while this was being drawn, which makes 168.
 //
-// This file draws those 167. The rule it works to is the owner's: the icon has to say what the thing IS at
+// This file draws those 168. The rule it works to is the owner's: the icon has to say what the thing IS at
 // 13 px, not merely differ from the item beside it. So:
 //
 //   * SILHOUETTE FIRST, COLOUR SECOND. Every tier of a thing is a different object, not a recolour. The eleven
@@ -1869,6 +1870,28 @@
     line(g, '#6fc24a', 1.4, 'round'); g.beginPath(); g.moveTo(3.4, -4.4); g.lineTo(4.4, -8); g.stroke();                      // the sprout
     g.fillStyle = '#6fc24a'; g.beginPath(); g.ellipse(5.6, -8.4, 2, 1.2, 0.4, 0, 7); g.fill();
     g.fillStyle = dk(0.24); g.fillRect(-5.8, 3.4, 11.4, 2.2);
+  });
+
+  // --- storm feather: master added it while this branch was drawing. It drew as a spider's web; it is a
+  // feather off the thing that lives in the storm, and it has not finished crackling.
+  set('storm_feather', (g, size, item) => {
+    g.save(); g.rotate(-0.5);
+    g.fillStyle = item.color;                                                                                          // the upper vane
+    g.beginPath(); g.moveTo(-6.4, -0.5); g.quadraticCurveTo(-1.4, -6.6, 8, -1.4); g.lineTo(8, -0.3); g.lineTo(-6.4, -0.3); g.closePath(); g.fill(); line(g, OUT, 1.2); g.stroke();
+    g.fillStyle = '#9dc2e8';                                                                                            // the lower vane, in shadow
+    g.beginPath(); g.moveTo(-6.4, 0.5); g.quadraticCurveTo(-1.4, 5.6, 7.4, 1.2); g.lineTo(7.4, 0.3); g.lineTo(-6.4, 0.3); g.closePath(); g.fill(); g.stroke();
+    line(g, dk(0.22), 1.1);                                                                                             // the barbs
+    for (let k = 0; k < 5; k++) { const x = -4.4 + k * 2.6;
+      g.beginPath(); g.moveTo(x, -0.4); g.lineTo(x + 1.8, -3.4 + k * 0.5); g.moveTo(x, 0.4); g.lineTo(x + 1.6, 2.8 - k * 0.3); g.stroke(); }
+    line(g, dk(0.5), 1.3);                                                                                              // the split, where a barb has come apart
+    g.beginPath(); g.moveTo(3.4, -0.4); g.lineTo(4.6, -3.4); g.stroke();
+    line(g, '#f2f7ff', 1.4, 'round');                                                                                   // the shaft, from quill to tip
+    g.beginPath(); g.moveTo(-8.4, 0.4); g.lineTo(8.4, -1); g.stroke();
+    g.fillStyle = '#e9eef5'; g.beginPath(); g.moveTo(-8.4, -0.6); g.lineTo(-6.4, -1.2); g.lineTo(-6.4, 1.6); g.lineTo(-8.4, 1.4); g.closePath(); g.fill();
+    g.restore();
+    g.fillStyle = '#efe6ff';                                                                                            // the charge still in it
+    g.beginPath(); g.moveTo(2.4, -7.4); g.lineTo(-0.4, -4.4); g.lineTo(1.4, -4.2); g.lineTo(-0.6, -1.4);
+    g.lineTo(3.4, -5); g.lineTo(1.4, -5.2); g.closePath(); g.fill();
   });
 
   // ==========================================================================
