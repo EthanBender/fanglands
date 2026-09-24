@@ -1,2 +1,5 @@
 .DS_Store
 .claude/
+online/public/index.html
+online/node_modules/
+online/.wrangler/

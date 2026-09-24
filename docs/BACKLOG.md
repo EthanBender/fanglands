@@ -52,6 +52,7 @@ something specific (named) · **OPEN** not started.
 | Machine charge feedback | roof beacon sweeps, spins up, flashes when armed, burns out and smokes on cooldown; exhaust flames grow with the hold; touch control is a real hold |
 | **Quest items are reclaimable** | a soft lock: Wren said he was handing the flute back and gave nothing. General register now — a quest item declares its giver, and asking hands it back; a banked one is named, not duplicated |
 | Dozer outruns walking | it drove at 130 against a walk of 175. 205 now, 250 with the boiler |
+| **gorkscape.ca serves Fanglands** | one Cloudflare Worker (`online/`), nothing on our machines; both `gorkscape.ca` and `www` |
 
 ---
 
@@ -70,6 +71,7 @@ something specific (named) · **OPEN** not started.
 | **Sylvaris grown into the jungle** | Bigger, districts with reasons to visit, integrated rather than bolted on, a repeatable reason to return. |
 | **Bulldozer bay as a facility** | Tunnel you drive the dozer into, knight walks out, machine parked inside a real workshop with the upgrade stations around it. |
 | **HUD redesign** | One grid, one container, one colour language, hierarchy, controls that look pressable. |
+| **Online MMORPG at gorkscape.ca** | Owner 2026-09-24: *"make it an online MMORPG so Cohen and his friends can log in and play together."* Contract in `docs/ONLINE.md`. Pieces: world server (accounts, cloud saves, chat log, admin page), login on the title screen + cloud save + bridge from the old address, seeing friends + chat + gifts, shared monsters per map (keeper model). |
 
 ---
 
@@ -96,4 +98,3 @@ something specific (named) · **OPEN** not started.
 | **Defence, Farming and Crafting still 3–5× the other skills' hours** | From the same audit. |
 | **Fast travel / mounts beyond the horse** | Original dad feedback. |
 | **A second hero companion** | Original design chat. |
-| **Cloudflare custom domain** | Needs the hostname; owner adds the CNAME. |

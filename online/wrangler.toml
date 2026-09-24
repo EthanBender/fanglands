@@ -1,0 +1,26 @@
+# Fanglands online — one Cloudflare Worker serves the game and runs the world.
+# Nothing runs on any of our computers. Deploy: ./deploy.sh (from the repo root: build, test, then this).
+name = "fanglands"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/ws", "/admin", "/admin/*"]
+
+[[durable_objects.bindings]]
+name = "WORLD"
+class_name = "World"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["World"]
+
+[[routes]]
+pattern = "gorkscape.ca"
+custom_domain = true
+
+[[routes]]
+pattern = "www.gorkscape.ca"
+custom_domain = true
