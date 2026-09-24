@@ -34,6 +34,9 @@ export const CAPS = {
 for (const c of Object.values(CAPS)) if (!c.burst) c.burst = Math.max(2, Math.round(c.rate * 2));
 
 export const ROSTER_EVERY = 2000;      // a changed roster goes out at most this often (join/leave go at once)
+// A keeper that streams no monsters for this long while others share its map (paused, on the title screen, a
+// sleeping tab) hands the map to the next knight; it is eligible again once that knight leaves.
+export const KEEPER_STALE = 4000;
 export const GIFT_WAIT = 10000;        // no answer to a gift within this: it comes back to the sender
 const STRIKES_FORGIVEN_AFTER = 10000;  // a socket that behaves for this long gets its warning back
 const MAX_FRAME = 64 * 1024;           // bigger than any honest message (a mon list is a few KB)
@@ -203,6 +206,7 @@ export class Room {
     if (!k.hello || !Array.isArray(m.list)) return;
     const g = this.maps.get(k.map);
     if (!g || g.keeper !== k) return;   // only the keeper's monsters are real; a late snapshot after handoff is dropped
+    k.monAt = this.now();
     const out = JSON.stringify({ t: 'mon', n: k.name, list: m.list });
     for (const o of g.members) if (o !== k) this.raw(o.sock, out);
   }
@@ -277,6 +281,7 @@ export class Room {
     g.members.add(k);
     // the newcomer is the youngest on the map so the keeper only changes when the map was empty
     this.elect(map, quiet ? k : null, silent);
+    this.arm();   // with two on a map the keeper's silence is now something to watch for
     if (!quiet) this.send(k.sock, { t: 'keeper', map, n: g.keeper ? g.keeper.name : null });
     // whoever is already here shows up at once, even if they are standing still
     for (const o of g.members) if (o !== k && o.last) this.raw(k.sock, o.last);
@@ -302,11 +307,19 @@ export class Room {
     const g = this.maps.get(map);
     if (!g) return;
     if (g.members.size === 0) { this.maps.delete(map); return; }
-    const before = (a, b) => a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc);
+    const now = this.now();
+    if (g.keeper && g.keeper.keeperAt == null) g.keeper.keeperAt = now;   // a restored keeper starts its grace now
+    // a keeper that has gone quiet while others are here goes to the back of the line (see KEEPER_STALE)
+    const stale = o => o === g.keeper && g.members.size > 1 && now - Math.max(o.monAt || 0, o.keeperAt || 0) > KEEPER_STALE;
+    const before = (a, b) => { const sa = stale(a), sb = stale(b); if (sa !== sb) return !sa; return a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc); };
     let best = null;
     for (const o of g.members) if (!best || before(o, best)) best = o;
     if (g.keeper === best) return;
-    g.keeper = best;
+    // a quiet keeper goes to the back of the line for good, not just this once: otherwise it would win the very
+    // next election (it is still the longest on the map) and the map would thrash between the two
+    const old = g.keeper;
+    if (old && stale(old)) old.mapAt = now;
+    g.keeper = best; best.keeperAt = now;
     if (silent) return;
     const out = JSON.stringify({ t: 'keeper', map, n: best.name });
     for (const o of g.members) if (o !== except) this.raw(o.sock, out);
@@ -357,6 +370,7 @@ export class Room {
   due() {
     let d = this.rosterDirty ? this.rosterAt + ROSTER_EVERY : null;
     for (const g of this.gifts.values()) if (d == null || g.due < d) d = g.due;
+    for (const g of this.maps.values()) if (g.keeper && g.members.size > 1) { const t = Math.max(g.keeper.monAt || 0, g.keeper.keeperAt || 0) + KEEPER_STALE + 50; if (d == null || t < d) d = t; }
     return d;
   }
   arm() {
@@ -371,6 +385,7 @@ export class Room {
     const now = this.now();
     for (const g of Array.from(this.gifts.values())) if (g.due <= now) this.settleGift(g, 'gift_back');
     if (this.rosterDirty && now - this.rosterAt >= ROSTER_EVERY) this.sendRoster(now);
+    for (const map of Array.from(this.maps.keys())) this.elect(map, null);   // a quiet keeper steps down
     this.arm();
   }
 

@@ -1,7 +1,7 @@
 // The Room: joins, relays, keepers, hits, gifts, caps, roster cadence. In-memory sockets, a fake clock.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Room, CAPS, GIFT_WAIT, ROSTER_EVERY } from '../src/room.js';
+import { Room, CAPS, GIFT_WAIT, ROSTER_EVERY, KEEPER_STALE } from '../src/room.js';
 
 // A pretend world with a clock we control and a log we can read.
 function world() {
@@ -174,7 +174,7 @@ test('gift: no answer within 10 s brings it back; gift_no brings it straight bac
   const a = w.knight('Cohen', 'over'), b = w.knight('Jack', 'over');
   w.settle(a, b);
   w.say(a, { t: 'gift', to: 'Jack', id: 'bread', qty: 1 });
-  assert.deepEqual(w.woke, [GIFT_WAIT]);
+  assert.ok(w.room.wakeAt != null && w.room.wakeAt <= w.t + GIFT_WAIT);   // a wake is booked no later than the gift is due (the keeper's silence check may already be earlier)
   w.t += GIFT_WAIT - 1; w.room.tick();
   assert.equal(a.of('gift_back').length, 0);
   w.t += 1; w.room.tick();
@@ -314,4 +314,37 @@ test('the room fills up: error full and a close', () => {
 test('caps match the contract table', () => {
   assert.equal(CAPS.p.rate, 8); assert.equal(CAPS.mon.rate, 8); assert.equal(CAPS.hit.rate, 20); assert.equal(CAPS.gift.rate, 1);
   assert.equal(CAPS.chat.rate, 1 / 1.5); assert.equal(CAPS.hello.burst, 1);
+});
+
+test('a keeper that goes quiet while someone shares its map hands the map on, and is eligible again once that knight leaves', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'), b = w.knight('Sam', 'over');
+  w.settle(a, b);
+  w.say(a, { t: 'mon', list: [] });                       // Cohen is streaming
+  w.t += KEEPER_STALE - 500; w.room.tick();
+  assert.equal(w.room.keeperOf('over').name, 'Cohen');    // not quiet for long enough yet
+  assert.equal(a.of('keeper').length, 0);
+  w.t += 1000; w.room.tick();                             // now it is
+  assert.equal(w.room.keeperOf('over').name, 'Sam');
+  assert.deepEqual(a.last('keeper'), { t: 'keeper', map: 'over', n: 'Sam' });
+  assert.deepEqual(b.last('keeper'), { t: 'keeper', map: 'over', n: 'Sam' });
+  b.clear(); w.say(a, { t: 'mon', list: [] });            // a late snapshot from the old keeper is dropped
+  assert.equal(b.of('mon').length, 0);
+  // Sam keeps streaming, so the map stays his for as long as he likes
+  for (let i = 0; i < 5; i++) { w.t += 2000; w.say(b, { t: 'mon', list: [] }); w.room.tick(); }
+  assert.equal(w.room.keeperOf('over').name, 'Sam');
+  // the timer was booked for the silence check, not left to chance
+  assert.ok(w.woke.length > 0);
+  // Sam leaves: Cohen is longest on the map and no longer the quiet keeper, so it comes back to him
+  a.clear(); w.room.leave(b);
+  assert.equal(w.room.keeperOf('over').name, 'Cohen');
+  assert.deepEqual(a.last('keeper'), { t: 'keeper', map: 'over', n: 'Cohen' });
+});
+
+test('a keeper alone on its map is never stepped down for being quiet', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over');
+  w.t += KEEPER_STALE * 3; w.room.tick();
+  assert.equal(w.room.keeperOf('over').name, 'Cohen');
+  assert.equal(a.of('keeper').length, 0);
 });

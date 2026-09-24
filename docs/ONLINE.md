@@ -25,7 +25,7 @@ The game is a client-side simulation (2 MB of it, 626 tests). It is not being re
 world. Online Fanglands is a **listen server per map**:
 
 1. Everyone on the same map sees each other, chats, and can hand items over.
-2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves. The
+2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves — or when it goes quiet: a keeper that streams no monsters for 4 s while someone shares its map (paused, on the title screen, a sleeping tab) hands the map to the next knight and goes to the back of the line until that knight leaves. The
    keeper's client runs the monsters exactly as it always has and streams their state; everyone else on that
    map stops simulating monsters and shows the keeper's. Hits from the others are routed to the keeper; the
    keeper's monsters target the nearest knight, whoever it is.
@@ -197,6 +197,12 @@ first (`fanglands.slot.1.online` marks slot 1 as the cloud knight's).
 - Rate limits on every message type (table above). A socket over its cap is dropped with `error: bad`.
 - The admin page is a single HTML file behind `ADMIN_KEY`; it never leaves Ethan's hands.
 - Saves are kept in three versions so a broken save can be rolled back from the admin page.
+
+## Where things are
+
+- Play: https://gorkscape.ca (the invite code is with Ethan; nothing on this page is public).
+- Parents: https://gorkscape.ca/admin — accounts, reset a forgotten secret word, ban, the invite code, the chat log, save rollback. Needs the admin key.
+- The old address https://ethanbender.github.io/fanglands/ is the offline copy; its title screen has no login.
 
 ## Testing
 
