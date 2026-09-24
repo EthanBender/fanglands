@@ -17,7 +17,7 @@ export const failFrom = e => (e instanceof HttpError) ? fail(e.status, e.message
 // The body as an object. An empty body is {} so "POST /api/logout" with nothing in it still works.
 export async function readJson(req, maxBytes = 64 * 1024) {
   const text = await req.text();
-  if (text.length > maxBytes) throw oops(413, 'that is too much to send at once', 'big');
+  if (text.length > maxBytes) throw oops(413, 'that is too much to send at once', 'full');
   if (!text.trim()) return {};
   let v;
   try { v = JSON.parse(text); } catch (e) { throw oops(400, 'that was not JSON', 'bad'); }

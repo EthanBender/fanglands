@@ -74,12 +74,12 @@ test('signup needs the invite code, a clean name and a secret word', { skip }, a
 
 test('login: wrong secret word, right secret word, case does not matter', { skip }, async () => {
   let r = await call('POST', '/api/login', { name: NAME_A, pass: 'nope' });
-  assert.equal(r.status, 401); assert.equal(r.data.code, 'login'); assert.equal(r.data.left, 4);
+  assert.equal(r.status, 401); assert.equal(r.data.code, 'pass'); assert.equal(r.data.left, 4);
   r = await call('POST', '/api/login', { name: NAME_A.toLowerCase(), pass: 'sword' });
   assert.equal(r.status, 200); assert.equal(r.data.name, NAME_A);
   tokenA = r.data.token;
   r = await call('POST', '/api/login', { name: 'Nobody Here', pass: 'sword' });
-  assert.equal(r.status, 401);
+  assert.equal(r.status, 404); assert.equal(r.data.code, 'unknown');
 });
 
 test('me and the save: three versions kept, the newest comes back verbatim', { skip }, async () => {
@@ -92,6 +92,8 @@ test('me and the save: three versions kept, the newest comes back verbatim', { s
   assert.equal(r.data.save, JSON.stringify({ v: 4, knight: NAME_A }));
   r = await call('PUT', '/api/save', 'not json at all', tokenA);
   assert.equal(r.status, 400);
+  r = await call('PUT', '/api/save', JSON.stringify({ pad: 'x'.repeat(600 * 1024) }), tokenA);
+  assert.equal(r.status, 413); assert.equal(r.data.code, 'full');
   r = await call('GET', '/api/save', undefined, 'deadbeef');
   assert.equal(r.status, 401); assert.equal(r.data.code, 'auth');
   r = await admin('GET', '/api/admin/saves?name=' + encodeURIComponent(NAME_A));

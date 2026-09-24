@@ -4,6 +4,11 @@
 // code, the sessions and the roster all live in one place with no races. The WebSockets use the
 // Hibernation API: an idle world is put to sleep for free, and its knights are rebuilt from the state
 // each socket carries (serializeAttachment) when a message wakes it. The routing itself is room.js.
+//
+// Error codes the title screen turns into one sentence (HTTP status is its fallback):
+//   login   pass (wrong secret word, 401)  unknown (no such knight, 404)  wait (too many tries, 429)  banned (403)
+//   signup  invite (401/403)  taken (409)  name (the filter refused it, 400)  pass (secret word under 4 chars, 400)
+//   any     auth (dead or missing token, 401)  full (a cap hit: too big, or the world is full)
 // ============================================================================
 
 import { Room } from './room.js';
@@ -150,7 +155,7 @@ export class World {
     const lc = String(b.name || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const pass = typeof b.pass === 'string' ? b.pass : '';
     const a = lc && this.row('SELECT * FROM accounts WHERE name_lc = ?', lc);
-    if (!a) throw oops(401, 'no knight by that name', 'login');
+    if (!a) throw oops(404, 'no knight by that name', 'unknown');
     if (a.banned) throw oops(403, 'this knight is banned', 'banned');
     const now = this.now();
     if (a.locked_until > now) throw oops(429, 'too many tries: wait a minute and try again', 'wait', { wait: Math.ceil((a.locked_until - now) / 1000) });
@@ -162,7 +167,7 @@ export class World {
         throw oops(429, 'too many tries: wait a minute and try again', 'wait', { wait: LOCK_MS / 1000 });
       }
       this.sql.exec('UPDATE accounts SET tries = ?, locked_until = 0 WHERE name_lc = ?', tries, lc);
-      throw oops(401, 'wrong secret word', 'login', { left: WRONG_TRIES - tries });
+      throw oops(401, 'wrong secret word', 'pass', { left: WRONG_TRIES - tries });
     }
     this.sql.exec('UPDATE accounts SET tries = 0, locked_until = 0, last_seen = ? WHERE name_lc = ?', now, lc);
     return json({ token: this.newSession(lc), name: a.name });
@@ -190,7 +195,7 @@ export class World {
   async putSave(req) {
     const s = this.auth(req);
     const text = await req.text();
-    if (new TextEncoder().encode(text).length > SAVE_MAX) throw oops(413, 'that save is too big', 'big');
+    if (new TextEncoder().encode(text).length > SAVE_MAX) throw oops(413, 'that save is too big', 'full');
     let v = null;
     try { v = JSON.parse(text); } catch (e) { }
     if (!v || typeof v !== 'object') throw oops(400, 'that save is not JSON', 'bad');
