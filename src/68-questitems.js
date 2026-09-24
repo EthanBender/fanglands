@@ -40,8 +40,13 @@
   countItem = function (id) { const n = _countItem(id); return (RING.has(id) && KEYS[id]) ? n + 1 : n; };
 
   // Anything given to the knight that belongs on the ring goes there instead of into the pack.
+  // addItem returns how many did NOT fit (04-state), and every caller reads a non-zero answer as "the pack is
+  // full": the shops refund and say so, giveOrDrop drops the rest on the ground, a pickup keeps the pile, the
+  // bank and guild chest keep the stack. A keyring item always fits, so the answer is 0 -- all of it placed.
+  // It used to return qty, which made a shop take 300 coins for a flute, hand them back and tell a knight with
+  // an empty pack that his pack was full.
   const _addItem = addItem;
-  addItem = function (id, qty) { if (KEYS[id]) { if (add(id)) announce(id); return qty === undefined ? 1 : qty; } return _addItem(id, qty); };
+  addItem = function (id, qty) { if (KEYS[id]) { if (add(id)) announce(id); return 0; } return _addItem(id, qty); };
   const _giveOrDrop = giveOrDrop;
   giveOrDrop = function (id, qty, x, y) { if (KEYS[id]) { if (add(id)) announce(id); return; } return _giveOrDrop(id, qty, x, y); };
   // A full pack can never stop one arriving.
@@ -146,6 +151,23 @@
     const migrated = KEYRING.held('wind_flute') && !player.inv.some(s => s && s.id === 'wind_flute');
     check(P + 'a save that still has the flute loose in the pack moves it onto the keyring on load', migrated, { migrated, ring: ring().slice() });
 
-    player.inv = bag; player.keyring = r0;
+    // given through addItem -- the path every shop, pickup, bank and chest takes -- it reports all of it placed,
+    // so nothing says the pack is full and nothing is dropped on the ground
+    { player.keyring = []; syncRing(); player.inv = player.inv.map(() => null);
+      const n0 = drops.length; notice = null;
+      const left = addItem('wind_flute', 1);
+      const placed = left === 0 && KEYRING.held('wind_flute') && countItem('wind_flute') === 1;
+      const noDrop = drops.length === n0 && !drops.some(d => d.id === 'wind_flute');
+      // and through a real shop button: the coins are spent, not refunded, and no "pack is full"
+      player.keyring = []; syncRing(); notice = null;
+      const SID = '__keyring_check'; SHOPS[SID] = { name: 'Keyring check', rate: 1, stock: [['wind_flute', 7]] };
+      player.inv[0] = { id: 'coins', qty: 10 };
+      closePanel(); openPanel('shop', SID); render(); const clicked = F.clickButton('Buy 7'); closePanel(); delete SHOPS[SID];
+      const full = !!notice && /pack is full/i.test(notice.text);
+      const bought = clicked && KEYRING.held('wind_flute') && coins() === 3 && !full && !drops.slice(n0).some(d => d.id === 'wind_flute');
+      check(P + 'giving a keyring item reports it as placed, so no shop or reward says the pack is full',
+        placed && noDrop && bought, { left, placed, noDrop, clicked, coinsLeft: coins(), full, notice: notice && notice.text }); }
+
+    player.inv = bag; player.keyring = r0; syncRing();
   });
 }
