@@ -31239,7 +31239,8 @@ HOOKS.selfTest.push((check, F, h) => {
 //   2. What lives here is well above the goblin fields: rimhawks are level 34, dustjaws level 42.
 //   3. THE DEEP CACHE, at the bottom of the box head, is behind a crack in the rock: AGILITY 30 to squeeze
 //      through, the same kind of gate as the pond stones (10) and the goblin palisade (25). Behind it is the
-//      one thing you can only get here — Hux's pick, tier 3, the best pickaxe in the Fanglands.
+//      one thing you can only get here — Hux's pick: tier 3, the same as a Mithril pickaxe, and the one pick
+//      that cuts 2 redsalt out of a seam where every other pick cuts 1.
 //   4. Redsalt is mined nowhere else on the map: MINING 22, and only from the seams in the canyon walls.
 //
 // No new key. Every tile worth pressing USE on is in INTERESTING_TILES, so a tap on the iPad walks to it and
@@ -31286,9 +31287,32 @@ HOOKS.selfTest.push((check, F, h) => {
     ITEMS[k].stack = (k === 'redsalt' || k === 'salt_beef') ? 50 : 1;
   }
   // Salt beef is cured, not cooked: it cannot burn, and it heals more than a meat pie. Made at any workbench.
-  RECIPES.push({ out: 'salt_beef', qty: 3, needs: [['raw_beef', 3], ['redsalt', 2]], station: 'workbench',
-    skill: 'cooking', lv: 15, xp: 90, label: '3 Raw beef + 2 Redsalt → 3 Salt beef' });
+  const SALT_BEEF = { out: 'salt_beef', qty: 3, needs: [['raw_beef', 3], ['redsalt', 2]], station: 'workbench',
+    skill: 'cooking', lv: 15, xp: 90, label: '3 Raw beef + 2 Redsalt → 3 Salt beef' };
+  RECIPES.push(SALT_BEEF);
+  // how many of an item the salt beef recipe takes, read off the recipe so the book and the audit cannot drift
+  const beefNeeds = id => { const n = SALT_BEEF.needs.find(([k]) => k === id); return n ? n[1] : 0; };
   GATHER[RC_SALT] = { skill: 'mining', tool: 'pickaxe', lv: SALT_LV, xp: 82, item: 'redsalt', fall: 1, leaves: RC_SPENT, regrow: 70, label: 'redsalt seam' };
+
+  // ---------- Hux's pick ----------
+  // Tier 3 swings like a Mithril pickaxe. What no other pick does: Hux cut his seams with it for forty years,
+  // and it takes the whole vein out, so a redsalt seam cut with it gives 2 redsalt instead of 1. A seam gives
+  // one cut and then goes spent (fall 1), so this is exactly one extra redsalt a seam.
+  const HUX_SALT_EXTRA = 1;
+  // carried in the pack or worn: the core swings the best pick you have, and nothing out-tiers this one
+  const huxPickInHand = () => countItem('hux_pick') > 0 || EQUIP_SLOTS.some(k => player.equip[k] === 'hux_pick');
+  // The core pays the xp only when a swing lands, so a rise in Mining xp on a seam is the proof it was cut.
+  // Wrapped by reassignment, with no .apply: this runs on every swing.
+  const _finishGatherRC = finishGather;
+  finishGather = function () {
+    const a = player.action, onSeam = !!a && tileAt(a.tx, a.ty) === RC_SALT;
+    const xp0 = player.skills.mining.xp;
+    _finishGatherRC();
+    if (!onSeam || player.skills.mining.xp === xp0 || !huxPickInHand()) return;
+    giveOrDrop('redsalt', HUX_SALT_EXTRA, player.x, player.y, true);
+    floatText(player.x, player.y - 44, `+${HUX_SALT_EXTRA} redsalt (Hux's pick)`, ITEMS.redsalt.color, 12);
+  };
+  { const coreBlurb = itemBlurb; itemBlurb = def => def && def.id === 'hux_pick' ? `Mines rocks (${keyName('E')}). Cuts ${1 + HUX_SALT_EXTRA} redsalt from a seam, not 1.` : coreBlurb(def); }
 
   // ---------- item art ----------
   // src/80-icons.js keeps a per-item drawing registry and an audit that fails when two items paint the same
@@ -31439,8 +31463,13 @@ HOOKS.selfTest.push((check, F, h) => {
   const polyD = (pl, x, y) => { let d = 99; for (let i = 0; i < pl.length - 1; i++) d = Math.min(d, segD(x, y, pl[i][0], pl[i][1], pl[i + 1][0], pl[i + 1][1])); return d; };
   const canD = (x, y) => Math.min(polyD(ARC, x, y), polyD(SPUR, x, y) + 0.6);
   // 0 floor · 1 ledge · 2 cliff · 3 table top · 4 scrub outside the table
+  // the two ends of the ring, where the canyon floor is meant to meet the scrub: within 2 tiles of either
+  const nearOpening = (x, y) => [MOUTH, SLOT].some(p => Math.max(Math.abs(p.x - x), Math.abs(p.y - y)) <= 2);
   function classOf(x, y) {
-    if (!inPl(x, y)) return canD(x, y) <= 3 ? 0 : 4;
+    // Outside the table the ring's two arms run on out to the mouth and the slot. They get a cliff wall of
+    // their own two tiles thick (3 < d <= 5), so the arm floor is a canyon cut down into the scrub and not a
+    // strip of floor lying open along its whole outer side. Only the mouth and the slot are left open.
+    if (!inPl(x, y)) { const d = canD(x, y); return d <= 3 ? 0 : d <= 5 && !nearOpening(x, y) ? 2 : 4; }
     const d = canD(x, y);
     if (d <= 3) return 0;
     if (d <= 4.2) return 1;
@@ -31631,7 +31660,7 @@ HOOKS.selfTest.push((check, F, h) => {
   //   face onto whatever ground stands below it. Ground in the canyon is darkened by how deep it sits.
   // window.REDCUT.paint counts what was actually painted, so a self-test can prove the height is being drawn
   // rather than take the drawing code's word for it.
-  const paint = { grounds: 0, faces: 0, rims: 0, shadows: 0, props: 0 };
+  const paint = { grounds: 0, faces: 0, rims: 0, shadows: 0, props: 0, lamps: 0, lampLit: 0 };
   const TONE = {
     [RC_FLOOR]: ['#4e2a20', '#573026', '#48261d'],
     [RC_SPENT]: ['#3f221a', '#472720', '#3a1f18'],
@@ -31780,10 +31809,14 @@ HOOKS.selfTest.push((check, F, h) => {
     if (!taken) { g.fillStyle = '#f5c542'; for (const [ox, oy] of [[-4, 1], [2, 3], [5, -1]]) { g.beginPath(); g.arc(cx + ox, cy + oy, 2.4, 0, 7); g.fill(); } }
   }
   function drawLamp(g, tx, ty) {
-    const cx = tc(tx), cy = tc(ty), lit = !(quest.redcut && quest.redcut.stage >= 2);
+    paint.lamps++;
+    // lit while the lamp is still on its spike: it goes dark the moment the knight takes it, whatever stage
+    const q = quest.redcut, lit = !(q && (q.lamp || q.stage >= 2));
+    const cx = tc(tx), cy = tc(ty);
     g.fillStyle = 'rgba(0,0,0,0.24)'; g.beginPath(); g.ellipse(cx, cy + 12, 9, 4, 0, 0, 7); g.fill();
     g.fillStyle = '#6a5a4a'; g.fillRect(cx - 6, cy - 4, 12, 14); g.fillRect(cx - 2, cy - 12, 4, 8);
     if (lit) {
+      paint.lampLit++;
       const a = 0.5 + Math.sin(time * 6) * 0.2;
       g.fillStyle = `rgba(255,200,110,${a})`; g.fillRect(cx - 4, cy - 2, 8, 10);
       const gr = g.createRadialGradient(cx, cy + 2, 3, cx, cy + 2, 52); gr.addColorStop(0, `rgba(255,190,90,${0.3 * a})`); gr.addColorStop(1, 'rgba(255,190,90,0)');
@@ -31860,10 +31893,14 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.talk.redcut_rim = n => {
     const q = Q();
     if (q.stage === 0) {
-      q.stage = 1;
+      // The lamp hangs on the switchback, and a knight can reach it before he ever meets Marlow. If he already
+      // has it, the story is already past the lamp: go straight to stage 2, or the lamp (taken once) could never
+      // move it on and the quest would stick at stage 1 for good.
+      q.stage = q.lamp ? 2 : 1;
       say('Eight days. Eight days I have sat here with a cut rope in my hand.', n.name);
       say('Hux went down on that rope to work the seam. Somebody cut it. Look at the end — clean as a butcher. Somebody stood where you are standing and cut my partner loose.', n.name);
-      say('My knee will not take the switchback, and I will not leave the winch. You take the ledges — three of them, just north of here — and you go down and you find him. Take the end with you. He knows his own knot.', n.name);
+      if (q.lamp) say('You have been down the ledges already? And his lamp was still burning on the middle one, eight days on? Then somebody has been filling it, and that somebody is Hux. Go on down to the bottom and find him. Take the end with you. He knows his own knot.', n.name);
+      else say('My knee will not take the switchback, and I will not leave the winch. You take the ledges — three of them, just north of here — and you go down and you find him. Take the end with you. He knows his own knot.', n.name);
       if (!countItem('cut_rope')) giveOrDrop('cut_rope', 1, player.x, player.y);
       quest.tracked = 'redcut'; save(); return;
     }
@@ -31928,10 +31965,17 @@ HOOKS.selfTest.push((check, F, h) => {
       ride(tx, ty, WINCH_T.x - 1, WINCH_T.y, false); return true;
     }
     if (t === RC_LAMP) {
+      // taking the lamp and moving the story on are two separate things: the lamp can be taken before Marlow
+      // has told you anything, and a save from before this fix can hold { stage: 1, lamp: true }
       if (!q.lamp) {
         q.lamp = true; if (q.stage === 1) q.stage = 2;
         giveOrDrop('hux_lamp', 1, player.x, player.y);
         say("A lamp, hooked over a spike in the rock on the middle ledge. It is still burning. Eight days, and the oil has not run out — because somebody has been climbing up here to fill it.", 'The Voice');
+        save();
+      } else if (q.stage === 1) {
+        q.stage = 2;
+        if (!countItem('hux_lamp')) giveOrDrop('hux_lamp', 1, player.x, player.y);
+        say("The spike in the rock where Hux's lamp hung. It was still burning when you took it. Eight days, and the oil had not run out — because somebody has been climbing up here to fill it.", 'The Voice');
         save();
       } else notify('The spike in the rock where the lamp hung.');
       return true;
@@ -31986,7 +32030,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // ---------- what the audit should know about ----------
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => {
     add('mining', 'redsalt seam (the Redcut)', SALT_LV, 82, 4.0, 'bronze pickaxe, at the level it opens');
-    add('cooking', 'salt beef at a workbench (3 beef + 2 redsalt → 3)', 15, 90, 12, 'the redsalt is mined in the Redcut');
+    add('cooking', `salt beef at a workbench (${beefNeeds('raw_beef')} beef + ${beefNeeds('redsalt')} redsalt → ${SALT_BEEF.qty})`, SALT_BEEF.lv, SALT_BEEF.xp, 12, 'the redsalt is mined in the Redcut');
   });
 
   // ---------- the book ----------
@@ -32001,8 +32045,8 @@ HOOKS.selfTest.push((check, F, h) => {
     'THE FALL, y 143–144, is a slab of cliff that came down and filled the spur. Walk over it from the table, or up and over it from the floor.',
     '',
     'WHAT LIVES THERE. Rimhawks (level 34) nest on the mesa and dive at anything that walks it. Dustjaws (level 42) chew the salt out of the canyon walls; they are slow and short-sighted and you can walk round one if you keep your distance.',
-    'WHAT IS IN IT. Redsalt, Mining 22, from the seams in the canyon walls — it is mined nowhere else. Three redsalt and three raw beef at any workbench make three salt beef, which heals 13 and cannot burn.',
-    'THE DEEP CACHE, behind the crack at the foot of the box head. Agility 30 to squeeze through. Hux\'s pick is in it: the best pickaxe in the Fanglands.',
+    `WHAT IS IN IT. Redsalt, Mining ${SALT_LV}, from the seams in the canyon walls — it is mined nowhere else. ${beefNeeds('redsalt')} redsalt and ${beefNeeds('raw_beef')} raw beef at any workbench (Cooking ${SALT_BEEF.lv}) make ${SALT_BEEF.qty} salt beef, which heals ${ITEMS.salt_beef.heal} and cannot burn.`,
+    `THE DEEP CACHE, behind the crack at the foot of the box head. Agility ${CRACK_LV} to squeeze through. Hux's pick is in it: tier ${ITEMS.hux_pick.tier}, the same as a Mithril pickaxe, and the only pick that cuts ${1 + HUX_SALT_EXTRA} redsalt out of a seam where any other pick cuts 1.`,
     'THE CUT ROPE. Marlow the prospector sits at his winch on the rim. His partner Hux went down eight days ago and the rope was cut. Marlow is wrong about who cut it, and the rope itself is what proves it.',
   ] });
   if (window.WIKI) WIKI.add('quests', { id: 'redcut', name: 'The Cut Rope', lines: [
@@ -32098,8 +32142,9 @@ HOOKS.selfTest.push((check, F, h) => {
     { const p0 = { ...paint }; const px = player.x, py = player.y;
       F.tp(230, 141); render();
       const faces = paint.faces - p0.faces, rims = paint.rims - p0.rims, shad = paint.shadows - p0.shadows, ground = paint.grounds - p0.grounds;
-      // and out on the open scrub there is no cliff to draw
-      const p1 = { ...paint }; F.tp(210, 101); render();
+      // and out on the open scrub there is little cliff to draw. Measured from the north-west corner of the
+      // Redcut: the old spot, 210,101 just above the mouth, now looks straight at the wall of the west arm.
+      const p1 = { ...paint }; F.tp(RC.x0, RC.y0); render();
       const scrubFaces = paint.faces - p1.faces;
       player.x = px; player.y = py;
       check(P + 'the height reads: standing in the canyon draws cliff faces, a lit rim along the top of each one, and a cast shadow on the ground under them', faces > 40 && rims > 10 && shad > 20 && ground > 300 && scrubFaces < faces / 3,
@@ -32132,18 +32177,42 @@ HOOKS.selfTest.push((check, F, h) => {
         refused = !player.action && !!notice && /Mining level 22/.test(notice.text);
       }
       player.skills.mining.xp = lv0; player.inv = bag0; player.action = null;
+      const needs = rec ? Object.fromEntries(rec.needs) : {};
+      // and the book says what the recipe says (it once said three redsalt when the recipe takes two)
+      const book = window.WIKI ? WIKI.lines('places', 'redcut').map(l => l.t).join(' | ') : '';
+      const bookRight = !window.WIKI || (book.includes(`${needs.redsalt} redsalt and ${needs.raw_beef} raw beef`) && book.includes(`make ${rec.qty} salt beef`));
       check(P + 'redsalt is cut from seams in the Redcut and nowhere else on the map: Mining 22, 82 xp, and 3 beef + 2 redsalt make 3 salt beef that cannot burn',
-        inside >= 8 && outside === 0 && !!g && g.lv === SALT_LV && g.xp === 82 && g.item === 'redsalt' && !!rec && rec.qty === 3 && rec.skill === 'cooking' && ITEMS.salt_beef.heal === 13 && !ITEMS.salt_beef.cook && refused,
-        { seamsInside: inside, seamsElsewhere: outside, mineLv: g && g.lv, refusedBelowLevel: refused, seam, side, notice: notice && notice.text, heal: ITEMS.salt_beef.heal }); }
+        inside >= 8 && outside === 0 && !!g && g.lv === SALT_LV && g.xp === 82 && g.item === 'redsalt' && !!rec && rec.qty === 3 && needs.raw_beef === 3 && needs.redsalt === 2 && rec.skill === 'cooking' && ITEMS.salt_beef.heal === 13 && !ITEMS.salt_beef.cook && refused && bookRight,
+        { seamsInside: inside, seamsElsewhere: outside, mineLv: g && g.lv, refusedBelowLevel: refused, seam, side, notice: notice && notice.text, heal: ITEMS.salt_beef.heal, needs, bookRight }); }
 
-    // 8. Hux's pick: tier 3, the best pickaxe there is, and it is in the cache and nowhere else
-    { const picks = Object.keys(ITEMS).filter(k => ITEMS[k].tool === 'pickaxe');
-      const best = Math.max(...picks.map(k => ITEMS[k].tier || 0));
-      const inShops = Object.keys(SHOPS).some(s => SHOPS[s].stock.some(([id]) => id === 'hux_pick'));
+    // 8. Hux's pick: tier 3 like a Mithril pickaxe, and the one pick that cuts 2 redsalt out of a seam. Proved by
+    //    cutting the same seam twice, once with each pick, and counting what lands in an empty pack.
+    { const inShops = Object.keys(SHOPS).some(s => SHOPS[s].stock.some(([id]) => id === 'hux_pick'));
       const inDrops = Object.keys(MONSTER_DEFS).some(t => JSON.stringify(MONSTER_DEFS[t].drops || {}).includes('hux_pick'));
       const inRecipes = RECIPES.some(r => r.out === 'hux_pick');
-      check(P + "Hux's pick is tier 3, the best pickaxe in the game, and the Deep Cache is the only place it comes from", ITEMS.hux_pick.tier === 3 && best === 3 && !inShops && !inDrops && !inRecipes && tileAt(CACHE_T.x, CACHE_T.y) === RC_CACHE,
-        { tier: ITEMS.hux_pick.tier, bestPickaxeTier: best, inShops, inDrops, inRecipes }); }
+      const rival = ITEMS.mithril_pickaxe ? 'mithril_pickaxe' : 'steel_pickaxe';
+      const open4 = (x, y) => [[0, 1], [0, -1], [1, 0], [-1, 0]].map(([dx, dy]) => [x + dx, y + dy]).find(([nx, ny]) => !SOLID.has(tileAt(nx, ny)));
+      const seam = REDCUT_SEAMS.find(([sx, sy]) => tileAt(sx, sy) === RC_SALT && open4(sx, sy));
+      const bag0 = player.inv.slice(), eq0 = { ...player.equip }, xp0 = player.skills.mining.xp;
+      const cut = pick => {
+        if (!seam) return -1;
+        const [sx, sy] = seam, side = open4(sx, sy);
+        player.inv = player.inv.map(() => null); for (const k of EQUIP_SLOTS) player.equip[k] = null;
+        h.give(pick, 1); player.skills.mining.xp = XP_TABLE[60];
+        F.tp(side[0], side[1]); F.face(sx, sy);
+        player.action = { type: 'mine', tx: sx, ty: sy, t: 0, need: 1, tier: hasTool('pickaxe') };
+        for (let i = 0; i < 80 && player.action && tileAt(sx, sy) === RC_SALT; i++) finishGather();
+        const got = tileAt(sx, sy) === RC_SALT ? -1 : countItem('redsalt');
+        player.action = null; regrow = regrow.filter(r => r.i !== idx(sx, sy)); changeTile(sx, sy, RC_SALT); mapDiffs.delete(idx(sx, sy));
+        return got;
+      };
+      const withRival = cut(rival), withHux = cut('hux_pick');
+      player.inv = bag0; Object.assign(player.equip, eq0); player.skills.mining.xp = xp0;
+      const blurb = itemBlurb(ITEMS.hux_pick);
+      check(P + "Hux's pick swings at tier 3 like a Mithril pickaxe but cuts 2 redsalt from a seam where the Mithril pickaxe cuts 1, and the Deep Cache is the only place it comes from",
+        ITEMS.hux_pick.tier === 3 && ITEMS[rival].tier === ITEMS.hux_pick.tier && withRival === 1 && withHux === 2 && /2 redsalt/.test(blurb)
+        && !inShops && !inDrops && !inRecipes && tileAt(CACHE_T.x, CACHE_T.y) === RC_CACHE,
+        { tier: ITEMS.hux_pick.tier, rival, rivalTier: ITEMS[rival].tier, seam, redsaltWithRival: withRival, redsaltWithHuxPick: withHux, blurb, inShops, inDrops, inRecipes }); }
 
     // 9. what lives here, and how far above the fields it is
     { const hawks = MONSTER_SPAWNS.filter(s => s.type === 'rimhawk'), jaws = MONSTER_SPAWNS.filter(s => s.type === 'dustjaw');
@@ -32153,7 +32222,7 @@ HOOKS.selfTest.push((check, F, h) => {
         { hawks: hawks.length, jaws: jaws.length, placed, onMesa, inCanyon }); }
 
     // 10. the story, start to finish, and the turn in the middle of it
-    { const q0 = JSON.parse(JSON.stringify(Q())), bag = player.inv.slice();
+    { const q0 = JSON.parse(JSON.stringify(Q())), bag = player.inv.slice(), mxp0 = player.skills.mining.xp;
       quest.redcut = { stage: 0, winch: false, lamp: false, coil: false, salt: false, rode: 0 };
       const marlow = NPCS.find(n => n.id === 'marlow'), hux = NPCS.find(n => n.id === 'hux');
       const clearSay = () => { dialog.queue.length = 0; dialog.cur = null; notice = null; };
@@ -32183,10 +32252,55 @@ HOOKS.selfTest.push((check, F, h) => {
       const wentDown = Math.abs(player.y - tc(BASKET_T.y)) < 2 * TILE && Math.abs(player.x - tc(BASKET_T.x)) < 3 * TILE;
       F.tp(BASKET_T.x + 1, BASKET_T.y); clearSay(); HOOKS.use.some(fn => fn(RC_BASKET, BASKET_T.x, BASKET_T.y));
       const cameUp = Math.abs(player.y - tc(WINCH_T.y)) < 2 * TILE && Math.abs(player.x - tc(WINCH_T.x)) < 3 * TILE;
-      clearSay(); player.inv = bag; quest.redcut = q0;
+      // Out of order: the lamp hangs on the switchback beside Marlow's camp, so a knight can take it (and look at
+      // the coil) before Marlow has said a word. The story must still run to the end and pay out.
+      quest.redcut = { stage: 0, winch: false, lamp: false, coil: false, salt: false, rode: 0 };
+      player.inv = player.inv.map(() => null);
+      const c1 = coins(), xp1 = player.skills.mining.xp;
+      clearSay(); F.tp(LAMP_T.x, LAMP_T.y - 1); HOOKS.use.some(fn => fn(RC_LAMP, LAMP_T.x, LAMP_T.y));
+      const earlyLamp = Q().stage === 0 && Q().lamp === true && countItem('hux_lamp') === 1;
+      clearSay(); F.tp(COIL_T.x, COIL_T.y - 1); HOOKS.use.some(fn => fn(RC_COIL, COIL_T.x, COIL_T.y));
+      clearSay(); HOOKS.talk.redcut_rim(marlow);
+      const pastLamp = Q().stage === 2 && countItem('cut_rope') === 1 && said(/filling it/i);
+      clearSay(); HOOKS.talk.redcut_deep(hux);
+      const turn2 = Q().stage === 3 && countItem('hux_tally') === 1;
+      clearSay(); HOOKS.talk.redcut_rim(marlow);
+      const done2 = Q().stage === 4 && Q().winch === true && coins() === c1 + 350 && player.skills.mining.xp > xp1;
+      // a save from before the fix, already stuck at { stage: 1, lamp: true }: the empty spike moves it on
+      quest.redcut = { stage: 1, winch: false, lamp: true, coil: false, salt: false, rode: 0 };
+      clearSay(); F.tp(LAMP_T.x, LAMP_T.y - 1); HOOKS.use.some(fn => fn(RC_LAMP, LAMP_T.x, LAMP_T.y));
+      const rescued = Q().stage === 2 && said(/fill it/i);
+      // and the lamp on its spike is drawn lit until it is taken, dark after, whatever stage the story is at
+      quest.redcut = { stage: 0, winch: false, lamp: false, coil: false, salt: false, rode: 0 };
+      F.tp(LAMP_T.x, LAMP_T.y + 1);
+      let n0 = paint.lamps, l0 = paint.lampLit; render();
+      const litOnSpike = paint.lamps > n0 && paint.lampLit > l0;
+      Q().lamp = true; n0 = paint.lamps; l0 = paint.lampLit; render();
+      const darkOnceTaken = paint.lamps > n0 && paint.lampLit === l0;
+      clearSay(); player.inv = bag; quest.redcut = q0; player.skills.mining.xp = mxp0;
       check(P + 'The Cut Rope runs start to finish: Marlow accuses the rim, the lamp is still lit, Hux says nothing until you have looked at the coiled rope, and then he says he cut it himself',
-        started && winchDead && lamp && heldBack && clue && turn && done && wentDown && cameUp,
-        { started, winchDeadBeforeTheStory: winchDead, lamp, huxHeldBack: heldBack, ropeClue: clue, theTurn: turn, finished: done, rodeDown: wentDown, rodeUp: cameUp }); }
+        started && winchDead && lamp && heldBack && clue && turn && done && wentDown && cameUp && earlyLamp && pastLamp && turn2 && done2 && rescued && litOnSpike && darkOnceTaken,
+        { started, winchDeadBeforeTheStory: winchDead, lamp, huxHeldBack: heldBack, ropeClue: clue, theTurn: turn, finished: done, rodeDown: wentDown, rodeUp: cameUp,
+          lampBeforeMarlow: earlyLamp, marlowSkipsPastTheLamp: pastLamp, outOfOrderTurn: turn2, outOfOrderFinished: done2, stuckSaveRescued: rescued, litOnSpike, darkOnceTaken }); }
+
+    // 12. the ring's two arms run out past the table to the mouth and the slot. They are walled along their
+    //     outer side, so the canyon floor touches the scrub at those two openings and nowhere else. A thorn bush
+    //     counts as scrub only where it grows on scrub ground; bushes grow on the canyon floor as well.
+    { const scrubAt = (x, y) => { const t = tileAt(x, y); return t === RC_SCRUB || (t === RC_BUSH && classOf(x, y) === 4); };
+      const atOpening = (x, y) => [MOUTH, SLOT].some(p => Math.max(Math.abs(p.x - x), Math.abs(p.y - y)) <= 2);
+      let contacts = 0, mouth = 0, slot = 0; const stray = [];
+      for (let y = RC.y0; y <= RC.y1; y++) for (let x = RC.x0; x <= RC.x1; x++) {
+        if (tileAt(x, y) !== RC_FLOOR) continue;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy; if (!scrubAt(nx, ny)) continue;
+          contacts++;
+          if (!atOpening(nx, ny)) { if (stray.length < 12) stray.push(`${x},${y}>${nx},${ny}`); continue; }
+          if (Math.max(Math.abs(MOUTH.x - nx), Math.abs(MOUTH.y - ny)) <= 2) mouth++; else slot++;
+        }
+      }
+      const strayCount = contacts - mouth - slot;
+      check(P + 'the canyon floor meets the scrub only at the mouth and the slot', strayCount === 0 && mouth > 0,
+        { contacts, atTheMouth: mouth, atTheSlot: slot, elsewhere: strayCount, firstStray: stray }); }
 
     // 11. nothing else on the map lost its way
     if (window.PLAYTHROUGH) { const c = PLAYTHROUGH.connectivity();
