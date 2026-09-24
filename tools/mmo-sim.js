@@ -198,11 +198,14 @@ async function main() {
   const gx = Math.floor(g1.home.x / T), gy = Math.floor(g1.home.y / T);
   g1.x = g1.home.x; g1.y = g1.home.y; g1.state = 'idle'; g1.hp = g1.maxHp; g1.dead = false; g1.lastHitBy = null;
   g1.wanderT = 99; g1.wander = { x: 0, y: 0 };   // stand still: the position check below compares the puppet with the keeper's monster
-  A.__peace = true; B.__peace = true;   // monsters ignore knights while the hit path is proved; the chase is proved on its own below
-  A.FANGLANDS.tp(gx + 1, gy); B.FANGLANDS.tp(gx - 1, gy); A.FANGLANDS.face(gx, gy); B.FANGLANDS.face(gx, gy);
+  A.__peace = true; B.__peace = true;   // held still for the position check
+  A.FANGLANDS.tp(gx + 3, gy); B.FANGLANDS.tp(gx - 1, gy); A.FANGLANDS.face(gx, gy); B.FANGLANDS.face(gx, gy);
   tick(12);
   const pb = B.COOP.find(g1.nid);
   line('B has a puppet for A\'s goblin after the first snapshot, at the keeper\'s position', !!pb && pb.remote && pb.type === 'goblin' && Math.abs(pb.x - g1.x) <= 2 && Math.abs(pb.y - g1.y) <= 2, { nid: g1.nid, puppet: pb && [Math.round(pb.x), Math.round(pb.y)], keeper: [Math.round(g1.x), Math.round(g1.y)] });
+  // peace off for the fight: a goblin left alone walks home and heals a point on arrival (07-update), so a fists-only
+  // knight could lose the race; chasing B it never goes home. A stands three tiles east so B is its nearest knight.
+  A.__peace = false; B.__peace = false;
 
   // B swings until a hit lands on A's goblin (a swing can miss; fists reach one tile)
   const standByPuppet = () => { const p = B.COOP.find(g1.nid); if (!p) return; const bp = B.FANGLANDS.player; bp.x = p.x - 40; bp.y = p.y; bp.facing = { x: 1, y: 0 }; };   // one fist-reach west of wherever the puppet stands
@@ -210,7 +213,7 @@ async function main() {
   const kA0 = A.FANGLANDS.player.kills, kB0 = B.FANGLANDS.player.kills;
   let hitsSeen = 0; const hitNids = {}; A.NET.on('hit', m => { hitsSeen++; hitNids[m.nid] = (hitNids[m.nid] || 0) + 1; });
   let landed = null, swings = 0;
-  while (!landed && swings < 60) { standByPuppet(); B.FANGLANDS.press('Space'); swings++; wire.flush(); if (g1.hp < 5) landed = { swings, hp: g1.hp, hitMessages: hitsSeen }; tick(40); }
+  while (!landed && swings < 60) { standByPuppet(); B.FANGLANDS.press('Space'); swings++; wire.flush(); if (g1.hp < 5) landed = { swings, hp: g1.hp, hitMessages: hitsSeen }; tick(40, heal); }
   const pbNow = B.COOP.find(g1.nid);
   line('B\'s hit reaches A\'s monster (the hit is routed to the keeper)', !!landed && hitsSeen >= 1 && g1.lastHitBy === 'Ben', landed || { swings, hitMessages: hitsSeen, hitNids, g1: [g1.nid, g1.dead, g1.hp, g1.state], puppet: pbNow && [pbNow.dead, pbNow.gone, Math.round(pbNow.x), Math.round(pbNow.y)], aOnline: A.NET.online(), aKeeper: A.COOP.isKeeper(), bKeeper: B.COOP.keeper(), bHere: A.COOP.knightsHere().length });
   tick(10);
@@ -220,7 +223,7 @@ async function main() {
   // B lands the last hit
   let killMsgs = 0; B.NET.on('kill', () => killMsgs++);
   swings = 0;
-  while (!g1.dead && swings < 80) { standByPuppet(); B.FANGLANDS.press('Space'); swings++; wire.flush(); tick(40); }
+  while (!g1.dead && swings < 80) { standByPuppet(); B.FANGLANDS.press('Space'); swings++; wire.flush(); tick(40, heal); }
   line('B lands the last hit: B\'s kills go up by exactly one and A\'s do not', g1.dead && killMsgs === 1 && B.FANGLANDS.player.kills === kB0 + 1 && A.FANGLANDS.player.kills === kA0, { dead: g1.dead, killMessages: killMsgs, bKills: B.FANGLANDS.player.kills - kB0, aKills: A.FANGLANDS.player.kills - kA0, swings });
   const pb3 = B.COOP.find(g1.nid);
   line('the puppet lies down on B\'s side too', !pb3 || pb3.dead, { puppetDead: pb3 ? pb3.dead : 'gone' });
