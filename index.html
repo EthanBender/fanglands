@@ -23588,14 +23588,14 @@ window.SETTINGS = SETTINGS;
 // CLOUD SAVE — the knight's save goes to the world at gorkscape.ca
 // Online there are no slots: the account is the knight (docs/ONLINE.md). Every save() still writes slot 1 in
 // this browser exactly as before (14-title); this file wraps save() after that and, while a knight is playing
-// online (LOGIN.playing), sends the very slot string 14-title wrote with PUT /api/save. Pushes are held for 4 s
+// online (LOGIN.playing), sends the very slot string 14-title wrote with PUT /api/save. Pushes are held for 12 s
 // so a burst of saves is one call, and flushed at once when the page hides or goes away (NET.call sets keepalive
 // on PUT). A failed push is kept for the next save; three failures in a row say so once, then stay quiet.
 // Coming back online (the world's welcome) pushes once if the cloud may be behind.
 // Feature file: registers through HOOKS and wraps save by reassignment. window.CLOUD is the register.
 // ============================================================================
 {
-  const DEBOUNCE = 4000, TICK = 1.5;
+  const DEBOUNCE = 12000, TICK = 1.5;   // a 12 s hold: the free plan counts every call, and the page-hide flush covers leaving
   const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const lsDel = k => { try { localStorage.removeItem(k); } catch (e) { } };
   const canListen = typeof document !== 'undefined' && typeof document.addEventListener === 'function' && typeof window.addEventListener === 'function';
