@@ -52,7 +52,8 @@
   const wsUrl = () => {
     if (NET.base) return NET.base.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(NET.token);
     const proto = (typeof location !== 'undefined' && location.protocol === 'http:') ? 'ws://' : 'wss://';
-    return proto + host + '/ws?token=' + encodeURIComponent(NET.token);
+    // location.host keeps the port (localhost:8790 in a local run); hostname would drop it and the socket would never open
+    return proto + location.host + '/ws?token=' + encodeURIComponent(NET.token);
   };
   function wire(sock) {
     sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send({ t: 'hello', v: 1 }, true); };
