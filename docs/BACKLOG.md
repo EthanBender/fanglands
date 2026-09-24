@@ -54,6 +54,7 @@ something specific (named) · **OPEN** not started.
 | Dozer outruns walking | it drove at 130 against a walk of 175. 205 now, 250 with the boiler |
 | **gorkscape.ca serves Fanglands** | one Cloudflare Worker (`online/`), nothing on our machines; both `gorkscape.ca` and `www` |
 | **Item art** | MERGED into integ/wave14, awaiting deploy — 194 of 194 items draw their own icon (`ICONS.audit()`: 0 shared, 0 missing), coloured halo on rares and uniques; the gate in `80-icons.js` is a flat zero again. `81-icons-art.js` |
+| **Tiered undead** | MERGED into integ/wave14, awaiting deploy — wood cross → skeleton, grave → risen zombie, headstone → 2×2 zombie brute (320 hp, stone slam); every grave gets its own minute between midnight and dawn and none stand at dawn; bones drop and build the torch, fence, skull pile, arch and throne; brute drops the necromancer's kit at 1 in 20. `54-graves.js` |
 
 ---
 
@@ -61,7 +62,6 @@ something specific (named) · **OPEN** not started.
 
 | What | Detail |
 |---|---|
-| **Tiered undead** | Wood cross → skeleton, grave → zombie, headstone → 2×2 zombie brute. All graves raise between midnight and dawn so none stand at dawn. Bones as a building and crafting resource. |
 | **Necromancy skill** | The magic skill, its supplies, its equipment, its quest line. |
 | **World reshape** | Organic region outlines; gated flow (no walking from spawn to the Ashfields); roads joining everything with 3–6 points of interest each; 12+ outposts with unique activities; a real height layer so you walk under and over the rope bridges. |
 | **Seven systems** | RuneScape bank (1/10/100/All, deposit bag, deposit worn, character panel you equip from); map markers; ore tiers between steel and mithril; house-portal private island; Paper Mario tile flutter on heavy hits; goblin spiked palisade; sky storm boss + Tinkerton met at the city gate. |
