@@ -62,9 +62,11 @@
       NET.stats.got++;
       if (msg.t === 'welcome') { NET.status = 'on'; NET.me = msg.me; }
       if (msg.t === 'error' && msg.code === 'auth') { NET.setToken(null); NET.closedByUs = true; }
+      // the same knight opened somewhere else: that socket wins, this one must not fight it by reconnecting
+      if (msg.t === 'error' && msg.code === 'elsewhere') NET.closedByUs = true;
       NET.emit(msg.t, msg);
     };
-    sock.onclose = () => { if (NET.sock !== sock) return; NET.sock = null; const was = NET.status; NET.status = 'off'; if (was === 'on') NET.emit('offline', { t: 'offline' }); if (!NET.closedByUs) scheduleReconnect(); };
+    sock.onclose = ev => { if (NET.sock !== sock) return; if (ev && ev.code === 4000) NET.closedByUs = true; NET.sock = null; const was = NET.status; NET.status = 'off'; if (was === 'on') NET.emit('offline', { t: 'offline' }); if (!NET.closedByUs) scheduleReconnect(); };
     sock.onerror = e => { NET.lastError = e; };
   }
   function scheduleReconnect() {

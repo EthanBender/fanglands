@@ -25,7 +25,7 @@ The game is a client-side simulation (2 MB of it, 626 tests). It is not being re
 world. Online Fanglands is a **listen server per map**:
 
 1. Everyone on the same map sees each other, chats, and can hand items over.
-2. On each map (the overworld, or one instance), the server names one connected knight the **keeper**. The
+2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves. The
    keeper's client runs the monsters exactly as it always has and streams their state; everyone else on that
    map stops simulating monsters and shows the keeper's. Hits from the others are routed to the keeper; the
    keeper's monsters target the nearest knight, whoever it is.
@@ -75,6 +75,9 @@ online/
 | `POST /api/admin/ban` | `{name, banned}` | `{ok}` | banned knights cannot log in; their save stays |
 | `POST /api/admin/invite` | `{invite}` | `{ok}` | change the invite code |
 | `GET /api/admin/chat?limit=500` | — | `[{at, n, text}]` | the whole log, newest last |
+| `GET /api/admin/invite` | — | `{invite}` | the current code |
+| `GET /api/admin/saves?name=` | — | `[{ver, at, bytes}]` | the kept versions |
+| `POST /api/admin/rollback` | `{name, ver}` | `{ok}` | make that version the current save |
 | `GET /api/admin/online` | — | `[{n, map, region, lv, since}]` | |
 
 Auth is `Authorization: Bearer <token>`. A token is 32 random bytes as hex, good for 90 days, stored in
@@ -92,8 +95,8 @@ between knights on the same map; chat and the roster go to everyone.
 
 | `t` | Fields | Cap | Meaning |
 |---|---|---|---|
-| `hello` | `v: 1` | once | first frame after open; the server answers `welcome` |
-| `p` | `map, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act` | 8/s | presence. `look` is the serialisable part of `playerLook()` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null |
+| `hello` | `v: 1, map?` | once | first frame after open; the server answers `welcome`. Without `map` the knight is on `over` until its first `p` |
+| `p` | `map, region, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act` | 8/s | presence. `region` is the region or instance name the roster shows; `look` is the serialisable part of `playerLook()` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null |
 | `chat` | `text` | 1 per 1.5 s, ≤ 120 chars | filtered and logged server-side, then sent to everyone |
 | `mon` | `list` | 8/s, keeper only | monster snapshot for the map (format below) |
 | `hit` | `nid, dmg, knock, bomb` | 20/s | a non-keeper hit a monster; routed to the keeper |
@@ -119,7 +122,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `hurt` | `dmg, x, y` | a monster hit you: `hurtPlayer(dmg, x, y)` |
 | `gift` | `gid, from, id, qty` | take it if it fits, answer `gift_ok`/`gift_no` |
 | `gift_ok` / `gift_back` | `gid, id, qty` | the receiver took it / it comes back to you |
-| `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `wait`, `full`, `banned`, `bad` |
+| `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `elsewhere` (the same knight opened on another device: this socket is closed with code 4000 and must not reconnect), `wait`, `full`, `banned`, `bad` |
 | `pong` | — | |
 
 ### The monster snapshot (`mon.list`)
