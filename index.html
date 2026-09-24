@@ -20966,6 +20966,15 @@ HOOKS.selfTest.push((check, F, h) => {
     return out;
   }
   const tabNow = () => { const av = tabsNow(); return av.indexOf(player.bankTab) >= 0 ? player.bankTab : 'all'; };
+  // The fall-back to All is real, not just drawn: when the tab you were on has emptied (the last sword taken
+  // out, the last armour put on, a save whose tab is empty now), the player really is on All again, page one.
+  // Without this, banking a sword later would snap the vault back to Gear by itself and hide everything else.
+  function settleTab() {
+    if (!sortOn() || tabsNow().indexOf(player.bankTab) >= 0) return false;
+    player.bankTab = 'all'; bankPage = 0;
+    return true;
+  }
+  { const _load = load; load = () => { const ok = _load(); if (ok) settleTab(); return ok; }; }
   // The vault as this tab shows it: the real slot index kept on every entry, so nothing else has to change.
   // Money first, then tab order, then dearest first, then by name — so the same bank always looks the same.
   function viewFor(t) {
@@ -21190,6 +21199,7 @@ HOOKS.selfTest.push((check, F, h) => {
   function caption(g, x, y, text) { g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(text, x, y); }
 
   HOOKS.panel.bank = g => {
+    settleTab();
     const L = layout();
     const amount = qty() === 'All' ? 'the whole stack' : String(qty());
     const sub = player.bank.length + ' / ' + BANK_SLOTS + ' vault slots · ' + (mode() === 'wear' ? 'WEAR: a tap puts it on' : 'a tap moves ' + amount);
@@ -21271,7 +21281,7 @@ HOOKS.selfTest.push((check, F, h) => {
     button(g, gx + bw + 10, y + 6, bw, 30, 'Deposit worn', depositWorn, '#1f6feb');
   };
 
-  window.BANK = { QTIES, KIND_ORDER, TAB_LABEL, resetState, qty, setQty, mode, setMode, sortOn, setSort, setTab, tabNow, tabsNow, kindOf, viewFor, wantOf, layout, depositItem, depositFromPack, withdraw, wearFromVault, bankWorn, depositBag, depositWorn, inVault, eqSlotFor };
+  window.BANK = { QTIES, KIND_ORDER, TAB_LABEL, resetState, qty, setQty, mode, setMode, sortOn, setSort, setTab, tabNow, tabsNow, settleTab, kindOf, viewFor, wantOf, layout, depositItem, depositFromPack, withdraw, wearFromVault, bankWorn, depositBag, depositWorn, inVault, eqSlotFor };
 
   // ---------- self-test ----------
   const P = 'bank: ';
@@ -21377,7 +21387,7 @@ HOOKS.selfTest.push((check, F, h) => {
         const all = BANK.viewFor('all');
         const counts = {}; for (const id in where) counts[where[id]] = (counts[where[id]] || 0) + 1;
         const named = BANK.KIND_ORDER.every(k => typeof BANK.TAB_LABEL[k] === 'string' && BANK.TAB_LABEL[k].length > 0);
-        check(P + 'all ' + ids.length + ' items in the game file themselves into exactly one tab, and the All tab holds every one',
+        check(P + 'every item in the game files itself into exactly one tab, and the All tab holds every one',
           fellThrough.length === 0 && inTwo.length === 0 && all.length === ids.length && named,
           { items: ids.length, counts, fellThrough: fellThrough.slice(0, 10), inTwo: inTwo.slice(0, 6), allTab: all.length }); }
       // the classification reads the item, not a list of ids: one worked example per tab
@@ -21401,17 +21411,29 @@ HOOKS.selfTest.push((check, F, h) => {
           offered === 'all,quest,gear,tools,food,craft,loot' && allIds === 'coins,iron_bar,shark,steel_pickaxe,steel_sword,wind_flute'
           && gear === 'steel_sword' && food === 'shark' && quest === 'wind_flute' && craft === 'iron_bar' && tools === 'steel_pickaxe' && loot === 'coins',
           { offered, allIds, gear, food, quest, craft, tools, loot }); }
-      // an empty tab is never offered, and the tab you were on falls back to All when it empties
-      { clear(); player.bank = [{ id: 'steel_sword', qty: 1 }, { id: 'shark', qty: 5 }]; open();
-        const two = BANK.tabsNow().join(',') === 'all,gear,food' && !buttons.some(b => b.label === 'tab:quest') && !buttons.some(b => b.label === 'tab:craft');
+      // an empty tab is never offered, and the tab you were on falls back to All when it empties -- for real:
+      // player.bankTab goes back to 'all', so banking a new sword later does not snap the vault back to Gear
+      { clear(); player.bank = [{ id: 'shark', qty: 5 }, { id: 'steel_sword', qty: 1 }, { id: 'iron_bar', qty: 20 }]; open();
+        const two = BANK.tabsNow().join(',') === 'all,gear,food,craft' && !buttons.some(b => b.label === 'tab:quest') && !buttons.some(b => b.label === 'tab:loot');
         F.clickButton('tab:gear');
-        const onGear = BANK.tabNow() === 'gear';
+        const onGear = BANK.tabNow() === 'gear' && player.bankTab === 'gear';
         F.clickButton('bank' + vaultIndexOf('steel_sword'));       // the last piece of gear leaves the vault
-        const gone = BANK.tabsNow().join(',') === 'all,food' && !buttons.some(b => b.label === 'tab:gear');
-        const fellBack = BANK.tabNow() === 'all' && shown().join(',') === 'shark';
+        const gone = BANK.tabsNow().join(',') === 'all,food,craft' && !buttons.some(b => b.label === 'tab:gear');
+        const fellBack = BANK.tabNow() === 'all' && shown().join(',') === 'iron_bar,shark';
+        const stuck = player.bankTab === 'all';
+        // a new sword goes in: the vault stays on All and the shark and the iron bars are still there
+        F.clickButton('slot' + slotOf('steel_sword'));
+        const stays = BANK.inVault('steel_sword') === 1 && BANK.tabNow() === 'all' && player.bankTab === 'all' && shown().join(',') === 'iron_bar,shark,steel_sword';
+        // a save whose open tab is empty now loads on All
+        let raw0 = null; try { raw0 = localStorage.getItem(SAVE_KEY); } catch (e) { }
+        closePanel(); player.bank = [{ id: 'shark', qty: 5 }]; player.bankTab = 'gear'; save();
+        const keep = player, ok = load();
+        const loaded = ok && player !== keep && player.bankTab === 'all' && BANK.tabNow() === 'all';
+        player = keep;
+        try { if (raw0 === null) localStorage.removeItem(SAVE_KEY); else localStorage.setItem(SAVE_KEY, raw0); } catch (e) { }
         clear(); open();
         const empty = BANK.tabsNow().join(',') === 'all' && buttons.some(b => b.label === 'tab:all');
-        check(P + 'a tab with nothing in it is never shown, and emptying the tab you are on drops you back to All', two && onGear && gone && fellBack && empty, { two, onGear, gone, fellBack, empty, tabs: BANK.tabsNow() }); }
+        check(P + 'a tab with nothing in it is never shown, and emptying the tab you are on drops you back to All', two && onGear && gone && fellBack && stuck && stays && loaded && empty, { two, onGear, gone, fellBack, stuck, stays, loaded, empty, tab: player.bankTab, tabs: BANK.tabsNow() }); }
       // the toggle: off is the plain grid in the order things went in, on is tabs again
       { clear(); player.bank = [{ id: 'shark', qty: 5 }, { id: 'steel_sword', qty: 1 }]; open();
         const onTabs = buttons.some(b => b.label === 'tab:all') && buttons.some(b => b.label === 'tab:gear');
