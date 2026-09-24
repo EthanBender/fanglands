@@ -32696,6 +32696,64 @@ HOOKS.selfTest.push((check, F, h) => {
       S.stranded = stranded.length; }
     S.leaks = leaking(north());
 
+    // ---- 7b. and no ground is walled off ----
+    // Step 7 frees a rock that lost its last side; this frees open GROUND that lost its last way in, and any
+    // iron, rock or berry bush whose last reachable side a face or a dressed tree took (step 7 will not dig
+    // across the Wolfwood line, and a bush can sit right on it). Every tile a knight could walk to before this
+    // pass (bridges open, gates as they stand) must still be one he can walk to, and everything he could stand
+    // beside he still can. Where this file's rock closed a pocket (the seal's faces at both ends of the Goblin
+    // Fields strip between Thistledown's wall and the river, a ring of dressed trees or jungle giants round a
+    // clearing), the rock gives way along the shortest dig to reached ground, unless that opens a way through
+    // the step.
+    { const passT = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === WARDEN_GATE;
+      const flood = get => { const seen = new Uint8Array(MAP_W * MAP_H), q = [];
+        const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !passT(get(i))) return; seen[i] = 1; q.push(i); };
+        push(CAVE_EXIT_X + 1, 7);
+        for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
+        return seen; };
+      const was = flood(i => before[i]); let seen = flood(i => map[i]);
+      // kept (out of sight of anything that prints the stats) for the self-test, which walks the finished map against it
+      Object.defineProperty(S, 'wasReach', { value: was, enumerable: false });
+      S.pockets = 0; S.pocketTiles = 0; S.pocketsKept = 0; S.pocketTrees = 0;
+      const done = new Uint8Array(MAP_W * MAP_H);
+      const KINDS = new Set([T.IRON, T.ROCK, T.BERRY_BUSH].filter(v => v >= 0));
+      const side = (i, set) => { const x = i % MAP_W, y = (i / MAP_W) | 0; return N4.some(([dx, dy]) => inMap(x + dx, y + dy) && set[(y + dy) * MAP_W + x + dx]); };
+      // a pocket of ground he walked before, or a resource he stood beside before and cannot reach a side of now
+      const lost = i => !done[i] && ((was[i] && !seen[i] && passT(map[i])) || (KINDS.has(map[i]) && before[i] === map[i] && side(i, was) && !side(i, seen)));
+      // a pocket the dig could not free is marked done whole, so it is counted once and not dug for again
+      const markPocket = i0 => { const q = [i0]; done[i0] = 1; if (!passT(map[i0])) return;
+        for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0;
+          for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (done[n] || !passT(map[n])) continue; done[n] = 1; q.push(n); } } };
+      // the shortest way out of a pocket to reached ground, through open ground and tiles `canDig` allows
+      const route = (i0, canDig) => {
+        const prev = new Int32Array(MAP_W * MAP_H).fill(-2), q = [i0]; prev[i0] = -1;
+        for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0;
+          for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (prev[n] !== -2) continue;
+            if (seen[n]) { const dug = []; for (let k = c; k >= 0; k = prev[k]) if (k !== i0 && !passT(map[k])) dug.push(k); return dug; }
+            if (!passT(map[n]) && !canDig(n, nx, ny)) continue;
+            prev[n] = c; q.push(n); } }
+        return null; };
+      // open the dug tiles; if that opened a way through the step, close them again
+      const open = dug => { const undo = dug.map(c => [c % MAP_W, (c / MAP_W) | 0, map[c]]);
+        for (const [x, y] of undo) { const c = y * MAP_W + x; set(x, y, SOLID.has(before[c]) ? T.GRASS : before[c]); }
+        if (!leaking(north()).length) return true;
+        for (const [x, y, t] of undo) set(x, y, t);
+        return false; };
+      for (let i0 = 0; i0 < MAP_W * MAP_H; i0++) {
+        if (!lost(i0)) continue;
+        S.pockets++;
+        // first through this file's own rock only
+        let dug = route(i0, n => placed[n]);
+        if (dug && open(dug)) { S.pocketTiles += dug.length; seen = flood(i => map[i]); continue; }
+        // where that is not enough (a bush on the line itself, whose one open side became the face), fell a tree
+        // of the wood beside it instead, never the face that failed nor a tile no pass may touch
+        const banned = new Set(dug || []);
+        dug = route(i0, (n, x, y) => !banned.has(n) && (placed[n] || (TREES.has(map[n]) && free(x, y))));
+        if (dug && open(dug)) { S.pocketTiles += dug.length; S.pocketTrees += dug.filter(c => !placed[c]).length; seen = flood(i => map[i]); continue; }
+        markPocket(i0); S.pocketsKept++;
+      }
+      S.leaks = leaking(north()); }
+
     // ---- 8. one climb cut in the rock, so the scarp is a road for a knight who has trained ----
     // A climb is only a climb if it joins the road country to the wood, so the candidates are measured, not
     // guessed: the tile above it must be ground the knight can walk to with the bridges shut, and the tile
@@ -32988,6 +33046,25 @@ HOOKS.selfTest.push((check, F, h) => {
       }
       check(P + "every gate on the way south opens: Warden Brann's at stage 11, and the burnt country is walkable the moment it does",
         !!dk && opened && ashReached > 1200, { gateOpensAtStage: 11, ashfieldTilesReachedAfter: ashReached, climb: (S.stairs || []).map(t => `${t.tile} Agility ${t.lv}`) }); }
+    // ---- 10. no ground is walled off ----
+    { const was = S.wasReach, pass = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === WARDEN_GATE || t === STEPS;
+      const now = new Uint8Array(MAP_W * MAP_H), q = [];
+      const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); if (now[i] || !pass(tiles[i])) return; now[i] = 1; q.push(i); };
+      push(CAVE_EXIT_X + 1, 7);
+      for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
+      const near = (seen, x, y) => !!seen && (!!(inMap(x, y) && seen[idx(x, y)]) || N4.some(([dx, dy]) => inMap(x + dx, y + dy) && seen[idx(x + dx, y + dy)]));
+      let lost = 0, before = 0; const lostAt = [];
+      if (was) for (let i = 0; i < MAP_W * MAP_H; i++) { if (!was[i]) continue; before++; if (!pass(tiles[i]) || now[i]) continue; lost++; if (lostAt.length < 12) lostAt.push(`${i % MAP_W},${(i / MAP_W) | 0}`); }
+      const spawns = MONSTER_SPAWNS.filter(s => inMap(s.tx, s.ty) && near(was, s.tx, s.ty) && !near(now, s.tx, s.ty)).map(s => `${s.type}@${s.tx},${s.ty}`);
+      const KINDS = new Set([T.IRON, T.ROCK, T.BERRY_BUSH].filter(v => v >= 0)), res = [];
+      let resources = 0;
+      if (was) for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const t = tiles[idx(x, y)];
+        if (!KINDS.has(t) || !N4.some(([dx, dy]) => inMap(x + dx, y + dy) && was[idx(x + dx, y + dy)])) continue;
+        resources++; if (!N4.some(([dx, dy]) => inMap(x + dx, y + dy) && now[idx(x + dx, y + dy)])) res.push(`${tileName(t)}@${x},${y}`); }
+      check(P + 'no ground the knight could walk to before the reshaping is walled off after it — every overworld monster spawn and every iron, rock and berry bush he could stand beside is still reachable (bridges and steps open)',
+        !!was && before > 15000 && lost === 0 && spawns.length === 0 && res.length === 0,
+        { tilesReachableBefore: before, tilesReachableAfter: q.length, walledOff: lost, walledOffAt: lostAt, spawnsLost: spawns, resourcesChecked: resources, resourcesLost: res.slice(0, 12), resourcesLostCount: res.length,
+          pockets: S.pockets, tilesDugToFreeThem: S.pocketTiles, treesFelled: S.pocketTrees, pocketsKept: S.pocketsKept }); }
   });
 }
 
