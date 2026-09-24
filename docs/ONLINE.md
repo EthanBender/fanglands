@@ -83,6 +83,14 @@ online/
 Auth is `Authorization: Bearer <token>`. A token is 32 random bytes as hex, good for 90 days, stored in
 `localStorage` under `fanglands.session`. `NET.call` adds the header; nobody else touches it.
 
+### Error codes the title screen reads (`src/71-login.js`)
+
+The login card turns a 4xx `{error, code}` into one plain sentence. Use these codes (the HTTP status is the
+fallback when a code is missing): `pass` (wrong secret word; also 401 on login), `unknown` (no such knight; also
+404 on login), `wait` (too many tries; also 429), `banned` (also 403 on login), `invite` (bad invite code; also
+401/403 on signup), `taken` (name already used; also 409 on signup), `name` (a name the filter refused), `full`,
+`auth` (token dead). Anything else, or no answer at all, reads "The world is asleep right now."
+
 ## The socket
 
 `wss://gorkscape.ca/ws?token=<session>`. JSON text frames, one message each, always with a string `t`.
@@ -175,8 +183,12 @@ adds `mech: {kind, hp, maxHp}` and is drawn with `drawMech`. Mounts add `mount: 
 
 `bridge.html` at the repo root is served by GitHub Pages. gorkscape.ca loads it in a hidden iframe and posts
 `{fanglands: 'give-save'}`; the bridge answers, only to `https://gorkscape.ca` and `https://www.gorkscape.ca`,
-with `{fanglands: 'save', slots: {...}}` holding the three slot strings and their `.at` stamps. The login
-flow offers the most recent one when the account has no cloud save yet. Nothing is deleted on the old side.
+with `{fanglands: 'save', slots: {1: {save, at} | null, 2: ..., 3: ...}}` holding the three slot strings and
+their `.at` stamps (a browser from before the slots existed hands its legacy `fanglands.save.v2` over as slot 1
+with `at: 0`). The login flow waits up to 3 s, believes answers only from `https://ethanbender.github.io`, and
+offers the most recent slot when the account has no cloud save yet. Nothing is deleted on the old side. On
+gorkscape.ca the online knight lives in slot 1; a save that *Play alone* left there is moved to an empty slot
+first (`fanglands.slot.1.online` marks slot 1 as the cloud knight's).
 
 ## Safety rules (binding)
 
