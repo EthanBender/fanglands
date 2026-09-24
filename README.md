@@ -3,6 +3,8 @@
 A 2D top-down knight adventure. Textured shapes, not pixels. Goblins with machines.
 A dragon only legends have heard about.
 
+- **Play online:** https://gorkscape.ca — the same game, served from a Cloudflare Worker, with accounts, cloud
+  saves and friends on the same map (see `docs/ONLINE.md`). The GitHub Pages address stays the offline, single-player copy.
 - **Play:** open `index.html` in any browser. No install.
 - **Edit:** the source lives in `src/*.js` (one module per system). Run `./build.sh` to
   rebuild `index.html` (it just concatenates the modules and syntax-checks them).
