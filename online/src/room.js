@@ -82,7 +82,7 @@ export class Room {
     const old = this.byName.get(lc);
     if (old) { if (old.since <= state.since) { try { sock.close(4000, 'logged in elsewhere'); } catch (e) { } return; } this.drop(old, 4000, 'logged in elsewhere'); }
     const k = this.makeKnight(sock, state);
-    if (k.hello && k.map) this.enterMap(k, k.map, { quiet: true, silent: true });
+    if (k.hello && k.map) this.enterMap(k, k.map, { quiet: true, silent: true, at: k.mapAt });
     for (const g of state.gifts || []) {
       if (!g || g.gid == null) continue;
       this.gifts.set(g.gid, { gid: g.gid, from: lc, to: low(g.to), id: g.id, qty: g.qty, due: g.due });
@@ -95,7 +95,7 @@ export class Room {
   makeKnight(sock, s) {
     const k = {
       sock, name: s.name, lc: low(s.name), since: s.since || this.now(),
-      hello: !!s.hello, map: s.map || null, region: s.region || '', lv: s.lv || 0,
+      hello: !!s.hello, map: s.map || null, mapAt: s.mapAt || s.since || this.now(), region: s.region || '', lv: s.lv || 0,
       last: null, buckets: {}, strikes: 0, strikeAt: 0, gifts: new Set(),
     };
     this.knights.set(sock, k);
@@ -268,8 +268,9 @@ export class Room {
     this.enterMap(k, map, { quiet: false });
   }
 
-  enterMap(k, map, { quiet, silent }) {
+  enterMap(k, map, { quiet, silent, at }) {
     k.map = map;
+    k.mapAt = at != null ? at : this.now();
     let g = this.maps.get(map);
     if (!g) { g = { members: new Set(), keeper: null }; this.maps.set(map, g); }
     g.members.add(k);
@@ -291,15 +292,18 @@ export class Room {
     this.elect(map, null);
   }
 
-  // The keeper of a map is the knight who has been on line longest (ties by name so it is the same answer
-  // after a restore). Everyone on the map hears when it changes, except `except` (welcome carries it).
+  // The keeper of a map is the knight who has been on that map longest (then on line longest, then by
+  // name, so it is the same answer after a restore). Counting time on the map rather than time in the game
+  // means the keeper only ever changes when it leaves: a handoff is the costly part, so there are as few as
+  // possible. Everyone on the map hears when it changes, except `except` (welcome carries it).
   // silent is for restore: the knights come back in any order and were all told before the nap.
   elect(map, except, silent) {
     const g = this.maps.get(map);
     if (!g) return;
     if (g.members.size === 0) { this.maps.delete(map); return; }
+    const before = (a, b) => a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc);
     let best = null;
-    for (const o of g.members) if (!best || o.since < best.since || (o.since === best.since && o.lc < best.lc)) best = o;
+    for (const o of g.members) if (!best || before(o, best)) best = o;
     if (g.keeper === best) return;
     g.keeper = best;
     if (silent) return;
@@ -376,6 +380,6 @@ export class Room {
     if (!k.sock.attach) return;
     const gifts = [];
     for (const gid of k.gifts) { const g = this.gifts.get(gid); if (g) gifts.push({ gid: g.gid, to: g.to, id: g.id, qty: g.qty, due: g.due }); }
-    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, region: k.region, lv: k.lv, gifts }); } catch (e) { }
+    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts }); } catch (e) { }
   }
 }
