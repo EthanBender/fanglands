@@ -2508,7 +2508,10 @@ function drawPanels(g, narrow, short, qh, hb) {
     // equipment column
     g.fillStyle = '#8b949e'; g.font = 'bold 10px sans-serif'; g.textAlign = 'left'; g.fillText('WORN', px + 18, py + 62);
     EQUIP_SLOTS.forEach((k, i) => {
-      const ey = py + 66 + i * (size + gap) * (narrow ? 0.8 : 1); const id = player.equip[k];
+      // one full pitch on every screen: a narrow phone used to pack the worn slots at 0.8 of it, which put 44 px
+      // tap targets on a 40 px pitch — every two neighbours a knight wears overlapped by 4 px (the kit's layout
+      // audit catches it the moment he wears a helm and a body). Six slots at full pitch are 300 px; the panel is 440
+      const ey = py + 66 + i * (size + gap); const id = player.equip[k];
       drawSlot(g, px + 18, ey, size, id ? { id, qty: 1 } : null, false);
       if (!id) { g.fillStyle = '#4b535d'; g.font = '9px sans-serif'; g.textAlign = 'center'; g.fillText(k, px + 18 + size / 2, ey + size / 2 + 3); }
       else buttons.push({ x: px + 18, y: ey, w: size, h: size, label: 'eq' + k, action: () => unequip(k) });
