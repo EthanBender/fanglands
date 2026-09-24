@@ -283,27 +283,19 @@
   HOOKS.newGame.push(() => { rideWas = false; handled = false; refuseT = -1e9; });
 
   // ---------- HUD: her name over the core's "Walker" line, and a RIDE / GET DOWN button ----------
+  // MIGRATED to the HUD kit: the mare's hp is the second meter in the status plate (hudMechName), not a
+  // brown-outlined pill at a hardcoded x, and RIDE / GET DOWN is a control on the left column's grid.
+  hudMechName(() => riding() ? NAME : null);
   HOOKS.hud.push((g, narrow) => {
-    if (riding()) {
-      const label = `${NAME} ${player.mech.hp}/${player.mech.maxHp}`;
-      g.font = '13px sans-serif'; g.textAlign = 'left';
-      const w = Math.max(g.measureText(`Walker ${player.mech.hp}/${player.mech.maxHp}`).width, g.measureText(label).width);
-      g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186, 47, w + 10, 19, 5); g.fill();
-      g.strokeStyle = 'rgba(201,163,106,0.35)'; g.lineWidth = 1; g.stroke();
-      g.fillStyle = '#c9a36a'; g.fillText(label, 190, 60);
-    }
     const near = !player.dead && !riding() && H().owned && !player.mech && !!horseNear();
     if (!riding() && !near) return;
     // HOOKS.hud runs before the panels are drawn, and a click is matched against the button list before it is
     // matched against the open panel — so a button drawn under a panel would still eat the click. Draw nothing
     // while anything is over the world: the panel sits right on top of this rect (Skills starts at x 14, y 90).
     if (panel || paused) return;
-    const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null;
-    const touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
-    const h = isTouch ? 44 : 34, w = 132, x = 14, y = Math.max(HUD.leftY, touchFloor, 84);
-    button(g, x, y, w, h, riding() ? 'GET DOWN' : 'RIDE', tryRide, riding() ? '#6b4f2a' : '#238636');
-    if (!isTouch) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(riding() ? 'R or X' : 'R', x + w + 8, y + h / 2 + 4); }
-    HUD.leftY = y + h + 6;
+    const s = HK.slot(HK.row());
+    button(g, s.x, s.y, HK.ctrlW(), s.h, riding() ? 'GET DOWN' : 'RIDE', tryRide, riding() ? '#21262d' : '#238636');
+    if (!touchMode()) { g.fillStyle = HK.C.DIM; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(riding() ? 'R or X' : 'R', s.x + HK.ctrlW() + 8, s.y + s.h / 2 + 4); }
   });
 
   // ---------- art: a grey mare with the knight in the saddle, drawn right at all four facings ----------

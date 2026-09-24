@@ -107,23 +107,26 @@
   });
   HOOKS.newGame.push(() => { beastWas = false; beastSnap = null; bombCd = 0; rams = 0; bombsLobbed = 0; });
 
-  // ---------- HUD: re-badge the core's "Walker hp/max", show the chute, and a BOMB touch button ----------
+  // ---------- HUD ----------
+  // MIGRATED to the HUD kit (src/59-hudkit.js): the machine's hp is now the second meter in the status
+  // plate (hudMechName below), and the bomb chute is a chip on the left column instead of a lilac-outlined
+  // pill floating at x=186. Amber while it reloads, neutral when it is ready — the kit's one meaning for
+  // amber is "wait", which is exactly what a cooldown is.
+  hudMechName(() => driving() ? 'Barrelbeast' : null);
   HOOKS.hud.push(g => {
     if (!driving()) return;
-    g.font = '13px sans-serif'; g.textAlign = 'left';
-    const label = `Barrelbeast ${player.mech.hp}/${player.mech.maxHp}`;
-    const w = Math.max(g.measureText(`Walker ${player.mech.hp}/${player.mech.maxHp}`).width, g.measureText(label).width);
-    g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186, 47, w + 10, 19, 5); g.fill(); g.strokeStyle = 'rgba(255,179,71,0.35)'; g.lineWidth = 1; g.stroke();
-    g.fillStyle = '#ffb347'; g.fillText(label, 190, 60);
-    const ready = bombCd <= 0, chute = ready ? (isTouch ? 'BOMB ready' : 'B: bomb ready') : `${isTouch ? 'BOMB' : 'B: bomb'} ${bombCd.toFixed(1)}s`;
-    g.font = 'bold 11px sans-serif'; const cw = g.measureText(chute).width;
-    g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186 + w + 16, 47, cw + 12, 19, 5); g.fill(); g.strokeStyle = ready ? 'rgba(216,200,255,0.6)' : 'rgba(255,255,255,0.15)'; g.stroke();
-    g.fillStyle = ready ? '#d8c8ff' : '#8b949e'; g.fillText(chute, 192 + w + 16, 60);
-    if (isTouch) { // the HOME button's spot: it is hidden while in any mech
-      const r = 52, x = VW - 160, y = VH - 254;
-      g.fillStyle = ready ? 'rgba(216,200,255,0.22)' : 'rgba(255,255,255,0.08)'; g.beginPath(); g.arc(x, y, r / 2 + 8, 0, 7); g.fill();
-      g.fillStyle = ready ? '#fff' : 'rgba(255,255,255,0.45)'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText(ready ? 'BOMB' : bombCd.toFixed(1), x, y + 4);
-      buttons.push({ x: x - r / 2 - 8, y: y - r / 2 - 8, w: r + 16, h: r + 16, label: 'BOMB', action: () => touch.taps.push('bomb') });
+    const ready = bombCd <= 0, pad = 8;
+    const s = HK.slot(HK.chipH());
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: ready ? null : HK.C.WARN });
+    g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillText(touchMode() ? 'BOMB' : 'BOMB (B)', s.x + pad + 4, s.y + s.h / 2);
+    g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; g.textAlign = 'right';
+    g.fillText(ready ? 'ready' : `${bombCd.toFixed(1)}s`, s.x + s.w - pad - 4, s.y + s.h / 2);
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    if (touchMode()) { // seat 4 of the kit's thumb grid — HOME's seat, and HOME is hidden while in any machine
+      const p = HK.thumbSeat(4);
+      HK.disc(g, p.x, p.y, p.r, ready ? 'BOMB' : bombCd.toFixed(1), { enabled: ready });
+      buttons.push({ x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2, label: 'BOMB', action: () => touch.taps.push('bomb') });
     }
   });
 

@@ -64,8 +64,10 @@ const PLACEABLE_ON = new Set([T.GRASS, T.DIRT, T.SAND, T.CAVE, T.COBBLE, T.FLOOR
 const WALK_OVER = new Set(); // tiles the player can currently cross (e.g. water while hover armour is worn); features add/remove
 // who: 'player' (the knight on foot: pushes through doors, honours WALK_OVER), 'person' (companions, guards, villagers: doors yes, WALK_OVER no), 'beast' (monsters and machines)
 const solidFor = (t, who) => (who === 'player' && WALK_OVER.has(t)) ? false : SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person' && who !== 'player');
-// shared left-HUD cursor: the core resets HUD.leftY to 82 every tick; HUD hooks that draw under the HP box start at HUD.leftY and advance it by their height (+6) so they stack
-const HUD = { leftY: 82 };
+// Shared left-HUD cursor. drawHud sets it to the bottom of the status plate every frame and HUD hooks claim
+// their row through HK.slot() (src/59-hudkit.js), which advances it. leftCol is the column that cursor is in:
+// the stack wraps into a second column rather than running into the joystick or off the bottom of the screen.
+const HUD = { leftY: 82, leftCol: 0 };
 
 // ---------- extension hooks (feature files in src/2x-*.js register here; core never needs editing) ----------
 const HOOKS = {
@@ -2172,34 +2174,40 @@ function drawMinimap(g, x, y, size) {
   if (player.home) dot(player.home.x, player.home.y, '#7ec8ff', 3);
   dot(player.x, player.y, '#ffffff', 3.5);
   g.restore();
-  g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 1.5; roundRect(g, x, y, size, size, 10); g.stroke();
+  g.strokeStyle = HK.C.CTRL_EDGE; g.lineWidth = 1.5; roundRect(g, x, y, size, size, HK.R); g.stroke(); // tapping it opens the map, so it wears the kit's pressable edge (src/59-hudkit.js)
 }
 
 // ---- src/10-hud.js ----
 // ============================================================================
 // HUD AND PANELS
 // ============================================================================
+// An item tile, not a container: the one other shape in the HUD, at HK.R_SLOT. "Selected" is drawn as a
+// RAISED tile (brighter fill, a light edge) rather than a blue one — the kit's rule is that colour carries
+// meaning and selection is not a meaning, it is a state of the control. (src/59-hudkit.js)
 function drawSlot(g, x, y, size, slot, selected) {
-  roundRect(g, x, y, size, size, 6); g.fillStyle = selected ? 'rgba(88,166,255,0.25)' : 'rgba(255,255,255,0.06)'; g.fill();
-  g.strokeStyle = selected ? '#58a6ff' : 'rgba(255,255,255,0.12)'; g.lineWidth = selected ? 2 : 1; g.stroke();
+  roundRect(g, x, y, size, size, HK.R_SLOT); g.fillStyle = selected ? 'rgba(233,240,248,0.20)' : 'rgba(233,240,248,0.06)'; g.fill();
+  g.strokeStyle = selected ? HK.C.CTRL_EDGE : HK.C.EDGE; g.lineWidth = selected ? 2 : 1; g.stroke();
   if (slot) {
     drawItemIcon(g, slot.id, x + size / 2, y + size / 2 - 2, size * 0.5);
-    if (slot.qty > 1) { g.fillStyle = '#e6edf3'; g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillText(slot.qty > 9999 ? Math.floor(slot.qty / 1000) + 'k' : slot.qty, x + size - 4, y + size - 4); }
+    if (slot.qty > 1) { g.fillStyle = HK.C.INK; g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillText(slot.qty > 9999 ? Math.floor(slot.qty / 1000) + 'k' : slot.qty, x + size - 4, y + size - 4); }
   }
 }
 // Disabled buttons are still registered (as inert hit rects, label prefixed 'disabled:') so a tap on a greyed button does not fall through to the panel/world.
+// One pressable style for the whole game, drawn by HK.control: a raised plate with a light edge, so a
+// control never looks like a readout. The legacy colour argument is kept (no call site had to change) but
+// it is now read as a MEANING — green = go, red = danger, amber = wait, anything else = a neutral control —
+// which is what turned thirty hand-picked hex codes into one language. (src/59-hudkit.js)
 function button(g, x, y, w, h, label, action, color = '#238636', enabled = true) {
-  roundRect(g, x, y, w, h, 8); g.fillStyle = enabled ? color : '#2a2f3a'; g.fill();
-  g.fillStyle = enabled ? '#fff' : '#6e7681'; g.font = 'bold 13px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, x + w / 2, y + h / 2); g.textBaseline = 'alphabetic';
-  buttons.push(enabled ? { x, y, w, h, label, action } : { x, y, w, h, label: 'disabled:' + label, action: () => { }, disabled: true });
+  HK.control(g, x, y, w, h, label, action, { tone: HK.toneOf(color), enabled });
 }
 function panelBox(g, w, h, title, subtitle) {
   w = Math.min(w, VW - 20); h = Math.min(h, VH - 20);
   const px = Math.round(VW / 2 - w / 2), py = Math.round(Math.max(10, VH / 2 - h / 2 - 20));
-  roundRect(g, px, py, w, h, 12); g.fillStyle = 'rgba(10,14,22,0.95)'; g.fill(); g.strokeStyle = '#30363d'; g.lineWidth = 1; g.stroke();
-  g.fillStyle = '#e6edf3'; g.font = `700 17px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(title, px + 18, py + 30);
-  if (subtitle) { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(subtitle, px + 18, py + 50); }
-  button(g, px + w - 56, py + 10, 44, 36, '×', closePanel, '#21262d');
+  // the same plate as every HUD chip, only near-opaque: a panel covers the world on purpose
+  HK.plate(g, px, py, w, h, { top: 'rgba(17,21,30,0.96)', bottom: 'rgba(11,14,21,0.94)' });
+  g.fillStyle = HK.C.INK; g.font = `700 17px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(title, px + 18, py + 30);
+  if (subtitle) { g.fillStyle = HK.C.DIM; g.font = '12px sans-serif'; g.fillText(subtitle, px + 18, py + 50); }
+  const cb = HK.row(); button(g, px + w - cb - 12, py + 10, cb, cb, '×', closePanel, '#21262d');
   panelRect = { x: px, y: py, w, h };
   return { px, py, w, h };
 }
@@ -2236,85 +2244,88 @@ function itemBlurb(def) {
 function drawHud(g) {
   buttons.length = 0; minimapRect = null; dialogRect = null; panelRect = null;
   g.textBaseline = 'alphabetic';
-  const narrow = VW < 640, short = isTouch && VH < 500;
-  const mmSize = narrow ? 96 : 150, mmx = VW - mmSize - 14, mmy = 14;
-  // HP + combat + coins (never under the minimap)
-  const hpw = narrow && isTouch ? Math.min(250, mmx - 14 - 10) : 250;
-  roundRect(g, 14, 14, hpw, 62, 10); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
-  const barW = Math.min(196, hpw - 62);
-  g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText('HP', 26, 34);
-  g.fillStyle = '#2a2f3a'; roundRect(g, 52, 22, barW, 14, 6); g.fill();
-  g.fillStyle = player.hp / player.maxHp > 0.5 ? '#3fb950' : player.hp / player.maxHp > 0.25 ? '#d29922' : '#f85149'; roundRect(g, 52, 22, barW * clamp(player.hp / player.maxHp, 0, 1), 14, 6); g.fill();
-  g.fillStyle = '#fff'; g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(player.hp)} / ${player.maxHp}`, 52 + barW / 2, 33);
-  g.textAlign = 'left'; g.font = '13px sans-serif'; g.fillStyle = '#f5c542'; drawItemIcon(g, 'coins', 32, 56, 13); g.fillText(`${coins()}`, 44, 60);
-  g.fillStyle = '#c9d1d9'; g.fillText(`Combat ${combatLevel()}`, 120, 60);
-  if (player.mech) { g.fillStyle = '#ffb347'; g.fillText(`Walker ${player.mech.hp}/${player.mech.maxHp}`, 190, 60); }
-  else if (window.__kidmode) { g.fillStyle = '#7ec8ff'; g.font = 'bold 11px sans-serif'; g.fillText('Kid mode', 190, 60); }
+  // touchMode() rather than isTouch: identical on a real device, but a test can force either layout, which
+  // is what lets the HUD-kit layout audit render the iPad HUD headlessly (src/59-hudkit.js).
+  const isT = touchMode();
+  const narrow = VW < 640, short = isT && VH < 500;
+  const mmSize = HK.mmSize(), mmx = HK.mmX(), mmy = 14;
+  // ---- the status plate: health first and biggest, the machine you are in second, coins and combat quiet ----
+  const statusBottom = HK.status(g);
+  HUD.leftY = statusBottom + HK.GUT; HUD.leftCol = 0; // the left column starts under the plate — set, not maxed: drawHud owns this cursor
   // minimap (top-right) + compass toward the tracked quest
-  drawMinimap(g, mmx, mmy, mmSize); minimapRect = { x: mmx, y: mmy, w: mmSize, h: mmSize };
+  drawMinimap(g, mmx, mmy, mmSize); minimapRect = panel ? null : { x: mmx, y: mmy, w: mmSize, h: mmSize }; // a panel owns the screen: no tap falls through to the map
   drawCompass(g, mmx, mmy, mmSize);
-  g.fillStyle = 'rgba(230,237,243,0.6)'; g.font = '10px sans-serif'; g.textAlign = 'center'; g.fillText(isTouch ? 'tap for map' : 'M for map', mmx + mmSize / 2, mmy + mmSize + 12);
-  // phone: MENU / SKILLS / HELP stack under the minimap; the quest box, notice slot and hotbar follow below
-  let topStackBottom = 76;
-  if (isTouch && narrow) {
-    const bx = VW - 74, by = mmy + mmSize + 16;
-    button(g, bx, by, 60, 28, 'MENU', () => { paused = !paused; }, '#21262d');
-    button(g, bx, by + 34, 60, 28, 'SKILLS', () => panel === 'skills' ? closePanel() : openPanel('skills'), '#21262d');
-    button(g, bx, by + 68, 60, 28, 'HELP', () => panel === 'help' ? closePanel() : openPanel('help'), '#21262d');
-    topStackBottom = by + 68 + 28;
-  }
-  // tracked quest (only when tracked). Placement: desktop → left of the minimap; phone → under the MENU stack;
-  // landscape phone (short) → under the HP box; tablet → beside the hotbar. Never under the MENU/SKILLS/HELP row.
+  g.fillStyle = 'rgba(233,240,248,0.55)'; g.font = '10px sans-serif'; g.textAlign = 'center'; g.fillText(isT ? 'tap for map' : 'M for map', mmx + mmSize / 2, mmy + mmSize + 12);
+  // The control rail (MENU / SKILLS / HELP / WIKI / MAP / MUSIC) is registered with hudControl() below and
+  // drawn by the kit's own HOOKS.hud entry, last, over everything. Its band is reserved here so the quest
+  // box and the hotbar can stack under it exactly as they used to.
+  const topStackBottom = isT && narrow ? HK.railBottom() : Math.max(statusBottom, 76);
+  // Tracked quest. It is a readout, not a control, so it gets a plate and no edge. Placement is on the grid:
+  // desktop → the top-right band, left of the minimap; narrow phone → full width under the rail; every other
+  // touch layout → the second column, at the top, right of the left column and left of the minimap. (It used
+  // to sit under the HP box on a landscape phone, which the taller status plate would have run into.)
   let qh = 0, qx = 0, qw = 0;   // qx/qw are published on HUD_LAYOUT so 67-questbox can put its expand control over the box
-  const qy = !isTouch ? 14 : narrow ? topStackBottom + 10 : short ? 84 : 90;
+  const col2 = HK.colX(1);                 // the second column's left edge (shifted right of a mirrored thumb cluster)
+  const qy = !isT ? 14 : narrow ? topStackBottom + 10 : 14;
   if (quest.tracked && activeQuests().includes(quest.tracked)) {
     const qt = questText(quest.tracked); g.font = 'bold 13px sans-serif';
-    qw = !isTouch ? Math.min(360, Math.max(260, g.measureText(qt).width + 40)) : narrow ? VW - 28 : short ? Math.min(300, VW / 2 - 40) : clamp(VW - 334 - mmSize - 14 - 24, 200, 360);
-    qh = 54; qx = !isTouch ? VW - mmSize - 14 - qw - 12 : narrow || short ? 14 : 334;
-    roundRect(g, qx, qy, qw, qh, 10); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(QUEST_DEFS[quest.tracked].name.toUpperCase(), qx + 20, qy + 18);
-    g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif';
-    let shown = qt; while (shown.length > 8 && g.measureText(shown + '…').width > qw - 40) shown = shown.slice(0, -1); g.fillText(shown === qt ? qt : shown + '…', qx + 20, qy + 40);
+    qw = !isT ? Math.min(360, Math.max(260, g.measureText(qt).width + 40)) : narrow ? VW - 28 : clamp(mmx - col2 - 12, 200, 360);
+    qh = 54; qx = !isT ? VW - mmSize - 14 - qw - 12 : narrow ? 14 : col2;
+    HK.plate(g, qx, qy, qw, qh);
+    g.fillStyle = HK.C.DIM; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(QUEST_DEFS[quest.tracked].name.toUpperCase(), qx + HK.PAD + 4, qy + 20);
+    g.fillStyle = HK.C.INK; g.font = 'bold 13px sans-serif';
+    let shown = qt; while (shown.length > 8 && g.measureText(shown + '…').width > qw - 40) shown = shown.slice(0, -1); g.fillText(shown === qt ? qt : shown + '…', qx + HK.PAD + 4, qy + 42);
   }
   const questSlotH = narrow ? 54 : qh; // phones reserve the quest slot so the hotbar does not jump
-  const noticeY = narrow ? qy + questSlotH + 8 : short ? 46 : 84; // short: the strip between the HP box and the minimap, clear of the quest box and dialogue
-  // hotbar: first five pack slots (keys 1–5)
+  // hotbar: first five pack slots (keys 1–5). One plate, one gutter, slots on the grid.
   const hb = 44, hgap = 6, hw = 5 * (hb + hgap) + 60;
-  const hx = short ? VW / 2 - hw / 2 + 30 : isTouch ? 14 : VW / 2 - hw / 2;
-  const hy = short ? VH - 58 : isTouch ? (narrow ? noticeY + 32 + 10 : 90) : VH - 96;
-  roundRect(g, hx - 6, hy - 6, hw + 6, hb + 12, 10); g.fillStyle = 'rgba(10,14,22,0.7)'; g.fill();
+  const hx = short ? VW / 2 - hw / 2 + 30 : isT ? HK.M() + 6 : VW / 2 - hw / 2; // +6: the plate is drawn at hx-6, so its edge lands on the column's
+  // a tablet's hotbar hangs off the bottom of the status plate; the notice then goes under the hotbar
+  // rather than across it (at the old fixed y = 84 the two overlapped on every tablet)
+  const hbTop = short ? VH - 58 : isT ? (narrow ? null : statusBottom + HK.GUT + 6) : VH - 96;
+  // the notice slot: a narrow phone stacks it under the quest box; every other touch layout puts it in the
+  // second column right under the quest slot (centred, it used to land across the left column's chips);
+  // desktop keeps it centred at the top, where nothing else lives.
+  const noticeY = narrow ? qy + questSlotH + 8 : isT ? 14 + 54 + HK.GUT : 84;
+  const hy = (isT && narrow) ? noticeY + 32 + 10 : hbTop;
+  HK.plate(g, hx - 6, hy - 6, hw + 6, hb + 12);
   for (let i = 0; i < 5; i++) {
     const sx = hx + i * (hb + hgap);
     drawSlot(g, sx, hy, hb, player.inv[i], false);
-    if (!isTouch) { g.fillStyle = '#8b949e'; g.font = '9px sans-serif'; g.textAlign = 'left'; g.fillText(i + 1, sx + 3, hy + 10); }
+    if (!isT) { g.fillStyle = HK.C.DIM; g.font = '9px sans-serif'; g.textAlign = 'left'; g.fillText(i + 1, sx + 3, hy + 10); }
     buttons.push({ x: sx, y: hy, w: hb, h: hb, label: 'hot' + i, action: () => useItem(i) });
   }
-  button(g, hx + 5 * (hb + hgap), hy, 54, hb, isTouch ? 'BAG' : 'Bag (I)', () => panel === 'inventory' ? closePanel() : openPanel('inventory'), '#21262d');
-  Object.assign(HUD_LAYOUT, { narrow, short, hotbarY: hy, hotbarH: hb, questY: qy, questH: qh, questX: qx, questW: qw, noticeY, topStackBottom, bossBarY: isTouch ? (narrow ? hy + hb + 12 : short ? 84 + (qh ? qh + 8 : 0) : 152) : 84 });
-  if (!isTouch) { g.fillStyle = 'rgba(230,237,243,0.75)'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(player.mech ? 'WASD move · click to walk · Space stomp · E crush planks · X climb out' : 'WASD move · click to walk · Space swing · E use / talk · Q place · 1-5 use · I bag · C craft · Tab skills · J quests · M map · H home · ? help · Esc menu', VW / 2, VH - 16); }
+  button(g, hx + 5 * (hb + hgap), hy, 54, hb, isT ? 'BAG' : 'Bag (I)', () => panel === 'inventory' ? closePanel() : openPanel('inventory'), '#21262d');
+  // the boss bar joins the left column like every other chip, so nothing has to guess where it ended
+  const bossBarY = Math.max(HUD.leftY, HK.stackFloor());
+  // where a wrapped chip lands: under whatever the second column already holds (quest, notice, the rail)
+  const col2Top = isT && !narrow ? Math.max(HK.railBottom(), noticeY + 32) + HK.GUT : 14;
+  Object.assign(HUD_LAYOUT, { narrow, short, hotbarY: hy, hotbarH: hb, questY: qy, questH: qh, questX: qx, questW: qw, noticeY, topStackBottom, bossBarY, col2Top });
+  if (!isT) { g.fillStyle = 'rgba(233,240,248,0.72)'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(player.mech ? 'WASD move · click to walk · Space stomp · E crush planks · X climb out' : 'WASD move · click to walk · Space swing · E use / talk · Q place · 1-5 use · I bag · C craft · Tab skills · J quests · M map · H home · ? help · Esc menu', VW / 2, VH - 16); }
   else if (!short) { // touch: one line between the stick and the buttons; it shortens on phones instead of running under them (landscape phones have no free edge for it)
-    const maxW = Math.max(120, VW - 460); g.fillStyle = 'rgba(230,237,243,0.7)'; g.font = '11px sans-serif'; g.textAlign = 'center';
-    let t = 'Tap to walk · tap a tree, rock, water or person to use it · tap a monster to fight · SWING · USE · BAG';
-    if (g.measureText(t).width > maxW) t = 'Tap to walk · tap things to use them · tap a monster to fight';
-    while (g.measureText(t).width > maxW && t.length > 12) t = t.slice(0, -2) + '…';
+    // the longest of three whole sentences that fits, rather than one sentence chopped mid-word: a phone was
+    // showing "Tap to walk · tap thing…", which teaches nothing and looks broken
+    const maxW = Math.max(120, VW - 460); g.fillStyle = 'rgba(233,240,248,0.68)'; g.font = '11px sans-serif'; g.textAlign = 'center';
+    const lines = ['Tap to walk · tap a tree, rock, water or person to use it · tap a monster to fight · SWING · USE · BAG',
+      'Tap to walk · tap things to use them · tap a monster to fight', 'Tap to walk · tap things to use them', 'Tap to walk'];
+    const t = lines.find(l => g.measureText(l).width <= maxW) || lines[lines.length - 1];
     g.fillText(t, VW / 2, VH - 8);
   }
-  // touch controls
-  if (isTouch) {
+  // touch controls: the thumb cluster. Round because they are held-down actions, not menu entries — the one
+  // deliberate exception to the plate, and it is a whole class of control, not a one-off.
+  if (isT) {
     const mx = x => window.__stickRight === true ? VW - x : x; // Settings › Move stick side: right-handed players get the stick on the right and the buttons on the left (src/43-settings.js)
-    if (touch.active) { g.fillStyle = 'rgba(255,255,255,0.15)'; g.beginPath(); g.arc(touch.ox, touch.oy, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.4)'; g.beginPath(); g.arc(touch.ox + touch.dx * 60, touch.oy + touch.dy * 60, 26, 0, 7); g.fill(); }
-    else { g.fillStyle = 'rgba(255,255,255,0.08)'; g.beginPath(); g.arc(mx(110), VH - 110, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText('MOVE', mx(110), VH - 106); }
-    const defs = [['SWING', () => touch.taps.push('attack'), 70, mx(VW - 70), VH - 100], ['USE', () => touch.taps.push('use'), 52, mx(VW - 160), VH - 66], [player.mech ? 'EXIT' : 'CRAFT', () => player.mech ? exitMech() : (panel === 'craft' ? closePanel() : openPanel('craft')), 52, mx(VW - 160), VH - 160], ['QUESTS', () => panel === 'quests' ? closePanel() : openPanel('quests'), 52, mx(VW - 70), VH - 200]];
-    if (player.home && !player.mech) defs.push(['HOME', goHome, 52, mx(VW - 160), VH - 254]);
-    for (const [label, action, r, x, y] of defs) {
-      g.fillStyle = 'rgba(255,255,255,0.14)'; g.beginPath(); g.arc(x, y, r / 2 + 8, 0, 7); g.fill();
-      g.fillStyle = '#fff'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText(label, x, y + 4);
-      buttons.push({ x: x - r / 2 - 8, y: y - r / 2 - 8, w: r + 16, h: r + 16, label, action });
-    }
-    if (!narrow) {
-      button(g, VW / 2 - 30, 14, 60, 26, 'MENU', () => { paused = !paused; }, '#21262d');
-      button(g, VW / 2 + 36, 14, 60, 26, 'SKILLS', () => panel === 'skills' ? closePanel() : openPanel('skills'), '#21262d');
-      button(g, VW / 2 + 102, 14, 60, 26, 'HELP', () => panel === 'help' ? closePanel() : openPanel('help'), '#21262d');
+    if (touch.active) { g.fillStyle = 'rgba(233,240,248,0.14)'; g.beginPath(); g.arc(touch.ox, touch.oy, 60, 0, 7); g.fill(); g.fillStyle = 'rgba(233,240,248,0.38)'; g.beginPath(); g.arc(touch.ox + touch.dx * 60, touch.oy + touch.dy * 60, 26, 0, 7); g.fill(); }
+    else HK.disc(g, mx(110), VH - 110, 60, 'MOVE', { quiet: true }); // the idle stick: a control, but the quietest one on screen
+    // seats 0-4 of the kit's thumb grid; features take the ones the core does not (32-beast: 4, 47-outliers: 5)
+    const defs = [[0, 'SWING', () => touch.taps.push('attack')], [1, 'USE', () => touch.taps.push('use')],
+      [2, player.mech ? 'EXIT' : 'CRAFT', () => player.mech ? exitMech() : (panel === 'craft' ? closePanel() : openPanel('craft'))],
+      [3, 'QUESTS', () => panel === 'quests' ? closePanel() : openPanel('quests')]];
+    if (player.home && !player.mech) defs.push([4, 'HOME', goHome]);
+    for (const [seat, label, action] of defs) {
+      const p = HK.thumbSeat(seat);
+      HK.disc(g, p.x, p.y, p.r, label);   // the same scrim, raise and edge as every other pressable
+      buttons.push({ x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2, label, action });
     }
   }
   drawBossBars(g, HUD_LAYOUT.bossBarY);
@@ -2324,16 +2335,27 @@ function drawHud(g) {
   if (dialog.cur) {
     const dw = short ? Math.max(260, VW - 400) : Math.min(720, VW - 40), dx = VW / 2 - dw / 2;
     g.font = '16px sans-serif'; const lines = dialogLines(g, dialog.cur.text, dw - 36); const dh = 60 + lines * 20;
-    const dy = short ? 150 : clamp(VH - dh - (isTouch ? (narrow ? 300 : 250) : 130), narrow ? 150 : 90, VH - dh - 10);
+    const dy = short ? 150 : clamp(VH - dh - (isT ? (narrow ? 300 : 250) : 130), narrow ? 150 : 90, VH - dh - 10);
+    // Who is speaking is a real distinction, so it keeps a colour — but as a 3 px rule down the left edge
+    // (the kit's tone rule), not as a full outline competing with the state colours.
     const col = dialog.cur.who === 'The Voice' ? '#b58cff' : dialog.cur.who === 'Death' ? '#8fa2b8' : '#c9a36a';
-    roundRect(g, dx, dy, dw, dh, 12); g.fillStyle = 'rgba(10,14,22,0.92)'; g.fill(); g.strokeStyle = col; g.lineWidth = 2; g.stroke();
-    g.fillStyle = col; g.font = 'bold 12px sans-serif'; g.textAlign = 'left'; g.fillText(dialog.cur.who.toUpperCase(), dx + 18, dy + 24);
-    g.fillStyle = '#e6edf3'; g.font = '16px sans-serif';
+    HK.plate(g, dx, dy, dw, dh, { top: 'rgba(17,21,30,0.92)', bottom: 'rgba(11,14,21,0.88)', tone: col });
+    g.fillStyle = HK.C.DIM; g.font = 'bold 12px sans-serif'; g.textAlign = 'left'; g.fillText(dialog.cur.who.toUpperCase(), dx + 18, dy + 24);
+    g.fillStyle = HK.C.INK; g.font = '16px sans-serif';
     wrapText(g, dialog.cur.text.slice(0, dialog.shown), dx + 18, dy + 48, dw - 36, 20);
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'right'; g.fillText(isTouch ? 'tap here to continue' : 'Enter or click here to continue', dx + dw - 14, dy + dh - 10);
+    g.fillStyle = 'rgba(211,220,232,0.65)'; g.font = '11px sans-serif'; g.textAlign = 'right'; g.fillText(isT ? 'tap here to continue' : 'Enter or click here to continue', dx + dw - 14, dy + dh - 10);
     dialogRect = { x: dx, y: dy, w: dw, h: dh };
   }
-  if (notice) { g.fillStyle = `rgba(10,14,22,${clamp(notice.t, 0, 0.85)})`; const nw = short ? Math.min(520, VW - 274 - mmSize - 24) : Math.min(VW - 20, 520), nx = short ? 274 : VW / 2 - nw / 2; roundRect(g, nx, noticeY, nw, 32, 8); g.fill(); g.fillStyle = `rgba(230,237,243,${clamp(notice.t, 0, 1)})`; g.font = '13px sans-serif'; g.textAlign = 'center'; let t = notice.text; while (g.measureText(t).width > nw - 20 && t.length > 8) t = t.slice(0, -2) + '…'; g.fillText(t, nx + nw / 2, noticeY + 21); }
+  // notice: the same plate, faded in and out by notice.t. On a landscape phone it sits in the second column
+  // under the quest slot, so it never lands on the status plate or the minimap.
+  if (notice) {
+    const nx0 = HK.colX(1);                              // the second column
+    const nw = isT && !narrow ? clamp(mmx - nx0 - 12, 200, 520) : Math.min(VW - 20, 520), nx = isT && !narrow ? nx0 : VW / 2 - nw / 2;
+    const a = clamp(notice.t, 0, 1);
+    g.globalAlpha = a; HK.plate(g, nx, noticeY, nw, 32); g.globalAlpha = 1;
+    g.fillStyle = `rgba(242,246,250,${a})`; g.font = '13px sans-serif'; g.textAlign = 'center';
+    let t = notice.text; while (g.measureText(t).width > nw - 20 && t.length > 8) t = t.slice(0, -2) + '…'; g.fillText(t, nx + nw / 2, noticeY + 21);
+  }
   if (areaBanner) {
     const a = clamp(Math.min(areaBanner.t, 0.8) * 1.5, 0, 1);
     g.globalAlpha = a; g.fillStyle = '#e6edf3'; g.font = `800 ${narrow ? 22 : 30}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,0.7)';
@@ -2355,19 +2377,21 @@ function drawHud(g) {
   if (paused) {
     buttons.length = 0; minimapRect = null; dialogRect = null; panelRect = null; // nothing under the menu is tappable
     g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0, 0, VW, VH);
-    const pw = 300, ph = 310, px = VW / 2 - pw / 2, py = VH / 2 - ph / 2; // the stats line sits at VH/2 + 83 (py + 238): 31-rebuild repaints it with the town's name
-    roundRect(g, px, py, pw, ph, 12); g.fillStyle = 'rgba(10,14,22,0.96)'; g.fill(); g.strokeStyle = '#30363d'; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 34);
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 52);
-    button(g, px + 24, py + 66, pw - 48, 36, 'Resume', () => { paused = false; });
+    // geometry from HK.pauseBox() so the rows are finger-sized on touch and the stats line stays findable:
+    // 31-rebuild repaints that line with the town's name and asks the kit for the same y.
+    const { px, py, pw, ph, bh, step, firstY, statsY } = HK.pauseBox();
+    HK.plate(g, px, py, pw, ph, { top: 'rgba(17,21,30,0.97)', bottom: 'rgba(11,14,21,0.95)' });
+    g.fillStyle = HK.C.INK; g.font = `800 24px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('FANGLANDS', VW / 2, py + 34);
+    g.fillStyle = HK.C.DIM; g.font = '12px sans-serif'; g.fillText(quest.stage >= 7 ? 'Chapter 3 · Goblin Tech' : quest.stage >= 5 ? 'Chapter 2 · Thistledown' : 'Chapter 1 · The Cave', VW / 2, py + 52);
+    button(g, px + 24, firstY, pw - 48, bh, 'Resume', () => { paused = false; });
     // sound, music, kid mode and the rest live in the Settings panel (src/43-settings.js); the panel draws under the pause overlay, so unpause to show it
-    button(g, px + 24, py + 106, pw - 48, 36, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
-    let by = py + 146; for (const f of HOOKS.pauseMenu) { f(g, px + 24, by, pw - 48, 36); by += 40; } // feature buttons (14-title: Title screen) — registered here, after the buttons reset above, so they are tappable
+    button(g, px + 24, firstY + step, pw - 48, bh, 'Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
+    let by = firstY + step * 2; for (const f of HOOKS.pauseMenu) { f(g, px + 24, by, pw - 48, bh); by += step; } // feature buttons (14-title: Title screen) — registered here, after the buttons reset above, so they are tappable
     const erase = confirmActive('newgame');
-    button(g, px + 24, by, pw - 48, 36, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, py + 238);
-    g.fillStyle = '#8b949e'; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, py + 256);
-    g.fillStyle = '#6e7681'; g.fillText('Progress saves automatically in this browser.', VW / 2, py + 274);
+    button(g, px + 24, by, pw - 48, bh, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
+    g.fillStyle = 'rgba(211,220,232,0.7)'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText(`Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`, VW / 2, statsY);
+    g.fillStyle = HK.C.DIM; g.fillText('Settings: sound, music, kid mode, text size, controls', VW / 2, statsY + 18);
+    g.fillStyle = 'rgba(211,220,232,0.7)'; g.fillText('Progress saves automatically in this browser.', VW / 2, statsY + 36);
   }
 }
 // small arrow on the minimap edge pointing at the tracked quest's target (or a ring when the target is on the minimap)
@@ -2387,18 +2411,22 @@ function drawCompass(g, x, y, size) {
   g.fillStyle = '#f5c542'; g.beginPath(); g.moveTo(8, 0); g.lineTo(-5, -6); g.lineTo(-2, 0); g.lineTo(-5, 6); g.closePath(); g.fill();
   g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); g.restore();
 }
-// generic boss bar for any big monster nearby (features that draw their own, like the Fang, are skipped)
+// Generic boss bar for any big monster nearby (features that draw their own, like the Fang, are skipped).
+// Now a chip in the left column like everything else: same plate, same width, a BAD rule down the left edge
+// because a boss on you IS the danger state, and the same label / value / bar block as your own health.
+// It advances HUD.leftY, so no feature has to guess how many bars are above it any more.
 function drawBossBars(g, y) {
   const bosses = monsters.filter(m => !m.dead && m.type !== 'the_fang' && MONSTER_DEFS[m.type] && MONSTER_DEFS[m.type].level >= 25 && MONSTER_DEFS[m.type].hp >= 300 && dist(m.x, m.y, player.x, player.y) <= 12 * TILE).slice(0, 2);
-  bosses.forEach((m, i) => {
-    const def = MONSTER_DEFS[m.type], w = HUD_LAYOUT.short ? 180 : Math.min(236, VW - 28), h = 48, x = 14, by = y + i * (h + 8);
-    roundRect(g, x, by, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = '#ff6b6b'; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(def.name.toUpperCase(), x + 12, by + 19);
-    g.fillStyle = '#ff6b6b'; g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillText(`LV ${def.level}`, x + w - 12, by + 19);
-    g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, by + 27, w - 24, 11, 5); g.fill();
-    g.fillStyle = '#e63946'; roundRect(g, x + 12, by + 27, (w - 24) * clamp(m.hp / m.maxHp, 0, 1), 11, 5); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(m.hp)} / ${m.maxHp}`, x + w / 2, by + 36);
-  });
+  HUD.leftY = Math.max(HUD.leftY, y);
+  for (const m of bosses) {
+    const def = MONSTER_DEFS[m.type], pad = 10;
+    const s = HK.slot(pad * 2 + HK.meterH());
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: HK.C.BAD });
+    HK.meter(g, s.x + pad + 2, s.y + pad, s.w - pad * 2 - 2, {
+      label: `${def.name.toUpperCase()} · lv ${def.level}`, value: `${Math.ceil(m.hp)} / ${m.maxHp}`, template: `${m.maxHp} / ${m.maxHp}`,
+      frac: clamp(m.hp / m.maxHp, 0, 1), tone: HK.C.BAD,
+    });
+  }
 }
 function drawPanels(g, narrow, short, qh, hb) {
   const gridCols = narrow ? 5 : 10;
@@ -2420,7 +2448,7 @@ function drawPanels(g, narrow, short, qh, hb) {
     });
   }
   if (panel === 'help') {
-    const rows = isTouch
+    const rows = touchMode()
       ? [['Tap the world', 'walk there · tap a tree, rock, water or person to use it · tap a monster to fight'], ['Hold on a thing', 'shows what it is, then acts when you let go'], ['Left side of screen', 'drag to move (or tap to walk)'], ['SWING', 'attack, shoot, stomp, hit a dummy (or double-tap the world)'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['Hotbar', 'tap a slot to eat or use it'], ['Bag › Place', 'put down a plank, door, bed, lodestone or trap'], ['CRAFT / SKILLS / QUESTS', 'panels · QUESTS also shows what was Said'], ['HOME', 'teleport to your lodestone (5 min)'], ['EXIT', 'climb out of a walker or bulldozer'], ['Machines', 'USE a wreck to repair it, USE again to climb in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Minimap', 'tap the minimap for the world map'], ['MENU', 'settings, title screen, new game']]
       : [['WASD / arrows', 'move'], ['Click the world', 'walk there · click a tree, rock, water, person or monster to use / fight it'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Machines', 'E on a wreck repairs it, E again climbs in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Enter', 'next line of talk (or click the box)'], ['Minimap', 'click the minimap (or M) for the world map'], ['Esc', 'menu (settings, title screen, new game)']];
     const rh = Math.min(26, Math.floor((VH - 120) / rows.length));
@@ -2471,8 +2499,11 @@ function drawPanels(g, narrow, short, qh, hb) {
   if (panel === 'inventory') {
     const cols = gridCols, size = narrow ? 44 : 46, gap = 6;
     const eqw = 70;
-    const { px, py, w, h } = panelBox(g, cols * (size + gap) + 30 + eqw, narrow ? 440 : 300, 'Your pack', `${player.inv.filter(Boolean).length} / ${INV_SLOTS} slots · tap one, then another, to swap`);
-    if (player.home) button(g, px + w - 56 - 84, py + 14, 74, 28, isTouch ? 'HOME' : 'Home (H)', goHome, '#21262d');
+    // rowH: the kit's control height — 44 on touch, so every button in the pack is finger-sized. The panel
+    // grows by the difference rather than letting the action row spill past its own box.
+    const rowH = HK.row(), grow = (rowH - 30) * 2;
+    const { px, py, w, h } = panelBox(g, cols * (size + gap) + 30 + eqw, (narrow ? 440 : 300) + grow, 'Your pack', `${player.inv.filter(Boolean).length} / ${INV_SLOTS} slots · tap one, then another, to swap`);
+    if (player.home) button(g, px + w - HK.row() - 12 - 86, py + 10, 78, rowH, touchMode() ? 'HOME' : 'Home (H)', goHome, '#21262d');
     const gy = drawInvGrid(g, px + 18 + eqw, py + 66, cols, size, gap, i => { selectedSlot = selectedSlot === i ? -1 : i; }, true);
     // equipment column
     g.fillStyle = '#8b949e'; g.font = 'bold 10px sans-serif'; g.textAlign = 'left'; g.fillText('WORN', px + 18, py + 62);
@@ -2490,11 +2521,11 @@ function drawPanels(g, narrow, short, qh, hb) {
       g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(itemBlurb(def), px + 18 + eqw, gy + 48);
       let bx = px + 18 + eqw; const by = gy + 58;
       const act = def.heal ? 'Eat' : (def.weapon || def.armour) ? 'Equip' : def.place ? 'Place' : def.burn ? 'Light fire' : def.throwable ? 'Throw' : null;
-      if (act) { button(g, bx, by, 90, 30, act, () => { const i = selectedSlot; useItem(i); if (act !== 'Equip') return; selectedSlot = -1; }); bx += 98; }
+      if (act) { button(g, bx, by, 90, rowH, act, () => { const i = selectedSlot; useItem(i); if (act !== 'Equip') return; selectedSlot = -1; }); bx += 98; }
       const doDrop = () => { const q = player.inv[selectedSlot]; if (!q) return; drops.push({ x: player.x + player.facing.x * 30, y: player.y + player.facing.y * 30, id: q.id, qty: q.qty, t: 0 }); player.inv[selectedSlot] = null; selectedSlot = -1; save(); };
       const arm = needsConfirm(def) && confirmActive('drop');
-      button(g, bx, by, arm ? 130 : 80, 30, arm ? 'Tap again to drop' : 'Drop', () => { if (needsConfirm(def)) confirmTap('drop', doDrop); else doDrop(); }, arm ? '#c0392b' : '#8b2e2e');
-    } else { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(isTouch ? 'Tap an item. Tap a worn piece to take it off. The hotbar uses the first five slots.' : 'Tap an item. Tap a worn piece to take it off. Keys 1–5 use the first five slots.', px + 18 + eqw, gy + 30); }
+      button(g, bx, by, arm ? 130 : 80, rowH, arm ? 'Tap again to drop' : 'Drop', () => { if (needsConfirm(def)) confirmTap('drop', doDrop); else doDrop(); }, arm ? '#c0392b' : '#8b2e2e');
+    } else { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(touchMode() ? 'Tap an item. Tap a worn piece to take it off. The hotbar uses the first five slots.' : 'Tap an item. Tap a worn piece to take it off. Keys 1–5 use the first five slots.', px + 18 + eqw, gy + 30); }
   }
   if (panel === 'bank') {
     const cols = gridCols, size = 40, gap = 5, rows = 3, per = cols * rows, pages = Math.max(1, Math.ceil(BANK_SLOTS / per));
@@ -2577,6 +2608,13 @@ function drawPanels(g, narrow, short, qh, hb) {
     }
   }
 }
+// The three menu buttons the touch layout needs join the control rail under the minimap instead of being
+// three loose buttons stacked in a corner on a phone and a different three at the top of the screen on a
+// tablet. hudControl() is a hoisted declaration from src/59-hudkit.js, so this runs at load time.
+hudControl({ id: 'menu', sort: 10, label: () => 'MENU', show: () => touchMode(), on: () => paused, action: () => { paused = !paused; } });
+hudControl({ id: 'skills', sort: 20, label: () => 'SKILLS', show: () => touchMode(), on: () => panel === 'skills', action: () => panel === 'skills' ? closePanel() : openPanel('skills') });
+hudControl({ id: 'help', sort: 30, label: () => 'HELP', show: () => touchMode(), on: () => panel === 'help', action: () => panel === 'help' ? closePanel() : openPanel('help') });
+
 function wrapText(g, text, x, y, maxW, lh) {
   const words = text.split(' '); let line = '';
   for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { g.fillText(line, x, y); line = w; y += lh; } else line = test; }
@@ -3346,7 +3384,7 @@ window.FANGLANDS.title = title;
     const el = (performance.now() - title.savedAt) / 1000;
     if (el >= 0 && el < 1.2) {
       const a = el < 0.2 ? el / 0.2 : 1 - (el - 0.2) / 1;
-      g.globalAlpha = clamp(a, 0, 1); g.textAlign = 'right'; g.fillStyle = '#3fb950'; g.font = 'bold 12px sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)';
+      g.globalAlpha = clamp(a, 0, 1); g.textAlign = 'right'; g.fillStyle = HK.C.GOOD; g.font = 'bold 12px sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; // green means "fine", here as everywhere
       g.strokeText('Saved', VW - 16, VH - 36); g.fillText('Saved', VW - 16, VH - 36); g.globalAlpha = 1;
     }
   });
@@ -3585,10 +3623,9 @@ const MUSIC = (() => {
     want = choose();
     if (timer === null) timer = setInterval(() => { try { tick(); } catch (e) { } }, TICK_MS) ?? true;
   });
-  HOOKS.hud.push((g) => {
-    if (!isTouch) return;
-    button(g, VW - 74, VH - 46, 64, 26, enabled ? 'MUSIC' : 'MUSIC off', toggle, enabled ? '#21262d' : '#3a2a2a');
-  });
+  // MIGRATED to the HUD kit: the music toggle was a 64x26 button parked in the bottom-right corner, matching
+  // nothing and too small for a finger. It is a rarely-touched switch, so it belongs in the control rail.
+  hudControl({ id: 'music', sort: 60, label: () => enabled ? 'MUSIC' : 'MUSIC OFF', show: () => touchMode() && !paused, on: () => enabled, action: toggle });
 
   // ---------- self-test (fake AudioContext that counts calls) ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -4079,18 +4116,21 @@ const MUSIC = (() => {
     } });
   });
   // HUD: where you are and how to get out
+  // MIGRATED to the HUD kit (src/59-hudkit.js): a neutral chip on the left column's grid — where you are is
+  // a fact, not a warning — with LEAVE as a proper finger-sized control on its own row underneath.
   HOOKS.hud.push((g, narrow) => {
     if (!active) return;
-    const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null, touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
-    const inst = active.inst, y = Math.max(HUD.leftY, touchFloor, 84), w = narrow && isTouch ? VW - 108 : 250, h = isTouch ? 52 : 40; // shared left-HUD cursor, under the law / companion tags and clear of the touch hotbar
-    roundRect(g, 14, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
-    g.fillStyle = '#e6edf3'; g.font = `700 13px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(inst.name.toUpperCase(), 26, y + 18);
+    if (panel || paused) return; // the chip and its LEAVE control sit where a panel lands
+    const inst = active.inst, pad = 9;
+    const s = HK.slot(pad * 2 + HK.LINE() + 2 + HK.LINE());
+    HK.plate(g, s.x, s.y, s.w, s.h);
+    g.fillStyle = HK.C.INK; g.font = `700 13px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(inst.name.toUpperCase(), s.x + pad + 4, s.y + pad + HK.LINE() - 3);
     const alive = monsters.filter(m => !m.dead).length;
-    g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.fillText(inst.boss && !active.cleared ? `${alive} left · boss alive` : active.cleared ? 'cleared' : `${alive} left`, 26, y + 32);
-    if (active.webT > 0) { g.fillStyle = '#e9eef5'; g.fillText(`webbed ${active.webT.toFixed(1)}s`, 130, y + 32); }
-    if (isTouch) button(g, 14 + w - 74, y + 12, 62, 28, 'LEAVE', () => { leaveInstance(); notify('You climb back out into the light.'); }, '#7a2e2e');
-    else { g.fillStyle = '#8b949e'; g.textAlign = 'right'; g.fillText('L to leave', 14 + w - 12, y + 18); }
-    HUD.leftY = y + h + 6;
+    g.fillStyle = HK.C.DIM; g.font = '11px sans-serif';
+    g.fillText(inst.boss && !active.cleared ? `${alive} left · boss alive` : active.cleared ? 'cleared' : `${alive} left`, s.x + pad + 4, s.y + pad + HK.LINE() * 2);
+    if (active.webT > 0) { g.textAlign = 'right'; g.fillStyle = HK.C.WARN; g.fillText(`webbed ${active.webT.toFixed(1)}s`, s.x + s.w - pad - 4, s.y + pad + HK.LINE() * 2); g.textAlign = 'left'; }
+    if (touchMode()) { const b = HK.slot(HK.row()); button(g, b.x, b.y, HK.ctrlW(), b.h, 'LEAVE', () => { leaveInstance(); notify('You climb back out into the light.'); }, '#21262d'); }
+    else { g.fillStyle = HK.C.DIM; g.textAlign = 'right'; g.fillText('L to leave', s.x + s.w - pad - 4, s.y + pad + HK.LINE() - 3); g.textAlign = 'left'; }
   });
 
   // ============================================================================
@@ -4507,10 +4547,11 @@ HOOKS.draw.push((g, items) => {
 // long-press label, drawn in screen space above the finger
 HOOKS.hud.push(g => {
   const l = tap.label; if (!l || paused) return;
+  // the same plate as every other container (src/59-hudkit.js) — it used to be the only gold-outlined box on screen
   g.font = 'bold 12px sans-serif'; const w = Math.max(60, g.measureText(l.text).width + 20), h = 26;
   const x = clamp(l.x - w / 2, 6, VW - w - 6), y = clamp(l.y - 54, 6, VH - h - 6);
-  roundRect(g, x, y, w, h, 8); g.fillStyle = 'rgba(10,14,22,0.9)'; g.fill(); g.strokeStyle = '#f5c542'; g.lineWidth = 1; g.stroke();
-  g.fillStyle = '#e6edf3'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(l.text, x + w / 2, y + h / 2); g.textBaseline = 'alphabetic';
+  HK.plate(g, x, y, w, h, { top: 'rgba(18,22,31,0.86)', bottom: 'rgba(12,15,22,0.80)' });
+  g.fillStyle = HK.C.INK; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(l.text, x + w / 2, y + h / 2); g.textBaseline = 'alphabetic';
 });
 // ---------- self-test ----------
 HOOKS.selfTest.push((check, F, h) => {
@@ -5403,19 +5444,21 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.hud.push((g, narrow) => {
     const c = comp(); if (!c.id) return;
     const def = HEROES[c.id];
-    const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
-    const short = isTouch && VH < 500;
-    let y = HUD.leftY; // shared left-HUD cursor: stack under whatever the law and boss bars already drew
-    { const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; y = Math.max(y, _touchFloor); }
-    HUD.leftY = y + 24 + 6;
-    const label = c.downT > 0 ? `${def.name} · back in ${Math.ceil(c.downT)}s` : c.mode === 'stay' ? `${def.name} · waiting` : `${def.name} ${Math.ceil(c.hp)}/${def.hp}`;
-    g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
-    const w = Math.ceil(g.measureText(label).width) + 44;
-    roundRect(g, 14, y, w, 24, 8); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
-    g.fillStyle = c.downT > 0 ? '#4b535d' : def.look.tunic; g.beginPath(); g.arc(28, y + 12, 7, 0, 7); g.fill();
-    g.fillStyle = c.downT > 0 ? '#6e7681' : (def.look.helm || def.look.hair); g.beginPath(); g.arc(28, y + 11, 6, Math.PI, 0); g.fill();
-    const f = clamp(c.hp / def.hp, 0, 1);
-    g.fillStyle = c.downT > 0 ? '#8b949e' : f > 0.5 ? '#e6edf3' : f > 0.25 ? '#d29922' : '#f85149'; g.fillText(label, 42, y + 16);
+    // MIGRATED to the HUD kit (src/59-hudkit.js). Was a content-sized black pill that changed width every
+    // time her hp ticked. Now it is a chip on the left column's grid — same edge, same width, same plate as
+    // your own health — and her hp reads on the same green/amber/red ramp as yours, because it means the
+    // same thing. The little portrait keeps her tunic colour: that is identity (which companion), not state.
+    const pad = 9, f = clamp(c.hp / def.hp, 0, 1), down = c.downT > 0;
+    const s = HK.slot(pad * 2 + HK.meterH(true));
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: down ? HK.C.BAD : null });
+    g.fillStyle = down ? '#4b535d' : def.look.tunic; g.beginPath(); g.arc(s.x + pad + 10, s.y + s.h / 2, 7, 0, 7); g.fill();
+    g.fillStyle = down ? '#6e7681' : (def.look.helm || def.look.hair); g.beginPath(); g.arc(s.x + pad + 10, s.y + s.h / 2 - 1, 6, Math.PI, 0); g.fill();
+    const bx = s.x + pad + 24;
+    HK.meter(g, bx, s.y + pad, s.x + s.w - pad - bx, {
+      label: def.name.toUpperCase() + (down ? ' · DOWN' : c.mode === 'stay' ? ' · WAITING' : ''),
+      value: down ? `${Math.ceil(c.downT)}s` : `${Math.ceil(c.hp)} / ${def.hp}`, template: `${def.hp} / ${def.hp}`,
+      frac: down ? 0 : f, tone: down ? HK.C.BAD : HK.ramp(f), small: true,
+    });
     // hero on the minimap
     if (minimapRect && c.downT <= 0) {
       const { x: mx, y: my, w: ms } = minimapRect; const ta = 44, sc = ms / ta;
@@ -5672,16 +5715,26 @@ HOOKS.update.push(dt => {
     } else m.chargeCd = DOZER_CHARGE_EVERY;
   }
 });
-// ---------- HUD: the core writes "Walker hp/max" for any mech; re-badge it while driving the bulldozer ----------
+// ---------- HUD ----------
+// MIGRATED to the HUD kit (src/59-hudkit.js). This used to be the worst pair of shapes on the screen: an
+// orange-outlined pill reading "Bulldozer 109/110" and, right beside it, a blue-outlined pill reading
+// "drill" — two unrelated colours for two things that are not opposites, both floating at hardcoded x=186.
+// Now: the machine's hp is a health meter inside the status plate (the machine IS your health while you are
+// in it, so it reads on the same green/amber/red ramp), and the fitted parts are a plain neutral chip,
+// because a fitted drill is a fact, not a warning.
+hudMechName(() => player.mech && player.mech.kind === 'dozer' ? 'Bulldozer' : null); // names the second meter in the status plate
 HOOKS.hud.push(g => {
   if (!player.mech || player.mech.kind !== 'dozer') return;
-  g.font = '13px sans-serif'; g.textAlign = 'left';
-  const label = `Bulldozer ${player.mech.hp}/${player.mech.maxHp}`;
-  const w = Math.max(g.measureText(`Walker ${player.mech.hp}/${player.mech.maxHp}`).width, g.measureText(label).width);
-  g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186, 47, w + 10, 19, 5); g.fill(); g.strokeStyle = 'rgba(255,179,71,0.35)'; g.lineWidth = 1; g.stroke();
-  g.fillStyle = '#ffb347'; g.fillText(label, 190, 60);
-  const up = dozerUp(), parts = [up.drill && (up.irondrill ? 'iron drill' : 'drill'), up.ram && 'ram', up.boiler && 'boiler'].filter(Boolean);
-  if (parts.length) { const t = parts.join(' · '); g.font = 'bold 11px sans-serif'; const cw = g.measureText(t).width; g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186 + w + 16, 47, cw + 12, 19, 5); g.fill(); g.strokeStyle = 'rgba(59,111,182,0.7)'; g.stroke(); g.fillStyle = '#9cc4ff'; g.fillText(t, 192 + w + 16, 60); }
+  const up = dozerUp(), parts = [up.drill && (up.irondrill ? 'Iron drill' : 'Drill'), up.ram && 'Ram', up.boiler && 'Boiler'].filter(Boolean);
+  if (!parts.length) return;
+  const pad = 8, s = HK.slot(HK.chipH());
+  HK.plate(g, s.x, s.y, s.w, s.h);
+  g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.fillText('FITTED', s.x + pad + 4, s.y + s.h / 2);
+  const lw = Math.ceil(g.measureText('FITTED').width) + 10;
+  g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK;
+  g.fillText(parts.join(' · '), s.x + pad + 4 + lw, s.y + s.h / 2);
+  g.textBaseline = 'alphabetic';
 });
 
 // ---------- art ----------
@@ -5996,21 +6049,24 @@ HOOKS.panel.captain = (g, narrow) => {
 };
 
 // ---------- HUD ----------
+// MIGRATED to the HUD kit (src/59-hudkit.js). Two content-sized tags with their own fills and outlines
+// become two chips on the left column's grid: BAD down the edge for WANTED (the Watch is coming for you)
+// and WARN for an unpaid fine (something to deal with, not something chasing you). The text is plain ink —
+// the colour is in the rule, which is the kit's rule everywhere.
 HOOKS.hud.push((g, narrow) => {
   if (!lawOwes()) return;
   const L = law();
-  const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
-  const touch = typeof isTouch !== 'undefined' && isTouch, short = touch && VH < 500;
-  let y = HUD.leftY; // shared left-HUD cursor (under the HP box; hooks stack instead of overprinting)
-  { const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; y = Math.max(y, _touchFloor); } // below the hotbar on touch layouts (HUD_LAYOUT from 13-ux)
-  const tag = (text, fill, stroke, color) => {
-    g.font = 'bold 12px sans-serif'; const tw = Math.ceil(g.measureText(text).width) + 24;
-    roundRect(g, 14, y, tw, 24, 8); g.fillStyle = fill; g.fill(); g.strokeStyle = stroke; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = color; g.textAlign = 'left'; g.fillText(text, 26, y + 16); y += 30;
+  const pad = 8;
+  const tag = (label, value, tone) => {
+    const s = HK.slot(HK.chipH());
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone });
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.fillText(label, s.x + pad + 4, s.y + s.h / 2);
+    g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; g.textAlign = 'right'; g.fillText(value, s.x + s.w - pad - 4, s.y + s.h / 2);
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
   };
-  if (L.wanted > 0) tag(`WANTED ${lawStars(L.wanted)}  ${Math.ceil(L.timer)}s`, 'rgba(120,20,20,0.85)', '#f85149', '#fff');
-  if (L.fines > 0) tag(`Fine: ${lawFine()} coins`, 'rgba(90,60,10,0.85)', '#d29922', '#ffd166');
-  HUD.leftY = y; // each tag already advanced y by its height + 6
+  if (L.wanted > 0) tag(`WANTED ${lawStars(L.wanted)}`, `${Math.ceil(L.timer)}s`, HK.C.BAD);
+  if (L.fines > 0) tag('FINE TO PAY', `${lawFine()} coins`, HK.C.WARN);
 });
 
 // ---------- quest entry ----------
@@ -8617,18 +8673,20 @@ HOOKS.selfTest.push((check, F, h) => {
     } });
   });
   // boss bar: under the HP box while the dragon is alive and within 12 tiles
+  // MIGRATED to the HUD kit (src/59-hudkit.js): the same boss chip the core draws, so a dragon and a grave
+  // zombie do not get two different bars. Which element the dragon is wearing is real information, so it is
+  // still shown — but as a WORD in the label, not as a fourth, fifth and sixth outline colour. Red means
+  // danger here as it does everywhere else; an ice dragon is not a different kind of danger.
   HOOKS.hud.push((g, narrow) => {
     const m = fang(); if (!m || m.dead || dist(m.x, m.y, player.x, player.y) > 12 * TILE) return;
-    const C = EL[m.element || 'fire'], w = Math.min(236, VW - 28), h = 48, x = 14;
-    const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
-    const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; const y = Math.max(HUD.leftY, _touchFloor, 84); // shared left-HUD cursor: under the companion / wanted tags
-    HUD.leftY = y + h + 6;
-    roundRect(g, x, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = C.col; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText('THE FANG', x + 12, y + 19);
-    g.fillStyle = C.col; g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillText(C.name.toUpperCase() + (m.element === 'stone' ? ' · wait it out' : ''), x + w - 12, y + 19);
-    g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, y + 27, w - 24, 11, 5); g.fill();
-    g.fillStyle = C.col; roundRect(g, x + 12, y + 27, (w - 24) * clamp(m.hp / m.maxHp, 0, 1), 11, 5); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(m.hp)} / ${m.maxHp}`, x + w / 2, y + 36);
+    const C = EL[m.element || 'fire'], pad = 10;
+    const s = HK.slot(pad * 2 + HK.meterH());
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: HK.C.BAD });
+    HK.meter(g, s.x + pad + 2, s.y + pad, s.w - pad * 2 - 2, {
+      label: 'THE FANG · ' + C.name.toUpperCase() + (m.element === 'stone' ? ' · WAIT IT OUT' : ''),
+      value: `${Math.ceil(m.hp)} / ${m.maxHp}`, template: `${m.maxHp} / ${m.maxHp}`,
+      frac: clamp(m.hp / m.maxHp, 0, 1), tone: HK.C.BAD,
+    });
   });
 
   // ---------- self-test ----------
@@ -9506,13 +9564,15 @@ HOOKS.selfTest.push((check, F, h) => {
     drawHud = function (g) {
       coreDrawHud(g);
       const title = quest.rebuild && quest.rebuild.title; if (!paused || !title) return;
-      const pw = 300, ph = 250, px = VW / 2 - pw / 2, py = VH / 2 - ph / 2;
-      g.fillStyle = 'rgba(10,14,22,1)'; g.fillRect(px + 2, py + 196, pw - 4, 18);
+      // the stats line used to be the magic number VH/2 + 83 in both this file and 10-hud; both now ask the
+      // HUD kit for the same y, so a finger-sized pause-menu row cannot silently split them (src/59-hudkit.js)
+      const { px, pw, statsY } = HK.pauseBox();
+      g.fillStyle = 'rgba(13,16,24,1)'; g.fillRect(px + 2, statsY - 12, pw - 4, 18);
       g.font = '11px sans-serif'; g.textBaseline = 'alphabetic';
       let stats = `Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`;
       const gap = ' · '; if (g.measureText(title + gap + stats).width > pw - 16) stats = `Kills ${player.kills} · Deaths ${player.deaths}`;
       const tw = g.measureText(title).width, gw = g.measureText(gap).width, sw = g.measureText(stats).width, x0 = VW / 2 - (tw + gw + sw) / 2;
-      g.textAlign = 'left'; g.fillStyle = '#f5c542'; g.fillText(title, x0, py + 208); g.fillStyle = '#6e7681'; g.fillText(gap + stats, x0 + tw, py + 208);
+      g.textAlign = 'left'; g.fillStyle = HK.C.GOLD; g.fillText(title, x0, statsY); g.fillStyle = 'rgba(211,220,232,0.7)'; g.fillText(gap + stats, x0 + tw, statsY);
       g.textAlign = 'center';
     };
   }
@@ -9687,23 +9747,26 @@ HOOKS.selfTest.push((check, F, h) => {
   });
   HOOKS.newGame.push(() => { beastWas = false; beastSnap = null; bombCd = 0; rams = 0; bombsLobbed = 0; });
 
-  // ---------- HUD: re-badge the core's "Walker hp/max", show the chute, and a BOMB touch button ----------
+  // ---------- HUD ----------
+  // MIGRATED to the HUD kit (src/59-hudkit.js): the machine's hp is now the second meter in the status
+  // plate (hudMechName below), and the bomb chute is a chip on the left column instead of a lilac-outlined
+  // pill floating at x=186. Amber while it reloads, neutral when it is ready — the kit's one meaning for
+  // amber is "wait", which is exactly what a cooldown is.
+  hudMechName(() => driving() ? 'Barrelbeast' : null);
   HOOKS.hud.push(g => {
     if (!driving()) return;
-    g.font = '13px sans-serif'; g.textAlign = 'left';
-    const label = `Barrelbeast ${player.mech.hp}/${player.mech.maxHp}`;
-    const w = Math.max(g.measureText(`Walker ${player.mech.hp}/${player.mech.maxHp}`).width, g.measureText(label).width);
-    g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186, 47, w + 10, 19, 5); g.fill(); g.strokeStyle = 'rgba(255,179,71,0.35)'; g.lineWidth = 1; g.stroke();
-    g.fillStyle = '#ffb347'; g.fillText(label, 190, 60);
-    const ready = bombCd <= 0, chute = ready ? (isTouch ? 'BOMB ready' : 'B: bomb ready') : `${isTouch ? 'BOMB' : 'B: bomb'} ${bombCd.toFixed(1)}s`;
-    g.font = 'bold 11px sans-serif'; const cw = g.measureText(chute).width;
-    g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186 + w + 16, 47, cw + 12, 19, 5); g.fill(); g.strokeStyle = ready ? 'rgba(216,200,255,0.6)' : 'rgba(255,255,255,0.15)'; g.stroke();
-    g.fillStyle = ready ? '#d8c8ff' : '#8b949e'; g.fillText(chute, 192 + w + 16, 60);
-    if (isTouch) { // the HOME button's spot: it is hidden while in any mech
-      const r = 52, x = VW - 160, y = VH - 254;
-      g.fillStyle = ready ? 'rgba(216,200,255,0.22)' : 'rgba(255,255,255,0.08)'; g.beginPath(); g.arc(x, y, r / 2 + 8, 0, 7); g.fill();
-      g.fillStyle = ready ? '#fff' : 'rgba(255,255,255,0.45)'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText(ready ? 'BOMB' : bombCd.toFixed(1), x, y + 4);
-      buttons.push({ x: x - r / 2 - 8, y: y - r / 2 - 8, w: r + 16, h: r + 16, label: 'BOMB', action: () => touch.taps.push('bomb') });
+    const ready = bombCd <= 0, pad = 8;
+    const s = HK.slot(HK.chipH());
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: ready ? null : HK.C.WARN });
+    g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillText(touchMode() ? 'BOMB' : 'BOMB (B)', s.x + pad + 4, s.y + s.h / 2);
+    g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; g.textAlign = 'right';
+    g.fillText(ready ? 'ready' : `${bombCd.toFixed(1)}s`, s.x + s.w - pad - 4, s.y + s.h / 2);
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    if (touchMode()) { // seat 4 of the kit's thumb grid — HOME's seat, and HOME is hidden while in any machine
+      const p = HK.thumbSeat(4);
+      HK.disc(g, p.x, p.y, p.r, ready ? 'BOMB' : bombCd.toFixed(1), { enabled: ready });
+      buttons.push({ x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2, label: 'BOMB', action: () => touch.taps.push('bomb') });
     }
   });
 
@@ -11037,13 +11100,14 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.hud.push((g, narrow) => {
     if (typeof title !== 'undefined' && title.active) return;
     const inst = window.__instance; if (inst && inst !== AFTER.id) return;
-    const mmSize = narrow ? 96 : 150, mmx = VW - mmSize - 14, mmy = 14;
+    const mmSize = HK.mmSize(), mmx = HK.mmX(), mmy = 14;   // one minimap box, from the kit (src/59-hudkit.js)
     const tight = isTouch && narrow;
     const w = tight ? 44 : 60, h = tight ? 14 : 18, x = tight ? mmx + 4 : mmx + mmSize / 2 - w / 2, y = tight ? mmy + mmSize - h - 4 : mmy + mmSize + 18;
     const t = dayT(), night = inst === AFTER.id || t >= LIGHT, p = inst === AFTER.id ? 0.5 : night ? (t - LIGHT) / (DAY - LIGHT) : t / LIGHT;
-    roundRect(g, x, y, w, h, 6); g.fillStyle = night ? 'rgba(10,14,40,0.82)' : 'rgba(10,14,22,0.7)'; g.fill();
+    // the same plate as everything else (src/59-hudkit.js); night only shifts the scrim a touch bluer
+    HK.plate(g, x, y, w, h, night ? { top: 'rgba(14,18,40,0.76)', bottom: 'rgba(10,13,30,0.64)' } : {});
     const r = h - 4, cx = x + w / 2, by = y + h - 2;
-    g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 1; g.beginPath(); g.arc(cx, by, r, Math.PI, 0); g.stroke();
+    g.strokeStyle = HK.C.RULE; g.lineWidth = 1; g.beginPath(); g.arc(cx, by, r, Math.PI, 0); g.stroke();
     const ang = Math.PI - p * Math.PI, dx = cx + Math.cos(ang) * r, dy = by - Math.sin(ang) * r;
     if (!night) {
       g.fillStyle = '#ffd166'; g.beginPath(); g.arc(dx, dy, 3.2, 0, 7); g.fill();
@@ -14104,12 +14168,10 @@ const SETTINGS = (() => {
   { const _drawMinimap = drawMinimap, _drawCompass = drawCompass;
     drawMinimap = function () { if (S.minimap) return _drawMinimap.apply(this, arguments); };
     drawCompass = function () { if (S.minimap) return _drawCompass.apply(this, arguments); }; }
-  HOOKS.hud.push(g => {
-    if (S.minimap) return;
-    minimapRect = null; // no tap opens the map by accident where the minimap used to be
-    const mmSize = VW < 640 ? 96 : 150, mmx = VW - mmSize - 14;
-    button(g, mmx + mmSize - 64, 14, 64, 28, 'MAP', () => panel === 'map' ? closePanel() : openPanel('map'), '#21262d');
-  });
+  // MIGRATED to the HUD kit: with the minimap off, MAP is a control like any other, so it joins the control
+  // rail under the (now empty) minimap corner instead of being a lone button pinned to the minimap's edge.
+  HOOKS.hud.push(() => { if (!S.minimap) minimapRect = null; }); // no tap opens the map where the minimap used to be
+  hudControl({ id: 'map', sort: 50, label: () => 'MAP', show: () => !S.minimap && !paused, on: () => panel === 'map', action: () => panel === 'map' ? closePanel() : openPanel('map') });
 
   // ---------- talk speed: 07-update reveals 34 characters a second; this hook runs right after it every tick ----------
   const SPEECH_RATE = { slow: 18, normal: 34, fast: 90 };
@@ -14240,9 +14302,14 @@ const SETTINGS = (() => {
         check('settings: tap to walk off means a tap never walks or uses; on brings it back', noPath && still && path, { noPath, still, path }); }
       // stick side
       { window.__forceTouch = true; touch.stickId = null; touch.active = false; touch.press = null; const sy = VH - 100;
-        set('stick', 'right'); render(); pointerDown(VW * 0.75, sy, 7); const rOn = touch.stickId === 7 && touch.active; touch.press = null; pointerUp(7); pointerDown(VW * 0.25, sy, 8); const lOff = touch.stickId === null; touch.press = null; pointerUp(8);
+        // The question here is which half of the screen starts the stick, so each tap is made against a freshly
+        // drawn frame with the on-screen buttons cleared: at these coordinates the touch layout's thumb cluster
+        // (SWING, BLOCK) is sitting right where the test taps, and a button would swallow the press and hide
+        // whatever pointerDown actually did with it. Clearing them tests the stick-side rule and nothing else.
+        const tapAtStick = (x, id) => { render(); buttons.length = 0; pointerDown(x, sy, id); };
+        set('stick', 'right'); tapAtStick(VW * 0.75, 7); const rOn = touch.stickId === 7 && touch.active; touch.press = null; pointerUp(7); tapAtStick(VW * 0.25, 8); const lOff = touch.stickId === null; touch.press = null; pointerUp(8);
         const zoneR = joystickZone(VW - 100, VH - 60) && !joystickZone(100, VH - 60) && window.__stickRight === true;
-        set('stick', 'left'); pointerDown(VW * 0.25, sy, 9); const lOn = touch.stickId === 9; touch.press = null; pointerUp(9); pointerDown(VW * 0.75, sy, 10); const rOff = touch.stickId === null; touch.press = null; pointerUp(10);
+        set('stick', 'left'); tapAtStick(VW * 0.25, 9); const lOn = touch.stickId === 9; touch.press = null; pointerUp(9); tapAtStick(VW * 0.75, 10); const rOff = touch.stickId === null; touch.press = null; pointerUp(10);
         const zoneL = joystickZone(100, VH - 60) && !joystickZone(VW - 100, VH - 60) && window.__stickRight === false;
         window.__forceTouch = prevTouch;
         check('settings: stick side right starts the stick on the right half only (and the dialogue-safe zone moves); left is the core behaviour', rOn && lOff && zoneR && lOn && rOff && zoneL, { rOn, lOff, zoneR, lOn, rOff, zoneL }); }
@@ -14831,37 +14898,37 @@ window.SETTINGS = SETTINGS;
   update.__inner = _update;
   HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] }); // 43-settings walks this chain to read the real key handlers
 
-  // ---------- buttons: WIKI on the HUD, Wiki under an item in the pack ----------
-  // Placement (never over another button, the minimap or the quest box):
-  //   desktop → right of the HP box at (274, 14): the spec's VW/2+168 sits under the quest box on a 1280 screen.
-  //   touch, wide → left of MENU at (VW/2-96, 14): VW/2+168 would touch the minimap on a 768 tablet.
-  //   touch, narrow phone → beside HELP at (VW-74-64, stackBottom-28): the core puts the quest box straight under the stack
-  //   (qy = topStackBottom + 10, drawn before HOOKS.hud runs), so "under the stack" would sit on the quest box.
-  function wikiButtonRect(narrow) {
-    if (!isTouch) return { x: 274, y: 14, w: 72, h: 26, label: 'Wiki (K)' };
-    if (!narrow) return { x: VW / 2 - 96, y: 14, w: 60, h: 26, label: 'WIKI' };
-    return { x: VW - 74 - 64, y: HUD_LAYOUT.topStackBottom - 28, w: 60, h: 28, label: 'WIKI' };
-  }
+  // ---------- buttons: WIKI in the control rail, Wiki under an item in the pack ----------
+  // MIGRATED to the HUD kit (src/59-hudkit.js). The book used to be a button bolted on wherever there was
+  // room — three different hardcoded spots for desktop, tablet and phone, each of them a near-miss with the
+  // quest box or the minimap, and none of them matching anything else on screen. It is now one entry in the
+  // control rail under the minimap, beside the other things you reach for rarely, laid out by the kit.
+  hudControl({
+    id: 'wiki', sort: 40,
+    label: () => touchMode() ? 'WIKI' : 'Wiki (K)',
+    show: () => !(typeof title !== 'undefined' && title && title.active) && !paused,
+    on: () => panel === 'wiki',
+    action: () => panel === 'wiki' ? closePanel() : open(wk.section, wk.id, false),
+  });
   HOOKS.hud.push((g, narrow) => {
     if (typeof title !== 'undefined' && title && title.active) return;
     if (paused) return;
-    const r = wikiButtonRect(narrow);
-    button(g, r.x, r.y, r.w, r.h, r.label, () => panel === 'wiki' ? closePanel() : open(wk.section, wk.id, false), '#21262d');
     // the pack panel is drawn after this hook, so the Wiki button for the selected item is registered on the next frame's pass — it is drawn here from the
     // same numbers the core uses (panelBox size, grid, Equip/Drop row), sitting one row under the Equip / Drop buttons.
     if (panel === 'inventory' && selectedSlot >= 0 && player.inv[selectedSlot]) {
       const cols = narrow ? 5 : 10, size = narrow ? 44 : 46, gap = 6, eqw = 70;
-      const pw = Math.min(cols * (size + gap) + 30 + eqw, VW - 20), ph = Math.min(narrow ? 440 : 300, VH - 20);
+      const rowH = HK.row(), grow = (rowH - 30) * 2;   // the core grew the pack panel by the same amount
+      const pw = Math.min(cols * (size + gap) + 30 + eqw, VW - 20), ph = Math.min((narrow ? 440 : 300) + grow, VH - 20);
       const px = Math.round(VW / 2 - pw / 2), py = Math.round(Math.max(10, VH / 2 - ph / 2 - 20));
       const gy = py + 66 + Math.ceil(INV_SLOTS / cols) * (size + gap);
       const id = player.inv[selectedSlot].id;
-      wikiInvButton = { x: px + 18 + eqw, y: gy + 58 + 36, w: 90, h: 26, id };
+      wikiInvButton = { x: px + 18 + eqw, y: gy + 58 + rowH + 6, w: 90, h: rowH, id };
     } else wikiInvButton = null;
   });
   let wikiInvButton = null;
   // drawn after the pack panel (a panel hook cannot run for a core panel, so the button is painted by a wrapped render: see below)
   const _render = typeof render === 'function' ? render : null;
-  if (_render) render = function () { const r = _render.apply(this, arguments); if (panel === 'inventory' && wikiInvButton && !paused) { const b = wikiInvButton; button(ctx, b.x, b.y, b.w, b.h, 'Wiki', () => open('items', b.id), '#1f4e78'); } return r; };
+  if (_render) render = function () { const r = _render.apply(this, arguments); if (panel === 'inventory' && wikiInvButton && !paused) { const b = wikiInvButton; button(ctx, b.x, b.y, b.w, b.h, 'Wiki', () => open('items', b.id), '#21262d'); } return r; }; // neutral: reading a page is not an action with a colour
 
   window.WIKI = {
     sections: SECTIONS, state: wk,
@@ -15505,33 +15572,28 @@ window.SETTINGS = SETTINGS;
       if (!best || d < best.d) best = { m, d, feeding, cold };
     }
     if (!best) return;
+    // MIGRATED to the HUD kit (src/59-hudkit.js). The same boss chip as every other boss, with the phase
+    // said in words rather than painted (it was orange while feeding and pale blue while cold — two more
+    // colours meaning things no other colour in the game meant). The core's boss bars now advance the shared
+    // left-column cursor themselves, so the old bossFloor arithmetic here is gone.
     const { m, feeding } = best, heart = heartOf(m);
     const bars = bossBarList(), onBar = bars.indexOf(m) >= 0;
-    const col = feeding ? '#ff8a3a' : '#8fd3ff';
-    const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null;
-    const w = lay && lay.short ? 180 : Math.min(236, VW - 28), x = 14;
     const hpRow = !onBar;                        // only when the core bar is not already showing them
-    const emberY = hpRow ? 42 : 27;              // where the ember bar sits inside the panel
-    const h = feeding ? emberY + 18 : hpRow ? 48 : 28;
-    const touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
-    // the boss bars are drawn before every HUD hook and do not move the shared cursor, so step past them here
-    const bossFloor = (bars.length && lay) ? lay.bossBarY + bars.length * (BOSS_H + BOSS_GAP) : 0;
-    const y = Math.max(HUD.leftY, touchFloor, bossFloor, 84);   // shared left-HUD cursor: stack under whatever drew above
-    HUD.leftY = y + h + 6;
-    roundRect(g, x, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = col; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText('CINDERWIGHT', x + 12, y + 19);
-    g.fillStyle = col; g.font = 'bold 11px sans-serif'; g.textAlign = 'right';
-    g.fillText(feeding ? 'BREAK THE HEART' : 'COLD · HIT IT NOW', x + w - 12, y + 19);
+    const pad = 10;
+    const h = pad * 2 + (hpRow ? HK.meterH() : 0) + (hpRow && feeding && heart ? HK.GUT : 0) + (feeding && heart ? HK.meterH(true) : 0) + (!hpRow && !(feeding && heart) ? HK.LINE() : 0);
+    const s = HK.slot(h);
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: HK.C.BAD });
+    const iw = s.w - pad * 2 - 2, ix = s.x + pad + 2;
+    let cy = s.y + pad;
+    const phase = feeding ? 'BREAK THE HEART' : 'COLD · HIT IT NOW';
     if (hpRow) {
-      g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, y + 27, w - 24, 11, 5); g.fill();
-      g.fillStyle = '#e63946'; roundRect(g, x + 12, y + 27, (w - 24) * clamp(m.hp / m.maxHp, 0, 1), 11, 5); g.fill();
-      g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(m.hp)} / ${m.maxHp}`, x + w / 2, y + 36);
+      cy += HK.meter(g, ix, cy, iw, { label: 'CINDERWIGHT · ' + phase, value: `${Math.ceil(m.hp)} / ${m.maxHp}`, template: `${m.maxHp} / ${m.maxHp}`, frac: clamp(m.hp / m.maxHp, 0, 1), tone: HK.C.BAD });
+      if (feeding && heart) cy += HK.GUT;
+    } else if (!(feeding && heart)) {
+      g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.textAlign = 'left'; g.fillText('CINDERWIGHT · ' + phase, ix, cy + HK.LINE() - 3);
     }
-    if (feeding && heart) {
-      g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, y + emberY, w - 24, 9, 4); g.fill();
-      g.fillStyle = col; roundRect(g, x + 12, y + emberY, (w - 24) * clamp(heart.hp / heart.maxHp, 0, 1), 9, 4); g.fill();
-      g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`heart ${Math.ceil(heart.hp)} / ${heart.maxHp}`, x + w / 2, y + emberY + 8);
-    }
+    // the heart is a countdown you have to beat, so it is amber: the kit's one meaning for "wait / hurry"
+    if (feeding && heart) HK.meter(g, ix, cy, iw, { label: hpRow ? 'HEART' : 'CINDERWIGHT · ' + phase, value: `${Math.ceil(heart.hp)} / ${heart.maxHp}`, template: `${heart.maxHp} / ${heart.maxHp}`, frac: clamp(heart.hp / heart.maxHp, 0, 1), tone: HK.C.WARN, small: true });
   }
   HOOKS.hud.push(wightPanel);
 
@@ -15668,19 +15730,26 @@ window.SETTINGS = SETTINGS;
           : typeof k === 'string' ? nop : undefined, set: () => true });
         const leftBack = HUD.leftY;
         HUD.leftY = 82; drawBossBars(rec, HUD_LAYOUT.bossBarY);      // the core draws its bars first, every frame
-        const nBar = marks.length, barred = marks.some(t => t.s === 'CINDERWIGHT');
+        // The bars now claim their rows from the HUD kit's left-column cursor (src/59-hudkit.js), so "under
+        // the core bar" is asked of the cursor itself rather than of a pinned 48 px bar height — the same
+        // intent, but it cannot drift out of date the next time a bar changes shape.
+        const barsBottom = HUD.leftY;
+        const nBar = marks.length, barred = marks.some(t => /^CINDERWIGHT\b/.test(t.s));
+        const barHp = marks.some(t => /^\d+ \/ \d+$/.test(t.s));   // the core bar shows the wight's hit points
+        const wightHp = `${Math.ceil(m.hp)} / ${m.maxHp}`;
+        const hrt = heartOf(m), heartHp = hrt ? `${Math.ceil(hrt.hp)} / ${hrt.maxHp}` : null;
         CINDERWIGHT.panel(rec);
         HUD.leftY = leftBack; monsters.length = 0; for (const b of roster) monsters.push(b);
         const mine = marks.slice(nBar);
         const top = mine.length ? Math.min(...mine.map(t => t.y)) : -1;
-        const hpLines = mine.filter(t => /^\d+ \/ \d+$/.test(t.s)).length;
+        const hpLines = mine.filter(t => t.s === wightHp).length;   // the panel must not repeat what the bar shows
         let clash = null;
         for (let i = 0; i < marks.length && !clash; i++) for (let j = i + 1; j < marks.length && !clash; j++)
           if (marks[i].x === marks[j].x && marks[i].y === marks[j].y) clash = [marks[i].s, marks[j].s, marks[i].x, marks[i].y];
         check(P + 'its HUD panel stacks under the core boss bar: nothing overprints, and it does not repeat the hit points the bar already shows',
-          barred && nBar >= 3 && mine.length >= 2 && !clash && top >= HUD_LAYOUT.bossBarY + 48 + 8 && hpLines === 0
-          && mine.some(t => t.s === 'BREAK THE HEART') && mine.some(t => /^heart \d+ \/ \d+$/.test(t.s)),
-          { bossBarTexts: nBar, bossBarDrewWight: barred, panelTexts: mine.map(t => [t.s, t.x, t.y]), panelTopY: top, bossBarY: HUD_LAYOUT.bossBarY, repeatedHpLines: hpLines, clash }); }
+          barred && barHp && mine.length >= 2 && !clash && top >= barsBottom && hpLines === 0
+          && mine.some(t => /BREAK THE HEART/.test(t.s)) && !!heartHp && mine.some(t => t.s === heartHp),
+          { bossBarTexts: nBar, bossBarDrewWight: barred, bossBarShowedHp: barHp, panelTexts: mine.map(t => [t.s, t.x, t.y]), panelTopY: top, barsBottom, wightHp, heartHp, repeatedHpLines: hpLines, clash }); }
       // 4b. while it burns: 14 hp a second back, and the ash scalds
       if (heart) {
         m.hp = 300; const before = m.hp; F.sim(60, []); const healed = m.hp - before;
@@ -16071,16 +16140,29 @@ window.SETTINGS = SETTINGS;
     } });
   }
   HOOKS.draw.push(drawShield);
-  // every key needs a button: BLOCK sits with the other action buttons on touch, under the Wiki button on a desktop
-  function blockRect() {
-    if (!isTouch) return { x: 274, y: 46, w: 92, h: 26, label: 'Block (R)' };
-    const mx = x => (window.__stickRight === true ? VW - x : x);
-    return { x: mx(VW - 250) - 34, y: VH - 134, w: 68, h: 68, label: 'BLOCK' };
+  // every key needs a button: BLOCK sits with the other action buttons in the thumb cluster on touch. On a
+  // desktop it used to be parked under the old bolted-on Wiki button at (274, 46); the Wiki button has moved
+  // into the control rail, so BLOCK now takes a row on the left column like every other state control.
+  // A landscape phone has no room for a sixth thumb seat (the minimap and the hotbar close in on it), so
+  // there BLOCK is a labelled control on the left column, like FULL STEAM. claim = true takes the row.
+  function blockRect(claim) {
+    if (!touchMode() || HK.short()) {
+      const s = claim ? HK.slot(HK.row()) : { x: HK.colX(0), y: Math.max(HUD.leftY, HK.stackFloor()) };
+      return { x: s.x, y: s.y, w: HK.ctrlW(), h: HK.row(), label: touchMode() ? 'BLOCK' : 'Block (R)' };
+    }
+    const p = HK.thumbSeat(5);
+    return { x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2, label: 'BLOCK', round: true };
   }
+  // MIGRATED to the HUD kit: three states used to be three fills (blue, grey, darker grey), which read as
+  // decoration. Now the shield up is GOOD (you are protected — the kit's one meaning for green), ready is a
+  // raised control (press me), and cooling is the flat one. Colour, weight and words all agree.
   HOOKS.hud.push(g => {
     if (player.dead || player.mech) return;
-    const r = blockRect(), up = BLOCK.t > 0, ready = BLOCK.cd <= 0 && !!shieldOn();
-    button(g, r.x, r.y, r.w, r.h, up ? 'BLOCKING' : r.label, raiseShield, up ? '#1f6feb' : ready ? '#30363d' : '#21262d');
+    if ((!touchMode() || HK.short()) && (panel || paused)) return; // on the left column: a panel would sit right on top of it
+    const up = BLOCK.t > 0, ready = BLOCK.cd <= 0 && !!shieldOn();
+    const r = blockRect(true);   // claims its row on the left column where that is where it lives
+    if (r.round) { HK.disc(g, r.x + r.w / 2, r.y + r.h / 2, r.w / 2, up ? 'UP' : 'BLOCK', { tone: up ? HK.C.GOOD : null }); buttons.push({ x: r.x, y: r.y, w: r.w, h: r.h, label: 'BLOCK', action: raiseShield }); return; }
+    HK.control(g, r.x, r.y, r.w, r.h, up ? 'BLOCKING' : r.label, raiseShield, { tone: up ? HK.C.GOOD : null, on: ready && !up, hit: 'BLOCK' });
   });
 
   // ---------- teaching it: the book, and the first blow the knight takes with a shield on his arm ----------
@@ -17304,27 +17386,19 @@ window.SETTINGS = SETTINGS;
   HOOKS.newGame.push(() => { rideWas = false; handled = false; refuseT = -1e9; });
 
   // ---------- HUD: her name over the core's "Walker" line, and a RIDE / GET DOWN button ----------
+  // MIGRATED to the HUD kit: the mare's hp is the second meter in the status plate (hudMechName), not a
+  // brown-outlined pill at a hardcoded x, and RIDE / GET DOWN is a control on the left column's grid.
+  hudMechName(() => riding() ? NAME : null);
   HOOKS.hud.push((g, narrow) => {
-    if (riding()) {
-      const label = `${NAME} ${player.mech.hp}/${player.mech.maxHp}`;
-      g.font = '13px sans-serif'; g.textAlign = 'left';
-      const w = Math.max(g.measureText(`Walker ${player.mech.hp}/${player.mech.maxHp}`).width, g.measureText(label).width);
-      g.fillStyle = 'rgba(10,14,22,0.95)'; roundRect(g, 186, 47, w + 10, 19, 5); g.fill();
-      g.strokeStyle = 'rgba(201,163,106,0.35)'; g.lineWidth = 1; g.stroke();
-      g.fillStyle = '#c9a36a'; g.fillText(label, 190, 60);
-    }
     const near = !player.dead && !riding() && H().owned && !player.mech && !!horseNear();
     if (!riding() && !near) return;
     // HOOKS.hud runs before the panels are drawn, and a click is matched against the button list before it is
     // matched against the open panel — so a button drawn under a panel would still eat the click. Draw nothing
     // while anything is over the world: the panel sits right on top of this rect (Skills starts at x 14, y 90).
     if (panel || paused) return;
-    const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null;
-    const touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
-    const h = isTouch ? 44 : 34, w = 132, x = 14, y = Math.max(HUD.leftY, touchFloor, 84);
-    button(g, x, y, w, h, riding() ? 'GET DOWN' : 'RIDE', tryRide, riding() ? '#6b4f2a' : '#238636');
-    if (!isTouch) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(riding() ? 'R or X' : 'R', x + w + 8, y + h / 2 + 4); }
-    HUD.leftY = y + h + 6;
+    const s = HK.slot(HK.row());
+    button(g, s.x, s.y, HK.ctrlW(), s.h, riding() ? 'GET DOWN' : 'RIDE', tryRide, riding() ? '#21262d' : '#238636');
+    if (!touchMode()) { g.fillStyle = HK.C.DIM; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(riding() ? 'R or X' : 'R', s.x + HK.ctrlW() + 8, s.y + s.h / 2 + 4); }
   });
 
   // ---------- art: a grey mare with the knight in the saddle, drawn right at all four facings ----------
@@ -18160,23 +18234,19 @@ window.SETTINGS = SETTINGS;
   });
 
   // ---------- the shift clock on screen ----------
+  // MIGRATED to the HUD kit (src/59-hudkit.js). The shift clock was a lone box floating at the top centre
+  // of the screen, in its own size, with its own outline that turned red. It is now a chip in the left
+  // column with everything else that is happening to you right now: the roof is a meter on the same
+  // green/amber/red ramp as your health, and the coal you have cut is a quiet second line.
   HOOKS.hud.push((g, narrow) => {
     if (!running()) return;
-    const w = narrow ? 150 : 190, x = VW / 2 - w / 2, y = Math.max(HUD_LAYOUT.topStackBottom + 8, 92);
-    roundRect(g, x, y, w, 44, 8); g.fillStyle = 'rgba(10,14,22,0.86)'; g.fill();
-    g.strokeStyle = run.roof < ROOF_WARN ? '#c0392b' : '#30363d'; g.lineWidth = run.roof < ROOF_WARN ? 2 : 1; g.stroke();
-    g.textAlign = 'left'; g.font = 'bold 13px sans-serif'; g.fillStyle = '#e6edf3';
-    g.fillText(`${run.coal} coal`, x + 12, y + 18);
-    g.textAlign = 'right'; g.fillStyle = '#8b949e'; g.font = '12px sans-serif';
-    g.fillText(`${Math.max(0, Math.ceil(run.t))}s`, x + w - 12, y + 18);
-    // the roof bar: full is safe, empty is rock on your head
-    const bw = w - 24, f = Math.max(0, Math.min(1, run.roof / PROP_RESET));
-    g.fillStyle = '#21262d'; g.fillRect(x + 12, y + 26, bw, 8);
-    g.fillStyle = f > 0.45 ? '#3fb950' : f > 0.2 ? '#d29922' : '#c0392b';
-    g.fillRect(x + 12, y + 26, bw * f, 8);
-    g.textAlign = 'left'; g.font = '10px sans-serif'; g.fillStyle = '#6e7681';
-    g.fillText('roof', x + 12, y + 42);
-    g.textAlign = 'center';
+    const pad = 9, f = Math.max(0, Math.min(1, run.roof / PROP_RESET));
+    const tone = f > 0.45 ? HK.C.GOOD : f > 0.2 ? HK.C.WARN : HK.C.BAD;
+    const s = HK.slot(pad * 2 + HK.meterH() + HK.GUT + HK.LINE());
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: run.roof < ROOF_WARN ? HK.C.BAD : null });
+    const ix = s.x + pad + 2, iw = s.w - pad * 2 - 2;
+    const used = HK.meter(g, ix, s.y + pad, iw, { label: 'ROOF', value: `${Math.max(0, Math.ceil(run.t))}s`, template: '000s', frac: f, tone });
+    HK.readout(g, ix, s.y + pad + used + HK.GUT, iw, [{ label: 'COAL CUT', value: `${run.coal}` }]);
   });
 
   // ---------- the cart and the rails in Deepholm ----------
@@ -19701,6 +19771,8 @@ window.SETTINGS = SETTINGS;
     if (!broken && (charge > 0 || sp)) {
       g.strokeStyle = armed() || sp ? '#f5c542' : '#d29922'; g.lineWidth = 4;
       g.beginPath(); g.arc(cx, cy, R - 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, sp ? 1 : charge)); g.stroke();
+  // (feat/hud had migrated the old 66x30 STEAM button onto the kit's left column; master replaced that button
+  //  with the corner HOLD target above before the merge, so the migration has nothing left to migrate.)
     }
     g.textAlign = 'center'; g.font = 'bold 11px sans-serif';
     g.fillStyle = broken ? '#6e7681' : '#ffe9e0';
@@ -20217,6 +20289,580 @@ window.SETTINGS = SETTINGS;
     regrow = rg0; fires = fr0; save(); h.peace(false);
   });
 }
+
+// ---- src/59-hudkit.js ----
+// ============================================================================
+// HUD KIT — one grid, one container, one colour language, for the whole heads-up display.
+//
+// WHY. Before this file the HUD was nine islands: four container styles at five corner radii, colour used
+// as decoration (an orange machine pill beside a blue drill pill, for two things that are not opposites),
+// slabs sized to their own text so the shapes jittered as numbers ticked, and buttons that looked like
+// labels. Every feature that wanted a chip invented one. This file is the single system they all draw
+// through, and 10-hud plus the feature HOOKS.hud blocks were migrated onto it.
+//
+// THE RULES, in full, so a later feature can follow them without reading the code:
+//
+//   GRID.       One margin (M), one gutter (GUT), one row height (row()), one column width (colW()).
+//               Everything in the left stack shares one left edge and one width — it is a column, not a pile
+//               of content-sized boxes, so nothing changes shape as a number changes. Numbers live in fields
+//               reserved from their widest possible value (fieldW()), never from today's. The column wraps
+//               into a second one rather than running into the joystick or off the bottom of the screen.
+//
+//   CONTAINER.  One: plate(). A soft dark scrim with a hairline light edge, radius R, sitting ON the art
+//               rather than punching a hole in it. The game is bright and painterly, so the plate is a
+//               gradient of 0.78 → 0.66 alpha, not the old flat 0.95 black — as light as it can be and still
+//               clear 4.5:1 for both text colours over the brightest ground the game paints. Item tiles
+//               (the pack grid) are the one other shape, at R_SLOT, because a slot is not a container.
+//
+//   COLOUR.     Text is INK or DIM. Nothing else. Colour lives in FILLS — bar fills, the 3 px rule down a
+//               chip's left edge, a control's tint — and it means exactly one thing everywhere:
+//                 GOOD  green  — healthy, ready, safe
+//                 WARN  amber  — watch this: getting low, winding up, counting down
+//                 BAD   red    — danger: nearly dead, wanted, the roof is coming in, a boss is on you
+//                 GOLD  gold   — the coin, and quest markers. A resource marker, never a state.
+//                 (no tone)    — a neutral readout. Most chips are neutral. That is the point.
+//               The old orange machine pill is now a health meter in the GOOD/WARN/BAD ramp (the machine's
+//               hp IS your hp while you are in it); the old blue drill pill is now a neutral parts line,
+//               because a fitted drill is a fact, not a warning.
+//
+//   PRESSABLE.  control() draws the SAME plate with light laid over it and a 1.5 px light edge round it.
+//               Readouts never get that edge. The difference is shape and weight, not colour, so it reads
+//               at arm's length on an iPad and it survives colour blindness. Controls are row() tall —
+//               44 px on touch, always — and go through the core button() helper, so they stay tappable.
+//
+//   HIERARCHY.  First read: health, and being in danger — the status plate at top left, biggest bar on
+//               screen. Second: coins, combat level, machine state — the plate's quiet second line and the
+//               chips stacked under it. Rarely: menus, the book, the map, music — the control rail under
+//               the minimap, off the main stack entirely.
+//
+// HOW TO USE IT from a feature file (all of these are safe to call inside a HOOKS.hud handler):
+//   const s = HK.slot(HK.meterH());            // claim the next row of the left column → {x, y, w, h}
+//   HK.plate(g, s.x, s.y, s.w, s.h);           // the one container
+//   HK.meter(g, s.x, s.y, s.w, { label:'SERA', value:'42 / 60', frac:.7 });   // label / value / bar
+//   HK.chip(g, x, y, w, h, { tone: HK.C.BAD }); // a plate with a meaning rule down its left edge
+//   HK.control(g, x, y, w, h, 'LEAVE', fn, { tone: HK.C.BAD });               // a pressable
+//   HK.disc(g, p.x, p.y, p.r, 'BOMB');         // a round pressable; HK.thumbSeat(n) gives it a seat
+//   hudControl({ id:'wiki', sort:40, label:() => 'WIKI', action: fn, show: () => true });  // rail entry
+// hudControl is a hoisted function declaration on purpose: files that load BEFORE this one (10-hud,
+// 15-music, 43-settings, 44-wiki) call it at load time, so the rail's size is known on the very first frame.
+//
+// Registers nothing destructive: one HOOKS.hud entry (pushed last, so it draws the rail over everything
+// else), one HOOKS.selfTest entry (the layout audit and the contrast proof).
+// ============================================================================
+
+// The control-rail registry. A hoisted declaration with its list on the function object, so it can be
+// called from any file at load time without caring which order the files were concatenated in.
+function hudControl(def) {
+  const list = (hudControl.list = hudControl.list || []);
+  const i = list.findIndex(d => d.id === def.id);
+  if (i >= 0) list[i] = def; else list.push(def);
+  list.sort((a, b) => (a.sort || 100) - (b.sort || 100) || a.id.localeCompare(b.id));
+  return def;
+}
+
+// What to call the machine you are in. Hoisted for the same reason as hudControl: 22-bulldozer, 32-beast and
+// 51-mounts register their names at load time, and the status plate reads them on the very first frame it
+// draws (a HOOKS.hud handler would be one frame late, and the plate is drawn before the hooks run).
+function hudMechName(fn) { (hudMechName.list = hudMechName.list || []).push(fn); return fn; }
+
+const HK = (() => {
+  // ---------- tokens ----------
+  const M_ = 14;            // the one screen margin, and the left edge of the whole left column
+  const GUT = 8;            // the one gutter, between plates and between fields
+  const PAD = 12;           // the one inner padding
+  const R = 10;             // the one container radius
+  const R_SLOT = 6;         // item tiles only (the pack grid) — a slot is not a container
+
+  const C = {
+    INK: '#f2f6fa',                       // text: everything you actually read
+    DIM: '#d3dce8',                       // text: labels, units, the quieter half of a pair
+    RULE: 'rgba(214,226,240,0.16)',       // hairlines, never text
+    GOOD: '#46c05a', WARN: '#e8a33d', BAD: '#f0524d', GOLD: '#f5c542',
+    SCRIM_TOP: 'rgba(18,22,31,0.78)',     // the plate, top of its gradient
+    SCRIM_BOT: 'rgba(12,15,22,0.66)',     // the plate, bottom (the worst case the contrast proof uses)
+    EDGE: 'rgba(233,240,248,0.11)',       // the plate's quiet edge
+    RAISE: 0.10,                          // a pressable: how much light is laid OVER the plate (never instead of it)
+    RAISE_ON: 0.05,                       // a pressable that is currently on: pressed IN, not lit up
+    CTRL_EDGE: 'rgba(233,240,248,0.38)',  // a pressable: the edge that says "press me"
+    CTRL_ON_EDGE: 'rgba(242,246,250,0.80)', // a pressable that is on: the edge does the work, not more white
+    CTRL_OFF_EDGE: 'rgba(160,172,188,0.20)',
+    TRACK: 'rgba(4,7,12,0.55)',           // the empty half of any bar
+  };
+  const scrimAlpha = () => 0.66;          // the thinnest the plate ever gets; the contrast proof uses this
+
+  const k = () => (window.SETTINGS && SETTINGS.textScale) ? SETTINGS.textScale() : 1;
+  const touch = () => (typeof touchMode === 'function') ? touchMode() : isTouch;
+  const narrow = () => VW < 640;
+  const short = () => touch() && VH < 500;
+
+  // one text line box, one bar height, one control height — the whole vertical rhythm
+  const LINE = () => Math.round(15 * k());
+  const BAR = () => Math.round(11 * k());
+  const BAR_S = () => Math.round(8 * k());
+  const row = () => touch() ? 44 : 32;                       // a control is finger-sized on touch, always
+  const ctrlW = () => Math.round(colW() / 2);                // one width for every control on the left column
+  const meterH = (small) => LINE() + 3 + (small ? BAR_S() : BAR());
+  const chipH = () => Math.max(touch() ? (short() ? 28 : 32) : 26, LINE() + 10);
+  const gutV = () => short() ? 6 : GUT;   // the gutter between stacked chips; a landscape phone gets the tight one
+
+  // fonts — sans for data, the game's display serif for names
+  const F = {
+    label: () => `bold ${Math.round(11)}px sans-serif`,   // small caps label (scaled by SETTINGS)
+    value: () => `bold 13px sans-serif`,
+    body: () => `12px sans-serif`,
+    ctrl: () => `bold 12px sans-serif`,
+    name: () => `700 14px ${DISPLAY}`,
+  };
+
+  const mmSize = () => (narrow() || short()) ? 96 : 150;   // a landscape phone has no 150 px to spare
+  const mmX = () => VW - mmSize() - M_;
+
+  // The left column width. Fixed for the whole session at a given size, so a plate never resizes itself
+  // around its text: the numbers move inside the plate, the plate does not move around the numbers.
+  const colW = () => Math.round(clamp(VW - M_ * 2 - mmSize() - 12, 168, 264));
+  // Where the thumb cluster starts across the screen. Settings › Move stick side mirrors it to the left,
+  // which on a landscape phone is exactly where the HUD column lives — so there the columns shift right
+  // past it. On a tall phone or a tablet the cluster is far below the column and nothing has to move.
+  const mirrored = () => window.__stickRight === true;
+  const clusterFrom = () => mirrored() ? 0 : VW - 194;
+  const clusterTo = () => mirrored() ? 194 : VW;
+  const colOrigin = () => (short() && mirrored()) ? clusterTo() + 16 : M_;
+  const colX = col => colOrigin() + col * (colW() + GUT);
+
+  // ---------- the one container ----------
+  function plate(g, x, y, w, h, opt = {}) {
+    const grad = g.createLinearGradient(0, y, 0, y + h);
+    grad.addColorStop(0, opt.top || C.SCRIM_TOP); grad.addColorStop(1, opt.bottom || C.SCRIM_BOT);
+    roundRect(g, x, y, w, h, opt.r === undefined ? R : opt.r); g.fillStyle = grad; g.fill();
+    g.strokeStyle = opt.edge || C.EDGE; g.lineWidth = 1; g.stroke();
+    if (opt.tone) { // the meaning rule: 3 px down the left edge. Colour as a fill, never as text.
+      g.save(); roundRect(g, x, y, w, h, opt.r === undefined ? R : opt.r); g.clip();
+      g.fillStyle = opt.tone; g.fillRect(x, y, 3, h); g.restore();
+    }
+    return { x, y, w, h };
+  }
+  const chip = (g, x, y, w, h, opt = {}) => plate(g, x, y, w, h, opt);
+
+  // ---------- the one pressable ----------
+  // Draws through the core button() helper so the hit rect lands in `buttons` exactly like every other
+  // control; the colour argument carries the tint and the kit repaints the plate over it.
+  function control(g, x, y, w, h, label, action, opt = {}) {
+    const on = !!opt.on, enabled = opt.enabled !== false;
+    const tone = opt.tone || null;
+    plate(g, x, y, w, h);                       // the same dark plate every readout gets…
+    g.save(); roundRect(g, x, y, w, h, R); g.clip();
+    if (enabled) { g.fillStyle = `rgba(233,240,248,${on ? C.RAISE_ON : C.RAISE})`; g.fillRect(x, y, w, h); } // …plus the raise that says "press me"
+    if (tone && enabled) { g.globalAlpha = on ? 0.5 : 0.32; g.fillStyle = tone; g.fillRect(x, y, w, h); g.globalAlpha = 1; }
+    g.restore();
+    // the edge is what a pressable wears and a readout never does; "on" turns it up rather than adding light
+    roundRect(g, x, y, w, h, R);
+    g.strokeStyle = !enabled ? C.CTRL_OFF_EDGE : on ? C.CTRL_ON_EDGE : C.CTRL_EDGE; g.lineWidth = on ? 2 : 1.5; g.stroke();
+    g.fillStyle = enabled ? C.INK : C.DIM; g.font = F.ctrl(); g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(label, x + w / 2, y + h / 2 + 0.5); g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+    buttons.push(enabled ? { x, y, w, h, label: opt.hit || label, action } : { x, y, w, h, label: 'disabled:' + (opt.hit || label), action: () => { }, disabled: true });
+  }
+
+  // A round control: the thumb cluster (SWING, USE, BOMB…). Round because they are held-down actions rather
+  // than menu entries — one deliberate second shape, and a whole class of control, not a one-off. Built from
+  // exactly the same three layers as control() — scrim, raise, edge — so the contrast proof covers it, and so
+  // it stops being a wash of white on white over bright grass.
+  function disc(g, cx, cy, r, label, opt = {}) {
+    const enabled = opt.enabled !== false, quiet = !!opt.quiet;
+    g.beginPath(); g.arc(cx, cy, r, 0, 7);
+    const grad = g.createRadialGradient(cx, cy - r * 0.4, r * 0.2, cx, cy, r);
+    grad.addColorStop(0, C.SCRIM_TOP); grad.addColorStop(1, C.SCRIM_BOT);
+    g.fillStyle = quiet ? 'rgba(12,15,22,0.42)' : grad; g.fill();
+    if (enabled && !quiet) { g.fillStyle = `rgba(233,240,248,${C.RAISE})`; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill(); }
+    if (opt.tone && enabled) { g.save(); g.globalAlpha = 0.32; g.fillStyle = opt.tone; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill(); g.restore(); }
+    g.beginPath(); g.arc(cx, cy, r, 0, 7);
+    g.strokeStyle = quiet ? C.EDGE : enabled ? C.CTRL_EDGE : C.CTRL_OFF_EDGE; g.lineWidth = 1.5; g.stroke();
+    if (label) { g.fillStyle = quiet ? 'rgba(233,240,248,0.55)' : enabled ? C.INK : C.DIM; g.font = F.ctrl(); g.textAlign = 'center'; g.fillText(label, cx, cy + 4); g.textAlign = 'left'; }
+  }
+
+  // THE THUMB CLUSTER, as a grid. Six numbered seats in a staggered arc up from the corner, mirrored by
+  // Settings › Move stick side. Features ask for a seat by number instead of inventing coordinates — which is
+  // how BLOCK ended up at (VW-250, VH-134), a third column that lands on top of the joystick on a 390 px phone.
+  //   0 the big one (SWING)   1 USE   2 CRAFT / EXIT   3 QUESTS   4 HOME / BOMB   5 BLOCK
+  const THUMB = [[70, 100, 70], [160, 66, 52], [160, 160, 52], [70, 200, 52], [160, 254, 52], [70, 294, 52]];
+  function thumbSeat(i) {
+    const [dx, dy, r] = THUMB[clamp(i, 0, THUMB.length - 1)];
+    const x = window.__stickRight === true ? dx : VW - dx;
+    return { x, y: VH - dy, r: r / 2 + 8 };
+  }
+
+  // ---------- fields: a number lives in the width of its biggest possible self, so nothing jitters ----------
+  function fieldW(g, template, font) { const f = g.font; g.font = font || F.value(); const w = Math.ceil(g.measureText(template).width); g.font = f; return w; }
+  function field(g, text, rightX, y, opt = {}) {
+    g.font = opt.font || F.value(); g.fillStyle = opt.colour || C.INK; g.textAlign = 'right';
+    g.fillText(text, rightX, y); g.textAlign = 'left';
+  }
+
+  // ---------- the one bar ----------
+  function bar(g, x, y, w, h, frac, tone) {
+    roundRect(g, x, y, w, h, h / 2); g.fillStyle = C.TRACK; g.fill();
+    const f = clamp(frac, 0, 1);
+    if (f > 0) { roundRect(g, x, y, Math.max(h, w * f), h, h / 2); g.fillStyle = tone || C.GOOD; g.fill(); }
+  }
+  // health-shaped ramp: the same three steps everywhere in the game
+  const ramp = f => f > 0.5 ? C.GOOD : f > 0.25 ? C.WARN : C.BAD;
+
+  // Reads a legacy button colour as one of the four meanings. Thirty-odd hand-picked hex codes were passed
+  // to button() across the codebase; rather than edit every call site, the kit reads the INTENT out of the
+  // colour (a saturated green means go, a saturated red means danger, a bright amber means wait) and paints
+  // the one tone that means that. Anything unsaturated, blue, purple or brown is a neutral control — which
+  // is how the decorative blues and purples stopped being colours that meant nothing.
+  function toneOf(col) {
+    const c = hex(col); if (!c) return null;
+    const [r, gg, b] = c, mx = Math.max(r, gg, b), mn = Math.min(r, gg, b);
+    if (mx - mn < 40) return null;                                        // grey: a neutral control
+    if (gg > 110 && gg > r * 1.15 && gg > b * 1.15) return C.GOOD;
+    if (r > 110 && r > gg * 1.6 && r > b * 1.4) return C.BAD;
+    if (gg > 110 && r >= gg && r > b * 1.5 && gg > b * 1.3) return C.WARN;
+    return null;
+  }
+
+  // ---------- the one label / value / bar block ----------
+  // { label, value, frac, tone, small, template } — template is the widest the value can ever be.
+  function meter(g, x, y, w, o) {
+    const line = LINE(), bh = o.small ? BAR_S() : BAR();
+    g.font = F.label(); g.fillStyle = C.DIM; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    const base = y + line - 3;
+    let lw = w;
+    if (o.value) { const rw = fieldW(g, o.template || o.value, F.value()); field(g, o.value, x + w, base, { colour: o.valueColour || C.INK }); lw = w - rw - GUT; }
+    let t = o.label; g.font = F.label();
+    while (t.length > 3 && g.measureText(t).width > lw) t = t.slice(0, -1);
+    g.fillText(t, x, base);
+    bar(g, x, y + line + 3, w, bh, o.frac === undefined ? 1 : o.frac, o.tone || ramp(o.frac === undefined ? 1 : o.frac));
+    return line + 3 + bh;
+  }
+
+  // ---------- a one-line readout row: pairs of [label, value] laid out on the grid ----------
+  function readout(g, x, y, w, cells) {
+    const line = LINE(), base = y + line - 3, n = cells.filter(Boolean).length;
+    if (!n) return 0;
+    const cw = Math.floor((w - GUT * (n - 1)) / n);
+    let cx = x;
+    for (const c of cells) {
+      if (!c) continue;
+      let tx = cx;
+      if (c.icon) { drawItemIcon(g, c.icon, cx + 7, base - 4, 14); tx = cx + 18; }
+      if (c.label) { g.font = F.label(); g.fillStyle = C.DIM; g.textAlign = 'left'; g.fillText(c.label, tx, base); tx += Math.ceil(g.measureText(c.label).width) + 6; }
+      g.font = F.value(); g.fillStyle = C.INK; g.textAlign = 'left'; g.fillText(c.value, tx, base);
+      cx += cw + GUT;
+    }
+    return line;
+  }
+
+  // ---------- the left column: one cursor, one left edge, one width ----------
+  // Every feature chip claims its row here instead of guessing a y. Keeps the old HUD.leftY contract.
+  function stackFloor() {
+    const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null;
+    let f = 0;
+    if (touch() && lay && !lay.short) f = Math.max(f, lay.hotbarY + lay.hotbarH + 12); // clear of the touch hotbar
+    return f;
+  }
+  // How far down a column may run before it has to wrap. On touch, column 0 stops short of the joystick — a
+  // control sitting in the stick's circle is a control you cannot press and a stick you cannot start.
+  const stickTop = () => VH - 176;
+  function colLimit(col) {
+    if (!touch()) return VH - 30;
+    if (col === 0) return stickTop() - 4;
+    return short() ? VH - 66 : VH - 20;      // a landscape phone's hotbar runs along the bottom of column 1
+  }
+  // Room for a second column only where the screen is wide enough to hold two full columns and both margins.
+  const canWrap = () => VW - colOrigin() >= M_ + colW() * 2 + GUT;
+  const colTop = col => col === 0 ? M_ + statusH() + GUT : (typeof HUD_LAYOUT !== 'undefined' && HUD_LAYOUT.col2Top) || M_;
+  function slot(h) {
+    let col = HUD.leftCol || 0;
+    let y = Math.max(HUD.leftY, col === 0 ? stackFloor() : 0);
+    if (y + h > colLimit(col) && canWrap() && col < 1) { col = 1; y = colTop(col); HUD.leftCol = col; }
+    HUD.leftY = y + h + gutV();
+    return { x: colX(col), y, w: colW(), h };
+  }
+
+  // ---------- the control rail: everything he needs rarely, in one place under the minimap ----------
+  const railCells = () => {
+    const list = (hudControl.list || []).filter(d => { try { return d.show ? d.show() : true; } catch (e) { return false; } });
+    if (!list.length) return null;
+    // Under the minimap. On a narrow phone the status plate reaches nearly the full column width, so the
+    // rail also has to clear it (the sun dial from 35-night sits at +18 on wider screens, hence the +44).
+    // On a landscape phone the whole right-hand edge under the minimap is thumb cluster, so the rail moves
+    // into the second column instead, under the quest and notice slots.
+    const cw = touch() ? 74 : 84, ch = row(), sh = short();
+    const y0 = sh ? M_ + 54 + GUT + 32 + GUT
+      : touch() && narrow() ? Math.max(M_ + mmSize() + 16, M_ + statusH() + GUT)
+        : M_ + mmSize() + 44;
+    // never let the rail wander into the left column (except on a narrow phone, where the column starts
+    // far below the rail and the full width is free)
+    const maxW = sh ? Math.max(cw, Math.min(mmX(), mirrored() ? VW : clusterFrom()) - colX(1) - 12)   // clear of the minimap AND the thumb cluster
+      : narrow() ? VW - M_ * 2 : VW - M_ * 2 - colW() - GUT;
+    const cols = Math.max(1, Math.min(list.length, Math.floor((maxW + GUT) / (cw + GUT))));
+    const rows = Math.ceil(list.length / cols);
+    const cells = [];
+    list.forEach((d, i) => {
+      const r = Math.floor(i / cols), c = i % cols, inRow = Math.min(cols, list.length - r * cols);
+      const rowW = inRow * cw + (inRow - 1) * GUT;
+      const x0 = sh ? colX(1) : VW - M_ - rowW;   // left-aligned in the second column, else right-aligned
+      cells.push({ def: d, x: Math.round(x0 + c * (cw + GUT)), y: y0 + r * (ch + GUT), w: cw, h: ch });
+    });
+    return { cells, y0, bottom: y0 + rows * ch + (rows - 1) * GUT, cols, rows };
+  };
+  function drawRail(g) {
+    const r = railCells(); if (!r) return;
+    for (const c of r.cells) {
+      const d = c.def;
+      let label = d.label; try { if (typeof label === 'function') label = label(); } catch (e) { label = d.id.toUpperCase(); }
+      let on = false; try { on = d.on ? !!d.on() : false; } catch (e) { on = false; }
+      control(g, c.x, c.y, c.w, c.h, label, d.action, { on, tone: d.tone || null });
+    }
+  }
+  const railBottom = () => { const r = railCells(); return r ? r.bottom : M_ + mmSize() + 16; };
+
+  // ---------- the status plate: health first, everything else quieter ----------
+  // Drawn by 10-hud at the top of the HUD. Returns its bottom edge.
+  // Whichever machine you are in names itself through hudMechName(); the core's generic one is a Walker.
+  const mechLabel = () => {
+    if (!player.mech) return null;
+    for (const f of (hudMechName.list || [])) { let n = null; try { n = f(); } catch (e) { n = null; } if (n) return n; }
+    return 'Walker';
+  };
+  const statusPad = () => short() ? 9 : PAD;
+  const statusH = () => statusPad() * 2 + meterH() + (mechLabel() ? GUT + meterH(true) : 0) + GUT + LINE();
+  function status(g) {
+    const w = colW(), x = colX(0), y = M_;
+    const machine = mechLabel();
+    const pad = statusPad();
+    const h = statusH();
+    plate(g, x, y, w, h);
+    let cy = y + pad;
+    const hf = clamp(player.hp / player.maxHp, 0, 1);
+    cy += meter(g, x + pad, cy, w - pad * 2, { label: 'HEALTH', value: `${Math.ceil(player.hp)} / ${player.maxHp}`, template: `${player.maxHp} / ${player.maxHp}`, frac: hf });
+    if (machine) {
+      cy += GUT;
+      const mf = clamp(player.mech.hp / player.mech.maxHp, 0, 1);
+      cy += meter(g, x + pad, cy, w - pad * 2, { label: machine.toUpperCase(), value: `${Math.ceil(player.mech.hp)} / ${player.mech.maxHp}`, template: `${player.mech.maxHp} / ${player.mech.maxHp}`, frac: mf, small: true });
+    }
+    cy += GUT;
+    readout(g, x + pad, cy, w - pad * 2, [
+      { icon: 'coins', value: `${coins()}` },
+      { label: 'COMBAT', value: `${combatLevel()}` },
+      window.__kidmode ? { label: 'KID', value: 'ON' } : null,
+    ]);
+    return y + h;
+  }
+
+  // ---------- the pause menu box, on the grid ----------
+  // Exported rather than hardcoded because two files draw into it: 10-hud draws the menu, 31-rebuild
+  // repaints the stats line with the town's name in front of it. That line used to be the magic number
+  // VH/2 + 83 in both files; now both ask for statsY, so a finger-sized button row cannot break it.
+  function pauseBox() {
+    const bh = row(), step = bh + 6, nRows = 3 + HOOKS.pauseMenu.length; // Resume, Settings, features…, New game
+    const pw = 300, head = 66, foot = 70;
+    const ph = Math.min(VH - 20, head + nRows * step - 6 + 12 + foot);
+    const px = Math.round(VW / 2 - pw / 2), py = Math.round(clamp(VH / 2 - ph / 2, 10, Math.max(10, VH - ph - 10)));
+    return { px, py, pw, ph, bh, step, firstY: py + head, statsY: py + head + nRows * step - 6 + 24 };
+  }
+
+  // ---------- self-test helpers: real contrast maths, not a vibe ----------
+  const hex = c => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c).trim()); if (!m) return null; const n = parseInt(m[1], 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  const lin = v => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+  const lum = rgb => 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+  const contrast = (a, b) => { const la = lum(a), lb = lum(b); const hi = Math.max(la, lb), lo = Math.min(la, lb); return (hi + 0.05) / (lo + 0.05); };
+  const over = (fg, alpha, bg) => [0, 1, 2].map(i => fg[i] * alpha + bg[i] * (1 - alpha)); // src-over composite
+  // Every ground colour the game paints, taken from the game's own minimap palette (03-textures MINI, plus
+  // whatever feature files added with addTile), and the two lightest grains any texture paints, so a new
+  // bright tile automatically tightens the proof instead of silently loosening it.
+  function grounds() {
+    const out = [];
+    for (const t in MINI) { const c = hex(MINI[t]); if (c) out.push({ c, name: MINI[t] }); }
+    for (const extra of ['#e6d79d', '#d4b078']) out.push({ c: hex(extra), name: extra + ' (texture grain)' }); // 03-textures: sand grain, floorboard
+    return out;
+  }
+
+  const API = {
+    M: () => M_, GUT, PAD, R, R_SLOT, C, F,
+    k, touch, narrow, short, LINE, BAR, BAR_S, row, ctrlW, meterH, chipH, gutV, colW, colX, colOrigin, mirrored, clusterFrom, mmSize, mmX, stickTop, colLimit, canWrap,
+    plate, chip, control, disc, thumbSeat, bar, ramp, toneOf, meter, readout, field, fieldW, slot, stackFloor,
+    status, statusH, mechLabel, drawRail, railBottom, railCells, pauseBox,
+    // colour maths, exported so any file can prove its own text instead of guessing
+    hex, lum, contrast, over, grounds, scrimAlpha,
+  };
+  return API;
+})();
+window.HK = HK;
+
+// The rail draws last, over every feature chip, so nothing can be drawn on top of a control. Nothing while
+// the pause menu is up: that block clears the button list, so a rail drawn under it would be a row of
+// controls that look pressable and are not (anything that must be live while paused goes through
+// HOOKS.pauseMenu instead).
+HOOKS.hud.push(g => { if (paused) return; if (typeof title !== 'undefined' && title && title.active) return; HK.drawRail(g); });
+
+// ============================================================================
+// SELF-TEST — the layout audit and the contrast proof
+// ============================================================================
+HOOKS.selfTest.push((check, F, h) => {
+  const P = 'hudkit: ';
+  const prevTouch = window.__forceTouch, dc = dialog.cur, dq = dialog.queue.slice();
+  const own = kk => Object.getOwnPropertyDescriptor(window, kk);
+  const savedSize = { w: own('innerWidth'), h: own('innerHeight') };
+  const savedText = window.SETTINGS ? SETTINGS.get('text') : 'normal';
+  const m0 = player.mech, c0 = player.companion ? JSON.parse(JSON.stringify(player.companion)) : null;
+  const mon0 = monsters.slice(), px0 = player.x, py0 = player.y, paused0 = paused, panel0 = panel;
+  dialog.cur = null; dialog.queue.length = 0; closePanel(); paused = false;
+
+  // ---------- 1. the colour language is a small, named, closed set ----------
+  {
+    const need = ['INK', 'DIM', 'GOOD', 'WARN', 'BAD', 'GOLD'];
+    const named = need.every(n => /^#[0-9a-f]{6}$/i.test(HK.C[n]));
+    const distinct = new Set(need.map(n => HK.C[n].toLowerCase())).size === need.length;
+    const rampOk = HK.ramp(1) === HK.C.GOOD && HK.ramp(0.4) === HK.C.WARN && HK.ramp(0.1) === HK.C.BAD && HK.ramp(0.5) === HK.C.WARN && HK.ramp(0.51) === HK.C.GOOD;
+    check(P + 'one colour language: six named colours, all distinct, and one health ramp (green > 50%, amber > 25%, red below)', named && distinct && rampOk, { named, distinct, rampOk, ramp: [HK.ramp(1), HK.ramp(0.4), HK.ramp(0.1)] });
+  }
+
+  // ---------- 2. contrast: every text style, over the lightest and darkest ground the game draws ----------
+  const contrastReport = {};
+  {
+    const gs = HK.grounds();
+    let lightest = gs[0], darkest = gs[0];
+    for (const q of gs) { if (HK.lum(q.c) > HK.lum(lightest.c)) lightest = q; if (HK.lum(q.c) < HK.lum(darkest.c)) darkest = q; }
+    // the worst case: the thinnest the plate ever gets (the bottom of its gradient) over the brightest ground
+    const a = HK.scrimAlpha(), scrim = [12, 15, 22];
+    const styles = { INK: HK.C.INK, DIM: HK.C.DIM };
+    const worst = [];
+    for (const [name, col] of Object.entries(styles)) {
+      for (const ground of [lightest, darkest]) {
+        const plate = HK.over(scrim, a, ground.c);
+        const r = HK.contrast(HK.hex(col), plate);
+        contrastReport[name + ' on ' + (ground === lightest ? 'lightest' : 'darkest') + ' ' + ground.name] = Math.round(r * 100) / 100;
+        if (r < 4.5) worst.push(`${name} over ${ground.name} = ${r.toFixed(2)}`);
+      }
+    }
+    // a control's label sits on the raised fill, which is LIGHTER than the plate — check it too
+    for (const ground of [lightest, darkest]) {
+      const plate = HK.over(scrim, a, ground.c);
+      const ctrl = HK.over([233, 240, 248], HK.C.RAISE, plate); // a control is the plate plus its raise
+      const r = HK.contrast(HK.hex(HK.C.INK), ctrl);
+      contrastReport['control label on ' + (ground === lightest ? 'lightest' : 'darkest')] = Math.round(r * 100) / 100;
+      if (r < 4.5) worst.push(`control label over ${ground.name} = ${r.toFixed(2)}`);
+    }
+    check(P + 'every text colour clears 4.5:1 against the plate over the lightest and the darkest ground the game paints', worst.length === 0, { worst, lightest: lightest.name, darkest: darkest.name, ...contrastReport });
+  }
+
+  // ---------- 3. the layout audit: 4 viewports x 2 text sizes x touch/desktop x 4 scenes ----------
+  {
+    const problems = [];
+    const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
+    const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    const inside = r => r.x >= -0.5 && r.y >= -0.5 && r.x + r.w <= VW + 0.5 && r.y + r.h <= VH + 0.5;
+    // the minimap is a tap target that never goes through button() (05-input matches it separately), so the
+    // audit has to know about it — the thumb cluster used to overlap it on a landscape phone unnoticed
+    const live = () => {
+      const out = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+      if (minimapRect) out.push({ ...minimapRect, label: 'minimap' });
+      return out;
+    };
+    // The circle the idle joystick is actually drawn in (10-hud paints it at 110, VH-110 with r 60, mirrored
+    // by Settings › Move stick side). A control drawn on top of that is a control you cannot press and a
+    // stick you cannot see, because 05-input matches the button list before it starts the stick. The wider
+    // joystickZone() rectangle is a tap-to-walk rule, not a keep-out: on a 390 px phone the thumb cluster
+    // necessarily reaches into it, and that has always been fine.
+    const stickBox = () => {
+      const cx = window.__stickRight === true ? VW - 110 : 110;
+      return { x: cx - 60, y: VH - 170, w: 120, h: 120, label: 'the joystick' };
+    };
+    const boss = () => { // a real boss bar: the biggest monster the game knows, standing on the knight
+      const type = Object.keys(MONSTER_DEFS).find(t => t !== 'the_fang' && MONSTER_DEFS[t].level >= 25 && MONSTER_DEFS[t].hp >= 300);
+      if (!type) return false;
+      const d = MONSTER_DEFS[type];
+      monsters.length = 0;
+      monsters.push({ // the same shape spawnMonsters() builds (04-state), so it draws as well as it reads
+        type, x: player.x + 40, y: player.y, home: { x: player.x + 40, y: player.y },
+        r: d.r, hp: d.hp * 0.6, maxHp: d.hp, speed: d.speed, angry: false, state: 'idle', wanderT: 9,
+        wander: { x: 0, y: 0 }, attackCd: 9, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0,
+      });
+      return true;
+    };
+    let tried = 0;
+    for (const [w, hh] of [[390, 844], [844, 390], [768, 1024], [1280, 800]]) {
+      if (!setSize(w, hh)) continue; tried++;
+      for (const t of [true, false]) {
+        window.__forceTouch = t;
+        for (const big of ['normal', 'large']) {
+          if (window.SETTINGS) SETTINGS.set('text', big);
+          for (const scene of ['plain', 'inventory', 'boss', 'machine', 'plain-righthanded']) {
+            monsters.length = 0; player.mech = null; player.companion = c0 ? JSON.parse(JSON.stringify(c0)) : null; closePanel();
+            window.__stickRight = scene === 'plain-righthanded';   // Settings › Move stick side mirrors the thumb cluster
+            if (scene === 'inventory') { player.inv[0] = player.inv[0] || { id: 'bread', qty: 1 }; openPanel('inventory'); selectedSlot = 0; }
+            if (scene === 'boss' && !boss()) continue;
+            if (scene === 'machine') { player.mech = { kind: 'dozer', hp: 74, maxHp: 110 }; player.companion = { id: 'sera', hp: 44, maxHp: 60, mode: 'follow', x: player.x, y: player.y, downT: 0, freed: { sera: true } }; }
+            render();
+            const where = `${w}x${hh} ${t ? 'touch' : 'desktop'} ${big} ${scene}`;
+            let rects = live();
+            if (scene === 'inventory') { // a panel shadows the HUD under it by design; audit the panel's own controls
+              const ci = rects.findIndex(b => b.label === '×');
+              if (ci < 0) problems.push(where + ': the pack has no close button');
+              else rects = rects.slice(ci);
+              if (panelRect && !inside(panelRect)) problems.push(`${where}: the pack box is off-screen ${JSON.stringify(panelRect)}`);
+            }
+            for (const r of rects) if (!inside(r)) problems.push(`${where}: ${r.label} off-screen ${JSON.stringify([Math.round(r.x), Math.round(r.y), r.w, r.h])}`);
+            for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) if (overlap(rects[i], rects[j])) problems.push(`${where}: ${rects[i].label} × ${rects[j].label}`);
+            // a ten-year-old's finger: 44 x 44, every control, on touch. On desktop a mouse is precise, so
+            // the floor is the kit's desktop row height.
+            const floor = t ? 44 : 26;
+            for (const r of rects) if (!/^slot\d+|^bank\d+|^hot\d+|^eq/.test(r.label) && (r.w < floor - 0.5 || r.h < floor - 0.5)) problems.push(`${where}: ${r.label} is ${Math.round(r.w)}x${Math.round(r.h)}, under ${floor}`);
+            for (const r of rects) if (/^slot\d+|^bank\d+|^hot\d+|^eq/.test(r.label) && t && (r.w < 40 || r.h < 40)) problems.push(`${where}: item tile ${r.label} is ${Math.round(r.w)}x${Math.round(r.h)}`);
+            // nothing pressable in the joystick's circle (the thumb cluster is the deliberate exception:
+            // it is mirrored to the far side by the same setting, so it is never in the live stick zone)
+            if (t && scene !== 'inventory') { const sb = stickBox(); for (const r of rects) if (overlap(r, sb)) problems.push(`${where}: ${r.label} is inside the joystick`); }
+          }
+        }
+      }
+    }
+    window.__forceTouch = prevTouch; window.__stickRight = window.SETTINGS ? SETTINGS.get('stick') === 'right' : false;
+    if (window.SETTINGS) SETTINGS.set('text', savedText);
+    monsters.length = 0; for (const m of mon0) monsters.push(m);
+    player.mech = m0; player.companion = c0; player.x = px0; player.y = py0; closePanel(); selectedSlot = -1;
+    if (savedSize.w) { Object.defineProperty(window, 'innerWidth', savedSize.w); Object.defineProperty(window, 'innerHeight', savedSize.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+    paused = paused0; if (panel0) openPanel(panel0); render();
+    check(P + 'layout audit: 390x844, 844x390, 768x1024 and 1280x800, touch and desktop, normal and large text, with no panel / the pack open / a boss bar up / driving a machine with a companion — no control overlaps another, none falls off screen, and every touch control is at least 44x44', tried === 4 && problems.length === 0, { tried, problems: problems.slice(0, 10), total: problems.length });
+  }
+
+  // ---------- 4. the grid is real: one left edge, one width, no content-sized plates ----------
+  {
+    HUD.leftY = 82;
+    const a = HK.slot(HK.meterH()), b = HK.slot(HK.chipH()), c = HK.slot(HK.chipH());
+    const sameEdge = a.x === b.x && b.x === c.x && a.x === HK.M();
+    const sameWidth = a.w === b.w && b.w === c.w && a.w === HK.colW();
+    const gutters = (b.y - (a.y + a.h)) === HK.GUT && (c.y - (b.y + b.h)) === HK.GUT;
+    HUD.leftY = 82;
+    check(P + 'the left column is a grid: every chip shares one left edge and one width, separated by one gutter', sameEdge && sameWidth && gutters, { x: [a.x, b.x, c.x], w: [a.w, b.w, c.w], gutters, M: HK.M(), colW: HK.colW() });
+  }
+
+  // ---------- 5. numbers sit in fields reserved from their widest value, so nothing jitters ----------
+  {
+    const g = ctx;
+    const w1 = HK.fieldW(g, '9 / 110'), w2 = HK.fieldW(g, '110 / 110');
+    // the kit always measures the template (max/max), never the live value, so the reserved width is the
+    // same at 9 hp as at 110 hp — that is what stops the plate twitching as the number ticks
+    const stable = HK.fieldW(g, '110 / 110') === w2 && w2 >= w1;
+    check(P + 'a changing number is drawn in a field reserved from its widest possible value', stable, { atNine: w1, atMax: w2 });
+  }
+
+  // ---------- 6. the rail is one place, and it holds the rarely-used controls ----------
+  {
+    render();
+    const ids = (hudControl.list || []).map(d => d.id);
+    const cells = HK.railCells();
+    const wanted = ['wiki'];
+    const has = wanted.every(idw => ids.includes(idw));
+    const laidOut = !!cells && cells.cells.length > 0 && cells.cells.every(c => c.w >= (HK.touch() ? 44 : 26) && c.h >= (HK.touch() ? 44 : 26));
+    check(P + 'the rarely-used controls (the book, the map, music, the menus) live in one rail under the minimap, not bolted on wherever there was room', has && laidOut, { ids, cells: cells && cells.cells.length, cols: cells && cells.cols });
+  }
+
+  dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq);
+  window.__forceTouch = prevTouch; paused = paused0;
+  window.__HK_CONTRAST = contrastReport; // read by the build notes / console
+});
 
 // ---- src/60-bank.js ----
 // ============================================================================

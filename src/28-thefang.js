@@ -471,18 +471,20 @@
     } });
   });
   // boss bar: under the HP box while the dragon is alive and within 12 tiles
+  // MIGRATED to the HUD kit (src/59-hudkit.js): the same boss chip the core draws, so a dragon and a grave
+  // zombie do not get two different bars. Which element the dragon is wearing is real information, so it is
+  // still shown — but as a WORD in the label, not as a fourth, fifth and sixth outline colour. Red means
+  // danger here as it does everywhere else; an ice dragon is not a different kind of danger.
   HOOKS.hud.push((g, narrow) => {
     const m = fang(); if (!m || m.dead || dist(m.x, m.y, player.x, player.y) > 12 * TILE) return;
-    const C = EL[m.element || 'fire'], w = Math.min(236, VW - 28), h = 48, x = 14;
-    const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
-    const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; const y = Math.max(HUD.leftY, _touchFloor, 84); // shared left-HUD cursor: under the companion / wanted tags
-    HUD.leftY = y + h + 6;
-    roundRect(g, x, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = C.col; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText('THE FANG', x + 12, y + 19);
-    g.fillStyle = C.col; g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillText(C.name.toUpperCase() + (m.element === 'stone' ? ' · wait it out' : ''), x + w - 12, y + 19);
-    g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, y + 27, w - 24, 11, 5); g.fill();
-    g.fillStyle = C.col; roundRect(g, x + 12, y + 27, (w - 24) * clamp(m.hp / m.maxHp, 0, 1), 11, 5); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(m.hp)} / ${m.maxHp}`, x + w / 2, y + 36);
+    const C = EL[m.element || 'fire'], pad = 10;
+    const s = HK.slot(pad * 2 + HK.meterH());
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: HK.C.BAD });
+    HK.meter(g, s.x + pad + 2, s.y + pad, s.w - pad * 2 - 2, {
+      label: 'THE FANG · ' + C.name.toUpperCase() + (m.element === 'stone' ? ' · WAIT IT OUT' : ''),
+      value: `${Math.ceil(m.hp)} / ${m.maxHp}`, template: `${m.maxHp} / ${m.maxHp}`,
+      frac: clamp(m.hp / m.maxHp, 0, 1), tone: HK.C.BAD,
+    });
   });
 
   // ---------- self-test ----------

@@ -382,13 +382,14 @@
   HOOKS.hud.push((g, narrow) => {
     if (typeof title !== 'undefined' && title.active) return;
     const inst = window.__instance; if (inst && inst !== AFTER.id) return;
-    const mmSize = narrow ? 96 : 150, mmx = VW - mmSize - 14, mmy = 14;
+    const mmSize = HK.mmSize(), mmx = HK.mmX(), mmy = 14;   // one minimap box, from the kit (src/59-hudkit.js)
     const tight = isTouch && narrow;
     const w = tight ? 44 : 60, h = tight ? 14 : 18, x = tight ? mmx + 4 : mmx + mmSize / 2 - w / 2, y = tight ? mmy + mmSize - h - 4 : mmy + mmSize + 18;
     const t = dayT(), night = inst === AFTER.id || t >= LIGHT, p = inst === AFTER.id ? 0.5 : night ? (t - LIGHT) / (DAY - LIGHT) : t / LIGHT;
-    roundRect(g, x, y, w, h, 6); g.fillStyle = night ? 'rgba(10,14,40,0.82)' : 'rgba(10,14,22,0.7)'; g.fill();
+    // the same plate as everything else (src/59-hudkit.js); night only shifts the scrim a touch bluer
+    HK.plate(g, x, y, w, h, night ? { top: 'rgba(14,18,40,0.76)', bottom: 'rgba(10,13,30,0.64)' } : {});
     const r = h - 4, cx = x + w / 2, by = y + h - 2;
-    g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 1; g.beginPath(); g.arc(cx, by, r, Math.PI, 0); g.stroke();
+    g.strokeStyle = HK.C.RULE; g.lineWidth = 1; g.beginPath(); g.arc(cx, by, r, Math.PI, 0); g.stroke();
     const ang = Math.PI - p * Math.PI, dx = cx + Math.cos(ang) * r, dy = by - Math.sin(ang) * r;
     if (!night) {
       g.fillStyle = '#ffd166'; g.beginPath(); g.arc(dx, dy, 3.2, 0, 7); g.fill();

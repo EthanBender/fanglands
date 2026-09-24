@@ -287,33 +287,28 @@
       if (!best || d < best.d) best = { m, d, feeding, cold };
     }
     if (!best) return;
+    // MIGRATED to the HUD kit (src/59-hudkit.js). The same boss chip as every other boss, with the phase
+    // said in words rather than painted (it was orange while feeding and pale blue while cold — two more
+    // colours meaning things no other colour in the game meant). The core's boss bars now advance the shared
+    // left-column cursor themselves, so the old bossFloor arithmetic here is gone.
     const { m, feeding } = best, heart = heartOf(m);
     const bars = bossBarList(), onBar = bars.indexOf(m) >= 0;
-    const col = feeding ? '#ff8a3a' : '#8fd3ff';
-    const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null;
-    const w = lay && lay.short ? 180 : Math.min(236, VW - 28), x = 14;
     const hpRow = !onBar;                        // only when the core bar is not already showing them
-    const emberY = hpRow ? 42 : 27;              // where the ember bar sits inside the panel
-    const h = feeding ? emberY + 18 : hpRow ? 48 : 28;
-    const touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
-    // the boss bars are drawn before every HUD hook and do not move the shared cursor, so step past them here
-    const bossFloor = (bars.length && lay) ? lay.bossBarY + bars.length * (BOSS_H + BOSS_GAP) : 0;
-    const y = Math.max(HUD.leftY, touchFloor, bossFloor, 84);   // shared left-HUD cursor: stack under whatever drew above
-    HUD.leftY = y + h + 6;
-    roundRect(g, x, y, w, h, 10); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = col; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#e6edf3'; g.font = `700 14px ${DISPLAY}`; g.textAlign = 'left'; g.fillText('CINDERWIGHT', x + 12, y + 19);
-    g.fillStyle = col; g.font = 'bold 11px sans-serif'; g.textAlign = 'right';
-    g.fillText(feeding ? 'BREAK THE HEART' : 'COLD · HIT IT NOW', x + w - 12, y + 19);
+    const pad = 10;
+    const h = pad * 2 + (hpRow ? HK.meterH() : 0) + (hpRow && feeding && heart ? HK.GUT : 0) + (feeding && heart ? HK.meterH(true) : 0) + (!hpRow && !(feeding && heart) ? HK.LINE() : 0);
+    const s = HK.slot(h);
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: HK.C.BAD });
+    const iw = s.w - pad * 2 - 2, ix = s.x + pad + 2;
+    let cy = s.y + pad;
+    const phase = feeding ? 'BREAK THE HEART' : 'COLD · HIT IT NOW';
     if (hpRow) {
-      g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, y + 27, w - 24, 11, 5); g.fill();
-      g.fillStyle = '#e63946'; roundRect(g, x + 12, y + 27, (w - 24) * clamp(m.hp / m.maxHp, 0, 1), 11, 5); g.fill();
-      g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(m.hp)} / ${m.maxHp}`, x + w / 2, y + 36);
+      cy += HK.meter(g, ix, cy, iw, { label: 'CINDERWIGHT · ' + phase, value: `${Math.ceil(m.hp)} / ${m.maxHp}`, template: `${m.maxHp} / ${m.maxHp}`, frac: clamp(m.hp / m.maxHp, 0, 1), tone: HK.C.BAD });
+      if (feeding && heart) cy += HK.GUT;
+    } else if (!(feeding && heart)) {
+      g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.textAlign = 'left'; g.fillText('CINDERWIGHT · ' + phase, ix, cy + HK.LINE() - 3);
     }
-    if (feeding && heart) {
-      g.fillStyle = '#2a2f3a'; roundRect(g, x + 12, y + emberY, w - 24, 9, 4); g.fill();
-      g.fillStyle = col; roundRect(g, x + 12, y + emberY, (w - 24) * clamp(heart.hp / heart.maxHp, 0, 1), 9, 4); g.fill();
-      g.fillStyle = '#fff'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(`heart ${Math.ceil(heart.hp)} / ${heart.maxHp}`, x + w / 2, y + emberY + 8);
-    }
+    // the heart is a countdown you have to beat, so it is amber: the kit's one meaning for "wait / hurry"
+    if (feeding && heart) HK.meter(g, ix, cy, iw, { label: hpRow ? 'HEART' : 'CINDERWIGHT · ' + phase, value: `${Math.ceil(heart.hp)} / ${heart.maxHp}`, template: `${heart.maxHp} / ${heart.maxHp}`, frac: clamp(heart.hp / heart.maxHp, 0, 1), tone: HK.C.WARN, small: true });
   }
   HOOKS.hud.push(wightPanel);
 
@@ -450,19 +445,26 @@
           : typeof k === 'string' ? nop : undefined, set: () => true });
         const leftBack = HUD.leftY;
         HUD.leftY = 82; drawBossBars(rec, HUD_LAYOUT.bossBarY);      // the core draws its bars first, every frame
-        const nBar = marks.length, barred = marks.some(t => t.s === 'CINDERWIGHT');
+        // The bars now claim their rows from the HUD kit's left-column cursor (src/59-hudkit.js), so "under
+        // the core bar" is asked of the cursor itself rather than of a pinned 48 px bar height — the same
+        // intent, but it cannot drift out of date the next time a bar changes shape.
+        const barsBottom = HUD.leftY;
+        const nBar = marks.length, barred = marks.some(t => /^CINDERWIGHT\b/.test(t.s));
+        const barHp = marks.some(t => /^\d+ \/ \d+$/.test(t.s));   // the core bar shows the wight's hit points
+        const wightHp = `${Math.ceil(m.hp)} / ${m.maxHp}`;
+        const hrt = heartOf(m), heartHp = hrt ? `${Math.ceil(hrt.hp)} / ${hrt.maxHp}` : null;
         CINDERWIGHT.panel(rec);
         HUD.leftY = leftBack; monsters.length = 0; for (const b of roster) monsters.push(b);
         const mine = marks.slice(nBar);
         const top = mine.length ? Math.min(...mine.map(t => t.y)) : -1;
-        const hpLines = mine.filter(t => /^\d+ \/ \d+$/.test(t.s)).length;
+        const hpLines = mine.filter(t => t.s === wightHp).length;   // the panel must not repeat what the bar shows
         let clash = null;
         for (let i = 0; i < marks.length && !clash; i++) for (let j = i + 1; j < marks.length && !clash; j++)
           if (marks[i].x === marks[j].x && marks[i].y === marks[j].y) clash = [marks[i].s, marks[j].s, marks[i].x, marks[i].y];
         check(P + 'its HUD panel stacks under the core boss bar: nothing overprints, and it does not repeat the hit points the bar already shows',
-          barred && nBar >= 3 && mine.length >= 2 && !clash && top >= HUD_LAYOUT.bossBarY + 48 + 8 && hpLines === 0
-          && mine.some(t => t.s === 'BREAK THE HEART') && mine.some(t => /^heart \d+ \/ \d+$/.test(t.s)),
-          { bossBarTexts: nBar, bossBarDrewWight: barred, panelTexts: mine.map(t => [t.s, t.x, t.y]), panelTopY: top, bossBarY: HUD_LAYOUT.bossBarY, repeatedHpLines: hpLines, clash }); }
+          barred && barHp && mine.length >= 2 && !clash && top >= barsBottom && hpLines === 0
+          && mine.some(t => /BREAK THE HEART/.test(t.s)) && !!heartHp && mine.some(t => t.s === heartHp),
+          { bossBarTexts: nBar, bossBarDrewWight: barred, bossBarShowedHp: barHp, panelTexts: mine.map(t => [t.s, t.x, t.y]), panelTopY: top, barsBottom, wightHp, heartHp, repeatedHpLines: hpLines, clash }); }
       // 4b. while it burns: 14 hp a second back, and the ash scalds
       if (heart) {
         m.hp = 300; const before = m.hp; F.sim(60, []); const healed = m.hp - before;

@@ -139,16 +139,29 @@
     } });
   }
   HOOKS.draw.push(drawShield);
-  // every key needs a button: BLOCK sits with the other action buttons on touch, under the Wiki button on a desktop
-  function blockRect() {
-    if (!isTouch) return { x: 274, y: 46, w: 92, h: 26, label: 'Block (R)' };
-    const mx = x => (window.__stickRight === true ? VW - x : x);
-    return { x: mx(VW - 250) - 34, y: VH - 134, w: 68, h: 68, label: 'BLOCK' };
+  // every key needs a button: BLOCK sits with the other action buttons in the thumb cluster on touch. On a
+  // desktop it used to be parked under the old bolted-on Wiki button at (274, 46); the Wiki button has moved
+  // into the control rail, so BLOCK now takes a row on the left column like every other state control.
+  // A landscape phone has no room for a sixth thumb seat (the minimap and the hotbar close in on it), so
+  // there BLOCK is a labelled control on the left column, like FULL STEAM. claim = true takes the row.
+  function blockRect(claim) {
+    if (!touchMode() || HK.short()) {
+      const s = claim ? HK.slot(HK.row()) : { x: HK.colX(0), y: Math.max(HUD.leftY, HK.stackFloor()) };
+      return { x: s.x, y: s.y, w: HK.ctrlW(), h: HK.row(), label: touchMode() ? 'BLOCK' : 'Block (R)' };
+    }
+    const p = HK.thumbSeat(5);
+    return { x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2, label: 'BLOCK', round: true };
   }
+  // MIGRATED to the HUD kit: three states used to be three fills (blue, grey, darker grey), which read as
+  // decoration. Now the shield up is GOOD (you are protected — the kit's one meaning for green), ready is a
+  // raised control (press me), and cooling is the flat one. Colour, weight and words all agree.
   HOOKS.hud.push(g => {
     if (player.dead || player.mech) return;
-    const r = blockRect(), up = BLOCK.t > 0, ready = BLOCK.cd <= 0 && !!shieldOn();
-    button(g, r.x, r.y, r.w, r.h, up ? 'BLOCKING' : r.label, raiseShield, up ? '#1f6feb' : ready ? '#30363d' : '#21262d');
+    if ((!touchMode() || HK.short()) && (panel || paused)) return; // on the left column: a panel would sit right on top of it
+    const up = BLOCK.t > 0, ready = BLOCK.cd <= 0 && !!shieldOn();
+    const r = blockRect(true);   // claims its row on the left column where that is where it lives
+    if (r.round) { HK.disc(g, r.x + r.w / 2, r.y + r.h / 2, r.w / 2, up ? 'UP' : 'BLOCK', { tone: up ? HK.C.GOOD : null }); buttons.push({ x: r.x, y: r.y, w: r.w, h: r.h, label: 'BLOCK', action: raiseShield }); return; }
+    HK.control(g, r.x, r.y, r.w, r.h, up ? 'BLOCKING' : r.label, raiseShield, { tone: up ? HK.C.GOOD : null, on: ready && !up, hit: 'BLOCK' });
   });
 
   // ---------- teaching it: the book, and the first blow the knight takes with a shield on his arm ----------

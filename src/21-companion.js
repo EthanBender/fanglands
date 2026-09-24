@@ -317,19 +317,21 @@
   HOOKS.hud.push((g, narrow) => {
     const c = comp(); if (!c.id) return;
     const def = HEROES[c.id];
-    const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
-    const short = isTouch && VH < 500;
-    let y = HUD.leftY; // shared left-HUD cursor: stack under whatever the law and boss bars already drew
-    { const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; y = Math.max(y, _touchFloor); }
-    HUD.leftY = y + 24 + 6;
-    const label = c.downT > 0 ? `${def.name} · back in ${Math.ceil(c.downT)}s` : c.mode === 'stay' ? `${def.name} · waiting` : `${def.name} ${Math.ceil(c.hp)}/${def.hp}`;
-    g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
-    const w = Math.ceil(g.measureText(label).width) + 44;
-    roundRect(g, 14, y, w, 24, 8); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
-    g.fillStyle = c.downT > 0 ? '#4b535d' : def.look.tunic; g.beginPath(); g.arc(28, y + 12, 7, 0, 7); g.fill();
-    g.fillStyle = c.downT > 0 ? '#6e7681' : (def.look.helm || def.look.hair); g.beginPath(); g.arc(28, y + 11, 6, Math.PI, 0); g.fill();
-    const f = clamp(c.hp / def.hp, 0, 1);
-    g.fillStyle = c.downT > 0 ? '#8b949e' : f > 0.5 ? '#e6edf3' : f > 0.25 ? '#d29922' : '#f85149'; g.fillText(label, 42, y + 16);
+    // MIGRATED to the HUD kit (src/59-hudkit.js). Was a content-sized black pill that changed width every
+    // time her hp ticked. Now it is a chip on the left column's grid — same edge, same width, same plate as
+    // your own health — and her hp reads on the same green/amber/red ramp as yours, because it means the
+    // same thing. The little portrait keeps her tunic colour: that is identity (which companion), not state.
+    const pad = 9, f = clamp(c.hp / def.hp, 0, 1), down = c.downT > 0;
+    const s = HK.slot(pad * 2 + HK.meterH(true));
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone: down ? HK.C.BAD : null });
+    g.fillStyle = down ? '#4b535d' : def.look.tunic; g.beginPath(); g.arc(s.x + pad + 10, s.y + s.h / 2, 7, 0, 7); g.fill();
+    g.fillStyle = down ? '#6e7681' : (def.look.helm || def.look.hair); g.beginPath(); g.arc(s.x + pad + 10, s.y + s.h / 2 - 1, 6, Math.PI, 0); g.fill();
+    const bx = s.x + pad + 24;
+    HK.meter(g, bx, s.y + pad, s.x + s.w - pad - bx, {
+      label: def.name.toUpperCase() + (down ? ' · DOWN' : c.mode === 'stay' ? ' · WAITING' : ''),
+      value: down ? `${Math.ceil(c.downT)}s` : `${Math.ceil(c.hp)} / ${def.hp}`, template: `${def.hp} / ${def.hp}`,
+      frac: down ? 0 : f, tone: down ? HK.C.BAD : HK.ramp(f), small: true,
+    });
     // hero on the minimap
     if (minimapRect && c.downT <= 0) {
       const { x: mx, y: my, w: ms } = minimapRect; const ta = 44, sc = ms / ta;

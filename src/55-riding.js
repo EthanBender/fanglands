@@ -285,6 +285,8 @@
     if (!broken && (charge > 0 || sp)) {
       g.strokeStyle = armed() || sp ? '#f5c542' : '#d29922'; g.lineWidth = 4;
       g.beginPath(); g.arc(cx, cy, R - 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, sp ? 1 : charge)); g.stroke();
+  // (feat/hud had migrated the old 66x30 STEAM button onto the kit's left column; master replaced that button
+  //  with the corner HOLD target above before the merge, so the migration has nothing left to migrate.)
     }
     g.textAlign = 'center'; g.font = 'bold 11px sans-serif';
     g.fillStyle = broken ? '#6e7681' : '#ffe9e0';

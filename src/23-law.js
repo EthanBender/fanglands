@@ -142,21 +142,24 @@ HOOKS.panel.captain = (g, narrow) => {
 };
 
 // ---------- HUD ----------
+// MIGRATED to the HUD kit (src/59-hudkit.js). Two content-sized tags with their own fills and outlines
+// become two chips on the left column's grid: BAD down the edge for WANTED (the Watch is coming for you)
+// and WARN for an unpaid fine (something to deal with, not something chasing you). The text is plain ink —
+// the colour is in the rule, which is the kit's rule everywhere.
 HOOKS.hud.push((g, narrow) => {
   if (!lawOwes()) return;
   const L = law();
-  const qh = quest.tracked && activeQuests().includes(quest.tracked) ? 54 : 0;
-  const touch = typeof isTouch !== 'undefined' && isTouch, short = touch && VH < 500;
-  let y = HUD.leftY; // shared left-HUD cursor (under the HP box; hooks stack instead of overprinting)
-  { const _lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const _touchFloor = (isTouch && _lay && !_lay.short) ? _lay.hotbarY + _lay.hotbarH + 12 : 0; y = Math.max(y, _touchFloor); } // below the hotbar on touch layouts (HUD_LAYOUT from 13-ux)
-  const tag = (text, fill, stroke, color) => {
-    g.font = 'bold 12px sans-serif'; const tw = Math.ceil(g.measureText(text).width) + 24;
-    roundRect(g, 14, y, tw, 24, 8); g.fillStyle = fill; g.fill(); g.strokeStyle = stroke; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = color; g.textAlign = 'left'; g.fillText(text, 26, y + 16); y += 30;
+  const pad = 8;
+  const tag = (label, value, tone) => {
+    const s = HK.slot(HK.chipH());
+    HK.plate(g, s.x, s.y, s.w, s.h, { tone });
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.fillText(label, s.x + pad + 4, s.y + s.h / 2);
+    g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; g.textAlign = 'right'; g.fillText(value, s.x + s.w - pad - 4, s.y + s.h / 2);
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
   };
-  if (L.wanted > 0) tag(`WANTED ${lawStars(L.wanted)}  ${Math.ceil(L.timer)}s`, 'rgba(120,20,20,0.85)', '#f85149', '#fff');
-  if (L.fines > 0) tag(`Fine: ${lawFine()} coins`, 'rgba(90,60,10,0.85)', '#d29922', '#ffd166');
-  HUD.leftY = y; // each tag already advanced y by its height + 6
+  if (L.wanted > 0) tag(`WANTED ${lawStars(L.wanted)}`, `${Math.ceil(L.timer)}s`, HK.C.BAD);
+  if (L.fines > 0) tag('FINE TO PAY', `${lawFine()} coins`, HK.C.WARN);
 });
 
 // ---------- quest entry ----------

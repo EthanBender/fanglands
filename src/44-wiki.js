@@ -502,37 +502,37 @@
   update.__inner = _update;
   HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] }); // 43-settings walks this chain to read the real key handlers
 
-  // ---------- buttons: WIKI on the HUD, Wiki under an item in the pack ----------
-  // Placement (never over another button, the minimap or the quest box):
-  //   desktop → right of the HP box at (274, 14): the spec's VW/2+168 sits under the quest box on a 1280 screen.
-  //   touch, wide → left of MENU at (VW/2-96, 14): VW/2+168 would touch the minimap on a 768 tablet.
-  //   touch, narrow phone → beside HELP at (VW-74-64, stackBottom-28): the core puts the quest box straight under the stack
-  //   (qy = topStackBottom + 10, drawn before HOOKS.hud runs), so "under the stack" would sit on the quest box.
-  function wikiButtonRect(narrow) {
-    if (!isTouch) return { x: 274, y: 14, w: 72, h: 26, label: 'Wiki (K)' };
-    if (!narrow) return { x: VW / 2 - 96, y: 14, w: 60, h: 26, label: 'WIKI' };
-    return { x: VW - 74 - 64, y: HUD_LAYOUT.topStackBottom - 28, w: 60, h: 28, label: 'WIKI' };
-  }
+  // ---------- buttons: WIKI in the control rail, Wiki under an item in the pack ----------
+  // MIGRATED to the HUD kit (src/59-hudkit.js). The book used to be a button bolted on wherever there was
+  // room — three different hardcoded spots for desktop, tablet and phone, each of them a near-miss with the
+  // quest box or the minimap, and none of them matching anything else on screen. It is now one entry in the
+  // control rail under the minimap, beside the other things you reach for rarely, laid out by the kit.
+  hudControl({
+    id: 'wiki', sort: 40,
+    label: () => touchMode() ? 'WIKI' : 'Wiki (K)',
+    show: () => !(typeof title !== 'undefined' && title && title.active) && !paused,
+    on: () => panel === 'wiki',
+    action: () => panel === 'wiki' ? closePanel() : open(wk.section, wk.id, false),
+  });
   HOOKS.hud.push((g, narrow) => {
     if (typeof title !== 'undefined' && title && title.active) return;
     if (paused) return;
-    const r = wikiButtonRect(narrow);
-    button(g, r.x, r.y, r.w, r.h, r.label, () => panel === 'wiki' ? closePanel() : open(wk.section, wk.id, false), '#21262d');
     // the pack panel is drawn after this hook, so the Wiki button for the selected item is registered on the next frame's pass — it is drawn here from the
     // same numbers the core uses (panelBox size, grid, Equip/Drop row), sitting one row under the Equip / Drop buttons.
     if (panel === 'inventory' && selectedSlot >= 0 && player.inv[selectedSlot]) {
       const cols = narrow ? 5 : 10, size = narrow ? 44 : 46, gap = 6, eqw = 70;
-      const pw = Math.min(cols * (size + gap) + 30 + eqw, VW - 20), ph = Math.min(narrow ? 440 : 300, VH - 20);
+      const rowH = HK.row(), grow = (rowH - 30) * 2;   // the core grew the pack panel by the same amount
+      const pw = Math.min(cols * (size + gap) + 30 + eqw, VW - 20), ph = Math.min((narrow ? 440 : 300) + grow, VH - 20);
       const px = Math.round(VW / 2 - pw / 2), py = Math.round(Math.max(10, VH / 2 - ph / 2 - 20));
       const gy = py + 66 + Math.ceil(INV_SLOTS / cols) * (size + gap);
       const id = player.inv[selectedSlot].id;
-      wikiInvButton = { x: px + 18 + eqw, y: gy + 58 + 36, w: 90, h: 26, id };
+      wikiInvButton = { x: px + 18 + eqw, y: gy + 58 + rowH + 6, w: 90, h: rowH, id };
     } else wikiInvButton = null;
   });
   let wikiInvButton = null;
   // drawn after the pack panel (a panel hook cannot run for a core panel, so the button is painted by a wrapped render: see below)
   const _render = typeof render === 'function' ? render : null;
-  if (_render) render = function () { const r = _render.apply(this, arguments); if (panel === 'inventory' && wikiInvButton && !paused) { const b = wikiInvButton; button(ctx, b.x, b.y, b.w, b.h, 'Wiki', () => open('items', b.id), '#1f4e78'); } return r; };
+  if (_render) render = function () { const r = _render.apply(this, arguments); if (panel === 'inventory' && wikiInvButton && !paused) { const b = wikiInvButton; button(ctx, b.x, b.y, b.w, b.h, 'Wiki', () => open('items', b.id), '#21262d'); } return r; }; // neutral: reading a page is not an action with a colour
 
   window.WIKI = {
     sections: SECTIONS, state: wk,
