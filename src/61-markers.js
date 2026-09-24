@@ -443,6 +443,7 @@
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'markers: ';
+    const extraAtStart = extra.length;   // what other features registered through MARKERS.add before the suite ran
     const s0 = { ...st(), seen: { ...st().seen } };
     const prevPanel = panel, prevTouch = window.__forceTouch, dc = dialog.cur, dq = dialog.queue.slice();
     dialog.cur = null; dialog.queue.length = 0; paused = false; closePanel(); h.peace(true);
@@ -594,13 +595,13 @@
           !!named && named.key === g0.key && named.label === want.label && stillOpen && untapped && !!hovered && hovered.key === g0.key && unhovered && clearOfToggle && keyKept && far && closed,
           { named: named && named.label, stillOpen, untapped, hovered: hovered && hovered.label, unhovered, keyKept, closed }); }
       // ---- MARKERS.add is a registry another feature can use ----
-      { const before = all().length;
+      { const before = all().length, extra0 = extra.length;   // a feature may have registered at load (88-aerie's market): keep it
         const spot = h.openSpot(48, 30);
         const m = MARKERS.add({ x: spot.x, y: spot.y, kind: 'quest', label: 'Test post' });
         const dup = MARKERS.add({ x: spot.x, y: spot.y, kind: 'bank', label: 'Second' });
         const bad = MARKERS.add({ x: spot.x + 4, y: spot.y, kind: 'nonsense', label: 'No' });
         const listed = !!at(spot.x, spot.y) && at(spot.x, spot.y).label === 'Test post' && all().length === before + 1;
-        extra.length = 0; dirty = true;
+        extra.length = extra0; dirty = true;                    // only what this check added comes back out
         check(P + 'MARKERS.add registers a place for another feature: one marker to a tile, an unknown kind is refused',
           !!m && dup === null && bad === null && listed && all().length === before, { listed, after: all().length, before }); }
       // ---- layout: nothing overlaps, nothing off-screen, at four viewports ----
@@ -684,7 +685,7 @@
     } finally {
       if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
       quest.markers = { seen: { ...s0.seen }, show: s0.show };
-      extra.length = 0; dirty = true; selected = null; hover = null;
+      extra.length = extraAtStart; dirty = true; selected = null; hover = null;
       panel = prevPanel; window.__forceTouch = prevTouch; h.peace(false);
       dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq);
       notice = null; save(); render();
