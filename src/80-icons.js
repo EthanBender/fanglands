@@ -589,25 +589,29 @@
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
-    // 1. THE RATCHET. The goal is zero items sharing a drawing, and the art is landing in waves, so this
-    //    guards the direction of travel rather than the destination: the number sharing may never go UP.
-    //    BASELINE is what master shared before any icon was registered — measured, not guessed. Lower it as
-    //    art lands, and when it reaches 0 turn this back into a flat `duplicates.length === 0`.
-    const BASELINE = 152;
+    // 1. THE GATE. This was loosened to a ratchet (`implicated <= 152`) while the art was still being drawn,
+    //    with a note to turn it back into a flat zero once it landed. It has landed: src/81-icons-art.js draws
+    //    the remaining 167, so this is a flat zero again and fails the moment any two items share a drawing.
     const a = audit();
-    check('icons: no more items share a drawing than before the art began (the count only ever falls)',
-      a.implicated <= BASELINE,
-      { baseline: BASELINE, stillSharing: a.implicated, total: a.total, unique: a.unique, groups: a.groups.length, worst: a.groups.slice(0, 4).map(gr => gr.length + '×' + gr.slice(0, 3).join('/')) });
-    // and a standing report of how far there is to go, so the remaining work is never invisible
+    check('icons: every item draws a different picture (no two items share one drawing)',
+      a.duplicates.length === 0,
+      { total: a.total, unique: a.unique, stillSharing: a.implicated, groups: a.groups.length, worst: a.groups.slice(0, 4).map(gr => gr.length + '×' + gr.slice(0, 3).join('/')) });
+    // and the standing report the ratchet came with, kept so the number is on the board every run
     check('icons: how many items still share a drawing, and how many have their own', true,
-      { done: a.total - a.implicated, remaining: a.implicated, of: a.total, goal: 0 });
+      { done: a.total - a.implicated, remaining: a.implicated, withoutArt: a.missing.length, of: a.total, goal: 0 });
 
-    // 2. the registry actually overrides, and an unregistered item is left exactly as it was
+    // 2. the registry actually overrides, and an unregistered item is left exactly as it was.
+    //    This probed with stone while stone had no art. Once every item is drawn there is no unregistered item
+    //    left to probe with, so the probe lifts stone's icon out of the registry for two recordings and puts it
+    //    straight back — the thing being proved is the fall-through, not which items happen to be registered.
     const before = Recorder(); const was = haloOn; haloOn = false; _drawItemIcon(before, 'stone', 0, 0, UNIT); haloOn = was;
     const coreHash = hashOf(before.__rec.log);
+    const stoneArt = REG.stone; delete REG.stone;
+    const fellThrough = recordIcon('stone').hash === coreHash && recordIcon('stone').calls > 4;
+    if (stoneArt) REG.stone = stoneArt;
     check('icons: a registered icon overrides the shape switch, an unregistered one falls through to it unchanged',
-      !!REG.dragon_scale && !REG.stone && recordIcon('stone').hash === coreHash && recordIcon('dragon_scale').hash !== recordIcon('iron_shield').hash && recordIcon('stone').calls > 4,
-      { registered: Object.keys(REG).length, fellThrough: recordIcon('stone').hash === coreHash, scaleIsNotAShield: recordIcon('dragon_scale').hash !== recordIcon('iron_shield').hash });
+      !!REG.dragon_scale && fellThrough && recordIcon('dragon_scale').hash !== recordIcon('iron_shield').hash,
+      { registered: Object.keys(REG).length, fellThrough, scaleIsNotAShield: recordIcon('dragon_scale').hash !== recordIcon('iron_shield').hash });
 
     // 3. the halo: rare and better get one, a common never does, and it never changes what the icon draws
     const withHalo = id => { const g2 = Recorder(); drawItemIcon(g2, id, 0, 0, UNIT); return g2.__rec.log.length; };
