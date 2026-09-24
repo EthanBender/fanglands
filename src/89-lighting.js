@@ -33,9 +33,10 @@
 // stay dark and a lamp is worth walking to.
 //
 // HOW IT TAKES OVER without editing a core file:
-//   · 16-instances and 24-dwarves each push their scrim as one world item at exactly y = 1e9. This file's
-//     HOOKS.draw handler runs last (89), so those items are already in the list: while a scene of ours is
-//     open they are lifted out and ours is pushed in their place. LIGHTS.stats().dropped counts them and
+//   · 16-instances and 24-dwarves each push their scrim as one world item tagged `legacyScrim: true`. This
+//     file's HOOKS.draw handler runs last (89), so those items are already in the list: while a scene of ours
+//     is open they are lifted out (by the tag — y 1e9 is shared with chat bubbles) and ours is pushed at
+//     1e9 - 1, under the bubbles and highlights. LIGHTS.stats().dropped counts them and
 //     the self-test asserts it is exactly one per scene, so a double scrim can never come back unnoticed.
 //   · The core's starting-cave scrim is painted inside render() itself, after HOOKS.draw, with no flag to
 //     turn it off — and a feature may not edit a core file. It paints into the module-scope canvas
@@ -244,20 +245,24 @@
   darkLayer.getContext = (...a) => (suppress ? SINK : realDg(...a));
 
   // (2) The two instance scrims. 16-instances (`dark: true`) and 24-dwarves (Deepholm) each push exactly one
-  // world item at y = 1e9. HOOKS.draw runs in file order and this file is 89, so by the time we are called the
-  // item is already in the list: lift it out and put ours in its place. Nothing else pushes at that exact y
-  // inside an instance — the other 1e9 items in the game are use-highlights for the bulldozer, the barrel
-  // beast and the dozer bay, none of whose tiles exist on an instance map — and the self-test asserts the
-  // count is exactly one in each dark place, so a second scrim can never creep back in unseen.
-  const LEGACY_Y = 1e9;
+  // world item tagged `legacyScrim: true`. HOOKS.draw runs in file order and this file is 89, so by the time we
+  // are called the item is already in the list: lift it out and put ours in its place. It is found by the TAG,
+  // never by its y. y 1e9 is not reserved for darkness: chat bubbles (74-chat, the knight's own and every other
+  // player's) and the use-highlights sit at 1e9 too, and a y test once deleted every speech bubble in Deepholm,
+  // the Spider Den and the Coal Road. Our own scrim goes in just UNDER that line, at 1e9 - 1, so everything at
+  // 1e9 or above (bubbles, highlights, the 1e9 + 1 front-tile outline) is drawn over the dark instead of tying
+  // with it. The self-test asserts exactly one legacy scrim is lifted in each dark place, so a second scrim can
+  // never creep back in unseen.
+  const SCRIM_Y = 1e9 - 1;
   HOOKS.draw.push((g, items) => {
     const sc = activeScene();
-    suppress = !!sc;                                    // set every frame: render() reaches the core's cave block after this
+    // set every frame: render() reaches the core's cave block after this
+    suppress = !!sc;
     if (!sc) { STATS.dropped = 0; return; }
     let dropped = 0;
-    for (let i = items.length - 1; i >= 0; i--) if (items[i].y === LEGACY_Y) { items.splice(i, 1); dropped++; }
+    for (let i = items.length - 1; i >= 0; i--) if (items[i].legacyScrim) { items.splice(i, 1); dropped++; }
     STATS.dropped = dropped;
-    items.push({ y: LEGACY_Y, draw: () => paint(g, sc) });
+    items.push({ y: SCRIM_Y, lightingScrim: true, draw: () => paint(g, sc) });
   });
   HOOKS.newGame.push(() => { STATS.dropped = 0; STATS.coreScrimSwallowed = 0; STATS.painted = 0; STATS.lights = 0; });
 
@@ -440,6 +445,29 @@
         && Object.values(notOurs).every(v => v.scene === null && v.dropped === 0 && !v.suppressing)
         && cave.isCave && cave.scene === null && !cave.suppressing && cave.swallowed === 0,
         { ours: dark, untouched: notOurs, startingCave: cave }); }
+
+    // ---- 8. y 1e9 is not reserved for darkness: a chat bubble there survives and is drawn over the dark ----
+    // 74-chat pushes every speech bubble at y 1e9. The old pass deleted every item at that y, so in Deepholm, the
+    // Spider Den and the Coal Road nobody's words were ever drawn. Run the real draw hooks over a list holding a
+    // bubble, the way render() does, and see what comes out the other side.
+    { const res = {};
+      for (const id of ['deepholm', 'spider_den', 'coalmine']) {
+        INSTANCES.enter(id);
+        const bubble = { y: 1e9, bubble: 'x', draw() { } };
+        const items = [bubble];
+        for (const hk of HOOKS.draw) hk(ctx, items, cam);
+        const scrims = items.filter(it => it.lightingScrim);
+        const kept = items.includes(bubble);
+        const leftOver = items.filter(it => it.legacyScrim).length;
+        const sorted = items.slice().sort((a, b) => a.y - b.y);
+        const order = scrims.length === 1 ? sorted.indexOf(bubble) - sorted.indexOf(scrims[0]) : 0;
+        res[id] = { bubbleKept: kept, legacyLifted: L.stats().dropped, legacyLeftOver: leftOver, ourScrims: scrims.length,
+          scrimY: scrims.length ? scrims[0].y : null, bubbleY: bubble.y, bubbleDrawnAfterScrim: order > 0 };
+        INSTANCES.leave();
+      }
+      check(P + 'a draw item at y 1e9 that is not a legacy scrim (a chat bubble) survives the darkness pass in every dark place and draws above the scrim',
+        Object.values(res).every(r => r.bubbleKept && r.legacyLifted === 1 && r.legacyLeftOver === 0 && r.ourScrims === 1 && r.scrimY < r.bubbleY && r.bubbleDrawnAfterScrim),
+        res); }
 
     if (INSTANCES.active()) INSTANCES.leave();
     h.peace(false);

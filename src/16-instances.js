@@ -420,7 +420,8 @@
       else if (t === T_CHEST) items.push({ y: ty * TILE + TILE - 6, draw: () => drawChest(g, tx, ty, !!(active && Q().chests[active.id + ':' + tx + ',' + ty])) });
       else if (t === T_SHROOM) items.push({ y: ty * TILE - 2 * TILE, draw: () => drawFurniture(g, tx, ty, T.MUSHROOM) });
     }
-    if (active && active.inst.dark) items.push({ y: 1e9, draw: () => drawDark(g) });
+    // legacyScrim: 89-lighting lifts this scrim out while it lights the place itself (it finds it by the tag, not by y)
+    if (active && active.inst.dark) items.push({ y: 1e9, legacyScrim: true, draw: () => drawDark(g) });
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const { tx, ty } = frontTile(player);
       if (USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
