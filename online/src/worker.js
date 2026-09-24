@@ -34,7 +34,8 @@ export default {
       // a 101 with a WebSocket on it must go back untouched
       return path === '/ws' ? res : withCors(req, res);
     }
-    if (path === '/admin' || path === '/admin/') return env.ASSETS.fetch(new Request(new URL('/admin.html', url), req));
+    // /admin is public/admin.html: the assets service maps the bare path to the file by itself (and would
+    // bounce a request for /admin.html back to /admin, so the request goes through untouched)
     return env.ASSETS.fetch(req);
   },
 };

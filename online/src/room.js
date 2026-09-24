@@ -64,8 +64,9 @@ export class Room {
     if (this.knights.has(sock)) return;
     const lc = low(name);
     const old = this.byName.get(lc);
-    // one socket per knight: the newest login wins, the old screen is told why
-    if (old) this.drop(old, 4000, 'logged in elsewhere');
+    // one socket per knight: the newest login wins, the old screen is told why (an error it can act on,
+    // then a plain close, so the wire does not treat it as a dropped line and fight the new device for the knight)
+    if (old) { this.send(old.sock, { t: 'error', code: 'elsewhere', text: 'this knight logged in somewhere else' }); this.drop(old, 4000, 'logged in elsewhere'); }
     if (this.byName.size >= this.max) {
       this.send(sock, { t: 'error', code: 'full', text: 'the world is full right now, try again in a bit' });
       try { sock.close(4004, 'full'); } catch (e) { }

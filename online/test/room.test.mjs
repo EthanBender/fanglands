@@ -254,6 +254,7 @@ test('one socket per knight: a second login closes the first and takes its place
   const a = w.knight('Cohen', 'over'); w.t += 10;
   const b = w.knight('Jack', 'over'); w.t += 10;
   const a2 = w.sock(); w.room.join(a2, 'cohen');
+  assert.equal(a.last('error').code, 'elsewhere');
   assert.deepEqual(a.closed, { code: 4000, reason: 'logged in elsewhere' });
   w.say(a2, { t: 'hello', v: 1 });
   assert.equal(a2.last('welcome').me, 'cohen');
