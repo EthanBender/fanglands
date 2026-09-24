@@ -146,7 +146,11 @@
         burst(m.x, m.y, '#8a8f98', 12, 80);
       }
       if (Math.random() < 0.9) burst(player.x + rint(-40, 40), player.y + rint(-30, 30), '#6e7178', 3, 60);
-      if (window.IMPACT && IMPACT.wave) IMPACT.wave(player.x, player.y, 1);
+      // One ring per Quake, sent out on the first frame the feet come down. (This used to call wave() every frame of
+      // the 1.15 s stomp, untagged: 69 waves that pushed each other, and every other ring, out of 64-impact's list
+      // before any of them had travelled, so only the tile under the machine ever moved.) Strength 2 is a 6-tile
+      // ring, the same as Full Steam's slam, and a little wider than the 230 px the stomp itself reaches.
+      if (window.IMPACT && IMPACT.wave && !sp.quaked) { sp.quaked = true; IMPACT.wave(player.x, player.y, 2, 'quake'); }
       if (sp.t >= RUN) { burst(player.x, player.y, '#f5c542', 22, 130); sfx('mine'); floatText(player.x, player.y - 40, 'Quake', '#f5c542', 15); cool = SPECIALS.walker.cool; sp = null; }
       return;
     }
