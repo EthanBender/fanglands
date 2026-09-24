@@ -25,7 +25,7 @@ The game is a client-side simulation (2 MB of it, 626 tests). It is not being re
 world. Online Fanglands is a **listen server per map**:
 
 1. Everyone on the same map sees each other, chats, and can hand items over.
-2. On each map (the overworld, or one instance), the server names one connected knight the **keeper**. The
+2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves — or when it goes quiet: a keeper that streams no monsters for 4 s while someone shares its map (paused, on the title screen, a sleeping tab) hands the map to the next knight and goes to the back of the line until that knight leaves. The
    keeper's client runs the monsters exactly as it always has and streams their state; everyone else on that
    map stops simulating monsters and shows the keeper's. Hits from the others are routed to the keeper; the
    keeper's monsters target the nearest knight, whoever it is.
@@ -75,10 +75,21 @@ online/
 | `POST /api/admin/ban` | `{name, banned}` | `{ok}` | banned knights cannot log in; their save stays |
 | `POST /api/admin/invite` | `{invite}` | `{ok}` | change the invite code |
 | `GET /api/admin/chat?limit=500` | — | `[{at, n, text}]` | the whole log, newest last |
+| `GET /api/admin/invite` | — | `{invite}` | the current code |
+| `GET /api/admin/saves?name=` | — | `[{ver, at, bytes}]` | the kept versions |
+| `POST /api/admin/rollback` | `{name, ver}` | `{ok}` | make that version the current save |
 | `GET /api/admin/online` | — | `[{n, map, region, lv, since}]` | |
 
 Auth is `Authorization: Bearer <token>`. A token is 32 random bytes as hex, good for 90 days, stored in
 `localStorage` under `fanglands.session`. `NET.call` adds the header; nobody else touches it.
+
+### Error codes the title screen reads (`src/71-login.js`)
+
+The login card turns a 4xx `{error, code}` into one plain sentence. Use these codes (the HTTP status is the
+fallback when a code is missing): `pass` (wrong secret word; also 401 on login), `unknown` (no such knight; also
+404 on login), `wait` (too many tries; also 429), `banned` (also 403 on login), `invite` (bad invite code; also
+401/403 on signup), `taken` (name already used; also 409 on signup), `name` (a name the filter refused), `full`,
+`auth` (token dead). Anything else, or no answer at all, reads "The world is asleep right now."
 
 ## The socket
 
@@ -92,8 +103,8 @@ between knights on the same map; chat and the roster go to everyone.
 
 | `t` | Fields | Cap | Meaning |
 |---|---|---|---|
-| `hello` | `v: 1` | once | first frame after open; the server answers `welcome` |
-| `p` | `map, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act` | 8/s | presence. `look` is the serialisable part of `playerLook()` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null |
+| `hello` | `v: 1, map?` | once | first frame after open; the server answers `welcome`. Without `map` the knight is on `over` until its first `p` |
+| `p` | `map, region, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act` | 8/s | presence. `region` is the region or instance name the roster shows; `look` is the serialisable part of `playerLook()` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null |
 | `chat` | `text` | 1 per 1.5 s, ≤ 120 chars | filtered and logged server-side, then sent to everyone |
 | `mon` | `list` | 8/s, keeper only | monster snapshot for the map (format below) |
 | `hit` | `nid, dmg, knock, bomb` | 20/s | a non-keeper hit a monster; routed to the keeper |
@@ -119,7 +130,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `hurt` | `dmg, x, y` | a monster hit you: `hurtPlayer(dmg, x, y)` |
 | `gift` | `gid, from, id, qty` | take it if it fits, answer `gift_ok`/`gift_no` |
 | `gift_ok` / `gift_back` | `gid, id, qty` | the receiver took it / it comes back to you |
-| `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `wait`, `full`, `banned`, `bad` |
+| `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `elsewhere` (the same knight opened on another device: this socket is closed with code 4000 and must not reconnect), `wait`, `full`, `banned`, `bad` |
 | `pong` | — | |
 
 ### The monster snapshot (`mon.list`)
@@ -172,8 +183,12 @@ adds `mech: {kind, hp, maxHp}` and is drawn with `drawMech`. Mounts add `mount: 
 
 `bridge.html` at the repo root is served by GitHub Pages. gorkscape.ca loads it in a hidden iframe and posts
 `{fanglands: 'give-save'}`; the bridge answers, only to `https://gorkscape.ca` and `https://www.gorkscape.ca`,
-with `{fanglands: 'save', slots: {...}}` holding the three slot strings and their `.at` stamps. The login
-flow offers the most recent one when the account has no cloud save yet. Nothing is deleted on the old side.
+with `{fanglands: 'save', slots: {1: {save, at} | null, 2: ..., 3: ...}}` holding the three slot strings and
+their `.at` stamps (a browser from before the slots existed hands its legacy `fanglands.save.v2` over as slot 1
+with `at: 0`). The login flow waits up to 3 s, believes answers only from `https://ethanbender.github.io`, and
+offers the most recent slot when the account has no cloud save yet. Nothing is deleted on the old side. On
+gorkscape.ca the online knight lives in slot 1; a save that *Play alone* left there is moved to an empty slot
+first (`fanglands.slot.1.online` marks slot 1 as the cloud knight's).
 
 ## Safety rules (binding)
 
@@ -182,6 +197,12 @@ flow offers the most recent one when the account has no cloud save yet. Nothing 
 - Rate limits on every message type (table above). A socket over its cap is dropped with `error: bad`.
 - The admin page is a single HTML file behind `ADMIN_KEY`; it never leaves Ethan's hands.
 - Saves are kept in three versions so a broken save can be rolled back from the admin page.
+
+## Where things are
+
+- Play: https://gorkscape.ca (the invite code is with Ethan; nothing on this page is public).
+- Parents: https://gorkscape.ca/admin — accounts, reset a forgotten secret word, ban, the invite code, the chat log, save rollback. Needs the admin key.
+- The old address https://ethanbender.github.io/fanglands/ is the offline copy; its title screen has no login.
 
 ## Testing
 

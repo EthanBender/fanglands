@@ -25295,7 +25295,8 @@ HOOKS.selfTest.push((check, F, h) => {
   const wsUrl = () => {
     if (NET.base) return NET.base.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(NET.token);
     const proto = (typeof location !== 'undefined' && location.protocol === 'http:') ? 'ws://' : 'wss://';
-    return proto + host + '/ws?token=' + encodeURIComponent(NET.token);
+    // location.host keeps the port (localhost:8790 in a local run); hostname would drop it and the socket would never open
+    return proto + location.host + '/ws?token=' + encodeURIComponent(NET.token);
   };
   function wire(sock) {
     sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send({ t: 'hello', v: 1 }, true); };
@@ -25305,9 +25306,11 @@ HOOKS.selfTest.push((check, F, h) => {
       NET.stats.got++;
       if (msg.t === 'welcome') { NET.status = 'on'; NET.me = msg.me; }
       if (msg.t === 'error' && msg.code === 'auth') { NET.setToken(null); NET.closedByUs = true; }
+      // the same knight opened somewhere else: that socket wins, this one must not fight it by reconnecting
+      if (msg.t === 'error' && msg.code === 'elsewhere') NET.closedByUs = true;
       NET.emit(msg.t, msg);
     };
-    sock.onclose = () => { if (NET.sock !== sock) return; NET.sock = null; const was = NET.status; NET.status = 'off'; if (was === 'on') NET.emit('offline', { t: 'offline' }); if (!NET.closedByUs) scheduleReconnect(); };
+    sock.onclose = ev => { if (NET.sock !== sock) return; if (ev && ev.code === 4000) NET.closedByUs = true; NET.sock = null; const was = NET.status; NET.status = 'off'; if (was === 'on') NET.emit('offline', { t: 'offline' }); if (!NET.closedByUs) scheduleReconnect(); };
     sock.onerror = e => { NET.lastError = e; };
   }
   function scheduleReconnect() {
@@ -25362,6 +25365,1722 @@ HOOKS.selfTest.push((check, F, h) => {
     NET.disconnect();
     check(P + 'without a token the wire will not open a socket at all', (NET.token = null, !NET.connect()) && NET.sock === null, { sock: !!NET.sock });
     NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; NET.listeners.chat = (NET.listeners.chat || []).filter(f => f !== fn);
+  });
+}
+
+// ---- src/71-login.js ----
+// ============================================================================
+// LOGIN — the online title screen at gorkscape.ca
+// Owner: "make it an online MMORPG so Cohen and his friends can log in and play together."
+// When the wire says we are online (NET.enabled) the three slot cards give way to one card: a real HTML form
+// (so the iPad keyboard works) for the knight's name and secret word, a New knight switch that asks for the
+// invite code, and a line saying who is on. Online there are no slots: the account is the knight. A login
+// pulls the cloud save into slot 1 and starts it exactly the way 14-title starts a slot; a knight with no cloud
+// save yet is offered the one on the old GitHub Pages address (bridge.html, in a hidden iframe) or starts fresh.
+// Play alone falls back to the ordinary three-slot title with no network at all.
+// Feature file: registers through HOOKS and wraps title.open / title.tick / drawHud by reassignment. Nothing in
+// here touches the DOM without checking there is one (tools/headless.js has no document.body).
+// window.LOGIN is the register; docs/ONLINE.md is the contract.
+// ============================================================================
+{
+  const BRIDGE_ORIGIN = 'https://ethanbender.github.io';
+  const BRIDGE_URL = BRIDGE_ORIGIN + '/fanglands/bridge.html';
+  const BRIDGE_WAIT = 3000;
+  const NAME_KEY = 'fanglands.lastname';
+  const MARK_KEY = 'fanglands.slot.1.online';
+  const CHAPTERS = ['The Cave', 'Thistledown', 'Goblin Tech', 'Hollowford', 'The Fang'];
+  const NAME_RE = /^[A-Za-z0-9 ]{2,16}$/;
+  const SLOT = n => title.slotKey(n), AT = n => title.slotKey(n) + '.at';
+  const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) { } };
+  const lsDel = k => { try { localStorage.removeItem(k); } catch (e) { } };
+  const hasDom = () => typeof document !== 'undefined' && !!document.body && !!document.head && typeof document.createElement === 'function';
+  const canListen = typeof document !== 'undefined' && typeof document.addEventListener === 'function' && typeof window.addEventListener === 'function';
+  const noop = () => { };
+
+  const LOGIN = {
+    showing: false,   // the online card is up over the title backdrop
+    playing: false,   // a knight started through this flow is in the game (72-cloudsave pushes saves while true)
+    alone: false,     // Play alone was chosen: the ordinary three-slot title, no network
+    name: null,       // the knight's name once the world said yes
+    mode: 'form',     // form | checking | me | busy | offer
+    newKnight: false, error: '', status: '', asleep: false, offer: null, busy: false,
+    stats: { login: 0, signup: 0 },
+    MARK_KEY, BRIDGE_ORIGIN,
+  };
+  window.LOGIN = LOGIN;
+
+  // ---------- calls: a fake transport may answer on the spot (no promise), so the flow runs on plain callbacks ----------
+  // NET.call is async and a promise never settles inside the synchronous self-test, so with a fake in place the
+  // fake is asked directly (with the same arguments NET.call would hand it) and its answer is used as it comes.
+  const api = (method, path, body) => {
+    try { return NET.fake ? NET.fake.call(method, path, body, NET.token) : NET.call(method, path, body); }
+    catch (e) { return { __threw: e || new Error('failed') }; }
+  };
+  const when = (v, ok, bad) => {
+    if (v && typeof v.then === 'function') { v.then(ok, bad).catch(e => console.error('login', e)); return; }
+    if (v && v.__threw) bad(v.__threw); else ok(v);
+  };
+
+  // ---------- the world's answers in plain words ----------
+  LOGIN.sentence = (err, kind) => {
+    const code = err && err.code, st = err && err.status;
+    if (code === 'wait' || st === 429) return 'Too many tries. Wait a minute.';
+    if (code === 'banned') return 'This knight is not allowed in. Ask Ethan.';
+    if (code === 'invite' || code === 'bad_invite') return 'That invite code is not right.';
+    if (code === 'pass' || code === 'password' || code === 'wrong' || code === 'secret') return 'That secret word is wrong.';
+    if (code === 'unknown' || code === 'noname' || code === 'nosuch') return 'No knight by that name yet. Tap New knight.';
+    if (code === 'taken' || code === 'exists') return 'That name is already taken. Pick another.';
+    if (code === 'name' || code === 'bad_name' || code === 'filtered') return kind === 'login' ? 'No knight by that name yet. Tap New knight.' : 'That name will not do here. Try another.';
+    if (code === 'full') return 'The world is full right now. Try again soon.';
+    if (code === 'auth') return 'You were logged out. Log in again.';
+    if (kind === 'login' && st === 401) return 'That secret word is wrong.';
+    if (kind === 'login' && st === 404) return 'No knight by that name yet. Tap New knight.';
+    if (kind === 'login' && st === 403) return 'This knight is not allowed in. Ask Ethan.';
+    if (kind === 'signup' && (st === 403 || st === 401)) return 'That invite code is not right.';
+    if (kind === 'signup' && st === 409) return 'That name is already taken. Pick another.';
+    if (!st) return 'The world is asleep right now. Try again in a bit.';
+    return 'Something went wrong. Try again.';
+  };
+  const statusWords = r => {
+    const names = (r && Array.isArray(r.names)) ? r.names.filter(n => typeof n === 'string') : [];
+    const n = (r && typeof r.online === 'number') ? r.online : names.length;
+    if (!n) return 'Nobody online right now';
+    const shown = names.slice(0, 8).join(', ') + (names.length > 8 ? ' and ' + (names.length - 8) + ' more' : '');
+    return `${n} knight${n === 1 ? '' : 's'} online${shown ? ': ' + shown : ''}`;
+  };
+
+  // ---------- a slot string, summarised the way the title cards do it ----------
+  const summarizeRaw = raw => {
+    try {
+      const d = JSON.parse(raw); const p = d.player || {}; const skills = p.skills || {};
+      const lv = k => levelForXp((skills[k] && skills[k].xp) || 0);
+      const level = Math.max(1, Math.floor((lv('melee') + lv('defence')) / 2 + lv('range') / 4));
+      const stage = (d.quest && d.quest.stage) || 0;
+      return { level, chapter: title.chapterFor(stage), region: p.region || 'Unknown', playSeconds: p.playSeconds || 0 };
+    } catch (e) { return { level: 1, chapter: 1, region: 'Unknown', playSeconds: 0, broken: true }; }
+  };
+  LOGIN.summarizeRaw = summarizeRaw;
+
+  // ---------- slot 1 is the online knight's slot ----------
+  // A save that Play alone left in slot 1 is moved to an empty slot before the cloud knight takes the slot over,
+  // so nothing a kid played is thrown away. The mark says slot 1 currently holds a cloud knight; 72-cloudsave
+  // clears it when a local save lands there.
+  const park = () => {
+    const cur = lsGet(SLOT(1)); if (!cur || lsGet(MARK_KEY) != null) return false;
+    for (let n = 2; n <= 3; n++) if (!lsGet(SLOT(n))) { lsSet(SLOT(n), cur); lsSet(AT(n), lsGet(AT(1)) || Date.now()); return true; }
+    return false;
+  };
+  const claim = (raw, at) => { if (lsGet(SLOT(1)) !== raw) park(); lsSet(SLOT(1), raw); lsSet(AT(1), at || Date.now()); lsSet(MARK_KEY, '1'); if (window.CLOUD) window.CLOUD.known = raw; };
+  const fresh = () => { park(); lsDel(SLOT(1)); lsDel(AT(1)); lsSet(MARK_KEY, '1'); if (window.CLOUD) window.CLOUD.known = null; };
+
+  // ---------- the bridge: the knight saved on the old address ----------
+  const bridge = {
+    waiting: null, timer: null, frame: null, last: null,
+    pick(slots) {
+      let best = null;
+      for (const k in (slots || {})) {
+        const s = slots[k]; if (!s || typeof s.save !== 'string' || !s.save) continue;
+        const at = +s.at || 0;
+        if (!best || at > best.at) best = Object.assign({ slot: +k || k, save: s.save, at }, summarizeRaw(s.save));
+      }
+      return best;
+    },
+    onMessage(ev) {
+      if (!ev || ev.origin !== BRIDGE_ORIGIN) return;
+      const d = ev.data; if (!d || d.fanglands !== 'save') return;
+      const c = bridge.pick(d.slots); bridge.last = c;
+      const cb = bridge.waiting; if (cb) { bridge.done(); cb(c); }
+    },
+    done() {
+      bridge.waiting = null;
+      if (bridge.timer) { clearTimeout(bridge.timer); bridge.timer = null; }
+      if (bridge.frame) { try { bridge.frame.remove(); } catch (e) { } bridge.frame = null; }
+    },
+    ask(cb) {
+      const real = hasDom() && typeof location !== 'undefined' && /^https?:$/.test(location.protocol) && location.origin !== BRIDGE_ORIGIN;
+      if (!real) { cb(null); return; }
+      bridge.done(); bridge.waiting = cb;
+      const f = document.createElement('iframe');
+      f.style.display = 'none'; f.setAttribute('aria-hidden', 'true'); f.setAttribute('title', 'Fanglands bridge');
+      f.onload = () => { try { f.contentWindow.postMessage({ fanglands: 'give-save' }, BRIDGE_ORIGIN); } catch (e) { } };
+      f.src = BRIDGE_URL; bridge.frame = f; document.body.appendChild(f);
+      bridge.timer = setTimeout(() => { const w = bridge.waiting; bridge.done(); if (w) w(null); }, BRIDGE_WAIT);
+    },
+  };
+  LOGIN.bridge = bridge;
+  if (canListen) window.addEventListener('message', bridge.onMessage);
+
+  // ---------- the flow ----------
+  const oops = text => { LOGIN.busy = false; LOGIN.mode = 'form'; LOGIN.error = text; refresh(); return false; };
+  LOGIN.submit = (name, pass, invite, isNew) => {
+    name = String(name || '').trim(); pass = String(pass || ''); invite = String(invite || '').trim();
+    if (LOGIN.busy) return false;
+    if (!NAME_RE.test(name)) return oops("A knight's name is 2 to 16 letters or numbers.");
+    if (pass.length < 4) return oops('The secret word needs at least 4 letters.');
+    if (isNew && !invite) return oops('Type the invite code. Ask Ethan for it.');
+    LOGIN.error = ''; LOGIN.busy = true; LOGIN.mode = 'busy'; refresh();
+    const kind = isNew ? 'signup' : 'login';
+    when(api('POST', '/api/' + kind, isNew ? { name, pass, invite } : { name, pass }),
+      r => {
+        LOGIN.busy = false;
+        if (!r || typeof r.token !== 'string' || !r.token) return oops('The world gave a strange answer. Try again.');
+        NET.setToken(r.token); LOGIN.name = (typeof r.name === 'string' && r.name) || name; lsSet(NAME_KEY, name); LOGIN.stats[kind]++;
+        afterLogin();
+      },
+      e => { LOGIN.busy = false; LOGIN.mode = 'form'; LOGIN.error = LOGIN.sentence(e, kind); refresh(); });
+    return true;
+  };
+  function afterLogin() {
+    LOGIN.mode = 'busy'; LOGIN.error = ''; refresh();
+    when(api('GET', '/api/save'),
+      r => {
+        if (r && typeof r.save === 'string' && r.save) { claim(r.save, +r.at || Date.now()); start(false, true); return; }
+        bridge.ask(c => { if (c) { LOGIN.offer = c; LOGIN.mode = 'offer'; refresh(); } else { fresh(); start(true, false); } });
+      },
+      e => {
+        if (e && (e.code === 'auth' || e.status === 401)) { NET.setToken(null); LOGIN.mode = 'form'; }
+        else LOGIN.mode = NET.token ? 'me' : 'form';
+        LOGIN.error = LOGIN.sentence(e, 'save'); refresh();
+      });
+  }
+  LOGIN.bring = yes => {
+    const c = LOGIN.offer; LOGIN.offer = null;
+    if (yes && c) { claim(c.save, c.at || Date.now()); start(true, true); }
+    else { fresh(); start(true, false); }
+  };
+  function start(push, had) {
+    LOGIN.playing = true; LOGIN.alone = false; hide();
+    title.startSlot(1);
+    notify(had ? `Welcome back, ${LOGIN.name}.` : `Welcome to the world, ${LOGIN.name}.`);
+    NET.connect();
+    if (push && window.CLOUD) window.CLOUD.push(true);
+  }
+  const askStatus = () => when(api('GET', '/api/status'),
+    r => { LOGIN.asleep = false; LOGIN.status = statusWords(r); refresh(); },
+    () => { LOGIN.asleep = true; LOGIN.status = 'The world is asleep right now.'; refresh(); });
+  const checkMe = () => when(api('GET', '/api/me'),
+    r => { if (LOGIN.mode !== 'checking') return; LOGIN.name = (r && typeof r.name === 'string' && r.name) || LOGIN.name || lsGet(NAME_KEY) || 'knight'; LOGIN.mode = 'me'; refresh(); },
+    e => {
+      if (LOGIN.mode !== 'checking') return;
+      if (e && (e.code === 'auth' || e.status === 401 || e.code === 'banned' || e.status === 403)) { NET.setToken(null); LOGIN.error = e.code === 'banned' ? LOGIN.sentence(e, 'login') : ''; }
+      LOGIN.mode = 'form'; refresh();
+    });
+  LOGIN.show = () => {
+    LOGIN.showing = true; LOGIN.alone = false; LOGIN.playing = false; LOGIN.error = ''; LOGIN.offer = null; LOGIN.busy = false; LOGIN.asleep = false;
+    LOGIN.status = 'Looking for the world...'; LOGIN.mode = NET.token ? 'checking' : 'form';
+    build(); if (ui) { if (!ui.name.value) ui.name.value = lsGet(NAME_KEY) || ''; place(); } refresh();
+    askStatus(); if (NET.token) checkMe();
+    if (ui && !touchMode()) { try { (ui.name.value ? ui.pass : ui.name).focus(); } catch (e) { } }
+  };
+  const hide = () => { LOGIN.showing = false; if (ui) { ui.root.hidden = true; try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) { } } };
+  LOGIN.hide = hide;
+  LOGIN.playAs = () => { if (LOGIN.mode !== 'me') return false; afterLogin(); return true; };
+  LOGIN.notMe = () => { when(api('POST', '/api/logout'), noop, noop); NET.setToken(null); LOGIN.name = null; LOGIN.mode = 'form'; LOGIN.error = ''; refresh(); };
+  LOGIN.playAlone = () => { LOGIN.alone = true; hide(); title.refresh(); };
+  LOGIN.backOnline = () => { LOGIN.alone = false; LOGIN.show(); };
+  LOGIN.logout = () => {
+    if (!LOGIN.playing) return false;
+    save();
+    const finish = () => {
+      when(api('POST', '/api/logout'), noop, noop);
+      NET.disconnect(); NET.setToken(null); LOGIN.name = null; LOGIN.playing = false;
+      title.open();
+    };
+    // the last push goes first, but a hung PUT must not hold the knight on the pause menu
+    let done = false; const once = () => { if (done) return; done = true; finish(); };
+    if (window.CLOUD) { when(window.CLOUD.flush(), once, once); setTimeout(once, 2000); } else once();
+    return true;
+  };
+  // the world can end a session from its side (token dead, knight banned): back to the title, in plain words
+  NET.on('error', m => {
+    if (!LOGIN.playing || !m || (m.code !== 'auth' && m.code !== 'banned')) return;
+    const text = LOGIN.sentence(m, 'login');
+    LOGIN.playing = false; NET.disconnect(); if (m.code === 'banned') NET.setToken(null);
+    title.open(); LOGIN.error = text; refresh();
+  });
+
+  // ---------- the title screen, wrapped ----------
+  const _open = title.open;
+  title.open = () => {
+    const wasPlaying = LOGIN.playing;
+    _open();
+    if (!NET.enabled) return;
+    if (wasPlaying && window.CLOUD) window.CLOUD.flush();
+    LOGIN.playing = false;
+    if (!LOGIN.alone) LOGIN.show();
+  };
+  const _tick = title.tick;
+  title.tick = dt => {
+    if (!LOGIN.showing) return _tick(dt);
+    title.t += dt; time += dt;
+    pressed.clear(); keys.clear(); touch.taps.length = 0;
+  };
+
+  // ---------- the HTML card (real inputs: the iPad keyboard needs them; 16 px so Safari does not zoom) ----------
+  let ui = null;
+  const CSS = `
+#fl-login{position:fixed;inset:0;z-index:10;display:flex;justify-content:center;align-items:flex-start;pointer-events:none;font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3}
+#fl-login[hidden]{display:none}
+#fl-login .fl-card{pointer-events:auto;box-sizing:border-box;width:min(440px,calc(100vw - 28px));overflow-y:auto;-webkit-overflow-scrolling:touch;background:#161b22;border:1px solid #f5c542;border-radius:10px;padding:16px 18px 14px;box-shadow:0 10px 40px rgba(0,0,0,.55)}
+#fl-login h2{margin:0 0 6px;font:700 18px "Cinzel","Trajan Pro",Georgia,serif;color:#f5c542}
+#fl-login label{display:block;font:bold 12px sans-serif;color:#c9d1d9;margin:10px 0 4px}
+#fl-login input[type=text],#fl-login input[type=password]{box-sizing:border-box;width:100%;font-size:16px;line-height:20px;padding:10px 12px;color:#e6edf3;background:#0b0f14;border:1px solid #30363d;border-radius:8px;outline:none;-webkit-appearance:none;appearance:none}
+#fl-login input:focus{border-color:#f5c542}
+#fl-login .fl-row{display:flex;gap:8px;margin-top:12px}
+#fl-login button{flex:1;font:bold 15px sans-serif;color:#fff;background:#238636;border:0;border-radius:8px;padding:11px 12px;cursor:pointer;-webkit-appearance:none;appearance:none}
+#fl-login button.fl-dim{background:#21262d;color:#e6edf3}
+#fl-login button:disabled{background:#2a2f3a;color:#6e7681}
+#fl-login .fl-check{display:flex;align-items:center;gap:8px;margin-top:12px;font:bold 13px sans-serif;color:#e6edf3;cursor:pointer}
+#fl-login .fl-check input{width:20px;height:20px;margin:0;accent-color:#f5c542}
+#fl-login .fl-hint{font:12px sans-serif;color:#8b949e;margin-top:4px}
+#fl-login .fl-err{font:bold 13px sans-serif;color:#f85149;min-height:16px;margin-top:10px}
+#fl-login .fl-err:empty{margin-top:0;min-height:0}
+#fl-login .fl-line{font:15px sans-serif;margin:6px 0 4px}
+#fl-login .fl-status{font:12px sans-serif;color:#8b949e;margin-top:12px;padding-top:10px;border-top:1px solid #30363d;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#fl-login .fl-status button{flex:0 0 auto;padding:7px 12px;font-size:13px}
+#fl-login [hidden]{display:none!important}`;
+  function build() {
+    if (ui || !hasDom()) return;
+    const el = (tag, attrs, ...kids) => {
+      const e = document.createElement(tag);
+      for (const k in attrs) { if (k === 'text') e.textContent = attrs[k]; else if (k === 'cls') e.className = attrs[k]; else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]); else e.setAttribute(k, attrs[k]); }
+      for (const c of kids) if (c) e.appendChild(c);
+      return e;
+    };
+    const style = document.createElement('style'); style.textContent = CSS; document.head.appendChild(style);
+    const u = {};
+    u.name = el('input', { type: 'text', id: 'fl-name', autocomplete: 'username', autocapitalize: 'words', autocorrect: 'off', spellcheck: 'false', maxlength: '16', enterkeyhint: 'next' });
+    u.pass = el('input', { type: 'password', id: 'fl-pass', autocomplete: 'current-password', enterkeyhint: 'go' });
+    u.invite = el('input', { type: 'text', id: 'fl-invite', autocomplete: 'off', autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'go' });
+    u.newBox = el('input', { type: 'checkbox', id: 'fl-new', onchange: () => { LOGIN.newKnight = u.newBox.checked; refresh(); if (LOGIN.newKnight) { try { u.invite.focus(); } catch (e) { } } } });
+    u.submit = el('button', { type: 'submit', text: 'Play' });
+    u.err = el('div', { cls: 'fl-err' });
+    u.inviteBox = el('div', {}, el('label', { for: 'fl-invite', text: 'Invite code' }), u.invite, el('div', { cls: 'fl-hint', text: 'Ask Ethan for the invite code' }));
+    u.form = el('form', { onsubmit: e => { e.preventDefault(); LOGIN.submit(u.name.value, u.pass.value, u.invite.value, u.newBox.checked); } },
+      el('label', { for: 'fl-name', text: "Knight's name" }), u.name,
+      el('label', { for: 'fl-pass', text: 'Secret word' }), u.pass,
+      el('label', { cls: 'fl-check', for: 'fl-new' }, u.newBox, el('span', { text: 'New knight' })),
+      u.inviteBox, u.err, el('div', { cls: 'fl-row' }, u.submit));
+    u.whoName = el('b', {});
+    u.who = el('div', {}, el('div', { cls: 'fl-line' }, el('span', { text: 'Playing as ' }), u.whoName),
+      el('div', { cls: 'fl-row' }, el('button', { type: 'button', text: 'Play', onclick: LOGIN.playAs }), el('button', { type: 'button', cls: 'fl-dim', text: 'Not me', onclick: LOGIN.notMe })));
+    u.offerText = el('div', { cls: 'fl-line' });
+    u.offer = el('div', {}, u.offerText, el('div', { cls: 'fl-row' }, el('button', { type: 'button', text: 'Yes, bring my knight', onclick: () => LOGIN.bring(true) }), el('button', { type: 'button', cls: 'fl-dim', text: 'No, start fresh', onclick: () => LOGIN.bring(false) })));
+    u.busy = el('div', { cls: 'fl-line', text: 'One moment...' });
+    u.busyErr = el('div', { cls: 'fl-err' });
+    u.statusText = el('span', {});
+    u.alone = el('button', { type: 'button', cls: 'fl-dim', text: 'Play alone', onclick: LOGIN.playAlone });
+    u.status = el('div', { cls: 'fl-status' }, u.statusText, u.alone);
+    u.card = el('div', { cls: 'fl-card' }, el('h2', { text: 'Play online at gorkscape.ca' }), u.form, u.who, u.offer, u.busy, u.busyErr, u.status);
+    u.root = el('div', { id: 'fl-login' }, u.card);
+    document.body.appendChild(u.root);
+    ui = u;
+    if (canListen) window.addEventListener('resize', place);
+  }
+  // the card sits where the slot cards would, under the FANGLANDS heading the canvas draws
+  function place() {
+    if (!ui) return;
+    const short = VH < 520, ty = short ? 44 : Math.round(VH * 0.19);
+    const top = Math.round(Math.max(ty + 56, Math.min(VH * 0.34, VH - 380)));
+    ui.card.style.marginTop = top + 'px'; ui.card.style.maxHeight = Math.max(160, VH - top - 10) + 'px';
+  }
+  function refresh() {
+    if (!ui) return;
+    ui.root.hidden = !LOGIN.showing;
+    const m = LOGIN.mode;
+    ui.form.hidden = m !== 'form'; ui.who.hidden = m !== 'me'; ui.offer.hidden = m !== 'offer'; ui.busy.hidden = m !== 'busy' && m !== 'checking';
+    ui.busy.textContent = m === 'checking' ? 'Looking for your knight...' : 'One moment...';
+    ui.inviteBox.hidden = !LOGIN.newKnight; ui.newBox.checked = LOGIN.newKnight;
+    ui.submit.textContent = LOGIN.newKnight ? 'Make my knight' : 'Play'; ui.submit.disabled = LOGIN.busy;
+    ui.pass.setAttribute('autocomplete', LOGIN.newKnight ? 'new-password' : 'current-password');
+    ui.err.textContent = m === 'form' ? LOGIN.error : ''; ui.busyErr.textContent = m === 'me' ? LOGIN.error : '';
+    ui.whoName.textContent = LOGIN.name || '';
+    const o = LOGIN.offer;
+    ui.offerText.textContent = o ? `Bring your knight from the old address? Level ${o.level} · Chapter ${o.chapter}: ${CHAPTERS[o.chapter - 1] || ''}` : '';
+    ui.statusText.textContent = LOGIN.status; ui.alone.hidden = !LOGIN.asleep;
+  }
+  // while a knight is typing, the game's key listeners must not hear it (they sit on window, bubble phase; this
+  // capturing listener runs first and stops the event there — the input still gets its default action). Escape blurs.
+  if (canListen) {
+    const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA'); };
+    for (const type of ['keydown', 'keyup', 'keypress']) window.addEventListener(type, e => {
+      if (!typing()) return;
+      if (type === 'keydown' && e.key === 'Escape') { try { document.activeElement.blur(); } catch (err) { } }
+      e.stopImmediatePropagation(); keys.clear();
+    }, true);
+  }
+
+  // ---------- the canvas behind the card: backdrop, heading, sprites, sound button ----------
+  const KNIGHT = { tunic: '#3b6fb6', hair: '#5a3a1e', helm: '#8f96a3', shoulder: '#9aa3b2', shield: '#8a6a3a', weapon: ITEMS.iron_sword || ITEMS.wooden_sword };
+  function drawOnlineTitle(g) {
+    const narrow = VW < 640, short = VH < 520;
+    const grad = g.createLinearGradient(0, 0, 0, VH);
+    grad.addColorStop(0, 'rgba(6,8,14,0.88)'); grad.addColorStop(0.45, 'rgba(6,8,14,0.66)'); grad.addColorStop(1, 'rgba(6,8,14,0.92)');
+    g.fillStyle = grad; g.fillRect(0, 0, VW, VH);
+    const ty = short ? 44 : Math.round(VH * 0.19);
+    g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,0.75)';
+    g.font = `800 ${narrow ? 44 : short ? 48 : 72}px ${DISPLAY}`; g.strokeText('FANGLANDS', VW / 2, ty); g.fillStyle = '#f5c542'; g.fillText('FANGLANDS', VW / 2, ty);
+    g.font = `600 ${narrow ? 14 : 18}px ${DISPLAY}`; g.lineWidth = 4; g.strokeText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30)); g.fillStyle = '#c9a36a'; g.fillText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30));
+    if (!narrow) {
+      const cw = Math.min(440, VW - 28), margin = Math.round(VW / 2 - cw / 2), midY = Math.round(VH * 0.55);
+      const bob = Math.sin(title.t * 1.6) * 4, bob2 = Math.sin(title.t * 1.6 + 1.3) * 4;
+      const ks = clamp(margin / 48, 1.6, 4), ws = clamp(margin / 78, 1.3, 3.4);
+      g.save(); g.translate(margin / 2, midY); g.scale(ks, ks); g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 12, 12, 5, 0, 0, 7); g.fill(); g.translate(0, bob / ks); drawHuman(g, { facing: { x: 1, y: 0 }, hurtT: 0, attackT: 0 }, KNIGHT); g.restore();
+      g.save(); g.translate(VW - margin / 2, midY); g.scale(ws, ws); g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 22, 26, 9, 0, 0, 7); g.fill(); g.translate(0, bob2 / ws); drawMech(g, { facing: { x: -1, y: 0 }, moving: true, walkT: title.t * 2.2, attackT: 0, hurtT: 0 }, false, null); g.restore();
+    }
+    if (!ui) {
+      // no HTML to hold the card (should never happen in a browser): say so on the canvas rather than show nothing
+      g.textAlign = 'center'; g.fillStyle = '#e6edf3'; g.font = `700 18px ${DISPLAY}`; g.fillText('Play online at gorkscape.ca', VW / 2, ty + 90);
+      g.font = '13px sans-serif'; g.fillStyle = '#8b949e'; g.fillText(LOGIN.status || '', VW / 2, ty + 114);
+    }
+    button(g, VW - 124, VH - 42, 110, 30, audioMuted ? 'Sound: off' : 'Sound: on', toggleMute, '#21262d');
+    g.textAlign = 'left'; g.fillStyle = 'rgba(230,237,243,0.55)'; g.font = '11px sans-serif'; g.fillText('Your knight is saved in the cloud at gorkscape.ca.', 14, VH - 22);
+  }
+  const _drawHud = drawHud;
+  drawHud = function (g) {
+    if (!title.active || !LOGIN.showing) {
+      _drawHud(g);
+      if (title.active && NET.enabled && LOGIN.alone) button(g, 14, VH - 76, 120, 30, 'Play online', LOGIN.backOnline, '#21262d');
+      return;
+    }
+    buttons.length = 0; minimapRect = null;
+    g.textBaseline = 'alphabetic';
+    drawOnlineTitle(g);
+  };
+
+  // ---------- Log out in the pause menu ----------
+  // The pause menu is a fixed 310 px box with one hook row; a second row would land on the stats line. So the
+  // Title screen row from 14-title is split in two while a knight is online: Title screen on the left, Log out on the right.
+  { const first = HOOKS.pauseMenu[0];
+    if (first) HOOKS.pauseMenu[0] = (g, x, y, w, h) => {
+      if (!NET.enabled || !LOGIN.playing) return first(g, x, y, w, h);
+      const half = Math.floor(w / 2) - 4;
+      first(g, x, y, half, h);
+      button(g, x + half + 8, y, w - half - 8, h, 'Log out', LOGIN.logout, '#3a4150');
+    }; }
+
+  // ---------- self-test ----------
+  const P = 'login: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    if (!title.active) save();
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, status: NET.status, slot: title.slot, titleActive: title.active, showing: LOGIN.showing, playing: LOGIN.playing, alone: LOGIN.alone, name: LOGIN.name,
+      slots: [1, 2, 3].map(n => [lsGet(SLOT(n)), lsGet(AT(n))]), cur: lsGet('fanglands.slot.current'), mark: lsGet(MARK_KEY), lastName: lsGet(NAME_KEY), paused, notice };
+    // a small world that answers on the spot: one knight (Cohen / sword) with a cloud save, invite code 'dragon'
+    const base = JSON.parse(lsGet(SLOT(title.slot)) || lsGet(SAVE_KEY) || '{"player":{},"quest":{}}'); base.player = base.player || {}; base.player.kills = 42; const cloud = JSON.stringify(base);
+    const world = {
+      accounts: { cohen: 'sword' }, names: { cohen: 'Cohen' }, saves: { cohen: cloud }, invite: 'dragon', puts: [], calls: [], statusFails: false,
+      call(method, path, body, token) {
+        world.calls.push(method + ' ' + path);
+        const fail = (code, status) => { const e = new Error(code); e.code = code; e.status = status; throw e; };
+        const key = token && token.startsWith('tok-') ? token.slice(4) : null;
+        if (path === '/api/status') { if (world.statusFails) throw new Error('no answer'); return { ok: true, online: 2, names: ['Cohen', 'Sam'] }; }
+        if (path === '/api/login') { const k = String(body.name).toLowerCase(); if (!(k in world.accounts)) fail('unknown', 404); if (world.accounts[k] !== body.pass) fail('pass', 401); return { token: 'tok-' + k, name: world.names[k] }; }
+        if (path === '/api/signup') { const k = String(body.name).toLowerCase(); if (body.invite !== world.invite) fail('invite', 403); if (k in world.accounts) fail('taken', 409); world.accounts[k] = body.pass; world.names[k] = body.name; return { token: 'tok-' + k, name: body.name }; }
+        if (!key) fail('auth', 401);
+        if (path === '/api/me') return { name: world.names[key], created: 1, saveAt: 1, online: false };
+        if (path === '/api/save' && method === 'GET') return { save: world.saves[key] || null, at: 5 };
+        if (path === '/api/save' && method === 'PUT') { world.puts.push([key, body]); world.saves[key] = body; return { at: 6 }; }
+        if (path === '/api/logout') return { ok: true };
+        fail('bad', 400);
+      },
+      open: () => { const s = { readyState: 1, send(str) { const m = JSON.parse(str); if (m.t === 'hello') s.onmessage({ data: JSON.stringify({ t: 'welcome', me: LOGIN.name, at: 1, keeper: LOGIN.name }) }); }, close() { s.readyState = 3; if (s.onclose) s.onclose(); } }; return s; },
+    };
+    try {
+      NET.enabled = true; NET.useFake(world); NET.setToken(null); LOGIN.alone = false; LOGIN.playing = false; if (window.CLOUD) window.CLOUD.reset();
+      title.open();
+      check(P + 'on the online address the title puts up the card and asks the world who is on', LOGIN.showing && title.active && LOGIN.mode === 'form' && LOGIN.status === '2 knights online: Cohen, Sam' && !LOGIN.asleep, { status: LOGIN.status, mode: LOGIN.mode });
+      render();
+      check(P + 'while the card is up the canvas keeps only the sound button and Enter does not start a slot', !buttons.some(b => b.label === 'Slot 1') && buttons.some(b => /^Sound/.test(b.label)) && (pressed.add('Enter'), title.tick(1 / 60), title.active && pressed.size === 0), { labels: buttons.map(b => b.label) });
+      LOGIN.submit('Cohen', 'shield', '', false);
+      check(P + 'a wrong secret word says so', LOGIN.error === 'That secret word is wrong.' && !NET.token && !LOGIN.playing && LOGIN.mode === 'form', { error: LOGIN.error });
+      LOGIN.submit('Nobody', 'sword', '', false);
+      check(P + 'a name the world does not know points at New knight', LOGIN.error === 'No knight by that name yet. Tap New knight.', { error: LOGIN.error });
+      const calls0 = world.calls.length; LOGIN.submit('C', 'sword', '', false); const shortName = LOGIN.error; LOGIN.submit('Cohen', 'abc', '', false); const shortPass = LOGIN.error;
+      check(P + 'a name or secret word that is too short is caught before the world is asked', /2 to 16/.test(shortName) && /at least 4/.test(shortPass) && world.calls.length === calls0, { shortName, shortPass });
+      const wrongs = ['wait', 'banned', 'invite', 'pass', 'unknown'].map(code => LOGIN.sentence({ code }, 'login'));
+      check(P + 'the contract codes read as plain sentences', wrongs.join('|') === 'Too many tries. Wait a minute.|This knight is not allowed in. Ask Ethan.|That invite code is not right.|That secret word is wrong.|No knight by that name yet. Tap New knight.', { wrongs });
+      LOGIN.submit('Cohen', 'sword', '', false);
+      check(P + 'the right secret word logs in: token kept, the cloud save lands in slot 1 and is the game now, the socket opens', NET.token === 'tok-cohen' && lsGet(SLOT(1)) === cloud && player.kills === 42 && title.slot === 1 && LOGIN.playing && !LOGIN.showing && !title.active && NET.status === 'on' && NET.me === 'Cohen' && lsGet(NAME_KEY) === 'Cohen' && lsGet(MARK_KEY) === '1', { token: NET.token, kills: player.kills, status: NET.status, me: NET.me, showing: LOGIN.showing });
+      paused = true; render(); const menu = buttons.some(b => b.label === 'Log out') && buttons.some(b => b.label.startsWith('Title screen')); paused = false;
+      const out = LOGIN.logout();
+      check(P + 'Log out sits beside Title screen in the pause menu; it drops the token, closes the socket and shows the card again', menu && out && !NET.token && NET.sock === null && NET.status === 'off' && LOGIN.showing && title.active && !LOGIN.playing && LOGIN.mode === 'form' && world.calls.includes('POST /api/logout'), { menu, token: NET.token, mode: LOGIN.mode });
+      LOGIN.submit('Sam', 'castle', 'wrong', true);
+      check(P + 'a wrong invite code says so', LOGIN.error === 'That invite code is not right.' && !NET.token, { error: LOGIN.error });
+      LOGIN.submit('Sam', 'castle', 'dragon', true);
+      const samRaw = lsGet(SLOT(1));
+      check(P + 'a new knight with no cloud save starts a new game (no browser, so the bridge is skipped) and is pushed to the cloud at once', NET.token === 'tok-sam' && LOGIN.playing && player.kills === 0 && quest.stage === 0 && !!samRaw && samRaw !== cloud && world.saves.sam === samRaw && !title.active && NET.me === 'Sam', { kills: player.kills, stage: quest.stage, puts: world.puts.length });
+      player.kills = 7; title.toTitle();
+      check(P + 'back on the title with a session in the browser: the card says who is playing and offers Play / Not me', LOGIN.showing && LOGIN.mode === 'me' && LOGIN.name === 'Sam' && !LOGIN.playing && world.saves.sam !== samRaw && JSON.parse(world.saves.sam).player.kills === 7, { mode: LOGIN.mode, name: LOGIN.name });
+      const played = LOGIN.playAs();
+      check(P + 'Play on that card loads the cloud knight without asking for the secret word again', played && LOGIN.playing && !title.active && player.kills === 7 && lsGet(SLOT(1)) === world.saves.sam, { kills: player.kills });
+      title.toTitle(); LOGIN.notMe();
+      check(P + 'Not me forgets the session and shows the form', !NET.token && LOGIN.mode === 'form' && LOGIN.showing && world.calls.filter(c => c === 'POST /api/logout').length === 2, { mode: LOGIN.mode });
+      world.statusFails = true; LOGIN.show();
+      check(P + 'when the world does not answer, the card says it is asleep and offers Play alone', LOGIN.asleep && LOGIN.status === 'The world is asleep right now.', { status: LOGIN.status });
+      LOGIN.playAlone(); render();
+      check(P + 'Play alone falls back to the three local slots, with a way back online', !LOGIN.showing && LOGIN.alone && title.active && buttons.some(b => b.label === 'Slot 1') && buttons.some(b => b.label === 'Play online'), { labels: buttons.map(b => b.label) });
+      world.statusFails = false; LOGIN.backOnline(); const back = LOGIN.showing && !LOGIN.alone;
+      // the bridge: only the old address is believed, and the newest slot wins
+      const older = { save: cloud, at: 100 }, newerSave = JSON.parse(cloud); newerSave.player.kills = 3; const newer = { save: JSON.stringify(newerSave), at: 200 };
+      let got = 'none'; bridge.waiting = c => { got = c; };
+      bridge.onMessage({ origin: 'https://evil.example', data: { fanglands: 'save', slots: { 1: newer } } }); const ignored = got === 'none' && bridge.waiting !== null;
+      bridge.onMessage({ origin: BRIDGE_ORIGIN, data: { fanglands: 'save', slots: { 1: older, 2: null, 3: newer } } });
+      check(P + 'the bridge answer is believed only from the old address and the newest slot wins, summarised for the offer', back && ignored && got && got.slot === 3 && got.at === 200 && got.save === newer.save && got.level >= 1 && got.chapter >= 1 && bridge.waiting === null, { ignored, slot: got && got.slot, at: got && got.at, level: got && got.level });
+      // a Play alone save in slot 1 is parked in an empty slot before a cloud knight takes slot 1
+      lsDel(MARK_KEY); lsSet(SLOT(1), '{"player":{"kills":1},"quest":{}}'); lsSet(AT(1), '77'); lsDel(SLOT(2)); lsDel(AT(2));
+      claim(cloud, 9);
+      check(P + 'a knight played alone in slot 1 is moved to an empty slot, never thrown away, when the cloud knight takes slot 1', lsGet(SLOT(2)) === '{"player":{"kills":1},"quest":{}}' && lsGet(AT(2)) === '77' && lsGet(SLOT(1)) === cloud && lsGet(MARK_KEY) === '1', { slot2: lsGet(SLOT(2)) });
+    } finally {
+      hide(); bridge.done(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.setToken(was.token); NET.status = 'off'; NET.me = null;
+      LOGIN.playing = was.playing; LOGIN.alone = was.alone; LOGIN.name = was.name; LOGIN.error = ''; LOGIN.offer = null; LOGIN.busy = false; LOGIN.mode = 'form';
+      for (let n = 1; n <= 3; n++) { const [s, a] = was.slots[n - 1]; if (s == null) { lsDel(SLOT(n)); lsDel(AT(n)); } else { lsSet(SLOT(n), s); lsSet(AT(n), a || Date.now()); } }
+      if (was.cur == null) lsDel('fanglands.slot.current'); else lsSet('fanglands.slot.current', was.cur);
+      if (was.mark == null) lsDel(MARK_KEY); else lsSet(MARK_KEY, was.mark);
+      if (was.lastName == null) lsDel(NAME_KEY); else lsSet(NAME_KEY, was.lastName);
+      if (window.CLOUD) window.CLOUD.reset();
+      if (was.titleActive) { title.open(); if (was.showing) LOGIN.show(); } else title.startSlot(was.slot);
+      paused = was.paused; notice = was.notice;
+      if (was.status === 'on' && NET.token) NET.connect();
+    }
+  });
+}
+
+// ---- src/72-cloudsave.js ----
+// ============================================================================
+// CLOUD SAVE — the knight's save goes to the world at gorkscape.ca
+// Online there are no slots: the account is the knight (docs/ONLINE.md). Every save() still writes slot 1 in
+// this browser exactly as before (14-title); this file wraps save() after that and, while a knight is playing
+// online (LOGIN.playing), sends the very slot string 14-title wrote with PUT /api/save. Pushes are held for 12 s
+// so a burst of saves is one call, and flushed at once when the page hides or goes away (NET.call sets keepalive
+// on PUT). A failed push is kept for the next save; three failures in a row say so once, then stay quiet.
+// Coming back online (the world's welcome) pushes once if the cloud may be behind.
+// Feature file: registers through HOOKS and wraps save by reassignment. window.CLOUD is the register.
+// ============================================================================
+{
+  const DEBOUNCE = 12000, TICK = 1.5;   // a 12 s hold: the free plan counts every call, and the page-hide flush covers leaving
+  const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsDel = k => { try { localStorage.removeItem(k); } catch (e) { } };
+  const canListen = typeof document !== 'undefined' && typeof document.addEventListener === 'function' && typeof window.addEventListener === 'function';
+
+  const CLOUD = {
+    pending: null,   // the slot string waiting to go up
+    timer: null,     // the 4 s hold
+    inflight: false, // a PUT is out
+    fails: 0,        // failures in a row
+    nagged: false,   // the one "could not reach the world" line has been shown for this outage
+    known: null,     // the last string the cloud is known to hold (pushed, or pulled at login)
+    savedAt: -1e9,   // performance.now() of the last good push, for the tick on the HUD
+    pushes: 0,
+  };
+  window.CLOUD = CLOUD;
+  const active = () => NET.enabled && !!NET.token && !!(window.LOGIN && window.LOGIN.playing);
+  CLOUD.active = active;
+  const slotString = () => (typeof title === 'undefined' || title.active) ? null : lsGet(title.slotKey(title.slot));
+
+  // ---------- calls, the same way 71-login does it: a fake may answer on the spot ----------
+  const api = (method, path, body) => {
+    try { return NET.fake ? NET.fake.call(method, path, body, NET.token) : NET.call(method, path, body); }
+    catch (e) { return { __threw: e || new Error('failed') }; }
+  };
+  const when = (v, ok, bad) => {
+    if (v && typeof v.then === 'function') { v.then(ok, bad).catch(e => console.error('cloud', e)); return; }
+    if (v && v.__threw) bad(v.__threw); else ok(v);
+  };
+
+  const clearTimer = () => { if (CLOUD.timer) { clearTimeout(CLOUD.timer); CLOUD.timer = null; } };
+  const schedule = () => { if (CLOUD.timer) return; CLOUD.timer = setTimeout(() => { CLOUD.timer = null; CLOUD.flush(); }, DEBOUNCE); };
+  // sends what is pending now; answers with whatever the call gives (a value with a fake, a promise on the wire)
+  CLOUD.flush = () => {
+    clearTimer();
+    if (!CLOUD.pending || CLOUD.inflight || !active()) return false;
+    const raw = CLOUD.pending; CLOUD.pending = null; CLOUD.inflight = true;
+    let result = null;
+    const ok = () => {
+      CLOUD.inflight = false; CLOUD.fails = 0; CLOUD.nagged = false; CLOUD.known = raw; CLOUD.pushes++; CLOUD.savedAt = performance.now();
+      if (CLOUD.pending) schedule();
+      result = true;
+    };
+    const bad = () => {
+      CLOUD.inflight = false; CLOUD.fails++;
+      if (!CLOUD.pending) CLOUD.pending = raw;
+      if (CLOUD.fails >= 3 && !CLOUD.nagged) { CLOUD.nagged = true; notify('Could not reach the world — your progress is saved on this device for now.'); }
+      result = false;
+    };
+    const r = api('PUT', '/api/save', raw);
+    if (r && typeof r.then === 'function') return r.then(ok, bad).then(() => result);
+    when(r, ok, bad);
+    return result;
+  };
+  // push the slot as it stands now; without force, only when the cloud may not have it
+  CLOUD.push = force => {
+    if (!active()) return false;
+    const raw = slotString(); if (!raw || (!force && raw === CLOUD.known)) return false;
+    CLOUD.pending = raw; return CLOUD.flush();
+  };
+  CLOUD.reset = () => { clearTimer(); CLOUD.pending = null; CLOUD.inflight = false; CLOUD.fails = 0; CLOUD.nagged = false; CLOUD.known = null; };
+
+  // ---------- save, wrapped after 14-title's wrapper (and 63-house's), so the slot string it wrote is what goes up ----------
+  const _save = save;
+  save = function () {
+    _save();
+    if (typeof title === 'undefined' || title.active) return;
+    if (!active()) {
+      // a local save landing in slot 1 makes it a local slot again (71-login parks it before a cloud knight takes over)
+      if (title.slot === 1 && window.LOGIN && lsGet(window.LOGIN.MARK_KEY) != null) lsDel(window.LOGIN.MARK_KEY);
+      return;
+    }
+    const raw = slotString(); if (raw == null) return;
+    CLOUD.pending = raw; schedule();
+  };
+
+  // ---------- flush when the page hides or goes away; push once when the world says welcome ----------
+  if (canListen) {
+    const now = () => { if (!active()) return; save(); CLOUD.flush(); };
+    window.addEventListener('pagehide', now);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) now(); });
+  }
+  NET.on('welcome', () => { CLOUD.push(false); });
+
+  // ---------- the tick on the HUD, beside 14-title's 'Saved' flash ----------
+  HOOKS.hud.push(g => {
+    const el = (performance.now() - CLOUD.savedAt) / 1000;
+    if (el < 0 || el >= TICK) return;
+    const a = el < 0.2 ? el / 0.2 : 1 - (el - 0.2) / (TICK - 0.2);
+    g.globalAlpha = clamp(a, 0, 1);
+    g.textAlign = 'right'; g.font = 'bold 11px sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.fillStyle = '#8b949e';
+    const x = VW - 16, y = VH - 52;
+    g.strokeText('Saved to the cloud', x, y); g.fillText('Saved to the cloud', x, y);
+    const w = g.measureText('Saved to the cloud').width;
+    g.strokeStyle = '#3fb950'; g.lineWidth = 2; g.beginPath(); g.moveTo(x - w - 16, y - 5); g.lineTo(x - w - 12, y - 1); g.lineTo(x - w - 5, y - 10); g.stroke();
+    g.globalAlpha = 1;
+  });
+
+  // ---------- self-test ----------
+  const P = 'cloud: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    const L = window.LOGIN;
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, status: NET.status, playing: L && L.playing, alone: L && L.alone, notice, titleActive: title.active, slot: title.slot };
+    const puts = []; let down = false;
+    const fake = {
+      call(method, path, body) { if (method === 'PUT' && path === '/api/save') { if (down) throw Object.assign(new Error('down'), { status: 0 }); puts.push(body); return { at: 1 }; } return { ok: true }; },
+      open: () => { const s = { readyState: 1, send(str) { if (JSON.parse(str).t === 'hello') s.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }) }); }, close() { s.readyState = 3; if (s.onclose) s.onclose(); } }; return s; },
+    };
+    try {
+      if (title.active) title.startSlot(title.slot);
+      NET.enabled = true; NET.useFake(fake); NET.setToken('tok-test'); if (L) { L.playing = true; L.alone = false; } CLOUD.reset();
+      save(); const raw1 = lsGet(title.slotKey(title.slot));
+      check(P + 'a save while online books a push and sends nothing yet (4 s hold)', active() && CLOUD.pending === raw1 && CLOUD.timer !== null && puts.length === 0, { pending: !!CLOUD.pending, puts: puts.length });
+      CLOUD.flush();
+      check(P + 'the flush sends the slot string the title wrote, word for word, and shows the tick', puts.length === 1 && puts[0] === raw1 && CLOUD.pending === null && CLOUD.timer === null && CLOUD.fails === 0 && CLOUD.known === raw1 && performance.now() - CLOUD.savedAt < 1000, { puts: puts.length, same: puts[0] === raw1 });
+      down = true; notice = null;
+      save(); CLOUD.flush(); save(); CLOUD.flush(); const quiet = !notice && CLOUD.fails === 2 && CLOUD.pending === lsGet(title.slotKey(title.slot));
+      save(); CLOUD.flush();
+      check(P + 'three failed pushes say so once, in plain words, and the save waits on this device', quiet && CLOUD.fails === 3 && CLOUD.nagged && !!notice && notice.text === 'Could not reach the world — your progress is saved on this device for now.' && puts.length === 1, { quiet, fails: CLOUD.fails, notice: notice && notice.text });
+      notice = null; save(); CLOUD.flush();
+      check(P + 'a fourth failure stays quiet', CLOUD.fails === 4 && notice === null && CLOUD.nagged, { fails: CLOUD.fails });
+      down = false; player.kills++; save(); CLOUD.flush();
+      check(P + 'the next good push clears the count and the nag', CLOUD.fails === 0 && !CLOUD.nagged && puts.length === 2 && puts[1] === lsGet(title.slotKey(title.slot)), { fails: CLOUD.fails, puts: puts.length });
+      // the world's welcome pushes once, only if the cloud may be behind
+      NET.connect(); const same = puts.length === 2 && NET.status === 'on';
+      NET.disconnect(); player.kills++; _save(); const raw2 = lsGet(title.slotKey(title.slot)); NET.connect();
+      check(P + 'coming back online pushes the knight once when the cloud is behind, and not when it is not', same && puts.length === 3 && puts[2] === raw2 && CLOUD.known === raw2, { same, puts: puts.length });
+      NET.disconnect();
+      if (L) L.playing = false; CLOUD.reset(); save();
+      check(P + 'playing alone never touches the cloud', !active() && CLOUD.pending === null && CLOUD.timer === null && puts.length === 3, { pending: CLOUD.pending });
+      NET.setToken(null); if (L) L.playing = true; save(); const noToken = CLOUD.pending === null && CLOUD.timer === null;
+      check(P + 'without a session there is nothing to push to', noToken, { noToken });
+    } finally {
+      CLOUD.reset(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.setToken(was.token); NET.status = 'off'; NET.me = null;
+      if (L) { L.playing = was.playing; L.alone = was.alone; }
+      notice = was.notice;
+      if (was.status === 'on' && NET.token) NET.connect();
+    }
+  });
+}
+
+// ---- src/73-players.js ----
+// ============================================================================
+// PLAYERS ONLINE — the other knights.
+// Owner: "make it an online MMORPG so Cohen and his friends can log in and play together."
+// This is what "see your friends" means. Our presence goes out on the wire (70-net) a few times a second, theirs comes
+// in, and every knight on the same map is drawn among the monsters and the trees with a name over their head. A chip at
+// the top says how many are on and opens the Friends panel: who, what level, where, a Give button that hands something
+// over (docs/ONLINE.md: gift / gift_ok / gift_no / gift_back) and Follow, which marks a friend on the map.
+// Feature file: HOOKS only, plus one core function wrapped by reassignment (drawPanels — the 61-markers trick), because
+// the world map is painted after every HUD hook has run and friends should be named on it.
+// window.PLAYERS = { lookOf, presence, mapId, remote, online, me, near, give, follow, following } — 74-chat draws the
+// speech bubbles over `remote`; 75-coop reuses lookOf / presence.
+// ============================================================================
+{
+  const SEND_EVERY = 1 / 8;     // s: presence goes out at most this often while something is changing (the contract's cap)
+  const SEND_IDLE = 1;          // s: and at least this often when nothing is
+  const GONE_MS = 6000;         // ms: a knight silent this long has gone
+  const LERP_S = 0.12;          // s: a remote knight slides to a fresh position over about this long
+  const NEAR = 2 * TILE;        // px: close enough to hand something over
+  const GIFT_EVERY = 1;         // s: the contract's cap on gifts
+  const MINE = { friends: 1, gift: 1, chatlog: 1 };   // the online files' own panels: the chip stays tappable under them
+  const DEFAULT_LOOK = { tunic: '#3b6fb6', hair: '#5a3a1e', shoulder: '#9aa3b2', fists: true };
+  const BLUE = '#7ec8ff';
+
+  const REMOTE = {};   // name → the knight as last heard: { n, map, x, y (where they are), shown: {x, y} (where we draw them), facing, moving, walkT, hp, mhp, lv, look, mech, dead, act, hurtT, attackT, r, lastAt }
+  let ONLINE = [];     // the roster from `who`: [{ n, map, region, lv }]
+  let following = null;
+  let friendsPage = 0, giftPage = 0;
+  const me = () => NET.me;
+  const mapId = () => (window.INSTANCES && INSTANCES.active && INSTANCES.active()) || 'over';
+  const instName = id => { const i = window.INSTANCES && INSTANCES.get ? INSTANCES.get(id) : null; return i && i.name ? i.name : String(id); };
+  const whereOf = o => o.map === 'over' || !o.map ? (o.region || 'The Fanglands') : instName(o.map);
+  // where we are, in words, for the roster and the admin page: the instance's name inside one, else the region under our feet
+  const regionName = () => { const id = mapId(); if (id !== 'over') return instName(id); if (player.region) return String(player.region); const r = regionAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); return r && r.name ? r.name : 'The Fanglands'; };
+  const forget = n => { delete REMOTE[n]; if (following === n) following = null; };
+  const clearAll = () => { for (const n in REMOTE) delete REMOTE[n]; ONLINE = []; following = null; };
+  const near = n => { const e = REMOTE[n]; return !!e && e.map === mapId() && dist(e.shown.x, e.shown.y, player.x, player.y) <= NEAR; };
+
+  // ---------- out: what we look like and where we are ----------
+  function lookOf() {
+    const l = playerLook();
+    return {
+      tunic: l.tunic, hair: l.hair, shoulder: l.shoulder, helm: l.helm || null, body: l.body || null, shield: l.shield || null,
+      weapon: l.weapon ? { shape: l.weapon.shape || 'sword', color: l.weapon.color || '#c9ccd3' } : null,
+      tool: l.tool || null, toolColor: l.toolColor || null, rod: !!l.rod, fists: !!l.fists,
+    };
+  }
+  function presence() {
+    const a = player.action, m = player.mech;
+    return {
+      t: 'p', map: mapId(), region: regionName(), x: Math.round(player.x), y: Math.round(player.y), fx: +player.facing.x.toFixed(2), fy: +player.facing.y.toFixed(2),
+      mv: !!player.moving, wt: +(player.walkT % 100).toFixed(1), hp: Math.ceil(player.hp), mhp: player.maxHp, lv: combatLevel(), look: lookOf(),
+      mech: m ? { kind: m.kind || 'walker', hp: Math.ceil(m.hp), maxHp: m.maxHp } : null, dead: !!player.dead, def: playerDefRoll(), act: a ? a.type : null,
+    };
+  }
+  // a cheap signature of everything the contract counts as a change; the full message is only built when it differs
+  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.body || '') + '|' + (e.shield || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-'); };
+  const sig = () => mapId() + '|' + Math.round(player.x) + ',' + Math.round(player.y) + '|' + player.facing.x.toFixed(2) + ',' + player.facing.y.toFixed(2) + '|' + (player.moving ? 1 : 0) + '|' + Math.ceil(player.hp) + '/' + player.maxHp + '|' + (player.dead ? 1 : 0) + '|' + lookKey();
+  let lastSig = null, lastSentAt = -1e9;
+
+  HOOKS.update.push(dt => {
+    if (NET.online()) {
+      const s = sig(), since = time - lastSentAt;
+      if ((s !== lastSig && since >= SEND_EVERY) || since >= SEND_IDLE) { if (NET.send(presence())) { lastSig = s; lastSentAt = time; } }
+    } else lastSig = null;
+    // the knights we know: slide toward where they really are, tick the hurt flash, forget the silent
+    const now = nowMs(), k = Math.min(1, dt / LERP_S);
+    for (const n in REMOTE) {
+      const e = REMOTE[n];
+      if (now - e.lastAt > GONE_MS) { forget(n); continue; }
+      e.shown.x += (e.x - e.shown.x) * k; e.shown.y += (e.y - e.shown.y) * k;
+      if (e.moving) e.walkT += dt * 9;
+      if (e.hurtT > 0) e.hurtT -= dt;
+    }
+    if (pressed.has('KeyF') && !player.dead) { if (panel === 'friends') closePanel(); else { friendsPage = 0; openPanel('friends'); } }
+  });
+  HOOKS.keyHelp.push({ action: 'Friends', codes: ['KeyF'] }); // 43-settings lists it on the Controls line
+
+  // ---------- in: the wire ----------
+  NET.on('welcome', () => { clearAll(); lastSig = null; lastSentAt = -1e9; });
+  NET.on('offline', clearAll);
+  NET.on('error', m => { if (m && m.code === 'elsewhere') { clearAll(); notify('Your knight was opened somewhere else.'); } }); // the same knight logged in from another device: the wire stops reconnecting
+  NET.on('who', m => { ONLINE = m && Array.isArray(m.list) ? m.list.filter(o => o && typeof o.n === 'string') : []; });
+  NET.on('left', m => { if (m && typeof m.n === 'string') forget(m.n); });
+  NET.on('p', m => {
+    if (!m || typeof m.n !== 'string' || m.n === me() || typeof m.x !== 'number' || typeof m.y !== 'number') return;
+    const map = typeof m.map === 'string' ? m.map : 'over';
+    let e = REMOTE[m.n];
+    if (!e) e = REMOTE[m.n] = { n: m.n, map, x: m.x, y: m.y, shown: { x: m.x, y: m.y }, facing: { x: 1, y: 0 }, moving: false, walkT: 0, hp: 1, mhp: 1, lv: 1, look: null, mech: null, dead: false, act: null, hurtT: 0, attackT: 0, r: 13, lastAt: 0 };
+    if (e.map !== map) { e.map = map; e.shown.x = m.x; e.shown.y = m.y; }   // a new map: no sliding across the world
+    e.x = m.x; e.y = m.y;
+    if (typeof m.fx === 'number' && typeof m.fy === 'number' && (m.fx || m.fy)) { e.facing.x = m.fx; e.facing.y = m.fy; }
+    e.moving = !!m.mv; if (typeof m.wt === 'number') e.walkT = m.wt;
+    if (typeof m.hp === 'number') { if (m.hp < e.hp && e.lastAt) e.hurtT = 0.25; e.hp = m.hp; }
+    if (typeof m.mhp === 'number' && m.mhp > 0) e.mhp = m.mhp;
+    if (typeof m.lv === 'number') e.lv = m.lv;
+    if (m.look && typeof m.look === 'object') { e.look = m.look; if (e.look.tool) e.look.toolSwing = true; }
+    e.mech = m.mech && typeof m.mech === 'object' ? m.mech : null; e.r = e.mech ? 20 : 13;
+    e.dead = !!m.dead; e.act = typeof m.act === 'string' ? m.act : null; e.lastAt = nowMs();
+  });
+
+  // ---------- drawing: among the y-sorted world items, like a monster or the knight himself ----------
+  function drawKnight(g, e) {
+    const look = e.look || DEFAULT_LOOK, x = e.shown.x, y = e.shown.y, onMech = !!e.mech && e.mech.kind !== 'horse';
+    g.save(); g.translate(x, y);
+    if (e.dead) { g.globalAlpha = 0.3; g.rotate(1.4); drawHuman(g, e, look); g.restore(); return; }   // fallen: lying down and faint, as the knight himself is
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, onMech ? 14 : 11, onMech ? 22 : 12, onMech ? 9 : 6, 0, 0, 7); g.fill();
+    if (onMech) drawMech(g, e, e.hurtT > 0, look);
+    else { g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
+    g.restore();
+    // the name, the level in smaller grey after it, an hp bar when hurt, a ring when close enough to hand things over
+    const top = Math.round(y) - (onMech ? 46 : 33), lv = 'lv ' + e.lv;
+    g.font = 'bold 11px sans-serif'; const nw = g.measureText(e.n).width;
+    g.font = '9px sans-serif'; const lw = g.measureText(lv).width;
+    const x0 = Math.round(x - (nw + 4 + lw) / 2);
+    g.textAlign = 'left'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.75)';
+    g.font = 'bold 11px sans-serif'; g.strokeText(e.n, x0, top); g.fillStyle = '#ffffff'; g.fillText(e.n, x0, top);
+    g.font = '9px sans-serif'; g.strokeText(lv, x0 + nw + 4, top); g.fillStyle = '#9aa3b2'; g.fillText(lv, x0 + nw + 4, top);
+    if (e.hp < e.mhp) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(x - 14, top + 3, 28, 4); g.fillStyle = e.hp / e.mhp > 0.5 ? '#3fb950' : e.hp / e.mhp > 0.25 ? '#d29922' : '#f85149'; g.fillRect(x - 14, top + 3, 28 * clamp(e.hp / e.mhp, 0, 1), 4); }
+    if (dist(x, y, player.x, player.y) <= NEAR) { g.strokeStyle = 'rgba(126,200,255,0.45)'; g.lineWidth = 1.5; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y + 2, onMech ? 30 : 22, 0, 7); g.stroke(); g.setLineDash([]); }
+  }
+  HOOKS.draw.push((g, items) => {
+    const my = mapId();
+    for (const n in REMOTE) {
+      const e = REMOTE[n];
+      if (e.map !== my) continue;
+      const x = e.shown.x, y = e.shown.y;
+      if (x < cam.x - 80 || x > cam.x + VW + 80 || y < cam.y - 80 || y > cam.y + VH + 80) continue;
+      items.push({ y: y + 13, who: n, draw: () => drawKnight(g, e) });
+    }
+  });
+
+  // ---------- the HUD: friends on the minimap, the follow arrow, the ONLINE chip ----------
+  const BOSS_H = 48, BOSS_GAP = 8;
+  function bossBarsShowing() { let n = 0; for (const m of monsters) { if (n >= 2) break; const d = MONSTER_DEFS[m.type]; if (!m.dead && m.type !== 'the_fang' && d && d.level >= 25 && d.hp >= 300 && dist(m.x, m.y, player.x, player.y) <= 12 * TILE) n++; } return n; }
+  HOOKS.hud.push(g => {
+    if (paused) return;
+    const my = mapId();
+    // blue dots on the minimap for the friends on this map (the core painted it just before the hooks run)
+    const mm = minimapRect;
+    if (mm && !(window.SETTINGS && SETTINGS.get('minimap') === false)) {
+      const size = mm.w, tilesAcross = 44, scale = size / tilesAcross;
+      const sx = clamp(player.x / TILE - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(player.y / TILE - tilesAcross / 2, 0, MAP_H - tilesAcross);
+      const at = e => ({ x: mm.x + (e.shown.x / TILE - sx) * scale, y: mm.y + (e.shown.y / TILE - sy) * scale });
+      let any = false;
+      for (const n in REMOTE) if (REMOTE[n].map === my) { any = true; break; }
+      if (any) {
+        g.save(); roundRect(g, mm.x, mm.y, size, size, 10); g.clip();
+        for (const n in REMOTE) { const e = REMOTE[n]; if (e.map !== my) continue; const p = at(e); g.fillStyle = BLUE; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); }
+        g.fillStyle = '#ffffff'; g.beginPath(); g.arc(mm.x + (player.x / TILE - sx) * scale, mm.y + (player.y / TILE - sy) * scale, 3.5, 0, 7); g.fill(); // the knight stays on top
+        g.restore();
+      }
+      // following someone: a ring on them when they are on the little map, a blue arrow at its edge when they are not
+      const f = following && REMOTE[following];
+      if (f && f.map === my) {
+        const p = at(f), inside = p.x > mm.x + 6 && p.x < mm.x + size - 6 && p.y > mm.y + 6 && p.y < mm.y + size - 6;
+        g.strokeStyle = BLUE; g.lineWidth = 2;
+        if (inside) { g.beginPath(); g.arc(p.x, p.y, 5 + Math.sin(time * 4) * 1.5, 0, 7); g.stroke(); }
+        else {
+          const ccx = mm.x + size / 2, ccy = mm.y + size / 2, ang = Math.atan2(p.y - ccy, p.x - ccx);
+          const half = size / 2 - 9, kk = Math.min(half / Math.max(Math.abs(Math.cos(ang)), 1e-6), half / Math.max(Math.abs(Math.sin(ang)), 1e-6));
+          g.save(); g.translate(ccx + Math.cos(ang) * kk, ccy + Math.sin(ang) * kk); g.rotate(ang);
+          g.fillStyle = BLUE; g.beginPath(); g.moveTo(8, 0); g.lineTo(-5, -6); g.lineTo(-2, 0); g.lineTo(-5, 6); g.closePath(); g.fill();
+          g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); g.restore();
+        }
+      }
+    }
+    // the chip: only on the online build, under the HP box on the shared left-HUD cursor, clear of the touch hotbar,
+    // the boss bars and (on a landscape phone) the quest box. Hidden under other files' panels so it cannot eat their taps.
+    if (!NET.enabled || (panel && !MINE[panel])) return;
+    const lay = HUD_LAYOUT;
+    const touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
+    const questFloor = (isTouch && lay && lay.short && lay.questH) ? lay.questY + lay.questH + 8 : 0;
+    const bars = bossBarsShowing(), bossFloor = bars && lay ? lay.bossBarY + bars * (BOSS_H + BOSS_GAP) : 0;
+    const y = Math.max(HUD.leftY, touchFloor, questFloor, bossFloor, 84), h = isTouch ? 30 : 26;
+    const on = NET.online(), label = on ? 'ONLINE ' + ONLINE.length : 'OFFLINE';
+    g.font = 'bold 13px sans-serif'; const w = Math.max(88, Math.ceil(g.measureText(label).width) + 28);
+    button(g, 14, y, w, h, label, () => { if (panel === 'friends') closePanel(); else { friendsPage = 0; openPanel('friends'); } }, on ? '#1f4e78' : '#2a2f3a');
+    HUD.leftY = y + h + 6;
+  });
+
+  // ---------- the world map: every friend on this map as a named blue dot (drawn after the core's map, so it wraps drawPanels) ----------
+  function drawMapFriends(g, narrow) {
+    const r = panelRect; if (!r) return;
+    const iw = r.w - 36, ih = Math.min(r.h - 80, iw * MAP_H / MAP_W), ix = r.x + 18, iy = r.y + 62, sc = iw / MAP_W, my = mapId();
+    g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip();
+    g.font = `bold ${narrow ? 9 : 11}px sans-serif`; g.textAlign = 'center';
+    for (const n in REMOTE) {
+      const e = REMOTE[n]; if (e.map !== my) continue;
+      const x = ix + e.shown.x / TILE * sc, y = iy + e.shown.y / TILE * sc;
+      g.fillStyle = BLUE; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 1.5; g.stroke();
+      g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(n, x, y - 8); g.fillStyle = BLUE; g.fillText(n, x, y - 8);
+    }
+    g.restore();
+  }
+  { const _drawPanels = drawPanels; drawPanels = function (g, narrow, short, qh, hb) { const r = _drawPanels(g, narrow, short, qh, hb); if (panel === 'map') drawMapFriends(g, narrow); return r; }; }
+  // Follow on map: a gold target on the world map with the friend's name, like a quest marker, while they are on our map
+  HOOKS.mapTarget.push(() => { const e = following && REMOTE[following]; if (!e || e.map !== mapId()) return null; return { x: Math.floor(e.shown.x / TILE), y: Math.floor(e.shown.y / TILE), label: following, id: 'friend' }; });
+
+  // ---------- gifts ----------
+  let lastGiftAt = -1e9; const pending = [];   // [{ to, id, qty }] gifts the world has not answered yet
+  function give(to, id, qty) {
+    qty = Math.floor(+qty || 0);
+    if (!NET.online()) { notify('You are not connected.'); return false; }
+    if (!near(to)) { notify('Walk up to ' + to + ' first.'); return false; }
+    if (time - lastGiftAt < GIFT_EVERY) { notify('One thing at a time.'); return false; }
+    if (!ITEMS[id] || qty < 1 || countItem(id) < qty) return false;
+    const took = removeItem(id, qty);
+    if (took < qty) { if (took) addItem(id, took); return false; }
+    if (!NET.send({ t: 'gift', to, id, qty })) { addItem(id, qty); notify('That did not go through. Try again.'); return false; }
+    lastGiftAt = time; pending.push({ to, id, qty }); while (pending.length > 20) pending.shift();
+    notify(`Handing ${qty} ${ITEMS[id].name} to ${to}…`); sfx('ui'); save();
+    return true;
+  }
+  const takePending = (id, qty) => { const i = pending.findIndex(p => p.id === id && p.qty === qty); return i >= 0 ? pending.splice(i, 1)[0] : null; };
+  NET.on('gift_ok', m => { const p = m ? takePending(m.id, m.qty) : null; floatText(player.x, player.y - 30, 'Given to ' + (p ? p.to : 'your friend'), BLUE); sfx('coins'); });
+  NET.on('gift_back', m => {
+    if (!m || !ITEMS[m.id] || !(m.qty >= 1)) return;
+    const p = takePending(m.id, m.qty);
+    giveOrDrop(m.id, m.qty, player.x, player.y, true);
+    notify((p ? p.to : 'Your friend') + ' could not take it.'); save();
+  });
+  NET.on('gift', m => {
+    if (!m) return;
+    if (!ITEMS[m.id] || !(m.qty >= 1) || !canFit(m.id, m.qty)) { NET.send({ t: 'gift_no', gid: m.gid }); if (ITEMS[m.id]) notify('Your pack is full. ' + (m.from || 'A friend') + ' keeps the ' + ITEMS[m.id].name + '.'); return; }
+    addItem(m.id, m.qty);
+    notify(`${m.from || 'A friend'} gave you ${m.qty} ${ITEMS[m.id].name}`); floatText(player.x, player.y - 30, `+${m.qty} ${ITEMS[m.id].name}`, ITEMS[m.id].color);
+    sfx('pickup'); NET.send({ t: 'gift_ok', gid: m.gid }); save();
+  });
+
+  // ---------- the Friends panel ----------
+  HOOKS.panel.friends = (g, narrow) => {
+    const my = mapId(), meN = me();
+    const list = ONLINE.filter(o => o.n !== meN);
+    const rowH = 60, per = Math.max(1, Math.min(6, Math.floor((VH - 20 - 170) / rowH))), pages = Math.max(1, Math.ceil(list.length / per));
+    friendsPage = clamp(friendsPage, 0, pages - 1);
+    const page = list.slice(friendsPage * per, friendsPage * per + per);
+    const w = narrow ? Math.min(VW - 20, 400) : 500, h = Math.min(VH - 20, 128 + Math.max(1, page.length) * rowH + 30 + (pages > 1 ? 40 : 0));
+    const on = NET.online();
+    const { px, py } = panelBox(g, w, h, 'Friends online', on ? `${ONLINE.length} knight${ONLINE.length === 1 ? '' : 's'} in the Fanglands right now` : 'Not connected right now');
+    button(g, px + 18, py + 62, 96, 28, 'Chat log', () => openPanel('chatlog'), '#21262d');
+    let y = py + 102;
+    if (!page.length) { g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText(on ? 'Nobody else is on right now.' : 'You are not connected.', px + 18, y + 14); }
+    const bw1 = 62, bw2 = narrow ? 92 : 118, bx1 = px + w - 18 - bw1, bx2 = bx1 - 8 - bw2, textW = bx2 - (px + 30) - 10;
+    for (const o of page) {
+      const here = o.map === my, close = near(o.n), fol = following === o.n;
+      roundRect(g, px + 18, y, w - 36, rowH - 8, 8); g.fillStyle = here ? 'rgba(88,166,255,0.12)' : 'rgba(255,255,255,0.05)'; g.fill();
+      g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#e6edf3'; g.fillText(o.n, px + 30, y + 20);
+      const nw = g.measureText(o.n).width; g.fillStyle = '#9aa3b2'; g.font = '11px sans-serif'; g.fillText('lv ' + (o.lv || 1), px + 30 + nw + 8, y + 20);
+      let where = here ? 'On your map · ' + whereOf(o) : whereOf(o); g.font = '12px sans-serif'; while (g.measureText(where).width > textW && where.length > 6) where = where.slice(0, -2) + '…';
+      g.fillStyle = here ? BLUE : '#8b949e'; g.fillText(where, px + 30, y + 40);
+      button(g, bx1, y + 11, bw1, 30, 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, close ? '#238636' : '#2a2f3a', close);
+      button(g, bx2, y + 11, bw2, 30, fol ? (narrow ? 'Following' : 'Stop following') : (narrow ? 'Follow' : 'Follow on map'), () => { following = fol ? null : o.n; sfx('open'); }, fol ? '#6b4f2a' : here ? '#21262d' : '#2a2f3a', here);
+      y += rowH;
+    }
+    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText('Give works when you stand within two tiles of a friend. F opens this panel.', px + 18, py + h - (pages > 1 ? 50 : 14));
+    if (pages > 1) pager(g, px + 18, py + h - 40, w - 36, friendsPage, pages, p => { friendsPage = p; });
+  };
+
+  // ---------- the gift picker: the pack's stacks, one tap each ----------
+  HOOKS.panel.gift = (g, narrow) => {
+    const to = String(panelArg || '');
+    const stacks = []; for (const s of player.inv) if (s && s.qty > 0 && ITEMS[s.id]) stacks.push(s);
+    const rowH = 38, per = Math.max(2, Math.min(8, Math.floor((VH - 20 - 130) / rowH))), pages = Math.max(1, Math.ceil(stacks.length / per));
+    giftPage = clamp(giftPage, 0, pages - 1);
+    const page = stacks.slice(giftPage * per, giftPage * per + per);
+    const w = narrow ? Math.min(VW - 20, 390) : 460, h = Math.min(VH - 20, 74 + Math.max(1, page.length) * rowH + (pages > 1 ? 50 : 20));
+    const ok = near(to) && NET.online();
+    const { px, py } = panelBox(g, w, h, 'Give to ' + to, ok ? 'Tap what to hand over. It leaves your pack and lands in theirs.' : 'Walk up to ' + to + ' first (within two tiles).');
+    let y = py + 64;
+    if (!page.length) { g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText('Your pack is empty.', px + 18, y + 20); }
+    for (const s of page) {
+      const def = ITEMS[s.id], many = s.qty > 1;
+      roundRect(g, px + 18, y, w - 36, rowH - 6, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
+      drawItemIcon(g, s.id, px + 36, y + 15, 18);
+      let name = def.name + ' × ' + s.qty; g.font = 'bold 13px sans-serif'; const maxW = w - 36 - 44 - (many ? 176 : 96);
+      while (g.measureText(name).width > maxW && name.length > 6) name = name.slice(0, -2) + '…';
+      g.fillStyle = '#e6edf3'; g.textAlign = 'left'; g.fillText(name, px + 54, y + 20);
+      const arm = needsConfirm(def) && confirmActive('gift:' + s.id);
+      const giveN = qty => { const go = () => { if (give(to, s.id, qty)) closePanel(); }; if (needsConfirm(def)) confirmTap('gift:' + s.id, go); else go(); };
+      const key = (b, suffix) => { b.label = (b.disabled ? 'disabled:' : '') + 'give:' + s.id + ':' + suffix; };   // the drawn word stays; the harness finds the button by key
+      if (many) { button(g, px + w - 18 - 82 - 6 - 74, y + 3, 74, rowH - 12, 'Give 1', () => giveN(1), ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], '1'); }
+      button(g, px + w - 18 - 82, y + 3, 82, rowH - 12, arm ? 'Tap again' : many ? 'Give all' : 'Give', () => giveN(s.qty), arm ? '#c0392b' : ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], 'all');
+      y += rowH;
+    }
+    if (pages > 1) pager(g, px + 18, py + h - 40, w - 36, giftPage, pages, p => { giftPage = p; });
+  };
+
+  window.PLAYERS = {
+    lookOf, presence, mapId, remote: REMOTE, near, give,
+    get online() { return ONLINE; }, get me() { return NET.me; },
+    follow: n => { following = n && REMOTE[n] ? n : null; }, get following() { return following; },
+  };
+
+  // ---------- self-test ----------
+  const P = 'players: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake };
+    const made = [];
+    const fake = {
+      call: async () => ({}),
+      open: () => { const s = { readyState: 1, sent: [], send(str) { const m = JSON.parse(str); s.sent.push(m); if (m.t === 'hello') s.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }) }); }, close() { s.readyState = 3; if (s.onclose) s.onclose(); } }; made.push(s); return s; },
+    };
+    NET.disconnect(); NET.enabled = true; NET.token = 'players-test'; NET.useFake(fake); NET.connect();
+    const sock = made[0], feed = m => sock.onmessage({ data: JSON.stringify(m) });
+    const ps = () => sock.sent.filter(m => m.t === 'p'), lastP = () => { const l = ps(); return l[l.length - 1]; };
+    const dc = dialog.cur, dq = dialog.queue.slice(); dialog.cur = null; dialog.queue.length = 0;
+    const mech0 = player.mech, r0 = player.r; player.mech = null; player.r = 13;
+    closePanel(); h.peace(true); player.hp = player.maxHp; const o = h.openSpot(40, 24); F.tp(o.x, o.y); F.step([]);
+    // presence out, with the contract's fields, at most 8 a second while moving and about once a second when still
+    { F.sim(12, ['KeyD']); const p = lastP();
+      const fields = p && ['map', 'region', 'x', 'y', 'fx', 'fy', 'mv', 'wt', 'hp', 'mhp', 'lv', 'look', 'mech', 'dead', 'def', 'act'].every(k => k in p);
+      const shaped = !!p && p.map === 'over' && typeof p.region === 'string' && p.region.length > 0 && typeof p.x === 'number' && typeof p.y === 'number' && typeof p.mv === 'boolean' && p.lv === combatLevel() && p.def === playerDefRoll() && p.mech === null && p.dead === false && p.act === null
+        && !!p.look && typeof p.look.tunic === 'string' && typeof p.look.hair === 'string' && typeof p.look.shoulder === 'string' && (p.look.weapon ? typeof p.look.weapon.shape === 'string' && typeof p.look.weapon.color === 'string' : p.look.fists === true);
+      const n0 = ps().length; F.sim(30, ['KeyD']); F.sim(30, ['KeyA']); const moving = ps().length - n0; const n1 = ps().length; player.hp = player.maxHp; F.sim(120, []); const still = ps().length - n1;
+      check(P + 'presence goes out with the contract fields, at most 8 a second while moving and about once a second when still', fields && shaped && moving >= 2 && moving <= 9 && still >= 1 && still <= 4, { fields, shaped, moving, still, p: p && { map: p.map, x: p.x, y: p.y, mv: p.mv, lv: p.lv, act: p.act, look: p.look } }); }
+    // inside an instance the map is the instance id, and it is 'over' again outside
+    { const id = INSTANCES.list().includes('spider_den') ? 'spider_den' : INSTANCES.list()[0]; const entered = INSTANCES.enter(id); F.sim(12, []); const inside = lastP(); const left = INSTANCES.leave(); F.sim(12, []); const outside = lastP();
+      const instRegion = !!inside && inside.region === INSTANCES.get(id).name;
+      check(P + 'presence carries the instance id as the map (and its name as the region) inside a dungeon, and over again outside', entered && !!inside && inside.map === id && instRegion && left && !!outside && outside.map === 'over' && outside.region !== INSTANCES.get(id).name, { entered, inside: inside && [inside.map, inside.region], left, outside: outside && [outside.map, outside.region], id });
+      dialog.cur = null; dialog.queue.length = 0; F.tp(o.x, o.y); }
+    // a knight arrives on our map and is drawn; one on another map is not
+    { const look = { tunic: '#a33', hair: '#222', shoulder: '#999', helm: null, body: null, shield: null, weapon: { shape: 'sword', color: '#ccc' }, tool: null, toolColor: null, rod: false, fists: false };
+      feed({ t: 'p', n: 'Ava', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: true, wt: 3, hp: 20, mhp: 25, lv: 7, look, mech: null, dead: false, def: 100, act: null });
+      feed({ t: 'p', n: 'Ben', map: 'spider_den', x: player.x - 40, y: player.y, fx: 1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 3, look, mech: { kind: 'walker', hp: 100, maxHp: 130 }, dead: false, def: 90, act: 'chop' });
+      F.step([]); render();
+      const items = []; for (const hk of HOOKS.draw) hk(ctx, items, cam);
+      const ava = items.find(it => it.who === 'Ava'), ben = items.find(it => it.who === 'Ben');
+      let drew = false; try { if (ava) { ava.draw(); drew = true; } } catch (e) { drew = String(e && e.message); }
+      // a mech rider and a fallen knight draw too (Ben, moved onto our map for a moment)
+      let drew2 = true; try { REMOTE.Ben.map = 'over'; const it2 = []; for (const hk of HOOKS.draw) hk(ctx, it2, cam); const b = it2.find(it => it.who === 'Ben'); if (b) b.draw(); REMOTE.Ben.dead = true; if (b) b.draw(); REMOTE.Ben.dead = false; REMOTE.Ben.map = 'spider_den'; } catch (e) { drew2 = String(e && e.message); }
+      const slid = REMOTE.Ava && Math.abs(REMOTE.Ava.shown.x - REMOTE.Ava.x) < 0.5;
+      check(P + 'a knight on your map is drawn among the world items (with a mech or fallen too); one on another map is not', !!REMOTE.Ava && !!REMOTE.Ben && !!ava && !ben && drew === true && drew2 === true && slid, { ava: !!ava, ben: !!ben, drew, drew2, slid }); }
+    // the roster, the chip, the panel and the F key
+    { feed({ t: 'who', list: [{ n: 'Cohen', map: 'over', region: 'Thistledown', lv: 5 }, { n: 'Ava', map: 'over', region: 'The Wilds', lv: 7 }, { n: 'Ben', map: 'spider_den', region: 'The Spider Den', lv: 3 }] });
+      closePanel(); render(); const chip = buttons.find(b => b.label === 'ONLINE 3'); if (chip) chip.action(); render();
+      const opened = panel === 'friends', give = buttons.find(b => /^(disabled:)?Give$/.test(b.label)), giveOn = !!give && !give.disabled, follow = buttons.find(b => /Follow/.test(b.label)), benFollow = buttons.filter(b => /Follow/.test(b.label))[1];
+      if (follow) follow.action(); const followed = PLAYERS.following === 'Ava'; render(); const stop = buttons.find(b => /Stop following|Following/.test(b.label)); const target = mapTargets().find(t => t.id === 'friend'); if (stop) stop.action();
+      closePanel(); F.press('KeyF'); const byKey = panel === 'friends'; F.press('KeyF'); const closed = panel === null;
+      check(P + 'the ONLINE chip is a button that opens Friends (F does too): Give is live within two tiles, Follow marks a friend on the map', !!chip && opened && giveOn && !!follow && !follow.disabled && !!benFollow && benFollow.disabled && followed && !!stop && !!target && target.label === 'Ava' && PLAYERS.following === null && byKey && closed, { chip: !!chip, opened, giveOn, follow: follow && follow.label, ben: benFollow && benFollow.label, followed, stop: !!stop, target, byKey, closed }); }
+    // gifts: out of the pack and onto the wire; back into the pack when the world sends it back; a friend's gift lands
+    { const inv0 = player.inv.map(s => s ? { ...s } : null);
+      feed({ t: 'p', n: 'Ava', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 7, look: null, mech: null, dead: false, def: 100, act: null }); F.step([]);
+      player.inv = new Array(INV_SLOTS).fill(null); addItem('stone', 3); addItem('wood', 2);
+      openPanel('gift', 'Ava'); render(); const tapped = F.clickButton('give:stone:all');
+      const g1 = sock.sent.filter(m => m.t === 'gift'); const went = g1.length === 1 && g1[0].to === 'Ava' && g1[0].id === 'stone' && g1[0].qty === 3 && countItem('stone') === 0 && panel === null;
+      feed({ t: 'gift_back', gid: 1, id: 'stone', qty: 3 }); const back = countItem('stone') === 3 && !!notice && /Ava could not take it/.test(notice.text);
+      const tooSoon = !PLAYERS.give('Ava', 'wood', 1); F.sim(70, []); const again = PLAYERS.give('Ava', 'wood', 1) && countItem('wood') === 1;
+      const fl0 = floaters.length; feed({ t: 'gift_ok', gid: 2, id: 'wood', qty: 1 }); const thanked = floaters.length === fl0 + 1 && /Given to Ava/.test(floaters[floaters.length - 1].text);
+      feed({ t: 'gift', gid: 9, from: 'Ava', id: 'coal', qty: 2 }); const got = countItem('coal') === 2 && sock.sent.some(m => m.t === 'gift_ok' && m.gid === 9) && !!notice && /Ava gave you 2/.test(notice.text);
+      player.inv = new Array(INV_SLOTS).fill(null).map(() => ({ id: 'iron_dagger', qty: 1 })); feed({ t: 'gift', gid: 10, from: 'Ava', id: 'coal', qty: 1 }); const refused = sock.sent.some(m => m.t === 'gift_no' && m.gid === 10);
+      player.inv = inv0; notice = null;
+      check(P + 'a gift leaves the pack and goes out; gift_back puts it back with a word; gift_ok floats thanks; a gift that fits lands and one that does not is refused', tapped && went && back && tooSoon && again && thanked && got && refused, { tapped, went, back, tooSoon, again, thanked, got, refused }); }
+    // left, and silence
+    { feed({ t: 'left', n: 'Ava', map: 'over' }); const gone = !REMOTE.Ava; if (REMOTE.Ben) REMOTE.Ben.lastAt = nowMs() - 7000; F.step([]); const timedOut = !REMOTE.Ben;
+      feed({ t: 'p', n: 'Cal', map: 'over', x: player.x, y: player.y + 40, fx: 0, fy: -1, mv: false, wt: 0, hp: 9, mhp: 25, lv: 2, look: null, mech: null, dead: false, def: 50, act: null });
+      const n0 = notice; feed({ t: 'error', code: 'elsewhere', text: 'opened elsewhere' }); const elsewhere = !REMOTE.Cal && !!notice && notice.text === 'Your knight was opened somewhere else.'; notice = n0;
+      check(P + "'left' removes a knight at once; six seconds of silence removes one too; 'elsewhere' clears everyone and says so", gone && timedOut && elsewhere, { gone, timedOut, elsewhere }); }
+    // layout: the chip overlaps no other button at four screen sizes (desktop layout; touch when the device is touch)
+    { const vw0 = window.innerWidth, vh0 = window.innerHeight, hits = [], sizes = []; const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
+      for (const [w, hh, name] of [[390, 844, 'phone'], [844, 390, 'landscape'], [768, 1024, 'tablet'], [1280, 800, 'desktop']]) {
+        closePanel(); if (!setSize(w, hh)) continue; sizes.push(name); const bs = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0); const mine = bs.filter(b => /^ONLINE/.test(b.label));
+        for (const a of mine) for (const b of bs) if (a !== b && overlap(a, b)) hits.push(name + ': ' + a.label + ' × ' + b.label);
+        if (!mine.length) hits.push(name + ': no chip');
+      }
+      setSize(vw0, vh0);
+      check(P + 'the ONLINE chip sits clear of every other button at phone, landscape, tablet and desktop sizes', hits.length === 0 && sizes.length > 0, { hits, sizes }); }
+    // put the world back
+    NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
+    clearAll(); lastSig = null; pending.length = 0; lastGiftAt = -1e9;
+    player.mech = mech0; player.r = r0; dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); closePanel(); h.peace(false); render();
+  });
+}
+
+// ---- src/74-chat.js ----
+// ============================================================================
+// CHAT — talking to your friends.
+// Owner: "make it an online MMORPG so Cohen and his friends can log in and play together."
+// A real text box (a DOM <input>, so the iPad keyboard works and nothing is zoomed) opens with Enter or Y on a keyboard
+// and with the CHAT button on touch; a row of quick phrases sits above it, one tap each. What comes back from the world
+// (docs/ONLINE.md: `chat`, already filtered and logged server-side) shows as a bubble over that knight's head for four
+// seconds, as a fading strip of the last few lines at the bottom-left, and in a Chat log panel with the last thirty.
+// While the box has the keyboard the game does not see a single key: a capturing listener on window stops them.
+// Feature file: HOOKS only. Reads window.PLAYERS (73) for where the other knights are. window.CHAT is the handle.
+// ============================================================================
+{
+  const MAX = 120;              // chars: the contract's cap (also trimmed client-side)
+  const BUBBLE_S = 4;           // s: a bubble over a head
+  const STRIP_S = 8;            // s: a line on the strip
+  const STRIP_LINES = 4;
+  const LOG_MAX = 30;
+  const SEND_EVERY = 1.5;       // s: the contract's cap on chat
+  const PHRASES = ['Hi!', 'Follow me', 'Help!', 'Look at this', 'Nice!', 'Where are you?', "Let's fight the boss", 'Bye!'];
+  const BLUE = '#7ec8ff';
+
+  const log = [];               // [{ n, text, at, t }] oldest first, t = seconds left on the strip
+  const bubbles = {};           // name → { text, t }
+  let isOpen = false, lastSentAt = -1e9, dom = null, prevDialog = false;
+  const clean = t => String(t == null ? '' : t).replace(/\s+/g, ' ').trim().slice(0, MAX);
+  const me = () => NET.me;
+  const remote = n => window.PLAYERS ? PLAYERS.remote[n] : null;
+  const mapId = () => window.PLAYERS ? PLAYERS.mapId() : 'over';
+
+  // ---------- the box: built once, on the first open; nothing is made where there is no document (headless) ----------
+  function ensureDom() {
+    if (dom !== null) return dom;
+    if (typeof document === 'undefined' || !document.body || typeof document.body.appendChild !== 'function' || typeof document.createElement !== 'function') { dom = false; return dom; }
+    try {
+      const box = document.createElement('div');
+      box.id = 'chatbox';
+      box.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);width:min(560px,calc(100vw - 32px));display:none;flex-direction:column;gap:8px;z-index:20;font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;';
+      const chips = document.createElement('div');
+      chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;justify-content:center;';
+      let chipAt = -1e9;   // when a chip was last pressed: a blur right after one is the chip taking the tap, not the box being left
+      for (const p of PHRASES) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = p;
+        b.style.cssText = 'font:600 14px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:rgba(10,14,22,0.92);border:1px solid #30363d;border-radius:16px;padding:7px 12px;cursor:pointer;touch-action:manipulation;';
+        b.addEventListener('pointerdown', ev => { chipAt = nowMs(); ev.preventDefault(); });   // the input keeps the keyboard; the click still comes
+        b.addEventListener('mousedown', ev => ev.preventDefault());
+        b.addEventListener('touchstart', () => { chipAt = nowMs(); }, { passive: true });
+        b.addEventListener('click', ev => { ev.preventDefault(); send(p); });
+        chips.appendChild(b);
+      }
+      const input = document.createElement('input');
+      input.type = 'text'; input.maxLength = MAX; input.autocomplete = 'off'; input.spellcheck = false;
+      input.setAttribute('autocapitalize', 'sentences'); input.setAttribute('enterkeyhint', 'send'); input.setAttribute('aria-label', 'Chat');
+      input.placeholder = 'Say something to your friends';
+      input.style.cssText = 'font:16px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:rgba(10,14,22,0.95);border:1px solid #58a6ff;border-radius:10px;padding:10px 12px;outline:none;width:100%;box-sizing:border-box;';
+      box.appendChild(chips); box.appendChild(input); document.body.appendChild(box);
+      dom = { box, chips, input };
+      // focus leaving the box (Done on the iPad keyboard, a click on the world) closes it; a chip's tap does not
+      input.addEventListener('blur', () => { setTimeout(() => { if (isOpen && dom && document.activeElement !== dom.input && nowMs() - chipAt > 600) close(); }, 150); });
+      // the on-screen keyboard covers the bottom of the layout viewport: keep the box just above it
+      const vv = window.visualViewport;
+      if (vv && vv.addEventListener) { const place = () => { const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop); box.style.bottom = (16 + covered) + 'px'; }; vv.addEventListener('resize', place); vv.addEventListener('scroll', place); }
+      // the guard: while the box has the keyboard, Enter sends, Escape closes, and no key reaches the game (05-input listens on window in the bubble phase; this runs first, in the capture phase, and stops the event there)
+      const guard = e => {
+        if (!dom || document.activeElement !== dom.input) return;
+        if (e.type === 'keydown') { if (e.key === 'Enter') { e.preventDefault(); send(dom.input.value); } else if (e.key === 'Escape') { e.preventDefault(); close(); } }
+        e.stopPropagation();
+      };
+      for (const t of ['keydown', 'keyup', 'keypress']) window.addEventListener(t, guard, true);
+    } catch (e) { dom = false; }
+    return dom;
+  }
+  function open() {
+    if (isOpen) return;
+    isOpen = true; keys.clear(); touch.taps.length = 0;
+    const d = ensureDom();
+    if (d) { d.box.style.display = 'flex'; try { d.input.focus(); } catch (e) { } }
+    sfx('open');
+  }
+  function close() {
+    isOpen = false;
+    const d = ensureDom();
+    if (d) { d.box.style.display = 'none'; try { d.input.blur(); } catch (e) { } }
+  }
+  // sends what was typed (or a quick phrase). The world echoes it back to everyone, us included: that echo is what makes our own bubble.
+  function send(text) {
+    const t = clean(text);
+    if (!t) { close(); return false; }
+    if (!NET.online()) { notify('You are not connected.'); return false; }
+    if (time - lastSentAt < SEND_EVERY) { notify('Slow down a little.'); return false; }
+    if (!NET.send({ t: 'chat', text: t })) { notify('That did not go through. Try again.'); return false; }
+    lastSentAt = time;
+    if (dom) dom.input.value = '';
+    close();
+    return true;
+  }
+
+  // ---------- in ----------
+  NET.on('chat', m => {
+    if (!m || typeof m.text !== 'string') return;
+    const text = clean(m.text); if (!text) return;
+    const n = typeof m.n === 'string' ? m.n : '?';
+    bubbles[n] = { text, t: BUBBLE_S };
+    log.push({ n, text, at: typeof m.at === 'number' ? m.at : Date.now(), t: STRIP_S }); while (log.length > LOG_MAX) log.shift();
+    if (n !== me()) sfx('ui');
+  });
+  NET.on('offline', () => { for (const n in bubbles) delete bubbles[n]; });
+
+  // ---------- keys, timers ----------
+  HOOKS.update.push(dt => {
+    for (const n in bubbles) { const b = bubbles[n]; b.t -= dt; if (b.t <= 0) delete bubbles[n]; }
+    for (const l of log) if (l.t > 0) l.t -= dt;
+    // Enter opens the box only when it would not be advancing a line of talk (the core handles that first, in the same tick, so remember whether a line was up last tick)
+    if (NET.enabled && !paused && !player.dead && !panel && !isOpen && (pressed.has('KeyY') || (pressed.has('Enter') && !dialog.cur && !prevDialog))) open();
+    prevDialog = !!dialog.cur;
+  });
+  HOOKS.keyHelp.push({ action: 'Chat', codes: ['KeyY', 'Enter'] }); // 43-settings lists it on the Controls line
+
+  // ---------- bubbles over heads (world items, sorted last so they sit over everything) ----------
+  function wrapLines(g, text, maxW) {
+    const words = text.split(' '), lines = []; let line = '';
+    for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test; if (lines.length === 3) break; }
+    if (line && lines.length < 3) lines.push(line);
+    return lines;
+  }
+  function drawBubble(g, b, x, y) {
+    const a = clamp(b.t * 2, 0, 1);
+    g.save(); g.globalAlpha = a; g.font = 'bold 12px sans-serif'; g.textAlign = 'center';
+    const lines = wrapLines(g, b.text, 180); let w = 0; for (const l of lines) w = Math.max(w, g.measureText(l).width);
+    const bw = Math.ceil(w) + 18, bh = 10 + lines.length * 15, bx = Math.round(x - bw / 2), by = Math.round(y - bh - 8);
+    roundRect(g, bx, by, bw, bh, 8); g.fillStyle = 'rgba(10,14,22,0.92)'; g.fill(); g.strokeStyle = BLUE; g.lineWidth = 1.2; g.stroke();
+    g.fillStyle = 'rgba(10,14,22,0.92)'; g.beginPath(); g.moveTo(x - 5, by + bh - 1); g.lineTo(x, by + bh + 6); g.lineTo(x + 5, by + bh - 1); g.closePath(); g.fill();
+    g.strokeStyle = BLUE; g.beginPath(); g.moveTo(x - 5, by + bh); g.lineTo(x, by + bh + 6); g.lineTo(x + 5, by + bh); g.stroke();
+    g.fillStyle = '#e6edf3'; lines.forEach((l, i) => g.fillText(l, x, by + 17 + i * 15));
+    g.restore();
+  }
+  HOOKS.draw.push((g, items) => {
+    const my = mapId(), meN = me();
+    for (const n in bubbles) {
+      const b = bubbles[n]; let x, y;
+      if (n === meN) { x = player.x; y = player.y - (player.mech ? 50 : 36); }
+      else { const e = remote(n); if (!e || e.map !== my) continue; x = e.shown.x; y = e.shown.y - (e.mech ? 62 : 48); }
+      if (x < cam.x - 120 || x > cam.x + VW + 120 || y < cam.y - 80 || y > cam.y + VH + 80) continue;
+      items.push({ y: 1e9, bubble: n, draw: () => drawBubble(g, b, x, y) });
+    }
+  });
+
+  // ---------- the strip at the bottom-left, and the CHAT touch button ----------
+  function stripBox() {
+    const lay = HUD_LAYOUT, lh = 16;
+    let bottom, top = 84;
+    if (!isTouch) bottom = VH - 44;
+    else if (lay.short) { bottom = VH - 186; top = lay.questH ? lay.questY + lay.questH + 6 : 84; }
+    else bottom = window.__stickRight === true ? VH - 300 : VH - 190;
+    const w = !isTouch ? Math.min(360, Math.floor(VW / 2 - (5 * 50 + 60) / 2) - 20 - 14) : Math.min(360, VW - 28);
+    const n = Math.max(0, Math.min(STRIP_LINES, Math.floor((bottom - top) / lh)));
+    return { x: 14, w, bottom, lh, n };
+  }
+  HOOKS.hud.push(g => {
+    if (paused) return;
+    // the strip: the last few lines, fading out; a tap on it opens the log
+    const live = []; for (let i = log.length - 1; i >= 0 && live.length < STRIP_LINES; i--) if (log[i].t > 0) live.unshift(log[i]);
+    const sb = stripBox();
+    if (live.length && sb.w >= 120 && sb.n > 0 && !panel) {
+      const lines = live.slice(-sb.n); const y0 = sb.bottom - lines.length * sb.lh;
+      g.font = '12px sans-serif'; g.textAlign = 'left';
+      lines.forEach((l, i) => {
+        const y = y0 + i * sb.lh, a = clamp(l.t / 1.5, 0, 1);
+        g.globalAlpha = a; roundRect(g, sb.x, y, sb.w, sb.lh - 1, 4); g.fillStyle = 'rgba(10,14,22,0.7)'; g.fill();
+        g.font = 'bold 12px sans-serif'; g.fillStyle = l.n === me() ? '#e6edf3' : BLUE; const name = l.n + ':'; g.fillText(name, sb.x + 6, y + 12);
+        const nw = g.measureText(name).width; g.font = '12px sans-serif'; g.fillStyle = '#e6edf3';
+        let t = l.text; const maxW = sb.w - 12 - nw - 6; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…';
+        g.fillText(t, sb.x + 6 + nw + 5, y + 12);
+      });
+      g.globalAlpha = 1;
+      buttons.push({ x: sb.x, y: y0, w: sb.w, h: lines.length * sb.lh, label: 'chat:log', action: () => openPanel('chatlog') });
+    }
+    // the CHAT button on touch: a third column left of QUESTS, in the same round style as the core's buttons (10-hud)
+    if (!touchMode() || !NET.enabled) return;
+    const mx = x => window.__stickRight === true ? VW - x : x;
+    const r = 52, x = mx(VW - 250), y = VH - 200;
+    g.fillStyle = 'rgba(255,255,255,0.14)'; g.beginPath(); g.arc(x, y, r / 2 + 8, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText('CHAT', x, y + 4);
+    buttons.push({ x: x - r / 2 - 8, y: y - r / 2 - 8, w: r + 16, h: r + 16, label: 'CHAT', action: () => { if (isOpen) close(); else open(); } });
+  });
+
+  // ---------- the log panel ----------
+  HOOKS.panel.chatlog = (g, narrow) => {
+    const lh = 22, per = Math.max(3, Math.min(LOG_MAX, Math.floor((VH - 20 - 160) / lh)));
+    const lines = log.slice(-per);
+    const w = narrow ? Math.min(VW - 20, 400) : 520, h = Math.min(VH - 20, 150 + Math.max(1, lines.length) * lh);
+    const { px, py } = panelBox(g, w, h, 'Chat', lines.length ? 'The last things your friends said, newest at the bottom.' : 'Nothing said yet.');
+    let y = py + 76;
+    g.font = '12px sans-serif';
+    for (const l of lines) {
+      const mine = l.n === me();
+      g.textAlign = 'left'; g.font = 'bold 12px sans-serif'; g.fillStyle = mine ? '#e6edf3' : BLUE; g.fillText(l.n, px + 18, y + 8);
+      const nw = Math.max(g.measureText(l.n).width, narrow ? 60 : 90);
+      g.font = '12px sans-serif'; g.fillStyle = '#c9d1d9'; let t = l.text; const maxW = w - 36 - nw - 10; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…'; g.fillText(t, px + 18 + nw + 10, y + 8);
+      y += lh;
+    }
+    button(g, px + 18, py + h - 46, 140, 32, touchMode() ? 'Say something' : 'Say something (Enter)', () => { closePanel(); open(); });
+    if (window.PLAYERS) button(g, px + 18 + 148, py + h - 46, 90, 32, 'Friends', () => openPanel('friends'), '#21262d');
+  };
+
+  window.CHAT = { open, close, send, isOpen: () => isOpen, bubbles, log, PHRASES, MAX };
+
+  // ---------- self-test ----------
+  const P = 'chat: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, touch: window.__forceTouch };
+    const made = [];
+    const fake = {
+      call: async () => ({}),
+      open: () => { const s = { readyState: 1, sent: [], send(str) { const m = JSON.parse(str); s.sent.push(m); if (m.t === 'hello') s.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }) }); if (m.t === 'chat') s.onmessage({ data: JSON.stringify({ t: 'chat', n: 'Cohen', text: m.text, at: 5 }) }); }, close() { s.readyState = 3; if (s.onclose) s.onclose(); } }; made.push(s); return s; },
+    };
+    NET.disconnect(); NET.enabled = true; NET.token = 'chat-test'; NET.useFake(fake); NET.connect();
+    const sock = made[0], feed = m => sock.onmessage({ data: JSON.stringify(m) });
+    const dc = dialog.cur, dq = dialog.queue.slice(); dialog.cur = null; dialog.queue.length = 0;
+    closePanel(); close(); log.length = 0; for (const n in bubbles) delete bubbles[n]; lastSentAt = -1e9;
+    const dead0 = player.dead; player.dead = false; h.peace(true); player.hp = player.maxHp;
+    // a line from a friend: a bubble over their head, a line on the strip and in the log; trimmed and capped at 120
+    { feed({ t: 'p', n: 'Ava', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 7, look: null, mech: null, dead: false, def: 100, act: null });
+      feed({ t: 'chat', n: 'Ava', text: '   hello   there  ', at: 3 }); feed({ t: 'chat', n: 'Ben', text: 'x'.repeat(200), at: 4 });
+      F.step([]); render();
+      const items = []; for (const hk of HOOKS.draw) hk(ctx, items, cam);
+      const bub = items.find(it => it.bubble === 'Ava'); let drew = false; try { if (bub) { bub.draw(); drew = true; } } catch (e) { drew = String(e && e.message); }
+      const hasStrip = buttons.some(b => b.label === 'chat:log');
+      check(P + "a friend's line makes a bubble over their head (drawn) and a log line; text is trimmed and capped at 120", !!bubbles.Ava && bubbles.Ava.text === 'hello there' && !!bub && drew === true && log.length === 2 && log[0].text === 'hello there' && log[1].text.length === 120 && hasStrip, { bubble: bubbles.Ava && bubbles.Ava.text, drew, log: log.length, capped: log[1] && log[1].text.length, hasStrip }); }
+    // sending: out on the wire, echoed back as our own bubble, no faster than one per 1.5 s; the log panel opens from the strip
+    { const ok1 = send('  Hi there  '); const out = sock.sent.filter(m => m.t === 'chat'); const echoed = !!bubbles.Cohen && bubbles.Cohen.text === 'Hi there';
+      const ok2 = send('again'); F.sim(100, []); const ok3 = send('again');
+      render(); const strip = buttons.find(b => b.label === 'chat:log'); if (strip) strip.action(); const logOpen = panel === 'chatlog'; render(); const say = buttons.find(b => /^Say something/.test(b.label)); closePanel();
+      check(P + 'a sent line goes out trimmed and comes back as our own bubble; a second within 1.5 s waits; the strip opens the log panel', ok1 && out.length === 1 && out[0].text === 'Hi there' && echoed && ok2 === false && ok3 && logOpen && !!say, { ok1, out: out.length, echoed, ok2, ok3, logOpen, say: !!say }); }
+    // keys: Y opens the box, Enter opens it only when no line of talk is up, Escape (or send) closes
+    { closePanel(); close(); F.press('KeyY'); const byY = isOpen; close();
+      F.press('Enter'); const byEnter = isOpen; close();
+      say('A test line, knight.', 'The Voice'); F.step([]); const up = !!dialog.cur; F.press('Enter'); const stayed = !isOpen; dialog.cur = null; dialog.queue.length = 0; F.step([]); F.step([]);
+      check(P + 'Y opens the chat box; Enter opens it only when no line of talk is showing', byY && byEnter && up && stayed, { byY, byEnter, up, stayed }); }
+    // touch: a CHAT button beside the others
+    { window.__forceTouch = true; closePanel(); render(); const btn = buttons.find(b => b.label === 'CHAT'); const has = !!btn;
+      if (btn) btn.action(); const opened = isOpen; if (btn) btn.action(); const closed = !isOpen; window.__forceTouch = was.touch; render();
+      check(P + 'in touch mode a CHAT button sits with the other round buttons and toggles the box', has && opened && closed, { has, opened, closed }); }
+    // fading: bubbles go after 4 s, strip lines after 8, the log keeps 30
+    { feed({ t: 'chat', n: 'Ava', text: 'still here' }); F.sim(60 * 4.2, []); const bubbleGone = !bubbles.Ava; F.sim(60 * 4.2, []); const stripGone = !log.some(l => l.t > 0);
+      for (let i = 0; i < 40; i++) feed({ t: 'chat', n: 'Ava', text: 'line ' + i }); const kept = log.length === LOG_MAX && log[LOG_MAX - 1].text === 'line 39';
+      check(P + 'a bubble lasts 4 s, a strip line 8 s, and the log keeps the last 30', bubbleGone && stripGone && kept, { bubbleGone, stripGone, kept, log: log.length }); }
+    // put the world back
+    close(); log.length = 0; for (const n in bubbles) delete bubbles[n]; lastSentAt = -1e9; prevDialog = false;
+    NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
+    player.dead = dead0; dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); closePanel(); h.peace(false); render();
+  });
+}
+
+// ---- src/75-coop.js ----
+// ============================================================================
+// COOP — shared monsters: two knights on the same map fight the same goblin
+// Owner: "make it an online MMORPG so Cohen and his friends can log in and play together."
+// docs/ONLINE.md ("The keeper model, in the client") is the contract this file keeps to. The server names one
+// knight per map the keeper. The keeper's client runs the monsters as it always has and streams a snapshot
+// eight times a second; everyone else on that map parks its own monster array, shows puppets built from the
+// stream, and routes its hits to the keeper. The keeper's monsters chase whichever knight is nearest, the
+// killing blow's owner gets the drops, and when the keeper leaves the next knight turns its puppets back
+// into real monsters. Nothing in here moves the local knight, touches the pack, or grants XP except through
+// the kill and hurt paths the contract names; every incoming field is checked before it is used.
+// Feature file: registers through HOOKS only, edits no core file. window.COOP is the register.
+// ============================================================================
+{
+  const SNAP_EVERY = 0.125;   // seconds between keeper snapshots (8/s is the cap in the contract)
+  const LERP_T = 0.12;        // seconds a puppet takes to glide onto a new snapshot position
+  const GONE_AFTER = 1;       // a puppet missing from the stream this long is hidden
+  const DROP_AFTER = 2;       // ...and dropped from the array this long after that
+  const NEAR = 24 * TILE;     // snapshot radius around every knight on the map
+  const FREEZE = 1e6;         // the stunT value that makes the core loop skip a monster for one frame
+  const MAX_DMG = 500;
+  const REMOTE_STALE = 15;    // seconds without presence before a remote knight is forgotten
+  const KNIGHT_R = 13;
+
+  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map() };
+
+  const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+  const r2 = v => Math.round(v * 100) / 100;
+  const mapId = () => {
+    const I = window.INSTANCES; if (!I) return 'over';
+    const a = typeof I.active === 'function' ? I.active() : (I.active && I.active.id);
+    return typeof a === 'string' && a ? a : 'over';
+  };
+  const online = () => typeof NET !== 'undefined' && NET.online();
+  const isKeeper = () => online() && S.keeper !== null && S.keeper === NET.me;
+  const puppetMode = () => online() && S.puppets !== null && S.keeper !== null && S.keeper !== NET.me;
+
+  // ---------- nids: a stable name for every monster, the same on every client ----------
+  function index() {
+    if (S.idxArr === monsters && S.idxLen === monsters.length) return S.byNid;
+    S.byNid = new Map(); for (const m of monsters) if (m.nid) S.byNid.set(m.nid, m);
+    S.idxArr = monsters; S.idxLen = monsters.length; return S.byNid;
+  }
+  const find = nid => { const m = index().get(nid); return m && monsters.includes(m) ? m : null; };
+  function tagInstance(id) {
+    const I = window.INSTANCES; const inst = I && typeof I.get === 'function' ? I.get(id) : null;
+    if (!inst || !Array.isArray(inst.spawns)) return;
+    for (let i = 0; i < monsters.length && i < inst.spawns.length; i++) { const m = monsters[i]; if (!m.nid && m.type === inst.spawns[i][0]) m.nid = 'i' + i; }
+    S.idxLen = -1;
+  }
+  function homeFor(nid, x, y) {
+    let r;
+    if ((r = /^s(\d+)$/.exec(nid))) { const s = MONSTER_SPAWNS[+r[1]]; if (s) return { x: tc(s.tx), y: tc(s.ty) }; }
+    else if ((r = /^i(\d+)$/.exec(nid))) { const I = window.INSTANCES; const inst = I && I.get ? I.get(S.map) : null; const s = inst && inst.spawns ? inst.spawns[+r[1]] : null; if (s) return { x: tc(s[1]), y: tc(s[2]) }; }
+    return { x, y };
+  }
+  const _spawnMonsters = spawnMonsters;
+  spawnMonsters = function () {
+    _spawnMonsters();
+    for (let i = 0; i < monsters.length; i++) monsters[i].nid = 's' + i;
+    S.idxLen = -1;
+    if (S.puppets) { S.parked[S.map] = monsters; monsters = S.puppets; }   // a new game while someone else keeps the map: the fresh array waits its turn
+  };
+  spawnMonsters.__inner = _spawnMonsters;
+  // enter/leave called by code (a test, a feature) change the map outside update(); the door, ladder and L key change it inside, where after() sees it
+  if (window.INSTANCES && typeof INSTANCES.enter === 'function') {
+    const _enter = INSTANCES.enter, _leave = INSTANCES.leave;
+    INSTANCES.enter = function (id, step) { const ok = _enter(id, step); if (ok) { const now = mapId(); if (now !== S.map) mapChanged(now); } return ok; };
+    INSTANCES.leave = function () { const ok = _leave(); if (ok) { const now = mapId(); if (now !== S.map) mapChanged(now); } return ok; };
+  }
+
+  // ---------- who else is on this map ----------
+  function remoteList() {
+    if (window.PLAYERS && typeof PLAYERS.remote === 'function') { try { const l = PLAYERS.remote(); if (Array.isArray(l)) return l; } catch (e) { } }
+    return Object.values(S.remotes);
+  }
+  function knightsHere() {
+    const out = [], me = typeof NET !== 'undefined' ? NET.me : null;
+    for (const r of remoteList()) {
+      if (!r) continue;
+      const n = typeof r.n === 'string' ? r.n : (typeof r.name === 'string' ? r.name : null);
+      if (!n || n === me || r.map !== S.map) continue;
+      const x = num(r.x), y = num(r.y); if (x === null || y === null) continue;
+      if (r.seen !== undefined && time - r.seen > REMOTE_STALE) continue;
+      const def = num(r.def), lv = num(r.lv);
+      out.push({ n, x, y, dead: !!r.dead, def: def === null || def < 0 ? 9 * 64 : def, lv: lv === null || lv < 1 ? 1 : lv });
+    }
+    return out;
+  }
+
+  // ---------- the keeper's snapshot ----------
+  function snapshot(knights) {
+    const list = [];
+    const ks = knights || S.here;
+    for (const m of monsters) {
+      if (m.remote || m.phantom) continue;
+      if (m.dead && !(m.deadT < 2)) continue;
+      let near = !player.dead && dist(m.x, m.y, player.x, player.y) <= NEAR;
+      if (!near) for (const k of ks) { if (!k.dead && dist(m.x, m.y, k.x, k.y) <= NEAR) { near = true; break; } }
+      if (!near) continue;
+      if (!m.nid) { m.nid = NET.me + ':' + (++S.counter); S.idxLen = -1; }
+      const f = m.facing || { x: 1, y: 0 };
+      list.push([m.nid, m.type, Math.round(m.x), Math.round(m.y), r2(m.hp || 0), r2(m.maxHp || 0), typeof m.state === 'string' ? m.state : 'idle', r2(f.x || 0), r2(f.y || 0), m.moving ? 1 : 0, r2(m.hurtT || 0), m.dead ? 1 : 0, r2(m.attackT || 0), r2(m.stunT || 0)]);
+      if (list.length >= 400) break;
+    }
+    return list;
+  }
+
+  // ---------- puppets: what a non-keeper shows ----------
+  function makePuppet(nid, type, x, y) {
+    const d = MONSTER_DEFS[type]; if (!d) return null;
+    return { nid, type, remote: true, x, y, home: homeFor(nid, x, y), r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: !!d.aggro, state: 'idle', wanderT: 0, wander: { x: 0, y: 0 },
+      attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 1e9, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0, seen: time, gone: false, from: { x, y }, to: { x, y }, lerp: 1, localDeadUntil: -1 };
+  }
+  function makeReal(type, x, y, nid, home) {
+    const d = MONSTER_DEFS[type];
+    return { type, nid, x, y, home: home ? { x: home.x, y: home.y } : { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: !!d.aggro, state: 'idle', wanderT: Math.random() * 2,
+      wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0 };
+  }
+  function applyMon(msg) {
+    if (!puppetMode() || !msg || !Array.isArray(msg.list)) return;
+    if (msg.n !== undefined && msg.n !== S.keeper) return;
+    const idx = index(); let added = false;
+    const n = Math.min(msg.list.length, 400);
+    for (let i = 0; i < n; i++) {
+      const e = msg.list[i];
+      if (!Array.isArray(e) || e.length < 14) continue;
+      const nid = e[0], type = e[1], x = num(e[2]), y = num(e[3]), hp = num(e[4]), maxHp = num(e[5]), state = e[6], fx = num(e[7]), fy = num(e[8]), hurt = num(e[9]), attackT = num(e[12]), stunT = num(e[13]);
+      if (typeof nid !== 'string' || typeof type !== 'string' || !MONSTER_DEFS[type]) continue;
+      if (x === null || y === null || hp === null || maxHp === null || fx === null || fy === null || hurt === null || attackT === null || stunT === null) continue;
+      let p = idx.get(nid);
+      if (p && (!p.remote || p.type !== type)) { const k = monsters.indexOf(p); if (k >= 0) monsters.splice(k, 1); p = null; }
+      if (!p) { p = makePuppet(nid, type, x, y); if (!p) continue; monsters.push(p); idx.set(nid, p); added = true; }
+      else if (p.x !== x || p.y !== y) { p.from.x = p.x; p.from.y = p.y; p.to.x = x; p.to.y = y; p.lerp = 0; }
+      const dead = !!e[11];
+      if (!dead && p.dead && time < p.localDeadUntil) { p.seen = time; continue; }   // our own blow just felled it; give the keeper a moment to agree
+      if (dead !== p.dead) p.deadT = 0;
+      p.dead = dead; p.hp = hp; if (maxHp > 0) p.maxHp = maxHp; p.state = typeof state === 'string' ? state : 'idle';
+      p.facing.x = fx; p.facing.y = fy; p.moving = !!e[10]; p.hurtT = hurt; p.attackT = attackT; p.stunT = stunT; p.respawnT = 1e9;
+      p.seen = time; p.gone = false;
+    }
+    if (added) { S.idxArr = monsters; S.idxLen = monsters.length; }
+  }
+  function policePuppets() {
+    let arr = monsters, dirty = false;
+    for (const m of arr) { if (!m.remote) { dirty = true; break; } if (m.gone && time - m.seen > DROP_AFTER) { dirty = true; break; } }
+    if (dirty) { arr = arr.filter(m => m.remote && !(m.gone && time - m.seen > DROP_AFTER)); monsters = arr; }
+    for (const p of arr) if (!p.gone && time - p.seen > GONE_AFTER) { p.gone = true; p.dead = true; p.deadT = 9; }
+    S.puppets = arr;
+  }
+
+  // ---------- keeper changes, handoff, map changes ----------
+  function setKeeper(n) {
+    const me = NET.me;
+    if (n && n !== me) {
+      if (!S.puppets) { S.parked[S.map] = monsters; S.puppets = []; monsters = S.puppets; }
+      S.keeper = n;
+    } else {
+      if (S.puppets) handoff();
+      S.keeper = n;
+    }
+  }
+  function handoff() {
+    const real = S.parked[S.map] || [];
+    const byNid = new Map(); for (const m of real) if (m.nid) byNid.set(m.nid, m);
+    for (const p of S.puppets) {
+      if (p.gone) continue;
+      let m = byNid.get(p.nid);
+      if (!m) { if (p.dead) continue; m = makeReal(p.type, p.x, p.y, p.nid, p.home); real.push(m); byNid.set(p.nid, m); }
+      m.x = p.x; m.y = p.y; m.hp = p.hp; m.maxHp = p.maxHp; m.dead = p.dead; m.deadT = p.deadT; m.state = p.state; m.facing = { x: p.facing.x, y: p.facing.y };
+      m.stunT = 0; m.lastHitBy = null; m.moving = false;
+      if (m.dead) { const d = MONSTER_DEFS[m.type]; m.respawnT = (d.respawn || 25) + Math.random() * 10; if (isCampMonster(m)) m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN); }
+      else m.respawnT = 0;
+    }
+    monsters = real; S.puppets = null; delete S.parked[S.map]; S.idxLen = -1; S.snapAcc = SNAP_EVERY;
+  }
+  function mapChanged(id) {
+    const old = S.map;
+    S.map = id; S.keeper = null; S.puppets = null; S.snapAcc = 0; S.here = [];
+    if (old !== 'over') delete S.parked[old];                 // an instance's monsters are rebuilt on every entry; nothing to keep
+    if (S.parked[id]) { monsters = S.parked[id]; delete S.parked[id]; }   // the instance code handed back the puppet array we left with; the real one waited here
+    else if (monsters.some(m => m.remote)) monsters = monsters.filter(m => !m.remote);
+    S.idxLen = -1;
+    tagInstance(id);
+  }
+  function reset() { if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; }
+
+  // ---------- the keeper's copy of the chase, for a monster whose nearest knight is somewhere else ----------
+  function stepRemote(m, t, dt) {
+    const def = MONSTER_DEFS[m.type];
+    const dp = dist(m.x, m.y, t.x, t.y), dHome = dist(m.x, m.y, m.home.x, m.home.y);
+    if (dp > def.sight * 1.6 || dHome > 14 * TILE || t.dead) { m.state = 'return'; m.moving = false; return; }
+    m.state = 'chase';
+    const dx = t.x - m.x, dy = t.y - m.y, d = dp || 1, stop = m.r + KNIGHT_R + 4;
+    let vx = 0, vy = 0;
+    if (dp > stop) { vx = dx / d; vy = dy / d; }
+    m.facing = { x: dx / d, y: dy / d };
+    if (dp <= stop + 10 && m.attackCd <= 0) {
+      m.attackCd = def.mech ? 1.6 : 1.1; m.attackT = 0.2;
+      const dmg = rollHit((def.att + 8) * 64, t.def, def.maxHit);
+      NET.send({ t: 'hurt', to: t.n, dmg, x: Math.round(m.x), y: Math.round(m.y) });
+      floatText(t.x, t.y - 24, dmg > 0 ? `-${dmg}` : 'miss', dmg > 0 ? '#ff6b6b' : '#8fb4ff', 13);
+    }
+    m.moving = !!(vx || vy);
+    if (m.moving) {
+      const bx = m.x, by = m.y;
+      moveEntity(m, vx * m.speed * dt, vy * m.speed * dt, def.human ? 'person' : 'beast');
+      if (Math.abs(m.x - bx) < 0.01 && Math.abs(m.y - by) < 0.01) moveEntity(m, -vy * m.speed * dt, vx * m.speed * dt, 'beast');
+      m.walkT += dt * 8;
+    }
+    m.attackT = Math.max(0, (m.attackT || 0) - dt);
+  }
+
+  // ---------- the per-frame wrap around update() ----------
+  function before(dt) {
+    const id = mapId(); if (id !== S.map) mapChanged(id);
+    if (puppetMode()) {
+      const P = S.puppets, saved = new Array(P.length);
+      for (let i = 0; i < P.length; i++) { saved[i] = P[i].stunT; P[i].stunT = FREEZE; }
+      return { kind: 'puppet', P, saved };
+    }
+    if (!isKeeper()) { S.here = []; return null; }
+    const here = knightsHere(); S.here = here;
+    if (!here.length) return null;
+    const frozen = [];
+    for (const m of monsters) {
+      if (m.dead || m.remote || m.phantom || (m.stunT || 0) > 0) continue;
+      const def = MONSTER_DEFS[m.type]; if (!def || def.thrower || def.harmless) continue;
+      let best = null, bd = player.dead ? Infinity : dist(m.x, m.y, player.x, player.y);
+      for (const k of here) { if (k.dead) continue; const d = dist(m.x, m.y, k.x, k.y); if (d < bd) { bd = d; best = k; } }
+      if (!best) continue;
+      if (window.__peace && m.state === 'chase') { m.state = 'return'; continue; }   // the self-test's "monsters ignore you" holds for remote knights too
+      if (m.state !== 'chase') {
+        const aggressive = def.aggro && best.lv <= def.level * 2 + 1 && !window.__peace;
+        if (m.state !== 'return' && ((m.angry && !def.aggro) || aggressive) && bd < def.sight) m.state = 'chase';
+      }
+      if (m.state !== 'chase') continue;
+      frozen.push({ m, stunT: m.stunT, target: best });
+      m.stunT = FREEZE;
+    }
+    return { kind: 'keeper', frozen };
+  }
+  function after(dt, pre) {
+    if (pre && pre.kind === 'puppet') {
+      const P = pre.P, saved = pre.saved;
+      for (let i = 0; i < P.length; i++) { const p = P[i], a = p.stunT; p.stunT = a > FREEZE / 2 ? saved[i] : a; }
+    } else if (pre && pre.kind === 'keeper') {
+      for (const f of pre.frozen) { const m = f.m, a = m.stunT; m.stunT = a > FREEZE / 2 ? f.stunT : a; }
+    }
+    const id = mapId(); if (id !== S.map) { mapChanged(id); return; }
+    if (puppetMode()) {
+      policePuppets();
+      if (!paused) for (const p of S.puppets) {
+        if (p.lerp < 1) { p.lerp = Math.min(1, p.lerp + dt / LERP_T); p.x = p.from.x + (p.to.x - p.from.x) * p.lerp; p.y = p.from.y + (p.to.y - p.from.y) * p.lerp; }
+        else { p.x = p.to.x; p.y = p.to.y; }
+      }
+      return;
+    }
+    if (!pre || pre.kind !== 'keeper') return;
+    if (!paused) for (const f of pre.frozen) { const m = f.m; if (!m.dead && m.stunT <= 0 && monsters.includes(m)) stepRemote(m, f.target, dt); }
+    S.snapAcc += dt;
+    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
+  }
+  const _update = update;
+  update = function (dt) { const pre = before(dt); _update(dt); after(dt, pre); };
+  update.__inner = _update;
+
+  // ---------- hits and kills ----------
+  const _hitMonster = hitMonster;
+  hitMonster = function (m, dmg, knock, fromBomb, source) {
+    if (m.remote) {
+      if (source !== 'monster' && source !== 'remote' && online()) NET.send({ t: 'hit', nid: m.nid, dmg: Math.max(0, Math.min(MAX_DMG, Math.round(num(dmg) || 0))), knock: Math.round(num(knock) === null ? 14 : knock), bomb: !!fromBomb });
+      return _hitMonster(m, dmg, knock, fromBomb, source);
+    }
+    if (source === undefined || source === 'player') m.lastHitBy = null;
+    return _hitMonster(m, dmg, knock, fromBomb, source);
+  };
+  hitMonster.__inner = _hitMonster;
+  const _killMonster = killMonster;
+  killMonster = function (m) {
+    if (m.remote) { m.dead = true; m.deadT = 0; m.respawnT = 1e9; m.localDeadUntil = time + 0.5; return; }   // the keeper decides drops, XP and credit
+    if (m.lastHitBy && isKeeper()) {
+      const d = MONSTER_DEFS[m.type], to = m.lastHitBy; m.lastHitBy = null;
+      m.dead = true; m.deadT = 0; m.respawnT = (d.respawn || 25) + Math.random() * 10;
+      burst(m.x, m.y, bloodColor(m.type), 16, 120);
+      if (isCampMonster(m)) { m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN); checkCampCleared(); }
+      if (d.mech) { const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); if (PLACEABLE_ON.has(tileAt(tx, ty))) changeTile(tx, ty, T.WRECK); }
+      NET.send({ t: 'kill', nid: m.nid, type: m.type, x: Math.round(m.x), y: Math.round(m.y), to });
+      return;
+    }
+    return _killMonster(m);
+  };
+  killMonster.__inner = _killMonster;
+
+  // ---------- the wire ----------
+  if (typeof NET !== 'undefined') {
+    NET.on('welcome', msg => { reset(); S.map = mapId(); setKeeper(typeof msg.keeper === 'string' ? msg.keeper : null); });
+    NET.on('keeper', msg => { if (!online() || typeof msg.map !== 'string' || msg.map !== S.map) return; setKeeper(typeof msg.n === 'string' ? msg.n : null); });
+    NET.on('offline', () => reset());
+    NET.on('mon', applyMon);
+    NET.on('p', msg => {
+      if (typeof msg.n !== 'string' || msg.n === NET.me || typeof msg.map !== 'string') return;
+      const x = num(msg.x), y = num(msg.y); if (x === null || y === null) return;
+      const r = S.remotes[msg.n] || (S.remotes[msg.n] = { n: msg.n });
+      r.x = x; r.y = y; r.map = msg.map; r.def = num(msg.def); r.dead = !!msg.dead; r.hp = num(msg.hp); r.lv = num(msg.lv); r.seen = time;
+    });
+    NET.on('left', msg => { if (typeof msg.n === 'string') delete S.remotes[msg.n]; });
+    NET.on('who', msg => { if (!Array.isArray(msg.list)) return; const names = new Set(); for (const e of msg.list) if (e && typeof e.n === 'string') names.add(e.n); for (const n in S.remotes) if (!names.has(n)) delete S.remotes[n]; });
+    NET.on('hit', msg => {
+      if (!isKeeper() || typeof msg.nid !== 'string' || typeof msg.n !== 'string') return;
+      const dmg = num(msg.dmg); if (dmg === null || dmg < 0 || dmg > MAX_DMG) return;
+      const m = find(msg.nid); if (!m || m.dead || m.remote) return;
+      const knock = num(msg.knock); const k = knock === null ? 14 : clamp(knock, 0, 60);
+      m.lastHitBy = msg.n;
+      const from = S.here.find(r => r.n === msg.n);
+      if (from && k > 0) { const kx = m.x - from.x, ky = m.y - from.y, kd = Math.hypot(kx, ky) || 1; moveEntity(m, kx / kd * k, ky / kd * k, 'beast'); hitMonster(m, dmg, 0, !!msg.bomb, 'remote'); }
+      else hitMonster(m, dmg, k, !!msg.bomb, 'remote');
+    });
+    NET.on('kill', msg => {
+      if (!online() || typeof msg.type !== 'string' || !MONSTER_DEFS[msg.type]) return;
+      const x = num(msg.x), y = num(msg.y); if (x === null || y === null) return;
+      const d = MONSTER_DEFS[msg.type], nid = typeof msg.nid === 'string' ? msg.nid : null;
+      const p = nid ? find(nid) : null;
+      if (p && p.remote) { p.dead = true; p.deadT = 0; p.respawnT = 1e9; p.localDeadUntil = time + 0.5; }
+      const home = nid ? homeFor(nid, x, y) : { x, y };
+      const phantom = { type: msg.type, nid, x, y, home, r: d.r, hp: 0, maxHp: d.hp, speed: d.speed, phantom: true, dead: false, deadT: 0, respawnT: 0, state: 'chase', angry: true, facing: { x: 1, y: 0 }, moving: false, walkT: 0, attackT: 0, attackCd: 0, hurtT: 0, stunT: 0, wander: { x: 0, y: 0 }, wanderT: 0 };
+      _killMonster(phantom);
+    });
+    NET.on('hurt', msg => {
+      if (!online()) return;
+      const dmg = num(msg.dmg); if (dmg === null || dmg < 0 || dmg > MAX_DMG) return;
+      const x = num(msg.x), y = num(msg.y);
+      hurtPlayer(dmg, x === null ? player.x : x, y === null ? player.y : y);
+    });
+  }
+
+  window.COOP = {
+    isKeeper, keeper: () => S.keeper, map: () => S.map, remotes: () => Object.values(S.remotes), knightsHere, puppets: () => S.puppets,
+    get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), find, apply: applyMon, reset, state: S,
+  };
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    if (typeof NET === 'undefined') return;
+    const P = 'coop: ';
+    if (typeof INSTANCES !== 'undefined' && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, peace: window.__peace, px: player.x, py: player.y, hp: player.hp, kills: player.kills, drops: drops.length, qstage: quest.stage, qkills: quest.kills, graves: quest.graves };
+    const real = monsters;
+    const keep = real.map(m => ({ m, x: m.x, y: m.y, hp: m.hp, dead: m.dead, deadT: m.deadT, respawnT: m.respawnT, state: m.state, angry: m.angry, stunT: m.stunT, attackCd: m.attackCd, lastHitBy: m.lastHitBy }));
+    const sent = []; let sock = null;
+    const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+    const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); sent.push(m); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
+    const sentOf = t => sent.filter(m => m.t === t);
+    const txOf = px => Math.floor(px / TILE);
+    NET.enabled = true; NET.token = 'coop-test'; NET.useFake(fake); NET.connect();
+    const gob = real.find(m => m.type === 'goblin' && !m.dead && m.nid && !isCampMonster(m)) || real.find(m => m.type === 'goblin' && m.nid);
+    const s0 = real[0];
+    try {
+      // (a) the keeper's snapshot
+      h.peace(true);
+      gob.dead = false; gob.hp = gob.maxHp; gob.x = gob.home.x; gob.y = gob.home.y; gob.state = 'idle'; gob.stunT = 0;
+      const ann = { x: gob.home.x - 2 * TILE, y: gob.home.y };
+      F.tp(txOf(gob.home.x) + 2, txOf(gob.home.y));
+      push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 });
+      sent.length = 0; F.sim(12);
+      const mons = sentOf('mon'); const list = mons.length ? mons[mons.length - 1].list : [];
+      const near = (x, y) => dist(x, y, player.x, player.y) <= NEAR || dist(x, y, ann.x, ann.y) <= NEAR;
+      const shapeOk = list.length > 0 && list.every(e => Array.isArray(e) && e.length === 14 && typeof e[0] === 'string' && !!MONSTER_DEFS[e[1]] && [2, 3, 4, 5, 7, 8, 9, 12, 13].every(i => Number.isFinite(e[i])) && typeof e[6] === 'string');
+      const farExists = real.some(m => !m.dead && !near(m.x, m.y)), farListed = list.some(e => !near(e[2], e[3]));
+      check(P + 'the keeper streams snapshots in the contract shape, only for monsters near a knight', NET.online() && COOP.isKeeper() && COOP.map() === 'over' && mons.length >= 1 && shapeOk && farExists && !farListed && list.some(e => e[0] === gob.nid), { online: NET.online(), keeper: COOP.keeper(), map: COOP.map(), snapshots: mons.length, listed: list.length, shapeOk, farExists, farListed });
+
+      // (b) a non-keeper shows puppets that hold still while the stream is silent
+      push({ t: 'keeper', map: 'over', n: 'Ann' });
+      const parked = COOP.parked;
+      const ax = gob.home.x, ay = gob.home.y;
+      const row = (nid, type, x, y, hp, mhp, state) => [nid, type, x, y, hp, mhp, state, 1, 0, 0, 0, 0, 0, 0];
+      push({ t: 'mon', n: 'Ann', list: [row('Ann:1', 'goblin', ax, ay, 12, 12, 'idle'), row(s0.nid, s0.type, ax + 40, ay + 40, 5, s0.maxHp, 'chase')] });
+      const p1 = COOP.find('Ann:1'), p2 = COOP.find(s0.nid);
+      let drew = true; try { render(); } catch (e) { drew = false; }
+      monsters.push(makeReal('goblin', ax, ay + 200, null, null));   // a boss file spawning locally on a non-keeper: dropped after the next update
+      F.sim(60);
+      check(P + 'a non-keeper parks its monsters, shows puppets that render and hold still while the stream is silent, and keeps nothing else', parked === real && monsters !== real && !!p1 && !!p2 && p1.remote && p2.remote && drew && p1.x === ax && p1.y === ay && p2.x === ax + 40 && p2.y === ay + 40 && p2.hp === 5 && p1.stunT === 0 && p2.stunT === 0 && monsters.length === 2 && monsters.every(m => m.remote), { parked: parked === real, puppets: monsters.length, allRemote: monsters.every(m => m.remote), drew, p1: p1 && [p1.x - ax, p1.y - ay, p1.stunT], p2: p2 && [p2.x - ax - 40, p2.hp] });
+
+      // an instance excursion while someone else keeps the overworld: inside, the fresh spawns are ours and tagged;
+      // back out, the real overworld array returns (the instance code hands back the puppet array it was given)
+      const ids = typeof INSTANCES !== 'undefined' && INSTANCES.list ? INSTANCES.list() : [];
+      if (ids.length) {
+        const id = ids[0]; const entered = INSTANCES.enter(id);
+        const inside = { map: COOP.map(), keeper: COOP.keeper(), puppets: COOP.puppets(), tagged: monsters.length > 0 && monsters.every((m, i) => m.nid === 'i' + i && !m.remote), n: monsters.length };
+        const left = entered && INSTANCES.leave();
+        check(P + 'an instance entered by a non-keeper runs its own tagged spawns; leaving gives the real overworld back, not the puppets', entered && inside.map === id && inside.keeper === null && inside.puppets === null && inside.tagged && left && COOP.map() === 'over' && monsters === real && COOP.keeper() === null && real.every(m => !m.remote), { entered, inside: [inside.map, inside.keeper, inside.n, inside.tagged], left, map: COOP.map(), realBack: monsters === real });
+        push({ t: 'keeper', map: 'over', n: 'Ann' });
+      }
+
+      // (c) a hit on a puppet
+      push({ t: 'mon', n: 'Ann', list: [row('Ann:1', 'goblin', ax, ay, 12, 12, 'idle'), row(s0.nid, s0.type, ax + 40, ay + 40, 5, s0.maxHp, 'chase')] });
+      const p1b = COOP.find('Ann:1');
+      F.tp(txOf(ax) - 1, txOf(ay)); F.face(txOf(ax), txOf(ay));
+      sent.length = 0; const k0 = player.kills, d0 = drops.length, xp0 = player.skills.melee.xp;
+      p1b.hp = 1; hitMonster(p1b, 3, 14);
+      const hits = sentOf('hit');
+      check(P + 'a hit on a puppet goes to the keeper, gives hit XP, and a puppet at 0 hp only lies down (no drops, no kill credit)', COOP.parked === real && hits.length === 1 && hits[0].nid === 'Ann:1' && hits[0].dmg === 3 && hits[0].knock === 14 && hits[0].bomb === false && p1b.dead && drops.length === d0 && player.kills === k0 && player.skills.melee.xp > xp0, { hits, dead: p1b.dead, drops: drops.length - d0, kills: player.kills - k0, xp: player.skills.melee.xp - xp0 });
+
+      // (d) a kill message grants everything once
+      quest.stage = 3; quest.kills = 0; quest.graves = [];
+      const k1 = player.kills, d1 = drops.length;
+      push({ t: 'kill', nid: 'Ann:1', type: 'goblin', x: ax, y: ay });
+      push({ t: 'kill', nid: 'Ann:1', type: 'nothing_of_the_sort', x: ax, y: ay });
+      check(P + 'a kill message grants the kill, the drops and the quest credit exactly once, and a bad one grants nothing', player.kills === k1 + 1 && drops.length > d1 && quest.kills === 1 && quest.stage === 3, { kills: player.kills - k1, drops: drops.length - d1, questKills: quest.kills });
+      quest.stage = was.qstage; quest.kills = was.qkills; quest.graves = was.graves; player.kills = k1; drops = drops.slice(0, d1);
+
+      // (g) handoff
+      push({ t: 'mon', n: 'Ann', list: [row(s0.nid, s0.type, ax + 40, ay + 40, 5, s0.maxHp, 'chase'), row('Ann:2', 'goblin', ax + 80, ay, 9, 12, 'idle')] });
+      const n0 = real.length;
+      push({ t: 'keeper', map: 'over', n: 'Cohen' });
+      const nids = monsters.map(m => m.nid); const uniq = new Set(nids).size === nids.length;
+      const a2 = monsters.find(m => m.nid === 'Ann:2');
+      check(P + 'handoff: the new keeper turns puppets into real monsters with no duplicates (known ones updated in place, unknown ones made, dead unknown ones left out)', monsters === real && COOP.isKeeper() && monsters.length === n0 + 1 && uniq && s0.hp === 5 && s0.x === ax + 40 && s0.y === ay + 40 && !!a2 && !a2.remote && a2.hp === 9 && monsters.every(m => !m.remote) && COOP.puppets() === null, { real: monsters === real, keeper: COOP.keeper(), count: monsters.length - n0, uniq, s0: [s0.hp, s0.x - ax - 40], a2: a2 && [a2.hp, !!a2.remote] });
+      if (a2) real.splice(real.indexOf(a2), 1);
+
+      // (e) the keeper takes a remote hit and hands the kill to the hitter
+      gob.dead = false; gob.hp = gob.maxHp; gob.x = gob.home.x; gob.y = gob.home.y; gob.state = 'idle'; gob.stunT = 0; gob.lastHitBy = null;
+      push({ t: 'p', n: 'Ann', map: 'over', x: gob.x + 30, y: gob.y, def: 576, dead: false, hp: 25, lv: 1 });
+      F.sim(1);
+      sent.length = 0; const k2 = player.kills, d2 = drops.length;
+      push({ t: 'hit', n: 'Ann', nid: gob.nid, dmg: 4, knock: 0, bomb: false });
+      const hp1 = gob.hp, by1 = gob.lastHitBy;
+      push({ t: 'hit', n: 'Ann', nid: gob.nid, dmg: 9999, knock: 0, bomb: false });
+      push({ t: 'hit', n: 'Ann', nid: 42, dmg: 4, knock: 0, bomb: false });
+      const hp2 = gob.hp;
+      push({ t: 'hit', n: 'Ann', nid: gob.nid, dmg: 8, knock: 0, bomb: false });
+      const kills = sentOf('kill');
+      check(P + 'the keeper applies a remote hit to the right monster, rejects a bad one, and a remote last hit sends the kill to the hitter with nothing granted here', hp1 === gob.maxHp - 4 && by1 === 'Ann' && hp2 === hp1 && gob.dead && kills.length === 1 && kills[0].to === 'Ann' && kills[0].nid === gob.nid && kills[0].type === 'goblin' && player.kills === k2 && drops.length === d2 && gob.respawnT > 0 && !gob.lastHitBy, { hp1, by1, hp2, dead: gob.dead, kills, localKills: player.kills - k2, drops: drops.length - d2 });
+
+      // (f) a remote knight beside an aggressive monster gets hurt while the keeper stands far away
+      gob.dead = false; gob.hp = gob.maxHp; gob.x = gob.home.x; gob.y = gob.home.y; gob.state = 'idle'; gob.attackCd = 0; gob.stunT = 0; gob.angry = !!MONSTER_DEFS.goblin.aggro; gob.lastHitBy = null;
+      h.peace(false);
+      let spot = h.openSpot(txOf(gob.x) + 16, txOf(gob.y)); if (dist(tc(spot.x), tc(spot.y), gob.x, gob.y) < 10 * TILE) spot = h.openSpot(txOf(gob.x) - 16, txOf(gob.y));
+      F.tp(spot.x, spot.y); player.hp = player.maxHp;
+      const ann2 = { x: gob.x + 30, y: gob.y };
+      push({ t: 'p', n: 'Ann', map: 'over', x: ann2.x, y: ann2.y, def: 576, dead: false, hp: 25, lv: 1 });
+      sent.length = 0; F.sim(180);
+      const hurts = sentOf('hurt');
+      check(P + 'a remote knight beside an aggressive monster gets hurt messages from the keeper while the keeper stands far away, and the monster chases them', dist(player.x, player.y, gob.home.x, gob.home.y) > 8 * TILE && hurts.length >= 1 && hurts.every(m => m.to === 'Ann' && Number.isFinite(m.dmg) && m.dmg >= 0 && m.dmg <= MONSTER_DEFS.goblin.maxHit) && gob.state === 'chase' && dist(gob.x, gob.y, ann2.x, ann2.y) < 60 && sentOf('mon').length >= 10, { keeperAway: Math.round(dist(player.x, player.y, gob.home.x, gob.home.y) / TILE), hurts: hurts.length, state: gob.state, gap: Math.round(dist(gob.x, gob.y, ann2.x, ann2.y)), snapshots: sentOf('mon').length });
+    } finally {
+      NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
+      reset();
+      monsters = real; real.length = 0;
+      for (const k of keep) { const m = k.m; m.x = k.x; m.y = k.y; m.hp = k.hp; m.dead = k.dead; m.deadT = k.deadT; m.respawnT = k.respawnT; m.state = k.state; m.angry = k.angry; m.stunT = k.stunT; m.attackCd = k.attackCd; m.lastHitBy = k.lastHitBy; real.push(m); }
+      S.idxLen = -1;
+      h.peace(was.peace); player.x = was.px; player.y = was.py; player.hp = Math.max(1, was.hp); player.kills = was.kills; drops = drops.slice(0, was.drops);
+      quest.stage = was.qstage; quest.kills = was.qkills; quest.graves = was.graves;
+      dialog.queue.length = 0;
+    }
   });
 }
 

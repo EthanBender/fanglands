@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Fanglands — the world</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #14161a; color: #d7dae0; font: 15px/1.45 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 32px 0 10px; border-bottom: 1px solid #2c3038; padding-bottom: 6px; }
+  p.note { color: #8a90a0; margin: 0 0 16px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #23262d; vertical-align: top; }
+  th { color: #8a90a0; font-weight: 600; font-size: 13px; }
+  tr.banned td { color: #8a90a0; }
+  button { background: #2b3140; color: #e7eaf0; border: 1px solid #3c4356; border-radius: 4px; padding: 5px 10px; font: inherit; cursor: pointer; margin: 0 4px 4px 0; }
+  button:hover { background: #363d4f; }
+  button.danger { border-color: #6b3a3a; }
+  input { background: #0f1114; color: #e7eaf0; border: 1px solid #3c4356; border-radius: 4px; padding: 6px 8px; font: inherit; }
+  code { background: #0f1114; padding: 2px 6px; border-radius: 3px; }
+  #chat { background: #0f1114; border: 1px solid #23262d; border-radius: 4px; padding: 8px 10px; height: 420px; overflow: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  #chat div { white-space: pre-wrap; }
+  #chat .t { color: #6f7688; }
+  #chat .n { color: #9bc1ff; }
+  #status { color: #8a90a0; font-size: 13px; }
+  #status.bad { color: #ff9a9a; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .hidden { display: none; }
+  .saves { margin: 4px 0 8px 16px; color: #aab0c0; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fanglands — the world</h1>
+  <p class="note">Who is playing, every knight's account, the invite code, and the chat log.</p>
+
+  <section id="keybox">
+    <h2>Admin key</h2>
+    <div class="row">
+      <input id="key" type="password" placeholder="the admin key" size="36">
+      <button id="usekey">Use this key</button>
+      <span id="status"></span>
+    </div>
+  </section>
+
+  <div id="app" class="hidden">
+    <div class="row"><span id="status2" class="note"></span><button id="refresh">Refresh now</button><button id="forget">Forget the key</button></div>
+
+    <h2>On line now</h2>
+    <table id="online"><thead><tr><th>Knight</th><th>Map</th><th>Region</th><th>Level</th><th>On for</th></tr></thead><tbody></tbody></table>
+
+    <h2>Accounts</h2>
+    <table id="accounts"><thead><tr><th>Knight</th><th>Made</th><th>Last seen</th><th>Banned</th><th>Save</th><th></th></tr></thead><tbody></tbody></table>
+
+    <h2>Invite code</h2>
+    <div class="row">
+      <span>Now: <code id="invite">…</code></span>
+      <input id="newinvite" placeholder="new invite code" size="24">
+      <button id="setinvite">Change it</button>
+    </div>
+    <p class="note">A new knight needs this code to sign up. Change it and the old one stops working straight away.</p>
+
+    <h2>Chat log</h2>
+    <p class="note">Newest at the bottom. Refreshes every 10 seconds. What is shown is what the knights saw, after the word filter.</p>
+    <div id="chat"></div>
+  </div>
+</main>
+<script>
+(() => {
+  const KEY = 'fanglands.adminKey';
+  const $ = id => document.getElementById(id);
+  let key = null, timer = null;
+  try { key = sessionStorage.getItem(KEY); } catch (e) { }
+
+  const say = (text, bad) => { for (const id of ['status', 'status2']) { const el = $(id); el.textContent = text || ''; el.className = bad ? 'bad' : (id === 'status' ? '' : 'note'); } };
+  const api = async (method, path, body) => {
+    const r = await fetch(path, { method, headers: { 'authorization': 'Bearer ' + key, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    let data = null; try { data = await r.json(); } catch (e) { }
+    if (!r.ok) throw new Error((data && data.error) || ('HTTP ' + r.status));
+    return data;
+  };
+  const when = ms => ms ? new Date(ms).toLocaleString() : '—';
+  const ago = ms => { const s = Math.max(0, Math.round((Date.now() - ms) / 1000)); if (s < 60) return s + ' s'; if (s < 3600) return Math.round(s / 60) + ' min'; if (s < 86400) return (s / 3600).toFixed(1) + ' h'; return Math.round(s / 86400) + ' d'; };
+  const cell = (tr, text) => { const td = document.createElement('td'); td.textContent = text; tr.appendChild(td); return td; };
+
+  async function loadOnline() {
+    const list = await api('GET', '/api/admin/online');
+    const tb = $('online').querySelector('tbody'); tb.innerHTML = '';
+    if (!list.length) { const tr = document.createElement('tr'); cell(tr, 'Nobody at the moment.').colSpan = 5; tb.appendChild(tr); }
+    for (const k of list) { const tr = document.createElement('tr'); cell(tr, k.n); cell(tr, k.map); cell(tr, k.region || ''); cell(tr, k.lv || ''); cell(tr, ago(k.since)); tb.appendChild(tr); }
+  }
+
+  async function loadAccounts() {
+    const list = await api('GET', '/api/admin/accounts');
+    const tb = $('accounts').querySelector('tbody'); tb.innerHTML = '';
+    if (!list.length) { const tr = document.createElement('tr'); cell(tr, 'No knights yet.').colSpan = 6; tb.appendChild(tr); }
+    for (const a of list) {
+      const tr = document.createElement('tr'); if (a.banned) tr.className = 'banned';
+      cell(tr, a.name); cell(tr, when(a.created)); cell(tr, when(a.lastSeen)); cell(tr, a.banned ? 'yes' : 'no'); cell(tr, when(a.saveAt));
+      const td = document.createElement('td');
+      const reset = document.createElement('button'); reset.textContent = 'Reset secret word';
+      reset.onclick = async () => { const pass = prompt('New secret word for ' + a.name + ' (at least 4 letters):'); if (!pass) return; try { await api('POST', '/api/admin/reset', { name: a.name, pass }); say('Secret word changed for ' + a.name + '.'); } catch (e) { say(e.message, true); } };
+      const ban = document.createElement('button'); ban.textContent = a.banned ? 'Unban' : 'Ban'; if (!a.banned) ban.className = 'danger';
+      ban.onclick = async () => { if (!a.banned && !confirm('Ban ' + a.name + '? They cannot log in until unbanned. Their save stays.')) return; try { await api('POST', '/api/admin/ban', { name: a.name, banned: !a.banned }); say((a.banned ? 'Unbanned ' : 'Banned ') + a.name + '.'); await loadAccounts(); } catch (e) { say(e.message, true); } };
+      const saves = document.createElement('button'); saves.textContent = 'Saves';
+      saves.onclick = async () => {
+        let box = tr.nextElementSibling; if (box && box.className === 'savesrow') { box.remove(); return; }
+        try {
+          const list = await api('GET', '/api/admin/saves?name=' + encodeURIComponent(a.name));
+          box = document.createElement('tr'); box.className = 'savesrow'; const td = document.createElement('td'); td.colSpan = 6; box.appendChild(td);
+          const div = document.createElement('div'); div.className = 'saves'; td.appendChild(div);
+          if (!list.length) div.textContent = 'No saves yet.';
+          list.forEach((s, i) => {
+            const line = document.createElement('div'); line.textContent = 'Version ' + s.ver + ' — ' + when(s.at) + ' — ' + Math.round(s.bytes / 1024) + ' KB' + (i === 0 ? ' (the one in use)' : ' ');
+            if (i > 0) { const b = document.createElement('button'); b.textContent = 'Go back to this one'; b.onclick = async () => { if (!confirm('Make version ' + s.ver + ' the current save for ' + a.name + '?')) return; try { await api('POST', '/api/admin/rollback', { name: a.name, ver: s.ver }); say('Rolled ' + a.name + ' back to version ' + s.ver + '.'); box.remove(); await loadAccounts(); } catch (e) { say(e.message, true); } }; line.appendChild(document.createTextNode(' ')); line.appendChild(b); }
+            div.appendChild(line);
+          });
+          tr.after(box);
+        } catch (e) { say(e.message, true); }
+      };
+      td.append(reset, ban, saves); tr.appendChild(td); tb.appendChild(tr);
+    }
+  }
+
+  async function loadInvite() { const r = await api('GET', '/api/admin/invite'); $('invite').textContent = r.invite || '(none set)'; }
+
+  async function loadChat() {
+    const list = await api('GET', '/api/admin/chat?limit=500');
+    const box = $('chat'); const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 8 || box.childElementCount === 0;
+    box.innerHTML = '';
+    if (!list.length) box.textContent = 'Nothing said yet.';
+    for (const c of list) { const d = document.createElement('div'); const t = document.createElement('span'); t.className = 't'; t.textContent = when(c.at) + '  '; const n = document.createElement('span'); n.className = 'n'; n.textContent = c.n + ': '; d.append(t, n, document.createTextNode(c.text)); box.appendChild(d); }
+    if (stick) box.scrollTop = box.scrollHeight;
+  }
+
+  async function refresh(all) {
+    try {
+      await loadOnline(); await loadChat();
+      if (all) { await loadAccounts(); await loadInvite(); }
+      say('Updated ' + new Date().toLocaleTimeString() + '.');
+    } catch (e) { say(e.message, true); if (/admin key/.test(e.message)) lock(); }
+  }
+  function unlock() { $('keybox').classList.add('hidden'); $('app').classList.remove('hidden'); refresh(true); if (timer) clearInterval(timer); timer = setInterval(() => refresh(false), 10000); }
+  function lock() { if (timer) clearInterval(timer); timer = null; key = null; try { sessionStorage.removeItem(KEY); } catch (e) { } $('app').classList.add('hidden'); $('keybox').classList.remove('hidden'); }
+
+  $('usekey').onclick = async () => {
+    key = $('key').value.trim(); if (!key) return;
+    try { await api('GET', '/api/admin/invite'); try { sessionStorage.setItem(KEY, key); } catch (e) { } $('key').value = ''; say(''); unlock(); }
+    catch (e) { say(e.message, true); key = null; }
+  };
+  $('key').addEventListener('keydown', e => { if (e.key === 'Enter') $('usekey').click(); });
+  $('refresh').onclick = () => refresh(true);
+  $('forget').onclick = lock;
+  $('setinvite').onclick = async () => {
+    const invite = $('newinvite').value.trim(); if (!invite) return;
+    if (!confirm('Change the invite code to "' + invite + '"? The old one stops working.')) return;
+    try { await api('POST', '/api/admin/invite', { invite }); $('newinvite').value = ''; await loadInvite(); say('Invite code changed.'); } catch (e) { say(e.message, true); }
+  };
+  if (key) unlock();
+})();
+</script>
+</body>
+</html>

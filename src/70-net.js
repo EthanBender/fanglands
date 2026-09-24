@@ -52,7 +52,8 @@
   const wsUrl = () => {
     if (NET.base) return NET.base.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(NET.token);
     const proto = (typeof location !== 'undefined' && location.protocol === 'http:') ? 'ws://' : 'wss://';
-    return proto + host + '/ws?token=' + encodeURIComponent(NET.token);
+    // location.host keeps the port (localhost:8790 in a local run); hostname would drop it and the socket would never open
+    return proto + location.host + '/ws?token=' + encodeURIComponent(NET.token);
   };
   function wire(sock) {
     sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send({ t: 'hello', v: 1 }, true); };
@@ -62,9 +63,11 @@
       NET.stats.got++;
       if (msg.t === 'welcome') { NET.status = 'on'; NET.me = msg.me; }
       if (msg.t === 'error' && msg.code === 'auth') { NET.setToken(null); NET.closedByUs = true; }
+      // the same knight opened somewhere else: that socket wins, this one must not fight it by reconnecting
+      if (msg.t === 'error' && msg.code === 'elsewhere') NET.closedByUs = true;
       NET.emit(msg.t, msg);
     };
-    sock.onclose = () => { if (NET.sock !== sock) return; NET.sock = null; const was = NET.status; NET.status = 'off'; if (was === 'on') NET.emit('offline', { t: 'offline' }); if (!NET.closedByUs) scheduleReconnect(); };
+    sock.onclose = ev => { if (NET.sock !== sock) return; if (ev && ev.code === 4000) NET.closedByUs = true; NET.sock = null; const was = NET.status; NET.status = 'off'; if (was === 'on') NET.emit('offline', { t: 'offline' }); if (!NET.closedByUs) scheduleReconnect(); };
     sock.onerror = e => { NET.lastError = e; };
   }
   function scheduleReconnect() {

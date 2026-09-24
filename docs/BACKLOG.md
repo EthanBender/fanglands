@@ -62,6 +62,11 @@ something specific (named) · **OPEN** not started.
 | **Region outlines and the land in steps** | MERGED into integ/wave14, awaiting deploy — thirteen regions get real outlines (one shared curve per border), the Wolfwood scarp and the Ashfields' rim cut the land into steps with the two bridges and one Agility-18 stair as the ways down, the Jungle's north edge is a wall of giants. `92-worldshape.js`. Integrated with the Redcut: its tiles are pinned to their region and the Jungle takes a bay on its east instead of growing over red rock. |
 | **HUD redesign** | MERGED into integ/wave14, awaiting deploy — one grid, one container, one colour language, hierarchy, controls that look pressable. `59-hudkit.js` plus 22 feature files moved onto it. Merge note: the old STEAM button feat/hud migrated onto the kit had already been replaced on master by the corner HOLD target, so that one control stays as master drew it. |
 | **Paper Mario tile flutter on heavy hits** | MERGED into integ/wave14, awaiting deploy — the ground lifts in a ring under a bomb, a dozer ram, a Gnasher's arm or fall, a barrel beast's fall; 18 px at the centre fading to 0 at the rim, every tile back to exactly 0. `64-impact.js`. Merge fix: a wave made right after a door was wiped on its first tick (the branch's own failing check); each wave now carries its map. |
+| **Online: accounts and cloud saves** | invite-only knights, secret word, one knight per account saved in the cloud (3 versions), "Playing as …" on return, Log out in the pause menu, the bridge that brings a knight over from the old address. `71-login`, `72-cloudsave`, `bridge.html` |
+| **Online: friends on the map** | name tags, level, hp bar, ONLINE chip and Friends panel (where everyone is, Follow on map, Give), blue dots on the minimap and the map. `73-players` |
+| **Online: chat** | Enter/Y or the CHAT button, quick phrases for the iPad, bubbles over heads, a fading strip and a log; every line word-filtered and kept for parents. `74-chat` |
+| **Online: shared monsters** | the knight longest on a map keeps its monsters and streams them; everyone on that map fights the same ones; kill credit to the last hit; monsters chase the nearest knight; keeper hands over on leaving or after 4 s of silence. `75-coop`, `tools/mmo-sim.js` (two whole games in one process, 12 checks, run before every deploy) |
+| **Online: the world server** | Cloudflare Durable Object: accounts (PBKDF2), sessions, saves, chat log, word filter, rate caps, the room; admin page at `/admin`. 40 unit checks + 8 against a local run. `online/` |
 
 ---
 
@@ -77,7 +82,6 @@ something specific (named) · **OPEN** not started.
 | **Per-region tile sets** | Thistledown clean and bright; goblin city muddy and natural; Sylvaris like the cities in Wings of Fire; Ashfields desolate and smoky; Deepholm worked stone. |
 | **Sylvaris grown into the jungle** | Bigger, districts with reasons to visit, integrated rather than bolted on, a repeatable reason to return. |
 | **Bulldozer bay as a facility** | Tunnel you drive the dozer into, knight walks out, machine parked inside a real workshop with the upgrade stations around it. |
-| **Online MMORPG at gorkscape.ca** | Owner 2026-09-24: *"make it an online MMORPG so Cohen and his friends can log in and play together."* Contract in `docs/ONLINE.md`. Pieces: world server (accounts, cloud saves, chat log, admin page), login on the title screen + cloud save + bridge from the old address, seeing friends + chat + gifts, shared monsters per map (keeper model). |
 
 ---
 
@@ -85,6 +89,10 @@ something specific (named) · **OPEN** not started.
 
 | What | Waiting on |
 |---|---|
+| **Online: co-op bosses in instances** | Untested with two knights in a boss instance: boss scripts still run on every client (see `docs/ONLINE.md`, the keeper model). Needs a two-knight run through the Spider Den and one boss lair. |
+| **Online: trap tiles under puppets** | A non-keeper standing a puppet on a trap consumes it locally. Move the trap check behind the freeze gate. |
+| **Online: horse riders as seen by friends** | `drawHorse` is not exposed by `51-mounts`; a remote rider shows on foot. Expose it on `window.MOUNTS`. |
+| **Online: a real keyboard's Enter in the chat box** | Works by the standard keydown path, but the browser automation cannot send real key events, so it was verified headless and by calling `CHAT.send`, not by a physical Enter. Check once on the laptop. |
 | **Undertaker and the magic spade** | The tiered-undead rewrite. A quest to learn it from an undertaker, then a spade that digs up crosses and gravestones so zombies do not rise where you do not want them. No reward beyond a coin — the point is control. |
 
 ---
