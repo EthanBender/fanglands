@@ -3,3 +3,4 @@
 online/public/index.html
 online/node_modules/
 online/.wrangler/
+online/.dev.vars
