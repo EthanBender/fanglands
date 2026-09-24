@@ -1,0 +1,34 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Fanglands bridge</title>
+<style>html,body{margin:0;background:#0b0f14;color:#8b949e;font:13px "Trebuchet MS","Segoe UI",system-ui,sans-serif}p{padding:16px}</style>
+<p>This page hands the knight saved in this browser to gorkscape.ca when it asks. Nothing to see here.</p>
+<script>
+// ============================================================================
+// THE BRIDGE — served by GitHub Pages at https://ethanbender.github.io/fanglands/bridge.html (docs/ONLINE.md).
+// gorkscape.ca loads this page in a hidden iframe and posts {fanglands: 'give-save'}. The answer, sent only to
+// https://gorkscape.ca and https://www.gorkscape.ca, is {fanglands: 'save', slots} where slots is
+// {1: {save, at} | null, 2: ..., 3: ...}: the three slot strings this browser holds (fanglands.slot.N) and their
+// .at stamps. A browser from before the slots existed has its legacy save (fanglands.save.v2) handed over as
+// slot 1 with no stamp. Nothing is deleted on this side, ever.
+// ============================================================================
+(function () {
+  var ALLOW = ['https://gorkscape.ca', 'https://www.gorkscape.ca'];
+  var get = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  function slots() {
+    var out = {}, any = false;
+    for (var n = 1; n <= 3; n++) {
+      var save = get('fanglands.slot.' + n), at = +get('fanglands.slot.' + n + '.at') || 0;
+      out[n] = save ? { save: save, at: at } : null; if (save) any = true;
+    }
+    if (!any) { var legacy = get('fanglands.save.v2'); if (legacy) out[1] = { save: legacy, at: 0 }; }
+    return out;
+  }
+  window.addEventListener('message', function (ev) {
+    if (ALLOW.indexOf(ev.origin) < 0) return;
+    if (!ev.data || ev.data.fanglands !== 'give-save' || !ev.source) return;
+    ev.source.postMessage({ fanglands: 'save', slots: slots() }, ev.origin);
+  });
+})();
+</script>
