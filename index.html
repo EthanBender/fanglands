@@ -23516,9 +23516,13 @@ window.SETTINGS = SETTINGS;
       box.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);width:min(560px,calc(100vw - 32px));display:none;flex-direction:column;gap:8px;z-index:20;font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;';
       const chips = document.createElement('div');
       chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;justify-content:center;';
+      let chipAt = -1e9;   // when a chip was last pressed: a blur right after one is the chip taking the tap, not the box being left
       for (const p of PHRASES) {
         const b = document.createElement('button'); b.type = 'button'; b.textContent = p;
         b.style.cssText = 'font:600 14px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:rgba(10,14,22,0.92);border:1px solid #30363d;border-radius:16px;padding:7px 12px;cursor:pointer;touch-action:manipulation;';
+        b.addEventListener('pointerdown', ev => { chipAt = nowMs(); ev.preventDefault(); });   // the input keeps the keyboard; the click still comes
+        b.addEventListener('mousedown', ev => ev.preventDefault());
+        b.addEventListener('touchstart', () => { chipAt = nowMs(); }, { passive: true });
         b.addEventListener('click', ev => { ev.preventDefault(); send(p); });
         chips.appendChild(b);
       }
@@ -23529,6 +23533,11 @@ window.SETTINGS = SETTINGS;
       input.style.cssText = 'font:16px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:rgba(10,14,22,0.95);border:1px solid #58a6ff;border-radius:10px;padding:10px 12px;outline:none;width:100%;box-sizing:border-box;';
       box.appendChild(chips); box.appendChild(input); document.body.appendChild(box);
       dom = { box, chips, input };
+      // focus leaving the box (Done on the iPad keyboard, a click on the world) closes it; a chip's tap does not
+      input.addEventListener('blur', () => { setTimeout(() => { if (isOpen && dom && document.activeElement !== dom.input && nowMs() - chipAt > 600) close(); }, 150); });
+      // the on-screen keyboard covers the bottom of the layout viewport: keep the box just above it
+      const vv = window.visualViewport;
+      if (vv && vv.addEventListener) { const place = () => { const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop); box.style.bottom = (16 + covered) + 'px'; }; vv.addEventListener('resize', place); vv.addEventListener('scroll', place); }
       // the guard: while the box has the keyboard, Enter sends, Escape closes, and no key reaches the game (05-input listens on window in the bubble phase; this runs first, in the capture phase, and stops the event there)
       const guard = e => {
         if (!dom || document.activeElement !== dom.input) return;
