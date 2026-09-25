@@ -91,27 +91,12 @@
   absorb();
 
   // ---------- it is visible, so a child knows he has it ----------
-  // Drawn under the pack grid rather than in it: on the ring, not in the bag.
-  HOOKS.hud.push(g => {
-    if (panel !== 'inventory' || paused) return;
-    const list = ring().filter(id => ITEMS[id]);
-    if (!list.length || !panelRect) return;
-    const { x, y, w, h } = panelRect;
-    const by = y + h - 40;
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left';
-    g.fillText('KEYRING — always with you, no pack space', x + 18, by - 6);
-    let kx = x + 18;
-    for (const id of list) {
-      roundRect(g, kx, by, 34, 34, 7); g.fillStyle = 'rgba(245,197,66,0.10)'; g.fill();
-      g.strokeStyle = 'rgba(245,197,66,0.55)'; g.lineWidth = 1; g.stroke();
-      drawItemIcon(g, id, kx + 17, by + 17, 15);
-      buttons.push({ x: kx, y: by, w: 34, h: 34, label: 'keyring:' + id, action: () => notify(`${ITEMS[id].name}. ${KEYS[id].note}`) });
-      kx += 40;
-    }
-    g.textAlign = 'left';
-  });
+  // The pack draws the keyring itself (src/10-hud.js packKeyring): a leather key strap of 44 px brass-edged tiles
+  // under the chosen item, on the ring and not in the bag. Each tile is the buttons[] entry 'keyring:<id>'; a tap
+  // shows the key's note. The list it draws comes from here.
+  const list = () => ring().filter(id => ITEMS[id] && KEYS[id]).map(id => ({ id, name: ITEMS[id].name, note: KEYS[id].note }));
 
-  window.KEYRING = { KEYS, ring, held, add, register, absorb };
+  window.KEYRING = { KEYS, ring, held, add, register, absorb, list };
 
   const P = 'keyring: ';
   HOOKS.selfTest.push((check, F, h) => {
@@ -167,6 +152,19 @@
       const bought = clicked && KEYRING.held('wind_flute') && coins() === 3 && !full && !drops.slice(n0).some(d => d.id === 'wind_flute');
       check(P + 'giving a keyring item reports it as placed, so no shop or reward says the pack is full',
         placed && noDrop && bought, { left, placed, noDrop, clicked, coinsLeft: coins(), full, notice: notice && notice.text }); }
+
+    // the pack shows it: a 44 px tile on the key strap, and a tap tells you what it is for
+    { const own = kk => Object.getOwnPropertyDescriptor(window, kk), sz0 = { w: own('innerWidth'), h: own('innerHeight') }, t0 = window.__forceTouch;
+      player.keyring = []; syncRing(); add('wind_flute'); player.inv = player.inv.map(() => null);
+      const seen = {};
+      for (const [w, hh, touch] of [[390, 844, true], [844, 390, true], [1280, 800, false]]) {
+        window.innerWidth = w; window.innerHeight = hh; window.__forceTouch = touch; closePanel(); openPanel('inventory'); render();
+        const b = buttons.find(q => q.label === 'keyring:wind_flute'); notice = null;
+        if (b) b.action();
+        seen[w + 'x' + hh] = !!b && b.w >= 44 && b.h >= 44 && !!panelRect && b.x >= panelRect.x && b.y >= panelRect.y && b.x + b.w <= panelRect.x + panelRect.w && b.y + b.h <= panelRect.y + panelRect.h && !!notice && /wind shrine/i.test(notice.text);
+      }
+      closePanel(); if (sz0.w) { Object.defineProperty(window, 'innerWidth', sz0.w); Object.defineProperty(window, 'innerHeight', sz0.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } } window.__forceTouch = t0; render();
+      check(P + 'the pack shows the keyring as 44 px tiles inside the panel, and a tap on one tells what it opens', Object.values(seen).every(Boolean), seen); }
 
     player.inv = bag; player.keyring = r0; syncRing();
   });

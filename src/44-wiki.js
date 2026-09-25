@@ -250,7 +250,7 @@
   const ensure = () => data || (data = build());
 
   // ---------- panel state ----------
-  const wk = { section: 'monsters', id: null, search: '', letter: '', page: 0, detailPage: 0, view: 'list', history: [] };
+  const wk = { section: 'monsters', id: null, search: '', letter: '', page: 0, detailPage: 0, letterPage: 0, view: 'list', history: [] };
   const listFor = section => {
     const d = ensure(); const q = wk.search.trim().toLowerCase(), L = wk.letter;
     return d.order[section].filter(id => { const n = d[section][id].name.toLowerCase(); return q ? n.includes(q) : L ? n.startsWith(L.toLowerCase()) : true; });
@@ -262,9 +262,8 @@
   function drawPortrait(g, x, y, w, narrow) {
     const d = ensure(), e = d[wk.section] && d[wk.section][wk.id];
     if (!e || !PORTRAIT_SECTIONS.has(wk.section)) return y;
-    const size = narrow ? 52 : 64;
-    roundRect(g, x, y, size, size, 8); g.fillStyle = 'rgba(126,200,255,0.06)'; g.fill();
-    g.strokeStyle = 'rgba(126,200,255,0.22)'; g.lineWidth = 1; g.stroke();
+    const size = typeof narrow === 'number' ? narrow : narrow ? 52 : 64;
+    HK.vellumPlate(g, x, y, size, size);
     g.save();
     g.beginPath(); g.rect(x, y, size, size); g.clip();
     try {
@@ -389,90 +388,139 @@
   function wrapLines(g, text, maxW) { const words = String(text).split(' '); const lines = []; let line = ''; for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test; } if (line) lines.push(line); return lines; }
 
   // ---------- the panel ----------
-  const btn = (g, x, y, w, h, label, action, color, enabled) => button(g, x, y, w, h, label, action, color, enabled);
+  // The book wears the kit's frame (panelBox) and the panel contract: the six sections are tab plates, the list rows
+  // and the cross-links are plates (44 px on touch, 28 / 26 with a mouse), the letter index is a grid of 44 px letter
+  // plates that pages (More) rather than shrinking, and a long page pages with Up / Down. Words are the kit's two
+  // families in the kit's colours; a link is a vellum plate with a gold edge and a chevron.
+  const TOKEN = { '#e6edf3': 'ink', '#c9d1d9': 'ink', '#8b949e': 'inkDim', '#6e7681': 'inkMute', '#f5c542': 'gold', '#7ec8ff': 'ink', '#8fa2b8': 'inkMute' };
+  const colour = c => { const k = TOKEN[String(c || '').toLowerCase()]; return k ? HK.T[k] : (c || HK.T.ink); };
+  // a page's lines as blocks of known height: a header, one wrapped text line, or a link plate
+  function pageBlocks(g, section, id, w, touch) {
+    const K = PANEL_KIT, lh = K.lineH(12.5), out = [], linkH = touch ? 44 : 26;
+    for (const l of pageLines(section, id)) {
+      if (l.head) { out.push({ kind: 'head', t: l.t, h: 26 }); continue; }
+      if (l.link) {
+        const room = w - 16 - (l.icon ? 24 : 0) - 22, f = K.FB(12.5, 700), ww = HK.wrap(g, l.t.trim(), room, 2, f);
+        out.push({ kind: 'link', t: l.t.trim(), lines: ww.lines, link: l.link, icon: l.icon, c: l.c, h: Math.max(linkH, ww.lines.length * lh + 8), gap: touch ? 8 : 4 });
+        continue;
+      }
+      const f = K.FB(12.5), ww = HK.wrap(g, String(l.t).replace(/^\s+/, ''), w - 4, 99, f);
+      ww.lines.forEach(t => out.push({ kind: 'text', t, c: l.c, h: lh }));
+    }
+    return out;
+  }
   HOOKS.panel.wiki = (g, narrow) => {
-    const d = ensure();
-    const touch = touchMode();
-    const W = Math.min(780, VW - 20), Hh = Math.min(560, VH - 20);
-    const { px, py, w, h } = panelBox(g, W, Hh, `Wiki${touch ? '' : ' (K)'}`, touch ? 'Tap a tab, then a letter, then a page. Blue lines open other pages.' : 'Type to search the list. Blue lines open other pages. Esc closes.');
-    // tabs
-    const tabW = Math.floor((w - 36 - 5 * 4) / 6), ty = py + 56;
-    SECTIONS.forEach((s, i) => { const on = s === wk.section; btn(g, px + 18 + i * (tabW + 4), ty, tabW, 26, narrow ? SECTION_SHORT[s] : SECTION_NAME[s], () => setSection(s), on ? '#238636' : '#21262d', !on); });
-    let top = ty + 34;
-    const showList = !narrow || wk.view === 'list';
-    const showDetail = !narrow || wk.view === 'detail';
-    const listW = narrow ? w - 36 : touch ? 330 : 250, listX = px + 18;
-    const detX = narrow ? px + 18 : listX + listW + 16, detW = narrow ? w - 36 : w - 36 - listW - 16;
+    const d = ensure(), K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G, t: touch } = Rm;
+    const W = Math.min(800, Rm.aw), Hh = Math.min(touch ? 700 : 580, Rm.ah);
+    const { px, py, w, h } = panelBox(g, W, Hh, 'Wiki', touch ? 'Tap a tab, a letter, then a page. Gold lines open other pages.' : 'Type to search. Gold lines open other pages. K or Esc closes.');
+    const x0 = px + 18, cw = w - 36;
+    const single = cw < 560 || h < 420;                 // one view at a time: the list, or a page
+    const short = h < 480;
+    // the six sections, as tabs
+    const tabName = s => narrow ? SECTION_SHORT[s] : SECTION_NAME[s];
+    const tabsH = K.tabs(g, x0, py + 62, cw, SECTIONS.map(s => ({ label: tabName(s) })), tabName(wk.section), l => { const s = SECTIONS.find(q => tabName(q) === l); if (s && s !== wk.section) setSection(s); }, { rows3: false });
+    const top0 = py + 62 + tabsH + 10;
+    const showList = !single || wk.view === 'list';
+    const showDetail = !single || wk.view === 'detail';
+    const listW = single ? cw : (touch ? 340 : 270), listX = x0;
+    const detX = single ? x0 : listX + listW + 20, detW = single ? cw : cw - listW - 20;
+    const pagerY = py + h - 14 - R;
     const list = listFor(wk.section);
     if (showList) {
-      // search: a typed field on desktop, a letter row on touch
+      let top = top0;
       if (!touch) {
-        roundRect(g, listX, top, listW, 26, 6); g.fillStyle = 'rgba(255,255,255,0.06)'; g.fill(); g.strokeStyle = '#30363d'; g.lineWidth = 1; g.stroke();
-        g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillStyle = wk.search ? '#e6edf3' : '#6e7681'; g.fillText(wk.search ? wk.search + (Math.floor(time * 2) % 2 ? '|' : ' ') : 'Search: just type', listX + 8, top + 17);
-        if (wk.search) btn(g, listX + listW - 54, top + 1, 52, 24, 'Clear', () => { wk.search = ''; wk.page = 0; }, '#21262d');
-        top += 32;
+        // search: typed on the keyboard (letters go to the search, not to the panels)
+        const fw = listW - 72;
+        HK.vellumPlate(g, listX, top, fw, R);
+        const q = wk.search ? wk.search + (Math.floor(time * 2) % 2 ? '|' : '') : 'Search: just type';
+        HK.text(g, q, listX + 10, top + R / 2 + 5, { font: K.FB(13), color: wk.search ? T.ink : T.inkMute, box: { x: listX + 6, y: top, w: fw - 12, h: R }, fitId: 'wiki:search' });
+        if (wk.search) K.verb(g, listX + listW - 64, top, 64, R, 'Clear', () => { wk.search = ''; wk.page = 0; });
+        top += R + G + 2;
       } else {
-        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''); const perRow = 9, lw = Math.floor((listW - (perRow - 1) * 3) / perRow), lh = 24;
-        letters.forEach((c, i) => { const on = wk.letter === c; btn(g, listX + (i % perRow) * (lw + 3), top + Math.floor(i / perRow) * (lh + 4), lw, lh, c, () => { wk.letter = on ? '' : c; wk.page = 0; }, on ? '#238636' : '#21262d'); });
-        top += 3 * (lh + 4);
-        btn(g, listX, top, 70, 24, 'Clear', () => { wk.letter = ''; wk.search = ''; wk.page = 0; }, '#21262d', !!(wk.letter || wk.search));
-        g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(`${list.length} ${wk.letter ? 'starting with ' + wk.letter : 'in all'}`, listX + 80, top + 16);
-        top += 30;
+        // the letter index: 44 px letter plates in a grid; when they do not all fit, More turns the page of letters
+        const cell = 44, perRow = Math.max(4, Math.floor((listW + G) / (cell + G))), rowsL = short ? 1 : 2, cells = perRow * rowsL;
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), needMore = letters.length > cells - 2, cap = cells - 2 - (needMore ? 1 : 0);
+        const lpages = Math.ceil(letters.length / cap); wk.letterPage = ((wk.letterPage || 0) % lpages + lpages) % lpages;
+        const at = i => ({ x: listX + (i % perRow) * (cell + G), y: top + Math.floor(i / perRow) * (cell + G) });
+        const c0 = at(0);
+        K.verb(g, c0.x, c0.y, cell * 2 + G, cell, 'Clear', () => { wk.letter = ''; wk.search = ''; wk.page = 0; }, { enabled: !!(wk.letter || wk.search), text: 'All' });
+        letters.slice(wk.letterPage * cap, wk.letterPage * cap + cap).forEach((c, i) => { const p = at(i + 2), on = wk.letter === c; K.verb(g, p.x, p.y, cell, cell, c, () => { wk.letter = on ? '' : c; wk.page = 0; }, { tone: on ? 'primary' : null, cinzel: true, size: 15 }); });
+        if (needMore) { const p = at(cells - 1), st = HK.stateOf('letters:more'); K.verb(g, p.x, p.y, cell, cell, 'letters:more', () => { wk.letterPage = (wk.letterPage + 1) % lpages; }, { text: '', name: 'More letters' }); g.fillStyle = g.strokeStyle = st.hover ? T.goldHi : T.gold; HK.EM.chevronR(g, p.x + cell / 2, p.y + cell / 2 + (st.pressed ? 1.5 : 0), 16); }
+        top += rowsL * (cell + G) + 2;
       }
-      const rowH = 26, pagerY = py + h - 40, rows = Math.max(1, Math.floor((pagerY - 8 - top) / rowH));
-      const pages = Math.max(1, Math.ceil(list.length / rows)); wk.page = clamp(wk.page, 0, pages - 1);
-      const slice = list.slice(wk.page * rows, wk.page * rows + rows);
-      if (!list.length) { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText('Nothing matches.', listX + 4, top + 18); }
+      HK.text(g, `${list.length} ${wk.letter ? 'starting with ' + wk.letter : wk.search ? 'found' : 'in all'}`, listX, top + 12, { font: K.FB(12), color: T.inkMute, box: { x: listX, y: top, w: listW, h: 16 }, fitId: 'wiki:count' });
+      top += 20;
+      const rowH = touch ? 44 : 28, pitch = rowH + G, lcols = listW >= 560 ? 2 : 1, colW = (listW - (lcols - 1) * 12) / lcols;
+      const rows = Math.max(1, Math.floor((pagerY - 8 - top + G) / pitch)), per = rows * lcols;
+      const pages = Math.max(1, Math.ceil(list.length / per)); wk.page = clamp(wk.page, 0, pages - 1);
+      const slice = list.slice(wk.page * per, wk.page * per + per);
+      if (!list.length) K.para(g, 'Nothing matches.', listX + 4, top + 16, listW, { size: 13, color: T.inkDim });
       slice.forEach((id, i) => {
-        const e = d[wk.section][id], y = top + i * rowH, on = id === wk.id;
-        roundRect(g, listX, y, listW, rowH - 3, 6); g.fillStyle = on ? 'rgba(88,166,255,0.2)' : 'rgba(255,255,255,0.05)'; g.fill();
-        let tx = listX + 8;
-        if (wk.section === 'items') { drawItemIcon(g, id, listX + 14, y + rowH / 2 - 2, 14); tx = listX + 28; }
-        g.fillStyle = on ? '#e6edf3' : '#c9d1d9'; g.font = on ? 'bold 12px sans-serif' : '12px sans-serif'; g.textAlign = 'left';
-        let label = e.name; const extra = wk.section === 'monsters' ? `  lv ${e.level}` : wk.section === 'recipes' ? `  lv ${e.lv}` : '';
-        const maxW = listW - (tx - listX) - 8 - (extra ? g.measureText(extra).width : 0);
-        while (label.length > 6 && g.measureText(label).width > maxW) label = label.slice(0, -2) + '…';
-        g.fillText(label, tx, y + 16);
-        if (extra) { g.fillStyle = '#6e7681'; g.textAlign = 'right'; g.fillText(extra.trim(), listX + listW - 6, y + 16); }
-        buttons.push({ x: listX, y, w: listW, h: rowH - 3, label: `wiki:${wk.section}:${id}`, action: () => { open(wk.section, id); } });
+        const e = d[wk.section][id], x = listX + Math.floor(i / rows) * (colW + 12), y = top + (i % rows) * pitch, on = id === wk.id, label = `wiki:${wk.section}:${id}`;
+        const st = HK.stateOf(label), dy = st.pressed ? 1.5 : 0;
+        HK.vellumPlate(g, x, y + dy, colW, rowH, on || st.hover ? { edge: 'rgba(247,220,143,0.95)' } : {});
+        let tx = x + 10;
+        if (wk.section === 'items') { try { drawItemIcon(g, id, x + 16, y + rowH / 2 + dy, 16); } catch (err) { } tx = x + 32; }
+        const extra = wk.section === 'monsters' ? `Lv ${e.level}` : wk.section === 'recipes' ? `Lv ${e.lv}` : '';
+        const xw = extra ? HK.tw(g, extra, K.FN(11.5)) + 6 : 0;
+        if (extra) K.name(g, extra, x + colW - 8, y + rowH / 2 + 5 + dy, xw, { size: 11.5, align: 'right', color: T.inkDim });
+        const room = colW - (tx - x) - 10 - xw;
+        let fs = 13; while (fs > 11 && HK.tw(g, e.name, K.FB(fs, on ? 700 : 600)) > room) fs -= 0.5;
+        const f = K.FB(fs, on ? 700 : 600), nm = HK.tw(g, e.name, f) > room ? (HK.wrap(g, e.name, room, 1, f).lines[0] || e.name) : e.name;
+        HK.text(g, nm, tx, y + rowH / 2 + 5 + dy, { font: f, color: on ? T.goldHi : T.ink, box: { x: tx, y, w: room, h: rowH }, fitId: 'wiki:row' });
+        buttons.push({ x, y, w: colW, h: rowH, label, action: () => { open(wk.section, id); }, up: true });
       });
       if (pages > 1) pager(g, listX, pagerY, listW, wk.page, pages, p => { wk.page = clamp(p, 0, pages - 1); });
-      else { g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(`${list.length} page${list.length === 1 ? '' : 's'}`, listX, pagerY + 19); }
     }
     if (showDetail) {
-      let dy = narrow ? ty + 34 : top - (touch ? 0 : 0);
-      if (narrow) { btn(g, detX, dy, 70, 26, 'Back', () => { wk.view = 'list'; wk.id = null; }, '#21262d'); dy += 32; }
-      else if (wk.history.length) { btn(g, detX + detW - 70, ty + 34, 70, 26, 'Back', () => { const p = wk.history.pop(); if (p) open(p.s, p.id, false); }, '#21262d'); }
+      let dy = top0;
+      const backW = touch ? 96 : 80;
+      let titleX = detX, titleW = detW;
+      if (single) { K.verb(g, detX, dy, backW, R, 'Back', () => { wk.view = 'list'; wk.id = null; }, { emblem: 'chevronL' }); titleX = detX + backW + 12; titleW = detW - backW - 12; }
+      else if (wk.history.length) { K.verb(g, detX + detW - backW, dy, backW, R, 'Back', () => { const p = wk.history.pop(); if (p) open(p.s, p.id, false); }, { emblem: 'chevronL' }); titleW = detW - backW - 12; }
       if (!wk.id || !d[wk.section][wk.id]) {
-        g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left';
         const intro = { monsters: 'Pick a monster to see how tough it is, where it lives and exactly what it drops.', items: 'Pick an item to see what it does and every way to get one.', recipes: 'Every recipe, by station: what you need, what you get, and the level for it.', skills: 'What each skill unlocks at every level, and how much xp a level takes.', places: 'Every region and dungeon: who lives there, who trades there, what you can use there.', quests: 'Every quest, who gives it and what it pays.' }[wk.section];
-        wrapText(g, intro, detX, dy + 30, detW, 18);
+        K.para(g, intro, detX, dy + (single ? R + 26 : 20), detW, { size: 13, color: T.inkDim });
         return;
       }
       const e = d[wk.section][wk.id];
-      g.fillStyle = '#e6edf3'; g.font = `700 16px ${DISPLAY}`; g.textAlign = 'left';
-      let title = e.name; while (title.length > 6 && g.measureText(title).width > detW - (wk.section === 'items' ? 30 : 0) - (narrow ? 0 : 76)) title = title.slice(0, -2) + '…';
-      if (wk.section === 'items') { drawItemIcon(g, wk.id, detX + 12, dy + 12, 22); g.fillText(title, detX + 30, dy + 19); } else g.fillText(title, detX, dy + 19);
-      dy += 30;
-      // a portrait, so you know what you are reading about by the look of it: the real sprite the game draws,
-      // in a framed box at the top of the page. Monsters use drawCharacter (which dispatches to HOOKS.drawMonster
-      // for feature creatures); items use their own icon; everything else gets no box rather than a blank one.
-      dy = drawPortrait(g, detX, dy, detW, narrow);
-      // lay the page out as wrapped rows, then show one screen of them
-      g.font = '12px sans-serif';
-      const rows = [];
-      for (const l of pageLines(wk.section, wk.id)) { const indent = l.icon ? 22 : 0; const ls = wrapLines(g, l.t, detW - indent - 4); ls.forEach((t, i) => rows.push({ t, c: l.c, f: l.f, link: l.link, icon: i === 0 ? l.icon : null, head: l.head, first: i === 0, indent })); }
-      const lh = 18, pagerY = py + h - 40, per = Math.max(3, Math.floor((pagerY - 6 - dy) / lh)), pages = Math.max(1, Math.ceil(rows.length / per));
-      wk.detailPage = clamp(wk.detailPage, 0, pages - 1);
-      const shown = rows.slice(wk.detailPage * per, wk.detailPage * per + per);
-      shown.forEach((r, i) => {
-        const y = dy + i * lh + (r.head ? 4 : 0);
-        if (r.link) { roundRect(g, detX - 4, y - 2, detW + 4, lh - 1, 5); g.fillStyle = 'rgba(126,200,255,0.08)'; g.fill(); }
-        if (r.icon) drawItemIcon(g, r.icon, detX + 9, y + 7, 14);
-        g.fillStyle = r.c || '#c9d1d9'; g.font = r.f || (r.link ? 'bold 12px sans-serif' : '12px sans-serif'); g.textAlign = 'left'; g.fillText(r.t, detX + r.indent, y + 12);
-        if (r.link && r.first) buttons.push({ x: detX - 4, y: y - 2, w: detW + 4, h: lh - 1, label: `wikilink:${r.link.s}:${r.link.id}`, action: () => open(r.link.s, r.link.id) });
-      });
-      if (pages > 1) { btn(g, detX, pagerY, 60, 30, 'Up', () => { wk.detailPage = Math.max(0, wk.detailPage - 1); }, '#21262d', wk.detailPage > 0); g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(`${wk.detailPage + 1} / ${pages}`, detX + detW / 2, pagerY + 19); btn(g, detX + detW - 60, pagerY, 60, 30, 'Down', () => { wk.detailPage = Math.min(pages - 1, wk.detailPage + 1); }, '#21262d', wk.detailPage < pages - 1); }
+      // the title, with a small picture beside it on a short screen, or the framed portrait under it
+      const mini = short && PORTRAIT_SECTIONS.has(wk.section);
+      if (mini) { drawPortrait(g, titleX, dy, titleW, R); titleX += R + 10; titleW -= R + 10; }
+      else if (wk.section === 'items') { try { drawItemIcon(g, wk.id, titleX + 12, dy + R / 2, 22); } catch (err) { } titleX += 28; titleW -= 28; }
+      K.name(g, e.name, titleX, dy + R / 2 + 6, titleW, { size: 17, min: 11, color: T.goldHi });
+      dy += R + 8;
+      if (!mini) dy = drawPortrait(g, detX, dy, detW, single ? 56 : 64);
+      // lay the page out as blocks, then show one screen of them
+      const blocks = pageBlocks(g, wk.section, wk.id, detW, touch), avail = pagerY - 8 - dy;
+      const pgs = [[]]; let acc = 0;
+      for (const b of blocks) { const bh = b.h + (b.gap || 0); if (acc + bh > avail && pgs[pgs.length - 1].length) { pgs.push([]); acc = 0; } pgs[pgs.length - 1].push(b); acc += bh; }
+      wk.detailPage = clamp(wk.detailPage, 0, pgs.length - 1);
+      const lh = K.lineH(12.5);
+      let y = dy;
+      for (const b of pgs[wk.detailPage]) {
+        if (b.kind === 'head') K.head(g, detX, y + 18, detW, b.t, { size: 12 });
+        if (b.kind === 'text') HK.text(g, b.t, detX, y + lh - 4, { font: K.FB(12.5), color: colour(b.c), box: { x: detX, y, w: detW, h: lh }, fitId: 'wiki:text' });
+        if (b.kind === 'link') {
+          const label = `wikilink:${b.link.s}:${b.link.id}`, st = HK.stateOf(label), dd = st.pressed ? 1.5 : 0;
+          HK.vellumPlate(g, detX, y + dd, detW, b.h, { edge: st.hover ? 'rgba(247,220,143,0.95)' : 'rgba(217,178,92,0.8)' });
+          let tx = detX + 10;
+          if (b.icon) { try { drawItemIcon(g, b.icon, detX + 17, y + b.h / 2 + dd, 15); } catch (err) { } tx = detX + 32; }
+          const room = detW - (tx - detX) - 24, top = y + b.h / 2 - (b.lines.length * lh) / 2 + lh - 4 + dd;
+          b.lines.forEach((ln, i) => HK.text(g, ln, tx, top + i * lh, { font: K.FB(12.5, 700), color: b.c === '#8fa2b8' ? T.inkMute : (st.hover ? T.goldHi : T.ink), box: { x: tx, y, w: room, h: b.h }, fitId: 'wiki:link' }));
+          g.fillStyle = g.strokeStyle = T.gold; HK.EM.chevronR(g, detX + detW - 12, y + b.h / 2 + dd, 11);
+          buttons.push({ x: detX, y, w: detW, h: b.h, label, action: () => open(b.link.s, b.link.id), up: true });
+        }
+        y += b.h + (b.gap || 0);
+      }
+      // links on the other pages stay reachable by label for the harness (F.clickButton), off-screen so no tap can reach them
+      pgs.forEach((pg, i) => { if (i !== wk.detailPage) for (const b of pg) if (b.kind === 'link') buttons.push({ x: -1e9, y: -1e9, w: 0, h: 0, label: `wikilink:${b.link.s}:${b.link.id}`, action: () => open(b.link.s, b.link.id), offscreen: true }); });
+      if (pgs.length > 1) {
+        const bw = touch ? 96 : 80, np = pgs.length;
+        K.verb(g, detX, pagerY, bw, R, 'Up', () => { wk.detailPage = Math.max(0, wk.detailPage - 1); }, { enabled: wk.detailPage > 0 });
+        HK.text(g, `${wk.detailPage + 1} / ${np}`, detX + detW / 2, pagerY + R / 2 + 5, { font: K.FN(13), align: 'center', color: T.inkDim });
+        K.verb(g, detX + detW - bw, pagerY, bw, R, 'Down', () => { wk.detailPage = Math.min(np - 1, wk.detailPage + 1); }, { enabled: wk.detailPage < np - 1 });
+      }
     }
   };
 
@@ -502,7 +550,7 @@
   update.__inner = _update;
   HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] }); // 43-settings walks this chain to read the real key handlers
 
-  // ---------- buttons: WIKI in the control rail, Wiki under an item in the pack ----------
+  // ---------- the WIKI tile in the Knight's Book ----------
   // MIGRATED to the HUD kit (src/59-hudkit.js). The book used to be a button bolted on wherever there was
   // room — three different hardcoded spots for desktop, tablet and phone, each of them a near-miss with the
   // quest box or the minimap, and none of them matching anything else on screen. It is now one entry in the
@@ -514,25 +562,7 @@
     on: () => panel === 'wiki',
     action: () => panel === 'wiki' ? closePanel() : open(wk.section, wk.id, false),
   });
-  HOOKS.hud.push((g, narrow) => {
-    if (typeof title !== 'undefined' && title && title.active) return;
-    if (paused) return;
-    // the pack panel is drawn after this hook, so the Wiki button for the selected item is registered on the next frame's pass — it is drawn here from the
-    // same numbers the core uses (panelBox size, grid, Equip/Drop row), sitting one row under the Equip / Drop buttons.
-    if (panel === 'inventory' && selectedSlot >= 0 && player.inv[selectedSlot]) {
-      const cols = narrow ? 5 : 10, size = narrow ? 44 : 46, gap = 6, eqw = 70;
-      const rowH = HK.row(), grow = (rowH - 30) * 2;   // the core grew the pack panel by the same amount
-      const pw = Math.min(cols * (size + gap) + 30 + eqw, VW - 20), ph = Math.min((narrow ? 440 : 300) + grow, VH - 20);
-      const px = Math.round(VW / 2 - pw / 2), py = Math.round(Math.max(10, VH / 2 - ph / 2 - 20));
-      const gy = py + 66 + Math.ceil(INV_SLOTS / cols) * (size + gap);
-      const id = player.inv[selectedSlot].id;
-      wikiInvButton = { x: px + 18 + eqw, y: gy + 58 + rowH + 6, w: 90, h: rowH, id };
-    } else wikiInvButton = null;
-  });
-  let wikiInvButton = null;
-  // drawn after the pack panel (a panel hook cannot run for a core panel, so the button is painted by a wrapped render: see below)
-  const _render = typeof render === 'function' ? render : null;
-  if (_render) render = function () { const r = _render.apply(this, arguments); if (panel === 'inventory' && wikiInvButton && !paused) { const b = wikiInvButton; button(ctx, b.x, b.y, b.w, b.h, 'Wiki', () => open('items', b.id), '#21262d'); } return r; }; // neutral: reading a page is not an action with a colour
+  // The Wiki plate under a chosen pack item is drawn by the pack itself (src/10-hud.js), in its one row of verbs.
 
   window.WIKI = {
     sections: SECTIONS, state: wk,
