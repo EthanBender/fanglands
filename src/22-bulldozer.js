@@ -171,25 +171,21 @@ HOOKS.update.push(dt => {
   }
 });
 // ---------- HUD ----------
-// MIGRATED to the HUD kit (src/59-hudkit.js). This used to be the worst pair of shapes on the screen: an
-// orange-outlined pill reading "Bulldozer 109/110" and, right beside it, a blue-outlined pill reading
-// "drill" — two unrelated colours for two things that are not opposites, both floating at hardcoded x=186.
-// Now: the machine's hp is a health meter inside the status plate (the machine IS your health while you are
-// in it, so it reads on the same green/amber/red ramp), and the fitted parts are a plain neutral chip,
-// because a fitted drill is a fact, not a warning.
-hudMechName(() => player.mech && player.mech.kind === 'dozer' ? 'Bulldozer' : null); // names the second meter in the status plate
-HOOKS.hud.push(g => {
+// The machine's hp is the crest's big number while you drive (hudMechName names it). The fitted upgrades are not on
+// the live HUD: the pack lists them beside WORN (src/10-hud.js), and the crest's tooltip and long-press name say them.
+hudMechName(() => player.mech && player.mech.kind === 'dozer' ? 'Bulldozer' : null);
+// the upgrades on the bulldozer you drive, in plain words: ['Iron drill', 'Ram', 'Boiler']
+function dozerFitted() { const up = dozerUp(); return [up.drill && (up.irondrill ? 'Iron drill' : 'Drill'), up.ram && 'Ram', up.boiler && 'Boiler'].filter(Boolean); }
+HOOKS.hud.push(() => {
   if (!player.mech || player.mech.kind !== 'dozer') return;
-  const up = dozerUp(), parts = [up.drill && (up.irondrill ? 'Iron drill' : 'Drill'), up.ram && 'Ram', up.boiler && 'Boiler'].filter(Boolean);
-  if (!parts.length) return;
-  const pad = 8, s = HK.slot(HK.chipH());
-  HK.plate(g, s.x, s.y, s.w, s.h);
-  g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.textAlign = 'left'; g.textBaseline = 'middle';
-  g.fillText('FITTED', s.x + pad + 4, s.y + s.h / 2);
-  const lw = Math.ceil(g.measureText('FITTED').width) + 10;
-  g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK;
-  g.fillText(parts.join(' · '), s.x + pad + 4 + lw, s.y + s.h / 2);
-  g.textBaseline = 'alphabetic';
+  const parts = dozerFitted(); if (!parts.length) return;
+  const b = buttons.find(q => q.label === 'crest'); if (!b) return;
+  const list = 'Fitted: ' + parts.join(', ');
+  b.sub = list;
+  // the long-press tag is one line: keep it on the screen (drop "Your skills" first)
+  const full = `${b.name || 'Your skills'} · ${list}`;
+  let wide = 0; try { wide = HK.tw(ctx, full, HK.FS(700, 13)); } catch (e) { wide = full.length * 8; }
+  b.name = wide + 40 <= VW - 12 ? full : `Bulldozer · ${list}`;
 });
 
 // ---------- art ----------
@@ -356,5 +352,20 @@ HOOKS.selfTest.push((check, F, h) => {
     check('bulldozer: X climbs down → a DOZER tile (no walker tile), mech cleared', !player.mech && !!parked && !walkerNear && player.r === 13 && player.speed === 175 && !!notice && /bulldozer/.test(notice.text), { parked: parked && [parked.tx, parked.ty], walkerNear, r: player.r, notice: notice && notice.text });
     player.dozerUp = upSaved;
   }
+  // FITTED is off the live HUD: the crest's tooltip and long-press name list the upgrades while you drive
+  { const m0 = player.mech, u0 = player.dozerUp, own = kk => Object.getOwnPropertyDescriptor(window, kk), sz0 = { w: own('innerWidth'), h: own('innerHeight') }, t0 = window.__forceTouch;
+    player.dozerUp = { drill: true, irondrill: true, ram: true }; player.mech = { kind: 'dozer', hp: 74, maxHp: 110 };
+    const got = {};
+    for (const [w, hh, touch] of [[375, 667, true], [1280, 800, false]]) {
+      window.innerWidth = w; window.innerHeight = hh; window.__forceTouch = touch; closePanel(); render();
+      const c = buttons.find(b => b.label === 'crest');
+      got[w] = { sub: c && c.sub, name: c && c.name, fits: !!c && HK.tw(ctx, c.name, HK.FS(700, 13)) + 40 <= VW - 12 };
+    }
+    player.mech = null; render(); const plain = buttons.find(b => b.label === 'crest');
+    const off = !!plain && !plain.sub;
+    player.mech = m0; player.dozerUp = u0;
+    if (sz0.w) { Object.defineProperty(window, 'innerWidth', sz0.w); Object.defineProperty(window, 'innerHeight', sz0.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } } window.__forceTouch = t0; render();
+    const ok = Object.values(got).every(v => v.sub === 'Fitted: Iron drill, Ram' && /Fitted: Iron drill, Ram$/.test(v.name || '') && v.fits);
+    check('bulldozer: the fitted upgrades are in the crest\'s tooltip and long-press name (not a chip on the HUD), and only while driving', ok && off, { got, off }); }
   h.peace(false);
 });

@@ -2335,10 +2335,23 @@ function drawMinimap(g, x, y, size) {
 // an iron-ringed minimap, a leather belt with five pouches and the BAG satchel, iron studs for the four touch seats,
 // wax seals for HOME / FRIENDS / MENU — every piece in a place HK.layout() reserved for it, so nothing jumps.
 // Panels wear the kit's frame: panelBox() is the book's cover and vellum page, button() is an iron plate button.
+//
+// THE PANEL CONTRACT (every core panel below, and the ones other files draw):
+//   frame     panelBox(g, w, h, title, sub) -> { px, py, w, h }; content starts at py + 62; it sits inside the safe
+//             insets (notch, Dynamic Island, home bar) and on screen, and closes with the umber '×' seal.
+//   words     HK.text with a box. Sentences in the system sans (HK.FS(600, 13-14), grows with Text size); names,
+//             headers and numbers in Cinzel (HK.FC(800, 11-13)); section headers are gold Cinzel capitals.
+//             Colours come only from HK.T. Long text wraps at whole words (HK.wrap); nothing is cut inside a word.
+//   rows      a vellum plate (HK.vellumPlate) or a gold hairline between them.
+//   items     drawSlot pouches, 44 px or more on touch.
+//   verbs     button() at HK.row() (44 on touch, 32 with a mouse); green means the primary choice, red means danger.
+//   tabs      plate buttons, the chosen one primary (gold edge), like the book's Kit / Keys bookmarks.
+//   lists     long lists page with pager() instead of shrinking.
 // ============================================================================
 // A pack / bank / shop slot: a small leather pouch with the item in its mouth. Selected = a gold stitched edge.
-function drawSlot(g, x, y, size, slot, selected) {
-  HK.pouch(g, { x, y: y - Math.round(size * 0.04), w: size, h: Math.round(size * 1.04) }, slot ? { id: slot.id, qty: slot.qty } : null, '', { selected });
+// st (optional) = the pouch's press state from HK.stateOf(label).
+function drawSlot(g, x, y, size, slot, selected, st) {
+  HK.pouch(g, { x, y: y - Math.round(size * 0.04), w: size, h: Math.round(size * 1.04) }, slot ? { id: slot.id, qty: slot.qty } : null, '', { selected, pressed: !!(st && st.pressed), hover: !!(st && st.hover), ripple: st ? st.ripple : null });
 }
 // One pressable for every panel verb: an iron plate button. The legacy colour argument is read as a MEANING
 // (green = the primary choice, gold edge; red = danger, red edge; amber = wait) and everything else is neutral.
@@ -2352,48 +2365,174 @@ function button(g, x, y, w, h, label, action, color = '#238636', enabled = true)
   HK.plateButton(g, { x, y, w, h }, em, label, tone, { pressed: !!st.pressed, hover: !!st.hover, disabled: !enabled, key, cinzel: !!em });
   buttons.push(enabled ? { x, y, w, h, label, action, up: true } : { x, y, w, h, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true });
 }
+
+// ---------- the panel toolkit: the pieces every core panel (and the Wiki book) is built from ----------
+const PANEL_KIT = (() => {
+  // the room a panel may use: inside the notch / Dynamic Island / home-indicator insets, with a small margin
+  function room() {
+    const t = touchMode(), fam = HK.family(VW, VH, t), S = HK.insets(VW, VH, fam, t), m = t ? 6 : 10;
+    return { t, fam, S, m, aw: VW - S.l - S.r - 2 * m, ah: VH - S.t - S.b - 2 * m, R: HK.row(), G: t ? 8 : 6 };
+  }
+  // pages per panel (and per tab), reset whenever a panel opens
+  const pages = {};
+  const page = (k, v) => { if (v !== undefined) pages[k] = v; return pages[k] || 0; };
+  const resetPages = () => { for (const k in pages) delete pages[k]; };
+  const k = () => (HK.k ? HK.k() : 1);
+  const lineH = size => Math.round(size * k() * 1.32);
+  const FB = (s, w) => HK.FS(w || 600, s || 13);
+  const FN = (s, w) => HK.FC(w || 800, s || 13);
+  // a gold hairline (rows, dividers)
+  function hair(g, x, y, w, a) {
+    g.beginPath(); g.moveTo(Math.round(x), Math.round(y) + 0.5); g.lineTo(Math.round(x + w), Math.round(y) + 0.5);
+    g.strokeStyle = `rgba(217,178,92,${a == null ? 0.35 : a})`; g.lineWidth = 1; g.stroke();
+  }
+  // a section header: gold Cinzel capitals, then a hairline to the end of the room. y is the baseline.
+  function head(g, x, y, w, label, o = {}) {
+    let s = o.size || 11.5; while (s > 9 && HK.tw(g, label, FN(s)) > w) s -= 0.5;
+    const tw = HK.text(g, label, x, y, { font: FN(s), color: o.color || HK.T.gold, shadow: 'rgba(0,0,0,0.8)', box: { x, y: y - 12, w, h: 16 }, fitId: 'panel:head' });
+    if (o.rule !== false && tw + 18 < w) hair(g, x + tw + 10, y - 4, w - tw - 10);
+    return tw;
+  }
+  // sentence text wrapped at whole words. Returns { h, lines, more }. It shrinks a step (to o.min) before it gives up
+  // lines, and when the lines still run out the last one ends at a word.
+  function para(g, s, x, y, w, o = {}) {
+    const wt = o.weight || 600, max = o.lines || 99;
+    let size = o.size || 13, f = FB(size, wt), ww = HK.wrap(g, s, w, max, f);
+    while (ww.more && size > (o.min || 11.5)) { size -= 0.5; f = FB(size, wt); ww = HK.wrap(g, s, w, max, f); }
+    const lh = o.lh || lineH(size);
+    if (!o.measure) ww.lines.forEach((ln, i) => HK.text(g, ln, x, y + i * lh, { font: f, color: o.color || HK.T.ink, align: o.align, box: { x: o.align === 'center' ? x - w / 2 : x, y: y + i * lh - lh + 3, w, h: lh }, fitId: o.fitId || 'panel:text' }));
+    return { h: ww.lines.length * lh, lines: ww.lines, more: ww.more, lh };
+  }
+  // one line of Cinzel that shrinks to fit (names, numbers); returns the width drawn
+  function name(g, s, x, y, w, o = {}) {
+    let size = o.size || 13; while (size > (o.min || 9.5) && HK.tw(g, s, FN(size)) > w) size -= 0.5;
+    let shown = String(s);
+    if (HK.tw(g, shown, FN(size)) > w) shown = HK.wrap(g, shown, w, 1, FN(size)).lines[0] || shown;
+    return HK.text(g, shown, x, y, { font: FN(size), align: o.align, color: o.color || HK.T.ink, shadow: 'rgba(0,0,0,0.8)', box: { x: o.align === 'right' ? x - w : o.align === 'center' ? x - w / 2 : x, y: y - size, w, h: size + 4 }, fitId: o.fitId || 'panel:name' });
+  }
+  // the width a plate button needs for its word (with its emblem roundel when it has one)
+  function verbW(g, text, emblem, h, cinzel) {
+    const size = cinzel ? Math.min(15, Math.round(h * 0.36)) : Math.min(14, Math.max(11, Math.round(h * 0.34)));
+    const w0 = HK.tw(g, text, cinzel ? HK.FC(800, size) : HK.FS(700, size));
+    return Math.ceil(emblem && h >= 30 ? w0 + (h - 10) + 32 : w0 + 28);
+  }
+  // a plate button with an emblem: the same buttons[] entry button() pushes (pointer-up, 'disabled:' when greyed)
+  function verb(g, x, y, w, h, label, action, o = {}) {
+    const on = o.enabled !== false, st = on ? HK.stateOf(label) : {};
+    x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
+    HK.plateButton(g, { x, y, w, h }, o.emblem || null, o.text != null ? o.text : label, o.tone || null, { pressed: !!st.pressed, hover: !!st.hover, disabled: !on, on: !!o.on, key: o.key || null, cinzel: !!o.cinzel, size: o.size });
+    const b = on ? { x, y, w, h, label, action, up: true } : { x, y, w, h, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true };
+    if (o.name) { b.name = o.name; b.keys = o.keys || []; }
+    buttons.push(b);
+    return b;
+  }
+  // a plate-button body with nothing written on it yet (the caller draws an icon and its own words on top)
+  function plate(g, x, y, w, h, label, action, o = {}) {
+    const on = o.enabled !== false, st = on ? HK.stateOf(label) : {};
+    HK.plateButton(g, { x, y, w, h }, null, '', o.tone || null, { pressed: !!st.pressed, hover: !!st.hover, disabled: !on });
+    buttons.push(on ? { x, y, w, h, label, action, up: true } : { x, y, w, h, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true });
+    return { pressed: !!st.pressed, hover: !!st.hover, dy: st.pressed ? 1.5 : 0 };
+  }
+  // TABS: plate buttons in a row (two rows when they do not fit), the chosen one primary. list = [{ label, text }].
+  // Returns the height used.
+  function tabs(g, x, y, w, list, sel, pick, o = {}) {
+    const { R, G, t } = room(), min = t ? 56 : 60;
+    const nat = list.map(it => Math.max(min, verbW(g, it.text || it.label, null, R)));
+    const one = nat.reduce((a, b) => a + b, 0) + G * (list.length - 1) <= w;
+    const rows = one ? [list.map((_, i) => i)] : (() => { const half = Math.ceil(list.length / (o.rows3 ? 3 : 2)); const out = []; for (let i = 0; i < list.length; i += half) out.push(list.slice(i, i + half).map((_, j) => i + j)); return out; })();
+    let yy = y;
+    for (const r of rows) {
+      let xx = x; const eq = one ? null : Math.floor((w - G * (r.length - 1)) / r.length);
+      for (const i of r) {
+        const it = list[i], bw = eq || nat[i], on = it.label === sel;
+        verb(g, xx, yy, bw, R, it.label, () => pick(it.label), { text: it.text, tone: on ? 'primary' : null });
+        xx += bw + G;
+      }
+      yy += R + G;
+    }
+    return yy - y - G;
+  }
+  // an iron roundel with an emblem (help rows, the pack's FITTED line)
+  function roundel(g, cx, cy, r, em, col) {
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fillStyle = '#111317'; g.fill();
+    g.beginPath(); g.arc(cx, cy, r - 1, 0, Math.PI * 2); g.strokeStyle = 'rgba(217,178,92,0.7)'; g.lineWidth = 1.5; g.stroke();
+    HK.emblem(g, em, cx, cy, r * 1.15, col || HK.T.ink, { hole: '#111317' });
+  }
+  // marks the kit does not draw (yet): a flame for 'Light fire'. Added to HK.EM on first use so plateButton can use it.
+  function marks() {
+    if (HK.EM.flame) return;
+    HK.EM.flame = (c, cx, cy, s) => {
+      c.save(); c.translate(cx, cy); c.beginPath();
+      c.moveTo(0, -s * 0.5); c.bezierCurveTo(s * 0.34, -s * 0.18, s * 0.4, s * 0.08, s * 0.3, s * 0.3);
+      c.quadraticCurveTo(s * 0.18, s * 0.5, 0, s * 0.5); c.quadraticCurveTo(-s * 0.18, s * 0.5, -s * 0.3, s * 0.3);
+      c.bezierCurveTo(-s * 0.4, s * 0.06, -s * 0.22, -s * 0.06, -s * 0.12, -s * 0.24); c.quadraticCurveTo(-s * 0.04, -s * 0.02, s * 0.02, -s * 0.06);
+      c.quadraticCurveTo(s * 0.08, -s * 0.28, 0, -s * 0.5); c.closePath(); c.fill(); c.restore();
+    };
+  }
+  return { room, page, resetPages, lineH, FB, FN, hair, head, para, name, verbW, verb, plate, tabs, roundel, marks };
+})();
+// every panel opens on its first page
+{ const _openPanel = openPanel; openPanel = function (name, arg) { PANEL_KIT.resetPages(); return _openPanel(name, arg); }; }
+
 // The panel frame: the book's brown leather cover with brass corners, a vellum page inside, the title in Cinzel,
 // the subtitle in the system sans, and an umber wax seal that closes it (labelled '×', the size of a kit row).
-// The geometry contract is unchanged ({ px, py, w, h }, and panelRect), so every panel's contents stay where they were.
+// The frame stays inside the safe insets (the notch, the Dynamic Island, the home bar) and on screen. The subtitle
+// never runs under the seal and is never cut inside a word: it shrinks, then wraps to a second line in the header.
+// The geometry contract is unchanged ({ px, py, w, h }, panelRect, contents from py + 62).
 function panelBox(g, w, h, title, subtitle) {
-  w = Math.min(w, VW - 20); h = Math.min(h, VH - 20);
-  const px = Math.round(VW / 2 - w / 2), py = Math.round(Math.max(10, VH / 2 - h / 2 - 20));
+  const Rm = PANEL_KIT.room(), S = Rm.S;
+  w = Math.round(Math.min(w, Rm.aw)); h = Math.round(Math.min(h, Rm.ah));
+  const px = Math.round(S.l + Rm.m + (Rm.aw - w) / 2);
+  const py = Math.round(clamp(VH / 2 - h / 2 - 20, S.t + Rm.m, VH - S.b - Rm.m - h));
   HK.bookCover(g, px, py, w, h, { flat: true });
   HK.bookPage(g, px + 6, py + 6, w - 12, h - 12);
-  const cb = HK.row(), cx = px + w - cb - 12;
-  const room = cx - 10 - (px + 18);
+  const cb = HK.row(), cx = px + w - cb - 12, sealBottom = py + 10 + cb;
+  const room = cx - 12 - (px + 18);
   let ts = 18; while (ts > 12 && HK.tw(g, title, HK.FC(800, ts)) > room) ts -= 0.5;
-  HK.text(g, title, px + 18, py + 30, { font: HK.FC(800, ts), color: HK.T.goldHi, shadow: 'rgba(0,0,0,0.9)' });
+  let subLines = null, sf = null;
   if (subtitle) {
-    let sf = HK.FS(600, 12); const sw = HK.tw(g, subtitle, sf), full = w - 36;
-    const lim = sw > room ? full : room;
-    if (HK.tw(g, subtitle, sf) > lim) { let s = 12; while (s > 9.5 && HK.tw(g, subtitle, HK.FS(600, s)) > lim) s -= 0.5; sf = HK.FS(600, s); }
-    HK.text(g, subtitle, px + 18, py + 50, { font: sf, color: HK.T.inkDim });
+    let s = 12; sf = HK.FS(600, s);
+    while (s > 10.5 && HK.tw(g, subtitle, sf) > room) { s -= 0.5; sf = HK.FS(600, s); }
+    if (HK.tw(g, subtitle, sf) <= room) subLines = [[String(subtitle), room]];
+    else {
+      // two lines in the header: the first beside the seal; the second beside it too, or the full width when the
+      // seal ends above it (a mouse's smaller seal)
+      sf = HK.FS(600, 11);
+      const room2 = sealBottom + 2 < py + 48 ? w - 36 : room;
+      const words = String(subtitle).split(/\s+/).filter(Boolean), l1 = [], l2 = [];
+      for (const wd of words) { if (!l2.length && HK.tw(g, l1.concat(wd).join(' '), sf) <= room) l1.push(wd); else l2.push(wd); }
+      while (l2.length && HK.tw(g, l2.join(' '), sf) > room2) l2.pop();
+      subLines = [[l1.join(' '), room], [l2.join(' '), room2]];
+    }
   }
+  const two = subLines && subLines.length > 1;
+  HK.text(g, title, px + 18, py + (two ? 28 : 30), { font: HK.FC(800, ts), color: HK.T.goldHi, shadow: 'rgba(0,0,0,0.9)', box: { x: px + 18, y: py + 10, w: room, h: 24 }, fitId: 'panel:title' });
+  if (subLines) subLines.forEach(([s, rw], i) => { if (s) HK.text(g, s, px + 18, py + (two ? 44 + i * 14 : 50), { font: sf, color: HK.T.inkDim, box: { x: px + 18, y: py + 36 + i * 14, w: rw, h: 16 }, fitId: 'panel:sub' }); });
   const st = HK.stateOf('×');
   HK.seal(g, cx + cb / 2, py + 10 + cb / 2, cb / 2, 'close', 'umber', { pressed: st.pressed, hover: st.hover, ripple: st.ripple, seed: 61, scale: 0.62 });
   buttons.push({ x: cx, y: py + 10, w: cb, h: cb, r: cb / 2, cx: cx + cb / 2, cy: py + 10 + cb / 2, label: '×', action: closePanel, up: true, name: 'Close', keys: ['Esc'] });
   panelRect = { x: px, y: py, w, h };
   return { px, py, w, h };
 }
-// Prev / Next: two plate buttons with drawn chevrons, and the page count between them. Returns the page shown (clamped).
+// Prev / Next: two plate buttons a kit row tall (44 on touch, 32 with a mouse) with drawn chevrons, and the page
+// count between them. Returns the page shown (clamped).
 function pager(g, x, y, w, page, pages, setPage) {
-  const p = clamp(page, 0, Math.max(0, pages - 1));
+  const p = clamp(page, 0, Math.max(0, pages - 1)), R = HK.row(), bw = touchMode() ? 96 : 84;
   const one = (bx, label, em, on, fn) => {
     const st = on ? HK.stateOf(label) : {};
-    HK.plateButton(g, { x: bx, y, w: 80, h: 30 }, null, label, null, { pressed: !!st.pressed, hover: !!st.hover, disabled: !on });
-    g.fillStyle = g.strokeStyle = on ? HK.T.goldHi : HK.T.inkMute; HK.EM[em](g, label === 'Prev' ? bx + 13 : bx + 67, y + 15, 12);
-    buttons.push(on ? { x: bx, y, w: 80, h: 30, label, action: fn, up: true } : { x: bx, y, w: 80, h: 30, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true });
+    HK.plateButton(g, { x: bx, y, w: bw, h: R }, null, label, null, { pressed: !!st.pressed, hover: !!st.hover, disabled: !on });
+    g.fillStyle = g.strokeStyle = on ? HK.T.goldHi : HK.T.inkMute; HK.EM[em](g, label === 'Prev' ? bx + 14 : bx + bw - 14, y + R / 2 + (st.pressed ? 1.5 : 0), 12);
+    buttons.push(on ? { x: bx, y, w: bw, h: R, label, action: fn, up: true } : { x: bx, y, w: bw, h: R, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true });
   };
   one(x, 'Prev', 'chevronL', p > 0, () => setPage(p - 1));
-  HK.text(g, `${p + 1} / ${pages}`, x + w / 2, y + 20, { font: HK.FC(800, 13), align: 'center', color: HK.T.inkDim });
-  one(x + w - 80, 'Next', 'chevronR', p < pages - 1, () => setPage(p + 1));
+  HK.text(g, `${p + 1} / ${pages}`, x + w / 2, y + R / 2 + 5, { font: HK.FC(800, 13), align: 'center', color: HK.T.inkDim });
+  one(x + w - bw, 'Next', 'chevronR', p < pages - 1, () => setPage(p + 1));
   return p;
 }
 function drawInvGrid(g, x, y, cols, size, gap, onClick, swap = false) {
   for (let i = 0; i < INV_SLOTS; i++) {
     const cx = x + (i % cols) * (size + gap), cy = y + Math.floor(i / cols) * (size + gap);
-    drawSlot(g, cx, cy, size, player.inv[i], selectedSlot === i);
+    drawSlot(g, cx, cy, size, player.inv[i], selectedSlot === i, HK.stateOf('slot' + i));
     buttons.push({ x: cx, y: cy, w: size, h: size, label: 'slot' + i, action: () => { if (swap && selectedSlot >= 0 && selectedSlot !== i) { const a = player.inv[selectedSlot]; player.inv[selectedSlot] = player.inv[i]; player.inv[i] = a; selectedSlot = -1; save(); } else onClick(i); } });
   }
   return y + Math.ceil(INV_SLOTS / cols) * (size + gap);
@@ -2473,248 +2612,776 @@ function drawBossBars(g, y) {
   const first = L.plaques[L.scrollRolled ? 1 : 0];
   HUD.leftY = Math.max(HUD.leftY, y || 0, first ? first.y : 0);
 }
+
+// =================================================================================================
+// THE CORE PANELS
+// =================================================================================================
+// ---------- the pack (the satchel, I, the BAG tile) ----------
+// After the runner-up Kit's pack: a 5 x 4 grid of pouches (the top row is the belt), WORN beside it (2 x 3; 3 x 2 when
+// stacked on an upright phone) with each empty slot's name, the gear's stats in plain words, the chosen item with ONE
+// row of verbs (Eat / Equip / Place / Light fire / Throw, Drop, Wiki), the keyring as a leather strap of 44 px tiles,
+// the Home plate when a lodestone is set, and FITTED while you drive the bulldozer.
+function packFitted() { return player.mech && player.mech.kind === 'dozer' && typeof dozerFitted === 'function' ? dozerFitted() : []; }
+function packKeys() { try { return window.KEYRING && KEYRING.list ? KEYRING.list() : []; } catch (e) { return []; } }
+// Rows a feature adds to the foot of the pack, one kit row each, full width: { id, show?: () => bool, draw: (g, x, y, w, h) }.
+// 69-retaliate puts its Fight back switch here. The pack measures them in, so they never land on the grid or the verbs.
+const PACK_ROWS = [];
+function drawPackPanel(g) {
+  const K = PANEL_KIT, Rm = K.room(), { t, fam, R, G } = Rm, T = HK.T;
+  K.marks();
+  const stacked = fam === 'phoneP';
+  const nW = EQUIP_SLOTS.length, wc = stacked ? 3 : 2, wr = Math.ceil(nW / wc);
+  const HEAD = 18, keys = packKeys(), fitted = packFitted(), inMech = !!player.mech, home = !!player.home && !inMech;
+  const lhB = K.lineH(13), lhS = K.lineH(12);
+  const extras = PACK_ROWS.filter(e => !e.show || e.show());
+  // an upright phone has no height to spare: one feature row rides on the keyring's line when the tiles leave it room
+  const keysW = keys.length * (44 + G) - G, inlineX = stacked && keys.length && extras.length === 1 && extras[0].minW ? (Rm.aw - 36) - keysW - 16 - extras[0].minW(g, R) >= 0 : false;
+  const extraH = extras.length && !inlineX ? extras.length * (R + G) + 4 : 0;
+  // the verbs: one fixed slot each, so nothing shifts when an item is chosen or Drop asks again
+  const acts = [['Eat', 'heart'], ['Equip', 'block'], ['Place', 'build'], ['Light fire', 'flame'], ['Throw', 'bomb']];
+  let emb = true;
+  const slotW = () => [Math.max(...acts.map(([a, e]) => K.verbW(g, a, emb && e, R))), K.verbW(g, 'Tap again to drop', emb && 'getdown', R), K.verbW(g, 'Wiki', emb && 'book', R)];
+  let aw3 = slotW();
+  const actSum = () => aw3[0] + aw3[1] + aw3[2] + 2 * G;
+  const fitAct = room => { if (actSum() > room) { emb = false; aw3 = slotW(); } if (actSum() > room) { const k0 = (room - 2 * G) / (actSum() - 2 * G); aw3 = aw3.map(v => Math.floor(v * k0)); } };
+  const statsLine = `Strength +${gearBonus('str')} · Accuracy +${gearBonus('att')} · Defence +${gearBonus('def')} · Max hit ${playerMaxHit()}`;
+  const statsList = [`Strength +${gearBonus('str')}`, `Accuracy +${gearBonus('att')}`, `Defence +${gearBonus('def')}`, `Max hit ${playerMaxHit()}`];
+  const fitTxt = fitted.length ? 'Fitted: ' + fitted.join(', ') : '';
+  const keyRow = keys.length ? HEAD + 44 + 6 : 0;
+  const itemH = 18 + 2 * lhB;                         // the name, then two lines of blurb (reserved, so nothing jumps)
+  const statsH = lhS * (fitted.length ? 3 : 1) + 10;
+  // the side column beside WORN: the stats as a list, FITTED, and Home
+  const sideH = 4 + statsList.length * lhS + (fitted.length ? 4 + 2 * lhS : 0) + (home ? 8 + R : 0);
+  // ---- measure: stacked (an upright phone), below (desk / iPad: the Kit's look) or beside (a phone on its side) ----
+  let mode, cw, h, s, side = false;
+  const dims = () => { const gridW = 5 * s + 4 * G, wornW = wc * s + (wc - 1) * G; return { gridW, gridH: 4 * s + 3 * G, wornW, wornH: wr * s + (wr - 1) * G, aW: gridW + 16 + wornW }; };
+  if (stacked) {
+    mode = 'stacked'; cw = Rm.aw - 36; fitAct(cw); side = true;
+    const measure = () => { const D = dims(); return 62 + HEAD + D.gridH + 12 + Math.max(HEAD + D.wornH, sideH) + 18 + itemH + 8 + R + 12 + keyRow + extraH + 8; };
+    // the pouches as big as the width allows (56 at most), then smaller until the page fits the screen (44 at least)
+    s = t ? Math.min(56, Math.floor((cw - 4 * G) / 5)) : 46;
+    while (s > 44 && measure() > Rm.ah) s -= 2;
+    h = measure();
+  } else {
+    s = t ? (fam === 'tab' ? 52 : 44) : 46;
+    const D = dims(), belowW = Math.max(D.aW, 170 + 16 + actSum());
+    side = belowW - D.aW - 16 >= 150;
+    const band = side ? Math.max(HEAD + D.gridH, HEAD + sideH) + 8 : HEAD + D.gridH + 8 + statsH;
+    const belowH = 62 + band + 18 + Math.max(itemH, R) + 12 + Math.max(keyRow, !side && home ? R : 0) + extraH + 12;
+    if (belowH <= Rm.ah && belowW <= Rm.aw - 36) { mode = 'below'; cw = belowW; h = belowH; }
+    else {
+      mode = 'beside'; side = false;
+      const iw = Math.min(360, Rm.aw - 36 - D.aW - 24);
+      fitAct(iw);
+      cw = D.aW + 24 + iw;
+      const infoH = HEAD + itemH + 8 + R + 12 + keyRow + (home ? R + 8 : 0);
+      h = 62 + Math.max(HEAD + D.gridH + 8 + statsH, infoH) + extraH + 12;
+    }
+  }
+  const { gridW, gridH, wornW, wornH, aW } = dims();
+  const nUsed = player.inv.filter(Boolean).length;
+  const { px, py, w, h: ph } = panelBox(g, cw + 36, h, 'Your pack', `${nUsed} of ${INV_SLOTS} pouches used. Tap two to swap them.`);
+  const x0 = px + 18, y0 = py + 62, cwR = w - 36;
+  // ---- the grid (PACK): the top row is the belt ----
+  K.head(g, x0, y0 + 12, 60, 'PACK', { rule: false });
+  const nx = x0 + HK.tw(g, 'PACK', K.FN(11.5)) + 10;
+  HK.text(g, 'Top row is your belt', nx, y0 + 12, { font: K.FB(11.5), color: T.inkMute, box: { x: nx, y: y0, w: x0 + gridW - nx, h: 16 }, fitId: 'pack:note' });
+  const gx = x0, gy = y0 + HEAD;
+  drawInvGrid(g, gx, gy, 5, s, G, i => { selectedSlot = selectedSlot === i ? -1 : i; }, true);
+  // ---- WORN: every slot a knight wears, empty ones named ----
+  const wx = stacked ? x0 : gx + gridW + 16, wyH = stacked ? gy + gridH + 12 : y0, wy = wyH + HEAD;
+  K.head(g, wx, wyH + 12, wornW, 'WORN');
+  EQUIP_SLOTS.forEach((kk, i) => {
+    const ex = wx + (i % wc) * (s + G), ey = wy + Math.floor(i / wc) * (s + G), id = player.equip[kk];
+    drawSlot(g, ex, ey, s, id ? { id, qty: 1 } : null, false, id ? HK.stateOf('eq' + kk) : null);
+    if (!id) {
+      const word = kk.charAt(0).toUpperCase() + kk.slice(1);
+      let fs = 11; while (fs > 8.5 && HK.tw(g, word, HK.FS(600, fs)) > s - 6) fs -= 0.5;
+      HK.text(g, word, ex + s / 2, ey + s * 0.58, { font: HK.FS(600, fs), align: 'center', color: T.inkMute, box: { x: ex + 2, y: ey, w: s - 4, h: s }, fitId: 'pack:worn' });
+    } else buttons.push({ x: ex, y: ey, w: s, h: s, label: 'eq' + kk, action: () => unequip(kk), name: `${ITEMS[id] ? ITEMS[id].name : id}: tap to take it off` });
+  });
+  // ---- the gear's stats in plain words, and FITTED while driving the bulldozer ----
+  const fittedAt = (fx, top, fw) => {
+    K.roundel(g, fx + 10, top + lhS / 2 + 1, 10, 'drill', T.goldHi);
+    return K.para(g, fitTxt, fx + 26, top + lhS - 3, fw - 26, { size: 12, lines: 2, color: T.ink, fitId: 'pack:fitted' }).h;
+  };
+  let sideBottom;
+  if (side) {
+    const sx = wx + wornW + 16, sw = x0 + cwR - sx;
+    let top = (stacked ? wyH : wy) + 4;
+    for (const ln of statsList) { HK.text(g, ln, sx, top + lhS - 3, { font: K.FB(12), color: T.inkDim, box: { x: sx, y: top, w: sw, h: lhS }, fitId: 'pack:stats' }); top += lhS; }
+    if (fitted.length) { top += 4; top += fittedAt(sx, top, sw); }
+    if (home) { top += 8; packHome(g, sx, top, Math.min(sw, 150), R); top += R; }
+    sideBottom = Math.max(wy + wornH, gy + (stacked ? 0 : gridH), top);
+  } else {
+    let top = gy + gridH + 8;
+    top += K.para(g, statsLine, x0, top + lhS - 3, aW, { size: 12, lines: 1, min: 10, color: T.inkDim, fitId: 'pack:stats' }).h;
+    if (fitted.length) { top += 2; top += fittedAt(x0, top, aW); }
+    sideBottom = top;
+  }
+  // ---- the chosen item, and its ONE row of verbs ----
+  let ix, iy, iw;
+  if (mode === 'beside') { ix = gx + aW + 24; iw = x0 + cwR - ix; K.head(g, ix, y0 + 12, iw, 'CHOSEN'); iy = y0 + HEAD; }
+  else { ix = x0; iw = cwR; iy = Math.round(sideBottom + 8); K.hair(g, x0, iy, cwR, 0.45); iy += 10; }
+  const sl = selectedSlot >= 0 ? player.inv[selectedSlot] : null;
+  const actY = mode === 'below' ? iy + Math.round(Math.max(0, itemH - R) / 2) : iy + itemH + 8;
+  const actX = mode === 'below' ? ix + iw - actSum() : ix;
+  const textW = mode === 'below' ? iw - actSum() - 16 : iw;
+  if (sl) {
+    const def = ITEMS[sl.id];
+    try { drawItemIcon(g, sl.id, ix + 12, iy + 10, 22); } catch (e) { }
+    K.name(g, `${def.name} × ${sl.qty}`, ix + 30, iy + 15, textW - 30, { size: 14 });
+    K.para(g, itemBlurb(def), ix, iy + 18 + lhB - 2, textW, { size: 13, lines: 2, color: T.inkDim, fitId: 'pack:blurb' });
+    const act = def.heal ? 'Eat' : (def.weapon || def.armour) ? 'Equip' : def.place ? 'Place' : def.burn ? 'Light fire' : def.throwable ? 'Throw' : null;
+    let bx = actX;
+    if (act) K.verb(g, bx, actY, aw3[0], R, act, () => { const i = selectedSlot; useItem(i); if (act !== 'Equip') return; selectedSlot = -1; }, { emblem: emb && acts.find(a => a[0] === act)[1], tone: 'primary' });
+    bx += aw3[0] + G;
+    const doDrop = () => { const q = player.inv[selectedSlot]; if (!q) return; drops.push({ x: player.x + player.facing.x * 30, y: player.y + player.facing.y * 30, id: q.id, qty: q.qty, t: 0 }); player.inv[selectedSlot] = null; selectedSlot = -1; save(); };
+    const arm = needsConfirm(def) && confirmActive('drop');
+    K.verb(g, bx, actY, aw3[1], R, arm ? 'Tap again to drop' : 'Drop', () => { if (needsConfirm(def)) confirmTap('drop', doDrop); else doDrop(); }, { emblem: emb && 'getdown', tone: 'danger' });
+    bx += aw3[1] + G;
+    const wid = sl.id;
+    K.verb(g, bx, actY, aw3[2], R, 'Wiki', () => { if (window.WIKI) WIKI.open('items', wid); }, { emblem: emb && 'book', name: `Read about ${def.name}`, keys: ['K'] });
+  } else {
+    K.para(g, t ? 'Tap a thing to choose it. Tap what you wear to take it off.' : 'Click a thing to choose it. Keys 1 to 5 use the belt row.', ix, iy + 15, textW, { size: 13, lines: 2, color: T.inkDim, fitId: 'pack:hint' });
+  }
+  // ---- the keyring, and the Home plate (in the side column when there is one) ----
+  const ky = mode === 'below' ? iy + Math.max(itemH, R) + 12 : actY + R + 12;
+  const homeHere = home && !side;
+  if (keys.length) packKeyring(g, ix, ky, mode === 'below' && homeHere ? iw - 166 : iw, keys);
+  if (inlineX) { const e = extras[0], ex = ix + keysW + 16; e.draw(g, ex, ky + 18, ix + iw - ex, R); }
+  if (homeHere) {
+    if (mode === 'below') packHome(g, ix + iw - 150, ky + (keys.length ? HEAD : 0), 150, R);
+    else packHome(g, ix, ky + keyRow, Math.min(iw, 160), R);
+  }
+  // ---- the feature rows (PACK_ROWS) along the foot, under a hairline ----
+  if (extras.length && !inlineX) {
+    let ey = py + (ph || h) - 12 - extras.length * (R + G) + G;
+    K.hair(g, x0, ey - 6, cwR, 0.3);
+    for (const e of extras) { e.draw(g, x0, ey, cwR, R); ey += R + G; }
+  }
+}
+// the Home plate: the lodestone teleport, with its cooldown written on it
+function packHome(g, x, y, w, h) {
+  const left = Math.max(0, HOME_COOLDOWN - (time - (player.homeCd || -1e9)));
+  const mm = `${Math.floor(Math.ceil(left) / 60)}:${String(Math.ceil(left) % 60).padStart(2, '0')}`;
+  PANEL_KIT.verb(g, x, y, w, h, touchMode() ? 'HOME' : 'Home (H)', goHome, { emblem: 'home', text: left > 0 ? `Home ${mm}` : 'Home', key: touchMode() || w < 110 ? null : 'H', name: left > 0 ? `Home · ready in ${mm}` : 'Home', keys: ['H'] });
+}
+// THE KEYRING: a leather key strap with brass-edged 44 px tiles. Tap one: its note.
+function packKeyring(g, x, y, w, keys) {
+  const K = PANEL_KIT, T = HK.T, s = 44, G = K.room().G;
+  K.head(g, x, y + 12, w, 'KEYRING', { rule: false });
+  HK.text(g, 'Always with you. Takes no pouch.', x + HK.tw(g, 'KEYRING', K.FN(11.5)) + 10, y + 12, { font: K.FB(11.5), color: T.inkMute, box: { x, y, w, h: 16 }, fitId: 'pack:keynote' });
+  const ty = y + 18, n = Math.max(1, Math.min(keys.length, Math.floor((w + G) / (s + G))));
+  HK.beltStrap(g, x - 4, ty + s / 2 - 9, n * (s + G) - G + 8, 18);
+  keys.slice(0, n).forEach((kk, i) => {
+    const kx = x + i * (s + G), label = 'keyring:' + kk.id, st = HK.stateOf(label), dy = st.pressed ? 1.5 : 0;
+    HK.vellumPlate(g, kx, ty + dy, s, s, { edge: 'rgba(247,220,143,0.9)' });
+    try { drawItemIcon(g, kk.id, kx + s / 2, ty + s / 2 + dy, 22); } catch (e) { }
+    buttons.push({ x: kx, y: ty, w: s, h: s, label, action: () => notify(`${kk.name}. ${kk.note}`), up: true, name: kk.name });
+  });
+}
+
+// ---------- skills (the crest, Tab, the SKILLS tile) ----------
+function skillLocked(s) {
+  const sk = player.skills[s.key]; if (!s.needs || !sk) return false;
+  return sk.xp === 0 && !hasTool(s.needs === 'a bow' ? 'bow' : s.needs === 'an axe' ? 'axe' : s.needs === 'a pickaxe' ? 'pickaxe' : s.needs === 'a rod' ? 'rod' : 'hoe') && !(s.key === 'range' && (player.equip.weapon === 'shortbow' || countItem('shortbow')));
+}
+function drawSkillsPanel(g) {
+  const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R } = Rm;
+  const list = SKILL_DEFS.filter(s => player.skills[s.key]), n = list.length;
+  const two = Rm.aw - 36 >= 560, cols = two ? 2 : 1, pitch = 50, colGap = 28;
+  const rowsAll = Math.ceil(n / cols), pagerH = R + 14;
+  let perCol = rowsAll, h = 62 + rowsAll * pitch + 8;
+  if (h > Rm.ah) { perCol = Math.max(2, Math.floor((Rm.ah - 62 - 8 - pagerH) / pitch)); h = 62 + perCol * pitch + 8 + pagerH; }
+  const per = perCol * cols, pages = Math.max(1, Math.ceil(n / per));
+  const { px, py, w } = panelBox(g, two ? Math.min(Rm.aw, 740) : Math.min(Rm.aw, 440), h, 'Skills', `Combat level ${combatLevel()}. Every skill trains by doing it.`);
+  const x0 = px + 18, cw = w - 36, colW = (cw - (cols - 1) * colGap) / cols;
+  const p = clamp(K.page('skills'), 0, pages - 1);
+  list.slice(p * per, p * per + per).forEach((s, i) => {
+    const col = Math.floor(i / perCol), row = i % perCol, x = x0 + col * (colW + colGap), y = py + 62 + row * pitch;
+    const sk = player.skills[s.key], lv = levelForXp(sk.xp), locked = skillLocked(s);
+    const lvW = HK.tw(g, 'Lv 99', K.FN(13)) + 4;
+    K.name(g, s.name, x, y + 16, colW - lvW - 8, { size: 13, color: locked ? T.inkMute : T.ink });
+    if (!locked) K.name(g, `Lv ${lv}`, x + colW, y + 16, lvW, { size: 13, color: T.gold, align: 'right' });
+    if (locked) K.para(g, `Needs ${s.needs}. Get one to start.`, x, y + 36, colW, { size: 12, lines: 1, min: 10, color: T.inkMute, fitId: 'skills:needs' });
+    else {
+      const top = lv >= 99, cur = sk.xp - xpForLevel(lv), need = xpForLevel(lv + 1) - xpForLevel(lv);
+      const xpT = top ? `${HK.fmtInt(sk.xp)} xp` : `${HK.fmtInt(cur)} / ${HK.fmtInt(need)} xp`;
+      const xw = HK.tw(g, xpT, K.FN(11)) + 2;
+      HK.meterBar(g, x, y + 25, Math.max(40, colW - xw - 10), 10, top ? 1 : clamp(cur / Math.max(1, need), 0, 1), '#c9a13c', { hi: '#f7dc8f', lo: '#6b4c14' });
+      K.name(g, xpT, x + colW, y + 34, xw, { size: 11, color: T.inkDim, align: 'right' });
+    }
+    if (row < perCol - 1 && i < n - 1) K.hair(g, x, y + pitch - 6, colW, 0.25);
+  });
+  if (pages > 1) pager(g, x0, py + h - 14 - R, cw, p, pages, q => K.page('skills', clamp(q, 0, pages - 1)));
+}
+
+// ---------- how to play (the HELP tile, ? or F1) ----------
+function helpRows() {
+  const t = touchMode();
+  if (t) return [
+    { em: 'swing', name: 'SWING', text: 'Hit, shoot or stomp. You can also tap a monster, or tap the world twice.' },
+    { em: 'hand', name: 'USE', text: 'Its word changes to what you face: TALK, CHOP, MINE, FISH, COOK, OPEN or ENTER.' },
+    { em: 'block', name: 'BLOCK', text: 'Hold up your shield just before a hit lands.' },
+    { em: 'exit', name: 'The fourth button', text: 'EXIT a machine, RIDE or GET DOWN from your horse, LEAVE a dungeon, BUILD on your island.' },
+    { em: 'hand', name: 'Tap the world', text: 'Walk there. Tap a tree, rock, water or person to use it.' },
+    { em: 'chevron', name: 'Left side', text: 'Drag your thumb to walk.' },
+    { em: 'bag', name: 'Belt pouches', text: 'The five things on your belt. Tap one to eat it or use it.' },
+    { em: 'bag', name: 'BAG', text: 'Your pack and what you wear. Tap two things to swap them. Place, Eat and Drop live here.' },
+    { em: 'block', name: 'BAG, Fight back', text: 'On: a monster that hits you gets hit back.' },
+    { em: 'map', name: 'The round map', text: 'Tap it to see the whole world.' },
+    { em: 'home', name: 'HOME', text: 'Back to your lodestone. Then it rests for 5 minutes.' },
+    { em: 'friends', name: 'FRIENDS', text: 'Who is online. Chat with them and give them things.' },
+    { em: 'menu', name: 'MENU', text: 'The book: Crafting, Quests, Skills, Wiki, Map, Chat, Music, Markers and Settings.' },
+    { em: 'help', name: 'Hold a button', text: 'Its name shows. Slide off it to change your mind.' },
+    { em: 'cog', name: 'Machines', text: 'USE a wreck to mend it. USE it again to climb in.' },
+    { em: 'quests', name: 'Notice boards', text: 'In the square and by the cave road: paid jobs.' },
+    { em: 'skull', name: 'If you fall', text: 'Death keeps your pack in his stone house.' },
+  ];
+  let km = []; try { km = window.SETTINGS && SETTINGS.keyMap ? SETTINGS.keyMap() : []; } catch (e) { km = []; }
+  const K = (action, dflt) => { const r = km.find(q => q.action === action); return r && r.label ? r.label.split(' or ').slice(0, 2) : dflt; };
+  return [
+    { keys: ['W', 'A', 'S', 'D'], name: 'Walk', text: 'Or the arrow keys. Or click the ground to walk there.' },
+    { keys: ['Click'], name: 'Click the world', text: 'Click a tree, rock, water or person to use it, or a monster to fight it.' },
+    { keys: K('Swing', ['Space']), name: 'Swing', text: 'Hit, shoot or stomp.' },
+    { keys: K('Use / talk', ['E']), name: 'Use', text: 'Talk, chop, mine, fish, cook, open or enter what you face.' },
+    { keys: K('Block', ['R']), name: 'Block', text: 'Hold up your shield just before a hit lands.' },
+    { keys: K('Place', ['Q']), name: 'Place', text: 'Put down a plank, door, bed, lodestone or trap.' },
+    { keys: ['1–5'], name: 'Belt', text: 'Eat or use the five things on your belt.' },
+    { keys: [K('Bag', ['I'])[0], K('Craft', ['C'])[0], K('Skills', ['Tab'])[0]], name: 'Pack, craft, skills', text: 'Your pack, crafting, and your skills.' },
+    { keys: K('Fight back on / off', ['O']), name: 'Fight back', text: 'On or off: a monster that hits you gets hit back. Also in the pack.' },
+    { keys: [K('Quests', ['J'])[0], K('Map', ['M'])[0], K('Wiki', ['K'])[0]], name: 'Quests, map, wiki', text: 'Your quests, the world map and the book of everything.' },
+    { keys: K('Home', ['H']), name: 'Home', text: 'Back to your lodestone. Then it rests for 5 minutes.' },
+    { keys: K('Climb out', ['X']), name: 'Climb out', text: 'Leave a walker, bulldozer or Barrelbeast.' },
+    { keys: K('Next line of talk', ['Enter']), name: 'Next line', text: 'Read on when someone talks (or click the page).' },
+    { keys: ['Esc'], name: 'The book', text: 'Settings, the title screen, a new game, and the whole kit.' },
+    { em: 'cog', name: 'Machines', text: 'Use a wreck to mend it. Use it again to climb in.' },
+    { em: 'quests', name: 'Notice boards', text: 'In the square and by the cave road: paid jobs.' },
+    { em: 'skull', name: 'If you fall', text: 'Death keeps your pack in his stone house.' },
+  ];
+}
+function drawHelpPanel(g) {
+  const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, t } = Rm;
+  const rows = helpRows();
+  const two = Rm.aw - 36 >= 720, cols = two ? 2 : 1, colGap = 28;
+  const W = two ? Math.min(Rm.aw, 900) : Math.min(Rm.aw, 520), cw = W - 36, colW = (cw - (cols - 1) * colGap) / cols;
+  const lead = t ? 40 : 118, lh = K.lineH(13);
+  // measure each row: its name, then the sentence wrapped under it
+  const hts = rows.map(r => 18 + HK.wrap(g, r.text, colW - lead, 4, K.FB(13)).lines.length * lh + 8);
+  const pagerH = R + 14, avail = Rm.ah - 62 - 10;
+  // pack rows into pages of `cols` columns; when everything fits on one page, split the columns evenly
+  const build = lim => { const pg = []; let cur = [[]], ch = [0]; for (let i = 0; i < rows.length; i++) { let c = cur.length - 1; if (ch[c] + hts[i] > lim) { if (cur.length < cols) { cur.push([]); ch.push(0); c++; } else { pg.push(cur); cur = [[]]; ch = [0]; c = 0; } } cur[c].push(i); ch[c] += hts[i]; } pg.push(cur); return pg; };
+  let pgs = build(avail), paged = pgs.length > 1;
+  if (paged) pgs = build(avail - pagerH);
+  else if (cols === 2) {
+    const total = hts.reduce((a, b) => a + b, 0); let acc = 0, cut = 0;
+    for (let i = 0; i < rows.length; i++) { if (acc + hts[i] / 2 > total / 2) break; acc += hts[i]; cut = i + 1; }
+    pgs = [[rows.slice(0, cut).map((_, i) => i), rows.slice(cut).map((_, i) => cut + i)]];
+  }
+  const colH = Math.max(...pgs.map(pg => Math.max(...pg.map(c => c.reduce((a, i) => a + hts[i], 0)))));
+  const h = 62 + colH + 10 + (paged ? pagerH : 0);
+  const { px, py } = panelBox(g, W, h, 'How to play', 'Every skill trains by doing. If you fall, Death keeps your pack.');
+  const x0 = px + 18, p = clamp(K.page('help'), 0, pgs.length - 1);
+  pgs[p].forEach((col, ci) => {
+    let y = py + 62; const x = x0 + ci * (colW + colGap);
+    for (const i of col) {
+      const r = rows[i];
+      if (r.keys) { let kx = x; for (const kk of r.keys.filter(Boolean)) { if (kx + HK.keycapW(g, kk, 11) > x + lead - 6) break; kx += HK.keycap(g, kx, y + 2, kk, 11) + 4; } }
+      else K.roundel(g, x + 15, y + 14, 14, r.em);
+      K.name(g, r.name, x + lead, y + 14, colW - lead, { size: 12.5, color: T.goldHi });
+      K.para(g, r.text, x + lead, y + 18 + lh - 3, colW - lead, { size: 13, lines: 4, color: T.inkDim, fitId: 'help:text' });
+      y += hts[i];
+    }
+  });
+  if (pgs.length > 1) pager(g, x0, py + h - 14 - R, W - 36, p, pgs.length, q => K.page('help', clamp(q, 0, pgs.length - 1)));
+}
+
+// ---------- quests (J, the QUESTS tile): tabs Quests / Said ----------
+function drawQuestsPanel(g, narrow) {
+  const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G } = Rm;
+  const said = questsTab === 'said';
+  const W = Math.min(Rm.aw, 560), cw = W - 36, lh = K.lineH(13), pagerH = R + 14;
+  const top = 62 + R + 12;
+  let items = [];
+  if (said) {
+    const log = dialogLog.slice().reverse();
+    items = log.map(l => ({ kind: 'said', l, h: 18 + HK.wrap(g, l.text, cw, 4, K.FB(13)).lines.length * lh + 10 }));
+    if (!items.length) items = [{ kind: 'none', h: 30 }];
+  } else {
+    const list = activeQuests();
+    items = list.map(id => { const lines = HK.wrap(g, questText(id) || '', cw - 24, 5, K.FB(13)).lines.length; return { kind: 'quest', id, h: 8 + R + 6 + lines * lh + 12 + 8 }; });
+    if (!items.length) items.push({ kind: 'none', h: 30 });
+    const done = []; if (quest.bread === 'done') done.push('bread'); if (quest.wren === 'done') done.push('wren');
+    if (done.length) { items.push({ kind: 'doneHead', h: 24 }); for (const id of done) items.push({ kind: 'done', id, h: 24 }); }
+  }
+  const total = items.reduce((a, it) => a + it.h, 0);
+  let lim = Rm.ah - top - 10, paged = total > lim;
+  if (paged) lim -= pagerH;
+  const pgs = [[]]; let acc = 0;
+  for (const it of items) { if (acc + it.h > lim && pgs[pgs.length - 1].length) { pgs.push([]); acc = 0; } pgs[pgs.length - 1].push(it); acc += it.h; }
+  const bodyH = Math.max(...pgs.map(pg => pg.reduce((a, it) => a + it.h, 0)));
+  const h = top + bodyH + 10 + (pgs.length > 1 ? pagerH : 0);
+  const { px, py } = panelBox(g, W, h, said ? 'Said' : 'Quests', said ? 'What people said to you, newest first.' : 'The quest you follow stays on screen and marks the map.');
+  const x0 = px + 18;
+  K.tabs(g, x0, py + 62, Math.min(cw, 2 * 120 + G), [{ label: 'Quests' }, { label: 'Said' }], said ? 'Said' : 'Quests', l => { questsTab = l === 'Said' ? 'said' : 'quests'; K.page('quests', 0); });
+  const pkey = 'quests';
+  const p = clamp(K.page(pkey), 0, pgs.length - 1);
+  let y = py + top;
+  for (const it of pgs[p]) {
+    if (it.kind === 'none') K.para(g, said ? 'Nobody has said anything yet.' : 'No quests right now. Talk to people to find some.', x0, y + 16, cw, { size: 13, lines: 2, color: T.inkDim });
+    if (it.kind === 'said') {
+      K.name(g, String(it.l.who || '').toUpperCase(), x0, y + 13, cw, { size: 11.5, color: T.gold });
+      K.para(g, it.l.text, x0, y + 18 + lh - 3, cw, { size: 13, lines: 4, color: T.ink, fitId: 'said:text' });
+      K.hair(g, x0, y + it.h - 4, cw, 0.2);
+    }
+    if (it.kind === 'quest') {
+      const id = it.id, tracked = quest.tracked === id, ch = it.h - 8;
+      HK.vellumPlate(g, x0, y, cw, ch, tracked ? { edge: 'rgba(247,220,143,0.95)' } : {});
+      const tw = K.verbW(g, 'Untrack', 'pin', R);
+      K.verb(g, x0 + cw - 10 - tw, y + 8, tw, R, tracked ? 'Untrack' : 'Track', () => { if (tracked) { quest.tracked = null; if (id === 'main') quest.untrackedByPlayer = true; } else { quest.tracked = id; if (id === 'main') quest.untrackedByPlayer = false; } save(); }, { emblem: 'pin', tone: tracked ? null : 'primary' });
+      const nw = cw - 24 - tw - 12;
+      K.name(g, QUEST_DEFS[id].name, x0 + 12, y + 8 + R / 2 - 1, nw, { size: 13, color: tracked ? T.goldHi : T.ink });
+      HK.text(g, id === 'main' ? 'Main story' : 'Side quest', x0 + 12, y + 8 + R / 2 + 14, { font: K.FB(11), color: T.inkMute, box: { x: x0 + 12, y: y + 8, w: nw, h: R }, fitId: 'quest:kind' });
+      K.para(g, questText(id) || '', x0 + 12, y + 8 + R + 6 + lh - 4, cw - 24, { size: 13, lines: 5, color: T.inkDim, fitId: 'quest:text' });
+    }
+    if (it.kind === 'doneHead') K.head(g, x0, y + 16, cw, 'DONE');
+    if (it.kind === 'done') {
+      HK.emblem(g, 'tick', x0 + 9, y + 11, 16, T.good, { hole: null });
+      K.name(g, QUEST_DEFS[it.id].name, x0 + 24, y + 16, cw - 24, { size: 12.5, color: T.inkMute });
+    }
+    y += it.h;
+  }
+  if (pgs.length > 1) pager(g, x0, py + h - 14 - R, cw, p, pgs.length, q => K.page(pkey, clamp(q, 0, pgs.length - 1)));
+}
+
+// ---------- the world map (the ring, M, the MAP tile, the map stud) ----------
+// The image rect is also the buttons[] entry 'mapimage' (tap the map to close it): 61-markers cuts it back for its key
+// strip and 73-players draws friends inside the same rect (px + 18, py + 62, w - 36 wide).
+function drawMapPanel(g, narrow) {
+  // Inside an instance the map is that instance (09-render mapView): its name on the panel, its own rect drawn whole and
+  // centred, and none of the overworld's region names, home or quest rings (they sit in the same top-left tiles).
+  const K = PANEL_KIT, Rm = K.room(), T = HK.T;
+  const view = mapView(), inside = !!view.id;
+  let mw = Math.min(Rm.aw, 760); if (inside) mw = Math.min(mw, Math.max(360, (Rm.ah - 80) * view.w / view.h + 36));
+  const mh = Math.min(Rm.ah, (mw - 36) * view.h / view.w + 80);
+  const close = touchMode() ? 'Tap the map to close.' : 'Click the map to close.';
+  const { px, py, w, h } = panelBox(g, mw, mh, view.name, inside ? `${view.sub ? view.sub + '. ' : ''}White arrow: you. ${close}` : `White arrow: you. Blue: home. Gold rings: quests. ${close}`);
+  if (miniDirty || miniDiffCount !== mapDiffs.size) refreshMini();
+  const iw = w - 36, ih = Math.min(h - 80, iw * view.h / view.w), ix = px + 18, iy = py + 62;
+  // the world keeps its fit (full width, cropped at the foot on a short screen); an instance fits whole and is centred
+  const sc = inside ? Math.min(iw / view.w, ih / view.h) : iw / MAP_W;
+  const ox = inside ? ix + (iw - view.w * sc) / 2 : ix, oy = inside ? iy + (ih - view.h * sc) / 2 : iy;
+  mapLayout = { ix, iy, iw, ih, ox, oy, sc, view };
+  g.save(); g.beginPath(); g.rect(ix, iy, iw, ih); g.clip();
+  if (inside) { g.fillStyle = '#0b0f14'; g.fillRect(ix, iy, iw, ih); }
+  g.imageSmoothingEnabled = false; g.drawImage(miniCanvas, 0, 0, view.w, view.h, ox, oy, view.w * sc, view.h * sc); g.imageSmoothingEnabled = true;
+  const fs = Math.max(9, Math.min(15, sc * 2.4));
+  for (const r of REGIONS) {
+    if (r.name === 'Goblin Fields' || r.name === 'The Wilds') continue;
+    // inside: only a region a feature marked as this instance's own, and not the whole-instance one the title already names
+    if (inside ? r.instance !== view.id || (r.x0 <= 0 && r.y0 <= 0 && r.x1 >= view.w - 1 && r.y1 >= view.h - 1) : r.instance) continue;
+    const cx = ox + (r.x0 + r.x1 + 1) / 2 * sc, cy = oy + (r.y0 + r.y1 + 1) / 2 * sc;
+    HK.text(g, r.name.toUpperCase(), cx, cy, { font: HK.FC(800, fs), align: 'center', color: T.ink, halo: 3 });
+  }
+  if (player.home && !inside) HK.emblem(g, 'home', ox + player.home.x / TILE * sc, oy + player.home.y / TILE * sc, 13, T.home, { hole: null, relief: 'rgba(0,0,0,0.9)' });
+  for (const tg of mapTargets()) {
+    const tx = ox + (tg.x + 0.5) * sc, ty = oy + (tg.y + 0.5) * sc, isTracked = tg.id === quest.tracked;
+    g.strokeStyle = isTracked ? T.goldHi : 'rgba(217,178,92,0.8)'; g.lineWidth = isTracked ? 2.5 : 1.5;
+    g.beginPath(); g.arc(tx, ty, (isTracked ? 6 : 5) + Math.sin(time * 4) * 2, 0, 7); g.stroke();
+    if (tg.label) HK.text(g, tg.label, tx, ty - 10, { font: HK.FS(700, narrow ? 10 : 11.5), align: 'center', color: T.goldHi, halo: 3 });
+  }
+  // you: a white arrowhead pointing the way you face (its dark rim keeps it visible on Aerie's white cloud)
+  {
+    const ax = ox + player.x / TILE * sc, ay = oy + player.y / TILE * sc, ang = Math.atan2(player.facing.y || 0, player.facing.x || 1);
+    g.save(); g.translate(ax, ay); g.rotate(ang);
+    g.beginPath(); g.moveTo(8, 0); g.lineTo(-5, -6); g.lineTo(-2, 0); g.lineTo(-5, 6); g.closePath();
+    g.fillStyle = '#ffffff'; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.85)'; g.lineWidth = 1.5; g.stroke(); g.restore();
+  }
+  g.restore();
+  // the gold hairline around the glass
+  g.strokeStyle = 'rgba(0,0,0,0.85)'; g.lineWidth = 1; g.strokeRect(ix - 1.5, iy - 1.5, iw + 3, ih + 3);
+  g.strokeStyle = 'rgba(217,178,92,0.75)'; g.strokeRect(ix - 0.5, iy - 0.5, iw + 1, ih + 1);
+  buttons.push({ x: ix, y: iy, w: iw, h: ih, label: 'mapimage', action: closePanel }); // tap the map to close it
+}
+
+// ---------- crafting (C, the CRAFTING tile) and the stations (Forge, Anvil, Workbench, Tinker's table, Alchemy) ----------
+// A recipe row: an iron plate with the item's picture, the recipe in words, and the level it needs on the right.
+function recipeRow(g, x, y, w, h, rec, label, can, action) {
+  const K = PANEL_KIT, T = HK.T;
+  const st = K.plate(g, x, y, w, h, label, action, { enabled: can, tone: can ? 'primary' : null });
+  const dy = st.dy, ic = Math.min(h - 8, 30);
+  try { drawItemIcon(g, rec.out || (rec.needs[0] && rec.needs[0][0]), x + 6 + ic / 2, y + h / 2 + dy, ic * 0.8); } catch (e) { }
+  const lvT = rec.lv > 1 ? `Lv ${rec.lv}` : '';
+  const lvOk = !rec.skill || skillLv(rec.skill) >= rec.lv;
+  const lw = lvT ? HK.tw(g, lvT, K.FN(12)) + 12 : 0;
+  if (lvT) K.name(g, lvT, x + w - 10, y + h / 2 + 5 + dy, lw, { size: 12, align: 'right', color: lvOk ? T.inkDim : T.warn });
+  const tx = x + 12 + ic, room = w - (tx - x) - 10 - lw;
+  let size = 13, f = HK.FS(700, size);
+  while (size > 10.5 && HK.tw(g, rec.label, f) > room) { size -= 0.5; f = HK.FS(700, size); }
+  const col = can ? (st.hover ? T.goldHi : T.ink) : T.inkMute;
+  if (HK.tw(g, rec.label, f) <= room || h < 40) {
+    let s = rec.label; if (HK.tw(g, s, f) > room) s = HK.wrap(g, s, room, 1, f).lines[0] || s;
+    HK.text(g, s, tx, y + h / 2 + 5 + dy, { font: f, color: col, box: { x: tx, y, w: room, h }, fitId: 'recipe' });
+  } else {
+    f = HK.FS(700, 11.5); const ln = HK.wrap(g, rec.label, room, 2, f).lines, lh = K.lineH(11.5);
+    ln.forEach((s, i) => HK.text(g, s, tx, y + h / 2 + 4 - (ln.length - 1) * lh / 2 + i * lh + dy, { font: f, color: col, box: { x: tx, y, w: room, h }, fitId: 'recipe' }));
+  }
+}
+function drawCraftPanel(g) {
+  const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G, t } = Rm;
+  const station = panel === 'craft' ? null : panelArg;
+  const all = station === 'forge' ? SMELT : RECIPES.filter(r => r.station === station);
+  const titles = { forge: 'Forge: smelting', anvil: 'Anvil: smithing', workbench: 'Workbench', workshop: "Tinker's table: traps and arrows", alchemy: 'Alchemy table: bombs' };
+  const skillKey = station === 'forge' || station === 'anvil' ? 'smithing' : 'crafting';
+  // tabs by tier when the list is long; 8 rows a page (fewer on a short screen) with Prev / Next
+  const tabbed = all.length > 8;
+  const tiers = tabbed ? ['Bronze/Iron', 'Steel', 'Mithril', 'Godly', 'Other'].filter(tn => all.some(r => recipeTier(r) === tn)) : [];
+  if (tabbed && !tiers.includes(recipeTab)) recipeTab = tiers[0];
+  const list = tabbed ? all.filter(r => recipeTier(r) === recipeTab) : all;
+  const W = Math.min(Rm.aw, t ? 480 : 440), cw = W - 36;
+  // the tab rows' height, measured the way K.tabs lays them out
+  let tabsH = 0;
+  if (tabbed) { const nat = tiers.map(tn => Math.max(t ? 56 : 60, K.verbW(g, tn, null, R))); tabsH = (nat.reduce((a, b) => a + b, 0) + G * (tiers.length - 1) <= cw ? R : 2 * R + G) + 10; }
+  const pitch = R + 8, y0 = 62 + tabsH, n = list.length, pagerH = R + 14;
+  const noHammer = station === 'anvil' && !hasTool('hammer'), warnH = noHammer ? 20 : 0;
+  const needPager = n > 8 || y0 + n * pitch + 16 + warnH > Rm.ah;
+  let perPage, h;
+  if (needPager) { perPage = Math.max(2, Math.min(8, Math.floor((Rm.ah - y0 - pagerH - warnH) / pitch))); h = y0 + perPage * pitch + pagerH + warnH; }
+  else { perPage = Math.max(1, n); h = Math.max(160, y0 + n * pitch + 16 + warnH); }
+  const { px, py, w, h: ph } = panelBox(g, W, h, station ? titles[station] || 'Station' : 'Crafting', station ? `${SKILL_DEFS.find(s => s.key === skillKey).name} level ${skillLv(skillKey)}${station === 'anvil' ? '. Needs a hammer.' : ''}` : 'Simple things craft from your pack. Stations in Thistledown make the rest.');
+  const x0 = px + 18;
+  if (tabbed) K.tabs(g, x0, py + 62, w - 36, tiers.map(tn => ({ label: tn })), recipeTab, tn => { recipeTab = tn; recipePage = 0; });
+  const pages = Math.max(1, Math.ceil(n / perPage)); recipePage = clamp(recipePage, 0, pages - 1);
+  const canMake = r => { const rec = station === 'forge' ? { ...r, station: 'forge', skill: 'smithing', qty: 1 } : r; const has = rec.needs.every(([id, q]) => countItem(id) >= q); const lvOk = !rec.skill || skillLv(rec.skill) >= rec.lv; return { rec, can: has && lvOk && !(station === 'anvil' && !hasTool('hammer')) }; };
+  const labelOf = rec => rec.label + (rec.lv > 1 ? `  (lv ${rec.lv})` : '');
+  const pageList = list.slice(recipePage * perPage, recipePage * perPage + perPage);
+  pageList.forEach((r, i) => {
+    const y = py + y0 + i * pitch; const { rec, can } = canMake(r);
+    recipeRow(g, x0, y, w - 36, R, rec, labelOf(rec), can, () => craft(rec));
+  });
+  // recipes on other tabs/pages stay addressable by label for the harness (F.clickButton) but sit off-screen, so no tap can reach them
+  for (const r of all) { if (pageList.includes(r)) continue; const { rec, can } = canMake(r); if (can) buttons.push({ x: -1e9, y: -1e9, w: 0, h: 0, label: labelOf(rec), action: () => craft(rec), offscreen: true }); }
+  if (noHammer) HK.text(g, 'You need a hammer in your pack.', x0, py + ph - (pages > 1 ? pagerH : 14) - 6, { font: K.FB(13), color: T.bad, box: { x: x0, y: py + ph - 60, w: w - 36, h: 60 }, fitId: 'craft:hammer' });
+  if (pages > 1) pager(g, x0, py + ph - 14 - R, w - 36, recipePage, pages, p => { recipePage = clamp(p, 0, pages - 1); });
+}
+
+// ---------- the shop (every opener) ----------
+// Measurements other shops copy (26-boats' Pete): rows are vellum plates HK.row() + 8 tall (52 on touch, 40 with a
+// mouse) on a pitch of row + 14; a 36 / 28 px pouch at the left; the name in Cinzel 13; the blurb in the sans at 12
+// (hidden under 520 px of content); 'Buy n' a primary plate HK.row() tall, the coin emblem, 4 px inside the row's
+// right edge; sell pouches 44 on touch, 40 with a mouse, 8 / 6 apart.
+function drawShopPanel(g, narrow) {
+  const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G, t } = Rm;
+  const shop = SHOPS[panelArg] || { name: "Fennick's Stall", stock: [], buys: ['wolf_pelt', 'boar_tusk', 'wool', 'spider_silk', 'goblin_scrap', 'coal'], rate: 1 };
+  const rate = shop.rate || 0.6, s = t ? 44 : 40;
+  const cols2 = Rm.aw - 36 >= 640;
+  const gridCols = cols2 ? 5 : (Rm.aw - 36 >= 10 * s + 9 * G ? 10 : 5);
+  const gridW = gridCols * s + (gridCols - 1) * G, gridH = Math.ceil(INV_SLOTS / gridCols) * (s + G) - G;
+  const W = cols2 ? Math.min(Rm.aw, 820) : Math.min(Rm.aw, Math.max(gridW + 36, 480)), cw = W - 36;
+  const listW = cols2 ? cw - gridW - 28 : cw, rowH = R + 8, pitch = rowH + 6, pagerH = R + 14;
+  const armSell = confirmActive('sell');
+  const sellHead = armSell ? `TAP AGAIN TO SELL ${((ITEMS[uxConfirm.item] || {}).name || 'it').toUpperCase()}` : shop.buys ? `SELLS FOR FULL PRICE: ${shop.buys.map(i => ITEMS[i].name).join(', ').toUpperCase()}` : `SELL FROM YOUR PACK: ${Math.round(rate * 100)}% OF WHAT IT IS WORTH`;
+  const sellW = cols2 ? gridW : cw;
+  const headLines = HK.wrap(g, sellHead, sellW, 3, K.FN(11)).lines.length, headH = headLines * 15 + 6;
+  const sellH = headH + gridH;
+  const n = shop.stock.length;
+  let perPage, h;
+  if (cols2) {
+    const fullH = 62 + Math.max(n * pitch, sellH) + 12;
+    if (fullH <= Rm.ah) { perPage = Math.max(1, n); h = fullH; }
+    else { perPage = Math.max(1, Math.floor((Rm.ah - 62 - 12 - pagerH) / pitch)); h = 62 + Math.max(perPage * pitch + pagerH, sellH) + 12; }
+  } else {
+    const fullH = 62 + n * pitch + 12 + sellH + 12;
+    if (fullH <= Rm.ah) { perPage = Math.max(1, n); h = fullH; }
+    else { perPage = Math.max(1, Math.floor((Rm.ah - 62 - 12 - sellH - 12 - pagerH) / pitch)); h = 62 + perPage * pitch + pagerH + 12 + sellH + 12; }
+  }
+  const pages = Math.max(1, Math.ceil(n / perPage));
+  const { px, py, w, h: ph } = panelBox(g, W, h, shop.name, `You have ${coins()} coins. Tap your pack to sell.`);
+  const x0 = px + 18, p = clamp(K.page('shop'), 0, pages - 1);
+  const blurbOn = listW >= 440;
+  const bw = Math.max(...shop.stock.map(([, price]) => K.verbW(g, `Buy ${price}`, 'coin', R)), K.verbW(g, 'Buy 99', 'coin', R));
+  shop.stock.forEach(([id, price], i) => {
+    const label = `Buy ${price}`, def = ITEMS[id], can = coins() >= price;
+    const buy = () => { if (!payCoins(price)) { notify('Not enough coins.'); return; } if (addItem(id, 1) > 0) { addItem('coins', price); notify('Your pack is full.'); return; } floatText(player.x, player.y - 30, `Bought ${def.name}`, def.color); save(); };
+    const k = i - p * perPage;
+    if (k < 0 || k >= perPage) { if (can) buttons.push({ x: -1e9, y: -1e9, w: 0, h: 0, label, action: buy, offscreen: true }); return; }
+    const y = py + 62 + k * pitch;
+    HK.vellumPlate(g, x0, y, listW, rowH);
+    const ps = t ? 36 : 28;
+    HK.pouch(g, { x: x0 + 8, y: y + (rowH - ps) / 2 - 1, w: ps, h: ps + 2 }, { id, qty: 1 }, '', {});
+    const tx = x0 + 16 + ps, room = listW - (tx - x0) - bw - 16;
+    if (blurbOn) {
+      K.name(g, def.name, tx, y + rowH / 2 - 2, Math.min(room, 170), { size: 13 });
+      K.para(g, itemBlurb(def), tx, y + rowH / 2 + 14, room, { size: 12, lines: 1, min: 10, color: T.inkDim, fitId: 'shop:blurb' });
+    } else K.name(g, def.name, tx, y + rowH / 2 + 5, room, { size: 13 });
+    K.verb(g, x0 + listW - 4 - bw, y + 4, bw, R, label, buy, { emblem: 'coin', tone: can ? 'primary' : null, enabled: can, name: `${def.name}: ${price} coins` });
+  });
+  if (pages > 1) pager(g, x0, py + 62 + perPage * pitch + 4, listW, p, pages, q => K.page('shop', clamp(q, 0, pages - 1)));
+  // selling: tap a pouch (a precious thing asks twice)
+  const sx = cols2 ? x0 + listW + 28 : x0, sy = cols2 ? py + 62 : py + ph - 12 - sellH;
+  HK.wrap(g, sellHead, sellW, 3, K.FN(11)).lines.forEach((ln, i) => HK.text(g, ln, sx, sy + 12 + i * 15, { font: K.FN(11), color: armSell ? T.goldHi : T.gold, shadow: 'rgba(0,0,0,0.8)', box: { x: sx, y: sy, w: sellW, h: headH }, fitId: 'shop:sell' }));
+  drawInvGrid(g, sx, sy + headH, gridCols, s, G, i => {
+    const sl = player.inv[i]; if (!sl || sl.id === 'coins') return; if (shop.buys && !shop.buys.includes(sl.id)) { notify('Fennick only wants pelts, tusks, wool, silk, scrap and coal.'); return; }
+    const sell = () => { const q = player.inv[i]; if (!q) return; const price = Math.max(1, Math.floor(ITEMS[q.id].value * rate)); q.qty -= 1; if (q.qty <= 0) player.inv[i] = null; addItem('coins', price); floatText(player.x, player.y - 30, `+${price} coins`, '#ffd166'); save(); };
+    if (needsConfirm(ITEMS[sl.id])) { if (confirmActive('sell') && uxConfirm.item === sl.id) { uxConfirm = null; sell(); } else { uxConfirm = { label: 'sell', until: nowMs() + 3000, item: sl.id }; sfx('open'); } } else sell();
+  });
+}
+
+// ---------- Death's Chest ----------
+function drawCoffinPanel(g) {
+  // The chest holds everything from every fall until it is collected (06-systems deathKeep), so it can be long: the
+  // total in plain words on top, every entry listed a page at a time with its own fee (or "no room" when the pack is
+  // full), and the reclaim plate charges only for what fits (reclaimPlan).
+  const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R } = Rm;
+  const W = Math.min(Rm.aw, 480), cw = W - 36, lhI = 26;
+  let words, plan = null, fee = 0, rest = 0;
+  if (!deathKeep) words = 'The chest is empty. For now. When you fall, what you carry comes here, and it stays here, from every fall, until you collect it. Cheap things I return for nothing. Precious things cost a share of their worth, and I take it from your own coin first.';
+  else {
+    plan = reclaimPlan(); fee = plan.total;
+    const fromHeld = Math.min(chestCoins(deathKeep.items), fee); rest = fee - fromHeld;
+    const how = `${fromHeld ? `, ${fromHeld} of it from the coins you dropped` : ''}${rest ? `, ${rest} from your hand` : ''}`;
+    words = 'I keep everything from every fall until you collect it. ' + (plan.all
+      ? (fee ? `The fee is ${fee} coins${how}.` : 'Nothing in it is worth my time. Take it, and try not to fall again.')
+      : `Your pack has room for only part of it${fee ? `. The fee for that part is ${fee} coins${how}` : ''}. The rest stays here until you come back.`);
+  }
+  const wh = HK.wrap(g, words, cw, 8, K.FB(14)).lines.length * K.lineH(14);
+  const items = deathKeep ? deathKeep.items : [], n = items.length;
+  // rows between the heading and the reclaim plate; a pager row when they do not all fit
+  const fixed = 62 + 20 + wh + 10 + 22 + 12 + R + 16, pagerH = R + 10;
+  let per = Math.max(1, Math.floor((Rm.ah - fixed) / lhI));
+  if (n > per) per = Math.max(1, Math.floor((Rm.ah - fixed - pagerH) / lhI));
+  const pages = Math.max(1, Math.ceil(n / per)); coffinPage = clamp(coffinPage, 0, pages - 1);
+  const shownN = Math.min(per, n);
+  const h = deathKeep ? fixed + shownN * lhI + (pages > 1 ? pagerH : 0) : 62 + 20 + wh + 16;
+  const { px, py, w, h: ph } = panelBox(g, W, h, "Death's Chest", 'Piles of his gold. A chest of what you lost.');
+  const x0 = px + 18;
+  K.head(g, x0, py + 62 + 12, cw, 'DEATH SAYS');
+  K.para(g, words, x0, py + 62 + 20 + K.lineH(14) - 4, cw, { size: 14, lines: 8, color: T.ink, fitId: 'coffin:words' });
+  if (!deathKeep) return;
+  let y = py + 62 + 20 + wh + 10;
+  K.head(g, x0, y + 16, cw, `IN THE CHEST: ${chestWords().toUpperCase()}`);
+  y += 22;
+  const first = coffinPage * per;
+  items.slice(first, first + per).forEach((sl, k) => {
+    const i = first + k, coin = sl.id === 'coins', fits = plan.fits[i], f1 = plan.fees[i];
+    try { drawItemIcon(g, sl.id, x0 + 10, y + lhI / 2, 16); } catch (e) { }
+    const feeT = coin ? 'free' : fits <= 0 ? 'no room' : f1 > 0 ? `${f1} coins` : 'free', fw = HK.tw(g, feeT, K.FN(12)) + 6;
+    const nm = `${ITEMS[sl.id] ? ITEMS[sl.id].name : sl.id} × ${sl.qty}` + (!coin && fits > 0 && fits < sl.qty ? ` (room for ${fits})` : '');
+    let t = nm; const room = cw - 26 - fw - 8, f = K.FB(13); if (HK.tw(g, t, f) > room) t = (HK.wrap(g, t, room, 1, f).lines[0] || t);
+    HK.text(g, t, x0 + 26, y + lhI / 2 + 5, { font: f, color: T.ink, box: { x: x0 + 26, y, w: room, h: lhI }, fitId: 'coffin:item' });
+    K.name(g, feeT, x0 + cw, y + lhI / 2 + 5, fw, { size: 12, align: 'right', color: !coin && fits <= 0 ? T.warn : !coin && f1 > 0 ? T.gold : T.inkMute });
+    K.hair(g, x0, y + lhI - 1, cw, 0.18);
+    y += lhI;
+  });
+  if (pages > 1) pager(g, x0, py + ph - 16 - R - 10 - R, cw, coffinPage, pages, q => { coffinPage = clamp(q, 0, pages - 1); });
+  const ok = coins() >= rest;
+  const label = plan.all ? (fee ? `Reclaim everything for ${fee} coins` : 'Reclaim everything') : (fee ? `Reclaim everything that fits for ${fee} coins` : 'Reclaim everything that fits');
+  K.verb(g, x0, py + ph - 16 - R, cw, R, label, reclaimFromDeath, { emblem: 'coin', tone: 'primary', enabled: ok, name: ok ? 'Take your things back' : `You need ${rest} coins` });
+}
+
 function drawPanels(g, narrow, short, qh, hb) {
-  const gridCols = narrow ? 5 : 10;
   if (panel && HOOKS.panel[panel]) { HOOKS.panel[panel](g, narrow); return; }
-  if (panel === 'skills') {
-    const rowH = clamp(Math.floor((VH - 70) / SKILL_DEFS.length), 24, 34), pw = 270, ph = 40 + SKILL_DEFS.length * rowH;
-    const px = 14; let py = narrow ? HUD_LAYOUT.hotbarY + hb + 12 : 90; if (py + ph > VH - 10) py = Math.max(14, VH - 10 - ph);
-    roundRect(g, px, py, pw, ph, 10); g.fillStyle = 'rgba(10,14,22,0.92)'; g.fill();
-    panelRect = { x: px, y: py, w: pw, h: ph };
-    button(g, px + pw - 50, py + 4, 44, 36, '×', closePanel, '#21262d');
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(`SKILLS · combat level ${combatLevel()}`, px + 12, py + 18);
-    SKILL_DEFS.forEach((s, i) => {
-      const y = py + 30 + i * rowH, sk = player.skills[s.key], lv = levelForXp(sk.xp);
-      const locked = s.needs && sk.xp === 0 && !hasTool(s.needs === 'a bow' ? 'bow' : s.needs === 'an axe' ? 'axe' : s.needs === 'a pickaxe' ? 'pickaxe' : s.needs === 'a rod' ? 'rod' : 'hoe') && !(s.key === 'range' && (player.equip.weapon === 'shortbow' || countItem('shortbow')));
-      g.fillStyle = locked ? '#6e7681' : '#e6edf3'; g.font = 'bold 12px sans-serif'; g.fillText(s.name, px + 12, y + 11);
-      g.fillStyle = locked ? '#6e7681' : '#f5c542'; g.textAlign = 'right'; g.fillText(locked ? `needs ${s.needs}` : `Lv ${lv}`, px + pw - 12, y + 11); g.textAlign = 'left';
-      g.fillStyle = '#2a2f3a'; roundRect(g, px + 12, y + 15, pw - 24, 5, 3); g.fill();
-      if (!locked) { const cur = sk.xp - xpForLevel(lv), need = xpForLevel(lv + 1) - xpForLevel(lv); g.fillStyle = '#58a6ff'; roundRect(g, px + 12, y + 15, (pw - 24) * clamp(cur / need, 0, 1), 5, 3); g.fill(); if (rowH >= 32) { g.fillStyle = '#6e7681'; g.font = '9px sans-serif'; g.fillText(`${cur} / ${need} xp`, px + 12, y + 29); } }
-    });
-  }
-  if (panel === 'help') {
-    const rows = touchMode()
-      ? [['Tap the world', 'walk there · tap a tree, rock, water or person to use it · tap a monster to fight'], ['Hold on a thing', 'shows what it is, then acts when you let go'], ['Left side of screen', 'drag to move (or tap to walk)'], ['SWING', 'attack, shoot, stomp, hit a dummy (or double-tap the world)'], ['USE', 'talk, chop, mine, fish, cook, open, enter'], ['BAG', 'pack + worn gear (tap, tap = swap)'], ['BAG › Fight back', 'on: a monster that hits you gets hit back'], ['Hotbar', 'tap a slot to eat or use it'], ['Bag › Place', 'put down a plank, door, bed, lodestone or trap'], ['CRAFT / SKILLS / QUESTS', 'panels · QUESTS also shows what was Said'], ['HOME', 'teleport to your lodestone (5 min)'], ['EXIT', 'climb out of a walker or bulldozer'], ['Machines', 'USE a wreck to repair it, USE again to climb in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Minimap', 'tap the minimap for the world map'], ['MENU', 'settings, title screen, new game']]
-      : [['WASD / arrows', 'move'], ['Click the world', 'walk there · click a tree, rock, water, person or monster to use / fight it'], ['Space', 'swing, shoot, stomp'], ['E', 'talk, chop, mine, fish, cook, open, enter'], ['Q', 'place a plank, door, bed, lodestone or trap'], ['1–5', 'eat or use the first five pack slots'], ['I / C / Tab / J / M', 'pack · craft · skills · quests · map'], ['O', 'fight back when hit: on or off (also in the pack)'], ['H', 'teleport home (lodestone, 5 min)'], ['X', 'climb out of a machine'], ['Machines', 'E on a wreck repairs it, E again climbs in'], ['Death', 'if you fall, he keeps your pack in his stone house'], ['Notice board', 'in the square and by the cave road: paid jobs'], ['Enter', 'next line of talk (or click the box)'], ['Minimap', 'click the minimap (or M) for the world map'], ['Esc', 'menu (settings, title screen, new game)']];
-    const rh = Math.min(26, Math.floor((VH - 120) / rows.length));
-    const { px, py, w } = panelBox(g, 500, 90 + rows.length * rh, 'How to play', 'Every skill trains by doing. Die and Death keeps your pack.');
-    rows.forEach(([k, v], i) => { const y = py + 78 + i * rh; g.fillStyle = '#f5c542'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(k, px + 18, y); g.fillStyle = '#c9d1d9'; g.font = narrow ? '11px sans-serif' : '13px sans-serif'; g.fillText(v, px + (narrow ? 150 : 190), y); });
-  }
-  if (panel === 'quests') {
-    const list = activeQuests(); const done = []; if (quest.bread === 'done') done.push('bread'); if (quest.wren === 'done') done.push('wren');
-    const said = questsTab === 'said';
-    const lines = said ? dialogLog.slice(-Math.max(3, Math.floor((VH - 160) / 22))).reverse() : [];
-    const { px, py, w, h } = panelBox(g, 460, said ? Math.min(VH - 20, 120 + lines.length * 22) : 150 + list.length * 74 + done.length * 20, said ? 'Said' : 'Quests', said ? 'The last things people said to you, newest first.' : 'The tracked quest stays on screen and marks the map.');
-    button(g, px + 18, py + 60, 80, 28, 'Quests', () => { questsTab = 'quests'; }, said ? '#21262d' : '#238636', said);
-    button(g, px + 104, py + 60, 80, 28, 'Said', () => { questsTab = 'said'; }, said ? '#238636' : '#21262d', !said);
-    let y = py + 100;
-    if (said) {
-      if (!lines.length) { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText('Nobody has said anything yet.', px + 18, y + 8); }
-      for (const l of lines) { g.fillStyle = '#c9a36a'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(l.who.toUpperCase(), px + 18, y + 8); g.fillStyle = '#c9d1d9'; g.font = '12px sans-serif'; let t = l.text; const maxW = w - 36 - (narrow ? 70 : 110); while (g.measureText(t).width > maxW && t.length > 8) t = t.slice(0, -2) + '…'; g.fillText(t, px + (narrow ? 88 : 128), y + 8); y += 22; if (y > py + h - 20) break; }
-      return;
-    }
-    for (const id of list) {
-      const tracked = quest.tracked === id;
-      roundRect(g, px + 18, y, w - 36, 64, 8); g.fillStyle = tracked ? 'rgba(88,166,255,0.12)' : 'rgba(255,255,255,0.05)'; g.fill();
-      g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(QUEST_DEFS[id].name + (id === 'main' ? '  · main story' : '  · side quest'), px + 30, y + 20);
-      g.fillStyle = '#c9d1d9'; g.font = '12px sans-serif'; let t = questText(id); while (g.measureText(t).width > w - 180 && t.length > 8) t = t.slice(0, -2) + '…'; g.fillText(t, px + 30, y + 42);
-      button(g, px + w - 120, y + 16, 90, 30, tracked ? 'Untrack' : 'Track', () => { if (tracked) { quest.tracked = null; if (id === 'main') quest.untrackedByPlayer = true; } else { quest.tracked = id; if (id === 'main') quest.untrackedByPlayer = false; } save(); }, tracked ? '#21262d' : '#238636');
-      y += 74;
-    }
-    for (const id of done) { g.fillStyle = '#6e7681'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(`✓ ${QUEST_DEFS[id].name} — done`, px + 30, y + 12); y += 20; }
-  }
-  if (panel === 'map') {
-    // Inside an instance the map is that instance: its name on the panel, its own rect drawn to fill the box, and
-    // none of the overworld's region names, homes, markers or quest rings (they sit in the same top-left tiles).
-    const view = mapView(), inside = !!view.id;
-    // an instance's box is cut to its shape (Deepholm is nearly square): as wide as its map can be at the height there is
-    let mw = Math.min(VW - 40, 760); if (inside) mw = Math.min(mw, Math.max(360, (VH - 60 - 80) * view.w / view.h + 36));
-    const mh = Math.min(VH - 60, inside ? (mw - 36) * view.h / view.w + 80 : mw * MAP_H / MAP_W + 70);
-    const { px, py, w, h } = panelBox(g, mw, mh, view.name, inside ? `${view.sub ? view.sub + '. ' : ''}White: you. Tap anywhere to close.` : 'White: you. Blue: home. Gold: quest targets. Tap anywhere to close.');
-    if (miniDirty || miniDiffCount !== mapDiffs.size) refreshMini();
-    const iw = w - 36, ih = Math.min(h - 80, iw * view.h / view.w), ix = px + 18, iy = py + 62;
-    // the world keeps its old fit (full width, cropped at the foot on a short screen); an instance fits whole and is centred
-    const sc = inside ? Math.min(iw / view.w, ih / view.h) : iw / MAP_W;
-    const ox = inside ? ix + (iw - view.w * sc) / 2 : ix, oy = inside ? iy + (ih - view.h * sc) / 2 : iy;
-    mapLayout = { ix, iy, iw, ih, ox, oy, sc, view };
-    g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip();
-    if (inside) { g.fillStyle = '#0b0f14'; g.fillRect(ix, iy, iw, ih); }
-    g.imageSmoothingEnabled = false; g.drawImage(miniCanvas, 0, 0, view.w, view.h, ox, oy, view.w * sc, view.h * sc); g.imageSmoothingEnabled = true;
-    for (const r of REGIONS) {
-      if (r.name === 'Goblin Fields' || r.name === 'The Wilds') continue;
-      // inside: only a region a feature marked as this instance's own (r.instance === id) and not the whole-instance one the title already names
-      if (inside ? r.instance !== view.id || (r.x0 <= 0 && r.y0 <= 0 && r.x1 >= view.w - 1 && r.y1 >= view.h - 1) : r.instance) continue;
-      const cx = ox + (r.x0 + r.x1 + 1) / 2 * sc, cy = oy + (r.y0 + r.y1 + 1) / 2 * sc; g.font = `700 ${Math.max(9, Math.min(16, sc * 2.2))}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(r.name.toUpperCase(), cx, cy); g.fillStyle = '#e6edf3'; g.fillText(r.name.toUpperCase(), cx, cy);
-    }
-    const dot = (wx, wy, color, r) => { g.fillStyle = color; g.beginPath(); g.arc(ox + wx / TILE * sc, oy + wy / TILE * sc, r, 0, 7); g.fill(); };
-    if (player.home && !inside) dot(player.home.x, player.home.y, '#7ec8ff', 4);
-    for (const t of mapTargets()) {
-      const tx = ox + (t.x + 0.5) * sc, ty = oy + (t.y + 0.5) * sc, isTracked = t.id === quest.tracked;
-      g.strokeStyle = isTracked ? '#f5c542' : 'rgba(245,197,66,0.7)'; g.lineWidth = isTracked ? 2.5 : 1.5; g.beginPath(); g.arc(tx, ty, (isTracked ? 6 : 5) + Math.sin(time * 4) * 2, 0, 7); g.stroke();
-      if (t.label) { g.font = `bold ${narrow ? 9 : 11}px sans-serif`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(t.label, tx, ty - 10); g.fillStyle = '#f5c542'; g.fillText(t.label, tx, ty - 10); }
-    }
-    dot(player.x, player.y, 'rgba(0,0,0,0.7)', 5.5); dot(player.x, player.y, '#ffffff', 4); // the rim keeps him visible on white cloud
-    g.restore();
-    buttons.push({ x: ix, y: iy, w: iw, h: ih, label: 'mapimage', action: closePanel }); // "tap anywhere to close" — the map itself closes too
-  }
-  if (panel === 'inventory') {
-    const cols = gridCols, size = narrow ? 44 : 46, gap = 6;
-    const eqw = 70;
-    // rowH: the kit's control height — 44 on touch, so every button in the pack is finger-sized. The panel
-    // grows by the difference rather than letting the action row spill past its own box.
-    const rowH = HK.row(), grow = (rowH - 30) * 2;
-    const { px, py, w, h } = panelBox(g, cols * (size + gap) + 30 + eqw, (narrow ? 440 : 300) + grow, 'Your pack', `${player.inv.filter(Boolean).length} / ${INV_SLOTS} slots · tap one, then another, to swap`);
-    if (player.home) button(g, px + w - HK.row() - 12 - 86, py + 10, 78, rowH, touchMode() ? 'HOME' : 'Home (H)', goHome, '#21262d');
-    const gy = drawInvGrid(g, px + 18 + eqw, py + 66, cols, size, gap, i => { selectedSlot = selectedSlot === i ? -1 : i; }, true);
-    // equipment column
-    g.fillStyle = '#8b949e'; g.font = 'bold 10px sans-serif'; g.textAlign = 'left'; g.fillText('WORN', px + 18, py + 62);
-    EQUIP_SLOTS.forEach((k, i) => {
-      // one full pitch on every screen: a narrow phone used to pack the worn slots at 0.8 of it, which put 44 px
-      // tap targets on a 40 px pitch — every two neighbours a knight wears overlapped by 4 px (the kit's layout
-      // audit catches it the moment he wears a helm and a body). Six slots at full pitch are 300 px; the panel is 440
-      const ey = py + 66 + i * (size + gap); const id = player.equip[k];
-      drawSlot(g, px + 18, ey, size, id ? { id, qty: 1 } : null, false);
-      if (!id) { g.fillStyle = '#4b535d'; g.font = '9px sans-serif'; g.textAlign = 'center'; g.fillText(k, px + 18 + size / 2, ey + size / 2 + 3); }
-      else buttons.push({ x: px + 18, y: ey, w: size, h: size, label: 'eq' + k, action: () => unequip(k) });
-    });
-    g.fillStyle = '#6e7681'; g.font = '10px sans-serif'; g.textAlign = 'left'; g.fillText(`str +${gearBonus('str')}  acc +${gearBonus('att')}  def +${gearBonus('def')}  max hit ${playerMaxHit()}`, px + 18 + eqw, gy + 8);
-    const s = selectedSlot >= 0 ? player.inv[selectedSlot] : null;
-    if (s) {
-      const def = ITEMS[s.id];
-      g.fillStyle = '#e6edf3'; g.font = 'bold 14px sans-serif'; g.textAlign = 'left'; g.fillText(`${def.name} × ${s.qty}`, px + 18 + eqw, gy + 30);
-      g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.fillText(itemBlurb(def), px + 18 + eqw, gy + 48);
-      let bx = px + 18 + eqw; const by = gy + 58;
-      const act = def.heal ? 'Eat' : (def.weapon || def.armour) ? 'Equip' : def.place ? 'Place' : def.burn ? 'Light fire' : def.throwable ? 'Throw' : null;
-      if (act) { button(g, bx, by, 90, rowH, act, () => { const i = selectedSlot; useItem(i); if (act !== 'Equip') return; selectedSlot = -1; }); bx += 98; }
-      const doDrop = () => { const q = player.inv[selectedSlot]; if (!q) return; drops.push({ x: player.x + player.facing.x * 30, y: player.y + player.facing.y * 30, id: q.id, qty: q.qty, t: 0 }); player.inv[selectedSlot] = null; selectedSlot = -1; save(); };
-      const arm = needsConfirm(def) && confirmActive('drop');
-      button(g, bx, by, arm ? 130 : 80, rowH, arm ? 'Tap again to drop' : 'Drop', () => { if (needsConfirm(def)) confirmTap('drop', doDrop); else doDrop(); }, arm ? '#c0392b' : '#8b2e2e');
-    } else { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(touchMode() ? 'Tap an item. Tap a worn piece to take it off. The hotbar uses the first five slots.' : 'Tap an item. Tap a worn piece to take it off. Keys 1–5 use the first five slots.', px + 18 + eqw, gy + 30); }
-  }
+  if (panel === 'skills') drawSkillsPanel(g, narrow);
+  if (panel === 'help') drawHelpPanel(g, narrow);
+  if (panel === 'quests') drawQuestsPanel(g, narrow);
+  if (panel === 'map') drawMapPanel(g, narrow);
+  if (panel === 'inventory') drawPackPanel(g, narrow);
   if (panel === 'bank') {
-    const cols = gridCols, size = 40, gap = 5, rows = 3, per = cols * rows, pages = Math.max(1, Math.ceil(BANK_SLOTS / per));
-    const { px, py, w } = panelBox(g, cols * (size + gap) + 30, narrow ? 560 : 440, 'Bank of Thistledown', `${player.bank.length} / ${BANK_SLOTS} vault slots · tap to move items`);
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('VAULT', px + 18, py + 70);
+    // the core bank (60-bank registers HOOKS.panel.bank and replaces this one)
+    const cols = narrow ? 5 : 10, size = touchMode() ? 44 : 40, gap = touchMode() ? 8 : 5, rows = 3, per = cols * rows, pages = Math.max(1, Math.ceil(BANK_SLOTS / per));
+    const { px, py, w } = panelBox(g, cols * (size + gap) + 30, narrow ? 600 : 480, 'Bank of Thistledown', `${player.bank.length} of ${BANK_SLOTS} vault slots. Tap to move things.`);
+    PANEL_KIT.head(g, px + 18, py + 74, w - 36, 'VAULT');
     bankPage = clamp(bankPage, 0, pages - 1);
     for (let k = 0; k < per; k++) {
       const i = bankPage * per + k; if (i >= BANK_SLOTS) break;
-      const cx = px + 18 + (k % cols) * (size + gap), cy = py + 78 + Math.floor(k / cols) * (size + gap), b = player.bank[i];
+      const cx = px + 18 + (k % cols) * (size + gap), cy = py + 82 + Math.floor(k / cols) * (size + gap), b = player.bank[i];
       drawSlot(g, cx, cy, size, b, false);
       if (b) buttons.push({ x: cx, y: cy, w: size, h: size, label: 'bank' + i, action: () => { const left = addItem(b.id, b.qty); b.qty = left; if (!left) player.bank.splice(i, 1); if (left) notify('Your pack is full.'); save(); } });
     }
-    const pgy = py + 78 + rows * (size + gap) + 4;
+    const pgy = py + 82 + rows * (size + gap) + 4;
     pager(g, px + 18, pgy, w - 36, bankPage, pages, p => { bankPage = clamp(p, 0, pages - 1); });
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('YOUR PACK', px + 18, pgy + 52);
-    drawInvGrid(g, px + 18, pgy + 60, cols, size, gap, i => { const s = player.inv[i]; if (!s) return; if (bankAdd(s.id, s.qty)) { player.inv[i] = null; save(); } else notify('The vault is full.'); });
+    PANEL_KIT.head(g, px + 18, pgy + HK.row() + 22, w - 36, 'YOUR PACK');
+    drawInvGrid(g, px + 18, pgy + HK.row() + 30, cols, size, gap, i => { const s = player.inv[i]; if (!s) return; if (bankAdd(s.id, s.qty)) { player.inv[i] = null; save(); } else notify('The vault is full.'); });
   }
-  if (panel === 'shop') {
-    const shop = SHOPS[panelArg] || { name: "Fennick's Stall", stock: [], buys: ['wolf_pelt', 'boar_tusk', 'wool', 'spider_silk', 'goblin_scrap', 'coal'], rate: 1 };
-    const cols = gridCols, size = 40, gap = 5; const rate = shop.rate || 0.6;
-    const { px, py, w } = panelBox(g, cols * (size + gap) + 30, 200 + shop.stock.length * 38 + Math.ceil(INV_SLOTS / cols) * (size + gap), shop.name, `${coins()} coins · buy on the left, tap your pack to sell`);
-    shop.stock.forEach(([id, price], i) => {
-      const y = py + 62 + i * 38; const def = ITEMS[id]; const can = coins() >= price;
-      roundRect(g, px + 18, y, w - 36, 32, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      drawItemIcon(g, id, px + 38, y + 16, 18);
-      g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(def.name, px + 58, y + 20);
-      if (!narrow) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.fillText(itemBlurb(def), px + 190, y + 20); }
-      button(g, px + w - 120, y + 3, 96, 26, `Buy ${price}`, () => { if (!payCoins(price)) { notify('Not enough coins.'); return; } if (addItem(id, 1) > 0) { addItem('coins', price); notify('Your pack is full.'); return; } floatText(player.x, player.y - 30, `Bought ${def.name}`, def.color); save(); }, can ? '#238636' : '#2a2f3a', can);
-    });
-    const gy = py + 62 + shop.stock.length * 38 + 12;
-    const armSell = confirmActive('sell');
-    g.fillStyle = armSell ? '#f5c542' : '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(armSell ? `TAP AGAIN TO SELL ${(ITEMS[uxConfirm.item] || {}).name || 'it'}` : shop.buys ? `SELLS FOR FULL PRICE: ${shop.buys.map(i => ITEMS[i].name).join(', ')}` : `SELL FROM YOUR PACK (${Math.round(rate * 100)}% of value)`, px + 18, gy);
-    drawInvGrid(g, px + 18, gy + 8, cols, size, gap, i => {
-      const s = player.inv[i]; if (!s || s.id === 'coins') return; if (shop.buys && !shop.buys.includes(s.id)) { notify('Fennick only wants pelts, tusks, wool, silk, scrap and coal.'); return; }
-      const sell = () => { const q = player.inv[i]; if (!q) return; const price = Math.max(1, Math.floor(ITEMS[q.id].value * rate)); q.qty -= 1; if (q.qty <= 0) player.inv[i] = null; addItem('coins', price); floatText(player.x, player.y - 30, `+${price} coins`, '#ffd166'); save(); };
-      if (needsConfirm(ITEMS[s.id])) { if (confirmActive('sell') && uxConfirm.item === s.id) { uxConfirm = null; sell(); } else { uxConfirm = { label: 'sell', until: nowMs() + 3000, item: s.id }; sfx('open'); } } else sell();
-    });
-  }
-  if (panel === 'craft' || panel === 'station') {
-    const station = panel === 'craft' ? null : panelArg;
-    const all = station === 'forge' ? SMELT : RECIPES.filter(r => r.station === station);
-    const titles = { forge: 'Forge — smelting', anvil: 'Anvil — smithing (needs a hammer)', workbench: 'Workbench', workshop: "Tinker's table — traps and arrows", alchemy: 'Alchemy table — bombs' };
-    const skillKey = station === 'forge' || station === 'anvil' ? 'smithing' : 'crafting';
-    // tabs by tier when the list is long; 8 rows a page (fewer on a short screen) with Prev/Next
-    const tabbed = all.length > 8;
-    const tiers = tabbed ? ['Bronze/Iron', 'Steel', 'Mithril', 'Godly', 'Other'].filter(t => all.some(r => recipeTier(r) === t)) : [];
-    if (tabbed && !tiers.includes(recipeTab)) recipeTab = tiers[0];
-    const list = tabbed ? all.filter(r => recipeTier(r) === recipeTab) : all;
-    const rowsY0 = tabbed ? 92 : 62, n = list.length;
-    const noPagerH = rowsY0 + n * 40 + 24;
-    const needPager = n > 8 || noPagerH > VH - 20;
-    const wantH = needPager ? rowsY0 + Math.min(8, n) * 40 + 54 : noPagerH;
-    const { px, py, w, h } = panelBox(g, 420, Math.min(VH - 20, Math.max(160, wantH)), station ? titles[station] || 'Station' : 'Crafting', station ? `${SKILL_DEFS.find(s => s.key === skillKey).name} level ${skillLv(skillKey)}` : 'Simple things craft from your pack. Stations in Thistledown make the rest.');
-    if (tabbed) { let tx = px + 18; for (const t of tiers) { const tw = Math.max(64, 14 + t.length * 8); button(g, tx, py + 58, tw, 26, t, () => { recipeTab = t; recipePage = 0; }, t === recipeTab ? '#238636' : '#21262d', t !== recipeTab); tx += tw + 6; } }
-    const perPage = needPager ? Math.max(2, Math.min(8, Math.floor((h - rowsY0 - 54) / 40))) : Math.max(1, n);
-    const pages = Math.max(1, Math.ceil(n / perPage)); recipePage = clamp(recipePage, 0, pages - 1);
-    const canMake = r => { const rec = station === 'forge' ? { ...r, station: 'forge', skill: 'smithing', qty: 1 } : r; const has = rec.needs.every(([id, q]) => countItem(id) >= q); const lvOk = !rec.skill || skillLv(rec.skill) >= rec.lv; return { rec, can: has && lvOk && !(station === 'anvil' && !hasTool('hammer')) }; };
-    const pageList = list.slice(recipePage * perPage, recipePage * perPage + perPage);
-    pageList.forEach((r, i) => {
-      const y = py + rowsY0 + i * 40; const { rec, can } = canMake(r);
-      button(g, px + 18, y, w - 36, 34, rec.label + (rec.lv > 1 ? `  (lv ${rec.lv})` : ''), () => craft(rec), can ? '#238636' : '#2a2f3a', can);
-    });
-    // recipes on other tabs/pages stay addressable by label for the harness (F.clickButton) but sit off-screen, so no tap can reach them
-    for (const r of all) { if (pageList.includes(r)) continue; const { rec, can } = canMake(r); if (can) buttons.push({ x: -1e9, y: -1e9, w: 0, h: 0, label: rec.label + (rec.lv > 1 ? `  (lv ${rec.lv})` : ''), action: () => craft(rec), offscreen: true }); }
-    if (pages > 1) pager(g, px + 18, py + h - 40, w - 36, recipePage, pages, p => { recipePage = clamp(p, 0, pages - 1); });
-    if (station === 'anvil' && !hasTool('hammer')) { g.fillStyle = '#ff6b6b'; g.font = '12px sans-serif'; g.textAlign = pages > 1 ? 'center' : 'left'; g.fillText('You need a hammer in your pack.', pages > 1 ? px + w / 2 : px + 18, pages > 1 ? py + h - 46 : py + h - 12); }
-  }
-  if (panel === 'coffin') {
-    // The chest holds everything from every fall, so it can be long: every entry is listed, a page at a time when
-    // they do not all fit, with the total count on top and nothing written past the panel's edge.
-    const bw = Math.min(460, VW - 20), ROW = 22, textW = bw - 36;
-    let intro, plan = null, fee = 0, rest = 0;
-    if (!deathKeep) intro = "The chest is empty. For now. When you fall, what you carry comes here, and it stays here, from every fall, until you collect it. Cheap things I return for nothing. Precious things cost a share of their worth, and I take it from your own coin first.";
-    else {
-      plan = reclaimPlan(); fee = plan.total;
-      const fromHeld = Math.min(chestCoins(deathKeep.items), fee); rest = fee - fromHeld;
-      const how = `${fromHeld ? `, ${fromHeld} of it from the coins you dropped` : ''}${rest ? `, ${rest} from your hand` : ''}`;
-      intro = 'I keep everything from every fall until you collect it. ' + (plan.all
-        ? (fee ? `The fee is ${fee} coins${how}.` : 'Nothing in it is worth my time. Take it, and try not to fall again.')
-        : `Your pack has room for only part of it${fee ? `. The fee for that part is ${fee} coins${how}` : ''}. The rest stays here until you come back.`);
-    }
-    g.font = '14px sans-serif'; const introLines = dialogLines(g, intro, textW);
-    const listTop = 98 + (introLines - 1) * 19 + 26; // offset from the panel top of the "In the chest" line
-    const n = deathKeep ? deathKeep.items.length : 0;
-    const fullH = deathKeep ? listTop + 12 + n * ROW + 68 : 98 + introLines * 19 + 24;
-    const { px, py, w, h } = panelBox(g, 460, Math.min(VH - 20, Math.max(200, fullH)), "Death's Chest", 'Piles of his gold. A chest of what you lost.');
-    g.fillStyle = '#b58cff'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('DEATH', px + 18, py + 76);
-    g.fillStyle = '#e6edf3'; g.font = '14px sans-serif'; wrapText(g, intro, px + 18, py + 98, w - 36, 19);
-    if (deathKeep) {
-      const items = deathKeep.items;
-      g.fillStyle = '#8b949e'; g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
-      let head = `In the chest: ${chestWords()}`; while (g.measureText(head).width > w - 36 && head.length > 8) head = head.slice(0, -2) + '…';
-      g.fillText(head, px + 18, py + listTop);
-      // rows between the heading and the button; a Prev / Next row takes 38 px when there is more than one page
-      const room = h - listTop - 12 - 60;
-      let perPage = Math.max(1, Math.floor(room / ROW));
-      if (n > perPage) perPage = Math.max(1, Math.floor((room - 38) / ROW));
-      const pages = Math.max(1, Math.ceil(n / perPage)); coffinPage = clamp(coffinPage, 0, pages - 1);
-      const first = coffinPage * perPage;
-      items.slice(first, first + perPage).forEach((s, k) => {
-        const i = first + k, y = py + listTop + 12 + k * ROW + 14, coin = s.id === 'coins';
-        const fits = plan.fits[i], f = plan.fees[i];
-        const right = coin ? 'free' : fits <= 0 ? 'no room' : f > 0 ? `${f}c` : 'free';
-        g.font = '12px sans-serif'; const rw = g.measureText(right).width;
-        g.fillStyle = coin || f <= 0 ? '#6e7681' : '#f5c542'; if (!coin && fits <= 0) g.fillStyle = '#ff9b6b';
-        g.textAlign = 'right'; g.fillText(right, px + w - 18, y);
-        drawItemIcon(g, s.id, px + 28, y - 4, 16);
-        g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#c9d1d9';
-        let t = `${ITEMS[s.id] ? ITEMS[s.id].name : s.id} × ${s.qty}` + (!coin && fits > 0 && fits < s.qty ? ` (room for ${fits})` : '');
-        const maxW = w - 36 - 26 - rw - 10; while (g.measureText(t).width > maxW && t.length > 6) t = t.slice(0, -2) + '…';
-        g.fillText(t, px + 44, y);
-      });
-      if (pages > 1) pager(g, px + 18, py + h - 52 - 38, w - 36, coffinPage, pages, p => { coffinPage = clamp(p, 0, pages - 1); });
-      const ok = coins() >= rest;
-      const label = plan.all ? (fee ? `Reclaim everything for ${fee} coins` : 'Reclaim everything') : (fee ? `Reclaim everything that fits for ${fee} coins` : 'Reclaim everything that fits');
-      button(g, px + 18, py + h - 52, w - 36, 36, label, reclaimFromDeath, ok ? '#5a2e7a' : '#2a2f3a', ok);
-    }
-  }
+  if (panel === 'shop') drawShopPanel(g, narrow);
+  if (panel === 'craft' || panel === 'station') drawCraftPanel(g, narrow);
+  if (panel === 'coffin') drawCoffinPanel(g, narrow);
 }
+// the core drawPanels, before 61-markers and 73-players wrap it (the self-test paints the core panels on their own)
+const CORE_DRAW_PANELS = drawPanels;
 
 function wrapText(g, text, x, y, maxW, lh) {
   const words = text.split(' '); let line = '';
   for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { g.fillText(line, x, y); line = w; y += lh; } else line = test; }
   if (line) g.fillText(line, x, y);
 }
+
+// ---------- the panel audit ----------
+// The ten core panels (the pack, Skills, How to play, Quests, the map, Crafting, the stations, the shop, Death's Chest
+// and the Wiki book) are drawn at every device size, touch and mouse, at Normal and Large text, and must hold the
+// panel contract: from the '×' seal on, every control 44 px on touch (26 with a mouse), 8 px apart on touch (4 with a
+// mouse), inside the panel and on the screen, and every string inside its plate. Then every other panel's FRAME (the
+// other files are still restyling their insides) and a recording of what the core panels paint.
+HOOKS.selfTest.push((check, F, h) => {
+  const P = 'panels: ', A = HK.audit;
+  const own = kk => Object.getOwnPropertyDescriptor(window, kk);
+  const saved = {
+    w: own('innerWidth'), h: own('innerHeight'), touch: window.__forceTouch, stick: window.__stickRight, text: window.SETTINGS ? SETTINGS.get('text') : 'normal',
+    inv: player.inv.map(q => q ? { ...q } : null), equip: { ...player.equip }, mech: player.mech, home: player.home, homeCd: player.homeCd,
+    keyring: Array.isArray(player.keyring) ? player.keyring.slice() : player.keyring, dozerUp: player.dozerUp, dk: deathKeep, panel, arg: panelArg, paused,
+    dc: dialog.cur, dq: dialog.queue.slice(), notice, qt: questsTab, sel: selectedSlot, ux: uxConfirm, tracked: quest.tracked, nLog: dialogLog.length,
+    wk: window.WIKI ? JSON.parse(JSON.stringify(WIKI.state)) : null,
+  };
+  const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+  const restore = () => {
+    HK.setCacheOff(false); HK.FIT.on = false;
+    window.__forceTouch = saved.touch; window.__stickRight = saved.stick; if (window.SETTINGS) SETTINGS.set('text', saved.text);
+    player.inv = saved.inv; Object.assign(player.equip, saved.equip); player.mech = saved.mech; player.home = saved.home; player.homeCd = saved.homeCd;
+    player.keyring = saved.keyring; if (window.KEYRING) KEYRING.absorb(); player.dozerUp = saved.dozerUp; deathKeep = saved.dk;
+    dialog.cur = saved.dc; dialog.queue.length = 0; dialog.queue.push(...saved.dq); notice = saved.notice; quest.tracked = saved.tracked; dialogLog.length = Math.min(dialogLog.length, saved.nLog);
+    if (saved.wk) Object.assign(WIKI.state, saved.wk);
+    if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+    resize(); closePanel(); paused = saved.paused; if (saved.panel) { openPanel(saved.panel, saved.arg); selectedSlot = saved.sel; } questsTab = saved.qt; uxConfirm = saved.ux; render();
+  };
+  const PACK = [['iron_sword', 1], ['bread', 5], ['wood', 12], ['iron_ore', 6], ['coins', 340], ['bronze_pickaxe', 1], ['bronze_axe', 1], ['iron_dagger', 1], ['hammer', 1], ['iron_bar', 4]];
+  const fixture = () => {
+    player.inv = new Array(INV_SLOTS).fill(null); PACK.forEach(([id, n], i) => { if (ITEMS[id]) player.inv[i] = { id, qty: n }; });
+    player.mech = null; player.home = { x: player.x + 100, y: player.y }; player.homeCd = -1e9; player.keyring = []; if (window.KEYRING) KEYRING.absorb();
+    dialog.cur = null; dialog.queue.length = 0; notice = null; uxConfirm = null; paused = false;
+  };
+  const SCENES = [
+    ['pack', () => { openPanel('inventory'); selectedSlot = 1; }],
+    ['pack in the bulldozer, keyring, Drop armed', () => { if (window.KEYRING) { KEYRING.add('wind_flute'); KEYRING.add('dragon_horn'); } player.dozerUp = { drill: true, irondrill: true, ram: true, boiler: true }; player.mech = { kind: 'dozer', hp: 74, maxHp: 110 }; openPanel('inventory'); selectedSlot = 7; uxConfirm = { label: 'drop', until: nowMs() + 60000 }; }],
+    ['skills', () => openPanel('skills')],
+    ['help', () => openPanel('help')],
+    ['quests', () => { quest.tracked = activeQuests()[0] || null; openPanel('quests'); }],
+    ['said', () => { dialogLog.push({ who: 'Tobin', text: 'Goblins came up the east road last night. If you mean to scout their camp, take bread. Lots of bread.' }, { who: 'The Voice', text: 'Thistledown. You will wake here now if you fall.' }); openPanel('quests'); questsTab = 'said'; }],
+    ['map', () => openPanel('map')],
+    ['crafting', () => openPanel('craft')],
+    ['forge', () => openPanel('station', 'forge')],
+    ['anvil', () => openPanel('station', 'anvil')],
+    ['shop, a sale armed', () => { openPanel('shop', 'general'); uxConfirm = { label: 'sell', until: nowMs() + 60000, item: 'iron_dagger' }; }],
+    ['coffin', () => { deathKeep = { items: [{ id: 'iron_sword', qty: 1 }, { id: 'bread', qty: 5 }, { id: 'coins', qty: 40 }, { id: 'iron_ore', qty: 6 }, { id: 'wood', qty: 12 }] }; openPanel('coffin'); }],
+    ['wiki page', () => { if (window.WIKI) WIKI.open('monsters', 'goblin'); }],
+    ['wiki index', () => { if (window.WIKI) { WIKI.open('items', null); WIKI.state.view = 'list'; } }],
+  ];
+  // controls another file draws inside a core panel (61-markers' key toggle on the map) are that file's to check
+  const FOREIGN = /^markers:/;
+  const shape = b => b.r ? { k: 'c', x: b.cx != null ? b.cx : b.x + b.w / 2, y: b.cy != null ? b.cy : b.y + b.h / 2, r: b.r } : { k: 'r', x: b.x, y: b.y, w: b.w, h: b.h };
+  const box = b => { const q = shape(b); return q.k === 'c' ? { x: q.x - q.r, y: q.y - q.r, w: q.r * 2, h: q.r * 2 } : q; };
+  const safeOf = t => HK.insets(VW, VH, HK.family(VW, VH, t), t);
+  const frameIssues = (where, t) => {
+    const out = [], R = panelRect, S = safeOf(t);
+    if (!R) return [`${where}: no frame`];
+    if (R.x < S.l - 0.5 || R.y < S.t - 0.5 || R.x + R.w > VW - S.r + 0.5 || R.y + R.h > VH - S.b + 0.5) out.push(`${where}: the frame leaves the safe area (${Math.round(R.x)},${Math.round(R.y)} ${Math.round(R.w)}x${Math.round(R.h)})`);
+    const c = buttons.find(b => b.label === '×');
+    if (!c) out.push(`${where}: no close seal`);
+    else {
+      const cb = box(c);
+      if (cb.w < (t ? 44 : 32) - 0.5) out.push(`${where}: the close seal is ${Math.round(cb.w)} px`);
+      for (const z of HK.bands({ VW, VH, S })) if (HK.gapBetween(z, shape(c)) < 0) out.push(`${where}: the close seal is in the ${z.name}`);
+    }
+    return out;
+  };
+  const panelIssues = (where, t) => {
+    const out = frameIssues(where, t), R = panelRect; if (!R) return out;
+    const ci = buttons.findIndex(b => b.label === '×');
+    const mine = buttons.slice(Math.max(0, ci)).filter(b => !b.offscreen && b.w > 0 && b.h > 0 && !FOREIGN.test(b.label));
+    const floor = t ? 44 : 26, clear = t ? 8 : 4;
+    for (const b of mine) {
+      const q = box(b);
+      if (q.w < floor - 0.5 || q.h < floor - 0.5) out.push(`${where}: ${b.label} is ${Math.round(q.w)}x${Math.round(q.h)}, under ${floor}`);
+      if (q.x < R.x - 0.5 || q.y < R.y - 0.5 || q.x + q.w > R.x + R.w + 0.5 || q.y + q.h > R.y + R.h + 0.5) out.push(`${where}: ${b.label} leaves the panel`);
+      if (q.x < -0.5 || q.y < -0.5 || q.x + q.w > VW + 0.5 || q.y + q.h > VH + 0.5) out.push(`${where}: ${b.label} is off screen`);
+    }
+    for (let i = 0; i < mine.length; i++) for (let j = i + 1; j < mine.length; j++) { const gp = HK.gapBetween(shape(mine[i]), shape(mine[j])); if (gp < clear - 0.01) out.push(`${where}: ${mine[i].label} ~ ${mine[j].label} ${gp.toFixed(1)} px apart`); }
+    return out;
+  };
+  const fc = A.fitCtx();
+  try {
+    HK.setCacheOff(true);
+    // ---------- 1. the ten core panels at 8 sizes x touch / mouse x Normal / Large text ----------
+    {
+      const problems = [], seen = {}; let frames = 0, tried = 0;
+      for (const [w, hh] of A.SIZES) {
+        if (!setSize(w, hh)) continue; tried++;
+        for (const t of [true, false]) for (const tx of ['normal', 'large']) {
+          window.__forceTouch = t; window.__stickRight = false; if (window.SETTINGS) SETTINGS.set('text', tx);
+          for (const [name, open] of SCENES) {
+            fixture(); closePanel(); open();
+            const want = panel;
+            HK.FIT.on = true; HK.FIT.log.length = 0; drawHud(fc); HK.FIT.on = false; frames++;
+            const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} ${tx} ${name}`;
+            if (!want || panel !== want) { problems.push(`${where}: did not stay open`); continue; }
+            for (const p of panelIssues(where, t).concat(A.fitIssues(where))) if (problems.length < 60) problems.push(p);
+            // what each scene must show
+            if (name === 'pack' && !(buttons.some(b => b.label === 'Wiki') && buttons.some(b => b.label === 'Eat') && buttons.some(b => b.label === 'Drop') && buttons.some(b => b.label === (t ? 'HOME' : 'Home (H)')))) problems.push(`${where}: the chosen item's verbs or Home are missing`);
+            if (name.startsWith('pack in') && !(buttons.some(b => b.label === 'keyring:wind_flute') && buttons.some(b => b.label === 'Tap again to drop') && HK.FIT.log.filter(e => e.id === 'pack:fitted').map(e => e.s).join(' ') === 'Fitted: Iron drill, Ram, Boiler')) problems.push(`${where}: the keyring, FITTED or the armed Drop is missing`);
+            seen[name] = (seen[name] || 0) + 1;
+          }
+        }
+      }
+      check(P + `the ten core panels keep the panel contract at 8 sizes, touch and mouse, Normal and Large text (${SCENES.length} scenes: the pack with an item chosen, the pack in the bulldozer with the keyring and FITTED, Skills, How to play, Quests, Said, the map, Crafting, the forge, the anvil, the shop with a sale armed, Death's Chest, a Wiki page and its index): from the close seal on, 44 px on touch (26 with a mouse), 8 px apart on touch (4 with a mouse), inside the panel, on screen, inside the safe insets, every string inside its plate`,
+        tried === 8 && frames === 8 * 2 * 2 * SCENES.length && problems.length === 0, { tried, frames, problems: problems.slice(0, 14), total: problems.length });
+    }
+    // ---------- 2. every panel's frame: on screen, inside the safe insets, a close seal clear of the notch and home-bar bands ----------
+    {
+      const problems = [], noFrame = new Set(), threw = new Set(); let frames = 0;
+      const ids = Array.from(new Set(Object.keys(HOOKS.panel).concat(['inventory', 'skills', 'help', 'quests', 'map', 'craft', 'station', 'shop', 'coffin', 'bank'])));
+      const ARG = { station: 'forge', shop: 'general', gift: 'Ava' };
+      if (window.SETTINGS) SETTINGS.set('text', 'normal');
+      for (const [w, hh] of A.SIZES) {
+        if (!setSize(w, hh)) continue;
+        for (const t of [true, false]) {
+          window.__forceTouch = t;
+          for (const id of ids) {
+            fixture(); closePanel();
+            try { openPanel(id, ARG[id] || null); drawHud(fc); } catch (e) { threw.add(id); continue; }
+            if (panel !== id) continue;
+            frames++;
+            if (!panelRect) { noFrame.add(id); continue; }
+            for (const p of frameIssues(`${w}x${hh} ${t ? 'touch' : 'mouse'} ${id}`, t)) if (problems.length < 40) problems.push(p);
+          }
+        }
+      }
+      check(P + `every panel's frame (${ids.length} panels, 8 sizes, touch and mouse) sits on screen inside the safe insets (the notch, the Dynamic Island, the home bar), and its close seal is 44 px on touch and clear of those bands`, frames > 8 * 2 * 10 && problems.length === 0,
+        { frames, problems: problems.slice(0, 12), total: problems.length, noFrame: [...noFrame], threw: [...threw] });
+    }
+    // ---------- 3. what the core panels paint: no glyph ticks, no word cut by an ellipsis, only the kit's colours ----------
+    {
+      const GITHUB = new Set(['#e6edf3', '#c9d1d9', '#8b949e', '#6e7681', '#f5c542', '#58a6ff', '#7ec8ff', '#b58cff', '#ff6b6b', '#8fa2b8', '#4b535d', '#30363d', '#21262d', '#238636', '#2a2f3a', '#ffd166', '#c0392b', '#8b2e2e', '#5a2e7a', '#161b22', '#0d1117']);
+      const bad = []; let strings = 0;
+      const recorder = () => {
+        const out = []; let fill = '#000', font = '12px sans-serif';
+        const nop = () => { };
+        const p = new Proxy({}, {
+          get: (tg, k) => k === 'measureText' ? (s => ({ width: String(s).length * 6.5 })) : k === 'fillText' ? ((s) => out.push({ s: String(s), c: String(fill).toLowerCase() }))
+            : k === 'fillStyle' ? fill : k === 'font' ? font : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: nop })) : k === 'createPattern' ? (() => null)
+              : typeof k === 'string' ? nop : undefined,
+          set: (tg, k, v) => { if (k === 'fillStyle') fill = v; if (k === 'font') font = v; return true; },
+        });
+        return { p, out };
+      };
+      for (const [w, hh, t] of [[390, 844, true], [1024, 768, true], [1280, 800, false]]) {
+        setSize(w, hh); window.__forceTouch = t;
+        for (const [name, open] of SCENES) {
+          fixture(); closePanel(); open(); render();
+          const rec = recorder(), keep = buttons.length;
+          if (panel === 'wiki') HOOKS.panel.wiki(rec.p, VW < 640); else CORE_DRAW_PANELS(rec.p, VW < 640, false, 0, 0);
+          buttons.length = keep;
+          for (const e of rec.out) {
+            strings++;
+            if (/[✓✔✗✘★☆]/.test(e.s)) bad.push(`${w}x${hh} ${name}: a glyph mark in "${e.s}"`);
+            if (/\w…/.test(e.s)) bad.push(`${w}x${hh} ${name}: a word cut by an ellipsis in "${e.s}"`);
+            if (GITHUB.has(e.c)) bad.push(`${w}x${hh} ${name}: "${e.s}" painted in ${e.c}`);
+          }
+        }
+      }
+      check(P + 'the core panels paint no glyph ticks or stars, never cut a word with an ellipsis, and write only in the kit\'s colours (no leftover GitHub greys, blues or greens)', bad.length === 0 && strings > 200, { strings, bad: bad.slice(0, 12), total: bad.length });
+    }
+  } finally { restore(); }
+});
 
 // ---- src/11-main.js ----
 // ============================================================================
@@ -6084,25 +6751,21 @@ HOOKS.update.push(dt => {
   }
 });
 // ---------- HUD ----------
-// MIGRATED to the HUD kit (src/59-hudkit.js). This used to be the worst pair of shapes on the screen: an
-// orange-outlined pill reading "Bulldozer 109/110" and, right beside it, a blue-outlined pill reading
-// "drill" — two unrelated colours for two things that are not opposites, both floating at hardcoded x=186.
-// Now: the machine's hp is a health meter inside the status plate (the machine IS your health while you are
-// in it, so it reads on the same green/amber/red ramp), and the fitted parts are a plain neutral chip,
-// because a fitted drill is a fact, not a warning.
-hudMechName(() => player.mech && player.mech.kind === 'dozer' ? 'Bulldozer' : null); // names the second meter in the status plate
-HOOKS.hud.push(g => {
+// The machine's hp is the crest's big number while you drive (hudMechName names it). The fitted upgrades are not on
+// the live HUD: the pack lists them beside WORN (src/10-hud.js), and the crest's tooltip and long-press name say them.
+hudMechName(() => player.mech && player.mech.kind === 'dozer' ? 'Bulldozer' : null);
+// the upgrades on the bulldozer you drive, in plain words: ['Iron drill', 'Ram', 'Boiler']
+function dozerFitted() { const up = dozerUp(); return [up.drill && (up.irondrill ? 'Iron drill' : 'Drill'), up.ram && 'Ram', up.boiler && 'Boiler'].filter(Boolean); }
+HOOKS.hud.push(() => {
   if (!player.mech || player.mech.kind !== 'dozer') return;
-  const up = dozerUp(), parts = [up.drill && (up.irondrill ? 'Iron drill' : 'Drill'), up.ram && 'Ram', up.boiler && 'Boiler'].filter(Boolean);
-  if (!parts.length) return;
-  const pad = 8, s = HK.slot(HK.chipH());
-  HK.plate(g, s.x, s.y, s.w, s.h);
-  g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.textAlign = 'left'; g.textBaseline = 'middle';
-  g.fillText('FITTED', s.x + pad + 4, s.y + s.h / 2);
-  const lw = Math.ceil(g.measureText('FITTED').width) + 10;
-  g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK;
-  g.fillText(parts.join(' · '), s.x + pad + 4 + lw, s.y + s.h / 2);
-  g.textBaseline = 'alphabetic';
+  const parts = dozerFitted(); if (!parts.length) return;
+  const b = buttons.find(q => q.label === 'crest'); if (!b) return;
+  const list = 'Fitted: ' + parts.join(', ');
+  b.sub = list;
+  // the long-press tag is one line: keep it on the screen (drop "Your skills" first)
+  const full = `${b.name || 'Your skills'} · ${list}`;
+  let wide = 0; try { wide = HK.tw(ctx, full, HK.FS(700, 13)); } catch (e) { wide = full.length * 8; }
+  b.name = wide + 40 <= VW - 12 ? full : `Bulldozer · ${list}`;
 });
 
 // ---------- art ----------
@@ -6269,6 +6932,21 @@ HOOKS.selfTest.push((check, F, h) => {
     check('bulldozer: X climbs down → a DOZER tile (no walker tile), mech cleared', !player.mech && !!parked && !walkerNear && player.r === 13 && player.speed === 175 && !!notice && /bulldozer/.test(notice.text), { parked: parked && [parked.tx, parked.ty], walkerNear, r: player.r, notice: notice && notice.text });
     player.dozerUp = upSaved;
   }
+  // FITTED is off the live HUD: the crest's tooltip and long-press name list the upgrades while you drive
+  { const m0 = player.mech, u0 = player.dozerUp, own = kk => Object.getOwnPropertyDescriptor(window, kk), sz0 = { w: own('innerWidth'), h: own('innerHeight') }, t0 = window.__forceTouch;
+    player.dozerUp = { drill: true, irondrill: true, ram: true }; player.mech = { kind: 'dozer', hp: 74, maxHp: 110 };
+    const got = {};
+    for (const [w, hh, touch] of [[375, 667, true], [1280, 800, false]]) {
+      window.innerWidth = w; window.innerHeight = hh; window.__forceTouch = touch; closePanel(); render();
+      const c = buttons.find(b => b.label === 'crest');
+      got[w] = { sub: c && c.sub, name: c && c.name, fits: !!c && HK.tw(ctx, c.name, HK.FS(700, 13)) + 40 <= VW - 12 };
+    }
+    player.mech = null; render(); const plain = buttons.find(b => b.label === 'crest');
+    const off = !!plain && !plain.sub;
+    player.mech = m0; player.dozerUp = u0;
+    if (sz0.w) { Object.defineProperty(window, 'innerWidth', sz0.w); Object.defineProperty(window, 'innerHeight', sz0.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } } window.__forceTouch = t0; render();
+    const ok = Object.values(got).every(v => v.sub === 'Fitted: Iron drill, Ram' && /Fitted: Iron drill, Ram$/.test(v.name || '') && v.fits);
+    check('bulldozer: the fitted upgrades are in the crest\'s tooltip and long-press name (not a chip on the HUD), and only while driving', ok && off, { got, off }); }
   h.peace(false);
 });
 
@@ -15586,7 +16264,7 @@ window.SETTINGS = SETTINGS;
   const ensure = () => data || (data = build());
 
   // ---------- panel state ----------
-  const wk = { section: 'monsters', id: null, search: '', letter: '', page: 0, detailPage: 0, view: 'list', history: [] };
+  const wk = { section: 'monsters', id: null, search: '', letter: '', page: 0, detailPage: 0, letterPage: 0, view: 'list', history: [] };
   const listFor = section => {
     const d = ensure(); const q = wk.search.trim().toLowerCase(), L = wk.letter;
     return d.order[section].filter(id => { const n = d[section][id].name.toLowerCase(); return q ? n.includes(q) : L ? n.startsWith(L.toLowerCase()) : true; });
@@ -15598,9 +16276,8 @@ window.SETTINGS = SETTINGS;
   function drawPortrait(g, x, y, w, narrow) {
     const d = ensure(), e = d[wk.section] && d[wk.section][wk.id];
     if (!e || !PORTRAIT_SECTIONS.has(wk.section)) return y;
-    const size = narrow ? 52 : 64;
-    roundRect(g, x, y, size, size, 8); g.fillStyle = 'rgba(126,200,255,0.06)'; g.fill();
-    g.strokeStyle = 'rgba(126,200,255,0.22)'; g.lineWidth = 1; g.stroke();
+    const size = typeof narrow === 'number' ? narrow : narrow ? 52 : 64;
+    HK.vellumPlate(g, x, y, size, size);
     g.save();
     g.beginPath(); g.rect(x, y, size, size); g.clip();
     try {
@@ -15725,90 +16402,139 @@ window.SETTINGS = SETTINGS;
   function wrapLines(g, text, maxW) { const words = String(text).split(' '); const lines = []; let line = ''; for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test; } if (line) lines.push(line); return lines; }
 
   // ---------- the panel ----------
-  const btn = (g, x, y, w, h, label, action, color, enabled) => button(g, x, y, w, h, label, action, color, enabled);
+  // The book wears the kit's frame (panelBox) and the panel contract: the six sections are tab plates, the list rows
+  // and the cross-links are plates (44 px on touch, 28 / 26 with a mouse), the letter index is a grid of 44 px letter
+  // plates that pages (More) rather than shrinking, and a long page pages with Up / Down. Words are the kit's two
+  // families in the kit's colours; a link is a vellum plate with a gold edge and a chevron.
+  const TOKEN = { '#e6edf3': 'ink', '#c9d1d9': 'ink', '#8b949e': 'inkDim', '#6e7681': 'inkMute', '#f5c542': 'gold', '#7ec8ff': 'ink', '#8fa2b8': 'inkMute' };
+  const colour = c => { const k = TOKEN[String(c || '').toLowerCase()]; return k ? HK.T[k] : (c || HK.T.ink); };
+  // a page's lines as blocks of known height: a header, one wrapped text line, or a link plate
+  function pageBlocks(g, section, id, w, touch) {
+    const K = PANEL_KIT, lh = K.lineH(12.5), out = [], linkH = touch ? 44 : 26;
+    for (const l of pageLines(section, id)) {
+      if (l.head) { out.push({ kind: 'head', t: l.t, h: 26 }); continue; }
+      if (l.link) {
+        const room = w - 16 - (l.icon ? 24 : 0) - 22, f = K.FB(12.5, 700), ww = HK.wrap(g, l.t.trim(), room, 2, f);
+        out.push({ kind: 'link', t: l.t.trim(), lines: ww.lines, link: l.link, icon: l.icon, c: l.c, h: Math.max(linkH, ww.lines.length * lh + 8), gap: touch ? 8 : 4 });
+        continue;
+      }
+      const f = K.FB(12.5), ww = HK.wrap(g, String(l.t).replace(/^\s+/, ''), w - 4, 99, f);
+      ww.lines.forEach(t => out.push({ kind: 'text', t, c: l.c, h: lh }));
+    }
+    return out;
+  }
   HOOKS.panel.wiki = (g, narrow) => {
-    const d = ensure();
-    const touch = touchMode();
-    const W = Math.min(780, VW - 20), Hh = Math.min(560, VH - 20);
-    const { px, py, w, h } = panelBox(g, W, Hh, `Wiki${touch ? '' : ' (K)'}`, touch ? 'Tap a tab, then a letter, then a page. Blue lines open other pages.' : 'Type to search the list. Blue lines open other pages. Esc closes.');
-    // tabs
-    const tabW = Math.floor((w - 36 - 5 * 4) / 6), ty = py + 56;
-    SECTIONS.forEach((s, i) => { const on = s === wk.section; btn(g, px + 18 + i * (tabW + 4), ty, tabW, 26, narrow ? SECTION_SHORT[s] : SECTION_NAME[s], () => setSection(s), on ? '#238636' : '#21262d', !on); });
-    let top = ty + 34;
-    const showList = !narrow || wk.view === 'list';
-    const showDetail = !narrow || wk.view === 'detail';
-    const listW = narrow ? w - 36 : touch ? 330 : 250, listX = px + 18;
-    const detX = narrow ? px + 18 : listX + listW + 16, detW = narrow ? w - 36 : w - 36 - listW - 16;
+    const d = ensure(), K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G, t: touch } = Rm;
+    const W = Math.min(800, Rm.aw), Hh = Math.min(touch ? 700 : 580, Rm.ah);
+    const { px, py, w, h } = panelBox(g, W, Hh, 'Wiki', touch ? 'Tap a tab, a letter, then a page. Gold lines open other pages.' : 'Type to search. Gold lines open other pages. K or Esc closes.');
+    const x0 = px + 18, cw = w - 36;
+    const single = cw < 560 || h < 420;                 // one view at a time: the list, or a page
+    const short = h < 480;
+    // the six sections, as tabs
+    const tabName = s => narrow ? SECTION_SHORT[s] : SECTION_NAME[s];
+    const tabsH = K.tabs(g, x0, py + 62, cw, SECTIONS.map(s => ({ label: tabName(s) })), tabName(wk.section), l => { const s = SECTIONS.find(q => tabName(q) === l); if (s && s !== wk.section) setSection(s); }, { rows3: false });
+    const top0 = py + 62 + tabsH + 10;
+    const showList = !single || wk.view === 'list';
+    const showDetail = !single || wk.view === 'detail';
+    const listW = single ? cw : (touch ? 340 : 270), listX = x0;
+    const detX = single ? x0 : listX + listW + 20, detW = single ? cw : cw - listW - 20;
+    const pagerY = py + h - 14 - R;
     const list = listFor(wk.section);
     if (showList) {
-      // search: a typed field on desktop, a letter row on touch
+      let top = top0;
       if (!touch) {
-        roundRect(g, listX, top, listW, 26, 6); g.fillStyle = 'rgba(255,255,255,0.06)'; g.fill(); g.strokeStyle = '#30363d'; g.lineWidth = 1; g.stroke();
-        g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillStyle = wk.search ? '#e6edf3' : '#6e7681'; g.fillText(wk.search ? wk.search + (Math.floor(time * 2) % 2 ? '|' : ' ') : 'Search: just type', listX + 8, top + 17);
-        if (wk.search) btn(g, listX + listW - 54, top + 1, 52, 24, 'Clear', () => { wk.search = ''; wk.page = 0; }, '#21262d');
-        top += 32;
+        // search: typed on the keyboard (letters go to the search, not to the panels)
+        const fw = listW - 72;
+        HK.vellumPlate(g, listX, top, fw, R);
+        const q = wk.search ? wk.search + (Math.floor(time * 2) % 2 ? '|' : '') : 'Search: just type';
+        HK.text(g, q, listX + 10, top + R / 2 + 5, { font: K.FB(13), color: wk.search ? T.ink : T.inkMute, box: { x: listX + 6, y: top, w: fw - 12, h: R }, fitId: 'wiki:search' });
+        if (wk.search) K.verb(g, listX + listW - 64, top, 64, R, 'Clear', () => { wk.search = ''; wk.page = 0; });
+        top += R + G + 2;
       } else {
-        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''); const perRow = 9, lw = Math.floor((listW - (perRow - 1) * 3) / perRow), lh = 24;
-        letters.forEach((c, i) => { const on = wk.letter === c; btn(g, listX + (i % perRow) * (lw + 3), top + Math.floor(i / perRow) * (lh + 4), lw, lh, c, () => { wk.letter = on ? '' : c; wk.page = 0; }, on ? '#238636' : '#21262d'); });
-        top += 3 * (lh + 4);
-        btn(g, listX, top, 70, 24, 'Clear', () => { wk.letter = ''; wk.search = ''; wk.page = 0; }, '#21262d', !!(wk.letter || wk.search));
-        g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(`${list.length} ${wk.letter ? 'starting with ' + wk.letter : 'in all'}`, listX + 80, top + 16);
-        top += 30;
+        // the letter index: 44 px letter plates in a grid; when they do not all fit, More turns the page of letters
+        const cell = 44, perRow = Math.max(4, Math.floor((listW + G) / (cell + G))), rowsL = short ? 1 : 2, cells = perRow * rowsL;
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), needMore = letters.length > cells - 2, cap = cells - 2 - (needMore ? 1 : 0);
+        const lpages = Math.ceil(letters.length / cap); wk.letterPage = ((wk.letterPage || 0) % lpages + lpages) % lpages;
+        const at = i => ({ x: listX + (i % perRow) * (cell + G), y: top + Math.floor(i / perRow) * (cell + G) });
+        const c0 = at(0);
+        K.verb(g, c0.x, c0.y, cell * 2 + G, cell, 'Clear', () => { wk.letter = ''; wk.search = ''; wk.page = 0; }, { enabled: !!(wk.letter || wk.search), text: 'All' });
+        letters.slice(wk.letterPage * cap, wk.letterPage * cap + cap).forEach((c, i) => { const p = at(i + 2), on = wk.letter === c; K.verb(g, p.x, p.y, cell, cell, c, () => { wk.letter = on ? '' : c; wk.page = 0; }, { tone: on ? 'primary' : null, cinzel: true, size: 15 }); });
+        if (needMore) { const p = at(cells - 1), st = HK.stateOf('letters:more'); K.verb(g, p.x, p.y, cell, cell, 'letters:more', () => { wk.letterPage = (wk.letterPage + 1) % lpages; }, { text: '', name: 'More letters' }); g.fillStyle = g.strokeStyle = st.hover ? T.goldHi : T.gold; HK.EM.chevronR(g, p.x + cell / 2, p.y + cell / 2 + (st.pressed ? 1.5 : 0), 16); }
+        top += rowsL * (cell + G) + 2;
       }
-      const rowH = 26, pagerY = py + h - 40, rows = Math.max(1, Math.floor((pagerY - 8 - top) / rowH));
-      const pages = Math.max(1, Math.ceil(list.length / rows)); wk.page = clamp(wk.page, 0, pages - 1);
-      const slice = list.slice(wk.page * rows, wk.page * rows + rows);
-      if (!list.length) { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText('Nothing matches.', listX + 4, top + 18); }
+      HK.text(g, `${list.length} ${wk.letter ? 'starting with ' + wk.letter : wk.search ? 'found' : 'in all'}`, listX, top + 12, { font: K.FB(12), color: T.inkMute, box: { x: listX, y: top, w: listW, h: 16 }, fitId: 'wiki:count' });
+      top += 20;
+      const rowH = touch ? 44 : 28, pitch = rowH + G, lcols = listW >= 560 ? 2 : 1, colW = (listW - (lcols - 1) * 12) / lcols;
+      const rows = Math.max(1, Math.floor((pagerY - 8 - top + G) / pitch)), per = rows * lcols;
+      const pages = Math.max(1, Math.ceil(list.length / per)); wk.page = clamp(wk.page, 0, pages - 1);
+      const slice = list.slice(wk.page * per, wk.page * per + per);
+      if (!list.length) K.para(g, 'Nothing matches.', listX + 4, top + 16, listW, { size: 13, color: T.inkDim });
       slice.forEach((id, i) => {
-        const e = d[wk.section][id], y = top + i * rowH, on = id === wk.id;
-        roundRect(g, listX, y, listW, rowH - 3, 6); g.fillStyle = on ? 'rgba(88,166,255,0.2)' : 'rgba(255,255,255,0.05)'; g.fill();
-        let tx = listX + 8;
-        if (wk.section === 'items') { drawItemIcon(g, id, listX + 14, y + rowH / 2 - 2, 14); tx = listX + 28; }
-        g.fillStyle = on ? '#e6edf3' : '#c9d1d9'; g.font = on ? 'bold 12px sans-serif' : '12px sans-serif'; g.textAlign = 'left';
-        let label = e.name; const extra = wk.section === 'monsters' ? `  lv ${e.level}` : wk.section === 'recipes' ? `  lv ${e.lv}` : '';
-        const maxW = listW - (tx - listX) - 8 - (extra ? g.measureText(extra).width : 0);
-        while (label.length > 6 && g.measureText(label).width > maxW) label = label.slice(0, -2) + '…';
-        g.fillText(label, tx, y + 16);
-        if (extra) { g.fillStyle = '#6e7681'; g.textAlign = 'right'; g.fillText(extra.trim(), listX + listW - 6, y + 16); }
-        buttons.push({ x: listX, y, w: listW, h: rowH - 3, label: `wiki:${wk.section}:${id}`, action: () => { open(wk.section, id); } });
+        const e = d[wk.section][id], x = listX + Math.floor(i / rows) * (colW + 12), y = top + (i % rows) * pitch, on = id === wk.id, label = `wiki:${wk.section}:${id}`;
+        const st = HK.stateOf(label), dy = st.pressed ? 1.5 : 0;
+        HK.vellumPlate(g, x, y + dy, colW, rowH, on || st.hover ? { edge: 'rgba(247,220,143,0.95)' } : {});
+        let tx = x + 10;
+        if (wk.section === 'items') { try { drawItemIcon(g, id, x + 16, y + rowH / 2 + dy, 16); } catch (err) { } tx = x + 32; }
+        const extra = wk.section === 'monsters' ? `Lv ${e.level}` : wk.section === 'recipes' ? `Lv ${e.lv}` : '';
+        const xw = extra ? HK.tw(g, extra, K.FN(11.5)) + 6 : 0;
+        if (extra) K.name(g, extra, x + colW - 8, y + rowH / 2 + 5 + dy, xw, { size: 11.5, align: 'right', color: T.inkDim });
+        const room = colW - (tx - x) - 10 - xw;
+        let fs = 13; while (fs > 11 && HK.tw(g, e.name, K.FB(fs, on ? 700 : 600)) > room) fs -= 0.5;
+        const f = K.FB(fs, on ? 700 : 600), nm = HK.tw(g, e.name, f) > room ? (HK.wrap(g, e.name, room, 1, f).lines[0] || e.name) : e.name;
+        HK.text(g, nm, tx, y + rowH / 2 + 5 + dy, { font: f, color: on ? T.goldHi : T.ink, box: { x: tx, y, w: room, h: rowH }, fitId: 'wiki:row' });
+        buttons.push({ x, y, w: colW, h: rowH, label, action: () => { open(wk.section, id); }, up: true });
       });
       if (pages > 1) pager(g, listX, pagerY, listW, wk.page, pages, p => { wk.page = clamp(p, 0, pages - 1); });
-      else { g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(`${list.length} page${list.length === 1 ? '' : 's'}`, listX, pagerY + 19); }
     }
     if (showDetail) {
-      let dy = narrow ? ty + 34 : top - (touch ? 0 : 0);
-      if (narrow) { btn(g, detX, dy, 70, 26, 'Back', () => { wk.view = 'list'; wk.id = null; }, '#21262d'); dy += 32; }
-      else if (wk.history.length) { btn(g, detX + detW - 70, ty + 34, 70, 26, 'Back', () => { const p = wk.history.pop(); if (p) open(p.s, p.id, false); }, '#21262d'); }
+      let dy = top0;
+      const backW = touch ? 96 : 80;
+      let titleX = detX, titleW = detW;
+      if (single) { K.verb(g, detX, dy, backW, R, 'Back', () => { wk.view = 'list'; wk.id = null; }, { emblem: 'chevronL' }); titleX = detX + backW + 12; titleW = detW - backW - 12; }
+      else if (wk.history.length) { K.verb(g, detX + detW - backW, dy, backW, R, 'Back', () => { const p = wk.history.pop(); if (p) open(p.s, p.id, false); }, { emblem: 'chevronL' }); titleW = detW - backW - 12; }
       if (!wk.id || !d[wk.section][wk.id]) {
-        g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left';
         const intro = { monsters: 'Pick a monster to see how tough it is, where it lives and exactly what it drops.', items: 'Pick an item to see what it does and every way to get one.', recipes: 'Every recipe, by station: what you need, what you get, and the level for it.', skills: 'What each skill unlocks at every level, and how much xp a level takes.', places: 'Every region and dungeon: who lives there, who trades there, what you can use there.', quests: 'Every quest, who gives it and what it pays.' }[wk.section];
-        wrapText(g, intro, detX, dy + 30, detW, 18);
+        K.para(g, intro, detX, dy + (single ? R + 26 : 20), detW, { size: 13, color: T.inkDim });
         return;
       }
       const e = d[wk.section][wk.id];
-      g.fillStyle = '#e6edf3'; g.font = `700 16px ${DISPLAY}`; g.textAlign = 'left';
-      let title = e.name; while (title.length > 6 && g.measureText(title).width > detW - (wk.section === 'items' ? 30 : 0) - (narrow ? 0 : 76)) title = title.slice(0, -2) + '…';
-      if (wk.section === 'items') { drawItemIcon(g, wk.id, detX + 12, dy + 12, 22); g.fillText(title, detX + 30, dy + 19); } else g.fillText(title, detX, dy + 19);
-      dy += 30;
-      // a portrait, so you know what you are reading about by the look of it: the real sprite the game draws,
-      // in a framed box at the top of the page. Monsters use drawCharacter (which dispatches to HOOKS.drawMonster
-      // for feature creatures); items use their own icon; everything else gets no box rather than a blank one.
-      dy = drawPortrait(g, detX, dy, detW, narrow);
-      // lay the page out as wrapped rows, then show one screen of them
-      g.font = '12px sans-serif';
-      const rows = [];
-      for (const l of pageLines(wk.section, wk.id)) { const indent = l.icon ? 22 : 0; const ls = wrapLines(g, l.t, detW - indent - 4); ls.forEach((t, i) => rows.push({ t, c: l.c, f: l.f, link: l.link, icon: i === 0 ? l.icon : null, head: l.head, first: i === 0, indent })); }
-      const lh = 18, pagerY = py + h - 40, per = Math.max(3, Math.floor((pagerY - 6 - dy) / lh)), pages = Math.max(1, Math.ceil(rows.length / per));
-      wk.detailPage = clamp(wk.detailPage, 0, pages - 1);
-      const shown = rows.slice(wk.detailPage * per, wk.detailPage * per + per);
-      shown.forEach((r, i) => {
-        const y = dy + i * lh + (r.head ? 4 : 0);
-        if (r.link) { roundRect(g, detX - 4, y - 2, detW + 4, lh - 1, 5); g.fillStyle = 'rgba(126,200,255,0.08)'; g.fill(); }
-        if (r.icon) drawItemIcon(g, r.icon, detX + 9, y + 7, 14);
-        g.fillStyle = r.c || '#c9d1d9'; g.font = r.f || (r.link ? 'bold 12px sans-serif' : '12px sans-serif'); g.textAlign = 'left'; g.fillText(r.t, detX + r.indent, y + 12);
-        if (r.link && r.first) buttons.push({ x: detX - 4, y: y - 2, w: detW + 4, h: lh - 1, label: `wikilink:${r.link.s}:${r.link.id}`, action: () => open(r.link.s, r.link.id) });
-      });
-      if (pages > 1) { btn(g, detX, pagerY, 60, 30, 'Up', () => { wk.detailPage = Math.max(0, wk.detailPage - 1); }, '#21262d', wk.detailPage > 0); g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'center'; g.fillText(`${wk.detailPage + 1} / ${pages}`, detX + detW / 2, pagerY + 19); btn(g, detX + detW - 60, pagerY, 60, 30, 'Down', () => { wk.detailPage = Math.min(pages - 1, wk.detailPage + 1); }, '#21262d', wk.detailPage < pages - 1); }
+      // the title, with a small picture beside it on a short screen, or the framed portrait under it
+      const mini = short && PORTRAIT_SECTIONS.has(wk.section);
+      if (mini) { drawPortrait(g, titleX, dy, titleW, R); titleX += R + 10; titleW -= R + 10; }
+      else if (wk.section === 'items') { try { drawItemIcon(g, wk.id, titleX + 12, dy + R / 2, 22); } catch (err) { } titleX += 28; titleW -= 28; }
+      K.name(g, e.name, titleX, dy + R / 2 + 6, titleW, { size: 17, min: 11, color: T.goldHi });
+      dy += R + 8;
+      if (!mini) dy = drawPortrait(g, detX, dy, detW, single ? 56 : 64);
+      // lay the page out as blocks, then show one screen of them
+      const blocks = pageBlocks(g, wk.section, wk.id, detW, touch), avail = pagerY - 8 - dy;
+      const pgs = [[]]; let acc = 0;
+      for (const b of blocks) { const bh = b.h + (b.gap || 0); if (acc + bh > avail && pgs[pgs.length - 1].length) { pgs.push([]); acc = 0; } pgs[pgs.length - 1].push(b); acc += bh; }
+      wk.detailPage = clamp(wk.detailPage, 0, pgs.length - 1);
+      const lh = K.lineH(12.5);
+      let y = dy;
+      for (const b of pgs[wk.detailPage]) {
+        if (b.kind === 'head') K.head(g, detX, y + 18, detW, b.t, { size: 12 });
+        if (b.kind === 'text') HK.text(g, b.t, detX, y + lh - 4, { font: K.FB(12.5), color: colour(b.c), box: { x: detX, y, w: detW, h: lh }, fitId: 'wiki:text' });
+        if (b.kind === 'link') {
+          const label = `wikilink:${b.link.s}:${b.link.id}`, st = HK.stateOf(label), dd = st.pressed ? 1.5 : 0;
+          HK.vellumPlate(g, detX, y + dd, detW, b.h, { edge: st.hover ? 'rgba(247,220,143,0.95)' : 'rgba(217,178,92,0.8)' });
+          let tx = detX + 10;
+          if (b.icon) { try { drawItemIcon(g, b.icon, detX + 17, y + b.h / 2 + dd, 15); } catch (err) { } tx = detX + 32; }
+          const room = detW - (tx - detX) - 24, top = y + b.h / 2 - (b.lines.length * lh) / 2 + lh - 4 + dd;
+          b.lines.forEach((ln, i) => HK.text(g, ln, tx, top + i * lh, { font: K.FB(12.5, 700), color: b.c === '#8fa2b8' ? T.inkMute : (st.hover ? T.goldHi : T.ink), box: { x: tx, y, w: room, h: b.h }, fitId: 'wiki:link' }));
+          g.fillStyle = g.strokeStyle = T.gold; HK.EM.chevronR(g, detX + detW - 12, y + b.h / 2 + dd, 11);
+          buttons.push({ x: detX, y, w: detW, h: b.h, label, action: () => open(b.link.s, b.link.id), up: true });
+        }
+        y += b.h + (b.gap || 0);
+      }
+      // links on the other pages stay reachable by label for the harness (F.clickButton), off-screen so no tap can reach them
+      pgs.forEach((pg, i) => { if (i !== wk.detailPage) for (const b of pg) if (b.kind === 'link') buttons.push({ x: -1e9, y: -1e9, w: 0, h: 0, label: `wikilink:${b.link.s}:${b.link.id}`, action: () => open(b.link.s, b.link.id), offscreen: true }); });
+      if (pgs.length > 1) {
+        const bw = touch ? 96 : 80, np = pgs.length;
+        K.verb(g, detX, pagerY, bw, R, 'Up', () => { wk.detailPage = Math.max(0, wk.detailPage - 1); }, { enabled: wk.detailPage > 0 });
+        HK.text(g, `${wk.detailPage + 1} / ${np}`, detX + detW / 2, pagerY + R / 2 + 5, { font: K.FN(13), align: 'center', color: T.inkDim });
+        K.verb(g, detX + detW - bw, pagerY, bw, R, 'Down', () => { wk.detailPage = Math.min(np - 1, wk.detailPage + 1); }, { enabled: wk.detailPage < np - 1 });
+      }
     }
   };
 
@@ -15838,7 +16564,7 @@ window.SETTINGS = SETTINGS;
   update.__inner = _update;
   HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] }); // 43-settings walks this chain to read the real key handlers
 
-  // ---------- buttons: WIKI in the control rail, Wiki under an item in the pack ----------
+  // ---------- the WIKI tile in the Knight's Book ----------
   // MIGRATED to the HUD kit (src/59-hudkit.js). The book used to be a button bolted on wherever there was
   // room — three different hardcoded spots for desktop, tablet and phone, each of them a near-miss with the
   // quest box or the minimap, and none of them matching anything else on screen. It is now one entry in the
@@ -15850,25 +16576,7 @@ window.SETTINGS = SETTINGS;
     on: () => panel === 'wiki',
     action: () => panel === 'wiki' ? closePanel() : open(wk.section, wk.id, false),
   });
-  HOOKS.hud.push((g, narrow) => {
-    if (typeof title !== 'undefined' && title && title.active) return;
-    if (paused) return;
-    // the pack panel is drawn after this hook, so the Wiki button for the selected item is registered on the next frame's pass — it is drawn here from the
-    // same numbers the core uses (panelBox size, grid, Equip/Drop row), sitting one row under the Equip / Drop buttons.
-    if (panel === 'inventory' && selectedSlot >= 0 && player.inv[selectedSlot]) {
-      const cols = narrow ? 5 : 10, size = narrow ? 44 : 46, gap = 6, eqw = 70;
-      const rowH = HK.row(), grow = (rowH - 30) * 2;   // the core grew the pack panel by the same amount
-      const pw = Math.min(cols * (size + gap) + 30 + eqw, VW - 20), ph = Math.min((narrow ? 440 : 300) + grow, VH - 20);
-      const px = Math.round(VW / 2 - pw / 2), py = Math.round(Math.max(10, VH / 2 - ph / 2 - 20));
-      const gy = py + 66 + Math.ceil(INV_SLOTS / cols) * (size + gap);
-      const id = player.inv[selectedSlot].id;
-      wikiInvButton = { x: px + 18 + eqw, y: gy + 58 + rowH + 6, w: 90, h: rowH, id };
-    } else wikiInvButton = null;
-  });
-  let wikiInvButton = null;
-  // drawn after the pack panel (a panel hook cannot run for a core panel, so the button is painted by a wrapped render: see below)
-  const _render = typeof render === 'function' ? render : null;
-  if (_render) render = function () { const r = _render.apply(this, arguments); if (panel === 'inventory' && wikiInvButton && !paused) { const b = wikiInvButton; button(ctx, b.x, b.y, b.w, b.h, 'Wiki', () => open('items', b.id), '#21262d'); } return r; }; // neutral: reading a page is not an action with a colour
+  // The Wiki plate under a chosen pack item is drawn by the pack itself (src/10-hud.js), in its one row of verbs.
 
   window.WIKI = {
     sections: SECTIONS, state: wk,
@@ -28994,27 +29702,12 @@ HOOKS.selfTest.push((check, F, h) => {
   absorb();
 
   // ---------- it is visible, so a child knows he has it ----------
-  // Drawn under the pack grid rather than in it: on the ring, not in the bag.
-  HOOKS.hud.push(g => {
-    if (panel !== 'inventory' || paused) return;
-    const list = ring().filter(id => ITEMS[id]);
-    if (!list.length || !panelRect) return;
-    const { x, y, w, h } = panelRect;
-    const by = y + h - 40;
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left';
-    g.fillText('KEYRING — always with you, no pack space', x + 18, by - 6);
-    let kx = x + 18;
-    for (const id of list) {
-      roundRect(g, kx, by, 34, 34, 7); g.fillStyle = 'rgba(245,197,66,0.10)'; g.fill();
-      g.strokeStyle = 'rgba(245,197,66,0.55)'; g.lineWidth = 1; g.stroke();
-      drawItemIcon(g, id, kx + 17, by + 17, 15);
-      buttons.push({ x: kx, y: by, w: 34, h: 34, label: 'keyring:' + id, action: () => notify(`${ITEMS[id].name}. ${KEYS[id].note}`) });
-      kx += 40;
-    }
-    g.textAlign = 'left';
-  });
+  // The pack draws the keyring itself (src/10-hud.js packKeyring): a leather key strap of 44 px brass-edged tiles
+  // under the chosen item, on the ring and not in the bag. Each tile is the buttons[] entry 'keyring:<id>'; a tap
+  // shows the key's note. The list it draws comes from here.
+  const list = () => ring().filter(id => ITEMS[id] && KEYS[id]).map(id => ({ id, name: ITEMS[id].name, note: KEYS[id].note }));
 
-  window.KEYRING = { KEYS, ring, held, add, register, absorb };
+  window.KEYRING = { KEYS, ring, held, add, register, absorb, list };
 
   const P = 'keyring: ';
   HOOKS.selfTest.push((check, F, h) => {
@@ -29080,6 +29773,19 @@ HOOKS.selfTest.push((check, F, h) => {
       const fromChest = KEYRING.held('wind_flute') && !!deathKeep && deathKeep.items.length === 1 && deathKeep.items[0].id === 'steel_helm';
       check(P + "an unlock left in Death's chest by an old save moves onto the keyring on load, and opening the chest panel hands nothing out", notByPanel && fromChest, { notByPanel, fromChest, chest: deathKeep && deathKeep.items.map(s => s.id) });
       deathKeep = dk0; }
+    // the pack shows it: a 44 px tile on the key strap, and a tap tells you what it is for
+    { const own = kk => Object.getOwnPropertyDescriptor(window, kk), sz0 = { w: own('innerWidth'), h: own('innerHeight') }, t0 = window.__forceTouch;
+      player.keyring = []; syncRing(); add('wind_flute'); player.inv = player.inv.map(() => null);
+      const seen = {};
+      for (const [w, hh, touch] of [[390, 844, true], [844, 390, true], [1280, 800, false]]) {
+        window.innerWidth = w; window.innerHeight = hh; window.__forceTouch = touch; closePanel(); openPanel('inventory'); render();
+        const b = buttons.find(q => q.label === 'keyring:wind_flute'); notice = null;
+        if (b) b.action();
+        seen[w + 'x' + hh] = !!b && b.w >= 44 && b.h >= 44 && !!panelRect && b.x >= panelRect.x && b.y >= panelRect.y && b.x + b.w <= panelRect.x + panelRect.w && b.y + b.h <= panelRect.y + panelRect.h && !!notice && /wind shrine/i.test(notice.text);
+      }
+      closePanel(); if (sz0.w) { Object.defineProperty(window, 'innerWidth', sz0.w); Object.defineProperty(window, 'innerHeight', sz0.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } } window.__forceTouch = t0; render();
+      check(P + 'the pack shows the keyring as 44 px tiles inside the panel, and a tap on one tells what it opens', Object.values(seen).every(Boolean), seen); }
+
     player.inv = bag; player.keyring = r0; syncRing();
   });
 }
@@ -29301,7 +30007,7 @@ HOOKS.selfTest.push((check, F, h) => {
 // that would make a small crime a big one without the child choosing it.
 // Online (75-coop): a non-keeper is hurt by a 'hurt' message carrying the keeper's monster position; the puppet there is
 // the attacker, and the swing goes through hitMonster, which routes a hit on a puppet to the keeper.
-// Feature file: HOOKS plus wrapped core functions (hurtPlayer, useAction, talkTo, panelBox, drawPanels). Test handle:
+// Feature file: HOOKS plus wrapped core functions (hurtPlayer, useAction, talkTo) and a row in the pack (10-hud PACK_ROWS). Test handle:
 // window.RETALIATE.
 // ============================================================================
 const RETALIATE = (() => {
@@ -29445,27 +30151,19 @@ const RETALIATE = (() => {
   });
 
   // ---------- the pack control (the iPad's way to flip it) ----------
-  // Wide packs (10 columns) have room at the right end of the Eat / Drop row. A narrow (phone) pack has none, so it
-  // grows by one row and the switch sits along its foot, right of the worn column.
-  const PACK = 'Your pack';
-  const narrowPack = () => VW < 640;
-  const footH = () => HK.row() + 16;
-  { const _panelBox = panelBox;
-    panelBox = function (g, w, h, title, subtitle) { if (title === PACK && narrowPack()) h += footH(); return _panelBox(g, w, h, title, subtitle); }; }
+  // A switch on its own row at the foot of the pack (10-hud PACK_ROWS): an iron plate with the sword emblem, its edge
+  // green while it is on, one kit row tall (44 px on touch). The pack measures the row in, so it never lands on anything.
   const label = () => `Fight back when hit: ${isOn() ? 'ON' : 'OFF'}`;
-  function packRect() {
-    if (!panelRect) return null;
-    const rowH = HK.row(), eqw = 70, { x: px, y: py, w, h } = panelRect;
-    if (narrowPack()) return { x: px + 18 + eqw, y: py + h - rowH - 14, w: w - 36 - eqw, h: rowH };
-    const cols = 10, size = 46, gap = 6, gy = py + 66 + Math.ceil(INV_SLOTS / cols) * (size + gap), bw = 220;
-    return { x: px + w - 18 - bw, y: gy + 58, w: bw, h: rowH };
-  }
-  function drawPackControl(g) {
-    const r = packRect(); if (!r) return;
-    HK.control(g, r.x, r.y, r.w, r.h, label(), () => { if (window.__kidmode) { notify('Kid mode keeps fighting back on. Turn kid mode off in Settings to change it.'); return; } toggle(); }, { tone: isOn() ? HK.C.GOOD : null, on: isOn(), hit: 'retaliate' });
-  }
-  { const _drawPanels = drawPanels;
-    drawPanels = function (g, narrow, short, qh, hb) { const r = _drawPanels(g, narrow, short, qh, hb); if (panel === 'inventory' && !paused) drawPackControl(g); return r; }; }
+  // where the row is narrow (beside the keyring on an upright phone) it says the short form, "Fight back: ON"
+  const short = () => `Fight back: ${isOn() ? 'ON' : 'OFF'}`;
+  PACK_ROWS.push({ id: 'retaliate',
+    minW: (g, h) => PANEL_KIT.verbW(g, short(), 'swing', h),
+    draw: (g, x, y, w, h) => {
+      const long = PANEL_KIT.verbW(g, label(), 'swing', h) <= w, text = long ? label() : short();
+      const bw = Math.min(w, Math.max(long ? 220 : 0, PANEL_KIT.verbW(g, text, 'swing', h)));
+      PANEL_KIT.verb(g, x, y, bw, h, 'retaliate', () => { if (window.__kidmode) { notify('Kid mode keeps fighting back on. Turn kid mode off in Settings to change it.'); return; } toggle(); },
+        { text, emblem: 'swing', on: isOn(), name: 'Fight back when hit: a monster that hits you gets hit back', keys: ['O'] });
+    } });
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -29594,7 +30292,7 @@ const RETALIATE = (() => {
     }
   });
 
-  return { isOn, set, toggle, state: R, LEASH, ANCHOR, KEY, label, packRect, attackerAt };
+  return { isOn, set, toggle, state: R, LEASH, ANCHOR, KEY, label, packRect: () => { const b = buttons.find(q => q.label === 'retaliate'); return b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null; }, attackerAt };
 })();
 window.RETALIATE = RETALIATE;
 

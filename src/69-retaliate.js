@@ -18,7 +18,7 @@
 // that would make a small crime a big one without the child choosing it.
 // Online (75-coop): a non-keeper is hurt by a 'hurt' message carrying the keeper's monster position; the puppet there is
 // the attacker, and the swing goes through hitMonster, which routes a hit on a puppet to the keeper.
-// Feature file: HOOKS plus wrapped core functions (hurtPlayer, useAction, talkTo, panelBox, drawPanels). Test handle:
+// Feature file: HOOKS plus wrapped core functions (hurtPlayer, useAction, talkTo) and a row in the pack (10-hud PACK_ROWS). Test handle:
 // window.RETALIATE.
 // ============================================================================
 const RETALIATE = (() => {
@@ -162,27 +162,19 @@ const RETALIATE = (() => {
   });
 
   // ---------- the pack control (the iPad's way to flip it) ----------
-  // Wide packs (10 columns) have room at the right end of the Eat / Drop row. A narrow (phone) pack has none, so it
-  // grows by one row and the switch sits along its foot, right of the worn column.
-  const PACK = 'Your pack';
-  const narrowPack = () => VW < 640;
-  const footH = () => HK.row() + 16;
-  { const _panelBox = panelBox;
-    panelBox = function (g, w, h, title, subtitle) { if (title === PACK && narrowPack()) h += footH(); return _panelBox(g, w, h, title, subtitle); }; }
+  // A switch on its own row at the foot of the pack (10-hud PACK_ROWS): an iron plate with the sword emblem, its edge
+  // green while it is on, one kit row tall (44 px on touch). The pack measures the row in, so it never lands on anything.
   const label = () => `Fight back when hit: ${isOn() ? 'ON' : 'OFF'}`;
-  function packRect() {
-    if (!panelRect) return null;
-    const rowH = HK.row(), eqw = 70, { x: px, y: py, w, h } = panelRect;
-    if (narrowPack()) return { x: px + 18 + eqw, y: py + h - rowH - 14, w: w - 36 - eqw, h: rowH };
-    const cols = 10, size = 46, gap = 6, gy = py + 66 + Math.ceil(INV_SLOTS / cols) * (size + gap), bw = 220;
-    return { x: px + w - 18 - bw, y: gy + 58, w: bw, h: rowH };
-  }
-  function drawPackControl(g) {
-    const r = packRect(); if (!r) return;
-    HK.control(g, r.x, r.y, r.w, r.h, label(), () => { if (window.__kidmode) { notify('Kid mode keeps fighting back on. Turn kid mode off in Settings to change it.'); return; } toggle(); }, { tone: isOn() ? HK.C.GOOD : null, on: isOn(), hit: 'retaliate' });
-  }
-  { const _drawPanels = drawPanels;
-    drawPanels = function (g, narrow, short, qh, hb) { const r = _drawPanels(g, narrow, short, qh, hb); if (panel === 'inventory' && !paused) drawPackControl(g); return r; }; }
+  // where the row is narrow (beside the keyring on an upright phone) it says the short form, "Fight back: ON"
+  const short = () => `Fight back: ${isOn() ? 'ON' : 'OFF'}`;
+  PACK_ROWS.push({ id: 'retaliate',
+    minW: (g, h) => PANEL_KIT.verbW(g, short(), 'swing', h),
+    draw: (g, x, y, w, h) => {
+      const long = PANEL_KIT.verbW(g, label(), 'swing', h) <= w, text = long ? label() : short();
+      const bw = Math.min(w, Math.max(long ? 220 : 0, PANEL_KIT.verbW(g, text, 'swing', h)));
+      PANEL_KIT.verb(g, x, y, bw, h, 'retaliate', () => { if (window.__kidmode) { notify('Kid mode keeps fighting back on. Turn kid mode off in Settings to change it.'); return; } toggle(); },
+        { text, emblem: 'swing', on: isOn(), name: 'Fight back when hit: a monster that hits you gets hit back', keys: ['O'] });
+    } });
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -311,6 +303,6 @@ const RETALIATE = (() => {
     }
   });
 
-  return { isOn, set, toggle, state: R, LEASH, ANCHOR, KEY, label, packRect, attackerAt };
+  return { isOn, set, toggle, state: R, LEASH, ANCHOR, KEY, label, packRect: () => { const b = buttons.find(q => q.label === 'retaliate'); return b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null; }, attackerAt };
 })();
 window.RETALIATE = RETALIATE;
