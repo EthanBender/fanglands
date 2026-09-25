@@ -197,7 +197,8 @@
   // room to be read, and shows nothing at all when not even one tap-sized row is free (the bubbles over the knights'
   // heads still say it, and the log is one tap away in Friends). Its tap area is at least one kit row (44 px on touch).
   const LINE_H = 16;
-  HOOKS.hud.push(g => {
+  // named so the self-test can draw the strip into a recording canvas; the HUD hook below calls it every frame
+  function drawStrip(g) {
     if (paused || panel) return;
     const live = []; for (let i = log.length - 1; i >= 0 && live.length < STRIP_LINES; i--) if (log[i].t > 0) live.unshift(log[i]);
     if (!live.length) return;
@@ -221,7 +222,8 @@
     });
     g.globalAlpha = 1;
     buttons.push({ x: s.x, y: s.y, w, h: s.h, label: 'chat:log', action: () => openPanel('chatlog') });
-  });
+  }
+  HOOKS.hud.push(g => drawStrip(g));
   // CHAT on touch is an entry on the kit's control rail (under the minimap; the second column on a landscape phone), not
   // a disc of its own: the thumb cluster's six seats are all taken (HK.thumbSeat), and the last hand-placed disc at
   // (VW-250, VH-200) sat on top of WIKI on a landscape phone and inside the joystick on a tall one. The rail lays
