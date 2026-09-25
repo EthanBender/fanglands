@@ -13765,9 +13765,22 @@ HOOKS.selfTest.push((check, F, h) => {
     const th = Math.min(player.maxHp - 1, Math.max(Math.ceil(player.maxHp * 0.5), threat + 2));
     if (player.hp < th) { PLAY.healed += player.maxHp - player.hp; PLAY.meals++; player.hp = player.maxHp; }
   }
+  // after a death: wait to wake, then go to Death's house in Thistledown and buy the pack back (it holds whatever the
+  // knight was carrying: dung, scales, silk). The note says whether the chest really came back, not just that he went.
   function afterDeath() {
     PLAY.deaths++; note(`died at ${ptx()},${pty()}`); let n = 0; while (player.dead && n++ < 400) tick();
-    if (deathKeep && coins() + (deathKeep.items.find(s => s.id === 'coins') || { qty: 0 }).qty >= coffinFee()) { const dh = BUILDINGS.find(b => b.id === 'death2'); if (dh && walk(dh.x + dh.door, dh.y + dh.h - 2)) { F().face(134, 50); F().press('KeyE'); PLAY.steps++; F().clickButton('Reclaim everything'); closePanel(); note('reclaimed the pack from Death'); } }
+    if (!deathKeep) return;
+    const purse = coins() + (deathKeep.items.find(s => s.id === 'coins') || { qty: 0 }).qty;
+    if (purse < coffinFee()) { note(`left the pack with Death: fee ${coffinFee()}, coins ${purse}`); return; }
+    const death = NPCS.find(o => o.id === 'death2'); if (!death) return;
+    for (let k = 0; k < 3 && deathKeep && !player.dead; k++) {
+      closePanel(); drain();
+      if (!walk(death.x, death.y + 1)) break;
+      F().face(death.x, death.y); F().press('KeyE'); PLAY.steps++;
+      if (panel === 'coffin') F().clickButton('Reclaim everything');
+      closePanel(); drain();
+    }
+    note(deathKeep ? `could not reclaim the pack from Death (${deathKeep.items.map(s => s.id + ' ' + s.qty).join(', ')})` : 'reclaimed the pack from Death');
   }
   const chasing = r => monsters.filter(m => !m.dead && HOSTILE.includes(m.type) && m.state === 'chase' && dist(m.x, m.y, player.x, player.y) < r);
   // the pack is 20 slots: a real player banks or drops the junk; the bot drops it (counted) so quest items and loot still fit
@@ -13883,14 +13896,34 @@ HOOKS.selfTest.push((check, F, h) => {
       const score = x => x.weapon ? (2 + Math.floor((skillLv('melee') + 8) * (x.weapon.str + 64) / 300)) * (1 - 0.5 / (x.weapon.cd * 10)) / x.weapon.cd : x.armour.def;
       if (!cur || score(d) > score(cur)) equipItem(i); }
   }
-  // hunt a monster type until an item count is reached (drakes for dung and scales, cave spiders for silk)
-  function hunt(type, itemId, want, tries, waitTicks = 600) {
-    let n = 0, kills0 = player.kills;
-    while (countItem(itemId) < want && n++ < tries && !over()) {
+  // hunt a monster type until an item count is reached (drakes for dung and scales, cave spiders for silk).
+  // `tries` counts fights only. When none of the type is alive the knight goes back to `base` and waits there, eating
+  // when he needs to, until one comes back: base must be a safe tile more than 4 tiles from every home, because a knight
+  // standing that close to a home holds that monster's respawn back (src/07-update.js). The default base is the tile
+  // the hunt starts from; null means wait where he stands. A death while waiting is handled like any other death
+  // (afterDeath buys the pack back from Death). The waiting is capped by time: twice the monster's respawn per
+  // item still missing when the hunt starts.
+  function hunt(type, itemId, want, tries, waitTicks = 600, base = [ptx(), pty()]) {
+    let n = 0, waited = 0; const kills0 = player.kills;
+    const maxWait = 2 * (MONSTER_DEFS[type].respawn || 60) * 60 * Math.max(1, want - countItem(itemId));
+    const alive = () => monsters.some(o => o.type === type && !o.dead);
+    while (countItem(itemId) < want && n < tries && !over()) {
+      heal(); if (player.dead) { afterDeath(); continue; }
       const m = monsters.filter(o => o.type === type && !o.dead).sort((a, b) => dist(a.x, a.y, player.x, player.y) - dist(b.x, b.y, player.x, player.y))[0];
-      if (!m) { sim(waitTicks); continue; }
+      if (!m) {
+        if (waited >= maxWait) { note(`hunt ${type}: none came back in ${waited} ticks of waiting`); break; }
+        if (base && (ptx() !== base[0] || pty() !== base[1])) walk(base[0], base[1]);
+        for (let k = 0, stop = Math.min(waitTicks, maxWait - waited); k < stop && !alive() && !over(); k++) {
+          heal(); tick(); waited++;
+          if (player.dead || chasing(4 * TILE).length) break;
+        }
+        if (player.dead) afterDeath();
+        else if (chasing(4 * TILE).some(o => o.type !== type)) { const r = brawl(HOSTILE, 3000); waited += typeof r === 'number' ? r : 3000; }
+        continue;
+      }
+      n++;
       const w = walk(Math.floor(m.x / TILE), Math.floor(m.y / TILE), true, 3000); const r = brawl([type], 20000, 8 * TILE);
-      if (n <= 2 || n % 5 === 0) note(`hunt ${type} #${n}: walk ${w}, brawl ${r}, ${itemId} ${countItem(itemId)}/${want}, kills +${player.kills - kills0}, free slots ${player.inv.filter(s => !s).length}`);
+      if (n <= 2 || n % 5 === 0) note(`hunt ${type} #${n}: walk ${w}, brawl ${r}, ${itemId} ${countItem(itemId)}/${want}, kills +${player.kills - kills0}, free slots ${player.inv.filter(s => !s).length}, waited ${waited}`);
     }
     return countItem(itemId) >= want;
   }
@@ -13971,18 +14004,22 @@ HOOKS.selfTest.push((check, F, h) => {
     // 12 → 13: Dunstan
     untilStage(13, () => { talk('dunstan'); drain(); }, () => advanceQuest(13));
     // 13 → 14: five dragon dung from the ash drakes
+    // the hunt waits for respawns in Dunstan's yard, where the knight stands after talking to him: away from the lava,
+    // far from the green dragon, more than 4 tiles from every drake's home. The scale hunt later waits there too.
+    let drakeBase = null;
     untilStage(14, () => {
-      hunt('ash_drake', 'dragon_dung', 5, 14);
+      drakeBase = [ptx(), pty()]; hunt('ash_drake', 'dragon_dung', 5, 14, 600, drakeBase);
       note(`dung ${countItem('dragon_dung')}, melee ${skillLv('melee')}`); closePanel(); talk('dunstan'); closePanel(); drain(); waitStage(14, 60);
     }, () => { (quest.dragons || (quest.dragons = {})).salve = true; quest.dragons.stage = 2; advanceQuest(14); });
     // 14 → 15: the Song of Above (Wren's silk, the flute, Aerie: 5 scales + 3 essence), the Dragon Killers, the lair, the horn, The Fang
     untilStage(15, () => {
-      // Wren's silk: five strands from the cave spiders
-      if (quest.wren !== 'done') { talk('wren'); drain(); hunt('spider', 'spider_silk', 5, 60, 300); talk('wren'); drain(); }
+      // Wren's silk: five strands from the cave spiders. They are harmless and live in a dead-end cave, so that hunt
+      // waits where it stands (base null) rather than walking back to Wren
+      if (quest.wren !== 'done') { talk('wren'); drain(); hunt('spider', 'spider_silk', 5, 60, 300, null); talk('wren'); drain(); }
       if (!countItem('wind_flute') && quest.sky && quest.sky.stage === 0) { talk('wren'); drain(); }
       note(`wren ${quest.wren}, flute ${countItem('wind_flute')}, sky ${quest.sky && quest.sky.stage}`);
-      // dragon scales from the drakes (one in four kills or so)
-      hunt('ash_drake', 'dragon_scale', 5, 60);
+      // dragon scales from the drakes (one in four kills or so), waiting for respawns in Dunstan's yard
+      hunt('ash_drake', 'dragon_scale', 5, 60, 600, drakeBase || undefined);
       note(`scales ${countItem('dragon_scale')}, melee ${skillLv('melee')}`);
       // up to Aerie — by way of the storm (66-storm): the flute now sets the knight down on the thunderhead and
       // the Thunderbird has to come down before the updraft into the city opens. A death puts him back in his bed,
@@ -14039,6 +14076,42 @@ HOOKS.selfTest.push((check, F, h) => {
     { const p = progression(), dead = p.rows.filter(r => r.dead && r.kind !== 'cape'); check(P + `progression: every skill gate has an XP source below it (${p.rows.length} gates)`, dead.length === 0, { gates: p.rows.length, dead: dead.map(r => `${r.skill} ${r.lv} ${r.what}`) });
       const wide = Object.entries(p.bands).filter(([, b]) => b.gap > 10).map(([k, b]) => `${k}: ${b.gap} levels (nothing new after ${b.lastNew} until ${b.at})`);
       check(P + 'progression: widest stretch of levels with no new XP source, per skill (10+ listed)', true, { wide }); }
+    // the bot's hunt (what the --play run does at stage 13 for the dung). Each check puts the drakes down by hand, runs
+    // hunt() for real, and puts everything back: position, pack, skills, quest, drops, the drakes and the bot's counters.
+    { const drakes = monsters.filter(m => m.type === 'ash_drake'), dun = NPCS.find(o => o.id === 'dunstan'), death = NPCS.find(o => o.id === 'death2');
+      if (drakes.length && dun && death) {
+        const saveBot = () => ({ x: player.x, y: player.y, hp: player.hp, equip: { ...player.equip }, maxHp: player.maxHp, dead: player.dead, inv: player.inv.map(s => s ? { ...s } : null), skills: JSON.stringify(player.skills), kills: player.kills, deaths: player.deaths,
+          dk: deathKeep, quest: JSON.stringify(quest), drops: drops.slice(), peace: window.__peace, respawn: MONSTER_DEFS.ash_drake.respawn,
+          play: { steps: PLAY.steps, budget: PLAY.budget, deaths: PLAY.deaths, meals: PLAY.meals, healed: PLAY.healed, log: PLAY.log.slice(), last: PLAY.last },
+          drakes: drakes.map(m => ({ m, dead: m.dead, hp: m.hp, maxHp: m.maxHp, respawnT: m.respawnT, deadT: m.deadT, state: m.state, x: m.x, y: m.y, angry: m.angry })) });
+        const restoreBot = k => { closePanel(); drain(); Object.assign(player, { x: k.x, y: k.y, hp: k.hp, equip: k.equip, maxHp: k.maxHp, dead: k.dead, inv: k.inv, skills: JSON.parse(k.skills), kills: k.kills, deaths: k.deaths, action: null });
+          deathKeep = k.dk; for (const key of Object.keys(quest)) delete quest[key]; Object.assign(quest, JSON.parse(k.quest)); drops = k.drops; window.__peace = k.peace; MONSTER_DEFS.ash_drake.respawn = k.respawn;
+          Object.assign(PLAY, k.play); for (const d of k.drakes) { const { m, ...rest } = d; Object.assign(m, rest); } };
+        // all four drakes dead; only the first can come back soon, and the others not during the check
+        const downAll = soon => { for (const m of drakes) { m.dead = true; m.hp = 0; m.deadT = 0; m.respawnT = 99999; m.maxHp = 1; m.state = 'idle'; } drakes[0].respawnT = soon; };
+        const base = [dun.x, dun.y - 1];
+        // 1. the knight stands on the only drake's home, where standing holds its respawn back, with one try: before,
+        //    the bot waited on the spot and the wait spent the try; now it walks back to the base and only fights count
+        { const k = saveBot(); let ok = false, err = null, dung = 0, at = null;
+          // the knight is given the level and blade the bot has by stage 13 (melee 22, an iron dagger) so the fight is short
+          try { h.peace(true); drain(); player.inv = new Array(INV_SLOTS).fill(null); player.dead = false; player.skills.melee.xp = Math.max(player.skills.melee.xp, XP_TABLE[22]); player.equip.weapon = 'iron_dagger'; player.hp = player.maxHp; downAll(2);
+            F.tp(Math.floor(drakes[0].home.x / TILE), Math.floor(drakes[0].home.y / TILE)); PLAY.budget = PLAY.steps + 20000;
+            ok = hunt('ash_drake', 'dragon_dung', 1, 1, 600, base); dung = countItem('dragon_dung'); at = [ptx(), pty()]; }
+          catch (e) { err = String(e && e.message); }
+          const log = PLAY.log.slice(k.play.log.length); restoreBot(k);
+          check(P + "the bot's hunt waits for a respawn at a safe base, and an empty wait does not use up a try (the stage 13 dung)", ok && dung === 1 && !err, { ok, dung, at, err, log }); }
+        // 2. the knight carries dung and dies while he waits: before, the wait ran on and the pack stayed with Death;
+        //    now afterDeath runs and he buys the pack back. The base here is Death's own house so the check stays short,
+        //    and the drakes' respawn is cut to one second so the capped wait ends soon after.
+        { const k = saveBot(), killHook = () => { ticks++; if (!fired && ticks > 30) { fired = true; player.hp = 0; die(); } }; let ticks = 0, fired = false, ok = null, err = null, dung = 0;
+          try { h.peace(true); drain(); player.inv = new Array(INV_SLOTS).fill(null); player.dead = false; player.hp = player.maxHp; addItem('dragon_dung', 1); addItem('coins', 200); deathKeep = null;
+            downAll(99999); MONSTER_DEFS.ash_drake.respawn = 1; F.tp(death.x, death.y + 1); PLAY.budget = PLAY.steps + 20000;
+            HOOKS.update.push(killHook); ok = hunt('ash_drake', 'dragon_dung', 2, 1, 600, [death.x, death.y + 1]); dung = countItem('dragon_dung'); }
+          catch (e) { err = String(e && e.message); }
+          const i = HOOKS.update.indexOf(killHook); if (i >= 0) HOOKS.update.splice(i, 1);
+          const deaths = PLAY.deaths - k.play.deaths, kept = deathKeep, alive = !player.dead, log = PLAY.log.slice(k.play.log.length); restoreBot(k);
+          check(P + "the bot's hunt: a death while waiting is followed by the walk to Death, and the dung he carried comes back", fired && deaths === 1 && !kept && dung === 1 && alive && ok === false && !err, { fired, deaths, kept: kept && kept.items, dung, alive, ok, err, log }); }
+      } }
     if (window.__fullPlaythrough) {
       const r = play();
       check(P + 'full bot playthrough 0→16 with real movement (node tools/headless.js --play)', r.stage >= 16 && r.forced.length === 0, { stage: r.stage, last: r.last, forced: r.forced, tps: r.tps, steps: r.steps, gameMinutes: r.gameMinutes, seconds: r.seconds, meals: r.meals, healed: Math.round(r.healed), junkDropped: r.junk || 0, deaths: r.deaths, kills: player.kills, melee: skillLv('melee'), defence: skillLv('defence'), stages: r.stages });
