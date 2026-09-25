@@ -186,12 +186,12 @@ function die() {
   player.hp = 0; player.dead = true; player.deadT = 0; player.deaths += 1; closePanel(); player.action = null; sfx('death');
   if (player.mech) { player.mech = null; }
   const items = player.inv.filter(Boolean);
-  const lostPrevious = deathKeep && deathKeep.items.length > 0;
-  // an empty pack does not replace the chest: what Death holds from last time stays where it is
-  if (items.length) deathKeep = { items };
+  const lostPrevious = !!deathKeep && deathKeep.items.length > 0;
+  // Death keeps everything from every fall: this pack is ADDED to what he already holds, never swapped for it (owner, 2026-09-25)
+  if (items.length) addToDeathKeep(items);
   player.inv = new Array(INV_SLOTS).fill(null);
-  if (items.length) say(lostPrevious ? "You fell again. What Death held before is his now. What you carried, he keeps in his chest. Find his house." : "You fell. Death has your pack in his chest. His house has a coffin for a door. One stands by the cave, one in Thistledown.", 'The Voice');
-  else if (lostPrevious) say('You fell with empty hands. Death still keeps what he had. Get up, knight.', 'The Voice');
+  if (items.length) say(lostPrevious ? `You fell again. Death put this pack in his chest with everything from before. He keeps it all, from every fall, until you collect it. His chest holds ${chestWords()} now.` : "You fell. Death has your pack in his chest. He keeps it until you collect it. His house has a coffin for a door. One stands by the cave, one in Thistledown.", 'The Voice');
+  else if (lostPrevious) say(`You fell with empty hands. Death still keeps everything in his chest until you collect it: ${chestWords()}. Get up, knight.`, 'The Voice');
   else say('You fell. Get up, knight.', 'The Voice');
 }
 
@@ -464,7 +464,7 @@ function talkTo(n) {
   else if (n.role === 'bank') { say("Your pack is small and the world is big. Leave what you like with me. It will be here.", n.name); openPanel('bank'); }
   else if (n.role === 'inn') { if (coins() >= 5) { payCoins(5); player.hp = player.maxHp; player.innRested = true; say("Five coins. Hot stew and a bed by the fire. Sleep in it if you want to wake here.", n.name); burst(player.x, player.y, '#7ee787', 10, 40); save(); } else say("A bed's five coins. Come back with coin.", n.name); }
   else if (n.role === 'tinker') { say("Workbench for bows, doors, beds and lodestones. That table for traps and iron arrows. The bubbling one for bombs. Mind your eyebrows.", n.name); }
-  else if (n.role === 'death') { say(deathKeep ? "I have your things. They are in the chest. My fee is fair. It always is." : "Not yet. But you will be back. Everyone comes back to me.", 'Death'); openPanel('coffin'); }
+  else if (n.role === 'death') { say(deathKeep ? `I keep everything from every fall, and it waits in my chest until you collect it. I hold ${chestWords()} for you now. My fee is fair. It always is.` : "Not yet. But you will be back. Everyone comes back to me.", 'Death'); openPanel('coffin'); }
   else if (n.role === 'duke') {
     if (quest.stage < 5) say("The road is dangerous, traveller. Speak to me when you have proven yourself on it.", n.name);
     else if (quest.stage === 5) advanceQuest(6);
@@ -489,33 +489,74 @@ function talkTo(n) {
   else if (HOOKS.talk[n.role]) HOOKS.talk[n.role](n);
 }
 // ---------- death's chest ----------
+// The chest grows with every fall. Things that stack (coins, wood, bars) join the pile of the same kind already
+// in the chest, so two deaths with wood are ONE wood entry with both amounts added. Things that do not stack
+// (a helm, a sword) stay one entry each. Nothing already in the chest is ever lost to a later fall.
+function addToDeathKeep(items) {
+  // a fresh list of fresh entries: a caller holding the old chest (a test's snapshot, an instance's) must not see it grow
+  const kept = (deathKeep && Array.isArray(deathKeep.items) ? deathKeep.items : []).map(s => ({ ...s }));
+  for (const s of items) {
+    if (!s || !(s.qty > 0)) continue;
+    const stacks = !!ITEMS[s.id] && ITEMS[s.id].stack > 1;
+    const same = stacks ? kept.find(k => k.id === s.id) : null;
+    if (same) same.qty += s.qty; else kept.push({ ...s });
+  }
+  deathKeep = kept.length ? { items: kept } : null;
+}
+// how many things are in a list (coins are counted apart, as coins)
+function chestThings(items) { let n = 0; for (const s of items) if (s.id !== 'coins') n += s.qty; return n; }
+function chestCoins(items) { let n = 0; for (const s of items) if (s.id === 'coins') n += s.qty; return n; }
+// "23 things and 140 coins" in plain words, for the Voice, Death and the panel
+function chestWords(items = deathKeep ? deathKeep.items : []) {
+  const n = chestThings(items), c = chestCoins(items);
+  const t = n === 1 ? '1 thing' : `${n} things`, cw = c === 1 ? '1 coin' : `${c} coins`;
+  return n && c ? `${t} and ${cw}` : c ? cw : t;
+}
+// the price of each entry in a list, in the same order. The core charges a quarter of an entry's worth when it is
+// worth 20 or more; 50-economy replaces this with the owner's bands and cap. A declaration so it can be reassigned.
+function chestFees(items) { return items.map(s => itemFee(s.id, s.qty)); }
 function coffinFee() {
   if (window.__kidmode) return 0; // kid mode: Death returns everything for free
   if (!deathKeep) return 0;
-  let fee = 0; for (const s of deathKeep.items) { if (s.id === 'coins') continue; const v = ITEMS[s.id].value * s.qty; if (v >= 20) fee += Math.ceil(v * 0.25); }
-  return fee;
+  return chestFees(deathKeep.items).reduce((a, f) => a + f, 0);
 }
-// the fee is charged per item, only for what actually fits in the pack; what stays in the chest keeps its fee for next time (no double charge)
+// the fee is charged only for what actually fits in the pack; what stays in the chest keeps its fee for next time (no double charge)
 function itemFee(id, qty) { if (window.__kidmode) return 0; if (id === 'coins') return 0; const v = ITEMS[id].value * qty; return v >= 20 ? Math.ceil(v * 0.25) : 0; } // kid mode is free here too, or the coffin's free-looking button would charge and return nothing. A declaration, not a const arrow: 50-economy wraps it to scale the fee with the knight
+// What a reclaim would do right now, without doing it: how many of each entry fit in the pack, and the fee for exactly
+// those. The pack is filled for real and then put back, so stacks and free slots are counted the way addItem counts them.
+function reclaimPlan() {
+  if (!deathKeep) return { fits: [], fees: [], total: 0, all: true };
+  const items = deathKeep.items, bag = player.inv.map(s => s ? { ...s } : null);
+  // a keyring unlock costs no slot and must not be handed out by merely working out the plan (addItem puts it on the ring)
+  const isKey = id => !!(window.KEYRING && KEYRING.KEYS && KEYRING.KEYS[id]);
+  const fits = items.map(s => { if (s.id === 'coins' || !ITEMS[s.id]) return 0; if (isKey(s.id)) return s.qty; const can = Math.min(s.qty, roomFor(s.id)); if (can > 0) addItem(s.id, can); return can; });
+  player.inv = bag;
+  const fees = chestFees(items.map((s, i) => ({ id: s.id, qty: fits[i] })));
+  const all = items.every((s, i) => s.id === 'coins' || fits[i] >= s.qty);
+  return { fits, fees, total: fees.reduce((a, f) => a + f, 0), all };
+}
 function reclaimFromDeath() {
   if (!deathKeep) return;
+  const plan = reclaimPlan();
   // Death takes his share from the coins he already holds, then from your pack
-  const held = deathKeep.items.find(s => s.id === 'coins'); let purse = held ? held.qty : 0;
+  const held = deathKeep.items.find(s => s.id === 'coins'); let purse = chestCoins(deathKeep.items);
   const left = []; let took = 0, short = 0;
-  for (const s of deathKeep.items) {
-    if (s.id === 'coins') continue;
-    const can = Math.min(s.qty, roomFor(s.id));
-    const fee = itemFee(s.id, can);
-    if (can <= 0) { left.push({ id: s.id, qty: s.qty }); continue; }
-    if (fee > purse + coins()) { left.push({ id: s.id, qty: s.qty }); short = Math.max(short, fee - purse - coins()); continue; }
+  deathKeep.items.forEach((s, i) => {
+    if (s.id === 'coins') return;
+    const can = plan.fits[i], fee = plan.fees[i];
+    if (can <= 0) { left.push({ ...s }); return; }
+    if (fee > purse + coins()) { left.push({ ...s }); short = Math.max(short, fee - purse - coins()); return; }
     const fromPurse = Math.min(purse, fee); purse -= fromPurse; if (fee - fromPurse > 0) payCoins(fee - fromPurse);
     addItem(s.id, can); took += can;
-    if (can < s.qty) left.push({ id: s.id, qty: s.qty - can });
-  }
-  if (purse > 0) { addItem('coins', purse); took += purse; } // never fails: coins that do not fit land at your feet
+    if (can < s.qty) left.push({ ...s, qty: s.qty - can });
+  });
+  if (held && purse > 0) { addItem('coins', purse); took += purse; } // never fails: coins that do not fit land at your feet
   deathKeep = left.length ? { items: left } : null;
-  if (!took && short > 0) { notify(`Death wants ${short} more coins. You have ${coins()}.`); return; }
-  say(left.length ? (short > 0 ? "Coin first, knight. I keep the rest until you have it." : "Your pack is full. I will keep the rest. For now.") : "Take them. We will meet again. Everyone does.", 'Death');
+  // left never holds coins (they always come back), so this reads "7 things are still in my chest"
+  const still = left.length ? `${chestWords(left)} ${chestThings(left) === 1 ? 'is' : 'are'} still in my chest` : '';
+  // said, not a one-line notice: the dialogue box wraps, a notice is cut short on a phone
+  if (!took && short > 0) { say(`Coin first, knight. I want ${short} more coins, and you have ${coins()}. ${still}.`, 'Death'); return; }
+  say(left.length ? (short > 0 ? `Coin first, knight. ${still}. I keep ${chestThings(left) === 1 ? 'it' : 'them'} until you have the coins.` : `Your pack is full. ${still}. Make room, and come back for ${chestThings(left) === 1 ? 'it' : 'them'}.`) : "Take them. We will meet again. Everyone does.", 'Death');
   if (!deathKeep) closePanel();
   save();
 }

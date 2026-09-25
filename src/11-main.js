@@ -235,6 +235,46 @@ window.FANGLANDS = {
       const clean = player.inv.every(s => !s || ITEMS[s.id]) && player.bank.every(s => ITEMS[s.id]) && player.equip.shield === null && !!deathKeep && deathKeep.items.length === 1 && deathKeep.items[0].id === 'wood';
       check("load: unknown item ids are dropped from pack, bank, equipment and Death's chest, with one notice", ok2 && clean && !!notice && /unknown item/.test(notice.text), { ok2, clean, notice: notice && notice.text });
       player.inv = inv0; player.equip = eq0; deathKeep = dk0; recomputeMaxHp(); save(); }
+    { // Death's chest adds up (owner, 2026-09-25): two falls with two different packs, and Death holds BOTH.
+      // Stackable things from both falls are one entry with the amounts added; gear stays one entry each; coins join.
+      // each fall through hurtPlayer earns Defence xp and counts a death, so both are put back at the end: later checks depend on the combat level
+      const inv0 = invSnap(), dk0 = deathKeep, bed0 = player.bedSpawn, kid = window.__kidmode, x0 = player.x, y0 = player.y, sk0 = JSON.parse(JSON.stringify(player.skills)), deaths0 = player.deaths, face0 = { ...player.facing };
+      window.__kidmode = false; player.bedSpawn = null; deathKeep = null;
+      const fall = pack => { player.inv = new Array(INV_SLOTS).fill(null); for (const [id, q] of pack) give(id, q); hurtPlayer(player.hp + 999, player.x + 10, player.y, true); F.sim(200, []); };
+      // every line said is recorded here (the dialogue queue can be full by this point in the run, and it drops lines when it is)
+      const heard = [], say0 = say; say = function (text, who) { heard.push(text); return say0.apply(this, arguments); }; const lastSaid = () => heard.length ? heard[heard.length - 1] : '';
+      const packA = [['wood', 5], ['steel_helm', 1], ['iron_body', 1], ['coins', 30]], packB = [['wood', 7], ['steel_helm', 1], ['mithril_bar', 3], ['goblin_scrap', 2], ['coins', 20]];
+      fall(packA); const afterA = JSON.stringify(deathKeep);
+      fall(packB); const said = lastSaid(), items = deathKeep ? deathKeep.items : [];
+      const qty = id => items.filter(s2 => s2.id === id).reduce((a, s2) => a + s2.qty, 0), entries = id => items.filter(s2 => s2.id === id).length;
+      const firstKept = packA.every(([id, q]) => qty(id) >= q);
+      const both = qty('wood') === 12 && entries('wood') === 1 && qty('coins') === 50 && entries('coins') === 1 && entries('steel_helm') === 2 && qty('iron_body') === 1 && qty('mithril_bar') === 3 && qty('goblin_scrap') === 2;
+      const voice = /every fall/.test(said) && !/is his now/.test(said) && said.includes(chestWords());
+      check("Death's chest: two falls with two packs, Death holds both (wood 5 + 7 = one entry of 12, two helms, coins 30 + 20 = 50)", firstKept && both && voice, { afterA, chest: JSON.stringify(items), said });
+      // the fee on collecting is the owner's rule on the WHOLE combined chest: bands by combat level, capped at 40 + combat x 20
+      const share = ECONOMY.feeShare(), cap = ECONOMY.feeCap();
+      const raw = items.reduce((a, s2) => a + (s2.id !== 'coins' && ITEMS[s2.id].value * s2.qty >= 20 ? ITEMS[s2.id].value * s2.qty : 0), 0);
+      const rule = Math.min(Math.ceil(raw * share), cap), fee = coffinFee(), parts = chestFees(items), sumParts = parts.reduce((a, f) => a + f, 0);
+      const byId = [...new Set(items.map(s2 => s2.id))].reduce((a, id) => a + itemFee(id, qty(id)), 0);
+      player.inv = new Array(INV_SLOTS).fill(null); give('coins', 2000); const c0 = coins() + qty('coins');
+      openPanel('coffin'); render(); const label = (buttons.find(b => b.label.startsWith('Reclaim everything')) || {}).label; const rec = F.clickButton('Reclaim everything');
+      const paid = c0 - coins(), back = qty('wood') === countItem('wood') && countItem('steel_helm') === 2 && countItem('iron_body') === 1 && countItem('mithril_bar') === 3 && countItem('goblin_scrap') === 2;
+      check("Death's chest: collecting two falls costs exactly the rule on the combined chest, under the cap, and gives everything back", fee === rule && sumParts === fee && byId === fee && fee <= cap && fee > 0 && rec && label === `Reclaim everything for ${fee} coins` && paid === fee && back && !deathKeep, { raw, share, cap, rule, fee, sumParts, byId, label, paid, back, left: deathKeep && JSON.stringify(deathKeep.items) });
+      // a nearly full pack (coins + 16 axes = 3 free slots) takes what fits; the chest keeps the rest and Death says how many are still there, in plain words
+      deathKeep = null; fall(packA); fall(packB); closePanel();
+      player.inv = new Array(INV_SLOTS).fill(null); give('coins', 2000); for (let i = 0; i < INV_SLOTS - 4; i++) give('bronze_axe', 1);
+      const before = chestThings(deathKeep.items), plan = reclaimPlan(), c1 = coins() + chestCoins(deathKeep.items);
+      openPanel('coffin'); render(); const partLabel = (buttons.find(b => b.label.startsWith('Reclaim everything')) || {}).label; F.clickButton('Reclaim everything');
+      const kept2 = deathKeep ? deathKeep.items : [], leftN = chestThings(kept2), took = before - leftN, msg = lastSaid(), paid2 = c1 - coins();
+      const fitN = plan.fits.reduce((a, f) => a + f, 0), full = player.inv.every(Boolean);
+      const partial = plan.all === false && full && took === fitN && leftN === before - fitN && leftN > 0 && !kept2.some(s2 => s2.id === 'coins') && paid2 === plan.total && plan.total <= ECONOMY.feeCap() && msg.includes(`${leftN} things are still in my chest`) && /Make room/.test(msg) && /that fits/.test(partLabel || '');
+      check("Death's chest: a full pack takes what fits (3 free slots), the chest keeps the rest, and Death says how many things are still there", partial, { before, took, fitN, full, leftN, paid2, planTotal: plan.total, msg, partLabel, kept: JSON.stringify(kept2) });
+      // the combined chest survives a save and a load, and an older save's chest loads and keeps growing
+      closePanel(); deathKeep = null; fall(packA); fall(packB); const saved = JSON.stringify(deathKeep); save(); deathKeep = null; const ok = load(); const same = JSON.stringify(deathKeep) === saved;
+      const raw2 = JSON.parse(localStorage.getItem(SAVE_KEY)); raw2.deathKeep = { items: [{ id: 'wood', qty: 3 }, { id: 'wood', qty: 2 }, { id: 'steel_helm', qty: 1 }] }; localStorage.setItem(SAVE_KEY, JSON.stringify(raw2)); try { const cur = localStorage.getItem('fanglands.slot.current'); if (cur) localStorage.setItem('fanglands.slot.' + cur, JSON.stringify(raw2)); } catch (e) { }
+      const ok2 = load(); const old = deathKeep && JSON.stringify(deathKeep.items); player.hp = player.maxHp; fall([['wood', 4], ['steel_helm', 1]]); const grown = deathKeep && JSON.stringify(deathKeep.items);
+      check("Death's chest: two falls survive save and load; an older save's chest loads (its wood joined into one pile) and the next fall adds to it", ok && same && ok2 && old === '[{"id":"wood","qty":5},{"id":"steel_helm","qty":1}]' && grown === '[{"id":"wood","qty":9},{"id":"steel_helm","qty":1},{"id":"steel_helm","qty":1}]', { ok, same, saved, ok2, old, grown });
+      say = say0; closePanel(); player.inv = inv0; deathKeep = dk0; player.bedSpawn = bed0; window.__kidmode = kid; player.skills = sk0; player.deaths = deaths0; player.facing = face0; player.x = x0; player.y = y0; recomputeMaxHp(); player.hp = player.maxHp; save(); }
     { // save: tiles by name; numeric (older) saves and unknown names still load
       const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); const named = raw.mapDiffs.length > 0 && raw.mapDiffs.every(([, t]) => typeof t === 'string' && t in T) && raw.regrow.every(r => typeof r.t === 'string' && r.t in T);
       const before = JSON.stringify([...mapDiffs.entries()]), rg = JSON.stringify(regrow.map(r => [r.i, r.t]));

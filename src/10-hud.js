@@ -417,17 +417,54 @@ function drawPanels(g, narrow, short, qh, hb) {
     if (station === 'anvil' && !hasTool('hammer')) { g.fillStyle = '#ff6b6b'; g.font = '12px sans-serif'; g.textAlign = pages > 1 ? 'center' : 'left'; g.fillText('You need a hammer in your pack.', pages > 1 ? px + w / 2 : px + 18, pages > 1 ? py + h - 46 : py + h - 12); }
   }
   if (panel === 'coffin') {
-    const { px, py, w, h } = panelBox(g, 460, 340, "Death's Chest", 'Piles of his gold. A chest of what you lost.');
-    g.fillStyle = '#b58cff'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('DEATH', px + 18, py + 76);
-    g.fillStyle = '#e6edf3'; g.font = '14px sans-serif';
-    if (!deathKeep) { wrapText(g, "The chest is empty. For now. When you fall, what you carry comes here. Cheap things I return for nothing. Precious things cost a quarter of their worth, and I take it from your own coin first.", px + 18, py + 98, w - 36, 19); }
+    // The chest holds everything from every fall, so it can be long: every entry is listed, a page at a time when
+    // they do not all fit, with the total count on top and nothing written past the panel's edge.
+    const bw = Math.min(460, VW - 20), ROW = 22, textW = bw - 36;
+    let intro, plan = null, fee = 0, rest = 0;
+    if (!deathKeep) intro = "The chest is empty. For now. When you fall, what you carry comes here, and it stays here, from every fall, until you collect it. Cheap things I return for nothing. Precious things cost a share of their worth, and I take it from your own coin first.";
     else {
-      const fee = coffinFee(); const held = deathKeep.items.find(s => s.id === 'coins'); const fromHeld = held ? Math.min(held.qty, fee) : 0; const rest = fee - fromHeld;
-      wrapText(g, fee ? `Your pack is in the chest. The fee is ${fee} coins${fromHeld ? `, ${fromHeld} of it from the purse you dropped` : ''}${rest ? `, ${rest} from your hand` : ''}.` : 'Your pack is in the chest. Nothing in it is worth my time. Take it, and try not to fall again.', px + 18, py + 98, w - 36, 19);
-      deathKeep.items.slice(0, 7).forEach((s, i) => { const y = py + 156 + i * 20; drawItemIcon(g, s.id, px + 28, y - 4, 16); g.fillStyle = '#c9d1d9'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText(`${ITEMS[s.id].name} × ${s.qty}`, px + 44, y); const v = ITEMS[s.id].value * s.qty; g.fillStyle = s.id !== 'coins' && v >= 20 ? '#f5c542' : '#6e7681'; g.textAlign = 'right'; g.fillText(s.id !== 'coins' && v >= 20 ? `${Math.ceil(v * 0.25)}c` : 'free', px + w - 18, y); });
-      if (deathKeep.items.length > 7) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(`+${deathKeep.items.length - 7} more`, px + 44, py + 156 + 7 * 20); }
+      plan = reclaimPlan(); fee = plan.total;
+      const fromHeld = Math.min(chestCoins(deathKeep.items), fee); rest = fee - fromHeld;
+      const how = `${fromHeld ? `, ${fromHeld} of it from the coins you dropped` : ''}${rest ? `, ${rest} from your hand` : ''}`;
+      intro = 'I keep everything from every fall until you collect it. ' + (plan.all
+        ? (fee ? `The fee is ${fee} coins${how}.` : 'Nothing in it is worth my time. Take it, and try not to fall again.')
+        : `Your pack has room for only part of it${fee ? `. The fee for that part is ${fee} coins${how}` : ''}. The rest stays here until you come back.`);
+    }
+    g.font = '14px sans-serif'; const introLines = dialogLines(g, intro, textW);
+    const listTop = 98 + (introLines - 1) * 19 + 26; // offset from the panel top of the "In the chest" line
+    const n = deathKeep ? deathKeep.items.length : 0;
+    const fullH = deathKeep ? listTop + 12 + n * ROW + 68 : 98 + introLines * 19 + 24;
+    const { px, py, w, h } = panelBox(g, 460, Math.min(VH - 20, Math.max(200, fullH)), "Death's Chest", 'Piles of his gold. A chest of what you lost.');
+    g.fillStyle = '#b58cff'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('DEATH', px + 18, py + 76);
+    g.fillStyle = '#e6edf3'; g.font = '14px sans-serif'; wrapText(g, intro, px + 18, py + 98, w - 36, 19);
+    if (deathKeep) {
+      const items = deathKeep.items;
+      g.fillStyle = '#8b949e'; g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
+      let head = `In the chest: ${chestWords()}`; while (g.measureText(head).width > w - 36 && head.length > 8) head = head.slice(0, -2) + '…';
+      g.fillText(head, px + 18, py + listTop);
+      // rows between the heading and the button; a Prev / Next row takes 38 px when there is more than one page
+      const room = h - listTop - 12 - 60;
+      let perPage = Math.max(1, Math.floor(room / ROW));
+      if (n > perPage) perPage = Math.max(1, Math.floor((room - 38) / ROW));
+      const pages = Math.max(1, Math.ceil(n / perPage)); coffinPage = clamp(coffinPage, 0, pages - 1);
+      const first = coffinPage * perPage;
+      items.slice(first, first + perPage).forEach((s, k) => {
+        const i = first + k, y = py + listTop + 12 + k * ROW + 14, coin = s.id === 'coins';
+        const fits = plan.fits[i], f = plan.fees[i];
+        const right = coin ? 'free' : fits <= 0 ? 'no room' : f > 0 ? `${f}c` : 'free';
+        g.font = '12px sans-serif'; const rw = g.measureText(right).width;
+        g.fillStyle = coin || f <= 0 ? '#6e7681' : '#f5c542'; if (!coin && fits <= 0) g.fillStyle = '#ff9b6b';
+        g.textAlign = 'right'; g.fillText(right, px + w - 18, y);
+        drawItemIcon(g, s.id, px + 28, y - 4, 16);
+        g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#c9d1d9';
+        let t = `${ITEMS[s.id] ? ITEMS[s.id].name : s.id} × ${s.qty}` + (!coin && fits > 0 && fits < s.qty ? ` (room for ${fits})` : '');
+        const maxW = w - 36 - 26 - rw - 10; while (g.measureText(t).width > maxW && t.length > 6) t = t.slice(0, -2) + '…';
+        g.fillText(t, px + 44, y);
+      });
+      if (pages > 1) pager(g, px + 18, py + h - 52 - 38, w - 36, coffinPage, pages, p => { coffinPage = clamp(p, 0, pages - 1); });
       const ok = coins() >= rest;
-      button(g, px + 18, py + h - 52, w - 36, 36, fee ? `Reclaim everything for ${fee} coins` : 'Reclaim everything', reclaimFromDeath, ok ? '#5a2e7a' : '#2a2f3a', ok);
+      const label = plan.all ? (fee ? `Reclaim everything for ${fee} coins` : 'Reclaim everything') : (fee ? `Reclaim everything that fits for ${fee} coins` : 'Reclaim everything that fits');
+      button(g, px + 18, py + h - 52, w - 36, 36, label, reclaimFromDeath, ok ? '#5a2e7a' : '#2a2f3a', ok);
     }
   }
 }
