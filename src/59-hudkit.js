@@ -1602,7 +1602,8 @@ const HK = (() => {
     L.chatLane = n => {
       if (!n) return null;
       let cx, cw2, cb;
-      if (fam === 'desk') { cx = left; cw2 = belt.x - 16 - left; cb = bottom; }
+      // a computer: bottom-left beside the belt, unless the belt leaves it too narrow to read a line (a 1000 px window); then above the belt
+      if (fam === 'desk' && belt.x - 16 - left >= 280) { cx = left; cw2 = belt.x - 16 - left; cb = bottom; }
       else if (fam === 'phoneP') { cx = left; cw2 = right - left; cb = belt.y - 8; }
       else { cx = belt.x; cw2 = belt.w; cb = belt.y - 8; }
       const hh = Math.max(44, n * lineH); return { x: cx, y: cb - hh, w: cw2, h: hh, lines: n };

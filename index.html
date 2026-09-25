@@ -22657,7 +22657,8 @@ const HK = (() => {
     L.chatLane = n => {
       if (!n) return null;
       let cx, cw2, cb;
-      if (fam === 'desk') { cx = left; cw2 = belt.x - 16 - left; cb = bottom; }
+      // a computer: bottom-left beside the belt, unless the belt leaves it too narrow to read a line (a 1000 px window); then above the belt
+      if (fam === 'desk' && belt.x - 16 - left >= 280) { cx = left; cw2 = belt.x - 16 - left; cb = bottom; }
       else if (fam === 'phoneP') { cx = left; cw2 = right - left; cb = belt.y - 8; }
       else { cx = belt.x; cw2 = belt.w; cb = belt.y - 8; }
       const hh = Math.max(44, n * lineH); return { x: cx, y: cb - hh, w: cw2, h: hh, lines: n };
@@ -30488,7 +30489,8 @@ window.RETALIATE = RETALIATE;
   const liveLines = () => { const out = []; for (let i = log.length - 1; i >= 0 && out.length < STRIP_LINES; i--) if (log[i].t > 0) out.unshift(log[i]); return out; };
   // how many lines the strip wants this frame (the kit reserves the lane from it), capped by the lane's own maximum
   const stripLines = () => { if (!NET.enabled || paused || panel || (dialog && dialog.cur)) return 0; const L = HK.cur(); return Math.min(liveLines().length, L && L.chatMax || STRIP_LINES); };
-  HOOKS.hud.push(g => {
+  // named so the self-test can draw the strip into a recording canvas; the HUD hook below calls it every frame
+  function drawStrip(g) {
     const n = stripLines(); if (!n) return;
     const lane = HK.lane('chat', n); if (!lane) return;
     const lines = liveLines().slice(-n);
@@ -30502,12 +30504,13 @@ window.RETALIATE = RETALIATE;
       let t = l.text; if (HK.tw(g, t, tf) > maxT) { const w = HK.wrap(g, t, maxT, 1, tf); t = w.lines[0] || ''; if (w.more) t += '…'; }
       const w = Math.min(lane.w, 20 + nw + 6 + HK.tw(g, t, tf));
       HK.rr(g, lane.x, y, w, LINE_H - 2, 4); g.fillStyle = 'rgba(20,15,13,0.78)'; g.fill(); g.strokeStyle = 'rgba(217,178,92,0.35)'; g.lineWidth = 1; g.stroke();
-      if (!sys) HK.text(g, name, lane.x + 8, y + 14, { font: nf, color: l.n === me() ? HK.T.ink : l.role === 'admin' ? HK.T.gold : HK.T.friend });
+      if (!sys) HK.text(g, name, lane.x + 8, y + 14, { font: nf, color: l.n === me() ? HK.T.ink : nameColour(l) });
       HK.text(g, t, lane.x + 8 + nw + 6, y + 14, { font: tf, color: sys ? (l.color || HK.T.ink) : HK.T.ink });
       g.restore();
     });
     buttons.push({ x: lane.x, y: lane.y, w: lane.w, h: lane.h, label: 'chat:log', action: () => openPanel('chatlog'), up: true, name: 'The chat log', keys: ['Y'] });
-  });
+  }
+  HOOKS.hud.push(g => drawStrip(g));
   // CHAT is a tile in the Knight's Book (the kit's twelve): it opens and closes the box, and it is lit while the box is open
   hudControl({ id: 'chat', sort: 45, label: () => 'CHAT', emblem: 'chat', key: 'Y', asleep: () => !NET.enabled, on: () => isOpen, action: () => { if (!NET.enabled) { notify('Chat is for the online game.'); return; } if (isOpen) close(); else open(); } });
 
@@ -30623,7 +30626,7 @@ window.RETALIATE = RETALIATE;
       const a = log[0], b = log[1];
       drawStrip(g2); const drawn = rec.splice(0);
       const onStrip = drawn.some(t => t.text === 'Sam found a purple party hat!' && t.fill === GOLD) && !drawn.some(t => /:$/.test(t.text));
-      check(P + 'CHAT.system writes a line with no name in its colour (gold by default) on the strip and in the log, with no bubble', ok && ok2 && empty === false && log.length === 2 && a.n === null && a.text === 'Sam found a purple party hat!' && a.color === GOLD && a.t > 0 && b.color === '#8b949e' && Object.keys(bubbles).length === 0 && onStrip, { ok, ok2, empty, a, b, onStrip }); }
+      check(P + 'CHAT.system writes a line with no name in its colour (gold by default) on the strip and in the log, with no bubble', ok && ok2 && empty === false && log.length === 2 && a.n === null && a.text === 'Sam found a purple party hat!' && a.color === GOLD && a.t > 0 && b.color === '#8b949e' && Object.keys(bubbles).length === 0 && onStrip, { ok, ok2, empty, a, b, onStrip, drawn: drawn.map(t => t.text + '=' + t.fill) }); }
     // put the world back
     close(); log.length = 0; for (const n in bubbles) delete bubbles[n]; lastSentAt = -1e9; prevDialog = false; mutedUntil = 0; lastLineAt = -1e9;
     NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
