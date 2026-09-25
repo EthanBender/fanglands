@@ -9,9 +9,17 @@
 //   login   pass (wrong secret word, 401)  unknown (no such knight, 404)  wait (too many tries, 429)  banned (403)
 //   signup  invite (401/403)  taken (409)  name (the filter refused it, 400)  pass (secret word under 4 chars, 400)
 //   any     auth (dead or missing token, 401)  full (a cap hit: too big, or the world is full)
+//   admins  admin (only an admin may, 403)  nopin (no pinned backup, 404)
+//
+// The tables and the one migration live in store.js (SCHEMA, migrate): every wake runs the old CREATE TABLE
+// statements unchanged, creates the new tables if they are missing, and adds the new accounts columns only when
+// they are not there yet. Nothing is dropped, renamed or retyped. The Room reads and writes roles, mutes, bans,
+// the mod log and drop parties through a SqlStore over the same SQLite.
 // ============================================================================
 
-import { Room } from './room.js';
+import { Room, MUTE_SPANS } from './room.js';
+import { SCHEMA, migrate, SqlStore, ALWAYS } from './store.js';
+import { cryptoRandom } from './party.js';
 import { cleanName } from './filter.js';
 import { makeHash, checkPassword, randomHex, sameString } from './auth.js';
 import { json, oops, failFrom, readJson, bearer } from './http.js';
@@ -22,18 +30,7 @@ const SAVES_KEPT = 3;                       // versions per knight, so a broken 
 const WRONG_TRIES = 5, LOCK_MS = 60000;     // five wrong secret words -> a minute's wait
 const CHAT_KEPT = 20000;                    // lines; older ones are dropped now and then
 const PASS_MIN = 4, PASS_MAX = 200;
-
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS accounts (
-  name_lc TEXT PRIMARY KEY, name TEXT NOT NULL, salt TEXT NOT NULL, hash TEXT NOT NULL,
-  created INTEGER NOT NULL, last_seen INTEGER NOT NULL, banned INTEGER NOT NULL DEFAULT 0,
-  tries INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, name_lc TEXT NOT NULL, expires INTEGER NOT NULL);
-CREATE INDEX IF NOT EXISTS sessions_by_name ON sessions (name_lc);
-CREATE TABLE IF NOT EXISTS saves (name_lc TEXT NOT NULL, ver INTEGER NOT NULL, json TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (name_lc, ver));
-CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, name TEXT NOT NULL, text TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-`;
+const PARENT = 'parent page';               // mod_log's "by" for everything done from /admin
 
 export class World {
   constructor(ctx, env) {
@@ -41,11 +38,16 @@ export class World {
     this.env = env;
     this.sql = ctx.storage.sql;
     for (const stmt of SCHEMA.split(';')) if (stmt.trim()) this.sql.exec(stmt);
+    const migrated = migrate(this.sql);
+    if (migrated.added.length) console.log('accounts gained ' + migrated.added.join(', ') + ' (columns read with ' + migrated.via + ')');
+    this.store = new SqlStore(this.sql);
     this.chatWrites = 0;
     this.wraps = new WeakMap();
     this.room = new Room({
       log: (name, text, at) => this.logChat(name, text, at),
       wake: ms => this.ctx.storage.setAlarm(Date.now() + ms).catch(e => console.error('alarm', e)),
+      store: this.store,
+      random: cryptoRandom,
     });
     // pings are answered by the runtime without waking the world (the client sends exactly this text)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"t":"ping"}', '{"t":"pong"}'));
@@ -80,21 +82,34 @@ export class World {
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname, method = req.method;
-    try {
-      if (path === '/ws') return this.openSocket(req, url);
-      if (path === '/api/status' && method === 'GET') return this.status();
-      if (path.startsWith('/api/admin/')) return await this.admin(req, url, path.slice('/api/admin/'.length), method);
-      if (path === '/api/signup' && method === 'POST') return await this.signup(req);
-      if (path === '/api/login' && method === 'POST') return await this.login(req);
-      if (path === '/api/logout' && method === 'POST') return this.logout(req);
-      if (path === '/api/me' && method === 'GET') return this.me(req);
-      if (path === '/api/save' && method === 'GET') return this.getSave(req);
-      if (path === '/api/save' && method === 'PUT') return await this.putSave(req);
-      throw oops(404, 'no such call', 'nope');
-    } catch (e) {
+    let res;
+    try { res = await this.route(req, url, path, method); } catch (e) {
       if (!(e && e.status)) console.error(path, e);
-      return failFrom(e);
+      res = failFrom(e);
     }
+    // A body nobody read (a refused token, a wrong admin key, a player asking for an admin's pin) is read to the end
+    // before the answer goes back. Otherwise the runtime is still pumping it in from the Worker after the answer and
+    // logs an uncaught "Can't read from request stream after response has been sent" (seen under wrangler dev,
+    // 2026-09-25; reading it here stops it, cancelling the stream does not).
+    if (path !== '/ws' && req.body && !req.bodyUsed) { try { await req.arrayBuffer(); } catch (e) { } }
+    return res;
+  }
+
+  // Every /api call and the socket, by path and method.
+  async route(req, url, path, method) {
+    if (path === '/ws') return this.openSocket(req, url);
+    if (path === '/api/status' && method === 'GET') return this.status();
+    if (path.startsWith('/api/admin/')) return await this.admin(req, url, path.slice('/api/admin/'.length), method);
+    if (path === '/api/signup' && method === 'POST') return await this.signup(req);
+    if (path === '/api/login' && method === 'POST') return await this.login(req);
+    if (path === '/api/logout' && method === 'POST') return this.logout(req);
+    if (path === '/api/me' && method === 'GET') return this.me(req);
+    if (path === '/api/save' && method === 'GET') return this.getSave(req);
+    if (path === '/api/save' && method === 'PUT') return await this.putSave(req);
+    if (path === '/api/save/pin' && method === 'GET') return this.getPin(req);
+    if (path === '/api/save/pin' && method === 'POST') return await this.pinSave(req, url);
+    if (path === '/api/save/restore' && method === 'POST') return this.restorePin(req);
+    throw oops(404, 'no such call', 'nope');
   }
 
   now() { return Date.now(); }
@@ -104,7 +119,7 @@ export class World {
   // ---------- sessions ----------
   session(token) {
     if (!token) throw oops(401, 'please log in', 'auth');
-    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
+    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
     if (!s) throw oops(401, 'that login has run out, please log in again', 'auth');
     const now = this.now();
     if (s.expires < now) { this.sql.exec('DELETE FROM sessions WHERE token = ?', token); throw oops(401, 'that login has run out, please log in again', 'auth'); }
@@ -182,7 +197,7 @@ export class World {
   me(req) {
     const s = this.auth(req);
     const save = this.row('SELECT at FROM saves WHERE name_lc = ? ORDER BY ver DESC LIMIT 1', s.name_lc);
-    return json({ name: s.name, created: s.created, saveAt: save ? save.at : null, online: this.room.isOnline(s.name) });
+    return json({ name: s.name, created: s.created, saveAt: save ? save.at : null, online: this.room.isOnline(s.name), role: roleWord(s.role) });
   }
 
   // ---------- saves: the slot JSON string, verbatim, three versions deep ----------
@@ -194,13 +209,19 @@ export class World {
 
   async putSave(req) {
     const s = this.auth(req);
+    const text = await this.saveBody(req);
+    const ver = this.storeSave(s.name_lc, text);
+    return json({ at: ver.at, ver: ver.ver });
+  }
+
+  // A save's body: at most SAVE_MAX bytes of JSON, kept as the exact string that came in.
+  async saveBody(req) {
     const text = await req.text();
     if (new TextEncoder().encode(text).length > SAVE_MAX) throw oops(413, 'that save is too big', 'full');
     let v = null;
     try { v = JSON.parse(text); } catch (e) { }
     if (!v || typeof v !== 'object') throw oops(400, 'that save is not JSON', 'bad');
-    const ver = this.storeSave(s.name_lc, text);
-    return json({ at: ver.at, ver: ver.ver });
+    return text;
   }
 
   storeSave(lc, text) {
@@ -209,6 +230,39 @@ export class World {
     this.sql.exec('INSERT INTO saves (name_lc, ver, json, at) VALUES (?, ?, ?, ?)', lc, ver, text, at);
     this.sql.exec('DELETE FROM saves WHERE name_lc = ? AND ver <= ?', lc, ver - SAVES_KEPT);
     return { ver, at };
+  }
+
+  // ---------- the pinned backup: an admin's own knight from before "Unlock everything" ----------
+  // Not one of the three kept versions, so no amount of saving pushes it out. Only an admin may keep one (the
+  // server reads accounts.role; anyone else gets 403 admin), and only of the session's own knight.
+  adminSession(req) {
+    const s = this.auth(req);
+    if (roleWord(s.role) !== 'admin') throw oops(403, 'only an admin can do that', 'admin');
+    return s;
+  }
+  getPin(req) {
+    const s = this.adminSession(req);
+    const r = this.row('SELECT at, LENGTH(json) AS bytes FROM save_pins WHERE name_lc = ?', s.name_lc);
+    return json(r ? { at: r.at, bytes: r.bytes } : { at: null, bytes: 0 });
+  }
+  // A pin already there is kept (it is the knight from before the first unlock) unless ?replace=1.
+  async pinSave(req, url) {
+    const s = this.adminSession(req);
+    const text = await this.saveBody(req);
+    const old = this.row('SELECT at FROM save_pins WHERE name_lc = ?', s.name_lc);
+    if (old && url.searchParams.get('replace') !== '1') return json({ at: old.at, pinned: false });
+    const at = this.now();
+    this.sql.exec('INSERT INTO save_pins (name_lc, json, at) VALUES (?, ?, ?) ON CONFLICT(name_lc) DO UPDATE SET json = excluded.json, at = excluded.at', s.name_lc, text, at);
+    return json({ at, pinned: true });
+  }
+  // The pin becomes the current save (a new version, like a rollback) and is then removed.
+  restorePin(req) {
+    const s = this.adminSession(req);
+    const pin = this.row('SELECT json FROM save_pins WHERE name_lc = ?', s.name_lc);
+    if (!pin) throw oops(404, 'there is no backup to go back to', 'nopin');
+    const ver = this.storeSave(s.name_lc, pin.json);
+    this.sql.exec('DELETE FROM save_pins WHERE name_lc = ?', s.name_lc);
+    return json({ save: pin.json, at: ver.at, ver: ver.ver });
   }
 
   // ---------- who is on (no login needed: the title screen shows it) ----------
@@ -241,8 +295,8 @@ export class World {
     if (!sameString(bearer(req), key)) throw oops(401, 'wrong admin key', 'admin');
     const post = method === 'POST';
     if (call === 'accounts' && method === 'GET') {
-      const list = this.rows('SELECT a.name, a.created, a.last_seen, a.banned, (SELECT MAX(at) FROM saves s WHERE s.name_lc = a.name_lc) AS save_at FROM accounts a ORDER BY a.name_lc');
-      return json(list.map(a => ({ name: a.name, created: a.created, lastSeen: a.last_seen, banned: !!a.banned, saveAt: a.save_at })));
+      const list = this.rows('SELECT a.name, a.created, a.last_seen, a.banned, a.role, a.muted_until, (SELECT MAX(at) FROM saves s WHERE s.name_lc = a.name_lc) AS save_at FROM accounts a ORDER BY a.name_lc');
+      return json(list.map(a => ({ name: a.name, created: a.created, lastSeen: a.last_seen, banned: !!a.banned, saveAt: a.save_at, role: roleWord(a.role), mutedUntil: a.muted_until || 0 })));
     }
     if (call === 'online' && method === 'GET') return json(this.room.online());
     if (call === 'chat' && method === 'GET') {
@@ -272,22 +326,55 @@ export class World {
     if (call === 'ban' && post) {
       const b = await readJson(req);
       const a = this.account(b.name);
-      const banned = b.banned ? 1 : 0;
-      this.sql.exec('UPDATE accounts SET banned = ? WHERE name_lc = ?', banned, a.name_lc);
-      if (banned) { this.sql.exec('DELETE FROM sessions WHERE name_lc = ?', a.name_lc); this.room.kick(a.name, 'banned', 'this knight is banned'); }
+      const banned = !!b.banned;
+      this.store.setBanned(a.name_lc, banned);   // banning drops every session of theirs too
+      this.store.log({ at: this.now(), by: PARENT, act: banned ? 'ban' : 'unban', target: a.name, detail: '' });
+      if (banned) this.room.kick(a.name, 'banned', 'this knight is banned');
       return json({ ok: true });
+    }
+    if (call === 'role' && post) {
+      const b = await readJson(req);
+      if (b.role !== 'player' && b.role !== 'admin') throw oops(400, 'the role must be player or admin', 'bad');
+      const a = this.account(b.name);
+      this.store.setRole(a.name_lc, b.role);
+      this.store.log({ at: this.now(), by: PARENT, act: 'role', target: a.name, detail: b.role });
+      this.room.setRole(a.name);   // an online knight hears it at once, and so does everyone's roster
+      return json({ ok: true, role: b.role });
+    }
+    if (call === 'mute' && post) {
+      // works on admins too: the parent page can do what nobody in the game can
+      const b = await readJson(req);
+      const span = b.span;
+      if (span !== 'off' && !Object.prototype.hasOwnProperty.call(MUTE_SPANS, span)) throw oops(400, 'the span must be 5m, 1h, 1d, always or off', 'bad');
+      const a = this.account(b.name);
+      const now = this.now();
+      const until = span === 'off' ? 0 : span === 'always' ? ALWAYS : now + MUTE_SPANS[span];
+      this.store.setMute(a.name_lc, until);
+      this.store.log({ at: now, by: PARENT, act: span === 'off' ? 'unmute' : 'mute', target: a.name, detail: span === 'off' ? '' : span });
+      this.room.muteChanged(a.name);
+      return json({ ok: true, mutedUntil: until });
+    }
+    if (call === 'modlog' && method === 'GET') {
+      const limit = Math.max(1, Math.min(2000, parseInt(url.searchParams.get('limit'), 10) || 200));
+      return json(this.store.modLog(limit).map(r => ({ at: r.at, by: r.by, act: r.act, n: r.target, detail: r.detail })));
     }
     if (call === 'saves' && method === 'GET') {
       const a = this.account(url.searchParams.get('name'));
       const rows = this.rows('SELECT ver, at, LENGTH(json) AS bytes FROM saves WHERE name_lc = ? ORDER BY ver DESC', a.name_lc);
-      return json(rows.map(r => ({ ver: r.ver, at: r.at, bytes: r.bytes })));
+      const list = rows.map(r => ({ ver: r.ver, at: r.at, bytes: r.bytes }));
+      // an admin's pinned backup (from before Unlock everything) comes first
+      const pin = this.row('SELECT at, LENGTH(json) AS bytes FROM save_pins WHERE name_lc = ?', a.name_lc);
+      if (pin) list.unshift({ ver: 'pin', at: pin.at, bytes: pin.bytes });
+      return json(list);
     }
     if (call === 'rollback' && post) {
-      // the old version is copied forward as a new one, so the history stays whole
+      // the old version (or the pinned backup) is copied forward as a new one, so the history stays whole;
+      // a pin rolled back to is kept, so it can be used again
       const b = await readJson(req);
       const a = this.account(b.name);
-      const r = this.row('SELECT json FROM saves WHERE name_lc = ? AND ver = ?', a.name_lc, parseInt(b.ver, 10) || 0);
-      if (!r) throw oops(404, 'no save with that version', 'nope');
+      const pinned = b.ver === 'pin';
+      const r = pinned ? this.row('SELECT json FROM save_pins WHERE name_lc = ?', a.name_lc) : this.row('SELECT json FROM saves WHERE name_lc = ? AND ver = ?', a.name_lc, parseInt(b.ver, 10) || 0);
+      if (!r) throw pinned ? oops(404, 'there is no pinned backup', 'nopin') : oops(404, 'no save with that version', 'nope');
       const ver = this.storeSave(a.name_lc, r.json);
       return json({ ok: true, ver: ver.ver, at: ver.at });
     }
@@ -300,3 +387,5 @@ export class World {
     return a;
   }
 }
+
+const roleWord = role => role === 'admin' ? 'admin' : 'player';
