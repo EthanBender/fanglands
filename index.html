@@ -30587,7 +30587,14 @@ HOOKS.selfTest.push((check, F, h) => {
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
   // how many perch-towers and nest-houses were drawn (the self-test reads it through AERIE.ART)
   const ART = { perchTowers: 0, nests: 0 };
-  const underRegion = (tx, ty) => underCell(tx, ty);
+  // the ground a cell is drawn on: a snag, a nest, an updraft or a cloud spire is not itself 'u', so it takes the
+  // ground it stands on (review round 2: those cells stood on a white sky-deck square in the middle of the undercloud)
+  const GROUND_GLYPHS = ['=', '"', '_', ',', 'u'];
+  const underRegion = (tx, ty) => {
+    if (!PLAN) return false;
+    const c = PLAN.at(tx, ty);
+    return c === 'u' || (!GROUND_GLYPHS.includes(c) && PLAN.groundAt(tx, ty) === 'u');
+  };
   function deck(g, tx, ty, low) {
     const x = tx * TILE, y = ty * TILE, r = hash(tx, ty);
     g.fillStyle = low ? '#c3d0e2' : '#eef3fa'; g.fillRect(x, y, TILE, TILE);
@@ -30779,7 +30786,8 @@ HOOKS.selfTest.push((check, F, h) => {
   }
 
   const COURSE_T = new Set([LOG_T, NET_T].filter(t => t !== undefined));
-  HOOKS.draw.push((g, items, cam2) => {
+  // every item carries a tag (aer: [kind, tx, ty]) so the self-test can find a cell's deck and its prop in one frame
+  const AER_DRAW = (g, items, cam2) => {
     const c = cam2 || cam;
     if (!inside()) return;
     const x0 = Math.max(0, Math.floor(c.x / TILE) - 1), x1 = Math.min(MAP_W - 1, Math.ceil((c.x + VW) / TILE) + 1);
@@ -30788,20 +30796,21 @@ HOOKS.selfTest.push((check, F, h) => {
       const t = tileAt(tx, ty); if (t === SKYT) continue;
       const low = underRegion(tx, ty);
       // the deck under everything this file put down -- except where the kingdom (91) lays its own paving, lawn or marble
-      if ((t === UNDER || t === RAIL || t === NEST || t === BRAZIER || t === STATUE || t === UPDRAFT || t === PERCH || t === SONG || t === SNAG || t === STALL || t === FLAG || COURSE_T.has(t))
+      // (CLOUD_SPIRE is in the list too: its core texture is sand, which showed as a beige square under every spire)
+      if ((t === UNDER || t === RAIL || t === NEST || t === BRAZIER || t === STATUE || t === UPDRAFT || t === PERCH || t === SONG || t === SNAG || t === SPIRE || t === STALL || t === FLAG || COURSE_T.has(t))
         && !(window.KINGDOM && KINGDOM.paintsGround(tx, ty)))
-        items.push({ y: -1e8 + ty * TILE + 0.001, draw: () => deck(g, tx, ty, low) });
-      if (t === RAIL) items.push({ y: ty * TILE + TILE - 10, draw: () => drawRail(g, tx, ty) });
-      else if (t === NEST) items.push({ y: ty * TILE + TILE - 4, draw: () => drawNest(g, tx, ty) });
-      else if (t === BRAZIER) items.push({ y: ty * TILE + TILE - 4, draw: () => drawBrazier(g, tx, ty) });
-      else if (t === STATUE) items.push({ y: ty * TILE + TILE - 4, draw: () => drawStatue(g, tx, ty) });
-      else if (t === SPIRE) items.push({ y: ty * TILE + TILE - 4, draw: () => drawSpire(g, tx, ty) });
-      else if (t === STALL) items.push({ y: ty * TILE + TILE - 4, draw: () => drawStall(g, tx, ty) });
-      else if (t === PERCH) items.push({ y: ty * TILE + TILE - 4, draw: () => drawPerch(g, tx, ty) });
-      else if (t === SONG) items.push({ y: ty * TILE + TILE - 4, draw: () => drawSong(g, tx, ty) });
-      else if (t === SNAG) items.push({ y: ty * TILE + TILE - 4, draw: () => drawSnag(g, tx, ty) });
-      else if (t === UPDRAFT) items.push({ y: ty * TILE + TILE - 4, draw: () => drawDraft(g, tx, ty) });
-      else if (t === FLAG) items.push({ y: -1e8 + ty * TILE + 0.9, draw: () => drawFlag(g, tx, ty) });
+        items.push({ y: -1e8 + ty * TILE + 0.001, aer: ['deck', tx, ty], draw: () => deck(g, tx, ty, low) });
+      if (t === RAIL) items.push({ y: ty * TILE + TILE - 10, aer: ['rail', tx, ty], draw: () => drawRail(g, tx, ty) });
+      else if (t === NEST) items.push({ y: ty * TILE + TILE - 4, aer: ['nest', tx, ty], draw: () => drawNest(g, tx, ty) });
+      else if (t === BRAZIER) items.push({ y: ty * TILE + TILE - 4, aer: ['brazier', tx, ty], draw: () => drawBrazier(g, tx, ty) });
+      else if (t === STATUE) items.push({ y: ty * TILE + TILE - 4, aer: ['statue', tx, ty], draw: () => drawStatue(g, tx, ty) });
+      else if (t === SPIRE) items.push({ y: ty * TILE + TILE - 4, aer: ['spire', tx, ty], draw: () => drawSpire(g, tx, ty) });
+      else if (t === STALL) items.push({ y: ty * TILE + TILE - 4, aer: ['stall', tx, ty], draw: () => drawStall(g, tx, ty) });
+      else if (t === PERCH) items.push({ y: ty * TILE + TILE - 4, aer: ['perch', tx, ty], draw: () => drawPerch(g, tx, ty) });
+      else if (t === SONG) items.push({ y: ty * TILE + TILE - 4, aer: ['song', tx, ty], draw: () => drawSong(g, tx, ty) });
+      else if (t === SNAG) items.push({ y: ty * TILE + TILE - 4, aer: ['snag', tx, ty], draw: () => drawSnag(g, tx, ty) });
+      else if (t === UPDRAFT) items.push({ y: ty * TILE + TILE - 4, aer: ['draft', tx, ty], draw: () => drawDraft(g, tx, ty) });
+      else if (t === FLAG) items.push({ y: -1e8 + ty * TILE + 0.9, aer: ['flag', tx, ty], draw: () => drawFlag(g, tx, ty) });
     }
     for (const n of FOLK) if (n.px > c.x - 60 && n.px < c.x + VW + 60 && n.py > c.y - 60 && n.py < c.y + VH + 60) items.push({ y: n.py + 13, draw: () => drawFolk(g, n) });
     HAWKS.forEach((h, k) => items.push({ y: 5e7 + k, draw: () => drawHawk(g, h, k) }));
@@ -30812,7 +30821,8 @@ HOOKS.selfTest.push((check, F, h) => {
       const { tx, ty } = frontTile(player);
       if (USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
     } });
-  });
+  };
+  HOOKS.draw.push(AER_DRAW);
 
   // =========================================================================
   // 13. the book
@@ -30942,6 +30952,47 @@ HOOKS.selfTest.push((check, F, h) => {
       check(A + 'every point of interest is on the map and reachable on foot from the Wind Landing: the six updraft landings, Quill, the Rookery on the Crown, the Underside, the Spire Run, and 4 statues / 7 nests / 6 braziers / 21 rails / 8 cloud spires / 7 stalls of decoration',
         walked.every(Boolean) && perches && snags && drafts && props && counts === '4/7/6/21/8/7' && FOLK.length === 4 && tileAt(AERIE.SONG_T[0], AERIE.SONG_T[1]) === T2.SONG,
         { walked, perches, snags, drafts, props, counts }); }
+
+    // ---- 5b. every prop of this file stands on its own ground, drawn before it ----
+    // Review round 2: the snags, the nest-house, the updraft and two cloud spires on the Underside stood on a white
+    // sky-deck square (their own letter is not 'u'), and every cloud spire the kingdom does not pave showed the sand
+    // core texture as a beige square (CLOUD_SPIRE was missing from the deck list). One frame is recorded per cell.
+    { const P2 = window.AERIE_PLAN, GR = ['=', '"', '_', ',', 'u'], UNDER_C = '#c3d0e2', DECK_C = '#eef3fa';
+      const setRec = () => { const log = []; const g = new Proxy({}, {
+        get: (t, k) => k === 'measureText' ? (() => ({ width: 10 })) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: () => { } })) : typeof k === 'string' ? ((...a) => { log.push([k, a]); }) : undefined,
+        set: (t, k, v) => { log.push(['=' + String(k), [v]]); return true; } }); return { g, log }; };
+      // one frame round (tx, ty): the items in the order the renderer sorts them, each with what it painted
+      const frame = (tx, ty) => { const { g, log } = setRec(), items = [];
+        AER_DRAW(g, items, { x: tx * TILE - VW / 2, y: ty * TILE - VH / 2 });
+        items.sort((a, b) => a.y - b.y);
+        return items.map(it => { const k0 = log.length; try { it.draw(); } catch (e) { } return { aer: it.aer, paint: log.slice(k0) }; }); };
+      const same = (it, kind, tx, ty) => !!it.aer && it.aer[0] === kind && it.aer[1] === tx && it.aer[2] === ty;
+      // what the deck under (tx, ty) filled its tile with, and whether it came before the cell's own prop
+      const ground = (tx, ty, kind) => { const f = frame(tx, ty);
+        const di = f.findIndex(it => same(it, 'deck', tx, ty)), pi = f.findIndex(it => same(it, kind, tx, ty));
+        if (di < 0) return { deck: false, before: false, fill: null };
+        const p = f[di].paint, ri = p.findIndex(e => e[0] === 'fillRect' && e[1][0] === tx * TILE && e[1][1] === ty * TILE && e[1][2] === TILE && e[1][3] === TILE);
+        const fs = p.slice(0, Math.max(0, ri)).filter(e => e[0] === '=fillStyle'), fill = ri >= 0 && fs.length ? fs[fs.length - 1][1][0] : null;
+        return { deck: true, before: pi > di, fill, fills: p.filter(e => e[0] === '=fillStyle').map(e => e[1][0]) }; };
+      const KIND = new Map([[AERIE.TILES.RAIL, 'rail'], [AERIE.TILES.NEST, 'nest'], [AERIE.TILES.BRAZIER, 'brazier'], [AERIE.TILES.STATUE, 'statue'], [AERIE.TILES.SPIRE, 'spire'], [AERIE.TILES.STALL, 'stall'], [AERIE.TILES.PERCH, 'perch'], [AERIE.TILES.SONG, 'song'], [AERIE.TILES.SNAG, 'snag'], [AERIE.TILES.UPDRAFT, 'draft'], [AERIE.TILES.FLAG, 'flag']]);
+      const paved = (x, y) => !!(window.KINGDOM && KINGDOM.paintsGround(x, y));
+      // (a) every prop cell that stands on undercloud, and that the kingdom does not pave, is drawn on undercloud
+      const low = [], bad = [];
+      for (let y = 0; y < P2.H; y++) for (let x = 0; x < P2.W; x++) {
+        const c = P2.at(x, y), t = tileAt(x, y);
+        if (GR.includes(c) || P2.groundAt(x, y) !== 'u' || !AERIE.MINE_TILES.includes(t) || paved(x, y)) continue;
+        const r = ground(x, y, KIND.get(t)); low.push([x, y, c]);
+        if (!r.deck || r.fill !== UNDER_C || r.fills.includes(DECK_C) || (KIND.get(t) && !r.before)) bad.push([x, y, c, r.fill, r.before]); }
+      const lowCells = low.map(([x, y]) => x + ',' + y);
+      const named = ['8,74', '13,71', '16,77', '24,72', '28,77', '31,74', '21,72', '11,72', '4,76', '30,78'].every(k => lowCells.includes(k));
+      // (b) all 8 cloud spires: paved by the kingdom, or a deck is filled before drawSpire -- never the sand core alone
+      const sp = AERIE.SPIRES.map(([x, y]) => { if (paved(x, y)) return { x, y, by: 'kingdom', ok: true };
+        const r = ground(x, y, 'spire'); const want = P2.groundAt(x, y) === 'u' ? UNDER_C : DECK_C;
+        return { x, y, by: 'deck', ok: r.deck && r.before && r.fill === want, fill: r.fill }; });
+      const unpaved = sp.filter(s => s.by === 'deck').length;
+      check(A + 'every prop stands on its own ground: the 10 snags, nest, updraft and spires (and 4 rails) that stand on the Underside are drawn on undercloud, never the white sky deck, and all 8 cloud spires have ground filled before the spire (6 on a deck, 2 on the kingdom paving), never the sand core',
+        low.length === 14 && named && bad.length === 0 && AERIE.SPIRES.length === 8 && sp.every(s => s.ok) && unpaved === 6,
+        { low: low.length, named, bad, spires: sp, unpaved }); }
 
     // ---- 6. the updraft stones carry you between the three levels, both ways ----
     { const D = AERIE.DRAFTS; const hops = [], said = [];
