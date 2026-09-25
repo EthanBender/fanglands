@@ -287,14 +287,11 @@ HOOKS.draw.push((g, items) => {
     g.globalAlpha = 0.25 * a; g.fillStyle = mk.color; g.beginPath(); g.arc(mk.x, mk.y, Math.max(2, r * 0.35), 0, 7); g.fill(); g.restore();
   } });
 });
-// long-press label, drawn in screen space above the finger
+// long-press label, drawn in screen space above the finger: the kit's small vellum tag with a pointer tooth (src/59-hudkit.js);
+// holding a HUD control names it with the same tag
 HOOKS.hud.push(g => {
   const l = tap.label; if (!l || paused) return;
-  // the same plate as every other container (src/59-hudkit.js) — it used to be the only gold-outlined box on screen
-  g.font = 'bold 12px sans-serif'; const w = Math.max(60, g.measureText(l.text).width + 20), h = 26;
-  const x = clamp(l.x - w / 2, 6, VW - w - 6), y = clamp(l.y - 54, 6, VH - h - 6);
-  HK.plate(g, x, y, w, h, { top: 'rgba(18,22,31,0.86)', bottom: 'rgba(12,15,22,0.80)' });
-  g.fillStyle = HK.C.INK; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(l.text, x + w / 2, y + h / 2); g.textBaseline = 'alphabetic';
+  HK.tag(g, l.x, l.y - 24, l.text);
 });
 // ---------- self-test ----------
 HOOKS.selfTest.push((check, F, h) => {
