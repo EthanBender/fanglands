@@ -28,6 +28,54 @@ function touchify(text) {
     .replace(/\bSpace\b/g, 'SWING');
 }
 
+// The computer's twin of touchify: split a sentence where it names a key, so the notice ribbon (59-hudkit) can draw that
+// key as a keycap. Conservative on purpose: only "Press X" / "press X", "(X)" and "X to ...", and only when X is a key the
+// game's own key table lists (43-settings' keyMap(), which reads the real handlers, plus HOOKS.keyHelp). X may be a letter,
+// Space, Tab, Enter, Esc or F1, or 1-5 after "press". Returns null when the sentence names no key.
+//   deskKeys('Press E to climb in.') -> [{ t: 'Press ' }, { k: 'E' }, { t: ' to climb in.' }]
+const DESK_KEY_CACHE = { sig: '', keys: null };
+function deskKeyLabels() {
+  const kh = (typeof HOOKS !== 'undefined' && HOOKS.keyHelp) || [];
+  const sig = kh.length + '|' + ((typeof HOOKS !== 'undefined' && HOOKS.update) ? HOOKS.update.length : 0) + '|' + !!window.SETTINGS;
+  if (DESK_KEY_CACHE.keys && DESK_KEY_CACHE.sig === sig) return DESK_KEY_CACHE.keys;
+  const keys = new Set();
+  const add = code => {
+    code = String(code);
+    if (/^Key[A-Z]$/.test(code)) keys.add(code.slice(3));
+    else if (code === 'Digit') for (let d = 1; d <= 5; d++) keys.add(String(d));
+    else if (/^Digit[1-5]$/.test(code)) keys.add(code.slice(5));
+    else if (code === 'Escape') keys.add('Esc');
+    else if (['Space', 'Tab', 'Enter', 'F1'].includes(code)) keys.add(code);
+  };
+  let rows = [];
+  try { rows = window.SETTINGS && typeof SETTINGS.keyMap === 'function' ? SETTINGS.keyMap() : []; } catch (e) { rows = []; }
+  for (const r of rows) for (const c of r.codes || []) add(c);
+  for (const k of kh) for (const c of k.codes || []) add(c);
+  DESK_KEY_CACHE.sig = sig; DESK_KEY_CACHE.keys = keys;
+  return keys;
+}
+function deskKeys(text) {
+  if (typeof text !== 'string' || !text) return null;
+  const known = deskKeyLabels(), segs = [];
+  // one pass, left to right: "Press X" keeps its verb, "(X)" loses its brackets, "X to" keeps " to"
+  const re = /\b([Pp]ress) (Space|Tab|Enter|Esc|F1|[A-Z]|[1-5])(?![\w'])|\((Space|Tab|Enter|Esc|F1|[A-Z])\)|(^|[\s(])(Space|Tab|Enter|Esc|F1|[A-Z])(?= to\b)/g;
+  let last = 0, m, any = false;
+  while ((m = re.exec(text))) {
+    let at = m.index, key, before = '';
+    if (m[2]) { key = m[2]; before = m[1] + ' '; }
+    else if (m[3]) key = m[3];
+    else { key = m[5]; before = m[4]; }
+    if (!known.has(key)) continue;
+    const lead = text.slice(last, at) + before;
+    if (lead) segs.push({ t: lead });
+    segs.push({ k: key }); any = true;
+    last = at + m[0].length;
+  }
+  if (!any) return null;
+  if (last < text.length) segs.push({ t: text.slice(last) });
+  return segs;
+}
+
 // ---------- dialogue log ("Said" tab) + the say/notify wrappers ----------
 const dialogLog = []; // last 30 {text, who}
 {

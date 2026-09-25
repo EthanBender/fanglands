@@ -133,10 +133,37 @@ plate buttons (a label starting with Resume / Settings / Title screen / Log out 
 ### Seals, bosses, the crest
 - `hudSeal('friends', () => ({ show, wax: 'blue' | 'grey' | 'umber', badge, on, action, name }))` — the FRIENDS seal (73-players).
   HOME and MENU are the kit's own.
-- `hudBoss(() => alive ? { id, mark: 'goblin' | 'skull' | 'fang' | 'bird', name, lv, hp, max, phase, heart: { hp, max }, edge } : null)`
-  — a boss banner (up to two; top centre on a computer and a landscape iPad, the scroll's slot elsewhere). The core already shows
-  any monster of level 25+ and 300+ hp within 12 tiles; `phase` replaces "LV n" with a word (FIRE / ICE / STONE).
+- `hudBoss(() => alive ? { key: m, mark: 'goblin' | 'skull' | 'fang' | 'bird', name, lv, hp, max, phase, sub, heart: { hp, max }, edge } : null)`
+  — a boss banner (up to two; top centre on a computer and a landscape iPad, the scroll's slot on phones and the portrait iPad,
+  where the quest rolls into plaque slot 1). The core already lists any monster of level 25+ and 300+ hp within 12 tiles;
+  `phase` replaces "LV n" with a word (FIRE / ICE / STONE). It is evaluated every frame, so return `null` the moment
+  the boss is gone.
+  - **One monster, one banner (the dedupe rule).** Give `key: m` (the monster object). If the core's generic list already holds
+    that monster, your entry REPLACES the generic one in place (same slot, your name, sub and heart row); it is never shown twice.
+    The kit does this at the start of `HK.layout()` (even when `hudBosses()`'s cap of two had cut your entry). An entry with no
+    `key`, or a key no one else lists, adds a banner. The Fang (28), the cinderwight (46) and the storm bird (66) use this.
+  - `sub` — a short sentence that says what to do now ("Wait it out", "Break the heart", "On the mast: hit it now"). On the full
+    banner it sits on its own row under the bar (sans, goldHi): the NAME shrinks first, then LV / the phase gives way on the name
+    row, and the sub shrinks to 9.5 px and then drops — it is never cut inside a word. On a compact banner (two bosses on a phone)
+    the sub takes LV's / the phase's place on the name row if it fits there, and otherwise drops.
+  - `heart: { hp, max }` — an amber bar on the sub's row ("HEART 23 / 40"); on the narrowest plates it becomes the amber number,
+    and on a compact banner it is a number on the main bar ("312 / 520 · heart 23").
+  - **Status-only banner:** leave `hp` or `max` null and the banner draws no bar and no numbers, only the name line (with `phase`
+    if you give one) and the sub sentence (up to two whole-word lines). It keeps the 58 px cap and the same slots.
+  - `edge` — the plate's edge colour, as a meaning (gold = "hit it now"; a cool blue for "keep moving"). Default: the red edge.
+  - Test through the kit, not pixels: `HK.FRAME.bosses = hudBosses(); const L = HK.layout();` then read `HK.FRAME.bosses` /
+    `HK.cur().boss`, and `HK.drawBosses(HK.audit.fitCtx(log), L)` records every string it paints into `log` ({ s, x, y, font,
+    fill }; a string with a drop shadow is recorded twice, the shadow's fill is `rgba(0,0,0,…)`).
 - `hudMechName(() => riding() ? 'Nell' : null)` — the machine's name on the crest (its hp is the crest's big number).
+
+### The notice (`notify(text)`)
+One line of sans on the sable swallowtail ribbon, in the notice lane (it fades in over 150 ms and stays about 2.8 s). On
+touch, 13-ux's `touchify` has already renamed the keys ("press E" -> "tap USE"). **On the computer a key the sentence names is
+drawn as a keycap inside the line**: 13-ux's `deskKeys(text)` matches only "Press X" / "press X", "(X)" and "X to ...", where X
+is a letter, Space, Tab, Enter, Esc, F1 (or 1-5 after "press") AND a key the game's own key table lists (`SETTINGS.keyMap()`,
+read from the real handlers, plus `HOOKS.keyHelp`). So write notices the plain way, `notify('Press E to climb in.')`, and
+declare any new key in `HOOKS.keyHelp`. The ribbon grows inside its lane to hold the keycaps; if they cannot fit on one line at
+11 px it falls back to the plain sentence (wrapped at words, never cut).
 
 ### Tooltips, the long-press name, the coach
 - A HUD control's tooltip (computer, after 350 ms of hover) and its long-press name (touch, 400 ms: it names instead of firing)
@@ -158,7 +185,7 @@ press and hover. A HUD control under an open panel takes no taps (10-hud drops i
 Primitives are plain `(g, ...)` canvas functions: `HK.stud(g, cx, cy, r, emblem, state)`, `HK.seal(g, cx, cy, r, emblem, wax,
 state)`, `HK.pouch(g, rect, item, key, state)`, `HK.satchel(g, rect, state)`, `HK.plateButton(g, rect, emblem, label, tone,
 state)`, `HK.bookTile(g, cx, cy, D, emblem, word, key, state)`, `HK.plaque(g, rect, fields)`, `HK.bossBanner(g, rect, boss)`,
-`HK.noticeRibbon(g, rect, text, alpha)`, `HK.banner(g, rect, { kind: 'area' | 'level', title, sub, alpha })`, `HK.meterBar(g, x,
+`HK.noticeRibbon(g, rect, text, alpha, slide, { keys })`, `HK.banner(g, rect, { kind: 'area' | 'level', title, sub, alpha })`, `HK.meterBar(g, x,
 y, w, h, frac, colour, { ticks, trail })`, `HK.ribbon(g, cx, cy, label, o)`, `HK.badge(g, cx, cy, text, size)`, `HK.keycap(g, x,
 y, key, size)`, `HK.tooltip(g, anchor, title, keys, sub, avoid)`, `HK.vellumPlate(g, x, y, w, h)`, `HK.bookCover` / `HK.bookPage`,
 `HK.brackets(g, x, y, w, h)` (the gold world-prompt corners). A `state` is `{ pressed, hover, lit, on, disabled, asleep, cool:
@@ -167,6 +194,41 @@ y, key, size)`, `HK.tooltip(g, anchor, title, keys, sub, avoid)`, `HK.vellumPlat
 skills wiki book help music friends menu fang expand cog gear star skull horseshoe getdown door tick cloud axe pick hook
 pot next crush bolt key bird prop drill build arch coin heart swords chevron chevronR chevronL close. Static layers go
 through `HK.cache(g, key, x, y, w, h, draw, pad)` (drawn once per size, DPR and state), so a feature's art stays cheap.
+
+### Panels (anything opened with `openPanel`, drawn from `HOOKS.panel[name]`)
+Every panel wears the same frame and follows one contract, so a new one looks like it belongs:
+- **Frame:** `const { px, py, w, h } = panelBox(g, w, h, title, sub)` — the book frame, centred and clamped to the screen; it sets
+  `panelRect` (a tap outside closes, a tap inside is absorbed) and draws the umber close seal, labelled `'×'`, radius `HK.row() / 2`.
+  Lay everything out inside `{ px, py, w, h }`; never draw a frame of your own.
+- **Words:** `HK.text(g, s, x, y, { font, color, ... })` with `HK.FS(600, px)` for sentences (they grow with Text size) and
+  `HK.FC(800, px)` for names, titles and numbers (fixed). Wrap sentences with `HK.wrap(g, s, maxW, maxLines, font)` — whole words
+  only; when `more` comes back, end the line there and put the rest one tap away. **Never cut a word with an ellipsis.**
+- **Colours:** from `HK.T` only (`ink`, `inkDim`, `inkMute`, `gold` / `goldHi` for selected / look-here, `good`, `warn`, `bad`,
+  `friend`). Red means health or danger only.
+- **Rows:** a list row is an `HK.vellumPlate(g, x, y, w, h)` of `HK.row()` height (44 on touch, 32 with a mouse), with its text inset 12 px.
+- **Items:** `drawSlot()` draws an item as a leather pouch; on touch a pouch is 44 px or more.
+- **Verbs:** `button(g, x, y, w, HK.row(), label, action, colour)` — an iron plate button fired on pointer-up; green = primary,
+  red = danger, anything else neutral. Keep 8 px between buttons on touch.
+- **Tabs:** plate buttons in a row, the selected one in the primary tone.
+- **Pages:** reserve one `HK.row()` at the bottom for `pager()` (the chevron plates and "2 / 5") even when there is one page, so
+  nothing jumps when a second page appears.
+- **The per-panel audit recipe** (write it into your file's `HOOKS.selfTest`):
+  ```js
+  const own = k => Object.getOwnPropertyDescriptor(window, k), keep = { w: own('innerWidth'), h: own('innerHeight'), t: window.__forceTouch };
+  const problems = [];
+  for (const [w, h] of HK.audit.SIZES) for (const t of [true, false]) {
+    window.innerWidth = w; window.innerHeight = h; resize(); window.__forceTouch = t;
+    closePanel(); openPanel('mypanel');
+    HK.FIT.on = true; HK.FIT.log.length = 0; if (window.SETTINGS) SETTINGS.set('text', 'large');
+    drawHud(HK.audit.fitCtx()); HK.FIT.on = false;
+    const all = buttons.filter(b => !b.offscreen && b.w > 0), i = all.findIndex(b => b.label === '×');
+    const mine = all.slice(i);                // the panel's own controls: the close seal and everything after it
+    // each: on screen, 44 px or more on touch, no two overlapping (8 px apart on touch)
+    for (const p of HK.audit.fitIssues(`${w}x${h} ${t ? 'touch' : 'mouse'}`)) problems.push(p);   // every string fits at Large
+  }
+  // then put back innerWidth / innerHeight (Object.defineProperty with keep.w / keep.h), resize(), __forceTouch, the text size
+  ```
+  59-hudkit's check 11 does exactly this for the pack, Friends, the Chat log and Give.
 
 ### Geometry
 `HK.cur()` is this frame's layout: `crest`, `mm` (the ring: `{ x, y, r, R }`), `seals`, `scroll`, `plaques`, `boss`, `notice`,
@@ -179,8 +241,9 @@ minimap is drawn by 09-render's `drawMinimap` inside the ring's round glass; `mi
 `HOOKS.selfTest` in 59-hudkit runs the layout engine over the spec's matrix and then draws the real HUD at every device size
 (iPhone SE / 12 / Pro Max both ways, both iPads, a laptop), touch and mouse, stick either side, minimap on and off, offline and
 online with chat, 0 / 1 / 2 bosses, on foot and in each machine, at every text size, plus the busy fight, the talk page, a
-dungeon and the book — and fails on any overlap, anything under 44 px, anything in a safe-area band or on the stick, anything
-off screen, anything that moves between scenes, or any string that does not fit its plate at Large. `HK.audit` exposes the
+dungeon, the Fang (fire and stone), a feeding cinderwight, the storm bird perched and hunting, your island, and the book — and fails on any overlap, anything under 44 px, anything in a safe-area band or on the stick, anything
+off screen, anything that moves between scenes, or any string that does not fit its plate at Large. It also checks that one monster gets one boss banner and that a notice's key is a keycap on the
+computer and plain words on touch. `HK.audit` exposes the
 pieces (e.g. `HK.audit.frameIssues(where)` after a `drawHud`) so a feature's own check can use them.
 
 ## Useful core functions
