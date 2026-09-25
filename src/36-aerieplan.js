@@ -13,8 +13,11 @@
 // judge's plan-rows.txt (sha1 a0fd9636f9c2584e0491b1e8a5389d6addc3dd10), then changed on 2026-09-25 after review
 // round 1: the Crown (x 80-99, rows 5-29) was bare cloud and is now the Rookery Yard, the Crown Walk, a garden and
 // a paved ring round the Songstone; and the paving left over between the streets became lawn (the Guild Green,
-// the chapel lawn and the back gardens along the south wall). Do not edit a row here without re-measuring every
-// count the self-tests quote (91's K1, K3 and K4). GLYPHS says which tile NAME each character paints.
+// the chapel lawn and the back gardens along the south wall). Review round 3 (2026-09-25) put a hearth, bellows and
+// cloud-anvil in the sky forge, an oven and bread racks in the Cloud Oven, made each market stall two cells wide with
+// crates and barrels round the square, joined the flagstones south of the Wishing Well to the pavement at x 35, and
+// added a wall tower on each long run of the west and east walls (16,50) and (79,28). Do not edit a row here without
+// re-measuring every count the self-tests quote (91's K1, K3 and K4). GLYPHS says which tile NAME each character paints.
 //
 // ROADS: which paving cells are STREET, not yard. A street is still a KING_PAVE tile (you walk on it the same way),
 // but 91 paints it as grey-blue setts with a white kerb and a gold gutter on every edge, so the streets read as
@@ -52,9 +55,9 @@
     '~~~~~~~~~~~~,,,TTT=t"h"hhhhhhh"h""~~===p=================p===~~""C__kkk__C"""==#,,,~~~~~"^"=___="""~',
     '~~~~~~~~~~~~,,,TTT=""h"h"""""""h"t~~=s========l===l========s=~~""C_______C"""==#,,,~~~~~"*"====="*"~',
     '~~~~~~~~~~~~,,,,#==""h"h"hhhhhhh""~~=====CCCCCCCCCCCCCCC=====~~""C_______C"""==#,,,~~~~~~""""===""~~',
-    '~~~~~~~~~~~~,,,,#==""h"h"h*""""h*"~~="""=C_x_________x_C="""=~~""C_b___b_C"S"==#,,,~~~~~~~n"====U~~~',
-    '~~~~~~~~~~~~,,,,#=="*h"h"hhhhh"h""~~="t"=C______Y______C="t"=~~""C_______C"""==#,,,~~~~~~~""*"*""~~~',
-    '~~~~~~~~~~~~,,,,#=="*h"h"""""h"h""~~="""=C_____________C="""=~~""C_b___b_C"""==#,,,~~~~~~~~~"l"~~~~~',
+    '~~~~~~~~~~~~,,,,#==""h"h"h*""""h*"~~="""=C_x_________x_C="""=~~""C_b___b_C"S"=TTT,,~~~~~~~n"====U~~~',
+    '~~~~~~~~~~~~,,,,#=="*h"h"hhhhh"h""~~="t"=C______Y______C="t"=~~""C_______C"""=TTT,,~~~~~~~""*"*""~~~',
+    '~~~~~~~~~~~~,,,,#=="*h"h"""""h"h""~~="""=C_____________C="""=~~""C_b___b_C"""=TTT,,~~~~~~~~~"l"~~~~~',
     '~~~~~~~~~~~~,,,,#==""h"hhhhhhh"h"t~~="*"=C__C___R___C__C="*"=~~""C_______C"""==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#==""h"""""""""h""~~="""=C______R______C="""=~~""C_______C""t==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#==t"hhhhhhhhhhh""~~="t"=C______R______C="t"=~~""CCCCDCCCC"""==#,,,~~~~~~~~~~~~~~~~~',
@@ -64,24 +67,24 @@
     '~~~~~~~~~~~~,,,,#=================++=====C______R______C=====++===============TTT,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#=================++=====CCCCCCCDCCCCCCC=====++===============TTT,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#==S==============~~=========================~~================#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,TTT==HHHHHHHHH=HHHH~~==========l===l==========~~================#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,TTT==Hcc_____H=H_aH~~========S=======S========~~==k==k==k==k====#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,TTT==H_____a_H=H__H~~==p===================p==~~================#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,,#===H_______H=HDHH~~====b===============b====~~================#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,TTT==HHHHHHHHH=HHHH~~==========l===l==========~~B===============#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,TTT==Hcc_____H=H_aH~~========S=======S========~~X=km=km=km=km===#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,TTT==H_____a_H=H__H~~==p===================p==~~=============X==#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,,#===H_______H=HDHH~~====b===============b====~~=============B==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#===Ha____a_H=====~~===========FFF===========~~================#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#===HHHHDHHHHl====~~===========FFF===========~~=l==========l===#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#=================~~====U======FFF===========~~=====FFF========#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#=================~~=========================~~=====FFF========#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#===HHHHH=HHHHH"""~~=s=======l=====l=======s=~~==p==FFF==p====TTT,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#===Ha__H=H__qH"""~~=========================~~===============TTT,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,,#===H___H=H___H"n"~~~~~~~~~~~~~+++~~~~~~~~~~~~~l============l=TTT,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,,#==lHHDHH=HHDHH"""~~~~~~~~~~~~~+++~~~~~~~~~~~~~================#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,,#=================l============================================#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,TTT==H___H=H___H"n"~~~~~~~~~~~~~+++~~~~~~~~~~~~~l============l=TTT,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,TTT=lHHDHH=HHDHH"""~~~~~~~~~~~~~+++~~~~~~~~~~~~~=========XXB====#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,TTT================l============================================#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#===================================CCCCDCCCC===HHDHHH==HHDHH==#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,,#=="""""""""""""""t=HHDHH=HDHH======Cx_____xC===Hc__cH==H___H==#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,,#=="n"""""w""t"""""=H___H=H__H======C_______C===H____H==Ha__H==#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,,G==""""""""""""""""=Ha__H=H_qHp===p=C_______C===H____H==H___H==#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,,#=="""=========""""=HHHHH=HHHH======Cq_____qC===HHHHHH==HHHHH==#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,,#=="""""""""""""""t=HHDHH=HDHH======Cxee___xC===Hc_VVH==H___H==#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,,#=="n"""""w""t"""""=H___H=H__H======Cv______C===H____H==Ha__H==#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,,G=="""""""=""""""""=Ha__H=H_qHp===p=C__A____C===HK__KH==H___H==#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,,#=="""==============HHHHH=HHHH======Cq_____qC===HHHHHH==HHHHH==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#=="""U"""""""""n""""""""*""""======CCCCCCCCC""*"""""*"""""""==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#=="""""""""""""""""""t""""TTT=====TTT"""t""""""""t"""""""t""==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#==========================TTT=====TTT=========================#,,,~~~~~~~~~~~~~~~~~',
@@ -115,6 +118,7 @@
     '#': 'KING_WALL', 'T': 'KING_TOWER', 'S': 'KING_SPIRE', 'F': 'KING_FOUNTAIN', 'o': 'KING_POND',
     'h': 'KING_GARDEN', 't': 'KING_GARDEN', 'p': 'KING_GARDEN',
     'b': 'KING_PROP', 'l': 'KING_PROP', 'Y': 'KING_PROP', 'w': 'KING_PROP',
+    'e': 'KING_PROP', 'v': 'KING_PROP', 'A': 'KING_PROP', 'V': 'KING_PROP', 'K': 'KING_PROP', 'm': 'KING_PROP', 'X': 'KING_PROP', 'B': 'KING_PROP',
     's': 'WIND_STATUE', 'k': 'WIND_STALL', 'n': 'NEST_HOUSE', 'x': 'SKY_BRAZIER', 'r': 'SKY_RAIL', '^': 'CLOUD_SPIRE',
     'U': 'UPDRAFT', 'P': 'HAWK_PERCH', 'O': 'SONGSTONE', 'z': 'CLOUD_SNAG', 'f': 'SPIRE_FLAG',
     'W': 'CLOUD_WISP', 'J': 'CLOUD_LEAP',
@@ -122,7 +126,10 @@
     'C': 'CWALL', 'H': 'HWALL', '_': 'FLOOR', 'D': 'DOOR', 'R': 'RUG', 'a': 'TABLE', 'q': 'SHELF', 'c': 'COUNTER',
   };
   // what a garden or prop cell is, by its glyph (KING_GARDEN and KING_PROP are one tile each; the kind is drawn)
-  const KINDS = { h: 'hedge', t: 'tree', p: 'planter', b: 'bench', l: 'lamp', Y: 'throne', w: 'well' };
+  // (review round 3: the forge's hearth, bellows and cloud-anvil, the Cloud Oven's oven and bread racks, the market's
+  // second stall cells, crates and barrels)
+  const KINDS = { h: 'hedge', t: 'tree', p: 'planter', b: 'bench', l: 'lamp', Y: 'throne', w: 'well',
+    e: 'hearth', v: 'bellows', A: 'anvil', V: 'oven', K: 'rack', m: 'stall', X: 'crate', B: 'barrel' };
 
   const at = (x, y) => (x >= 0 && y >= 0 && x < W && y < H) ? ROWS[y][x] : '~';
   // every cell of one glyph, in reading order
@@ -175,6 +182,8 @@
     braziers: [[43, 27], [53, 27], [53, 53], [59, 53], [88, 14], [88, 20]],
     statues: [[37, 25], [59, 25], [37, 47], [59, 47]],
     stalls: [[65, 40], [68, 40], [71, 40], [74, 40]],
+    // the market's people: a seller behind each stall (fruit, cloth, feathers, pots) and two shoppers
+    marketFolk: [[65, 39], [68, 39], [71, 39], [74, 39], [64, 41], [72, 42]],
     organ: [[68, 24], [69, 24], [70, 24]],
     rails: [[43, 0], [44, 0], [45, 0], [46, 0], [47, 0], [48, 0], [49, 0], [50, 0], [51, 0], [52, 0], [53, 0], [43, 1], [43, 2], [43, 3], [53, 1], [53, 2], [53, 3], [16, 69], [17, 69], [23, 69], [24, 69]],
     cloudSpires: [[80, 76], [86, 76], [92, 76], [98, 76], [98, 11], [89, 24], [4, 76], [30, 78]],
@@ -182,7 +191,7 @@
     fountains: [{ id: 'royal', x0: 47, y0: 43, x1: 49, y1: 45 }, { id: 'market', x0: 68, y0: 45, x1: 70, y1: 47 }],
     pond: { x0: 36, y0: 14, x1: 41, y1: 16 },
     well: [26, 54],
-    towers: [[16, 11], [79, 11], [16, 61], [79, 61], [32, 11], [64, 11], [45, 11], [51, 11], [30, 61], [70, 61], [74, 61], [79, 14], [79, 20], [79, 36], [79, 48], [16, 24], [16, 40]],
+    towers: [[16, 11], [79, 11], [16, 61], [79, 61], [32, 11], [64, 11], [45, 11], [51, 11], [30, 61], [70, 61], [74, 61], [79, 14], [79, 20], [79, 36], [79, 48], [16, 24], [16, 40], [16, 50], [79, 28]],
     gatehouse: [{ x: 44, y: 60, x0: 43, x1: 45, y0: 58, y1: 63 }, { x: 52, y: 60, x0: 51, x1: 53, y0: 58, y1: 63 }],
     pillars: [[44, 30], [52, 30], [44, 33], [52, 33]],
     bunting: [[64, 39], [76, 39]],

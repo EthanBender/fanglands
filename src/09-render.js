@@ -24,8 +24,11 @@ function render() {
   const g = ctx;
   g.setTransform(DPR, 0, 0, DPR, 0, 0);
   g.imageSmoothingEnabled = true;
-  cam.x = clamp(player.x - VW / 2, 0, MAP_W * TILE - VW);
-  cam.y = clamp(player.y - VH / 2, 0, MAP_H * TILE - VH);
+  // HOOKS.camera (optional, made by the feature that first needs it): each fn() may return { x, y } in pixels to nudge the view
+  let camDX = 0, camDY = 0;
+  if (HOOKS.camera) for (const f of HOOKS.camera) { const o = f(); if (o) { camDX += o.x || 0; camDY += o.y || 0; } }
+  cam.x = clamp(player.x - VW / 2 + camDX, 0, MAP_W * TILE - VW);
+  cam.y = clamp(player.y - VH / 2 + camDY, 0, MAP_H * TILE - VH);
   if (MAP_W * TILE < VW) cam.x = (MAP_W * TILE - VW) / 2;
   if (MAP_H * TILE < VH) cam.y = (MAP_H * TILE - VH) / 2;
   g.fillStyle = '#0b0f14'; g.fillRect(0, 0, VW, VH);

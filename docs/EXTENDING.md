@@ -69,6 +69,10 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   list in pixels (empty when out of reach) and the same talk call your E handler makes; a tap then walks adjacent and talks.
 - Touch: every keyboard action needs a button — register one with `buttons.push({ x, y, w, h, label, action })` from a `HOOKS.hud` draw, and
   write key hints with `keyName('KeyE')` so touch players read "E" or "USE" as appropriate.
+- Camera: `HOOKS.camera` is not in the core's table; the first feature that needs it makes it (`HOOKS.camera = HOOKS.camera || []`)
+  and pushes `() => ({ x, y })` (pixels, or null). `render` adds every nudge to the centred view before it clamps to the map.
+  Keep a nudge a smooth function of where the knight stands (91-cloudkingdom's keep plaza fades over three tiles), so walking never
+  makes the view jump.
 - `HOOKS.draw` is called as `(g, items, cam)`, and each item you push has its `draw()` called with **no arguments** — so write
   `HOOKS.draw.push((g, items) => { items.push({ y, draw: () => { ...use g... } }) })`. A handler that takes one parameter gets
   the canvas context where it expects the list, and nothing renders, silently.

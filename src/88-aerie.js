@@ -67,29 +67,36 @@
   setMode('deepholm', 'lamplit');
 
   // ---------- the day layer ----------
+  // Review round 3 (Cloud Kingdom): the sun was a white-hot disc painted 'lighter' at a fixed spot on the screen, just
+  // under the minimap, and it bleached whatever building stood there -- it read as a glitch, not a sun. The view looks
+  // down on the city, so the sun is never in it: it stands off the top-right edge of the screen (SUN_AT, in screen
+  // fractions), and what reaches the city is its light -- a warm tint laid over (never added to) the stone, strongest
+  // in the top-right corner, and five faint rays fanning in from there. No part of the layer can lift a pixel by more
+  // than DAY.maxLift (the self-test measures it at the brightest point on the screen).
+  const SUN_AT = { x: 0.9, y: -0.45 };
+  const DAY = { tint: 0.12, ray: 0.028, maxLift: 0 };
   function drawDay(g, inst) {
-    const sx = VW * 0.78 - (cam.x % 400) * 0.05, sy = VH * 0.13 - (cam.y % 400) * 0.04;
+    const sx = VW * SUN_AT.x - (cam.x % 400) * 0.03, sy = VH * SUN_AT.y;
     g.save(); g.setTransform(DPR, 0, 0, DPR, 0, 0);
-    // the sun's warmth over everything
-    g.globalCompositeOperation = 'lighter';
-    const R = Math.max(VW, VH) * 0.95;
+    // the sun's warmth: a warm tint, laid over the city (source-over), fading away from the top-right corner
+    g.globalCompositeOperation = 'source-over';
+    const R = Math.max(VW, VH) * 1.15;
     const warm = g.createRadialGradient(sx, sy, 10, sx, sy, R);
-    warm.addColorStop(0, 'rgba(255,244,214,0.20)'); warm.addColorStop(0.45, 'rgba(255,240,205,0.09)'); warm.addColorStop(1, 'rgba(255,240,205,0)');
+    warm.addColorStop(0, `rgba(255,222,150,${DAY.tint})`); warm.addColorStop(0.5, `rgba(255,228,170,${(DAY.tint * 0.45).toFixed(3)})`); warm.addColorStop(1, 'rgba(255,230,180,0)');
     g.fillStyle = warm; g.fillRect(0, 0, VW, VH);
-    // five long rays, turning slowly
+    // five long rays fanning in from the corner, turning slowly
     const rays = 5;
+    g.globalCompositeOperation = 'lighter';
     for (let k = 0; k < rays; k++) {
-      const a = 1.9 + k * 0.24 + Math.sin(time * 0.11 + k) * 0.05, w = 0.055;
-      g.fillStyle = 'rgba(255,247,225,0.045)';
+      const a = 1.95 + k * 0.2 + Math.sin(time * 0.11 + k) * 0.04, w = 0.05;
+      g.fillStyle = `rgba(255,244,214,${DAY.ray})`;
       g.beginPath(); g.moveTo(sx, sy);
-      g.lineTo(sx + Math.cos(a - w) * R * 1.6, sy + Math.sin(a - w) * R * 1.6);
-      g.lineTo(sx + Math.cos(a + w) * R * 1.6, sy + Math.sin(a + w) * R * 1.6);
+      g.lineTo(sx + Math.cos(a - w) * R * 2, sy + Math.sin(a - w) * R * 2);
+      g.lineTo(sx + Math.cos(a + w) * R * 2, sy + Math.sin(a + w) * R * 2);
       g.closePath(); g.fill();
     }
-    // the sun itself
-    const disc = g.createRadialGradient(sx, sy, 4, sx, sy, 96);
-    disc.addColorStop(0, 'rgba(255,253,240,0.85)'); disc.addColorStop(0.25, 'rgba(255,240,190,0.35)'); disc.addColorStop(1, 'rgba(255,240,190,0)');
-    g.fillStyle = disc; g.beginPath(); g.arc(sx, sy, 96, 0, 7); g.fill();
+    // the most any pixel is lifted: two rays crossing (lighter adds) over the warm tint's strongest point on screen
+    DAY.maxLift = Math.round(255 * DAY.ray * 2);
     // cloud shadow drifting under the city, and the cold air off the drop at the bottom of the screen
     g.globalCompositeOperation = 'source-over';
     const shadows = 3;
@@ -104,7 +111,7 @@
     g.fillStyle = drop; g.fillRect(0, VH * 0.82, VW, VH * 0.18);
     g.restore();
     STATS.painted++; STATS.lastMode = 'day';
-    LAST.mode = 'day'; LAST.id = inst && inst.id; LAST.scrim = 0; LAST.warm = 0.20; LAST.rays = rays; LAST.shadows = shadows; LAST.sun = { x: Math.round(sx), y: Math.round(sy) };
+    LAST.mode = 'day'; LAST.id = inst && inst.id; LAST.scrim = 0; LAST.warm = DAY.tint; LAST.rays = rays; LAST.shadows = shadows; LAST.sun = { x: Math.round(sx), y: Math.round(sy), onScreen: sx >= 0 && sx <= VW && sy >= 0 && sy <= VH, disc: false };
   }
 
   HOOKS.draw.push((g, items) => {
@@ -139,7 +146,7 @@
   };
 
   window.INSTANCE_LIGHT = {
-    MODES, define: defineMode, set: setMode, of: modeOf, stats: STATS, last: LAST,
+    MODES, define: defineMode, set: setMode, of: modeOf, stats: STATS, last: LAST, DAY, SUN_AT,
     suppressing: () => suppressing,
     list: () => (window.INSTANCES ? INSTANCES.list() : []).map(id => ({ id, mode: modeOf(id), dark: !!(instOf(id) && instOf(id).dark) })),
   };
@@ -647,6 +654,8 @@
       for (let k = 0; k < 5; k++) { g.fillStyle = k % 2 ? '#9fb0c6' : '#c6d3e4'; g.fillRect(x + 5 + k * 8, y + 44 - h[k], 6, h[k]); g.fillStyle = '#e9eef5'; g.fillRect(x + 5 + k * 8, y + 44 - h[k], 6, 3); }
       return;
     }
+    // the Windward Market's four stalls are drawn whole by 91-cloudkingdom (two cells wide, with their goods)
+    if (window.KINGDOM && KINGDOM.ownsStall && KINGDOM.ownsStall(tx, ty)) return;
     g.fillStyle = 'rgba(60,90,140,0.22)'; g.fillRect(x + 4, y + 40, TILE - 8, 5);
     g.fillStyle = '#8a6a3a'; g.fillRect(x + 5, y + 20, 4, 24); g.fillRect(x + TILE - 9, y + 20, 4, 24);
     g.fillStyle = '#c0906a'; g.fillRect(x + 2, y + 12, TILE - 4, 10);
@@ -893,9 +902,12 @@
     { const S = INSTANCE_LIGHT.stats;
       INSTANCES.enter('aerie'); F.tp(20, 15); const b = S.blocked, p = S.painted; render();
       const L = INSTANCE_LIGHT.last, over = overlays();
-      check(A + "Aerie is lit as open daylight: sun, 5 rays and 3 drifting cloud shadows, no scrim at all, and the cave rectangle no longer lands on the Queen's Garden",
-        S.painted > p && S.blocked > b && L.mode === 'day' && L.id === 'aerie' && L.scrim === 0 && L.warm > 0 && L.rays === 5 && L.shadows === 3 && !!L.sun && over.n === 1 && inst('aerie').dark === false,
-        { painted: S.painted - p, blocked: S.blocked - b, last: L, overlays: over.n }); }
+      // review round 3: the sun is off the top of the screen (never a disc over a building); what shows is a warm tint laid
+      // over the stone and faint rays, and nothing lifts a pixel by more than 16 of 255
+      const offScreen = !!L.sun && !L.sun.onScreen && L.sun.disc === false && L.sun.y < 0 && INSTANCE_LIGHT.DAY.maxLift <= 16;
+      check(A + "Aerie is lit as open daylight: the sun off the top-right of the screen (no disc over the city), a warm tint, 5 faint rays (no pixel lifted more than 16 of 255) and 3 drifting cloud shadows, no scrim at all, and the cave rectangle no longer lands on the Queen's Garden",
+        S.painted > p && S.blocked > b && L.mode === 'day' && L.id === 'aerie' && L.scrim === 0 && L.warm > 0 && L.rays === 5 && L.shadows === 3 && offScreen && over.n === 1 && inst('aerie').dark === false,
+        { painted: S.painted - p, blocked: S.blocked - b, last: L, maxLift: INSTANCE_LIGHT.DAY.maxLift, overlays: over.n }); }
 
     // ---- 4. Aerie is the walled city: the plan, painted exactly, with its three outer islands ----
     { const W = AERIE.W, H = AERIE.H, a = inst('aerie'), P2 = window.AERIE_PLAN;
