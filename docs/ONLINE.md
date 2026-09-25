@@ -194,6 +194,20 @@ adds `mech: {kind, hp, maxHp}` and is drawn with `drawMech`. Mounts add `mount: 
   non-keeper is deleted after each update (a non-keeper's `monsters` array may only hold puppets). Known gap;
   test the Spider Den and the goblin camp, note anything else.
 
+  **The keeper-gated boss** (the Ginormous Golem, `src/91-royalmine.js`) is the pattern for a new one. Everything
+  that decides something runs only where `!NET.online() || COOP.isKeeper()`: waking him, his states (sleep, rise,
+  fight, windup, slam), spawning the little golems, walking them in and the heal they give, and the giant rocks'
+  wake roll, settling and regrowth. His states ride the streamed `state` field; the keeper's timers live on
+  `m.rm` and are rebuilt from state, hp and maxHp after a handoff. On a puppet the file sends
+  `{t: 'hit', nid, dmg, knock: 0, bomb}` itself and shows only a hurt flash, never a local hp change, so there
+  is no dead-then-alive flicker. The keeper takes a remote hit on the golem only when `bomb` is true and the damage is 40 to 100 (a hot
+  heartstone), and on a giant rock only as a crack of 0 to 2; swords and arrows are stopped on the sender and on
+  the keeper. What belongs to one knight stays on that knight's own client: the falling rocks are aimed at your
+  own knight, the slam hurts only your own knight, and each knight who helped rolls their own loot once per fall.
+  What must match without being a monster comes from the wall clock: which veins glow is a hash of
+  `Math.floor(clock / 20000)`, the clock corrected by the server time in `welcome`. `node tools/golem-sim.js`
+  (and `--room`) proves it with two whole games.
+
 ## The bridge (bringing a knight from the old address)
 
 `bridge.html` at the repo root is served by GitHub Pages. gorkscape.ca loads it in a hidden iframe and posts
