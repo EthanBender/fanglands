@@ -267,50 +267,29 @@
   HOOKS.newGame.push(() => { quest.cinderwight = { taught: false }; for (const k in STATS) STATS[k] = 0; });
 
   // ---------- HUD: what it is doing, while it is near ----------
-  // The core already paints a generic boss bar for anything level 25 or better with 300+ hp inside twelve
-  // tiles (10-hud.js drawBossBars), and a cinderwight passes that rule, so the core bar is already showing
-  // its name, its level and its hit points at HUD_LAYOUT.bossBarY. This panel never repeats any of that and
-  // never sits on top of it: it steps down past the bars and carries only the mechanic — what to do right
-  // now, and how much ember is left. If no bar is up for this wight (further than twelve tiles, or two other
-  // big things took the only two bar slots) it puts the hit points back so the panel still reads on its own.
-  const BOSS_H = 48, BOSS_GAP = 8;   // one core boss bar, and the gap the core leaves under it
-  const bossBarList = () => monsters.filter(b => !b.dead && b.type !== 'the_fang' && MONSTER_DEFS[b.type]
-    && MONSTER_DEFS[b.type].level >= 25 && MONSTER_DEFS[b.type].hp >= 300
-    && dist(b.x, b.y, player.x, player.y) <= 12 * TILE).slice(0, 2);
-  function wightPanel(g) {
+  // The core already lists anything level 25 or better with 300+ hp inside twelve tiles for a boss banner (10-hud.js
+  // hudBosses), and a cinderwight passes that rule. While it is feeding or cold this entry carries the same monster as
+  // its key, so the kit (src/59-hudkit.js) REPLACES that generic banner in place: one banner, with the wight's name, its
+  // level and hit points, what to do right now as a sentence, and — while it feeds — an amber HEART bar (on a phone with
+  // two bosses the heart row becomes a number on the bar). The phase is said in words, not painted in two more colours.
+  function wightBoss() {
     let best = null;
     for (const m of monsters) {
       if (m.type !== WIGHT || m.dead) continue;
       const feeding = !!heartOf(m), cold = (m.coldT || 0) > 0;
       if (!feeding && !cold) continue;
       const d = dist(m.x, m.y, player.x, player.y); if (d > 14 * TILE) continue;
-      if (!best || d < best.d) best = { m, d, feeding, cold };
+      if (!best || d < best.d) best = { m, d, feeding };
     }
-    if (!best) return;
-    // MIGRATED to the HUD kit (src/59-hudkit.js). The same boss chip as every other boss, with the phase
-    // said in words rather than painted (it was orange while feeding and pale blue while cold — two more
-    // colours meaning things no other colour in the game meant). The core's boss bars now advance the shared
-    // left-column cursor themselves, so the old bossFloor arithmetic here is gone.
+    if (!best) return null;
     const { m, feeding } = best, heart = heartOf(m);
-    const bars = bossBarList(), onBar = bars.indexOf(m) >= 0;
-    const hpRow = !onBar;                        // only when the core bar is not already showing them
-    const pad = 10;
-    const h = pad * 2 + (hpRow ? HK.meterH() : 0) + (hpRow && feeding && heart ? HK.GUT : 0) + (feeding && heart ? HK.meterH(true) : 0) + (!hpRow && !(feeding && heart) ? HK.LINE() : 0);
-    const s = HK.slot(h);
-    HK.plate(g, s.x, s.y, s.w, s.h, { tone: HK.C.BAD });
-    const iw = s.w - pad * 2 - 2, ix = s.x + pad + 2;
-    let cy = s.y + pad;
-    const phase = feeding ? 'BREAK THE HEART' : 'COLD · HIT IT NOW';
-    if (hpRow) {
-      cy += HK.meter(g, ix, cy, iw, { label: 'CINDERWIGHT · ' + phase, value: `${Math.ceil(m.hp)} / ${m.maxHp}`, template: `${m.maxHp} / ${m.maxHp}`, frac: clamp(m.hp / m.maxHp, 0, 1), tone: HK.C.BAD });
-      if (feeding && heart) cy += HK.GUT;
-    } else if (!(feeding && heart)) {
-      g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.textAlign = 'left'; g.fillText('CINDERWIGHT · ' + phase, ix, cy + HK.LINE() - 3);
-    }
-    // the heart is a countdown you have to beat, so it is amber: the kit's one meaning for "wait / hurry"
-    if (feeding && heart) HK.meter(g, ix, cy, iw, { label: hpRow ? 'HEART' : 'CINDERWIGHT · ' + phase, value: `${Math.ceil(heart.hp)} / ${heart.maxHp}`, template: `${heart.maxHp} / ${heart.maxHp}`, frac: clamp(heart.hp / heart.maxHp, 0, 1), tone: HK.C.WARN, small: true });
+    return {
+      key: m, mark: 'skull', name: 'CINDERWIGHT', lv: MONSTER_DEFS[WIGHT].level, hp: Math.max(0, Math.ceil(m.hp)), max: m.maxHp,
+      sub: feeding ? 'Break the heart' : 'Cold: hit it now',
+      heart: feeding && heart ? { hp: Math.max(0, Math.ceil(heart.hp)), max: heart.maxHp } : null,
+    };
   }
-  HOOKS.hud.push(wightPanel);
+  hudBoss(wightBoss);
 
   // ---------- the book (44-wiki) ----------
   // Both pages build themselves out of MONSTER_DEFS and the spawn lists; what a page cannot work out on
@@ -341,7 +320,7 @@
   });
 
   window.CINDERWIGHT = {
-    WIGHT, HEART, ASH_SPOTS, AFTER_SPOTS, heartOf, kindle, panel: wightPanel,
+    WIGHT, HEART, ASH_SPOTS, AFTER_SPOTS, heartOf, kindle, boss: wightBoss,
     NUMBERS: { KINDLE_EVERY, KINDLE_AFTER_BREAK, HEART_HP, HEART_LIFE, FEED_HEAL, HEAT_EVERY, HEAT_R, HEAT_MIN, HEAT_MAX, TETHER, COLD_STUN, COLD_TIME },
     get stats() { return { ...STATS }; },
   };
@@ -425,12 +404,12 @@
         { planted: !!heart, heartHp: heart && heart.hp, awayFromKnight: heart && +(dist(heart.x, heart.y, player.x, player.y) - dist(m.x, m.y, player.x, player.y)).toFixed(1) });
 
 
-      // 4a-ii. the panel must not print on top of the core's boss bar. 10-hud.js paints a generic bar for
-      // anything level 25+ with 300+ hp inside twelve tiles, and a cinderwight is one of those, so both used
-      // to land on the same rectangle. Recorded here for real: every fillText the core bar and this panel
-      // emit for one frame. No two may share a point, the panel must start below the bar, and while the bar
-      // is up the panel must not repeat the hit points. Take any other big monster out of the list first so
-      // the bar under test is certainly this wight's (the core shows at most two).
+      // 4a-ii. ONE boss banner for the wight, not two. 10-hud's hudBosses() lists it twice — the core's generic entry (it
+      // is level 25+ with 300+ hp inside twelve tiles) and this file's hudBoss entry, both keyed by the monster — and the
+      // kit (src/59-hudkit.js, HK.layout) keeps one: this file's, in the generic one's place. Drawn for real into a
+      // recording context (the headless canvas swallows everything): the name once, its hit points once, the instruction,
+      // the heart row's own numbers, and no two strings on the same point. Any other big monster steps out first, so the
+      // banner under test is certainly this wight's (the kit shows at most two).
       { const roster = monsters.slice();
         for (const b of roster) {
           if (b === m || b.dead || b.type === 'the_fang' || !MONSTER_DEFS[b.type]) continue;
@@ -438,33 +417,25 @@
           if (dist(b.x, b.y, player.x, player.y) > 12 * TILE) continue;
           const i = monsters.indexOf(b); if (i >= 0) monsters.splice(i, 1);
         }
-        const marks = [], nop = () => { };
-        const rec = new Proxy({}, { get: (t, k) => k === 'measureText' ? (() => ({ width: 10 }))
-          : k === 'fillText' ? ((s, tx, ty) => { marks.push({ s, x: Math.round(tx), y: Math.round(ty) }); })
-          : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: nop }))
-          : typeof k === 'string' ? nop : undefined, set: () => true });
-        const leftBack = HUD.leftY;
-        HUD.leftY = 82; drawBossBars(rec, HUD_LAYOUT.bossBarY);      // the core draws its bars first, every frame
-        // The bars now claim their rows from the HUD kit's left-column cursor (src/59-hudkit.js), so "under
-        // the core bar" is asked of the cursor itself rather than of a pinned 48 px bar height — the same
-        // intent, but it cannot drift out of date the next time a bar changes shape.
-        const barsBottom = HUD.leftY;
-        const nBar = marks.length, barred = marks.some(t => /^CINDERWIGHT\b/.test(t.s));
-        const barHp = marks.some(t => /^\d+ \/ \d+$/.test(t.s));   // the core bar shows the wight's hit points
-        const wightHp = `${Math.ceil(m.hp)} / ${m.maxHp}`;
-        const hrt = heartOf(m), heartHp = hrt ? `${Math.ceil(hrt.hp)} / ${hrt.maxHp}` : null;
-        CINDERWIGHT.panel(rec);
-        HUD.leftY = leftBack; monsters.length = 0; for (const b of roster) monsters.push(b);
-        const mine = marks.slice(nBar);
-        const top = mine.length ? Math.min(...mine.map(t => t.y)) : -1;
-        const hpLines = mine.filter(t => t.s === wightHp).length;   // the panel must not repeat what the bar shows
+        const raw = hudBosses(), twins = raw.filter(b => b.key === m).length;
+        HK.FRAME.bosses = raw; const L = HK.layout();
+        const mine = HK.FRAME.bosses.filter(b => b.key === m), bb = mine[0] || {};
+        const marks = [], rec = HK.audit.fitCtx(marks);
+        HK.drawBosses(rec, L);
+        const slots = L.boss.length, kept = HK.FRAME.bosses.length;
+        monsters.length = 0; for (const b of roster) monsters.push(b);
+        HK.FRAME.bosses = [];
+        const wightHp = `${Math.ceil(m.hp)} / ${m.maxHp}`, hrt = heartOf(m), heartHp = hrt ? `${Math.ceil(hrt.hp)} / ${hrt.maxHp}` : null;
+        // a string drawn with a drop shadow is painted twice (the shadow, 1 px down, then the ink): count the ink only
+        const ink = marks.filter(t => !/^rgba\(0, ?0, ?0/.test(t.fill));
+        const names = ink.filter(t => t.s === 'CINDERWIGHT').length, hps = ink.filter(t => t.s === wightHp).length;
+        const said = ink.some(t => t.s === 'Break the heart'), heartShown = !!heartHp && ink.some(t => t.s === 'HEART ' + heartHp || t.s === heartHp);
         let clash = null;
         for (let i = 0; i < marks.length && !clash; i++) for (let j = i + 1; j < marks.length && !clash; j++)
-          if (marks[i].x === marks[j].x && marks[i].y === marks[j].y) clash = [marks[i].s, marks[j].s, marks[i].x, marks[i].y];
-        check(P + 'its HUD panel stacks under the core boss bar: nothing overprints, and it does not repeat the hit points the bar already shows',
-          barred && barHp && mine.length >= 2 && !clash && top >= barsBottom && hpLines === 0
-          && mine.some(t => /BREAK THE HEART/.test(t.s)) && !!heartHp && mine.some(t => t.s === heartHp),
-          { bossBarTexts: nBar, bossBarDrewWight: barred, bossBarShowedHp: barHp, panelTexts: mine.map(t => [t.s, t.x, t.y]), panelTopY: top, barsBottom, wightHp, heartHp, repeatedHpLines: hpLines, clash }); }
+          if (Math.round(marks[i].x) === Math.round(marks[j].x) && Math.round(marks[i].y) === Math.round(marks[j].y) && marks[i].s !== marks[j].s) clash = [marks[i].s, marks[j].s, marks[i].x, marks[i].y];
+        check(P + 'one boss banner, not two: the core lists the wight and so does this file, and the kit keeps this file\'s entry in its place — the name once, its hit points once, "Break the heart", and the heart\'s own numbers',
+          twins === 2 && mine.length === 1 && kept === 1 && slots === 1 && bb.sub === 'Break the heart' && !!bb.heart && bb.mark === 'skull' && names === 1 && hps === 1 && said && heartShown && !clash,
+          { twins, kept, slots, sub: bb.sub, heart: bb.heart, names, hps, said, heartShown, wightHp, heartHp, texts: ink.map(t => t.s), clash }); }
       // 4b. while it burns: 14 hp a second back, and the ash scalds
       if (heart) {
         m.hp = 300; const before = m.hp; F.sim(60, []); const healed = m.hp - before;

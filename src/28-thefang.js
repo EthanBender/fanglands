@@ -470,22 +470,17 @@
       if (USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
-  // boss bar: under the HP box while the dragon is alive and within 12 tiles
-  // MIGRATED to the HUD kit (src/59-hudkit.js): the same boss chip the core draws, so a dragon and a grave
-  // zombie do not get two different bars. Which element the dragon is wearing is real information, so it is
-  // still shown — but as a WORD in the label, not as a fourth, fifth and sixth outline colour. Red means
-  // danger here as it does everywhere else; an ice dragon is not a different kind of danger.
-  HOOKS.hud.push((g, narrow) => {
-    const m = fang(); if (!m || m.dead || dist(m.x, m.y, player.x, player.y) > 12 * TILE) return;
-    const C = EL[m.element || 'fire'], pad = 10;
-    const s = HK.slot(pad * 2 + HK.meterH());
-    HK.plate(g, s.x, s.y, s.w, s.h, { tone: HK.C.BAD });
-    HK.meter(g, s.x + pad + 2, s.y + pad, s.w - pad * 2 - 2, {
-      label: 'THE FANG · ' + C.name.toUpperCase() + (m.element === 'stone' ? ' · WAIT IT OUT' : ''),
-      value: `${Math.ceil(m.hp)} / ${m.maxHp}`, template: `${m.maxHp} / ${m.maxHp}`,
-      frac: clamp(m.hp / m.maxHp, 0, 1), tone: HK.C.BAD,
-    });
-  });
+  // boss banner: while the dragon is alive and within 12 tiles, in the kit's boss slots (src/59-hudkit.js hudBoss).
+  // The core's own list leaves the Fang out, so this adds a banner rather than replacing one. Which element the dragon
+  // is wearing is real information, so it is the banner's right-hand word (FIRE / ICE / STORM / STONE) instead of a
+  // fourth, fifth and sixth outline colour; red still means danger. In stone it heals, so the banner says what to do.
+  function fangBoss() {
+    const m = fang(); if (!m || m.dead || dist(m.x, m.y, player.x, player.y) > 12 * TILE) return null;
+    const el = EL[m.element] ? m.element : 'fire';
+    return { key: m, mark: 'fang', name: 'THE FANG', lv: MONSTER_DEFS.the_fang.level, hp: Math.max(0, Math.ceil(m.hp)), max: m.maxHp,
+      phase: EL[el].name.toUpperCase(), sub: el === 'stone' ? 'Wait it out' : null };
+  }
+  hudBoss(fangBoss);
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -542,6 +537,12 @@
     { m.element = 'stone'; m.elemT = 0; m.hp = 600; F.sim(60, []); const regen = m.hp >= 607 && m.hp <= 609, hard = MONSTER_DEFS.the_fang.maxHit === 48;
       floaters.length = 0; m.stoneTip = 0; hitMonster(m, 5); const tip = floaters.some(f => /Stone skin/.test(f.text));
       m.element = 'fire'; F.sim(1, []); check('fang: stone — regenerates 8 hp/s, bites at 1.5× (max hit 48), tells you to wait it out', regen && hard && tip && MONSTER_DEFS.the_fang.maxHit === 32, { hp: m.hp, hard, tip }); }
+    // its boss banner (src/59-hudkit.js hudBoss): exactly one, the element as its word, "Wait it out" while it is stone
+    { F.tp(18, 114); m.x = tc(18); m.y = tc(118); m.dead = false; const got = {};
+      for (const el of ['fire', 'stone']) { m.element = el; HK.FRAME.bosses = hudBosses(); HK.layout(); const mine = HK.FRAME.bosses.filter(q => q.key === m); got[el] = { n: mine.length, phase: mine[0] && mine[0].phase, sub: mine[0] && mine[0].sub, mark: mine[0] && mine[0].mark, slots: HK.cur().boss.length }; }
+      m.element = 'fire'; HK.FRAME.bosses = [];
+      check('fang: one boss banner with the tooth, the element as its word (FIRE, then STONE) and "Wait it out" only while it is stone',
+        got.fire.n === 1 && got.fire.phase === 'FIRE' && !got.fire.sub && got.fire.mark === 'fang' && got.stone.n === 1 && got.stone.phase === 'STONE' && got.stone.sub === 'Wait it out' && got.fire.slots >= 1, got); }
     // the kill
     { quest.stage = 14; fq.slain = false; F.tp(18, 114); player.facing = { x: 0, y: 1 }; m.dead = false; m.hp = 1; m.element = 'fire'; m.elemT = 0; m.state = 'idle'; m.stunT = 0; drops = drops.filter(dd => dd.id !== 'fang_of_the_fang');
       for (let i = 0; i < 150 && !m.dead; i++) { m.x = player.x; m.y = player.y + 70; m.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); }

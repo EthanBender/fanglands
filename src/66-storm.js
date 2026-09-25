@@ -392,20 +392,25 @@
   });
 
   // ---------- what the bird is doing, in words, for the player who is running ----------
-  HOOKS.hud.push((g, narrow) => {
-    if (!inStorm()) return;
-    const m = bird(); if (!m) return;
+  // It is urgent, so it takes a BOSS SLOT in the kit (src/59-hudkit.js hudBoss): top centre on a computer and a landscape
+  // iPad, the quest scroll's slot on a phone and a portrait iPad (the quest rolls into plaque slot 1). The bird is a real
+  // monster with hit points, so it is the key: the core's generic "Thunderbird" banner is replaced by this one, never
+  // shown beside it. Perched = a gold edge and "hit it now"; in the cloud or hunting = a sky-blue edge and "keep moving".
+  const STORM_BLUE = 'rgba(158,203,255,0.85)';
+  function birdBoss() {
+    if (!inStorm()) return null;
+    const m = bird(); if (!m) return null;
     const perch = m.phase === 'perch', high = m.phase === 'high';
-    const label = perch ? 'PERCHED ON THE MAST — HIT IT NOW' : high ? 'IN THE CLOUD — KEEP MOVING' : 'HUNTING — KEEP MOVING';
-    const col = perch ? '#ffe066' : '#9ecbff';
-    const w = narrow ? Math.min(VW - 28, 250) : 268, h = 26, x = Math.round(VW / 2 - w / 2), y = narrow ? 96 : 60;
-    roundRect(g, x, y, w, h, 8); g.fillStyle = 'rgba(10,14,22,0.82)'; g.fill(); g.strokeStyle = col; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = col; g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.fillText(label, x + w / 2, y + 17);
-  });
+    const b = { mark: 'bird', name: 'THE STORM BIRD', lv: MONSTER_DEFS.thunderbird.level, edge: perch ? HK.T.gold : STORM_BLUE,
+      sub: perch ? 'On the mast: hit it now' : high ? 'In the cloud: keep moving' : 'Hunting: keep moving' };
+    if (typeof m.hp === 'number' && m.maxHp > 0) Object.assign(b, { key: m, hp: Math.max(0, Math.ceil(m.hp)), max: m.maxHp });
+    return b;
+  }
+  hudBoss(birdBoss);
 
   window.STORM = {
     ST, DECK, VOID, MAST, UPDRAFT, DOWNDRAFT, ENTRY, UP_T, DOWN_T, MASTS, BIRD_HOME, HUNT_FOR, HIGH_FOR, PERCH_FOR, MEM, WARN, BOLT_R, BOLT_DMG,
-    inStorm, bird, shrine, toAerie, callBolt, setPhase, memoryPoint, state: StQ,
+    inStorm, bird, shrine, toAerie, callBolt, setPhase, memoryPoint, state: StQ, boss: birdBoss,
     get trail() { return trail; }, get strikes() { return strikes; },
   };
 
@@ -604,6 +609,18 @@
         m.hp = m.maxHp; setPhase(m, 'hunt'); m.phaseT = -1e5;
         check(P + 'the Thunderbird cannot be hit while it is in the cloud, and takes double damage while it is perched on a mast a knight can reach',
           refused && onMast && doubled && reached, { refused, onMast, doubled, reached, swings }); } }
+
+    // ---------- its boss banner: one, gold "hit it now" on the mast, sky blue "keep moving" otherwise ----------
+    { const m = bird();
+      if (!m) check(P + 'the storm bird takes one boss slot (never a second, generic one): gold "On the mast: hit it now" while perched, blue "Hunting: keep moving" / "In the cloud: keep moving" otherwise', false, { bird: false });
+      else {
+        const bx = m.x, by = m.y, ph = m.phase; m.x = player.x + 60; m.y = player.y;
+        const look = p => { m.phase = p; HK.FRAME.bosses = hudBosses(); HK.layout(); const mine = HK.FRAME.bosses.filter(q => q.key === m || q.mark === 'bird' || /thunderbird/i.test(q.name)); return { n: mine.length, sub: mine[0] && mine[0].sub, edge: mine[0] && mine[0].edge, name: mine[0] && mine[0].name, hp: mine[0] && mine[0].hp }; };
+        const perch = look('perch'), hunt = look('hunt'), high = look('high');
+        m.x = bx; m.y = by; m.phase = ph; HK.FRAME.bosses = [];
+        check(P + 'the storm bird takes one boss slot (never a second, generic one): gold "On the mast: hit it now" while perched, blue "Hunting: keep moving" / "In the cloud: keep moving" otherwise',
+          [perch, hunt, high].every(q => q.n === 1 && q.name === 'THE STORM BIRD' && q.hp === Math.ceil(m.hp)) && perch.sub === 'On the mast: hit it now' && perch.edge === HK.T.gold
+          && hunt.sub === 'Hunting: keep moving' && high.sub === 'In the cloud: keep moving' && hunt.edge !== HK.T.gold && high.edge === hunt.edge, { perch, hunt, high }); } }
 
     // ---------- the storm remembers a wounded bird ----------
     { const m = bird();

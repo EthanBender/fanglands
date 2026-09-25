@@ -19,7 +19,7 @@
 //   a plaque        HOOKS.hud.push(g => { if (on) HK.addPlaque(g, { emblem:'skull', name:'GRAVES 3', right:'risen 1', sub:'Dusk', edge:HK.T.warn }); });
 //   a seat face     hudSeatFace('ctx', { id:'leave', when:() => inDungeon(), emblem:'leave', ribbon:'LEAVE', key:'L', action:leave });
 //   a book tile     hudControl({ id:'music', label:() => 'MUSIC', emblem:'music', key:'N', on:() => enabled, action:toggle });
-//   a boss banner   hudBoss(() => alive ? { mark:'fang', name:'THE FANG', lv:40, hp, max, phase:'FIRE' } : null);
+//   a boss banner   hudBoss(() => alive ? { key:m, mark:'fang', name:'THE FANG', lv:80, hp, max, phase:'STONE', sub:'Wait it out' } : null);
 //   a seal          hudSeal('friends', () => ({ show:true, wax:'blue', badge:'2', action:openFriends }));
 //   a coach line    HK.teach('talk', 'E', 'Talk to Tobin', { x, y })   (world pixels; shown the first 3 times)
 //   a tooltip       give the buttons[] entry { name:'World map', keys:['M'] }
@@ -52,7 +52,10 @@ function hudSeatFace(seat, face) {
 }
 // A seal's live state: hudSeal('friends', () => ({ show, wax:'blue'|'grey'|'umber', badge, action, on, name })).
 function hudSeal(id, fn) { (hudSeal.map = hudSeal.map || {})[id] = fn; return fn; }
-// A boss for the boss banner slots: fn() → null or { id, mark, name, lv, hp, max, phase, sub, heart:{ hp, max } }.
+// A boss for the boss banner slots: fn() → null or { key, mark, name, lv, hp, max, phase, sub, heart:{ hp, max }, edge }.
+// `key` is the monster itself: an entry whose key is a monster the core already lists (level 25+, 300+ hp, 12 tiles)
+// REPLACES that generic banner in place, so one monster never shows twice. `sub` is a short sentence ("Wait it out").
+// hp or max null = a status-only banner (no bar, no numbers: the name and the sub). `edge` recolours the plate's edge.
 function hudBoss(fn) { (hudBoss.list = hudBoss.list || []).push(fn); return fn; }
 
 const HK = (() => {
@@ -1035,9 +1038,15 @@ const HK = (() => {
   }
 
   // ---------- notice ribbon, banners ----------
-  function noticeRibbon(g, r0, msg, alpha = 1, slide = 0) {
+  // o.keys (the computer only): the sentence split into [{ t: 'Press ' }, { k: 'E' }, { t: ' to climb in.' }] by 13-ux's
+  // deskKeys(); each key is drawn as a keycap inside the line. The ribbon grows inside its lane to hold them; when they
+  // cannot fit on one line at 11 px or more the ribbon falls back to the plain sentence (which never cuts a word).
+  const NOTE_CAP = 11, NOTE_CAP_GAP = 3;
+  function keyedWidth(g, segs, f) { let w = 0; for (const q of segs) w += q.k != null ? keycapW(g, q.k, NOTE_CAP) + 2 * NOTE_CAP_GAP : tw(g, q.t, f); return w; }
+  function noticeRibbon(g, r0, msg, alpha = 1, slide = 0, o = {}) {
+    const segs = o && o.keys && o.keys.some(q => q.k != null) ? o.keys : null;
     const tails = 2 * (Math.round(r0.h * 0.7) - 8 + Math.round(r0.h * 0.28));
-    const want = Math.min(r0.w, Math.max(200, tw(g, msg, FS(600, 14)) + 40 + tails));
+    const want = Math.min(r0.w, Math.max(200, (segs ? keyedWidth(g, segs, FS(600, 14)) : tw(g, msg, FS(600, 14))) + 40 + tails));
     const r = { x: Math.round(r0.x + (r0.w - want) / 2), y: r0.y, w: want, h: r0.h };
     const { x, w, h } = r, y = r.y - slide;
     g.save(); g.globalAlpha *= cl(alpha, 0, 1);
@@ -1061,8 +1070,22 @@ const HK = (() => {
       rr(g, ix, y, iw, h, 2); g.strokeStyle = 'rgba(0,0,0,0.9)'; g.stroke();
       g.restore(); g = saveG;
     }, 24);
-    // one line of sans at 14; smaller before it ever wraps; two balanced lines before it is ever cut, and then at a word
     const room = iw - 16;
+    // keycaps inline: one line at 14 px, smaller down to 11 px; if that still does not fit, the plain sentence below
+    if (segs) {
+      let ks = 14; while (ks > 11 && keyedWidth(g, segs, FS(600, ks)) > room) ks -= 0.5;
+      const kf = FS(600, ks), total = keyedWidth(g, segs, kf);
+      if (total <= room) {
+        let px = ix + iw / 2 - total / 2; const base = y + h / 2 + realPx(kf) * 0.36, capH = NOTE_CAP + 10;
+        for (const q of segs) {
+          if (q.k != null) { px += NOTE_CAP_GAP; px += keycap(g, px, Math.round(y + h / 2 - capH / 2 + 1), q.k, NOTE_CAP) + NOTE_CAP_GAP; continue; }
+          px += text(g, q.t, px, base, { font: kf, color: T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x: ix + 8, y, w: room, h }, fitId: 'notice' });
+        }
+        g.restore();
+        return;
+      }
+    }
+    // one line of sans at 14; smaller before it ever wraps; two balanced lines before it is ever cut, and then at a word
     let size = 14, f = FS(600, size), lines = [String(msg)];
     while (size > 11 && tw(g, msg, FS(600, size)) > room) size -= 0.5;
     f = FS(600, size);
@@ -1102,9 +1125,17 @@ const HK = (() => {
   }
 
   // ---------- the boss banner ----------
+  // One plate for every boss, 54-58 px tall wherever it sits (in a taller slot, the scroll's on a phone, it hangs at the top).
+  //   FULL     row 1  NAME (Cinzel; it shrinks first) .......... LV 28 or the phase word (it gives way second)
+  //            row 2  the red bar with its damage trail and "180 / 300" on it
+  //            row 3  only with a sub or a heart: the sub sentence at the left (sans, goldHi; it shrinks, then drops,
+  //                   never cut inside a word), and the amber HEART bar filling the rest of the row
+  //   COMPACT  (two bosses on a phone) NAME and, at the right, the sub if it fits there (else LV / the phase), then the
+  //            bar with "n / max" (and "heart n") on it
+  //   STATUS   (hp or max is null) no bar and no numbers: the name line, then the sub sentence where the bar would be
   function bossBanner(g, r, b) {
-    // a banner is 54-58 px tall wherever it sits; in a taller slot (the scroll's, on a phone) it hangs at the slot's top
     const { x, y, w } = r, h = Math.min(r.h, 58), compact = !!b.compact || h < 44;
+    const status = b.hp == null || b.max == null || !(b.max > 0);
     const rd = compact ? h - 4 : h + 4, rcx = x + rd / 2 - (compact ? 0 : 6), rcy = y + h / 2;
     const mark = b.mark || 'skull';
     // the plate, its edge, the roundel and the boss's mark never change during a fight: drawn once
@@ -1124,42 +1155,105 @@ const HK = (() => {
       emblem(cg, mark, qcx, qcy + 1, rd * 0.62, markCol, { hole: '#17181c' });
       if (mark === 'goblin') for (const q of [-1, 1]) { cg.save(); cg.beginPath(); cg.arc(qcx + q * rd * 0.085, qcy - rd * 0.02, rd * 0.03, 0, TAU); cg.fillStyle = '#ffe56a'; cg.shadowColor = '#ffe56a'; cg.shadowBlur = 6; cg.fill(); cg.restore(); }
     }, 16);
-    const tx = x + rd + (compact ? 4 : 6), rightW = 14;
-    const right = b.phase ? String(b.phase).toUpperCase() : (b.lv != null ? 'LV ' + b.lv : '');
+    const tx = x + rd + (compact ? 4 : 6);
+    const nm = String(b.name || '').toUpperCase(), sub = b.sub ? String(b.sub) : '';
+    const right = b.phase ? String(b.phase).toUpperCase() : (!status && b.lv != null ? 'LV ' + b.lv : '');
+    const rightCol = b.phase ? T.goldHi : '#ff9a86', subCol = T.goldHi, sh = 'rgba(0,0,0,0.9)';
+    const frac = status ? 0 : cl(b.hp / b.max, 0, 1);
+    // "n / max" set on a bar, in Cinzel, haloed so it reads over the red and the dark alike
+    const onBar = (s, cx, by, bh, px, bw0) => text(g, s, cx, by + bh / 2 + Math.round(bh * 0.3), { font: FC(800, px || Math.max(9.5, Math.round(bh * 0.78))), align: 'center', color: T.ink, halo: 3, box: { x: cx - bw0 / 2, y: by, w: bw0, h: bh }, fitId: 'boss:num' });
     if (compact) {
-      // two rows in a short plate: NAME (and LV while it fits), then the bar with "n / max" on it
-      const nm = String(b.name).toUpperCase(), room = x + w - 12 - tx;
-      let nf = Math.min(11.5, Math.round(h * 0.3)); const lv = right ? right : '';
-      const lvW = () => lv ? tw(g, lv, FC(800, Math.max(8, nf - 1))) + 8 : 0;
-      while (nf > 8 && tw(g, nm, FC(800, nf)) + lvW() > room) nf -= 0.5;
-      const showLv = lv && tw(g, nm, FC(800, nf)) + lvW() <= room;
-      const ny = y + nf + 3;
-      text(g, nm, tx, ny, { font: FC(800, nf), color: T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: showLv ? room - lvW() : room, h: nf + 6 }, fitId: 'boss:name' });
-      if (showLv) text(g, lv, x + w - 12, ny, { font: FC(800, Math.max(8, nf - 1)), align: 'right', color: b.phase ? T.goldHi : '#ff9a86', shadow: 'rgba(0,0,0,0.9)' });
+      const room = x + w - 12 - tx;
+      let nf = Math.min(11.5, Math.round(h * 0.3));
+      const rf = n => FC(800, Math.max(8, n - 1)), sf = n => FS(600, Math.max(9.5, n - 1));
+      // the right-hand place: the sub when it fits beside the name, otherwise LV / the phase, otherwise nothing
+      let side = '', sideF = null, sideCol = rightCol, sideId = 'boss:lv';
+      if (sub && !status) {
+        let n2 = nf; const need = n => tw(g, nm, FC(800, n)) + 8 + tw(g, sub, sf(n));
+        while (n2 > 9 && need(n2) > room) n2 -= 0.5;
+        if (need(n2) <= room) { nf = n2; side = sub; sideF = sf(n2); sideCol = subCol; sideId = 'boss:sub'; }
+      }
+      if (!side && right) {
+        const need = n => tw(g, nm, FC(800, n)) + tw(g, right, rf(n)) + 8;
+        while (nf > 8 && need(nf) > room) nf -= 0.5;
+        if (need(nf) <= room) { side = right; sideF = rf(nf); }
+      } else if (!side) { while (nf > 8 && tw(g, nm, FC(800, nf)) > room) nf -= 0.5; }
+      const sideW = side ? tw(g, side, sideF) + 8 : 0, ny = y + nf + 3;
+      text(g, nm, tx, ny, { font: FC(800, nf), color: T.ink, shadow: sh, box: { x: tx, y, w: room - sideW, h: nf + 6 }, fitId: 'boss:name' });
+      if (side) text(g, side, x + w - 12, ny, { font: sideF, align: 'right', color: sideCol, shadow: sh, box: { x: x + w - 12 - sideW + 8, y, w: sideW - 8 + 0.5, h: nf + 6 }, fitId: sideId });
       const bh = Math.max(9, Math.round(h * 0.34)), by = y + h - bh - 4, bw = room;
-      meterBar(g, tx, by, bw, bh, b.hp / b.max, '#d8322b', { ticks: 10, trail: b.trail });
+      if (status) {
+        // no bar and no numbers: the sentence sits where the bar would, and drops rather than lose a word
+        if (sub) {
+          let s = 11; while (s > 9.5 && tw(g, sub, FS(600, s)) > bw) s -= 0.5;
+          const f = FS(600, s);
+          if (tw(g, sub, f) <= bw) text(g, sub, tx, by + bh / 2 + realPx(f) * 0.36, { font: f, color: subCol, shadow: sh, box: { x: tx, y: by - 2, w: bw, h: bh + 4 }, fitId: 'boss:sub' });
+        }
+        return;
+      }
+      meterBar(g, tx, by, bw, bh, frac, '#d8322b', { ticks: 10, trail: b.trail });
       const nt = b.heart ? `${Math.ceil(b.hp)} / ${b.max} · heart ${Math.ceil(b.heart.hp)}` : `${Math.ceil(b.hp)} / ${b.max}`;
-      text(g, nt, tx + bw / 2, by + bh / 2 + Math.round(bh * 0.3), { font: FC(800, Math.max(8.5, Math.round(bh * 0.78))), align: 'center', color: T.ink, halo: 3 });
+      onBar(nt, tx + bw / 2, by, bh, Math.max(8.5, Math.round(bh * 0.78)), bw);
       return;
     }
-    let nf = Math.round(Math.min(16, h * 0.28)); const nm = String(b.name).toUpperCase();
-    const lvf = () => FC(800, Math.max(9, Math.round(nf * 0.8))), room = x + w - 16 - tx;
+    const room = x + w - 16 - tx, bw = x + w - 14 - tx;
+    const third = !status && !!(sub || b.heart);
+    let nf = Math.round(Math.min(third ? 14 : 16, h * (third ? 0.25 : 0.28)));
+    const lvf = () => FC(800, Math.max(9, Math.round(nf * 0.8)));
     // the name shrinks first; if it still meets the level, the level gives way (the name is what a child reads)
     while (nf > 9.5 && tw(g, nm, FC(800, nf)) + (right ? tw(g, right, lvf()) + 14 : 0) > room) nf -= 0.5;
     const showRight = right && tw(g, nm, FC(800, nf)) + tw(g, right, lvf()) + 14 <= room;
-    const ny = y + nf + 7;
-    text(g, nm, tx, ny, { font: FC(800, nf), color: T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: showRight ? room - tw(g, right, lvf()) - 14 : room, h: nf + 8 }, fitId: 'boss:name' });
-    if (showRight) text(g, right, x + w - 16, ny, { font: lvf(), align: 'right', color: b.phase ? T.goldHi : '#ff9a86', shadow: 'rgba(0,0,0,0.9)' });
-    const heartRow = !!b.heart;
-    const bh = Math.round(h * (heartRow ? 0.22 : 0.3)), by = heartRow ? y + h - 2 * bh - 12 : y + h - bh - 9, bw = x + w - 14 - tx;
-    meterBar(g, tx, by, bw, bh, b.hp / b.max, '#d8322b', { ticks: 10, trail: b.trail });
-    text(g, `${Math.ceil(b.hp)} / ${b.max}`, tx + bw / 2, by + bh / 2 + Math.round(bh * 0.3), { font: FC(800, Math.max(9, Math.round(bh * 0.74))), align: 'center', color: T.ink, halo: 3 });
-    if (heartRow) {
-      const hy = by + bh + 4;
-      meterBar(g, tx, hy, bw, bh, b.heart.hp / b.heart.max, '#e8a33d', { hi: '#ffd08a', lo: '#7a4a0e' });
-      text(g, `HEART ${Math.ceil(b.heart.hp)} / ${b.heart.max}`, tx + bw / 2, hy + bh / 2 + Math.round(bh * 0.3), { font: FC(800, Math.max(9, Math.round(bh * 0.74))), align: 'center', color: T.ink, halo: 3 });
-    } else if (b.sub && h >= 50) {
-      // a short instruction under the name, where there is room ("Wait it out", "Break the heart")
+    const ny = y + nf + (third ? 4 : 7), rw = showRight ? tw(g, right, lvf()) + 14 : 0;
+    text(g, nm, tx, ny, { font: FC(800, nf), color: T.ink, shadow: sh, box: { x: tx, y: y, w: room - rw, h: nf + 8 }, fitId: 'boss:name' });
+    if (showRight) text(g, right, x + w - 16, ny, { font: lvf(), align: 'right', color: rightCol, shadow: sh, box: { x: x + w - 16 - rw + 14, y, w: rw - 14 + 0.5, h: nf + 8 }, fitId: 'boss:lv' });
+    if (status) {
+      // no bar, no numbers: the sub sentence fills the plate under the name (smaller before it wraps, two whole-word lines at most)
+      if (!sub) return;
+      const top = ny + 4, avail = y + h - 4 - top;
+      let s = 14, f = FS(600, s), lines = null;
+      for (; ;) {
+        f = FS(600, s);
+        if (tw(g, sub, f) <= bw) { lines = [sub]; break; }
+        if (s > 11) { s -= 0.5; continue; }
+        const wr = wrap(g, sub, bw, 2, f);
+        if (!wr.more && wr.lines.every(l => tw(g, l, f) <= bw) && realPx(f) * 2.2 <= avail + 3) lines = wr.lines;
+        break;
+      }
+      if (!lines) return;
+      const lh = realPx(f) * 1.12, y0 = top + avail / 2 - (lines.length - 1) * lh / 2 + realPx(f) * 0.36;
+      lines.forEach((l, i) => text(g, l, tx, y0 + i * lh, { font: f, color: subCol, shadow: sh, box: { x: tx, y: top, w: bw, h: avail }, fitId: 'boss:sub' }));
+      return;
+    }
+    if (!third) {
+      const bh = Math.round(h * 0.3), by = y + h - bh - 9;
+      meterBar(g, tx, by, bw, bh, frac, '#d8322b', { ticks: 10, trail: b.trail });
+      onBar(`${Math.ceil(b.hp)} / ${b.max}`, tx + bw / 2, by, bh, Math.max(9, Math.round(bh * 0.74)), bw);
+      return;
+    }
+    // three rows: the bar under the name, then the sub and / or the heart
+    const bh = Math.round(h * 0.22), by = ny + 5;
+    meterBar(g, tx, by, bw, bh, frac, '#d8322b', { ticks: 10, trail: b.trail });
+    onBar(`${Math.ceil(b.hp)} / ${b.max}`, tx + bw / 2, by, bh, 0, bw);
+    const ry = by + bh + 3, rh = Math.max(10, y + h - 4 - ry);
+    let subW = 0, heartAsNumber = false;
+    const hn = b.heart ? `${Math.ceil(b.heart.hp)} / ${b.heart.max}` : '', hnF = FC(800, 10);
+    const fitSub = avail => { let sz = 12; while (sz > 9.5 && tw(g, sub, FS(600, sz)) > avail) sz -= 0.5; const f = FS(600, sz); return tw(g, sub, f) <= avail ? f : null; };
+    if (sub) {
+      // with a heart row the sentence leaves the heart bar at least 46 px (room for "40 / 40"); on the narrowest plates
+      // the heart row becomes its amber number instead of a bar; failing both, the sentence drops (it is never cut)
+      let avail = bw - (b.heart ? 46 + 8 : 0), f = fitSub(avail);
+      if (!f && b.heart) { avail = bw - tw(g, hn, hnF) - 10; f = fitSub(avail); heartAsNumber = !!f; }
+      if (f) { subW = tw(g, sub, f); text(g, sub, tx, ry + rh / 2 + realPx(f) * 0.36, { font: f, color: subCol, shadow: sh, box: { x: tx, y: ry, w: avail, h: rh }, fitId: 'boss:sub' }); }
+    }
+    if (b.heart && heartAsNumber) {
+      const nw = tw(g, hn, hnF);
+      text(g, hn, x + w - 14, ry + rh / 2 + 10 * 0.36, { font: hnF, align: 'right', color: T.warn, shadow: sh, box: { x: x + w - 14 - nw - 1, y: ry, w: nw + 2, h: rh }, fitId: 'boss:num' });
+    } else if (b.heart) {
+      // the heart is a countdown to beat, so it is amber: the kit's one meaning for "wait / hurry"
+      const hx = subW ? tx + subW + 8 : tx, hw = x + w - 14 - hx, hy = ry + 1, hh = rh - 2;
+      meterBar(g, hx, hy, hw, hh, cl(b.heart.hp / Math.max(1, b.heart.max), 0, 1), '#e8a33d', { hi: '#ffd08a', lo: '#7a4a0e' });
+      const hf = Math.max(9, Math.round(hh * 0.78)), lab = 'HEART ' + hn;
+      onBar(tw(g, lab, FC(800, hf)) + 10 <= hw ? lab : hn, hx + hw / 2, hy, hh, hf, hw);
     }
   }
 
@@ -1708,7 +1802,29 @@ const HK = (() => {
     bosses: FRAME.bosses.length, dialog: !!(typeof dialog !== 'undefined' && dialog && dialog.cur),
     chat: FRAME.chatLines, plaques: 99,
   });
+  // One banner per monster, two at most. 10-hud's hudBosses() lists the core's big monsters first (key = the monster) and
+  // then every hudBoss() entry; an entry whose key is a monster already listed replaces that entry IN PLACE (a cinderwight
+  // or the storm bird keeps its slot but wears its own name, sub and heart row). hudBosses() caps its list at 2 before this
+  // runs, so a feature's entry can be cut while its generic twin stays: with a full list the features are asked again.
+  function normBosses(list) {
+    const out = [];
+    for (const b of list || []) {
+      if (!b) continue;
+      const i = b.key != null ? out.findIndex(o => o.key === b.key) : -1;
+      if (i >= 0) out[i] = b; else out.push(b);
+    }
+    if (out.length >= 2 && hudBoss.list && hudBoss.list.length) {
+      for (const f of hudBoss.list) {
+        let b = null; try { b = f(); } catch (e) { b = null; }
+        if (!b || b.key == null) continue;
+        const i = out.findIndex(o => o.key === b.key);
+        if (i >= 0) out[i] = b;
+      }
+    }
+    return out.slice(0, 2);
+  }
   function layout(extra) {
+    FRAME.bosses = normBosses(FRAME.bosses);
     const L = layoutFor(VW, VH, Object.assign(liveOpts(), extra || {}));
     FRAME.L = L;
     if (typeof HUD_LAYOUT !== 'undefined') {
@@ -1814,7 +1930,7 @@ const HK = (() => {
   // ---------- plaque slots: HK.slot() / HK.claim() keep the old cursor contract (HUD.leftY) but hand out plaque slots ----------
   const OFF = { x: -4000, y: -4000 };
   function beginPlaques(L, reserveFirst) {
-    FRAME.plaqueRects = L.plaques.slice(); FRAME.overflow = 0; FRAME.plaqueStart = reserveFirst ? 1 : 0;
+    FRAME.plaqueRects = L.plaques.slice(); FRAME.overflow = 0; FRAME.plaqueStart = reserveFirst ? 1 : 0; FRAME.plaqueIds = [];
     HUD.leftCol = 0; HUD.leftY = L.plaques[FRAME.plaqueStart] ? L.plaques[FRAME.plaqueStart].y : L.plaques.length ? L.plaques[L.plaques.length - 1].y + 52 : L.crest.y + L.crest.h + 10;
   }
   function slotAt(h, peek) {
@@ -1837,6 +1953,8 @@ const HK = (() => {
     const born = PLAQ_BORN[key] && t - PLAQ_BORN[key].seen < 600 ? PLAQ_BORN[key].born : t;
     PLAQ_BORN[key] = { born, seen: t };
     plaque(g, r, Object.assign({ alpha: cl((t - born) / 150, 0, 1) }, o));
+    // this frame's plaques by id, in slot order (a check can ask what the column holds)
+    (FRAME.plaqueIds = FRAME.plaqueIds || []).push(key);
     return r;
   }
   const PLAQ_BORN = {};
@@ -2062,7 +2180,8 @@ const HK = (() => {
     const n = Math.min(2, FRAME.bosses.length);
     for (let i = 0; i < n && i < L.boss.length; i++) {
       const b = FRAME.bosses[i], r = L.boss[i];
-      bossBanner(g, r, Object.assign({}, b, { trail: trailFor(b.key || b.name, b.hp / Math.max(1, b.max)) * b.max / Math.max(1, b.max), compact: !!r.compact }));
+      const status = b.hp == null || b.max == null || !(b.max > 0);
+      bossBanner(g, r, Object.assign({}, b, { trail: status ? null : trailFor(b.key || b.name, b.hp / b.max), compact: !!r.compact }));
     }
   }
 
@@ -2158,14 +2277,18 @@ const HK = (() => {
   }
 
   // ---- the notice ribbon, in its fixed lane (slides 8 px and fades in over 150 ms; fades out over 300 ms) ----
-  const NOTE = { text: null, born: 0 };
+  // On the computer a key the sentence names ("Press E to climb in.") is drawn as a keycap: 13-ux's deskKeys() splits the
+  // text, matching only keys the game's own key table lists. On touch nothing changes (touchify already renamed them).
+  const NOTE = { text: null, born: 0, keysFor: null, keys: null };
   function drawNotice(g, L) {
     if (typeof notice === 'undefined' || !notice) { NOTE.text = null; return; }
-    if (notice.text !== NOTE.text) { NOTE.text = notice.text; NOTE.born = now(); }
+    if (notice.text !== NOTE.text) { NOTE.text = notice.text; NOTE.born = now(); NOTE.keysFor = null; }
+    const desk = !touchOn(), kf = (desk ? 'd|' : 't|') + notice.text;
+    if (NOTE.keysFor !== kf) { NOTE.keysFor = kf; NOTE.keys = null; if (desk && typeof deskKeys === 'function') { try { NOTE.keys = deskKeys(notice.text); } catch (e) { NOTE.keys = null; } } }
     const age = (now() - NOTE.born) / 150, a = Math.min(cl(age, 0, 1), cl(notice.t / 0.3, 0, 1));
     const lane = (L.fam === 'phoneP' || L.fam === 'phoneL') && FRAME.bannerOnNotice ? null : L.notice;
     if (!lane) return;
-    noticeRibbon(g, lane, notice.text, a, (1 - cl(age, 0, 1)) * 8);
+    noticeRibbon(g, lane, notice.text, a, (1 - cl(age, 0, 1)) * 8, { keys: NOTE.keys });
   }
   // ---- banners: an area name and the level / event headline, in their lanes (phones: one at a time, in the scroll slot) ----
   function drawBanners(g, L) {
@@ -2648,15 +2771,17 @@ const HUD_AUDIT = (() => {
   }
   // a context that measures text the way the fonts do, a little generously (headless has no fonts; calibrated in Chromium:
   // Cinzel capitals read 5-20% wide, the system sans 0-5% wide), and records nothing else
-  function fitCtx() {
-    let font = '12px sans-serif';
+  // fitCtx(log): pass an array and every fillText lands in it as { s, x, y, font, fill } (a recording context for a check)
+  function fitCtx(log) {
+    let font = '12px sans-serif', fill = '';
     const est = s => { const m = /(\d+(?:\.\d+)?)px/.exec(font), px = m ? +m[1] : 12, cz = /Cinzel/.test(font); let w = 0; for (const ch of String(s)) w += ch === ' ' ? 0.29 : /[A-Z]/.test(ch) ? (cz ? 0.8 : 0.72) : /[0-9]/.test(ch) ? (cz ? 0.64 : 0.61) : /[.,:;'!|il]/.test(ch) ? 0.3 : (cz ? 0.62 : 0.585); return w * px * (/800|700|bold/.test(font) ? 1.04 : 1); };
     const nop = () => { };
     return new Proxy({}, {
       get: (tg, key) => key === 'measureText' ? (s => ({ width: est(s) })) : key === 'font' ? font
         : (key === 'createLinearGradient' || key === 'createRadialGradient') ? (() => ({ addColorStop: nop })) : key === 'createPattern' ? (() => null)
-          : typeof key === 'string' ? nop : undefined,
-      set: (tg, key, v) => { if (key === 'font') font = v; return true; },
+          : key === 'fillText' && log ? ((s, x, y) => { log.push({ s: String(s), x, y, font, fill }); })
+            : typeof key === 'string' ? nop : undefined,
+      set: (tg, key, v) => { if (key === 'font') font = v; else if (key === 'fillStyle') fill = typeof v === 'string' ? v : ''; return true; },
     });
   }
   function fitIssues(where) {
@@ -2738,12 +2863,39 @@ HOOKS.selfTest.push((check, F, h) => {
     for (let i = 0; i < n && i < bossType.length; i++) { const d = MONSTER_DEFS[bossType[i]]; monsters.push({ type: bossType[i], x: player.x + 40 + i * 30, y: player.y + 10, home: { x: player.x + 40, y: player.y }, r: d.r, hp: d.hp * 0.6, maxHp: d.hp, speed: d.speed, angry: false, state: 'idle', wanderT: 9, wander: { x: 0, y: 0 }, attackCd: 9, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0 }); }
   };
   const MECH = { walker: { kind: 'walker', hp: 40, maxHp: 60 }, dozer: { kind: 'dozer', hp: 74, maxHp: 110 }, beast: { kind: 'beast', hp: 240, maxHp: 300 }, horse: { kind: 'horse', hp: 30, maxHp: 40 } };
+  // the bosses that bring their own banner (hudBoss): stand-ins beside the knight, built from the real defs. Only the HUD
+  // is drawn in these checks (no update runs), so a plain monster record is all a banner reads.
+  const mon = (type, dx, dy, fields) => { const d = MONSTER_DEFS[type] || { r: 16, hp: 100, speed: 0 }; return Object.assign({ type, x: player.x + dx, y: player.y + dy, home: { x: player.x + dx, y: player.y + dy }, r: d.r, hp: d.hp, maxHp: d.hp, speed: 0, angry: false, state: 'idle', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 99, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: -1, y: 0 }, walkT: 0, moving: false, stunT: 0 }, fields || {}); };
+  const addFang = el => { if (!MONSTER_DEFS.the_fang) return false; monsters.push(mon('the_fang', 70, -10, { hp: 540, element: el, elemT: 0 })); return true; };
+  const addWight = () => {
+    if (!MONSTER_DEFS.cinderwight || !MONSTER_DEFS.cinder_heart) return null;
+    const w = mon('cinderwight', 60, 0, { hp: 312, coldT: 0 }), hrt = mon('cinder_heart', 110, 0, { hp: 23 });
+    w.heart = hrt; hrt.owner = w; monsters.push(w, hrt); return w;
+  };
+  // the storm (66-storm) and the island (63-house) are instances: entered for real, left straight after the frame
+  const enterStorm = phase => {
+    if (!window.STORM || !window.INSTANCES || !INSTANCES.enter(STORM.ST.id)) return null;
+    dialog.cur = null; dialog.queue.length = 0;
+    const b = STORM.bird(); if (b) { b.phase = phase; b.x = player.x + 60; b.y = player.y - 20; }
+    return b;
+  };
+  const enterIsland = () => {
+    if (!window.HOUSE || !window.INSTANCES) return false;
+    const st = HOUSE.state(), seen = st.seen; st.seen = true;   // no first-visit notice (and no save) from inside a check
+    const ok = HOUSE.enter(); st.seen = seen; dialog.cur = null; dialog.queue.length = 0; return ok && HOUSE.inside;
+  };
+  // a test-only hudBoss (a status-only banner: no hp, no max), live only while PROBE.b is set
+  const PROBE = { b: null }, probeFn = () => PROBE.b;
+  hudBoss(probeFn);
+  const leaveAny = () => { if (window.HOUSE && HOUSE.inside) HOUSE.leave(); if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave(); };
   const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
   const fctx = A.fitCtx();
   const frame = () => { HK.DRAWN.on = true; HK.DRAWN.log.length = 0; drawHud(fctx); HK.DRAWN.on = false; };
   const sigs = new Map(), jumps = [];
   const noteSig = (key, where) => { const s = A.signature(HK.cur()); if (!sigs.has(key)) sigs.set(key, { s, where }); else if (sigs.get(key).s !== s && jumps.length < 6) jumps.push(`${where} vs ${sigs.get(key).where}`); };
   const restoreWorld = () => {
+    PROBE.b = null; { const i = (hudBoss.list || []).indexOf(probeFn); if (i >= 0) hudBoss.list.splice(i, 1); }
+    if (window.INSTANCES && INSTANCES.active()) leaveAny();
     ONL.restore(); HK.setCacheOff(false); HK.FIT.on = false;
     window.__forceTouch = saved.touch; window.__stickRight = saved.stick;
     if (window.SETTINGS) { SETTINGS.set('text', saved.text); SETTINGS.set('minimap', saved.map); }
@@ -2789,7 +2941,7 @@ HOOKS.selfTest.push((check, F, h) => {
     {
       const problems = []; let frames = 0;
       if (window.SETTINGS) { SETTINGS.set('text', 'normal'); SETTINGS.set('minimap', true); }
-      const scenes = ['busy', 'talk', 'no-home', 'walker', 'dozer', 'beast', 'mare', 'dungeon'];
+      const scenes = ['busy', 'talk', 'no-home', 'walker', 'dozer', 'beast', 'mare', 'dungeon', 'fang-fire', 'fang-stone', 'wight', 'bird-perch', 'bird-hunt', 'island'];
       const inst = window.INSTANCES && INSTANCES.list().includes('spider_den') ? 'spider_den' : null;
       for (const [w, hh] of A.SIZES) {
         if (!setSize(w, hh)) continue;
@@ -2804,11 +2956,29 @@ HOOKS.selfTest.push((check, F, h) => {
             if (MECH[sc]) player.mech = { ...MECH[sc] };
             if (sc === 'mare') player.mech = { ...MECH.horse };
             if (sc === 'dungeon') { if (!inst) continue; if (!INSTANCES.active()) INSTANCES.enter(inst); }
-            frame(); frames++;
             const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} stick-${right ? 'right' : 'left'} ${sc}`;
+            // the bosses that bring their own banner, and the two instances with their own plaque and seat
+            if (sc === 'fang-fire' || sc === 'fang-stone') { if (!addFang(sc === 'fang-fire' ? 'fire' : 'stone')) { problems.push(`${where}: no Fang`); continue; } }
+            if (sc === 'wight' && !addWight()) { problems.push(`${where}: no cinderwight`); continue; }
+            if ((sc === 'bird-perch' || sc === 'bird-hunt') && !enterStorm(sc === 'bird-perch' ? 'perch' : 'hunt')) { problems.push(`${where}: the storm did not come up`); leaveAny(); continue; }
+            if (sc === 'island' && !enterIsland()) { problems.push(`${where}: the island did not come up`); leaveAny(); continue; }
+            frame(); frames++;
             for (const p of A.frameIssues(where)) if (problems.length < 40) problems.push(p);
-            if (sc !== 'dungeon' && sc !== 'busy' && sc !== 'talk') noteSig(`${w}x${hh}|${t}|${right}|true|false`, where);
-            if (sc === 'dungeon') { INSTANCES.leave(); }
+            if (sc !== 'dungeon' && sc !== 'busy' && sc !== 'talk' && sc !== 'island' && !/^bird/.test(sc)) noteSig(`${w}x${hh}|${t}|${right}|true|false`, where);
+            // each boss scene shows its one banner, with its words
+            const want = { 'fang-fire': ['THE FANG', 'FIRE', null], 'fang-stone': ['THE FANG', 'STONE', 'Wait it out'], wight: ['CINDERWIGHT', null, 'Break the heart'], 'bird-perch': ['THE STORM BIRD', null, 'On the mast: hit it now'], 'bird-hunt': ['THE STORM BIRD', null, 'Hunting: keep moving'] }[sc];
+            if (want) {
+              const bs = HK.FRAME.bosses, b = bs.find(q => q.name === want[0]);
+              if (!b || bs.length !== 1 || HK.cur().boss.length !== 1) problems.push(`${where}: ${bs.length} banners (${bs.map(q => q.name).join(', ')}) for one boss`);
+              else if ((want[1] && b.phase !== want[1]) || (b.sub || null) !== want[2] || (sc === 'wight' && !b.heart)) problems.push(`${where}: the banner says ${JSON.stringify([b.phase, b.sub, !!b.heart])}`);
+            }
+            if (sc === 'island') {
+              const ctxF = HK.FRAME.faces.ctx;
+              if (!ctxF || (ctxF.id !== 'build' && ctxF.id !== 'leave')) problems.push(`${where}: the ctx seat wears ${ctxF ? ctxF.id : 'nothing'} on the island`);
+              // the island's plaque, or (one slot on an iPhone SE, and a landscape phone with the stick on the right) the +n badge it folds into
+              if (!(HK.FRAME.plaqueIds || []).includes('island') && !(HK.FRAME.overflow > 0)) problems.push(`${where}: no island plaque (${(HK.FRAME.plaqueIds || []).join(', ')})`);
+            }
+            if (sc === 'dungeon' || sc === 'island' || /^bird/.test(sc)) leaveAny();
             if (sc === 'talk' && !buttons.some(b => b.label === 'dialog')) problems.push(`${where}: the talk page is not a tap`);
           }
           // the book, on every page this size has
@@ -2824,7 +2994,7 @@ HOOKS.selfTest.push((check, F, h) => {
         }
       }
       setBosses(0); player.mech = null; dialog.cur = null; levelBanner = null;
-      check(P + 'the scenes pass the same rules at every size, touch and mouse, stick either side: busy (2 bosses, a companion, WANTED and a fine, a level-up, 4 chat lines), the talk page, HOME not set, the walker, bulldozer, Barrelbeast and mare, a dungeon, and the Knight\'s Book (kit, game and keys pages) with everything on its page', frames > 8 * 2 * 2 * 8 && problems.length === 0, { frames, problems: problems.slice(0, 14), total: problems.length });
+      check(P + 'the scenes pass the same rules at every size, touch and mouse, stick either side: busy (2 bosses, a companion, WANTED and a fine, a level-up, 4 chat lines), the talk page, HOME not set, the walker, bulldozer, Barrelbeast and mare, a dungeon, the Fang in FIRE and in STONE ("Wait it out"), a feeding cinderwight (the heart row), the storm bird perched and hunting, your island (its plaque and seat), and the Knight\'s Book (kit, game and keys pages) with everything on its page — each boss with one banner saying its words', frames > 8 * 2 * 2 * 14 && problems.length === 0, { frames, problems: problems.slice(0, 14), total: problems.length });
     }
     // ---------- 6. nothing jumps: every persistent piece has one rect per size and setting, whatever is happening ----------
     check(P + 'nothing jumps: the crest, the ring, the seals, the scroll slot, the plaque slots, the belt, its pouches and BAG, the four seats and the stick keep one rect per size and setting across every scene (bosses, machines, chat, text size)', jumps.length === 0 && sigs.size > 0, { settings: sigs.size, jumps });
@@ -2836,19 +3006,33 @@ HOOKS.selfTest.push((check, F, h) => {
         if (!setSize(w, hh)) continue;
         for (const t of [true, false]) {
           window.__forceTouch = t; window.__stickRight = false;
-          for (const sc of ['busy', 'machine', 'talk']) {
-            setBosses(sc === 'busy' ? 2 : 0); ONL.set(sc !== 'machine', 4); player.mech = sc === 'machine' ? { ...MECH.beast } : null;
+          for (const sc of ['busy', 'machine', 'talk', 'fang', 'wight', 'bird', 'status', 'status2']) {
+            setBosses(sc === 'busy' || sc === 'fang' || sc === 'status2' ? (sc === 'busy' ? 2 : 1) : 0); ONL.set(sc !== 'machine', 4); player.mech = sc === 'machine' ? { ...MECH.beast } : null;
+            // subs on a full banner and on a compact one (the Fang in stone beside a second boss), the heart row, the storm
+            // bird's longest sentence, and a status-only banner alone and beside a second boss
+            if (sc === 'fang') addFang('stone');
+            if (sc === 'wight') addWight();
+            if (sc === 'bird' && !enterStorm('perch')) { problems.push(`${w}x${hh}: the storm did not come up`); continue; }
+            PROBE.b = /^status/.test(sc) ? { mark: 'bird', name: 'THE STORM BIRD', sub: 'In the cloud: keep moving', edge: 'rgba(158,203,255,0.85)' } : null;
             player.companion = sc === 'busy' ? { id: 'sera', hp: 44, maxHp: 60, mode: 'follow', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } } : null;
             player.law = sc === 'busy' ? { wanted: 2, timer: 38, fines: 1 } : null; levelBanner = sc === 'busy' ? { text: 'LEVEL UP', sub: 'Melee 20', t: 3 } : null;
             dialog.cur = sc === 'talk' ? { who: 'Death', text: 'You again. Your pack is in the chest in my house. Cheap things I return for nothing; precious things cost a quarter of their worth.', t: 0 } : null; if (dialog.cur) dialog.shown = dialog.cur.text.length;
             notice = { text: 'That shield can stop a blow. Tap BLOCK as the next one comes in.', t: 2 };
             HK.FIT.on = true; HK.FIT.log.length = 0; drawHud(fc); HK.FIT.on = false; frames++;
             for (const p of A.fitIssues(`${w}x${hh} ${t ? 'touch' : 'mouse'} ${sc}`)) if (problems.length < 30) problems.push(p);
+            // a sub the banner carries is said (on a compact banner it may give way to LV, never be cut)
+            const subs = HK.FRAME.bosses.filter(b => b.sub), said = HK.FIT.log.filter(e => e.id === 'boss:sub').map(e => e.s);
+            const compact = HK.cur().boss.some(r => r.compact);
+            for (const b of subs) if (!compact && !said.join(' ').includes(b.sub) && problems.length < 30) problems.push(`${w}x${hh} ${t ? 'touch' : 'mouse'} ${sc}: "${b.sub}" is not on its banner (${said.join(' | ')})`);
+            for (const s0 of said) if (!subs.some(b => b.sub.split(/\s+/).join(' ').includes(s0)) && problems.length < 30) problems.push(`${w}x${hh} ${sc}: a sub line "${s0}" is not a whole part of its sentence`);
+            // a status-only banner has no bar and no numbers: alone, nothing is set on a boss bar at all
+            if (sc === 'status' && HK.FIT.log.some(e => e.id === 'boss:num' || e.id === 'boss:lv')) problems.push(`${w}x${hh} ${t ? 'touch' : 'mouse'} status: the status-only banner drew numbers`);
+            PROBE.b = null; leaveAny();
           }
         }
       }
       notice = null; dialog.cur = null; levelBanner = null; setBosses(0); player.mech = null; ONL.set(false, 0); if (window.SETTINGS) SETTINGS.set('text', 'normal');
-      check(P + 'text fits at Large: the crest, the scroll, plaques, boss banners, ribbons, the notice, banners, the talk page and the book keep every string inside its plate at every size (names shrink to a floor, sentences wrap, never cut inside a word)', frames === 48 && problems.length === 0, { frames, problems: problems.slice(0, 12), total: problems.length });
+      check(P + 'text fits at Large: the crest, the scroll, plaques, boss banners (their subs, the heart row, a status-only banner, alone and compact beside a second boss), ribbons, the notice, banners, the talk page and the book keep every string inside its plate at every size (names shrink to a floor, sentences wrap, never cut inside a word)', frames === 8 * 2 * 8 && problems.length === 0, { frames, problems: problems.slice(0, 12), total: problems.length });
     }
     // ---------- 8. the seat table: four seats, one face each, the right face in every state ----------
     {
@@ -2942,6 +3126,49 @@ HOOKS.selfTest.push((check, F, h) => {
       HK.FIT.on = true; HK.FIT.log.length = 0; HK.crest(fc, r, variants[1]); HK.crest(fc, r, variants[2]); HK.FIT.on = false;
       const fits = A.fitIssues('crest');
       check(P + 'numbers sit in fields reserved from their widest value: the crest lays out the same for 9 / 110, 999,999 coins and level 99, and a machine at 999 / 999 — and those widest values fit its banner', same && fits.length === 0, { metrics: ms, fits });
+    }
+    // ---------- 13. one monster, one banner: a boss that brings its own banner replaces the core's generic one in place ----------
+    {
+      setSize(390, 844); window.__forceTouch = true; window.__stickRight = false; ONL.set(false, 0); player.mech = null; dialog.cur = null; levelBanner = null;
+      const ink = log => log.filter(e => !/^rgba\(0, ?0, ?0/.test(e.fill)).map(e => e.s);
+      const look = (name) => {
+        const raw = hudBosses(); HK.FRAME.bosses = raw; const L = HK.layout(), log = [];
+        HK.drawBosses(A.fitCtx(log), L);
+        const said = ink(log);
+        return { raw: raw.length, kept: HK.FRAME.bosses.map(b => b.name), slots: L.boss.length, names: said.filter(q => q === name).length, generic: said.filter(q => /^(CINDERWIGHT|THUNDERBIRD)$/.test(q) && q !== name).length, said };
+      };
+      const got = {};
+      // a feeding cinderwight: the core lists it (level 66, 520 hp) and so does 46-cinderwight
+      setBosses(0); const wt = addWight(); got.wight = wt ? look('CINDERWIGHT') : null;
+      // the same wight behind a second big monster, where hudBosses()'s cap of two cuts its own entry: it still wins its slot
+      setBosses(1); if (wt) { monsters.push(wt, wt.heart); got.cut = look('CINDERWIGHT'); got.cut.sub = (HK.FRAME.bosses.find(b => b.key === wt) || {}).sub || null; }
+      // the storm bird (a real Thunderbird in the real storm): the core lists it too (level 40, 340 hp)
+      setBosses(0); const bd = enterStorm('perch'); got.bird = bd ? look('THE STORM BIRD') : null; leaveAny();
+      setBosses(0); HK.FRAME.bosses = [];
+      const ok = !!got.wight && got.wight.raw === 2 && got.wight.kept.length === 1 && got.wight.slots === 1 && got.wight.names === 1 && got.wight.said.includes('Break the heart')
+        && !!got.cut && got.cut.kept.length === 2 && got.cut.names === 1 && got.cut.sub === 'Break the heart'
+        && !!got.bird && got.bird.raw === 2 && got.bird.kept.length === 1 && got.bird.slots === 1 && got.bird.names === 1 && got.bird.generic === 0 && got.bird.said.includes('On the mast: hit it now');
+      check(P + 'one monster, one banner: a feeding cinderwight and the storm bird are each listed twice (the core\'s generic entry and their own) and the kit shows exactly one banner, theirs, in the generic one\'s place — even when the cap of two had cut their own entry', ok, got);
+    }
+    // ---------- 14. a key named in a notice is a keycap on the computer, and plain words on touch ----------
+    {
+      setSize(1280, 800); window.__stickRight = false; setBosses(0); levelBanner = null; if (typeof areaBanner !== 'undefined') areaBanner = null;
+      const paint = t => {
+        window.__forceTouch = t; frame(); notify('Press E to climb in.');
+        const L = HK.cur(), log = [], text0 = notice && notice.text; notice.t = 2;
+        HK.drawNotice(A.fitCtx(log), L);
+        const said = log.filter(e => !/^rgba\(0, ?0, ?0/.test(e.fill));
+        return { text: text0, cap: said.some(e => e.s === 'E' && e.fill === '#2a1d0c'), words: said.map(e => e.s) };
+      };
+      const desk = paint(false), tch = paint(true);
+      const split = typeof deskKeys === 'function' ? {
+        paren: JSON.stringify(deskKeys('Open your pack (I).')), to: JSON.stringify(deskKeys('X to climb out')), none: deskKeys('A goblin drops 3 coins (2).'), fake: deskKeys('Press Z to fly.'),
+      } : null;
+      notice = null; window.__forceTouch = false;
+      const ok = desk.cap && desk.text === 'Press E to climb in.' && desk.words.includes('Press ') && desk.words.includes(' to climb in.') && !desk.words.includes('Press E to climb in.')
+        && !tch.cap && tch.words.length > 0 && !tch.words.includes('E') && !!split && split.paren === '[{"t":"Open your pack "},{"k":"I"},{"t":"."}]'
+        && split.to === '[{"k":"X"},{"t":" to climb out"}]' && split.none === null && split.fake === null;
+      check(P + 'notice keycaps: on the computer "Press E to climb in." is painted with a drawn E keycap (and "(I)", "X to ..." become keycaps too, only for keys the key table lists); on touch the same notice paints no keycap', ok, { desk, touch: tch, split });
     }
   } finally { restoreWorld(); }
 });
