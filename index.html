@@ -22057,7 +22057,7 @@ const HK = (() => {
   }
   // THE KNIGHT'S BOOK (the pause menu): a port of layout.js bookLayout()
   function bookLayoutFor(W, H, o) {
-    o = Object.assign({ touch: true, online: true, page: 'kit', tiles: 12 }, o);
+    o = Object.assign({ touch: true, online: true, page: 'kit', tiles: 12, extraRows: 1 }, o);
     const fam = family(W, H, o.touch), S = insets(W, H, fam, o.touch), M = Mx[fam];
     const L = { VW: W, VH: H, fam, S, M, items: [], knight: { x: -999, y: -999, w: 0, h: 0 }, tiles: [], rows: [], marks: [] };
     const Rr = (id, x, y, w, h, tap) => { const it = { id, k: 'r', x, y, w, h, tap }; L.items.push(it); return it; };
@@ -22071,7 +22071,8 @@ const HK = (() => {
     L.close = Cc('book:close', x + w - cr - 8, y + cr + 8, cr, true);
     const rowH = fam === 'desk' ? 44 : 48;
     const nT = Math.max(12, o.tiles), nRows = Math.ceil(nT / 3);
-    const rows = ['resume', 'settings', 'title', 'newgame'];
+    // Resume, Settings, one row per HOOKS.pauseMenu entry (Title screen is the first), New game
+    const rows = ['resume', 'settings'].concat(Array.from({ length: Math.max(1, o.extraRows) }, (_, i) => i ? 'extra' + i : 'title'), ['newgame']);
     const grid = (gx, gy, gw, gh) => {
       const tw_ = (gw - 2 * 12) / 3, keyH = fam === 'desk' ? 18 : 0;
       const Dd = Math.min(fam === 'phoneL' ? 46 : 56, tw_ - 10, (gh - (nRows - 1) * 8) / nRows - 16 - keyH);
@@ -22685,7 +22686,7 @@ const HK = (() => {
   const bookState = { drawing: false };
   function drawBook(g) {
     const t = touchOn(), tiles = bookTiles();
-    const BL = bookLayoutFor(VW, VH, { touch: t, online: !!(window.NET && NET.enabled), page: BOOK.page, tiles: tiles.length });
+    const BL = bookLayoutFor(VW, VH, { touch: t, online: !!(window.NET && NET.enabled), page: BOOK.page, tiles: tiles.length, extraRows: Math.max(1, HOOKS.pauseMenu.length) });
     FRAME.lastBook = BL;
     if ((BL.onePage && BOOK.page === 'keys') || (!BL.onePage && BOOK.page === 'game') || (BOOK.page === 'keys' && BL.fam !== 'desk')) BOOK.page = 'kit';
     g.fillStyle = 'rgba(6,5,4,0.68)'; g.fillRect(0, 0, VW, VH);
@@ -22715,7 +22716,7 @@ const HK = (() => {
         const row = (label, action, tone) => { const r = R0[i++]; if (r) button(g, r.x, r.y, r.w, r.h, label, action, tone); };
         row('Resume', () => { paused = false; }, '#238636');
         row('Settings', () => { paused = false; openPanel('settings'); }, '#21262d');
-        for (const f of HOOKS.pauseMenu) { const r = R0[i]; if (!r) break; i++; try { f(g, r.x, r.y, r.w, r.h); } catch (e) { } }
+        for (const f of HOOKS.pauseMenu) { const r = R0[i]; if (!r || i >= R0.length - 1) break; i++; try { f(g, r.x, r.y, r.w, r.h); } catch (e) { } }
         const erase = typeof confirmActive === 'function' && confirmActive('newgame');
         const r = R0[R0.length - 1]; if (r) button(g, r.x, r.y, r.w, r.h, erase ? 'Really erase? Tap again' : 'New game (erases save)', () => confirmTap('newgame', newGame), erase ? '#c0392b' : '#8b2e2e');
       };
