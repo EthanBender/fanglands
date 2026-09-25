@@ -33494,10 +33494,11 @@ HOOKS.selfTest.push((check, F, h) => {
   // window.__companionHit); a woken golem pays the normal one. A smashed little golem counts toward your share.
   // =========================================================================
   const NO_BONUS = new Set(['giant_mithril', 'giant_stormstone', 'golemling', 'ginormous_golem']);
-  let bonusWas, bonusOn = false;
-  HOOKS.kill.unshift(m => { if (m && NO_BONUS.has(m.type)) { bonusWas = window.__companionHit; window.__companionHit = true; bonusOn = true; } });
+  let bonusWas, bonusHad = false, bonusOn = false;
+  HOOKS.kill.unshift(m => { if (m && NO_BONUS.has(m.type)) { bonusHad = '__companionHit' in window; bonusWas = window.__companionHit; window.__companionHit = true; bonusOn = true; } });
   HOOKS.kill.push(m => {
-    if (bonusOn) { window.__companionHit = bonusWas; bonusOn = false; }
+    // put the flag back exactly as it was, absent included
+    if (bonusOn) { if (bonusHad) window.__companionHit = bonusWas; else delete window.__companionHit; bonusOn = false; }
     if (m && m.type === 'golemling' && inMine()) { run.life.smashed++; if (!told('smash')) voice("Don't worry. Little golems pull themselves back together later. Golems always do."); }
   });
 
