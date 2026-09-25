@@ -80,7 +80,7 @@
   // =========================================================================
   // 2. paint: ROWS -> tile ids, cell for cell (no rnd, no Math.random), and what each garden or prop cell is
   // =========================================================================
-  const KIND_NAMES = ['', 'hedge', 'tree', 'planter', 'bench', 'pew', 'lamp', 'throne', 'well', 'hearth', 'bellows', 'anvil', 'oven', 'rack', 'stall', 'crate', 'barrel'];
+  const KIND_NAMES = ['', 'hedge', 'tree', 'planter', 'bench', 'pew', 'lamp', 'throne', 'well'];
   const KIND_CODE = {}; KIND_NAMES.forEach((n, i) => { if (n) KIND_CODE[n] = i; });
   const KIND = new Uint8Array(W * H);
   const TID = {};
@@ -167,13 +167,6 @@
     { id: 'merriweather', name: 'Merriweather', at: SP.merriweather, wing: 0.95, look: { tunic: '#9a5a3a', hair: '#c9783a', apron: true, shoulder: '#d9b36a', skin: '#f2d0b5' } },
     { id: 'orla', name: 'Warden Orla', at: SP.orla, wing: 1.05, look: { tunic: '#c9d6ea', hair: '#e8d9a0', woman: true, helm: '#dfe6f0', spear: true, shoulder: '#9ab0d0', skin: '#f0d8c0' } },
     { id: 'brisk', name: 'Warden Brisk', at: SP.brisk, wing: 1.05, look: { tunic: '#c9d6ea', hair: '#5a3a1e', helm: '#dfe6f0', spear: true, shoulder: '#9ab0d0', skin: '#e8c0a0' } },
-    // the Windward Market (review round 3): a seller behind each stall, and two shoppers
-    { id: 'pippa', name: 'Pippa the fruit seller', at: SP.marketFolk[0], wing: 0.95, line: 'Sky-apples and cloudberries! Hauled up on the rope this morning. Smell them. Go on.', look: { tunic: '#d9534f', hair: '#6a3a1e', woman: true, apron: true, shoulder: '#f5c542', skin: '#f2d6bf' } },
-    { id: 'maudie', name: 'Maudie the weaver', at: SP.marketFolk[1], wing: 1.0, line: 'Wing-cloth. So light that if you drop it, it falls up. Hold on tight.', look: { tunic: '#5b9be0', hair: '#c9c9c9', woman: true, shoulder: '#f5e6a8', skin: '#f0d8c0' } },
-    { id: 'plume', name: 'Old Plume the feather seller', at: SP.marketFolk[2], wing: 1.15, line: 'Every feather here fell off somebody. I asked first. Mostly.', look: { tunic: '#e8b84a', hair: '#f4f1ea', beard: true, shoulder: '#ffffff', skin: '#e8c8a8' } },
-    { id: 'crockett', name: 'Crockett the potter', at: SP.marketFolk[3], wing: 0.9, line: 'Tap a pot. Hear it ring? Fired on cloud-fire. It will ring until Tuesday.', look: { tunic: '#5aa86a', hair: '#3a2a1a', apron: true, shoulder: '#c9a36a', skin: '#e0b894' } },
-    { id: 'hazel', name: 'Hazel', at: SP.marketFolk[4], wing: 0.9, line: 'I came for one apple. Now I have eleven things, and no apple.', look: { tunic: '#b07ad9', hair: '#f0c060', woman: true, shoulder: '#ffffff', skin: '#f5dcc8' } },
-    { id: 'tobin', name: 'Tobin', at: SP.marketFolk[5], wing: 0.85, line: 'My wings are moulting, so I am buying feathers to put back in. Do not tell anyone.', look: { tunic: '#7a8a9a', hair: '#8a5a2a', shoulder: '#f5c542', skin: '#f2d0b5' } },
   ];
   for (const p of PEOPLE) { p.x = p.at[0]; p.y = p.at[1]; p.px = tc(p.x); p.py = tc(p.y); p.facing = { x: 0, y: 1 }; p.b = PLAN.inBuilding(p.x, p.y); }
   // Lark: where she stands depends on her story (the maze, then at the knight's heel, then the plaza). She is this
@@ -348,7 +341,6 @@
       case 'orla': say('The Queen will see you. Walk up the red carpet, and do not touch the throne.', who); return;
       case 'brisk': say('I have stood at this door for twenty years. Nobody has ever tried to touch the throne. Please do not be the first.', who); return;
       case 'lark': return talkLark();
-      default: if (p.line) say(p.line, who); return;
     }
   }
   const onBalcony = () => { const a = ptile(), b = SP.balcony; return a.tx >= b.x0 && a.tx <= b.x1 && a.ty >= b.y0 && a.ty <= b.y1; };
@@ -487,25 +479,8 @@
     lamp: ['A sky lamp', `A sky lamp: cloud-fire in glass. Bellweather lights all ${LAMPS_N} of them every evening.`],
     throne: ['The Sky Throne', 'The Sky Throne. The Queen stands in front of it to talk to people. She says a throne is for feasts.'],
     well: ['The Wishing Well', 'The Wishing Well. It goes all the way down through the cloud. Nobody has ever heard a coin land.'],
-    hearth: ['The forge hearth', 'The forge hearth. Halcyon burns real fire in it, carried up from below: dragon scale only laughs at cloud-fire.'],
-    bellows: ['The bellows', 'A great leather bellows. One push and the forge fire roars.'],
-    anvil: ['The cloud-anvil', 'The cloud-anvil: white sky-stone that rings like a bell. Talk to Master Halcyon to forge on it.'],
-    oven: ['The great oven', 'The great oven, glowing with cloud-fire. Tamsin says nothing in it has ever burnt.'],
-    rack: ['A bread rack', 'A rack of loaves, still warm. The honey buns are on the top shelf, out of reach of small hands.'],
-    stall: ['A market stall', 'A market stall.'],
-    crate: ['A crate', 'A crate of goods, hauled up from the Fanglands on a rope.'],
-    barrel: ['A barrel', 'A barrel of rainwater, caught fresh this morning from a passing cloud.'],
   };
-  const TAP_KIND = { hedge: 'Hedge', tree: 'Tree', planter: 'Planter', bench: 'Bench', pew: 'Pew', lamp: 'Lamp', throne: 'Throne', well: 'Well',
-    hearth: 'Hearth', bellows: 'Bellows', anvil: 'Anvil', oven: 'Oven', rack: 'Bread rack', stall: 'Stall', crate: 'Crate', barrel: 'Barrel' };
-  // the four market stalls, each two cells wide (the 'k' cell of 88 and the 'm' cell east of it): what each one sells
-  const STALL_INFO = [
-    { goods: 'fruit', name: 'The fruit stall', canopy: '#e0645a', line: 'Sky-apples, cloudberries and pears, hauled up from the orchards below on a rope.' },
-    { goods: 'cloth', name: 'The cloth stall', canopy: '#4f86d0', line: 'Bolts of wing-cloth in sky blue, gold and rose, woven so light it floats.' },
-    { goods: 'feathers', name: 'The feather stall', canopy: '#e0a93a', line: 'Feathers in jars: white, gold and grey, and one blue one that is not for sale.' },
-    { goods: 'pots', name: 'The pot stall', canopy: '#4f9a62', line: 'Pots, jugs and bowls of white clay, fired on cloud-fire. They ring when you tap them.' },
-  ];
-  const stallAt = (x, y) => { const i = SP.stalls.findIndex(([sx, sy]) => sy === y && (x === sx || x === sx + 1)); return i >= 0 ? Object.assign({ i }, STALL_INFO[i]) : null; };
+  const TAP_KIND = { hedge: 'Hedge', tree: 'Tree', planter: 'Planter', bench: 'Bench', pew: 'Pew', lamp: 'Lamp', throne: 'Throne', well: 'Well' };
   const FOUNTAINS = SP.fountains.map(f => Object.assign({}, f, f.id === 'royal'
     ? { name: 'The Royal Fountain', line: 'The Royal Fountain. The water falls up as much as it falls down.' }
     : { name: 'The Market Fountain', line: 'The Market Fountain. The statue is the first wingwright, holding the first letter.' }));
@@ -566,8 +541,7 @@
   function lineFor(t, x, y) {
     if (t === FOUNTAIN) { const f = fountainAt(x, y); return f ? [f.name, f.line, f] : null; }
     if (t === POND) return ['The Mirror Pond', POND_LINE];
-    if (t === GARDEN || t === PROP) { const k = kindAt(x, y); if (k === 'stall') { const s = stallAt(x, y); return s ? [s.name, s.line] : null; } return k && KIND_LINE[k] ? [KIND_LINE[k][0], KIND_LINE[k][1]] : null; }
-    if (t === T.WIND_STALL) { const s = stallAt(x, y); return s ? [s.name, s.line] : null; }
+    if (t === GARDEN || t === PROP) { const k = kindAt(x, y); return k && KIND_LINE[k] ? [KIND_LINE[k][0], KIND_LINE[k][1]] : null; }
     if (t === SPIRE) { const s = spireAt(x, y); return s ? [s.name, s.line] : null; }
     if (t === TOWER) return ['A wall tower', TOWER_LINE];
     if (t === WALL) return ['The city wall', WALL_LINE];
@@ -576,12 +550,7 @@
     return null;
   }
   // E: a standing person or Lark first (unshifted, ahead of every other feature's E; false unless one of ours is in front) ...
-  // (a market stall's own cell is 88's reed stall tile: its line is the stall's, said here before 88's)
-  HOOKS.use.unshift((t, tx, ty) => {
-    const p = inFront(); if (p) { talk(p); return true; }
-    if (inside() && t === T.WIND_STALL) { const l = lineFor(t, tx, ty); if (l) { say(l[1], l[0]); return true; } }
-    return false;
-  });
+  HOOKS.use.unshift(() => { const p = inFront(); if (!p) return false; talk(p); return true; });
   // ... then the kingdom's own tiles and the gold updraft stones (pushed: 36 and 88 have had their turn, and 88's
   // rideDraft answers false for a stone that is not one of its six) ...
   HOOKS.use.push((t, tx, ty) => {
@@ -601,7 +570,6 @@
       if (p && inside() && (p.kind === 'use' || p.kind === 'walk' || p.kind === 'wall')) {
         const t = p.t;
         if (t === GARDEN || t === PROP) { const k = kindAt(p.tx, p.ty); if (k) return TAP_KIND[k]; }
-        if (t === T.WIND_STALL && stallAt(p.tx, p.ty)) return 'Stall';
         if (t === FOUNTAIN) { const f = fountainAt(p.tx, p.ty); if (f) return f.name.replace(/^The /, ''); }
         if (t === SPIRE) { const s = spireAt(p.tx, p.ty); if (s) return s.name.replace(/^The /, ''); }
         if (t === GATE) { const g = gateAt(p.tx, p.ty); if (g) return g.name.replace(/^The /, ''); }
@@ -785,7 +753,7 @@
   // =========================================================================
   const SS = 2;                                   // patterns and sprites are drawn at 2x, like the core's textures
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const STATS = { frames: 0, curtain: 0, drawn: {}, kerbs: 0, parapets: 0, gates: 0, fountains: 0, awnings: 0, banners: 0, pennants: 0, spires: 0, towers: 0, items: 0, chunks: 0, chunksPainted: 0, roomClips: 0 };
+  const STATS = { frames: 0, curtain: 0, drawn: {}, kerbs: 0, parapets: 0, gates: 0, fountains: 0, awnings: 0, banners: 0, pennants: 0, spires: 0, towers: 0, items: 0, chunks: 0, chunksPainted: 0 };
   const CACHE = {};
   function sprite(key, w, h, ax, ay, fn) {
     let s = CACHE[key];
@@ -830,7 +798,7 @@
   const codeFor = (c, x, y) => (c === '=' || c === 'G') ? (PLAN.roadAt(x, y) ? G_ROAD : inPlaza(x, y) ? G_PLAZA : G_PAVE) : c === '"' ? G_LAWN : c === '*' ? G_BLOOM
     : (c === '_' || c === 'a' || c === 'q' || c === 'c') ? G_MARBLE : c === 'C' ? G_CWALL : c === 'H' ? G_HWALL : c === 'R' ? G_RUG : c === 'D' ? G_DOOR
     : c === '+' ? G_BRIDGE : c === ',' ? G_CLOUD : c === 'u' ? G_UNDER : G_NONE;
-  const OUR_GROUND = '="*G_aqcCHRD+', OUR_PROPS = '#TSFohtpblYwevAVKmXB', THEIR_PROPS = 'sknxr^UPOzfLNg';
+  const OUR_GROUND = '="*G_aqcCHRD+', OUR_PROPS = '#TSFohtpblYw', THEIR_PROPS = 'sknxr^UPOzfLNg';
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const c = PLAN.ROWS[y][x], i = y * W + x; let code = G_NONE;
     VAR[i] = Math.floor(hash(x, y) * 3);
@@ -1046,8 +1014,6 @@
       if (code === G_BRIDGE) drawBridgeRails(g, tx, ty, x, y);
       if (code === G_DOOR) { drawDoorProp(g, tx, ty, false); g.strokeStyle = '#e8c25a'; g.lineWidth = 2; g.strokeRect(x + 7, y + 1, 34, 46); }
       const st = STEPS[tx + ',' + ty]; if (st !== undefined) drawDoorstep(g, tx, ty, st, false);
-      // the shadow a west or east wall throws on the ground east of it (the light comes from the west)
-      if (glyph(tx - 1, ty) === '#' && ty !== 11 && ty !== 61) { const sh = g.createLinearGradient(x, 0, x + 18, 0); sh.addColorStop(0, 'rgba(40,60,100,0.26)'); sh.addColorStop(1, 'rgba(40,60,100,0)'); g.fillStyle = sh; g.fillRect(x, y, 18, 48); }
     }
   }
   // a street's edge, on every side where the next cell is not street (nor a gate or a bridge the street runs on to):
@@ -1231,54 +1197,20 @@
     blit(g, sprite('wallH' + (tx % 2), 48, 68, 0, 10, cg => paintWallH(cg, tx % 2)), tx * TILE, ty * TILE);
     if (BANNERS.has(tx + ',' + ty)) drawBanner(g, tx * TILE + 24, ty * TILE + 16, 38, 16);
   }
-  // The west and east runs (review round 3: they were a thin strip with a gold line down it, and read as a walkway or a
-  // ladder). Now they stand like the north and south walls: the top of the wall is raised WV_RISE px over its foot and
-  // is a little wider than its tile, a paved wall-walk runs between a plain parapet on the city side and merlons on the
-  // outer side (each a raised block with its face and a gold cap, every other 12 px, lined up with the world), the lit
-  // side is to the west, and the ground east of the wall lies in its shadow (drawGroundRow). Where a run ends over open
-  // ground its face shows, in the same brick and gold as the north wall's face.
-  const WV_RISE = 30;
-  function paintWallV(g, cap, outerLeft) {
-    const top = -WV_RISE;
-    g.fillStyle = '#b3a78f'; g.fillRect(-5, top, 58, 48);
-    g.fillStyle = '#dcd3c1'; g.fillRect(-4, top, 56, 48);
-    // the lit west edge and the shaded east edge
-    g.fillStyle = 'rgba(255,255,255,0.45)'; g.fillRect(-4, top, 3, 48);
-    g.fillStyle = 'rgba(60,70,100,0.22)'; g.fillRect(48, top, 4, 48);
-    // the wall-walk: pale flags, the joints staggered so it reads as paving (never as rungs)
-    g.fillStyle = '#efe9de'; g.fillRect(9, top, 30, 48);
-    g.fillStyle = 'rgba(150,135,110,0.18)'; g.fillRect(24, top, 1, 48);
-    for (const [jx, jy] of [[9, 11], [24, 23], [9, 35], [24, 47]]) g.fillRect(jx, top + jy, 15, 1);
-    // the city side: a low plain parapet, lit on top
-    const ix = outerLeft ? 39 : -4, ox = outerLeft ? -4 : 39;
-    g.fillStyle = '#e6decd'; g.fillRect(ix, top, 13, 48);
-    g.fillStyle = 'rgba(255,255,255,0.6)'; g.fillRect(ix + 2, top, 3, 48);
-    g.fillStyle = 'rgba(110,95,70,0.3)'; g.fillRect(outerLeft ? ix : ix + 12, top, 1, 48);
-    // the outer side: the merlons
-    g.fillStyle = '#d2c7b2'; g.fillRect(ox, top, 13, 48);
-    for (const my of [0, 24]) {
-      const y = top + my;
-      g.fillStyle = 'rgba(60,80,120,0.16)'; g.fillRect(ox, y + 16, 13, 6);
-      g.fillStyle = '#f3ede2'; g.fillRect(ox, y - 6, 13, 13);
-      g.fillStyle = '#c9bca3'; g.fillRect(ox, y + 7, 13, 8);
-      g.fillStyle = 'rgba(145,130,105,0.35)'; g.fillRect(ox, y + 10, 13, 1);
-      g.fillStyle = '#f5c542'; g.fillRect(ox, y - 8, 13, 2.5);
+  function paintWallV(g, cap) {
+    g.fillStyle = 'rgba(40,60,100,0.14)'; g.fillRect(44, 0, 9, 48);
+    g.fillStyle = '#d8cebb'; g.fillRect(4, 0, 40, 48);
+    g.fillStyle = '#e9e2d4'; g.fillRect(11, 0, 26, 48);
+    g.fillStyle = 'rgba(145,130,105,0.22)'; for (let r = 0; r < 4; r++) g.fillRect(11, r * 12 + 11, 26, 1);
+    for (let k = 0; k < 4; k += 2) {
+      const my = k * 12;
+      for (const ex of [4, 36]) { g.fillStyle = '#e1d8c6'; g.fillRect(ex, my - 6, 8, 12); g.fillStyle = '#f5c542'; g.fillRect(ex, my - 7, 8, 2); g.fillStyle = '#d8d0c0'; g.fillRect(ex, my + 6, 8, 4); }
     }
-    if (cap) {
-      // the face where the run ends: brick courses, a gold string course, and its shadow on the ground
-      const fy = top + 48;
-      g.fillStyle = 'rgba(40,60,100,0.15)'; g.fillRect(-5, 48, 58, 8);
-      g.fillStyle = '#dad0bd'; g.fillRect(-5, fy, 58, WV_RISE);
-      g.fillStyle = 'rgba(145,130,105,0.28)'; for (let r = 0; r < 3; r++) { const yy = fy + 3 + r * 10; g.fillRect(-5, yy + 9, 58, 1); for (let c = 0; c < 3; c++) g.fillRect(-5 + ((r % 2) ? 12 : 0) + c * 24, yy, 1, 9); }
-      g.fillStyle = '#e8c25a'; g.fillRect(-5, fy, 58, 3);
-    }
+    if (cap) { g.fillStyle = '#e2dbcd'; g.fillRect(4, 34, 40, 14); g.fillStyle = '#e8c25a'; g.fillRect(4, 33, 40, 2); g.fillStyle = 'rgba(40,60,100,0.15)'; g.fillRect(4, 48, 40, 8); }
   }
   function drawWallV(g, tx, ty) {
-    const cap = !wallish(tx, ty + 1), outerLeft = tx < W / 2;
-    const s = sprite('wallV' + (cap ? 1 : 0) + (outerLeft ? 'w' : 'e'), 64, 48 + WV_RISE * 2 + 20, 6, WV_RISE + 12, cg => paintWallV(cg, cap, outerLeft));
-    // a run that starts at a gate (the Postern) starts at the gate's edge, not over the door
-    if (glyph(tx, ty - 1) === 'G') { g.save(); g.beginPath(); g.rect(tx * TILE - 10, ty * TILE, TILE + 20, TILE + WV_RISE + 12); g.clip(); blit(g, s, tx * TILE, ty * TILE); g.restore(); }
-    else blit(g, s, tx * TILE, ty * TILE);
+    const cap = !wallish(tx, ty + 1);
+    blit(g, sprite('wallV' + (cap ? 1 : 0), 56, 64, 0, 8, cg => paintWallV(cg, cap)), tx * TILE, ty * TILE);
   }
 
   // ---------- the towers: nineteen, each with a pennant ----------
@@ -1624,17 +1556,8 @@
     pew: () => sprite('pew', 48, 28, 24, 22, paintPew),
     throne: () => sprite('throne', 100, 100, 50, 88, paintThrone),
     well: () => sprite('well', 64, 80, 32, 72, paintWell),
-    bellows: () => sprite('bellows', 56, 50, 28, 42, paintBellows),
-    anvil: () => sprite('anvil', 64, 60, 30, 52, paintAnvil),
-    rack: () => sprite('rack', 48, 80, 24, 74, paintRack),
-    crate: () => sprite('crate', 48, 44, 22, 38, paintCrate),
-    barrel: () => sprite('barrel', 44, 50, 20, 44, paintBarrel),
   };
   function drawKind(g, k, tx, ty) {
-    // the hearth and the oven are two cells wide: drawn once, from the west cell; a stall's east cell is drawn with its stall
-    if (k === 'hearth') { if (kindAt(tx - 1, ty) !== 'hearth') drawHearth(g, tx, ty); return; }
-    if (k === 'oven') { if (kindAt(tx - 1, ty) !== 'oven') drawOven(g, tx, ty); return; }
-    if (k === 'stall') return;
     if (k === 'hedge') return drawHedge(g, tx, ty);
     if (k === 'tree') return drawTree(g, tx, ty);
     if (k === 'lamp') return drawLamp(g, tx, ty);
@@ -1682,46 +1605,12 @@
     bowl(g, 0, -70, 12, 4.5);
     g.fillStyle = '#f5c542'; g.beginPath(); g.arc(0, -78, 4.5, 0, 7); g.fill(); goldWing(g, 2, -84, 9); g.save(); g.translate(0, -84); g.scale(-1, 1); goldWing(g, 2, 0, 9); g.restore();
   }
-  // the first wingwright, holding the first letter up to the wind (review round 3: it was a white box with hair-line
-  // wings; now a winged figure in pale grey stone, outlined and shaded so it stands out against the white basin)
   function paintWingwright(g) {
-    const STONE = '#eceae4', SHADE = '#c3c9d4', LINE = '#7d879b';
-    // the plinth: round, gold-banded, standing in the water
-    g.fillStyle = 'rgba(40,60,100,0.25)'; g.beginPath(); g.ellipse(4, -2, 20, 6, 0, 0, 7); g.fill();
-    g.fillStyle = '#d4d8e0'; g.fillRect(-15, -22, 30, 20); g.fillStyle = '#b9c0cc'; g.fillRect(4, -22, 11, 20);
-    g.fillStyle = STONE; g.beginPath(); g.ellipse(0, -22, 15, 5, 0, 0, 7); g.fill(); g.strokeStyle = LINE; g.lineWidth = 1; g.stroke();
-    g.fillStyle = '#e8c25a'; g.fillRect(-15, -14, 30, 3);
-    // the wings, spread wide and up, feather by feather
-    for (const sd of [-1, 1]) {
-      g.save(); g.translate(sd * 6, -60); g.scale(sd, 1);
-      const F = [[0.2, 44], [-0.12, 46], [-0.45, 44], [-0.78, 38], [-1.1, 30]];
-      for (let k = F.length - 1; k >= 0; k--) {
-        const [a, L] = F[k], ex = Math.cos(a) * L, ey = Math.sin(a) * L - 8;
-        g.fillStyle = k % 2 ? STONE : '#f7f6f2'; g.beginPath(); g.moveTo(0, 2); g.quadraticCurveTo(ex * 0.45, ey * 0.45 - 12, ex, ey); g.quadraticCurveTo(ex * 0.6 + 4, ey * 0.6 + 6, 2, 12); g.closePath(); g.fill();
-        g.strokeStyle = LINE; g.lineWidth = 1; g.stroke();
-      }
-      g.fillStyle = SHADE; g.beginPath(); g.moveTo(0, 2); g.quadraticCurveTo(10, -6, 18, -4); g.quadraticCurveTo(10, 4, 2, 12); g.closePath(); g.fill();
-      g.restore();
-    }
-    // the robe, falling to the plinth, shaded on its east side
-    g.fillStyle = STONE; g.beginPath(); g.moveTo(-7, -66); g.lineTo(7, -66); g.lineTo(12, -24); g.lineTo(-12, -24); g.closePath(); g.fill();
-    g.fillStyle = SHADE; g.beginPath(); g.moveTo(2, -66); g.lineTo(7, -66); g.lineTo(12, -24); g.lineTo(4, -24); g.closePath(); g.fill();
-    g.strokeStyle = LINE; g.lineWidth = 1; g.beginPath(); g.moveTo(-7, -66); g.lineTo(7, -66); g.lineTo(12, -24); g.lineTo(-12, -24); g.closePath(); g.stroke();
-    g.strokeStyle = 'rgba(125,135,155,0.6)'; for (const fx of [-5, 0, 5]) { g.beginPath(); g.moveTo(fx * 0.5, -58); g.lineTo(fx * 1.6, -25); g.stroke(); }
-    g.fillStyle = '#e8c25a'; g.fillRect(-8, -52, 16, 2.5);
-    // the lowered arm, and the raised arm holding the first letter
-    g.strokeStyle = LINE; g.lineWidth = 5.5; g.lineCap = 'round'; g.beginPath(); g.moveTo(-6, -62); g.lineTo(-10, -44); g.moveTo(6, -63); g.lineTo(13, -78); g.lineTo(12, -92); g.stroke();
-    g.strokeStyle = STONE; g.lineWidth = 3.5; g.beginPath(); g.moveTo(-6, -62); g.lineTo(-10, -44); g.moveTo(6, -63); g.lineTo(13, -78); g.lineTo(12, -92); g.stroke(); g.lineCap = 'butt';
-    // the head, hair bound up, looking up at the letter
-    g.fillStyle = STONE; g.beginPath(); g.arc(0, -73, 7, 0, 7); g.fill(); g.strokeStyle = LINE; g.lineWidth = 1; g.stroke();
-    g.fillStyle = SHADE; g.beginPath(); g.arc(-1, -79, 5.5, Math.PI, 0); g.fill(); g.beginPath(); g.arc(-4, -80, 3, 0, 7); g.fill();
-    g.fillStyle = 'rgba(125,135,155,0.7)'; g.fillRect(2, -73, 2, 1.3);
-    // the letter: white, sealed in gold, held high
-    g.save(); g.translate(12, -98); g.rotate(0.18);
-    g.fillStyle = '#fffdf6'; g.fillRect(-9, -6, 18, 12); g.strokeStyle = '#a58a3a'; g.lineWidth = 1; g.strokeRect(-9, -6, 18, 12);
-    g.beginPath(); g.moveTo(-9, -6); g.lineTo(0, 1); g.lineTo(9, -6); g.stroke();
-    g.fillStyle = '#e8c25a'; g.beginPath(); g.arc(0, 1, 2.6, 0, 7); g.fill();
-    g.restore();
+    // the first wingwright, holding the first letter
+    g.fillStyle = '#e6dfd1'; g.fillRect(-12, -30, 24, 30); g.fillStyle = '#e8c25a'; g.fillRect(-13, -31, 26, 3);
+    for (const s of [-1, 1]) { g.save(); g.translate(0, -58); g.scale(s, 1); g.fillStyle = '#f7f4ee'; g.beginPath(); g.moveTo(4, 0); g.quadraticCurveTo(22, -16, 28, -34); g.quadraticCurveTo(16, -18, 6, 10); g.closePath(); g.fill(); g.strokeStyle = 'rgba(160,150,130,0.5)'; g.lineWidth = 1; g.stroke(); g.restore(); }
+    g.fillStyle = '#f2eee6'; g.beginPath(); g.ellipse(0, -44, 8, 14, 0, 0, 7); g.fill(); g.beginPath(); g.arc(0, -64, 6, 0, 7); g.fill();
+    g.fillStyle = '#fffaf0'; g.fillRect(5, -58, 10, 7); g.strokeStyle = '#c9a23a'; g.lineWidth = 1; g.strokeRect(5, -58, 10, 7); g.beginPath(); g.moveTo(5, -58); g.lineTo(10, -54); g.lineTo(15, -58); g.stroke();
   }
   function drawFountain(g, f) {
     const cx = (f.x0 + 1.5) * TILE, cy = (f.y0 + 1.5) * TILE, t = time, R = FR, K = FK, royal = f.id === 'royal';
@@ -1736,7 +1625,7 @@
       // the jet, and it arcs up and back
       for (let k = 0; k < 4; k++) { const ph = (t * 1.3 + k / 4) % 1; g.strokeStyle = `rgba(230,246,255,${(0.7 * (1 - ph)).toFixed(3)})`; g.lineWidth = 2.2; g.beginPath(); g.moveTo(cx, cy - 86); g.quadraticCurveTo(cx + (k - 1.5) * 10, cy - 116 - ph * 8, cx + (k - 1.5) * 18, cy - 90 + ph * 12); g.stroke(); }
     } else {
-      blit(g, sprite('wingwright2', 130, 140, 65, 124, paintWingwright), cx, cy);
+      blit(g, sprite('wingwright', 70, 104, 35, 100, paintWingwright), cx, cy);
       // four spouts
       for (let k = 0; k < 4; k++) { const a = Math.PI / 4 + k * Math.PI / 2, sx = cx + Math.cos(a) * 12, sy = cy - 22 + Math.sin(a) * 5, ex = cx + Math.cos(a) * 42, ey = cy + Math.sin(a) * 24; for (let j = 0; j < 2; j++) { const ph = (t * 1.5 + j * 0.5 + k * 0.2) % 1; g.strokeStyle = `rgba(225,244,255,${(0.75 - ph * 0.4).toFixed(3)})`; g.lineWidth = 2.2; g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + ex) / 2, sy - 18 - ph * 4, ex, ey); g.stroke(); } }
     }
@@ -1769,253 +1658,15 @@
     // lily pads, two in flower
     for (let k = 0; k < 7; k++) { const lx = x + 28 + hash(k, 21) * (w - 56), ly = y + 26 + hash(k, 43) * (h - 52), bob = Math.sin(t * 1.2 + k) * 1.2; g.fillStyle = '#4f9a45'; g.beginPath(); g.moveTo(lx, ly + bob); g.arc(lx, ly + bob, 9, 0.35, Math.PI * 2 - 0.1); g.closePath(); g.fill(); g.fillStyle = 'rgba(160,220,120,0.5)'; g.beginPath(); g.arc(lx - 2, ly + bob - 2, 4, 0, 7); g.fill(); if (k % 3 === 0) { g.fillStyle = '#ffb3cf'; for (let q = 0; q < 5; q++) { const a = q / 5 * Math.PI * 2; g.beginPath(); g.ellipse(lx + Math.cos(a) * 3, ly + bob - 3 + Math.sin(a) * 2, 3, 1.8, a, 0, 7); g.fill(); } g.fillStyle = '#ffe066'; g.beginPath(); g.arc(lx, ly + bob - 3, 1.6, 0, 7); g.fill(); } }
   }
-  // ---------- the market: four stalls with their goods, crates and barrels, and bunting over the square ----------
-  // Review round 3: the square was blank flagstone with four empty awnings. Each stall is now two cells wide: a counter
-  // draped in its own colour, its goods on top (fruit, cloth, feathers, pots), posts and a striped canopy high enough
-  // that its seller stands under it, and a sign on the valance. Each is painted once (cached) and blitted.
-  function paintGoods(g, goods) {
-    const r = mulberry32(0x6a11 + goods.length * 17);
-    if (goods === 'fruit') {
-      // three baskets: red sky-apples, green pears, white-and-blue cloudberries
-      [[20, '#d9433f', '#ff8a7a'], [48, '#8fbf3f', '#c8e878'], [76, '#e8f2ff', '#7fb2e8']].forEach(([bx, c1, c2], k) => {
-        g.fillStyle = '#8a5e36'; g.beginPath(); g.ellipse(bx, 4, 14, 7, 0, 0, 7); g.fill();
-        g.fillStyle = '#6b4526'; g.beginPath(); g.ellipse(bx, 2, 12, 5, 0, 0, 7); g.fill();
-        const n = k === 2 ? 14 : 7, rr = k === 2 ? 2.6 : 4.2;
-        for (let i = 0; i < n; i++) { const a = r() * Math.PI * 2, d = r() * 8, fx = bx + Math.cos(a) * d, fy = 0 + Math.sin(a) * d * 0.45 - (i > n / 2 ? 3 : 0);
-          g.fillStyle = c1; g.beginPath(); g.arc(fx, fy, rr, 0, 7); g.fill(); g.fillStyle = c2; g.beginPath(); g.arc(fx - rr * 0.35, fy - rr * 0.35, rr * 0.4, 0, 7); g.fill(); }
-        g.strokeStyle = '#b08a55'; g.lineWidth = 1.2; g.beginPath(); g.ellipse(bx, 4, 14, 7, 0, 0, Math.PI); g.stroke();
-      });
-      g.fillStyle = '#4f8a2e'; for (const [lx, ly] of [[14, -4], [44, -5], [70, -4]]) { g.beginPath(); g.ellipse(lx, ly, 3, 1.6, -0.6, 0, 7); g.fill(); }
-    } else if (goods === 'cloth') {
-      // bolts of wing-cloth lying on the counter, and one length hanging over the front
-      const cols = ['#5b9be0', '#f5c542', '#f29bb8', '#fbf8f0', '#b99be8'];
-      cols.forEach((c, k) => { const bx = 8 + k * 16, by = -6 + (k % 2) * 3;
-        g.fillStyle = shade(c, -0.25); roundRect(g, bx, by, 14, 18, 5); g.fill();
-        g.fillStyle = c; roundRect(g, bx, by, 14, 15, 5); g.fill();
-        g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(bx + 3, by + 2, 3, 11);
-        g.fillStyle = shade(c, -0.35); g.beginPath(); g.ellipse(bx + 7, by + 15, 6, 2.6, 0, 0, 7); g.fill(); });
-      g.fillStyle = '#5b9be0'; g.beginPath(); g.moveTo(58, 10); g.lineTo(74, 10); g.lineTo(76, 34); g.quadraticCurveTo(66, 30, 58, 34); g.closePath(); g.fill();
-      g.fillStyle = '#f5c542'; g.fillRect(58, 26, 18, 2);
-    } else if (goods === 'feathers') {
-      // three glass jars of feathers, and a fan of loose ones
-      [[18, ['#ffffff', '#f4f1ea', '#e8e3d8']], [46, ['#f5c542', '#e8b84a', '#fff0b0']], [74, ['#b9c0cc', '#8f9aad', '#5b9be0']]].forEach(([jx, fc]) => {
-        fc.forEach((c, k) => { const a = -Math.PI / 2 + (k - 1) * 0.42; g.save(); g.translate(jx, -2); g.rotate(a + Math.PI / 2);
-          g.fillStyle = c; g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(-5, -12, 0, -24); g.quadraticCurveTo(5, -12, 0, 0); g.closePath(); g.fill();
-          g.strokeStyle = 'rgba(90,100,120,0.55)'; g.lineWidth = 0.8; g.stroke(); g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -22); g.stroke(); g.restore(); });
-        g.fillStyle = 'rgba(190,225,250,0.85)'; roundRect(g, jx - 8, -4, 16, 16, 4); g.fill();
-        g.strokeStyle = '#7fa6d6'; g.lineWidth = 1.2; roundRect(g, jx - 8, -4, 16, 16, 4); g.stroke();
-        g.fillStyle = 'rgba(255,255,255,0.7)'; g.fillRect(jx - 5, -1, 2, 10);
-      });
-      g.fillStyle = '#fffaf0'; for (let k = 0; k < 4; k++) { g.save(); g.translate(30 + k * 5, 8); g.rotate(-0.3 + k * 0.2); g.beginPath(); g.ellipse(0, 0, 7, 2.2, 0, 0, 7); g.fill(); g.restore(); }
-    } else {
-      // white clay with blue bands: a big pot, a jug, stacked bowls, a small pot
-      const clay = (cx, by, w, h) => { g.fillStyle = '#f4f0e8'; g.beginPath(); g.ellipse(cx, by - h * 0.45, w / 2, h / 2, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(90,110,150,0.18)'; g.beginPath(); g.ellipse(cx + w * 0.12, by - h * 0.4, w * 0.36, h * 0.44, 0, 0, 7); g.fill(); g.strokeStyle = '#8f9aad'; g.lineWidth = 1; g.beginPath(); g.ellipse(cx, by - h * 0.45, w / 2, h / 2, 0, 0, 7); g.stroke(); g.fillStyle = '#3b6fc0'; g.fillRect(cx - w * 0.46, by - h * 0.55, w * 0.92, 2.5); g.fillStyle = '#e6dfd0'; g.beginPath(); g.ellipse(cx, by - h * 0.92, w * 0.28, 2.6, 0, 0, 7); g.fill(); g.fillStyle = '#6b6258'; g.beginPath(); g.ellipse(cx, by - h * 0.92, w * 0.2, 1.6, 0, 0, 7); g.fill(); };
-      clay(18, 12, 24, 26); clay(48, 12, 16, 20);
-      g.strokeStyle = '#f4f0e8'; g.lineWidth = 3; g.beginPath(); g.arc(57, 2, 5, -1.2, 1.4); g.stroke();
-      for (let k = 0; k < 3; k++) { const by = 10 - k * 4; g.fillStyle = k % 2 ? '#e6dfd0' : '#f4f0e8'; g.beginPath(); g.ellipse(76, by, 13 - k, 4, 0, 0, Math.PI); g.lineTo(63 + k, by); g.fill(); g.fillStyle = '#3b6fc0'; g.fillRect(64 + k, by - 1, 24 - 2 * k, 1.5); }
-      clay(88, 12, 10, 12);
-    }
-  }
-  function goodsIcon(g, goods) {
-    if (goods === 'fruit') { g.fillStyle = '#d9433f'; g.beginPath(); g.arc(0, 1, 5, 0, 7); g.fill(); g.fillStyle = '#4f8a2e'; g.beginPath(); g.ellipse(2.5, -4.5, 3, 1.4, -0.6, 0, 7); g.fill(); }
-    else if (goods === 'cloth') { g.fillStyle = '#5b9be0'; roundRect(g, -5, -5, 10, 10, 3); g.fill(); g.fillStyle = '#f5c542'; g.fillRect(-5, -1, 10, 2); }
-    else if (goods === 'feathers') { g.fillStyle = '#e0a93a'; g.beginPath(); g.moveTo(-4, 5); g.quadraticCurveTo(-4, -4, 5, -6); g.quadraticCurveTo(3, 2, -4, 5); g.closePath(); g.fill(); }
-    else { g.fillStyle = '#4f9a62'; g.beginPath(); g.ellipse(0, 1, 5, 5, 0, 0, 7); g.fill(); g.fillRect(-2.5, -6, 5, 3); }
-  }
-  function paintStall(g, info) {
-    const W2 = 96, stripe = info.canopy;
-    g.fillStyle = 'rgba(40,60,100,0.2)'; g.fillRect(4, 40, W2 - 2, 8);
-    // the posts at the back
-    g.fillStyle = '#6b4526'; g.fillRect(6, -74, 4, 70); g.fillRect(W2 - 10, -74, 4, 70);
-    // the counter: its top, then its front, draped in the stall's colour
-    g.fillStyle = '#c9a06a'; g.fillRect(0, -6, W2, 18);
-    g.fillStyle = 'rgba(255,240,210,0.35)'; g.fillRect(0, -6, W2, 2);
-    g.fillStyle = '#8f5f36'; g.fillRect(0, 12, W2, 30);
-    g.fillStyle = 'rgba(40,24,12,0.35)'; for (let k = 1; k < 6; k++) g.fillRect(k * 16, 12, 1.5, 30);
-    g.fillStyle = '#5e3c20'; g.fillRect(0, 40, W2, 3);
-    g.fillStyle = stripe; g.fillRect(0, 10, W2, 9);
-    g.fillStyle = shade(stripe, 0.35); for (let k = 0; k < 8; k++) { g.beginPath(); g.arc(6 + k * 12, 19, 6, 0, Math.PI); g.fill(); }
-    g.fillStyle = stripe; for (let k = 0; k < 8; k++) { g.beginPath(); g.arc(6 + k * 12, 18, 5, 0, Math.PI); g.fill(); }
-    g.fillStyle = '#f5c542'; g.fillRect(0, 9, W2, 2);
-    // the goods
-    g.save(); g.translate(0, -4); paintGoods(g, info.goods); g.restore();
-    // the front posts, and the canopy: stripes, a gold rail, a scalloped valance with the stall's sign in the middle
-    g.fillStyle = '#7a5236'; g.fillRect(1, -62, 5, 104); g.fillRect(W2 - 6, -62, 5, 104);
-    g.fillStyle = '#9a6a3e'; g.fillRect(2, -62, 2, 104); g.fillRect(W2 - 5, -62, 2, 104);
-    g.fillStyle = 'rgba(40,60,100,0.16)'; g.fillRect(-2, -56, W2 + 4, 6);
-    for (let k = 0; k < 8; k++) { g.fillStyle = k % 2 ? '#ffffff' : stripe; g.beginPath(); g.moveTo(-4 + k * 13, -92); g.lineTo(9 + k * 13, -92); g.lineTo(9 + k * 13 + 1, -66); g.lineTo(-4 + k * 13 + 1, -66); g.closePath(); g.fill(); }
-    for (let k = 0; k < 8; k++) { g.fillStyle = k % 2 ? '#ffffff' : stripe; g.beginPath(); g.arc(2.5 + k * 13 + 1, -66, 6.5, 0, Math.PI); g.fill(); }
-    g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(-4, -72, W2 + 8, 6);
-    g.fillStyle = '#e8c25a'; g.fillRect(-5, -94, W2 + 10, 3);
-    g.fillStyle = '#fbf8f0'; g.beginPath(); g.arc(W2 / 2, -79, 10, 0, 7); g.fill(); g.strokeStyle = '#e8c25a'; g.lineWidth = 2; g.stroke();
-    g.save(); g.translate(W2 / 2, -79); goodsIcon(g, info.goods); g.restore();
-  }
+  // ---------- the market: striped awnings over the four stalls, and bunting over the square ----------
   function drawAwning(g, tx, ty) {
-    const i = Math.max(0, SP.stalls.findIndex(([sx, sy]) => sx === tx && sy === ty)), info = STALL_INFO[i];
-    const x = tx * TILE, y = ty * TILE, a = behindAlpha(x - 6, y - 96, x + 102, y + 44, (ty + 1) * TILE - 3);
-    if (a < 1) { g.save(); g.globalAlpha = a; }
-    blit(g, sprite('stall' + i, 112, 150, 8, 100, cg => paintStall(cg, info)), x, y);
-    if (a < 1) g.restore();
+    const x = tx * TILE, y = ty * TILE, fl = Math.sin(time * 2.2 + tx) * 1.2;
+    g.fillStyle = 'rgba(40,60,100,0.18)'; g.fillRect(x - 3, y + 26, 54, 5);
+    for (let k = 0; k < 6; k++) { g.fillStyle = k % 2 ? '#ffffff' : '#5b9be0'; g.beginPath(); g.moveTo(x - 3 + k * 9, y + 2); g.lineTo(x + 6 + k * 9, y + 2); g.lineTo(x + 6 + k * 9 + fl * 0.3, y + 22 + fl); g.lineTo(x - 3 + k * 9 + fl * 0.3, y + 22 + fl); g.closePath(); g.fill(); }
+    for (let k = 0; k < 6; k++) { g.fillStyle = k % 2 ? '#ffffff' : '#5b9be0'; g.beginPath(); g.arc(x + 1.5 + k * 9 + fl * 0.3, y + 22 + fl, 4.5, 0, Math.PI); g.fill(); }
+    g.fillStyle = '#e8c25a'; g.fillRect(x - 4, y, 56, 3);
     STATS.awnings++;
   }
-  function paintCrate(g) {
-    g.fillStyle = 'rgba(40,60,100,0.2)'; g.fillRect(-18, -2, 40, 6);
-    g.fillStyle = '#b0844e'; g.fillRect(-18, -30, 36, 12);
-    g.fillStyle = 'rgba(60,36,16,0.35)'; for (const yy of [-26, -22]) g.fillRect(-18, yy, 36, 1);
-    g.fillStyle = '#946a3a'; g.fillRect(-18, -18, 36, 18);
-    g.fillStyle = 'rgba(60,36,16,0.35)'; for (const yy of [-12, -6]) g.fillRect(-18, yy, 36, 1);
-    g.fillStyle = '#6b4a2a'; g.fillRect(-18, -18, 4, 18); g.fillRect(14, -18, 4, 18); g.fillRect(-18, -30, 36, 2);
-    g.strokeStyle = '#6b4a2a'; g.lineWidth = 2; g.beginPath(); g.moveTo(-14, -2); g.lineTo(14, -16); g.stroke();
-    g.fillStyle = '#d9d0bf'; for (const [nx, ny] of [[-16, -16], [16, -16], [-16, -3], [16, -3]]) { g.beginPath(); g.arc(nx, ny, 1, 0, 7); g.fill(); }
-    goldWing(g, 2, -26, 8, '#f5e6a8');
-  }
-  function paintBarrel(g) {
-    g.fillStyle = 'rgba(40,60,100,0.2)'; g.beginPath(); g.ellipse(3, 0, 18, 6, 0, 0, 7); g.fill();
-    const body = g.createLinearGradient(-15, 0, 15, 0); body.addColorStop(0, '#7a5230'); body.addColorStop(0.4, '#b58450'); body.addColorStop(1, '#6a4526');
-    g.fillStyle = body; g.beginPath(); g.moveTo(-13, -34); g.quadraticCurveTo(-17, -17, -13, 0); g.lineTo(13, 0); g.quadraticCurveTo(17, -17, 13, -34); g.closePath(); g.fill();
-    g.fillStyle = '#5b6474'; for (const yy of [-29, -6]) { g.fillRect(-15, yy, 30, 3); }
-    g.fillStyle = '#c99a62'; g.beginPath(); g.ellipse(0, -34, 13, 5, 0, 0, 7); g.fill();
-    g.fillStyle = '#6fbde9'; g.beginPath(); g.ellipse(0, -34, 10, 3.6, 0, 0, 7); g.fill();
-    g.fillStyle = 'rgba(255,255,255,0.6)'; g.beginPath(); g.ellipse(-3, -35, 4, 1.2, 0, 0, 7); g.fill();
-  }
-
-  // ---------- inside the sky forge: the hearth, the bellows, the cloud-anvil, the tools on the wall ----------
-  // Review round 3: the forge had two pale braziers and a shelf. The hearth stands on the north wall (two cells), with a
-  // hood and a chimney into the wall, a fire of real flame (drawn each frame) and its glow on the floor.
-  function paintHearthBody(g) {
-    // the hood and chimney, in dark sky-stone banded in gold
-    g.fillStyle = '#6f7a8f'; g.fillRect(34, -70, 28, 40);
-    g.fillStyle = '#58627a'; g.beginPath(); g.moveTo(8, -6); g.lineTo(26, -44); g.lineTo(70, -44); g.lineTo(88, -6); g.closePath(); g.fill();
-    g.fillStyle = 'rgba(255,255,255,0.12)'; g.beginPath(); g.moveTo(8, -6); g.lineTo(26, -44); g.lineTo(34, -44); g.lineTo(20, -6); g.closePath(); g.fill();
-    g.fillStyle = '#e8c25a'; g.fillRect(6, -8, 84, 4); g.fillRect(24, -46, 48, 3); g.fillRect(32, -72, 32, 3);
-    // the firebed: stone blocks round a black mouth
-    g.fillStyle = 'rgba(40,40,60,0.25)'; g.fillRect(4, 42, 90, 6);
-    g.fillStyle = '#7d879b'; g.fillRect(2, -4, 92, 46);
-    g.fillStyle = 'rgba(30,34,48,0.35)'; for (let r = 0; r < 4; r++) { g.fillRect(2, -4 + r * 12 + 11, 92, 1); for (let c = 0; c < 5; c++) g.fillRect(2 + ((r % 2) ? 10 : 0) + c * 20, -4 + r * 12, 1, 11); }
-    g.fillStyle = '#9aa3b5'; g.fillRect(2, -4, 92, 4);
-    g.fillStyle = '#1c1512'; g.beginPath(); g.moveTo(18, 42); g.lineTo(18, 16); g.arc(48, 16, 30, Math.PI, 0); g.lineTo(78, 42); g.closePath(); g.fill();
-    g.strokeStyle = '#e8c25a'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(18, 42); g.lineTo(18, 16); g.arc(48, 16, 30, Math.PI, 0); g.lineTo(78, 42); g.stroke();
-  }
-  function drawHearth(g, tx, ty) {
-    const x = tx * TILE, y = ty * TILE, t = time;
-    blit(g, sprite('hearth', 100, 130, 2, 76, paintHearthBody), x, y);
-    // the coals and the flames
-    g.save(); g.beginPath(); g.moveTo(x + 19, y + 41); g.lineTo(x + 19, y + 16); g.arc(x + 48, y + 16, 29, Math.PI, 0); g.lineTo(x + 77, y + 41); g.closePath(); g.clip();
-    const glow = g.createRadialGradient(x + 48, y + 38, 4, x + 48, y + 30, 36); glow.addColorStop(0, 'rgba(255,190,90,0.95)'); glow.addColorStop(1, 'rgba(160,40,10,0.2)');
-    g.fillStyle = glow; g.fillRect(x + 18, y - 14, 60, 56);
-    for (let k = 0; k < 7; k++) { const ph = (t * 1.7 + k * 0.37) % 1, fx = x + 26 + k * 7.5 + Math.sin(t * 6 + k) * 2, h = 18 + Math.sin(t * 9 + k * 1.9) * 6 + (k % 3) * 4;
-      g.fillStyle = k % 2 ? 'rgba(255,120,40,0.9)' : 'rgba(255,170,60,0.95)'; g.beginPath(); g.moveTo(fx - 6, y + 40); g.quadraticCurveTo(fx - 5, y + 40 - h * 0.6, fx + Math.sin(t * 7 + k) * 3, y + 40 - h); g.quadraticCurveTo(fx + 5, y + 40 - h * 0.6, fx + 6, y + 40); g.closePath(); g.fill();
-      g.fillStyle = 'rgba(255,240,180,0.9)'; g.beginPath(); g.moveTo(fx - 3, y + 40); g.quadraticCurveTo(fx, y + 40 - h * 0.55, fx + 3, y + 40); g.closePath(); g.fill(); }
-    g.fillStyle = '#ff9a3a'; for (let k = 0; k < 9; k++) { g.beginPath(); g.arc(x + 24 + k * 6, y + 40 - (k % 2) * 2, 3, 0, 7); g.fill(); }
-    g.restore();
-    // sparks up the chimney, and the glow on the floor in front
-    for (let k = 0; k < 5; k++) { const ph = (t * 0.9 + k / 5) % 1; g.fillStyle = `rgba(255,${200 - Math.floor(ph * 80)},90,${(1 - ph).toFixed(3)})`; g.beginPath(); g.arc(x + 40 + k * 4 + Math.sin(t * 3 + k) * 5, y + 10 - ph * 60, 1.6, 0, 7); g.fill(); }
-    const f = 0.8 + Math.sin(t * 8) * 0.08 + Math.sin(t * 13) * 0.05;
-    const fl = g.createRadialGradient(x + 48, y + 50, 6, x + 48, y + 56, 70); fl.addColorStop(0, `rgba(255,170,70,${(0.32 * f).toFixed(3)})`); fl.addColorStop(1, 'rgba(255,150,60,0)');
-    g.fillStyle = fl; g.beginPath(); g.ellipse(x + 48, y + 60, 72, 30, 0, 0, 7); g.fill();
-  }
-  function paintBellows(g) {
-    g.fillStyle = 'rgba(40,40,60,0.22)'; g.beginPath(); g.ellipse(2, 0, 20, 6, 0, 0, 7); g.fill();
-    g.fillStyle = '#6b4526'; g.fillRect(-16, -12, 4, 12); g.fillRect(12, -12, 4, 12);
-    g.save(); g.translate(0, -18); g.rotate(-0.55);
-    g.fillStyle = '#8a5a34'; g.beginPath(); g.moveTo(-16, -9); g.lineTo(10, -5); g.lineTo(10, 5); g.lineTo(-16, 9); g.closePath(); g.fill();
-    g.fillStyle = '#5e3a1e'; g.beginPath(); g.moveTo(-16, -9); g.lineTo(10, -5); g.lineTo(10, -3); g.lineTo(-16, -6); g.closePath(); g.fill();
-    g.strokeStyle = 'rgba(40,24,12,0.55)'; g.lineWidth = 1; for (let k = 0; k < 4; k++) { g.beginPath(); g.moveTo(-12 + k * 6, -7 + k); g.lineTo(-12 + k * 6, 7 - k); g.stroke(); }
-    g.fillStyle = '#b58450'; g.fillRect(-22, -2, 7, 4);
-    g.fillStyle = '#c9ccd3'; g.beginPath(); g.moveTo(10, -3); g.lineTo(22, -1); g.lineTo(22, 1); g.lineTo(10, 3); g.closePath(); g.fill();
-    g.restore();
-  }
-  function paintAnvil(g) {
-    // the cloud-anvil: white sky-stone on an oak block, a little cloud curled round its foot
-    g.fillStyle = 'rgba(40,40,60,0.22)'; g.beginPath(); g.ellipse(3, 0, 22, 7, 0, 0, 7); g.fill();
-    g.fillStyle = '#7a5236'; g.fillRect(-11, -16, 22, 16); g.fillStyle = '#5e3c24'; g.fillRect(-11, -16, 22, 3);
-    const st = g.createLinearGradient(0, -34, 0, -16); st.addColorStop(0, '#fbfaf6'); st.addColorStop(1, '#c9d3e2');
-    g.fillStyle = st; g.beginPath(); g.moveTo(-20, -34); g.lineTo(14, -34); g.quadraticCurveTo(26, -33, 28, -28); g.quadraticCurveTo(20, -27, 12, -26); g.lineTo(7, -18); g.lineTo(-7, -18); g.lineTo(-10, -26); g.lineTo(-20, -27); g.closePath(); g.fill();
-    g.strokeStyle = '#8f9aad'; g.lineWidth = 1.2; g.stroke();
-    g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillRect(-18, -34, 30, 2);
-    g.fillStyle = '#e8c25a'; g.fillRect(-8, -20, 16, 2);
-    // a hammer resting on it
-    g.save(); g.translate(-4, -38); g.rotate(-0.25); g.fillStyle = '#8a5e36'; g.fillRect(-2, -1, 20, 3); g.fillStyle = '#5b6474'; g.fillRect(-8, -5, 8, 10); g.restore();
-    g.fillStyle = 'rgba(255,255,255,0.85)'; for (const [cx, cy, rr] of [[-14, -2, 6], [-6, 0, 7], [6, -1, 6], [14, -3, 5]]) { g.beginPath(); g.arc(cx, cy, rr, 0, 7); g.fill(); }
-  }
-  // the tools on the forge's north wall, east of the door: a rack with hammers, tongs and a file
-  const FORGE_TOOLS = { x: 57, y: 52, w: 3 };
-  const BAKERY_COUNTERS = PLAN.scan('c').filter(([x, y]) => { const b = PLAN.inBuilding(x, y); return !!b && b.id === 'aer_bakery'; });
-  function drawForgeTools(g) {
-    const x = FORGE_TOOLS.x * TILE + 6, y = FORGE_TOOLS.y * TILE + 8, w = FORGE_TOOLS.w * TILE - 12;
-    g.fillStyle = 'rgba(40,40,60,0.2)'; g.fillRect(x + 3, y + 30, w, 5);
-    g.fillStyle = '#8a5e36'; g.fillRect(x, y, w, 8); g.fillStyle = '#6b4526'; g.fillRect(x, y + 6, w, 2);
-    g.fillStyle = '#e8c25a'; for (let k = 0; k < 7; k++) g.fillRect(x + 8 + k * 20, y + 3, 2.5, 2.5);
-    const tool = (tx0, kind) => {
-      g.save(); g.translate(x + tx0, y + 6);
-      if (kind === 'hammer') { g.fillStyle = '#8a5e36'; g.fillRect(-1.5, 0, 3, 22); g.fillStyle = '#5b6474'; g.fillRect(-7, 20, 14, 8); g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(-7, 20, 14, 2); }
-      else if (kind === 'tongs') { g.strokeStyle = '#4a5162'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(-3, 0); g.lineTo(-1, 26); g.lineTo(-5, 32); g.moveTo(3, 0); g.lineTo(1, 26); g.lineTo(5, 32); g.stroke(); }
-      else if (kind === 'file') { g.fillStyle = '#8a5e36'; g.fillRect(-2, 0, 4, 9); g.fillStyle = '#7d879b'; g.fillRect(-2.5, 9, 5, 18); }
-      else { g.fillStyle = '#8a5e36'; g.fillRect(-1.5, 0, 3, 18); g.fillStyle = '#5b6474'; g.beginPath(); g.moveTo(-9, 18); g.lineTo(9, 18); g.lineTo(5, 26); g.lineTo(-5, 26); g.closePath(); g.fill(); }
-      g.restore();
-    };
-    tool(14, 'hammer'); tool(38, 'tongs'); tool(60, 'file'); tool(82, 'hammer2'); tool(104, 'tongs'); tool(122, 'hammer');
-  }
-
-  // ---------- inside the Cloud Oven: the great oven, the bread racks, loaves on the counter ----------
-  function paintOvenBody(g) {
-    g.fillStyle = 'rgba(40,40,60,0.22)'; g.fillRect(4, 40, 90, 7);
-    // the chimney pipe out through the wall
-    g.fillStyle = '#9a8f80'; g.fillRect(60, -64, 14, 40); g.fillStyle = '#e8c25a'; g.fillRect(58, -66, 18, 3);
-    // the dome of warm brick on a stone base
-    g.fillStyle = '#d9d0bf'; g.fillRect(0, 22, 96, 20); g.fillStyle = 'rgba(145,130,105,0.35)'; for (let c = 1; c < 6; c++) g.fillRect(c * 16, 22, 1, 20); g.fillRect(0, 31, 96, 1);
-    g.fillStyle = '#e8c25a'; g.fillRect(0, 21, 96, 2);
-    const dome = g.createLinearGradient(0, -34, 0, 22); dome.addColorStop(0, '#e79a62'); dome.addColorStop(1, '#b25a30');
-    g.fillStyle = dome; g.beginPath(); g.moveTo(4, 22); g.bezierCurveTo(4, -40, 92, -40, 92, 22); g.closePath(); g.fill();
-    g.strokeStyle = 'rgba(110,50,24,0.45)'; g.lineWidth = 1;
-    for (let r = 0; r < 4; r++) { const yy = 14 - r * 11, half = 44 - r * r * 3.2; g.beginPath(); g.moveTo(48 - half, yy); g.lineTo(48 + half, yy); g.stroke(); for (let c = -2; c <= 2; c++) { const bx = 48 + c * 16 + (r % 2) * 8; if (Math.abs(bx - 48) < half - 4) { g.beginPath(); g.moveTo(bx, yy); g.lineTo(bx, yy - 11); g.stroke(); } } }
-    g.fillStyle = 'rgba(255,230,190,0.35)'; g.beginPath(); g.ellipse(30, -6, 14, 8, -0.4, 0, 7); g.fill();
-    // the mouth, arched and gold-edged
-    g.fillStyle = '#2a1812'; g.beginPath(); g.moveTo(28, 22); g.lineTo(28, 10); g.arc(48, 10, 20, Math.PI, 0); g.lineTo(68, 22); g.closePath(); g.fill();
-    g.strokeStyle = '#e8c25a'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(28, 22); g.lineTo(28, 10); g.arc(48, 10, 20, Math.PI, 0); g.lineTo(68, 22); g.stroke();
-    // a peel leaning on it
-    g.save(); g.translate(88, 36); g.rotate(-0.35); g.fillStyle = '#b58450'; g.fillRect(-2, -46, 4, 40); g.beginPath(); g.ellipse(0, -52, 7, 9, 0, 0, 7); g.fill(); g.restore();
-  }
-  function drawOven(g, tx, ty) {
-    const x = tx * TILE, y = ty * TILE, t = time;
-    blit(g, sprite('oven', 100, 120, 2, 70, paintOvenBody), x, y);
-    // the glow inside the mouth, a loaf baking, the glow on the floor
-    const f = 0.85 + Math.sin(t * 3.1) * 0.1;
-    g.save(); g.beginPath(); g.moveTo(x + 29, y + 22); g.lineTo(x + 29, y + 10); g.arc(x + 48, y + 10, 19, Math.PI, 0); g.lineTo(x + 67, y + 22); g.closePath(); g.clip();
-    const gl = g.createRadialGradient(x + 48, y + 18, 2, x + 48, y + 12, 26); gl.addColorStop(0, `rgba(255,236,160,${f.toFixed(3)})`); gl.addColorStop(0.6, `rgba(255,150,60,${(0.8 * f).toFixed(3)})`); gl.addColorStop(1, 'rgba(160,50,20,0.5)');
-    g.fillStyle = gl; g.fillRect(x + 28, y - 10, 40, 34);
-    g.fillStyle = '#c9803a'; g.beginPath(); g.ellipse(x + 48, y + 18, 10, 4.5, 0, 0, 7); g.fill(); g.fillStyle = '#e8a860'; g.beginPath(); g.ellipse(x + 46, y + 16.5, 5, 2, 0, 0, 7); g.fill();
-    g.restore();
-    const fl = g.createRadialGradient(x + 48, y + 44, 4, x + 48, y + 52, 60); fl.addColorStop(0, `rgba(255,190,100,${(0.3 * f).toFixed(3)})`); fl.addColorStop(1, 'rgba(255,170,80,0)');
-    g.fillStyle = fl; g.beginPath(); g.ellipse(x + 48, y + 56, 62, 24, 0, 0, 7); g.fill();
-    // steam from the loaf
-    for (let k = 0; k < 3; k++) { const ph = (t * 0.5 + k / 3) % 1; g.fillStyle = `rgba(255,255,255,${(0.5 * (1 - ph)).toFixed(3)})`; g.beginPath(); g.arc(x + 44 + k * 5 + Math.sin(ph * 5 + k) * 3, y - 12 - ph * 26, 3 + ph * 6, 0, 7); g.fill(); }
-  }
-  function loaf(g, x, y, s, kind) {
-    if (kind === 'bun') { g.fillStyle = '#c98a40'; g.beginPath(); g.arc(x, y, 4.6 * s, 0, 7); g.fill(); g.fillStyle = '#f0c070'; g.beginPath(); g.arc(x - 1.2 * s, y - 1.4 * s, 2 * s, 0, 7); g.fill(); g.fillStyle = '#fff4d0'; g.fillRect(x - 2 * s, y - 0.4 * s, 4 * s, 0.9 * s); return; }
-    if (kind === 'long') { g.fillStyle = '#c68b45'; g.beginPath(); g.ellipse(x, y, 13 * s, 3.8 * s, 0, 0, 7); g.fill(); g.strokeStyle = '#f0c880'; g.lineWidth = 1.2; for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(x + k * 6 * s - 2, y + 1.5); g.lineTo(x + k * 6 * s + 2, y - 1.5); g.stroke(); } return; }
-    g.fillStyle = '#b87838'; g.beginPath(); g.ellipse(x, y, 8 * s, 5.5 * s, 0, 0, 7); g.fill();
-    g.fillStyle = '#e0a860'; g.beginPath(); g.ellipse(x - 1, y - 1.5 * s, 6 * s, 3.4 * s, 0, 0, 7); g.fill();
-    g.strokeStyle = '#8a5424'; g.lineWidth = 1; for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(x + k * 3.4 * s - 1.5, y + 1); g.lineTo(x + k * 3.4 * s + 1.5, y - 3); g.stroke(); }
-  }
-  function paintRack(g) {
-    g.fillStyle = 'rgba(40,40,60,0.22)'; g.fillRect(-18, -2, 40, 6);
-    g.fillStyle = '#7a5236'; g.fillRect(-19, -62, 4, 62); g.fillRect(15, -62, 4, 62);
-    g.fillStyle = '#9a6a3e'; for (const sy of [-60, -40, -20, -4]) g.fillRect(-19, sy, 38, 4);
-    g.fillStyle = '#e8c25a'; g.fillRect(-19, -62, 38, 2);
-    // honey buns on top, round loaves, long loaves at the bottom
-    for (let k = 0; k < 4; k++) loaf(g, -12 + k * 8, -64, 0.8, 'bun');
-    for (let k = 0; k < 3; k++) loaf(g, -10 + k * 10, -45, 0.62, 'round');
-    loaf(g, -2, -25, 0.95, 'long'); loaf(g, 1, -29, 0.85, 'long');
-    for (let k = 0; k < 3; k++) loaf(g, -10 + k * 10, -9, 0.62, 'round');
-  }
-  function drawCounterLoaves(g, tx, ty) {
-    const x = tc(tx), y = ty * TILE + 18;
-    g.fillStyle = '#8a5e36'; g.beginPath(); g.ellipse(x - 6, y + 2, 11, 5, 0, 0, 7); g.fill(); g.fillStyle = '#6b4526'; g.beginPath(); g.ellipse(x - 6, y + 1, 9, 3.6, 0, 0, 7); g.fill();
-    for (let k = 0; k < 4; k++) loaf(g, x - 11 + (k % 2) * 8, y - 1 - Math.floor(k / 2) * 3, 0.6, 'bun');
-    loaf(g, x + 10, y, 0.7, 'round');
-  }
-
   function drawBunting(g) {
     const [a, b] = SP.bunting, x0 = tc(a[0]), x1 = tc(b[0]), y = a[1] * TILE + 6, top = y - 58;
     for (const px of [x0, x1]) { g.fillStyle = '#f3efe6'; g.fillRect(px - 2, top, 4, 58); g.fillStyle = '#f5c542'; g.beginPath(); g.arc(px, top - 2, 3.5, 0, 7); g.fill(); }
@@ -2227,35 +1878,12 @@
     const x = b.x * TILE, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
     const a = behindAlpha(x, y - riseOf(b), x + w, y + h, (b.y + b.h) * TILE - 1);
     g.save(); if (a < 1) g.globalAlpha = a;
-    // the knight is in another building with its roof off: nothing of this one is drawn over that room
-    const room = roomOf(); if (room && room !== b && b.y + b.h > room.y) { g.beginPath(); g.rect(x - 240, y - 640, w + 480, h + 900); roomRect(g, room); g.clip('evenodd'); STATS.roomClips++; }
     if (b.id === 'aer_keep') drawKeep(g, b, x, y, w, h);
     else if (b.id === 'aer_chapel') drawChapel(g, b, x, y, w, h);
     else drawHall(g, b, x, y, w, h);
     g.restore();
   }
   { const _drawBuilding = drawBuilding; drawBuilding = function (g, b) { return (b && b.kingdom) ? drawKingBuilding(g, b) : _drawBuilding(g, b); }; }
-
-  // ---------- the room the knight stands in ----------
-  // Review round 3: the Great Gate's towers stood inside Halcyon's Sky Forge and the house aer_h4 once the roof lifted,
-  // because a tall thing south of a room is drawn after the room's floor and reaches up over it. While the knight stands
-  // in a kingdom building, every tall thing of this file whose foot is outside that building (and every other kingdom
-  // building) is drawn with the building's rectangle cut out of it, so the room reads whole.
-  function roomOf() { if (!inside() || player.dead) return null; const a = ptile(), b = buildingAt(a.tx, a.ty); return b && b.kingdom ? b : null; }
-  const roomRect = (g, b) => g.rect(b.x * TILE, b.y * TILE, b.w * TILE, b.h * TILE);
-  const inRoom = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
-  function clipRooms(g, items, n0, c) {
-    const room = roomOf(); if (!room) return 0;
-    let n = 0;
-    for (let i = n0; i < items.length; i++) {
-      const it = items[i]; if (!it.tall || inRoom(room, it.tall[0], it.tall[1]) || it.y < room.y * TILE) continue;
-      const d = it.draw;
-      it.draw = () => { g.save(); g.beginPath(); g.rect(c.x - 6 * TILE, c.y - 14 * TILE, VW + 12 * TILE, VH + 28 * TILE); roomRect(g, room); g.clip('evenodd'); try { d(); } finally { g.restore(); } };
-      it.roomClip = room.id; n++;
-    }
-    STATS.roomClips += n;
-    return n;
-  }
 
   // ---------- people: wings, a person, the name when you are close ----------
   function wings(g, scale, flap, tone) {
@@ -2371,9 +1999,9 @@
       const row = PLAN.ROWS[ty];
       for (let tx = x0; tx <= x1; tx++) {
         const ch = row[tx];
-        if (ch === '#') { if (ARCH_STUBS.has(tx + ',' + ty)) continue; const horiz = ty === 11 || ty === 61; items.push({ y: (ty + 1) * TILE - 2, tall: [tx, ty], draw: () => horiz ? drawWallH(g, tx, ty) : drawWallV(g, tx, ty) }); continue; }
+        if (ch === '#') { if (ARCH_STUBS.has(tx + ',' + ty)) continue; const horiz = ty === 11 || ty === 61; items.push({ y: (ty + 1) * TILE - 2, draw: () => horiz ? drawWallH(g, tx, ty) : drawWallV(g, tx, ty) }); continue; }
         const k = KIND_NAMES[KIND[ty * W + tx]];
-        if (k) { if (k !== 'stall') items.push({ y: (ty + 1) * TILE - (k === 'hedge' ? 3 : 6), tall: [tx, ty], kind: k, draw: () => drawKind(g, k, tx, ty) }); continue; }
+        if (k) { items.push({ y: (ty + 1) * TILE - (k === 'hedge' ? 3 : 6), draw: () => drawKind(g, k, tx, ty) }); continue; }
         if (ch === 'C') { const b = PLAN.inBuilding(tx, ty); if (b && b.id === 'aer_keep' && tx > b.x && tx < b.x + b.w - 1 && ty > b.y && ty < b.y + b.h - 1) items.push({ y: (ty + 1) * TILE - 8, draw: () => blit(g, sprite('pillar', 40, 90, 20, 80, paintPillar), tc(tx), (ty + 1) * TILE - 8) }); }
         // a wisp is white on white cloud, and an updraft stone pale: a ring of sky-blue on the ground under each, so they read
         else if ((ch === 'W' && window.SKYCITY && tileAt(tx, ty) === SKYCITY.WISP) || (ch === 'U' && royalAt(tx, ty) < 0)) items.push({ y: -1e8 + ty * TILE + 0.8, draw: () => groundRing(g, tx, ty, ch === 'W') });
@@ -2381,24 +2009,21 @@
     }
     // the towers, the spires, the fountains, the pond, the gates
     for (const t of TOWERS) {
-      if (t.kind !== 'gate') { const cx = tc(t.x), cy = tc(t.y); if (vis(c, cx - 80, cy - 215, cx + 80, cy + 60)) items.push({ y: (t.y + 2) * TILE - 2, tall: [t.x, t.y], tower: t.kind, draw: () => drawRoundTower(g, t) }); }
-      else { const x = t.x0 * TILE, y = t.y0 * TILE; if (vis(c, x, y - 170, x + 150, (t.y1 + 1) * TILE + 12)) items.push({ y: (t.y1 + 1) * TILE - 2, tall: [t.x, t.y1], tower: 'gate', draw: () => drawGateTower(g, t) }); }
+      if (t.kind !== 'gate') { const cx = tc(t.x), cy = tc(t.y); if (vis(c, cx - 80, cy - 215, cx + 80, cy + 60)) items.push({ y: (t.y + 2) * TILE - 2, draw: () => drawRoundTower(g, t) }); }
+      else { const x = t.x0 * TILE, y = t.y0 * TILE; if (vis(c, x, y - 170, x + 150, (t.y1 + 1) * TILE + 12)) items.push({ y: (t.y1 + 1) * TILE - 2, draw: () => drawGateTower(g, t) }); }
     }
-    for (const s of SPIRES) { const cx = tc(s.x), by = (s.y + 1) * TILE; if (vis(c, cx - 40, by - 260, cx + 40, by + 12)) items.push({ y: by - 6, spire: s.name, tall: [s.x, s.y], draw: () => drawSpire(g, s) }); }
-    for (const f of FOUNTAINS) { const x = f.x0 * TILE, y = f.y0 * TILE; if (vis(c, x - 10, y - 140, x + 154, y + 160)) items.push({ y: (f.y1 + 1) * TILE - 4, tall: [f.x0, f.y1], draw: () => drawFountain(g, f) }); }
+    for (const s of SPIRES) { const cx = tc(s.x), by = (s.y + 1) * TILE; if (vis(c, cx - 40, by - 260, cx + 40, by + 12)) items.push({ y: by - 6, spire: s.name, draw: () => drawSpire(g, s) }); }
+    for (const f of FOUNTAINS) { const x = f.x0 * TILE, y = f.y0 * TILE; if (vis(c, x - 10, y - 140, x + 154, y + 160)) items.push({ y: (f.y1 + 1) * TILE - 4, draw: () => drawFountain(g, f) }); }
     { const p = SP.pond; if (vis(c, p.x0 * TILE, p.y0 * TILE, (p.x1 + 1) * TILE, (p.y1 + 1) * TILE)) items.push({ y: (p.y1 + 1) * TILE - 40, draw: () => drawPond(g) }); }
     for (const gt of GATES) {
       const xs = gt.cells.map(q => q[0]), ys = gt.cells.map(q => q[1]), gx0 = (Math.min(...xs) - 1) * TILE, gx1 = (Math.max(...xs) + 2) * TILE, gy0 = (Math.min(...ys) - 3) * TILE, gy1 = (Math.max(...ys) + 1) * TILE;
       if (!vis(c, gx0, gy0, gx1, gy1)) continue;
       const f = GATE_DRAW[gt.id], by = gateSortY(gt), topRow = Math.min(...ys);
-      items.push({ y: topRow * TILE + 2, tall: gt.cells[0], draw: () => f(g, gt, 'back') });
-      items.push({ y: by, tall: gt.cells[0], draw: () => f(g, gt, 'front') });
+      items.push({ y: topRow * TILE + 2, draw: () => f(g, gt, 'back') });
+      items.push({ y: by, draw: () => f(g, gt, 'front') });
     }
     // the market's awnings and bunting, the royal updrafts' gold
-    for (const [sx, sy] of SP.stalls) if (vis(c, sx * TILE - 10, sy * TILE - 100, (sx + 2) * TILE + 10, (sy + 1) * TILE + 4)) items.push({ y: (sy + 1) * TILE - 3, tall: [sx, sy], stall: sx, draw: () => drawAwning(g, sx, sy) });
-    // the forge's tools on its north wall, and the loaves on the Cloud Oven's counter (both under the roof until it lifts)
-    if (vis(c, FORGE_TOOLS.x * TILE, FORGE_TOOLS.y * TILE, (FORGE_TOOLS.x + FORGE_TOOLS.w) * TILE, (FORGE_TOOLS.y + 2) * TILE)) items.push({ y: (FORGE_TOOLS.y + 1) * TILE + 1, tools: true, draw: () => drawForgeTools(g) });
-    for (const [bx, by] of BAKERY_COUNTERS) if (vis(c, bx * TILE, by * TILE, (bx + 1) * TILE, (by + 1) * TILE)) items.push({ y: (by + 1) * TILE - 5, loaves: true, draw: () => drawCounterLoaves(g, bx, by) });
+    for (const [sx, sy] of SP.stalls) if (vis(c, sx * TILE - 8, sy * TILE - 8, (sx + 1) * TILE + 8, (sy + 1) * TILE)) items.push({ y: (sy + 1) * TILE - 3, draw: () => drawAwning(g, sx, sy) });
     { const [a, b] = SP.bunting; if (vis(c, a[0] * TILE, a[1] * TILE - 70, (b[0] + 1) * TILE, (a[1] + 1) * TILE)) items.push({ y: 4.8e7, draw: () => drawBunting(g) }); }
     for (const r of ROYAL) if (vis(c, r.t[0] * TILE - 20, r.t[1] * TILE - 40, (r.t[0] + 1) * TILE + 20, (r.t[1] + 1) * TILE)) items.push({ y: (r.t[1] + 1) * TILE - 3, draw: () => drawRoyalRim(g, r) });
     // a kingdom building whose footprint is off the screen while its towers are not: the core culls by footprint
@@ -2425,31 +2050,9 @@
       const p = inFront() || walkerInFront(); if (!p) return;
       g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.arc(p.px, p.py, 22, 0, 7); g.stroke(); g.setLineDash([]);
     } });
-    clipRooms(g, items, n0, c);
     STATS.items = items.length - n0;
   };
   HOOKS.draw.push(drawHook);
-
-  // ---------- the keep, seen whole from its plaza ----------
-  // Review round 3: on a laptop (1280x800), standing on the plaza in front of the keep door, the donjon's cone and the
-  // royal pennant were above the top of the screen. On the plaza in front of the keep the view is nudged up (the knight
-  // stands lower on the screen) just far enough to show the pennant with KEEP_VIEW.margin to spare, never so far that he
-  // goes below KEEP_VIEW.low of the screen's height. The nudge is a function of where he stands: it grows from nothing
-  // (in the hall, where the pennant is already in view) as he walks south, and fades to nothing over three tiles at the
-  // plaza's south, east and west edges, so walking never makes the view jump.
-  const KEEP_VIEW = { top: 0, margin: 16, low: 0.72 };
-  { const b = PLAN.BUILDINGS.find(o => o.id === 'aer_keep'); KEEP_VIEW.top = (b.y + b.h) * TILE - 100 - 40 - 200 - 158; }   // drawKeep: faceY, the donjon, the pennant's staff
-  function keepNudge() {
-    if (!inside() || player.dead) return null;
-    const px = player.x / TILE, py = player.y / TILE;
-    const wx = clamp((px - 38.5) / 3, 0, 1) * clamp((58.5 - px) / 3, 0, 1), wy = clamp((46 - py) / 3, 0, 1);
-    const w = wx * wy; if (w <= 0) return null;
-    const need = (KEEP_VIEW.top - KEEP_VIEW.margin) - (player.y - VH / 2);
-    const dy = Math.max(-VH * (KEEP_VIEW.low - 0.5), Math.min(0, need));
-    return dy < 0 ? { x: 0, y: dy * w } : null;
-  }
-  HOOKS.camera = HOOKS.camera || [];
-  HOOKS.camera.push(keepNudge);
 
   // =========================================================================
   // 10. registers: Lark's feather, the Cloud Oven, the marker, the book, the Voice
@@ -2528,8 +2131,7 @@
     GATES, FOUNTAINS, SPIRES, TOWERS, BANNERS: SP.banners, LIFT, lift: id => LIFT[id], kindAt, paintsGround, paint, painted: () => PAINTED, glyphsOk: () => glyphsOk, maxTile: MAX_TILE,
     queenFirst, Q, talk, talkWalker, inFront, walkerInFront, lineFor, standing, flyTo, useRoyal, WALK_LINES, REFUSE_LINE,
     scene: { start: sceneStart, get t() { return sceneT(); }, get active() { return SCENE.active; }, finish: sceneFinish },
-    stats: STATS, drawHook, drawBuilding: drawKingBuilding, drawCurtain, art: { tower: drawTowerAny, fountain: drawFountain, spire: drawSpire, awning: drawAwning, wallV: drawWallV, wingwright: paintWingwright },
-    STALL_INFO, stallAt, ownsStall: (x, y) => !!stallAt(x, y), roomOf, clipRooms, BAKERY_COUNTERS, FORGE_TOOLS,
+    stats: STATS, drawHook, drawBuilding: drawKingBuilding, drawCurtain, art: { tower: drawTowerAny, fountain: drawFountain, spire: drawSpire, awning: drawAwning },
     arrived, larkFromStage, follow: startFollow, OVEN_MARK: () => OVEN_MARK,
   };
 
