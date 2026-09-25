@@ -177,6 +177,8 @@
     }
     return best && best.p;
   };
+  const OWN_TILES = [T_RBOARD, T_SAWMILL, T_GOODWELL, T_BELL];
+  const rbFacing = PEOPLE_UI.facing(() => { const ft = frontTile(player); if (OWN_TILES.includes(tileAt(ft.tx, ft.ty))) return null; const p = personInFront(); return p ? { px: p.px, py: p.py, name: p.name } : null; });
   const talkTo = p => {
     const done = RB().done.knight; const pool = done && p.after ? p.after.concat(p.lines) : p.lines;
     p.facing = { x: Math.sign(player.x - p.px) || 0, y: Math.sign(player.y - p.py) || 1 };
@@ -231,38 +233,34 @@
   });
 
   // ---------- panel ----------
-  const ROW_H = 62;
-  const perPage = () => Math.max(2, Math.min(PROJECTS.length, Math.floor((VH - 20 - 150) / ROW_H)));
+  // Nell's plan: one vellum row per project, its number and name in Cinzel, Nell's words about it, what it needs as exact
+  // numbers ("Stone 10/20 · Planks 0/4") and a gold bar of what is paid so far; Build on a plate at the right (under the words
+  // on a phone). Rows that do not fit go on pages. The two-tap "Called: Sir / Dame" flip stays a plain toggle.
   let page = 0;
-  HOOKS.panel.rebuild = (g, narrow) => {
-    const r = RB(); const per = perPage(), pages = Math.max(1, Math.ceil(PROJECTS.length / per)); page = clamp(page | 0, 0, pages - 1);
-    const done = PROJECTS.filter(isDone).length;
-    const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : 600, 96 + per * ROW_H + 52, 'Rebuild Hollowford', `Nell's plan · ${done} of ${PROJECTS.length} built${pages > 1 ? ` · page ${page + 1} of ${pages}` : ''}${r.title ? ` · ${r.title}` : ''}`);
-    const fit = (text, maxW) => { let s = text; while (s.length > 8 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s === text ? text : s + '…'; };
-    const bw = narrow ? 96 : 126, textW = w - 36 - bw - 24;
-    PROJECTS.slice(page * per, page * per + per).forEach((p, i) => {
-      const y = py + 66 + i * ROW_H; const dn = isDone(p), av = available(p), frac = dn ? 1 : haveTotal(p) / needTotal(p);
-      const canGive = av && Object.keys(p.cost).some(k => have(p, k) < p.cost[k] && countItem(k) > 0);
-      roundRect(g, px + 18, y, w - 36, ROW_H - 6, 8); g.fillStyle = dn ? 'rgba(126,231,135,0.07)' : av ? 'rgba(88,166,255,0.10)' : 'rgba(255,255,255,0.04)'; g.fill();
-      if (canGive) { g.strokeStyle = 'rgba(126,231,135,0.45)'; g.lineWidth = 1; g.stroke(); }
-      const num = PROJECTS.indexOf(p);
-      g.textAlign = 'left'; g.fillStyle = dn ? '#7ee787' : av ? '#e6edf3' : '#6e7681'; g.font = 'bold 13px sans-serif'; g.fillText(fit(`${num}. ${p.title}`, textW), px + 30, y + 17);
-      g.fillStyle = dn ? '#6e7681' : av ? '#c9d1d9' : '#4b535d'; g.font = 'italic 11px sans-serif'; g.fillText(fit(dn ? p.result : `“${p.blurb}”`, textW), px + 30, y + 32);
-      g.font = '11px sans-serif'; g.fillStyle = dn ? '#4b535d' : av ? '#8b949e' : '#4b535d'; g.fillText(fit(dn ? 'Built' : av ? `Needs: ${costText(p)}` : !unlocked() ? 'Not while the beast walks' : 'Locked: finish the one before it', textW), px + 30, y + 46);
-      // progress bar
-      g.fillStyle = '#2a2f3a'; roundRect(g, px + 30, y + 50, textW, 4, 2); g.fill();
-      if (frac > 0) { g.fillStyle = dn ? '#7ee787' : '#58a6ff'; roundRect(g, px + 30, y + 50, textW * clamp(frac, 0, 1), 4, 2); g.fill(); }
-      const bx = px + w - 18 - bw, by = y + 13;
-      if (dn) {
-        if (p.id === 'knight') { const dame = r.title === 'Dame of Hollowford'; button(g, bx, by, bw, 30, dame ? 'Called: Dame' : 'Called: Sir', () => { r.title = dame ? 'Sir of Hollowford' : 'Dame of Hollowford'; save(); }, '#21262d'); }
-        else button(g, bx, by, bw, 30, 'Built', () => { }, '#2a2f3a', false);
-      }
-      else button(g, bx, by, bw, 30, `Build: ${p.tag}`, () => contribute(p), canGive ? '#238636' : '#2a2f3a', av);
+  const projectRows = () => {
+    const r = RB();
+    return PROJECTS.map((p, num) => {
+      const dn = isDone(p), av = available(p), canGive = av && Object.keys(p.cost).some(k => have(p, k) < p.cost[k] && countItem(k) > 0);
+      const frac = dn ? 1 : haveTotal(p) / needTotal(p);
+      const note = dn ? 'Built' : av ? `Needs: ${costText(p)}` : !unlocked() ? 'Not while the beast walks' : 'Locked: finish the one before it';
+      let verb;
+      if (dn && p.id === 'knight') { const dame = r.title === 'Dame of Hollowford'; verb = { label: dame ? 'Called: Dame' : 'Called: Sir', action: () => { r.title = dame ? 'Sir of Hollowford' : 'Dame of Hollowford'; save(); }, tone: null }; }
+      else if (dn) verb = null;
+      else verb = { label: `Build: ${p.tag}`, action: () => contribute(p), tone: canGive ? 'primary' : null, enabled: av };
+      return {
+        name: `${num}. ${p.title}`, nameColor: dn ? HK.T.good : av ? HK.T.ink : HK.T.inkMute,
+        sub: VH < 500 ? null : dn ? p.result : `“${p.blurb}”`, subColor: av || dn ? HK.T.inkDim : HK.T.inkMute,
+        note, noteColor: dn ? HK.T.good : av ? (canGive ? HK.T.good : HK.T.ink) : HK.T.inkMute,
+        bar: frac, barCol: dn ? HK.T.good : HK.T.gold, edge: canGive ? 'rgba(138,216,131,0.6)' : null, verb,
+      };
     });
-    const fy = py + h - 44;
-    if (pages > 1) { button(g, px + 18, fy, 80, 30, 'Prev', () => { page = Math.max(0, page - 1); }, '#21262d', page > 0); button(g, px + 106, fy, 80, 30, 'Next', () => { page = Math.min(pages - 1, page + 1); }, '#21262d', page < pages - 1); }
-    button(g, px + w - 18 - 100, fy, 100, 30, 'Close', closePanel, '#21262d');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText('Build gives what you carry. Half now, half later is fine.', px + w / 2 - (pages > 1 ? 0 : 40), fy + 20);
+  };
+  HOOKS.panel.rebuild = (g, narrow) => {
+    const r = RB(), done = PROJECTS.filter(isDone).length;
+    PEOPLE_UI.rowsPanel(g, {
+      title: 'Rebuild Hollowford', sub: `Nell's plan · ${done} of ${PROJECTS.length} built${r.title ? ` · ${r.title}` : ''}`,
+      intro: VH < 500 ? null : 'Build gives what you carry. Half now, half later is fine.', rows: projectRows(), want: 620, page, setPage: p => { page = p; },
+    });
   };
 
   // ---------- quest tab ----------
@@ -364,10 +362,11 @@
     for (const p of people()) if (p.px > cam.x - 60 && p.px < cam.x + VW + 60 && p.py > cam.y - 60 && p.py < cam.y + VH + 60) items.push({ y: p.py + 13, draw: () => drawPerson(g, p) });
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 3, draw: () => {
       if (npcInFront()) return;
-      const p = personInFront();
-      if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 20, 0, 7); g.stroke(); g.setLineDash([]); return; }
+      // E answers the board, the sawmill, the well and the bell before the people (HOOKS.use above), so the prompt does too
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      if (t === T_RBOARD || t === T_SAWMILL || t === T_GOODWELL || t === T_BELL) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
+      if (OWN_TILES.includes(t)) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); return; }
+      // the person you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      PEOPLE_UI.brackets(g, rbFacing());
     } });
   });
 
@@ -429,6 +428,21 @@
     { save(); const doneSnap = JSON.stringify(RB().done); const title = RB().title; const diffs = mapDiffs.size;
       quest = { stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }; resetPeople(); const ok = load(); F.sim(2, []);
       check('rebuild: save()/load() keeps the done flags, the title, and the rebuilt tiles (well, house, bell)', ok && JSON.stringify(RB().done) === doneSnap && RB().title === title && mapDiffs.size === diffs && tileAt(WELL_POS.x, WELL_POS.y) === T_GOODWELL && tileAt(BELL_POS.x, BELL_POS.y) === T_BELL && tileAt(127, 69) === T.BED && survivors.length === 3, { ok, done: RB().done, title: RB().title, survivors: survivors.length }); }
+    // the world prompt on Nell in the square, and Nell's plan at every size: all built, a fresh plan, and before the beast falls
+    { closePanel(); drain(); const nell = survivors.find(s => s.name === 'Nell');
+      for (const w of villagers) { w.px = nell.px + 9 * TILE; w.py = nell.py + 9 * TILE; w.dir = null; w.wanderT = 99; }
+      F.tp(Math.floor(nell.px / TILE), Math.floor(nell.py / TILE) + 1); F.face(Math.floor(nell.px / TILE), Math.floor(nell.py / TILE)); render();
+      const r = PEOPLE_UI.auditPrompt({ px: nell.px, py: nell.py, name: 'Nell' }), face = HK.face('use');
+      check('rebuild: facing Nell draws the gold corners on her and a Talk tag beside her (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const rb1 = quest.rebuild, st1 = quest.stage;
+      const a = PEOPLE_UI.auditPanels([
+        { name: 'rebuild, all built', panel: 'rebuild', open: () => { page = 0; openPanel('rebuild'); } },
+        { name: 'rebuild, a fresh plan', panel: 'rebuild', open: () => { quest.rebuild = fresh(); page = 0; openPanel('rebuild'); }, close: () => { quest.rebuild = rb1; } },
+        { name: 'rebuild, page 2', panel: 'rebuild', open: () => { quest.rebuild = fresh(); page = 1; openPanel('rebuild'); }, close: () => { quest.rebuild = rb1; page = 0; } },
+        { name: 'rebuild, before the beast falls', panel: 'rebuild', open: () => { quest.stage = 9; quest.rebuild = fresh(); page = 0; openPanel('rebuild'); }, close: () => { quest.rebuild = rb1; quest.stage = st1; } },
+      ]);
+      quest.rebuild = rb1; quest.stage = st1; page = 0;
+      check("rebuild: Nell's plan wears the book frame at all 8 sizes, touch and mouse, Normal and Large text: Build plates, pages and the Sir / Dame flip 44 px on touch (26 with a mouse), 8 px apart on touch, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 128 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     // put the town back the way it was
     for (const [i, t] of snap) if (map[i] !== t) changeTile(i % MAP_W, Math.floor(i / MAP_W), t);
     quest.rebuild = rb0 || fresh(); resetPeople(); quest.stage = Math.max(quest.stage, st0); clearPack(); closePanel(); drain(); player.hp = Math.min(Math.max(hp0, 1), player.maxHp); levelBanner = null; h.peace(false); F.sim(2, []);

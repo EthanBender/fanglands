@@ -1,4 +1,335 @@
 // ============================================================================
+// PEOPLE AND TRADE — the pieces the eight "people" feature files share (24 dwarves, 25 elves, 26 boats,
+// 31 rebuild, 33 goblin city, 36 sky city, 41 guild, 88 aerie). They live here, in the first of those files,
+// because a feature file may not edit the HUD kit; the kit (src/59-hudkit.js) can lift them as they are.
+//
+// THE WORLD PROMPT FOR A FEATURE'S OWN PEOPLE. The core (09-render) prompts only the people in NPCS. A feature
+// with its own list registers who the knight is facing:
+//     const facing = PEOPLE_UI.facing(() => { const d = myInFront(); return d ? { px: d.px, py: d.py, name: d.name } : null; });
+// and in its HOOKS.draw item draws the gold corner brackets:  PEOPLE_UI.brackets(g, facing());
+// Everything else is shared: the verb tag beside the person (the E keycap on a computer, the TALK emblem on touch),
+// the coach the first three times ("E  Talk to Thessaly"), and the USE seat wearing TALK while one of them is faced.
+// A person counts as faced only when E really reaches them: not while a core person is in front (the core prompts
+// them), and not while the tile in front is one the core's E handles before the feature hooks (water, a forge...).
+//
+// THE TRADE PANELS. One look for every people-and-trade panel, the same contract the core panels follow:
+// the book frame (panelBox), content from py + 62, words through HK.text in their own box, names and numbers in
+// Cinzel, sentences in the system sans, rows on vellum plates, items in pouches, verbs as plate buttons at HK.row().
+// ============================================================================
+const PEOPLE_UI = (() => {
+  // ---------- who the knight is facing ----------
+  const who = [];
+  let coreSet = null;
+  // the tiles the core's E (06-systems useAction) answers before any HOOKS.use: facing one, E never reaches a feature's people
+  const coreFirst = () => {
+    if (coreSet) return coreSet;
+    const s = new Set();
+    for (const k of ['SIGN', 'CHEST', 'GOLDPILE', 'GRAVE', 'STONECIRCLE', 'DUMMY', 'AXESTUMP', 'CART', 'WATER', 'OVEN', 'FIRE', 'SOIL', 'CROP', 'ANVIL', 'FORGE', 'WORKBENCH', 'WORKSHOP', 'ALCHEMY', 'LODESTONE', 'BED', 'WRECK', 'MECH', 'TRAP', 'COUNTER', 'THRONE', 'STUMP', 'RUBBLE', 'PLANK']) if (T[k] != null) s.add(T[k]);
+    if (typeof GATHER !== 'undefined') for (const k of Object.keys(GATHER)) s.add(+k);
+    return (coreSet = s);
+  };
+  function reachable() {
+    if (typeof player === 'undefined' || player.dead || player.mech) return false;
+    if (typeof npcInFront === 'function' && npcInFront()) return false;
+    const ft = frontTile(player);
+    return !coreFirst().has(tileAt(ft.tx, ft.ty));
+  }
+  // fn() -> null | { px, py, name }. Returns the guarded version: use it for your brackets so they and the tag agree.
+  function facing(fn) {
+    const f = () => {
+      if (!reachable()) return null;
+      let p = null;
+      try { p = fn(); } catch (e) { p = null; }
+      return p && typeof p.px === 'number' && typeof p.py === 'number' ? p : null;
+    };
+    who.push(f);
+    return f;
+  }
+  function faced() {
+    if (!who.length || !reachable()) return null;
+    let best = null;
+    for (const f of who) {
+      const p = f(); if (!p) continue;
+      const d = dist(player.x, player.y, p.px, p.py);
+      if (!best || d < best.d) best = { p, d };
+    }
+    return best ? best.p : null;
+  }
+  // the core already frames the tile in front (09-render: an INTERESTING tile) and puts its tag there: then it is the one prompt
+  const corePrompts = () => { const ft = frontTile(player); return typeof INTERESTING === 'function' && INTERESTING(tileAt(ft.tx, ft.ty)); };
+  function brackets(g, p) {
+    if (!p || corePrompts()) return false;
+    HK.brackets(g, p.px - 18, p.py - 24, 36, 44);
+    return true;
+  }
+  // HK.usePreview answers for NPCS and tiles only; taught about these people, the core's own tag (when it frames an
+  // interesting tile a feature person stands on, such as King Thrain's throne) says "Talk to King Thrain", not "Use"
+  let taught = false;
+  function teachKit() {
+    if (taught || typeof HK === 'undefined' || typeof HK.usePreview !== 'function') return;
+    taught = true;
+    const corePreview = HK.usePreview;
+    HK.usePreview = () => { const p = faced(); return p ? { verb: 'TALK', emblem: 'talk', what: p.name, at: { x: p.px, y: p.py, npc: true } } : corePreview(); };
+  }
+  HOOKS.world.push(() => teachKit());
+  // the USE seat wears TALK while one of them is faced (the kit's own USE face would read the tile in front instead)
+  hudSeatFace('use', {
+    id: 'person', prio: 5, when: () => !!faced(), emblem: 'talk', ribbon: 'TALK', key: 'E',
+    name: () => { const p = faced(); return p ? 'Talk to ' + p.name : 'Talk'; }, action: () => touch.taps.push('use'),
+  });
+  // the verb tag beside the person, in screen space (the coach's longer line the first three times), as 09-render does
+  HOOKS.hud.push(g => {
+    teachKit();
+    if (paused || panel || (dialog && dialog.cur)) return;
+    const p = faced(); if (!p || corePrompts()) return;
+    const t = touchMode(), face = HK.face('use'), em = (face && face.emblem) || 'talk';
+    const pv = HK.usePreview();
+    const verb = pv && pv.what === p.name ? pv.verb.charAt(0) + pv.verb.slice(1).toLowerCase() : 'Talk';
+    const sx = Math.round(p.px + 20 - cam.x), sy = Math.round(p.py - 6 - cam.y);
+    const coached = HK.teach('use', t ? null : 'E', `${verb} to ${p.name}`, { sx, sy }, { emblem: em });
+    if (!coached) HK.tag(g, sx, sy, verb, { side: 'right', key: t ? null : 'E', emblem: t ? em : null });
+  });
+
+  // ---------- the trade panels ----------
+  const row = () => HK.row();
+  const isT = () => touchMode();
+  const gap = () => (touchMode() ? 8 : 6);
+  const pouchSize = () => (touchMode() ? 44 : 40);
+  const scale = () => (window.SETTINGS && SETTINGS.textScale ? SETTINGS.textScale() : 1);
+  // the panel's size, kept clear of the notch, Dynamic Island and home-indicator bands (panelBox centres it a little high)
+  function fit(wantW, wantH) {
+    const L = HK.cur ? HK.cur() : null, S = (L && L.S) || { t: 0, r: 0, b: 0, l: 0 };
+    const maxW = Math.min(VW - 20, VW - 2 * Math.max(S.l || 0, S.r || 0));
+    const maxH = Math.min(VH - 20, VH - 2 * (S.t || 0) - 20, VH - 10 - (S.b || 0));
+    return { w: Math.round(Math.min(wantW, maxW)), h: Math.round(Math.min(wantH, maxH)), maxW, maxH };
+  }
+  // a header: gold Cinzel capitals on a gold hairline. y is the top; returns the height used.
+  function header(g, s, x, y, w) {
+    const up = String(s).toUpperCase();
+    let size = 12; while (size > 9.5 && HK.tw(g, up, HK.FC(800, size)) > w) size -= 0.5;
+    HK.text(g, up, x, y + 13, { font: HK.FC(800, size), color: HK.T.gold, shadow: 'rgba(0,0,0,0.9)', box: { x, y, w, h: 18 }, fitId: 'people:header' });
+    g.strokeStyle = 'rgba(217,178,92,0.45)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y + 19.5); g.lineTo(x + w, y + 19.5); g.stroke();
+    return 24;
+  }
+  // a name or a number: Cinzel that shrinks to fit (never below 10 px), then wraps at a word. y is the top; returns the height.
+  function name(g, s, x, y, w, o = {}) {
+    const size0 = o.size || 13; let size = size0;
+    while (size > 10 && HK.tw(g, s, HK.FC(800, size)) > w) size -= 0.5;
+    const f = HK.FC(800, size), lines = HK.tw(g, s, f) > w ? HK.wrap(g, s, w, 2, f).lines : [String(s)];
+    lines.forEach((l, i) => HK.text(g, l, x, y + size0 + i * (size + 3), { font: f, color: o.color || HK.T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x, y, w, h: size0 + 6 }, fitId: 'people:name' }));
+    return size0 + 5 + (lines.length - 1) * (size + 3);
+  }
+  const nameH = (g, s, w, o = {}) => { const size0 = o.size || 13; let size = size0; while (size > 10 && HK.tw(g, s, HK.FC(800, size)) > w) size -= 0.5; const f = HK.FC(800, size); const n = HK.tw(g, s, f) > w ? HK.wrap(g, s, w, 2, f).lines.length : 1; return size0 + 5 + (n - 1) * (size + 3); };
+  // sentences: the system sans (grows with Text size), wrapped at whole words. y is the top; returns { h, lines, more }.
+  function wordsFit(g, s, w, o = {}) {
+    const f = HK.FS(o.weight || 600, o.size || 13), lh = Math.round((o.size || 13) * scale() * 1.28);
+    const r = HK.wrap(g, String(s), w, o.lines || 4, f);
+    return { f, lh, lines: r.lines, more: r.more, h: r.lines.length * lh };
+  }
+  function words(g, s, x, y, w, o = {}) {
+    const m = wordsFit(g, s, w, o);
+    m.lines.forEach((l, i) => HK.text(g, l, o.align === 'center' ? x + w / 2 : x, y + (i + 0.78) * m.lh, { font: m.f, align: o.align || 'left', color: o.color || HK.T.inkDim, shadow: 'rgba(0,0,0,0.9)', box: { x, y, w, h: m.h }, fitId: o.fitId || 'people:words' }));
+    return m;
+  }
+  // a verb: an iron plate button showing `shown` while buttons[] keeps its stable `label` (the tests and the tooltips use it).
+  // o.live: it looks disabled but still fires, so a tap can say why (Harl names the combat level he wants).
+  function verb(g, r, shown, label, action, tone, enabled = true, o = {}) {
+    const on = enabled || !!o.live, st = on ? HK.stateOf(label) : {};
+    HK.plateButton(g, r, o.emblem || null, shown, enabled ? tone : null, { pressed: !!st.pressed, hover: !!st.hover, disabled: !enabled, key: o.key });
+    buttons.push(on ? { x: r.x, y: r.y, w: r.w, h: r.h, label, action, up: true, name: o.name } : { x: r.x, y: r.y, w: r.w, h: r.h, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true });
+  }
+  // Prev / Next: two plate buttons a kit row tall with drawn chevrons, the page count between them (the same look as the
+  // core pager(); pack-core raises that one to HK.row() too, and these can call it once it lands)
+  function pager(g, x, y, w, page, pages, setPage) {
+    const p = Math.max(0, Math.min(page, pages - 1)), h = row(), bw = isT() ? 96 : 84;
+    const one = (bx, label, em, on, fn) => {
+      verb(g, { x: bx, y, w: bw, h }, label, label, fn, null, on);
+      HK.emblem(g, em, label === 'Prev' ? bx + 15 : bx + bw - 15, y + h / 2, 12, on ? HK.T.goldHi : HK.T.inkMute);
+    };
+    one(x, 'Prev', 'chevronL', p > 0, () => setPage(p - 1));
+    HK.text(g, `${p + 1} / ${pages}`, x + w / 2, y + h / 2 + 5, { font: HK.FC(800, 13), align: 'center', color: HK.T.inkDim, box: { x: x + bw, y, w: w - 2 * bw, h }, fitId: 'people:pages' });
+    one(x + w - bw, 'Next', 'chevronR', p < pages - 1, () => setPage(p + 1));
+    return p;
+  }
+  const pagerH = () => row() + 8;
+  // split rows of the given heights into pages that fit `avail`
+  function paginate(heights, avail, space) {
+    const pages = []; let cur = [], used = 0;
+    heights.forEach((hh, i) => { const need = (cur.length ? space : 0) + hh; if (cur.length && used + need > avail) { pages.push(cur); cur = []; used = 0; } used += cur.length ? space + hh : hh; cur.push(i); });
+    if (cur.length || !pages.length) pages.push(cur);
+    return pages;
+  }
+  // ONE ROW: a vellum plate; an item in a pouch (or no pouch); its name in Cinzel; up to three lines of sans under it
+  // (sub, then a note in a meaning colour); an optional progress bar; the verb at the right, or under the words when
+  // `stack` (phones). r = { id, name, sub, note, noteColor, bar, barCol, verb: { shown, label, action, tone, enabled, live, w } }
+  function rowGeom(g, r, x, w, o = {}) {
+    const ps = r.id ? pouchSize() : 0, pad = 10, R = row();
+    const bw = r.verb ? (r.verb.w || o.bw || (isT() ? 108 : 100)) : 0;
+    const tx = x + pad + (ps ? ps + 10 : 4), stack = !!(o.stack && r.verb);
+    const tw = Math.max(40, (stack || !r.verb ? x + w - pad : x + w - pad - bw - 10) - tx);
+    let th = nameH(g, r.name, tw);
+    const sub = r.sub ? wordsFit(g, r.sub, tw, { size: 12.5, lines: 3 }) : null;
+    const note = r.note ? wordsFit(g, r.note, tw, { size: 12.5, lines: 2, weight: 700 }) : null;
+    th += (sub ? sub.h + 2 : 0) + (note ? note.h + 2 : 0) + (r.bar != null ? 10 : 0);
+    const inner = Math.max(th, ps, stack ? 0 : R);
+    const h = Math.round(pad + inner + (stack ? 8 + R : 0) + pad);
+    // a short block of words sits level with the pouch and the verb rather than at the top of the row
+    const lift = stack ? 0 : Math.max(0, Math.round((inner - th) / 2));
+    return { ps, bw, tx, tw, stack, sub, note, h, pad, lift };
+  }
+  function drawRow(g, r, x, y, w, o = {}) {
+    const q = rowGeom(g, r, x, w, o), R = row();
+    HK.vellumPlate(g, x, y, w, q.h, r.edge ? { edge: r.edge } : {});
+    const textTop = y + q.pad + q.lift;
+    if (q.ps) drawSlot(g, x + q.pad, q.stack ? y + q.pad : Math.round(y + (q.h - q.ps) / 2), q.ps, { id: r.id, qty: r.qty || 1 }, false);
+    let ty = textTop + name(g, r.name, q.tx, textTop - 1, q.tw, { color: r.nameColor || HK.T.ink });
+    if (q.sub) { words(g, r.sub, q.tx, ty, q.tw, { size: 12.5, lines: 3, color: r.subColor || HK.T.inkDim }); ty += q.sub.h + 2; }
+    if (q.note) { words(g, r.note, q.tx, ty, q.tw, { size: 12.5, lines: 2, weight: 700, color: r.noteColor || HK.T.warn }); ty += q.note.h + 2; }
+    if (r.bar != null) { HK.meterBar(g, q.tx, ty + 3, q.tw, 6, r.bar, r.barCol || HK.T.gold, { hi: r.barHi || HK.T.goldHi, lo: HK.T.goldLo }); ty += 10; }
+    if (r.verb) {
+      const v = r.verb;
+      const vr = q.stack ? { x: q.tx, y: y + q.h - q.pad - R, w: x + w - q.pad - q.tx, h: R } : { x: x + w - q.pad - q.bw, y: Math.round(y + (q.h - R) / 2), w: q.bw, h: R };
+      verb(g, vr, v.shown || v.label, v.label, v.action, v.tone === undefined ? 'primary' : v.tone, v.enabled !== false, { live: v.live, name: v.name });
+    }
+    return q.h;
+  }
+  // rows split into pages that fit `avail`; returns { pages, pageH } so a panel keeps one height across its pages
+  function layoutRows(g, rows, x, w, avail, o = {}) {
+    const hs = rows.map(r => rowGeom(g, r, x, w, o).h), sp = gap();
+    const pages = paginate(hs, avail, sp);
+    const pageH = Math.max(0, ...pages.map(pg => pg.reduce((a, i, k) => a + hs[i] + (k ? sp : 0), 0)));
+    return { hs, pages, pageH, sp };
+  }
+  function drawRows(g, rows, lay, page, x, y, w, o = {}) {
+    let cy = y;
+    for (const i of lay.pages[page] || []) cy += drawRow(g, rows[i], x, cy, w, o) + lay.sp;
+    return cy;
+  }
+  // A PANEL OF ROWS: the frame sized to its tallest page, Prev / Next when the rows do not fit, an intro sentence on top and
+  // an optional footer (footerH tall) under the rows. Rows on other pages stay addressable by label for the harness
+  // (F.clickButton) but sit off-screen, as the core's station panel does, so no tap can reach them.
+  // o = { title, sub, rows, want, page, setPage, stack, intro, introColor, footerH, footer(g, x, y, w, bottom) }
+  function rowsPanel(g, o) {
+    const box = fit(o.want || 460, 9999), w = box.w, iw = w - 36, top = 62, bottom = 16;
+    const stack = o.stack != null ? o.stack : VW < 640;
+    const introM = o.intro ? wordsFit(g, o.intro, iw, { size: 13, lines: 3 }) : null;
+    const introH = introM ? introM.h + 10 : 0, footH = o.footerH || 0;
+    const avail = box.maxH - top - bottom - introH - footH;
+    let lay = layoutRows(g, o.rows, 0, iw, avail, { stack });
+    if (lay.pages.length > 1) lay = layoutRows(g, o.rows, 0, iw, avail - pagerH(), { stack });
+    const pages = lay.pages.length, paged = pages > 1, page = Math.max(0, Math.min(o.page || 0, pages - 1));
+    const h = top + introH + lay.pageH + (paged ? pagerH() : 0) + footH + bottom;
+    const { px, py } = panelBox(g, w, h, o.title, o.sub);
+    let y = py + top;
+    if (introM) { words(g, o.intro, px + 18, y, iw, { size: 13, lines: 3, color: o.introColor || HK.T.inkDim }); y += introH; }
+    drawRows(g, o.rows, lay, page, px + 18, y, iw, { stack });
+    const shown = new Set(lay.pages[page] || []);
+    o.rows.forEach((r, i) => { if (shown.has(i) || !r.verb) return; const on = r.verb.enabled !== false || r.verb.live; buttons.push({ x: -1e9, y: -1e9, w: 0, h: 0, label: on ? r.verb.label : 'disabled:' + r.verb.label, action: on ? r.verb.action : () => { }, offscreen: true, inert: !on }); });
+    let fy = y + lay.pageH;
+    if (paged) { pager(g, px + 18, fy + 8, iw, page, pages, p => o.setPage && o.setPage(p)); fy += pagerH(); }
+    if (o.footer) o.footer(g, px + 18, fy, iw, py + h - bottom);
+    return { px, py, w, h, page, pages, iw };
+  }
+  // a pack grid of pouches that fits `w` (44 px pouches, 8 apart, on touch); returns its geometry
+  function gridGeom(w, n, maxCols) {
+    const size = isT() ? 44 : 42, sp = isT() ? 8 : 5;
+    const cols = Math.max(1, Math.min(maxCols || 10, Math.floor((w + sp) / (size + sp))));
+    return { size, sp, cols, rows: Math.ceil(n / cols), h: Math.ceil(n / cols) * (size + sp) - sp, w: cols * (size + sp) - sp };
+  }
+  // the cost of a recipe as exact numbers: "Spider silk 3/10 · Wool 5/5 · Mithril bar 0/1"
+  const needsText = needs => needs.map(([id, n]) => `${ITEMS[id] ? ITEMS[id].name : id} ${Math.min(countItem(id), n)}/${n}`).join(' · ');
+  const skillWord = k => { const s = typeof SKILL_DEFS !== 'undefined' && SKILL_DEFS.find(d => d.key === k); return s ? s.name : k; };
+
+  return {
+    facing, faced, brackets, corePrompts,
+    row, gap, pouchSize, fit, header, name, words, wordsFit, verb, pager, pagerH, paginate,
+    rowGeom, drawRow, layoutRows, drawRows, rowsPanel, gridGeom, needsText, skillWord,
+  };
+})();
+
+// The people panels' self-test harness (every people file's HOOKS.selfTest uses it): each panel opened with the
+// state it needs, at every device size, on touch and with a mouse, at Normal and Large text. From the close seal
+// onward every control is 44 px on touch (26 with a mouse), 8 px apart on touch (4 with a mouse), inside the panel,
+// on screen and out of the notch and home-indicator bands; and at Large every string stays inside its plate.
+PEOPLE_UI.auditPanels = function (cases) {
+  const A = HK.audit, own = k => Object.getOwnPropertyDescriptor(window, k);
+  const saved = { w: own('innerWidth'), h: own('innerHeight'), touch: window.__forceTouch, text: window.SETTINGS ? SETTINGS.get('text') : 'normal', panel, arg: panelArg, dc: dialog.cur, notice };
+  const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+  const problems = [], seen = {}; let frames = 0;
+  const shape = b => b.r ? { k: 'c', x: b.cx != null ? b.cx : b.x + b.w / 2, y: b.cy != null ? b.cy : b.y + b.h / 2, r: b.r, label: b.label } : { k: 'r', x: b.x, y: b.y, w: b.w, h: b.h, label: b.label };
+  const box = s => s.k === 'c' ? { x: s.x - s.r, y: s.y - s.r, w: 2 * s.r, h: 2 * s.r } : s;
+  const note = (c, msg) => { seen[c] = (seen[c] || 0) + 1; if (problems.length < 40) problems.push(msg); };
+  try {
+    HK.setCacheOff(true); dialog.cur = null; notice = null;
+    for (const [w, hh] of A.SIZES) {
+      if (!setSize(w, hh)) { note('size', `could not size ${w}x${hh}`); continue; }
+      for (const t of [true, false]) {
+        window.__forceTouch = t;
+        for (const text of ['normal', 'large']) {
+          if (window.SETTINGS) SETTINGS.set('text', text);
+          for (const c of cases) {
+            const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} ${text} ${c.name}`;
+            closePanel(); c.open(); if (panel !== c.panel) { note(c.name, `${where}: did not open (${panel})`); c.close && c.close(); continue; }
+            const fctx = A.fitCtx();
+            HK.FIT.on = text === 'large'; HK.FIT.log.length = 0; drawHud(fctx); HK.FIT.on = false; frames++;
+            if (text === 'large') for (const p of A.fitIssues(where)) note(c.name, p);
+            const L = HK.cur(), bands = t ? HK.bands(L) : [], P = panelRect;
+            const all = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+            const ci = all.findIndex(b => b.label === '×');
+            if (ci < 0 || !P) { note(c.name, `${where}: no close seal or no panel`); c.close && c.close(); continue; }
+            const rects = all.slice(ci).map(shape), floor = t ? 44 : 26, clear = t ? 8 : 4;
+            for (const s of rects) {
+              const b = box(s);
+              if (b.w < floor - 0.5 || b.h < floor - 0.5) note(c.name, `${where}: ${s.label} is ${Math.round(b.w)}x${Math.round(b.h)}, under ${floor}`);
+              if (b.x < P.x - 0.5 || b.y < P.y - 0.5 || b.x + b.w > P.x + P.w + 0.5 || b.y + b.h > P.y + P.h + 0.5) note(c.name, `${where}: ${s.label} outside the panel`);
+              if (b.x < -0.5 || b.y < -0.5 || b.x + b.w > VW + 0.5 || b.y + b.h > VH + 0.5) note(c.name, `${where}: ${s.label} off screen`);
+              for (const z of bands) if (HK.gapBetween(z, s) < 0) note(c.name, `${where}: ${s.label} in the ${z.name}`);
+            }
+            for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) { const d = HK.gapBetween(rects[i], rects[j]); if (d < clear) note(c.name, `${where}: ${rects[i].label} ~ ${rects[j].label} gap ${d.toFixed(1)} < ${clear}`); }
+            if (c.more) for (const p of c.more(where, P, t) || []) note(c.name, p);
+            c.close && c.close();
+          }
+        }
+      }
+    }
+  } finally {
+    HK.FIT.on = false; HK.setCacheOff(false); window.__forceTouch = saved.touch;
+    if (window.SETTINGS) SETTINGS.set('text', saved.text);
+    if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+    resize(); closePanel(); if (saved.panel) openPanel(saved.panel, saved.arg); dialog.cur = saved.dc; notice = saved.notice; render();
+  }
+  return { frames, problems, seen, total: Object.values(seen).reduce((a, b) => a + b, 0) };
+};
+// The world prompt's self-test: face one of your people and read what is drawn. A recording context runs your HOOKS.draw
+// items (no dashed circle may be stroked), a spy on HK.brackets sees the gold corners on the person, and a spy on the
+// kit's tag / coach sees the verb beside them; the USE seat must wear TALK.
+PEOPLE_UI.auditPrompt = function (p) {
+  const log = [], rec = new Proxy({}, {
+    get: (t, k) => k === 'measureText' ? (s => ({ width: String(s).length * 6 })) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: () => { } }))
+      : k === 'setLineDash' ? (a => { log.push({ dash: Array.isArray(a) && a.length > 0 }); }) : k === 'arc' ? ((...a) => { log.push({ arc: a[2] }); }) : typeof k === 'string' ? (() => { }) : undefined,
+    set: () => true,
+  });
+  const got = { brackets: [], tags: [], coach: [] };
+  const b0 = HK.brackets, t0 = HK.tag, c0 = HK.teach;
+  HK.brackets = (g, x, y, w, h, tt) => { got.brackets.push({ x, y, w, h }); return b0(g, x, y, w, h, tt); };
+  HK.tag = (g, x, y, label, o) => { got.tags.push({ x, y, label, o: o || {} }); return t0(g, x, y, label, o); };
+  HK.teach = (id, key, v, at, o) => { const r = c0(id, key, v, at, o); if (r) got.coach.push({ id, key, verb: v, at }); return r; };
+  let dashed = false, face = null;
+  try {
+    const items = []; for (const hh of HOOKS.draw) { try { hh(rec, items, cam); } catch (e) { } }
+    for (const it of items) if (it.y >= 1e9) { try { it.draw(); } catch (e) { } }
+    dashed = log.some(e => e.dash);
+    for (const hh of HOOKS.hud) { try { hh(rec, VW < 640); } catch (e) { } }
+    face = HK.face('use');
+  } finally { HK.brackets = b0; HK.tag = t0; HK.teach = c0; }
+  const onPerson = got.brackets.some(b => Math.abs(b.x - (p.px - 18)) < 0.5 && Math.abs(b.y - (p.py - 24)) < 0.5 && b.w === 36 && b.h === 44);
+  const sx = Math.round(p.px + 20 - cam.x), sy = Math.round(p.py - 6 - cam.y);
+  const tagged = got.tags.some(q => q.label === 'Talk' && q.x === sx && q.y === sy && q.o.side === 'right') || got.coach.some(q => q.verb === 'Talk to ' + p.name && q.at && q.at.sx === sx && q.at.sy === sy);
+  const faced = PEOPLE_UI.faced();
+  return { ok: onPerson && tagged && !dashed && !!faced && faced.name === p.name, onPerson, tagged, dashed, faced: faced && faced.name, brackets: got.brackets.length, tags: got.tags.map(q => q.label), coach: got.coach.map(q => q.verb) };
+};
+
+// ============================================================================
 // DEEPHOLM — the dwarven undercity under Grey Quarry, and the mithril tier
 // Feature file. Registers everything through HOOKS; edits no core file.
 // Everything lives in one block so no name leaks into the shared script scope.
@@ -117,6 +448,7 @@
     }
     return best ? best.d : null;
   }
+  const dwFacing = PEOPLE_UI.facing(() => { const d = dwInFront(); return d ? { px: d.px, py: d.py, name: d.name } : null; });
   function dwTalk(d) {
     { const dx = d.px - player.x, dy = d.py - player.y, dd = Math.hypot(dx, dy) || 1; player.facing = { x: dx / dd, y: dy / dd }; }
     const q = dq();
@@ -363,8 +695,8 @@
     if (inside()) items.push({ y: 1e9, legacyScrim: true, draw: () => dwDrawDark(g) });
     // interaction highlight for our own tiles and dwarves (the core only highlights what it knows)
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
-      const d = dwInFront();
-      if (d) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(d.px, d.py, 18, 0, 7); g.stroke(); g.setLineDash([]); return; }
+      // the dwarf you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      if (PEOPLE_UI.brackets(g, dwFacing())) return;
       const { tx, ty } = frontTile(player);
       if (DW_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
@@ -402,6 +734,13 @@
       check('dwarves: the world map marks the mine shaft as the way to Deepholm, once you have been down it', !before && !!after && after.x === SHAFT_T.x && after.y === SHAFT_T.y && /Deepholm/.test(after.label), { before, after });
       dq().visited = v0; }
     DEEPHOLM.enter();
+    // the world prompt on a dwarf: the kit's gold corners on him (no dashed ring), the verb tag beside him, the USE seat on TALK;
+    // and on King Thrain, who sits on his throne (a tile the core frames), the core's own tag is taught to say "Talk to King Thrain"
+    { const d = DWARVES.find(x => x.id === 'orik'); closePanel(); dialog.queue.length = 0; dialog.cur = null; F.tp(d.x, d.y + 1); F.face(d.x, d.y); render();
+      const r = PEOPLE_UI.auditPrompt(d), face = HK.face('use');
+      check('dwarves: facing Orik draws the gold corners on him and a Talk tag beside him (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      F.tp(THRONE_T.x, THRONE_T.y - 1); F.face(THRONE_T.x, THRONE_T.y); render(); const pv = HK.usePreview(), f2 = HK.face('use');
+      check("dwarves: facing King Thrain on his throne, the core's prompt says Talk to King Thrain and the USE seat reads TALK", !!pv && pv.verb === 'TALK' && pv.what === 'King Thrain' && !!f2 && f2.ribbon === 'TALK', { pv, face: f2 && f2.ribbon }); }
     // mithril rocks + mining gates
     { let rocks = 0; for (let y = DH.y0; y <= DH.y1; y++) for (let x = DH.x0; x <= DH.x1; x++) if (tileAt(x, y) === DW_MITHRIL) rocks++; check('dwarves: mithril rocks in the galleries', rocks >= 10, { rocks }); }
     { F.tp(LADDER_T.x, LADDER_T.y + 1); const r = F.nearestTile([DW_MITHRIL]); const w = F.goAdjacent(r.x, r.y, 2500); F.face(r.x, r.y);

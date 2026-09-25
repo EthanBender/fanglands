@@ -386,6 +386,7 @@
     }
     return best ? best.e : null;
   }
+  const aerieFacing = PEOPLE_UI.facing(() => { const e = folkInFront(); return e ? { px: e.px, py: e.py, name: e.name } : null; });
   const songDone = () => !!(SKY_C && SKY_C.skyDone());
 
   function talkFolk(e) {
@@ -566,23 +567,31 @@
     burst(player.x, player.y, ITEMS[r.out].color, 24, 130); floatText(player.x, player.y - 30, `+${r.qty} ${ITEMS[r.out].name}`, ITEMS[r.out].color);
     save(); return true;
   }
-  HOOKS.panel.rookery = (g, narrow) => {
-    const { px, py, w } = panelBox(g, 460, 220, "Keeper Pell's perches", `Crafting level ${skillLv('crafting')} - needs ${FLETCH.lv}`);
-    g.fillStyle = '#c9d1d9'; g.font = '12px sans-serif'; g.textAlign = 'left';
-    g.fillText(`You carry ${countItem('skyhawk_feather')} skyhawk feathers and ${countItem('wood')} wood.`, px + 18, py + 74);
-    g.fillStyle = '#8b949e'; g.fillText(`Skyhawk arrows hit for ${ITEMS.skyhawk_arrow.arrow.str}. Put a fish on a perch outside for a feather.`, px + 18, py + 94);
-    const ok = canMake(FLETCH);
-    button(g, px + 18, py + 110, w - 36, 34, FLETCH.label, () => { make(FLETCH); }, ok ? '#238636' : '#2a2f3a', ok);
+  // KEEPER PELL'S PERCHES: one row, the fletching (the arrows in a pouch, what they take as exact numbers, Fletch)
+  const fletchRow = () => {
+    const lvOk = skillLv('crafting') >= FLETCH.lv;
+    return {
+      id: FLETCH.out, name: `${ITEMS[FLETCH.out].name} × ${FLETCH.qty}`, sub: `${PEOPLE_UI.needsText(FLETCH.needs)}. They hit for ${ITEMS.skyhawk_arrow.arrow.str}.`,
+      note: lvOk ? null : `Needs Crafting ${FLETCH.lv}. You are ${skillLv('crafting')}.`, noteColor: HK.T.bad,
+      verb: { shown: 'Fletch', label: FLETCH.label, action: () => { make(FLETCH); }, tone: 'primary', enabled: canMake(FLETCH) },
+    };
   };
-  // Halcyon's own panel is 36-skycity's; the Skysinger is added under it once the Songstone is awake
+  HOOKS.panel.rookery = (g, narrow) => {
+    PEOPLE_UI.rowsPanel(g, { title: "Keeper Pell's perches", sub: `Crafting level ${skillLv('crafting')} · needs ${FLETCH.lv}`, intro: 'Put a fish on a perch outside and a skyhawk leaves a feather for it.', rows: [fletchRow()], want: 500 });
+  };
+  // Halcyon's own panel is 36-skycity's; the Skysinger is one more row on it once the Songstone is awake (until then, a line
+  // on the sleeping stone), handed in as the panel's third argument so it is laid out, paged and sized with the others
   { const _halcyon = HOOKS.panel.halcyon;
     if (_halcyon) HOOKS.panel.halcyon = (g, narrow) => {
-      _halcyon(g, narrow);
-      const r = panelRect; if (!r) return;
-      const y = r.y + r.h - 44, q = Q();
-      if (!q.songstone) { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText('The Songstone on the Crown is still asleep. Wake it and I will sing a blade.', r.x + 18, y + 22); return; }
-      const ok = canMake(SING);
-      button(g, r.x + 18, y, r.w - 36, 34, SING.label + `  (lv ${SING.lv})`, () => { make(SING); }, ok ? '#238636' : '#2a2f3a', ok);
+      const q = Q(), lvOk = skillLv('smithing') >= SING.lv;
+      const row = !q.songstone
+        ? { name: ITEMS[SING.out].name, nameColor: HK.T.inkMute, sub: 'The Songstone on the Crown is still asleep. Wake it and I will sing a blade.' }
+        : {
+          id: SING.out, name: ITEMS[SING.out].name, sub: PEOPLE_UI.needsText(SING.needs),
+          note: lvOk ? null : `Needs Smithing ${SING.lv}. You are ${skillLv('smithing')}.`, noteColor: HK.T.bad,
+          verb: { shown: 'Forge', label: SING.label + `  (lv ${SING.lv})`, action: () => { make(SING); }, tone: 'primary', enabled: canMake(SING) },
+        };
+      _halcyon(g, narrow, [row]);
     };
   }
 
@@ -793,8 +802,8 @@
     HAWKS.forEach((h, k) => items.push({ y: 5e7 + k, draw: () => drawHawk(g, h, k) }));
     // the use highlight for this file's tiles and people (the core only knows its own)
     if (!player.dead && !player.mech && !npcInFront()) items.push({ y: 1e9 + 4, draw: () => {
-      const n = folkInFront();
-      if (n) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.arc(n.px, n.py, 22, 0, 7); g.stroke(); g.setLineDash([]); return; }
+      // the winged folk you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      if (PEOPLE_UI.brackets(g, aerieFacing())) return;
       const { tx, ty } = frontTile(player);
       if (USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
@@ -1065,6 +1074,19 @@
       check(A + 'the Windward Market sells nothing the knight keeps on his keyring',
         !!window.KEYRING && stock.length > 0 && onRing.length === 0 && unknown.length === 0,
         { stock, onRing, unknown }); }
+
+    // ---- 15. the world prompt on Keeper Pell; the Rookery and Halcyon's forge (the Skysinger row asleep and awake) at every size ----
+    { if (INSTANCES.active() !== 'aerie') INSTANCES.enter('aerie'); closePanel(); drain(); const pell = FOLK[0]; F.tp(pell.x, pell.y + 1); F.face(pell.x, pell.y); render();
+      const r = PEOPLE_UI.auditPrompt({ px: pell.px, py: pell.py, name: pell.name }), face = HK.face('use');
+      check(A + 'facing Keeper Pell draws the gold corners on him and a Talk tag beside him (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const q = Q(), ss0 = q.songstone;
+      const a = PEOPLE_UI.auditPanels([
+        { name: "Keeper Pell's perches", panel: 'rookery', open: () => openPanel('rookery') },
+        { name: "Halcyon's forge, the Songstone asleep", panel: 'halcyon', open: () => { q.songstone = false; openPanel('halcyon'); }, close: () => { q.songstone = ss0; } },
+        { name: "Halcyon's forge, the Skysinger row", panel: 'halcyon', open: () => { q.songstone = true; openPanel('halcyon'); }, close: () => { q.songstone = ss0; } },
+      ]);
+      q.songstone = ss0;
+      check(A + "Keeper Pell's perches and Halcyon's Sky Forge (with the Skysinger row) wear the book frame at all 8 sizes, touch and mouse, Normal and Large text: Fletch and Forge plates and pages 44 px on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 96 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
 
     // ---- put everything back ----
     if (INSTANCES.active()) INSTANCES.leave();

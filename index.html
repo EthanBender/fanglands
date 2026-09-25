@@ -6046,6 +6046,337 @@ HOOKS.selfTest.push((check, F, h) => {
 
 // ---- src/24-dwarves.js ----
 // ============================================================================
+// PEOPLE AND TRADE — the pieces the eight "people" feature files share (24 dwarves, 25 elves, 26 boats,
+// 31 rebuild, 33 goblin city, 36 sky city, 41 guild, 88 aerie). They live here, in the first of those files,
+// because a feature file may not edit the HUD kit; the kit (src/59-hudkit.js) can lift them as they are.
+//
+// THE WORLD PROMPT FOR A FEATURE'S OWN PEOPLE. The core (09-render) prompts only the people in NPCS. A feature
+// with its own list registers who the knight is facing:
+//     const facing = PEOPLE_UI.facing(() => { const d = myInFront(); return d ? { px: d.px, py: d.py, name: d.name } : null; });
+// and in its HOOKS.draw item draws the gold corner brackets:  PEOPLE_UI.brackets(g, facing());
+// Everything else is shared: the verb tag beside the person (the E keycap on a computer, the TALK emblem on touch),
+// the coach the first three times ("E  Talk to Thessaly"), and the USE seat wearing TALK while one of them is faced.
+// A person counts as faced only when E really reaches them: not while a core person is in front (the core prompts
+// them), and not while the tile in front is one the core's E handles before the feature hooks (water, a forge...).
+//
+// THE TRADE PANELS. One look for every people-and-trade panel, the same contract the core panels follow:
+// the book frame (panelBox), content from py + 62, words through HK.text in their own box, names and numbers in
+// Cinzel, sentences in the system sans, rows on vellum plates, items in pouches, verbs as plate buttons at HK.row().
+// ============================================================================
+const PEOPLE_UI = (() => {
+  // ---------- who the knight is facing ----------
+  const who = [];
+  let coreSet = null;
+  // the tiles the core's E (06-systems useAction) answers before any HOOKS.use: facing one, E never reaches a feature's people
+  const coreFirst = () => {
+    if (coreSet) return coreSet;
+    const s = new Set();
+    for (const k of ['SIGN', 'CHEST', 'GOLDPILE', 'GRAVE', 'STONECIRCLE', 'DUMMY', 'AXESTUMP', 'CART', 'WATER', 'OVEN', 'FIRE', 'SOIL', 'CROP', 'ANVIL', 'FORGE', 'WORKBENCH', 'WORKSHOP', 'ALCHEMY', 'LODESTONE', 'BED', 'WRECK', 'MECH', 'TRAP', 'COUNTER', 'THRONE', 'STUMP', 'RUBBLE', 'PLANK']) if (T[k] != null) s.add(T[k]);
+    if (typeof GATHER !== 'undefined') for (const k of Object.keys(GATHER)) s.add(+k);
+    return (coreSet = s);
+  };
+  function reachable() {
+    if (typeof player === 'undefined' || player.dead || player.mech) return false;
+    if (typeof npcInFront === 'function' && npcInFront()) return false;
+    const ft = frontTile(player);
+    return !coreFirst().has(tileAt(ft.tx, ft.ty));
+  }
+  // fn() -> null | { px, py, name }. Returns the guarded version: use it for your brackets so they and the tag agree.
+  function facing(fn) {
+    const f = () => {
+      if (!reachable()) return null;
+      let p = null;
+      try { p = fn(); } catch (e) { p = null; }
+      return p && typeof p.px === 'number' && typeof p.py === 'number' ? p : null;
+    };
+    who.push(f);
+    return f;
+  }
+  function faced() {
+    if (!who.length || !reachable()) return null;
+    let best = null;
+    for (const f of who) {
+      const p = f(); if (!p) continue;
+      const d = dist(player.x, player.y, p.px, p.py);
+      if (!best || d < best.d) best = { p, d };
+    }
+    return best ? best.p : null;
+  }
+  // the core already frames the tile in front (09-render: an INTERESTING tile) and puts its tag there: then it is the one prompt
+  const corePrompts = () => { const ft = frontTile(player); return typeof INTERESTING === 'function' && INTERESTING(tileAt(ft.tx, ft.ty)); };
+  function brackets(g, p) {
+    if (!p || corePrompts()) return false;
+    HK.brackets(g, p.px - 18, p.py - 24, 36, 44);
+    return true;
+  }
+  // HK.usePreview answers for NPCS and tiles only; taught about these people, the core's own tag (when it frames an
+  // interesting tile a feature person stands on, such as King Thrain's throne) says "Talk to King Thrain", not "Use"
+  let taught = false;
+  function teachKit() {
+    if (taught || typeof HK === 'undefined' || typeof HK.usePreview !== 'function') return;
+    taught = true;
+    const corePreview = HK.usePreview;
+    HK.usePreview = () => { const p = faced(); return p ? { verb: 'TALK', emblem: 'talk', what: p.name, at: { x: p.px, y: p.py, npc: true } } : corePreview(); };
+  }
+  HOOKS.world.push(() => teachKit());
+  // the USE seat wears TALK while one of them is faced (the kit's own USE face would read the tile in front instead)
+  hudSeatFace('use', {
+    id: 'person', prio: 5, when: () => !!faced(), emblem: 'talk', ribbon: 'TALK', key: 'E',
+    name: () => { const p = faced(); return p ? 'Talk to ' + p.name : 'Talk'; }, action: () => touch.taps.push('use'),
+  });
+  // the verb tag beside the person, in screen space (the coach's longer line the first three times), as 09-render does
+  HOOKS.hud.push(g => {
+    teachKit();
+    if (paused || panel || (dialog && dialog.cur)) return;
+    const p = faced(); if (!p || corePrompts()) return;
+    const t = touchMode(), face = HK.face('use'), em = (face && face.emblem) || 'talk';
+    const pv = HK.usePreview();
+    const verb = pv && pv.what === p.name ? pv.verb.charAt(0) + pv.verb.slice(1).toLowerCase() : 'Talk';
+    const sx = Math.round(p.px + 20 - cam.x), sy = Math.round(p.py - 6 - cam.y);
+    const coached = HK.teach('use', t ? null : 'E', `${verb} to ${p.name}`, { sx, sy }, { emblem: em });
+    if (!coached) HK.tag(g, sx, sy, verb, { side: 'right', key: t ? null : 'E', emblem: t ? em : null });
+  });
+
+  // ---------- the trade panels ----------
+  const row = () => HK.row();
+  const isT = () => touchMode();
+  const gap = () => (touchMode() ? 8 : 6);
+  const pouchSize = () => (touchMode() ? 44 : 40);
+  const scale = () => (window.SETTINGS && SETTINGS.textScale ? SETTINGS.textScale() : 1);
+  // the panel's size, kept clear of the notch, Dynamic Island and home-indicator bands (panelBox centres it a little high)
+  function fit(wantW, wantH) {
+    const L = HK.cur ? HK.cur() : null, S = (L && L.S) || { t: 0, r: 0, b: 0, l: 0 };
+    const maxW = Math.min(VW - 20, VW - 2 * Math.max(S.l || 0, S.r || 0));
+    const maxH = Math.min(VH - 20, VH - 2 * (S.t || 0) - 20, VH - 10 - (S.b || 0));
+    return { w: Math.round(Math.min(wantW, maxW)), h: Math.round(Math.min(wantH, maxH)), maxW, maxH };
+  }
+  // a header: gold Cinzel capitals on a gold hairline. y is the top; returns the height used.
+  function header(g, s, x, y, w) {
+    const up = String(s).toUpperCase();
+    let size = 12; while (size > 9.5 && HK.tw(g, up, HK.FC(800, size)) > w) size -= 0.5;
+    HK.text(g, up, x, y + 13, { font: HK.FC(800, size), color: HK.T.gold, shadow: 'rgba(0,0,0,0.9)', box: { x, y, w, h: 18 }, fitId: 'people:header' });
+    g.strokeStyle = 'rgba(217,178,92,0.45)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y + 19.5); g.lineTo(x + w, y + 19.5); g.stroke();
+    return 24;
+  }
+  // a name or a number: Cinzel that shrinks to fit (never below 10 px), then wraps at a word. y is the top; returns the height.
+  function name(g, s, x, y, w, o = {}) {
+    const size0 = o.size || 13; let size = size0;
+    while (size > 10 && HK.tw(g, s, HK.FC(800, size)) > w) size -= 0.5;
+    const f = HK.FC(800, size), lines = HK.tw(g, s, f) > w ? HK.wrap(g, s, w, 2, f).lines : [String(s)];
+    lines.forEach((l, i) => HK.text(g, l, x, y + size0 + i * (size + 3), { font: f, color: o.color || HK.T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x, y, w, h: size0 + 6 }, fitId: 'people:name' }));
+    return size0 + 5 + (lines.length - 1) * (size + 3);
+  }
+  const nameH = (g, s, w, o = {}) => { const size0 = o.size || 13; let size = size0; while (size > 10 && HK.tw(g, s, HK.FC(800, size)) > w) size -= 0.5; const f = HK.FC(800, size); const n = HK.tw(g, s, f) > w ? HK.wrap(g, s, w, 2, f).lines.length : 1; return size0 + 5 + (n - 1) * (size + 3); };
+  // sentences: the system sans (grows with Text size), wrapped at whole words. y is the top; returns { h, lines, more }.
+  function wordsFit(g, s, w, o = {}) {
+    const f = HK.FS(o.weight || 600, o.size || 13), lh = Math.round((o.size || 13) * scale() * 1.28);
+    const r = HK.wrap(g, String(s), w, o.lines || 4, f);
+    return { f, lh, lines: r.lines, more: r.more, h: r.lines.length * lh };
+  }
+  function words(g, s, x, y, w, o = {}) {
+    const m = wordsFit(g, s, w, o);
+    m.lines.forEach((l, i) => HK.text(g, l, o.align === 'center' ? x + w / 2 : x, y + (i + 0.78) * m.lh, { font: m.f, align: o.align || 'left', color: o.color || HK.T.inkDim, shadow: 'rgba(0,0,0,0.9)', box: { x, y, w, h: m.h }, fitId: o.fitId || 'people:words' }));
+    return m;
+  }
+  // a verb: an iron plate button showing `shown` while buttons[] keeps its stable `label` (the tests and the tooltips use it).
+  // o.live: it looks disabled but still fires, so a tap can say why (Harl names the combat level he wants).
+  function verb(g, r, shown, label, action, tone, enabled = true, o = {}) {
+    const on = enabled || !!o.live, st = on ? HK.stateOf(label) : {};
+    HK.plateButton(g, r, o.emblem || null, shown, enabled ? tone : null, { pressed: !!st.pressed, hover: !!st.hover, disabled: !enabled, key: o.key });
+    buttons.push(on ? { x: r.x, y: r.y, w: r.w, h: r.h, label, action, up: true, name: o.name } : { x: r.x, y: r.y, w: r.w, h: r.h, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true });
+  }
+  // Prev / Next: two plate buttons a kit row tall with drawn chevrons, the page count between them (the same look as the
+  // core pager(); pack-core raises that one to HK.row() too, and these can call it once it lands)
+  function pager(g, x, y, w, page, pages, setPage) {
+    const p = Math.max(0, Math.min(page, pages - 1)), h = row(), bw = isT() ? 96 : 84;
+    const one = (bx, label, em, on, fn) => {
+      verb(g, { x: bx, y, w: bw, h }, label, label, fn, null, on);
+      HK.emblem(g, em, label === 'Prev' ? bx + 15 : bx + bw - 15, y + h / 2, 12, on ? HK.T.goldHi : HK.T.inkMute);
+    };
+    one(x, 'Prev', 'chevronL', p > 0, () => setPage(p - 1));
+    HK.text(g, `${p + 1} / ${pages}`, x + w / 2, y + h / 2 + 5, { font: HK.FC(800, 13), align: 'center', color: HK.T.inkDim, box: { x: x + bw, y, w: w - 2 * bw, h }, fitId: 'people:pages' });
+    one(x + w - bw, 'Next', 'chevronR', p < pages - 1, () => setPage(p + 1));
+    return p;
+  }
+  const pagerH = () => row() + 8;
+  // split rows of the given heights into pages that fit `avail`
+  function paginate(heights, avail, space) {
+    const pages = []; let cur = [], used = 0;
+    heights.forEach((hh, i) => { const need = (cur.length ? space : 0) + hh; if (cur.length && used + need > avail) { pages.push(cur); cur = []; used = 0; } used += cur.length ? space + hh : hh; cur.push(i); });
+    if (cur.length || !pages.length) pages.push(cur);
+    return pages;
+  }
+  // ONE ROW: a vellum plate; an item in a pouch (or no pouch); its name in Cinzel; up to three lines of sans under it
+  // (sub, then a note in a meaning colour); an optional progress bar; the verb at the right, or under the words when
+  // `stack` (phones). r = { id, name, sub, note, noteColor, bar, barCol, verb: { shown, label, action, tone, enabled, live, w } }
+  function rowGeom(g, r, x, w, o = {}) {
+    const ps = r.id ? pouchSize() : 0, pad = 10, R = row();
+    const bw = r.verb ? (r.verb.w || o.bw || (isT() ? 108 : 100)) : 0;
+    const tx = x + pad + (ps ? ps + 10 : 4), stack = !!(o.stack && r.verb);
+    const tw = Math.max(40, (stack || !r.verb ? x + w - pad : x + w - pad - bw - 10) - tx);
+    let th = nameH(g, r.name, tw);
+    const sub = r.sub ? wordsFit(g, r.sub, tw, { size: 12.5, lines: 3 }) : null;
+    const note = r.note ? wordsFit(g, r.note, tw, { size: 12.5, lines: 2, weight: 700 }) : null;
+    th += (sub ? sub.h + 2 : 0) + (note ? note.h + 2 : 0) + (r.bar != null ? 10 : 0);
+    const inner = Math.max(th, ps, stack ? 0 : R);
+    const h = Math.round(pad + inner + (stack ? 8 + R : 0) + pad);
+    // a short block of words sits level with the pouch and the verb rather than at the top of the row
+    const lift = stack ? 0 : Math.max(0, Math.round((inner - th) / 2));
+    return { ps, bw, tx, tw, stack, sub, note, h, pad, lift };
+  }
+  function drawRow(g, r, x, y, w, o = {}) {
+    const q = rowGeom(g, r, x, w, o), R = row();
+    HK.vellumPlate(g, x, y, w, q.h, r.edge ? { edge: r.edge } : {});
+    const textTop = y + q.pad + q.lift;
+    if (q.ps) drawSlot(g, x + q.pad, q.stack ? y + q.pad : Math.round(y + (q.h - q.ps) / 2), q.ps, { id: r.id, qty: r.qty || 1 }, false);
+    let ty = textTop + name(g, r.name, q.tx, textTop - 1, q.tw, { color: r.nameColor || HK.T.ink });
+    if (q.sub) { words(g, r.sub, q.tx, ty, q.tw, { size: 12.5, lines: 3, color: r.subColor || HK.T.inkDim }); ty += q.sub.h + 2; }
+    if (q.note) { words(g, r.note, q.tx, ty, q.tw, { size: 12.5, lines: 2, weight: 700, color: r.noteColor || HK.T.warn }); ty += q.note.h + 2; }
+    if (r.bar != null) { HK.meterBar(g, q.tx, ty + 3, q.tw, 6, r.bar, r.barCol || HK.T.gold, { hi: r.barHi || HK.T.goldHi, lo: HK.T.goldLo }); ty += 10; }
+    if (r.verb) {
+      const v = r.verb;
+      const vr = q.stack ? { x: q.tx, y: y + q.h - q.pad - R, w: x + w - q.pad - q.tx, h: R } : { x: x + w - q.pad - q.bw, y: Math.round(y + (q.h - R) / 2), w: q.bw, h: R };
+      verb(g, vr, v.shown || v.label, v.label, v.action, v.tone === undefined ? 'primary' : v.tone, v.enabled !== false, { live: v.live, name: v.name });
+    }
+    return q.h;
+  }
+  // rows split into pages that fit `avail`; returns { pages, pageH } so a panel keeps one height across its pages
+  function layoutRows(g, rows, x, w, avail, o = {}) {
+    const hs = rows.map(r => rowGeom(g, r, x, w, o).h), sp = gap();
+    const pages = paginate(hs, avail, sp);
+    const pageH = Math.max(0, ...pages.map(pg => pg.reduce((a, i, k) => a + hs[i] + (k ? sp : 0), 0)));
+    return { hs, pages, pageH, sp };
+  }
+  function drawRows(g, rows, lay, page, x, y, w, o = {}) {
+    let cy = y;
+    for (const i of lay.pages[page] || []) cy += drawRow(g, rows[i], x, cy, w, o) + lay.sp;
+    return cy;
+  }
+  // A PANEL OF ROWS: the frame sized to its tallest page, Prev / Next when the rows do not fit, an intro sentence on top and
+  // an optional footer (footerH tall) under the rows. Rows on other pages stay addressable by label for the harness
+  // (F.clickButton) but sit off-screen, as the core's station panel does, so no tap can reach them.
+  // o = { title, sub, rows, want, page, setPage, stack, intro, introColor, footerH, footer(g, x, y, w, bottom) }
+  function rowsPanel(g, o) {
+    const box = fit(o.want || 460, 9999), w = box.w, iw = w - 36, top = 62, bottom = 16;
+    const stack = o.stack != null ? o.stack : VW < 640;
+    const introM = o.intro ? wordsFit(g, o.intro, iw, { size: 13, lines: 3 }) : null;
+    const introH = introM ? introM.h + 10 : 0, footH = o.footerH || 0;
+    const avail = box.maxH - top - bottom - introH - footH;
+    let lay = layoutRows(g, o.rows, 0, iw, avail, { stack });
+    if (lay.pages.length > 1) lay = layoutRows(g, o.rows, 0, iw, avail - pagerH(), { stack });
+    const pages = lay.pages.length, paged = pages > 1, page = Math.max(0, Math.min(o.page || 0, pages - 1));
+    const h = top + introH + lay.pageH + (paged ? pagerH() : 0) + footH + bottom;
+    const { px, py } = panelBox(g, w, h, o.title, o.sub);
+    let y = py + top;
+    if (introM) { words(g, o.intro, px + 18, y, iw, { size: 13, lines: 3, color: o.introColor || HK.T.inkDim }); y += introH; }
+    drawRows(g, o.rows, lay, page, px + 18, y, iw, { stack });
+    const shown = new Set(lay.pages[page] || []);
+    o.rows.forEach((r, i) => { if (shown.has(i) || !r.verb) return; const on = r.verb.enabled !== false || r.verb.live; buttons.push({ x: -1e9, y: -1e9, w: 0, h: 0, label: on ? r.verb.label : 'disabled:' + r.verb.label, action: on ? r.verb.action : () => { }, offscreen: true, inert: !on }); });
+    let fy = y + lay.pageH;
+    if (paged) { pager(g, px + 18, fy + 8, iw, page, pages, p => o.setPage && o.setPage(p)); fy += pagerH(); }
+    if (o.footer) o.footer(g, px + 18, fy, iw, py + h - bottom);
+    return { px, py, w, h, page, pages, iw };
+  }
+  // a pack grid of pouches that fits `w` (44 px pouches, 8 apart, on touch); returns its geometry
+  function gridGeom(w, n, maxCols) {
+    const size = isT() ? 44 : 42, sp = isT() ? 8 : 5;
+    const cols = Math.max(1, Math.min(maxCols || 10, Math.floor((w + sp) / (size + sp))));
+    return { size, sp, cols, rows: Math.ceil(n / cols), h: Math.ceil(n / cols) * (size + sp) - sp, w: cols * (size + sp) - sp };
+  }
+  // the cost of a recipe as exact numbers: "Spider silk 3/10 · Wool 5/5 · Mithril bar 0/1"
+  const needsText = needs => needs.map(([id, n]) => `${ITEMS[id] ? ITEMS[id].name : id} ${Math.min(countItem(id), n)}/${n}`).join(' · ');
+  const skillWord = k => { const s = typeof SKILL_DEFS !== 'undefined' && SKILL_DEFS.find(d => d.key === k); return s ? s.name : k; };
+
+  return {
+    facing, faced, brackets, corePrompts,
+    row, gap, pouchSize, fit, header, name, words, wordsFit, verb, pager, pagerH, paginate,
+    rowGeom, drawRow, layoutRows, drawRows, rowsPanel, gridGeom, needsText, skillWord,
+  };
+})();
+
+// The people panels' self-test harness (every people file's HOOKS.selfTest uses it): each panel opened with the
+// state it needs, at every device size, on touch and with a mouse, at Normal and Large text. From the close seal
+// onward every control is 44 px on touch (26 with a mouse), 8 px apart on touch (4 with a mouse), inside the panel,
+// on screen and out of the notch and home-indicator bands; and at Large every string stays inside its plate.
+PEOPLE_UI.auditPanels = function (cases) {
+  const A = HK.audit, own = k => Object.getOwnPropertyDescriptor(window, k);
+  const saved = { w: own('innerWidth'), h: own('innerHeight'), touch: window.__forceTouch, text: window.SETTINGS ? SETTINGS.get('text') : 'normal', panel, arg: panelArg, dc: dialog.cur, notice };
+  const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+  const problems = [], seen = {}; let frames = 0;
+  const shape = b => b.r ? { k: 'c', x: b.cx != null ? b.cx : b.x + b.w / 2, y: b.cy != null ? b.cy : b.y + b.h / 2, r: b.r, label: b.label } : { k: 'r', x: b.x, y: b.y, w: b.w, h: b.h, label: b.label };
+  const box = s => s.k === 'c' ? { x: s.x - s.r, y: s.y - s.r, w: 2 * s.r, h: 2 * s.r } : s;
+  const note = (c, msg) => { seen[c] = (seen[c] || 0) + 1; if (problems.length < 40) problems.push(msg); };
+  try {
+    HK.setCacheOff(true); dialog.cur = null; notice = null;
+    for (const [w, hh] of A.SIZES) {
+      if (!setSize(w, hh)) { note('size', `could not size ${w}x${hh}`); continue; }
+      for (const t of [true, false]) {
+        window.__forceTouch = t;
+        for (const text of ['normal', 'large']) {
+          if (window.SETTINGS) SETTINGS.set('text', text);
+          for (const c of cases) {
+            const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} ${text} ${c.name}`;
+            closePanel(); c.open(); if (panel !== c.panel) { note(c.name, `${where}: did not open (${panel})`); c.close && c.close(); continue; }
+            const fctx = A.fitCtx();
+            HK.FIT.on = text === 'large'; HK.FIT.log.length = 0; drawHud(fctx); HK.FIT.on = false; frames++;
+            if (text === 'large') for (const p of A.fitIssues(where)) note(c.name, p);
+            const L = HK.cur(), bands = t ? HK.bands(L) : [], P = panelRect;
+            const all = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+            const ci = all.findIndex(b => b.label === '×');
+            if (ci < 0 || !P) { note(c.name, `${where}: no close seal or no panel`); c.close && c.close(); continue; }
+            const rects = all.slice(ci).map(shape), floor = t ? 44 : 26, clear = t ? 8 : 4;
+            for (const s of rects) {
+              const b = box(s);
+              if (b.w < floor - 0.5 || b.h < floor - 0.5) note(c.name, `${where}: ${s.label} is ${Math.round(b.w)}x${Math.round(b.h)}, under ${floor}`);
+              if (b.x < P.x - 0.5 || b.y < P.y - 0.5 || b.x + b.w > P.x + P.w + 0.5 || b.y + b.h > P.y + P.h + 0.5) note(c.name, `${where}: ${s.label} outside the panel`);
+              if (b.x < -0.5 || b.y < -0.5 || b.x + b.w > VW + 0.5 || b.y + b.h > VH + 0.5) note(c.name, `${where}: ${s.label} off screen`);
+              for (const z of bands) if (HK.gapBetween(z, s) < 0) note(c.name, `${where}: ${s.label} in the ${z.name}`);
+            }
+            for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) { const d = HK.gapBetween(rects[i], rects[j]); if (d < clear) note(c.name, `${where}: ${rects[i].label} ~ ${rects[j].label} gap ${d.toFixed(1)} < ${clear}`); }
+            if (c.more) for (const p of c.more(where, P, t) || []) note(c.name, p);
+            c.close && c.close();
+          }
+        }
+      }
+    }
+  } finally {
+    HK.FIT.on = false; HK.setCacheOff(false); window.__forceTouch = saved.touch;
+    if (window.SETTINGS) SETTINGS.set('text', saved.text);
+    if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+    resize(); closePanel(); if (saved.panel) openPanel(saved.panel, saved.arg); dialog.cur = saved.dc; notice = saved.notice; render();
+  }
+  return { frames, problems, seen, total: Object.values(seen).reduce((a, b) => a + b, 0) };
+};
+// The world prompt's self-test: face one of your people and read what is drawn. A recording context runs your HOOKS.draw
+// items (no dashed circle may be stroked), a spy on HK.brackets sees the gold corners on the person, and a spy on the
+// kit's tag / coach sees the verb beside them; the USE seat must wear TALK.
+PEOPLE_UI.auditPrompt = function (p) {
+  const log = [], rec = new Proxy({}, {
+    get: (t, k) => k === 'measureText' ? (s => ({ width: String(s).length * 6 })) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: () => { } }))
+      : k === 'setLineDash' ? (a => { log.push({ dash: Array.isArray(a) && a.length > 0 }); }) : k === 'arc' ? ((...a) => { log.push({ arc: a[2] }); }) : typeof k === 'string' ? (() => { }) : undefined,
+    set: () => true,
+  });
+  const got = { brackets: [], tags: [], coach: [] };
+  const b0 = HK.brackets, t0 = HK.tag, c0 = HK.teach;
+  HK.brackets = (g, x, y, w, h, tt) => { got.brackets.push({ x, y, w, h }); return b0(g, x, y, w, h, tt); };
+  HK.tag = (g, x, y, label, o) => { got.tags.push({ x, y, label, o: o || {} }); return t0(g, x, y, label, o); };
+  HK.teach = (id, key, v, at, o) => { const r = c0(id, key, v, at, o); if (r) got.coach.push({ id, key, verb: v, at }); return r; };
+  let dashed = false, face = null;
+  try {
+    const items = []; for (const hh of HOOKS.draw) { try { hh(rec, items, cam); } catch (e) { } }
+    for (const it of items) if (it.y >= 1e9) { try { it.draw(); } catch (e) { } }
+    dashed = log.some(e => e.dash);
+    for (const hh of HOOKS.hud) { try { hh(rec, VW < 640); } catch (e) { } }
+    face = HK.face('use');
+  } finally { HK.brackets = b0; HK.tag = t0; HK.teach = c0; }
+  const onPerson = got.brackets.some(b => Math.abs(b.x - (p.px - 18)) < 0.5 && Math.abs(b.y - (p.py - 24)) < 0.5 && b.w === 36 && b.h === 44);
+  const sx = Math.round(p.px + 20 - cam.x), sy = Math.round(p.py - 6 - cam.y);
+  const tagged = got.tags.some(q => q.label === 'Talk' && q.x === sx && q.y === sy && q.o.side === 'right') || got.coach.some(q => q.verb === 'Talk to ' + p.name && q.at && q.at.sx === sx && q.at.sy === sy);
+  const faced = PEOPLE_UI.faced();
+  return { ok: onPerson && tagged && !dashed && !!faced && faced.name === p.name, onPerson, tagged, dashed, faced: faced && faced.name, brackets: got.brackets.length, tags: got.tags.map(q => q.label), coach: got.coach.map(q => q.verb) };
+};
+
+// ============================================================================
 // DEEPHOLM — the dwarven undercity under Grey Quarry, and the mithril tier
 // Feature file. Registers everything through HOOKS; edits no core file.
 // Everything lives in one block so no name leaks into the shared script scope.
@@ -6164,6 +6495,7 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     return best ? best.d : null;
   }
+  const dwFacing = PEOPLE_UI.facing(() => { const d = dwInFront(); return d ? { px: d.px, py: d.py, name: d.name } : null; });
   function dwTalk(d) {
     { const dx = d.px - player.x, dy = d.py - player.y, dd = Math.hypot(dx, dy) || 1; player.facing = { x: dx / dd, y: dy / dd }; }
     const q = dq();
@@ -6410,8 +6742,8 @@ HOOKS.selfTest.push((check, F, h) => {
     if (inside()) items.push({ y: 1e9, legacyScrim: true, draw: () => dwDrawDark(g) });
     // interaction highlight for our own tiles and dwarves (the core only highlights what it knows)
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
-      const d = dwInFront();
-      if (d) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(d.px, d.py, 18, 0, 7); g.stroke(); g.setLineDash([]); return; }
+      // the dwarf you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      if (PEOPLE_UI.brackets(g, dwFacing())) return;
       const { tx, ty } = frontTile(player);
       if (DW_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
@@ -6449,6 +6781,13 @@ HOOKS.selfTest.push((check, F, h) => {
       check('dwarves: the world map marks the mine shaft as the way to Deepholm, once you have been down it', !before && !!after && after.x === SHAFT_T.x && after.y === SHAFT_T.y && /Deepholm/.test(after.label), { before, after });
       dq().visited = v0; }
     DEEPHOLM.enter();
+    // the world prompt on a dwarf: the kit's gold corners on him (no dashed ring), the verb tag beside him, the USE seat on TALK;
+    // and on King Thrain, who sits on his throne (a tile the core frames), the core's own tag is taught to say "Talk to King Thrain"
+    { const d = DWARVES.find(x => x.id === 'orik'); closePanel(); dialog.queue.length = 0; dialog.cur = null; F.tp(d.x, d.y + 1); F.face(d.x, d.y); render();
+      const r = PEOPLE_UI.auditPrompt(d), face = HK.face('use');
+      check('dwarves: facing Orik draws the gold corners on him and a Talk tag beside him (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      F.tp(THRONE_T.x, THRONE_T.y - 1); F.face(THRONE_T.x, THRONE_T.y); render(); const pv = HK.usePreview(), f2 = HK.face('use');
+      check("dwarves: facing King Thrain on his throne, the core's prompt says Talk to King Thrain and the USE seat reads TALK", !!pv && pv.verb === 'TALK' && pv.what === 'King Thrain' && !!f2 && f2.ribbon === 'TALK', { pv, face: f2 && f2.ribbon }); }
     // mithril rocks + mining gates
     { let rocks = 0; for (let y = DH.y0; y <= DH.y1; y++) for (let x = DH.x0; x <= DH.x1; x++) if (tileAt(x, y) === DW_MITHRIL) rocks++; check('dwarves: mithril rocks in the galleries', rocks >= 10, { rocks }); }
     { F.tp(LADDER_T.x, LADDER_T.y + 1); const r = F.nearestTile([DW_MITHRIL]); const w = F.goAdjacent(r.x, r.y, 2500); F.face(r.x, r.y);
@@ -6607,6 +6946,7 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     return best ? best.e : null;
   }
+  const elFacing = PEOPLE_UI.facing(() => { const e = elInFront(); return e ? { px: e.px, py: e.py, name: e.name } : null; });
   function elTalk(e) {
     { const dx = e.px - player.x, dy = e.py - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
     const q = eq();
@@ -6722,15 +7062,19 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   // ---------- the loom panel (the core's station panel has no title for a loom, so the recipe list is drawn here) ----------
+  // One row per weaving, like the stations' recipe rows: what it makes in a pouch, what it takes as exact numbers
+  // ("Spider silk 3/10"), the level it needs in red when you are short of it, and Weave (the row's label is the recipe's).
+  let loomPage = 0;
+  const loomRows = () => RECIPES.filter(r => r.station === 'loom').map(rec => {
+    const lvOk = !rec.skill || skillLv(rec.skill) >= rec.lv, can = lvOk && rec.needs.every(([id, q]) => countItem(id) >= q);
+    return {
+      id: rec.out, name: ITEMS[rec.out].name + (rec.qty > 1 ? ` × ${rec.qty}` : ''), sub: PEOPLE_UI.needsText(rec.needs),
+      note: lvOk ? null : `Needs ${PEOPLE_UI.skillWord(rec.skill)} ${rec.lv}. You are ${skillLv(rec.skill)}.`, noteColor: HK.T.bad,
+      verb: { shown: 'Weave', label: rec.label + (rec.lv > 1 ? `  (lv ${rec.lv})` : ''), action: () => craft(rec), tone: 'primary', enabled: can },
+    };
+  });
   HOOKS.panel.loom = (g, narrow) => {
-    const list = RECIPES.filter(r => r.station === 'loom');
-    const { px, py, w, h } = panelBox(g, 420, Math.min(VH - 20, 90 + list.length * 40), "Thessaly's loom — weaving", `Crafting level ${skillLv('crafting')}`);
-    const maxRows = Math.floor((h - 80) / 40);
-    list.slice(0, maxRows).forEach((rec, i) => {
-      const y = py + 62 + i * 40;
-      const has = rec.needs.every(([id, q]) => countItem(id) >= q); const lvOk = !rec.skill || skillLv(rec.skill) >= rec.lv; const can = has && lvOk;
-      button(g, px + 18, y, w - 36, 34, rec.label + (rec.lv > 1 ? `  (lv ${rec.lv})` : ''), () => craft(rec), can ? '#238636' : '#2a2f3a', can);
-    });
+    PEOPLE_UI.rowsPanel(g, { title: "Thessaly's loom — weaving", sub: `Crafting level ${skillLv('crafting')}`, rows: loomRows(), want: 480, page: loomPage, setPage: p => { loomPage = p; } });
   };
 
   // ---------- update: chopping, the Voice's hint, hover armour, target practice ----------
@@ -6938,8 +7282,8 @@ HOOKS.selfTest.push((check, F, h) => {
     if (!player.dead && player.equip.body === 'hover_armour') items.push({ y: player.y + player.r - 0.5, draw: () => drawHoverGlow(g) });
     // interaction highlight for our own tiles and elves (the core only highlights what it knows)
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 2, draw: () => {
-      const e = elInFront();
-      if (e) { g.strokeStyle = 'rgba(200,240,192,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(e.px, e.py, 18, 0, 7); g.stroke(); g.setLineDash([]); return; }
+      // the elf you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      if (PEOPLE_UI.brackets(g, elFacing())) return;
       const { tx, ty } = frontTile(player);
       if (EL_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
@@ -7016,6 +7360,17 @@ HOOKS.selfTest.push((check, F, h) => {
       check("elves: twenty strikes complete Lira's Twenty: 500 Range xp + 30 elven arrows", twenty && eq().liraDone && countItem('elven_arrow') === ea1 + 30 && player.skills.range.xp === rx1 + 500 && !activeQuests().includes('elf_range'), { twenty, done: eq().liraDone, arrows: countItem('elven_arrow') - ea1, xp: player.skills.range.xp - rx1 });
       if (prevW) { const s = player.inv.findIndex(x => x && x.id === prevW); if (s >= 0) equipItem(s); } }
     { const s = monsters.filter(m => m.type === 'elf_sentinel'); check('elves: two neutral elf sentinels watch the gap', s.length === 2 && s.every(m => !m.angry && inCity(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))) && MONSTER_DEFS.elf_sentinel.level === 25 && MONSTER_DEFS.elf_sentinel.human, { sentinels: s.length }); }
+    // the world prompt on Thessaly, and her loom at every size (with the level note showing, and without)
+    { drain(); closePanel(); F.tp(132, 129); F.face(133, 129); render();
+      const th = ELVES.find(e => e.id === 'thessaly'), r = PEOPLE_UI.auditPrompt(th), face = HK.face('use');
+      check('elves: facing Thessaly draws the gold corners on her and a Talk tag beside her (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const cx0 = player.skills.crafting.xp;
+      const a = PEOPLE_UI.auditPanels([
+        { name: 'loom', panel: 'loom', open: () => openPanel('loom') },
+        { name: 'loom, Crafting too low', panel: 'loom', open: () => { player.skills.crafting.xp = 0; openPanel('loom'); }, close: () => { player.skills.crafting.xp = cx0; } },
+      ]);
+      player.skills.crafting.xp = cx0;
+      check("elves: Thessaly's loom wears the book frame at all 8 sizes, touch and mouse, Normal and Large text: Weave rows 44 px on touch (26 with a mouse), 8 px apart on touch, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 64 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     h.peace(false); closePanel();
   });
 }
@@ -7118,6 +7473,7 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     return best;
   }
+  const seaFacing = PEOPLE_UI.facing(() => { if (bq().sailing) return null; const c = seaFolkInFront(); return c ? { px: c.px, py: c.py, name: c.who.name } : null; });
   function talkSeaFolk(c) {
     { const dx = c.px - player.x, dy = c.py - player.y, dd = Math.hypot(dx, dy) || 1; player.facing = { x: dx / dd, y: dy / dd }; }
     say(pick(c.who.lines), c.who.name);
@@ -7259,47 +7615,63 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   // ---------- panels ----------
-  HOOKS.panel.sailing = () => { }; // blocks movement and use while the crossing overlay (HOOKS.hud) plays
+  // The crossing is a panel too: it owns the whole screen (panelRect), so no HUD control under it takes a tap, and it is
+  // drawn after every HUD piece and plaque, opaque, so none of them shows through while Harl rows.
+  HOOKS.panel.sailing = (g, narrow) => {
+    panelRect = { x: 0, y: 0, w: VW, h: VH }; buttons.length = 0;
+    const s = bq().sailing; if (s) drawCrossing(g, s, narrow);
+  };
+  // OLD HARL'S FERRY: one vellum card per place he rows to, its name in Cinzel and its blurb in words, and the fare on a plate:
+  // gold-edged when you can pay, grey when Harl will not take you yet (a tap still has him say why), plain when you are short.
+  let ferryPage = 0;
   HOOKS.panel.ferry = (g, narrow) => {
     const q = bq(); const here = q.where;
-    const { px, py, w, h } = panelBox(g, 460, 400, "Old Harl's Ferry", `${coins()} coins · you are at ${LOC[here].name}`);
-    const dests = ['gull', 'ironclad', 'farshore', 'dock'].filter(k => k !== here);
-    let y = py + 64;
-    for (const k of dests) {
-      const L = LOC[k]; const price = k === 'dock' ? 0 : L.price; const gated = L.combat && combatLevel() < L.combat;
-      roundRect(g, px + 18, y, w - 36, 60, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(k === 'dock' ? 'Back to the dock' : L.name, px + 30, y + 22);
-      g.fillStyle = gated ? '#ff9a9a' : '#8b949e'; g.font = '11px sans-serif';
-      let sub = gated ? `Needs combat level ${L.combat}. You are ${combatLevel()}.` : L.blurb; while (g.measureText(sub).width > w - 66 - (narrow ? 0 : 190) && sub.length > 8) sub = sub.slice(0, -2) + '…'; g.fillText(sub, px + 30, y + 44);
-      const label = k === 'dock' ? 'Back to the dock · free' : `${L.name} · ${price} coins`;
-      button(g, narrow ? px + 18 : px + w - 208, narrow ? y + 30 : y + 15, narrow ? w - 36 : 190, 30, label, () => sail(k), gated ? '#5a3a3a' : coins() >= price ? '#238636' : '#2a2f3a');
-      y += 68;
-    }
-    button(g, px + 18, py + h - 50, w - 36, 34, 'Stay', closePanel, '#21262d');
+    const rows = ['gull', 'ironclad', 'farshore', 'dock'].filter(k => k !== here).map(k => {
+      const L = LOC[k], price = k === 'dock' ? 0 : L.price, gated = !!(L.combat && combatLevel() < L.combat), can = coins() >= price;
+      return {
+        name: k === 'dock' ? 'Back to the dock' : L.name, sub: L.blurb,
+        note: gated ? `Needs combat level ${L.combat}. You are ${combatLevel()}.` : null, noteColor: HK.T.bad,
+        verb: { label: k === 'dock' ? 'Back to the dock · free' : `${L.name} · ${price} coins`, action: () => sail(k), tone: !gated && can ? 'primary' : null, enabled: !gated, live: gated, w: 214 },
+      };
+    });
+    const R = PEOPLE_UI.row();
+    PEOPLE_UI.rowsPanel(g, {
+      title: "Old Harl's Ferry", sub: `${coins()} coins · you are at ${LOC[here].name}`, rows, want: 540, page: ferryPage, setPage: p => { ferryPage = p; },
+      footerH: R + 10, footer: (g2, x, y, w) => { const bw = narrow ? w : 160; button(g2, x + w - bw, y + 10, bw, R, 'Stay', closePanel, '#21262d'); },
+    });
+  };
+  // SALT PETE'S SHACK: the shop rows (the item in a pouch, its name, a line on what it is, Buy) and, beside or under them, the
+  // pack to sell fish from. Side by side on a short, wide screen (a phone on its side); one under the other everywhere else.
+  const peteBuy = (id, price) => { const def = ITEMS[id]; if (!payCoins(price)) { notify('Not enough coins.'); return; } if (addItem(id, 1) > 0) { addItem('coins', price); notify('Your pack is full.'); return; } floatText(player.x, player.y - 30, `Bought ${def.name}`, def.color); save(); };
+  const peteSell = i => {
+    const s = player.inv[i]; if (!s || s.id === 'coins') return;
+    if (!PETE_SHOP.buys.includes(s.id)) { notify('Pete only buys fish. Shrimp, trout, lobster. Raw or cooked.'); return; }
+    const price = Math.max(1, ITEMS[s.id].value); s.qty -= 1; if (s.qty <= 0) player.inv[i] = null; addItem('coins', price); floatText(player.x, player.y - 30, `+${price} coins`, '#ffd166'); save();
   };
   HOOKS.panel.pete = (g, narrow) => {
-    const shop = PETE_SHOP; const cols = narrow ? 5 : 10, size = 40, gap = 5;
-    const { px, py, w } = panelBox(g, cols * (size + gap) + 30, 200 + shop.stock.length * 38 + Math.ceil(INV_SLOTS / cols) * (size + gap), shop.name, `${coins()} coins · buy on the left, tap your pack to sell`);
-    shop.stock.forEach(([id, price], i) => {
-      const y = py + 62 + i * 38; const def = ITEMS[id]; const can = coins() >= price;
-      roundRect(g, px + 18, y, w - 36, 32, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      drawItemIcon(g, id, px + 38, y + 16, 18);
-      g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(def.name, px + 58, y + 20);
-      if (!narrow) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.fillText(itemBlurb(def), px + 190, y + 20); }
-      button(g, px + w - 120, y + 3, 96, 26, `Buy ${price}`, () => { if (!payCoins(price)) { notify('Not enough coins.'); return; } if (addItem(id, 1) > 0) { addItem('coins', price); notify('Your pack is full.'); return; } floatText(player.x, player.y - 30, `Bought ${def.name}`, def.color); save(); }, can ? '#238636' : '#2a2f3a', can);
-    });
-    const gy = py + 62 + shop.stock.length * 38 + 12;
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('PETE BUYS FISH AT FULL PRICE: shrimp, trout, lobster (raw or cooked)', px + 18, gy);
-    drawInvGrid(g, px + 18, gy + 8, cols, size, gap, i => {
-      const s = player.inv[i]; if (!s || s.id === 'coins') return;
-      if (!shop.buys.includes(s.id)) { notify('Pete only buys fish. Shrimp, trout, lobster. Raw or cooked.'); return; }
-      const price = Math.max(1, ITEMS[s.id].value); s.qty -= 1; if (s.qty <= 0) player.inv[i] = null; addItem('coins', price); floatText(player.x, player.y - 30, `+${price} coins`, '#ffd166'); save();
-    });
+    const U = PEOPLE_UI, shop = PETE_SHOP, short = VH < 500, top = 62, bottom = 16, sp = U.gap();
+    const rows = shop.stock.map(([id, price]) => ({ id, name: ITEMS[id].name, sub: narrow || short ? null : itemBlurb(ITEMS[id]), verb: { label: `Buy ${price}`, action: () => peteBuy(id, price), tone: 'primary', enabled: coins() >= price } }));
+    const sellWords = short ? 'Full price for fish. Tap one to sell it.' : 'Full price for shrimp, trout and lobster, raw or cooked. Tap a fish in your pack to sell it.';
+    const box = U.fit(short && !narrow ? 760 : 560, 9999), w = box.w, iw = w - 36;
+    const rowsH = cw => { const lay = U.layoutRows(g, rows, 0, cw, 9999); return lay.pageH; };
+    const sellH = cw => { const gg = U.gridGeom(cw, INV_SLOTS, 10); return 24 + U.wordsFit(g, sellWords, cw, { size: 13, lines: 3 }).h + 8 + gg.h; };
+    const stackedH = top + rowsH(iw) + 14 + sellH(iw) + bottom;
+    const side = !narrow && stackedH > box.maxH;
+    const lw = side ? Math.round(iw * 0.54) : iw, rw = side ? iw - lw - 16 : iw;
+    const h = side ? top + Math.max(rowsH(lw), sellH(rw)) + bottom : stackedH;
+    const { px, py } = panelBox(g, w, h, shop.name, `${coins()} coins · buy here, tap your pack to sell`);
+    const lay = U.layoutRows(g, rows, 0, lw, 9999);
+    let y = U.drawRows(g, rows, lay, 0, px + 18, py + top, lw) - lay.sp;
+    const sx = side ? px + 18 + lw + 16 : px + 18; let sy = side ? py + top : y + 14;
+    sy += U.header(g, 'Pete buys fish', sx, sy, rw);
+    sy += U.words(g, sellWords, sx, sy, rw, { size: 13, lines: 3 }).h + 8;
+    const gg = U.gridGeom(rw, INV_SLOTS, 10);
+    drawInvGrid(g, sx, sy, gg.cols, gg.size, gg.sp, peteSell);
   };
 
   // ---------- drawing ----------
   function drawGull(g, x, y, s = 1, flap = 0) {
-    g.strokeStyle = '#e6edf3'; g.lineWidth = 1.6 * s; g.lineCap = 'round'; g.beginPath();
+    g.strokeStyle = '#efe9dc'; g.lineWidth = 1.6 * s; g.lineCap = 'round'; g.beginPath();
     g.moveTo(x - 8 * s, y + 2 * s); g.quadraticCurveTo(x - 4 * s, y - 4 * s - flap, x, y); g.quadraticCurveTo(x + 4 * s, y - 4 * s - flap, x + 8 * s, y + 2 * s); g.stroke();
   }
   function drawBoatSide(g, s, dir) { // the crossing: seen from the side
@@ -7462,37 +7834,46 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     // interaction highlight for our own folk and tiles (the core only highlights what it knows)
     if (!player.dead && !player.mech && !q.sailing) items.push({ y: 1e9 + 1, draw: () => {
-      const c = seaFolkInFront();
-      if (c) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(c.px, c.py, 20, 0, 7); g.stroke(); g.setLineDash([]); return; }
+      // Harl or Pete, faced: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      if (PEOPLE_UI.brackets(g, seaFacing())) return;
       const { tx, ty } = frontTile(player);
       if (B_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
-  // the crossing: a full-screen overlay while Harl rows
-  HOOKS.hud.push((g, narrow) => {
-    const s = bq().sailing; if (!s) return;
+  // the crossing: a full-screen night sea while Harl rows. Drawn by the 'sailing' panel above, over every HUD piece: black
+  // first, so nothing of the HUD shows even while the sea fades in and out, then the sea, the boat and the gulls, and the
+  // kit's area banner for the title (Cinzel, the gold flourish, a line of words) in a lane near a fifth of the way down.
+  function drawCrossing(g, s, narrow) {
     const p = clamp(s.t / SAIL_T, 0, 1), dir = s.to === 'dock' ? -1 : 1;
     const fade = clamp(Math.min(p * 10, (1 - p) * 10), 0, 1);
-    g.save(); g.globalAlpha = fade;
+    g.save(); g.fillStyle = '#05070c'; g.fillRect(0, 0, VW, VH);
+    g.globalAlpha = fade;
     const hz = VH * 0.42;
     const sky = g.createLinearGradient(0, 0, 0, hz); sky.addColorStop(0, '#070c18'); sky.addColorStop(1, '#16304f'); g.fillStyle = sky; g.fillRect(0, 0, VW, hz);
     const sea = g.createLinearGradient(0, hz, 0, VH); sea.addColorStop(0, '#123b66'); sea.addColorStop(1, '#0a2242'); g.fillStyle = sea; g.fillRect(0, hz, VW, VH - hz);
-    g.fillStyle = '#e8e6d8'; g.beginPath(); g.arc(VW * 0.78, hz * 0.4, 18, 0, 7); g.fill(); g.fillStyle = '#16304f'; g.beginPath(); g.arc(VW * 0.78 + 8, hz * 0.4 - 5, 15, 0, 7); g.fill();
+    // the moon sits low on the right, under the title's lane at every size
+    const mx = VW * 0.84, my = hz * 0.8;
+    g.fillStyle = '#e8e6d8'; g.beginPath(); g.arc(mx, my, 16, 0, 7); g.fill(); g.fillStyle = '#16304f'; g.beginPath(); g.arc(mx + 7, my - 5, 13, 0, 7); g.fill();
     g.fillStyle = 'rgba(255,255,255,0.7)'; for (let k = 0; k < 24; k++) { g.beginPath(); g.arc(((k * 137) % VW), (k * 53) % (hz * 0.8), 1 + (k % 3) * 0.4, 0, 7); g.fill(); }
     g.lineCap = 'round';
     for (let k = 0; k < 9; k++) {
       const y = hz + 14 + k * (VH - hz) / 9; g.strokeStyle = `rgba(200,230,255,${0.12 + k * 0.03})`; g.lineWidth = 1.5 + k * 0.2; g.beginPath();
-      for (let x = -20; x <= VW + 20; x += 12) { const yy = y + Math.sin(x * 0.03 + time * 2 + k) * (3 + k) ; if (x === -20) g.moveTo(x, yy); else g.lineTo(x, yy); } g.stroke();
+      for (let x = -20; x <= VW + 20; x += 12) { const yy = y + Math.sin(x * 0.03 + time * 2 + k) * (3 + k); if (x === -20) g.moveTo(x, yy); else g.lineTo(x, yy); } g.stroke();
     }
     const bx = dir > 0 ? lerp(-140, VW + 140, p) : lerp(VW + 140, -140, p), by = VH * 0.62 + Math.sin(time * 2.5) * 5;
     g.save(); g.translate(bx, by); g.rotate(Math.sin(time * 2.5 + 1) * 0.05); drawBoatSide(g, narrow ? 1.4 : 2, dir); g.restore();
     g.strokeStyle = 'rgba(230,245,255,0.5)'; g.lineWidth = 2; g.beginPath(); g.moveTo(bx - dir * 90, by + 40); g.quadraticCurveTo(bx - dir * 200, by + 44 + Math.sin(time * 3) * 4, bx - dir * 320, by + 36); g.stroke();
     for (let k = 0; k < 4; k++) { const gx = ((VW * 0.15 + k * VW * 0.23 + time * 28 * (k % 2 ? 1 : -1)) % (VW + 60) + VW + 60) % (VW + 60) - 30, gy = hz * 0.55 + Math.sin(time * 2.2 + k * 1.7) * 14 + k * 9; drawGull(g, gx, gy, 1.3, Math.sin(time * 7 + k) * 3); }
-    g.fillStyle = '#e6edf3'; g.font = `800 ${narrow ? 22 : 30}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,0.7)';
-    const title = `SAILING TO ${(s.to === 'dock' ? 'THE DOCK' : LOC[s.to].name).toUpperCase()}`; g.strokeText(title, VW / 2, VH * 0.2); g.fillText(title, VW / 2, VH * 0.2);
-    g.font = '13px sans-serif'; g.fillStyle = '#c9a36a'; g.strokeText('Old Harl rows. The gulls follow.', VW / 2, VH * 0.2 + 22); g.fillText('Old Harl rows. The gulls follow.', VW / 2, VH * 0.2 + 22);
+    HK.banner(g, crossingLane(), { kind: 'area', title: crossingTitle(s), sub: 'Old Harl rows. The gulls follow.' });
     g.restore();
-  });
+  }
+  const crossingTitle = s => `SAILING TO ${(s.to === 'dock' ? 'THE DOCK' : LOC[s.to].name).toUpperCase()}`;
+  // the title's lane: centred, clear of the notch bands, its headline near a fifth of the way down
+  function crossingLane() {
+    const L = HK.cur ? HK.cur() : null, S = (L && L.S) || { t: 0, r: 0, l: 0 };
+    const side = Math.max(16, (S.l || 0) + 8, (S.r || 0) + 8), w = Math.min(VW - 2 * side, 720);
+    return { x: Math.round((VW - w) / 2), y: Math.round(Math.max((S.t || 0) + 8, VH * 0.2 - 34)), w, h: 90 };
+  }
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -7551,6 +7932,40 @@ HOOKS.selfTest.push((check, F, h) => {
     { const a = talkHarl(); const open = panel === 'ferry'; const c0 = coins(); const c = F.clickButton('Back'); F.sim(150, []);
       check("boats: 'Back to the dock' is free and returns you to the mainland dock", typeof a === 'number' && open && c && coins() === c0 && q.where === 'dock' && Math.floor(player.x / TILE) === LOC.dock.land.x && Math.floor(player.y / TILE) === LOC.dock.land.y && harlPos().x === tc(LOC.dock.harl.x), { a, open, c, where: q.where, tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }); }
     player.skills.melee.xp = m0; player.skills.defence.xp = d0; player.skills.range.xp = r0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
+    // the world prompt on Old Harl: gold corners on him, the Talk tag beside him, the USE seat on TALK
+    { closePanel(); drain(); q.sailing = null; q.where = 'dock'; F.tp(LOC.dock.land.x, LOC.dock.land.y); F.face(LOC.dock.harl.x, LOC.dock.harl.y); render();
+      const hp = harlPos(), r = PEOPLE_UI.auditPrompt({ px: hp.x, py: hp.y, name: HARL.name }), face = HK.face('use');
+      check('boats: facing Old Harl draws the gold corners on him and a Talk tag beside him (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon }); }
+    // the ferry and Pete's shack at every size, touch and mouse, Normal and Large
+    { const sk = ['melee', 'defence', 'range'].map(k => player.skills[k].xp), inv0 = player.inv.map(x => x ? { ...x } : null), w0 = q.where;
+      const low = () => { player.skills.melee.xp = 0; player.skills.defence.xp = 0; player.skills.range.xp = 0; }, back = () => { ['melee', 'defence', 'range'].forEach((k, i) => { player.skills[k].xp = sk[i]; }); q.where = w0; };
+      h.give('coins', 100); if (!countItem('raw_trout')) h.give('raw_trout', 2);
+      const a = PEOPLE_UI.auditPanels([
+        { name: 'ferry at the dock', panel: 'ferry', open: () => { q.where = 'dock'; openPanel('ferry'); }, close: back },
+        { name: 'ferry, combat level too low', panel: 'ferry', open: () => { low(); q.where = 'dock'; openPanel('ferry'); }, close: back },
+        { name: 'ferry at Gull Isle', panel: 'ferry', open: () => { q.where = 'gull'; openPanel('ferry'); }, close: back },
+        { name: "Pete's shack", panel: 'pete', open: () => openPanel('pete') },
+      ]);
+      back(); player.inv = inv0;
+      check("boats: Old Harl's ferry and Salt Pete's shack wear the book frame at all 8 sizes, touch and mouse, Normal and Large text: fare plates, Stay, Buy plates and 44 px sell pouches on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 128 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
+    // the crossing hides the HUD: no control stays in buttons[] while Harl rows, at any size; and its title (the kit's
+    // area banner) fits at Large on the smallest iPhone, with nothing but the black sea behind it
+    { const own = k => Object.getOwnPropertyDescriptor(window, k), sw = own('innerWidth'), shh = own('innerHeight'), t0 = window.__forceTouch, tx0 = window.SETTINGS ? SETTINGS.get('text') : 'normal';
+      const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); };
+      const left = []; let fit = null, title = null;
+      try {
+        HK.setCacheOff(true); closePanel(); drain();
+        q.sailing = { to: 'farshore', t: 0.5, from: q.where, fx: player.x, fy: player.y }; openPanel('sailing');
+        for (const [w, hh] of HK.audit.SIZES) for (const t of [true, false]) { setSize(w, hh); window.__forceTouch = t; drawHud(HK.audit.fitCtx()); if (buttons.length) left.push(`${w}x${hh} ${t ? 'touch' : 'mouse'}: ${buttons.map(b => b.label).join(', ')}`); }
+        setSize(375, 667); window.__forceTouch = true; if (window.SETTINGS) SETTINGS.set('text', 'large');
+        HK.FIT.on = true; HK.FIT.log.length = 0; drawHud(HK.audit.fitCtx()); HK.FIT.on = false;
+        fit = HK.audit.fitIssues('crossing 375x667 large'); title = HK.FIT.log.find(e => e.id === 'banner' && e.s === 'SAILING TO THE FAR SHORE');
+      } finally {
+        HK.FIT.on = false; HK.setCacheOff(false); q.sailing = null; closePanel(); window.__forceTouch = t0; if (window.SETTINGS) SETTINGS.set('text', tx0);
+        if (sw) { Object.defineProperty(window, 'innerWidth', sw); Object.defineProperty(window, 'innerHeight', shh); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+        resize(); render();
+      }
+      check('boats: while Harl rows the crossing owns the screen: no HUD control is left in buttons[] at any of the 8 sizes, touch or mouse, and "SAILING TO THE FAR SHORE" (the kit\'s area banner) fits its lane at Large on a 375x667 iPhone', left.length === 0 && !!title && fit.length === 0, { left: left.slice(0, 4), title: !!title, fit }); }
     h.peace(false);
   });
 }
@@ -9292,6 +9707,8 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     return best && best.p;
   };
+  const OWN_TILES = [T_RBOARD, T_SAWMILL, T_GOODWELL, T_BELL];
+  const rbFacing = PEOPLE_UI.facing(() => { const ft = frontTile(player); if (OWN_TILES.includes(tileAt(ft.tx, ft.ty))) return null; const p = personInFront(); return p ? { px: p.px, py: p.py, name: p.name } : null; });
   const talkTo = p => {
     const done = RB().done.knight; const pool = done && p.after ? p.after.concat(p.lines) : p.lines;
     p.facing = { x: Math.sign(player.x - p.px) || 0, y: Math.sign(player.y - p.py) || 1 };
@@ -9346,38 +9763,34 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   // ---------- panel ----------
-  const ROW_H = 62;
-  const perPage = () => Math.max(2, Math.min(PROJECTS.length, Math.floor((VH - 20 - 150) / ROW_H)));
+  // Nell's plan: one vellum row per project, its number and name in Cinzel, Nell's words about it, what it needs as exact
+  // numbers ("Stone 10/20 · Planks 0/4") and a gold bar of what is paid so far; Build on a plate at the right (under the words
+  // on a phone). Rows that do not fit go on pages. The two-tap "Called: Sir / Dame" flip stays a plain toggle.
   let page = 0;
-  HOOKS.panel.rebuild = (g, narrow) => {
-    const r = RB(); const per = perPage(), pages = Math.max(1, Math.ceil(PROJECTS.length / per)); page = clamp(page | 0, 0, pages - 1);
-    const done = PROJECTS.filter(isDone).length;
-    const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : 600, 96 + per * ROW_H + 52, 'Rebuild Hollowford', `Nell's plan · ${done} of ${PROJECTS.length} built${pages > 1 ? ` · page ${page + 1} of ${pages}` : ''}${r.title ? ` · ${r.title}` : ''}`);
-    const fit = (text, maxW) => { let s = text; while (s.length > 8 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s === text ? text : s + '…'; };
-    const bw = narrow ? 96 : 126, textW = w - 36 - bw - 24;
-    PROJECTS.slice(page * per, page * per + per).forEach((p, i) => {
-      const y = py + 66 + i * ROW_H; const dn = isDone(p), av = available(p), frac = dn ? 1 : haveTotal(p) / needTotal(p);
-      const canGive = av && Object.keys(p.cost).some(k => have(p, k) < p.cost[k] && countItem(k) > 0);
-      roundRect(g, px + 18, y, w - 36, ROW_H - 6, 8); g.fillStyle = dn ? 'rgba(126,231,135,0.07)' : av ? 'rgba(88,166,255,0.10)' : 'rgba(255,255,255,0.04)'; g.fill();
-      if (canGive) { g.strokeStyle = 'rgba(126,231,135,0.45)'; g.lineWidth = 1; g.stroke(); }
-      const num = PROJECTS.indexOf(p);
-      g.textAlign = 'left'; g.fillStyle = dn ? '#7ee787' : av ? '#e6edf3' : '#6e7681'; g.font = 'bold 13px sans-serif'; g.fillText(fit(`${num}. ${p.title}`, textW), px + 30, y + 17);
-      g.fillStyle = dn ? '#6e7681' : av ? '#c9d1d9' : '#4b535d'; g.font = 'italic 11px sans-serif'; g.fillText(fit(dn ? p.result : `“${p.blurb}”`, textW), px + 30, y + 32);
-      g.font = '11px sans-serif'; g.fillStyle = dn ? '#4b535d' : av ? '#8b949e' : '#4b535d'; g.fillText(fit(dn ? 'Built' : av ? `Needs: ${costText(p)}` : !unlocked() ? 'Not while the beast walks' : 'Locked: finish the one before it', textW), px + 30, y + 46);
-      // progress bar
-      g.fillStyle = '#2a2f3a'; roundRect(g, px + 30, y + 50, textW, 4, 2); g.fill();
-      if (frac > 0) { g.fillStyle = dn ? '#7ee787' : '#58a6ff'; roundRect(g, px + 30, y + 50, textW * clamp(frac, 0, 1), 4, 2); g.fill(); }
-      const bx = px + w - 18 - bw, by = y + 13;
-      if (dn) {
-        if (p.id === 'knight') { const dame = r.title === 'Dame of Hollowford'; button(g, bx, by, bw, 30, dame ? 'Called: Dame' : 'Called: Sir', () => { r.title = dame ? 'Sir of Hollowford' : 'Dame of Hollowford'; save(); }, '#21262d'); }
-        else button(g, bx, by, bw, 30, 'Built', () => { }, '#2a2f3a', false);
-      }
-      else button(g, bx, by, bw, 30, `Build: ${p.tag}`, () => contribute(p), canGive ? '#238636' : '#2a2f3a', av);
+  const projectRows = () => {
+    const r = RB();
+    return PROJECTS.map((p, num) => {
+      const dn = isDone(p), av = available(p), canGive = av && Object.keys(p.cost).some(k => have(p, k) < p.cost[k] && countItem(k) > 0);
+      const frac = dn ? 1 : haveTotal(p) / needTotal(p);
+      const note = dn ? 'Built' : av ? `Needs: ${costText(p)}` : !unlocked() ? 'Not while the beast walks' : 'Locked: finish the one before it';
+      let verb;
+      if (dn && p.id === 'knight') { const dame = r.title === 'Dame of Hollowford'; verb = { label: dame ? 'Called: Dame' : 'Called: Sir', action: () => { r.title = dame ? 'Sir of Hollowford' : 'Dame of Hollowford'; save(); }, tone: null }; }
+      else if (dn) verb = null;
+      else verb = { label: `Build: ${p.tag}`, action: () => contribute(p), tone: canGive ? 'primary' : null, enabled: av };
+      return {
+        name: `${num}. ${p.title}`, nameColor: dn ? HK.T.good : av ? HK.T.ink : HK.T.inkMute,
+        sub: VH < 500 ? null : dn ? p.result : `“${p.blurb}”`, subColor: av || dn ? HK.T.inkDim : HK.T.inkMute,
+        note, noteColor: dn ? HK.T.good : av ? (canGive ? HK.T.good : HK.T.ink) : HK.T.inkMute,
+        bar: frac, barCol: dn ? HK.T.good : HK.T.gold, edge: canGive ? 'rgba(138,216,131,0.6)' : null, verb,
+      };
     });
-    const fy = py + h - 44;
-    if (pages > 1) { button(g, px + 18, fy, 80, 30, 'Prev', () => { page = Math.max(0, page - 1); }, '#21262d', page > 0); button(g, px + 106, fy, 80, 30, 'Next', () => { page = Math.min(pages - 1, page + 1); }, '#21262d', page < pages - 1); }
-    button(g, px + w - 18 - 100, fy, 100, 30, 'Close', closePanel, '#21262d');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText('Build gives what you carry. Half now, half later is fine.', px + w / 2 - (pages > 1 ? 0 : 40), fy + 20);
+  };
+  HOOKS.panel.rebuild = (g, narrow) => {
+    const r = RB(), done = PROJECTS.filter(isDone).length;
+    PEOPLE_UI.rowsPanel(g, {
+      title: 'Rebuild Hollowford', sub: `Nell's plan · ${done} of ${PROJECTS.length} built${r.title ? ` · ${r.title}` : ''}`,
+      intro: VH < 500 ? null : 'Build gives what you carry. Half now, half later is fine.', rows: projectRows(), want: 620, page, setPage: p => { page = p; },
+    });
   };
 
   // ---------- quest tab ----------
@@ -9479,10 +9892,11 @@ HOOKS.selfTest.push((check, F, h) => {
     for (const p of people()) if (p.px > cam.x - 60 && p.px < cam.x + VW + 60 && p.py > cam.y - 60 && p.py < cam.y + VH + 60) items.push({ y: p.py + 13, draw: () => drawPerson(g, p) });
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 3, draw: () => {
       if (npcInFront()) return;
-      const p = personInFront();
-      if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 20, 0, 7); g.stroke(); g.setLineDash([]); return; }
+      // E answers the board, the sawmill, the well and the bell before the people (HOOKS.use above), so the prompt does too
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      if (t === T_RBOARD || t === T_SAWMILL || t === T_GOODWELL || t === T_BELL) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
+      if (OWN_TILES.includes(t)) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); return; }
+      // the person you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      PEOPLE_UI.brackets(g, rbFacing());
     } });
   });
 
@@ -9544,6 +9958,21 @@ HOOKS.selfTest.push((check, F, h) => {
     { save(); const doneSnap = JSON.stringify(RB().done); const title = RB().title; const diffs = mapDiffs.size;
       quest = { stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }; resetPeople(); const ok = load(); F.sim(2, []);
       check('rebuild: save()/load() keeps the done flags, the title, and the rebuilt tiles (well, house, bell)', ok && JSON.stringify(RB().done) === doneSnap && RB().title === title && mapDiffs.size === diffs && tileAt(WELL_POS.x, WELL_POS.y) === T_GOODWELL && tileAt(BELL_POS.x, BELL_POS.y) === T_BELL && tileAt(127, 69) === T.BED && survivors.length === 3, { ok, done: RB().done, title: RB().title, survivors: survivors.length }); }
+    // the world prompt on Nell in the square, and Nell's plan at every size: all built, a fresh plan, and before the beast falls
+    { closePanel(); drain(); const nell = survivors.find(s => s.name === 'Nell');
+      for (const w of villagers) { w.px = nell.px + 9 * TILE; w.py = nell.py + 9 * TILE; w.dir = null; w.wanderT = 99; }
+      F.tp(Math.floor(nell.px / TILE), Math.floor(nell.py / TILE) + 1); F.face(Math.floor(nell.px / TILE), Math.floor(nell.py / TILE)); render();
+      const r = PEOPLE_UI.auditPrompt({ px: nell.px, py: nell.py, name: 'Nell' }), face = HK.face('use');
+      check('rebuild: facing Nell draws the gold corners on her and a Talk tag beside her (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const rb1 = quest.rebuild, st1 = quest.stage;
+      const a = PEOPLE_UI.auditPanels([
+        { name: 'rebuild, all built', panel: 'rebuild', open: () => { page = 0; openPanel('rebuild'); } },
+        { name: 'rebuild, a fresh plan', panel: 'rebuild', open: () => { quest.rebuild = fresh(); page = 0; openPanel('rebuild'); }, close: () => { quest.rebuild = rb1; } },
+        { name: 'rebuild, page 2', panel: 'rebuild', open: () => { quest.rebuild = fresh(); page = 1; openPanel('rebuild'); }, close: () => { quest.rebuild = rb1; page = 0; } },
+        { name: 'rebuild, before the beast falls', panel: 'rebuild', open: () => { quest.stage = 9; quest.rebuild = fresh(); page = 0; openPanel('rebuild'); }, close: () => { quest.rebuild = rb1; quest.stage = st1; } },
+      ]);
+      quest.rebuild = rb1; quest.stage = st1; page = 0;
+      check("rebuild: Nell's plan wears the book frame at all 8 sizes, touch and mouse, Normal and Large text: Build plates, pages and the Sir / Dame flip 44 px on touch (26 with a mouse), 8 px apart on touch, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 128 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     // put the town back the way it was
     for (const [i, t] of snap) if (map[i] !== t) changeTile(i % MAP_W, Math.floor(i / MAP_W), t);
     quest.rebuild = rb0 || fresh(); resetPeople(); quest.stage = Math.max(quest.stage, st0); clearPack(); closePanel(); drain(); player.hp = Math.min(Math.max(hp0, 1), player.maxHp); levelBanner = null; h.peace(false); F.sim(2, []);
@@ -9978,6 +10407,7 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     return best ? best.n : null;
   }
+  const gcFacing = PEOPLE_UI.facing(() => { const n = folkInFront(), p = n && folkPx(n); return p ? { px: p.px, py: p.py, name: n.name } : null; });
   const liveGnasher = () => monsters.find(m => m.type === 'gnasher' && !m.dead) || null;
   const guards = () => monsters.filter(m => m.type === 'castle_guard');
   const calmGuards = () => { for (const m of guards()) if (!m.dead) { m.angry = false; if (m.state === 'chase') m.state = 'return'; } };
@@ -10208,32 +10638,24 @@ HOOKS.selfTest.push((check, F, h) => {
 
   // ---------- panel: Tinkerton's shop, and the Barrelbeast re-supply when another feature provides window.BEAST ----------
   const beastLost = () => { try { return !!(window.BEAST && typeof window.BEAST.lost === 'function' && window.BEAST.lost()); } catch (e) { return false; } };
+  // TINKERTON'S LAB: the shop rows (the item in a pouch, its name, a line on what it is, Buy) and, when the Barrelbeast is lost,
+  // a row to have it rebuilt in the yard
+  let tinkPage = 0;
+  const tinkBuy = (id, price) => { const def = ITEMS[id]; if (!payCoins(price)) { notify('Not enough coins.'); return; } if (addItem(id, 1) > 0) { addItem('coins', price); notify('Your pack is full.'); return; } floatText(player.x, player.y - 30, `Bought ${def.name}`, def.color); sfx('coins'); save(); };
+  const rebuildBeast = () => {
+    if (!beastLost()) { notify('The Barrelbeast is not lost.'); return; }
+    if (hidden()) { notify('Tinkerton builds it outside, in the yard. Come back out and ask again.'); return; } // the yard tile is on the overworld, not in the lab's map
+    if (!payCoins(200)) { notify('Tinkerton wants 200 coins for that. You have ' + coins() + '.'); return; }
+    let ok = false; try { ok = window.BEAST.giveTile(BEAST_T.x, BEAST_T.y) !== false; } catch (e) { ok = false; }
+    if (!ok) { addItem('coins', 200); notify('Tinkerton could not rebuild it. Your coins are returned.'); return; }
+    burst(tc(BEAST_T.x), tc(BEAST_T.y), '#ffb347', 30, 140); sfx('boom');
+    say('Two hundred coins and a night with a hammer. It is in the yard by my wall, knight. Try not to lose it in the sea this time.', 'Tinkerton'); closePanel(); save();
+  };
   HOOKS.panel.tinkerton = (g, narrow) => {
-    const shop = SHOPS.tinkerton; const lost = beastLost(); const rows = shop.stock.length + (lost ? 1 : 0);
-    const { px, py, w, h } = panelBox(g, 460, 150 + rows * 38, shop.name, `${coins()} coins · powder, scrap and hammers${lost ? ' · and a Barrelbeast' : ''}`);
-    shop.stock.forEach(([id, price], i) => {
-      const y = py + 62 + i * 38; const def = ITEMS[id]; const can = coins() >= price;
-      roundRect(g, px + 18, y, w - 36, 32, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      drawItemIcon(g, id, px + 38, y + 16, 18);
-      g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(def.name, px + 58, y + 20);
-      if (!narrow) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; let bl = itemBlurb(def) || ''; while (g.measureText(bl).width > w - 330 && bl.length > 8) bl = bl.slice(0, -2) + '…'; g.fillText(bl, px + 190, y + 20); }
-      button(g, px + w - 120, y + 3, 96, 26, `Buy ${price}`, () => { if (!payCoins(price)) { notify('Not enough coins.'); return; } if (addItem(id, 1) > 0) { addItem('coins', price); notify('Your pack is full.'); return; } floatText(player.x, player.y - 30, `Bought ${def.name}`, def.color); sfx('coins'); save(); }, can ? '#238636' : '#2a2f3a', can);
-    });
-    if (lost) {
-      const y = py + 62 + shop.stock.length * 38; const can = coins() >= 200;
-      roundRect(g, px + 18, y, w - 36, 32, 8); g.fillStyle = 'rgba(255,179,71,0.10)'; g.fill();
-      g.fillStyle = '#ffb347'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText('Bring back the Barrelbeast (200 coins)', px + 30, y + 20);
-      button(g, px + w - 120, y + 3, 96, 26, 'Rebuild 200', () => {
-        if (!beastLost()) { notify('The Barrelbeast is not lost.'); return; }
-        if (hidden()) { notify('Tinkerton builds it outside, in the yard. Come back out and ask again.'); return; } // the yard tile is on the overworld, not in the lab's map
-        if (!payCoins(200)) { notify('Tinkerton wants 200 coins for that. You have ' + coins() + '.'); return; }
-        let ok = false; try { ok = window.BEAST.giveTile(BEAST_T.x, BEAST_T.y) !== false; } catch (e) { ok = false; }
-        if (!ok) { addItem('coins', 200); notify('Tinkerton could not rebuild it. Your coins are returned.'); return; }
-        burst(tc(BEAST_T.x), tc(BEAST_T.y), '#ffb347', 30, 140); sfx('boom');
-        say('Two hundred coins and a night with a hammer. It is in the yard by my wall, knight. Try not to lose it in the sea this time.', 'Tinkerton'); closePanel(); save();
-      }, can ? '#b8641a' : '#2a2f3a', can);
-    }
-    button(g, px + 18, py + h - 46, w - 36, 32, 'Close', closePanel, '#21262d');
+    const shop = SHOPS.tinkerton, lost = beastLost(), short = VH < 500;
+    const rows = shop.stock.map(([id, price]) => ({ id, name: ITEMS[id].name, sub: narrow || short ? null : itemBlurb(ITEMS[id]) || null, verb: { label: `Buy ${price}`, action: () => tinkBuy(id, price), tone: 'primary', enabled: coins() >= price } }));
+    if (lost) rows.push({ name: 'The Barrelbeast', sub: 'Lost at sea? Tinkerton builds another in the yard by his wall.', note: '200 coins', noteColor: HK.T.gold, verb: { label: 'Rebuild 200', action: rebuildBeast, tone: 'primary', enabled: coins() >= 200 } });
+    PEOPLE_UI.rowsPanel(g, { title: shop.name, sub: `${coins()} coins · powder, scrap and hammers${lost ? ' · and a Barrelbeast' : ''}`, rows, want: 540, page: tinkPage, setPage: p => { tinkPage = p; } });
   };
 
   // ---------- drawing ----------
@@ -10398,8 +10820,8 @@ HOOKS.selfTest.push((check, F, h) => {
     for (const n of FOLK) { const p = folkPx(n); if (!p) continue; if (p.px > cam.x - 60 && p.px < cam.x + VW + 60 && p.py > cam.y - 60 && p.py < cam.y + VH + 60) { const b = insideBuilding(Math.floor(p.px / TILE), Math.floor(p.py / TILE)); if (b && b !== inside) continue; items.push({ y: p.py + 12 + (n.sortY || 0), draw: () => drawFolk(g, n, p) }); } }
     // interaction highlight for our own folk and tiles (the core only highlights what it knows)
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
-      const n = folkInFront();
-      if (n) { const p = folkPx(n); if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 18, 0, 7); g.stroke(); g.setLineDash([]); } return; }
+      // the goblin you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      if (folkInFront()) { PEOPLE_UI.brackets(g, gcFacing()); return; }
       const { tx, ty } = frontTile(player);
       if (GC_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
@@ -10501,6 +10923,18 @@ HOOKS.selfTest.push((check, F, h) => {
     // the scrap yard's machines mind their own business
     { const ms = monsters.filter(m => m.type === 'yard_walker' || m.type === 'yard_dozer');
       check('goblincity: two yard walkers (lv 18) and a yard dozer stand in the scrap yard, neutral unless attacked', ms.length === 3 && ms.filter(m => m.type === 'yard_walker').length === 2 && ms.every(m => !m.angry && inRect(YARD, Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))) && !MONSTER_DEFS.yard_walker.aggro && MONSTER_DEFS.yard_walker.level === 18 && !MONSTER_DEFS.yard_dozer.aggro && typeof HOOKS.drawMonster.yard_walker === 'function' && typeof HOOKS.drawMonster.yard_dozer === 'function', { n: ms.length, types: ms.map(m => m.type) }); }
+    // the world prompt on Grubb in Grubmarket, and Tinkerton's lab at every size (and with the Barrelbeast lost)
+    { if (window.__instance && window.INSTANCES) INSTANCES.leave(); closePanel(); drain(); const n = FOLK.find(q => q.id === 'grubb');
+      F.tp(n.x, n.y + 1); F.face(n.x, n.y); render();
+      const r = PEOPLE_UI.auditPrompt({ px: tc(n.x), py: tc(n.y), name: n.name }), face = HK.face('use');
+      check('goblincity: facing Grubb in Grubmarket draws the gold corners on him and a Talk tag beside him (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const B = window.BEAST, lost0 = B && B.lost; h.give('coins', 300);
+      const a = PEOPLE_UI.auditPanels([
+        { name: "Tinkerton's lab", panel: 'tinkerton', open: () => openPanel('tinkerton') },
+        { name: "Tinkerton's lab, the Barrelbeast lost", panel: 'tinkerton', open: () => { if (B) B.lost = () => true; openPanel('tinkerton'); }, close: () => { if (B) B.lost = lost0; } },
+      ]);
+      if (B) B.lost = lost0;
+      check("goblincity: Tinkerton's lab wears the book frame at all 8 sizes, touch and mouse, Normal and Large text: Buy plates (and Rebuild when the Barrelbeast is lost) 44 px on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 64 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     player.skills.melee.xp = m0; player.skills.defence.xp = d0; player.skills.range.xp = r0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
     closePanel(); drain(); h.peace(false);
   });
@@ -11313,6 +11747,8 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     return best ? best.e : null;
   }
+  // E answers the wind shrine before the folk (HOOKS.use below), so the prompt does too
+  const skyFacing = PEOPLE_UI.facing(() => { if (!active()) return null; const ft = frontTile(player); if (tileAt(ft.tx, ft.ty) === WIND_SHRINE) return null; const e = inFront(); return e ? { px: e.px, py: e.py, name: e.name } : null; });
   function talk(e) {
     { const dx = e.px - player.x, dy = e.py - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
     const q = SQ();
@@ -11366,12 +11802,20 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   // ---------- Halcyon's forge panel ----------
-  HOOKS.panel.halcyon = (g, narrow) => {
-    const { px, py, w, h } = panelBox(g, 460, 300, "Halcyon's Sky Forge", `Smithing level ${skillLv('smithing')} · needs ${FORGE_LV} · no anvil, no hammer`);
-    g.fillStyle = '#c9d1d9'; g.font = '12px sans-serif'; g.textAlign = 'left';
-    g.fillText(`You carry ${countItem('dragon_scale')} dragon scales, ${countItem('mithril_bar')} mithril bars, ${countItem('obsidian')} obsidian.`, px + 18, py + 74);
-    FORGE.forEach((f, i) => { const y = py + 88 + i * 40; const ok = canForge(f); button(g, px + 18, y, w - 36, 34, f.label + `  (lv ${FORGE_LV})`, () => forge(f), ok ? '#238636' : '#2a2f3a', ok); });
-    if (skillLv('smithing') < FORGE_LV) { g.fillStyle = '#ff6b6b'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(`Smithing ${FORGE_LV} is needed for Godly plate.`, px + 18, py + h - 14); }
+  // One row per Godly piece: the piece in a pouch, what it takes as exact numbers ("Dragon scale 3/8 · Mithril bar 2/2 ·
+  // Obsidian 1/1"), the level in red when you are short of it, and Forge (the row keeps the recipe's label). A file that
+  // adds to the forge (88-aerie's Skysinger) wraps this panel and hands its own rows in as the third argument.
+  let forgePage = 0;
+  const forgeRows = () => FORGE.map(f => {
+    const lvOk = skillLv('smithing') >= FORGE_LV;
+    return {
+      id: f.out, name: ITEMS[f.out].name, sub: PEOPLE_UI.needsText(forgeNeeds(f)),
+      note: lvOk ? null : `Needs Smithing ${FORGE_LV}. You are ${skillLv('smithing')}.`, noteColor: HK.T.bad,
+      verb: { shown: 'Forge', label: f.label + `  (lv ${FORGE_LV})`, action: () => forge(f), tone: 'primary', enabled: canForge(f) },
+    };
+  });
+  HOOKS.panel.halcyon = (g, narrow, extra) => {
+    PEOPLE_UI.rowsPanel(g, { title: "Halcyon's Sky Forge", sub: `Smithing level ${skillLv('smithing')} · needs ${FORGE_LV} · no anvil, no hammer`, rows: forgeRows().concat(extra || []), want: 520, page: forgePage, setPage: p => { forgePage = p; } });
   };
 
   // ---------- drawing ----------
@@ -11447,8 +11891,9 @@ HOOKS.selfTest.push((check, F, h) => {
     // use-highlight for our tiles and our people
     if (!player.dead && !player.mech && !npcInFront()) items.push({ y: 1e9 + 3, draw: () => {
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      const n = inside ? inFront() : null;
-      if (n) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.arc(n.px, n.py, 22, 0, 7); g.stroke(); g.setLineDash([]); }
+      // the winged folk you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      const p = inside ? skyFacing() : null;
+      if (p) PEOPLE_UI.brackets(g, p);
       else if (t === WIND_SHRINE || (inside && (t === LEAP || t === WISP))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
@@ -11513,6 +11958,15 @@ HOOKS.selfTest.push((check, F, h) => {
       check('sky: E on the leap tile returns you to the shrine step', INSTANCES.active() === null && at[0] === STEP_T.x && at[1] === STEP_T.y && tileAt(SHRINE_T.x, SHRINE_T.y) === WIND_SHRINE, { at, inst: INSTANCES.active() }); }
     // quest log text for the Godly gear stays truthful: it lists Aerie, not the anvil
     check('sky: the Song of Above quest is registered with texts for every stage', QUEST_DEFS.sky.name === 'Song of Above' && typeof HOOKS.questText.sky === 'function' && ITEMS.wind_flute.stack === 1 && ITEMS.cloud_essence.stack === 50 && ITEMS.godly_helm.armour.def === 30, {});
+    // the world prompt on Master Halcyon at his forge, and his panel at every size with Smithing too low for it
+    { if (INSTANCES.active() !== AER.id) INSTANCES.enter(AER.id); closePanel(); drain(); const hal = SKY_NPCS.find(n => n.id === 'halcyon');
+      F.tp(hal.x, hal.y + 1); F.face(hal.x, hal.y); render();
+      const r = PEOPLE_UI.auditPrompt({ px: hal.px, py: hal.py, name: hal.name }), face = HK.face('use');
+      check('sky: facing Master Halcyon draws the gold corners on him and a Talk tag beside him (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const sx0 = player.skills.smithing.xp;
+      const a = PEOPLE_UI.auditPanels([{ name: "Halcyon's forge, Smithing too low", panel: 'halcyon', open: () => { player.skills.smithing.xp = 0; openPanel('halcyon'); }, close: () => { player.skills.smithing.xp = sx0; } }]);
+      player.skills.smithing.xp = sx0;
+      check("sky: Halcyon's Sky Forge wears the book frame at all 8 sizes, touch and mouse, Normal and Large text, with the level note on every row: Forge plates and pages 44 px on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 32 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     if (INSTANCES.active()) INSTANCES.leave(); quest.wren = wren0; quest.stage = st0; closePanel(); drain(); h.peace(false); save();
     void sky0;
   });
@@ -13133,6 +13587,8 @@ HOOKS.selfTest.push((check, F, h) => {
     for (const p of staff) { const dx = p.px - player.x, dy = p.py - player.y, d = Math.hypot(dx, dy); if (d > 64 || d < 1) continue; const dot = (dx / d) * player.facing.x + (dy / d) * player.facing.y; if (dot < 0.4) continue; if (!best || d < best.d) best = { p, d }; }
     return best && best.p;
   };
+  // E answers the board and the chest before the staff (HOOKS.use below), so the prompt does too
+  const staffFacing = PEOPLE_UI.facing(() => { const ft = frontTile(player), t = tileAt(ft.tx, ft.ty); if (t === T_GBOARD || t === T_GCHEST) return null; const p = staffInFront(); return p ? { px: p.px, py: p.py, name: p.name } : null; });
   if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => staff.map(p => ({ x: p.px, y: p.py, r: 13, id: p.id, name: p.name, talk: () => useAction() }))); // 17-tap: a tap on the staff walks up; facing them, E's own path (HOOKS.use → staffInFront) talks
 
   // ---------- update ----------
@@ -13169,44 +13625,57 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   // ---------- panels ----------
-  const ROW_H = 66;
-  const fit = (g, text, maxW) => { let s = text; while (s.length > 8 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s === text ? text : s + '…'; };
-  HOOKS.panel.guild = (g, narrow) => {
-    const gd = G(); const next = gd.rank < RANKS.length - 1 ? `${jobsToRank(gd.rank + 1)} job${jobsToRank(gd.rank + 1) === 1 ? '' : 's'} to ${RANKS[gd.rank + 1]}` : 'the top of the guild';
-    const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : 600, 96 + JOBS.length * ROW_H + 62, 'The Hollowford Guild', `${rankName()} · ${gd.jobsDone} job${gd.jobsDone === 1 ? '' : 's'} done · ${next}`);
-    const bw = narrow ? 100 : 130, textW = w - 36 - bw - 24;
-    JOBS.forEach((j, i) => {
-      const y = py + 66 + i * ROW_H; const act = isActive(j), cool = cooling(j), can = j.kind === 'deliver' ? countItem(j.item) >= j.n && !cool : !cool && !gd.active;
-      roundRect(g, px + 18, y, w - 36, ROW_H - 6, 8); g.fillStyle = act ? 'rgba(88,166,255,0.12)' : cool ? 'rgba(255,255,255,0.03)' : can ? 'rgba(126,231,135,0.08)' : 'rgba(255,255,255,0.05)'; g.fill();
-      if (can && !act) { g.strokeStyle = 'rgba(126,231,135,0.45)'; g.lineWidth = 1; g.stroke(); }
-      g.textAlign = 'left'; g.fillStyle = cool ? '#6e7681' : '#e6edf3'; g.font = 'bold 13px sans-serif'; g.fillText(fit(g, `${j.title}  · ${j.who}`, textW), px + 30, y + 18);
-      g.fillStyle = cool ? '#4b535d' : '#c9d1d9'; g.font = 'italic 12px sans-serif'; g.fillText(fit(g, `“${j.blurb}”`, textW), px + 30, y + 35);
-      g.font = '11px sans-serif'; g.fillStyle = cool ? '#4b535d' : act ? '#58a6ff' : '#8b949e'; g.fillText(fit(g, `${cool ? coolText(j) : progressText(j)} · Reward: ${rewardText(j)}`, textW), px + 30, y + 51);
-      const bx = px + w - 18 - bw, by = y + 15;
-      if (cool) button(g, bx, by, bw, 30, coolText(j), () => { }, '#2a2f3a', false);
-      else if (j.kind === 'deliver') button(g, bx, by, bw, 30, `Deliver: ${j.tag}`, () => deliver(j), '#238636', can);
-      else if (act) button(g, bx, by, bw, 30, `Cancel: ${j.tag}`, cancelJob, '#6e2a2a');
-      else button(g, bx, by, bw, 30, `Take: ${j.tag}`, () => takeJob(j), '#238636', can);
+  // THE GUILD BOARD: one vellum row per job, its name in Cinzel, what it asks in words, and its progress and reward as exact
+  // numbers; Take / Deliver / Cancel on a plate (gold-edged when you can do it now, grey while it cools: "Ready in 10m").
+  // Under the rows, the cape (for Captains) and one line on what the ranks open. Rows that do not fit go on pages.
+  let guildPage = 0;
+  const jobRows = () => {
+    const gd = G();
+    return JOBS.map(j => {
+      const act = isActive(j), cool = cooling(j), can = j.kind === 'deliver' ? countItem(j.item) >= j.n && !cool : !cool && !gd.active;
+      let verb;
+      if (cool) verb = { label: coolText(j), action: () => { }, tone: null, enabled: false };
+      else if (j.kind === 'deliver') verb = { label: `Deliver: ${j.tag}`, action: () => deliver(j), tone: 'primary', enabled: can };
+      else if (act) verb = { label: `Cancel: ${j.tag}`, action: cancelJob, tone: null };
+      else verb = { label: `Take: ${j.tag}`, action: () => takeJob(j), tone: 'primary', enabled: can };
+      return {
+        name: `${j.title} · ${j.who}`, nameColor: cool ? HK.T.inkMute : HK.T.ink, sub: VH < 500 ? null : j.blurb, subColor: cool ? HK.T.inkMute : HK.T.inkDim,
+        note: `${cool ? coolText(j) : progressText(j)} · Reward: ${rewardText(j)}`, noteColor: cool ? HK.T.inkMute : act ? HK.T.gold : HK.T.ink,
+        edge: act ? 'rgba(217,178,92,0.9)' : can ? 'rgba(138,216,131,0.6)' : null, verb,
+      };
     });
-    const fy = py + h - 44;
-    const capeOn = gd.rank >= CAPE_RANK;
-    button(g, px + 18, fy, narrow ? 120 : 150, 30, narrow ? `Cape ${CAPE_PRICE}` : `Buy cape (${CAPE_PRICE})`, buyCape, capeOn && coins() >= CAPE_PRICE ? '#7a2e2e' : '#2a2f3a', capeOn);
-    button(g, px + w - 18 - 100, fy, 100, 30, 'Close', closePanel, '#21262d');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center';
-    g.fillText(fit(g, capeOn ? `Captain's cape: Hollowford red, defence +${ITEMS.guild_cape.armour.def}. Every 3 jobs is a rank.` : gd.rank >= CHEST_RANK ? 'The guild chest by the wall is yours. Captains may buy the cape.' : `Every 3 jobs is a rank. Warden opens the chest, Captain earns the cape.`, w - 36 - (narrow ? 120 : 150) - 100 - 20), px + w / 2 + 20, fy + 20);
   };
+  HOOKS.panel.guild = (g, narrow) => {
+    const U = PEOPLE_UI, gd = G(), R = U.row(), next = gd.rank < RANKS.length - 1 ? `${jobsToRank(gd.rank + 1)} job${jobsToRank(gd.rank + 1) === 1 ? '' : 's'} to ${RANKS[gd.rank + 1]}` : 'the top of the guild';
+    const capeOn = gd.rank >= CAPE_RANK, cw = narrow ? 130 : 170, iw = U.fit(620, 9999).w - 36;
+    const line = capeOn ? `Captain's cape: Hollowford red, defence +${ITEMS.guild_cape.armour.def}. Every 3 jobs is a rank.` : gd.rank >= CHEST_RANK ? 'The guild chest by the wall is yours. Captains may buy the cape.' : 'Every 3 jobs is a rank. Warden opens the chest, Captain earns the cape.';
+    const lm = U.wordsFit(g, line, iw - cw - 14, { size: 12.5, lines: 3 }), footerH = 10 + Math.max(R, lm.h);
+    U.rowsPanel(g, {
+      title: 'The Hollowford Guild', sub: `${rankName()} · ${gd.jobsDone} job${gd.jobsDone === 1 ? '' : 's'} done · ${next}`, rows: jobRows(), want: 620,
+      page: guildPage, setPage: p => { guildPage = p; }, footerH,
+      footer: (g2, x, y, w) => {
+        button(g2, x, y + 10, cw, R, narrow ? `Cape ${CAPE_PRICE}` : `Buy cape (${CAPE_PRICE})`, buyCape, capeOn && coins() >= CAPE_PRICE ? '#238636' : '#21262d', capeOn);
+        U.words(g2, line, x + cw + 14, y + 10 + Math.max(0, (R - lm.h) / 2), w - cw - 14, { size: 12.5, lines: 3 });
+      },
+    });
+  };
+  // THE GUILD CHEST: the chest's twenty pouches over your pack's; a tap moves a stack across
   let chestPage = 0;
   HOOKS.panel.guild_chest = (g, narrow) => {
-    const gd = G(); const cols = narrow ? 5 : 10, size = narrow ? 44 : 46, gap = 6, rows = Math.ceil(CHEST_SLOTS / cols), invRows = Math.ceil(INV_SLOTS / cols);
-    const { px, py, w } = panelBox(g, cols * (size + gap) + 30, 78 + rows * (size + gap) + 34 + invRows * (size + gap) + 24, 'Guild chest', `${chestCount()} / ${CHEST_SLOTS} stacks · tap to move items · ${rankName()}`);
+    const U = PEOPLE_UI, gd = G(), top = 62, bottom = 16, box = U.fit(600, 9999), iw = box.w - 36;
+    const cg = U.gridGeom(iw, CHEST_SLOTS, 10), pg = U.gridGeom(iw, INV_SLOTS, 10);
+    const w = Math.min(box.w, Math.max(cg.w, pg.w, 300) + 36), h = top + 24 + cg.h + 16 + 24 + pg.h + bottom;
+    const { px, py } = panelBox(g, w, h, 'Guild chest', `${chestCount()} / ${CHEST_SLOTS} stacks · tap to move items · ${rankName()}`);
+    let y = py + top;
+    y += U.header(g, 'In the chest · tap one to take it', px + 18, y, w - 36);
     for (let i = 0; i < CHEST_SLOTS; i++) {
-      const cx = px + 18 + (i % cols) * (size + gap), cy = py + 66 + Math.floor(i / cols) * (size + gap), s = gd.chest[i];
-      drawSlot(g, cx, cy, size, s, false);
-      buttons.push({ x: cx, y: cy, w: size, h: size, label: 'gchest' + i, action: () => { const c = gd.chest[i]; if (!c) return; const left = addItem(c.id, c.qty); c.qty = left; if (!left) gd.chest[i] = null; else notify('Your pack is full.'); sfx('pickup'); save(); } });
+      const cx = px + 18 + (i % cg.cols) * (cg.size + cg.sp), cy = y + Math.floor(i / cg.cols) * (cg.size + cg.sp), s = gd.chest[i];
+      drawSlot(g, cx, cy, cg.size, s, false);
+      buttons.push({ x: cx, y: cy, w: cg.size, h: cg.size, label: 'gchest' + i, action: () => { const c = gd.chest[i]; if (!c) return; const left = addItem(c.id, c.qty); c.qty = left; if (!left) gd.chest[i] = null; else notify('Your pack is full.'); sfx('pickup'); save(); } });
     }
-    const iy = py + 66 + rows * (size + gap) + 8;
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText('Your pack (tap an item to store it)', px + 18, iy + 12);
-    drawInvGrid(g, px + 18, iy + 22, cols, size, gap, i => { const s = player.inv[i]; if (!s) return; const left = chestAdd(s.id, s.qty); if (left === s.qty) { notify('The chest is full.'); return; } s.qty = left; if (!left) player.inv[i] = null; sfx('pickup'); save(); });
+    y += cg.h + 16;
+    y += U.header(g, 'Your pack · tap one to store it', px + 18, y, w - 36);
+    drawInvGrid(g, px + 18, y, pg.cols, pg.size, pg.sp, i => { const s = player.inv[i]; if (!s) return; const left = chestAdd(s.id, s.qty); if (left === s.qty) { notify('The chest is full.'); return; } s.qty = left; if (!left) player.inv[i] = null; sfx('pickup'); save(); });
   };
 
   // ---------- quest tab ----------
@@ -13272,7 +13741,8 @@ HOOKS.selfTest.push((check, F, h) => {
     if (gd.founded && !inHall(ptx, pty) && (HALL.x + HALL.w) * TILE > cam.x && HALL.x * TILE < cam.x + VW && (HALL.y + HALL.h) * TILE > cam.y && HALL.y * TILE < cam.y + VH) items.push({ y: (HALL.y + HALL.h) * TILE - 1, draw: () => { drawBuilding(g, HALL); drawPennant(g); } });
     if (!player.dead && !player.mech && staff.length) items.push({ y: 1e9 + 4, draw: () => {
       if (npcInFront()) return;
-      const p = staffInFront(); if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 20, 0, 7); g.stroke(); g.setLineDash([]); }
+      // the staff member you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      PEOPLE_UI.brackets(g, staffFacing());
     } });
   });
 
@@ -13337,6 +13807,20 @@ HOOKS.selfTest.push((check, F, h) => {
       const s = staff[0]; s.px = tc(154); s.py = tc(69); s.waitT = 9; s.moving = false; drain(); F.tp(154, 70); F.face(154, 69); F.press('KeyE'); F.sim(2, []); const spoke = !!dialog.cur && dialog.cur.who === s.name && s.lines.includes(dialog.cur.text);
       drain(); F.tp(137, 82); F.face(137, 81); F.press('KeyE'); F.sim(2, []); const squareGone = !(dialog.cur && ['Old Tam', 'Nell', 'Pip'].includes(dialog.cur.who));
       check('guild: three more runs make a Guildmaster; Tam, Nell and Pip work in the hall, walking a loop between the board, the chest and the door (all three moved, all inside), E on one gets a line, and the square copies step aside', runs.every(Boolean) && master && moved && names === 'Nell,Old Tam,Pip' && spoke && squareGone, { runs, master, rank: G().rank, moved, names, spoke, squareGone, who: dialog.cur && dialog.cur.who, banner: levelBanner && levelBanner.text }); drain(); }
+    // the world prompt on a staff member in the hall, and the board and the chest at every size
+    { const s = staff[0]; s.px = tc(154); s.py = tc(69); s.waitT = 99; s.moving = false; closePanel(); drain(); F.tp(154, 70); F.face(154, 69); render();
+      const r = PEOPLE_UI.auditPrompt({ px: s.px, py: s.py, name: s.name }), face = HK.face('use');
+      check('guild: facing a staff member in the hall draws the gold corners on them and a Talk tag beside them (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const gd = G(), act0 = gd.active, cd0 = { ...gd.cooldowns }, rank0 = gd.rank, chest0 = gd.chest.map(x => x ? { ...x } : null);
+      const back = () => { gd.active = act0; gd.cooldowns = { ...cd0 }; gd.rank = rank0; gd.chest = chest0.map(x => x ? { ...x } : null); guildPage = 0; };
+      const a = PEOPLE_UI.auditPanels([
+        { name: 'guild board, Guildmaster', panel: 'guild', open: () => { guildPage = 0; openPanel('guild'); } },
+        { name: 'guild board, a job on and one cooling', panel: 'guild', open: () => { gd.active = { id: 'wolf', kills: 2 }; gd.cooldowns.timber = time; guildPage = 0; openPanel('guild'); }, close: back },
+        { name: 'guild board, last page', panel: 'guild', open: () => { gd.rank = 0; guildPage = 9; openPanel('guild'); }, close: back },
+        { name: 'guild chest', panel: 'guild_chest', open: () => { gd.chest[0] = { id: 'goblin_scrap', qty: 7 }; gd.chest[5] = { id: 'plank', qty: 20 }; openPanel('guild_chest'); }, close: back },
+      ]);
+      back();
+      check('guild: the Hollowford Guild board and the Guild chest wear the book frame at all 8 sizes, touch and mouse, Normal and Large text: job plates, the cape, pages and 44 px chest pouches on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate', a.frames === 128 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     // Escort: Pip follows, snaps when far, and the job completes at Thistledown's notice board
     { G().cooldowns.escort = -1e9; G().active = null; escort = null; F.tp(153, 69); open(); const took = F.clickButton('Take: Escort'); closePanel(); F.sim(2, []);
       const near0 = !!escort && dist(escort.px, escort.py, player.x, player.y) < 3 * TILE && !!dialog.cur && dialog.cur.who === 'Pip';
@@ -32724,6 +33208,7 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     return best ? best.e : null;
   }
+  const aerieFacing = PEOPLE_UI.facing(() => { const e = folkInFront(); return e ? { px: e.px, py: e.py, name: e.name } : null; });
   const songDone = () => !!(SKY_C && SKY_C.skyDone());
 
   function talkFolk(e) {
@@ -32904,23 +33389,31 @@ HOOKS.selfTest.push((check, F, h) => {
     burst(player.x, player.y, ITEMS[r.out].color, 24, 130); floatText(player.x, player.y - 30, `+${r.qty} ${ITEMS[r.out].name}`, ITEMS[r.out].color);
     save(); return true;
   }
-  HOOKS.panel.rookery = (g, narrow) => {
-    const { px, py, w } = panelBox(g, 460, 220, "Keeper Pell's perches", `Crafting level ${skillLv('crafting')} - needs ${FLETCH.lv}`);
-    g.fillStyle = '#c9d1d9'; g.font = '12px sans-serif'; g.textAlign = 'left';
-    g.fillText(`You carry ${countItem('skyhawk_feather')} skyhawk feathers and ${countItem('wood')} wood.`, px + 18, py + 74);
-    g.fillStyle = '#8b949e'; g.fillText(`Skyhawk arrows hit for ${ITEMS.skyhawk_arrow.arrow.str}. Put a fish on a perch outside for a feather.`, px + 18, py + 94);
-    const ok = canMake(FLETCH);
-    button(g, px + 18, py + 110, w - 36, 34, FLETCH.label, () => { make(FLETCH); }, ok ? '#238636' : '#2a2f3a', ok);
+  // KEEPER PELL'S PERCHES: one row, the fletching (the arrows in a pouch, what they take as exact numbers, Fletch)
+  const fletchRow = () => {
+    const lvOk = skillLv('crafting') >= FLETCH.lv;
+    return {
+      id: FLETCH.out, name: `${ITEMS[FLETCH.out].name} × ${FLETCH.qty}`, sub: `${PEOPLE_UI.needsText(FLETCH.needs)}. They hit for ${ITEMS.skyhawk_arrow.arrow.str}.`,
+      note: lvOk ? null : `Needs Crafting ${FLETCH.lv}. You are ${skillLv('crafting')}.`, noteColor: HK.T.bad,
+      verb: { shown: 'Fletch', label: FLETCH.label, action: () => { make(FLETCH); }, tone: 'primary', enabled: canMake(FLETCH) },
+    };
   };
-  // Halcyon's own panel is 36-skycity's; the Skysinger is added under it once the Songstone is awake
+  HOOKS.panel.rookery = (g, narrow) => {
+    PEOPLE_UI.rowsPanel(g, { title: "Keeper Pell's perches", sub: `Crafting level ${skillLv('crafting')} · needs ${FLETCH.lv}`, intro: 'Put a fish on a perch outside and a skyhawk leaves a feather for it.', rows: [fletchRow()], want: 500 });
+  };
+  // Halcyon's own panel is 36-skycity's; the Skysinger is one more row on it once the Songstone is awake (until then, a line
+  // on the sleeping stone), handed in as the panel's third argument so it is laid out, paged and sized with the others
   { const _halcyon = HOOKS.panel.halcyon;
     if (_halcyon) HOOKS.panel.halcyon = (g, narrow) => {
-      _halcyon(g, narrow);
-      const r = panelRect; if (!r) return;
-      const y = r.y + r.h - 44, q = Q();
-      if (!q.songstone) { g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText('The Songstone on the Crown is still asleep. Wake it and I will sing a blade.', r.x + 18, y + 22); return; }
-      const ok = canMake(SING);
-      button(g, r.x + 18, y, r.w - 36, 34, SING.label + `  (lv ${SING.lv})`, () => { make(SING); }, ok ? '#238636' : '#2a2f3a', ok);
+      const q = Q(), lvOk = skillLv('smithing') >= SING.lv;
+      const row = !q.songstone
+        ? { name: ITEMS[SING.out].name, nameColor: HK.T.inkMute, sub: 'The Songstone on the Crown is still asleep. Wake it and I will sing a blade.' }
+        : {
+          id: SING.out, name: ITEMS[SING.out].name, sub: PEOPLE_UI.needsText(SING.needs),
+          note: lvOk ? null : `Needs Smithing ${SING.lv}. You are ${skillLv('smithing')}.`, noteColor: HK.T.bad,
+          verb: { shown: 'Forge', label: SING.label + `  (lv ${SING.lv})`, action: () => { make(SING); }, tone: 'primary', enabled: canMake(SING) },
+        };
+      _halcyon(g, narrow, [row]);
     };
   }
 
@@ -33131,8 +33624,8 @@ HOOKS.selfTest.push((check, F, h) => {
     HAWKS.forEach((h, k) => items.push({ y: 5e7 + k, draw: () => drawHawk(g, h, k) }));
     // the use highlight for this file's tiles and people (the core only knows its own)
     if (!player.dead && !player.mech && !npcInFront()) items.push({ y: 1e9 + 4, draw: () => {
-      const n = folkInFront();
-      if (n) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.arc(n.px, n.py, 22, 0, 7); g.stroke(); g.setLineDash([]); return; }
+      // the winged folk you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      if (PEOPLE_UI.brackets(g, aerieFacing())) return;
       const { tx, ty } = frontTile(player);
       if (USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
@@ -33403,6 +33896,19 @@ HOOKS.selfTest.push((check, F, h) => {
       check(A + 'the Windward Market sells nothing the knight keeps on his keyring',
         !!window.KEYRING && stock.length > 0 && onRing.length === 0 && unknown.length === 0,
         { stock, onRing, unknown }); }
+
+    // ---- 15. the world prompt on Keeper Pell; the Rookery and Halcyon's forge (the Skysinger row asleep and awake) at every size ----
+    { if (INSTANCES.active() !== 'aerie') INSTANCES.enter('aerie'); closePanel(); drain(); const pell = FOLK[0]; F.tp(pell.x, pell.y + 1); F.face(pell.x, pell.y); render();
+      const r = PEOPLE_UI.auditPrompt({ px: pell.px, py: pell.py, name: pell.name }), face = HK.face('use');
+      check(A + 'facing Keeper Pell draws the gold corners on him and a Talk tag beside him (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const q = Q(), ss0 = q.songstone;
+      const a = PEOPLE_UI.auditPanels([
+        { name: "Keeper Pell's perches", panel: 'rookery', open: () => openPanel('rookery') },
+        { name: "Halcyon's forge, the Songstone asleep", panel: 'halcyon', open: () => { q.songstone = false; openPanel('halcyon'); }, close: () => { q.songstone = ss0; } },
+        { name: "Halcyon's forge, the Skysinger row", panel: 'halcyon', open: () => { q.songstone = true; openPanel('halcyon'); }, close: () => { q.songstone = ss0; } },
+      ]);
+      q.songstone = ss0;
+      check(A + "Keeper Pell's perches and Halcyon's Sky Forge (with the Skysinger row) wear the book frame at all 8 sizes, touch and mouse, Normal and Large text: Fletch and Forge plates and pages 44 px on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 96 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
 
     // ---- put everything back ----
     if (INSTANCES.active()) INSTANCES.leave();

@@ -170,6 +170,7 @@
     }
     return best ? best.n : null;
   }
+  const gcFacing = PEOPLE_UI.facing(() => { const n = folkInFront(), p = n && folkPx(n); return p ? { px: p.px, py: p.py, name: n.name } : null; });
   const liveGnasher = () => monsters.find(m => m.type === 'gnasher' && !m.dead) || null;
   const guards = () => monsters.filter(m => m.type === 'castle_guard');
   const calmGuards = () => { for (const m of guards()) if (!m.dead) { m.angry = false; if (m.state === 'chase') m.state = 'return'; } };
@@ -400,32 +401,24 @@
 
   // ---------- panel: Tinkerton's shop, and the Barrelbeast re-supply when another feature provides window.BEAST ----------
   const beastLost = () => { try { return !!(window.BEAST && typeof window.BEAST.lost === 'function' && window.BEAST.lost()); } catch (e) { return false; } };
+  // TINKERTON'S LAB: the shop rows (the item in a pouch, its name, a line on what it is, Buy) and, when the Barrelbeast is lost,
+  // a row to have it rebuilt in the yard
+  let tinkPage = 0;
+  const tinkBuy = (id, price) => { const def = ITEMS[id]; if (!payCoins(price)) { notify('Not enough coins.'); return; } if (addItem(id, 1) > 0) { addItem('coins', price); notify('Your pack is full.'); return; } floatText(player.x, player.y - 30, `Bought ${def.name}`, def.color); sfx('coins'); save(); };
+  const rebuildBeast = () => {
+    if (!beastLost()) { notify('The Barrelbeast is not lost.'); return; }
+    if (hidden()) { notify('Tinkerton builds it outside, in the yard. Come back out and ask again.'); return; } // the yard tile is on the overworld, not in the lab's map
+    if (!payCoins(200)) { notify('Tinkerton wants 200 coins for that. You have ' + coins() + '.'); return; }
+    let ok = false; try { ok = window.BEAST.giveTile(BEAST_T.x, BEAST_T.y) !== false; } catch (e) { ok = false; }
+    if (!ok) { addItem('coins', 200); notify('Tinkerton could not rebuild it. Your coins are returned.'); return; }
+    burst(tc(BEAST_T.x), tc(BEAST_T.y), '#ffb347', 30, 140); sfx('boom');
+    say('Two hundred coins and a night with a hammer. It is in the yard by my wall, knight. Try not to lose it in the sea this time.', 'Tinkerton'); closePanel(); save();
+  };
   HOOKS.panel.tinkerton = (g, narrow) => {
-    const shop = SHOPS.tinkerton; const lost = beastLost(); const rows = shop.stock.length + (lost ? 1 : 0);
-    const { px, py, w, h } = panelBox(g, 460, 150 + rows * 38, shop.name, `${coins()} coins · powder, scrap and hammers${lost ? ' · and a Barrelbeast' : ''}`);
-    shop.stock.forEach(([id, price], i) => {
-      const y = py + 62 + i * 38; const def = ITEMS[id]; const can = coins() >= price;
-      roundRect(g, px + 18, y, w - 36, 32, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      drawItemIcon(g, id, px + 38, y + 16, 18);
-      g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(def.name, px + 58, y + 20);
-      if (!narrow) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; let bl = itemBlurb(def) || ''; while (g.measureText(bl).width > w - 330 && bl.length > 8) bl = bl.slice(0, -2) + '…'; g.fillText(bl, px + 190, y + 20); }
-      button(g, px + w - 120, y + 3, 96, 26, `Buy ${price}`, () => { if (!payCoins(price)) { notify('Not enough coins.'); return; } if (addItem(id, 1) > 0) { addItem('coins', price); notify('Your pack is full.'); return; } floatText(player.x, player.y - 30, `Bought ${def.name}`, def.color); sfx('coins'); save(); }, can ? '#238636' : '#2a2f3a', can);
-    });
-    if (lost) {
-      const y = py + 62 + shop.stock.length * 38; const can = coins() >= 200;
-      roundRect(g, px + 18, y, w - 36, 32, 8); g.fillStyle = 'rgba(255,179,71,0.10)'; g.fill();
-      g.fillStyle = '#ffb347'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText('Bring back the Barrelbeast (200 coins)', px + 30, y + 20);
-      button(g, px + w - 120, y + 3, 96, 26, 'Rebuild 200', () => {
-        if (!beastLost()) { notify('The Barrelbeast is not lost.'); return; }
-        if (hidden()) { notify('Tinkerton builds it outside, in the yard. Come back out and ask again.'); return; } // the yard tile is on the overworld, not in the lab's map
-        if (!payCoins(200)) { notify('Tinkerton wants 200 coins for that. You have ' + coins() + '.'); return; }
-        let ok = false; try { ok = window.BEAST.giveTile(BEAST_T.x, BEAST_T.y) !== false; } catch (e) { ok = false; }
-        if (!ok) { addItem('coins', 200); notify('Tinkerton could not rebuild it. Your coins are returned.'); return; }
-        burst(tc(BEAST_T.x), tc(BEAST_T.y), '#ffb347', 30, 140); sfx('boom');
-        say('Two hundred coins and a night with a hammer. It is in the yard by my wall, knight. Try not to lose it in the sea this time.', 'Tinkerton'); closePanel(); save();
-      }, can ? '#b8641a' : '#2a2f3a', can);
-    }
-    button(g, px + 18, py + h - 46, w - 36, 32, 'Close', closePanel, '#21262d');
+    const shop = SHOPS.tinkerton, lost = beastLost(), short = VH < 500;
+    const rows = shop.stock.map(([id, price]) => ({ id, name: ITEMS[id].name, sub: narrow || short ? null : itemBlurb(ITEMS[id]) || null, verb: { label: `Buy ${price}`, action: () => tinkBuy(id, price), tone: 'primary', enabled: coins() >= price } }));
+    if (lost) rows.push({ name: 'The Barrelbeast', sub: 'Lost at sea? Tinkerton builds another in the yard by his wall.', note: '200 coins', noteColor: HK.T.gold, verb: { label: 'Rebuild 200', action: rebuildBeast, tone: 'primary', enabled: coins() >= 200 } });
+    PEOPLE_UI.rowsPanel(g, { title: shop.name, sub: `${coins()} coins · powder, scrap and hammers${lost ? ' · and a Barrelbeast' : ''}`, rows, want: 540, page: tinkPage, setPage: p => { tinkPage = p; } });
   };
 
   // ---------- drawing ----------
@@ -590,8 +583,8 @@
     for (const n of FOLK) { const p = folkPx(n); if (!p) continue; if (p.px > cam.x - 60 && p.px < cam.x + VW + 60 && p.py > cam.y - 60 && p.py < cam.y + VH + 60) { const b = insideBuilding(Math.floor(p.px / TILE), Math.floor(p.py / TILE)); if (b && b !== inside) continue; items.push({ y: p.py + 12 + (n.sortY || 0), draw: () => drawFolk(g, n, p) }); } }
     // interaction highlight for our own folk and tiles (the core only highlights what it knows)
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
-      const n = folkInFront();
-      if (n) { const p = folkPx(n); if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 18, 0, 7); g.stroke(); g.setLineDash([]); } return; }
+      // the goblin you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      if (folkInFront()) { PEOPLE_UI.brackets(g, gcFacing()); return; }
       const { tx, ty } = frontTile(player);
       if (GC_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
@@ -693,6 +686,18 @@
     // the scrap yard's machines mind their own business
     { const ms = monsters.filter(m => m.type === 'yard_walker' || m.type === 'yard_dozer');
       check('goblincity: two yard walkers (lv 18) and a yard dozer stand in the scrap yard, neutral unless attacked', ms.length === 3 && ms.filter(m => m.type === 'yard_walker').length === 2 && ms.every(m => !m.angry && inRect(YARD, Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))) && !MONSTER_DEFS.yard_walker.aggro && MONSTER_DEFS.yard_walker.level === 18 && !MONSTER_DEFS.yard_dozer.aggro && typeof HOOKS.drawMonster.yard_walker === 'function' && typeof HOOKS.drawMonster.yard_dozer === 'function', { n: ms.length, types: ms.map(m => m.type) }); }
+    // the world prompt on Grubb in Grubmarket, and Tinkerton's lab at every size (and with the Barrelbeast lost)
+    { if (window.__instance && window.INSTANCES) INSTANCES.leave(); closePanel(); drain(); const n = FOLK.find(q => q.id === 'grubb');
+      F.tp(n.x, n.y + 1); F.face(n.x, n.y); render();
+      const r = PEOPLE_UI.auditPrompt({ px: tc(n.x), py: tc(n.y), name: n.name }), face = HK.face('use');
+      check('goblincity: facing Grubb in Grubmarket draws the gold corners on him and a Talk tag beside him (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const B = window.BEAST, lost0 = B && B.lost; h.give('coins', 300);
+      const a = PEOPLE_UI.auditPanels([
+        { name: "Tinkerton's lab", panel: 'tinkerton', open: () => openPanel('tinkerton') },
+        { name: "Tinkerton's lab, the Barrelbeast lost", panel: 'tinkerton', open: () => { if (B) B.lost = () => true; openPanel('tinkerton'); }, close: () => { if (B) B.lost = lost0; } },
+      ]);
+      if (B) B.lost = lost0;
+      check("goblincity: Tinkerton's lab wears the book frame at all 8 sizes, touch and mouse, Normal and Large text: Buy plates (and Rebuild when the Barrelbeast is lost) 44 px on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 64 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     player.skills.melee.xp = m0; player.skills.defence.xp = d0; player.skills.range.xp = r0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
     closePanel(); drain(); h.peace(false);
   });
