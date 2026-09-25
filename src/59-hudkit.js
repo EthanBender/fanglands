@@ -2507,7 +2507,7 @@ const HK = (() => {
     teach, coachCount, learn, learnCount, showWord, wordsMode,
     addPlaque, slot, claim, beginPlaques,
     // input
-    press: INPUT, get hover() { return INPUT.hover; }, stateOf, held, hitButton, pressStart, pressMove, pressEnd, pressDrop,
+    input: INPUT, get press() { return INPUT.press; }, get hover() { return INPUT.hover; }, stateOf, held, hitButton, pressStart, pressMove, pressEnd, pressDrop,
     // the core pieces (10-hud's drawHud)
     drawRing, compassOnRing, drawSeals, drawCrest, drawScroll, drawBosses, drawBelt, drawStick, drawSeats, dialogGeom, drawTalk, drawNotice, drawBanners, drawOverlays, drawBook, bookTiles, BOOK, KIT_TILES, ROW_LOOK, bookState, FRAME, DRAWN, FIT, trailFor, openQuest, trackedQuest, hudRects,
     setCacheOff: v => { cacheOff = !!v; }, cacheSize: () => CACHE.size,
@@ -2863,11 +2863,11 @@ HOOKS.selfTest.push((check, F, h) => {
       let [bx, by] = mid(bag);
       pointerDown(bx, by, 'mouse'); const notOnPress = panel !== 'inventory'; pointerUp('mouse', bx, by); const onRelease = panel === 'inventory'; closePanel(); frame();
       pointerDown(bx, by, 'mouse'); pointerMove(bx + 300, by - 300, 'mouse'); pointerUp('mouse', bx + 300, by - 300); const slideOff = panel !== 'inventory'; closePanel(); frame();
-      pointerDown(bx, by, 'mouse'); HK.press.press.t0 -= 450; drawHud(ctx); const named = !!HK.press.press && HK.press.press.named; pointerUp('mouse', bx, by); const holdNames = named && panel !== 'inventory'; closePanel(); frame();
+      pointerDown(bx, by, 'mouse'); HK.input.press.t0 -= 450; drawHud(ctx); const named = !!HK.press && HK.press.named; pointerUp('mouse', bx, by); const holdNames = named && panel !== 'inventory'; closePanel(); frame();
       const inv0 = player.inv.map(q => q ? { ...q } : null), hp0 = player.hp; player.inv[0] = { id: 'bread', qty: 3 }; player.hp = Math.max(1, player.maxHp - 10); frame();
       const bread0 = countItem('bread'), hot = buttons.find(b => b.label === 'hot0'); [bx, by] = mid(hot); pointerDown(bx, by, 'mouse'); const ateOnPress = countItem('bread') === bread0 - 1; pointerUp('mouse', bx, by); player.inv = inv0; player.hp = hp0; frame();
       const ring = buttons.find(b => b.label === 'minimap'), cx = ring.cx + ring.r * 0.9, cy = ring.cy + ring.r * 0.9;
-      pointerDown(cx, cy, 'mouse'); const cornerMiss = !HK.press.press || HK.press.press.label !== 'minimap'; HK.pressDrop('mouse'); touch.press = null; touch.stickId = null; touch.active = false;
+      pointerDown(cx, cy, 'mouse'); const cornerMiss = !HK.press || HK.press.label !== 'minimap'; HK.pressDrop('mouse'); touch.press = null; touch.stickId = null; touch.active = false;
       pointerDown(ring.cx, ring.cy + ring.r * 0.9, 'mouse'); pointerUp('mouse', ring.cx, ring.cy + ring.r * 0.9); const ringHit = panel === 'map'; closePanel();
       check(P + 'controls: BAG fires on release inside and not on the press, sliding off cancels it, holding it 400 ms names it instead; a pouch fires on the press; the ring is hit as a circle (its box corner misses)', notOnPress && onRelease && slideOff && holdNames && ateOnPress && cornerMiss && ringHit, { notOnPress, onRelease, slideOff, holdNames, ateOnPress, cornerMiss, ringHit });
     }
