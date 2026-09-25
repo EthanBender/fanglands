@@ -156,16 +156,9 @@ window.FANGLANDS.title = title;
     drawTitle(g);
   };
 
-  // ---------- in-game bits: play time, 'Saved' flash, TITLE from the pause menu ----------
+  // ---------- in-game bits: play time, the 'Saved' tick, TITLE from the book (the pause menu) ----------
   HOOKS.update.push(dt => { if (!title.active && !player.dead) player.playSeconds = (player.playSeconds || 0) + dt; });
-  HOOKS.hud.push((g, narrow) => {
-    const el = (performance.now() - title.savedAt) / 1000;
-    if (el >= 0 && el < 1.2) {
-      const a = el < 0.2 ? el / 0.2 : 1 - (el - 0.2) / 1;
-      g.globalAlpha = clamp(a, 0, 1); g.textAlign = 'right'; g.fillStyle = HK.C.GOOD; g.font = 'bold 12px sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; // green means "fine", here as everywhere
-      g.strokeText('Saved', VW - 16, VH - 36); g.fillText('Saved', VW - 16, VH - 36); g.globalAlpha = 1;
-    }
-  });
+  // the 'Saved' flash is a green tick on the crest's banner for 1.2 s (src/59-hudkit.js reads title.savedAt)
   HOOKS.pauseMenu.push((g, x, y, w, h) => button(g, x, y, w, h, isTouch ? 'Title screen' : 'Title screen (T)', title.toTitle, '#3a4150')); // a slot in the core pause menu (10-hud), so the button is drawn after the menu resets `buttons` and is tappable
 
   // ---------- self-test ----------

@@ -371,26 +371,9 @@
     } });
   });
 
-  // ---------- the title in the pause menu ----------
-  // The core pause menu is drawn after HOOKS.hud, so the title is added by wrapping drawHud (a global
-  // function binding; render() looks it up by name each frame). Redraws the stats line with the title in front.
-  if (typeof drawHud === 'function') {
-    const coreDrawHud = drawHud;
-    drawHud = function (g) {
-      coreDrawHud(g);
-      const title = quest.rebuild && quest.rebuild.title; if (!paused || !title) return;
-      // the stats line used to be the magic number VH/2 + 83 in both this file and 10-hud; both now ask the
-      // HUD kit for the same y, so a finger-sized pause-menu row cannot silently split them (src/59-hudkit.js)
-      const { px, pw, statsY } = HK.pauseBox();
-      g.fillStyle = 'rgba(13,16,24,1)'; g.fillRect(px + 2, statsY - 12, pw - 4, 18);
-      g.font = '11px sans-serif'; g.textBaseline = 'alphabetic';
-      let stats = `Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`;
-      const gap = ' · '; if (g.measureText(title + gap + stats).width > pw - 16) stats = `Kills ${player.kills} · Deaths ${player.deaths}`;
-      const tw = g.measureText(title).width, gw = g.measureText(gap).width, sw = g.measureText(stats).width, x0 = VW / 2 - (tw + gw + sw) / 2;
-      g.textAlign = 'left'; g.fillStyle = HK.C.GOLD; g.fillText(title, x0, statsY); g.fillStyle = 'rgba(211,220,232,0.7)'; g.fillText(gap + stats, x0 + tw, statsY);
-      g.textAlign = 'center';
-    };
-  }
+  // ---------- the title in the book ----------
+  // The Knight's Book (the pause menu, src/59-hudkit.js) writes your town title in gold in front of the Kills / Deaths /
+  // Best hit line on its game page; it reads quest.rebuild.title.
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {

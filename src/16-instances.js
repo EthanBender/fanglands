@@ -428,21 +428,17 @@
     } });
   });
   // HUD: where you are and how to get out
-  // MIGRATED to the HUD kit (src/59-hudkit.js): a neutral chip on the left column's grid — where you are is
-  // a fact, not a warning — with LEAVE as a proper finger-sized control on its own row underneath.
+  // Where you are is a plaque in the kit's column (src/59-hudkit.js): the door mark, the place's name, what is left in
+  // it, and "webbed" in amber while a web holds you. LEAVE is the context seat's face (L on the keys), first in line.
+  const leaveNow = () => { leaveInstance(); notify('You climb back out into the light.'); };
+  hudSeatFace('ctx', { id: 'leave', prio: 30, when: () => !!active && !player.mech && !player.dead, emblem: 'leave', ribbon: 'LEAVE', key: 'L', name: 'Leave', action: leaveNow });
+  HOOKS.hud.push(() => { if (active && !paused && !panel && !player.dead) HK.teach('leave', 'L', 'Leave', { x: player.x, y: player.y, lift: 46 }, { emblem: 'leave' }); });
   HOOKS.hud.push((g, narrow) => {
     if (!active) return;
-    if (panel || paused) return; // the chip and its LEAVE control sit where a panel lands
-    const inst = active.inst, pad = 9;
-    const s = HK.slot(pad * 2 + HK.LINE() + 2 + HK.LINE());
-    HK.plate(g, s.x, s.y, s.w, s.h);
-    g.fillStyle = HK.C.INK; g.font = `700 13px ${DISPLAY}`; g.textAlign = 'left'; g.fillText(inst.name.toUpperCase(), s.x + pad + 4, s.y + pad + HK.LINE() - 3);
-    const alive = monsters.filter(m => !m.dead).length;
-    g.fillStyle = HK.C.DIM; g.font = '11px sans-serif';
-    g.fillText(inst.boss && !active.cleared ? `${alive} left · boss alive` : active.cleared ? 'cleared' : `${alive} left`, s.x + pad + 4, s.y + pad + HK.LINE() * 2);
-    if (active.webT > 0) { g.textAlign = 'right'; g.fillStyle = HK.C.WARN; g.fillText(`webbed ${active.webT.toFixed(1)}s`, s.x + s.w - pad - 4, s.y + pad + HK.LINE() * 2); g.textAlign = 'left'; }
-    if (touchMode()) { const b = HK.slot(HK.row()); button(g, b.x, b.y, HK.ctrlW(), b.h, 'LEAVE', () => { leaveInstance(); notify('You climb back out into the light.'); }, '#21262d'); }
-    else { g.fillStyle = HK.C.DIM; g.textAlign = 'right'; g.fillText('L to leave', s.x + s.w - pad - 4, s.y + pad + HK.LINE() - 3); g.textAlign = 'left'; }
+    if (panel || paused) return;
+    const inst = active.inst, alive = monsters.filter(m => !m.dead).length;
+    const sub = inst.boss && !active.cleared ? `${alive} left, the boss is awake` : active.cleared ? 'Cleared' : `${alive} left`;
+    HK.addPlaque(g, { id: 'dungeon', emblem: 'door', name: inst.name.toUpperCase(), sub, right: active.webT > 0 ? `webbed ${active.webT.toFixed(1)}s` : '', rightColor: HK.T.warn, edge: active.webT > 0 ? HK.T.warn : null });
   });
 
   // ============================================================================

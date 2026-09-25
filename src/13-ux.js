@@ -13,11 +13,12 @@ try { window.__kidmode = localStorage.getItem('fanglands.kidmode') === '1'; } ca
 function toggleKidMode() { window.__kidmode = !window.__kidmode; try { localStorage.setItem('fanglands.kidmode', window.__kidmode ? '1' : '0'); } catch (e) { } }
 
 // ---------- key names: what the button is called on this device ----------
-const TOUCH_KEY_NAMES = { E: 'USE', SPACE: 'SWING', Q: 'Bag › Place', I: 'BAG', C: 'CRAFT', J: 'QUESTS', M: 'the minimap', H: 'HOME', X: 'EXIT', TAB: 'SKILLS', ENTER: 'tap' };
+// CRAFTING, QUESTS and SKILLS are tiles in the Knight's Book (MENU) now, so their touch names say where to find them.
+const TOUCH_KEY_NAMES = { E: 'USE', SPACE: 'SWING', Q: 'Bag › Place', I: 'BAG', C: 'CRAFTING in the book', J: 'QUESTS in the book', M: 'the round map', H: 'HOME', X: 'EXIT', TAB: 'SKILLS in the book', ENTER: 'tap' };
 const DESKTOP_KEY_NAMES = { SPACE: 'Space', TAB: 'Tab', ENTER: 'Enter' };
 function keyName(k) { const u = String(k).toUpperCase(); return touchMode() ? (TOUCH_KEY_NAMES[u] || k) : (DESKTOP_KEY_NAMES[u] || u); }
 // Post-processor for strings owned by other files: on touch, "press E" → "tap USE", "(J)" → "(QUESTS)", "Space" → "SWING", "X climbs" → "EXIT climbs".
-const KEY_WORD = { E: 'USE', Q: 'Bag › Place', I: 'BAG', C: 'CRAFT', J: 'QUESTS', M: 'the minimap', H: 'HOME', X: 'EXIT', TAB: 'SKILLS', SPACE: 'SWING' };
+const KEY_WORD = { E: 'USE', Q: 'Bag › Place', I: 'BAG', C: 'CRAFTING in the book', J: 'QUESTS in the book', M: 'the round map', H: 'HOME', X: 'EXIT', TAB: 'SKILLS in the book', SPACE: 'SWING' };
 function touchify(text) {
   if (!touchMode() || typeof text !== 'string') return text;
   return text
@@ -107,6 +108,8 @@ HOOKS.update.push(dt => {
   }
   for (const b of bannerQueue) b.t -= dt;
   bannerQueue = bannerQueue.filter(b => b.t > 0);
+  // phones show one banner at a time (it borrows the scroll's slot): an area banner waits its turn behind a level banner
+  if (typeof areaBanner !== 'undefined' && areaBanner && levelBanner && HUD_LAYOUT.fam && (HUD_LAYOUT.fam === 'phoneP' || HUD_LAYOUT.fam === 'phoneL')) areaBanner.t += dt;
 });
 HOOKS.newGame.push(() => { quest.tracked = 'main'; quest.untrackedByPlayer = false; _lastStage = quest.stage; bannerQueue = []; _lastBanner = null; dialogLog.length = 0; uxConfirm = null; });
 
@@ -121,13 +124,14 @@ HOOKS.selfTest.push((check, F, h) => {
   { window.__forceTouch = true; const a = keyName('E'), b = keyName('Space'), c = touchify('Press E to climb in.'), d = touchify('Open your quests (J) if you lose the thread.'), e = touchify('You are in the walker. Space stomps (knockback). X climbs out.'), f = touchify('Lodestone placed. Press H to return (5 minute cooldown).'), g2 = touchify('Nothing to place. Craft planks (C) first.');
     window.__forceTouch = false; const dk = keyName('E'), ds = keyName('Space'), dn = touchify('Press E to climb in.');
     window.__forceTouch = prevTouch;
-    check('ux: keyName + touchify rename keys on touch only', a === 'USE' && b === 'SWING' && c === 'Tap USE to climb in.' && d === 'Open your quests (QUESTS) if you lose the thread.' && e === 'You are in the walker. SWING stomps (knockback). EXIT climbs out.' && f === 'Lodestone placed. Tap HOME to return (5 minute cooldown).' && g2 === 'Nothing to place. Craft planks (CRAFT) first.' && dk === 'E' && ds === 'Space' && dn === 'Press E to climb in.', { a, b, c, d, e, f, g2, dk, ds, dn }); }
+    check('ux: keyName + touchify rename keys on touch only', a === 'USE' && b === 'SWING' && c === 'Tap USE to climb in.' && d === 'Open your quests (QUESTS in the book) if you lose the thread.' && e === 'You are in the walker. SWING stomps (knockback). EXIT climbs out.' && f === 'Lodestone placed. Tap HOME to return (5 minute cooldown).' && g2 === 'Nothing to place. Craft planks (CRAFTING in the book) first.' && dk === 'E' && ds === 'Space' && dn === 'Press E to climb in.', { a, b, c, d, e, f, g2, dk, ds, dn }); }
   // dialogue: box rect is the tap zone, no auto-advance before 4 + len/9 s, log keeps lines
   { const saved = { cur: dialog.cur, q: dialog.queue.slice() }; dialog.queue.length = 0; dialog.cur = null; paused = false; closePanel();
     const n0 = dialogLog.length; say('Testing the box. Tap it to continue, knight.', 'The Voice'); F.step([]); render();
     const cur = dialog.cur && dialog.cur.text; const r = dialogRect && { ...dialogRect }; const logged = dialogLog.length >= Math.min(30, n0 + 1) && dialogLog[dialogLog.length - 1].text === cur; // the log is capped at 30
     pointerDown(r ? r.x - 5 : -1, r ? r.y - 5 : -1, 'mouse'); const stillThere = !!dialog.cur;
-    pointerDown(r.x + r.w / 2, r.y + r.h / 2, 'mouse'); const gone = !dialog.cur;
+    // the talk page is a pointer-up control (src/59-hudkit.js): pressed, it waits; released inside, it advances
+    pointerDown(r.x + r.w / 2, r.y + r.h / 2, 'mouse'); const waits = !!dialog.cur; pointerUp('mouse', r.x + r.w / 2, r.y + r.h / 2); const gone = waits && !dialog.cur;
     say('A'.repeat(90), 'The Voice'); F.step([]); F.sim(60 * 9, []); const notYet = !!dialog.cur; F.sim(60 * 6, []); const autoLater = !dialog.cur;
     check('ux: dialogue box is the tap zone (outside: stays, inside: advances), auto-advances only after 4 + len/9 s, Said log records it', !!cur && !!r && logged && stillThere && gone && notYet && autoLater, { cur, r, logged, stillThere, gone, notYet, autoLater });
     dialog.cur = null; dialog.queue.length = 0; dialog.queue.push(...saved.q); if (saved.cur) dialog.queue.unshift(saved.cur); }

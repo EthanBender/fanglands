@@ -143,43 +143,36 @@
     }
   });
 
-  // ---------- the strip on the HUD kit's left column, and the CHAT control on the rail ----------
-  // The strip is a readout with a tap on it (it opens the log), so it asks the kit for its space like a control does:
-  // HK.claim() gives it the next rows of the left column that are clear of every control already on screen and of the
-  // joystick and all six thumb seats, whichever side Settings › Move stick side puts them (it used to be placed by hand
-  // at the bottom-left, 360 px wide, and ran across MUSIC, QUESTS, CRAFT — and later BLOCK, in a boss fight with the
-  // stick on the right). It shows the newest lines that fit, stops short of a control on its right where it still has
-  // room to be read, and shows nothing at all when not even one tap-sized row is free (the bubbles over the knights'
-  // heads still say it, and the log is one tap away in Friends). Its tap area is at least one kit row (44 px on touch).
-  const LINE_H = 16;
+  // ---------- the strip, in the kit's chat lane, and the CHAT tile in the book ----------
+  // The strip has its own lane (src/59-hudkit.js HK.lane('chat', n)): bottom-left on a computer, above the belt on an iPad
+  // and a phone held sideways, full width above the belt on a phone held upright. Up to 4 / 2 / 1 thin sable lines,
+  // "Name: text" with the name in friend blue, each fading 8 s after it was said; the lane hides while someone talks.
+  // The whole strip is one tap (padded to 44 px) that opens the Chat log. CHAT itself is a tile in the Knight's Book.
+  const LINE_H = 20;
+  const liveLines = () => { const out = []; for (let i = log.length - 1; i >= 0 && out.length < STRIP_LINES; i--) if (log[i].t > 0) out.unshift(log[i]); return out; };
+  // how many lines the strip wants this frame (the kit reserves the lane from it), capped by the lane's own maximum
+  const stripLines = () => { if (!NET.enabled || paused || panel || (dialog && dialog.cur)) return 0; const L = HK.cur(); return Math.min(liveLines().length, L && L.chatMax || STRIP_LINES); };
   HOOKS.hud.push(g => {
-    if (paused || panel) return;
-    const live = []; for (let i = log.length - 1; i >= 0 && live.length < STRIP_LINES; i--) if (log[i].t > 0) live.unshift(log[i]);
-    if (!live.length) return;
-    let s = null, n = live.length;
-    for (; n >= 1 && !s; n--) s = HK.claim(Math.max(n * LINE_H, HK.row()), { minW: 160 });
-    if (!s) return;
-    n++;
-    const lines = live.slice(-n), w = s.w;
-    g.textAlign = 'left';
+    const n = stripLines(); if (!n) return;
+    const lane = HK.lane('chat', n); if (!lane) return;
+    const lines = liveLines().slice(-n);
+    const top = lane.y + lane.h - n * LINE_H;
     lines.forEach((l, i) => {
-      const y = s.y + i * LINE_H;
-      g.globalAlpha = clamp(l.t / 1.5, 0, 1);
-      HK.plate(g, s.x, y, w, LINE_H - 1, { r: 4 });
-      // names in the kit's INK, what they said in its DIM: text is never a colour of its own
-      g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; const name = l.n + ':'; g.fillText(name, s.x + 6, y + 12);
-      const nw = g.measureText(name).width; g.font = '12px sans-serif'; g.fillStyle = HK.C.DIM;
-      let t = l.text; const maxW = w - 12 - nw - 6; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…';
-      g.fillText(t, s.x + 6 + nw + 5, y + 12);
+      const y = top + i * LINE_H;
+      g.save(); g.globalAlpha *= clamp(l.t / 1.5, 0, 1);
+      const nf = HK.FS(700, 13), tf = HK.FS(600, 13), name = l.n + ':';
+      const nw = HK.tw(g, name, nf), maxT = lane.w - 20 - nw - 6;
+      let t = l.text; if (HK.tw(g, t, tf) > maxT) { const w = HK.wrap(g, t, maxT, 1, tf); t = w.lines[0] || ''; if (w.more) t += '…'; }
+      const w = Math.min(lane.w, 20 + nw + 6 + HK.tw(g, t, tf));
+      HK.rr(g, lane.x, y, w, LINE_H - 2, 4); g.fillStyle = 'rgba(20,15,13,0.78)'; g.fill(); g.strokeStyle = 'rgba(217,178,92,0.35)'; g.lineWidth = 1; g.stroke();
+      HK.text(g, name, lane.x + 8, y + 14, { font: nf, color: l.n === me() ? HK.T.ink : HK.T.friend });
+      HK.text(g, t, lane.x + 8 + nw + 6, y + 14, { font: tf, color: HK.T.ink });
+      g.restore();
     });
-    g.globalAlpha = 1;
-    buttons.push({ x: s.x, y: s.y, w, h: s.h, label: 'chat:log', action: () => openPanel('chatlog') });
+    buttons.push({ x: lane.x, y: lane.y, w: lane.w, h: lane.h, label: 'chat:log', action: () => openPanel('chatlog'), up: true, name: 'The chat log', keys: ['Y'] });
   });
-  // CHAT on touch is an entry on the kit's control rail (under the minimap; the second column on a landscape phone), not
-  // a disc of its own: the thumb cluster's six seats are all taken (HK.thumbSeat), and the last hand-placed disc at
-  // (VW-250, VH-200) sat on top of WIKI on a landscape phone and inside the joystick on a tall one. The rail lays
-  // it out with the others, draws it in the kit's control style and lights it while the box is open.
-  hudControl({ id: 'chat', sort: 45, label: () => 'CHAT', show: () => touchMode() && NET.enabled && !paused, on: () => isOpen, action: () => { if (isOpen) close(); else open(); } });
+  // CHAT is a tile in the Knight's Book (the kit's twelve): it opens and closes the box, and it is lit while the box is open
+  hudControl({ id: 'chat', sort: 45, label: () => 'CHAT', emblem: 'chat', key: 'Y', asleep: () => !NET.enabled, on: () => isOpen, action: () => { if (!NET.enabled) { notify('Chat is for the online game.'); return; } if (isOpen) close(); else open(); } });
 
   // ---------- the log panel ----------
   HOOKS.panel.chatlog = (g, narrow) => {
@@ -202,7 +195,7 @@
     if (window.PLAYERS) button(g, px + 18 + 148, by, 90, bh, 'Friends', () => openPanel('friends'), '#21262d');
   };
 
-  window.CHAT = { open, close, send, isOpen: () => isOpen, bubbles, log, PHRASES, MAX };
+  window.CHAT = { open, close, send, isOpen: () => isOpen, bubbles, log, PHRASES, MAX, stripLines };
 
   // ---------- self-test ----------
   const P = 'chat: ';
@@ -237,13 +230,13 @@
       say('A test line, knight.', 'The Voice'); F.step([]); const up = !!dialog.cur; F.press('Enter'); const stayed = !isOpen; dialog.cur = null; dialog.queue.length = 0; F.step([]); F.step([]);
       check(P + 'Y opens the chat box; Enter opens it only when no line of talk is showing', byY && byEnter && up && stayed, { byY, byEnter, up, stayed }); }
     // touch: CHAT is an entry on the kit's control rail (drawn by the rail, where the rail says), and toggles the box
-    { window.__forceTouch = true; closePanel(); render(); const btn = buttons.find(b => b.label === 'CHAT'); const has = !!btn;
-      const rail = HK.railCells(), cell = rail && rail.cells.find(c => c.def.id === 'chat');
-      const onRail = !!cell && !!btn && btn.x === cell.x && btn.y === cell.y && btn.w === cell.w && btn.h === cell.h;
-      if (btn) btn.action(); const opened = isOpen; render(); const lit = !!cell && cell.def.on(); if (btn) btn.action(); const closed = !isOpen;
-      window.__forceTouch = false; render(); const deskHidden = !buttons.some(b => b.label === 'CHAT');
-      window.__forceTouch = was.touch; render();
-      check(P + 'in touch mode a CHAT control sits on the control rail with the other rarely-used controls and toggles the box (lit while it is open)', has && onRail && opened && lit && closed && deskHidden, { has, onRail, cell: cell && [cell.x, cell.y, cell.w, cell.h], btn: btn && [btn.x, btn.y, btn.w, btn.h], opened, lit, closed, deskHidden }); }
+    { window.__forceTouch = true; closePanel(); paused = true; render(); const btn = buttons.find(b => b.label === 'CHAT'); const has = !!btn;
+      const book = HK.FRAME.lastBook, tile = book && btn && book.tiles.find(c => Math.abs(c.x - btn.cx) < 0.5 && Math.abs(c.y - btn.cy) < 0.5);
+      const inBook = !!tile && btn.r >= 22 && !buttons.some(b => b.label === 'chat:log');
+      if (btn) btn.action(); const opened = isOpen && !paused; paused = true; render(); const lit = !!HK.bookTiles().find(t => t.id === 'chat' && t.on); if (btn) btn.action(); const closed = !isOpen;
+      window.__forceTouch = false; paused = true; render(); const deskKey = HK.bookTiles().find(t => t.id === 'chat').key === 'Y' && buttons.some(b => b.label === 'CHAT' && (b.keys || []).includes('Y'));
+      paused = false; window.__forceTouch = was.touch; render();
+      check(P + 'CHAT is a tile in the Knight\'s Book with the other rarely-used controls: it toggles the box (lit while open), and on a computer it wears its key Y', has && inBook && opened && lit && closed && deskKey, { has, inBook, btn: btn && [btn.cx, btn.cy, btn.r], opened, lit, closed, deskKey }); }
     // fading: bubbles go after 4 s, strip lines after 8, the log keeps 30
     { feed({ t: 'chat', n: 'Ava', text: 'still here' }); F.sim(60 * 4.2, []); const bubbleGone = !bubbles.Ava; F.sim(60 * 4.2, []); const stripGone = !log.some(l => l.t > 0);
       for (let i = 0; i < 40; i++) feed({ t: 'chat', n: 'Ava', text: 'line ' + i }); const kept = log.length === LOG_MAX && log[LOG_MAX - 1].text === 'line 39';
