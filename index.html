@@ -4205,6 +4205,7 @@ const tap = {
   gather: null,      // {tx, ty, t} while a chop / mine / fish keeps re-issuing
   marker: null,      // {x, y, t, color} the ring at the destination
   label: null,       // {text, x, y} long-press context label
+  wiki: null,        // {type, text, x, y, t} the book mark on a long-pressed monster's tag: opens its wiki page; stays about 2 s after the finger lifts
   blockedT: 0, repathed: false, wantMove: false, lastX: 0, lastY: 0, repathT: 0, reissueT: 0, reissues: 0,
   lastTap: null,     // {x, y, at} for double-tap
 };
@@ -4375,8 +4376,11 @@ HOOKS.update.push(dt => {
     const p = touch.press; p.held = (p.held || 0) + dt;
     const held = Math.max(p.held, (nowMs() - p.t0) / 1000);
     if (held > 8) touch.press = null;
-    else if (p.moved < 10 && held >= 0.4 && !tap.label && !paused) { const pk = tapPick(p.x, p.y); const onStick = touch.stickId === p.id && (!pk || pk.kind === 'walk' || pk.kind === 'wall'); const text = onStick ? null : tapLabelFor(pk); if (text) tap.label = { text, x: p.x, y: p.y }; } // a still thumb on the stick over plain ground is not a question
+    // a still thumb on the stick over plain ground is not a question
+    else if (p.moved < 10 && held >= 0.4 && !tap.label && !paused) { const pk = tapPick(p.x, p.y); const onStick = touch.stickId === p.id && (!pk || pk.kind === 'walk' || pk.kind === 'wall'); const text = onStick ? null : tapLabelFor(pk); if (text) { tap.label = { text, x: p.x, y: p.y }; tap.wiki = tapWikiFor(pk, text, p.x, p.y); } }
   }
+  // the wiki mark outlives the finger by about 2 s (the tag it hangs on goes with it), so a child can lift and then tap it
+  if (tap.wiki) { if (tap.label) tap.wiki.t = TAP_WIKI_KEEP; else { tap.wiki.t -= dt; if (tap.wiki.t <= 0) tap.wiki = null; } }
   if (tap.marker) { tap.marker.t += dt; if (tap.marker.fade && tap.marker.t > 0.6) tap.marker = null; }
   if (player.dead) { if (tap.kind || tap.gather || tap.path) tapCancel('dead'); return; }
   if (tap.path && tap.path !== player.walkPath) tapCancel('stale');
@@ -4464,7 +4468,7 @@ HOOKS.update.push(dt => {
     tap.reissues += 1; tap.reissueT = 0.4; tapFace(tc(g.tx), tc(g.ty)); useAction();
   }
 });
-HOOKS.newGame.push(() => { tapCancel('manual'); tap.lastTap = null; tap.marker = null; touch.press = null; });
+HOOKS.newGame.push(() => { tapCancel('manual'); tap.lastTap = null; tap.marker = null; tap.wiki = null; touch.press = null; });
 // destination ring (shrinks in, then breathes) + faint dots along the path
 HOOKS.draw.push((g, items) => {
   if (tap.path && tap.path.length > 1) items.push({ y: -1e9, draw: () => { g.fillStyle = 'rgba(255,255,255,0.22)'; for (let i = 0; i < tap.path.length - 1; i++) { const [x, y] = tap.path[i]; g.beginPath(); g.arc(tc(x), tc(y), 2.5, 0, 7); g.fill(); } } });
@@ -4477,10 +4481,41 @@ HOOKS.draw.push((g, items) => {
   } });
 });
 // long-press label, drawn in screen space above the finger: the kit's small vellum tag with a pointer tooth (src/59-hudkit.js);
-// holding a HUD control names it with the same tag
+// holding a HUD control names it with the same tag.
+// On a MONSTER the tag gains a small book mark (the 'wiki' emblem on an umber wax seal: wax = open and read) that opens
+// that monster's wiki page, the same page K opens when you face it. On touch it is a round tap of 46 px, beside the tag
+// and clear of the finger, and it stays about 2 s after the finger lifts; with a mouse it is 28 px and names itself
+// ('Wiki page', K). Lifting the finger does exactly what it always did (a tap on the monster fights it): the mark is
+// only a tap target of its own while it is up.
+const TAP_WIKI_KEEP = 2;
+function tapWikiFor(pk, text, x, y) {
+  if (!pk || pk.kind !== 'monster' || !pk.monster || !window.WIKI || !WIKI.open) return null;
+  return { type: pk.monster.type, text, x, y, t: TAP_WIKI_KEEP };
+}
+// where the mark sits: pressed onto the tag's right end like a seal on a letter (a few px over the vellum's margin, never
+// over its words), else onto its left end, inside the safe area
+function tapWikiSpot(tg, R) {
+  const L = typeof HK !== 'undefined' && HK.cur ? HK.cur() : null, S = (L && L.S) || { t: 0, r: 0, b: 0, l: 0 };
+  const tuck = Math.min(9, R * 0.4), cy = clamp(tg.y + tg.h / 2, S.t + R + 2, VH - S.b - R - 2);
+  let cx = tg.x + tg.w - tuck + R;
+  if (cx + R > VW - S.r - 4) cx = tg.x + tuck - R;
+  return { x: clamp(cx, S.l + R + 4, VW - S.r - R - 4), y: cy, r: R };
+}
 HOOKS.hud.push(g => {
-  const l = tap.label; if (!l || paused) return;
-  HK.tag(g, l.x, l.y - 24, l.text);
+  if (paused) return;
+  const l = tap.label || tap.wiki; if (!l) return;
+  const w = tap.wiki, fade = !tap.label && w ? clamp(w.t / 0.35, 0, 1) : 1;
+  g.save(); g.globalAlpha *= fade;
+  const tg = HK.tag(g, l.x, l.y - 24, l.text);
+  if (w && tg) {
+    const R = touchMode() ? 23 : 14, c = tapWikiSpot(tg, R), stt = HK.stateOf('wiki:mark');
+    HK.seal(g, c.x, c.y, R, 'wiki', 'umber', { pressed: stt.pressed, hover: stt.hover, ripple: stt.ripple, seed: 44, scale: 0.7 });
+    const type = w.type;
+    buttons.push({ x: c.x - R, y: c.y - R, w: R * 2, h: R * 2, r: R, cx: c.x, cy: c.y, label: 'wiki:mark', up: true, name: 'Wiki page', keys: ['K'], sub: MONSTER_DEFS[type] ? MONSTER_DEFS[type].name : null,
+      action: () => { tap.wiki = null; tap.label = null; WIKI.open('monsters', type); } });
+    tap.wikiRect = c;
+  } else tap.wikiRect = null;
+  g.restore();
 });
 // ---------- self-test ----------
 HOOKS.selfTest.push((check, F, h) => {
@@ -4547,6 +4582,40 @@ HOOKS.selfTest.push((check, F, h) => {
     pointerDown(sx, sy, 10); F.sim(30, []); const hold2 = tap.label && tap.label.text; pointerUp(10); tapCancel('manual');
     const [tsx, tsy] = screen(tc(o.x + 1), tc(o.y + 1)); pointerDown(tsx, tsy, 11); F.sim(30, []); const groundLabel = tap.label && tap.label.text; pointerUp(11); tapCancel('manual');
     check('tap: long-press labels name the ground too', hold2 === label && typeof groundLabel === 'string' && groundLabel.length > 0, { hold2, groundLabel });
+    gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.home = gs.home; gob.state = 'idle'; gob.attackCd = 0; }
+  // 8b. the long-press tag on a monster gains a wiki mark: on touch a round tap of 44 px or more, still up a second after the
+  //     finger lifts (the lift still fights the monster, exactly as before), and a tap on it opens that monster's wiki page,
+  //     the page K opens; with a mouse it is 26 px or more and names itself 'Wiki page' with K; it goes by itself about
+  //     2 s after the finger lifts
+  { const o = h.openSpot(40, 20); clearArea(o); F.tp(o.x, o.y); F.step([]); const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home } };
+    gob.dead = false; gob.x = tc(o.x + 2); gob.y = tc(o.y); gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; gob.attackCd = 99;
+    const out = {}; let pid = 40;
+    for (const t of [true, false]) {
+      window.__forceTouch = t; closePanel(); tap.wiki = null; tap.label = null; tapCancel('manual');
+      const [sx, sy] = screen(gob.x, gob.y), id = t ? ++pid : 'mouse';
+      pointerDown(sx, sy, id); F.sim(30, []);
+      const whileHeld = !!buttons.find(b => b.label === 'wiki:mark');
+      pointerUp(id, sx, sy); const fights = tap.kind === 'monster' && tap.target === gob && !tap.label; tapCancel('manual');
+      F.sim(50, []); gob.x = tc(o.x + 2); gob.y = tc(o.y); render();
+      const b = buttons.find(q => q.label === 'wiki:mark');
+      const size = b ? Math.round(b.r * 2) : 0, circle = !!(b && b.r && b.up);
+      const onScreen = !!b && b.cx - b.r >= 0 && b.cy - b.r >= 0 && b.cx + b.r <= VW && b.cy + b.r <= VH;
+      const named = !!b && b.name === 'Wiki page' && Array.isArray(b.keys) && b.keys[0] === 'K';
+      const clear = !!b && Math.hypot(b.cx - sx, b.cy - sy) > b.r + 10;
+      let opened = false;
+      if (b) { const id2 = t ? ++pid : 'mouse'; pointerDown(b.cx, b.cy, id2); pointerUp(id2, b.cx, b.cy); render(); opened = panel === 'wiki' && WIKI.state.section === 'monsters' && WIKI.state.id === 'goblin'; }
+      closePanel(); render();
+      // again, and this time leave it: it is gone about 2 s after the lift
+      pointerDown(sx, sy, t ? ++pid : 'mouse'); F.sim(30, []); pointerUp(t ? pid : 'mouse', sx, sy); tapCancel('manual');
+      F.sim(80, []); gob.x = tc(o.x + 2); gob.y = tc(o.y); render(); const stillAt1s = !!buttons.find(q => q.label === 'wiki:mark');
+      F.sim(80, []); gob.x = tc(o.x + 2); gob.y = tc(o.y); render(); const goneAt3s = !buttons.find(q => q.label === 'wiki:mark') && !tap.wiki;
+      out[t ? 'touch' : 'mouse'] = { whileHeld, fights, size, circle, onScreen, named, clear, opened, stillAt1s, goneAt3s };
+    }
+    const T0 = out.touch, M0 = out.mouse;
+    const ok = x => x.whileHeld && x.fights && x.circle && x.onScreen && x.named && x.clear && x.opened && x.stillAt1s && x.goneAt3s;
+    check('tap: the long-press tag on a monster carries a wiki mark (44 px or more on touch, 26 or more with a mouse, named Wiki page with K) that opens its wiki page, stays about 2 s after the finger lifts, and the lift still fights the monster',
+      ok(T0) && ok(M0) && T0.size >= 44 && M0.size >= 26, out);
+    window.__forceTouch = false; tap.wiki = null; closePanel();
     gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.home = gs.home; gob.state = 'idle'; gob.attackCd = 0; }
   // 9. double-tap = swing
   { const o = h.openSpot(40, 24); clearArea(o); F.tp(o.x, o.y); F.step([]); player.attackCd = 0; player.attackT = 0; const [sx, sy] = screen(tc(o.x + 2), tc(o.y)); pointerDown(sx, sy, 12); pointerUp(12); F.step([]); pointerDown(sx, sy, 13); pointerUp(13);
@@ -5191,31 +5260,62 @@ HOOKS.selfTest.push((check, F, h) => {
   };
 
   // ---------- panel ----------
+  // The Companion hero panel wears the book frame (panelBox) and the kit's type: the hero's words in the system sans,
+  // her health as the same ramp bar the plaque shows with the exact "44 / 60" in Cinzel, and the verbs as iron plate
+  // buttons a kit row tall (44 on touch, 32 with a mouse). Green = the choice to make; nothing here is danger.
+  const PANEL_PAD = 18;
+  // the sentence block: whole words, never cut; returns the y under the last line
+  function heroWords(g, s, x, y, w) {
+    const f = HK.FS(600, 14), lh = Math.round(14 * HK.k() * 1.42);
+    const lines = HK.wrap(g, s, w, 12, f).lines;
+    lines.forEach((ln, i) => HK.text(g, ln, x, y + 14 + i * lh, { font: f, color: HK.T.ink, box: { x, y, w, h: lh }, fitId: 'companion:words' }));
+    return y + lines.length * lh + 6;
+  }
+  function heroRowButtons(g, px, y, w, list) {
+    const n = list.length, gap = 8, bw = (w - PANEL_PAD * 2 - gap * (n - 1)) / n, rh = HK.row();
+    list.forEach(([label, fn, col, on], i) => button(g, Math.round(px + PANEL_PAD + i * (bw + gap)), y, Math.floor(bw), rh, label, fn, col, on));
+    return y + rh;
+  }
   HOOKS.panel.companion = (g, narrow) => {
     const c = comp(); const arg = panelArg;
+    const rh = HK.row();
     if (arg && arg.hire && HEROES[arg.hire]) {
       const def = HEROES[arg.hire]; const cost = def.cost || 0;
-      const { px, py, w, h } = panelBox(g, 400, 220, def.name, def.title);
-      g.fillStyle = '#c9d1d9'; g.font = '13px sans-serif'; g.textAlign = 'left';
-      wrapText(g, def.blurb + (c.id && c.id !== arg.hire ? ` ${HEROES[c.id].name} will wait at the Barrel & Boar.` : ''), px + 18, py + 78, w - 36, 18);
+      const blurb = def.blurb + (c.id && c.id !== arg.hire ? ` ${HEROES[c.id].name} will wait at the Barrel & Boar.` : '');
+      const w = Math.min(420, VW - 20), inner = w - PANEL_PAD * 2;
+      const lines = HK.wrap(g, blurb, inner, 12, HK.FS(600, 14)).lines.length, lh = Math.round(14 * HK.k() * 1.42);
+      const { px, py } = panelBox(g, w, 62 + lines * lh + 18 + rh + 18, def.name, def.title);
+      const y = heroWords(g, blurb, px + PANEL_PAD, py + 62, inner);
       const can = coins() >= cost;
-      button(g, px + 18, py + h - 54, 210, 36, cost ? `Hire for ${cost} coins` : 'Come with me', () => { if (cost && !payCoins(cost)) { notify('Not enough coins.'); return; } if (cost) floatText(player.x, player.y - 30, `-${cost} coins`, '#ffd166'); closePanel(); recruit(arg.hire); }, can ? '#238636' : '#2a2f3a', can);
-      button(g, px + w - 18 - 120, py + h - 54, 120, 36, 'Not now', closePanel, '#21262d');
+      heroRowButtons(g, px, Math.max(y + 8, py + 62 + lines * lh + 18), w, [
+        [cost ? `Hire for ${cost} coins` : 'Come with me', () => { if (cost && !payCoins(cost)) { notify('Not enough coins.'); return; } if (cost) floatText(player.x, player.y - 30, `-${cost} coins`, '#ffd166'); closePanel(); recruit(arg.hire); }, '#238636', can],
+        ['Not now', closePanel, '#21262d', true],
+      ]);
       return;
     }
     if (!c.id) { closePanel(); return; }
     const def = HEROES[c.id];
-    const { px, py, w, h } = panelBox(g, 400, 236, def.name, `${def.title} · ${c.mode === 'stay' ? 'waiting here' : 'following you'}`);
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('HP', px + 18, py + 78);
-    g.fillStyle = '#2a2f3a'; roundRect(g, px + 44, py + 68, w - 62, 12, 5); g.fill();
-    const f = clamp(c.hp / def.hp, 0, 1); g.fillStyle = f > 0.5 ? '#3fb950' : f > 0.25 ? '#d29922' : '#f85149'; roundRect(g, px + 44, py + 68, (w - 62) * f, 12, 5); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 10px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(c.hp)} / ${def.hp}`, px + 44 + (w - 62) / 2, py + 78);
-    g.fillStyle = '#c9d1d9'; g.font = '13px sans-serif'; g.textAlign = 'left';
-    wrapText(g, def.blurb, px + 18, py + 104, w - 36, 18);
-    const by = py + h - 54, bw = (w - 36 - 16) / 3;
-    button(g, px + 18, by, bw, 36, 'Follow me', () => { setMode('follow'); closePanel(); }, '#238636', c.mode !== 'follow');
-    button(g, px + 18 + bw + 8, by, bw, 36, 'Stay here', () => { setMode('stay'); closePanel(); }, '#1f6feb', c.mode !== 'stay');
-    button(g, px + 18 + (bw + 8) * 2, by, bw, 36, 'Dismiss', () => { closePanel(); dismiss(); }, '#8b2e2e');
+    const w = Math.min(420, VW - 20), inner = w - PANEL_PAD * 2;
+    const lines = HK.wrap(g, def.blurb, inner, 12, HK.FS(600, 14)).lines.length, lh = Math.round(14 * HK.k() * 1.42);
+    const h = 62 + 34 + lines * lh + 18 + rh + 18;
+    const { px, py } = panelBox(g, w, h, def.name, `${def.title} · ${c.mode === 'stay' ? 'waiting here' : 'following you'}`);
+    // her health: a portrait roundel, HEALTH in Cinzel, the exact numbers, and the ramp bar (the plaque's own look)
+    const f = clamp(c.hp / def.hp, 0, 1), y0 = py + 62;
+    const pr = 13, pcx = px + PANEL_PAD + pr, pcy = y0 + pr;
+    g.beginPath(); g.arc(pcx, pcy, pr, 0, 7); g.fillStyle = '#111317'; g.fill();
+    HK.portrait(g, pcx, pcy, pr - 2, heroFace(def, c.downT > 0));
+    g.beginPath(); g.arc(pcx, pcy, pr - 1, 0, 7); g.strokeStyle = 'rgba(217,178,92,0.7)'; g.lineWidth = 1.5; g.stroke();
+    const bx = px + PANEL_PAD + pr * 2 + 10, bw = px + w - PANEL_PAD - bx;
+    HK.text(g, 'HEALTH', bx, y0 + 10, { font: HK.FC(800, 11), color: HK.T.gold });
+    HK.text(g, `${Math.ceil(c.hp)} / ${def.hp}`, px + w - PANEL_PAD, y0 + 10, { font: HK.FC(800, 12), align: 'right', color: HK.T.ink });
+    const col = HK.ramp(f);
+    HK.meterBar(g, bx, y0 + 15, bw, 10, f, col === HK.T.good ? '#3fae4a' : col === HK.T.warn ? '#e8a33d' : '#d8322b', col === HK.T.good ? { hi: '#9ce68e', lo: '#1d5a22' } : col === HK.T.warn ? { hi: '#ffd08a', lo: '#7a4a0e' } : {});
+    const y = heroWords(g, def.blurb, px + PANEL_PAD, y0 + 34, inner);
+    heroRowButtons(g, px, Math.max(y + 8, py + h - rh - 18), w, [
+      ['Follow me', () => { setMode('follow'); closePanel(); }, '#238636', c.mode !== 'follow'],
+      ['Stay here', () => { setMode('stay'); closePanel(); }, '#21262d', c.mode !== 'stay'],
+      ['Dismiss', () => { closePanel(); dismiss(); }, '#21262d', true],
+    ]);
   };
 
   // ---------- combat helpers ----------
@@ -5370,30 +5470,50 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   // ---------- hud ----------
+  // The companion PLAQUE (src/59-hudkit.js HK.addPlaque): her drawn portrait in the roundel, her name in Cinzel caps,
+  // the exact "44 / 60" and a bar on the health ramp (green, amber, red: the same meaning as your own shield).
+  // Down: a red edge, "SERA IS DOWN" and "up in 12 s". Waiting where you left her: "SERA · WAITING".
+  // The portrait keeps the hero's own colours (hair, tunic): that says WHICH hero, not how she is doing.
+  function heroFace(def, down) { return { hair: def.look.helm || def.look.hair, tunic: def.look.tunic, down: !!down }; }
+  // The first of several field sets that fits the plaque column's width, so no word is ever squeezed out of its plate.
+  // It measures the way the kit's plaque lays out (src/59-hudkit.js plaque(): a 36 px roundel, the name in Cinzel shrinking
+  // to 9 px and no further, the value on the right in Cinzel 11, drawn stars 16 px each, one line of sans under it).
+  // (A local copy in each world-status file: HK.addPlaque could take such a list itself.)
+  const fitFields = (g, list) => {
+    const P = HK.cur().plaques, w = P && P[0] ? P[0].w : 0;
+    if (!w) return list[0];
+    for (const o of list) {
+      const tx = (o.emblem || o.portrait) ? 48 : 10, rw = o.right != null && o.right !== '' ? HK.tw(g, String(o.right), HK.FC(800, 11)) + 12 : 0, stars = o.stars ? o.stars.of * 16 + 6 : 0;
+      if (HK.tw(g, String(o.name || ''), HK.FC(800, 9)) > w - 14 - rw - stars - tx) continue;
+      if (o.sub && o.frac == null && HK.tw(g, String(o.sub), HK.FS(600, 12)) > w - 14 - tx) continue;
+      return o;
+    }
+    return list[list.length - 1];
+  };
+  // on a narrow plaque column (a landscape phone) the longer words give way to shorter ones, in this order
+  function companionPlaque(g) {
+    const c = comp(); if (!c.id || !HEROES[c.id]) return null;
+    const def = HEROES[c.id], NAME = def.name.toUpperCase(), down = c.downT > 0;
+    if (down) {
+      const s = Math.max(1, Math.ceil(c.downT)), base = { id: 'companion', portrait: heroFace(def, true), frac: 0, edge: HK.T.gules };
+      return fitFields(g, [{ name: `${NAME} IS DOWN`, right: `up in ${s} s` }, { name: `${NAME} IS DOWN`, right: `${s} s` }, { name: `${NAME} DOWN`, right: `${s} s` }].map(o => Object.assign({}, base, o)));
+    }
+    const hp = Math.max(0, Math.ceil(c.hp)), base = { id: 'companion', portrait: heroFace(def, false), frac: clamp(c.hp / def.hp, 0, 1) };
+    const list = c.mode === 'stay'
+      ? [{ name: `${NAME} · WAITING`, right: `${hp} / ${def.hp}` }, { name: `${NAME} WAITS`, right: `${hp} / ${def.hp}` }, { name: `${NAME} WAITS`, right: `${hp}` }, { name: NAME, right: `${hp} / ${def.hp}` }]
+      : [{ name: NAME, right: `${hp} / ${def.hp}` }];
+    return fitFields(g, list.map(o => Object.assign({}, base, o)));
+  }
   HOOKS.hud.push((g, narrow) => {
     const c = comp(); if (!c.id) return;
-    const def = HEROES[c.id];
-    // MIGRATED to the HUD kit (src/59-hudkit.js). Was a content-sized black pill that changed width every
-    // time her hp ticked. Now it is a chip on the left column's grid — same edge, same width, same plate as
-    // your own health — and her hp reads on the same green/amber/red ramp as yours, because it means the
-    // same thing. The little portrait keeps her tunic colour: that is identity (which companion), not state.
-    const pad = 9, f = clamp(c.hp / def.hp, 0, 1), down = c.downT > 0;
-    const s = HK.slot(pad * 2 + HK.meterH(true));
-    HK.plate(g, s.x, s.y, s.w, s.h, { tone: down ? HK.C.BAD : null });
-    g.fillStyle = down ? '#4b535d' : def.look.tunic; g.beginPath(); g.arc(s.x + pad + 10, s.y + s.h / 2, 7, 0, 7); g.fill();
-    g.fillStyle = down ? '#6e7681' : (def.look.helm || def.look.hair); g.beginPath(); g.arc(s.x + pad + 10, s.y + s.h / 2 - 1, 6, Math.PI, 0); g.fill();
-    const bx = s.x + pad + 24;
-    HK.meter(g, bx, s.y + pad, s.x + s.w - pad - bx, {
-      label: def.name.toUpperCase() + (down ? ' · DOWN' : c.mode === 'stay' ? ' · WAITING' : ''),
-      value: down ? `${Math.ceil(c.downT)}s` : `${Math.ceil(c.hp)} / ${def.hp}`, template: `${def.hp} / ${def.hp}`,
-      frac: down ? 0 : f, tone: down ? HK.C.BAD : HK.ramp(f), small: true,
-    });
+    const pq = companionPlaque(g); if (pq) HK.addPlaque(g, pq);
     // hero on the minimap
     if (minimapRect && c.downT <= 0) {
       const { x: mx, y: my, w: ms } = minimapRect; const ta = 44, sc = ms / ta;
       const sx = clamp(player.x / TILE - ta / 2, 0, MAP_W - ta), sy = clamp(player.y / TILE - ta / 2, 0, MAP_H - ta);
       const dx = mx + (c.x / TILE - sx) * sc, dy = my + (c.y / TILE - sy) * sc;
-      if (Math.hypot(dx - (mx + ms / 2), dy - (my + ms / 2)) < ms / 2 - 3) { g.fillStyle = '#a6f0a0'; g.beginPath(); g.arc(dx, dy, 2.5, 0, 7); g.fill(); }   // inside the ring's round glass (src/59-hudkit.js)
+      // only inside the ring's round glass (src/59-hudkit.js)
+      if (Math.hypot(dx - (mx + ms / 2), dy - (my + ms / 2)) < ms / 2 - 3) { g.fillStyle = HK.T.companion; g.beginPath(); g.arc(dx, dy, 2.5, 0, 7); g.fill(); }
     }
   });
 
@@ -5401,7 +5521,33 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.newGame.push(() => { player.companion = newCompanionState(); resetLive(null); syncHeroNpcs(); });
 
   // ---------- debug handle ----------
-  if (window.FANGLANDS) window.FANGLANDS.companion = { CAGE, CAGE_POS, HEROES, comp, recruit, dismiss, setMode, syncHeroNpcs, guardsNearCage };
+  if (window.FANGLANDS) window.FANGLANDS.companion = { CAGE, CAGE_POS, HEROES, comp, recruit, dismiss, setMode, syncHeroNpcs, guardsNearCage, plaque: companionPlaque };
+
+  // ---------- self-test: the plaque ----------
+  // Her plaque comes through the kit (HK.addPlaque) with the fields the spec names, in every state she can be in.
+  HOOKS.selfTest.push((check, F, h) => {
+    const saved = player.companion ? JSON.parse(JSON.stringify(player.companion)) : null, p0 = paused;
+    const rec = [], add0 = HK.addPlaque, fc = HK.audit.fitCtx();
+    HK.addPlaque = (g, o) => { rec.push({ o: Object.assign({}, o), r: add0(g, o) }); return rec[rec.length - 1].r; };
+    const frame = () => { rec.length = 0; drawHud(fc); return rec.find(q => q.o.id === 'companion') || null; };
+    const got = {};
+    try {
+      paused = false;
+      player.companion = { id: 'sera', hp: 44, mode: 'follow', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } };
+      const a = frame(); got.follow = a && a.o;
+      player.companion.mode = 'stay'; const b = frame(); got.stay = b && b.o;
+      player.companion.mode = 'follow'; player.companion.downT = 11.2; const d = frame(); got.down = d && d.o;
+      player.companion.downT = 0; player.companion.id = 'garrick'; player.companion.hp = 90; const gk = frame(); got.garrick = gk && gk.o;
+      player.companion = { id: null, hp: 0, mode: 'follow', x: 0, y: 0, freed: { sera: true }, downT: 0 }; const none = frame();
+      const S = HEROES.sera.look, G = HEROES.garrick.look;
+      const okFollow = !!a && !!a.r && a.o.name === 'SERA' && a.o.right === '44 / 60' && Math.abs(a.o.frac - 44 / 60) < 1e-9 && !a.o.edge && a.o.portrait && a.o.portrait.hair === S.hair && a.o.portrait.tunic === S.tunic && !a.o.portrait.down && !a.o.emblem;
+      const okStay = !!b && b.o.name === 'SERA · WAITING' && b.o.right === '44 / 60';
+      const okDown = !!d && d.o.name === 'SERA IS DOWN' && d.o.right === 'up in 12 s' && d.o.frac === 0 && d.o.edge === HK.T.gules && d.o.portrait.down === true;
+      const okGarrick = !!gk && gk.o.name === 'GARRICK' && gk.o.right === '90 / 90' && gk.o.portrait.hair === (G.helm || G.hair);
+      check('companion: her plaque comes through HK.addPlaque in a reserved slot: her portrait in her own colours, SERA, the exact 44 / 60 and a ramp bar; SERA · WAITING while she stays; SERA IS DOWN, up in 12 s, a red edge while she is down; GARRICK 90 / 90; nothing without a companion',
+        okFollow && okStay && okDown && okGarrick && !none, got);
+    } finally { HK.addPlaque = add0; player.companion = saved; paused = p0; }
+  });
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -5853,7 +5999,8 @@ let lawArmed = false; // true while guards have been told to fight; stand them d
 
 const lawIsGuard = m => LAW_GUARD_TYPES.includes(m.type);
 function law() { if (!player.law) player.law = { wanted: 0, timer: 0, fines: 0 }; return player.law; }
-const lawStars = n => '★'.repeat(n) + '☆'.repeat(Math.max(0, 3 - n));
+// the wanted level in plain words (stars are only ever DRAWN, on the WANTED plaque and in the Captain's panel)
+const lawStars = n => `${n} of 3 star${n === 1 ? '' : 's'}`;
 const lawFine = () => law().fines + law().wanted * LAW_LEVEL_FINE;
 const lawOwes = () => law().wanted > 0 || law().fines > 0;
 
@@ -5862,8 +6009,8 @@ function lawOffend(level) {
   const L = law(); const before = L.wanted;
   L.wanted = clamp(level, 0, 3); L.timer = LAW_HIT_TIMER;
   if (L.wanted > before) {
-    floatText(player.x, player.y - 42, 'WANTED ' + '★'.repeat(L.wanted), '#ff6b6b', 16);
-    notify(L.wanted >= 3 ? 'The whole watch is after you! Reinforcements at the gates.' : `The watch is after you! Wanted ${lawStars(L.wanted)}`);
+    floatText(player.x, player.y - 42, `WANTED: ${L.wanted} star${L.wanted === 1 ? '' : 's'}`, '#ff6b6b', 16);
+    notify(L.wanted >= 3 ? 'The whole watch is after you! Reinforcements at the gates.' : `The watch is after you! Wanted: ${lawStars(L.wanted)}.`);
     if (before === 0) say("Striking the watch inside the walls? The Captain will want words. And coin.", 'The Voice');
     save();
   }
@@ -5915,7 +6062,7 @@ HOOKS.update.push(dt => {
     L.timer -= dt;
     if (L.timer <= 0) {
       L.wanted -= 1; L.timer = L.wanted > 0 ? LAW_DECAY : 0;
-      notify(L.wanted > 0 ? `The watch is losing interest. Wanted ${lawStars(L.wanted)}` : L.fines > 0 ? 'The watch has lost interest. Your fine still stands.' : 'The watch has lost interest in you.');
+      notify(L.wanted > 0 ? `The watch is losing interest. Wanted: ${lawStars(L.wanted)}.` : L.fines > 0 ? 'The watch has lost interest. Your fine still stands.' : 'The watch has lost interest in you.');
       save();
     }
   }
@@ -5950,16 +6097,46 @@ HOOKS.talk.captain = n => {
   } else say(pick(LAW_CAPTAIN_LINES), n.name);
   openPanel('captain');
 };
+// The Captain's panel wears the book frame (panelBox). The wanted level is DRAWN (three stars, the lit ones gold) beside
+// the words, the reason for the fine is one plain sentence, and the verbs are iron plate buttons a kit row tall:
+// green (the choice to make) when it can be done, greyed and inert when it cannot. Nothing here is danger red.
+const LAW_PAD = 18;
+function lawDrawStars(g, x, cy, n, r = 8) {
+  for (let i = 0; i < 3; i++) {
+    const sx = x + r + i * (r * 2 + 4);
+    HK.starPath(g, sx, cy, r, r * 0.42);
+    g.fillStyle = i < n ? HK.T.goldHi : 'rgba(0,0,0,0.5)'; g.fill();
+    g.strokeStyle = i < n ? '#3a2708' : 'rgba(217,178,92,0.45)'; g.lineWidth = 1; g.stroke();
+  }
+  return 3 * (r * 2 + 4) - 4;
+}
 HOOKS.panel.captain = (g, narrow) => {
   const L = law(); const cost = lawFine(); const scrap = countItem('goblin_scrap');
-  const { px, py, w, h } = panelBox(g, 440, 262, 'Captain of the Watch', lawOwes() ? `Wanted ${lawStars(L.wanted)} · fine ${cost} coins` : 'Thistledown is at peace with you.');
-  g.fillStyle = '#c9d1d9'; g.font = '13px sans-serif'; g.textAlign = 'left';
+  const rh = HK.row(), gap = rh >= 44 ? 10 : 8;
+  const w = Math.min(460, VW - 20), inner = w - LAW_PAD * 2;
   const parts = [];
   if (L.fines) parts.push(`${L.fines} for the guard${L.fines > LAW_KILL_FINE ? 's' : ''} you cut down`);
   if (L.wanted) parts.push(`${L.wanted * LAW_LEVEL_FINE} for ${L.wanted} star${L.wanted > 1 ? 's' : ''}`);
-  wrapText(g, lawOwes() ? `Settle up and the watch stands down: ${parts.join(', and ')}.` : `The watch buys goblin scrap at ${LAW_SCRAP_PAY} coins a piece. You carry ${scrap}.`, px + 18, py + 78, w - 36, 18);
+  const words = lawOwes() ? `Settle up and the watch stands down: ${parts.join(', and ')}.` : `The watch buys goblin scrap at ${LAW_SCRAP_PAY} coins a piece. You carry ${scrap}.`;
+  const f = HK.FS(600, 14), lh = Math.round(14 * HK.k() * 1.42);
+  const lines = HK.wrap(g, words, inner, 10, f).lines;
+  const starRow = L.wanted > 0 ? 30 : 0;
+  const h = 62 + starRow + lines.length * lh + 16 + 3 * rh + 2 * gap + 18;
+  const sub = !lawOwes() ? 'Thistledown is at peace with you.' : L.wanted ? `Wanted: ${lawStars(L.wanted)} · fine ${cost} coins` : `Fine to pay: ${cost} coins`;
+  const { px, py, h: ph } = panelBox(g, w, h, 'Captain of the Watch', sub);
+  let y = py + 62;
+  if (starRow) {
+    HK.text(g, 'WANTED', px + LAW_PAD, y + 16, { font: HK.FC(800, 13), color: HK.T.bad });
+    const sw = lawDrawStars(g, px + LAW_PAD + HK.tw(g, 'WANTED', HK.FC(800, 13)) + 10, y + 11, L.wanted);
+    HK.text(g, L.timer > 0 ? `${Math.ceil(L.timer)} s` : '', px + LAW_PAD + HK.tw(g, 'WANTED', HK.FC(800, 13)) + 10 + sw + 10, y + 16, { font: HK.FC(800, 12), color: HK.T.inkDim });
+    y += starRow;
+  }
+  lines.forEach((ln, i) => HK.text(g, ln, px + LAW_PAD, y + 14 + i * lh, { font: f, color: HK.T.ink, box: { x: px + LAW_PAD, y, w: inner, h: lh }, fitId: 'captain:words' }));
+  y += lines.length * lh + 16;
   const canPay = lawOwes() && coins() >= cost;
-  button(g, px + 18, py + 122, w - 36, 36, lawOwes() ? `Pay fine (${cost} coins)` : 'Pay fine (nothing owed)', () => {
+  // the verbs sit at the foot of the page (a short screen clips the page, never the buttons)
+  y = Math.min(y, py + ph - 18 - 3 * rh - 2 * gap);
+  button(g, px + LAW_PAD, y, inner, rh, lawOwes() ? `Pay fine (${cost} coins)` : 'Pay fine (nothing owed)', () => {
     const due = lawFine(); if (!lawOwes()) return;
     if (!payCoins(due)) { notify(`Not enough coins. The fine is ${due}.`); return; }
     L.wanted = 0; L.timer = 0; L.fines = 0; lawStandDown();
@@ -5967,35 +6144,54 @@ HOOKS.panel.captain = (g, narrow) => {
     levelBanner = { text: 'FINE PAID', sub: 'The watch stands down', t: 2.6 };
     say('Paid in full. The watch stands down. Keep it that way, knight.', LAW_CAPTAIN.name);
     closePanel(); save();
-  }, canPay ? '#8b2e2e' : '#2a2f3a', canPay);
-  button(g, px + 18, py + 166, w - 36, 36, `Hand in goblin scrap (${scrap} × ${LAW_SCRAP_PAY} coins)`, () => {
+  }, '#238636', canPay);
+  y += rh + gap;
+  button(g, px + LAW_PAD, y, inner, rh, `Hand in goblin scrap (${scrap} for ${scrap * LAW_SCRAP_PAY} coins)`, () => {
     const n = countItem('goblin_scrap'); if (!n) { notify('You have no goblin scrap.'); return; }
     removeItem('goblin_scrap', n); const pay = n * LAW_SCRAP_PAY;
     giveOrDrop('coins', pay, player.x, player.y, true); floatText(player.x, player.y - 30, `+${pay} coins`, '#ffd166');
     notify(`The Captain takes ${n} scrap and pays ${pay} coins.`); save();
-  }, scrap > 0 ? '#238636' : '#2a2f3a', scrap > 0);
-  button(g, px + 18, py + h - 44, w - 36, 30, 'Close', closePanel, '#21262d');
+  }, '#238636', scrap > 0);
+  y += rh + gap;
+  button(g, px + LAW_PAD, y, inner, rh, 'Close', closePanel, '#21262d');
 };
 
 // ---------- HUD ----------
-// MIGRATED to the HUD kit (src/59-hudkit.js). Two content-sized tags with their own fills and outlines
-// become two chips on the left column's grid: BAD down the edge for WANTED (the Watch is coming for you)
-// and WARN for an unpaid fine (something to deal with, not something chasing you). The text is plain ink —
-// the colour is in the rule, which is the kit's rule everywhere.
+// Two PLAQUES in the kit's reserved column (src/59-hudkit.js HK.addPlaque), no hand placing:
+//   WANTED: a skull roundel, the word, the wanted level as DRAWN stars (never star characters), the seconds until the
+//           watch loses interest, and a red edge (red = danger: the watch is coming for you).
+//   FINE TO PAY: a coin roundel, the exact coins, and an amber edge (something to settle, not something chasing you).
+// The first of several field sets that fits the plaque column's width, so no word is ever squeezed out of its plate.
+// It measures the way the kit's plaque lays out (src/59-hudkit.js plaque(): a 36 px roundel, the name in Cinzel shrinking
+// to 9 px and no further, the value on the right in Cinzel 11, drawn stars 16 px each, one line of sans under it).
+// (A local copy in each world-status file: HK.addPlaque could take such a list itself.)
+const lawFitFields = (g, list) => {
+  const P = HK.cur().plaques, w = P && P[0] ? P[0].w : 0;
+  if (!w) return list[0];
+  for (const o of list) {
+    const tx = (o.emblem || o.portrait) ? 48 : 10, rw = o.right != null && o.right !== '' ? HK.tw(g, String(o.right), HK.FC(800, 11)) + 12 : 0, stars = o.stars ? o.stars.of * 16 + 6 : 0;
+    if (HK.tw(g, String(o.name || ''), HK.FC(800, 9)) > w - 14 - rw - stars - tx) continue;
+    if (o.sub && o.frac == null && HK.tw(g, String(o.sub), HK.FS(600, 12)) > w - 14 - tx) continue;
+    return o;
+  }
+  return list[list.length - 1];
+};
+// on a narrow plaque column (a landscape phone) the longer words give way to shorter ones, in this order
+function lawPlaques(g) {
+  const L = law(), out = [];
+  if (L.wanted > 0) {
+    const s = Math.max(0, Math.ceil(L.timer)), base = { id: 'wanted', emblem: 'skull', name: 'WANTED', stars: { n: L.wanted, of: 3 }, edge: HK.T.gules };
+    out.push(lawFitFields(g, [{ right: `${s} s`, sub: 'The watch is after you' }, { right: `${s} s`, sub: 'The watch wants you' }, { right: null, sub: `${s} s left` }].map(o => Object.assign({}, base, o))));
+  }
+  if (L.fines > 0) {
+    const base = { id: 'fine', emblem: 'coin', right: `${lawFine()} coins`, edge: HK.T.warn };
+    out.push(lawFitFields(g, [{ name: 'FINE TO PAY', sub: 'Pay the Captain' }, { name: 'FINE', sub: 'Pay the Captain' }].map(o => Object.assign({}, base, o))));
+  }
+  return out;
+}
 HOOKS.hud.push((g, narrow) => {
   if (!lawOwes()) return;
-  const L = law();
-  const pad = 8;
-  const tag = (label, value, tone) => {
-    const s = HK.slot(HK.chipH());
-    HK.plate(g, s.x, s.y, s.w, s.h, { tone });
-    g.textBaseline = 'middle'; g.textAlign = 'left';
-    g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.fillText(label, s.x + pad + 4, s.y + s.h / 2);
-    g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; g.textAlign = 'right'; g.fillText(value, s.x + s.w - pad - 4, s.y + s.h / 2);
-    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-  };
-  if (L.wanted > 0) tag(`WANTED ${lawStars(L.wanted)}`, `${Math.ceil(L.timer)}s`, HK.C.BAD);
-  if (L.fines > 0) tag('FINE TO PAY', `${lawFine()} coins`, HK.C.WARN);
+  for (const p of lawPlaques(g)) HK.addPlaque(g, p);
 });
 
 // ---------- quest entry ----------
@@ -6042,6 +6238,47 @@ HOOKS.selfTest.push((check, F, h) => {
   // falling while wanted = arrested: stars become fine, no death loop
   { law().wanted = 2; law().timer = 120; law().fines = 0; player.dead = true; player.deadT = 0; F.sim(2, []); const arrested = law().wanted === 0 && law().fines === 50; F.sim(200, []); check('law: dying while wanted turns the stars into a fine and stands the watch down', arrested && !player.dead, { arrested, fines: law().fines, dead: player.dead }); }
   reset(); lawStandDown(); h.peace(false); closePanel(); F.sim(2, []);
+});
+
+// ---------- self-test: the plaques and the Captain's words ----------
+// WANTED and FINE TO PAY come through the kit (HK.addPlaque) with the spec's fields, and nothing the law paints (the
+// plaques, the Captain's panel, the notices and the floating word) carries a star CHARACTER: stars are drawn shapes.
+HOOKS.selfTest.push((check, F, h) => {
+  const L0 = JSON.parse(JSON.stringify(law())), p0 = paused, fl0 = floaters.length, n0 = notice;
+  const rec = [], add0 = HK.addPlaque, fc = HK.audit.fitCtx();
+  let painted = '';
+  const recCtx = new Proxy({}, {
+    get: (t, k) => (k === 'fillText' || k === 'strokeText') ? (s => { painted += String(s) + '\n'; }) : fc[k],
+    set: (t, k, v) => { fc[k] = v; return true; },
+  });
+  HK.addPlaque = (g, o) => { rec.push({ o: Object.assign({}, o), r: add0(g, o) }); return rec[rec.length - 1].r; };
+  const STAR = /[★☆]/;
+  const out = {};
+  try {
+    paused = false; closePanel();
+    const L = law(); L.wanted = 2; L.timer = 37.2; L.fines = 150;
+    rec.length = 0; drawHud(recCtx);
+    const w = rec.find(q => q.o.id === 'wanted'), f = rec.find(q => q.o.id === 'fine');
+    out.wanted = w && w.o; out.fine = f && f.o;
+    const okW = !!w && !!w.r && w.o.emblem === 'skull' && w.o.name === 'WANTED' && w.o.stars && w.o.stars.n === 2 && w.o.stars.of === 3 && w.o.right === '38 s' && w.o.edge === HK.T.gules;
+    const okF = !!f && !!f.r && f.o.emblem === 'coin' && f.o.name === 'FINE TO PAY' && f.o.right === `${150 + 2 * LAW_LEVEL_FINE} coins` && f.o.edge === HK.T.warn;
+    // only a wanted level, no fine: one plaque; nothing owed: none
+    L.fines = 0; rec.length = 0; drawHud(fc); const onlyW = rec.filter(q => q.o.id === 'wanted' || q.o.id === 'fine').map(q => q.o.id).join();
+    L.wanted = 0; L.timer = 0; rec.length = 0; drawHud(fc); const clean = rec.filter(q => q.o.id === 'wanted' || q.o.id === 'fine').length;
+    // the Captain's panel with a wanted level, and the words the law says out loud
+    L.wanted = 2; L.timer = 37.2; L.fines = 150; openPanel('captain'); drawHud(recCtx);
+    const panelWords = painted.includes('Wanted: 2 of 3 stars') && painted.includes('Captain of the Watch');
+    closePanel();
+    L.wanted = 0; L.timer = 0; L.fines = 0; floaters.length = fl0; lawOffend(2);
+    const said = [notice && notice.text, ...floaters.slice(fl0).map(q => q.text)].filter(Boolean);
+    const floatOk = floaters.slice(fl0).some(q => q.text === 'WANTED: 2 stars');
+    out.said = said; out.onlyW = onlyW; out.clean = clean; out.panelWords = panelWords;
+    check('law: WANTED and FINE TO PAY come through HK.addPlaque in reserved slots (a skull, 2 drawn stars of 3, the seconds, a red edge; a coin, the exact coins, an amber edge), and nothing the law paints or says carries a star character: the Captain says "Wanted: 2 of 3 stars", the floating word says "WANTED: 2 stars"',
+      okW && okF && onlyW === 'wanted' && clean === 0 && panelWords && floatOk && !STAR.test(painted) && !said.some(s => STAR.test(s)), out);
+  } finally {
+    HK.addPlaque = add0; closePanel(); paused = p0;
+    Object.assign(law(), L0); floaters.length = fl0; notice = n0; dialog.cur = null; dialog.queue.length = 0; lawStandDown(); save();
+  }
 });
 
 // ---- src/24-dwarves.js ----
@@ -18196,19 +18433,35 @@ window.SETTINGS = SETTINGS;
   });
 
   // ---------- the shift clock on screen ----------
-  // MIGRATED to the HUD kit (src/59-hudkit.js). The shift clock was a lone box floating at the top centre
-  // of the screen, in its own size, with its own outline that turned red. It is now a chip in the left
-  // column with everything else that is happening to you right now: the roof is a meter on the same
-  // green/amber/red ramp as your health, and the coal you have cut is a quiet second line.
+  // A PLAQUE in the kit's reserved column (src/59-hudkit.js HK.addPlaque): a pit-prop roundel, ROOF with the coal you
+  // have cut beside it (a plaque with a bar has no second line, so COAL CUT rides in the name), the seconds left in
+  // the shift, and the roof's share as a bar on the health ramp (green, amber, red: the same meaning as your shield).
+  // The plate's edge turns red when the roof is about to give.
+  // The first of several field sets that fits the plaque column's width, so no word is ever squeezed out of its plate.
+  // It measures the way the kit's plaque lays out (src/59-hudkit.js plaque(): a 36 px roundel, the name in Cinzel shrinking
+  // to 9 px and no further, the value on the right in Cinzel 11, drawn stars 16 px each, one line of sans under it).
+  // (A local copy in each world-status file: HK.addPlaque could take such a list itself.)
+  const fitFields = (g, list) => {
+    const P = HK.cur().plaques, w = P && P[0] ? P[0].w : 0;
+    if (!w) return list[0];
+    for (const o of list) {
+      const tx = (o.emblem || o.portrait) ? 48 : 10, rw = o.right != null && o.right !== '' ? HK.tw(g, String(o.right), HK.FC(800, 11)) + 12 : 0, stars = o.stars ? o.stars.of * 16 + 6 : 0;
+      if (HK.tw(g, String(o.name || ''), HK.FC(800, 9)) > w - 14 - rw - stars - tx) continue;
+      if (o.sub && o.frac == null && HK.tw(g, String(o.sub), HK.FS(600, 12)) > w - 14 - tx) continue;
+      return o;
+    }
+    return list[list.length - 1];
+  };
+  // on a narrow plaque column (a landscape phone) the name gives way to a shorter one
+  function roofPlaque(g, r = run) {
+    if (!r) return null;
+    const f = Math.max(0, Math.min(1, r.roof / PROP_RESET));
+    const base = { id: 'roof', emblem: 'prop', right: `${Math.max(0, Math.ceil(r.t))} s`, frac: f, edge: r.roof < ROOF_WARN ? HK.T.gules : null };
+    return fitFields(g, [`ROOF · COAL CUT ${r.coal}`, `ROOF · COAL ${r.coal}`, 'ROOF'].map(name => Object.assign({}, base, { name })));
+  }
   HOOKS.hud.push((g, narrow) => {
     if (!running()) return;
-    const pad = 9, f = Math.max(0, Math.min(1, run.roof / PROP_RESET));
-    const tone = f > 0.45 ? HK.C.GOOD : f > 0.2 ? HK.C.WARN : HK.C.BAD;
-    const s = HK.slot(pad * 2 + HK.meterH() + HK.GUT + HK.LINE());
-    HK.plate(g, s.x, s.y, s.w, s.h, { tone: run.roof < ROOF_WARN ? HK.C.BAD : null });
-    const ix = s.x + pad + 2, iw = s.w - pad * 2 - 2;
-    const used = HK.meter(g, ix, s.y + pad, iw, { label: 'ROOF', value: `${Math.max(0, Math.ceil(run.t))}s`, template: '000s', frac: f, tone });
-    HK.readout(g, ix, s.y + pad + used + HK.GUT, iw, [{ label: 'COAL CUT', value: `${run.coal}` }]);
+    const pq = roofPlaque(g); if (pq) HK.addPlaque(g, pq);
   });
 
   // ---------- the cart and the rails in Deepholm ----------
@@ -18303,7 +18556,7 @@ window.SETTINGS = SETTINGS;
     g.beginPath(); g.arc(x + 8, y + 8, 4, 0, 7); g.fill();
   }
 
-  window.COALMINE = { MINE, CART_T, RUN_SECONDS, SEAM_LIVE, PROP_RESET, ROOF_FUSE, tiles: { cart: T_CART, seam: T_SEAM, prop: T_PROP, haul: T_HAUL, rail: T_RAIL }, HAUL, EXIT, ENTRY, state: st, get run() { return run; }, startRun, endRun, openFace, FACE_SPOTS };
+  window.COALMINE = { MINE, CART_T, RUN_SECONDS, SEAM_LIVE, PROP_RESET, ROOF_FUSE, tiles: { cart: T_CART, seam: T_SEAM, prop: T_PROP, haul: T_HAUL, rail: T_RAIL }, HAUL, EXIT, ENTRY, state: st, get run() { return run; }, startRun, endRun, openFace, FACE_SPOTS, ROOF_WARN, plaque: roofPlaque };
 
   // ---------- self-test ----------
   const P = 'coalmine: ';
@@ -18362,6 +18615,24 @@ window.SETTINGS = SETTINGS;
         const fell = r2.fell >= 1 && (player.hp < hp0 || r2.coal < 6);
         check(P + 'the roof runs down on a clock, a prop resets it, and a fall costs health and coal off the cart', reset && fell, { reset, fell, roof: Math.round(r2.roof), coal: r2.coal, hp: player.hp, hp0 });
       } else check(P + 'the roof runs down on a clock, a prop resets it, and a fall costs health and coal off the cart', false, { noRun: true });
+      // the shift on screen: the ROOF plaque comes through the kit (HK.addPlaque) in a reserved slot: the pit prop, the
+      // coal cut in the name, the seconds left, the roof's share on the health ramp, and a red edge only when it is low
+      if (COALMINE.run) {
+        const r4 = COALMINE.run, rec = [], add0 = HK.addPlaque, fc = HK.audit.fitCtx(), p0 = paused;
+        HK.addPlaque = (g, o) => { rec.push({ o: Object.assign({}, o), r: add0(g, o) }); return rec[rec.length - 1].r; };
+        let low = null, safe = null;
+        try {
+          paused = false;
+          const t0 = r4.t, roof0 = r4.roof, coal0 = r4.coal;
+          r4.coal = 7; r4.t = 41.3; r4.roof = 3; rec.length = 0; drawHud(fc); low = rec.find(q => q.o.id === 'roof') || null;
+          r4.roof = COALMINE.PROP_RESET; rec.length = 0; drawHud(fc); safe = rec.find(q => q.o.id === 'roof') || null;
+          r4.t = t0; r4.roof = roof0; r4.coal = coal0;
+        } finally { HK.addPlaque = add0; paused = p0; }
+        const okLow = !!low && !!low.r && low.o.emblem === 'prop' && low.o.name === 'ROOF · COAL CUT 7' && low.o.right === '42 s' && Math.abs(low.o.frac - 3 / COALMINE.PROP_RESET) < 1e-9 && low.o.edge === HK.T.gules && !low.o.sub;
+        const okSafe = !!safe && safe.o.frac === 1 && !safe.o.edge;
+        check(P + 'the shift shows as a ROOF plaque through HK.addPlaque in a reserved slot: a pit prop, ROOF · COAL CUT 7, the 42 s left, the roof share on the health ramp, and a red edge only while the roof is about to give',
+          okLow && okSafe, { low: low && low.o, safe: safe && safe.o });
+      } else check(P + 'the shift shows as a ROOF plaque through HK.addPlaque in a reserved slot', false, { noRun: true });
       // calling it at the haul cart pays out, records a best, and puts you back in Deepholm
       if (COALMINE.run) {
         const r3 = COALMINE.run; r3.coal = 21; player.hp = player.maxHp;
@@ -19085,22 +19356,38 @@ window.SETTINGS = SETTINGS;
     return true;
   });
 
-  // ---------- the HUD tag: how much of the night you have left owing ----------
-  HOOKS.hud.push((g, narrow) => {
-    if (typeof title !== 'undefined' && title.active) return;
+  // ---------- the HUD plaque: how much of the night you have left owing ----------
+  // A PLAQUE in the kit's reserved column (src/59-hudkit.js HK.addPlaque), not a hand-placed tag: a skull roundel,
+  // GRAVES and how many are still standing, how many rose tonight, and one plain line. Amber edge at dusk (wait: they
+  // open after midnight), green at night (the graves are open: go and fight what climbs out). Shown at dusk and at
+  // night only, never on the title screen and never inside an instance (the graves are on the overworld).
+  // The first of several field sets that fits the plaque column's width, so no word is ever squeezed out of its plate.
+  // It measures the way the kit's plaque lays out (src/59-hudkit.js plaque(): a 36 px roundel, the name in Cinzel shrinking
+  // to 9 px and no further, the value on the right in Cinzel 11, drawn stars 16 px each, one line of sans under it).
+  // (A local copy in each world-status file: HK.addPlaque could take such a list itself.)
+  const fitFields = (g, list) => {
+    const P = HK.cur().plaques, w = P && P[0] ? P[0].w : 0;
+    if (!w) return list[0];
+    for (const o of list) {
+      const tx = (o.emblem || o.portrait) ? 48 : 10, rw = o.right != null && o.right !== '' ? HK.tw(g, String(o.right), HK.FC(800, 11)) + 12 : 0, stars = o.stars ? o.stars.of * 16 + 6 : 0;
+      if (HK.tw(g, String(o.name || ''), HK.FC(800, 9)) > w - 14 - rw - stars - tx) continue;
+      if (o.sub && o.frac == null && HK.tw(g, String(o.sub), HK.FS(600, 12)) > w - 14 - tx) continue;
+      return o;
+    }
+    return list[list.length - 1];
+  };
+  // on a narrow plaque column the line under the name gives way to a shorter one, in this order
+  function gravesPlaque(g) {
+    if (typeof title !== 'undefined' && title.active) return null;
     const list = marks(); const ph = phase();
-    if (!list.length || ph === 'day' || window.__instance) return;
-    const q = tally();
-    const label = `Graves ${list.length} · risen ${q.rose}`;
-    let y = HUD.leftY;
-    { const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const floor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0; y = Math.max(y, floor, 84); }
-    HUD.leftY = y + 24 + 6;
-    g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
-    const w = Math.ceil(g.measureText(label).width) + 42;
-    roundRect(g, 14, y, w, 24, 8); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
-    g.fillStyle = '#e9e4d2'; g.beginPath(); g.arc(28, y + 11, 5.5, 0, 7); g.fill();
-    g.fillStyle = '#14140f'; g.beginPath(); g.arc(26, y + 10.5, 1.5, 0, 7); g.arc(30, y + 10.5, 1.5, 0, 7); g.fill();
-    g.fillStyle = ph === 'night' ? '#7ee787' : '#d29922'; g.fillText(label, 42, y + 16);
+    if (!list.length || ph === 'day' || window.__instance) return null;
+    const q = tally(), night = ph === 'night';
+    const base = { id: 'graves', emblem: 'skull', name: `GRAVES ${list.length}`, right: `risen ${q.rose}`, edge: night ? HK.T.good : HK.T.warn };
+    const subs = night ? ['Night: the dead can rise', 'The dead can rise', 'They can rise'] : ['Dusk: they open at midnight', 'They open at midnight', 'Open at midnight'];
+    return fitFields(g, subs.map(sub => Object.assign({}, base, { sub })));
+  }
+  HOOKS.hud.push((g, narrow) => {
+    const pq = gravesPlaque(g); if (pq) HK.addPlaque(g, pq);
   });
 
   // ---------- the pack icons ----------
@@ -19247,7 +19534,9 @@ window.SETTINGS = SETTINGS;
     riseSpot, raise, schedule, settleAtDawn, risen, weightOf, load, log: LOG,
     window: () => ({ from: MIDNIGHT(), to: LAST_RISE(), dark: DARK_FROM(), day: DAY() }),
     tiles: { torch: T_TORCH, fence: T_FENCE, pile: T_PILE, arch: T_ARCH, throne: T_THRONE },
-    arm: () => { armed = true; built = false; },                 // the dusk that arms the night, for the self-test
+    // the dusk that arms the night, for the self-test
+    arm: () => { armed = true; built = false; },
+    plaque: gravesPlaque,
     state: () => ({ armed, built, prevPhase }),
   };
 
@@ -19610,6 +19899,117 @@ window.SETTINGS = SETTINGS;
     player.dayTime = day0; player.hp = hp0; player.inv = inv0; LOG.length = 0;
     prevPhase = null; lastT = null; armed = false; built = false;
     h.peace(true);
+  });
+
+  // ---------- self-test: the graves plaque, and the world-status plaques together at every device size ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const g0 = Array.isArray(quest.graves) ? quest.graves.slice() : [], q0 = quest.graveNight ? { ...quest.graveNight } : null, day0 = player.dayTime;
+    const comp0 = player.companion ? JSON.parse(JSON.stringify(player.companion)) : null, law0 = player.law ? JSON.parse(JSON.stringify(player.law)) : null;
+    const p0 = paused, pan0 = panel, touch0 = window.__forceTouch, stick0 = window.__stickRight, text0 = window.SETTINGS ? SETTINGS.get('text') : 'normal';
+    const own = k => Object.getOwnPropertyDescriptor(window, k), size0 = { w: own('innerWidth'), h: own('innerHeight') };
+    const mons0 = monsters.slice(), net0 = window.NET ? NET.enabled : false;
+    const rec = [], add0 = HK.addPlaque, fc = HK.audit.fitCtx();
+    HK.addPlaque = (g, o) => { rec.push({ o: Object.assign({}, o), r: add0(g, o) }); return rec[rec.length - 1].r; };
+    const frame = (g = fc) => { rec.length = 0; drawHud(g); return rec; };
+    const DUSK = NIGHT.LIGHT + 10, NIGHTT = NIGHT.LIGHT + NIGHT.DUSK + 20, DAYT = NIGHT.LIGHT - 60;
+    // the roof shows only inside the coal seam, where the graves never show: for the busy check a hook of the check's
+    // own puts the ROOF plaque up through the same builder the mine uses, low and red-edged, as the fifth plaque
+    const roofOn = { on: false }, roofHook = g => { if (roofOn.on && window.COALMINE && COALMINE.plaque) HK.addPlaque(g, COALMINE.plaque(g, { t: 41.3, coal: 7, roof: 3 })); };
+    HOOKS.hud.push(roofHook);
+    const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+    try {
+      paused = false; closePanel(); if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
+      monsters.length = 0; for (const m of mons0) if (!(MONSTER_DEFS[m.type] && MONSTER_DEFS[m.type].level >= 25 && MONSTER_DEFS[m.type].hp >= 300)) monsters.push(m);
+      player.companion = { id: null, hp: 0, mode: 'follow', x: 0, y: 0, freed: { sera: true }, downT: 0 }; player.law = { wanted: 0, timer: 0, fines: 0 };
+      // ---- the graves plaque: a skull, GRAVES n, risen n, a plain line; amber at dusk, green at night, gone by day ----
+      {
+        quest.graves = [{ x: 40, y: 40, g: 'cross', t: 0, rise: null }, { x: 42, y: 40, g: 'cross', t: 0, rise: null }, { x: 44, y: 40, g: 'cross', t: 0, rise: null }];
+        quest.graveNight = { rose: 1, walked: 0, laid: 3 };
+        const find = () => { const q = frame().find(x => x.o.id === 'graves'); return q || null; };
+        player.dayTime = DUSK; const dusk = find();
+        player.dayTime = NIGHTT; const night = find();
+        player.dayTime = DAYT; const day = find();
+        player.dayTime = NIGHTT; title.active = true; const onTitle = find(); title.active = false;
+        let inInst = null;
+        if (window.INSTANCES && INSTANCES.list().includes('spider_den')) { INSTANCES.enter('spider_den'); inInst = find(); INSTANCES.leave(); }
+        const okDusk = !!dusk && !!dusk.r && dusk.o.emblem === 'skull' && dusk.o.name === 'GRAVES 3' && dusk.o.right === 'risen 1' && /^Dusk/.test(dusk.o.sub) && dusk.o.edge === HK.T.warn;
+        const okNight = !!night && night.o.name === 'GRAVES 3' && /^Night/.test(night.o.sub) && night.o.edge === HK.T.good;
+        check('graves: the graves tag is a plaque through HK.addPlaque in a reserved slot now: a skull, GRAVES 3, risen 1 and one plain line, amber at dusk and green at night; not by day, not on the title screen, not inside an instance',
+          okDusk && okNight && !day && !onTitle && !inInst, { dusk: dusk && dusk.o, night: night && night.o, day: !!day, onTitle: !!onTitle, inInst: !!inInst });
+      }
+      // ---- all five world-status plaques at every size: reserved slots only, the rest folds into +n, and every word fits at Large ----
+      {
+        const busy = on => {
+          player.companion = on ? { id: 'sera', hp: 44, mode: 'follow', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } } : { id: null, hp: 0, mode: 'follow', x: 0, y: 0, freed: { sera: true }, downT: 0 };
+          player.law = on ? { wanted: 2, timer: 38, fines: 150 } : { wanted: 0, timer: 0, fines: 0 };
+          player.dayTime = on ? NIGHTT : DAYT; roofOn.on = !!on;
+        };
+        const IDS = ['companion', 'wanted', 'fine', 'graves', 'roof'];
+        const alone = id => {
+          busy(false);
+          if (id === 'companion') player.companion = { id: 'sera', hp: 44, mode: 'follow', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } };
+          if (id === 'wanted') player.law = { wanted: 2, timer: 38, fines: 0 };
+          if (id === 'fine') player.law = { wanted: 0, timer: 0, fines: 150 };
+          if (id === 'graves') player.dayTime = NIGHTT;
+          if (id === 'roof') roofOn.on = true;
+        };
+        const same = (a, b) => !!a && !!b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.w - b.w) < 0.5 && Math.abs(a.h - b.h) < 0.5;
+        const problems = [], folds = {}, narrow = []; let tried = 0, painted = '';
+        const recCtx = new Proxy({}, { get: (t, k) => (k === 'fillText' || k === 'strokeText') ? (s => { painted += String(s) + '\n'; }) : fc[k], set: (t, k, v) => { fc[k] = v; return true; } });
+        for (const [w, hh] of HK.audit.SIZES) {
+          if (!setSize(w, hh)) continue; tried++;
+          for (const t of [true, false]) for (const online of [true, false]) {
+            window.__forceTouch = t; window.__stickRight = false; if (window.NET) NET.enabled = online;
+            if (window.SETTINGS) SETTINGS.set('text', 'normal');
+            const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} ${online ? 'online' : 'offline'}`;
+            // each one alone lands in the first free reserved slot
+            for (const id of IDS) {
+              alone(id); frame();
+              const L = HK.cur(), start = HK.FRAME.plaqueStart || 0, q = rec.find(x => x.o.id === id);
+              if (!q) problems.push(`${where}: ${id} was not added`);
+              else if (!same(q.r, L.plaques[start])) problems.push(`${where}: ${id} is not in reserved slot ${start + 1}`);
+            }
+            // all five: the first ones fill the reserved slots, in order, and the rest fold into the brass +n badge
+            busy(true); frame(recCtx);
+            const L = HK.cur(), start = HK.FRAME.plaqueStart || 0, room = L.plaques.length - start;
+            const got = IDS.map(id => rec.find(x => x.o.id === id)).filter(Boolean);
+            if (got.length !== 5) problems.push(`${where}: ${got.length} of 5 plaques were added`);
+            const shown = got.filter(x => x.r), want = Math.min(5, room);
+            if (shown.length !== want) problems.push(`${where}: ${shown.length} shown for ${room} slots`);
+            shown.forEach((x, i) => { if (!same(x.r, L.plaques[start + i])) problems.push(`${where}: ${x.o.id} is not in reserved slot ${start + i + 1}`); });
+            if (HK.FRAME.overflow !== 5 - want) problems.push(`${where}: the +n badge counts ${HK.FRAME.overflow}, not ${5 - want}`);
+            if (online) folds[`${w}x${hh}${t ? '' : ' mouse'}`] = `${want} + ${HK.FRAME.overflow}`;
+            // at Large every word fits its plate: the busy frame, and each plaque drawn in a slot at this width
+            if (window.SETTINGS) SETTINGS.set('text', 'large');
+            HK.FIT.on = true; HK.FIT.log.length = 0; frame();
+            const slot = L.plaques[start];
+            if (slot) for (const id of IDS) { alone(id); const q = frame().find(x => x.o.id === id); if (q) HK.plaque(fc, slot, q.o); }
+            HK.FIT.on = false;
+            // (a kit question, not this file's: offline on a landscape phone the plaque column is only as wide as the
+            // HOME and MENU seals, 124 px, which no plaque with a value on its right can fit. It is reported, not hidden:
+            // the width is listed in the check's info, and the words are held to it everywhere the column is 160 or more.)
+            const fit = HK.audit.fitIssues(`${where} large`);
+            if (slot && slot.w < 160 && !online) { if (fit.length) narrow.push(`${where}: plaque column ${slot.w} px wide, ${fit.length} words do not fit`); }
+            else for (const p of fit) if (problems.length < 30) problems.push(p);
+          }
+        }
+        if (window.NET) NET.enabled = net0;
+        const phonesFold = ['375x667', '390x844', '844x390', '430x932', '932x430'].every(k => folds[k] && +folds[k].split(' + ')[1] >= 3);
+        check('world-status plaques (companion, WANTED, FINE TO PAY, GRAVES, ROOF) each land in a reserved plaque slot at all 8 sizes, touch and mouse; all five together fill the slots in order and fold the rest into the brass +n badge (+3 or more on every phone); every word fits its plate at Large; no star character is painted',
+          tried === 8 && problems.length === 0 && phonesFold && !/[\u2605\u2606]/.test(painted), { tried, folds, problems: problems.slice(0, 12), total: problems.length, kitNarrowColumn: narrow });
+      }
+    } catch (e) {
+      check('graves: the plaque checks ran to the end without throwing', false, { error: String(e && e.message || e) });
+    } finally {
+      HK.addPlaque = add0; HK.FIT.on = false; roofOn.on = false; if (window.NET) NET.enabled = net0;
+      const hi = HOOKS.hud.indexOf(roofHook); if (hi >= 0) HOOKS.hud.splice(hi, 1);
+      quest.graves = g0; if (q0) quest.graveNight = q0; player.dayTime = day0; player.companion = comp0; player.law = law0;
+      monsters.length = 0; for (const m of mons0) monsters.push(m);
+      if (window.SETTINGS) SETTINGS.set('text', text0);
+      window.__forceTouch = touch0; window.__stickRight = stick0;
+      if (size0.w) { Object.defineProperty(window, 'innerWidth', size0.w); Object.defineProperty(window, 'innerHeight', size0.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+      resize(); paused = p0; closePanel(); if (pan0) openPanel(pan0); render();
+    }
   });
 }
 
@@ -24056,7 +24456,7 @@ HOOKS.selfTest.push((check, F, h) => {
 
   // ---------- the kinds ----------
   const KINDS = [
-    { id: 'bank', name: 'Bank', colour: '#f5c542' },
+    { id: 'bank', name: 'Bank', colour: HK.T.gold },
     { id: 'shop', name: 'Shop', colour: '#e0883a' },
     { id: 'quest', name: 'Quest', colour: '#ffe066' },
     { id: 'down', name: 'Way down', colour: '#b58cff' },
@@ -24324,27 +24724,27 @@ HOOKS.selfTest.push((check, F, h) => {
     const tilesAcross = 44, scale = size / tilesAcross;
     const sx = clamp(player.x / TILE - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(player.y / TILE - tilesAcross / 2, 0, MAP_H - tilesAcross);
     const r = size < 120 ? 3.4 : MINI_R;
-    g.save(); roundRect(g, x, y, size, size, 10); g.clip();
+    // The minimap is the kit's round glass (src/59-hudkit.js drawRing clips it and paints the you-arrow on top after
+    // this), so there is no clip of our own and no "you" dot: a glyph whose centre is not inside the circle, a glyph's
+    // radius in from the rim, is simply not drawn, so no mark is ever cut in half by the ring.
+    const gx = x + size / 2, gy = y + size / 2, inR = size / 2 - r - 1.7;
     for (const m of known()) {
       const mx = x + (m.x + 0.5 - sx) * scale, my = y + (m.y + 0.5 - sy) * scale;
-      if (mx < x - r || mx > x + size + r || my < y - r || my > y + size + r) continue;
+      if (Math.hypot(mx - gx, my - gy) > inR) continue;
       // a corner of a town can hold six places inside four tiles: on a map this small they would stack into
       // a smudge, so the second glyph within a glyph's width of one already drawn waits for the world map
       if (lastMini.some(p => Math.hypot(p.x - mx, p.y - my) < r * 1.9)) continue;
       drawGlyph(g, m.kind, mx, my, r);
-      lastMini.push({ key: m.key, x: mx, y: my, r });
+      lastMini.push({ key: m.key, x: mx, y: my, r, cx: gx, cy: gy, R: size / 2 });
     }
-    // the core draws the white "you" dot before this hook: put it back on top so a glyph never hides the knight
-    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(x + (player.x / TILE - sx) * scale, y + (player.y / TILE - sy) * scale, 3.5, 0, 7); g.fill();
-    g.restore();
   }
   let boxRect = null;
-  { const _render = render; render = function () { const r = _render.apply(this, arguments); boxRect = dialog.cur && dialogRect ? { ...dialogRect } : null; return r; }; }
+  { const _render = render; render = function () { const r = _render(); boxRect = dialog.cur && dialogRect ? { ...dialogRect } : null; return r; }; }
   { const _load = load; load = function () { const r = _load.apply(this, arguments); dirty = true; return r; }; } // a fresh mapDiffs can be the same size as the old one
   {
     const _drawMinimap = drawMinimap;
     drawMinimap = function (g, x, y, size) {
-      const r = _drawMinimap.apply(this, arguments);
+      const r = _drawMinimap(g, x, y, size);
       if (window.SETTINGS && SETTINGS.get('minimap') === false) return r; // the minimap is switched off: nothing was drawn
       drawMiniMarkers(g, x, y, size);
       return r;
@@ -24358,10 +24758,12 @@ HOOKS.selfTest.push((check, F, h) => {
   // The key is capped three ways so it can never eat the map it explains: three rows at most, then glyphs
   // without their words, and if even that will not fit, no key at all.
   const MAX_ROWS = 3, STRIP_SHARE = 0.34;
+  // The toggle is an iron plate button a kit row tall (44 on touch, 32 with a mouse); the words are the system sans.
+  const LEGEND_FONT = () => HK.FS(700, 11);
   function legendLayout(g, ix, iy, iw, ih, narrow) {
-    const pad = 8, bw = narrow ? 84 : 96, bh = 26, rowH = 14;
+    const pad = 8, bw = narrow ? 104 : 120, bh = HK.row(), rowH = 16;
     const cells = st().show ? kindsInUse() : [];
-    g.font = 'bold 10px sans-serif';
+    HK.setF(g, LEGEND_FONT());
     const avail = Math.max(40, iw - pad * 2 - bw - pad);
     const wrap = named => {
       const rows = []; let row = [], used = 0;
@@ -24397,14 +24799,13 @@ HOOKS.selfTest.push((check, F, h) => {
     const img = buttons[bi], ix = img.x, iy = img.y, iw = img.w, ih = img.h, sc = iw / MAP_W;
     const lay = legendLayout(g, ix, iy, iw, ih, narrow);
     const L = { ix, iy, iw, ih, sc, glyphs: [], strip: { x: lay.x, y: lay.y, w: lay.w, h: lay.h }, toggle: lay.toggle, cells: lay.cells };
-    g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip();
-    // the strip first, then the glyphs: a marker that happens to fall down here is still visible on top of it
-    roundRect(g, lay.x + 2, lay.y, lay.w - 4, lay.h - 2, 8); g.fillStyle = 'rgba(8,11,17,0.86)'; g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 1; g.stroke();
+    g.save(); g.beginPath(); g.rect(ix, iy, iw, ih); g.clip();
+    // the strip first, then the glyphs: a marker that happens to fall down here is still visible on top of it.
+    // The key is a strip of vellum (words live on vellum) with the drawn glyphs and their names in the sans.
+    HK.vellumPlate(g, lay.x + 2, lay.y, lay.w - 4, lay.h - 2);
     for (const c of lay.cells) {
       drawGlyph(g, c.kind, c.x + 8, c.y, 5);
-      g.fillStyle = '#c9d1d9'; g.font = 'bold 10px sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle';
-      g.fillText(c.name, c.x + 16, c.y); g.textBaseline = 'alphabetic';
+      if (c.name) HK.text(g, c.name, c.x + 16, c.y + 4, { font: LEGEND_FONT(), color: HK.T.inkDim, box: { x: c.x + 16, y: c.y - c.h / 2, w: c.w - 16, h: c.h }, fitId: 'markers:key' });
     }
     if (st().show) {
       for (const m of known()) {
@@ -24424,20 +24825,19 @@ HOOKS.selfTest.push((check, F, h) => {
     img.h = Math.max(0, lay.y - iy);
     const close = img.action;
     img.action = () => { const m = pointer && hitAt(pointer.x, pointer.y); if (m) { selected = selected === m.key ? null : m.key; sfx('open'); } else { selected = null; close(); } };
+    // On = the primary tone (a gold edge); Off = a plain plate. The drawn words stay 'Markers: On' / 'Markers: Off'.
     button(g, lay.toggle.x, lay.toggle.y, lay.toggle.w, lay.toggle.h, st().show ? 'Markers: On' : 'Markers: Off', () => setShow(!st().show), st().show ? '#238636' : '#21262d');
     buttons[buttons.length - 1].label = 'markers:toggle'; // the drawn word stays On / Off; the harness finds it by key
     lastMap = L;
   }
+  // a named marker: a gold ring round its glyph and the kit's small vellum tag with a pointer tooth (src/59-hudkit.js
+  // HK.tag), above it, or beside it when there is no room above
   function drawLabel(g, m, L) {
     const mx = L.ix + (m.x + 0.5) * L.sc, my = L.iy + (m.y + 0.5) * L.sc;
-    g.font = 'bold 12px sans-serif';
-    const bw = g.measureText(m.label).width + 20, bh = 22;
-    let bx = clamp(mx - bw / 2, L.ix + 4, L.ix + L.iw - bw - 4), by = my - bh - 11;
-    if (by < L.iy + 4) by = my + 11;
-    roundRect(g, bx, by, bw, bh, 6); g.fillStyle = 'rgba(8,11,17,0.94)'; g.fill();
-    g.strokeStyle = KIND[m.kind].colour; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#e6edf3'; g.textAlign = 'center'; g.fillText(m.label, bx + bw / 2, by + 15);
-    g.strokeStyle = KIND[m.kind].colour; g.lineWidth = 1.5; g.beginPath(); g.arc(mx, my, MAP_R + 4, 0, 7); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,0.8)'; g.lineWidth = 3.5; g.beginPath(); g.arc(mx, my, MAP_R + 4, 0, 7); g.stroke();
+    g.strokeStyle = HK.T.goldHi; g.lineWidth = 1.5; g.beginPath(); g.arc(mx, my, MAP_R + 4, 0, 7); g.stroke();
+    if (my - MAP_R - 46 >= L.iy) HK.tag(g, mx, my - MAP_R - 3, m.label, { edge: KIND[m.kind].colour });
+    else HK.tag(g, mx + MAP_R + 4, my, m.label, { edge: KIND[m.kind].colour, side: 'right' });
   }
   function hitAt(sx, sy) {
     const L = lastMap; if (!L || !st().show) return null;
@@ -24447,13 +24847,13 @@ HOOKS.selfTest.push((check, F, h) => {
   }
   {
     const _drawPanels = drawPanels;
-    drawPanels = function (g, narrow) { const r = _drawPanels.apply(this, arguments); if (panel === 'map') drawWorldMarkers(g, narrow); return r; };
+    drawPanels = function (g, narrow, short, qh, hb) { const r = _drawPanels(g, narrow, short, qh, hb); if (panel === 'map') drawWorldMarkers(g, narrow); return r; };
     const _pointerDown = pointerDown;
-    pointerDown = function (x, y) { pointer = { x, y }; return _pointerDown.apply(this, arguments); };
+    pointerDown = function (x, y, id) { pointer = { x, y }; return _pointerDown(x, y, id); };
     const _pointerMove = pointerMove;
     pointerMove = function (x, y, id) {
       if (id === 'mouse' && panel === 'map' && !selected) { const m = hitAt(x, y); hover = m ? m.key : null; }
-      return _pointerMove.apply(this, arguments);
+      return _pointerMove(x, y, id);
     };
   }
 
@@ -24693,7 +25093,7 @@ HOOKS.selfTest.push((check, F, h) => {
         for (const [iw, ih] of sizes) for (const narrow of [true, false]) {
           const L = MARKERS.layout(fake, 0, 0, iw, ih, narrow);
           widest = Math.max(widest, L.h / ih);
-          if (L.h > Math.max(42, ih * STRIP_SHARE) + 0.01) bad.push(`${iw}x${ih}: strip ${Math.round(L.h)} of ${ih}`);
+          if (L.h > Math.max(HK.row() + 16, ih * STRIP_SHARE) + 0.01) bad.push(`${iw}x${ih}: strip ${Math.round(L.h)} of ${ih}`);
           if (L.rows.length > MAX_ROWS) bad.push(`${iw}x${ih}: ${L.rows.length} rows`);
           if (!L.rows.length) bad.push(`${iw}x${ih}: no key at all`);
           if (L.cells.map(c => c.kind).sort().join() !== want) bad.push(`${iw}x${ih}: key lists ${L.cells.length} of 7`);
@@ -24715,6 +25115,46 @@ HOOKS.selfTest.push((check, F, h) => {
         check(P + 'inside a dungeon the overworld markers are not drawn and nothing new is discovered; they come back outside',
           inside && miniInside === 0 && noNewFinds && all().length === before && lastMini.length > 0,
           { inside, miniInside, noNewFinds, after: all().length, before, outside: lastMini.length }); }
+      // ---- the round glass: every glyph is whole inside the circle; one the rim would cut is not drawn, and there is
+      //      no "you" dot of ours (the kit paints the you-arrow on top) ----
+      { seeAll(); st().show = true; closePanel();
+        const own = k => Object.getOwnPropertyDescriptor(window, k), saved = { w: own('innerWidth'), h: own('innerHeight') }, t0 = window.__forceTouch, pos0 = { x: player.x, y: player.y };
+        const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+        // a context that follows translate / save / restore and writes down every arc: each glyph starts with its round backing
+        const recorder = () => {
+          let tx = 0, ty = 0; const stack = [], arcs = [];
+          const p = new Proxy({}, { get: (t, k) => k === 'save' ? (() => stack.push([tx, ty])) : k === 'restore' ? (() => { const q = stack.pop(); if (q) { tx = q[0]; ty = q[1]; } })
+            : k === 'translate' ? ((x, y) => { tx += x; ty += y; }) : k === 'arc' ? ((x, y, r) => { arcs.push({ x: x + tx, y: y + ty, r }); })
+              : k === 'measureText' ? (q => ({ width: String(q).length * 6 })) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: () => { } }))
+                : typeof k === 'string' ? (() => { }) : undefined, set: () => true });
+          return { p, arcs };
+        };
+        const problems = []; let drawn = 0, skipped = 0, frames = 0;
+        const pts = all().filter(m => m.x > 30 && m.x < MAP_W - 30 && m.y > 30 && m.y < MAP_H - 30).slice(0, 8);
+        for (const [w, hh, t] of [[390, 844, true], [1280, 800, false], [844, 390, true]]) {
+          if (!setSize(w, hh)) { problems.push(`${w}x${hh}: could not size`); continue; }
+          window.__forceTouch = t;
+          for (const m of pts) for (const [dx, dy] of [[-20, 0], [-14, -14], [-17, -17], [0, 21], [16, 13]]) {
+            player.x = tc(m.x + dx); player.y = tc(m.y + dy); render(); frames++;
+            const mm = HK.cur().mm, gx = mm.x, gy = mm.y, size = mm.r * 2;
+            for (const q of lastMini) { drawn++; if (Math.hypot(q.x - gx, q.y - gy) > mm.r - q.r + 0.01) problems.push(`${w}x${hh}: ${q.key} drawn across the rim`); }
+            // the square's corners are outside the glass: a known marker there must not be in the drawn list
+            const v = { sx: clamp(player.x / TILE - 22, 0, MAP_W - 44), sy: clamp(player.y / TILE - 22, 0, MAP_H - 44) }, sc = size / 44;
+            for (const k of known()) {
+              const kx = gx - mm.r + (k.x + 0.5 - v.sx) * sc, ky = gy - mm.r + (k.y + 0.5 - v.sy) * sc;
+              const inSquare = Math.abs(kx - gx) <= mm.r && Math.abs(ky - gy) <= mm.r, cut = Math.hypot(kx - gx, ky - gy) > mm.r - 3;
+              if (inSquare && cut) { skipped++; if (lastMini.some(q => q.key === k.key)) problems.push(`${w}x${hh}: ${k.key} in the square's corner was drawn`); }
+            }
+            const R = recorder(); drawMiniMarkers(R.p, gx - mm.r, gy - mm.r, size);
+            for (const a of R.arcs) if (Math.hypot(a.x - gx, a.y - gy) + a.r > mm.r + 0.5) problems.push(`${w}x${hh}: a glyph disc reaches past the glass (${Math.round(a.x)},${Math.round(a.y)} r ${a.r.toFixed(1)})`);
+            if (R.arcs.some(a => Math.abs(a.r - 3.5) < 0.01)) problems.push(`${w}x${hh}: a white you-dot was painted`);
+          }
+        }
+        player.x = pos0.x; player.y = pos0.y; window.__forceTouch = t0;
+        if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+        resize(); render();
+        check(P + 'the minimap is the round glass: no glyph is drawn outside the circle or across its rim at 390x844, 1280x800 and 844x390 (one the rim would cut is left for the world map), and no you-dot of our own is painted',
+          problems.length === 0 && drawn > 20 && skipped > 0 && frames > 0, { frames, drawn, skipped, problems: problems.slice(0, 8) }); }
     } catch (e) {
       // a throw in here would take the whole suite down with it: report it as the failure it is
       check(P + 'the marker checks ran to the end without throwing', false, { error: String(e && e.message || e) });
@@ -27592,47 +28032,62 @@ HOOKS.selfTest.push((check, F, h) => {
   // phone boss fight, is one tap labelled 'questbox:open' that opens the panel below (pointer-up; the wax seal is
   // decoration inside the hit). Its rect is published on HUD_LAYOUT, which is what boxRect() reads.
 
-  // J already opens the quest list; this is the one the box opens, and it leads with the quest you are on
-  const HEAD = 74, LINE = 20, ROW = 34, FOOT = 52, PAD = 18;
-  HOOKS.panel.quest_detail = (g, narrow) => {
+  // J already opens the quest list; this is the one the box opens, and it leads with the quest you are on.
+  // It wears the book frame (panelBox): the whole instruction in the system sans, wrapped at whole words and never cut
+  // (14 px on a computer and an iPad, 13 on a phone), a pin and "Head for X, n tiles away", ALSO ON THE GO in gold
+  // Cinzel over one plate button per other quest (tap one to follow it instead), and Close, each a kit row tall.
+  const HEAD = 62, PAD = 18;
+  const bodyFont = () => HK.FS(600, HK.cur().fam === 'phoneP' || HK.cur().fam === 'phoneL' ? 13 : 14);
+  const headFont = () => HK.FS(700, 13);
+  const lineH = () => Math.round(bodyFont().px * HK.k() * 1.42);
+  function detailGeom(g, narrow) {
     const id = tracked();
     const all = (typeof activeQuests === 'function' ? activeQuests() : []).filter(q => QUEST_DEFS[q]);
     const others = all.filter(q => q !== id);
     const body = id ? textOf(id) : '';
     const w = narrow ? Math.min(VW - 24, 380) : 460;
-    const inner = w - PAD * 2;
-    g.font = '14px sans-serif';
-    const lines = body ? Math.max(1, dialogLines(g, body, inner)) : 0;
+    const inner = w - PAD * 2, rh = HK.row(), gap = rh >= 44 ? 10 : 8;
+    const lines = body ? HK.wrap(g, body, inner, 99, bodyFont()).lines : [];
     const target = id && typeof trackedTarget === 'function' ? trackedTarget() : null;
-    // measured, not guessed: header, the instruction, the marker line, the list, then the footer
-    const listH = others.length ? 22 + others.length * ROW : 0;
-    const h = Math.min(VH - 24, HEAD + lines * LINE + (target ? 30 : 6) + listH + FOOT);
-    const { px, py } = panelBox(g, w, h, id ? nameOf(id) : 'Your quests', id ? 'What to do next' : 'Nothing tracked right now');
-
-    let y = py + HEAD;                                   // panelBox writes its subtitle at py + 50
-    if (body) {
-      g.fillStyle = '#e6edf3'; g.font = '14px sans-serif'; g.textAlign = 'left';
-      wrapText(g, body, px + PAD, y, inner, LINE);
-      y += lines * LINE;
-    }
+    let head = [];
     if (target) {
       const tiles = Math.round(dist(player.x, player.y, tc(target.x), tc(target.y)) / TILE);
-      g.fillStyle = '#f5c542'; g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
-      g.fillText(`Head for ${target.label || 'the marker'} — ${tiles} tiles away`, px + PAD, y + 18);
-      y += 30;
-    } else y += 6;
+      head = HK.wrap(g, `Head for ${target.label || 'the marker'}, ${tiles} tile${tiles === 1 ? '' : 's'} away`, inner - 22, 3, headFont()).lines;
+    }
+    // measured, not guessed: header, the instruction, the marker line, the list, then the footer (Close)
+    const listH = others.length ? 26 + others.length * (rh + gap) : 0;
+    const foot = rh + 18 + 10;
+    const headH = head.length ? 12 + head.length * 18 : 8;
+    const h = Math.min(VH - 24, HEAD + lines.length * lineH() + headH + listH + foot);
+    return { id, others, body, w, inner, rh, gap, lines, target, head, headH, h, foot };
+  }
+  HOOKS.panel.quest_detail = (g, narrow) => {
+    const Q = detailGeom(g, narrow);
+    const { id, others, inner, rh, gap, lines, target } = Q;
+    const { px, py, h } = panelBox(g, Q.w, Q.h, id ? nameOf(id) : 'Your quests', id ? 'What to do next' : 'Nothing tracked right now');
+    let y = py + HEAD;
+    const f = bodyFont(), lh = lineH();
+    lines.forEach((ln, i) => HK.text(g, ln, px + PAD, y + f.px * HK.k() + i * lh, { font: f, color: HK.T.ink, box: { x: px + PAD, y: y + i * lh, w: inner, h: lh }, fitId: 'questbox:text' }));
+    y += lines.length * lh;
+    if (Q.head.length) {
+      // where the gold arrow on the ring points: a drawn pin and one plain line
+      HK.emblem(g, 'pin', px + PAD + 7, y + 17, 14, HK.T.goldHi);
+      Q.head.forEach((ln, i) => HK.text(g, ln, px + PAD + 20, y + 22 + i * 18, { font: headFont(), color: HK.T.inkDim, box: { x: px + PAD + 20, y: y + 8 + i * 18, w: inner - 20, h: 18 }, fitId: 'questbox:head' }));
+    }
+    y += Q.headH;
 
     if (others.length) {
-      g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left';
-      g.fillText('ALSO ON THE GO', px + PAD, y + 12);
-      y += 22;
+      // a gold hairline and the section header in Cinzel caps
+      g.beginPath(); g.moveTo(px + PAD, y + 3.5); g.lineTo(px + PAD + inner, y + 3.5); g.strokeStyle = 'rgba(217,178,92,0.45)'; g.lineWidth = 1; g.stroke();
+      HK.text(g, 'ALSO ON THE GO', px + PAD, y + 20, { font: HK.FC(800, 11), color: HK.T.gold });
+      y += 26;
       for (const q of others) {
-        if (y + 28 > py + h - FOOT) break;               // never run under the footer
-        button(g, px + PAD, y, inner, 28, nameOf(q), () => { quest.tracked = q; quest.untrackedByPlayer = false; save(); }, '#21262d');
-        y += ROW;
+        if (y + rh > py + h - Q.foot) break;              // never run under the footer
+        button(g, px + PAD, y, inner, rh, nameOf(q), () => { quest.tracked = q; quest.untrackedByPlayer = false; save(); }, '#21262d');
+        y += rh + gap;
       }
     }
-    button(g, px + PAD, py + h - 44, inner, 32, 'Close', () => closePanel());
+    button(g, px + PAD, py + h - rh - 18, inner, rh, 'Close', () => closePanel(), '#21262d');
   };
 
   window.QUESTBOX = { boxRect, tracked };
@@ -27684,6 +28139,76 @@ HOOKS.selfTest.push((check, F, h) => {
     } else {
       check(P + 'the panel lists your other quests and tapping one follows it instead', true, { onlyOneActive: true });
     }
+  });
+
+  // ---------- the panel audit: Quest detail, the Captain of the Watch and the Companion hero ----------
+  // The three panels this file and 21-companion / 23-law draw, at all 8 device sizes, touch and mouse (the rules of the
+  // kit's own panel check, 59-hudkit check 11, plus the finger gap): the book frame's close seal is there; from it on,
+  // every control is 44 px or more on touch (26 with a mouse) and 8 px from every other on touch (4 with a mouse),
+  // measured circle to rect; everything sits inside the panel and on screen; and every boxed word fits at Large.
+  HOOKS.selfTest.push((check, F, h) => {
+    const own = k => Object.getOwnPropertyDescriptor(window, k), size0 = { w: own('innerWidth'), h: own('innerHeight') };
+    const touch0 = window.__forceTouch, text0 = window.SETTINGS ? SETTINGS.get('text') : 'normal', p0 = paused, pan0 = panel, arg0 = panelArg;
+    const comp0 = player.companion ? JSON.parse(JSON.stringify(player.companion)) : null, law0 = player.law ? JSON.parse(JSON.stringify(player.law)) : null;
+    const t0 = quest.tracked, u0 = quest.untrackedByPlayer, dc = dialog.cur, dq = dialog.queue.slice();
+    const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+    const fc = HK.audit.fitCtx();
+    const shape = b => b.r ? { k: 'c', x: b.cx != null ? b.cx : b.x + b.w / 2, y: b.cy != null ? b.cy : b.y + b.h / 2, r: b.r, label: b.label } : { k: 'r', x: b.x, y: b.y, w: b.w, h: b.h, label: b.label };
+    // the words these three panels draw: their sentences and their plate buttons' labels
+    const PANEL_FIT = /^(button|companion:words|captain:words|questbox:text|questbox:head)$/;
+    const box = q => q.k === 'c' ? { x: q.x - q.r, y: q.y - q.r, w: q.r * 2, h: q.r * 2 } : q;
+    const live = (typeof activeQuests === 'function' ? activeQuests() : []).filter(q => QUEST_DEFS[q]);
+    const problems = []; let tried = 0, frames = 0;
+    const scenes = [
+      ['quest_detail', null, () => { quest.tracked = live[0] || null; quest.untrackedByPlayer = false; }],
+      ['captain', null, () => { player.law = { wanted: 2, timer: 38, fines: 150 }; }],
+      ['captain', null, () => { player.law = { wanted: 0, timer: 0, fines: 0 }; }],
+      ['companion', { hire: 'garrick' }, () => { player.companion = { id: 'sera', hp: 44, mode: 'follow', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } }; }],
+      ['companion', null, () => { player.companion = { id: 'sera', hp: 44, mode: 'stay', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } }; }],
+    ];
+    try {
+      paused = false; dialog.cur = null; dialog.queue.length = 0;
+      for (const [w, hh] of HK.audit.SIZES) {
+        if (!setSize(w, hh)) continue; tried++;
+        for (const t of [true, false]) for (const text of ['normal', 'large']) {
+          window.__forceTouch = t; if (window.SETTINGS) SETTINGS.set('text', text);
+          for (const [pn, arg, prep] of scenes) {
+            prep(); closePanel(); openPanel(pn, arg);
+            HK.FIT.on = true; HK.FIT.log.length = 0; drawHud(fc); HK.FIT.on = false; frames++;
+            const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} ${text} ${pn}${arg ? ' (hire)' : ''}`;
+            if (panel !== pn || !panelRect) { problems.push(`${where}: the panel did not open`); continue; }
+            const all = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+            const ci = all.findIndex(b => b.label === '×');
+            if (ci < 0) { problems.push(`${where}: no close seal`); continue; }
+            const P = panelRect, ctl = all.slice(ci).map(shape), floor = t ? 44 : 26, clear = t ? 8 : 4;
+            if (ctl.length < 2) problems.push(`${where}: only ${ctl.length} control`);
+            if (P.x < -0.5 || P.y < -0.5 || P.x + P.w > VW + 0.5 || P.y + P.h > VH + 0.5) problems.push(`${where}: the panel is off screen`);
+            for (const q of ctl) {
+              const b = box(q);
+              if (b.w < floor - 0.5 || b.h < floor - 0.5) problems.push(`${where}: ${q.label} is ${Math.round(b.w)}x${Math.round(b.h)}, under ${floor}`);
+              if (b.x < P.x - 0.5 || b.y < P.y - 0.5 || b.x + b.w > P.x + P.w + 0.5 || b.y + b.h > P.y + P.h + 0.5) problems.push(`${where}: ${q.label} is outside the panel`);
+            }
+            for (let i = 0; i < ctl.length; i++) for (let j = i + 1; j < ctl.length; j++) { const gp = HK.gapBetween(ctl[i], ctl[j]); if (gp < clear - 0.01) problems.push(`${where}: ${ctl[i].label} ~ ${ctl[j].label} gap ${gp.toFixed(1)} < ${clear}`); }
+            // every boxed word inside the panel fits its box (sentences wrap at whole words; button labels shrink)
+            for (const e of HK.FIT.log) {
+              if (!e.box || !PANEL_FIT.test(e.id || '')) continue;
+              const x0 = e.align === 'center' ? e.x - e.w / 2 : e.align === 'right' ? e.x - e.w : e.x;
+              if (x0 < e.box.x - 1 || x0 + e.w > e.box.x + e.box.w + 1) problems.push(`${where}: "${e.s}" runs out of its box`);
+            }
+          }
+          closePanel();
+        }
+      }
+    } finally {
+      HK.FIT.on = false; closePanel();
+      player.companion = comp0; player.law = law0; quest.tracked = t0; quest.untrackedByPlayer = u0;
+      if (window.SETTINGS) SETTINGS.set('text', text0);
+      window.__forceTouch = touch0;
+      if (size0.w) { Object.defineProperty(window, 'innerWidth', size0.w); Object.defineProperty(window, 'innerHeight', size0.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+      resize(); paused = p0; dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); if (pan0) openPanel(pan0, arg0); render();
+    }
+    check(P + 'Quest detail, the Captain of the Watch and the Companion hero (hiring and with her) wear the book frame at all 8 sizes, touch and mouse, normal and Large text: a close seal, then every control 44 px or more on touch (26 with a mouse), 8 px apart on touch (4 with a mouse), inside the panel and on screen, and every word inside its box',
+      tried === 8 && frames === 8 * 2 * 2 * scenes.length && problems.length === 0, { tried, frames, problems: problems.slice(0, 12), total: problems.length });
   });
 }
 

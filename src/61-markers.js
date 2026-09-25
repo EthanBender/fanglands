@@ -25,7 +25,7 @@
 
   // ---------- the kinds ----------
   const KINDS = [
-    { id: 'bank', name: 'Bank', colour: '#f5c542' },
+    { id: 'bank', name: 'Bank', colour: HK.T.gold },
     { id: 'shop', name: 'Shop', colour: '#e0883a' },
     { id: 'quest', name: 'Quest', colour: '#ffe066' },
     { id: 'down', name: 'Way down', colour: '#b58cff' },
@@ -293,27 +293,27 @@
     const tilesAcross = 44, scale = size / tilesAcross;
     const sx = clamp(player.x / TILE - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(player.y / TILE - tilesAcross / 2, 0, MAP_H - tilesAcross);
     const r = size < 120 ? 3.4 : MINI_R;
-    g.save(); roundRect(g, x, y, size, size, 10); g.clip();
+    // The minimap is the kit's round glass (src/59-hudkit.js drawRing clips it and paints the you-arrow on top after
+    // this), so there is no clip of our own and no "you" dot: a glyph whose centre is not inside the circle, a glyph's
+    // radius in from the rim, is simply not drawn, so no mark is ever cut in half by the ring.
+    const gx = x + size / 2, gy = y + size / 2, inR = size / 2 - r - 1.7;
     for (const m of known()) {
       const mx = x + (m.x + 0.5 - sx) * scale, my = y + (m.y + 0.5 - sy) * scale;
-      if (mx < x - r || mx > x + size + r || my < y - r || my > y + size + r) continue;
+      if (Math.hypot(mx - gx, my - gy) > inR) continue;
       // a corner of a town can hold six places inside four tiles: on a map this small they would stack into
       // a smudge, so the second glyph within a glyph's width of one already drawn waits for the world map
       if (lastMini.some(p => Math.hypot(p.x - mx, p.y - my) < r * 1.9)) continue;
       drawGlyph(g, m.kind, mx, my, r);
-      lastMini.push({ key: m.key, x: mx, y: my, r });
+      lastMini.push({ key: m.key, x: mx, y: my, r, cx: gx, cy: gy, R: size / 2 });
     }
-    // the core draws the white "you" dot before this hook: put it back on top so a glyph never hides the knight
-    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(x + (player.x / TILE - sx) * scale, y + (player.y / TILE - sy) * scale, 3.5, 0, 7); g.fill();
-    g.restore();
   }
   let boxRect = null;
-  { const _render = render; render = function () { const r = _render.apply(this, arguments); boxRect = dialog.cur && dialogRect ? { ...dialogRect } : null; return r; }; }
+  { const _render = render; render = function () { const r = _render(); boxRect = dialog.cur && dialogRect ? { ...dialogRect } : null; return r; }; }
   { const _load = load; load = function () { const r = _load.apply(this, arguments); dirty = true; return r; }; } // a fresh mapDiffs can be the same size as the old one
   {
     const _drawMinimap = drawMinimap;
     drawMinimap = function (g, x, y, size) {
-      const r = _drawMinimap.apply(this, arguments);
+      const r = _drawMinimap(g, x, y, size);
       if (window.SETTINGS && SETTINGS.get('minimap') === false) return r; // the minimap is switched off: nothing was drawn
       drawMiniMarkers(g, x, y, size);
       return r;
@@ -327,10 +327,12 @@
   // The key is capped three ways so it can never eat the map it explains: three rows at most, then glyphs
   // without their words, and if even that will not fit, no key at all.
   const MAX_ROWS = 3, STRIP_SHARE = 0.34;
+  // The toggle is an iron plate button a kit row tall (44 on touch, 32 with a mouse); the words are the system sans.
+  const LEGEND_FONT = () => HK.FS(700, 11);
   function legendLayout(g, ix, iy, iw, ih, narrow) {
-    const pad = 8, bw = narrow ? 84 : 96, bh = 26, rowH = 14;
+    const pad = 8, bw = narrow ? 104 : 120, bh = HK.row(), rowH = 16;
     const cells = st().show ? kindsInUse() : [];
-    g.font = 'bold 10px sans-serif';
+    HK.setF(g, LEGEND_FONT());
     const avail = Math.max(40, iw - pad * 2 - bw - pad);
     const wrap = named => {
       const rows = []; let row = [], used = 0;
@@ -366,14 +368,13 @@
     const img = buttons[bi], ix = img.x, iy = img.y, iw = img.w, ih = img.h, sc = iw / MAP_W;
     const lay = legendLayout(g, ix, iy, iw, ih, narrow);
     const L = { ix, iy, iw, ih, sc, glyphs: [], strip: { x: lay.x, y: lay.y, w: lay.w, h: lay.h }, toggle: lay.toggle, cells: lay.cells };
-    g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip();
-    // the strip first, then the glyphs: a marker that happens to fall down here is still visible on top of it
-    roundRect(g, lay.x + 2, lay.y, lay.w - 4, lay.h - 2, 8); g.fillStyle = 'rgba(8,11,17,0.86)'; g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 1; g.stroke();
+    g.save(); g.beginPath(); g.rect(ix, iy, iw, ih); g.clip();
+    // the strip first, then the glyphs: a marker that happens to fall down here is still visible on top of it.
+    // The key is a strip of vellum (words live on vellum) with the drawn glyphs and their names in the sans.
+    HK.vellumPlate(g, lay.x + 2, lay.y, lay.w - 4, lay.h - 2);
     for (const c of lay.cells) {
       drawGlyph(g, c.kind, c.x + 8, c.y, 5);
-      g.fillStyle = '#c9d1d9'; g.font = 'bold 10px sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle';
-      g.fillText(c.name, c.x + 16, c.y); g.textBaseline = 'alphabetic';
+      if (c.name) HK.text(g, c.name, c.x + 16, c.y + 4, { font: LEGEND_FONT(), color: HK.T.inkDim, box: { x: c.x + 16, y: c.y - c.h / 2, w: c.w - 16, h: c.h }, fitId: 'markers:key' });
     }
     if (st().show) {
       for (const m of known()) {
@@ -393,20 +394,19 @@
     img.h = Math.max(0, lay.y - iy);
     const close = img.action;
     img.action = () => { const m = pointer && hitAt(pointer.x, pointer.y); if (m) { selected = selected === m.key ? null : m.key; sfx('open'); } else { selected = null; close(); } };
+    // On = the primary tone (a gold edge); Off = a plain plate. The drawn words stay 'Markers: On' / 'Markers: Off'.
     button(g, lay.toggle.x, lay.toggle.y, lay.toggle.w, lay.toggle.h, st().show ? 'Markers: On' : 'Markers: Off', () => setShow(!st().show), st().show ? '#238636' : '#21262d');
     buttons[buttons.length - 1].label = 'markers:toggle'; // the drawn word stays On / Off; the harness finds it by key
     lastMap = L;
   }
+  // a named marker: a gold ring round its glyph and the kit's small vellum tag with a pointer tooth (src/59-hudkit.js
+  // HK.tag), above it, or beside it when there is no room above
   function drawLabel(g, m, L) {
     const mx = L.ix + (m.x + 0.5) * L.sc, my = L.iy + (m.y + 0.5) * L.sc;
-    g.font = 'bold 12px sans-serif';
-    const bw = g.measureText(m.label).width + 20, bh = 22;
-    let bx = clamp(mx - bw / 2, L.ix + 4, L.ix + L.iw - bw - 4), by = my - bh - 11;
-    if (by < L.iy + 4) by = my + 11;
-    roundRect(g, bx, by, bw, bh, 6); g.fillStyle = 'rgba(8,11,17,0.94)'; g.fill();
-    g.strokeStyle = KIND[m.kind].colour; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#e6edf3'; g.textAlign = 'center'; g.fillText(m.label, bx + bw / 2, by + 15);
-    g.strokeStyle = KIND[m.kind].colour; g.lineWidth = 1.5; g.beginPath(); g.arc(mx, my, MAP_R + 4, 0, 7); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,0.8)'; g.lineWidth = 3.5; g.beginPath(); g.arc(mx, my, MAP_R + 4, 0, 7); g.stroke();
+    g.strokeStyle = HK.T.goldHi; g.lineWidth = 1.5; g.beginPath(); g.arc(mx, my, MAP_R + 4, 0, 7); g.stroke();
+    if (my - MAP_R - 46 >= L.iy) HK.tag(g, mx, my - MAP_R - 3, m.label, { edge: KIND[m.kind].colour });
+    else HK.tag(g, mx + MAP_R + 4, my, m.label, { edge: KIND[m.kind].colour, side: 'right' });
   }
   function hitAt(sx, sy) {
     const L = lastMap; if (!L || !st().show) return null;
@@ -416,13 +416,13 @@
   }
   {
     const _drawPanels = drawPanels;
-    drawPanels = function (g, narrow) { const r = _drawPanels.apply(this, arguments); if (panel === 'map') drawWorldMarkers(g, narrow); return r; };
+    drawPanels = function (g, narrow, short, qh, hb) { const r = _drawPanels(g, narrow, short, qh, hb); if (panel === 'map') drawWorldMarkers(g, narrow); return r; };
     const _pointerDown = pointerDown;
-    pointerDown = function (x, y) { pointer = { x, y }; return _pointerDown.apply(this, arguments); };
+    pointerDown = function (x, y, id) { pointer = { x, y }; return _pointerDown(x, y, id); };
     const _pointerMove = pointerMove;
     pointerMove = function (x, y, id) {
       if (id === 'mouse' && panel === 'map' && !selected) { const m = hitAt(x, y); hover = m ? m.key : null; }
-      return _pointerMove.apply(this, arguments);
+      return _pointerMove(x, y, id);
     };
   }
 
@@ -662,7 +662,7 @@
         for (const [iw, ih] of sizes) for (const narrow of [true, false]) {
           const L = MARKERS.layout(fake, 0, 0, iw, ih, narrow);
           widest = Math.max(widest, L.h / ih);
-          if (L.h > Math.max(42, ih * STRIP_SHARE) + 0.01) bad.push(`${iw}x${ih}: strip ${Math.round(L.h)} of ${ih}`);
+          if (L.h > Math.max(HK.row() + 16, ih * STRIP_SHARE) + 0.01) bad.push(`${iw}x${ih}: strip ${Math.round(L.h)} of ${ih}`);
           if (L.rows.length > MAX_ROWS) bad.push(`${iw}x${ih}: ${L.rows.length} rows`);
           if (!L.rows.length) bad.push(`${iw}x${ih}: no key at all`);
           if (L.cells.map(c => c.kind).sort().join() !== want) bad.push(`${iw}x${ih}: key lists ${L.cells.length} of 7`);
@@ -684,6 +684,46 @@
         check(P + 'inside a dungeon the overworld markers are not drawn and nothing new is discovered; they come back outside',
           inside && miniInside === 0 && noNewFinds && all().length === before && lastMini.length > 0,
           { inside, miniInside, noNewFinds, after: all().length, before, outside: lastMini.length }); }
+      // ---- the round glass: every glyph is whole inside the circle; one the rim would cut is not drawn, and there is
+      //      no "you" dot of ours (the kit paints the you-arrow on top) ----
+      { seeAll(); st().show = true; closePanel();
+        const own = k => Object.getOwnPropertyDescriptor(window, k), saved = { w: own('innerWidth'), h: own('innerHeight') }, t0 = window.__forceTouch, pos0 = { x: player.x, y: player.y };
+        const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+        // a context that follows translate / save / restore and writes down every arc: each glyph starts with its round backing
+        const recorder = () => {
+          let tx = 0, ty = 0; const stack = [], arcs = [];
+          const p = new Proxy({}, { get: (t, k) => k === 'save' ? (() => stack.push([tx, ty])) : k === 'restore' ? (() => { const q = stack.pop(); if (q) { tx = q[0]; ty = q[1]; } })
+            : k === 'translate' ? ((x, y) => { tx += x; ty += y; }) : k === 'arc' ? ((x, y, r) => { arcs.push({ x: x + tx, y: y + ty, r }); })
+              : k === 'measureText' ? (q => ({ width: String(q).length * 6 })) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: () => { } }))
+                : typeof k === 'string' ? (() => { }) : undefined, set: () => true });
+          return { p, arcs };
+        };
+        const problems = []; let drawn = 0, skipped = 0, frames = 0;
+        const pts = all().filter(m => m.x > 30 && m.x < MAP_W - 30 && m.y > 30 && m.y < MAP_H - 30).slice(0, 8);
+        for (const [w, hh, t] of [[390, 844, true], [1280, 800, false], [844, 390, true]]) {
+          if (!setSize(w, hh)) { problems.push(`${w}x${hh}: could not size`); continue; }
+          window.__forceTouch = t;
+          for (const m of pts) for (const [dx, dy] of [[-20, 0], [-14, -14], [-17, -17], [0, 21], [16, 13]]) {
+            player.x = tc(m.x + dx); player.y = tc(m.y + dy); render(); frames++;
+            const mm = HK.cur().mm, gx = mm.x, gy = mm.y, size = mm.r * 2;
+            for (const q of lastMini) { drawn++; if (Math.hypot(q.x - gx, q.y - gy) > mm.r - q.r + 0.01) problems.push(`${w}x${hh}: ${q.key} drawn across the rim`); }
+            // the square's corners are outside the glass: a known marker there must not be in the drawn list
+            const v = { sx: clamp(player.x / TILE - 22, 0, MAP_W - 44), sy: clamp(player.y / TILE - 22, 0, MAP_H - 44) }, sc = size / 44;
+            for (const k of known()) {
+              const kx = gx - mm.r + (k.x + 0.5 - v.sx) * sc, ky = gy - mm.r + (k.y + 0.5 - v.sy) * sc;
+              const inSquare = Math.abs(kx - gx) <= mm.r && Math.abs(ky - gy) <= mm.r, cut = Math.hypot(kx - gx, ky - gy) > mm.r - 3;
+              if (inSquare && cut) { skipped++; if (lastMini.some(q => q.key === k.key)) problems.push(`${w}x${hh}: ${k.key} in the square's corner was drawn`); }
+            }
+            const R = recorder(); drawMiniMarkers(R.p, gx - mm.r, gy - mm.r, size);
+            for (const a of R.arcs) if (Math.hypot(a.x - gx, a.y - gy) + a.r > mm.r + 0.5) problems.push(`${w}x${hh}: a glyph disc reaches past the glass (${Math.round(a.x)},${Math.round(a.y)} r ${a.r.toFixed(1)})`);
+            if (R.arcs.some(a => Math.abs(a.r - 3.5) < 0.01)) problems.push(`${w}x${hh}: a white you-dot was painted`);
+          }
+        }
+        player.x = pos0.x; player.y = pos0.y; window.__forceTouch = t0;
+        if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+        resize(); render();
+        check(P + 'the minimap is the round glass: no glyph is drawn outside the circle or across its rim at 390x844, 1280x800 and 844x390 (one the rim would cut is left for the world map), and no you-dot of our own is painted',
+          problems.length === 0 && drawn > 20 && skipped > 0 && frames > 0, { frames, drawn, skipped, problems: problems.slice(0, 8) }); }
     } catch (e) {
       // a throw in here would take the whole suite down with it: report it as the failure it is
       check(P + 'the marker checks ran to the end without throwing', false, { error: String(e && e.message || e) });

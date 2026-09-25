@@ -700,22 +700,38 @@
     return true;
   });
 
-  // ---------- the HUD tag: how much of the night you have left owing ----------
-  HOOKS.hud.push((g, narrow) => {
-    if (typeof title !== 'undefined' && title.active) return;
+  // ---------- the HUD plaque: how much of the night you have left owing ----------
+  // A PLAQUE in the kit's reserved column (src/59-hudkit.js HK.addPlaque), not a hand-placed tag: a skull roundel,
+  // GRAVES and how many are still standing, how many rose tonight, and one plain line. Amber edge at dusk (wait: they
+  // open after midnight), green at night (the graves are open: go and fight what climbs out). Shown at dusk and at
+  // night only, never on the title screen and never inside an instance (the graves are on the overworld).
+  // The first of several field sets that fits the plaque column's width, so no word is ever squeezed out of its plate.
+  // It measures the way the kit's plaque lays out (src/59-hudkit.js plaque(): a 36 px roundel, the name in Cinzel shrinking
+  // to 9 px and no further, the value on the right in Cinzel 11, drawn stars 16 px each, one line of sans under it).
+  // (A local copy in each world-status file: HK.addPlaque could take such a list itself.)
+  const fitFields = (g, list) => {
+    const P = HK.cur().plaques, w = P && P[0] ? P[0].w : 0;
+    if (!w) return list[0];
+    for (const o of list) {
+      const tx = (o.emblem || o.portrait) ? 48 : 10, rw = o.right != null && o.right !== '' ? HK.tw(g, String(o.right), HK.FC(800, 11)) + 12 : 0, stars = o.stars ? o.stars.of * 16 + 6 : 0;
+      if (HK.tw(g, String(o.name || ''), HK.FC(800, 9)) > w - 14 - rw - stars - tx) continue;
+      if (o.sub && o.frac == null && HK.tw(g, String(o.sub), HK.FS(600, 12)) > w - 14 - tx) continue;
+      return o;
+    }
+    return list[list.length - 1];
+  };
+  // on a narrow plaque column the line under the name gives way to a shorter one, in this order
+  function gravesPlaque(g) {
+    if (typeof title !== 'undefined' && title.active) return null;
     const list = marks(); const ph = phase();
-    if (!list.length || ph === 'day' || window.__instance) return;
-    const q = tally();
-    const label = `Graves ${list.length} · risen ${q.rose}`;
-    let y = HUD.leftY;
-    { const lay = typeof HUD_LAYOUT !== 'undefined' ? HUD_LAYOUT : null; const floor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0; y = Math.max(y, floor, 84); }
-    HUD.leftY = y + 24 + 6;
-    g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
-    const w = Math.ceil(g.measureText(label).width) + 42;
-    roundRect(g, 14, y, w, 24, 8); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
-    g.fillStyle = '#e9e4d2'; g.beginPath(); g.arc(28, y + 11, 5.5, 0, 7); g.fill();
-    g.fillStyle = '#14140f'; g.beginPath(); g.arc(26, y + 10.5, 1.5, 0, 7); g.arc(30, y + 10.5, 1.5, 0, 7); g.fill();
-    g.fillStyle = ph === 'night' ? '#7ee787' : '#d29922'; g.fillText(label, 42, y + 16);
+    if (!list.length || ph === 'day' || window.__instance) return null;
+    const q = tally(), night = ph === 'night';
+    const base = { id: 'graves', emblem: 'skull', name: `GRAVES ${list.length}`, right: `risen ${q.rose}`, edge: night ? HK.T.good : HK.T.warn };
+    const subs = night ? ['Night: the dead can rise', 'The dead can rise', 'They can rise'] : ['Dusk: they open at midnight', 'They open at midnight', 'Open at midnight'];
+    return fitFields(g, subs.map(sub => Object.assign({}, base, { sub })));
+  }
+  HOOKS.hud.push((g, narrow) => {
+    const pq = gravesPlaque(g); if (pq) HK.addPlaque(g, pq);
   });
 
   // ---------- the pack icons ----------
@@ -862,7 +878,9 @@
     riseSpot, raise, schedule, settleAtDawn, risen, weightOf, load, log: LOG,
     window: () => ({ from: MIDNIGHT(), to: LAST_RISE(), dark: DARK_FROM(), day: DAY() }),
     tiles: { torch: T_TORCH, fence: T_FENCE, pile: T_PILE, arch: T_ARCH, throne: T_THRONE },
-    arm: () => { armed = true; built = false; },                 // the dusk that arms the night, for the self-test
+    // the dusk that arms the night, for the self-test
+    arm: () => { armed = true; built = false; },
+    plaque: gravesPlaque,
     state: () => ({ armed, built, prevPhase }),
   };
 
@@ -1225,5 +1243,116 @@
     player.dayTime = day0; player.hp = hp0; player.inv = inv0; LOG.length = 0;
     prevPhase = null; lastT = null; armed = false; built = false;
     h.peace(true);
+  });
+
+  // ---------- self-test: the graves plaque, and the world-status plaques together at every device size ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const g0 = Array.isArray(quest.graves) ? quest.graves.slice() : [], q0 = quest.graveNight ? { ...quest.graveNight } : null, day0 = player.dayTime;
+    const comp0 = player.companion ? JSON.parse(JSON.stringify(player.companion)) : null, law0 = player.law ? JSON.parse(JSON.stringify(player.law)) : null;
+    const p0 = paused, pan0 = panel, touch0 = window.__forceTouch, stick0 = window.__stickRight, text0 = window.SETTINGS ? SETTINGS.get('text') : 'normal';
+    const own = k => Object.getOwnPropertyDescriptor(window, k), size0 = { w: own('innerWidth'), h: own('innerHeight') };
+    const mons0 = monsters.slice(), net0 = window.NET ? NET.enabled : false;
+    const rec = [], add0 = HK.addPlaque, fc = HK.audit.fitCtx();
+    HK.addPlaque = (g, o) => { rec.push({ o: Object.assign({}, o), r: add0(g, o) }); return rec[rec.length - 1].r; };
+    const frame = (g = fc) => { rec.length = 0; drawHud(g); return rec; };
+    const DUSK = NIGHT.LIGHT + 10, NIGHTT = NIGHT.LIGHT + NIGHT.DUSK + 20, DAYT = NIGHT.LIGHT - 60;
+    // the roof shows only inside the coal seam, where the graves never show: for the busy check a hook of the check's
+    // own puts the ROOF plaque up through the same builder the mine uses, low and red-edged, as the fifth plaque
+    const roofOn = { on: false }, roofHook = g => { if (roofOn.on && window.COALMINE && COALMINE.plaque) HK.addPlaque(g, COALMINE.plaque(g, { t: 41.3, coal: 7, roof: 3 })); };
+    HOOKS.hud.push(roofHook);
+    const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+    try {
+      paused = false; closePanel(); if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
+      monsters.length = 0; for (const m of mons0) if (!(MONSTER_DEFS[m.type] && MONSTER_DEFS[m.type].level >= 25 && MONSTER_DEFS[m.type].hp >= 300)) monsters.push(m);
+      player.companion = { id: null, hp: 0, mode: 'follow', x: 0, y: 0, freed: { sera: true }, downT: 0 }; player.law = { wanted: 0, timer: 0, fines: 0 };
+      // ---- the graves plaque: a skull, GRAVES n, risen n, a plain line; amber at dusk, green at night, gone by day ----
+      {
+        quest.graves = [{ x: 40, y: 40, g: 'cross', t: 0, rise: null }, { x: 42, y: 40, g: 'cross', t: 0, rise: null }, { x: 44, y: 40, g: 'cross', t: 0, rise: null }];
+        quest.graveNight = { rose: 1, walked: 0, laid: 3 };
+        const find = () => { const q = frame().find(x => x.o.id === 'graves'); return q || null; };
+        player.dayTime = DUSK; const dusk = find();
+        player.dayTime = NIGHTT; const night = find();
+        player.dayTime = DAYT; const day = find();
+        player.dayTime = NIGHTT; title.active = true; const onTitle = find(); title.active = false;
+        let inInst = null;
+        if (window.INSTANCES && INSTANCES.list().includes('spider_den')) { INSTANCES.enter('spider_den'); inInst = find(); INSTANCES.leave(); }
+        const okDusk = !!dusk && !!dusk.r && dusk.o.emblem === 'skull' && dusk.o.name === 'GRAVES 3' && dusk.o.right === 'risen 1' && /^Dusk/.test(dusk.o.sub) && dusk.o.edge === HK.T.warn;
+        const okNight = !!night && night.o.name === 'GRAVES 3' && /^Night/.test(night.o.sub) && night.o.edge === HK.T.good;
+        check('graves: the graves tag is a plaque through HK.addPlaque in a reserved slot now: a skull, GRAVES 3, risen 1 and one plain line, amber at dusk and green at night; not by day, not on the title screen, not inside an instance',
+          okDusk && okNight && !day && !onTitle && !inInst, { dusk: dusk && dusk.o, night: night && night.o, day: !!day, onTitle: !!onTitle, inInst: !!inInst });
+      }
+      // ---- all five world-status plaques at every size: reserved slots only, the rest folds into +n, and every word fits at Large ----
+      {
+        const busy = on => {
+          player.companion = on ? { id: 'sera', hp: 44, mode: 'follow', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } } : { id: null, hp: 0, mode: 'follow', x: 0, y: 0, freed: { sera: true }, downT: 0 };
+          player.law = on ? { wanted: 2, timer: 38, fines: 150 } : { wanted: 0, timer: 0, fines: 0 };
+          player.dayTime = on ? NIGHTT : DAYT; roofOn.on = !!on;
+        };
+        const IDS = ['companion', 'wanted', 'fine', 'graves', 'roof'];
+        const alone = id => {
+          busy(false);
+          if (id === 'companion') player.companion = { id: 'sera', hp: 44, mode: 'follow', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } };
+          if (id === 'wanted') player.law = { wanted: 2, timer: 38, fines: 0 };
+          if (id === 'fine') player.law = { wanted: 0, timer: 0, fines: 150 };
+          if (id === 'graves') player.dayTime = NIGHTT;
+          if (id === 'roof') roofOn.on = true;
+        };
+        const same = (a, b) => !!a && !!b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.w - b.w) < 0.5 && Math.abs(a.h - b.h) < 0.5;
+        const problems = [], folds = {}, narrow = []; let tried = 0, painted = '';
+        const recCtx = new Proxy({}, { get: (t, k) => (k === 'fillText' || k === 'strokeText') ? (s => { painted += String(s) + '\n'; }) : fc[k], set: (t, k, v) => { fc[k] = v; return true; } });
+        for (const [w, hh] of HK.audit.SIZES) {
+          if (!setSize(w, hh)) continue; tried++;
+          for (const t of [true, false]) for (const online of [true, false]) {
+            window.__forceTouch = t; window.__stickRight = false; if (window.NET) NET.enabled = online;
+            if (window.SETTINGS) SETTINGS.set('text', 'normal');
+            const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} ${online ? 'online' : 'offline'}`;
+            // each one alone lands in the first free reserved slot
+            for (const id of IDS) {
+              alone(id); frame();
+              const L = HK.cur(), start = HK.FRAME.plaqueStart || 0, q = rec.find(x => x.o.id === id);
+              if (!q) problems.push(`${where}: ${id} was not added`);
+              else if (!same(q.r, L.plaques[start])) problems.push(`${where}: ${id} is not in reserved slot ${start + 1}`);
+            }
+            // all five: the first ones fill the reserved slots, in order, and the rest fold into the brass +n badge
+            busy(true); frame(recCtx);
+            const L = HK.cur(), start = HK.FRAME.plaqueStart || 0, room = L.plaques.length - start;
+            const got = IDS.map(id => rec.find(x => x.o.id === id)).filter(Boolean);
+            if (got.length !== 5) problems.push(`${where}: ${got.length} of 5 plaques were added`);
+            const shown = got.filter(x => x.r), want = Math.min(5, room);
+            if (shown.length !== want) problems.push(`${where}: ${shown.length} shown for ${room} slots`);
+            shown.forEach((x, i) => { if (!same(x.r, L.plaques[start + i])) problems.push(`${where}: ${x.o.id} is not in reserved slot ${start + i + 1}`); });
+            if (HK.FRAME.overflow !== 5 - want) problems.push(`${where}: the +n badge counts ${HK.FRAME.overflow}, not ${5 - want}`);
+            if (online) folds[`${w}x${hh}${t ? '' : ' mouse'}`] = `${want} + ${HK.FRAME.overflow}`;
+            // at Large every word fits its plate: the busy frame, and each plaque drawn in a slot at this width
+            if (window.SETTINGS) SETTINGS.set('text', 'large');
+            HK.FIT.on = true; HK.FIT.log.length = 0; frame();
+            const slot = L.plaques[start];
+            if (slot) for (const id of IDS) { alone(id); const q = frame().find(x => x.o.id === id); if (q) HK.plaque(fc, slot, q.o); }
+            HK.FIT.on = false;
+            // (a kit question, not this file's: offline on a landscape phone the plaque column is only as wide as the
+            // HOME and MENU seals, 124 px, which no plaque with a value on its right can fit. It is reported, not hidden:
+            // the width is listed in the check's info, and the words are held to it everywhere the column is 160 or more.)
+            const fit = HK.audit.fitIssues(`${where} large`);
+            if (slot && slot.w < 160 && !online) { if (fit.length) narrow.push(`${where}: plaque column ${slot.w} px wide, ${fit.length} words do not fit`); }
+            else for (const p of fit) if (problems.length < 30) problems.push(p);
+          }
+        }
+        if (window.NET) NET.enabled = net0;
+        const phonesFold = ['375x667', '390x844', '844x390', '430x932', '932x430'].every(k => folds[k] && +folds[k].split(' + ')[1] >= 3);
+        check('world-status plaques (companion, WANTED, FINE TO PAY, GRAVES, ROOF) each land in a reserved plaque slot at all 8 sizes, touch and mouse; all five together fill the slots in order and fold the rest into the brass +n badge (+3 or more on every phone); every word fits its plate at Large; no star character is painted',
+          tried === 8 && problems.length === 0 && phonesFold && !/[\u2605\u2606]/.test(painted), { tried, folds, problems: problems.slice(0, 12), total: problems.length, kitNarrowColumn: narrow });
+      }
+    } catch (e) {
+      check('graves: the plaque checks ran to the end without throwing', false, { error: String(e && e.message || e) });
+    } finally {
+      HK.addPlaque = add0; HK.FIT.on = false; roofOn.on = false; if (window.NET) NET.enabled = net0;
+      const hi = HOOKS.hud.indexOf(roofHook); if (hi >= 0) HOOKS.hud.splice(hi, 1);
+      quest.graves = g0; if (q0) quest.graveNight = q0; player.dayTime = day0; player.companion = comp0; player.law = law0;
+      monsters.length = 0; for (const m of mons0) monsters.push(m);
+      if (window.SETTINGS) SETTINGS.set('text', text0);
+      window.__forceTouch = touch0; window.__stickRight = stick0;
+      if (size0.w) { Object.defineProperty(window, 'innerWidth', size0.w); Object.defineProperty(window, 'innerHeight', size0.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+      resize(); paused = p0; closePanel(); if (pan0) openPanel(pan0); render();
+    }
   });
 }

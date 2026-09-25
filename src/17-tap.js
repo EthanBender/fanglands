@@ -16,6 +16,7 @@ const tap = {
   gather: null,      // {tx, ty, t} while a chop / mine / fish keeps re-issuing
   marker: null,      // {x, y, t, color} the ring at the destination
   label: null,       // {text, x, y} long-press context label
+  wiki: null,        // {type, text, x, y, t} the book mark on a long-pressed monster's tag: opens its wiki page; stays about 2 s after the finger lifts
   blockedT: 0, repathed: false, wantMove: false, lastX: 0, lastY: 0, repathT: 0, reissueT: 0, reissues: 0,
   lastTap: null,     // {x, y, at} for double-tap
 };
@@ -186,8 +187,11 @@ HOOKS.update.push(dt => {
     const p = touch.press; p.held = (p.held || 0) + dt;
     const held = Math.max(p.held, (nowMs() - p.t0) / 1000);
     if (held > 8) touch.press = null;
-    else if (p.moved < 10 && held >= 0.4 && !tap.label && !paused) { const pk = tapPick(p.x, p.y); const onStick = touch.stickId === p.id && (!pk || pk.kind === 'walk' || pk.kind === 'wall'); const text = onStick ? null : tapLabelFor(pk); if (text) tap.label = { text, x: p.x, y: p.y }; } // a still thumb on the stick over plain ground is not a question
+    // a still thumb on the stick over plain ground is not a question
+    else if (p.moved < 10 && held >= 0.4 && !tap.label && !paused) { const pk = tapPick(p.x, p.y); const onStick = touch.stickId === p.id && (!pk || pk.kind === 'walk' || pk.kind === 'wall'); const text = onStick ? null : tapLabelFor(pk); if (text) { tap.label = { text, x: p.x, y: p.y }; tap.wiki = tapWikiFor(pk, text, p.x, p.y); } }
   }
+  // the wiki mark outlives the finger by about 2 s (the tag it hangs on goes with it), so a child can lift and then tap it
+  if (tap.wiki) { if (tap.label) tap.wiki.t = TAP_WIKI_KEEP; else { tap.wiki.t -= dt; if (tap.wiki.t <= 0) tap.wiki = null; } }
   if (tap.marker) { tap.marker.t += dt; if (tap.marker.fade && tap.marker.t > 0.6) tap.marker = null; }
   if (player.dead) { if (tap.kind || tap.gather || tap.path) tapCancel('dead'); return; }
   if (tap.path && tap.path !== player.walkPath) tapCancel('stale');
@@ -275,7 +279,7 @@ HOOKS.update.push(dt => {
     tap.reissues += 1; tap.reissueT = 0.4; tapFace(tc(g.tx), tc(g.ty)); useAction();
   }
 });
-HOOKS.newGame.push(() => { tapCancel('manual'); tap.lastTap = null; tap.marker = null; touch.press = null; });
+HOOKS.newGame.push(() => { tapCancel('manual'); tap.lastTap = null; tap.marker = null; tap.wiki = null; touch.press = null; });
 // destination ring (shrinks in, then breathes) + faint dots along the path
 HOOKS.draw.push((g, items) => {
   if (tap.path && tap.path.length > 1) items.push({ y: -1e9, draw: () => { g.fillStyle = 'rgba(255,255,255,0.22)'; for (let i = 0; i < tap.path.length - 1; i++) { const [x, y] = tap.path[i]; g.beginPath(); g.arc(tc(x), tc(y), 2.5, 0, 7); g.fill(); } } });
@@ -288,10 +292,41 @@ HOOKS.draw.push((g, items) => {
   } });
 });
 // long-press label, drawn in screen space above the finger: the kit's small vellum tag with a pointer tooth (src/59-hudkit.js);
-// holding a HUD control names it with the same tag
+// holding a HUD control names it with the same tag.
+// On a MONSTER the tag gains a small book mark (the 'wiki' emblem on an umber wax seal: wax = open and read) that opens
+// that monster's wiki page, the same page K opens when you face it. On touch it is a round tap of 46 px, beside the tag
+// and clear of the finger, and it stays about 2 s after the finger lifts; with a mouse it is 28 px and names itself
+// ('Wiki page', K). Lifting the finger does exactly what it always did (a tap on the monster fights it): the mark is
+// only a tap target of its own while it is up.
+const TAP_WIKI_KEEP = 2;
+function tapWikiFor(pk, text, x, y) {
+  if (!pk || pk.kind !== 'monster' || !pk.monster || !window.WIKI || !WIKI.open) return null;
+  return { type: pk.monster.type, text, x, y, t: TAP_WIKI_KEEP };
+}
+// where the mark sits: pressed onto the tag's right end like a seal on a letter (a few px over the vellum's margin, never
+// over its words), else onto its left end, inside the safe area
+function tapWikiSpot(tg, R) {
+  const L = typeof HK !== 'undefined' && HK.cur ? HK.cur() : null, S = (L && L.S) || { t: 0, r: 0, b: 0, l: 0 };
+  const tuck = Math.min(9, R * 0.4), cy = clamp(tg.y + tg.h / 2, S.t + R + 2, VH - S.b - R - 2);
+  let cx = tg.x + tg.w - tuck + R;
+  if (cx + R > VW - S.r - 4) cx = tg.x + tuck - R;
+  return { x: clamp(cx, S.l + R + 4, VW - S.r - R - 4), y: cy, r: R };
+}
 HOOKS.hud.push(g => {
-  const l = tap.label; if (!l || paused) return;
-  HK.tag(g, l.x, l.y - 24, l.text);
+  if (paused) return;
+  const l = tap.label || tap.wiki; if (!l) return;
+  const w = tap.wiki, fade = !tap.label && w ? clamp(w.t / 0.35, 0, 1) : 1;
+  g.save(); g.globalAlpha *= fade;
+  const tg = HK.tag(g, l.x, l.y - 24, l.text);
+  if (w && tg) {
+    const R = touchMode() ? 23 : 14, c = tapWikiSpot(tg, R), stt = HK.stateOf('wiki:mark');
+    HK.seal(g, c.x, c.y, R, 'wiki', 'umber', { pressed: stt.pressed, hover: stt.hover, ripple: stt.ripple, seed: 44, scale: 0.7 });
+    const type = w.type;
+    buttons.push({ x: c.x - R, y: c.y - R, w: R * 2, h: R * 2, r: R, cx: c.x, cy: c.y, label: 'wiki:mark', up: true, name: 'Wiki page', keys: ['K'], sub: MONSTER_DEFS[type] ? MONSTER_DEFS[type].name : null,
+      action: () => { tap.wiki = null; tap.label = null; WIKI.open('monsters', type); } });
+    tap.wikiRect = c;
+  } else tap.wikiRect = null;
+  g.restore();
 });
 // ---------- self-test ----------
 HOOKS.selfTest.push((check, F, h) => {
@@ -358,6 +393,40 @@ HOOKS.selfTest.push((check, F, h) => {
     pointerDown(sx, sy, 10); F.sim(30, []); const hold2 = tap.label && tap.label.text; pointerUp(10); tapCancel('manual');
     const [tsx, tsy] = screen(tc(o.x + 1), tc(o.y + 1)); pointerDown(tsx, tsy, 11); F.sim(30, []); const groundLabel = tap.label && tap.label.text; pointerUp(11); tapCancel('manual');
     check('tap: long-press labels name the ground too', hold2 === label && typeof groundLabel === 'string' && groundLabel.length > 0, { hold2, groundLabel });
+    gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.home = gs.home; gob.state = 'idle'; gob.attackCd = 0; }
+  // 8b. the long-press tag on a monster gains a wiki mark: on touch a round tap of 44 px or more, still up a second after the
+  //     finger lifts (the lift still fights the monster, exactly as before), and a tap on it opens that monster's wiki page,
+  //     the page K opens; with a mouse it is 26 px or more and names itself 'Wiki page' with K; it goes by itself about
+  //     2 s after the finger lifts
+  { const o = h.openSpot(40, 20); clearArea(o); F.tp(o.x, o.y); F.step([]); const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home } };
+    gob.dead = false; gob.x = tc(o.x + 2); gob.y = tc(o.y); gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; gob.attackCd = 99;
+    const out = {}; let pid = 40;
+    for (const t of [true, false]) {
+      window.__forceTouch = t; closePanel(); tap.wiki = null; tap.label = null; tapCancel('manual');
+      const [sx, sy] = screen(gob.x, gob.y), id = t ? ++pid : 'mouse';
+      pointerDown(sx, sy, id); F.sim(30, []);
+      const whileHeld = !!buttons.find(b => b.label === 'wiki:mark');
+      pointerUp(id, sx, sy); const fights = tap.kind === 'monster' && tap.target === gob && !tap.label; tapCancel('manual');
+      F.sim(50, []); gob.x = tc(o.x + 2); gob.y = tc(o.y); render();
+      const b = buttons.find(q => q.label === 'wiki:mark');
+      const size = b ? Math.round(b.r * 2) : 0, circle = !!(b && b.r && b.up);
+      const onScreen = !!b && b.cx - b.r >= 0 && b.cy - b.r >= 0 && b.cx + b.r <= VW && b.cy + b.r <= VH;
+      const named = !!b && b.name === 'Wiki page' && Array.isArray(b.keys) && b.keys[0] === 'K';
+      const clear = !!b && Math.hypot(b.cx - sx, b.cy - sy) > b.r + 10;
+      let opened = false;
+      if (b) { const id2 = t ? ++pid : 'mouse'; pointerDown(b.cx, b.cy, id2); pointerUp(id2, b.cx, b.cy); render(); opened = panel === 'wiki' && WIKI.state.section === 'monsters' && WIKI.state.id === 'goblin'; }
+      closePanel(); render();
+      // again, and this time leave it: it is gone about 2 s after the lift
+      pointerDown(sx, sy, t ? ++pid : 'mouse'); F.sim(30, []); pointerUp(t ? pid : 'mouse', sx, sy); tapCancel('manual');
+      F.sim(80, []); gob.x = tc(o.x + 2); gob.y = tc(o.y); render(); const stillAt1s = !!buttons.find(q => q.label === 'wiki:mark');
+      F.sim(80, []); gob.x = tc(o.x + 2); gob.y = tc(o.y); render(); const goneAt3s = !buttons.find(q => q.label === 'wiki:mark') && !tap.wiki;
+      out[t ? 'touch' : 'mouse'] = { whileHeld, fights, size, circle, onScreen, named, clear, opened, stillAt1s, goneAt3s };
+    }
+    const T0 = out.touch, M0 = out.mouse;
+    const ok = x => x.whileHeld && x.fights && x.circle && x.onScreen && x.named && x.clear && x.opened && x.stillAt1s && x.goneAt3s;
+    check('tap: the long-press tag on a monster carries a wiki mark (44 px or more on touch, 26 or more with a mouse, named Wiki page with K) that opens its wiki page, stays about 2 s after the finger lifts, and the lift still fights the monster',
+      ok(T0) && ok(M0) && T0.size >= 44 && M0.size >= 26, out);
+    window.__forceTouch = false; tap.wiki = null; closePanel();
     gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.home = gs.home; gob.state = 'idle'; gob.attackCd = 0; }
   // 9. double-tap = swing
   { const o = h.openSpot(40, 24); clearArea(o); F.tp(o.x, o.y); F.step([]); player.attackCd = 0; player.attackT = 0; const [sx, sy] = screen(tc(o.x + 2), tc(o.y)); pointerDown(sx, sy, 12); pointerUp(12); F.step([]); pointerDown(sx, sy, 13); pointerUp(13);
