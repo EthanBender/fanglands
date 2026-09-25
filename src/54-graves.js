@@ -42,7 +42,12 @@
 // sweep. 35-night owns the ambient zombie and counts its own `night` monsters; these are ours, we clean up
 // after them, and the two systems never tread on each other.
 //
-// Feature file: registers through HOOKS only, edits no core file. window.GRAVES exposes the tables.
+// ONLINE. A knight who is not the keeper keeps his graves (nothing may rise into his puppet list); the risen
+// are swept by type as well as by flag, because a keeper handoff loses the flag; and only real monsters slam
+// or take the stagger bonus, never a puppet.
+//
+// Feature file: registers through HOOKS and edits no core file. It wraps placeAction by reassignment (the way
+// 63-house does) so the five bone builds only go up on the knight's own island. window.GRAVES exposes the tables.
 // ============================================================================
 {
   // ---------- the clock (35-night owns it; everything here is read from it) ----------
@@ -72,6 +77,17 @@
   const UNDEAD = new Set(['zombie', 'zombie_calm', 'grave_zombie', 'grave_zombie_calm', 'vampire', 'count_ashvane',
     'grave_skeleton', 'grave_risen', BRUTE]);
   const NO_BODY = new Set(['bulldozer', 'yard_dozer']);   // machines: 22-bulldozer leaves a wreck tile where they fall
+  // These three are only ever made by raise() below: nothing spawns them into the world (see the book entry
+  // near the end of this file). So the type alone says "one of ours", even when the fromGrave flag is lost.
+  // It is lost in online play: when the keeper leaves, 75-coop rebuilds the next knight's puppets as fresh
+  // real monsters, and those carry no flag. A puppet (remote) is the keeper's to sweep, never ours.
+  const RISEN_TYPES = new Set(['grave_skeleton', 'grave_risen', BRUTE]);
+  const isRisen = m => !!m && (m.fromGrave || (RISEN_TYPES.has(m.type) && !m.remote));
+  // Online, a knight who is not the keeper shows puppets of the keeper's monsters, and 75-coop throws away
+  // anything else put into that list on the very next update. A grave raised there would be used up with
+  // nothing standing on it, so on that knight's screen the graves wait: whatever is still in the ground at
+  // dawn walks, the same as a grave nobody was near.
+  const puppetView = () => !!(window.COOP && COOP.puppets && COOP.puppets());
 
   // anything that could fight back gets a grave; livestock, critters and machines do not
   function buriable(type) {
@@ -141,7 +157,7 @@
   }
 
   // ---------- raising ----------
-  const risen = () => monsters.filter(m => m.fromGrave && !m.dead);
+  const risen = () => monsters.filter(m => isRisen(m) && !m.dead);
   const weightOf = key => (key === 'headstone' ? 2 : 1);           // two tiles of brute is two of anything else
   const load = () => risen().reduce((n, m) => n + weightOf(m.grade), 0);
   function makeRisen(type, tx, ty, grade) {
@@ -155,7 +171,7 @@
   }
   // can this grave put something up where the knight can see it right now?
   function riseSpot(m) {
-    if (window.__instance || player.dead) return false;
+    if (window.__instance || player.dead || puppetView()) return false;
     const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
     if (Math.abs(m.x - px) > RISE_RADIUS || Math.abs(m.y - py) > RISE_RADIUS) return false;
     if (dist(tc(m.x), tc(m.y), player.x, player.y) <= 3 * TILE) return false;      // never straight under his feet
@@ -176,6 +192,7 @@
     return e;
   }
   function tryRises() {
+    if (puppetView()) return;
     const list = marks(); if (!list.length) return;
     const t = dayT(); let n = load();
     for (const m of list.slice()) {
@@ -193,10 +210,11 @@
     for (const m of list.slice()) { t.walked++; removeMarker(m, true); }
     quest.graves = [];
   }
-  // and the risen go with the light, the same way 35-night's do
+  // and the risen go with the light, the same way 35-night's do. Matched by type as well as by flag, so one
+  // that came to us in a keeper handoff still crumbles at dawn and, dead, is taken away and never respawns.
   function sweepRisen(ph) {
     for (let i = monsters.length - 1; i >= 0; i--) {
-      const m = monsters[i]; if (!m.fromGrave) continue;
+      const m = monsters[i]; if (!isRisen(m)) continue;
       if (m.dead) { if (m.deadT > 0.8) monsters.splice(i, 1); continue; }   // yours never come back
       if (ph !== 'night') {
         burst(m.x, m.y, '#8a8a7a', 14, 80); floatText(m.x, m.y - 24, 'crumbles', '#9a9a8a', 12);
@@ -210,6 +228,10 @@
   // throws you a long way — and the stone buries itself, so for the second and a bit while it drags the thing
   // back out, every hit you land goes in twice. Let it swing, step out, then hit it.
   const SLAM = { range: 3.2 * TILE, wind: 1.1, hit: 1.7 * TILE, stagger: 1.7, cd: 5, knock: 46 };
+  // Online, only the keeper's real brute slams, and it slams only the keeper's own knight: the slam is not
+  // sent over the wire, so another knight standing beside it is not thrown. A puppet brute on the other
+  // knights' screens never winds up at all (bruteTick skips it), so nobody is hit by a copy that is out of
+  // step with the real one. That is the whole of it for this wave.
   function landSlam(m) {
     m.stagT = SLAM.stagger; m.slams = (m.slams || 0) + 1;
     burst(m.x, m.y + 12, '#6a5a3a', 26, 150); burst(m.x, m.y + 12, '#9a9a8a', 14, 110);
@@ -228,6 +250,7 @@
   }
   function bruteTick(dt) {
     for (const m of monsters) {
+      if (m.remote) continue;
       if (m.type !== BRUTE || m.dead) continue;
       m.slamCd = Math.max(0, (m.slamCd == null ? SLAM.cd : m.slamCd) - dt);
       if (m.stagT > 0) { m.stagT -= dt; m.windT = 0; m.stunT = Math.max(m.stunT || 0, m.stagT); continue; }
@@ -238,9 +261,11 @@
       floatText(m.x, m.y - m.r - 24, 'lifts the stone', '#ffd166', 13);
     }
   }
-  // the stone is buried: the second half of every hit lands free
+  // the stone is buried: the second half of every hit lands free. Not on a puppet: its hp is the keeper's,
+  // and the next snapshot would take back a "-N more" the knight had just been shown.
   HOOKS.hit.push((m, dmg) => {
-    if (!m || m.type !== BRUTE || m.dead || !(m.stagT > 0) || !(dmg > 0)) return;
+    if (!m || m.remote) return;
+    if (m.type !== BRUTE || m.dead || !(m.stagT > 0) || !(dmg > 0)) return;
     m.hp -= dmg; m.doubled = (m.doubled || 0) + dmg;
     floatText(m.x, m.y - m.r - 26, `-${dmg} more`, '#ffd166', 13);
   });
@@ -419,6 +444,17 @@
   const NECRO_SET = ['necro_hood', 'necro_robe', 'necro_wraps', 'soul_lantern', 'bone_stave'];
   const BONE_BUILDS = ['bone_torch', 'bone_fence', 'skull_pile', 'bone_arch', 'bone_throne'];
   for (const k of ['bone', ...BONE_BUILDS, ...NECRO_SET, 'skull_mace', 'grave_iron']) ITEMS[k].id = k;
+
+  // Owner's standing rule: nothing is built in the shared world; building goes on the knight's own island
+  // (63-house). The five bone builds are new, so they go there and nowhere else. The core's own plank, door,
+  // bed and workbench are older than the rule and are left alone. 63-house loads after this file and wraps
+  // placeAction again on top of this; on the island its checks run first and then hand on to this one.
+  const onIsland = () => !!(window.INSTANCES && INSTANCES.active && INSTANCES.active() === (window.HOUSE ? HOUSE.ID : 'house'));
+  const _placeAction = placeAction;
+  placeAction = function (id) {
+    if (id && BONE_BUILDS.includes(id) && !onIsland()) { notify('Bone builds go on your island. Take them through the portal.'); return; }
+    return _placeAction(id);
+  };
 
   // ---------- the tiles they become ----------
   const T_TORCH = addTile('BONE_TORCH', { solid: true, tex: 'dirt', mini: '#d8f0c0' });
@@ -822,7 +858,7 @@
 
   window.GRAVES = {
     GRADES, ORDER, gradeFor, gradeForLevel, buriable, gradeOf, marks, markerAt, layMarker, removeMarker, tally,
-    MAX_MARKERS, RISE_RADIUS, CAP, BRUTE, BRUTE_R, BRUTE_SPRITE, SLAM, NECRO_SET, BONE_BUILDS, zombieDrops,
+    MAX_MARKERS, RISE_RADIUS, CAP, BRUTE, RISEN_TYPES, isRisen, onIsland, BRUTE_R, BRUTE_SPRITE, SLAM, NECRO_SET, BONE_BUILDS, zombieDrops,
     riseSpot, raise, schedule, settleAtDawn, risen, weightOf, load, log: LOG,
     window: () => ({ from: MIDNIGHT(), to: LAST_RISE(), dark: DARK_FROM(), day: DAY() }),
     tiles: { torch: T_TORCH, fence: T_FENCE, pile: T_PILE, arch: T_ARCH, throne: T_THRONE },
@@ -836,7 +872,7 @@
     const g0 = Array.isArray(quest.graves) ? quest.graves.slice() : [];
     const q0 = quest.graveNight ? { ...quest.graveNight } : null;
     const day0 = player.dayTime, hp0 = player.hp, inv0 = player.inv.slice();
-    const wipeRisen = () => { for (let i = monsters.length - 1; i >= 0; i--) if (monsters[i].fromGrave) monsters.splice(i, 1); };
+    const wipeRisen = () => { for (let i = monsters.length - 1; i >= 0; i--) if (isRisen(monsters[i])) monsters.splice(i, 1); };
     const reset = () => { quest.graves = []; quest.graveNight = { rose: 0, walked: 0, laid: 0 }; LOG.length = 0; wipeRisen(); };
     const fakeKill = (type, tx, ty) => { for (const hk of HOOKS.kill) hk({ type, dead: true, x: tc(tx), y: tc(ty), r: 12 }); };
     // a brute is two tiles wide, so a headstone needs room round it: clear a patch and hand back how to put it right
@@ -932,7 +968,9 @@
     { reset();
       const d = MONSTER_DEFS[GRAVES.BRUTE], z = MONSTER_DEFS.zombie;
       const o = h.openSpot(56, 34); F.tp(o.x, o.y);
-      player.dayTime = 0;                                                 // broad daylight: 35-night raises nothing to join in
+      // the middle of the night: daylight sweeps a brute whatever its flag says, so this one is tested in the
+      // dark, and 35-night's spawn clock is set back so no zombie of its own turns up in these three seconds
+      player.dayTime = NIGHT.LIGHT + NIGHT.DUSK + 20; NIGHT.resetTimer();
       const big = GRAVES.BRUTE_SPRITE === 2 * TILE && d.r * 2 >= 1.8 * TILE && d.r * 2 <= 2 * TILE;
       const tanky = d.hp === 320 && d.hp >= 3 * MONSTER_DEFS.grave_zombie.hp;
       const soft = d.maxHit === 5 && d.maxHit < z.maxHit && d.speed < z.speed;
@@ -943,7 +981,7 @@
       for (const mm of monsters) if (!mm.dead && dist(mm.x, mm.y, player.x, player.y) < 12 * TILE) { parked.push([mm, mm.x, mm.y, mm.state]); mm.x = player.x - 2000; mm.y = player.y; mm.state = 'return'; }
       const rnd = Math.random; Math.random = () => 0;                     // pin the rolls: the slam lands, for 1
       const m = makeRisen(GRAVES.BRUTE, Math.floor(player.x / TILE) + 2, Math.floor(player.y / TILE), 'headstone');
-      m.fromGrave = false;                                                // a specimen, not one of tonight's: daylight must not sweep it
+      m.fromGrave = false;                                                // a specimen, not one of tonight's
       m.x = player.x + 60; m.y = player.y; m.home = { x: m.x, y: m.y }; m.state = 'chase'; m.slamCd = 0;
       monsters.push(m);
       let wound = false;
@@ -982,23 +1020,49 @@
         for (const [id, n] of r.needs) removeItem(id, n);
         addItem(r.out, r.qty); made.push(countItem(r.out) >= r.qty);
       }
-      // put one in the ground in front of the knight
+      // the shared world first: each of the five, a clear tile in front of the knight, and every one is refused
       const o = h.openSpot(56, 30); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 };
-      const ft = frontTile(player, 40); const wasT = tileAt(ft.tx, ft.ty);
-      drops = drops.filter(dd => !circleHitsTile(dd.x, dd.y, 8, ft.tx, ft.ty));
+      const wf = frontTile(player, 40); const wasW = tileAt(wf.tx, wf.ty);
+      drops = drops.filter(dd => !circleHitsTile(dd.x, dd.y, 8, wf.tx, wf.ty));
       const moved = [];
-      for (const mm of monsters) if (!mm.dead && circleHitsTile(mm.x, mm.y, mm.r + 2, ft.tx, ft.ty)) { moved.push([mm, mm.x, mm.y]); mm.x = player.x - 600; mm.y = player.y; }
-      player.inv = player.inv.map(() => null); h.give('bone_torch', 1);
-      placeAction('bone_torch');
-      const placed = tileAt(ft.tx, ft.ty) === GRAVES.tiles.torch;
+      for (const mm of monsters) if (!mm.dead && circleHitsTile(mm.x, mm.y, mm.r + 2, wf.tx, wf.ty)) { moved.push([mm, mm.x, mm.y]); mm.x = player.x - 600; mm.y = player.y; }
+      const worldTile = { tile: tileName(wasW), placeable: PLACEABLE_ON.has(wasW) }, refused = {};
+      for (const id of GRAVES.BONE_BUILDS) {
+        player.inv = player.inv.map(() => null); h.give(id, 1); notice = null;
+        placeAction(id);
+        refused[id] = tileAt(wf.tx, wf.ty) === wasW && countItem(id) === 1 && !!notice && /your island/i.test(notice.text);
+        if (tileAt(wf.tx, wf.ty) !== wasW) changeTile(wf.tx, wf.ty, wasW);
+      }
+      const worldSays = notice && notice.text;
+      for (const [mm, x, y] of moved) { mm.x = x; mm.y = y; }
+      // then his own island: through the portal, a clear patch, and the torch goes in the ground
+      const house0 = player.house ? JSON.parse(JSON.stringify(player.house)) : null;
+      const went = !!window.HOUSE && HOUSE.enter();
+      let placed = false, onHisIsland = false;
+      if (went) {
+        onHisIsland = GRAVES.onIsland();
+        const ix = HOUSE.ENTRY[0] - 3, iy = HOUSE.ENTRY[1] - 3;
+        if (SOLID.has(tileAt(ix, iy))) changeTile(ix, iy, T.GRASS);
+        if (tileAt(ix, iy - 1) !== T.GRASS) changeTile(ix, iy - 1, T.GRASS);
+        F.tp(ix, iy); F.face(ix, iy - 1); player.action = null;
+        const ft = frontTile(player, 40);
+        drops = drops.filter(dd => !circleHitsTile(dd.x, dd.y, 8, ft.tx, ft.ty));
+        player.inv = player.inv.map(() => null); h.give('bone_torch', 1);
+        placeAction('bone_torch');
+        placed = tileAt(ft.tx, ft.ty) === GRAVES.tiles.torch && countItem('bone_torch') === 0;
+        HOUSE.leave(); F.sim(2, []);
+      }
+      if (house0) player.house = house0;                                   // the patch cleared on the island is not kept
+      const backOut = !GRAVES.onIsland() && !(window.INSTANCES && INSTANCES.active());
       const tappable = Object.values(GRAVES.tiles).every(t2 => INTERESTING_TILES.has(t2));
       const gateOpen = PUSH_THROUGH.has(GRAVES.tiles.arch) && !solidFor(GRAVES.tiles.arch, 'player') && solidFor(GRAVES.tiles.arch, 'beast');
-      changeTile(ft.tx, ft.ty, wasT);
-      for (const [mm, x, y] of moved) { mm.x = x; mm.y = y; }
       player.inv = bag;
       check(P + 'a skeleton drops bones; four bones and a log make a bone torch, and the fence, skull pile, arch and throne all come off the same pile; a torch goes in the ground and every piece answers a tap',
-        boned && allThere && made.every(Boolean) && placed && tappable && gateOpen,
-        { boned, allThere, made, placed, tappable, gateOpen, builds: recs.map(r => (r ? r.label : 'missing')) });
+        boned && allThere && made.every(Boolean) && went && onHisIsland && placed && backOut && tappable && gateOpen,
+        { boned, allThere, made, went, onHisIsland, placed, backOut, tappable, gateOpen, builds: recs.map(r => (r ? r.label : 'missing')) });
+      check(P + 'no bone build goes up in the shared world: each of the five is refused on open ground there, stays in the pack, and he is told to take it to his island',
+        worldTile.placeable && GRAVES.BONE_BUILDS.every(id => refused[id]),
+        { worldTile, refused, said: worldSays });
       reset(); }
 
     // ---- 6. the necromancy kit: 1 kill in 20 ----
@@ -1051,6 +1115,110 @@
       const extra = countItem('grave_iron');
       player.inv = bag;
       check(P + 'anything you raised out of your own kill pays grave iron on top', extra >= 1 && extra <= 2, { extra }); }
+
+    // ---- 10. online: a knight who is not the keeper keeps his graves through the night ----
+    // Faked the way 75-coop's own check does it: a fake wire says welcome, then names Ann the keeper of the
+    // overworld, so this knight parks his monsters and shows Ann's puppets. Anything put in that list that is
+    // not a puppet is thrown away on the next update, so nothing may rise here and nothing may be counted.
+    { reset();
+      const online = typeof NET !== 'undefined' && !!window.COOP;
+      const was = online ? { enabled: NET.enabled, token: NET.token, fake: NET.fake } : null, real = monsters;
+      let sock = null;
+      const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+      const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const mm = JSON.parse(str); if (mm.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
+      const kept = [];
+      let res = { online };
+      try {
+        if (online) {
+          NET.enabled = true; NET.token = 'graves-test'; NET.useFake(fake); NET.connect();
+          push({ t: 'keeper', map: 'over', n: 'Ann' });
+          const puppetsUp = Array.isArray(COOP.puppets()) && monsters === COOP.puppets() && COOP.keeper() === 'Ann';
+          const o = h.openSpot(56, 34); F.tp(o.x, o.y);
+          const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
+          player.dayTime = NIGHT.LIGHT + NIGHT.DUSK - 2;             // the last of the dusk arms the night
+          F.sim(2, []);
+          let laid = 0;
+          for (const [x, y, g2] of [[px + 5, py, 'cross'], [px + 7, py + 3, 'grave'], [px + 6, py - 4, 'headstone']]) {
+            if (!inMap(x, y) || buildingAt(x, y)) continue;
+            for (const k of clearPatch(x, y, 1)) kept.push(k);
+            if (GRAVES.layMarker(x, y, g2)) laid++;
+          }
+          let held = true, allDue = false, stayedPuppet = true, ours = 0;
+          for (let i = 0; i < 60 * 130 && phase() !== 'day'; i++) {
+            F.step([]);
+            if (phase() === 'day') break;
+            if (GRAVES.marks().length !== laid) held = false;
+            if (!COOP.puppets()) stayedPuppet = false;
+            ours = Math.max(ours, monsters.filter(m => m.fromGrave).length);
+            if (GRAVES.state().built && laid && GRAVES.marks().every(m => m.rise != null && m.rise <= dayT())) allDue = true;
+          }
+          const tal = GRAVES.tally();
+          res = { online, puppetsUp, stayedPuppet, laid, held, allDue, rose: tal.rose, walked: tal.walked, log: LOG.length, ours, dawnEmpty: GRAVES.marks().length === 0 };
+        }
+      } finally {
+        if (online) { NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
+        if (monsters !== real) monsters = real;
+        putBack(kept);
+        player.dayTime = day0; F.sim(2, []);
+      }
+      check(P + 'a knight who is not the keeper keeps his graves through the night — nothing rises into the puppet list and nothing is counted as risen',
+        res.online && res.puppetsUp && res.stayedPuppet && res.laid === 3 && res.held && res.allDue && res.rose === 0 && res.log === 0 && res.ours === 0 && res.walked === 3 && res.dawnEmpty,
+        res);
+      reset(); }
+
+    // ---- 11. a keeper handoff loses the grave flag; the type still sweeps them ----
+    // 75-coop's handoff rebuilds the new keeper's monsters with makeReal(), which has no fromGrave. Those three
+    // types only ever come out of a grave, so a live one still crumbles at dawn and a dead one is taken away
+    // instead of counting down to a respawn.
+    { reset();
+      const o = h.openSpot(56, 34); F.tp(o.x, o.y);
+      const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
+      player.dayTime = DAY() - 4; NIGHT.resetTimer();                     // the last few seconds of the night
+      const lost = (type, tx, ty, grade) => { const e = makeRisen(type, tx, ty, grade); e.fromGrave = false; e.remote = false; delete e.grade; e.nid = 'Ann:' + type; return e; };
+      const sk = lost('grave_skeleton', px + 6, py, 'cross'), br = lost(BRUTE, px + 9, py + 2, 'headstone'), dz = lost('grave_risen', px + 6, py + 4, 'grave');
+      dz.dead = true; dz.hp = 0; dz.deadT = 1; dz.respawnT = 27;             // what handoff() gives a dead one: a respawn clock
+      monsters.push(sk, br, dz);
+      F.step([]);
+      const standAtNight = phase() === 'night' && monsters.includes(sk) && monsters.includes(br);
+      const deadTaken = !monsters.includes(dz);
+      for (let i = 0; i < 60 * 8 && phase() !== 'day'; i++) F.step([]);
+      F.step([]);
+      const crumbled = phase() === 'day' && !monsters.includes(sk) && !monsters.includes(br);
+      for (const e of [sk, br, dz]) { const i = monsters.indexOf(e); if (i >= 0) monsters.splice(i, 1); }
+      player.dayTime = day0; F.sim(2, []);
+      check(P + 'a grave skeleton and a brute that lost their grave flag (a keeper handoff) still crumble at dawn and never respawn',
+        standAtNight && deadTaken && crumbled, { standAtNight, deadTaken, crumbled, types: [...GRAVES.RISEN_TYPES] });
+      reset(); }
+
+    // ---- 12. a brute puppet never slams and never takes the stagger bonus ----
+    // A puppet is a picture of the keeper's brute. Its wind-up and slam are the keeper's to roll, and its hp is
+    // the keeper's to change, so on this knight's screen it does neither. The core loop is held off it the way
+    // 75-coop's update wrap holds every puppet (a stun it never runs out of), so only this file's code can act.
+    { reset();
+      const o = h.openSpot(56, 34); F.tp(o.x, o.y);
+      player.dayTime = 0;
+      h.peace(false); player.hp = 100000;
+      const parked = [];
+      for (const mm of monsters) if (!mm.dead && dist(mm.x, mm.y, player.x, player.y) < 12 * TILE) { parked.push([mm, mm.x, mm.y, mm.state]); mm.x = player.x - 2000; mm.y = player.y; mm.state = 'return'; }
+      const rnd = Math.random; Math.random = () => 0;                     // pinned: a slam that ran would land
+      const m = makeRisen(BRUTE, Math.floor(player.x / TILE) + 1, Math.floor(player.y / TILE), 'headstone');
+      m.fromGrave = false; m.remote = true; m.nid = 'Ann:brute'; m.respawnT = 1e9;
+      m.x = player.x + 60; m.y = player.y; m.slamCd = 0; m.windT = 0.2; m.stunT = 1e6;
+      monsters.push(m);
+      const hpA = player.hp, xA = player.x, yA = player.y;
+      for (let i = 0; i < 60; i++) F.step([]);
+      const hurt = hpA - player.hp, moved = Math.round(dist(xA, yA, player.x, player.y));
+      const noSlam = !(m.slams > 0) && hurt === 0 && player.x === xA && player.y === yA;
+      m.stagT = 1;
+      const hp1 = m.hp; hitMonster(m, 10, 0, false, 'player'); const took = hp1 - m.hp;
+      Math.random = rnd;
+      { const i = monsters.indexOf(m); if (i >= 0) monsters.splice(i, 1); }
+      for (const [mm, x, y, st] of parked) { mm.x = x; mm.y = y; mm.state = st; }
+      h.peace(true); player.hp = hp0; player.dayTime = day0;
+      check(P + 'a brute puppet never slams and never takes the stagger bonus',
+        noSlam && took === 10 && !(m.doubled > 0),
+        { slams: m.slams || 0, hurt, moved, damageWhileStuck: took, doubled: m.doubled || 0 });
+      reset(); }
 
     wipeRisen();
     quest.graves = g0; quest.graveNight = q0 || { rose: 0, walked: 0, laid: 0 };
