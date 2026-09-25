@@ -37,6 +37,8 @@
     monsters: 'Monsters you make here never come back once they are killed.',
     party: 'Crackers on the ground for everyone near you.',
   };
+  // the same, for a phone's narrow panel
+  const SUBTITLE_SHORT = { knights: 'Mute, send out or ban a knight.', powers: 'These change only your own knight.', monsters: 'Killed ones never come back.', party: 'Crackers for everyone near you.' };
 
   const S = {
     tab: 'knights',
@@ -106,11 +108,15 @@
   const fit = (g, text, maxW) => { let s = String(text); if (g.measureText(s).width <= maxW) return s; while (s.length > 2 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s + '…'; };
 
   // ---------- sending: admins only, and never faster than the world allows ----------
+  // counted in game seconds: they never run faster than real ones (a frame is at most 0.05 s), so the world's caps
+  // are always met, and a simulation's frames count the same way the world's clock does. A load that sets the clock
+  // back starts the count again.
   const bucket = {};
   function allowed(t) {
     const c = CAPS[t]; if (!c) return true;
-    const now = nowMs(), b = bucket[t] || (bucket[t] = { tokens: c[1], at: now });
-    b.tokens = Math.min(c[1], b.tokens + (now - b.at) / 1000 * c[0]); b.at = now;
+    const now = time, b = bucket[t] || (bucket[t] = { tokens: c[1], at: now });
+    const dt = now - b.at;
+    b.tokens = dt < 0 ? c[1] : Math.min(c[1], b.tokens + dt * c[0]); b.at = now;
     if (b.tokens < 1) return false;
     b.tokens -= 1; return true;
   }
@@ -619,7 +625,7 @@
     const touchy = touchMode(), T = touchy ? 44 : 32;
     const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : Math.min(660, VW - 20), Math.min(VH - 20, 660), 'Admin', '');
     if (touchy) { buttons.pop(); button(g, px + w - 56, py + 10, 44, 44, '×', closePanel, '#21262d'); }
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(fit(g, SUBTITLE[S.tab], w - 36 - 60), px + 18, py + 50);
+    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; const subW = w - 36 - 60; g.fillText(fit(g, g.measureText(SUBTITLE[S.tab]).width <= subW ? SUBTITLE[S.tab] : SUBTITLE_SHORT[S.tab], subW), px + 18, py + 50);
     const tabW = (w - 36 - 3 * 6) / 4;
     TABS.forEach(([id, name], i) => btn(g, px + 18 + i * (tabW + 6), py + 60, tabW, T, name, () => { if (S.tab !== id) { S.tab = id; S.view = null; S.inputMode = 'search'; onTab(id); } }, S.tab === id ? '#7a5a12' : '#21262d', true, 'admin:tab:' + id));
     const x = px + 18, y = py + 60 + T + 10, cw = w - 36, ch = py + h - 12 - y;
@@ -644,12 +650,14 @@
     const RH = wide ? T + 14 : T + 52, HH = 26;
     if (!items.some(it => it.kind === 'k')) note(g, NET.me ? 'Nobody else is online right now.' : 'You are not connected.', x, y + 16, w);
     const top = items.some(it => it.kind === 'k') ? y : y + 26;
-    const pages = paginate(items, it => it.kind === 'h' ? HH : RH, y + h - top, T + 10);
+    // an admin's row has no buttons, so on a phone it needs no second line of them
+    const heightOf = it => it.kind === 'h' ? HH : (!wide && it.kind === 'k' && it.o.role === 'admin') ? 52 : RH;
+    const pages = paginate(items, heightOf, y + h - top, T + 10);
     S.page.knights = clamp(S.page.knights, 0, pages.length - 1);
     let yy = top;
     for (const it of pages[S.page.knights]) {
       if (it.kind === 'h') { g.fillStyle = GOLD; g.font = 'bold 12px sans-serif'; g.textAlign = 'left'; g.fillText(it.text.toUpperCase(), x, yy + 18); yy += HH; continue; }
-      knightRow(g, it, x, yy, w, RH - 6, T, wide); yy += RH;
+      const ih = heightOf(it); knightRow(g, it, x, yy, w, ih - 6, T, wide); yy += ih;
     }
     if (pages.length > 1) pagerRow(g, x, y + h - T, w, T, 'knights', pages.length);
   }
@@ -757,7 +765,17 @@
   }
 
   // ---------- D. the Monsters tab ----------
-  const monList = () => { const q = S.search.trim().toLowerCase(); return Object.keys(MONSTER_DEFS).filter(t => { const d = MONSTER_DEFS[t]; return d && (!q || String(d.name || t).toLowerCase().includes(q) || t.includes(q)); }).sort((a, b) => (MONSTER_DEFS[a].level || 0) - (MONSTER_DEFS[b].level || 0) || String(MONSTER_DEFS[a].name).localeCompare(String(MONSTER_DEFS[b].name))); };
+  // a monster's name as the list shows it: two kinds that share a name are told apart in plain words
+  function monName(type) {
+    const d = MONSTER_DEFS[type], name = String((d && d.name) || type);
+    const twins = Object.keys(MONSTER_DEFS).filter(t => t !== type && MONSTER_DEFS[t] && MONSTER_DEFS[t].name === d.name);
+    if (!twins.length) return name;
+    if (d.woman) return name + ' (woman)';
+    if (!d.aggro && twins.some(t => MONSTER_DEFS[t].aggro)) return name + ' (calm)';
+    if (twins.some(t => MONSTER_DEFS[t].woman || (!MONSTER_DEFS[t].aggro && d.aggro))) return name;
+    return name + ' (' + type.replace(/_/g, ' ') + ')';
+  }
+  const monList = () => { const q = S.search.trim().toLowerCase(); return Object.keys(MONSTER_DEFS).filter(t => { const d = MONSTER_DEFS[t]; return d && (!q || monName(t).toLowerCase().includes(q) || t.includes(q)); }).sort((a, b) => (MONSTER_DEFS[a].level || 0) - (MONSTER_DEFS[b].level || 0) || String(MONSTER_DEFS[a].name).localeCompare(String(MONSTER_DEFS[b].name))); };
   // a portrait the way 44-wiki draws one: the game's own sprite, face-on and still, fitted in a box
   function portrait(g, type, x, y, size) {
     roundRect(g, x, y, size, size, 6); g.fillStyle = 'rgba(126,200,255,0.06)'; g.fill();
@@ -789,13 +807,13 @@
       roundRect(g, cx, cy, cellW, cellH, 8); g.fillStyle = sel ? 'rgba(245,197,66,0.16)' : 'rgba(255,255,255,0.05)'; g.fill();
       if (sel) { g.strokeStyle = GOLD; g.lineWidth = 1.5; g.stroke(); }
       const ps = cellH - 6; portrait(g, type, cx + 3, cy + 3, ps);
-      g.font = 'bold 12px sans-serif'; g.textAlign = 'left'; g.fillStyle = sel ? GOLD : '#e6edf3'; g.fillText(fit(g, def.name || type, cellW - ps - 14), cx + ps + 9, cy + cellH / 2 - 1);
+      g.font = 'bold 12px sans-serif'; g.textAlign = 'left'; g.fillStyle = sel ? GOLD : '#e6edf3'; g.fillText(fit(g, monName(type), cellW - ps - 14), cx + ps + 9, cy + cellH / 2 - 1);
       g.font = '11px sans-serif'; g.fillStyle = '#8b949e'; g.fillText('Level ' + (def.level || 1), cx + ps + 9, cy + cellH / 2 + 13);
       buttons.push({ x: cx, y: cy, w: cellW, h: cellH, label: 'admin:mon:' + type, action: () => { S.monType = type; } });
     });
     if (pages > 1) { g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'right'; g.fillText(`page ${S.page.monsters + 1} of ${pages}`, x + w, listY + listH + 2); }
     const by = y + h - barH, def = S.monType && MONSTER_DEFS[S.monType];
-    note(g, def ? `${def.name} × ${S.count}, around you` : 'Tap a monster, pick how many, then Spawn.', x, by + 13, w, def ? '#e6edf3' : '#8b949e');
+    note(g, def ? `${monName(S.monType)} × ${S.count}, around you` : 'Tap a monster, pick how many, then Spawn.', x, by + 13, w, def ? '#e6edf3' : '#8b949e');
     const step = [
       { text: '−', w: 44, action: () => { S.count = Math.max(1, S.count - 1); }, color: '#21262d', enabled: S.count > 1, key: 'admin:count:-' },
       { w: 54, draw: (bx, bw, ry) => { roundRect(g, bx, ry, bw, T, 8); g.fillStyle = '#0b0f14'; g.fill(); g.fillStyle = '#e6edf3'; g.font = 'bold 15px sans-serif'; g.textAlign = 'center'; g.fillText(String(S.count), bx + bw / 2, ry + T / 2 + 5); } },
@@ -853,7 +871,7 @@
     is: isAdmin, open, unlockAll, unlockWithBackup, putBack, pin, get pinAt() { return S.pinAt; },
     get god() { return S.god; }, setGod, teleportTo, startTeleport, give, spawn, clearSpawns,
     mute, unmute, kick, ban, unban, askModlist, get modlist() { return S.modlist; },
-    isSpawn, SPAWN_LIVE_MAX, UNLOCKS, modSentence, plural, amount, setSearch, setQty, state: S,
+    isSpawn, SPAWN_LIVE_MAX, UNLOCKS, modSentence, plural, amount, monName, setSearch, setQty, state: S,
   };
   window.ADMIN = ADMIN;
 
