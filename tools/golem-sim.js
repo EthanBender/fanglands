@@ -201,8 +201,8 @@ async function main() {
   const flying = B.ROYALMINE.run.stones.length === 1 && B.ROYALMINE.run.hot === 0;
   tick(60);
   const dmgB = B.ROYALMINE.heartDmg();
-  line('2. the golem wakes on both screens, and B\'s hot heartstone lowers A\'s golem by exactly B\'s damage (60 at Smithing 40)',
-    awakeOnB && flying && dmgB === 60 && gA().hp === hp0 - dmgB && gA().maxHp === max0 && max0 === 1600,
+  line('2. the golem wakes on both screens, and B\'s hot heartstone lowers A\'s golem by exactly B\'s damage (60 at Smithing 40); two knights wake him with 960 hp',
+    awakeOnB && flying && dmgB === 60 && gA().hp === hp0 - dmgB && gA().maxHp === max0 && max0 === 960,
     { awakeOnB, flying, before: hp0, after: gA().hp, dmgB, max: gA().maxHp });
 
   // ---- 3. B's sword sends nothing and changes nothing ----

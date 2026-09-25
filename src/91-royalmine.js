@@ -44,8 +44,14 @@
       giant_stormstone: { size: 3, r: 62, cracks: 9, lv: 30, xp: 70, swing: 2.2, swingMin: 1.1, wakeAt: 3, wakeChance: 1 / 2, regrow: 90, golem: 'stormstone_golem', metal: 'stormstone', ore: 'stormstone_ore' },
     },
     SWING_STEP: 0.25, MINE_REACH: 60, STIR_PULSE: 1.2, STIR_SETTLE: 45, WAKE_TIME: 2.0, SPLICE: 1.5, HINT_GAP: 4,
-    // the Ginormous Golem
-    GOLEM_HP: 1000, PER_KNIGHT: 0.6, KNIGHTS_MAX: 4, KID_HP: 0.7, BAR_RANGE: 12,
+    // the Ginormous Golem. 600, not 1000: a bot that plays the real loop solo (the self-test's plain bot fight, block 39 of
+    // section 25) took 4 to 6 minutes at 1000, and a ten-year-old who has to look for the lit vein is slower than a bot
+    GOLEM_HP: 600, PER_KNIGHT: 0.6, KNIGHTS_MAX: 4, KID_HP: 0.7, BAR_RANGE: 12,
+    // every ring and shadow on the floor is drawn squashed (RING_SQUASH tall for the golem's rings, ROCK_SQUASH for a rock's
+    // shadow, which sits ROCK_DROP px below where it lands); the hit tests use exactly the shapes that are drawn
+    RING_SQUASH: 0.8, ROCK_SQUASH: 0.6, ROCK_DROP: 6,
+    // the golem's picture reaches BODY_W px either side of his centre and BODY_TOP px above it; a knight behind it sees him at SEE_THROUGH
+    BODY_W: 92, BODY_TOP: 215, SEE_THROUGH: 0.45,
     WAKE_R: 4, RISE: 0.9, NEAR_R: 3, NEAR_HOLD: 0.8, WINDUP: 1.2, KID_WINDUP: 1.6, SLAM: 0.5, SLAM_R: 3.2, SLAM_DMG: 12, KID_SLAM_DMG: 5, SLAM_KNOCK: 40, SLAM_CD: 4,
     SETTLE: 10, REVIVE: 30, FALL_HOLD: 1.0,
     // the veins, the forge and the throw
@@ -54,13 +60,17 @@
     THROW_CD: 0.5, FLIGHT: 0.3, FLIGHT_SPEED: 900, DMG: 50, DMG_SMITH: 4, DMG_SMITH_MAX: 25, KID_DMG: 1.25, MELEE_PER_DMG: 2,
     REMOTE_MIN: 40, REMOTE_MAX: 100,
     // the little golems
-    LING_FIRST: 10, LING_EVERY: 16, LING_EVERY_HALF: 11, LING_HALF_COUNT: 2, LING_PER_KNIGHT: 0.35, KID_LING: 1.4, LING_MAX: 4, LING_WARN: 0.8,
-    // LING_HEAL is 25, not the spec's 40: at 40, two little golems every 11 s out-heal a solo knight's stones below
-    // half health, and a bot fight (rocks on) never ended; at 25 the same fight falls in about six minutes
+    // below half health one little golem comes every 13 s, not two every 11: a pair out of opposite heaps, 15 tiles apart, kept a
+    // solo knight chasing, and a smash-first bot fight never ended. And once he is below half, no heal lifts him above
+    // the health he had when he got there, so the second half can be slowed but never undone
+    LING_FIRST: 10, LING_EVERY: 16, LING_EVERY_HALF: 13, LING_HALF_COUNT: 1, LING_PER_KNIGHT: 0.35, KID_LING: 1.4, LING_MAX: 4, LING_WARN: 0.8,
+    // LING_HEAL is 25, not the spec's 40: at 40 the little golems out-heal a solo knight's stones
     LING_SPEED: 42, KID_LING_SPEED: 30, LING_REACH: 70, LING_HEAL: 25, LING_HP: 12, KID_LING_HP: 8,
     // the falling rocks
     ROCK_EVERY: 5.0, ROCK_EVERY_HALF: 3.5, KID_ROCK_EVERY: 8, ROCK_R: 34, ROCK_LEAD: 0.6, ROCK_FALL: 1.4, KID_ROCK_FALL: 2.0, ROCK_DMG: 8, KID_ROCK_DMG: 3, ROCK_EXTRA: 3,
     // what it all pays
+    // STONE_SECS and FALL_SECS are what the audit is told a stone and a solo fall take (see section 23)
+    STONE_SECS: 10, FALL_SECS: 150,
     FIGHT_XP: 200, HELP_STONES: 1, HELP_SMASH: 2, PITY: 24, QUEST_XP: 800, QUEST_COINS: 1000, WARM_XP: 60,
     // the story's clocks
     WARM_TIME: 2.0, SLIDE: 2.0, SLIDE_DUST: 0.15, KNOCK_RING: 0.6, ANSWER_PAUSE: 1.5,
@@ -956,7 +966,11 @@
     for (const k of remotes()) if (pred(k.x, k.y)) out.push(k);
     return out;
   }
-  const nearSeat = r => (x, y) => dist(x, y, SEAT_C.x, SEAT_C.y) <= r;
+  // inside an ellipse centred on (cx, cy): the same test for every ring and shadow, so what hurts is what is drawn
+  const inOval = (x, y, cx, cy, rx, ry) => { const u = (x - cx) / rx, v = (y - cy) / ry; return u * u + v * v < 1; };
+  const inRing = (x, y, r) => inOval(x, y, SEAT_C.x, SEAT_C.y, r, r * NUM.RING_SQUASH);
+  const underRock = (rk, x, y) => inOval(x, y, rk.x, rk.y + NUM.ROCK_DROP, NUM.ROCK_R, NUM.ROCK_R * NUM.ROCK_SQUASH);
+  const nearSeat = r => (x, y) => inRing(x, y, r);
   function ensureGolemRm(g) {
     if (g.rm && g.rm.kind === 'golem' && (g.dead || g.rm.phase === g.state)) return g.rm;
     const phase = AWAKE.has(g.state) || g.state === 'sleep' ? g.state : 'sleep';
@@ -968,7 +982,7 @@
     const k = clamp(n, 1, NUM.KNIGHTS_MAX);
     rm.scale = 1 + NUM.PER_KNIGHT * (k - 1);
     g.maxHp = g.hp = Math.round(NUM.GOLEM_HP * rm.scale * (kid() ? NUM.KID_HP : 1));
-    rm.phase = 'rise'; rm.t = 0; rm.lingT = NUM.LING_FIRST; rm.nearT = 0; rm.slamCd = 0; rm.settleT = 0;
+    rm.phase = 'rise'; rm.t = 0; rm.lingT = NUM.LING_FIRST; rm.nearT = 0; rm.slamCd = 0; rm.settleT = 0; rm.capHp = null;
   }
   function spawnLittle(i) {
     const [hx, hy] = HEAPS[(((i | 0) % 4) + 4) % 4];
@@ -992,7 +1006,7 @@
       rm.downT += dt;
       if (rm.downT >= NUM.REVIVE && !ring.length) {
         g.dead = false; g.deadT = 0; g.maxHp = g.hp = NUM.GOLEM_HP; g.lastHitBy = null; g.x = g.home.x = SEAT_C.x; g.y = g.home.y = SEAT_C.y;
-        rm.phase = 'sleep'; rm.t = 0; rm.wasDead = false; rm.scale = 1; g.state = 'sleep';
+        rm.phase = 'sleep'; rm.t = 0; rm.wasDead = false; rm.scale = 1; rm.capHp = null; g.state = 'sleep';
       }
       return;
     }
@@ -1009,10 +1023,12 @@
     }
     if (AWAKE.has(rm.phase)) {
       // nobody left in the chamber: he settles back down, whole
-      if (!chamber.length) { rm.settleT += dt; if (rm.settleT >= NUM.SETTLE) { rm.phase = 'sleep'; rm.t = 0; g.hp = g.maxHp; rm.settleT = 0; crumbleLings(); } }
+      if (!chamber.length) { rm.settleT += dt; if (rm.settleT >= NUM.SETTLE) { rm.phase = 'sleep'; rm.t = 0; g.hp = g.maxHp; rm.settleT = 0; rm.capHp = null; crumbleLings(); } }
       else rm.settleT = 0;
     }
     if (AWAKE.has(rm.phase)) {
+      // the health he had when he first fell below half: the ceiling for every heal from now on
+      if (rm.capHp == null && g.hp <= g.maxHp / 2) rm.capHp = g.hp;
       rm.lingT -= dt;
       if (rm.lingT <= 0) {
         const half = g.hp <= g.maxHp / 2, knights = Math.max(1, chamber.length);
@@ -1029,7 +1045,8 @@
         m.state = 'walk';
         const dx = g.x - m.x, dy = g.y - m.y, d = Math.hypot(dx, dy) || 1;
         if (d <= NUM.LING_REACH || m.rm.stuck > 1) {
-          g.hp = Math.min(g.maxHp, g.hp + Math.round(NUM.LING_HEAL * (rm.scale || 1) * (kid() ? 0.5 : 1)));
+          const top = rm.capHp == null ? g.maxHp : Math.max(g.hp, rm.capHp);
+          g.hp = Math.min(top, g.hp + Math.round(NUM.LING_HEAL * (rm.scale || 1) * (kid() ? 0.5 : 1)));
           burst(m.x, m.y, '#8f887a', 8, 60); const i = monsters.indexOf(m); if (i >= 0) monsters.splice(i, 1);
           continue;
         }
@@ -1072,12 +1089,12 @@
       burst(r.x, r.y, '#8f887a', 14, 120); burst(r.x, r.y, '#5a554c', 8, 70); sfx('hit');
       if (window.IMPACT) IMPACT.wave(r.x, r.y, 0.5);
       run.debris.push({ x: r.x, y: r.y, t: 0 });
-      if (!player.dead && inMine() && dist(player.x, player.y, r.x, r.y) < NUM.ROCK_R) { const dmg = kid() ? NUM.KID_ROCK_DMG : NUM.ROCK_DMG; run.lastRockDmg = dmg; hurtPlayer(dmg, r.x, r.y - 8, true); }
+      if (!player.dead && inMine() && underRock(r, player.x, player.y)) { const dmg = kid() ? NUM.KID_ROCK_DMG : NUM.ROCK_DMG; run.lastRockDmg = dmg; hurtPlayer(dmg, r.x, r.y - 8, true); }
     }
     for (const d of run.debris.slice()) { d.t += dt; if (d.t > 1.4) run.debris.splice(run.debris.indexOf(d), 1); }
   }
-  const inShadow = () => run.rocks.some(r => dist(player.x, player.y, r.x, r.y) < NUM.ROCK_R);
-  const inSlam = () => !player.dead && dist(player.x, player.y, SEAT_C.x, SEAT_C.y) < NUM.SLAM_R * TILE;
+  const inShadow = () => run.rocks.some(r => underRock(r, player.x, player.y));
+  const inSlam = () => !player.dead && inRing(player.x, player.y, NUM.SLAM_R * TILE);
   function lifeTick(dt) {
     const gm = golemMon(), L = run.life;
     if (!gm) return;
@@ -1106,7 +1123,7 @@
       if (gm.state === 'slam' && L.lastState !== 'slam') {
         sfx('boom'); if (window.IMPACT) IMPACT.wave(SEAT_C.x, SEAT_C.y, 2.5);
         const d = dist(player.x, player.y, SEAT_C.x, SEAT_C.y);
-        if (!player.dead && inMine() && d < NUM.SLAM_R * TILE) {
+        if (!player.dead && inMine() && inRing(player.x, player.y, NUM.SLAM_R * TILE)) {
           const dmg = kid() ? NUM.KID_SLAM_DMG : NUM.SLAM_DMG; run.lastSlamDmg = dmg;
           hurtPlayer(dmg, SEAT_C.x, SEAT_C.y, true);
           const k = NUM.SLAM_KNOCK / (d || 1); moveEntity(player, (player.x - SEAT_C.x) * k, (player.y - SEAT_C.y) * k, playerWho());
@@ -1510,21 +1527,28 @@
     const gm = golemMon(), awake = isAwake(gm);
     // the gold wake ring round the golem (red while he is awake)
     g.save(); g.lineWidth = 3; g.strokeStyle = awake ? 'rgba(240,82,77,0.75)' : (gm && !gm.dead ? `rgba(232,184,74,${(0.55 + 0.25 * Math.sin(time * 2)).toFixed(3)})` : 'rgba(232,184,74,0.25)');
-    g.setLineDash([14, 8]); g.beginPath(); g.ellipse(SEAT_C.x, SEAT_C.y, NUM.WAKE_R * TILE, NUM.WAKE_R * TILE * 0.8, 0, 0, 7); g.stroke(); g.setLineDash([]);
+    g.setLineDash([14, 8]); g.beginPath(); g.ellipse(SEAT_C.x, SEAT_C.y, NUM.WAKE_R * TILE, NUM.WAKE_R * TILE * NUM.RING_SQUASH, 0, 0, 7); g.stroke(); g.setLineDash([]);
     g.globalAlpha = 0.18; g.lineWidth = 10; g.stroke(); g.restore();
     // the slam: a red ring filling out to 3.2 tiles
     if (gm && gm.state === 'windup' && !gm.dead && run.life.windupAt !== null) {
       const k = clamp((time - run.life.windupAt) / (kid() ? NUM.KID_WINDUP : NUM.WINDUP), 0, 1), R2 = NUM.SLAM_R * TILE;
-      g.fillStyle = `rgba(240,60,50,${(0.12 + 0.2 * k).toFixed(3)})`; g.beginPath(); g.ellipse(SEAT_C.x, SEAT_C.y, R2 * k, R2 * k * 0.8, 0, 0, 7); g.fill();
-      g.strokeStyle = `rgba(255,80,60,${(0.6 + 0.35 * Math.sin(time * 20)).toFixed(3)})`; g.lineWidth = 3; g.setLineDash([8, 6]); g.beginPath(); g.ellipse(SEAT_C.x, SEAT_C.y, R2, R2 * 0.8, 0, 0, 7); g.stroke(); g.setLineDash([]);
+      g.fillStyle = `rgba(240,60,50,${(0.12 + 0.2 * k).toFixed(3)})`; g.beginPath(); g.ellipse(SEAT_C.x, SEAT_C.y, R2 * k, R2 * k * NUM.RING_SQUASH, 0, 0, 7); g.fill();
+      g.strokeStyle = `rgba(255,80,60,${(0.6 + 0.35 * Math.sin(time * 20)).toFixed(3)})`; g.lineWidth = 3; g.setLineDash([8, 6]); g.beginPath(); g.ellipse(SEAT_C.x, SEAT_C.y, R2, R2 * NUM.RING_SQUASH, 0, 0, 7); g.stroke(); g.setLineDash([]);
     }
     // where the rocks will land
     for (const r of run.rocks) {
       const k = clamp(r.t / r.T, 0, 1), rad = lerp(8, NUM.ROCK_R, k);
-      g.fillStyle = `rgba(0,0,0,${(0.2 + 0.45 * k).toFixed(3)})`; g.beginPath(); g.ellipse(r.x, r.y + 6, rad, rad * 0.6, 0, 0, 7); g.fill();
-      g.strokeStyle = `rgba(240,82,77,${(0.35 + 0.45 * k).toFixed(3)})`; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.ellipse(r.x, r.y + 6, NUM.ROCK_R, NUM.ROCK_R * 0.6, 0, 0, 7); g.stroke(); g.setLineDash([]);
+      g.fillStyle = `rgba(0,0,0,${(0.2 + 0.45 * k).toFixed(3)})`; g.beginPath(); g.ellipse(r.x, r.y + NUM.ROCK_DROP, rad, rad * NUM.ROCK_SQUASH, 0, 0, 7); g.fill();
+      g.strokeStyle = `rgba(240,82,77,${(0.35 + 0.45 * k).toFixed(3)})`; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.ellipse(r.x, r.y + NUM.ROCK_DROP, NUM.ROCK_R, NUM.ROCK_R * NUM.ROCK_SQUASH, 0, 0, 7); g.stroke(); g.setLineDash([]);
     }
     for (const d of run.debris) { const a = clamp(1 - d.t / 1.4, 0, 1); g.fillStyle = `rgba(110,103,92,${a.toFixed(3)})`; for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(d.x + (k - 1.5) * 7, d.y + 6 + (k % 2) * 3, 5 - k * 0.5, 3.4, 0, 0, 7); g.fill(); } }
+    // a red ring under every little golem, pulsing (faster while it is still climbing out of its heap): the same red as
+    // the rock shadows, so a kid can spot one from across the chamber on the pale floor
+    for (const m of lings()) {
+      const emerge = m.state === 'emerge', p = 0.5 + 0.5 * Math.sin(time * (emerge ? 14 : 7) + m.x * 0.05), rr = 17 + 3 * p;
+      g.fillStyle = `rgba(240,60,50,${(0.16 + 0.12 * p).toFixed(3)})`; g.beginPath(); g.ellipse(m.x, m.y + 9, rr, rr * 0.5, 0, 0, 7); g.fill();
+      g.strokeStyle = `rgba(255,80,60,${(0.65 + 0.3 * p).toFixed(3)})`; g.lineWidth = 2.5; g.beginPath(); g.ellipse(m.x, m.y + 9, rr, rr * 0.5, 0, 0, 7); g.stroke();
+    }
     // the little golems' paths: a faint dotted line to the one they are walking to
     if (gm && !gm.dead) { g.strokeStyle = 'rgba(255,120,80,0.45)'; g.lineWidth = 2; g.setLineDash([3, 7]); for (const m of lings()) if (m.state !== 'emerge') { g.beginPath(); g.moveTo(m.x, m.y + 4); g.lineTo(gm.x, gm.y + 10); g.stroke(); } g.setLineDash([]); }
   }
@@ -1799,23 +1823,31 @@
   HOOKS.drawMonster.mithril_golem = (g, e, hurt) => drawWokenGolem(g, e, hurt, false);
   HOOKS.drawMonster.stormstone_golem = (g, e, hurt) => drawWokenGolem(g, e, hurt, true);
 
-  // ---------- the little golems: three stacked pebbles on stubby legs, a glowing red chip held up high ----------
+  // ---------- the little golems: three stacked dark stones on stubby legs, a glowing red chip held up high ----------
+  // Dark stone with a red rim, glowing eyes and a size a little bigger than a knight's boot: on the pale chamber floor
+  // they must read as "a golem, coming" from across the room (the red ring under each one is painted on the floor)
+  const LING = { leg: '#3a352e', low: '#4f4940', mid: '#5c554b', top: '#6a6358', rim: '#e0452e', arm: '#3f3a33' };
   function drawLittle(g, e, hurt) {
     if (e.dead) return;
     const emerge = e.state === 'emerge', mv = e.moving && !emerge, wt = e.walkT || 0, lp = mv ? Math.sin(wt * 1.3) * 3 : 0;
     if (e.moving) g.translate(0, -Math.sin(e.walkT || 0) * 2);
     g.save();
+    g.scale(1.3, 1.3);
     if (emerge) { g.translate(Math.sin(time * 40) * 1.5, 12); g.scale(0.8, 0.8); }
-    g.fillStyle = hurt ? '#e0b0a0' : '#666158'; g.beginPath(); g.ellipse(-4 + lp * 0.4, 9, 3.4, 2.6, 0, 0, 7); g.ellipse(4 - lp * 0.4, 9, 3.4, 2.6, 0, 0, 7); g.fill();
+    const H = c => hurt ? '#f0c8b8' : c;
+    g.fillStyle = H(LING.leg); g.beginPath(); g.ellipse(-4 + lp * 0.4, 9, 3.6, 2.8, 0, 0, 7); g.ellipse(4 - lp * 0.4, 9, 3.6, 2.8, 0, 0, 7); g.fill();
     g.translate(0, mv ? -Math.abs(Math.sin(wt * 1.3)) * 2 : 0);
-    g.fillStyle = hurt ? '#f0c8b8' : '#7d766a'; g.beginPath(); g.ellipse(0, 3, 9, 6.5, 0, 0, 7); g.fill();
-    g.fillStyle = hurt ? '#f8d8c8' : '#958e80'; g.beginPath(); g.ellipse(0, -5, 7, 5.5, 0, 0, 7); g.fill();
-    g.fillStyle = hurt ? '#f8d8c8' : '#a8a092'; g.beginPath(); g.ellipse(0, -12, 5, 4, 0, 0, 7); g.fill();
-    g.fillStyle = '#1e1a16'; g.beginPath(); g.arc(-2, -12.5, 1.1, 0, 7); g.arc(2, -12.5, 1.1, 0, 7); g.fill();
     // arms up, holding the chip over its head
-    g.strokeStyle = hurt ? '#e8c0b0' : '#7f7a70'; g.lineWidth = 3; g.lineCap = 'round'; g.beginPath(); g.moveTo(-6, -4); g.lineTo(-5, -18); g.moveTo(6, -4); g.lineTo(5, -18); g.stroke();
+    g.strokeStyle = H(LING.arm); g.lineWidth = 3.4; g.lineCap = 'round'; g.beginPath(); g.moveTo(-6, -4); g.lineTo(-5.5, -18); g.moveTo(6, -4); g.lineTo(5.5, -18); g.stroke();
+    g.strokeStyle = LING.rim; g.lineWidth = 1.6;
+    for (const [y, rx, ry, c] of [[3, 9.5, 7, LING.low], [-5, 7.5, 5.8, LING.mid], [-12, 5.5, 4.4, LING.top]]) {
+      g.fillStyle = H(c); g.beginPath(); g.ellipse(0, y, rx, ry, 0, 0, 7); g.fill(); g.stroke();
+    }
+    // the eyes glow, like his heart
+    g.fillStyle = '#ff9a4a'; g.beginPath(); g.arc(-2.1, -12.5, 1.5, 0, 7); g.arc(2.1, -12.5, 1.5, 0, 7); g.fill();
+    g.fillStyle = '#fff0c0'; g.beginPath(); g.arc(-2.1, -12.8, 0.6, 0, 7); g.arc(2.1, -12.8, 0.6, 0, 7); g.fill();
     const p = 0.6 + 0.4 * Math.sin(time * 6 + (e.x || 0) * 0.1);
-    const gr = g.createRadialGradient(0, -21, 0.5, 0, -21, 10); gr.addColorStop(0, `rgba(255,110,70,${(0.7 * p).toFixed(3)})`); gr.addColorStop(1, 'rgba(255,90,60,0)'); g.fillStyle = gr; g.beginPath(); g.arc(0, -21, 10, 0, 7); g.fill();
+    const gr = g.createRadialGradient(0, -21, 0.5, 0, -21, 11); gr.addColorStop(0, `rgba(255,110,70,${(0.8 * p).toFixed(3)})`); gr.addColorStop(1, 'rgba(255,90,60,0)'); g.fillStyle = gr; g.beginPath(); g.arc(0, -21, 11, 0, 7); g.fill();
     g.fillStyle = '#ff5a3c'; g.beginPath(); g.moveTo(-4.5, -19); g.lineTo(-1, -25); g.lineTo(4, -23); g.lineTo(3.5, -18); g.closePath(); g.fill();
     g.fillStyle = '#ffd0a0'; g.beginPath(); g.arc(-0.5, -22, 1.1, 0, 7); g.fill();
     g.restore();
@@ -1903,7 +1935,7 @@
       g.fillStyle = 'rgba(255,245,225,0.1)'; g.beginPath(); g.ellipse(sd * 36, 8, 14, 8, 0, 0, 7); g.fill();
     }
     // hit: he flashes white; mended: a green ring round the furnace
-    if (flash) { g.globalAlpha = 0.45; g.fillStyle = '#ffffff'; g.beginPath(); TORSO.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fill(); roundRect(g, -36, -164 + drop, 72, 56, 12); g.fill(); g.globalAlpha = 1; }
+    if (flash) { const a0 = typeof g.globalAlpha === 'number' ? g.globalAlpha : 1; g.globalAlpha = a0 * 0.45; g.fillStyle = '#ffffff'; g.beginPath(); TORSO.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fill(); roundRect(g, -36, -164 + drop, 72, 56, 12); g.fill(); g.globalAlpha = a0; }
     const mk = clamp(1 - (time - run.mendFlash) / 0.9, 0, 1);
     if (mk > 0) { g.strokeStyle = `rgba(150,235,110,${(0.85 * mk).toFixed(3)})`; g.lineWidth = 4; g.beginPath(); g.arc(0, -52, 32 + (1 - mk) * 30, 0, 7); g.stroke(); }
     if (asleep) for (let k = 0; k < 3; k++) { const ph = (time * 0.35 + k / 3) % 1; g.fillStyle = `rgba(210,200,185,${(0.5 * (1 - ph)).toFixed(3)})`; g.font = `bold ${12 + Math.round(ph * 8)}px sans-serif`; g.textAlign = 'center'; g.fillText('z', 30 + k * 8 + ph * 16, -170 - ph * 40); }
@@ -1982,10 +2014,13 @@
     }
   }
   // the next thing to do, marked in gold: the golem, the nearest forge, or the nearest glowing vein
+  const comingLing = () => { let best = null, bd = 0; for (const m of lings()) { const d = dist(m.x, m.y, SEAT_C.x, SEAT_C.y); if (!best || d < bd) { best = m; bd = d; } } return best; };
   function nextTarget() {
     if (!inMine() || player.dead || !inChamberPx(player.x, player.y)) return null;
     const gm = golemMon(); if (!gm || gm.dead) return null;
     if (!isAwake(gm)) return { x: SEAT_C.x, y: SEAT_C.y - 150, kind: 'golem' };
+    // a little golem is out: the one closest to him is the one to smash first
+    const lg = comingLing(); if (lg) return { x: lg.x, y: lg.y - 44, kind: 'ling', m: lg };
     if (run.hot > 0) return { x: gm.x, y: gm.y - 175, kind: 'golem' };
     if (run.raw > 0) { let best = null; for (const [x, y] of FORGES) { const d = dist(player.x, player.y, tc(x), tc(y)); if (!best || d < best.d) best = { x: tc(x), y: tc(y) - 30, d, kind: 'forge' }; } return best; }
     const ms = clock(); let best = null;
@@ -2007,6 +2042,11 @@
     g.restore();
   }
 
+  // the knight walks in from the north, so waking him (and dodging his first slam) happens right behind his head and
+  // shoulders: while the knight is drawn before him and inside his picture, he is drawn see-through
+  const behindGolem = gm => !!gm && !player.dead && inMine() && Math.abs(player.x - gm.x) < NUM.BODY_W + player.r && player.y > gm.y - NUM.BODY_TOP
+    && player.y + player.r + 0.02 < gm.y + gm.r + 0.01;
+
   // ---------- the draw hook: (g, items, cam); every item's draw() takes no arguments ----------
   HOOKS.draw.push((g, items) => {
     const a = player.action;
@@ -2026,7 +2066,7 @@
       if (tileAt(22, 23) === GOLEM_GATE && v.y0 <= 24 && v.y1 >= 22) items.push({ y: 24 * TILE - 4, draw: () => drawGate(g) });
       const pb = pebblePx(); if (pb) items.push({ y: pb.y + 13, draw: () => drawPebble(g, pb.x, pb.y, tileAt(22, 23) === GOLEM_GATE ? 'hold' : 'idle') });
       const gm = golemMon();
-      if (gm && !gm.dead) items.push({ y: gm.y + gm.r + 0.01, draw: () => { g.save(); g.translate(gm.x, gm.y); drawColossus(g, gm, gm.hurtT > 0 || time - run.hitFlash < 0.12); g.restore(); } });
+      if (gm && !gm.dead) items.push({ y: gm.y + gm.r + 0.01, rm: 'golem', draw: () => { g.save(); if (behindGolem(gm)) g.globalAlpha = NUM.SEE_THROUGH; g.translate(gm.x, gm.y); drawColossus(g, gm, gm.hurtT > 0 || time - run.hitFlash < 0.12); g.restore(); } });
       else if (gm || run.life.fallen) items.push({ y: SEAT_C.y + 41, draw: () => drawFallen(g, SEAT_C.x, SEAT_C.y) });
       items.push({ y: player.y + player.r + 0.02, draw: () => drawCarry(g) });
       items.push({ y: 1e9 + 2, draw: () => { drawFalling(g); drawStones(g); } });
@@ -2081,6 +2121,7 @@
       else if (gm.state === 'windup' && inSlam()) { line1 = 'GET BACK! HE IS GOING TO SLAM'; tone = HK.C.BAD; }
       else if (lings().some(m => dist(m.x, m.y, SEAT_C.x, SEAT_C.y) <= 4 * TILE)) { line1 = 'SMASH THE LITTLE GOLEM!'; tone = HK.C.BAD; }
       else if (inShadow()) { line1 = 'MOVE! A ROCK IS FALLING'; tone = HK.C.WARN; }
+      else if (lings().length) { line1 = 'A LITTLE GOLEM IS COMING. SMASH IT!'; tone = HK.C.WARN; }
       else if (run.hot > 0) { line1 = touch() ? 'THROW IT! Tap THROW' : 'THROW IT! (T)'; tone = HK.C.GOOD; }
       else if (run.raw > 0) line1 = 'HEAT IT AT A FORGE';
       else line1 = 'MINE A GLOWING VEIN';
@@ -2155,7 +2196,7 @@
     if (k === 0) { g.fillStyle = '#4b443c'; g.fillRect(x, y, w, h); g.strokeStyle = '#ff5a3c'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx - 12, cy + 8); g.lineTo(cx - 3, cy - 2); g.lineTo(cx + 2, cy + 4); g.lineTo(cx + 12, cy - 9); g.stroke(); g.fillStyle = '#ffd08a'; g.beginPath(); g.arc(cx + 2, cy + 4, 2.5, 0, 7); g.fill(); }
     else if (k === 1) { g.fillStyle = '#5c544a'; g.fillRect(cx - 12, cy - 4, 24, 16); g.fillStyle = '#ff5a2a'; heartPath(g, cx, cy - 3, 0.8); g.fill(); g.fillStyle = '#ffb050'; g.beginPath(); g.moveTo(cx - 4, cy - 2); g.quadraticCurveTo(cx, cy - 16, cx + 4, cy - 2); g.closePath(); g.fill(); }
     else if (k === 2) { g.fillStyle = G_STONE; g.fillRect(cx + 4, cy - 12, 16, 20); g.fillStyle = '#ff7a1a'; g.beginPath(); g.arc(cx + 9, cy - 6, 1.8, 0, 7); g.arc(cx + 15, cy - 6, 1.8, 0, 7); g.fill(); g.strokeStyle = 'rgba(255,160,80,0.8)'; g.lineWidth = 2; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(cx - 18, cy + 10); g.quadraticCurveTo(cx - 8, cy - 16, cx + 2, cy - 4); g.stroke(); g.setLineDash([]); g.fillStyle = '#ff9a3a'; g.beginPath(); g.arc(cx - 18, cy + 10, 4, 0, 7); g.fill(); }
-    else if (k === 3) { g.fillStyle = '#958e80'; g.beginPath(); g.ellipse(cx, cy + 4, 8, 6, 0, 0, 7); g.ellipse(cx, cy - 5, 6, 5, 0, 0, 7); g.fill(); g.fillStyle = '#ff5a3c'; g.beginPath(); g.arc(cx, cy - 13, 3, 0, 7); g.fill(); g.strokeStyle = '#f0524d'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx - 13, cy - 13); g.lineTo(cx + 13, cy + 13); g.moveTo(cx + 13, cy - 13); g.lineTo(cx - 13, cy + 13); g.stroke(); }
+    else if (k === 3) { g.fillStyle = LING.mid; g.strokeStyle = LING.rim; g.lineWidth = 1.5; g.beginPath(); g.ellipse(cx, cy + 4, 8, 6, 0, 0, 7); g.fill(); g.stroke(); g.beginPath(); g.ellipse(cx, cy - 5, 6, 5, 0, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#ff5a3c'; g.beginPath(); g.arc(cx, cy - 13, 3, 0, 7); g.fill(); g.strokeStyle = '#f0524d'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx - 13, cy - 13); g.lineTo(cx + 13, cy + 13); g.moveTo(cx + 13, cy - 13); g.lineTo(cx - 13, cy + 13); g.stroke(); }
     else if (k === 4) { g.fillStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.ellipse(cx, cy + 9, 15, 6, 0, 0, 7); g.fill(); g.fillStyle = '#8a8275'; g.beginPath(); g.ellipse(cx, cy - 8, 8, 6, 0.3, 0, 7); g.fill(); g.strokeStyle = 'rgba(255,255,255,0.4)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - 3, cy - 18); g.lineTo(cx - 3, cy - 14); g.moveTo(cx + 3, cy - 18); g.lineTo(cx + 3, cy - 14); g.stroke(); }
     else { g.strokeStyle = '#f0524d'; g.lineWidth = 2.5; g.beginPath(); g.ellipse(cx, cy + 8, 20, 7, 0, 0, 7); g.stroke(); g.fillStyle = G_LIGHT; g.beginPath(); g.ellipse(cx, cy - 4, 10, 8, 0, 0, 7); g.fill(); g.fillStyle = GOLD; g.fillRect(cx - 10, cy - 1, 20, 3); }
     g.restore();
@@ -2217,15 +2258,19 @@
     add('mining', 'royal stormstone seam (Royal Mine)', 24, 95, gs(24), 'bronze tool, at the level it opens');
     add('mining', 'giant mithril ore, a crack (Royal Mine)', 20, 40, 1.5, 'every swing lands; six cracks a rock');
     add('mining', 'giant stormstone ore, a crack', 30, 70, 1.7, 'every swing lands; nine cracks a rock');
-    add('mining', 'heartstone vein (Heart Chamber)', 1, 30, 1.0, 'while the Ginormous Golem is awake');
-    add('mining', 'Ginormous Golem fight bonus', 1, 200, 120, 'every fall you helped with');
+    // the Heart Chamber pays per stone, and a stone is a whole trip: find the lit vein, mine it, carry it to a forge,
+    // heat it, throw it, and smash the little golems on the way. A bot that plays that loop with the real code lands
+    // one every 6 to 11 s solo (the self-test's plain bot fight measures it, and fails if these rows claim more than
+    // half as much again); a kid is slower, so these say STONE_SECS. It opens behind the dwarf quest's coal (Mining 10).
+    add('mining', 'heartstone vein (Heart Chamber)', 10, NUM.VEIN_XP, NUM.STONE_SECS, 'a stone a trip: mine, heat, throw, smash');
+    add('mining', 'Ginormous Golem fight bonus', 10, NUM.FIGHT_XP, NUM.FALL_SECS, 'every fall you helped with, about one a ' + NUM.FALL_SECS + ' s solo fight');
     add('mining', 'The Knocking Under the Throne (once)', 1, 800, 0, 'quest');
-    add('smithing', 'heat heartstone at a heart forge', 1, 25, 0.8, 'the Heart Chamber');
+    add('smithing', 'heat heartstone at a heart forge', 1, NUM.HEAT_XP, NUM.STONE_SECS, 'the Heart Chamber, a stone a trip');
     add('smithing', "Hilde's heartstone (once)", 1, 60, 0, 'quest');
-    add('smithing', 'Ginormous Golem fight bonus', 1, 200, 120, 'every fall you helped with');
+    add('smithing', 'Ginormous Golem fight bonus', 1, NUM.FIGHT_XP, NUM.FALL_SECS, 'every fall you helped with');
     add('smithing', 'The Knocking Under the Throne (once)', 1, 800, 0, 'quest');
-    add('melee', 'hot heartstone on the Ginormous Golem (2 a damage)', 1, 110, 2.5, 'about 55 a stone');
-    add('melee', 'Ginormous Golem fight bonus', 1, 200, 120, 'every fall you helped with');
+    add('melee', 'hot heartstone on the Ginormous Golem (2 a damage)', 1, NUM.MELEE_PER_DMG * NUM.DMG, NUM.STONE_SECS, 'a stone a trip, 50 damage or more each');
+    add('melee', 'Ginormous Golem fight bonus', 1, NUM.FIGHT_XP, NUM.FALL_SECS, 'every fall you helped with');
     if (P && P.killXp && P.killSecs) {
       // how many the rocks can give in an hour: four mithril beds, one in three wakes; two stormstone, one in two
       const mPerH = 4 * 3600 / (6 * 1.5 + NUM.GIANT.giant_mithril.regrow) / 3, sPerH = 2 * 3600 / (9 * 1.7 + NUM.GIANT.giant_stormstone.regrow) / 2;
@@ -2257,7 +2302,7 @@
     WIKI.add('monsters', { id: 'mithril_golem', where: ['The Royal Mine'], blurb: 'It wakes out of a giant mithril ore. It attacks you on sight. Beat it for the bars in its pockets.' });
     WIKI.add('monsters', { id: 'stormstone_golem', where: ['The Royal Mine'], blurb: 'It wakes out of a giant stormstone ore. Big, slow and hard. Beat it for the bars in its pockets.' });
     WIKI.add('monsters', { id: 'golemling', where: ['The Royal Mine'], blurb: `A little golem. It crawls out of a rubble heap and walks to the Ginormous Golem to be eaten, and he heals ${NUM.LING_HEAL}. Smash it first: one or two hits.` });
-    WIKI.add('monsters', { id: 'ginormous_golem', blurb: 'Swords, arrows and bombs bounce off him. MINE a glowing red vein in the chamber wall (two glow at a time, a new pair every 20 seconds, while he is awake). HEAT the stone at a heart forge. THROW it (T, THROW, SWING, or tap him): 50 damage, plus a quarter of your Smithing level (up to 25). He has 1000 health, and 600 more for every other knight in the chamber. Smash the little golems before they reach him. Step out of dark spots on the floor, and do not stand next to him. Everyone who helped gets his loot and 200 Mining, Smithing and Melee xp.' });
+    WIKI.add('monsters', { id: 'ginormous_golem', blurb: 'Swords, arrows and bombs bounce off him. MINE a glowing red vein in the chamber wall (two glow at a time, a new pair every 20 seconds, while he is awake). HEAT the stone at a heart forge. THROW it (T, THROW, SWING, or tap him): 50 damage, plus a quarter of your Smithing level (up to 25). He has ' + NUM.GOLEM_HP + ' health, and ' + Math.round(NUM.GOLEM_HP * NUM.PER_KNIGHT) + ' more for every other knight in the chamber. Smash the little golems before they reach him. Step out of dark spots on the floor, and do not stand next to him. Everyone who helped gets his loot and 200 Mining, Smithing and Melee xp.' });
     WIKI.add('items', { id: 'hildes_heartstone', sources: [{ kind: 'given', text: "Hilde, in Deepholm (The Knocking Under the Throne). It lives on your keyring." }] });
     WIKI.add('items', { id: 'kingstone', sources: [{ kind: 'given', text: 'King Thrain, when you knock the all-clear (The Knocking Under the Throne). It lives on your keyring.' }] });
   }
@@ -2547,12 +2592,12 @@
       // ---- 19. the gold ring wakes him, the empty chamber puts him back to sleep ----
       { fresh({ stage: 5 }); intoMine(); drain(); const g = golemMon();
         F.tp(24, 30); F.step([]); F.step([]);
-        const rose = g.state === 'rise' && g.maxHp === 1000 && g.hp === 1000;
+        const rose = g.state === 'rise' && g.maxHp === NUM.GOLEM_HP && g.hp === NUM.GOLEM_HP && NUM.GOLEM_HP === 600;
         const fight = typeof F.untilAction(Math.ceil(1.2 * 60), () => g.state === 'fight') === 'number';
         NUM.SETTLE = 2; F.tp(24, 24); F.sim(Math.ceil(2.5 * 60), []);
         const settled = g.state === 'sleep' && g.hp === g.maxHp;
-        window.__kidmode = true; out(); intoMine(); const g2 = golemMon(); F.tp(24, 30); F.step([]); F.step([]); const kidHp = g2.maxHp === 700; window.__kidmode = S0.kid;
-        check(P + 'stepping into the gold ring wakes him (rise, then fight within 1.2 s) with 1000 hp (700 in kid mode); an empty chamber puts him back to sleep, whole',
+        window.__kidmode = true; out(); intoMine(); const g2 = golemMon(); F.tp(24, 30); F.step([]); F.step([]); const kidHp = g2.maxHp === Math.round(NUM.GOLEM_HP * NUM.KID_HP) && g2.maxHp === 420; window.__kidmode = S0.kid;
+        check(P + 'stepping into the gold ring wakes him (rise, then fight within 1.2 s) with 600 hp (420 in kid mode); an empty chamber puts him back to sleep, whole',
           rose && fight && settled && kidHp, { rose, fight, settled, kidHp: g2.maxHp });
         restoreNum(); out(); }
 
@@ -2597,11 +2642,23 @@
         g.hp = g.maxHp - 100; const l = spawnLittle(0);
         const nextTo = dist(l.x, l.y, tc(HEAPS[0][0]), tc(HEAPS[0][1])) < TILE && MONSTER_DEFS.golemling.harmless && l.state === 'emerge';
         const hp0 = g.hp; F.untilAction(12 * 60, () => !monsters.includes(l)); const healed = !monsters.includes(l) && g.hp === Math.min(g.maxHp, hp0 + NUM.LING_HEAL);
+        // a real sword swing smashes one on its way: the knight stands beside it, faces it and presses SWING
+        emptyPack('iron_sword'); player.equip.weapon = 'iron_sword'; run.hot = 1;
         g.hp = g.maxHp - 100; const l2 = spawnLittle(1); F.sim(60, []); const mx = player.skills.melee.xp, hp1 = g.hp;
-        hitMonster(l2, l2.hp, 0); F.sim(12 * 60, []);
+        let swings = 0; for (let k = 0; k < 40 && !l2.dead && monsters.includes(l2); k++) { player.x = l2.x - 30; player.y = l2.y; player.facing = { x: 1, y: 0 }; player.attackCd = 0; F.press('Space'); swings++; for (let j = 0; j < 12; j++) { player.x = l2.x - 30; player.y = l2.y; F.step([]); } }
+        const thrown = run.hot === 1; run.hot = 0; F.sim(12 * 60, []);
         const smashed = l2.dead || !monsters.includes(l2), nothing = g.hp === hp1, paid = player.skills.melee.xp > mx;
-        check(P + `a little golem crawls out of heap 0 (harmless), walks to the golem and is eaten: he heals ${NUM.LING_HEAL} and it is gone; one smashed on the way heals nothing and pays Melee xp`,
-          nextTo && healed && smashed && nothing && paid, { nextTo, healed, hp: [hp0, g.hp], smashed, nothing, paid });
+        check(P + `a little golem crawls out of heap 0 (harmless), walks to the golem and is eaten: he heals ${NUM.LING_HEAL} and it is gone; one smashed on the way by real SWINGs of an iron sword (with a hot stone in hand, which stays in hand) heals nothing and pays Melee xp`,
+          nextTo && healed && smashed && nothing && paid && thrown, { nextTo, healed, hp: [hp0, g.hp], smashed, swings, nothing, paid, thrown });
+        // below half: one little golem at a time, and no heal lifts him above the health he had when he got there
+        player.equip.weapon = null; F.tp(18, 30); for (const m of lings()) monsters.splice(monsters.indexOf(m), 1);
+        g.rm.capHp = null; g.hp = Math.floor(g.maxHp / 2) - 10; const at = g.hp; g.rm.lingT = 0; F.step([]);
+        const one = lings().length === 1 && g.rm.capHp === at;
+        for (const m of lings()) monsters.splice(monsters.indexOf(m), 1); g.rm.lingT = 9999;
+        g.hp = at - 10; const l3 = spawnLittle(2); F.untilAction(14 * 60, () => !monsters.includes(l3)); const capped = !monsters.includes(l3) && g.hp === at;
+        g.hp = at - 60; const l4 = spawnLittle(3); F.untilAction(14 * 60, () => !monsters.includes(l4)); const full = !monsters.includes(l4) && g.hp === at - 60 + NUM.LING_HEAL;
+        check(P + `below half health one little golem comes at a time (${NUM.LING_HALF_COUNT}), and a heal never lifts him above the ${at} hp he had when he fell below half (10 short: +10; 60 short: +${NUM.LING_HEAL})`,
+          NUM.LING_HALF_COUNT === 1 && one && capped && full, { one, lings: lings().length, cap: g.rm.capHp, capped, full, hp: g.hp });
         out(); }
 
       // ---- 24. rocks ----
@@ -2614,10 +2671,10 @@
 
       // ---- 25. the slam ----
       { fresh({ stage: 5 }); intoMine(); drain(); h.peace(false); run.rockT = 1e9; ROYALMINE.debug.wake(); const g = golemMon(); g.rm.lingT = 9999; g.rm.slamCd = 0;
-        player.hp = player.maxHp; run.lastSlamDmg = 0; F.tp(24, 30); run.rockT = 1e9;
+        player.hp = player.maxHp; run.lastSlamDmg = 0; F.tp(24, 31); run.rockT = 1e9;
         const wound = typeof F.untilAction(4 * 60, () => { run.rockT = 1e9; return g.state === 'windup'; }) === 'number';
         const slammed = typeof F.untilAction(3 * 60, () => { run.rockT = 1e9; return run.lastSlamDmg > 0; }) === 'number' && run.lastSlamDmg === 12;
-        window.__kidmode = true; player.hp = player.maxHp; run.lastSlamDmg = 0; g.rm.phase = 'fight'; g.state = 'fight'; g.rm.slamCd = 0; g.rm.nearT = 0; F.tp(24, 30);
+        window.__kidmode = true; player.hp = player.maxHp; run.lastSlamDmg = 0; g.rm.phase = 'fight'; g.state = 'fight'; g.rm.slamCd = 0; g.rm.nearT = 0; F.tp(24, 31);
         F.untilAction(6 * 60, () => { run.rockT = 1e9; return run.lastSlamDmg > 0; }); const kid5 = run.lastSlamDmg === 5; window.__kidmode = S0.kid;
         run.lastSlamDmg = 0; F.tp(24, 28); g.rm.phase = 'windup'; g.state = 'windup'; g.rm.t = 0; F.untilAction(3 * 60, () => { run.rockT = 1e9; return g.state === 'fight'; }); const safe = run.lastSlamDmg === 0;
         check(P + 'standing within 3 tiles for a moment winds him up and the slam hits for 12 (5 in kid mode); at 5 tiles the slam misses', wound && slammed && kid5 && safe, { wound, slammed, kid5, safe, last: run.lastSlamDmg });
@@ -2650,7 +2707,7 @@
       // ---- 27. he pulls himself back together ----
       { fresh({ stage: 6 }); intoMine(); drain(); NUM.REVIVE = 2; const g = golemMon(); ROYALMINE.debug.wake(); run.life.landed = 0; g.hp = 1; _hitMonster(g, 5, 0, true, 'heartstone'); F.tp(18, 30);
         const died = g.dead; F.sim(Math.ceil(2.6 * 60), []);
-        check(P + 'after he falls he pulls himself back together (the shrunk revive, nobody in the ring): alive, asleep, 1000 hp', died && !g.dead && g.state === 'sleep' && g.hp === NUM.GOLEM_HP, { died, dead: g.dead, state: g.state, hp: g.hp });
+        check(P + 'after he falls he pulls himself back together (the shrunk revive, nobody in the ring): alive, asleep, ' + NUM.GOLEM_HP + ' hp', died && !g.dead && g.state === 'sleep' && g.hp === NUM.GOLEM_HP, { died, dead: g.dead, state: g.state, hp: g.hp });
         restoreNum(); out(); }
 
       // ---- 28. leaving ----
@@ -2763,6 +2820,98 @@
         const two = m.hp === 4 && player.skills.mining.xp - x0 === 80; player.action = null;
         check(P + 'the Heartstone pickaxe, in the Royal Mine: a vein swing takes 0.5 s and a swing at a giant rock lands two cracks (80 xp)', fastVein && two, { fastVein, two, hp: m.hp });
         clockFn = null; out(); }
+
+      // ---- 36. what hurts is what is drawn: the rock shadow, the slam ring and the gold wake ring ----
+      // each is drawn as a squashed ellipse; a knight just outside the drawn edge is safe, just inside is not (the old
+      // round hit zones reached past the drawings: all three "outside" spots below were hits before)
+      { fresh({ stage: 5 }); intoMine(); drain(); ROYALMINE.debug.wake(); const g = golemMon(); g.rm.lingT = 9999; F.tp(18, 30); player.hp = player.maxHp;
+        const rx = NUM.ROCK_R, ry = NUM.ROCK_R * NUM.ROCK_SQUASH;
+        const rock = (ox, oy) => { run.rocks.length = 0; player.hp = player.maxHp; run.lastRockDmg = 0; const px = player.x, py = player.y; forceRock(px - ox, py - oy); const shadow = inShadow(); F.sim(Math.ceil(1.5 * 60), []); player.x = px; player.y = py; return { shadow, hit: run.lastRockDmg > 0 }; };
+        // the knight's spot relative to the drawn shadow's centre (the shadow sits ROCK_DROP below where the rock lands)
+        const rIn = [rock(0, NUM.ROCK_DROP + 0.9 * ry), rock(0, NUM.ROCK_DROP - 0.9 * ry), rock(0.9 * rx, NUM.ROCK_DROP)];
+        const rOut = [rock(0, NUM.ROCK_DROP + 1.1 * ry), rock(0, NUM.ROCK_DROP - 1.1 * ry), rock(1.1 * rx, NUM.ROCK_DROP)];
+        const rocksOk = rIn.every(o => o.hit && o.shadow) && rOut.every(o => !o.hit && !o.shadow);
+        const SR = NUM.SLAM_R * TILE, sry = SR * NUM.RING_SQUASH;
+        const slam = (x, y) => { player.hp = player.maxHp; run.lastSlamDmg = 0; g.rm.phase = 'windup'; g.state = 'windup'; g.rm.t = 0; player.x = x; player.y = y; const chip = inSlam();
+          F.untilAction(3 * 60, () => { player.x = x; player.y = y; run.rockT = 1e9; return g.state === 'fight'; }); return { chip, hit: run.lastSlamDmg > 0 }; };
+        const sIn = [slam(SEAT_C.x, SEAT_C.y - 0.9 * sry), slam(SEAT_C.x + 0.9 * SR, SEAT_C.y)], sOut = [slam(SEAT_C.x, SEAT_C.y - 1.1 * sry), slam(SEAT_C.x + 1.1 * SR, SEAT_C.y)];
+        const slamOk = sIn.every(o => o.hit && o.chip) && sOut.every(o => !o.hit && !o.chip);
+        const WR = NUM.WAKE_R * TILE, wry = WR * NUM.RING_SQUASH;
+        const wake = (x, y) => { player.x = x; player.y = y; newLife(g); player.x = x; player.y = y; F.step([]); F.step([]); const woke = g.state !== 'sleep'; return woke; };
+        const wIn = wake(SEAT_C.x, SEAT_C.y - 0.9 * wry), wOut = wake(SEAT_C.x, SEAT_C.y - 1.1 * wry);
+        const wakeOk = wIn && !wOut;
+        check(P + 'what hurts is what is drawn: a knight just inside the drawn rock shadow, slam ring and gold ring is hit, slammed and wakes him; just outside each (by a tenth) he is not, and the chip agrees',
+          rocksOk && slamOk && wakeOk, { rIn, rOut, sIn, sOut, wIn, wOut });
+        player.hp = player.maxHp; run.rocks.length = 0; out(); }
+
+      // ---- 37. the knight behind the golem is seen through him ----
+      { fresh({ stage: 5 }); intoMine(); drain(); ROYALMINE.debug.wake(); const g = golemMon(); g.rm.lingT = 9999; run.hitFlash = -99; g.hurtT = 0;
+        const alphaRec = () => { const log = { alpha: [] }; let a = 1; return { log, g: new Proxy({}, { get: (t, k) => k === 'globalAlpha' ? a : k === 'measureText' ? (() => ({ width: 10 })) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: () => { } })) : typeof k === 'string' ? (() => { }) : undefined, set: (t, k, v) => { if (k === 'globalAlpha') { a = v; log.alpha.push(v); } return true; } }) }; };
+        const look = (tx, ty) => { F.tp(tx, ty); player.x = tc(tx); player.y = ty * TILE + 12; render(); const r = alphaRec(), items = []; for (const hk of HOOKS.draw) { try { hk(r.g, items, cam); } catch (e) { } }
+          const it = items.find(i => i.rm === 'golem'); if (!it) return { found: false }; it.draw(); return { found: true, behind: player.y + player.r + 0.02 < it.y, first: r.log.alpha.length ? r.log.alpha[0] : 1 }; };
+        const back = look(24, 30), front = look(24, 36);
+        const seen = back.found && back.behind && back.first === NUM.SEE_THROUGH && front.found && !front.behind && front.first === 1;
+        check(P + `walking up from the gate to wake him, the knight at (24,30) is drawn before the golem, so the golem is drawn see-through (${NUM.SEE_THROUGH}); in front of him (24,36) he is solid`,
+          seen, { back, front });
+        out(); }
+
+      // ---- 38. little golems are easy to find: a warning from the moment one climbs out, the marker on it, dark stone with a red ring ----
+      { fresh({ stage: 5 }); intoMine(); drain(); ROYALMINE.debug.wake(); const g = golemMon(); g.rm.lingT = 9999; F.tp(24, 26); run.hot = 1;
+        const l = spawnLittle(3); const emerging = l.state === 'emerge' && dist(l.x, l.y, SEAT_C.x, SEAT_C.y) > 4 * TILE;
+        const rec = recorder(); HUD.leftY = 200; HUD.leftCol = 0; drawChip(rec); const text = rec.__log.text.join(' | ');
+        const warned = /A LITTLE GOLEM IS COMING/.test(text), tg = nextTarget(), marked = !!tg && tg.kind === 'ling' && tg.m === l;
+        // what the floor and the little golem paint: a red ring under it, dark stone with a red rim
+        const paintRec = () => { const log = []; let fs = null, ss = null; return { log, g: new Proxy({}, { get: (t, k) => k === 'fill' ? (() => log.push(['fill', fs])) : k === 'stroke' ? (() => log.push(['stroke', ss])) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: () => { } })) : k === 'measureText' ? (() => ({ width: 10 })) : typeof k === 'string' ? (() => { }) : undefined, set: (t, k, v) => { if (k === 'fillStyle') fs = v; if (k === 'strokeStyle') ss = v; return true; } }) }; };
+        const fl = paintRec(); paintFloorFx(fl.g); const ring = fl.log.some(([k, c]) => k === 'stroke' && /^rgba\(255,80,60/.test(String(c)));
+        const bd = paintRec(); drawLittle(bd.g, l, false); const dark = bd.log.some(([k, c]) => k === 'fill' && c === LING.low) && bd.log.some(([k, c]) => k === 'stroke' && c === LING.rim);
+        const lum = c => { const n = parseInt(c.slice(1), 16); return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255); };
+        const contrast = lum(LING.low) < 80 && lum(LING.mid) < 95;
+        for (const m of lings()) monsters.splice(monsters.indexOf(m), 1);
+        check(P + 'a little golem still climbing out of a far heap: the chip says A LITTLE GOLEM IS COMING and the gold marker points at it (over THROW IT); the floor gets a red ring under it and it is drawn in dark stone with a red rim',
+          emerging && warned && marked && ring && dark && contrast, { emerging, warned, text, marked: tg && tg.kind, ring, dark, contrast });
+        run.hot = 0; out(); }
+
+      // ---- 39. a plain bot fight, solo, with the real code: it falls in three minutes, and the audit's rates are honest ----
+      // mine the lit vein, heat at the nearest forge, throw; smash any little golem on sight; step out of the slam ring
+      // when he winds up. Mining, Smithing and Melee 20, a bronze pickaxe and an iron sword, rocks falling, not kid mode.
+      { fresh({ stage: 7 }); intoMine(); drain(); h.peace(false); NUM.LING_FIRST = S0.num.LING_FIRST;
+        emptyPack('bronze_pickaxe', 'iron_sword'); player.equip.weapon = 'iron_sword';
+        for (const k of ['mining', 'smithing', 'melee', 'defence', 'hitpoints']) if (player.skills[k]) lv(k, 20); recomputeMaxHp(); player.hp = player.maxHp;
+        clockFn = () => 1.7e12 + time * 1000; run.raw = 0; run.hot = 0; run.quota = {}; run.rocks.length = 0;
+        const g = golemMon(); F.tp(23, 26); F.walkTo(23, 30, 600);
+        const woke = typeof F.untilAction(120, () => isAwake(g)) === 'number';
+        const t0 = time, x0 = { mining: player.skills.mining.xp, smithing: player.skills.smithing.xp, melee: player.skills.melee.xp };
+        let x1 = null, fell = null, stones = 0, smashed = 0, heals = 0, guard = 0;
+        const step = keys => { if (player.hp < player.maxHp * 0.35) { player.hp = player.maxHp; heals++; } F.step(keys || []); if (dialog.cur) { dialog.queue.length = 0; dialog.cur = null; } if (panel) closePanel(); };
+        const nearest = list => list.slice().sort((a, b) => dist(tc(a[0]), tc(a[1]), player.x, player.y) - dist(tc(b[0]), tc(b[1]), player.x, player.y))[0];
+        while (woke && time - t0 < 600 && guard++ < 60000) {
+          if (g.dead || g.hp <= 0) { fell = time - t0; break; }
+          if (g.state === 'windup' && inSlam()) { step(F.held(player.x - SEAT_C.x, player.y - SEAT_C.y)); continue; }
+          const ls = lings().sort((a, b) => dist(a.x, a.y, player.x, player.y) - dist(b.x, b.y, player.x, player.y));
+          if (ls.length) {
+            const m = ls[0], dx = m.x - player.x, dy = m.y - player.y, d = Math.hypot(dx, dy) || 1;
+            if (d < m.r + 40) { player.facing = { x: dx / d, y: dy / d }; const k0 = player.kills; F.press('Space'); for (let k = 0; k < 8; k++) step(); if (player.kills > k0 || m.dead) smashed++; }
+            else step(F.held(dx, dy));
+            continue;
+          }
+          if (run.hot > 0) { const h0 = run.hot; F.press('KeyT'); if (run.hot < h0) stones++; for (let k = 0; k < 30; k++) step(); continue; }
+          if (run.raw > 0) { const f = nearest(FORGES); F.goAdjacent(f[0], f[1], 900); F.face(f[0], f[1]); F.press('KeyE'); for (let k = 0; k < 400 && player.action && player.action.type === 'rm_heat' && !lings().length; k++) step(); continue; }
+          const v = nearest(litVeins(clock()).filter(([x, y]) => (run.quota[veinKey(clock(), x, y)] || 0) < NUM.VEIN_TAKE));
+          if (!v) { step(); continue; }
+          F.goAdjacent(v[0], v[1], 900); F.face(v[0], v[1]); F.press('KeyE');
+          for (let k = 0; k < 600 && player.action && player.action.type === 'rm_vein' && !lings().length; k++) step();
+          if (!player.action) step();
+        }
+        x1 = { mining: player.skills.mining.xp - x0.mining, smithing: player.skills.smithing.xp - x0.smithing, melee: player.skills.melee.xp - x0.melee };
+        const secs = fell === null ? null : +fell.toFixed(1), perH = v => secs ? Math.round(v * 3600 / secs) : 0;
+        const got = { mining: perH(x1.mining), smithing: perH(x1.smithing), melee: perH(x1.melee), bonus: secs ? Math.round(NUM.FIGHT_XP * 3600 / secs) : 0 };
+        const S = PLAYTHROUGH.sources(), rate = (sk, name) => ((S[sk] || []).find(r => r.name === name) || {}).rate || 0;
+        const said = { mining: rate('mining', 'heartstone vein (Heart Chamber)'), smithing: rate('smithing', 'heat heartstone at a heart forge'), melee: rate('melee', 'hot heartstone on the Ginormous Golem (2 a damage)'),
+          bonus: Math.max(rate('mining', 'Ginormous Golem fight bonus'), rate('smithing', 'Ginormous Golem fight bonus'), rate('melee', 'Ginormous Golem fight bonus')) };
+        const honest = secs !== null && ['mining', 'smithing', 'melee', 'bonus'].every(k => said[k] > 0 && said[k] <= 1.5 * got[k]);
+        check(P + `a plain bot fight (solo, Mining/Smithing/Melee 20, bronze pickaxe, iron sword, rocks on, not kid mode; mine, heat, throw, smash little golems on sight) downs him within 180 s of game time (${secs} s, ${stones} stones, ${smashed} smashed); no declared Heart Chamber XP rate is more than 1.5x what it earned`,
+          woke && secs !== null && secs <= 180 && honest, { woke, secs, stones, smashed, heals, hp: g.hp, perHour: got, declared: said });
+        h.peace(true); restoreNum(); clockFn = null; player.equip.weapon = null; player.hp = player.maxHp; out(); }
     } catch (e) {
       check(P + 'the royal mine suite ran to the end without throwing', false, { error: String(e && e.stack || e).slice(0, 600) });
     } finally {
