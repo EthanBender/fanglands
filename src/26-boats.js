@@ -95,6 +95,7 @@
     }
     return best;
   }
+  const seaFacing = PEOPLE_UI.facing(() => { if (bq().sailing) return null; const c = seaFolkInFront(); return c ? { px: c.px, py: c.py, name: c.who.name } : null; });
   function talkSeaFolk(c) {
     { const dx = c.px - player.x, dy = c.py - player.y, dd = Math.hypot(dx, dy) || 1; player.facing = { x: dx / dd, y: dy / dd }; }
     say(pick(c.who.lines), c.who.name);
@@ -236,47 +237,65 @@
   });
 
   // ---------- panels ----------
-  HOOKS.panel.sailing = () => { }; // blocks movement and use while the crossing overlay (HOOKS.hud) plays
+  // The crossing is a panel too: it owns the whole screen (panelRect), so no HUD control under it takes a tap, and it is
+  // drawn after every HUD piece and plaque, opaque, so none of them shows through while Harl rows.
+  // With no crossing under way there is nothing to show and nothing to wait for, so the panel closes itself.
+  HOOKS.panel.sailing = (g, narrow) => {
+    const s = bq().sailing; if (!s) { closePanel(); return; }
+    panelRect = { x: 0, y: 0, w: VW, h: VH }; buttons.length = 0;
+    drawCrossing(g, s, narrow);
+  };
+  // OLD HARL'S FERRY: one vellum card per place he rows to, its name in Cinzel and its blurb in words, and the fare on a plate:
+  // gold-edged when you can pay, grey when Harl will not take you yet (a tap still has him say why), plain when you are short.
+  let ferryPage = 0;
   HOOKS.panel.ferry = (g, narrow) => {
     const q = bq(); const here = q.where;
-    const { px, py, w, h } = panelBox(g, 460, 400, "Old Harl's Ferry", `${coins()} coins · you are at ${LOC[here].name}`);
-    const dests = ['gull', 'ironclad', 'farshore', 'dock'].filter(k => k !== here);
-    let y = py + 64;
-    for (const k of dests) {
-      const L = LOC[k]; const price = k === 'dock' ? 0 : L.price; const gated = L.combat && combatLevel() < L.combat;
-      roundRect(g, px + 18, y, w - 36, 60, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(k === 'dock' ? 'Back to the dock' : L.name, px + 30, y + 22);
-      g.fillStyle = gated ? '#ff9a9a' : '#8b949e'; g.font = '11px sans-serif';
-      let sub = gated ? `Needs combat level ${L.combat}. You are ${combatLevel()}.` : L.blurb; while (g.measureText(sub).width > w - 66 - (narrow ? 0 : 190) && sub.length > 8) sub = sub.slice(0, -2) + '…'; g.fillText(sub, px + 30, y + 44);
-      const label = k === 'dock' ? 'Back to the dock · free' : `${L.name} · ${price} coins`;
-      button(g, narrow ? px + 18 : px + w - 208, narrow ? y + 30 : y + 15, narrow ? w - 36 : 190, 30, label, () => sail(k), gated ? '#5a3a3a' : coins() >= price ? '#238636' : '#2a2f3a');
-      y += 68;
-    }
-    button(g, px + 18, py + h - 50, w - 36, 34, 'Stay', closePanel, '#21262d');
+    const rows = ['gull', 'ironclad', 'farshore', 'dock'].filter(k => k !== here).map(k => {
+      const L = LOC[k], price = k === 'dock' ? 0 : L.price, gated = !!(L.combat && combatLevel() < L.combat), can = coins() >= price;
+      return {
+        name: k === 'dock' ? 'Back to the dock' : L.name, sub: L.blurb,
+        note: gated ? `Needs combat level ${L.combat}. You are ${combatLevel()}.` : null, noteColor: HK.T.bad,
+        verb: { label: k === 'dock' ? 'Back to the dock · free' : `${L.name} · ${price} coins`, action: () => sail(k), tone: !gated && can ? 'primary' : null, enabled: !gated, live: gated, w: 214 },
+      };
+    });
+    const R = PEOPLE_UI.row();
+    PEOPLE_UI.rowsPanel(g, {
+      title: "Old Harl's Ferry", sub: `${coins()} coins · you are at ${LOC[here].name}`, rows, want: 540, page: ferryPage, setPage: p => { ferryPage = p; },
+      footerH: R + 10, footer: (g2, x, y, w) => { const bw = narrow ? w : 160; button(g2, x + w - bw, y + 10, bw, R, 'Stay', closePanel, '#21262d'); },
+    });
+  };
+  // SALT PETE'S SHACK: the shop rows (the item in a pouch, its name, a line on what it is, Buy) and, beside or under them, the
+  // pack to sell fish from. Side by side on a short, wide screen (a phone on its side); one under the other everywhere else.
+  const peteBuy = (id, price) => { const def = ITEMS[id]; if (!payCoins(price)) { notify('Not enough coins.'); return; } if (addItem(id, 1) > 0) { addItem('coins', price); notify('Your pack is full.'); return; } floatText(player.x, player.y - 30, `Bought ${def.name}`, def.color); save(); };
+  const peteSell = i => {
+    const s = player.inv[i]; if (!s || s.id === 'coins') return;
+    if (!PETE_SHOP.buys.includes(s.id)) { notify('Pete only buys fish. Shrimp, trout, lobster. Raw or cooked.'); return; }
+    const price = Math.max(1, ITEMS[s.id].value); s.qty -= 1; if (s.qty <= 0) player.inv[i] = null; addItem('coins', price); floatText(player.x, player.y - 30, `+${price} coins`, '#ffd166'); save();
   };
   HOOKS.panel.pete = (g, narrow) => {
-    const shop = PETE_SHOP; const cols = narrow ? 5 : 10, size = 40, gap = 5;
-    const { px, py, w } = panelBox(g, cols * (size + gap) + 30, 200 + shop.stock.length * 38 + Math.ceil(INV_SLOTS / cols) * (size + gap), shop.name, `${coins()} coins · buy on the left, tap your pack to sell`);
-    shop.stock.forEach(([id, price], i) => {
-      const y = py + 62 + i * 38; const def = ITEMS[id]; const can = coins() >= price;
-      roundRect(g, px + 18, y, w - 36, 32, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      drawItemIcon(g, id, px + 38, y + 16, 18);
-      g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(def.name, px + 58, y + 20);
-      if (!narrow) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.fillText(itemBlurb(def), px + 190, y + 20); }
-      button(g, px + w - 120, y + 3, 96, 26, `Buy ${price}`, () => { if (!payCoins(price)) { notify('Not enough coins.'); return; } if (addItem(id, 1) > 0) { addItem('coins', price); notify('Your pack is full.'); return; } floatText(player.x, player.y - 30, `Bought ${def.name}`, def.color); save(); }, can ? '#238636' : '#2a2f3a', can);
-    });
-    const gy = py + 62 + shop.stock.length * 38 + 12;
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('PETE BUYS FISH AT FULL PRICE: shrimp, trout, lobster (raw or cooked)', px + 18, gy);
-    drawInvGrid(g, px + 18, gy + 8, cols, size, gap, i => {
-      const s = player.inv[i]; if (!s || s.id === 'coins') return;
-      if (!shop.buys.includes(s.id)) { notify('Pete only buys fish. Shrimp, trout, lobster. Raw or cooked.'); return; }
-      const price = Math.max(1, ITEMS[s.id].value); s.qty -= 1; if (s.qty <= 0) player.inv[i] = null; addItem('coins', price); floatText(player.x, player.y - 30, `+${price} coins`, '#ffd166'); save();
-    });
+    const U = PEOPLE_UI, shop = PETE_SHOP, short = VH < 500, top = 62, bottom = 16, sp = U.gap();
+    const rows = shop.stock.map(([id, price]) => ({ id, name: ITEMS[id].name, sub: narrow || short ? null : itemBlurb(ITEMS[id]), verb: { label: `Buy ${price}`, action: () => peteBuy(id, price), tone: 'primary', enabled: coins() >= price } }));
+    const sellWords = short ? 'Full price for fish. Tap one to sell it.' : 'Full price for shrimp, trout and lobster, raw or cooked. Tap a fish in your pack to sell it.';
+    const box = U.fit(short && !narrow ? 760 : 560, 9999), w = box.w, iw = w - 36;
+    const rowsH = cw => { const lay = U.layoutRows(g, rows, 0, cw, 9999); return lay.pageH; };
+    const sellH = cw => { const gg = U.gridGeom(cw, INV_SLOTS, 10); return 24 + U.wordsFit(g, sellWords, cw, { size: 13, lines: 3 }).h + 8 + gg.h; };
+    const stackedH = top + rowsH(iw) + 14 + sellH(iw) + bottom;
+    const side = !narrow && stackedH > box.maxH;
+    const lw = side ? Math.round(iw * 0.54) : iw, rw = side ? iw - lw - 16 : iw;
+    const h = side ? top + Math.max(rowsH(lw), sellH(rw)) + bottom : stackedH;
+    const { px, py } = panelBox(g, w, h, shop.name, `${coins()} coins · buy here, tap your pack to sell`);
+    const lay = U.layoutRows(g, rows, 0, lw, 9999);
+    let y = U.drawRows(g, rows, lay, 0, px + 18, py + top, lw) - lay.sp;
+    const sx = side ? px + 18 + lw + 16 : px + 18; let sy = side ? py + top : y + 14;
+    sy += U.header(g, 'Pete buys fish', sx, sy, rw);
+    sy += U.words(g, sellWords, sx, sy, rw, { size: 13, lines: 3 }).h + 8;
+    const gg = U.gridGeom(rw, INV_SLOTS, 10);
+    drawInvGrid(g, sx, sy, gg.cols, gg.size, gg.sp, peteSell);
   };
 
   // ---------- drawing ----------
   function drawGull(g, x, y, s = 1, flap = 0) {
-    g.strokeStyle = '#e6edf3'; g.lineWidth = 1.6 * s; g.lineCap = 'round'; g.beginPath();
+    g.strokeStyle = '#efe9dc'; g.lineWidth = 1.6 * s; g.lineCap = 'round'; g.beginPath();
     g.moveTo(x - 8 * s, y + 2 * s); g.quadraticCurveTo(x - 4 * s, y - 4 * s - flap, x, y); g.quadraticCurveTo(x + 4 * s, y - 4 * s - flap, x + 8 * s, y + 2 * s); g.stroke();
   }
   function drawBoatSide(g, s, dir) { // the crossing: seen from the side
@@ -439,37 +458,46 @@
     }
     // interaction highlight for our own folk and tiles (the core only highlights what it knows)
     if (!player.dead && !player.mech && !q.sailing) items.push({ y: 1e9 + 1, draw: () => {
-      const c = seaFolkInFront();
-      if (c) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(c.px, c.py, 20, 0, 7); g.stroke(); g.setLineDash([]); return; }
+      // Harl or Pete, faced: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      if (PEOPLE_UI.brackets(g, seaFacing())) return;
       const { tx, ty } = frontTile(player);
       if (B_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
-  // the crossing: a full-screen overlay while Harl rows
-  HOOKS.hud.push((g, narrow) => {
-    const s = bq().sailing; if (!s) return;
+  // the crossing: a full-screen night sea while Harl rows. Drawn by the 'sailing' panel above, over every HUD piece: black
+  // first, so nothing of the HUD shows even while the sea fades in and out, then the sea, the boat and the gulls, and the
+  // kit's area banner for the title (Cinzel, the gold flourish, a line of words) in a lane near a fifth of the way down.
+  function drawCrossing(g, s, narrow) {
     const p = clamp(s.t / SAIL_T, 0, 1), dir = s.to === 'dock' ? -1 : 1;
     const fade = clamp(Math.min(p * 10, (1 - p) * 10), 0, 1);
-    g.save(); g.globalAlpha = fade;
+    g.save(); g.fillStyle = '#05070c'; g.fillRect(0, 0, VW, VH);
+    g.globalAlpha = fade;
     const hz = VH * 0.42;
     const sky = g.createLinearGradient(0, 0, 0, hz); sky.addColorStop(0, '#070c18'); sky.addColorStop(1, '#16304f'); g.fillStyle = sky; g.fillRect(0, 0, VW, hz);
     const sea = g.createLinearGradient(0, hz, 0, VH); sea.addColorStop(0, '#123b66'); sea.addColorStop(1, '#0a2242'); g.fillStyle = sea; g.fillRect(0, hz, VW, VH - hz);
-    g.fillStyle = '#e8e6d8'; g.beginPath(); g.arc(VW * 0.78, hz * 0.4, 18, 0, 7); g.fill(); g.fillStyle = '#16304f'; g.beginPath(); g.arc(VW * 0.78 + 8, hz * 0.4 - 5, 15, 0, 7); g.fill();
+    // the moon sits low on the right, under the title's lane at every size
+    const mx = VW * 0.84, my = hz * 0.8;
+    g.fillStyle = '#e8e6d8'; g.beginPath(); g.arc(mx, my, 16, 0, 7); g.fill(); g.fillStyle = '#16304f'; g.beginPath(); g.arc(mx + 7, my - 5, 13, 0, 7); g.fill();
     g.fillStyle = 'rgba(255,255,255,0.7)'; for (let k = 0; k < 24; k++) { g.beginPath(); g.arc(((k * 137) % VW), (k * 53) % (hz * 0.8), 1 + (k % 3) * 0.4, 0, 7); g.fill(); }
     g.lineCap = 'round';
     for (let k = 0; k < 9; k++) {
       const y = hz + 14 + k * (VH - hz) / 9; g.strokeStyle = `rgba(200,230,255,${0.12 + k * 0.03})`; g.lineWidth = 1.5 + k * 0.2; g.beginPath();
-      for (let x = -20; x <= VW + 20; x += 12) { const yy = y + Math.sin(x * 0.03 + time * 2 + k) * (3 + k) ; if (x === -20) g.moveTo(x, yy); else g.lineTo(x, yy); } g.stroke();
+      for (let x = -20; x <= VW + 20; x += 12) { const yy = y + Math.sin(x * 0.03 + time * 2 + k) * (3 + k); if (x === -20) g.moveTo(x, yy); else g.lineTo(x, yy); } g.stroke();
     }
     const bx = dir > 0 ? lerp(-140, VW + 140, p) : lerp(VW + 140, -140, p), by = VH * 0.62 + Math.sin(time * 2.5) * 5;
     g.save(); g.translate(bx, by); g.rotate(Math.sin(time * 2.5 + 1) * 0.05); drawBoatSide(g, narrow ? 1.4 : 2, dir); g.restore();
     g.strokeStyle = 'rgba(230,245,255,0.5)'; g.lineWidth = 2; g.beginPath(); g.moveTo(bx - dir * 90, by + 40); g.quadraticCurveTo(bx - dir * 200, by + 44 + Math.sin(time * 3) * 4, bx - dir * 320, by + 36); g.stroke();
     for (let k = 0; k < 4; k++) { const gx = ((VW * 0.15 + k * VW * 0.23 + time * 28 * (k % 2 ? 1 : -1)) % (VW + 60) + VW + 60) % (VW + 60) - 30, gy = hz * 0.55 + Math.sin(time * 2.2 + k * 1.7) * 14 + k * 9; drawGull(g, gx, gy, 1.3, Math.sin(time * 7 + k) * 3); }
-    g.fillStyle = '#e6edf3'; g.font = `800 ${narrow ? 22 : 30}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,0.7)';
-    const title = `SAILING TO ${(s.to === 'dock' ? 'THE DOCK' : LOC[s.to].name).toUpperCase()}`; g.strokeText(title, VW / 2, VH * 0.2); g.fillText(title, VW / 2, VH * 0.2);
-    g.font = '13px sans-serif'; g.fillStyle = '#c9a36a'; g.strokeText('Old Harl rows. The gulls follow.', VW / 2, VH * 0.2 + 22); g.fillText('Old Harl rows. The gulls follow.', VW / 2, VH * 0.2 + 22);
+    HK.banner(g, crossingLane(), { kind: 'area', title: crossingTitle(s), sub: 'Old Harl rows. The gulls follow.' });
     g.restore();
-  });
+  }
+  const crossingTitle = s => `SAILING TO ${(s.to === 'dock' ? 'THE DOCK' : LOC[s.to].name).toUpperCase()}`;
+  // the title's lane: centred, clear of the notch bands, its headline near a fifth of the way down
+  function crossingLane() {
+    const L = HK.cur ? HK.cur() : null, S = (L && L.S) || { t: 0, r: 0, l: 0 };
+    const side = Math.max(16, (S.l || 0) + 8, (S.r || 0) + 8), w = Math.min(VW - 2 * side, 720);
+    return { x: Math.round((VW - w) / 2), y: Math.round(Math.max((S.t || 0) + 8, VH * 0.2 - 34)), w, h: 90 };
+  }
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -528,6 +556,40 @@
     { const a = talkHarl(); const open = panel === 'ferry'; const c0 = coins(); const c = F.clickButton('Back'); F.sim(150, []);
       check("boats: 'Back to the dock' is free and returns you to the mainland dock", typeof a === 'number' && open && c && coins() === c0 && q.where === 'dock' && Math.floor(player.x / TILE) === LOC.dock.land.x && Math.floor(player.y / TILE) === LOC.dock.land.y && harlPos().x === tc(LOC.dock.harl.x), { a, open, c, where: q.where, tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }); }
     player.skills.melee.xp = m0; player.skills.defence.xp = d0; player.skills.range.xp = r0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
+    // the world prompt on Old Harl: gold corners on him, the Talk tag beside him, the USE seat on TALK
+    { closePanel(); drain(); q.sailing = null; q.where = 'dock'; F.tp(LOC.dock.land.x, LOC.dock.land.y); F.face(LOC.dock.harl.x, LOC.dock.harl.y); render();
+      const hp = harlPos(), r = PEOPLE_UI.auditPrompt({ px: hp.x, py: hp.y, name: HARL.name }), face = HK.face('use');
+      check('boats: facing Old Harl draws the gold corners on him and a Talk tag beside him (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon }); }
+    // the ferry and Pete's shack at every size, touch and mouse, Normal and Large
+    { const sk = ['melee', 'defence', 'range'].map(k => player.skills[k].xp), inv0 = player.inv.map(x => x ? { ...x } : null), w0 = q.where;
+      const low = () => { player.skills.melee.xp = 0; player.skills.defence.xp = 0; player.skills.range.xp = 0; }, back = () => { ['melee', 'defence', 'range'].forEach((k, i) => { player.skills[k].xp = sk[i]; }); q.where = w0; };
+      h.give('coins', 100); if (!countItem('raw_trout')) h.give('raw_trout', 2);
+      const a = PEOPLE_UI.auditPanels([
+        { name: 'ferry at the dock', panel: 'ferry', open: () => { q.where = 'dock'; openPanel('ferry'); }, close: back },
+        { name: 'ferry, combat level too low', panel: 'ferry', open: () => { low(); q.where = 'dock'; openPanel('ferry'); }, close: back },
+        { name: 'ferry at Gull Isle', panel: 'ferry', open: () => { q.where = 'gull'; openPanel('ferry'); }, close: back },
+        { name: "Pete's shack", panel: 'pete', open: () => openPanel('pete') },
+      ]);
+      back(); player.inv = inv0;
+      check("boats: Old Harl's ferry and Salt Pete's shack wear the book frame at all 8 sizes, touch and mouse, Normal and Large text: fare plates, Stay, Buy plates and 44 px sell pouches on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 128 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
+    // the crossing hides the HUD: no control stays in buttons[] while Harl rows, at any size; and its title (the kit's
+    // area banner) fits at Large on the smallest iPhone, with nothing but the black sea behind it
+    { const own = k => Object.getOwnPropertyDescriptor(window, k), sw = own('innerWidth'), shh = own('innerHeight'), t0 = window.__forceTouch, tx0 = window.SETTINGS ? SETTINGS.get('text') : 'normal';
+      const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); };
+      const left = []; let fit = null, title = null;
+      try {
+        HK.setCacheOff(true); closePanel(); drain();
+        q.sailing = { to: 'farshore', t: 0.5, from: q.where, fx: player.x, fy: player.y }; openPanel('sailing');
+        for (const [w, hh] of HK.audit.SIZES) for (const t of [true, false]) { setSize(w, hh); window.__forceTouch = t; drawHud(HK.audit.fitCtx()); if (buttons.length) left.push(`${w}x${hh} ${t ? 'touch' : 'mouse'}: ${buttons.map(b => b.label).join(', ')}`); }
+        setSize(375, 667); window.__forceTouch = true; if (window.SETTINGS) SETTINGS.set('text', 'large');
+        HK.FIT.on = true; HK.FIT.log.length = 0; drawHud(HK.audit.fitCtx()); HK.FIT.on = false;
+        fit = HK.audit.fitIssues('crossing 375x667 large'); title = HK.FIT.log.find(e => e.id === 'banner' && e.s === 'SAILING TO THE FAR SHORE');
+      } finally {
+        HK.FIT.on = false; HK.setCacheOff(false); q.sailing = null; closePanel(); window.__forceTouch = t0; if (window.SETTINGS) SETTINGS.set('text', tx0);
+        if (sw) { Object.defineProperty(window, 'innerWidth', sw); Object.defineProperty(window, 'innerHeight', shh); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+        resize(); render();
+      }
+      check('boats: while Harl rows the crossing owns the screen: no HUD control is left in buttons[] at any of the 8 sizes, touch or mouse, and "SAILING TO THE FAR SHORE" (the kit\'s area banner) fits its lane at Large on a 375x667 iPhone', left.length === 0 && !!title && fit.length === 0, { left: left.slice(0, 4), title: !!title, fit }); }
     h.peace(false);
   });
 }

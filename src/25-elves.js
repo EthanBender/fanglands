@@ -106,6 +106,7 @@
     }
     return best ? best.e : null;
   }
+  const elFacing = PEOPLE_UI.facing(() => { const e = elInFront(); return e ? { px: e.px, py: e.py, name: e.name } : null; });
   function elTalk(e) {
     { const dx = e.px - player.x, dy = e.py - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
     const q = eq();
@@ -221,15 +222,19 @@
   });
 
   // ---------- the loom panel (the core's station panel has no title for a loom, so the recipe list is drawn here) ----------
+  // One row per weaving, like the stations' recipe rows: what it makes in a pouch, what it takes as exact numbers
+  // ("Spider silk 3/10"), the level it needs in red when you are short of it, and Weave (the row's label is the recipe's).
+  let loomPage = 0;
+  const loomRows = () => RECIPES.filter(r => r.station === 'loom').map(rec => {
+    const lvOk = !rec.skill || skillLv(rec.skill) >= rec.lv, can = lvOk && rec.needs.every(([id, q]) => countItem(id) >= q);
+    return {
+      id: rec.out, name: ITEMS[rec.out].name + (rec.qty > 1 ? ` × ${rec.qty}` : ''), sub: PEOPLE_UI.needsText(rec.needs),
+      note: lvOk ? null : `Needs ${PEOPLE_UI.skillWord(rec.skill)} ${rec.lv}. You are ${skillLv(rec.skill)}.`, noteColor: HK.T.bad,
+      verb: { shown: 'Weave', label: rec.label + (rec.lv > 1 ? `  (lv ${rec.lv})` : ''), action: () => craft(rec), tone: 'primary', enabled: can },
+    };
+  });
   HOOKS.panel.loom = (g, narrow) => {
-    const list = RECIPES.filter(r => r.station === 'loom');
-    const { px, py, w, h } = panelBox(g, 420, Math.min(VH - 20, 90 + list.length * 40), "Thessaly's loom — weaving", `Crafting level ${skillLv('crafting')}`);
-    const maxRows = Math.floor((h - 80) / 40);
-    list.slice(0, maxRows).forEach((rec, i) => {
-      const y = py + 62 + i * 40;
-      const has = rec.needs.every(([id, q]) => countItem(id) >= q); const lvOk = !rec.skill || skillLv(rec.skill) >= rec.lv; const can = has && lvOk;
-      button(g, px + 18, y, w - 36, 34, rec.label + (rec.lv > 1 ? `  (lv ${rec.lv})` : ''), () => craft(rec), can ? '#238636' : '#2a2f3a', can);
-    });
+    PEOPLE_UI.rowsPanel(g, { title: "Thessaly's loom — weaving", sub: `Crafting level ${skillLv('crafting')}`, rows: loomRows(), want: 480, page: loomPage, setPage: p => { loomPage = p; } });
   };
 
   // ---------- update: chopping, the Voice's hint, hover armour, target practice ----------
@@ -437,8 +442,8 @@
     if (!player.dead && player.equip.body === 'hover_armour') items.push({ y: player.y + player.r - 0.5, draw: () => drawHoverGlow(g) });
     // interaction highlight for our own tiles and elves (the core only highlights what it knows)
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 2, draw: () => {
-      const e = elInFront();
-      if (e) { g.strokeStyle = 'rgba(200,240,192,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(e.px, e.py, 18, 0, 7); g.stroke(); g.setLineDash([]); return; }
+      // the elf you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      if (PEOPLE_UI.brackets(g, elFacing())) return;
       const { tx, ty } = frontTile(player);
       if (EL_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
@@ -515,6 +520,17 @@
       check("elves: twenty strikes complete Lira's Twenty: 500 Range xp + 30 elven arrows", twenty && eq().liraDone && countItem('elven_arrow') === ea1 + 30 && player.skills.range.xp === rx1 + 500 && !activeQuests().includes('elf_range'), { twenty, done: eq().liraDone, arrows: countItem('elven_arrow') - ea1, xp: player.skills.range.xp - rx1 });
       if (prevW) { const s = player.inv.findIndex(x => x && x.id === prevW); if (s >= 0) equipItem(s); } }
     { const s = monsters.filter(m => m.type === 'elf_sentinel'); check('elves: two neutral elf sentinels watch the gap', s.length === 2 && s.every(m => !m.angry && inCity(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))) && MONSTER_DEFS.elf_sentinel.level === 25 && MONSTER_DEFS.elf_sentinel.human, { sentinels: s.length }); }
+    // the world prompt on Thessaly, and her loom at every size (with the level note showing, and without)
+    { drain(); closePanel(); F.tp(132, 129); F.face(133, 129); render();
+      const th = ELVES.find(e => e.id === 'thessaly'), r = PEOPLE_UI.auditPrompt(th), face = HK.face('use');
+      check('elves: facing Thessaly draws the gold corners on her and a Talk tag beside her (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const cx0 = player.skills.crafting.xp;
+      const a = PEOPLE_UI.auditPanels([
+        { name: 'loom', panel: 'loom', open: () => openPanel('loom') },
+        { name: 'loom, Crafting too low', panel: 'loom', open: () => { player.skills.crafting.xp = 0; openPanel('loom'); }, close: () => { player.skills.crafting.xp = cx0; } },
+      ]);
+      player.skills.crafting.xp = cx0;
+      check("elves: Thessaly's loom wears the book frame at all 8 sizes, touch and mouse, Normal and Large text: Weave rows 44 px on touch (26 with a mouse), 8 px apart on touch, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 64 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     h.peace(false); closePanel();
   });
 }

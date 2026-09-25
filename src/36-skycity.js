@@ -171,6 +171,8 @@
     }
     return best ? best.e : null;
   }
+  // E answers the wind shrine before the folk (HOOKS.use below), so the prompt does too
+  const skyFacing = PEOPLE_UI.facing(() => { if (!active()) return null; const ft = frontTile(player); if (tileAt(ft.tx, ft.ty) === WIND_SHRINE) return null; const e = inFront(); return e ? { px: e.px, py: e.py, name: e.name } : null; });
   function talk(e) {
     { const dx = e.px - player.x, dy = e.py - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
     const q = SQ();
@@ -225,12 +227,20 @@
   });
 
   // ---------- Halcyon's forge panel ----------
-  HOOKS.panel.halcyon = (g, narrow) => {
-    const { px, py, w, h } = panelBox(g, 460, 300, "Halcyon's Sky Forge", `Smithing level ${skillLv('smithing')} · needs ${FORGE_LV} · no anvil, no hammer`);
-    g.fillStyle = '#c9d1d9'; g.font = '12px sans-serif'; g.textAlign = 'left';
-    g.fillText(`You carry ${countItem('dragon_scale')} dragon scales, ${countItem('mithril_bar')} mithril bars, ${countItem('obsidian')} obsidian.`, px + 18, py + 74);
-    FORGE.forEach((f, i) => { const y = py + 88 + i * 40; const ok = canForge(f); button(g, px + 18, y, w - 36, 34, f.label + `  (lv ${FORGE_LV})`, () => forge(f), ok ? '#238636' : '#2a2f3a', ok); });
-    if (skillLv('smithing') < FORGE_LV) { g.fillStyle = '#ff6b6b'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(`Smithing ${FORGE_LV} is needed for Godly plate.`, px + 18, py + h - 14); }
+  // One row per Godly piece: the piece in a pouch, what it takes as exact numbers ("Dragon scale 3/8 · Mithril bar 2/2 ·
+  // Obsidian 1/1"), the level in red when you are short of it, and Forge (the row keeps the recipe's label). A file that
+  // adds to the forge (88-aerie's Skysinger) wraps this panel and hands its own rows in as the third argument.
+  let forgePage = 0;
+  const forgeRows = () => FORGE.map(f => {
+    const lvOk = skillLv('smithing') >= FORGE_LV;
+    return {
+      id: f.out, name: ITEMS[f.out].name, sub: PEOPLE_UI.needsText(forgeNeeds(f)),
+      note: lvOk ? null : `Needs Smithing ${FORGE_LV}. You are ${skillLv('smithing')}.`, noteColor: HK.T.bad,
+      verb: { shown: 'Forge', label: f.label + `  (lv ${FORGE_LV})`, action: () => forge(f), tone: 'primary', enabled: canForge(f) },
+    };
+  });
+  HOOKS.panel.halcyon = (g, narrow, extra) => {
+    PEOPLE_UI.rowsPanel(g, { title: "Halcyon's Sky Forge", sub: `Smithing level ${skillLv('smithing')} · needs ${FORGE_LV} · no anvil, no hammer`, rows: forgeRows().concat(extra || []), want: 520, page: forgePage, setPage: p => { forgePage = p; } });
   };
 
   // ---------- drawing ----------
@@ -306,8 +316,9 @@
     // use-highlight for our tiles and our people
     if (!player.dead && !player.mech && !npcInFront()) items.push({ y: 1e9 + 3, draw: () => {
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      const n = inside ? inFront() : null;
-      if (n) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.arc(n.px, n.py, 22, 0, 7); g.stroke(); g.setLineDash([]); }
+      // the winged folk you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      const p = inside ? skyFacing() : null;
+      if (p) PEOPLE_UI.brackets(g, p);
       else if (t === WIND_SHRINE || (inside && (t === LEAP || t === WISP))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
@@ -375,6 +386,15 @@
       check('sky: E on the leap tile returns you to the shrine step', INSTANCES.active() === null && at[0] === STEP_T.x && at[1] === STEP_T.y && tileAt(SHRINE_T.x, SHRINE_T.y) === WIND_SHRINE, { at, inst: INSTANCES.active() }); }
     // quest log text for the Godly gear stays truthful: it lists Aerie, not the anvil
     check('sky: the Song of Above quest is registered with texts for every stage', QUEST_DEFS.sky.name === 'Song of Above' && typeof HOOKS.questText.sky === 'function' && ITEMS.wind_flute.stack === 1 && ITEMS.cloud_essence.stack === 50 && ITEMS.godly_helm.armour.def === 30, {});
+    // the world prompt on Master Halcyon at his forge, and his panel at every size with Smithing too low for it
+    { if (INSTANCES.active() !== AER.id) INSTANCES.enter(AER.id); closePanel(); drain(); const hal = SKY_NPCS.find(n => n.id === 'halcyon');
+      F.tp(hal.x, hal.y + 1); F.face(hal.x, hal.y); render();
+      const r = PEOPLE_UI.auditPrompt({ px: hal.px, py: hal.py, name: hal.name }), face = HK.face('use');
+      check('sky: facing Master Halcyon draws the gold corners on him and a Talk tag beside him (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const sx0 = player.skills.smithing.xp;
+      const a = PEOPLE_UI.auditPanels([{ name: "Halcyon's forge, Smithing too low", panel: 'halcyon', open: () => { player.skills.smithing.xp = 0; openPanel('halcyon'); }, close: () => { player.skills.smithing.xp = sx0; } }]);
+      player.skills.smithing.xp = sx0;
+      check("sky: Halcyon's Sky Forge wears the book frame at all 8 sizes, touch and mouse, Normal and Large text, with the level note on every row: Forge plates and pages 44 px on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate", a.frames === 32 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     if (INSTANCES.active()) INSTANCES.leave(); quest.wren = wren0; quest.stage = st0; closePanel(); drain(); h.peace(false); save();
     void sky0;
   });

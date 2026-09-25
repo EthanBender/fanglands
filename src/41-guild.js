@@ -210,6 +210,8 @@
     for (const p of staff) { const dx = p.px - player.x, dy = p.py - player.y, d = Math.hypot(dx, dy); if (d > 64 || d < 1) continue; const dot = (dx / d) * player.facing.x + (dy / d) * player.facing.y; if (dot < 0.4) continue; if (!best || d < best.d) best = { p, d }; }
     return best && best.p;
   };
+  // E answers the board and the chest before the staff (HOOKS.use below), so the prompt does too
+  const staffFacing = PEOPLE_UI.facing(() => { const ft = frontTile(player), t = tileAt(ft.tx, ft.ty); if (t === T_GBOARD || t === T_GCHEST) return null; const p = staffInFront(); return p ? { px: p.px, py: p.py, name: p.name } : null; });
   if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => staff.map(p => ({ x: p.px, y: p.py, r: 13, id: p.id, name: p.name, talk: () => useAction() }))); // 17-tap: a tap on the staff walks up; facing them, E's own path (HOOKS.use → staffInFront) talks
 
   // ---------- update ----------
@@ -246,44 +248,57 @@
   });
 
   // ---------- panels ----------
-  const ROW_H = 66;
-  const fit = (g, text, maxW) => { let s = text; while (s.length > 8 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s === text ? text : s + '…'; };
-  HOOKS.panel.guild = (g, narrow) => {
-    const gd = G(); const next = gd.rank < RANKS.length - 1 ? `${jobsToRank(gd.rank + 1)} job${jobsToRank(gd.rank + 1) === 1 ? '' : 's'} to ${RANKS[gd.rank + 1]}` : 'the top of the guild';
-    const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : 600, 96 + JOBS.length * ROW_H + 62, 'The Hollowford Guild', `${rankName()} · ${gd.jobsDone} job${gd.jobsDone === 1 ? '' : 's'} done · ${next}`);
-    const bw = narrow ? 100 : 130, textW = w - 36 - bw - 24;
-    JOBS.forEach((j, i) => {
-      const y = py + 66 + i * ROW_H; const act = isActive(j), cool = cooling(j), can = j.kind === 'deliver' ? countItem(j.item) >= j.n && !cool : !cool && !gd.active;
-      roundRect(g, px + 18, y, w - 36, ROW_H - 6, 8); g.fillStyle = act ? 'rgba(88,166,255,0.12)' : cool ? 'rgba(255,255,255,0.03)' : can ? 'rgba(126,231,135,0.08)' : 'rgba(255,255,255,0.05)'; g.fill();
-      if (can && !act) { g.strokeStyle = 'rgba(126,231,135,0.45)'; g.lineWidth = 1; g.stroke(); }
-      g.textAlign = 'left'; g.fillStyle = cool ? '#6e7681' : '#e6edf3'; g.font = 'bold 13px sans-serif'; g.fillText(fit(g, `${j.title}  · ${j.who}`, textW), px + 30, y + 18);
-      g.fillStyle = cool ? '#4b535d' : '#c9d1d9'; g.font = 'italic 12px sans-serif'; g.fillText(fit(g, `“${j.blurb}”`, textW), px + 30, y + 35);
-      g.font = '11px sans-serif'; g.fillStyle = cool ? '#4b535d' : act ? '#58a6ff' : '#8b949e'; g.fillText(fit(g, `${cool ? coolText(j) : progressText(j)} · Reward: ${rewardText(j)}`, textW), px + 30, y + 51);
-      const bx = px + w - 18 - bw, by = y + 15;
-      if (cool) button(g, bx, by, bw, 30, coolText(j), () => { }, '#2a2f3a', false);
-      else if (j.kind === 'deliver') button(g, bx, by, bw, 30, `Deliver: ${j.tag}`, () => deliver(j), '#238636', can);
-      else if (act) button(g, bx, by, bw, 30, `Cancel: ${j.tag}`, cancelJob, '#6e2a2a');
-      else button(g, bx, by, bw, 30, `Take: ${j.tag}`, () => takeJob(j), '#238636', can);
+  // THE GUILD BOARD: one vellum row per job, its name in Cinzel, what it asks in words, and its progress and reward as exact
+  // numbers; Take / Deliver / Cancel on a plate (gold-edged when you can do it now, grey while it cools: "Ready in 10m").
+  // Under the rows, the cape (for Captains) and one line on what the ranks open. Rows that do not fit go on pages.
+  let guildPage = 0;
+  const jobRows = () => {
+    const gd = G();
+    return JOBS.map(j => {
+      const act = isActive(j), cool = cooling(j), can = j.kind === 'deliver' ? countItem(j.item) >= j.n && !cool : !cool && !gd.active;
+      let verb;
+      if (cool) verb = { label: coolText(j), action: () => { }, tone: null, enabled: false };
+      else if (j.kind === 'deliver') verb = { label: `Deliver: ${j.tag}`, action: () => deliver(j), tone: 'primary', enabled: can };
+      else if (act) verb = { label: `Cancel: ${j.tag}`, action: cancelJob, tone: null };
+      else verb = { label: `Take: ${j.tag}`, action: () => takeJob(j), tone: 'primary', enabled: can };
+      return {
+        name: `${j.title} · ${j.who}`, nameColor: cool ? HK.T.inkMute : HK.T.ink, sub: VH < 500 ? null : j.blurb, subColor: cool ? HK.T.inkMute : HK.T.inkDim,
+        note: `${cool ? coolText(j) : progressText(j)} · Reward: ${rewardText(j)}`, noteColor: cool ? HK.T.inkMute : act ? HK.T.gold : HK.T.ink,
+        edge: act ? 'rgba(217,178,92,0.9)' : can ? 'rgba(138,216,131,0.6)' : null, verb,
+      };
     });
-    const fy = py + h - 44;
-    const capeOn = gd.rank >= CAPE_RANK;
-    button(g, px + 18, fy, narrow ? 120 : 150, 30, narrow ? `Cape ${CAPE_PRICE}` : `Buy cape (${CAPE_PRICE})`, buyCape, capeOn && coins() >= CAPE_PRICE ? '#7a2e2e' : '#2a2f3a', capeOn);
-    button(g, px + w - 18 - 100, fy, 100, 30, 'Close', closePanel, '#21262d');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center';
-    g.fillText(fit(g, capeOn ? `Captain's cape: Hollowford red, defence +${ITEMS.guild_cape.armour.def}. Every 3 jobs is a rank.` : gd.rank >= CHEST_RANK ? 'The guild chest by the wall is yours. Captains may buy the cape.' : `Every 3 jobs is a rank. Warden opens the chest, Captain earns the cape.`, w - 36 - (narrow ? 120 : 150) - 100 - 20), px + w / 2 + 20, fy + 20);
   };
+  HOOKS.panel.guild = (g, narrow) => {
+    const U = PEOPLE_UI, gd = G(), R = U.row(), next = gd.rank < RANKS.length - 1 ? `${jobsToRank(gd.rank + 1)} job${jobsToRank(gd.rank + 1) === 1 ? '' : 's'} to ${RANKS[gd.rank + 1]}` : 'the top of the guild';
+    const capeOn = gd.rank >= CAPE_RANK, cw = narrow ? 130 : 170, iw = U.fit(620, 9999).w - 36;
+    const line = capeOn ? `Captain's cape: Hollowford red, defence +${ITEMS.guild_cape.armour.def}. Every 3 jobs is a rank.` : gd.rank >= CHEST_RANK ? 'The guild chest by the wall is yours. Captains may buy the cape.' : 'Every 3 jobs is a rank. Warden opens the chest, Captain earns the cape.';
+    const lm = U.wordsFit(g, line, iw - cw - 14, { size: 12.5, lines: 3 }), footerH = 10 + Math.max(R, lm.h);
+    U.rowsPanel(g, {
+      title: 'The Hollowford Guild', sub: `${rankName()} · ${gd.jobsDone} job${gd.jobsDone === 1 ? '' : 's'} done · ${next}`, rows: jobRows(), want: 620,
+      page: guildPage, setPage: p => { guildPage = p; }, footerH,
+      footer: (g2, x, y, w) => {
+        button(g2, x, y + 10, cw, R, narrow ? `Cape ${CAPE_PRICE}` : `Buy cape (${CAPE_PRICE})`, buyCape, capeOn && coins() >= CAPE_PRICE ? '#238636' : '#21262d', capeOn);
+        U.words(g2, line, x + cw + 14, y + 10 + Math.max(0, (R - lm.h) / 2), w - cw - 14, { size: 12.5, lines: 3 });
+      },
+    });
+  };
+  // THE GUILD CHEST: the chest's twenty pouches over your pack's; a tap moves a stack across
   let chestPage = 0;
   HOOKS.panel.guild_chest = (g, narrow) => {
-    const gd = G(); const cols = narrow ? 5 : 10, size = narrow ? 44 : 46, gap = 6, rows = Math.ceil(CHEST_SLOTS / cols), invRows = Math.ceil(INV_SLOTS / cols);
-    const { px, py, w } = panelBox(g, cols * (size + gap) + 30, 78 + rows * (size + gap) + 34 + invRows * (size + gap) + 24, 'Guild chest', `${chestCount()} / ${CHEST_SLOTS} stacks · tap to move items · ${rankName()}`);
+    const U = PEOPLE_UI, gd = G(), top = 62, bottom = 16, box = U.fit(600, 9999), iw = box.w - 36;
+    const cg = U.gridGeom(iw, CHEST_SLOTS, 10), pg = U.gridGeom(iw, INV_SLOTS, 10);
+    const w = Math.min(box.w, Math.max(cg.w, pg.w, 300) + 36), h = top + 24 + cg.h + 16 + 24 + pg.h + bottom;
+    const { px, py } = panelBox(g, w, h, 'Guild chest', `${chestCount()} / ${CHEST_SLOTS} stacks · tap to move items · ${rankName()}`);
+    let y = py + top;
+    y += U.header(g, 'In the chest · tap one to take it', px + 18, y, w - 36);
     for (let i = 0; i < CHEST_SLOTS; i++) {
-      const cx = px + 18 + (i % cols) * (size + gap), cy = py + 66 + Math.floor(i / cols) * (size + gap), s = gd.chest[i];
-      drawSlot(g, cx, cy, size, s, false);
-      buttons.push({ x: cx, y: cy, w: size, h: size, label: 'gchest' + i, action: () => { const c = gd.chest[i]; if (!c) return; const left = addItem(c.id, c.qty); c.qty = left; if (!left) gd.chest[i] = null; else notify('Your pack is full.'); sfx('pickup'); save(); } });
+      const cx = px + 18 + (i % cg.cols) * (cg.size + cg.sp), cy = y + Math.floor(i / cg.cols) * (cg.size + cg.sp), s = gd.chest[i];
+      drawSlot(g, cx, cy, cg.size, s, false);
+      buttons.push({ x: cx, y: cy, w: cg.size, h: cg.size, label: 'gchest' + i, action: () => { const c = gd.chest[i]; if (!c) return; const left = addItem(c.id, c.qty); c.qty = left; if (!left) gd.chest[i] = null; else notify('Your pack is full.'); sfx('pickup'); save(); } });
     }
-    const iy = py + 66 + rows * (size + gap) + 8;
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText('Your pack (tap an item to store it)', px + 18, iy + 12);
-    drawInvGrid(g, px + 18, iy + 22, cols, size, gap, i => { const s = player.inv[i]; if (!s) return; const left = chestAdd(s.id, s.qty); if (left === s.qty) { notify('The chest is full.'); return; } s.qty = left; if (!left) player.inv[i] = null; sfx('pickup'); save(); });
+    y += cg.h + 16;
+    y += U.header(g, 'Your pack · tap one to store it', px + 18, y, w - 36);
+    drawInvGrid(g, px + 18, y, pg.cols, pg.size, pg.sp, i => { const s = player.inv[i]; if (!s) return; const left = chestAdd(s.id, s.qty); if (left === s.qty) { notify('The chest is full.'); return; } s.qty = left; if (!left) player.inv[i] = null; sfx('pickup'); save(); });
   };
 
   // ---------- quest tab ----------
@@ -349,7 +364,8 @@
     if (gd.founded && !inHall(ptx, pty) && (HALL.x + HALL.w) * TILE > cam.x && HALL.x * TILE < cam.x + VW && (HALL.y + HALL.h) * TILE > cam.y && HALL.y * TILE < cam.y + VH) items.push({ y: (HALL.y + HALL.h) * TILE - 1, draw: () => { drawBuilding(g, HALL); drawPennant(g); } });
     if (!player.dead && !player.mech && staff.length) items.push({ y: 1e9 + 4, draw: () => {
       if (npcInFront()) return;
-      const p = staffInFront(); if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 20, 0, 7); g.stroke(); g.setLineDash([]); }
+      // the staff member you face: the kit's gold corners (PEOPLE_UI adds the verb tag and the TALK seat)
+      PEOPLE_UI.brackets(g, staffFacing());
     } });
   });
 
@@ -414,6 +430,20 @@
       const s = staff[0]; s.px = tc(154); s.py = tc(69); s.waitT = 9; s.moving = false; drain(); F.tp(154, 70); F.face(154, 69); F.press('KeyE'); F.sim(2, []); const spoke = !!dialog.cur && dialog.cur.who === s.name && s.lines.includes(dialog.cur.text);
       drain(); F.tp(137, 82); F.face(137, 81); F.press('KeyE'); F.sim(2, []); const squareGone = !(dialog.cur && ['Old Tam', 'Nell', 'Pip'].includes(dialog.cur.who));
       check('guild: three more runs make a Guildmaster; Tam, Nell and Pip work in the hall, walking a loop between the board, the chest and the door (all three moved, all inside), E on one gets a line, and the square copies step aside', runs.every(Boolean) && master && moved && names === 'Nell,Old Tam,Pip' && spoke && squareGone, { runs, master, rank: G().rank, moved, names, spoke, squareGone, who: dialog.cur && dialog.cur.who, banner: levelBanner && levelBanner.text }); drain(); }
+    // the world prompt on a staff member in the hall, and the board and the chest at every size
+    { const s = staff[0]; s.px = tc(154); s.py = tc(69); s.waitT = 99; s.moving = false; closePanel(); drain(); F.tp(154, 70); F.face(154, 69); render();
+      const r = PEOPLE_UI.auditPrompt({ px: s.px, py: s.py, name: s.name }), face = HK.face('use');
+      check('guild: facing a staff member in the hall draws the gold corners on them and a Talk tag beside them (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
+      const gd = G(), act0 = gd.active, cd0 = { ...gd.cooldowns }, rank0 = gd.rank, chest0 = gd.chest.map(x => x ? { ...x } : null);
+      const back = () => { gd.active = act0; gd.cooldowns = { ...cd0 }; gd.rank = rank0; gd.chest = chest0.map(x => x ? { ...x } : null); guildPage = 0; };
+      const a = PEOPLE_UI.auditPanels([
+        { name: 'guild board, Guildmaster', panel: 'guild', open: () => { guildPage = 0; openPanel('guild'); } },
+        { name: 'guild board, a job on and one cooling', panel: 'guild', open: () => { gd.active = { id: 'wolf', kills: 2 }; gd.cooldowns.timber = time; guildPage = 0; openPanel('guild'); }, close: back },
+        { name: 'guild board, last page', panel: 'guild', open: () => { gd.rank = 0; guildPage = 9; openPanel('guild'); }, close: back },
+        { name: 'guild chest', panel: 'guild_chest', open: () => { gd.chest[0] = { id: 'goblin_scrap', qty: 7 }; gd.chest[5] = { id: 'plank', qty: 20 }; openPanel('guild_chest'); }, close: back },
+      ]);
+      back();
+      check('guild: the Hollowford Guild board and the Guild chest wear the book frame at all 8 sizes, touch and mouse, Normal and Large text: job plates, the cape, pages and 44 px chest pouches on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate', a.frames === 128 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     // Escort: Pip follows, snaps when far, and the job completes at Thistledown's notice board
     { G().cooldowns.escort = -1e9; G().active = null; escort = null; F.tp(153, 69); open(); const took = F.clickButton('Take: Escort'); closePanel(); F.sim(2, []);
       const near0 = !!escort && dist(escort.px, escort.py, player.x, player.y) < 3 * TILE && !!dialog.cur && dialog.cur.who === 'Pip';
