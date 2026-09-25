@@ -543,6 +543,9 @@
       { const s = st(); st().show = true;
         // only two kinds found so far: the legend must show two rows, not seven
         const want = ['bank', 'dock'];
+        // a new world has no lodestone, and the --play bot's newGame() wipes the one the core suite put down,
+        // so the check puts down its own to have all seven kinds on the map
+        const own = h.openSpot(40, 28), ownWas = tileAt(own.x, own.y); changeTile(own.x, own.y, T.LODESTONE); MARKERS.refresh();
         s.seen = {}; for (const m of all()) if (want.includes(m.kind)) s.seen[m.key] = 1;
         openPanel('map'); render();
         const few = (lastMap ? lastMap.cells : []).map(c => c.kind).sort();
@@ -550,6 +553,8 @@
         const many = (lastMap ? lastMap.cells : []).map(c => c.kind).sort();
         const fromMarkers = [...new Set(known().map(m => m.kind))].sort();
         const allSeven = KINDS.every(k => fromMarkers.includes(k.id));
+        // take it away again so the lodestone count below starts from the same world
+        changeTile(own.x, own.y, ownWas); MARKERS.refresh();
         // one lodestone of the knight's own, put down at play, is a marker too
         const lodeBefore = all().filter(m => m.kind === 'lodestone').length;
         const o = h.openSpot(44, 26); changeTile(o.x, o.y, T.LODESTONE); MARKERS.refresh(); const lode = at(o.x, o.y);
