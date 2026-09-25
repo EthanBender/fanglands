@@ -135,31 +135,62 @@
   };
 
   // ---------- panel ----------
+  // The Companion hero panel wears the book frame (panelBox) and the kit's type: the hero's words in the system sans,
+  // her health as the same ramp bar the plaque shows with the exact "44 / 60" in Cinzel, and the verbs as iron plate
+  // buttons a kit row tall (44 on touch, 32 with a mouse). Green = the choice to make; nothing here is danger.
+  const PANEL_PAD = 18;
+  // the sentence block: whole words, never cut; returns the y under the last line
+  function heroWords(g, s, x, y, w) {
+    const f = HK.FS(600, 14), lh = Math.round(14 * HK.k() * 1.42);
+    const lines = HK.wrap(g, s, w, 12, f).lines;
+    lines.forEach((ln, i) => HK.text(g, ln, x, y + 14 + i * lh, { font: f, color: HK.T.ink, box: { x, y, w, h: lh }, fitId: 'companion:words' }));
+    return y + lines.length * lh + 6;
+  }
+  function heroRowButtons(g, px, y, w, list) {
+    const n = list.length, gap = 8, bw = (w - PANEL_PAD * 2 - gap * (n - 1)) / n, rh = HK.row();
+    list.forEach(([label, fn, col, on], i) => button(g, Math.round(px + PANEL_PAD + i * (bw + gap)), y, Math.floor(bw), rh, label, fn, col, on));
+    return y + rh;
+  }
   HOOKS.panel.companion = (g, narrow) => {
     const c = comp(); const arg = panelArg;
+    const rh = HK.row();
     if (arg && arg.hire && HEROES[arg.hire]) {
       const def = HEROES[arg.hire]; const cost = def.cost || 0;
-      const { px, py, w, h } = panelBox(g, 400, 220, def.name, def.title);
-      g.fillStyle = '#c9d1d9'; g.font = '13px sans-serif'; g.textAlign = 'left';
-      wrapText(g, def.blurb + (c.id && c.id !== arg.hire ? ` ${HEROES[c.id].name} will wait at the Barrel & Boar.` : ''), px + 18, py + 78, w - 36, 18);
+      const blurb = def.blurb + (c.id && c.id !== arg.hire ? ` ${HEROES[c.id].name} will wait at the Barrel & Boar.` : '');
+      const w = Math.min(420, VW - 20), inner = w - PANEL_PAD * 2;
+      const lines = HK.wrap(g, blurb, inner, 12, HK.FS(600, 14)).lines.length, lh = Math.round(14 * HK.k() * 1.42);
+      const { px, py } = panelBox(g, w, 62 + lines * lh + 18 + rh + 18, def.name, def.title);
+      const y = heroWords(g, blurb, px + PANEL_PAD, py + 62, inner);
       const can = coins() >= cost;
-      button(g, px + 18, py + h - 54, 210, 36, cost ? `Hire for ${cost} coins` : 'Come with me', () => { if (cost && !payCoins(cost)) { notify('Not enough coins.'); return; } if (cost) floatText(player.x, player.y - 30, `-${cost} coins`, '#ffd166'); closePanel(); recruit(arg.hire); }, can ? '#238636' : '#2a2f3a', can);
-      button(g, px + w - 18 - 120, py + h - 54, 120, 36, 'Not now', closePanel, '#21262d');
+      heroRowButtons(g, px, Math.max(y + 8, py + 62 + lines * lh + 18), w, [
+        [cost ? `Hire for ${cost} coins` : 'Come with me', () => { if (cost && !payCoins(cost)) { notify('Not enough coins.'); return; } if (cost) floatText(player.x, player.y - 30, `-${cost} coins`, '#ffd166'); closePanel(); recruit(arg.hire); }, '#238636', can],
+        ['Not now', closePanel, '#21262d', true],
+      ]);
       return;
     }
     if (!c.id) { closePanel(); return; }
     const def = HEROES[c.id];
-    const { px, py, w, h } = panelBox(g, 400, 236, def.name, `${def.title} · ${c.mode === 'stay' ? 'waiting here' : 'following you'}`);
-    g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('HP', px + 18, py + 78);
-    g.fillStyle = '#2a2f3a'; roundRect(g, px + 44, py + 68, w - 62, 12, 5); g.fill();
-    const f = clamp(c.hp / def.hp, 0, 1); g.fillStyle = f > 0.5 ? '#3fb950' : f > 0.25 ? '#d29922' : '#f85149'; roundRect(g, px + 44, py + 68, (w - 62) * f, 12, 5); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 10px sans-serif'; g.textAlign = 'center'; g.fillText(`${Math.ceil(c.hp)} / ${def.hp}`, px + 44 + (w - 62) / 2, py + 78);
-    g.fillStyle = '#c9d1d9'; g.font = '13px sans-serif'; g.textAlign = 'left';
-    wrapText(g, def.blurb, px + 18, py + 104, w - 36, 18);
-    const by = py + h - 54, bw = (w - 36 - 16) / 3;
-    button(g, px + 18, by, bw, 36, 'Follow me', () => { setMode('follow'); closePanel(); }, '#238636', c.mode !== 'follow');
-    button(g, px + 18 + bw + 8, by, bw, 36, 'Stay here', () => { setMode('stay'); closePanel(); }, '#1f6feb', c.mode !== 'stay');
-    button(g, px + 18 + (bw + 8) * 2, by, bw, 36, 'Dismiss', () => { closePanel(); dismiss(); }, '#8b2e2e');
+    const w = Math.min(420, VW - 20), inner = w - PANEL_PAD * 2;
+    const lines = HK.wrap(g, def.blurb, inner, 12, HK.FS(600, 14)).lines.length, lh = Math.round(14 * HK.k() * 1.42);
+    const h = 62 + 34 + lines * lh + 18 + rh + 18;
+    const { px, py } = panelBox(g, w, h, def.name, `${def.title} · ${c.mode === 'stay' ? 'waiting here' : 'following you'}`);
+    // her health: a portrait roundel, HEALTH in Cinzel, the exact numbers, and the ramp bar (the plaque's own look)
+    const f = clamp(c.hp / def.hp, 0, 1), y0 = py + 62;
+    const pr = 13, pcx = px + PANEL_PAD + pr, pcy = y0 + pr;
+    g.beginPath(); g.arc(pcx, pcy, pr, 0, 7); g.fillStyle = '#111317'; g.fill();
+    HK.portrait(g, pcx, pcy, pr - 2, heroFace(def, c.downT > 0));
+    g.beginPath(); g.arc(pcx, pcy, pr - 1, 0, 7); g.strokeStyle = 'rgba(217,178,92,0.7)'; g.lineWidth = 1.5; g.stroke();
+    const bx = px + PANEL_PAD + pr * 2 + 10, bw = px + w - PANEL_PAD - bx;
+    HK.text(g, 'HEALTH', bx, y0 + 10, { font: HK.FC(800, 11), color: HK.T.gold });
+    HK.text(g, `${Math.ceil(c.hp)} / ${def.hp}`, px + w - PANEL_PAD, y0 + 10, { font: HK.FC(800, 12), align: 'right', color: HK.T.ink });
+    const col = HK.ramp(f);
+    HK.meterBar(g, bx, y0 + 15, bw, 10, f, col === HK.T.good ? '#3fae4a' : col === HK.T.warn ? '#e8a33d' : '#d8322b', col === HK.T.good ? { hi: '#9ce68e', lo: '#1d5a22' } : col === HK.T.warn ? { hi: '#ffd08a', lo: '#7a4a0e' } : {});
+    const y = heroWords(g, def.blurb, px + PANEL_PAD, y0 + 34, inner);
+    heroRowButtons(g, px, Math.max(y + 8, py + h - rh - 18), w, [
+      ['Follow me', () => { setMode('follow'); closePanel(); }, '#238636', c.mode !== 'follow'],
+      ['Stay here', () => { setMode('stay'); closePanel(); }, '#21262d', c.mode !== 'stay'],
+      ['Dismiss', () => { closePanel(); dismiss(); }, '#21262d', true],
+    ]);
   };
 
   // ---------- combat helpers ----------
@@ -314,29 +345,49 @@
   });
 
   // ---------- hud ----------
+  // The companion PLAQUE (src/59-hudkit.js HK.addPlaque): her drawn portrait in the roundel, her name in Cinzel caps,
+  // the exact "44 / 60" and a bar on the health ramp (green, amber, red: the same meaning as your own shield).
+  // Down: a red edge, "SERA IS DOWN" and "up in 12 s". Waiting where you left her: "SERA · WAITING".
+  // The portrait keeps the hero's own colours (hair, tunic): that says WHICH hero, not how she is doing.
+  function heroFace(def, down) { return { hair: def.look.helm || def.look.hair, tunic: def.look.tunic, down: !!down }; }
+  // The first of several field sets that fits the plaque column's width, so no word is ever squeezed out of its plate.
+  // It measures the way the kit's plaque lays out (src/59-hudkit.js plaque(): a 36 px roundel, the name in Cinzel shrinking
+  // to 9 px and no further, the value on the right in Cinzel 11, drawn stars 16 px each, one line of sans under it).
+  // (A local copy in each world-status file: HK.addPlaque could take such a list itself.)
+  const fitFields = (g, list) => {
+    const P = HK.cur().plaques, w = P && P[0] ? P[0].w : 0;
+    if (!w) return list[0];
+    for (const o of list) {
+      const tx = (o.emblem || o.portrait) ? 48 : 10, rw = o.right != null && o.right !== '' ? HK.tw(g, String(o.right), HK.FC(800, 11)) + 12 : 0, stars = o.stars ? o.stars.of * 16 + 6 : 0;
+      if (HK.tw(g, String(o.name || ''), HK.FC(800, 9)) > w - 14 - rw - stars - tx) continue;
+      if (o.sub && o.frac == null && HK.tw(g, String(o.sub), HK.FS(600, 12)) > w - 14 - tx) continue;
+      return o;
+    }
+    return list[list.length - 1];
+  };
+  // on a narrow plaque column (a landscape phone) the longer words give way to shorter ones, in this order
+  function companionPlaque(g) {
+    const c = comp(); if (!c.id || !HEROES[c.id]) return null;
+    const def = HEROES[c.id], NAME = def.name.toUpperCase(), down = c.downT > 0;
+    if (down) {
+      const s = Math.max(1, Math.ceil(c.downT)), base = { id: 'companion', portrait: heroFace(def, true), frac: 0, edge: HK.T.gules };
+      return fitFields(g, [{ name: `${NAME} IS DOWN`, right: `up in ${s} s` }, { name: `${NAME} IS DOWN`, right: `${s} s` }, { name: `${NAME} DOWN`, right: `${s} s` }].map(o => Object.assign({}, base, o)));
+    }
+    const hp = Math.max(0, Math.ceil(c.hp)), base = { id: 'companion', portrait: heroFace(def, false), frac: clamp(c.hp / def.hp, 0, 1) };
+    const list = c.mode === 'stay'
+      ? [{ name: `${NAME} · WAITING`, right: `${hp} / ${def.hp}` }, { name: `${NAME} WAITS`, right: `${hp} / ${def.hp}` }, { name: `${NAME} WAITS`, right: `${hp}` }, { name: NAME, right: `${hp} / ${def.hp}` }]
+      : [{ name: NAME, right: `${hp} / ${def.hp}` }];
+    return fitFields(g, list.map(o => Object.assign({}, base, o)));
+  }
   HOOKS.hud.push((g, narrow) => {
     const c = comp(); if (!c.id) return;
-    const def = HEROES[c.id];
-    // MIGRATED to the HUD kit (src/59-hudkit.js). Was a content-sized black pill that changed width every
-    // time her hp ticked. Now it is a chip on the left column's grid — same edge, same width, same plate as
-    // your own health — and her hp reads on the same green/amber/red ramp as yours, because it means the
-    // same thing. The little portrait keeps her tunic colour: that is identity (which companion), not state.
-    const pad = 9, f = clamp(c.hp / def.hp, 0, 1), down = c.downT > 0;
-    const s = HK.slot(pad * 2 + HK.meterH(true));
-    HK.plate(g, s.x, s.y, s.w, s.h, { tone: down ? HK.C.BAD : null });
-    g.fillStyle = down ? '#4b535d' : def.look.tunic; g.beginPath(); g.arc(s.x + pad + 10, s.y + s.h / 2, 7, 0, 7); g.fill();
-    g.fillStyle = down ? '#6e7681' : (def.look.helm || def.look.hair); g.beginPath(); g.arc(s.x + pad + 10, s.y + s.h / 2 - 1, 6, Math.PI, 0); g.fill();
-    const bx = s.x + pad + 24;
-    HK.meter(g, bx, s.y + pad, s.x + s.w - pad - bx, {
-      label: def.name.toUpperCase() + (down ? ' · DOWN' : c.mode === 'stay' ? ' · WAITING' : ''),
-      value: down ? `${Math.ceil(c.downT)}s` : `${Math.ceil(c.hp)} / ${def.hp}`, template: `${def.hp} / ${def.hp}`,
-      frac: down ? 0 : f, tone: down ? HK.C.BAD : HK.ramp(f), small: true,
-    });
+    const pq = companionPlaque(g); if (pq) HK.addPlaque(g, pq);
     // hero on the minimap
     if (minimapRect && c.downT <= 0) {
       const { x: mx, y: my, w: ms } = minimapRect; const { scale: sc, sx, sy } = miniWindow(ms);
       const dx = mx + (c.x / TILE - sx) * sc, dy = my + (c.y / TILE - sy) * sc;
-      if (Math.hypot(dx - (mx + ms / 2), dy - (my + ms / 2)) < ms / 2 - 3) { g.fillStyle = '#a6f0a0'; g.beginPath(); g.arc(dx, dy, 2.5, 0, 7); g.fill(); }   // inside the ring's round glass (src/59-hudkit.js)
+      // only inside the ring's round glass (src/59-hudkit.js)
+      if (Math.hypot(dx - (mx + ms / 2), dy - (my + ms / 2)) < ms / 2 - 3) { g.fillStyle = HK.T.companion; g.beginPath(); g.arc(dx, dy, 2.5, 0, 7); g.fill(); }
     }
   });
 
@@ -344,7 +395,33 @@
   HOOKS.newGame.push(() => { player.companion = newCompanionState(); resetLive(null); syncHeroNpcs(); });
 
   // ---------- debug handle ----------
-  if (window.FANGLANDS) window.FANGLANDS.companion = { CAGE, CAGE_POS, HEROES, comp, recruit, dismiss, setMode, syncHeroNpcs, guardsNearCage };
+  if (window.FANGLANDS) window.FANGLANDS.companion = { CAGE, CAGE_POS, HEROES, comp, recruit, dismiss, setMode, syncHeroNpcs, guardsNearCage, plaque: companionPlaque };
+
+  // ---------- self-test: the plaque ----------
+  // Her plaque comes through the kit (HK.addPlaque) with the fields the spec names, in every state she can be in.
+  HOOKS.selfTest.push((check, F, h) => {
+    const saved = player.companion ? JSON.parse(JSON.stringify(player.companion)) : null, p0 = paused;
+    const rec = [], add0 = HK.addPlaque, fc = HK.audit.fitCtx();
+    HK.addPlaque = (g, o) => { rec.push({ o: Object.assign({}, o), r: add0(g, o) }); return rec[rec.length - 1].r; };
+    const frame = () => { rec.length = 0; drawHud(fc); return rec.find(q => q.o.id === 'companion') || null; };
+    const got = {};
+    try {
+      paused = false;
+      player.companion = { id: 'sera', hp: 44, mode: 'follow', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } };
+      const a = frame(); got.follow = a && a.o;
+      player.companion.mode = 'stay'; const b = frame(); got.stay = b && b.o;
+      player.companion.mode = 'follow'; player.companion.downT = 11.2; const d = frame(); got.down = d && d.o;
+      player.companion.downT = 0; player.companion.id = 'garrick'; player.companion.hp = 90; const gk = frame(); got.garrick = gk && gk.o;
+      player.companion = { id: null, hp: 0, mode: 'follow', x: 0, y: 0, freed: { sera: true }, downT: 0 }; const none = frame();
+      const S = HEROES.sera.look, G = HEROES.garrick.look;
+      const okFollow = !!a && !!a.r && a.o.name === 'SERA' && a.o.right === '44 / 60' && Math.abs(a.o.frac - 44 / 60) < 1e-9 && !a.o.edge && a.o.portrait && a.o.portrait.hair === S.hair && a.o.portrait.tunic === S.tunic && !a.o.portrait.down && !a.o.emblem;
+      const okStay = !!b && b.o.name === 'SERA · WAITING' && b.o.right === '44 / 60';
+      const okDown = !!d && d.o.name === 'SERA IS DOWN' && d.o.right === 'up in 12 s' && d.o.frac === 0 && d.o.edge === HK.T.gules && d.o.portrait.down === true;
+      const okGarrick = !!gk && gk.o.name === 'GARRICK' && gk.o.right === '90 / 90' && gk.o.portrait.hair === (G.helm || G.hair);
+      check('companion: her plaque comes through HK.addPlaque in a reserved slot: her portrait in her own colours, SERA, the exact 44 / 60 and a ramp bar; SERA · WAITING while she stays; SERA IS DOWN, up in 12 s, a red edge while she is down; GARRICK 90 / 90; nothing without a companion',
+        okFollow && okStay && okDown && okGarrick && !none, got);
+    } finally { HK.addPlaque = add0; player.companion = saved; paused = p0; }
+  });
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
