@@ -87,11 +87,7 @@ export class World {
       if (!(e && e.status)) console.error(path, e);
       res = failFrom(e);
     }
-    // A body nobody read (a refused token, a wrong admin key, a player asking for an admin's pin) is read to the end
-    // before the answer goes back. Otherwise the runtime is still pumping it in from the Worker after the answer and
-    // logs an uncaught "Can't read from request stream after response has been sent" (seen under wrangler dev,
-    // 2026-09-25; reading it here stops it, cancelling the stream does not).
-    if (path !== '/ws' && req.body && !req.bodyUsed) { try { await req.arrayBuffer(); } catch (e) { } }
+    if (path !== '/ws') await drain(req);
     return res;
   }
 
@@ -389,3 +385,22 @@ export class World {
 }
 
 const roleWord = role => role === 'admin' ? 'admin' : 'player';
+
+// A body nobody read (a refused token, a wrong admin key, a player asking for an admin's pin) is read to the end, and
+// thrown away as it comes, before the answer goes back. Otherwise the runtime is still pumping it in from the Worker
+// after the answer and logs an uncaught "Can't read from request stream after response has been sent" (seen under
+// wrangler dev, 2026-09-25: reading it stops that, cancelling the stream does not). Chunks are not kept, so a huge
+// body costs no memory; past DRAIN_MAX (far bigger than any honest request) the rest is cancelled.
+const DRAIN_MAX = 1024 * 1024;
+async function drain(req) {
+  if (!req.body || req.bodyUsed) return;
+  try {
+    const reader = req.body.getReader();
+    for (let n = 0; ;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      n += value ? value.byteLength : 0;
+      if (n > DRAIN_MAX) { await reader.cancel(); return; }
+    }
+  } catch (e) { }
+}
