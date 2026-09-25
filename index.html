@@ -35055,6 +35055,20 @@ HOOKS.selfTest.push((check, F, h) => {
   const RC_CRACK = addTile('REDCUT_CRACK', { solid: true, tex: 'wall', mini: '#4a2418' });   // solid below Agility 30 (WALK_OVER)
   const RC_CACHE = addTile('DEEP_CACHE', { solid: true, tex: 'wall', mini: '#f5c542' });     // the cache behind the crack
   const RC_BOARD = addTile('REDCUT_BOARD', { solid: true, tex: 'sand', mini: '#8a6a3a' });   // the board at the mouth and at the Rise
+  // THE EDGE (see "the edge" below): the ground that steps from the red rock out to the green country round
+  // it. All of it wears the grass texture underneath: the edge's colour wash gives each its colour, and one
+  // texture under the wash means no tile shows a seam against the next. Their map colours step too, red dust to scree to dry scrub to dry grass, so the world map shows the
+  // same fade the ground does. These are NOT in REDCUT.tiles, on purpose: 92-worldshape keeps every tile in
+  // that list inside the Redcut's region box, and a strip of dry grass out on the jungle side is the jungle's.
+  const RC_DUST = addTile('REDDUST', { tex: 'grass', mini: '#9c5d3d', placeableOn: true });
+  // red dust strewn with stones fallen off the rim
+  const RC_SCREE = addTile('REDSCREE', { tex: 'grass', mini: '#8e5b45' });
+  const RC_DRYSCRUB = addTile('DRYSCRUB', { tex: 'grass', mini: '#a58d5c', placeableOn: true });
+  const RC_DRYGRASS = addTile('DRYGRASS', { tex: 'grass', mini: '#7f8c46', placeableOn: true });
+  // a dry thorn bush: walk through it, like the dust bushes
+  const RC_DRYBUSH = addTile('DRYBUSH', { tex: 'grass', mini: '#77773f' });
+  // a dead tree, bleached and leafless: solid
+  const RC_SNAG = addTile('DEADSNAG', { solid: true, tex: 'grass', mini: '#5f4c3b' });
   const CRACK_LV = 30, SALT_LV = 22;
   for (const t of [RC_SALT, RC_WINCH, RC_BASKET, RC_NEST, RC_LAMP, RC_COIL, RC_CRACK, RC_CACHE, RC_BOARD, RC_BOULDER])
     INTERESTING_TILES.add(t);   // the core USE ring, frontTile's reach, and a tap on the iPad
@@ -35245,10 +35259,38 @@ HOOKS.selfTest.push((check, F, h) => {
   const JAWS = [[216, 114], [233, 138], [244, 122], [231, 148]];
   const SEED = 9017;
 
-  const inPl = (x, y) => ((x - CX) / RX) ** 2 + ((y - CY) / RY) ** 2 <= 1;
   const segD = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1; const t = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1); return Math.hypot(px - (ax + dx * t), py - (ay + dy * t)); };
   const polyD = (pl, x, y) => { let d = 99; for (let i = 0; i < pl.length - 1; i++) d = Math.min(d, segD(x, y, pl[i][0], pl[i][1], pl[i + 1][0], pl[i + 1][1])); return d; };
   const canD = (x, y) => Math.min(polyD(ARC, x, y), polyD(SPUR, x, y) + 0.6);
+  // smooth value noise, two octaves on a lattice, 0..1: the same maker 39-worldblend and 92-worldshape use
+  const makeNoise = (seed, cell) => {
+    const r = mulberry32(seed), N = 64, lat = new Float32Array(N * N); for (let i = 0; i < lat.length; i++) lat[i] = r();
+    const at = (ix, iy) => lat[((iy % N + N) % N) * N + ((ix % N + N) % N)];
+    const sm = t => t * t * (3 - 2 * t);
+    const oct = (x, y, c) => { const fx = x / c, fy = y / c, ix = Math.floor(fx), iy = Math.floor(fy), tx = sm(fx - ix), ty = sm(fy - iy); return lerp(lerp(at(ix, iy), at(ix + 1, iy), tx), lerp(at(ix, iy + 1), at(ix + 1, iy + 1), tx), ty); };
+    return (x, y) => clamp(0.5 + (oct(x, y, cell) * 0.7 + oct(x + 37.3, y + 11.7, cell / 2) * 0.3 - 0.5) * 1.7, 0, 1);
+  };
+  const sm01 = t => { const u = clamp(t, 0, 1); return u * u * (3 - 2 * u); };
+  // THE TABLE'S OUTLINE wanders off the oval by smooth noise, up to about two and a half tiles either way, and
+  // pulls in a little towards the east and south edges of the world so the scrub has room there too. It is
+  // held to the exact oval near the Rise (the ramp must still cut clean through the escarpment) and wherever
+  // the canyon runs close to the rim (there the ring's own wall is the escarpment, and a wobble could open a
+  // ledge straight onto the scrub). Everything the climbs and the ring depend on is exactly where it was.
+  // Held means: the outline only moves where the canyon is more than six tiles off it. There every tile of the
+  // table that ends up beside the ground outside is past the ledges (4.2) and the canyon's own walls (6.2), so
+  // it can only ever become escarpment, and the floor (3) never comes near the outside at all.
+  // The pull keeps the table three tiles or more inside the region box on every side, so the escarpment is
+  // never cut off by the box edge and there is room for the band all the way round.
+  const rimN0 = makeNoise(SEED + 11, 6), rimN1 = makeNoise(SEED + 12, 3);
+  // a slow swell and a quick fret on top of it, so no stretch of the rim runs dead straight
+  const rimN = (x, y) => rimN0(x, y) * 0.7 + rimN1(x, y) * 0.3;
+  const RISE_C = [(RISE.x0 + RISE.x1) / 2, (RISE.y0 + RISE.y1) / 2];
+  const rimFree = (x, y) => Math.min(sm01((Math.hypot(x - RISE_C[0], y - RISE_C[1]) - 6) / 5), sm01((canD(x, y) - 6) / 3));
+  const rimPull = (x, y) => 0.07 * sm01((x - 249) / 6) + 0.06 * sm01((y - 168) / 6) + 0.08 * sm01((212 - x) / 6);
+  // the wander is set in tiles (about two either way), not as a share of the radius, so the long flat top and
+  // bottom of the oval move no further than its sides
+  const rimOf = (x, y) => { const f = rimFree(x, y); if (f <= 0) return 1; const r = Math.max(8, Math.hypot(x - CX, y - CY)); return 1 + ((rimN(x, y) * 2 - 1) * 2.6 / r - rimPull(x, y)) * f; };
+  const inPl = (x, y) => { const e = ((x - CX) / RX) ** 2 + ((y - CY) / RY) ** 2; return e <= 0.64 || (e <= 1.44 && e <= rimOf(x, y) ** 2); };
   // 0 floor · 1 ledge · 2 cliff · 3 table top · 4 scrub outside the table
   // the two ends of the ring, where the canyon floor is meant to meet the scrub: within 2 tiles of either
   const nearOpening = (x, y) => [MOUTH, SLOT].some(p => Math.max(Math.abs(p.x - x), Math.abs(p.y - y)) <= 2);
@@ -35270,6 +35312,48 @@ HOOKS.selfTest.push((check, F, h) => {
   const isCliff = (x, y) => { const t = tileAt(x, y); return t === RC_CLIFF || t === RC_SALT || t === RC_CRACK || t === RC_CACHE; };
   const mine = (x, y) => x >= RC.x0 && x <= RC.x1 && y >= RC.y0 && y <= RC.y1;
   const tally = { floor: 0, ledge: 0, cliff: 0, top: 0, scrub: 0, ramp: 0, fall: 0, seams: 0, bushes: 0, boulders: 0, walledIn: 0, sealed: 0, converted: 0 };
+  // classOf for every tile of the region, worked out once a world (it reads the noisy outline 25 times a tile);
+  // 4 everywhere outside the region. The ground painter reads it to shade a bush or a block by what it stands on.
+  const CLASS = new Uint8Array(MAP_W * MAP_H).fill(4);
+  const cls = (x, y) => (inMap(x, y) ? CLASS[idx(x, y)] : 4);
+
+  // ---------- THE EDGE ----------
+  // Owner, testing: "The canyon doesn't blend with the surrounding environment in the slightest." The table
+  // stood in a tan rectangle (every tile of the region box that was not rock was scrub), and the rectangle
+  // met the grass and the jungle on two ruled lines. Now the table's outline wanders (inPl above), and round
+  // the whole of it runs a band laid by distance from the rock, stepping out through:
+  //   red dust and scree at the foot of the escarpment, with fallen blocks
+  //   dry scrub, with thorn bushes
+  //   dry grass, with the odd dead tree
+  //   green grass with patches of dry grass in it — and then the land as it was.
+  // The map is drawn from the tiles, so the world map shows the same fade. In the world the band is washed by
+  // one soft colour field, red at the rock through tan and straw to nothing, painted from a one-pixel-a-tile
+  // picture scaled up smooth, so the ground changes colour with no line anywhere.
+  const EXT = { x0: RC.x0 - 14, y0: RC.y0 - 14, x1: MAP_W - 2, y1: MAP_H - 2 };   // the band's reach: x 190-258, y 86-178
+  const EW = EXT.x1 - EXT.x0 + 1, EH = EXT.y1 - EXT.y0 + 1;
+  const inExt = (x, y) => x >= EXT.x0 && x <= EXT.x1 && y >= EXT.y0 && y <= EXT.y1;
+  const ei = (x, y) => (y - EXT.y0) * EW + (x - EXT.x0);
+  const ERAW = new Float32Array(EW * EH).fill(1e9);   // tiles from the rock
+  const EFIELD = new Float32Array(EW * EH).fill(99);  // the same, moved in and out by smooth noise (no jitter)
+  const EDGE_GROUND = new Set([RC_DUST, RC_SCREE, RC_DRYSCRUB, RC_DRYGRASS, RC_DRYBUSH]);
+  const edgeState = { gen: 0 };
+  const bandN = makeNoise(SEED + 23, 6);
+  // a fixed per-tile number in 0..1 (k picks an independent one): the jitter that frays each step
+  const hash = (x, y, k) => { const s = Math.sin(x * 127.1 + y * 311.7 + k * 74.7 + SEED * 0.013) * 43758.5453; return s - Math.floor(s); };
+  // the smooth field: a tile or so of wander at the foot of the rim, close to three tiles out in the grass
+  // (it reaches out further than it bites in, so the band is never squeezed thinner than about four tiles)
+  const edgeField = (x, y, d) => { const n = bandN(x, y) * 2 - 1; return d + n * (n > 0 ? 0.5 : 1) * (0.6 + 0.35 * Math.min(d, 6)); };
+  // where each ground starts, in field tiles from the rock
+  const TIERS = { dust: 1.3, scrub: 3.1, dry: 5.4, patchy: 8.0 };
+  // what ground a tile gets (null: stays green), from the field plus the jitter
+  const edgeTier = (x, y, f0, d) => {
+    const f = f0 + (hash(x, y, 1) - 0.5) * 1.1, h = hash(x, y, 2), h3 = hash(x, y, 3);
+    if (f < TIERS.dust) return d <= 3.2 && h > 0.5 ? RC_SCREE : RC_DUST;
+    if (f < TIERS.scrub) return d <= 2.5 && h > 0.8 ? RC_SCREE : RC_DRYSCRUB;
+    if (f < TIERS.dry) return h3 < 0.14 ? RC_DRYSCRUB : RC_DRYGRASS;
+    if (f < TIERS.patchy) return h3 < (TIERS.patchy - f) / 2.6 ? RC_DRYGRASS : null;
+    return null;
+  };
 
   // ---------- the region ----------
   // Inserted just ahead of the catch-all 'The Wilds', the way 25-elves does it: regionAt still finds it first
@@ -35293,12 +35377,17 @@ HOOKS.selfTest.push((check, F, h) => {
     const OK = OVERWRITABLE();
     const put = (x, y, t) => { if (!mine(x, y)) return false; if (!OK.has(at(x, y)) && HEIGHT_OF[at(x, y)] === undefined) return false; set(x, y, t); return true; };
     const force = (x, y, t) => { if (!mine(x, y)) return false; set(x, y, t); return true; };
+    CLASS.fill(4);
+    for (let y = RC.y0; y <= RC.y1; y++) for (let x = RC.x0; x <= RC.x1; x++) CLASS[idx(x, y)] = classOf(x, y);
+    // the ground as the other files left it, so the edge can give the far corners of the box back their grass
+    const orig = map.slice();
 
-    // 1. the ground: four heights over the table, dry scrub everywhere outside it
+    // 1. the ground: four heights over the table, dry scrub everywhere outside it (the edge, step 6c, then
+    //    re-lays the scrub as the band that steps out from the rock to the country round it)
     for (let y = RC.y0; y <= RC.y1; y++) for (let x = RC.x0; x <= RC.x1; x++) {
       if (!OK.has(at(x, y))) continue;                       // water, and anything another feature put here, is left alone
       tally.converted++;
-      const c = classOf(x, y);
+      const c = CLASS[idx(x, y)];
       // the wall edges wander a little so the canyon is not two smooth curves; the floor itself is untouched,
       // so nothing the connectivity of this place depends on moves
       const w = noise(x, y);
@@ -35319,7 +35408,7 @@ HOOKS.selfTest.push((check, F, h) => {
     // 3. the Fall: a slab of the cliff came down and filled the spur. Walked over from the table, walked up
     //    and over from the canyon floor — the only place you cross the Redcut without climbing.
     for (let y = FALL.y0; y <= FALL.y1; y++) for (let x = FALL.x0; x <= FALL.x1; x++) {
-      const c = classOf(x, y); if (c === 3 || c === 4) continue;
+      const c = cls(x, y); if (c === 3 || c === 4) continue;
       force(x, y, RC_FALL); tally.fall++;
     }
 
@@ -35334,7 +35423,7 @@ HOOKS.selfTest.push((check, F, h) => {
     force(COIL_T.x, COIL_T.y, RC_COIL);
     force(BENCH_T.x, BENCH_T.y, T.WORKBENCH); force(BENCH_T.x - 1, BENCH_T.y, RC_FLOOR);
     for (const [x, y] of NESTS) { flat(x, y, 1, RC_TOP); force(x, y, RC_NEST); }
-    for (const [x, y] of BOARDS) { force(x, y, RC_BOARD); for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1]]) if (SOLID.has(at(x + dx, y + dy))) force(x + dx, y + dy, classOf(x + dx, y + dy) === 4 ? RC_SCRUB : RC_TOP); }
+    for (const [x, y] of BOARDS) { force(x, y, RC_BOARD); for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1]]) if (SOLID.has(at(x + dx, y + dy))) force(x + dx, y + dy, cls(x + dx, y + dy) === 4 ? RC_SCRUB : RC_TOP); }
     // the deep cache: a crack in the rock at the foot of the box head, and a pocket cut in behind it.
     // The pocket is walled all the way round bar the crack, so the crack is the only way in and the Agility
     // gate is a real gate rather than a decoration you can walk around.
@@ -35356,7 +35445,7 @@ HOOKS.selfTest.push((check, F, h) => {
       for (const n of NPCS) opening.add(n.x + ',' + n.y);
       let sealed = 0;
       for (let y = RC.y0; y <= RC.y1; y++) for (let x = RC.x0; x <= RC.x1; x++) {
-        if (classOf(x, y) !== 2 || opening.has(x + ',' + y)) continue;
+        if (cls(x, y) !== 2 || opening.has(x + ',' + y)) continue;
         const t = at(x, y); if (SOLID.has(t) || PUSH_THROUGH.has(t)) continue;
         force(x, y, RC_CLIFF); sealed++;
       }
@@ -35396,7 +35485,8 @@ HOOKS.selfTest.push((check, F, h) => {
     //    eight neighbours are walkable, so it can never close a way.
     for (let y = RC.y0; y <= RC.y1; y++) for (let x = RC.x0; x <= RC.x1; x++) {
       const t = at(x, y);
-      if (t !== RC_SCRUB && t !== RC_TOP && t !== RC_FLOOR) continue;
+      // the scrub outside the table is dressed by the edge (6c), with its own bushes, blocks and dead trees
+      if (t !== RC_TOP && t !== RC_FLOOR) continue;
       const n = noise(x * 3 + 7, y * 3 + 11);
       if (n > 0.94) {
         let open = true;
@@ -35404,6 +35494,90 @@ HOOKS.selfTest.push((check, F, h) => {
         if (open && !NPCS.some(p => Math.max(Math.abs(p.x - x), Math.abs(p.y - y)) <= 3)) { force(x, y, RC_BOULDER); tally.boulders++; continue; }
       }
       if (n > 0.80 && n <= 0.90) { force(x, y, RC_BUSH); tally.bushes++; }
+    }
+
+    // 6c. THE EDGE: the band between the rock and the country round it (the drawing and the reasons are at
+    //     "the edge" below). Every tile gets its distance from the rock (the table, the ring and its arms), a
+    //     smooth noise moves that in and out (a tile or so at the foot of the rim, nearly three tiles out in
+    //     the grass), and a per-tile jitter frays each step so two grounds dither into each other instead of
+    //     meeting on a line. Inside the region box the placeholder scrub is re-laid; outside it only open grass
+    //     becomes open ground and a tree becomes a dead tree (solid for solid), so no way anywhere opens or
+    //     closes. A block or a dead tree added on open ground needs all eight tiles round it open.
+    {
+      const Tn = n => (n in T ? T[n] : -1);
+      const FERN = Tn('FERN'), JUNGLE = Tn('JUNGLE');
+      const OUT_GROUND = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN].filter(v => v >= 0));
+      const OUT_TREE = new Set([T.TREE, T.OAK, JUNGLE].filter(v => v >= 0));
+      const GREEN_BACK = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, T.DIRT]);
+      const E = tally.edge = { dust: 0, scree: 0, scrub: 0, dry: 0, green: 0, bush: 0, snag: 0, boulder: 0, tree: 0, deadTree: 0, outside: 0 };
+      const RAW = ERAW, FLD = EFIELD;
+      RAW.fill(1e9); FLD.fill(99);
+      for (let y = EXT.y0; y <= EXT.y1; y++) for (let x = EXT.x0; x <= EXT.x1; x++) if (mine(x, y) && CLASS[idx(x, y)] < 4) RAW[ei(x, y)] = 0;
+      // distance from the rock: a two-pass chamfer (1 straight, root 2 diagonal), exact enough for bands
+      const R2 = Math.SQRT2;
+      for (let j = 0; j < EH; j++) for (let i = 0; i < EW; i++) {
+        const k = j * EW + i; let d = RAW[k];
+        if (i > 0) d = Math.min(d, RAW[k - 1] + 1);
+        if (j > 0) { d = Math.min(d, RAW[k - EW] + 1); if (i > 0) d = Math.min(d, RAW[k - EW - 1] + R2); if (i < EW - 1) d = Math.min(d, RAW[k - EW + 1] + R2); }
+        RAW[k] = d;
+      }
+      for (let j = EH - 1; j >= 0; j--) for (let i = EW - 1; i >= 0; i--) {
+        const k = j * EW + i; let d = RAW[k];
+        if (i < EW - 1) d = Math.min(d, RAW[k + 1] + 1);
+        if (j < EH - 1) { d = Math.min(d, RAW[k + EW] + 1); if (i < EW - 1) d = Math.min(d, RAW[k + EW + 1] + R2); if (i > 0) d = Math.min(d, RAW[k + EW - 1] + R2); }
+        RAW[k] = d;
+      }
+      for (let y = EXT.y0; y <= EXT.y1; y++) for (let x = EXT.x0; x <= EXT.x1; x++) { const k = ei(x, y); FLD[k] = RAW[k] === 0 ? -1 : edgeField(x, y, RAW[k]); }
+
+      // lay the band
+      const regrow = [];
+      for (let y = EXT.y0; y <= EXT.y1; y++) for (let x = EXT.x0; x <= EXT.x1; x++) {
+        const k = ei(x, y); if (RAW[k] === 0) continue;
+        const inside = mine(x, y), t = at(x, y);
+        if (inside ? t !== RC_SCRUB : !(OUT_GROUND.has(t) || OUT_TREE.has(t))) continue;
+        const to = edgeTier(x, y, FLD[k], RAW[k]);
+        if (!inside && OUT_TREE.has(t)) {
+          // a tree in the dry ground dies where it stands: solid for solid
+          if (to !== null && to !== RC_DRYGRASS) { set(x, y, RC_SNAG); E.deadTree++; E.outside++; }
+          else if (to === RC_DRYGRASS && hash(x, y, 4) < 0.55) { set(x, y, RC_SNAG); E.deadTree++; E.outside++; }
+          continue;
+        }
+        if (to === null) {
+          // past the band: green again. Inside the box that means giving back what the base world had there
+          if (!inside) continue;
+          const o = orig[idx(x, y)];
+          set(x, y, GREEN_BACK.has(o) ? o : T.GRASS); E.green++;
+          if (o === T.TREE || o === T.OAK) regrow.push([x, y, o]);
+          continue;
+        }
+        set(x, y, to);
+        if (!inside) E.outside++;
+        if (to === RC_DUST) E.dust++; else if (to === RC_SCREE) E.scree++; else if (to === RC_DRYSCRUB) E.scrub++; else E.dry++;
+      }
+
+      // dress it: blocks at the foot of the rim, thorn bushes in the scrub, the odd dead tree in the dry grass,
+      // and the base world's own trees back in the green corners of the box
+      const open8 = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { if (!dx && !dy) continue; if (!inMap(x + dx, y + dy)) return false; const q = at(x + dx, y + dy); if (SOLID.has(q) || PUSH_THROUGH.has(q)) return false; } return true; };
+      const cheb = (p, x, y) => Math.max(Math.abs(p.x - x), Math.abs(p.y - y));
+      const keepClear = (x, y) => NPCS.some(p => cheb(p, x, y) <= 3) || MONSTER_SPAWNS.some(sp => Math.max(Math.abs(sp.tx - x), Math.abs(sp.ty - y)) <= 1)
+        || [MOUTH, SLOT].some(p => cheb(p, x, y) <= 3) || BOARDS.some(([bx, by]) => Math.max(Math.abs(bx - x), Math.abs(by - y)) <= 1)
+        || (x >= RISE.x0 - 3 && x <= RISE.x1 + 1 && y >= RISE.y0 - 2 && y <= RISE.y1 + 2) || !!buildingAt(x, y);
+      const solidOk = (x, y) => open8(x, y) && !keepClear(x, y);
+      for (let y = EXT.y0; y <= EXT.y1; y++) for (let x = EXT.x0; x <= EXT.x1; x++) {
+        const t = at(x, y); if (!EDGE_GROUND.has(t)) continue;
+        const inside = mine(x, y), h = hash(x, y, 7);
+        if (t === RC_DUST || t === RC_SCREE) {
+          if (inside && h > 0.9 && solidOk(x, y)) { set(x, y, RC_BOULDER); E.boulder++; }
+        } else if (t === RC_DRYSCRUB) {
+          if (h > 0.8 && h <= 0.89) { set(x, y, RC_DRYBUSH); E.bush++; }
+          else if (inside && h > 0.975 && solidOk(x, y)) { set(x, y, RC_BOULDER); E.boulder++; }
+        } else if (t === RC_DRYGRASS) {
+          if (h > 0.85 && h <= 0.91) { set(x, y, RC_DRYBUSH); E.bush++; }
+          else if (h > 0.96 && solidOk(x, y)) { set(x, y, RC_SNAG); E.snag++; }
+        }
+      }
+      for (const [x, y, o] of regrow) if (hash(x, y, 9) < 0.6 && solidOk(x, y)) { set(x, y, o); E.tree++; }
+      edgeState.gen++;
     }
 
     // 6b. the wobbled wall edges can leave a pocket of walkable rock shut inside a cliff: a hole nobody can
@@ -35458,21 +35632,30 @@ HOOKS.selfTest.push((check, F, h) => {
     [RC_SCRUB]: ['#9c8654', '#a48e5c', '#947e4d'],
     [RC_WINCH]: ['#b86a3e', '#c07444', '#b06238'], [RC_NEST]: ['#b86a3e', '#c07444', '#b06238'],
     [RC_BASKET]: ['#4e2a20', '#573026', '#48261d'], [RC_COIL]: ['#4e2a20', '#573026', '#48261d'],
-    [RC_LAMP]: ['#8a4c30', '#965436', '#80452b'], [RC_BOARD]: ['#9c8654', '#a48e5c', '#947e4d'],
-    [RC_BUSH]: ['#9c8654', '#a48e5c', '#947e4d'],
+    [RC_LAMP]: ['#8a4c30', '#965436', '#80452b'],
   };
+  // a bush, a block or a board takes the tone of the ground it stands on: floor, ledge or table. Out in the band
+  // it takes none, and the edge's colour wash is its ground like everything else there.
+  const groundTone = (t, tx, ty) => {
+    const tone = TONE[t]; if (tone) return tone;
+    if (t !== RC_BUSH && t !== RC_BOULDER && t !== RC_BOARD) return null;
+    const c = cls(tx, ty);
+    return c === 0 ? TONE[RC_FLOOR] : c === 1 ? TONE[RC_LEDGE] : c === 3 ? TONE[RC_TOP] : null;
+  };
+  // the ground a cliff can throw its shadow on
+  const SHADED = new Set([...EDGE_GROUND, RC_BUSH, RC_BOULDER, RC_SCRUB]);
   const CLIFF_FACE = ['#6b3320', '#733825', '#642e1d'];
   const CLIFF_CAP = '#c2764a';                       // the sunlit lip along the top of a face
   const CLIFF_DARK = '#3a1a11';
 
   // one flat item under everything: the ground tones, the depth shading, and the shadows the cliffs throw
   HOOKS.draw.push((g, items) => {
-    const x0 = Math.max(RC.x0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(RC.x1, Math.ceil((cam.x + VW) / TILE) + 1);
-    const y0 = Math.max(RC.y0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(RC.y1, Math.ceil((cam.y + VH) / TILE) + 1);
+    const x0 = Math.max(EXT.x0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(EXT.x1, Math.ceil((cam.x + VW) / TILE) + 1);
+    const y0 = Math.max(EXT.y0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(EXT.y1, Math.ceil((cam.y + VH) / TILE) + 1);
     if (x1 < x0 || y1 < y0) return;
     items.push({ y: -8e8, draw: () => {
       for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-        const t = tileAt(tx, ty), tone = TONE[t];
+        const t = tileAt(tx, ty), tone = groundTone(t, tx, ty);
         const px = tx * TILE, py = ty * TILE;
         if (tone) {
           const v = variant[idx(tx, ty)] % 3;
@@ -35487,7 +35670,7 @@ HOOKS.selfTest.push((check, F, h) => {
           if (h < 4 && t !== RC_SCRUB) { g.fillStyle = `rgba(12,8,20,${(4 - h) * 0.055})`; g.fillRect(px, py, TILE, TILE); }
         }
         // the shadow a cliff throws on the ground below it: strongest against the face, gone six tiles down
-        if (!tone && t !== RC_BUSH) continue;
+        if (!tone && !SHADED.has(t)) continue;
         if (isCliff(tx, ty - 1)) {
           const gr = g.createLinearGradient(0, py, 0, py + 26);
           gr.addColorStop(0, 'rgba(10,6,14,0.5)'); gr.addColorStop(1, 'rgba(10,6,14,0)');
@@ -35499,6 +35682,131 @@ HOOKS.selfTest.push((check, F, h) => {
       }
     } });
   });
+
+  // ---------- the edge, drawn ----------
+  // THE WASH: one picture, one pixel a tile, over the whole reach of the band. Each pixel is the colour of the
+  // ground at that tile's distance from the rock (red dust, tan scrub, straw, then nothing), drawn scaled up
+  // with smoothing on, so the colour runs smoothly from tile centre to tile centre and no step has an edge.
+  // It lies over the tile textures and under everything else; the rock's own flat tones paint over it.
+  // Only open ground takes it: water, cobbles and anything built are left their own colour.
+  const WASH = [
+    // [field tiles from the rock, r, g, b, alpha]
+    [-9, 154, 88, 57, 0.95], [0.8, 157, 92, 60, 0.94], [2.4, 166, 134, 86, 0.88], [4.6, 176, 160, 96, 0.56],
+    [7.0, 160, 166, 88, 0.24], [9.0, 150, 160, 80, 0],
+  ];
+  const washAt = f => {
+    if (f <= WASH[0][0]) return WASH[0];
+    for (let i = 1; i < WASH.length; i++) if (f <= WASH[i][0]) { const a = WASH[i - 1], b = WASH[i], u = (f - a[0]) / (b[0] - a[0]); return a.map((v, k) => v + (b[k] - v) * u); }
+    return WASH[WASH.length - 1];
+  };
+  const WASHED = new Set([...EDGE_GROUND, RC_SNAG, RC_SCRUB, RC_BUSH, RC_BOULDER, RC_BOARD]);
+  const washable = t => WASHED.has(t) || t === T.GRASS || t === T.FLOWERS || t === T.MUSHROOM || t === T.DIRT || t === T.TREE || t === T.OAK || t === T.ROCK || t === T.STUMP
+    || ('FERN' in T && t === T.FERN) || ('JUNGLE' in T && t === T.JUNGLE);
+  const edgeDraw = { canvas: null, gen: -1, washes: 0, marks: 0, snags: 0, bushes: 0 };
+  function buildWash() {
+    edgeDraw.gen = edgeState.gen;
+    const c = edgeDraw.canvas || (edgeDraw.canvas = document.createElement('canvas'));
+    c.width = EW; c.height = EH;
+    const w = c.getContext('2d'); if (!w) return;
+    w.clearRect(0, 0, EW, EH);
+    for (let y = EXT.y0; y <= EXT.y1; y++) for (let x = EXT.x0; x <= EXT.x1; x++) {
+      const k = ei(x, y), t = tileAt(x, y);
+      let col = null;
+      if (ERAW[k] === 0) {
+        // the rock itself: only the rim tiles beside the band carry the dust colour, so the wash runs right up
+        // to the foot of the cliff instead of fading out half a tile short of it (the rock paints over them)
+        let rim = false;
+        for (let dy = -1; dy <= 1 && !rim; dy++) for (let dx = -1; dx <= 1 && !rim; dx++) if (inExt(x + dx, y + dy) && ERAW[ei(x + dx, y + dy)] > 0) rim = true;
+        if (rim) col = WASH[0];
+      } else if (washable(t) && !buildingAt(x, y)) col = washAt(EFIELD[k]);
+      if (!col || col[4] <= 0.004) continue;
+      w.fillStyle = `rgba(${col[1] | 0},${col[2] | 0},${col[3] | 0},${col[4].toFixed(3)})`;
+      w.fillRect(x - EXT.x0, y - EXT.y0, 1, 1);
+    }
+  }
+  // THE MARKS: small things on the ground, drawn once into a sprite per kind and variant and stamped per tile:
+  // stones on the scree, a pebble and a crack in the dust, dry tufts in the scrub, straw blades in the dry grass
+  const markSprites = {};
+  const markSprite = (kind, v) => {
+    const key = kind + v; if (markSprites[key] !== undefined) return markSprites[key];
+    const c = document.createElement('canvas'); c.width = TILE; c.height = TILE;
+    const m = c.getContext && c.getContext('2d'); if (!m) return (markSprites[key] = null);
+    const r = mulberry32(SEED * 7 + kind.length * 131 + v * 17);
+    const tuft = (x, y, h, col) => { m.strokeStyle = col; m.lineWidth = 1.4; for (let k = -2; k <= 2; k++) { m.beginPath(); m.moveTo(x, y); m.quadraticCurveTo(x + k * 1.6, y - h * 0.5, x + k * 3.2, y - h + Math.abs(k)); m.stroke(); } };
+    const stone = (x, y, rx, ry, col) => { m.fillStyle = 'rgba(0,0,0,0.25)'; m.beginPath(); m.ellipse(x + 1, y + ry * 0.6, rx, ry * 0.55, 0, 0, 7); m.fill(); m.fillStyle = col; m.beginPath(); m.ellipse(x, y, rx, ry, 0, 0, 7); m.fill(); m.fillStyle = 'rgba(255,225,190,0.28)'; m.beginPath(); m.ellipse(x - rx * 0.3, y - ry * 0.35, rx * 0.45, ry * 0.35, 0, 0, 7); m.fill(); };
+    if (kind === 'scree') {
+      for (let i = 0; i < 7; i++) stone(5 + r() * 38, 6 + r() * 36, 2.2 + r() * 3.2, 1.8 + r() * 2.2, ['#7c4a35', '#946046', '#6c3f2e'][i % 3]);
+    } else if (kind === 'dust') {
+      m.strokeStyle = 'rgba(60,28,18,0.28)'; m.lineWidth = 1.2; m.beginPath(); const cx = 10 + r() * 28, cy = 10 + r() * 28;
+      m.moveTo(cx - 8, cy - 3); m.lineTo(cx - 2, cy); m.lineTo(cx + 3, cy - 2); m.lineTo(cx + 9, cy + 3); m.stroke();
+      for (let i = 0; i < 2; i++) stone(6 + r() * 36, 6 + r() * 36, 1.6 + r() * 1.6, 1.3 + r() * 1.2, '#8a543b');
+    } else if (kind === 'scrub') {
+      for (let i = 0; i < 2; i++) tuft(8 + r() * 32, 18 + r() * 26, 7 + r() * 4, 'rgba(130,112,62,0.9)');
+      stone(6 + r() * 36, 6 + r() * 36, 1.5, 1.2, '#8f7a52');
+    } else if (kind === 'dry') {
+      for (let i = 0; i < 3; i++) tuft(6 + r() * 36, 14 + r() * 30, 8 + r() * 5, i === 1 ? 'rgba(150,140,70,0.85)' : 'rgba(176,158,86,0.85)');
+    }
+    return (markSprites[key] = c);
+  };
+  const MARK_OF = { [RC_SCREE]: 'scree', [RC_DUST]: 'dust', [RC_DRYSCRUB]: 'scrub', [RC_DRYGRASS]: 'dry' };
+  HOOKS.draw.push((g, items) => {
+    const x0 = Math.max(EXT.x0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(EXT.x1, Math.ceil((cam.x + VW) / TILE) + 1);
+    const y0 = Math.max(EXT.y0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(EXT.y1, Math.ceil((cam.y + VH) / TILE) + 1);
+    if (x1 < x0 || y1 < y0 || !edgeState.gen) return;
+    // the wash: after the tile textures and 39-worldblend's feathering, before the rock's flat tones
+    items.push({ y: -8.5e8, draw: () => {
+      if (edgeDraw.gen !== edgeState.gen) buildWash();
+      if (!edgeDraw.canvas) return;
+      // a block, a board or a bush out in the band stands on sand-textured tiles of the Redcut's own (they are
+      // the same tiles that stand on the table and the canyon floor, where a flat tone covers them): give them
+      // the grass the rest of the band is washed over, so none of them sits on a pale square
+      for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+        const t = tileAt(tx, ty); if ((t !== RC_BOULDER && t !== RC_BOARD && t !== RC_BUSH) || cls(tx, ty) !== 4) continue;
+        const img = tex['grass' + (variant[idx(tx, ty)] % 3)]; if (img) g.drawImage(img, tx * TILE, ty * TILE, TILE, TILE);
+      }
+      const smooth = g.imageSmoothingEnabled;
+      g.imageSmoothingEnabled = true;
+      g.drawImage(edgeDraw.canvas, 0, 0, EW, EH, EXT.x0 * TILE, EXT.y0 * TILE, EW * TILE, EH * TILE);
+      g.imageSmoothingEnabled = smooth;
+      edgeDraw.washes++;
+    } });
+    // the marks: after the rock's tones, before anything that stands up
+    items.push({ y: -7.95e8, draw: () => {
+      for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+        const kind = MARK_OF[tileAt(tx, ty)]; if (!kind) continue;
+        const v = variant[idx(tx, ty)] % 3, spr = markSprite(kind, v);
+        if (spr) { g.drawImage(spr, tx * TILE, ty * TILE); edgeDraw.marks++; }
+      }
+    } });
+  });
+  // a dead tree: a bleached trunk that forks, bare branches, no leaves, and its shadow on the dry ground
+  function drawSnag(g, tx, ty) {
+    const cx = tc(tx), cy = tc(ty), v = variant[idx(tx, ty)] % 3, lean = (v - 1) * 2.5;
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(cx + 4, cy + 16, 15, 5, 0, 0, 7); g.fill();
+    g.strokeStyle = '#6e5a46'; g.lineCap = 'round';
+    g.lineWidth = 6; g.beginPath(); g.moveTo(cx, cy + 16); g.lineTo(cx + lean, cy - 8); g.stroke();
+    g.lineWidth = 3.2;
+    g.beginPath(); g.moveTo(cx + lean, cy - 6); g.lineTo(cx + lean - 11, cy - 22); g.stroke();
+    g.beginPath(); g.moveTo(cx + lean, cy - 8); g.lineTo(cx + lean + 9, cy - 26); g.stroke();
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx + lean - 6, cy - 14); g.lineTo(cx + lean - 15, cy - 13); g.stroke();
+    g.beginPath(); g.moveTo(cx + lean + 5, cy - 18); g.lineTo(cx + lean + 14, cy - 17); g.stroke();
+    g.beginPath(); g.moveTo(cx + lean + 9, cy - 26); g.lineTo(cx + lean + 7, cy - 32); g.stroke();
+    g.strokeStyle = 'rgba(235,220,195,0.35)'; g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(cx - 1.5, cy + 14); g.lineTo(cx + lean - 1.5, cy - 7); g.stroke();
+    g.lineCap = 'butt';
+    edgeDraw.snags++;
+  }
+  // a dry thorn bush: the dust bush's shape, in straw
+  function drawDryBush(g, tx, ty) {
+    const cx = tc(tx), cy = tc(ty), sway = Math.sin(time * 1.3 + tx) * 1.2;
+    g.fillStyle = 'rgba(0,0,0,0.16)'; g.beginPath(); g.ellipse(cx, cy + 11, 11, 3.5, 0, 0, 7); g.fill();
+    g.strokeStyle = '#8f7f45'; g.lineWidth = 1.7;
+    for (let k = -3; k <= 3; k++) { g.beginPath(); g.moveTo(cx, cy + 10); g.quadraticCurveTo(cx + k * 3.5, cy, cx + k * 6 + sway, cy - 8 - Math.abs(k) * 0.8); g.stroke(); }
+    g.strokeStyle = '#b39f5c'; g.lineWidth = 1.1;
+    for (let k = -2; k <= 2; k += 2) { g.beginPath(); g.moveTo(cx, cy + 9); g.lineTo(cx + k * 5 + sway, cy - 6); g.stroke(); }
+    edgeDraw.bushes++;
+  }
 
   // the cliffs themselves, one item a tile so a knight walking south of a wall is drawn in front of it
   function drawCliff(g, tx, ty) {
@@ -35640,10 +35948,10 @@ HOOKS.selfTest.push((check, F, h) => {
     g.fillStyle = 'rgba(0,0,0,0.20)'; g.fillRect(cx - 24, cy + 12, TILE, 5);
   }
 
-  const PROP = { [RC_CLIFF]: drawCliff, [RC_SALT]: drawSeam, [RC_CRACK]: drawCrack, [RC_CACHE]: drawCache, [RC_BOULDER]: drawBoulder, [RC_BUSH]: drawBush, [RC_WINCH]: drawWinch, [RC_BASKET]: drawBasket, [RC_NEST]: drawNest, [RC_LAMP]: drawLamp, [RC_COIL]: drawCoil, [RC_BOARD]: drawBoard, [RC_RAMP]: drawRampSteps, [RC_FALL]: drawFallRubble };
+  const PROP = { [RC_CLIFF]: drawCliff, [RC_SALT]: drawSeam, [RC_CRACK]: drawCrack, [RC_CACHE]: drawCache, [RC_BOULDER]: drawBoulder, [RC_BUSH]: drawBush, [RC_WINCH]: drawWinch, [RC_BASKET]: drawBasket, [RC_NEST]: drawNest, [RC_LAMP]: drawLamp, [RC_COIL]: drawCoil, [RC_BOARD]: drawBoard, [RC_RAMP]: drawRampSteps, [RC_FALL]: drawFallRubble, [RC_SNAG]: drawSnag, [RC_DRYBUSH]: drawDryBush };
   HOOKS.draw.push((g, items) => {
-    const x0 = Math.max(RC.x0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(RC.x1, Math.ceil((cam.x + VW) / TILE) + 1);
-    const y0 = Math.max(RC.y0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(RC.y1, Math.ceil((cam.y + VH) / TILE) + 2);
+    const x0 = Math.max(EXT.x0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(EXT.x1, Math.ceil((cam.x + VW) / TILE) + 1);
+    const y0 = Math.max(EXT.y0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(EXT.y1, Math.ceil((cam.y + VH) / TILE) + 2);
     if (x1 < x0 || y1 < y0) return;
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
       const f = PROP[tileAt(tx, ty)]; if (!f) continue;
@@ -35845,7 +36153,7 @@ HOOKS.selfTest.push((check, F, h) => {
     'Reward: 350 coins, 400 Mining xp, and Marlow fits the handle back on the drum and leaves the winch running for good — ride it down from the rim, ride it up from the floor.',
   ] });
 
-  window.REDCUT = { RC, CX, CY, RX, RY, ARC, SPUR, MOUTH, SLOT, RISE, STAIR, SWITCHBACK, FALL, WINCH_T, BASKET_T, LAMP_T, COIL_T, CRACK_T, CACHE_T, BENCH_T, MARLOW, HUX, NESTS, BOARDS, HAWKS, JAWS, SEAMS: REDCUT_SEAMS,
+  window.REDCUT = { EXT, edge: { dust: RC_DUST, scree: RC_SCREE, scrub: RC_DRYSCRUB, dry: RC_DRYGRASS, bush: RC_DRYBUSH, snag: RC_SNAG }, edgeDraw, edgeRaw: ERAW, edgeField: EFIELD, TIERS, inPl, RC, CX, CY, RX, RY, ARC, SPUR, MOUTH, SLOT, RISE, STAIR, SWITCHBACK, FALL, WINCH_T, BASKET_T, LAMP_T, COIL_T, CRACK_T, CACHE_T, BENCH_T, MARLOW, HUX, NESTS, BOARDS, HAWKS, JAWS, SEAMS: REDCUT_SEAMS,
     tiles: { top: RC_TOP, ledge: RC_LEDGE, floor: RC_FLOOR, cliff: RC_CLIFF, scrub: RC_SCRUB, ramp: RC_RAMP, fall: RC_FALL, salt: RC_SALT, crack: RC_CRACK, cache: RC_CACHE, winch: RC_WINCH, basket: RC_BASKET, nest: RC_NEST, lamp: RC_LAMP, coil: RC_COIL, board: RC_BOARD, boulder: RC_BOULDER, bush: RC_BUSH, spent: RC_SPENT },
     tally, paint, HEIGHT_OF, classOf, CRACK_LV, SALT_LV, quest: Q };
 
@@ -35874,11 +36182,13 @@ HOOKS.selfTest.push((check, F, h) => {
 
     // 1. the place exists, with the counts it claims
     { const c = {}; for (let y = RC.y0; y <= RC.y1; y++) for (let x = RC.x0; x <= RC.x1; x++) { const n = tileName(tileAt(x, y)); c[n] = (c[n] || 0) + 1; }
+      // the ground at the foot of the table: the edge's dust, scree, scrub and dry grass (it was all one scrub)
+      const foot = (c.REDDUST || 0) + (c.REDSCREE || 0) + (c.DRYSCRUB || 0) + (c.DRYGRASS || 0) + (c.DRYBUSH || 0) + (c.REDSCRUB || 0);
       const reg = REGIONS.find(r => r.name === 'The Redcut');
       check(P + 'The Redcut is a region in the bottom-right, and the table is cut into four heights: canyon floor, ledge, cliff and table top',
         !!reg && regionAt(230, 140).name === 'The Redcut' && regionAt(215, 110).name === 'The Redcut' && regionAt(150, 120).name !== 'The Redcut'
-        && (c.CANYONFLOOR || 0) > 350 && (c.REDLEDGE || 0) > 120 && (c.REDCLIFF || 0) > 500 && (c.REDROCK || 0) > 900 && (c.REDSCRUB || 0) > 700,
-        { region: reg && [reg.x0, reg.y0, reg.x1, reg.y1], floor: c.CANYONFLOOR || 0, ledge: c.REDLEDGE || 0, cliff: c.REDCLIFF || 0, top: c.REDROCK || 0, scrub: c.REDSCRUB || 0, tally }); }
+        && (c.CANYONFLOOR || 0) > 350 && (c.REDLEDGE || 0) > 120 && (c.REDCLIFF || 0) > 500 && (c.REDROCK || 0) > 900 && foot > 700,
+        { region: reg && [reg.x0, reg.y0, reg.x1, reg.y1], floor: c.CANYONFLOOR || 0, ledge: c.REDLEDGE || 0, cliff: c.REDCLIFF || 0, top: c.REDROCK || 0, footOfTheTable: foot, tally }); }
 
     // 2. every point of interest is reachable on foot from where the ferry puts you down
     { const POI = [['the mouth', MOUTH.x, MOUTH.y], ['the slot', SLOT.x, SLOT.y], ['the Rise', RISE.x0 + 1, RISE.y0 + 2],
@@ -36071,9 +36381,9 @@ HOOKS.selfTest.push((check, F, h) => {
           lampBeforeMarlow: earlyLamp, marlowSkipsPastTheLamp: pastLamp, outOfOrderTurn: turn2, outOfOrderFinished: done2, stuckSaveRescued: rescued, litOnSpike, darkOnceTaken }); }
 
     // 12. the ring's two arms run out past the table to the mouth and the slot. They are walled along their
-    //     outer side, so the canyon floor touches the scrub at those two openings and nowhere else. A thorn bush
-    //     counts as scrub only where it grows on scrub ground; bushes grow on the canyon floor as well.
-    { const scrubAt = (x, y) => { const t = tileAt(x, y); return t === RC_SCRUB || (t === RC_BUSH && classOf(x, y) === 4); };
+    //     outer side, so the canyon floor touches the ground outside the table (the edge's band, whatever it
+    //     is dressed as) at those two openings and nowhere else.
+    { const scrubAt = (x, y) => { const t = tileAt(x, y); return cls(x, y) === 4 && !SOLID.has(t); };
       const atOpening = (x, y) => [MOUTH, SLOT].some(p => Math.max(Math.abs(p.x - x), Math.abs(p.y - y)) <= 2);
       let contacts = 0, mouth = 0, slot = 0; const stray = [];
       for (let y = RC.y0; y <= RC.y1; y++) for (let x = RC.x0; x <= RC.x1; x++) {
@@ -36088,6 +36398,53 @@ HOOKS.selfTest.push((check, F, h) => {
       const strayCount = contacts - mouth - slot;
       check(P + 'the canyon floor meets the scrub only at the mouth and the slot', strayCount === 0 && mouth > 0,
         { contacts, atTheMouth: mouth, atTheSlot: slot, elsewhere: strayCount, firstStray: stray }); }
+
+    // 13. THE EDGE. The owner: "The canyon doesn't blend with the surrounding environment in the slightest."
+    //     It stood in a tan rectangle whose west side ran down x 204 and whose north side ran along y 100.
+    { const E = REDCUT.edge, FOOT = new Set([E.dust, E.scree, E.scrub, E.dry, E.bush, E.snag, RC_BOULDER]);
+      const rock = (x, y) => mine(x, y) && cls(x, y) < 4;
+      const country = (x, y) => rock(x, y) || FOOT.has(tileAt(x, y));
+      // (a) the outline: the outermost tile of the canyon country, row by row on the west and column by column
+      //     on the north, never holds one line for more than a few tiles (the old box held one for 78 and 54)
+      const longest = arr => { let best = 0, run = 0, prev = null; for (const v of arr) { run = v !== null && v === prev ? run + 1 : 1; prev = v; if (v !== null) best = Math.max(best, run); } return best; };
+      const west = [], north = [];
+      for (let y = RC.y0; y <= RC.y1 - 3; y++) { let e = null; for (let x = EXT.x0; x <= RC.x1; x++) if (country(x, y)) { e = x; break; } west.push(e); }
+      for (let x = RC.x0; x <= RC.x1 - 3; x++) { let e = null; for (let y = EXT.y0; y <= RC.y1; y++) if (country(x, y)) { e = y; break; } north.push(e); }
+      const onBoxWest = west.filter(v => v === RC.x0).length, onBoxNorth = north.filter(v => v === RC.y0).length;
+      check(P + 'the edge: the Redcut\'s outline is ragged, not a box (no straight run longer than 6 tiles down its west side or along its north side)',
+        longest(west) <= 6 && longest(north) <= 6 && onBoxWest < 20 && onBoxNorth < 14,
+        { longestWest: longest(west), longestNorth: longest(north), rowsOnTheOldWestLine: onBoxWest, columnsOnTheOldNorthLine: onBoxNorth }); }
+    // (b) the transition: walking straight out from the foot of the rim, the ground steps red dust or scree →
+    //     dry scrub → dry grass → green, and the band from the last rock tile to the first green one is several
+    //     tiles wide, on every side that has room for it (the east and south run into the edge of the world)
+    { const rock = (x, y) => mine(x, y) && cls(x, y) < 4;
+      const E = REDCUT.edge, green = t => t === T.GRASS || t === T.FLOWERS || t === T.MUSHROOM || ('FERN' in T && t === T.FERN) || t === T.TREE || t === T.OAK || ('JUNGLE' in T && t === T.JUNGLE);
+      const rank = t => (t === E.dust || t === E.scree || t === RC_BOULDER) ? 0 : (t === E.scrub || t === E.bush) ? 1 : (t === E.dry || t === E.snag) ? 2 : green(t) ? 3 : -1;
+      // each ray starts on the rock and walks out until it leaves it
+      const rays = [['west', -1, 0, 215, 120], ['west', -1, 0, 215, 160], ['north-west', -1, -1, 222, 112], ['north', 0, -1, 231, 112], ['north', 0, -1, 226, 112], ['south-west', -1, 1, 218, 158]];
+      const out = rays.map(([name, dx, dy, sx, sy]) => {
+        let x = sx, y = sy; while (rock(x, y) && inMap(x + dx, y + dy)) { x += dx; y += dy; }
+        const seen = []; let width = 0, max = -1, back = 0;
+        for (let k = 0; k < 20 && inMap(x, y); k++, x += dx, y += dy) {
+          const r = rank(tileAt(x, y)); if (r < 0) continue;
+          if (r === 3) break;
+          width++; if (!seen.includes(r)) seen.push(r); if (r < max - 1) back++; max = Math.max(max, r);
+        }
+        // in tiles of distance: a diagonal step covers 1.4
+        return { name, width: +(width * Math.hypot(dx, dy)).toFixed(1), steps: seen.length, back };
+      });
+      check(P + 'the edge: out from the rim the ground steps dust, scrub, dry grass, green, in a band at least 4 tiles wide on the west and north',
+        out.every(o => o.width >= 4 && o.steps >= 2 && o.back === 0), out); }
+    // (c) the band opened nothing and shut nothing: every open tile of it inside the box can be walked to from
+    //     where the ferry lands, and outside the box it only turned grass into grass-coloured ground and trees
+    //     into dead trees, so the rest of the map is exactly as walkable as it was
+    { const seen = new Uint8Array(MAP_W * MAP_H), q = [idx(206, 30)]; seen[q[0]] = 1;
+      for (let i = 0; i < q.length; i++) { const c = q[i], x = c % MAP_W, y = (c / MAP_W) | 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = idx(nx, ny); if (seen[n] || SOLID.has(tileAt(nx, ny))) continue; seen[n] = 1; q.push(n); } }
+      const E = REDCUT.edge, BAND = new Set([E.dust, E.scree, E.scrub, E.dry, E.bush]);
+      let band = 0; const stranded = [];
+      for (let y = RC.y0; y <= RC.y1; y++) for (let x = RC.x0; x <= RC.x1; x++) { if (!BAND.has(tileAt(x, y))) continue; band++; if (!seen[idx(x, y)] && stranded.length < 12) stranded.push(x + ',' + y); }
+      check(P + 'the edge: every tile of the band can be walked to from the far dock', band > 700 && stranded.length === 0, { band, stranded, edge: tally.edge }); }
 
     // 11. nothing else on the map lost its way
     if (window.PLAYTHROUGH) { const c = PLAYTHROUGH.connectivity();
