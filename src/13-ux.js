@@ -35,7 +35,7 @@ const dialogLog = []; // last 30 {text, who}
   const _notify = notify;
   notify = text => _notify(touchify(text));
   const _openPanel = openPanel;
-  openPanel = (name, arg) => { recipeTab = null; recipePage = 0; bankPage = 0; questsTab = 'quests'; uxConfirm = null; return _openPanel(name, arg); };
+  openPanel = (name, arg) => { recipeTab = null; recipePage = 0; bankPage = 0; coffinPage = 0; questsTab = 'quests'; uxConfirm = null; return _openPanel(name, arg); };
 }
 // dialogue box height for a line: the HUD computes wrapped lines with the same width it draws with
 function dialogLines(g, text, maxW) { const words = text.split(' '); let line = '', n = 1; for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { line = w; n++; } else line = test; } return n; }
@@ -59,7 +59,7 @@ function confirmTap(label, action) {
 const needsConfirm = def => !!(def && (def.weapon || def.armour || def.tool || def.value >= 100));
 
 // ---------- paging state ----------
-let recipeTab = null, recipePage = 0, bankPage = 0, questsTab = 'quests';
+let recipeTab = null, recipePage = 0, bankPage = 0, coffinPage = 0, questsTab = 'quests';
 const RECIPE_TIERS = [['Bronze/Iron', /^(bronze|iron)_/], ['Steel', /^steel_/], ['Mithril', /^mithril_/], ['Godly', /^godly_/]];
 function recipeTier(r) { const id = r.out || ''; for (const [name, re] of RECIPE_TIERS) if (re.test(id)) return name; return 'Other'; }
 

@@ -248,8 +248,9 @@ Three sizes of quest, Zelda-style:
 - **Death's Coffin.** On death the pack goes to Death; the wooden sword stays
   so you are never stuck. Any grave in the ground (one by the cave, three in
   the Thistledown graveyard) opens the coffin. Stacks worth under 20 gold come
-  back free; valuables cost 25% of their worth. Dying again replaces what
-  Death held. Gold is never lost on death now.
+  back free; valuables cost 25% of their worth. Dying again ADDS to what
+  Death holds (owner, 2026-09-25): he keeps everything from every fall until
+  you collect it; things that stack join one pile. Gold is never lost on death now.
 - **Training yard.** Sergeant Hale's three dummies show your damage and record
   your highest hit. Dummy XP is a quarter of real fighting.
 - **Village life.** Houses cannot be broken; placed planks can. Tobin's loaf
@@ -391,3 +392,4 @@ goblin, levels, break/craft/place blocks). Everything else stacks on that.
 | 2026-09-07 | Death lives in a stone house with a coffin door, a scythe, gold piles and a chest. |
 | 2026-09-07 | Buildings are enterable and furnished; the Duke sits in a castle keep. |
 | 2026-09-07 | Goblin tech is medieval: barrels, boilers, iron legs. The walker can be repaired and piloted. |
+| 2026-09-25 | Death's chest adds up: every fall adds the pack to what Death holds, never replaces it. |

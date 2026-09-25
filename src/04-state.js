@@ -195,6 +195,8 @@ function load() {
       player.bank = player.bank.filter(known);
       for (const k in player.equip) if (player.equip[k] && !ITEMS[player.equip[k]]) { player.equip[k] = null; dropped++; }
       if (deathKeep) { deathKeep.items = deathKeep.items.filter(known); if (!deathKeep.items.length) deathKeep = null; }
+      // a chest from an older save is kept whole; things of one kind that stack are joined into one pile, the way every new fall adds to it
+      if (deathKeep) { const had = deathKeep.items; deathKeep = null; addToDeathKeep(had); }
       if (dropped) notify(`${dropped} unknown item${dropped > 1 ? 's' : ''} from an older save could not be loaded.`); }
     // saves from a narrower map: tile indices are row-major, so remap them onto the current width
     const oldW = d.mapW || 160; const remap = i => oldW === MAP_W ? i : (i % oldW) + Math.floor(i / oldW) * MAP_W;

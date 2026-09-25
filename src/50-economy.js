@@ -52,21 +52,30 @@
   // cap. Scaling each item independently could not do both: four items each rounded up put the sum a few coins
   // over the cap. So the whole chest is priced once — a target that is already capped — and then split across
   // the items by largest remainder, which makes the parts sum to the total by construction.
-  const chargeable = () => {
-    if (!deathKeep) return [];
-    return deathKeep.items.filter(s2 => s2.id !== 'coins' && ITEMS[s2.id] && ITEMS[s2.id].value * s2.qty >= 20);
-  };
-  function feeTable() {
-    if (window.__kidmode) return {};
-    const items = chargeable(); if (!items.length) return {};
-    const raw = items.reduce((a, s2) => a + ITEMS[s2.id].value * s2.qty, 0);
-    if (raw <= 0) return {};
+  // Priced per chest ENTRY, not per item id: the chest grows with every fall, and two helms from two deaths are two
+  // entries of the same id, each with its own share. chestFees(list) prices any list the same way — the whole chest
+  // for the headline, or just what fits in the pack when a reclaim can only take part of it.
+  const worthCharging = s2 => s2.id !== 'coins' && ITEMS[s2.id] && ITEMS[s2.id].value * s2.qty >= 20;
+  chestFees = function (items) {
+    const out = items.map(() => 0);
+    if (window.__kidmode) return out;
+    const idx = []; items.forEach((s2, i) => { if (worthCharging(s2)) idx.push(i); });
+    if (!idx.length) return out;
+    const raw = idx.reduce((a, i) => a + ITEMS[items[i].id].value * items[i].qty, 0);
+    if (raw <= 0) return out;
     const target = Math.min(Math.ceil(raw * feeShare()), feeCap());
-    const parts = items.map(s2 => ({ id: s2.id, exact: (ITEMS[s2.id].value * s2.qty) / raw * target }));
-    const out = {}; let used = 0;
-    for (const p2 of parts) { const f = Math.floor(p2.exact); out[p2.id] = (out[p2.id] || 0) + f; used += f; }
+    const parts = idx.map(i => ({ i, exact: (ITEMS[items[i].id].value * items[i].qty) / raw * target }));
+    let used = 0;
+    for (const p2 of parts) { const f = Math.floor(p2.exact); out[p2.i] += f; used += f; }
     parts.sort((a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)));
-    for (let i = 0; used < target && i < parts.length; i++, used++) out[parts[i].id]++;
+    for (let k = 0; used < target && k < parts.length; k++, used++) out[parts[k].i]++;
+    return out;
+  };
+  // the chest's fees added up by item id (two helms from two deaths are one line here)
+  function feeTable() {
+    if (window.__kidmode || !deathKeep) return {};
+    const fees = chestFees(deathKeep.items), out = {};
+    deathKeep.items.forEach((s2, i) => { if (worthCharging(s2)) out[s2.id] = (out[s2.id] || 0) + fees[i]; });
     return out;
   }
   itemFee = function (id, qty) {
@@ -79,9 +88,7 @@
   };
   coffinFee = function () {
     if (window.__kidmode || !deathKeep) return 0;
-    const table = feeTable();
-    let f = 0; for (const k in table) f += table[k];
-    return f;
+    return chestFees(deathKeep.items).reduce((a, f) => a + f, 0);
   };
 
   // Death says what he is doing, so the ramp is visible rather than mysterious.

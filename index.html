@@ -818,6 +818,8 @@ function load() {
       player.bank = player.bank.filter(known);
       for (const k in player.equip) if (player.equip[k] && !ITEMS[player.equip[k]]) { player.equip[k] = null; dropped++; }
       if (deathKeep) { deathKeep.items = deathKeep.items.filter(known); if (!deathKeep.items.length) deathKeep = null; }
+      // a chest from an older save is kept whole; things of one kind that stack are joined into one pile, the way every new fall adds to it
+      if (deathKeep) { const had = deathKeep.items; deathKeep = null; addToDeathKeep(had); }
       if (dropped) notify(`${dropped} unknown item${dropped > 1 ? 's' : ''} from an older save could not be loaded.`); }
     // saves from a narrower map: tile indices are row-major, so remap them onto the current width
     const oldW = d.mapW || 160; const remap = i => oldW === MAP_W ? i : (i % oldW) + Math.floor(i / oldW) * MAP_W;
@@ -1097,12 +1099,12 @@ function die() {
   player.hp = 0; player.dead = true; player.deadT = 0; player.deaths += 1; closePanel(); player.action = null; sfx('death');
   if (player.mech) { player.mech = null; }
   const items = player.inv.filter(Boolean);
-  const lostPrevious = deathKeep && deathKeep.items.length > 0;
-  // an empty pack does not replace the chest: what Death holds from last time stays where it is
-  if (items.length) deathKeep = { items };
+  const lostPrevious = !!deathKeep && deathKeep.items.length > 0;
+  // Death keeps everything from every fall: this pack is ADDED to what he already holds, never swapped for it (owner, 2026-09-25)
+  if (items.length) addToDeathKeep(items);
   player.inv = new Array(INV_SLOTS).fill(null);
-  if (items.length) say(lostPrevious ? "You fell again. What Death held before is his now. What you carried, he keeps in his chest. Find his house." : "You fell. Death has your pack in his chest. His house has a coffin for a door. One stands by the cave, one in Thistledown.", 'The Voice');
-  else if (lostPrevious) say('You fell with empty hands. Death still keeps what he had. Get up, knight.', 'The Voice');
+  if (items.length) say(lostPrevious ? `You fell again. Death put this pack in his chest with everything from before. He keeps it all, from every fall, until you collect it. His chest holds ${chestWords()} now.` : "You fell. Death has your pack in his chest. He keeps it until you collect it. His house has a coffin for a door. One stands by the cave, one in Thistledown.", 'The Voice');
+  else if (lostPrevious) say(`You fell with empty hands. Death still keeps everything in his chest until you collect it: ${chestWords()}. Get up, knight.`, 'The Voice');
   else say('You fell. Get up, knight.', 'The Voice');
 }
 
@@ -1375,7 +1377,7 @@ function talkTo(n) {
   else if (n.role === 'bank') { say("Your pack is small and the world is big. Leave what you like with me. It will be here.", n.name); openPanel('bank'); }
   else if (n.role === 'inn') { if (coins() >= 5) { payCoins(5); player.hp = player.maxHp; player.innRested = true; say("Five coins. Hot stew and a bed by the fire. Sleep in it if you want to wake here.", n.name); burst(player.x, player.y, '#7ee787', 10, 40); save(); } else say("A bed's five coins. Come back with coin.", n.name); }
   else if (n.role === 'tinker') { say("Workbench for bows, doors, beds and lodestones. That table for traps and iron arrows. The bubbling one for bombs. Mind your eyebrows.", n.name); }
-  else if (n.role === 'death') { say(deathKeep ? "I have your things. They are in the chest. My fee is fair. It always is." : "Not yet. But you will be back. Everyone comes back to me.", 'Death'); openPanel('coffin'); }
+  else if (n.role === 'death') { say(deathKeep ? `I keep everything from every fall, and it waits in my chest until you collect it. I hold ${chestWords()} for you now. My fee is fair. It always is.` : "Not yet. But you will be back. Everyone comes back to me.", 'Death'); openPanel('coffin'); }
   else if (n.role === 'duke') {
     if (quest.stage < 5) say("The road is dangerous, traveller. Speak to me when you have proven yourself on it.", n.name);
     else if (quest.stage === 5) advanceQuest(6);
@@ -1400,33 +1402,71 @@ function talkTo(n) {
   else if (HOOKS.talk[n.role]) HOOKS.talk[n.role](n);
 }
 // ---------- death's chest ----------
+// The chest grows with every fall. Things that stack (coins, wood, bars) join the pile of the same kind already
+// in the chest, so two deaths with wood are ONE wood entry with both amounts added. Things that do not stack
+// (a helm, a sword) stay one entry each. Nothing already in the chest is ever lost to a later fall.
+function addToDeathKeep(items) {
+  const kept = deathKeep && Array.isArray(deathKeep.items) ? deathKeep.items : [];
+  for (const s of items) {
+    if (!s || !(s.qty > 0)) continue;
+    const stacks = !!ITEMS[s.id] && ITEMS[s.id].stack > 1;
+    const same = stacks ? kept.find(k => k.id === s.id) : null;
+    if (same) same.qty += s.qty; else kept.push({ ...s });
+  }
+  deathKeep = kept.length ? { items: kept } : null;
+}
+// how many things are in a list (coins are counted apart, as coins)
+function chestThings(items) { let n = 0; for (const s of items) if (s.id !== 'coins') n += s.qty; return n; }
+function chestCoins(items) { let n = 0; for (const s of items) if (s.id === 'coins') n += s.qty; return n; }
+// "23 things and 140 coins" in plain words, for the Voice, Death and the panel
+function chestWords(items = deathKeep ? deathKeep.items : []) {
+  const n = chestThings(items), c = chestCoins(items);
+  const t = n === 1 ? '1 thing' : `${n} things`, cw = c === 1 ? '1 coin' : `${c} coins`;
+  return n && c ? `${t} and ${cw}` : c ? cw : t;
+}
+// the price of each entry in a list, in the same order. The core charges a quarter of an entry's worth when it is
+// worth 20 or more; 50-economy replaces this with the owner's bands and cap. A declaration so it can be reassigned.
+function chestFees(items) { return items.map(s => itemFee(s.id, s.qty)); }
 function coffinFee() {
   if (window.__kidmode) return 0; // kid mode: Death returns everything for free
   if (!deathKeep) return 0;
-  let fee = 0; for (const s of deathKeep.items) { if (s.id === 'coins') continue; const v = ITEMS[s.id].value * s.qty; if (v >= 20) fee += Math.ceil(v * 0.25); }
-  return fee;
+  return chestFees(deathKeep.items).reduce((a, f) => a + f, 0);
 }
-// the fee is charged per item, only for what actually fits in the pack; what stays in the chest keeps its fee for next time (no double charge)
+// the fee is charged only for what actually fits in the pack; what stays in the chest keeps its fee for next time (no double charge)
 function itemFee(id, qty) { if (window.__kidmode) return 0; if (id === 'coins') return 0; const v = ITEMS[id].value * qty; return v >= 20 ? Math.ceil(v * 0.25) : 0; } // kid mode is free here too, or the coffin's free-looking button would charge and return nothing. A declaration, not a const arrow: 50-economy wraps it to scale the fee with the knight
+// What a reclaim would do right now, without doing it: how many of each entry fit in the pack, and the fee for exactly
+// those. The pack is filled for real and then put back, so stacks and free slots are counted the way addItem counts them.
+function reclaimPlan() {
+  if (!deathKeep) return { fits: [], fees: [], total: 0, all: true };
+  const items = deathKeep.items, bag = player.inv.map(s => s ? { ...s } : null);
+  const fits = items.map(s => { if (s.id === 'coins' || !ITEMS[s.id]) return 0; const can = Math.min(s.qty, roomFor(s.id)); if (can > 0) addItem(s.id, can); return can; });
+  player.inv = bag;
+  const fees = chestFees(items.map((s, i) => ({ id: s.id, qty: fits[i] })));
+  const all = items.every((s, i) => s.id === 'coins' || fits[i] >= s.qty);
+  return { fits, fees, total: fees.reduce((a, f) => a + f, 0), all };
+}
 function reclaimFromDeath() {
   if (!deathKeep) return;
+  const plan = reclaimPlan();
   // Death takes his share from the coins he already holds, then from your pack
-  const held = deathKeep.items.find(s => s.id === 'coins'); let purse = held ? held.qty : 0;
+  const held = deathKeep.items.find(s => s.id === 'coins'); let purse = chestCoins(deathKeep.items);
   const left = []; let took = 0, short = 0;
-  for (const s of deathKeep.items) {
-    if (s.id === 'coins') continue;
-    const can = Math.min(s.qty, roomFor(s.id));
-    const fee = itemFee(s.id, can);
-    if (can <= 0) { left.push({ id: s.id, qty: s.qty }); continue; }
-    if (fee > purse + coins()) { left.push({ id: s.id, qty: s.qty }); short = Math.max(short, fee - purse - coins()); continue; }
+  deathKeep.items.forEach((s, i) => {
+    if (s.id === 'coins') return;
+    const can = plan.fits[i], fee = plan.fees[i];
+    if (can <= 0) { left.push({ ...s }); return; }
+    if (fee > purse + coins()) { left.push({ ...s }); short = Math.max(short, fee - purse - coins()); return; }
     const fromPurse = Math.min(purse, fee); purse -= fromPurse; if (fee - fromPurse > 0) payCoins(fee - fromPurse);
     addItem(s.id, can); took += can;
-    if (can < s.qty) left.push({ id: s.id, qty: s.qty - can });
-  }
-  if (purse > 0) { addItem('coins', purse); took += purse; } // never fails: coins that do not fit land at your feet
+    if (can < s.qty) left.push({ ...s, qty: s.qty - can });
+  });
+  if (held && purse > 0) { addItem('coins', purse); took += purse; } // never fails: coins that do not fit land at your feet
   deathKeep = left.length ? { items: left } : null;
-  if (!took && short > 0) { notify(`Death wants ${short} more coins. You have ${coins()}.`); return; }
-  say(left.length ? (short > 0 ? "Coin first, knight. I keep the rest until you have it." : "Your pack is full. I will keep the rest. For now.") : "Take them. We will meet again. Everyone does.", 'Death');
+  // left never holds coins (they always come back), so this reads "7 things are still in my chest"
+  const still = left.length ? `${chestWords(left)} ${chestThings(left) === 1 ? 'is' : 'are'} still in my chest` : '';
+  // said, not a one-line notice: the dialogue box wraps, a notice is cut short on a phone
+  if (!took && short > 0) { say(`Coin first, knight. I want ${short} more coins, and you have ${coins()}. ${still}.`, 'Death'); return; }
+  say(left.length ? (short > 0 ? `Coin first, knight. ${still}. I keep them until you have the coins.` : `Your pack is full. ${still}. Make room, and come back for them.`) : "Take them. We will meet again. Everyone does.", 'Death');
   if (!deathKeep) closePanel();
   save();
 }
@@ -2563,17 +2603,54 @@ function drawPanels(g, narrow, short, qh, hb) {
     if (station === 'anvil' && !hasTool('hammer')) { g.fillStyle = '#ff6b6b'; g.font = '12px sans-serif'; g.textAlign = pages > 1 ? 'center' : 'left'; g.fillText('You need a hammer in your pack.', pages > 1 ? px + w / 2 : px + 18, pages > 1 ? py + h - 46 : py + h - 12); }
   }
   if (panel === 'coffin') {
-    const { px, py, w, h } = panelBox(g, 460, 340, "Death's Chest", 'Piles of his gold. A chest of what you lost.');
-    g.fillStyle = '#b58cff'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('DEATH', px + 18, py + 76);
-    g.fillStyle = '#e6edf3'; g.font = '14px sans-serif';
-    if (!deathKeep) { wrapText(g, "The chest is empty. For now. When you fall, what you carry comes here. Cheap things I return for nothing. Precious things cost a quarter of their worth, and I take it from your own coin first.", px + 18, py + 98, w - 36, 19); }
+    // The chest holds everything from every fall, so it can be long: every entry is listed, a page at a time when
+    // they do not all fit, with the total count on top and nothing written past the panel's edge.
+    const bw = Math.min(460, VW - 20), ROW = 22, textW = bw - 36;
+    let intro, plan = null, fee = 0, rest = 0;
+    if (!deathKeep) intro = "The chest is empty. For now. When you fall, what you carry comes here, and it stays here, from every fall, until you collect it. Cheap things I return for nothing. Precious things cost a share of their worth, and I take it from your own coin first.";
     else {
-      const fee = coffinFee(); const held = deathKeep.items.find(s => s.id === 'coins'); const fromHeld = held ? Math.min(held.qty, fee) : 0; const rest = fee - fromHeld;
-      wrapText(g, fee ? `Your pack is in the chest. The fee is ${fee} coins${fromHeld ? `, ${fromHeld} of it from the purse you dropped` : ''}${rest ? `, ${rest} from your hand` : ''}.` : 'Your pack is in the chest. Nothing in it is worth my time. Take it, and try not to fall again.', px + 18, py + 98, w - 36, 19);
-      deathKeep.items.slice(0, 7).forEach((s, i) => { const y = py + 156 + i * 20; drawItemIcon(g, s.id, px + 28, y - 4, 16); g.fillStyle = '#c9d1d9'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText(`${ITEMS[s.id].name} × ${s.qty}`, px + 44, y); const v = ITEMS[s.id].value * s.qty; g.fillStyle = s.id !== 'coins' && v >= 20 ? '#f5c542' : '#6e7681'; g.textAlign = 'right'; g.fillText(s.id !== 'coins' && v >= 20 ? `${Math.ceil(v * 0.25)}c` : 'free', px + w - 18, y); });
-      if (deathKeep.items.length > 7) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(`+${deathKeep.items.length - 7} more`, px + 44, py + 156 + 7 * 20); }
+      plan = reclaimPlan(); fee = plan.total;
+      const fromHeld = Math.min(chestCoins(deathKeep.items), fee); rest = fee - fromHeld;
+      const how = `${fromHeld ? `, ${fromHeld} of it from the coins you dropped` : ''}${rest ? `, ${rest} from your hand` : ''}`;
+      intro = 'I keep everything from every fall until you collect it. ' + (plan.all
+        ? (fee ? `The fee is ${fee} coins${how}.` : 'Nothing in it is worth my time. Take it, and try not to fall again.')
+        : `Your pack has room for only part of it${fee ? `. The fee for that part is ${fee} coins${how}` : ''}. The rest stays here until you come back.`);
+    }
+    g.font = '14px sans-serif'; const introLines = dialogLines(g, intro, textW);
+    const listTop = 98 + (introLines - 1) * 19 + 26; // offset from the panel top of the "In the chest" line
+    const n = deathKeep ? deathKeep.items.length : 0;
+    const fullH = deathKeep ? listTop + 12 + n * ROW + 68 : 98 + introLines * 19 + 24;
+    const { px, py, w, h } = panelBox(g, 460, Math.min(VH - 20, Math.max(200, fullH)), "Death's Chest", 'Piles of his gold. A chest of what you lost.');
+    g.fillStyle = '#b58cff'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText('DEATH', px + 18, py + 76);
+    g.fillStyle = '#e6edf3'; g.font = '14px sans-serif'; wrapText(g, intro, px + 18, py + 98, w - 36, 19);
+    if (deathKeep) {
+      const items = deathKeep.items;
+      g.fillStyle = '#8b949e'; g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
+      let head = `In the chest: ${chestWords()}`; while (g.measureText(head).width > w - 36 && head.length > 8) head = head.slice(0, -2) + '…';
+      g.fillText(head, px + 18, py + listTop);
+      // rows between the heading and the button; a Prev / Next row takes 38 px when there is more than one page
+      const room = h - listTop - 12 - 60;
+      let perPage = Math.max(1, Math.floor(room / ROW));
+      if (n > perPage) perPage = Math.max(1, Math.floor((room - 38) / ROW));
+      const pages = Math.max(1, Math.ceil(n / perPage)); coffinPage = clamp(coffinPage, 0, pages - 1);
+      const first = coffinPage * perPage;
+      items.slice(first, first + perPage).forEach((s, k) => {
+        const i = first + k, y = py + listTop + 12 + k * ROW + 14, coin = s.id === 'coins';
+        const fits = plan.fits[i], f = plan.fees[i];
+        const right = coin ? 'free' : fits <= 0 ? 'no room' : f > 0 ? `${f}c` : 'free';
+        g.font = '12px sans-serif'; const rw = g.measureText(right).width;
+        g.fillStyle = coin || f <= 0 ? '#6e7681' : '#f5c542'; if (!coin && fits <= 0) g.fillStyle = '#ff9b6b';
+        g.textAlign = 'right'; g.fillText(right, px + w - 18, y);
+        drawItemIcon(g, s.id, px + 28, y - 4, 16);
+        g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#c9d1d9';
+        let t = `${ITEMS[s.id] ? ITEMS[s.id].name : s.id} × ${s.qty}` + (!coin && fits > 0 && fits < s.qty ? ` (room for ${fits})` : '');
+        const maxW = w - 36 - 26 - rw - 10; while (g.measureText(t).width > maxW && t.length > 6) t = t.slice(0, -2) + '…';
+        g.fillText(t, px + 44, y);
+      });
+      if (pages > 1) pager(g, px + 18, py + h - 52 - 38, w - 36, coffinPage, pages, p => { coffinPage = clamp(p, 0, pages - 1); });
       const ok = coins() >= rest;
-      button(g, px + 18, py + h - 52, w - 36, 36, fee ? `Reclaim everything for ${fee} coins` : 'Reclaim everything', reclaimFromDeath, ok ? '#5a2e7a' : '#2a2f3a', ok);
+      const label = plan.all ? (fee ? `Reclaim everything for ${fee} coins` : 'Reclaim everything') : (fee ? `Reclaim everything that fits for ${fee} coins` : 'Reclaim everything that fits');
+      button(g, px + 18, py + h - 52, w - 36, 36, label, reclaimFromDeath, ok ? '#5a2e7a' : '#2a2f3a', ok);
     }
   }
 }
@@ -2789,6 +2866,46 @@ window.FANGLANDS = {
       const clean = player.inv.every(s => !s || ITEMS[s.id]) && player.bank.every(s => ITEMS[s.id]) && player.equip.shield === null && !!deathKeep && deathKeep.items.length === 1 && deathKeep.items[0].id === 'wood';
       check("load: unknown item ids are dropped from pack, bank, equipment and Death's chest, with one notice", ok2 && clean && !!notice && /unknown item/.test(notice.text), { ok2, clean, notice: notice && notice.text });
       player.inv = inv0; player.equip = eq0; deathKeep = dk0; recomputeMaxHp(); save(); }
+    { // Death's chest adds up (owner, 2026-09-25): two falls with two different packs, and Death holds BOTH.
+      // Stackable things from both falls are one entry with the amounts added; gear stays one entry each; coins join.
+      // each fall through hurtPlayer earns Defence xp and counts a death, so both are put back at the end: later checks depend on the combat level
+      const inv0 = invSnap(), dk0 = deathKeep, bed0 = player.bedSpawn, kid = window.__kidmode, x0 = player.x, y0 = player.y, sk0 = JSON.parse(JSON.stringify(player.skills)), deaths0 = player.deaths, face0 = { ...player.facing };
+      window.__kidmode = false; player.bedSpawn = null; deathKeep = null;
+      const fall = pack => { player.inv = new Array(INV_SLOTS).fill(null); for (const [id, q] of pack) give(id, q); hurtPlayer(player.hp + 999, player.x + 10, player.y, true); F.sim(200, []); };
+      // every line said is recorded here (the dialogue queue can be full by this point in the run, and it drops lines when it is)
+      const heard = [], say0 = say; say = function (text, who) { heard.push(text); return say0.apply(this, arguments); }; const lastSaid = () => heard.length ? heard[heard.length - 1] : '';
+      const packA = [['wood', 5], ['steel_helm', 1], ['iron_body', 1], ['coins', 30]], packB = [['wood', 7], ['steel_helm', 1], ['mithril_bar', 3], ['goblin_scrap', 2], ['coins', 20]];
+      fall(packA); const afterA = JSON.stringify(deathKeep);
+      fall(packB); const said = lastSaid(), items = deathKeep ? deathKeep.items : [];
+      const qty = id => items.filter(s2 => s2.id === id).reduce((a, s2) => a + s2.qty, 0), entries = id => items.filter(s2 => s2.id === id).length;
+      const firstKept = packA.every(([id, q]) => qty(id) >= q);
+      const both = qty('wood') === 12 && entries('wood') === 1 && qty('coins') === 50 && entries('coins') === 1 && entries('steel_helm') === 2 && qty('iron_body') === 1 && qty('mithril_bar') === 3 && qty('goblin_scrap') === 2;
+      const voice = /every fall/.test(said) && !/is his now/.test(said) && said.includes(chestWords());
+      check("Death's chest: two falls with two packs, Death holds both (wood 5 + 7 = one entry of 12, two helms, coins 30 + 20 = 50)", firstKept && both && voice, { afterA, chest: JSON.stringify(items), said });
+      // the fee on collecting is the owner's rule on the WHOLE combined chest: bands by combat level, capped at 40 + combat x 20
+      const share = ECONOMY.feeShare(), cap = ECONOMY.feeCap();
+      const raw = items.reduce((a, s2) => a + (s2.id !== 'coins' && ITEMS[s2.id].value * s2.qty >= 20 ? ITEMS[s2.id].value * s2.qty : 0), 0);
+      const rule = Math.min(Math.ceil(raw * share), cap), fee = coffinFee(), parts = chestFees(items), sumParts = parts.reduce((a, f) => a + f, 0);
+      const byId = [...new Set(items.map(s2 => s2.id))].reduce((a, id) => a + itemFee(id, qty(id)), 0);
+      player.inv = new Array(INV_SLOTS).fill(null); give('coins', 2000); const c0 = coins() + qty('coins');
+      openPanel('coffin'); render(); const label = (buttons.find(b => b.label.startsWith('Reclaim everything')) || {}).label; const rec = F.clickButton('Reclaim everything');
+      const paid = c0 - coins(), back = qty('wood') === countItem('wood') && countItem('steel_helm') === 2 && countItem('iron_body') === 1 && countItem('mithril_bar') === 3 && countItem('goblin_scrap') === 2;
+      check("Death's chest: collecting two falls costs exactly the rule on the combined chest, under the cap, and gives everything back", fee === rule && sumParts === fee && byId === fee && fee <= cap && fee > 0 && rec && label === `Reclaim everything for ${fee} coins` && paid === fee && back && !deathKeep, { raw, share, cap, rule, fee, sumParts, byId, label, paid, back, left: deathKeep && JSON.stringify(deathKeep.items) });
+      // a nearly full pack (coins + 16 axes = 3 free slots) takes what fits; the chest keeps the rest and Death says how many are still there, in plain words
+      deathKeep = null; fall(packA); fall(packB); closePanel();
+      player.inv = new Array(INV_SLOTS).fill(null); give('coins', 2000); for (let i = 0; i < INV_SLOTS - 4; i++) give('bronze_axe', 1);
+      const before = chestThings(deathKeep.items), plan = reclaimPlan(), c1 = coins() + chestCoins(deathKeep.items);
+      openPanel('coffin'); render(); const partLabel = (buttons.find(b => b.label.startsWith('Reclaim everything')) || {}).label; F.clickButton('Reclaim everything');
+      const kept2 = deathKeep ? deathKeep.items : [], leftN = chestThings(kept2), took = before - leftN, msg = lastSaid(), paid2 = c1 - coins();
+      const fitN = plan.fits.reduce((a, f) => a + f, 0), full = player.inv.every(Boolean);
+      const partial = plan.all === false && full && took === fitN && leftN === before - fitN && leftN > 0 && !kept2.some(s2 => s2.id === 'coins') && paid2 === plan.total && plan.total <= ECONOMY.feeCap() && msg.includes(`${leftN} things are still in my chest`) && /Make room/.test(msg) && /that fits/.test(partLabel || '');
+      check("Death's chest: a full pack takes what fits (3 free slots), the chest keeps the rest, and Death says how many things are still there", partial, { before, took, fitN, full, leftN, paid2, planTotal: plan.total, msg, partLabel, kept: JSON.stringify(kept2) });
+      // the combined chest survives a save and a load, and an older save's chest loads and keeps growing
+      closePanel(); deathKeep = null; fall(packA); fall(packB); const saved = JSON.stringify(deathKeep); save(); deathKeep = null; const ok = load(); const same = JSON.stringify(deathKeep) === saved;
+      const raw2 = JSON.parse(localStorage.getItem(SAVE_KEY)); raw2.deathKeep = { items: [{ id: 'wood', qty: 3 }, { id: 'wood', qty: 2 }, { id: 'steel_helm', qty: 1 }] }; localStorage.setItem(SAVE_KEY, JSON.stringify(raw2)); try { const cur = localStorage.getItem('fanglands.slot.current'); if (cur) localStorage.setItem('fanglands.slot.' + cur, JSON.stringify(raw2)); } catch (e) { }
+      const ok2 = load(); const old = deathKeep && JSON.stringify(deathKeep.items); player.hp = player.maxHp; fall([['wood', 4], ['steel_helm', 1]]); const grown = deathKeep && JSON.stringify(deathKeep.items);
+      check("Death's chest: two falls survive save and load; an older save's chest loads (its wood joined into one pile) and the next fall adds to it", ok && same && ok2 && old === '[{"id":"wood","qty":5},{"id":"steel_helm","qty":1}]' && grown === '[{"id":"wood","qty":9},{"id":"steel_helm","qty":1},{"id":"steel_helm","qty":1}]', { ok, same, saved, ok2, old, grown });
+      say = say0; closePanel(); player.inv = inv0; deathKeep = dk0; player.bedSpawn = bed0; window.__kidmode = kid; player.skills = sk0; player.deaths = deaths0; player.facing = face0; player.x = x0; player.y = y0; recomputeMaxHp(); player.hp = player.maxHp; save(); }
     { // save: tiles by name; numeric (older) saves and unknown names still load
       const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); const named = raw.mapDiffs.length > 0 && raw.mapDiffs.every(([, t]) => typeof t === 'string' && t in T) && raw.regrow.every(r => typeof r.t === 'string' && r.t in T);
       const before = JSON.stringify([...mapDiffs.entries()]), rg = JSON.stringify(regrow.map(r => [r.i, r.t]));
@@ -3056,7 +3173,7 @@ const dialogLog = []; // last 30 {text, who}
   const _notify = notify;
   notify = text => _notify(touchify(text));
   const _openPanel = openPanel;
-  openPanel = (name, arg) => { recipeTab = null; recipePage = 0; bankPage = 0; questsTab = 'quests'; uxConfirm = null; return _openPanel(name, arg); };
+  openPanel = (name, arg) => { recipeTab = null; recipePage = 0; bankPage = 0; coffinPage = 0; questsTab = 'quests'; uxConfirm = null; return _openPanel(name, arg); };
 }
 // dialogue box height for a line: the HUD computes wrapped lines with the same width it draws with
 function dialogLines(g, text, maxW) { const words = text.split(' '); let line = '', n = 1; for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { line = w; n++; } else line = test; } return n; }
@@ -3080,7 +3197,7 @@ function confirmTap(label, action) {
 const needsConfirm = def => !!(def && (def.weapon || def.armour || def.tool || def.value >= 100));
 
 // ---------- paging state ----------
-let recipeTab = null, recipePage = 0, bankPage = 0, questsTab = 'quests';
+let recipeTab = null, recipePage = 0, bankPage = 0, coffinPage = 0, questsTab = 'quests';
 const RECIPE_TIERS = [['Bronze/Iron', /^(bronze|iron)_/], ['Steel', /^steel_/], ['Mithril', /^mithril_/], ['Godly', /^godly_/]];
 function recipeTier(r) { const id = r.out || ''; for (const [name, re] of RECIPE_TIERS) if (re.test(id)) return name; return 'Other'; }
 
@@ -16842,21 +16959,30 @@ window.SETTINGS = SETTINGS;
   // cap. Scaling each item independently could not do both: four items each rounded up put the sum a few coins
   // over the cap. So the whole chest is priced once — a target that is already capped — and then split across
   // the items by largest remainder, which makes the parts sum to the total by construction.
-  const chargeable = () => {
-    if (!deathKeep) return [];
-    return deathKeep.items.filter(s2 => s2.id !== 'coins' && ITEMS[s2.id] && ITEMS[s2.id].value * s2.qty >= 20);
-  };
-  function feeTable() {
-    if (window.__kidmode) return {};
-    const items = chargeable(); if (!items.length) return {};
-    const raw = items.reduce((a, s2) => a + ITEMS[s2.id].value * s2.qty, 0);
-    if (raw <= 0) return {};
+  // Priced per chest ENTRY, not per item id: the chest grows with every fall, and two helms from two deaths are two
+  // entries of the same id, each with its own share. chestFees(list) prices any list the same way — the whole chest
+  // for the headline, or just what fits in the pack when a reclaim can only take part of it.
+  const worthCharging = s2 => s2.id !== 'coins' && ITEMS[s2.id] && ITEMS[s2.id].value * s2.qty >= 20;
+  chestFees = function (items) {
+    const out = items.map(() => 0);
+    if (window.__kidmode) return out;
+    const idx = []; items.forEach((s2, i) => { if (worthCharging(s2)) idx.push(i); });
+    if (!idx.length) return out;
+    const raw = idx.reduce((a, i) => a + ITEMS[items[i].id].value * items[i].qty, 0);
+    if (raw <= 0) return out;
     const target = Math.min(Math.ceil(raw * feeShare()), feeCap());
-    const parts = items.map(s2 => ({ id: s2.id, exact: (ITEMS[s2.id].value * s2.qty) / raw * target }));
-    const out = {}; let used = 0;
-    for (const p2 of parts) { const f = Math.floor(p2.exact); out[p2.id] = (out[p2.id] || 0) + f; used += f; }
+    const parts = idx.map(i => ({ i, exact: (ITEMS[items[i].id].value * items[i].qty) / raw * target }));
+    let used = 0;
+    for (const p2 of parts) { const f = Math.floor(p2.exact); out[p2.i] += f; used += f; }
     parts.sort((a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)));
-    for (let i = 0; used < target && i < parts.length; i++, used++) out[parts[i].id]++;
+    for (let k = 0; used < target && k < parts.length; k++, used++) out[parts[k].i]++;
+    return out;
+  };
+  // the chest's fees added up by item id (two helms from two deaths are one line here)
+  function feeTable() {
+    if (window.__kidmode || !deathKeep) return {};
+    const fees = chestFees(deathKeep.items), out = {};
+    deathKeep.items.forEach((s2, i) => { if (worthCharging(s2)) out[s2.id] = (out[s2.id] || 0) + fees[i]; });
     return out;
   }
   itemFee = function (id, qty) {
@@ -16869,9 +16995,7 @@ window.SETTINGS = SETTINGS;
   };
   coffinFee = function () {
     if (window.__kidmode || !deathKeep) return 0;
-    const table = feeTable();
-    let f = 0; for (const k in table) f += table[k];
-    return f;
+    return chestFees(deathKeep.items).reduce((a, f) => a + f, 0);
   };
 
   // Death says what he is doing, so the ramp is visible rather than mysterious.
