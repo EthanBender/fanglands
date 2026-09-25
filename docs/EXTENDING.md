@@ -36,7 +36,8 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
 - State: keep feature state inside `quest.myFeature = {...}` or `player.myFeature = {...}` — both are saved and
   loaded automatically (they are plain JSON). Reset it in `HOOKS.newGame`.
 - More hooks: `HOOKS.talkBefore.my_role = npc => handled` runs before the core dialogue; `HOOKS.mapTarget.push(() => ({ x, y, label }))`
-  puts a marker on the world map; `HOOKS.hurt.push((e, dmg, source) => ...)` sees every hit the player takes.
+  puts a marker on the world map (add `map: '<instance id>'` for a target inside an instance: inside an instance only that instance's targets are listed, and
+  anything drawn on the maps reads `mapView()`, `miniWindow(size)` and `mapLayout` instead of assuming the whole world); `HOOKS.hurt.push((e, dmg, source) => ...)` sees every hit the player takes.
 - Pathfinding: `HOOKS.pathBlock.push((tx, ty, who) => blocked)` keeps tap-to-move and the self-test bot's `walkTo` off a cell the
   knight could step onto but cannot get across right now (an agility log above his level). Test cheaply: it runs for every cell a search visits.
 - Instances (`src/16-instances.js`): `INSTANCES.define('my_cave', { name, sub, w, h, build(setTile, rnd), spawns: [[type, x, y]], exit: [x, y], door: [x, y], step: [x, y], boss, onClear })`;
@@ -72,7 +73,7 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
 `gainXp(skill, xp)`, `skillLv(skill)`, `combatLevel()`, `hitMonster(m, dmg, knock)`, `hurtPlayer(dmg, fromX, fromY, sure)`,
 `rollHit(attRoll, defRoll, maxHit)`, `playerAttackRoll()`, `playerMaxHit()`, `moveEntity(e, dx, dy, 'person'|'beast')`,
 `collides(x, y, r, who)`, `changeTile(tx, ty, t)` (persists), `tileAt`, `insideBuilding(tx, ty)`, `regionAt(tx, ty)`,
-`levelBanner = { text, sub, t }`, `openPanel(name, arg)`, `closePanel()`, `drawHuman(g, e, look)`, `drawMech(g, e, hurt, pilot)`, `drawItemIcon`.
+`levelBanner = { text, sub, t }` (banners queue: one replaced within 1.5 s comes up after the new one; `bannerAhead(text)` asks whether it is on screen or waiting), `openPanel(name, arg)`, `closePanel()`, `drawHuman(g, e, look)`, `drawMech(g, e, hurt, pilot)`, `drawItemIcon`.
 Monsters: `monsters` array (each has `x y r hp maxHp state angry dead home facing`), `MONSTER_SPAWNS`, `spawnMonsters()`.
 Player: `player.x/y/hp/maxHp/facing/equip/inv/skills/mech/home`.
 

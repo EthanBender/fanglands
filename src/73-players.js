@@ -138,8 +138,7 @@
     // blue dots on the minimap for the friends on this map (the core painted it just before the hooks run)
     const mm = minimapRect;
     if (mm && !(window.SETTINGS && SETTINGS.get('minimap') === false)) {
-      const size = mm.w, tilesAcross = 44, scale = size / tilesAcross;
-      const sx = clamp(player.x / TILE - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(player.y / TILE - tilesAcross / 2, 0, MAP_H - tilesAcross);
+      const size = mm.w, { scale, sx, sy } = miniWindow(size);   // the core's window: inside an instance it is the instance's
       const at = e => ({ x: mm.x + (e.shown.x / TILE - sx) * scale, y: mm.y + (e.shown.y / TILE - sy) * scale });
       let any = false;
       for (const n in REMOTE) if (REMOTE[n].map === my) { any = true; break; }
@@ -178,13 +177,13 @@
 
   // ---------- the world map: every friend on this map as a named blue dot (drawn after the core's map, so it wraps drawPanels) ----------
   function drawMapFriends(g, narrow) {
-    const r = panelRect; if (!r) return;
-    const iw = r.w - 36, ih = Math.min(r.h - 80, iw * MAP_H / MAP_W), ix = r.x + 18, iy = r.y + 62, sc = iw / MAP_W, my = mapId();
+    const L = mapLayout; if (!panelRect || !L) return;   // where 10-hud drew the map this frame (an instance is centred in the box)
+    const { ix, iy, iw, ih, ox, oy, sc } = L, my = mapId();
     g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip();
     g.font = `bold ${narrow ? 9 : 11}px sans-serif`; g.textAlign = 'center';
     for (const n in REMOTE) {
       const e = REMOTE[n]; if (e.map !== my) continue;
-      const x = ix + e.shown.x / TILE * sc, y = iy + e.shown.y / TILE * sc;
+      const x = ox + e.shown.x / TILE * sc, y = oy + e.shown.y / TILE * sc;
       g.fillStyle = BLUE; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 1.5; g.stroke();
       g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(n, x, y - 8); g.fillStyle = BLUE; g.fillText(n, x, y - 8);
     }
@@ -192,7 +191,8 @@
   }
   { const _drawPanels = drawPanels; drawPanels = function (g, narrow, short, qh, hb) { const r = _drawPanels(g, narrow, short, qh, hb); if (panel === 'map') drawMapFriends(g, narrow); return r; }; }
   // Follow on map: a gold target on the world map with the friend's name, like a quest marker, while they are on our map
-  HOOKS.mapTarget.push(() => { const e = following && REMOTE[following]; if (!e || e.map !== mapId()) return null; return { x: Math.floor(e.shown.x / TILE), y: Math.floor(e.shown.y / TILE), label: following, id: 'friend' }; });
+  // in the same instance the ring goes on that instance's map (13-ux lists only this map's targets)
+  HOOKS.mapTarget.push(() => { const e = following && REMOTE[following], my = mapId(); if (!e || e.map !== my) return null; return { x: Math.floor(e.shown.x / TILE), y: Math.floor(e.shown.y / TILE), label: following, id: 'friend', map: my === 'over' ? null : my }; });
 
   // ---------- gifts ----------
   let lastGiftAt = -1e9; const pending = [];   // [{ to, id, qty }] gifts the world has not answered yet

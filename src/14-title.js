@@ -77,7 +77,7 @@ window.FANGLANDS.title = title;
   // ---------- open / start / delete ----------
   title.open = () => {
     title.active = true; title.t = 0; title.deleteArmed = 0;
-    paused = false; closePanel(); dialog.cur = null; dialog.queue.length = 0; notice = null; levelBanner = null; areaBanner = null;
+    paused = false; closePanel(); dialog.cur = null; dialog.queue.length = 0; notice = null; clearBanners(); areaBanner = null;
     player.x = tc(SQUARE.x); player.y = tc(SQUARE.y); player.action = null; player.moving = false; player.dead = false; player.hurtT = 0;
     keys.clear(); pressed.clear(); touch.taps.length = 0;
     title.refresh();
