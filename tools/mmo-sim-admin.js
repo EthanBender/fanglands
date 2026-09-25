@@ -19,41 +19,11 @@ const vm = require('vm');
 const { Wire, makeContext, loadRoom, FRAME_MS } = require('./mmo-sim.js');
 
 // ---------------------------------------------------------------------------
-// The wire of mmo-sim.js, with one thing added: a close the world makes carries its code (4005 kicked, 4003 banned)
-// to the page, and arrives after whatever the world sent just before it, the way a real socket delivers them.
+// The wire is mmo-sim.js's: a close the world makes carries its code (4005 kicked, 4003 banned) to the page and arrives
+// after whatever the world sent just before it, the way a real socket delivers them. (This file built that first, as
+// CodeWire; it moved into the shared Wire, and the name stays for anything that required it.)
 // ---------------------------------------------------------------------------
-class CodeWire extends Wire {
-  constructor(room) { super(room); this.made = []; }
-  socketClass() {
-    const wire = this;
-    return class FakeWebSocket {
-      constructor(url) { this.url = String(url); this.readyState = 0; this.onopen = null; this.onmessage = null; this.onclose = null; this.onerror = null; this.closeCode = null; wire.opening.push(this); wire.made.push(this); }
-      send(str) { if (this.readyState !== 1) throw new Error('socket not open'); wire.inbound.push({ client: this, str: String(str) }); }
-      close(code) { if (this.readyState === 3) return; this.readyState = 3; if (this.closeCode === null) this.closeCode = typeof code === 'number' ? code : 1000; wire.closing.push(this); }
-    };
-  }
-  flush() {
-    let guard = 0;
-    while ((this.opening.length || this.inbound.length || this.outbound.length || this.closing.length) && guard++ < 10000) {
-      for (const c of this.opening.splice(0)) {
-        const token = decodeURIComponent((c.url.split('token=')[1] || '').split('&')[0]);
-        const name = this.accounts.get(token);
-        if (!name) { c.readyState = 3; c.closeCode = 4001; if (c.onclose) c.onclose({ code: 4001 }); continue; }
-        // the world's close goes into the same queue as its messages, so an error sent first is read first
-        const srv = { send: str => this.outbound.push({ client: c, str: String(str) }), close: code => this.outbound.push({ client: c, close: typeof code === 'number' ? code : 1000 }) };
-        this.srvOf.set(c, srv); c.readyState = 1; this.room.join(srv, name);
-        if (c.onopen) c.onopen();
-      }
-      for (const { client, str } of this.inbound.splice(0)) { const srv = this.srvOf.get(client); if (srv) this.room.message(srv, str); }
-      for (const o of this.outbound.splice(0)) {
-        const c = o.client;
-        if (o.close !== undefined) { if (c.readyState !== 3) { c.readyState = 3; c.closeCode = o.close; this.closing.push(c); } continue; }
-        if (c.readyState === 1 && c.onmessage) c.onmessage({ data: o.str });
-      }
-      for (const c of this.closing.splice(0)) { const srv = this.srvOf.get(c); if (srv) { this.srvOf.delete(c); this.room.leave(srv); } if (c.onclose) c.onclose({ code: c.closeCode }); }
-    }
-  }
-}
+class CodeWire extends Wire { }
 
 async function main() {
   const t0 = Date.now();

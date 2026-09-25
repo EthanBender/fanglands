@@ -85,6 +85,9 @@ online/
 | `GET /api/admin/saves?name=` | — | `[{ver, at, bytes}]` | the kept versions; a pinned backup is listed first as `ver: 'pin'` |
 | `POST /api/admin/rollback` | `{name, ver}` | `{ok}` | make that version the current save (`ver: 'pin'` copies the pin forward and keeps it) |
 | `GET /api/admin/online` | — | `[{n, map, region, lv, since, role}]` | |
+| `GET /api/admin/export` | — | `{at, accounts, saves, chat, settings, mod_log, save_pins, parties, crackers}` | every row of every table but `sessions` (`online/src/backup.js`): the backup taken before a deploy |
+| `GET /api/admin/bookmark` | — | `{bookmark, at}` | a Cloudflare point-in-time restore bookmark, also kept in `settings` |
+| `POST /api/admin/restore` | `{bookmark}` | `{ok, restoring}` | rewinds the whole world to that bookmark; every knight reconnects to it |
 
 Auth is `Authorization: Bearer <token>`. A token is 32 random bytes as hex, good for 90 days, stored in
 `localStorage` under `fanglands.session`. `NET.call` adds the header; nobody else touches it.
@@ -432,7 +435,7 @@ Server → client:
 | `crackers` | `pid, map, by, list: [[id, tx, ty], ...], left` | everyone on that map | the unlit crackers of one live party; `left` = ms until they vanish. Sent when the party starts, to a knight arriving on that map, and after `welcome`. It replaces whatever the client held for that `pid` |
 | `boom` | `id, n, fuse, reward` | everyone on that map | `n` lit it first. Play the fuse for `fuse` ms (1,000–2,500), the bang, confetti, the prize popping out. Only `n`'s client adds the item |
 | `party_end` | `pid, map` | everyone on that map | the party is over (15 minutes up, every cracker lit, or an admin ended it): take down what is left |
-| `light_no` | `id, code` | the knight | `gone` (no such cracker, or the party is over), `taken` (lit first by someone else: their `boom` is already out), `far` (stand within 3 tiles), `map` (it is on another map) |
+| `light_no` | `id, code` | the knight | `gone` (no such cracker, or the party is over), `taken` (lit first by someone else: their `boom` is already out), `far` (stand within 3 tiles), `map` (it is on another map). Two lights on a party's last cracker: the first ends the party, so the second hears `gone` after the first one's `boom`; a client that already holds that `boom` treats it as `taken` and says nothing |
 | `prize` | `id, reward` | the lighter, after `welcome` | a cracker you lit in the last 7 days whose prize the server never heard you `claim` |
 | `party_no` | `code` | the admin | `bad` (spots or table failed a check), `busy` (more than 150 unlit crackers would be on the map), `where` (no position known) |
 | `announce` | `kind: 'party', n, region, map, count` | everyone online | "MudGoll started a drop party in Thistledown!" |
@@ -544,14 +547,22 @@ The cap runs before the role check, so a knight hammering admin messages is drop
 - **Admin** (`tools/mmo-sim-admin.js`, two games against the real Room): the admin mutes, kicks and bans a player (and
   cannot touch an admin); the admin spawns goblins that the other knight sees and fights; a non-admin sends every admin
   message and each is refused with nothing changed. Plus self-tests in 76 and in each edited online file. A client
-  treats a missing `role` (an older server, the FakeWorld) as `'player'`.
+  treats a missing `role` (an older server) as `'player'`.
 - **Party** (`tools/mmo-sim-party.js`, two games against the real Room): a party both knights see; both knights light
   the **same** cracker in the same frame and exactly one gets the prize; a scripted roll gives a hat and both hear the
   announcement; a prize that survives a disconnect mid-fuse; crackers that survive a rebuilt Room; expiry. Plus
   self-tests in 77 and 81.
 - The three simulations are required as modules (`require('./mmo-sim.js')` exports `Wire`, `makeContext`,
-  `loadRoom(now, opts)` and `FakeWorld`); `MMO_ROOM=<path to room.js>` points them at another checkout. `deploy.sh`
-  runs all three before every deploy.
+  `loadRoom(now, opts)`, `FakeWorld` and `FakeStore`, `mulberry32` and `contractRoll`); `MMO_ROOM=<path to room.js>`
+  points them at another checkout. `deploy.sh` runs all three before every deploy. The `Wire` delivers a close the
+  world makes with its code (4005, 4003, 4000), after whatever the world sent just before it.
+- **Two-player** (`tools/mmo-sim.js`, both against its FakeWorld and with `--room` against the real Room; the FakeWorld
+  is this contract written out again, not a copy of `room.js`): roles on welcome, the roster and presence, and the
+  parent page turning a role on and off; the admin mutes the other knight from the panel (the mute holds over a
+  reconnect), kicks him (4005) and bans him (4003, every join refused until unbanned); the admin spawns goblins the
+  other knight sees, fights and gets the kill for; a party of 50 crackers where both knights light the **same**
+  cracker in the same tick, 50 times, each prize recomputed from the world's own dice by the roll above; a party hat
+  handed over with the ordinary gift; a non-admin sending every admin message is refused with nothing changed.
 
 ### Who owns what
 
@@ -587,9 +598,10 @@ The cap runs before the role check, so a knight hammering admin messages is drop
 ## Testing
 
 - `HOOKS.selfTest` checks in every online file, using `NET.useFake(...)` for the wire.
-- `tools/mmo-sim.js`: two headless game contexts + the real `Room` class from `online/src/room.js` wired with
-  in-memory sockets. Proves login, presence relay, keeper election, hit routing, the kill going to the right
-  knight, chat filtering, and handoff when the keeper leaves. Run it in `deploy.sh` before every deploy.
+- `tools/mmo-sim.js`: two headless game contexts + the real `Room` class from `online/src/room.js` (`--room`) or the
+  FakeWorld (the contract written out again), wired with in-memory sockets. Proves login, presence relay, keeper
+  election, hit routing, the kill going to the right knight, chat, and handoff when the keeper leaves; then the admins
+  and drop parties (*Admins and drop parties*, *Testing*). Run both ways in `deploy.sh` before every deploy.
 - `node --test online/test/` for the server's own logic (password hashing, filter, room routing, rate caps, roles,
   moderation, the store and its migration, drop parties and the party-hat odds).
 - `tools/mmo-sim-admin.js` and `tools/mmo-sim-party.js`: the admin and party scenarios, two games against the real

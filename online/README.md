@@ -68,7 +68,10 @@ migrations stay at `v1`. (The everyday trimming is separate and unchanged: the n
 per knight, and now the newest 5,000 mod_log rows.) Before the first deploy of a change like this, prove it on a copy: run the live code
 (`git archive master online`) under `wrangler dev --persist-to <dir>`, fill it with knights, saves, chat, a ban and a
 new invite code, then run the new code on the same `<dir>` twice and check that everything is still there. The
-proof for the admin change is `~/.fanglands/work/admin/migration-proof.txt`.
+proof for the admin change is `~/.fanglands/work/admin/migration-proof.txt` (the server branch) and
+`~/.fanglands/work/admin/integ/migration/migration-proof.txt` (the merged `feat/admin`, old code = master with its
+backup routes). The second also runs the OLD code again on the migrated database: it still logs everyone in, saves,
+chats, signs up and exports (the two new account columns ride along), so going back to the previous code alone is safe.
 
 ## Deploy
 
@@ -78,8 +81,16 @@ From the repo root, on Ethan's MacBook (the only machine where `wrangler` is log
 ./online/deploy.sh
 ```
 
-It builds the game, runs the headless suite and the two-player simulation, copies `index.html` (and
-`bridge.html`) into `online/public/`, then runs `wrangler deploy`. It stops at the first failing check.
+It builds the game, runs the headless suite, the server's own tests (`node --test online/test/`, Node 22.5 or
+later), the two-player simulation against the FakeWorld and against the real Room, and the admin and drop party
+simulations, copies `index.html` (and `bridge.html`) into `online/public/`, then runs `wrangler deploy`. It stops at the
+first failing check.
+
+A deploy that changes the schema (the admins change does: two new `accounts` columns and four new tables) needs a
+backup first, taken with the admin key: `GET /api/admin/export` (every table, the admins' ones too) and
+`GET /api/admin/bookmark` (a point-in-time restore bookmark), both saved under `~/.fanglands/backups/`. Deploy when
+`GET /api/status` says nobody is online. To go back: `POST /api/admin/restore {bookmark}` rewinds the world, and the
+previous code can simply be deployed again (it runs on the new schema; see the proof above).
 
 ## Secrets
 
@@ -147,6 +158,10 @@ GET  /api/admin/modlog?limit=200      at, by, act, n, detail, newest first (1 to
 GET  /api/admin/saves?name=           the pin first (ver 'pin'), then the kept versions
 POST /api/admin/rollback {name, ver}  ver a number, or 'pin' (copied forward; the pin stays)
 POST /api/admin/reset, GET/POST /api/admin/invite, GET /api/admin/chat   as before
+GET  /api/admin/export                every table but sessions: accounts, saves, chat, settings, mod_log,
+                                      save_pins, parties, crackers (online/src/backup.js)
+GET  /api/admin/bookmark              a point-in-time restore bookmark, also kept in settings
+POST /api/admin/restore {bookmark}    rewinds the whole world to that bookmark; everyone reconnects
 ```
 
 An admin's own game uses `GET /api/save/pin`, `POST /api/save/pin` (`?replace=1`) and `POST /api/save/restore`

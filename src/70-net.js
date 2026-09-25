@@ -63,7 +63,7 @@
       if (!msg || typeof msg.t !== 'string') return;
       NET.stats.got++;
       if (msg.t === 'welcome') { NET.status = 'on'; NET.me = msg.me; }
-      // the role is the world's word, set before anyone hears the message; a missing one (an older server, the FakeWorld) is 'player'
+      // the role is the world's word, set before anyone hears the message; a missing one (an older server) is 'player'
       if (msg.t === 'welcome' || msg.t === 'role') NET.role = msg.role === 'admin' ? 'admin' : 'player';
       if (msg.t === 'error' && msg.code === 'auth') { NET.setToken(null); NET.closedByUs = true; }
       // the same knight opened somewhere else: that socket wins, this one must not fight it by reconnecting

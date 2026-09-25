@@ -465,3 +465,21 @@ test('a drop party over real sockets: two knights light the same cracker, one bo
   for (const s of [m, p, third]) try { s.close(); } catch (e) { }
   await wait(300);
 });
+
+test('the backup export (taken before every schema-changing deploy) needs the key and carries every table but sessions, the admins\' four too', { skip }, async () => {
+  let r = await call('GET', '/api/admin/export');
+  assert.equal(r.status, 401);
+  r = await admin('GET', '/api/admin/export');
+  assert.equal(r.status, 200);
+  assert.deepEqual(Object.keys(r.data).filter(k => k !== 'at'), ['accounts', 'saves', 'chat', 'settings', 'mod_log', 'save_pins', 'parties', 'crackers']);
+  const mud = r.data.accounts.find(a => a.name === NAME_M);
+  assert.ok(mud); assert.equal(mud.role, 'admin'); assert.equal(typeof mud.muted_until, 'number');
+  assert.ok(r.data.mod_log.some(x => x.act === 'party' && x.by === NAME_M));
+  const party = r.data.parties.find(p => p.by === NAME_M);
+  assert.ok(party); assert.equal(party.count, 5); assert.equal(party.ended, 1);
+  const crackers = r.data.crackers.filter(c => c.party === party.id);
+  assert.equal(crackers.length, 5);
+  assert.equal(crackers.filter(c => c.lit_by !== null).length, 1);
+  assert.equal(crackers.find(c => c.k === 0).claimed, 1);
+  assert.deepEqual(JSON.parse(crackers.find(c => c.k === 0).reward), { id: 'coins', qty: 5 });
+});

@@ -359,6 +359,17 @@ test('spawn goes to the keeper of the admin\'s map only: the admin itself when i
   assert.equal(sam.of('spawn_clear').length + zed.of('spawn_clear').length, 0);
 });
 
+test('spawn: a clock with fractions of a millisecond (the simulations step 1000/60 ms a frame) still gives a sid of only 0-9 and a-z', () => {
+  const w = world(undefined, 1758800000000 + 1000 / 60 * 7);
+  w.store.addAccount('MudGoll', 'admin');
+  const mud = w.knight('MudGoll', 'over');
+  w.settle(mud);
+  w.t += 1000 / 60 * 3;
+  assert.notEqual(w.t, Math.floor(w.t));
+  w.say(mud, { t: 'spawn', type: 'goblin', count: 1, x: 480, y: 500 });
+  assert.match(mud.last('spawn').sid, /^[0-9a-z]+$/, mud.last('spawn').sid);
+});
+
 test('spawn: when someone else keeps the map it goes to them; a fresh sid every time, even after a nap', () => {
   const w = world();
   w.store.addAccount('MudGoll', 'admin'); w.store.addAccount('Sam'); w.store.addAccount('Zed');

@@ -462,7 +462,7 @@ export class Room {
     const keeper = this.keeperOf(k.map);
     if (!keeper) return;
     // new for every spawn and never used again: the time in base 36, then a counter (only 0-9 and a-z)
-    const sid = this.now().toString(36) + (this.spawnSeq++).toString(36);
+    const sid = Math.floor(this.now()).toString(36) + (this.spawnSeq++).toString(36);
     this.send(keeper.sock, { t: 'spawn', by: k.name, type, count, x, y, sid });
   }
 

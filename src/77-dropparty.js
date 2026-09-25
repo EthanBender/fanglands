@@ -301,9 +301,12 @@
     if (!m) return;
     if (m.code === 'far') { note('Walk up to the cracker first.'); return; }
     if (m.code !== 'gone') return;
-    note('That cracker is gone.');
     const r = typeof m.id === 'string' ? ID_RE.exec(m.id) : null, p = r ? S.parties.get(+r[1]) : null, c = p ? p.crackers.get(m.id) : null;
-    if (c && !c.lit) { p.crackers.delete(m.id); if (!p.crackers.size) S.parties.delete(p.pid); }
+    // someone else's light got there first and it was the party's last cracker, so the party ended before ours was
+    // read: its boom is already here. That is "taken", and taken says nothing.
+    if ((c && c.lit) || S.banged.has(m.id)) return;
+    note('That cracker is gone.');
+    if (c) { p.crackers.delete(m.id); if (!p.crackers.size) S.parties.delete(p.pid); }
   }
   if (typeof NET !== 'undefined') {
     NET.on('welcome', m => { S.role = m && m.role === 'admin' ? 'admin' : 'player'; dropUnlit(null); if (S.waiting.length) checkWaiting(); });
@@ -1024,7 +1027,12 @@
         quiet(); feed({ t: 'light_no', id: 'p7.0', code: 'taken' }); feed({ t: 'light_no', id: 'p7.0', code: 'map' }); const silent = !notice && !S.notes.length;
         quiet(); feed({ t: 'light_no', id: 'p7.4', code: 'gone' }); const gone = said('That cracker is gone.') && !findCracker('p7.4');
         tapCancel('manual');
-        check(P + 'the cracker USE would light gets "E to light" on top of the trees; USE sends one light with its id and the knight\'s position (not twice in a second); a tap on one walks up and lights it; far / gone say so, taken and map stay quiet', hinted === true && ok && tapOk && tapped && person && far && silent && gone, { hinted, first, second: second.length, tapOk, tapped, person, far, silent, gone }); }
+        // the party's last cracker: someone else's light ended the party first, so ours comes back gone after their boom; that stays quiet like taken
+        quiet(); feed({ t: 'crackers', pid: 6, map: 'over', by: 'MudGoll', list: [['p6.0', o.x - 3, o.y + 2]], left: 900000 });
+        feed({ t: 'boom', id: 'p6.0', n: 'Sam', fuse: 1000, reward: { id: 'coins', qty: 3 } }); feed({ t: 'party_end', pid: 6, map: 'over' }); feed({ t: 'light_no', id: 'p6.0', code: 'gone' });
+        const lastQuiet = !notice && !S.notes.length && !!findCracker('p6.0') && !!findCracker('p6.0').lit;
+        F.sim(70, []); const lastGone = !S.parties.has(6) && S.banged.has('p6.0'); quiet();
+        check(P + 'the cracker USE would light gets "E to light" on top of the trees; USE sends one light with its id and the knight\'s position (not twice in a second); a tap on one walks up and lights it; far / gone say so, taken and map stay quiet, and so does gone for a cracker whose boom is already here', hinted === true && ok && tapOk && tapped && person && far && silent && gone && lastQuiet && lastGone, { hinted, first, second: second.length, tapOk, tapped, person, far, silent, gone, lastQuiet, lastGone }); }
 
       // 9. the boom: the prize after the fuse, once; claimed in the save, then the claim; others get nothing
       { quiet(); player.inv = empty(); const c0 = coins(); const k0 = sent('claim').length;
