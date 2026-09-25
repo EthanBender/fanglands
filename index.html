@@ -25098,7 +25098,8 @@ window.SETTINGS = SETTINGS;
       floatText(x, y - 36, big ? who + ': ' + def.name + '!' : who + ': ' + prizeWords(L.reward), big ? '#f5c542' : '#ffe9a8', big ? 20 : 14);
     }
     if (mine) grant(c.id, L.reward, 'boom');
-    if (p.ended && !p.crackers.size) S.parties.delete(p.pid);
+    // nothing left here (the server sends the crackers of a live party again on the next arrival)
+    if (!p.crackers.size) S.parties.delete(p.pid);
   }
   const PARTY_NO = {
     bad: 'That party did not pass the checks. Try again.',
