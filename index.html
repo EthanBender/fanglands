@@ -22712,6 +22712,11 @@ HOOKS.selfTest.push((check, F, h) => {
         quarry >= 6 && hills >= 6 && rs.length >= 2, { quarry, hills, regions: rs }); }
 
     // ---- the pickaxe gate, the Mining level, the ore and the xp ----
+    // How long a check waits for one landed swing. At the gate level a bronze pickaxe swings every 1.8 s
+    // (108 steps) and lands 45 times in 100, so the wait must hold 20 or more swings: 900 steps held 8,
+    // and 8 misses in a row (0.55^8, about 1 run in 120) failed the check on a healthy game.
+    const MINE_WAIT = 2400;
+    const swings = [];
     for (const t of TIERS) {
       const spot = SPOTS[t.key].find(([x, y]) => tileAt(x, y) === t.tile && openSide(x, y));
       if (!spot) { check(P + `${t.key}: mining it`, false, { spot }); continue; }
@@ -22732,7 +22737,8 @@ HOOKS.selfTest.push((check, F, h) => {
       const ore0 = countItem(t.ore), x0 = player.skills.mining.xp;
       F.face(rx, ry); F.press('KeyE');
       const started = !!player.action && player.action.type === 'mine';
-      const steps = F.untilAction(900, () => player.skills.mining.xp > x0); player.action = null;
+      if (started) swings.push({ key: t.key, need: player.action.need, tier: player.action.tier });
+      const steps = F.untilAction(MINE_WAIT, () => player.skills.mining.xp > x0); player.action = null;
       const gained = player.skills.mining.xp - x0;
       const settled = tileAt(rx, ry) === T.RUBBLE && regrow.some(r => r.i === idx(rx, ry) && r.t === t.tile && r.timer > 0);
       check(P + `${t.key}: needs a pickaxe, then Mining ${t.mineLv}; at ${t.mineLv} it gives ${ITEMS[t.ore].name} for ${t.mineXp} xp and the face settles to rubble and regrows`,
@@ -22742,6 +22748,17 @@ HOOKS.selfTest.push((check, F, h) => {
       changeTile(rx, ry, t.tile); regrow = regrow.filter(r => r.i !== idx(rx, ry));
       player.equip.weapon = eqw;
     }
+    // The wait itself, measured: the swing time and the pickaxe tier come off the action the game started,
+    // the landing chance is the core's own rule written out a second time (35 in 100 at the gate, plus 10 a
+    // pickaxe tier). Every at-level wait in this file uses MINE_WAIT, so this covers all of them.
+    { const rows = swings.map(r => {
+        const stepsPerSwing = Math.ceil(r.need * 60) + 1, n = Math.floor(MINE_WAIT / stepsPerSwing);
+        const land = Math.min(0.9, 0.35 + r.tier * 0.1);
+        return { key: r.key, stepsPerSwing, swings: n, land, missAll: Math.pow(1 - land, n) };
+      });
+      check(P + 'the mining checks wait long enough that bad luck cannot fail them: 20 or more swings at the gate level, and under 1 in 10000 to miss every one',
+        rows.length === TIERS.length && rows.every(r => r.swings >= 20 && r.missAll < 1e-4),
+        { wait: MINE_WAIT, rows }); }
 
     // ---- the forge: one smelt per metal ----
     const FORGE = [92, 37], ANV = [94, 38];
@@ -22829,13 +22846,13 @@ HOOKS.selfTest.push((check, F, h) => {
         player.skills.mining.xp = XP_TABLE[t.mineLv];
         dialog.queue.length = 0; dialog.cur = null;
         const a0 = player.skills.mining.xp;
-        F.tp(sx, sy); F.face(rx, ry); F.press('KeyE'); F.untilAction(900, () => player.skills.mining.xp > a0); player.action = null;
+        F.tp(sx, sy); F.face(rx, ry); F.press('KeyE'); F.untilAction(MINE_WAIT, () => player.skills.mining.xp > a0); player.action = null;
         first = st.seen.includes(t.key) && said();
         changeTile(rx, ry, t.tile); regrow = regrow.filter(r => r.i !== idx(rx, ry));
         // a second lump of the same metal: the ore still comes, the line does not
         dialog.queue.length = 0; dialog.cur = null;
         const a1 = player.skills.mining.xp;
-        F.tp(sx, sy); F.face(rx, ry); F.press('KeyE'); F.untilAction(900, () => player.skills.mining.xp > a1); player.action = null;
+        F.tp(sx, sy); F.face(rx, ry); F.press('KeyE'); F.untilAction(MINE_WAIT, () => player.skills.mining.xp > a1); player.action = null;
         mined2 = player.skills.mining.xp > a1;
         again = said();
         changeTile(rx, ry, t.tile); regrow = regrow.filter(r => r.i !== idx(rx, ry));
