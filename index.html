@@ -34500,7 +34500,7 @@ HOOKS.selfTest.push((check, F, h) => {
       inv: player.inv.map(s => s ? { ...s } : null), bank: (player.bank || []).map(s => ({ ...s })), keyring: (player.keyring || []).slice(),
       skills: clone(player.skills), equip: { ...player.equip }, hp: player.hp, px: player.x, py: player.y, kills: player.kills, bed: player.bedSpawn, deaths: player.deaths,
       deathKeep: clone(deathKeep), kid: window.__kidmode, touch: window.__forceTouch, random: Math.random, clockFn, rollWake: ROYALMINE.rollWake, heartDmg: ROYALMINE.heartDmg,
-      num: clone(NUM), peace: window.__peace, th: th0 ? { x: th0.x, px: th0.px, py: th0.py } : null, drops: drops.slice(), dhSum: dhSum(), companion: window.__companionHit,
+      num: clone(NUM), peace: window.__peace, th: th0 ? { x: th0.x, px: th0.px, py: th0.py } : null, drops: drops.slice(), dhSum: dhSum(), companion: window.__companionHit, hadCompanion: '__companionHit' in window,
     };
     const netWas = window.NET ? { enabled: NET.enabled, token: NET.token, fake: NET.fake } : null;
     const restoreNum = () => { for (const k in S0.num) { if (k === 'GIANT') { for (const t in S0.num.GIANT) Object.assign(NUM.GIANT[t], S0.num.GIANT[t]); } else NUM[k] = S0.num[k]; } };
@@ -34975,7 +34975,7 @@ HOOKS.selfTest.push((check, F, h) => {
       player.inv = S0.inv; player.bank = S0.bank; player.keyring = S0.keyring; if (window.KEYRING) KEYRING.absorb();
       player.skills = S0.skills; player.equip = S0.equip; recomputeMaxHp(); player.hp = Math.min(player.maxHp, Math.max(1, S0.hp)); player.dead = false; player.action = null;
       window.__kidmode = S0.kid; window.__forceTouch = S0.touch; deathKeep = S0.deathKeep; player.kills = S0.kills; player.bedSpawn = S0.bed; player.deaths = S0.deaths;
-      player.x = S0.px; player.y = S0.py; drops = S0.drops; window.__companionHit = S0.companion;
+      player.x = S0.px; player.y = S0.py; drops = S0.drops; if (S0.hadCompanion) window.__companionHit = S0.companion; else delete window.__companionHit;
       const t = thrain(); if (t && S0.th) { t.x = S0.th.x; t.px = S0.th.px; t.py = S0.th.py; }
       syncDeepholm();
       check(P + "afterwards Deepholm is exactly what 24-dwarves builds (the throne on 14,23, Thrain on it) and the knight is back on the surface",
