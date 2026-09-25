@@ -33188,15 +33188,15 @@ HOOKS.selfTest.push((check, F, h) => {
 
   // =========================================================================
   // 9. drawing
-  //   Layers (y): the ground, one item per visible row, at -1e8 + ty*48 + 0.0005 (after 36's sky and cloud; 88 lays no
-  //   deck where this file paints ground); the sky decor (cloud-tops in the moat and under the bridges, the plaza's
+  //   Layers (y): the ground, blitted from cached chunks at -1e8 - 2, under 36's sky and cloud rows (they cover only cells
+  //   that are theirs) and 88's deck (none where this file paints ground); the sky decor (cloud-tops in the moat and under the bridges, the plaza's
   //   retaining face) and the fliers' shadows after every ground row; walls, towers, spires, trees, lamps, fountains and
   //   people y-sorted at their base like everything else; the air (fliers, Lark flying) at 5e7; the sky curtain at 9.5e8
   //   (see drawCurtain); the use highlight at 1e9 + 5. Every item's draw takes no arguments.
   // =========================================================================
   const SS = 2;                                   // patterns and sprites are drawn at 2x, like the core's textures
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const STATS = { frames: 0, curtain: 0, drawn: {}, gates: 0, fountains: 0, awnings: 0, banners: 0, pennants: 0, spires: 0, towers: 0, items: 0 };
+  const STATS = { frames: 0, curtain: 0, drawn: {}, gates: 0, fountains: 0, awnings: 0, banners: 0, pennants: 0, spires: 0, towers: 0, items: 0, chunks: 0, chunksPainted: 0 };
   const CACHE = {};
   function sprite(key, w, h, ax, ay, fn) {
     let s = CACHE[key];
@@ -33439,6 +33439,43 @@ HOOKS.selfTest.push((check, F, h) => {
       const st = STEPS[tx + ',' + ty]; if (st !== undefined) drawDoorstep(g, tx, ty, st, false);
     }
   }
+  // ---------- the ground, cached in chunks ----------
+  // Nothing on the ground moves (the paving, lawn, marble, inlays, kerbs, bridge decks, doors and doorsteps), so it is
+  // painted once into 8x8-tile canvases at the screen's pixel ratio and each frame only blits the few that are in view,
+  // instead of five hundred tiles and their trimmings. A chunk is painted with a one-tile apron (a doorstep's glow reaches
+  // into the next tile) and the least recently used are dropped past a small limit, so the memory stays bounded.
+  const CH = 8, CHUNKS = new Map();
+  let chunkMax = 20;          // at least every chunk one screen shows, and a few more: grown by drawGround when a big screen needs it
+  let chunkUse = 0;
+  function groundChunk(cx, cy) {
+    const ss = Math.max(1, Math.min(2, Math.round(typeof DPR === 'number' ? DPR : 1))), key = cx + ',' + cy + '@' + ss;
+    let ch = CHUNKS.get(key);
+    if (!ch) {
+      const c = document.createElement('canvas'); c.width = CH * TILE * ss; c.height = CH * TILE * ss;
+      const cg = c.getContext ? c.getContext('2d') : null;
+      if (cg) {
+        try {
+          cg.scale(ss, ss); cg.translate(-cx * CH * TILE, -cy * CH * TILE);
+          const x0 = Math.max(0, cx * CH - 1), x1 = Math.min(W - 1, cx * CH + CH), y0 = Math.max(0, cy * CH - 1), y1 = Math.min(H - 1, cy * CH + CH);
+          for (let ty = y0; ty <= y1; ty++) drawGroundRow(cg, ty, x0, x1);
+        } catch (e) { }
+      }
+      ch = { c, used: ++chunkUse }; CHUNKS.set(key, ch); STATS.chunksPainted++;
+      // over the limit: drop the ones used longest ago (never this one, which was just marked as the newest)
+      if (CHUNKS.size > chunkMax) {
+        const old = [...CHUNKS.entries()].filter(([k]) => k !== key).sort((a, b) => a[1].used - b[1].used).slice(0, CHUNKS.size - chunkMax);
+        for (const [k, o] of old) { CHUNKS.delete(k); try { o.c.width = 0; o.c.height = 0; } catch (e) { } }
+      }
+    }
+    ch.used = ++chunkUse;
+    return ch;
+  }
+  function drawGround(g, c) {
+    const cx0 = Math.max(0, Math.floor(c.x / (CH * TILE))), cx1 = Math.min(Math.ceil(W / CH) - 1, Math.floor((c.x + VW) / (CH * TILE)));
+    const cy0 = Math.max(0, Math.floor(c.y / (CH * TILE))), cy1 = Math.min(Math.ceil(H / CH) - 1, Math.floor((c.y + VH) / (CH * TILE)));
+    chunkMax = Math.max(chunkMax, (cx1 - cx0 + 1) * (cy1 - cy0 + 1) + 6);
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) { const ch = groundChunk(cx, cy); if (!ch.c.width) continue; g.drawImage(ch.c, cx * CH * TILE, cy * CH * TILE, CH * TILE, CH * TILE); STATS.chunks++; }
+  }
   // the balustrade of a stone bridge (a gold rail on white posts) or the ropes of a rope one, on every side over open sky
   function drawBridgeRails(g, tx, ty, x, y) {
     const bi = BRIDGE_AT[ty * W + tx]; if (bi < 0) return;
@@ -33467,6 +33504,20 @@ HOOKS.selfTest.push((check, F, h) => {
     if (x >= 34 && x <= 62 && y >= 22 && y <= 50) { DECOR[y * W + x] = 1; continue; }
     for (const b of PLAN.BRIDGES) for (const [x0, y0, x1, y1] of b.rects) if (x >= x0 - 3 && x <= x1 + 3 && y >= y0 - 3 && y <= y1 + 3) DECOR[y * W + x] = 1;
   }
+  // the cached pieces of the sky decor: a cloud-top far below, the plaza's retaining face, the face under a bridge
+  function paintPuff(g) {
+    g.fillStyle = 'rgba(160,190,230,0.35)'; for (const [ox, oy, rr] of [[0, 6, 14], [16, 8, 12], [-14, 9, 10]]) { g.beginPath(); g.ellipse(ox, oy, rr * 1.3, rr * 0.7, 0, 0, 7); g.fill(); }
+    g.fillStyle = 'rgba(255,255,255,0.78)'; for (const [ox, oy, rr] of [[0, 0, 14], [16, 3, 11], [-14, 4, 10], [6, -6, 9]]) { g.beginPath(); g.arc(ox, oy, rr, 0, 7); g.fill(); }
+  }
+  function paintFace(g, v) {
+    g.fillStyle = '#e3dccd'; g.fillRect(0, 0, 48, 24);
+    g.fillStyle = 'rgba(150,135,110,0.3)'; for (let r = 0; r < 2; r++) { g.fillRect(0, 11 + r * 12, 48, 1); for (let c = 0; c < 3; c++) g.fillRect(((r + v) % 2 ? 12 : 0) + c * 24, r * 12, 1, 11); }
+    const sh = g.createLinearGradient(0, 24, 0, 44); sh.addColorStop(0, 'rgba(60,90,140,0.30)'); sh.addColorStop(1, 'rgba(60,90,140,0)'); g.fillStyle = sh; g.fillRect(0, 24, 48, 20);
+  }
+  function paintSpanFace(g, stone) {
+    if (stone) { g.fillStyle = '#e3dccd'; g.fillRect(0, 0, 48, 16); g.fillStyle = '#8fd0ff'; g.beginPath(); g.ellipse(24, 16, 18, 10, 0, Math.PI, 0); g.fill(); g.fillStyle = '#e8c25a'; g.fillRect(0, 0, 48, 2); }
+    const sh = g.createLinearGradient(0, 12, 0, 40); sh.addColorStop(0, 'rgba(60,90,140,0.22)'); sh.addColorStop(1, 'rgba(60,90,140,0)'); g.fillStyle = sh; g.fillRect(0, 12, 48, 28);
+  }
   function drawSkyDecor(g, x0, x1, y0, y1) {
     let any = false;
     g.save(); g.beginPath();
@@ -33478,16 +33529,13 @@ HOOKS.selfTest.push((check, F, h) => {
       if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
       const h = hash(tx * 3 + 11, ty * 7 + 5); if (h > 0.2) continue;
       const drift = (time * (5 + h * 20) + h * 300) % (TILE * 4), cx = tx * TILE + drift, cy = ty * TILE + 10 + h * 30;
-      g.fillStyle = 'rgba(160,190,230,0.35)'; for (const [ox, oy, rr] of [[0, 6, 14], [16, 8, 12], [-14, 9, 10]]) { g.beginPath(); g.ellipse(cx + ox, cy + oy, rr * 1.3, rr * 0.7, 0, 0, 7); g.fill(); }
-      g.fillStyle = 'rgba(255,255,255,0.78)'; for (const [ox, oy, rr] of [[0, 0, 14], [16, 3, 11], [-14, 4, 10], [6, -6, 9]]) { g.beginPath(); g.arc(cx + ox, cy + oy, rr, 0, 7); g.fill(); }
+      blit(g, sprite('puff', 72, 44, 36, 20, paintPuff), cx, cy);
     }
     // the plaza's retaining face on the moat side: white stone, gold coping, a shadow falling on the cloud below
     for (let tx = Math.max(x0, PLAZA.x0); tx <= Math.min(x1, PLAZA.x1); tx++) {
       const ty = PLAZA.y1 + 1; if (ty < y0 || ty > y1 || !isSky(tx, ty)) continue;
-      const x = tx * TILE, y = ty * TILE;
-      g.fillStyle = '#e3dccd'; g.fillRect(x, y, 48, 24);
-      g.fillStyle = 'rgba(150,135,110,0.3)'; for (let r = 0; r < 2; r++) { g.fillRect(x, y + 11 + r * 12, 48, 1); for (let c = 0; c < 3; c++) g.fillRect(x + ((r + tx) % 2 ? 12 : 0) + c * 24, y + r * 12, 1, 11); }
-      const sh = g.createLinearGradient(0, y + 24, 0, y + 44); sh.addColorStop(0, 'rgba(60,90,140,0.30)'); sh.addColorStop(1, 'rgba(60,90,140,0)'); g.fillStyle = sh; g.fillRect(x, y + 24, 48, 20);
+      const v = tx % 2;
+      blit(g, sprite('face' + v, 48, 44, 0, 0, cg => paintFace(cg, v)), tx * TILE, ty * TILE);
     }
     for (let ty = Math.max(y0, PLAZA.y0); ty <= Math.min(y1, PLAZA.y1 + 1); ty++) for (const tx of [PLAZA.x0 - 1, PLAZA.x1 + 1]) {
       if (tx < x0 || tx > x1 || !isSky(tx, ty)) continue;
@@ -33499,9 +33547,8 @@ HOOKS.selfTest.push((check, F, h) => {
       const dir = b.id === 'runners' ? (bx0 >= 78 ? 'ew' : 'ns') : BRIDGE_DIR[b.id];
       if (dir === 'ew') for (let tx = bx0; tx <= bx1; tx++) {
         const ty = by1 + 1; if (tx < x0 || tx > x1 || ty < y0 || ty > y1 || !isSky(tx, ty)) continue;
-        const x = tx * TILE, y = ty * TILE;
-        if (b.kind === 'stone') { g.fillStyle = '#e3dccd'; g.fillRect(x, y, 48, 16); g.fillStyle = '#8fd0ff'; g.beginPath(); g.ellipse(x + 24, y + 16, 18, 10, 0, Math.PI, 0); g.fill(); g.fillStyle = '#e8c25a'; g.fillRect(x, y, 48, 2); }
-        const sh = g.createLinearGradient(0, y + 12, 0, y + 40); sh.addColorStop(0, 'rgba(60,90,140,0.22)'); sh.addColorStop(1, 'rgba(60,90,140,0)'); g.fillStyle = sh; g.fillRect(x, y + 12, 48, 28);
+        const stone = b.kind === 'stone';
+        blit(g, sprite('span' + (stone ? 's' : 'r'), 48, 40, 0, 0, cg => paintSpanFace(cg, stone)), tx * TILE, ty * TILE);
       } else for (let ty = by0; ty <= by1; ty++) for (const tx of [bx0 - 1, bx1 + 1]) {
         if (tx < x0 || tx > x1 || ty < y0 || ty > y1 || !isSky(tx, ty)) continue;
         g.fillStyle = 'rgba(60,90,140,0.18)'; g.fillRect(tx * TILE + (tx > bx1 ? 0 : 36), ty * TILE + 8, 12, 48);
@@ -33523,39 +33570,44 @@ HOOKS.selfTest.push((check, F, h) => {
     goldWing(g, cx + sw * 0.35 + 2, top + len * 0.38, wd * 0.62);
     STATS.banners++;
   }
-  function drawWallH(g, tx, ty) {
-    const x = tx * TILE, y = ty * TILE;
-    g.fillStyle = 'rgba(40,60,100,0.15)'; g.fillRect(x, y + 48, 48, 9);
+  // the wall's stonework never moves: each kind of wall tile is painted once (the brick courses alternate with the column,
+  // and a north-south run has a cap where it ends) and blitted; only the banners wave, drawn over it
+  function paintWallH(g, v) {
+    g.fillStyle = 'rgba(40,60,100,0.15)'; g.fillRect(0, 48, 48, 9);
     // the face
-    g.fillStyle = '#dad0bd'; g.fillRect(x, y + 14, 48, 34);
+    g.fillStyle = '#dad0bd'; g.fillRect(0, 14, 48, 34);
     g.fillStyle = 'rgba(145,130,105,0.28)';
-    for (let r = 0; r < 3; r++) { const yy = y + 15 + r * 11; g.fillRect(x, yy + 10, 48, 1); const off = (r + tx) % 2 ? 12 : 0; for (let c = 0; c < 3; c++) g.fillRect(x + off + c * 24, yy, 1, 10); }
-    const sh = g.createLinearGradient(0, y + 30, 0, y + 48); sh.addColorStop(0, 'rgba(60,80,120,0)'); sh.addColorStop(1, 'rgba(60,80,120,0.16)'); g.fillStyle = sh; g.fillRect(x, y + 30, 48, 18);
+    for (let r = 0; r < 3; r++) { const yy = 15 + r * 11; g.fillRect(0, yy + 10, 48, 1); const off = (r + v) % 2 ? 12 : 0; for (let c = 0; c < 3; c++) g.fillRect(off + c * 24, yy, 1, 10); }
+    const sh = g.createLinearGradient(0, 30, 0, 48); sh.addColorStop(0, 'rgba(60,80,120,0)'); sh.addColorStop(1, 'rgba(60,80,120,0.16)'); g.fillStyle = sh; g.fillRect(0, 30, 48, 18);
     // the walk, the gold string course, the merlons (world-aligned, so the whole wall lines up)
-    g.fillStyle = '#eae3d5'; g.fillRect(x, y + 3, 48, 9);
-    g.fillStyle = '#e8c25a'; g.fillRect(x, y + 12, 48, 3); g.fillStyle = '#fff0b0'; g.fillRect(x, y + 12, 48, 1);
-    for (let k = 0; k < 4; k++) {
-      if ((tx * 4 + k) % 2) continue;
-      const mx = x + k * 12;
-      g.fillStyle = '#e1d8c6'; g.fillRect(mx, y - 6, 12, 18);
-      g.fillStyle = '#f0eadf'; g.fillRect(mx, y - 9, 12, 4);
-      g.fillStyle = '#f5c542'; g.fillRect(mx, y - 10, 12, 2);
-      g.fillStyle = 'rgba(60,80,120,0.12)'; g.fillRect(mx + 9, y - 6, 3, 18);
+    g.fillStyle = '#eae3d5'; g.fillRect(0, 3, 48, 9);
+    g.fillStyle = '#e8c25a'; g.fillRect(0, 12, 48, 3); g.fillStyle = '#fff0b0'; g.fillRect(0, 12, 48, 1);
+    for (let k = 0; k < 4; k += 2) {
+      const mx = k * 12;
+      g.fillStyle = '#e1d8c6'; g.fillRect(mx, -6, 12, 18);
+      g.fillStyle = '#f0eadf'; g.fillRect(mx, -9, 12, 4);
+      g.fillStyle = '#f5c542'; g.fillRect(mx, -10, 12, 2);
+      g.fillStyle = 'rgba(60,80,120,0.12)'; g.fillRect(mx + 9, -6, 3, 18);
     }
-    if (BANNERS.has(tx + ',' + ty)) drawBanner(g, x + 24, y + 16, 38, 16);
+  }
+  function drawWallH(g, tx, ty) {
+    blit(g, sprite('wallH' + (tx % 2), 48, 68, 0, 10, cg => paintWallH(cg, tx % 2)), tx * TILE, ty * TILE);
+    if (BANNERS.has(tx + ',' + ty)) drawBanner(g, tx * TILE + 24, ty * TILE + 16, 38, 16);
+  }
+  function paintWallV(g, cap) {
+    g.fillStyle = 'rgba(40,60,100,0.14)'; g.fillRect(44, 0, 9, 48);
+    g.fillStyle = '#d8cebb'; g.fillRect(4, 0, 40, 48);
+    g.fillStyle = '#e9e2d4'; g.fillRect(11, 0, 26, 48);
+    g.fillStyle = 'rgba(145,130,105,0.22)'; for (let r = 0; r < 4; r++) g.fillRect(11, r * 12 + 11, 26, 1);
+    for (let k = 0; k < 4; k += 2) {
+      const my = k * 12;
+      for (const ex of [4, 36]) { g.fillStyle = '#e1d8c6'; g.fillRect(ex, my - 6, 8, 12); g.fillStyle = '#f5c542'; g.fillRect(ex, my - 7, 8, 2); g.fillStyle = '#d8d0c0'; g.fillRect(ex, my + 6, 8, 4); }
+    }
+    if (cap) { g.fillStyle = '#e2dbcd'; g.fillRect(4, 34, 40, 14); g.fillStyle = '#e8c25a'; g.fillRect(4, 33, 40, 2); g.fillStyle = 'rgba(40,60,100,0.15)'; g.fillRect(4, 48, 40, 8); }
   }
   function drawWallV(g, tx, ty) {
-    const x = tx * TILE, y = ty * TILE;
-    g.fillStyle = 'rgba(40,60,100,0.14)'; g.fillRect(x + 44, y, 9, 48);
-    g.fillStyle = '#d8cebb'; g.fillRect(x + 4, y, 40, 48);
-    g.fillStyle = '#e9e2d4'; g.fillRect(x + 11, y, 26, 48);
-    g.fillStyle = 'rgba(145,130,105,0.22)'; for (let r = 0; r < 4; r++) g.fillRect(x + 11, y + r * 12 + 11, 26, 1);
-    for (let k = 0; k < 4; k++) {
-      if ((ty * 4 + k) % 2) continue;
-      const my = y + k * 12;
-      for (const ex of [x + 4, x + 36]) { g.fillStyle = '#e1d8c6'; g.fillRect(ex, my - 6, 8, 12); g.fillStyle = '#f5c542'; g.fillRect(ex, my - 7, 8, 2); g.fillStyle = '#d8d0c0'; g.fillRect(ex, my + 6, 8, 4); }
-    }
-    if (!wallish(tx, ty + 1)) { g.fillStyle = '#e2dbcd'; g.fillRect(x + 4, y + 34, 40, 14); g.fillStyle = '#e8c25a'; g.fillRect(x + 4, y + 33, 40, 2); g.fillStyle = 'rgba(40,60,100,0.15)'; g.fillRect(x + 4, y + 48, 40, 8); }
+    const cap = !wallish(tx, ty + 1);
+    blit(g, sprite('wallV' + (cap ? 1 : 0), 56, 64, 0, 8, cg => paintWallV(cg, cap)), tx * TILE, ty * TILE);
   }
 
   // ---------- the towers: nineteen, each with a pennant ----------
@@ -33928,36 +33980,50 @@ HOOKS.selfTest.push((check, F, h) => {
       g.beginPath(); g.moveTo(x, y0); g.quadraticCurveTo(x + Math.cos(a) * 5, y0 + drop * 0.5, x + Math.cos(a) * 8, y0 + drop); g.stroke();
     }
   }
-  function drawFountain(g, f) {
-    const cx = (f.x0 + 1.5) * TILE, cy = (f.y0 + 1.5) * TILE, t = time, R = 70, K = 0.84, royal = f.id === 'royal';
-    g.fillStyle = 'rgba(40,60,100,0.18)'; g.beginPath(); g.ellipse(cx + 6, cy + R * K + 6, R, 12, 0, 0, 7); g.fill();
+  // a fountain is two cached pieces (the basin with its still water, and the tiers or the statue) with the moving water drawn
+  // between and over them each frame: the ripples, the water falling off every rim, the jets and the spray
+  const FR = 70, FK = 0.84;
+  function paintBasin(g) {
+    g.fillStyle = 'rgba(40,60,100,0.18)'; g.beginPath(); g.ellipse(6, FR * FK + 6, FR, 12, 0, 0, 7); g.fill();
     // the basin: a rim face on the near side, the rim, the water
-    octagon(g, cx, cy + 10, R, K); g.fillStyle = '#d9d1c1'; g.fill();
-    octagon(g, cx, cy, R, K); g.fillStyle = '#f4f0e7'; g.fill();
+    octagon(g, 0, 10, FR, FK); g.fillStyle = '#d9d1c1'; g.fill();
+    octagon(g, 0, 0, FR, FK); g.fillStyle = '#f4f0e7'; g.fill();
     g.strokeStyle = '#e8c25a'; g.lineWidth = 2.5; g.stroke();
-    octagon(g, cx, cy, R - 10, K); const wat = g.createLinearGradient(0, cy - R * K, 0, cy + R * K); wat.addColorStop(0, '#7fc6ef'); wat.addColorStop(1, '#2f8fd8'); g.fillStyle = wat; g.fill();
+    octagon(g, 0, 0, FR - 10, FK); const wat = g.createLinearGradient(0, -FR * FK, 0, FR * FK); wat.addColorStop(0, '#7fc6ef'); wat.addColorStop(1, '#2f8fd8'); g.fillStyle = wat; g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.25)'; g.beginPath(); g.ellipse(-26, -22, 16, 5, -0.3, 0, 7); g.fill();
+  }
+  function paintTiers(g) {
+    // three tiers: the water falls up as much as it falls down
+    g.fillStyle = '#ece6d9'; g.fillRect(-7, -24, 14, 30);
+    bowl(g, 0, -24, 34, 11);
+    g.fillStyle = '#ece6d9'; g.fillRect(-5, -50, 10, 26);
+    bowl(g, 0, -50, 22, 7.5);
+    g.fillStyle = '#ece6d9'; g.fillRect(-4, -70, 8, 20);
+    bowl(g, 0, -70, 12, 4.5);
+    g.fillStyle = '#f5c542'; g.beginPath(); g.arc(0, -78, 4.5, 0, 7); g.fill(); goldWing(g, 2, -84, 9); g.save(); g.translate(0, -84); g.scale(-1, 1); goldWing(g, 2, 0, 9); g.restore();
+  }
+  function paintWingwright(g) {
+    // the first wingwright, holding the first letter
+    g.fillStyle = '#e6dfd1'; g.fillRect(-12, -30, 24, 30); g.fillStyle = '#e8c25a'; g.fillRect(-13, -31, 26, 3);
+    for (const s of [-1, 1]) { g.save(); g.translate(0, -58); g.scale(s, 1); g.fillStyle = '#f7f4ee'; g.beginPath(); g.moveTo(4, 0); g.quadraticCurveTo(22, -16, 28, -34); g.quadraticCurveTo(16, -18, 6, 10); g.closePath(); g.fill(); g.strokeStyle = 'rgba(160,150,130,0.5)'; g.lineWidth = 1; g.stroke(); g.restore(); }
+    g.fillStyle = '#f2eee6'; g.beginPath(); g.ellipse(0, -44, 8, 14, 0, 0, 7); g.fill(); g.beginPath(); g.arc(0, -64, 6, 0, 7); g.fill();
+    g.fillStyle = '#fffaf0'; g.fillRect(5, -58, 10, 7); g.strokeStyle = '#c9a23a'; g.lineWidth = 1; g.strokeRect(5, -58, 10, 7); g.beginPath(); g.moveTo(5, -58); g.lineTo(10, -54); g.lineTo(15, -58); g.stroke();
+  }
+  function drawFountain(g, f) {
+    const cx = (f.x0 + 1.5) * TILE, cy = (f.y0 + 1.5) * TILE, t = time, R = FR, K = FK, royal = f.id === 'royal';
+    blit(g, sprite('basin', 170, 150, 85, 62, paintBasin), cx, cy);
     // ripples, spreading from the middle
     g.save(); octagon(g, cx, cy, R - 11, K); g.clip();
     for (let k = 0; k < 3; k++) { const ph = (t * 0.45 + k / 3) % 1, rr = 18 + ph * 44; g.strokeStyle = `rgba(255,255,255,${((1 - ph) * 0.55).toFixed(3)})`; g.lineWidth = 1.6; g.beginPath(); g.ellipse(cx, cy + 4, rr, rr * K * 0.62, 0, 0, 7); g.stroke(); }
-    g.fillStyle = 'rgba(255,255,255,0.25)'; g.beginPath(); g.ellipse(cx - 26, cy - 22, 16, 5, -0.3, 0, 7); g.fill();
     g.restore();
     if (royal) {
-      // three tiers: the water falls up as much as it falls down
-      g.fillStyle = '#ece6d9'; g.fillRect(cx - 7, cy - 24, 14, 30);
-      bowl(g, cx, cy - 24, 34, 11); curtain(g, cx, cy - 24, 34, 26, t);
-      g.fillStyle = '#ece6d9'; g.fillRect(cx - 5, cy - 50, 10, 26);
-      bowl(g, cx, cy - 50, 22, 7.5); curtain(g, cx, cy - 50, 22, 24, t + 0.3);
-      g.fillStyle = '#ece6d9'; g.fillRect(cx - 4, cy - 70, 8, 20);
-      bowl(g, cx, cy - 70, 12, 4.5); curtain(g, cx, cy - 70, 12, 18, t + 0.6);
-      g.fillStyle = '#f5c542'; g.beginPath(); g.arc(cx, cy - 78, 4.5, 0, 7); g.fill(); goldWing(g, cx + 2, cy - 84, 9); g.save(); g.translate(cx, cy - 84); g.scale(-1, 1); goldWing(g, 2, 0, 9); g.restore();
+      blit(g, sprite('tiers', 80, 112, 40, 102, paintTiers), cx, cy);
+      curtain(g, cx, cy - 24, 34, 26, t); curtain(g, cx, cy - 50, 22, 24, t + 0.3); curtain(g, cx, cy - 70, 12, 18, t + 0.6);
       // the jet, and it arcs up and back
       for (let k = 0; k < 4; k++) { const ph = (t * 1.3 + k / 4) % 1; g.strokeStyle = `rgba(230,246,255,${(0.7 * (1 - ph)).toFixed(3)})`; g.lineWidth = 2.2; g.beginPath(); g.moveTo(cx, cy - 86); g.quadraticCurveTo(cx + (k - 1.5) * 10, cy - 116 - ph * 8, cx + (k - 1.5) * 18, cy - 90 + ph * 12); g.stroke(); }
     } else {
-      // the first wingwright, holding the first letter, and four spouts
-      g.fillStyle = '#e6dfd1'; g.fillRect(cx - 12, cy - 30, 24, 30); g.fillStyle = '#e8c25a'; g.fillRect(cx - 13, cy - 31, 26, 3);
-      for (const s of [-1, 1]) { g.save(); g.translate(cx, cy - 58); g.scale(s, 1); g.fillStyle = '#f7f4ee'; g.beginPath(); g.moveTo(4, 0); g.quadraticCurveTo(22, -16, 28, -34); g.quadraticCurveTo(16, -18, 6, 10); g.closePath(); g.fill(); g.strokeStyle = 'rgba(160,150,130,0.5)'; g.lineWidth = 1; g.stroke(); g.restore(); }
-      g.fillStyle = '#f2eee6'; g.beginPath(); g.ellipse(cx, cy - 44, 8, 14, 0, 0, 7); g.fill(); g.beginPath(); g.arc(cx, cy - 64, 6, 0, 7); g.fill();
-      g.fillStyle = '#fffaf0'; g.fillRect(cx + 5, cy - 58, 10, 7); g.strokeStyle = '#c9a23a'; g.lineWidth = 1; g.strokeRect(cx + 5, cy - 58, 10, 7); g.beginPath(); g.moveTo(cx + 5, cy - 58); g.lineTo(cx + 10, cy - 54); g.lineTo(cx + 15, cy - 58); g.stroke();
+      blit(g, sprite('wingwright', 70, 104, 35, 100, paintWingwright), cx, cy);
+      // four spouts
       for (let k = 0; k < 4; k++) { const a = Math.PI / 4 + k * Math.PI / 2, sx = cx + Math.cos(a) * 12, sy = cy - 22 + Math.sin(a) * 5, ex = cx + Math.cos(a) * 42, ey = cy + Math.sin(a) * 24; for (let j = 0; j < 2; j++) { const ph = (t * 1.5 + j * 0.5 + k * 0.2) % 1; g.strokeStyle = `rgba(225,244,255,${(0.75 - ph * 0.4).toFixed(3)})`; g.lineWidth = 2.2; g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + ex) / 2, sy - 18 - ph * 4, ex, ey); g.stroke(); } }
     }
     // spray: 24 drops at most, placed by the clock (hash of the drop and an eighth of a second)
@@ -34315,12 +34381,13 @@ HOOKS.selfTest.push((check, F, h) => {
   const drawHook = (g, items, c0) => {
     if (!inside()) return;
     const c = c0 || cam;
-    STATS.frames++; STATS.gates = 0; STATS.fountains = 0; STATS.awnings = 0; STATS.banners = 0; STATS.pennants = 0; STATS.spires = 0; STATS.towers = 0;
+    STATS.frames++; STATS.chunks = 0; STATS.gates = 0; STATS.fountains = 0; STATS.awnings = 0; STATS.banners = 0; STATS.pennants = 0; STATS.spires = 0; STATS.towers = 0;
     const n0 = items.length;
     const x0 = Math.max(0, Math.floor(c.x / TILE) - 1), x1 = Math.min(W - 1, Math.ceil((c.x + VW) / TILE) + 1);
     const y0 = Math.max(0, Math.floor(c.y / TILE) - 1), y1 = Math.min(H - 1, Math.ceil((c.y + VH) / TILE) + 1);
     // the ground, a row at a time, and the sky decor once every row is down
-    for (let ty = y0; ty <= y1; ty++) items.push({ y: -1e8 + ty * TILE + 0.0005, draw: () => drawGroundRow(g, ty, x0, x1) });
+    // the ground: before every other ground-level thing (36 paints its sky and cloud over what is not ours; nothing of ours is under them)
+    items.push({ y: -1e8 - 2, draw: () => drawGround(g, c) });
     items.push({ y: -1e8 + H * TILE + 1, draw: () => drawSkyDecor(g, x0, x1, y0, y1) });
     // the fliers' shadows cross the streets (on the ground, under everyone standing)
     items.push({ y: -1e8 + H * TILE + 2, draw: () => { for (const f of FLIERS) if (vis(c, f.px - 30, f.py - 10, f.px + 30, f.py + 20)) flierShadow(g, f); } });
@@ -34866,6 +34933,15 @@ HOOKS.selfTest.push((check, F, h) => {
       window.innerWidth = iw; window.innerHeight = ih; render();
       check(K + 'K21 the sky curtain: at (97,9) on a 1920x1080 screen it is drawn over every world thing (the edge of the whole map is further east than the edge of the city); at (48,40) on 1280x800 there is none',
         issued && quiet, { issued, curtainY: cur && cur.y, top, frames: STATS.curtain - c0, villagersPastTheEdge: past.map(n => n.name), pastUnder, quiet }); }
+
+    // ---- K22. the ground is painted once and blitted: standing still paints no chunk again, and the cache stays bounded ----
+    { enter(); const iw = window.innerWidth, ih = window.innerHeight; window.innerWidth = 1280; window.innerHeight = 800;
+      F.tp(48, 46); F.step([]); render(); const p0 = STATS.chunksPainted; render(); render(); const again = STATS.chunksPainted - p0, blits = STATS.chunks;
+      for (const [x, y] of [[20, 14], [78, 60], [90, 76], [10, 70], [48, 2], [95, 10]]) { F.tp(x, y); F.step([]); render(); }
+      const bounded = CHUNKS.size <= chunkMax && chunkMax <= 40;
+      window.innerWidth = iw; window.innerHeight = ih; render();
+      check(K + 'K22 the ground is cached: standing still repaints no chunk (it only blits the 12 or so in view), and after walking the whole city the cache holds no more than it may',
+        again === 0 && blits > 0 && blits <= 20 && bounded, { again, blits, cached: CHUNKS.size, max: chunkMax }); }
 
     // ---- K21b. what the overworld draws by coordinate stays out of Aerie (45's river crossing posts, 54's grave markers) ----
     { const crossHook = HOOKS.draw.find(f => /CROSSINGS/.test(String(f))), graveHook = HOOKS.draw.find(f => /MARKER_ART/.test(String(f)));
