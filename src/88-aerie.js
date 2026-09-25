@@ -67,29 +67,36 @@
   setMode('deepholm', 'lamplit');
 
   // ---------- the day layer ----------
+  // Review round 3 (Cloud Kingdom): the sun was a white-hot disc painted 'lighter' at a fixed spot on the screen, just
+  // under the minimap, and it bleached whatever building stood there -- it read as a glitch, not a sun. The view looks
+  // down on the city, so the sun is never in it: it stands off the top-right edge of the screen (SUN_AT, in screen
+  // fractions), and what reaches the city is its light -- a warm tint laid over (never added to) the stone, strongest
+  // in the top-right corner, and five faint rays fanning in from there. No part of the layer can lift a pixel by more
+  // than DAY.maxLift (the self-test measures it at the brightest point on the screen).
+  const SUN_AT = { x: 0.9, y: -0.45 };
+  const DAY = { tint: 0.12, ray: 0.028, maxLift: 0 };
   function drawDay(g, inst) {
-    const sx = VW * 0.78 - (cam.x % 400) * 0.05, sy = VH * 0.13 - (cam.y % 400) * 0.04;
+    const sx = VW * SUN_AT.x - (cam.x % 400) * 0.03, sy = VH * SUN_AT.y;
     g.save(); g.setTransform(DPR, 0, 0, DPR, 0, 0);
-    // the sun's warmth over everything
-    g.globalCompositeOperation = 'lighter';
-    const R = Math.max(VW, VH) * 0.95;
+    // the sun's warmth: a warm tint, laid over the city (source-over), fading away from the top-right corner
+    g.globalCompositeOperation = 'source-over';
+    const R = Math.max(VW, VH) * 1.15;
     const warm = g.createRadialGradient(sx, sy, 10, sx, sy, R);
-    warm.addColorStop(0, 'rgba(255,244,214,0.20)'); warm.addColorStop(0.45, 'rgba(255,240,205,0.09)'); warm.addColorStop(1, 'rgba(255,240,205,0)');
+    warm.addColorStop(0, `rgba(255,222,150,${DAY.tint})`); warm.addColorStop(0.5, `rgba(255,228,170,${(DAY.tint * 0.45).toFixed(3)})`); warm.addColorStop(1, 'rgba(255,230,180,0)');
     g.fillStyle = warm; g.fillRect(0, 0, VW, VH);
-    // five long rays, turning slowly
+    // five long rays fanning in from the corner, turning slowly
     const rays = 5;
+    g.globalCompositeOperation = 'lighter';
     for (let k = 0; k < rays; k++) {
-      const a = 1.9 + k * 0.24 + Math.sin(time * 0.11 + k) * 0.05, w = 0.055;
-      g.fillStyle = 'rgba(255,247,225,0.045)';
+      const a = 1.95 + k * 0.2 + Math.sin(time * 0.11 + k) * 0.04, w = 0.05;
+      g.fillStyle = `rgba(255,244,214,${DAY.ray})`;
       g.beginPath(); g.moveTo(sx, sy);
-      g.lineTo(sx + Math.cos(a - w) * R * 1.6, sy + Math.sin(a - w) * R * 1.6);
-      g.lineTo(sx + Math.cos(a + w) * R * 1.6, sy + Math.sin(a + w) * R * 1.6);
+      g.lineTo(sx + Math.cos(a - w) * R * 2, sy + Math.sin(a - w) * R * 2);
+      g.lineTo(sx + Math.cos(a + w) * R * 2, sy + Math.sin(a + w) * R * 2);
       g.closePath(); g.fill();
     }
-    // the sun itself
-    const disc = g.createRadialGradient(sx, sy, 4, sx, sy, 96);
-    disc.addColorStop(0, 'rgba(255,253,240,0.85)'); disc.addColorStop(0.25, 'rgba(255,240,190,0.35)'); disc.addColorStop(1, 'rgba(255,240,190,0)');
-    g.fillStyle = disc; g.beginPath(); g.arc(sx, sy, 96, 0, 7); g.fill();
+    // the most any pixel is lifted: two rays crossing (lighter adds) over the warm tint's strongest point on screen
+    DAY.maxLift = Math.round(255 * DAY.ray * 2);
     // cloud shadow drifting under the city, and the cold air off the drop at the bottom of the screen
     g.globalCompositeOperation = 'source-over';
     const shadows = 3;
@@ -104,7 +111,7 @@
     g.fillStyle = drop; g.fillRect(0, VH * 0.82, VW, VH * 0.18);
     g.restore();
     STATS.painted++; STATS.lastMode = 'day';
-    LAST.mode = 'day'; LAST.id = inst && inst.id; LAST.scrim = 0; LAST.warm = 0.20; LAST.rays = rays; LAST.shadows = shadows; LAST.sun = { x: Math.round(sx), y: Math.round(sy) };
+    LAST.mode = 'day'; LAST.id = inst && inst.id; LAST.scrim = 0; LAST.warm = DAY.tint; LAST.rays = rays; LAST.shadows = shadows; LAST.sun = { x: Math.round(sx), y: Math.round(sy), onScreen: sx >= 0 && sx <= VW && sy >= 0 && sy <= VH, disc: false };
   }
 
   HOOKS.draw.push((g, items) => {
@@ -139,7 +146,7 @@
   };
 
   window.INSTANCE_LIGHT = {
-    MODES, define: defineMode, set: setMode, of: modeOf, stats: STATS, last: LAST,
+    MODES, define: defineMode, set: setMode, of: modeOf, stats: STATS, last: LAST, DAY, SUN_AT,
     suppressing: () => suppressing,
     list: () => (window.INSTANCES ? INSTANCES.list() : []).map(id => ({ id, mode: modeOf(id), dark: !!(instOf(id) && instOf(id).dark) })),
   };
@@ -277,103 +284,72 @@
   setMode('aerie', 'day');
 
   // =========================================================================
-  // 5. the map: grow Aerie from 50 x 34 to 78 x 50, three levels
+  // 5. the map: Aerie is the walled kingdom now (src/36-aerieplan.js is the plan, 91-cloudkingdom paints it)
   // =========================================================================
-  const NW = 78, NH = 50;
-  const SPAN = { w: 50, h: 34 };                                   // the old island, kept exactly as 36-skycity built it
-  const CROWN = { cx: 62, cy: 10, rx: 14, ry: 8.5, x0: 51 };       // above and north-east: the Rookery, the market, the Songstone
-  const CATCH = { cx: 33, cy: 43, rx: 20, ry: 7.5, y0: 35 };       // below the drop: everything the city lets fall
-  const ENTRY = [25, 30];
-  // the four winds, named on their statues
-  const STATUES = [[20, 20, 'Vireth, the north wind'], [30, 20, 'Sorrow, the east wind'], [52, 10, 'Halloa, the west wind'], [74, 10, 'The Last Wind, that has no name']];
-  const NESTS = [[12, 14], [16, 10], [36, 10], [14, 22], [33, 25], [30, 28], [53, 8], [56, 11], [60, 13], [71, 12], [72, 6], [34, 41]];
-  const BRAZIERS = [[23, 13], [27, 13], [57, 3], [66, 4], [70, 14]];
-  const RAILS = [[21, 31], [22, 31], [27, 31], [28, 31], [60, 17], [61, 17], [62, 17], [63, 17], [64, 17], [30, 37], [31, 37], [35, 37], [36, 37]];
-  const SPIRES = [[51, 14], [75, 7], [53, 29], [59, 29], [65, 29], [71, 29], [16, 46], [29, 48], [45, 47], [50, 40]];
-  const ORGAN = [[19, 14], [20, 14], [21, 14]];
-  const PERCHES = [[55, 7], [58, 5], [61, 7]];
-  const STALLS = [[64, 13], [66, 13], [64, 15], [66, 15]];
-  const SONG_T = [69, 9];
-  const SNAGS = [[20, 44], [26, 41], [30, 46], [37, 40], [41, 45], [47, 42]];
-  // the three ways between the levels: E on the tile, the wind sets you down on the far land tile
-  const DRAFTS = [
-    { t: [46, 17], land: [45, 17], to: 1, name: 'the Crown' },
-    { t: [54, 15], land: [55, 15], to: 0, name: 'the Span' },
-    { t: [24, 31], land: [24, 30], to: 3, name: 'the Underside' },
-    { t: [24, 37], land: [24, 38], to: 2, name: 'the Span' },
-    { t: [58, 18], land: [58, 17], to: 5, name: 'the Spire Run' },
-    { t: [54, 26], land: [55, 26], to: 4, name: 'the Crown' },
-  ];
-  // the Spire Run: six flags, three beams, four gaps and a rope net, all at Agility 40 but the net
-  const RUN_MARKS = [[56, 26], [63, 26], [69, 26], [69, 22], [63, 22], [56, 22]];
-  const RUN_PLATES = [[53, 55, 25, 27], [55, 57, 25, 27], [62, 64, 25, 27], [68, 70, 25, 27], [68, 70, 21, 23], [62, 64, 21, 23], [55, 57, 21, 23]];
-  const RUN_GAPS = [[58, 26], [69, 24], [61, 22], [56, 24]];
-  const RUN_LOGS = [[59, 26], [60, 26], [61, 26], [65, 26], [66, 26], [67, 26], [60, 22], [59, 22], [58, 22]];
-  const RUN_NETS = [[65, 22], [66, 22], [67, 22]];
+  // This section used to grow Aerie from 50 x 34 to 78 x 50 by painting three levels into it. The kingdom plan is
+  // 100 x 80 and 91-cloudkingdom paints every cell of it at load, so there is nothing left here to paint: sizeAerie
+  // only confirms the instance is the plan's size (GREW keeps its meaning) and every spot below is read off the plan.
+  const PLAN = window.AERIE_PLAN, SP = PLAN ? PLAN.SPOTS : null;
+  const NW = PLAN ? PLAN.W : 78, NH = PLAN ? PLAN.H : 50;
+  // the three levels, as places on the plan: the city (the old Span grew into it), the Crown and the Underside
+  const SPAN = { x0: 12, y0: 7, x1: 82, y1: 72, w: NW, h: NH };      // the walled city on its apron, and the Wind Landing
+  const CROWN = { x0: 83, y0: 3, x1: 99, y1: 30 };                  // north-east, over the Crown Bridge: the Rookery, the Songstone
+  const CATCH = { x0: 0, y0: 66, x1: 36, y1: 79 };                  // below the drop, down the Low Stair: everything the city lets fall
+  const ENTRY = SP ? SP.entry.slice() : [25, 30];
+  // the four winds, named on their statues (same order and names as before, on the Royal Plaza's four corners now)
+  const STATUES = SP ? SP.statues.map(([x, y], i) => [x, y, PLAN.STATUE_NAMES[i]]) : [];
+  const NESTS = SP ? SP.nests.map(p => p.slice()) : [];
+  const BRAZIERS = SP ? SP.braziers.map(p => p.slice()) : [];
+  const RAILS = SP ? SP.rails.map(p => p.slice()) : [];
+  const SPIRES = SP ? SP.cloudSpires.map(p => p.slice()) : [];
+  const ORGAN = SP ? SP.organ.map(p => p.slice()) : [];
+  const PERCHES = SP ? SP.perches.map(p => p.slice()) : [];
+  const STALLS = SP ? SP.stalls.map(p => p.slice()) : [];
+  const SONG_T = SP ? SP.songstone.slice() : [69, 9];
+  const SNAGS = SP ? SP.snags.map(p => p.slice()) : [];
+  // the six ways between the levels: E on the tile, the wind sets you down on the far land tile (order kept)
+  const DRAFTS = PLAN ? PLAN.DRAFTS.map(d => ({ t: d.t.slice(), land: d.land.slice(), to: d.to, name: d.name })) : [];
+  // the Spire Run: six flags, three beams, four gaps and a rope net -- today's layout, moved whole by RUN_OFFSET
+  const RUN_BASE = {
+    marks: [[56, 26], [63, 26], [69, 26], [69, 22], [63, 22], [56, 22]],
+    plates: [[53, 55, 25, 27], [55, 57, 25, 27], [62, 64, 25, 27], [68, 70, 25, 27], [68, 70, 21, 23], [62, 64, 21, 23], [55, 57, 21, 23]],
+    gaps: [[58, 26], [69, 24], [61, 22], [56, 24]],
+    logs: [[59, 26], [60, 26], [61, 26], [65, 26], [66, 26], [67, 26], [60, 22], [59, 22], [58, 22]],
+    nets: [[65, 22], [66, 22], [67, 22]],
+  };
+  const RUN_OFFSET = PLAN ? PLAN.RUN_OFFSET : [0, 0];
+  const mv = a => a.map(([x, y]) => [x + RUN_OFFSET[0], y + RUN_OFFSET[1]]);
+  const RUN_MARKS = mv(RUN_BASE.marks);
+  const RUN_PLATES = RUN_BASE.plates.map(([x0, x1, y0, y1]) => [x0 + RUN_OFFSET[0], x1 + RUN_OFFSET[0], y0 + RUN_OFFSET[1], y1 + RUN_OFFSET[1]]);
+  const RUN_GAPS = mv(RUN_BASE.gaps);
+  const RUN_LOGS = mv(RUN_BASE.logs);
+  const RUN_NETS = mv(RUN_BASE.nets);
 
   const CL = SKY_C ? SKY_C.CLOUD : T.CAVE, SKYT = SKY_C ? SKY_C.SKY : T.WALL;
-  let TI = null;                                  // Aerie's own tile grid while we build it (never the live map)
   const gi = (x, y) => y * NW + x;
-  const gset = (x, y, t) => { if (x >= 0 && y >= 0 && x < NW && y < NH) TI[gi(x, y)] = t; };
-  const gat = (x, y) => (x >= 0 && y >= 0 && x < NW && y < NH) ? TI[gi(x, y)] : SKYT;
-  const isDeck = t => t === CL || t === UNDER || t === T.FLOOR || t === FLAG;
-  const ell = (x, y, e, wob) => { const dx = (x - e.cx) / e.rx, dy = (y - e.cy) / e.ry; return dx * dx + dy * dy <= 1 + Math.sin(x * 1.7 + y * 1.1) * (wob === undefined ? 0.09 : wob); };
-  // a point of interest always stands on deck with deck around it, whatever the ragged edge did
-  function pad(x, y, deck) { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = gat(x + dx, y + dy); if (t === SKYT) gset(x + dx, y + dy, deck); } }
-  function plant(x, y, t, deck) { pad(x, y, deck); gset(x, y, t); }
+  // the Underside is where the plan says 'u' (a tile, not a row: the city and the Spire Run share its rows)
+  const underCell = (tx, ty) => !!PLAN && PLAN.at(tx, ty) === 'u';
 
-  function growAerie() {
-    if (!AER || !SKY_C) return false;
-    const old = AER.tiles, oldV = AER.vars, ow = AER.w, oh = AER.h;
-    TI = new Uint8Array(NW * NH).fill(SKYT);
-    const vars = new Uint8Array(NW * NH);
-    const rnd = mulberry32(0x5171e ^ (NW * 7919) ^ NH);
-    for (let i = 0; i < vars.length; i++) vars[i] = Math.floor(rnd() * 3);
-    for (let y = 0; y < Math.min(oh, NH); y++) for (let x = 0; x < Math.min(ow, NW); x++) { TI[gi(x, y)] = old[y * ow + x]; vars[gi(x, y)] = oldV[y * ow + x]; }
-    // the Crown, north-east and above
-    for (let y = 1; y < 20; y++) for (let x = CROWN.x0; x < NW; x++) if (ell(x, y, CROWN)) gset(x, y, CL);
-    // the Underside, hanging below the drop
-    for (let y = CATCH.y0; y < NH; y++) for (let x = 0; x < NW; x++) if (ell(x, y, CATCH)) gset(x, y, UNDER);
-    // the Spire Run's platforms, east of both
-    for (const [x0, x1, y0, y1] of RUN_PLATES) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) gset(x, y, CL);
-    // ---- the Span: what a city of winged people keeps at home ----
-    for (const [x, y] of ORGAN) plant(x, y, STALL, CL);            // the wind organ shares the stall's frame, drawn as pipes
-    for (const [x, y] of BRAZIERS) plant(x, y, BRAZIER, y >= CATCH.y0 ? UNDER : CL);
-    for (const [x, y] of NESTS) plant(x, y, NEST, y >= CATCH.y0 ? UNDER : CL);
-    for (const [x, y, ] of STATUES) plant(x, y, STATUE, CL);
-    for (const [x, y] of RAILS) plant(x, y, RAIL, y >= CATCH.y0 ? UNDER : CL);
-    for (const [x, y] of SPIRES) { pad(x, y, gat(x, y) === UNDER || y >= CATCH.y0 ? UNDER : CL); gset(x, y, SPIRE); }
-    // ---- the Crown: the Rookery, the market, the Songstone ----
-    for (const [x, y] of PERCHES) plant(x, y, PERCH, CL);
-    for (const [x, y] of STALLS) plant(x, y, STALL, CL);
-    for (let y = SONG_T[1] - 1; y <= SONG_T[1] + 1; y++) for (let x = SONG_T[0] - 1; x <= SONG_T[0] + 1; x++) gset(x, y, T.FLOOR);
-    plant(SONG_T[0], SONG_T[1], SONG, CL);
-    // ---- the Underside: the Catch ----
-    for (const [x, y] of SNAGS) plant(x, y, SNAG, UNDER);
-    // ---- the ways between ----
-    for (const d of DRAFTS) { const deck = d.t[1] >= CATCH.y0 ? UNDER : CL; pad(d.land[0], d.land[1], deck); pad(d.t[0], d.t[1], deck); gset(d.land[0], d.land[1], deck); gset(d.t[0], d.t[1], UPDRAFT); }
-    // ---- the Spire Run ----
-    for (const [x, y] of RUN_GAPS) gset(x, y, GAP_T === undefined ? SKYT : GAP_T);
-    for (const [x, y] of RUN_LOGS) gset(x, y, LOG_T === undefined ? CL : LOG_T);
-    for (const [x, y] of RUN_NETS) gset(x, y, NET_T === undefined ? CL : NET_T);
-    for (const [x, y] of RUN_MARKS) gset(x, y, FLAG);
-    // hand the grown map back to the instance system
-    AER.w = NW; AER.h = NH; AER.tiles = TI; AER.vars = vars;
-    return true;
+  function sizeAerie() {
+    if (!AER || !SKY_C || !PLAN) return false;
+    return AER.w === NW && AER.h === NH && AER.tiles.length === NW * NH;
   }
-  const GREW = growAerie();
+  const GREW = sizeAerie();
 
   // =========================================================================
   // 6. the winged folk who were not here before
   // =========================================================================
+  // where each stands comes from the plan: Pell at the Rookery on the Crown, Quill in the Market Square, Skyla at the
+  // start of the Spire Run, Ferris on the Underside
+  const at2 = (k, d) => (SP && SP[k]) ? SP[k] : d;
   const FOLK = [
-    { id: 'pell', name: 'Keeper Pell', x: 58, y: 8, tunic: '#6a7f5a', hair: '#3a2a1a', role: 'rookery', wing: 1.0, beard: true },
-    { id: 'quill', name: 'Quill Windward', x: 65, y: 14, tunic: '#8a6a3a', hair: '#e8d9a0', role: 'market', wing: 1.0 },
-    { id: 'skyla', name: 'Skyla Fleetwing', x: 55, y: 27, tunic: '#2b8c8c', hair: '#f0d0b0', role: 'runner', wing: 1.15, woman: true },
-    { id: 'ferris', name: 'Old Ferris', x: 33, y: 43, tunic: '#5a6a7a', hair: '#d9d0c0', role: 'picker', wing: 0.8, beard: true },
+    { id: 'pell', name: 'Keeper Pell', x: at2('pell', [58, 8])[0], y: at2('pell', [58, 8])[1], tunic: '#6a7f5a', hair: '#3a2a1a', role: 'rookery', wing: 1.0, beard: true },
+    { id: 'quill', name: 'Quill Windward', x: at2('quill', [65, 14])[0], y: at2('quill', [65, 14])[1], tunic: '#8a6a3a', hair: '#e8d9a0', role: 'market', wing: 1.0 },
+    { id: 'skyla', name: 'Skyla Fleetwing', x: at2('skyla', [55, 27])[0], y: at2('skyla', [55, 27])[1], tunic: '#2b8c8c', hair: '#f0d0b0', role: 'runner', wing: 1.15, woman: true },
+    { id: 'ferris', name: 'Old Ferris', x: at2('ferris', [33, 43])[0], y: at2('ferris', [33, 43])[1], tunic: '#5a6a7a', hair: '#d9d0c0', role: 'picker', wing: 0.8, beard: true },
   ];
   for (const n of FOLK) { n.px = tc(n.x); n.py = tc(n.y); n.facing = { x: 0, y: 1 }; }
-  if (GREW) for (const n of FOLK) if (SOLID.has(AER.tiles[gi(n.x, n.y)])) AER.tiles[gi(n.x, n.y)] = n.y >= CATCH.y0 ? UNDER : CL;
+  if (GREW) for (const n of FOLK) if (SOLID.has(AER.tiles[gi(n.x, n.y)])) AER.tiles[gi(n.x, n.y)] = underCell(n.x, n.y) ? UNDER : CL;
 
   function folkInFront() {
     if (!inside()) return null;
@@ -609,7 +585,16 @@
   // 12. drawing
   // =========================================================================
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const underRegion = ty => ty >= CATCH.y0;
+  // how many perch-towers and nest-houses were drawn (the self-test reads it through AERIE.ART)
+  const ART = { perchTowers: 0, nests: 0 };
+  // the ground a cell is drawn on: a snag, a nest, an updraft or a cloud spire is not itself 'u', so it takes the
+  // ground it stands on (review round 2: those cells stood on a white sky-deck square in the middle of the undercloud)
+  const GROUND_GLYPHS = ['=', '"', '_', ',', 'u'];
+  const underRegion = (tx, ty) => {
+    if (!PLAN) return false;
+    const c = PLAN.at(tx, ty);
+    return c === 'u' || (!GROUND_GLYPHS.includes(c) && PLAN.groundAt(tx, ty) === 'u');
+  };
   function deck(g, tx, ty, low) {
     const x = tx * TILE, y = ty * TILE, r = hash(tx, ty);
     g.fillStyle = low ? '#c3d0e2' : '#eef3fa'; g.fillRect(x, y, TILE, TILE);
@@ -627,15 +612,34 @@
     g.fillStyle = '#cbd6e6'; g.fillRect(x, y + 24, TILE, 5); g.fillRect(x, y + 34, TILE, 3);
     g.fillStyle = '#e9eef5'; g.fillRect(x + 2, y + 24, TILE - 4, 2);
   }
+  // the knight behind something tall is drawn through it (half see-through), so he never vanishes
+  function behind(x0, y0, x1, y1, footY) {
+    if (player.dead || player.y + player.r >= footY) return 1;
+    return (player.x + 14 > x0 && player.x - 14 < x1 && player.y + 14 > y0 && player.y - 34 < y1) ? 0.45 : 1;
+  }
+  // a nest-house: a woven round house up on four posts, with a little blue roof and a gold finial
   function drawNest(g, tx, ty) {
-    const cx = tc(tx), y = ty * TILE;
-    g.fillStyle = 'rgba(60,90,140,0.25)'; g.beginPath(); g.ellipse(cx, y + 42, 20, 7, 0, 0, 7); g.fill();
-    g.fillStyle = '#b79a63'; g.beginPath(); g.ellipse(cx, y + 30, 21, 15, 0, 0, 7); g.fill();
-    g.strokeStyle = '#8a7040'; g.lineWidth = 1.4;
-    for (let k = 0; k < 6; k++) { const a = k * 1.05; g.beginPath(); g.ellipse(cx, y + 30, 21 - k * 1.5, 15 - k, a * 0.2, 0, 7); g.stroke(); }
-    g.fillStyle = '#d8c69a'; g.beginPath(); g.ellipse(cx, y + 18, 17, 10, 0, 0, 7); g.fill();
-    g.fillStyle = '#2a2f3a'; g.beginPath(); g.ellipse(cx, y + 22, 7, 5, 0, 0, 7); g.fill();   // the doorway
-    g.fillStyle = '#f0e4c4'; g.beginPath(); g.arc(cx + 10, y + 14, 3, 0, 7); g.fill();        // a feather tucked in the weave
+    const cx = tc(tx), y = ty * TILE, a = behind(cx - 26, y - 44, cx + 26, y + 40, y + 44);
+    ART.nests++;
+    g.save(); g.globalAlpha = a;
+    g.fillStyle = 'rgba(60,90,140,0.25)'; g.beginPath(); g.ellipse(cx, y + 44, 21, 6, 0, 0, 7); g.fill();
+    // the posts and the ladder
+    g.fillStyle = '#7a5a36'; for (const px of [-15, -6, 6, 15]) g.fillRect(cx + px - 2, y + 14, 4, 30);
+    g.fillStyle = '#8a6a44'; g.fillRect(cx - 17, y + 30, 34, 3);
+    g.strokeStyle = '#9a7a50'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx + 3, y + 44); g.lineTo(cx + 5, y + 16); g.moveTo(cx + 11, y + 44); g.lineTo(cx + 12, y + 16); for (let k = 0; k < 4; k++) { g.moveTo(cx + 3.5, y + 40 - k * 7); g.lineTo(cx + 11.4, y + 40 - k * 7); } g.stroke();
+    // the platform
+    g.fillStyle = '#b08a55'; g.fillRect(cx - 20, y + 10, 40, 6); g.fillStyle = '#c9a36a'; g.fillRect(cx - 20, y + 10, 40, 2);
+    // the woven house
+    g.fillStyle = '#b79a63'; g.beginPath(); g.ellipse(cx, y + 2, 18, 12, 0, 0, 7); g.fill();
+    g.strokeStyle = '#8a7040'; g.lineWidth = 1.2;
+    for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(cx, y + 2, 18 - k * 1.6, 12 - k * 1.2, 0, 0.1, Math.PI - 0.1); g.stroke(); }
+    g.fillStyle = '#2a2f3a'; g.beginPath(); g.ellipse(cx - 2, y + 6, 6, 5, 0, Math.PI, 0); g.fillRect(cx - 8, y + 6, 12, 4); g.fill();   // the doorway
+    g.fillStyle = '#f0e4c4'; g.beginPath(); g.arc(cx + 11, y + 1, 2.6, 0, 7); g.fill();        // a feather tucked in the weave
+    // the little roof
+    g.fillStyle = '#3b5ba8'; g.beginPath(); g.moveTo(cx - 23, y - 6); g.lineTo(cx, y - 30); g.lineTo(cx + 23, y - 6); g.closePath(); g.fill();
+    g.fillStyle = '#5b8fd6'; g.beginPath(); g.moveTo(cx - 23, y - 6); g.lineTo(cx, y - 30); g.lineTo(cx - 2, y - 6); g.closePath(); g.fill();
+    g.fillStyle = '#e8c25a'; g.fillRect(cx - 23, y - 7, 46, 2.5); g.beginPath(); g.arc(cx, y - 32, 3, 0, 7); g.fill();
+    g.restore();
   }
   function drawBrazier(g, tx, ty) {
     const cx = tc(tx), y = ty * TILE, f = Math.sin(time * 5 + tx) * 2;
@@ -670,6 +674,8 @@
       for (let k = 0; k < 5; k++) { g.fillStyle = k % 2 ? '#9fb0c6' : '#c6d3e4'; g.fillRect(x + 5 + k * 8, y + 44 - h[k], 6, h[k]); g.fillStyle = '#e9eef5'; g.fillRect(x + 5 + k * 8, y + 44 - h[k], 6, 3); }
       return;
     }
+    // the Windward Market's four stalls are drawn whole by 91-cloudkingdom (two cells wide, with their goods)
+    if (window.KINGDOM && KINGDOM.ownsStall && KINGDOM.ownsStall(tx, ty)) return;
     g.fillStyle = 'rgba(60,90,140,0.22)'; g.fillRect(x + 4, y + 40, TILE - 8, 5);
     g.fillStyle = '#8a6a3a'; g.fillRect(x + 5, y + 20, 4, 24); g.fillRect(x + TILE - 9, y + 20, 4, 24);
     g.fillStyle = '#c0906a'; g.fillRect(x + 2, y + 12, TILE - 4, 10);
@@ -678,14 +684,31 @@
     g.fillStyle = '#9fd8ff'; g.beginPath(); g.arc(x + 16, y + 24, 3, 0, 7); g.fill();
     g.fillStyle = '#f0e4c4'; g.beginPath(); g.arc(x + 30, y + 24, 3, 0, 7); g.fill();
   }
+  // a perch-tower: a slender white stone tower banded in gold, the perch bar and the fish plate at the top, and a
+  // pennant flying from a pole above it (a skyhawk comes down to the plate when you carry a fish)
   function drawPerch(g, tx, ty) {
-    const cx = tc(tx), y = ty * TILE;
-    g.fillStyle = 'rgba(60,90,140,0.22)'; g.beginPath(); g.ellipse(cx, y + 44, 11, 4, 0, 0, 7); g.fill();
-    g.fillStyle = '#8a6a3a'; g.fillRect(cx - 3, y + 14, 6, 30);
-    g.fillStyle = '#c9a36a'; g.fillRect(cx - 15, y + 10, 30, 5);
+    const cx = tc(tx), y = ty * TILE, top = y - 58, a = behind(cx - 22, top - 44, cx + 22, y + 40, y + 44);
+    ART.perchTowers++;
+    g.save(); g.globalAlpha = a;
+    g.fillStyle = 'rgba(60,90,140,0.25)'; g.beginPath(); g.ellipse(cx + 3, y + 44, 16, 5, 0, 0, 7); g.fill();
+    // the plinth and the shaft
+    g.fillStyle = '#dcd4c2'; g.fillRect(cx - 13, y + 32, 26, 12); g.fillStyle = '#f4f0e7'; g.fillRect(cx - 13, y + 30, 26, 4); g.fillStyle = '#e8c25a'; g.fillRect(cx - 13, y + 30, 26, 1.5);
+    const sh = g.createLinearGradient(cx - 8, 0, cx + 8, 0); sh.addColorStop(0, '#d9d2c4'); sh.addColorStop(0.45, '#fbf8f2'); sh.addColorStop(1, '#cfc7b6');
+    g.fillStyle = sh; g.fillRect(cx - 8, top + 8, 16, y + 30 - top - 8);
+    g.fillStyle = '#e8c25a'; for (const by of [y + 12, y - 16, top + 10]) g.fillRect(cx - 9, by, 18, 3);
+    g.fillStyle = '#5b8fd6'; g.fillRect(cx - 3, y - 2, 6, 9); g.fillStyle = '#2f4f8f'; g.fillRect(cx - 2, y, 4, 6);   // a slit window
+    // the top: a gold-edged platform, the wooden perch bar across it, the plate
+    g.fillStyle = '#f4f0e7'; g.fillRect(cx - 14, top, 28, 8); g.fillStyle = '#e8c25a'; g.fillRect(cx - 14, top + 7, 28, 2);
+    g.fillStyle = '#8a6a3a'; g.fillRect(cx - 18, top - 4, 36, 4);
     const hasFish = FISH() >= 0;
-    g.fillStyle = hasFish ? '#9fb7c9' : 'rgba(255,255,255,0.25)'; g.beginPath(); g.ellipse(cx, y + 6, 7, 3.5, 0, 0, 7); g.fill();
-    if (!hasFish) { g.strokeStyle = 'rgba(240,228,196,0.6)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - 9, y + 6); g.lineTo(cx + 9, y + 6); g.stroke(); }
+    g.fillStyle = hasFish ? '#9fb7c9' : 'rgba(255,255,255,0.5)'; g.beginPath(); g.ellipse(cx - 8, top - 6, 6, 3, 0, 0, 7); g.fill();
+    // the pole and the pennant
+    const px = cx + 9, pole = top - 40, sw = Math.sin(time * 2.4 + tx) * 3;
+    g.fillStyle = '#8e9bb0'; g.fillRect(px - 1, pole, 2.5, 40);
+    g.fillStyle = '#e8c25a'; g.beginPath(); g.arc(px, pole - 1, 2.5, 0, 7); g.fill();
+    g.fillStyle = '#3b5ba8'; g.beginPath(); g.moveTo(px + 1, pole + 2); g.quadraticCurveTo(px + 14, pole + 4 + sw, px + 26, pole + 8 + sw); g.lineTo(px + 1, pole + 15); g.closePath(); g.fill();
+    g.fillStyle = '#f5c542'; g.beginPath(); g.moveTo(px + 1, pole + 6); g.quadraticCurveTo(px + 10, pole + 7 + sw * 0.7, px + 18, pole + 8 + sw); g.lineTo(px + 1, pole + 10); g.closePath(); g.fill();
+    g.restore();
   }
   function drawSong(g, tx, ty) {
     const cx = tc(tx), y = ty * TILE, q = Q(), lit = q.songstone ? 1 : 0.35;
@@ -765,29 +788,31 @@
   }
 
   const COURSE_T = new Set([LOG_T, NET_T].filter(t => t !== undefined));
-  HOOKS.draw.push((g, items, cam2) => {
+  // every item carries a tag (aer: [kind, tx, ty]) so the self-test can find a cell's deck and its prop in one frame
+  const AER_DRAW = (g, items, cam2) => {
     const c = cam2 || cam;
     if (!inside()) return;
     const x0 = Math.max(0, Math.floor(c.x / TILE) - 1), x1 = Math.min(MAP_W - 1, Math.ceil((c.x + VW) / TILE) + 1);
     const y0 = Math.max(0, Math.floor(c.y / TILE) - 1), y1 = Math.min(MAP_H - 1, Math.ceil((c.y + VH) / TILE) + 2);
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
       const t = tileAt(tx, ty); if (t === SKYT) continue;
-      const outside36 = tx >= SPAN.w || ty >= SPAN.h;   // 36-skycity paints everything past 50 x 34 as open sky
-      const low = underRegion(ty);
-      // the deck under everything this file put down, and under the old file's blind spot
-      if (t === UNDER || t === RAIL || t === NEST || t === BRAZIER || t === STATUE || t === UPDRAFT || t === PERCH || t === SONG || t === SNAG || t === STALL || t === FLAG || COURSE_T.has(t) || (outside36 && t !== GAP_T))
-        items.push({ y: -1e8 + ty * TILE + 0.001, draw: () => deck(g, tx, ty, low) });
-      if (t === RAIL) items.push({ y: ty * TILE + TILE - 10, draw: () => drawRail(g, tx, ty) });
-      else if (t === NEST) items.push({ y: ty * TILE + TILE - 4, draw: () => drawNest(g, tx, ty) });
-      else if (t === BRAZIER) items.push({ y: ty * TILE + TILE - 4, draw: () => drawBrazier(g, tx, ty) });
-      else if (t === STATUE) items.push({ y: ty * TILE + TILE - 4, draw: () => drawStatue(g, tx, ty) });
-      else if (t === SPIRE) items.push({ y: ty * TILE + TILE - 4, draw: () => drawSpire(g, tx, ty) });
-      else if (t === STALL) items.push({ y: ty * TILE + TILE - 4, draw: () => drawStall(g, tx, ty) });
-      else if (t === PERCH) items.push({ y: ty * TILE + TILE - 4, draw: () => drawPerch(g, tx, ty) });
-      else if (t === SONG) items.push({ y: ty * TILE + TILE - 4, draw: () => drawSong(g, tx, ty) });
-      else if (t === SNAG) items.push({ y: ty * TILE + TILE - 4, draw: () => drawSnag(g, tx, ty) });
-      else if (t === UPDRAFT) items.push({ y: ty * TILE + TILE - 4, draw: () => drawDraft(g, tx, ty) });
-      else if (t === FLAG) items.push({ y: -1e8 + ty * TILE + 0.9, draw: () => drawFlag(g, tx, ty) });
+      const low = underRegion(tx, ty);
+      // the deck under everything this file put down -- except where the kingdom (91) lays its own paving, lawn or marble
+      // (CLOUD_SPIRE is in the list too: its core texture is sand, which showed as a beige square under every spire)
+      if ((t === UNDER || t === RAIL || t === NEST || t === BRAZIER || t === STATUE || t === UPDRAFT || t === PERCH || t === SONG || t === SNAG || t === SPIRE || t === STALL || t === FLAG || COURSE_T.has(t))
+        && !(window.KINGDOM && KINGDOM.paintsGround(tx, ty)))
+        items.push({ y: -1e8 + ty * TILE + 0.001, aer: ['deck', tx, ty], draw: () => deck(g, tx, ty, low) });
+      if (t === RAIL) items.push({ y: ty * TILE + TILE - 10, aer: ['rail', tx, ty], draw: () => drawRail(g, tx, ty) });
+      else if (t === NEST) items.push({ y: ty * TILE + TILE - 4, aer: ['nest', tx, ty], draw: () => drawNest(g, tx, ty) });
+      else if (t === BRAZIER) items.push({ y: ty * TILE + TILE - 4, aer: ['brazier', tx, ty], draw: () => drawBrazier(g, tx, ty) });
+      else if (t === STATUE) items.push({ y: ty * TILE + TILE - 4, aer: ['statue', tx, ty], draw: () => drawStatue(g, tx, ty) });
+      else if (t === SPIRE) items.push({ y: ty * TILE + TILE - 4, aer: ['spire', tx, ty], draw: () => drawSpire(g, tx, ty) });
+      else if (t === STALL) items.push({ y: ty * TILE + TILE - 4, aer: ['stall', tx, ty], draw: () => drawStall(g, tx, ty) });
+      else if (t === PERCH) items.push({ y: ty * TILE + TILE - 4, aer: ['perch', tx, ty], draw: () => drawPerch(g, tx, ty) });
+      else if (t === SONG) items.push({ y: ty * TILE + TILE - 4, aer: ['song', tx, ty], draw: () => drawSong(g, tx, ty) });
+      else if (t === SNAG) items.push({ y: ty * TILE + TILE - 4, aer: ['snag', tx, ty], draw: () => drawSnag(g, tx, ty) });
+      else if (t === UPDRAFT) items.push({ y: ty * TILE + TILE - 4, aer: ['draft', tx, ty], draw: () => drawDraft(g, tx, ty) });
+      else if (t === FLAG) items.push({ y: -1e8 + ty * TILE + 0.9, aer: ['flag', tx, ty], draw: () => drawFlag(g, tx, ty) });
     }
     for (const n of FOLK) if (n.px > c.x - 60 && n.px < c.x + VW + 60 && n.py > c.y - 60 && n.py < c.y + VH + 60) items.push({ y: n.py + 13, draw: () => drawFolk(g, n) });
     HAWKS.forEach((h, k) => items.push({ y: 5e7 + k, draw: () => drawHawk(g, h, k) }));
@@ -798,7 +823,8 @@
       const { tx, ty } = frontTile(player);
       if (USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
     } });
-  });
+  };
+  HOOKS.draw.push(AER_DRAW);
 
   // =========================================================================
   // 13. the book
@@ -826,7 +852,7 @@
       `Skyla Fleetwing hands it over after ${CLOAK_LAPS} laps of the Spire Run in Aerie. It is not a skill cape and has no skill trick: it is what the runners wear.` ] });
     WIKI.add('quests', { id: 'spire_run', name: 'The Spire Run', lines: [
       `Aerie's own course: six flags over the spires east of the Crown, at Agility ${RUN_LV}.`,
-      'Ride the updraft from the Crown at (58,18). Skyla Fleetwing stands at the start.',
+      "Ride the updraft from the Crown at (96,27), or walk the Runners' Bridge from the Spire Gate. Skyla Fleetwing stands at the start.",
       `Touch the six flags in order and come home to the first: ${RUN_XP} Agility xp a lap, ${RUN_PURSE} coins every ${RUN_EVERY} laps, and the Gale cloak at ${CLOAK_LAPS}.`,
       `Below Agility ${RUN_LV} the beams roll you off for 1 damage and the gaps drop you back to the start for 2.` ] });
     void P;
@@ -836,8 +862,8 @@
   // 14. handle
   // =========================================================================
   window.AERIE = {
-    TILES: { UNDER, RAIL, NEST, BRAZIER, STATUE, UPDRAFT, PERCH, SONG, SNAG, SPIRE, STALL, FLAG },
-    W: NW, H: NH, SPAN, CROWN, CATCH, FOLK, DRAFTS, RUN_MARKS, RUN_GAPS, RUN_LOGS, RUN_NETS, PERCHES, SNAGS, SONG_T, STATUES, NESTS, STALLS, SPIRES, BRAZIERS, RAILS, ORGAN,
+    TILES: { UNDER, RAIL, NEST, BRAZIER, STATUE, UPDRAFT, PERCH, SONG, SNAG, SPIRE, STALL, FLAG }, ART, drawPerch, drawNest,
+    W: NW, H: NH, SPAN, CROWN, CATCH, ENTRY, FOLK, DRAFTS, RUN_BASE, RUN_OFFSET, RUN_MARKS, RUN_PLATES, RUN_GAPS, RUN_LOGS, RUN_NETS, PERCHES, SNAGS, SONG_T, STATUES, NESTS, STALLS, SPIRES, BRAZIERS, RAILS, ORGAN,
     SALVAGE, SING, FLETCH, RUN_LV, RUN_XP, RUN_PURSE, RUN_EVERY, CLOAK_LAPS, SONG_XP, GODLY_LINE, runLapSecs,
     Q, talk: talkFolk, inFront: folkInFront, grew: () => GREW, regrow: REGROW,
     touchFlag, useSnag, usePerch, useSongstone, rideDraft, make, MINE_TILES,
@@ -894,44 +920,91 @@
         { overworldKept, denBlocked, den: denOverlay.n, deepholm: dhOverlay.n, dhPainted, blocked: S.blocked }); }
 
     // ---- 3. Aerie reads as daylight ----
+    // (20,15) is still inside the old starting-cave rectangle (0-20 x 0-15), which is the Queen's Garden now
     { const S = INSTANCE_LIGHT.stats;
-      INSTANCES.enter('aerie'); F.tp(20, 6); const b = S.blocked, p = S.painted; render();
+      INSTANCES.enter('aerie'); F.tp(20, 15); const b = S.blocked, p = S.painted; render();
       const L = INSTANCE_LIGHT.last, over = overlays();
-      check(A + 'Aerie is lit as open daylight: sun, 5 rays and 3 drifting cloud shadows, no scrim at all, and the cave rectangle no longer lands on the great hall',
-        S.painted > p && S.blocked > b && L.mode === 'day' && L.id === 'aerie' && L.scrim === 0 && L.warm > 0 && L.rays === 5 && L.shadows === 3 && !!L.sun && over.n === 1 && inst('aerie').dark === false,
-        { painted: S.painted - p, blocked: S.blocked - b, last: L, overlays: over.n }); }
+      // review round 3: the sun is off the top of the screen (never a disc over a building); what shows is a warm tint laid
+      // over the stone and faint rays, and nothing lifts a pixel by more than 16 of 255
+      const offScreen = !!L.sun && !L.sun.onScreen && L.sun.disc === false && L.sun.y < 0 && INSTANCE_LIGHT.DAY.maxLift <= 16;
+      check(A + "Aerie is lit as open daylight: the sun off the top-right of the screen (no disc over the city), a warm tint, 5 faint rays (no pixel lifted more than 16 of 255) and 3 drifting cloud shadows, no scrim at all, and the cave rectangle no longer lands on the Queen's Garden",
+        S.painted > p && S.blocked > b && L.mode === 'day' && L.id === 'aerie' && L.scrim === 0 && L.warm > 0 && L.rays === 5 && L.shadows === 3 && offScreen && over.n === 1 && inst('aerie').dark === false,
+        { painted: S.painted - p, blocked: S.blocked - b, last: L, maxLift: INSTANCE_LIGHT.DAY.maxLift, overlays: over.n }); }
 
-    // ---- 4. the city sprawls over three levels and the old island is untouched ----
-    { const W = AERIE.W, H = AERIE.H, a = inst('aerie');
-      let cloud = 0, sky = 0, floor = 0, wisps = 0, under = 0, crown = 0, mine = 0;
+    // ---- 4. Aerie is the walled city: the plan, painted exactly, with its three outer islands ----
+    { const W = AERIE.W, H = AERIE.H, a = inst('aerie'), P2 = window.AERIE_PLAN;
+      let mismatch = 0, first = null, under = 0, crown = 0, run = 0, mine = 0;
       const S = SKYCITY;
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = tileAt(x, y);
-        if (x < 50 && y < 34) { if (t === S.CLOUD) cloud++; else if (t === S.SKY) sky++; else if (t === T.FLOOR) floor++; else if (t === S.WISP) wisps++; }
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = tileAt(x, y), want = T[P2.GLYPHS[P2.ROWS[y][x]]];
+        if (t !== want) { mismatch++; if (!first) first = [x, y, tileName(t), tileName(want)]; }
         if (t === AERIE.TILES.UNDER) under++;
-        if (x >= 51 && y < 20 && t === S.CLOUD) crown++;
+        if (x >= AERIE.CROWN.x0 && y >= AERIE.CROWN.y0 && x <= AERIE.CROWN.x1 && y <= AERIE.CROWN.y1 && !SOLID.has(t)) crown++;
+        if (x >= 76 && y >= 66 && x !== 76 && x !== 77 && !SOLID.has(t)) run++;
         if (AERIE.MINE_TILES.includes(t)) mine++; }
-      check(A + 'Aerie grew from 50x34 to 78x50 with three levels — the Span kept every tile 36-skycity built (cloud, sky, marble, 3 wisps, the leap), the Crown above it, the Underside below the drop',
-        AERIE.grew() && a.w === 78 && a.h === 50 && cloud > 800 && sky > 300 && floor > 150 && wisps === 3 && tileAt(25, 31) === S.LEAP && under > 250 && crown > 200 && mine > 60,
-        { w: a.w, h: a.h, cloud, sky, floor, wisps, under, crown, mine }); }
+      check(A + 'Aerie is the walled city: 100x80, painted exactly from the plan, three outer islands (the Crown, the Underside, the Spire Run)',
+        AERIE.grew() && a.w === 100 && a.h === 80 && W === 100 && H === 80 && mismatch === 0 && tileAt(S.LEAP_T[0], S.LEAP_T[1]) === S.LEAP && under === 270 && crown > 150 && run > 40 && mine > 60,
+        { w: a.w, h: a.h, mismatch, first, under, crown, run, mine }); }
 
-    // ---- 5. every point of interest exists and is reachable on foot from its landing ----
-    { const D = AERIE.DRAFTS, T2 = AERIE.TILES;
-      const legs = [[25, 30, D[0].land[0], D[0].land[1]], [25, 30, D[2].land[0], D[2].land[1]],
-        [D[1].land[0], D[1].land[1], 58, 8], [D[1].land[0], D[1].land[1], 69, 10], [D[1].land[0], D[1].land[1], 65, 14], [D[1].land[0], D[1].land[1], D[4].land[0], D[4].land[1]],
-        [D[5].land[0], D[5].land[1], 56, 26], [D[3].land[0], D[3].land[1], 33, 43]];
+    // ---- 5. every point of interest exists and is reachable on foot from where the wind sets you down ----
+    { const D = AERIE.DRAFTS, T2 = AERIE.TILES, E0 = SKYCITY.ENTRY, Q0 = FOLK[1];
+      // from the landing: every updraft's land tile, Quill in the market, and on foot to the Crown (Pell), the Underside (Ferris), the Spire Run's first flag
+      const legs = D.map(d => [E0[0], E0[1], d.land[0], d.land[1]]).concat([[E0[0], E0[1], Q0.x, Q0.y + 1], [E0[0], E0[1], FOLK[0].x, FOLK[0].y + 1], [E0[0], E0[1], FOLK[3].x + 1, FOLK[3].y], [E0[0], E0[1], AERIE.RUN_MARKS[0][0], AERIE.RUN_MARKS[0][1]]]);
       const walked = legs.map(([ax, ay, bx, by]) => !!F.bfs(ax, ay, bx, by));
       const beside = (x, y) => [[0, 1], [0, -1], [1, 0], [-1, 0]].some(([dx, dy]) => !SOLID.has(tileAt(x + dx, y + dy)));
       const perches = AERIE.PERCHES.every(([x, y]) => tileAt(x, y) === T2.PERCH && beside(x, y));
       const snags = AERIE.SNAGS.every(([x, y]) => tileAt(x, y) === T2.SNAG && beside(x, y));
       const drafts = D.every(d => tileAt(d.t[0], d.t[1]) === T2.UPDRAFT && !SOLID.has(tileAt(d.land[0], d.land[1])));
       const props = AERIE.STATUES.every(([x, y]) => tileAt(x, y) === T2.STATUE) && AERIE.NESTS.every(([x, y]) => tileAt(x, y) === T2.NEST) && AERIE.BRAZIERS.every(([x, y]) => tileAt(x, y) === T2.BRAZIER) && AERIE.RAILS.every(([x, y]) => tileAt(x, y) === T2.RAIL) && AERIE.SPIRES.every(([x, y]) => tileAt(x, y) === T2.SPIRE) && AERIE.STALLS.concat(AERIE.ORGAN).every(([x, y]) => tileAt(x, y) === T2.STALL);
-      check(A + 'every point of interest is on the map and reachable: the Rookery perches, the Songstone, the market, the Catch snags, the six updraft stones, and 4 statues / 12 nests / 5 braziers / 13 rails / 10 spires / 7 stalls of decoration',
-        walked.every(Boolean) && perches && snags && drafts && props && FOLK.length === 4 && tileAt(AERIE.SONG_T[0], AERIE.SONG_T[1]) === T2.SONG,
-        { walked, perches, snags, drafts, props }); }
+      const counts = [AERIE.STATUES.length, AERIE.NESTS.length, AERIE.BRAZIERS.length, AERIE.RAILS.length, AERIE.SPIRES.length, AERIE.STALLS.length + AERIE.ORGAN.length].join('/');
+      check(A + 'every point of interest is on the map and reachable on foot from the Wind Landing: the six updraft landings, Quill, the Rookery on the Crown, the Underside, the Spire Run, and 4 statues / 7 nests / 6 braziers / 21 rails / 8 cloud spires / 7 stalls of decoration',
+        walked.every(Boolean) && perches && snags && drafts && props && counts === '4/7/6/21/8/7' && FOLK.length === 4 && tileAt(AERIE.SONG_T[0], AERIE.SONG_T[1]) === T2.SONG,
+        { walked, perches, snags, drafts, props, counts }); }
+
+    // ---- 5b. every prop of this file stands on its own ground, drawn before it ----
+    // Review round 2: the snags, the nest-house, the updraft and two cloud spires on the Underside stood on a white
+    // sky-deck square (their own letter is not 'u'), and every cloud spire the kingdom does not pave showed the sand
+    // core texture as a beige square (CLOUD_SPIRE was missing from the deck list). One frame is recorded per cell.
+    { const P2 = window.AERIE_PLAN, GR = ['=', '"', '_', ',', 'u'], UNDER_C = '#c3d0e2', DECK_C = '#eef3fa';
+      const setRec = () => { const log = []; const g = new Proxy({}, {
+        get: (t, k) => k === 'measureText' ? (() => ({ width: 10 })) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: () => { } })) : typeof k === 'string' ? ((...a) => { log.push([k, a]); }) : undefined,
+        set: (t, k, v) => { log.push(['=' + String(k), [v]]); return true; } }); return { g, log }; };
+      // one frame round (tx, ty): the items in the order the renderer sorts them, each with what it painted
+      const frame = (tx, ty) => { const { g, log } = setRec(), items = [];
+        AER_DRAW(g, items, { x: tx * TILE - VW / 2, y: ty * TILE - VH / 2 });
+        items.sort((a, b) => a.y - b.y);
+        return items.map(it => { const k0 = log.length; try { it.draw(); } catch (e) { } return { aer: it.aer, paint: log.slice(k0) }; }); };
+      const same = (it, kind, tx, ty) => !!it.aer && it.aer[0] === kind && it.aer[1] === tx && it.aer[2] === ty;
+      // what the deck under (tx, ty) filled its tile with, and whether it came before the cell's own prop
+      const ground = (tx, ty, kind) => { const f = frame(tx, ty);
+        const di = f.findIndex(it => same(it, 'deck', tx, ty)), pi = f.findIndex(it => same(it, kind, tx, ty));
+        if (di < 0) return { deck: false, before: false, fill: null };
+        const p = f[di].paint, ri = p.findIndex(e => e[0] === 'fillRect' && e[1][0] === tx * TILE && e[1][1] === ty * TILE && e[1][2] === TILE && e[1][3] === TILE);
+        const fs = p.slice(0, Math.max(0, ri)).filter(e => e[0] === '=fillStyle'), fill = ri >= 0 && fs.length ? fs[fs.length - 1][1][0] : null;
+        return { deck: true, before: pi > di, fill, fills: p.filter(e => e[0] === '=fillStyle').map(e => e[1][0]) }; };
+      const KIND = new Map([[AERIE.TILES.RAIL, 'rail'], [AERIE.TILES.NEST, 'nest'], [AERIE.TILES.BRAZIER, 'brazier'], [AERIE.TILES.STATUE, 'statue'], [AERIE.TILES.SPIRE, 'spire'], [AERIE.TILES.STALL, 'stall'], [AERIE.TILES.PERCH, 'perch'], [AERIE.TILES.SONG, 'song'], [AERIE.TILES.SNAG, 'snag'], [AERIE.TILES.UPDRAFT, 'draft'], [AERIE.TILES.FLAG, 'flag']]);
+      const paved = (x, y) => !!(window.KINGDOM && KINGDOM.paintsGround(x, y));
+      // (a) every prop cell that stands on undercloud, and that the kingdom does not pave, is drawn on undercloud
+      const low = [], bad = [];
+      for (let y = 0; y < P2.H; y++) for (let x = 0; x < P2.W; x++) {
+        const c = P2.at(x, y), t = tileAt(x, y);
+        if (GR.includes(c) || P2.groundAt(x, y) !== 'u' || !AERIE.MINE_TILES.includes(t) || paved(x, y)) continue;
+        const r = ground(x, y, KIND.get(t)); low.push([x, y, c]);
+        if (!r.deck || r.fill !== UNDER_C || r.fills.includes(DECK_C) || (KIND.get(t) && !r.before)) bad.push([x, y, c, r.fill, r.before]); }
+      const lowCells = low.map(([x, y]) => x + ',' + y);
+      const named = ['8,74', '13,71', '16,77', '24,72', '28,77', '31,74', '21,72', '11,72', '4,76', '30,78'].every(k => lowCells.includes(k));
+      // (b) all 8 cloud spires: paved by the kingdom, or a deck is filled before drawSpire -- never the sand core alone
+      const sp = AERIE.SPIRES.map(([x, y]) => { if (paved(x, y)) return { x, y, by: 'kingdom', ok: true };
+        const r = ground(x, y, 'spire'); const want = P2.groundAt(x, y) === 'u' ? UNDER_C : DECK_C;
+        return { x, y, by: 'deck', ok: r.deck && r.before && r.fill === want, fill: r.fill }; });
+      const unpaved = sp.filter(s => s.by === 'deck').length;
+      check(A + 'every prop stands on its own ground: the 10 snags, nest, updraft and spires (and 4 rails) that stand on the Underside are drawn on undercloud, never the white sky deck, and all 8 cloud spires have ground filled before the spire (6 on a deck, 2 on the kingdom paving), never the sand core',
+        low.length === 14 && named && bad.length === 0 && AERIE.SPIRES.length === 8 && sp.every(s => s.ok) && unpaved === 6,
+        { low: low.length, named, bad, spires: sp, unpaved }); }
 
     // ---- 6. the updraft stones carry you between the three levels, both ways ----
     { const D = AERIE.DRAFTS; const hops = [], said = [];
-      for (const m of monsters) { m.x = tc(74); m.y = tc(4); m.wanderT = 9; m.wander = { x: 0, y: 0 }; }  // a sentinel standing on the landing would shove the knight a tile
+      // a sentinel standing on a landing would shove the knight a tile: park them all out over the sky at (5,5)
+      for (const m of monsters) { m.x = tc(5); m.y = tc(5); m.wanderT = 9; m.wander = { x: 0, y: 0 }; }
       for (let i = 0; i < D.length; i++) { const to = D[D[i].to];
         closePanel(); drain(); notice = null; F.tp(D[i].land[0], D[i].land[1]); F.face(D[i].t[0], D[i].t[1]); F.press('KeyE'); F.sim(1, []);
         const at = tileOf();
@@ -951,7 +1024,7 @@
       F.tp(wx, wy + 1); F.face(wx, wy); drain(); notice = null; F.press('KeyE'); F.sim(2, []); const noFish = countItem('skyhawk_feather') === 1 && !!notice && /perch is empty/.test(notice.text);
       give('wood', 1); if (player.skills.crafting.xp < XP_TABLE[AERIE.FLETCH.lv]) player.skills.crafting.xp = XP_TABLE[AERIE.FLETCH.lv];
       strip('skyhawk_arrow'); const cx0 = player.skills.crafting.xp;
-      closePanel(); drain(); F.tp(58, 9); AERIE.talk(FOLK[0]); const opened = panel === 'rookery'; render();
+      closePanel(); drain(); F.tp(FOLK[0].x, FOLK[0].y + 1); AERIE.talk(FOLK[0]); const opened = panel === 'rookery'; render();
       const clicked = F.clickButton(AERIE.FLETCH.label); closePanel();
       check(A + 'a fish on a Rookery perch buys one skyhawk feather (the perch grows back in 30 s, and pays nothing without a fish); Keeper Pell fletches 12 Skyhawk arrows from a feather and a log',
         paid && back && noFish && opened && clicked && countItem('skyhawk_arrow') === 12 && countItem('skyhawk_feather') === 0 && player.skills.crafting.xp === cx0 + AERIE.FLETCH.xp && ITEMS.skyhawk_arrow.arrow.str === 18,
@@ -989,7 +1062,7 @@
       makeRoom(6); give('stormglass', 3); give('dragon_scale', 4); give('mithril_bar', 2);
       if (player.skills.smithing.xp < XP_TABLE[AERIE.SING.lv]) player.skills.smithing.xp = XP_TABLE[AERIE.SING.lv];
       const sx2 = player.skills.smithing.xp, sg0 = countItem('stormglass'), ds0 = countItem('dragon_scale'), mb0 = countItem('mithril_bar');
-      closePanel(); drain(); F.tp(38, 19); F.face(38, 18); F.press('KeyE'); F.sim(1, []); const open = panel === 'halcyon'; render();
+      const HN = SKYCITY.SKY_NPCS[1]; closePanel(); drain(); F.tp(HN.x, HN.y - 1); F.face(HN.x, HN.y); F.press('KeyE'); F.sim(1, []); const open = panel === 'halcyon'; render();
       const clicked = F.clickButton(AERIE.SING.label + `  (lv ${AERIE.SING.lv})`); closePanel();
       const forged = clicked && countItem('skysinger') === 1 && countItem('stormglass') === sg0 - 3 && countItem('dragon_scale') === ds0 - 4 && countItem('mithril_bar') === mb0 - 2 && player.skills.smithing.xp === sx2 + AERIE.SING.xp;
       check(A + 'the Songstone will not wake before the Song is sung; once awake it pays 250 Smithing and opens the Skysinger on Halcyon\'s forge (3 stormglass, 4 scales, 2 mithril, Smithing 35, 900 xp) — the only blade in the game made of stormglass',
@@ -1002,7 +1075,7 @@
       const go = i => { const [x, y] = M[i]; F.tp(x, y); F.step([]); };
       player.skills.agility.xp = 0; q.next = 0; q.laps = 0; player.hp = player.maxHp; lastTile = null;
       go(0); const started = q.next === 1;
-      F.tp(57, 26); F.step([]); const h0 = player.hp; F.tp(58, 26); F.step([]);
+      const [gx, gy] = AERIE.RUN_GAPS[0]; F.tp(gx - 1, gy); F.step([]); const h0 = player.hp; F.tp(gx, gy); F.step([]);
       const at = tileOf(), fell = player.hp === h0 - 2 && q.next === 0 && at.tx === M[0][0] && at.ty === M[0][1];
       player.skills.agility.xp = XP_TABLE[AERIE.RUN_LV]; player.hp = player.maxHp; lastTile = null;
       const x0 = xp(); go(0); go(1); go(2); go(3); go(4); go(5); go(0);

@@ -199,6 +199,8 @@
   // so the handler takes (g, items) and each item closes over g. Taking one parameter made `list` the canvas
   // context and the posts never drew at all.
   HOOKS.draw.push((g, items) => { // two posts and a rope, drawn on the bank
+    // the crossings are overworld tiles: inside an instance the same coordinates are somewhere else (they stood on Aerie's plaza)
+    if (window.__instance) return;
     for (const c of CROSSINGS) for (const p of [c.a, c.b]) {
       if (p.x < cam.x / TILE - 2 || p.x > (cam.x + VW) / TILE + 2 || p.y < cam.y / TILE - 2 || p.y > (cam.y + VH) / TILE + 2) continue;
       items.push({ y: tc(p.y), draw: () => {

@@ -534,7 +534,9 @@
 
   HOOKS.draw.push((g, items) => {
     const dark = phase() === 'night', t = dayT();
-    const list = marks();
+    // the markers stand on overworld tiles, drawn by coordinate: inside an instance the same coordinates are somewhere
+    // else (a goblin's cross by the cave would stand in Aerie's garden), so an instance shows none of them
+    const list = window.__instance ? [] : marks();
     const x0 = cam.x / TILE - 2, x1 = (cam.x + VW) / TILE + 2, y0 = cam.y / TILE - 2, y1 = (cam.y + VH) / TILE + 2;
     for (const m of list) {
       if (m.x < x0 || m.x > x1 || m.y < y0 || m.y > y1) continue;
