@@ -367,7 +367,7 @@
     // a wisp gives essence and grows back
     { const [wx, wy] = WISPS[1]; makeRoom(2); const e0 = countItem('cloud_essence'); F.tp(wx, wy - 1); F.face(wx, wy); F.press('KeyE'); F.sim(2, []);
       const took = countItem('cloud_essence') === e0 + 1 && tileAt(wx, wy) === CLOUD && SKYW.length === 1;
-      F.tp(25, 20); F.sim(Math.ceil(WISP_REGROW * 60) + 5, []); const back = tileAt(wx, wy) === WISP && SKYW.length === 0;
+      F.tp(ENTRY[0], ENTRY[1]); F.sim(Math.ceil(WISP_REGROW * 60) + 5, []); const back = tileAt(wx, wy) === WISP && SKYW.length === 0;
       check('sky: E on a cloud wisp gives cloud essence; it grows back after 45 s', took && back, { took, back, essence: countItem('cloud_essence') - e0, tile: tileAt(wx, wy) }); while (countItem('cloud_essence') > e0) removeItem('cloud_essence', 1); }
     // the leap goes home to the shrine
     { F.tp(ENTRY[0], ENTRY[1]); F.face(LEAP_T[0], LEAP_T[1]); F.press('KeyE'); F.sim(2, []);

@@ -1247,33 +1247,61 @@
     goldWing(g, cx + 3, cy - 4, 13);
     STATS.gates++;
   }
-  // the Crown Gate: two gold-banded leaves in the east wall, swinging out toward the Crown Bridge
+  // a door leaf hinged at (hx, hy), its foot running `dirY` (down or up the wall) when shut and swinging out toward `outX`
+  // as it opens (theta 0 shut, up to about 80 degrees open); it stands DH tall, so an open leaf shows its whole face
+  function leafFace(g, hx, hy, dirY, outX, theta, L, DH) {
+    const s = Math.sin(theta), c = Math.cos(theta), px = hx + outX * s * L, py = hy + dirY * c * L;
+    if (s < 0.04) return;
+    const quad = () => { g.beginPath(); g.moveTo(hx, hy); g.lineTo(px, py); g.lineTo(px, py - DH); g.lineTo(hx, hy - DH); g.closePath(); };
+    quad(); g.fillStyle = s > 0.6 ? '#9a6a3e' : s > 0.3 ? '#855a34' : '#6f4a2c'; g.fill();
+    g.strokeStyle = 'rgba(40,24,12,0.5)'; g.lineWidth = 1.2;
+    for (let k = 1; k < 5; k++) { const f = k / 5, bx = lerp(hx, px, f), by = lerp(hy, py, f); g.beginPath(); g.moveTo(bx, by); g.lineTo(bx, by - DH); g.stroke(); }
+    g.strokeStyle = '#f5c542'; g.lineWidth = 3.5;
+    for (const hf of [0.2, 0.8]) { g.beginPath(); g.moveTo(hx, hy - DH * hf); g.lineTo(px, py - DH * hf); g.stroke(); }
+    g.fillStyle = '#fff0b0';
+    for (const hf of [0.2, 0.8]) for (let k = 1; k < 5; k++) { const f = k / 5; g.beginPath(); g.arc(lerp(hx, px, f), lerp(hy, py, f) - DH * hf, 1.7, 0, 7); g.fill(); }
+    g.strokeStyle = '#c9a36a'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(hx, hy - DH); g.lineTo(px, py - DH); g.stroke();
+    g.strokeStyle = 'rgba(40,24,12,0.6)'; g.lineWidth = 1.5; quad(); g.stroke();
+  }
+  // a gate shut in a north-south wall: one slab of oak across the gateway, seen from above like the wall itself
+  function shutSlab(g, x, top, bottom, seams) {
+    g.fillStyle = 'rgba(40,60,100,0.16)'; g.fillRect(x + 40, top, 8, bottom - top);
+    g.fillStyle = '#6f4a2c'; g.fillRect(x + 9, top, 30, bottom - top);
+    g.fillStyle = '#8a5e36'; g.fillRect(x + 12, top, 8, bottom - top);
+    g.fillStyle = '#f5c542'; for (let yy = top + 10; yy < bottom - 6; yy += 22) g.fillRect(x + 8, yy, 32, 4);
+    g.fillStyle = '#3a2616'; for (const sy of seams) g.fillRect(x + 9, sy - 1.5, 30, 3);
+  }
+  // the Crown Gate: two oak leaves banded in gold, between the two gate turrets of the east wall, swinging out toward the
+  // Crown Bridge when a knight comes near
   function drawCrownGate(g, gt, part) {
     if (part === 'back') return;
-    const lift = LIFT[gt.id], x = 79 * TILE, y0 = 16 * TILE, y1 = 19 * TILE, cx = x + 24, ang = lift * 1.35;
-    g.fillStyle = 'rgba(245,240,230,0.5)'; g.fillRect(x + 4, y0, 40, y1 - y0);
-    for (const [hy, dir] of [[y0 + 2, 1], [y1 - 2, -1]]) {
-      g.save(); g.translate(cx, hy); g.rotate(-dir * ang);
-      const L = (y1 - y0) / 2 - 3;
-      g.fillStyle = '#8a5e36'; g.fillRect(-5, 0, 10, dir * L);
-      g.fillStyle = '#a8764a'; g.fillRect(-3, 0, 3, dir * L);
-      g.fillStyle = '#f5c542'; for (const f of [0.18, 0.5, 0.82]) g.fillRect(-6, dir * L * f - 2, 12, 4);
-      g.restore();
-    }
-    g.fillStyle = '#ede7da'; g.fillRect(x + 2, y0 - 6, 44, 10); g.fillRect(x + 2, y1 - 4, 44, 10);
-    g.fillStyle = '#f5c542'; g.fillRect(x + 2, y0 - 7, 44, 2); g.fillRect(x + 2, y1 - 5, 44, 2);
+    const lift = LIFT[gt.id], x = 79 * TILE, y0 = 16 * TILE, y1 = 19 * TILE, cx = x + 24, L = (y1 - y0) / 2 - 2;
+    // the gateway's floor, in the shade of the turrets
+    g.fillStyle = 'rgba(60,70,90,0.18)'; g.fillRect(x, y0, 48, y1 - y0);
+    const shut = clamp(1 - lift / 0.3, 0, 1);
+    if (shut > 0) { g.save(); g.globalAlpha = shut; shutSlab(g, x, y0 - 4, y1 + 2, [(y0 + y1) / 2]); g.restore(); }
+    leafFace(g, cx, y0 + 3, 1, 1, lift * 1.4, L, 52);
+    leafFace(g, cx, y1 - 3, -1, 1, lift * 1.4, L, 52);
+    // the hinge posts: white stone with gold caps
+    for (const py of [y0 + 3, y1 - 3]) { g.fillStyle = '#e6dfd0'; g.fillRect(cx - 5, py - 58, 10, 58); g.fillStyle = '#f5c542'; g.fillRect(cx - 6, py - 62, 12, 5); }
     STATS.gates++;
   }
-  // the Postern: one wooden door in the west wall, swinging out
+  // the Postern: one small arched oak door in the west wall, hinged at its north end, opening outward (west)
   function drawPostern(g, gt, part) {
     if (part === 'back') return;
-    const lift = LIFT[gt.id], [tx, ty] = gt.cells[0], x = tx * TILE, y = ty * TILE;
-    g.fillStyle = 'rgba(245,240,230,0.5)'; g.fillRect(x + 4, y, 40, 48);
-    g.save(); g.translate(x + 24, y + 3); g.rotate(lift * 1.3);
-    g.fillStyle = '#6b4a2e'; g.fillRect(-5, 0, 10, 42); g.fillStyle = '#8a6a44'; g.fillRect(-3, 0, 3, 42);
-    g.fillStyle = '#3d4658'; g.fillRect(-6, 8, 12, 3); g.fillRect(-6, 30, 12, 3);
-    g.restore();
-    g.fillStyle = '#ede7da'; g.fillRect(x + 2, y - 5, 44, 8); g.fillStyle = '#f5c542'; g.fillRect(x + 2, y - 6, 44, 2);
+    const lift = LIFT[gt.id], [tx, ty] = gt.cells[0], x = tx * TILE, y = ty * TILE, cx = x + 24;
+    g.fillStyle = 'rgba(60,70,90,0.18)'; g.fillRect(x, y, 48, 48);
+    const shut = clamp(1 - lift / 0.3, 0, 1);
+    if (shut > 0) {
+      g.save(); g.globalAlpha = shut; shutSlab(g, x, y - 2, y + 46, []);
+      // its round top, facing south where you come at it along the wall
+      g.fillStyle = '#6f4a2c'; g.beginPath(); g.moveTo(x + 9, y + 46); g.lineTo(x + 9, y + 30); g.arc(cx, y + 30, 15, Math.PI, 0); g.lineTo(x + 39, y + 46); g.closePath(); g.fill();
+      g.strokeStyle = '#f5c542'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(x + 9, y + 46); g.lineTo(x + 9, y + 30); g.arc(cx, y + 30, 15, Math.PI, 0); g.lineTo(x + 39, y + 46); g.stroke();
+      g.fillStyle = '#f5c542'; g.beginPath(); g.arc(cx + 8, y + 36, 2.2, 0, 7); g.fill();
+      g.restore();
+    }
+    leafFace(g, cx, y + 3, 1, -1, lift * 1.35, 40, 40);
+    g.fillStyle = '#e6dfd0'; g.fillRect(cx - 5, y - 44, 10, 47); g.fillStyle = '#f5c542'; g.fillRect(cx - 6, y - 48, 12, 5);
     STATS.gates++;
   }
   const GATE_DRAW = { great: drawGreatGate, flight: drawSmallGate, spire: drawSmallGate, crown: drawCrownGate, postern: drawPostern };
@@ -1527,6 +1555,15 @@
     g.strokeStyle = '#8a6a44'; g.lineWidth = 1.4; g.beginPath(); for (let k = 0; k <= 20; k++) { const p = pt(k / 20); if (k) g.lineTo(p.x, p.y); else g.moveTo(p.x, p.y); } g.stroke();
     const cols = ['#5b9be0', '#ffffff', '#f5c542'];
     for (let k = 1; k < 24; k++) { const p = pt(k / 24), sw = Math.sin(time * 3 + k) * 2; g.fillStyle = cols[k % 3]; g.beginPath(); g.moveTo(p.x - 6, p.y); g.lineTo(p.x + 6, p.y); g.lineTo(p.x + sw, p.y + 13); g.closePath(); g.fill(); }
+  }
+  function groundRing(g, tx, ty, wisp) {
+    const cx = tc(tx), cy = ty * TILE + (wisp ? 26 : 40), p = 0.75 + Math.sin(time * 2.4 + tx) * 0.2;
+    if (wisp) {
+      // a pool of sky-blue under the white swirl, so the wisp stands out on the cloud
+      const gl = g.createRadialGradient(cx, cy, 3, cx, cy, 24); gl.addColorStop(0, `rgba(88,150,230,${(0.6 * p).toFixed(3)})`); gl.addColorStop(1, 'rgba(88,150,230,0)');
+      g.fillStyle = gl; g.beginPath(); g.arc(cx, cy, 24, 0, 7); g.fill();
+    }
+    g.strokeStyle = `rgba(80,140,220,${(0.6 * p).toFixed(3)})`; g.lineWidth = 2.2; g.beginPath(); g.ellipse(cx, wisp ? cy + 14 : cy, 18, 7, 0, 0, 7); g.stroke();
   }
   // the two royal updraft stones wear a gold edge (88 draws the stone itself)
   function drawRoyalRim(g, r) {
@@ -1846,6 +1883,8 @@
         const k = KIND_NAMES[KIND[ty * W + tx]];
         if (k) { items.push({ y: (ty + 1) * TILE - (k === 'hedge' ? 3 : 6), draw: () => drawKind(g, k, tx, ty) }); continue; }
         if (ch === 'C') { const b = PLAN.inBuilding(tx, ty); if (b && b.id === 'aer_keep' && tx > b.x && tx < b.x + b.w - 1 && ty > b.y && ty < b.y + b.h - 1) items.push({ y: (ty + 1) * TILE - 8, draw: () => blit(g, sprite('pillar', 40, 90, 20, 80, paintPillar), tc(tx), (ty + 1) * TILE - 8) }); }
+        // a wisp is white on white cloud, and an updraft stone pale: a ring of sky-blue on the ground under each, so they read
+        else if ((ch === 'W' && window.SKYCITY && tileAt(tx, ty) === SKYCITY.WISP) || (ch === 'U' && royalAt(tx, ty) < 0)) items.push({ y: -1e8 + ty * TILE + 0.8, draw: () => groundRing(g, tx, ty, ch === 'W') });
       }
     }
     // the towers, the spires, the fountains, the pond, the gates
@@ -2133,7 +2172,7 @@
         F.newGame(); F.sim(2, []); r.newGame = mounted() + (INSTANCES.active() ? 100 : 0); r.kingdomReset = !!quest.kingdom && quest.kingdom.stage === 0 && quest.kingdom.wishes === 0;
         r.store = BUILDINGS.some(b => b.x === 90 && b.y === 20);
         if (raw != null) { localStorage.setItem(sk, raw); if (at != null) localStorage.setItem(sk + '.at', at); localStorage.setItem('fanglands.slot.current', String(title.slot)); }
-        r.reloaded = raw != null && load(); F.sim(2, []); h.peace(true); if (comp && player.companion === comp) comp.downT = 999; }
+        r.reloaded = raw != null && load(); F.sim(2, []); h.peace(true); if (player.companion && typeof player.companion === 'object') player.companion.downT = 999; }
       r.same = idsOf() === ids0 && BUILDINGS.length === n0 && (MARKERS.all ? MARKERS.all() : []).map(m => m.key).sort().join('|') === marks0;
       A5 = r;
       check(K + 'K5 the twelve buildings are only ever in Aerie: none outside, 12 inside, and none again after INSTANCES.leave, the L key, the LEAVE button, dying, loading and a new game; the Thistledown store is back and the overworld buildings and markers are exactly as before',
@@ -2392,7 +2431,9 @@
     // ---- put everything back ----
     leave(); closePanel(); drain(); tapCancel('manual');
     restoreKingdom(); restoreSky(); restoreKit(); larkFromStage(); CLOCK.fixed = null;
-    if (comp) comp.downT = compDown; window.__forceTouch = snap.touch;
+    // the loads in K5 and K17 hand back a companion object of their own: the one sitting now is whichever is live
+    if (comp) { comp.downT = compDown; if (player.companion && typeof player.companion === 'object') player.companion.downT = compDown; }
+    window.__forceTouch = snap.touch;
     player.x = snap.x; player.y = snap.y; h.peace(false);
   });
 }
