@@ -55,6 +55,7 @@
   LOGIN.sentence = (err, kind) => {
     const code = err && err.code, st = err && err.status;
     if (code === 'wait' || st === 429) return 'Too many tries. Wait a minute.';
+    if (code === 'kicked') return 'An admin sent you out of the world. You can come back in.';
     if (code === 'banned') return 'This knight is not allowed in. Ask Ethan.';
     if (code === 'invite' || code === 'bad_invite') return 'That invite code is not right.';
     if (code === 'pass' || code === 'password' || code === 'wrong' || code === 'secret') return 'That secret word is wrong.';
@@ -203,6 +204,8 @@
     if (ui && !touchMode()) { try { (ui.name.value ? ui.pass : ui.name).focus(); } catch (e) { } }
   };
   const hide = () => { LOGIN.showing = false; if (ui) { ui.root.hidden = true; try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) { } } };
+  // the error line the card is showing right now: under the form, or under "Playing as <name>" (and "Looking for your knight...")
+  LOGIN.shownError = () => (LOGIN.mode === 'form' || LOGIN.mode === 'me' || LOGIN.mode === 'checking') ? LOGIN.error : '';
   LOGIN.hide = hide;
   LOGIN.playAs = () => { if (LOGIN.mode !== 'me') return false; afterLogin(); return true; };
   LOGIN.notMe = () => { when(api('POST', '/api/logout'), noop, noop); NET.setToken(null); LOGIN.name = null; LOGIN.mode = 'form'; LOGIN.error = ''; refresh(); };
@@ -221,13 +224,28 @@
     if (window.CLOUD) { when(window.CLOUD.flush(), once, once); setTimeout(once, 2000); } else once();
     return true;
   };
-  // the world can end a session from its side (token dead, knight banned): back to the title, in plain words
+  // the world can end a session from its side (token dead, knight banned, an admin sent the knight out): back to the
+  // title, in plain words. Kicked keeps the session: the card says "Playing as <name>" and Play goes straight back in,
+  // and because the session still works, the last few seconds of play go up to the cloud first.
   NET.on('error', m => {
-    if (!LOGIN.playing || !m || (m.code !== 'auth' && m.code !== 'banned')) return;
+    if (!LOGIN.playing || !m || (m.code !== 'auth' && m.code !== 'banned' && m.code !== 'kicked')) return;
     const text = LOGIN.sentence(m, 'login');
+    if (m.code === 'kicked' && window.CLOUD) { save(); window.CLOUD.flush(); }
     LOGIN.playing = false; NET.disconnect(); if (m.code === 'banned') NET.setToken(null);
     title.open(); LOGIN.error = text; refresh();
   });
+  // Put my knight back (76-admin): the world hands back the pinned backup as a slot string. It goes into slot 1 exactly the way
+  // a login's cloud save does (a Play alone save there is parked first, the mark is set, the cloud knows it) and the game
+  // starts on it. The socket is left alone: the knight never left the world. Any push of the knight being replaced is
+  // dropped first, so it can never land on top of the one coming back.
+  LOGIN.reload = (raw, at) => {
+    if (typeof raw !== 'string' || !raw) return false;
+    try { JSON.parse(raw); } catch (e) { return false; }
+    if (window.CLOUD) window.CLOUD.reset();
+    claim(raw, +at || Date.now());
+    title.startSlot(1);
+    return true;
+  };
 
   // ---------- the title screen, wrapped ----------
   const _open = title.open;
@@ -323,7 +341,7 @@
     ui.inviteBox.hidden = !LOGIN.newKnight; ui.newBox.checked = LOGIN.newKnight;
     ui.submit.textContent = LOGIN.newKnight ? 'Make my knight' : 'Play'; ui.submit.disabled = LOGIN.busy;
     ui.pass.setAttribute('autocomplete', LOGIN.newKnight ? 'new-password' : 'current-password');
-    ui.err.textContent = m === 'form' ? LOGIN.error : ''; ui.busyErr.textContent = m === 'me' ? LOGIN.error : '';
+    ui.err.textContent = m === 'form' ? LOGIN.shownError() : ''; ui.busyErr.textContent = m === 'me' || m === 'checking' ? LOGIN.shownError() : '';
     ui.whoName.textContent = LOGIN.name || '';
     const o = LOGIN.offer;
     ui.offerText.textContent = o ? `Bring your knight from the old address? Level ${o.level} · Chapter ${o.chapter}: ${CHAPTERS[o.chapter - 1] || ''}` : '';
@@ -460,6 +478,21 @@
       lsDel(MARK_KEY); lsSet(SLOT(1), '{"player":{"kills":1},"quest":{}}'); lsSet(AT(1), '77'); lsDel(SLOT(2)); lsDel(AT(2));
       claim(cloud, 9);
       check(P + 'a knight played alone in slot 1 is moved to an empty slot, never thrown away, when the cloud knight takes slot 1', lsGet(SLOT(2)) === '{"player":{"kills":1},"quest":{}}' && lsGet(AT(2)) === '77' && lsGet(SLOT(1)) === cloud && lsGet(MARK_KEY) === '1', { slot2: lsGet(SLOT(2)) });
+      // kicked by an admin: back to the title with the session kept, the sentence on the card, the last seconds pushed, and Play goes straight back in
+      { LOGIN.submit('Cohen', 'sword', '', false);
+        const inGame = LOGIN.playing && NET.status === 'on'; const puts0 = world.puts.length; player.kills = 5;
+        NET.sock.onmessage({ data: JSON.stringify({ t: 'error', code: 'kicked', text: 'an admin sent you out' }) });
+        const said = LOGIN.sentence({ code: 'kicked' }, 'login');
+        const back = title.active && LOGIN.showing && !LOGIN.playing && NET.token === 'tok-cohen' && NET.sock === null && NET.timer === null && LOGIN.mode === 'me' && LOGIN.shownError() === said;
+        const pushed = world.puts.length === puts0 + 1 && JSON.parse(world.puts[puts0][1]).player.kills === 5;
+        const again = LOGIN.playAs() && LOGIN.playing && NET.status === 'on' && player.kills === 5;
+        check(P + 'kicked: the title card comes back with the sentence under "Playing as", the session is kept, the last seconds were pushed first, and Play goes straight back in', said === 'An admin sent you out of the world. You can come back in.' && inGame && back && pushed && again, { said, inGame, back, mode: LOGIN.mode, shown: LOGIN.shownError(), pushed, puts: world.puts.length - puts0, again }); }
+      // Put my knight back (76-admin) ends here: a cloud save string becomes slot 1 and the game, any pending push of the old knight is dropped, the socket is untouched
+      { const sock = NET.sock; const d = JSON.parse(cloud); d.player.kills = 77; const raw = JSON.stringify(d);
+        if (window.CLOUD) window.CLOUD.pending = '{"stale":true}';
+        const ok = LOGIN.reload(raw, 1234);
+        const clean = !window.CLOUD || (window.CLOUD.known === raw && window.CLOUD.pending === null);
+        check(P + 'LOGIN.reload puts a cloud save into slot 1 the way a login does and starts it, drops any pending push, leaves the socket alone, and refuses a broken string', ok && lsGet(SLOT(1)) === raw && lsGet(AT(1)) === '1234' && lsGet(MARK_KEY) === '1' && player.kills === 77 && title.slot === 1 && !title.active && NET.sock === sock && NET.status === 'on' && clean && LOGIN.reload('not json', 1) === false, { ok, kills: player.kills, slot: title.slot, same: NET.sock === sock, status: NET.status, clean }); }
     } finally {
       hide(); bridge.done(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.setToken(was.token); NET.status = 'off'; NET.me = null;
       LOGIN.playing = was.playing; LOGIN.alone = was.alone; LOGIN.name = was.name; LOGIN.error = ''; LOGIN.offer = null; LOGIN.busy = false; LOGIN.mode = 'form';
