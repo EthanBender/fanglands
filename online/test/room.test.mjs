@@ -30,9 +30,9 @@ test('join and hello: welcome names the knight, the time and the keeper (the fir
   const w = world();
   const a = w.knight('Cohen');
   const welcome = a.last('welcome');
-  assert.deepEqual(welcome, { t: 'welcome', me: 'Cohen', at: 1000, keeper: 'Cohen' });
+  assert.deepEqual(welcome, { t: 'welcome', me: 'Cohen', at: 1000, keeper: 'Cohen', role: 'player' });
   assert.equal(a.of('who').length, 1);
-  assert.deepEqual(a.last('who').list, [{ n: 'Cohen', map: 'over', region: '', lv: 0 }]);
+  assert.deepEqual(a.last('who').list, [{ n: 'Cohen', map: 'over', region: '', lv: 0, role: 'player' }]);
   assert.deepEqual(w.room.online().map(k => k.n), ['Cohen']);
   assert.equal(a.state.name, 'Cohen');
   assert.equal(a.state.hello, true);
@@ -53,7 +53,7 @@ test('presence is relayed to the same map only, with the name on it', () => {
   const a = w.knight('Cohen', 'over'), b = w.knight('Jack', 'over'), c = w.knight('Zed', 'cave1');
   a.clear(); b.clear(); c.clear();
   w.say(a, { t: 'p', map: 'over', x: 10, y: 20, lv: 5 });
-  assert.deepEqual(b.last('p'), { t: 'p', n: 'Cohen', map: 'over', x: 10, y: 20, lv: 5 });
+  assert.deepEqual(b.last('p'), { t: 'p', n: 'Cohen', map: 'over', x: 10, y: 20, lv: 5, role: 'player' });
   assert.equal(a.of('p').length, 0);
   assert.equal(c.of('p').length, 0);
 });
@@ -147,7 +147,7 @@ test('chat is filtered, logged and sent to everyone on every map', () => {
   const a = w.knight('Cohen', 'over'), b = w.knight('Jack', 'cave1');
   a.clear(); b.clear();
   w.say(a, { t: 'chat', text: '  what the fuck  ' });
-  assert.deepEqual(a.last('chat'), { t: 'chat', n: 'Cohen', text: 'what the ****', at: 1000 });
+  assert.deepEqual(a.last('chat'), { t: 'chat', n: 'Cohen', text: 'what the ****', at: 1000, role: 'player' });
   assert.deepEqual(b.last('chat'), a.last('chat'));
   assert.deepEqual(w.log, [{ n: 'Cohen', text: 'what the ****', at: 1000 }]);
   w.say(a, { t: 'chat', text: '   ' });
@@ -241,7 +241,7 @@ test('roster cadence: join and leave go at once; a map change waits up to 2 s, t
   assert.equal(b.of('who').length, 0);
   w.t += ROSTER_EVERY; w.room.tick();
   assert.equal(b.of('who').length, 1);
-  assert.deepEqual(b.last('who').list, [{ n: 'Cohen', map: 'cave1', region: '', lv: 9 }, { n: 'Jack', map: 'over', region: '', lv: 3 }]);
+  assert.deepEqual(b.last('who').list, [{ n: 'Cohen', map: 'cave1', region: '', lv: 9, role: 'player' }, { n: 'Jack', map: 'over', region: '', lv: 3, role: 'player' }]);
   assert.equal(w.room.due(), null);
   const c = w.knight('Zed');
   assert.equal(b.of('who').length, 2);            // a join goes at once
@@ -314,6 +314,9 @@ test('the room fills up: error full and a close', () => {
 test('caps match the contract table', () => {
   assert.equal(CAPS.p.rate, 8); assert.equal(CAPS.mon.rate, 8); assert.equal(CAPS.hit.rate, 20); assert.equal(CAPS.gift.rate, 1);
   assert.equal(CAPS.chat.rate, 1 / 1.5); assert.equal(CAPS.hello.burst, 1);
+  // admins and drop parties (docs/ONLINE.md, "Caps and validation, all new messages"): rate per second / burst
+  const want = { mute: [1, 3], unmute: [1, 3], kick: [1, 3], ban: [1, 3], unban: [1, 3], modlist: [1, 2], spawn: [1, 3], spawn_clear: [1, 2], party: [0.2, 2], party_end: [1, 2], light: [4, 8], claim: [10, 50] };
+  for (const [t, [rate, burst]] of Object.entries(want)) { assert.equal(CAPS[t].rate, rate, t + ' rate'); assert.equal(CAPS[t].burst, burst, t + ' burst'); }
 });
 
 test('a keeper that goes quiet while someone shares its map hands the map on, and is eligible again once that knight leaves', () => {

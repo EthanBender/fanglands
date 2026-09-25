@@ -17,14 +17,39 @@
   const SEND_EVERY = 1.5;       // s: the contract's cap on chat
   const PHRASES = ['Hi!', 'Follow me', 'Help!', 'Look at this', 'Nice!', 'Where are you?', "Let's fight the boss", 'Bye!'];
   const BLUE = '#7ec8ff';
+  const GOLD = '#f5c542';       // an admin's name and bubble (docs/ONLINE.md, "Roles"); also CHAT.system's default colour
+  const MUTE_RED = '#ff9b8f';   // the lines about being muted
+  const REPLY_MS = 5000;        // a 'muted' this soon after a line went out is the world refusing that line
 
-  const log = [];               // [{ n, text, at, t }] oldest first, t = seconds left on the strip
-  const bubbles = {};           // name → { text, t }
+  const log = [];               // [{ n, text, at, t, role }] oldest first, t = seconds left on the strip; a system line has n null and a colour
+  const bubbles = {};           // name → { text, t, role }
   let isOpen = false, lastSentAt = -1e9, dom = null, prevDialog = false;
+  // muted: nowMs() when the chat comes back on, Infinity until an admin turns it back on, 0 when it is on
+  let mutedUntil = 0, lastLineAt = -1e9;
   const clean = t => String(t == null ? '' : t).replace(/\s+/g, ' ').trim().slice(0, MAX);
   const me = () => NET.me;
   const remote = n => window.PLAYERS ? PLAYERS.remote[n] : null;
   const mapId = () => window.PLAYERS ? PLAYERS.mapId() : 'over';
+  const roleOf = m => (m && m.role === 'admin' ? 'admin' : 'player');
+  // an admin's name in gold; your own in white; everyone else's blue
+  const nameColour = l => l.role === 'admin' ? GOLD : l.n === me() ? '#e6edf3' : BLUE;
+
+  // ---------- muted (docs/ONLINE.md, "Moderation from inside the game") ----------
+  const isMuted = () => mutedUntil === Infinity || nowMs() < mutedUntil;
+  // seconds under a minute, minutes under an hour, hours under a day, then days; always rounded up
+  const amount = secs => {
+    const s = Math.max(1, Math.ceil(secs));
+    const [n, unit] = s < 60 ? [s, 'second'] : s < 3600 ? [Math.ceil(s / 60), 'minute'] : s < 86400 ? [Math.ceil(s / 3600), 'hour'] : [Math.ceil(s / 86400), 'day'];
+    return { n, unit: unit + (n === 1 ? '' : 's') };
+  };
+  const mutedSentence = left => { if (left === -1) return 'An admin muted you. Your chat is off until an admin turns it back on.'; const a = amount(left); return `An admin muted you for ${a.n} ${a.unit}. You can still play; your chat is off until then.`; };
+  const cantChatSentence = () => { if (mutedUntil === Infinity) return "You can't chat until an admin turns it back on."; const a = amount((mutedUntil - nowMs()) / 1000); return `You can't chat for ${a.n} more ${a.unit}.`; };
+  // a line with no name, in its own colour, on the strip and in the log; no bubble (the party file says "Sam found a purple party hat!" with it)
+  function system(text, color = GOLD) {
+    const t = clean(text); if (!t) return false;
+    log.push({ n: null, text: t, at: Date.now(), t: STRIP_S, color: typeof color === 'string' ? color : GOLD, role: null }); while (log.length > LOG_MAX) log.shift();
+    return true;
+  }
 
   // ---------- the box: built once, on the first open; nothing is made where there is no document (headless) ----------
   function ensureDom() {
@@ -85,9 +110,11 @@
     const t = clean(text);
     if (!t) { close(); return false; }
     if (!NET.online()) { notify('You are not connected.'); return false; }
+    // muted: nothing goes out at all (the quick phrases come through here too)
+    if (isMuted()) { notify(cantChatSentence()); return false; }
     if (time - lastSentAt < SEND_EVERY) { notify('Slow down a little.'); return false; }
     if (!NET.send({ t: 'chat', text: t })) { notify('That did not go through. Try again.'); return false; }
-    lastSentAt = time;
+    lastSentAt = time; lastLineAt = nowMs();
     if (dom) dom.input.value = '';
     close();
     return true;
@@ -97,12 +124,28 @@
   NET.on('chat', m => {
     if (!m || typeof m.text !== 'string') return;
     const text = clean(m.text); if (!text) return;
-    const n = typeof m.n === 'string' ? m.n : '?';
-    bubbles[n] = { text, t: BUBBLE_S };
-    log.push({ n, text, at: typeof m.at === 'number' ? m.at : Date.now(), t: STRIP_S }); while (log.length > LOG_MAX) log.shift();
+    const n = typeof m.n === 'string' ? m.n : '?', role = roleOf(m);
+    bubbles[n] = { text, t: BUBBLE_S, role };
+    log.push({ n, text, at: typeof m.at === 'number' ? m.at : Date.now(), t: STRIP_S, role }); while (log.length > LOG_MAX) log.shift();
     if (n !== me()) sfx('ui');
+    // our own line came back: the world took it, so a muted after this is news, not a refusal
+    else lastLineAt = -1e9;
   });
   NET.on('offline', () => { for (const n in bubbles) delete bubbles[n]; });
+  // muted: `left` whole seconds, or -1 until an admin unmutes. Right after a line went out it is the world refusing that line;
+  // otherwise it is news (a fresh mute, or the reminder after a welcome) and is said once.
+  NET.on('muted', m => {
+    if (!m || typeof m.left !== 'number' || !(m.left === -1 || m.left >= 0)) return;
+    const reply = nowMs() - lastLineAt < REPLY_MS; lastLineAt = -1e9;
+    mutedUntil = m.left === -1 ? Infinity : nowMs() + m.left * 1000;
+    const text = reply ? cantChatSentence() : mutedSentence(m.left);
+    // the strip is one short line an entry: the news goes in as its two sentences, the notice carries it whole
+    if (!reply) { const cut = text.indexOf('. '); for (const part of cut > 0 ? [text.slice(0, cut + 1), text.slice(cut + 2)] : [text]) system(part, MUTE_RED); }
+    notify(text);
+  });
+  NET.on('unmuted', () => { mutedUntil = 0; system('An admin turned your chat back on.', MUTE_RED); notify('An admin turned your chat back on.'); });
+  // a new session starts unmuted; the world follows its welcome with a muted if the knight still is
+  NET.on('welcome', () => { mutedUntil = 0; lastLineAt = -1e9; });
 
   // ---------- keys, timers ----------
   HOOKS.update.push(dt => {
@@ -126,9 +169,11 @@
     g.save(); g.globalAlpha = a; g.font = 'bold 12px sans-serif'; g.textAlign = 'center';
     const lines = wrapLines(g, b.text, 180); let w = 0; for (const l of lines) w = Math.max(w, g.measureText(l).width);
     const bw = Math.ceil(w) + 18, bh = 10 + lines.length * 15, bx = Math.round(x - bw / 2), by = Math.round(y - bh - 8);
-    roundRect(g, bx, by, bw, bh, 8); g.fillStyle = 'rgba(10,14,22,0.92)'; g.fill(); g.strokeStyle = BLUE; g.lineWidth = 1.2; g.stroke();
+    // an admin's bubble has a gold outline
+    const edge = b.role === 'admin' ? GOLD : BLUE;
+    roundRect(g, bx, by, bw, bh, 8); g.fillStyle = 'rgba(10,14,22,0.92)'; g.fill(); g.strokeStyle = edge; g.lineWidth = 1.2; g.stroke();
     g.fillStyle = 'rgba(10,14,22,0.92)'; g.beginPath(); g.moveTo(x - 5, by + bh - 1); g.lineTo(x, by + bh + 6); g.lineTo(x + 5, by + bh - 1); g.closePath(); g.fill();
-    g.strokeStyle = BLUE; g.beginPath(); g.moveTo(x - 5, by + bh); g.lineTo(x, by + bh + 6); g.lineTo(x + 5, by + bh); g.stroke();
+    g.strokeStyle = edge; g.beginPath(); g.moveTo(x - 5, by + bh); g.lineTo(x, by + bh + 6); g.lineTo(x + 5, by + bh); g.stroke();
     g.fillStyle = '#e6edf3'; lines.forEach((l, i) => g.fillText(l, x, by + 17 + i * 15));
     g.restore();
   }
@@ -152,7 +197,8 @@
   // room to be read, and shows nothing at all when not even one tap-sized row is free (the bubbles over the knights'
   // heads still say it, and the log is one tap away in Friends). Its tap area is at least one kit row (44 px on touch).
   const LINE_H = 16;
-  HOOKS.hud.push(g => {
+  // named so the self-test can draw the strip into a recording canvas; the HUD hook below calls it every frame
+  function drawStrip(g) {
     if (paused || panel) return;
     const live = []; for (let i = log.length - 1; i >= 0 && live.length < STRIP_LINES; i--) if (log[i].t > 0) live.unshift(log[i]);
     if (!live.length) return;
@@ -167,14 +213,17 @@
       g.globalAlpha = clamp(l.t / 1.5, 0, 1);
       HK.plate(g, s.x, y, w, LINE_H - 1, { r: 4 });
       // names in the kit's INK, what they said in its DIM: text is never a colour of its own
-      g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; const name = l.n + ':'; g.fillText(name, s.x + 6, y + 12);
-      const nw = g.measureText(name).width; g.font = '12px sans-serif'; g.fillStyle = HK.C.DIM;
+      // a system line (an admin's word, a party hat found) has no name and its own colour; a name wears its role's colour (an admin's is gold)
+      let nw = -5;
+      if (l.n !== null) { g.font = 'bold 12px sans-serif'; g.fillStyle = nameColour(l) || HK.C.INK; const name = l.n + ':'; g.fillText(name, s.x + 6, y + 12); nw = g.measureText(name).width; }
+      g.font = l.n === null ? 'bold 12px sans-serif' : '12px sans-serif'; g.fillStyle = l.n === null ? l.color : HK.C.DIM;
       let t = l.text; const maxW = w - 12 - nw - 6; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…';
       g.fillText(t, s.x + 6 + nw + 5, y + 12);
     });
     g.globalAlpha = 1;
     buttons.push({ x: s.x, y: s.y, w, h: s.h, label: 'chat:log', action: () => openPanel('chatlog') });
-  });
+  }
+  HOOKS.hud.push(g => drawStrip(g));
   // CHAT on touch is an entry on the kit's control rail (under the minimap; the second column on a landscape phone), not
   // a disc of its own: the thumb cluster's six seats are all taken (HK.thumbSeat), and the last hand-placed disc at
   // (VW-250, VH-200) sat on top of WIKI on a landscape phone and inside the joystick on a tall one. The rail lays
@@ -190,8 +239,10 @@
     let y = py + 76;
     g.font = '12px sans-serif';
     for (const l of lines) {
-      const mine = l.n === me();
-      g.textAlign = 'left'; g.font = 'bold 12px sans-serif'; g.fillStyle = mine ? '#e6edf3' : BLUE; g.fillText(l.n, px + 18, y + 8);
+      g.textAlign = 'left';
+      // a system line runs the whole width in its own colour; a knight's line has the name first (gold for an admin)
+      if (l.n === null) { g.font = 'bold 12px sans-serif'; g.fillStyle = l.color; let t = l.text; const maxW = w - 36; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…'; g.fillText(t, px + 18, y + 8); y += lh; continue; }
+      g.font = 'bold 12px sans-serif'; g.fillStyle = nameColour(l); g.fillText(l.n, px + 18, y + 8);
       const nw = Math.max(g.measureText(l.n).width, narrow ? 60 : 90);
       g.font = '12px sans-serif'; g.fillStyle = '#c9d1d9'; let t = l.text; const maxW = w - 36 - nw - 10; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…'; g.fillText(t, px + 18 + nw + 10, y + 8);
       y += lh;
@@ -202,7 +253,11 @@
     if (window.PLAYERS) button(g, px + 18 + 148, by, 90, bh, 'Friends', () => openPanel('friends'), '#21262d');
   };
 
-  window.CHAT = { open, close, send, isOpen: () => isOpen, bubbles, log, PHRASES, MAX };
+  window.CHAT = {
+    open, close, send, system, isOpen: () => isOpen, bubbles, log, PHRASES, MAX,
+    // seconds of mute left: 0 when the chat is on, -1 until an admin turns it back on
+    muted: () => mutedUntil === Infinity ? -1 : isMuted() ? Math.ceil((mutedUntil - nowMs()) / 1000) : 0,
+  };
 
   // ---------- self-test ----------
   const P = 'chat: ';
@@ -248,8 +303,48 @@
     { feed({ t: 'chat', n: 'Ava', text: 'still here' }); F.sim(60 * 4.2, []); const bubbleGone = !bubbles.Ava; F.sim(60 * 4.2, []); const stripGone = !log.some(l => l.t > 0);
       for (let i = 0; i < 40; i++) feed({ t: 'chat', n: 'Ava', text: 'line ' + i }); const kept = log.length === LOG_MAX && log[LOG_MAX - 1].text === 'line 39';
       check(P + 'a bubble lasts 4 s, a strip line 8 s, and the log keeps the last 30', bubbleGone && stripGone && kept, { bubbleGone, stripGone, kept, log: log.length }); }
+    // a canvas that remembers what was written and in which colour, and what colour each outline was
+    const rec = [], strokes = [], st = {};
+    const g2 = new Proxy(st, { get: (t, k) => k === 'measureText' ? (s => ({ width: String(s).length * 6 })) : k === 'fillText' ? ((s) => { rec.push({ text: String(s), fill: st.fillStyle }); }) : k === 'stroke' ? () => { strokes.push(st.strokeStyle); } : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : (k in st ? st[k] : () => { }), set: (t, k, v) => { st[k] = v; return true; } });
+    // roles on lines: an admin's name is gold on the strip and in the log and their bubble outline is gold; anything else is a player
+    { close(); closePanel(); log.length = 0; for (const n in bubbles) delete bubbles[n];
+      feed({ t: 'chat', n: 'Mud', text: 'hello all', at: 7, role: 'admin' }); feed({ t: 'chat', n: 'Ava', text: 'hi Mud', at: 8, role: 'bogus' });
+      const roles = log.length === 2 && log[0].role === 'admin' && log[1].role === 'player' && bubbles.Mud.role === 'admin' && bubbles.Ava.role === 'player';
+      drawStrip(g2); const strip = rec.splice(0);
+      const goldStrip = strip.some(t => t.text === 'Mud:' && t.fill === GOLD) && strip.some(t => t.text === 'Ava:' && t.fill === BLUE);
+      openPanel('chatlog'); HOOKS.panel.chatlog(g2, false); const inLog = rec.splice(0); closePanel();
+      const goldLog = inLog.some(t => t.text === 'Mud' && t.fill === GOLD) && inLog.some(t => t.text === 'Ava' && t.fill === BLUE);
+      strokes.length = 0; drawBubble(g2, bubbles.Mud, 100, 100); const mudEdge = strokes.slice(); strokes.length = 0; drawBubble(g2, bubbles.Ava, 100, 100); const avaEdge = strokes.slice();
+      const goldBubble = mudEdge.length > 0 && mudEdge.every(c => c === GOLD) && avaEdge.length > 0 && avaEdge.every(c => c === BLUE);
+      check(P + "roles: an admin's chat name is gold on the strip and in the log and their bubble outline is gold; a line whose role is not 'admin' reads as a player's", roles && goldStrip && goldLog && goldBubble, { roles, goldStrip, goldLog, goldBubble, strip: strip.map(t => t.text + '=' + t.fill) }); rec.length = 0; }
+    // muted: said once, nothing goes out while muted (the quick phrases neither), the time left in plain words, unmuted, a refusal, a new session
+    { close(); closePanel(); log.length = 0; for (const n in bubbles) delete bubbles[n]; lastSentAt = -1e9; lastLineAt = -1e9; mutedUntil = 0; notice = null;
+      const chats = () => sock.sent.filter(m => m.t === 'chat').length, c0 = chats();
+      feed({ t: 'muted', left: 300 });
+      const told = !!notice && notice.text === 'An admin muted you for 5 minutes. You can still play; your chat is off until then.' && log.length === 2 && log.every(l => l.n === null) && log.map(l => l.text).join(' ') === notice.text && CHAT.muted() === 300;
+      const r1 = send('hello'), said1 = notice && notice.text, r2 = send(PHRASES[0]);
+      const nothing = r1 === false && r2 === false && chats() === c0 && said1 === "You can't chat for 5 more minutes." && log.length === 2;
+      const words = [];
+      for (const secs of [1, 45, 60, 61, 3599, 3600, 3601, 86400, 90000]) { mutedUntil = nowMs() + secs * 1000 - 50; words.push(cantChatSentence()); }
+      const plain = words.join('|') === ["You can't chat for 1 more second.", "You can't chat for 45 more seconds.", "You can't chat for 1 more minute.", "You can't chat for 2 more minutes.", "You can't chat for 60 more minutes.", "You can't chat for 1 more hour.", "You can't chat for 2 more hours.", "You can't chat for 1 more day.", "You can't chat for 2 more days."].join('|');
+      feed({ t: 'muted', left: -1 }); const always = notice.text === 'An admin muted you. Your chat is off until an admin turns it back on.' && CHAT.muted() === -1;
+      send('still?'); const until = notice.text === "You can't chat until an admin turns it back on." && chats() === c0;
+      feed({ t: 'unmuted' }); const back = notice.text === 'An admin turned your chat back on.' && log[log.length - 1].text === 'An admin turned your chat back on.' && CHAT.muted() === 0;
+      lastSentAt = -1e9; const r3 = send('I am back'); const flows = r3 === true && chats() === c0 + 1;
+      // a line the world refused (no echo came back) is answered with muted: that is a refusal, said as the time left, not news
+      lastSentAt = -1e9; lastLineAt = nowMs(); const n0 = log.length; feed({ t: 'muted', left: 240 });
+      const refused = notice.text === "You can't chat for 4 more minutes." && log.length === n0;
+      mutedUntil = Infinity; feed({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }); const fresh = CHAT.muted() === 0;
+      check(P + 'muted: the sentence once (strip, log and notice), nothing sent while muted (quick phrases too), time left in plain words, until-unmuted, unmuted, a refused line, and a new session starts unmuted', told && nothing && plain && always && until && back && flows && refused && fresh, { told, nothing, said1, plain, words, always, until, back, flows, refused, fresh }); }
+    // CHAT.system: a line with no name, in its colour (gold unless told), on the strip and in the log, and never a bubble
+    { log.length = 0; for (const n in bubbles) delete bubbles[n]; closePanel();
+      const ok = CHAT.system('Sam found a purple party hat!'), ok2 = CHAT.system('A quiet line', '#8b949e'), empty = CHAT.system('   ');
+      const a = log[0], b = log[1];
+      drawStrip(g2); const drawn = rec.splice(0);
+      const onStrip = drawn.some(t => t.text === 'Sam found a purple party hat!' && t.fill === GOLD) && !drawn.some(t => /:$/.test(t.text));
+      check(P + 'CHAT.system writes a line with no name in its colour (gold by default) on the strip and in the log, with no bubble', ok && ok2 && empty === false && log.length === 2 && a.n === null && a.text === 'Sam found a purple party hat!' && a.color === GOLD && a.t > 0 && b.color === '#8b949e' && Object.keys(bubbles).length === 0 && onStrip, { ok, ok2, empty, a, b, onStrip }); }
     // put the world back
-    close(); log.length = 0; for (const n in bubbles) delete bubbles[n]; lastSentAt = -1e9; prevDialog = false;
+    close(); log.length = 0; for (const n in bubbles) delete bubbles[n]; lastSentAt = -1e9; prevDialog = false; mutedUntil = 0; lastLineAt = -1e9;
     NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
     player.dead = dead0; dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); closePanel(); h.peace(false); render();
   });

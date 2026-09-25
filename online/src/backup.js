@@ -1,6 +1,8 @@
 // Backups of the world, for the parent page and for deploys. Admin-key only (world.js checks the key before calling in).
-// GET  /api/admin/export    everything needed to rebuild the world: accounts (with their hashes), every save version,
-//                           the chat log and the settings. Sessions are left out on purpose: they are short-lived logins.
+// GET  /api/admin/export    everything needed to rebuild the world: accounts (with their hashes, roles and mutes), every
+//                           save version, the chat log, the settings, and the admins' tables: the moderation log, the
+//                           pinned backups, the drop parties and their crackers (who lit each, the prize, claimed or
+//                           not). Sessions are left out on purpose: they are short-lived logins.
 // GET  /api/admin/bookmark  a Cloudflare point-in-time restore bookmark for this moment, also kept in settings with the
 //                           time it was taken. Taken before every deploy that changes the schema.
 // POST /api/admin/restore   {bookmark}: rewind the whole world's storage to that bookmark. The object restarts to do it,
@@ -17,6 +19,10 @@ export async function backupCall(world, req, url, call, method) {
       saves: rows('SELECT * FROM saves ORDER BY name_lc, ver'),
       chat: rows('SELECT * FROM chat ORDER BY id'),
       settings: rows('SELECT * FROM settings ORDER BY key'),
+      mod_log: rows('SELECT * FROM mod_log ORDER BY id'),
+      save_pins: rows('SELECT * FROM save_pins ORDER BY name_lc'),
+      parties: rows('SELECT * FROM parties ORDER BY id'),
+      crackers: rows('SELECT * FROM crackers ORDER BY party, k'),
     });
   }
   if (call === 'bookmark' && method === 'GET') {

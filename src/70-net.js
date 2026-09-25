@@ -20,6 +20,7 @@
     enabled, base: window.__onlineBase || '',
     status: 'off',            // off | connecting | on
     me: null,                 // the knight's name once the world says welcome
+    role: 'player',           // 'player' | 'admin': only ever the world's word (welcome, role); 'player' again when the socket closes
     token: lsGet(TOKEN_KEY),
     sock: null, tries: 0, lastError: null, stats: { sent: 0, got: 0, opens: 0 },
     listeners: {}, fake: null, timer: null, closedByUs: false,
@@ -62,12 +63,23 @@
       if (!msg || typeof msg.t !== 'string') return;
       NET.stats.got++;
       if (msg.t === 'welcome') { NET.status = 'on'; NET.me = msg.me; }
+      // the role is the world's word, set before anyone hears the message; a missing one (an older server) is 'player'
+      if (msg.t === 'welcome' || msg.t === 'role') NET.role = msg.role === 'admin' ? 'admin' : 'player';
       if (msg.t === 'error' && msg.code === 'auth') { NET.setToken(null); NET.closedByUs = true; }
       // the same knight opened somewhere else: that socket wins, this one must not fight it by reconnecting
       if (msg.t === 'error' && msg.code === 'elsewhere') NET.closedByUs = true;
+      // an admin sent this knight out (kicked) or banned it: the wire must not fight that by reconnecting; a ban also ends the session
+      if (msg.t === 'error' && (msg.code === 'kicked' || msg.code === 'banned')) { NET.closedByUs = true; if (msg.code === 'banned') NET.setToken(null); }
       NET.emit(msg.t, msg);
     };
-    sock.onclose = ev => { if (NET.sock !== sock) return; if (ev && ev.code === 4000) NET.closedByUs = true; NET.sock = null; const was = NET.status; NET.status = 'off'; if (was === 'on') NET.emit('offline', { t: 'offline' }); if (!NET.closedByUs) scheduleReconnect(); };
+    // close codes the world uses on purpose: 4000 elsewhere, 4003 banned, 4005 kicked. None of them is a dropped line, so none reconnects.
+    sock.onclose = ev => {
+      if (NET.sock !== sock) return;
+      if (ev && (ev.code === 4000 || ev.code === 4003 || ev.code === 4005)) NET.closedByUs = true;
+      NET.sock = null; NET.role = 'player'; const was = NET.status; NET.status = 'off';
+      if (was === 'on') NET.emit('offline', { t: 'offline' });
+      if (!NET.closedByUs) scheduleReconnect();
+    };
     sock.onerror = e => { NET.lastError = e; };
   }
   function scheduleReconnect() {
@@ -85,7 +97,7 @@
     } catch (e) { NET.lastError = e; NET.status = 'off'; NET.sock = null; scheduleReconnect(); return false; }
     return true;
   };
-  NET.disconnect = () => { NET.closedByUs = true; if (NET.timer) { if (typeof clearTimeout === 'function') clearTimeout(NET.timer); NET.timer = null; } const s = NET.sock; NET.sock = null; NET.status = 'off'; NET.me = null; if (s) { try { s.close(); } catch (e) { } } };
+  NET.disconnect = () => { NET.closedByUs = true; if (NET.timer) { if (typeof clearTimeout === 'function') clearTimeout(NET.timer); NET.timer = null; } const s = NET.sock; NET.sock = null; NET.status = 'off'; NET.me = null; NET.role = 'player'; if (s) { try { s.close(); } catch (e) { } } };
   NET.send = (msg, evenWhileConnecting) => {
     if (!NET.sock || (NET.status !== 'on' && !evenWhileConnecting)) return false;
     try { NET.sock.send(JSON.stringify(msg)); NET.stats.sent++; return true; } catch (e) { NET.lastError = e; return false; }
@@ -121,6 +133,28 @@
     check(P + 'a dropped socket leaves the wire offline and books a reconnect instead of giving up', NET.status === 'off' && NET.sock === null && NET.timer !== null, { status: NET.status, timer: !!NET.timer });
     NET.disconnect();
     check(P + 'without a token the wire will not open a socket at all', (NET.token = null, !NET.connect()) && NET.sock === null, { sock: !!NET.sock });
-    NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; NET.listeners.chat = (NET.listeners.chat || []).filter(f => f !== fn);
+    // roles and the ways the world ends a session (docs/ONLINE.md, "Admins and drop parties")
+    {
+      const socks = []; let hello = { t: 'welcome', me: 'MudGoll', role: 'admin' };
+      const fake2 = { call: async () => ({}), open: () => { const s = { readyState: 1, send(str) { if (JSON.parse(str).t === 'hello') s.onmessage({ data: JSON.stringify(hello) }); }, close() { s.readyState = 3; } }; socks.push(s); return s; } };
+      const feed = m => socks[socks.length - 1].onmessage({ data: JSON.stringify(m) });
+      const drop = code => socks[socks.length - 1].onclose(code === undefined ? undefined : { code });
+      NET.enabled = true; NET.useFake(fake2);
+      const before = NET.role;
+      NET.token = 'role-test'; NET.connect(); const admin = NET.role === 'admin';
+      feed({ t: 'role', role: 'player' }); const demoted = NET.role === 'player';
+      feed({ t: 'role', role: 'admin' }); const promoted = NET.role === 'admin';
+      feed({ t: 'role', role: 'boss' }); const junk = NET.role === 'player';
+      feed({ t: 'role', role: 'admin' }); drop(1006); const plainDrop = NET.role === 'player' && NET.status === 'off' && NET.timer !== null;
+      NET.disconnect(); hello = { t: 'welcome', me: 'Cohen' }; NET.token = 'role-test'; NET.connect(); const missing = NET.status === 'on' && NET.role === 'player';
+      check(P + "the role is the world's word: welcome and role set it, anything but 'admin' (or nothing, as an older server sends) is 'player', and a closed socket is 'player' again", before === 'player' && admin && demoted && promoted && junk && plainDrop && missing, { before, admin, demoted, promoted, junk, plainDrop, missing });
+      const ends = {};
+      for (const code of [4005, 4003, 4000, 4008]) { NET.disconnect(); NET.token = 'role-test'; NET.connect(); drop(code); ends[code] = NET.timer === null ? 'stays' : 'reconnects'; }
+      NET.disconnect(); NET.token = 'role-test'; NET.connect(); feed({ t: 'error', code: 'kicked' }); drop(); const kicked = NET.timer === null && NET.token === 'role-test';
+      NET.disconnect(); NET.token = 'role-test'; NET.connect(); feed({ t: 'error', code: 'banned' }); drop(); const banned = NET.timer === null && NET.token === null;
+      NET.disconnect();
+      check(P + 'closed 4005 (kicked), 4003 (banned) or 4000 (elsewhere) the wire books no reconnect, 4008 (too fast) still does; an error kicked keeps the session, banned drops it', ends[4005] === 'stays' && ends[4003] === 'stays' && ends[4000] === 'stays' && ends[4008] === 'reconnects' && kicked && banned, { ends, kicked, banned });
+    }
+    NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; NET.role = 'player'; NET.listeners.chat = (NET.listeners.chat || []).filter(f => f !== fn);
   });
 }
