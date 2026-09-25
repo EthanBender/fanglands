@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// tools/golem-sim.js — the King's Deep with two knights: Gorm, his little golems and the giant rocks, online.
+// tools/golem-sim.js — the Royal Mine with two knights: the Ginormous Golem, a little golem and a giant rock, online.
 //
 //   node tools/golem-sim.js            the FakeWorld below routes messages by docs/ONLINE.md's rules
 //   node tools/golem-sim.js --room     online/src/room.js (the real routing class) does it instead
 //
 // Two whole game contexts in one Node process, wired to an in-memory world exactly as tools/mmo-sim.js wires
 // them (FakeWorld, Wire and makeContext are copied from it, not imported: mmo-sim.js stays as it is). Both
-// knights stand in Gorm's hall. A arrives first and keeps the map. What it proves, in order: B's warm stone
-// lowers A's Gorm by exactly B's damage; B's sword sends nothing and changes nothing; a little golem lives on
-// A and is only a puppet on B; B mining a restless giant rock for 1.3 s makes A wake one golem that both see;
-// Gorm's fall pays A and B once each; and when A leaves, B keeps the map with exactly one Gorm.
-// Exit 0 only when every line passes.
+// knights stand in the Heart Chamber. A (Ann) arrives first and keeps the map. What it proves, in order:
+// B sees A's golem as a puppet; B's hot heartstone lowers A's golem by exactly B's damage; B's sword sends
+// nothing and changes nothing; a little golem lives on A and is only a puppet on B; B mining a giant rock
+// makes it shake and then wakes one golem on A that both see; the golem's fall pays A and B once each; and
+// when A leaves, B keeps the map with exactly one Ginormous Golem. Exit 0 only when every line passes.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const ROOT = path.join(__dirname, '..');
@@ -164,92 +164,110 @@ async function main() {
       vnow += FRAME_MS; frames++;
       if (typeof room.tick === 'function') room.tick();
       wire.flush();
-      if (each) each();
+      if (each && each() === true) return i + 1;
     }
+    return n;
   };
-  // both clocks read the sim's clock, so the vein glow, the rocks and the restless windows agree
-  for (const g of both) g.ROYALMINE.setNow(() => vnow);
+  // both clocks read the sim's clock, so the vein windows agree
+  for (const g of both) g.ROYALMINE.setClock(() => vnow);
   const login = async (g, name) => { const r = await g.NET.post('/api/login', { name, pass: 'secret' }); g.NET.setToken(r.token); g.NET.connect(); wire.flush(); return r; };
   await login(A, 'Ann');
   await login(B, 'Ben');
   tick(4);
-  // both knights have opened the Heart Door on their own game and carry a pickaxe; A goes down first.
-  // No peace mode: the core heals a monster 1 hp when peace sends it home, which would blur the exact hit in line 2.
-  // Gorm only reaches a knight inside 73 px, and both knights stand further off than that.
+  // Both knights have opened the golem's gate on their own game (stage 5), carry a bronze pickaxe and an iron
+  // sword, and have level 40 skills. The rocks, the little golems' own timer and the slam are switched off, so
+  // every number below is the one the line is about (the sim spawns the one little golem it checks itself).
+  // No peace mode: the core heals a monster 1 hp when peace sends it home.
   for (const g of both) {
-    R(g, `quest.royal = { stage: 6, caught: 3, door: true, falls: 0, best: 0, payouts: 0, seenHow: true, seenRestless: true, seenWake: true, seenGiant: true };
+    R(g, `quest.dwarf = { stage: 2, chests: [], visited: true };
+      quest.royalmine = { stage: 5, fights: 0, best: 0, dry: 0, gotPick: false, told: { rules: true, chamber: true, giant: true, stir: true, wake: true, raw: true, hot: true, rock: true, heal: true, ling: true, smash: true, after: true } };
       player.inv = new Array(INV_SLOTS).fill(null); addItem('bronze_pickaxe', 1); addItem('iron_sword', 1); player.equip.weapon = 'iron_sword';
       for (const s of ['mining', 'smithing', 'melee', 'defence']) player.skills[s].xp = XP_TABLE[40]; recomputeMaxHp(); player.hp = player.maxHp;
-      ROYALMINE.TEST.noRocks = true; ROYALMINE.TEST.noLings = true; window.__peace = false;`);
+      Object.assign(ROYALMINE.NUM, { ROCK_EVERY: 1e9, ROCK_EVERY_HALF: 1e9, LING_FIRST: 1e9, LING_EVERY: 1e9, LING_EVERY_HALF: 1e9, NEAR_HOLD: 1e9 });
+      window.__peace = false;`);
   }
   R(A, `INSTANCES.enter('royalmine'); FANGLANDS.tp(24, 37);`); tick(12);
   R(B, `INSTANCES.enter('royalmine'); FANGLANDS.tp(30, 36);`); tick(24);
-  const gA = () => A.ROYALMINE.gorm(), gB = () => B.ROYALMINE.gorm();
-  line('1. A (the keeper) and B are both in the King\'s Deep: A keeps the map and B shows A\'s Gorm as a puppet',
-    A.INSTANCES.active() === 'royalmine' && B.INSTANCES.active() === 'royalmine' && A.COOP.isKeeper() && B.COOP.keeper() === 'Ann' && !!gB() && gB().remote && gB().nid === 'i0' && !!gA() && !gA().remote,
-    { a: A.INSTANCES.active(), b: B.INSTANCES.active(), keeper: [A.COOP.keeper(), B.COOP.keeper()], puppet: gB() && [gB().nid, !!gB().remote] });
+  for (const g of both) R(g, 'ROYALMINE.run.rockT = 1e9; dialog.queue.length = 0; dialog.cur = null;');
+  const gA = () => A.ROYALMINE.golem(), gB = () => B.ROYALMINE.golem();
+  line('1. A (the keeper) and B are both in the Royal Mine: A keeps the map and B shows A\'s sleeping golem as a puppet',
+    A.INSTANCES.active() === 'royalmine' && B.INSTANCES.active() === 'royalmine' && A.COOP.isKeeper() && B.COOP.keeper() === 'Ann' && !!gB() && gB().remote && gB().nid === 'i0' && !!gA() && !gA().remote && gA().state === 'sleep' && gB().state === 'sleep',
+    { a: A.INSTANCES.active(), b: B.INSTANCES.active(), keeper: [A.COOP.keeper(), B.COOP.keeper()], puppet: gB() && [gB().nid, !!gB().remote, gB().state] });
 
-  // ---- 2. B's warm stone lowers A's Gorm by exactly B's damage ----
-  tick(10);
-  const hp0 = gA().hp, max0 = gA().maxHp;
-  R(B, `ROYALMINE.arms.warm = 1; ROYALMINE.arms.raw = 0; ROYALMINE.fight.throwCd = 0; ROYALMINE.throwStone();`);
-  tick(40);
-  const dmgB = B.ROYALMINE.fight.lastThrowDmg;
-  line('2. B\'s throw lowers A\'s Gorm by exactly the damage B rolled', typeof dmgB === 'number' && dmgB >= 70 && dmgB <= 90 && gA().hp === hp0 - dmgB && gA().maxHp === max0,
-    { before: hp0, after: gA().hp, dmgB, max: gA().maxHp });
+  // ---- 2. B's hot stone lowers A's golem by exactly B's damage ----
+  R(A, `ROYALMINE.debug.wake(2);`); tick(12);
+  const hp0 = gA().hp, max0 = gA().maxHp, awakeOnB = gB().state === 'fight' && gB().maxHp === max0;
+  R(B, `ROYALMINE.run.hot = 1; ROYALMINE.run.throwCd = 0; ROYALMINE.throwHeart();`);
+  const flying = B.ROYALMINE.run.stones.length === 1 && B.ROYALMINE.run.hot === 0;
+  tick(60);
+  const dmgB = B.ROYALMINE.heartDmg();
+  line('2. the golem wakes on both screens, and B\'s hot heartstone lowers A\'s golem by exactly B\'s damage (60 at Smithing 40)',
+    awakeOnB && flying && dmgB === 60 && gA().hp === hp0 - dmgB && gA().maxHp === max0 && max0 === 1600,
+    { awakeOnB, flying, before: hp0, after: gA().hp, dmgB, max: gA().maxHp });
 
   // ---- 3. B's sword sends nothing and changes nothing ----
   let hitsFromB = 0; A.NET.on('hit', m => { if (m.n === 'Ben') hitsFromB++; });
   const hp1 = gA().hp;
-  R(B, `(() => { const m = ROYALMINE.gorm(); player.x = m.x; player.y = m.y - 70; player.facing = { x: 0, y: 1 }; player.attackCd = 0; ROYALMINE.arms.warm = 0; })()`);
+  R(B, `(() => { const m = ROYALMINE.golem(); player.x = m.x; player.y = m.y + 76; player.facing = { x: 0, y: -1 }; player.attackCd = 0; ROYALMINE.run.hot = 0; })()`);
   B.FANGLANDS.press('Space'); wire.flush(); tick(20);
-  line('3. B\'s sword on Gorm sends no hit and leaves him as he was', hitsFromB === 0 && gA().hp === hp1, { hitsFromB, before: hp1, after: gA().hp });
+  const clanged = B.FANGLANDS.player.attackT > 0 || B.ROYALMINE.run.clangT > 0;
+  line('3. B\'s sword on the golem sends no hit and leaves him as he was', hitsFromB === 0 && gA().hp === hp1 && clanged, { hitsFromB, before: hp1, after: gA().hp, clanged });
   R(B, `FANGLANDS.tp(30, 36);`); tick(4);
 
   // ---- 4. a little golem lives on A and is only a puppet on B ----
-  R(A, `ROYALMINE.spawnGolemling(1);`); tick(12);
+  R(A, `ROYALMINE.spawnLittle(1);`); tick(12);
   const lingA = A.FANGLANDS.monsters.find(m => m.type === 'golemling' && !m.dead);
   const lingB = B.FANGLANDS.monsters.find(m => m.type === 'golemling' && !m.dead);
   const bAllPuppets = B.FANGLANDS.monsters.every(m => m.remote);
+  tick(60);
   const pos0 = lingB && { x: lingB.x, y: lingB.y };
   tick(30);
   const lingB2 = lingB && B.COOP.find(lingB.nid);
-  // a snapshot goes out eight times a second and a little golem walks 50 px/s, so the puppet trails by up to ~7 px
+  // a snapshot goes out eight times a second and a little golem walks 42 px/s, so the puppet trails by a few px
   const followsA = !!lingB2 && Math.abs(lingB2.x - lingA.x) <= 12 && Math.abs(lingB2.y - lingA.y) <= 12 && (Math.abs(lingB2.x - pos0.x) > 1 || Math.abs(lingB2.y - pos0.y) > 1);
   line('4. a little golem exists on A and shows on B only as a puppet that follows A\'s (B does not walk it)', !!lingA && !lingA.remote && !!lingB && lingB.remote && bAllPuppets && followsA,
     { onA: !!lingA, onB: !!lingB, puppet: lingB && !!lingB.remote, bAllPuppets, followsA, a: lingA && [Math.round(lingA.x), Math.round(lingA.y)], b: lingB2 && [Math.round(lingB2.x), Math.round(lingB2.y)] });
   R(A, `monsters = monsters.filter(m => m.type !== 'golemling');`); tick(30);
 
-  // ---- 5. B mines a restless giant rock: A wakes one golem, and both see it ----
-  // a clock where giant mithril rock 0 is restless; B stands under it with a bronze pick (a 1.8 s swing, so B's own crack
-  // cannot land before A has seen 1.2 s of mining in B's presence)
-  let T0 = 0; for (let k = 90000; k < 200000; k++) if (A.ROYALMINE.h32(1, k) < 0.25) { T0 = k * 10000 + 5; break; }
-  const shift = T0 - vnow; for (const g of both) g.ROYALMINE.setNow(() => vnow + shift);
-  R(B, `FANGLANDS.tp(7, 15); FANGLANDS.face(7, 14); player.attackCd = 0;`);
-  B.FANGLANDS.press('KeyE'); wire.flush();
-  const miningB = !!B.FANGLANDS.player.action && B.FANGLANDS.player.action.type === 'mine';
-  let woke = 0; for (let i = 0; i < 90 && !woke; i++) { tick(1); woke = A.FANGLANDS.monsters.filter(m => m.type === 'rock_golem' && !m.dead).length; }
-  tick(24);
-  const golemsA = A.FANGLANDS.monsters.filter(m => m.type === 'rock_golem' && !m.dead), golemsB = B.FANGLANDS.monsters.filter(m => m.type === 'rock_golem' && !m.dead);
-  line('5. B mining a restless giant rock for 1.3 s makes A wake exactly one rock golem, and B sees it', miningB && golemsA.length === 1 && golemsB.length === 1 && golemsB[0].remote && golemsB[0].nid === golemsA[0].nid,
-    { miningB, onA: golemsA.length, onB: golemsB.length, nid: golemsA[0] && golemsA[0].nid });
-  R(A, `monsters = monsters.filter(m => m.type !== 'rock_golem');`); R(B, `player.action = null; FANGLANDS.tp(30, 36);`); tick(40);
+  // ---- 5. B mines a giant rock: it shakes on both screens, then A wakes one golem, and both see it ----
+  // A has already cracked the first giant mithril rock down to 2 (its wake roll) and the roll is fixed to "wake",
+  // so B's first crack makes it shake and B's second (which B swings on its own, the rock still standing) wakes it
+  R(A, `ROYALMINE.rollWake = () => true; ROYALMINE.debug.crack('i1', 4);`); tick(12);
+  // the keeper streams only what is near a knight, so B waits (as a knight walking over would) until the rock is on its screen
+  R(B, `(() => { const b = ROYALMINE.GIANTS[0]; player.action = null; player.x = b.c.x; player.y = b.c.y + 72; player.facing = { x: 0, y: -1 }; })()`);
+  const arrived = tick(120, () => !!B.COOP.find('i1')) < 120;
+  R(B, `player.facing = { x: 0, y: -1 }; player.attackCd = 0;`);
+  B.FANGLANDS.press('Space'); wire.flush();
+  const miningB = !!B.FANGLANDS.player.action && B.FANGLANDS.player.action.type === 'rm_giant';
+  const seenB = new Set();
+  tick(900, () => { seenB.add(B.ROYALMINE.run.ores.i1); return A.FANGLANDS.monsters.some(m => m.type === 'mithril_golem' && !m.dead); });
+  tick(24, () => { seenB.add(B.ROYALMINE.run.ores.i1); });
+  const golemsA = A.FANGLANDS.monsters.filter(m => m.type === 'mithril_golem' && !m.dead), golemsB = B.FANGLANDS.monsters.filter(m => m.type === 'mithril_golem' && !m.dead);
+  const rockA = A.FANGLANDS.monsters.find(m => m.nid === 'i1');
+  line('5. B mining a giant rock makes it shake on B\'s screen, then A wakes exactly one mithril golem from it, and B sees that golem',
+    arrived && miningB && seenB.has('stir') && seenB.has('waking') && golemsA.length === 1 && !golemsA[0].remote && golemsB.length === 1 && golemsB[0].remote && golemsB[0].nid === golemsA[0].nid && !!rockA && rockA.dead,
+    { arrived, miningB, seenOnB: [...seenB], onA: golemsA.length, onB: golemsB.length, nid: golemsA[0] && golemsA[0].nid, rockDead: !!rockA && rockA.dead });
+  R(A, `monsters = monsters.filter(m => m.type !== 'mithril_golem');`); R(B, `player.action = null; FANGLANDS.tp(30, 36); player.hp = player.maxHp;`); tick(40);
 
-  // ---- 6. Gorm's fall pays A and B once each ----
-  const pay0 = [A.FANGLANDS.quest.royal.payouts, B.FANGLANDS.quest.royal.payouts];
-  R(A, `(() => { const m = ROYALMINE.gorm(); m.hp = 60; FANGLANDS.tp(24, 37); ROYALMINE.arms.warm = 1; ROYALMINE.fight.throwCd = 0; ROYALMINE.throwStone(); })()`);
+  // ---- 6. the golem's fall pays A and B once each ----
+  const q = g => g.FANGLANDS.quest.royalmine, mxp = g => g.FANGLANDS.player.skills.mining.xp;
+  const f0 = [q(A).fights, q(B).fights], x0 = [mxp(A), mxp(B)];
+  R(A, `(() => { const m = ROYALMINE.golem(); m.hp = 60; FANGLANDS.tp(24, 37); ROYALMINE.run.hot = 1; ROYALMINE.run.throwCd = 0; ROYALMINE.throwHeart(); })()`);
   tick(60);
   const downA = !!gA() && gA().dead, downB = !gB() || gB().dead || gB().hp <= 0;
   tick(120);
-  const pay1 = [A.FANGLANDS.quest.royal.payouts, B.FANGLANDS.quest.royal.payouts], falls = [A.FANGLANDS.quest.royal.falls, B.FANGLANDS.quest.royal.falls];
-  line('6. Gorm falls and A and B are each paid once (A for the killing stone, B for its stone this life)', downA && downB && pay1[0] === pay0[0] + 1 && pay1[1] === pay0[1] + 1 && falls[0] === 1 && falls[1] === 1,
-    { downA, downB, payouts: pay1, falls });
+  const f1 = [q(A).fights, q(B).fights], x1 = [mxp(A), mxp(B)], stages = [q(A).stage, q(B).stage];
+  tick(120);
+  const f2 = [q(A).fights, q(B).fights];
+  line('6. the golem falls and A and B are each paid once (A for the killing stone, B for its stone this life), and Pebble is free on both',
+    downA && downB && f1[0] === f0[0] + 1 && f1[1] === f0[1] + 1 && f2[0] === f1[0] && f2[1] === f1[1] && x1[0] - x0[0] === 200 && x1[1] - x0[1] === 200 && stages[0] === 6 && stages[1] === 6,
+    { downA, downB, fights: f2, miningXp: [x1[0] - x0[0], x1[1] - x0[1]], stages });
 
-  // ---- 7. A leaves: B keeps the map, with exactly one Gorm ----
+  // ---- 7. A leaves: B keeps the map, with exactly one Ginormous Golem ----
   R(A, `INSTANCES.leave();`); tick(30);
-  const BM = B.FANGLANDS.monsters, gorms = BM.filter(m => m.type === 'gorm');
-  line('7. A leaves the mine: B becomes its keeper with exactly one Gorm and no puppets left', B.COOP.isKeeper() && B.COOP.puppets() === null && gorms.length === 1 && BM.every(m => !m.remote),
-    { keeper: B.COOP.keeper(), gorms: gorms.length, puppets: BM.filter(m => m.remote).length });
+  const BM = B.FANGLANDS.monsters, golems = BM.filter(m => m.type === 'ginormous_golem');
+  line('7. A leaves the mine: B becomes its keeper with exactly one Ginormous Golem and no puppets left', B.COOP.isKeeper() && B.COOP.puppets() === null && golems.length === 1 && BM.every(m => !m.remote),
+    { keeper: B.COOP.keeper(), golems: golems.length, puppets: BM.filter(m => m.remote).length });
 
   const bad = results.filter(r => !r).length;
   console.log((bad ? `${bad} FAILED of ${results.length}` : `ALL ${results.length} PASS`) + ` (${useRoom ? 'online/src/room.js' : 'FakeWorld'}, ${Date.now() - t0} ms)`);

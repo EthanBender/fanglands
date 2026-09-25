@@ -33605,23 +33605,34 @@ HOOKS.selfTest.push((check, F, h) => {
     if (E) g.fillRect(x + TILE - 3, y, 3, TILE);
   }
   function inlay(g, tx, ty) {
-    const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2, v = DECOR[ty * W + tx] || 0;
-    g.fillStyle = 'rgba(40,28,10,0.35)'; g.beginPath(); g.moveTo(cx, cy - 8); g.lineTo(cx + 8, cy); g.lineTo(cx, cy + 8); g.lineTo(cx - 8, cy); g.closePath(); g.fill();
-    g.fillStyle = GOLD;
-    if (v === 0) { g.beginPath(); g.moveTo(cx, cy - 5.5); g.lineTo(cx + 5.5, cy); g.lineTo(cx, cy + 5.5); g.lineTo(cx - 5.5, cy); g.closePath(); g.fill(); }
-    else if (v === 1) { g.strokeStyle = GOLD; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.stroke(); g.beginPath(); g.arc(cx, cy, 1.6, 0, 7); g.fill(); }
-    else if (v === 2) { g.beginPath(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, r = k % 2 ? 2.2 : 6; g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); } g.closePath(); g.fill(); }
-    else { g.fillRect(cx - 4, cy - 4, 8, 8); g.fillStyle = GOLD_D; g.fillRect(cx - 1.5, cy - 1.5, 3, 3); }
-    g.fillStyle = GOLD_L; g.beginPath(); g.moveTo(cx, cy - 5); g.lineTo(cx + 1.8, cy - 1.8); g.lineTo(cx, cy - 0.5); g.lineTo(cx - 1.8, cy - 1.8); g.closePath(); g.fill();
+    // a small gold figure set flush into the cut stone: carved first, then filled
+    const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2, v = (DECOR[ty * W + tx] || 0) & 1;
+    // a diamond, some with a ring inside (the build's rnd picks which): laid out on a grid, like a proper floor
+    const shape = () => {
+      g.beginPath(); g.moveTo(cx, cy - 9); g.lineTo(cx + 9, cy); g.lineTo(cx, cy + 9); g.lineTo(cx - 9, cy); g.closePath();
+      if (v) { g.moveTo(cx + 4, cy); g.arc(cx, cy, 4, 0, 7); }
+    };
+    g.lineCap = 'round';
+    g.strokeStyle = 'rgba(30,22,10,0.45)'; g.lineWidth = 3.2; g.save(); g.translate(0.8, 0.8); shape(); g.stroke(); g.restore();
+    g.strokeStyle = 'rgba(232,184,74,0.78)'; g.lineWidth = 1.8; shape(); g.stroke();
+    g.fillStyle = 'rgba(247,220,138,0.85)'; g.beginPath(); g.arc(cx, cy, 1.4, 0, 7); g.fill();
+    g.lineCap = 'butt';
   }
   function chamberCrack(g, tx, ty, glow) {
-    if (hh(tx, ty, 3) > 0.34) return;
-    const x = tx * TILE, y = ty * TILE, a0 = hh(tx, ty, 5) * Math.PI * 2;
-    const pts = []; let px = x + 8 + hh(tx, ty, 7) * 32, py = y + 8 + hh(ty, tx, 9) * 32;
-    for (let k = 0; k < 4; k++) { pts.push([px, py]); const a = a0 + (hh(tx + k, ty, 11) - 0.5) * 1.6; px = clamp(px + Math.cos(a) * 11, x + 2, x + TILE - 2); py = clamp(py + Math.sin(a) * 11, y + 2, y + TILE - 2); }
-    g.lineCap = 'round'; g.lineJoin = 'round';
-    g.strokeStyle = '#3a120c'; g.lineWidth = 3.4; g.beginPath(); pts.forEach(([a, b], i) => i ? g.lineTo(a, b) : g.moveTo(a, b)); g.stroke();
-    g.strokeStyle = `rgba(255,${90 + Math.round(60 * glow)},50,${(0.35 + 0.5 * glow).toFixed(3)})`; g.lineWidth = 1.5; g.stroke();
+    // a thin zig-zag fissure in the chamber floor with a branch off it; the heartstone's red shows in it while he is awake
+    if (hh(tx, ty, 3) > 0.17) return;
+    const x = tx * TILE, y = ty * TILE, a0 = hh(tx, ty, 5) * Math.PI;
+    const pts = []; let px = x + 8 + hh(tx, ty, 7) * 10, py = y + 12 + hh(ty, tx, 9) * 24;
+    for (let k = 0; k < 5; k++) { pts.push([px, py]); const a = a0 + (k % 2 ? 0.7 : -0.7) + (hh(tx + k, ty, 11) - 0.5) * 0.5; px += Math.cos(a) * 7; py += Math.sin(a) * 6; }
+    const path = () => {
+      g.beginPath(); pts.forEach(([a, b], i) => i ? g.lineTo(a, b) : g.moveTo(a, b));
+      const [bx, by] = pts[2]; g.moveTo(bx, by); g.lineTo(bx + Math.cos(a0 + 1.4) * 7, by + Math.sin(a0 + 1.4) * 7);
+    };
+    g.lineCap = 'round';
+    if (glow > 0.3) { g.strokeStyle = `rgba(255,90,40,${(0.25 * glow).toFixed(3)})`; g.lineWidth = 5; path(); g.stroke(); }
+    g.strokeStyle = 'rgba(20,12,8,0.55)'; g.lineWidth = 1.6; path(); g.stroke();
+    if (glow > 0.3) { g.strokeStyle = `rgba(255,${120 + Math.round(60 * glow)},60,${(0.6 * glow).toFixed(3)})`; g.lineWidth = 0.8; path(); g.stroke(); }
+    g.lineCap = 'butt';
   }
   function floorTexUnder(g, tx, ty) {
     // a lamp, a seam or a pillar standing on cut stone keeps the cut stone under it (the tile's own texture is cave)
@@ -33676,7 +33687,7 @@ HOOKS.selfTest.push((check, F, h) => {
       if (c === '#') { wallTrim(g, tx, ty); continue; }
       if (c === 'L' || c === 'c' || c === 's' || c === 'm' || c === 'P') floorTexUnder(g, tx, ty);
       if (t === T.RUBBLE) { const img = tex['cave' + (variant[idx(tx, ty)] || 0)]; if (img) g.drawImage(img, tx * TILE, ty * TILE, TILE, TILE); drawRubbleProp(g, tx, ty); continue; }
-      if (c === '.' && (tx + ty) % 4 === 0) inlay(g, tx, ty);
+      if (c === '.' && tx % 4 === 2 && ty % 4 === 2) inlay(g, tx, ty);
       else if (c === ':' || c === 'h') chamberCrack(g, tx, ty, glow);
     }
     for (const b of GIANTS) if (b.bed[0] + b.size >= v.x0 && b.bed[0] <= v.x1 && b.bed[1] + b.size >= v.y0 && b.bed[1] <= v.y1) drawBed(g, b);
@@ -33763,25 +33774,26 @@ HOOKS.selfTest.push((check, F, h) => {
   function drawVein(g, tx, ty) {
     const x = tx * TILE, y = ty * TILE, ms = clock(), awake = golemAwake(), lit = awake && veinLit(tx, ty, ms);
     const into = ms % NUM.VEIN_WINDOW, flash = lit && into < NUM.VEIN_FLASH * 1000 ? 1 - into / (NUM.VEIN_FLASH * 1000) : 0;
-    const left = lit ? NUM.VEIN_TAKE - (run.quota[veinKey(ms, tx, ty)] || 0) : 0;
-    const [fx, fy] = veinFace(tx, ty), cx = x + TILE / 2 + fx * 10, cy = y + TILE / 2 + fy * 10;
-    const pulse = 0.65 + 0.35 * Math.sin(time * 6 + tx);
+    const left = lit ? NUM.VEIN_TAKE - (run.quota[veinKey(ms, tx, ty)] || 0) : NUM.VEIN_TAKE;
+    const [fx, fy] = veinFace(tx, ty), cx = x + TILE / 2 + fx * 8, cy = y + TILE / 2 + fy * 8;
+    const pulse = 0.65 + 0.35 * Math.sin(time * 6 + tx), ang = Math.atan2(fy, fx);
     if (lit) {
-      const gr = g.createRadialGradient(cx, cy, 4, cx, cy, 62); gr.addColorStop(0, `rgba(255,110,70,${(0.45 * pulse + 0.4 * flash).toFixed(3)})`); gr.addColorStop(1, 'rgba(255,90,60,0)');
-      g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, 62, 0, 7); g.fill();
+      const gr = g.createRadialGradient(cx, cy, 4, cx, cy, 70); gr.addColorStop(0, `rgba(255,110,70,${(0.5 * pulse + 0.45 * flash).toFixed(3)})`); gr.addColorStop(1, 'rgba(255,90,60,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, 70, 0, 7); g.fill();
     }
-    const core = lit ? `rgb(255,${Math.round(120 + 90 * pulse + 40 * flash)},${Math.round(80 + 60 * flash)})` : '#6a1e14', edge = lit ? '#ff5a3c' : '#3e120c';
-    g.lineCap = 'round'; g.lineJoin = 'round';
-    for (let s = 0; s < 3; s++) {
-      const a0 = hh(tx, ty, s) * 6.28, len = 16 + s * 4;
-      g.strokeStyle = edge; g.lineWidth = 5; g.beginPath(); g.moveTo(cx, cy);
-      for (let j = 1; j <= 3; j++) { const a = a0 + (j % 2 ? 0.5 : -0.5); g.lineTo(cx + Math.cos(a) * len * j / 3, cy + Math.sin(a) * len * j / 3); }
-      g.stroke(); g.strokeStyle = core; g.lineWidth = 2.2; g.stroke();
+    // the seam in the rock face
+    g.fillStyle = lit ? '#5a1a10' : '#3a1610'; g.beginPath(); g.ellipse(cx - fx * 6, cy - fy * 6, 17, 13, ang, 0, 7); g.fill();
+    // the crystals, pointing out of the wall toward the chamber: one for each stone this glow still holds
+    for (let j = 0; j < 4; j++) {
+      const a = ang + (j - 1.5) * 0.45 + (hh(tx, ty, j) - 0.5) * 0.2, len = 13 + hh(ty, tx, j) * 7, spent = j >= left;
+      const bx = cx - fx * 6 + Math.cos(a + Math.PI / 2) * (j - 1.5) * 3, by = cy - fy * 6 + Math.sin(a + Math.PI / 2) * (j - 1.5) * 3;
+      const tipx = bx + Math.cos(a) * (spent ? len * 0.35 : len), tipy = by + Math.sin(a) * (spent ? len * 0.35 : len), nx = -Math.sin(a) * 3.2, ny = Math.cos(a) * 3.2;
+      g.fillStyle = spent ? '#4a1c14' : lit ? `rgb(255,${Math.round(90 + 70 * pulse + 60 * flash)},${Math.round(60 + 50 * flash)})` : '#7a2a1c';
+      g.beginPath(); g.moveTo(bx + nx, by + ny); g.lineTo(tipx + nx * 0.4, tipy + ny * 0.4); g.lineTo(tipx, tipy); g.lineTo(tipx - nx * 0.4, tipy - ny * 0.4); g.lineTo(bx - nx, by - ny); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 1; g.stroke();
+      if (!spent) { g.fillStyle = lit ? 'rgba(255,240,210,0.8)' : 'rgba(255,140,110,0.3)'; g.beginPath(); g.moveTo(bx + nx * 0.5, by + ny * 0.5); g.lineTo(tipx + nx * 0.2, tipy + ny * 0.2); g.lineTo(tipx, tipy); g.closePath(); g.fill(); }
     }
-    // the crystals you can still break off this glow (four when it lights, fewer as you take them)
-    g.fillStyle = core;
-    for (let j = 0; j < (lit ? left : 2); j++) { const a = j * 1.6 + hh(ty, tx, j) * 1.2, r = 7 + j * 2; g.beginPath(); g.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r - 5); g.lineTo(cx + Math.cos(a) * r + 3.5, cy + Math.sin(a) * r + 2); g.lineTo(cx + Math.cos(a) * r - 3.5, cy + Math.sin(a) * r + 2); g.closePath(); g.fill(); }
-    if (lit) for (let k = 0; k < 3; k++) { const ph = (time * 1.4 + k / 3 + tx * 0.1) % 1; g.fillStyle = `rgba(255,${200 - k * 30},120,${(1 - ph).toFixed(3)})`; g.beginPath(); g.arc(cx + Math.sin(time * 3 + k * 2) * 8, cy - ph * 26, 1.5, 0, 7); g.fill(); }
+    if (lit) for (let k = 0; k < 3; k++) { const ph = (time * 1.4 + k / 3 + tx * 0.1) % 1; g.fillStyle = `rgba(255,${200 - k * 30},120,${(1 - ph).toFixed(3)})`; g.beginPath(); g.arc(cx + Math.sin(time * 3 + k * 2) * 8, cy - ph * 26, 1.6, 0, 7); g.fill(); }
   }
   function drawHeartForge(g, tx, ty) {
     const cx = tc(tx), y = ty * TILE, fl = Math.sin(time * 9 + tx) * 2;
@@ -33860,57 +33872,84 @@ HOOKS.selfTest.push((check, F, h) => {
   function drawGiantOre(g, e, hurt) {
     if (e.dead) return;
     const gd = NUM.GIANT[e.type]; if (!gd) return;
-    const S = gd.size * TILE, mith = gd.metal === 'mithril', n = mith ? 9 : 11, id = mith ? 7 : 13;
+    const S = gd.size * TILE, mith = gd.metal === 'mithril', n = mith ? 11 : 13, id = Math.round((e.x || 0) / TILE) * 13 + Math.round((e.y || 0) / TILE) * 7 + (mith ? 1 : 2);
     // 09-render bobs a monster it thinks is moving; a rock never bobs
     if (e.moving) g.translate(0, -Math.sin(e.walkT || 0) * 2);
     const frac = e.maxHp ? clamp(e.hp / e.maxHp, 0, 1) : 1, st = e.state || 'idle';
-    const shake = st === 'waking' ? 4 : st === 'stir' ? 2 : 0;
-    g.save(); g.translate(shake ? Math.sin(time * 47 + e.x) * shake : 0, (shake ? Math.cos(time * 39) * shake * 0.5 : 0) - S * 0.06);
-    const pts = []; for (let k = 0; k < n; k++) { const a = -Math.PI / 2 + k / n * Math.PI * 2, rr = 0.86 + hh(id, k, 3) * 0.14; pts.push([Math.cos(a) * S * 0.46 * rr, Math.sin(a) * S * 0.42 * rr]); }
-    const body = hurt ? ['#e8d0d0', '#f4dede', '#c8b0b0'] : mith ? ['#5f7aa8', '#7593c6', '#435c86'] : ['#5a4a8e', '#6f5fb0', '#3f3468'];
-    const vein = mith ? '#bcd4f5' : '#c8b0ff', deep = mith ? '#3d5680' : '#3a2e5e', glowC = mith ? '160,210,255' : '210,180,255';
+    const shake = st === 'waking' ? 4.5 : st === 'stir' ? 2 : 0;
+    const C = hurt ? { hi: '#fbe4e4', mid: '#e8c8c8', lo: '#b89898', deep: '#8a6a6a' }
+      : mith ? { hi: '#a9c0e0', mid: '#7089b4', lo: '#4a5f86', deep: '#2f3d5a' } : { hi: '#a494d8', mid: '#6d5cae', lo: '#4a3c80', deep: '#2c2350' };
+    const ore = mith ? '#dcebff' : '#e8dcff', oreDeep = mith ? '#5f8fd0' : '#9a6ae8', glowC = mith ? '160,210,255' : '210,170,255';
+    const cy = -S * 0.1, rx = S * 0.46, ry = S * 0.44;
+    g.save(); g.translate(shake ? Math.sin(time * 47 + e.x) * shake : 0, shake ? Math.cos(time * 39) * shake * 0.5 : 0);
+    // the boulder's outline: lumpy, rounder on top, flat where it sits on its plinth
+    const pts = [];
+    for (let k = 0; k < n; k++) { const a = -Math.PI / 2 + k / n * Math.PI * 2, rr = 0.88 + hh(id, k, 3) * 0.12; let y = cy + Math.sin(a) * ry * rr; if (y > S * 0.3) y = S * 0.3 + (y - S * 0.3) * 0.3; pts.push([Math.cos(a) * rx * rr, y]); }
     const outline = () => { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); };
-    const split = frac < 0.33 ? 5 : 0;
+    const split = frac < 0.33 ? 6 : 0;
+    // a shadow where it meets the plinth
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.ellipse(0, S * 0.3, rx * 0.95, S * 0.08, 0, 0, 7); g.fill();
     for (const half of split ? [-1, 1] : [0]) {
       g.save();
-      if (half) { g.beginPath(); g.rect(half < 0 ? -S : 0, -S, S, S * 2); g.clip(); g.translate(half * split, 0); }
-      const bg = g.createLinearGradient(-S / 2, -S / 2, S / 2, S / 2); bg.addColorStop(0, body[1]); bg.addColorStop(1, body[2]);
-      g.fillStyle = bg; outline(); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 2; g.stroke();
-      g.fillStyle = 'rgba(255,255,255,0.13)'; g.beginPath(); g.moveTo(pts[n - 1][0] * 0.8, pts[n - 1][1] * 0.8); g.lineTo(pts[0][0] * 0.85, pts[0][1] * 0.85); g.lineTo(pts[1][0] * 0.6, pts[1][1] * 0.6); g.lineTo(-S * 0.05, -S * 0.05); g.closePath(); g.fill();
-      g.lineCap = 'round'; g.lineJoin = 'round';
-      // thick veins of its metal
-      for (let v = 0; v < (mith ? 3 : 2); v++) {
-        const a = hh(id, v, 11) * 6.28;
-        g.strokeStyle = deep; g.lineWidth = 6; g.beginPath(); g.moveTo(Math.cos(a) * S * 0.34, Math.sin(a) * S * 0.28);
-        g.quadraticCurveTo(Math.cos(a + 1.8) * S * 0.12, Math.sin(a + 1.8) * S * 0.1, Math.cos(a + 3) * S * 0.32, Math.sin(a + 3) * S * 0.26); g.stroke();
-        g.strokeStyle = vein; g.lineWidth = 3; g.stroke(); g.strokeStyle = 'rgba(245,248,255,0.8)'; g.lineWidth = 1; g.stroke();
+      if (half) { g.beginPath(); g.rect(half < 0 ? -S : 0, -S, S, S * 2); g.clip(); g.translate(half * split, half < 0 ? 1 : 0); }
+      const bg = g.createLinearGradient(-rx * 0.4, cy - ry, rx * 0.3, S * 0.3); bg.addColorStop(0, C.hi); bg.addColorStop(0.45, C.mid); bg.addColorStop(1, C.lo);
+      g.fillStyle = bg; outline(); g.fill();
+      // the lit top and the shadowed front, as two planes
+      g.save(); outline(); g.clip();
+      g.fillStyle = 'rgba(255,255,255,0.16)'; g.beginPath(); g.ellipse(-rx * 0.22, cy - ry * 0.45, rx * 0.55, ry * 0.4, -0.35, 0, 7); g.fill();
+      g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.moveTo(-rx, S * 0.08); g.quadraticCurveTo(0, S * 0.02, rx, S * 0.1); g.lineTo(rx, S * 0.4); g.lineTo(-rx, S * 0.4); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 2; g.beginPath(); g.moveTo(-rx * 0.7, cy - ry * 0.1); g.lineTo(-rx * 0.15, cy + ry * 0.05); g.lineTo(rx * 0.45, cy - ry * 0.25); g.stroke();
+      // nuggets of its metal set in the rock: six-sided, a dark rim, the metal, a bright top facet
+      g.lineJoin = 'round';
+      for (let k = 0; k < (mith ? 7 : 6); k++) {
+        const a = hh(id, k, 41) * Math.PI * 2, d = 0.15 + Math.sqrt(hh(k, id, 42)) * 0.6, r = (mith ? 6 : 7) + hh(id, k, 43) * gd.size * 2.6;
+        const nx = Math.cos(a) * rx * d, ny = cy + Math.sin(a) * ry * d * 0.85, tw = hh(k, id, 44) * 1.2;
+        const hex = (rr) => { g.beginPath(); for (let j = 0; j < 6; j++) { const t = tw + j / 6 * Math.PI * 2, q = rr * (0.82 + hh(id + j, k, 45) * 0.26); const px = nx + Math.cos(t) * q, py = ny + Math.sin(t) * q * 0.82; j ? g.lineTo(px, py) : g.moveTo(px, py); } g.closePath(); };
+        g.fillStyle = C.deep; hex(r); g.fill();
+        g.fillStyle = oreDeep; hex(r * 0.74); g.fill();
+        g.fillStyle = ore; g.beginPath(); g.moveTo(nx - r * 0.5, ny - r * 0.1); g.lineTo(nx - r * 0.1, ny - r * 0.55); g.lineTo(nx + r * 0.3, ny - r * 0.25); g.closePath(); g.fill();
       }
       if (!mith) {
-        // stormstone: a crown of crystals, and lightning in the rock
-        for (let k = 0; k < 5; k++) { const bx = -S * 0.2 + k * S * 0.1, by = -S * 0.3 + Math.abs(k - 2) * 5, h = S * (0.18 - Math.abs(k - 2) * 0.03); g.fillStyle = k % 2 ? '#c8b0ff' : '#a98ae8'; g.beginPath(); g.moveTo(bx - 6, by); g.lineTo(bx - 2, by - h); g.lineTo(bx + 3, by - h * 0.92); g.lineTo(bx + 6, by); g.closePath(); g.fill(); }
-        if (Math.sin(time * 5 + e.x) > 0.6) { g.strokeStyle = 'rgba(230,215,255,0.9)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(-S * 0.2, -S * 0.05); g.lineTo(-S * 0.06, S * 0.04); g.lineTo(-S * 0.12, S * 0.1); g.lineTo(S * 0.06, S * 0.2); g.stroke(); }
+        // stormstone: lightning living in the rock
+        if (Math.sin(time * 5 + e.x) > 0.55) { g.strokeStyle = 'rgba(240,230,255,0.95)'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(-rx * 0.5, cy + ry * 0.05); g.lineTo(-rx * 0.2, cy + ry * 0.25); g.lineTo(-rx * 0.3, cy + ry * 0.38); g.lineTo(rx * 0.05, cy + ry * 0.55); g.stroke(); }
       }
-      if (frac > 0.66) {
-        for (let k = 0; k < 5; k++) { const a = hh(id, k, 21) * 6.28, d = hh(k, id, 22) * S * 0.28; g.fillStyle = `rgba(240,246,255,${(0.35 + 0.55 * Math.max(0, Math.sin(time * 3 + k))).toFixed(3)})`; g.beginPath(); g.arc(Math.cos(a) * d, Math.sin(a) * d, 1.8, 0, 7); g.fill(); }
-      } else {
+      g.restore();
+      g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 2.2; outline(); g.stroke();
+      if (!mith) {
+        // and a crown of crystals breaking out of its top
+        for (let k = 0; k < 5; k++) {
+          const bx = -rx * 0.42 + k * rx * 0.21, by = cy - ry * 0.78 + Math.abs(k - 2) * 6, hgt = S * (0.2 - Math.abs(k - 2) * 0.035);
+          g.fillStyle = k % 2 ? '#d4c0ff' : '#a98ae8'; g.beginPath(); g.moveTo(bx - 7, by + 4); g.lineTo(bx - 3, by - hgt); g.lineTo(bx + 3, by - hgt * 0.9); g.lineTo(bx + 7, by + 4); g.closePath(); g.fill();
+          g.strokeStyle = 'rgba(40,20,80,0.5)'; g.lineWidth = 1.2; g.stroke();
+          g.fillStyle = 'rgba(255,255,255,0.5)'; g.beginPath(); g.moveTo(bx - 3.5, by); g.lineTo(bx - 2, by - hgt * 0.85); g.lineTo(bx - 0.5, by); g.closePath(); g.fill();
+        }
+      }
+      if (frac <= 0.66) {
         // deep cracks, and chips gone from the rim
-        g.strokeStyle = 'rgba(14,10,18,0.85)'; g.lineWidth = 3; g.beginPath(); g.moveTo(-S * 0.3, -S * 0.1); g.lineTo(-S * 0.12, -S * 0.02); g.lineTo(-S * 0.05, S * 0.14); g.moveTo(S * 0.1, -S * 0.3); g.lineTo(S * 0.18, -S * 0.12); g.lineTo(S * 0.3, -S * 0.06); g.stroke();
-        g.fillStyle = '#231c24'; for (const k of [2, 6]) { const [px, py] = pts[k % n]; g.beginPath(); g.moveTo(px, py); g.lineTo(px * 0.78 + 4, py * 0.78); g.lineTo(px * 0.86, py * 0.86 + 6); g.closePath(); g.fill(); }
+        g.strokeStyle = 'rgba(10,8,14,0.9)'; g.lineWidth = 3.4; g.beginPath();
+        g.moveTo(-rx * 0.65, cy - ry * 0.2); g.lineTo(-rx * 0.28, cy - ry * 0.05); g.lineTo(-rx * 0.12, cy + ry * 0.3);
+        g.moveTo(rx * 0.2, cy - ry * 0.7); g.lineTo(rx * 0.36, cy - ry * 0.3); g.lineTo(rx * 0.62, cy - ry * 0.15); g.stroke();
+        g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 1; g.beginPath(); g.moveTo(-rx * 0.64, cy - ry * 0.24); g.lineTo(-rx * 0.27, cy - ry * 0.09); g.stroke();
+        g.fillStyle = '#1e1822'; for (const k of [2, n - 3]) { const [px, py] = pts[k]; g.beginPath(); g.moveTo(px, py); g.lineTo(px * 0.76, py * 0.8 + 3); g.lineTo(px * 0.9, py * 0.9 + 9); g.closePath(); g.fill(); }
       }
       g.restore();
     }
+    if (frac > 0.66) for (let k = 0; k < 6; k++) { const a = hh(id, k, 21) * 6.28, d = hh(k, id, 22) * rx * 0.7, tw = Math.max(0, Math.sin(time * 3 + k * 1.7)); if (tw < 0.2) continue; const x = Math.cos(a) * d, y = cy + Math.sin(a) * d * 0.8; g.fillStyle = `rgba(255,255,255,${(0.9 * tw).toFixed(3)})`; g.beginPath(); g.moveTo(x, y - 3.5 * tw); g.lineTo(x + 1.2, y); g.lineTo(x, y + 3.5 * tw); g.lineTo(x - 1.2, y); g.closePath(); g.fill(); }
     if (split) {
       // split open: the seam glows through the gap, and grit falls out of it
-      const gr = g.createLinearGradient(0, -S * 0.4, 0, S * 0.4); gr.addColorStop(0, `rgba(${glowC},0)`); gr.addColorStop(0.5, `rgba(${glowC},0.85)`); gr.addColorStop(1, `rgba(${glowC},0)`);
-      g.fillStyle = gr; g.fillRect(-split, -S * 0.42, split * 2, S * 0.84);
-      for (let k = 0; k < 4; k++) { const ph = (time * 1.3 + k / 4) % 1; g.fillStyle = `rgba(150,140,125,${(1 - ph).toFixed(3)})`; g.beginPath(); g.arc(Math.sin(k * 2.1) * 4, -S * 0.1 + ph * S * 0.5, 1.6, 0, 7); g.fill(); }
+      const gr = g.createLinearGradient(0, cy - ry, 0, S * 0.3); gr.addColorStop(0, `rgba(${glowC},0)`); gr.addColorStop(0.5, `rgba(${glowC},0.9)`); gr.addColorStop(1, `rgba(${glowC},0.2)`);
+      g.fillStyle = gr; g.fillRect(-split, cy - ry * 0.9, split * 2, ry * 1.6 + S * 0.1);
+      for (let k = 0; k < 5; k++) { const ph = (time * 1.2 + k / 5) % 1; g.fillStyle = `rgba(160,150,135,${(1 - ph).toFixed(3)})`; g.beginPath(); g.arc(Math.sin(k * 2.1) * 5, cy + ph * (S * 0.42 - cy), 1.8, 0, 7); g.fill(); }
     }
+    // rubble chipped off it, lying on the plinth
+    if (frac <= 0.66) for (let k = 0; k < (split ? 6 : 3); k++) { g.fillStyle = k % 2 ? C.mid : C.lo; g.beginPath(); g.ellipse(-rx * 0.8 + hh(id, k, 31) * rx * 1.6, S * 0.3 + hh(k, id, 32) * 6, 4 + hh(id, k, 33) * 3, 3, 0, 0, 7); g.fill(); }
     if (st === 'stir' || st === 'waking') {
       // something inside is waking: two eyes, glowing in its metal's colour, in the deepest crack
-      const wide = st === 'waking' ? 1.6 : 1, blink = st === 'stir' && Math.sin(time * 2.3 + e.x) > 0.94 ? 0.2 : 1;
-      const eg = g.createRadialGradient(0, -S * 0.04, 1, 0, -S * 0.04, S * 0.3); eg.addColorStop(0, `rgba(${glowC},0.5)`); eg.addColorStop(1, `rgba(${glowC},0)`); g.fillStyle = eg; g.beginPath(); g.arc(0, -S * 0.04, S * 0.3, 0, 7); g.fill();
-      g.fillStyle = mith ? '#dff0ff' : '#f0e4ff'; for (const ex of [-8, 8]) { g.beginPath(); g.ellipse(ex * wide, -S * 0.06, 4 * wide, 3 * blink * wide, 0, 0, 7); g.fill(); }
-      g.fillStyle = mith ? '#5aa0ff' : '#b070ff'; for (const ex of [-8, 8]) { g.beginPath(); g.arc(ex * wide, -S * 0.06, 1.6 * blink * wide, 0, 7); g.fill(); }
+      const wide = st === 'waking' ? 1.5 : 1, blink = st === 'stir' && Math.sin(time * 2.3 + e.x) > 0.94 ? 0.2 : 1, ey = cy - ry * 0.02;
+      const eg = g.createRadialGradient(0, ey, 1, 0, ey, S * 0.32); eg.addColorStop(0, `rgba(${glowC},0.55)`); eg.addColorStop(1, `rgba(${glowC},0)`); g.fillStyle = eg; g.beginPath(); g.arc(0, ey, S * 0.32, 0, 7); g.fill();
+      g.fillStyle = '#10141c'; g.beginPath(); g.ellipse(0, ey, 20 * wide, 8 * wide, 0, 0, 7); g.fill();
+      g.fillStyle = mith ? '#e6f4ff' : '#f4ecff'; for (const ex of [-9, 9]) { g.beginPath(); g.ellipse(ex * wide, ey, 5 * wide, 3.4 * blink * wide, 0, 0, 7); g.fill(); }
+      g.fillStyle = mith ? '#4a9aff' : '#b070ff'; for (const ex of [-9, 9]) { g.beginPath(); g.arc(ex * wide, ey, 2 * blink * wide, 0, 7); g.fill(); }
     }
     g.restore();
   }
@@ -34128,10 +34167,13 @@ HOOKS.selfTest.push((check, F, h) => {
     for (const s of run.stones) {
       const m = monsters.includes(s.m) ? s.m : golemMon(), tx = m ? m.x : s.x0, ty = m ? m.y - 70 : s.y0, k = clamp(s.t / s.T, 0, 1), arc = 50 + dist(s.x0, s.y0, tx, ty) * 0.18;
       const at = kk => [lerp(s.x0, tx, kk), lerp(s.y0, ty, kk) - Math.sin(kk * Math.PI) * arc];
-      for (let j = 4; j >= 1; j--) { const [xx, yy] = at(Math.max(0, k - j * 0.05)); g.fillStyle = `rgba(255,${130 + j * 15},60,${(0.45 - j * 0.09).toFixed(3)})`; g.beginPath(); g.arc(xx, yy, 5 - j * 0.8, 0, 7); g.fill(); }
+      // a fireball's tail of sparks along the arc, then the stone itself: red-hot, dark-edged so it shows against him
+      for (let j = 6; j >= 1; j--) { const [xx, yy] = at(Math.max(0, k - j * 0.04)); g.fillStyle = `rgba(255,${120 + j * 14},50,${(0.6 - j * 0.08).toFixed(3)})`; g.beginPath(); g.arc(xx, yy, 7.5 - j * 0.9, 0, 7); g.fill(); }
       const [x, y] = at(k);
-      const gr = g.createRadialGradient(x, y, 1, x, y, 18); gr.addColorStop(0, 'rgba(255,210,120,0.9)'); gr.addColorStop(1, 'rgba(255,120,40,0)'); g.fillStyle = gr; g.beginPath(); g.arc(x, y, 18, 0, 7); g.fill();
-      g.fillStyle = '#ff9a3a'; g.beginPath(); g.arc(x, y, 6, 0, 7); g.fill(); g.fillStyle = '#fff0c0'; g.beginPath(); g.arc(x - 1.5, y - 1.5, 2.2, 0, 7); g.fill();
+      const gr = g.createRadialGradient(x, y, 1, x, y, 24); gr.addColorStop(0, 'rgba(255,210,120,0.95)'); gr.addColorStop(1, 'rgba(255,110,40,0)'); g.fillStyle = gr; g.beginPath(); g.arc(x, y, 24, 0, 7); g.fill();
+      g.fillStyle = '#7a1e10'; g.beginPath(); g.arc(x, y, 8.5, 0, 7); g.fill();
+      g.fillStyle = '#ff7a2a'; g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill();
+      g.fillStyle = '#ffd070'; g.beginPath(); g.arc(x - 1, y - 1, 4, 0, 7); g.fill(); g.fillStyle = '#fff6d8'; g.beginPath(); g.arc(x - 2, y - 2.5, 1.8, 0, 7); g.fill();
     }
   }
   // the next thing to do, marked in gold: the golem, the nearest forge, or the nearest glowing vein
@@ -34147,10 +34189,17 @@ HOOKS.selfTest.push((check, F, h) => {
   }
   function drawMarker(g) {
     const tg = nextTarget(); if (!tg) return;
-    const b = Math.abs(Math.sin(time * 4)) * 8, x = tg.x, y = tg.y - b;
-    g.fillStyle = 'rgba(0,0,0,0.5)'; g.beginPath(); g.moveTo(x - 13, y - 16); g.lineTo(x + 13, y - 16); g.lineTo(x, y + 2); g.closePath(); g.fill();
-    g.fillStyle = '#f5c542'; g.beginPath(); g.moveTo(x - 11, y - 17); g.lineTo(x + 11, y - 17); g.lineTo(x, y); g.closePath(); g.fill();
-    g.fillStyle = '#fff2b0'; g.beginPath(); g.moveTo(x - 5, y - 15); g.lineTo(x + 1, y - 15); g.lineTo(x - 2, y - 9); g.closePath(); g.fill();
+    const b = Math.abs(Math.sin(time * 4)) * 8;
+    // off the screen (a narrow iPad at a forge, say): the same chevron waits at the screen's edge, pointing the way
+    const m = 30, x0 = cam.x + m, x1 = cam.x + VW - m, y0 = cam.y + m + 24, y1 = cam.y + VH - m;
+    const off = tg.x < x0 || tg.x > x1 || tg.y - 17 < y0 || tg.y > y1;
+    g.save();
+    if (off) { const x = clamp(tg.x, x0, x1), y = clamp(tg.y, y0, y1); g.translate(x, y); g.rotate(Math.atan2(tg.y - y, tg.x - x) - Math.PI / 2); g.translate(0, b * 0.6); }
+    else g.translate(tg.x, tg.y - b);
+    g.fillStyle = 'rgba(0,0,0,0.5)'; g.beginPath(); g.moveTo(-13, -16); g.lineTo(13, -16); g.lineTo(0, 2); g.closePath(); g.fill();
+    g.fillStyle = '#f5c542'; g.beginPath(); g.moveTo(-11, -17); g.lineTo(11, -17); g.lineTo(0, 0); g.closePath(); g.fill();
+    g.fillStyle = '#fff2b0'; g.beginPath(); g.moveTo(-5, -15); g.lineTo(1, -15); g.lineTo(-2, -9); g.closePath(); g.fill();
+    g.restore();
   }
 
   // ---------- the draw hook: (g, items, cam); every item's draw() takes no arguments ----------
@@ -34191,9 +34240,20 @@ HOOKS.selfTest.push((check, F, h) => {
         g.restore();
       } });
     }
-    const socket = (px, ty) => { const y = ty * TILE; g.fillStyle = '#1a1614'; g.beginPath(); g.arc(px, y + 12, 4.2, 0, 7); g.fill(); g.strokeStyle = '#8a8d95'; g.lineWidth = 1.2; g.stroke(); };
-    if (slide.on && DH.drawThrone) items.push({ y: 23 * TILE + TILE - 6, draw: () => { const fx = 14 + 2 * ease(slide.t / NUM.SLIDE); DH.drawThrone(g, fx, 23); if (R().stage >= 4) socket(tc(fx), 23); } });
-    else if (R().stage >= 4 && tileAt(16, 23) === DW_THRONE) items.push({ y: 23 * TILE + TILE - 6 + 0.01, draw: () => socket(tc(16), 23) });
+    // the Kingstone's crest on the top rail of the throne's back (24 sets its stud lower, where the seated king
+    // hides it): the mithril stone until the all-clear, then an empty socket
+    const crest = (px, ty, empty) => {
+      const y = ty * TILE + 1, arch = r => { g.beginPath(); g.arc(px, y, r, Math.PI, 0); g.lineTo(px + r, y + 4); g.lineTo(px - r, y + 4); g.closePath(); };
+      g.fillStyle = 'rgba(0,0,0,0.3)'; g.save(); g.translate(0, 1.5); arch(8.5); g.fill(); g.restore();
+      g.fillStyle = '#f5c542'; arch(8); g.fill(); g.strokeStyle = GOLD_D; g.lineWidth = 1.2; g.stroke();
+      if (empty) { g.fillStyle = '#1a1614'; g.beginPath(); g.arc(px, y - 1, 4, 0, 7); g.fill(); g.strokeStyle = '#8a8d95'; g.lineWidth = 1.2; g.stroke(); }
+      else { g.fillStyle = ITEMS.kingstone.color; g.beginPath(); g.arc(px, y - 1, 4, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.7)'; g.beginPath(); g.arc(px - 1.3, y - 2.3, 1.3, 0, 7); g.fill(); }
+    };
+    if (slide.on && DH.drawThrone) items.push({ y: 23 * TILE + TILE - 6, draw: () => { const fx = 14 + 2 * ease(slide.t / NUM.SLIDE); DH.drawThrone(g, fx, 23); crest(tc(fx), 23, R().stage >= 4); } });
+    else {
+      const at = tileAt(14, 23) === DW_THRONE ? 14 : tileAt(16, 23) === DW_THRONE ? 16 : null;
+      if (at !== null) items.push({ y: 23 * TILE + TILE - 6 + 0.01, draw: () => crest(tc(at), 23, at === 16 || R().stage >= 4) });
+    }
     const pb = pebblePx(); if (pb) items.push({ y: pb.y + 13, draw: () => drawPebble(g, pb.x, pb.y, 'idle') });
   });
 
@@ -34240,6 +34300,14 @@ HOOKS.selfTest.push((check, F, h) => {
     if (!inMine() || paused || panel || (typeof title !== 'undefined' && title && title.active)) return;
     drawChip(g);
   });
+  // the core's boss bar (10-hud) shows any big monster within 12 tiles; the golem asleep behind his door, seen from
+  // the Deep, is left out of it until he wakes or you walk into his chamber
+  const _drawBossBars = drawBossBars;
+  drawBossBars = function (g, y) {
+    const gm = inMine() ? golemMon() : null;
+    if (gm && !gm.dead && !isAwake(gm) && !inChamberPx(player.x, player.y)) { gm.dead = true; try { return _drawBossBars(g, y); } finally { gm.dead = false; } }
+    return _drawBossBars(g, y);
+  };
   // the dots of a rhythm, laid out by when each knock comes
   function drawRhythm(g, cx, cy, w, pat, lit) {
     const span = 1.6, x0 = cx - w / 2;
@@ -34865,6 +34933,14 @@ HOOKS.selfTest.push((check, F, h) => {
         window.__forceTouch = S0.touch;
         check(P + 'the HUD chip: in the chamber with 2 hot stones on touch there is a THROW (2) control and the chip says THROW IT; a little golem near him turns it to SMASH THE LITTLE GOLEM!; on a keyboard it says (T)',
           throwBtn && smash && keys, { throwBtn, smash, keys, touchText: t1.text, keyText: t3.text });
+        // the core's boss bar: asleep behind his door he is left out of it from the Deep; in his chamber, or awake, he is in it
+        const bar = () => { const rec = recorder(); HUD.leftY = 200; HUD.leftCol = 0; drawBossBars(rec, 200); return rec.__log.text.some(s => /GINORMOUS GOLEM/.test(s)); };
+        g.rm.phase = 'sleep'; g.state = 'sleep'; run.hot = 0;
+        F.tp(23, 21); const deepAsleep = bar(), stillAlive = !g.dead;
+        F.tp(24, 28); const chamberAsleep = bar();
+        ROYALMINE.debug.wake(); F.tp(23, 21); const deepAwake = bar();
+        check(P + 'the boss bar leaves the golem out while he sleeps behind his door (seen from the Deep, 11.5 tiles away) and shows him in his chamber, or anywhere near once he is awake',
+          !deepAsleep && stillAlive && chamberAsleep && deepAwake, { deepAsleep, stillAlive, chamberAsleep, deepAwake });
         run.hot = 0; out(); }
 
       // ---- 35. the Heartstone pickaxe ----
