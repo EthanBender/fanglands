@@ -9647,9 +9647,16 @@ HOOKS.selfTest.push((check, F, h) => {
       const door = tileAt(b.x + b.door, b.y + b.h - 1) === T.DOOR, bed = tileAt(127, 69) === T.BED;
       const named = survivors.map(p => p.name).sort().join(','), inSq = people().every(p => sqIn(Math.floor(p.px / TILE), Math.floor(p.py / TILE)));
       check('rebuild: The first house (30 planks + 10 stone) turns the ruin into HWALL walls, FLOOR, a door and a bed; Tam, Nell and Pip stand in the square with two villagers', c && RB().done.house && walls && door && bed && named === 'Nell,Old Tam,Pip' && villagers.length === 2 && inSq, { c, walls, door, bed, named, villagers: villagers.length, inSq }); }
-    { const v = villagers[0]; const x0 = v.px, y0 = v.py; F.tp(150, 60); F.sim(600, []); const moved = villagers.some(w => dist(w.px, w.py, w.home.x, w.home.y) > 12) || dist(v.px, v.py, x0, y0) > 12; const stayed = villagers.every(w => sqIn(Math.floor(w.px / TILE), Math.floor(w.py / TILE)));
+    // the wander is dice (update hook above: a 2-6 s hold per roll, 3 in 10 holds idle, a walk home from 4 tiles out), so one
+    // sampled frame proves nothing: a villager who wandered can be back on its home tile at frame 600 (~1 run in 100).
+    // Watch every frame instead: EACH villager must get more than 12 px from home, and NEITHER may stand outside the square
+    // on any frame. At least 600 frames as before, then on until both have wandered, capped at 4800 (80 s). An idle villager
+    // re-rolls within 6 s, so 80 s is at least 13 rolls: a false failure is at most 2 x 0.3^13 = 3.2e-7.
+    { F.tp(150, 60); const went = villagers.map(() => false); let stayed = true, f = 0;
+      for (; f < 4800 && (f < 600 || !went.every(Boolean)); f++) { F.step([]); villagers.forEach((w, k) => { if (dist(w.px, w.py, w.home.x, w.home.y) > 12) went[k] = true; if (!sqIn(Math.floor(w.px / TILE), Math.floor(w.py / TILE))) stayed = false; }); }
+      render(); const moved = villagers.length > 0 && went.every(Boolean);
       const p = survivors.find(s => s.name === 'Nell'); closePanel(); for (const w of villagers) { w.px = p.px + 9 * TILE; w.py = p.py + 9 * TILE; } F.tp(Math.floor(p.px / TILE), Math.floor(p.py / TILE) + 1); F.face(Math.floor(p.px / TILE), Math.floor(p.py / TILE)); drain(); F.press('KeyE'); F.sim(2, []); const spoke = !!dialog.cur && dialog.cur.who === 'Nell';
-      check('rebuild: villagers wander inside the square; E on the square Nell gets a rebuilding line', moved && stayed && spoke, { moved, stayed, spoke, who: dialog.cur && dialog.cur.who }); drain(); }
+      check('rebuild: villagers wander inside the square; E on the square Nell gets a rebuilding line', moved && stayed && spoke, { moved, went, frames: f, stayed, spoke, who: dialog.cur && dialog.cur.who }); drain(); }
     // project 0: the sawmill turns logs into planks
     { h.give('plank', 10); h.give('stone', 5); open(); const c = F.clickButton('Build: Sawmill'); const mill = tileAt(SAWMILL_POS.x, SAWMILL_POS.y) === T_SAWMILL;
       removeItem('plank', countItem('plank')); h.give('wood', 1); const cx0 = player.skills.crafting.xp; pressAt(SAWMILL_POS.x, SAWMILL_POS.y + 1, SAWMILL_POS.x, SAWMILL_POS.y);
