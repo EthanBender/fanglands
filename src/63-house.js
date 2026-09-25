@@ -409,44 +409,93 @@
   });
 
   // ---------- the build panel ----------
+  // Two tabs as plates (Stations / Portal nexus, the chosen one gold), a line that says where the thing will go, then
+  // one card of dark vellum per station or arch: its name in Cinzel, what it is for in plain words, its cost as
+  // pouches with "have / need" under each, and Build it / Raise the arch (green when it can be done; greyed, still
+  // named, when it cannot: Cannot pay, No room, Not been). Take down sits at the bottom in the danger tone. It needs
+  // no second tap: taking a thing down destroys nothing, its materials come straight back. Back / Next page the cards.
+  let buildPage = 0;
+  const TAKE_LINE = 'Take down what is in front of you. Its materials come back.';
+  const FACE_LINE = 'Face something you built to take it down.';
+  const destLine = d => (archTo(d.key) ? 'Standing. Walk through it to go there.' : H().been[d.key] ? d.line : 'You have not been there yet. Stand there once and an arch can reach it.');
+  function buildGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
+    // a wide panel puts the cost and the plate beside the words (one short card); a narrow one stacks them under
+    const w = Math.min(PANEL_KIT.room().aw, 600), inner = w - 36, wide = inner >= 480, f = K.SENT(13), lh = K.lineH(f);
+    const rowH = Math.max(S + 16, R), bw = K.plateW('Raise the arch'), costsW = K.costW(Math.max(ARCH_COST.length, ...KITS.map(k => k.cost.length)), S);
+    const textW = wide ? inner - 24 - bw - 12 - costsW - 12 : inner - 24;
+    const cardH = t => (wide ? Math.max(10 + 18 + K.linesOf(g, t, textW, f) * lh + 8, rowH + 16) : 10 + 18 + K.linesOf(g, t, textW, f) * lh + 6 + rowH + 10);
+    const heights = buildTab === 0 ? KITS.map(k => cardH(k.blurb)) : DESTS.map(d => cardH(destLine(d)));
+    const takeH = Math.max(K.linesOf(g, TAKE_LINE, inner, f), K.linesOf(g, FACE_LINE, inner, f)) * lh;
+    const top = R + G + lh + 6, bottom = 8 + takeH + 4 + R;
+    const pagerH = R + 8, room0 = PANEL_KIT.room().ah - 62 - 12 - top - bottom;
+    let pages = K.pages(heights, room0, G);
+    if (pages.length > 1) pages = K.pages(heights, room0 - pagerH, G);
+    const pageH = Math.max(...pages.map(p => p.reduce((a, i) => a + heights[i], 0) + (p.length - 1) * G));
+    return { K, R, G, S, w, inner, wide, bw, costsW, textW, f, lh, rowH, heights, pages, takeH, top, pagerH: pages.length > 1 ? pagerH : 0, h: 62 + top + pageH + (pages.length > 1 ? 8 + R : 0) + bottom + 12 };
+  }
   HOOKS.panel.house_build = (g, narrow) => {
     if (!inside) { closePanel(); return; }
-    const h = H(), spot = buildSpot();
-    const rows = buildTab === 0 ? KITS.length : DESTS.length;
-    const { px, py, w } = panelBox(g, narrow ? 340 : 470, 132 + rows * 38 + 44, 'Build on your island',
-      `${h.made} built · ${archCount()} of ${DESTS.length} arches standing`);
-    button(g, px + 18, py + 58, (w - 44) / 2, 30, 'Stations', () => { buildTab = 0; }, buildTab === 0 ? '#1f6feb' : '#21262d');
-    button(g, px + 26 + (w - 44) / 2, py + 58, (w - 44) / 2, 30, 'Portal nexus', () => { buildTab = 1; }, buildTab === 1 ? '#1f6feb' : '#21262d');
-    g.fillStyle = spot.ok ? '#8b949e' : '#d29922'; g.font = '12px sans-serif'; g.textAlign = 'left';
-    g.fillText(spot.ok ? 'It goes on the ground in front of you.' : spot.why, px + 18, py + 110);
-
-    let y = py + 122;
-    if (buildTab === 0) {
-      for (const k of KITS) {
-        const pay = canPay(k.cost), can = pay && spot.ok;
-        roundRect(g, px + 18, y, w - 36, 34, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-        g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(k.name, px + 30, y + 15);
-        g.fillStyle = pay ? '#8b949e' : '#8b2e2e'; g.font = '11px sans-serif'; g.fillText(pay ? costText(k.cost) : shortText(k.cost) + ' needed', px + 30, y + 28);
-        button(g, px + w - 130, y + 2, 112, 30, can ? 'Build it' : pay ? 'No room' : 'Cannot pay', () => buildHere(k, null), can ? '#238636' : '#21262d', can);
-        y += 38;
+    const h = H(), spot = buildSpot(), Q = buildGeom(g), { K, R, G, S } = Q;
+    buildPage = clamp(buildPage, 0, Q.pages.length - 1);
+    const { px, py, h: ph } = panelBox(g, Q.w, Q.h, 'Build on your island', `${h.made} built, ${archCount()} of ${DESTS.length} arches standing`);
+    const x0 = px + 18; let y = py + 62;
+    K.plateRow(g, x0, y, Q.inner, [
+      { shown: 'Stations', label: 'Stations', on: buildTab === 0, action: () => { buildTab = 0; buildPage = 0; } },
+      { shown: 'Portal nexus', label: 'Portal nexus', on: buildTab === 1, action: () => { buildTab = 1; buildPage = 0; } }]);
+    y += R + G;
+    K.say(g, spot.ok ? 'It goes on the ground in front of you.' : spot.why, x0, y + 13, Q.inner, { font: Q.f, color: spot.ok ? HK.T.inkDim : HK.T.warn, id: 'build:spot' });
+    y += Q.lh + 6;
+    const list = buildTab === 0 ? KITS : DESTS;
+    list.forEach((it, i) => {
+      let shown, label, can, action, cost = null, nameCol = HK.T.ink, have = false;
+      if (buildTab === 0) {
+        const pay = canPay(it.cost); can = pay && spot.ok; cost = it.cost;
+        label = can ? 'Build it' : pay ? 'No room' : 'Cannot pay'; shown = label; action = () => buildHere(it, null);
+      } else {
+        have = archTo(it.key); const been = !!h.been[it.key], pay = canPay(ARCH_COST); can = been && !have && pay && spot.ok;
+        label = !been ? 'Not been' : !pay ? 'Cannot pay' : can ? 'Raise the arch' : 'No room'; shown = label; action = () => buildHere(null, it.key);
+        if (been && !have) cost = ARCH_COST;
+        nameCol = have ? HK.T.good : been ? HK.T.ink : HK.T.inkDim;
       }
-    } else {
-      for (const d of DESTS) {
-        const have = archTo(d.key), been = !!h.been[d.key], pay = canPay(ARCH_COST), can = been && !have && pay && spot.ok;
-        roundRect(g, px + 18, y, w - 36, 34, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-        g.fillStyle = have ? '#3fb950' : been ? '#e6edf3' : '#6e7681'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(d.name, px + 30, y + 15);
-        g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.fillText(have ? 'standing' : been ? costText(ARCH_COST) : 'you have not been there yet', px + 30, y + 28);
-        if (have) { g.fillStyle = '#3fb950'; g.textAlign = 'right'; g.fillText('built', px + w - 26, y + 20); g.textAlign = 'left'; }
-        else button(g, px + w - 130, y + 2, 112, 30, !been ? 'Not been' : !pay ? 'Cannot pay' : can ? 'Raise the arch' : 'No room', () => buildHere(null, d.key), can ? '#6a3fb9' : '#21262d', can);
-        y += 38;
-      }
-    }
+      if (!Q.pages[buildPage].includes(i)) { if (!have) K.offscreen(label, action, can); return; }
+      const ch = Q.heights[i];
+      K.card(g, x0, y, Q.inner, ch, have ? HK.T.good : can ? HK.T.gold : null);
+      const tx = x0 + 12;
+      K.say(g, it.name, tx, y + 23, Q.textW, { font: K.NAME(13), color: nameCol, id: 'build:name' });
+      const paraH = K.para(g, buildTab === 0 ? it.blurb : destLine(it), tx, y + 28 + 13, Q.textW, 99, { font: Q.f, color: HK.T.inkDim, id: 'build:blurb' });
+      const ty = Q.wide ? y + Math.round((ch - Q.rowH) / 2) : y + 28 + paraH + 6, bw = Q.bw, bx = x0 + Q.inner - 12 - bw, by = ty + Math.round((Q.rowH - R) / 2);
+      if (cost) K.costRow(g, Q.wide ? bx - 12 - Q.costsW : tx, ty + Math.round((Q.rowH - S - 16) / 2), cost);
+      if (have) K.mark(g, true, bx + 8, by + R / 2 + 5, 'Built', { w: bw - 26 });
+      else K.plate(g, bx, by, bw, R, shown, label, action, can ? 'primary' : null, can);
+      y += ch + G;
+    });
+    if (Q.pages.length > 1) K.pager(g, x0, py + ph - 12 - R - 4 - Q.takeH - 8 - R, Q.inner, buildPage, Q.pages.length, p => { buildPage = clamp(p, 0, Q.pages.length - 1); });
+    // take down: the thing in front of you, materials back
     const f = frontTile(player, 40);
     const front = onGrid(f.tx, f.ty) ? tileAt(f.tx, f.ty) : -1;
     const removable = !protectedTile(f.tx, f.ty) && (!!kitByTile(front) || front === T_ARCH);
-    button(g, px + 18, y + 6, w - 36, 32, removable ? 'Take down what is in front of you (materials back)' : 'Face something you built to take it down',
-      takeDown, removable ? '#8b2e2e' : '#21262d', removable);
+    const ly = py + ph - 12 - R - 4 - Q.takeH;
+    K.para(g, removable ? TAKE_LINE : FACE_LINE, x0, ly + 13, Q.inner, 99, { font: Q.f, color: removable ? HK.T.ink : HK.T.inkDim, id: 'build:take' });
+    K.plate(g, x0, py + ph - 12 - R, Q.inner, R, 'Take down', removable ? 'Take down what is in front of you (materials back)' : 'Face something you built to take it down', takeDown, removable ? 'danger' : null, removable);
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): on the island (as the panel sees it) with planks and stone
+  // for some things and not others, two places visited and one arch's worth of stone short; both tabs, first and last page
+  PLACE_KIT.scene({
+    id: 'house', panel: 'house_build', name: 'Build on your island (both tabs, first and last page)',
+    setup() {
+      const inv = player.inv.map(s => (s ? { ...s } : null)), house = JSON.parse(JSON.stringify(player.house || {})), was = inside, tab = buildTab;
+      inside = true; H().been = { thistledown: true, quarry: true, pond: true };
+      player.inv = new Array(INV_SLOTS).fill(null); addItem('plank', 9); addItem('stone', 12); addItem('iron_bar', 2); addItem('lodestone', 1);
+      return () => { inside = was; player.inv = inv; player.house = house; buildTab = tab; buildPage = 0; };
+    },
+    variants: [
+      { name: 'Stations', open: () => { buildTab = 0; openPanel('house_build'); buildPage = 0; } },
+      { name: 'Stations, last page', open: () => { buildTab = 0; openPanel('house_build'); buildPage = 99; } },
+      { name: 'Portal nexus', open: () => { buildTab = 1; openPanel('house_build'); buildPage = 0; } },
+      { name: 'Portal nexus, last page', open: () => { buildTab = 1; openPanel('house_build'); buildPage = 99; } },
+    ],
+  });
 
   // ---------- HUD ----------
   // On your island: a plaque in the kit's column (src/59-hudkit.js) with the arch mark, "Your island", the arches
@@ -767,4 +816,7 @@
     check(P + 'the self-test leaves the world exactly as it found it', worldOk, worldInfo);
     save(); h.peace(false);
   });
+
+  // ---------- the panel audit: every place panel at every size (the scenes are registered by their own files) ----------
+  HOOKS.selfTest.push((check, F, h) => PLACE_KIT.audit(check, F, h));
 }

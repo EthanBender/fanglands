@@ -211,100 +211,138 @@
     save();
   }
 
-  // ---------- the tab strip ----------
-  // Chip widths come from the label length and the live text size, never from measureText: the same number
-  // decides the hit rect and the wrap, so the strip lays out the same in the browser and in the harness, and
-  // large text really does make the chips bigger instead of overflowing them.
-  const CHIP_H = 24, CHIP_GAP = 4, CHIP_FONT = 12;
-  const textK = () => { try { return SETTINGS.textScale(); } catch (e) { return 1; } };
-  const chipW = text => 14 + text.length * Math.round(CHIP_FONT * textK() * 0.62);
-  // pack the chips into rows no wider than `width`; each chip carries the x it sits at inside its row
-  function wrapChips(chips, width) {
-    const rows = []; let row = null, x = 0;
-    for (const c of chips) {
-      const w = chipW(c.wide || c.text);
-      if (!row || (x > 0 && x + w > width)) { row = []; rows.push(row); x = 0; }
-      row.push({ ...c, w, x });
-      x += w + CHIP_GAP;
-    }
-    return rows;
-  }
-  // On a phone the toggle rides at the head of the strip; on anything wider it sits under the knight, where
-  // there is room, and the strip is all tabs.
-  function stripChips(narrow) {
+  // ---------- the look: one plan for every screen ----------
+  // The panel wears the kit's frame (panelBox) and the kit's sizes: vault and pack pouches 44 px on touch (40 with a
+  // mouse), 8 px apart on touch; every choice (1 / 10 / 100 / All, Take / Wear, the tabs, Sort, Deposit) is an iron
+  // plate HK.row() tall, the chosen one with the gold edge. Plates never grow with the text size — a word shrinks to
+  // fit its plate — so a plate's width comes from its word's length, the same in the browser and in the harness.
+  //
+  // Four shapes, the first that fits wins (more vault rows are worth more than any other choice):
+  //   wide   a computer or an iPad: the knight's column on the left; the amounts, tabs, vault, pager, pack and the two
+  //          Deposit plates on the right
+  //   three  a phone on its side: the knight | the vault | the pack, side by side
+  //   stack  a tall phone: the knight's row on top, then the vault, then the pack
+  //   split  a phone too short for the vault and the pack at once: two plates, Vault and Your pack, show one of them
+  // EQUIP_SLOTS is read live (38-agility adds the cape), so the worn pouches are counted, never assumed.
+  const QTY_SHOWN = { 1: '1', 10: '10', 100: '100', All: 'All' };
+  let bankView = 'vault';   // split shape only: which half is showing
+  // a tab's plate is a little tighter than a verb's, so all seven fit one row beside a phone's vault
+  const tabW = s => Math.max(PLACE_KIT.R(), Math.round(String(s).length * 7.2 + 16));
+  const sortChip = () => ({ text: sortOn() ? 'Sort on' : 'Sort off', id: 'sortTabs', active: sortOn, action: toggleSort, w: PLACE_KIT.plateW('Sort off') });
+  function chipList(withSort) {
     const out = [];
-    if (narrow) out.push(sortChip());
-    if (sortOn()) for (const t of tabsNow()) out.push({ text: TAB_LABEL[t], id: 'tab:' + t, active: () => tabNow() === t, action: () => setTab(t) });
+    if (withSort) out.push(sortChip());
+    if (sortOn()) for (const t of tabsNow()) out.push({ text: TAB_LABEL[t], id: 'tab:' + t, active: () => tabNow() === t, action: () => setTab(t), w: tabW(TAB_LABEL[t]) });
     return out;
   }
-  const sortChip = () => ({ text: sortOn() ? 'Sort on' : 'Sort off', wide: 'Sort off', id: 'sortTabs', active: sortOn, action: toggleSort });
-
-  // ---------- layout ----------
-  // One place decides every size, so the panel fits a phone, a phone on its side, a tablet and a desktop.
-  // A short screen drops the HOW MANY caption, shrinks the slots and shows fewer vault rows (the pager reaches
-  // the rest); a narrow screen stands the knight in a band above the vault instead of a column beside it.
-  // EQUIP_SLOTS is read live — 38-agility adds a sixth slot (cape), and another feature may add a seventh — so
-  // the gear list is measured, never assumed: one slot per row with its name when there is room, two columns
-  // of icons when there is not. The tab strip is measured the same way and wraps rather than growing the panel.
-  const PORTRAIT_W = 56;   // the knight's box in the narrow band
-  const SORT_ROW = 36;     // the toggle under the knight's gear on a wide screen (28 tall + 8 above it)
+  // The room the tab plates are given is planned for every tab there could be, so the panel keeps one shape whether the
+  // vault holds one kind of thing or all of them, and whether Sort is on or off (nothing jumps when a tab empties).
+  const allChips = withSort => (withSort ? [sortChip()] : []).concat(['all'].concat(KIND_ORDER).map(t => ({ text: TAB_LABEL[t], id: 'tab:' + t, w: tabW(TAB_LABEL[t]) })));
   function layout() {
-    const narrow = VW < 640, compact = VH < 560, avail = VH - 20;
-    const cols = narrow ? 5 : 10;
-    const packRows = Math.ceil(INV_SLOTS / cols);
-    const nEq = EQUIP_SLOTS.length;
-    const charW = narrow ? 0 : 156;
-    const modeRowH = narrow ? 34 : 0;           // wide: the TAKE/WEAR pair lives in the knight's column
-    const portraitH = compact ? 60 : 92;
-    const bandH = narrow ? 14 + portraitH : 0;
-    const qtyH = compact ? 26 : 40;             // short screen: the 1/10/100/All chips speak for themselves
-    const chips = stripChips(narrow);
-    let size = compact ? 32 : 40, gap = compact ? 4 : 5, rows = 3;
-    const gridOf = s => cols * (s + gap) - gap;
-    const narrowEq = s => clamp(Math.floor((Math.max(gridOf(s), Math.min(VW - 56, 340)) - PORTRAIT_W - 8) / nEq) - 4, 18, 34);
-    const bodyOf = s => narrow ? Math.max(gridOf(s), PORTRAIT_W + 8 + nEq * (narrowEq(s) + 4) - 4) : charW + 14 + gridOf(s);
-    const stripOf = s => {
-      if (!chips.length) return { rows: [], h: 16 };            // nothing to show: the plain VAULT caption
-      const rws = wrapChips(chips, narrow ? bodyOf(s) : gridOf(s));
-      return { rows: rws, h: rws.length * CHIP_H + (rws.length - 1) * CHIP_GAP + 4 };   // 4 of air under the strip
-    };
-    const total = () => 66 + bandH + qtyH + modeRowH + stripOf(size).h + rows * (size + gap) + 38 + 16 + packRows * (size + gap) + 40 + 10;
-    // two vault rows are worth more than big slots, so drop to two rows, then shrink, then one row last
-    while (rows > 2 && total() > avail) rows--;
-    while (size > 24 && total() > avail) size -= 4;
-    while (rows > 1 && total() > avail) rows--;
-    const h = total();
-    const gridW = gridOf(size), strip = stripOf(size), bodyW = bodyOf(size);
-    // the gear list has to live inside that height (wide, above the toggle) or inside one band (narrow)
-    let eqCols = 1, eqSize;
-    if (narrow) { eqCols = nEq; eqSize = narrowEq(size); }
-    else {
-      const room = h - 10 - 66 - (14 + portraitH + 4 + 14 + 38) - SORT_ROW;
-      eqSize = Math.floor(room / nEq) - 5;
-      if (eqSize < 28) { eqCols = 2; eqSize = Math.floor(room / Math.ceil(nEq / 2)) - 5; }
-      eqSize = clamp(eqSize, 18, 38);
+    const K = PLACE_KIT, t = touchMode(), S = K.POUCH(), G = K.GAP(), R = K.R();
+    const avail = PANEL_KIT.room().ah, maxW = PANEL_KIT.room().aw, nEq = EQUIP_SLOTS.length;
+    const grid = n => n * (S + G) - G, rowsOf = n => n * (S + G);
+    const TOP = 62, BOT = 12, HEAD = 18, PAGER = R + 8, GEAR = 3 * 17;
+    const packRows = cols => Math.ceil(INV_SLOTS / cols);
+    // one candidate plan: every block's place, relative to the content origin (px + 18, py + 62)
+    function plan(kind, rows) {
+      const p = { kind, rows, S, G, R, heads: kind === 'wide' };
+      if (kind === 'wide') {
+        const kw = Math.max(grid(3), 140), cols = 10, gw = grid(cols), vx = kw + 16;
+        const wornCols = 3, wornRows = Math.ceil(nEq / wornCols);
+        let ly = HEAD; p.portrait = { x: 0, y: ly, w: kw, h: 96 }; ly += 96 + G;
+        p.gear = { x: 0, y: ly, w: kw, lines: 3 }; ly += GEAR + G;
+        p.worn = { x: 0, y: ly, cols: wornCols }; ly += rowsOf(wornRows);
+        p.mode = { x: 0, y: ly, w: kw, stacked: false }; ly += R + G;
+        p.sort = { x: 0, y: ly, w: kw }; ly += R;
+        p.you = { x: 0, y: 0, w: kw };
+        let y = 0;
+        p.qty = { x: vx, y, w: gw, withMode: false }; y += R + G;
+        const tabs = K.flow(chipList(false), gw);
+        p.tabs = { x: vx, y, rows: tabs }; if (!tabs.length) p.vaultHead = { x: vx, y, w: gw };
+        y += Math.max(HEAD, K.flowH(K.flow(allChips(false), gw))) + G;
+        p.grid = { x: vx, y, cols }; y += rowsOf(rows);
+        p.pager = { x: vx, y, w: gw }; y += PAGER;
+        p.packHead = { x: vx, y, w: gw }; y += HEAD;
+        p.pack = { x: vx, y, cols }; y += rowsOf(packRows(cols));
+        p.deposit = { x: vx, y, w: gw }; y += R;
+        p.w = 36 + vx + gw; p.h = TOP + Math.max(ly, y) + BOT;
+        return p;
+      }
+      if (kind === 'three') {
+        const kw = grid(2), pw = grid(5);
+        const room = maxW - 36 - kw - 16 - 16 - pw, cols = Math.min(10, Math.floor((room + G) / (S + G)));
+        if (cols < 6) return null;   // six columns still read as a vault (a landscape phone with its notch inset leaves six)
+        const gw = grid(cols), vx = kw + 16, rx = vx + gw + 16, wornRows = Math.ceil(nEq / 2);
+        let ly = HEAD; p.you = { x: 0, y: 0, w: kw };
+        // a short screen (a landscape phone) gets a shorter knight, so the vault, the pack and Take / Wear all still fit
+        const phH = avail < 380 ? 48 : 64; p.portrait = { x: 0, y: ly, w: kw, h: phH }; ly += phH + G;
+        p.worn = { x: 0, y: ly, cols: 2 }; ly += rowsOf(wornRows);
+        p.sort = { x: 0, y: ly, w: kw }; ly += R;
+        let y = 0;
+        p.qty = { x: vx, y, w: gw, withMode: true }; y += R + G;
+        const tabs = K.flow(chipList(false), gw);
+        p.tabs = { x: vx, y, rows: tabs }; if (!tabs.length) p.vaultHead = { x: vx, y, w: gw };
+        y += Math.max(HEAD, K.flowH(K.flow(allChips(false), gw))) + G;
+        p.grid = { x: vx, y, cols }; y += rowsOf(rows);
+        p.pager = { x: vx, y, w: gw }; y += R;
+        let ry = 0;
+        p.packHead = { x: rx, y: ry, w: pw }; ry += HEAD;
+        p.pack = { x: rx, y: ry, cols: 5 }; ry += rowsOf(packRows(5));
+        p.deposit = { x: rx, y: ry, w: pw }; ry += R;
+        const inner = Math.max(ly, y, ry);
+        // the gear line fits under the worn pouches only when there is room left in the column
+        if (ly + G + GEAR <= inner) p.gear = { x: 0, y: ly + G, w: kw, lines: 3 };
+        p.w = 36 + rx + pw; p.h = TOP + inner + BOT;
+        return p;
+      }
+      // stack and split share the knight's row: the knight, the worn pouches in two rows, Take and Wear stacked
+      const inner = Math.min(maxW - 36, 340);
+      const wornCols = Math.ceil(nEq / 2), ww = grid(wornCols), pw0 = 60;
+      const modeX = pw0 + 12 + ww + 12, modeW = inner - modeX;
+      if (modeW < R) return null;
+      const cols = Math.min(10, Math.floor((inner + G) / (S + G)));
+      const rowH = Math.max(grid(2) + 0, 2 * R + G);
+      let y = 0;
+      p.portrait = { x: 0, y, w: pw0, h: rowH };
+      p.worn = { x: pw0 + 12, y: y + Math.round((rowH - grid(2)) / 2), cols: wornCols };
+      p.mode = { x: modeX, y: y + Math.round((rowH - (2 * R + G)) / 2), w: modeW, stacked: true };
+      y += rowH + 4;
+      p.gear = { x: 0, y, w: inner, lines: 1 }; y += 17 + G;
+      if (kind === 'split') { p.view = { x: 0, y, w: inner }; y += R + G; }
+      const top = y;
+      // the vault half
+      p.qty = { x: 0, y, w: inner, withMode: false }; y += R + G;
+      const tabs = K.flow(chipList(true), inner);
+      p.tabs = { x: 0, y, rows: tabs }; y += K.flowH(K.flow(allChips(true), inner)) + G;
+      p.grid = { x: 0, y, cols }; y += rowsOf(rows);
+      p.pager = { x: 0, y, w: inner }; y += R;
+      // the pack half: under the vault, or in its place
+      let py0 = kind === 'split' ? top : y + 8;
+      if (kind === 'split') { p.qtyPack = { x: 0, y: py0, w: inner }; py0 += R + G; }
+      p.packHead = { x: 0, y: py0, w: inner }; py0 += HEAD;
+      p.pack = { x: 0, y: py0, cols: 5 }; py0 += rowsOf(packRows(5));
+      p.deposit = { x: 0, y: py0, w: inner }; py0 += R;
+      p.w = 36 + inner; p.h = TOP + Math.max(y, py0) + BOT;
+      return p;
     }
-    return { narrow, compact, size, gap, cols, gridW, packRows, nEq, eqCols, eqSize, portraitH, charW, bandH, bodyW, modeRowH, qtyH, rows, strip, w: bodyW + 36, h };
+    const order = [['wide', 2], ['three', 2], ['stack', 2], ['wide', 1], ['three', 1], ['stack', 1], ['split', 1]];
+    let last = null;
+    for (const [kind, minR] of order) for (let r = 3; r >= minR; r--) {
+      const p = plan(kind, r); if (!p) break;
+      last = p; if (p.h <= avail && p.w <= maxW) return finish(p);
+    }
+    return finish(plan('split', 1) || last);
+    function finish(p) {
+      // the old names (tests and other files read BANK.layout())
+      return Object.assign(p, { narrow: p.kind === 'stack' || p.kind === 'split', compact: p.kind === 'three' || p.kind === 'split', size: S, gap: G, cols: p.grid.cols, gridW: grid(p.grid.cols), packRows: packRows(p.pack.cols), nEq, eqSize: S, touch: t });
+    }
   }
 
-  // a small pill button that draws one label and answers to another (so the harness can name it exactly)
-  function chip(g, x, y, w, h, text, id, active, action) {
-    roundRect(g, x, y, w, h, 7); g.fillStyle = active ? '#238636' : '#21262d'; g.fill();
-    g.strokeStyle = active ? '#3fb950' : '#30363d'; g.lineWidth = 1; g.stroke();
-    g.fillStyle = active ? '#ffffff' : '#c9d1d9'; g.font = 'bold ' + CHIP_FONT + 'px sans-serif';
-    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, x + w / 2, y + h / 2);
-    g.textBaseline = 'alphabetic'; g.textAlign = 'left';
-    buttons.push({ x, y, w, h, label: id, action });
-  }
-  function modePair(g, x, y, w) {
-    const bw = Math.floor((w - 8) / 2);
-    chip(g, x, y, bw, 28, 'TAKE', 'takeMode', mode() === 'take', () => setMode('take'));
-    chip(g, x + bw + 8, y, bw, 28, 'WEAR', 'wearMode', mode() === 'wear', () => setMode('wear'));
-  }
+  // the knight on a vellum plate, drawn wearing what he wears
   function drawKnight(g, x, y, w, h) {
-    roundRect(g, x, y, w, h, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.10)'; g.lineWidth = 1; g.stroke();
-    g.save(); roundRect(g, x, y, w, h, 8); g.clip();
+    PLACE_KIT.card(g, x, y, w, h);
+    g.save(); g.beginPath(); g.rect(x + 3, y + 3, w - 6, h - 6); g.clip();
     g.translate(x + w / 2, y + h * 0.64);
     const s = Math.min(w / 34, h / 44);
     g.scale(s, s);
@@ -312,106 +350,115 @@
     drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, playerLook());
     g.restore();
   }
-  function gearLine() { return 'str +' + gearBonus('str') + '  acc +' + gearBonus('att') + '  def +' + gearBonus('def'); }
-  function wornButton(g, x, y, w, h, k, showName) {
+  const gearLines = () => ['Strength +' + gearBonus('str'), 'Accuracy +' + gearBonus('att'), 'Defence +' + gearBonus('def')];
+  // one worn slot: a pouch; empty, it carries the slot's name; worn, a tap banks the piece
+  function wornPouch(g, x, y, s, k) {
     const id = player.equip[k];
-    drawSlot(g, x, y, h, id ? { id, qty: 1 } : null, false);
-    if (!id && !showName) { g.fillStyle = '#4b535d'; g.font = '9px sans-serif'; g.textAlign = 'center'; g.fillText(k, x + h / 2, y + h / 2 + 3); g.textAlign = 'left'; }
-    if (showName) {
-      g.fillStyle = id ? '#c9d1d9' : '#4b535d'; g.font = '11px sans-serif'; g.textAlign = 'left';
-      let t = id ? name(id) : k;
-      const maxW = w - h - 8;
-      while (t.length > 4 && g.measureText(t).width > maxW) t = t.slice(0, -2) + '…';
-      g.fillText(t, x + h + 6, y + h / 2 + 4);
-    }
-    if (id) buttons.push({ x, y, w, h, label: 'worn' + k, action: () => bankWorn(k) });
+    PLACE_KIT.pouch(g, x, y, s, id || null, 1);
+    if (!id) PLACE_KIT.say(g, k, x + s / 2, y + s * 0.62, s - 4, { font: HK.FC(800, 9), align: 'center', color: HK.T.inkMute, id: 'bank:slot', floor: 7 });
+    if (id) buttons.push({ x, y, w: s, h: s, label: 'worn' + k, action: () => bankWorn(k), name: 'Put the ' + name(id) + ' in the vault' });
   }
-  function caption(g, x, y, text) { g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(text, x, y); }
 
   HOOKS.panel.bank = g => {
     settleTab();
-    const L = layout();
+    const K = PLACE_KIT, L = layout(), S = L.S, G = L.G, R = L.R;
     const amount = qty() === 'All' ? 'the whole stack' : String(qty());
-    const sub = player.bank.length + ' / ' + BANK_SLOTS + ' vault slots · ' + (mode() === 'wear' ? 'WEAR: a tap puts it on' : 'a tap moves ' + amount);
-    const { px, py, w } = panelBox(g, L.w, L.h, 'Bank of Thistledown', sub);
-    const gx = px + 18 + (L.narrow ? 0 : L.charW + 14);
-    let y = py + 66;
+    const sub = player.bank.length + ' / ' + BANK_SLOTS + ' vault slots · ' + (mode() === 'wear' ? 'a tap puts it on' : 'a tap moves ' + amount);
+    const { px, py } = panelBox(g, L.w, L.h, 'Bank of Thistledown', sub);
+    const ox = px + 18, oy = py + 62, at = b => ({ x: ox + b.x, y: oy + b.y });
+    const showVault = L.kind !== 'split' || bankView === 'vault', showPack = L.kind !== 'split' || bankView === 'pack';
 
-    // ---- the knight and his gear: a column beside the vault, or a band above it on a phone ----
-    g.fillStyle = '#8b949e'; g.font = 'bold 10px sans-serif'; g.textAlign = 'left'; g.fillText('YOU', px + 18, y + 10);
-    if (L.narrow) {
-      g.fillStyle = '#6e7681'; g.font = '10px sans-serif'; g.textAlign = 'right'; g.fillText(gearLine(), px + 18 + L.bodyW, y + 10); g.textAlign = 'left';
-      drawKnight(g, px + 18, y + 14, PORTRAIT_W, L.portraitH);
-      const ey = y + 14 + Math.round((L.portraitH - L.eqSize) / 2);
-      EQUIP_SLOTS.forEach((k, i) => wornButton(g, px + 18 + PORTRAIT_W + 8 + i * (L.eqSize + 4), ey, L.eqSize, L.eqSize, k, false));
-      y += L.bandH;
-    } else {
-      let cy = y + 14;
-      drawKnight(g, px + 18, cy, L.charW, L.portraitH);
-      cy += L.portraitH + 4;
-      g.fillStyle = '#6e7681'; g.font = '10px sans-serif'; g.textAlign = 'left'; g.fillText(gearLine(), px + 18, cy + 9);
-      cy += 14;
-      modePair(g, px + 18, cy, L.charW);
-      cy += 38;
-      EQUIP_SLOTS.forEach((k, i) => {
-        const c = i % L.eqCols, r = Math.floor(i / L.eqCols);
-        wornButton(g, px + 18 + c * (L.eqSize + 8), cy + r * (L.eqSize + 5), L.eqCols === 1 ? L.charW : L.eqSize, L.eqSize, k, L.eqCols === 1);
-      });
-      cy += Math.ceil(L.nEq / L.eqCols) * (L.eqSize + 5) - 5 + 8;
-      const sc = sortChip();
-      chip(g, px + 18, cy, L.charW, 28, sc.text, sc.id, sc.active(), sc.action);
+    // ---- the knight and what he wears ----
+    if (L.you) K.head(g, ox + L.you.x, oy + L.you.y, L.you.w, 'You');
+    { const r = at(L.portrait); drawKnight(g, r.x, r.y, L.portrait.w, L.portrait.h); }
+    { const r = at(L.worn); EQUIP_SLOTS.forEach((k, i) => wornPouch(g, r.x + (i % L.worn.cols) * (S + G), r.y + Math.floor(i / L.worn.cols) * (S + G), S, k)); }
+    if (L.gear) {
+      const r = at(L.gear), f = HK.FC(800, 11);
+      if (L.gear.lines === 1) K.say(g, gearLines().join('   '), r.x, r.y + 12, L.gear.w, { font: f, color: HK.T.inkDim, id: 'bank:gear' });
+      else gearLines().forEach((s, i) => K.say(g, s, r.x, r.y + 12 + i * 17, L.gear.w, { font: f, color: HK.T.inkDim, id: 'bank:gear' }));
+    }
+    const modeItems = [{ shown: 'Take', label: 'takeMode', on: mode() === 'take', action: () => setMode('take') }, { shown: 'Wear', label: 'wearMode', on: mode() === 'wear', action: () => setMode('wear') }];
+    if (L.mode) {
+      const r = at(L.mode);
+      if (L.mode.stacked) modeItems.forEach((it, i) => K.tab(g, r.x, r.y + i * (R + G), L.mode.w, it.shown, it.label, it.on, it.action));
+      else K.plateRow(g, r.x, r.y, L.mode.w, modeItems);
+    }
+    // Sort is a toggle, not a tab: on, it wears the green edge (a chosen tab wears the gold one)
+    const sortPlate = (x, y, w) => { const sc = sortChip(); K.plate(g, x, y, w, R, sc.text, sc.id, sc.action, null, true, { on: sc.active() }); };
+    if (L.sort) { const r = at(L.sort); sortPlate(r.x, r.y, L.sort.w); }
+    if (L.view) {
+      const r = at(L.view);
+      K.plateRow(g, r.x, r.y, L.view.w, [
+        { shown: 'Vault', label: 'view:vault', on: bankView === 'vault', action: () => { bankView = 'vault'; } },
+        { shown: 'Your pack', label: 'view:pack', on: bankView === 'pack', action: () => { bankView = 'pack'; } }]);
     }
 
-    // ---- 1 / 10 / 100 / All ----
-    let qy = y;
-    if (!L.compact) { caption(g, gx, y + 9, 'HOW MANY'); qy = y + 14; }
-    const qw = Math.floor((L.gridW - 18) / 4);
-    QTIES.forEach((q, i) => chip(g, gx + i * (qw + 6), qy, qw, 26, String(q), 'qty' + q, qty() === q, () => setQty(q)));
-    y += L.qtyH;
-    if (L.narrow) { modePair(g, gx, y, L.gridW); y += L.modeRowH; }
+    // ---- 1 / 10 / 100 / All (the amount works both ways, so it shows with either half) ----
+    const qtyItems = QTIES.map(q => ({ shown: QTY_SHOWN[q], label: 'qty' + q, on: qty() === q, action: () => setQty(q) }));
+    const qRow = showVault ? L.qty : L.qtyPack;
+    if (qRow) { const r = at(qRow); K.plateRow(g, r.x, r.y, qRow.w, qRow.withMode ? qtyItems.concat(modeItems) : qtyItems); }
 
-    // ---- the tab strip (or the plain caption when there is nothing to show) ----
-    if (!L.strip.rows.length) caption(g, gx, y + 11, 'VAULT');
-    else {
-      L.strip.rows.forEach((row, r) => {
-        const ry = y + r * (CHIP_H + CHIP_GAP);
-        for (const c of row) chip(g, gx + c.x, ry, c.w, CHIP_H, c.text, c.id, c.active(), c.action);
-      });
-      if (!sortOn()) { const last = L.strip.rows[0][L.strip.rows[0].length - 1]; caption(g, gx + last.x + last.w + 10, y + 16, 'VAULT'); }
+    // ---- the vault: its tabs, its pouches and the pager ----
+    if (showVault) {
+      if (L.vaultHead) { const r = at(L.vaultHead); K.head(g, r.x, r.y, L.vaultHead.w, 'Vault'); }
+      if (L.tabs) {
+        const r = at(L.tabs);
+        L.tabs.rows.forEach((row, i) => { for (const c of row) { if (c.id === 'sortTabs') sortPlate(r.x + c.x, r.y + i * (R + G), c.w); else K.tab(g, r.x + c.x, r.y + i * (R + G), c.w, c.text, c.id, c.active(), c.action); } });
+      }
+      const view = sortOn() ? viewFor(tabNow()) : null;      // null = the plain 60-slot grid, in the order things went in
+      const per = L.grid.cols * L.rows, pages = Math.max(1, Math.ceil((view ? view.length : BANK_SLOTS) / per));
+      bankPage = clamp(bankPage, 0, pages - 1);
+      const r = at(L.grid);
+      for (let k = 0; k < per; k++) {
+        const idx = bankPage * per + k;
+        const cx = r.x + (k % L.grid.cols) * (S + G), cy = r.y + Math.floor(k / L.grid.cols) * (S + G);
+        const e = view ? view[idx] : (idx < BANK_SLOTS ? { s: player.bank[idx], i: idx } : null);
+        if (!e) { if (!view) break; drawSlot(g, cx, cy, S, null, false); continue; }
+        const b = e.s;
+        const wearable = !!b && mode() === 'wear' && !!eqSlotFor(ITEMS[b.id]);
+        drawSlot(g, cx, cy, S, b || null, wearable);
+        if (b) buttons.push({ x: cx, y: cy, w: S, h: S, label: 'bank' + e.i, action: () => (mode() === 'wear' ? wearFromVault(e.i) : withdraw(e.i)), name: name(b.id) + ' x ' + b.qty });
+      }
+      const pr = at(L.pager);
+      K.pager(g, pr.x, pr.y, L.pager.w, bankPage, pages, p => { bankPage = clamp(p, 0, pages - 1); });
     }
-    y += L.strip.h;
 
-    // ---- the vault ----
-    const view = sortOn() ? viewFor(tabNow()) : null;      // null = the plain 60-slot grid, in the order things went in
-    const per = L.cols * L.rows, pages = Math.max(1, Math.ceil((view ? view.length : BANK_SLOTS) / per));
-    bankPage = clamp(bankPage, 0, pages - 1);
-    for (let k = 0; k < per; k++) {
-      const idx = bankPage * per + k;
-      const cx = gx + (k % L.cols) * (L.size + L.gap), cy = y + Math.floor(k / L.cols) * (L.size + L.gap);
-      const e = view ? view[idx] : (idx < BANK_SLOTS ? { s: player.bank[idx], i: idx } : null);
-      if (!e) { if (!view) break; drawSlot(g, cx, cy, L.size, null, false); continue; }
-      const b = e.s;
-      const wearable = !!b && mode() === 'wear' && !!eqSlotFor(ITEMS[b.id]);
-      drawSlot(g, cx, cy, L.size, b || null, wearable);
-      if (b) buttons.push({ x: cx, y: cy, w: L.size, h: L.size, label: 'bank' + e.i, action: () => (mode() === 'wear' ? wearFromVault(e.i) : withdraw(e.i)) });
+    // ---- the pack and the two Deposit plates ----
+    if (showPack) {
+      const hr = at(L.packHead); K.head(g, hr.x, hr.y, L.packHead.w, 'Your pack', player.inv.filter(Boolean).length + ' / ' + INV_SLOTS);
+      const r = at(L.pack);
+      drawInvGrid(g, r.x, r.y, L.pack.cols, S, G, depositFromPack);
+      const d = at(L.deposit);
+      K.plateRow(g, d.x, d.y, L.deposit.w, [{ shown: 'Deposit bag', label: 'Deposit bag', action: depositBag }, { shown: 'Deposit worn', label: 'Deposit worn', action: depositWorn }]);
     }
-    y += L.rows * (L.size + L.gap);
-    pager(g, gx, y, L.gridW, bankPage, pages, p => { bankPage = clamp(p, 0, pages - 1); });
-    y += 38;
-
-    // ---- the pack ----
-    caption(g, gx, y + 11, 'YOUR PACK');
-    y += 16;
-    drawInvGrid(g, gx, y, L.cols, L.size, L.gap, depositFromPack);
-    y += L.packRows * (L.size + L.gap);
-
-    // ---- the two dump buttons ----
-    const bw = Math.floor((L.gridW - 10) / 2);
-    button(g, gx, y + 6, bw, 30, 'Deposit bag', depositBag, '#1f6feb');
-    button(g, gx + bw + 10, y + 6, bw, 30, 'Deposit worn', depositWorn, '#1f6feb');
   };
+  const setView = v => { bankView = v === 'pack' ? 'pack' : 'vault'; };
 
-  window.BANK = { QTIES, KIND_ORDER, TAB_LABEL, resetState, qty, setQty, mode, setMode, sortOn, setSort, setTab, tabNow, tabsNow, settleTab, kindOf, viewFor, wantOf, layout, depositItem, depositFromPack, withdraw, wearFromVault, bankWorn, depositBag, depositWorn, inVault, eqSlotFor };
+  window.BANK = { QTIES, KIND_ORDER, TAB_LABEL, resetState, qty, setQty, mode, setMode, sortOn, setSort, setTab, tabNow, tabsNow, settleTab, kindOf, viewFor, wantOf, layout, depositItem, depositFromPack, withdraw, wearFromVault, bankWorn, depositBag, depositWorn, inVault, eqSlotFor, setView, view: () => bankView };
+
+  // ---------- the panel audit's scene (PLACE_KIT, run from 63-house): a full vault over several pages ----------
+  PLACE_KIT.scene({
+    id: 'bank', panel: 'bank', name: 'Bank of Thistledown (a full vault of every kind, on page 2; sorted and plain; Take and Wear; the pack half on a small phone)',
+    setup() {
+      const keep = { inv: player.inv.map(s => (s ? { ...s } : null)), bank: player.bank.map(s => ({ ...s })), equip: { ...player.equip }, q: player.bankQty, m: player.bankMode, s: player.bankSort, t: player.bankTab, page: bankPage, view: bankView, hp: player.hp, mhp: player.maxHp };
+      // sixty different things, every kind among them, so every tab stands and the vault runs to several pages
+      const ids = Object.keys(ITEMS), pick = [];
+      for (const k of KIND_ORDER) for (const id of ids.filter(i => kindOf(i) === k).slice(0, 4)) pick.push(id);
+      for (const id of ids) { if (pick.length >= BANK_SLOTS) break; if (!pick.includes(id)) pick.push(id); }
+      player.bank = pick.slice(0, BANK_SLOTS).map((id, i) => ({ id, qty: ITEMS[id].stack > 1 ? 1 + (i * 37) % 900 : 1 }));
+      player.inv = new Array(INV_SLOTS).fill(null).map((s, i) => ({ id: ids[(i * 7) % ids.length], qty: 1 + i }));
+      for (const k of EQUIP_SLOTS) { const id = ids.find(i => eqSlotFor(ITEMS[i]) === k); player.equip[k] = id || null; }
+      return () => {
+        player.inv = keep.inv; player.bank = keep.bank; player.equip = keep.equip; player.bankQty = keep.q; player.bankMode = keep.m; player.bankSort = keep.s; player.bankTab = keep.t;
+        bankPage = keep.page; bankView = keep.view; recomputeMaxHp(); player.maxHp = keep.mhp; player.hp = keep.hp;
+      };
+    },
+    variants: [
+      { name: 'sorted, page 2', open: () => { player.bankSort = true; player.bankTab = 'all'; player.bankMode = 'take'; player.bankQty = 10; bankView = 'vault'; openPanel('bank'); bankPage = 1; } },
+      { name: 'plain, Wear', open: () => { player.bankSort = false; player.bankTab = 'all'; player.bankMode = 'wear'; player.bankQty = 'All'; bankView = 'vault'; openPanel('bank'); bankPage = 1; } },
+      { name: 'the pack half', open: () => { player.bankSort = true; player.bankTab = 'gear'; player.bankMode = 'take'; player.bankQty = 1; bankView = 'pack'; openPanel('bank'); bankPage = 0; } },
+    ],
+  });
 
   // ---------- self-test ----------
   const P = 'bank: ';

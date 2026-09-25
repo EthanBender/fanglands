@@ -10237,6 +10237,245 @@ PEOPLE_UI.auditPrompt = function (p) {
 // needs touching. Registered entirely through HOOKS; edits no core file.
 // State lives in quest.board = { taken, done, page, fish, fires, wolves, goblins, toasted }.
 // ============================================================================
+
+// ============================================================================
+// PLACE_KIT — the small pieces the place-and-machine panels share: the bank (60), the notice board (29), the oven
+// (34), the capes (38), the bulldozer bay (40), Fennick's rail (51), the wreck and Nix (52) and the island build
+// panel (63). It sits here because this is the first of those files to load; everything in it reaches the Heraldry
+// kit (HK, src/59-hudkit.js) only when a panel is drawn, so load order does not matter. The integrator may lift it
+// into the kit. Every panel keeps the one panel contract:
+//   · the frame is panelBox(); content starts at py + 62
+//   · sentences are the system sans, HK.FS(600, 13), and grow with Settings > Text size; names and numbers are Cinzel,
+//     HK.FC(800, 11-13), a fixed size; section heads are gold Cinzel capitals with a gold hairline
+//   · colours come only from HK.T; rows sit on dark vellum; items sit in drawSlot pouches (44 px on touch)
+//   · verbs are iron plate buttons HK.row() tall (44 on touch, 32 with a mouse), 8 px apart on touch; green = the
+//     main choice, red = danger; a disabled one is still registered (inert) so a tap never falls through
+//   · plates never change size with the text size: a plate's width comes from its word, and the word shrinks to fit
+//   · long text wraps at whole words (HK.wrap); nothing is ever cut inside a word with an ellipsis
+// PLACE_KIT.scene() registers a panel with the panel audit (run from 63-house's self-test, the last of these files).
+// ============================================================================
+const PLACE_KIT = (() => {
+  const isTouch = () => (typeof touchMode === 'function' ? touchMode() : false);
+  const R = () => HK.row();
+  const GAP = () => (isTouch() ? 8 : 5);
+  const POUCH = () => (isTouch() ? 44 : 40);
+  const SENT = (px = 13) => HK.FS(600, px);
+  const NAME = (px = 12) => HK.FC(800, px);
+  // a plate's width from its word: the same number in the browser and the harness, and never bigger with the text size
+  const plateW = (s, pad = 24) => Math.max(R(), Math.round(String(s).length * 7.6 + pad));
+  const lineH = f => Math.round((f.s ? f.px * HK.k() : f.px) * 1.34);
+
+  // a gold hairline (the page's rule)
+  function rule(g, x, y, w, a = 0.35) {
+    g.beginPath(); g.moveTo(Math.round(x), Math.round(y) + 0.5); g.lineTo(Math.round(x + w), Math.round(y) + 0.5);
+    g.strokeStyle = `rgba(217,178,92,${a})`; g.lineWidth = 1; g.stroke();
+  }
+  // A section head: gold Cinzel capitals, a gold hairline to the right, and an optional short value at the far right.
+  // Takes 18 px. Returns that height.
+  function head(g, x, y, w, label, right) {
+    const f = NAME(11), rf = NAME(11);
+    const rw = right ? Math.ceil(HK.tw(g, right, rf)) + 10 : 0;
+    const lw = HK.text(g, String(label).toUpperCase(), x, y + 12, { font: f, color: HK.T.gold, box: { x, y, w: w - rw, h: 16 }, fitId: 'panel:head' });
+    if (right) HK.text(g, right, x + w, y + 12, { font: rf, align: 'right', color: HK.T.inkDim, box: { x: x + w - rw, y, w: rw, h: 16 }, fitId: 'panel:head' });
+    const r0 = x + lw + 8, r1 = x + w - rw - (right ? 0 : 0);
+    if (r1 > r0 + 8) rule(g, r0, y + 8, r1 - r0);
+    return 18;
+  }
+  // One line of text in a box of width w. A Cinzel name shrinks to a floor first; whatever still does not fit ends at a
+  // whole word. o: { font, color, align, floor, id }. Returns the width drawn.
+  function say(g, s, x, y, w, o = {}) {
+    let f = o.font || SENT(13); s = String(s);
+    if (!f.s && HK.tw(g, s, f) > w) { let p = f.px; while (p > (o.floor || 9) && HK.tw(g, s, HK.FC(f.w, p)) > w) p -= 0.5; f = HK.FC(f.w, p); }
+    if (HK.tw(g, s, f) > w) s = HK.wrap(g, s, w, 1, f).lines[0] || '';
+    const bx = o.align === 'center' ? x - w / 2 : o.align === 'right' ? x - w : x;
+    return HK.text(g, s, x, y, { font: f, align: o.align || 'left', color: o.color || HK.T.inkDim, box: { x: bx, y: y - 14, w, h: 18 }, fitId: o.id || 'panel:line' });
+  }
+  // How many lines a sentence needs at width w (whole words).
+  const linesOf = (g, s, w, f = SENT(13)) => Math.max(1, HK.wrap(g, s, w, 99, f).lines.length);
+  // A wrapped sentence; y is the first baseline. Returns the height taken (lines x line height).
+  function para(g, s, x, y, w, maxLines = 99, o = {}) {
+    const f = o.font || SENT(13), lh = o.lh || lineH(f);
+    const { lines } = HK.wrap(g, s, w, maxLines, f);
+    lines.forEach((ln, i) => HK.text(g, ln, x, y + i * lh, { font: f, color: o.color || HK.T.inkDim, box: { x, y: y + i * lh - 14, w, h: lh }, fitId: o.id || 'panel:para' }));
+    return lines.length * lh;
+  }
+  // An iron plate button that SHOWS one word and ANSWERS to a label (tests and the harness click by label, so a
+  // label never changes; the word on the plate can be plainer). tone: 'primary' | 'danger' | 'warn' | null.
+  // A disabled plate is registered as an inert 'disabled:' rect, as button() does.
+  function plate(g, x, y, w, h, shown, label, action, tone, enabled = true, o = {}) {
+    const st = enabled ? HK.stateOf(label) : {};
+    HK.plateButton(g, { x, y, w, h }, o.em || null, shown, tone, { pressed: !!st.pressed, hover: !!st.hover, disabled: !enabled, on: !!o.on, cinzel: !!o.cinzel });
+    buttons.push(enabled ? { x, y, w, h, label, action, up: true, name: o.name || shown } : { x, y, w, h, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true });
+  }
+  // A tab: a plate, the chosen one primary (gold edge). Tabs stay tappable when chosen (a second tap does nothing new).
+  const tab = (g, x, y, w, shown, label, on, action) => plate(g, x, y, w, R(), shown, label, action, on ? 'primary' : null, true);
+  // A row of plates of equal width across w. items: [{ shown, label, action, tone, on, enabled }]
+  function plateRow(g, x, y, w, items) {
+    const G = GAP(), n = items.length, pw = (w - (n - 1) * G) / n;
+    items.forEach((it, i) => {
+      const bx = Math.round(x + i * (pw + G)), bw = Math.round(x + i * (pw + G) + pw) - bx;
+      plate(g, bx, y, bw, R(), it.shown, it.label, it.action, it.on ? 'primary' : (it.tone || null), it.enabled !== false);
+    });
+    return R();
+  }
+  // Lay plates of their own widths into rows no wider than width. Each item carries w; returns [[{ ...item, x }]].
+  function flow(items, width) {
+    const G = GAP(), rows = []; let row = null, x = 0;
+    for (const it of items) {
+      if (!row || (x > 0 && x + it.w > width)) { row = []; rows.push(row); x = 0; }
+      row.push(Object.assign({}, it, { x })); x += it.w + G;
+    }
+    return rows;
+  }
+  const flowH = rows => (rows.length ? rows.length * R() + (rows.length - 1) * GAP() : 0);
+  // Prev / Next: two plates with drawn chevrons and the page count between them, HK.row() tall.
+  // Reserve HK.row() + 8 below it. Returns the page shown (clamped).
+  function pager(g, x, y, w, page, pages, setPage) {
+    const p = clamp(page, 0, Math.max(0, pages - 1)), h = R(), pw = isTouch() ? 92 : 82;
+    const one = (bx, label, em, on, fn) => {
+      plate(g, bx, y, pw, h, label === 'Prev' ? 'Back' : 'Next', label, fn, null, on, { name: label === 'Prev' ? 'Back a page' : 'Next page' });
+      HK.emblem(g, em, label === 'Prev' ? bx + 15 : bx + pw - 15, y + h / 2, 13, on ? HK.T.goldHi : HK.T.inkMute, { hole: null });
+    };
+    one(x, 'Prev', 'chevronL', p > 0, () => setPage(p - 1));
+    say(g, `${p + 1} / ${pages}`, x + w / 2, y + h / 2 + 5, Math.max(40, w - 2 * pw - 16), { font: NAME(13), align: 'center', color: HK.T.inkDim, id: 'panel:pager' });
+    one(x + w - pw, 'Next', 'chevronR', p < pages - 1, () => setPage(p + 1));
+    return p;
+  }
+  // A row of work on dark vellum: the page's card. edge: a meaning colour for its inner line (gold = ready, good = done).
+  const card = (g, x, y, w, h, edge) => HK.vellumPlate(g, x, y, w, h, edge ? { edge } : {});
+  // An item in a pouch (the kit's slot). qty 1 is stamped too when `stamp` is set, so a cost of one reads "1".
+  function pouch(g, x, y, s, id, qty, o = {}) {
+    drawSlot(g, x, y, s, id ? { id, qty } : null, !!o.sel);
+    if (id && qty === 1 && o.stamp) HK.text(g, '1', x + s - 5, y + s - 6, { font: NAME(Math.max(11, Math.round(s * 0.24))), align: 'right', color: '#f6d98c', halo: 3 });
+  }
+  // A cost as pouches: each item with the number needed stamped on it, and under it "have / need" in green when there
+  // is enough and amber when not. Returns the height taken (pouch + its count line).
+  function costRow(g, x, y, cost, o = {}) {
+    const s = o.s || POUCH(), G = GAP(), cw = Math.max(s, 46);
+    cost.forEach(([id, n], i) => {
+      const cx = x + i * (cw + G), have = countItem(id), ok = have >= n;
+      pouch(g, cx + (cw - s) / 2, y, s, id, n, { stamp: true });
+      say(g, `${Math.min(have, 9999)} / ${n}`, cx + cw / 2, y + s + 13, cw + G - 2, { font: NAME(10), align: 'center', color: ok ? HK.T.good : HK.T.warn, id: 'panel:cost' });
+    });
+    return s + 16;
+  }
+  const costW = (n, s) => n ? n * Math.max(s || POUCH(), 46) + (n - 1) * GAP() : 0;
+  // A drawn mark with a word beside it: the tick for "yes", the cross for "no" (no glyph characters).
+  function mark(g, ok, x, y, word, o = {}) {
+    const col = o.color || (ok ? HK.T.good : HK.T.warn);
+    HK.emblem(g, ok ? 'tick' : 'close', x + 7, y - 4, 14, col, { hole: null });
+    return 18 + say(g, word, x + 18, y, o.w || 200, { font: o.font || SENT(13), color: col, id: 'panel:mark' });
+  }
+  // The harness still reaches a control drawn on another page (F.clickButton finds it by label), but no tap can.
+  function offscreen(label, action, enabled = true) {
+    buttons.push(enabled ? { x: -1e9, y: -1e9, w: 0, h: 0, label, action, offscreen: true } : { x: -1e9, y: -1e9, w: 0, h: 0, label: 'disabled:' + label, action: () => { }, offscreen: true, inert: true, disabled: true });
+  }
+  // Greedy pages of rows with their own heights, so no row is ever cut or squeezed: [[index, ...], ...]
+  function pages(heights, room, gap) {
+    const out = []; let cur = [], used = 0;
+    heights.forEach((h, i) => { const need = (cur.length ? gap : 0) + h; if (cur.length && used + need > room) { out.push(cur); cur = []; used = 0; } used += (cur.length ? gap : 0) + h; cur.push(i); });
+    if (cur.length) out.push(cur);
+    return out.length ? out : [[]];
+  }
+
+  // ---------- the panel audit ----------
+  // Every registered scene opens its panel at the 8 device sizes, touch and mouse, at Normal and Large text, and the
+  // panel is drawn by the real drawHud onto a context that measures text the way the fonts do (HK.audit.fitCtx) and
+  // records every string it paints. Checked from the × seal onward: 44 px on touch (26 with a mouse), 8 px apart on
+  // touch (4 with a mouse), inside the panel and on screen; at Large every string fits its box; nothing painted is a
+  // tick or cross glyph or an ellipsis.
+  const SCENES = [];
+  function scene(def) { SCENES.push(def); }
+  function recorder() {
+    const fc = HK.audit.fitCtx(); let drawn = [];
+    const rec = new Proxy({}, {
+      get: (t, k) => (k === 'fillText' || k === 'strokeText') ? (s => { drawn.push(String(s)); }) : fc[k],
+      set: (t, k, v) => { fc[k] = v; return true; },
+    });
+    return { rec, take: () => { const d = drawn; drawn = []; return d; } };
+  }
+  function audit(check, F, h) {
+    const A = HK.audit, own = k0 => Object.getOwnPropertyDescriptor(window, k0);
+    const saved = { w: own('innerWidth'), h: own('innerHeight'), touch: window.__forceTouch, text: window.SETTINGS ? SETTINGS.get('text') : 'normal', panel, arg: panelArg, paused, dc: dialog.cur, notice, mech: player.mech };
+    const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+    const { rec, take } = recorder();
+    const shape = b => (b.r ? { k: 'c', x: b.cx != null ? b.cx : b.x + b.w / 2, y: b.cy != null ? b.cy : b.y + b.h / 2, r: b.r } : { k: 'r', x: b.x, y: b.y, w: b.w, h: b.h });
+    const box = s => (s.k === 'c' ? { x: s.x - s.r, y: s.y - s.r, w: s.r * 2, h: s.r * 2 } : s);
+    const results = [];
+    try {
+      HK.setCacheOff(true); closePanel(); paused = false; dialog.cur = null; notice = null; player.mech = null;
+      for (const sc of SCENES) {
+        const problems = []; let frames = 0, opened = 0;
+        let undo = null;
+        try {
+          undo = sc.setup ? sc.setup(F, h) : null;
+          for (const [w, hh] of A.SIZES) {
+            if (!setSize(w, hh)) { problems.push(`${w}x${hh}: could not size the window`); continue; }
+            for (const t of [true, false]) {
+              window.__forceTouch = t;
+              for (const tx of ['normal', 'large']) {
+                if (window.SETTINGS) SETTINGS.set('text', tx);
+                for (const v of sc.variants) {
+                  const where = `${sc.id}${v.name ? ' ' + v.name : ''} ${w}x${hh} ${t ? 'touch' : 'mouse'} ${tx}`;
+                  closePanel(); v.open();
+                  HK.FIT.on = true; HK.FIT.log.length = 0; take();
+                  // where the panel's own words start in the fit log (the HUD under it is drawn first)
+                  let fitFrom = 0; const ph = HOOKS.panel[sc.panel];
+                  HOOKS.panel[sc.panel] = (g2, nar) => { fitFrom = HK.FIT.log.length; return ph(g2, nar); };
+                  try { drawHud(rec); } finally { HOOKS.panel[sc.panel] = ph; }
+                  frames++;
+                  HK.FIT.on = false;
+                  const painted = take();
+                  if (panel !== sc.panel) { problems.push(`${where}: the panel did not stay open (${panel})`); continue; }
+                  opened++;
+                  if (!panelRect) { problems.push(`${where}: no panel frame`); continue; }
+                  const P = panelRect, floor = t ? 44 : 26, clear = t ? 8 : 4;
+                  if (P.x < -0.5 || P.y < -0.5 || P.x + P.w > VW + 0.5 || P.y + P.h > VH + 0.5) problems.push(`${where}: the panel runs off the screen`);
+                  const all = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+                  const ci = all.findIndex(b => b.label === '×');
+                  if (ci < 0) { problems.push(`${where}: no close seal`); continue; }
+                  const mine = all.slice(ci).map(b => ({ b, s: shape(b) }));
+                  for (const q of mine) {
+                    const r = box(q.s);
+                    if (r.w < floor - 0.5 || r.h < floor - 0.5) problems.push(`${where}: ${q.b.label} is ${Math.round(r.w)}x${Math.round(r.h)}, under ${floor}`);
+                    if (r.x < P.x - 0.5 || r.y < P.y - 0.5 || r.x + r.w > P.x + P.w + 0.5 || r.y + r.h > P.y + P.h + 0.5) problems.push(`${where}: ${q.b.label} is outside the panel`);
+                    if (r.x < -0.5 || r.y < -0.5 || r.x + r.w > VW + 0.5 || r.y + r.h > VH + 0.5) problems.push(`${where}: ${q.b.label} is off screen`);
+                  }
+                  for (let i = 0; i < mine.length; i++) for (let j = i + 1; j < mine.length; j++) {
+                    const gp = HK.gapBetween(mine[i].s, mine[j].s);
+                    if (gp < clear - 0.01) problems.push(`${where}: ${mine[i].b.label} and ${mine[j].b.label} are ${gp.toFixed(1)} px apart`);
+                  }
+                  // only the panel's own words: the HUD under it has its own fit audit in 59-hudkit
+                  if (tx === 'large') { HK.FIT.log.splice(0, fitFrom); for (const p of A.fitIssues(where)) problems.push(p); }
+                  const bad = painted.filter(s => /[✓✔✗✘…]/.test(s));
+                  if (bad.length) problems.push(`${where}: painted ${JSON.stringify(bad.slice(0, 3))}`);
+                  if (sc.more) for (const p of sc.more(where, painted) || []) problems.push(p);
+                }
+              }
+            }
+          }
+        } catch (e) { problems.push(`${sc.id}: threw ${e && e.message}`); }
+        finally { closePanel(); try { if (undo) undo(); } catch (e) { problems.push(`${sc.id}: undo threw ${e && e.message}`); } }
+        results.push({ sc, problems, frames, opened });
+      }
+    } finally {
+      HK.FIT.on = false; HK.setCacheOff(false);
+      window.__forceTouch = saved.touch; if (window.SETTINGS) SETTINGS.set('text', saved.text);
+      if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+      resize(); closePanel(); paused = saved.paused; dialog.cur = saved.dc; notice = saved.notice; player.mech = saved.mech;
+      if (saved.panel) openPanel(saved.panel, saved.arg);
+      render();
+    }
+    for (const r of results) {
+      const want = 8 * 2 * 2 * r.sc.variants.length;
+      check(`panels: ${r.sc.name} — at all 8 sizes, touch and mouse, normal and large text (${want} frames): every control from the close seal on is 44 px on touch (26 with a mouse) and 8 px apart on touch (4 with a mouse), inside the panel and on screen; every word fits its box at Large; no tick, cross or ellipsis glyph is painted`,
+        r.frames === want && r.opened === want && r.problems.length === 0, { frames: r.frames, opened: r.opened, problems: r.problems.slice(0, 10), total: r.problems.length });
+    }
+  }
+  return { R, GAP, POUCH, SENT, NAME, plateW, lineH, rule, head, say, linesOf, para, plate, tab, plateRow, flow, flowH, pager, card, pouch, costRow, costW, mark, offscreen, pages, scene, audit, SCENES };
+})();
+window.PLACE_KIT = PLACE_KIT;
+
 {
   const BOARD = addTile('BOARD', { solid: true, tex: 'cobble', mini: '#8a6a3a' });
   const BOARD_TILES = [[105, 27], [24, 6]]; // the square in Thistledown; the road outside the cave
@@ -10356,34 +10595,90 @@ PEOPLE_UI.auditPrompt = function (p) {
   HOOKS.use.push((t, tx, ty) => { if (t !== BOARD) return false; openPanel('board'); return true; });
 
   // ---------- panel ----------
-  const ROW_H = 66;
+  // Each job is a card of dark vellum: its title in Cinzel, who asks and what they said (whole, never cut), what it
+  // takes with the exact count so far, and the reward — coins and xp in exact numbers. Take job / Hand in sits on the
+  // card as an iron plate. Cards keep their full height, so a page holds as many whole cards as the screen has room
+  // for; Back and Next turn the pages and Close shuts the board. A ready job's card wears the gold edge.
+  const rewardBits = q => { const r = q.reward, out = []; if (r.coins) out.push({ coin: true, t: String(r.coins) }); if (r.xp) out.push({ t: `${r.xp[1]} ${skillName(r.xp[0])} xp` }); if (r.item) out.push({ t: `${r.item[1] > 1 ? r.item[1] + ' ' : ''}${ITEMS[r.item[0]].name}` }); return out; };
+  // the geometry every size shares: the card's width, the plate's width, the text column, and each card's height
+  function boardGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP();
+    const w = Math.min(PANEL_KIT.room().aw, 640), inner = w - 36, wide = inner >= 470;
+    const bw = touchMode() ? 124 : 112, textW = wide ? inner - 24 - bw - 14 : inner - 24;
+    const f = K.SENT(13), lh = K.lineH(f);
+    const hOf = q => {
+      const text = 10 + 18 + K.linesOf(g, noteOf(q), textW, f) * lh + lh + 20 + 8;
+      return wide ? Math.max(text, R + 24) : 10 + 18 + K.linesOf(g, noteOf(q), textW, f) * lh + lh + 4 + R + 10;
+    };
+    const heights = BOARD_QUESTS.map(hOf);
+    const foot = R + 16, room = PANEL_KIT.room().ah - 62 - foot - 8;
+    const pages = K.pages(heights, room, G);
+    const pageH = Math.max(...pages.map(p => p.reduce((a, i) => a + heights[i], 0) + (p.length - 1) * G));
+    return { K, R, G, w, inner, wide, bw, textW, f, lh, heights, pages, h: 62 + pageH + 8 + foot };
+  }
+  const noteOf = q => `${q.giver}: “${q.note}”`;
+  const boardPages = () => boardGeom(ctx).pages;
+  const pageOf = q => boardPages().findIndex(p => p.includes(BOARD_QUESTS.indexOf(q)));
   HOOKS.panel.board = (g, narrow) => {
-    const b = bq();
-    const per = Math.max(2, Math.min(6, Math.floor((VH - 20 - 150) / ROW_H)));
-    const pages = Math.max(1, Math.ceil(BOARD_QUESTS.length / per));
-    b.page = clamp(b.page | 0, 0, pages - 1);
+    const b = bq(), Q = boardGeom(g), { K, R, G } = Q;
+    b.page = clamp(b.page | 0, 0, Q.pages.length - 1);
     const taken = openQuests().length, done = BOARD_QUESTS.filter(q => b.done[q.id]).length, readyN = BOARD_QUESTS.filter(ready).length;
-    const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : 580, 96 + per * ROW_H + 52, 'Notice board', `Tiny jobs from the folk of Thistledown · page ${b.page + 1} of ${pages} · ${taken} taken · ${done} done${readyN ? ` · ${readyN} ready` : ''}`);
-    const fit = (text, maxW) => { let s = text; while (s.length > 8 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s === text ? text : s + '…'; };
-    const bw = narrow ? 96 : 122, textW = w - 36 - bw - 24;
-    BOARD_QUESTS.slice(b.page * per, b.page * per + per).forEach((q, i) => {
-      const y = py + 66 + i * ROW_H; const isDone = !!b.done[q.id], tk = isTaken(q), rd = ready(q);
-      roundRect(g, px + 18, y, w - 36, ROW_H - 6, 8); g.fillStyle = isDone ? 'rgba(255,255,255,0.03)' : rd ? 'rgba(126,231,135,0.10)' : tk ? 'rgba(88,166,255,0.10)' : 'rgba(255,255,255,0.05)'; g.fill();
-      if (rd) { g.strokeStyle = 'rgba(126,231,135,0.45)'; g.lineWidth = 1; g.stroke(); }
-      g.textAlign = 'left'; g.fillStyle = isDone ? '#6e7681' : '#e6edf3'; g.font = 'bold 13px sans-serif'; g.fillText(fit(`${q.title}  · ${q.giver}`, textW), px + 30, y + 18);
-      g.fillStyle = isDone ? '#4b535d' : '#c9d1d9'; g.font = 'italic 12px sans-serif'; g.fillText(fit(`“${q.note}”`, textW), px + 30, y + 35);
-      g.font = '11px sans-serif'; g.fillStyle = isDone ? '#4b535d' : rd ? '#7ee787' : '#8b949e'; g.fillText(fit(`${isDone ? 'Done' : needText(q)} · Reward: ${rewardText(q)}`, textW), px + 30, y + 51);
-      const bx = px + w - 18 - bw, by = y + 15;
-      if (isDone) button(g, bx, by, bw, 30, 'Done', () => { }, '#2a2f3a', false);
-      else if (!tk) button(g, bx, by, bw, 30, `Take: ${q.tag}`, () => takeQuest(q), '#238636');
-      else button(g, bx, by, bw, 30, `Hand in: ${q.tag}`, () => handIn(q), rd ? '#238636' : '#2a2f3a', rd);
-    });
-    const fy = py + h - 44;
-    button(g, px + 18, fy, 80, 30, 'Prev', () => { b.page = Math.max(0, b.page - 1); save(); }, '#21262d', b.page > 0);
-    button(g, px + 106, fy, 80, 30, 'Next', () => { b.page = Math.min(pages - 1, b.page + 1); save(); }, '#21262d', b.page < pages - 1);
-    button(g, px + w - 18 - 100, fy, 100, 30, 'Close', closePanel, '#21262d');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText('Take a job, do it, bring it back here.', px + w / 2, fy + 20);
+    const { px, py, w, h } = panelBox(g, Q.w, Q.h, 'Notice board', taken || done ? `${taken} taken, ${done} done${readyN ? `, ${readyN} ready to hand in` : ''}` : 'Take a job, do it, bring it back here.');
+    const x0 = px + 18;
+    let y = py + 62;
+    for (const i of Q.pages[b.page]) {
+      const q = BOARD_QUESTS[i], ch = Q.heights[i], isDone = !!b.done[q.id], tk = isTaken(q), rd = ready(q);
+      K.card(g, x0, y, Q.inner, ch, rd ? HK.T.goldHi : null);
+      const tx = x0 + 12;
+      let ty = y + 10;
+      K.say(g, q.title, tx, ty + 13, Q.textW, { font: K.NAME(13), color: isDone ? HK.T.inkMute : rd ? HK.T.goldHi : HK.T.ink, id: 'board:title' });
+      ty += 18;
+      ty += K.para(g, noteOf(q), tx, ty + 12, Q.textW, 99, { font: Q.f, color: isDone ? HK.T.inkMute : HK.T.inkDim, id: 'board:note' });
+      // what it takes, with the count so far
+      if (isDone) K.mark(g, true, tx, ty + 13, 'Done. Thank you, knight.', { w: Q.textW - 18, color: HK.T.inkMute });
+      else if (rd) K.mark(g, true, tx, ty + 13, needText(q) + '. Ready to hand in.', { w: Q.textW - 18 });
+      else K.say(g, needText(q), tx, ty + 13, Q.textW, { font: Q.f, color: tk ? HK.T.ink : HK.T.inkDim, id: 'board:need' });
+      ty += Q.lh + 2;
+      // the reward, exact, in Cinzel
+      const bx = x0 + Q.inner - 12 - Q.bw, by = Q.wide ? y + Math.round((ch - R) / 2) : y + ch - 10 - R;
+      // (on a narrow card the reward shares the row with the plate, so the word Reward gives way and the numbers
+      // shrink to fit, never cut)
+      const ry = Q.wide ? ty + 13 : by + R / 2 + 5, rEnd = Q.wide ? tx + Q.textW : bx - 10, bits = rewardBits(q), label = Q.wide;
+      const rowW = px0 => (label ? HK.tw(g, 'Reward', K.NAME(11)) + 8 : 0) + bits.reduce((a, bt) => a + (bt.coin ? 15 : 0) + HK.tw(g, bt.t, K.NAME(px0)) + 12, -12);
+      let rp = 12; while (rp > 9 && rowW(rp) > rEnd - tx) rp -= 0.5;
+      const rbox = { x: tx, y: ry - 12, w: rEnd - tx, h: 16 };
+      let rx = tx;
+      if (label) rx += HK.text(g, 'Reward', rx, ry, { font: K.NAME(11), color: HK.T.gold, box: rbox, fitId: 'board:reward' }) + 8;
+      for (const bit of bits) {
+        if (bit.coin) { HK.coin(g, rx + 6, ry - 4, 6); rx += 15; }
+        rx += HK.text(g, bit.t, rx, ry, { font: K.NAME(rp), color: isDone ? HK.T.inkMute : bit.coin ? HK.T.goldHi : HK.T.ink, box: rbox, fitId: 'board:reward' }) + 12;
+      }
+      // the verb
+      if (isDone) K.plate(g, bx, by, Q.bw, R, 'Done', 'Done', () => { }, null, false, { em: 'tick' });
+      else if (!tk) K.plate(g, bx, by, Q.bw, R, 'Take job', `Take: ${q.tag}`, () => takeQuest(q), 'primary', true, { name: 'Take ' + q.giver + '’s job' });
+      else K.plate(g, bx, by, Q.bw, R, 'Hand in', `Hand in: ${q.tag}`, () => handIn(q), rd ? 'primary' : null, rd, { name: 'Hand in ' + q.giver + '’s job' });
+      y += ch + G;
+    }
+    // Back / the page / Next, and Close
+    const fy = py + h - 8 - R, cw = K.plateW('Close');
+    K.pager(g, x0, fy, Q.inner - cw - 2 * G, b.page, Q.pages.length, p => { b.page = clamp(p, 0, Q.pages.length - 1); save(); });
+    K.plate(g, x0 + Q.inner - cw, fy, cw, R, 'Close', 'Close', closePanel, null, true);
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): jobs taken, one ready, one done, on the first and last page
+  PLACE_KIT.scene({
+    id: 'board', panel: 'board', name: 'Notice board (jobs taken, ready and done, first and last page)',
+    setup() {
+      const keep = quest.board ? JSON.parse(JSON.stringify(quest.board)) : null, inv = player.inv.map(s => (s ? { ...s } : null));
+      quest.board = freshBoard(); const b = bq();
+      b.taken.greta = true; b.done.greta = true; b.taken.brakka = true; b.taken.hale = true; b.taken.captain = true; b.goblins = 4; b.toasted = { hale: true };
+      const hh = player.highestHit; player.highestHit = 12;
+      return () => { quest.board = keep; player.inv = inv; player.highestHit = hh; };
+    },
+    variants: [
+      { name: 'page 1', open: () => { openPanel('board'); bq().page = 0; } },
+      { name: 'last page', open: () => { openPanel('board'); bq().page = 99; } },
+    ],
+  });
 
   // ---------- drawing ----------
   const drawBoard = (g, tx, ty, mark) => {
@@ -10428,8 +10723,7 @@ PEOPLE_UI.auditPrompt = function (p) {
     const ensureRoom = n => { for (let i = player.inv.length - 1; i >= 0 && player.inv.filter(s => !s).length < n; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour && !ITEMS[s.id].tool) player.inv[i] = null; } };
     const open = () => { openPanel('board'); render(); };
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
-    const pageOf = q => Math.floor(BOARD_QUESTS.indexOf(q) / Math.max(2, Math.min(6, Math.floor((VH - 20 - 150) / ROW_H))));
-    h.peace(true); closePanel(); player.action = null; drops.length = 0; drain();
+        h.peace(true); closePanel(); player.action = null; drops.length = 0; drain();
     quest.board = freshBoard(); lastFish = null; lastFireSet = null;
     ensureRoom(4); removeItem('potato', countItem('potato')); F.sim(2, []);
     // the board stands in the square and answers E
@@ -10466,9 +10760,9 @@ PEOPLE_UI.auditPrompt = function (p) {
       const steps = F.untilAction(2400, () => bq().fish > f0); player.action = null;
       check('board: Fish for the street counts fish caught with the rod', took && typeof steps === 'number' && bq().fish === f0 + 1 && progress(q) >= 1, { took, steps, fish: bq().fish }); }
     // paging
-    { const per = Math.max(2, Math.min(6, Math.floor((VH - 20 - 150) / ROW_H))); const l2 = `Take: ${BOARD_QUESTS[per].tag}`, l1 = 'Take: Brakka';
+    { const pg = boardPages(), per = pg[0].length; const l2 = `Take: ${BOARD_QUESTS[pg[1][0]].tag}`, l1 = 'Take: Brakka';
       bq().page = 0; open(); const p0 = bq().page; const prevOff = !F.clickButton('Prev'); const next = F.clickButton('Next'); const p1 = bq().page; const onPage2 = !!buttons.find(b => b.label === l2); const prev = F.clickButton('Prev'); const p2 = bq().page; const onPage1 = !!buttons.find(b => b.label === l1);
-      check('board: six jobs a page, Next and Prev turn the pages (Prev is off on the first page)', prevOff && next && p0 === 0 && p1 === 1 && onPage2 && prev && p2 === 0 && onPage1 && BOARD_QUESTS.length >= 12, { p0, p1, p2, onPage2, onPage1, jobs: BOARD_QUESTS.length }); }
+      check('board: the jobs come a page at a time (as many whole cards as fit), Next and Prev turn the pages (Prev is off on the first page)', prevOff && next && p0 === 0 && p1 === 1 && onPage2 && prev && p2 === 0 && onPage1 && BOARD_QUESTS.length >= 12 && per >= 2 && pg.length >= 2, { p0, p1, p2, onPage2, onPage1, per, pages: pg.length, jobs: BOARD_QUESTS.length }); }
     // Rosalind's berry pies: three pies → 120 coins + 100 Cooking xp
     { const q = byId.pies; const ok = !!q && q.kind === 'item' && q.item === 'berry_pie' && q.n === 3 && q.reward.coins === 120 && q.reward.xp[0] === 'cooking' && q.reward.xp[1] === 100 && q.giver === 'Rosalind' && !!ITEMS.berry_pie;
       bq().page = pageOf(q); open(); const took = F.clickButton('Take: Pies'); closePanel(); ensureRoom(2); h.give('berry_pie', 3); F.sim(2, []);
@@ -12098,14 +12392,56 @@ PEOPLE_UI.auditPrompt = function (p) {
 
   // ---------- the oven panel: pies ----------
   // Opened by the core's T.OVEN branch (06) when the knight holds flour and any filling; craft() handles the rest.
-  HOOKS.panel.oven = (g, narrow) => {
+  // One recipe plate per pie, like a station's rows: the pie in a pouch, its name in Cinzel, what goes in and what is in
+  // the pack in plain words with exact counts, and a Bake plate (green when it can be baked). The plate answers to the
+  // recipe's label, so every test and the harness still find it by name.
+  let ovenPage = 0;
+  const ovenLabel = r => r.label + (r.lv > 1 ? `  (lv ${r.lv})` : '');
+  const needsLine = r => r.needs.map(([id, q]) => `${q} ${ITEMS[id] ? ITEMS[id].name : id} (you have ${countItem(id)})`).join(', ');
+  function ovenGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
     const list = RECIPES.filter(r => r.station === 'oven');
-    const { px, py, w } = panelBox(g, 420, 62 + list.length * 40 + 24, 'Oven — pies', `Cooking level ${skillLv('cooking')} · flour and a filling go in, a pie comes out`);
-    list.forEach((r, i) => {
-      const y = py + 62 + i * 40, has = r.needs.every(([id, q]) => countItem(id) >= q), lvOk = skillLv(r.skill) >= r.lv;
-      button(g, px + 18, y, w - 36, 34, r.label + (r.lv > 1 ? `  (lv ${r.lv})` : ''), () => craft(r), has && lvOk ? '#238636' : '#2a2f3a', has && lvOk);
+    const w = Math.min(PANEL_KIT.room().aw, 460), inner = w - 36, bw = touchMode() ? 96 : 84;
+    const textW = inner - 12 - S - 12 - bw - 12, f = K.SENT(13), lh = K.lineH(f);
+    const heights = list.map(r => Math.max(S + 16, 10 + 18 + K.linesOf(g, needsLine(r), textW, f) * lh + 8, R + 16));
+    const foot = R + 8, room = PANEL_KIT.room().ah - 62 - 12 - foot;
+    const pages = K.pages(heights, room, G);
+    const many = pages.length > 1;
+    const pageH = Math.max(...pages.map(p => p.reduce((a, i) => a + heights[i], 0) + (p.length - 1) * G));
+    return { K, R, G, S, list, w, inner, bw, textW, f, lh, heights, pages, h: 62 + pageH + 12 + (many ? foot : 0) };
+  }
+  HOOKS.panel.oven = (g, narrow) => {
+    const Q = ovenGeom(g), { K, R, G, S } = Q;
+    ovenPage = clamp(ovenPage, 0, Q.pages.length - 1);
+    const { px, py, h } = panelBox(g, Q.w, Q.h, 'Oven', `Cooking level ${skillLv('cooking')}. Flour and a filling go in, a pie comes out.`);
+    const x0 = px + 18; let y = py + 62;
+    const canOf = r => ({ has: r.needs.every(([id, q]) => countItem(id) >= q), lvOk: skillLv(r.skill) >= r.lv });
+    Q.list.forEach((r, i) => {
+      const { has, lvOk } = canOf(r), can = has && lvOk;
+      if (!Q.pages[ovenPage].includes(i)) { K.offscreen(ovenLabel(r), () => craft(r), can); return; }
+      const ch = Q.heights[i];
+      K.card(g, x0, y, Q.inner, ch, can ? HK.T.gold : null);
+      K.pouch(g, x0 + 12, y + Math.round((ch - S) / 2), S, r.out, r.qty || 1);
+      const tx = x0 + 12 + S + 12, name = ITEMS[r.out] ? ITEMS[r.out].name : r.out;
+      const lvW = r.lv > 1 ? HK.tw(g, `Level ${r.lv}`, K.NAME(11)) + 8 : 0;
+      K.say(g, name, tx, y + 23, Q.textW - lvW, { font: K.NAME(13), color: can ? HK.T.ink : HK.T.inkDim, id: 'oven:name' });
+      if (r.lv > 1) K.say(g, `Level ${r.lv}`, tx + Q.textW, y + 23, lvW, { font: K.NAME(11), align: 'right', color: lvOk ? HK.T.good : HK.T.warn, id: 'oven:lv' });
+      K.para(g, needsLine(r), tx, y + 28 + 13, Q.textW, 99, { font: Q.f, color: has ? HK.T.ink : HK.T.inkDim, id: 'oven:needs' });
+      K.plate(g, x0 + Q.inner - 12 - Q.bw, y + Math.round((ch - R) / 2), Q.bw, R, 'Bake', ovenLabel(r), () => craft(r), can ? 'primary' : null, can, { name: 'Bake a ' + name.toLowerCase() });
+      y += ch + G;
     });
+    if (Q.pages.length > 1) K.pager(g, x0, py + h - 12 - R, Q.inner, ovenPage, Q.pages.length, p => { ovenPage = clamp(p, 0, Q.pages.length - 1); });
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): flour and berries in the pack, so one pie can be baked
+  PLACE_KIT.scene({
+    id: 'oven', panel: 'oven', name: 'Oven (one pie ready to bake, the others short)',
+    setup() {
+      const inv = player.inv.map(s => (s ? { ...s } : null));
+      player.inv = new Array(INV_SLOTS).fill(null); addItem('flour', 2); addItem('berries', 6); addItem('raw_beef', 1);
+      return () => { player.inv = inv; ovenPage = 0; };
+    },
+    variants: [{ name: '', open: () => { openPanel('oven'); ovenPage = 0; } }],
+  });
 
   // ---------- berry bushes ----------
   const T_BERRY = addTile('BERRY_BUSH', { solid: true, tex: 'grass', mini: '#3f7d2b' });
@@ -13757,19 +14093,56 @@ PEOPLE_UI.auditPrompt = function (p) {
     say(ready ? `A master. I can see it in how you stand. ${CAPE_PRICE} coins for the cape, and every one of them earned.` : `Ninety-nine in a skill, and I will sell you its cape. Not before. Every cape has a trick to it. Agility is trained on the yard course south of Hale's yard, and the cliff ledge at Grey Quarry.`, n.name);
     openPanel('capes');
   };
+  // The Master's panel: one plate of dark vellum per skill. The cape in a pouch, its name in Cinzel, where the knight
+  // stands in plain words ("Level 45. A cape needs level 99." / "Level 99. Yours to buy."), what the cape does, and a
+  // Buy plate with the exact price. Rows keep their full height; Back and Next turn the pages on a small screen.
+  let capesPage = 0;
+  function capesGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
+    const w = Math.min(PANEL_KIT.room().aw, 520), inner = w - 36, bw = touchMode() ? 112 : 100;
+    const textW = inner - 12 - S - 12 - bw - 12, f = K.SENT(13), lh = K.lineH(f);
+    const heights = SKILL_DEFS.map(sk => Math.max(S + 16, R + 16, 10 + 18 + K.linesOf(g, capeLine(sk), textW, f) * lh + 8));
+    const foot = R + 8, room = PANEL_KIT.room().ah - 62 - 12 - foot;
+    const pages = K.pages(heights, room, G);
+    const pageH = Math.max(...pages.map(p => p.reduce((a, i) => a + heights[i], 0) + (p.length - 1) * G));
+    return { K, R, G, S, w, inner, bw, textW, f, lh, heights, pages, h: 62 + pageH + 12 + (pages.length > 1 ? foot : 0) };
+  }
+  const capeLine = sk => { const lv = skillLv(sk.key); return (lv >= 99 ? `Level ${lv}. Yours to buy.` : `Level ${lv}. A cape needs level 99.`) + ` ${CAPE_ABILITY[sk.key] || 'Worn with pride'}.`; };
   HOOKS.panel.capes = (g, narrow) => {
-    ensureCapes(); const n = SKILL_DEFS.length;
-    const rowH = clamp(Math.floor((VH - 120) / n), 20, 30);
-    const { px, py, w } = panelBox(g, 470, 84 + n * rowH, 'Master of Skills', `${coins()} coins · a cape costs ${CAPE_PRICE} and needs level 99`);
-    SKILL_DEFS.forEach((s, i) => {
-      const y = py + 66 + i * rowH, lv = skillLv(s.key), can = lv >= 99 && coins() >= CAPE_PRICE, owned = countItem(capeId(s.key)) > 0 || player.equip.cape === capeId(s.key);
-      drawItemIcon(g, capeId(s.key), px + 28, y + rowH / 2, Math.min(18, rowH - 4));
-      g.fillStyle = lv >= 99 ? '#e6edf3' : '#8b949e'; g.font = `bold ${narrow ? 11 : 12}px sans-serif`; g.textAlign = 'left'; g.fillText(`${s.name}${owned ? ' ✓' : ''}`, px + 44, y + rowH / 2 + 4);
-      g.fillStyle = lv >= 99 ? '#f5c542' : '#6e7681'; g.textAlign = 'right'; g.fillText(`Lv ${lv}`, px + (narrow ? 170 : 186), y + rowH / 2 + 4); g.textAlign = 'left';
-      if (!narrow) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.fillText(CAPE_ABILITY[s.key] || 'Worn with pride', px + 196, y + rowH / 2 + 4); }
-      button(g, px + w - 100, y + 1, 84, rowH - 2, `Buy ${CAPE_PRICE}`, () => { buyCape(s.key); }, can ? '#238636' : '#2a2f3a', can);
+    ensureCapes();
+    const Q = capesGeom(g), { K, R, G, S } = Q;
+    capesPage = clamp(capesPage, 0, Q.pages.length - 1);
+    const { px, py, h } = panelBox(g, Q.w, Q.h, 'Master of Skills', `You have ${coins()} coins. A cape costs ${CAPE_PRICE} and needs level 99.`);
+    const x0 = px + 18; let y = py + 62;
+    SKILL_DEFS.forEach((sk, i) => {
+      const lv = skillLv(sk.key), can = lv >= 99 && coins() >= CAPE_PRICE, owned = countItem(capeId(sk.key)) > 0 || player.equip.cape === capeId(sk.key);
+      const buy = () => { buyCape(sk.key); };
+      if (!Q.pages[capesPage].includes(i)) { K.offscreen(`Buy ${CAPE_PRICE}`, buy, can); return; }
+      const ch = Q.heights[i];
+      K.card(g, x0, y, Q.inner, ch, lv >= 99 ? HK.T.gold : null);
+      K.pouch(g, x0 + 12, y + Math.round((ch - S) / 2), S, capeId(sk.key), 1);
+      const tx = x0 + 12 + S + 12;
+      const ownW = owned ? 18 + HK.tw(g, 'Yours', K.SENT(13)) + 4 : 0;
+      K.say(g, `${sk.name} cape`, tx, y + 23, Q.textW - ownW, { font: K.NAME(13), color: lv >= 99 ? HK.T.goldHi : HK.T.ink, id: 'capes:name' });
+      if (owned) K.mark(g, true, tx + Q.textW - ownW + 4, y + 23, 'Yours', { w: ownW - 18 });
+      K.para(g, capeLine(sk), tx, y + 28 + 13, Q.textW, 99, { font: Q.f, color: lv >= 99 ? HK.T.ink : HK.T.inkDim, id: 'capes:line' });
+      K.plate(g, x0 + Q.inner - 12 - Q.bw, y + Math.round((ch - R) / 2), Q.bw, R, `Buy ${CAPE_PRICE}`, `Buy ${CAPE_PRICE}`, buy, can ? 'primary' : null, can, { em: 'coin', name: `Buy the ${sk.name} cape` });
+      y += ch + G;
     });
+    if (Q.pages.length > 1) K.pager(g, x0, py + h - 12 - R, Q.inner, capesPage, Q.pages.length, p => { capesPage = clamp(p, 0, Q.pages.length - 1); });
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): 2,000 coins, two skills at 99, one cape owned, first and last page
+  PLACE_KIT.scene({
+    id: 'capes', panel: 'capes', name: 'Master of Skills (two skills at 99, one cape owned, first and last page)',
+    setup() {
+      ensureCapes();
+      const inv = player.inv.map(s => (s ? { ...s } : null)), sk = JSON.parse(JSON.stringify(player.skills)), cape = player.equip.cape;
+      player.inv = new Array(INV_SLOTS).fill(null); addItem('coins', 2000); addItem('cape_mining', 1);
+      player.skills.woodcutting.xp = XP_TABLE[99]; player.skills.mining.xp = XP_TABLE[99]; player.skills.agility.xp = XP_TABLE[45];
+      return () => { player.inv = inv; player.skills = sk; player.equip.cape = cape; capesPage = 0; recomputeMaxHp(); };
+    },
+    variants: [{ name: 'first page', open: () => { openPanel('capes'); capesPage = 0; } }, { name: 'last page', open: () => { openPanel('capes'); capesPage = 99; } }],
+  });
   const _panelBox = panelBox;
   panelBox = (g, w, h, title, subtitle) => { if (title === 'Your pack') h = Math.max(h, 66 + EQUIP_SLOTS.length * 52 + 14); return _panelBox(g, w, h, title, subtitle); };
   const _drawItemIcon = drawItemIcon;
@@ -14616,31 +14989,77 @@ PEOPLE_UI.auditPrompt = function (p) {
   }
 
   // ---------- panel ----------
+  // One card of dark vellum per upgrade: the blueprint in a pouch, the name in Cinzel, what it does in plain words,
+  // whether the knight holds the blueprint (a drawn tick and "Blueprint", or a drawn cross and "Needs the blueprint"),
+  // the Crafting level, and the materials as pouches with "have / need" under each. The Fit plate sits beside them,
+  // green when it can be fitted. A narrow phone stacks the card (no blueprint column) and pages the four cards.
+  let bayPage = 0;
+  const BAY_HINT = 'Blueprints drop from the goblins who own the machines: sappers, brutes, walkers, bulldozers and the Barrelbeast. Nix in Grubmarket sells them for machine parts.';
+  function bayGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
+    const w = Math.min(PANEL_KIT.room().aw, 640), inner = w - 36, wide = inner >= 470, bw = touchMode() ? 116 : 104;
+    const textX = wide ? 12 + S + 12 : 12, textW = inner - textX - 12, f = K.SENT(13), lh = K.lineH(f);
+    const heights = UPGRADES.map(u => 10 + 18 + K.linesOf(g, u.blurb, textW, f) * lh + 4 + lh + (u.requires ? lh : 0) + 8 + Math.max(S + 16, R) + 10);
+    const hintH = K.linesOf(g, BAY_HINT, inner, f) * lh + 6;
+    const foot = R + 8, room = PANEL_KIT.room().ah - 62 - 12 - foot - hintH;
+    const pages = K.pages(heights, room, G);
+    const pageH = Math.max(...pages.map(p => p.reduce((a, i) => a + heights[i], 0) + (p.length - 1) * G));
+    return { K, R, G, S, w, inner, wide, bw, textX, textW, f, lh, heights, pages, hintH, h: 62 + pageH + 8 + hintH + foot + 4 };
+  }
   HOOKS.panel.dozerup = (g, narrow) => {
-    const up = DU();
-    const rowH = clamp(Math.floor((VH - 20 - 150) / UPGRADES.length), 60, 78);
+    const up = DU(), Q = bayGeom(g), { K, R, G, S } = Q;
+    bayPage = clamp(bayPage, 0, Q.pages.length - 1);
     const fitted = UPGRADES.filter(u => up[u.id]).length;
-    const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : 620, 96 + UPGRADES.length * rowH + 52, 'Bulldozer bay', `Fit upgrades onto the bulldozer · ${fitted} of ${UPGRADES.length} fitted · they ride with you onto any bulldozer`);
-    const fit = (text, maxW) => { let s = text; while (s.length > 8 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s === text ? text : s + '…'; };
-    const bw = narrow ? 92 : 118, textW = w - 36 - bw - 24;
+    const { px, py, h } = panelBox(g, Q.w, Q.h, 'Bulldozer bay', `${fitted} of ${UPGRADES.length} fitted. They ride with you onto any bulldozer.`);
+    const x0 = px + 18; let y = py + 62;
     UPGRADES.forEach((u, i) => {
-      const y = py + 66 + i * rowH, isDone = !!up[u.id], c = isDone ? { ok: false } : canFitUpgrade(u), hasBp = countItem(u.blueprint) > 0;
-      roundRect(g, px + 18, y, w - 36, rowH - 6, 8); g.fillStyle = isDone ? 'rgba(59,111,182,0.14)' : c.ok ? 'rgba(126,231,135,0.10)' : 'rgba(255,255,255,0.05)'; g.fill();
-      if (c.ok) { g.strokeStyle = 'rgba(126,231,135,0.45)'; g.lineWidth = 1; g.stroke(); }
-      if (isDone) { g.strokeStyle = 'rgba(59,111,182,0.6)'; g.lineWidth = 1; g.stroke(); }
-      drawItemIcon(g, u.blueprint, px + 36, y + rowH / 2 - 3, 16);
-      g.textAlign = 'left'; g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.fillText(fit(`${u.name}${isDone ? '  · fitted' : ''}`, textW - 30), px + 56, y + 18);
-      g.fillStyle = isDone ? '#8b949e' : '#c9d1d9'; g.font = '12px sans-serif'; g.fillText(fit(u.blurb, textW - 30), px + 56, y + 35);
-      const needs = `${hasBp ? 'Blueprint ✓' : 'Blueprint ✗'} · ${u.needs.map(([id, q]) => `${q} ${ITEMS[id].name.toLowerCase()} (${countItem(id)})`).join(' · ')} · Crafting ${u.lv}${u.requires ? ` · needs ${upgradeById(u.requires).name.toLowerCase()}` : ''}`;
-      g.font = '11px sans-serif'; g.fillStyle = isDone ? '#4b535d' : c.ok ? '#7ee787' : '#8b949e'; g.fillText(fit(isDone ? 'Fitted. It stays with you.' : needs, textW - 30), px + 56, y + 51);
-      const bx = px + w - 18 - bw, by = y + Math.floor(rowH / 2) - 18;
-      if (isDone) button(g, bx, by, bw, 30, 'Fitted', () => { }, '#2a2f3a', false);
-      else button(g, bx, by, bw, 30, `Fit: ${u.name}`, () => { fitUpgrade(u); }, c.ok ? '#238636' : '#2a2f3a', c.ok);
+      const isDone = !!up[u.id], c = isDone ? { ok: false } : canFitUpgrade(u), hasBp = countItem(u.blueprint) > 0;
+      const fit = () => { fitUpgrade(u); };
+      if (!Q.pages[bayPage].includes(i)) { if (isDone) K.offscreen('Fitted', () => { }, false); else K.offscreen(`Fit: ${u.name}`, fit, c.ok); return; }
+      const ch = Q.heights[i];
+      K.card(g, x0, y, Q.inner, ch, isDone ? HK.T.good : c.ok ? HK.T.gold : null);
+      if (Q.wide) K.pouch(g, x0 + 12, y + 10, S, u.blueprint, 1);
+      const tx = x0 + Q.textX;
+      let ty = y + 10;
+      K.say(g, u.name, tx, ty + 13, Q.textW, { font: K.NAME(13), color: isDone ? HK.T.good : c.ok ? HK.T.goldHi : HK.T.ink, id: 'bay:name' });
+      ty += 18;
+      ty += K.para(g, u.blurb, tx, ty + 12, Q.textW, 99, { font: Q.f, color: HK.T.inkDim, id: 'bay:blurb' }) + 4;
+      if (isDone) K.mark(g, true, tx, ty + 13, 'Fitted. It stays with you.', { w: Q.textW - 18 });
+      else {
+        const bpW = K.mark(g, hasBp, tx, ty + 13, hasBp ? 'Blueprint' : 'Needs the blueprint', { w: Q.textW / 2 - 18 });
+        const lvOk = skillLv('crafting') >= u.lv;
+        K.say(g, `Crafting level ${u.lv}`, tx + bpW + 16, ty + 13, Q.textW - bpW - 16, { font: Q.f, color: lvOk ? HK.T.good : HK.T.warn, id: 'bay:lv' });
+      }
+      ty += Q.lh;
+      if (u.requires) { const ok = !!up[u.requires]; K.say(g, ok ? `Goes on the ${upgradeById(u.requires).name.toLowerCase()}.` : `Fit the ${upgradeById(u.requires).name.toLowerCase()} first.`, tx, ty + 13, Q.textW, { font: Q.f, color: ok || isDone ? HK.T.inkDim : HK.T.warn, id: 'bay:req' }); ty += Q.lh; }
+      ty += 8;
+      // the materials, and the Fit plate beside them
+      const rowH = Math.max(S + 16, R);
+      K.costRow(g, tx, ty + Math.round((rowH - S - 16) / 2), u.needs);
+      const bx = x0 + Q.inner - 12 - Q.bw, by = ty + Math.round((rowH - R) / 2);
+      if (isDone) K.plate(g, bx, by, Q.bw, R, 'Fitted', 'Fitted', () => { }, null, false, { em: 'tick' });
+      else K.plate(g, bx, by, Q.bw, R, 'Fit it', `Fit: ${u.name}`, fit, c.ok ? 'primary' : null, c.ok, { name: `Fit the ${u.name.toLowerCase()}` });
+      y += ch + G;
     });
-    const fy = py + h - 44;
-    button(g, px + w - 18 - 100, fy, 100, 30, 'Close', closePanel, '#21262d');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(fit('Blueprints drop from the goblins who own the machines: sappers, brutes, walkers, bulldozers, the Barrelbeast.', w - 36 - 110), px + 18, fy + 20);
+    const hy = py + h - 4 - 8 - R - Q.hintH;
+    K.para(g, BAY_HINT, x0, hy + 13, Q.inner, 99, { font: Q.f, color: HK.T.inkDim, id: 'bay:hint' });
+    const fy = py + h - 12 - R, cw = K.plateW('Close');
+    if (Q.pages.length > 1) K.pager(g, x0, fy, Q.inner - cw - 2 * G, bayPage, Q.pages.length, p => { bayPage = clamp(p, 0, Q.pages.length - 1); });
+    K.plate(g, x0 + Q.inner - cw, fy, cw, R, 'Close', 'Close', closePanel, null, true);
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): the drill fitted, two blueprints held, one missing
+  PLACE_KIT.scene({
+    id: 'dozerup', panel: 'dozerup', name: 'Bulldozer bay (the drill fitted, the ram ready, one blueprint missing, first and last page)',
+    setup() {
+      const inv = player.inv.map(s => (s ? { ...s } : null)), up0 = player.dozerUp ? { ...player.dozerUp } : null, cx = player.skills.crafting.xp;
+      player.inv = new Array(INV_SLOTS).fill(null);
+      player.dozerUp = { drill: true, irondrill: false, ram: false, boiler: false };
+      for (const [id, n] of [['blueprint_ram', 1], ['blueprint_irondrill', 1], ['iron_bar', 4], ['blast_powder', 2], ['steel_bar', 3], ['coal', 12]]) addItem(id, n);
+      player.skills.crafting.xp = XP_TABLE[18];
+      return () => { player.inv = inv; player.dozerUp = up0; player.skills.crafting.xp = cx; bayPage = 0; };
+    },
+    variants: [{ name: 'first page', open: () => { openPanel('dozerup'); bayPage = 0; } }, { name: 'last page', open: () => { openPanel('dozerup'); bayPage = 99; } }],
+  });
 
   // ---------- drawing: the pit ----------
   function drawBay(g, tx, ty) {
@@ -19346,20 +19765,49 @@ window.SETTINGS = SETTINGS;
     return true;
   };
   }
+  // Fennick's rail: the mare herself on a plate of vellum with her price in Cinzel, what she will and will not do in
+  // plain words, the knight's own coins (and how many more he needs), a primary Buy plate and Fennick's stall.
+  const STABLE_LINES = ['She carries a knight at twice walking pace.', 'She will not go indoors, down a dungeon, or into water.', 'No swinging a sword from the saddle: get down first.'];
+  function stableGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP();
+    const w = Math.min(460, PANEL_KIT.room().aw), inner = w - 36, f = K.SENT(13), lh = K.lineH(f);
+    const textH = STABLE_LINES.reduce((a, t) => a + K.linesOf(g, t, inner, f) * lh, 0) + K.linesOf(g, coinLine(), inner, f) * lh;
+    return { K, R, G, w, inner, f, lh, textH, h: 62 + 96 + 10 + textH + 10 + R + G + R + 12 };
+  }
+  const coinLine = () => coins() >= HORSE_PRICE ? `You have ${coins()} coins.` : `You have ${coins()} coins. ${HORSE_PRICE - coins()} more to go.`;
   HOOKS.panel.stable = (g, narrow) => {
-    const { px, py, w, h } = panelBox(g, Math.min(440, VW - 20), 250, "Fennick's rail", `A grey mare — ${HORSE_PRICE} coins`);
-    const lines = [
-      'She carries a knight at twice walking pace.',
-      'She will not go indoors, down a dungeon, or into water.',
-      'No swinging a sword from the saddle: get down first.',
-      `You have ${coins()} coins.`,
-    ];
-    g.font = '13px sans-serif'; g.textAlign = 'left';
-    lines.forEach((t, i) => { g.fillStyle = i === lines.length - 1 ? '#c9a36a' : '#8b949e'; g.fillText(t, px + 18, py + 78 + i * 20); });
+    const Q = stableGeom(g), { K, R, G } = Q;
+    const { px, py, h } = panelBox(g, Q.w, Q.h, "Fennick's rail", `A grey mare called ${NAME}, for ${HORSE_PRICE} coins.`);
+    const x0 = px + 18; let y = py + 62;
+    // the mare, grazing on her plate, and her price
+    K.card(g, x0, y, Q.inner, 96);
+    g.save(); g.beginPath(); g.rect(x0 + 3, y + 3, Q.inner - 6, 90); g.clip();
+    g.translate(x0 + 70, y + 60); g.scale(1.25, 1.25);
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 20, 28, 7, 0, 0, 7); g.fill();
+    drawHorse(g, parkedMare(0, 0), false, null);
+    g.restore();
+    const tx = x0 + 150, tw0 = Q.inner - 150 - 12;
+    K.say(g, NAME, tx, y + 34, tw0, { font: K.NAME(16), color: HK.T.goldHi, id: 'stable:name' });
+    K.say(g, 'A grey mare', tx, y + 54, tw0, { font: Q.f, color: HK.T.inkDim, id: 'stable:kind' });
+    HK.coin(g, tx + 8, y + 72, 8);
+    K.say(g, `${HORSE_PRICE} coins`, tx + 22, y + 77, tw0 - 22, { font: K.NAME(14), color: HK.T.goldHi, id: 'stable:price' });
+    y += 96 + 10;
+    for (const t of STABLE_LINES) y += K.para(g, t, x0, y + 13, Q.inner, 99, { font: Q.f, color: HK.T.ink, id: 'stable:line' });
     const enough = coins() >= HORSE_PRICE;
-    button(g, px + 18, py + h - 100, w - 36, 40, `Buy the mare — ${HORSE_PRICE} coins`, buyHorse, '#238636', enough);
-    button(g, px + 18, py + h - 52, w - 36, 40, 'Trade pelts and scrap', () => { closePanel(); openPanel('shop', 'trader'); }, '#21262d');
+    y += K.para(g, coinLine(), x0, y + 13, Q.inner, 99, { font: Q.f, color: enough ? HK.T.good : HK.T.warn, id: 'stable:coins' });
+    const by = py + h - 12 - R - G - R;
+    K.plate(g, x0, by, Q.inner, R, `Buy ${NAME} for ${HORSE_PRICE} coins`, `Buy the mare — ${HORSE_PRICE} coins`, buyHorse, 'primary', enough, { em: 'coin', name: 'Buy the mare' });
+    K.plate(g, x0, by + R + G, Q.inner, R, 'Trade pelts and scrap', 'Trade pelts and scrap', () => { closePanel(); openPanel('shop', 'trader'); }, null, true);
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): short of coins, then with enough
+  PLACE_KIT.scene({
+    id: 'stable', panel: 'stable', name: "Fennick's rail (short of coins, and with enough)",
+    setup() { const inv = player.inv.map(s => (s ? { ...s } : null)); player.inv = new Array(INV_SLOTS).fill(null); return () => { player.inv = inv; }; },
+    variants: [
+      { name: 'short', open: () => { player.inv = new Array(INV_SLOTS).fill(null); addItem('coins', 340); openPanel('stable'); } },
+      { name: 'enough', open: () => { player.inv = new Array(INV_SLOTS).fill(null); addItem('coins', 999999); openPanel('stable'); } },
+    ],
+  });
 
   // ---------- getting on ----------
   // Every refusal is a real one, checked before anything moves.
@@ -19994,17 +20442,50 @@ window.SETTINGS = SETTINGS;
     save();
   }
 
+  // The wreck's panel: what the choice is in plain words, what stripping pays (the parts in a pouch, the exact range
+  // and the Crafting xp), a primary Repair plate and the Strip plate, which asks twice and turns red when armed.
+  const WRECK_TEXT = 'Put it back together and drive it, or break it down for parts. Nix the scrapper in Grubmarket trades parts for the machine plans you are missing.';
+  function wreckGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
+    const w = Math.min(PANEL_KIT.room().aw, 440), inner = w - 36, f = K.SENT(13), lh = K.lineH(f);
+    const textH = K.linesOf(g, WRECK_TEXT, inner, f) * lh;
+    return { K, R, G, S, w, inner, f, lh, textH, h: 62 + textH + 8 + 18 + S + 16 + 10 + R + G + R + 12 };
+  }
   HOOKS.panel.salvage = (g, narrow) => {
     const at = panelArg || {};
-    const t = tileAt(at.tx, at.ty), y = yieldFor(t);
-    if (!y) { closePanel(); return; }
-    const { px, py, w } = panelBox(g, narrow ? 320 : 400, 210, 'A wrecked machine', `${y.name} · ${y.lo}-${y.hi} machine parts if you strip it`);
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left';
-    wrapText(g, 'Put it back together and drive it, or break it down for parts. Nix the scrapper in Grubmarket trades parts for the machine plans you are missing.', px + 18, py + 62, w - 36, 16);
-    button(g, px + 18, py + 118, w - 36, 34, 'Repair it and drive it', () => { closePanel(); repairThrough(); });
+    const t = tileAt(at.tx, at.ty), y0 = yieldFor(t);
+    if (!y0) { closePanel(); return; }
+    const Q = wreckGeom(g), { K, R, G, S } = Q;
+    const { px, py, h } = panelBox(g, Q.w, Q.h, 'A wrecked machine', `A wrecked ${y0.name}.`);
+    const x0 = px + 18; let y = py + 62;
+    y += K.para(g, WRECK_TEXT, x0, y + 13, Q.inner, 99, { font: Q.f, color: HK.T.inkDim, id: 'wreck:text' }) + 8;
+    y += K.head(g, x0, y, Q.inner, 'If you strip it');
+    K.pouch(g, x0, y, S, 'machine_parts', y0.hi);
+    const tx = x0 + S + 12, tw0 = Q.inner - S - 12;
+    K.say(g, `${y0.lo} to ${y0.hi} machine parts`, tx, y + 17, tw0, { font: K.NAME(13), color: HK.T.ink, id: 'wreck:parts' });
+    K.say(g, `and ${y0.xp} Crafting xp. Sometimes some goblin scrap too.`, tx, y + 36, tw0, { font: Q.f, color: HK.T.inkDim, id: 'wreck:xp' });
     const armed = confirmActive('strip');
-    button(g, px + 18, py + 158, w - 36, 34, armed ? 'Really strip it? Tap again' : 'Strip it for parts', () => confirmTap('strip', () => { closePanel(); stripWreck(at.tx, at.ty); }), armed ? '#c0392b' : '#8b2e2e');
+    const by = py + h - 12 - R - G - R;
+    K.plate(g, x0, by, Q.inner, R, 'Repair it and drive it', 'Repair it and drive it', () => { closePanel(); repairThrough(); }, 'primary', true);
+    K.plate(g, x0, by + R + G, Q.inner, R, armed ? 'Really strip it? Tap again' : 'Strip it for parts', armed ? 'Really strip it? Tap again' : 'Strip it for parts', () => confirmTap('strip', () => { closePanel(); stripWreck(at.tx, at.ty); }), armed ? 'danger' : null, true);
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): a walker wreck, then with the Strip plate armed
+  {
+    let spot = null, was = null;
+    const wreckAt = () => { for (let i = 0; i < map.length; i++) if (isWreck(map[i])) return { tx: i % MAP_W, ty: (i / MAP_W) | 0, made: false }; return null; };
+    PLACE_KIT.scene({
+      id: 'salvage', panel: 'salvage', name: 'A wrecked machine (as it opens, and with Strip armed)',
+      setup() {
+        spot = wreckAt();
+        if (!spot) { spot = { tx: 60, ty: 26, made: true }; was = tileAt(60, 26); changeTile(60, 26, T.WRECK); }
+        return () => { if (spot && spot.made) changeTile(spot.tx, spot.ty, was); spot = null; uxConfirm = null; };
+      },
+      variants: [
+        { name: '', open: () => { uxConfirm = null; openPanel('salvage', { tx: spot.tx, ty: spot.ty }); } },
+        { name: 'armed', open: () => { openPanel('salvage', { tx: spot.tx, ty: spot.ty }); uxConfirm = { label: 'strip', until: nowMs() + 60000 }; } },
+      ],
+    });
+  }
 
   // ---------- Nix sells plans, quietly ----------
   const PRICE = { blueprint_drill: 12, blueprint_ram: 16, blueprint_irondrill: 24, blueprint_boiler: 32 };
@@ -20023,34 +20504,71 @@ window.SETTINGS = SETTINGS;
     return true;
   };
 
+  // Nix's panel: what the knight carries (parts and scrap, in pouches with exact counts), then one card per plan —
+  // the blueprint in a pouch, its name, its exact price in parts, and Buy the plan (green), "Need n more" (greyed) or a
+  // drawn tick and "You have it". Melting scrap into parts is the plate at the bottom.
+  function nixGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
+    const ids = Object.keys(PRICE).filter(id => ITEMS[id]);
+    const bw = touchMode() ? 124 : 112, rowH = Math.max(S, R) + 16;
+    // the plans stand in one column, or two side by side when the screen is too short for one (a phone on its side)
+    const hOf = cols => 62 + 18 + S + 18 + 6 + 18 + Math.ceil(ids.length / cols) * (rowH + G) + R + 12;
+    const cols = hOf(1) > PANEL_KIT.room().ah && PANEL_KIT.room().aw >= 720 ? 2 : 1;
+    const w = Math.min(PANEL_KIT.room().aw, cols === 2 ? 760 : 500), inner = w - 36, colW = (inner - (cols - 1) * 16) / cols;
+    return { K, R, G, S, ids, w, inner, bw, rowH, cols, colW, h: hOf(cols) };
+  }
   HOOKS.panel.nix_parts = (g, narrow) => {
     const parts = countItem('machine_parts'), scrap = countItem('goblin_scrap');
-    const ids = Object.keys(PRICE).filter(id => ITEMS[id]);
-    const { px, py, w } = panelBox(g, narrow ? 340 : 470, 150 + ids.length * 40, 'Nix the scrapper', `${parts} machine parts · ${scrap} goblin scrap · you never had these from me`);
-    let y = py + 58;
-    for (const id of ids) {
+    const Q = nixGeom(g), { K, R, G, S } = Q;
+    const { px, py, h } = panelBox(g, Q.w, Q.h, 'Nix the scrapper', 'Plans for machine parts. You never had these from me.');
+    const x0 = px + 18; let y = py + 62;
+    y += K.head(g, x0, y, Q.inner, 'You carry');
+    const half = (Q.inner - G) / 2;
+    K.pouch(g, x0, y, S, 'machine_parts', parts || 0);
+    K.say(g, `${parts} machine parts`, x0 + S + 8, y + S / 2 + 5, half - S - 8, { font: K.NAME(12), color: HK.T.ink, id: 'nix:have' });
+    K.pouch(g, x0 + half + G, y, S, 'goblin_scrap', scrap || 0);
+    K.say(g, `${scrap} goblin scrap`, x0 + half + G + S + 8, y + S / 2 + 5, half - S - 8, { font: K.NAME(12), color: HK.T.ink, id: 'nix:have' });
+    y += S + 18 + 6;
+    y += K.head(g, x0, y, Q.inner, 'Plans');
+    const top = y;
+    Q.ids.forEach((id, n) => {
       const cost = PRICE[id], have = hasBP(id), can = !have && parts >= cost;
-      g.fillStyle = have ? '#3fb950' : can ? '#e6edf3' : '#6e7681'; g.font = '12px sans-serif'; g.textAlign = 'left';
-      drawItemIcon(g, id, px + 26, y + 16, 14);
-      g.fillText(`${bpName(id)} — ${cost} parts`, px + 44, y + 20);
-      if (have) { g.fillStyle = '#3fb950'; g.textAlign = 'right'; g.fillText('you have it', px + w - 22, y + 20); g.textAlign = 'left'; }
-      else button(g, px + w - 132, y, 110, 30, can ? 'Buy the plan' : `Need ${cost - parts} more`, () => {
+      const cx = x0 + (n % Q.cols) * (Q.colW + 16), y = top + Math.floor(n / Q.cols) * (Q.rowH + G);
+      K.card(g, cx, y, Q.colW, Q.rowH, can ? HK.T.gold : null);
+      K.pouch(g, cx + 10, y + 8, S, id, 1);
+      const tx = cx + 10 + S + 12, tw0 = Q.colW - 10 - S - 12 - Q.bw - 22;
+      K.say(g, bpName(id).replace(/^Blueprint: /, ''), tx, y + Q.rowH / 2 - 3, tw0, { font: K.NAME(13), color: have ? HK.T.good : HK.T.ink, id: 'nix:name' });
+      K.say(g, `${cost} machine parts`, tx, y + Q.rowH / 2 + 15, tw0, { font: K.NAME(11), color: can ? HK.T.goldHi : HK.T.inkDim, id: 'nix:price' });
+      const bx = cx + Q.colW - 10 - Q.bw, by = y + (Q.rowH - R) / 2;
+      if (have) K.mark(g, true, bx + 8, by + R / 2 + 5, 'You have it', { w: Q.bw - 26 });
+      else K.plate(g, bx, by, Q.bw, R, can ? 'Buy the plan' : `Need ${cost - parts} more`, can ? 'Buy the plan' : `Need ${cost - parts} more`, () => {
         if (countItem('machine_parts') < cost || hasBP(id)) return;
         removeItem('machine_parts', cost); giveOrDrop(id, 1, player.x, player.y);
         nixState().bought++; sfx('coin'); burst(player.x, player.y, '#3b6fb6', 14, 80);
         floatText(player.x, player.y - 34, bpName(id), '#3b6fb6', 14);
         say('Take it. Burn it when you are done. And if anyone asks, you found it in the yard.', 'Nix the scrapper');
         save();
-      }, can ? '#1f6feb' : '#21262d', can);
-      y += 40;
-    }
+      }, can ? 'primary' : null, can, { name: 'Buy the ' + bpName(id).toLowerCase() });
+    });
     const canMelt = scrap >= SCRAP_PER_PART;
-    button(g, px + 18, y + 6, w - 36, 32, canMelt ? `Melt ${SCRAP_PER_PART} goblin scrap into 1 machine part` : `Melting needs ${SCRAP_PER_PART} goblin scrap`, () => {
+    const melt = canMelt ? `Melt ${SCRAP_PER_PART} goblin scrap into 1 machine part` : `Melting needs ${SCRAP_PER_PART} goblin scrap`;
+    K.plate(g, x0, py + h - 12 - R, Q.inner, R, melt, melt, () => {
       if (countItem('goblin_scrap') < SCRAP_PER_PART || !canFit('machine_parts', 1)) return;
       removeItem('goblin_scrap', SCRAP_PER_PART); giveOrDrop('machine_parts', 1, player.x, player.y);
       nixState().melted++; gainXp('crafting', 12); sfx('ui'); save();
-    }, canMelt ? '#21262d' : '#161b22', canMelt);
+    }, null, canMelt);
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): 20 parts and 7 scrap, the drill plan already held
+  PLACE_KIT.scene({
+    id: 'nix', panel: 'nix_parts', name: 'Nix the scrapper (20 parts, 7 scrap, one plan held, one affordable)',
+    setup() {
+      const inv = player.inv.map(s => (s ? { ...s } : null)), bank = player.bank.map(s => ({ ...s })), up0 = player.dozerUp ? { ...player.dozerUp } : null;
+      player.inv = new Array(INV_SLOTS).fill(null); addItem('machine_parts', 20); addItem('goblin_scrap', 7); addItem('blueprint_drill', 1);
+      player.dozerUp = { drill: false, irondrill: false, ram: false, boiler: false };
+      return () => { player.inv = inv; player.bank = bank; player.dozerUp = up0; };
+    },
+    variants: [{ name: '', open: () => openPanel('nix_parts') }],
+  });
 
   // the audit's progression table should know parts are a Crafting source
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => {
@@ -25956,100 +26474,138 @@ HOOKS.selfTest.push((check, F, h) => {
     save();
   }
 
-  // ---------- the tab strip ----------
-  // Chip widths come from the label length and the live text size, never from measureText: the same number
-  // decides the hit rect and the wrap, so the strip lays out the same in the browser and in the harness, and
-  // large text really does make the chips bigger instead of overflowing them.
-  const CHIP_H = 24, CHIP_GAP = 4, CHIP_FONT = 12;
-  const textK = () => { try { return SETTINGS.textScale(); } catch (e) { return 1; } };
-  const chipW = text => 14 + text.length * Math.round(CHIP_FONT * textK() * 0.62);
-  // pack the chips into rows no wider than `width`; each chip carries the x it sits at inside its row
-  function wrapChips(chips, width) {
-    const rows = []; let row = null, x = 0;
-    for (const c of chips) {
-      const w = chipW(c.wide || c.text);
-      if (!row || (x > 0 && x + w > width)) { row = []; rows.push(row); x = 0; }
-      row.push({ ...c, w, x });
-      x += w + CHIP_GAP;
-    }
-    return rows;
-  }
-  // On a phone the toggle rides at the head of the strip; on anything wider it sits under the knight, where
-  // there is room, and the strip is all tabs.
-  function stripChips(narrow) {
+  // ---------- the look: one plan for every screen ----------
+  // The panel wears the kit's frame (panelBox) and the kit's sizes: vault and pack pouches 44 px on touch (40 with a
+  // mouse), 8 px apart on touch; every choice (1 / 10 / 100 / All, Take / Wear, the tabs, Sort, Deposit) is an iron
+  // plate HK.row() tall, the chosen one with the gold edge. Plates never grow with the text size — a word shrinks to
+  // fit its plate — so a plate's width comes from its word's length, the same in the browser and in the harness.
+  //
+  // Four shapes, the first that fits wins (more vault rows are worth more than any other choice):
+  //   wide   a computer or an iPad: the knight's column on the left; the amounts, tabs, vault, pager, pack and the two
+  //          Deposit plates on the right
+  //   three  a phone on its side: the knight | the vault | the pack, side by side
+  //   stack  a tall phone: the knight's row on top, then the vault, then the pack
+  //   split  a phone too short for the vault and the pack at once: two plates, Vault and Your pack, show one of them
+  // EQUIP_SLOTS is read live (38-agility adds the cape), so the worn pouches are counted, never assumed.
+  const QTY_SHOWN = { 1: '1', 10: '10', 100: '100', All: 'All' };
+  let bankView = 'vault';   // split shape only: which half is showing
+  // a tab's plate is a little tighter than a verb's, so all seven fit one row beside a phone's vault
+  const tabW = s => Math.max(PLACE_KIT.R(), Math.round(String(s).length * 7.2 + 16));
+  const sortChip = () => ({ text: sortOn() ? 'Sort on' : 'Sort off', id: 'sortTabs', active: sortOn, action: toggleSort, w: PLACE_KIT.plateW('Sort off') });
+  function chipList(withSort) {
     const out = [];
-    if (narrow) out.push(sortChip());
-    if (sortOn()) for (const t of tabsNow()) out.push({ text: TAB_LABEL[t], id: 'tab:' + t, active: () => tabNow() === t, action: () => setTab(t) });
+    if (withSort) out.push(sortChip());
+    if (sortOn()) for (const t of tabsNow()) out.push({ text: TAB_LABEL[t], id: 'tab:' + t, active: () => tabNow() === t, action: () => setTab(t), w: tabW(TAB_LABEL[t]) });
     return out;
   }
-  const sortChip = () => ({ text: sortOn() ? 'Sort on' : 'Sort off', wide: 'Sort off', id: 'sortTabs', active: sortOn, action: toggleSort });
-
-  // ---------- layout ----------
-  // One place decides every size, so the panel fits a phone, a phone on its side, a tablet and a desktop.
-  // A short screen drops the HOW MANY caption, shrinks the slots and shows fewer vault rows (the pager reaches
-  // the rest); a narrow screen stands the knight in a band above the vault instead of a column beside it.
-  // EQUIP_SLOTS is read live — 38-agility adds a sixth slot (cape), and another feature may add a seventh — so
-  // the gear list is measured, never assumed: one slot per row with its name when there is room, two columns
-  // of icons when there is not. The tab strip is measured the same way and wraps rather than growing the panel.
-  const PORTRAIT_W = 56;   // the knight's box in the narrow band
-  const SORT_ROW = 36;     // the toggle under the knight's gear on a wide screen (28 tall + 8 above it)
+  // The room the tab plates are given is planned for every tab there could be, so the panel keeps one shape whether the
+  // vault holds one kind of thing or all of them, and whether Sort is on or off (nothing jumps when a tab empties).
+  const allChips = withSort => (withSort ? [sortChip()] : []).concat(['all'].concat(KIND_ORDER).map(t => ({ text: TAB_LABEL[t], id: 'tab:' + t, w: tabW(TAB_LABEL[t]) })));
   function layout() {
-    const narrow = VW < 640, compact = VH < 560, avail = VH - 20;
-    const cols = narrow ? 5 : 10;
-    const packRows = Math.ceil(INV_SLOTS / cols);
-    const nEq = EQUIP_SLOTS.length;
-    const charW = narrow ? 0 : 156;
-    const modeRowH = narrow ? 34 : 0;           // wide: the TAKE/WEAR pair lives in the knight's column
-    const portraitH = compact ? 60 : 92;
-    const bandH = narrow ? 14 + portraitH : 0;
-    const qtyH = compact ? 26 : 40;             // short screen: the 1/10/100/All chips speak for themselves
-    const chips = stripChips(narrow);
-    let size = compact ? 32 : 40, gap = compact ? 4 : 5, rows = 3;
-    const gridOf = s => cols * (s + gap) - gap;
-    const narrowEq = s => clamp(Math.floor((Math.max(gridOf(s), Math.min(VW - 56, 340)) - PORTRAIT_W - 8) / nEq) - 4, 18, 34);
-    const bodyOf = s => narrow ? Math.max(gridOf(s), PORTRAIT_W + 8 + nEq * (narrowEq(s) + 4) - 4) : charW + 14 + gridOf(s);
-    const stripOf = s => {
-      if (!chips.length) return { rows: [], h: 16 };            // nothing to show: the plain VAULT caption
-      const rws = wrapChips(chips, narrow ? bodyOf(s) : gridOf(s));
-      return { rows: rws, h: rws.length * CHIP_H + (rws.length - 1) * CHIP_GAP + 4 };   // 4 of air under the strip
-    };
-    const total = () => 66 + bandH + qtyH + modeRowH + stripOf(size).h + rows * (size + gap) + 38 + 16 + packRows * (size + gap) + 40 + 10;
-    // two vault rows are worth more than big slots, so drop to two rows, then shrink, then one row last
-    while (rows > 2 && total() > avail) rows--;
-    while (size > 24 && total() > avail) size -= 4;
-    while (rows > 1 && total() > avail) rows--;
-    const h = total();
-    const gridW = gridOf(size), strip = stripOf(size), bodyW = bodyOf(size);
-    // the gear list has to live inside that height (wide, above the toggle) or inside one band (narrow)
-    let eqCols = 1, eqSize;
-    if (narrow) { eqCols = nEq; eqSize = narrowEq(size); }
-    else {
-      const room = h - 10 - 66 - (14 + portraitH + 4 + 14 + 38) - SORT_ROW;
-      eqSize = Math.floor(room / nEq) - 5;
-      if (eqSize < 28) { eqCols = 2; eqSize = Math.floor(room / Math.ceil(nEq / 2)) - 5; }
-      eqSize = clamp(eqSize, 18, 38);
+    const K = PLACE_KIT, t = touchMode(), S = K.POUCH(), G = K.GAP(), R = K.R();
+    const avail = PANEL_KIT.room().ah, maxW = PANEL_KIT.room().aw, nEq = EQUIP_SLOTS.length;
+    const grid = n => n * (S + G) - G, rowsOf = n => n * (S + G);
+    const TOP = 62, BOT = 12, HEAD = 18, PAGER = R + 8, GEAR = 3 * 17;
+    const packRows = cols => Math.ceil(INV_SLOTS / cols);
+    // one candidate plan: every block's place, relative to the content origin (px + 18, py + 62)
+    function plan(kind, rows) {
+      const p = { kind, rows, S, G, R, heads: kind === 'wide' };
+      if (kind === 'wide') {
+        const kw = Math.max(grid(3), 140), cols = 10, gw = grid(cols), vx = kw + 16;
+        const wornCols = 3, wornRows = Math.ceil(nEq / wornCols);
+        let ly = HEAD; p.portrait = { x: 0, y: ly, w: kw, h: 96 }; ly += 96 + G;
+        p.gear = { x: 0, y: ly, w: kw, lines: 3 }; ly += GEAR + G;
+        p.worn = { x: 0, y: ly, cols: wornCols }; ly += rowsOf(wornRows);
+        p.mode = { x: 0, y: ly, w: kw, stacked: false }; ly += R + G;
+        p.sort = { x: 0, y: ly, w: kw }; ly += R;
+        p.you = { x: 0, y: 0, w: kw };
+        let y = 0;
+        p.qty = { x: vx, y, w: gw, withMode: false }; y += R + G;
+        const tabs = K.flow(chipList(false), gw);
+        p.tabs = { x: vx, y, rows: tabs }; if (!tabs.length) p.vaultHead = { x: vx, y, w: gw };
+        y += Math.max(HEAD, K.flowH(K.flow(allChips(false), gw))) + G;
+        p.grid = { x: vx, y, cols }; y += rowsOf(rows);
+        p.pager = { x: vx, y, w: gw }; y += PAGER;
+        p.packHead = { x: vx, y, w: gw }; y += HEAD;
+        p.pack = { x: vx, y, cols }; y += rowsOf(packRows(cols));
+        p.deposit = { x: vx, y, w: gw }; y += R;
+        p.w = 36 + vx + gw; p.h = TOP + Math.max(ly, y) + BOT;
+        return p;
+      }
+      if (kind === 'three') {
+        const kw = grid(2), pw = grid(5);
+        const room = maxW - 36 - kw - 16 - 16 - pw, cols = Math.min(10, Math.floor((room + G) / (S + G)));
+        if (cols < 6) return null;   // six columns still read as a vault (a landscape phone with its notch inset leaves six)
+        const gw = grid(cols), vx = kw + 16, rx = vx + gw + 16, wornRows = Math.ceil(nEq / 2);
+        let ly = HEAD; p.you = { x: 0, y: 0, w: kw };
+        // a short screen (a landscape phone) gets a shorter knight, so the vault, the pack and Take / Wear all still fit
+        const phH = avail < 380 ? 48 : 64; p.portrait = { x: 0, y: ly, w: kw, h: phH }; ly += phH + G;
+        p.worn = { x: 0, y: ly, cols: 2 }; ly += rowsOf(wornRows);
+        p.sort = { x: 0, y: ly, w: kw }; ly += R;
+        let y = 0;
+        p.qty = { x: vx, y, w: gw, withMode: true }; y += R + G;
+        const tabs = K.flow(chipList(false), gw);
+        p.tabs = { x: vx, y, rows: tabs }; if (!tabs.length) p.vaultHead = { x: vx, y, w: gw };
+        y += Math.max(HEAD, K.flowH(K.flow(allChips(false), gw))) + G;
+        p.grid = { x: vx, y, cols }; y += rowsOf(rows);
+        p.pager = { x: vx, y, w: gw }; y += R;
+        let ry = 0;
+        p.packHead = { x: rx, y: ry, w: pw }; ry += HEAD;
+        p.pack = { x: rx, y: ry, cols: 5 }; ry += rowsOf(packRows(5));
+        p.deposit = { x: rx, y: ry, w: pw }; ry += R;
+        const inner = Math.max(ly, y, ry);
+        // the gear line fits under the worn pouches only when there is room left in the column
+        if (ly + G + GEAR <= inner) p.gear = { x: 0, y: ly + G, w: kw, lines: 3 };
+        p.w = 36 + rx + pw; p.h = TOP + inner + BOT;
+        return p;
+      }
+      // stack and split share the knight's row: the knight, the worn pouches in two rows, Take and Wear stacked
+      const inner = Math.min(maxW - 36, 340);
+      const wornCols = Math.ceil(nEq / 2), ww = grid(wornCols), pw0 = 60;
+      const modeX = pw0 + 12 + ww + 12, modeW = inner - modeX;
+      if (modeW < R) return null;
+      const cols = Math.min(10, Math.floor((inner + G) / (S + G)));
+      const rowH = Math.max(grid(2) + 0, 2 * R + G);
+      let y = 0;
+      p.portrait = { x: 0, y, w: pw0, h: rowH };
+      p.worn = { x: pw0 + 12, y: y + Math.round((rowH - grid(2)) / 2), cols: wornCols };
+      p.mode = { x: modeX, y: y + Math.round((rowH - (2 * R + G)) / 2), w: modeW, stacked: true };
+      y += rowH + 4;
+      p.gear = { x: 0, y, w: inner, lines: 1 }; y += 17 + G;
+      if (kind === 'split') { p.view = { x: 0, y, w: inner }; y += R + G; }
+      const top = y;
+      // the vault half
+      p.qty = { x: 0, y, w: inner, withMode: false }; y += R + G;
+      const tabs = K.flow(chipList(true), inner);
+      p.tabs = { x: 0, y, rows: tabs }; y += K.flowH(K.flow(allChips(true), inner)) + G;
+      p.grid = { x: 0, y, cols }; y += rowsOf(rows);
+      p.pager = { x: 0, y, w: inner }; y += R;
+      // the pack half: under the vault, or in its place
+      let py0 = kind === 'split' ? top : y + 8;
+      if (kind === 'split') { p.qtyPack = { x: 0, y: py0, w: inner }; py0 += R + G; }
+      p.packHead = { x: 0, y: py0, w: inner }; py0 += HEAD;
+      p.pack = { x: 0, y: py0, cols: 5 }; py0 += rowsOf(packRows(5));
+      p.deposit = { x: 0, y: py0, w: inner }; py0 += R;
+      p.w = 36 + inner; p.h = TOP + Math.max(y, py0) + BOT;
+      return p;
     }
-    return { narrow, compact, size, gap, cols, gridW, packRows, nEq, eqCols, eqSize, portraitH, charW, bandH, bodyW, modeRowH, qtyH, rows, strip, w: bodyW + 36, h };
+    const order = [['wide', 2], ['three', 2], ['stack', 2], ['wide', 1], ['three', 1], ['stack', 1], ['split', 1]];
+    let last = null;
+    for (const [kind, minR] of order) for (let r = 3; r >= minR; r--) {
+      const p = plan(kind, r); if (!p) break;
+      last = p; if (p.h <= avail && p.w <= maxW) return finish(p);
+    }
+    return finish(plan('split', 1) || last);
+    function finish(p) {
+      // the old names (tests and other files read BANK.layout())
+      return Object.assign(p, { narrow: p.kind === 'stack' || p.kind === 'split', compact: p.kind === 'three' || p.kind === 'split', size: S, gap: G, cols: p.grid.cols, gridW: grid(p.grid.cols), packRows: packRows(p.pack.cols), nEq, eqSize: S, touch: t });
+    }
   }
 
-  // a small pill button that draws one label and answers to another (so the harness can name it exactly)
-  function chip(g, x, y, w, h, text, id, active, action) {
-    roundRect(g, x, y, w, h, 7); g.fillStyle = active ? '#238636' : '#21262d'; g.fill();
-    g.strokeStyle = active ? '#3fb950' : '#30363d'; g.lineWidth = 1; g.stroke();
-    g.fillStyle = active ? '#ffffff' : '#c9d1d9'; g.font = 'bold ' + CHIP_FONT + 'px sans-serif';
-    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, x + w / 2, y + h / 2);
-    g.textBaseline = 'alphabetic'; g.textAlign = 'left';
-    buttons.push({ x, y, w, h, label: id, action });
-  }
-  function modePair(g, x, y, w) {
-    const bw = Math.floor((w - 8) / 2);
-    chip(g, x, y, bw, 28, 'TAKE', 'takeMode', mode() === 'take', () => setMode('take'));
-    chip(g, x + bw + 8, y, bw, 28, 'WEAR', 'wearMode', mode() === 'wear', () => setMode('wear'));
-  }
+  // the knight on a vellum plate, drawn wearing what he wears
   function drawKnight(g, x, y, w, h) {
-    roundRect(g, x, y, w, h, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.10)'; g.lineWidth = 1; g.stroke();
-    g.save(); roundRect(g, x, y, w, h, 8); g.clip();
+    PLACE_KIT.card(g, x, y, w, h);
+    g.save(); g.beginPath(); g.rect(x + 3, y + 3, w - 6, h - 6); g.clip();
     g.translate(x + w / 2, y + h * 0.64);
     const s = Math.min(w / 34, h / 44);
     g.scale(s, s);
@@ -26057,106 +26613,115 @@ HOOKS.selfTest.push((check, F, h) => {
     drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, playerLook());
     g.restore();
   }
-  function gearLine() { return 'str +' + gearBonus('str') + '  acc +' + gearBonus('att') + '  def +' + gearBonus('def'); }
-  function wornButton(g, x, y, w, h, k, showName) {
+  const gearLines = () => ['Strength +' + gearBonus('str'), 'Accuracy +' + gearBonus('att'), 'Defence +' + gearBonus('def')];
+  // one worn slot: a pouch; empty, it carries the slot's name; worn, a tap banks the piece
+  function wornPouch(g, x, y, s, k) {
     const id = player.equip[k];
-    drawSlot(g, x, y, h, id ? { id, qty: 1 } : null, false);
-    if (!id && !showName) { g.fillStyle = '#4b535d'; g.font = '9px sans-serif'; g.textAlign = 'center'; g.fillText(k, x + h / 2, y + h / 2 + 3); g.textAlign = 'left'; }
-    if (showName) {
-      g.fillStyle = id ? '#c9d1d9' : '#4b535d'; g.font = '11px sans-serif'; g.textAlign = 'left';
-      let t = id ? name(id) : k;
-      const maxW = w - h - 8;
-      while (t.length > 4 && g.measureText(t).width > maxW) t = t.slice(0, -2) + '…';
-      g.fillText(t, x + h + 6, y + h / 2 + 4);
-    }
-    if (id) buttons.push({ x, y, w, h, label: 'worn' + k, action: () => bankWorn(k) });
+    PLACE_KIT.pouch(g, x, y, s, id || null, 1);
+    if (!id) PLACE_KIT.say(g, k, x + s / 2, y + s * 0.62, s - 4, { font: HK.FC(800, 9), align: 'center', color: HK.T.inkMute, id: 'bank:slot', floor: 7 });
+    if (id) buttons.push({ x, y, w: s, h: s, label: 'worn' + k, action: () => bankWorn(k), name: 'Put the ' + name(id) + ' in the vault' });
   }
-  function caption(g, x, y, text) { g.fillStyle = '#8b949e'; g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillText(text, x, y); }
 
   HOOKS.panel.bank = g => {
     settleTab();
-    const L = layout();
+    const K = PLACE_KIT, L = layout(), S = L.S, G = L.G, R = L.R;
     const amount = qty() === 'All' ? 'the whole stack' : String(qty());
-    const sub = player.bank.length + ' / ' + BANK_SLOTS + ' vault slots · ' + (mode() === 'wear' ? 'WEAR: a tap puts it on' : 'a tap moves ' + amount);
-    const { px, py, w } = panelBox(g, L.w, L.h, 'Bank of Thistledown', sub);
-    const gx = px + 18 + (L.narrow ? 0 : L.charW + 14);
-    let y = py + 66;
+    const sub = player.bank.length + ' / ' + BANK_SLOTS + ' vault slots · ' + (mode() === 'wear' ? 'a tap puts it on' : 'a tap moves ' + amount);
+    const { px, py } = panelBox(g, L.w, L.h, 'Bank of Thistledown', sub);
+    const ox = px + 18, oy = py + 62, at = b => ({ x: ox + b.x, y: oy + b.y });
+    const showVault = L.kind !== 'split' || bankView === 'vault', showPack = L.kind !== 'split' || bankView === 'pack';
 
-    // ---- the knight and his gear: a column beside the vault, or a band above it on a phone ----
-    g.fillStyle = '#8b949e'; g.font = 'bold 10px sans-serif'; g.textAlign = 'left'; g.fillText('YOU', px + 18, y + 10);
-    if (L.narrow) {
-      g.fillStyle = '#6e7681'; g.font = '10px sans-serif'; g.textAlign = 'right'; g.fillText(gearLine(), px + 18 + L.bodyW, y + 10); g.textAlign = 'left';
-      drawKnight(g, px + 18, y + 14, PORTRAIT_W, L.portraitH);
-      const ey = y + 14 + Math.round((L.portraitH - L.eqSize) / 2);
-      EQUIP_SLOTS.forEach((k, i) => wornButton(g, px + 18 + PORTRAIT_W + 8 + i * (L.eqSize + 4), ey, L.eqSize, L.eqSize, k, false));
-      y += L.bandH;
-    } else {
-      let cy = y + 14;
-      drawKnight(g, px + 18, cy, L.charW, L.portraitH);
-      cy += L.portraitH + 4;
-      g.fillStyle = '#6e7681'; g.font = '10px sans-serif'; g.textAlign = 'left'; g.fillText(gearLine(), px + 18, cy + 9);
-      cy += 14;
-      modePair(g, px + 18, cy, L.charW);
-      cy += 38;
-      EQUIP_SLOTS.forEach((k, i) => {
-        const c = i % L.eqCols, r = Math.floor(i / L.eqCols);
-        wornButton(g, px + 18 + c * (L.eqSize + 8), cy + r * (L.eqSize + 5), L.eqCols === 1 ? L.charW : L.eqSize, L.eqSize, k, L.eqCols === 1);
-      });
-      cy += Math.ceil(L.nEq / L.eqCols) * (L.eqSize + 5) - 5 + 8;
-      const sc = sortChip();
-      chip(g, px + 18, cy, L.charW, 28, sc.text, sc.id, sc.active(), sc.action);
+    // ---- the knight and what he wears ----
+    if (L.you) K.head(g, ox + L.you.x, oy + L.you.y, L.you.w, 'You');
+    { const r = at(L.portrait); drawKnight(g, r.x, r.y, L.portrait.w, L.portrait.h); }
+    { const r = at(L.worn); EQUIP_SLOTS.forEach((k, i) => wornPouch(g, r.x + (i % L.worn.cols) * (S + G), r.y + Math.floor(i / L.worn.cols) * (S + G), S, k)); }
+    if (L.gear) {
+      const r = at(L.gear), f = HK.FC(800, 11);
+      if (L.gear.lines === 1) K.say(g, gearLines().join('   '), r.x, r.y + 12, L.gear.w, { font: f, color: HK.T.inkDim, id: 'bank:gear' });
+      else gearLines().forEach((s, i) => K.say(g, s, r.x, r.y + 12 + i * 17, L.gear.w, { font: f, color: HK.T.inkDim, id: 'bank:gear' }));
+    }
+    const modeItems = [{ shown: 'Take', label: 'takeMode', on: mode() === 'take', action: () => setMode('take') }, { shown: 'Wear', label: 'wearMode', on: mode() === 'wear', action: () => setMode('wear') }];
+    if (L.mode) {
+      const r = at(L.mode);
+      if (L.mode.stacked) modeItems.forEach((it, i) => K.tab(g, r.x, r.y + i * (R + G), L.mode.w, it.shown, it.label, it.on, it.action));
+      else K.plateRow(g, r.x, r.y, L.mode.w, modeItems);
+    }
+    // Sort is a toggle, not a tab: on, it wears the green edge (a chosen tab wears the gold one)
+    const sortPlate = (x, y, w) => { const sc = sortChip(); K.plate(g, x, y, w, R, sc.text, sc.id, sc.action, null, true, { on: sc.active() }); };
+    if (L.sort) { const r = at(L.sort); sortPlate(r.x, r.y, L.sort.w); }
+    if (L.view) {
+      const r = at(L.view);
+      K.plateRow(g, r.x, r.y, L.view.w, [
+        { shown: 'Vault', label: 'view:vault', on: bankView === 'vault', action: () => { bankView = 'vault'; } },
+        { shown: 'Your pack', label: 'view:pack', on: bankView === 'pack', action: () => { bankView = 'pack'; } }]);
     }
 
-    // ---- 1 / 10 / 100 / All ----
-    let qy = y;
-    if (!L.compact) { caption(g, gx, y + 9, 'HOW MANY'); qy = y + 14; }
-    const qw = Math.floor((L.gridW - 18) / 4);
-    QTIES.forEach((q, i) => chip(g, gx + i * (qw + 6), qy, qw, 26, String(q), 'qty' + q, qty() === q, () => setQty(q)));
-    y += L.qtyH;
-    if (L.narrow) { modePair(g, gx, y, L.gridW); y += L.modeRowH; }
+    // ---- 1 / 10 / 100 / All (the amount works both ways, so it shows with either half) ----
+    const qtyItems = QTIES.map(q => ({ shown: QTY_SHOWN[q], label: 'qty' + q, on: qty() === q, action: () => setQty(q) }));
+    const qRow = showVault ? L.qty : L.qtyPack;
+    if (qRow) { const r = at(qRow); K.plateRow(g, r.x, r.y, qRow.w, qRow.withMode ? qtyItems.concat(modeItems) : qtyItems); }
 
-    // ---- the tab strip (or the plain caption when there is nothing to show) ----
-    if (!L.strip.rows.length) caption(g, gx, y + 11, 'VAULT');
-    else {
-      L.strip.rows.forEach((row, r) => {
-        const ry = y + r * (CHIP_H + CHIP_GAP);
-        for (const c of row) chip(g, gx + c.x, ry, c.w, CHIP_H, c.text, c.id, c.active(), c.action);
-      });
-      if (!sortOn()) { const last = L.strip.rows[0][L.strip.rows[0].length - 1]; caption(g, gx + last.x + last.w + 10, y + 16, 'VAULT'); }
+    // ---- the vault: its tabs, its pouches and the pager ----
+    if (showVault) {
+      if (L.vaultHead) { const r = at(L.vaultHead); K.head(g, r.x, r.y, L.vaultHead.w, 'Vault'); }
+      if (L.tabs) {
+        const r = at(L.tabs);
+        L.tabs.rows.forEach((row, i) => { for (const c of row) { if (c.id === 'sortTabs') sortPlate(r.x + c.x, r.y + i * (R + G), c.w); else K.tab(g, r.x + c.x, r.y + i * (R + G), c.w, c.text, c.id, c.active(), c.action); } });
+      }
+      const view = sortOn() ? viewFor(tabNow()) : null;      // null = the plain 60-slot grid, in the order things went in
+      const per = L.grid.cols * L.rows, pages = Math.max(1, Math.ceil((view ? view.length : BANK_SLOTS) / per));
+      bankPage = clamp(bankPage, 0, pages - 1);
+      const r = at(L.grid);
+      for (let k = 0; k < per; k++) {
+        const idx = bankPage * per + k;
+        const cx = r.x + (k % L.grid.cols) * (S + G), cy = r.y + Math.floor(k / L.grid.cols) * (S + G);
+        const e = view ? view[idx] : (idx < BANK_SLOTS ? { s: player.bank[idx], i: idx } : null);
+        if (!e) { if (!view) break; drawSlot(g, cx, cy, S, null, false); continue; }
+        const b = e.s;
+        const wearable = !!b && mode() === 'wear' && !!eqSlotFor(ITEMS[b.id]);
+        drawSlot(g, cx, cy, S, b || null, wearable);
+        if (b) buttons.push({ x: cx, y: cy, w: S, h: S, label: 'bank' + e.i, action: () => (mode() === 'wear' ? wearFromVault(e.i) : withdraw(e.i)), name: name(b.id) + ' x ' + b.qty });
+      }
+      const pr = at(L.pager);
+      K.pager(g, pr.x, pr.y, L.pager.w, bankPage, pages, p => { bankPage = clamp(p, 0, pages - 1); });
     }
-    y += L.strip.h;
 
-    // ---- the vault ----
-    const view = sortOn() ? viewFor(tabNow()) : null;      // null = the plain 60-slot grid, in the order things went in
-    const per = L.cols * L.rows, pages = Math.max(1, Math.ceil((view ? view.length : BANK_SLOTS) / per));
-    bankPage = clamp(bankPage, 0, pages - 1);
-    for (let k = 0; k < per; k++) {
-      const idx = bankPage * per + k;
-      const cx = gx + (k % L.cols) * (L.size + L.gap), cy = y + Math.floor(k / L.cols) * (L.size + L.gap);
-      const e = view ? view[idx] : (idx < BANK_SLOTS ? { s: player.bank[idx], i: idx } : null);
-      if (!e) { if (!view) break; drawSlot(g, cx, cy, L.size, null, false); continue; }
-      const b = e.s;
-      const wearable = !!b && mode() === 'wear' && !!eqSlotFor(ITEMS[b.id]);
-      drawSlot(g, cx, cy, L.size, b || null, wearable);
-      if (b) buttons.push({ x: cx, y: cy, w: L.size, h: L.size, label: 'bank' + e.i, action: () => (mode() === 'wear' ? wearFromVault(e.i) : withdraw(e.i)) });
+    // ---- the pack and the two Deposit plates ----
+    if (showPack) {
+      const hr = at(L.packHead); K.head(g, hr.x, hr.y, L.packHead.w, 'Your pack', player.inv.filter(Boolean).length + ' / ' + INV_SLOTS);
+      const r = at(L.pack);
+      drawInvGrid(g, r.x, r.y, L.pack.cols, S, G, depositFromPack);
+      const d = at(L.deposit);
+      K.plateRow(g, d.x, d.y, L.deposit.w, [{ shown: 'Deposit bag', label: 'Deposit bag', action: depositBag }, { shown: 'Deposit worn', label: 'Deposit worn', action: depositWorn }]);
     }
-    y += L.rows * (L.size + L.gap);
-    pager(g, gx, y, L.gridW, bankPage, pages, p => { bankPage = clamp(p, 0, pages - 1); });
-    y += 38;
-
-    // ---- the pack ----
-    caption(g, gx, y + 11, 'YOUR PACK');
-    y += 16;
-    drawInvGrid(g, gx, y, L.cols, L.size, L.gap, depositFromPack);
-    y += L.packRows * (L.size + L.gap);
-
-    // ---- the two dump buttons ----
-    const bw = Math.floor((L.gridW - 10) / 2);
-    button(g, gx, y + 6, bw, 30, 'Deposit bag', depositBag, '#1f6feb');
-    button(g, gx + bw + 10, y + 6, bw, 30, 'Deposit worn', depositWorn, '#1f6feb');
   };
+  const setView = v => { bankView = v === 'pack' ? 'pack' : 'vault'; };
 
-  window.BANK = { QTIES, KIND_ORDER, TAB_LABEL, resetState, qty, setQty, mode, setMode, sortOn, setSort, setTab, tabNow, tabsNow, settleTab, kindOf, viewFor, wantOf, layout, depositItem, depositFromPack, withdraw, wearFromVault, bankWorn, depositBag, depositWorn, inVault, eqSlotFor };
+  window.BANK = { QTIES, KIND_ORDER, TAB_LABEL, resetState, qty, setQty, mode, setMode, sortOn, setSort, setTab, tabNow, tabsNow, settleTab, kindOf, viewFor, wantOf, layout, depositItem, depositFromPack, withdraw, wearFromVault, bankWorn, depositBag, depositWorn, inVault, eqSlotFor, setView, view: () => bankView };
+
+  // ---------- the panel audit's scene (PLACE_KIT, run from 63-house): a full vault over several pages ----------
+  PLACE_KIT.scene({
+    id: 'bank', panel: 'bank', name: 'Bank of Thistledown (a full vault of every kind, on page 2; sorted and plain; Take and Wear; the pack half on a small phone)',
+    setup() {
+      const keep = { inv: player.inv.map(s => (s ? { ...s } : null)), bank: player.bank.map(s => ({ ...s })), equip: { ...player.equip }, q: player.bankQty, m: player.bankMode, s: player.bankSort, t: player.bankTab, page: bankPage, view: bankView, hp: player.hp, mhp: player.maxHp };
+      // sixty different things, every kind among them, so every tab stands and the vault runs to several pages
+      const ids = Object.keys(ITEMS), pick = [];
+      for (const k of KIND_ORDER) for (const id of ids.filter(i => kindOf(i) === k).slice(0, 4)) pick.push(id);
+      for (const id of ids) { if (pick.length >= BANK_SLOTS) break; if (!pick.includes(id)) pick.push(id); }
+      player.bank = pick.slice(0, BANK_SLOTS).map((id, i) => ({ id, qty: ITEMS[id].stack > 1 ? 1 + (i * 37) % 900 : 1 }));
+      player.inv = new Array(INV_SLOTS).fill(null).map((s, i) => ({ id: ids[(i * 7) % ids.length], qty: 1 + i }));
+      for (const k of EQUIP_SLOTS) { const id = ids.find(i => eqSlotFor(ITEMS[i]) === k); player.equip[k] = id || null; }
+      return () => {
+        player.inv = keep.inv; player.bank = keep.bank; player.equip = keep.equip; player.bankQty = keep.q; player.bankMode = keep.m; player.bankSort = keep.s; player.bankTab = keep.t;
+        bankPage = keep.page; bankView = keep.view; recomputeMaxHp(); player.maxHp = keep.mhp; player.hp = keep.hp;
+      };
+    },
+    variants: [
+      { name: 'sorted, page 2', open: () => { player.bankSort = true; player.bankTab = 'all'; player.bankMode = 'take'; player.bankQty = 10; bankView = 'vault'; openPanel('bank'); bankPage = 1; } },
+      { name: 'plain, Wear', open: () => { player.bankSort = false; player.bankTab = 'all'; player.bankMode = 'wear'; player.bankQty = 'All'; bankView = 'vault'; openPanel('bank'); bankPage = 1; } },
+      { name: 'the pack half', open: () => { player.bankSort = true; player.bankTab = 'gear'; player.bankMode = 'take'; player.bankQty = 1; bankView = 'pack'; openPanel('bank'); bankPage = 0; } },
+    ],
+  });
 
   // ---------- self-test ----------
   const P = 'bank: ';
@@ -27990,44 +28555,93 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   // ---------- the build panel ----------
+  // Two tabs as plates (Stations / Portal nexus, the chosen one gold), a line that says where the thing will go, then
+  // one card of dark vellum per station or arch: its name in Cinzel, what it is for in plain words, its cost as
+  // pouches with "have / need" under each, and Build it / Raise the arch (green when it can be done; greyed, still
+  // named, when it cannot: Cannot pay, No room, Not been). Take down sits at the bottom in the danger tone. It needs
+  // no second tap: taking a thing down destroys nothing, its materials come straight back. Back / Next page the cards.
+  let buildPage = 0;
+  const TAKE_LINE = 'Take down what is in front of you. Its materials come back.';
+  const FACE_LINE = 'Face something you built to take it down.';
+  const destLine = d => (archTo(d.key) ? 'Standing. Walk through it to go there.' : H().been[d.key] ? d.line : 'You have not been there yet. Stand there once and an arch can reach it.');
+  function buildGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
+    // a wide panel puts the cost and the plate beside the words (one short card); a narrow one stacks them under
+    const w = Math.min(PANEL_KIT.room().aw, 600), inner = w - 36, wide = inner >= 480, f = K.SENT(13), lh = K.lineH(f);
+    const rowH = Math.max(S + 16, R), bw = K.plateW('Raise the arch'), costsW = K.costW(Math.max(ARCH_COST.length, ...KITS.map(k => k.cost.length)), S);
+    const textW = wide ? inner - 24 - bw - 12 - costsW - 12 : inner - 24;
+    const cardH = t => (wide ? Math.max(10 + 18 + K.linesOf(g, t, textW, f) * lh + 8, rowH + 16) : 10 + 18 + K.linesOf(g, t, textW, f) * lh + 6 + rowH + 10);
+    const heights = buildTab === 0 ? KITS.map(k => cardH(k.blurb)) : DESTS.map(d => cardH(destLine(d)));
+    const takeH = Math.max(K.linesOf(g, TAKE_LINE, inner, f), K.linesOf(g, FACE_LINE, inner, f)) * lh;
+    const top = R + G + lh + 6, bottom = 8 + takeH + 4 + R;
+    const pagerH = R + 8, room0 = PANEL_KIT.room().ah - 62 - 12 - top - bottom;
+    let pages = K.pages(heights, room0, G);
+    if (pages.length > 1) pages = K.pages(heights, room0 - pagerH, G);
+    const pageH = Math.max(...pages.map(p => p.reduce((a, i) => a + heights[i], 0) + (p.length - 1) * G));
+    return { K, R, G, S, w, inner, wide, bw, costsW, textW, f, lh, rowH, heights, pages, takeH, top, pagerH: pages.length > 1 ? pagerH : 0, h: 62 + top + pageH + (pages.length > 1 ? 8 + R : 0) + bottom + 12 };
+  }
   HOOKS.panel.house_build = (g, narrow) => {
     if (!inside) { closePanel(); return; }
-    const h = H(), spot = buildSpot();
-    const rows = buildTab === 0 ? KITS.length : DESTS.length;
-    const { px, py, w } = panelBox(g, narrow ? 340 : 470, 132 + rows * 38 + 44, 'Build on your island',
-      `${h.made} built · ${archCount()} of ${DESTS.length} arches standing`);
-    button(g, px + 18, py + 58, (w - 44) / 2, 30, 'Stations', () => { buildTab = 0; }, buildTab === 0 ? '#1f6feb' : '#21262d');
-    button(g, px + 26 + (w - 44) / 2, py + 58, (w - 44) / 2, 30, 'Portal nexus', () => { buildTab = 1; }, buildTab === 1 ? '#1f6feb' : '#21262d');
-    g.fillStyle = spot.ok ? '#8b949e' : '#d29922'; g.font = '12px sans-serif'; g.textAlign = 'left';
-    g.fillText(spot.ok ? 'It goes on the ground in front of you.' : spot.why, px + 18, py + 110);
-
-    let y = py + 122;
-    if (buildTab === 0) {
-      for (const k of KITS) {
-        const pay = canPay(k.cost), can = pay && spot.ok;
-        roundRect(g, px + 18, y, w - 36, 34, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-        g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(k.name, px + 30, y + 15);
-        g.fillStyle = pay ? '#8b949e' : '#8b2e2e'; g.font = '11px sans-serif'; g.fillText(pay ? costText(k.cost) : shortText(k.cost) + ' needed', px + 30, y + 28);
-        button(g, px + w - 130, y + 2, 112, 30, can ? 'Build it' : pay ? 'No room' : 'Cannot pay', () => buildHere(k, null), can ? '#238636' : '#21262d', can);
-        y += 38;
+    const h = H(), spot = buildSpot(), Q = buildGeom(g), { K, R, G, S } = Q;
+    buildPage = clamp(buildPage, 0, Q.pages.length - 1);
+    const { px, py, h: ph } = panelBox(g, Q.w, Q.h, 'Build on your island', `${h.made} built, ${archCount()} of ${DESTS.length} arches standing`);
+    const x0 = px + 18; let y = py + 62;
+    K.plateRow(g, x0, y, Q.inner, [
+      { shown: 'Stations', label: 'Stations', on: buildTab === 0, action: () => { buildTab = 0; buildPage = 0; } },
+      { shown: 'Portal nexus', label: 'Portal nexus', on: buildTab === 1, action: () => { buildTab = 1; buildPage = 0; } }]);
+    y += R + G;
+    K.say(g, spot.ok ? 'It goes on the ground in front of you.' : spot.why, x0, y + 13, Q.inner, { font: Q.f, color: spot.ok ? HK.T.inkDim : HK.T.warn, id: 'build:spot' });
+    y += Q.lh + 6;
+    const list = buildTab === 0 ? KITS : DESTS;
+    list.forEach((it, i) => {
+      let shown, label, can, action, cost = null, nameCol = HK.T.ink, have = false;
+      if (buildTab === 0) {
+        const pay = canPay(it.cost); can = pay && spot.ok; cost = it.cost;
+        label = can ? 'Build it' : pay ? 'No room' : 'Cannot pay'; shown = label; action = () => buildHere(it, null);
+      } else {
+        have = archTo(it.key); const been = !!h.been[it.key], pay = canPay(ARCH_COST); can = been && !have && pay && spot.ok;
+        label = !been ? 'Not been' : !pay ? 'Cannot pay' : can ? 'Raise the arch' : 'No room'; shown = label; action = () => buildHere(null, it.key);
+        if (been && !have) cost = ARCH_COST;
+        nameCol = have ? HK.T.good : been ? HK.T.ink : HK.T.inkDim;
       }
-    } else {
-      for (const d of DESTS) {
-        const have = archTo(d.key), been = !!h.been[d.key], pay = canPay(ARCH_COST), can = been && !have && pay && spot.ok;
-        roundRect(g, px + 18, y, w - 36, 34, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-        g.fillStyle = have ? '#3fb950' : been ? '#e6edf3' : '#6e7681'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(d.name, px + 30, y + 15);
-        g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.fillText(have ? 'standing' : been ? costText(ARCH_COST) : 'you have not been there yet', px + 30, y + 28);
-        if (have) { g.fillStyle = '#3fb950'; g.textAlign = 'right'; g.fillText('built', px + w - 26, y + 20); g.textAlign = 'left'; }
-        else button(g, px + w - 130, y + 2, 112, 30, !been ? 'Not been' : !pay ? 'Cannot pay' : can ? 'Raise the arch' : 'No room', () => buildHere(null, d.key), can ? '#6a3fb9' : '#21262d', can);
-        y += 38;
-      }
-    }
+      if (!Q.pages[buildPage].includes(i)) { if (!have) K.offscreen(label, action, can); return; }
+      const ch = Q.heights[i];
+      K.card(g, x0, y, Q.inner, ch, have ? HK.T.good : can ? HK.T.gold : null);
+      const tx = x0 + 12;
+      K.say(g, it.name, tx, y + 23, Q.textW, { font: K.NAME(13), color: nameCol, id: 'build:name' });
+      const paraH = K.para(g, buildTab === 0 ? it.blurb : destLine(it), tx, y + 28 + 13, Q.textW, 99, { font: Q.f, color: HK.T.inkDim, id: 'build:blurb' });
+      const ty = Q.wide ? y + Math.round((ch - Q.rowH) / 2) : y + 28 + paraH + 6, bw = Q.bw, bx = x0 + Q.inner - 12 - bw, by = ty + Math.round((Q.rowH - R) / 2);
+      if (cost) K.costRow(g, Q.wide ? bx - 12 - Q.costsW : tx, ty + Math.round((Q.rowH - S - 16) / 2), cost);
+      if (have) K.mark(g, true, bx + 8, by + R / 2 + 5, 'Built', { w: bw - 26 });
+      else K.plate(g, bx, by, bw, R, shown, label, action, can ? 'primary' : null, can);
+      y += ch + G;
+    });
+    if (Q.pages.length > 1) K.pager(g, x0, py + ph - 12 - R - 4 - Q.takeH - 8 - R, Q.inner, buildPage, Q.pages.length, p => { buildPage = clamp(p, 0, Q.pages.length - 1); });
+    // take down: the thing in front of you, materials back
     const f = frontTile(player, 40);
     const front = onGrid(f.tx, f.ty) ? tileAt(f.tx, f.ty) : -1;
     const removable = !protectedTile(f.tx, f.ty) && (!!kitByTile(front) || front === T_ARCH);
-    button(g, px + 18, y + 6, w - 36, 32, removable ? 'Take down what is in front of you (materials back)' : 'Face something you built to take it down',
-      takeDown, removable ? '#8b2e2e' : '#21262d', removable);
+    const ly = py + ph - 12 - R - 4 - Q.takeH;
+    K.para(g, removable ? TAKE_LINE : FACE_LINE, x0, ly + 13, Q.inner, 99, { font: Q.f, color: removable ? HK.T.ink : HK.T.inkDim, id: 'build:take' });
+    K.plate(g, x0, py + ph - 12 - R, Q.inner, R, 'Take down', removable ? 'Take down what is in front of you (materials back)' : 'Face something you built to take it down', takeDown, removable ? 'danger' : null, removable);
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): on the island (as the panel sees it) with planks and stone
+  // for some things and not others, two places visited and one arch's worth of stone short; both tabs, first and last page
+  PLACE_KIT.scene({
+    id: 'house', panel: 'house_build', name: 'Build on your island (both tabs, first and last page)',
+    setup() {
+      const inv = player.inv.map(s => (s ? { ...s } : null)), house = JSON.parse(JSON.stringify(player.house || {})), was = inside, tab = buildTab;
+      inside = true; H().been = { thistledown: true, quarry: true, pond: true };
+      player.inv = new Array(INV_SLOTS).fill(null); addItem('plank', 9); addItem('stone', 12); addItem('iron_bar', 2); addItem('lodestone', 1);
+      return () => { inside = was; player.inv = inv; player.house = house; buildTab = tab; buildPage = 0; };
+    },
+    variants: [
+      { name: 'Stations', open: () => { buildTab = 0; openPanel('house_build'); buildPage = 0; } },
+      { name: 'Stations, last page', open: () => { buildTab = 0; openPanel('house_build'); buildPage = 99; } },
+      { name: 'Portal nexus', open: () => { buildTab = 1; openPanel('house_build'); buildPage = 0; } },
+      { name: 'Portal nexus, last page', open: () => { buildTab = 1; openPanel('house_build'); buildPage = 99; } },
+    ],
+  });
 
   // ---------- HUD ----------
   // On your island: a plaque in the kit's column (src/59-hudkit.js) with the arch mark, "Your island", the arches
@@ -28348,6 +28962,9 @@ HOOKS.selfTest.push((check, F, h) => {
     check(P + 'the self-test leaves the world exactly as it found it', worldOk, worldInfo);
     save(); h.peace(false);
   });
+
+  // ---------- the panel audit: every place panel at every size (the scenes are registered by their own files) ----------
+  HOOKS.selfTest.push((check, F, h) => PLACE_KIT.audit(check, F, h));
 }
 
 // ---- src/64-impact.js ----
