@@ -175,7 +175,8 @@
     // ---- the vacated rectangle is ordinary Wolfwood: walkable, joined to the rest of the map, and it looks it ----
     { const U = window.UNDERGROUND, O = U.OLD;
       const mix = {}; let solid = 0, floor = 0, alien = 0;
-      const WOODY = new Set([T.GRASS, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, T.DIRT, T.ROCK, T.IRON, T.COAL, T.STUMP, ('ASH' in T) ? T.ASH : T.GRASS]);
+      // (93-ashedge's burnt fringe - dry and singed grass, cinders, scorch, charred trees - is Wolfwood's own ground where it meets the Ashfields)
+      const WOODY = new Set([T.GRASS, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, T.DIRT, T.ROCK, T.IRON, T.COAL, T.STUMP, ('ASH' in T) ? T.ASH : T.GRASS, ...(window.ASHEDGE ? ASHEDGE.FRINGE : [])]);
       for (let y = O.y0; y <= O.y1; y++) for (let x = O.x0; x <= O.x1; x++) {
         const t = map[idx(x, y)];
         mix[t] = (mix[t] || 0) + 1;
