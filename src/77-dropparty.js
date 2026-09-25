@@ -163,6 +163,9 @@
     const pr = ensure();
     if (typeof id !== 'string' || !ID_RE.test(id)) return 'bad';
     if (pr.claimed.includes(id)) { claimSoon(id); return 'again'; }
+    // on the title screen save() writes nothing, so a claim now could lose the prize: leave it unclaimed, and the
+    // server offers it again after the next welcome
+    if (typeof title !== 'undefined' && title.active) return 'later';
     const r = cleanReward(reward);
     if (!r || !ITEMS[r.id]) { note('That prize needs the newest game. Reload the page to get it.'); return 'unknown'; }
     const def = ITEMS[r.id];
@@ -512,7 +515,9 @@
   const ground = () => GROUND || (GROUND = new Set(GROUND_NAMES.filter(n => n in T).map(n => T[n]).filter(t => t !== T.WATER && !SOLID.has(t) && !PUSH_THROUGH.has(t) && !INTERESTING_TILES.has(t))));
   function candidates(scatter, from) {
     const px = from ? from.x : player.x, py = from ? from.y : player.y;
-    const ktx = Math.floor(px / TILE), kty = Math.floor(py / TILE), r = Math.floor(scatter), home = insideBuilding(ktx, kty);
+    const ktx = Math.floor(px / TILE), kty = Math.floor(py / TILE), r = Math.floor(scatter);
+    // houses are only on the overworld (an instance's tiles are not the buildings' tiles)
+    const over = mapNow() === 'over', home = over ? insideBuilding(ktx, kty) : null;
     const taken = new Set(); for (const p of S.parties.values()) for (const c of p.crackers.values()) if (c.tx !== null) taken.add(c.tx + ',' + c.ty);
     const G = ground(), out = [];
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
@@ -523,7 +528,7 @@
       // the server measures its 11 tiles from the knight; stay inside them however it rounds (corner or centre)
       if (Math.hypot(tx - px / TILE, ty - py / TILE) > SERVER_REACH - 0.1 || Math.hypot(tx + 0.5 - px / TILE, ty + 0.5 - py / TILE) > SERVER_REACH - 0.1) continue;
       if (collides(tc(tx), tc(ty), 13, 'person')) continue;
-      if (insideBuilding(tx, ty) !== home) continue;
+      if (over && insideBuilding(tx, ty) !== home) continue;
       if (window.GRAVES && typeof GRAVES.markerAt === 'function' && GRAVES.markerAt(tx, ty)) continue;
       if (taken.has(tx + ',' + ty)) continue;
       out.push([tx, ty]);
@@ -818,7 +823,7 @@
     }
     if (pages > 1) pagerRow(g, x0, listBottom - BH, colW, BH, UI.rowPage, pages, p => { UI.rowPage = clamp(p, 0, pages - 1); UI.sel = Math.min(n - 1, UI.rowPage * per); }, 'party:rows:');
     // the party hat's own line, always
-    label(g, 'Party hat: ' + hatWords(UI.hat) + ' (' + pctText(100 / UI.hat) + '%), rolled first', x0, hatY, '#f5c542', 'bold 12px sans-serif');
+    label(g, 'Party hat: ' + hatWords(UI.hat) + ' (' + pctText(100 / UI.hat) + '%) on every cracker', x0, hatY, '#f5c542', 'bold 12px sans-serif');
     // the chosen row: from, to, weight, take it out
     if (!n || UI.sel < 0) return;
     const r = UI.table[UI.sel], cap = qtyCap(r.id), ex = wide ? x0 + colW + 24 : x0, ew = colW;
@@ -1040,6 +1045,8 @@
         check(P + 'a boom naming this knight gives the prize once, after the fuse; the id is saved as claimed and the claim goes out; a repeat boom or a prize for it gives nothing more (it only claims); a boom for someone else gives nothing', burning && drewLit === true && got && popped && once && theirs, { burning, drewLit, got, popped, once, theirs, coins: coins() - c0, claims: claims() }); }
       { quiet(); feed({ t: 'prize', id: 'p8.4', reward: { id: 'not_in_this_game', qty: 1 } });
         const unknown = !ensure().claimed.includes('p8.4') && !sent('claim').some(m => m.id === 'p8.4') && said('That prize needs the newest game. Reload the page to get it.');
+        const ta = title.active, cz = coins(); title.active = true; feed({ t: 'prize', id: 'p8.7', reward: { id: 'coins', qty: 5 } }); title.active = ta;
+        const later = coins() === cz && !ensure().claimed.includes('p8.7') && !sent('claim').some(m => m.id === 'p8.7');
         quiet(); const bank0 = player.bank; player.bank = []; player.inv = empty().map(() => ({ id: 'iron_dagger', qty: 1 }));
         feed({ t: 'prize', id: 'p8.5', reward: { id: 'iron_bar', qty: 3 } });
         const vault = player.bank.find(s => s.id === 'iron_bar');
@@ -1049,7 +1056,7 @@
         feed({ t: 'boom', id: 'p9.0', n: 'MudGoll', fuse: 1000, reward: { id: 'party_hat_purple', qty: 1, hat: 'purple' } }); F.sim(70, []);
         const hat = countItem('party_hat_purple') === 1 && said('You found a purple party hat! Open your pack to wear it.') && !!levelBanner && levelBanner.text === 'Purple party hat!';
         player.inv = empty(); levelBanner = null;
-        check(P + 'a prize this game does not know is not added and not claimed (the reload sentence); a full pack sends it to the bank, in words; a party hat lands in the pack with its sentence and a gold banner', unknown && banked && hat, { unknown, banked, hat }); }
+        check(P + 'a prize this game does not know is not added and not claimed (the reload sentence), nor is one that comes while the title screen is up; a full pack sends it to the bank, in words; a party hat lands in the pack with its sentence and a gold banner', unknown && later && banked && hat, { unknown, later, banked, hat }); }
 
       // 10. with the cloud save on, the claim waits for a push that holds the cracker id
       if (LG && window.CLOUD) {
