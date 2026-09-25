@@ -37618,7 +37618,8 @@ window.RETALIATE = RETALIATE;
   HOOKS.mapTarget.push(() => {
     if (!midQuest()) return null;
     const s = Q().stage;
-    if (inside()) { const [p, label] = TARGETS[s]; return { x: p[0], y: p[1], label, id: 'lark' }; }
+    // map: 'aerie' marks the target as being on the instance's own map, so the instance map shows it (13-ux mapTargets)
+    if (inside()) { const [p, label] = TARGETS[s]; return { x: p[0], y: p[1], label, id: 'lark', map: 'aerie' }; }
     return { x: 62, y: 6, label: "Aerie: Lark's First Flight", id: 'lark' };
   });
 
