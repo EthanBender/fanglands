@@ -4254,11 +4254,13 @@ const MUSIC = (() => {
       const eggs = () => { let n = 0; for (let y = 0; y < DEN.h; y++) for (let x = 0; x < DEN.w; x++) if (tileAt(x, y) === T_EGG) n++; return n; };
       F.sim(2, []); const laid = eggs(); const m0 = monsters.length; bm.eggT = 99;
       F.sim(Math.ceil(6.2 * 60), []); const hatched = eggs() === 0 && monsters.length === m0 + laid && monsters.filter(m => m.type === 'spider' && m.hatched).length === laid;
-      bm.eggT = 0; F.sim(2, []); const laid2 = eggs(); const e = active.eggs[0]; let swung = false, byE = false;
+      bm.eggT = 0; F.sim(2, []); const laid2 = eggs(); const e = active.eggs[0]; let swung = false, byE = false, live = null;
       if (e) { const sp = beside(e.tx, e.ty); player.x = sp.x; player.y = sp.y; F.face(e.tx, e.ty); player.attackCd = 0; F.press('Space'); F.sim(2, []); swung = tileAt(e.tx, e.ty) === T.CAVE && !active.eggs.includes(e); }
+      // a swing sweeps its reach on every tick of its 0.22 s (attackT), so an egg laid or stood beside before it ends breaks to the swing, not to E: let it end first
+      for (let i = 0; i < 60 && player.attackT > 0; i++) F.step([]);
       let e2 = active.eggs[0]; if (!e2) { bm.eggT = 0; F.sim(2, []); e2 = active.eggs[0]; }
-      if (e2) { const sp = beside(e2.tx, e2.ty); player.x = sp.x; player.y = sp.y; F.face(e2.tx, e2.ty); closePanel(); F.press('KeyE'); F.sim(2, []); byE = tileAt(e2.tx, e2.ty) === T.CAVE; }
-      check('instance: the Brood Mother lays 2 eggs that hatch into spiders after 6 s; a swing or E breaks one', laid === 2 && hatched && laid2 === 2 && swung && byE, { laid, hatched, laid2, swung, byE, eggsNow: eggs() });
+      if (e2) { const sp = beside(e2.tx, e2.ty); player.x = sp.x; player.y = sp.y; F.face(e2.tx, e2.ty); closePanel(); live = player.attackT; F.press('KeyE'); F.sim(2, []); byE = live === 0 && tileAt(e2.tx, e2.ty) === T.CAVE && !active.eggs.includes(e2); }
+      check('instance: the Brood Mother lays 2 eggs that hatch into spiders after 6 s; a swing or E breaks one', laid === 2 && hatched && laid2 === 2 && swung && byE, { laid, hatched, laid2, swung, byE, swingLeftAtE: live, eggsNow: eggs() });
       for (const x of active.eggs.slice()) breakEgg(x, true); monsters = monsters.filter(m => !m.hatched); }
     // the web at half hp, then the kill: banner, cloak once, chest once
     { const bm = monsters.find(m => m.type === 'brood_mother'); const q = Q(); q.cleared[DEN.id] = 0; q.chests = {}; player.equip.body = null; player.mech = null; player.speed = BASE_SPEED;
