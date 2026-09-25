@@ -1406,7 +1406,8 @@ function talkTo(n) {
 // in the chest, so two deaths with wood are ONE wood entry with both amounts added. Things that do not stack
 // (a helm, a sword) stay one entry each. Nothing already in the chest is ever lost to a later fall.
 function addToDeathKeep(items) {
-  const kept = deathKeep && Array.isArray(deathKeep.items) ? deathKeep.items : [];
+  // a fresh list of fresh entries: a caller holding the old chest (a test's snapshot, an instance's) must not see it grow
+  const kept = (deathKeep && Array.isArray(deathKeep.items) ? deathKeep.items : []).map(s => ({ ...s }));
   for (const s of items) {
     if (!s || !(s.qty > 0)) continue;
     const stacks = !!ITEMS[s.id] && ITEMS[s.id].stack > 1;
@@ -1439,7 +1440,9 @@ function itemFee(id, qty) { if (window.__kidmode) return 0; if (id === 'coins') 
 function reclaimPlan() {
   if (!deathKeep) return { fits: [], fees: [], total: 0, all: true };
   const items = deathKeep.items, bag = player.inv.map(s => s ? { ...s } : null);
-  const fits = items.map(s => { if (s.id === 'coins' || !ITEMS[s.id]) return 0; const can = Math.min(s.qty, roomFor(s.id)); if (can > 0) addItem(s.id, can); return can; });
+  // a keyring unlock costs no slot and must not be handed out by merely working out the plan (addItem puts it on the ring)
+  const isKey = id => !!(window.KEYRING && KEYRING.KEYS && KEYRING.KEYS[id]);
+  const fits = items.map(s => { if (s.id === 'coins' || !ITEMS[s.id]) return 0; if (isKey(s.id)) return s.qty; const can = Math.min(s.qty, roomFor(s.id)); if (can > 0) addItem(s.id, can); return can; });
   player.inv = bag;
   const fees = chestFees(items.map((s, i) => ({ id: s.id, qty: fits[i] })));
   const all = items.every((s, i) => s.id === 'coins' || fits[i] >= s.qty);
@@ -1466,7 +1469,7 @@ function reclaimFromDeath() {
   const still = left.length ? `${chestWords(left)} ${chestThings(left) === 1 ? 'is' : 'are'} still in my chest` : '';
   // said, not a one-line notice: the dialogue box wraps, a notice is cut short on a phone
   if (!took && short > 0) { say(`Coin first, knight. I want ${short} more coins, and you have ${coins()}. ${still}.`, 'Death'); return; }
-  say(left.length ? (short > 0 ? `Coin first, knight. ${still}. I keep them until you have the coins.` : `Your pack is full. ${still}. Make room, and come back for them.`) : "Take them. We will meet again. Everyone does.", 'Death');
+  say(left.length ? (short > 0 ? `Coin first, knight. ${still}. I keep ${chestThings(left) === 1 ? 'it' : 'them'} until you have the coins.` : `Your pack is full. ${still}. Make room, and come back for ${chestThings(left) === 1 ? 'it' : 'them'}.`) : "Take them. We will meet again. Everyone does.", 'Death');
   if (!deathKeep) closePanel();
   save();
 }
@@ -23027,6 +23030,8 @@ window.SETTINGS = SETTINGS;
       let found = false;
       for (let i = 0; i < player.inv.length; i++) { const s = player.inv[i]; if (s && s.id === id) { player.inv[i] = null; found = true; } }
       if (Array.isArray(player.bank)) for (let i = 0; i < player.bank.length; i++) { const s = player.bank[i]; if (s && s.id === id) { player.bank[i] = null; found = true; } }
+      // a save from before the keyring could have left one in Death's chest: it comes out of the chest and onto the ring, free
+      if (deathKeep && Array.isArray(deathKeep.items) && deathKeep.items.some(s => s && s.id === id)) { deathKeep.items = deathKeep.items.filter(s => !(s && s.id === id)); if (!deathKeep.items.length) deathKeep = null; found = true; }
       if (found) add(id);
     }
     if (Array.isArray(player.bank)) player.bank = player.bank.filter(Boolean);
@@ -23097,6 +23102,15 @@ window.SETTINGS = SETTINGS;
     const migrated = KEYRING.held('wind_flute') && !player.inv.some(s => s && s.id === 'wind_flute');
     check(P + 'a save that still has the flute loose in the pack moves it onto the keyring on load', migrated, { migrated, ring: ring().slice() });
 
+    // and one left in Death's chest by an old save moves onto the ring on load; the chest panel never hands one out on its own
+    { const dk0 = deathKeep; player.keyring = [];
+      deathKeep = { items: [{ id: 'wind_flute', qty: 1 }, { id: 'steel_helm', qty: 1 }] };
+      openPanel('coffin'); render(); closePanel();
+      const notByPanel = !KEYRING.held('wind_flute');
+      KEYRING.absorb();
+      const fromChest = KEYRING.held('wind_flute') && !!deathKeep && deathKeep.items.length === 1 && deathKeep.items[0].id === 'steel_helm';
+      check(P + "an unlock left in Death's chest by an old save moves onto the keyring on load, and opening the chest panel hands nothing out", notByPanel && fromChest, { notByPanel, fromChest, chest: deathKeep && deathKeep.items.map(s => s.id) });
+      deathKeep = dk0; }
     player.inv = bag; player.keyring = r0;
   });
 }

@@ -76,6 +76,8 @@
       let found = false;
       for (let i = 0; i < player.inv.length; i++) { const s = player.inv[i]; if (s && s.id === id) { player.inv[i] = null; found = true; } }
       if (Array.isArray(player.bank)) for (let i = 0; i < player.bank.length; i++) { const s = player.bank[i]; if (s && s.id === id) { player.bank[i] = null; found = true; } }
+      // a save from before the keyring could have left one in Death's chest: it comes out of the chest and onto the ring, free
+      if (deathKeep && Array.isArray(deathKeep.items) && deathKeep.items.some(s => s && s.id === id)) { deathKeep.items = deathKeep.items.filter(s => !(s && s.id === id)); if (!deathKeep.items.length) deathKeep = null; found = true; }
       if (found) add(id);
     }
     if (Array.isArray(player.bank)) player.bank = player.bank.filter(Boolean);
@@ -146,6 +148,15 @@
     const migrated = KEYRING.held('wind_flute') && !player.inv.some(s => s && s.id === 'wind_flute');
     check(P + 'a save that still has the flute loose in the pack moves it onto the keyring on load', migrated, { migrated, ring: ring().slice() });
 
+    // and one left in Death's chest by an old save moves onto the ring on load; the chest panel never hands one out on its own
+    { const dk0 = deathKeep; player.keyring = [];
+      deathKeep = { items: [{ id: 'wind_flute', qty: 1 }, { id: 'steel_helm', qty: 1 }] };
+      openPanel('coffin'); render(); closePanel();
+      const notByPanel = !KEYRING.held('wind_flute');
+      KEYRING.absorb();
+      const fromChest = KEYRING.held('wind_flute') && !!deathKeep && deathKeep.items.length === 1 && deathKeep.items[0].id === 'steel_helm';
+      check(P + "an unlock left in Death's chest by an old save moves onto the keyring on load, and opening the chest panel hands nothing out", notByPanel && fromChest, { notByPanel, fromChest, chest: deathKeep && deathKeep.items.map(s => s.id) });
+      deathKeep = dk0; }
     player.inv = bag; player.keyring = r0;
   });
 }

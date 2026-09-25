@@ -493,7 +493,8 @@ function talkTo(n) {
 // in the chest, so two deaths with wood are ONE wood entry with both amounts added. Things that do not stack
 // (a helm, a sword) stay one entry each. Nothing already in the chest is ever lost to a later fall.
 function addToDeathKeep(items) {
-  const kept = deathKeep && Array.isArray(deathKeep.items) ? deathKeep.items : [];
+  // a fresh list of fresh entries: a caller holding the old chest (a test's snapshot, an instance's) must not see it grow
+  const kept = (deathKeep && Array.isArray(deathKeep.items) ? deathKeep.items : []).map(s => ({ ...s }));
   for (const s of items) {
     if (!s || !(s.qty > 0)) continue;
     const stacks = !!ITEMS[s.id] && ITEMS[s.id].stack > 1;
@@ -526,7 +527,9 @@ function itemFee(id, qty) { if (window.__kidmode) return 0; if (id === 'coins') 
 function reclaimPlan() {
   if (!deathKeep) return { fits: [], fees: [], total: 0, all: true };
   const items = deathKeep.items, bag = player.inv.map(s => s ? { ...s } : null);
-  const fits = items.map(s => { if (s.id === 'coins' || !ITEMS[s.id]) return 0; const can = Math.min(s.qty, roomFor(s.id)); if (can > 0) addItem(s.id, can); return can; });
+  // a keyring unlock costs no slot and must not be handed out by merely working out the plan (addItem puts it on the ring)
+  const isKey = id => !!(window.KEYRING && KEYRING.KEYS && KEYRING.KEYS[id]);
+  const fits = items.map(s => { if (s.id === 'coins' || !ITEMS[s.id]) return 0; if (isKey(s.id)) return s.qty; const can = Math.min(s.qty, roomFor(s.id)); if (can > 0) addItem(s.id, can); return can; });
   player.inv = bag;
   const fees = chestFees(items.map((s, i) => ({ id: s.id, qty: fits[i] })));
   const all = items.every((s, i) => s.id === 'coins' || fits[i] >= s.qty);
@@ -553,7 +556,7 @@ function reclaimFromDeath() {
   const still = left.length ? `${chestWords(left)} ${chestThings(left) === 1 ? 'is' : 'are'} still in my chest` : '';
   // said, not a one-line notice: the dialogue box wraps, a notice is cut short on a phone
   if (!took && short > 0) { say(`Coin first, knight. I want ${short} more coins, and you have ${coins()}. ${still}.`, 'Death'); return; }
-  say(left.length ? (short > 0 ? `Coin first, knight. ${still}. I keep them until you have the coins.` : `Your pack is full. ${still}. Make room, and come back for them.`) : "Take them. We will meet again. Everyone does.", 'Death');
+  say(left.length ? (short > 0 ? `Coin first, knight. ${still}. I keep ${chestThings(left) === 1 ? 'it' : 'them'} until you have the coins.` : `Your pack is full. ${still}. Make room, and come back for ${chestThings(left) === 1 ? 'it' : 'them'}.`) : "Take them. We will meet again. Everyone does.", 'Death');
   if (!deathKeep) closePanel();
   save();
 }
