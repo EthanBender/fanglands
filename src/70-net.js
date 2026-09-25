@@ -7,7 +7,7 @@
 // Feature file: registers through HOOKS only. window.NET is the register.
 // ============================================================================
 {
-  const HOSTS = ['gorkscape.ca', 'www.gorkscape.ca'];
+  const HOSTS = ['gorkscape.ca', 'www.gorkscape.ca', 'test.gorkscape.ca'];   // test.gorkscape.ca: the owner's separate test world
   const host = (typeof location !== 'undefined' && location.hostname) || '';
   const search = (typeof location !== 'undefined' && location.search) || '';
   // online on the real address, on any address with ?online, or when a test says so before this file runs
