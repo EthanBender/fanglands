@@ -23,6 +23,7 @@ import { cryptoRandom } from './party.js';
 import { cleanName } from './filter.js';
 import { makeHash, checkPassword, randomHex, sameString } from './auth.js';
 import { json, oops, failFrom, readJson, bearer } from './http.js';
+import { backupCall } from './backup.js';
 
 const SESSION_MS = 90 * 24 * 3600 * 1000;   // a token is good for 90 days
 const SAVE_MAX = 512 * 1024;                // bytes; a slot is well under 100 KB
@@ -290,6 +291,7 @@ export class World {
     if (!key) throw oops(503, 'no admin key is set on the world', 'admin');
     if (!sameString(bearer(req), key)) throw oops(401, 'wrong admin key', 'admin');
     const post = method === 'POST';
+    { const r = await backupCall(this, req, url, call, method); if (r) return r; }
     if (call === 'accounts' && method === 'GET') {
       const list = this.rows('SELECT a.name, a.created, a.last_seen, a.banned, a.role, a.muted_until, (SELECT MAX(at) FROM saves s WHERE s.name_lc = a.name_lc) AS save_at FROM accounts a ORDER BY a.name_lc');
       return json(list.map(a => ({ name: a.name, created: a.created, lastSeen: a.last_seen, banned: !!a.banned, saveAt: a.save_at, role: roleWord(a.role), mutedUntil: a.muted_until || 0 })));
