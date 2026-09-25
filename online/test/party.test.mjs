@@ -362,6 +362,19 @@ test('a party survives a nap: a new Room on the same store has it, sends it afte
   assert.deepEqual(ada2.last('light_no'), { t: 'light_no', id: 'p1.0', code: 'taken' });   // lit before the nap stays lit
 });
 
+test('a stored party that is already all lit, or whose prize list no longer reads, is ended when a Room is built, not loaded', () => {
+  const store = new MemoryStore();
+  const all = store.addParty({ at: 1000, by: 'MudGoll', map: 'over', region: '', hat: 1000, table: COINS, spots: SPOTS5, expires: 1000 + PARTY_LIFE });
+  for (let k = 0; k < 5; k++) store.light(all, k, 'sam', 1500, { id: 'coins', qty: 5 });
+  const broken = store.addParty({ at: 1000, by: 'MudGoll', map: 'over', region: '', hat: 1000, table: [], spots: SPOTS5, expires: 1000 + PARTY_LIFE });
+  const good = store.addParty({ at: 1000, by: 'MudGoll', map: 'over', region: '', hat: 1000, table: COINS, spots: SPOTS5, expires: 1000 + PARTY_LIFE });
+  const w = world(store, 2000);
+  assert.deepEqual(Array.from(w.room.parties.keys()), [good]);
+  assert.deepEqual(store.liveParties(2000).map(p => p.id), [good]);
+  assert.equal(store.partyRows.get(all).ended, true); assert.equal(store.partyRows.get(broken).ended, true);
+  assert.equal(store.unclaimed('sam', 0).length, 5);   // the prizes of the all-lit party are still there to claim
+});
+
 test('expiry: 15 minutes after the start the party ends on the fake clock, and later lights find it gone', () => {
   const { w, mud, sam } = scene();
   party(w, mud);

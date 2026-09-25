@@ -111,9 +111,11 @@ export class Room {
   loadParties() {
     for (const p of this.store.liveParties(this.now())) {
       const crackers = new Map(p.crackers.map(c => [c.k, { k: c.k, tx: c.tx, ty: c.ty, litBy: c.litBy || null }]));
-      // every cracker lit but the party never marked over (the world stopped in between): it is over now
-      if (!Array.from(crackers.values()).some(c => !c.litBy)) { this.store.endParty(p.id); continue; }
-      this.parties.set(p.id, { id: p.id, at: p.at, by: p.by, map: p.map, region: p.region || '', hat: p.hat, table: p.table, expires: p.expires, crackers });
+      // every cracker lit but the party never marked over (the world stopped in between), or a prize list that no
+      // longer reads as one: the party is over now
+      const table = checkTable(p.table);
+      if (!table || !HAT_CHOICES.includes(p.hat) || !Array.from(crackers.values()).some(c => !c.litBy)) { this.store.endParty(p.id); continue; }
+      this.parties.set(p.id, { id: p.id, at: p.at, by: p.by, map: p.map, region: p.region || '', hat: p.hat, table, expires: p.expires, crackers });
     }
   }
 
