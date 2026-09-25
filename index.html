@@ -27495,12 +27495,16 @@ window.RETALIATE = RETALIATE;
   }
   // while a knight is typing, the game's key listeners must not hear it (they sit on window, bubble phase; this
   // capturing listener runs first and stops the event there — the input still gets its default action). Escape blurs.
+  // stopPropagation, NOT stopImmediatePropagation: the other text boxes (chat, the admin search) have their own capturing
+  // listeners on window, registered after this one, and they must still hear Enter. With the immediate stop the chat box
+  // never saw Enter, so typed messages could not be sent (only the quick-phrase taps worked).
+  // tools/dom-keys.js checks this with real key presses in a browser before every deploy.
   if (canListen) {
     const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA'); };
     for (const type of ['keydown', 'keyup', 'keypress']) window.addEventListener(type, e => {
       if (!typing()) return;
       if (type === 'keydown' && e.key === 'Escape') { try { document.activeElement.blur(); } catch (err) { } }
-      e.stopImmediatePropagation(); keys.clear();
+      e.stopPropagation(); keys.clear();
     }, true);
   }
 
@@ -29600,7 +29604,9 @@ window.RETALIATE = RETALIATE;
       input.setAttribute('autocapitalize', 'none'); input.setAttribute('autocorrect', 'off'); input.setAttribute('enterkeyhint', 'done'); input.setAttribute('aria-label', 'Search');
       input.style.cssText = 'position:fixed;display:none;z-index:15;box-sizing:border-box;margin:0;padding:0 10px;font:16px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:#0b0f14;border:1px solid #f5c542;border-radius:8px;outline:none;-webkit-appearance:none;appearance:none;';
       input.addEventListener('input', () => typed(input.value));
-      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); try { input.blur(); } catch (err) { } } });
+      // Enter closes the keyboard. It listens on window in the capture phase, like the chat box: 71-login's guard stops
+      // key events at window before they reach any text box, so a listener on the input itself never heard Enter.
+      window.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement === input) { e.preventDefault(); try { input.blur(); } catch (err) { } } }, true);
       document.body.appendChild(input);
       dom = { input, shown: false, key: '', sig: '' };
     } catch (e) { dom = false; }
