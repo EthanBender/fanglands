@@ -21516,7 +21516,8 @@ const HK = (() => {
 
   // ---------- the boss banner ----------
   function bossBanner(g, r, b) {
-    const { x, y, w, h } = r, compact = !!b.compact || h < 44;
+    // a banner is 54-58 px tall wherever it sits; in a taller slot (the scroll's, on a phone) it hangs at the slot's top
+    const { x, y, w } = r, h = Math.min(r.h, 58), compact = !!b.compact || h < 44;
     const rd = compact ? h - 4 : h + 4, rcx = x + rd / 2 - (compact ? 0 : 6), rcy = y + h / 2;
     const mark = b.mark || 'skull';
     // the plate, its edge, the roundel and the boss's mark never change during a fight: drawn once
@@ -21555,11 +21556,13 @@ const HK = (() => {
       return;
     }
     let nf = Math.round(Math.min(16, h * 0.28)); const nm = String(b.name).toUpperCase();
-    const lvf = () => FC(800, Math.max(10, Math.round(nf * 0.8)));
-    while (nf > 10 && tw(g, nm, FC(800, nf)) + (right ? tw(g, right, lvf()) + 14 : 0) > x + w - 16 - tx) nf -= 0.5;
+    const lvf = () => FC(800, Math.max(9, Math.round(nf * 0.8))), room = x + w - 16 - tx;
+    // the name shrinks first; if it still meets the level, the level gives way (the name is what a child reads)
+    while (nf > 9.5 && tw(g, nm, FC(800, nf)) + (right ? tw(g, right, lvf()) + 14 : 0) > room) nf -= 0.5;
+    const showRight = right && tw(g, nm, FC(800, nf)) + tw(g, right, lvf()) + 14 <= room;
     const ny = y + nf + 7;
-    text(g, nm, tx, ny, { font: FC(800, nf), color: T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: x + w - 16 - tx, h: nf + 8 }, fitId: 'boss:name' });
-    if (right) text(g, right, x + w - 16, ny, { font: lvf(), align: 'right', color: b.phase ? T.goldHi : '#ff9a86', shadow: 'rgba(0,0,0,0.9)' });
+    text(g, nm, tx, ny, { font: FC(800, nf), color: T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: showRight ? room - tw(g, right, lvf()) - 14 : room, h: nf + 8 }, fitId: 'boss:name' });
+    if (showRight) text(g, right, x + w - 16, ny, { font: lvf(), align: 'right', color: b.phase ? T.goldHi : '#ff9a86', shadow: 'rgba(0,0,0,0.9)' });
     const heartRow = !!b.heart;
     const bh = Math.round(h * (heartRow ? 0.22 : 0.3)), by = heartRow ? y + h - 2 * bh - 12 : y + h - bh - 9, bw = x + w - 14 - tx;
     meterBar(g, tx, by, bw, bh, b.hp / b.max, '#d8322b', { ticks: 10, trail: b.trail });
@@ -21744,10 +21747,12 @@ const HK = (() => {
     if (o.hover) { rr(g, x + 14, ty, w - 20, th, th / 2); g.strokeStyle = T.goldHi; g.lineWidth = 1.5; g.stroke(); }
     const sr = Math.round(h * 0.3);
     seal(g, x + sr + 2, y + h / 2, sr, 'fang', 'umber', { pressed: o.pressed, seed: 5, scale: 0.95 });
-    const t = String(title || 'QUEST').toUpperCase(); let ts = 11; const room = w - 20 - (sr * 2 + 12) - 10;
+    const t = String(title || 'QUEST').toUpperCase(); let ts = 11; const room = w - 20 - (sr * 2 + 12) - 10, tx0 = x + sr * 2 + 12;
     while (ts > 8.5 && tw(g, t, FC(800, ts)) > room) ts -= 0.5;
-    let shown = t; if (tw(g, shown, FC(800, ts)) > room) { const ww = wrap(g, t, room, 1, FC(800, ts)); shown = ww.lines[0] || ''; }
-    text(g, shown, x + sr * 2 + 12, y + h / 2 + ts * 0.36, { font: FC(800, ts), color: T.gold, shadow: 'rgba(0,0,0,0.9)', box: { x: x + sr * 2 + 12, y, w: room, h }, fitId: 'rolled' });
+    // a name too long for one line takes two (the strip is tall enough), never a cut word
+    const lines = tw(g, t, FC(800, ts)) > room ? wrap(g, t, room, 2, FC(800, 9)).lines : [t];
+    if (lines.length > 1) ts = 9;
+    lines.forEach((l, i) => text(g, l, tx0, y + h / 2 + ts * 0.36 + (i - (lines.length - 1) / 2) * (ts + 2), { font: FC(800, ts), color: T.gold, shadow: 'rgba(0,0,0,0.9)', box: { x: tx0, y, w: room, h }, fitId: 'rolled' }));
   }
 
   // ---------- the talk page ----------
@@ -22086,7 +22091,7 @@ const HK = (() => {
       const py = y + 8 + 44 + 16;
       L.pageTop = py;
       if (o.page === 'kit') L.bottom = grid(x + 16, py + 22, w - 32, h - (py - y) - 16 - 22);
-      else if (o.page === 'game') { L.bottom = rowList(x + 16, py + 40, w - 32); L.statsY = L.bottom + 18; }
+      else if (o.page === 'game') { L.bottom = rowList(x + 16, py + 78, w - 32); L.statsY = L.bottom + 18; }
       else L.bottom = py;
       L.pages = [{ x: x + 10, y: y + 60, w: w - 20, h: h - 70 }];
     } else {
@@ -22620,10 +22625,11 @@ const HK = (() => {
       let sx, sy, side = c.side;
       if (c.at && c.at.sx != null) { sx = c.at.sx; sy = c.at.sy; }
       else if (c.at && typeof cam !== 'undefined') {
-        sx = Math.round(c.at.x - cam.x); sy = Math.round(c.at.y - cam.y) - (c.at.lift || 30);
-        // above the thing unless a lane or a HUD piece is there; then below it
-        const w0 = 140, above = { x: sx - w0 / 2, y: sy - 38, w: w0, h: 38 };
-        if (clash(above)) sy = Math.round(c.at.y - cam.y) + (c.at.lift || 30) + 38;
+        // above the thing, else below it, else beside it: the first place clear of the lanes in use and of the HUD
+        const px = Math.round(c.at.x - cam.x), py = Math.round(c.at.y - cam.y), lift = c.at.lift || 30, w0 = 150;
+        const cand = [['up', px, py - lift, { x: px - w0 / 2, y: py - lift - 38, w: w0, h: 38 }], ['up', px, py + lift + 38, { x: px - w0 / 2, y: py + lift, w: w0, h: 38 }], ['right', px + lift * 0.6, py, { x: px + lift * 0.6 + 8, y: py - 15, w: w0, h: 30 }]];
+        const pick = cand.find(q => !clash(q[3])) || cand[0];
+        sx = pick[1]; sy = pick[2]; side = pick[0] === 'right' ? 'right' : null;
       } else continue;
       tag(g, sx, sy, c.verb, { key: touchOn() ? null : c.key, emblem: touchOn() ? c.emblem : null, edge: 'rgba(247,220,143,0.75)', side });
     }
@@ -22688,8 +22694,10 @@ const HK = (() => {
     for (const p of BL.pages) bookPage(g, p.x, p.y, p.w, p.h);
     if (!BL.onePage) { const lp = BL.pages[0], rp = BL.pages[1], gx = lp.x + lp.w - 18, gw = rp.x - gx + 18; const gg = g.createLinearGradient(gx, 0, gx + gw + 18, 0); gg.addColorStop(0, 'rgba(0,0,0,0)'); gg.addColorStop(0.5, 'rgba(0,0,0,0.55)'); gg.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gg; g.fillRect(gx, B.y + 10, gw + 18, B.h - 20); }
     const chapter = quest.stage >= 7 ? 'Chapter 3: Goblin Tech' : quest.stage >= 5 ? 'Chapter 2: Thistledown' : 'Chapter 1: The Cave';
-    const titleBlock = (cx, y, big) => {
-      text(g, 'FANGLANDS', cx, y, { font: FC(800, big ? 30 : 24), align: 'center', color: T.goldHi, shadow: 'rgba(0,0,0,0.95)' });
+    // the title, and the chapter under it where the page has the room (a phone held sideways has room for the title only)
+    const titleBlock = (cx, y, big, short) => {
+      text(g, 'FANGLANDS', cx, y, { font: FC(800, big ? 30 : short ? 20 : 24), align: 'center', color: T.goldHi, shadow: 'rgba(0,0,0,0.95)' });
+      if (short) return;
       text(g, chapter, cx, y + 22, { font: FS(600, 13), align: 'center', color: T.inkDim });
       flourish(g, cx, y + 36, 180);
     };
@@ -22743,11 +22751,11 @@ const HK = (() => {
           plateButton(g, m, m.id === 'mark:kit' ? 'bag' : 'castle', m.id === 'mark:kit' ? 'Kit' : 'Game', on ? 'primary' : null, { pressed: st.pressed, hover: st.hover, cinzel: true, size: 13 });
           push({ x: m.x, y: m.y, w: m.w, h: m.h, label: m.id, action: () => { BOOK.page = m.id === 'mark:kit' ? 'kit' : 'game'; }, up: true });
         }
-        if (BOOK.page === 'kit') { text(g, 'YOUR KIT', pg.x + 14, BL.pageTop - 4, { font: FC(800, 12), color: T.gold }); drawKit(); }
+        if (BOOK.page === 'kit') { text(g, 'YOUR KIT', pg.x + 14, BL.pageTop + 10, { font: FC(800, 12), color: T.gold }); drawKit(); }
         else { titleBlock(pg.x + pg.w / 2, BL.pageTop + 26, false); drawRows(); statsBlock(pg.x + pg.w / 2, BL.statsY + 14); }
       } else {
         const lp = BL.pages[0], rp = BL.pages[1];
-        titleBlock(lp.x + lp.w / 2, B.y + (BL.fam === 'phoneL' ? 34 : 46), BL.fam !== 'phoneL');
+        titleBlock(lp.x + lp.w / 2, B.y + (BL.fam === 'phoneL' ? 36 : 46), BL.fam !== 'phoneL', BL.fam === 'phoneL');
         drawRows();
         if (BL.fam !== 'phoneL') statsBlock(lp.x + lp.w / 2, BL.statsY);
         text(g, BOOK.page === 'keys' ? '' : 'YOUR KIT', rp.x + 18, B.y + (BL.fam === 'phoneL' ? 34 : 44), { font: FC(800, 13), color: T.gold });
