@@ -379,15 +379,16 @@ const HK = (() => {
       }
       c.restore();
     },
-    // a closed book with a brass clasp: MENU opens the Knight's Book
+    // a closed book with a brass clasp over its fore-edge: MENU opens the Knight's Book
     book(c, cx, cy, s, hole) {
       c.save(); c.translate(cx, cy);
-      rr(c, -s * 0.36, -s * 0.44, s * 0.72, s * 0.88, [s * 0.1, s * 0.06, s * 0.06, s * 0.1]); c.fill();
+      rr(c, -s * 0.4, -s * 0.44, s * 0.7, s * 0.88, [s * 0.14, s * 0.05, s * 0.05, s * 0.14]); c.fill();
+      rr(c, s * 0.08, -s * 0.11, s * 0.4, s * 0.22, s * 0.06); c.fill();
       if (hole) {
-        c.fillStyle = hole; c.strokeStyle = hole; c.lineWidth = Math.max(1, s * 0.045);
-        c.beginPath(); c.moveTo(-s * 0.22, -s * 0.44); c.lineTo(-s * 0.22, s * 0.44); c.stroke();
-        for (const y of [-0.3, 0.3]) { c.beginPath(); c.moveTo(-s * 0.14, y * s); c.lineTo(s * 0.26, y * s); c.stroke(); }
-        rr(c, s * 0.2, -s * 0.1, s * 0.22, s * 0.2, s * 0.04); c.fill();
+        c.strokeStyle = hole; c.fillStyle = hole; c.lineWidth = Math.max(1.1, s * 0.055);
+        c.beginPath(); c.moveTo(-s * 0.25, -s * 0.38); c.lineTo(-s * 0.25, s * 0.38); c.stroke();
+        rr(c, -s * 0.15, -s * 0.33, s * 0.3, s * 0.15, s * 0.03); c.stroke();
+        c.beginPath(); c.arc(s * 0.36, 0, s * 0.055, 0, TAU); c.fill();
       }
       c.restore();
     },
@@ -579,7 +580,7 @@ const HK = (() => {
   function deboss(g, name, cx, cy, s, dark, o = {}) {
     const f = EM[name]; if (!f) return;
     g.save(); g.fillStyle = g.strokeStyle = 'rgba(255,215,200,0.32)'; f(g, cx, cy + 1, s, null, o.off); g.restore();
-    g.save(); g.fillStyle = g.strokeStyle = dark; f(g, cx, cy, s, null, o.off); g.restore();
+    g.save(); g.fillStyle = g.strokeStyle = dark; f(g, cx, cy, s, o.hole || null, o.off); g.restore();
   }
   function coin(g, cx, cy, r) {
     const gr = g.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
@@ -615,11 +616,11 @@ const HK = (() => {
   // =================================================================================================
   // the name ribbon across the foot of a stud / under a seal: a swallowtail band
   function ribbon(g, cx, cy, label, o = {}) {
-    let size = o.size || 11; const maxW = o.maxW || 999;
-    while (size > 8 && tw(g, label, FC(800, size)) + size * 1.1 > maxW) size -= 0.5;
+    let size = o.size || 11;
+    const h = o.h || Math.round(size * 1.5), t = o.tail != null ? o.tail : Math.round(h * 0.5), maxW = (o.maxW || 999) - 2 * t;
+    while (size > 8 && tw(g, label, FC(800, size)) + size * 0.9 > maxW) size -= 0.5;
     const w0 = tw(g, label, FC(800, size));
-    const h = o.h || Math.round(size * 1.5), w = Math.round(w0 + size * 1.1), x = Math.round(cx - w / 2), y = Math.round(cy - h / 2);
-    const t = Math.round(h * 0.5);
+    const w = Math.round(w0 + size * 0.9), x = Math.round(cx - w / 2), y = Math.round(cy - h / 2);
     g.fillStyle = '#120b07';
     g.beginPath(); g.moveTo(x + 3, y + 3); g.lineTo(x - t, y + 3); g.lineTo(x - t * 0.55, y + h / 2 + 3); g.lineTo(x - t, y + h + 3); g.lineTo(x + 3, y + h + 3); g.closePath(); g.fill();
     g.beginPath(); g.moveTo(x + w - 3, y + 3); g.lineTo(x + w + t, y + 3); g.lineTo(x + w + t * 0.55, y + h / 2 + 3); g.lineTo(x + w + t, y + h + 3); g.lineTo(x + w - 3, y + h + 3); g.closePath(); g.fill();
@@ -714,7 +715,7 @@ const HK = (() => {
     g.beginPath(); g.arc(cx, cy, r * 0.7, 0, TAU); g.strokeStyle = dk; g.lineWidth = Math.max(1.4, r * 0.07); g.stroke();
     if (f.pr) { g.beginPath(); g.arc(cx, cy - 1, r * 0.7, Math.PI * 1.15, Math.PI * 1.85); g.strokeStyle = 'rgba(255,215,200,0.3)'; g.lineWidth = 1; g.stroke(); }
     else { g.beginPath(); g.arc(cx, cy + 1, r * 0.7, Math.PI * 0.15, Math.PI * 0.85); g.strokeStyle = 'rgba(255,215,200,0.3)'; g.lineWidth = 1; g.stroke(); }
-    if (em) deboss(g, em, cx, cy, r * (f.scale || 0.92), dk, { off: f.off });
+    if (em) deboss(g, em, cx, cy, r * (f.scale || 0.92), dk, { off: f.off, hole: mid });
     if (!f.pr) { g.beginPath(); g.ellipse(cx - r * 0.38, cy - r * 0.46, r * 0.26, r * 0.12, -0.5, 0, TAU); g.fillStyle = 'rgba(255,255,255,0.22)'; g.fill(); }
   }
   // WAX SEAL: the pressable for OPENING / READING things. wax: 'umber' (MENU, the quest seal, the close seal), 'blue'
@@ -1022,7 +1023,10 @@ const HK = (() => {
   }
 
   // ---------- notice ribbon, banners ----------
-  function noticeRibbon(g, r, msg, alpha = 1, slide = 0) {
+  function noticeRibbon(g, r0, msg, alpha = 1, slide = 0) {
+    const tails = 2 * (Math.round(r0.h * 0.7) - 8 + Math.round(r0.h * 0.28));
+    const want = Math.min(r0.w, Math.max(200, tw(g, msg, FS(600, 14)) + 40 + tails));
+    const r = { x: Math.round(r0.x + (r0.w - want) / 2), y: r0.y, w: want, h: r0.h };
     const { x, w, h } = r, y = r.y - slide;
     g.save(); g.globalAlpha *= cl(alpha, 0, 1);
     const t = Math.round(h * 0.7), n = Math.round(h * 0.28);
@@ -1054,6 +1058,12 @@ const HK = (() => {
     g.strokeStyle = 'rgba(217,178,92,0.7)'; g.lineWidth = 1; g.beginPath(); g.moveTo(cx - w / 2, y); g.lineTo(cx - 8, y); g.moveTo(cx + 8, y); g.lineTo(cx + w / 2, y); g.stroke();
     g.fillStyle = T.gold; g.beginPath(); g.moveTo(cx, y - 4); g.lineTo(cx + 5, y); g.lineTo(cx, y + 4); g.lineTo(cx - 5, y); g.closePath(); g.fill();
   }
+  // a banner's sentence under its headline: it shrinks to 11 px before it wraps, and wraps (two balanced lines) before it is cut
+  function subLines(g, sub, cx, top, r, size, col, halo) {
+    const room = r.w - 8; let sz = size; while (sz > 11 && tw(g, sub, FS(600, sz)) > room) sz -= 0.5;
+    const f = FS(600, sz), lines = tw(g, sub, f) > room ? wrap(g, sub, room, 2, f).lines : [String(sub)];
+    lines.forEach((l, i) => text(g, l, cx, top + realPx(f) * (1 + i * 1.2), { font: f, align: 'center', color: col, halo: 4, haloColor: `rgba(10,8,6,${halo})`, box: r, fitId: 'banner:sub' }));
+  }
   // BANNER: an area name (kind 'area') or a level-up / event headline (kind 'level'), in its lane, faded by alpha
   function banner(g, r, o) {
     const phone = r.w < 420 || VW < 640;
@@ -1064,12 +1074,12 @@ const HK = (() => {
       const ty = r.y + size;
       text(g, o.title, cx, ty, { font: FC(800, size), align: 'center', color: T.ink, halo: 6, haloColor: 'rgba(10,8,6,0.8)', box: r, fitId: 'banner' });
       flourish(g, cx, ty + 9, Math.min(r.w - 20, tw(g, o.title, FC(800, size)) * 0.8));
-      if (o.sub) { let sf = FS(600, phone ? 13 : 15); if (tw(g, o.sub, sf) > r.w - 8) sf = FS(600, 12); text(g, o.sub, cx, ty + 9 + 8 + realPx(sf), { font: sf, align: 'center', color: '#e6c77a', halo: 4, haloColor: 'rgba(10,8,6,0.8)', box: r, fitId: 'banner:sub' }); }
+      if (o.sub) subLines(g, o.sub, cx, ty + 9 + 8, r, phone ? 13 : 15, '#e6c77a', 0.8);
     } else {
       let size = o.small ? (phone ? 16 : 20) : phone ? 24 : 30; while (size > 14 && tw(g, o.title, FC(800, size)) > r.w - 8) size -= 1;
       const ty = r.y + size;
       text(g, o.title, cx, ty, { font: FC(800, size), align: 'center', color: o.small ? '#e6c76a' : T.goldHi, halo: 6, haloColor: 'rgba(10,8,6,0.85)', box: r, fitId: 'banner' });
-      if (o.sub) { const sf = FS(700, o.small ? 12 : 14); text(g, o.sub, cx, ty + 6 + realPx(sf), { font: sf, align: 'center', color: T.ink, halo: 4, haloColor: 'rgba(10,8,6,0.85)', box: r, fitId: 'banner:sub' }); }
+      if (o.sub) subLines(g, o.sub, cx, ty + 6, r, o.small ? 12 : 14, T.ink, 0.85);
     }
     g.restore();
   }
@@ -1257,8 +1267,12 @@ const HK = (() => {
     let ts = tf; while (ts > 9 && tw(g, title, FC(800, ts)) > maxW) ts -= 0.5;
     const ty = y + 7 + ts;
     text(g, title, x + pad, ty, { font: FC(800, ts), color: T.gold, shadow: 'rgba(0,0,0,0.9)', box: { x: x + pad, y, w: maxW, h: ts + 8 }, fitId: 'scroll:title' });
-    const qf = FS(600, o.size || 13), lh = Math.round(realPx(qf) * 1.28);
-    const nLines = Math.max(1, Math.floor((y + h - 6 - (ty + 4)) / lh));
+    let qf = FS(600, o.size || 13), lh = Math.round(realPx(qf) * 1.28);
+    let nLines = Math.max(1, Math.floor((y + h - 6 - (ty + 4)) / lh));
+    if (wrap(g, o.text || '', maxW, nLines, qf).more && (o.size || 13) > 12) {
+      const q2 = FS(600, (o.size || 13) - 1), l2 = Math.round(realPx(q2) * 1.28), n2 = Math.max(1, Math.floor((y + h - 6 - (ty + 4)) / l2));
+      if (!wrap(g, o.text || '', maxW, n2, q2).more) { qf = q2; lh = l2; nLines = n2; }
+    }
     const ww = wrap(g, o.text || '', o.more ? maxW - 10 : maxW, nLines, qf);
     let lines = ww.lines, more = ww.more;
     if (more) { const w2 = wrap(g, o.text || '', maxW - 14, nLines, qf); lines = w2.lines; }
@@ -1610,8 +1624,10 @@ const HK = (() => {
       const tw_ = (gw - 2 * 12) / 3, keyH = fam === 'desk' ? 18 : 0;
       const Dd = Math.min(fam === 'phoneL' ? 46 : 56, tw_ - 10, (gh - (nRows - 1) * 8) / nRows - 16 - keyH);
       const th = Dd + 16 + keyH;
-      for (let i = 0; i < nT; i++) { const cx = gx + (i % 3) * (tw_ + 12) + tw_ / 2, cy = gy + Math.floor(i / 3) * (th + 8) + Dd / 2; L.tiles.push(Cc('tile' + i, cx, cy, Dd / 2, true)); }
-      L.tileD = Dd; L.tileW = tw_; L.grid = { x: gx, y: gy, w: gw, h: gh }; return gy + nRows * th + (nRows - 1) * 8 + 8;
+      // spread the rows down the page when there is room (a tall phone), never closer than the spec's pitch
+      const pitch = Math.max(th + 8, Math.min(th + 40, (gh - th) / Math.max(1, nRows - 1)));
+      for (let i = 0; i < nT; i++) { const cx = gx + (i % 3) * (tw_ + 12) + tw_ / 2, cy = gy + Math.floor(i / 3) * pitch + Dd / 2; L.tiles.push(Cc('tile' + i, cx, cy, Dd / 2, true)); }
+      L.tileD = Dd; L.tileW = tw_; L.grid = { x: gx, y: gy, w: gw, h: gh }; return gy + (nRows - 1) * pitch + th + 8;
     };
     const rowList = (rx, ry, rw) => {
       let yy = ry;
@@ -1622,7 +1638,7 @@ const HK = (() => {
       const bw = 96; L.marks.push(Rr('mark:kit', x + 16, y + 8, bw, 44, true)); L.marks.push(Rr('mark:game', x + 16 + bw + 10, y + 8, bw, 44, true));
       const py = y + 8 + 44 + 16;
       L.pageTop = py;
-      if (o.page === 'kit') L.bottom = grid(x + 16, py, w - 32, h - (py - y) - 16);
+      if (o.page === 'kit') L.bottom = grid(x + 16, py + 22, w - 32, h - (py - y) - 16 - 22);
       else if (o.page === 'game') { L.bottom = rowList(x + 16, py + 40, w - 32); L.statsY = L.bottom + 18; }
       else L.bottom = py;
       L.pages = [{ x: x + 10, y: y + 60, w: w - 20, h: h - 70 }];
@@ -1925,12 +1941,20 @@ const HK = (() => {
   // ---- HOME / FRIENDS / MENU ----
   function drawSeals(g, L) {
     const S0 = L.seals, open = typeof panel !== 'undefined' ? panel : null;
-    const rib = (id, word) => showWord(id) ? word : null;
+    const rib = (id, word) => L.fam !== 'desk' && showWord(id) ? word : null;
+    // a seal's ribbon may be as wide as the room to its neighbours allows (the column on an upright phone has no neighbour
+    // beside it, only the screen's edge)
+    const ids = Object.keys(S0), sealRibbon = (c, word, id) => {
+      let room = 96;
+      for (const k of ids) { const o = S0[k]; if (o === c || Math.abs(o.y - c.y) > 4) continue; room = Math.min(room, Math.abs(o.x - c.x) - 12); }
+      room = Math.min(room, 2 * (VW - L.S.r - 2 - c.x), 2 * (c.x - L.S.l - 2));
+      ribbon(g, c.x, c.y + c.r + 3, word, { size: 10, h: 14, tail: 4, maxW: room, id, fitId: id });
+    };
     // HOME: an iron stud, hidden until a lodestone is set (its slot stays reserved), asleep in a machine
     if (S0.home && player.home) {
       const c = S0.home, st = stateOf('HOME'), left = HOME_COOLDOWN - (time - (player.homeCd || -1e9)), cool = left > 0 ? { frac: left / HOME_COOLDOWN, text: mmss(left) } : null;
       stud(g, c.x, c.y, c.r, 'home', { pressed: st.pressed, hover: st.hover, ripple: st.ripple, cool, asleep: !!player.mech, id: 'home' });
-      if (rib('home', 'HOME')) ribbon(g, c.x, c.y + c.r + 3, 'HOME', { size: 10, h: 14, maxW: c.r * 2 + 20, id: 'home', fitId: 'home' });
+      if (rib('home', 'HOME')) sealRibbon(c, 'HOME', 'home');
       circleBtn('HOME', c, () => goHome(), { up: true, nameHold: true, learn: 'home', name: cool ? `Home · ready in ${mmss(left)}` : 'Home', keys: ['H'] });
     }
     if (S0.friends) {
@@ -1938,14 +1962,14 @@ const HK = (() => {
       if (f && f.show !== false) {
         const c = S0.friends, st = stateOf('friends');
         seal(g, c.x, c.y, c.r, 'friends', f.wax || 'blue', { pressed: st.pressed, hover: st.hover, ripple: st.ripple, on: !!f.on, seed: 23, scale: 0.9, badge: f.badge });
-        if (rib('friends', 'FRIENDS')) ribbon(g, c.x, c.y + c.r + 3, 'FRIENDS', { size: 10, h: 14, maxW: c.r * 2 + 20, id: 'friends', fitId: 'friends' });
+        if (rib('friends', 'FRIENDS')) sealRibbon(c, 'FRIENDS', 'friends');
         circleBtn('friends', c, () => { if (f.action) f.action(); }, { up: true, nameHold: true, learn: 'friends', name: f.name || 'Friends', keys: ['F'], badge: f.badge });
       }
     }
     if (S0.menu) {
       const c = S0.menu, st = stateOf('MENU');
       seal(g, c.x, c.y, c.r, 'book', 'umber', { pressed: st.pressed, hover: st.hover, ripple: st.ripple, seed: 41, scale: 0.78 });
-      if (rib('menu', 'MENU')) ribbon(g, c.x, c.y + c.r + 3, 'MENU', { size: 10, h: 14, maxW: c.r * 2 + 20, id: 'menu', fitId: 'menu' });
+      if (rib('menu', 'MENU')) sealRibbon(c, 'MENU', 'menu');
       circleBtn('MENU', c, () => { paused = !paused; if (paused) BOOK.page = FRAME.L && FRAME.L.fam === 'phoneP' ? 'kit' : 'kit'; }, { up: true, nameHold: true, learn: 'menu', name: 'Menu', keys: ['Esc'] });
     }
   }
@@ -2176,7 +2200,8 @@ const HK = (() => {
     const reg = hudControl.list || [];
     const out = KIT_TILES.map(t => {
       const r = reg.find(d => d.id === t.id) || {};
-      const onF = r.on || t.on, asleepF = r.asleep || t.asleep, badgeF = r.badge || t.badge;
+      const seal0 = t.id === 'friends' && hudSeal.map && hudSeal.map.friends ? val(hudSeal.map.friends) : null;
+      const onF = r.on || t.on, asleepF = r.asleep || t.asleep, badgeF = r.badge || t.badge || (seal0 && seal0.show !== false ? seal0.badge : null);
       let word = t.word; if (t.id === 'music') { const on = !!val(onF); word = on ? 'MUSIC ON' : 'MUSIC OFF'; }
       const home = t.id === 'home' && player.home ? HOME_COOLDOWN - (time - (player.homeCd || -1e9)) : 0;
       return { id: t.id, emblem: r.emblem || t.emblem, word, key: r.key || t.key, action: r.action || t.action, on: !!val(onF), asleep: !!val(asleepF), badge: val(badgeF), off: t.id === 'music' && !val(onF), cool: home > 0 ? { frac: home / HOME_COOLDOWN, text: mmss(home) } : null };
@@ -2273,7 +2298,7 @@ const HK = (() => {
       // the close seal (Esc)
       const c = BL.close, st = stateOf('book:close');
       seal(g, c.x, c.y, c.r, 'close', 'umber', { pressed: st.pressed, hover: st.hover, ripple: st.ripple, seed: 61, scale: 0.62 });
-      if (!t) keycap(g, c.x - c.r - keycapW(g, 'ESC', 10) - 6, c.y - 10, 'ESC', 10);
+      if (!t) keycap(g, c.x - keycapW(g, 'ESC', 9) / 2, c.y + c.r + 3, 'ESC', 9);
       circleBtn('book:close', c, () => { paused = false; }, { up: true, name: 'Close the book', keys: ['Esc'] });
     } finally { bookState.drawing = false; }
     return BL;
@@ -2558,10 +2583,11 @@ const HUD_AUDIT = (() => {
     L.pouches.forEach((p, i) => s.push('pouch' + i + ' ' + r(p)));
     return s.join(' | ');
   }
-  // a context that measures text the way the fonts roughly do (headless has no fonts) and records nothing else
+  // a context that measures text the way the fonts do, a little generously (headless has no fonts; calibrated in Chromium:
+  // Cinzel capitals read 5-20% wide, the system sans 0-5% wide), and records nothing else
   function fitCtx() {
     let font = '12px sans-serif';
-    const est = s => { const m = /(\d+(?:\.\d+)?)px/.exec(font), px = m ? +m[1] : 12, cz = /Cinzel/.test(font); let w = 0; for (const ch of String(s)) w += ch === ' ' ? 0.28 : /[A-Z]/.test(ch) ? (cz ? 0.8 : 0.68) : /[0-9]/.test(ch) ? (cz ? 0.64 : 0.58) : /[.,:;'!|il]/.test(ch) ? 0.3 : (cz ? 0.62 : 0.54); return w * px * (/800|700|bold/.test(font) ? 1.04 : 1); };
+    const est = s => { const m = /(\d+(?:\.\d+)?)px/.exec(font), px = m ? +m[1] : 12, cz = /Cinzel/.test(font); let w = 0; for (const ch of String(s)) w += ch === ' ' ? 0.29 : /[A-Z]/.test(ch) ? (cz ? 0.8 : 0.72) : /[0-9]/.test(ch) ? (cz ? 0.64 : 0.61) : /[.,:;'!|il]/.test(ch) ? 0.3 : (cz ? 0.62 : 0.585); return w * px * (/800|700|bold/.test(font) ? 1.04 : 1); };
     const nop = () => { };
     return new Proxy({}, {
       get: (tg, key) => key === 'measureText' ? (s => ({ width: est(s) })) : key === 'font' ? font
@@ -2650,7 +2676,8 @@ HOOKS.selfTest.push((check, F, h) => {
   };
   const MECH = { walker: { kind: 'walker', hp: 40, maxHp: 60 }, dozer: { kind: 'dozer', hp: 74, maxHp: 110 }, beast: { kind: 'beast', hp: 240, maxHp: 300 }, horse: { kind: 'horse', hp: 30, maxHp: 40 } };
   const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
-  const frame = () => { HK.DRAWN.on = true; HK.DRAWN.log.length = 0; drawHud(ctx); HK.DRAWN.on = false; };
+  const fctx = A.fitCtx();
+  const frame = () => { HK.DRAWN.on = true; HK.DRAWN.log.length = 0; drawHud(fctx); HK.DRAWN.on = false; };
   const sigs = new Map(), jumps = [];
   const noteSig = (key, where) => { const s = A.signature(HK.cur()); if (!sigs.has(key)) sigs.set(key, { s, where }); else if (sigs.get(key).s !== s && jumps.length < 6) jumps.push(`${where} vs ${sigs.get(key).where}`); };
   const restoreWorld = () => {
