@@ -74,6 +74,53 @@ something specific (named) · **OPEN** not started.
 
 ---
 
+## SHIPPED 2026-09-25 (live on gorkscape.ca and the test world, master a04403b)
+
+The owner asked to ship what was built rather than wait for polish, and keep the rest for next week. Live now: the
+wave-14 build, Death's chest adding up, admin for MudGoll (moderation, powers, mob spawning, drop parties, party hats),
+Cohen's Cloud Kingdom, the golem mini-game (King Thrain's royal mine, giant ores, Gorm the Ginormous), the obvious axe
+in the stump, the Redcut blended into the land, the Ashfields edge, auto-retaliate (on by default, toggle in the pack),
+instance maps that show only the instance, and banners that queue. 903 checks, the full-story bot, both two-player sims
+(28 scenarios each) and 86 server tests passed before each deploy.
+
+## NEXT WEEK — improvements held back so the work could ship
+
+Built but NOT through its adversarial review yet (it passed the suite and was deployed; review it properly next):
+| What | Where it is | What is left |
+|---|---|---|
+| Admin mode and drop parties | feat/admin (db92c37), in master | The abuse review (a clever kid trying to get admin powers or free party hats), the kid-on-an-iPad review, the data-safety review. The admin panel still uses the old HUD look. |
+| Golem mini-game | feat/royalmine2 (ce2f90a), in master | Review round 1 findings were fixed; round 2 (Cohen's eyes, code + online, rules + balance) never ran. |
+| Ashfields edge, auto-retaliate | fix/0925-ashfields, fix/0925-retaliate, in master | Stopped mid-build and shipped as saved: both passed the suite together, neither was reviewed. Check the Ashfields edge all the way round and try to break auto-retaliate (two monsters, throwers, rivers, machines, online). |
+| Redcut edge, axe in the stump, instance maps + banners | fix/0925-canyon, fix/0925-axe, fix/map-labels-banners, in master | Finished by their builders, not reviewed. |
+
+Cloud Kingdom polish (unfinished work saved on feat/cloudkingdom as 6a9b2ef, taken OUT of the release because it
+crashed a check; screenshots of the problems in ~/.fanglands/work/cohen/rescued/ckr3rev/):
+- The two Great Gate towers are drawn over the inside of Halcyon's Sky Forge and the house aer_h4 (the one real bug).
+- The market square is mostly empty; stalls should read as shops with goods.
+- The Sky Forge has no hearth or anvil; the Cloud Oven bakery has no oven.
+- The market fountain's statue does not read as a winged person.
+- The east and west walls read as a walkway from above.
+- The 'day' sun is a white glare disc that bleaches buildings under the minimap.
+- A stray row of flagstone by the Wishing Well joins nothing.
+- On a laptop the keep's cone and pennant are cut off from the plaza.
+
+The new HUD (Storybook Heraldry) — the biggest item. Owner: "the HUD needs work because is crowded and not organized or
+cohesive looks like a bunch of AI coded buttons" and "it should feel good from iPhone to iPad to computer". Chosen by two
+judges; mockups, the full spec and the element inventory are in ~/.fanglands/work/hud/ (SPEC.md, INVENTORY.json,
+heraldry/mock.html). The foundation is on feat/hud2 (ce923b5); the six migration clusters were stopped part-way and saved
+on feat/hud2-* branches. Next: finish the migration, integrate, review on the whole device matrix.
+
+Smaller things found along the way:
+- On an iPhone held upright with the move stick on the right, a knight late in the game can lose the ONLINE button and
+  the chat strip (no room is left for them). The new HUD fixes this properly.
+- Roads (feat/roads2) were dropped: laid for the old flat land. Rebuild them on the stepped land (roads joining
+  everything, 3-6 points of interest each, 12+ outposts). Its playerMaxHit wrapper also dropped the ranged argument.
+- HOOKS.pathBlock does not cover 92-worldshape's own agility obstacles.
+- Night spawns (35-night) on a non-keeper and after a keeper handoff behave like the old graves did online.
+- The blackiron dagger and sword look almost the same at small size; ores share one rock outline.
+- The bank panel's Prev/Next overlap at 320x568.
+- Old saves: player changes (stumps, planks) can land inside the new cliffs.
+
 ## BUILDING
 
 | What | Detail |
