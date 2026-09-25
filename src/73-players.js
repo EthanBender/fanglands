@@ -20,6 +20,17 @@
   const MINE = { friends: 1, gift: 1, chatlog: 1 };   // the online files' own panels: the chip stays tappable under them
   const DEFAULT_LOOK = { tunic: '#3b6fb6', hair: '#5a3a1e', shoulder: '#9aa3b2', fists: true };
   const BLUE = '#7ec8ff';
+  const GOLD = '#f5c542';       // an admin's name, wherever it is written (docs/ONLINE.md, "Roles")
+  const isAdmin = o => !!o && o.role === 'admin';
+  // The ADMIN tag: a small gold pill with dark letters, its left edge at x and its middle at y. Returns its width.
+  // 74-chat and 76-admin draw the same pill through PLAYERS.adminPill, so every screen shows one tag.
+  function adminPill(g, x, y, size) {
+    g.font = `bold ${size}px sans-serif`;
+    const w = Math.ceil(g.measureText('ADMIN').width) + 8, h = size + 5;
+    roundRect(g, x, y - h / 2, w, h, h / 2); g.fillStyle = GOLD; g.fill();
+    g.fillStyle = '#1a1300'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText('ADMIN', x + 4, y + 0.5); g.textBaseline = 'alphabetic';
+    return w;
+  }
 
   const REMOTE = {};   // name → the knight as last heard: { n, map, x, y (where they are), shown: {x, y} (where we draw them), facing, moving, walkT, hp, mhp, lv, look, mech, dead, act, hurtT, attackT, r, lastAt }
   let ONLINE = [];     // the roster from `who`: [{ n, map, region, lv }]
@@ -44,6 +55,8 @@
       tunic: l.tunic, hair: l.hair, shoulder: l.shoulder, helm: l.helm || null, body: l.body || null, shield: l.shield || null,
       weapon: l.weapon ? { shape: l.weapon.shape || 'sword', color: l.weapon.color || '#c9ccd3' } : null,
       tool: l.tool || null, toolColor: l.toolColor || null, rod: !!l.rod, fists: !!l.fists,
+      // a worn party hat (77-dropparty's playerLook wrapper sets the colour word), so everyone sees it
+      hat: l.hat || null,
     };
   }
   function presence() {
@@ -87,7 +100,9 @@
     if (!m || typeof m.n !== 'string' || m.n === me() || typeof m.x !== 'number' || typeof m.y !== 'number') return;
     const map = typeof m.map === 'string' ? m.map : 'over';
     let e = REMOTE[m.n];
-    if (!e) e = REMOTE[m.n] = { n: m.n, map, x: m.x, y: m.y, shown: { x: m.x, y: m.y }, facing: { x: 1, y: 0 }, moving: false, walkT: 0, hp: 1, mhp: 1, lv: 1, look: null, mech: null, dead: false, act: null, hurtT: 0, attackT: 0, r: 13, lastAt: 0 };
+    if (!e) e = REMOTE[m.n] = { n: m.n, map, x: m.x, y: m.y, shown: { x: m.x, y: m.y }, facing: { x: 1, y: 0 }, moving: false, walkT: 0, hp: 1, mhp: 1, lv: 1, look: null, mech: null, dead: false, act: null, hurtT: 0, attackT: 0, r: 13, lastAt: 0, role: 'player' };
+    // the role is the world's word on every relayed p (the server overwrites whatever the sender claimed); anything else is a player
+    e.role = m.role === 'admin' ? 'admin' : 'player';
     if (e.map !== map) { e.map = map; e.shown.x = m.x; e.shown.y = m.y; }   // a new map: no sliding across the world
     e.x = m.x; e.y = m.y;
     if (typeof m.fx === 'number' && typeof m.fy === 'number' && (m.fx || m.fy)) { e.facing.x = m.fx; e.facing.y = m.fy; }
@@ -109,14 +124,17 @@
     if (onMech) drawMech(g, e, e.hurtT > 0, look);
     else { g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
     g.restore();
-    // the name, the level in smaller grey after it, an hp bar when hurt, a ring when close enough to hand things over
-    const top = Math.round(y) - (onMech ? 46 : 33), lv = 'lv ' + e.lv;
+    // the name, the level in smaller grey after it, an hp bar when hurt, a ring when close enough to hand things over.
+    // An admin's tag row starts with the gold ADMIN pill and the name is gold; the level stays.
+    const top = Math.round(y) - (onMech ? 46 : 33), lv = 'lv ' + e.lv, admin = isAdmin(e);
+    g.font = 'bold 8px sans-serif'; const pw = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 + 4 : 0;
     g.font = 'bold 11px sans-serif'; const nw = g.measureText(e.n).width;
     g.font = '9px sans-serif'; const lw = g.measureText(lv).width;
-    const x0 = Math.round(x - (nw + 4 + lw) / 2);
+    const x0 = Math.round(x - (pw + nw + 4 + lw) / 2), nx = x0 + pw;
+    if (admin) adminPill(g, x0, top - 4, 8);
     g.textAlign = 'left'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.75)';
-    g.font = 'bold 11px sans-serif'; g.strokeText(e.n, x0, top); g.fillStyle = '#ffffff'; g.fillText(e.n, x0, top);
-    g.font = '9px sans-serif'; g.strokeText(lv, x0 + nw + 4, top); g.fillStyle = '#9aa3b2'; g.fillText(lv, x0 + nw + 4, top);
+    g.font = 'bold 11px sans-serif'; g.strokeText(e.n, nx, top); g.fillStyle = admin ? GOLD : '#ffffff'; g.fillText(e.n, nx, top);
+    g.font = '9px sans-serif'; g.strokeText(lv, nx + nw + 4, top); g.fillStyle = '#9aa3b2'; g.fillText(lv, nx + nw + 4, top);
     if (e.hp < e.mhp) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(x - 14, top + 3, 28, 4); g.fillStyle = e.hp / e.mhp > 0.5 ? '#3fb950' : e.hp / e.mhp > 0.25 ? '#d29922' : '#f85149'; g.fillRect(x - 14, top + 3, 28 * clamp(e.hp / e.mhp, 0, 1), 4); }
     if (dist(x, y, player.x, player.y) <= NEAR) { g.strokeStyle = 'rgba(126,200,255,0.45)'; g.lineWidth = 1.5; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y + 2, onMech ? 30 : 22, 0, 7); g.stroke(); g.setLineDash([]); }
   }
@@ -245,8 +263,15 @@
       const here = o.map === my, close = near(o.n), fol = following === o.n;
       roundRect(g, px + 18, y, w - 36, rowH - 8, 8); g.fillStyle = here ? 'rgba(88,166,255,0.12)' : 'rgba(255,255,255,0.05)'; g.fill();
       const mid = y + (rowH - 8) / 2;   // the middle of the row's plate: the name sits above it, where they are below
-      g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#e6edf3'; g.fillText(o.n, px + 30, mid - 6);
-      const nw = g.measureText(o.n).width; g.fillStyle = '#9aa3b2'; g.font = '11px sans-serif'; g.fillText('lv ' + (o.lv || 1), px + 30 + nw + 8, mid - 6);
+      // the name (gold for an admin, with the ADMIN pill after it), then the level; clipped so nothing runs under the buttons
+      const admin = isAdmin(o), roomW = bx2 - 10 - (px + 30);
+      g.font = 'bold 9px sans-serif'; const pillW = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 + 6 : 0;
+      g.font = 'bold 13px sans-serif'; let shownName = o.n; while (g.measureText(shownName).width + pillW > roomW && shownName.length > 3) shownName = shownName.slice(0, -2) + '…';
+      g.textAlign = 'left'; g.fillStyle = admin ? GOLD : '#e6edf3'; g.fillText(shownName, px + 30, mid - 6);
+      const nw = g.measureText(shownName).width;
+      if (admin) adminPill(g, px + 30 + nw + 6, mid - 10, 9);
+      const lvText = 'lv ' + (o.lv || 1), lvX = px + 30 + nw + 8 + pillW; g.font = '11px sans-serif';
+      if (lvX + g.measureText(lvText).width <= px + 30 + roomW) { g.fillStyle = '#9aa3b2'; g.textAlign = 'left'; g.fillText(lvText, lvX, mid - 6); }
       let where = here ? 'On your map · ' + whereOf(o) : whereOf(o); g.font = '12px sans-serif'; while (g.measureText(where).width > textW && where.length > 6) where = where.slice(0, -2) + '…';
       g.fillStyle = here ? BLUE : '#8b949e'; g.fillText(where, px + 30, mid + 14);
       button(g, bx1, mid - bh / 2, bw1, bh, 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, close ? '#238636' : '#2a2f3a', close);
@@ -288,8 +313,11 @@
     if (pages > 1) pager(g, px + 18, py + h - 40, w - 36, giftPage, pages, p => { giftPage = p; });
   };
 
+  // what the world says a knight is: their last presence, else the roster, else a player
+  const roleOf = n => { const e = REMOTE[n]; if (e) return isAdmin(e) ? 'admin' : 'player'; const o = ONLINE.find(k => k.n === n); return isAdmin(o) ? 'admin' : 'player'; };
+
   window.PLAYERS = {
-    lookOf, presence, mapId, remote: REMOTE, near, give,
+    lookOf, presence, mapId, remote: REMOTE, near, give, roleOf, adminPill, GOLD,
     get online() { return ONLINE; }, get me() { return NET.me; },
     follow: n => { following = n && REMOTE[n] ? n : null; }, get following() { return following; },
   };
@@ -358,6 +386,31 @@
       feed({ t: 'p', n: 'Cal', map: 'over', x: player.x, y: player.y + 40, fx: 0, fy: -1, mv: false, wt: 0, hp: 9, mhp: 25, lv: 2, look: null, mech: null, dead: false, def: 50, act: null });
       const n0 = notice; feed({ t: 'error', code: 'elsewhere', text: 'opened elsewhere' }); const elsewhere = !REMOTE.Cal && !!notice && notice.text === 'Your knight was opened somewhere else.'; notice = n0;
       check(P + "'left' removes a knight at once; six seconds of silence removes one too; 'elsewhere' clears everyone and says so", gone && timedOut && elsewhere, { gone, timedOut, elsewhere }); }
+    // roles: the world's word rides on every p; an admin's tag is the gold ADMIN pill and a gold name, a player's is neither
+    { const rec = []; const st = {};
+      const g2 = new Proxy(st, { get: (t, k) => k === 'measureText' ? (s => ({ width: String(s).length * 6 })) : k === 'fillText' ? ((s) => { rec.push({ text: String(s), fill: st.fillStyle }); }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : (k in st ? st[k] : () => { }), set: (t, k, v) => { st[k] = v; return true; } });
+      const at = { map: 'over', fx: -1, fy: 0, mv: false, wt: 0, hp: 20, mhp: 20, look: null, mech: null, dead: false, def: 100, act: null };
+      feed(Object.assign({ t: 'p', n: 'Mud', x: player.x + 30, y: player.y, lv: 99, role: 'admin' }, at));
+      feed(Object.assign({ t: 'p', n: 'Sam', x: player.x - 30, y: player.y, lv: 4, role: 'sneaky' }, at));
+      feed({ t: 'who', list: [{ n: 'Cohen', map: 'over', region: 'Thistledown', lv: 5, role: 'player' }, { n: 'Mud', map: 'over', region: 'Thistledown', lv: 99, role: 'admin' }, { n: 'Sam', map: 'over', region: 'Thistledown', lv: 4 }] });
+      F.step([]);
+      const items = []; for (const hk of HOOKS.draw) hk(g2, items, cam);
+      const mud = items.find(it => it.who === 'Mud'), sam = items.find(it => it.who === 'Sam');
+      let drew = true;
+      try { if (mud) mud.draw(); } catch (e) { drew = String(e && e.message); }
+      const mudText = rec.splice(0);
+      try { if (sam) sam.draw(); } catch (e) { drew = String(e && e.message); }
+      const samText = rec.splice(0);
+      const tagged = mudText.some(t => t.text === 'ADMIN') && mudText.some(t => t.text === 'Mud' && t.fill === GOLD);
+      const plain = samText.length > 0 && !samText.some(t => t.text === 'ADMIN') && samText.some(t => t.text === 'Sam' && t.fill === '#ffffff');
+      const roles = REMOTE.Mud.role === 'admin' && REMOTE.Sam.role === 'player' && PLAYERS.roleOf('Mud') === 'admin' && PLAYERS.roleOf('Sam') === 'player' && PLAYERS.roleOf('Nobody') === 'player';
+      openPanel('friends'); let listed = false; try { HOOKS.panel.friends(g2, false); const drawn = rec.splice(0); listed = drawn.filter(t => t.text === 'ADMIN').length === 1 && drawn.some(t => t.text === 'Mud' && t.fill === GOLD) && drawn.some(t => t.text === 'Sam' && t.fill === '#e6edf3'); } catch (e) { listed = String(e && e.message); } closePanel(); render();
+      check(P + 'roles: an admin (the role on their p) gets the gold ADMIN pill and a gold name over the head and in the Friends list; a player, or anything else a p claims, gets neither', !!mud && !!sam && drew === true && tagged && plain && roles && listed === true, { mud: !!mud, sam: !!sam, drew, tagged, plain, roles, listed, mudText: mudText.map(t => t.text) }); }
+    // a worn party hat rides in presence as look.hat (77-dropparty's playerLook wrapper sets the colour word); none is null
+    { const _look = playerLook; let worn = null;
+      try { playerLook = function () { const l = _look(); l.hat = 'purple'; return l; }; worn = [PLAYERS.lookOf().hat, PLAYERS.presence().look.hat]; } finally { playerLook = _look; }
+      const bare = PLAYERS.lookOf().hat;
+      check(P + "presence carries look.hat, the colour word, when a party hat is worn, and null when it is not", worn && worn[0] === 'purple' && worn[1] === 'purple' && bare === null, { worn, bare }); }
     // layout: the chip overlaps no other button at four screen sizes, in the touch layout and the desktop one. It reads
     // touchMode() (forced both ways here), not the device's isTouch, which is always false headless — so the touch
     // layout, the one the iPad and the phones use, is really tested. On touch it is also a full 44 px control and
