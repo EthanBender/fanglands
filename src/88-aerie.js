@@ -168,6 +168,8 @@
   const AG_T = (window.AGILITY && AGILITY.TILES) || {};
   const LOG_T = AG_T.LOG, NET_T = AG_T.NET, GAP_T = AG_T.GAP;
   const RUN_LV = 40, RUN_XP = 340, RUN_PURSE = 60, RUN_EVERY = 5, CLOAK_LAPS = 10;
+  // what waking the Songstone pays, once
+  const SONG_XP = 250;
 
   // =========================================================================
   // 3. items only the sky has
@@ -255,9 +257,11 @@
 
   SHOPS.aerie_market = {
     name: 'The Windward Market', rate: 0.75,
-    stock: [['cloud_essence', 140], ['stormglass', 620], ['wind_flute', 300], ['rope', 40]],
+    stock: [['cloud_essence', 140], ['stormglass', 620]],
   };
-  if (!ITEMS.rope) SHOPS.aerie_market.stock = SHOPS.aerie_market.stock.filter(s => s[0] !== 'rope');
+  // No Wind flute on the stall: it lives on the knight's keyring now (68-questitems), and nobody reaches Aerie
+  // without one, so a flute for sale was 300 coins taken and handed back with "Your pack is full." And no
+  // rope: there is no rope item in the game, so that row never showed.
   // 61-markers hangs every shop on a mark. The market lives inside Aerie, which has no door tile — a knight goes
   // up from the wind shrine — so its mark goes on the shrine's step (the shrine itself already carries 'Way up').
   if (window.MARKERS && MARKERS.add && SKY_C && SKY_C.STEP_T) MARKERS.add({ x: SKY_C.STEP_T.x, y: SKY_C.STEP_T.y, kind: 'shop', label: SHOPS.aerie_market.name });
@@ -447,7 +451,7 @@
       q.songstone = true;
       say('This is the stone the first Song was sung over. Dragon scale will not take a hammer cold -- no anvil in the Fanglands will move it. It takes the Song, and the Song lives here.', 'The Songstone');
       say('That is why Master Halcyon forges what nobody below can. The stone is awake now. Ask him for the Skysinger.', 'The Songstone');
-      levelBanner = { text: 'THE SONGSTONE WAKES', sub: 'Halcyon can forge the Skysinger', t: 3.5 }; sfx('quest'); burst(player.x, player.y, '#f5e6a8', 34, 180); gainXp('smithing', 250); save();
+      levelBanner = { text: 'THE SONGSTONE WAKES', sub: 'Halcyon can forge the Skysinger', t: 3.5 }; sfx('quest'); burst(player.x, player.y, '#f5e6a8', 34, 180); gainXp('smithing', SONG_XP); save();
     } else say('The stone is awake. Halcyon has what he needs.', 'The Songstone');
   }
   function rideDraft(tx, ty) {
@@ -493,6 +497,22 @@
       if (!player.dead) { const s = runStart(); const spot = safeSpot(s.x, s.y, player.r, playerWho()) || s; player.x = spot.x; player.y = spot.y; player.action = null; }
     }
   }
+
+  // ---------- the progression audit (42-playthrough reads HOOKS.xpSource) ----------
+  // Every Agility and Smithing xp this file pays is declared here, or PLAYTHROUGH.sources() cannot see it.
+  // A lap is timed the way 48-agility2 times its courses: the flag-to-flag loop at walking speed (175), with
+  // the rope net crossed at climbing speed (60, 38-agility).
+  const WALK_SPEED = 175, NET_SPEED = 60;
+  const runLapSecs = () => {
+    let tiles = 0;
+    for (let i = 0; i < RUN_MARKS.length; i++) { const a = RUN_MARKS[i], b = RUN_MARKS[(i + 1) % RUN_MARKS.length]; tiles += Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]); }
+    return tiles * TILE / WALK_SPEED + RUN_NETS.length * TILE * (1 / NET_SPEED - 1 / WALK_SPEED);
+  };
+  if (HOOKS.xpSource) HOOKS.xpSource.push(add => {
+    add('agility', 'Aerie Spire Run (lap)', RUN_LV, RUN_XP, runLapSecs(), `the gaps and beams need Agility ${RUN_LV}; ${RUN_PURSE} coins every ${RUN_EVERY} laps`);
+    add('smithing', 'the Songstone (once)', 1, SONG_XP, 0, 'wake it after the Song of Above');
+    add('smithing', 'Skysinger on the sky forge', SING.lv, SING.xp, 0, `${SING.label}, once the Songstone is awake (Halcyon, no anvil)`);
+  });
 
   // =========================================================================
   // 9. use, update
@@ -818,7 +838,7 @@
   window.AERIE = {
     TILES: { UNDER, RAIL, NEST, BRAZIER, STATUE, UPDRAFT, PERCH, SONG, SNAG, SPIRE, STALL, FLAG },
     W: NW, H: NH, SPAN, CROWN, CATCH, FOLK, DRAFTS, RUN_MARKS, RUN_GAPS, RUN_LOGS, RUN_NETS, PERCHES, SNAGS, SONG_T, STATUES, NESTS, STALLS, SPIRES, BRAZIERS, RAILS, ORGAN,
-    SALVAGE, SING, FLETCH, RUN_LV, RUN_XP, RUN_PURSE, RUN_EVERY, CLOAK_LAPS, GODLY_LINE,
+    SALVAGE, SING, FLETCH, RUN_LV, RUN_XP, RUN_PURSE, RUN_EVERY, CLOAK_LAPS, SONG_XP, GODLY_LINE, runLapSecs,
     Q, talk: talkFolk, inFront: folkInFront, grew: () => GREW, regrow: REGROW,
     touchFlag, useSnag, usePerch, useSongstone, rideDraft, make, MINE_TILES,
   };
@@ -1020,6 +1040,31 @@
       check(A + 'Godly Plated is forged on the sky forge and nowhere else — no Godly recipe is left on the anvil, Halcyon still has all four, and the anvil and Brakka now say where it is made instead of saying nothing',
         told && quiet && brakka && !RECIPES.some(r => r.station === 'anvil' && /^godly_/.test(r.out)) && SKYCITY.FORGE.length === 4 && /sky forge in Aerie/.test(GODLY_LINE),
         { told, quiet, brakka, godlyOnAnvil: RECIPES.filter(r => r.station === 'anvil' && /^godly_/.test(r.out)).length }); }
+
+    // ---- 13. the progression audit sees what Aerie pays ----
+    { const got = []; for (const f of HOOKS.xpSource) { try { f((skill, name, req, xp, secs) => got.push({ skill, name, req, xp, secs })); } catch (e) { } }
+      const run = got.filter(r => r.skill === 'agility' && r.req === AERIE.RUN_LV && r.xp === AERIE.RUN_XP);
+      // the lap is timed from the course itself: at least the flag-to-flag loop at walking speed, and not a minute
+      let loop = 0; const M = AERIE.RUN_MARKS; for (let i = 0; i < M.length; i++) { const a = M[i], b = M[(i + 1) % M.length]; loop += Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]); }
+      const secs = run.length ? run[0].secs : 0, timed = secs > loop * TILE / 175 && secs < 60;
+      const audit = window.PLAYTHROUGH && PLAYTHROUGH.progression ? (PLAYTHROUGH.progression().sources.agility || []).filter(r => /Spire Run/.test(r.name)) : [];
+      const seen = audit.length === 1 && audit[0].req === AERIE.RUN_LV && audit[0].xp === AERIE.RUN_XP && audit[0].rate > 0;
+      check(A + 'the progression audit sees the Spire Run as an Agility source at level 40',
+        run.length === 1 && timed && seen && AERIE.RUN_LV === 40,
+        { run: run.map(r => r.name), secs: +secs.toFixed(2), loopTiles: loop, audit: audit.map(r => ({ name: r.name, req: r.req, xp: r.xp, rate: r.rate })) });
+      const smith = window.PLAYTHROUGH && PLAYTHROUGH.progression ? (PLAYTHROUGH.progression().sources.smithing || []) : [];
+      const song = smith.filter(r => r.xp === AERIE.SONG_XP && /Songstone/.test(r.name)), sing = smith.filter(r => r.req === AERIE.SING.lv && r.xp === AERIE.SING.xp && /Skysinger/.test(r.name));
+      check(A + 'the progression audit sees the Songstone and the Skysinger as Smithing sources',
+        song.length === 1 && sing.length === 1,
+        { song: song.map(r => r.name), sing: sing.map(r => ({ name: r.name, req: r.req, xp: r.xp })) }); }
+
+    // ---- 14. the market sells only what a knight can carry away ----
+    { const stock = SHOPS.aerie_market.stock.map(s => s[0]);
+      const onRing = window.KEYRING ? stock.filter(id => KEYRING.KEYS[id]) : [];
+      const unknown = stock.filter(id => !ITEMS[id]);
+      check(A + 'the Windward Market sells nothing the knight keeps on his keyring',
+        !!window.KEYRING && stock.length > 0 && onRing.length === 0 && unknown.length === 0,
+        { stock, onRing, unknown }); }
 
     // ---- put everything back ----
     if (INSTANCES.active()) INSTANCES.leave();
