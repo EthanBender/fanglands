@@ -32254,8 +32254,10 @@ HOOKS.selfTest.push((check, F, h) => {
     THROW_CD: 0.5, FLIGHT: 0.3, FLIGHT_SPEED: 900, DMG: 50, DMG_SMITH: 4, DMG_SMITH_MAX: 25, KID_DMG: 1.25, MELEE_PER_DMG: 2,
     REMOTE_MIN: 40, REMOTE_MAX: 100,
     // the little golems
-    LING_FIRST: 10, LING_EVERY: 16, LING_EVERY_HALF: 11, LING_PER_KNIGHT: 0.35, KID_LING: 1.4, LING_MAX: 4, LING_WARN: 0.8,
-    LING_SPEED: 42, KID_LING_SPEED: 30, LING_REACH: 70, LING_HEAL: 40, LING_HP: 12, KID_LING_HP: 8,
+    LING_FIRST: 10, LING_EVERY: 16, LING_EVERY_HALF: 11, LING_HALF_COUNT: 2, LING_PER_KNIGHT: 0.35, KID_LING: 1.4, LING_MAX: 4, LING_WARN: 0.8,
+    // LING_HEAL is 25, not the spec's 40: at 40, two little golems every 11 s out-heal a solo knight's stones below
+    // half health, and a bot fight (rocks on) never ended; at 25 the same fight falls in about six minutes
+    LING_SPEED: 42, KID_LING_SPEED: 30, LING_REACH: 70, LING_HEAL: 25, LING_HP: 12, KID_LING_HP: 8,
     // the falling rocks
     ROCK_EVERY: 5.0, ROCK_EVERY_HALF: 3.5, KID_ROCK_EVERY: 8, ROCK_R: 34, ROCK_LEAD: 0.6, ROCK_FALL: 1.4, KID_ROCK_FALL: 2.0, ROCK_DMG: 8, KID_ROCK_DMG: 3, ROCK_EXTRA: 3,
     // what it all pays
@@ -33216,7 +33218,7 @@ HOOKS.selfTest.push((check, F, h) => {
         const half = g.hp <= g.maxHp / 2, knights = Math.max(1, chamber.length);
         rm.lingT = (half ? NUM.LING_EVERY_HALF : NUM.LING_EVERY) / (1 + NUM.LING_PER_KNIGHT * (knights - 1)) * (kid() ? NUM.KID_LING : 1);
         const alive = lings().length;
-        for (let k = 0; k < (half ? 2 : 1) && alive + k < NUM.LING_MAX; k++) spawnLittle(rm.heap++);
+        for (let k = 0; k < (half ? NUM.LING_HALF_COUNT : 1) && alive + k < NUM.LING_MAX; k++) spawnLittle(rm.heap++);
       }
       // the little golems walk straight to him; one that gets there is eaten, and he mends
       for (const m of monsters.slice()) {
@@ -34454,7 +34456,7 @@ HOOKS.selfTest.push((check, F, h) => {
     WIKI.add('monsters', { id: 'giant_stormstone', blurb: rock + ' Nine cracks, 70 Mining xp each. Grows back in 90 seconds. One in two wakes.' });
     WIKI.add('monsters', { id: 'mithril_golem', where: ['The Royal Mine'], blurb: 'It wakes out of a giant mithril ore. It attacks you on sight. Beat it for the bars in its pockets.' });
     WIKI.add('monsters', { id: 'stormstone_golem', where: ['The Royal Mine'], blurb: 'It wakes out of a giant stormstone ore. Big, slow and hard. Beat it for the bars in its pockets.' });
-    WIKI.add('monsters', { id: 'golemling', where: ['The Royal Mine'], blurb: 'A little golem. It crawls out of a rubble heap and walks to the Ginormous Golem to be eaten, and he heals 40. Smash it first: one or two hits.' });
+    WIKI.add('monsters', { id: 'golemling', where: ['The Royal Mine'], blurb: `A little golem. It crawls out of a rubble heap and walks to the Ginormous Golem to be eaten, and he heals ${NUM.LING_HEAL}. Smash it first: one or two hits.` });
     WIKI.add('monsters', { id: 'ginormous_golem', blurb: 'Swords, arrows and bombs bounce off him. MINE a glowing red vein in the chamber wall (two glow at a time, a new pair every 20 seconds, while he is awake). HEAT the stone at a heart forge. THROW it (T, THROW, SWING, or tap him): 50 damage, plus a quarter of your Smithing level (up to 25). He has 1000 health, and 600 more for every other knight in the chamber. Smash the little golems before they reach him. Step out of dark spots on the floor, and do not stand next to him. Everyone who helped gets his loot and 200 Mining, Smithing and Melee xp.' });
     WIKI.add('items', { id: 'hildes_heartstone', sources: [{ kind: 'given', text: "Hilde, in Deepholm (The Knocking Under the Throne). It lives on your keyring." }] });
     WIKI.add('items', { id: 'kingstone', sources: [{ kind: 'given', text: 'King Thrain, when you knock the all-clear (The Knocking Under the Throne). It lives on your keyring.' }] });
@@ -34794,11 +34796,11 @@ HOOKS.selfTest.push((check, F, h) => {
       { fresh({ stage: 5 }); intoMine(); drain(); ROYALMINE.debug.wake(); const g = golemMon(); g.rm.lingT = 9999; F.tp(18, 30);
         g.hp = g.maxHp - 100; const l = spawnLittle(0);
         const nextTo = dist(l.x, l.y, tc(HEAPS[0][0]), tc(HEAPS[0][1])) < TILE && MONSTER_DEFS.golemling.harmless && l.state === 'emerge';
-        const hp0 = g.hp; F.untilAction(12 * 60, () => !monsters.includes(l)); const healed = !monsters.includes(l) && g.hp === Math.min(g.maxHp, hp0 + 40);
+        const hp0 = g.hp; F.untilAction(12 * 60, () => !monsters.includes(l)); const healed = !monsters.includes(l) && g.hp === Math.min(g.maxHp, hp0 + NUM.LING_HEAL);
         g.hp = g.maxHp - 100; const l2 = spawnLittle(1); F.sim(60, []); const mx = player.skills.melee.xp, hp1 = g.hp;
         hitMonster(l2, l2.hp, 0); F.sim(12 * 60, []);
         const smashed = l2.dead || !monsters.includes(l2), nothing = g.hp === hp1, paid = player.skills.melee.xp > mx;
-        check(P + 'a little golem crawls out of heap 0 (harmless), walks to the golem and is eaten: he heals 40 and it is gone; one smashed on the way heals nothing and pays Melee xp',
+        check(P + `a little golem crawls out of heap 0 (harmless), walks to the golem and is eaten: he heals ${NUM.LING_HEAL} and it is gone; one smashed on the way heals nothing and pays Melee xp`,
           nextTo && healed && smashed && nothing && paid, { nextTo, healed, hp: [hp0, g.hp], smashed, nothing, paid });
         out(); }
 
