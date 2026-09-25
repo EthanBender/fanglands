@@ -16,17 +16,23 @@
   const WIND_SHRINE = addTile('WIND_SHRINE', { solid: true, tex: 'cave', mini: '#bfe3ff' }); // the way up (Grey Quarry)
 
   // ---------- geometry ----------
-  const AER = { id: 'aerie', name: 'Aerie', sub: 'The city above the clouds', w: 50, h: 34 };
+  // Aerie is the walled kingdom now (Cohen's ask; src/36-aerieplan.js is the plan, 91-cloudkingdom paints and draws it).
+  // Its size, the arrival, the sentinels, the wisps and where the Queen and Halcyon stand all come from the plan.
+  const PLAN = window.AERIE_PLAN, SP = PLAN.SPOTS;
+  const AER = { id: 'aerie', name: 'Aerie', sub: 'The city above the clouds', w: PLAN.W, h: PLAN.H };
   const SHRINE_T = { x: 62, y: 6 }, STEP_T = { x: 62, y: 7 }; // east of the Agility cliff course (x 46–62), which carves the quarry's north edge
-  const ENTRY = [25, 30], LEAP_T = [25, 31];
-  const HALL = { x0: 17, y0: 3, x1: 33, y1: 12 };            // the great hall (marble floor, castle-wall fragments)
-  const FORGE_P = { x0: 35, y0: 15, x1: 41, y1: 21 };         // Halcyon's platform
-  const SENTINELS = [[12, 10], [38, 10], [12, 24], [38, 24]];
-  const WISPS = [[8, 17], [25, 27], [42, 20]];
+  const ENTRY = SP.entry.slice(), LEAP_T = SP.leap.slice();
+  // the old great hall and Halcyon's platform are buildings in the city now: the keep and the sky forge. Their rects are kept
+  // under the old names for anything that reads them; nothing here paints them any more.
+  const rectOf = id => { const b = PLAN.BUILDINGS.find(o => o.id === id); return { x0: b.x, y0: b.y, x1: b.x + b.w - 1, y1: b.y + b.h - 1 }; };
+  const HALL = rectOf('aer_keep');
+  const FORGE_P = rectOf('aer_forge');
+  const SENTINELS = SP.sentinels.map(p => p.slice());
+  const WISPS = SP.wisps.map(p => p.slice());
   const WISP_REGROW = 45;
   const SKY_NPCS = [
-    { id: 'seraphel', name: 'Queen Seraphel', x: 25, y: 6, tunic: '#e9eef5', hair: '#f5e6a8', crown: true, woman: true, role: 'sky_queen', wing: 1.35 },
-    { id: 'halcyon', name: 'Master Halcyon', x: 38, y: 18, tunic: '#5a6a8a', hair: '#d9d0c0', beard: true, apron: true, role: 'sky_smith', wing: 1.1 },
+    { id: 'seraphel', name: 'Queen Seraphel', x: SP.seraphel[0], y: SP.seraphel[1], tunic: '#e9eef5', hair: '#f5e6a8', crown: true, woman: true, role: 'sky_queen', wing: 1.35 },
+    { id: 'halcyon', name: 'Master Halcyon', x: SP.halcyon[0], y: SP.halcyon[1], tunic: '#5a6a8a', hair: '#d9d0c0', beard: true, apron: true, role: 'sky_smith', wing: 1.1 },
   ];
   for (const n of SKY_NPCS) { n.px = tc(n.x); n.py = tc(n.y); n.facing = { x: 0, y: 1 }; }
   const active = () => window.INSTANCES && INSTANCES.active() === AER.id;
@@ -122,26 +128,11 @@
   };
 
   // ---------- Aerie: the instance ----------
-  const inCloud = (x, y) => { const dx = (x - 25) / 23.5, dy = (y - 17) / 15.5; return dx * dx + dy * dy <= 1 + Math.sin(x * 1.9 + y * 1.3) * 0.08; };
+  // This file lays the sky and the cloud; 91-cloudkingdom paints the rest of the plan over it at load (the walls, the
+  // keep, the streets). Sky where the plan has sky, the wisps and the leap where the plan puts them, cloud elsewhere.
   function buildAerie(set, rnd, at) {
-    for (let y = 0; y < AER.h; y++) for (let x = 0; x < AER.w; x++) set(x, y, inCloud(x, y) ? CLOUD : SKY);
-    // the great hall: marble floor, a ring of castle-wall fragments, open to the south
-    for (let y = HALL.y0; y <= HALL.y1; y++) for (let x = HALL.x0; x <= HALL.x1; x++) set(x, y, T.FLOOR);
-    for (let x = HALL.x0; x <= HALL.x1; x++) { if (x !== HALL.x0 + 4 && x !== HALL.x1 - 4) set(x, HALL.y0, T.CWALL); if (x < 24 || x > 26) set(x, HALL.y1, T.CWALL); }
-    for (let y = HALL.y0; y <= HALL.y1; y++) { if (y % 3 !== 1) { set(HALL.x0, y, T.CWALL); set(HALL.x1, y, T.CWALL); } }
-    for (const [x, y] of [[21, 7], [29, 7], [21, 10], [29, 10]]) set(x, y, T.CWALL);            // pillars
-    for (const [x, y] of [[24, 4], [26, 4], [25, 4]]) set(x, y, T.CWALL);                        // the dais wall behind the queen
-    // Halcyon's platform and the walk to it
-    for (let y = FORGE_P.y0; y <= FORGE_P.y1; y++) for (let x = FORGE_P.x0; x <= FORGE_P.x1; x++) set(x, y, T.FLOOR);
-    for (const [x, y] of [[FORGE_P.x0, FORGE_P.y0], [FORGE_P.x1, FORGE_P.y0], [FORGE_P.x0, FORGE_P.y1], [FORGE_P.x1, FORGE_P.y1], [39, 16], [40, 16]]) set(x, y, T.CWALL);
-    // marble walks from the entry to the hall and the forge
-    for (let y = HALL.y1 + 1; y <= ENTRY[1]; y++) set(25, y, T.FLOOR);
-    for (let x = 26; x < FORGE_P.x0; x++) set(x, 18, T.FLOOR);
-    // small marble islands with wall fragments, for the eye
-    for (const [cx, cy] of [[8, 8], [42, 6], [6, 26], [44, 28]]) { for (let y = cy - 1; y <= cy + 1; y++) for (let x = cx - 1; x <= cx + 1; x++) if (at(x, y) === CLOUD) set(x, y, T.FLOOR); if (at(cx, cy - 1) === T.FLOOR) set(cx, cy - 1, T.CWALL); }
-    for (const [x, y] of WISPS) set(x, y, WISP);
-    set(LEAP_T[0], LEAP_T[1], LEAP); set(ENTRY[0], ENTRY[1], CLOUD);
-    for (const n of SKY_NPCS) set(n.x, n.y, T.FLOOR);
+    for (let y = 0; y < AER.h; y++) for (let x = 0; x < AER.w; x++) { const c = PLAN.ROWS[y][x]; set(x, y, c === '~' ? SKY : c === 'W' ? WISP : c === 'J' ? LEAP : CLOUD); }
+    void rnd; void at;
   }
   const aerie = INSTANCES.define(AER.id, {
     name: AER.name, sub: AER.sub, w: AER.w, h: AER.h, dark: false, build: buildAerie,
@@ -184,6 +175,7 @@
     { const dx = e.px - player.x, dy = e.py - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
     const q = SQ();
     if (e.role === 'sky_queen') {
+      if (window.KINGDOM && KINGDOM.queenFirst(e)) return;
       if (q.stage !== 'done' && q.stage < 2) {
         q.stage = 2;
         say("A knight, carried up on Wren's old flute — and through the storm, which is more than any of my sentinels has managed this year. The wind does not lift just anyone. Welcome to Aerie, the city above the clouds.", e.name);
@@ -304,7 +296,7 @@
     const inside = active();
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
       const t = tileAt(tx, ty);
-      if (inside && (t === SKY || tx >= AER.w || ty >= AER.h)) items.push({ y: -1e8 + ty * TILE - 1, draw: () => drawSky(g, tx, ty) });
+      if (inside && (t === SKY || tx >= aerie.w || ty >= aerie.h)) items.push({ y: -1e8 + ty * TILE - 1, draw: () => drawSky(g, tx, ty) });
       else if (t === CLOUD) items.push({ y: -1e8 + ty * TILE, draw: () => drawCloud(g, tx, ty) });
       else if (t === WISP) { items.push({ y: -1e8 + ty * TILE, draw: () => drawCloud(g, tx, ty) }); items.push({ y: ty * TILE + TILE - 6, draw: () => drawWisp(g, tx, ty) }); }
       else if (t === LEAP) { items.push({ y: -1e8 + ty * TILE, draw: () => drawCloud(g, tx, ty) }); items.push({ y: ty * TILE + 6, draw: () => drawLeap(g, tx, ty) }); }
@@ -321,7 +313,7 @@
   });
 
   // ---------- debug handle ----------
-  window.SKYCITY = { CLOUD, SKY, WISP, LEAP, WIND_SHRINE, SHRINE_T, STEP_T, ENTRY, LEAP_T, WISPS, SKY_NPCS, FORGE, SQ, skyDone, forge, talk, inFront, liftToAerie };
+  window.SKYCITY = { CLOUD, SKY, WISP, LEAP, WIND_SHRINE, SHRINE_T, STEP_T, ENTRY, LEAP_T, WISPS, SKY_NPCS, FORGE, SQ, skyDone, forge, talk, inFront, liftToAerie, drawSky, HALL, FORGE_P };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -350,22 +342,27 @@
     // up to Aerie, with the storm behind you
     { drain(); F.tp(STEP_T.x, STEP_T.y); F.face(SHRINE_T.x, SHRINE_T.y); F.press('KeyE'); F.sim(3, []);
       const sents = monsters.filter(m => m.type === 'sky_sentinel');
-      let cloud = 0, sky = 0, floor = 0, wisps = 0; for (let y = 0; y < AER.h; y++) for (let x = 0; x < AER.w; x++) { const t = tileAt(x, y); if (t === CLOUD) cloud++; else if (t === SKY) sky++; else if (t === T.FLOOR) floor++; else if (t === WISP) wisps++; }
-      const path = F.bfs(ENTRY[0], ENTRY[1], 25, 7), pathForge = F.bfs(ENTRY[0], ENTRY[1], 38, 19);
-      check('sky: with the storm broken the flute lifts you to Aerie — a 50×34 cloud instance (region + banner), 4 neutral level-35 sentinels, marble hall, 3 wisps, the leap tile', INSTANCES.active() === AER.id && player.region === AER.name && !!areaBanner && areaBanner.name === AER.name && sents.length === 4 && sents.every(m => !m.angry && !m.dead) && MONSTER_DEFS.sky_sentinel.level === 35 && MONSTER_DEFS.sky_sentinel.human && !MONSTER_DEFS.sky_sentinel.aggro && cloud > 800 && sky > 300 && floor > 150 && wisps === 3 && tileAt(LEAP_T[0], LEAP_T[1]) === LEAP && !!path && !!pathForge && !aerie.dark, { inst: INSTANCES.active(), region: player.region, sentinels: sents.length, cloud, sky, floor, wisps, path: path && path.length, forge: pathForge && pathForge.length }); }
+      let pave = 0, wall = 0, sky = 0, floor = 0, wisps = 0; for (let y = 0; y < AER.h; y++) for (let x = 0; x < AER.w; x++) { const t = tileAt(x, y); if (t === T.KING_PAVE) pave++; else if (t === T.KING_WALL) wall++; else if (t === SKY) sky++; else if (t === T.FLOOR) floor++; else if (t === WISP) wisps++; }
+      // the Queen in her keep (stand one tile below her) and Halcyon in his forge (one tile above him)
+      const path = F.bfs(ENTRY[0], ENTRY[1], SKY_NPCS[0].x, SKY_NPCS[0].y + 1), pathForge = F.bfs(ENTRY[0], ENTRY[1], SKY_NPCS[1].x, SKY_NPCS[1].y - 1);
+      check('sky: with the storm broken the flute lifts you to Aerie — a 100x80 walled city (region + banner), 4 neutral level-35 sentinels, the keep hall, 3 wisps, the leap', INSTANCES.active() === AER.id && player.region === AER.name && !!areaBanner && areaBanner.name === AER.name && sents.length === 4 && sents.every(m => !m.angry && !m.dead) && MONSTER_DEFS.sky_sentinel.level === 35 && MONSTER_DEFS.sky_sentinel.human && !MONSTER_DEFS.sky_sentinel.aggro && AER.w === 100 && AER.h === 80 && pave > 1400 && wall === 160 && sky > 3000 && floor > 250 && wisps === 3 && tileAt(LEAP_T[0], LEAP_T[1]) === LEAP && !!path && !!pathForge && !aerie.dark, { inst: INSTANCES.active(), region: player.region, sentinels: sents.length, pave, wall, sky, floor, wisps, path: path && path.length, forge: pathForge && pathForge.length }); }
     // Seraphel's task, then the song
-    { drain(); F.tp(25, 7); F.face(25, 6); F.press('KeyE'); F.sim(2, []); const asked = q.stage === 2 && dialog.cur && dialog.cur.who === 'Queen Seraphel' && /scales/.test(questText('sky'));
+    { const qx = SKY_NPCS[0].x, qy = SKY_NPCS[0].y, k0 = JSON.stringify(quest.kingdom === undefined ? null : quest.kingdom);
+      // the Queen's own story (91-cloudkingdom, Lark's First Flight) speaks first while it is open, so it is closed for this check
+      quest.kingdom = { stage: 'done', wishes: 0, seen: {} };
+      drain(); F.tp(qx, qy + 1); F.face(qx, qy); F.press('KeyE'); F.sim(2, []); const asked = q.stage === 2 && dialog.cur && dialog.cur.who === 'Queen Seraphel' && /scales/.test(questText('sky'));
       while (countItem('dragon_scale') > 0) removeItem('dragon_scale', countItem('dragon_scale')); while (countItem('cloud_essence') > 0) removeItem('cloud_essence', countItem('cloud_essence'));
-      drain(); F.face(25, 6); F.press('KeyE'); F.sim(2, []); const notYet = q.stage === 2 && dialog.cur && /carry 0 scales/.test(dialog.cur.text);
+      drain(); F.face(qx, qy); F.press('KeyE'); F.sim(2, []); const notYet = q.stage === 2 && dialog.cur && /carry 0 scales/.test(dialog.cur.text);
       makeRoom(4); give('dragon_scale', 5); give('cloud_essence', 3); const c0 = coins();
-      drain(); F.face(25, 6); F.press('KeyE'); F.sim(2, []);
-      check('sky: Seraphel asks for 5 dragon scales + 3 cloud essence, then sings the Song (quest done, 400 coins)', asked && notYet && q.stage === 'done' && skyDone() && countItem('dragon_scale') === 0 && countItem('cloud_essence') === 0 && (coins() === c0 + 400 || drops.some(d => d.id === 'coins' && d.qty === 400)) && !activeQuests().includes('sky') && questText('sky') === 'Done.' && !!levelBanner && levelBanner.sub === 'Song of Above', { asked, notYet, stage: q.stage, coins: coins() - c0, banner: levelBanner && levelBanner.sub }); }
+      drain(); F.face(qx, qy); F.press('KeyE'); F.sim(2, []);
+      check('sky: Seraphel asks for 5 dragon scales + 3 cloud essence, then sings the Song (quest done, 400 coins)', asked && notYet && q.stage === 'done' && skyDone() && countItem('dragon_scale') === 0 && countItem('cloud_essence') === 0 && (coins() === c0 + 400 || drops.some(d => d.id === 'coins' && d.qty === 400)) && !activeQuests().includes('sky') && questText('sky') === 'Done.' && !!levelBanner && levelBanner.sub === 'Song of Above', { asked, notYet, stage: q.stage, coins: coins() - c0, banner: levelBanner && levelBanner.sub });
+      quest.kingdom = JSON.parse(k0); if (quest.kingdom === null) delete quest.kingdom; }
     // Halcyon forges a godly helm: Smithing 30, 8 scales + 2 mithril + obsidian, no anvil, no hammer
     { makeRoom(4); give('dragon_scale', 8); give('mithril_bar', 2); give('obsidian', 1);
       const hammerSlots = []; for (let i = 0; i < player.inv.length; i++) { const s = player.inv[i]; if (s && ITEMS[s.id].tool === 'hammer') { hammerSlots.push([i, s]); player.inv[i] = null; } }
       const sx0 = player.skills.smithing.xp; if (skillLv('smithing') < FORGE_LV) player.skills.smithing.xp = XP_TABLE[FORGE_LV];
       const helm0 = countItem('godly_helm'), sc0 = countItem('dragon_scale'), mb0 = countItem('mithril_bar'), ob0 = countItem('obsidian'), xp0 = player.skills.smithing.xp;
-      drain(); F.tp(38, 19); F.face(38, 18); F.press('KeyE'); F.sim(1, []); const opened = panel === 'halcyon'; render();
+      drain(); F.tp(SKY_NPCS[1].x, SKY_NPCS[1].y - 1); F.face(SKY_NPCS[1].x, SKY_NPCS[1].y); F.press('KeyE'); F.sim(1, []); const opened = panel === 'halcyon'; render();
       const clicked = F.clickButton('8 Dragon scales + 2 Mithril bars + Obsidian → Godly winged helm'); F.sim(2, []);
       check('sky: Halcyon\'s panel forges a Godly winged helm from 8 scales + 2 mithril + obsidian (Smithing 30, 500 xp), without hammer or anvil', opened && clicked && countItem('godly_helm') === helm0 + 1 && countItem('dragon_scale') === sc0 - 8 && countItem('mithril_bar') === mb0 - 2 && countItem('obsidian') === ob0 - 1 && player.skills.smithing.xp === xp0 + FORGE_XP && !hasTool('hammer') && FORGE.map(f => f.scales).join(',') === '8,12,10,8' && FORGE.map(f => f.mithril).join(',') === '2,4,3,2', { opened, clicked, helm: countItem('godly_helm') - helm0, xp: player.skills.smithing.xp - xp0 });
       closePanel(); removeItem('godly_helm', 1); for (const [i, s] of hammerSlots) if (!player.inv[i]) player.inv[i] = s; else addItem(s.id, s.qty); player.skills.smithing.xp = Math.max(sx0, player.skills.smithing.xp); }

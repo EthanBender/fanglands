@@ -386,9 +386,14 @@ HOOKS.selfTest.push((check, F, h) => {
     // the goblin townsfolk (33): Grubb the cook inside his cookhouse, mid-quest without the beef
     if (REGIONS.some(r => r.name === 'Grubmarket')) { const snap = JSON.stringify(quest.tinker === undefined ? null : quest.tinker); quest.tinker = { stage: 1, parts: {}, visited: true, rematch: false, kills: 0 }; clearArea({ x: 216, y: 24 });
       const e = viaE(216, 24, 216, 23); const t = viaTap(215, 24, tc(216), tc(23)); same('Grubb the cook (33-goblincity)', e, t); quest.tinker = JSON.parse(snap); if (quest.tinker === null) delete quest.tinker; }
-    // the winged folk (36): Queen Seraphel in the Aerie's hall, asked and not yet paid
-    if (window.SKYCITY && window.INSTANCES && INSTANCES.get && INSTANCES.get('aerie')) { const snap = JSON.stringify(quest.sky === undefined ? null : quest.sky); const ok = INSTANCES.enter('aerie', [62, 7]); F.sim(2, []); const q = SKYCITY.SQ(); q.stage = 2;
-      const e = ok ? viaE(25, 7, 25, 6) : null; const t = ok ? viaTap(25, 9, tc(25), tc(6)) : { kind: null }; same('Queen Seraphel (36-skycity, inside the Aerie)', e, t, { entered: ok, inst: inst() }); if (inst()) INSTANCES.leave(); drainD(); quest.sky = JSON.parse(snap); if (quest.sky === null) delete quest.sky; }
+    // the winged folk (36): Queen Seraphel in her keep in Aerie, asked and not yet paid. E from the carpet below her;
+    // the tap starts two tiles further down the carpet, still inside the keep. Her daughter's story (91) is set done
+    // for the probe, so both ways reach the Song's own reminder line.
+    if (window.SKYCITY && window.INSTANCES && INSTANCES.get && INSTANCES.get('aerie')) { const snap = JSON.stringify(quest.sky === undefined ? null : quest.sky), ksnap = JSON.stringify(quest.kingdom === undefined ? null : quest.kingdom);
+      const ok = INSTANCES.enter('aerie', [62, 7]); F.sim(2, []); const q = SKYCITY.SQ(); q.stage = 2; quest.kingdom = { stage: 'done', wishes: 0, seen: {} };
+      const Q0 = SKYCITY.SKY_NPCS[0];
+      const e = ok ? viaE(Q0.x, Q0.y + 1, Q0.x, Q0.y) : null; const t = ok ? viaTap(Q0.x, Q0.y + 3, tc(Q0.x), tc(Q0.y)) : { kind: null }; same('Queen Seraphel (36-skycity, inside her keep in Aerie)', e, t, { entered: ok, inst: inst() }); if (inst()) INSTANCES.leave(); drainD();
+      quest.sky = JSON.parse(snap); if (quest.sky === null) delete quest.sky; quest.kingdom = JSON.parse(ksnap); if (quest.kingdom === null) delete quest.kingdom; }
     // the guild staff (41): Pip inside the hall door at rank 4 (pick() pinned so both probes draw the same line)
     if (typeof quest.rebuild !== 'undefined' || BUILDINGS.some(b => b.id === 'guild_hall') || REGIONS.some(r => r.name === 'Hollowford')) { const snap = JSON.stringify(quest.guild === undefined ? null : quest.guild); const R = Math.random; Math.random = () => 0;
       quest.guild = Object.assign({}, quest.guild || {}, { founded: true, rank: 4, jobsDone: 12, cooldowns: {}, active: null }); F.tp(153, 71); F.sim(2, []); clearArea({ x: 153, y: 70 });

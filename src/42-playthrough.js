@@ -122,7 +122,10 @@
   function instanceConnectivity() {
     const out = [];
     if (!window.INSTANCES) return out;
-    const KNOWN = { aerie: [['Queen Seraphel', 25, 6], ['Master Halcyon', 38, 18], ['the leap down', 25, 31]], tinker_lab: [['Tinkerton (lab)', 4, 3], ['the Gnasher rug', 12, 9], ['the arena lever', 21, 15]], afterlands: [['the fire', 30, 8], ['Count Ashvane', 46, 18], ['the crypt door out', 30, 2]], spider_den: [['the chest', 3, 26], ['the Brood Mother', 12, 22]] };
+    // Aerie (36-skycity, the walled kingdom of 91-cloudkingdom): the Queen, Halcyon and the leap from SKYCITY, then every
+    // resident, all twelve doors, the maze's middle, the Long Rail and both royal updraft stones from KINGDOM.KNOWN
+    const SKYK = window.SKYCITY ? [[SKYCITY.SKY_NPCS[0].name, SKYCITY.SKY_NPCS[0].x, SKYCITY.SKY_NPCS[0].y], [SKYCITY.SKY_NPCS[1].name, SKYCITY.SKY_NPCS[1].x, SKYCITY.SKY_NPCS[1].y], ['the leap down', SKYCITY.LEAP_T[0], SKYCITY.LEAP_T[1]]] : [];
+    const KNOWN = { aerie: SKYK.concat(window.KINGDOM && Array.isArray(KINGDOM.KNOWN) ? KINGDOM.KNOWN : []), tinker_lab: [['Tinkerton (lab)', 4, 3], ['the Gnasher rug', 12, 9], ['the arena lever', 21, 15]], afterlands: [['the fire', 30, 8], ['Count Ashvane', 46, 18], ['the crypt door out', 30, 2]], spider_den: [['the chest', 3, 26], ['the Brood Mother', 12, 22]] };
     // Deepholm's people and its way out (24-dwarves): they used to be overworld targets at 2–26, 72–94, and
     // the same walk is proved here instead — from the foot of the ladder to every dwarf and back to the ladder.
     if (window.DEEPHOLM) KNOWN.deepholm = [...DEEPHOLM.DWARVES.map(d => [d.name, d.x, d.y]), ['the ladder out', DEEPHOLM.LADDER.x, DEEPHOLM.LADDER.y],
@@ -529,11 +532,12 @@
       }
       if (window.INSTANCES && INSTANCES.active() === 'aerie') {
         note('in Aerie'); drain(); tidy(4);
-        for (const [x, y] of [[8, 17], [25, 27], [42, 20]]) if (countItem('cloud_essence') < 3) { tidy(2); useAt(x, y); }
-        // Queen Seraphel stands at (25,6); the winged folk answer E within two tiles, so stand right under her
-        for (let k = 0; k < 2; k++) { closePanel(); walk(25, 7); F().face(25, 6); F().press('KeyE'); PLAY.steps++; sim(2); drain(); }
+        for (const [x, y] of SKYCITY.WISPS) if (countItem('cloud_essence') < 3) { tidy(2); useAt(x, y); }
+        // Queen Seraphel stands in her keep; the winged folk answer E within two tiles, so stand right under her on the carpet
+        const QN = SKYCITY.SKY_NPCS[0];
+        for (let k = 0; k < 2; k++) { closePanel(); walk(QN.x, QN.y + 1); F().face(QN.x, QN.y); F().press('KeyE'); PLAY.steps++; sim(2); drain(); }
         note(`sky ${quest.sky && quest.sky.stage}, essence ${countItem('cloud_essence')}`);
-        useAt(25, 31); sim(3);
+        useAt(SKYCITY.LEAP_T[0], SKYCITY.LEAP_T[1]); sim(3);
       }
       if (window.INSTANCES && INSTANCES.active()) { INSTANCES.leave(); note('left the sky by the API (the leap tile was not reached)'); }
       note(`back on the ground: ${player.region} at ${ptx()},${pty()}`);
