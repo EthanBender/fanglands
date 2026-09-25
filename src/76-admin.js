@@ -7,7 +7,7 @@
 // file hiding its buttons from a player is a convenience, never the lock.
 //
 // What is here:
-//   A. a gold ADMIN chip on the HUD, beside 73's ONLINE chip, for admins only; it opens the Admin panel (HOOKS.panel.admin)
+//   A. a gold ADMIN plaque in the HUD kit's plaque column, for admins only; it opens the Admin panel (HOOKS.panel.admin)
 //      with four tabs: Knights, Powers, Monsters, Party
 //   B. Knights: mute (5 minutes / 1 hour / 1 day / until unmuted), unmute, kick and ban the knights online; the muted and
 //      banned lists with Unmute and Unban; the world's answers in plain words
@@ -22,6 +22,8 @@
 // ============================================================================
 {
   const GOLD = '#f5c542', INK = '#1a1300';
+  // the chosen tab, quantity or count, and the panel's main actions: the book's primary plate (a gold edge; HK.toneOf reads this green as 'primary')
+  const SEL = '#238636';
   const SPAWN_LIVE_MAX = 60;          // living admin spawns per map, on the keeper
   const SPAWN_SPREAD = 3 * TILE;      // how far from the admin a spawned monster may stand
   const SPAWN_GONE_AFTER = 2;         // seconds a dead admin spawn lies there before the keeper removes it
@@ -606,16 +608,13 @@
   const whereOf = o => (!o.map || o.map === 'over') ? (o.region || 'The Fanglands') : (((window.INSTANCES && INSTANCES.get && INSTANCES.get(o.map)) || {}).name || o.region || String(o.map));
 
   // ---------- A. the chip ----------
-  // beside 73's ONLINE chip on the same row, gold, 44 px square-ish on touch; hidden under any panel (like the online chip is under other files')
+  // A plaque in the kit's reserved column (src/59-hudkit.js HK.addPlaque): a star roundel, ADMIN in gold with a gold edge,
+  // "Tap to open" under it; the whole plaque is the tap (44 px tall on touch). Admins only; hidden under any panel and the book.
   HOOKS.hud.push(g => {
     if (!isAdmin() || paused || panel) return;
-    const on = buttons.find(b => /^(ONLINE|OFFLINE)/.test(b.label)), touchy = touchMode();
-    const h = touchy ? 44 : (on ? on.h : 26), w = touchy ? 76 : 70;
-    const x = on ? on.x + on.w + 8 : 14, y = on ? on.y : Math.max(HUD.leftY, 84);
-    roundRect(g, x, y, w, h, 8); g.fillStyle = GOLD; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1; g.stroke();
-    g.fillStyle = INK; g.font = 'bold 13px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('ADMIN', x + w / 2, y + h / 2 + 0.5); g.textBaseline = 'alphabetic';
-    buttons.push({ x, y, w, h, label: 'ADMIN', action: () => { if (panel === 'admin') closePanel(); else open(); } });
-    HUD.leftY = Math.max(HUD.leftY, y + h + 6);
+    const r = HK.addPlaque(g, { id: 'admin', emblem: 'star', emblemColor: GOLD, name: 'ADMIN', nameColor: GOLD, edge: GOLD, sub: touchMode() ? 'Tap to open' : 'Click to open' });
+    if (!r) return;
+    buttons.push({ x: r.x, y: r.y, w: r.w, h: r.h, label: 'ADMIN', action: () => { if (panel === 'admin') closePanel(); else open(); }, up: true, name: 'The Admin panel' });
   });
 
   // ---------- the panel ----------
@@ -634,10 +633,10 @@
     if (!isAdmin()) { closePanel(); return; }
     const touchy = touchMode(), T = touchy ? 44 : 32;
     const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : Math.min(660, VW - 20), Math.min(VH - 20, 660), 'Admin', '');
-    if (touchy) { buttons.pop(); button(g, px + w - 56, py + 10, 44, 44, '×', closePanel, '#21262d'); }
+    // the book frame's umber close seal is already a kit row (44 px on touch), so the panel keeps it
     g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; const subW = w - 36 - 60; g.fillText(fit(g, g.measureText(SUBTITLE[S.tab]).width <= subW ? SUBTITLE[S.tab] : SUBTITLE_SHORT[S.tab], subW), px + 18, py + 50);
     const tabW = (w - 36 - 3 * 6) / 4;
-    TABS.forEach(([id, name], i) => btn(g, px + 18 + i * (tabW + 6), py + 60, tabW, T, name, () => { if (S.tab !== id) { S.tab = id; S.view = null; freshSearch(); onTab(id); } }, S.tab === id ? '#7a5a12' : '#21262d', true, 'admin:tab:' + id));
+    TABS.forEach(([id, name], i) => btn(g, px + 18 + i * (tabW + 6), py + 60, tabW, T, name, () => { if (S.tab !== id) { S.tab = id; S.view = null; freshSearch(); onTab(id); } }, S.tab === id ? SEL : '#21262d', true, 'admin:tab:' + id));
     const x = px + 18, y = py + 60 + T + 10, cw = w - 36, ch = py + h - 12 - y;
     if (S.tab === 'knights') { if (S.view && S.view.kind === 'mute') drawMuteChooser(g, x, y, cw, ch, T); else drawKnights(g, x, y, cw, ch, T); }
     else if (S.tab === 'powers') { if (S.view && S.view.kind === 'give') drawGive(g, x, y, cw, ch, T); else drawPowers(g, x, y, cw, ch, T); }
@@ -717,7 +716,7 @@
   function drawPowers(g, x, y, w, h, T) {
     const armU = confirmActive('admin:unlock'), armR = confirmActive('admin:putback'), hasPin = typeof S.pinAt === 'number';
     const entries = [
-      { key: 'admin:unlock', text: S.busy === 'pin' ? 'Saving a backup…' : armU ? 'Tap again to unlock' : 'Unlock everything', color: armU ? '#c0392b' : '#7a5a12', enabled: !S.busy && !inInstance(),
+      { key: 'admin:unlock', text: S.busy === 'pin' ? 'Saving a backup…' : armU ? 'Tap again to unlock' : 'Unlock everything', color: armU ? '#c0392b' : SEL, enabled: !S.busy && !inInstance(),
         action: () => { if (confirmTap('admin:unlock', unlockWithBackup)) return; notify('This saves a backup of your knight first. Tap again to unlock everything.'); },
         line: inInstance() ? 'Unlock everything works on the overworld.' : armU ? 'This saves a backup of your knight first. Tap again to unlock everything.' : 'Every skill 99, every quest done, every gate open.' },
       { key: 'admin:putback', text: S.busy === 'restore' ? 'Bringing it back…' : armR ? 'Tap again to put it back' : 'Put my knight back', color: armR ? '#c0392b' : '#1f4e78', enabled: hasPin && !S.busy,
@@ -767,7 +766,7 @@
     // the bar: what is picked, how many, Give
     const by = y + h - barH;
     note(g, S.item ? `${ITEMS[S.item].name} × ${commas(S.qty)}` : 'Tap an item, pick how many, then Give.', x, by + 13, w, S.item ? '#e6edf3' : '#8b949e');
-    const quick = [1, 10, 100, 1000].map(n => ({ text: commas(n), w: wide ? 62 : 'fill', action: () => setQty(n), color: S.qty === n ? '#7a5a12' : '#21262d', key: 'admin:qty:' + n }));
+    const quick = [1, 10, 100, 1000].map(n => ({ text: commas(n), w: wide ? 62 : 'fill', action: () => setQty(n), color: S.qty === n ? SEL : '#21262d', key: 'admin:qty:' + n }));
     const box = { w: wide ? 120 : 'fill', draw: (bx, bw, ry) => textBox(g, bx, ry, bw, T, 'qty', 'How many') };
     const giveBtn = { text: 'Give', w: wide ? 'fill' : 110, action: () => { if (S.item) give(S.item, S.qty); else notify('Tap an item first.'); }, color: '#238636', enabled: !!S.item, key: 'admin:giveitem' };
     if (wide) row(g, x, by + 18, w, T, quick.concat([box, giveBtn]));
@@ -829,7 +828,7 @@
       { w: 54, draw: (bx, bw, ry) => { roundRect(g, bx, ry, bw, T, 8); g.fillStyle = '#0b0f14'; g.fill(); g.fillStyle = '#e6edf3'; g.font = 'bold 15px sans-serif'; g.textAlign = 'center'; g.fillText(String(S.count), bx + bw / 2, ry + T / 2 + 5); } },
       { text: '+', w: 44, action: () => { S.count = Math.min(COUNT_MAX, S.count + 1); }, color: '#21262d', enabled: S.count < COUNT_MAX, key: 'admin:count:+' },
     ];
-    const quick = [1, 5, 10, 20].map(n => ({ text: String(n), w: wide ? 44 : 'fill', action: () => { S.count = n; }, color: S.count === n ? '#7a5a12' : '#21262d', key: 'admin:count:' + n }));
+    const quick = [1, 5, 10, 20].map(n => ({ text: String(n), w: wide ? 44 : 'fill', action: () => { S.count = n; }, color: S.count === n ? SEL : '#21262d', key: 'admin:count:' + n }));
     const go = { text: 'Spawn', w: wide ? 84 : 'fill', action: () => { if (S.monType) spawn(S.monType, S.count); else notify('Tap a monster first.'); }, color: '#238636', enabled: !!S.monType, key: 'admin:spawn' };
     const clear = { text: 'Clear spawns', w: wide ? 'fill' : 'fill', action: clearSpawns, color: '#8b2e2e', key: 'admin:clear' };
     if (wide) row(g, x, by + 18, w, T, step.concat(quick, [go, clear]));
@@ -839,7 +838,7 @@
   // ---------- E. the Party tab: 77-dropparty's panel ----------
   function drawParty(g, x, y, w, h, T) {
     const there = typeof HOOKS.panel.party === 'function';
-    btn(g, x, y, Math.min(w, 320), T, there ? 'Drop party' : 'Drop party is not in this build.', () => { if (typeof HOOKS.panel.party === 'function') openPanel('party'); }, '#7a5a12', there, 'admin:party');
+    btn(g, x, y, Math.min(w, 320), T, there ? 'Drop party' : 'Drop party is not in this build.', () => { if (typeof HOOKS.panel.party === 'function') openPanel('party'); }, SEL, there, 'admin:party');
     note(g, there ? 'Pick the prizes, then crackers fall on the ground around you. Anyone can light one.' : 'The drop party file is not part of this game yet.', x, y + T + 20, w);
   }
 

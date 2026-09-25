@@ -220,8 +220,14 @@ Every panel wears the same frame and follows one contract, so a new one looks li
   `friend`). Red means health or danger only.
 - **Rows:** a list row is an `HK.vellumPlate(g, x, y, w, h)` of `HK.row()` height (44 on touch, 32 with a mouse), with its text inset 12 px.
 - **Items:** `drawSlot()` draws an item as a leather pouch; on touch a pouch is 44 px or more.
-- **Verbs:** `button(g, x, y, w, HK.row(), label, action, colour)` — an iron plate button fired on pointer-up; green = primary,
-  red = danger, anything else neutral. Keep 8 px between buttons on touch.
+- **Verbs:** `button(g, x, y, w, HK.row(), label, action, colour)` — an iron plate button fired on pointer-up; green or a dark
+  gold (`#9e6a03`) = primary (the chosen one), red = danger, anything else neutral. Keep 8 px between buttons on touch.
+- **The pack's foot:** a feature that needs a control in the pack pushes a row onto `PACK_ROWS` (10-hud):
+  `{ id, show?: () => bool, minW?: (g, h) => px, draw: (g, x, y, w, h) }`. The pack measures the row in, so it never lands on
+  the grid or the verbs; on an upright phone one row rides beside the keyring when `minW` fits. 69-retaliate's Fight back is one.
+- **Two panel kits:** `PANEL_KIT` (10-hud: the core panels and the Wiki) and `PLACE_KIT` (29-quests: the bank, the notice board,
+  the oven, the capes, the dozer bay, Fennick's rail, the wreck and Nix, the island build). Both draw the same kit pieces; size a
+  panel from `PANEL_KIT.room()` (`aw` / `ah`: inside the notch and home-bar insets), never from `VW - 20` / `VH - 20`.
 - **Tabs:** plate buttons in a row, the selected one in the primary tone.
 - **Pages:** reserve one `HK.row()` at the bottom for `pager()` (the chevron plates and "2 / 5") even when there is one page, so
   nothing jumps when a second page appears.

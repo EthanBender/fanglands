@@ -2567,6 +2567,8 @@ const HK = (() => {
     if (gg > 110 && gg > r * 1.15 && gg > b * 1.15) return 'primary';
     if (r > 110 && r > gg * 1.6 && r > b * 1.4) return 'danger';
     if (gg > 110 && r >= gg && r > b * 1.5 && gg > b * 1.3) return 'warn';
+    // a dark gold (#9e6a03, #7a5a12): features mark the chosen choice with it, and gold means chosen in the kit
+    if (r > 100 && r > gg && gg > b * 1.8 && r - b > 80) return 'primary';
     return null;
   }
   function control(g, x, y, w, h, label, action, opt = {}) {
