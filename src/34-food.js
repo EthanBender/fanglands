@@ -26,14 +26,56 @@
 
   // ---------- the oven panel: pies ----------
   // Opened by the core's T.OVEN branch (06) when the knight holds flour and any filling; craft() handles the rest.
-  HOOKS.panel.oven = (g, narrow) => {
+  // One recipe plate per pie, like a station's rows: the pie in a pouch, its name in Cinzel, what goes in and what is in
+  // the pack in plain words with exact counts, and a Bake plate (green when it can be baked). The plate answers to the
+  // recipe's label, so every test and the harness still find it by name.
+  let ovenPage = 0;
+  const ovenLabel = r => r.label + (r.lv > 1 ? `  (lv ${r.lv})` : '');
+  const needsLine = r => r.needs.map(([id, q]) => `${q} ${ITEMS[id] ? ITEMS[id].name : id} (you have ${countItem(id)})`).join(', ');
+  function ovenGeom(g) {
+    const K = PANEL_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
     const list = RECIPES.filter(r => r.station === 'oven');
-    const { px, py, w } = panelBox(g, 420, 62 + list.length * 40 + 24, 'Oven — pies', `Cooking level ${skillLv('cooking')} · flour and a filling go in, a pie comes out`);
-    list.forEach((r, i) => {
-      const y = py + 62 + i * 40, has = r.needs.every(([id, q]) => countItem(id) >= q), lvOk = skillLv(r.skill) >= r.lv;
-      button(g, px + 18, y, w - 36, 34, r.label + (r.lv > 1 ? `  (lv ${r.lv})` : ''), () => craft(r), has && lvOk ? '#238636' : '#2a2f3a', has && lvOk);
+    const w = Math.min(VW - 20, 460), inner = w - 36, bw = touchMode() ? 96 : 84;
+    const textW = inner - 12 - S - 12 - bw - 12, f = K.SENT(13), lh = K.lineH(f);
+    const heights = list.map(r => Math.max(S + 16, 10 + 18 + K.linesOf(g, needsLine(r), textW, f) * lh + 8, R + 16));
+    const foot = R + 8, room = VH - 20 - 62 - 12 - foot;
+    const pages = K.pages(heights, room, G);
+    const many = pages.length > 1;
+    const pageH = Math.max(...pages.map(p => p.reduce((a, i) => a + heights[i], 0) + (p.length - 1) * G));
+    return { K, R, G, S, list, w, inner, bw, textW, f, lh, heights, pages, h: 62 + pageH + 12 + (many ? foot : 0) };
+  }
+  HOOKS.panel.oven = (g, narrow) => {
+    const Q = ovenGeom(g), { K, R, G, S } = Q;
+    ovenPage = clamp(ovenPage, 0, Q.pages.length - 1);
+    const { px, py, h } = panelBox(g, Q.w, Q.h, 'Oven', `Cooking level ${skillLv('cooking')}. Flour and a filling go in, a pie comes out.`);
+    const x0 = px + 18; let y = py + 62;
+    const canOf = r => ({ has: r.needs.every(([id, q]) => countItem(id) >= q), lvOk: skillLv(r.skill) >= r.lv });
+    Q.list.forEach((r, i) => {
+      const { has, lvOk } = canOf(r), can = has && lvOk;
+      if (!Q.pages[ovenPage].includes(i)) { K.offscreen(ovenLabel(r), () => craft(r), can); return; }
+      const ch = Q.heights[i];
+      K.card(g, x0, y, Q.inner, ch, can ? HK.T.gold : null);
+      K.pouch(g, x0 + 12, y + Math.round((ch - S) / 2), S, r.out, r.qty || 1);
+      const tx = x0 + 12 + S + 12, name = ITEMS[r.out] ? ITEMS[r.out].name : r.out;
+      const lvW = r.lv > 1 ? HK.tw(g, `Level ${r.lv}`, K.NAME(11)) + 8 : 0;
+      K.say(g, name, tx, y + 23, Q.textW - lvW, { font: K.NAME(13), color: can ? HK.T.ink : HK.T.inkDim, id: 'oven:name' });
+      if (r.lv > 1) K.say(g, `Level ${r.lv}`, tx + Q.textW, y + 23, lvW, { font: K.NAME(11), align: 'right', color: lvOk ? HK.T.good : HK.T.warn, id: 'oven:lv' });
+      K.para(g, needsLine(r), tx, y + 28 + 13, Q.textW, 99, { font: Q.f, color: has ? HK.T.ink : HK.T.inkDim, id: 'oven:needs' });
+      K.plate(g, x0 + Q.inner - 12 - Q.bw, y + Math.round((ch - R) / 2), Q.bw, R, 'Bake', ovenLabel(r), () => craft(r), can ? 'primary' : null, can, { name: 'Bake a ' + name.toLowerCase() });
+      y += ch + G;
     });
+    if (Q.pages.length > 1) K.pager(g, x0, py + h - 12 - R, Q.inner, ovenPage, Q.pages.length, p => { ovenPage = clamp(p, 0, Q.pages.length - 1); });
   };
+  // the panel audit's scene (PANEL_KIT, run from 63-house): flour and berries in the pack, so one pie can be baked
+  PANEL_KIT.scene({
+    id: 'oven', panel: 'oven', name: 'Oven (one pie ready to bake, the others short)',
+    setup() {
+      const inv = player.inv.map(s => (s ? { ...s } : null));
+      player.inv = new Array(INV_SLOTS).fill(null); addItem('flour', 2); addItem('berries', 6); addItem('raw_beef', 1);
+      return () => { player.inv = inv; ovenPage = 0; };
+    },
+    variants: [{ name: '', open: () => { openPanel('oven'); ovenPage = 0; } }],
+  });
 
   // ---------- berry bushes ----------
   const T_BERRY = addTile('BERRY_BUSH', { solid: true, tex: 'grass', mini: '#3f7d2b' });

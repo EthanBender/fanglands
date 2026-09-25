@@ -76,19 +76,56 @@
     say(ready ? `A master. I can see it in how you stand. ${CAPE_PRICE} coins for the cape, and every one of them earned.` : `Ninety-nine in a skill, and I will sell you its cape. Not before. Every cape has a trick to it. Agility is trained on the yard course south of Hale's yard, and the cliff ledge at Grey Quarry.`, n.name);
     openPanel('capes');
   };
+  // The Master's panel: one plate of dark vellum per skill. The cape in a pouch, its name in Cinzel, where the knight
+  // stands in plain words ("Level 45. A cape needs level 99." / "Level 99. Yours to buy."), what the cape does, and a
+  // Buy plate with the exact price. Rows keep their full height; Back and Next turn the pages on a small screen.
+  let capesPage = 0;
+  function capesGeom(g) {
+    const K = PANEL_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
+    const w = Math.min(VW - 20, 520), inner = w - 36, bw = touchMode() ? 112 : 100;
+    const textW = inner - 12 - S - 12 - bw - 12, f = K.SENT(13), lh = K.lineH(f);
+    const heights = SKILL_DEFS.map(sk => Math.max(S + 16, R + 16, 10 + 18 + K.linesOf(g, capeLine(sk), textW, f) * lh + 8));
+    const foot = R + 8, room = VH - 20 - 62 - 12 - foot;
+    const pages = K.pages(heights, room, G);
+    const pageH = Math.max(...pages.map(p => p.reduce((a, i) => a + heights[i], 0) + (p.length - 1) * G));
+    return { K, R, G, S, w, inner, bw, textW, f, lh, heights, pages, h: 62 + pageH + 12 + (pages.length > 1 ? foot : 0) };
+  }
+  const capeLine = sk => { const lv = skillLv(sk.key); return (lv >= 99 ? `Level ${lv}. Yours to buy.` : `Level ${lv}. A cape needs level 99.`) + ` ${CAPE_ABILITY[sk.key] || 'Worn with pride'}.`; };
   HOOKS.panel.capes = (g, narrow) => {
-    ensureCapes(); const n = SKILL_DEFS.length;
-    const rowH = clamp(Math.floor((VH - 120) / n), 20, 30);
-    const { px, py, w } = panelBox(g, 470, 84 + n * rowH, 'Master of Skills', `${coins()} coins · a cape costs ${CAPE_PRICE} and needs level 99`);
-    SKILL_DEFS.forEach((s, i) => {
-      const y = py + 66 + i * rowH, lv = skillLv(s.key), can = lv >= 99 && coins() >= CAPE_PRICE, owned = countItem(capeId(s.key)) > 0 || player.equip.cape === capeId(s.key);
-      drawItemIcon(g, capeId(s.key), px + 28, y + rowH / 2, Math.min(18, rowH - 4));
-      g.fillStyle = lv >= 99 ? '#e6edf3' : '#8b949e'; g.font = `bold ${narrow ? 11 : 12}px sans-serif`; g.textAlign = 'left'; g.fillText(`${s.name}${owned ? ' ✓' : ''}`, px + 44, y + rowH / 2 + 4);
-      g.fillStyle = lv >= 99 ? '#f5c542' : '#6e7681'; g.textAlign = 'right'; g.fillText(`Lv ${lv}`, px + (narrow ? 170 : 186), y + rowH / 2 + 4); g.textAlign = 'left';
-      if (!narrow) { g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.fillText(CAPE_ABILITY[s.key] || 'Worn with pride', px + 196, y + rowH / 2 + 4); }
-      button(g, px + w - 100, y + 1, 84, rowH - 2, `Buy ${CAPE_PRICE}`, () => { buyCape(s.key); }, can ? '#238636' : '#2a2f3a', can);
+    ensureCapes();
+    const Q = capesGeom(g), { K, R, G, S } = Q;
+    capesPage = clamp(capesPage, 0, Q.pages.length - 1);
+    const { px, py, h } = panelBox(g, Q.w, Q.h, 'Master of Skills', `You have ${coins()} coins. A cape costs ${CAPE_PRICE} and needs level 99.`);
+    const x0 = px + 18; let y = py + 62;
+    SKILL_DEFS.forEach((sk, i) => {
+      const lv = skillLv(sk.key), can = lv >= 99 && coins() >= CAPE_PRICE, owned = countItem(capeId(sk.key)) > 0 || player.equip.cape === capeId(sk.key);
+      const buy = () => { buyCape(sk.key); };
+      if (!Q.pages[capesPage].includes(i)) { K.offscreen(`Buy ${CAPE_PRICE}`, buy, can); return; }
+      const ch = Q.heights[i];
+      K.card(g, x0, y, Q.inner, ch, lv >= 99 ? HK.T.gold : null);
+      K.pouch(g, x0 + 12, y + Math.round((ch - S) / 2), S, capeId(sk.key), 1);
+      const tx = x0 + 12 + S + 12;
+      const ownW = owned ? 18 + HK.tw(g, 'Yours', K.SENT(13)) + 4 : 0;
+      K.say(g, `${sk.name} cape`, tx, y + 23, Q.textW - ownW, { font: K.NAME(13), color: lv >= 99 ? HK.T.goldHi : HK.T.ink, id: 'capes:name' });
+      if (owned) K.mark(g, true, tx + Q.textW - ownW + 4, y + 23, 'Yours', { w: ownW - 18 });
+      K.para(g, capeLine(sk), tx, y + 28 + 13, Q.textW, 99, { font: Q.f, color: lv >= 99 ? HK.T.ink : HK.T.inkDim, id: 'capes:line' });
+      K.plate(g, x0 + Q.inner - 12 - Q.bw, y + Math.round((ch - R) / 2), Q.bw, R, `Buy ${CAPE_PRICE}`, `Buy ${CAPE_PRICE}`, buy, can ? 'primary' : null, can, { em: 'coin', name: `Buy the ${sk.name} cape` });
+      y += ch + G;
     });
+    if (Q.pages.length > 1) K.pager(g, x0, py + h - 12 - R, Q.inner, capesPage, Q.pages.length, p => { capesPage = clamp(p, 0, Q.pages.length - 1); });
   };
+  // the panel audit's scene (PANEL_KIT, run from 63-house): 2,000 coins, two skills at 99, one cape owned, first and last page
+  PANEL_KIT.scene({
+    id: 'capes', panel: 'capes', name: 'Master of Skills (two skills at 99, one cape owned, first and last page)',
+    setup() {
+      ensureCapes();
+      const inv = player.inv.map(s => (s ? { ...s } : null)), sk = JSON.parse(JSON.stringify(player.skills)), cape = player.equip.cape;
+      player.inv = new Array(INV_SLOTS).fill(null); addItem('coins', 2000); addItem('cape_mining', 1);
+      player.skills.woodcutting.xp = XP_TABLE[99]; player.skills.mining.xp = XP_TABLE[99]; player.skills.agility.xp = XP_TABLE[45];
+      return () => { player.inv = inv; player.skills = sk; player.equip.cape = cape; capesPage = 0; recomputeMaxHp(); };
+    },
+    variants: [{ name: 'first page', open: () => { openPanel('capes'); capesPage = 0; } }, { name: 'last page', open: () => { openPanel('capes'); capesPage = 99; } }],
+  });
   const _panelBox = panelBox;
   panelBox = (g, w, h, title, subtitle) => { if (title === 'Your pack') h = Math.max(h, 66 + EQUIP_SLOTS.length * 52 + 14); return _panelBox(g, w, h, title, subtitle); };
   const _drawItemIcon = drawItemIcon;

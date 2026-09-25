@@ -116,31 +116,77 @@
   }
 
   // ---------- panel ----------
+  // One card of dark vellum per upgrade: the blueprint in a pouch, the name in Cinzel, what it does in plain words,
+  // whether the knight holds the blueprint (a drawn tick and "Blueprint", or a drawn cross and "Needs the blueprint"),
+  // the Crafting level, and the materials as pouches with "have / need" under each. The Fit plate sits beside them,
+  // green when it can be fitted. A narrow phone stacks the card (no blueprint column) and pages the four cards.
+  let bayPage = 0;
+  const BAY_HINT = 'Blueprints drop from the goblins who own the machines: sappers, brutes, walkers, bulldozers and the Barrelbeast. Nix in Grubmarket sells them for machine parts.';
+  function bayGeom(g) {
+    const K = PANEL_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
+    const w = Math.min(VW - 20, 640), inner = w - 36, wide = inner >= 470, bw = touchMode() ? 116 : 104;
+    const textX = wide ? 12 + S + 12 : 12, textW = inner - textX - 12, f = K.SENT(13), lh = K.lineH(f);
+    const heights = UPGRADES.map(u => 10 + 18 + K.linesOf(g, u.blurb, textW, f) * lh + 4 + lh + (u.requires ? lh : 0) + 8 + Math.max(S + 16, R) + 10);
+    const hintH = K.linesOf(g, BAY_HINT, inner, f) * lh + 6;
+    const foot = R + 8, room = VH - 20 - 62 - 12 - foot - hintH;
+    const pages = K.pages(heights, room, G);
+    const pageH = Math.max(...pages.map(p => p.reduce((a, i) => a + heights[i], 0) + (p.length - 1) * G));
+    return { K, R, G, S, w, inner, wide, bw, textX, textW, f, lh, heights, pages, hintH, h: 62 + pageH + 8 + hintH + foot + 4 };
+  }
   HOOKS.panel.dozerup = (g, narrow) => {
-    const up = DU();
-    const rowH = clamp(Math.floor((VH - 20 - 150) / UPGRADES.length), 60, 78);
+    const up = DU(), Q = bayGeom(g), { K, R, G, S } = Q;
+    bayPage = clamp(bayPage, 0, Q.pages.length - 1);
     const fitted = UPGRADES.filter(u => up[u.id]).length;
-    const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : 620, 96 + UPGRADES.length * rowH + 52, 'Bulldozer bay', `Fit upgrades onto the bulldozer · ${fitted} of ${UPGRADES.length} fitted · they ride with you onto any bulldozer`);
-    const fit = (text, maxW) => { let s = text; while (s.length > 8 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s === text ? text : s + '…'; };
-    const bw = narrow ? 92 : 118, textW = w - 36 - bw - 24;
+    const { px, py, h } = panelBox(g, Q.w, Q.h, 'Bulldozer bay', `${fitted} of ${UPGRADES.length} fitted. They ride with you onto any bulldozer.`);
+    const x0 = px + 18; let y = py + 62;
     UPGRADES.forEach((u, i) => {
-      const y = py + 66 + i * rowH, isDone = !!up[u.id], c = isDone ? { ok: false } : canFitUpgrade(u), hasBp = countItem(u.blueprint) > 0;
-      roundRect(g, px + 18, y, w - 36, rowH - 6, 8); g.fillStyle = isDone ? 'rgba(59,111,182,0.14)' : c.ok ? 'rgba(126,231,135,0.10)' : 'rgba(255,255,255,0.05)'; g.fill();
-      if (c.ok) { g.strokeStyle = 'rgba(126,231,135,0.45)'; g.lineWidth = 1; g.stroke(); }
-      if (isDone) { g.strokeStyle = 'rgba(59,111,182,0.6)'; g.lineWidth = 1; g.stroke(); }
-      drawItemIcon(g, u.blueprint, px + 36, y + rowH / 2 - 3, 16);
-      g.textAlign = 'left'; g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.fillText(fit(`${u.name}${isDone ? '  · fitted' : ''}`, textW - 30), px + 56, y + 18);
-      g.fillStyle = isDone ? '#8b949e' : '#c9d1d9'; g.font = '12px sans-serif'; g.fillText(fit(u.blurb, textW - 30), px + 56, y + 35);
-      const needs = `${hasBp ? 'Blueprint ✓' : 'Blueprint ✗'} · ${u.needs.map(([id, q]) => `${q} ${ITEMS[id].name.toLowerCase()} (${countItem(id)})`).join(' · ')} · Crafting ${u.lv}${u.requires ? ` · needs ${upgradeById(u.requires).name.toLowerCase()}` : ''}`;
-      g.font = '11px sans-serif'; g.fillStyle = isDone ? '#4b535d' : c.ok ? '#7ee787' : '#8b949e'; g.fillText(fit(isDone ? 'Fitted. It stays with you.' : needs, textW - 30), px + 56, y + 51);
-      const bx = px + w - 18 - bw, by = y + Math.floor(rowH / 2) - 18;
-      if (isDone) button(g, bx, by, bw, 30, 'Fitted', () => { }, '#2a2f3a', false);
-      else button(g, bx, by, bw, 30, `Fit: ${u.name}`, () => { fitUpgrade(u); }, c.ok ? '#238636' : '#2a2f3a', c.ok);
+      const isDone = !!up[u.id], c = isDone ? { ok: false } : canFitUpgrade(u), hasBp = countItem(u.blueprint) > 0;
+      const fit = () => { fitUpgrade(u); };
+      if (!Q.pages[bayPage].includes(i)) { if (isDone) K.offscreen('Fitted', () => { }, false); else K.offscreen(`Fit: ${u.name}`, fit, c.ok); return; }
+      const ch = Q.heights[i];
+      K.card(g, x0, y, Q.inner, ch, isDone ? HK.T.good : c.ok ? HK.T.gold : null);
+      if (Q.wide) K.pouch(g, x0 + 12, y + 10, S, u.blueprint, 1);
+      const tx = x0 + Q.textX;
+      let ty = y + 10;
+      K.say(g, u.name, tx, ty + 13, Q.textW, { font: K.NAME(13), color: isDone ? HK.T.good : c.ok ? HK.T.goldHi : HK.T.ink, id: 'bay:name' });
+      ty += 18;
+      ty += K.para(g, u.blurb, tx, ty + 12, Q.textW, 99, { font: Q.f, color: HK.T.inkDim, id: 'bay:blurb' }) + 4;
+      if (isDone) K.mark(g, true, tx, ty + 13, 'Fitted. It stays with you.', { w: Q.textW - 18 });
+      else {
+        const bpW = K.mark(g, hasBp, tx, ty + 13, hasBp ? 'Blueprint' : 'Needs the blueprint', { w: Q.textW / 2 - 18 });
+        const lvOk = skillLv('crafting') >= u.lv;
+        K.say(g, `Crafting level ${u.lv}`, tx + bpW + 16, ty + 13, Q.textW - bpW - 16, { font: Q.f, color: lvOk ? HK.T.good : HK.T.warn, id: 'bay:lv' });
+      }
+      ty += Q.lh;
+      if (u.requires) { const ok = !!up[u.requires]; K.say(g, ok ? `Goes on the ${upgradeById(u.requires).name.toLowerCase()}.` : `Fit the ${upgradeById(u.requires).name.toLowerCase()} first.`, tx, ty + 13, Q.textW, { font: Q.f, color: ok || isDone ? HK.T.inkDim : HK.T.warn, id: 'bay:req' }); ty += Q.lh; }
+      ty += 8;
+      // the materials, and the Fit plate beside them
+      const rowH = Math.max(S + 16, R);
+      K.costRow(g, tx, ty + Math.round((rowH - S - 16) / 2), u.needs);
+      const bx = x0 + Q.inner - 12 - Q.bw, by = ty + Math.round((rowH - R) / 2);
+      if (isDone) K.plate(g, bx, by, Q.bw, R, 'Fitted', 'Fitted', () => { }, null, false, { em: 'tick' });
+      else K.plate(g, bx, by, Q.bw, R, 'Fit it', `Fit: ${u.name}`, fit, c.ok ? 'primary' : null, c.ok, { name: `Fit the ${u.name.toLowerCase()}` });
+      y += ch + G;
     });
-    const fy = py + h - 44;
-    button(g, px + w - 18 - 100, fy, 100, 30, 'Close', closePanel, '#21262d');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(fit('Blueprints drop from the goblins who own the machines: sappers, brutes, walkers, bulldozers, the Barrelbeast.', w - 36 - 110), px + 18, fy + 20);
+    const hy = py + h - 4 - 8 - R - Q.hintH;
+    K.para(g, BAY_HINT, x0, hy + 13, Q.inner, 99, { font: Q.f, color: HK.T.inkDim, id: 'bay:hint' });
+    const fy = py + h - 12 - R, cw = K.plateW('Close');
+    if (Q.pages.length > 1) K.pager(g, x0, fy, Q.inner - cw - 2 * G, bayPage, Q.pages.length, p => { bayPage = clamp(p, 0, Q.pages.length - 1); });
+    K.plate(g, x0 + Q.inner - cw, fy, cw, R, 'Close', 'Close', closePanel, null, true);
   };
+  // the panel audit's scene (PANEL_KIT, run from 63-house): the drill fitted, two blueprints held, one missing
+  PANEL_KIT.scene({
+    id: 'dozerup', panel: 'dozerup', name: 'Bulldozer bay (the drill fitted, the ram ready, one blueprint missing, first and last page)',
+    setup() {
+      const inv = player.inv.map(s => (s ? { ...s } : null)), up0 = player.dozerUp ? { ...player.dozerUp } : null, cx = player.skills.crafting.xp;
+      player.inv = new Array(INV_SLOTS).fill(null);
+      player.dozerUp = { drill: true, irondrill: false, ram: false, boiler: false };
+      for (const [id, n] of [['blueprint_ram', 1], ['blueprint_irondrill', 1], ['iron_bar', 4], ['blast_powder', 2], ['steel_bar', 3], ['coal', 12]]) addItem(id, n);
+      player.skills.crafting.xp = XP_TABLE[18];
+      return () => { player.inv = inv; player.dozerUp = up0; player.skills.crafting.xp = cx; bayPage = 0; };
+    },
+    variants: [{ name: 'first page', open: () => { openPanel('dozerup'); bayPage = 0; } }, { name: 'last page', open: () => { openPanel('dozerup'); bayPage = 99; } }],
+  });
 
   // ---------- drawing: the pit ----------
   function drawBay(g, tx, ty) {

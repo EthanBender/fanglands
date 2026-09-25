@@ -5,6 +5,245 @@
 // needs touching. Registered entirely through HOOKS; edits no core file.
 // State lives in quest.board = { taken, done, page, fish, fires, wolves, goblins, toasted }.
 // ============================================================================
+
+// ============================================================================
+// PANEL_KIT — the small pieces the place-and-machine panels share: the bank (60), the notice board (29), the oven
+// (34), the capes (38), the bulldozer bay (40), Fennick's rail (51), the wreck and Nix (52) and the island build
+// panel (63). It sits here because this is the first of those files to load; everything in it reaches the Heraldry
+// kit (HK, src/59-hudkit.js) only when a panel is drawn, so load order does not matter. The integrator may lift it
+// into the kit. Every panel keeps the one panel contract:
+//   · the frame is panelBox(); content starts at py + 62
+//   · sentences are the system sans, HK.FS(600, 13), and grow with Settings > Text size; names and numbers are Cinzel,
+//     HK.FC(800, 11-13), a fixed size; section heads are gold Cinzel capitals with a gold hairline
+//   · colours come only from HK.T; rows sit on dark vellum; items sit in drawSlot pouches (44 px on touch)
+//   · verbs are iron plate buttons HK.row() tall (44 on touch, 32 with a mouse), 8 px apart on touch; green = the
+//     main choice, red = danger; a disabled one is still registered (inert) so a tap never falls through
+//   · plates never change size with the text size: a plate's width comes from its word, and the word shrinks to fit
+//   · long text wraps at whole words (HK.wrap); nothing is ever cut inside a word with an ellipsis
+// PANEL_KIT.scene() registers a panel with the panel audit (run from 63-house's self-test, the last of these files).
+// ============================================================================
+const PANEL_KIT = (() => {
+  const isTouch = () => (typeof touchMode === 'function' ? touchMode() : false);
+  const R = () => HK.row();
+  const GAP = () => (isTouch() ? 8 : 5);
+  const POUCH = () => (isTouch() ? 44 : 40);
+  const SENT = (px = 13) => HK.FS(600, px);
+  const NAME = (px = 12) => HK.FC(800, px);
+  // a plate's width from its word: the same number in the browser and the harness, and never bigger with the text size
+  const plateW = (s, pad = 24) => Math.max(R(), Math.round(String(s).length * 7.6 + pad));
+  const lineH = f => Math.round((f.s ? f.px * HK.k() : f.px) * 1.34);
+
+  // a gold hairline (the page's rule)
+  function rule(g, x, y, w, a = 0.35) {
+    g.beginPath(); g.moveTo(Math.round(x), Math.round(y) + 0.5); g.lineTo(Math.round(x + w), Math.round(y) + 0.5);
+    g.strokeStyle = `rgba(217,178,92,${a})`; g.lineWidth = 1; g.stroke();
+  }
+  // A section head: gold Cinzel capitals, a gold hairline to the right, and an optional short value at the far right.
+  // Takes 18 px. Returns that height.
+  function head(g, x, y, w, label, right) {
+    const f = NAME(11), rf = NAME(11);
+    const rw = right ? Math.ceil(HK.tw(g, right, rf)) + 10 : 0;
+    const lw = HK.text(g, String(label).toUpperCase(), x, y + 12, { font: f, color: HK.T.gold, box: { x, y, w: w - rw, h: 16 }, fitId: 'panel:head' });
+    if (right) HK.text(g, right, x + w, y + 12, { font: rf, align: 'right', color: HK.T.inkDim, box: { x: x + w - rw, y, w: rw, h: 16 }, fitId: 'panel:head' });
+    const r0 = x + lw + 8, r1 = x + w - rw - (right ? 0 : 0);
+    if (r1 > r0 + 8) rule(g, r0, y + 8, r1 - r0);
+    return 18;
+  }
+  // One line of text in a box of width w. A Cinzel name shrinks to a floor first; whatever still does not fit ends at a
+  // whole word. o: { font, color, align, floor, id }. Returns the width drawn.
+  function say(g, s, x, y, w, o = {}) {
+    let f = o.font || SENT(13); s = String(s);
+    if (!f.s && HK.tw(g, s, f) > w) { let p = f.px; while (p > (o.floor || 9) && HK.tw(g, s, HK.FC(f.w, p)) > w) p -= 0.5; f = HK.FC(f.w, p); }
+    if (HK.tw(g, s, f) > w) s = HK.wrap(g, s, w, 1, f).lines[0] || '';
+    const bx = o.align === 'center' ? x - w / 2 : o.align === 'right' ? x - w : x;
+    return HK.text(g, s, x, y, { font: f, align: o.align || 'left', color: o.color || HK.T.inkDim, box: { x: bx, y: y - 14, w, h: 18 }, fitId: o.id || 'panel:line' });
+  }
+  // How many lines a sentence needs at width w (whole words).
+  const linesOf = (g, s, w, f = SENT(13)) => Math.max(1, HK.wrap(g, s, w, 99, f).lines.length);
+  // A wrapped sentence; y is the first baseline. Returns the height taken (lines x line height).
+  function para(g, s, x, y, w, maxLines = 99, o = {}) {
+    const f = o.font || SENT(13), lh = o.lh || lineH(f);
+    const { lines } = HK.wrap(g, s, w, maxLines, f);
+    lines.forEach((ln, i) => HK.text(g, ln, x, y + i * lh, { font: f, color: o.color || HK.T.inkDim, box: { x, y: y + i * lh - 14, w, h: lh }, fitId: o.id || 'panel:para' }));
+    return lines.length * lh;
+  }
+  // An iron plate button that SHOWS one word and ANSWERS to a label (tests and the harness click by label, so a
+  // label never changes; the word on the plate can be plainer). tone: 'primary' | 'danger' | 'warn' | null.
+  // A disabled plate is registered as an inert 'disabled:' rect, as button() does.
+  function plate(g, x, y, w, h, shown, label, action, tone, enabled = true, o = {}) {
+    const st = enabled ? HK.stateOf(label) : {};
+    HK.plateButton(g, { x, y, w, h }, o.em || null, shown, tone, { pressed: !!st.pressed, hover: !!st.hover, disabled: !enabled, on: !!o.on, cinzel: !!o.cinzel });
+    buttons.push(enabled ? { x, y, w, h, label, action, up: true, name: o.name || shown } : { x, y, w, h, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true });
+  }
+  // A tab: a plate, the chosen one primary (gold edge). Tabs stay tappable when chosen (a second tap does nothing new).
+  const tab = (g, x, y, w, shown, label, on, action) => plate(g, x, y, w, R(), shown, label, action, on ? 'primary' : null, true);
+  // A row of plates of equal width across w. items: [{ shown, label, action, tone, on, enabled }]
+  function plateRow(g, x, y, w, items) {
+    const G = GAP(), n = items.length, pw = (w - (n - 1) * G) / n;
+    items.forEach((it, i) => {
+      const bx = Math.round(x + i * (pw + G)), bw = Math.round(x + i * (pw + G) + pw) - bx;
+      plate(g, bx, y, bw, R(), it.shown, it.label, it.action, it.on ? 'primary' : (it.tone || null), it.enabled !== false);
+    });
+    return R();
+  }
+  // Lay plates of their own widths into rows no wider than width. Each item carries w; returns [[{ ...item, x }]].
+  function flow(items, width) {
+    const G = GAP(), rows = []; let row = null, x = 0;
+    for (const it of items) {
+      if (!row || (x > 0 && x + it.w > width)) { row = []; rows.push(row); x = 0; }
+      row.push(Object.assign({}, it, { x })); x += it.w + G;
+    }
+    return rows;
+  }
+  const flowH = rows => (rows.length ? rows.length * R() + (rows.length - 1) * GAP() : 0);
+  // Prev / Next: two plates with drawn chevrons and the page count between them, HK.row() tall.
+  // Reserve HK.row() + 8 below it. Returns the page shown (clamped).
+  function pager(g, x, y, w, page, pages, setPage) {
+    const p = clamp(page, 0, Math.max(0, pages - 1)), h = R(), pw = isTouch() ? 92 : 82;
+    const one = (bx, label, em, on, fn) => {
+      plate(g, bx, y, pw, h, label === 'Prev' ? 'Back' : 'Next', label, fn, null, on, { name: label === 'Prev' ? 'Back a page' : 'Next page' });
+      HK.emblem(g, em, label === 'Prev' ? bx + 15 : bx + pw - 15, y + h / 2, 13, on ? HK.T.goldHi : HK.T.inkMute, { hole: null });
+    };
+    one(x, 'Prev', 'chevronL', p > 0, () => setPage(p - 1));
+    say(g, `${p + 1} / ${pages}`, x + w / 2, y + h / 2 + 5, Math.max(40, w - 2 * pw - 16), { font: NAME(13), align: 'center', color: HK.T.inkDim, id: 'panel:pager' });
+    one(x + w - pw, 'Next', 'chevronR', p < pages - 1, () => setPage(p + 1));
+    return p;
+  }
+  // A row of work on dark vellum: the page's card. edge: a meaning colour for its inner line (gold = ready, good = done).
+  const card = (g, x, y, w, h, edge) => HK.vellumPlate(g, x, y, w, h, edge ? { edge } : {});
+  // An item in a pouch (the kit's slot). qty 1 is stamped too when `stamp` is set, so a cost of one reads "1".
+  function pouch(g, x, y, s, id, qty, o = {}) {
+    drawSlot(g, x, y, s, id ? { id, qty } : null, !!o.sel);
+    if (id && qty === 1 && o.stamp) HK.text(g, '1', x + s - 5, y + s - 6, { font: NAME(Math.max(11, Math.round(s * 0.24))), align: 'right', color: '#f6d98c', halo: 3 });
+  }
+  // A cost as pouches: each item with the number needed stamped on it, and under it "have / need" in green when there
+  // is enough and amber when not. Returns the height taken (pouch + its count line).
+  function costRow(g, x, y, cost, o = {}) {
+    const s = o.s || POUCH(), G = GAP(), cw = Math.max(s, 46);
+    cost.forEach(([id, n], i) => {
+      const cx = x + i * (cw + G), have = countItem(id), ok = have >= n;
+      pouch(g, cx + (cw - s) / 2, y, s, id, n, { stamp: true });
+      say(g, `${Math.min(have, 9999)} / ${n}`, cx + cw / 2, y + s + 13, cw + G - 2, { font: NAME(10), align: 'center', color: ok ? HK.T.good : HK.T.warn, id: 'panel:cost' });
+    });
+    return s + 16;
+  }
+  const costW = (n, s) => n ? n * Math.max(s || POUCH(), 46) + (n - 1) * GAP() : 0;
+  // A drawn mark with a word beside it: the tick for "yes", the cross for "no" (no glyph characters).
+  function mark(g, ok, x, y, word, o = {}) {
+    const col = o.color || (ok ? HK.T.good : HK.T.warn);
+    HK.emblem(g, ok ? 'tick' : 'close', x + 7, y - 4, 14, col, { hole: null });
+    return 18 + say(g, word, x + 18, y, o.w || 200, { font: o.font || SENT(13), color: col, id: 'panel:mark' });
+  }
+  // The harness still reaches a control drawn on another page (F.clickButton finds it by label), but no tap can.
+  function offscreen(label, action, enabled = true) {
+    buttons.push(enabled ? { x: -1e9, y: -1e9, w: 0, h: 0, label, action, offscreen: true } : { x: -1e9, y: -1e9, w: 0, h: 0, label: 'disabled:' + label, action: () => { }, offscreen: true, inert: true, disabled: true });
+  }
+  // Greedy pages of rows with their own heights, so no row is ever cut or squeezed: [[index, ...], ...]
+  function pages(heights, room, gap) {
+    const out = []; let cur = [], used = 0;
+    heights.forEach((h, i) => { const need = (cur.length ? gap : 0) + h; if (cur.length && used + need > room) { out.push(cur); cur = []; used = 0; } used += (cur.length ? gap : 0) + h; cur.push(i); });
+    if (cur.length) out.push(cur);
+    return out.length ? out : [[]];
+  }
+
+  // ---------- the panel audit ----------
+  // Every registered scene opens its panel at the 8 device sizes, touch and mouse, at Normal and Large text, and the
+  // panel is drawn by the real drawHud onto a context that measures text the way the fonts do (HK.audit.fitCtx) and
+  // records every string it paints. Checked from the × seal onward: 44 px on touch (26 with a mouse), 8 px apart on
+  // touch (4 with a mouse), inside the panel and on screen; at Large every string fits its box; nothing painted is a
+  // tick or cross glyph or an ellipsis.
+  const SCENES = [];
+  function scene(def) { SCENES.push(def); }
+  function recorder() {
+    const fc = HK.audit.fitCtx(); let drawn = [];
+    const rec = new Proxy({}, {
+      get: (t, k) => (k === 'fillText' || k === 'strokeText') ? (s => { drawn.push(String(s)); }) : fc[k],
+      set: (t, k, v) => { fc[k] = v; return true; },
+    });
+    return { rec, take: () => { const d = drawn; drawn = []; return d; } };
+  }
+  function audit(check, F, h) {
+    const A = HK.audit, own = k0 => Object.getOwnPropertyDescriptor(window, k0);
+    const saved = { w: own('innerWidth'), h: own('innerHeight'), touch: window.__forceTouch, text: window.SETTINGS ? SETTINGS.get('text') : 'normal', panel, arg: panelArg, paused, dc: dialog.cur, notice, mech: player.mech };
+    const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+    const { rec, take } = recorder();
+    const shape = b => (b.r ? { k: 'c', x: b.cx != null ? b.cx : b.x + b.w / 2, y: b.cy != null ? b.cy : b.y + b.h / 2, r: b.r } : { k: 'r', x: b.x, y: b.y, w: b.w, h: b.h });
+    const box = s => (s.k === 'c' ? { x: s.x - s.r, y: s.y - s.r, w: s.r * 2, h: s.r * 2 } : s);
+    const results = [];
+    try {
+      HK.setCacheOff(true); closePanel(); paused = false; dialog.cur = null; notice = null; player.mech = null;
+      for (const sc of SCENES) {
+        const problems = []; let frames = 0, opened = 0;
+        let undo = null;
+        try {
+          undo = sc.setup ? sc.setup(F, h) : null;
+          for (const [w, hh] of A.SIZES) {
+            if (!setSize(w, hh)) { problems.push(`${w}x${hh}: could not size the window`); continue; }
+            for (const t of [true, false]) {
+              window.__forceTouch = t;
+              for (const tx of ['normal', 'large']) {
+                if (window.SETTINGS) SETTINGS.set('text', tx);
+                for (const v of sc.variants) {
+                  const where = `${sc.id}${v.name ? ' ' + v.name : ''} ${w}x${hh} ${t ? 'touch' : 'mouse'} ${tx}`;
+                  closePanel(); v.open();
+                  HK.FIT.on = true; HK.FIT.log.length = 0; take();
+                  // where the panel's own words start in the fit log (the HUD under it is drawn first)
+                  let fitFrom = 0; const ph = HOOKS.panel[sc.panel];
+                  HOOKS.panel[sc.panel] = (g2, nar) => { fitFrom = HK.FIT.log.length; return ph(g2, nar); };
+                  try { drawHud(rec); } finally { HOOKS.panel[sc.panel] = ph; }
+                  frames++;
+                  HK.FIT.on = false;
+                  const painted = take();
+                  if (panel !== sc.panel) { problems.push(`${where}: the panel did not stay open (${panel})`); continue; }
+                  opened++;
+                  if (!panelRect) { problems.push(`${where}: no panel frame`); continue; }
+                  const P = panelRect, floor = t ? 44 : 26, clear = t ? 8 : 4;
+                  if (P.x < -0.5 || P.y < -0.5 || P.x + P.w > VW + 0.5 || P.y + P.h > VH + 0.5) problems.push(`${where}: the panel runs off the screen`);
+                  const all = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+                  const ci = all.findIndex(b => b.label === '×');
+                  if (ci < 0) { problems.push(`${where}: no close seal`); continue; }
+                  const mine = all.slice(ci).map(b => ({ b, s: shape(b) }));
+                  for (const q of mine) {
+                    const r = box(q.s);
+                    if (r.w < floor - 0.5 || r.h < floor - 0.5) problems.push(`${where}: ${q.b.label} is ${Math.round(r.w)}x${Math.round(r.h)}, under ${floor}`);
+                    if (r.x < P.x - 0.5 || r.y < P.y - 0.5 || r.x + r.w > P.x + P.w + 0.5 || r.y + r.h > P.y + P.h + 0.5) problems.push(`${where}: ${q.b.label} is outside the panel`);
+                    if (r.x < -0.5 || r.y < -0.5 || r.x + r.w > VW + 0.5 || r.y + r.h > VH + 0.5) problems.push(`${where}: ${q.b.label} is off screen`);
+                  }
+                  for (let i = 0; i < mine.length; i++) for (let j = i + 1; j < mine.length; j++) {
+                    const gp = HK.gapBetween(mine[i].s, mine[j].s);
+                    if (gp < clear - 0.01) problems.push(`${where}: ${mine[i].b.label} and ${mine[j].b.label} are ${gp.toFixed(1)} px apart`);
+                  }
+                  // only the panel's own words: the HUD under it has its own fit audit in 59-hudkit
+                  if (tx === 'large') { HK.FIT.log.splice(0, fitFrom); for (const p of A.fitIssues(where)) problems.push(p); }
+                  const bad = painted.filter(s => /[✓✔✗✘…]/.test(s));
+                  if (bad.length) problems.push(`${where}: painted ${JSON.stringify(bad.slice(0, 3))}`);
+                  if (sc.more) for (const p of sc.more(where, painted) || []) problems.push(p);
+                }
+              }
+            }
+          }
+        } catch (e) { problems.push(`${sc.id}: threw ${e && e.message}`); }
+        finally { closePanel(); try { if (undo) undo(); } catch (e) { problems.push(`${sc.id}: undo threw ${e && e.message}`); } }
+        results.push({ sc, problems, frames, opened });
+      }
+    } finally {
+      HK.FIT.on = false; HK.setCacheOff(false);
+      window.__forceTouch = saved.touch; if (window.SETTINGS) SETTINGS.set('text', saved.text);
+      if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+      resize(); closePanel(); paused = saved.paused; dialog.cur = saved.dc; notice = saved.notice; player.mech = saved.mech;
+      if (saved.panel) openPanel(saved.panel, saved.arg);
+      render();
+    }
+    for (const r of results) {
+      const want = 8 * 2 * 2 * r.sc.variants.length;
+      check(`panels: ${r.sc.name} — at all 8 sizes, touch and mouse, normal and large text (${want} frames): every control from the close seal on is 44 px on touch (26 with a mouse) and 8 px apart on touch (4 with a mouse), inside the panel and on screen; every word fits its box at Large; no tick, cross or ellipsis glyph is painted`,
+        r.frames === want && r.opened === want && r.problems.length === 0, { frames: r.frames, opened: r.opened, problems: r.problems.slice(0, 10), total: r.problems.length });
+    }
+  }
+  return { R, GAP, POUCH, SENT, NAME, plateW, lineH, rule, head, say, linesOf, para, plate, tab, plateRow, flow, flowH, pager, card, pouch, costRow, costW, mark, offscreen, pages, scene, audit, SCENES };
+})();
+window.PANEL_KIT = PANEL_KIT;
+
 {
   const BOARD = addTile('BOARD', { solid: true, tex: 'cobble', mini: '#8a6a3a' });
   const BOARD_TILES = [[105, 27], [24, 6]]; // the square in Thistledown; the road outside the cave
@@ -124,34 +363,90 @@
   HOOKS.use.push((t, tx, ty) => { if (t !== BOARD) return false; openPanel('board'); return true; });
 
   // ---------- panel ----------
-  const ROW_H = 66;
+  // Each job is a card of dark vellum: its title in Cinzel, who asks and what they said (whole, never cut), what it
+  // takes with the exact count so far, and the reward — coins and xp in exact numbers. Take job / Hand in sits on the
+  // card as an iron plate. Cards keep their full height, so a page holds as many whole cards as the screen has room
+  // for; Back and Next turn the pages and Close shuts the board. A ready job's card wears the gold edge.
+  const rewardBits = q => { const r = q.reward, out = []; if (r.coins) out.push({ coin: true, t: String(r.coins) }); if (r.xp) out.push({ t: `${r.xp[1]} ${skillName(r.xp[0])} xp` }); if (r.item) out.push({ t: `${r.item[1] > 1 ? r.item[1] + ' ' : ''}${ITEMS[r.item[0]].name}` }); return out; };
+  // the geometry every size shares: the card's width, the plate's width, the text column, and each card's height
+  function boardGeom(g) {
+    const K = PANEL_KIT, R = K.R(), G = K.GAP();
+    const w = Math.min(VW - 20, 640), inner = w - 36, wide = inner >= 470;
+    const bw = touchMode() ? 124 : 112, textW = wide ? inner - 24 - bw - 14 : inner - 24;
+    const f = K.SENT(13), lh = K.lineH(f);
+    const hOf = q => {
+      const text = 10 + 18 + K.linesOf(g, noteOf(q), textW, f) * lh + lh + 20 + 8;
+      return wide ? Math.max(text, R + 24) : 10 + 18 + K.linesOf(g, noteOf(q), textW, f) * lh + lh + 4 + R + 10;
+    };
+    const heights = BOARD_QUESTS.map(hOf);
+    const foot = R + 16, room = VH - 20 - 62 - foot - 8;
+    const pages = K.pages(heights, room, G);
+    const pageH = Math.max(...pages.map(p => p.reduce((a, i) => a + heights[i], 0) + (p.length - 1) * G));
+    return { K, R, G, w, inner, wide, bw, textW, f, lh, heights, pages, h: 62 + pageH + 8 + foot };
+  }
+  const noteOf = q => `${q.giver}: “${q.note}”`;
+  const boardPages = () => boardGeom(ctx).pages;
+  const pageOf = q => boardPages().findIndex(p => p.includes(BOARD_QUESTS.indexOf(q)));
   HOOKS.panel.board = (g, narrow) => {
-    const b = bq();
-    const per = Math.max(2, Math.min(6, Math.floor((VH - 20 - 150) / ROW_H)));
-    const pages = Math.max(1, Math.ceil(BOARD_QUESTS.length / per));
-    b.page = clamp(b.page | 0, 0, pages - 1);
+    const b = bq(), Q = boardGeom(g), { K, R, G } = Q;
+    b.page = clamp(b.page | 0, 0, Q.pages.length - 1);
     const taken = openQuests().length, done = BOARD_QUESTS.filter(q => b.done[q.id]).length, readyN = BOARD_QUESTS.filter(ready).length;
-    const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : 580, 96 + per * ROW_H + 52, 'Notice board', `Tiny jobs from the folk of Thistledown · page ${b.page + 1} of ${pages} · ${taken} taken · ${done} done${readyN ? ` · ${readyN} ready` : ''}`);
-    const fit = (text, maxW) => { let s = text; while (s.length > 8 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s === text ? text : s + '…'; };
-    const bw = narrow ? 96 : 122, textW = w - 36 - bw - 24;
-    BOARD_QUESTS.slice(b.page * per, b.page * per + per).forEach((q, i) => {
-      const y = py + 66 + i * ROW_H; const isDone = !!b.done[q.id], tk = isTaken(q), rd = ready(q);
-      roundRect(g, px + 18, y, w - 36, ROW_H - 6, 8); g.fillStyle = isDone ? 'rgba(255,255,255,0.03)' : rd ? 'rgba(126,231,135,0.10)' : tk ? 'rgba(88,166,255,0.10)' : 'rgba(255,255,255,0.05)'; g.fill();
-      if (rd) { g.strokeStyle = 'rgba(126,231,135,0.45)'; g.lineWidth = 1; g.stroke(); }
-      g.textAlign = 'left'; g.fillStyle = isDone ? '#6e7681' : '#e6edf3'; g.font = 'bold 13px sans-serif'; g.fillText(fit(`${q.title}  · ${q.giver}`, textW), px + 30, y + 18);
-      g.fillStyle = isDone ? '#4b535d' : '#c9d1d9'; g.font = 'italic 12px sans-serif'; g.fillText(fit(`“${q.note}”`, textW), px + 30, y + 35);
-      g.font = '11px sans-serif'; g.fillStyle = isDone ? '#4b535d' : rd ? '#7ee787' : '#8b949e'; g.fillText(fit(`${isDone ? 'Done' : needText(q)} · Reward: ${rewardText(q)}`, textW), px + 30, y + 51);
-      const bx = px + w - 18 - bw, by = y + 15;
-      if (isDone) button(g, bx, by, bw, 30, 'Done', () => { }, '#2a2f3a', false);
-      else if (!tk) button(g, bx, by, bw, 30, `Take: ${q.tag}`, () => takeQuest(q), '#238636');
-      else button(g, bx, by, bw, 30, `Hand in: ${q.tag}`, () => handIn(q), rd ? '#238636' : '#2a2f3a', rd);
-    });
-    const fy = py + h - 44;
-    button(g, px + 18, fy, 80, 30, 'Prev', () => { b.page = Math.max(0, b.page - 1); save(); }, '#21262d', b.page > 0);
-    button(g, px + 106, fy, 80, 30, 'Next', () => { b.page = Math.min(pages - 1, b.page + 1); save(); }, '#21262d', b.page < pages - 1);
-    button(g, px + w - 18 - 100, fy, 100, 30, 'Close', closePanel, '#21262d');
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'center'; g.fillText('Take a job, do it, bring it back here.', px + w / 2, fy + 20);
+    const { px, py, w, h } = panelBox(g, Q.w, Q.h, 'Notice board', taken || done ? `${taken} taken, ${done} done${readyN ? `, ${readyN} ready to hand in` : ''}` : 'Take a job, do it, bring it back here.');
+    const x0 = px + 18;
+    let y = py + 62;
+    for (const i of Q.pages[b.page]) {
+      const q = BOARD_QUESTS[i], ch = Q.heights[i], isDone = !!b.done[q.id], tk = isTaken(q), rd = ready(q);
+      K.card(g, x0, y, Q.inner, ch, rd ? HK.T.goldHi : null);
+      const tx = x0 + 12;
+      let ty = y + 10;
+      K.say(g, q.title, tx, ty + 13, Q.textW, { font: K.NAME(13), color: isDone ? HK.T.inkMute : rd ? HK.T.goldHi : HK.T.ink, id: 'board:title' });
+      ty += 18;
+      ty += K.para(g, noteOf(q), tx, ty + 12, Q.textW, 99, { font: Q.f, color: isDone ? HK.T.inkMute : HK.T.inkDim, id: 'board:note' });
+      // what it takes, with the count so far
+      if (isDone) K.mark(g, true, tx, ty + 13, 'Done. Thank you, knight.', { w: Q.textW - 18, color: HK.T.inkMute });
+      else if (rd) K.mark(g, true, tx, ty + 13, needText(q) + '. Ready to hand in.', { w: Q.textW - 18 });
+      else K.say(g, needText(q), tx, ty + 13, Q.textW, { font: Q.f, color: tk ? HK.T.ink : HK.T.inkDim, id: 'board:need' });
+      ty += Q.lh + 2;
+      // the reward, exact, in Cinzel
+      const bx = x0 + Q.inner - 12 - Q.bw, by = Q.wide ? y + Math.round((ch - R) / 2) : y + ch - 10 - R;
+      // (on a narrow card the reward shares the row with the plate, so the word Reward gives way and the numbers
+      // shrink to fit, never cut)
+      const ry = Q.wide ? ty + 13 : by + R / 2 + 5, rEnd = Q.wide ? tx + Q.textW : bx - 10, bits = rewardBits(q), label = Q.wide;
+      const rowW = px0 => (label ? HK.tw(g, 'Reward', K.NAME(11)) + 8 : 0) + bits.reduce((a, bt) => a + (bt.coin ? 15 : 0) + HK.tw(g, bt.t, K.NAME(px0)) + 12, -12);
+      let rp = 12; while (rp > 9 && rowW(rp) > rEnd - tx) rp -= 0.5;
+      const rbox = { x: tx, y: ry - 12, w: rEnd - tx, h: 16 };
+      let rx = tx;
+      if (label) rx += HK.text(g, 'Reward', rx, ry, { font: K.NAME(11), color: HK.T.gold, box: rbox, fitId: 'board:reward' }) + 8;
+      for (const bit of bits) {
+        if (bit.coin) { HK.coin(g, rx + 6, ry - 4, 6); rx += 15; }
+        rx += HK.text(g, bit.t, rx, ry, { font: K.NAME(rp), color: isDone ? HK.T.inkMute : bit.coin ? HK.T.goldHi : HK.T.ink, box: rbox, fitId: 'board:reward' }) + 12;
+      }
+      // the verb
+      if (isDone) K.plate(g, bx, by, Q.bw, R, 'Done', 'Done', () => { }, null, false, { em: 'tick' });
+      else if (!tk) K.plate(g, bx, by, Q.bw, R, 'Take job', `Take: ${q.tag}`, () => takeQuest(q), 'primary', true, { name: 'Take ' + q.giver + '’s job' });
+      else K.plate(g, bx, by, Q.bw, R, 'Hand in', `Hand in: ${q.tag}`, () => handIn(q), rd ? 'primary' : null, rd, { name: 'Hand in ' + q.giver + '’s job' });
+      y += ch + G;
+    }
+    // Back / the page / Next, and Close
+    const fy = py + h - 8 - R, cw = K.plateW('Close');
+    K.pager(g, x0, fy, Q.inner - cw - 2 * G, b.page, Q.pages.length, p => { b.page = clamp(p, 0, Q.pages.length - 1); save(); });
+    K.plate(g, x0 + Q.inner - cw, fy, cw, R, 'Close', 'Close', closePanel, null, true);
   };
+  // the panel audit's scene (PANEL_KIT, run from 63-house): jobs taken, one ready, one done, on the first and last page
+  PANEL_KIT.scene({
+    id: 'board', panel: 'board', name: 'Notice board (jobs taken, ready and done, first and last page)',
+    setup() {
+      const keep = quest.board ? JSON.parse(JSON.stringify(quest.board)) : null, inv = player.inv.map(s => (s ? { ...s } : null));
+      quest.board = freshBoard(); const b = bq();
+      b.taken.greta = true; b.done.greta = true; b.taken.brakka = true; b.taken.hale = true; b.taken.captain = true; b.goblins = 4; b.toasted = { hale: true };
+      const hh = player.highestHit; player.highestHit = 12;
+      return () => { quest.board = keep; player.inv = inv; player.highestHit = hh; };
+    },
+    variants: [
+      { name: 'page 1', open: () => { openPanel('board'); bq().page = 0; } },
+      { name: 'last page', open: () => { openPanel('board'); bq().page = 99; } },
+    ],
+  });
 
   // ---------- drawing ----------
   const drawBoard = (g, tx, ty, mark) => {
@@ -196,8 +491,7 @@
     const ensureRoom = n => { for (let i = player.inv.length - 1; i >= 0 && player.inv.filter(s => !s).length < n; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour && !ITEMS[s.id].tool) player.inv[i] = null; } };
     const open = () => { openPanel('board'); render(); };
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
-    const pageOf = q => Math.floor(BOARD_QUESTS.indexOf(q) / Math.max(2, Math.min(6, Math.floor((VH - 20 - 150) / ROW_H))));
-    h.peace(true); closePanel(); player.action = null; drops.length = 0; drain();
+        h.peace(true); closePanel(); player.action = null; drops.length = 0; drain();
     quest.board = freshBoard(); lastFish = null; lastFireSet = null;
     ensureRoom(4); removeItem('potato', countItem('potato')); F.sim(2, []);
     // the board stands in the square and answers E
@@ -234,9 +528,9 @@
       const steps = F.untilAction(2400, () => bq().fish > f0); player.action = null;
       check('board: Fish for the street counts fish caught with the rod', took && typeof steps === 'number' && bq().fish === f0 + 1 && progress(q) >= 1, { took, steps, fish: bq().fish }); }
     // paging
-    { const per = Math.max(2, Math.min(6, Math.floor((VH - 20 - 150) / ROW_H))); const l2 = `Take: ${BOARD_QUESTS[per].tag}`, l1 = 'Take: Brakka';
+    { const pg = boardPages(), per = pg[0].length; const l2 = `Take: ${BOARD_QUESTS[pg[1][0]].tag}`, l1 = 'Take: Brakka';
       bq().page = 0; open(); const p0 = bq().page; const prevOff = !F.clickButton('Prev'); const next = F.clickButton('Next'); const p1 = bq().page; const onPage2 = !!buttons.find(b => b.label === l2); const prev = F.clickButton('Prev'); const p2 = bq().page; const onPage1 = !!buttons.find(b => b.label === l1);
-      check('board: six jobs a page, Next and Prev turn the pages (Prev is off on the first page)', prevOff && next && p0 === 0 && p1 === 1 && onPage2 && prev && p2 === 0 && onPage1 && BOARD_QUESTS.length >= 12, { p0, p1, p2, onPage2, onPage1, jobs: BOARD_QUESTS.length }); }
+      check('board: the jobs come a page at a time (as many whole cards as fit), Next and Prev turn the pages (Prev is off on the first page)', prevOff && next && p0 === 0 && p1 === 1 && onPage2 && prev && p2 === 0 && onPage1 && BOARD_QUESTS.length >= 12 && per >= 2 && pg.length >= 2, { p0, p1, p2, onPage2, onPage1, per, pages: pg.length, jobs: BOARD_QUESTS.length }); }
     // Rosalind's berry pies: three pies → 120 coins + 100 Cooking xp
     { const q = byId.pies; const ok = !!q && q.kind === 'item' && q.item === 'berry_pie' && q.n === 3 && q.reward.coins === 120 && q.reward.xp[0] === 'cooking' && q.reward.xp[1] === 100 && q.giver === 'Rosalind' && !!ITEMS.berry_pie;
       bq().page = pageOf(q); open(); const took = F.clickButton('Take: Pies'); closePanel(); ensureRoom(2); h.give('berry_pie', 3); F.sim(2, []);
