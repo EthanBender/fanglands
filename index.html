@@ -23184,7 +23184,7 @@ HOOKS.selfTest.push((check, F, h) => {
               const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} stick-${right ? 'right' : 'left'} ${map ? 'map' : 'no-map'} chat${chat} boss${bosses}${mach ? ' ' + player.mech.kind : ''} ${tx}`;
               for (const p of A.frameIssues(where)) if (problems.length < 40) problems.push(p);
               noteSig(`${w}x${hh}|${t}|${right}|${map}|${chat > 0}`, where);
-              if (chat && !bosses && !mach && !dialog.cur && !buttons.some(b => b.label === 'chat:log')) problems.push(`${where}: no chat strip`);
+              if (chat && !bosses && !dialog.cur && !buttons.some(b => b.label === 'chat:log')) problems.push(`${where}: no chat strip`);
               if (chat && !buttons.some(b => b.label === 'friends')) problems.push(`${where}: no FRIENDS seal`);
             }
           }
@@ -23303,6 +23303,54 @@ HOOKS.selfTest.push((check, F, h) => {
       paused = false; frame();
       const twelve = ['BAG', 'SKILLS', 'QUESTS', 'CRAFTING', 'MAP', 'WIKI', 'FRIENDS', 'CHAT', 'HOME', 'HELP', 'MARKERS'].every(wd => words.includes(wd)) && words.some(wd => /^MUSIC/.test(wd)) && tiles.length >= 12;
       check(P + "the Knight's Book (MENU / Esc) holds the kit's twelve tiles — every panel is one tap from it and each tile wears its key on a computer — and its rows: Resume, Settings, Title screen, New game", twelve && Object.values(opens).every(Boolean) && keys && rows, { words, opens, keys, rows });
+    }
+    // ---------- 11. the panels wear the kit's frame and stay finger-sized: the pack (an item chosen), Friends, the Chat log and Give ----------
+    {
+      const problems = []; let tried = 0;
+      const rectOf = b => b.r ? { x: b.cx - b.r, y: b.cy - b.r, w: b.r * 2, h: b.r * 2, label: b.label } : b;
+      const ov = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      const inside = r => r.x >= -0.5 && r.y >= -0.5 && r.x + r.w <= VW + 0.5 && r.y + r.h <= VH + 0.5;
+      const inv0 = player.inv.map(q => q ? { ...q } : null);
+      for (const [w, hh] of A.SIZES) {
+        if (!setSize(w, hh)) continue; tried++;
+        for (const t of [true, false]) {
+          window.__forceTouch = t; window.__stickRight = false; setBosses(0); player.mech = null;
+          for (const [pn, arg] of [['inventory'], ['friends'], ['chatlog'], ['gift', 'Ava']]) {
+            ONL.set(true, 2); player.inv = inv0.map(q => q ? { ...q } : null); player.inv[0] = { id: 'bread', qty: 3 };
+            if (pn === 'gift') { player.inv = new Array(INV_SLOTS).fill(null); player.inv[0] = { id: 'stone', qty: 3 }; }
+            closePanel(); openPanel(pn, arg); if (pn === 'inventory') selectedSlot = 0;
+            frame(); drawHud(ctx);
+            const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} panel ${pn}`;
+            const all = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0).map(rectOf);
+            const ci = all.findIndex(b => b.label === '×');
+            if (ci < 0) { problems.push(`${where}: no close seal`); continue; }
+            const rects = all.slice(ci);
+            if (panelRect && !inside(panelRect)) problems.push(`${where}: the panel is off screen`);
+            const floor = t ? 44 : 26, tile = /^slot\d+|^bank\d+|^hot\d+|^eq|^give/;
+            for (const r of rects) {
+              if (!inside(r)) problems.push(`${where}: ${r.label} off screen`);
+              if (!tile.test(r.label) && (r.w < floor - 0.5 || r.h < floor - 0.5)) problems.push(`${where}: ${r.label} is ${Math.round(r.w)}x${Math.round(r.h)}, under ${floor}`);
+              if (tile.test(r.label) && t && (r.w < 40 || r.h < 40)) problems.push(`${where}: item tile ${r.label} is ${Math.round(r.w)}x${Math.round(r.h)}`);
+            }
+            for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) if (ov(rects[i], rects[j])) problems.push(`${where}: ${rects[i].label} x ${rects[j].label}`);
+          }
+          closePanel(); selectedSlot = -1;
+        }
+      }
+      player.inv = inv0; ONL.set(false, 0);
+      check(P + 'the panels wear the book frame and stay usable at all 8 sizes, touch and mouse: the pack (an item chosen), Friends, the Chat log and Give each have a close seal, no two controls overlap, nothing is off screen, controls are 44 px on touch (26 with a mouse) and item pouches 40', tried === 8 && problems.length === 0, { tried, problems: problems.slice(0, 12), total: problems.length });
+    }
+    // ---------- 12. a changing number lives in a field reserved from its widest value: the crest never resizes or shifts ----------
+    {
+      setSize(390, 844); window.__forceTouch = true; frame();
+      const r = HK.cur().crest, mc = HK.crestMetrics, fc = A.fitCtx();
+      const variants = [{ hp: 9, max: 110, coins: 0, combat: 3 }, { hp: 110, max: 110, coins: 999999, combat: 99 }, { hp: 27, max: 34, coins: 340, combat: 19, mech: { name: 'Barrelbeast', hp: 999, max: 999 } }];
+      const ms = variants.map(v => { const m = mc(fc, r, v); return [m.f1, m.f1b, m.f2, m.tx, m.avail].join(','); });
+      const same = ms.every(x => x === ms[0]);
+      // and the widest values really fit the banner at those sizes
+      HK.FIT.on = true; HK.FIT.log.length = 0; HK.crest(fc, r, variants[1]); HK.crest(fc, r, variants[2]); HK.FIT.on = false;
+      const fits = A.fitIssues('crest');
+      check(P + 'numbers sit in fields reserved from their widest value: the crest lays out the same for 9 / 110, 999,999 coins and level 99, and a machine at 999 / 999 — and those widest values fit its banner', same && fits.length === 0, { metrics: ms, fits });
     }
   } finally { restoreWorld(); }
 });
