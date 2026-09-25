@@ -19805,7 +19805,11 @@ window.SETTINGS = SETTINGS;
         burst(m.x, m.y, '#8a8f98', 12, 80);
       }
       if (Math.random() < 0.9) burst(player.x + rint(-40, 40), player.y + rint(-30, 30), '#6e7178', 3, 60);
-      if (window.IMPACT && IMPACT.wave) IMPACT.wave(player.x, player.y, 1);
+      // One ring per Quake, sent out on the first frame the feet come down. (This used to call wave() every frame of
+      // the 1.15 s stomp, untagged: 69 waves that pushed each other, and every other ring, out of 64-impact's list
+      // before any of them had travelled, so only the tile under the machine ever moved.) Strength 2 is a 6-tile
+      // ring, the same as Full Steam's slam, and a little wider than the 230 px the stomp itself reaches.
+      if (window.IMPACT && IMPACT.wave && !sp.quaked) { sp.quaked = true; IMPACT.wave(player.x, player.y, 2, 'quake'); }
       if (sp.t >= RUN) { burst(player.x, player.y, '#f5c542', 22, 130); sfx('mine'); floatText(player.x, player.y - 40, 'Quake', '#f5c542', 15); cool = SPECIALS.walker.cool; sp = null; }
       return;
     }
@@ -23644,7 +23648,7 @@ HOOKS.selfTest.push((check, F, h) => {
 // turned shake off does not get this either.
 //
 // Wired to the heavy hits: bombs (06-systems explode), the Barrelbeast ram (32-beast), the bulldozer's ram-plate
-// stomp (22-bulldozer), Full Steam (55-riding), The Gnasher's arm and its fall (33-goblincity), and The Fang
+// stomp (22-bulldozer), Full Steam and the walker's Quake Stomp (55-riding), The Gnasher's arm and its fall (33-goblincity), and The Fang
 // waking, turning and falling (28-thefang).
 // Debug/test handle: window.IMPACT.
 // ============================================================================
@@ -23661,6 +23665,9 @@ HOOKS.selfTest.push((check, F, h) => {
   const OUT = 3;         // pixels the tile is shoved outward along the blast line
   const SHADOW = 0.5;    // alpha of the pit under a tile at full lift
   const MIN_LIFT = 1 / 64; // under a 64th of a pixel a tile is where it started: no lift, no pit, no drift in the tail
+  // At most six rings in the air at once. When all six are still moving, a new hit makes no ring rather than
+  // pushing the oldest one out: a ring cut off part way through would drop every tile it had lifted back flat in
+  // one frame, and a tile must always come back to where it was by settling, never by a snap.
   const MAX_WAVES = 6;
   const SAME_TAG_GAP = 0.08; // one stomp landing on three goblins makes one wave, not three
 
@@ -23677,7 +23684,7 @@ HOOKS.selfTest.push((check, F, h) => {
   const shakeOn = () => { try { return typeof SETTINGS === 'undefined' || SETTINGS.get('shake') !== false; } catch (e) { return true; } };
 
   const waves = [];
-  let last = null, drawn = 0;
+  let last = null, drawn = 0, dropped = 0;
 
   // Amplitude 0..1 for one tile under one wave: a half-sine over FLUTTER seconds, delayed by how far out the tile
   // sits, faded straight down to exactly 0 at the rim. Outside the ring, before the front arrives, or after the
@@ -23725,7 +23732,9 @@ HOOKS.selfTest.push((check, F, h) => {
     const s = clamp(+strength || 1, 0.2, 3);
     if (tag && last && last.tag === tag && time - last.t0 < SAME_TAG_GAP) return null;
     const w = { cx: x / TILE, cy: y / TILE, r: radiusTiles(s), lift: liftPx(s), t0: time, s, tag: tag || '', inst: window.__instance || null }; // the map it was made on
-    if (waves.length >= MAX_WAVES) waves.shift();
+    // a ring that has finished settling frees its slot; one still lifting ground keeps it
+    if (waves.length >= MAX_WAVES) prune();
+    if (waves.length >= MAX_WAVES) { dropped++; return null; }
     waves.push(w); last = w;
     return w;
   }
@@ -23879,6 +23888,7 @@ HOOKS.selfTest.push((check, F, h) => {
     liftAt, geomLift,
     get drawn() { return drawn; },   // tiles redrawn on the last frame
     get last() { return last; },
+    get dropped() { return dropped; }, // hits that made no ring because six were already moving
     get waves() { return waves; },
     onHit, onHurt, onKill, onUpdate,
   };
@@ -24142,6 +24152,75 @@ HOOKS.selfTest.push((check, F, h) => {
         player.mech = mech0; player.dozerUp = up0; player.r = r0; player.speed = sp0; player.attackT = 0; ramsWas = -1; steamWas = null; clearWaves();
         check(P + 'Full Steam shakes the ground when the boiler lets go and again when the machine slams to a stop, and a Barrelbeast ram shakes it too',
           steamOk && ramOk, { ...steamInfo, ...ramInfo }); }
+
+      // ---------- M. the walker's Quake Stomp: one ring, and it cuts no other ring short ----------
+      // It used to call wave() on every frame of the 1.15 s stomp with no tag: 69 waves, each one pushing the oldest
+      // out of the six-wave list after about six frames, so no ring ever got past the tile under the machine and
+      // the boiler's ring was thrown away 0.1 s in. Driven through the real game step so the clock moves.
+      { clearWaves();
+        let quakeOk = false, quakeInfo = { hasRiding: !!window.RIDING };
+        if (window.RIDING) {
+          const q = h.openSpot(58, 36); F.tp(q.x, q.y);
+          player.companion = null;
+          // a machine with no kind is the walker
+          player.mech = { hp: 110, maxHp: 110 }; player.r = 22; player.facing = { x: 1, y: 0 };
+          window.RIDING.resetCool(); steamWas = null;
+          // the stomp hurts and stuns what is near: this check is about the ground, so nothing nearby is touched
+          const near = monsters.filter(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 400).map(m => ({ m, x: m.x, y: m.y, stunT: m.stunT, state: m.state, angry: m.angry }));
+          const _hitMonster = hitMonster; hitMonster = function () { };
+          const cx = Math.floor(player.x / TILE), cy = Math.floor(player.y / TILE);
+          const d0 = dropped, made = new Set(), cut = [], far = {};
+          let other = null, frames = 0, kind = null;
+          try {
+            kind = window.RIDING.machineKind();
+            window.RIDING.startSteam();
+            while (frames < 300 && (window.RIDING.special || waves.length)) {
+              F.step([]); frames++;
+              const sp = window.RIDING.special, running = !!sp && sp.phase === 'run';
+              // another ring already in the air when the feet come down (a bomb, say): it must live out its whole wave
+              if (running && !other) other = wave(player.x, player.y, 1, 'other-ring');
+              for (const w of made) if (!waves.includes(w) && !w.gone) { w.gone = true; if (time - w.t0 < LIFE) cut.push({ tag: w.tag, age: +(time - w.t0).toFixed(3) }); }
+              for (const w of waves) made.add(w);
+              // while the stomp runs, the highest lift at each whole-tile distance from the machine
+              if (running) box(cx, cy, 7, (tx, ty) => { const d = Math.round(Math.hypot(tx - cx, ty - cy)); const l = geomLift(tx, ty); if (l > (far[d] || 0)) far[d] = +l.toFixed(2); });
+            }
+          } finally {
+            hitMonster = _hitMonster;
+            for (const s of near) Object.assign(s.m, { x: s.x, y: s.y, stunT: s.stunT, state: s.state, angry: s.angry });
+            window.RIDING.resetCool();
+          }
+          const tags = [...made].map(w => w.tag);
+          const quakes = tags.filter(t => t === 'quake').length;
+          // the boiler's ring (1, radius 3) and the other ring (1, radius 3) lift nothing 3 or more tiles out: any lift
+          // there while the stomp runs is the Quake's own ring
+          const reach = Math.max(0, ...Object.keys(far).filter(d => +d >= 3).map(d => far[d]));
+          quakeOk = kind === 'walker' && quakes === 1 && made.size <= 4 && cut.length === 0 && dropped === d0 && !!other && reach > 1 && (far[5] || 0) > 0;
+          quakeInfo = { hasRiding: true, kind, waves: made.size, tags, quakes, cut: cut.length, firstCut: cut[0], dropped: dropped - d0, liftByTiles: far, frames };
+        }
+        player.mech = mech0; player.dozerUp = up0; player.r = r0; player.speed = sp0; player.companion = comp0; player.attackT = 0; steamWas = null; clearWaves();
+        check(P + "the walker's Quake Stomp sends one ring out across the ground and cuts no other ring short",
+          quakeOk, quakeInfo); }
+
+      // ---------- N. a full list turns the new hit away rather than cutting a ring off mid-lift ----------
+      { clearWaves();
+        const res = withTime(() => {
+          const d0 = dropped;
+          const six = [0, 1, 2, 3, 4, 5].map(k => wave(tc(o.x), tc(o.y), 3, 'full-' + k));
+          // a tenth of a second on, all six are still lifting
+          time += 0.1;
+          const lifting = geomLift(o.x + 1, o.y) > 0;
+          const seventh = wave(tc(o.x), tc(o.y), 3, 'full-6');
+          const kept = waves.length === MAX_WAVES && six.every(w => w && waves.includes(w));
+          const turnedAway = seventh === null && dropped - d0 === 1 && last === six[5];
+          // the first one has settled: its slot is free now, with no update tick in between
+          six[0].t0 = time - LIFE;
+          const eighth = wave(tc(o.x), tc(o.y), 3, 'full-7');
+          const reused = !!eighth && waves.length === MAX_WAVES && !waves.includes(six[0]) && six.slice(1).every(w => waves.includes(w)) && dropped - d0 === 1;
+          return { lifting, kept, turnedAway, reused, dropped: dropped - d0 };
+        });
+        clearWaves();
+        check(P + 'with six rings already moving a seventh hit makes no ring instead of cutting one off mid-lift, and a ring that has settled frees its slot at once',
+          res.lifting && res.kept && res.turnedAway && res.reused, res); }
     } finally {
       clearWaves();
       player.mech = mech0; player.dozerUp = up0; player.r = r0; player.speed = sp0; player.companion = comp0; player.attackT = 0;
