@@ -37,6 +37,8 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   loaded automatically (they are plain JSON). Reset it in `HOOKS.newGame`.
 - More hooks: `HOOKS.talkBefore.my_role = npc => handled` runs before the core dialogue; `HOOKS.mapTarget.push(() => ({ x, y, label }))`
   puts a marker on the world map; `HOOKS.hurt.push((e, dmg, source) => ...)` sees every hit the player takes.
+- Pathfinding: `HOOKS.pathBlock.push((tx, ty, who) => blocked)` keeps tap-to-move and the self-test bot's `walkTo` off a cell the
+  knight could step onto but cannot get across right now (an agility log above his level). Test cheaply: it runs for every cell a search visits.
 - Instances (`src/16-instances.js`): `INSTANCES.define('my_cave', { name, sub, w, h, build(setTile, rnd), spawns: [[type, x, y]], exit: [x, y], door: [x, y], step: [x, y], boss, onClear })`;
   a `door` places a DUNGEON_DOOR tile at world-gen and E on it enters, or call `INSTANCES.enter('my_cave')` yourself and `INSTANCES.leave()`. The instance map replaces `map` while active; the save always records the overworld.
 - Lighting (`src/89-lighting.js`): dark places read one registry. `LIGHTS.add({ tile: 'MY_BRAZIER', r, lift, color, tint, flicker, speed, ox, oy })`

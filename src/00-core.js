@@ -72,7 +72,10 @@ const HOOKS = {
   mainQuest: {},    // mainQuest[stage] = { text, onEnter: fn() } for main-quest stages beyond the core
   selfTest: [],     // fn(check, F, helpers) — extra self-test checks
   newGame: [],      // fn() — reset feature state
+  pathBlock: [],    // fn(tx, ty, who) → true: tap-to-move and the bot's walkTo must not route through this cell right now (e.g. a balance log above the knight's Agility)
 };
+// a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it
+function pathBlocked(tx, ty, who) { for (const f of HOOKS.pathBlock) if (f(tx, ty, who)) return true; return false; }
 
 // ---------- canvas ----------
 const DISPLAY = '"Cinzel", "Trajan Pro", Georgia, serif';

@@ -219,7 +219,9 @@ function newGame() {
   mapDiffs = new Map(); regrow = []; crops = []; fires = []; blockHp.clear(); miniDirtyTiles.clear(); miniDirty = true;
   player = newPlayer(); quest = { stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }; swordTaken = false; deathKeep = null;
   drops = []; particles = []; floaters = []; projectiles = []; dialog = { queue: [], cur: null, shown: 0, t: 0 };
-  for (const n of NPCS) { n.px = n.home.x; n.py = n.home.y; }
+  // villagers start a new game standing at home with a fresh walk timer: a timer left over from the last game would change
+  // how many dice the first seconds roll, so a seeded self-test could not replay the same opening twice
+  for (const n of NPCS) { n.px = n.home.x; n.py = n.home.y; n.wanderT = Math.random() * 3; n.dir = null; n.moving = false; }
   spawnMonsters(); paused = false; closePanel();
   time = 0; introT = 0; areaBanner = null; levelBanner = null;
   for (const h of HOOKS.newGame) h();

@@ -50,7 +50,7 @@ function tapBfs(sx, sy, gx, gy, who) {
     for (const [dx, dy] of TAP_DIRS) {
       const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const n = ny * W + nx; if (prev[n] !== -1) continue;
-      if (n !== goal && solidFor(map[idx(nx + x0, ny + y0)], who)) continue;
+      if (n !== goal && (solidFor(map[idx(nx + x0, ny + y0)], who) || pathBlocked(nx + x0, ny + y0, who))) continue;
       prev[n] = c; q[qt++] = n;
     }
   }
@@ -323,7 +323,10 @@ HOOKS.selfTest.push((check, F, h) => {
     const s = untilPath(200); F.sim(2, []);
     const adjacent = Math.max(Math.abs(Math.floor(player.x / TILE) - tx), Math.abs(Math.floor(player.y / TILE) - ty)) === 1;
     const chopping = !!player.action && player.action.type === 'chop' && player.action.tx === tx && player.action.ty === ty;
-    const r = F.untilAction(900, () => countItem('wood') > w0);
+    // the wait is set by the odds, not by feel: a bronze axe swings every 1.8 s (109 steps) and lands 45 times in 100 at
+    // Woodcutting 1 (0.35 + 0.02 a level + 0.1 an axe tier). 900 steps held 8 swings, and 8 misses in a row (0.51^8 at the
+    // suite's level 3, about 1 run in 220) failed the check on a healthy game. 2700 steps hold 24 swings: 0.55^24 < 1e-6.
+    const r = F.untilAction(2700, () => countItem('wood') > w0);
     check('tap: a tree 3 tiles away → stand beside it, chop starts, the log comes with no second tap', started && s < 200 && adjacent && chopping && typeof r === 'number' && countItem('wood') > w0, { started, s, adjacent, chopping, r, wood: countItem('wood') - w0, notice: notice && notice.text });
     F.sim(3, []); tap.gather = null; player.action = null; regrow = regrow.filter(x => x.i !== idx(tx, ty)); changeTile(tx, ty, t0); }
   // 4. tap a goblin 5 tiles east (hp 1) → chase and kill it

@@ -91,7 +91,10 @@ const HOOKS = {
   mainQuest: {},    // mainQuest[stage] = { text, onEnter: fn() } for main-quest stages beyond the core
   selfTest: [],     // fn(check, F, helpers) — extra self-test checks
   newGame: [],      // fn() — reset feature state
+  pathBlock: [],    // fn(tx, ty, who) → true: tap-to-move and the bot's walkTo must not route through this cell right now (e.g. a balance log above the knight's Agility)
 };
+// a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it
+function pathBlocked(tx, ty, who) { for (const f of HOOKS.pathBlock) if (f(tx, ty, who)) return true; return false; }
 
 // ---------- canvas ----------
 const DISPLAY = '"Cinzel", "Trajan Pro", Georgia, serif';
@@ -844,7 +847,9 @@ function newGame() {
   mapDiffs = new Map(); regrow = []; crops = []; fires = []; blockHp.clear(); miniDirtyTiles.clear(); miniDirty = true;
   player = newPlayer(); quest = { stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }; swordTaken = false; deathKeep = null;
   drops = []; particles = []; floaters = []; projectiles = []; dialog = { queue: [], cur: null, shown: 0, t: 0 };
-  for (const n of NPCS) { n.px = n.home.x; n.py = n.home.y; }
+  // villagers start a new game standing at home with a fresh walk timer: a timer left over from the last game would change
+  // how many dice the first seconds roll, so a seeded self-test could not replay the same opening twice
+  for (const n of NPCS) { n.px = n.home.x; n.py = n.home.y; n.wanderT = Math.random() * 3; n.dir = null; n.moving = false; }
   spawnMonsters(); paused = false; closePanel();
   time = 0; introT = 0; areaBanner = null; levelBanner = null;
   for (const h of HOOKS.newGame) h();
@@ -2641,7 +2646,7 @@ window.FANGLANDS = {
     const W = MAP_W, H = MAP_H;
     const prev = new Int32Array(W * H).fill(-1); const q = [sy * W + sx]; prev[sy * W + sx] = sy * W + sx; let qi = 0;
     while (qi < q.length) { const c = q[qi++]; const cx = c % W, cy = (c / W) | 0; if (cx === tx && cy === ty) break;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = cx + dx, ny = cy + dy; if (!inMap(nx, ny)) continue; const n = ny * W + nx; if (prev[n] !== -1) continue; if (SOLID.has(map[n]) && !(nx === tx && ny === ty)) continue; prev[n] = c; q.push(n); } }
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = cx + dx, ny = cy + dy; if (!inMap(nx, ny)) continue; const n = ny * W + nx; if (prev[n] !== -1) continue; if ((SOLID.has(map[n]) || pathBlocked(nx, ny, playerWho())) && !(nx === tx && ny === ty)) continue; prev[n] = c; q.push(n); } }
     if (prev[ty * W + tx] === -1) return null; const path = []; let c = ty * W + tx; while (c !== sy * W + sx) { path.push([c % W, (c / W) | 0]); c = prev[c]; } return path.reverse();
   },
   held(dx, dy) { const h = []; if (Math.abs(dx) > 2) h.push(dx > 0 ? 'KeyD' : 'KeyA'); if (Math.abs(dy) > 2) h.push(dy > 0 ? 'KeyS' : 'KeyW'); return h; },
@@ -2661,7 +2666,7 @@ window.FANGLANDS = {
       if (d < 56) { pressed.add('Space'); this.step([]); for (let k = 0; k < 8; k++) this.step([]); s += 9; }
       else {
         if (Math.abs(player.x - lastX) < 0.5 && Math.abs(player.y - lastY) < 0.5) stuck++; else stuck = 0; lastX = player.x; lastY = player.y;
-        if (stuck > 30) { stuck = 0; const r = this.walkTo(Math.floor(g.x / TILE), Math.floor(g.y / TILE), 400); s += 400; if (r === 'nopath') { g.x = player.x + 60; g.y = player.y; } }
+        if (stuck > 30) { stuck = 0; const r = this.walkTo(Math.floor(g.x / TILE), Math.floor(g.y / TILE), 400); s += typeof r === 'number' ? r : 400; if (r === 'nopath') { g.x = player.x + 60; g.y = player.y; } }
         else { this.step(this.held(dx, dy)); s++; }
       }
       if (player.dead) return 'died';
@@ -2680,10 +2685,18 @@ window.FANGLANDS = {
     const F = this; const report = {};
     const check = (name, ok, info) => { report[name] = (ok ? 'PASS' : 'FAIL') + (info !== undefined ? ' ' + JSON.stringify(info) : '') + (!ok && notice ? ' notice=' + JSON.stringify(notice.text) : ''); };
     const peace = on => { window.__peace = on; if (on) for (const m of monsters) if (m.state === 'chase') m.state = 'return'; };
-    const openSpot = (cx, cy) => { for (let r = 0; r < 30; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const x = cx + dx, y = cy + dy; let ok = inMap(x - 2, y - 2) && inMap(x + 2, y + 2); for (let yy = y - 1; yy <= y + 1 && ok; yy++) for (let xx = x - 2; xx <= x + 2 && ok; xx++) if (tileAt(xx, yy) !== T.GRASS) ok = false; if (ok && !inVillageBounds(tc(x), tc(y))) return { x, y }; } return { x: cx, y: cy }; };
+    const openSpot = (cx, cy, extra) => { for (let r = 0; r < 30; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const x = cx + dx, y = cy + dy; let ok = inMap(x - 2, y - 2) && inMap(x + 2, y + 2); for (let yy = y - 1; yy <= y + 1 && ok; yy++) for (let xx = x - 2; xx <= x + 2 && ok; xx++) if (tileAt(xx, yy) !== T.GRASS) ok = false; if (ok && !inVillageBounds(tc(x), tc(y)) && (!extra || extra(x, y))) return { x, y }; } return { x: cx, y: cy }; };
+    // a build check owns its ground: no drop the earlier fights left lying (a coin on the tile answers Q with 'Pick that up first.'), no monster or villager close by
+    const clutterFree = (x, y) => { const px = tc(x), py = tc(y); return !drops.some(d => dist(d.x, d.y, px, py) < 3 * TILE) && !monsters.some(m => !m.dead && dist(m.x, m.y, px, py) < 4 * TILE) && !NPCS.some(n => dist(n.px, n.py, px, py) < 3 * TILE); };
+    // a check that spends a stock sets that stock up itself, so one unlucky gather cannot fail the checks after it
+    const topUp = (id, n) => { const have = countItem(id); if (have < n) addItem(id, n - have); };
     const clearJunk = () => { player.inv = player.inv.map(s => s && ['stone', 'burnt_food', 'potato', 'raw_shrimp', 'shrimp', 'cooked_beef', 'raw_beef', 'wool', 'raw_trout', 'trout', 'spider_silk'].includes(s.id) ? null : s); };
     const give = (id, q) => addItem(id, q);
+    // pin Math.random to a seeded stream until the returned function is called (a check whose outcome is combat or wander dice)
+    const seedRandom = seed => { const r0 = Math.random; Math.random = mulberry32(seed); return () => { Math.random = r0; }; };
     // ---------- Chapter 1 ----------
+    // Chapter 1's opening (spider, first blood, the signpost) is fought with dice: seeded from the new game to the signpost, so it replays the same every run
+    const unseedCh1 = seedRandom(0xF16);
     F.newGame(); F.sim(120);
     check('voice speaks on wake', dialog.cur && dialog.cur.text === "You're finally awake.", dialog.cur && dialog.cur.text);
     { const g = monsters.filter(m => m.type.startsWith('guard')); const a = monsters.filter(m => ['sheep', 'cow'].includes(m.type)); check('guards (men and women) + animals neutral', g.length === 6 && g.some(x => x.type === 'guard_f') && g.every(x => !x.angry) && a.length === 7, { guards: g.length, animals: a.length }); }
@@ -2693,28 +2706,35 @@ window.FANGLANDS = {
     F.sim(200, ['KeyD']);
     check('sword pickup goes to the weapon slot', player.equip.weapon === 'wooden_sword' && countItem('wooden_sword') === 0 && quest.stage === 2, { stage: quest.stage });
     check('RNG combat: max hit 4 at level 1 with the wooden sword', playerMaxHit() === 4, { maxHit: playerMaxHit() });
-    { const k0 = player.kills; F.goAdjacent(Math.floor(sp[0].home.x / TILE), Math.floor(sp[0].home.y / TILE), 2000); F.fight(900, ['spider']); check('kill a spider', player.kills > k0, { kills: player.kills }); }
+    { const k0 = player.kills; F.goAdjacent(Math.floor(sp[0].x / TILE), Math.floor(sp[0].y / TILE), 2000); F.fight(900, ['spider']); check('kill a spider', player.kills > k0, { kills: player.kills }); }
     F.walkTo(CAVE_EXIT_X + 3, 7, 3000);
     check('left the cave', quest.stage === 3, { x: +(player.x / TILE).toFixed(1) });
     F.goAdjacent(23, 9); F.press('KeyE'); F.sim(3, []);
     check('bronze axe from the stump outside the cave', countItem('bronze_axe') === 1 && tileAt(23, 9) === T.STUMP && player.tookAxe, {});
+    // the pace is read the moment the third goblin falls: fight() keeps swinging at every goblin in reach after the quest moves on, and the
+    // neighbours and respawns it goes on to kill are the bot's doing, not the first goblins (4 xp a point of damage, so more kills are meant to level)
+    let firstXp = null; const thirdGoblin = m => { if (m.type === 'goblin' && quest.stage === 3 && quest.kills === 2) firstXp = player.skills.melee.xp; }; HOOKS.kill.push(thirdGoblin);
     { const log = []; for (let n = 0; n < 6 && quest.stage === 3; n++) { const gs = monsters.filter(m => m.type === 'goblin' && !m.dead).sort((a, b) => dist(a.x, a.y, player.x, player.y) - dist(b.x, b.y, player.x, player.y)); const g = gs[0]; const w = F.walkTo(Math.floor(g.x / TILE), Math.floor(g.y / TILE), 2500); const f = F.fight(3000); log.push([w, f]); }
       check('first blood (3 goblins)', quest.stage === 4, { log, kills: player.kills, deaths: player.deaths, melee: skillLv('melee'), coins: coins() }); }
-    check('levelling pace: melee ≤ 5 after the first goblins', skillLv('melee') <= 5, { melee: skillLv('melee'), xp: player.skills.melee.xp });
+    HOOKS.kill.splice(HOOKS.kill.indexOf(thirdGoblin), 1);
+    { const xp = firstXp !== null ? firstXp : player.skills.melee.xp; check('levelling pace: melee ≤ 5 after the first goblins', levelForXp(xp) <= 5, { melee: levelForXp(xp), xp, afterBot: player.skills.melee.xp }); }
     check('coins are an item in the pack', countItem('coins') === coins() && (coins() === 0 || player.inv.some(s => s && s.id === 'coins')), { coins: coins() });
     { const w3 = F.walkTo(SIGN_TILE.x - 1, SIGN_TILE.y, 6000); F.fight(3000); F.walkTo(SIGN_TILE.x - 1, SIGN_TILE.y, 3000); F.face(SIGN_TILE.x, SIGN_TILE.y); F.press('KeyE'); F.sim(3, []); check('read the signpost', quest.stage === 5, { w3 }); }
+    unseedCh1();
     // ---------- gathering: axe required, timed, stumps regrow, oak gated ----------
     F.fight(3000); peace(true); // no goblin may interrupt the timed swings (a hit cancels player.action); the blend pass opened the copse at (40,8)
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y);
       const axe = player.inv.findIndex(s => s && s.id === 'bronze_axe'); const saved = player.inv[axe]; player.inv[axe] = null; F.press('KeyE'); F.sim(2, []);
       check('woodcutting needs an axe', !player.action && notice && /axe/.test(notice.text), { notice: notice && notice.text });
-      player.inv[axe] = saved; F.face(tree.x, tree.y); const near0 = monsters.filter(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 160).map(m => m.type + ':' + m.state); F.press('KeyE'); const a0 = player.action && player.action.kind, n0 = notice && notice.text; const r = F.untilAction(900, () => countItem('wood') >= 1);
-      check('chop: timed swings, one log, stump left, regrows', typeof r === 'number' && countItem('wood') === 1 && tileAt(tree.x, tree.y) === T.STUMP && regrow.some(x => x.i === idx(tree.x, tree.y)) && player.skills.woodcutting.xp === 25, { steps: r, wood: countItem('wood'), tile: tileName(tileAt(tree.x, tree.y)), tree: [tree.x, tree.y], at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)], a0, n0, near0, hp: player.hp, action: player.action && player.action.kind, n1: notice && notice.text }); }
+      player.inv[axe] = saved; F.face(tree.x, tree.y); const near0 = monsters.filter(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 160).map(m => m.type + ':' + m.state); notice = null; F.press('KeyE'); const a0 = player.action && player.action.type, n0 = notice && notice.text;
+      // a bronze axe at Woodcutting 1 lands 45% of swings (finishGather: 0.35 + 0.1 per axe tier) and a miss swings again. 24 swings: a false timeout is 24 misses in a row, 0.55^24 = 5.9e-7
+      const r = F.untilAction(a0 === 'chop' ? 24 * (Math.ceil(player.action.need * 60) + 1) : 1, () => countItem('wood') >= 1);
+      check('chop: timed swings, one log, stump left, regrows', typeof r === 'number' && countItem('wood') === 1 && tileAt(tree.x, tree.y) === T.STUMP && regrow.some(x => x.i === idx(tree.x, tree.y)) && player.skills.woodcutting.xp === 25, { steps: r, wood: countItem('wood'), tile: tileName(tileAt(tree.x, tree.y)), tree: [tree.x, tree.y], at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)], a0, n0, near0, hp: player.hp, action: player.action && player.action.type, n1: notice && notice.text }); }
     { const oak = F.nearestTile([T.OAK]); F.goAdjacent(oak.x, oak.y); F.fight(3000); F.goAdjacent(oak.x, oak.y); F.press('KeyE'); F.sim(3, []); check('oak needs Woodcutting 5', !player.action && notice && /Woodcutting level 5/.test(notice.text), { notice: notice && notice.text }); }
-    { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y); F.press('KeyE'); F.untilAction(900, () => countItem('wood') >= 2); } peace(false); // the second log is timed too: a goblin's hit cancels the swing and every plank check after it fails
-    openPanel('craft'); render(); const crafted = F.clickButton('2 Logs → 4 Planks'); closePanel();
+    { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y); F.press('KeyE'); F.untilAction(player.action && player.action.type === 'chop' ? 24 * (Math.ceil(player.action.need * 60) + 1) : 1, () => countItem('wood') >= 2); } peace(false); // the second log is timed too: a goblin's hit cancels the swing and every plank check after it fails
+    topUp('wood', 2); openPanel('craft'); render(); const crafted = F.clickButton('2 Logs → 4 Planks'); closePanel();
     check('craft planks from the pack', crafted && countItem('plank') === 4 && countItem('wood') === 0, { plank: countItem('plank') });
-    F.fight(3000); { const o = openSpot(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); F.tp(o.x, o.y); } player.facing = { x: 1, y: 0 }; { const ft = frontTile(player, 40); F.press('KeyQ'); F.sim(3, []); check('place a plank', countItem('plank') === 3 && tileAt(ft.tx, ft.ty) === T.PLANK, { after: tileAt(ft.tx, ft.ty) }); F.press('KeyE'); F.sim(2, []); check('pick a placed plank back up', countItem('plank') === 4 && tileAt(ft.tx, ft.ty) === T.GRASS, { tile: tileAt(ft.tx, ft.ty) }); }
+    F.fight(3000); { const o = openSpot(Math.floor(player.x / TILE), Math.floor(player.y / TILE), clutterFree); F.tp(o.x, o.y); } topUp('plank', 4); player.facing = { x: 1, y: 0 }; { const ft = frontTile(player, 40); F.press('KeyQ'); F.sim(3, []); check('place a plank', countItem('plank') === 3 && tileAt(ft.tx, ft.ty) === T.PLANK, { after: tileAt(ft.tx, ft.ty) }); if (tileAt(ft.tx, ft.ty) !== T.PLANK) { changeTile(ft.tx, ft.ty, T.PLANK); if (countItem('plank') > 3) removeItem('plank', countItem('plank') - 3); } F.press('KeyE'); F.sim(2, []); check('pick a placed plank back up', countItem('plank') === 4 && tileAt(ft.tx, ft.ty) === T.GRASS, { tile: tileAt(ft.tx, ft.ty) }); }
     { const a = player.inv[0], b = player.inv[2]; openPanel('inventory'); render(); F.clickButton('slot0'); F.clickButton('slot2'); closePanel(); check('rearrange the pack (tap, tap = swap)', JSON.stringify(player.inv[2]) === JSON.stringify(a) && JSON.stringify(player.inv[0]) === JSON.stringify(b), {}); }
     { const inv0 = player.inv.map(s => s ? { ...s } : null); for (let i = 0; i < INV_SLOTS; i++) if (!player.inv[i]) player.inv[i] = { id: 'stone', qty: 50 }; const left = addItem('wool', 3); check('pack has limited slots', left === 3, { left }); player.inv = inv0; }
     // ---------- drop tables ----------
@@ -2723,7 +2743,7 @@ window.FANGLANDS = {
     { const w6 = F.walkTo(86, 32, 9000); check('reached Thistledown (area banner)', player.visitedVillage && player.region === 'Thistledown' && typeof w6 === 'number', { w6, region: player.region }); }
     give('coins', 300);
     { const wm = F.talk('marta'); const open = panel === 'shop'; const inside = !!insideBuilding(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); const b1 = F.clickButton('Buy 60'), b2 = F.clickButton('Buy 5'), b3 = F.clickButton('Buy 10'); closePanel(); check('walk in through the door, buy rod, hammer, bread', open && inside && b1 && b2 && b3 && countItem('fishing_rod') === 1 && countItem('hammer') === 1 && countItem('bread') >= 1, { wm, open, inside, coins: coins() }); }
-    { const wa = F.talk('aldous'); const open = panel === 'bank'; const slot = player.inv.findIndex(s => s && s.id === 'plank'); const dep = F.clickButton('slot' + slot); const inBank = player.bank.some(b => b.id === 'plank' && b.qty === 4); const wd = F.clickButton('bank0'); closePanel(); check('bank deposit + withdraw', open && dep && inBank && wd && countItem('plank') === 4 && player.bank.length === 0, { wa, open, inBank, planks: countItem('plank') }); }
+    { topUp('plank', 4); const wa = F.talk('aldous'); const open = panel === 'bank'; const slot = player.inv.findIndex(s => s && s.id === 'plank'); const dep = F.clickButton('slot' + slot); const inBank = player.bank.some(b => b.id === 'plank' && b.qty === 4); const wd = F.clickButton('bank0'); closePanel(); check('bank deposit + withdraw', open && dep && inBank && wd && countItem('plank') === 4 && player.bank.length === 0, { wa, open, inBank, planks: countItem('plank') }); }
     { F.calm(); const d = DUMMIES[0]; F.goAdjacent(d[0], d[1]); const x0 = player.skills.melee.xp; for (let i = 0; i < 6; i++) { F.press('Space'); F.sim(30, []); } check('training dummies: small xp, misses possible, records best hit', player.skills.melee.xp > x0 && player.skills.melee.xp - x0 <= 24 && player.highestHit >= 1, { gained: player.skills.melee.xp - x0, best: player.highestHit }); }
     { const wt = F.talk('tobin'); const q1 = quest.bread; const c0 = coins(); F.press('KeyE'); F.sim(2, []); check("Tobin's bread quest", q1 === 'active' && quest.bread === 'done' && coins() === c0 + 30, { wt, bread: quest.bread }); }
     { quest.tracked = null; openPanel('quests'); render(); const t = F.clickButton('Track'); closePanel(); check('quests are tracked on demand, not by default', t && quest.tracked === 'main', { tracked: quest.tracked }); }
@@ -2742,18 +2762,28 @@ window.FANGLANDS = {
     clearJunk(); give('iron_ore', 2);
     { F.tp(93, 39); F.face(92, 37); F.walkTo(92, 38, 500); F.face(92, 37); F.press('KeyE'); const open = panel === 'station' && panelArg === 'forge'; const c1 = F.clickButton('Iron ore → Iron bar'); const r = F.untilAction(200, () => countItem('iron_bar') >= 1); closePanel(); F.face(92, 37); F.press('KeyE'); F.clickButton('Iron ore → Iron bar'); F.untilAction(200, () => countItem('iron_bar') >= 2); closePanel(); check('forge smelts ore into bars (timed)', open && c1 && typeof r === 'number' && countItem('iron_bar') === 2 && player.skills.smithing.xp === 24, { open, bars: countItem('iron_bar') });
       F.walkTo(94, 39, 500); F.face(94, 38); F.press('KeyE'); const open2 = panel === 'station' && panelArg === 'anvil'; const d0 = countItem('iron_dagger'), b0 = countItem('iron_bar'); const c2 = F.clickButton('1 bar → Iron dagger'); const r2 = F.untilAction(200, () => countItem('iron_dagger') >= d0 + 1 && countItem('iron_bar') === b0 - 1); closePanel(); check('anvil + hammer smiths an iron dagger (hammer animation)', open2 && c2 && typeof r2 === 'number' && countItem('iron_dagger') === d0 + 1 && countItem('iron_bar') === b0 - 1, { open2, c2, r2, dagger: countItem('iron_dagger'), bars: countItem('iron_bar'), notice: notice && notice.text }); }
-    { const slot = player.inv.findIndex(s => s && s.id === 'iron_dagger'); openPanel('inventory'); render(); F.clickButton('slot' + slot); F.clickButton('Equip'); const eq = player.equip.weapon === 'iron_dagger' && countItem('wooden_sword') === 1; F.clickButton('eqweapon'); closePanel(); check('equipment slots: equip swaps the old weapon back to the pack, unequip works', eq && player.equip.weapon === null && countItem('iron_dagger') === 1, { weapon: player.equip.weapon }); const s2 = player.inv.findIndex(s => s && s.id === 'iron_dagger'); equipItem(s2); }
+    // equipment slots: its own pack and its own weapon, not the leftovers of the anvil and the goblin fights. A goblin's rare
+    // drop (1 in 40 kills, an iron dagger 3 in 4 of those) could already sit in the pack, and the absolute counts then failed.
+    { const bag = player.inv, w0 = player.equip.weapon; player.inv = new Array(INV_SLOTS).fill(null); player.inv[0] = { id: 'iron_dagger', qty: 1 }; player.equip.weapon = 'wooden_sword';
+      openPanel('inventory'); render(); F.clickButton('slot0'); F.clickButton('Equip'); const eq = player.equip.weapon === 'iron_dagger' && countItem('wooden_sword') === 1 && countItem('iron_dagger') === 0; F.clickButton('eqweapon'); closePanel();
+      check('equipment slots: equip swaps the old weapon back to the pack, unequip works', eq && player.equip.weapon === null && countItem('iron_dagger') === 1 && countItem('wooden_sword') === 1, { eq, weapon: player.equip.weapon, dagger: countItem('iron_dagger'), sword: countItem('wooden_sword') });
+      player.inv = bag; player.equip.weapon = w0; const s2 = player.inv.findIndex(s => s && s.id === 'iron_dagger'); equipItem(s2); }
     // ---------- workbench: bow + arrows; alchemy: bomb; workshop: trap ----------
     clearJunk(); give('wood', 6); give('spider_silk', 1); give('stone', 1); give('blast_powder', 1); give('goblin_scrap', 1); player.skills.crafting.xp = XP_TABLE[3]; const cx0 = player.skills.crafting.xp;
     { F.tp(103, 39); F.walkTo(100, 38, 500); F.face(100, 37); F.press('KeyE'); const ok1 = panel === 'station' && panelArg === 'workbench' && F.clickButton('2 Logs + Spider silk → Shortbow') && F.clickButton('Logs + Stone → 5 Stone arrows'); closePanel();
       F.walkTo(104, 38, 500); F.face(104, 37); F.press('KeyE'); const ok2 = panel === 'station' && panelArg === 'alchemy' && F.clickButton('Blast powder + Goblin scrap → Goblin bomb'); closePanel();
       check('workbench makes a bow and arrows; alchemy makes a bomb', ok1 && ok2 && countItem('shortbow') === 1 && countItem('stone_arrow') === 5 && countItem('bomb') === 1 && player.skills.crafting.xp === cx0 + 78, { bow: countItem('shortbow'), arrows: countItem('stone_arrow'), bomb: countItem('bomb'), cxp: player.skills.crafting.xp }); }
-    { F.walkTo(102, 38, 500); F.face(102, 37); F.press('KeyE'); const ok = panel === 'station' && panelArg === 'workshop'; render(); const c = F.clickButton('Iron bar + 2 Planks → Goblin trap'); closePanel(); check('workshop makes a goblin trap (Crafting 3)', ok && c && countItem('goblin_trap') === 1, { ok, trap: countItem('goblin_trap') }); }
+    { topUp('plank', 2); topUp('iron_bar', 1); F.walkTo(102, 38, 500); F.face(102, 37); F.press('KeyE'); const ok = panel === 'station' && panelArg === 'workshop'; render(); const c = F.clickButton('Iron bar + 2 Planks → Goblin trap'); closePanel(); check('workshop makes a goblin trap (Crafting 3)', ok && c && countItem('goblin_trap') === 1, { ok, trap: countItem('goblin_trap') }); }
     { const o = openSpot(40, 20); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); gob.x = player.x + 120; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.hp = gob.maxHp; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; player.facing = { x: 1, y: 0 };
-      const bs = player.inv.findIndex(s => s && s.id === 'shortbow'); equipItem(bs); give('stone_arrow', 30); const a0 = countItem('stone_arrow'); const rx0 = player.skills.range.xp; let hit = false; for (let i = 0; i < 14 && !hit; i++) { gob.x = player.x + 120; gob.y = player.y; gob.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(40, []); if (gob.hp < gob.maxHp) hit = true; }
+      const bs = player.inv.findIndex(s => s && s.id === 'shortbow'); equipItem(bs); give('stone_arrow', 30); const a0 = countItem('stone_arrow'); const rx0 = player.skills.range.xp;
+      // watch every frame: under peace the goblin is 'home' the frame after the arrow lands and the leash heals 1 hp (07-update), which erased every 1-damage hit when hp was read after the 40 frames. 21 shots: P(all miss) = (1 - 630/1282)^21 = 6.8e-7
+      let hit = false; for (let i = 0; i < 21 && !hit; i++) { gob.x = player.x + 120; gob.y = player.y; gob.stunT = 0; player.attackCd = 0; F.press('Space'); for (let f = 0; f < 40; f++) { F.step([]); if (gob.hp < gob.maxHp) hit = true; } render(); }
       check('range: bow shoots arrows, consumes them, Range xp', hit && countItem('stone_arrow') < a0 && player.skills.range.xp > rx0, { arrows: countItem('stone_arrow'), rxp: player.skills.range.xp });
       const hp0 = gob.hp; gob.x = player.x + 90; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; gob.stunT = 0; const bslot = player.inv.findIndex(s => s && s.id === 'bomb'); player.attackCd = 0; useItem(bslot); F.sim(60, []); check('bomb: throw, explode, area damage', countItem('bomb') === 0 && gob.hp < hp0, { hp0, hp: gob.hp });
-      gob.dead = false; gob.hp = gob.maxHp; gob.state = 'idle'; gob.stunT = 0; gob.x = player.x + 200; gob.y = player.y; player.facing = { x: 1, y: 0 }; const ft = frontTile(player, 40); drops = drops.filter(d => !circleHitsTile(d.x, d.y, 8, ft.tx, ft.ty)); placeAction('goblin_trap'); // a loot drop from the fight may sit on the tile ("Pick that up first.") const placed = tileAt(ft.tx, ft.ty) === T.TRAP; gob.x = tc(ft.tx); gob.y = tc(ft.ty); F.sim(3, []); check('goblin trap: placed, springs on a goblin, stuns it', placed && gob.hp === gob.maxHp - 12 && gob.stunT > 0 && tileAt(ft.tx, ft.ty) !== T.TRAP, { placed, hp: gob.hp, stun: gob.stunT });
+      // a loot drop from the fight may sit on the trap's tile ("Pick that up first."), so the drops there are cleared before placing; the check brings its own trap.
+      // Keep this comment on its own line: trailing it on the line below once swallowed the placement check and left a live trap on the map.
+      gob.dead = false; gob.hp = gob.maxHp; gob.state = 'idle'; gob.stunT = 0; gob.x = player.x + 200; gob.y = player.y; player.facing = { x: 1, y: 0 }; const ft = frontTile(player, 40); drops = drops.filter(d => !circleHitsTile(d.x, d.y, 8, ft.tx, ft.ty)); if (!countItem('goblin_trap')) give('goblin_trap', 1); placeAction('goblin_trap');
+      const placed = tileAt(ft.tx, ft.ty) === T.TRAP; gob.x = tc(ft.tx); gob.y = tc(ft.ty); F.sim(3, []); check('goblin trap: placed, springs on a goblin, stuns it', placed && gob.hp === gob.maxHp - 12 && gob.stunT > 0 && tileAt(ft.tx, ft.ty) !== T.TRAP, { placed, hp: gob.hp, stun: gob.stunT });
       const ws = player.inv.findIndex(s => s && s.id === 'wooden_sword'); if (ws >= 0) equipItem(ws); }
     // ---------- aggression stops at higher combat level ----------
     peace(false); { const o = openSpot(40, 20); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); gob.x = player.x + 100; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.angry = true; gob.hp = gob.maxHp; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; const m0 = player.skills.melee.xp, d0 = player.skills.defence.xp; player.skills.melee.xp = XP_TABLE[8]; player.skills.defence.xp = XP_TABLE[8]; F.sim(60, []); const calmHigh = gob.state === 'idle'; player.skills.melee.xp = m0; player.skills.defence.xp = d0; gob.x = player.x + 100; gob.y = player.y; gob.state = 'idle'; F.sim(60, []); const chaseLow = gob.state === 'chase'; check('goblins ignore a combat-level 8 knight, chase a low one (sight 4.5 tiles)', calmHigh && chaseLow, { cbHigh: 8, cbLow: combatLevel(), calmHigh, chaseLow }); F.fight(2000); }
@@ -4311,7 +4341,7 @@ function tapBfs(sx, sy, gx, gy, who) {
     for (const [dx, dy] of TAP_DIRS) {
       const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const n = ny * W + nx; if (prev[n] !== -1) continue;
-      if (n !== goal && solidFor(map[idx(nx + x0, ny + y0)], who)) continue;
+      if (n !== goal && (solidFor(map[idx(nx + x0, ny + y0)], who) || pathBlocked(nx + x0, ny + y0, who))) continue;
       prev[n] = c; q[qt++] = n;
     }
   }
@@ -4584,7 +4614,10 @@ HOOKS.selfTest.push((check, F, h) => {
     const s = untilPath(200); F.sim(2, []);
     const adjacent = Math.max(Math.abs(Math.floor(player.x / TILE) - tx), Math.abs(Math.floor(player.y / TILE) - ty)) === 1;
     const chopping = !!player.action && player.action.type === 'chop' && player.action.tx === tx && player.action.ty === ty;
-    const r = F.untilAction(900, () => countItem('wood') > w0);
+    // the wait is set by the odds, not by feel: a bronze axe swings every 1.8 s (109 steps) and lands 45 times in 100 at
+    // Woodcutting 1 (0.35 + 0.02 a level + 0.1 an axe tier). 900 steps held 8 swings, and 8 misses in a row (0.51^8 at the
+    // suite's level 3, about 1 run in 220) failed the check on a healthy game. 2700 steps hold 24 swings: 0.55^24 < 1e-6.
+    const r = F.untilAction(2700, () => countItem('wood') > w0);
     check('tap: a tree 3 tiles away → stand beside it, chop starts, the log comes with no second tap', started && s < 200 && adjacent && chopping && typeof r === 'number' && countItem('wood') > w0, { started, s, adjacent, chopping, r, wood: countItem('wood') - w0, notice: notice && notice.text });
     F.sim(3, []); tap.gather = null; player.action = null; regrow = regrow.filter(x => x.i !== idx(tx, ty)); changeTile(tx, ty, t0); }
   // 4. tap a goblin 5 tiles east (hp 1) → chase and kill it
@@ -12121,14 +12154,25 @@ HOOKS.selfTest.push((check, F, h) => {
       if (lv >= o.lv || hasCape('agility')) return;
       const back = lastTile && !(lastTile.tx === tx && lastTile.ty === ty) ? lastTile : null;
       hurtPlayer(1, tc(tx), tc(ty), true); floatText(player.x, player.y - 40, `Slipped! Agility ${o.lv} for this log`, '#ff6b6b', 13); burst(player.x, player.y, '#8a5a2b', 8, 60);
+      // a tap walk that led here stops: walking the knight straight back onto the log slips him every few frames until he dies
+      if (typeof tapCancel === 'function') tapCancel('slip');
       if (back && !player.dead) { const bx = tc(back.tx), by = tc(back.ty); if (!collides(bx, by, player.r, playerWho())) { player.x = bx; player.y = by; } }
     } else if (o.t === AG_GAP) {
       if (lv >= o.lv) { floatText(player.x, player.y - 36, 'Jump!', '#8fb4ff', 13); return; }
       hurtPlayer(2, tc(tx), tc(ty) + 1, true); floatText(player.x, player.y - 40, `You fell! Agility ${o.lv} for this gap`, '#ff6b6b', 13); burst(player.x, player.y, '#1c2230', 12, 80);
       const a = AG(); a.next[o.course] = 0;
+      if (typeof tapCancel === 'function') tapCancel('fell');
       if (!player.dead) { const s = courseStart(o.course); const spot = safeSpot(s.x, s.y, player.r, playerWho()) || s; player.x = spot.x; player.y = spot.y; player.action = null; }
     }
   }
+  // pathfinders (tap-to-move, the bot) go round an obstacle the knight cannot cross yet; a walker or bulldozer never slips
+  HOOKS.pathBlock.push((tx, ty, who) => {
+    if (who !== 'player') return false;
+    const o = OBST.get(key(tx, ty)); if (!o || tileAt(tx, ty) !== o.t) return false;
+    if (o.t === AG_LOG) return agLv() < o.lv && !hasCape('agility');
+    if (o.t === AG_GAP) return agLv() < o.lv;
+    return false;
+  });
   HOOKS.update.push(dt => {
     // hitpoints for older saves: seed once from the melee + range xp that would have fed it
     if (!player.hpSeeded) { const m = player.skills.melee.xp + player.skills.range.xp; if (m > 0 && player.skills.hitpoints.xp === 0) player.skills.hitpoints.xp = Math.floor(m / 3); player.hpSeeded = true; recomputeMaxHp(); }
