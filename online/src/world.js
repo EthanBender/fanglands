@@ -10,6 +10,9 @@
 //   signup  invite (401/403)  taken (409)  name (the filter refused it, 400)  pass (secret word under 4 chars, 400)
 //   any     auth (dead or missing token, 401)  full (a cap hit: too big, or the world is full)
 //   admins  admin (only an admin may, 403)  nopin (no pinned backup, 404)
+//   accounts (an admin's game, docs/ONLINE.md "Accounts")  unknown (no such knight, 404)  self (your own secret word:
+//           the parent page does that, 403)  isadmin (another admin's, 403)  pass (under 4 or over 200, 400)
+//           wait (too many resets in a minute, 429, with wait = seconds)
 //
 // The tables and the one migration live in store.js (SCHEMA, migrate): every wake runs the old CREATE TABLE
 // statements unchanged, creates the new tables if they are missing, and adds the new accounts columns only when
@@ -19,6 +22,7 @@
 
 import { Room, MUTE_SPANS } from './room.js';
 import { SCHEMA, migrate, SqlStore, ALWAYS } from './store.js';
+import { accountList, RESETS_PER_MINUTE, RESET_TEXT } from './accounts.js';
 import { cryptoRandom } from './party.js';
 import { cleanName } from './filter.js';
 import { makeHash, checkPassword, randomHex, sameString } from './auth.js';
@@ -45,6 +49,7 @@ export class World {
     this.chatWrites = 0;
     this.wraps = new WeakMap();
     this.room = new Room({
+      now: () => this.now(),
       log: (name, text, at) => this.logChat(name, text, at),
       wake: ms => this.ctx.storage.setAlarm(Date.now() + ms).catch(e => console.error('alarm', e)),
       store: this.store,
@@ -59,6 +64,10 @@ export class World {
       if (state && state.name) this.room.restore(this.wrap(ws), state);
       else { try { ws.close(4001, 'lost'); } catch (e) { } }
     }
+    // a login still open with no socket carrying it (the world was restarted under it) ends when it was last heard from
+    try { this.room.settleLogins(); } catch (e) { console.error('logins', e); }
+    // when the logins began to be counted: written once, on the first wake of this code
+    this.loginsSince = this.store.trackingSince(this.now());
   }
 
   // ---------- the socket, as the room sees it ----------
@@ -106,6 +115,8 @@ export class World {
     if (path === '/api/save/pin' && method === 'GET') return this.getPin(req);
     if (path === '/api/save/pin' && method === 'POST') return await this.pinSave(req, url);
     if (path === '/api/save/restore' && method === 'POST') return this.restorePin(req);
+    if (path === '/api/accounts' && method === 'GET') return this.accountsForAdmin(req);
+    if (path === '/api/accounts/reset' && method === 'POST') return await this.resetForAdmin(req);
     throw oops(404, 'no such call', 'nope');
   }
 
@@ -262,6 +273,38 @@ export class World {
     return json({ save: pin.json, at: ver.at, ver: ver.ver });
   }
 
+  // ---------- Accounts: every knight, on line or not, for an admin's game (docs/ONLINE.md, "Accounts") ----------
+  // The caller's session must belong to a knight whose role is 'admin' in the database, checked on every call.
+  accountsForAdmin(req) {
+    this.adminSession(req);
+    return json(this.accountsView());
+  }
+  accountsView() { return accountList({ sql: this.sql, store: this.store, room: this.room, now: this.now(), since: this.loginsSince }); }
+  // A new secret word for a knight, from an admin's game: never your own (the parent page does that), never another
+  // admin's; at most RESETS_PER_MINUTE a minute per admin. The word itself is never logged.
+  async resetForAdmin(req) {
+    const s = this.adminSession(req);
+    const b = await readJson(req);
+    const pass = typeof b.pass === 'string' ? b.pass : '';
+    const target = this.store.account(typeof b.name === 'string' ? b.name : '');
+    if (!target) throw oops(404, 'no knight by that name', 'unknown');
+    if (target.lc === s.name_lc) throw oops(403, 'change your own secret word on the parent page', 'self');
+    if (target.role === 'admin') throw oops(403, "you can't change another admin's secret word", 'isadmin');
+    if (pass.length < PASS_MIN || pass.length > PASS_MAX) throw oops(400, 'the secret word needs at least 4 letters', 'pass');
+    const now = this.now();
+    if (this.store.actsSince(s.name, 'reset', now - 60000) >= RESETS_PER_MINUTE) throw oops(429, 'too many at once: wait a minute', 'wait', { wait: 60 });
+    await this.newSecret(target, pass, s.name, now);
+    return json({ ok: true, name: target.name });
+  }
+  // The one way a secret word changes (the parent page and an admin's game both come here): hashed with a new salt,
+  // every session of that knight deleted, the knight sent back to the login card if on line, one line in mod_log.
+  async newSecret(target, pass, by, now) {
+    const { salt, hash } = await makeHash(pass);
+    this.store.setSecret(target.lc, salt, hash);
+    this.room.kick(target.name, 'auth', RESET_TEXT, { why: 'reset' });
+    this.store.log({ at: now, by, act: 'reset', target: target.name, detail: '' });
+  }
+
   // ---------- who is on (no login needed: the title screen shows it) ----------
   status() {
     const list = this.room.online();
@@ -282,8 +325,10 @@ export class World {
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
     this.room.join(this.wrap(server), s.name);
-    return new Response(null, { status: 101, webSocket: client });
+    return this.upgraded(client);
   }
+  // the 101 that hands the socket over (a seam for the Node tests, whose Response cannot carry a 101)
+  upgraded(client) { return new Response(null, { status: 101, webSocket: client }); }
 
   // ---------- admin: Authorization: Bearer <ADMIN_KEY> ----------
   async admin(req, url, call, method) {
@@ -292,10 +337,7 @@ export class World {
     if (!sameString(bearer(req), key)) throw oops(401, 'wrong admin key', 'admin');
     const post = method === 'POST';
     { const r = await backupCall(this, req, url, call, method); if (r) return r; }
-    if (call === 'accounts' && method === 'GET') {
-      const list = this.rows('SELECT a.name, a.created, a.last_seen, a.banned, a.role, a.muted_until, (SELECT MAX(at) FROM saves s WHERE s.name_lc = a.name_lc) AS save_at FROM accounts a ORDER BY a.name_lc');
-      return json(list.map(a => ({ name: a.name, created: a.created, lastSeen: a.last_seen, banned: !!a.banned, saveAt: a.save_at, role: roleWord(a.role), mutedUntil: a.muted_until || 0 })));
-    }
+    if (call === 'accounts' && method === 'GET') return json(this.accountsView());
     if (call === 'online' && method === 'GET') return json(this.room.online());
     if (call === 'chat' && method === 'GET') {
       const limit = Math.max(1, Math.min(5000, parseInt(url.searchParams.get('limit'), 10) || 500));
@@ -311,14 +353,12 @@ export class World {
       return json({ ok: true });
     }
     if (call === 'reset' && post) {
+      // the parent page may change anyone's secret word, an admin's and its own knight's too
       const b = await readJson(req);
       const a = this.account(b.name);
       const pass = typeof b.pass === 'string' ? b.pass : '';
       if (pass.length < PASS_MIN || pass.length > PASS_MAX) throw oops(400, 'the secret word needs at least 4 letters', 'pass');
-      const { salt, hash } = await makeHash(pass);
-      this.sql.exec('UPDATE accounts SET salt = ?, hash = ?, tries = 0, locked_until = 0 WHERE name_lc = ?', salt, hash, a.name_lc);
-      this.sql.exec('DELETE FROM sessions WHERE name_lc = ?', a.name_lc);
-      this.room.kick(a.name, 'auth', 'your secret word was changed: log in again');
+      await this.newSecret({ lc: a.name_lc, name: a.name }, pass, PARENT, this.now());
       return json({ ok: true });
     }
     if (call === 'ban' && post) {

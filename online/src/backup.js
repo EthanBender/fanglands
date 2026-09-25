@@ -2,7 +2,8 @@
 // GET  /api/admin/export    everything needed to rebuild the world: accounts (with their hashes, roles and mutes), every
 //                           save version, the chat log, the settings, and the admins' tables: the moderation log, the
 //                           pinned backups, the drop parties and their crackers (who lit each, the prize, claimed or
-//                           not). Sessions are left out on purpose: they are short-lived logins.
+//                           not), and the logins (when each knight's sockets opened and closed). Sessions are left
+//                           out on purpose: they are short-lived tokens.
 // GET  /api/admin/bookmark  a Cloudflare point-in-time restore bookmark for this moment, also kept in settings with the
 //                           time it was taken. Taken before every deploy that changes the schema.
 // POST /api/admin/restore   {bookmark}: rewind the whole world's storage to that bookmark. The object restarts to do it,
@@ -23,6 +24,7 @@ export async function backupCall(world, req, url, call, method) {
       save_pins: rows('SELECT * FROM save_pins ORDER BY name_lc'),
       parties: rows('SELECT * FROM parties ORDER BY id'),
       crackers: rows('SELECT * FROM crackers ORDER BY party, k'),
+      logins: rows('SELECT * FROM logins ORDER BY id'),
     });
   }
   if (call === 'bookmark' && method === 'GET') {

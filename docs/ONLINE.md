@@ -73,8 +73,10 @@ online/
 | `POST /api/save/pin` | the save JSON string | `{at, pinned}` | admins only; an existing pin is kept unless `?replace=1` |
 | `POST /api/save/restore` | — | `{save, at, ver}` | admins only; the pin becomes the current save and is removed; 404 `nopin` |
 | `GET /api/status` | — | `{ok, online, names}` | no auth; the title screen uses it to say who is on |
-| `GET /api/admin/accounts` | — | `[{name, created, lastSeen, banned, saveAt, role, mutedUntil}]` | `Authorization: Bearer <ADMIN_KEY>` |
-| `POST /api/admin/reset` | `{name, pass}` | `{ok}` | new secret word |
+| `GET /api/accounts` | — | `[account]` (see *Accounts*) | admins only (403 `admin`, 401 `auth`): every knight, online or not, for the in-game Accounts tab |
+| `POST /api/accounts/reset` | `{name, pass}` | `{ok, name}` | admins only: a new secret word for another player; 404 `unknown`, 403 `self`, 403 `isadmin`, 400 `pass`, 429 `wait` (see *Accounts*) |
+| `GET /api/admin/accounts` | — | `[account]` (see *Accounts*) | `Authorization: Bearer <ADMIN_KEY>`; the same rows as `GET /api/accounts` |
+| `POST /api/admin/reset` | `{name, pass}` | `{ok}` | new secret word; works on anyone, admins and the parent's own knight too; the knight is sent out, written to `mod_log` (`by: 'parent page'`) |
 | `POST /api/admin/ban` | `{name, banned}` | `{ok}` | banned knights cannot log in; their save stays; written to `mod_log` |
 | `POST /api/admin/role` | `{name, role}` | `{ok, role}` | `'player'` or `'admin'`; an online knight is told at once |
 | `POST /api/admin/mute` | `{name, span}` | `{ok, mutedUntil}` | `'5m'`, `'1h'`, `'1d'`, `'always'` or `'off'` |
@@ -85,7 +87,7 @@ online/
 | `GET /api/admin/saves?name=` | — | `[{ver, at, bytes}]` | the kept versions; a pinned backup is listed first as `ver: 'pin'` |
 | `POST /api/admin/rollback` | `{name, ver}` | `{ok}` | make that version the current save (`ver: 'pin'` copies the pin forward and keeps it) |
 | `GET /api/admin/online` | — | `[{n, map, region, lv, since, role}]` | |
-| `GET /api/admin/export` | — | `{at, accounts, saves, chat, settings, mod_log, save_pins, parties, crackers}` | every row of every table but `sessions` (`online/src/backup.js`): the backup taken before a deploy |
+| `GET /api/admin/export` | — | `{at, accounts, saves, chat, settings, mod_log, save_pins, parties, crackers, logins}` | every row of every table but `sessions` (`online/src/backup.js`): the backup taken before a deploy |
 | `GET /api/admin/bookmark` | — | `{bookmark, at}` | a Cloudflare point-in-time restore bookmark, also kept in `settings` |
 | `POST /api/admin/restore` | `{bookmark}` | `{ok, restoring}` | rewinds the whole world to that bookmark; every knight reconnects to it |
 
@@ -374,7 +376,7 @@ Server → client:
   `POST /api/admin/ban` now also writes `mod_log`; `GET /api/admin/modlog?limit=200` → `[{at, by, act, n, detail}]`
   newest first (limit 1 to 2,000); `GET /api/admin/accounts` rows gain `role` and `mutedUntil`;
   `GET /api/admin/online` rows gain `role`. Parent-page actions are logged with `by: 'parent page'`.
-- `mod_log.act` is one of `role`, `mute`, `unmute`, `kick`, `ban`, `unban`, `party`, `hat`. The parent page shows the
+- `mod_log.act` is one of `role`, `mute`, `unmute`, `kick`, `ban`, `unban`, `party`, `hat`, `reset` (*Accounts*). The parent page shows the
   log newest first, one line each ("3:41 pm — MudGoll muted Sam for 5 minutes").
 
 ### Admin powers (the admin's own knight)
@@ -591,6 +593,100 @@ The cap runs before the role check, so a knight hammering admin messages is drop
 
 `index.html` is generated: each branch rebuilds and commits it, and the integration rebuilds it again.
 
+## Accounts
+
+Owner (2026-09-25): *"can you add to the admin consol to see all the active accounts even if they are looged out with
+the ability to reset their passwords and see how much time they have logged playing and when they have logged in"*
+
+An **Accounts** tab in the in-game Admin panel (`src/78-accounts.js`, added to 76's panel with `ADMIN.addTab`, after
+Knights) lists every knight the world knows, online or not, and lets an admin give a player a new secret word. The
+parent page shows the same rows. Server: `online/src/accounts.js` (the list), `store.js` (the logins), `room.js`
+(opening and closing them), `world.js` (the routes).
+
+### Logins: one row per socket
+
+```
+logins    (id INTEGER PRIMARY KEY AUTOINCREMENT, name_lc TEXT NOT NULL, started INTEGER NOT NULL,
+           seen INTEGER NOT NULL, ended INTEGER)                      -- ended NULL while the socket is open
+CREATE INDEX IF NOT EXISTS logins_by_name ON logins (name_lc, id)
+accounts  + online_ms INTEGER NOT NULL DEFAULT 0                      -- every closed login's length, added up
+settings  'logins_since'                                              -- when counting began (the first wake of this code)
+```
+
+Same migration rules as *The database*: `CREATE TABLE IF NOT EXISTS`, `migrate()` adds `online_ms` only when missing,
+nothing dropped or rewritten, no new Durable Object class.
+
+- The Room opens a row at `join` (`store.loginStart`) and puts its id on the socket attachment (`loginId`), so a
+  hibernation nap keeps the same row open. A socket restored from before this code (no `loginId`) opens one at its
+  join time.
+- The row closes (`store.loginEnd`, `ended` = now) in `remove()`, which every way out goes through: the socket closing,
+  the same knight logging in elsewhere (4000), a kick (4005), a ban (4003, from the game or the parent page), a new
+  secret word, the world full, a socket dropped for speed. Closing adds its length to `accounts.online_ms` once (only
+  the call that finds it open counts).
+- Any message from a socket writes `seen` = now, at most once a minute (`SEEN_EVERY`). After every wake's restores the
+  World calls `room.settleLogins()`: an open row that no restored socket carries (the world was restarted under it)
+  ends at `seen`, the last time the world heard from it.
+- The newest 50 rows per knight are kept (`LOGINS_KEPT`); older closed rows go when a new one opens. The total lives in
+  `online_ms`, so it never shrinks.
+- *Time online* counts only from `logins_since` (or the day the knight was made, if later). Both screens say so.
+- *Knight play time* is a different clock: `player.playSeconds` in the knight's newest cloud save (the game adds to it
+  every frame it runs unpaused, online or not). The server reads it with SQLite's `json_extract` (a runtime without
+  JSON functions falls back to `JSON.parse` in a `try`); anything that is not a whole, finite, non-negative number
+  under 10^10 reads as `null`.
+
+### The rows (`GET /api/accounts` for an admin's game; `GET /api/admin/accounts` for the parent page)
+
+Every account, sorted by name (each screen orders them itself: online first, then the most recently on):
+
+| Field | Meaning |
+|---|---|
+| `name`, `role`, `created`, `lastSeen`, `saveAt`, `banned`, `mutedUntil` | as before (`role` `'player'`/`'admin'`; `mutedUntil` ms, 0, or `ALWAYS`) |
+| `online` | true while a socket is open |
+| `map`, `region`, `lv` | where the knight is now (null when not online) |
+| `lastLogin` | when the newest login began (ms), or null |
+| `lastOn` | now when online, else the later of `lastSeen` and the newest login's end |
+| `onlineMs` | *Time online*: `online_ms` plus the open login so far |
+| `countedSince` | the later of `logins_since` and `created` |
+| `playSeconds` | *Knight play time* in seconds, or null (no save, or no clean number in it) |
+| `logins` | the last 10, newest first: `[{at, ms, open}]`; `open` true for the one still going (its `ms` counts to now) |
+
+`GET /api/accounts` needs a session whose knight's `role` in the database is `'admin'`, checked on every call:
+401 `auth` without one, 403 `admin` for a player.
+
+### A new secret word from the game: `POST /api/accounts/reset {name, pass}` → `{ok, name}`
+
+Checked in this order, on every call: the caller's session is an admin's (401 `auth`, 403 `admin`); the knight exists
+(404 `unknown`); it is not the caller (403 `self`: "change your own on the parent page"); it is not an admin (403
+`isadmin`); `pass` is 4 to 200 characters (400 `pass`); the caller has made fewer than 3 resets in the last minute
+(429 `wait`, with `wait: 60`; counted from `mod_log`). Then, the same as the parent page's `POST /api/admin/reset`:
+a new salt and `makeHash`, the wrong-tries count cleared, **every session of that knight deleted**, and if online the
+knight gets `{t:'error', code:'auth', why:'reset', text}` and close 4000 (the wire forgets the token; the login card
+says "An admin changed your secret word. Ask them for the new one, then log in again."). One `mod_log` row: `act:
+'reset'`, `by` the admin (or `'parent page'`), `target` the knight, `detail` empty. The word itself is never logged.
+
+### The Accounts tab (`src/78-accounts.js`)
+
+- Only while `NET.online()` and `NET.role === 'admin'` (76's `ADMIN.is()`); a demotion or a lost line closes it and
+  forgets the list, the page and any word typed. The world's own refusal reads "Only an admin can see this."
+- The list: Refresh, Up / Down, a drag scrolls, the mouse wheel scrolls; it asks again every 30 s while open.
+  Each row: a green dot when online, the name (gold with the ADMIN tag for an admin), "Online now in <place>" or
+  "Last on Fri 25 Sep, 7:42 pm", "Time online: 3h 12m (since Thu 24 Sep)", "Knight play time: 14h 5m", "Made <day>",
+  and Banned / Muted tags.
+- A still tap on a row opens that knight: the last 10 logins (day, time, how long; the open one "on now, 12m so far"),
+  mute / ban state with Mute (the four lengths), Unmute, Ban (two taps), Unban and Kick — 76's own socket messages —
+  and **Reset secret word**. None of these for an admin or for yourself.
+- Reset secret word: a real `<input>` over the canvas, guarded like 71-login's and 74-chat's (capture-phase key
+  listeners stop every key reaching the game); Next (4+ letters) → "Change Cohen's secret word to "dragon fire"?" drawn
+  in the panel (no `confirm()`) → Yes sends the call → "Done. Cohen's secret word is now "dragon fire". Tell Cohen,
+  then they log in with it." Each refusal code reads as one sentence. The word is forgotten when done or when the
+  panel closes.
+
+### The parent page
+
+The accounts table gains *On now / last on*, *Last login*, *Time online* and *Knight play time*, ordered like the game's,
+a line saying when time online began to be counted, and a *Logins* button per knight that opens the last 10 logins
+under the row. A reset shows in *What admins did* ("MudGoll gave Sam a new secret word").
+
 ## Safety rules (binding)
 
 - Invite-only signups. Names and chat pass `online/src/filter.js`. Chat is logged with the name and time.
@@ -598,6 +694,9 @@ The cap runs before the role check, so a knight hammering admin messages is drop
 - Rate limits on every message type (table above). A socket over its cap is dropped with `error: bad`.
 - The admin page is a single HTML file behind `ADMIN_KEY`; it never leaves Ethan's hands.
 - Saves are kept in three versions so a broken save can be rolled back from the admin page.
+- A secret word is changed only by the parent page, or by an admin's game for a player (never another admin's, never
+  the admin's own), at most 3 a minute; the knight is sent out and every session ends; `mod_log` says who. The word
+  is never logged.
 - Admins: only the parent page makes one. The server reads the role from the database on every admin message; the
   game hiding buttons is not the lock. Every moderation action, party and party hat is written to `mod_log` and shown
   on the parent page. Nobody can mute, kick or ban an admin from inside the game.
@@ -607,7 +706,7 @@ The cap runs before the role check, so a knight hammering admin messages is drop
 ## Where things are
 
 - Play: https://gorkscape.ca (the invite code is with Ethan; nothing on this page is public).
-- Parents: https://gorkscape.ca/admin — accounts, reset a forgotten secret word, ban, the invite code, the chat log, save rollback,
+- Parents: https://gorkscape.ca/admin — accounts (last login, time online, knight play time, the last 10 logins), reset a forgotten secret word, ban, the invite code, the chat log, save rollback,
   who is an admin (Make admin / Make player), mutes, the moderation log, pinned backups. Needs the admin key.
 - The old address https://ethanbender.github.io/fanglands/ is the offline copy; its title screen has no login.
 
