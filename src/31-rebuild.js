@@ -367,30 +367,13 @@
       const p = personInFront();
       if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 20, 0, 7); g.stroke(); g.setLineDash([]); return; }
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      if (t === T_RBOARD || t === T_SAWMILL || t === T_GOODWELL || t === T_BELL) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (t === T_RBOARD || t === T_SAWMILL || t === T_GOODWELL || t === T_BELL) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 
-  // ---------- the title in the pause menu ----------
-  // The core pause menu is drawn after HOOKS.hud, so the title is added by wrapping drawHud (a global
-  // function binding; render() looks it up by name each frame). Redraws the stats line with the title in front.
-  if (typeof drawHud === 'function') {
-    const coreDrawHud = drawHud;
-    drawHud = function (g) {
-      coreDrawHud(g);
-      const title = quest.rebuild && quest.rebuild.title; if (!paused || !title) return;
-      // the stats line used to be the magic number VH/2 + 83 in both this file and 10-hud; both now ask the
-      // HUD kit for the same y, so a finger-sized pause-menu row cannot silently split them (src/59-hudkit.js)
-      const { px, pw, statsY } = HK.pauseBox();
-      g.fillStyle = 'rgba(13,16,24,1)'; g.fillRect(px + 2, statsY - 12, pw - 4, 18);
-      g.font = '11px sans-serif'; g.textBaseline = 'alphabetic';
-      let stats = `Kills ${player.kills} · Deaths ${player.deaths} · Best hit ${player.highestHit}`;
-      const gap = ' · '; if (g.measureText(title + gap + stats).width > pw - 16) stats = `Kills ${player.kills} · Deaths ${player.deaths}`;
-      const tw = g.measureText(title).width, gw = g.measureText(gap).width, sw = g.measureText(stats).width, x0 = VW / 2 - (tw + gw + sw) / 2;
-      g.textAlign = 'left'; g.fillStyle = HK.C.GOLD; g.fillText(title, x0, statsY); g.fillStyle = 'rgba(211,220,232,0.7)'; g.fillText(gap + stats, x0 + tw, statsY);
-      g.textAlign = 'center';
-    };
-  }
+  // ---------- the title in the book ----------
+  // The Knight's Book (the pause menu, src/59-hudkit.js) writes your town title in gold in front of the Kills / Deaths /
+  // Best hit line on its game page; it reads quest.rebuild.title.
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {

@@ -161,7 +161,7 @@
       let any = false;
       for (const n in REMOTE) if (REMOTE[n].map === my) { any = true; break; }
       if (any) {
-        g.save(); roundRect(g, mm.x, mm.y, size, size, 10); g.clip();
+        g.save(); g.beginPath(); g.arc(mm.x + size / 2, mm.y + size / 2, size / 2, 0, 7); g.clip();   // the ring's round glass (src/59-hudkit.js)
         for (const n in REMOTE) { const e = REMOTE[n]; if (e.map !== my) continue; const p = at(e); g.fillStyle = BLUE; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); }
         g.fillStyle = '#ffffff'; g.beginPath(); g.arc(mm.x + (player.x / TILE - sx) * scale, mm.y + (player.y / TILE - sy) * scale, 3.5, 0, 7); g.fill(); // the knight stays on top
         g.restore();
@@ -169,30 +169,25 @@
       // following someone: a ring on them when they are on the little map, a blue arrow at its edge when they are not
       const f = following && REMOTE[following];
       if (f && f.map === my) {
-        const p = at(f), inside = p.x > mm.x + 6 && p.x < mm.x + size - 6 && p.y > mm.y + 6 && p.y < mm.y + size - 6;
+        // the glass is round (src/59-hudkit.js): the friend is "on the map" inside its circle, and the arrow rides its edge
+        const ccx = mm.x + size / 2, ccy = mm.y + size / 2, p = at(f), inside = Math.hypot(p.x - ccx, p.y - ccy) < size / 2 - 8;
         g.strokeStyle = BLUE; g.lineWidth = 2;
         if (inside) { g.beginPath(); g.arc(p.x, p.y, 5 + Math.sin(time * 4) * 1.5, 0, 7); g.stroke(); }
         else {
-          const ccx = mm.x + size / 2, ccy = mm.y + size / 2, ang = Math.atan2(p.y - ccy, p.x - ccx);
-          const half = size / 2 - 9, kk = Math.min(half / Math.max(Math.abs(Math.cos(ang)), 1e-6), half / Math.max(Math.abs(Math.sin(ang)), 1e-6));
+          const ang = Math.atan2(p.y - ccy, p.x - ccx), kk = size / 2 - 9;
           g.save(); g.translate(ccx + Math.cos(ang) * kk, ccy + Math.sin(ang) * kk); g.rotate(ang);
           g.fillStyle = BLUE; g.beginPath(); g.moveTo(8, 0); g.lineTo(-5, -6); g.lineTo(-2, 0); g.lineTo(-5, 6); g.closePath(); g.fill();
           g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); g.restore();
         }
       }
     }
-    // The chip: only on the online build. It is a control on the HUD kit's left column: one row (44 px on touch), the
-    // column's control width, and HK.claim() finds its row — under whatever chips are already up (a boss bar, a
-    // machine, the quest items) and clear of every control already on screen and of the joystick and thumb seats, on
-    // either side (Settings › Move stick side), wrapping into the second column where there is one. It is drawn late
-    // in the frame, so it is the one that has to move: nothing it lands on can be covered. Hidden under other files'
-    // panels so it cannot eat their taps.
-    if (!NET.enabled || (panel && !MINE[panel])) return;
-    const label = NET.online() ? 'ONLINE ' + ONLINE.length : 'OFFLINE';
-    const s = HK.claim(HK.row(), { w: HK.ctrlW() });
-    if (s) HK.control(g, s.x, s.y, s.w, s.h, label, toggleFriends, { on: panel === 'friends', hit: label });
   });
-
+  // FRIENDS is a seal in the kit's seal row (src/59-hudkit.js): blue wax with a brass badge counting the knights online,
+  // grey wax while the wire is down, only on the online build. It opens Friends (F); it wears a green halo while open.
+  hudSeal('friends', () => ({
+    show: !!NET.enabled, wax: NET.online() ? 'blue' : 'grey', badge: NET.online() ? String(ONLINE.length) : null,
+    on: panel === 'friends', action: toggleFriends, name: NET.online() ? `Friends: ${ONLINE.length} online` : 'Offline',
+  }));
   // ---------- the world map: every friend on this map as a named blue dot (drawn after the core's map, so it wraps drawPanels) ----------
   function drawMapFriends(g, narrow) {
     const L = mapLayout; if (!panelRect || !L) return;   // where 10-hud drew the map this frame (an instance is centred in the box)
@@ -363,11 +358,11 @@
       check(P + 'a knight on your map is drawn among the world items (with a mech or fallen too); one on another map is not', !!REMOTE.Ava && !!REMOTE.Ben && !!ava && !ben && drew === true && drew2 === true && slid, { ava: !!ava, ben: !!ben, drew, drew2, slid }); }
     // the roster, the chip, the panel and the F key
     { feed({ t: 'who', list: [{ n: 'Cohen', map: 'over', region: 'Thistledown', lv: 5 }, { n: 'Ava', map: 'over', region: 'The Wilds', lv: 7 }, { n: 'Ben', map: 'spider_den', region: 'The Spider Den', lv: 3 }] });
-      closePanel(); render(); const chip = buttons.find(b => b.label === 'ONLINE 3'); if (chip) chip.action(); render();
+      closePanel(); render(); const chip = buttons.find(b => b.label === 'friends' && b.badge === '3'); if (chip) chip.action(); render();
       const opened = panel === 'friends', give = buttons.find(b => /^(disabled:)?Give$/.test(b.label)), giveOn = !!give && !give.disabled, follow = buttons.find(b => /Follow/.test(b.label)), benFollow = buttons.filter(b => /Follow/.test(b.label))[1];
       if (follow) follow.action(); const followed = PLAYERS.following === 'Ava'; render(); const stop = buttons.find(b => /Stop following|Following/.test(b.label)); const target = mapTargets().find(t => t.id === 'friend'); if (stop) stop.action();
       closePanel(); F.press('KeyF'); const byKey = panel === 'friends'; F.press('KeyF'); const closed = panel === null;
-      check(P + 'the ONLINE chip is a button that opens Friends (F does too): Give is live within two tiles, Follow marks a friend on the map', !!chip && opened && giveOn && !!follow && !follow.disabled && !!benFollow && benFollow.disabled && followed && !!stop && !!target && target.label === 'Ava' && PLAYERS.following === null && byKey && closed, { chip: !!chip, opened, giveOn, follow: follow && follow.label, ben: benFollow && benFollow.label, followed, stop: !!stop, target, byKey, closed }); }
+      check(P + 'the FRIENDS seal (its badge counting the 3 knights online) is a button that opens Friends (F does too): Give is live within two tiles, Follow marks a friend on the map', !!chip && opened && giveOn && !!follow && !follow.disabled && !!benFollow && benFollow.disabled && followed && !!stop && !!target && target.label === 'Ava' && PLAYERS.following === null && byKey && closed, { chip: !!chip, opened, giveOn, follow: follow && follow.label, ben: benFollow && benFollow.label, followed, stop: !!stop, target, byKey, closed }); }
     // gifts: out of the pack and onto the wire; back into the pack when the world sends it back; a friend's gift lands
     { const inv0 = player.inv.map(s => s ? { ...s } : null);
       feed({ t: 'p', n: 'Ava', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 7, look: null, mech: null, dead: false, def: 100, act: null }); F.step([]);
@@ -423,18 +418,18 @@
         window.__forceTouch = t;
         for (const [w, hh, name] of [[390, 844, 'phone'], [844, 390, 'landscape'], [768, 1024, 'tablet'], [1280, 800, 'desktop']]) {
           closePanel(); if (!setSize(w, hh)) continue; const where = name + (t ? ' touch' : ' desktop'); sizes.push(where);
-          const bs = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0); const mine = bs.filter(b => /^ONLINE/.test(b.label));
+          const bs = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0); const mine = bs.filter(b => b.label === 'friends');
           for (const a of mine) for (const b of bs) if (a !== b && overlap(a, b)) hits.push(where + ': ' + a.label + ' × ' + b.label);
-          if (!mine.length) hits.push(where + ': no chip');
+          if (!mine.length) hits.push(where + ': no FRIENDS seal');
           if (t) for (const a of mine) {
             if (a.w < 44 || a.h < 44) hits.push(where + ': ' + a.label + ' is ' + Math.round(a.w) + 'x' + Math.round(a.h));
-            const cx = window.__stickRight === true ? VW - 110 : 110;
-            if (overlap(a, { x: cx - 60, y: VH - 170, w: 120, h: 120 })) hits.push(where + ': ' + a.label + ' is inside the joystick');
+            const st = HK.cur().stick;   // the stick's keep-out circle, wherever Settings › Move stick side puts it
+            if (st && Math.hypot(a.cx - st.x, a.cy - st.y) < a.r + st.keep) hits.push(where + ': ' + a.label + ' is inside the joystick');
           }
         }
       }
       window.__forceTouch = t0; setSize(vw0, vh0);
-      check(P + 'the ONLINE chip sits clear of every other button at phone, landscape, tablet and desktop sizes', hits.length === 0 && sizes.length === 8, { hits, sizes }); }
+      check(P + 'the FRIENDS seal sits clear of every other button at phone, landscape, tablet and desktop sizes (on touch: 44 px, out of the stick)', hits.length === 0 && sizes.length === 8, { hits, sizes }); }
     // put the world back
     NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
     clearAll(); lastSig = null; pending.length = 0; lastGiftAt = -1e9;

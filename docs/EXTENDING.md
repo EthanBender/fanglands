@@ -70,11 +70,131 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   own solid tiles to `INTERESTING_TILES` so a tap on them works on the iPad. A feature with its own people list (not `NPCS`) registers it once:
   `TAP_PEOPLE.push(() => MY_PEOPLE.map(p => ({ x: p.px, y: p.py, r: 13, id: p.id, name: p.name, talk: () => myTalk(p) })))` — return the live
   list in pixels (empty when out of reach) and the same talk call your E handler makes; a tap then walks adjacent and talks.
-- Touch: every keyboard action needs a button — register one with `buttons.push({ x, y, w, h, label, action })` from a `HOOKS.hud` draw, and
-  write key hints with `keyName('KeyE')` so touch players read "E" or "USE" as appropriate.
+- Touch: every keyboard action needs an on-screen control. Do not place buttons by hand: use the HUD kit (next section) — a seat
+  face, a book tile, or a plaque — and write key hints with `keyName('KeyE')` so touch players read "E" or "USE" as appropriate.
 - `HOOKS.draw` is called as `(g, items, cam)`, and each item you push has its `draw()` called with **no arguments** — so write
   `HOOKS.draw.push((g, items) => { items.push({ y, draw: () => { ...use g... } }) })`. A handler that takes one parameter gets
   the canvas context where it expects the list, and nothing renders, silently.
+
+## HUD (src/59-hudkit.js, the Storybook Heraldry kit) — the API every feature file uses
+
+The HUD is one knight's kit, drawn from one file and laid out by one engine. **Never place a HUD control or readout by
+hand.** Every place is reserved in advance, so nothing moves when something appears; a feature asks the kit for a
+place and a look. The rules the look follows (so a new piece fits without reading the code):
+
+- Five materials, one job each: IRON studs are things you DO (the four seats, the book's tiles); WAX seals are things you
+  OPEN (MENU, FRIENDS, the quest seal, the close seal); LEATHER holds what you CARRY (the belt, the pouches, BAG); dark
+  VELLUM carries words (the scroll, the talk page, tooltips, tags); SABLE cloth carries numbers and news (the crest's
+  banner, the notice).
+- Colour means state. Gold (`HK.T.gold`, `goldHi`) means "look here / ready / selected". Red (`HK.T.gules`, `HK.T.bad`) means
+  health or danger ONLY. Green (`good`) = on / healthy, amber (`warn`) = wait / low. `HK.T.friend` blue is for friends only.
+- Two type families: Cinzel for names, numbers, ribbons and titles (`HK.FC(weight, px)`, a fixed size), the system sans for
+  sentences (`HK.FS(weight, px)`, which grows with Settings › Text size). Draw text with `HK.text(g, s, x, y, { font, align,
+  color, halo, shadow })`; wrap sentences with `HK.wrap(g, s, maxW, maxLines, font)` (whole words only; `more` says it ran out).
+- Anything on the world gets a plate or a 3 px halo (`halo: 3`). No emoji, no glyph fonts: marks are drawn (`HK.EM`, below).
+- Every tap target is at least 44 px; nothing tappable in the notch / Dynamic Island / home-indicator bands or on the stick.
+  The self-test (the HUD audit) fails the build if a feature breaks any of this, at every device size.
+
+### Plaques (the column under the quest scroll) — for things that come and go
+Call it every frame the thing is live, from a `HOOKS.hud` handler; the kit claims the next free plaque slot and draws it.
+```js
+HOOKS.hud.push(g => {
+  if (!graves.out) return;
+  HK.addPlaque(g, { id: 'graves', emblem: 'skull', name: 'GRAVES 3', right: 'risen 1', sub: 'Dusk: the dead are stirring', edge: HK.T.warn });
+});
+```
+Fields: `id` (stable, for the fade-in), `emblem` (a name in `HK.EM`) or `portrait: { hair, skin, tunic, down }`, `name` (Cinzel
+caps; shrinks to fit), `right` (a short value on the right, e.g. `'42 / 60'`, `'38s'`), then EITHER `sub` (one line of sans) OR
+`frac` (0..1, a bar; `bar: 'good' | 'warn' | 'bad' | colour`, default the health ramp), `stars: { n, of }` (drawn stars after the
+name), `edge` (a meaning colour for the plate's edge: `HK.T.bad` for danger, `HK.T.warn` for wait), `nameColor`, `rightColor`.
+Returns the rect, or `null` when the column is full (it then folds into the brass "+n" badge on the last slot). Desk and iPad
+have 4 slots, phones 2 (1 on an iPhone SE); in a phone boss fight the rolled quest strip takes slot 1.
+`HK.plaque(g, rect, fields)` draws one at a rect you already hold. The old `HK.slot(h)` / `HK.claim(h, { w })` still hand out
+plaque slots (same cursor, `HUD.leftY`) for code not yet moved; new code uses `HK.addPlaque`.
+
+### Seat faces (the four touch seats: `swing | use | block | ctx`; on a computer, the four medallions on the belt)
+There are never more than four seats and they never move; what changes is the FACE a seat wears. Register a face once, at
+load time (the call is hoisted, so files before 59 can use it too):
+```js
+hudSeatFace('ctx', {
+  id: 'leave', prio: 30, when: () => inDungeon(),           // the first face whose when() is true wins, highest prio first
+  emblem: 'leave', ribbon: 'LEAVE', key: 'L', name: 'Leave', // emblem from HK.EM; ribbon = its word and its button label
+  action: leave,                                             // fired on the press (seats are down-fire controls)
+});
+```
+Any field may be a value or a function: `emblem, ribbon, label, key, name, lit` (gold halo: "press me now"), `on` (green halo),
+`disabled` (flat grey; the press still fires, so it can say why), `asleep` (45%, nothing to do), `cool: { frac, text }` (a
+cooldown sweep with seconds), `charge` (0..1, a gold ring filling outside the rim), `badge`, `hold: true` (a HOLD target: the
+press does not fire; read `HK.held('block')` in your update), `learn: 'id'` (its ribbon hides after 20 uses while learning).
+The table in use (prio in brackets): **swing** SWING (0), STOMP / RAM in a machine (10), SWING disabled on the mare (10);
+**use** the faced verb TALK / CHOP / MINE / FISH / COOK / OPEN / ENTER / USE (0), CRUSH asleep in a machine (10), BOMB in the
+Barrelbeast (30, 32-beast), CRUSH lit with a plank in front (50), NEXT while someone talks (100); **block** BLOCK (0,
+47-outliers), the machine special (10, 55-riding); **ctx** RIDE (10, 51-mounts), BUILD (20, 63-house), LEAVE (30, 16-instances),
+EXIT in a machine (50), GET DOWN on the mare (50, 51-mounts). `HK.seat(name)` gives a seat's circle `{ x, y, r }`;
+`HK.face(name)` the face it shows this frame.
+
+### Book tiles (the Knight's Book: MENU / Esc) — for everything rarely used
+```js
+hudControl({ id: 'music', emblem: 'music', key: 'N', label: () => 'MUSIC', on: () => enabled, action: toggle });
+```
+The twelve kit tiles are fixed (BAG, SKILLS, QUESTS, CRAFTING, MAP, WIKI, FRIENDS, CHAT, HOME, HELP, MUSIC, MARKERS); a
+registration with one of those ids supplies its live `action`, `on`, `asleep`, `badge`. Any other id becomes an extra tile after
+the twelve (the grid grows a row). `show` is ignored for the twelve. Opening a tile closes the book first. Rows on the book's
+game page come from `HOOKS.pauseMenu` entries, `(g, x, y, w, h) => button(g, x, y, w, h, 'Title screen', fn)`, drawn as iron
+plate buttons (a label starting with Resume / Settings / Title screen / Log out / New game gets its emblem and key).
+
+### Seals, bosses, the crest
+- `hudSeal('friends', () => ({ show, wax: 'blue' | 'grey' | 'umber', badge, on, action, name }))` — the FRIENDS seal (73-players).
+  HOME and MENU are the kit's own.
+- `hudBoss(() => alive ? { id, mark: 'goblin' | 'skull' | 'fang' | 'bird', name, lv, hp, max, phase, heart: { hp, max }, edge } : null)`
+  — a boss banner (up to two; top centre on a computer and a landscape iPad, the scroll's slot elsewhere). The core already shows
+  any monster of level 25+ and 300+ hp within 12 tiles; `phase` replaces "LV n" with a word (FIRE / ICE / STONE).
+- `hudMechName(() => riding() ? 'Nell' : null)` — the machine's name on the crest (its hp is the crest's big number).
+
+### Tooltips, the long-press name, the coach
+- A HUD control's tooltip (computer, after 350 ms of hover) and its long-press name (touch, 400 ms: it names instead of firing)
+  come from its `buttons[]` entry: `{ name: 'World map', keys: ['M'], sub: 'Click to open the big map' }`.
+- The coach: `HK.teach(id, key, verb, at, { emblem })` — call it every frame the action is available; it shows a vellum tag with
+  the keycap (on touch: the seat's emblem) the first 3 times it appears (counted in `localStorage` `fl_coach_<id>`, once a session
+  if storage refuses). `at` is `{ x, y, lift }` in world pixels (the tag sits above the thing) or `{ sx, sy }` in screen pixels.
+- A small vellum tag anywhere: `HK.tag(g, x, y, label, { key, emblem, side: 'right' })`.
+
+### Controls and input (05-input.js)
+`buttons[]` entries: `{ x, y, w, h, label, action }` plus, optionally, `r` (+ `cx`, `cy`: hit as a circle), `up: true` (fires on
+pointer-up inside; sliding off cancels; held 400 ms it names itself), `hold: true` (a hold target), `inert: true` (swallows the
+press, does nothing: a disabled button), `name` / `keys` / `sub` (its tooltip). `button(g, x, y, w, h, label, action, colour,
+enabled)` draws an iron plate button and pushes an `up` entry; its colour is read as a meaning (green = primary, red = danger).
+The press shows in the very next frame: `HK.stateOf(label)` → `{ pressed, hover, ripple }`; `HK.press` / `HK.hover` are the live
+press and hover. A HUD control under an open panel takes no taps (10-hud drops it).
+
+### Drawing with the kit
+Primitives are plain `(g, ...)` canvas functions: `HK.stud(g, cx, cy, r, emblem, state)`, `HK.seal(g, cx, cy, r, emblem, wax,
+state)`, `HK.pouch(g, rect, item, key, state)`, `HK.satchel(g, rect, state)`, `HK.plateButton(g, rect, emblem, label, tone,
+state)`, `HK.bookTile(g, cx, cy, D, emblem, word, key, state)`, `HK.plaque(g, rect, fields)`, `HK.bossBanner(g, rect, boss)`,
+`HK.noticeRibbon(g, rect, text, alpha)`, `HK.banner(g, rect, { kind: 'area' | 'level', title, sub, alpha })`, `HK.meterBar(g, x,
+y, w, h, frac, colour, { ticks, trail })`, `HK.ribbon(g, cx, cy, label, o)`, `HK.badge(g, cx, cy, text, size)`, `HK.keycap(g, x,
+y, key, size)`, `HK.tooltip(g, anchor, title, keys, sub, avoid)`, `HK.vellumPlate(g, x, y, w, h)`, `HK.bookCover` / `HK.bookPage`,
+`HK.brackets(g, x, y, w, h)` (the gold world-prompt corners). A `state` is `{ pressed, hover, lit, on, disabled, asleep, cool:
+{ frac, text }, charge, badge, ribbon }`. Emblems: `HK.emblem(g, name, cx, cy, size, colour, { hole })` with `name` from
+`HK.EM`: swing sword stomp ram hand talk chat block goblin bag pin play castle erase craft quests home bomb exit leave map
+skills wiki book help music friends menu fang expand cog gear star skull horseshoe getdown door tick cloud axe pick hook
+pot next crush bolt key bird prop drill build arch coin heart swords chevron chevronR chevronL close. Static layers go
+through `HK.cache(g, key, x, y, w, h, draw, pad)` (drawn once per size, DPR and state), so a feature's art stays cheap.
+
+### Geometry
+`HK.cur()` is this frame's layout: `crest`, `mm` (the ring: `{ x, y, r, R }`), `seals`, `scroll`, `plaques`, `boss`, `notice`,
+`banners`, `dialog` (the talk page), `belt`, `pouches`, `bag`, `seats`, `stick` (`{ x, y, r, keep }`), `S` (the safe insets), `fam`
+(`desk | tab | phoneP | phoneL`). `HK.lane('chat', n)` is the chat strip's lane for n lines; `HK.lane('notice')` the notice
+lane. `HUD_LAYOUT` keeps `questX / Y / W / H` (the scroll, or the rolled strip), `hotbarY / H` (the belt) and `bossBarY`. The
+minimap is drawn by 09-render's `drawMinimap` inside the ring's round glass; `minimapRect` is the glass's square, for dots.
+
+### The audit
+`HOOKS.selfTest` in 59-hudkit runs the layout engine over the spec's matrix and then draws the real HUD at every device size
+(iPhone SE / 12 / Pro Max both ways, both iPads, a laptop), touch and mouse, stick either side, minimap on and off, offline and
+online with chat, 0 / 1 / 2 bosses, on foot and in each machine, at every text size, plus the busy fight, the talk page, a
+dungeon and the book — and fails on any overlap, anything under 44 px, anything in a safe-area band or on the stick, anything
+off screen, anything that moves between scenes, or any string that does not fit its plate at Large. `HK.audit` exposes the
+pieces (e.g. `HK.audit.frameIssues(where)` after a `drawHud`) so a feature's own check can use them.
 
 ## Useful core functions
 

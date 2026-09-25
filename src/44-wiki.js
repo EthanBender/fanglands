@@ -573,18 +573,23 @@
     { closePanel(); const inv0 = player.inv.map(s => s ? { ...s } : null); player.inv[0] = { id: 'iron_dagger', qty: 1 }; openPanel('inventory'); render(); F.clickButton('slot0'); render(); render(); const wb = buttons.find(b => b.label === 'Wiki'); const has = !!wb; const c = has ? (wb.action(), render(), true) : false; const onPage = panel === 'wiki' && wk.section === 'items' && wk.id === 'iron_dagger'; closePanel(); player.inv = inv0;
       check(P + 'Wiki button under a selected pack item opens that item\'s page', has && c && onPage, { has, c, onPage }); }
     // layout: no two buttons overlap at four viewports, book closed and open
-    { const vw0 = VW, vh0 = VH; const hits = {}; const prevTouch = window.__forceTouch; window.__forceTouch = undefined;
+    // (the size is set on the window, so render() really lays the HUD out at each one; the WIKI entry is a tile in the
+    // Knight's Book, so with the book closed it is looked for in the book, and with it open the book's own page is up)
+    { const own = kk => Object.getOwnPropertyDescriptor(window, kk), sz0 = { w: own('innerWidth'), h: own('innerHeight') }; const hits = {}; const prevTouch = window.__forceTouch; window.__forceTouch = undefined;
       const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
       for (const [w, hh, name] of [[390, 844, 'phone'], [844, 390, 'landscape'], [768, 1024, 'tablet'], [1280, 800, 'desktop']]) {
-        VW = w; VH = hh;
+        window.innerWidth = w; window.innerHeight = hh;
         for (const state of ['closed', 'open']) {
           if (state === 'open') WIKI.open('monsters', 'goblin'); else closePanel();
           render(); const bs = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+          if (VW !== w || VH !== hh) (hits[name + ':' + state] = hits[name + ':' + state] || []).push('the size did not take');
           for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) if (overlap(bs[i], bs[j])) (hits[name + ':' + state] = hits[name + ':' + state] || []).push(bs[i].label + ' × ' + bs[j].label);
-          const wb = bs.some(b => /^wiki/i.test(b.label)); if (!wb) (hits[name + ':' + state] = hits[name + ':' + state] || []).push('no WIKI button');
+          let wb = state === 'open' ? panel === 'wiki' && bs.some(b => b.label === '×') : false;
+          if (state === 'closed') { paused = true; render(); const tile = buttons.find(b => b.label === 'WIKI'); wb = !!tile && tile.r >= 22; paused = false; render(); }
+          if (!wb) (hits[name + ':' + state] = hits[name + ':' + state] || []).push('no WIKI button');
         }
       }
-      closePanel(); VW = vw0; VH = vh0; window.__forceTouch = prevTouch; render();
+      closePanel(); if (sz0.w) { Object.defineProperty(window, 'innerWidth', sz0.w); Object.defineProperty(window, 'innerHeight', sz0.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } } window.__forceTouch = prevTouch; render();
       check(P + 'no two on-screen buttons overlap at phone, landscape, tablet and desktop sizes, book closed and open (touch layouts only when the device is touch)', Object.keys(hits).length === 0, { hits, touch: isTouch }); }
     // WIKI.add
     { const ok0 = WIKI.add('monsters', { id: 'wiki_test_thing', name: 'Test thing', level: 3, hp: 1, maxHit: 1, att: 1, def: 1, aggro: false, boss: false, where: ['Nowhere'], drops: [], tablePct: 0, blurb: 'Only a test.' }); const got = WIKI.get('monsters', 'wiki_test_thing'); const listed = WIKI.list('monsters').includes('wiki_test_thing'); const lines = WIKI.lines('monsters', 'wiki_test_thing').length > 0;

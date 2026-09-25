@@ -104,18 +104,33 @@ function render() {
     if (p.kind === 'arrow') { g.save(); g.translate(p.x, p.y); g.rotate(Math.atan2(p.vy, p.vx)); g.strokeStyle = '#8a6a3a'; g.lineWidth = 2; g.beginPath(); g.moveTo(-10, 0); g.lineTo(8, 0); g.stroke(); g.fillStyle = '#c9ccd3'; g.beginPath(); g.moveTo(8, -2.5); g.lineTo(13, 0); g.lineTo(8, 2.5); g.closePath(); g.fill(); g.restore(); }
     else { g.fillStyle = '#2f2f35'; g.beginPath(); g.arc(p.x, p.y, 7, 0, 7); g.fill(); g.fillStyle = '#ffb347'; g.beginPath(); g.arc(p.x + 5, p.y - 7, 2 + Math.sin(time * 30) * 1, 0, 7); g.fill(); if (p.kind === 'sticky' && p.t >= p.life) { g.strokeStyle = `rgba(255,80,40,${0.5 + Math.sin(time * 20) * 0.5})`; g.lineWidth = 2; g.beginPath(); g.arc(p.x, p.y, 56, 0, 7); g.stroke(); } }
   }
+  // the world prompt (src/59-hudkit.js): gold corner brackets on the tile or person you face, and after the world is drawn
+  // a small verb tag beside it that matches the USE seat's face ("[E] Talk" on a computer, the USE emblem on touch)
+  let prompt = null;
   if (!player.dead) {
     const npc = npcInFront();
     const { tx, ty } = frontTile(player);
-    if (npc && !player.mech) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(npc.px, npc.py, 20, 0, 7); g.stroke(); g.setLineDash([]); }
-    else if (INTERESTING(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
-    if (player.action && player.action.need) { const p = player.action.t / player.action.need; g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(player.x - 16, player.y - 34, 32, 5); g.fillStyle = '#58a6ff'; g.fillRect(player.x - 16, player.y - 34, 32 * p, 5); }
+    if (npc && !player.mech) { HK.brackets(g, npc.px - 18, npc.py - 24, 36, 44); prompt = { x: npc.px + 20, y: npc.py - 6 }; }
+    else if (INTERESTING(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); prompt = { x: tx * TILE + TILE + 2, y: ty * TILE + TILE / 2 }; }
+    // the action bar: a gold fill on a dark iron track
+    if (player.action && player.action.need) { const p = clamp(player.action.t / player.action.need, 0, 1); roundRect(g, player.x - 16, player.y - 35, 32, 6, 3); g.fillStyle = 'rgba(14,16,20,0.85)'; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.9)'; g.lineWidth = 1; g.stroke(); if (p > 0) { roundRect(g, player.x - 15, player.y - 34, Math.max(4, 30 * p), 4, 2); g.fillStyle = '#e8bf5c'; g.fill(); } }
   }
   for (const p of particles) { g.globalAlpha = clamp(p.t * 2, 0, 1); g.fillStyle = p.color; g.beginPath(); g.arc(p.x, p.y, p.r, 0, 7); g.fill(); }
   g.globalAlpha = 1;
   for (const f of floaters) { g.globalAlpha = clamp(f.t * 1.5, 0, 1); g.font = `bold ${f.size}px sans-serif`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(f.text, f.x, f.y); g.fillStyle = f.color; g.fillText(f.text, f.x, f.y); }
   g.globalAlpha = 1;
   g.restore();
+  // the verb tag, in screen space, beside what you face (the first times: the coach's longer line, "[E] Talk to Tobin")
+  if (prompt && !paused && !panel && !dialog.cur) {
+    const face = HK.face('use'), pv = HK.usePreview(), mech = !!player.mech;
+    const verb = mech ? (face && face.id === 'crush' ? 'Crush' : null) : pv ? pv.verb.charAt(0) + pv.verb.slice(1).toLowerCase() : null;
+    if (verb) {
+      const sx = Math.round(prompt.x - cam.x), sy = Math.round(prompt.y - cam.y), t = touchMode();
+      const long = pv && pv.what && pv.verb === 'TALK' ? `${verb} to ${pv.what}` : pv && pv.what ? `${verb} ${pv.what}` : verb;
+      const coached = HK.teach('use', t ? null : 'E', long, { sx, sy }, { emblem: face && face.emblem });
+      if (!coached) HK.tag(g, sx, sy, verb, { side: 'right', key: t ? null : 'E', emblem: t ? (face && face.emblem) : null });
+    }
+  }
 
   // cave darkness
   if (isCaveTile(ptx, pty) || cam.x < (CAVE_EXIT_X + 2) * TILE && cam.y < 17 * TILE) {
@@ -130,8 +145,11 @@ function render() {
     for (const L of lights) { const gr = dg.createRadialGradient(L.x - cam.x, L.y - cam.y, 10, L.x - cam.x, L.y - cam.y, L.r); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); dg.fillStyle = gr; dg.beginPath(); dg.arc(L.x - cam.x, L.y - cam.y, L.r, 0, 7); dg.fill(); }
     g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(darkLayer, 0, 0); g.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
-  if (player.hurtT > 0) { g.fillStyle = `rgba(220,40,40,${player.hurtT * 0.8})`; g.fillRect(0, 0, VW, VH); }
-  if (player.dead) { g.fillStyle = `rgba(0,0,0,${clamp(player.deadT / 2, 0, 0.75)})`; g.fillRect(0, 0, VW, VH); g.fillStyle = '#fff'; g.font = `600 34px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('You fell...', VW / 2, VH / 2); }
+  // hurt: a red vignette at the screen's edges that fades with hurtT (the crest's liquid drops with a white flash too);
+  // the middle, where the knight is, stays clear
+  if (player.hurtT > 0) { const a = clamp(player.hurtT * 0.9, 0, 0.75), r0 = Math.min(VW, VH) * 0.38, r1 = Math.hypot(VW, VH) * 0.56; const vg = g.createRadialGradient(VW / 2, VH / 2, r0, VW / 2, VH / 2, r1); vg.addColorStop(0, 'rgba(210,40,30,0)'); vg.addColorStop(1, `rgba(210,40,30,${a})`); g.fillStyle = vg; g.fillRect(0, 0, VW, VH); }
+  // death: the fade, and "You fell..." in Cinzel on a sable plate
+  if (player.dead) { g.fillStyle = `rgba(0,0,0,${clamp(player.deadT / 2, 0, 0.75)})`; g.fillRect(0, 0, VW, VH); const w = Math.min(VW - 40, 320), h = 64, x = VW / 2 - w / 2, y = VH / 2 - h / 2 - 10; roundRect(g, x, y, w, h, 5); g.fillStyle = 'rgba(20,15,13,0.92)'; g.fill(); roundRect(g, x + 3, y + 3, w - 6, h - 6, 3); g.strokeStyle = 'rgba(217,178,92,0.55)'; g.lineWidth = 1; g.stroke(); HK.text(g, 'You fell...', VW / 2, y + h / 2 + 12, { font: HK.FC(600, 32), align: 'center', color: HK.T.ink, shadow: 'rgba(0,0,0,0.9)' }); }
   drawHud(g);
 }
 function drawMinimap(g, x, y, size) {
@@ -145,5 +163,5 @@ function drawMinimap(g, x, y, size) {
   if (player.home && !view.id) dot(player.home.x, player.home.y, '#7ec8ff', 3); // home is a place in the world, not in here
   dot(player.x, player.y, 'rgba(0,0,0,0.7)', 5); dot(player.x, player.y, '#ffffff', 3.5); // a dark rim: a white dot alone vanishes on Aerie's white cloud
   g.restore();
-  g.strokeStyle = HK.C.CTRL_EDGE; g.lineWidth = 1.5; roundRect(g, x, y, size, size, HK.R); g.stroke(); // tapping it opens the map, so it wears the kit's pressable edge (src/59-hudkit.js)
+  // the HUD kit frames the map in its iron ring and clips it to the round glass (src/59-hudkit.js drawRing)
 }

@@ -375,30 +375,11 @@
     items.push({ y: 1e9 - 0.5, draw: () => drawNight(g) }); // under the other darkness layers (1e9), over everything else
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const { tx, ty } = frontTile(player);
-      if (tileAt(tx, ty) === T_CRYPT) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (tileAt(tx, ty) === T_CRYPT) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
-  // the sun/moon dial under the minimap (inside its corner on a phone, where the MENU stack takes the space below)
-  HOOKS.hud.push((g, narrow) => {
-    if (typeof title !== 'undefined' && title.active) return;
-    const inst = window.__instance; if (inst && inst !== AFTER.id) return;
-    const mmSize = HK.mmSize(), mmx = HK.mmX(), mmy = 14;   // one minimap box, from the kit (src/59-hudkit.js)
-    const tight = isTouch && narrow;
-    const w = tight ? 44 : 60, h = tight ? 14 : 18, x = tight ? mmx + 4 : mmx + mmSize / 2 - w / 2, y = tight ? mmy + mmSize - h - 4 : mmy + mmSize + 18;
-    const t = dayT(), night = inst === AFTER.id || t >= LIGHT, p = inst === AFTER.id ? 0.5 : night ? (t - LIGHT) / (DAY - LIGHT) : t / LIGHT;
-    // the same plate as everything else (src/59-hudkit.js); night only shifts the scrim a touch bluer
-    HK.plate(g, x, y, w, h, night ? { top: 'rgba(14,18,40,0.76)', bottom: 'rgba(10,13,30,0.64)' } : {});
-    const r = h - 4, cx = x + w / 2, by = y + h - 2;
-    g.strokeStyle = HK.C.RULE; g.lineWidth = 1; g.beginPath(); g.arc(cx, by, r, Math.PI, 0); g.stroke();
-    const ang = Math.PI - p * Math.PI, dx = cx + Math.cos(ang) * r, dy = by - Math.sin(ang) * r;
-    if (!night) {
-      g.fillStyle = '#ffd166'; g.beginPath(); g.arc(dx, dy, 3.2, 0, 7); g.fill();
-      g.strokeStyle = 'rgba(255,209,102,0.6)'; for (let k = 0; k < 6; k++) { const q = k / 6 * Math.PI * 2; g.beginPath(); g.moveTo(dx + Math.cos(q) * 4.2, dy + Math.sin(q) * 4.2); g.lineTo(dx + Math.cos(q) * 5.8, dy + Math.sin(q) * 5.8); g.stroke(); }
-    } else {
-      g.fillStyle = '#e8ecff'; g.beginPath(); g.arc(dx, dy, 3.4, 0, 7); g.fill();
-      g.fillStyle = 'rgba(10,14,40,0.95)'; g.beginPath(); g.arc(dx + 1.7, dy - 0.8, 2.7, 0, 7); g.fill();
-    }
-  });
+  // The day is drawn on the minimap's iron ring (src/59-hudkit.js): a groove along its top arc where the sun rides by day,
+  // reddening at dusk, with the moon riding it at night and the glass dimmed. It reads window.NIGHT.phase() and dayT().
 
   // ---------- test / debug handle ----------
   window.NIGHT = { DAY, LIGHT, DUSK, phase, alpha, overlay: overlayAlpha, dayT, alive: nightAlive, resetTimer: () => { spawnT = 0; }, timer: () => spawnT, canSpawn, inNoGo, noGoRects, tiles: { crypt: T_CRYPT, deadTree: T_DEAD } };

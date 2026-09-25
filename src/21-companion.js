@@ -336,7 +336,7 @@
     if (minimapRect && c.downT <= 0) {
       const { x: mx, y: my, w: ms } = minimapRect; const { scale: sc, sx, sy } = miniWindow(ms);
       const dx = mx + (c.x / TILE - sx) * sc, dy = my + (c.y / TILE - sy) * sc;
-      if (dx > mx + 2 && dx < mx + ms - 2 && dy > my + 2 && dy < my + ms - 2) { g.fillStyle = '#9fe0b0'; g.beginPath(); g.arc(dx, dy, 2.5, 0, 7); g.fill(); }
+      if (Math.hypot(dx - (mx + ms / 2), dy - (my + ms / 2)) < ms / 2 - 3) { g.fillStyle = '#a6f0a0'; g.beginPath(); g.arc(dx, dy, 2.5, 0, 7); g.fill(); }   // inside the ring's round glass (src/59-hudkit.js)
     }
   });
 

@@ -16,8 +16,8 @@
 const SETTINGS = (() => {
   const KEY = 'fanglands.settings';
   const LEGACY = { sound: ['fanglands.muted', v => v !== '1', on => on ? '0' : '1'], music: ['fanglands.music', v => v !== '0', on => on ? '1' : '0'], kid: ['fanglands.kidmode', v => v === '1', on => on ? '1' : '0'] };
-  const DEFAULTS = { sound: true, music: true, kid: false, tap: true, stick: 'left', text: 'normal', speech: 'normal', damage: true, shake: true, levels: true, minimap: true };
-  const OPTIONS = { sound: [true, false], music: [true, false], kid: [true, false], tap: [true, false], stick: ['left', 'right'], text: ['normal', 'large'], speech: ['slow', 'normal', 'fast'], damage: [true, false], shake: [true, false], levels: [true, false], minimap: [true, false] };
+  const DEFAULTS = { sound: true, music: true, kid: false, tap: true, stick: 'left', text: 'normal', speech: 'normal', damage: true, shake: true, levels: true, minimap: true, words: 'learning' };
+  const OPTIONS = { sound: [true, false], music: [true, false], kid: [true, false], tap: [true, false], stick: ['left', 'right'], text: ['small', 'normal', 'large'], speech: ['slow', 'normal', 'fast'], damage: [true, false], shake: [true, false], levels: [true, false], minimap: [true, false], words: ['learning', 'always', 'off'] };
   const S = { ...DEFAULTS };
   let settingsPage = 0;
   const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
@@ -69,7 +69,9 @@ const SETTINGS = (() => {
   function reset() { Object.assign(S, DEFAULTS); apply(); save(); notify('Settings put back to normal.'); }
 
   // ---------- text size: every font set on the game canvas goes through this ----------
-  const textScale = () => S.text === 'large' ? 1.2 : 1;
+  // Small 0.9 / Normal 1 / Large 1.15 (the HUD kit's type tokens). The kit keeps its plates, names and numbers at their
+  // own size and lets only sentences grow (src/59-hudkit.js); panels and talk boxes scale through this.
+  const textScale = () => S.text === 'large' ? 1.15 : S.text === 'small' ? 0.9 : 1;
   function scaleFont(f) { const k = textScale(); if (k === 1 || typeof f !== 'string') return f; return f.replace(/(\d+(?:\.\d+)?)px/, (m, n) => (Math.round(n * k * 10) / 10) + 'px'); }
   // shadows the prototype's font accessor on one context: reads give back what was set, writes land scaled
   function installFontScale(g) {
@@ -182,7 +184,7 @@ const SETTINGS = (() => {
     const map = keyMap();
     if (!touchMode()) return map.map(r => `${r.action}: ${r.label}`).join(' · ');
     const names = []; for (const r of map) for (const c of r.codes) { const k = keyName(c.replace(/^Key/, '')); if (/^[A-Z]+$/.test(k) && TOUCH_KEY_NAMES[c.replace(/^Key/, '').toUpperCase()] && !names.includes(k)) names.push(k); }
-    return `Move: the stick on the ${S.stick} side. Buttons: ${names.join(', ')}, MENU, HELP, MUSIC. Tap the minimap for the big map.`;
+    return `Move: the stick on the ${S.stick} side. Buttons: ${names.join(', ')}. MENU opens the book with everything else. Tap the round map for the big one.`;
   }
 
   // ---------- the panel ----------
@@ -197,9 +199,10 @@ const SETTINGS = (() => {
     { key: 'damage', name: 'Damage numbers', hint: () => 'The -5 and miss that pop up on hits.' },
     { key: 'shake', name: 'Screen shake', hint: () => 'A small shake when you get hit or a bomb goes off.' },
     { key: 'levels', name: 'Monster levels', hint: () => 'Show "lv 3" beside a monster\'s name.' },
-    { key: 'minimap', name: 'Minimap', hint: () => 'The little map in the corner. A MAP button stands in for it.' },
+    { key: 'minimap', name: 'Minimap', hint: () => 'The round map in the corner. A map stud stands in for it.' },
+    { key: 'words', name: 'Button words', hint: () => 'The words under SWING, BLOCK, HOME, FRIENDS and MENU.' },
   ];
-  const VALUE_WORDS = { true: 'On', false: 'Off', left: 'Left', right: 'Right', normal: 'Normal', large: 'Large', slow: 'Slow', fast: 'Fast' };
+  const VALUE_WORDS = { true: 'On', false: 'Off', left: 'Left', right: 'Right', normal: 'Normal', large: 'Large', small: 'Small', slow: 'Slow', fast: 'Fast', learning: 'While learning', always: 'Always', off: 'Off' };
   const ROW_H = 36;
   const text = v => typeof v === 'function' ? v() : v;
   HOOKS.panel.settings = (g, narrow) => {
@@ -280,9 +283,10 @@ const SETTINGS = (() => {
         check('settings: stick side right starts the stick on the right half only (and the dialogue-safe zone moves); left is the core behaviour', rOn && lOff && zoneR && lOn && rOff && zoneL, { rOn, lOff, zoneR, lOn, rOff, zoneL }); }
       // text size
       { const P = { get font() { return this._f; }, set font(v) { this._f = v; } }; const fake = Object.create(P); fake._f = '10px x'; const ok = installFontScale(fake);
-        set('text', 'large'); fake.font = '16px sans-serif'; const big = fake._f === '19.2px sans-serif' && fake.font === '16px sans-serif' && scaleFont('bold 13px sans-serif') === 'bold 15.6px sans-serif';
+        set('text', 'large'); fake.font = '16px sans-serif'; const big = fake._f === '18.4px sans-serif' && fake.font === '16px sans-serif' && scaleFont('bold 13px sans-serif') === 'bold 15px sans-serif';
+        set('text', 'small'); fake.font = '16px sans-serif'; const small = fake._f === '14.4px sans-serif' && fake.font === '16px sans-serif' && scaleFont('bold 13px sans-serif') === 'bold 11.7px sans-serif';
         set('text', 'normal'); fake.font = '16px sans-serif'; const same = fake._f === '16px sans-serif' && scaleFont('16px sans-serif') === '16px sans-serif';
-        check('settings: text size large scales every font set on the canvas by 1.2 (reads give back the unscaled font)', ok && big && same, { ok, big, same, live: typeof ctx.font }); }
+        check('settings: text size large scales every font set on the canvas by 1.15 and small by 0.9 (reads give back the unscaled font)', ok && big && small && same, { ok, big, small, same, live: typeof ctx.font }); }
       // talk speed
       { const shownAfter = sp => { set('speech', sp); dialog.cur = null; dialog.queue.length = 0; say('B'.repeat(200), 'The Voice'); F.step([]); F.sim(29, []); const n = dialog.shown; dialog.cur = null; dialog.queue.length = 0; return n; };
         const slow = shownAfter('slow'), normal = shownAfter('normal'), fast = shownAfter('fast'); set('speech', 'normal');

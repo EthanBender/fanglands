@@ -168,7 +168,7 @@
     items.push({ y: ty * TILE + TILE - 10, draw: () => drawBay(g, tx, ty) });
     if (!player.dead && !player.mech) { // use-highlight (the core only highlights its own INTERESTING tiles)
       const ft = frontTile(player);
-      if (ft.tx === tx && ft.ty === ty) items.push({ y: 1e9, draw: () => { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); } });
+      if (ft.tx === tx && ft.ty === ty) items.push({ y: 1e9, draw: () => { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); } });
     }
   });
   HOOKS.newGame.push(() => { blueprintsDropped = 0; pendingBanner = null; });

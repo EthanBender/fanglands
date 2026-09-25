@@ -139,30 +139,24 @@
     } });
   }
   HOOKS.draw.push(drawShield);
-  // every key needs a button: BLOCK sits with the other action buttons in the thumb cluster on touch. On a
-  // desktop it used to be parked under the old bolted-on Wiki button at (274, 46); the Wiki button has moved
-  // into the control rail, so BLOCK now takes a row on the left column like every other state control.
-  // A landscape phone has no room for a sixth thumb seat (the minimap and the hotbar close in on it), so
-  // there BLOCK is a labelled control on the left column, like FULL STEAM. claim = true takes the row.
-  function blockRect(claim) {
-    if (!touchMode() || HK.short()) {
-      const s = claim ? HK.slot(HK.row()) : { x: HK.colX(0), y: Math.max(HUD.leftY, HK.stackFloor()) };
-      return { x: s.x, y: s.y, w: HK.ctrlW(), h: HK.row(), label: touchMode() ? 'BLOCK' : 'Block (R)' };
-    }
-    const p = HK.thumbSeat(5);
-    return { x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2, label: 'BLOCK', round: true };
-  }
-  // MIGRATED to the HUD kit: three states used to be three fills (blue, grey, darker grey), which read as
-  // decoration. Now the shield up is GOOD (you are protected — the kit's one meaning for green), ready is a
-  // raised control (press me), and cooling is the flat one. Colour, weight and words all agree.
-  HOOKS.hud.push(g => {
-    if (player.dead || player.mech) return;
-    if ((!touchMode() || HK.short()) && (panel || paused)) return; // on the left column: a panel would sit right on top of it
-    const up = BLOCK.t > 0, ready = BLOCK.cd <= 0 && !!shieldOn();
-    const r = blockRect(true);   // claims its row on the left column where that is where it lives
-    if (r.round) { HK.disc(g, r.x + r.w / 2, r.y + r.h / 2, r.w / 2, up ? 'UP' : 'BLOCK', { tone: up ? HK.C.GOOD : null }); buttons.push({ x: r.x, y: r.y, w: r.w, h: r.h, label: 'BLOCK', action: raiseShield }); return; }
-    HK.control(g, r.x, r.y, r.w, r.h, up ? 'BLOCKING' : r.label, raiseShield, { tone: up ? HK.C.GOOD : null, on: ready && !up, hit: 'BLOCK' });
+  // BLOCK is the block seat of the kit's four (src/59-hudkit.js): on touch the stud above SWING, on a computer the BLOCK
+  // medallion on the belt, R on the keys. ON (a green halo, the ribbon reads UP) while the shield is up, then a cooldown
+  // sweep while it comes back into place. With no shield on the arm it looks disabled, and a press still says why.
+  // In a machine the same seat holds the machine's special (src/55-riding.js); on the mare it is empty.
+  hudSeatFace('block', {
+    id: 'block', prio: 0, when: () => !player.mech, emblem: 'block', key: 'R', name: 'Block', learn: 'block',
+    ribbon: () => BLOCK.t > 0 ? 'UP' : 'BLOCK', on: () => BLOCK.t > 0, disabled: () => !shieldOn(),
+    cool: () => BLOCK.t <= 0 && BLOCK.cd > 0 ? { frac: BLOCK.cd / (BLOCK_CYCLE - BLOCK_UP), text: BLOCK.cd.toFixed(1) } : null,
+    action: raiseShield,
   });
+  // the coach: "[R] Block" at the knight the first times a blow winds up while he has a shield (src/59-hudkit.js HK.teach)
+  HOOKS.hud.push(() => {
+    if (player.dead || player.mech || paused || panel || !shieldOn() || BLOCK.cd > 0) return;
+    const m = swinger(); if (!m || !((m.attackT || 0) > 0.15 || (m.armT || 0) > 0.15)) return;
+    HK.teach('block', 'R', 'Block', { x: player.x, y: player.y, lift: 44 }, { emblem: 'block' });
+  });
+  // where the control is, for anything that asks (the seat's circle as a rect)
+  const blockRect = () => { const s = HK.seat('block'); return s ? { x: s.x - s.r, y: s.y - s.r, w: s.r * 2, h: s.r * 2, label: 'BLOCK', round: true } : null; };
 
   // ---------- teaching it: the book, and the first blow the knight takes with a shield on his arm ----------
   { const pay = t => { const d = MONSTER_DEFS[t]; return d ? `a ${d.name.toLowerCase()} (level ${d.level}) pays ${blockXp(d.level)}` : null; };

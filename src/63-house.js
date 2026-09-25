@@ -449,15 +449,14 @@
   };
 
   // ---------- HUD ----------
+  // On your island: a plaque in the kit's column (src/59-hudkit.js) with the arch mark, "Your island", the arches
+  // standing and the things built; BUILD is the context seat's face (the arch; P on the keys), after LEAVE.
+  hudSeatFace('ctx', { id: 'build', prio: 20, when: () => inside && !player.mech && !player.dead, emblem: 'build', ribbon: 'BUILD', key: 'P', name: 'Build on your island', action: () => { touch.taps.push('housebuild'); } });
+  HOOKS.hud.push(() => { if (inside && !paused && !panel && !player.dead) HK.teach('build', 'P', 'Build', { x: player.x, y: player.y, lift: 46 }, { emblem: 'build' }); });
   HOOKS.hud.push((g, narrow) => {
-    if (!inside) return;
-    const w = narrow && isTouch ? Math.min(250, VW - 108) : 250, hgt = 34, y = Math.max(HUD.leftY, 84);
-    roundRect(g, 14, y, w, hgt, 10); g.fillStyle = 'rgba(10,14,22,0.78)'; g.fill();
+    if (!inside || paused) return;
     const h = H();
-    g.fillStyle = '#8b949e'; g.font = '11px sans-serif'; g.textAlign = 'left';
-    g.fillText(`${h.made} built · ${archCount()} of ${DESTS.length} arches`, 26, y + 21);
-    button(g, 14 + w - 74, y + 4, 62, 26, 'BUILD', () => { touch.taps.push('housebuild'); }, '#1f6feb');
-    HUD.leftY = y + hgt + 6;
+    HK.addPlaque(g, { id: 'island', emblem: 'build', name: 'YOUR ISLAND', right: `${archCount()} of ${DESTS.length} arches`, sub: `${h.made} built` });
   });
 
   // ---------- drawing ----------

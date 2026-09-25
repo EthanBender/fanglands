@@ -4,7 +4,7 @@
 // tells a ten-year-old what to do next is the sentence he cannot read. Tapping it now opens the whole thing:
 // the full instruction wrapped over as many lines as it needs, where the marker is pointing, and every other
 // quest he has on the go, each one tappable to track instead.
-// Feature file: registers through HOOKS only. 10-hud publishes the box's rect on HUD_LAYOUT (questX/questW).
+// Feature file: registers through HOOKS only. 10-hud publishes the scroll's rect on HUD_LAYOUT (questX/Y/W/H).
 // ============================================================================
 {
   const boxRect = () => {
@@ -16,19 +16,9 @@
   const nameOf = id => (QUEST_DEFS[id] ? QUEST_DEFS[id].name : id);
   const textOf = id => { try { return questText(id) || ''; } catch (e) { return ''; } };
 
-  // an invisible control over the box, plus a small chevron so it looks like it opens
-  HOOKS.hud.push(g => {
-    if (paused || panel) return;
-    const r = boxRect(), id = tracked();
-    if (!r || !id) return;
-    // a hit area, not a drawn control: button() paints its label, which would print "questbox:open" over the box
-    buttons.push({ x: r.x, y: r.y, w: r.w, h: r.h, label: 'questbox:open', action: () => openPanel('quest_detail') });
-    // the chevron: two strokes in the corner, quiet enough not to fight the text
-    g.strokeStyle = 'rgba(139,148,158,0.85)'; g.lineWidth = 2; g.lineCap = 'round';
-    const cx = r.x + r.w - 16, cy = r.y + r.h / 2;
-    g.beginPath(); g.moveTo(cx - 4, cy - 4); g.lineTo(cx + 1, cy); g.lineTo(cx - 4, cy + 4); g.stroke();
-    g.lineCap = 'butt';
-  });
+  // The quest scroll (src/59-hudkit.js, drawn by 10-hud) is itself the control: the whole scroll, or the rolled strip in a
+  // phone boss fight, is one tap labelled 'questbox:open' that opens the panel below (pointer-up; the wax seal is
+  // decoration inside the hit). Its rect is published on HUD_LAYOUT, which is what boxRect() reads.
 
   // J already opens the quest list; this is the one the box opens, and it leads with the quest you are on
   const HEAD = 74, LINE = 20, ROW = 34, FOOT = 52, PAD = 18;

@@ -93,19 +93,8 @@
   }
   NET.on('welcome', () => { CLOUD.push(false); });
 
-  // ---------- the tick on the HUD, beside 14-title's 'Saved' flash ----------
-  HOOKS.hud.push(g => {
-    const el = (performance.now() - CLOUD.savedAt) / 1000;
-    if (el < 0 || el >= TICK) return;
-    const a = el < 0.2 ? el / 0.2 : 1 - (el - 0.2) / (TICK - 0.2);
-    g.globalAlpha = clamp(a, 0, 1);
-    g.textAlign = 'right'; g.font = 'bold 11px sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.fillStyle = '#8b949e';
-    const x = VW - 16, y = VH - 52;
-    g.strokeText('Saved to the cloud', x, y); g.fillText('Saved to the cloud', x, y);
-    const w = g.measureText('Saved to the cloud').width;
-    g.strokeStyle = '#3fb950'; g.lineWidth = 2; g.beginPath(); g.moveTo(x - w - 16, y - 5); g.lineTo(x - w - 12, y - 1); g.lineTo(x - w - 5, y - 10); g.stroke();
-    g.globalAlpha = 1;
-  });
+  // ---------- the tick on the HUD ----------
+  // 'Saved to the cloud' is a green tick on a drawn cloud, on the crest's banner, for a moment (src/59-hudkit.js reads CLOUD.savedAt)
 
   // ---------- self-test ----------
   const P = 'cloud: ';

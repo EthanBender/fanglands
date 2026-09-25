@@ -387,7 +387,7 @@
     if (flash > 0.01) items.push({ y: 9e8 + 2, draw: () => { g.fillStyle = `rgba(255,255,255,${flash * 0.28})`; g.fillRect(c.x - 20, c.y - 20, VW + 40, VH + 40); } });
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 4, draw: () => {
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      if (t === UPDRAFT || t === DOWNDRAFT || t === MAST) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (t === UPDRAFT || t === DOWNDRAFT || t === MAST) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 

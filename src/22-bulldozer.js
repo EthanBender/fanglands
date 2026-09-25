@@ -305,7 +305,7 @@ HOOKS.draw.unshift((g, items, cam) => {
   }
   if (!player.dead && !player.mech) { // use-highlight for the bulldozer tiles (the core only highlights its own INTERESTING tiles)
     const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-    if (t === T_DOZER || t === T_DOZER_WRECK) items.push({ y: 1e9, draw: () => { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); } });
+    if (t === T_DOZER || t === T_DOZER_WRECK) items.push({ y: 1e9, draw: () => { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); } });
   }
 });
 
