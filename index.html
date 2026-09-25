@@ -27577,7 +27577,7 @@ HOOKS.selfTest.push((check, F, h) => {
     const keep = real.map(m => ({ m, x: m.x, y: m.y, hp: m.hp, dead: m.dead, deadT: m.deadT, respawnT: m.respawnT, state: m.state, angry: m.angry, stunT: m.stunT, attackCd: m.attackCd, lastHitBy: m.lastHitBy }));
     const sent = []; let sock = null;
     const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
-    const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); sent.push(m); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
+    const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); if (m.t === 'mon') m.at = { x: player.x, y: player.y }; sent.push(m); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
     const sentOf = t => sent.filter(m => m.t === t);
     const txOf = px => Math.floor(px / TILE);
     NET.enabled = true; NET.token = 'coop-test'; NET.useFake(fake); NET.connect();
@@ -27593,8 +27593,12 @@ HOOKS.selfTest.push((check, F, h) => {
       sent.length = 0; F.sim(12);
       const mons = sentOf('mon'); const list = mons.length ? mons[mons.length - 1].list : [];
       const near = (x, y) => dist(x, y, player.x, player.y) <= NEAR || dist(x, y, ann.x, ann.y) <= NEAR;
+      // a listed x,y is Math.round of the true position (the contract sends whole pixels), so it can sit up to √½ px further out
+      // than the monster stood when the keeper picked it by the true position; measure from where the keeper stood at that moment
+      const at = mons.length ? mons[mons.length - 1].at : player;
+      const sentNear = (x, y) => dist(x, y, at.x, at.y) <= NEAR + Math.SQRT1_2 || dist(x, y, ann.x, ann.y) <= NEAR + Math.SQRT1_2;
       const shapeOk = list.length > 0 && list.every(e => Array.isArray(e) && e.length === 14 && typeof e[0] === 'string' && !!MONSTER_DEFS[e[1]] && [2, 3, 4, 5, 7, 8, 9, 12, 13].every(i => Number.isFinite(e[i])) && typeof e[6] === 'string');
-      const farExists = real.some(m => !m.dead && !near(m.x, m.y)), farListed = list.some(e => !near(e[2], e[3]));
+      const farExists = real.some(m => !m.dead && !near(m.x, m.y)), farListed = list.some(e => !sentNear(e[2], e[3]));
       check(P + 'the keeper streams snapshots in the contract shape, only for monsters near a knight', NET.online() && COOP.isKeeper() && COOP.map() === 'over' && mons.length >= 1 && shapeOk && farExists && !farListed && list.some(e => e[0] === gob.nid), { online: NET.online(), keeper: COOP.keeper(), map: COOP.map(), snapshots: mons.length, listed: list.length, shapeOk, farExists, farListed });
 
       // (b) a non-keeper shows puppets that hold still while the stream is silent
