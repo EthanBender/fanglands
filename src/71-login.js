@@ -248,26 +248,35 @@
 
   // ---------- the HTML card (real inputs: the iPad keyboard needs them; 16 px so Safari does not zoom) ----------
   let ui = null;
+  // The card wears the kit's materials in CSS: dark vellum with a gold hairline 2.5 px inside the edge, Cinzel for the
+  // heading and the labels, the system sans for sentences, iron-plate buttons (a gold edge on the main one), every button,
+  // box and the New knight switch at least 44 px tall, and 16 px inputs so iOS Safari never zooms.
   const CSS = `
-#fl-login{position:fixed;inset:0;z-index:10;display:flex;justify-content:center;align-items:flex-start;pointer-events:none;font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3}
+#fl-login{position:fixed;inset:0;z-index:10;display:flex;justify-content:center;align-items:flex-start;pointer-events:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4ead3}
 #fl-login[hidden]{display:none}
-#fl-login .fl-card{pointer-events:auto;box-sizing:border-box;width:min(440px,calc(100vw - 28px));overflow-y:auto;-webkit-overflow-scrolling:touch;background:#161b22;border:1px solid #f5c542;border-radius:10px;padding:16px 18px 14px;box-shadow:0 10px 40px rgba(0,0,0,.55)}
-#fl-login h2{margin:0 0 6px;font:700 18px "Cinzel","Trajan Pro",Georgia,serif;color:#f5c542}
-#fl-login label{display:block;font:bold 12px sans-serif;color:#c9d1d9;margin:10px 0 4px}
-#fl-login input[type=text],#fl-login input[type=password]{box-sizing:border-box;width:100%;font-size:16px;line-height:20px;padding:10px 12px;color:#e6edf3;background:#0b0f14;border:1px solid #30363d;border-radius:8px;outline:none;-webkit-appearance:none;appearance:none}
-#fl-login input:focus{border-color:#f5c542}
-#fl-login .fl-row{display:flex;gap:8px;margin-top:12px}
-#fl-login button{flex:1;font:bold 15px sans-serif;color:#fff;background:#238636;border:0;border-radius:8px;padding:11px 12px;cursor:pointer;-webkit-appearance:none;appearance:none}
-#fl-login button.fl-dim{background:#21262d;color:#e6edf3}
-#fl-login button:disabled{background:#2a2f3a;color:#6e7681}
-#fl-login .fl-check{display:flex;align-items:center;gap:8px;margin-top:12px;font:bold 13px sans-serif;color:#e6edf3;cursor:pointer}
-#fl-login .fl-check input{width:20px;height:20px;margin:0;accent-color:#f5c542}
-#fl-login .fl-hint{font:12px sans-serif;color:#8b949e;margin-top:4px}
-#fl-login .fl-err{font:bold 13px sans-serif;color:#f85149;min-height:16px;margin-top:10px}
+#fl-login .fl-card{position:relative;pointer-events:auto;box-sizing:border-box;width:min(440px,calc(100vw - 28px));overflow-y:auto;-webkit-overflow-scrolling:touch;background:linear-gradient(180deg,#31281e,#1d1712);border:1px solid rgba(0,0,0,.9);border-radius:5px;padding:18px 20px 16px;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+#fl-login .fl-card::before{content:"";position:absolute;inset:2.5px;border:1px solid rgba(217,178,92,.5);border-radius:3px;pointer-events:none}
+#fl-login h2{margin:0 0 8px;font:800 19px "Cinzel","Trajan Pro",Georgia,serif;color:#f7dc8f;text-shadow:0 1px 0 rgba(0,0,0,.9)}
+#fl-login label{display:block;font:700 12px "Cinzel","Trajan Pro",Georgia,serif;letter-spacing:.04em;color:#cdbf9e;margin:12px 0 5px}
+#fl-login input[type=text],#fl-login input[type=password]{box-sizing:border-box;width:100%;min-height:44px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:16px;font-weight:600;line-height:20px;padding:11px 12px;color:#f4ead3;background:#14100c;border:1px solid rgba(217,178,92,.35);border-radius:4px;outline:none;-webkit-appearance:none;appearance:none}
+#fl-login input::placeholder{color:#8c8170}
+#fl-login input:focus{border-color:#d9b25c;box-shadow:0 0 0 2px rgba(217,178,92,.25)}
+#fl-login .fl-row{display:flex;gap:10px;margin-top:14px}
+#fl-login button{flex:1;min-height:44px;font:700 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4ead3;background:linear-gradient(180deg,#2d3138,#16181c);border:1px solid rgba(0,0,0,.9);border-radius:6px;padding:11px 14px;cursor:pointer;box-shadow:inset 0 0 0 1.5px rgba(217,178,92,.95),inset 0 2px 0 rgba(255,255,255,.08),0 3px 8px rgba(0,0,0,.6);text-shadow:0 1px 0 rgba(0,0,0,.9);-webkit-appearance:none;appearance:none;touch-action:manipulation}
+#fl-login button.fl-dim{box-shadow:inset 0 2px 0 rgba(255,255,255,.08),0 3px 8px rgba(0,0,0,.6)}
+#fl-login button:hover{color:#f7dc8f}
+#fl-login button:active{transform:translateY(1.5px);background:linear-gradient(180deg,#16181c,#2d3138);box-shadow:inset 0 0 0 1.5px rgba(217,178,92,.6),0 0 1px rgba(0,0,0,.6)}
+#fl-login button.fl-dim:active{box-shadow:0 0 1px rgba(0,0,0,.6)}
+#fl-login button:disabled{color:#8c8170;background:linear-gradient(180deg,#24272c,#15171a);box-shadow:none;cursor:default;transform:none}
+#fl-login .fl-check{display:flex;align-items:center;gap:10px;min-height:44px;margin-top:8px;font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;letter-spacing:0;color:#f4ead3;cursor:pointer}
+#fl-login .fl-check input{width:22px;height:22px;margin:0;accent-color:#d9b25c}
+#fl-login .fl-hint{font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#cdbf9e;margin-top:5px}
+#fl-login .fl-err{font:700 14px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#ef4b3f;min-height:18px;margin-top:10px}
 #fl-login .fl-err:empty{margin-top:0;min-height:0}
-#fl-login .fl-line{font:15px sans-serif;margin:6px 0 4px}
-#fl-login .fl-status{font:12px sans-serif;color:#8b949e;margin-top:12px;padding-top:10px;border-top:1px solid #30363d;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-#fl-login .fl-status button{flex:0 0 auto;padding:7px 12px;font-size:13px}
+#fl-login .fl-line{font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:6px 0 4px}
+#fl-login .fl-line b{font:800 15px "Cinzel","Trajan Pro",Georgia,serif;color:#f7dc8f}
+#fl-login .fl-status{font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#cdbf9e;margin-top:14px;padding-top:12px;border-top:1px solid rgba(217,178,92,.3);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#fl-login .fl-status button{flex:0 0 auto;padding:9px 14px;font-size:14px}
 #fl-login [hidden]{display:none!important}`;
   function build() {
     if (ui || !hasDom()) return;
@@ -308,11 +317,12 @@
     if (canListen) window.addEventListener('resize', place);
   }
   // the card sits where the slot cards would, under the FANGLANDS heading the canvas draws
+  // (under the heading, above the canvas's bottom row: Sound and the saving line; 14-title's title.frame says where those are)
   function place() {
     if (!ui) return;
-    const short = VH < 520, ty = short ? 44 : Math.round(VH * 0.19);
-    const top = Math.round(Math.max(ty + 56, Math.min(VH * 0.34, VH - 380)));
-    ui.card.style.marginTop = top + 'px'; ui.card.style.maxHeight = Math.max(160, VH - top - 10) + 'px';
+    const F = title.frame(), top = Math.round(F.headBottom + 12);
+    ui.card.style.marginTop = top + 'px'; ui.card.style.maxHeight = Math.max(160, F.bottomY - 10 - top) + 'px';
+    ui.card.style.width = `min(440px, ${Math.max(200, Math.round(F.right - F.left - 4))}px)`;
   }
   function refresh() {
     if (!ui) return;
@@ -340,53 +350,41 @@
     }, true);
   }
 
-  // ---------- the canvas behind the card: backdrop, heading, sprites, sound button ----------
-  const KNIGHT = { tunic: '#3b6fb6', hair: '#5a3a1e', helm: '#8f96a3', shoulder: '#9aa3b2', shield: '#8a6a3a', weapon: ITEMS.iron_sword || ITEMS.wooden_sword };
+  // ---------- the canvas behind the card: 14-title's backdrop, heading, sprites and bottom row ----------
   function drawOnlineTitle(g) {
-    const narrow = VW < 640, short = VH < 520;
-    const grad = g.createLinearGradient(0, 0, 0, VH);
-    grad.addColorStop(0, 'rgba(6,8,14,0.88)'); grad.addColorStop(0.45, 'rgba(6,8,14,0.66)'); grad.addColorStop(1, 'rgba(6,8,14,0.92)');
-    g.fillStyle = grad; g.fillRect(0, 0, VW, VH);
-    const ty = short ? 44 : Math.round(VH * 0.19);
-    g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,0.75)';
-    g.font = `800 ${narrow ? 44 : short ? 48 : 72}px ${DISPLAY}`; g.strokeText('FANGLANDS', VW / 2, ty); g.fillStyle = '#f5c542'; g.fillText('FANGLANDS', VW / 2, ty);
-    g.font = `600 ${narrow ? 14 : 18}px ${DISPLAY}`; g.lineWidth = 4; g.strokeText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30)); g.fillStyle = '#c9a36a'; g.fillText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30));
-    if (!narrow) {
-      const cw = Math.min(440, VW - 28), margin = Math.round(VW / 2 - cw / 2), midY = Math.round(VH * 0.55);
-      const bob = Math.sin(title.t * 1.6) * 4, bob2 = Math.sin(title.t * 1.6 + 1.3) * 4;
-      const ks = clamp(margin / 48, 1.6, 4), ws = clamp(margin / 78, 1.3, 3.4);
-      g.save(); g.translate(margin / 2, midY); g.scale(ks, ks); g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 12, 12, 5, 0, 0, 7); g.fill(); g.translate(0, bob / ks); drawHuman(g, { facing: { x: 1, y: 0 }, hurtT: 0, attackT: 0 }, KNIGHT); g.restore();
-      g.save(); g.translate(VW - margin / 2, midY); g.scale(ws, ws); g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 22, 26, 9, 0, 0, 7); g.fill(); g.translate(0, bob2 / ws); drawMech(g, { facing: { x: -1, y: 0 }, moving: true, walkT: title.t * 2.2, attackT: 0, hurtT: 0 }, false, null); g.restore();
+    const F = title.frame(), T = HK.T;
+    title.backdrop(g);
+    title.heading(g, F);
+    if (!F.narrow) {
+      const cw = Math.min(440, F.right - F.left - 4), margin = Math.round(VW / 2 - cw / 2) - F.left, midY = Math.round(VH * 0.55);
+      if (margin > 70) title.sprites(g, F.left + margin / 2, midY, clamp(margin / 48, 1.6, 4), F.right - margin / 2, midY, clamp(margin / 78, 1.3, 3.4));
     }
     if (!ui) {
       // no HTML to hold the card (should never happen in a browser): say so on the canvas rather than show nothing
-      g.textAlign = 'center'; g.fillStyle = '#e6edf3'; g.font = `700 18px ${DISPLAY}`; g.fillText('Play online at gorkscape.ca', VW / 2, ty + 90);
-      g.font = '13px sans-serif'; g.fillStyle = '#8b949e'; g.fillText(LOGIN.status || '', VW / 2, ty + 114);
+      HK.text(g, 'Play online at gorkscape.ca', VW / 2, F.headBottom + 40, { font: HK.FC(800, 18), align: 'center', color: T.goldHi, halo: 3 });
+      HK.text(g, LOGIN.status || '', VW / 2, F.headBottom + 64, { font: HK.FS(600, 13), align: 'center', color: T.inkDim, halo: 3 });
     }
-    button(g, VW - 124, VH - 42, 110, 30, audioMuted ? 'Sound: off' : 'Sound: on', toggleMute, '#21262d');
-    g.textAlign = 'left'; g.fillStyle = 'rgba(230,237,243,0.55)'; g.font = '11px sans-serif'; g.fillText('Your knight is saved in the cloud at gorkscape.ca.', 14, VH - 22);
+    title.chrome(g, F, ['Your knight is saved in the cloud at gorkscape.ca.', 'Saved in the cloud at gorkscape.ca.', 'Saved in the cloud.']);
   }
+  // Play alone keeps a way back: a Play online plate at the left end of the title's bottom row
+  title.leftButton = () => (title.active && NET.enabled && LOGIN.alone && !LOGIN.showing) ? { label: 'Play online', action: LOGIN.backOnline, emblem: 'friends' } : null;
   const _drawHud = drawHud;
   drawHud = function (g) {
-    if (!title.active || !LOGIN.showing) {
-      _drawHud(g);
-      if (title.active && NET.enabled && LOGIN.alone) button(g, 14, VH - 76, 120, 30, 'Play online', LOGIN.backOnline, '#21262d');
-      return;
-    }
+    if (!title.active || !LOGIN.showing) return _drawHud(g);
     buttons.length = 0; minimapRect = null;
     g.textBaseline = 'alphabetic';
     drawOnlineTitle(g);
   };
 
   // ---------- Log out in the pause menu ----------
-  // The pause menu is a fixed 310 px box with one hook row; a second row would land on the stats line. So the
-  // Title screen row from 14-title is split in two while a knight is online: Title screen on the left, Log out on the right.
+  // While a knight is online the book's Title screen row (14-title) is split in two: Title screen on the left, Log out on
+  // the right, 8 px apart, both iron plates of the row's height (the book's own rows stay where the kit put them).
   { const first = HOOKS.pauseMenu[0];
     if (first) HOOKS.pauseMenu[0] = (g, x, y, w, h) => {
       if (!NET.enabled || !LOGIN.playing) return first(g, x, y, w, h);
       const half = Math.floor(w / 2) - 4;
       first(g, x, y, half, h);
-      button(g, x + half + 8, y, w - half - 8, h, 'Log out', LOGIN.logout, '#3a4150');
+      platePush(g, x + half + 8, y, w - half - 8, h, 'Log out', 'Log out', LOGIN.logout, null, { emblem: 'leave', cinzel: true, name: 'Save, log out and go to the title screen' });
     }; }
 
   // ---------- self-test ----------
@@ -432,6 +430,24 @@
       LOGIN.submit('Cohen', 'sword', '', false);
       check(P + 'the right secret word logs in: token kept, the cloud save lands in slot 1 and is the game now, the socket opens', NET.token === 'tok-cohen' && lsGet(SLOT(1)) === cloud && player.kills === 42 && title.slot === 1 && LOGIN.playing && !LOGIN.showing && !title.active && NET.status === 'on' && NET.me === 'Cohen' && lsGet(NAME_KEY) === 'Cohen' && lsGet(MARK_KEY) === '1', { token: NET.token, kills: player.kills, status: NET.status, me: NET.me, showing: LOGIN.showing });
       paused = true; render(); const menu = buttons.some(b => b.label === 'Log out') && buttons.some(b => b.label.startsWith('Title screen')); paused = false;
+      // the split row in the Knight's Book at all 8 device sizes, touch and mouse: both halves there, and the book passes the
+      // kit's book audit (44 px on touch, 8 px apart, on screen, out of the notch and home bands); their words fit at Large
+      { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = SETTINGS.get('text'), page0 = HK.BOOK.page, problems = []; let tried = 0;
+        try {
+          for (const [w, hh] of HK.audit.SIZES) {
+            if (!panelSetSize(w, hh)) continue; tried++;
+            for (const tch of [true, false]) for (const big of ['normal', 'large']) {
+              window.__forceTouch = tch; SETTINGS.set('text', big); paused = true; HK.BOOK.page = 'game';
+              const where = `book ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big}`;
+              const fit = panelFrame(where, { from: 0, panel: false }).filter(q => /Title screen|Log out/.test(q));
+              problems.push(...fit, ...HK.audit.frameIssues(where, { book: true }));
+              const a = buttons.find(b => b.label.startsWith('Title screen')), b = buttons.find(b => b.label === 'Log out');
+              if (!a || !b) problems.push(`${where}: the split row is missing (${buttons.map(q => q.label).join(',')})`);
+              else if (HK.gapBetween(Object.assign({ k: 'r' }, a), Object.assign({ k: 'r' }, b)) < (tch ? 8 : 4) || Math.abs(a.y - b.y) > 0.5 || a.h !== b.h) problems.push(`${where}: Title screen and Log out do not sit side by side 8 px apart`);
+            }
+          }
+        } finally { paused = false; HK.BOOK.page = page0; window.__forceTouch = t0; SETTINGS.set('text', text0); restore(); render(); }
+        check(P + "online, the book's Title screen | Log out row splits cleanly at all 8 device sizes, touch and mouse, and passes the book audit (44 px, 8 px apart, on screen, out of the bands; the words fit at Large)", tried === 8 && problems.length === 0, { tried, problems: problems.slice(0, 8), total: problems.length }); }
       const out = LOGIN.logout();
       check(P + 'Log out sits beside Title screen in the pause menu; it drops the token, closes the socket and shows the card again', menu && out && !NET.token && NET.sock === null && NET.status === 'off' && LOGIN.showing && title.active && !LOGIN.playing && LOGIN.mode === 'form' && world.calls.includes('POST /api/logout'), { menu, token: NET.token, mode: LOGIN.mode });
       LOGIN.submit('Sam', 'castle', 'wrong', true);
@@ -449,6 +465,30 @@
       check(P + 'when the world does not answer, the card says it is asleep and offers Play alone', LOGIN.asleep && LOGIN.status === 'The world is asleep right now.', { status: LOGIN.status });
       LOGIN.playAlone(); render();
       check(P + 'Play alone falls back to the three local slots, with a way back online', !LOGIN.showing && LOGIN.alone && title.active && buttons.some(b => b.label === 'Slot 1') && buttons.some(b => b.label === 'Play online'), { labels: buttons.map(b => b.label) });
+      // the title in Play alone mode (Play online on the bottom row) and behind the online card, at all 8 device sizes
+      { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = SETTINGS.get('text'), problems = []; let tried = 0;
+        try {
+          for (const [w, hh] of HK.audit.SIZES) {
+            if (!panelSetSize(w, hh)) continue; tried++;
+            for (const tch of [true, false]) for (const big of ['normal', 'large']) for (const alone of [true, false]) {
+              window.__forceTouch = tch; SETTINGS.set('text', big); LOGIN.showing = !alone;
+              const where = `title ${alone ? 'alone' : 'online card'} ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big}`;
+              problems.push(...panelFrame(where, { from: 0, panel: false }));
+              if (alone && !buttons.some(b => b.label === 'Play online')) problems.push(`${where}: no Play online`);
+              if (!alone && buttons.map(b => b.label).join() !== 'Sound: on' && buttons.map(b => b.label).join() !== 'Sound: off') problems.push(`${where}: the canvas should hold only Sound (${buttons.map(b => b.label).join(',')})`);
+            }
+          }
+        } finally { LOGIN.showing = false; window.__forceTouch = t0; SETTINGS.set('text', text0); restore(); render(); }
+        check(P + 'the title with Play online (Play alone) and behind the online card, at all 8 device sizes, touch and mouse: controls 44 px on touch (26 with a mouse), 8 px apart (4), on screen, out of the bands, the words inside their plates', tried === 8 && problems.length === 0, { tried, problems: problems.slice(0, 8), total: problems.length }); }
+      // the card's CSS (headless has no DOM to measure): every button, box and the New knight switch is at least 44 px tall and
+      // the inputs are 16 px (so iOS does not zoom); in a browser the live card is measured too
+      { const rule = sel => { const m = CSS.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}')); return m ? m[1] : ''; };
+        const px = (r, prop) => { const m = new RegExp('(?:^|;)' + prop + ':(\\d+(?:\\.\\d+)?)px').exec(r); return m ? +m[1] : 0; };
+        const inputs = rule('#fl-login input[type=text],#fl-login input[type=password]'), btn = rule('#fl-login button'), chk = rule('#fl-login .fl-check');
+        const css = px(inputs, 'min-height') >= 44 && px(inputs, 'font-size') >= 16 && px(btn, 'min-height') >= 44 && px(chk, 'min-height') >= 44;
+        let live = 'no DOM';
+        if (hasDom()) { build(); const was0 = ui.root.hidden; ui.root.hidden = false; try { const hs = [...ui.card.querySelectorAll('button,input[type=text],input[type=password],.fl-check')].filter(e => e.offsetParent !== null).map(e => e.getBoundingClientRect().height); const fs = parseFloat(getComputedStyle(ui.name).fontSize); live = hs.every(v => v >= 44) && fs >= 16; } finally { ui.root.hidden = was0; } }
+        check(P + 'the login card: buttons, text boxes and the New knight switch are at least 44 px tall, and the text boxes use a 16 px font', css && live !== false, { css, live, inputs, btn: btn.slice(0, 60), chk }); }
       world.statusFails = false; LOGIN.backOnline(); const back = LOGIN.showing && !LOGIN.alone;
       // the bridge: only the old address is believed, and the newest slot wins
       const older = { save: cloud, at: 100 }, newerSave = JSON.parse(cloud); newerSave.player.kills = 3; const newer = { save: JSON.stringify(newerSave), at: 200 };

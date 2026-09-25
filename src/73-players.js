@@ -19,7 +19,8 @@
   const GIFT_EVERY = 1;         // s: the contract's cap on gifts
   const MINE = { friends: 1, gift: 1, chatlog: 1 };   // the online files' own panels: the chip stays tappable under them
   const DEFAULT_LOOK = { tunic: '#3b6fb6', hair: '#5a3a1e', shoulder: '#9aa3b2', fists: true };
-  const BLUE = '#7ec8ff';
+  // friend blue: the kit's one colour for friends (their seal, dots, names); nothing else is this blue
+  const BLUE = HK.T.friend;
 
   const REMOTE = {};   // name → the knight as last heard: { n, map, x, y (where they are), shown: {x, y} (where we draw them), facing, moving, walkT, hp, mhp, lv, look, mech, dead, act, hurtT, attackT, r, lastAt }
   let ONLINE = [];     // the roster from `who`: [{ n, map, region, lv }]
@@ -118,7 +119,7 @@
     g.font = 'bold 11px sans-serif'; g.strokeText(e.n, x0, top); g.fillStyle = '#ffffff'; g.fillText(e.n, x0, top);
     g.font = '9px sans-serif'; g.strokeText(lv, x0 + nw + 4, top); g.fillStyle = '#9aa3b2'; g.fillText(lv, x0 + nw + 4, top);
     if (e.hp < e.mhp) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(x - 14, top + 3, 28, 4); g.fillStyle = e.hp / e.mhp > 0.5 ? '#3fb950' : e.hp / e.mhp > 0.25 ? '#d29922' : '#f85149'; g.fillRect(x - 14, top + 3, 28 * clamp(e.hp / e.mhp, 0, 1), 4); }
-    if (dist(x, y, player.x, player.y) <= NEAR) { g.strokeStyle = 'rgba(126,200,255,0.45)'; g.lineWidth = 1.5; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y + 2, onMech ? 30 : 22, 0, 7); g.stroke(); g.setLineDash([]); }
+    if (dist(x, y, player.x, player.y) <= NEAR) { g.strokeStyle = 'rgba(111,177,255,0.5)'; g.lineWidth = 1.5; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y + 2, onMech ? 30 : 22, 0, 7); g.stroke(); g.setLineDash([]); }
   }
   HOOKS.draw.push((g, items) => {
     const my = mapId();
@@ -145,7 +146,7 @@
       for (const n in REMOTE) if (REMOTE[n].map === my) { any = true; break; }
       if (any) {
         g.save(); g.beginPath(); g.arc(mm.x + size / 2, mm.y + size / 2, size / 2, 0, 7); g.clip();   // the ring's round glass (src/59-hudkit.js)
-        for (const n in REMOTE) { const e = REMOTE[n]; if (e.map !== my) continue; const p = at(e); g.fillStyle = BLUE; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); }
+        for (const n in REMOTE) { const e = REMOTE[n]; if (e.map !== my) continue; const p = at(e); g.fillStyle = BLUE; g.beginPath(); g.arc(p.x, p.y, 3, 0, 7); g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = 1.2; g.stroke(); }
         g.fillStyle = '#ffffff'; g.beginPath(); g.arc(mm.x + (player.x / TILE - sx) * scale, mm.y + (player.y / TILE - sy) * scale, 3.5, 0, 7); g.fill(); // the knight stays on top
         g.restore();
       }
@@ -172,16 +173,22 @@
     on: panel === 'friends', action: toggleFriends, name: NET.online() ? `Friends: ${ONLINE.length} online` : 'Offline',
   }));
   // ---------- the world map: every friend on this map as a named blue dot (drawn after the core's map, so it wraps drawPanels) ----------
+  // The map image's rect is read from the buttons[] entry labelled 'mapimage' (10-hud keeps it exactly the image; 61-markers
+  // cuts its foot back to where the key strip starts), so the dots follow the map wherever the panel puts it.
+  const mapImage = () => { const b = buttons.find(q => q.label === 'mapimage'); return b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null; };
+  const MAP_DOTS = [];   // this frame's dots, for the self-test: { n, x, y }
   function drawMapFriends(g, narrow) {
-    const r = panelRect; if (!r) return;
-    const iw = r.w - 36, ih = Math.min(r.h - 80, iw * MAP_H / MAP_W), ix = r.x + 18, iy = r.y + 62, sc = iw / MAP_W, my = mapId();
-    g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip();
-    g.font = `bold ${narrow ? 9 : 11}px sans-serif`; g.textAlign = 'center';
+    MAP_DOTS.length = 0;
+    const r = mapImage(); if (!r || r.w <= 0 || r.h <= 0) return;
+    const sc = r.w / MAP_W, my = mapId(), f = HK.FC(800, narrow ? 11 : 12);
+    g.save(); g.beginPath(); g.rect(r.x, r.y, r.w, r.h); g.clip();
     for (const n in REMOTE) {
       const e = REMOTE[n]; if (e.map !== my) continue;
-      const x = ix + e.shown.x / TILE * sc, y = iy + e.shown.y / TILE * sc;
-      g.fillStyle = BLUE; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 1.5; g.stroke();
-      g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(n, x, y - 8); g.fillStyle = BLUE; g.fillText(n, x, y - 8);
+      const x = r.x + e.shown.x / TILE * sc, y = r.y + e.shown.y / TILE * sc;
+      if (x < r.x || x > r.x + r.w || y < r.y || y > r.y + r.h) continue;
+      g.fillStyle = BLUE; g.beginPath(); g.arc(x, y, 4.5, 0, 7); g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
+      HK.text(g, n, x, y - 9, { font: f, align: 'center', color: BLUE, halo: 3 });
+      MAP_DOTS.push({ n, x, y });
     }
     g.restore();
   }
@@ -221,66 +228,102 @@
   });
 
   // ---------- the Friends panel ----------
+  // The book's frame (panelBox), then one vellum row per friend: the name in friend blue with the exact level, where they
+  // are in words (whole words, never cut), and Give / Follow on map as iron plates one kit row tall (HK.row(): 44 px on
+  // touch). On a narrow phone the plates drop under the words. Chat log sits at the top; Prev / Next when the list runs over.
+  const T = () => HK.T;
+  function friendRows(g, list, iw, narrow) {
+    const bh = HK.row(), bw1 = 70, bw2 = narrow ? 104 : 136, btnW = bw1 + 8 + bw2;
+    const twoTier = iw - 24 - btnW - 12 < 170;
+    const textW = twoTier ? iw - 24 : iw - 24 - btnW - 12, wf = HK.FS(600, 12), lh = Math.round(15 * HK.k() * 10) / 10;
+    return list.map(o => {
+      const here = o.map === mapId();
+      const where = HK.wrap(g, (here ? 'On your map: ' : '') + whereOf(o), textW, 2, wf).lines;
+      const textH = 12 + 16 + where.length * lh + 8;
+      const h = twoTier ? textH + bh + 12 : Math.max(bh + 16, textH);
+      return { o, here, where, h, twoTier, textW, bw1, bw2, lh, wf };
+    });
+  }
   HOOKS.panel.friends = (g, narrow) => {
-    const my = mapId(), meN = me();
-    const list = ONLINE.filter(o => o.n !== meN);
-    // every button here is one kit row tall (HK.row(): 44 px on touch), so the rows and the header grow to hold them
-    const bh = HK.row(), top = 62 + bh + 12, rowH = Math.max(60, bh + 16);
-    const per = Math.max(1, Math.min(6, Math.floor((VH - 20 - top - 68) / rowH))), pages = Math.max(1, Math.ceil(list.length / per));
-    friendsPage = clamp(friendsPage, 0, pages - 1);
-    const page = list.slice(friendsPage * per, friendsPage * per + per);
-    const w = narrow ? Math.min(VW - 20, 400) : 500, h = Math.min(VH - 20, top + 26 + Math.max(1, page.length) * rowH + 30 + (pages > 1 ? 40 : 0));
-    const on = NET.online();
+    const meN = me(), list = ONLINE.filter(o => o.n !== meN), on = NET.online();
+    const room = panelRoom(narrow ? 400 : 500, VH), w = room.w, iw = w - 36, bh = HK.row();
+    const top = 62 + bh + 12, foot = 44, pagerH = bh + 14;
+    const rows = friendRows(g, list, iw, narrow), gap = 8;
+    // pages: as many rows as fit the room (with a pager when they do not all fit)
+    const all = rows.reduce((a, r) => a + r.h + gap, 0), fits = top + all + foot <= room.h;
+    const avail = room.h - top - foot - (fits ? 0 : pagerH), pagesL = [[]]; let used = 0;
+    for (const r of rows) { if (used + r.h > avail && pagesL[pagesL.length - 1].length) { pagesL.push([]); used = 0; } pagesL[pagesL.length - 1].push(r); used += r.h + gap; }
+    const pages = pagesL.length; friendsPage = clamp(friendsPage, 0, pages - 1);
+    const page = pagesL[friendsPage], pageH = Math.max(...pagesL.map(pg => pg.reduce((a, r) => a + r.h + gap, 0)), 40);
+    const h = Math.min(room.h, top + pageH + foot + (pages > 1 ? pagerH : 0));
     const { px, py } = panelBox(g, w, h, 'Friends online', on ? `${ONLINE.length} knight${ONLINE.length === 1 ? '' : 's'} in the Fanglands right now` : 'Not connected right now');
-    button(g, px + 18, py + 62, 96, bh, 'Chat log', () => openPanel('chatlog'), '#21262d');
+    const x0 = px + 18;
+    platePush(g, x0, py + 62, Math.min(iw, touchMode() ? 150 : 136), bh, 'Chat log', 'Chat log', () => openPanel('chatlog'), null, { emblem: 'chat', name: 'The chat log' });
     let y = py + top;
-    if (!page.length) { g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText(on ? 'Nobody else is on right now.' : 'You are not connected.', px + 18, y + 14); }
-    const bw1 = 62, bw2 = narrow ? 92 : 118, bx1 = px + w - 18 - bw1, bx2 = bx1 - 8 - bw2, textW = bx2 - (px + 30) - 10;
-    for (const o of page) {
-      const here = o.map === my, close = near(o.n), fol = following === o.n;
-      roundRect(g, px + 18, y, w - 36, rowH - 8, 8); g.fillStyle = here ? 'rgba(88,166,255,0.12)' : 'rgba(255,255,255,0.05)'; g.fill();
-      const mid = y + (rowH - 8) / 2;   // the middle of the row's plate: the name sits above it, where they are below
-      g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#e6edf3'; g.fillText(o.n, px + 30, mid - 6);
-      const nw = g.measureText(o.n).width; g.fillStyle = '#9aa3b2'; g.font = '11px sans-serif'; g.fillText('lv ' + (o.lv || 1), px + 30 + nw + 8, mid - 6);
-      let where = here ? 'On your map · ' + whereOf(o) : whereOf(o); g.font = '12px sans-serif'; while (g.measureText(where).width > textW && where.length > 6) where = where.slice(0, -2) + '…';
-      g.fillStyle = here ? BLUE : '#8b949e'; g.fillText(where, px + 30, mid + 14);
-      button(g, bx1, mid - bh / 2, bw1, bh, 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, close ? '#238636' : '#2a2f3a', close);
-      button(g, bx2, mid - bh / 2, bw2, bh, fol ? (narrow ? 'Following' : 'Stop following') : (narrow ? 'Follow' : 'Follow on map'), () => { following = fol ? null : o.n; sfx('open'); }, fol ? '#6b4f2a' : here ? '#21262d' : '#2a2f3a', here);
-      y += rowH;
+    if (!page.length) HK.text(g, on ? 'Nobody else is on right now.' : 'You are not connected.', x0, y + 22, { font: HK.FS(600, 13), color: T().inkDim, box: { x: x0, y, w: iw, h: 40 }, fitId: 'friends:none' });
+    for (const r of page) {
+      const o = r.o, close = near(o.n), fol = following === o.n;
+      HK.vellumPlate(g, x0, y, iw, r.h, { edge: r.here ? 'rgba(111,177,255,0.55)' : null });
+      const tx = x0 + 12, nf = HK.FC(800, 14), lv = `Lv ${o.lv || 1}`;
+      const nameTop = r.twoTier ? y + 12 : y + Math.max(12, (r.h - (16 + r.where.length * r.lh + 8)) / 2);
+      HK.text(g, o.n, tx, nameTop + 13, { font: nf, color: T().friend, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'friends:name' });
+      HK.text(g, lv, tx + HK.tw(g, o.n, nf) + 8, nameTop + 13, { font: HK.FC(800, 12), color: T().inkDim, box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'friends:lv' });
+      r.where.forEach((l, i) => HK.text(g, l, tx, nameTop + 16 + (i + 1) * r.lh, { font: r.wf, color: r.here ? T().ink : T().inkDim, box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'friends:where' }));
+      const by = r.twoTier ? y + r.h - bh - 10 : y + (r.h - bh) / 2, bx1 = x0 + iw - 12 - r.bw1, bx2 = bx1 - 8 - r.bw2;
+      platePush(g, bx1, by, r.bw1, bh, 'Give', 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, 'primary', { enabled: close, name: close ? `Give something to ${o.n}` : `Walk up to ${o.n} to give` });
+      const fl = fol ? (narrow ? 'Following' : 'Stop following') : (narrow ? 'Follow' : 'Follow on map');
+      platePush(g, bx2, by, r.bw2, bh, fl, fl, () => { following = fol ? null : o.n; sfx('open'); }, fol ? 'warn' : null, { enabled: r.here, name: fol ? `Stop following ${o.n}` : `Mark ${o.n} on the map` });
+      y += r.h + gap;
     }
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText('Give works when you stand within two tiles of a friend. F opens this panel.', px + 18, py + h - (pages > 1 ? 50 : 14));
-    if (pages > 1) pager(g, px + 18, py + h - 40, w - 36, friendsPage, pages, p => { friendsPage = p; });
+    const note = 'Give works when you stand within two tiles of a friend.' + (touchMode() ? '' : ' F opens this panel.');
+    const nf2 = HK.FS(600, 12), nl = HK.wrap(g, note, iw, 2, nf2).lines, ny = py + h - (pages > 1 ? pagerH : 0) - foot + 16;
+    nl.forEach((l, i) => HK.text(g, l, x0, ny + i * Math.round(15 * HK.k()), { font: nf2, color: T().inkMute, box: { x: x0, y: ny - 14, w: iw, h: foot }, fitId: 'friends:note' }));
+    if (pages > 1) rowPager(g, x0, py + h - pagerH, iw, friendsPage, pages, p => { friendsPage = p; });
   };
 
   // ---------- the gift picker: the pack's stacks, one tap each ----------
+  // Vellum rows with the item's picture, its name and how many you have (exact), and Give 1 / Give all plates one kit row
+  // tall. Valuables ask twice. Prev / Next when the pack runs over the screen.
   HOOKS.panel.gift = (g, narrow) => {
     const to = String(panelArg || '');
     const stacks = []; for (const s of player.inv) if (s && s.qty > 0 && ITEMS[s.id]) stacks.push(s);
-    // the Give buttons are one kit row tall (HK.row(): 44 px on touch); each row is that plus its margins
-    const bh = HK.row(), rowH = bh + 12, per = Math.max(2, Math.min(8, Math.floor((VH - 20 - 130) / rowH))), pages = Math.max(1, Math.ceil(stacks.length / per));
-    giftPage = clamp(giftPage, 0, pages - 1);
-    const page = stacks.slice(giftPage * per, giftPage * per + per);
-    const w = narrow ? Math.min(VW - 20, 390) : 460, h = Math.min(VH - 20, 74 + Math.max(1, page.length) * rowH + (pages > 1 ? 50 : 20));
+    const room = panelRoom(narrow ? 390 : 460, VH), w = room.w, iw = w - 36, bh = HK.row(), gap = 8;
+    const b1 = 78, b2 = 90, nf = HK.FC(800, 13), cf = HK.FS(600, 12), lh = Math.round(15 * HK.k() * 10) / 10;
+    const rows = stacks.map(s => {
+      const def = ITEMS[s.id], many = s.qty > 1, oneW = iw - 12 - 40 - (many ? b1 + 8 : 0) - b2 - 12 - 8;
+      // too little room beside the plates (a narrow phone): the plates drop under the words
+      const twoTier = oneW < 130, textW = twoTier ? iw - 12 - 40 - 12 : oneW;
+      const name = HK.wrap(g, def.name, textW, 2, nf).lines, textH = 12 + name.length * 16 + lh + 8;
+      return { s, def, many, textW, name, twoTier, textH, h: twoTier ? textH + bh + 10 : Math.max(bh + 14, textH) };
+    });
+    const top = 64, foot = 12, pagerH = bh + 14;
+    const all = rows.reduce((a, r) => a + r.h + gap, 0), fits = top + Math.max(all, 40) + foot <= room.h;
+    const avail = room.h - top - foot - (fits ? 0 : pagerH), pagesL = [[]]; let used = 0;
+    for (const r of rows) { if (used + r.h > avail && pagesL[pagesL.length - 1].length) { pagesL.push([]); used = 0; } pagesL[pagesL.length - 1].push(r); used += r.h + gap; }
+    const pages = pagesL.length; giftPage = clamp(giftPage, 0, pages - 1);
+    const page = pagesL[giftPage], pageH = Math.max(...pagesL.map(pg => pg.reduce((a, r) => a + r.h + gap, 0)), 40);
+    const h = Math.min(room.h, top + pageH + foot + (pages > 1 ? pagerH : 0));
     const ok = near(to) && NET.online();
-    const { px, py } = panelBox(g, w, h, 'Give to ' + to, ok ? 'Tap what to hand over. It leaves your pack and lands in theirs.' : 'Walk up to ' + to + ' first (within two tiles).');
-    let y = py + 64;
-    if (!page.length) { g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText('Your pack is empty.', px + 18, y + 20); }
-    for (const s of page) {
-      const def = ITEMS[s.id], many = s.qty > 1;
-      const mid = y + (rowH - 6) / 2;   // the middle of the row's plate
-      roundRect(g, px + 18, y, w - 36, rowH - 6, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      drawItemIcon(g, s.id, px + 36, mid - 1, 18);
-      let name = def.name + ' × ' + s.qty; g.font = 'bold 13px sans-serif'; const maxW = w - 36 - 44 - (many ? 176 : 96);
-      while (g.measureText(name).width > maxW && name.length > 6) name = name.slice(0, -2) + '…';
-      g.fillStyle = '#e6edf3'; g.textAlign = 'left'; g.fillText(name, px + 54, mid + 4);
+    const tap = touchMode() ? 'Tap' : 'Click';
+    const { px, py } = panelBox(g, w, h, 'Give to ' + to, ok ? `${tap} what to hand over. It leaves your pack and lands in theirs.` : 'Walk up to ' + to + ' first (within two tiles).');
+    const x0 = px + 18; let y = py + top;
+    if (!page.length) HK.text(g, 'Your pack is empty.', x0, y + 22, { font: HK.FS(600, 13), color: T().inkDim, box: { x: x0, y, w: iw, h: 40 }, fitId: 'gift:none' });
+    for (const r of page) {
+      const s = r.s, def = r.def, mid = r.twoTier ? y + r.textH / 2 : y + r.h / 2;
+      HK.vellumPlate(g, x0, y, iw, r.h);
+      drawItemIcon(g, s.id, x0 + 30, mid, 18);
+      const tx = x0 + 52, textTop = mid - (r.name.length * 16 + lh) / 2;
+      r.name.forEach((l, i) => HK.text(g, l, tx, textTop + 13 + i * 16, { font: nf, color: T().ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'gift:name' }));
+      HK.text(g, `You have ${s.qty}`, tx, textTop + r.name.length * 16 + lh - 1, { font: cf, color: T().inkDim, box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'gift:qty' });
       const arm = needsConfirm(def) && confirmActive('gift:' + s.id);
       const giveN = qty => { const go = () => { if (give(to, s.id, qty)) closePanel(); }; if (needsConfirm(def)) confirmTap('gift:' + s.id, go); else go(); };
-      const key = (b, suffix) => { b.label = (b.disabled ? 'disabled:' : '') + 'give:' + s.id + ':' + suffix; };   // the drawn word stays; the harness finds the button by key
-      if (many) { button(g, px + w - 18 - 82 - 6 - 74, mid - bh / 2, 74, bh, 'Give 1', () => giveN(1), ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], '1'); }
-      button(g, px + w - 18 - 82, mid - bh / 2, 82, bh, arm ? 'Tap again' : many ? 'Give all' : 'Give', () => giveN(s.qty), arm ? '#c0392b' : ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], 'all');
-      y += rowH;
+      // the drawn word stays Give 1 / Give all; the harness finds each button by its key give:<item>:<1|all>
+      const bx2 = x0 + iw - 12 - b2, by = r.twoTier ? y + r.h - bh - 10 : mid - bh / 2;
+      if (r.many) platePush(g, bx2 - 8 - b1, by, b1, bh, 'give:' + s.id + ':1', 'Give 1', () => giveN(1), 'primary', { enabled: ok, name: `Give 1 ${def.name}` });
+      platePush(g, bx2, by, b2, bh, 'give:' + s.id + ':all', arm ? 'Tap again' : r.many ? 'Give all' : 'Give', () => giveN(s.qty), arm ? 'danger' : 'primary', { enabled: ok, name: `Give ${r.many ? 'all ' + s.qty : 'the'} ${def.name}` });
+      y += r.h + gap;
     }
-    if (pages > 1) pager(g, px + 18, py + h - 40, w - 36, giftPage, pages, p => { giftPage = p; });
+    if (pages > 1) rowPager(g, x0, py + h - pagerH, iw, giftPage, pages, p => { giftPage = p; });
   };
 
   window.PLAYERS = {
@@ -377,6 +420,40 @@
       }
       window.__forceTouch = t0; setSize(vw0, vh0);
       check(P + 'the FRIENDS seal sits clear of every other button at phone, landscape, tablet and desktop sizes (on touch: 44 px, out of the stick)', hits.length === 0 && sizes.length === 8, { hits, sizes }); }
+    // Friends and Give at all 8 device sizes, touch and mouse, normal and Large text, one page and several: from the close
+    // seal on, controls 44 px on touch (26 with a mouse), 8 px apart (4), on screen, out of the notch and home bands, and
+    // every word inside its row (names, levels and places whole; no '...' anywhere)
+    { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = SETTINGS.get('text'), inv0 = player.inv.map(q => q ? { ...q } : null), problems = []; let tried = 0, paged = 0;
+      const names = ['Ava', 'Maximilian', 'Ben', 'Sam', 'Isabella', 'Theodore', 'Zoe', 'Oliver'];
+      feed({ t: 'who', list: [{ n: 'Cohen', map: 'over', region: 'Thistledown', lv: 5 }].concat(names.map((n, i) => ({ n, map: i % 3 === 2 ? 'spider_den' : 'over', region: i % 2 ? 'The Whispering Woods' : 'Thistledown', lv: 3 + i * 11 }))) });
+      feed({ t: 'p', n: 'Ava', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 7, look: null, mech: null, dead: false, def: 100, act: null }); F.step([]);
+      const bag = ['bronze_pickaxe', 'iron_ore', 'wood', 'bread', 'stone', 'coal', 'iron_sword', 'raw_shrimp', 'spider_silk', 'bronze_axe'].filter(id => ITEMS[id]);
+      try {
+        for (const [w, hh] of HK.audit.SIZES) {
+          if (!panelSetSize(w, hh)) continue; tried++;
+          for (const tch of [true, false]) for (const big of ['normal', 'large']) {
+            window.__forceTouch = tch; SETTINGS.set('text', big);
+            player.inv = new Array(INV_SLOTS).fill(null); bag.forEach((id, i) => { player.inv[i] = { id, qty: i % 2 ? 12 : 1 }; });
+            for (const [pn, arg] of [['friends'], ['gift', 'Ava']]) {
+              closePanel(); openPanel(pn, arg);
+              for (let pg = 0; pg < 8; pg++) {
+                if (pn === 'friends') friendsPage = pg; else giftPage = pg;
+                const where = `${pn} ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big} page ${pg + 1}`;
+                problems.push(...panelFrame(where));
+                if (!buttons.some(b => b.label === 'Next')) break; paged++;
+              }
+            }
+          }
+        }
+      } finally { closePanel(); friendsPage = 0; giftPage = 0; player.inv = inv0; window.__forceTouch = t0; SETTINGS.set('text', text0); restore(); render(); }
+      const src = String(HOOKS.panel.friends) + String(HOOKS.panel.gift), dots = !/\u2026|…/.test(src);
+      check(P + "Friends and Give at all 8 device sizes, touch and mouse, normal and Large text, every page: controls 44 px on touch (26 with a mouse) and 8 px apart (4), on screen, out of the bands; names, levels and places fit their vellum rows whole (no '...')", tried === 8 && problems.length === 0 && paged > 0 && dots, { tried, paged, dots, problems: problems.slice(0, 10), total: problems.length }); }
+    // the world map: each friend on our map is a blue dot inside the map image (the 'mapimage' entry), named beside it
+    { closePanel(); openPanel('map'); render(); const img = buttons.find(b => b.label === 'mapimage');
+      const inside = !!img && MAP_DOTS.length >= 1 && MAP_DOTS.every(d => d.x >= img.x && d.x <= img.x + img.w && d.y >= img.y && d.y <= img.y + img.h);
+      const ava = MAP_DOTS.find(d => d.n === 'Ava'), sc = img ? img.w / MAP_W : 0, right = !!ava && !!img && Math.abs(ava.x - (img.x + REMOTE.Ava.shown.x / TILE * sc)) < 0.5 && Math.abs(ava.y - (img.y + REMOTE.Ava.shown.y / TILE * sc)) < 0.5;
+      closePanel();
+      check(P + "on the world map a friend's dot lands inside the map image the 'mapimage' entry marks, at their place on it", inside && right, { dots: MAP_DOTS.slice(0, 3), img: img && [img.x, img.y, img.w, img.h], right }); }
     // put the world back
     NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
     clearAll(); lastSig = null; pending.length = 0; lastGiftAt = -1e9;

@@ -10,9 +10,84 @@
 // (tap-to-walk), floatText (damage numbers), explode + HOOKS.hurt (screen shake), drawMinimap + drawCompass (minimap),
 // render (shake offset + legacy sync). Text size scales every font set on the game canvas through an accessor on
 // ctx.font; monster levels are stripped from the "Name · lv N" label 09-render draws through a wrapper on ctx.fillText.
-// 10-hud reads window.__stickRight to mirror the touch buttons (the only core edit, beside the pause menu button).
+// The HUD kit reads window.__stickRight to mirror the stick and the seats, and SETTINGS.textScale / get('words') / get('minimap').
+// SETTINGS.keyMap() is the one key table: Settings › Controls, the book's Keys card and the key coverage check read it.
 // Debug/test handle: window.SETTINGS.
 // ============================================================================
+// ---------- panel helpers for the book-and-online panels (Settings, Friends, Give, Chat log, the title screen) ----------
+// Function declarations, so they are hoisted: 14-title (before this file) and 71 / 73 / 74 (after it) call them too.
+// They stand in for three things the kit (src/59-hudkit.js) and 10-hud do not offer yet; the integrator may lift them:
+//   panelRoom(w, h)   the largest panelBox() that keeps its close seal and its bottom edge out of the notch / Dynamic Island /
+//                     home-indicator bands (panelBox centres the box at VH/2 - h/2 - 20, never above y 10);
+//   platePush(...)    an iron plate button whose TAP LABEL (what the harness clicks, e.g. 'set:sound') differs from the WORD
+//                     drawn on it ('On'), with the kit's press / hover look read from that label; fires on pointer-up;
+//   rowPager(...)     Prev / Next plates one kit row tall (HK.row(): 44 px on touch), labelled 'Prev' / 'Next' like pager().
+function panelRoom(wantW, wantH) {
+  const t = touchMode(), fam = HK.family(VW, VH, t), S = HK.insets(VW, VH, fam, t);
+  const w = Math.round(Math.max(200, Math.min(wantW, VW - 20, VW - 2 * Math.max(S.l, S.r) - 16)));
+  let h = Math.round(Math.min(wantH, VH - 20));
+  const ok = hh => { const py = Math.max(10, Math.round(VH / 2 - hh / 2 - 20)); return py >= S.t + 4 && py + hh <= VH - S.b - 4; };
+  while (h > 140 && !ok(h)) h -= 2;
+  return { w, h, S };
+}
+function platePush(g, x, y, w, h, label, word, action, tone, o = {}) {
+  const live = o.enabled !== false, st = live ? HK.stateOf(label) : {};
+  HK.plateButton(g, { x, y, w, h }, o.emblem || null, word, live ? tone : null, { pressed: !!st.pressed, hover: !!st.hover, disabled: !live, key: o.key || null, cinzel: !!o.cinzel, size: o.size, on: !!o.on });
+  const b = live ? { x, y, w, h, label, action, up: true, name: o.name || word, keys: o.keys || [] } : { x, y, w, h, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true };
+  buttons.push(b);
+  return b;
+}
+function rowPager(g, x, y, w, page, pages, setPage) {
+  const p = clamp(page, 0, Math.max(0, pages - 1)), h = HK.row(), bw = Math.min(Math.floor((w - 16) / 3), touchMode() ? 104 : 92);
+  const one = (bx, label, em, live, fn) => {
+    platePush(g, bx, y, bw, h, label, label, fn, null, { enabled: live, name: label === 'Prev' ? 'The page before' : 'The next page' });
+    g.fillStyle = g.strokeStyle = live ? HK.T.goldHi : HK.T.inkMute; HK.EM[em](g, label === 'Prev' ? bx + 14 : bx + bw - 14, y + h / 2 + (HK.stateOf(label).pressed ? 1.5 : 0), 12);
+  };
+  one(x, 'Prev', 'chevronL', p > 0, () => setPage(p - 1));
+  HK.text(g, `Page ${p + 1} of ${pages}`, x + w / 2, y + h / 2 + 5, { font: HK.FS(600, 13), align: 'center', color: HK.T.inkDim, box: { x: x + bw + 4, y, w: w - 2 * bw - 8, h }, fitId: 'pager' });
+  one(x + w - bw, 'Next', 'chevronR', p < pages - 1, () => setPage(p + 1));
+  return p;
+}
+// The panel audit the online-book checks share: the rects from the close seal (or `from`) onward must be at least 44 px on
+// touch (26 with a mouse), 8 px apart on touch (4), on screen, out of the notch / home-indicator bands, and every string the
+// kit logged must fit its box. Call it right after a frame drawn with HK.FIT on.
+function panelAudit(where, opt = {}) {
+  const t = touchMode(), out = [], floor = t ? 44 : 26, clear = t ? 8 : 4;
+  const all = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+  const from = opt.from != null ? opt.from : all.findIndex(b => b.label === '×');
+  if (from < 0) { out.push(`${where}: no close seal`); return out; }
+  const L = { VW, VH, S: HK.insets(VW, VH, HK.family(VW, VH, t), t) };
+  const taps = all.slice(from).map(b => b.r ? { id: b.label, k: 'c', x: b.cx != null ? b.cx : b.x + b.w / 2, y: b.cy != null ? b.cy : b.y + b.h / 2, r: b.r } : { id: b.label, k: 'r', x: b.x, y: b.y, w: b.w, h: b.h });
+  const box = q => q.k === 'c' ? { x: q.x - q.r, y: q.y - q.r, w: q.r * 2, h: q.r * 2 } : q;
+  const small = opt.small || /^(slot|bank|hot|eq)\d*/;
+  for (const q of taps) {
+    const b = box(q);
+    if (!small.test(q.id) && (b.w < floor - 0.5 || b.h < floor - 0.5)) out.push(`${where}: ${q.id} is ${Math.round(b.w)}x${Math.round(b.h)}, under ${floor}`);
+    if (b.x < -0.5 || b.y < -0.5 || b.x + b.w > VW + 0.5 || b.y + b.h > VH + 0.5) out.push(`${where}: ${q.id} off screen`);
+    if (t) for (const z of HK.bands(L)) if (HK.gapBetween(z, q) < 0) out.push(`${where}: ${q.id} in the ${z.name}`);
+  }
+  for (let i = 0; i < taps.length; i++) for (let j = i + 1; j < taps.length; j++) { const g0 = HK.gapBetween(taps[i], taps[j]); if (g0 < clear) out.push(`${where}: ${taps[i].id} ~ ${taps[j].id} gap ${g0.toFixed(1)}`); }
+  if (panelRect && opt.panel !== false) { const P = panelRect; if (P.x < -0.5 || P.y < -0.5 || P.x + P.w > VW + 0.5 || P.y + P.h > VH + 0.5) out.push(`${where}: the panel is off screen`); }
+  for (const f of HK.audit.fitIssues(where)) out.push(f);
+  return out;
+}
+// Draws one frame at a size with the kit's measuring context and the fit log on, and returns panelAudit's issues.
+// setSize(w, h) and the restore are the caller's (see the self-tests below).
+function panelFrame(where, opt = {}) {
+  const fc = HK.audit.fitCtx();
+  HK.FIT.on = true; HK.FIT.log.length = 0;
+  try { drawHud(fc); } finally { HK.FIT.on = false; }
+  const out = panelAudit(where, opt);
+  HK.FIT.log.length = 0;
+  return out;
+}
+// Set the window to a size (tests only), the way the kit's check 11 does; returns true when the game took it.
+function panelSetSize(w, h) { try { window.innerWidth = w; window.innerHeight = h; } catch (e) { } if (VW !== w || VH !== h) resize(); return VW === w && VH === h; }
+function panelSizeSaver() {
+  const own = k => Object.getOwnPropertyDescriptor(window, k), saved = { w: own('innerWidth'), h: own('innerHeight') };
+  return () => { if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } } resize(); };
+}
+
 const SETTINGS = (() => {
   const KEY = 'fanglands.settings';
   const LEGACY = { sound: ['fanglands.muted', v => v !== '1', on => on ? '0' : '1'], music: ['fanglands.music', v => v !== '0', on => on ? '1' : '0'], kid: ['fanglands.kidmode', v => v === '1', on => on ? '1' : '0'] };
@@ -124,9 +199,9 @@ const SETTINGS = (() => {
   { const _drawMinimap = drawMinimap, _drawCompass = drawCompass;
     drawMinimap = function () { if (S.minimap) return _drawMinimap.apply(this, arguments); };
     drawCompass = function () { if (S.minimap) return _drawCompass.apply(this, arguments); }; }
-  // MIGRATED to the HUD kit: with the minimap off, MAP is a control like any other, so it joins the control
-  // rail under the (now empty) minimap corner instead of being a lone button pinned to the minimap's edge.
-  HOOKS.hud.push(() => { if (!S.minimap) minimapRect = null; }); // no tap opens the map where the minimap used to be
+  // With the minimap off the kit leaves a 48 px iron map stud where the ring was (src/59-hudkit.js, label 'MAP'), and the
+  // seals do not move. This registration gives the book's MAP tile its toggle. No tap opens the map where the glass was.
+  HOOKS.hud.push(() => { if (!S.minimap) minimapRect = null; });
   hudControl({ id: 'map', sort: 50, label: () => 'MAP', show: () => !S.minimap && !paused, on: () => panel === 'map', action: () => panel === 'map' ? closePanel() : openPanel('map') });
 
   // ---------- talk speed: 07-update reveals 34 characters a second; this hook runs right after it every tick ----------
@@ -142,41 +217,97 @@ const SETTINGS = (() => {
   { const _render = render; render = function () { _render.apply(this, arguments); syncFromLive(); applyShake(); }; }
   { const _openPanel = openPanel; openPanel = function (name, arg) { if (name === 'settings') settingsPage = 0; return _openPanel(name, arg); }; }
 
-  // ---------- the key map, read from the real handlers (07-update, 05-input, every HOOKS.update, 99-boot) ----------
-  const ACTION_WORDS = { 'toggle:skills': 'Skills', 'toggle:inventory': 'Bag', 'toggle:craft': 'Craft', 'toggle:quests': 'Quests', 'toggle:map': 'Map', 'toggle:help': 'Help', 'toggle:': 'Music', goHome: 'Home', exitMech: 'Climb out', advanceDialog: 'Next line of talk', useItem: 'Eat or use pack slots', playerAttack: 'Swing', useAction: 'Use / talk', placeAction: 'Place', closePanel: 'Menu / close', toTitle: 'Title screen', toggleSettings: 'Settings', lobBomb: 'Throw a bomb (walker)', leaveInstance: 'Leave a dungeon' };
-  const KEY_LABELS = { Space: 'Space', Tab: 'Tab', Escape: 'Esc', Enter: 'Enter', Slash: '?', Comma: ',', Digit: '1–5', F1: 'F1' };
-  const keyLabel = code => KEY_LABELS[code] || code.replace(/^Key/, '');
-  function keyMap() {
-    const out = []; const seen = new Set();
-    const add = (code, action) => { if (seen.has(code)) return; seen.add(code); const row = out.find(r => r.action === action); if (row) row.codes.push(code); else out.push({ action, codes: [code] }); };
+  // ---------- the key map, read from the real handlers (07-update, 05-input, every HOOKS.update, 99-boot, HOOKS.keyHelp) ----------
+  // One table feeds Settings › Controls, the book's Keys card (src/59-hudkit.js drawKeys) and the key coverage self-test.
+  // KEY_TABLE gives each key its plain words and its order; a row is kept only while a real handler still reads one of its
+  // codes (so a removed key drops out, and the coverage check says so), and any key a handler reads that the table does not
+  // know is added at the end in the words its handler or its HOOKS.keyHelp entry gives. Words are short enough for one line
+  // of the Keys card's two columns at 1280x800 (the self-test measures them).
+  const KEY_TABLE = [
+    { codes: ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'], keys: ['WASD'], action: 'Walk (or arrows)', move: true },
+    { codes: ['Space'], keys: ['Space'], action: 'Swing, shoot, stomp' },
+    { codes: ['KeyE'], action: 'Use or talk' },
+    { codes: ['KeyQ'], action: 'Place a thing' },
+    { codes: ['Digit'], keys: ['1-5'], action: 'Use a belt pouch' },
+    { codes: ['KeyI'], action: 'Your pack' },
+    { codes: ['KeyC'], action: 'Crafting' },
+    { codes: ['Tab'], keys: ['Tab'], action: 'Skills' },
+    { codes: ['KeyJ'], action: 'Quests' },
+    { codes: ['KeyM'], action: 'World map' },
+    { codes: ['Slash', 'F1'], keys: ['?', 'F1'], action: 'How to play' },
+    { codes: ['KeyH'], action: 'Go home' },
+    { codes: ['KeyX'], action: 'Climb out' },
+    { codes: ['Enter'], keys: ['Enter'], action: 'Next line, or chat' },
+    { codes: ['Escape'], keys: ['Esc'], action: 'Close, or the book' },
+    { codes: ['KeyT'], action: 'Title screen, paused' },
+    { codes: ['Comma'], keys: [','], action: 'Settings' },
+    { codes: ['KeyK'], action: 'Wiki' },
+    { codes: ['KeyN'], action: 'Music on or off' },
+    { codes: ['KeyR'], action: 'Raise your shield' },
+    // G rides the mare and gets down; X gets down too (51-mounts)
+    { codes: ['KeyG'], keys: ['G', 'X'], action: 'Ride or get down' },
+    { codes: ['KeyV'], action: 'Machine special' },
+    { codes: ['KeyB'], action: 'Bomb (Barrelbeast)' },
+    { codes: ['KeyL'], action: 'Leave a dungeon' },
+    // P does two jobs (61-markers and 63-house): both are listed, neither is renamed (an open question for the owner)
+    { codes: ['KeyP'], action: 'Markers, or Build' },
+    { codes: ['KeyF'], action: 'Friends' },
+    { codes: ['KeyY'], action: 'Chat' },
+  ];
+  const ACTION_WORDS = { 'toggle:skills': 'Skills', 'toggle:inventory': 'Your pack', 'toggle:craft': 'Crafting', 'toggle:quests': 'Quests', 'toggle:map': 'World map', 'toggle:help': 'How to play', 'toggle:': 'Music on or off', goHome: 'Go home', exitMech: 'Climb out', advanceDialog: 'Next line of talk', useItem: 'Use a belt pouch', playerAttack: 'Swing', useAction: 'Use or talk', placeAction: 'Place a thing', closePanel: 'Close, or the book', toTitle: 'Title screen', toggleSettings: 'Settings', lobBomb: 'Bomb (Barrelbeast)', leaveInstance: 'Leave a dungeon' };
+  const KEY_LABELS = { Space: 'Space', Tab: 'Tab', Escape: 'Esc', Enter: 'Enter', Slash: '?', Comma: ',', Digit: '1-5', F1: 'F1' };
+  const keyLabel = code => KEY_LABELS[code] || code.replace(/^Key/, '').replace(/^Arrow/, '');
+  // every code a real handler reads, with the words its handler suggests: { code: word }
+  function handlerCodes() {
+    const found = {};
     // movement: 05-input reads keys.has(...) for WASD / arrows
-    { const src = String(inputVector); const codes = []; const re = /keys\.has\('(\w+)'\)/g; let m; while ((m = re.exec(src))) codes.push(m[1]);
-      const ls = codes.filter(c => c.startsWith('Key')).map(keyLabel); const letters = 'WASD'.split('').filter(l => ls.includes(l)).concat(ls.filter(l => !'WASD'.includes(l))).join(''), arrows = codes.some(c => c.startsWith('Arrow'));
-      if (letters || arrows) { out.push({ action: 'Move', codes: [], label: letters + (letters && arrows ? ' or arrows' : arrows ? 'arrows' : '') }); codes.forEach(c => seen.add(c)); } }
+    { const src = String(inputVector); const re = /keys\.has\('(\w+)'\)/g; let m; while ((m = re.exec(src))) found[m[1]] = found[m[1]] || 'Walk'; }
     // wrappers (44-wiki) hand back the wrapped function as __inner; only the core handler is parsed — features declare their keys in HOOKS.keyHelp
     const sources = []; { let u = update; while (typeof u === 'function' && u.__inner) u = u.__inner; sources.push(String(u)); } for (const h of HOOKS.update) sources.push(String(h)); if (typeof frame === 'function') sources.push(String(frame));
-    for (const k of HOOKS.keyHelp) for (const c of k.codes) add(c, k.action); // features: HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] })
     const re = /pressed\.has\('([A-Za-z0-9]+)'(?:\s*\+\s*k)?\)/g;
     for (const src of sources) {
       let m; while ((m = re.exec(src))) {
         const end = src.indexOf(';', m.index); const seg = src.slice(m.index + m[0].length, end < 0 ? m.index + 160 : end);
         let fn = null, arg = ''; const cre = /([A-Za-z_]\w*)\((?:'(\w+)')?/g; let c; while ((c = cre.exec(seg))) { if (c[1] === 'has' || c[1] === 'tapped') continue; fn = c[1]; arg = c[2] || ''; }
-        if (!fn) continue;
-        const word = ACTION_WORDS[fn + ':' + arg] || ACTION_WORDS[fn] || fn;
-        add(m[1], word);
+        if (!fn || found[m[1]]) continue;
+        found[m[1]] = ACTION_WORDS[fn + ':' + arg] || ACTION_WORDS[fn] || fn;
       }
     }
-    for (const r of out) if (!r.label) r.label = r.codes.map(keyLabel).join(' or ');
-    return out;
+    for (const k of HOOKS.keyHelp) for (const c of k.codes) if (!found[c]) found[c] = k.action;
+    return found;
+  }
+  // The rows: [{ action, codes, label, keys, jobs }]. `keys` are the keycaps to draw, `label` the same joined with ' or '
+  // (the older readers split it), `jobs` every HOOKS.keyHelp word for a key two features share (P).
+  let keyMemo = null;
+  function keyMap() {
+    // the handlers only change at load time: parse them once per set of hooks, hand out copies
+    const sig = HOOKS.update.length + '|' + HOOKS.keyHelp.length;
+    if (keyMemo && keyMemo.sig === sig) return keyMemo.rows.map(r => Object.assign({}, r, { codes: r.codes.slice(), keys: r.keys.slice(), jobs: r.jobs.slice() }));
+    const found = handlerCodes(), out = [], used = new Set();
+    for (const t of KEY_TABLE) {
+      const codes = t.codes.filter(c => found[c]); if (!codes.length) continue;
+      const keys = t.keys ? t.keys.slice() : [keyLabel(codes[0])];
+      const jobs = []; for (const k of HOOKS.keyHelp) if (k.codes.some(c => codes.includes(c)) && !jobs.includes(k.action)) jobs.push(k.action);
+      out.push({ action: t.action, codes, keys, label: keys.join(' or '), jobs });
+      codes.forEach(c => used.add(c));
+    }
+    // a key the table does not know yet (a new feature's): grouped by its words
+    for (const c in found) {
+      if (used.has(c)) continue;
+      const row = out.find(r => r.extra && r.action === found[c]);
+      if (row) { row.codes.push(c); row.keys.push(keyLabel(c)); row.label = row.keys.join(' or '); }
+      else out.push({ action: found[c], codes: [c], keys: [keyLabel(c)], label: keyLabel(c), jobs: [], extra: true });
+    }
+    keyMemo = { sig, rows: out };
+    return keyMap();
   }
   function controlsText() {
     const map = keyMap();
     if (!touchMode()) return map.map(r => `${r.action}: ${r.label}`).join(' · ');
-    const names = []; for (const r of map) for (const c of r.codes) { const k = keyName(c.replace(/^Key/, '')); if (/^[A-Z]+$/.test(k) && TOUCH_KEY_NAMES[c.replace(/^Key/, '').toUpperCase()] && !names.includes(k)) names.push(k); }
-    return `Move: the stick on the ${S.stick} side. Buttons: ${names.join(', ')}. MENU opens the book with everything else. Tap the round map for the big one.`;
+    return `Move with the stick on the ${S.stick} side. SWING, USE and BLOCK are the round buttons by your thumb, and a fourth one shows up when there is something extra to do. Tap the belt to eat or use things, your shield for skills, the scroll for your quest, and the round map for the big one. MENU opens the book with everything else.`;
   }
 
-  // ---------- the panel ----------
+  // ---------- the panel: one row per setting, then the reset, then the controls; paged when the screen is short ----------
   const ROWS = [
     { key: 'sound', name: 'Sound effects', hint: () => 'Swings, hits, coins and clicks.' },
     { key: 'music', name: 'Music', hint: () => 'A tune for every place.' + (touchMode() ? '' : ' N flips it while you play.') },
@@ -192,38 +323,84 @@ const SETTINGS = (() => {
     { key: 'words', name: 'Button words', hint: () => 'The words under SWING, BLOCK, HOME, FRIENDS and MENU.' },
   ];
   const VALUE_WORDS = { true: 'On', false: 'Off', left: 'Left', right: 'Right', normal: 'Normal', large: 'Large', small: 'Small', slow: 'Slow', fast: 'Fast', learning: 'While learning', always: 'Always', off: 'Off' };
-  const ROW_H = 36;
   const text = v => typeof v === 'function' ? v() : v;
+  // The page plan: every item with its height, packed onto pages that fit the panel. Measured with the context it draws on.
+  function plan(g, w) {
+    const T = HK.T, t = touchMode(), ctrlH = HK.row(), iw = w - 36;
+    const bw = VW < 400 ? 112 : t ? 124 : 112, textW = iw - bw - 12;
+    const hintF = HK.FS(600, 12), lh = Math.round(15 * HK.k() * 10) / 10;
+    const items = [];
+    for (const row of ROWS) {
+      const hint = HK.wrap(g, text(row.hint), textW, 3, hintF);
+      const textH = 18 + hint.lines.length * lh + 4, rowH = Math.max(ctrlH, textH);
+      items.push({ kind: 'row', row, hint: hint.lines, h: rowH + 10, rowH, textH });
+    }
+    items.push({ kind: 'reset', h: ctrlH + 14 });
+    items.push({ kind: 'head', h: 24 });
+    if (t) {
+      const f = HK.FS(600, 13), lines = HK.wrap(g, controlsText(), iw, 12, f).lines, clh = Math.round(17 * HK.k() * 10) / 10;
+      // the paragraph goes in chunks of up to four lines, so a short screen can carry it over a page break
+      for (let i = 0; i < lines.length; i += 4) { const part = lines.slice(i, i + 4); items.push({ kind: 'para', lines: part, lh: clh, h: part.length * clh + 4 }); }
+    } else {
+      const rows = keyMap(), cols = iw >= 380 ? 2 : 1, per = Math.ceil(rows.length / cols);
+      const capW = Math.max(62, ...rows.map(r => r.keys.reduce((a, k) => a + HK.keycapW(g, k, 10) + 4, 0) + 6));
+      for (let i = 0; i < per; i++) items.push({ kind: 'keys', cells: Array.from({ length: cols }, (_, c) => rows[c * per + i]).filter(Boolean), cols, capW, h: 22 });
+    }
+    return { items, bw, textW, hintF, lh, iw, T };
+  }
+  function paginate(items, avail) {
+    const pages = [[]]; let used = 0;
+    for (const it of items) {
+      // a heading never ends a page on its own
+      const need = it.kind === 'head' ? it.h + 22 : it.h;
+      if (used + need > avail && pages[pages.length - 1].length) { pages.push([]); used = 0; }
+      pages[pages.length - 1].push(it); used += it.h;
+    }
+    return pages;
+  }
   HOOKS.panel.settings = (g, narrow) => {
-    const items = ROWS.length + 1; // + reset
-    const wMax = Math.min(460, VW - 20);
-    g.font = '11px sans-serif'; const ctrl = controlsText(); const ctrlLines = dialogLines(g, ctrl, wMax - 36); const ctrlH = 18 + ctrlLines * 14;
-    const top = 66, wantH = top + items * ROW_H + 10 + ctrlH + 10;
-    const h = Math.min(VH - 20, wantH); const paged = h < wantH;
-    const per = paged ? Math.max(1, Math.floor((h - top - 10 - ctrlH - 10 - 36) / ROW_H)) : items;
-    const pages = Math.max(1, Math.ceil(items / per)); settingsPage = clamp(settingsPage, 0, pages - 1);
-    const { px, py, w } = panelBox(g, 460, h, 'Settings', touchMode() ? 'Tap a button to change it. Tap outside to close.' : 'Click a button to change it. Esc or , closes.');
-    const bw = narrow ? 84 : 96, labelW = w - 36 - bw - 10;
-    const fit = t => { while (g.measureText(t).width > labelW && t.length > 6) t = t.slice(0, -2) + '…'; return t; };
-    const list = [...ROWS, { reset: true }].slice(settingsPage * per, settingsPage * per + per);
-    list.forEach((row, i) => {
-      const y = py + top + i * ROW_H;
-      if (row.reset) {
+    const room = panelRoom(460, VH), w = room.w, top = 62, foot = 12, pagerH = HK.row() + 16;
+    const P = plan(g, w);
+    const total = P.items.reduce((a, it) => a + it.h, 0);
+    const one = top + total + foot <= room.h;
+    const pages = one ? [P.items] : paginate(P.items, room.h - top - foot - pagerH);
+    // the box is as tall as its fullest page (the pager keeps one place on every page), never taller than the room
+    const h = one ? top + total + foot : Math.min(room.h, top + Math.max(...pages.map(pg => pg.reduce((a, it) => a + it.h, 0))) + pagerH + foot);
+    settingsPage = clamp(settingsPage, 0, pages.length - 1);
+    const { px, py } = panelBox(g, w, h, 'Settings', touchMode() ? 'Tap a button to change it. Tap outside to close.' : 'Click a button to change it. Esc or , closes.');
+    const T = HK.T, x0 = px + 18, iw = P.iw, ctrlH = HK.row();
+    let y = py + top;
+    for (const it of pages[settingsPage]) {
+      if (it.kind === 'row') {
+        const row = it.row, ty = y + Math.max(0, (it.rowH - it.textH) / 2);
+        HK.text(g, text(row.name), x0, ty + 15, { font: HK.FC(800, 13), color: T.ink, box: { x: x0, y, w: P.textW, h: it.rowH }, fitId: 'settings:name' });
+        it.hint.forEach((l, i) => HK.text(g, l, x0, ty + 18 + (i + 1) * P.lh - 2, { font: P.hintF, color: T.inkDim, box: { x: x0, y, w: P.textW, h: it.rowH }, fitId: 'settings:hint' }));
+        const v = S[row.key], isToggle = typeof v === 'boolean';
+        platePush(g, x0 + iw - P.bw, y + (it.rowH - ctrlH) / 2, P.bw, ctrlH, 'set:' + row.key, VALUE_WORDS[String(v)] || String(v), () => cycle(row.key), isToggle && v ? 'primary' : null, { name: text(row.name), on: false });
+        // a gold hairline between rows
+        g.fillStyle = 'rgba(217,178,92,0.22)'; g.fillRect(x0, y + it.h - 5, iw, 1);
+      } else if (it.kind === 'reset') {
         const armed = confirmActive('settings-reset');
-        button(g, px + 18, y + 3, w - 36, 30, armed ? 'Really reset? Tap again' : 'Put every setting back to normal', () => confirmTap('settings-reset', reset), armed ? '#c0392b' : '#8b2e2e');
-        buttons[buttons.length - 1].label = 'set:reset';
-        return;
+        platePush(g, x0, y + 4, iw, ctrlH, 'set:reset', armed ? 'Really reset? Tap again' : 'Put every setting back to normal', () => confirmTap('settings-reset', reset), 'danger', { emblem: 'erase', name: 'Put every setting back to normal' });
+      } else if (it.kind === 'head') {
+        HK.text(g, 'CONTROLS', x0, y + 17, { font: HK.FC(800, 12), color: T.gold, box: { x: x0, y, w: iw, h: 24 }, fitId: 'settings:head' });
+        g.fillStyle = 'rgba(217,178,92,0.35)'; g.fillRect(x0 + 84, y + 12, iw - 84, 1);
+      } else if (it.kind === 'para') {
+        it.lines.forEach((l, i) => HK.text(g, l, x0, y + 13 + i * it.lh, { font: HK.FS(600, 13), color: T.inkDim, box: { x: x0, y, w: iw, h: it.h }, fitId: 'settings:controls' }));
+      } else if (it.kind === 'keys') {
+        const cw = iw / it.cols;
+        it.cells.forEach((r, c) => {
+          const cx0 = x0 + c * cw; let kx = cx0;
+          for (const k of r.keys) kx += HK.keycap(g, kx, y + 2, k, 10) + 4;
+          const capW = it.capW, room2 = cw - capW - 10;
+          let f = HK.FS(600, 12); if (HK.tw(g, r.action, f) > room2) f = HK.FS(600, 10.5);
+          const words = HK.tw(g, r.action, f) > room2 ? (HK.wrap(g, r.action, room2, 1, f).lines[0] || r.action) : r.action;
+          HK.text(g, words, cx0 + capW, y + 15, { font: f, color: T.ink, box: { x: cx0 + capW, y, w: room2, h: 22 }, fitId: 'settings:key' });
+        });
       }
-      g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(fit(text(row.name)), px + 18, y + 15);
-      g.fillStyle = '#8b949e'; g.font = '10px sans-serif'; g.fillText(fit(text(row.hint)), px + 18, y + 29);
-      const v = S[row.key], on = v === true || (typeof v === 'string' && v !== DEFAULTS[row.key]);
-      button(g, px + w - 18 - bw, y + 3, bw, 30, VALUE_WORDS[String(v)] || String(v), () => cycle(row.key), on ? '#238636' : '#21262d');
-      buttons[buttons.length - 1].label = 'set:' + row.key; // the harness finds rows by key; the drawn word stays On / Off / Left / ...
-    });
-    if (paged) pager(g, px + 18, py + h - ctrlH - 10 - 36, w - 36, settingsPage, pages, p => { settingsPage = p; });
-    const y0 = py + h - ctrlH - 8;
-    g.fillStyle = '#8b949e'; g.font = 'bold 10px sans-serif'; g.textAlign = 'left'; g.fillText('CONTROLS', px + 18, y0 + 10);
-    g.fillStyle = '#c9d1d9'; g.font = '11px sans-serif'; wrapText(g, ctrl, px + 18, y0 + 24, w - 36, 14);
+      y += it.h;
+    }
+    if (pages.length > 1) rowPager(g, x0, py + h - foot - HK.row() - 4, iw, settingsPage, pages.length, p => { settingsPage = p; });
   };
 
   // ---------- boot ----------
@@ -237,12 +414,16 @@ const SETTINGS = (() => {
     dialog.cur = null; dialog.queue.length = 0; paused = false; closePanel(); h.peace(true); uxConfirm = null;
     const rectsOf = () => buttons.filter(b => !b.offscreen);
     const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    // turn to the page that holds a control (the panel pages on short screens)
+    const seek = lab => { for (let p = 0; p < 12; p++) { settingsPage = p; render(); if (buttons.some(b => b.label === lab)) return true; if (!buttons.some(b => b.label === 'Next')) break; } return false; };
     try {
       // opens from the pause menu and with ,
       { paused = true; render(); const c = F.clickButton('Settings'); const fromMenu = c && !paused && panel === 'settings'; closePanel();
-        F.press('Comma'); const byKey = panel === 'settings'; render(); const rows = rectsOf().filter(b => b.label.startsWith('set:')).map(b => b.label.slice(4));
-        F.press('Comma'); const closed = panel === null;
-        check('settings: opens from the pause menu Settings button and with the , key; one control per row plus reset', fromMenu && byKey && closed && rows.join() === ROWS.map(r => r.key).join() + ',reset', { fromMenu, byKey, closed, rows }); }
+        F.press('Comma'); const byKey = panel === 'settings'; const rows = [];
+        // the rows may run over more than one page on a short screen: walk every page
+        for (let p = 0; p < 12; p++) { settingsPage = p; render(); for (const b of rectsOf()) if (b.label.startsWith('set:') && !rows.includes(b.label.slice(4))) rows.push(b.label.slice(4)); if (!buttons.some(b => b.label === 'Next')) break; }
+        settingsPage = 0; F.press('Comma'); const closed = panel === null;
+        check('settings: opens from the pause menu Settings button and with the , key; one control per row plus reset (over every page)', fromMenu && byKey && closed && rows.join() === ROWS.map(r => r.key).join() + ',reset', { fromMenu, byKey, closed, rows }); }
       // sound / music / kid drive the real flags and the legacy keys
       { const a0 = audioMuted; set('sound', true); const on = !audioMuted && lsGet('fanglands.muted') === '0'; set('sound', false); const off = audioMuted && lsGet('fanglands.muted') === '1';
         set('sound', !a0); check('settings: sound row drives audioMuted and fanglands.muted', on && off, { on, off }); }
@@ -311,35 +492,64 @@ const SETTINGS = (() => {
         lsSet(KEY, keep.j); lsSet('fanglands.muted', keep.m); lsSet('fanglands.music', keep.u); lsSet('fanglands.kidmode', keep.k); load();
         check('settings: persist as JSON under fanglands.settings and round-trip; the legacy muted / music / kidmode keys migrate on a first load', saved && back && migrated, { saved, back, migrated }); }
       // reset: two taps
-      { set('text', 'large'); set('damage', false); set('stick', 'right'); openPanel('settings'); render(); const c1 = F.clickButton('set:reset'); const still = S.text === 'large' && S.damage === false && buttons.some(b => b.label === 'set:reset'); render();
+      { set('text', 'large'); set('damage', false); set('stick', 'right'); openPanel('settings'); seek('set:reset'); const c1 = F.clickButton('set:reset'); const still = S.text === 'large' && S.damage === false && buttons.some(b => b.label === 'set:reset'); render();
         const c2 = F.clickButton('set:reset'); const done = S.text === 'normal' && S.damage === true && S.stick === 'left' && JSON.parse(lsGet(KEY)).text === 'normal'; closePanel(); uxConfirm = null;
         check('settings: reset needs two taps and puts every setting back to normal', c1 && still && c2 && done, { c1, still, c2, done }); }
       // controls line reads the real handlers
-      { const map = keyMap(); const find = a => map.find(r => r.action === a); const e = find('Use / talk'), sp = find('Swing'), st = find('Settings'), mu = find('Music'), mv = find('Move');
+      { const map = keyMap(); const by = code => map.find(r => r.codes.includes(code)); const e = by('KeyE'), sp = by('Space'), st = by('Comma'), mu = by('KeyN'), mv = by('KeyW');
         const codes = []; const re = /pressed\.has\('([A-Za-z0-9]+)'/g; let m; while ((m = re.exec(String(update)))) codes.push(m[1]); const all = codes.every(c => map.some(r => r.codes.includes(c)));
         window.__forceTouch = true; const t = controlsText(); window.__forceTouch = false; const d = controlsText(); window.__forceTouch = prevTouch;
-        check('settings: the Controls line is built from the real key handlers (E use, Space swing, comma settings, N music, WASD move) and every key 07-update reads is listed; touch shows button names', !!e && e.codes.includes('KeyE') && !!sp && sp.codes.includes('Space') && !!st && st.codes.includes('Comma') && !!mu && mu.codes.includes('KeyN') && !!mv && /WASD/.test(mv.label) && all && /SWING/.test(t) && /USE/.test(t) && /Swing: Space/.test(d), { e: e && e.codes, sp: sp && sp.codes, st: st && st.codes, mu: mu && mu.codes, mv: mv && mv.label, all, t, d }); }
-      // layout at four viewports: panel (every page) and pause menu — no two buttons overlap, everything inside the screen
-      { const own = k => Object.getOwnPropertyDescriptor(window, k); const saved = { w: own('innerWidth'), h: own('innerHeight') }; const problems = [];
-        const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
-        const inside = r => r.x >= 0 && r.y >= 0 && r.x + r.w <= VW && r.y + r.h <= VH;
-        const audit = (where, rects) => { for (const r of rects) if (!inside(r)) problems.push(`${where}: ${r.label} off-screen ${JSON.stringify([r.x, r.y, r.w, r.h])}`); for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) if (hit(rects[i], rects[j])) problems.push(`${where}: ${rects[i].label} × ${rects[j].label}`); };
-        let tried = 0;
-        for (const [w, hh] of [[390, 844], [844, 390], [768, 1024], [1280, 800]]) {
-          if (!setSize(w, hh)) continue; tried++;
-          for (const big of ['normal', 'large']) {
-            set('text', big);
-            openPanel('settings'); let p = 0;
-            while (true) { settingsPage = p; render(); const pr = { ...panelRect }; if (!inside(pr)) problems.push(`panel ${w}x${hh} ${big} p${p}: box off-screen ${JSON.stringify(pr)}`);
-              const ci = buttons.findIndex(b => b.label === '×' && hit(b, pr)); audit(`panel ${w}x${hh} ${big} p${p}`, ci < 0 ? [{ x: -1, y: -1, w: 0, h: 0, label: 'no close button' }] : rectsOf().filter(b => buttons.indexOf(b) >= ci)); /* the panel's own controls; HUD rects under the box are shadowed by design (last registered wins) */ if (!buttons.some(b => b.label === 'Next')) break; if (++p > 8) { problems.push('too many pages'); break; } }
-            closePanel(); paused = true; render(); audit(`pause ${w}x${hh} ${big}`, rectsOf()); paused = false;
-            say('A'.repeat(180) + ' ' + 'word '.repeat(30), 'The Voice'); F.step([]); render(); if (!dialogRect || !inside(dialogRect)) problems.push(`dialogue ${w}x${hh} ${big}: ${JSON.stringify(dialogRect)}`); dialog.cur = null; dialog.queue.length = 0;
+        check('settings: the Controls line is built from the real key handlers (E use, Space swing, comma settings, N music, WASD walk) and every key 07-update reads is listed; touch names the buttons instead', !!e && e.action === 'Use or talk' && !!sp && /^Swing/.test(sp.action) && !!st && st.action === 'Settings' && !!mu && /Music/.test(mu.action) && !!mv && /WASD/.test(mv.label) && mv.codes.includes('ArrowUp') && all && /SWING/.test(t) && /USE/.test(t) && /Swing, shoot, stomp: Space/.test(d), { e: e && e.codes, sp: sp && sp.codes, st: st && st.codes, mu: mu && mu.codes, mv: mv && mv.label, all, t, d }); }
+      // key coverage: every key the game answers (INVENTORY.json's 'keys' paragraph) is in the one table, each read from a real
+      // handler, P listed with both of its jobs, G with X beside it, T while paused
+      { const map = keyMap();
+        const need = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyE', 'KeyQ', 'Digit', 'KeyI', 'KeyC', 'Tab', 'KeyJ', 'KeyM', 'Slash', 'F1', 'KeyH', 'KeyX', 'Enter', 'Escape', 'KeyT', 'Comma', 'KeyK', 'KeyN', 'KeyR', 'KeyG', 'KeyV', 'KeyB', 'KeyL', 'KeyP', 'KeyF', 'KeyY'];
+        const srcs = []; { let u = update; while (typeof u === 'function' && u.__inner) u = u.__inner; srcs.push(String(u)); } for (const hk of HOOKS.update) srcs.push(String(hk)); if (typeof frame === 'function') srcs.push(String(frame)); srcs.push(String(inputVector));
+        const src = srcs.join('\n'), helped = new Set(); for (const k of HOOKS.keyHelp) for (const c of k.codes) helped.add(c);
+        const heard = c => c === 'Digit' ? /pressed\.has\('Digit'\s*\+/.test(src) : src.includes(`pressed.has('${c}'`) || src.includes(`keys.has('${c}'`) || helped.has(c);
+        const missing = need.filter(c => !map.some(r => r.codes.includes(c))), deaf = need.filter(c => !heard(c));
+        const p = map.find(r => r.codes.includes('KeyP')), gRow = map.find(r => r.codes.includes('KeyG')), tRow = map.find(r => r.codes.includes('KeyT'));
+        const pJobs = !!p && p.jobs.length >= 2 && HOOKS.keyHelp.filter(k => k.codes.includes('KeyP')).every(k => p.jobs.includes(k.action));
+        const shape = map.every(r => typeof r.action === 'string' && r.action && Array.isArray(r.codes) && r.codes.length && Array.isArray(r.keys) && r.keys.length && r.label === r.keys.join(' or '));
+        check('settings: the key table lists every key the game answers (W A S D / arrows, Space, E, Q, 1-5, I, C, Tab, J, M, / or F1, H, X, Enter, Esc, T, comma, K, N, R, G or X, V, B, L, P with both its jobs, F, Y), each one read from a real handler', !missing.length && !deaf.length && pJobs && !!gRow && gRow.keys.includes('X') && !!tRow && shape, { missing, deaf, p: p && p.jobs, g: gRow && gRow.keys, t: !!tRow, rows: map.length, shape }); }
+      // the book's Keys card (src/59-hudkit.js drawKeys) fits every row at 1280x800: the rows fit its columns, each row's keycaps
+      // fit the key column, and its words fit one line (12 px, or the card's 10.5 px step at Large text)
+      { const B = HK.bookLayoutFor(1280, 800, { touch: false, online: true, page: 'keys', tiles: HK.bookTiles().length, extraRows: Math.max(1, HOOKS.pauseMenu.length) });
+        const kb = B.keysBox, fc = HK.audit.fitCtx(), rows = keyMap(), bad = [];
+        const lh = 20, per = kb ? Math.max(1, Math.floor((kb.h - 30) / lh)) : 0, cols = rows.length > per ? 2 : 1, cw = kb ? kb.w / cols : 0, capW = cols > 1 ? 58 : Math.min(150, kb ? kb.w * 0.42 : 0), room = cw - capW - 8;
+        const t0 = S.text;
+        for (const big of ['normal', 'large']) {
+          S.text = big;
+          for (const r of rows) {
+            const capsW = r.keys.reduce((a, k) => a + HK.keycapW(fc, k, 9) + 4, 0) - 4;
+            if (capsW > capW - 4) bad.push(`${big}: keys ${r.label} are ${Math.round(capsW)} px, the key column ${capW - 4}`);
+            const w12 = HK.tw(fc, r.action, HK.FS(600, 12)), w10 = HK.tw(fc, r.action, HK.FS(600, 10.5));
+            if (big === 'normal' ? w12 > room : w10 > room) bad.push(`${big}: "${r.action}" is ${Math.round(big === 'normal' ? w12 : w10)} px, the words column ${Math.round(room)}`);
           }
         }
-        set('text', 'normal'); settingsPage = 0;
-        if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
-        render();
-        check('settings: no overlapping or off-screen buttons in the panel (every page, normal + large text) and the pause menu at 390x844, 844x390, 768x1024, 1280x800; the dialogue box fits', tried === 4 && problems.length === 0, { tried, problems: problems.slice(0, 8), VW, VH }); }
+        S.text = t0;
+        check('settings: the book\'s Keys card fits the whole key table at 1280x800 (rows in its two columns, keycaps in the key column, the words on one line)', !!kb && rows.length <= per * cols && bad.length === 0, { rows: rows.length, room: per * cols, cols, bad: bad.slice(0, 8) }); }
+      // layout at all 8 device sizes, touch and mouse, every page, normal and Large text: from the close seal on, controls are
+      // 44 px on touch (26 with a mouse), 8 px apart on touch (4), on screen and out of the notch / home bands; every string fits
+      // its plate at Large. The book (pause menu) passes the kit's frame audit and the talk box fits.
+      { const restore = panelSizeSaver(), problems = []; let tried = 0, pagesSeen = 0;
+        try {
+          for (const [w, hh] of HK.audit.SIZES) {
+            if (!panelSetSize(w, hh)) continue; tried++;
+            for (const tch of [true, false]) {
+              window.__forceTouch = tch;
+              for (const big of ['normal', 'large']) {
+                set('text', big);
+                const where = `${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big}`;
+                closePanel(); openPanel('settings');
+                for (let p = 0; p < 12; p++) { settingsPage = p; problems.push(...panelFrame(`settings ${where} page ${p + 1}`)); pagesSeen++; if (!buttons.some(b => b.label === 'Next')) break; if (p === 11) problems.push(`settings ${where}: too many pages`); }
+                closePanel(); paused = true; HK.BOOK.page = 'game'; panelFrame('book', { from: 0, panel: false }); problems.push(...HK.audit.frameIssues(`book ${where}`, { book: true })); paused = false; HK.BOOK.page = 'kit';
+                say('A'.repeat(180) + ' ' + 'word '.repeat(30), 'The Voice'); F.step([]); render(); if (!dialogRect || dialogRect.x < 0 || dialogRect.y < 0 || dialogRect.x + dialogRect.w > VW || dialogRect.y + dialogRect.h > VH) problems.push(`dialogue ${where}: ${JSON.stringify(dialogRect)}`); dialog.cur = null; dialog.queue.length = 0;
+              }
+            }
+          }
+        } finally { set('text', 'normal'); settingsPage = 0; window.__forceTouch = prevTouch; paused = false; closePanel(); restore(); render(); }
+        check('settings: the panel at all 8 device sizes, touch and mouse, every page, normal and Large text: controls 44 px on touch (26 with a mouse) and 8 px apart (4), on screen, clear of the notch and home bands, every word inside its plate; the book and the talk box fit too', tried === 8 && problems.length === 0, { tried, pagesSeen, problems: problems.slice(0, 10), total: problems.length }); }
     } finally {
       Object.assign(S, snap); apply(); save(); settingsPage = 0; uxConfirm = null; clearShake();
       window.__forceTouch = prevTouch; paused = false; closePanel(); h.peace(false); touch.press = null; touch.stickId = null; touch.active = false;

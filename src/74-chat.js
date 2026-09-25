@@ -16,7 +16,6 @@
   const LOG_MAX = 30;
   const SEND_EVERY = 1.5;       // s: the contract's cap on chat
   const PHRASES = ['Hi!', 'Follow me', 'Help!', 'Look at this', 'Nice!', 'Where are you?', "Let's fight the boss", 'Bye!'];
-  const BLUE = '#7ec8ff';
 
   const log = [];               // [{ n, text, at, t }] oldest first, t = seconds left on the strip
   const bubbles = {};           // name → { text, t }
@@ -27,37 +26,61 @@
   const mapId = () => window.PLAYERS ? PLAYERS.mapId() : 'over';
 
   // ---------- the box: built once, on the first open; nothing is made where there is no document (headless) ----------
+  // A DOM overlay (so the iPad keyboard works), dressed in the kit's materials in CSS: dark vellum with a gold hairline
+  // 2.5 px inside its edge, a Cinzel label, the quick phrases as small leather tabs with a dashed stitch, a 16 px input
+  // (iOS Safari zooms on anything smaller) and an iron Send plate. Every button and the input are at least 44 px tall.
+  const SANS_CSS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif', CINZEL_CSS = '"Cinzel","Trajan Pro",Georgia,serif';
+  const CSS = `
+#chatbox{position:fixed;left:50%;bottom:max(16px,calc(env(safe-area-inset-bottom) + 8px));transform:translateX(-50%);width:min(560px,calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));box-sizing:border-box;display:none;flex-direction:column;gap:10px;z-index:20;padding:12px 14px 14px;background:linear-gradient(180deg,#31281e,#1d1712);border:1px solid rgba(0,0,0,.9);border-radius:5px;box-shadow:0 8px 30px rgba(0,0,0,.6);font-family:${SANS_CSS};color:#f4ead3}
+#chatbox::before{content:"";position:absolute;inset:2.5px;border:1px solid rgba(217,178,92,.5);border-radius:3px;pointer-events:none}
+#chatbox .fl-chat-head{font:800 12px ${CINZEL_CSS};letter-spacing:.06em;color:#d9b25c;text-shadow:0 1px 0 rgba(0,0,0,.9)}
+#chatbox .fl-chat-tabs{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+#chatbox .fl-chat-tab{min-height:44px;padding:0 14px;font:700 15px ${SANS_CSS};color:#f4ead3;background:linear-gradient(180deg,#6d4a30,#48301e 55%,#24160c);border:1px solid rgba(0,0,0,.9);border-radius:6px;outline:1px dashed rgba(226,186,124,.6);outline-offset:-5px;box-shadow:0 3px 6px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.12);text-shadow:0 1px 0 rgba(0,0,0,.9);cursor:pointer;touch-action:manipulation;-webkit-appearance:none;appearance:none}
+#chatbox .fl-chat-tab:hover{color:#f7dc8f}
+#chatbox .fl-chat-tab:active{transform:translateY(1.5px);box-shadow:0 0 1px rgba(0,0,0,.6);background:linear-gradient(180deg,#48301e,#6d4a30)}
+#chatbox .fl-chat-row{display:flex;gap:8px}
+#chatbox .fl-chat-input{flex:1;min-width:0;min-height:44px;box-sizing:border-box;font-family:${SANS_CSS};font-size:16px;font-weight:600;line-height:20px;padding:10px 12px;color:#f4ead3;background:#14100c;border:1px solid rgba(217,178,92,.45);border-radius:4px;outline:none;-webkit-appearance:none;appearance:none}
+#chatbox .fl-chat-input::placeholder{color:#8c8170}
+#chatbox .fl-chat-input:focus{border-color:#d9b25c;box-shadow:0 0 0 2px rgba(217,178,92,.25)}
+#chatbox .fl-chat-send{min-height:44px;min-width:84px;padding:0 16px;font:700 15px ${SANS_CSS};color:#f4ead3;background:linear-gradient(180deg,#2d3138,#16181c);border:1px solid rgba(0,0,0,.9);border-radius:6px;box-shadow:inset 0 0 0 1.5px rgba(217,178,92,.95),inset 0 2px 0 rgba(255,255,255,.08),0 3px 8px rgba(0,0,0,.6);text-shadow:0 1px 0 rgba(0,0,0,.9);cursor:pointer;touch-action:manipulation;-webkit-appearance:none;appearance:none}
+#chatbox .fl-chat-send:active{transform:translateY(1.5px);background:linear-gradient(180deg,#16181c,#2d3138);box-shadow:inset 0 0 0 1.5px rgba(217,178,92,.6)}`;
   function ensureDom() {
     if (dom !== null) return dom;
-    if (typeof document === 'undefined' || !document.body || typeof document.body.appendChild !== 'function' || typeof document.createElement !== 'function') { dom = false; return dom; }
+    if (typeof document === 'undefined' || !document.body || !document.head || typeof document.body.appendChild !== 'function' || typeof document.createElement !== 'function') { dom = false; return dom; }
     try {
+      const style = document.createElement('style'); style.id = 'fl-chat-css'; style.textContent = CSS; document.head.appendChild(style);
       const box = document.createElement('div');
       box.id = 'chatbox';
-      box.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);width:min(560px,calc(100vw - 32px));display:none;flex-direction:column;gap:8px;z-index:20;font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;';
-      const chips = document.createElement('div');
-      chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;justify-content:center;';
+      const head = document.createElement('div'); head.className = 'fl-chat-head'; head.textContent = 'SAY SOMETHING';
+      const chips = document.createElement('div'); chips.className = 'fl-chat-tabs';
       let chipAt = -1e9;   // when a chip was last pressed: a blur right after one is the chip taking the tap, not the box being left
-      for (const p of PHRASES) {
-        const b = document.createElement('button'); b.type = 'button'; b.textContent = p;
-        b.style.cssText = 'font:600 14px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:rgba(10,14,22,0.92);border:1px solid #30363d;border-radius:16px;padding:7px 12px;cursor:pointer;touch-action:manipulation;';
-        b.addEventListener('pointerdown', ev => { chipAt = nowMs(); ev.preventDefault(); });   // the input keeps the keyboard; the click still comes
+      // a tab or Send keeps the keyboard up: the press is swallowed, the click still comes
+      const keepFocus = b => {
+        b.addEventListener('pointerdown', ev => { chipAt = nowMs(); ev.preventDefault(); });
         b.addEventListener('mousedown', ev => ev.preventDefault());
         b.addEventListener('touchstart', () => { chipAt = nowMs(); }, { passive: true });
+      };
+      for (const p of PHRASES) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'fl-chat-tab'; b.textContent = p;
+        keepFocus(b);
         b.addEventListener('click', ev => { ev.preventDefault(); send(p); });
         chips.appendChild(b);
       }
       const input = document.createElement('input');
-      input.type = 'text'; input.maxLength = MAX; input.autocomplete = 'off'; input.spellcheck = false;
+      input.type = 'text'; input.className = 'fl-chat-input'; input.maxLength = MAX; input.autocomplete = 'off'; input.spellcheck = false;
       input.setAttribute('autocapitalize', 'sentences'); input.setAttribute('enterkeyhint', 'send'); input.setAttribute('aria-label', 'Chat');
       input.placeholder = 'Say something to your friends';
-      input.style.cssText = 'font:16px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:rgba(10,14,22,0.95);border:1px solid #58a6ff;border-radius:10px;padding:10px 12px;outline:none;width:100%;box-sizing:border-box;';
-      box.appendChild(chips); box.appendChild(input); document.body.appendChild(box);
-      dom = { box, chips, input };
+      const sendBtn = document.createElement('button'); sendBtn.type = 'button'; sendBtn.className = 'fl-chat-send'; sendBtn.textContent = 'Send';
+      keepFocus(sendBtn);
+      sendBtn.addEventListener('click', ev => { ev.preventDefault(); send(input.value); });
+      const row = document.createElement('div'); row.className = 'fl-chat-row'; row.appendChild(input); row.appendChild(sendBtn);
+      box.appendChild(head); box.appendChild(chips); box.appendChild(row); document.body.appendChild(box);
+      dom = { box, chips, input, send: sendBtn };
       // focus leaving the box (Done on the iPad keyboard, a click on the world) closes it; a chip's tap does not
       input.addEventListener('blur', () => { setTimeout(() => { if (isOpen && dom && document.activeElement !== dom.input && nowMs() - chipAt > 600) close(); }, 150); });
       // the on-screen keyboard covers the bottom of the layout viewport: keep the box just above it
       const vv = window.visualViewport;
-      if (vv && vv.addEventListener) { const place = () => { const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop); box.style.bottom = (16 + covered) + 'px'; }; vv.addEventListener('resize', place); vv.addEventListener('scroll', place); }
+      if (vv && vv.addEventListener) { const place = () => { const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop); box.style.bottom = covered > 0 ? (16 + covered) + 'px' : ''; }; vv.addEventListener('resize', place); vv.addEventListener('scroll', place); }
       // the guard: while the box has the keyboard, Enter sends, Escape closes, and no key reaches the game (05-input listens on window in the bubble phase; this runs first, in the capture phase, and stops the event there)
       const guard = e => {
         if (!dom || document.activeElement !== dom.input) return;
@@ -115,22 +138,32 @@
   HOOKS.keyHelp.push({ action: 'Chat', codes: ['KeyY', 'Enter'] }); // 43-settings lists it on the Controls line
 
   // ---------- bubbles over heads (world items, sorted last so they sit over everything) ----------
-  function wrapLines(g, text, maxW) {
-    const words = text.split(' '), lines = []; let line = '';
-    for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test; if (lines.length === 3) break; }
-    if (line && lines.length < 3) lines.push(line);
+  // A small vellum plate with the kit's gold hairline and a pointer tooth, the words in the system sans (12 px, bold), up to
+  // three lines of whole words; a word too long for a line (a run of letters with no space) is broken across lines.
+  function bubbleLines(g, text, maxW, f, maxLines = 3) {
+    const parts = [];
+    for (const w of String(text).split(' ').filter(Boolean)) {
+      if (HK.tw(g, w, f) <= maxW) { parts.push(w); continue; }
+      let cur = ''; for (const ch of w) { if (cur && HK.tw(g, cur + ch, f) > maxW) { parts.push(cur); cur = ch; } else cur += ch; } if (cur) parts.push(cur);
+    }
+    const lines = []; let line = '';
+    for (const p of parts) { const t = line ? line + ' ' + p : p; if (line && HK.tw(g, t, f) > maxW) { lines.push(line); line = p; if (lines.length === maxLines) break; } else line = t; }
+    if (line && lines.length < maxLines) lines.push(line);
     return lines;
   }
   function drawBubble(g, b, x, y) {
-    const a = clamp(b.t * 2, 0, 1);
-    g.save(); g.globalAlpha = a; g.font = 'bold 12px sans-serif'; g.textAlign = 'center';
-    const lines = wrapLines(g, b.text, 180); let w = 0; for (const l of lines) w = Math.max(w, g.measureText(l).width);
-    const bw = Math.ceil(w) + 18, bh = 10 + lines.length * 15, bx = Math.round(x - bw / 2), by = Math.round(y - bh - 8);
-    roundRect(g, bx, by, bw, bh, 8); g.fillStyle = 'rgba(10,14,22,0.92)'; g.fill(); g.strokeStyle = BLUE; g.lineWidth = 1.2; g.stroke();
-    g.fillStyle = 'rgba(10,14,22,0.92)'; g.beginPath(); g.moveTo(x - 5, by + bh - 1); g.lineTo(x, by + bh + 6); g.lineTo(x + 5, by + bh - 1); g.closePath(); g.fill();
-    g.strokeStyle = BLUE; g.beginPath(); g.moveTo(x - 5, by + bh); g.lineTo(x, by + bh + 6); g.lineTo(x + 5, by + bh); g.stroke();
-    g.fillStyle = '#e6edf3'; lines.forEach((l, i) => g.fillText(l, x, by + 17 + i * 15));
+    const a = clamp(b.t * 2, 0, 1), f = HK.FS(700, 12), lh = Math.round(15 * HK.k());
+    g.save(); g.globalAlpha *= a;
+    const lines = bubbleLines(g, b.text, 180, f); let w = 0; for (const l of lines) w = Math.max(w, HK.tw(g, l, f));
+    const bw = Math.ceil(w) + 22, bh = 12 + lines.length * lh, bx = Math.round(x - bw / 2), by = Math.round(y - bh - 8);
+    HK.vellumPlate(g, bx, by, bw, bh);
+    // the tooth: vellum, its two outer edges in the plate's near-black outline and the gold hairline inside
+    g.beginPath(); g.moveTo(x - 6, by + bh - 1); g.lineTo(x, by + bh + 7); g.lineTo(x + 6, by + bh - 1); g.closePath(); g.fillStyle = '#1d1712'; g.fill();
+    g.beginPath(); g.moveTo(x - 6, by + bh); g.lineTo(x, by + bh + 7); g.lineTo(x + 6, by + bh); g.strokeStyle = 'rgba(0,0,0,0.9)'; g.lineWidth = 1; g.stroke();
+    g.beginPath(); g.moveTo(x - 3.5, by + bh - 2.5); g.lineTo(x, by + bh + 3); g.lineTo(x + 3.5, by + bh - 2.5); g.strokeStyle = 'rgba(217,178,92,0.5)'; g.stroke();
+    lines.forEach((l, i) => HK.text(g, l, x, by + 6 + (i + 1) * lh - 3, { font: f, align: 'center', color: HK.T.ink, shadow: 'rgba(0,0,0,0.9)' }));
     g.restore();
+    return { x: bx, y: by, w: bw, h: bh, lines };
   }
   HOOKS.draw.push((g, items) => {
     const my = mapId(), meN = me();
@@ -175,27 +208,42 @@
   hudControl({ id: 'chat', sort: 45, label: () => 'CHAT', emblem: 'chat', key: 'Y', asleep: () => !NET.enabled, on: () => isOpen, action: () => { if (!NET.enabled) { notify('Chat is for the online game.'); return; } if (isOpen) close(); else open(); } });
 
   // ---------- the log panel ----------
+  // The newest lines that fit, in one vellum plate with a gold hairline between lines: the name in friend blue (yours in
+  // ink), the words in the system sans, wrapped whole (never cut). Say something and Friends are plates one kit row tall.
   HOOKS.panel.chatlog = (g, narrow) => {
-    const lh = 22, per = Math.max(3, Math.min(LOG_MAX, Math.floor((VH - 20 - 128 - HK.row()) / lh)));
-    const lines = log.slice(-per);
-    const w = narrow ? Math.min(VW - 20, 400) : 520, h = Math.min(VH - 20, 118 + HK.row() + Math.max(1, lines.length) * lh);
-    const { px, py } = panelBox(g, w, h, 'Chat', lines.length ? 'The last things your friends said, newest at the bottom.' : 'Nothing said yet.');
-    let y = py + 76;
-    g.font = '12px sans-serif';
-    for (const l of lines) {
-      const mine = l.n === me();
-      g.textAlign = 'left'; g.font = 'bold 12px sans-serif'; g.fillStyle = mine ? '#e6edf3' : BLUE; g.fillText(l.n, px + 18, y + 8);
-      const nw = Math.max(g.measureText(l.n).width, narrow ? 60 : 90);
-      g.font = '12px sans-serif'; g.fillStyle = '#c9d1d9'; let t = l.text; const maxW = w - 36 - nw - 10; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…'; g.fillText(t, px + 18 + nw + 10, y + 8);
-      y += lh;
+    const room = panelRoom(narrow ? 400 : 520, VH), w = room.w, iw = w - 36, bh = HK.row();
+    const nf = HK.FC(800, 12), tf = HK.FS(600, 13), lh = Math.round(17 * HK.k() * 10) / 10;
+    const nameCol = Math.min(narrow ? 84 : 110, Math.max(60, iw * 0.28)), textW = iw - 24 - nameCol - 10;
+    const top = 62, foot = bh + 26, pad = 8;
+    const avail = room.h - top - foot - 2 * pad;
+    // newest first, as many as fit; a name wider than its column takes a line of its own
+    const rows = []; let used = 0;
+    for (let i = log.length - 1; i >= 0; i--) {
+      const l = log[i], own = HK.tw(g, l.n, nf) > nameCol, lines = bubbleLines(g, l.text, own ? iw - 24 : textW, tf, 4);
+      const h = (own ? lh : 0) + lines.length * lh + 8;
+      if (used + h > avail && rows.length) break;
+      rows.unshift({ l, own, lines, h }); used += h;
     }
-    // one kit row tall (HK.row(): 44 px on touch), like every control
-    const bh = HK.row(), by = py + h - bh - 14;
-    button(g, px + 18, by, 140, bh, touchMode() ? 'Say something' : 'Say something (Enter)', () => { closePanel(); open(); });
-    if (window.PLAYERS) button(g, px + 18 + 148, by, 90, bh, 'Friends', () => openPanel('friends'), '#21262d');
+    const listH = Math.max(rows.length ? 40 : 2 * lh + 8, used) + 2 * pad, h = Math.min(room.h, top + listH + foot);
+    const { px, py } = panelBox(g, w, h, 'Chat', log.length ? 'The last things your friends said, newest at the bottom.' : 'Nothing said yet.');
+    const x0 = px + 18, T = HK.T;
+    HK.vellumPlate(g, x0, py + top, iw, listH);
+    if (!rows.length) HK.wrap(g, 'When a friend says something, it shows up here.', iw - 24, 2, tf).lines.forEach((l, i) => HK.text(g, l, x0 + 12, py + top + pad + 16 + i * lh, { font: tf, color: T.inkDim, box: { x: x0 + 12, y: py + top, w: iw - 24, h: listH }, fitId: 'chatlog:none' }));
+    let y = py + top + pad;
+    rows.forEach((r, k) => {
+      const mine = r.l.n === me(), tx = r.own ? x0 + 12 : x0 + 12 + nameCol + 10;
+      HK.text(g, r.l.n, x0 + 12, y + lh - 3, { font: nf, color: mine ? T.ink : T.friend, shadow: 'rgba(0,0,0,0.9)', box: r.own ? { x: x0 + 12, y, w: iw - 24, h: r.h } : { x: x0 + 12, y, w: nameCol, h: r.h }, fitId: 'chatlog:name' });
+      r.lines.forEach((l, i) => HK.text(g, l, tx, y + (r.own ? lh : 0) + (i + 1) * lh - 3, { font: tf, color: T.ink, box: { x: tx, y, w: r.own ? iw - 24 : textW, h: r.h }, fitId: 'chatlog:text' }));
+      if (k < rows.length - 1) { g.fillStyle = 'rgba(217,178,92,0.22)'; g.fillRect(x0 + 10, y + r.h - 1, iw - 20, 1); }
+      y += r.h;
+    });
+    const by = py + h - bh - 14, sayL = touchMode() ? 'Say something' : 'Say something (Enter)';
+    const fw = window.PLAYERS ? Math.min(140, Math.round(iw * 0.4)) : 0, sw = Math.min(iw - (fw ? fw + 10 : 0), touchMode() ? 190 : 200);
+    platePush(g, x0, by, sw, bh, sayL, sayL, () => { closePanel(); open(); }, 'primary', { emblem: 'talk', name: 'Say something to your friends', keys: touchMode() ? [] : ['Enter'] });
+    if (window.PLAYERS) platePush(g, x0 + sw + 10, by, fw, bh, 'Friends', 'Friends', () => openPanel('friends'), null, { emblem: 'friends', name: 'Friends online', keys: touchMode() ? [] : ['F'] });
   };
 
-  window.CHAT = { open, close, send, isOpen: () => isOpen, bubbles, log, PHRASES, MAX, stripLines };
+  window.CHAT = { open, close, send, isOpen: () => isOpen, bubbles, log, PHRASES, MAX, stripLines, CSS, drawBubble, bubbleLines };
 
   // ---------- self-test ----------
   const P = 'chat: ';
@@ -241,6 +289,50 @@
     { feed({ t: 'chat', n: 'Ava', text: 'still here' }); F.sim(60 * 4.2, []); const bubbleGone = !bubbles.Ava; F.sim(60 * 4.2, []); const stripGone = !log.some(l => l.t > 0);
       for (let i = 0; i < 40; i++) feed({ t: 'chat', n: 'Ava', text: 'line ' + i }); const kept = log.length === LOG_MAX && log[LOG_MAX - 1].text === 'line 39';
       check(P + 'a bubble lasts 4 s, a strip line 8 s, and the log keeps the last 30', bubbleGone && stripGone && kept, { bubbleGone, stripGone, kept, log: log.length }); }
+    // the Chat log at all 8 device sizes, touch and mouse, normal and Large text, empty and full of long lines: from the close
+    // seal on, controls 44 px on touch (26 with a mouse), 8 px apart (4), on screen, out of the bands; every word in its plate
+    { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = SETTINGS.get('text'), problems = []; let tried = 0;
+      const lines = [['Ava', 'Come and help me fight the boss'], ['Maximilian', 'It is by the old mill near the big oak tree past the river, hurry up everyone, it has lots of hit points'], ['Cohen', 'On my way'], ['Isabella', 'Supercalifragilisticexpialidocious and more words'], ['Ben', 'Nice!']];
+      try {
+        for (const [w, hh] of HK.audit.SIZES) {
+          if (!panelSetSize(w, hh)) continue; tried++;
+          for (const tch of [true, false]) for (const big of ['normal', 'large']) for (const full of [false, true]) {
+            window.__forceTouch = tch; SETTINGS.set('text', big); log.length = 0;
+            if (full) for (let i = 0; i < 30; i++) { const [n, text] = lines[i % lines.length]; log.push({ n, text, at: i, t: 0 }); }
+            closePanel(); openPanel('chatlog');
+            const where = `chatlog ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big} ${full ? 'full' : 'empty'}`;
+            problems.push(...panelFrame(where));
+            if (!buttons.some(b => /^Say something/.test(b.label)) || !buttons.some(b => b.label === 'Friends')) problems.push(`${where}: Say something or Friends is missing`);
+          }
+        }
+      } finally { closePanel(); log.length = 0; window.__forceTouch = t0; SETTINGS.set('text', text0); restore(); render(); }
+      const src = String(HOOKS.panel.chatlog), dots = !/\u2026|…/.test(src);
+      check(P + "the Chat log at all 8 device sizes, touch and mouse, normal and Large text, empty and full: Say something and Friends 44 px on touch (26 with a mouse) and 8 px apart (4), on screen, out of the bands; names and words whole inside the vellum (no '...')", tried === 8 && problems.length === 0 && dots, { tried, dots, problems: problems.slice(0, 10), total: problems.length }); }
+    // a bubble: vellum (#31281e to #1d1712) with the gold hairline, no blue outline, the system sans, at most three lines,
+    // the pointer tooth under it; a run of letters longer than a line is broken, never cut or dotted
+    { const sets = [], stops = [], texts = [];
+      const rec = new Proxy({}, {
+        get: (tg, k) => k === 'measureText' ? (str => ({ width: String(str).length * 6.5 })) : (k === 'fillText' || k === 'strokeText') ? (str => { if (k === 'fillText') texts.push(String(str)); })
+          : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: (o, c) => stops.push(String(c)) })) : k === 'createPattern' ? (() => null) : typeof k === 'string' ? (() => { }) : undefined,
+        set: (tg, k, v) => { sets.push([k, String(v)]); return true; },
+      });
+      HK.setCacheOff(true);
+      let r1, r2;
+      try { r1 = drawBubble(rec, { text: 'word '.repeat(80).trim(), t: 3 }, 200, 200); const n1 = texts.length; r2 = drawBubble(rec, { text: 'x'.repeat(60), t: 3 }, 200, 200); r2.n = texts.length - n1; } finally { HK.setCacheOff(false); }
+      const vellum = stops.includes('#31281e') && stops.includes('#1d1712'), hair = sets.some(([k, v]) => k === 'strokeStyle' && /217,\s*178,\s*92/.test(v));
+      const blue = sets.some(([k, v]) => k === 'strokeStyle' && /#7ec8ff|#6fb1ff|126,\s*200,\s*255/i.test(v)), sans = sets.some(([k, v]) => k === 'font' && /-apple-system/.test(v) && /12/.test(v));
+      const three = r1.lines.length === 3 && r2.n >= 1 && r2.lines.join('') === 'x'.repeat(60).slice(0, r2.lines.join('').length) && r2.lines.every(l => l.length * 6.5 <= 180) && !texts.some(t => /…/.test(t));
+      check(P + 'a chat bubble is a vellum plate with the gold hairline (no blue outline), in the system sans, three lines at most, with its pointer tooth; an over-long word breaks across lines instead of being cut', vellum && hair && !blue && sans && three, { vellum, hair, blue, sans, lines1: r1.lines.length, lines2: r2.lines }); }
+    // the chat box (HTML): its phrases, Send and the input are at least 44 px tall and the input is 16 px (so iOS does not zoom);
+    // read from its stylesheet (headless has no DOM), and measured live where there is a document
+    { const rule = sel => { const m = CSS.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}')); return m ? m[1] : ''; };
+      const px = (r, prop) => { const m = new RegExp('(?:^|;)' + prop + ':(\\d+(?:\\.\\d+)?)px').exec(r); return m ? +m[1] : 0; };
+      const tab = rule('#chatbox .fl-chat-tab'), inp = rule('#chatbox .fl-chat-input'), snd = rule('#chatbox .fl-chat-send'), box = rule('#chatbox');
+      const css = px(tab, 'min-height') >= 44 && px(inp, 'min-height') >= 44 && px(inp, 'font-size') >= 16 && px(snd, 'min-height') >= 44 && /#31281e/.test(box) && /217,178,92,\.5/.test(rule('#chatbox::before')) && /dashed rgba\(226,186,124,\.6\)/.test(tab) && /#6d4a30/.test(tab);
+      let live = 'no DOM';
+      const d = ensureDom();
+      if (d) { const was0 = d.box.style.display; d.box.style.display = 'flex'; try { const hs = [...d.box.querySelectorAll('button,input')].map(e => e.getBoundingClientRect().height); live = hs.length === PHRASES.length + 2 && hs.every(v => v >= 44) && parseFloat(getComputedStyle(d.input).fontSize) >= 16; } finally { d.box.style.display = was0; } }
+      check(P + 'the chat box: vellum with a gold hairline, leather phrase tabs with a dashed stitch; every phrase, Send and the input at least 44 px tall and the input 16 px', css && live !== false, { css, live, tab: tab.slice(0, 50), inp: inp.slice(0, 50) }); }
     // put the world back
     close(); log.length = 0; for (const n in bubbles) delete bubbles[n]; lastSentAt = -1e9; prevDialog = false;
     NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
