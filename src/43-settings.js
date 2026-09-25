@@ -45,6 +45,7 @@ const SETTINGS = (() => {
     if ((all || key === 'tap') && !S.tap && typeof tapCancel === 'function') tapCancel('settings');
     if (all || key === 'stick') { window.__stickRight = S.stick === 'right'; if (!all) { touch.stickId = null; touch.active = false; touch.dx = touch.dy = 0; } }
     if ((all || key === 'shake') && !S.shake) clearShake();
+    for (const k in EXTRA) if (all || key === k) EXTRA[k](S[k]);
   }
   // the core toggles (title-screen Sound button, N for music, toggleKidMode) write only the legacy flags: read them back
   function syncFromLive() {
@@ -52,6 +53,16 @@ const SETTINGS = (() => {
     const live = { sound: !audioMuted, music: MUSIC.enabled(), kid: !!window.__kidmode };
     for (const k in live) if (live[k] !== S[k]) { S[k] = live[k]; changed = true; }
     if (changed) save();
+  }
+  // a row another file owns (69-retaliate: Fight back when hit). It sits in this panel, persists under fanglands.settings,
+  // goes back to its default on reset and is in the layout audit below; onApply(value) hands every change to that file.
+  const EXTRA = {};
+  function addRow(row, def, options, after, onApply) {
+    DEFAULTS[row.key] = def; OPTIONS[row.key] = options; EXTRA[row.key] = onApply;
+    let v = def; const raw = lsGet(KEY);
+    if (raw) { try { const j = JSON.parse(raw); if (j && options.includes(j[row.key])) v = j[row.key]; } catch (e) { } }
+    S[row.key] = v;
+    const i = ROWS.findIndex(r => r.key === after); ROWS.splice(i < 0 ? ROWS.length : i + 1, 0, row);
   }
   function set(key, value) { if (!OPTIONS[key] || !OPTIONS[key].includes(value)) return false; S[key] = value; apply(key); save(); return true; }
   function cycle(key) { const o = OPTIONS[key]; return set(key, o[(o.indexOf(S[key]) + 1) % o.length]); }
@@ -343,6 +354,6 @@ const SETTINGS = (() => {
     }
   });
 
-  return { get: k => S[k], set, cycle, reset, load, save, apply, state: () => ({ ...S }), DEFAULTS, OPTIONS, scaleFont, textScale, installFontScale, levelText, installTextFilter, shakeOffset, startShake, keyMap, controlsText, page: () => settingsPage };
+  return { get: k => S[k], set, cycle, reset, load, save, apply, addRow, state: () => ({ ...S }), DEFAULTS, OPTIONS, scaleFont, textScale, installFontScale, levelText, installTextFilter, shakeOffset, startShake, keyMap, controlsText, page: () => settingsPage };
 })();
 window.SETTINGS = SETTINGS;
