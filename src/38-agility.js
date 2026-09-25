@@ -196,14 +196,25 @@
       if (lv >= o.lv || hasCape('agility')) return;
       const back = lastTile && !(lastTile.tx === tx && lastTile.ty === ty) ? lastTile : null;
       hurtPlayer(1, tc(tx), tc(ty), true); floatText(player.x, player.y - 40, `Slipped! Agility ${o.lv} for this log`, '#ff6b6b', 13); burst(player.x, player.y, '#8a5a2b', 8, 60);
+      // a tap walk that led here stops: walking the knight straight back onto the log slips him every few frames until he dies
+      if (typeof tapCancel === 'function') tapCancel('slip');
       if (back && !player.dead) { const bx = tc(back.tx), by = tc(back.ty); if (!collides(bx, by, player.r, playerWho())) { player.x = bx; player.y = by; } }
     } else if (o.t === AG_GAP) {
       if (lv >= o.lv) { floatText(player.x, player.y - 36, 'Jump!', '#8fb4ff', 13); return; }
       hurtPlayer(2, tc(tx), tc(ty) + 1, true); floatText(player.x, player.y - 40, `You fell! Agility ${o.lv} for this gap`, '#ff6b6b', 13); burst(player.x, player.y, '#1c2230', 12, 80);
       const a = AG(); a.next[o.course] = 0;
+      if (typeof tapCancel === 'function') tapCancel('fell');
       if (!player.dead) { const s = courseStart(o.course); const spot = safeSpot(s.x, s.y, player.r, playerWho()) || s; player.x = spot.x; player.y = spot.y; player.action = null; }
     }
   }
+  // pathfinders (tap-to-move, the bot) go round an obstacle the knight cannot cross yet; a walker or bulldozer never slips
+  HOOKS.pathBlock.push((tx, ty, who) => {
+    if (who !== 'player') return false;
+    const o = OBST.get(key(tx, ty)); if (!o || tileAt(tx, ty) !== o.t) return false;
+    if (o.t === AG_LOG) return agLv() < o.lv && !hasCape('agility');
+    if (o.t === AG_GAP) return agLv() < o.lv;
+    return false;
+  });
   HOOKS.update.push(dt => {
     // hitpoints for older saves: seed once from the melee + range xp that would have fed it
     if (!player.hpSeeded) { const m = player.skills.melee.xp + player.skills.range.xp; if (m > 0 && player.skills.hitpoints.xp === 0) player.skills.hitpoints.xp = Math.floor(m / 3); player.hpSeeded = true; recomputeMaxHp(); }
