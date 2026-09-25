@@ -118,7 +118,7 @@
   const VEIN_NAMES = ['west', 'west', 'south', 'south', 'east', 'east'];
   const BURROWS = [[14, 35], [40, 35], [14, 41], [40, 41]];
   const GORM_HOME = [27, 39];
-  const CART = [8, 16];
+  const CART = [8, 16], CART2 = [25, 16];
   const HALL = { x0: 12, y0: 34, x1: 42, y1: 42 };
   const ROOMS = {
     gallery: { name: 'Gallery of Kings', x0: 21, y0: 3, x1: 33, y1: 9 },
@@ -392,7 +392,9 @@
     });
     LIGHTS.add({ name: 'heart forge', tile: 'HEART_FORGE', r: 150, lift: 1, color: '#ff5a2a', tint: 0.26, flicker: 0.14, speed: 8.5, oy: -6 });
     LIGHTS.add({ name: 'royal stair', tile: 'ROYAL_STAIR', r: 150, lift: 0.95, color: '#ffe9b0', tint: 0.14 });
-    LIGHTS.add({ name: 'underfall', tile: 'ROYAL_CHASM', r: 90, lift: 0.6, color: '#ff7030', tint: 0.25, flicker: 0.1, speed: 2.4 });
+    // CHANGED from the spec's tint 0.25: the Underfall is ~70 tiles, and at 0.25 each their additive tints sum to a solid
+    // orange sheet over the whole chasm (measured on screen). 0.03 each lets the bridge and the cliff edges read.
+    LIGHTS.add({ name: 'underfall', tile: 'ROYAL_CHASM', r: 90, lift: 0.55, color: '#ff7030', tint: 0.03, flicker: 0.1, speed: 2.4 });
     LIGHTS.addSource((out, sc) => {
       if (!sc || sc.id !== RM_ID) return;
       const t = now(), lit = litVeins(t);
@@ -879,6 +881,7 @@
     fight.knocks++;
     knockRings.push({ x: player.x, y: player.y - 18, t: 0 });
     floatText(player.x, player.y - 46, 'knock', '#f5c542', 16); sfx('boom');
+    if (fight.knocks === 1 && !ending.thrain) ending.thrain = { x: tc(27), y: tc(33) + 4, tx: tc(27), ty: tc(33) + 4, a: 0, out: false, walkT: 0 };
     if (fight.knocks >= 3) startEnding();
     return true;
   }
@@ -887,7 +890,12 @@
     cineSay('Gorm', 'Knock... knock... knock.');
     cineSay('The Voice', 'Three knocks, like the old rule. Gorm\'s eyes open, soft as embers.');
     cineSay('Gorm', 'King... calls... Gorm... home?');
-    cineAct(() => { ending.thrain = { x: tc(27), y: tc(32) + 12, tx: tc(27), ty: tc(35), a: 0, out: false, walkT: 0 }; });
+    cineAct(() => {
+      // he stops at (27,35), or beside it if the knight is standing there
+      const clash = dist(player.x, player.y, tc(27), tc(35)) < 40, tx = clash ? tc(27) + (player.x >= tc(27) ? -46 : 46) : tc(27);
+      if (!ending.thrain) ending.thrain = { x: tc(27), y: tc(33) + 4, tx, ty: tc(35), a: 0, out: false, walkT: 0 };
+      else { ending.thrain.tx = tx; ending.thrain.ty = tc(35); }
+    });
     cineSay(THRAIN, 'I do, old friend. I am sorry it took me a hundred years. Rest now.');
     cineSay('Gorm', 'Gorm... rests.');
     cineAct(completeQuest);
@@ -1030,6 +1038,16 @@
     try { return _render(); } finally { for (let i = 0; i < SWAP.length; i++) TEX_NAME[SWAP[i]] = keep[i]; }
   };
   render.__inner = _render;
+  // drawBossBars (10-hud): his full name and level are longer than the boss bar's label field, which cuts the
+  // label from the right and printed "GORM THE GINORMOUS · lv 5" for a level-50 boss. While the bar draws he is
+  // plain "Gorm"; everywhere else (the book, the tap label, the banner) he keeps his whole name.
+  const _drawBossBars = drawBossBars;
+  drawBossBars = function (g, y) {
+    const d = MONSTER_DEFS.gorm, name = d.name;
+    d.name = 'Gorm';
+    try { return _drawBossBars(g, y); } finally { d.name = name; }
+  };
+  drawBossBars.__inner = _drawBossBars;
   // load: a save never describes an instance, so the throne comes back closed with everything else
   const _load = load;
   load = function () { const r = _load(); closeAll(); arms.raw = 0; arms.warm = 0; syncEdge(); return r; };
@@ -1161,11 +1179,12 @@
       const q = R();
       if (!q.seenHow) {
         q.seenHow = true; save();
-        levelBanner = { text: 'GORM THE GINORMOUS', sub: 'Only a heartstone can crack a heartstone.', t: 4 }; fight.hallBannerT = time;
+        fight.hallBannerT = time; fight.bannerAfterHow = true;
         say2('Gorm opens his eyes. They glow like a forge.');
         openPanel('royal_howto');
       } else if (time - fight.hallBannerT > 60) { fight.hallBannerT = time; levelBanner = { text: 'GORM THE GINORMOUS', sub: 'Only a heartstone can crack a heartstone.', t: 3 }; }
     }
+    if (fight.bannerAfterHow && panel !== 'royal_howto') { fight.bannerAfterHow = false; levelBanner = { text: 'GORM THE GINORMOUS', sub: 'Only a heartstone can crack a heartstone.', t: 4 }; }
     if (!inH && fight.inHall && carried()) crumble();
     if (player.dead && carried()) crumble();
     fight.inHall = inH;
@@ -1177,7 +1196,10 @@
       const down = gm.dead || gm.hp <= 0;
       if (down) { gm.deadT = Math.max(gm.deadT || 0, 0.8); if (!fight.fallSeen) onFall(); }
       else {
-        if (fight.fallSeen && gm.hp >= gm.maxHp) { fight.fallSeen = false; fight.paid = false; if (fight.downAt != null) floatText(gm.x, gm.y - 120, 'Gorm wakes again!', '#ffb050', 18); fight.downAt = null; fight.knocks = 0; }
+        if (fight.fallSeen && gm.hp >= gm.maxHp) {
+          fight.fallSeen = false; fight.paid = false; if (fight.downAt != null) floatText(gm.x, gm.y - 120, 'Gorm wakes again!', '#ffb050', 18); fight.downAt = null; fight.knocks = 0;
+          if (!ending.on && ending.thrain && !ending.thrain.out) ending.thrain = null;
+        }
         if (fight.lifeStart == null && inH && !fight.fallSeen) fight.lifeStart = time;
         if (!mayScript() && fight.lastHp != null && !fight.lastDown && gm.hp - fight.lastHp >= 20 && !(fight.lastHp >= fight.lastMax)) mendSeen(gm, Math.round(gm.hp - fight.lastHp));
         if (!fight.halfSaid && gm.hp < gm.maxHp * 0.5 && !fight.fallSeen) { fight.halfSaid = true; if (inH) levelBanner = { text: 'HE IS CRUMBLING', sub: 'The little golems are coming faster.', t: 3 }; }
@@ -1342,7 +1364,7 @@
     const gr = g.createLinearGradient(0, y, 0, y + TILE);
     if (top) { gr.addColorStop(0, '#0e0605'); gr.addColorStop(1, `rgb(${60 + p * 20},${22 + p * 8},10)`); }
     else if (bot) { gr.addColorStop(0, `rgb(${60 + p * 20},${22 + p * 8},10)`); gr.addColorStop(1, '#0e0605'); }
-    else { gr.addColorStop(0, `rgb(${70 + p * 22},${26 + p * 8},10)`); gr.addColorStop(0.5, `rgb(${120 + p * 40},${46 + p * 16},14)`); gr.addColorStop(1, `rgb(${70 + p * 22},${26 + p * 8},10)`); }
+    else { gr.addColorStop(0, `rgb(${62 + p * 18},${22 + p * 7},9)`); gr.addColorStop(0.5, `rgb(${104 + p * 34},${38 + p * 14},12)`); gr.addColorStop(1, `rgb(${62 + p * 18},${22 + p * 7},9)`); }
     g.fillStyle = gr; g.fillRect(x, y, TILE, TILE);
     // glints of the fire far below, drifting
     for (let k = 0; k < 3; k++) {
@@ -1370,12 +1392,12 @@
     const west = tileAt(tx - 1, ty) === ROYAL_CHASM, east = tileAt(tx + 1, ty) === ROYAL_CHASM;
     for (const side of [west ? 0 : -1, east ? 1 : -1]) {
       if (side < 0) continue;
-      const px = side === 0 ? x : x + TILE - 8;
-      g.fillStyle = '#3f3831'; g.fillRect(px, y, 8, TILE);
-      g.fillStyle = '#5a5249'; g.fillRect(px + 1, y, 6, TILE);
-      g.fillStyle = GOLD; g.fillRect(px + 2.5, y, 3, TILE);
-      g.fillStyle = GOLD_L; for (const py of [y + 6, y + 30]) { g.beginPath(); g.arc(px + 4, py, 3.4, 0, 7); g.fill(); }
-      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(side === 0 ? px - 4 : px + 8, y, 4, TILE);
+      const px = side === 0 ? x : x + TILE - 10;
+      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(side === 0 ? px - 6 : px + 10, y, 6, TILE);
+      g.fillStyle = '#3f3831'; g.fillRect(px, y, 10, TILE);
+      g.fillStyle = '#6a6157'; g.fillRect(px + 1, y, 8, TILE);
+      g.fillStyle = GOLD_D; g.fillRect(px + 3, y, 4, TILE); g.fillStyle = GOLD; g.fillRect(px + 3.5, y, 2.5, TILE);
+      for (const py of [y + 4, y + 28]) { g.fillStyle = '#4b443c'; g.fillRect(px - 1, py - 4, 12, 10); g.fillStyle = GOLD_L; g.beginPath(); g.arc(px + 5, py + 1, 3.6, 0, 7); g.fill(); }
     }
   }
   function drawRail(g, tx, ty) {
@@ -1496,7 +1518,7 @@
     }
     const look = s.empty ? stoneLook(playerLook()) : stoneLook(s.look);
     const e = { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false };
-    g.save(); g.translate(cx, y + 2); g.scale(1.25, 1.25);
+    g.save(); g.translate(cx, y - 1); g.scale(1.45, 1.45);
     drawHuman(g, e, look);
     g.restore();
     if (s.empty) { g.fillStyle = 'rgba(245,238,220,0.5)'; for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(cx - 10 + k * 7, y + 17 + Math.sin(time * 2 + k) * 0.6, 1.3, 0, 7); g.fill(); } }
@@ -1624,7 +1646,7 @@
   }
   HOOKS.drawMonster.golemling = (g, e, hurt) => drawPebbler(g, e, { crumb: true, hurt });
   function golemBody(g, e, hurt, big) {
-    const wt = e.walkT || 0, mv = e.moving, stomp = mv ? Math.sin(wt * 0.8) : 0, s = big ? 1.45 : 1;
+    const wt = e.walkT || 0, mv = e.moving, stomp = mv ? Math.sin(wt * 0.8) : 0, s = big ? 1.75 : 1.15;
     const em = e.emergeT > 0 ? 1 - e.emergeT / N.WAKE_ANIM : 1;
     const c = big ? { a: '#5a4a8e', b: '#6f5fb0', d: '#3f3468', vein: '#e8a640', eye: '#ffb040' } : { a: '#5f7aa8', b: '#7593c6', d: '#435c86', vein: '#bcd4f5', eye: '#ff7a2a' };
     if (hurt) { c.a = '#e8c0c0'; c.b = '#f4d4d4'; c.d = '#c8a0a0'; }
@@ -1874,7 +1896,7 @@
         else if (t === ROYAL_STATUE) { const s = STATUES.find(o => o.x === tx && o.y === ty); if (s) items.push({ y: ty * TILE + TILE - 4, draw: () => drawStatue(g, s, R().stage >= 7) }); }
         else if (t === HEART_FORGE) items.push({ y: ty * TILE + TILE - 6, draw: () => drawHeartForge(g, tx, ty) });
       }
-      if (tileAt(CART[0], CART[1]) === T_RAIL && CART[0] >= v.x0 && CART[0] <= v.x1 && CART[1] >= v.y0 && CART[1] <= v.y1) items.push({ y: tc(CART[1]) + 12, draw: () => drawCart(g, CART[0], CART[1]) });
+      for (const c of [CART, CART2]) if (tileAt(c[0], c[1]) === T_RAIL && c[0] >= v.x0 && c[0] <= v.x1 && c[1] >= v.y0 && c[1] <= v.y1) items.push({ y: tc(c[1]) + 12, draw: () => drawCart(g, c[0], c[1]) });
       for (const r of ROCKS) if (r.x + r.size >= v.x0 && r.x <= v.x1 && r.y + r.size >= v.y0 && r.y <= v.y1 && rockIntact(r.i)) items.push({ y: (r.y + r.size) * TILE - 4, draw: () => drawGiant(g, r) });
       if (33 >= v.y0 - 2 && 33 <= v.y1 + 2) items.push({ y: 34 * TILE - 6, draw: () => drawDoor(g) });
       const gm = gorm();
@@ -1895,17 +1917,38 @@
     if (inD) {
       const q = R();
       if (q.stage === 3) items.push({ y: -9e7, draw: () => { for (const [x, y] of CRACKS) drawCrack(g, x, y); } });
-      if (tileAt(STAIR_DOWN[0], STAIR_DOWN[1]) === ROYAL_STAIR) items.push({ y: -9e7 + 1, draw: () => drawStairDown(g, STAIR_DOWN[0], STAIR_DOWN[1]) });
-      for (const t of TH.list) items.push({ y: t.y + 10, draw: () => { g.save(); g.translate(t.x, t.y + (t.nibbleT > 0 ? Math.sin(time * 30) * 1 : 0)); drawPebbler(g, t, { coal: true, moving: t.nibbleT <= 0 }); g.restore(); } });
+      if (tileAt(STAIR_DOWN[0], STAIR_DOWN[1]) === ROYAL_STAIR) {
+        items.push({ y: -9e7 + 1, draw: () => drawStairDown(g, STAIR_DOWN[0], STAIR_DOWN[1]) });
+        items.push({ y: 1e9 + 1, draw: () => {
+          // the warm light of the King's Deep coming up the stair, over the dark
+          const x = tc(STAIR_DOWN[0]), y = tc(STAIR_DOWN[1]), p = 0.75 + 0.25 * Math.sin(time * 2.2);
+          g.save(); g.globalCompositeOperation = 'lighter';
+          const gr = g.createRadialGradient(x, y, 4, x, y, 64); gr.addColorStop(0, `rgba(255,200,120,${(0.42 * p).toFixed(3)})`); gr.addColorStop(1, 'rgba(255,170,90,0)'); g.fillStyle = gr; g.beginPath(); g.arc(x, y, 64, 0, 7); g.fill();
+          for (let k = 0; k < 4; k++) { const ph = (time * 0.5 + k / 4) % 1; g.fillStyle = `rgba(255,220,150,${(0.6 * Math.sin(ph * Math.PI)).toFixed(3)})`; g.beginPath(); g.arc(x - 12 + k * 8 + Math.sin(time + k) * 3, y + 10 - ph * 40, 1.6, 0, 7); g.fill(); }
+          g.restore();
+        } });
+      }
+      for (const t of TH.list) items.push({ y: t.y + 12, draw: () => {
+        g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(t.x, t.y + 12, 13, 5, 0, 0, 7); g.fill();
+        g.save(); g.translate(t.x, t.y + (t.nibbleT > 0 ? Math.sin(time * 30) * 1 : 0)); g.scale(1.4, 1.4); drawPebbler(g, t, { coal: true, moving: t.nibbleT <= 0 }); g.restore();
+      } });
+      if (q.stage === 3) items.push({ y: 1e9 + 1, draw: () => {
+        // a warm glint over each crack and each thief's stolen coal, painted over the dark so the chase can be seen in the galleries
+        g.save(); g.globalCompositeOperation = 'lighter';
+        for (const [x, y] of CRACKS) { const p = 0.5 + 0.3 * Math.sin(time * 3 + x); const gr = g.createRadialGradient(tc(x), tc(y), 2, tc(x), tc(y), 30); gr.addColorStop(0, `rgba(255,120,50,${(0.35 * p).toFixed(3)})`); gr.addColorStop(1, 'rgba(255,120,50,0)'); g.fillStyle = gr; g.beginPath(); g.arc(tc(x), tc(y), 30, 0, 7); g.fill(); }
+        for (const t of TH.list) { const gr = g.createRadialGradient(t.x + 12, t.y - 2, 1, t.x + 12, t.y - 2, 26); gr.addColorStop(0, 'rgba(255,170,90,0.35)'); gr.addColorStop(1, 'rgba(255,170,90,0)'); g.fillStyle = gr; g.beginPath(); g.arc(t.x + 12, t.y - 2, 26, 0, 7); g.fill(); }
+        g.restore();
+      } });
       if (slide.on) items.push({ y: 23 * TILE + TILE - 6, draw: () => { const px = tc(slide.x()); drawThroneAt(g, px, 23); drawCrest(g, px, 23); } });
       if (q.stage >= 1) { const v = vis(1); for (let ty = v.y0; ty <= v.y1; ty++) for (let tx = v.x0; tx <= v.x1; tx++) if (tileAt(tx, ty) === DW_THRONE) items.push({ y: ty * TILE + TILE - 6 + 0.05, draw: () => drawCrest(g, tc(tx), ty) }); }
     }
   });
   function drawCrack(g, tx, ty) {
     const cx = tc(tx), cy = tc(ty);
-    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 3, 18, 8, 0, 0, 7); g.fill();
-    g.fillStyle = '#120e0c'; g.beginPath(); g.moveTo(cx - 14, cy); g.lineTo(cx - 6, cy - 5); g.lineTo(cx - 1, cy - 2); g.lineTo(cx + 6, cy - 6); g.lineTo(cx + 15, cy + 1); g.lineTo(cx + 5, cy + 5); g.lineTo(cx - 2, cy + 3); g.lineTo(cx - 9, cy + 6); g.closePath(); g.fill();
-    g.fillStyle = '#7d766a'; for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; g.beginPath(); g.arc(cx + Math.cos(a) * 17, cy + Math.sin(a) * 8 + 2, 2.2, 0, 7); g.fill(); }
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(cx, cy + 3, 24, 11, 0, 0, 7); g.fill();
+    g.fillStyle = '#120e0c'; g.beginPath(); g.moveTo(cx - 20, cy); g.lineTo(cx - 9, cy - 7); g.lineTo(cx - 2, cy - 3); g.lineTo(cx + 8, cy - 8); g.lineTo(cx + 21, cy + 1); g.lineTo(cx + 7, cy + 7); g.lineTo(cx - 3, cy + 4); g.lineTo(cx - 12, cy + 8); g.closePath(); g.fill();
+    g.strokeStyle = `rgba(255,120,50,${(0.45 + 0.25 * Math.sin(time * 3 + tx)).toFixed(3)})`; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - 12, cy + 1); g.lineTo(cx - 3, cy - 1); g.lineTo(cx + 6, cy - 3); g.lineTo(cx + 14, cy + 1); g.stroke();
+    g.fillStyle = '#7d766a'; for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; g.beginPath(); g.arc(cx + Math.cos(a) * 23, cy + Math.sin(a) * 11 + 2, 2.6, 0, 7); g.fill(); }
   }
 
   // =========================================================================
@@ -1927,7 +1970,9 @@
   }
   function drawHowToChip(g) {
     const pad = 9, L = HK.LINE(), lings = monsters.filter(m => m.type === 'golemling' && !m.dead && !m.gone).length;
-    const rowsN = 4 + (lings > 0 ? 1 : 0), q = HK.row();
+    g.font = 'bold 11px sans-serif'; const labW = g.measureText('HEARTSTONES').width; g.font = '12px sans-serif';
+    const stoneText = `raw ${arms.raw} · warm ${arms.warm} · arms hold ${N.ARMS}`, twoLines = labW + 12 + g.measureText(stoneText).width > HK.colW() - 9 * 2 - 8 - HK.row() - 6;
+    const rowsN = 4 + (twoLines ? 1 : 0) + (lings > 0 ? 1 : 0), q = HK.row();
     const s = HK.slot(Math.max(pad * 2 + L * rowsN + 6, q + pad * 2));
     HK.plate(g, s.x, s.y, s.w, s.h, { tone: lings > 0 ? HK.C.BAD : null });
     const ix = s.x + pad + 4, iw = s.w - pad * 2 - 8 - q;
@@ -1946,7 +1991,8 @@
     }
     y += L;
     g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.fillText('HEARTSTONES', ix, y);
-    g.font = '12px sans-serif'; g.fillStyle = HK.C.INK; g.fillText(`raw ${arms.raw} · warm ${arms.warm} · arms hold ${N.ARMS}`, ix + g.measureText('HEARTSTONES').width + 18, y);
+    if (twoLines) y += L;
+    g.font = '12px sans-serif'; g.fillStyle = HK.C.INK; g.fillText(stoneText, twoLines ? ix : ix + labW + 12, y);
     y += L;
     const left = Math.ceil((N.VEIN_WINDOW - now() % N.VEIN_WINDOW) / 1000);
     g.font = '12px sans-serif'; g.fillStyle = HK.C.DIM; g.fillText(`The glow moves in ${left}s`, ix, y);
