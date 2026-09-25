@@ -119,8 +119,7 @@
   }
   function dwTalk(d) {
     { const dx = d.px - player.x, dy = d.py - player.y, dd = Math.hypot(dx, dy) || 1; player.facing = { x: dx / dd, y: dy / dd }; }
-    // CHANGED with the royal mine: a later feature may take over a dwarf's lines for some stages, as core talkTo does
-    if (HOOKS.talkBefore[d.role] && HOOKS.talkBefore[d.role](d)) return;
+    const pre = HOOKS.talkBefore['dwarf:' + d.id]; if (pre && pre(d)) return;
     const q = dq();
     if (d.role === 'dwarf_king') {
       if (q.stage === 0) { q.stage = 1; say("A knight of the surface, in Deepholm? Then you came down the old shaft. Good. Few remember it.", d.name); say("Our great forge went cold when the goblins cut the coal road. Bring me 5 coal and 3 iron bars and we relight it. Then Brunhild trades with you.", d.name); save(); }
@@ -375,6 +374,7 @@
   window.DEEPHOLM = {
     ID: DH_ID, W: DH_W, H: DH_H, rect: DH, SHAFT: SHAFT_T, SHAFT_STEP, LADDER: LADDER_T, ENTRY: [LADDER_T.x, LADDER_T.y + 1],
     THRONE: THRONE_T, FORGES, ANVILS, LAMPS, MITHRIL_ROCKS, CHESTS, GUARDS, DWARVES, inside,
+    drawThrone: dwDrawThrone,
     tiles: { shaft: DW_SHAFT, ladder: DW_LADDER, mithril: DW_MITHRIL, chest: DW_CHEST, throne: DW_THRONE, lamp: DW_LAMP },
     // read/write the undercity's own tile map (16-instances copies it into `map` on every entry, so a
     // feature that wants to stand something inside Deepholm writes it here at world-gen, not into `map`)
