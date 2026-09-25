@@ -367,7 +367,7 @@
       const p = personInFront();
       if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 20, 0, 7); g.stroke(); g.setLineDash([]); return; }
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      if (t === T_RBOARD || t === T_SAWMILL || t === T_GOODWELL || t === T_BELL) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (t === T_RBOARD || t === T_SAWMILL || t === T_GOODWELL || t === T_BELL) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 

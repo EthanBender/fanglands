@@ -4048,7 +4048,7 @@ const MUSIC = (() => {
     if (active && active.inst.dark) items.push({ y: 1e9, legacyScrim: true, draw: () => drawDark(g) });
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const { tx, ty } = frontTile(player);
-      if (USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
   // HUD: where you are and how to get out
@@ -5779,7 +5779,7 @@ HOOKS.draw.unshift((g, items, cam) => {
   }
   if (!player.dead && !player.mech) { // use-highlight for the bulldozer tiles (the core only highlights its own INTERESTING tiles)
     const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-    if (t === T_DOZER || t === T_DOZER_WRECK) items.push({ y: 1e9, draw: () => { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); } });
+    if (t === T_DOZER || t === T_DOZER_WRECK) items.push({ y: 1e9, draw: () => { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); } });
   }
 });
 
@@ -6413,7 +6413,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const d = dwInFront();
       if (d) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(d.px, d.py, 18, 0, 7); g.stroke(); g.setLineDash([]); return; }
       const { tx, ty } = frontTile(player);
-      if (DW_USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (DW_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 
@@ -6941,7 +6941,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const e = elInFront();
       if (e) { g.strokeStyle = 'rgba(200,240,192,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(e.px, e.py, 18, 0, 7); g.stroke(); g.setLineDash([]); return; }
       const { tx, ty } = frontTile(player);
-      if (EL_USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (EL_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 
@@ -7465,7 +7465,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const c = seaFolkInFront();
       if (c) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(c.px, c.py, 20, 0, 7); g.stroke(); g.setLineDash([]); return; }
       const { tx, ty } = frontTile(player);
-      if (B_USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (B_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
   // the crossing: a full-screen overlay while Harl rows
@@ -8050,7 +8050,7 @@ HOOKS.selfTest.push((check, F, h) => {
     // use-highlight for our tiles (the core only highlights what it knows)
     if (!player.dead && !player.mech && !npcInFront()) items.push({ y: 1e9 + 2, draw: () => {
       const { tx, ty } = frontTile(player);
-      if (DR_USABLE().includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (DR_USABLE().includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 
@@ -8599,7 +8599,7 @@ HOOKS.selfTest.push((check, F, h) => {
     items.push({ y: 1e9, draw: () => drawDark(g) });
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const { tx, ty } = frontTile(player);
-      if (USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
   // boss bar: under the HP box while the dragon is alive and within 12 tiles
@@ -8876,7 +8876,7 @@ HOOKS.selfTest.push((check, F, h) => {
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 2, draw: () => {
       if (npcInFront()) return;
       const { tx, ty } = frontTile(player);
-      if (tileAt(tx, ty) === BOARD) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (tileAt(tx, ty) === BOARD) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 
@@ -9482,7 +9482,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const p = personInFront();
       if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 20, 0, 7); g.stroke(); g.setLineDash([]); return; }
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      if (t === T_RBOARD || t === T_SAWMILL || t === T_GOODWELL || t === T_BELL) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (t === T_RBOARD || t === T_SAWMILL || t === T_GOODWELL || t === T_BELL) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 
@@ -9709,7 +9709,7 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     if (!player.dead && !player.mech) { // use-highlight for the beast tiles (the core only highlights its own INTERESTING tiles)
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      if (t === T_BEAST || t === T_BEAST_WRECK) items.push({ y: 1e9, draw: () => { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); } });
+      if (t === T_BEAST || t === T_BEAST_WRECK) items.push({ y: 1e9, draw: () => { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); } });
     }
   });
 
@@ -10401,7 +10401,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const n = folkInFront();
       if (n) { const p = folkPx(n); if (p) { g.strokeStyle = 'rgba(255,233,168,0.7)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(p.px, p.py, 18, 0, 7); g.stroke(); g.setLineDash([]); } return; }
       const { tx, ty } = frontTile(player);
-      if (GC_USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (GC_USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 
@@ -10613,7 +10613,7 @@ HOOKS.selfTest.push((check, F, h) => {
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 4, draw: () => { // use-highlight: the core only highlights its own tiles
       if (npcInFront()) return;
       const { tx, ty } = frontTile(player);
-      if (tileAt(tx, ty) === T_BERRY) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (tileAt(tx, ty) === T_BERRY) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 }
@@ -10996,7 +10996,7 @@ HOOKS.selfTest.push((check, F, h) => {
     items.push({ y: 1e9 - 0.5, draw: () => drawNight(g) }); // under the other darkness layers (1e9), over everything else
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const { tx, ty } = frontTile(player);
-      if (tileAt(tx, ty) === T_CRYPT) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (tileAt(tx, ty) === T_CRYPT) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
   // The day is drawn on the minimap's iron ring (src/59-hudkit.js): a groove along its top arc where the sun rides by day,
@@ -11449,7 +11449,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
       const n = inside ? inFront() : null;
       if (n) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.arc(n.px, n.py, 22, 0, 7); g.stroke(); g.setLineDash([]); }
-      else if (t === WIND_SHRINE || (inside && (t === LEAP || t === WISP))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      else if (t === WIND_SHRINE || (inside && (t === LEAP || t === WISP))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 
@@ -12780,7 +12780,7 @@ HOOKS.selfTest.push((check, F, h) => {
     items.push({ y: ty * TILE + TILE - 10, draw: () => drawBay(g, tx, ty) });
     if (!player.dead && !player.mech) { // use-highlight (the core only highlights its own INTERESTING tiles)
       const ft = frontTile(player);
-      if (ft.tx === tx && ft.ty === ty) items.push({ y: 1e9, draw: () => { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); } });
+      if (ft.tx === tx && ft.ty === ty) items.push({ y: 1e9, draw: () => { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); } });
     }
   });
   HOOKS.newGame.push(() => { blueprintsDropped = 0; pendingBanner = null; });
@@ -27240,7 +27240,7 @@ HOOKS.selfTest.push((check, F, h) => {
     if (flash > 0.01) items.push({ y: 9e8 + 2, draw: () => { g.fillStyle = `rgba(255,255,255,${flash * 0.28})`; g.fillRect(c.x - 20, c.y - 20, VW + 40, VH + 40); } });
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 4, draw: () => {
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      if (t === UPDRAFT || t === DOWNDRAFT || t === MAST) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (t === UPDRAFT || t === DOWNDRAFT || t === MAST) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 
@@ -28764,12 +28764,12 @@ HOOKS.selfTest.push((check, F, h) => {
       // following someone: a ring on them when they are on the little map, a blue arrow at its edge when they are not
       const f = following && REMOTE[following];
       if (f && f.map === my) {
-        const p = at(f), inside = p.x > mm.x + 6 && p.x < mm.x + size - 6 && p.y > mm.y + 6 && p.y < mm.y + size - 6;
+        // the glass is round (src/59-hudkit.js): the friend is "on the map" inside its circle, and the arrow rides its edge
+        const ccx = mm.x + size / 2, ccy = mm.y + size / 2, p = at(f), inside = Math.hypot(p.x - ccx, p.y - ccy) < size / 2 - 8;
         g.strokeStyle = BLUE; g.lineWidth = 2;
         if (inside) { g.beginPath(); g.arc(p.x, p.y, 5 + Math.sin(time * 4) * 1.5, 0, 7); g.stroke(); }
         else {
-          const ccx = mm.x + size / 2, ccy = mm.y + size / 2, ang = Math.atan2(p.y - ccy, p.x - ccx);
-          const half = size / 2 - 9, kk = Math.min(half / Math.max(Math.abs(Math.cos(ang)), 1e-6), half / Math.max(Math.abs(Math.sin(ang)), 1e-6));
+          const ang = Math.atan2(p.y - ccy, p.x - ccx), kk = size / 2 - 9;
           g.save(); g.translate(ccx + Math.cos(ang) * kk, ccy + Math.sin(ang) * kk); g.rotate(ang);
           g.fillStyle = BLUE; g.beginPath(); g.moveTo(8, 0); g.lineTo(-5, -6); g.lineTo(-2, 0); g.lineTo(-5, 6); g.closePath(); g.fill();
           g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); g.restore();
@@ -33133,7 +33133,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const n = folkInFront();
       if (n) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.arc(n.px, n.py, 22, 0, 7); g.stroke(); g.setLineDash([]); return; }
       const { tx, ty } = frontTile(player);
-      if (USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
 

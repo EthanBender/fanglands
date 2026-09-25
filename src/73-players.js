@@ -152,12 +152,12 @@
       // following someone: a ring on them when they are on the little map, a blue arrow at its edge when they are not
       const f = following && REMOTE[following];
       if (f && f.map === my) {
-        const p = at(f), inside = p.x > mm.x + 6 && p.x < mm.x + size - 6 && p.y > mm.y + 6 && p.y < mm.y + size - 6;
+        // the glass is round (src/59-hudkit.js): the friend is "on the map" inside its circle, and the arrow rides its edge
+        const ccx = mm.x + size / 2, ccy = mm.y + size / 2, p = at(f), inside = Math.hypot(p.x - ccx, p.y - ccy) < size / 2 - 8;
         g.strokeStyle = BLUE; g.lineWidth = 2;
         if (inside) { g.beginPath(); g.arc(p.x, p.y, 5 + Math.sin(time * 4) * 1.5, 0, 7); g.stroke(); }
         else {
-          const ccx = mm.x + size / 2, ccy = mm.y + size / 2, ang = Math.atan2(p.y - ccy, p.x - ccx);
-          const half = size / 2 - 9, kk = Math.min(half / Math.max(Math.abs(Math.cos(ang)), 1e-6), half / Math.max(Math.abs(Math.sin(ang)), 1e-6));
+          const ang = Math.atan2(p.y - ccy, p.x - ccx), kk = size / 2 - 9;
           g.save(); g.translate(ccx + Math.cos(ang) * kk, ccy + Math.sin(ang) * kk); g.rotate(ang);
           g.fillStyle = BLUE; g.beginPath(); g.moveTo(8, 0); g.lineTo(-5, -6); g.lineTo(-2, 0); g.lineTo(-5, 6); g.closePath(); g.fill();
           g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); g.restore();

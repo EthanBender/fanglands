@@ -424,7 +424,7 @@
     if (active && active.inst.dark) items.push({ y: 1e9, legacyScrim: true, draw: () => drawDark(g) });
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const { tx, ty } = frontTile(player);
-      if (USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (USABLE.includes(tileAt(tx, ty))) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
   // HUD: where you are and how to get out

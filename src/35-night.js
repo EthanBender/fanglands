@@ -375,7 +375,7 @@
     items.push({ y: 1e9 - 0.5, draw: () => drawNight(g) }); // under the other darkness layers (1e9), over everything else
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const { tx, ty } = frontTile(player);
-      if (tileAt(tx, ty) === T_CRYPT) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
+      if (tileAt(tx, ty) === T_CRYPT) { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); }
     } });
   });
   // The day is drawn on the minimap's iron ring (src/59-hudkit.js): a groove along its top arc where the sun rides by day,
