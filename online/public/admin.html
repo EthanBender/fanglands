@@ -9,34 +9,48 @@
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin: 0; background: #14161a; color: #d7dae0; font: 15px/1.45 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 80px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 80px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   h2 { font-size: 17px; margin: 32px 0 10px; border-bottom: 1px solid #2c3038; padding-bottom: 6px; }
   p.note { color: #8a90a0; margin: 0 0 16px; }
+  .scroll { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #23262d; vertical-align: top; }
-  th { color: #8a90a0; font-weight: 600; font-size: 13px; }
+  th { color: #8a90a0; font-weight: 600; font-size: 13px; white-space: nowrap; }
   tr.banned td { color: #8a90a0; }
-  button { background: #2b3140; color: #e7eaf0; border: 1px solid #3c4356; border-radius: 4px; padding: 5px 10px; font: inherit; cursor: pointer; margin: 0 4px 4px 0; }
+  button { background: #2b3140; color: #e7eaf0; border: 1px solid #3c4356; border-radius: 4px; padding: 5px 10px; font: inherit; cursor: pointer; margin: 0 4px 4px 0; white-space: nowrap; }
   button:hover { background: #363d4f; }
   button.danger { border-color: #6b3a3a; }
-  input { background: #0f1114; color: #e7eaf0; border: 1px solid #3c4356; border-radius: 4px; padding: 6px 8px; font: inherit; }
+  button.gold { border-color: #7a6320; }
+  input, select { background: #0f1114; color: #e7eaf0; border: 1px solid #3c4356; border-radius: 4px; padding: 6px 8px; font: inherit; }
+  select { padding: 5px 6px; margin: 0 4px 4px 0; }
   code { background: #0f1114; padding: 2px 6px; border-radius: 3px; }
-  #chat { background: #0f1114; border: 1px solid #23262d; border-radius: 4px; padding: 8px 10px; height: 420px; overflow: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
-  #chat div { white-space: pre-wrap; }
-  #chat .t { color: #6f7688; }
+  #chat, #modlog { background: #0f1114; border: 1px solid #23262d; border-radius: 4px; padding: 8px 10px; overflow: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  #chat { height: 420px; }
+  #modlog { max-height: 320px; }
+  #chat div, #modlog div { white-space: pre-wrap; }
+  #chat .t, #modlog .t { color: #6f7688; }
   #chat .n { color: #9bc1ff; }
+  #chat .n.admin { color: #f5c542; }
+  #modlog .hat { color: #f5c542; }
   #status { color: #8a90a0; font-size: 13px; }
   #status.bad { color: #ff9a9a; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .hidden { display: none; }
   .saves { margin: 4px 0 8px 16px; color: #aab0c0; font-size: 13px; }
+  .saves .pin { color: #f5c542; }
+  .pill { display: inline-block; background: #f5c542; color: #1b1604; font-weight: 700; font-size: 11px; letter-spacing: 0.05em; padding: 1px 7px; border-radius: 9px; margin-right: 6px; vertical-align: 1px; }
+  .quiet { color: #8a90a0; }
+  .muted { color: #ffb86b; }
+  td .tools { margin-top: 4px; white-space: nowrap; }
+  /* fingers on an iPad or a phone: every button and box at least 44 px tall */
+  @media (pointer: coarse) { button, select, input { min-height: 44px; } }
 </style>
 </head>
 <body>
 <main>
   <h1>Fanglands — the world</h1>
-  <p class="note">Who is playing, every knight's account, the invite code, and the chat log.</p>
+  <p class="note">Who is playing, every knight's account, the invite code, the chat log, and what admins did.</p>
 
   <section id="keybox">
     <h2>Admin key</h2>
@@ -51,10 +65,11 @@
     <div class="row"><span id="status2" class="note"></span><button id="refresh">Refresh now</button><button id="forget">Forget the key</button></div>
 
     <h2>On line now</h2>
-    <table id="online"><thead><tr><th>Knight</th><th>Map</th><th>Region</th><th>Level</th><th>On for</th></tr></thead><tbody></tbody></table>
+    <div class="scroll"><table id="online"><thead><tr><th>Knight</th><th>Role</th><th>Map</th><th>Region</th><th>Level</th><th>On for</th></tr></thead><tbody></tbody></table></div>
 
     <h2>Accounts</h2>
-    <table id="accounts"><thead><tr><th>Knight</th><th>Made</th><th>Last seen</th><th>Banned</th><th>Save</th><th></th></tr></thead><tbody></tbody></table>
+    <p class="note">An admin can mute, kick and ban other knights from inside the game, spawn monsters and throw drop parties. Only this page makes someone an admin, and only this page can mute or ban an admin.</p>
+    <div class="scroll"><table id="accounts"><thead><tr><th>Knight</th><th>Role</th><th>Made</th><th>Last seen</th><th>Banned</th><th>Muted</th><th>Save</th><th></th></tr></thead><tbody></tbody></table></div>
 
     <h2>Invite code</h2>
     <div class="row">
@@ -65,15 +80,20 @@
     <p class="note">A new knight needs this code to sign up. Change it and the old one stops working straight away.</p>
 
     <h2>Chat log</h2>
-    <p class="note">Newest at the bottom. Refreshes every 10 seconds. What is shown is what the knights saw, after the word filter.</p>
+    <p class="note">Newest at the bottom. Refreshes every 10 seconds. What is shown is what the knights saw, after the word filter. Admins' names are gold.</p>
     <div id="chat"></div>
+
+    <h2>What admins did</h2>
+    <p class="note">Newest at the top. Every mute, kick, ban, new admin, drop party and party hat, from the game and from this page. Refreshes with the chat log.</p>
+    <div id="modlog"></div>
   </div>
 </main>
 <script>
 (() => {
   const KEY = 'fanglands.adminKey';
+  const ALWAYS = 8640000000000000;   // muted "until unmuted"
   const $ = id => document.getElementById(id);
-  let key = null, timer = null;
+  let key = null, timer = null, admins = new Set();
   try { key = sessionStorage.getItem(KEY); } catch (e) { }
 
   const say = (text, bad) => { for (const id of ['status', 'status2']) { const el = $(id); el.textContent = text || ''; el.className = bad ? 'bad' : (id === 'status' ? '' : 'note'); } };
@@ -85,45 +105,89 @@
   };
   const when = ms => ms ? new Date(ms).toLocaleString() : '—';
   const ago = ms => { const s = Math.max(0, Math.round((Date.now() - ms) / 1000)); if (s < 60) return s + ' s'; if (s < 3600) return Math.round(s / 60) + ' min'; if (s < 86400) return (s / 3600).toFixed(1) + ' h'; return Math.round(s / 86400) + ' d'; };
+  // "3:41 pm" today, "Sep 24, 3:41 pm" before today
+  const clock = ms => { const d = new Date(ms); const t = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(/\s?([AaPp])\.?\s?[Mm]\.?$/, (m, a) => ' ' + a.toLowerCase() + 'm'); return d.toDateString() === new Date().toDateString() ? t : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ', ' + t; };
   const cell = (tr, text) => { const td = document.createElement('td'); td.textContent = text; tr.appendChild(td); return td; };
+  const button = (text, onclick, cls) => { const b = document.createElement('button'); b.textContent = text; b.onclick = onclick; if (cls) b.className = cls; return b; };
+  const pill = () => { const s = document.createElement('span'); s.className = 'pill'; s.textContent = 'ADMIN'; return s; };
+  const kb = bytes => (bytes / 1024).toFixed(1) + ' KB';
 
   async function loadOnline() {
     const list = await api('GET', '/api/admin/online');
     const tb = $('online').querySelector('tbody'); tb.innerHTML = '';
-    if (!list.length) { const tr = document.createElement('tr'); cell(tr, 'Nobody at the moment.').colSpan = 5; tb.appendChild(tr); }
-    for (const k of list) { const tr = document.createElement('tr'); cell(tr, k.n); cell(tr, k.map); cell(tr, k.region || ''); cell(tr, k.lv || ''); cell(tr, ago(k.since)); tb.appendChild(tr); }
+    if (!list.length) { const tr = document.createElement('tr'); cell(tr, 'Nobody at the moment.').colSpan = 6; tb.appendChild(tr); }
+    for (const k of list) {
+      const tr = document.createElement('tr'); cell(tr, k.n);
+      const role = cell(tr, ''); if (k.role === 'admin') role.appendChild(pill()); else { role.textContent = 'player'; role.className = 'quiet'; }
+      cell(tr, k.map); cell(tr, k.region || ''); cell(tr, k.lv || ''); cell(tr, ago(k.since)); tb.appendChild(tr);
+    }
   }
+
+  // The Muted column: "no", "until 3:45 pm", "until unmuted".
+  const mutedWords = until => !until || until <= Date.now() ? 'no' : until >= ALWAYS ? 'until unmuted' : 'until ' + clock(until);
 
   async function loadAccounts() {
     const list = await api('GET', '/api/admin/accounts');
+    admins = new Set(list.filter(a => a.role === 'admin').map(a => a.name));
     const tb = $('accounts').querySelector('tbody'); tb.innerHTML = '';
-    if (!list.length) { const tr = document.createElement('tr'); cell(tr, 'No knights yet.').colSpan = 6; tb.appendChild(tr); }
+    if (!list.length) { const tr = document.createElement('tr'); cell(tr, 'No knights yet.').colSpan = 8; tb.appendChild(tr); }
     for (const a of list) {
       const tr = document.createElement('tr'); if (a.banned) tr.className = 'banned';
-      cell(tr, a.name); cell(tr, when(a.created)); cell(tr, when(a.lastSeen)); cell(tr, a.banned ? 'yes' : 'no'); cell(tr, when(a.saveAt));
+      cell(tr, a.name);
+      // Role: the gold ADMIN tag, and the one button that changes it
+      const role = cell(tr, '');
+      if (a.role === 'admin') role.appendChild(pill()); else { const s = document.createElement('span'); s.className = 'quiet'; s.textContent = 'player'; role.appendChild(s); }
+      const rb = document.createElement('div'); rb.className = 'tools';
+      rb.appendChild(a.role === 'admin'
+        ? button('Make player', async () => { if (!confirm('Make ' + a.name + ' a player again? They lose the admin powers straight away.')) return; await act(() => api('POST', '/api/admin/role', { name: a.name, role: 'player' }), a.name + ' is a player now.'); })
+        : button('Make admin', async () => { if (!confirm('Make ' + a.name + ' an admin? An admin can mute, kick and ban other knights from inside the game.')) return; await act(() => api('POST', '/api/admin/role', { name: a.name, role: 'admin' }), a.name + ' is an admin now.'); }, 'gold'));
+      role.appendChild(rb);
+      cell(tr, when(a.created)); cell(tr, when(a.lastSeen)); cell(tr, a.banned ? 'yes' : 'no');
+      // Muted: how long, a small chooser to mute, and Unmute while muted
+      const muted = cell(tr, ''); const words = mutedWords(a.mutedUntil);
+      const ms = document.createElement('span'); ms.textContent = words; if (words !== 'no') ms.className = 'muted'; muted.appendChild(ms);
+      const mt = document.createElement('div'); mt.className = 'tools';
+      const pick = document.createElement('select'); pick.setAttribute('aria-label', 'How long to mute ' + a.name);
+      for (const [v, t] of [['5m', '5 minutes'], ['1h', '1 hour'], ['1d', '1 day'], ['always', 'Until unmuted']]) { const o = document.createElement('option'); o.value = v; o.textContent = t; pick.appendChild(o); }
+      mt.append(pick, button('Mute', async () => { await act(() => api('POST', '/api/admin/mute', { name: a.name, span: pick.value }), a.name + ' is muted ' + (pick.value === 'always' ? 'until unmuted' : 'for ' + pick.options[pick.selectedIndex].textContent) + '.'); }));
+      if (words !== 'no') mt.appendChild(button('Unmute', async () => { await act(() => api('POST', '/api/admin/mute', { name: a.name, span: 'off' }), a.name + ' can chat again.'); }));
+      muted.appendChild(mt);
+      cell(tr, when(a.saveAt));
       const td = document.createElement('td');
-      const reset = document.createElement('button'); reset.textContent = 'Reset secret word';
-      reset.onclick = async () => { const pass = prompt('New secret word for ' + a.name + ' (at least 4 letters):'); if (!pass) return; try { await api('POST', '/api/admin/reset', { name: a.name, pass }); say('Secret word changed for ' + a.name + '.'); } catch (e) { say(e.message, true); } };
-      const ban = document.createElement('button'); ban.textContent = a.banned ? 'Unban' : 'Ban'; if (!a.banned) ban.className = 'danger';
-      ban.onclick = async () => { if (!a.banned && !confirm('Ban ' + a.name + '? They cannot log in until unbanned. Their save stays.')) return; try { await api('POST', '/api/admin/ban', { name: a.name, banned: !a.banned }); say((a.banned ? 'Unbanned ' : 'Banned ') + a.name + '.'); await loadAccounts(); } catch (e) { say(e.message, true); } };
-      const saves = document.createElement('button'); saves.textContent = 'Saves';
-      saves.onclick = async () => {
+      const reset = button('Reset secret word', async () => { const pass = prompt('New secret word for ' + a.name + ' (at least 4 letters):'); if (!pass) return; try { await api('POST', '/api/admin/reset', { name: a.name, pass }); say('Secret word changed for ' + a.name + '.'); } catch (e) { say(e.message, true); } });
+      const ban = button(a.banned ? 'Unban' : 'Ban', async () => { if (!a.banned && !confirm('Ban ' + a.name + '? They cannot log in until unbanned. Their save stays.')) return; await act(() => api('POST', '/api/admin/ban', { name: a.name, banned: !a.banned }), (a.banned ? 'Unbanned ' : 'Banned ') + a.name + '.'); }, a.banned ? '' : 'danger');
+      const saves = button('Saves', async () => {
         let box = tr.nextElementSibling; if (box && box.className === 'savesrow') { box.remove(); return; }
         try {
           const list = await api('GET', '/api/admin/saves?name=' + encodeURIComponent(a.name));
-          box = document.createElement('tr'); box.className = 'savesrow'; const td = document.createElement('td'); td.colSpan = 6; box.appendChild(td);
+          box = document.createElement('tr'); box.className = 'savesrow'; const td = document.createElement('td'); td.colSpan = 8; box.appendChild(td);
           const div = document.createElement('div'); div.className = 'saves'; td.appendChild(div);
           if (!list.length) div.textContent = 'No saves yet.';
-          list.forEach((s, i) => {
-            const line = document.createElement('div'); line.textContent = 'Version ' + s.ver + ' — ' + when(s.at) + ' — ' + Math.round(s.bytes / 1024) + ' KB' + (i === 0 ? ' (the one in use)' : ' ');
-            if (i > 0) { const b = document.createElement('button'); b.textContent = 'Go back to this one'; b.onclick = async () => { if (!confirm('Make version ' + s.ver + ' the current save for ' + a.name + '?')) return; try { await api('POST', '/api/admin/rollback', { name: a.name, ver: s.ver }); say('Rolled ' + a.name + ' back to version ' + s.ver + '.'); box.remove(); await loadAccounts(); } catch (e) { say(e.message, true); } }; line.appendChild(document.createTextNode(' ')); line.appendChild(b); }
+          let first = true;
+          for (const s of list) {
+            const line = document.createElement('div');
+            if (s.ver === 'pin') {
+              // an admin's backup from before Unlock everything: going back to it keeps it, so it can be used again
+              line.className = 'pin';
+              line.textContent = 'Backup from before Unlock everything — ' + when(s.at) + ' — ' + kb(s.bytes) + ' ';
+              line.appendChild(button('Go back to this one', async () => { if (!confirm('Make the backup from before Unlock everything the current save for ' + a.name + '? The backup stays, so you can do this again.')) return; try { await api('POST', '/api/admin/rollback', { name: a.name, ver: 'pin' }); say(a.name + ' is back to the backup from before Unlock everything.'); box.remove(); await loadAccounts(); } catch (e) { say(e.message, true); } }));
+            } else {
+              line.textContent = 'Version ' + s.ver + ' — ' + when(s.at) + ' — ' + kb(s.bytes) + (first ? ' (the one in use)' : ' ');
+              if (!first) line.appendChild(button('Go back to this one', async () => { if (!confirm('Make version ' + s.ver + ' the current save for ' + a.name + '?')) return; try { await api('POST', '/api/admin/rollback', { name: a.name, ver: s.ver }); say('Rolled ' + a.name + ' back to version ' + s.ver + '.'); box.remove(); await loadAccounts(); } catch (e) { say(e.message, true); } }));
+              first = false;
+            }
             div.appendChild(line);
-          });
+          }
           tr.after(box);
         } catch (e) { say(e.message, true); }
-      };
+      });
       td.append(reset, ban, saves); tr.appendChild(td); tb.appendChild(tr);
     }
+  }
+
+  // Runs one change, says so, and shows the new state everywhere it appears.
+  async function act(fn, done) {
+    try { await fn(); say(done); await loadAccounts(); await loadOnline(); await loadModlog(); } catch (e) { say(e.message, true); }
   }
 
   async function loadInvite() { const r = await api('GET', '/api/admin/invite'); $('invite').textContent = r.invite || '(none set)'; }
@@ -133,14 +197,37 @@
     const box = $('chat'); const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 8 || box.childElementCount === 0;
     box.innerHTML = '';
     if (!list.length) box.textContent = 'Nothing said yet.';
-    for (const c of list) { const d = document.createElement('div'); const t = document.createElement('span'); t.className = 't'; t.textContent = when(c.at) + '  '; const n = document.createElement('span'); n.className = 'n'; n.textContent = c.n + ': '; d.append(t, n, document.createTextNode(c.text)); box.appendChild(d); }
+    for (const c of list) { const d = document.createElement('div'); const t = document.createElement('span'); t.className = 't'; t.textContent = when(c.at) + '  '; const n = document.createElement('span'); n.className = admins.has(c.n) ? 'n admin' : 'n'; n.textContent = c.n + ': '; d.append(t, n, document.createTextNode(c.text)); box.appendChild(d); }
     if (stick) box.scrollTop = box.scrollHeight;
+  }
+
+  // One plain sentence per row of mod_log.
+  const SPANS = { '5m': 'for 5 minutes', '1h': 'for 1 hour', '1d': 'for 1 day', always: 'until unmuted' };
+  function sentence(r) {
+    switch (r.act) {
+      case 'role': return r.by + ' made ' + r.n + (r.detail === 'admin' ? ' an admin' : ' a player');
+      case 'mute': return r.by + ' muted ' + r.n + ' ' + (SPANS[r.detail] || r.detail);
+      case 'unmute': return r.by + ' unmuted ' + r.n;
+      case 'kick': return r.by + ' sent ' + r.n + ' out of the world';
+      case 'ban': return r.by + ' banned ' + r.n;
+      case 'unban': return r.by + ' unbanned ' + r.n;
+      case 'party': return r.by + ' threw a drop party: ' + r.detail;
+      case 'hat': return r.n + ' found a ' + r.detail + ' party hat (' + r.by + "'s party)";
+      default: return r.by + ' ' + r.act + ' ' + r.n + (r.detail ? ' (' + r.detail + ')' : '');
+    }
+  }
+  async function loadModlog() {
+    const list = await api('GET', '/api/admin/modlog?limit=200');
+    const box = $('modlog'); box.innerHTML = '';
+    if (!list.length) box.textContent = 'Nothing yet.';
+    for (const r of list) { const d = document.createElement('div'); if (r.act === 'hat') d.className = 'hat'; const t = document.createElement('span'); t.className = 't'; t.textContent = clock(r.at) + ' — '; d.append(t, document.createTextNode(sentence(r))); box.appendChild(d); }
   }
 
   async function refresh(all) {
     try {
-      await loadOnline(); await loadChat();
-      if (all) { await loadAccounts(); await loadInvite(); }
+      if (all) await loadAccounts();
+      await loadOnline(); await loadChat(); await loadModlog();
+      if (all) await loadInvite();
       say('Updated ' + new Date().toLocaleTimeString() + '.');
     } catch (e) { say(e.message, true); if (/admin key/.test(e.message)) lock(); }
   }
