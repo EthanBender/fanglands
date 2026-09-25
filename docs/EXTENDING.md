@@ -39,6 +39,16 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   puts a marker on the world map; `HOOKS.hurt.push((e, dmg, source) => ...)` sees every hit the player takes.
 - Instances (`src/16-instances.js`): `INSTANCES.define('my_cave', { name, sub, w, h, build(setTile, rnd), spawns: [[type, x, y]], exit: [x, y], door: [x, y], step: [x, y], boss, onClear })`;
   a `door` places a DUNGEON_DOOR tile at world-gen and E on it enters, or call `INSTANCES.enter('my_cave')` yourself and `INSTANCES.leave()`. The instance map replaces `map` while active; the save always records the overworld.
+  **Instance-local BUILDINGS** (a roof that lifts when you walk in, inside an instance): mount them into `BUILDINGS` on enter and
+  unmount them on every way out, because 16-instances hides the overworld buildings in the instance's rectangle and puts them back
+  on leave but knows nothing about yours. The ways out are `INSTANCES.leave`, the L key and the LEAVE button (both call the inner
+  leave directly), dying (`respawnPoint`), `load` and a new game (`generateWorld`): wrap `INSTANCES.enter`/`leave`, `load`,
+  `respawnPoint` and `generateWorld`, and re-sync from an update hook at the start and the end of the tick. Wrap `drawBuilding` with
+  explicit `(g, b)` to draw your own; the core already skips the building the knight stands in, so the roof lifts for free.
+  `src/91-cloudkingdom.js` does all of it (`mountSync`) and its self-test K5 proves nothing leaks.
+  **Anything drawn at fixed overworld coordinates** (not read off a tile: posts, grave markers, a walking figure) must skip
+  instances with `if (window.__instance) return;` — every instance is written into the map's top-left corner, so those coordinates
+  are somewhere inside the instance. 45-progression's crossing posts and 54-graves' markers do; 91's K21b checks both.
 - Lighting (`src/89-lighting.js`): dark places read one registry. `LIGHTS.add({ tile: 'MY_BRAZIER', r, lift, color, tint, flicker, speed, ox, oy })`
   registers a tile kind as a light — `tile` is the tile NAME, `r` is its reach in pixels, `color` is what it burns and `tint` how much of that
   colour washes the ground. `LIGHTS.addSource(fn)` adds a light that is not a tile (the knight, a boss, a fireball): `fn(out, scene)` pushes

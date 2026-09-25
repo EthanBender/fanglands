@@ -10,7 +10,7 @@
 // instance once at load, cell for cell, with no random numbers — every client builds the same city.
 //
 // ROWS: 100 x 80 tiles, one character per tile, 48 px a tile (4800 x 3840 px). Copied byte for byte from the
-// judge's plan-rows.txt (sha1 eadc9a3784076af81069d9591b777aa9d082237b); do not edit a row here without
+// judge's plan-rows.txt (sha1 a0fd9636f9c2584e0491b1e8a5389d6addc3dd10); do not edit a row here without
 // re-measuring every count the self-tests quote. GLYPHS says which tile NAME each character paints.
 //
 //     0         1         2         3         4         5         6         7         8         9
@@ -37,7 +37,7 @@
     '~~~~~~~~~~~~,,,,#=="""""""""""""S"""oooooo""""t=====C__a_a__C==================G,,,++++,,,,,,,,,,,,,',
     '~~~~~~~~~~~~,,,,#==""""l""""""""""""b"b""b"""""=====C_______C==================G,,,++++,,,,,,,,,,,,,',
     '~~~~~~~~~~~~,,,,#===================================C_______C==================G,,,++++,,,,,,,,,,,,,',
-    '~~~~~~~~~~~~,,,,#=="""""""=""""l""""""""""l""""=====CCCCDCCCl===========l=====TTT,,~~~~,,,,,,,,,U,,,',
+    '~~~~~~~~~~~~,,,,#=="""""""=""""l""""""""""l""""=====CCCCDCCCCl==========l=====TTT,,~~~~,,,,,,,,,U,,,',
     '~~~~~~~~~~~~,,,,#=="""""""=""***""""""****""t"l===============================TTT,,~~~~,x,,,,,,,,,,,',
     '~~~~~~~~~~~~,,,,#=="t"""""=""""""t"""""""""""""===============================TTT,,~~~~,,,,,,,,,,,,,',
     '~~~~~~~~~~~~,,,,#==""hhhhh"hhhhh""~~~~~~~~~~~~~+++~~~~~~~~~~~~~""========="""==#,,,~~~~,,,,,___,,,,,',
@@ -157,7 +157,7 @@
     seraphel: [48, 29], throne: [48, 28], halcyon: [56, 55],
     pell: [93, 9], quill: [69, 42], skyla: [82, 74], ferris: [19, 74],
     aldric: [48, 57], tamsin: [66, 54], mossbeard: [28, 19], aubade: [69, 26], corvin: [56, 17], merriweather: [22, 41],
-    hale: [46, 31], brisk: [50, 31],
+    orla: [46, 31], brisk: [50, 31],
     larkMaze: [26, 27], larkWait: [48, 15], larkPlaza: [54, 44],
     mazeGate: [26, 22], railSpot: [48, 2],
     balcony: { x0: 44, y0: 1, x1: 52, y1: 3 }, larkRail: [52, 2], larkLand: [51, 2],
@@ -195,10 +195,10 @@
 
   const GATES = [
     { id: 'great', name: 'The Great Gate', cells: [[47, 61], [48, 61], [49, 61]], side: 'south', line: 'The Great Gate. It lifts for anyone who walks up to it.' },
-    { id: 'flight', name: 'The Flight Gate', cells: [[48, 11]], side: 'north', line: 'The Flight Gate. Every child of Aerie walks through it once, and flies back.' },
-    { id: 'crown', name: 'The Crown Gate', cells: [[79, 16], [79, 17], [79, 18]], side: 'east', line: 'The Crown Gate. The bridge beyond it goes to the Rookery and the Songstone.' },
+    { id: 'flight', name: 'The Flight Gate', cells: [[48, 11]], side: 'north', line: 'The Flight Gate. Past it there is only the Long Rail.' },
+    { id: 'crown', name: 'The Crown Gate', cells: [[79, 16], [79, 17], [79, 18]], side: 'east', line: 'The Crown Gate. Its doors swing open for knights.' },
     { id: 'spire', name: 'The Spire Gate', cells: [[72, 61]], side: 'south', line: 'The Spire Gate. The runners go out this way.' },
-    { id: 'postern', name: 'The Postern', cells: [[16, 55]], side: 'west', line: 'The Postern. A small door for people who do not want to be seen leaving.' },
+    { id: 'postern', name: 'The Postern', cells: [[16, 55]], side: 'west', line: 'The Postern. A small door for people in a hurry.' },
   ];
   const BRIDGES = [
     { id: 'moatN', name: 'the north moat bridge', kind: 'stone', moat: true, rects: [[47, 22, 49, 23]] },
@@ -218,7 +218,8 @@
     { x: 52, y: 40, name: 'The East Twin Spire', line: 'The East Twin Spire. Its twin is exactly as tall. They have been measured.' },
     { x: 19, y: 38, name: 'The Span Spire', line: 'The Span Spire. The children race to its top and back, with wings.' },
   ];
-  // the six updraft stones (88-aerie's table, order kept) and the two royal ones only Lark's feather opens
+  // the six updraft stones (88-aerie's table, order kept) and the two gold royal ones: with Lark's feather either one opens
+  // her flight panel (91-cloudkingdom), and she carries you to any of six places in the city
   const DRAFTS = [
     { t: [44, 68], land: [45, 68], to: 1, name: 'the Crown' },
     { t: [96, 19], land: [95, 19], to: 0, name: 'the Wind Landing' },
@@ -228,8 +229,8 @@
     { t: [81, 73], land: [82, 73], to: 4, name: 'the Crown' },
   ];
   const ROYAL = [
-    { id: 'A', t: [52, 68], land: [51, 68], to: 1, name: 'the Royal Plaza' },
-    { id: 'B', t: [40, 45], land: [41, 45], to: 0, name: 'the Wind Landing' },
+    { id: 'A', t: [52, 68], land: [51, 68], name: 'the Wind Landing' },
+    { id: 'B', t: [40, 45], land: [41, 45], name: 'the Royal Plaza' },
   ];
   // the wards: an arrival banner each (the first match wins, so the Long Rail and the Great Gate come first)
   const WARDS = [
