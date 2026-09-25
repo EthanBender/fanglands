@@ -105,48 +105,108 @@ window.FANGLANDS.title = title;
     pressed.clear(); keys.clear(); touch.taps.length = 0;
   };
 
-  // ---------- drawing ----------
+  // ---------- drawing: the kit's materials (src/59-hudkit.js) over the village square ----------
+  // FANGLANDS in gold Cinzel with the flourish, the three slots as vellum cards (the latest one gold-edged), plate buttons
+  // for Continue / Delete / Sound, and nothing tappable in the notch or home-indicator bands. 71-login draws the online
+  // title with the same heading, sprites and bottom row (title.heading / title.sprites / title.chrome).
   const KNIGHT = { tunic: '#3b6fb6', hair: '#5a3a1e', helm: '#8f96a3', shoulder: '#9aa3b2', shield: '#8a6a3a', weapon: ITEMS.iron_sword || ITEMS.wooden_sword };
-  function drawTitle(g) {
+  // the frame every title screen shares: safe insets, the heading's place, the bottom row's place
+  title.frame = () => {
+    const t = touchMode(), fam = HK.family(VW, VH, t), S = HK.insets(VW, VH, fam, t), M = 12;
     const narrow = VW < 640, short = VH < 520;
+    const size = narrow ? 44 : short ? 40 : 64;
+    const ty = Math.round(short ? S.t + 44 : Math.max(S.t + 58, VH * 0.17));
+    const headBottom = ty + (short ? 26 : narrow ? 44 : 52);
+    const rowH = t ? 44 : 36, bottomY = VH - S.b - M - rowH;
+    return { t, fam, S, M, narrow, short, size, ty, headBottom, rowH, bottomY, left: S.l + M, right: VW - S.r - M };
+  };
+  title.backdrop = g => {
     const grad = g.createLinearGradient(0, 0, 0, VH);
-    grad.addColorStop(0, 'rgba(6,8,14,0.88)'); grad.addColorStop(0.45, 'rgba(6,8,14,0.66)'); grad.addColorStop(1, 'rgba(6,8,14,0.92)');
+    grad.addColorStop(0, 'rgba(8,6,4,0.88)'); grad.addColorStop(0.45, 'rgba(8,6,4,0.62)'); grad.addColorStop(1, 'rgba(8,6,4,0.92)');
     g.fillStyle = grad; g.fillRect(0, 0, VW, VH);
-    // layout: title, then a centred column of three cards; the knight and walker fill the side margins
-    const cw = Math.min(narrow ? VW - 28 : 440, VW - 28), ch = short ? 54 : 66, gap = 10;
-    const cx = Math.round(VW / 2 - cw / 2);
-    const ty = short ? 44 : Math.round(VH * 0.19);
-    const y0 = Math.round(Math.max(ty + (narrow ? 44 : 52), Math.min(narrow ? ty + 52 : VH * 0.36, VH - (3 * (ch + gap) + 60))));
-    g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,0.75)';
-    g.font = `800 ${narrow ? 44 : short ? 48 : 72}px ${DISPLAY}`; g.strokeText('FANGLANDS', VW / 2, ty); g.fillStyle = '#f5c542'; g.fillText('FANGLANDS', VW / 2, ty);
-    g.font = `600 ${narrow ? 14 : 18}px ${DISPLAY}`; g.lineWidth = 4; g.strokeText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30)); g.fillStyle = '#c9a36a'; g.fillText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30));
-    // knight (left margin) and walker (right margin), bobbing slowly; scaled to the room beside the cards
+  };
+  title.heading = (g, F) => {
+    const T = HK.T;
+    HK.text(g, 'FANGLANDS', VW / 2, F.ty, { font: HK.FC(800, F.size), align: 'center', color: T.goldHi, halo: 6, haloColor: 'rgba(0,0,0,0.8)', shadow: 'rgba(0,0,0,0.9)' });
+    const sy = F.ty + (F.short ? 20 : F.narrow ? 24 : 30);
+    HK.text(g, 'A game by Cohen', VW / 2, sy, { font: HK.FS(600, F.short ? 13 : F.narrow ? 14 : 16), align: 'center', color: T.inkDim, halo: 3 });
+    if (!F.short) HK.flourish(g, VW / 2, sy + 14, Math.min(260, VW - 80));
+  };
+  title.sprites = (g, kx, ky, ks, wx, wy, ws) => {
     const bob = Math.sin(title.t * 1.6) * 4, bob2 = Math.sin(title.t * 1.6 + 1.3) * 4;
-    const margin = cx, midY = y0 + (3 * (ch + gap) - gap) / 2, below = y0 + 3 * (ch + gap) + 60 + 70; // narrow screens: sprites sit under the cards
-    const kx = narrow ? VW * 0.28 : margin / 2, ky = narrow ? below : midY, ks = narrow ? 2.6 : clamp(margin / 48, 1.6, 4);
-    const wx = narrow ? VW * 0.72 : VW - margin / 2, wy = narrow ? below : midY, ws = narrow ? 2 : clamp(margin / 78, 1.3, 3.4);
     g.save(); g.translate(kx, ky); g.scale(ks, ks); g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 12, 12, 5, 0, 0, 7); g.fill(); g.translate(0, bob / ks); drawHuman(g, { facing: { x: 1, y: 0 }, hurtT: 0, attackT: 0 }, KNIGHT); g.restore();
     g.save(); g.translate(wx, wy); g.scale(ws, ws); g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 22, 26, 9, 0, 0, 7); g.fill(); g.translate(0, bob2 / ws); drawMech(g, { facing: { x: -1, y: 0 }, moving: true, walkT: title.t * 2.2, attackT: 0, hurtT: 0 }, false, null); g.restore();
-    // slot cards
+  };
+  // the bottom row: Sound on the right (a plate, gold-edged while on), an optional plate on the left (71's Play online),
+  // and one line about saving above the left end
+  // title.leftButton: () => null | { label, action, emblem } — a plate at the left end of the bottom row (71-login's Play online)
+  title.leftButton = () => null;
+  title.chromeGeom = F => {
+    const sw = F.t ? 136 : 124, sx = F.right - sw, lb = title.leftButton(), lw = lb ? Math.min(150, sx - 12 - F.left) : 0;
+    return { sw, sx, lb, lw, lr: lb ? F.left + lw : F.left - 10 };
+  };
+  // avoid: a rect the footer words must stay beside (the card stack, when it comes down to the bottom row)
+  title.chrome = (g, F, footer, avoid) => {
+    const T = HK.T, C = title.chromeGeom(F), { sw, sx, lb, lw } = C, on = !audioMuted;
+    platePush(g, sx, F.bottomY, sw, F.rowH, on ? 'Sound: on' : 'Sound: off', on ? 'Sound: on' : 'Sound: off', toggleMute, on ? 'primary' : null, { emblem: 'music', name: 'Sound effects' });
+    let lx = F.left;
+    if (lb) { platePush(g, F.left, F.bottomY, lw, F.rowH, lb.label, lb.label, lb.action, null, { emblem: lb.emblem || null }); lx = F.left + lw + 12; }
+    const beside = avoid && avoid.y + avoid.h > F.bottomY - 4 && avoid.x > lx;
+    // footer: a sentence, or a list of them longest first: the first that fits two lines beside the plates is drawn
+    const room = (beside ? Math.min(sx, avoid.x) : sx) - 12 - lx, f = HK.FS(600, 12);
+    const pick = [].concat(footer).find(o => !HK.wrap(g, o, room, 2, f).more && HK.wrap(g, o, room, 2, f).lines.every(l => HK.tw(g, l, f) <= room));
+    const lines = pick ? HK.wrap(g, pick, room, 2, f).lines : [];
+    const lh = Math.round(15 * HK.k()), y0 = F.bottomY + F.rowH / 2 - (lines.length - 1) * lh / 2 + 4;
+    lines.forEach((l, i) => HK.text(g, l, lx, y0 + i * lh, { font: f, color: T.inkDim, halo: 3, box: { x: lx, y: F.bottomY, w: room, h: F.rowH }, fitId: 'title:footer' }));
+  };
+  // each line of a card, longest first: the first that fits its room is drawn (whole words, never cut)
+  const cardLines = (c, short) => {
+    const tap = touchMode() ? 'Tap' : 'Click';
+    if (!c) return [[`Empty. ${tap} to start a new game.`, `Empty. ${tap} to start.`, 'Empty']];
+    if (c.broken) return [['This save could not be read.', 'Cannot be read']];
+    const lv = [`Combat level ${c.level}, Chapter ${c.chapter}: ${CHAPTERS[c.chapter - 1]}`, `Level ${c.level}, Chapter ${c.chapter}: ${CHAPTERS[c.chapter - 1]}`, `Level ${c.level}, Chapter ${c.chapter}`];
+    const at = [`${c.region}, played ${fmtTime(c.playSeconds)}`, `${c.region}`, `Played ${fmtTime(c.playSeconds)}`];
+    if (short) return [[`Level ${c.level}, Chapter ${c.chapter}, ${c.region}`, `Level ${c.level}, Chapter ${c.chapter}`]];
+    return [lv, at];
+  };
+  function drawTitle(g) {
+    const F = title.frame(), T = HK.T;
+    title.backdrop(g);
+    title.heading(g, F);
+    const ch = F.short ? 60 : 74, gap = 10, contH = F.t ? 48 : 40, stackH = 3 * ch + 2 * gap + 12 + contH;
+    const y0 = Math.round(Math.max(F.headBottom + 14, Math.min(F.headBottom + 40, F.bottomY - 12 - stackH)));
+    let cw = Math.min(F.narrow ? F.right - F.left - 4 : 440, F.right - F.left - 4);
+    // when the cards reach down to the bottom row (a phone held sideways), they narrow to stay clear of its plates
+    if (y0 + stackH > F.bottomY - 8) { const C = title.chromeGeom(F); cw = Math.min(cw, 2 * Math.min(C.sx - 10 - VW / 2, VW / 2 - C.lr - 10)); }
+    const cx = Math.round(VW / 2 - cw / 2);
+    // the knight and the walker: in the side margins, or under the cards on a narrow screen when there is room
+    const midY = y0 + (3 * (ch + gap) - gap) / 2;
+    if (!F.narrow) { const margin = cx - F.left; if (margin > 70) title.sprites(g, F.left + margin / 2, midY, clamp(margin / 48, 1.6, 4), F.right - margin / 2, midY, clamp(margin / 78, 1.3, 3.4)); }
+    else { const free = F.bottomY - 12 - (y0 + stackH); if (free > 110) { const sy = y0 + stackH + free / 2 + 10; title.sprites(g, VW * 0.28, sy, 2.4, VW * 0.72, sy, 1.9); } }
+    // the slot cards
     let y = y0;
-    const recent = title.recent();
+    const recent = title.recent(), delW = F.t ? 92 : 80, delH = HK.row();
     for (let n = 1; n <= 3; n++) {
       const c = title.cards[n - 1], isRecent = n === recent, armed = title.deleteArmed === n;
-      roundRect(g, cx, y, cw, ch, 10); g.fillStyle = c ? 'rgba(14,20,30,0.9)' : 'rgba(10,14,22,0.7)'; g.fill(); g.strokeStyle = isRecent ? '#f5c542' : '#30363d'; g.lineWidth = isRecent ? 2 : 1; g.stroke();
-      g.textAlign = 'left'; g.fillStyle = c ? '#e6edf3' : '#8b949e'; g.font = `700 ${short ? 14 : 16}px ${DISPLAY}`; g.fillText(`Slot ${n}`, cx + 16, y + (short ? 22 : 26));
-      g.font = `${narrow ? 11 : 12}px sans-serif`; g.fillStyle = c ? '#c9d1d9' : '#6e7681';
-      const line = c ? (c.broken ? 'Save could not be read' : narrow ? `Level ${c.level} · Ch. ${c.chapter} · ${c.region} · ${fmtTime(c.playSeconds)}` : `Combat level ${c.level} · Chapter ${c.chapter}: ${CHAPTERS[c.chapter - 1]} · ${c.region} · ${fmtTime(c.playSeconds)}`) : 'Empty · tap to start a new game';
-      let shown = line; while (shown.length > 8 && g.measureText(shown + '…').width > cw - (c ? 110 : 30)) shown = shown.slice(0, -1); g.fillText(shown === line ? line : shown + '…', cx + 16, y + (short ? 40 : 48));
-      if (isRecent) { g.textAlign = 'right'; g.fillStyle = '#f5c542'; g.font = 'bold 10px sans-serif'; g.fillText('LATEST', cx + cw - 92, y + 16); }
-      // Delete goes in first: the first hit rect wins, and it sits on top of the card
-      if (c) button(g, cx + cw - 82, y + Math.round(ch / 2 - 14), 70, 28, armed ? 'Sure?' : 'Delete', () => title.deleteTap(n), armed ? '#b33a3a' : '#5a2323');
-      buttons.push({ x: cx, y, w: cw, h: ch, label: `Slot ${n}`, action: () => title.startSlot(n) });
+      g.save(); if (!c) g.globalAlpha *= 0.82;
+      HK.vellumPlate(g, cx, y, cw, ch, { edge: isRecent ? 'rgba(247,220,143,0.95)' : null });
+      g.restore();
+      const textW = cw - 32 - (c ? delW + 12 : 0), tf = HK.FC(800, F.short ? 14 : 16);
+      const nameY = y + (F.short ? 22 : 25);
+      HK.text(g, `SLOT ${n}`, cx + 16, nameY, { font: tf, color: c ? T.ink : T.inkDim, shadow: 'rgba(0,0,0,0.9)', box: { x: cx + 16, y, w: textW, h: ch }, fitId: 'title:slot' });
+      if (isRecent) HK.text(g, 'LATEST', cx + 16 + HK.tw(g, `SLOT ${n}`, tf) + 10, nameY - 1, { font: HK.FC(800, 10), color: T.gold, box: { x: cx + 16, y, w: textW, h: ch }, fitId: 'title:latest' });
+      const lf = HK.FS(600, F.short ? 12 : 13), lh = Math.round((F.short ? 15 : 16) * HK.k());
+      const lines = cardLines(c, F.short).map(opts => opts.find(o => HK.tw(g, o, lf) <= textW) || HK.wrap(g, opts[opts.length - 1], textW, 1, lf).lines[0] || '');
+      lines.forEach((l, i) => HK.text(g, l, cx + 16, nameY + 19 + i * lh, { font: lf, color: c ? T.inkDim : T.inkMute, box: { x: cx + 16, y, w: textW, h: ch }, fitId: 'title:line' }));
+      // the card is its own button (Delete sits beside its tap area, never under it)
+      const dx = cx + cw - 12 - delW;
+      buttons.push({ x: cx, y, w: c ? dx - 8 - cx : cw, h: ch, label: `Slot ${n}`, action: () => title.startSlot(n), up: true, name: c ? `Play slot ${n}` : `Start a new game in slot ${n}` });
+      if (c) platePush(g, dx, y + Math.round((ch - delH) / 2), delW, delH, armed ? 'Sure?' : 'Delete', armed ? 'Sure?' : 'Delete', () => title.deleteTap(n), 'danger', { name: armed ? 'Tap again to delete this slot' : 'Delete this slot' });
       y += ch + gap;
     }
-    if (title.hasSaves()) button(g, cx, y + 2, cw, short ? 34 : 42, 'Continue', title.continue, '#238636');
-    else { g.textAlign = 'center'; g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.fillText('Tap a slot to begin', VW / 2, y + 22); }
-    button(g, VW - 124, VH - 42, 110, 30, audioMuted ? 'Sound: off' : 'Sound: on', toggleMute, '#21262d');
-    g.textAlign = 'left'; g.fillStyle = 'rgba(230,237,243,0.55)'; g.font = '11px sans-serif'; g.fillText('Progress saves to this browser.', 14, VH - 22);
+    if (title.hasSaves()) platePush(g, cx, y + 2, cw, contH, 'Continue', 'Continue', title.continue, 'primary', { emblem: 'play', cinzel: true, name: 'Continue the latest game', keys: touchMode() ? [] : ['Enter'] });
+    else HK.text(g, touchMode() ? 'Tap a slot to begin' : 'Click a slot to begin', VW / 2, y + 26, { font: HK.FS(600, 14), align: 'center', color: T.inkDim, halo: 3 });
+    title.chrome(g, F, ['Progress saves to this browser.', 'Saves to this browser.'], { x: cx, y: y0, w: cw, h: stackH });
   }
   const _drawHud = drawHud;
   drawHud = function (g) {
@@ -159,7 +219,14 @@ window.FANGLANDS.title = title;
   // ---------- in-game bits: play time, the 'Saved' tick, TITLE from the book (the pause menu) ----------
   HOOKS.update.push(dt => { if (!title.active && !player.dead) player.playSeconds = (player.playSeconds || 0) + dt; });
   // the 'Saved' flash is a green tick on the crest's banner for 1.2 s (src/59-hudkit.js reads title.savedAt)
-  HOOKS.pauseMenu.push((g, x, y, w, h) => button(g, x, y, w, h, isTouch ? 'Title screen' : 'Title screen (T)', title.toTitle, '#3a4150')); // a slot in the core pause menu (10-hud), so the button is drawn after the menu resets `buttons` and is tappable
+  // The book's Title screen row (a slot in HOOKS.pauseMenu, drawn after the book resets `buttons`, so it is tappable). Its tap
+  // label stays 'Title screen (T)' on a computer and 'Title screen' on touch; the plate shows the words and, on a computer,
+  // the T keycap, the castle emblem the kit gives every Title screen row.
+  title.row = (g, x, y, w, h) => {
+    const label = isTouch ? 'Title screen' : 'Title screen (T)', key = touchMode() ? null : 'T';
+    platePush(g, x, y, w, h, label, 'Title screen', title.toTitle, null, { emblem: 'castle', cinzel: true, key: w >= 110 && key ? key : null, name: 'Save and go to the title screen', keys: key ? [key] : [] });
+  };
+  HOOKS.pauseMenu.push((g, x, y, w, h) => title.row(g, x, y, w, h));
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -188,5 +255,28 @@ window.FANGLANDS.title = title;
     const ps0 = player.playSeconds || 0; F.sim(60);
     check('title: play time accumulates in the slot', player.playSeconds > ps0 && !title.active, { playSeconds: +player.playSeconds.toFixed(2) });
     save(); check('title: save leaves a mirror in the legacy key and flashes Saved', lsGet(SAVE_KEY) === lsGet(SLOT_KEY(1)) && performance.now() - title.savedAt < 1000, {});
+    // the title screen at all 8 device sizes, touch and mouse, with saves and without, normal and Large text: every control
+    // 44 px on touch (26 with a mouse), 8 px apart (4), on screen and out of the notch / home bands, the slot card's tap area
+    // clear of its Delete, and every word inside its card or plate
+    { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = window.SETTINGS ? SETTINGS.get('text') : 'normal', problems = []; let tried = 0;
+      const keep = [1, 2, 3].map(n => [lsGet(SLOT_KEY(n)), lsGet(AT_KEY(n))]);
+      try {
+        title.open();
+        for (const [w, hh] of HK.audit.SIZES) {
+          if (!panelSetSize(w, hh)) continue; tried++;
+          for (const tch of [true, false]) for (const big of ['normal', 'large']) for (const saves of [true, false]) {
+            window.__forceTouch = tch; if (window.SETTINGS) SETTINGS.set('text', big);
+            if (saves) { for (let n = 1; n <= 3; n++) { const [sv, at] = keep[n - 1]; if (sv != null) { lsSet(SLOT_KEY(n), sv); lsSet(AT_KEY(n), at || 1); } } title.deleteArmed = 2; } else { for (let n = 1; n <= 3; n++) { lsDel(SLOT_KEY(n)); lsDel(AT_KEY(n)); } title.deleteArmed = 0; }
+            title.refresh();
+            const where = `title ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big} ${saves ? 'saves' : 'empty'}`;
+            problems.push(...panelFrame(where, { from: 0, panel: false }));
+            if (!buttons.some(b => b.label === 'Slot 1') || !buttons.some(b => /^Sound/.test(b.label)) || (saves && !buttons.some(b => b.label === 'Continue'))) problems.push(`${where}: missing controls ${buttons.map(b => b.label).join(',')}`);
+          }
+        }
+      } finally {
+        for (let n = 1; n <= 3; n++) { const [sv, at] = keep[n - 1]; if (sv == null) { lsDel(SLOT_KEY(n)); lsDel(AT_KEY(n)); } else { lsSet(SLOT_KEY(n), sv); lsSet(AT_KEY(n), at || Date.now()); } }
+        title.deleteArmed = 0; window.__forceTouch = t0; if (window.SETTINGS) SETTINGS.set('text', text0); restore(); title.startSlot(1);
+      }
+      check('title: the title screen at all 8 device sizes, touch and mouse, with saves and without, normal and Large text: controls 44 px on touch (26 with a mouse), 8 px apart (4), on screen, out of the notch and home bands, and every word inside its card', tried === 8 && problems.length === 0 && !title.active, { tried, problems: problems.slice(0, 10), total: problems.length }); }
   });
 }

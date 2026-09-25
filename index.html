@@ -3558,48 +3558,108 @@ window.FANGLANDS.title = title;
     pressed.clear(); keys.clear(); touch.taps.length = 0;
   };
 
-  // ---------- drawing ----------
+  // ---------- drawing: the kit's materials (src/59-hudkit.js) over the village square ----------
+  // FANGLANDS in gold Cinzel with the flourish, the three slots as vellum cards (the latest one gold-edged), plate buttons
+  // for Continue / Delete / Sound, and nothing tappable in the notch or home-indicator bands. 71-login draws the online
+  // title with the same heading, sprites and bottom row (title.heading / title.sprites / title.chrome).
   const KNIGHT = { tunic: '#3b6fb6', hair: '#5a3a1e', helm: '#8f96a3', shoulder: '#9aa3b2', shield: '#8a6a3a', weapon: ITEMS.iron_sword || ITEMS.wooden_sword };
-  function drawTitle(g) {
+  // the frame every title screen shares: safe insets, the heading's place, the bottom row's place
+  title.frame = () => {
+    const t = touchMode(), fam = HK.family(VW, VH, t), S = HK.insets(VW, VH, fam, t), M = 12;
     const narrow = VW < 640, short = VH < 520;
+    const size = narrow ? 44 : short ? 40 : 64;
+    const ty = Math.round(short ? S.t + 44 : Math.max(S.t + 58, VH * 0.17));
+    const headBottom = ty + (short ? 26 : narrow ? 44 : 52);
+    const rowH = t ? 44 : 36, bottomY = VH - S.b - M - rowH;
+    return { t, fam, S, M, narrow, short, size, ty, headBottom, rowH, bottomY, left: S.l + M, right: VW - S.r - M };
+  };
+  title.backdrop = g => {
     const grad = g.createLinearGradient(0, 0, 0, VH);
-    grad.addColorStop(0, 'rgba(6,8,14,0.88)'); grad.addColorStop(0.45, 'rgba(6,8,14,0.66)'); grad.addColorStop(1, 'rgba(6,8,14,0.92)');
+    grad.addColorStop(0, 'rgba(8,6,4,0.88)'); grad.addColorStop(0.45, 'rgba(8,6,4,0.62)'); grad.addColorStop(1, 'rgba(8,6,4,0.92)');
     g.fillStyle = grad; g.fillRect(0, 0, VW, VH);
-    // layout: title, then a centred column of three cards; the knight and walker fill the side margins
-    const cw = Math.min(narrow ? VW - 28 : 440, VW - 28), ch = short ? 54 : 66, gap = 10;
-    const cx = Math.round(VW / 2 - cw / 2);
-    const ty = short ? 44 : Math.round(VH * 0.19);
-    const y0 = Math.round(Math.max(ty + (narrow ? 44 : 52), Math.min(narrow ? ty + 52 : VH * 0.36, VH - (3 * (ch + gap) + 60))));
-    g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,0.75)';
-    g.font = `800 ${narrow ? 44 : short ? 48 : 72}px ${DISPLAY}`; g.strokeText('FANGLANDS', VW / 2, ty); g.fillStyle = '#f5c542'; g.fillText('FANGLANDS', VW / 2, ty);
-    g.font = `600 ${narrow ? 14 : 18}px ${DISPLAY}`; g.lineWidth = 4; g.strokeText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30)); g.fillStyle = '#c9a36a'; g.fillText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30));
-    // knight (left margin) and walker (right margin), bobbing slowly; scaled to the room beside the cards
+  };
+  title.heading = (g, F) => {
+    const T = HK.T;
+    HK.text(g, 'FANGLANDS', VW / 2, F.ty, { font: HK.FC(800, F.size), align: 'center', color: T.goldHi, halo: 6, haloColor: 'rgba(0,0,0,0.8)', shadow: 'rgba(0,0,0,0.9)' });
+    const sy = F.ty + (F.short ? 20 : F.narrow ? 24 : 30);
+    HK.text(g, 'A game by Cohen', VW / 2, sy, { font: HK.FS(600, F.short ? 13 : F.narrow ? 14 : 16), align: 'center', color: T.inkDim, halo: 3 });
+    if (!F.short) HK.flourish(g, VW / 2, sy + 14, Math.min(260, VW - 80));
+  };
+  title.sprites = (g, kx, ky, ks, wx, wy, ws) => {
     const bob = Math.sin(title.t * 1.6) * 4, bob2 = Math.sin(title.t * 1.6 + 1.3) * 4;
-    const margin = cx, midY = y0 + (3 * (ch + gap) - gap) / 2, below = y0 + 3 * (ch + gap) + 60 + 70; // narrow screens: sprites sit under the cards
-    const kx = narrow ? VW * 0.28 : margin / 2, ky = narrow ? below : midY, ks = narrow ? 2.6 : clamp(margin / 48, 1.6, 4);
-    const wx = narrow ? VW * 0.72 : VW - margin / 2, wy = narrow ? below : midY, ws = narrow ? 2 : clamp(margin / 78, 1.3, 3.4);
     g.save(); g.translate(kx, ky); g.scale(ks, ks); g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 12, 12, 5, 0, 0, 7); g.fill(); g.translate(0, bob / ks); drawHuman(g, { facing: { x: 1, y: 0 }, hurtT: 0, attackT: 0 }, KNIGHT); g.restore();
     g.save(); g.translate(wx, wy); g.scale(ws, ws); g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 22, 26, 9, 0, 0, 7); g.fill(); g.translate(0, bob2 / ws); drawMech(g, { facing: { x: -1, y: 0 }, moving: true, walkT: title.t * 2.2, attackT: 0, hurtT: 0 }, false, null); g.restore();
-    // slot cards
+  };
+  // the bottom row: Sound on the right (a plate, gold-edged while on), an optional plate on the left (71's Play online),
+  // and one line about saving above the left end
+  // title.leftButton: () => null | { label, action, emblem } — a plate at the left end of the bottom row (71-login's Play online)
+  title.leftButton = () => null;
+  title.chromeGeom = F => {
+    const sw = F.t ? 136 : 124, sx = F.right - sw, lb = title.leftButton(), lw = lb ? Math.min(150, sx - 12 - F.left) : 0;
+    return { sw, sx, lb, lw, lr: lb ? F.left + lw : F.left - 10 };
+  };
+  // avoid: a rect the footer words must stay beside (the card stack, when it comes down to the bottom row)
+  title.chrome = (g, F, footer, avoid) => {
+    const T = HK.T, C = title.chromeGeom(F), { sw, sx, lb, lw } = C, on = !audioMuted;
+    platePush(g, sx, F.bottomY, sw, F.rowH, on ? 'Sound: on' : 'Sound: off', on ? 'Sound: on' : 'Sound: off', toggleMute, on ? 'primary' : null, { emblem: 'music', name: 'Sound effects' });
+    let lx = F.left;
+    if (lb) { platePush(g, F.left, F.bottomY, lw, F.rowH, lb.label, lb.label, lb.action, null, { emblem: lb.emblem || null }); lx = F.left + lw + 12; }
+    const beside = avoid && avoid.y + avoid.h > F.bottomY - 4 && avoid.x > lx;
+    // footer: a sentence, or a list of them longest first: the first that fits two lines beside the plates is drawn
+    const room = (beside ? Math.min(sx, avoid.x) : sx) - 12 - lx, f = HK.FS(600, 12);
+    const pick = [].concat(footer).find(o => !HK.wrap(g, o, room, 2, f).more && HK.wrap(g, o, room, 2, f).lines.every(l => HK.tw(g, l, f) <= room));
+    const lines = pick ? HK.wrap(g, pick, room, 2, f).lines : [];
+    const lh = Math.round(15 * HK.k()), y0 = F.bottomY + F.rowH / 2 - (lines.length - 1) * lh / 2 + 4;
+    lines.forEach((l, i) => HK.text(g, l, lx, y0 + i * lh, { font: f, color: T.inkDim, halo: 3, box: { x: lx, y: F.bottomY, w: room, h: F.rowH }, fitId: 'title:footer' }));
+  };
+  // each line of a card, longest first: the first that fits its room is drawn (whole words, never cut)
+  const cardLines = (c, short) => {
+    const tap = touchMode() ? 'Tap' : 'Click';
+    if (!c) return [[`Empty. ${tap} to start a new game.`, `Empty. ${tap} to start.`, 'Empty']];
+    if (c.broken) return [['This save could not be read.', 'Cannot be read']];
+    const lv = [`Combat level ${c.level}, Chapter ${c.chapter}: ${CHAPTERS[c.chapter - 1]}`, `Level ${c.level}, Chapter ${c.chapter}: ${CHAPTERS[c.chapter - 1]}`, `Level ${c.level}, Chapter ${c.chapter}`];
+    const at = [`${c.region}, played ${fmtTime(c.playSeconds)}`, `${c.region}`, `Played ${fmtTime(c.playSeconds)}`];
+    if (short) return [[`Level ${c.level}, Chapter ${c.chapter}, ${c.region}`, `Level ${c.level}, Chapter ${c.chapter}`]];
+    return [lv, at];
+  };
+  function drawTitle(g) {
+    const F = title.frame(), T = HK.T;
+    title.backdrop(g);
+    title.heading(g, F);
+    const ch = F.short ? 60 : 74, gap = 10, contH = F.t ? 48 : 40, stackH = 3 * ch + 2 * gap + 12 + contH;
+    const y0 = Math.round(Math.max(F.headBottom + 14, Math.min(F.headBottom + 40, F.bottomY - 12 - stackH)));
+    let cw = Math.min(F.narrow ? F.right - F.left - 4 : 440, F.right - F.left - 4);
+    // when the cards reach down to the bottom row (a phone held sideways), they narrow to stay clear of its plates
+    if (y0 + stackH > F.bottomY - 8) { const C = title.chromeGeom(F); cw = Math.min(cw, 2 * Math.min(C.sx - 10 - VW / 2, VW / 2 - C.lr - 10)); }
+    const cx = Math.round(VW / 2 - cw / 2);
+    // the knight and the walker: in the side margins, or under the cards on a narrow screen when there is room
+    const midY = y0 + (3 * (ch + gap) - gap) / 2;
+    if (!F.narrow) { const margin = cx - F.left; if (margin > 70) title.sprites(g, F.left + margin / 2, midY, clamp(margin / 48, 1.6, 4), F.right - margin / 2, midY, clamp(margin / 78, 1.3, 3.4)); }
+    else { const free = F.bottomY - 12 - (y0 + stackH); if (free > 110) { const sy = y0 + stackH + free / 2 + 10; title.sprites(g, VW * 0.28, sy, 2.4, VW * 0.72, sy, 1.9); } }
+    // the slot cards
     let y = y0;
-    const recent = title.recent();
+    const recent = title.recent(), delW = F.t ? 92 : 80, delH = HK.row();
     for (let n = 1; n <= 3; n++) {
       const c = title.cards[n - 1], isRecent = n === recent, armed = title.deleteArmed === n;
-      roundRect(g, cx, y, cw, ch, 10); g.fillStyle = c ? 'rgba(14,20,30,0.9)' : 'rgba(10,14,22,0.7)'; g.fill(); g.strokeStyle = isRecent ? '#f5c542' : '#30363d'; g.lineWidth = isRecent ? 2 : 1; g.stroke();
-      g.textAlign = 'left'; g.fillStyle = c ? '#e6edf3' : '#8b949e'; g.font = `700 ${short ? 14 : 16}px ${DISPLAY}`; g.fillText(`Slot ${n}`, cx + 16, y + (short ? 22 : 26));
-      g.font = `${narrow ? 11 : 12}px sans-serif`; g.fillStyle = c ? '#c9d1d9' : '#6e7681';
-      const line = c ? (c.broken ? 'Save could not be read' : narrow ? `Level ${c.level} · Ch. ${c.chapter} · ${c.region} · ${fmtTime(c.playSeconds)}` : `Combat level ${c.level} · Chapter ${c.chapter}: ${CHAPTERS[c.chapter - 1]} · ${c.region} · ${fmtTime(c.playSeconds)}`) : 'Empty · tap to start a new game';
-      let shown = line; while (shown.length > 8 && g.measureText(shown + '…').width > cw - (c ? 110 : 30)) shown = shown.slice(0, -1); g.fillText(shown === line ? line : shown + '…', cx + 16, y + (short ? 40 : 48));
-      if (isRecent) { g.textAlign = 'right'; g.fillStyle = '#f5c542'; g.font = 'bold 10px sans-serif'; g.fillText('LATEST', cx + cw - 92, y + 16); }
-      // Delete goes in first: the first hit rect wins, and it sits on top of the card
-      if (c) button(g, cx + cw - 82, y + Math.round(ch / 2 - 14), 70, 28, armed ? 'Sure?' : 'Delete', () => title.deleteTap(n), armed ? '#b33a3a' : '#5a2323');
-      buttons.push({ x: cx, y, w: cw, h: ch, label: `Slot ${n}`, action: () => title.startSlot(n) });
+      g.save(); if (!c) g.globalAlpha *= 0.82;
+      HK.vellumPlate(g, cx, y, cw, ch, { edge: isRecent ? 'rgba(247,220,143,0.95)' : null });
+      g.restore();
+      const textW = cw - 32 - (c ? delW + 12 : 0), tf = HK.FC(800, F.short ? 14 : 16);
+      const nameY = y + (F.short ? 22 : 25);
+      HK.text(g, `SLOT ${n}`, cx + 16, nameY, { font: tf, color: c ? T.ink : T.inkDim, shadow: 'rgba(0,0,0,0.9)', box: { x: cx + 16, y, w: textW, h: ch }, fitId: 'title:slot' });
+      if (isRecent) HK.text(g, 'LATEST', cx + 16 + HK.tw(g, `SLOT ${n}`, tf) + 10, nameY - 1, { font: HK.FC(800, 10), color: T.gold, box: { x: cx + 16, y, w: textW, h: ch }, fitId: 'title:latest' });
+      const lf = HK.FS(600, F.short ? 12 : 13), lh = Math.round((F.short ? 15 : 16) * HK.k());
+      const lines = cardLines(c, F.short).map(opts => opts.find(o => HK.tw(g, o, lf) <= textW) || HK.wrap(g, opts[opts.length - 1], textW, 1, lf).lines[0] || '');
+      lines.forEach((l, i) => HK.text(g, l, cx + 16, nameY + 19 + i * lh, { font: lf, color: c ? T.inkDim : T.inkMute, box: { x: cx + 16, y, w: textW, h: ch }, fitId: 'title:line' }));
+      // the card is its own button (Delete sits beside its tap area, never under it)
+      const dx = cx + cw - 12 - delW;
+      buttons.push({ x: cx, y, w: c ? dx - 8 - cx : cw, h: ch, label: `Slot ${n}`, action: () => title.startSlot(n), up: true, name: c ? `Play slot ${n}` : `Start a new game in slot ${n}` });
+      if (c) platePush(g, dx, y + Math.round((ch - delH) / 2), delW, delH, armed ? 'Sure?' : 'Delete', armed ? 'Sure?' : 'Delete', () => title.deleteTap(n), 'danger', { name: armed ? 'Tap again to delete this slot' : 'Delete this slot' });
       y += ch + gap;
     }
-    if (title.hasSaves()) button(g, cx, y + 2, cw, short ? 34 : 42, 'Continue', title.continue, '#238636');
-    else { g.textAlign = 'center'; g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.fillText('Tap a slot to begin', VW / 2, y + 22); }
-    button(g, VW - 124, VH - 42, 110, 30, audioMuted ? 'Sound: off' : 'Sound: on', toggleMute, '#21262d');
-    g.textAlign = 'left'; g.fillStyle = 'rgba(230,237,243,0.55)'; g.font = '11px sans-serif'; g.fillText('Progress saves to this browser.', 14, VH - 22);
+    if (title.hasSaves()) platePush(g, cx, y + 2, cw, contH, 'Continue', 'Continue', title.continue, 'primary', { emblem: 'play', cinzel: true, name: 'Continue the latest game', keys: touchMode() ? [] : ['Enter'] });
+    else HK.text(g, touchMode() ? 'Tap a slot to begin' : 'Click a slot to begin', VW / 2, y + 26, { font: HK.FS(600, 14), align: 'center', color: T.inkDim, halo: 3 });
+    title.chrome(g, F, ['Progress saves to this browser.', 'Saves to this browser.'], { x: cx, y: y0, w: cw, h: stackH });
   }
   const _drawHud = drawHud;
   drawHud = function (g) {
@@ -3612,7 +3672,14 @@ window.FANGLANDS.title = title;
   // ---------- in-game bits: play time, the 'Saved' tick, TITLE from the book (the pause menu) ----------
   HOOKS.update.push(dt => { if (!title.active && !player.dead) player.playSeconds = (player.playSeconds || 0) + dt; });
   // the 'Saved' flash is a green tick on the crest's banner for 1.2 s (src/59-hudkit.js reads title.savedAt)
-  HOOKS.pauseMenu.push((g, x, y, w, h) => button(g, x, y, w, h, isTouch ? 'Title screen' : 'Title screen (T)', title.toTitle, '#3a4150')); // a slot in the core pause menu (10-hud), so the button is drawn after the menu resets `buttons` and is tappable
+  // The book's Title screen row (a slot in HOOKS.pauseMenu, drawn after the book resets `buttons`, so it is tappable). Its tap
+  // label stays 'Title screen (T)' on a computer and 'Title screen' on touch; the plate shows the words and, on a computer,
+  // the T keycap, the castle emblem the kit gives every Title screen row.
+  title.row = (g, x, y, w, h) => {
+    const label = isTouch ? 'Title screen' : 'Title screen (T)', key = touchMode() ? null : 'T';
+    platePush(g, x, y, w, h, label, 'Title screen', title.toTitle, null, { emblem: 'castle', cinzel: true, key: w >= 110 && key ? key : null, name: 'Save and go to the title screen', keys: key ? [key] : [] });
+  };
+  HOOKS.pauseMenu.push((g, x, y, w, h) => title.row(g, x, y, w, h));
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -3641,6 +3708,29 @@ window.FANGLANDS.title = title;
     const ps0 = player.playSeconds || 0; F.sim(60);
     check('title: play time accumulates in the slot', player.playSeconds > ps0 && !title.active, { playSeconds: +player.playSeconds.toFixed(2) });
     save(); check('title: save leaves a mirror in the legacy key and flashes Saved', lsGet(SAVE_KEY) === lsGet(SLOT_KEY(1)) && performance.now() - title.savedAt < 1000, {});
+    // the title screen at all 8 device sizes, touch and mouse, with saves and without, normal and Large text: every control
+    // 44 px on touch (26 with a mouse), 8 px apart (4), on screen and out of the notch / home bands, the slot card's tap area
+    // clear of its Delete, and every word inside its card or plate
+    { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = window.SETTINGS ? SETTINGS.get('text') : 'normal', problems = []; let tried = 0;
+      const keep = [1, 2, 3].map(n => [lsGet(SLOT_KEY(n)), lsGet(AT_KEY(n))]);
+      try {
+        title.open();
+        for (const [w, hh] of HK.audit.SIZES) {
+          if (!panelSetSize(w, hh)) continue; tried++;
+          for (const tch of [true, false]) for (const big of ['normal', 'large']) for (const saves of [true, false]) {
+            window.__forceTouch = tch; if (window.SETTINGS) SETTINGS.set('text', big);
+            if (saves) { for (let n = 1; n <= 3; n++) { const [sv, at] = keep[n - 1]; if (sv != null) { lsSet(SLOT_KEY(n), sv); lsSet(AT_KEY(n), at || 1); } } title.deleteArmed = 2; } else { for (let n = 1; n <= 3; n++) { lsDel(SLOT_KEY(n)); lsDel(AT_KEY(n)); } title.deleteArmed = 0; }
+            title.refresh();
+            const where = `title ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big} ${saves ? 'saves' : 'empty'}`;
+            problems.push(...panelFrame(where, { from: 0, panel: false }));
+            if (!buttons.some(b => b.label === 'Slot 1') || !buttons.some(b => /^Sound/.test(b.label)) || (saves && !buttons.some(b => b.label === 'Continue'))) problems.push(`${where}: missing controls ${buttons.map(b => b.label).join(',')}`);
+          }
+        }
+      } finally {
+        for (let n = 1; n <= 3; n++) { const [sv, at] = keep[n - 1]; if (sv == null) { lsDel(SLOT_KEY(n)); lsDel(AT_KEY(n)); } else { lsSet(SLOT_KEY(n), sv); lsSet(AT_KEY(n), at || Date.now()); } }
+        title.deleteArmed = 0; window.__forceTouch = t0; if (window.SETTINGS) SETTINGS.set('text', text0); restore(); title.startSlot(1);
+      }
+      check('title: the title screen at all 8 device sizes, touch and mouse, with saves and without, normal and Large text: controls 44 px on touch (26 with a mouse), 8 px apart (4), on screen, out of the notch and home bands, and every word inside its card', tried === 8 && problems.length === 0 && !title.active, { tried, problems: problems.slice(0, 10), total: problems.length }); }
   });
 }
 
@@ -14681,9 +14771,84 @@ HOOKS.selfTest.push((check, F, h) => {
 // (tap-to-walk), floatText (damage numbers), explode + HOOKS.hurt (screen shake), drawMinimap + drawCompass (minimap),
 // render (shake offset + legacy sync). Text size scales every font set on the game canvas through an accessor on
 // ctx.font; monster levels are stripped from the "Name · lv N" label 09-render draws through a wrapper on ctx.fillText.
-// 10-hud reads window.__stickRight to mirror the touch buttons (the only core edit, beside the pause menu button).
+// The HUD kit reads window.__stickRight to mirror the stick and the seats, and SETTINGS.textScale / get('words') / get('minimap').
+// SETTINGS.keyMap() is the one key table: Settings › Controls, the book's Keys card and the key coverage check read it.
 // Debug/test handle: window.SETTINGS.
 // ============================================================================
+// ---------- panel helpers for the book-and-online panels (Settings, Friends, Give, Chat log, the title screen) ----------
+// Function declarations, so they are hoisted: 14-title (before this file) and 71 / 73 / 74 (after it) call them too.
+// They stand in for three things the kit (src/59-hudkit.js) and 10-hud do not offer yet; the integrator may lift them:
+//   panelRoom(w, h)   the largest panelBox() that keeps its close seal and its bottom edge out of the notch / Dynamic Island /
+//                     home-indicator bands (panelBox centres the box at VH/2 - h/2 - 20, never above y 10);
+//   platePush(...)    an iron plate button whose TAP LABEL (what the harness clicks, e.g. 'set:sound') differs from the WORD
+//                     drawn on it ('On'), with the kit's press / hover look read from that label; fires on pointer-up;
+//   rowPager(...)     Prev / Next plates one kit row tall (HK.row(): 44 px on touch), labelled 'Prev' / 'Next' like pager().
+function panelRoom(wantW, wantH) {
+  const t = touchMode(), fam = HK.family(VW, VH, t), S = HK.insets(VW, VH, fam, t);
+  const w = Math.round(Math.max(200, Math.min(wantW, VW - 20, VW - 2 * Math.max(S.l, S.r) - 16)));
+  let h = Math.round(Math.min(wantH, VH - 20));
+  const ok = hh => { const py = Math.max(10, Math.round(VH / 2 - hh / 2 - 20)); return py >= S.t + 4 && py + hh <= VH - S.b - 4; };
+  while (h > 140 && !ok(h)) h -= 2;
+  return { w, h, S };
+}
+function platePush(g, x, y, w, h, label, word, action, tone, o = {}) {
+  const live = o.enabled !== false, st = live ? HK.stateOf(label) : {};
+  HK.plateButton(g, { x, y, w, h }, o.emblem || null, word, live ? tone : null, { pressed: !!st.pressed, hover: !!st.hover, disabled: !live, key: o.key || null, cinzel: !!o.cinzel, size: o.size, on: !!o.on });
+  const b = live ? { x, y, w, h, label, action, up: true, name: o.name || word, keys: o.keys || [] } : { x, y, w, h, label: 'disabled:' + label, action: () => { }, disabled: true, inert: true };
+  buttons.push(b);
+  return b;
+}
+function rowPager(g, x, y, w, page, pages, setPage) {
+  const p = clamp(page, 0, Math.max(0, pages - 1)), h = HK.row(), bw = Math.min(Math.floor((w - 16) / 3), touchMode() ? 104 : 92);
+  const one = (bx, label, em, live, fn) => {
+    platePush(g, bx, y, bw, h, label, label, fn, null, { enabled: live, name: label === 'Prev' ? 'The page before' : 'The next page' });
+    g.fillStyle = g.strokeStyle = live ? HK.T.goldHi : HK.T.inkMute; HK.EM[em](g, label === 'Prev' ? bx + 14 : bx + bw - 14, y + h / 2 + (HK.stateOf(label).pressed ? 1.5 : 0), 12);
+  };
+  one(x, 'Prev', 'chevronL', p > 0, () => setPage(p - 1));
+  HK.text(g, `Page ${p + 1} of ${pages}`, x + w / 2, y + h / 2 + 5, { font: HK.FS(600, 13), align: 'center', color: HK.T.inkDim, box: { x: x + bw + 4, y, w: w - 2 * bw - 8, h }, fitId: 'pager' });
+  one(x + w - bw, 'Next', 'chevronR', p < pages - 1, () => setPage(p + 1));
+  return p;
+}
+// The panel audit the online-book checks share: the rects from the close seal (or `from`) onward must be at least 44 px on
+// touch (26 with a mouse), 8 px apart on touch (4), on screen, out of the notch / home-indicator bands, and every string the
+// kit logged must fit its box. Call it right after a frame drawn with HK.FIT on.
+function panelAudit(where, opt = {}) {
+  const t = touchMode(), out = [], floor = t ? 44 : 26, clear = t ? 8 : 4;
+  const all = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+  const from = opt.from != null ? opt.from : all.findIndex(b => b.label === '×');
+  if (from < 0) { out.push(`${where}: no close seal`); return out; }
+  const L = { VW, VH, S: HK.insets(VW, VH, HK.family(VW, VH, t), t) };
+  const taps = all.slice(from).map(b => b.r ? { id: b.label, k: 'c', x: b.cx != null ? b.cx : b.x + b.w / 2, y: b.cy != null ? b.cy : b.y + b.h / 2, r: b.r } : { id: b.label, k: 'r', x: b.x, y: b.y, w: b.w, h: b.h });
+  const box = q => q.k === 'c' ? { x: q.x - q.r, y: q.y - q.r, w: q.r * 2, h: q.r * 2 } : q;
+  const small = opt.small || /^(slot|bank|hot|eq)\d*/;
+  for (const q of taps) {
+    const b = box(q);
+    if (!small.test(q.id) && (b.w < floor - 0.5 || b.h < floor - 0.5)) out.push(`${where}: ${q.id} is ${Math.round(b.w)}x${Math.round(b.h)}, under ${floor}`);
+    if (b.x < -0.5 || b.y < -0.5 || b.x + b.w > VW + 0.5 || b.y + b.h > VH + 0.5) out.push(`${where}: ${q.id} off screen`);
+    if (t) for (const z of HK.bands(L)) if (HK.gapBetween(z, q) < 0) out.push(`${where}: ${q.id} in the ${z.name}`);
+  }
+  for (let i = 0; i < taps.length; i++) for (let j = i + 1; j < taps.length; j++) { const g0 = HK.gapBetween(taps[i], taps[j]); if (g0 < clear) out.push(`${where}: ${taps[i].id} ~ ${taps[j].id} gap ${g0.toFixed(1)}`); }
+  if (panelRect && opt.panel !== false) { const P = panelRect; if (P.x < -0.5 || P.y < -0.5 || P.x + P.w > VW + 0.5 || P.y + P.h > VH + 0.5) out.push(`${where}: the panel is off screen`); }
+  for (const f of HK.audit.fitIssues(where)) out.push(f);
+  return out;
+}
+// Draws one frame at a size with the kit's measuring context and the fit log on, and returns panelAudit's issues.
+// setSize(w, h) and the restore are the caller's (see the self-tests below).
+function panelFrame(where, opt = {}) {
+  const fc = HK.audit.fitCtx();
+  HK.FIT.on = true; HK.FIT.log.length = 0;
+  try { drawHud(fc); } finally { HK.FIT.on = false; }
+  const out = panelAudit(where, opt);
+  HK.FIT.log.length = 0;
+  return out;
+}
+// Set the window to a size (tests only), the way the kit's check 11 does; returns true when the game took it.
+function panelSetSize(w, h) { try { window.innerWidth = w; window.innerHeight = h; } catch (e) { } if (VW !== w || VH !== h) resize(); return VW === w && VH === h; }
+function panelSizeSaver() {
+  const own = k => Object.getOwnPropertyDescriptor(window, k), saved = { w: own('innerWidth'), h: own('innerHeight') };
+  return () => { if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } } resize(); };
+}
+
 const SETTINGS = (() => {
   const KEY = 'fanglands.settings';
   const LEGACY = { sound: ['fanglands.muted', v => v !== '1', on => on ? '0' : '1'], music: ['fanglands.music', v => v !== '0', on => on ? '1' : '0'], kid: ['fanglands.kidmode', v => v === '1', on => on ? '1' : '0'] };
@@ -14806,9 +14971,9 @@ const SETTINGS = (() => {
   { const _drawMinimap = drawMinimap, _drawCompass = drawCompass;
     drawMinimap = function () { if (S.minimap) return _drawMinimap.apply(this, arguments); };
     drawCompass = function () { if (S.minimap) return _drawCompass.apply(this, arguments); }; }
-  // MIGRATED to the HUD kit: with the minimap off, MAP is a control like any other, so it joins the control
-  // rail under the (now empty) minimap corner instead of being a lone button pinned to the minimap's edge.
-  HOOKS.hud.push(() => { if (!S.minimap) minimapRect = null; }); // no tap opens the map where the minimap used to be
+  // With the minimap off the kit leaves a 48 px iron map stud where the ring was (src/59-hudkit.js, label 'MAP'), and the
+  // seals do not move. This registration gives the book's MAP tile its toggle. No tap opens the map where the glass was.
+  HOOKS.hud.push(() => { if (!S.minimap) minimapRect = null; });
   hudControl({ id: 'map', sort: 50, label: () => 'MAP', show: () => !S.minimap && !paused, on: () => panel === 'map', action: () => panel === 'map' ? closePanel() : openPanel('map') });
 
   // ---------- talk speed: 07-update reveals 34 characters a second; this hook runs right after it every tick ----------
@@ -14824,41 +14989,97 @@ const SETTINGS = (() => {
   { const _render = render; render = function () { _render.apply(this, arguments); syncFromLive(); applyShake(); }; }
   { const _openPanel = openPanel; openPanel = function (name, arg) { if (name === 'settings') settingsPage = 0; return _openPanel(name, arg); }; }
 
-  // ---------- the key map, read from the real handlers (07-update, 05-input, every HOOKS.update, 99-boot) ----------
-  const ACTION_WORDS = { 'toggle:skills': 'Skills', 'toggle:inventory': 'Bag', 'toggle:craft': 'Craft', 'toggle:quests': 'Quests', 'toggle:map': 'Map', 'toggle:help': 'Help', 'toggle:': 'Music', goHome: 'Home', exitMech: 'Climb out', advanceDialog: 'Next line of talk', useItem: 'Eat or use pack slots', playerAttack: 'Swing', useAction: 'Use / talk', placeAction: 'Place', closePanel: 'Menu / close', toTitle: 'Title screen', toggleSettings: 'Settings', lobBomb: 'Throw a bomb (walker)', leaveInstance: 'Leave a dungeon' };
-  const KEY_LABELS = { Space: 'Space', Tab: 'Tab', Escape: 'Esc', Enter: 'Enter', Slash: '?', Comma: ',', Digit: '1–5', F1: 'F1' };
-  const keyLabel = code => KEY_LABELS[code] || code.replace(/^Key/, '');
-  function keyMap() {
-    const out = []; const seen = new Set();
-    const add = (code, action) => { if (seen.has(code)) return; seen.add(code); const row = out.find(r => r.action === action); if (row) row.codes.push(code); else out.push({ action, codes: [code] }); };
+  // ---------- the key map, read from the real handlers (07-update, 05-input, every HOOKS.update, 99-boot, HOOKS.keyHelp) ----------
+  // One table feeds Settings › Controls, the book's Keys card (src/59-hudkit.js drawKeys) and the key coverage self-test.
+  // KEY_TABLE gives each key its plain words and its order; a row is kept only while a real handler still reads one of its
+  // codes (so a removed key drops out, and the coverage check says so), and any key a handler reads that the table does not
+  // know is added at the end in the words its handler or its HOOKS.keyHelp entry gives. Words are short enough for one line
+  // of the Keys card's two columns at 1280x800 (the self-test measures them).
+  const KEY_TABLE = [
+    { codes: ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'], keys: ['WASD'], action: 'Walk (or arrows)', move: true },
+    { codes: ['Space'], keys: ['Space'], action: 'Swing, shoot, stomp' },
+    { codes: ['KeyE'], action: 'Use or talk' },
+    { codes: ['KeyQ'], action: 'Place a thing' },
+    { codes: ['Digit'], keys: ['1-5'], action: 'Use a belt pouch' },
+    { codes: ['KeyI'], action: 'Your pack' },
+    { codes: ['KeyC'], action: 'Crafting' },
+    { codes: ['Tab'], keys: ['Tab'], action: 'Skills' },
+    { codes: ['KeyJ'], action: 'Quests' },
+    { codes: ['KeyM'], action: 'World map' },
+    { codes: ['Slash', 'F1'], keys: ['?', 'F1'], action: 'How to play' },
+    { codes: ['KeyH'], action: 'Go home' },
+    { codes: ['KeyX'], action: 'Climb out' },
+    { codes: ['Enter'], keys: ['Enter'], action: 'Next line, or chat' },
+    { codes: ['Escape'], keys: ['Esc'], action: 'Close, or the book' },
+    { codes: ['KeyT'], action: 'Title screen, paused' },
+    { codes: ['Comma'], keys: [','], action: 'Settings' },
+    { codes: ['KeyK'], action: 'Wiki' },
+    { codes: ['KeyN'], action: 'Music on or off' },
+    { codes: ['KeyR'], action: 'Raise your shield' },
+    // G rides the mare and gets down; X gets down too (51-mounts)
+    { codes: ['KeyG'], keys: ['G', 'X'], action: 'Ride or get down' },
+    { codes: ['KeyV'], action: 'Machine special' },
+    { codes: ['KeyB'], action: 'Bomb (Barrelbeast)' },
+    { codes: ['KeyL'], action: 'Leave a dungeon' },
+    // P does two jobs (61-markers and 63-house): both are listed, neither is renamed (an open question for the owner)
+    { codes: ['KeyP'], action: 'Markers, or Build' },
+    { codes: ['KeyF'], action: 'Friends' },
+    { codes: ['KeyY'], action: 'Chat' },
+  ];
+  const ACTION_WORDS = { 'toggle:skills': 'Skills', 'toggle:inventory': 'Your pack', 'toggle:craft': 'Crafting', 'toggle:quests': 'Quests', 'toggle:map': 'World map', 'toggle:help': 'How to play', 'toggle:': 'Music on or off', goHome: 'Go home', exitMech: 'Climb out', advanceDialog: 'Next line of talk', useItem: 'Use a belt pouch', playerAttack: 'Swing', useAction: 'Use or talk', placeAction: 'Place a thing', closePanel: 'Close, or the book', toTitle: 'Title screen', toggleSettings: 'Settings', lobBomb: 'Bomb (Barrelbeast)', leaveInstance: 'Leave a dungeon' };
+  const KEY_LABELS = { Space: 'Space', Tab: 'Tab', Escape: 'Esc', Enter: 'Enter', Slash: '?', Comma: ',', Digit: '1-5', F1: 'F1' };
+  const keyLabel = code => KEY_LABELS[code] || code.replace(/^Key/, '').replace(/^Arrow/, '');
+  // every code a real handler reads, with the words its handler suggests: { code: word }
+  function handlerCodes() {
+    const found = {};
     // movement: 05-input reads keys.has(...) for WASD / arrows
-    { const src = String(inputVector); const codes = []; const re = /keys\.has\('(\w+)'\)/g; let m; while ((m = re.exec(src))) codes.push(m[1]);
-      const ls = codes.filter(c => c.startsWith('Key')).map(keyLabel); const letters = 'WASD'.split('').filter(l => ls.includes(l)).concat(ls.filter(l => !'WASD'.includes(l))).join(''), arrows = codes.some(c => c.startsWith('Arrow'));
-      if (letters || arrows) { out.push({ action: 'Move', codes: [], label: letters + (letters && arrows ? ' or arrows' : arrows ? 'arrows' : '') }); codes.forEach(c => seen.add(c)); } }
+    { const src = String(inputVector); const re = /keys\.has\('(\w+)'\)/g; let m; while ((m = re.exec(src))) found[m[1]] = found[m[1]] || 'Walk'; }
     // wrappers (44-wiki) hand back the wrapped function as __inner; only the core handler is parsed — features declare their keys in HOOKS.keyHelp
     const sources = []; { let u = update; while (typeof u === 'function' && u.__inner) u = u.__inner; sources.push(String(u)); } for (const h of HOOKS.update) sources.push(String(h)); if (typeof frame === 'function') sources.push(String(frame));
-    for (const k of HOOKS.keyHelp) for (const c of k.codes) add(c, k.action); // features: HOOKS.keyHelp.push({ action: 'Wiki', codes: ['KeyK'] })
     const re = /pressed\.has\('([A-Za-z0-9]+)'(?:\s*\+\s*k)?\)/g;
     for (const src of sources) {
       let m; while ((m = re.exec(src))) {
         const end = src.indexOf(';', m.index); const seg = src.slice(m.index + m[0].length, end < 0 ? m.index + 160 : end);
         let fn = null, arg = ''; const cre = /([A-Za-z_]\w*)\((?:'(\w+)')?/g; let c; while ((c = cre.exec(seg))) { if (c[1] === 'has' || c[1] === 'tapped') continue; fn = c[1]; arg = c[2] || ''; }
-        if (!fn) continue;
-        const word = ACTION_WORDS[fn + ':' + arg] || ACTION_WORDS[fn] || fn;
-        add(m[1], word);
+        if (!fn || found[m[1]]) continue;
+        found[m[1]] = ACTION_WORDS[fn + ':' + arg] || ACTION_WORDS[fn] || fn;
       }
     }
-    for (const r of out) if (!r.label) r.label = r.codes.map(keyLabel).join(' or ');
-    return out;
+    for (const k of HOOKS.keyHelp) for (const c of k.codes) if (!found[c]) found[c] = k.action;
+    return found;
+  }
+  // The rows: [{ action, codes, label, keys, jobs }]. `keys` are the keycaps to draw, `label` the same joined with ' or '
+  // (the older readers split it), `jobs` every HOOKS.keyHelp word for a key two features share (P).
+  let keyMemo = null;
+  function keyMap() {
+    // the handlers only change at load time: parse them once per set of hooks, hand out copies
+    const sig = HOOKS.update.length + '|' + HOOKS.keyHelp.length;
+    if (keyMemo && keyMemo.sig === sig) return keyMemo.rows.map(r => Object.assign({}, r, { codes: r.codes.slice(), keys: r.keys.slice(), jobs: r.jobs.slice() }));
+    const found = handlerCodes(), out = [], used = new Set();
+    for (const t of KEY_TABLE) {
+      const codes = t.codes.filter(c => found[c]); if (!codes.length) continue;
+      const keys = t.keys ? t.keys.slice() : [keyLabel(codes[0])];
+      const jobs = []; for (const k of HOOKS.keyHelp) if (k.codes.some(c => codes.includes(c)) && !jobs.includes(k.action)) jobs.push(k.action);
+      out.push({ action: t.action, codes, keys, label: keys.join(' or '), jobs });
+      codes.forEach(c => used.add(c));
+    }
+    // a key the table does not know yet (a new feature's): grouped by its words
+    for (const c in found) {
+      if (used.has(c)) continue;
+      const row = out.find(r => r.extra && r.action === found[c]);
+      if (row) { row.codes.push(c); row.keys.push(keyLabel(c)); row.label = row.keys.join(' or '); }
+      else out.push({ action: found[c], codes: [c], keys: [keyLabel(c)], label: keyLabel(c), jobs: [], extra: true });
+    }
+    keyMemo = { sig, rows: out };
+    return keyMap();
   }
   function controlsText() {
     const map = keyMap();
     if (!touchMode()) return map.map(r => `${r.action}: ${r.label}`).join(' · ');
-    const names = []; for (const r of map) for (const c of r.codes) { const k = keyName(c.replace(/^Key/, '')); if (/^[A-Z]+$/.test(k) && TOUCH_KEY_NAMES[c.replace(/^Key/, '').toUpperCase()] && !names.includes(k)) names.push(k); }
-    return `Move: the stick on the ${S.stick} side. Buttons: ${names.join(', ')}. MENU opens the book with everything else. Tap the round map for the big one.`;
+    return `Move with the stick on the ${S.stick} side. SWING, USE and BLOCK are the round buttons by your thumb, and a fourth one shows up when there is something extra to do. Tap the belt to eat or use things, your shield for skills, the scroll for your quest, and the round map for the big one. MENU opens the book with everything else.`;
   }
 
-  // ---------- the panel ----------
+  // ---------- the panel: one row per setting, then the reset, then the controls; paged when the screen is short ----------
   const ROWS = [
     { key: 'sound', name: 'Sound effects', hint: () => 'Swings, hits, coins and clicks.' },
     { key: 'music', name: 'Music', hint: () => 'A tune for every place.' + (touchMode() ? '' : ' N flips it while you play.') },
@@ -14874,38 +15095,84 @@ const SETTINGS = (() => {
     { key: 'words', name: 'Button words', hint: () => 'The words under SWING, BLOCK, HOME, FRIENDS and MENU.' },
   ];
   const VALUE_WORDS = { true: 'On', false: 'Off', left: 'Left', right: 'Right', normal: 'Normal', large: 'Large', small: 'Small', slow: 'Slow', fast: 'Fast', learning: 'While learning', always: 'Always', off: 'Off' };
-  const ROW_H = 36;
   const text = v => typeof v === 'function' ? v() : v;
+  // The page plan: every item with its height, packed onto pages that fit the panel. Measured with the context it draws on.
+  function plan(g, w) {
+    const T = HK.T, t = touchMode(), ctrlH = HK.row(), iw = w - 36;
+    const bw = VW < 400 ? 112 : t ? 124 : 112, textW = iw - bw - 12;
+    const hintF = HK.FS(600, 12), lh = Math.round(15 * HK.k() * 10) / 10;
+    const items = [];
+    for (const row of ROWS) {
+      const hint = HK.wrap(g, text(row.hint), textW, 3, hintF);
+      const textH = 18 + hint.lines.length * lh + 4, rowH = Math.max(ctrlH, textH);
+      items.push({ kind: 'row', row, hint: hint.lines, h: rowH + 10, rowH, textH });
+    }
+    items.push({ kind: 'reset', h: ctrlH + 14 });
+    items.push({ kind: 'head', h: 24 });
+    if (t) {
+      const f = HK.FS(600, 13), lines = HK.wrap(g, controlsText(), iw, 12, f).lines, clh = Math.round(17 * HK.k() * 10) / 10;
+      // the paragraph goes in chunks of up to four lines, so a short screen can carry it over a page break
+      for (let i = 0; i < lines.length; i += 4) { const part = lines.slice(i, i + 4); items.push({ kind: 'para', lines: part, lh: clh, h: part.length * clh + 4 }); }
+    } else {
+      const rows = keyMap(), cols = iw >= 380 ? 2 : 1, per = Math.ceil(rows.length / cols);
+      const capW = Math.max(62, ...rows.map(r => r.keys.reduce((a, k) => a + HK.keycapW(g, k, 10) + 4, 0) + 6));
+      for (let i = 0; i < per; i++) items.push({ kind: 'keys', cells: Array.from({ length: cols }, (_, c) => rows[c * per + i]).filter(Boolean), cols, capW, h: 22 });
+    }
+    return { items, bw, textW, hintF, lh, iw, T };
+  }
+  function paginate(items, avail) {
+    const pages = [[]]; let used = 0;
+    for (const it of items) {
+      // a heading never ends a page on its own
+      const need = it.kind === 'head' ? it.h + 22 : it.h;
+      if (used + need > avail && pages[pages.length - 1].length) { pages.push([]); used = 0; }
+      pages[pages.length - 1].push(it); used += it.h;
+    }
+    return pages;
+  }
   HOOKS.panel.settings = (g, narrow) => {
-    const items = ROWS.length + 1; // + reset
-    const wMax = Math.min(460, VW - 20);
-    g.font = '11px sans-serif'; const ctrl = controlsText(); const ctrlLines = dialogLines(g, ctrl, wMax - 36); const ctrlH = 18 + ctrlLines * 14;
-    const top = 66, wantH = top + items * ROW_H + 10 + ctrlH + 10;
-    const h = Math.min(VH - 20, wantH); const paged = h < wantH;
-    const per = paged ? Math.max(1, Math.floor((h - top - 10 - ctrlH - 10 - 36) / ROW_H)) : items;
-    const pages = Math.max(1, Math.ceil(items / per)); settingsPage = clamp(settingsPage, 0, pages - 1);
-    const { px, py, w } = panelBox(g, 460, h, 'Settings', touchMode() ? 'Tap a button to change it. Tap outside to close.' : 'Click a button to change it. Esc or , closes.');
-    const bw = narrow ? 84 : 96, labelW = w - 36 - bw - 10;
-    const fit = t => { while (g.measureText(t).width > labelW && t.length > 6) t = t.slice(0, -2) + '…'; return t; };
-    const list = [...ROWS, { reset: true }].slice(settingsPage * per, settingsPage * per + per);
-    list.forEach((row, i) => {
-      const y = py + top + i * ROW_H;
-      if (row.reset) {
+    const room = panelRoom(460, VH), w = room.w, top = 62, foot = 12, pagerH = HK.row() + 16;
+    const P = plan(g, w);
+    const total = P.items.reduce((a, it) => a + it.h, 0);
+    const one = top + total + foot <= room.h;
+    const pages = one ? [P.items] : paginate(P.items, room.h - top - foot - pagerH);
+    // the box is as tall as its fullest page (the pager keeps one place on every page), never taller than the room
+    const h = one ? top + total + foot : Math.min(room.h, top + Math.max(...pages.map(pg => pg.reduce((a, it) => a + it.h, 0))) + pagerH + foot);
+    settingsPage = clamp(settingsPage, 0, pages.length - 1);
+    const { px, py } = panelBox(g, w, h, 'Settings', touchMode() ? 'Tap a button to change it. Tap outside to close.' : 'Click a button to change it. Esc or , closes.');
+    const T = HK.T, x0 = px + 18, iw = P.iw, ctrlH = HK.row();
+    let y = py + top;
+    for (const it of pages[settingsPage]) {
+      if (it.kind === 'row') {
+        const row = it.row, ty = y + Math.max(0, (it.rowH - it.textH) / 2);
+        HK.text(g, text(row.name), x0, ty + 15, { font: HK.FC(800, 13), color: T.ink, box: { x: x0, y, w: P.textW, h: it.rowH }, fitId: 'settings:name' });
+        it.hint.forEach((l, i) => HK.text(g, l, x0, ty + 18 + (i + 1) * P.lh - 2, { font: P.hintF, color: T.inkDim, box: { x: x0, y, w: P.textW, h: it.rowH }, fitId: 'settings:hint' }));
+        const v = S[row.key], isToggle = typeof v === 'boolean';
+        platePush(g, x0 + iw - P.bw, y + (it.rowH - ctrlH) / 2, P.bw, ctrlH, 'set:' + row.key, VALUE_WORDS[String(v)] || String(v), () => cycle(row.key), isToggle && v ? 'primary' : null, { name: text(row.name), on: false });
+        // a gold hairline between rows
+        g.fillStyle = 'rgba(217,178,92,0.22)'; g.fillRect(x0, y + it.h - 5, iw, 1);
+      } else if (it.kind === 'reset') {
         const armed = confirmActive('settings-reset');
-        button(g, px + 18, y + 3, w - 36, 30, armed ? 'Really reset? Tap again' : 'Put every setting back to normal', () => confirmTap('settings-reset', reset), armed ? '#c0392b' : '#8b2e2e');
-        buttons[buttons.length - 1].label = 'set:reset';
-        return;
+        platePush(g, x0, y + 4, iw, ctrlH, 'set:reset', armed ? 'Really reset? Tap again' : 'Put every setting back to normal', () => confirmTap('settings-reset', reset), 'danger', { emblem: 'erase', name: 'Put every setting back to normal' });
+      } else if (it.kind === 'head') {
+        HK.text(g, 'CONTROLS', x0, y + 17, { font: HK.FC(800, 12), color: T.gold, box: { x: x0, y, w: iw, h: 24 }, fitId: 'settings:head' });
+        g.fillStyle = 'rgba(217,178,92,0.35)'; g.fillRect(x0 + 84, y + 12, iw - 84, 1);
+      } else if (it.kind === 'para') {
+        it.lines.forEach((l, i) => HK.text(g, l, x0, y + 13 + i * it.lh, { font: HK.FS(600, 13), color: T.inkDim, box: { x: x0, y, w: iw, h: it.h }, fitId: 'settings:controls' }));
+      } else if (it.kind === 'keys') {
+        const cw = iw / it.cols;
+        it.cells.forEach((r, c) => {
+          const cx0 = x0 + c * cw; let kx = cx0;
+          for (const k of r.keys) kx += HK.keycap(g, kx, y + 2, k, 10) + 4;
+          const capW = it.capW, room2 = cw - capW - 10;
+          let f = HK.FS(600, 12); if (HK.tw(g, r.action, f) > room2) f = HK.FS(600, 10.5);
+          const words = HK.tw(g, r.action, f) > room2 ? (HK.wrap(g, r.action, room2, 1, f).lines[0] || r.action) : r.action;
+          HK.text(g, words, cx0 + capW, y + 15, { font: f, color: T.ink, box: { x: cx0 + capW, y, w: room2, h: 22 }, fitId: 'settings:key' });
+        });
       }
-      g.fillStyle = '#e6edf3'; g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillText(fit(text(row.name)), px + 18, y + 15);
-      g.fillStyle = '#8b949e'; g.font = '10px sans-serif'; g.fillText(fit(text(row.hint)), px + 18, y + 29);
-      const v = S[row.key], on = v === true || (typeof v === 'string' && v !== DEFAULTS[row.key]);
-      button(g, px + w - 18 - bw, y + 3, bw, 30, VALUE_WORDS[String(v)] || String(v), () => cycle(row.key), on ? '#238636' : '#21262d');
-      buttons[buttons.length - 1].label = 'set:' + row.key; // the harness finds rows by key; the drawn word stays On / Off / Left / ...
-    });
-    if (paged) pager(g, px + 18, py + h - ctrlH - 10 - 36, w - 36, settingsPage, pages, p => { settingsPage = p; });
-    const y0 = py + h - ctrlH - 8;
-    g.fillStyle = '#8b949e'; g.font = 'bold 10px sans-serif'; g.textAlign = 'left'; g.fillText('CONTROLS', px + 18, y0 + 10);
-    g.fillStyle = '#c9d1d9'; g.font = '11px sans-serif'; wrapText(g, ctrl, px + 18, y0 + 24, w - 36, 14);
+      y += it.h;
+    }
+    if (pages.length > 1) rowPager(g, x0, py + h - foot - HK.row() - 4, iw, settingsPage, pages.length, p => { settingsPage = p; });
   };
 
   // ---------- boot ----------
@@ -14919,12 +15186,16 @@ const SETTINGS = (() => {
     dialog.cur = null; dialog.queue.length = 0; paused = false; closePanel(); h.peace(true); uxConfirm = null;
     const rectsOf = () => buttons.filter(b => !b.offscreen);
     const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    // turn to the page that holds a control (the panel pages on short screens)
+    const seek = lab => { for (let p = 0; p < 12; p++) { settingsPage = p; render(); if (buttons.some(b => b.label === lab)) return true; if (!buttons.some(b => b.label === 'Next')) break; } return false; };
     try {
       // opens from the pause menu and with ,
       { paused = true; render(); const c = F.clickButton('Settings'); const fromMenu = c && !paused && panel === 'settings'; closePanel();
-        F.press('Comma'); const byKey = panel === 'settings'; render(); const rows = rectsOf().filter(b => b.label.startsWith('set:')).map(b => b.label.slice(4));
-        F.press('Comma'); const closed = panel === null;
-        check('settings: opens from the pause menu Settings button and with the , key; one control per row plus reset', fromMenu && byKey && closed && rows.join() === ROWS.map(r => r.key).join() + ',reset', { fromMenu, byKey, closed, rows }); }
+        F.press('Comma'); const byKey = panel === 'settings'; const rows = [];
+        // the rows may run over more than one page on a short screen: walk every page
+        for (let p = 0; p < 12; p++) { settingsPage = p; render(); for (const b of rectsOf()) if (b.label.startsWith('set:') && !rows.includes(b.label.slice(4))) rows.push(b.label.slice(4)); if (!buttons.some(b => b.label === 'Next')) break; }
+        settingsPage = 0; F.press('Comma'); const closed = panel === null;
+        check('settings: opens from the pause menu Settings button and with the , key; one control per row plus reset (over every page)', fromMenu && byKey && closed && rows.join() === ROWS.map(r => r.key).join() + ',reset', { fromMenu, byKey, closed, rows }); }
       // sound / music / kid drive the real flags and the legacy keys
       { const a0 = audioMuted; set('sound', true); const on = !audioMuted && lsGet('fanglands.muted') === '0'; set('sound', false); const off = audioMuted && lsGet('fanglands.muted') === '1';
         set('sound', !a0); check('settings: sound row drives audioMuted and fanglands.muted', on && off, { on, off }); }
@@ -14993,35 +15264,64 @@ const SETTINGS = (() => {
         lsSet(KEY, keep.j); lsSet('fanglands.muted', keep.m); lsSet('fanglands.music', keep.u); lsSet('fanglands.kidmode', keep.k); load();
         check('settings: persist as JSON under fanglands.settings and round-trip; the legacy muted / music / kidmode keys migrate on a first load', saved && back && migrated, { saved, back, migrated }); }
       // reset: two taps
-      { set('text', 'large'); set('damage', false); set('stick', 'right'); openPanel('settings'); render(); const c1 = F.clickButton('set:reset'); const still = S.text === 'large' && S.damage === false && buttons.some(b => b.label === 'set:reset'); render();
+      { set('text', 'large'); set('damage', false); set('stick', 'right'); openPanel('settings'); seek('set:reset'); const c1 = F.clickButton('set:reset'); const still = S.text === 'large' && S.damage === false && buttons.some(b => b.label === 'set:reset'); render();
         const c2 = F.clickButton('set:reset'); const done = S.text === 'normal' && S.damage === true && S.stick === 'left' && JSON.parse(lsGet(KEY)).text === 'normal'; closePanel(); uxConfirm = null;
         check('settings: reset needs two taps and puts every setting back to normal', c1 && still && c2 && done, { c1, still, c2, done }); }
       // controls line reads the real handlers
-      { const map = keyMap(); const find = a => map.find(r => r.action === a); const e = find('Use / talk'), sp = find('Swing'), st = find('Settings'), mu = find('Music'), mv = find('Move');
+      { const map = keyMap(); const by = code => map.find(r => r.codes.includes(code)); const e = by('KeyE'), sp = by('Space'), st = by('Comma'), mu = by('KeyN'), mv = by('KeyW');
         const codes = []; const re = /pressed\.has\('([A-Za-z0-9]+)'/g; let m; while ((m = re.exec(String(update)))) codes.push(m[1]); const all = codes.every(c => map.some(r => r.codes.includes(c)));
         window.__forceTouch = true; const t = controlsText(); window.__forceTouch = false; const d = controlsText(); window.__forceTouch = prevTouch;
-        check('settings: the Controls line is built from the real key handlers (E use, Space swing, comma settings, N music, WASD move) and every key 07-update reads is listed; touch shows button names', !!e && e.codes.includes('KeyE') && !!sp && sp.codes.includes('Space') && !!st && st.codes.includes('Comma') && !!mu && mu.codes.includes('KeyN') && !!mv && /WASD/.test(mv.label) && all && /SWING/.test(t) && /USE/.test(t) && /Swing: Space/.test(d), { e: e && e.codes, sp: sp && sp.codes, st: st && st.codes, mu: mu && mu.codes, mv: mv && mv.label, all, t, d }); }
-      // layout at four viewports: panel (every page) and pause menu — no two buttons overlap, everything inside the screen
-      { const own = k => Object.getOwnPropertyDescriptor(window, k); const saved = { w: own('innerWidth'), h: own('innerHeight') }; const problems = [];
-        const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
-        const inside = r => r.x >= 0 && r.y >= 0 && r.x + r.w <= VW && r.y + r.h <= VH;
-        const audit = (where, rects) => { for (const r of rects) if (!inside(r)) problems.push(`${where}: ${r.label} off-screen ${JSON.stringify([r.x, r.y, r.w, r.h])}`); for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) if (hit(rects[i], rects[j])) problems.push(`${where}: ${rects[i].label} × ${rects[j].label}`); };
-        let tried = 0;
-        for (const [w, hh] of [[390, 844], [844, 390], [768, 1024], [1280, 800]]) {
-          if (!setSize(w, hh)) continue; tried++;
-          for (const big of ['normal', 'large']) {
-            set('text', big);
-            openPanel('settings'); let p = 0;
-            while (true) { settingsPage = p; render(); const pr = { ...panelRect }; if (!inside(pr)) problems.push(`panel ${w}x${hh} ${big} p${p}: box off-screen ${JSON.stringify(pr)}`);
-              const ci = buttons.findIndex(b => b.label === '×' && hit(b, pr)); audit(`panel ${w}x${hh} ${big} p${p}`, ci < 0 ? [{ x: -1, y: -1, w: 0, h: 0, label: 'no close button' }] : rectsOf().filter(b => buttons.indexOf(b) >= ci)); /* the panel's own controls; HUD rects under the box are shadowed by design (last registered wins) */ if (!buttons.some(b => b.label === 'Next')) break; if (++p > 8) { problems.push('too many pages'); break; } }
-            closePanel(); paused = true; render(); audit(`pause ${w}x${hh} ${big}`, rectsOf()); paused = false;
-            say('A'.repeat(180) + ' ' + 'word '.repeat(30), 'The Voice'); F.step([]); render(); if (!dialogRect || !inside(dialogRect)) problems.push(`dialogue ${w}x${hh} ${big}: ${JSON.stringify(dialogRect)}`); dialog.cur = null; dialog.queue.length = 0;
+        check('settings: the Controls line is built from the real key handlers (E use, Space swing, comma settings, N music, WASD walk) and every key 07-update reads is listed; touch names the buttons instead', !!e && e.action === 'Use or talk' && !!sp && /^Swing/.test(sp.action) && !!st && st.action === 'Settings' && !!mu && /Music/.test(mu.action) && !!mv && /WASD/.test(mv.label) && mv.codes.includes('ArrowUp') && all && /SWING/.test(t) && /USE/.test(t) && /Swing, shoot, stomp: Space/.test(d), { e: e && e.codes, sp: sp && sp.codes, st: st && st.codes, mu: mu && mu.codes, mv: mv && mv.label, all, t, d }); }
+      // key coverage: every key the game answers (INVENTORY.json's 'keys' paragraph) is in the one table, each read from a real
+      // handler, P listed with both of its jobs, G with X beside it, T while paused
+      { const map = keyMap();
+        const need = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyE', 'KeyQ', 'Digit', 'KeyI', 'KeyC', 'Tab', 'KeyJ', 'KeyM', 'Slash', 'F1', 'KeyH', 'KeyX', 'Enter', 'Escape', 'KeyT', 'Comma', 'KeyK', 'KeyN', 'KeyR', 'KeyG', 'KeyV', 'KeyB', 'KeyL', 'KeyP', 'KeyF', 'KeyY'];
+        const srcs = []; { let u = update; while (typeof u === 'function' && u.__inner) u = u.__inner; srcs.push(String(u)); } for (const hk of HOOKS.update) srcs.push(String(hk)); if (typeof frame === 'function') srcs.push(String(frame)); srcs.push(String(inputVector));
+        const src = srcs.join('\n'), helped = new Set(); for (const k of HOOKS.keyHelp) for (const c of k.codes) helped.add(c);
+        const heard = c => c === 'Digit' ? /pressed\.has\('Digit'\s*\+/.test(src) : src.includes(`pressed.has('${c}'`) || src.includes(`keys.has('${c}'`) || helped.has(c);
+        const missing = need.filter(c => !map.some(r => r.codes.includes(c))), deaf = need.filter(c => !heard(c));
+        const p = map.find(r => r.codes.includes('KeyP')), gRow = map.find(r => r.codes.includes('KeyG')), tRow = map.find(r => r.codes.includes('KeyT'));
+        const pJobs = !!p && p.jobs.length >= 2 && HOOKS.keyHelp.filter(k => k.codes.includes('KeyP')).every(k => p.jobs.includes(k.action));
+        const shape = map.every(r => typeof r.action === 'string' && r.action && Array.isArray(r.codes) && r.codes.length && Array.isArray(r.keys) && r.keys.length && r.label === r.keys.join(' or '));
+        check('settings: the key table lists every key the game answers (W A S D / arrows, Space, E, Q, 1-5, I, C, Tab, J, M, / or F1, H, X, Enter, Esc, T, comma, K, N, R, G or X, V, B, L, P with both its jobs, F, Y), each one read from a real handler', !missing.length && !deaf.length && pJobs && !!gRow && gRow.keys.includes('X') && !!tRow && shape, { missing, deaf, p: p && p.jobs, g: gRow && gRow.keys, t: !!tRow, rows: map.length, shape }); }
+      // the book's Keys card (src/59-hudkit.js drawKeys) fits every row at 1280x800: the rows fit its columns, each row's keycaps
+      // fit the key column, and its words fit one line (12 px, or the card's 10.5 px step at Large text)
+      { const B = HK.bookLayoutFor(1280, 800, { touch: false, online: true, page: 'keys', tiles: HK.bookTiles().length, extraRows: Math.max(1, HOOKS.pauseMenu.length) });
+        const kb = B.keysBox, fc = HK.audit.fitCtx(), rows = keyMap(), bad = [];
+        const lh = 20, per = kb ? Math.max(1, Math.floor((kb.h - 30) / lh)) : 0, cols = rows.length > per ? 2 : 1, cw = kb ? kb.w / cols : 0, capW = cols > 1 ? 58 : Math.min(150, kb ? kb.w * 0.42 : 0), room = cw - capW - 8;
+        const t0 = S.text;
+        for (const big of ['normal', 'large']) {
+          S.text = big;
+          for (const r of rows) {
+            const capsW = r.keys.reduce((a, k) => a + HK.keycapW(fc, k, 9) + 4, 0) - 4;
+            if (capsW > capW - 4) bad.push(`${big}: keys ${r.label} are ${Math.round(capsW)} px, the key column ${capW - 4}`);
+            const w12 = HK.tw(fc, r.action, HK.FS(600, 12)), w10 = HK.tw(fc, r.action, HK.FS(600, 10.5));
+            if (big === 'normal' ? w12 > room : w10 > room) bad.push(`${big}: "${r.action}" is ${Math.round(big === 'normal' ? w12 : w10)} px, the words column ${Math.round(room)}`);
           }
         }
-        set('text', 'normal'); settingsPage = 0;
-        if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
-        render();
-        check('settings: no overlapping or off-screen buttons in the panel (every page, normal + large text) and the pause menu at 390x844, 844x390, 768x1024, 1280x800; the dialogue box fits', tried === 4 && problems.length === 0, { tried, problems: problems.slice(0, 8), VW, VH }); }
+        S.text = t0;
+        check('settings: the book\'s Keys card fits the whole key table at 1280x800 (rows in its two columns, keycaps in the key column, the words on one line)', !!kb && rows.length <= per * cols && bad.length === 0, { rows: rows.length, room: per * cols, cols, bad: bad.slice(0, 8) }); }
+      // layout at all 8 device sizes, touch and mouse, every page, normal and Large text: from the close seal on, controls are
+      // 44 px on touch (26 with a mouse), 8 px apart on touch (4), on screen and out of the notch / home bands; every string fits
+      // its plate at Large. The book (pause menu) passes the kit's frame audit and the talk box fits.
+      { const restore = panelSizeSaver(), problems = []; let tried = 0, pagesSeen = 0;
+        try {
+          for (const [w, hh] of HK.audit.SIZES) {
+            if (!panelSetSize(w, hh)) continue; tried++;
+            for (const tch of [true, false]) {
+              window.__forceTouch = tch;
+              for (const big of ['normal', 'large']) {
+                set('text', big);
+                const where = `${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big}`;
+                closePanel(); openPanel('settings');
+                for (let p = 0; p < 12; p++) { settingsPage = p; problems.push(...panelFrame(`settings ${where} page ${p + 1}`)); pagesSeen++; if (!buttons.some(b => b.label === 'Next')) break; if (p === 11) problems.push(`settings ${where}: too many pages`); }
+                closePanel(); paused = true; HK.BOOK.page = 'game'; panelFrame('book', { from: 0, panel: false }); problems.push(...HK.audit.frameIssues(`book ${where}`, { book: true })); paused = false; HK.BOOK.page = 'kit';
+                say('A'.repeat(180) + ' ' + 'word '.repeat(30), 'The Voice'); F.step([]); render(); if (!dialogRect || dialogRect.x < 0 || dialogRect.y < 0 || dialogRect.x + dialogRect.w > VW || dialogRect.y + dialogRect.h > VH) problems.push(`dialogue ${where}: ${JSON.stringify(dialogRect)}`); dialog.cur = null; dialog.queue.length = 0;
+              }
+            }
+          }
+        } finally { set('text', 'normal'); settingsPage = 0; window.__forceTouch = prevTouch; paused = false; closePanel(); restore(); render(); }
+        check('settings: the panel at all 8 device sizes, touch and mouse, every page, normal and Large text: controls 44 px on touch (26 with a mouse) and 8 px apart (4), on screen, clear of the notch and home bands, every word inside its plate; the book and the talk box fit too', tried === 8 && problems.length === 0, { tried, pagesSeen, problems: problems.slice(0, 10), total: problems.length }); }
     } finally {
       Object.assign(S, snap); apply(); save(); settingsPage = 0; uxConfirm = null; clearShake();
       window.__forceTouch = prevTouch; paused = false; closePanel(); h.peace(false); touch.press = null; touch.stickId = null; touch.active = false;
@@ -29729,26 +30029,35 @@ window.RETALIATE = RETALIATE;
 
   // ---------- the HTML card (real inputs: the iPad keyboard needs them; 16 px so Safari does not zoom) ----------
   let ui = null;
+  // The card wears the kit's materials in CSS: dark vellum with a gold hairline 2.5 px inside the edge, Cinzel for the
+  // heading and the labels, the system sans for sentences, iron-plate buttons (a gold edge on the main one), every button,
+  // box and the New knight switch at least 44 px tall, and 16 px inputs so iOS Safari never zooms.
   const CSS = `
-#fl-login{position:fixed;inset:0;z-index:10;display:flex;justify-content:center;align-items:flex-start;pointer-events:none;font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3}
+#fl-login{position:fixed;inset:0;z-index:10;display:flex;justify-content:center;align-items:flex-start;pointer-events:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4ead3}
 #fl-login[hidden]{display:none}
-#fl-login .fl-card{pointer-events:auto;box-sizing:border-box;width:min(440px,calc(100vw - 28px));overflow-y:auto;-webkit-overflow-scrolling:touch;background:#161b22;border:1px solid #f5c542;border-radius:10px;padding:16px 18px 14px;box-shadow:0 10px 40px rgba(0,0,0,.55)}
-#fl-login h2{margin:0 0 6px;font:700 18px "Cinzel","Trajan Pro",Georgia,serif;color:#f5c542}
-#fl-login label{display:block;font:bold 12px sans-serif;color:#c9d1d9;margin:10px 0 4px}
-#fl-login input[type=text],#fl-login input[type=password]{box-sizing:border-box;width:100%;font-size:16px;line-height:20px;padding:10px 12px;color:#e6edf3;background:#0b0f14;border:1px solid #30363d;border-radius:8px;outline:none;-webkit-appearance:none;appearance:none}
-#fl-login input:focus{border-color:#f5c542}
-#fl-login .fl-row{display:flex;gap:8px;margin-top:12px}
-#fl-login button{flex:1;font:bold 15px sans-serif;color:#fff;background:#238636;border:0;border-radius:8px;padding:11px 12px;cursor:pointer;-webkit-appearance:none;appearance:none}
-#fl-login button.fl-dim{background:#21262d;color:#e6edf3}
-#fl-login button:disabled{background:#2a2f3a;color:#6e7681}
-#fl-login .fl-check{display:flex;align-items:center;gap:8px;margin-top:12px;font:bold 13px sans-serif;color:#e6edf3;cursor:pointer}
-#fl-login .fl-check input{width:20px;height:20px;margin:0;accent-color:#f5c542}
-#fl-login .fl-hint{font:12px sans-serif;color:#8b949e;margin-top:4px}
-#fl-login .fl-err{font:bold 13px sans-serif;color:#f85149;min-height:16px;margin-top:10px}
+#fl-login .fl-card{position:relative;pointer-events:auto;box-sizing:border-box;width:min(440px,calc(100vw - 28px));overflow-y:auto;-webkit-overflow-scrolling:touch;background:linear-gradient(180deg,#31281e,#1d1712);border:1px solid rgba(0,0,0,.9);border-radius:5px;padding:18px 20px 16px;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+#fl-login .fl-card::before{content:"";position:absolute;inset:2.5px;border:1px solid rgba(217,178,92,.5);border-radius:3px;pointer-events:none}
+#fl-login h2{margin:0 0 8px;font:800 19px "Cinzel","Trajan Pro",Georgia,serif;color:#f7dc8f;text-shadow:0 1px 0 rgba(0,0,0,.9)}
+#fl-login label{display:block;font:700 12px "Cinzel","Trajan Pro",Georgia,serif;letter-spacing:.04em;color:#cdbf9e;margin:12px 0 5px}
+#fl-login input[type=text],#fl-login input[type=password]{box-sizing:border-box;width:100%;min-height:44px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:16px;font-weight:600;line-height:20px;padding:11px 12px;color:#f4ead3;background:#14100c;border:1px solid rgba(217,178,92,.35);border-radius:4px;outline:none;-webkit-appearance:none;appearance:none}
+#fl-login input::placeholder{color:#8c8170}
+#fl-login input:focus{border-color:#d9b25c;box-shadow:0 0 0 2px rgba(217,178,92,.25)}
+#fl-login .fl-row{display:flex;gap:10px;margin-top:14px}
+#fl-login button{flex:1;min-height:44px;font:700 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4ead3;background:linear-gradient(180deg,#2d3138,#16181c);border:1px solid rgba(0,0,0,.9);border-radius:6px;padding:11px 14px;cursor:pointer;box-shadow:inset 0 0 0 1.5px rgba(217,178,92,.95),inset 0 2px 0 rgba(255,255,255,.08),0 3px 8px rgba(0,0,0,.6);text-shadow:0 1px 0 rgba(0,0,0,.9);-webkit-appearance:none;appearance:none;touch-action:manipulation}
+#fl-login button.fl-dim{box-shadow:inset 0 2px 0 rgba(255,255,255,.08),0 3px 8px rgba(0,0,0,.6)}
+#fl-login button:hover{color:#f7dc8f}
+#fl-login button:active{transform:translateY(1.5px);background:linear-gradient(180deg,#16181c,#2d3138);box-shadow:inset 0 0 0 1.5px rgba(217,178,92,.6),0 0 1px rgba(0,0,0,.6)}
+#fl-login button.fl-dim:active{box-shadow:0 0 1px rgba(0,0,0,.6)}
+#fl-login button:disabled{color:#8c8170;background:linear-gradient(180deg,#24272c,#15171a);box-shadow:none;cursor:default;transform:none}
+#fl-login .fl-check{display:flex;align-items:center;gap:10px;min-height:44px;margin-top:8px;font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;letter-spacing:0;color:#f4ead3;cursor:pointer}
+#fl-login .fl-check input{width:22px;height:22px;margin:0;accent-color:#d9b25c}
+#fl-login .fl-hint{font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#cdbf9e;margin-top:5px}
+#fl-login .fl-err{font:700 14px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#ef4b3f;min-height:18px;margin-top:10px}
 #fl-login .fl-err:empty{margin-top:0;min-height:0}
-#fl-login .fl-line{font:15px sans-serif;margin:6px 0 4px}
-#fl-login .fl-status{font:12px sans-serif;color:#8b949e;margin-top:12px;padding-top:10px;border-top:1px solid #30363d;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-#fl-login .fl-status button{flex:0 0 auto;padding:7px 12px;font-size:13px}
+#fl-login .fl-line{font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:6px 0 4px}
+#fl-login .fl-line b{font:800 15px "Cinzel","Trajan Pro",Georgia,serif;color:#f7dc8f}
+#fl-login .fl-status{font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#cdbf9e;margin-top:14px;padding-top:12px;border-top:1px solid rgba(217,178,92,.3);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#fl-login .fl-status button{flex:0 0 auto;padding:9px 14px;font-size:14px}
 #fl-login [hidden]{display:none!important}`;
   function build() {
     if (ui || !hasDom()) return;
@@ -29789,11 +30098,12 @@ window.RETALIATE = RETALIATE;
     if (canListen) window.addEventListener('resize', place);
   }
   // the card sits where the slot cards would, under the FANGLANDS heading the canvas draws
+  // (under the heading, above the canvas's bottom row: Sound and the saving line; 14-title's title.frame says where those are)
   function place() {
     if (!ui) return;
-    const short = VH < 520, ty = short ? 44 : Math.round(VH * 0.19);
-    const top = Math.round(Math.max(ty + 56, Math.min(VH * 0.34, VH - 380)));
-    ui.card.style.marginTop = top + 'px'; ui.card.style.maxHeight = Math.max(160, VH - top - 10) + 'px';
+    const F = title.frame(), top = Math.round(F.headBottom + 12);
+    ui.card.style.marginTop = top + 'px'; ui.card.style.maxHeight = Math.max(160, F.bottomY - 10 - top) + 'px';
+    ui.card.style.width = `min(440px, ${Math.max(200, Math.round(F.right - F.left - 4))}px)`;
   }
   function refresh() {
     if (!ui) return;
@@ -29821,53 +30131,41 @@ window.RETALIATE = RETALIATE;
     }, true);
   }
 
-  // ---------- the canvas behind the card: backdrop, heading, sprites, sound button ----------
-  const KNIGHT = { tunic: '#3b6fb6', hair: '#5a3a1e', helm: '#8f96a3', shoulder: '#9aa3b2', shield: '#8a6a3a', weapon: ITEMS.iron_sword || ITEMS.wooden_sword };
+  // ---------- the canvas behind the card: 14-title's backdrop, heading, sprites and bottom row ----------
   function drawOnlineTitle(g) {
-    const narrow = VW < 640, short = VH < 520;
-    const grad = g.createLinearGradient(0, 0, 0, VH);
-    grad.addColorStop(0, 'rgba(6,8,14,0.88)'); grad.addColorStop(0.45, 'rgba(6,8,14,0.66)'); grad.addColorStop(1, 'rgba(6,8,14,0.92)');
-    g.fillStyle = grad; g.fillRect(0, 0, VW, VH);
-    const ty = short ? 44 : Math.round(VH * 0.19);
-    g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,0.75)';
-    g.font = `800 ${narrow ? 44 : short ? 48 : 72}px ${DISPLAY}`; g.strokeText('FANGLANDS', VW / 2, ty); g.fillStyle = '#f5c542'; g.fillText('FANGLANDS', VW / 2, ty);
-    g.font = `600 ${narrow ? 14 : 18}px ${DISPLAY}`; g.lineWidth = 4; g.strokeText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30)); g.fillStyle = '#c9a36a'; g.fillText('A game by Cohen', VW / 2, ty + (narrow ? 24 : 30));
-    if (!narrow) {
-      const cw = Math.min(440, VW - 28), margin = Math.round(VW / 2 - cw / 2), midY = Math.round(VH * 0.55);
-      const bob = Math.sin(title.t * 1.6) * 4, bob2 = Math.sin(title.t * 1.6 + 1.3) * 4;
-      const ks = clamp(margin / 48, 1.6, 4), ws = clamp(margin / 78, 1.3, 3.4);
-      g.save(); g.translate(margin / 2, midY); g.scale(ks, ks); g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 12, 12, 5, 0, 0, 7); g.fill(); g.translate(0, bob / ks); drawHuman(g, { facing: { x: 1, y: 0 }, hurtT: 0, attackT: 0 }, KNIGHT); g.restore();
-      g.save(); g.translate(VW - margin / 2, midY); g.scale(ws, ws); g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 22, 26, 9, 0, 0, 7); g.fill(); g.translate(0, bob2 / ws); drawMech(g, { facing: { x: -1, y: 0 }, moving: true, walkT: title.t * 2.2, attackT: 0, hurtT: 0 }, false, null); g.restore();
+    const F = title.frame(), T = HK.T;
+    title.backdrop(g);
+    title.heading(g, F);
+    if (!F.narrow) {
+      const cw = Math.min(440, F.right - F.left - 4), margin = Math.round(VW / 2 - cw / 2) - F.left, midY = Math.round(VH * 0.55);
+      if (margin > 70) title.sprites(g, F.left + margin / 2, midY, clamp(margin / 48, 1.6, 4), F.right - margin / 2, midY, clamp(margin / 78, 1.3, 3.4));
     }
     if (!ui) {
       // no HTML to hold the card (should never happen in a browser): say so on the canvas rather than show nothing
-      g.textAlign = 'center'; g.fillStyle = '#e6edf3'; g.font = `700 18px ${DISPLAY}`; g.fillText('Play online at gorkscape.ca', VW / 2, ty + 90);
-      g.font = '13px sans-serif'; g.fillStyle = '#8b949e'; g.fillText(LOGIN.status || '', VW / 2, ty + 114);
+      HK.text(g, 'Play online at gorkscape.ca', VW / 2, F.headBottom + 40, { font: HK.FC(800, 18), align: 'center', color: T.goldHi, halo: 3 });
+      HK.text(g, LOGIN.status || '', VW / 2, F.headBottom + 64, { font: HK.FS(600, 13), align: 'center', color: T.inkDim, halo: 3 });
     }
-    button(g, VW - 124, VH - 42, 110, 30, audioMuted ? 'Sound: off' : 'Sound: on', toggleMute, '#21262d');
-    g.textAlign = 'left'; g.fillStyle = 'rgba(230,237,243,0.55)'; g.font = '11px sans-serif'; g.fillText('Your knight is saved in the cloud at gorkscape.ca.', 14, VH - 22);
+    title.chrome(g, F, ['Your knight is saved in the cloud at gorkscape.ca.', 'Saved in the cloud at gorkscape.ca.', 'Saved in the cloud.']);
   }
+  // Play alone keeps a way back: a Play online plate at the left end of the title's bottom row
+  title.leftButton = () => (title.active && NET.enabled && LOGIN.alone && !LOGIN.showing) ? { label: 'Play online', action: LOGIN.backOnline, emblem: 'friends' } : null;
   const _drawHud = drawHud;
   drawHud = function (g) {
-    if (!title.active || !LOGIN.showing) {
-      _drawHud(g);
-      if (title.active && NET.enabled && LOGIN.alone) button(g, 14, VH - 76, 120, 30, 'Play online', LOGIN.backOnline, '#21262d');
-      return;
-    }
+    if (!title.active || !LOGIN.showing) return _drawHud(g);
     buttons.length = 0; minimapRect = null;
     g.textBaseline = 'alphabetic';
     drawOnlineTitle(g);
   };
 
   // ---------- Log out in the pause menu ----------
-  // The pause menu is a fixed 310 px box with one hook row; a second row would land on the stats line. So the
-  // Title screen row from 14-title is split in two while a knight is online: Title screen on the left, Log out on the right.
+  // While a knight is online the book's Title screen row (14-title) is split in two: Title screen on the left, Log out on
+  // the right, 8 px apart, both iron plates of the row's height (the book's own rows stay where the kit put them).
   { const first = HOOKS.pauseMenu[0];
     if (first) HOOKS.pauseMenu[0] = (g, x, y, w, h) => {
       if (!NET.enabled || !LOGIN.playing) return first(g, x, y, w, h);
       const half = Math.floor(w / 2) - 4;
       first(g, x, y, half, h);
-      button(g, x + half + 8, y, w - half - 8, h, 'Log out', LOGIN.logout, '#3a4150');
+      platePush(g, x + half + 8, y, w - half - 8, h, 'Log out', 'Log out', LOGIN.logout, null, { emblem: 'leave', cinzel: true, name: 'Save, log out and go to the title screen' });
     }; }
 
   // ---------- self-test ----------
@@ -29913,6 +30211,24 @@ window.RETALIATE = RETALIATE;
       LOGIN.submit('Cohen', 'sword', '', false);
       check(P + 'the right secret word logs in: token kept, the cloud save lands in slot 1 and is the game now, the socket opens', NET.token === 'tok-cohen' && lsGet(SLOT(1)) === cloud && player.kills === 42 && title.slot === 1 && LOGIN.playing && !LOGIN.showing && !title.active && NET.status === 'on' && NET.me === 'Cohen' && lsGet(NAME_KEY) === 'Cohen' && lsGet(MARK_KEY) === '1', { token: NET.token, kills: player.kills, status: NET.status, me: NET.me, showing: LOGIN.showing });
       paused = true; render(); const menu = buttons.some(b => b.label === 'Log out') && buttons.some(b => b.label.startsWith('Title screen')); paused = false;
+      // the split row in the Knight's Book at all 8 device sizes, touch and mouse: both halves there, and the book passes the
+      // kit's book audit (44 px on touch, 8 px apart, on screen, out of the notch and home bands); their words fit at Large
+      { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = SETTINGS.get('text'), page0 = HK.BOOK.page, problems = []; let tried = 0;
+        try {
+          for (const [w, hh] of HK.audit.SIZES) {
+            if (!panelSetSize(w, hh)) continue; tried++;
+            for (const tch of [true, false]) for (const big of ['normal', 'large']) {
+              window.__forceTouch = tch; SETTINGS.set('text', big); paused = true; HK.BOOK.page = 'game';
+              const where = `book ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big}`;
+              const fit = panelFrame(where, { from: 0, panel: false }).filter(q => /Title screen|Log out/.test(q));
+              problems.push(...fit, ...HK.audit.frameIssues(where, { book: true }));
+              const a = buttons.find(b => b.label.startsWith('Title screen')), b = buttons.find(b => b.label === 'Log out');
+              if (!a || !b) problems.push(`${where}: the split row is missing (${buttons.map(q => q.label).join(',')})`);
+              else if (HK.gapBetween(Object.assign({ k: 'r' }, a), Object.assign({ k: 'r' }, b)) < (tch ? 8 : 4) || Math.abs(a.y - b.y) > 0.5 || a.h !== b.h) problems.push(`${where}: Title screen and Log out do not sit side by side 8 px apart`);
+            }
+          }
+        } finally { paused = false; HK.BOOK.page = page0; window.__forceTouch = t0; SETTINGS.set('text', text0); restore(); render(); }
+        check(P + "online, the book's Title screen | Log out row splits cleanly at all 8 device sizes, touch and mouse, and passes the book audit (44 px, 8 px apart, on screen, out of the bands; the words fit at Large)", tried === 8 && problems.length === 0, { tried, problems: problems.slice(0, 8), total: problems.length }); }
       const out = LOGIN.logout();
       check(P + 'Log out sits beside Title screen in the pause menu; it drops the token, closes the socket and shows the card again', menu && out && !NET.token && NET.sock === null && NET.status === 'off' && LOGIN.showing && title.active && !LOGIN.playing && LOGIN.mode === 'form' && world.calls.includes('POST /api/logout'), { menu, token: NET.token, mode: LOGIN.mode });
       LOGIN.submit('Sam', 'castle', 'wrong', true);
@@ -29930,6 +30246,30 @@ window.RETALIATE = RETALIATE;
       check(P + 'when the world does not answer, the card says it is asleep and offers Play alone', LOGIN.asleep && LOGIN.status === 'The world is asleep right now.', { status: LOGIN.status });
       LOGIN.playAlone(); render();
       check(P + 'Play alone falls back to the three local slots, with a way back online', !LOGIN.showing && LOGIN.alone && title.active && buttons.some(b => b.label === 'Slot 1') && buttons.some(b => b.label === 'Play online'), { labels: buttons.map(b => b.label) });
+      // the title in Play alone mode (Play online on the bottom row) and behind the online card, at all 8 device sizes
+      { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = SETTINGS.get('text'), problems = []; let tried = 0;
+        try {
+          for (const [w, hh] of HK.audit.SIZES) {
+            if (!panelSetSize(w, hh)) continue; tried++;
+            for (const tch of [true, false]) for (const big of ['normal', 'large']) for (const alone of [true, false]) {
+              window.__forceTouch = tch; SETTINGS.set('text', big); LOGIN.showing = !alone;
+              const where = `title ${alone ? 'alone' : 'online card'} ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big}`;
+              problems.push(...panelFrame(where, { from: 0, panel: false }));
+              if (alone && !buttons.some(b => b.label === 'Play online')) problems.push(`${where}: no Play online`);
+              if (!alone && buttons.map(b => b.label).join() !== 'Sound: on' && buttons.map(b => b.label).join() !== 'Sound: off') problems.push(`${where}: the canvas should hold only Sound (${buttons.map(b => b.label).join(',')})`);
+            }
+          }
+        } finally { LOGIN.showing = false; window.__forceTouch = t0; SETTINGS.set('text', text0); restore(); render(); }
+        check(P + 'the title with Play online (Play alone) and behind the online card, at all 8 device sizes, touch and mouse: controls 44 px on touch (26 with a mouse), 8 px apart (4), on screen, out of the bands, the words inside their plates', tried === 8 && problems.length === 0, { tried, problems: problems.slice(0, 8), total: problems.length }); }
+      // the card's CSS (headless has no DOM to measure): every button, box and the New knight switch is at least 44 px tall and
+      // the inputs are 16 px (so iOS does not zoom); in a browser the live card is measured too
+      { const rule = sel => { const m = CSS.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}')); return m ? m[1] : ''; };
+        const px = (r, prop) => { const m = new RegExp('(?:^|;)' + prop + ':(\\d+(?:\\.\\d+)?)px').exec(r); return m ? +m[1] : 0; };
+        const inputs = rule('#fl-login input[type=text],#fl-login input[type=password]'), btn = rule('#fl-login button'), chk = rule('#fl-login .fl-check');
+        const css = px(inputs, 'min-height') >= 44 && px(inputs, 'font-size') >= 16 && px(btn, 'min-height') >= 44 && px(chk, 'min-height') >= 44;
+        let live = 'no DOM';
+        if (hasDom()) { build(); const was0 = ui.root.hidden; ui.root.hidden = false; try { const hs = [...ui.card.querySelectorAll('button,input[type=text],input[type=password],.fl-check')].filter(e => e.offsetParent !== null).map(e => e.getBoundingClientRect().height); const fs = parseFloat(getComputedStyle(ui.name).fontSize); live = hs.every(v => v >= 44) && fs >= 16; } finally { ui.root.hidden = was0; } }
+        check(P + 'the login card: buttons, text boxes and the New knight switch are at least 44 px tall, and the text boxes use a 16 px font', css && live !== false, { css, live, inputs, btn: btn.slice(0, 60), chk }); }
       world.statusFails = false; LOGIN.backOnline(); const back = LOGIN.showing && !LOGIN.alone;
       // the bridge: only the old address is believed, and the newest slot wins
       const older = { save: cloud, at: 100 }, newerSave = JSON.parse(cloud); newerSave.player.kills = 3; const newer = { save: JSON.stringify(newerSave), at: 200 };
@@ -30135,7 +30475,8 @@ window.RETALIATE = RETALIATE;
   const GIFT_EVERY = 1;         // s: the contract's cap on gifts
   const MINE = { friends: 1, gift: 1, chatlog: 1 };   // the online files' own panels: the chip stays tappable under them
   const DEFAULT_LOOK = { tunic: '#3b6fb6', hair: '#5a3a1e', shoulder: '#9aa3b2', fists: true };
-  const BLUE = '#7ec8ff';
+  // friend blue: the kit's one colour for friends (their seal, dots, names); nothing else is this blue
+  const BLUE = HK.T.friend;
   const GOLD = '#f5c542';       // an admin's name, wherever it is written (docs/ONLINE.md, "Roles")
   const isAdmin = o => !!o && o.role === 'admin';
   // The ADMIN tag: a small gold pill with dark letters, its left edge at x and its middle at y. Returns its width.
@@ -30252,7 +30593,7 @@ window.RETALIATE = RETALIATE;
     g.font = 'bold 11px sans-serif'; g.strokeText(e.n, nx, top); g.fillStyle = admin ? GOLD : '#ffffff'; g.fillText(e.n, nx, top);
     g.font = '9px sans-serif'; g.strokeText(lv, nx + nw + 4, top); g.fillStyle = '#9aa3b2'; g.fillText(lv, nx + nw + 4, top);
     if (e.hp < e.mhp) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(x - 14, top + 3, 28, 4); g.fillStyle = e.hp / e.mhp > 0.5 ? '#3fb950' : e.hp / e.mhp > 0.25 ? '#d29922' : '#f85149'; g.fillRect(x - 14, top + 3, 28 * clamp(e.hp / e.mhp, 0, 1), 4); }
-    if (dist(x, y, player.x, player.y) <= NEAR) { g.strokeStyle = 'rgba(126,200,255,0.45)'; g.lineWidth = 1.5; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y + 2, onMech ? 30 : 22, 0, 7); g.stroke(); g.setLineDash([]); }
+    if (dist(x, y, player.x, player.y) <= NEAR) { g.strokeStyle = 'rgba(111,177,255,0.5)'; g.lineWidth = 1.5; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y + 2, onMech ? 30 : 22, 0, 7); g.stroke(); g.setLineDash([]); }
   }
   HOOKS.draw.push((g, items) => {
     const my = mapId();
@@ -30278,7 +30619,7 @@ window.RETALIATE = RETALIATE;
       for (const n in REMOTE) if (REMOTE[n].map === my) { any = true; break; }
       if (any) {
         g.save(); g.beginPath(); g.arc(mm.x + size / 2, mm.y + size / 2, size / 2, 0, 7); g.clip();   // the ring's round glass (src/59-hudkit.js)
-        for (const n in REMOTE) { const e = REMOTE[n]; if (e.map !== my) continue; const p = at(e); g.fillStyle = BLUE; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); }
+        for (const n in REMOTE) { const e = REMOTE[n]; if (e.map !== my) continue; const p = at(e); g.fillStyle = BLUE; g.beginPath(); g.arc(p.x, p.y, 3, 0, 7); g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = 1.2; g.stroke(); }
         g.fillStyle = '#ffffff'; g.beginPath(); g.arc(mm.x + (player.x / TILE - sx) * scale, mm.y + (player.y / TILE - sy) * scale, 3.5, 0, 7); g.fill(); // the knight stays on top
         g.restore();
       }
@@ -30305,16 +30646,23 @@ window.RETALIATE = RETALIATE;
     on: panel === 'friends', action: toggleFriends, name: NET.online() ? `Friends: ${ONLINE.length} online` : 'Offline',
   }));
   // ---------- the world map: every friend on this map as a named blue dot (drawn after the core's map, so it wraps drawPanels) ----------
+  // The map image's rect is read from the buttons[] entry labelled 'mapimage' (10-hud keeps it exactly the image; 61-markers
+  // cuts its foot back to where the key strip starts), so the dots follow the map wherever the panel puts it.
+  const mapImage = () => { const b = buttons.find(q => q.label === 'mapimage'); return b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null; };
+  const MAP_DOTS = [];   // this frame's dots, for the self-test: { n, x, y }
   function drawMapFriends(g, narrow) {
-    const L = mapLayout; if (!panelRect || !L) return;   // where 10-hud drew the map this frame (an instance is centred in the box)
-    const { ix, iy, iw, ih, ox, oy, sc } = L, my = mapId();
-    g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip();
-    g.font = `bold ${narrow ? 9 : 11}px sans-serif`; g.textAlign = 'center';
+    MAP_DOTS.length = 0;
+    // where 10-hud drew the map this frame (mapLayout: inside an instance only the instance, centred in the box)
+    const L = mapLayout, r = mapImage(); if (!panelRect || !L || !r || r.w <= 0 || r.h <= 0) return;
+    const { ox, oy, sc } = L, my = mapId(), f = HK.FC(800, narrow ? 11 : 12);
+    g.save(); g.beginPath(); g.rect(r.x, r.y, r.w, r.h); g.clip();
     for (const n in REMOTE) {
       const e = REMOTE[n]; if (e.map !== my) continue;
       const x = ox + e.shown.x / TILE * sc, y = oy + e.shown.y / TILE * sc;
-      g.fillStyle = BLUE; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 1.5; g.stroke();
-      g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(n, x, y - 8); g.fillStyle = BLUE; g.fillText(n, x, y - 8);
+      if (x < r.x || x > r.x + r.w || y < r.y || y > r.y + r.h) continue;
+      g.fillStyle = BLUE; g.beginPath(); g.arc(x, y, 4.5, 0, 7); g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
+      HK.text(g, n, x, y - 9, { font: f, align: 'center', color: BLUE, halo: 3 });
+      MAP_DOTS.push({ n, x, y });
     }
     g.restore();
   }
@@ -30355,73 +30703,105 @@ window.RETALIATE = RETALIATE;
   });
 
   // ---------- the Friends panel ----------
+  // The book's frame (panelBox), then one vellum row per friend: the name in friend blue with the exact level, where they
+  // are in words (whole words, never cut), and Give / Follow on map as iron plates one kit row tall (HK.row(): 44 px on
+  // touch). On a narrow phone the plates drop under the words. Chat log sits at the top; Prev / Next when the list runs over.
+  const T = () => HK.T;
+  function friendRows(g, list, iw, narrow) {
+    const bh = HK.row(), bw1 = 70, bw2 = narrow ? 104 : 136, btnW = bw1 + 8 + bw2;
+    const twoTier = iw - 24 - btnW - 12 < 170;
+    const textW = twoTier ? iw - 24 : iw - 24 - btnW - 12, wf = HK.FS(600, 12), lh = Math.round(15 * HK.k() * 10) / 10;
+    return list.map(o => {
+      const here = o.map === mapId();
+      const where = HK.wrap(g, (here ? 'On your map: ' : '') + whereOf(o), textW, 2, wf).lines;
+      const textH = 12 + 16 + where.length * lh + 8;
+      const h = twoTier ? textH + bh + 12 : Math.max(bh + 16, textH);
+      return { o, here, where, h, twoTier, textW, bw1, bw2, lh, wf };
+    });
+  }
   HOOKS.panel.friends = (g, narrow) => {
-    const my = mapId(), meN = me();
-    const list = ONLINE.filter(o => o.n !== meN);
-    // every button here is one kit row tall (HK.row(): 44 px on touch), so the rows and the header grow to hold them
-    const bh = HK.row(), top = 62 + bh + 12, rowH = Math.max(60, bh + 16);
-    const per = Math.max(1, Math.min(6, Math.floor((VH - 20 - top - 68) / rowH))), pages = Math.max(1, Math.ceil(list.length / per));
-    friendsPage = clamp(friendsPage, 0, pages - 1);
-    const page = list.slice(friendsPage * per, friendsPage * per + per);
-    const w = narrow ? Math.min(VW - 20, 400) : 500, h = Math.min(VH - 20, top + 26 + Math.max(1, page.length) * rowH + 30 + (pages > 1 ? 40 : 0));
-    const on = NET.online();
+    const meN = me(), list = ONLINE.filter(o => o.n !== meN), on = NET.online();
+    const room = panelRoom(narrow ? 400 : 500, VH), w = room.w, iw = w - 36, bh = HK.row();
+    const top = 62 + bh + 12, foot = 44, pagerH = bh + 14;
+    const rows = friendRows(g, list, iw, narrow), gap = 8;
+    // pages: as many rows as fit the room (with a pager when they do not all fit)
+    const all = rows.reduce((a, r) => a + r.h + gap, 0), fits = top + all + foot <= room.h;
+    const avail = room.h - top - foot - (fits ? 0 : pagerH), pagesL = [[]]; let used = 0;
+    for (const r of rows) { if (used + r.h > avail && pagesL[pagesL.length - 1].length) { pagesL.push([]); used = 0; } pagesL[pagesL.length - 1].push(r); used += r.h + gap; }
+    const pages = pagesL.length; friendsPage = clamp(friendsPage, 0, pages - 1);
+    const page = pagesL[friendsPage], pageH = Math.max(...pagesL.map(pg => pg.reduce((a, r) => a + r.h + gap, 0)), 40);
+    const h = Math.min(room.h, top + pageH + foot + (pages > 1 ? pagerH : 0));
     const { px, py } = panelBox(g, w, h, 'Friends online', on ? `${ONLINE.length} knight${ONLINE.length === 1 ? '' : 's'} in the Fanglands right now` : 'Not connected right now');
-    button(g, px + 18, py + 62, 96, bh, 'Chat log', () => openPanel('chatlog'), '#21262d');
+    const x0 = px + 18;
+    platePush(g, x0, py + 62, Math.min(iw, touchMode() ? 150 : 136), bh, 'Chat log', 'Chat log', () => openPanel('chatlog'), null, { emblem: 'chat', name: 'The chat log' });
     let y = py + top;
-    if (!page.length) { g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText(on ? 'Nobody else is on right now.' : 'You are not connected.', px + 18, y + 14); }
-    const bw1 = 62, bw2 = narrow ? 92 : 118, bx1 = px + w - 18 - bw1, bx2 = bx1 - 8 - bw2, textW = bx2 - (px + 30) - 10;
-    for (const o of page) {
-      const here = o.map === my, close = near(o.n), fol = following === o.n;
-      roundRect(g, px + 18, y, w - 36, rowH - 8, 8); g.fillStyle = here ? 'rgba(88,166,255,0.12)' : 'rgba(255,255,255,0.05)'; g.fill();
-      const mid = y + (rowH - 8) / 2;   // the middle of the row's plate: the name sits above it, where they are below
-      // the name (gold for an admin, with the ADMIN pill after it), then the level; clipped so nothing runs under the buttons
-      const admin = isAdmin(o), roomW = bx2 - 10 - (px + 30);
-      g.font = 'bold 9px sans-serif'; const pillW = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 + 6 : 0;
-      g.font = 'bold 13px sans-serif'; let shownName = o.n; while (g.measureText(shownName).width + pillW > roomW && shownName.length > 3) shownName = shownName.slice(0, -2) + '…';
-      g.textAlign = 'left'; g.fillStyle = admin ? GOLD : '#e6edf3'; g.fillText(shownName, px + 30, mid - 6);
-      const nw = g.measureText(shownName).width;
-      if (admin) adminPill(g, px + 30 + nw + 6, mid - 10, 9);
-      const lvText = 'lv ' + (o.lv || 1), lvX = px + 30 + nw + 8 + pillW; g.font = '11px sans-serif';
-      if (lvX + g.measureText(lvText).width <= px + 30 + roomW) { g.fillStyle = '#9aa3b2'; g.textAlign = 'left'; g.fillText(lvText, lvX, mid - 6); }
-      let where = here ? 'On your map · ' + whereOf(o) : whereOf(o); g.font = '12px sans-serif'; while (g.measureText(where).width > textW && where.length > 6) where = where.slice(0, -2) + '…';
-      g.fillStyle = here ? BLUE : '#8b949e'; g.fillText(where, px + 30, mid + 14);
-      button(g, bx1, mid - bh / 2, bw1, bh, 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, close ? '#238636' : '#2a2f3a', close);
-      button(g, bx2, mid - bh / 2, bw2, bh, fol ? (narrow ? 'Following' : 'Stop following') : (narrow ? 'Follow' : 'Follow on map'), () => { following = fol ? null : o.n; sfx('open'); }, fol ? '#6b4f2a' : here ? '#21262d' : '#2a2f3a', here);
-      y += rowH;
+    if (!page.length) HK.text(g, on ? 'Nobody else is on right now.' : 'You are not connected.', x0, y + 22, { font: HK.FS(600, 13), color: T().inkDim, box: { x: x0, y, w: iw, h: 40 }, fitId: 'friends:none' });
+    for (const r of page) {
+      const o = r.o, close = near(o.n), fol = following === o.n;
+      HK.vellumPlate(g, x0, y, iw, r.h, { edge: r.here ? 'rgba(111,177,255,0.55)' : null });
+      const tx = x0 + 12, nf = HK.FC(800, 14), lv = `Lv ${o.lv || 1}`;
+      const nameTop = r.twoTier ? y + 12 : y + Math.max(12, (r.h - (16 + r.where.length * r.lh + 8)) / 2);
+      // the name in friend blue, or gold with the ADMIN pill after it for an admin (docs/ONLINE.md, "Roles"), then the level
+      const admin = isAdmin(o), nwid = HK.tw(g, o.n, nf);
+      HK.text(g, o.n, tx, nameTop + 13, { font: nf, color: admin ? GOLD : T().friend, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'friends:name' });
+      const pillW = admin ? adminPill(g, tx + nwid + 6, nameTop + 8, 9) + 6 : 0;
+      HK.text(g, lv, tx + nwid + 8 + pillW, nameTop + 13, { font: HK.FC(800, 12), color: T().inkDim, box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'friends:lv' });
+      r.where.forEach((l, i) => HK.text(g, l, tx, nameTop + 16 + (i + 1) * r.lh, { font: r.wf, color: r.here ? T().ink : T().inkDim, box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'friends:where' }));
+      const by = r.twoTier ? y + r.h - bh - 10 : y + (r.h - bh) / 2, bx1 = x0 + iw - 12 - r.bw1, bx2 = bx1 - 8 - r.bw2;
+      platePush(g, bx1, by, r.bw1, bh, 'Give', 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, 'primary', { enabled: close, name: close ? `Give something to ${o.n}` : `Walk up to ${o.n} to give` });
+      const fl = fol ? (narrow ? 'Following' : 'Stop following') : (narrow ? 'Follow' : 'Follow on map');
+      platePush(g, bx2, by, r.bw2, bh, fl, fl, () => { following = fol ? null : o.n; sfx('open'); }, fol ? 'warn' : null, { enabled: r.here, name: fol ? `Stop following ${o.n}` : `Mark ${o.n} on the map` });
+      y += r.h + gap;
     }
-    g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText('Give works when you stand within two tiles of a friend. F opens this panel.', px + 18, py + h - (pages > 1 ? 50 : 14));
-    if (pages > 1) pager(g, px + 18, py + h - 40, w - 36, friendsPage, pages, p => { friendsPage = p; });
+    const note = 'Give works when you stand within two tiles of a friend.' + (touchMode() ? '' : ' F opens this panel.');
+    const nf2 = HK.FS(600, 12), nl = HK.wrap(g, note, iw, 2, nf2).lines, ny = py + h - (pages > 1 ? pagerH : 0) - foot + 16;
+    nl.forEach((l, i) => HK.text(g, l, x0, ny + i * Math.round(15 * HK.k()), { font: nf2, color: T().inkMute, box: { x: x0, y: ny - 14, w: iw, h: foot }, fitId: 'friends:note' }));
+    if (pages > 1) rowPager(g, x0, py + h - pagerH, iw, friendsPage, pages, p => { friendsPage = p; });
   };
 
   // ---------- the gift picker: the pack's stacks, one tap each ----------
+  // Vellum rows with the item's picture, its name and how many you have (exact), and Give 1 / Give all plates one kit row
+  // tall. Valuables ask twice. Prev / Next when the pack runs over the screen.
   HOOKS.panel.gift = (g, narrow) => {
     const to = String(panelArg || '');
     const stacks = []; for (const s of player.inv) if (s && s.qty > 0 && ITEMS[s.id]) stacks.push(s);
-    // the Give buttons are one kit row tall (HK.row(): 44 px on touch); each row is that plus its margins
-    const bh = HK.row(), rowH = bh + 12, per = Math.max(2, Math.min(8, Math.floor((VH - 20 - 130) / rowH))), pages = Math.max(1, Math.ceil(stacks.length / per));
-    giftPage = clamp(giftPage, 0, pages - 1);
-    const page = stacks.slice(giftPage * per, giftPage * per + per);
-    const w = narrow ? Math.min(VW - 20, 390) : 460, h = Math.min(VH - 20, 74 + Math.max(1, page.length) * rowH + (pages > 1 ? 50 : 20));
+    const room = panelRoom(narrow ? 390 : 460, VH), w = room.w, iw = w - 36, bh = HK.row(), gap = 8;
+    const b1 = 78, b2 = 90, nf = HK.FC(800, 13), cf = HK.FS(600, 12), lh = Math.round(15 * HK.k() * 10) / 10;
+    const rows = stacks.map(s => {
+      const def = ITEMS[s.id], many = s.qty > 1, oneW = iw - 12 - 40 - (many ? b1 + 8 : 0) - b2 - 12 - 8;
+      // too little room beside the plates (a narrow phone): the plates drop under the words
+      const twoTier = oneW < 130, textW = twoTier ? iw - 12 - 40 - 12 : oneW;
+      const name = HK.wrap(g, def.name, textW, 2, nf).lines, textH = 12 + name.length * 16 + lh + 8;
+      return { s, def, many, textW, name, twoTier, textH, h: twoTier ? textH + bh + 10 : Math.max(bh + 14, textH) };
+    });
+    const top = 64, foot = 12, pagerH = bh + 14;
+    const all = rows.reduce((a, r) => a + r.h + gap, 0), fits = top + Math.max(all, 40) + foot <= room.h;
+    const avail = room.h - top - foot - (fits ? 0 : pagerH), pagesL = [[]]; let used = 0;
+    for (const r of rows) { if (used + r.h > avail && pagesL[pagesL.length - 1].length) { pagesL.push([]); used = 0; } pagesL[pagesL.length - 1].push(r); used += r.h + gap; }
+    const pages = pagesL.length; giftPage = clamp(giftPage, 0, pages - 1);
+    const page = pagesL[giftPage], pageH = Math.max(...pagesL.map(pg => pg.reduce((a, r) => a + r.h + gap, 0)), 40);
+    const h = Math.min(room.h, top + pageH + foot + (pages > 1 ? pagerH : 0));
     const ok = near(to) && NET.online();
-    const { px, py } = panelBox(g, w, h, 'Give to ' + to, ok ? 'Tap what to hand over. It leaves your pack and lands in theirs.' : 'Walk up to ' + to + ' first (within two tiles).');
-    let y = py + 64;
-    if (!page.length) { g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText('Your pack is empty.', px + 18, y + 20); }
-    for (const s of page) {
-      const def = ITEMS[s.id], many = s.qty > 1;
-      const mid = y + (rowH - 6) / 2;   // the middle of the row's plate
-      roundRect(g, px + 18, y, w - 36, rowH - 6, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      drawItemIcon(g, s.id, px + 36, mid - 1, 18);
-      let name = def.name + ' × ' + s.qty; g.font = 'bold 13px sans-serif'; const maxW = w - 36 - 44 - (many ? 176 : 96);
-      while (g.measureText(name).width > maxW && name.length > 6) name = name.slice(0, -2) + '…';
-      g.fillStyle = '#e6edf3'; g.textAlign = 'left'; g.fillText(name, px + 54, mid + 4);
+    const tap = touchMode() ? 'Tap' : 'Click';
+    const { px, py } = panelBox(g, w, h, 'Give to ' + to, ok ? `${tap} what to hand over. It leaves your pack and lands in theirs.` : 'Walk up to ' + to + ' first (within two tiles).');
+    const x0 = px + 18; let y = py + top;
+    if (!page.length) HK.text(g, 'Your pack is empty.', x0, y + 22, { font: HK.FS(600, 13), color: T().inkDim, box: { x: x0, y, w: iw, h: 40 }, fitId: 'gift:none' });
+    for (const r of page) {
+      const s = r.s, def = r.def, mid = r.twoTier ? y + r.textH / 2 : y + r.h / 2;
+      HK.vellumPlate(g, x0, y, iw, r.h);
+      drawItemIcon(g, s.id, x0 + 30, mid, 18);
+      const tx = x0 + 52, textTop = mid - (r.name.length * 16 + lh) / 2;
+      r.name.forEach((l, i) => HK.text(g, l, tx, textTop + 13 + i * 16, { font: nf, color: T().ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'gift:name' }));
+      HK.text(g, `You have ${s.qty}`, tx, textTop + r.name.length * 16 + lh - 1, { font: cf, color: T().inkDim, box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'gift:qty' });
       const arm = needsConfirm(def) && confirmActive('gift:' + s.id);
       const giveN = qty => { const go = () => { if (give(to, s.id, qty)) closePanel(); }; if (needsConfirm(def)) confirmTap('gift:' + s.id, go); else go(); };
-      const key = (b, suffix) => { b.label = (b.disabled ? 'disabled:' : '') + 'give:' + s.id + ':' + suffix; };   // the drawn word stays; the harness finds the button by key
-      if (many) { button(g, px + w - 18 - 82 - 6 - 74, mid - bh / 2, 74, bh, 'Give 1', () => giveN(1), ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], '1'); }
-      button(g, px + w - 18 - 82, mid - bh / 2, 82, bh, arm ? 'Tap again' : many ? 'Give all' : 'Give', () => giveN(s.qty), arm ? '#c0392b' : ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], 'all');
-      y += rowH;
+      // the drawn word stays Give 1 / Give all; the harness finds each button by its key give:<item>:<1|all>
+      const bx2 = x0 + iw - 12 - b2, by = r.twoTier ? y + r.h - bh - 10 : mid - bh / 2;
+      if (r.many) platePush(g, bx2 - 8 - b1, by, b1, bh, 'give:' + s.id + ':1', 'Give 1', () => giveN(1), 'primary', { enabled: ok, name: `Give 1 ${def.name}` });
+      platePush(g, bx2, by, b2, bh, 'give:' + s.id + ':all', arm ? 'Tap again' : r.many ? 'Give all' : 'Give', () => giveN(s.qty), arm ? 'danger' : 'primary', { enabled: ok, name: `Give ${r.many ? 'all ' + s.qty : 'the'} ${def.name}` });
+      y += r.h + gap;
     }
-    if (pages > 1) pager(g, px + 18, py + h - 40, w - 36, giftPage, pages, p => { giftPage = p; });
+    if (pages > 1) rowPager(g, x0, py + h - pagerH, iw, giftPage, pages, p => { giftPage = p; });
   };
 
   // what the world says a knight is: their last presence, else the roster, else a player
@@ -30515,7 +30895,7 @@ window.RETALIATE = RETALIATE;
       const tagged = mudText.some(t => t.text === 'ADMIN') && mudText.some(t => t.text === 'Mud' && t.fill === GOLD);
       const plain = samText.length > 0 && !samText.some(t => t.text === 'ADMIN') && samText.some(t => t.text === 'Sam' && t.fill === '#ffffff');
       const roles = REMOTE.Mud.role === 'admin' && REMOTE.Sam.role === 'player' && PLAYERS.roleOf('Mud') === 'admin' && PLAYERS.roleOf('Sam') === 'player' && PLAYERS.roleOf('Nobody') === 'player';
-      openPanel('friends'); let listed = false; try { HOOKS.panel.friends(g2, false); const drawn = rec.splice(0); listed = drawn.filter(t => t.text === 'ADMIN').length === 1 && drawn.some(t => t.text === 'Mud' && t.fill === GOLD) && drawn.some(t => t.text === 'Sam' && t.fill === '#e6edf3'); } catch (e) { listed = String(e && e.message); } closePanel(); render();
+      openPanel('friends'); let listed = false; try { HOOKS.panel.friends(g2, false); const drawn = rec.splice(0); listed = drawn.filter(t => t.text === 'ADMIN').length === 1 && drawn.some(t => t.text === 'Mud' && t.fill === GOLD) && drawn.some(t => t.text === 'Sam' && t.fill === HK.T.friend); } catch (e) { listed = String(e && e.message); } closePanel(); render();
       check(P + 'roles: an admin (the role on their p) gets the gold ADMIN pill and a gold name over the head and in the Friends list; a player, or anything else a p claims, gets neither', !!mud && !!sam && drew === true && tagged && plain && roles && listed === true, { mud: !!mud, sam: !!sam, drew, tagged, plain, roles, listed, mudText: mudText.map(t => t.text) }); }
     // a worn party hat rides in presence as look.hat (77-dropparty's playerLook wrapper sets the colour word); none is null
     { const _look = playerLook; let worn = null;
@@ -30546,6 +30926,40 @@ window.RETALIATE = RETALIATE;
       }
       window.__forceTouch = t0; setSize(vw0, vh0);
       check(P + 'the FRIENDS seal sits clear of every other button at phone, landscape, tablet and desktop sizes (on touch: 44 px, out of the stick)', hits.length === 0 && sizes.length === 8, { hits, sizes }); }
+    // Friends and Give at all 8 device sizes, touch and mouse, normal and Large text, one page and several: from the close
+    // seal on, controls 44 px on touch (26 with a mouse), 8 px apart (4), on screen, out of the notch and home bands, and
+    // every word inside its row (names, levels and places whole; no '...' anywhere)
+    { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = SETTINGS.get('text'), inv0 = player.inv.map(q => q ? { ...q } : null), problems = []; let tried = 0, paged = 0;
+      const names = ['Ava', 'Maximilian', 'Ben', 'Sam', 'Isabella', 'Theodore', 'Zoe', 'Oliver'];
+      feed({ t: 'who', list: [{ n: 'Cohen', map: 'over', region: 'Thistledown', lv: 5 }].concat(names.map((n, i) => ({ n, map: i % 3 === 2 ? 'spider_den' : 'over', region: i % 2 ? 'The Whispering Woods' : 'Thistledown', lv: 3 + i * 11 }))) });
+      feed({ t: 'p', n: 'Ava', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 7, look: null, mech: null, dead: false, def: 100, act: null }); F.step([]);
+      const bag = ['bronze_pickaxe', 'iron_ore', 'wood', 'bread', 'stone', 'coal', 'iron_sword', 'raw_shrimp', 'spider_silk', 'bronze_axe'].filter(id => ITEMS[id]);
+      try {
+        for (const [w, hh] of HK.audit.SIZES) {
+          if (!panelSetSize(w, hh)) continue; tried++;
+          for (const tch of [true, false]) for (const big of ['normal', 'large']) {
+            window.__forceTouch = tch; SETTINGS.set('text', big);
+            player.inv = new Array(INV_SLOTS).fill(null); bag.forEach((id, i) => { player.inv[i] = { id, qty: i % 2 ? 12 : 1 }; });
+            for (const [pn, arg] of [['friends'], ['gift', 'Ava']]) {
+              closePanel(); openPanel(pn, arg);
+              for (let pg = 0; pg < 8; pg++) {
+                if (pn === 'friends') friendsPage = pg; else giftPage = pg;
+                const where = `${pn} ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big} page ${pg + 1}`;
+                problems.push(...panelFrame(where));
+                if (!buttons.some(b => b.label === 'Next')) break; paged++;
+              }
+            }
+          }
+        }
+      } finally { closePanel(); friendsPage = 0; giftPage = 0; player.inv = inv0; window.__forceTouch = t0; SETTINGS.set('text', text0); restore(); render(); }
+      const src = String(HOOKS.panel.friends) + String(HOOKS.panel.gift), dots = !/\u2026|…/.test(src);
+      check(P + "Friends and Give at all 8 device sizes, touch and mouse, normal and Large text, every page: controls 44 px on touch (26 with a mouse) and 8 px apart (4), on screen, out of the bands; names, levels and places fit their vellum rows whole (no '...')", tried === 8 && problems.length === 0 && paged > 0 && dots, { tried, paged, dots, problems: problems.slice(0, 10), total: problems.length }); }
+    // the world map: each friend on our map is a blue dot inside the map image (the 'mapimage' entry), named beside it
+    { closePanel(); openPanel('map'); render(); const img = buttons.find(b => b.label === 'mapimage');
+      const inside = !!img && MAP_DOTS.length >= 1 && MAP_DOTS.every(d => d.x >= img.x && d.x <= img.x + img.w && d.y >= img.y && d.y <= img.y + img.h);
+      const ava = MAP_DOTS.find(d => d.n === 'Ava'), sc = img ? img.w / MAP_W : 0, right = !!ava && !!img && Math.abs(ava.x - (img.x + REMOTE.Ava.shown.x / TILE * sc)) < 0.5 && Math.abs(ava.y - (img.y + REMOTE.Ava.shown.y / TILE * sc)) < 0.5;
+      closePanel();
+      check(P + "on the world map a friend's dot lands inside the map image the 'mapimage' entry marks, at their place on it", inside && right, { dots: MAP_DOTS.slice(0, 3), img: img && [img.x, img.y, img.w, img.h], right }); }
     // put the world back
     NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
     clearAll(); lastSig = null; pending.length = 0; lastGiftAt = -1e9;
@@ -30572,7 +30986,7 @@ window.RETALIATE = RETALIATE;
   const LOG_MAX = 30;
   const SEND_EVERY = 1.5;       // s: the contract's cap on chat
   const PHRASES = ['Hi!', 'Follow me', 'Help!', 'Look at this', 'Nice!', 'Where are you?', "Let's fight the boss", 'Bye!'];
-  const BLUE = '#7ec8ff';
+  const BLUE = '#6fb1ff';        // a friend's name: the kit's friend blue (src/59-hudkit.js T.friend)
   const GOLD = '#f5c542';       // an admin's name and bubble (docs/ONLINE.md, "Roles"); also CHAT.system's default colour
   const MUTE_RED = '#ff9b8f';   // the lines about being muted
   const REPLY_MS = 5000;        // a 'muted' this soon after a line went out is the world refusing that line
@@ -30588,7 +31002,7 @@ window.RETALIATE = RETALIATE;
   const mapId = () => window.PLAYERS ? PLAYERS.mapId() : 'over';
   const roleOf = m => (m && m.role === 'admin' ? 'admin' : 'player');
   // an admin's name in gold; your own in white; everyone else's blue
-  const nameColour = l => l.role === 'admin' ? GOLD : l.n === me() ? '#e6edf3' : BLUE;
+  const nameColour = l => l.role === 'admin' ? GOLD : l.n === me() ? HK.T.ink : BLUE;
 
   // ---------- muted (docs/ONLINE.md, "Moderation from inside the game") ----------
   const isMuted = () => mutedUntil === Infinity || nowMs() < mutedUntil;
@@ -30608,37 +31022,61 @@ window.RETALIATE = RETALIATE;
   }
 
   // ---------- the box: built once, on the first open; nothing is made where there is no document (headless) ----------
+  // A DOM overlay (so the iPad keyboard works), dressed in the kit's materials in CSS: dark vellum with a gold hairline
+  // 2.5 px inside its edge, a Cinzel label, the quick phrases as small leather tabs with a dashed stitch, a 16 px input
+  // (iOS Safari zooms on anything smaller) and an iron Send plate. Every button and the input are at least 44 px tall.
+  const SANS_CSS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif', CINZEL_CSS = '"Cinzel","Trajan Pro",Georgia,serif';
+  const CSS = `
+#chatbox{position:fixed;left:50%;bottom:max(16px,calc(env(safe-area-inset-bottom) + 8px));transform:translateX(-50%);width:min(560px,calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));box-sizing:border-box;display:none;flex-direction:column;gap:10px;z-index:20;padding:12px 14px 14px;background:linear-gradient(180deg,#31281e,#1d1712);border:1px solid rgba(0,0,0,.9);border-radius:5px;box-shadow:0 8px 30px rgba(0,0,0,.6);font-family:${SANS_CSS};color:#f4ead3}
+#chatbox::before{content:"";position:absolute;inset:2.5px;border:1px solid rgba(217,178,92,.5);border-radius:3px;pointer-events:none}
+#chatbox .fl-chat-head{font:800 12px ${CINZEL_CSS};letter-spacing:.06em;color:#d9b25c;text-shadow:0 1px 0 rgba(0,0,0,.9)}
+#chatbox .fl-chat-tabs{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+#chatbox .fl-chat-tab{min-height:44px;padding:0 14px;font:700 15px ${SANS_CSS};color:#f4ead3;background:linear-gradient(180deg,#6d4a30,#48301e 55%,#24160c);border:1px solid rgba(0,0,0,.9);border-radius:6px;outline:1px dashed rgba(226,186,124,.6);outline-offset:-5px;box-shadow:0 3px 6px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.12);text-shadow:0 1px 0 rgba(0,0,0,.9);cursor:pointer;touch-action:manipulation;-webkit-appearance:none;appearance:none}
+#chatbox .fl-chat-tab:hover{color:#f7dc8f}
+#chatbox .fl-chat-tab:active{transform:translateY(1.5px);box-shadow:0 0 1px rgba(0,0,0,.6);background:linear-gradient(180deg,#48301e,#6d4a30)}
+#chatbox .fl-chat-row{display:flex;gap:8px}
+#chatbox .fl-chat-input{flex:1;min-width:0;min-height:44px;box-sizing:border-box;font-family:${SANS_CSS};font-size:16px;font-weight:600;line-height:20px;padding:10px 12px;color:#f4ead3;background:#14100c;border:1px solid rgba(217,178,92,.45);border-radius:4px;outline:none;-webkit-appearance:none;appearance:none}
+#chatbox .fl-chat-input::placeholder{color:#8c8170}
+#chatbox .fl-chat-input:focus{border-color:#d9b25c;box-shadow:0 0 0 2px rgba(217,178,92,.25)}
+#chatbox .fl-chat-send{min-height:44px;min-width:84px;padding:0 16px;font:700 15px ${SANS_CSS};color:#f4ead3;background:linear-gradient(180deg,#2d3138,#16181c);border:1px solid rgba(0,0,0,.9);border-radius:6px;box-shadow:inset 0 0 0 1.5px rgba(217,178,92,.95),inset 0 2px 0 rgba(255,255,255,.08),0 3px 8px rgba(0,0,0,.6);text-shadow:0 1px 0 rgba(0,0,0,.9);cursor:pointer;touch-action:manipulation;-webkit-appearance:none;appearance:none}
+#chatbox .fl-chat-send:active{transform:translateY(1.5px);background:linear-gradient(180deg,#16181c,#2d3138);box-shadow:inset 0 0 0 1.5px rgba(217,178,92,.6)}`;
   function ensureDom() {
     if (dom !== null) return dom;
-    if (typeof document === 'undefined' || !document.body || typeof document.body.appendChild !== 'function' || typeof document.createElement !== 'function') { dom = false; return dom; }
+    if (typeof document === 'undefined' || !document.body || !document.head || typeof document.body.appendChild !== 'function' || typeof document.createElement !== 'function') { dom = false; return dom; }
     try {
+      const style = document.createElement('style'); style.id = 'fl-chat-css'; style.textContent = CSS; document.head.appendChild(style);
       const box = document.createElement('div');
       box.id = 'chatbox';
-      box.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);width:min(560px,calc(100vw - 32px));display:none;flex-direction:column;gap:8px;z-index:20;font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;';
-      const chips = document.createElement('div');
-      chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;justify-content:center;';
+      const head = document.createElement('div'); head.className = 'fl-chat-head'; head.textContent = 'SAY SOMETHING';
+      const chips = document.createElement('div'); chips.className = 'fl-chat-tabs';
       let chipAt = -1e9;   // when a chip was last pressed: a blur right after one is the chip taking the tap, not the box being left
-      for (const p of PHRASES) {
-        const b = document.createElement('button'); b.type = 'button'; b.textContent = p;
-        b.style.cssText = 'font:600 14px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:rgba(10,14,22,0.92);border:1px solid #30363d;border-radius:16px;padding:7px 12px;cursor:pointer;touch-action:manipulation;';
-        b.addEventListener('pointerdown', ev => { chipAt = nowMs(); ev.preventDefault(); });   // the input keeps the keyboard; the click still comes
+      // a tab or Send keeps the keyboard up: the press is swallowed, the click still comes
+      const keepFocus = b => {
+        b.addEventListener('pointerdown', ev => { chipAt = nowMs(); ev.preventDefault(); });
         b.addEventListener('mousedown', ev => ev.preventDefault());
         b.addEventListener('touchstart', () => { chipAt = nowMs(); }, { passive: true });
+      };
+      for (const p of PHRASES) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'fl-chat-tab'; b.textContent = p;
+        keepFocus(b);
         b.addEventListener('click', ev => { ev.preventDefault(); send(p); });
         chips.appendChild(b);
       }
       const input = document.createElement('input');
-      input.type = 'text'; input.maxLength = MAX; input.autocomplete = 'off'; input.spellcheck = false;
+      input.type = 'text'; input.className = 'fl-chat-input'; input.maxLength = MAX; input.autocomplete = 'off'; input.spellcheck = false;
       input.setAttribute('autocapitalize', 'sentences'); input.setAttribute('enterkeyhint', 'send'); input.setAttribute('aria-label', 'Chat');
       input.placeholder = 'Say something to your friends';
-      input.style.cssText = 'font:16px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:rgba(10,14,22,0.95);border:1px solid #58a6ff;border-radius:10px;padding:10px 12px;outline:none;width:100%;box-sizing:border-box;';
-      box.appendChild(chips); box.appendChild(input); document.body.appendChild(box);
-      dom = { box, chips, input };
+      const sendBtn = document.createElement('button'); sendBtn.type = 'button'; sendBtn.className = 'fl-chat-send'; sendBtn.textContent = 'Send';
+      keepFocus(sendBtn);
+      sendBtn.addEventListener('click', ev => { ev.preventDefault(); send(input.value); });
+      const row = document.createElement('div'); row.className = 'fl-chat-row'; row.appendChild(input); row.appendChild(sendBtn);
+      box.appendChild(head); box.appendChild(chips); box.appendChild(row); document.body.appendChild(box);
+      dom = { box, chips, input, send: sendBtn };
       // focus leaving the box (Done on the iPad keyboard, a click on the world) closes it; a chip's tap does not
       input.addEventListener('blur', () => { setTimeout(() => { if (isOpen && dom && document.activeElement !== dom.input && nowMs() - chipAt > 600) close(); }, 150); });
       // the on-screen keyboard covers the bottom of the layout viewport: keep the box just above it
       const vv = window.visualViewport;
-      if (vv && vv.addEventListener) { const place = () => { const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop); box.style.bottom = (16 + covered) + 'px'; }; vv.addEventListener('resize', place); vv.addEventListener('scroll', place); }
+      if (vv && vv.addEventListener) { const place = () => { const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop); box.style.bottom = covered > 0 ? (16 + covered) + 'px' : ''; }; vv.addEventListener('resize', place); vv.addEventListener('scroll', place); }
       // the guard: while the box has the keyboard, Enter sends, Escape closes, and no key reaches the game (05-input listens on window in the bubble phase; this runs first, in the capture phase, and stops the event there)
       const guard = e => {
         if (!dom || document.activeElement !== dom.input) return;
@@ -30714,24 +31152,34 @@ window.RETALIATE = RETALIATE;
   HOOKS.keyHelp.push({ action: 'Chat', codes: ['KeyY', 'Enter'] }); // 43-settings lists it on the Controls line
 
   // ---------- bubbles over heads (world items, sorted last so they sit over everything) ----------
-  function wrapLines(g, text, maxW) {
-    const words = text.split(' '), lines = []; let line = '';
-    for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test; if (lines.length === 3) break; }
-    if (line && lines.length < 3) lines.push(line);
+  // A small vellum plate with the kit's gold hairline and a pointer tooth, the words in the system sans (12 px, bold), up to
+  // three lines of whole words; a word too long for a line (a run of letters with no space) is broken across lines.
+  function bubbleLines(g, text, maxW, f, maxLines = 3) {
+    const parts = [];
+    for (const w of String(text).split(' ').filter(Boolean)) {
+      if (HK.tw(g, w, f) <= maxW) { parts.push(w); continue; }
+      let cur = ''; for (const ch of w) { if (cur && HK.tw(g, cur + ch, f) > maxW) { parts.push(cur); cur = ch; } else cur += ch; } if (cur) parts.push(cur);
+    }
+    const lines = []; let line = '';
+    for (const p of parts) { const t = line ? line + ' ' + p : p; if (line && HK.tw(g, t, f) > maxW) { lines.push(line); line = p; if (lines.length === maxLines) break; } else line = t; }
+    if (line && lines.length < maxLines) lines.push(line);
     return lines;
   }
   function drawBubble(g, b, x, y) {
-    const a = clamp(b.t * 2, 0, 1);
-    g.save(); g.globalAlpha = a; g.font = 'bold 12px sans-serif'; g.textAlign = 'center';
-    const lines = wrapLines(g, b.text, 180); let w = 0; for (const l of lines) w = Math.max(w, g.measureText(l).width);
-    const bw = Math.ceil(w) + 18, bh = 10 + lines.length * 15, bx = Math.round(x - bw / 2), by = Math.round(y - bh - 8);
-    // an admin's bubble has a gold outline
-    const edge = b.role === 'admin' ? GOLD : BLUE;
-    roundRect(g, bx, by, bw, bh, 8); g.fillStyle = 'rgba(10,14,22,0.92)'; g.fill(); g.strokeStyle = edge; g.lineWidth = 1.2; g.stroke();
-    g.fillStyle = 'rgba(10,14,22,0.92)'; g.beginPath(); g.moveTo(x - 5, by + bh - 1); g.lineTo(x, by + bh + 6); g.lineTo(x + 5, by + bh - 1); g.closePath(); g.fill();
-    g.strokeStyle = edge; g.beginPath(); g.moveTo(x - 5, by + bh); g.lineTo(x, by + bh + 6); g.lineTo(x + 5, by + bh); g.stroke();
-    g.fillStyle = '#e6edf3'; lines.forEach((l, i) => g.fillText(l, x, by + 17 + i * 15));
+    const a = clamp(b.t * 2, 0, 1), f = HK.FS(700, 12), lh = Math.round(15 * HK.k());
+    g.save(); g.globalAlpha *= a;
+    const lines = bubbleLines(g, b.text, 180, f); let w = 0; for (const l of lines) w = Math.max(w, HK.tw(g, l, f));
+    const bw = Math.ceil(w) + 22, bh = 12 + lines.length * lh, bx = Math.round(x - bw / 2), by = Math.round(y - bh - 8);
+    HK.vellumPlate(g, bx, by, bw, bh);
+    // an admin's bubble wears a gold edge over the plate's outline (docs/ONLINE.md, "Roles"); a player's has the plain vellum
+    if (b.role === 'admin') { HK.rr(g, bx - 0.5, by - 0.5, bw + 1, bh + 1, 5); g.strokeStyle = GOLD; g.lineWidth = 1.5; g.stroke(); }
+    // the tooth: vellum, its two outer edges in the plate's near-black outline and the gold hairline inside
+    g.beginPath(); g.moveTo(x - 6, by + bh - 1); g.lineTo(x, by + bh + 7); g.lineTo(x + 6, by + bh - 1); g.closePath(); g.fillStyle = '#1d1712'; g.fill();
+    g.beginPath(); g.moveTo(x - 6, by + bh); g.lineTo(x, by + bh + 7); g.lineTo(x + 6, by + bh); g.strokeStyle = 'rgba(0,0,0,0.9)'; g.lineWidth = 1; g.stroke();
+    g.beginPath(); g.moveTo(x - 3.5, by + bh - 2.5); g.lineTo(x, by + bh + 3); g.lineTo(x + 3.5, by + bh - 2.5); g.strokeStyle = 'rgba(217,178,92,0.5)'; g.stroke();
+    lines.forEach((l, i) => HK.text(g, l, x, by + 6 + (i + 1) * lh - 3, { font: f, align: 'center', color: HK.T.ink, shadow: 'rgba(0,0,0,0.9)' }));
     g.restore();
+    return { x: bx, y: by, w: bw, h: bh, lines };
   }
   HOOKS.draw.push((g, items) => {
     const my = mapId(), meN = me();
@@ -30768,7 +31216,7 @@ window.RETALIATE = RETALIATE;
       let t = l.text; if (HK.tw(g, t, tf) > maxT) { const w = HK.wrap(g, t, maxT, 1, tf); t = w.lines[0] || ''; if (w.more) t += '…'; }
       const w = Math.min(lane.w, 20 + nw + 6 + HK.tw(g, t, tf));
       HK.rr(g, lane.x, y, w, LINE_H - 2, 4); g.fillStyle = 'rgba(20,15,13,0.78)'; g.fill(); g.strokeStyle = 'rgba(217,178,92,0.35)'; g.lineWidth = 1; g.stroke();
-      if (!sys) HK.text(g, name, lane.x + 8, y + 14, { font: nf, color: l.n === me() ? HK.T.ink : nameColour(l) });
+      if (!sys) HK.text(g, name, lane.x + 8, y + 14, { font: nf, color: nameColour(l) });
       HK.text(g, t, lane.x + 8 + nw + 6, y + 14, { font: tf, color: sys ? (l.color || HK.T.ink) : HK.T.ink });
       g.restore();
     });
@@ -30779,30 +31227,45 @@ window.RETALIATE = RETALIATE;
   hudControl({ id: 'chat', sort: 45, label: () => 'CHAT', emblem: 'chat', key: 'Y', asleep: () => !NET.enabled, on: () => isOpen, action: () => { if (!NET.enabled) { notify('Chat is for the online game.'); return; } if (isOpen) close(); else open(); } });
 
   // ---------- the log panel ----------
+  // The newest lines that fit, in one vellum plate with a gold hairline between lines: the name in friend blue (yours in
+  // ink), the words in the system sans, wrapped whole (never cut). Say something and Friends are plates one kit row tall.
   HOOKS.panel.chatlog = (g, narrow) => {
-    const lh = 22, per = Math.max(3, Math.min(LOG_MAX, Math.floor((VH - 20 - 128 - HK.row()) / lh)));
-    const lines = log.slice(-per);
-    const w = narrow ? Math.min(VW - 20, 400) : 520, h = Math.min(VH - 20, 118 + HK.row() + Math.max(1, lines.length) * lh);
-    const { px, py } = panelBox(g, w, h, 'Chat', lines.length ? 'The last things your friends said, newest at the bottom.' : 'Nothing said yet.');
-    let y = py + 76;
-    g.font = '12px sans-serif';
-    for (const l of lines) {
-      g.textAlign = 'left';
-      // a system line runs the whole width in its own colour; a knight's line has the name first (gold for an admin)
-      if (l.n === null) { g.font = 'bold 12px sans-serif'; g.fillStyle = l.color; let t = l.text; const maxW = w - 36; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…'; g.fillText(t, px + 18, y + 8); y += lh; continue; }
-      g.font = 'bold 12px sans-serif'; g.fillStyle = nameColour(l); g.fillText(l.n, px + 18, y + 8);
-      const nw = Math.max(g.measureText(l.n).width, narrow ? 60 : 90);
-      g.font = '12px sans-serif'; g.fillStyle = '#c9d1d9'; let t = l.text; const maxW = w - 36 - nw - 10; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…'; g.fillText(t, px + 18 + nw + 10, y + 8);
-      y += lh;
+    const room = panelRoom(narrow ? 400 : 520, VH), w = room.w, iw = w - 36, bh = HK.row();
+    const nf = HK.FC(800, 12), tf = HK.FS(600, 13), lh = Math.round(17 * HK.k() * 10) / 10;
+    const nameCol = Math.min(narrow ? 84 : 110, Math.max(60, iw * 0.28)), textW = iw - 24 - nameCol - 10;
+    const top = 62, foot = bh + 26, pad = 8;
+    const avail = room.h - top - foot - 2 * pad;
+    // newest first, as many as fit; a name wider than its column takes a line of its own
+    const rows = []; let used = 0;
+    for (let i = log.length - 1; i >= 0; i--) {
+      // a system line (an admin's word, a party hat found) has no name: its words run the whole width, in its own colour
+      const l = log[i], sys = l.n === null, own = !sys && HK.tw(g, l.n, nf) > nameCol, lines = bubbleLines(g, l.text, own || sys ? iw - 24 : textW, tf, 4);
+      const h = (own ? lh : 0) + lines.length * lh + 8;
+      if (used + h > avail && rows.length) break;
+      rows.unshift({ l, own, lines, h }); used += h;
     }
-    // one kit row tall (HK.row(): 44 px on touch), like every control
-    const bh = HK.row(), by = py + h - bh - 14;
-    button(g, px + 18, by, 140, bh, touchMode() ? 'Say something' : 'Say something (Enter)', () => { closePanel(); open(); });
-    if (window.PLAYERS) button(g, px + 18 + 148, by, 90, bh, 'Friends', () => openPanel('friends'), '#21262d');
+    const listH = Math.max(rows.length ? 40 : 2 * lh + 8, used) + 2 * pad, h = Math.min(room.h, top + listH + foot);
+    const { px, py } = panelBox(g, w, h, 'Chat', log.length ? 'The last things your friends said, newest at the bottom.' : 'Nothing said yet.');
+    const x0 = px + 18, T = HK.T;
+    HK.vellumPlate(g, x0, py + top, iw, listH);
+    if (!rows.length) HK.wrap(g, 'When a friend says something, it shows up here.', iw - 24, 2, tf).lines.forEach((l, i) => HK.text(g, l, x0 + 12, py + top + pad + 16 + i * lh, { font: tf, color: T.inkDim, box: { x: x0 + 12, y: py + top, w: iw - 24, h: listH }, fitId: 'chatlog:none' }));
+    let y = py + top + pad;
+    rows.forEach((r, k) => {
+      const sys = r.l.n === null, tx = r.own || sys ? x0 + 12 : x0 + 12 + nameCol + 10;
+      // a name wears its role's colour (an admin's is gold, yours is ink, a friend's is friend blue)
+      if (!sys) HK.text(g, r.l.n, x0 + 12, y + lh - 3, { font: nf, color: nameColour(r.l), shadow: 'rgba(0,0,0,0.9)', box: r.own ? { x: x0 + 12, y, w: iw - 24, h: r.h } : { x: x0 + 12, y, w: nameCol, h: r.h }, fitId: 'chatlog:name' });
+      r.lines.forEach((l, i) => HK.text(g, l, tx, y + (r.own ? lh : 0) + (i + 1) * lh - 3, { font: sys ? HK.FS(700, 13) : tf, color: sys ? (r.l.color || T.ink) : T.ink, box: { x: tx, y, w: r.own || sys ? iw - 24 : textW, h: r.h }, fitId: 'chatlog:text' }));
+      if (k < rows.length - 1) { g.fillStyle = 'rgba(217,178,92,0.22)'; g.fillRect(x0 + 10, y + r.h - 1, iw - 20, 1); }
+      y += r.h;
+    });
+    const by = py + h - bh - 14, sayL = touchMode() ? 'Say something' : 'Say something (Enter)';
+    const fw = window.PLAYERS ? Math.min(140, Math.round(iw * 0.4)) : 0, sw = Math.min(iw - (fw ? fw + 10 : 0), touchMode() ? 190 : 200);
+    platePush(g, x0, by, sw, bh, sayL, sayL, () => { closePanel(); open(); }, 'primary', { emblem: 'talk', name: 'Say something to your friends', keys: touchMode() ? [] : ['Enter'] });
+    if (window.PLAYERS) platePush(g, x0 + sw + 10, by, fw, bh, 'Friends', 'Friends', () => openPanel('friends'), null, { emblem: 'friends', name: 'Friends online', keys: touchMode() ? [] : ['F'] });
   };
 
   window.CHAT = {
-    open, close, send, system, isOpen: () => isOpen, bubbles, log, PHRASES, MAX, stripLines,
+    open, close, send, system, isOpen: () => isOpen, bubbles, log, PHRASES, MAX, stripLines, CSS, drawBubble, bubbleLines,
     // seconds of mute left: 0 when the chat is on, -1 until an admin turns it back on
     muted: () => mutedUntil === Infinity ? -1 : isMuted() ? Math.ceil((mutedUntil - nowMs()) / 1000) : 0,
   };
@@ -30863,8 +31326,10 @@ window.RETALIATE = RETALIATE;
       openPanel('chatlog'); HOOKS.panel.chatlog(g2, false); const inLog = rec.splice(0); closePanel();
       const goldLog = inLog.some(t => t.text === 'Mud' && t.fill === GOLD) && inLog.some(t => t.text === 'Ava' && t.fill === BLUE);
       strokes.length = 0; drawBubble(g2, bubbles.Mud, 100, 100); const mudEdge = strokes.slice(); strokes.length = 0; drawBubble(g2, bubbles.Ava, 100, 100); const avaEdge = strokes.slice();
-      const goldBubble = mudEdge.length > 0 && mudEdge.every(c => c === GOLD) && avaEdge.length > 0 && avaEdge.every(c => c === BLUE);
-      check(P + "roles: an admin's chat name is gold on the strip and in the log and their bubble outline is gold; a line whose role is not 'admin' reads as a player's", roles && goldStrip && goldLog && goldBubble, { roles, goldStrip, goldLog, goldBubble, strip: strip.map(t => t.text + '=' + t.fill) }); rec.length = 0; }
+      // the bubbles are the kit's vellum (outline + gold hairline): an admin's has a gold edge on top, a player's has none, and neither is blue
+      const blueIn = e => e.some(c => /#7ec8ff|#6fb1ff/i.test(String(c)));
+      const goldBubble = mudEdge.length > 0 && mudEdge.includes(GOLD) && avaEdge.length > 0 && !avaEdge.includes(GOLD) && !blueIn(mudEdge) && !blueIn(avaEdge);
+      check(P + "roles: an admin's chat name is gold on the strip and in the log and their bubble has a gold edge; a line whose role is not 'admin' reads as a player's", roles && goldStrip && goldLog && goldBubble, { roles, goldStrip, goldLog, goldBubble, strip: strip.map(t => t.text + '=' + t.fill) }); rec.length = 0; }
     // muted: said once, nothing goes out while muted (the quick phrases neither), the time left in plain words, unmuted, a refusal, a new session
     { close(); closePanel(); log.length = 0; for (const n in bubbles) delete bubbles[n]; lastSentAt = -1e9; lastLineAt = -1e9; mutedUntil = 0; notice = null;
       const chats = () => sock.sent.filter(m => m.t === 'chat').length, c0 = chats();
@@ -30891,6 +31356,50 @@ window.RETALIATE = RETALIATE;
       drawStrip(g2); const drawn = rec.splice(0);
       const onStrip = drawn.some(t => t.text === 'Sam found a purple party hat!' && t.fill === GOLD) && !drawn.some(t => /:$/.test(t.text));
       check(P + 'CHAT.system writes a line with no name in its colour (gold by default) on the strip and in the log, with no bubble', ok && ok2 && empty === false && log.length === 2 && a.n === null && a.text === 'Sam found a purple party hat!' && a.color === GOLD && a.t > 0 && b.color === '#8b949e' && Object.keys(bubbles).length === 0 && onStrip, { ok, ok2, empty, a, b, onStrip, drawn: drawn.map(t => t.text + '=' + t.fill) }); }
+    // the Chat log at all 8 device sizes, touch and mouse, normal and Large text, empty and full of long lines: from the close
+    // seal on, controls 44 px on touch (26 with a mouse), 8 px apart (4), on screen, out of the bands; every word in its plate
+    { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = SETTINGS.get('text'), problems = []; let tried = 0;
+      const lines = [['Ava', 'Come and help me fight the boss'], ['Maximilian', 'It is by the old mill near the big oak tree past the river, hurry up everyone, it has lots of hit points'], ['Cohen', 'On my way'], ['Isabella', 'Supercalifragilisticexpialidocious and more words'], ['Ben', 'Nice!']];
+      try {
+        for (const [w, hh] of HK.audit.SIZES) {
+          if (!panelSetSize(w, hh)) continue; tried++;
+          for (const tch of [true, false]) for (const big of ['normal', 'large']) for (const full of [false, true]) {
+            window.__forceTouch = tch; SETTINGS.set('text', big); log.length = 0;
+            if (full) for (let i = 0; i < 30; i++) { const [n, text] = lines[i % lines.length]; log.push({ n, text, at: i, t: 0 }); }
+            closePanel(); openPanel('chatlog');
+            const where = `chatlog ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big} ${full ? 'full' : 'empty'}`;
+            problems.push(...panelFrame(where));
+            if (!buttons.some(b => /^Say something/.test(b.label)) || !buttons.some(b => b.label === 'Friends')) problems.push(`${where}: Say something or Friends is missing`);
+          }
+        }
+      } finally { closePanel(); log.length = 0; window.__forceTouch = t0; SETTINGS.set('text', text0); restore(); render(); }
+      const src = String(HOOKS.panel.chatlog), dots = !/\u2026|…/.test(src);
+      check(P + "the Chat log at all 8 device sizes, touch and mouse, normal and Large text, empty and full: Say something and Friends 44 px on touch (26 with a mouse) and 8 px apart (4), on screen, out of the bands; names and words whole inside the vellum (no '...')", tried === 8 && problems.length === 0 && dots, { tried, dots, problems: problems.slice(0, 10), total: problems.length }); }
+    // a bubble: vellum (#31281e to #1d1712) with the gold hairline, no blue outline, the system sans, at most three lines,
+    // the pointer tooth under it; a run of letters longer than a line is broken, never cut or dotted
+    { const sets = [], stops = [], texts = [];
+      const rec = new Proxy({}, {
+        get: (tg, k) => k === 'measureText' ? (str => ({ width: String(str).length * 6.5 })) : (k === 'fillText' || k === 'strokeText') ? (str => { if (k === 'fillText') texts.push(String(str)); })
+          : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: (o, c) => stops.push(String(c)) })) : k === 'createPattern' ? (() => null) : typeof k === 'string' ? (() => { }) : undefined,
+        set: (tg, k, v) => { sets.push([k, String(v)]); return true; },
+      });
+      HK.setCacheOff(true);
+      let r1, r2;
+      try { r1 = drawBubble(rec, { text: 'word '.repeat(80).trim(), t: 3 }, 200, 200); const n1 = texts.length; r2 = drawBubble(rec, { text: 'x'.repeat(60), t: 3 }, 200, 200); r2.n = texts.length - n1; } finally { HK.setCacheOff(false); }
+      const vellum = stops.includes('#31281e') && stops.includes('#1d1712'), hair = sets.some(([k, v]) => k === 'strokeStyle' && /217,\s*178,\s*92/.test(v));
+      const blue = sets.some(([k, v]) => k === 'strokeStyle' && /#7ec8ff|#6fb1ff|126,\s*200,\s*255/i.test(v)), sans = sets.some(([k, v]) => k === 'font' && /-apple-system/.test(v) && /12/.test(v));
+      const three = r1.lines.length === 3 && r2.n >= 1 && r2.lines.join('') === 'x'.repeat(60).slice(0, r2.lines.join('').length) && r2.lines.every(l => l.length * 6.5 <= 180) && !texts.some(t => /…/.test(t));
+      check(P + 'a chat bubble is a vellum plate with the gold hairline (no blue outline), in the system sans, three lines at most, with its pointer tooth; an over-long word breaks across lines instead of being cut', vellum && hair && !blue && sans && three, { vellum, hair, blue, sans, lines1: r1.lines.length, lines2: r2.lines }); }
+    // the chat box (HTML): its phrases, Send and the input are at least 44 px tall and the input is 16 px (so iOS does not zoom);
+    // read from its stylesheet (headless has no DOM), and measured live where there is a document
+    { const rule = sel => { const m = CSS.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}')); return m ? m[1] : ''; };
+      const px = (r, prop) => { const m = new RegExp('(?:^|;)' + prop + ':(\\d+(?:\\.\\d+)?)px').exec(r); return m ? +m[1] : 0; };
+      const tab = rule('#chatbox .fl-chat-tab'), inp = rule('#chatbox .fl-chat-input'), snd = rule('#chatbox .fl-chat-send'), box = rule('#chatbox');
+      const css = px(tab, 'min-height') >= 44 && px(inp, 'min-height') >= 44 && px(inp, 'font-size') >= 16 && px(snd, 'min-height') >= 44 && /#31281e/.test(box) && /217,178,92,\.5/.test(rule('#chatbox::before')) && /dashed rgba\(226,186,124,\.6\)/.test(tab) && /#6d4a30/.test(tab);
+      let live = 'no DOM';
+      const d = ensureDom();
+      if (d) { const was0 = d.box.style.display; d.box.style.display = 'flex'; try { const hs = [...d.box.querySelectorAll('button,input')].map(e => e.getBoundingClientRect().height); live = hs.length === PHRASES.length + 2 && hs.every(v => v >= 44) && parseFloat(getComputedStyle(d.input).fontSize) >= 16; } finally { d.box.style.display = was0; } }
+      check(P + 'the chat box: vellum with a gold hairline, leather phrase tabs with a dashed stitch; every phrase, Send and the input at least 44 px tall and the input 16 px', css && live !== false, { css, live, tab: tab.slice(0, 50), inp: inp.slice(0, 50) }); }
     // put the world back
     close(); log.length = 0; for (const n in bubbles) delete bubbles[n]; lastSentAt = -1e9; prevDialog = false; mutedUntil = 0; lastLineAt = -1e9;
     NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
