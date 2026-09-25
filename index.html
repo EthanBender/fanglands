@@ -25367,7 +25367,8 @@ window.SETTINGS = SETTINGS;
   const tileId = name => (name in T ? T[name] : undefined);
   const eachTile = (t, fn) => { if (t === undefined) return 0; let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === t) { fn(x, y); n++; } return n; };
   const anyTile = t => { if (t === undefined) return false; for (let i = 0; i < map.length; i++) if (map[i] === t) return true; return false; };
-  const NIGHT_CRYPT = { x: 13, y: 70 };   // 35-night: the crypt door east of the last knight's grave (12,70, 02-world)
+  // 35-night: the crypt door east of the last knight's grave (12,70, laid by 02-world)
+  const NIGHT_CRYPT = { x: 13, y: 70 };
   const PART_IDS = ['boiler', 'gear_wheel', 'bomb_chute', 'lightning_coil'];
   const REBUILD_STOCK = [['plank', 200], ['stone', 100], ['iron_bar', 50], ['mithril_bar', 10]];
   const rebuilt = () => !!(QUEST_DEFS.rebuild && quest.stage >= 10 && !activeQuests().includes('rebuild'));
@@ -25488,6 +25489,13 @@ window.SETTINGS = SETTINGS;
       apply() { seeAllMarkers(); S.followUp = 3; },
       ok: () => MARKERS.known().length === MARKERS.all().length },
   ];
+  // a building the unlock put up (a house, the guild hall) never closes round the knight: he steps to the nearest free spot
+  function unstick() {
+    const who = typeof playerWho === 'function' ? playerWho() : 'player';
+    if (!collides(player.x, player.y, player.r, who)) return false;
+    const s = safeSpot(player.x, player.y, player.r, who); if (!s) return false;
+    player.x = s.x; player.y = s.y; return true;
+  }
   const present = u => { try { return !u.present || !!u.present(); } catch (e) { return false; } };
   const holds = u => { try { return !present(u) || !!u.ok(); } catch (e) { return false; } };
   // sets every entry; refuses inside an instance (a tile edit there would land on the instance, not the world)
@@ -25499,7 +25507,7 @@ window.SETTINGS = SETTINGS;
       if (!present(u)) { missing.push(u.key); continue; }
       try { u.apply(); done.push(u.key); } catch (e) { failed.push(u.key + ': ' + (e && e.message)); console.error('admin unlock ' + u.key, e); }
     }
-    player.hp = player.maxHp;
+    player.hp = player.maxHp; unstick();
     return { done, missing, failed, holding: UNLOCKS.filter(holds).map(u => u.key) };
   }
 
@@ -25563,7 +25571,7 @@ window.SETTINGS = SETTINGS;
       input.addEventListener('input', () => typed(input.value));
       input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); try { input.blur(); } catch (err) { } } });
       document.body.appendChild(input);
-      dom = { input, shown: false, key: '' };
+      dom = { input, shown: false, key: '', sig: '' };
     } catch (e) { dom = false; }
     return dom;
   }
@@ -25571,25 +25579,27 @@ window.SETTINGS = SETTINGS;
     if (S.inputMode === 'qty') { const digits = String(v).replace(/\D/g, '').slice(0, 7); S.qtyText = digits; S.qty = clamp(parseInt(digits || '0', 10) || 1, 1, QTY_MAX); if (dom && dom.input.value !== digits) dom.input.value = digits; }
     else { S.search = String(v).slice(0, 30); S.page.give = 0; S.page.monsters = 0; }
   }
-  function hideInput() { if (!dom || !dom.shown) return; dom.shown = false; dom.key = ''; try { dom.input.blur(); } catch (e) { } dom.input.style.display = 'none'; }
+  function hideInput() { if (!dom || !dom.shown) return; dom.shown = false; dom.key = ''; dom.sig = ''; try { dom.input.blur(); } catch (e) { } dom.input.style.display = 'none'; }
   function showInput(w) {
     const d = ensureInput(); if (!d) return;
-    const k = [w.x, w.y, w.w, w.h, w.mode].join(',');
-    if (d.key !== k) {
-      d.key = k; const s = d.input.style;
-      s.left = Math.round(w.x) + 'px'; s.top = Math.round(w.y) + 'px'; s.width = Math.round(w.w) + 'px'; s.height = Math.round(w.h) + 'px';
-      d.input.inputMode = w.mode === 'qty' ? 'numeric' : 'text';
-      d.input.placeholder = w.placeholder || '';
-      d.input.value = w.mode === 'qty' ? S.qtyText : S.search;
-    }
+    // while it has the keyboard, the box never hides under the iPad's on-screen keyboard: it rides just above it
+    let top = w.y;
+    const vv = window.visualViewport;
+    if (vv && typeof vv.height === 'number' && document.activeElement === d.input) { const bottom = (vv.offsetTop || 0) + vv.height - 8; if (top + w.h > bottom) top = Math.max(8, bottom - w.h); }
+    const k = [w.x, top, w.w, w.h].join(','), sig = w.mode + '|' + (w.placeholder || '');
+    if (d.key !== k) { d.key = k; const s = d.input.style; s.left = Math.round(w.x) + 'px'; s.top = Math.round(top) + 'px'; s.width = Math.round(w.w) + 'px'; s.height = Math.round(w.h) + 'px'; }
+    // a different box (the item search, the monster search, the amount): its own keyboard, words and text
+    if (d.sig !== sig) { d.sig = sig; d.input.inputMode = w.mode === 'qty' ? 'numeric' : 'text'; d.input.placeholder = w.placeholder || ''; d.input.value = w.mode === 'qty' ? S.qtyText : S.search; }
     if (!d.shown) { d.shown = true; d.input.style.display = 'block'; }
   }
   function focusInput(mode) {
     if (S.inputMode !== mode) { S.inputMode = mode; if (mode === 'qty') S.qtyText = String(S.qty); }
     const d = ensureInput(); if (!d) return;
-    d.key = ''; d.input.value = mode === 'qty' ? S.qtyText : S.search;
+    d.sig = ''; d.input.value = mode === 'qty' ? S.qtyText : S.search;
     try { d.input.focus(); } catch (e) { }
   }
+  // each list starts with an empty search: the item picker and the monster list do not share what was typed
+  function freshSearch() { S.inputMode = 'search'; S.search = ''; S.page.give = 0; S.page.monsters = 0; if (dom) { dom.sig = ''; } }
   function setSearch(text) { S.inputMode = 'search'; S.search = String(text || '').slice(0, 30); S.page.give = 0; S.page.monsters = 0; if (dom) dom.input.value = S.search; }
   function setQty(n) { S.qty = clamp(Math.floor(+n || 1), 1, QTY_MAX); S.qtyText = String(S.qty); if (dom && S.inputMode === 'qty') dom.input.value = S.qtyText; }
 
@@ -25654,7 +25664,7 @@ window.SETTINGS = SETTINGS;
   function open(tab) {
     if (!isAdmin()) return false;
     if (tab && TABS.some(t => t[0] === tab)) S.tab = tab;
-    S.view = null; S.inputMode = 'search';
+    S.view = null; freshSearch();
     openPanel('admin'); onTab(S.tab);
     return true;
   }
@@ -25665,7 +25675,7 @@ window.SETTINGS = SETTINGS;
     if (touchy) { buttons.pop(); button(g, px + w - 56, py + 10, 44, 44, '×', closePanel, '#21262d'); }
     g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; const subW = w - 36 - 60; g.fillText(fit(g, g.measureText(SUBTITLE[S.tab]).width <= subW ? SUBTITLE[S.tab] : SUBTITLE_SHORT[S.tab], subW), px + 18, py + 50);
     const tabW = (w - 36 - 3 * 6) / 4;
-    TABS.forEach(([id, name], i) => btn(g, px + 18 + i * (tabW + 6), py + 60, tabW, T, name, () => { if (S.tab !== id) { S.tab = id; S.view = null; S.inputMode = 'search'; onTab(id); } }, S.tab === id ? '#7a5a12' : '#21262d', true, 'admin:tab:' + id));
+    TABS.forEach(([id, name], i) => btn(g, px + 18 + i * (tabW + 6), py + 60, tabW, T, name, () => { if (S.tab !== id) { S.tab = id; S.view = null; freshSearch(); onTab(id); } }, S.tab === id ? '#7a5a12' : '#21262d', true, 'admin:tab:' + id));
     const x = px + 18, y = py + 60 + T + 10, cw = w - 36, ch = py + h - 12 - y;
     if (S.tab === 'knights') { if (S.view && S.view.kind === 'mute') drawMuteChooser(g, x, y, cw, ch, T); else drawKnights(g, x, y, cw, ch, T); }
     else if (S.tab === 'powers') { if (S.view && S.view.kind === 'give') drawGive(g, x, y, cw, ch, T); else drawPowers(g, x, y, cw, ch, T); }
@@ -25754,7 +25764,7 @@ window.SETTINGS = SETTINGS;
       { key: 'admin:god', text: "Can't be hurt: " + (S.god ? 'On' : 'Off'), color: S.god ? '#238636' : '#21262d', enabled: true,
         action: () => setGod(!S.god), line: 'Just for now. It turns off when you log out.' },
       { key: 'admin:teleport', text: 'Teleport', color: '#21262d', enabled: !inInstance(), action: startTeleport, line: inInstance() ? 'Teleport works on the overworld.' : 'Tap a place on the world map to go there.' },
-      { key: 'admin:give', text: 'Give me an item', color: '#21262d', enabled: true, action: () => { S.view = { kind: 'give' }; S.inputMode = 'search'; }, line: 'Anything in the game, as many as you like.' },
+      { key: 'admin:give', text: 'Give me an item', color: '#21262d', enabled: true, action: () => { S.view = { kind: 'give' }; freshSearch(); }, line: 'Anything in the game, as many as you like.' },
     ];
     const withLines = T + 26, bare = T + 8;
     let cols = 1, rowH = withLines;
@@ -25776,7 +25786,7 @@ window.SETTINGS = SETTINGS;
     const cols = Math.max(1, Math.floor((w + 6) / (wide ? 186 : 160))), cellW = (w - (cols - 1) * 6) / cols, rows = Math.max(1, Math.floor((listH + 4) / (T + 4))), per = cols * rows;
     const pages = Math.max(1, Math.ceil(list.length / per)); S.page.give = clamp(S.page.give, 0, pages - 1);
     row(g, x, y, w, T, [
-      { text: 'Back', w: 70, action: () => { S.view = null; S.inputMode = 'search'; }, color: '#21262d', key: 'admin:back' },
+      { text: 'Back', w: 70, action: () => { S.view = null; freshSearch(); }, color: '#21262d', key: 'admin:back' },
       { w: 'fill', draw: (bx, bw, ry) => textBox(g, bx, ry, bw, T, 'search', 'Search for an item') },
       { text: 'Prev', w: 64, action: () => { S.page.give = Math.max(0, S.page.give - 1); }, color: '#21262d', enabled: S.page.give > 0, key: 'admin:give:prev' },
       { text: 'Next', w: 64, action: () => { S.page.give = Math.min(pages - 1, S.page.give + 1); }, color: '#21262d', enabled: S.page.give < pages - 1, key: 'admin:give:next' },
@@ -25902,7 +25912,7 @@ window.SETTINGS = SETTINGS;
     }
     if (S.teleport && panel !== 'map') S.teleport = false;
     spawnUpkeep();
-    if (S.followUp > 0 && --S.followUp === 0) { seeAllMarkers(); save(); }
+    if (S.followUp > 0 && --S.followUp === 0) { seeAllMarkers(); unstick(); save(); }
   });
 
   const ADMIN = {
@@ -26073,7 +26083,9 @@ window.SETTINGS = SETTINGS;
 
       // ---- Unlock everything with a pin that answers: every entry of the table holds, and only presence went out ----
       let pinnedRaw = null;
-      { refill(); closePanel(); dialog.cur = null; dialog.queue.length = 0; render(); save(); const before = slot();
+      { refill(); closePanel(); dialog.cur = null; dialog.queue.length = 0;
+        // stand where 31-rebuild puts the first house's west wall: whatever the unlock builds, the knight is never left inside it
+        F.tp(126, 70); render(); save(); const before = slot();
         open('powers'); render(); sent.length = 0;
         F.clickButton('admin:unlock'); F.clickButton('admin:unlock');
         pinnedRaw = world.pinned;
@@ -26082,8 +26094,8 @@ window.SETTINGS = SETTINGS;
         const held = UNLOCKS.map(u => [u.key, present(u) ? holds(u) : 'absent']);
         const failing = held.filter(([, v]) => v === false).map(([k]) => k);
         const founded = !QUEST_DEFS.guild || (!!quest.guild && !!quest.guild.founded);
-        const onlyPresence = sent.every(m => m.t === 'p');
-        check(P + `Unlock everything with a pin that answers: the pinned backup is the knight from before, and every entry of the table holds afterwards (${UNLOCKS.length}), the guild founded, and nothing but presence went out on the socket`, pinnedRaw === before && told && failing.length === 0 && founded && onlyPresence, { pinnedBefore: pinnedRaw === before, told, failing, founded, onlyPresence, out: sent.map(m => m.t), pinAt: S.pinAt });
+        const onlyPresence = sent.every(m => m.t === 'p'), free = !collides(player.x, player.y, player.r, 'player');
+        check(P + `Unlock everything with a pin that answers: the pinned backup is the knight from before, and every entry of the table holds afterwards (${UNLOCKS.length}), the guild founded, the knight on free ground, and nothing but presence went out on the socket`, pinnedRaw === before && told && failing.length === 0 && founded && free && onlyPresence, { pinnedBefore: pinnedRaw === before, told, failing, founded, free, onlyPresence, out: sent.map(m => m.t), pinAt: S.pinAt });
         dialog.cur = null; dialog.queue.length = 0; }
 
       // ---- Put my knight back: the cloud's pending push is dropped first, then the world's pin comes back as the knight ----
