@@ -139,7 +139,8 @@
     const reply = nowMs() - lastLineAt < REPLY_MS; lastLineAt = -1e9;
     mutedUntil = m.left === -1 ? Infinity : nowMs() + m.left * 1000;
     const text = reply ? cantChatSentence() : mutedSentence(m.left);
-    if (!reply) system(text, MUTE_RED);
+    // the strip is one short line an entry: the news goes in as its two sentences, the notice carries it whole
+    if (!reply) { const cut = text.indexOf('. '); for (const part of cut > 0 ? [text.slice(0, cut + 1), text.slice(cut + 2)] : [text]) system(part, MUTE_RED); }
     notify(text);
   });
   NET.on('unmuted', () => { mutedUntil = 0; system('An admin turned your chat back on.', MUTE_RED); notify('An admin turned your chat back on.'); });
@@ -314,9 +315,9 @@
     { close(); closePanel(); log.length = 0; for (const n in bubbles) delete bubbles[n]; lastSentAt = -1e9; lastLineAt = -1e9; mutedUntil = 0; notice = null;
       const chats = () => sock.sent.filter(m => m.t === 'chat').length, c0 = chats();
       feed({ t: 'muted', left: 300 });
-      const told = !!notice && notice.text === 'An admin muted you for 5 minutes. You can still play; your chat is off until then.' && log.length === 1 && log[0].n === null && log[0].text === notice.text && CHAT.muted() === 300;
+      const told = !!notice && notice.text === 'An admin muted you for 5 minutes. You can still play; your chat is off until then.' && log.length === 2 && log.every(l => l.n === null) && log.map(l => l.text).join(' ') === notice.text && CHAT.muted() === 300;
       const r1 = send('hello'), said1 = notice && notice.text, r2 = send(PHRASES[0]);
-      const nothing = r1 === false && r2 === false && chats() === c0 && said1 === "You can't chat for 5 more minutes." && log.length === 1;
+      const nothing = r1 === false && r2 === false && chats() === c0 && said1 === "You can't chat for 5 more minutes." && log.length === 2;
       const words = [];
       for (const secs of [1, 45, 60, 61, 3599, 3600, 3601, 86400, 90000]) { mutedUntil = nowMs() + secs * 1000 - 50; words.push(cantChatSentence()); }
       const plain = words.join('|') === ["You can't chat for 1 more second.", "You can't chat for 45 more seconds.", "You can't chat for 1 more minute.", "You can't chat for 2 more minutes.", "You can't chat for 60 more minutes.", "You can't chat for 1 more hour.", "You can't chat for 2 more hours.", "You can't chat for 1 more day.", "You can't chat for 2 more days."].join('|');

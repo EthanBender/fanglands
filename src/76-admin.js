@@ -707,9 +707,9 @@
   function drawPowers(g, x, y, w, h, T) {
     const armU = confirmActive('admin:unlock'), armR = confirmActive('admin:putback'), hasPin = typeof S.pinAt === 'number';
     const entries = [
-      { key: 'admin:unlock', text: S.busy === 'pin' ? 'Saving a backup…' : armU ? 'Tap again to unlock' : 'Unlock everything', color: armU ? '#c0392b' : '#7a5a12', enabled: !S.busy,
+      { key: 'admin:unlock', text: S.busy === 'pin' ? 'Saving a backup…' : armU ? 'Tap again to unlock' : 'Unlock everything', color: armU ? '#c0392b' : '#7a5a12', enabled: !S.busy && !inInstance(),
         action: () => { if (confirmTap('admin:unlock', unlockWithBackup)) return; notify('This saves a backup of your knight first. Tap again to unlock everything.'); },
-        line: armU ? 'This saves a backup of your knight first. Tap again to unlock everything.' : 'Every skill 99, every quest done, every gate open.' },
+        line: inInstance() ? 'Unlock everything works on the overworld.' : armU ? 'This saves a backup of your knight first. Tap again to unlock everything.' : 'Every skill 99, every quest done, every gate open.' },
       { key: 'admin:putback', text: S.busy === 'restore' ? 'Bringing it back…' : armR ? 'Tap again to put it back' : 'Put my knight back', color: armR ? '#c0392b' : '#1f4e78', enabled: hasPin && !S.busy,
         action: () => { if (confirmTap('admin:putback', putBack)) return; notify('Your knight goes back to the backup. Tap again to do it.'); },
         line: hasPin ? `Back to the backup from ${clock(S.pinAt)}.` : S.pinAt === null ? 'No backup yet. Unlock everything makes one.' : 'Looking for a backup…' },
