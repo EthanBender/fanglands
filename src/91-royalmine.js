@@ -1075,6 +1075,7 @@
     for (const d of run.debris.slice()) { d.t += dt; if (d.t > 1.4) run.debris.splice(run.debris.indexOf(d), 1); }
   }
   const inShadow = () => run.rocks.some(r => dist(player.x, player.y, r.x, r.y) < NUM.ROCK_R);
+  const inSlam = () => !player.dead && dist(player.x, player.y, SEAT_C.x, SEAT_C.y) < NUM.SLAM_R * TILE;
   function lifeTick(dt) {
     const gm = golemMon(), L = run.life;
     if (!gm) return;
@@ -1098,7 +1099,8 @@
       // a friend's stone: the chunks fly on this screen too
       if (L.lastHp !== null && L.lastDead === false && gm.hp < L.lastHp - 30 && time - (run.hitFlash || -9) > 0.1) { run.hitFlash = time; burst(gm.x, gm.y - 70, '#ff6a2a', 12, 120); }
       // the slam: the windup ring is drawn from here, the damage lands on your own knight only
-      if (gm.state === 'windup' && L.lastState !== 'windup') { L.windupAt = time; floatText(SEAT_C.x, SEAT_C.y - 170, 'GET BACK!', '#ff6b6b', 22); }
+      // over your own head when you are the one in the ring (over his, where a narrow screen can hide it under the HUD, otherwise)
+      if (gm.state === 'windup' && L.lastState !== 'windup') { L.windupAt = time; const mine = inSlam(); floatText(mine ? player.x : SEAT_C.x, mine ? player.y - 58 : SEAT_C.y - 170, 'GET BACK!', '#ff6b6b', 22); }
       if (gm.state === 'slam' && L.lastState !== 'slam') {
         sfx('boom'); if (window.IMPACT) IMPACT.wave(SEAT_C.x, SEAT_C.y, 2.5);
         const d = dist(player.x, player.y, SEAT_C.x, SEAT_C.y);
@@ -2074,6 +2076,7 @@
       const gm = golemMon();
       if (!gm || gm.dead) line1 = 'THE GOLEM IS DOWN. UP AGAIN SOON';
       else if (!isAwake(gm)) line1 = 'STEP INTO THE GOLD RING TO WAKE HIM';
+      else if (gm.state === 'windup' && inSlam()) { line1 = 'GET BACK! HE IS GOING TO SLAM'; tone = HK.C.BAD; }
       else if (lings().some(m => dist(m.x, m.y, SEAT_C.x, SEAT_C.y) <= 4 * TILE)) { line1 = 'SMASH THE LITTLE GOLEM!'; tone = HK.C.BAD; }
       else if (inShadow()) { line1 = 'MOVE! A ROCK IS FALLING'; tone = HK.C.WARN; }
       else if (run.hot > 0) { line1 = touch() ? 'THROW IT! Tap THROW' : 'THROW IT! (T)'; tone = HK.C.GOOD; }
@@ -2742,6 +2745,13 @@
         ROYALMINE.debug.wake(); F.tp(23, 21); const deepAwake = bar();
         check(P + 'the boss bar leaves the golem out while he sleeps behind his door (seen from the Deep, 11.5 tiles away) and shows him in his chamber, or anywhere near once he is awake',
           !deepAsleep && stillAlive && chamberAsleep && deepAwake, { deepAsleep, stillAlive, chamberAsleep, deepAwake });
+        // the windup: inside the slam ring the chip's first line is GET BACK!, even over a little golem; two tiles further out it is not
+        g.rm.phase = 'windup'; g.state = 'windup'; run.hot = 1; const l2 = spawnLittle(0); l2.state = 'walk'; l2.x = SEAT_C.x + 100; l2.y = SEAT_C.y;
+        player.x = SEAT_C.x; player.y = SEAT_C.y + 2 * TILE; const w1 = paint(false), back = /^THE HEART CHAMBER \| GET BACK! HE IS GOING TO SLAM/.test(w1.text);
+        player.x = SEAT_C.x; player.y = SEAT_C.y + 5 * TILE; const w2 = paint(false), clear = !/GET BACK/.test(w2.text);
+        monsters.splice(monsters.indexOf(l2), 1); g.rm.phase = 'fight'; g.state = 'fight';
+        check(P + 'during the slam windup a knight inside the ring (2 tiles out) reads GET BACK! first on the chip, and one outside it (5 tiles out) does not',
+          back && clear, { back, clear, inside: w1.text, outside: w2.text });
         run.hot = 0; out(); }
 
       // ---- 35. the Heartstone pickaxe ----
