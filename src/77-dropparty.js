@@ -159,7 +159,7 @@
   }
 
   // ---------- the prize: pack, then bank, then at your feet; claimed in the save before the claim goes out ----------
-  function grant(id, reward, how) {
+  function grant(id, reward, how, shown) {
     const pr = ensure();
     if (typeof id !== 'string' || !ID_RE.test(id)) return 'bad';
     if (pr.claimed.includes(id)) { claimSoon(id); return 'again'; }
@@ -179,7 +179,7 @@
       levelBanner = { text: def.name + '!', sub: where === 'pack' ? 'Super rare. Open your pack to wear it.' : 'Super rare.', t: 4 };
       burst(player.x, player.y, '#f5c542', 26, 150); sfx('levelup');
     } else {
-      floatText(player.x, player.y - 30, '+' + (r.qty > 1 ? fmt(r.qty) + ' ' : '') + def.name, def.color);
+      if (!shown) floatText(player.x, player.y - 30, '+' + (r.qty > 1 ? fmt(r.qty) + ' ' : '') + def.name, def.color);
       sfx('pickup');
     }
     if (where === 'bank') note('Your pack was full, so it went to your bank.');
@@ -263,17 +263,17 @@
     p.crackers.delete(c.id);
     markBanged(c.id);
     const L = c.lit, mine = !!L.n && L.n === meName();
-    const def = L.reward ? ITEMS[L.reward.id] : null, big = !!(def && def.partyHat);
-    if (p.map === mapNow() && c.tx !== null) {
+    const def = L.reward ? ITEMS[L.reward.id] : null, big = !!(def && def.partyHat), here = p.map === mapNow() && c.tx !== null;
+    if (here) {
       const x = tc(c.tx), y = tc(c.ty);
       sfx('boom');
       for (const col of CONFETTI) burst(x, y - 6, col, big ? 9 : 5, big ? 220 : 150);
       if (big) { burst(x, y - 6, '#f5c542', 22, 260); if (!mine) sfx('levelup'); }
       S.pops.push({ x, y, id: def ? L.reward.id : null, t: 0, dur: big ? 2.6 : 1.8, big });
       const who = L.n || 'Someone';
-      floatText(x, y - 36, big ? who + ': ' + def.name + '!' : who + ': ' + prizeWords(L.reward), big ? '#f5c542' : '#ffe9a8', big ? 20 : 14);
+      floatText(x, y - (big ? 80 : 60), big ? who + ': ' + def.name + '!' : who + ': ' + prizeWords(L.reward), big ? '#f5c542' : '#ffe9a8', big ? 20 : 15);
     }
-    if (mine) grant(c.id, L.reward, 'boom');
+    if (mine) grant(c.id, L.reward, 'boom', here && !!def);
     // nothing left here (the server sends the crackers of a live party again on the next arrival)
     if (!p.crackers.size) S.parties.delete(p.pid);
   }
@@ -382,13 +382,15 @@
   // ---------- drawing: a festive paper cracker that bobs and glints; a burning fuse; the prize popping out ----------
   const BODY = ['#e5484d', '#3e8ef7', '#3fb950', '#f5a623', '#a371f7', '#ef6fb1'];
   const TRIM = ['#f5c542', '#ffffff', '#ffe9a8'];
-  function drawCracker(g, c, x, y, hint) {
+  function drawCracker(g, c, x, y) {
     const k = c.k || 0, body = BODY[k % BODY.length], trim = TRIM[k % TRIM.length];
     const L = c.lit, p = L ? clamp(L.el / Math.max(1, L.fuse), 0, 1) : 0;
     const bob = L ? 0 : Math.sin(time * 2.4 + k * 1.3) * 1.6;
     const shake = L ? Math.sin(time * 47 + k) * (0.5 + p * 2) : 0;
     g.save(); g.translate(x, y);
     g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 9, 15, 3.8, 0, 0, 7); g.fill();
+    // lit: a warm glow behind it that pulses faster as the fuse burns down
+    if (L) { g.fillStyle = `rgba(255,150,40,${(0.28 + 0.2 * Math.sin(time * (9 + p * 26))).toFixed(3)})`; g.beginPath(); g.arc(0, -2, 22 + p * 6, 0, 7); g.fill(); }
     g.translate(shake, bob - 2); g.rotate(((k % 5) - 2) * 0.09);
     // the twisted paper ends
     g.fillStyle = body; g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1;
@@ -409,19 +411,20 @@
     }
     // lit: the fuse burns down from the right-hand end, spitting sparks
     if (L) {
-      const fx = lerp(23, 16.5, p), fy = lerp(-8, -2.5, p);
-      g.strokeStyle = '#5a4a3a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(16, -2); g.lineTo(fx, fy); g.stroke();
-      const fl = 2.3 + Math.sin(time * 50) * 0.8;
-      g.fillStyle = 'rgba(255,170,40,0.45)'; g.beginPath(); g.arc(fx, fy, fl + 3.2, 0, 7); g.fill();
-      g.fillStyle = '#fff3b0'; g.beginPath(); g.arc(fx, fy, fl, 0, 7); g.fill();
-      for (let s = 0; s < 4; s++) { const a = time * 21 + s * 1.7 + k; g.fillStyle = s % 2 ? '#ffd166' : '#ff8c42'; g.fillRect(fx + Math.cos(a) * 5.5, fy + Math.sin(a) * 5.5, 1.8, 1.8); }
+      const fx = lerp(28, 17.5, p), fy = lerp(-12, -3, p);
+      g.strokeStyle = '#3a2e22'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(16.5, -1.5); g.lineTo(fx, fy); g.stroke();
+      const fl = 3 + Math.sin(time * 50) * 1;
+      g.fillStyle = 'rgba(255,170,40,0.55)'; g.beginPath(); g.arc(fx, fy, fl + 4.5, 0, 7); g.fill();
+      g.fillStyle = '#fff6c2'; g.beginPath(); g.arc(fx, fy, fl, 0, 7); g.fill();
+      for (let s = 0; s < 6; s++) { const a = time * 19 + s * 1.05 + k, r = 6 + ((time * 30 + s * 3) % 6); g.fillStyle = s % 2 ? '#ffd166' : '#ff8c42'; g.fillRect(fx + Math.cos(a) * r - 1, fy + Math.sin(a) * r - 1, 2.2, 2.2); }
     }
     g.restore();
-    if (hint && !L) {
-      g.strokeStyle = 'rgba(255,233,168,0.8)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y, 23, 0, 7); g.stroke(); g.setLineDash([]);
-      const t = keyName('E') + ' to light';
-      g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(t, x, y - 20); g.fillStyle = '#ffe9a8'; g.fillText(t, x, y - 20);
-    }
+  }
+  // the one USE would light: a dashed ring and "E to light" (or "USE to light"), on top of the trees
+  function drawHint(g, x, y) {
+    g.strokeStyle = 'rgba(255,233,168,0.85)'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y, 23, 0, 7); g.stroke(); g.setLineDash([]);
+    const t = keyName('E') + ' to light';
+    g.font = 'bold 13px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.strokeText(t, x, y - 22); g.fillStyle = '#ffe9a8'; g.fillText(t, x, y - 22);
   }
   function drawPop(g, f) {
     const a = f.t < 0.12 ? f.t / 0.12 : f.t > f.dur - 0.5 ? Math.max(0, (f.dur - f.t) / 0.5) : 1;
@@ -452,7 +455,8 @@
         if (c.tx === null) continue;
         const x = tc(c.tx), y = tc(c.ty);
         if (x < cam.x - 60 || x > cam.x + VW + 60 || y < cam.y - 60 || y > cam.y + VH + 60) continue;
-        items.push({ y: y + 8, cracker: c.id, draw: () => drawCracker(g, c, x, y, c === hint) });
+        items.push({ y: y + 8, cracker: c.id, draw: () => drawCracker(g, c, x, y) });
+        if (c === hint) items.push({ y: 1e9 - 1, hint: c.id, draw: () => drawHint(g, x, y) });
       }
     }
     for (const f of S.pops) items.push({ y: 1e8, pop: true, draw: () => drawPop(g, f) });
@@ -698,19 +702,35 @@
     for (const [text, k, fn, on] of items) { btn(g, xx, y, bw, BH, text, key + k + '|', fn, '#21262d', on !== false); xx += bw + 6; }
   }
 
+  // the core's panel is 95% opaque; with this much text on it, the HUD behind must not show through
+  function box(g, w, h, titleText, sub) {
+    const W = Math.min(w, VW - 20), Hh = Math.min(h, VH - 20), bx = Math.round(VW / 2 - W / 2), by = Math.round(Math.max(10, VH / 2 - Hh / 2 - 20));
+    roundRect(g, bx, by, W, Hh, 12); g.fillStyle = '#0a0e16'; g.fill();
+    return panelBox(g, w, h, titleText, sub);
+  }
   HOOKS.panel.party = (g, narrow) => {
     const BH = touchMode() ? 44 : 34, G = 8;
     if (!isAdmin()) {
       hideSearch();
-      const { px, py, h } = panelBox(g, 420, 160, 'Drop party', netOn() ? 'Crackers, a bang, and a prize for whoever lights one.' : 'You are not connected.');
+      const { px, py, h } = box(g, 420, 160, 'Drop party', netOn() ? 'Crackers, a bang, and a prize for whoever lights one.' : 'You are not connected.');
       label(g, 'Only an admin can throw a drop party.', px + 18, py + 84, '#c9d1d9', '13px sans-serif');
       btn(g, px + 18, py + h - BH - 14, 120, BH, 'Close', 'party:close|', closePanel);
       return;
     }
     const wide = VW >= 640;
     const W = wide ? Math.min(VW - 20, 760) : Math.min(VW - 20, 440);
-    const H = Math.min(VH - 20, UI.tab === 'party' ? (wide ? 390 : 610) : (wide ? 480 : 770));
-    const { px, py, w, h } = panelBox(g, W, H, 'Drop party', narrow ? 'Crackers fall around you.' : 'Crackers fall on the ground around you. Anyone can light one for a prize.');
+    // as tall as the tab needs (every odds line, every prize row) when the screen has the room; paged when it has not
+    const head = 58 + BH + 12, ctrlH = 3 * (BH + G) + 20;
+    let need;
+    if (UI.tab === 'party') {
+      const t = cleanTable(UI.table), lines = t.length + 1, statusH = mine() ? 22 + BH + 6 : 0, warn = t.length ? 0 : 26;
+      need = wide ? head + Math.max(ctrlH + 6 + BH + warn, 20 + lines * 17 + 12 + statusH) + 14 : head + ctrlH + 22 + lines * 17 + 12 + statusH + warn + BH + 14;
+    } else if (UI.tab === 'prizes') {
+      const n = Math.max(1, UI.table.length), ed = 22 + 3 * (BH + 6);
+      need = wide ? head + Math.max(n * (BH + 4) + 22, ed) + 16 : head + n * (BH + 4) + 18 + 10 + ed + 14;
+    } else need = wide ? 480 : 770;
+    const H = Math.min(VH - 20, Math.max(UI.tab === 'party' ? 330 : 300, need));
+    const { px, py, w, h } = box(g, W, H, 'Drop party', narrow ? 'Crackers fall around you.' : 'Crackers fall on the ground around you. Anyone can light one for a prize.');
     const x0 = px + 18, cw = w - 36, top = py + 58, bottom = py + h - 12;
     const tabs = [['party', 'Party'], ['prizes', 'Prizes (' + UI.table.length + ')'], ['add', 'Add prizes']];
     const tw = Math.min(150, Math.floor((cw - 2 * 6) / 3));
@@ -981,7 +1001,10 @@
         const cr = items.filter(it => it.cracker);
         let drew = true; try { for (const it of cr) it.draw(); } catch (e) { drew = String(e && e.message); }
         check(P + 'a crackers message puts its crackers on the ground: kept, listed by PARTY.live() and drawn among the world items', !!S.parties.get(7) && S.parties.get(7).crackers.size === 5 && PARTY.live().length === 5 && cr.length === 5 && drew === true, { kept: S.parties.get(7) && S.parties.get(7).crackers.size, drawn: cr.length, drew }); }
-      { F.tp(o.x + 1, o.y); F.face(o.x + 2, o.y); S.lastLight.clear();
+      { F.tp(o.x + 1, o.y); F.face(o.x + 2, o.y); S.lastLight.clear(); render();
+        const hintItems = []; for (const hk of HOOKS.draw) hk(ctx, hintItems, cam);
+        const hints = hintItems.filter(it => it.hint);
+        let hinted = hints.length === 1 && hints[0].hint === 'p7.0' && hints[0].y > 1e8; try { if (hints[0]) hints[0].draw(); } catch (e) { hinted = String(e && e.message); }
         const n0 = sent('light').length;
         F.press('KeyE'); const first = sent('light').slice(n0);
         F.press('KeyE'); const second = sent('light').slice(n0);
@@ -996,7 +1019,7 @@
         quiet(); feed({ t: 'light_no', id: 'p7.0', code: 'taken' }); feed({ t: 'light_no', id: 'p7.0', code: 'map' }); const silent = !notice && !S.notes.length;
         quiet(); feed({ t: 'light_no', id: 'p7.4', code: 'gone' }); const gone = said('That cracker is gone.') && !findCracker('p7.4');
         tapCancel('manual');
-        check(P + 'USE beside a cracker sends one light with its id and the knight\'s position (not twice in a second); a tap on one walks up and lights it; far / gone say so, taken and map stay quiet', ok && tapOk && tapped && person && far && silent && gone, { first, second: second.length, tapOk, tapped, person, far, silent, gone }); }
+        check(P + 'the cracker USE would light gets "E to light" on top of the trees; USE sends one light with its id and the knight\'s position (not twice in a second); a tap on one walks up and lights it; far / gone say so, taken and map stay quiet', hinted === true && ok && tapOk && tapped && person && far && silent && gone, { hinted, first, second: second.length, tapOk, tapped, person, far, silent, gone }); }
 
       // 9. the boom: the prize after the fuse, once; claimed in the save, then the claim; others get nothing
       { quiet(); player.inv = empty(); const c0 = coins(); const k0 = sent('claim').length;
