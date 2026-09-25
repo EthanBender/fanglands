@@ -838,7 +838,9 @@
       get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : typeof k === 'string' ? (() => { log.push(k); }) : undefined,
       set: (t, k) => { log.push('set:' + String(k)); return true; } }); return { g, log }; };
     const overlays = () => { const { g, log } = recorder(); const items = []; for (const hh of HOOKS.draw) { try { hh(g, items, cam); } catch (e) { } }
-      const top = items.filter(i => i.y >= 1e9 && i.y < 1e9 + 0.5); for (const it of top) { try { it.draw(); } catch (e) { } } return { n: top.length, log }; };
+      // an overlay layer is anything in the band just above 1e9, or 89-lighting's own scrim, which sits at 1e9 - 1 (tagged
+      // lightingScrim) so chat bubbles draw over the dark. A chat bubble (74-chat, also at 1e9) is words, not an overlay.
+      const top = items.filter(i => i.lightingScrim || (i.y >= 1e9 && i.y < 1e9 + 0.5 && !i.bubble)); for (const it of top) { try { it.draw(); } catch (e) { } } return { n: top.length, log }; };
 
     h.peace(true); closePanel(); drain(); if (INSTANCES.active()) INSTANCES.leave();
     // a hired companion follows at the knight's heel, and 21-companion's use hook opens its panel for any

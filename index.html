@@ -4112,7 +4112,8 @@ const MUSIC = (() => {
       else if (t === T_CHEST) items.push({ y: ty * TILE + TILE - 6, draw: () => drawChest(g, tx, ty, !!(active && Q().chests[active.id + ':' + tx + ',' + ty])) });
       else if (t === T_SHROOM) items.push({ y: ty * TILE - 2 * TILE, draw: () => drawFurniture(g, tx, ty, T.MUSHROOM) });
     }
-    if (active && active.inst.dark) items.push({ y: 1e9, draw: () => drawDark(g) });
+    // legacyScrim: 89-lighting lifts this scrim out while it lights the place itself (it finds it by the tag, not by y)
+    if (active && active.inst.dark) items.push({ y: 1e9, legacyScrim: true, draw: () => drawDark(g) });
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const { tx, ty } = frontTile(player);
       if (USABLE.includes(tileAt(tx, ty))) { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); }
@@ -6480,7 +6481,8 @@ HOOKS.selfTest.push((check, F, h) => {
       g.save(); g.translate(player.x, player.y); g.rotate(ang - 0.7 + sw); g.fillStyle = '#8a6a3a'; g.fillRect(2, -1.5, 26, 3);
       g.fillStyle = a.tier >= 3 ? MITHRIL : a.tier === 2 ? '#a9adb5' : '#b8863a'; g.beginPath(); g.moveTo(24, -2); g.quadraticCurveTo(30, -8, 34, -6); g.lineTo(30, 0); g.lineTo(34, 6); g.quadraticCurveTo(30, 8, 24, 2); g.closePath(); g.fill(); g.restore();
     } });
-    if (inside()) items.push({ y: 1e9, draw: () => dwDrawDark(g) });
+    // legacyScrim: 89-lighting lifts this scrim out while it lights Deepholm itself (it finds it by the tag, not by y)
+    if (inside()) items.push({ y: 1e9, legacyScrim: true, draw: () => dwDrawDark(g) });
     // interaction highlight for our own tiles and dwarves (the core only highlights what it knows)
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const d = dwInFront();
@@ -30726,7 +30728,9 @@ HOOKS.selfTest.push((check, F, h) => {
       get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : typeof k === 'string' ? (() => { log.push(k); }) : undefined,
       set: (t, k) => { log.push('set:' + String(k)); return true; } }); return { g, log }; };
     const overlays = () => { const { g, log } = recorder(); const items = []; for (const hh of HOOKS.draw) { try { hh(g, items, cam); } catch (e) { } }
-      const top = items.filter(i => i.y >= 1e9 && i.y < 1e9 + 0.5); for (const it of top) { try { it.draw(); } catch (e) { } } return { n: top.length, log }; };
+      // an overlay layer is anything in the band just above 1e9, or 89-lighting's own scrim, which sits at 1e9 - 1 (tagged
+      // lightingScrim) so chat bubbles draw over the dark. A chat bubble (74-chat, also at 1e9) is words, not an overlay.
+      const top = items.filter(i => i.lightingScrim || (i.y >= 1e9 && i.y < 1e9 + 0.5 && !i.bubble)); for (const it of top) { try { it.draw(); } catch (e) { } } return { n: top.length, log }; };
 
     h.peace(true); closePanel(); drain(); if (INSTANCES.active()) INSTANCES.leave();
     // a hired companion follows at the knight's heel, and 21-companion's use hook opens its panel for any
@@ -30964,9 +30968,10 @@ HOOKS.selfTest.push((check, F, h) => {
 // stay dark and a lamp is worth walking to.
 //
 // HOW IT TAKES OVER without editing a core file:
-//   · 16-instances and 24-dwarves each push their scrim as one world item at exactly y = 1e9. This file's
-//     HOOKS.draw handler runs last (89), so those items are already in the list: while a scene of ours is
-//     open they are lifted out and ours is pushed in their place. LIGHTS.stats().dropped counts them and
+//   · 16-instances and 24-dwarves each push their scrim as one world item tagged `legacyScrim: true`. This
+//     file's HOOKS.draw handler runs last (89), so those items are already in the list: while a scene of ours
+//     is open they are lifted out (by the tag — y 1e9 is shared with chat bubbles) and ours is pushed at
+//     1e9 - 1, under the bubbles and highlights. LIGHTS.stats().dropped counts them and
 //     the self-test asserts it is exactly one per scene, so a double scrim can never come back unnoticed.
 //   · The core's starting-cave scrim is painted inside render() itself, after HOOKS.draw, with no flag to
 //     turn it off — and a feature may not edit a core file. It paints into the module-scope canvas
@@ -31175,20 +31180,24 @@ HOOKS.selfTest.push((check, F, h) => {
   darkLayer.getContext = (...a) => (suppress ? SINK : realDg(...a));
 
   // (2) The two instance scrims. 16-instances (`dark: true`) and 24-dwarves (Deepholm) each push exactly one
-  // world item at y = 1e9. HOOKS.draw runs in file order and this file is 89, so by the time we are called the
-  // item is already in the list: lift it out and put ours in its place. Nothing else pushes at that exact y
-  // inside an instance — the other 1e9 items in the game are use-highlights for the bulldozer, the barrel
-  // beast and the dozer bay, none of whose tiles exist on an instance map — and the self-test asserts the
-  // count is exactly one in each dark place, so a second scrim can never creep back in unseen.
-  const LEGACY_Y = 1e9;
+  // world item tagged `legacyScrim: true`. HOOKS.draw runs in file order and this file is 89, so by the time we
+  // are called the item is already in the list: lift it out and put ours in its place. It is found by the TAG,
+  // never by its y. y 1e9 is not reserved for darkness: chat bubbles (74-chat, the knight's own and every other
+  // player's) and the use-highlights sit at 1e9 too, and a y test once deleted every speech bubble in Deepholm,
+  // the Spider Den and the Coal Road. Our own scrim goes in just UNDER that line, at 1e9 - 1, so everything at
+  // 1e9 or above (bubbles, highlights, the 1e9 + 1 front-tile outline) is drawn over the dark instead of tying
+  // with it. The self-test asserts exactly one legacy scrim is lifted in each dark place, so a second scrim can
+  // never creep back in unseen.
+  const SCRIM_Y = 1e9 - 1;
   HOOKS.draw.push((g, items) => {
     const sc = activeScene();
-    suppress = !!sc;                                    // set every frame: render() reaches the core's cave block after this
+    // set every frame: render() reaches the core's cave block after this
+    suppress = !!sc;
     if (!sc) { STATS.dropped = 0; return; }
     let dropped = 0;
-    for (let i = items.length - 1; i >= 0; i--) if (items[i].y === LEGACY_Y) { items.splice(i, 1); dropped++; }
+    for (let i = items.length - 1; i >= 0; i--) if (items[i].legacyScrim) { items.splice(i, 1); dropped++; }
     STATS.dropped = dropped;
-    items.push({ y: LEGACY_Y, draw: () => paint(g, sc) });
+    items.push({ y: SCRIM_Y, lightingScrim: true, draw: () => paint(g, sc) });
   });
   HOOKS.newGame.push(() => { STATS.dropped = 0; STATS.coreScrimSwallowed = 0; STATS.painted = 0; STATS.lights = 0; });
 
@@ -31371,6 +31380,29 @@ HOOKS.selfTest.push((check, F, h) => {
         && Object.values(notOurs).every(v => v.scene === null && v.dropped === 0 && !v.suppressing)
         && cave.isCave && cave.scene === null && !cave.suppressing && cave.swallowed === 0,
         { ours: dark, untouched: notOurs, startingCave: cave }); }
+
+    // ---- 8. y 1e9 is not reserved for darkness: a chat bubble there survives and is drawn over the dark ----
+    // 74-chat pushes every speech bubble at y 1e9. The old pass deleted every item at that y, so in Deepholm, the
+    // Spider Den and the Coal Road nobody's words were ever drawn. Run the real draw hooks over a list holding a
+    // bubble, the way render() does, and see what comes out the other side.
+    { const res = {};
+      for (const id of ['deepholm', 'spider_den', 'coalmine']) {
+        INSTANCES.enter(id);
+        const bubble = { y: 1e9, bubble: 'x', draw() { } };
+        const items = [bubble];
+        for (const hk of HOOKS.draw) hk(ctx, items, cam);
+        const scrims = items.filter(it => it.lightingScrim);
+        const kept = items.includes(bubble);
+        const leftOver = items.filter(it => it.legacyScrim).length;
+        const sorted = items.slice().sort((a, b) => a.y - b.y);
+        const order = scrims.length === 1 ? sorted.indexOf(bubble) - sorted.indexOf(scrims[0]) : 0;
+        res[id] = { bubbleKept: kept, legacyLifted: L.stats().dropped, legacyLeftOver: leftOver, ourScrims: scrims.length,
+          scrimY: scrims.length ? scrims[0].y : null, bubbleY: bubble.y, bubbleDrawnAfterScrim: order > 0 };
+        INSTANCES.leave();
+      }
+      check(P + 'a draw item at y 1e9 that is not a legacy scrim (a chat bubble) survives the darkness pass in every dark place and draws above the scrim',
+        Object.values(res).every(r => r.bubbleKept && r.legacyLifted === 1 && r.legacyLeftOver === 0 && r.ourScrims === 1 && r.scrimY < r.bubbleY && r.bubbleDrawnAfterScrim),
+        res); }
 
     if (INSTANCES.active()) INSTANCES.leave();
     h.peace(false);

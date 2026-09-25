@@ -359,7 +359,8 @@
       g.save(); g.translate(player.x, player.y); g.rotate(ang - 0.7 + sw); g.fillStyle = '#8a6a3a'; g.fillRect(2, -1.5, 26, 3);
       g.fillStyle = a.tier >= 3 ? MITHRIL : a.tier === 2 ? '#a9adb5' : '#b8863a'; g.beginPath(); g.moveTo(24, -2); g.quadraticCurveTo(30, -8, 34, -6); g.lineTo(30, 0); g.lineTo(34, 6); g.quadraticCurveTo(30, 8, 24, 2); g.closePath(); g.fill(); g.restore();
     } });
-    if (inside()) items.push({ y: 1e9, draw: () => dwDrawDark(g) });
+    // legacyScrim: 89-lighting lifts this scrim out while it lights Deepholm itself (it finds it by the tag, not by y)
+    if (inside()) items.push({ y: 1e9, legacyScrim: true, draw: () => dwDrawDark(g) });
     // interaction highlight for our own tiles and dwarves (the core only highlights what it knows)
     if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => {
       const d = dwInFront();
