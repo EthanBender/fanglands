@@ -25,7 +25,8 @@ online/
 
 - Every request for `/api/...` or `/ws` is handed to the single `World` object (`idFromName('world')`).
   It holds the SQLite tables `accounts`, `sessions`, `saves` (the last three versions per knight), `chat` and
-  `settings` (the invite code), the admin tables `mod_log`, `save_pins`, `parties` and `crackers`, and the live room.
+  `settings` (the invite code), the admin tables `mod_log`, `save_pins`, `parties` and `crackers`, `logins` (one row per socket a knight opens, for
+  the Accounts list), and the live room.
 - A knight signs up with the invite code, gets a token (32 random bytes as hex, good for 90 days) and opens
   `wss://gorkscape.ca/ws?token=...`. The World checks the token before the upgrade; a bad one is a 401.
 - The room (`room.js`) relays presence between knights on the same map, names one knight per map the
@@ -58,9 +59,10 @@ The whole contract is `docs/ONLINE.md`, "Admins and drop parties".
 1. the five tables from before admins (`accounts`, `sessions` + its index, `saves`, `chat`, `settings`), unchanged;
 2. the new ones, only if they are missing: `mod_log` (newest 5,000 kept), `save_pins` (one pinned backup per admin),
    `parties` and `crackers` (when a party starts, every party more than 7 days past its fifteen minutes is deleted
-   with its crackers: its unclaimed prizes are no longer offered by then);
-3. `migrate()`: it reads the columns of `accounts` (`PRAGMA table_info`) and adds `role` (`'player'`) and
-   `muted_until` (`0`) only when they are not there. Running it again changes nothing.
+   with its crackers: its unclaimed prizes are no longer offered by then), and `logins` with its index (the newest 50
+   per knight kept; docs/ONLINE.md, *Accounts*);
+3. `migrate()`: it reads the columns of `accounts` (`PRAGMA table_info`) and adds `role` (`'player'`),
+   `muted_until` (`0`) and `online_ms` (`0`) only when they are not there. Running it again changes nothing.
 
 The rule for every change after this one: a migration adds and never takes away. It drops, renames or rewrites no
 table, column, row or index, changes no column's type, and adds no new Durable Object class, so `wrangler.toml`'s
@@ -72,6 +74,11 @@ proof for the admin change is `~/.fanglands/work/admin/migration-proof.txt` (the
 `~/.fanglands/work/admin/integ/migration/migration-proof.txt` (the merged `feat/admin`, old code = master with its
 backup routes). The second also runs the OLD code again on the migrated database: it still logs everyone in, saves,
 chats, signs up and exports (the two new account columns ride along), so going back to the previous code alone is safe.
+The proof for the Accounts change (the `logins` table and `online_ms`) is
+`~/.fanglands/work/admin-accounts/proof3/migration-proof.txt`: master's server fills a world, the new code starts on it
+three times (the third after a SIGKILL with a knight's socket open, whose login is then closed at the last time the
+world heard from it), and every old row comes back byte for byte; `rollback.txt` beside it runs master's code again on
+the migrated world (login, save, signup, socket, export all work) and then the new code once more.
 
 ## Deploy
 
@@ -141,7 +148,8 @@ cracker. Point it at another port with `SMOKE_BASE=http://127.0.0.1:<port>`.
 ## The admin page
 
 `https://gorkscape.ca/admin`. It asks for the admin key once per browser tab (kept in `sessionStorage`) and
-shows who is on line (admins marked ADMIN in gold), every account (with **Make admin** / **Make player**, how long
+shows who is on line (admins marked ADMIN in gold), every account, online ones first (when each was last on, the last
+login, time online, knight play time, and **Logins** for the last 10 with how long each lasted; with **Make admin** / **Make player**, how long
 they are muted with **Mute** and **Unmute**, **Reset secret word**, **Ban** / **Unban** and **Saves**, which lists
 an admin's backup from before Unlock everything first and then the three kept versions, each with a **Go back to
 this one** button), the invite code with a box to change it, the chat log, newest at the bottom, and **What admins
@@ -149,7 +157,8 @@ did**, newest at the top, both refreshed every ten seconds. Everything goes thro
 `Authorization: Bearer <ADMIN_KEY>`:
 
 ```
-GET  /api/admin/accounts              name, created, lastSeen, banned, saveAt, role, mutedUntil
+GET  /api/admin/accounts              name, created, lastSeen, banned, saveAt, role, mutedUntil, online, map, region,
+                                      lv, lastLogin, lastOn, onlineMs, countedSince, playSeconds, logins (docs/ONLINE.md)
 GET  /api/admin/online                n, map, region, lv, since, role
 POST /api/admin/role    {name, role}  'player' or 'admin'; an online knight is told at once
 POST /api/admin/mute    {name, span}  '5m', '1h', '1d', 'always' or 'off' (works on admins too)
@@ -159,16 +168,19 @@ GET  /api/admin/saves?name=           the pin first (ver 'pin'), then the kept v
 POST /api/admin/rollback {name, ver}  ver a number, or 'pin' (copied forward; the pin stays)
 POST /api/admin/reset, GET/POST /api/admin/invite, GET /api/admin/chat   as before
 GET  /api/admin/export                every table but sessions: accounts, saves, chat, settings, mod_log,
-                                      save_pins, parties, crackers (online/src/backup.js)
+                                      save_pins, parties, crackers, logins (online/src/backup.js)
 GET  /api/admin/bookmark              a point-in-time restore bookmark, also kept in settings
 POST /api/admin/restore {bookmark}    rewinds the whole world to that bookmark; everyone reconnects
 ```
 
 An admin's own game uses `GET /api/save/pin`, `POST /api/save/pin` (`?replace=1`) and `POST /api/save/restore`
-with its own session; anyone else gets 403 `admin`.
+with its own session; anyone else gets 403 `admin`. Its Accounts tab uses `GET /api/accounts` (the same rows as the
+parent page's) and `POST /api/accounts/reset {name, pass}` (a player's secret word only: never another admin's, never
+its own, 3 a minute), both checked against the caller's role in the database on every call.
 
 Banning drops the knight's sessions and closes their socket; their save stays. Resetting a secret word also
-logs the knight out everywhere, so whoever had the old word is out. A mute stops a knight's chat (nothing they
+logs the knight out everywhere, so whoever had the old word is out; it tells them why on the login card and writes
+one line to What admins did (who did it, never the word). A mute stops a knight's chat (nothing they
 type is sent or logged) and nothing else; they keep playing.
 
 ## Free-plan limits, and why they are fine

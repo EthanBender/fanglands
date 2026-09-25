@@ -16,6 +16,8 @@
 //   D. Monsters: spawn any MONSTER_DEFS type near yourself; the map's keeper makes them (any client can be the keeper, so
 //      the keeper's half lives here too: NET.on('spawn') / ('spawn_clear') and the no-respawn rule for '!' monsters)
 //   E. Party: the button into 77-dropparty's panel
+//   F. tabs other files add with ADMIN.addTab (78-accounts: Accounts). Their drawing, state and tests live in their own
+//      file; this one only lays the tab buttons out (in two rows when the panel is too narrow for one) and hands over.
 // Wraps by reassignment, all with explicit arguments: hurtPlayer and die (Can't be hurt), pointerDown (where the last
 // tap was, for Teleport), drawPanels (the Teleport button over the world map, and the one search box), closePanel (the
 // search box goes when the panel does). Feature file: HOOKS only otherwise. window.ADMIN is the register.
@@ -31,6 +33,18 @@
   // the contract's caps (rate per second, burst): the client stays under them, so the world never drops the admin for speed
   const CAPS = { mute: [1, 3], unmute: [1, 3], kick: [1, 3], ban: [1, 3], unban: [1, 3], modlist: [1, 2], spawn: [1, 3], spawn_clear: [1, 2] };
   const TABS = [['knights', 'Knights'], ['powers', 'Powers'], ['monsters', 'Monsters'], ['party', 'Party']];
+  // F. tabs from other files: { id, name, after, subtitle, short, draw(g, x, y, w, h, T), open() }, placed after the tab `after`
+  const EXTRA = [];
+  const extraTab = id => EXTRA.find(t => t.id === id) || null;
+  function allTabs() {
+    const out = TABS.slice();
+    for (const t of EXTRA) { const i = out.findIndex(o => o[0] === t.after); out.splice(i >= 0 ? i + 1 : out.length, 0, [t.id, t.name]); }
+    return out;
+  }
+  function addTab(spec) {
+    if (!spec || typeof spec.id !== 'string' || typeof spec.draw !== 'function' || TABS.some(t => t[0] === spec.id) || extraTab(spec.id)) return false;
+    EXTRA.push(spec); return true;
+  }
   const SUBTITLE = {
     knights: 'Mute, send out or ban a knight. Nobody can do that to an admin.',
     powers: 'These change only your own knight.',
@@ -620,12 +634,13 @@
 
   // ---------- the panel ----------
   function onTab(tab) {
+    const ex = extraTab(tab); if (ex && typeof ex.open === 'function') ex.open();
     if (tab === 'knights') askModlist();
     if (tab === 'powers' && (S.pinAt === undefined || nowMs() - S.pinAskedAt > 30000)) pin();
   }
   function open(tab) {
     if (!isAdmin()) return false;
-    if (tab && TABS.some(t => t[0] === tab)) S.tab = tab;
+    if (tab && allTabs().some(t => t[0] === tab)) S.tab = tab;
     S.view = null; freshSearch();
     openPanel('admin'); onTab(S.tab);
     return true;
@@ -635,11 +650,17 @@
     const touchy = touchMode(), T = touchy ? 44 : 32;
     const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : Math.min(660, VW - 20), Math.min(VH - 20, 660), 'Admin', '');
     if (touchy) { buttons.pop(); button(g, px + w - 56, py + 10, 44, 44, '×', closePanel, '#21262d'); }
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; const subW = w - 36 - 60; g.fillText(fit(g, g.measureText(SUBTITLE[S.tab]).width <= subW ? SUBTITLE[S.tab] : SUBTITLE_SHORT[S.tab], subW), px + 18, py + 50);
-    const tabW = (w - 36 - 3 * 6) / 4;
-    TABS.forEach(([id, name], i) => btn(g, px + 18 + i * (tabW + 6), py + 60, tabW, T, name, () => { if (S.tab !== id) { S.tab = id; S.view = null; freshSearch(); onTab(id); } }, S.tab === id ? '#7a5a12' : '#21262d', true, 'admin:tab:' + id));
-    const x = px + 18, y = py + 60 + T + 10, cw = w - 36, ch = py + h - 12 - y;
-    if (S.tab === 'knights') { if (S.view && S.view.kind === 'mute') drawMuteChooser(g, x, y, cw, ch, T); else drawKnights(g, x, y, cw, ch, T); }
+    const tabs = allTabs(), ex = extraTab(S.tab);
+    if (!tabs.some(t => t[0] === S.tab)) S.tab = 'knights';
+    const sub = ex ? ex.subtitle || '' : SUBTITLE[S.tab], subShort = ex ? ex.short || ex.subtitle || '' : SUBTITLE_SHORT[S.tab];
+    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; const subW = w - 36 - 60; g.fillText(fit(g, g.measureText(sub).width <= subW ? sub : subShort, subW), px + 18, py + 50);
+    // one row of tabs when each can be at least 96 px wide, else as few rows as that allows (a phone: two)
+    const per0 = clamp(Math.floor((w - 36 + 6) / (96 + 6)), 1, tabs.length), rows = Math.ceil(tabs.length / per0), per = Math.ceil(tabs.length / rows);
+    const tabW = (w - 36 - (per - 1) * 6) / per;
+    tabs.forEach(([id, name], i) => btn(g, px + 18 + (i % per) * (tabW + 6), py + 60 + Math.floor(i / per) * (T + 6), tabW, T, name, () => { if (S.tab !== id) { S.tab = id; S.view = null; freshSearch(); onTab(id); } }, S.tab === id ? '#7a5a12' : '#21262d', true, 'admin:tab:' + id));
+    const x = px + 18, y = py + 60 + rows * (T + 6) + 4, cw = w - 36, ch = py + h - 12 - y;
+    if (ex) ex.draw(g, x, y, cw, ch, T);
+    else if (S.tab === 'knights') { if (S.view && S.view.kind === 'mute') drawMuteChooser(g, x, y, cw, ch, T); else drawKnights(g, x, y, cw, ch, T); }
     else if (S.tab === 'powers') { if (S.view && S.view.kind === 'give') drawGive(g, x, y, cw, ch, T); else drawPowers(g, x, y, cw, ch, T); }
     else if (S.tab === 'monsters') drawMonsters(g, x, y, cw, ch, T);
     else drawParty(g, x, y, cw, ch, T);
@@ -882,6 +903,7 @@
     get god() { return S.god; }, setGod, teleportTo, startTeleport, give, spawn, clearSpawns,
     mute, unmute, kick, ban, unban, askModlist, get modlist() { return S.modlist; },
     isSpawn, SPAWN_LIVE_MAX, UNLOCKS, modSentence, plural, amount, monName, setSearch, setQty, state: S,
+    addTab, tabs: () => allTabs().map(t => t[0]),
   };
   window.ADMIN = ADMIN;
 

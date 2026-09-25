@@ -63,6 +63,8 @@
     if (code === 'taken' || code === 'exists') return 'That name is already taken. Pick another.';
     if (code === 'name' || code === 'bad_name' || code === 'filtered') return kind === 'login' ? 'No knight by that name yet. Tap New knight.' : 'That name will not do here. Try another.';
     if (code === 'full') return 'The world is full right now. Try again soon.';
+    // an admin (or the parent page) gave the knight a new secret word: the world says why on the error (why: 'reset')
+    if (code === 'auth' && err.why === 'reset') return 'An admin changed your secret word. Ask them for the new one, then log in again.';
     if (code === 'auth') return 'You were logged out. Log in again.';
     if (kind === 'login' && st === 401) return 'That secret word is wrong.';
     if (kind === 'login' && st === 404) return 'No knight by that name yet. Tap New knight.';

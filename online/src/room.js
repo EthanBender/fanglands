@@ -12,7 +12,9 @@
 //   room.tick()                fire whatever is due: gift timeouts, a held-back roster, a party running out
 //   room.setRole(name)         the parent page changed a role: re-read it, tell that knight and the roster
 //   room.muteChanged(name)     the parent page changed a mute: re-read it, tell that knight
-//   room.store                 where roles, mutes, bans, parties and prizes live (store.js)
+//   room.settleLogins()        after a wake's restores: every login row no socket carries any more is closed
+//   room.loginOf(name)         the open login row of a knight on line: {id, started} or null
+//   room.store                 where roles, mutes, bans, parties, prizes and logins live (store.js)
 //
 // Timers: the room never calls setTimeout itself. When something becomes due it calls wake(ms) once, and
 // the host calls tick() at that time (the World uses a Durable Object alarm, which survives hibernation).
@@ -22,6 +24,11 @@
 // state) rebuilds the knight from it when the World wakes up. Roles, mutes, bans, parties, crackers and prizes
 // are in the store, never in memory alone: every wake builds a new Room, which loads the live parties from the
 // store and reads each knight's role from it again.
+//
+// Logins (docs/ONLINE.md, "Accounts"): every socket a knight opens is one row in the store's logins, opened at join and
+// closed in remove(), which every way out goes through: the socket closing, the same knight logging in elsewhere, a
+// kick, a ban, a new secret word, the world full of strikes. The row's id rides the attachment, so a nap keeps it open;
+// a row that no socket carries after a wake (the world was restarted under it) ends at the last time it was heard from.
 //
 // Admins (docs/ONLINE.md, "Admins and drop parties"): only the parent page makes one. Every admin message reads
 // the sender's role from the store, fresh, before it does anything; the socket's memory is never the lock.
@@ -73,6 +80,7 @@ export const MUTE_SPANS = { '5m': 5 * 60 * 1000, '1h': 3600 * 1000, '1d': 24 * 3
 export const SPAWN_MAX = 20;           // monsters in one spawn message
 export const KICK_TEXT = 'An admin sent you out of the world. You can come back in.';
 const STRIKES_FORGIVEN_AFTER = 10000;  // a socket that behaves for this long gets its warning back
+export const SEEN_EVERY = 60000;       // a login's "last heard from" is written at most this often
 const MAX_FRAME = 64 * 1024;           // bigger than any honest message (a mon list is a few KB)
 const MAX_P = 4096;                    // presence is small; anything bigger is junk
 const OVERWORLD = 'over';
@@ -137,6 +145,7 @@ export class Room {
     }
     const k = this.makeKnight(sock, { name: String(name), since: this.now() });
     k.role = acc ? acc.role : 'player';   // a name with no account (tests, simulations) is a plain player
+    k.loginId = this.loginStart(k.lc, k.since);
     this.attach(k);
   }
 
@@ -156,6 +165,8 @@ export class Room {
     if (old) { if (old.since <= state.since) { try { sock.close(4000, 'logged in elsewhere'); } catch (e) { } return; } this.drop(old, 4000, 'logged in elsewhere'); }
     const k = this.makeKnight(sock, state);
     k.role = acc ? acc.role : 'player';
+    // the login this socket has carried since it joined; a socket from before logins were kept starts one at its join time
+    k.loginId = Number.isInteger(state.loginId) ? state.loginId : this.loginStart(k.lc, k.since);
     if (k.hello && k.map) this.enterMap(k, k.map, { quiet: true, silent: true, at: k.mapAt });
     for (const g of state.gifts || []) {
       if (!g || g.gid == null) continue;
@@ -171,6 +182,7 @@ export class Room {
       sock, name: s.name, lc: low(s.name), since: s.since || this.now(),
       hello: !!s.hello, map: s.map || null, mapAt: s.mapAt || s.since || this.now(), region: s.region || '', lv: s.lv || 0,
       role: 'player', x: null, y: null,   // x, y: the last presence, for party and cracker range checks (not kept over a nap)
+      loginId: null, seenAt: 0,           // the store's logins row for this socket, and when its "last heard from" was written
       last: null, buckets: {}, strikes: 0, strikeAt: 0, gifts: new Set(),
     };
     this.knights.set(sock, k);
@@ -185,10 +197,10 @@ export class Room {
 
   // Throws a knight out: an error first so the screen can say why, then the close. kicked closes with 4005 and
   // banned with 4003 (the wire reconnects after neither); anything else with 4000.
-  kick(name, code, text) {
+  kick(name, code, text, extra) {
     const k = this.byName.get(low(name));
     if (!k) return false;
-    this.send(k.sock, { t: 'error', code, text });
+    this.send(k.sock, Object.assign({ t: 'error', code, text }, extra || {}));
     this.drop(k, code === 'kicked' ? 4005 : code === 'banned' ? 4003 : 4000, String(text || code).slice(0, 120));
     return true;
   }
@@ -201,6 +213,7 @@ export class Room {
   remove(k) {
     if (this.knights.get(k.sock) !== k) return;
     this.knights.delete(k.sock);
+    this.loginEnd(k);
     if (this.byName.get(k.lc) === k) this.byName.delete(k.lc);
     if (k.hello && k.map) this.leaveMap(k);
     // gifts on their way to this knight go straight back; gifts this knight sent have nowhere to go
@@ -216,6 +229,7 @@ export class Room {
   message(sock, str) {
     const k = this.knights.get(sock);
     if (!k || typeof str !== 'string') return;
+    this.heard(k);
     if (str.length > MAX_FRAME) return this.strike(k, CAPS.p);
     let m;
     try { m = JSON.parse(str); } catch (e) { return; }
@@ -651,6 +665,31 @@ export class Room {
     for (const o of g.members) if (o !== except) this.raw(o.sock, out);
   }
 
+  // ---------- logins (the store keeps them; a store without them, as an older simulation's, is simply not asked) ----------
+  hasLogins() { return typeof this.store.loginStart === 'function'; }
+  loginStart(lc, at) { if (!this.hasLogins()) return null; try { return this.store.loginStart(lc, at); } catch (e) { return null; } }
+  loginEnd(k) {
+    if (k.loginId == null || !this.hasLogins()) return;
+    const id = k.loginId; k.loginId = null;
+    try { this.store.loginEnd(id, this.now()); } catch (e) { }
+  }
+  // any message at all: the login was alive now (written at most every SEEN_EVERY, so a busy knight costs one row a minute)
+  heard(k) {
+    if (k.loginId == null || !this.hasLogins()) return;
+    const now = this.now();
+    if (now - k.seenAt < SEEN_EVERY) return;
+    k.seenAt = now;
+    try { this.store.loginSeen(k.loginId, now); } catch (e) { }
+  }
+  // After a wake has restored every socket: an open row no knight here carries belongs to a socket that is gone.
+  settleLogins() {
+    if (!this.hasLogins() || typeof this.store.closeStaleLogins !== 'function') return 0;
+    const keep = new Set();
+    for (const k of this.knights.values()) if (k.loginId != null) keep.add(k.loginId);
+    return this.store.closeStaleLogins(keep, this.now());
+  }
+  loginOf(name) { const k = this.byName.get(low(name)); return k && k.loginId != null ? { id: k.loginId, started: k.since } : null; }
+
   // ---------- the roster ----------
   online() {
     const list = [];
@@ -724,6 +763,6 @@ export class Room {
     if (!k.sock.attach) return;
     const gifts = [];
     for (const gid of k.gifts) { const g = this.gifts.get(gid); if (g) gifts.push({ gid: g.gid, to: g.to, id: g.id, qty: g.qty, due: g.due }); }
-    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts }); } catch (e) { }
+    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId }); } catch (e) { }
   }
 }

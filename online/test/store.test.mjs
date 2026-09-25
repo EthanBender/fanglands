@@ -78,22 +78,23 @@ test('migrate on the live schema: every old row stays byte for byte, the new col
   const { sql } = oldWorld();
   const before = dump(sql);
   const first = wake(sql);
-  assert.deepEqual(first, { via: 'pragma', added: ['role', 'muted_until'] });
+  assert.deepEqual(first, { via: 'pragma', added: ['role', 'muted_until', 'online_ms'] });
   assert.deepEqual(dump(sql), before);
   const second = wake(sql);
   assert.deepEqual(second, { via: 'pragma', added: [] });
   assert.deepEqual(dump(sql), before);
   // the accounts table is the old one with two columns on the end, nothing else moved or retyped
   const info = sql.exec('PRAGMA table_info(accounts)').toArray();
-  assert.deepEqual(info.map(c => c.name), [...OLD_COLUMNS.accounts, 'role', 'muted_until']);
-  assert.deepEqual(info.map(c => c.type), ['TEXT', 'TEXT', 'TEXT', 'TEXT', 'INTEGER', 'INTEGER', 'INTEGER', 'INTEGER', 'INTEGER', 'TEXT', 'INTEGER']);
+  assert.deepEqual(info.map(c => c.name), [...OLD_COLUMNS.accounts, 'role', 'muted_until', 'online_ms']);
+  assert.deepEqual(info.map(c => c.type), ['TEXT', 'TEXT', 'TEXT', 'TEXT', 'INTEGER', 'INTEGER', 'INTEGER', 'INTEGER', 'INTEGER', 'TEXT', 'INTEGER', 'INTEGER']);
   for (const t of ['sessions', 'saves', 'chat', 'settings']) assert.deepEqual(sql.exec(`PRAGMA table_info(${t})`).toArray().map(c => c.name), OLD_COLUMNS[t]);
   assert.deepEqual(sql.exec('SELECT name_lc, role, muted_until FROM accounts ORDER BY name_lc').toArray(),
     [{ name_lc: 'cohen', role: 'player', muted_until: 0 }, { name_lc: 'mudgoll', role: 'player', muted_until: 0 }, { name_lc: 'sam the brave', role: 'player', muted_until: 0 }]);
   // the new tables and indexes are there, empty; the old index is still there
   const names = sql.exec("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").toArray().map(r => r.type + ' ' + r.name);
-  assert.deepEqual(names, ['index crackers_by_lighter', 'index sessions_by_name', 'table accounts', 'table chat', 'table crackers', 'table mod_log', 'table parties', 'table save_pins', 'table saves', 'table sessions', 'table settings']);
-  for (const t of ['mod_log', 'save_pins', 'parties', 'crackers']) assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM ${t}`).one().n, 0);
+  assert.deepEqual(names, ['index crackers_by_lighter', 'index logins_by_name', 'index sessions_by_name', 'table accounts', 'table chat', 'table crackers', 'table logins', 'table mod_log', 'table parties', 'table save_pins', 'table saves', 'table sessions', 'table settings']);
+  for (const t of ['mod_log', 'save_pins', 'parties', 'crackers', 'logins']) assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM ${t}`).one().n, 0);
+  assert.deepEqual(sql.exec('SELECT DISTINCT online_ms FROM accounts').toArray(), [{ online_ms: 0 }]);
   // what the store reads from a migrated world
   const store = new SqlStore(sql);
   assert.deepEqual(store.account('Sam the  Brave'), { name: 'Sam the Brave', lc: 'sam the brave', role: 'player', mutedUntil: 0, banned: true });
@@ -107,7 +108,7 @@ test('migrate: when a runtime refuses PRAGMA it reads the columns from SELECT * 
   run(plain, OLD_SCHEMA);
   plain.exec("INSERT INTO accounts (name_lc, name, salt, hash, created, last_seen) VALUES ('cohen', 'Cohen', 's', 'h', 1, 2)");
   run(strict, SCHEMA);
-  assert.deepEqual(migrate(strict), { via: 'columnNames', added: ['role', 'muted_until'] });
+  assert.deepEqual(migrate(strict), { via: 'columnNames', added: ['role', 'muted_until', 'online_ms'] });
   assert.deepEqual(migrate(strict), { via: 'columnNames', added: [] });
   assert.deepEqual(migrate(plain), { via: 'pragma', added: [] });   // and the two ways agree
   assert.deepEqual(plain.exec('SELECT name, role, muted_until FROM accounts').toArray(), [{ name: 'Cohen', role: 'player', muted_until: 0 }]);
@@ -115,7 +116,7 @@ test('migrate: when a runtime refuses PRAGMA it reads the columns from SELECT * 
 
 test('a brand new world gets the same tables and columns as a migrated one', () => {
   const fresh = sqlOf(new DatabaseSync(':memory:'));
-  assert.deepEqual(wake(fresh), { via: 'pragma', added: ['role', 'muted_until'] });
+  assert.deepEqual(wake(fresh), { via: 'pragma', added: ['role', 'muted_until', 'online_ms'] });
   const { sql: old } = oldWorld(); wake(old);
   const shape = sql => sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").toArray()
     .map(r => r.name + ': ' + sql.exec(`PRAGMA table_info(${r.name})`).toArray().map(c => c.name + ' ' + c.type + (c.notnull ? ' NOT NULL' : '') + (c.dflt_value != null ? ' DEFAULT ' + c.dflt_value : '')).join(', '));
