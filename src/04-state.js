@@ -26,7 +26,45 @@ let paused = false;
 let panel = null; // null | inventory | bank | shop | craft | coffin | skills | quests | map | station
 let panelArg = null; let selectedSlot = -1;
 let time = 0;
-let levelBanner = null;
+// ---------- the big centre banner: one on screen, the others wait their turn ----------
+// Every file shows a banner by writing `levelBanner = { text, sub, t }`, so the queue lives behind that one name:
+// levelBanner is a property of window with a getter and a setter, not a `let`. A banner replaced before it has been on
+// screen for BANNER_MIN_SHOWN seconds (with more than BANNER_MIN_LEFT seconds still to run) is not lost: it joins
+// bannerQueue and comes up after the one that replaced it, so a level-up on the boss kill no longer wipes DUNGEON
+// CLEARED, and a rare drop, a quest, a chapter and a level-up in one swing are all read. Setting a banner that is
+// already waiting takes it out of the queue first (30-ashdrake puts a boss banner back over a level-up: the level-up
+// then waits). `levelBanner = null` dismisses the one on screen; the next waiting one comes up on the next tick
+// (tickBanners, from 07-update). clearBanners() drops everything (new game, the title screen).
+const BANNER_MIN_SHOWN = 1.5, BANNER_MIN_LEFT = 0.5, BANNER_QUEUE_MAX = 6, BANNER_MAX_WAIT = 30, BANNER_REPLAY_T = 2.5;
+let bannerQueue = [];
+let _banner = null, _bannerShown = 0;
+const _bannerWait = new WeakMap();   // seconds a queued banner has waited: one that waited longer than BANNER_MAX_WAIT is stale news
+Object.defineProperty(window, 'levelBanner', {
+  configurable: true,
+  get: () => _banner,
+  set: v => {
+    v = v || null;
+    if (v === _banner) return;
+    if (v) { const i = bannerQueue.indexOf(v); if (i >= 0) bannerQueue.splice(i, 1); }
+    const old = _banner;
+    if (old && v && old.t > BANNER_MIN_LEFT && _bannerShown < BANNER_MIN_SHOWN && !bannerQueue.includes(old)) {
+      bannerQueue.push(old); _bannerWait.set(old, 0);
+      if (bannerQueue.length > BANNER_QUEUE_MAX) bannerQueue.shift();   // a flood keeps the newest few, not all of them
+    }
+    _banner = v; _bannerShown = 0;
+  },
+});
+function tickBanners(dt) {
+  if (bannerQueue.length) {
+    for (const b of bannerQueue) _bannerWait.set(b, (_bannerWait.get(b) || 0) + dt);
+    bannerQueue = bannerQueue.filter(b => b && b.t > 0 && _bannerWait.get(b) <= BANNER_MAX_WAIT);
+  }
+  if (_banner) { _banner.t -= dt; _bannerShown += dt; if (_banner.t <= 0) _banner = null; }
+  if (!_banner && bannerQueue.length) { const b = bannerQueue.shift(); b.t = Math.max(b.t, BANNER_REPLAY_T); _banner = b; _bannerShown = 0; }
+}
+// true when the knight is reading this banner now or it is waiting in the queue to come up (self-tests assert this, the promise)
+function bannerAhead(text) { return (!!_banner && _banner.text === text) || bannerQueue.some(b => b.text === text); }
+function clearBanners() { _banner = null; _bannerShown = 0; bannerQueue = []; }
 let areaBanner = null; // {name, sub, t}
 let dialog = { queue: [], cur: null, shown: 0, t: 0 };
 let notice = null;
@@ -225,7 +263,7 @@ function newGame() {
   // how many dice the first seconds roll, so a seeded self-test could not replay the same opening twice
   for (const n of NPCS) { n.px = n.home.x; n.py = n.home.y; n.wanderT = Math.random() * 3; n.dir = null; n.moving = false; }
   spawnMonsters(); paused = false; closePanel();
-  time = 0; introT = 0; areaBanner = null; levelBanner = null;
+  time = 0; introT = 0; areaBanner = null; clearBanners();
   for (const h of HOOKS.newGame) h();
 }
 function changeTile(tx, ty, t) { setTile(tx, ty, t); mapDiffs.set(idx(tx, ty), t); blockHp.delete(idx(tx, ty)); miniDirtyTiles.add(idx(tx, ty)); }

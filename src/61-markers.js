@@ -290,8 +290,7 @@
     lastMini = [];
     if (!st().show || inInstance()) return;
     if (typeof x !== 'number' || !(size > 0)) return;
-    const tilesAcross = 44, scale = size / tilesAcross;
-    const sx = clamp(player.x / TILE - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(player.y / TILE - tilesAcross / 2, 0, MAP_H - tilesAcross);
+    const { scale, sx, sy } = miniWindow(size);
     const r = size < 120 ? 3.4 : MINI_R;
     g.save(); roundRect(g, x, y, size, size, 10); g.clip();
     for (const m of known()) {
@@ -361,6 +360,9 @@
   }
   function drawWorldMarkers(g, narrow) {
     lastMap = null;
+    // inside an instance the map is the instance's (10-hud draws only its rect): the world's markers, their key and
+    // their toggle belong to the world map, so none of them is drawn over the dungeon
+    if (inInstance()) { selected = null; hover = null; return; }
     const bi = buttons.findIndex(b => b.label === 'mapimage');
     if (bi < 0) return;
     const img = buttons[bi], ix = img.x, iy = img.y, iw = img.w, ih = img.h, sc = iw / MAP_W;

@@ -46,6 +46,9 @@ function dialogHit(x, y) { return !!dialog.cur && inRect(x, y, dialogRect) && !j
 
 // ---------- panel rect (tap outside closes, tap inside is absorbed) ----------
 let panelRect = null;
+// where the world map panel drew its image this frame (10-hud fills it): features that draw on the map read this
+// instead of assuming the whole world fills the box — inside an instance only the instance is drawn, centred
+let mapLayout = null;
 
 // ---------- two-tap confirmations ----------
 let uxConfirm = null; // {label, until}
@@ -86,12 +89,14 @@ HOOKS.mapTarget.push(() => quest.wren === 'active' ? { x: 30, y: 78, label: 'Old
 HOOKS.mapTarget.push(() => { const a = activeQuests(); return a.includes('board') ? { x: 105, y: 27, label: 'Notice board', id: 'board' } : null; });
 HOOKS.mapTarget.push(() => activeQuests().includes('law') ? { x: 110, y: 41, label: 'Captain of the Watch', id: 'law' } : null);
 HOOKS.mapTarget.push(() => activeQuests().includes('dragons') ? { x: 67, y: 104, label: 'Dunstan', id: 'dragons' } : null);
-function mapTargets() { const out = []; for (const f of HOOKS.mapTarget) { let t = null; try { t = f(); } catch (e) { t = null; } if (t && typeof t.x === 'number' && typeof t.y === 'number') out.push(t); } return out; }
+// A target is on the world map unless it says otherwise: { map: '<instance id>' } puts it on that instance's map instead.
+// Inside an instance only that instance's own targets are listed, so no overworld ring, label or compass arrow lands on the
+// dungeon drawn in the same top-left tiles (the quest box's "Head for ..." line and the minimap compass read this too).
+function mapTargets() {
+  const here = window.INSTANCES && INSTANCES.active ? INSTANCES.active() || null : null;
+  const out = []; for (const f of HOOKS.mapTarget) { let t = null; try { t = f(); } catch (e) { t = null; } if (t && typeof t.x === 'number' && typeof t.y === 'number' && (t.map && t.map !== 'over' ? t.map : null) === here) out.push(t); } return out;
+}
 function trackedTarget() { if (!quest.tracked) return null; return mapTargets().find(t => t.id === quest.tracked) || null; }
-
-// ---------- banner queue ----------
-let bannerQueue = []; // displaced level banners, drawn 40 px under the live one
-let _lastBanner = null;
 
 // ---------- HUD layout shared with feature files (filled by drawHud every frame) ----------
 const HUD_LAYOUT = { narrow: false, short: false, hotbarY: 0, hotbarH: 44, questY: 0, questH: 0, noticeY: 84, topStackBottom: 76, bossBarY: 84 };
@@ -101,14 +106,8 @@ let _lastStage = -1;
 HOOKS.update.push(dt => {
   if (quest.stage !== _lastStage) { _lastStage = quest.stage; if (!quest.untrackedByPlayer) quest.tracked = 'main'; }
   if (quest.tracked && quest.tracked !== 'main' && !activeQuests().includes(quest.tracked) && !quest.untrackedByPlayer) quest.tracked = 'main';
-  if (levelBanner !== _lastBanner) {
-    if (_lastBanner && levelBanner && _lastBanner.t > 0.3) bannerQueue = [_lastBanner];
-    _lastBanner = levelBanner;
-  }
-  for (const b of bannerQueue) b.t -= dt;
-  bannerQueue = bannerQueue.filter(b => b.t > 0);
 });
-HOOKS.newGame.push(() => { quest.tracked = 'main'; quest.untrackedByPlayer = false; _lastStage = quest.stage; bannerQueue = []; _lastBanner = null; dialogLog.length = 0; uxConfirm = null; });
+HOOKS.newGame.push(() => { quest.tracked = 'main'; quest.untrackedByPlayer = false; _lastStage = quest.stage; dialogLog.length = 0; uxConfirm = null; });
 
 // ---------- self-test ----------
 HOOKS.selfTest.push((check, F, h) => {
@@ -152,9 +151,22 @@ HOOKS.selfTest.push((check, F, h) => {
     pointerDown(free[0], free[1], 'mouse'); const closed = panel === null; closePanel(); dialog.cur = dc;
     buttons.length = 0; button(ctx, 10, 10, 50, 20, 'Nope', () => { }, '#000', false); const inert = buttons.length === 1 && buttons[0].label === 'disabled:Nope' && !F.clickButton('Nope'); buttons.length = 0;
     check('ux: taps inside a panel are absorbed, outside close it; disabled buttons are registered as no-ops', kept && closed && inert, { kept, closed, inert, r }); }
-  // banner queue
-  { levelBanner = { text: 'FIRST', sub: 'a', t: 3 }; F.step([]); levelBanner = { text: 'SECOND', sub: 'b', t: 3 }; F.step([]); const queued = bannerQueue.length === 1 && bannerQueue[0].text === 'FIRST' && levelBanner.text === 'SECOND'; levelBanner = null; bannerQueue = []; F.step([]);
-    check('ux: a new level banner pushes the showing one into a second slot instead of replacing it', queued, { queued }); }
+  // banner queue: a banner replaced too soon is shown after the one that replaced it, never lost
+  { clearBanners(); const saw = [], watch = n => { for (let i = 0; i < n; i++) { F.step([]); const t = levelBanner && levelBanner.text; if (t && saw[saw.length - 1] !== t) saw.push(t); } };
+    // a boss kill: a rare drop, DUNGEON CLEARED and a level-up all land in the same tick
+    levelBanner = { text: 'RARE DROP', sub: 'a', t: 3 }; levelBanner = { text: 'DUNGEON CLEARED', sub: 'b', t: 4 }; levelBanner = { text: 'Melee level 9!', sub: 'Level up', t: 2.6 };
+    const now = levelBanner.text, waiting = bannerQueue.map(b => b.text);
+    watch(60 * 14); const allSeen = saw.join(' > '), drained = !levelBanner && bannerQueue.length === 0;
+    // one that has been read for 2 s and is then replaced has been seen: it does not come back
+    levelBanner = { text: 'READ', sub: 'c', t: 4 }; F.sim(120, []); levelBanner = { text: 'NEXT', sub: 'd', t: 2 }; const notRequeued = bannerQueue.length === 0;
+    // putting a waiting banner back on screen (30-ashdrake does, over a level-up) takes it out of the queue: no double
+    clearBanners(); const boss = { text: 'BOSS', sub: 'e', t: 4 }; levelBanner = boss; const lv = { text: 'Melee level 10!', sub: 'Level up', t: 2.6 }; levelBanner = lv; levelBanner = boss;
+    const swap = levelBanner === boss && bannerQueue.length === 1 && bannerQueue[0] === lv;
+    // a new game clears the lot
+    clearBanners(); const cleared = !levelBanner && bannerQueue.length === 0; F.step([]);
+    check('ux: banners queue: a rare drop, DUNGEON CLEARED and a level-up in one tick are each shown in turn (newest first, then the rest in order); one read for 2 s is not shown again; re-showing a waiting one takes it out of the queue',
+      now === 'Melee level 9!' && waiting.join() === 'RARE DROP,DUNGEON CLEARED' && allSeen === 'Melee level 9! > RARE DROP > DUNGEON CLEARED' && drained && notRequeued && swap && cleared,
+      { now, waiting, allSeen, drained, notRequeued, swap, cleared }); }
   // kid mode toggle is exposed
   { const k0 = window.__kidmode; toggleKidMode(); const on = window.__kidmode === !k0; toggleKidMode(); const back = window.__kidmode === k0; check('ux: kid mode toggle flips window.__kidmode', on && back, { on, back }); }
   window.__forceTouch = prevTouch;

@@ -8,13 +8,32 @@ const darkLayer = document.createElement('canvas');
 // changeTile touched (miniDirtyTiles) are repainted, so a chopped tree costs one pixel and not a 28,000-cell sweep.
 const miniCanvas = document.createElement('canvas'); miniCanvas.width = MAP_W; miniCanvas.height = MAP_H;
 let miniDirty = true, miniDiffCount = -1;
+// What the maps show. Out in the world: the whole world. Inside an instance: that instance's own rect and nothing else.
+// An instance is written into the top-left of `map`, over the ground where the Cave, the Grey Quarry and Miller's Pond
+// are, so every map layer (the minimap, the world map, markers, quest rings, friends, the companion) asks this first
+// instead of assuming MAP_W x MAP_H — otherwise the overworld's names and markers are drawn over the dungeon.
+function mapView() {
+  const id = window.INSTANCES && INSTANCES.active ? INSTANCES.active() : null;
+  const inst = id && INSTANCES.get ? INSTANCES.get(id) : null;
+  if (inst) return { id, w: inst.w, h: inst.h, name: inst.name, sub: inst.sub || '' };
+  return { id: null, w: MAP_W, h: MAP_H, name: 'The Fanglands', sub: '' };
+}
+// The minimap's window onto mapView(): 44 tiles across in the world; inside a small instance the whole instance fits,
+// and the window never slides past the instance's edge into the walls that fill the rest of the map.
+function miniWindow(size) {
+  const view = mapView(), across = view.id ? Math.min(44, Math.max(view.w, view.h)) : 44;
+  const sx = clamp(player.x / TILE - across / 2, 0, Math.max(0, view.w - across)), sy = clamp(player.y / TILE - across / 2, 0, Math.max(0, view.h - across));
+  return { across, scale: size / across, sx, sy, view };
+}
+// inside an instance only its own buildings are painted: the overworld's (Thistledown, the castle) stay in BUILDINGS
+const onMiniMap = (tx, ty) => { const v = mapView(); return !v.id || (tx >= 0 && ty >= 0 && tx < v.w && ty < v.h); };
 function refreshMini() {
   const g = miniCanvas.getContext('2d');
   if (miniDirty) {
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { g.fillStyle = MINI[map[idx(x, y)]] || '#4c9134'; g.fillRect(x, y, 1, 1); }
-    for (const b of BUILDINGS) { g.fillStyle = b.roof; g.fillRect(b.x, b.y, b.w, b.h); }
+    for (const b of BUILDINGS) { if (!onMiniMap(b.x, b.y)) continue; g.fillStyle = b.roof; g.fillRect(b.x, b.y, b.w, b.h); }
   } else {
-    for (const i of miniDirtyTiles) { const x = i % MAP_W, y = Math.floor(i / MAP_W); const b = buildingAt(x, y); g.fillStyle = b ? b.roof : (MINI[map[i]] || '#4c9134'); g.fillRect(x, y, 1, 1); }
+    for (const i of miniDirtyTiles) { const x = i % MAP_W, y = Math.floor(i / MAP_W); const b = onMiniMap(x, y) && buildingAt(x, y); g.fillStyle = b ? b.roof : (MINI[map[i]] || '#4c9134'); g.fillRect(x, y, 1, 1); }
   }
   miniDirtyTiles.clear(); miniDirty = false; miniDiffCount = mapDiffs.size;
 }
@@ -117,16 +136,14 @@ function render() {
 }
 function drawMinimap(g, x, y, size) {
   if (miniNeedsPaint()) refreshMini();
-  const tilesAcross = 44, scale = size / tilesAcross;
-  const cx = player.x / TILE, cy = player.y / TILE;
-  const sx = clamp(cx - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(cy - tilesAcross / 2, 0, MAP_H - tilesAcross);
+  const { across: tilesAcross, scale, sx, sy, view } = miniWindow(size);
   g.save(); roundRect(g, x, y, size, size, 10); g.clip();
   g.imageSmoothingEnabled = false; g.drawImage(miniCanvas, sx, sy, tilesAcross, tilesAcross, x, y, size, size); g.imageSmoothingEnabled = true;
   const dot = (wx, wy, color, r) => { g.fillStyle = color; g.beginPath(); g.arc(x + (wx / TILE - sx) * scale, y + (wy / TILE - sy) * scale, r, 0, 7); g.fill(); };
-  for (const n of NPCS) dot(n.px, n.py, n.ghost ? '#b58cff' : '#ffe9a8', 1.6);
+  for (const n of NPCS) if (onMiniMap(Math.floor(n.px / TILE), Math.floor(n.py / TILE))) dot(n.px, n.py, n.ghost ? '#b58cff' : '#ffe9a8', 1.6);
   for (const m of monsters) if (!m.dead) dot(m.x, m.y, MONSTER_DEFS[m.type].aggro ? '#ff6b6b' : '#f5c542', 1.6);
-  if (player.home) dot(player.home.x, player.home.y, '#7ec8ff', 3);
-  dot(player.x, player.y, '#ffffff', 3.5);
+  if (player.home && !view.id) dot(player.home.x, player.home.y, '#7ec8ff', 3); // home is a place in the world, not in here
+  dot(player.x, player.y, 'rgba(0,0,0,0.7)', 5); dot(player.x, player.y, '#ffffff', 3.5); // a dark rim: a white dot alone vanishes on Aerie's white cloud
   g.restore();
   g.strokeStyle = HK.C.CTRL_EDGE; g.lineWidth = 1.5; roundRect(g, x, y, size, size, HK.R); g.stroke(); // tapping it opens the map, so it wears the kit's pressable edge (src/59-hudkit.js)
 }

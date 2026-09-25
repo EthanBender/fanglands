@@ -183,17 +183,14 @@ function drawHud(g) {
     g.font = '13px sans-serif'; g.fillStyle = '#c9a36a'; g.strokeText(areaBanner.sub, VW / 2, VH * 0.22 + 22); g.fillText(areaBanner.sub, VW / 2, VH * 0.22 + 22);
     g.globalAlpha = 1;
   }
-  // level banners: the live one, then up to one displaced banner 40 px lower (smaller, so the two never touch)
-  const banners = [];
-  if (levelBanner) banners.push(levelBanner);
-  if (bannerQueue.length) banners.push(bannerQueue[0]);
-  banners.slice(0, 2).forEach((b, i) => {
-    const a = clamp(Math.min(b.t, 1) * 1.2, 0, 1); const by = VH * 0.34 + (i ? 40 + 14 : 0);
-    g.globalAlpha = a; g.fillStyle = i ? '#e6c76a' : '#f5c542'; g.font = `800 ${i ? (narrow ? 16 : 22) : (narrow ? 24 : 34)}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,0.7)';
+  // the level banner: one at a time; the ones that were replaced too soon wait in bannerQueue and follow it (04-state)
+  if (levelBanner) {
+    const b = levelBanner, a = clamp(Math.min(b.t, 1) * 1.2, 0, 1), by = VH * 0.34;
+    g.globalAlpha = a; g.fillStyle = '#f5c542'; g.font = `800 ${narrow ? 24 : 34}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,0.7)';
     g.strokeText(b.text, VW / 2, by); g.fillText(b.text, VW / 2, by);
-    g.font = `bold ${i ? 12 : 14}px sans-serif`; g.fillStyle = '#e6edf3'; g.strokeText(b.sub, VW / 2, by + (i ? 18 : 26)); g.fillText(b.sub, VW / 2, by + (i ? 18 : 26));
+    g.font = 'bold 14px sans-serif'; g.fillStyle = '#e6edf3'; g.strokeText(b.sub, VW / 2, by + 26); g.fillText(b.sub, VW / 2, by + 26);
     g.globalAlpha = 1;
-  });
+  }
   if (paused) {
     buttons.length = 0; minimapRect = null; dialogRect = null; panelRect = null; // nothing under the menu is tappable
     g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0, 0, VW, VH);
@@ -216,10 +213,8 @@ function drawHud(g) {
 }
 // small arrow on the minimap edge pointing at the tracked quest's target (or a ring when the target is on the minimap)
 function drawCompass(g, x, y, size) {
-  const t = trackedTarget(); if (!t) return;
-  const tilesAcross = 44, scale = size / tilesAcross;
-  const cx = player.x / TILE, cy = player.y / TILE;
-  const sx = clamp(cx - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(cy - tilesAcross / 2, 0, MAP_H - tilesAcross);
+  const t = trackedTarget(); if (!t) return;   // inside an instance only a target on this instance's own map is kept (mapTargets)
+  const { scale, sx, sy } = miniWindow(size);
   const mx = x + (t.x + 0.5 - sx) * scale, my = y + (t.y + 0.5 - sy) * scale;
   g.strokeStyle = '#f5c542'; g.lineWidth = 2;
   if (mx > x + 6 && mx < x + size - 6 && my > y + 6 && my < y + size - 6) { g.beginPath(); g.arc(mx, my, 5 + Math.sin(time * 4) * 1.5, 0, 7); g.stroke(); return; }
@@ -299,20 +294,36 @@ function drawPanels(g, narrow, short, qh, hb) {
     for (const id of done) { g.fillStyle = '#6e7681'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(`✓ ${QUEST_DEFS[id].name} — done`, px + 30, y + 12); y += 20; }
   }
   if (panel === 'map') {
-    const mw = Math.min(VW - 40, 760), mh = Math.min(VH - 60, mw * MAP_H / MAP_W + 70);
-    const { px, py, w, h } = panelBox(g, mw, mh, 'The Fanglands', 'White: you. Blue: home. Gold: quest targets. Tap anywhere to close.');
+    // Inside an instance the map is that instance: its name on the panel, its own rect drawn to fill the box, and
+    // none of the overworld's region names, homes, markers or quest rings (they sit in the same top-left tiles).
+    const view = mapView(), inside = !!view.id;
+    // an instance's box is cut to its shape (Deepholm is nearly square): as wide as its map can be at the height there is
+    let mw = Math.min(VW - 40, 760); if (inside) mw = Math.min(mw, Math.max(360, (VH - 60 - 80) * view.w / view.h + 36));
+    const mh = Math.min(VH - 60, inside ? (mw - 36) * view.h / view.w + 80 : mw * MAP_H / MAP_W + 70);
+    const { px, py, w, h } = panelBox(g, mw, mh, view.name, inside ? `${view.sub ? view.sub + '. ' : ''}White: you. Tap anywhere to close.` : 'White: you. Blue: home. Gold: quest targets. Tap anywhere to close.');
     if (miniDirty || miniDiffCount !== mapDiffs.size) refreshMini();
-    const iw = w - 36, ih = Math.min(h - 80, iw * MAP_H / MAP_W), ix = px + 18, iy = py + 62; const sc = iw / MAP_W;
-    g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip(); g.imageSmoothingEnabled = false; g.drawImage(miniCanvas, 0, 0, MAP_W, MAP_H, ix, iy, iw, MAP_W * sc * MAP_H / MAP_W); g.imageSmoothingEnabled = true;
-    for (const r of REGIONS) { if (r.name === 'Goblin Fields' || r.name === 'The Wilds') continue; const cx = ix + (r.x0 + r.x1 + 1) / 2 * sc, cy = iy + (r.y0 + r.y1 + 1) / 2 * sc; g.font = `700 ${Math.max(9, sc * 2.2)}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(r.name.toUpperCase(), cx, cy); g.fillStyle = '#e6edf3'; g.fillText(r.name.toUpperCase(), cx, cy); }
-    const dot = (wx, wy, color, r) => { g.fillStyle = color; g.beginPath(); g.arc(ix + wx / TILE * sc, iy + wy / TILE * sc, r, 0, 7); g.fill(); };
-    if (player.home) dot(player.home.x, player.home.y, '#7ec8ff', 4);
+    const iw = w - 36, ih = Math.min(h - 80, iw * view.h / view.w), ix = px + 18, iy = py + 62;
+    // the world keeps its old fit (full width, cropped at the foot on a short screen); an instance fits whole and is centred
+    const sc = inside ? Math.min(iw / view.w, ih / view.h) : iw / MAP_W;
+    const ox = inside ? ix + (iw - view.w * sc) / 2 : ix, oy = inside ? iy + (ih - view.h * sc) / 2 : iy;
+    mapLayout = { ix, iy, iw, ih, ox, oy, sc, view };
+    g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip();
+    if (inside) { g.fillStyle = '#0b0f14'; g.fillRect(ix, iy, iw, ih); }
+    g.imageSmoothingEnabled = false; g.drawImage(miniCanvas, 0, 0, view.w, view.h, ox, oy, view.w * sc, view.h * sc); g.imageSmoothingEnabled = true;
+    for (const r of REGIONS) {
+      if (r.name === 'Goblin Fields' || r.name === 'The Wilds') continue;
+      // inside: only a region a feature marked as this instance's own (r.instance === id) and not the whole-instance one the title already names
+      if (inside ? r.instance !== view.id || (r.x0 <= 0 && r.y0 <= 0 && r.x1 >= view.w - 1 && r.y1 >= view.h - 1) : r.instance) continue;
+      const cx = ox + (r.x0 + r.x1 + 1) / 2 * sc, cy = oy + (r.y0 + r.y1 + 1) / 2 * sc; g.font = `700 ${Math.max(9, Math.min(16, sc * 2.2))}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(r.name.toUpperCase(), cx, cy); g.fillStyle = '#e6edf3'; g.fillText(r.name.toUpperCase(), cx, cy);
+    }
+    const dot = (wx, wy, color, r) => { g.fillStyle = color; g.beginPath(); g.arc(ox + wx / TILE * sc, oy + wy / TILE * sc, r, 0, 7); g.fill(); };
+    if (player.home && !inside) dot(player.home.x, player.home.y, '#7ec8ff', 4);
     for (const t of mapTargets()) {
-      const tx = ix + (t.x + 0.5) * sc, ty = iy + (t.y + 0.5) * sc, isTracked = t.id === quest.tracked;
+      const tx = ox + (t.x + 0.5) * sc, ty = oy + (t.y + 0.5) * sc, isTracked = t.id === quest.tracked;
       g.strokeStyle = isTracked ? '#f5c542' : 'rgba(245,197,66,0.7)'; g.lineWidth = isTracked ? 2.5 : 1.5; g.beginPath(); g.arc(tx, ty, (isTracked ? 6 : 5) + Math.sin(time * 4) * 2, 0, 7); g.stroke();
       if (t.label) { g.font = `bold ${narrow ? 9 : 11}px sans-serif`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(t.label, tx, ty - 10); g.fillStyle = '#f5c542'; g.fillText(t.label, tx, ty - 10); }
     }
-    dot(player.x, player.y, '#ffffff', 4);
+    dot(player.x, player.y, 'rgba(0,0,0,0.7)', 5.5); dot(player.x, player.y, '#ffffff', 4); // the rim keeps him visible on white cloud
     g.restore();
     buttons.push({ x: ix, y: iy, w: iw, h: ih, label: 'mapimage', action: closePanel }); // "tap anywhere to close" — the map itself closes too
   }

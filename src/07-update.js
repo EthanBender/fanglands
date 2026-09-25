@@ -23,7 +23,7 @@ function update(dt) {
   if (!dialog.cur && dialog.queue.length) { dialog.cur = dialog.queue.shift(); dialog.shown = 0; dialog.t = 0; }
   if (dialog.cur) { dialog.t += dt; dialog.shown = Math.min(dialog.cur.text.length, Math.floor(dialog.t * 34)); if (dialog.t > 4 + dialog.cur.text.length / 9) advanceDialog(); } // waits for a tap; the timer is only a safety net for a kid who does not know to tap
   if (notice) { notice.t -= dt; if (notice.t <= 0) notice = null; }
-  if (levelBanner) { levelBanner.t -= dt; if (levelBanner.t <= 0) levelBanner = null; }
+  tickBanners(dt); // the one on screen runs down; when it is gone the next waiting banner comes up (04-state)
   if (areaBanner) { areaBanner.t -= dt; if (areaBanner.t <= 0) areaBanner = null; }
   introT += dt;
   if (quest.stage === 0 && introT > 1.4) advanceQuest(1);

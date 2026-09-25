@@ -654,7 +654,45 @@ let paused = false;
 let panel = null; // null | inventory | bank | shop | craft | coffin | skills | quests | map | station
 let panelArg = null; let selectedSlot = -1;
 let time = 0;
-let levelBanner = null;
+// ---------- the big centre banner: one on screen, the others wait their turn ----------
+// Every file shows a banner by writing `levelBanner = { text, sub, t }`, so the queue lives behind that one name:
+// levelBanner is a property of window with a getter and a setter, not a `let`. A banner replaced before it has been on
+// screen for BANNER_MIN_SHOWN seconds (with more than BANNER_MIN_LEFT seconds still to run) is not lost: it joins
+// bannerQueue and comes up after the one that replaced it, so a level-up on the boss kill no longer wipes DUNGEON
+// CLEARED, and a rare drop, a quest, a chapter and a level-up in one swing are all read. Setting a banner that is
+// already waiting takes it out of the queue first (30-ashdrake puts a boss banner back over a level-up: the level-up
+// then waits). `levelBanner = null` dismisses the one on screen; the next waiting one comes up on the next tick
+// (tickBanners, from 07-update). clearBanners() drops everything (new game, the title screen).
+const BANNER_MIN_SHOWN = 1.5, BANNER_MIN_LEFT = 0.5, BANNER_QUEUE_MAX = 6, BANNER_MAX_WAIT = 30, BANNER_REPLAY_T = 2.5;
+let bannerQueue = [];
+let _banner = null, _bannerShown = 0;
+const _bannerWait = new WeakMap();   // seconds a queued banner has waited: one that waited longer than BANNER_MAX_WAIT is stale news
+Object.defineProperty(window, 'levelBanner', {
+  configurable: true,
+  get: () => _banner,
+  set: v => {
+    v = v || null;
+    if (v === _banner) return;
+    if (v) { const i = bannerQueue.indexOf(v); if (i >= 0) bannerQueue.splice(i, 1); }
+    const old = _banner;
+    if (old && v && old.t > BANNER_MIN_LEFT && _bannerShown < BANNER_MIN_SHOWN && !bannerQueue.includes(old)) {
+      bannerQueue.push(old); _bannerWait.set(old, 0);
+      if (bannerQueue.length > BANNER_QUEUE_MAX) bannerQueue.shift();   // a flood keeps the newest few, not all of them
+    }
+    _banner = v; _bannerShown = 0;
+  },
+});
+function tickBanners(dt) {
+  if (bannerQueue.length) {
+    for (const b of bannerQueue) _bannerWait.set(b, (_bannerWait.get(b) || 0) + dt);
+    bannerQueue = bannerQueue.filter(b => b && b.t > 0 && _bannerWait.get(b) <= BANNER_MAX_WAIT);
+  }
+  if (_banner) { _banner.t -= dt; _bannerShown += dt; if (_banner.t <= 0) _banner = null; }
+  if (!_banner && bannerQueue.length) { const b = bannerQueue.shift(); b.t = Math.max(b.t, BANNER_REPLAY_T); _banner = b; _bannerShown = 0; }
+}
+// true when the knight is reading this banner now or it is waiting in the queue to come up (self-tests assert this, the promise)
+function bannerAhead(text) { return (!!_banner && _banner.text === text) || bannerQueue.some(b => b.text === text); }
+function clearBanners() { _banner = null; _bannerShown = 0; bannerQueue = []; }
 let areaBanner = null; // {name, sub, t}
 let dialog = { queue: [], cur: null, shown: 0, t: 0 };
 let notice = null;
@@ -853,7 +891,7 @@ function newGame() {
   // how many dice the first seconds roll, so a seeded self-test could not replay the same opening twice
   for (const n of NPCS) { n.px = n.home.x; n.py = n.home.y; n.wanderT = Math.random() * 3; n.dir = null; n.moving = false; }
   spawnMonsters(); paused = false; closePanel();
-  time = 0; introT = 0; areaBanner = null; levelBanner = null;
+  time = 0; introT = 0; areaBanner = null; clearBanners();
   for (const h of HOOKS.newGame) h();
 }
 function changeTile(tx, ty, t) { setTile(tx, ty, t); mapDiffs.set(idx(tx, ty), t); blockHp.delete(idx(tx, ty)); miniDirtyTiles.add(idx(tx, ty)); }
@@ -1507,7 +1545,7 @@ function update(dt) {
   if (!dialog.cur && dialog.queue.length) { dialog.cur = dialog.queue.shift(); dialog.shown = 0; dialog.t = 0; }
   if (dialog.cur) { dialog.t += dt; dialog.shown = Math.min(dialog.cur.text.length, Math.floor(dialog.t * 34)); if (dialog.t > 4 + dialog.cur.text.length / 9) advanceDialog(); } // waits for a tap; the timer is only a safety net for a kid who does not know to tap
   if (notice) { notice.t -= dt; if (notice.t <= 0) notice = null; }
-  if (levelBanner) { levelBanner.t -= dt; if (levelBanner.t <= 0) levelBanner = null; }
+  tickBanners(dt); // the one on screen runs down; when it is gone the next waiting banner comes up (04-state)
   if (areaBanner) { areaBanner.t -= dt; if (areaBanner.t <= 0) areaBanner = null; }
   introT += dt;
   if (quest.stage === 0 && introT > 1.4) advanceQuest(1);
@@ -2102,13 +2140,32 @@ const darkLayer = document.createElement('canvas');
 // changeTile touched (miniDirtyTiles) are repainted, so a chopped tree costs one pixel and not a 28,000-cell sweep.
 const miniCanvas = document.createElement('canvas'); miniCanvas.width = MAP_W; miniCanvas.height = MAP_H;
 let miniDirty = true, miniDiffCount = -1;
+// What the maps show. Out in the world: the whole world. Inside an instance: that instance's own rect and nothing else.
+// An instance is written into the top-left of `map`, over the ground where the Cave, the Grey Quarry and Miller's Pond
+// are, so every map layer (the minimap, the world map, markers, quest rings, friends, the companion) asks this first
+// instead of assuming MAP_W x MAP_H — otherwise the overworld's names and markers are drawn over the dungeon.
+function mapView() {
+  const id = window.INSTANCES && INSTANCES.active ? INSTANCES.active() : null;
+  const inst = id && INSTANCES.get ? INSTANCES.get(id) : null;
+  if (inst) return { id, w: inst.w, h: inst.h, name: inst.name, sub: inst.sub || '' };
+  return { id: null, w: MAP_W, h: MAP_H, name: 'The Fanglands', sub: '' };
+}
+// The minimap's window onto mapView(): 44 tiles across in the world; inside a small instance the whole instance fits,
+// and the window never slides past the instance's edge into the walls that fill the rest of the map.
+function miniWindow(size) {
+  const view = mapView(), across = view.id ? Math.min(44, Math.max(view.w, view.h)) : 44;
+  const sx = clamp(player.x / TILE - across / 2, 0, Math.max(0, view.w - across)), sy = clamp(player.y / TILE - across / 2, 0, Math.max(0, view.h - across));
+  return { across, scale: size / across, sx, sy, view };
+}
+// inside an instance only its own buildings are painted: the overworld's (Thistledown, the castle) stay in BUILDINGS
+const onMiniMap = (tx, ty) => { const v = mapView(); return !v.id || (tx >= 0 && ty >= 0 && tx < v.w && ty < v.h); };
 function refreshMini() {
   const g = miniCanvas.getContext('2d');
   if (miniDirty) {
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { g.fillStyle = MINI[map[idx(x, y)]] || '#4c9134'; g.fillRect(x, y, 1, 1); }
-    for (const b of BUILDINGS) { g.fillStyle = b.roof; g.fillRect(b.x, b.y, b.w, b.h); }
+    for (const b of BUILDINGS) { if (!onMiniMap(b.x, b.y)) continue; g.fillStyle = b.roof; g.fillRect(b.x, b.y, b.w, b.h); }
   } else {
-    for (const i of miniDirtyTiles) { const x = i % MAP_W, y = Math.floor(i / MAP_W); const b = buildingAt(x, y); g.fillStyle = b ? b.roof : (MINI[map[i]] || '#4c9134'); g.fillRect(x, y, 1, 1); }
+    for (const i of miniDirtyTiles) { const x = i % MAP_W, y = Math.floor(i / MAP_W); const b = onMiniMap(x, y) && buildingAt(x, y); g.fillStyle = b ? b.roof : (MINI[map[i]] || '#4c9134'); g.fillRect(x, y, 1, 1); }
   }
   miniDirtyTiles.clear(); miniDirty = false; miniDiffCount = mapDiffs.size;
 }
@@ -2211,16 +2268,14 @@ function render() {
 }
 function drawMinimap(g, x, y, size) {
   if (miniNeedsPaint()) refreshMini();
-  const tilesAcross = 44, scale = size / tilesAcross;
-  const cx = player.x / TILE, cy = player.y / TILE;
-  const sx = clamp(cx - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(cy - tilesAcross / 2, 0, MAP_H - tilesAcross);
+  const { across: tilesAcross, scale, sx, sy, view } = miniWindow(size);
   g.save(); roundRect(g, x, y, size, size, 10); g.clip();
   g.imageSmoothingEnabled = false; g.drawImage(miniCanvas, sx, sy, tilesAcross, tilesAcross, x, y, size, size); g.imageSmoothingEnabled = true;
   const dot = (wx, wy, color, r) => { g.fillStyle = color; g.beginPath(); g.arc(x + (wx / TILE - sx) * scale, y + (wy / TILE - sy) * scale, r, 0, 7); g.fill(); };
-  for (const n of NPCS) dot(n.px, n.py, n.ghost ? '#b58cff' : '#ffe9a8', 1.6);
+  for (const n of NPCS) if (onMiniMap(Math.floor(n.px / TILE), Math.floor(n.py / TILE))) dot(n.px, n.py, n.ghost ? '#b58cff' : '#ffe9a8', 1.6);
   for (const m of monsters) if (!m.dead) dot(m.x, m.y, MONSTER_DEFS[m.type].aggro ? '#ff6b6b' : '#f5c542', 1.6);
-  if (player.home) dot(player.home.x, player.home.y, '#7ec8ff', 3);
-  dot(player.x, player.y, '#ffffff', 3.5);
+  if (player.home && !view.id) dot(player.home.x, player.home.y, '#7ec8ff', 3); // home is a place in the world, not in here
+  dot(player.x, player.y, 'rgba(0,0,0,0.7)', 5); dot(player.x, player.y, '#ffffff', 3.5); // a dark rim: a white dot alone vanishes on Aerie's white cloud
   g.restore();
   g.strokeStyle = HK.C.CTRL_EDGE; g.lineWidth = 1.5; roundRect(g, x, y, size, size, HK.R); g.stroke(); // tapping it opens the map, so it wears the kit's pressable edge (src/59-hudkit.js)
 }
@@ -2411,17 +2466,14 @@ function drawHud(g) {
     g.font = '13px sans-serif'; g.fillStyle = '#c9a36a'; g.strokeText(areaBanner.sub, VW / 2, VH * 0.22 + 22); g.fillText(areaBanner.sub, VW / 2, VH * 0.22 + 22);
     g.globalAlpha = 1;
   }
-  // level banners: the live one, then up to one displaced banner 40 px lower (smaller, so the two never touch)
-  const banners = [];
-  if (levelBanner) banners.push(levelBanner);
-  if (bannerQueue.length) banners.push(bannerQueue[0]);
-  banners.slice(0, 2).forEach((b, i) => {
-    const a = clamp(Math.min(b.t, 1) * 1.2, 0, 1); const by = VH * 0.34 + (i ? 40 + 14 : 0);
-    g.globalAlpha = a; g.fillStyle = i ? '#e6c76a' : '#f5c542'; g.font = `800 ${i ? (narrow ? 16 : 22) : (narrow ? 24 : 34)}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,0.7)';
+  // the level banner: one at a time; the ones that were replaced too soon wait in bannerQueue and follow it (04-state)
+  if (levelBanner) {
+    const b = levelBanner, a = clamp(Math.min(b.t, 1) * 1.2, 0, 1), by = VH * 0.34;
+    g.globalAlpha = a; g.fillStyle = '#f5c542'; g.font = `800 ${narrow ? 24 : 34}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,0.7)';
     g.strokeText(b.text, VW / 2, by); g.fillText(b.text, VW / 2, by);
-    g.font = `bold ${i ? 12 : 14}px sans-serif`; g.fillStyle = '#e6edf3'; g.strokeText(b.sub, VW / 2, by + (i ? 18 : 26)); g.fillText(b.sub, VW / 2, by + (i ? 18 : 26));
+    g.font = 'bold 14px sans-serif'; g.fillStyle = '#e6edf3'; g.strokeText(b.sub, VW / 2, by + 26); g.fillText(b.sub, VW / 2, by + 26);
     g.globalAlpha = 1;
-  });
+  }
   if (paused) {
     buttons.length = 0; minimapRect = null; dialogRect = null; panelRect = null; // nothing under the menu is tappable
     g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0, 0, VW, VH);
@@ -2444,10 +2496,8 @@ function drawHud(g) {
 }
 // small arrow on the minimap edge pointing at the tracked quest's target (or a ring when the target is on the minimap)
 function drawCompass(g, x, y, size) {
-  const t = trackedTarget(); if (!t) return;
-  const tilesAcross = 44, scale = size / tilesAcross;
-  const cx = player.x / TILE, cy = player.y / TILE;
-  const sx = clamp(cx - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(cy - tilesAcross / 2, 0, MAP_H - tilesAcross);
+  const t = trackedTarget(); if (!t) return;   // inside an instance only a target on this instance's own map is kept (mapTargets)
+  const { scale, sx, sy } = miniWindow(size);
   const mx = x + (t.x + 0.5 - sx) * scale, my = y + (t.y + 0.5 - sy) * scale;
   g.strokeStyle = '#f5c542'; g.lineWidth = 2;
   if (mx > x + 6 && mx < x + size - 6 && my > y + 6 && my < y + size - 6) { g.beginPath(); g.arc(mx, my, 5 + Math.sin(time * 4) * 1.5, 0, 7); g.stroke(); return; }
@@ -2527,20 +2577,36 @@ function drawPanels(g, narrow, short, qh, hb) {
     for (const id of done) { g.fillStyle = '#6e7681'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText(`✓ ${QUEST_DEFS[id].name} — done`, px + 30, y + 12); y += 20; }
   }
   if (panel === 'map') {
-    const mw = Math.min(VW - 40, 760), mh = Math.min(VH - 60, mw * MAP_H / MAP_W + 70);
-    const { px, py, w, h } = panelBox(g, mw, mh, 'The Fanglands', 'White: you. Blue: home. Gold: quest targets. Tap anywhere to close.');
+    // Inside an instance the map is that instance: its name on the panel, its own rect drawn to fill the box, and
+    // none of the overworld's region names, homes, markers or quest rings (they sit in the same top-left tiles).
+    const view = mapView(), inside = !!view.id;
+    // an instance's box is cut to its shape (Deepholm is nearly square): as wide as its map can be at the height there is
+    let mw = Math.min(VW - 40, 760); if (inside) mw = Math.min(mw, Math.max(360, (VH - 60 - 80) * view.w / view.h + 36));
+    const mh = Math.min(VH - 60, inside ? (mw - 36) * view.h / view.w + 80 : mw * MAP_H / MAP_W + 70);
+    const { px, py, w, h } = panelBox(g, mw, mh, view.name, inside ? `${view.sub ? view.sub + '. ' : ''}White: you. Tap anywhere to close.` : 'White: you. Blue: home. Gold: quest targets. Tap anywhere to close.');
     if (miniDirty || miniDiffCount !== mapDiffs.size) refreshMini();
-    const iw = w - 36, ih = Math.min(h - 80, iw * MAP_H / MAP_W), ix = px + 18, iy = py + 62; const sc = iw / MAP_W;
-    g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip(); g.imageSmoothingEnabled = false; g.drawImage(miniCanvas, 0, 0, MAP_W, MAP_H, ix, iy, iw, MAP_W * sc * MAP_H / MAP_W); g.imageSmoothingEnabled = true;
-    for (const r of REGIONS) { if (r.name === 'Goblin Fields' || r.name === 'The Wilds') continue; const cx = ix + (r.x0 + r.x1 + 1) / 2 * sc, cy = iy + (r.y0 + r.y1 + 1) / 2 * sc; g.font = `700 ${Math.max(9, sc * 2.2)}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(r.name.toUpperCase(), cx, cy); g.fillStyle = '#e6edf3'; g.fillText(r.name.toUpperCase(), cx, cy); }
-    const dot = (wx, wy, color, r) => { g.fillStyle = color; g.beginPath(); g.arc(ix + wx / TILE * sc, iy + wy / TILE * sc, r, 0, 7); g.fill(); };
-    if (player.home) dot(player.home.x, player.home.y, '#7ec8ff', 4);
+    const iw = w - 36, ih = Math.min(h - 80, iw * view.h / view.w), ix = px + 18, iy = py + 62;
+    // the world keeps its old fit (full width, cropped at the foot on a short screen); an instance fits whole and is centred
+    const sc = inside ? Math.min(iw / view.w, ih / view.h) : iw / MAP_W;
+    const ox = inside ? ix + (iw - view.w * sc) / 2 : ix, oy = inside ? iy + (ih - view.h * sc) / 2 : iy;
+    mapLayout = { ix, iy, iw, ih, ox, oy, sc, view };
+    g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip();
+    if (inside) { g.fillStyle = '#0b0f14'; g.fillRect(ix, iy, iw, ih); }
+    g.imageSmoothingEnabled = false; g.drawImage(miniCanvas, 0, 0, view.w, view.h, ox, oy, view.w * sc, view.h * sc); g.imageSmoothingEnabled = true;
+    for (const r of REGIONS) {
+      if (r.name === 'Goblin Fields' || r.name === 'The Wilds') continue;
+      // inside: only a region a feature marked as this instance's own (r.instance === id) and not the whole-instance one the title already names
+      if (inside ? r.instance !== view.id || (r.x0 <= 0 && r.y0 <= 0 && r.x1 >= view.w - 1 && r.y1 >= view.h - 1) : r.instance) continue;
+      const cx = ox + (r.x0 + r.x1 + 1) / 2 * sc, cy = oy + (r.y0 + r.y1 + 1) / 2 * sc; g.font = `700 ${Math.max(9, Math.min(16, sc * 2.2))}px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(r.name.toUpperCase(), cx, cy); g.fillStyle = '#e6edf3'; g.fillText(r.name.toUpperCase(), cx, cy);
+    }
+    const dot = (wx, wy, color, r) => { g.fillStyle = color; g.beginPath(); g.arc(ox + wx / TILE * sc, oy + wy / TILE * sc, r, 0, 7); g.fill(); };
+    if (player.home && !inside) dot(player.home.x, player.home.y, '#7ec8ff', 4);
     for (const t of mapTargets()) {
-      const tx = ix + (t.x + 0.5) * sc, ty = iy + (t.y + 0.5) * sc, isTracked = t.id === quest.tracked;
+      const tx = ox + (t.x + 0.5) * sc, ty = oy + (t.y + 0.5) * sc, isTracked = t.id === quest.tracked;
       g.strokeStyle = isTracked ? '#f5c542' : 'rgba(245,197,66,0.7)'; g.lineWidth = isTracked ? 2.5 : 1.5; g.beginPath(); g.arc(tx, ty, (isTracked ? 6 : 5) + Math.sin(time * 4) * 2, 0, 7); g.stroke();
       if (t.label) { g.font = `bold ${narrow ? 9 : 11}px sans-serif`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(t.label, tx, ty - 10); g.fillStyle = '#f5c542'; g.fillText(t.label, tx, ty - 10); }
     }
-    dot(player.x, player.y, '#ffffff', 4);
+    dot(player.x, player.y, 'rgba(0,0,0,0.7)', 5.5); dot(player.x, player.y, '#ffffff', 4); // the rim keeps him visible on white cloud
     g.restore();
     buttons.push({ x: ix, y: iy, w: iw, h: ih, label: 'mapimage', action: closePanel }); // "tap anywhere to close" — the map itself closes too
   }
@@ -3265,6 +3331,9 @@ function dialogHit(x, y) { return !!dialog.cur && inRect(x, y, dialogRect) && !j
 
 // ---------- panel rect (tap outside closes, tap inside is absorbed) ----------
 let panelRect = null;
+// where the world map panel drew its image this frame (10-hud fills it): features that draw on the map read this
+// instead of assuming the whole world fills the box — inside an instance only the instance is drawn, centred
+let mapLayout = null;
 
 // ---------- two-tap confirmations ----------
 let uxConfirm = null; // {label, until}
@@ -3305,12 +3374,14 @@ HOOKS.mapTarget.push(() => quest.wren === 'active' ? { x: 30, y: 78, label: 'Old
 HOOKS.mapTarget.push(() => { const a = activeQuests(); return a.includes('board') ? { x: 105, y: 27, label: 'Notice board', id: 'board' } : null; });
 HOOKS.mapTarget.push(() => activeQuests().includes('law') ? { x: 110, y: 41, label: 'Captain of the Watch', id: 'law' } : null);
 HOOKS.mapTarget.push(() => activeQuests().includes('dragons') ? { x: 67, y: 104, label: 'Dunstan', id: 'dragons' } : null);
-function mapTargets() { const out = []; for (const f of HOOKS.mapTarget) { let t = null; try { t = f(); } catch (e) { t = null; } if (t && typeof t.x === 'number' && typeof t.y === 'number') out.push(t); } return out; }
+// A target is on the world map unless it says otherwise: { map: '<instance id>' } puts it on that instance's map instead.
+// Inside an instance only that instance's own targets are listed, so no overworld ring, label or compass arrow lands on the
+// dungeon drawn in the same top-left tiles (the quest box's "Head for ..." line and the minimap compass read this too).
+function mapTargets() {
+  const here = window.INSTANCES && INSTANCES.active ? INSTANCES.active() || null : null;
+  const out = []; for (const f of HOOKS.mapTarget) { let t = null; try { t = f(); } catch (e) { t = null; } if (t && typeof t.x === 'number' && typeof t.y === 'number' && (t.map && t.map !== 'over' ? t.map : null) === here) out.push(t); } return out;
+}
 function trackedTarget() { if (!quest.tracked) return null; return mapTargets().find(t => t.id === quest.tracked) || null; }
-
-// ---------- banner queue ----------
-let bannerQueue = []; // displaced level banners, drawn 40 px under the live one
-let _lastBanner = null;
 
 // ---------- HUD layout shared with feature files (filled by drawHud every frame) ----------
 const HUD_LAYOUT = { narrow: false, short: false, hotbarY: 0, hotbarH: 44, questY: 0, questH: 0, noticeY: 84, topStackBottom: 76, bossBarY: 84 };
@@ -3320,14 +3391,8 @@ let _lastStage = -1;
 HOOKS.update.push(dt => {
   if (quest.stage !== _lastStage) { _lastStage = quest.stage; if (!quest.untrackedByPlayer) quest.tracked = 'main'; }
   if (quest.tracked && quest.tracked !== 'main' && !activeQuests().includes(quest.tracked) && !quest.untrackedByPlayer) quest.tracked = 'main';
-  if (levelBanner !== _lastBanner) {
-    if (_lastBanner && levelBanner && _lastBanner.t > 0.3) bannerQueue = [_lastBanner];
-    _lastBanner = levelBanner;
-  }
-  for (const b of bannerQueue) b.t -= dt;
-  bannerQueue = bannerQueue.filter(b => b.t > 0);
 });
-HOOKS.newGame.push(() => { quest.tracked = 'main'; quest.untrackedByPlayer = false; _lastStage = quest.stage; bannerQueue = []; _lastBanner = null; dialogLog.length = 0; uxConfirm = null; });
+HOOKS.newGame.push(() => { quest.tracked = 'main'; quest.untrackedByPlayer = false; _lastStage = quest.stage; dialogLog.length = 0; uxConfirm = null; });
 
 // ---------- self-test ----------
 HOOKS.selfTest.push((check, F, h) => {
@@ -3371,9 +3436,22 @@ HOOKS.selfTest.push((check, F, h) => {
     pointerDown(free[0], free[1], 'mouse'); const closed = panel === null; closePanel(); dialog.cur = dc;
     buttons.length = 0; button(ctx, 10, 10, 50, 20, 'Nope', () => { }, '#000', false); const inert = buttons.length === 1 && buttons[0].label === 'disabled:Nope' && !F.clickButton('Nope'); buttons.length = 0;
     check('ux: taps inside a panel are absorbed, outside close it; disabled buttons are registered as no-ops', kept && closed && inert, { kept, closed, inert, r }); }
-  // banner queue
-  { levelBanner = { text: 'FIRST', sub: 'a', t: 3 }; F.step([]); levelBanner = { text: 'SECOND', sub: 'b', t: 3 }; F.step([]); const queued = bannerQueue.length === 1 && bannerQueue[0].text === 'FIRST' && levelBanner.text === 'SECOND'; levelBanner = null; bannerQueue = []; F.step([]);
-    check('ux: a new level banner pushes the showing one into a second slot instead of replacing it', queued, { queued }); }
+  // banner queue: a banner replaced too soon is shown after the one that replaced it, never lost
+  { clearBanners(); const saw = [], watch = n => { for (let i = 0; i < n; i++) { F.step([]); const t = levelBanner && levelBanner.text; if (t && saw[saw.length - 1] !== t) saw.push(t); } };
+    // a boss kill: a rare drop, DUNGEON CLEARED and a level-up all land in the same tick
+    levelBanner = { text: 'RARE DROP', sub: 'a', t: 3 }; levelBanner = { text: 'DUNGEON CLEARED', sub: 'b', t: 4 }; levelBanner = { text: 'Melee level 9!', sub: 'Level up', t: 2.6 };
+    const now = levelBanner.text, waiting = bannerQueue.map(b => b.text);
+    watch(60 * 14); const allSeen = saw.join(' > '), drained = !levelBanner && bannerQueue.length === 0;
+    // one that has been read for 2 s and is then replaced has been seen: it does not come back
+    levelBanner = { text: 'READ', sub: 'c', t: 4 }; F.sim(120, []); levelBanner = { text: 'NEXT', sub: 'd', t: 2 }; const notRequeued = bannerQueue.length === 0;
+    // putting a waiting banner back on screen (30-ashdrake does, over a level-up) takes it out of the queue: no double
+    clearBanners(); const boss = { text: 'BOSS', sub: 'e', t: 4 }; levelBanner = boss; const lv = { text: 'Melee level 10!', sub: 'Level up', t: 2.6 }; levelBanner = lv; levelBanner = boss;
+    const swap = levelBanner === boss && bannerQueue.length === 1 && bannerQueue[0] === lv;
+    // a new game clears the lot
+    clearBanners(); const cleared = !levelBanner && bannerQueue.length === 0; F.step([]);
+    check('ux: banners queue: a rare drop, DUNGEON CLEARED and a level-up in one tick are each shown in turn (newest first, then the rest in order); one read for 2 s is not shown again; re-showing a waiting one takes it out of the queue',
+      now === 'Melee level 9!' && waiting.join() === 'RARE DROP,DUNGEON CLEARED' && allSeen === 'Melee level 9! > RARE DROP > DUNGEON CLEARED' && drained && notRequeued && swap && cleared,
+      { now, waiting, allSeen, drained, notRequeued, swap, cleared }); }
   // kid mode toggle is exposed
   { const k0 = window.__kidmode; toggleKidMode(); const on = window.__kidmode === !k0; toggleKidMode(); const back = window.__kidmode === k0; check('ux: kid mode toggle flips window.__kidmode', on && back, { on, back }); }
   window.__forceTouch = prevTouch;
@@ -3459,7 +3537,7 @@ window.FANGLANDS.title = title;
   // ---------- open / start / delete ----------
   title.open = () => {
     title.active = true; title.t = 0; title.deleteArmed = 0;
-    paused = false; closePanel(); dialog.cur = null; dialog.queue.length = 0; notice = null; levelBanner = null; areaBanner = null;
+    paused = false; closePanel(); dialog.cur = null; dialog.queue.length = 0; notice = null; clearBanners(); areaBanner = null;
     player.x = tc(SQUARE.x); player.y = tc(SQUARE.y); player.action = null; player.moving = false; player.dead = false; player.hurtT = 0;
     keys.clear(); pressed.clear(); touch.taps.length = 0;
     title.refresh();
@@ -4396,8 +4474,9 @@ const MUSIC = (() => {
       check('instance: at half hp the Brood Mother webs the knight (slow for 4 s, then free)', webbed && torn, { webbed, torn, speed: player.speed });
       const cloak = () => countItem('silk_cloak') + drops.filter(d => d.id === 'silk_cloak').reduce((s, d) => s + d.qty, 0);
       const kill = () => { const b = monsters.find(m => m.type === 'brood_mother'); b.hp = 1; b.stunT = 0; b.state = 'idle'; player.facing = { x: -1, y: 0 }; for (let i = 0; i < 80 && !b.dead; i++) { b.x = player.x - 50; b.y = player.y; b.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); } return b.dead; };
-      const k1 = kill(); F.sim(3, []); const banner = !!levelBanner && levelBanner.text === 'DUNGEON CLEARED'; const c1 = cloak(); const cleared1 = q.cleared[DEN.id];
-      check('instance: killing the Brood Mother shows DUNGEON CLEARED and gives the silk cloak (body, def 6)', k1 && banner && c1 === 1 && cleared1 === 1 && ITEMS.silk_cloak.armour.slot === 'body' && ITEMS.silk_cloak.armour.def === 6, { k1, banner: levelBanner && levelBanner.text, cloak: c1, cleared: cleared1 });
+      // the promise is that he reads DUNGEON CLEARED: on screen now, or next up behind a level-up the killing blow earned
+      const k1 = kill(); F.sim(3, []); const banner = bannerAhead('DUNGEON CLEARED'); const c1 = cloak(); const cleared1 = q.cleared[DEN.id];
+      check('instance: killing the Brood Mother shows DUNGEON CLEARED (now or next in the banner queue) and gives the silk cloak (body, def 6)', k1 && banner && c1 === 1 && cleared1 === 1 && ITEMS.silk_cloak.armour.slot === 'body' && ITEMS.silk_cloak.armour.def === 6, { k1, banner: levelBanner && levelBanner.text, waiting: bannerQueue.map(b => b.text), cloak: c1, cleared: cleared1 });
       drops = drops.filter(d => d.id !== 'silk_cloak');
       const cx = DEN_CHEST_T[0], cy = DEN_CHEST_T[1]; F.tp(cx + 1, cy); F.face(cx, cy); const a0 = countItem('stone_arrow'); F.press('KeyE'); F.sim(2, []); const got = countItem('stone_arrow') + drops.filter(d => d.id === 'stone_arrow').reduce((s, d) => s + d.qty, 0) - a0; F.press('KeyE'); F.sim(2, []); const got2 = countItem('stone_arrow') + drops.filter(d => d.id === 'stone_arrow').reduce((s, d) => s + d.qty, 0) - a0;
       check('instance: the chest at the back gives 30 stone arrows once', got === 30 && got2 === 30 && Object.keys(q.chests).length === 1, { got, got2, chests: Object.keys(q.chests) });
@@ -4414,6 +4493,56 @@ const MUSIC = (() => {
     { F.tp(23, 3); F.face(22, 3); F.press('KeyE'); F.sim(2, []); const inside = window.__instance === DEN.id; F.tp(DEN_EXIT[0], DEN_EXIT[1] + 1); F.face(DEN_EXIT[0], DEN_EXIT[1]); F.press('KeyE'); F.sim(2, []);
       check('instance: E on the exit ladder leaves too; INSTANCES API lists the den', inside && window.__instance === null && onStep() && INSTANCES.list().includes(DEN.id) && INSTANCES.active() === null, { inside, at: tileOf(), list: INSTANCES.list() }); }
     if (active) leaveInstance(); regrow = rg0; fires = fr0; if (w0 && !player.equip.weapon) player.equip.weapon = w0; save(); h.peace(false);
+  });
+
+  // ---------- the maps inside an instance show the instance, never the overworld ----------
+  // An instance is written into the top-left of `map`, over the Cave, the Grey Quarry and Miller's Pond. The world map and
+  // the minimap used to draw the whole world there: the overworld's region names, its markers ("The signpost"), its quest
+  // rings and the compass arrow all sat over the dungeon. Drawn here with a context that records every word and image.
+  HOOKS.selfTest.push((check, F, h) => {
+    const recorder = () => {
+      const texts = [], images = [], noop = () => { };
+      const g = new Proxy({}, {
+        get: (t, k) => k === 'measureText' ? s => ({ width: String(s).length * 7 }) : (k === 'fillText' || k === 'strokeText') ? s => { texts.push(String(s)); }
+          : k === 'drawImage' ? (...a) => { images.push(a.slice(1)); } : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: noop })
+            : typeof k === 'string' ? noop : undefined,
+        set: () => true,
+      });
+      return { g, texts, images };
+    };
+    const drawMap = () => { const r = recorder(); buttons.length = 0; openPanel('map'); drawPanels(r.g, false, false, 0, 44); buttons.length = 0; return r; };
+    const drawMini = () => { const r = recorder(); drawMinimap(r.g, 0, 0, 160); drawCompass(r.g, 0, 0, 160); return r; };
+    const q0 = { wren: quest.wren, bread: quest.bread, tracked: quest.tracked, untracked: quest.untrackedByPlayer }, M = window.MARKERS, seen0 = M ? { ...M.state().seen } : null;
+    const at0 = { x: player.x, y: player.y }, dc = dialog.cur, dq = dialog.queue.slice();
+    h.peace(true); if (active) leaveInstance(); closePanel(); player.mech = null; player.dead = false;
+    quest.wren = 'active'; quest.bread = 'active'; quest.tracked = 'wren'; quest.untrackedByPlayer = false;
+    if (M) { M.refresh(); for (const m of M.all()) M.state().seen[m.key] = 1; }
+    // the overworld first: the recorder must hear the world's names and quest labels, or the checks below prove nothing
+    F.tp(22, 12); const world = drawMap(); closePanel();
+    const worldWords = new Set(REGIONS.map(r => r.name.toUpperCase()).concat(mapTargets().map(t => t.label), M ? M.known().map(m => m.label) : []));
+    const heard = ['Old Wren', 'Tobin', 'THISTLEDOWN'].filter(w => world.texts.includes(w));
+    check('instance maps: out in the world the map names the regions and the quest targets (the recorder hears them)', heard.length === 3 && !!mapLayout && mapLayout.view.id === null, { heard, view: mapLayout && mapLayout.view.id });
+    const bad = [];
+    for (const id of INSTANCES.list()) {
+      const inst = INST[id];
+      if (!enterInstance(id)) { bad.push(`${id}: would not enter`); continue; }
+      dialog.cur = null; dialog.queue.length = 0;
+      const mapR = drawMap(), view = mapLayout && mapLayout.view, lastMap = M ? M.lastMap : null, toggle = buttons.some(b => b.label === 'markers:toggle'); closePanel();
+      const miniR = drawMini(), src = miniR.images[0] || [], across = src[2];
+      const own = inst.name.toUpperCase(), leaked = mapR.texts.filter(t => worldWords.has(t) && t.toUpperCase() !== own && t !== own);
+      if (leaked.length) bad.push(`${id}: the map says ${leaked.slice(0, 4).join(', ')}`);
+      if (!mapR.texts.some(t => t.toLowerCase().includes(inst.name.toLowerCase()))) bad.push(`${id}: the map does not name ${inst.name}`);
+      if (!view || view.id !== id || view.w !== inst.w || view.h !== inst.h) bad.push(`${id}: the map is not the instance's ${inst.w}x${inst.h}`);
+      if (mapTargets().length) bad.push(`${id}: quest rings ${mapTargets().map(t => t.label).join(', ')}`);
+      if (trackedTarget()) bad.push(`${id}: the compass points at ${trackedTarget().label}`);
+      if (lastMap || toggle) bad.push(`${id}: world markers or their key drawn`);
+      if (!(src[0] >= 0 && src[1] >= 0 && src[0] + across <= Math.max(inst.w, across) + 1e-6 && src[1] + across <= Math.max(inst.h, across) + 1e-6)) bad.push(`${id}: the minimap looks outside the instance (${src.slice(0, 4).map(v => +(+v).toFixed(1)).join(',')})`);
+      if (miniR.texts.length) bad.push(`${id}: words on the minimap ${miniR.texts.slice(0, 3).join(', ')}`);
+      leaveInstance();
+    }
+    check('instance maps: inside every instance the world map and minimap show only that instance (its name, its own rect; no overworld region names, markers, quest rings or compass)', bad.length === 0, { bad: bad.slice(0, 8), instances: INSTANCES.list().length });
+    closePanel(); quest.wren = q0.wren; quest.bread = q0.bread; quest.tracked = q0.tracked; quest.untrackedByPlayer = q0.untracked; if (M) M.state().seen = seen0;
+    player.x = at0.x; player.y = at0.y; dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); h.peace(false);
   });
 }
 
@@ -5627,8 +5756,7 @@ HOOKS.selfTest.push((check, F, h) => {
     });
     // hero on the minimap
     if (minimapRect && c.downT <= 0) {
-      const { x: mx, y: my, w: ms } = minimapRect; const ta = 44, sc = ms / ta;
-      const sx = clamp(player.x / TILE - ta / 2, 0, MAP_W - ta), sy = clamp(player.y / TILE - ta / 2, 0, MAP_H - ta);
+      const { x: mx, y: my, w: ms } = minimapRect; const { scale: sc, sx, sy } = miniWindow(ms);
       const dx = mx + (c.x / TILE - sx) * sc, dy = my + (c.y / TILE - sy) * sc;
       if (dx > mx + 2 && dx < mx + ms - 2 && dy > my + 2 && dy < my + ms - 2) { g.fillStyle = '#9fe0b0'; g.beginPath(); g.arc(dx, dy, 2.5, 0, 7); g.fill(); }
     }
@@ -11406,8 +11534,8 @@ HOOKS.selfTest.push((check, F, h) => {
       const have = id => countItem(id) + drops.filter(d => d.id === id).reduce((s, d) => s + d.qty, 0);
       const kill = () => { const c = monsters.find(m => m.type === 'count_ashvane'); player.facing = { x: 1, y: 0 }; for (let i = 0; i < 80 && !c.dead; i++) { c.hp = 1; c.x = player.x + 44; c.y = player.y; c.stunT = 0; c.tpT = 99; player.attackCd = 0; F.press('Space'); F.sim(3, []); } return c.dead; };
       const f0 = have('vampire_fang'), c0 = have('shadow_cloak');
-      const k1 = kill(); F.sim(3, []); const banner = !!levelBanner && levelBanner.text === 'DUNGEON CLEARED'; const c1 = have('shadow_cloak') - c0, f1 = have('vampire_fang') - f0;
-      check('night: killing the count shows DUNGEON CLEARED, drops a vampire fang and (first time) the shadow cloak (body, def 14, value 900)', k1 && banner && c1 === 1 && f1 >= 1 && q.cleared[AFTER.id] === 1 && ITEMS.shadow_cloak.armour.slot === 'body' && ITEMS.shadow_cloak.armour.def === 14 && ITEMS.shadow_cloak.value === 900 && ITEMS.vampire_fang.value === 400 && ITEMS.vampire_fang.shape === 'dagger', { k1, banner: levelBanner && levelBanner.text, cloak: c1, fang: f1, cleared: q.cleared[AFTER.id] });
+      const k1 = kill(); F.sim(3, []); const banner = bannerAhead('DUNGEON CLEARED'); const c1 = have('shadow_cloak') - c0, f1 = have('vampire_fang') - f0;
+      check('night: killing the count shows DUNGEON CLEARED (now or next in the banner queue), drops a vampire fang and (first time) the shadow cloak (body, def 14, value 900)', k1 && banner && c1 === 1 && f1 >= 1 && q.cleared[AFTER.id] === 1 && ITEMS.shadow_cloak.armour.slot === 'body' && ITEMS.shadow_cloak.armour.def === 14 && ITEMS.shadow_cloak.value === 900 && ITEMS.vampire_fang.value === 400 && ITEMS.vampire_fang.shape === 'dagger', { k1, banner: levelBanner && levelBanner.text, cloak: c1, fang: f1, cleared: q.cleared[AFTER.id] });
       drops = drops.filter(d => !['shadow_cloak', 'vampire_fang', 'coins', 'grave_dust'].includes(d.id)); const c2b = have('shadow_cloak'), f2b = have('vampire_fang');
       const back = enter(); const fresh = monsters.some(m => m.type === 'count_ashvane' && !m.dead); const k2 = kill(); F.sim(3, []);
       check('night: a second visit brings the count back; a second kill gives another fang but no second cloak', back && fresh && k2 && have('shadow_cloak') === c2b && have('vampire_fang') === f2b + 1 && q.cleared[AFTER.id] === 2, { back, fresh, k2, cloak: have('shadow_cloak') - c2b, fang: have('vampire_fang') - f2b });
@@ -22452,8 +22580,7 @@ HOOKS.selfTest.push((check, F, h) => {
     lastMini = [];
     if (!st().show || inInstance()) return;
     if (typeof x !== 'number' || !(size > 0)) return;
-    const tilesAcross = 44, scale = size / tilesAcross;
-    const sx = clamp(player.x / TILE - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(player.y / TILE - tilesAcross / 2, 0, MAP_H - tilesAcross);
+    const { scale, sx, sy } = miniWindow(size);
     const r = size < 120 ? 3.4 : MINI_R;
     g.save(); roundRect(g, x, y, size, size, 10); g.clip();
     for (const m of known()) {
@@ -22523,6 +22650,9 @@ HOOKS.selfTest.push((check, F, h) => {
   }
   function drawWorldMarkers(g, narrow) {
     lastMap = null;
+    // inside an instance the map is the instance's (10-hud draws only its rect): the world's markers, their key and
+    // their toggle belong to the world map, so none of them is drawn over the dungeon
+    if (inInstance()) { selected = null; hover = null; return; }
     const bi = buttons.findIndex(b => b.label === 'mapimage');
     if (bi < 0) return;
     const img = buttons[bi], ix = img.x, iy = img.y, iw = img.w, ih = img.h, sc = iw / MAP_W;
@@ -27000,8 +27130,7 @@ HOOKS.selfTest.push((check, F, h) => {
     // blue dots on the minimap for the friends on this map (the core painted it just before the hooks run)
     const mm = minimapRect;
     if (mm && !(window.SETTINGS && SETTINGS.get('minimap') === false)) {
-      const size = mm.w, tilesAcross = 44, scale = size / tilesAcross;
-      const sx = clamp(player.x / TILE - tilesAcross / 2, 0, MAP_W - tilesAcross), sy = clamp(player.y / TILE - tilesAcross / 2, 0, MAP_H - tilesAcross);
+      const size = mm.w, { scale, sx, sy } = miniWindow(size);   // the core's window: inside an instance it is the instance's
       const at = e => ({ x: mm.x + (e.shown.x / TILE - sx) * scale, y: mm.y + (e.shown.y / TILE - sy) * scale });
       let any = false;
       for (const n in REMOTE) if (REMOTE[n].map === my) { any = true; break; }
@@ -27040,13 +27169,13 @@ HOOKS.selfTest.push((check, F, h) => {
 
   // ---------- the world map: every friend on this map as a named blue dot (drawn after the core's map, so it wraps drawPanels) ----------
   function drawMapFriends(g, narrow) {
-    const r = panelRect; if (!r) return;
-    const iw = r.w - 36, ih = Math.min(r.h - 80, iw * MAP_H / MAP_W), ix = r.x + 18, iy = r.y + 62, sc = iw / MAP_W, my = mapId();
+    const L = mapLayout; if (!panelRect || !L) return;   // where 10-hud drew the map this frame (an instance is centred in the box)
+    const { ix, iy, iw, ih, ox, oy, sc } = L, my = mapId();
     g.save(); roundRect(g, ix, iy, iw, ih, 8); g.clip();
     g.font = `bold ${narrow ? 9 : 11}px sans-serif`; g.textAlign = 'center';
     for (const n in REMOTE) {
       const e = REMOTE[n]; if (e.map !== my) continue;
-      const x = ix + e.shown.x / TILE * sc, y = iy + e.shown.y / TILE * sc;
+      const x = ox + e.shown.x / TILE * sc, y = oy + e.shown.y / TILE * sc;
       g.fillStyle = BLUE; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 1.5; g.stroke();
       g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(n, x, y - 8); g.fillStyle = BLUE; g.fillText(n, x, y - 8);
     }
@@ -27054,7 +27183,8 @@ HOOKS.selfTest.push((check, F, h) => {
   }
   { const _drawPanels = drawPanels; drawPanels = function (g, narrow, short, qh, hb) { const r = _drawPanels(g, narrow, short, qh, hb); if (panel === 'map') drawMapFriends(g, narrow); return r; }; }
   // Follow on map: a gold target on the world map with the friend's name, like a quest marker, while they are on our map
-  HOOKS.mapTarget.push(() => { const e = following && REMOTE[following]; if (!e || e.map !== mapId()) return null; return { x: Math.floor(e.shown.x / TILE), y: Math.floor(e.shown.y / TILE), label: following, id: 'friend' }; });
+  // in the same instance the ring goes on that instance's map (13-ux lists only this map's targets)
+  HOOKS.mapTarget.push(() => { const e = following && REMOTE[following], my = mapId(); if (!e || e.map !== my) return null; return { x: Math.floor(e.shown.x / TILE), y: Math.floor(e.shown.y / TILE), label: following, id: 'friend', map: my === 'over' ? null : my }; });
 
   // ---------- gifts ----------
   let lastGiftAt = -1e9; const pending = [];   // [{ to, id, qty }] gifts the world has not answered yet

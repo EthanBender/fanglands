@@ -547,8 +547,9 @@
       check('instance: at half hp the Brood Mother webs the knight (slow for 4 s, then free)', webbed && torn, { webbed, torn, speed: player.speed });
       const cloak = () => countItem('silk_cloak') + drops.filter(d => d.id === 'silk_cloak').reduce((s, d) => s + d.qty, 0);
       const kill = () => { const b = monsters.find(m => m.type === 'brood_mother'); b.hp = 1; b.stunT = 0; b.state = 'idle'; player.facing = { x: -1, y: 0 }; for (let i = 0; i < 80 && !b.dead; i++) { b.x = player.x - 50; b.y = player.y; b.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); } return b.dead; };
-      const k1 = kill(); F.sim(3, []); const banner = !!levelBanner && levelBanner.text === 'DUNGEON CLEARED'; const c1 = cloak(); const cleared1 = q.cleared[DEN.id];
-      check('instance: killing the Brood Mother shows DUNGEON CLEARED and gives the silk cloak (body, def 6)', k1 && banner && c1 === 1 && cleared1 === 1 && ITEMS.silk_cloak.armour.slot === 'body' && ITEMS.silk_cloak.armour.def === 6, { k1, banner: levelBanner && levelBanner.text, cloak: c1, cleared: cleared1 });
+      // the promise is that he reads DUNGEON CLEARED: on screen now, or next up behind a level-up the killing blow earned
+      const k1 = kill(); F.sim(3, []); const banner = bannerAhead('DUNGEON CLEARED'); const c1 = cloak(); const cleared1 = q.cleared[DEN.id];
+      check('instance: killing the Brood Mother shows DUNGEON CLEARED (now or next in the banner queue) and gives the silk cloak (body, def 6)', k1 && banner && c1 === 1 && cleared1 === 1 && ITEMS.silk_cloak.armour.slot === 'body' && ITEMS.silk_cloak.armour.def === 6, { k1, banner: levelBanner && levelBanner.text, waiting: bannerQueue.map(b => b.text), cloak: c1, cleared: cleared1 });
       drops = drops.filter(d => d.id !== 'silk_cloak');
       const cx = DEN_CHEST_T[0], cy = DEN_CHEST_T[1]; F.tp(cx + 1, cy); F.face(cx, cy); const a0 = countItem('stone_arrow'); F.press('KeyE'); F.sim(2, []); const got = countItem('stone_arrow') + drops.filter(d => d.id === 'stone_arrow').reduce((s, d) => s + d.qty, 0) - a0; F.press('KeyE'); F.sim(2, []); const got2 = countItem('stone_arrow') + drops.filter(d => d.id === 'stone_arrow').reduce((s, d) => s + d.qty, 0) - a0;
       check('instance: the chest at the back gives 30 stone arrows once', got === 30 && got2 === 30 && Object.keys(q.chests).length === 1, { got, got2, chests: Object.keys(q.chests) });
@@ -565,5 +566,55 @@
     { F.tp(23, 3); F.face(22, 3); F.press('KeyE'); F.sim(2, []); const inside = window.__instance === DEN.id; F.tp(DEN_EXIT[0], DEN_EXIT[1] + 1); F.face(DEN_EXIT[0], DEN_EXIT[1]); F.press('KeyE'); F.sim(2, []);
       check('instance: E on the exit ladder leaves too; INSTANCES API lists the den', inside && window.__instance === null && onStep() && INSTANCES.list().includes(DEN.id) && INSTANCES.active() === null, { inside, at: tileOf(), list: INSTANCES.list() }); }
     if (active) leaveInstance(); regrow = rg0; fires = fr0; if (w0 && !player.equip.weapon) player.equip.weapon = w0; save(); h.peace(false);
+  });
+
+  // ---------- the maps inside an instance show the instance, never the overworld ----------
+  // An instance is written into the top-left of `map`, over the Cave, the Grey Quarry and Miller's Pond. The world map and
+  // the minimap used to draw the whole world there: the overworld's region names, its markers ("The signpost"), its quest
+  // rings and the compass arrow all sat over the dungeon. Drawn here with a context that records every word and image.
+  HOOKS.selfTest.push((check, F, h) => {
+    const recorder = () => {
+      const texts = [], images = [], noop = () => { };
+      const g = new Proxy({}, {
+        get: (t, k) => k === 'measureText' ? s => ({ width: String(s).length * 7 }) : (k === 'fillText' || k === 'strokeText') ? s => { texts.push(String(s)); }
+          : k === 'drawImage' ? (...a) => { images.push(a.slice(1)); } : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: noop })
+            : typeof k === 'string' ? noop : undefined,
+        set: () => true,
+      });
+      return { g, texts, images };
+    };
+    const drawMap = () => { const r = recorder(); buttons.length = 0; openPanel('map'); drawPanels(r.g, false, false, 0, 44); buttons.length = 0; return r; };
+    const drawMini = () => { const r = recorder(); drawMinimap(r.g, 0, 0, 160); drawCompass(r.g, 0, 0, 160); return r; };
+    const q0 = { wren: quest.wren, bread: quest.bread, tracked: quest.tracked, untracked: quest.untrackedByPlayer }, M = window.MARKERS, seen0 = M ? { ...M.state().seen } : null;
+    const at0 = { x: player.x, y: player.y }, dc = dialog.cur, dq = dialog.queue.slice();
+    h.peace(true); if (active) leaveInstance(); closePanel(); player.mech = null; player.dead = false;
+    quest.wren = 'active'; quest.bread = 'active'; quest.tracked = 'wren'; quest.untrackedByPlayer = false;
+    if (M) { M.refresh(); for (const m of M.all()) M.state().seen[m.key] = 1; }
+    // the overworld first: the recorder must hear the world's names and quest labels, or the checks below prove nothing
+    F.tp(22, 12); const world = drawMap(); closePanel();
+    const worldWords = new Set(REGIONS.map(r => r.name.toUpperCase()).concat(mapTargets().map(t => t.label), M ? M.known().map(m => m.label) : []));
+    const heard = ['Old Wren', 'Tobin', 'THISTLEDOWN'].filter(w => world.texts.includes(w));
+    check('instance maps: out in the world the map names the regions and the quest targets (the recorder hears them)', heard.length === 3 && !!mapLayout && mapLayout.view.id === null, { heard, view: mapLayout && mapLayout.view.id });
+    const bad = [];
+    for (const id of INSTANCES.list()) {
+      const inst = INST[id];
+      if (!enterInstance(id)) { bad.push(`${id}: would not enter`); continue; }
+      dialog.cur = null; dialog.queue.length = 0;
+      const mapR = drawMap(), view = mapLayout && mapLayout.view, lastMap = M ? M.lastMap : null, toggle = buttons.some(b => b.label === 'markers:toggle'); closePanel();
+      const miniR = drawMini(), src = miniR.images[0] || [], across = src[2];
+      const own = inst.name.toUpperCase(), leaked = mapR.texts.filter(t => worldWords.has(t) && t.toUpperCase() !== own && t !== own);
+      if (leaked.length) bad.push(`${id}: the map says ${leaked.slice(0, 4).join(', ')}`);
+      if (!mapR.texts.some(t => t.toLowerCase().includes(inst.name.toLowerCase()))) bad.push(`${id}: the map does not name ${inst.name}`);
+      if (!view || view.id !== id || view.w !== inst.w || view.h !== inst.h) bad.push(`${id}: the map is not the instance's ${inst.w}x${inst.h}`);
+      if (mapTargets().length) bad.push(`${id}: quest rings ${mapTargets().map(t => t.label).join(', ')}`);
+      if (trackedTarget()) bad.push(`${id}: the compass points at ${trackedTarget().label}`);
+      if (lastMap || toggle) bad.push(`${id}: world markers or their key drawn`);
+      if (!(src[0] >= 0 && src[1] >= 0 && src[0] + across <= Math.max(inst.w, across) + 1e-6 && src[1] + across <= Math.max(inst.h, across) + 1e-6)) bad.push(`${id}: the minimap looks outside the instance (${src.slice(0, 4).map(v => +(+v).toFixed(1)).join(',')})`);
+      if (miniR.texts.length) bad.push(`${id}: words on the minimap ${miniR.texts.slice(0, 3).join(', ')}`);
+      leaveInstance();
+    }
+    check('instance maps: inside every instance the world map and minimap show only that instance (its name, its own rect; no overworld region names, markers, quest rings or compass)', bad.length === 0, { bad: bad.slice(0, 8), instances: INSTANCES.list().length });
+    closePanel(); quest.wren = q0.wren; quest.bread = q0.bread; quest.tracked = q0.tracked; quest.untrackedByPlayer = q0.untracked; if (M) M.state().seen = seen0;
+    player.x = at0.x; player.y = at0.y; dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); h.peace(false);
   });
 }
