@@ -119,6 +119,8 @@
   }
   function dwTalk(d) {
     { const dx = d.px - player.x, dy = d.py - player.y, dd = Math.hypot(dx, dy) || 1; player.facing = { x: dx / dd, y: dy / dd }; }
+    // CHANGED with the royal mine: a later feature may take over a dwarf's lines for some stages, as core talkTo does
+    if (HOOKS.talkBefore[d.role] && HOOKS.talkBefore[d.role](d)) return;
     const q = dq();
     if (d.role === 'dwarf_king') {
       if (q.stage === 0) { q.stage = 1; say("A knight of the surface, in Deepholm? Then you came down the old shaft. Good. Few remember it.", d.name); say("Our great forge went cold when the goblins cut the coal road. Bring me 5 coal and 3 iron bars and we relight it. Then Brunhild trades with you.", d.name); save(); }
