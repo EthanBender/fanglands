@@ -20349,8 +20349,10 @@ window.SETTINGS = SETTINGS;
 // hudControl is a hoisted function declaration on purpose: files that load BEFORE this one (10-hud,
 // 15-music, 43-settings, 44-wiki) call it at load time, so the rail's size is known on the very first frame.
 //
-// Registers nothing destructive: one HOOKS.hud entry (pushed last, so it draws the rail over everything
-// else), one HOOKS.selfTest entry (the layout audit and the contrast proof).
+// Registers nothing destructive: one HOOKS.hud entry (the rail), one HOOKS.selfTest entry (the layout audit and the
+// contrast proof). The rail's HOOKS.hud entry runs in file order like every other, so the HUD hooks of the files after
+// this one (60 onward: the quest box, the online chip, the chat strip…) draw after it. Nothing is allowed to land on
+// a rail control anyway — the layout audit fails if a control overlaps another — so the order is not what protects it.
 // ============================================================================
 
 // The control-rail registry. A hoisted declaration with its list on the function object, so it can be
@@ -20567,6 +20569,9 @@ const HK = (() => {
   // How far down a column may run before it has to wrap. On touch, column 0 stops short of the joystick — a
   // control sitting in the stick's circle is a control you cannot press and a stick you cannot start.
   const stickTop = () => VH - 176;
+  // The box round the circle the idle joystick is drawn in (10-hud: centre 110 in from its side, VH-110 up, r 60,
+  // mirrored by Settings › Move stick side). Nothing pressable may sit in it; the layout audit holds everything to it.
+  const stickRect = () => { const cx = mirrored() ? VW - 110 : 110; return { x: cx - 60, y: VH - 170, w: 120, h: 120 }; };
   function colLimit(col) {
     if (!touch()) return VH - 30;
     if (col === 0) return stickTop() - 4;
@@ -20684,7 +20689,7 @@ const HK = (() => {
 
   const API = {
     M: () => M_, GUT, PAD, R, R_SLOT, C, F,
-    k, touch, narrow, short, LINE, BAR, BAR_S, row, ctrlW, meterH, chipH, gutV, colW, colX, colOrigin, mirrored, clusterFrom, mmSize, mmX, stickTop, colLimit, canWrap,
+    k, touch, narrow, short, LINE, BAR, BAR_S, row, ctrlW, meterH, chipH, gutV, colW, colX, colOrigin, mirrored, clusterFrom, mmSize, mmX, stickTop, stickRect, colLimit, canWrap,
     plate, chip, control, disc, thumbSeat, bar, ramp, toneOf, meter, readout, field, fieldW, slot, stackFloor,
     status, statusH, mechLabel, drawRail, railBottom, railCells, pauseBox,
     // colour maths, exported so any file can prove its own text instead of guessing
@@ -20694,10 +20699,10 @@ const HK = (() => {
 })();
 window.HK = HK;
 
-// The rail draws last, over every feature chip, so nothing can be drawn on top of a control. Nothing while
-// the pause menu is up: that block clears the button list, so a rail drawn under it would be a row of
-// controls that look pressable and are not (anything that must be live while paused goes through
-// HOOKS.pauseMenu instead).
+// The rail. It is drawn in file order among the HOOKS.hud entries (not last: files 60 onward draw after it), and the
+// layout audit below is what keeps every other control off it. Nothing while the pause menu is up: that block
+// clears the button list, so a rail drawn under it would be a row of controls that look pressable and are not
+// (anything that must be live while paused goes through HOOKS.pauseMenu instead).
 HOOKS.hud.push(g => { if (paused) return; if (typeof title !== 'undefined' && title && title.active) return; HK.drawRail(g); });
 
 // ============================================================================
@@ -20751,40 +20756,121 @@ HOOKS.selfTest.push((check, F, h) => {
     check(P + 'every text colour clears 4.5:1 against the plate over the lightest and the darkest ground the game paints', worst.length === 0, { worst, lightest: lightest.name, darkest: darkest.name, ...contrastReport });
   }
 
+  // ---------- the layout audit's tools (checks 3 and 3b share them, so both hold every control to one rule) ----------
+  const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
+  const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const inside = r => r.x >= -0.5 && r.y >= -0.5 && r.x + r.w <= VW + 0.5 && r.y + r.h <= VH + 0.5;
+  // the minimap is a tap target that never goes through button() (05-input matches it separately), so the
+  // audit has to know about it — the thumb cluster used to overlap it on a landscape phone unnoticed
+  const live = () => {
+    const out = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+    if (minimapRect) out.push({ ...minimapRect, label: 'minimap' });
+    return out;
+  };
+  // The circle the idle joystick is actually drawn in (10-hud paints it at 110, VH-110 with r 60, mirrored
+  // by Settings › Move stick side). A control drawn on top of that is a control you cannot press and a
+  // stick you cannot see, because 05-input matches the button list before it starts the stick. The wider
+  // joystickZone() rectangle is a tap-to-walk rule, not a keep-out: on a 390 px phone the thumb cluster
+  // necessarily reaches into it, and that has always been fine.
+  const stickBox = () => {
+    const cx = window.__stickRight === true ? VW - 110 : 110;
+    return { x: cx - 60, y: VH - 170, w: 120, h: 120, label: 'the joystick' };
+  };
+  const boss = () => { // a real boss bar: the biggest monster the game knows, standing on the knight
+    const type = Object.keys(MONSTER_DEFS).find(t => t !== 'the_fang' && MONSTER_DEFS[t].level >= 25 && MONSTER_DEFS[t].hp >= 300);
+    if (!type) return false;
+    const d = MONSTER_DEFS[type];
+    monsters.length = 0;
+    monsters.push({ // the same shape spawnMonsters() builds (04-state), so it draws as well as it reads
+      type, x: player.x + 40, y: player.y, home: { x: player.x + 40, y: player.y },
+      r: d.r, hp: d.hp * 0.6, maxHp: d.hp, speed: d.speed, angry: false, state: 'idle', wanderT: 9,
+      wander: { x: 0, y: 0 }, attackCd: 9, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0,
+    });
+    return true;
+  };
+  // Everything one rendered frame must satisfy. `rects` is what to audit (the whole button list, or a panel's own).
+  function auditNow(where, t, rects, stick, problems) {
+    for (const r of rects) if (!inside(r)) problems.push(`${where}: ${r.label} off-screen ${JSON.stringify([Math.round(r.x), Math.round(r.y), r.w, r.h])}`);
+    for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) if (overlap(rects[i], rects[j])) problems.push(`${where}: ${rects[i].label} × ${rects[j].label}`);
+    // a ten-year-old's finger: 44 x 44, every control, on touch. On desktop a mouse is precise, so
+    // the floor is the kit's desktop row height.
+    const floor = t ? 44 : 26;
+    for (const r of rects) if (!/^slot\d+|^bank\d+|^hot\d+|^eq/.test(r.label) && (r.w < floor - 0.5 || r.h < floor - 0.5)) problems.push(`${where}: ${r.label} is ${Math.round(r.w)}x${Math.round(r.h)}, under ${floor}`);
+    for (const r of rects) if (/^slot\d+|^bank\d+|^hot\d+|^eq/.test(r.label) && t && (r.w < 40 || r.h < 40)) problems.push(`${where}: item tile ${r.label} is ${Math.round(r.w)}x${Math.round(r.h)}`);
+    // nothing pressable in the joystick's circle (the thumb cluster is the deliberate exception:
+    // it is mirrored to the far side by the same setting, so it is never in the live stick zone)
+    if (t && stick) { const sb = stickBox(); for (const r of rects) if (overlap(r, sb)) problems.push(`${where}: ${r.label} is inside the joystick`); }
+  }
+  // A panel shadows the HUD under it by design: audit the panel's own controls, from its close button on.
+  function panelRects(where, problems) {
+    let rects = live();
+    const ci = rects.findIndex(b => b.label === '×');
+    if (ci < 0) { problems.push(where + ': the panel has no close button'); return []; }
+    rects = rects.slice(ci);
+    if (panelRect && !inside(panelRect)) problems.push(`${where}: the panel box is off-screen ${JSON.stringify(panelRect)}`);
+    return rects;
+  }
+
+  // THE ONLINE SCENE: the wire (70-net) on a fake socket, as the online files' own checks run it — two knights in the
+  // roster, the other one a friend standing beside us, two lines of chat on the strip. That puts every online control
+  // on screen at once: the ONLINE chip (73), the chat strip and CHAT on the rail (74). scene(true) lights it for one
+  // render, scene(false) takes the controls away again without dropping the connection; restore() puts the wire, the
+  // roster, the chat and the pack back exactly as they were.
+  const ONL = (() => {
+    const can = !!(window.NET && window.CHAT && window.PLAYERS);
+    let was = null;
+    const feed = m => NET.sock && NET.sock.onmessage && NET.sock.onmessage({ data: JSON.stringify(m) });
+    function connect() {
+      if (was || !can) return;
+      was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, status: NET.status, me: NET.me, log: CHAT.log.map(l => ({ ...l })), bubbles: { ...CHAT.bubbles }, inv: player.inv.map(q => q ? { ...q } : null) };
+      const fake = {
+        call: async () => ({}),
+        open: () => { const s = { readyState: 1, send(str) { const m = JSON.parse(str); if (m.t === 'hello') s.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }) }); }, close() { s.readyState = 3; } }; return s; },
+      };
+      NET.disconnect(); NET.enabled = true; NET.token = 'hudkit-test'; NET.useFake(fake); NET.connect();
+      feed({ t: 'who', list: [{ n: 'Cohen', map: 'over', region: 'Thistledown', lv: 5 }, { n: 'Ava', map: 'over', region: 'Thistledown', lv: 7 }] });
+      CHAT.log.length = 0;
+      feed({ t: 'chat', n: 'Ava', text: 'Come and help me fight the boss', at: 3 });
+      feed({ t: 'chat', n: 'Cohen', text: 'On my way, follow me', at: 4 });
+    }
+    return {
+      can,
+      scene(on) {
+        if (!on && !was) return true;
+        connect(); if (!can) return false;
+        // the friend is re-announced every time, beside wherever the knight is standing now (a boss is at +40, so the
+        // friend stands on the other side)
+        if (on) feed({ t: 'p', n: 'Ava', map: 'over', x: player.x - 40, y: player.y, fx: 1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 7, look: null, mech: null, dead: false, def: 100, act: null });
+        NET.enabled = on;
+        for (const l of CHAT.log) l.t = on ? 8 : 0;
+        return !on || NET.online();
+      },
+      restore() {
+        if (!was) return;
+        NET.emit('offline', { t: 'offline' });   // what a dropped socket tells 73/74/75: the roster, the bubbles and the shared monsters go
+        NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
+        CHAT.log.length = 0; for (const l of was.log) CHAT.log.push(l);
+        for (const n in CHAT.bubbles) delete CHAT.bubbles[n]; Object.assign(CHAT.bubbles, was.bubbles);
+        player.inv = was.inv;
+        was = null;
+      },
+    };
+  })();
+
+  // puts back what the audits changed (the window, the text size, the monsters, the machine, the panel)
+  function restoreWorld() {
+    ONL.restore();
+    window.__forceTouch = prevTouch; window.__stickRight = window.SETTINGS ? SETTINGS.get('stick') === 'right' : false;
+    if (window.SETTINGS) SETTINGS.set('text', savedText);
+    monsters.length = 0; for (const m of mon0) monsters.push(m);
+    player.mech = m0; player.companion = c0; player.x = px0; player.y = py0; closePanel(); selectedSlot = -1;
+    if (savedSize.w) { Object.defineProperty(window, 'innerWidth', savedSize.w); Object.defineProperty(window, 'innerHeight', savedSize.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+    paused = paused0; if (panel0) openPanel(panel0); render();
+  }
+
   // ---------- 3. the layout audit: 4 viewports x 2 text sizes x touch/desktop x 4 scenes ----------
   {
     const problems = [];
-    const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
-    const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-    const inside = r => r.x >= -0.5 && r.y >= -0.5 && r.x + r.w <= VW + 0.5 && r.y + r.h <= VH + 0.5;
-    // the minimap is a tap target that never goes through button() (05-input matches it separately), so the
-    // audit has to know about it — the thumb cluster used to overlap it on a landscape phone unnoticed
-    const live = () => {
-      const out = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0);
-      if (minimapRect) out.push({ ...minimapRect, label: 'minimap' });
-      return out;
-    };
-    // The circle the idle joystick is actually drawn in (10-hud paints it at 110, VH-110 with r 60, mirrored
-    // by Settings › Move stick side). A control drawn on top of that is a control you cannot press and a
-    // stick you cannot see, because 05-input matches the button list before it starts the stick. The wider
-    // joystickZone() rectangle is a tap-to-walk rule, not a keep-out: on a 390 px phone the thumb cluster
-    // necessarily reaches into it, and that has always been fine.
-    const stickBox = () => {
-      const cx = window.__stickRight === true ? VW - 110 : 110;
-      return { x: cx - 60, y: VH - 170, w: 120, h: 120, label: 'the joystick' };
-    };
-    const boss = () => { // a real boss bar: the biggest monster the game knows, standing on the knight
-      const type = Object.keys(MONSTER_DEFS).find(t => t !== 'the_fang' && MONSTER_DEFS[t].level >= 25 && MONSTER_DEFS[t].hp >= 300);
-      if (!type) return false;
-      const d = MONSTER_DEFS[type];
-      monsters.length = 0;
-      monsters.push({ // the same shape spawnMonsters() builds (04-state), so it draws as well as it reads
-        type, x: player.x + 40, y: player.y, home: { x: player.x + 40, y: player.y },
-        r: d.r, hp: d.hp * 0.6, maxHp: d.hp, speed: d.speed, angry: false, state: 'idle', wanderT: 9,
-        wander: { x: 0, y: 0 }, attackCd: 9, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0,
-      });
-      return true;
-    };
     let tried = 0;
     for (const [w, hh] of [[390, 844], [844, 390], [768, 1024], [1280, 800]]) {
       if (!setSize(w, hh)) continue; tried++;
@@ -20792,42 +20878,75 @@ HOOKS.selfTest.push((check, F, h) => {
         window.__forceTouch = t;
         for (const big of ['normal', 'large']) {
           if (window.SETTINGS) SETTINGS.set('text', big);
-          for (const scene of ['plain', 'inventory', 'boss', 'machine', 'plain-righthanded']) {
+          for (const scene of ['plain', 'inventory', 'boss', 'machine', 'plain-righthanded', 'online', 'online-boss']) {
             monsters.length = 0; player.mech = null; player.companion = c0 ? JSON.parse(JSON.stringify(c0)) : null; closePanel();
             window.__stickRight = scene === 'plain-righthanded';   // Settings › Move stick side mirrors the thumb cluster
+            if (!ONL.scene(scene.startsWith('online'))) { if (scene.startsWith('online')) problems.push(`${w}x${hh}: the online scene did not come up`); continue; }
             if (scene === 'inventory') { player.inv[0] = player.inv[0] || { id: 'bread', qty: 1 }; openPanel('inventory'); selectedSlot = 0; }
-            if (scene === 'boss' && !boss()) continue;
+            if ((scene === 'boss' || scene === 'online-boss') && !boss()) continue;
             if (scene === 'machine') { player.mech = { kind: 'dozer', hp: 74, maxHp: 110 }; player.companion = { id: 'sera', hp: 44, maxHp: 60, mode: 'follow', x: player.x, y: player.y, downT: 0, freed: { sera: true } }; }
             render();
             const where = `${w}x${hh} ${t ? 'touch' : 'desktop'} ${big} ${scene}`;
-            let rects = live();
-            if (scene === 'inventory') { // a panel shadows the HUD under it by design; audit the panel's own controls
-              const ci = rects.findIndex(b => b.label === '×');
-              if (ci < 0) problems.push(where + ': the pack has no close button');
-              else rects = rects.slice(ci);
-              if (panelRect && !inside(panelRect)) problems.push(`${where}: the pack box is off-screen ${JSON.stringify(panelRect)}`);
-            }
-            for (const r of rects) if (!inside(r)) problems.push(`${where}: ${r.label} off-screen ${JSON.stringify([Math.round(r.x), Math.round(r.y), r.w, r.h])}`);
-            for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) if (overlap(rects[i], rects[j])) problems.push(`${where}: ${rects[i].label} × ${rects[j].label}`);
-            // a ten-year-old's finger: 44 x 44, every control, on touch. On desktop a mouse is precise, so
-            // the floor is the kit's desktop row height.
-            const floor = t ? 44 : 26;
-            for (const r of rects) if (!/^slot\d+|^bank\d+|^hot\d+|^eq/.test(r.label) && (r.w < floor - 0.5 || r.h < floor - 0.5)) problems.push(`${where}: ${r.label} is ${Math.round(r.w)}x${Math.round(r.h)}, under ${floor}`);
-            for (const r of rects) if (/^slot\d+|^bank\d+|^hot\d+|^eq/.test(r.label) && t && (r.w < 40 || r.h < 40)) problems.push(`${where}: item tile ${r.label} is ${Math.round(r.w)}x${Math.round(r.h)}`);
-            // nothing pressable in the joystick's circle (the thumb cluster is the deliberate exception:
-            // it is mirrored to the far side by the same setting, so it is never in the live stick zone)
-            if (t && scene !== 'inventory') { const sb = stickBox(); for (const r of rects) if (overlap(r, sb)) problems.push(`${where}: ${r.label} is inside the joystick`); }
+            const rects = scene === 'inventory' ? panelRects(where, problems) : live();
+            auditNow(where, t, rects, scene !== 'inventory', problems);
           }
         }
       }
     }
-    window.__forceTouch = prevTouch; window.__stickRight = window.SETTINGS ? SETTINGS.get('stick') === 'right' : false;
-    if (window.SETTINGS) SETTINGS.set('text', savedText);
-    monsters.length = 0; for (const m of mon0) monsters.push(m);
-    player.mech = m0; player.companion = c0; player.x = px0; player.y = py0; closePanel(); selectedSlot = -1;
-    if (savedSize.w) { Object.defineProperty(window, 'innerWidth', savedSize.w); Object.defineProperty(window, 'innerHeight', savedSize.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
-    paused = paused0; if (panel0) openPanel(panel0); render();
+    ONL.scene(false);
+    restoreWorld();
     check(P + 'layout audit: 390x844, 844x390, 768x1024 and 1280x800, touch and desktop, normal and large text, with no panel / the pack open / a boss bar up / driving a machine with a companion — no control overlaps another, none falls off screen, and every touch control is at least 44x44', tried === 4 && problems.length === 0, { tried, problems: problems.slice(0, 10), total: problems.length });
+  }
+
+  // ---------- 3b. the online audit: every online control, at the four sizes the iPad and the phones really are ----------
+  // The online wave (70-75) was built after the kit and placed its controls by hand; with the wire off (as every
+  // other scene runs) none of them is on screen, so nothing could see the chat strip across MUSIC or CHAT inside the
+  // joystick. Here the wire is up: the ONLINE chip, the chat strip and CHAT on the rail, with and without a boss bar
+  // pushing the column into its second half, with the stick on either side — and then the Friends, Chat and Give
+  // panels, whose every button must be a finger's width.
+  {
+    const problems = [];
+    let tried = 0, seen = 0;
+    for (const [w, hh] of [[844, 390], [390, 844], [768, 1024], [1024, 768]]) {
+      if (!setSize(w, hh)) continue; tried++;
+      for (const t of [true, false]) {
+        window.__forceTouch = t;
+        for (const big of ['normal', 'large']) {
+          if (window.SETTINGS) SETTINGS.set('text', big);
+          for (const scene of ['online', 'online-boss', 'online-righthanded']) {
+            monsters.length = 0; player.mech = null; closePanel();
+            window.__stickRight = scene === 'online-righthanded';
+            if (!ONL.scene(true)) { problems.push(`${w}x${hh}: the online scene did not come up`); continue; }
+            if (scene === 'online-boss' && !boss()) continue;
+            // twice: the first frame after a size change reads last frame's hotbar position (10-hud's boss-bar row
+            // is placed before this frame's layout is published), and the audit is about where things settle
+            render(); render();
+            const where = `${w}x${hh} ${t ? 'touch' : 'desktop'} ${big} ${scene}`;
+            const rects = live();
+            // every online control has to be there to be audited at all
+            const need = ['ONLINE 2', 'chat:log'].concat(t ? ['CHAT'] : []);
+            for (const n of need) if (!rects.some(r => r.label === n)) problems.push(`${where}: no ${n}`);
+            seen++;
+            auditNow(where, t, rects, true, problems);
+          }
+          // the online panels: Friends (with the friend in reach, so Give and Follow are live), Chat, and Give
+          if (big === 'normal') {
+            window.__stickRight = false; monsters.length = 0; ONL.scene(true);
+            player.inv = new Array(INV_SLOTS).fill(null); player.inv[0] = { id: 'stone', qty: 3 };   // one stack of three: Give 1 and Give all, one page
+            for (const [p, arg] of [['friends'], ['chatlog'], ['gift', 'Ava']]) {
+              closePanel(); openPanel(p, arg); render();
+              const where = `${w}x${hh} ${t ? 'touch' : 'desktop'} panel ${p}`;
+              auditNow(where, t, panelRects(where, problems), false, problems);
+            }
+            closePanel();
+          }
+        }
+      }
+    }
+    ONL.scene(false);
+    const can = ONL.can;
+    restoreWorld();
+    check(P + 'online layout audit: 844x390, 390x844, 768x1024 and 1024x768, touch and desktop, with the wire up, a friend beside you and two lines of chat (and a boss bar up, and the stick on the right) — the ONLINE chip, the chat strip and CHAT overlap no control, stay out of the joystick and are finger-sized, and so is every button on the Friends, Chat and Give panels', can && tried === 4 && seen === 48 && problems.length === 0, { can, tried, seen, problems: problems.slice(0, 12), total: problems.length });
   }
 
   // ---------- 4. the grid is real: one left edge, one width, no content-sized plates ----------
@@ -26039,6 +26158,8 @@ HOOKS.selfTest.push((check, F, h) => {
   const forget = n => { delete REMOTE[n]; if (following === n) following = null; };
   const clearAll = () => { for (const n in REMOTE) delete REMOTE[n]; ONLINE = []; following = null; };
   const near = n => { const e = REMOTE[n]; return !!e && e.map === mapId() && dist(e.shown.x, e.shown.y, player.x, player.y) <= NEAR; };
+  // the ONLINE chip and the F key both do this
+  const toggleFriends = () => { if (panel === 'friends') closePanel(); else { friendsPage = 0; openPanel('friends'); } };
 
   // ---------- out: what we look like and where we are ----------
   function lookOf() {
@@ -26076,7 +26197,7 @@ HOOKS.selfTest.push((check, F, h) => {
       if (e.moving) e.walkT += dt * 9;
       if (e.hurtT > 0) e.hurtT -= dt;
     }
-    if (pressed.has('KeyF') && !player.dead) { if (panel === 'friends') closePanel(); else { friendsPage = 0; openPanel('friends'); } }
+    if (pressed.has('KeyF') && !player.dead) toggleFriends();
   });
   HOOKS.keyHelp.push({ action: 'Friends', codes: ['KeyF'] }); // 43-settings lists it on the Controls line
 
@@ -26135,8 +26256,6 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   // ---------- the HUD: friends on the minimap, the follow arrow, the ONLINE chip ----------
-  const BOSS_H = 48, BOSS_GAP = 8;
-  function bossBarsShowing() { let n = 0; for (const m of monsters) { if (n >= 2) break; const d = MONSTER_DEFS[m.type]; if (!m.dead && m.type !== 'the_fang' && d && d.level >= 25 && d.hp >= 300 && dist(m.x, m.y, player.x, player.y) <= 12 * TILE) n++; } return n; }
   HOOKS.hud.push(g => {
     if (paused) return;
     const my = mapId();
@@ -26169,18 +26288,15 @@ HOOKS.selfTest.push((check, F, h) => {
         }
       }
     }
-    // the chip: only on the online build, under the HP box on the shared left-HUD cursor, clear of the touch hotbar,
-    // the boss bars and (on a landscape phone) the quest box. Hidden under other files' panels so it cannot eat their taps.
+    // The chip: only on the online build. It is a control on the HUD kit's left column like LEAVE and BLOCK: one row
+    // (44 px on touch), the column's control width, and HK.slot() finds its row, so it sits under whatever chips are
+    // already up (a boss bar, a machine, the quest items), wraps into the second column instead of running into the
+    // joystick, and never needs to know how tall anything above it is. Hidden under other files' panels so it cannot
+    // eat their taps.
     if (!NET.enabled || (panel && !MINE[panel])) return;
-    const lay = HUD_LAYOUT;
-    const touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
-    const questFloor = (isTouch && lay && lay.short && lay.questH) ? lay.questY + lay.questH + 8 : 0;
-    const bars = bossBarsShowing(), bossFloor = bars && lay ? lay.bossBarY + bars * (BOSS_H + BOSS_GAP) : 0;
-    const y = Math.max(HUD.leftY, touchFloor, questFloor, bossFloor, 84), h = isTouch ? 30 : 26;
-    const on = NET.online(), label = on ? 'ONLINE ' + ONLINE.length : 'OFFLINE';
-    g.font = 'bold 13px sans-serif'; const w = Math.max(88, Math.ceil(g.measureText(label).width) + 28);
-    button(g, 14, y, w, h, label, () => { if (panel === 'friends') closePanel(); else { friendsPage = 0; openPanel('friends'); } }, on ? '#1f4e78' : '#2a2f3a');
-    HUD.leftY = y + h + 6;
+    const label = NET.online() ? 'ONLINE ' + ONLINE.length : 'OFFLINE';
+    const s = HK.slot(HK.row());
+    HK.control(g, s.x, s.y, HK.ctrlW(), s.h, label, toggleFriends, { on: panel === 'friends', hit: label });
   });
 
   // ---------- the world map: every friend on this map as a named blue dot (drawn after the core's map, so it wraps drawPanels) ----------
@@ -26236,25 +26352,28 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.panel.friends = (g, narrow) => {
     const my = mapId(), meN = me();
     const list = ONLINE.filter(o => o.n !== meN);
-    const rowH = 60, per = Math.max(1, Math.min(6, Math.floor((VH - 20 - 170) / rowH))), pages = Math.max(1, Math.ceil(list.length / per));
+    // every button here is one kit row tall (HK.row(): 44 px on touch), so the rows and the header grow to hold them
+    const bh = HK.row(), top = 62 + bh + 12, rowH = Math.max(60, bh + 16);
+    const per = Math.max(1, Math.min(6, Math.floor((VH - 20 - top - 68) / rowH))), pages = Math.max(1, Math.ceil(list.length / per));
     friendsPage = clamp(friendsPage, 0, pages - 1);
     const page = list.slice(friendsPage * per, friendsPage * per + per);
-    const w = narrow ? Math.min(VW - 20, 400) : 500, h = Math.min(VH - 20, 128 + Math.max(1, page.length) * rowH + 30 + (pages > 1 ? 40 : 0));
+    const w = narrow ? Math.min(VW - 20, 400) : 500, h = Math.min(VH - 20, top + 26 + Math.max(1, page.length) * rowH + 30 + (pages > 1 ? 40 : 0));
     const on = NET.online();
     const { px, py } = panelBox(g, w, h, 'Friends online', on ? `${ONLINE.length} knight${ONLINE.length === 1 ? '' : 's'} in the Fanglands right now` : 'Not connected right now');
-    button(g, px + 18, py + 62, 96, 28, 'Chat log', () => openPanel('chatlog'), '#21262d');
-    let y = py + 102;
+    button(g, px + 18, py + 62, 96, bh, 'Chat log', () => openPanel('chatlog'), '#21262d');
+    let y = py + top;
     if (!page.length) { g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText(on ? 'Nobody else is on right now.' : 'You are not connected.', px + 18, y + 14); }
     const bw1 = 62, bw2 = narrow ? 92 : 118, bx1 = px + w - 18 - bw1, bx2 = bx1 - 8 - bw2, textW = bx2 - (px + 30) - 10;
     for (const o of page) {
       const here = o.map === my, close = near(o.n), fol = following === o.n;
       roundRect(g, px + 18, y, w - 36, rowH - 8, 8); g.fillStyle = here ? 'rgba(88,166,255,0.12)' : 'rgba(255,255,255,0.05)'; g.fill();
-      g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#e6edf3'; g.fillText(o.n, px + 30, y + 20);
-      const nw = g.measureText(o.n).width; g.fillStyle = '#9aa3b2'; g.font = '11px sans-serif'; g.fillText('lv ' + (o.lv || 1), px + 30 + nw + 8, y + 20);
+      const mid = y + (rowH - 8) / 2;   // the middle of the row's plate: the name sits above it, where they are below
+      g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#e6edf3'; g.fillText(o.n, px + 30, mid - 6);
+      const nw = g.measureText(o.n).width; g.fillStyle = '#9aa3b2'; g.font = '11px sans-serif'; g.fillText('lv ' + (o.lv || 1), px + 30 + nw + 8, mid - 6);
       let where = here ? 'On your map · ' + whereOf(o) : whereOf(o); g.font = '12px sans-serif'; while (g.measureText(where).width > textW && where.length > 6) where = where.slice(0, -2) + '…';
-      g.fillStyle = here ? BLUE : '#8b949e'; g.fillText(where, px + 30, y + 40);
-      button(g, bx1, y + 11, bw1, 30, 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, close ? '#238636' : '#2a2f3a', close);
-      button(g, bx2, y + 11, bw2, 30, fol ? (narrow ? 'Following' : 'Stop following') : (narrow ? 'Follow' : 'Follow on map'), () => { following = fol ? null : o.n; sfx('open'); }, fol ? '#6b4f2a' : here ? '#21262d' : '#2a2f3a', here);
+      g.fillStyle = here ? BLUE : '#8b949e'; g.fillText(where, px + 30, mid + 14);
+      button(g, bx1, mid - bh / 2, bw1, bh, 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, close ? '#238636' : '#2a2f3a', close);
+      button(g, bx2, mid - bh / 2, bw2, bh, fol ? (narrow ? 'Following' : 'Stop following') : (narrow ? 'Follow' : 'Follow on map'), () => { following = fol ? null : o.n; sfx('open'); }, fol ? '#6b4f2a' : here ? '#21262d' : '#2a2f3a', here);
       y += rowH;
     }
     g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText('Give works when you stand within two tiles of a friend. F opens this panel.', px + 18, py + h - (pages > 1 ? 50 : 14));
@@ -26265,7 +26384,8 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.panel.gift = (g, narrow) => {
     const to = String(panelArg || '');
     const stacks = []; for (const s of player.inv) if (s && s.qty > 0 && ITEMS[s.id]) stacks.push(s);
-    const rowH = 38, per = Math.max(2, Math.min(8, Math.floor((VH - 20 - 130) / rowH))), pages = Math.max(1, Math.ceil(stacks.length / per));
+    // the Give buttons are one kit row tall (HK.row(): 44 px on touch); each row is that plus its margins
+    const bh = HK.row(), rowH = bh + 12, per = Math.max(2, Math.min(8, Math.floor((VH - 20 - 130) / rowH))), pages = Math.max(1, Math.ceil(stacks.length / per));
     giftPage = clamp(giftPage, 0, pages - 1);
     const page = stacks.slice(giftPage * per, giftPage * per + per);
     const w = narrow ? Math.min(VW - 20, 390) : 460, h = Math.min(VH - 20, 74 + Math.max(1, page.length) * rowH + (pages > 1 ? 50 : 20));
@@ -26275,16 +26395,17 @@ HOOKS.selfTest.push((check, F, h) => {
     if (!page.length) { g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText('Your pack is empty.', px + 18, y + 20); }
     for (const s of page) {
       const def = ITEMS[s.id], many = s.qty > 1;
+      const mid = y + (rowH - 6) / 2;   // the middle of the row's plate
       roundRect(g, px + 18, y, w - 36, rowH - 6, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      drawItemIcon(g, s.id, px + 36, y + 15, 18);
+      drawItemIcon(g, s.id, px + 36, mid - 1, 18);
       let name = def.name + ' × ' + s.qty; g.font = 'bold 13px sans-serif'; const maxW = w - 36 - 44 - (many ? 176 : 96);
       while (g.measureText(name).width > maxW && name.length > 6) name = name.slice(0, -2) + '…';
-      g.fillStyle = '#e6edf3'; g.textAlign = 'left'; g.fillText(name, px + 54, y + 20);
+      g.fillStyle = '#e6edf3'; g.textAlign = 'left'; g.fillText(name, px + 54, mid + 4);
       const arm = needsConfirm(def) && confirmActive('gift:' + s.id);
       const giveN = qty => { const go = () => { if (give(to, s.id, qty)) closePanel(); }; if (needsConfirm(def)) confirmTap('gift:' + s.id, go); else go(); };
       const key = (b, suffix) => { b.label = (b.disabled ? 'disabled:' : '') + 'give:' + s.id + ':' + suffix; };   // the drawn word stays; the harness finds the button by key
-      if (many) { button(g, px + w - 18 - 82 - 6 - 74, y + 3, 74, rowH - 12, 'Give 1', () => giveN(1), ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], '1'); }
-      button(g, px + w - 18 - 82, y + 3, 82, rowH - 12, arm ? 'Tap again' : many ? 'Give all' : 'Give', () => giveN(s.qty), arm ? '#c0392b' : ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], 'all');
+      if (many) { button(g, px + w - 18 - 82 - 6 - 74, mid - bh / 2, 74, bh, 'Give 1', () => giveN(1), ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], '1'); }
+      button(g, px + w - 18 - 82, mid - bh / 2, 82, bh, arm ? 'Tap again' : many ? 'Give all' : 'Give', () => giveN(s.qty), arm ? '#c0392b' : ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], 'all');
       y += rowH;
     }
     if (pages > 1) pager(g, px + 18, py + h - 40, w - 36, giftPage, pages, p => { giftPage = p; });
@@ -26360,16 +26481,30 @@ HOOKS.selfTest.push((check, F, h) => {
       feed({ t: 'p', n: 'Cal', map: 'over', x: player.x, y: player.y + 40, fx: 0, fy: -1, mv: false, wt: 0, hp: 9, mhp: 25, lv: 2, look: null, mech: null, dead: false, def: 50, act: null });
       const n0 = notice; feed({ t: 'error', code: 'elsewhere', text: 'opened elsewhere' }); const elsewhere = !REMOTE.Cal && !!notice && notice.text === 'Your knight was opened somewhere else.'; notice = n0;
       check(P + "'left' removes a knight at once; six seconds of silence removes one too; 'elsewhere' clears everyone and says so", gone && timedOut && elsewhere, { gone, timedOut, elsewhere }); }
-    // layout: the chip overlaps no other button at four screen sizes (desktop layout; touch when the device is touch)
-    { const vw0 = window.innerWidth, vh0 = window.innerHeight, hits = [], sizes = []; const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-      const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
-      for (const [w, hh, name] of [[390, 844, 'phone'], [844, 390, 'landscape'], [768, 1024, 'tablet'], [1280, 800, 'desktop']]) {
-        closePanel(); if (!setSize(w, hh)) continue; sizes.push(name); const bs = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0); const mine = bs.filter(b => /^ONLINE/.test(b.label));
-        for (const a of mine) for (const b of bs) if (a !== b && overlap(a, b)) hits.push(name + ': ' + a.label + ' × ' + b.label);
-        if (!mine.length) hits.push(name + ': no chip');
+    // layout: the chip overlaps no other button at four screen sizes, in the touch layout and the desktop one. It reads
+    // touchMode() (forced both ways here), not the device's isTouch, which is always false headless — so the touch
+    // layout, the one the iPad and the phones use, is really tested. On touch it is also a full 44 px control and
+    // stays out of the joystick's circle (05-input matches buttons before it starts the stick). Two frames per size: the
+    // first frame after a size or layout change reads last frame's hotbar position (10-hud places its boss-bar row
+    // before it publishes this frame's layout), and what matters is where the chip settles.
+    { const vw0 = window.innerWidth, vh0 = window.innerHeight, t0 = window.__forceTouch, hits = [], sizes = []; const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); render(); return VW === w && VH === hh; };
+      for (const t of [true, false]) {
+        window.__forceTouch = t;
+        for (const [w, hh, name] of [[390, 844, 'phone'], [844, 390, 'landscape'], [768, 1024, 'tablet'], [1280, 800, 'desktop']]) {
+          closePanel(); if (!setSize(w, hh)) continue; const where = name + (t ? ' touch' : ' desktop'); sizes.push(where);
+          const bs = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0); const mine = bs.filter(b => /^ONLINE/.test(b.label));
+          for (const a of mine) for (const b of bs) if (a !== b && overlap(a, b)) hits.push(where + ': ' + a.label + ' × ' + b.label);
+          if (!mine.length) hits.push(where + ': no chip');
+          if (t) for (const a of mine) {
+            if (a.w < 44 || a.h < 44) hits.push(where + ': ' + a.label + ' is ' + Math.round(a.w) + 'x' + Math.round(a.h));
+            const cx = window.__stickRight === true ? VW - 110 : 110;
+            if (overlap(a, { x: cx - 60, y: VH - 170, w: 120, h: 120 })) hits.push(where + ': ' + a.label + ' is inside the joystick');
+          }
+        }
       }
-      setSize(vw0, vh0);
-      check(P + 'the ONLINE chip sits clear of every other button at phone, landscape, tablet and desktop sizes', hits.length === 0 && sizes.length > 0, { hits, sizes }); }
+      window.__forceTouch = t0; setSize(vw0, vh0);
+      check(P + 'the ONLINE chip sits clear of every other button at phone, landscape, tablet and desktop sizes', hits.length === 0 && sizes.length === 8, { hits, sizes }); }
     // put the world back
     NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
     clearAll(); lastSig = null; pending.length = 0; lastGiftAt = -1e9;
@@ -26382,9 +26517,9 @@ HOOKS.selfTest.push((check, F, h) => {
 // CHAT — talking to your friends.
 // Owner: "make it an online MMORPG so Cohen and his friends can log in and play together."
 // A real text box (a DOM <input>, so the iPad keyboard works and nothing is zoomed) opens with Enter or Y on a keyboard
-// and with the CHAT button on touch; a row of quick phrases sits above it, one tap each. What comes back from the world
+// and with CHAT on the control rail on touch; a row of quick phrases sits above it, one tap each. What comes back from the world
 // (docs/ONLINE.md: `chat`, already filtered and logged server-side) shows as a bubble over that knight's head for four
-// seconds, as a fading strip of the last few lines at the bottom-left, and in a Chat log panel with the last thirty.
+// seconds, as a fading strip of the last few lines on the left column of the HUD, and in a Chat log panel with the last thirty.
 // While the box has the keyboard the game does not see a single key: a capturing listener on window stops them.
 // Feature file: HOOKS only. Reads window.PLAYERS (73) for where the other knights are. window.CHAT is the handle.
 // ============================================================================
@@ -26523,50 +26658,55 @@ HOOKS.selfTest.push((check, F, h) => {
     }
   });
 
-  // ---------- the strip at the bottom-left, and the CHAT touch button ----------
-  function stripBox() {
-    const lay = HUD_LAYOUT, lh = 16;
-    let bottom, top = 84;
-    if (!isTouch) bottom = VH - 44;
-    else if (lay.short) { bottom = VH - 186; top = lay.questH ? lay.questY + lay.questH + 6 : 84; }
-    else bottom = window.__stickRight === true ? VH - 300 : VH - 190;
-    const w = !isTouch ? Math.min(360, Math.floor(VW / 2 - (5 * 50 + 60) / 2) - 20 - 14) : Math.min(360, VW - 28);
-    const n = Math.max(0, Math.min(STRIP_LINES, Math.floor((bottom - top) / lh)));
-    return { x: 14, w, bottom, lh, n };
-  }
+  // ---------- the strip on the HUD kit's left column, and the CHAT control on the rail ----------
+  // The strip is a readout, so it lives where every other readout lives: HK.slot() gives it the next rows of the left
+  // column at the column's width, under the ONLINE chip. That is what keeps it off the rail (on a landscape phone the
+  // column wraps into the second one BELOW the rail), off the thumb cluster and out of the joystick's circle — it used
+  // to be placed by hand at the bottom-left, 360 px wide, and ran across MUSIC, QUESTS and CRAFT. A tap on it opens
+  // the log, so its tap area is at least one kit row tall (44 px on touch) even when only one line is showing.
+  const LINE_H = 16;
   HOOKS.hud.push(g => {
-    if (paused) return;
-    // the strip: the last few lines, fading out; a tap on it opens the log
+    if (paused || panel) return;
     const live = []; for (let i = log.length - 1; i >= 0 && live.length < STRIP_LINES; i--) if (log[i].t > 0) live.unshift(log[i]);
-    const sb = stripBox();
-    if (live.length && sb.w >= 120 && sb.n > 0 && !panel) {
-      const lines = live.slice(-sb.n); const y0 = sb.bottom - lines.length * sb.lh;
-      g.font = '12px sans-serif'; g.textAlign = 'left';
-      lines.forEach((l, i) => {
-        const y = y0 + i * sb.lh, a = clamp(l.t / 1.5, 0, 1);
-        g.globalAlpha = a; roundRect(g, sb.x, y, sb.w, sb.lh - 1, 4); g.fillStyle = 'rgba(10,14,22,0.7)'; g.fill();
-        g.font = 'bold 12px sans-serif'; g.fillStyle = l.n === me() ? '#e6edf3' : BLUE; const name = l.n + ':'; g.fillText(name, sb.x + 6, y + 12);
-        const nw = g.measureText(name).width; g.font = '12px sans-serif'; g.fillStyle = '#e6edf3';
-        let t = l.text; const maxW = sb.w - 12 - nw - 6; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…';
-        g.fillText(t, sb.x + 6 + nw + 5, y + 12);
-      });
-      g.globalAlpha = 1;
-      buttons.push({ x: sb.x, y: y0, w: sb.w, h: lines.length * sb.lh, label: 'chat:log', action: () => openPanel('chatlog') });
-    }
-    // the CHAT button on touch: a third column left of QUESTS, in the same round style as the core's buttons (10-hud)
-    if (!touchMode() || !NET.enabled) return;
-    const mx = x => window.__stickRight === true ? VW - x : x;
-    const r = 52, x = mx(VW - 250), y = VH - 200;
-    g.fillStyle = 'rgba(255,255,255,0.14)'; g.beginPath(); g.arc(x, y, r / 2 + 8, 0, 7); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText('CHAT', x, y + 4);
-    buttons.push({ x: x - r / 2 - 8, y: y - r / 2 - 8, w: r + 16, h: r + 16, label: 'CHAT', action: () => { if (isOpen) close(); else open(); } });
+    if (!live.length) return;
+    const was = { y: HUD.leftY, col: HUD.leftCol };
+    const s = HK.slot(Math.max(live.length * LINE_H, HK.row()));
+    // the column can hold fewer lines than there are (a boss bar and a machine above it on a landscape phone):
+    // show the newest that fit, and nothing at all if not even one tap-sized row fits
+    const room = HK.colLimit(HUD.leftCol || 0) - s.y, n = Math.min(live.length, Math.floor(room / LINE_H)), h = Math.max(n * LINE_H, HK.row());
+    // With the stick moved to the right on a landscape phone, the second column runs down beside it: the strip stops
+    // short of the joystick's circle rather than lying across it
+    let w = s.w;
+    const st = HK.stickRect();
+    if (HK.touch() && s.y < st.y + st.h && st.y < s.y + h && s.x < st.x + st.w && st.x < s.x + w) w = st.x - HK.GUT - s.x;
+    if (n < 1 || h > room || w < 160) { HUD.leftY = was.y; HUD.leftCol = was.col; return; }
+    HUD.leftY = s.y + h + HK.gutV();
+    const lines = live.slice(-n);
+    g.textAlign = 'left';
+    lines.forEach((l, i) => {
+      const y = s.y + i * LINE_H;
+      g.globalAlpha = clamp(l.t / 1.5, 0, 1);
+      HK.plate(g, s.x, y, w, LINE_H - 1, { r: 4 });
+      // names in the kit's INK, what they said in its DIM: text is never a colour of its own
+      g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; const name = l.n + ':'; g.fillText(name, s.x + 6, y + 12);
+      const nw = g.measureText(name).width; g.font = '12px sans-serif'; g.fillStyle = HK.C.DIM;
+      let t = l.text; const maxW = w - 12 - nw - 6; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…';
+      g.fillText(t, s.x + 6 + nw + 5, y + 12);
+    });
+    g.globalAlpha = 1;
+    buttons.push({ x: s.x, y: s.y, w, h, label: 'chat:log', action: () => openPanel('chatlog') });
   });
+  // CHAT on touch is an entry on the kit's control rail (under the minimap; the second column on a landscape phone), not
+  // a disc of its own: the thumb cluster's six seats are all taken (HK.thumbSeat), and the last hand-placed disc at
+  // (VW-250, VH-200) sat on top of WIKI on a landscape phone and inside the joystick on a tall one. The rail lays
+  // it out with the others, draws it in the kit's control style and lights it while the box is open.
+  hudControl({ id: 'chat', sort: 45, label: () => 'CHAT', show: () => touchMode() && NET.enabled && !paused, on: () => isOpen, action: () => { if (isOpen) close(); else open(); } });
 
   // ---------- the log panel ----------
   HOOKS.panel.chatlog = (g, narrow) => {
-    const lh = 22, per = Math.max(3, Math.min(LOG_MAX, Math.floor((VH - 20 - 160) / lh)));
+    const lh = 22, per = Math.max(3, Math.min(LOG_MAX, Math.floor((VH - 20 - 128 - HK.row()) / lh)));
     const lines = log.slice(-per);
-    const w = narrow ? Math.min(VW - 20, 400) : 520, h = Math.min(VH - 20, 150 + Math.max(1, lines.length) * lh);
+    const w = narrow ? Math.min(VW - 20, 400) : 520, h = Math.min(VH - 20, 118 + HK.row() + Math.max(1, lines.length) * lh);
     const { px, py } = panelBox(g, w, h, 'Chat', lines.length ? 'The last things your friends said, newest at the bottom.' : 'Nothing said yet.');
     let y = py + 76;
     g.font = '12px sans-serif';
@@ -26577,8 +26717,10 @@ HOOKS.selfTest.push((check, F, h) => {
       g.font = '12px sans-serif'; g.fillStyle = '#c9d1d9'; let t = l.text; const maxW = w - 36 - nw - 10; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…'; g.fillText(t, px + 18 + nw + 10, y + 8);
       y += lh;
     }
-    button(g, px + 18, py + h - 46, 140, 32, touchMode() ? 'Say something' : 'Say something (Enter)', () => { closePanel(); open(); });
-    if (window.PLAYERS) button(g, px + 18 + 148, py + h - 46, 90, 32, 'Friends', () => openPanel('friends'), '#21262d');
+    // one kit row tall (HK.row(): 44 px on touch), like every control
+    const bh = HK.row(), by = py + h - bh - 14;
+    button(g, px + 18, by, 140, bh, touchMode() ? 'Say something' : 'Say something (Enter)', () => { closePanel(); open(); });
+    if (window.PLAYERS) button(g, px + 18 + 148, by, 90, bh, 'Friends', () => openPanel('friends'), '#21262d');
   };
 
   window.CHAT = { open, close, send, isOpen: () => isOpen, bubbles, log, PHRASES, MAX };
@@ -26615,10 +26757,14 @@ HOOKS.selfTest.push((check, F, h) => {
       F.press('Enter'); const byEnter = isOpen; close();
       say('A test line, knight.', 'The Voice'); F.step([]); const up = !!dialog.cur; F.press('Enter'); const stayed = !isOpen; dialog.cur = null; dialog.queue.length = 0; F.step([]); F.step([]);
       check(P + 'Y opens the chat box; Enter opens it only when no line of talk is showing', byY && byEnter && up && stayed, { byY, byEnter, up, stayed }); }
-    // touch: a CHAT button beside the others
+    // touch: CHAT is an entry on the kit's control rail (drawn by the rail, where the rail says), and toggles the box
     { window.__forceTouch = true; closePanel(); render(); const btn = buttons.find(b => b.label === 'CHAT'); const has = !!btn;
-      if (btn) btn.action(); const opened = isOpen; if (btn) btn.action(); const closed = !isOpen; window.__forceTouch = was.touch; render();
-      check(P + 'in touch mode a CHAT button sits with the other round buttons and toggles the box', has && opened && closed, { has, opened, closed }); }
+      const rail = HK.railCells(), cell = rail && rail.cells.find(c => c.def.id === 'chat');
+      const onRail = !!cell && !!btn && btn.x === cell.x && btn.y === cell.y && btn.w === cell.w && btn.h === cell.h;
+      if (btn) btn.action(); const opened = isOpen; render(); const lit = !!cell && cell.def.on(); if (btn) btn.action(); const closed = !isOpen;
+      window.__forceTouch = false; render(); const deskHidden = !buttons.some(b => b.label === 'CHAT');
+      window.__forceTouch = was.touch; render();
+      check(P + 'in touch mode a CHAT control sits on the control rail with the other rarely-used controls and toggles the box (lit while it is open)', has && onRail && opened && lit && closed && deskHidden, { has, onRail, cell: cell && [cell.x, cell.y, cell.w, cell.h], btn: btn && [btn.x, btn.y, btn.w, btn.h], opened, lit, closed, deskHidden }); }
     // fading: bubbles go after 4 s, strip lines after 8, the log keeps 30
     { feed({ t: 'chat', n: 'Ava', text: 'still here' }); F.sim(60 * 4.2, []); const bubbleGone = !bubbles.Ava; F.sim(60 * 4.2, []); const stripGone = !log.some(l => l.t > 0);
       for (let i = 0; i < 40; i++) feed({ t: 'chat', n: 'Ava', text: 'line ' + i }); const kept = log.length === LOG_MAX && log[LOG_MAX - 1].text === 'line 39';

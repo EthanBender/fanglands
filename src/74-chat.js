@@ -2,9 +2,9 @@
 // CHAT — talking to your friends.
 // Owner: "make it an online MMORPG so Cohen and his friends can log in and play together."
 // A real text box (a DOM <input>, so the iPad keyboard works and nothing is zoomed) opens with Enter or Y on a keyboard
-// and with the CHAT button on touch; a row of quick phrases sits above it, one tap each. What comes back from the world
+// and with CHAT on the control rail on touch; a row of quick phrases sits above it, one tap each. What comes back from the world
 // (docs/ONLINE.md: `chat`, already filtered and logged server-side) shows as a bubble over that knight's head for four
-// seconds, as a fading strip of the last few lines at the bottom-left, and in a Chat log panel with the last thirty.
+// seconds, as a fading strip of the last few lines on the left column of the HUD, and in a Chat log panel with the last thirty.
 // While the box has the keyboard the game does not see a single key: a capturing listener on window stops them.
 // Feature file: HOOKS only. Reads window.PLAYERS (73) for where the other knights are. window.CHAT is the handle.
 // ============================================================================
@@ -143,50 +143,55 @@
     }
   });
 
-  // ---------- the strip at the bottom-left, and the CHAT touch button ----------
-  function stripBox() {
-    const lay = HUD_LAYOUT, lh = 16;
-    let bottom, top = 84;
-    if (!isTouch) bottom = VH - 44;
-    else if (lay.short) { bottom = VH - 186; top = lay.questH ? lay.questY + lay.questH + 6 : 84; }
-    else bottom = window.__stickRight === true ? VH - 300 : VH - 190;
-    const w = !isTouch ? Math.min(360, Math.floor(VW / 2 - (5 * 50 + 60) / 2) - 20 - 14) : Math.min(360, VW - 28);
-    const n = Math.max(0, Math.min(STRIP_LINES, Math.floor((bottom - top) / lh)));
-    return { x: 14, w, bottom, lh, n };
-  }
+  // ---------- the strip on the HUD kit's left column, and the CHAT control on the rail ----------
+  // The strip is a readout, so it lives where every other readout lives: HK.slot() gives it the next rows of the left
+  // column at the column's width, under the ONLINE chip. That is what keeps it off the rail (on a landscape phone the
+  // column wraps into the second one BELOW the rail), off the thumb cluster and out of the joystick's circle — it used
+  // to be placed by hand at the bottom-left, 360 px wide, and ran across MUSIC, QUESTS and CRAFT. A tap on it opens
+  // the log, so its tap area is at least one kit row tall (44 px on touch) even when only one line is showing.
+  const LINE_H = 16;
   HOOKS.hud.push(g => {
-    if (paused) return;
-    // the strip: the last few lines, fading out; a tap on it opens the log
+    if (paused || panel) return;
     const live = []; for (let i = log.length - 1; i >= 0 && live.length < STRIP_LINES; i--) if (log[i].t > 0) live.unshift(log[i]);
-    const sb = stripBox();
-    if (live.length && sb.w >= 120 && sb.n > 0 && !panel) {
-      const lines = live.slice(-sb.n); const y0 = sb.bottom - lines.length * sb.lh;
-      g.font = '12px sans-serif'; g.textAlign = 'left';
-      lines.forEach((l, i) => {
-        const y = y0 + i * sb.lh, a = clamp(l.t / 1.5, 0, 1);
-        g.globalAlpha = a; roundRect(g, sb.x, y, sb.w, sb.lh - 1, 4); g.fillStyle = 'rgba(10,14,22,0.7)'; g.fill();
-        g.font = 'bold 12px sans-serif'; g.fillStyle = l.n === me() ? '#e6edf3' : BLUE; const name = l.n + ':'; g.fillText(name, sb.x + 6, y + 12);
-        const nw = g.measureText(name).width; g.font = '12px sans-serif'; g.fillStyle = '#e6edf3';
-        let t = l.text; const maxW = sb.w - 12 - nw - 6; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…';
-        g.fillText(t, sb.x + 6 + nw + 5, y + 12);
-      });
-      g.globalAlpha = 1;
-      buttons.push({ x: sb.x, y: y0, w: sb.w, h: lines.length * sb.lh, label: 'chat:log', action: () => openPanel('chatlog') });
-    }
-    // the CHAT button on touch: a third column left of QUESTS, in the same round style as the core's buttons (10-hud)
-    if (!touchMode() || !NET.enabled) return;
-    const mx = x => window.__stickRight === true ? VW - x : x;
-    const r = 52, x = mx(VW - 250), y = VH - 200;
-    g.fillStyle = 'rgba(255,255,255,0.14)'; g.beginPath(); g.arc(x, y, r / 2 + 8, 0, 7); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillText('CHAT', x, y + 4);
-    buttons.push({ x: x - r / 2 - 8, y: y - r / 2 - 8, w: r + 16, h: r + 16, label: 'CHAT', action: () => { if (isOpen) close(); else open(); } });
+    if (!live.length) return;
+    const was = { y: HUD.leftY, col: HUD.leftCol };
+    const s = HK.slot(Math.max(live.length * LINE_H, HK.row()));
+    // the column can hold fewer lines than there are (a boss bar and a machine above it on a landscape phone):
+    // show the newest that fit, and nothing at all if not even one tap-sized row fits
+    const room = HK.colLimit(HUD.leftCol || 0) - s.y, n = Math.min(live.length, Math.floor(room / LINE_H)), h = Math.max(n * LINE_H, HK.row());
+    // With the stick moved to the right on a landscape phone, the second column runs down beside it: the strip stops
+    // short of the joystick's circle rather than lying across it
+    let w = s.w;
+    const st = HK.stickRect();
+    if (HK.touch() && s.y < st.y + st.h && st.y < s.y + h && s.x < st.x + st.w && st.x < s.x + w) w = st.x - HK.GUT - s.x;
+    if (n < 1 || h > room || w < 160) { HUD.leftY = was.y; HUD.leftCol = was.col; return; }
+    HUD.leftY = s.y + h + HK.gutV();
+    const lines = live.slice(-n);
+    g.textAlign = 'left';
+    lines.forEach((l, i) => {
+      const y = s.y + i * LINE_H;
+      g.globalAlpha = clamp(l.t / 1.5, 0, 1);
+      HK.plate(g, s.x, y, w, LINE_H - 1, { r: 4 });
+      // names in the kit's INK, what they said in its DIM: text is never a colour of its own
+      g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; const name = l.n + ':'; g.fillText(name, s.x + 6, y + 12);
+      const nw = g.measureText(name).width; g.font = '12px sans-serif'; g.fillStyle = HK.C.DIM;
+      let t = l.text; const maxW = w - 12 - nw - 6; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…';
+      g.fillText(t, s.x + 6 + nw + 5, y + 12);
+    });
+    g.globalAlpha = 1;
+    buttons.push({ x: s.x, y: s.y, w, h, label: 'chat:log', action: () => openPanel('chatlog') });
   });
+  // CHAT on touch is an entry on the kit's control rail (under the minimap; the second column on a landscape phone), not
+  // a disc of its own: the thumb cluster's six seats are all taken (HK.thumbSeat), and the last hand-placed disc at
+  // (VW-250, VH-200) sat on top of WIKI on a landscape phone and inside the joystick on a tall one. The rail lays
+  // it out with the others, draws it in the kit's control style and lights it while the box is open.
+  hudControl({ id: 'chat', sort: 45, label: () => 'CHAT', show: () => touchMode() && NET.enabled && !paused, on: () => isOpen, action: () => { if (isOpen) close(); else open(); } });
 
   // ---------- the log panel ----------
   HOOKS.panel.chatlog = (g, narrow) => {
-    const lh = 22, per = Math.max(3, Math.min(LOG_MAX, Math.floor((VH - 20 - 160) / lh)));
+    const lh = 22, per = Math.max(3, Math.min(LOG_MAX, Math.floor((VH - 20 - 128 - HK.row()) / lh)));
     const lines = log.slice(-per);
-    const w = narrow ? Math.min(VW - 20, 400) : 520, h = Math.min(VH - 20, 150 + Math.max(1, lines.length) * lh);
+    const w = narrow ? Math.min(VW - 20, 400) : 520, h = Math.min(VH - 20, 118 + HK.row() + Math.max(1, lines.length) * lh);
     const { px, py } = panelBox(g, w, h, 'Chat', lines.length ? 'The last things your friends said, newest at the bottom.' : 'Nothing said yet.');
     let y = py + 76;
     g.font = '12px sans-serif';
@@ -197,8 +202,10 @@
       g.font = '12px sans-serif'; g.fillStyle = '#c9d1d9'; let t = l.text; const maxW = w - 36 - nw - 10; while (g.measureText(t).width > maxW && t.length > 4) t = t.slice(0, -2) + '…'; g.fillText(t, px + 18 + nw + 10, y + 8);
       y += lh;
     }
-    button(g, px + 18, py + h - 46, 140, 32, touchMode() ? 'Say something' : 'Say something (Enter)', () => { closePanel(); open(); });
-    if (window.PLAYERS) button(g, px + 18 + 148, py + h - 46, 90, 32, 'Friends', () => openPanel('friends'), '#21262d');
+    // one kit row tall (HK.row(): 44 px on touch), like every control
+    const bh = HK.row(), by = py + h - bh - 14;
+    button(g, px + 18, by, 140, bh, touchMode() ? 'Say something' : 'Say something (Enter)', () => { closePanel(); open(); });
+    if (window.PLAYERS) button(g, px + 18 + 148, by, 90, bh, 'Friends', () => openPanel('friends'), '#21262d');
   };
 
   window.CHAT = { open, close, send, isOpen: () => isOpen, bubbles, log, PHRASES, MAX };
@@ -235,10 +242,14 @@
       F.press('Enter'); const byEnter = isOpen; close();
       say('A test line, knight.', 'The Voice'); F.step([]); const up = !!dialog.cur; F.press('Enter'); const stayed = !isOpen; dialog.cur = null; dialog.queue.length = 0; F.step([]); F.step([]);
       check(P + 'Y opens the chat box; Enter opens it only when no line of talk is showing', byY && byEnter && up && stayed, { byY, byEnter, up, stayed }); }
-    // touch: a CHAT button beside the others
+    // touch: CHAT is an entry on the kit's control rail (drawn by the rail, where the rail says), and toggles the box
     { window.__forceTouch = true; closePanel(); render(); const btn = buttons.find(b => b.label === 'CHAT'); const has = !!btn;
-      if (btn) btn.action(); const opened = isOpen; if (btn) btn.action(); const closed = !isOpen; window.__forceTouch = was.touch; render();
-      check(P + 'in touch mode a CHAT button sits with the other round buttons and toggles the box', has && opened && closed, { has, opened, closed }); }
+      const rail = HK.railCells(), cell = rail && rail.cells.find(c => c.def.id === 'chat');
+      const onRail = !!cell && !!btn && btn.x === cell.x && btn.y === cell.y && btn.w === cell.w && btn.h === cell.h;
+      if (btn) btn.action(); const opened = isOpen; render(); const lit = !!cell && cell.def.on(); if (btn) btn.action(); const closed = !isOpen;
+      window.__forceTouch = false; render(); const deskHidden = !buttons.some(b => b.label === 'CHAT');
+      window.__forceTouch = was.touch; render();
+      check(P + 'in touch mode a CHAT control sits on the control rail with the other rarely-used controls and toggles the box (lit while it is open)', has && onRail && opened && lit && closed && deskHidden, { has, onRail, cell: cell && [cell.x, cell.y, cell.w, cell.h], btn: btn && [btn.x, btn.y, btn.w, btn.h], opened, lit, closed, deskHidden }); }
     // fading: bubbles go after 4 s, strip lines after 8, the log keeps 30
     { feed({ t: 'chat', n: 'Ava', text: 'still here' }); F.sim(60 * 4.2, []); const bubbleGone = !bubbles.Ava; F.sim(60 * 4.2, []); const stripGone = !log.some(l => l.t > 0);
       for (let i = 0; i < 40; i++) feed({ t: 'chat', n: 'Ava', text: 'line ' + i }); const kept = log.length === LOG_MAX && log[LOG_MAX - 1].text === 'line 39';
