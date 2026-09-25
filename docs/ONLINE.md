@@ -142,7 +142,8 @@ An array of arrays, one per monster within 24 tiles of any knight on the map, in
 `nid` is the monster's stable id: `s<i>` for the overworld spawn list (`MONSTER_SPAWNS[i]`), `i<i>` for an
 instance's own spawn list, and `<keeperName>:<n>` for anything a feature file spawned on the keeper (zombies,
 hatched spiders, the Cinderwight's heart). The keeper tags monsters it finds without a `nid` on the fly.
-Non-keepers create a puppet for every nid they do not know, from `MONSTER_DEFS[type]`. Positions are pixels.
+Non-keepers create a puppet for every nid they do not know, from `MONSTER_DEFS[type]`. Positions are whole pixels: `x, y` are `Math.round` of the true position.
+The 24-tile test uses the true position, so a listed `x, y` can sit up to √½ px (about 0.71 px) past 24 tiles.
 
 ### `look`
 
