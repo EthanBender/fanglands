@@ -135,14 +135,15 @@ function makeContext(wire) {
   return g;
 }
 
-async function loadRoom(now) {
+// opts are handed to the Room as well (a later room.js takes { store, random }); a Room that does not know them ignores them
+async function loadRoom(now, opts) {
   const file = process.env.MMO_ROOM ? path.resolve(process.env.MMO_ROOM) : path.join(ROOT, 'online', 'src', 'room.js');   // MMO_ROOM=path points at another checkout's room.js
   if (!fs.existsSync(file)) { console.error('--room: ' + file + ' does not exist on this branch'); process.exit(1); }
   let mod;
   try { mod = require(file); } catch (e) { mod = await import(require('url').pathToFileURL(file).href); }
   const Room = mod.Room || (mod.default && mod.default.Room) || mod.default;
   if (typeof Room !== 'function') { console.error('--room: no Room class exported by ' + file); process.exit(1); }
-  return new Room({ now, log: () => { }, wake: () => { } });
+  return new Room(Object.assign({ now, log: () => { }, wake: () => { } }, opts || {}));
 }
 
 async function main() {
@@ -258,4 +259,7 @@ async function main() {
   console.log((bad ? `${bad} FAILED of ${results.length}` : `ALL ${results.length} PASS`) + ` (${useRoom ? 'online/src/room.js' : 'FakeWorld'}, ${Date.now() - t0} ms)`);
   process.exit(bad ? 1 : 0);
 }
-main().catch(e => { console.error(e); process.exit(1); });
+// Run as a script: the scenarios above. Required as a module (tools/mmo-sim-admin.js, tools/mmo-sim-party.js): the
+// plumbing only, so every scenario file drives the same fake wire, the same game contexts and the same Room loader.
+if (require.main === module) main().catch(e => { console.error(e); process.exit(1); });
+module.exports = { FakeWorld, Wire, makeContext, loadRoom, FRAME_MS, ROOT };
