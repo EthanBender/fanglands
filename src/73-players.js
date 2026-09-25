@@ -164,15 +164,16 @@
         }
       }
     }
-    // The chip: only on the online build. It is a control on the HUD kit's left column like LEAVE and BLOCK: one row
-    // (44 px on touch), the column's control width, and HK.slot() finds its row, so it sits under whatever chips are
-    // already up (a boss bar, a machine, the quest items), wraps into the second column instead of running into the
-    // joystick, and never needs to know how tall anything above it is. Hidden under other files' panels so it cannot
-    // eat their taps.
+    // The chip: only on the online build. It is a control on the HUD kit's left column: one row (44 px on touch), the
+    // column's control width, and HK.claim() finds its row — under whatever chips are already up (a boss bar, a
+    // machine, the quest items) and clear of every control already on screen and of the joystick and thumb seats, on
+    // either side (Settings › Move stick side), wrapping into the second column where there is one. It is drawn late
+    // in the frame, so it is the one that has to move: nothing it lands on can be covered. Hidden under other files'
+    // panels so it cannot eat their taps.
     if (!NET.enabled || (panel && !MINE[panel])) return;
     const label = NET.online() ? 'ONLINE ' + ONLINE.length : 'OFFLINE';
-    const s = HK.slot(HK.row());
-    HK.control(g, s.x, s.y, HK.ctrlW(), s.h, label, toggleFriends, { on: panel === 'friends', hit: label });
+    const s = HK.claim(HK.row(), { w: HK.ctrlW() });
+    if (s) HK.control(g, s.x, s.y, s.w, s.h, label, toggleFriends, { on: panel === 'friends', hit: label });
   });
 
   // ---------- the world map: every friend on this map as a named blue dot (drawn after the core's map, so it wraps drawPanels) ----------

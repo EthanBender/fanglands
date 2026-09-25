@@ -144,29 +144,23 @@
   });
 
   // ---------- the strip on the HUD kit's left column, and the CHAT control on the rail ----------
-  // The strip is a readout, so it lives where every other readout lives: HK.slot() gives it the next rows of the left
-  // column at the column's width, under the ONLINE chip. That is what keeps it off the rail (on a landscape phone the
-  // column wraps into the second one BELOW the rail), off the thumb cluster and out of the joystick's circle — it used
-  // to be placed by hand at the bottom-left, 360 px wide, and ran across MUSIC, QUESTS and CRAFT. A tap on it opens
-  // the log, so its tap area is at least one kit row tall (44 px on touch) even when only one line is showing.
+  // The strip is a readout with a tap on it (it opens the log), so it asks the kit for its space like a control does:
+  // HK.claim() gives it the next rows of the left column that are clear of every control already on screen and of the
+  // joystick and all six thumb seats, whichever side Settings › Move stick side puts them (it used to be placed by hand
+  // at the bottom-left, 360 px wide, and ran across MUSIC, QUESTS, CRAFT — and later BLOCK, in a boss fight with the
+  // stick on the right). It shows the newest lines that fit, stops short of a control on its right where it still has
+  // room to be read, and shows nothing at all when not even one tap-sized row is free (the bubbles over the knights'
+  // heads still say it, and the log is one tap away in Friends). Its tap area is at least one kit row (44 px on touch).
   const LINE_H = 16;
   HOOKS.hud.push(g => {
     if (paused || panel) return;
     const live = []; for (let i = log.length - 1; i >= 0 && live.length < STRIP_LINES; i--) if (log[i].t > 0) live.unshift(log[i]);
     if (!live.length) return;
-    const was = { y: HUD.leftY, col: HUD.leftCol };
-    const s = HK.slot(Math.max(live.length * LINE_H, HK.row()));
-    // the column can hold fewer lines than there are (a boss bar and a machine above it on a landscape phone):
-    // show the newest that fit, and nothing at all if not even one tap-sized row fits
-    const room = HK.colLimit(HUD.leftCol || 0) - s.y, n = Math.min(live.length, Math.floor(room / LINE_H)), h = Math.max(n * LINE_H, HK.row());
-    // With the stick moved to the right on a landscape phone, the second column runs down beside it: the strip stops
-    // short of the joystick's circle rather than lying across it
-    let w = s.w;
-    const st = HK.stickRect();
-    if (HK.touch() && s.y < st.y + st.h && st.y < s.y + h && s.x < st.x + st.w && st.x < s.x + w) w = st.x - HK.GUT - s.x;
-    if (n < 1 || h > room || w < 160) { HUD.leftY = was.y; HUD.leftCol = was.col; return; }
-    HUD.leftY = s.y + h + HK.gutV();
-    const lines = live.slice(-n);
+    let s = null, n = live.length;
+    for (; n >= 1 && !s; n--) s = HK.claim(Math.max(n * LINE_H, HK.row()), { minW: 160 });
+    if (!s) return;
+    n++;
+    const lines = live.slice(-n), w = s.w;
     g.textAlign = 'left';
     lines.forEach((l, i) => {
       const y = s.y + i * LINE_H;
@@ -179,7 +173,7 @@
       g.fillText(t, s.x + 6 + nw + 5, y + 12);
     });
     g.globalAlpha = 1;
-    buttons.push({ x: s.x, y: s.y, w, h, label: 'chat:log', action: () => openPanel('chatlog') });
+    buttons.push({ x: s.x, y: s.y, w, h: s.h, label: 'chat:log', action: () => openPanel('chatlog') });
   });
   // CHAT on touch is an entry on the kit's control rail (under the minimap; the second column on a landscape phone), not
   // a disc of its own: the thumb cluster's six seats are all taken (HK.thumbSeat), and the last hand-placed disc at
