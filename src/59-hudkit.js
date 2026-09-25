@@ -628,7 +628,7 @@ const HK = (() => {
     g.strokeStyle = o.lit ? 'rgba(247,220,143,0.95)' : o.on ? 'rgba(138,216,131,0.85)' : 'rgba(217,178,92,0.6)'; g.lineWidth = 1; g.stroke();
     text(g, label, cx, y + h / 2 + size * 0.36, { font: FC(800, size), align: 'center', color: o.dim ? T.inkMute : o.lit ? T.goldHi : o.on ? '#c9f5c0' : T.ink, box: { x, y, w, h }, fitId: o.fitId });
     const box = { x: x - t, y, w: w + 2 * t, h: h + 3 };
-    if (DRAWN.on) DRAWN.log.push({ id: (o.id || label) + ':ribbon', k: 'r', ...box, deco: o.id || label });
+    if (DRAWN.on && !DRAWN.mute) DRAWN.log.push({ id: (o.id || label) + ':ribbon', k: 'r', ...box, deco: o.id || label });
     return box;
   }
   const DRAWN = { on: false, log: [] };   // the audit's record of drawn pieces (ribbons, the strap) this frame
@@ -792,7 +792,7 @@ const HK = (() => {
     const f = { pr, sel, empty: !item };
     if (hv) shadowed(g, () => { rr(g, x, y + h * 0.1, s, h * 0.9, [s * 0.24, s * 0.24, s * 0.32, s * 0.32]); g.strokeStyle = T.goldHi; g.lineWidth = 2; g.stroke(); }, 8, 0, T.goldHi);
     cache(g, `pouchB|${s}|${h}|${+pr}|${+!item}`, x, y, s, h, (cg, ox, oy) => pouchShell(cg, ox, oy, s, h, f), 12);
-    if (item && typeof drawItemIcon === 'function') { try { drawItemIcon(g, item.id, x + s / 2, y + h * 0.4 + (pr ? 2 : 0), s * 0.46); } catch (e) { } }
+    if (item && typeof drawItemIcon === 'function') { try { drawItemIcon(g, item.id, x + s / 2, y + h * 0.42 + (pr ? 2 : 0), s * 0.6); } catch (e) { } }
     cache(g, `pouchF|${s}|${h}|${+pr}|${+sel}`, x, y, s, h, (cg, ox, oy) => pouchFront(cg, ox, oy, s, h, f), 12);
     if (item && item.qty > 1) { const lbl = item.qty > 9999 ? Math.floor(item.qty / 1000) + 'k' : String(item.qty); text(g, lbl, x + s - 5, y + h - 6, { font: FC(800, Math.max(11, Math.round(s * 0.24))), align: 'right', color: '#f6d98c', halo: 3 }); }
     if (key) text(g, key, x + 6, y + h * 0.1 + 11, { font: FC(800, 10), color: 'rgba(244,234,211,0.9)', halo: 2.5 });
@@ -995,12 +995,17 @@ const HK = (() => {
     return { x, y, w, h };
   }
   // TAG: a small vellum tag with a pointer tooth, above a point (the long-press name, a world label)
+  // side 'right': (cx, by) is the point the tag stands beside, on its left, vertically centred on it
   function tag(g, cx, by, label, o = {}) {
-    const f = FS(700, 13), w = Math.max(60, tw(g, label, f) + 22 + (o.key ? keycapW(g, o.key, 11) + 8 : 0) + (o.emblem ? 22 : 0)), h = 30;
-    const x = cl(Math.round(cx - w / 2), 6, VW - w - 6), y = cl(Math.round(by - h - 8), 6, VH - h - 6);
+    const f = FS(700, 13), w = Math.max(o.side === 'right' ? 40 : 60, tw(g, label, f) + 22 + (o.key ? keycapW(g, o.key, 11) + 8 : 0) + (o.emblem ? 22 : 0)), h = 30;
+    const right = o.side === 'right';
+    const x = right ? cl(Math.round(cx + 8), 6, VW - w - 6) : cl(Math.round(cx - w / 2), 6, VW - w - 6), y = right ? cl(Math.round(by - h / 2), 6, VH - h - 6) : cl(Math.round(by - h - 8), 6, VH - h - 6);
     vellumPlate(g, x, y, w, h, { edge: o.edge });
     const tx = cl(cx, x + 10, x + w - 10);
-    g.beginPath(); g.moveTo(tx - 6, y + h); g.lineTo(tx, y + h + 7); g.lineTo(tx + 6, y + h); g.closePath(); g.fillStyle = '#211b14'; g.fill(); g.strokeStyle = o.edge || 'rgba(217,178,92,0.5)'; g.lineWidth = 1; g.stroke();
+    g.beginPath();
+    if (right) { const ty = cl(by, y + 8, y + h - 8); g.moveTo(x, ty - 6); g.lineTo(x - 7, ty); g.lineTo(x, ty + 6); }
+    else { g.moveTo(tx - 6, y + h); g.lineTo(tx, y + h + 7); g.lineTo(tx + 6, y + h); }
+    g.closePath(); g.fillStyle = '#211b14'; g.fill(); g.strokeStyle = o.edge || 'rgba(217,178,92,0.5)'; g.lineWidth = 1; g.stroke();
     let px = x + 11;
     if (o.key) px += keycap(g, px, y + 6, o.key, 11) + 8;
     if (o.emblem) { emblem(g, o.emblem, px + 8, y + h / 2, 17, T.goldHi, { hole: '#241d15' }); px += 22; }
@@ -1091,15 +1096,19 @@ const HK = (() => {
     const tx = x + rd + (compact ? 4 : 6), rightW = 14;
     const right = b.phase ? String(b.phase).toUpperCase() : (b.lv != null ? 'LV ' + b.lv : '');
     if (compact) {
-      // one line: NAME  [bar with n / max]
-      let nf = Math.round(h * 0.34); const nm = String(b.name).toUpperCase();
-      const barW0 = Math.max(80, Math.round((x + w - rightW - tx) * 0.52));
-      while (nf > 9 && tw(g, nm, FC(800, nf)) > x + w - rightW - tx - barW0 - 8) nf -= 0.5;
-      text(g, nm, tx, y + h / 2 + nf * 0.36, { font: FC(800, nf), color: T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: x + w - rightW - tx - barW0 - 8, h }, fitId: 'boss:name' });
-      const bw = barW0, bx = x + w - rightW - bw, bh = Math.max(10, Math.round(h * 0.42)), by = y + h / 2 - bh / 2;
-      meterBar(g, bx, by, bw, bh, b.hp / b.max, '#d8322b', { ticks: 10, trail: b.trail });
+      // two rows in a short plate: NAME (and LV while it fits), then the bar with "n / max" on it
+      const nm = String(b.name).toUpperCase(), room = x + w - 12 - tx;
+      let nf = Math.min(11.5, Math.round(h * 0.3)); const lv = right ? right : '';
+      const lvW = () => lv ? tw(g, lv, FC(800, Math.max(8, nf - 1))) + 8 : 0;
+      while (nf > 8 && tw(g, nm, FC(800, nf)) + lvW() > room) nf -= 0.5;
+      const showLv = lv && tw(g, nm, FC(800, nf)) + lvW() <= room;
+      const ny = y + nf + 3;
+      text(g, nm, tx, ny, { font: FC(800, nf), color: T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: showLv ? room - lvW() : room, h: nf + 6 }, fitId: 'boss:name' });
+      if (showLv) text(g, lv, x + w - 12, ny, { font: FC(800, Math.max(8, nf - 1)), align: 'right', color: b.phase ? T.goldHi : '#ff9a86', shadow: 'rgba(0,0,0,0.9)' });
+      const bh = Math.max(9, Math.round(h * 0.34)), by = y + h - bh - 4, bw = room;
+      meterBar(g, tx, by, bw, bh, b.hp / b.max, '#d8322b', { ticks: 10, trail: b.trail });
       const nt = b.heart ? `${Math.ceil(b.hp)} / ${b.max} · heart ${Math.ceil(b.heart.hp)}` : `${Math.ceil(b.hp)} / ${b.max}`;
-      text(g, nt, bx + bw / 2, by + bh / 2 + Math.round(bh * 0.3), { font: FC(800, Math.max(9, Math.round(bh * 0.72))), align: 'center', color: T.ink, halo: 3 });
+      text(g, nt, tx + bw / 2, by + bh / 2 + Math.round(bh * 0.3), { font: FC(800, Math.max(8.5, Math.round(bh * 0.78))), align: 'center', color: T.ink, halo: 3 });
       return;
     }
     let nf = Math.round(Math.min(16, h * 0.28)); const nm = String(b.name).toUpperCase();
@@ -1741,7 +1750,7 @@ const HK = (() => {
       coachLive[id] = { seen: t, since: t, off: false };
     } else c.seen = t;
     if (coachLive[id].off) return false;
-    FRAME.coach = FRAME.coach || []; FRAME.coach.push({ id, key, verb, at, emblem: o.emblem || null });
+    FRAME.coach = FRAME.coach || []; FRAME.coach.push({ id, key, verb, at, emblem: o.emblem || null, side: o.side || (at && at.sx != null ? 'right' : null) });
     return true;
   }
 
@@ -2020,6 +2029,8 @@ const HK = (() => {
   function drawSeats(g, L) {
     const desk = L.fam === 'desk', t = now();
     FRAME.faces = {};
+    // the coach: "[Space] Swing" over the monster the first times one is in reach
+    if (!player.mech && !player.dead && !paused && !panel) { const m = monsterInReach(); if (m) teach('swing', 'Space', 'Swing', { x: m.x, y: m.y, lift: (m.r || 14) + 30 }, { emblem: 'swing' }); }
     for (const seat of SEATS) {
       const c = L.seats[seat]; if (!c) continue;
       const f = faceOf(seat); FRAME.faces[seat] = f;
@@ -2036,7 +2047,7 @@ const HK = (() => {
         if (desk && face.key) { const kw = keycapW(g, face.key, 9); keycap(g, c.x - kw / 2, c.y + c.r - 6, face.key, 9); }
         g.restore();
       };
-      if (sw.prev && fadeIn < 1) draw(sw.prev, 1 - fadeIn);
+      if (sw.prev && fadeIn < 1) { DRAWN.mute = true; try { draw(sw.prev, 1 - fadeIn); } finally { DRAWN.mute = false; } }
       draw(f, sw.prev ? fadeIn : 1);
       if (f) {
         const b = circleBtn(f.label, c, f.hold ? () => { } : () => { learn(f.learn); if (f.action) f.action(); }, { seat, name: f.name || (f.ribbon ? f.ribbon.charAt(0) + f.ribbon.slice(1).toLowerCase() : f.id), keys: f.key ? [f.key] : [], hold: f.hold, disabledFace: f.disabled });
@@ -2102,7 +2113,8 @@ const HK = (() => {
       shadowed(g, () => { rr(g, lane.x, lane.y, lane.w, lane.h, 5); g.fillStyle = 'rgba(20,15,13,0.94)'; g.fill(); }, 8, 3);
       rr(g, lane.x + 3, lane.y + 3, lane.w - 6, lane.h - 6, 3); g.strokeStyle = 'rgba(217,178,92,0.55)'; g.lineWidth = 1; g.stroke();
       g.restore();
-      banner(g, { x: lane.x + 6, y: lane.y + Math.max(2, (lane.h - (b.sub ? 50 : 30)) / 2), w: lane.w - 12, h: lane.h - 4 }, { kind: b.kind, title: b.title, sub: b.sub, alpha: a, small: lane.h < 60 });
+      const tall = lane.h >= 60;
+      banner(g, { x: lane.x + 6, y: lane.y + (tall ? Math.max(4, (lane.h - (b.sub ? 54 : 30)) / 2) : 2), w: lane.w - 12, h: lane.h - 4 }, { kind: b.kind, title: b.title, sub: tall ? b.sub : null, alpha: a, small: !tall });
       return;
     }
     list.slice(0, 2).forEach((b, i) => { const lane = L.banners[i]; if (lane) banner(g, lane, { kind: b.kind, title: b.title, sub: b.sub, alpha: alphaOf(b), small: i > 0 }); });
@@ -2128,7 +2140,7 @@ const HK = (() => {
       if (c.at && c.at.sx != null) { sx = c.at.sx; sy = c.at.sy; }
       else if (c.at && typeof cam !== 'undefined') { sx = Math.round(c.at.x - cam.x); sy = Math.round(c.at.y - cam.y) - (c.at.lift || 30); }
       else continue;
-      tag(g, sx, sy, c.verb, { key: touchOn() ? null : c.key, emblem: touchOn() ? c.emblem : null, edge: 'rgba(247,220,143,0.75)' });
+      tag(g, sx, sy, c.verb, { key: touchOn() ? null : c.key, emblem: touchOn() ? c.emblem : null, edge: 'rgba(247,220,143,0.75)', side: c.side });
     }
     FRAME.coach = [];
     if (FRAME.overflow > 0 && FRAME.plaqueRects.length) { const r = FRAME.plaqueRects[FRAME.plaqueRects.length - 1]; badge(g, r.x + r.w - 8, r.y + 8, '+' + FRAME.overflow, 11); }
@@ -2183,7 +2195,7 @@ const HK = (() => {
     const t = touchOn(), tiles = bookTiles();
     const BL = bookLayoutFor(VW, VH, { touch: t, online: !!(window.NET && NET.enabled), page: BOOK.page, tiles: tiles.length });
     FRAME.lastBook = BL;
-    if (BL.onePage && BOOK.page === 'keys') BOOK.page = 'kit';
+    if ((BL.onePage && BOOK.page === 'keys') || (!BL.onePage && BOOK.page === 'game') || (BOOK.page === 'keys' && BL.fam !== 'desk')) BOOK.page = 'kit';
     g.fillStyle = 'rgba(6,5,4,0.68)'; g.fillRect(0, 0, VW, VH);
     const B = BL.book;
     bookCover(g, B.x, B.y, B.w, B.h);
@@ -2435,3 +2447,363 @@ const HK = (() => {
 })();
 window.HK = HK;
 if (typeof readSafeArea === 'function') readSafeArea();
+
+// ============================================================================
+// THE HUD AUDIT (HOOKS.selfTest) — the spec's rules, held against the REAL game: the buttons it registers and the
+// pieces it draws, not a mock. HK.audit() is also callable in a browser (the screenshot pass prints it).
+//   rules: every tap target 44 px or more (circles by diameter); no two tap targets closer than 8 px on touch, 4 px with
+//   a mouse (circle to circle, circle to rect, never by bounding box); nothing tappable in the notch / Dynamic Island /
+//   home-indicator bands or on the stick; ribbons and the belt strap touch no other control; the notice lane touches no
+//   control and not the knight; no persistent piece covers the knight; everything on screen; at most four seats with one
+//   face each; nothing jumps (every persistent rect identical across scenes); every string fits its plate at Large.
+// ============================================================================
+const HUD_AUDIT = (() => {
+  const SIZES = [[375, 667], [390, 844], [844, 390], [430, 932], [932, 430], [768, 1024], [1024, 768], [1280, 800]];
+  const bb = a => (a.k === 'c' ? { x: a.x - a.r, y: a.y - a.r, w: 2 * a.r, h: 2 * a.r } : a);
+  // ---- the pure engine: layout.js audit() / auditBook(), over HK.layoutFor and HK.bookLayoutFor ----
+  function auditLayout(L, o) {
+    const issues = [], tapsAll = L.items.filter(i => i.tap), MIN = 44, CLEAR = o.touch ? 8 : 4, gap = HK.gapBetween;
+    const st = L.items.find(i => i.stick);
+    for (const t of tapsAll) {
+      const b = bb(t);
+      if (b.w < MIN - 0.01 || b.h < MIN - 0.01) issues.push(`${t.id} under 44 px`);
+      if (b.x < 0 || b.y < 0 || b.x + b.w > L.VW + 0.01 || b.y + b.h > L.VH + 0.01) issues.push(`${t.id} off screen`);
+      for (const z of HK.bands(L)) if (gap(z, t) < 0) issues.push(`${t.id} in the ${z.name}`);
+      if (st && gap(st, t) < 0) issues.push(`${t.id} on the stick`);
+    }
+    for (let i = 0; i < tapsAll.length; i++) for (let j = i + 1; j < tapsAll.length; j++) { const g = gap(tapsAll[i], tapsAll[j]); if (g < CLEAR) issues.push(`${tapsAll[i].id}~${tapsAll[j].id} gap ${g.toFixed(1)}`); }
+    const drawn = L.items.filter(i => i.deco);
+    for (const d of drawn) for (const t of tapsAll) {
+      if (t.id === d.deco) continue;
+      if (d.strap && /^pouch|^bag$|^swing$|^use$|^block$|^ctx$/.test(t.id) && L.fam === 'desk') continue;
+      if (d.strap && /^pouch|^bag$/.test(t.id)) continue;
+      if (gap(d, t) < 2) issues.push(`drawn ${d.id} touches ${t.id}`);
+    }
+    for (let i = 0; i < drawn.length; i++) for (let j = i + 1; j < drawn.length; j++) if (gap(drawn[i], drawn[j]) < 2) issues.push(`drawn ${drawn[i].id} touches ${drawn[j].id}`);
+    const strap = L.items.find(i => i.strap);
+    if (st && strap && gap(st, strap) < 8) issues.push('the belt is under 8 px from the stick');
+    if (L.bannerFail) issues.push('no banner lane fits above the knight');
+    const knight = Object.assign({ k: 'r' }, L.knight);
+    for (const t of L.items.filter(i => i.transient)) {
+      if (gap(knight, t) < 0) issues.push(`${t.id} lane covers the knight`);
+      if (t.id === 'notice') for (const c of tapsAll.filter(i => !i.reserved)) if (gap(t, c) < 2) issues.push(`notice lane touches ${c.id}`);
+      if (/^banner/.test(t.id)) for (const c of tapsAll.filter(i => !i.reserved)) if (c.id !== 'scroll' && gap(t, c) < 0) issues.push(`banner lane covers ${c.id}`);
+    }
+    for (const t of L.items.filter(i => i.tap && !/^dialog|^chat/.test(i.id))) if (gap(knight, t) < 0) issues.push(`${t.id} covers the knight`);
+    return issues;
+  }
+  function auditBookLayout(B, o) {
+    const iss = auditLayout(Object.assign({}, B, { knight: { x: -999, y: -999, w: 0, h: 0 } }), o);
+    if (B.bottom > B.book.y + B.book.h + 0.5) iss.push(`book content runs ${Math.round(B.bottom - B.book.y - B.book.h)} px past the page`);
+    return iss;
+  }
+  function pureMatrix() {
+    let runs = 0, fails = 0; const seen = [];
+    for (const [w, h] of SIZES) for (const touch of [true, false]) for (const stickRight of [false, true]) for (const bosses of [0, 1, 2])
+      for (const minimap of [true, false]) for (const chat of [0, 4]) for (const dialog of [false, true]) for (const online of [true, false]) for (const home of [true, false]) {
+        const o = { touch, stickRight, bosses, minimap, chat, dialog, online, home, plaques: 99 };
+        const iss = auditLayout(HK.layoutFor(w, h, o), o); runs++;
+        if (iss.length) { fails++; if (seen.length < 12) seen.push(`${w}x${h} ${touch ? 'touch' : 'mouse'}: ${iss[0]}`); }
+      }
+    let bRuns = 0, bFails = 0;
+    for (const [w, h] of SIZES) for (const touch of [true, false]) for (const online of [true, false]) for (const page of ['kit', 'game']) {
+      const o = { touch, online, page }, iss = auditBookLayout(HK.bookLayoutFor(w, h, o), o); bRuns++;
+      if (iss.length) { bFails++; if (seen.length < 16) seen.push(`BOOK ${w}x${h} ${touch ? 'touch' : 'mouse'} ${page}: ${iss[0]}`); }
+    }
+    return { runs, fails, bRuns, bFails, seen };
+  }
+
+  // ---- one live frame: the real buttons[], the pieces the kit drew, the layout's lanes ----
+  function frameIssues(where, opt = {}) {
+    const L = HK.cur(), t = L.touch, out = [], gap = HK.gapBetween;
+    const taps = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0).map(b => b.r ? { id: b.label, k: 'c', x: b.cx != null ? b.cx : b.x + b.w / 2, y: b.cy != null ? b.cy : b.y + b.h / 2, r: b.r, b } : { id: b.label, k: 'r', x: b.x, y: b.y, w: b.w, h: b.h, b });
+    const MIN = 44, CLEAR = t ? 8 : 4, knight = Object.assign({ k: 'r' }, L.knight), bandsL = HK.bands(L);
+    const stick = L.stick && !opt.book ? { k: 'c', x: L.stick.x, y: L.stick.y, r: L.stick.keep } : null;   // the book is modal: no stick under it
+    for (const q of taps) {
+      const b = bb(q);
+      if (b.w < MIN - 0.01 || b.h < MIN - 0.01) out.push(`${where}: ${q.id} under 44 px (${Math.round(b.w)}x${Math.round(b.h)})`);
+      if (b.x < -0.5 || b.y < -0.5 || b.x + b.w > VW + 0.5 || b.y + b.h > VH + 0.5) out.push(`${where}: ${q.id} off screen`);
+      for (const z of bandsL) if (gap(z, q) < 0) out.push(`${where}: ${q.id} in the ${z.name}`);
+      if (stick && gap(stick, q) < 0) out.push(`${where}: ${q.id} on the stick`);
+      if (!opt.book && !/^(dialog|chat:log)$/.test(q.id) && gap(knight, q) < 0) out.push(`${where}: ${q.id} covers the knight`);
+    }
+    for (let i = 0; i < taps.length; i++) for (let j = i + 1; j < taps.length; j++) { const g0 = gap(taps[i], taps[j]); if (g0 < CLEAR) out.push(`${where}: ${taps[i].id} ~ ${taps[j].id} gap ${g0.toFixed(1)} < ${CLEAR}`); }
+    if (!opt.book) {
+      const drawn = HK.DRAWN.log.slice();
+      const own = (d, q) => (q.b.seat && d.deco === q.b.seat) || d.deco === String(q.id).toLowerCase();
+      for (const d of drawn) for (const q of taps) {
+        if (own(d, q)) continue;
+        if (d.strap && (/^hot\d$|^BAG$/.test(q.id) || (L.fam === 'desk' && q.b.seat))) continue;
+        if (gap(Object.assign({ k: 'r' }, d), q) < 2) out.push(`${where}: drawn ${d.id} touches ${q.id}`);
+      }
+      for (let i = 0; i < drawn.length; i++) for (let j = i + 1; j < drawn.length; j++) { if (drawn[i].strap || drawn[j].strap) continue; if (gap(Object.assign({ k: 'r' }, drawn[i]), Object.assign({ k: 'r' }, drawn[j])) < 2) out.push(`${where}: drawn ${drawn[i].id} touches ${drawn[j].id}`); }
+      const strap = drawn.find(d => d.strap);
+      if (stick && strap && gap(stick, Object.assign({ k: 'r' }, strap)) < 8) out.push(`${where}: the belt is under 8 px from the stick`);
+      const nt = Object.assign({ k: 'r' }, L.notice);
+      for (const q of taps) if (gap(nt, q) < 2) out.push(`${where}: the notice lane touches ${q.id}`);
+      if (gap(knight, nt) < 0) out.push(`${where}: the notice lane covers the knight`);
+      for (const bn of L.banners) if (gap(knight, Object.assign({ k: 'r' }, bn)) < 0) out.push(`${where}: a banner lane covers the knight`);
+      const seatTaps = taps.filter(q => q.b.seat), seats = new Set(seatTaps.map(q => q.b.seat));
+      if (seatTaps.length > 4 || seats.size !== seatTaps.length) out.push(`${where}: ${seatTaps.length} seat taps for ${seats.size} seats`);
+    }
+    return out;
+  }
+  // the persistent pieces' rects, for NOTHING JUMPS
+  function signature(L) {
+    const r = o => o ? [o.x, o.y, o.w, o.h, o.r].map(v => v == null ? '' : Math.round(v * 10) / 10).join(',') : '-';
+    const s = ['crest ' + r(L.crest), 'mm ' + r(L.mm), 'scroll ' + r(L.scroll), 'belt ' + r(L.belt), 'bag ' + r(L.bag), 'stick ' + r(L.stick)];
+    for (const k of Object.keys(L.seals).sort()) s.push(k + ' ' + r(L.seals[k]));
+    for (const k of Object.keys(L.seats).sort()) s.push(k + ' ' + r(L.seats[k]));
+    L.plaques.forEach((p, i) => s.push('plaque' + i + ' ' + r(p)));
+    L.pouches.forEach((p, i) => s.push('pouch' + i + ' ' + r(p)));
+    return s.join(' | ');
+  }
+  // a context that measures text the way the fonts roughly do (headless has no fonts) and records nothing else
+  function fitCtx() {
+    let font = '12px sans-serif';
+    const est = s => { const m = /(\d+(?:\.\d+)?)px/.exec(font), px = m ? +m[1] : 12, cz = /Cinzel/.test(font); let w = 0; for (const ch of String(s)) w += ch === ' ' ? 0.28 : /[A-Z]/.test(ch) ? (cz ? 0.8 : 0.68) : /[0-9]/.test(ch) ? (cz ? 0.64 : 0.58) : /[.,:;'!|il]/.test(ch) ? 0.3 : (cz ? 0.62 : 0.54); return w * px * (/800|700|bold/.test(font) ? 1.04 : 1); };
+    const nop = () => { };
+    return new Proxy({}, {
+      get: (tg, key) => key === 'measureText' ? (s => ({ width: est(s) })) : key === 'font' ? font
+        : (key === 'createLinearGradient' || key === 'createRadialGradient') ? (() => ({ addColorStop: nop })) : key === 'createPattern' ? (() => null)
+          : typeof key === 'string' ? nop : undefined,
+      set: (tg, key, v) => { if (key === 'font') font = v; return true; },
+    });
+  }
+  function fitIssues(where) {
+    const out = [];
+    for (const e of HK.FIT.log) {
+      if (!e.box) continue;
+      const x0 = e.align === 'center' ? e.x - e.w / 2 : e.align === 'right' ? e.x - e.w : e.x, x1 = x0 + e.w;
+      if (x0 < e.box.x - 1 || x1 > e.box.x + e.box.w + 1) out.push(`${where}: "${e.s}" (${e.id || 'text'}) runs ${Math.round(Math.max(e.box.x - x0, x1 - e.box.x - e.box.w))} px out of its plate`);
+    }
+    return out;
+  }
+  return { SIZES, auditLayout, auditBookLayout, pureMatrix, frameIssues, signature, fitCtx, fitIssues };
+})();
+HK.audit = HUD_AUDIT;
+
+HOOKS.selfTest.push((check, F, h) => {
+  const P = 'hudkit: ', A = HUD_AUDIT;
+  // ---------- 1. the colour language: a small closed set of named colours; red means health or danger only ----------
+  {
+    const T = HK.T, named = ['ink', 'inkDim', 'inkMute', 'gold', 'goldHi', 'goldLo', 'gules', 'good', 'warn', 'bad', 'friend'].every(n => /^#[0-9a-f]{6}$/i.test(T[n]));
+    const distinct = new Set(['ink', 'inkDim', 'inkMute', 'gold', 'goldHi', 'gules', 'good', 'warn', 'bad', 'friend'].map(n => T[n].toLowerCase())).size === 10;
+    const rampOk = HK.ramp(1) === T.good && HK.ramp(0.4) === T.warn && HK.ramp(0.1) === T.bad && HK.ramp(0.5) === T.warn && HK.ramp(0.51) === T.good;
+    const red = c => { const q = HK.hex(c); return !!q && q[0] > 150 && q[0] > q[1] * 2 && q[0] > q[2] * 2; };
+    const reds = Object.entries(T).filter(([, v]) => typeof v === 'string' && v[0] === '#' && red(v)).map(([k]) => k).sort().join();
+    check(P + 'one colour language: named tokens, all distinct; red only for health and danger (gules, bad, enemy dots); one health ramp (green > 50%, amber > 25%, red below)', named && distinct && rampOk && reds === 'bad,enemy,gules', { named, distinct, rampOk, reds });
+  }
+  // ---------- 2. contrast: every text colour on every material it sits on ----------
+  {
+    const mats = { vellumTop: '#31281e', vellumBottom: '#1d1712', sableTop: '#2a2020', sableBottom: '#141011', plaqueTop: '#2d3138', plaqueBottom: '#16181c', bookPage: '#30271d' };
+    const worst = [], rep = {};
+    for (const [mn, mc] of Object.entries(mats)) for (const [tn, tc] of [['ink', HK.T.ink], ['inkDim', HK.T.inkDim], ['gold', HK.T.gold], ['goldHi', HK.T.goldHi]]) {
+      const r = HK.contrast(HK.hex(tc), HK.hex(mc)); rep[tn + ' on ' + mn] = Math.round(r * 10) / 10; if (r < 4.5) worst.push(`${tn} on ${mn} = ${r.toFixed(2)}`);
+    }
+    const key = HK.contrast(HK.hex('#2a1d0c'), HK.hex('#cdbb90')); if (key < 4.5) worst.push('keycap letter ' + key.toFixed(2));
+    const mute = HK.contrast(HK.hex(HK.T.inkMute), HK.hex('#16181c')); if (mute < 3) worst.push('inkMute (disabled) ' + mute.toFixed(2));
+    check(P + 'contrast: ink, inkDim and gold clear 4.5:1 on vellum, sable cloth, the iron plaque and the book page; keycap letters too; disabled text still 3:1', worst.length === 0, { worst, ...rep, keycap: +key.toFixed(2), mute: +mute.toFixed(2) });
+  }
+  // ---------- 3. the geometry engine over the spec's whole matrix (3,072 HUD combinations and 64 of the book) ----------
+  {
+    const r = A.pureMatrix();
+    check(P + `the layout engine passes the spec's matrix: ${r.runs} HUD combinations (8 sizes x touch/mouse x stick side x 0/1/2 bosses x minimap x chat x talk page x online x home) and ${r.bRuns} of the Knight's Book, with no overlap, 8 px apart on touch, 44 px floors, nothing in the notch or home-bar bands or on the stick`, r.runs === 3072 && r.fails === 0 && r.bRuns === 64 && r.bFails === 0, r);
+  }
+
+  // ---------- the live audits share one harness: the real game, drawn at every size ----------
+  const own = kk => Object.getOwnPropertyDescriptor(window, kk);
+  const saved = { w: own('innerWidth'), h: own('innerHeight'), touch: window.__forceTouch, stick: window.__stickRight, text: window.SETTINGS ? SETTINGS.get('text') : 'normal', map: window.SETTINGS ? SETTINGS.get('minimap') : true,
+    mech: player.mech, comp: player.companion ? JSON.parse(JSON.stringify(player.companion)) : null, law: player.law ? JSON.parse(JSON.stringify(player.law)) : null, mons: monsters.slice(), x: player.x, y: player.y, home: player.home, homeCd: player.homeCd,
+    paused, panel, dc: dialog.cur, dq: dialog.queue.slice(), lb: levelBanner, ab: typeof areaBanner !== 'undefined' ? areaBanner : null, notice, inv: player.inv.map(q => q ? { ...q } : null), page: HK.BOOK.page };
+  dialog.cur = null; dialog.queue.length = 0; closePanel(); paused = false; levelBanner = null; notice = null; if (typeof areaBanner !== 'undefined') areaBanner = null;
+  // the wire on a fake socket (70-net), as the online files' own checks run it: a friend beside us and chat on the strip
+  const ONL = (() => {
+    const can = !!(window.NET && window.CHAT && window.PLAYERS); let was = null;
+    const feed = m => NET.sock && NET.sock.onmessage && NET.sock.onmessage({ data: JSON.stringify(m) });
+    const TALK = [['Ava', 'Come and help me fight the boss'], ['Cohen', 'On my way, follow me'], ['Ava', 'It is by the old mill, hurry'], ['Cohen', 'Nearly there']];
+    return {
+      can,
+      set(on, lines) {
+        if (!can) return !on;
+        if (!was) {
+          was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, log: CHAT.log.map(l => ({ ...l })), bubbles: { ...CHAT.bubbles } };
+          const fake = { call: async () => ({}), open: () => { const s = { readyState: 1, send(str) { const m = JSON.parse(str); if (m.t === 'hello') s.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }) }); }, close() { s.readyState = 3; } }; return s; } };
+          NET.disconnect(); NET.enabled = true; NET.token = 'hudkit-test'; NET.useFake(fake); NET.connect();
+          feed({ t: 'who', list: [{ n: 'Cohen', map: 'over', region: 'Thistledown', lv: 5 }, { n: 'Ava', map: 'over', region: 'Thistledown', lv: 7 }] });
+        }
+        if (on) { CHAT.log.length = 0; TALK.slice(0, lines).forEach(([n, text], i) => feed({ t: 'chat', n, text, at: 3 + i })); }
+        NET.enabled = on; for (const l of CHAT.log) l.t = on ? 8 : 0;
+        return !on || NET.online();
+      },
+      restore() {
+        if (!was) return;
+        NET.emit('offline', { t: 'offline' }); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
+        CHAT.log.length = 0; for (const l of was.log) CHAT.log.push(l); for (const n in CHAT.bubbles) delete CHAT.bubbles[n]; Object.assign(CHAT.bubbles, was.bubbles); was = null;
+      },
+    };
+  })();
+  const bossType = Object.keys(MONSTER_DEFS).filter(t => t !== 'the_fang' && MONSTER_DEFS[t].level >= 25 && MONSTER_DEFS[t].hp >= 300);
+  const setBosses = n => {
+    monsters.length = 0;
+    for (let i = 0; i < n && i < bossType.length; i++) { const d = MONSTER_DEFS[bossType[i]]; monsters.push({ type: bossType[i], x: player.x + 40 + i * 30, y: player.y + 10, home: { x: player.x + 40, y: player.y }, r: d.r, hp: d.hp * 0.6, maxHp: d.hp, speed: d.speed, angry: false, state: 'idle', wanderT: 9, wander: { x: 0, y: 0 }, attackCd: 9, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0 }); }
+  };
+  const MECH = { walker: { kind: 'walker', hp: 40, maxHp: 60 }, dozer: { kind: 'dozer', hp: 74, maxHp: 110 }, beast: { kind: 'beast', hp: 240, maxHp: 300 }, horse: { kind: 'horse', hp: 30, maxHp: 40 } };
+  const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; if (VW !== w || VH !== hh) resize(); return VW === w && VH === hh; };
+  const frame = () => { HK.DRAWN.on = true; HK.DRAWN.log.length = 0; drawHud(ctx); HK.DRAWN.on = false; };
+  const sigs = new Map(), jumps = [];
+  const noteSig = (key, where) => { const s = A.signature(HK.cur()); if (!sigs.has(key)) sigs.set(key, { s, where }); else if (sigs.get(key).s !== s && jumps.length < 6) jumps.push(`${where} vs ${sigs.get(key).where}`); };
+  const restoreWorld = () => {
+    ONL.restore(); HK.setCacheOff(false); HK.FIT.on = false;
+    window.__forceTouch = saved.touch; window.__stickRight = saved.stick;
+    if (window.SETTINGS) { SETTINGS.set('text', saved.text); SETTINGS.set('minimap', saved.map); }
+    monsters.length = 0; for (const m of saved.mons) monsters.push(m);
+    player.mech = saved.mech; player.companion = saved.comp; player.law = saved.law; player.x = saved.x; player.y = saved.y; player.home = saved.home; player.homeCd = saved.homeCd; player.inv = saved.inv;
+    if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+    resize(); closePanel(); paused = saved.paused; if (saved.panel) openPanel(saved.panel);
+    dialog.cur = saved.dc; dialog.queue.length = 0; dialog.queue.push(...saved.dq); levelBanner = saved.lb; if (typeof areaBanner !== 'undefined') areaBanner = saved.ab; notice = saved.notice; HK.BOOK.page = saved.page;
+    render();
+  };
+  try {
+    HK.setCacheOff(true);
+    const texts = window.SETTINGS && SETTINGS.OPTIONS && SETTINGS.OPTIONS.text ? SETTINGS.OPTIONS.text.slice() : ['normal'];
+    // ---------- 4. the live matrix: sizes x touch/mouse x stick side x boss bars x machine x text size x minimap x chat lines ----------
+    {
+      const problems = []; let frames = 0, tried = 0;
+      const kinds = ['walker', 'dozer', 'beast'];
+      for (const [w, hh] of A.SIZES) {
+        if (!setSize(w, hh)) continue; tried++;
+        for (const t of [true, false]) {
+          window.__forceTouch = t;
+          for (const right of [false, true]) for (const map of [true, false]) for (const chat of [0, 4]) {
+            window.__stickRight = right; if (window.SETTINGS) SETTINGS.set('minimap', map);
+            if (!ONL.set(chat > 0, chat)) { problems.push(`${w}x${hh}: the online scene did not come up`); continue; }
+            for (const bosses of [0, 1, 2]) for (const mach of [false, true]) for (const tx of texts) {
+              if (window.SETTINGS) SETTINGS.set('text', tx);
+              setBosses(bosses); player.mech = mach ? { ...MECH[kinds[frames % 3]] } : null; player.home = { x: player.x - 80, y: player.y };
+              frame(); frames++;
+              const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} stick-${right ? 'right' : 'left'} ${map ? 'map' : 'no-map'} chat${chat} boss${bosses}${mach ? ' ' + player.mech.kind : ''} ${tx}`;
+              for (const p of A.frameIssues(where)) if (problems.length < 40) problems.push(p);
+              noteSig(`${w}x${hh}|${t}|${right}|${map}|${chat > 0}`, where);
+              if (chat && !bosses && !mach && !dialog.cur && !buttons.some(b => b.label === 'chat:log')) problems.push(`${where}: no chat strip`);
+              if (chat && !buttons.some(b => b.label === 'friends')) problems.push(`${where}: no FRIENDS seal`);
+            }
+          }
+        }
+      }
+      ONL.set(false, 0); setBosses(0); player.mech = null;
+      check(P + `live audit over the real buttons: 8 sizes x touch/mouse x stick side x minimap x chat 0/4 (online) x 0/1/2 boss banners x on foot / in a machine x ${texts.length} text sizes = ${frames} frames — 44 px floors, 8 px apart on touch (4 with a mouse), nothing in the notch or home-bar bands or on the stick, ribbons and the belt clear of every control, the notice lane clear, nothing over the knight, everything on screen, four seats at most`, tried === 8 && frames === 8 * 2 * 2 * 2 * 2 * 3 * 2 * texts.length && problems.length === 0, { tried, frames, problems: problems.slice(0, 14), total: problems.length });
+    }
+    // ---------- 5. the scenes: busy (2 bosses + companion + full plaques + level-up + max chat), talk page, home not set,
+    //            the walker / bulldozer / Barrelbeast / mare, a dungeon, and the book on both pages ----------
+    {
+      const problems = []; let frames = 0;
+      if (window.SETTINGS) { SETTINGS.set('text', 'normal'); SETTINGS.set('minimap', true); }
+      const scenes = ['busy', 'talk', 'no-home', 'walker', 'dozer', 'beast', 'mare', 'dungeon'];
+      const inst = window.INSTANCES && INSTANCES.list().includes('spider_den') ? 'spider_den' : null;
+      for (const [w, hh] of A.SIZES) {
+        if (!setSize(w, hh)) continue;
+        for (const t of [true, false]) for (const right of [false, true]) {
+          window.__forceTouch = t; window.__stickRight = right;
+          for (const sc of scenes) {
+            player.mech = null; player.companion = saved.comp ? JSON.parse(JSON.stringify(saved.comp)) : null; player.law = saved.law ? JSON.parse(JSON.stringify(saved.law)) : null; player.home = { x: player.x - 80, y: player.y };
+            dialog.cur = null; levelBanner = null; setBosses(0); ONL.set(false, 0);
+            if (sc === 'busy') { setBosses(2); ONL.set(true, 4); player.companion = { id: 'sera', hp: 44, maxHp: 60, mode: 'follow', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } }; player.law = { wanted: 2, timer: 38, fines: 1 }; levelBanner = { text: 'LEVEL UP', sub: 'Melee 20', t: 3 }; }
+            if (sc === 'talk') { ONL.set(true, 4); dialog.cur = { who: 'The Voice', text: 'Thistledown. You will wake here now if you fall. The captain of the watch keeps the gate, and the smith by the square will mend your blade.', t: 0 }; dialog.shown = dialog.cur.text.length; }
+            if (sc === 'no-home') player.home = null;
+            if (MECH[sc]) player.mech = { ...MECH[sc] };
+            if (sc === 'mare') player.mech = { ...MECH.horse };
+            if (sc === 'dungeon') { if (!inst) continue; if (!INSTANCES.active()) INSTANCES.enter(inst); }
+            frame(); frames++;
+            const where = `${w}x${hh} ${t ? 'touch' : 'mouse'} stick-${right ? 'right' : 'left'} ${sc}`;
+            for (const p of A.frameIssues(where)) if (problems.length < 40) problems.push(p);
+            if (sc !== 'dungeon' && sc !== 'busy' && sc !== 'talk') noteSig(`${w}x${hh}|${t}|${right}|true|false`, where);
+            if (sc === 'dungeon') { INSTANCES.leave(); }
+            if (sc === 'talk' && !buttons.some(b => b.label === 'dialog')) problems.push(`${where}: the talk page is not a tap`);
+          }
+          // the book, on every page this size has
+          ONL.set(true, 0); paused = true;
+          for (const page of ['kit', 'game', 'keys']) {
+            HK.BOOK.page = page; frame(); frames++;
+            const B = HK.FRAME.lastBook, where = `${w}x${hh} ${t ? 'touch' : 'mouse'} book:${page}`;
+            if ((page === 'game' && !B.onePage) || (page === 'keys' && B.fam !== 'desk')) continue;
+            for (const p of A.frameIssues(where, { book: true })) if (problems.length < 40) problems.push(p);
+            for (const b of buttons) { const r = b.r ? { x: b.cx - b.r, y: b.cy - b.r, w: b.r * 2, h: b.r * 2 } : b; if (r.x < B.book.x - 0.5 || r.y < B.book.y - 0.5 || r.x + r.w > B.book.x + B.book.w + 0.5 || r.y + r.h > B.book.y + B.book.h + 0.5) problems.push(`${where}: ${b.label} is off the page`); }
+          }
+          paused = false; HK.BOOK.page = 'kit'; ONL.set(false, 0);
+        }
+      }
+      setBosses(0); player.mech = null; dialog.cur = null; levelBanner = null;
+      check(P + 'the scenes pass the same rules at every size, touch and mouse, stick either side: busy (2 bosses, a companion, WANTED and a fine, a level-up, 4 chat lines), the talk page, HOME not set, the walker, bulldozer, Barrelbeast and mare, a dungeon, and the Knight\'s Book (kit, game and keys pages) with everything on its page', frames > 8 * 2 * 2 * 8 && problems.length === 0, { frames, problems: problems.slice(0, 14), total: problems.length });
+    }
+    // ---------- 6. nothing jumps: every persistent piece has one rect per size and setting, whatever is happening ----------
+    check(P + 'nothing jumps: the crest, the ring, the seals, the scroll slot, the plaque slots, the belt, its pouches and BAG, the four seats and the stick keep one rect per size and setting across every scene (bosses, machines, chat, text size)', jumps.length === 0 && sigs.size > 0, { settings: sigs.size, jumps });
+    // ---------- 7. text fits at Large: every string inside its plate after the shrink and wrap rules ----------
+    {
+      const problems = []; let frames = 0; const fc = A.fitCtx();
+      if (window.SETTINGS) SETTINGS.set('text', 'large');
+      for (const [w, hh] of A.SIZES) {
+        if (!setSize(w, hh)) continue;
+        for (const t of [true, false]) {
+          window.__forceTouch = t; window.__stickRight = false;
+          for (const sc of ['busy', 'machine', 'talk']) {
+            setBosses(sc === 'busy' ? 2 : 0); ONL.set(sc !== 'machine', 4); player.mech = sc === 'machine' ? { ...MECH.beast } : null;
+            player.companion = sc === 'busy' ? { id: 'sera', hp: 44, maxHp: 60, mode: 'follow', x: player.x - 30, y: player.y, downT: 0, freed: { sera: true } } : null;
+            player.law = sc === 'busy' ? { wanted: 2, timer: 38, fines: 1 } : null; levelBanner = sc === 'busy' ? { text: 'LEVEL UP', sub: 'Melee 20', t: 3 } : null;
+            dialog.cur = sc === 'talk' ? { who: 'Death', text: 'You again. Your pack is in the chest in my house. Cheap things I return for nothing; precious things cost a quarter of their worth.', t: 0 } : null; if (dialog.cur) dialog.shown = dialog.cur.text.length;
+            notice = { text: 'That shield can stop a blow. Tap BLOCK as the next one comes in.', t: 2 };
+            HK.FIT.on = true; HK.FIT.log.length = 0; drawHud(fc); HK.FIT.on = false; frames++;
+            for (const p of A.fitIssues(`${w}x${hh} ${t ? 'touch' : 'mouse'} ${sc}`)) if (problems.length < 30) problems.push(p);
+          }
+        }
+      }
+      notice = null; dialog.cur = null; levelBanner = null; setBosses(0); player.mech = null; ONL.set(false, 0); if (window.SETTINGS) SETTINGS.set('text', 'normal');
+      check(P + 'text fits at Large: the crest, the scroll, plaques, boss banners, ribbons, the notice, banners, the talk page and the book keep every string inside its plate at every size (names shrink to a floor, sentences wrap, never cut inside a word)', frames === 48 && problems.length === 0, { frames, problems: problems.slice(0, 12), total: problems.length });
+    }
+    // ---------- 8. the seat table: four seats, one face each, the right face in every state ----------
+    {
+      setSize(390, 844); window.__forceTouch = true; window.__stickRight = false; if (window.SETTINGS) SETTINGS.set('minimap', true);
+      setBosses(0); ONL.set(false, 0);
+      const faces = () => { frame(); const f = HK.FRAME.faces; return ['swing', 'use', 'block', 'ctx'].map(s => f[s] ? f[s].id : '-').join(' '); };
+      const got = {};
+      player.mech = null; got.foot = faces();
+      player.mech = { ...MECH.walker }; got.walker = faces();
+      player.mech = { ...MECH.dozer }; got.dozer = faces();
+      player.mech = { ...MECH.beast }; got.beast = faces();
+      player.mech = { ...MECH.horse }; got.mare = faces();
+      player.mech = null; dialog.cur = { who: 'The Voice', text: 'Next.', t: 0 }; got.talk = faces(); dialog.cur = null;
+      const want = { foot: /^swing (use|next) block (-|ride|leave|build)$/, walker: /^stomp crush(-idle)? special exit$/, dozer: /^stomp crush(-idle)? special exit$/, beast: /^ram (bomb|crush) special exit$/, mare: /^saddle (use|next) - getdown$/, talk: /^swing next block/ };
+      const bad = Object.keys(want).filter(k => !want[k].test(got[k]));
+      const seatsOk = buttons.filter(b => b.seat).length <= 4;
+      check(P + 'the seat table: four seats (SWING | USE | BLOCK | ctx), one face each — on foot SWING / USE / BLOCK, a walker or bulldozer STOMP / CRUSH / the special / EXIT, the Barrelbeast RAM / BOMB / the special / EXIT, the mare SWING (disabled) / USE / nothing / GET DOWN, and NEXT on USE while someone talks', bad.length === 0 && seatsOk, { got, bad });
+      player.mech = null;
+    }
+    // ---------- 9. the controls behave: pointer-up inside fires, slide-off cancels, a 400 ms hold names instead, SWING fires on the press, a round control is hit as a circle ----------
+    {
+      setSize(1280, 800); window.__forceTouch = false; window.__stickRight = false; closePanel(); frame();
+      const bag = buttons.find(b => b.label === 'BAG'), mid = b => [b.x + b.w / 2, b.y + b.h / 2];
+      let [bx, by] = mid(bag);
+      pointerDown(bx, by, 'mouse'); const notOnPress = panel !== 'inventory'; pointerUp('mouse', bx, by); const onRelease = panel === 'inventory'; closePanel(); frame();
+      pointerDown(bx, by, 'mouse'); pointerMove(bx + 300, by - 300, 'mouse'); pointerUp('mouse', bx + 300, by - 300); const slideOff = panel !== 'inventory'; closePanel(); frame();
+      pointerDown(bx, by, 'mouse'); HK.press.press.t0 -= 450; drawHud(ctx); const named = !!HK.press.press && HK.press.press.named; pointerUp('mouse', bx, by); const holdNames = named && panel !== 'inventory'; closePanel(); frame();
+      const inv0 = player.inv.map(q => q ? { ...q } : null), hp0 = player.hp; player.inv[0] = { id: 'bread', qty: 3 }; player.hp = Math.max(1, player.maxHp - 10); frame();
+      const bread0 = countItem('bread'), hot = buttons.find(b => b.label === 'hot0'); [bx, by] = mid(hot); pointerDown(bx, by, 'mouse'); const ateOnPress = countItem('bread') === bread0 - 1; pointerUp('mouse', bx, by); player.inv = inv0; player.hp = hp0; frame();
+      const ring = buttons.find(b => b.label === 'minimap'), cx = ring.cx + ring.r * 0.9, cy = ring.cy + ring.r * 0.9;
+      pointerDown(cx, cy, 'mouse'); const cornerMiss = !HK.press.press || HK.press.press.label !== 'minimap'; HK.pressDrop('mouse'); touch.press = null; touch.stickId = null; touch.active = false;
+      pointerDown(ring.cx, ring.cy + ring.r * 0.9, 'mouse'); pointerUp('mouse', ring.cx, ring.cy + ring.r * 0.9); const ringHit = panel === 'map'; closePanel();
+      check(P + 'controls: BAG fires on release inside and not on the press, sliding off cancels it, holding it 400 ms names it instead; a pouch fires on the press; the ring is hit as a circle (its box corner misses)', notOnPress && onRelease && slideOff && holdNames && ateOnPress && cornerMiss && ringHit, { notOnPress, onRelease, slideOff, holdNames, ateOnPress, cornerMiss, ringHit });
+    }
+    // ---------- 10. the Knight's Book holds everything rare: twelve tiles, each opening its panel, each with its key on a computer ----------
+    {
+      setSize(1280, 800); window.__forceTouch = false; closePanel(); paused = true; HK.BOOK.page = 'kit'; frame();
+      const want = { BAG: 'inventory', SKILLS: 'skills', QUESTS: 'quests', CRAFTING: 'craft', MAP: 'map', WIKI: 'wiki', HELP: 'help' };
+      const tiles = HK.bookTiles(), words = tiles.map(t => t.word);
+      const opens = {}; for (const [wd, pn] of Object.entries(want)) { paused = true; frame(); const b = buttons.find(q => q.label === wd); if (b) b.action(); opens[wd] = panel === pn && !paused; closePanel(); }
+      paused = true; frame(); const keys = tiles.slice(0, 12).every(t => t.key && buttons.some(b => b.label === t.word && (b.keys || []).includes(t.key)));
+      const rows = ['Resume', 'Settings', 'Title screen', 'New game'].every(l => buttons.some(b => b.label.startsWith(l)));
+      paused = false; frame();
+      const twelve = ['BAG', 'SKILLS', 'QUESTS', 'CRAFTING', 'MAP', 'WIKI', 'FRIENDS', 'CHAT', 'HOME', 'HELP', 'MARKERS'].every(wd => words.includes(wd)) && words.some(wd => /^MUSIC/.test(wd)) && tiles.length >= 12;
+      check(P + "the Knight's Book (MENU / Esc) holds the kit's twelve tiles — every panel is one tap from it and each tile wears its key on a computer — and its rows: Resume, Settings, Title screen, New game", twelve && Object.values(opens).every(Boolean) && keys && rows, { words, opens, keys, rows });
+    }
+  } finally { restoreWorld(); }
+});
