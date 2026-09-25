@@ -371,12 +371,12 @@
     const def = HEROES[c.id], NAME = def.name.toUpperCase(), down = c.downT > 0;
     if (down) {
       const s = Math.max(1, Math.ceil(c.downT)), base = { id: 'companion', portrait: heroFace(def, true), frac: 0, edge: HK.T.gules };
-      return fitFields(g, [{ name: `${NAME} IS DOWN`, right: `up in ${s} s` }, { name: `${NAME} IS DOWN`, right: `${s} s` }, { name: `${NAME} DOWN`, right: `${s} s` }].map(o => Object.assign({}, base, o)));
+      return fitFields(g, [{ name: `${NAME} IS DOWN`, right: `up in ${s} s` }, { name: `${NAME} IS DOWN`, right: `${s} s` }, { name: `${NAME} DOWN`, right: `${s} s` }, { name: NAME, right: `${s} s` }, { name: `${NAME} DOWN`, right: '' }].map(o => Object.assign({}, base, o)));
     }
     const hp = Math.max(0, Math.ceil(c.hp)), base = { id: 'companion', portrait: heroFace(def, false), frac: clamp(c.hp / def.hp, 0, 1) };
     const list = c.mode === 'stay'
-      ? [{ name: `${NAME} · WAITING`, right: `${hp} / ${def.hp}` }, { name: `${NAME} WAITS`, right: `${hp} / ${def.hp}` }, { name: `${NAME} WAITS`, right: `${hp}` }, { name: NAME, right: `${hp} / ${def.hp}` }]
-      : [{ name: NAME, right: `${hp} / ${def.hp}` }];
+      ? [{ name: `${NAME} · WAITING`, right: `${hp} / ${def.hp}` }, { name: `${NAME} WAITS`, right: `${hp} / ${def.hp}` }, { name: `${NAME} WAITS`, right: `${hp}` }, { name: NAME, right: `${hp} / ${def.hp}` }, { name: NAME, right: `${hp}` }]
+      : [{ name: NAME, right: `${hp} / ${def.hp}` }, { name: NAME, right: `${hp}` }];   // a 124 px column (a landscape phone) keeps the exact hp, not the max
     return fitFields(g, list.map(o => Object.assign({}, base, o)));
   }
   HOOKS.hud.push((g, narrow) => {

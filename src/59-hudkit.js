@@ -1595,7 +1595,9 @@ const HK = (() => {
     }
     // ---- the plaque column (the rolled scroll always takes plaque slot 1) ----
     let px, py, pw, ph, pmax;
-    if (fam === 'phoneL') { px = left; py = sealsBottom + 8; pw = L.sealsRight - left; ph = 44; }
+    // a landscape phone: under the seals, and at least 176 px wide (the seal column alone is 124, too narrow for a name and
+    // its number; to its right is open world, and the audit keeps it clear of the stick and every control)
+    if (fam === 'phoneL') { px = left; py = sealsBottom + 8; pw = Math.max(L.sealsRight - left, 176); ph = 44; }
     else { px = scroll.x; py = scroll.y + scroll.h + 10; pw = scroll.w; ph = 44; }
     // ---- touch: the stick and the four-seat fan (drawn, without the stick, for a small mouse window too) ----
     const fr = fanR(fam, H);
