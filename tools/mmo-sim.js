@@ -17,7 +17,8 @@
 // never come back; a drop party of 50 crackers where both knights light the SAME cracker in the SAME tick, 50 times:
 // exactly one boom each time, the prize exactly the contract's roll from the world's dice, and it lands once, in the
 // winner's game only; a party hat handed over with the ordinary gift; Ann bans Ben (close 4003, every join refused
-// until she unbans); and Ben sending every admin message is refused with nothing changed.
+// until she unbans), and so does the parent page (the store, then the world's kick by name); and Ben sending every admin
+// message is refused with nothing changed.
 // Exit 0 only when every line passes.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path');
@@ -143,7 +144,8 @@ class FakeStore {
 //   Admins: the role is read from the store at hello and fresh for every admin message; anyone else is answered
 //   'error admin' and nothing happens. mute / unmute / kick / ban / unban / modlist with the contract's answers; nobody
 //   touches an admin, or themselves; spawn and spawn_clear go to the keeper of the admin's map with a new sid.
-//   setRole(name) and muteChanged(name) are the parent page's calls, as the World makes them.
+//   setRole(name), muteChanged(name), kick(name, code, text) and isOnline(name) are the World's calls (the parent page,
+//   /api/me), answered as the Room answers them.
 //   Drop parties: party with the server's checks (bad / where / busy), crackers to the map, the announcement to everyone;
 //   light (gone / map / taken / far; the roll, then the fuse; the first light wins; a hat is announced; the last one lit
 //   ends the party); claim (the lighter only); party_end; crackers after welcome and on arriving on a map; a prize after
@@ -184,7 +186,11 @@ class FakeWorld {
     if (k.hello) this.who();
   }
   drop(k, code) { this.remove(k); try { k.sock.close(code); } catch (e) { } }
-  kick(k, code, text) { this.send(k, { t: 'error', code, text }); this.drop(k, code === 'kicked' ? 4005 : code === 'banned' ? 4003 : 4000); }
+  // out of the world: the error first so the screen can say why, then the close (4005 kicked, 4003 banned, else 4000)
+  sendOff(k, code, text) { this.send(k, { t: 'error', code, text }); this.drop(k, code === 'kicked' ? 4005 : code === 'banned' ? 4003 : 4000); }
+  // the World's calls from the parent page, by name, as the Room answers them
+  kick(name, code, text) { const k = this.named(name); if (!k) return false; this.sendOff(k, code, text); return true; }
+  isOnline(name) { const k = this.named(name); return !!(k && k.hello); }
 
   // ---------- maps and keepers ----------
   elect(map, except) {
@@ -343,8 +349,8 @@ class FakeWorld {
       this.store.setMute(target.lc, until); answer.left = leftOf(until, now); detail = m.span;
       if (there && there.hello) this.send(there, { t: 'muted', left: answer.left });
     } else if (act === 'unmute') { this.store.setMute(target.lc, 0); if (there && there.hello) this.send(there, { t: 'unmuted' }); }
-    else if (act === 'kick') this.kick(there, 'kicked', KICK_TEXT);
-    else if (act === 'ban') { this.store.setBanned(target.lc, true); if (there) this.kick(there, 'banned', 'this knight is banned'); }
+    else if (act === 'kick') this.sendOff(there, 'kicked', KICK_TEXT);
+    else if (act === 'ban') { this.store.setBanned(target.lc, true); if (there) this.sendOff(there, 'banned', 'this knight is banned'); }
     else this.store.setBanned(target.lc, false);
     this.store.log({ at: now, by: admin.name, act, target: target.name, detail });
     this.send(k, answer);
@@ -922,6 +928,16 @@ async function main() {
     A.FANGLANDS.closePanel();
     line('12. Ann bans Ben (two taps): error banned, then close 4003; his wire drops the session and books no reconnect; every new join is refused (4003) until Ann taps Unban, then he is welcomed; ban and unban are in the mod log',
       !!err && closed && noRetry && refused && unbanBtn && back && same(rows, ['ban', 'unban']), { err: !!err, code: sock && sock.closeCode, closed, noRetry, tries, unbanBtn, back, rows });
+    // the parent page's Ban and Unban: the World writes the store, then sends him out by name (room.kick), as it does for real
+    const b1 = mark(B), s1 = B.NET.sock, onBefore = room.isOnline('Ben');
+    room.store.setBanned('Ben', true); const sent = room.kick('Ben', 'banned', 'this knight is banned'); wire.flush(); tick(3);
+    const out = sent === true && got(B, 'error', b1).some(m => m.code === 'banned') && !!s1 && s1.closeCode === 4003 && !B.NET.online() && !room.isOnline('Ben');
+    B.NET.setToken(wire.login('Ben')); B.NET.connect(); wire.flush(); tick(3);
+    const held = !B.NET.online() && wire.made[wire.made.length - 1].closeCode === 4003;
+    room.store.setBanned('Ben', false); B.NET.setToken(wire.login('Ben')); B.NET.connect(); wire.flush(); tick(6);
+    const again = B.NET.online() && room.isOnline('Ben') && room.kick('Nobody', 'banned', 'x') === false;
+    line('12. the parent page\'s Ban (the store written, then kick by name) sends Ben out with 4003 and keeps him out; its Unban lets him straight back in',
+      onBefore && out && held && again, { onBefore, out, held, again });
   }
 
   // ---- 13. a player sends every admin message ----

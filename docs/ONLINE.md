@@ -559,10 +559,11 @@ The cap runs before the role check, so a knight hammering admin messages is drop
 - **Two-player** (`tools/mmo-sim.js`, both against its FakeWorld and with `--room` against the real Room; the FakeWorld
   is this contract written out again, not a copy of `room.js`): roles on welcome, the roster and presence, and the
   parent page turning a role on and off; the admin mutes the other knight from the panel (the mute holds over a
-  reconnect), kicks him (4005) and bans him (4003, every join refused until unbanned); the admin spawns goblins the
-  other knight sees, fights and gets the kill for; a party of 50 crackers where both knights light the **same**
-  cracker in the same tick, 50 times, each prize recomputed from the world's own dice by the roll above; a party hat
-  handed over with the ordinary gift; a non-admin sending every admin message is refused with nothing changed.
+  reconnect), kicks him (4005) and bans him (4003, every join refused until unbanned), and the parent page's Ban and
+  Unban do the same by name; the admin spawns goblins the other knight sees, fights and gets the kill for; a party of
+  50 crackers where both knights light the **same** cracker in the same tick, 50 times, each prize recomputed from the
+  world's own dice by the roll above; a party hat handed over with the ordinary gift; a non-admin sending every admin
+  message is refused with nothing changed.
 
 ### Who owns what
 
