@@ -34,6 +34,8 @@
   const forget = n => { delete REMOTE[n]; if (following === n) following = null; };
   const clearAll = () => { for (const n in REMOTE) delete REMOTE[n]; ONLINE = []; following = null; };
   const near = n => { const e = REMOTE[n]; return !!e && e.map === mapId() && dist(e.shown.x, e.shown.y, player.x, player.y) <= NEAR; };
+  // the ONLINE chip and the F key both do this
+  const toggleFriends = () => { if (panel === 'friends') closePanel(); else { friendsPage = 0; openPanel('friends'); } };
 
   // ---------- out: what we look like and where we are ----------
   function lookOf() {
@@ -71,7 +73,7 @@
       if (e.moving) e.walkT += dt * 9;
       if (e.hurtT > 0) e.hurtT -= dt;
     }
-    if (pressed.has('KeyF') && !player.dead) { if (panel === 'friends') closePanel(); else { friendsPage = 0; openPanel('friends'); } }
+    if (pressed.has('KeyF') && !player.dead) toggleFriends();
   });
   HOOKS.keyHelp.push({ action: 'Friends', codes: ['KeyF'] }); // 43-settings lists it on the Controls line
 
@@ -130,8 +132,6 @@
   });
 
   // ---------- the HUD: friends on the minimap, the follow arrow, the ONLINE chip ----------
-  const BOSS_H = 48, BOSS_GAP = 8;
-  function bossBarsShowing() { let n = 0; for (const m of monsters) { if (n >= 2) break; const d = MONSTER_DEFS[m.type]; if (!m.dead && m.type !== 'the_fang' && d && d.level >= 25 && d.hp >= 300 && dist(m.x, m.y, player.x, player.y) <= 12 * TILE) n++; } return n; }
   HOOKS.hud.push(g => {
     if (paused) return;
     const my = mapId();
@@ -164,18 +164,16 @@
         }
       }
     }
-    // the chip: only on the online build, under the HP box on the shared left-HUD cursor, clear of the touch hotbar,
-    // the boss bars and (on a landscape phone) the quest box. Hidden under other files' panels so it cannot eat their taps.
+    // The chip: only on the online build. It is a control on the HUD kit's left column: one row (44 px on touch), the
+    // column's control width, and HK.claim() finds its row — under whatever chips are already up (a boss bar, a
+    // machine, the quest items) and clear of every control already on screen and of the joystick and thumb seats, on
+    // either side (Settings › Move stick side), wrapping into the second column where there is one. It is drawn late
+    // in the frame, so it is the one that has to move: nothing it lands on can be covered. Hidden under other files'
+    // panels so it cannot eat their taps.
     if (!NET.enabled || (panel && !MINE[panel])) return;
-    const lay = HUD_LAYOUT;
-    const touchFloor = (isTouch && lay && !lay.short) ? lay.hotbarY + lay.hotbarH + 12 : 0;
-    const questFloor = (isTouch && lay && lay.short && lay.questH) ? lay.questY + lay.questH + 8 : 0;
-    const bars = bossBarsShowing(), bossFloor = bars && lay ? lay.bossBarY + bars * (BOSS_H + BOSS_GAP) : 0;
-    const y = Math.max(HUD.leftY, touchFloor, questFloor, bossFloor, 84), h = isTouch ? 30 : 26;
-    const on = NET.online(), label = on ? 'ONLINE ' + ONLINE.length : 'OFFLINE';
-    g.font = 'bold 13px sans-serif'; const w = Math.max(88, Math.ceil(g.measureText(label).width) + 28);
-    button(g, 14, y, w, h, label, () => { if (panel === 'friends') closePanel(); else { friendsPage = 0; openPanel('friends'); } }, on ? '#1f4e78' : '#2a2f3a');
-    HUD.leftY = y + h + 6;
+    const label = NET.online() ? 'ONLINE ' + ONLINE.length : 'OFFLINE';
+    const s = HK.claim(HK.row(), { w: HK.ctrlW() });
+    if (s) HK.control(g, s.x, s.y, s.w, s.h, label, toggleFriends, { on: panel === 'friends', hit: label });
   });
 
   // ---------- the world map: every friend on this map as a named blue dot (drawn after the core's map, so it wraps drawPanels) ----------
@@ -231,25 +229,28 @@
   HOOKS.panel.friends = (g, narrow) => {
     const my = mapId(), meN = me();
     const list = ONLINE.filter(o => o.n !== meN);
-    const rowH = 60, per = Math.max(1, Math.min(6, Math.floor((VH - 20 - 170) / rowH))), pages = Math.max(1, Math.ceil(list.length / per));
+    // every button here is one kit row tall (HK.row(): 44 px on touch), so the rows and the header grow to hold them
+    const bh = HK.row(), top = 62 + bh + 12, rowH = Math.max(60, bh + 16);
+    const per = Math.max(1, Math.min(6, Math.floor((VH - 20 - top - 68) / rowH))), pages = Math.max(1, Math.ceil(list.length / per));
     friendsPage = clamp(friendsPage, 0, pages - 1);
     const page = list.slice(friendsPage * per, friendsPage * per + per);
-    const w = narrow ? Math.min(VW - 20, 400) : 500, h = Math.min(VH - 20, 128 + Math.max(1, page.length) * rowH + 30 + (pages > 1 ? 40 : 0));
+    const w = narrow ? Math.min(VW - 20, 400) : 500, h = Math.min(VH - 20, top + 26 + Math.max(1, page.length) * rowH + 30 + (pages > 1 ? 40 : 0));
     const on = NET.online();
     const { px, py } = panelBox(g, w, h, 'Friends online', on ? `${ONLINE.length} knight${ONLINE.length === 1 ? '' : 's'} in the Fanglands right now` : 'Not connected right now');
-    button(g, px + 18, py + 62, 96, 28, 'Chat log', () => openPanel('chatlog'), '#21262d');
-    let y = py + 102;
+    button(g, px + 18, py + 62, 96, bh, 'Chat log', () => openPanel('chatlog'), '#21262d');
+    let y = py + top;
     if (!page.length) { g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText(on ? 'Nobody else is on right now.' : 'You are not connected.', px + 18, y + 14); }
     const bw1 = 62, bw2 = narrow ? 92 : 118, bx1 = px + w - 18 - bw1, bx2 = bx1 - 8 - bw2, textW = bx2 - (px + 30) - 10;
     for (const o of page) {
       const here = o.map === my, close = near(o.n), fol = following === o.n;
       roundRect(g, px + 18, y, w - 36, rowH - 8, 8); g.fillStyle = here ? 'rgba(88,166,255,0.12)' : 'rgba(255,255,255,0.05)'; g.fill();
-      g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#e6edf3'; g.fillText(o.n, px + 30, y + 20);
-      const nw = g.measureText(o.n).width; g.fillStyle = '#9aa3b2'; g.font = '11px sans-serif'; g.fillText('lv ' + (o.lv || 1), px + 30 + nw + 8, y + 20);
+      const mid = y + (rowH - 8) / 2;   // the middle of the row's plate: the name sits above it, where they are below
+      g.font = 'bold 13px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#e6edf3'; g.fillText(o.n, px + 30, mid - 6);
+      const nw = g.measureText(o.n).width; g.fillStyle = '#9aa3b2'; g.font = '11px sans-serif'; g.fillText('lv ' + (o.lv || 1), px + 30 + nw + 8, mid - 6);
       let where = here ? 'On your map · ' + whereOf(o) : whereOf(o); g.font = '12px sans-serif'; while (g.measureText(where).width > textW && where.length > 6) where = where.slice(0, -2) + '…';
-      g.fillStyle = here ? BLUE : '#8b949e'; g.fillText(where, px + 30, y + 40);
-      button(g, bx1, y + 11, bw1, 30, 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, close ? '#238636' : '#2a2f3a', close);
-      button(g, bx2, y + 11, bw2, 30, fol ? (narrow ? 'Following' : 'Stop following') : (narrow ? 'Follow' : 'Follow on map'), () => { following = fol ? null : o.n; sfx('open'); }, fol ? '#6b4f2a' : here ? '#21262d' : '#2a2f3a', here);
+      g.fillStyle = here ? BLUE : '#8b949e'; g.fillText(where, px + 30, mid + 14);
+      button(g, bx1, mid - bh / 2, bw1, bh, 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, close ? '#238636' : '#2a2f3a', close);
+      button(g, bx2, mid - bh / 2, bw2, bh, fol ? (narrow ? 'Following' : 'Stop following') : (narrow ? 'Follow' : 'Follow on map'), () => { following = fol ? null : o.n; sfx('open'); }, fol ? '#6b4f2a' : here ? '#21262d' : '#2a2f3a', here);
       y += rowH;
     }
     g.fillStyle = '#6e7681'; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText('Give works when you stand within two tiles of a friend. F opens this panel.', px + 18, py + h - (pages > 1 ? 50 : 14));
@@ -260,7 +261,8 @@
   HOOKS.panel.gift = (g, narrow) => {
     const to = String(panelArg || '');
     const stacks = []; for (const s of player.inv) if (s && s.qty > 0 && ITEMS[s.id]) stacks.push(s);
-    const rowH = 38, per = Math.max(2, Math.min(8, Math.floor((VH - 20 - 130) / rowH))), pages = Math.max(1, Math.ceil(stacks.length / per));
+    // the Give buttons are one kit row tall (HK.row(): 44 px on touch); each row is that plus its margins
+    const bh = HK.row(), rowH = bh + 12, per = Math.max(2, Math.min(8, Math.floor((VH - 20 - 130) / rowH))), pages = Math.max(1, Math.ceil(stacks.length / per));
     giftPage = clamp(giftPage, 0, pages - 1);
     const page = stacks.slice(giftPage * per, giftPage * per + per);
     const w = narrow ? Math.min(VW - 20, 390) : 460, h = Math.min(VH - 20, 74 + Math.max(1, page.length) * rowH + (pages > 1 ? 50 : 20));
@@ -270,16 +272,17 @@
     if (!page.length) { g.fillStyle = '#8b949e'; g.font = '13px sans-serif'; g.textAlign = 'left'; g.fillText('Your pack is empty.', px + 18, y + 20); }
     for (const s of page) {
       const def = ITEMS[s.id], many = s.qty > 1;
+      const mid = y + (rowH - 6) / 2;   // the middle of the row's plate
       roundRect(g, px + 18, y, w - 36, rowH - 6, 8); g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
-      drawItemIcon(g, s.id, px + 36, y + 15, 18);
+      drawItemIcon(g, s.id, px + 36, mid - 1, 18);
       let name = def.name + ' × ' + s.qty; g.font = 'bold 13px sans-serif'; const maxW = w - 36 - 44 - (many ? 176 : 96);
       while (g.measureText(name).width > maxW && name.length > 6) name = name.slice(0, -2) + '…';
-      g.fillStyle = '#e6edf3'; g.textAlign = 'left'; g.fillText(name, px + 54, y + 20);
+      g.fillStyle = '#e6edf3'; g.textAlign = 'left'; g.fillText(name, px + 54, mid + 4);
       const arm = needsConfirm(def) && confirmActive('gift:' + s.id);
       const giveN = qty => { const go = () => { if (give(to, s.id, qty)) closePanel(); }; if (needsConfirm(def)) confirmTap('gift:' + s.id, go); else go(); };
       const key = (b, suffix) => { b.label = (b.disabled ? 'disabled:' : '') + 'give:' + s.id + ':' + suffix; };   // the drawn word stays; the harness finds the button by key
-      if (many) { button(g, px + w - 18 - 82 - 6 - 74, y + 3, 74, rowH - 12, 'Give 1', () => giveN(1), ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], '1'); }
-      button(g, px + w - 18 - 82, y + 3, 82, rowH - 12, arm ? 'Tap again' : many ? 'Give all' : 'Give', () => giveN(s.qty), arm ? '#c0392b' : ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], 'all');
+      if (many) { button(g, px + w - 18 - 82 - 6 - 74, mid - bh / 2, 74, bh, 'Give 1', () => giveN(1), ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], '1'); }
+      button(g, px + w - 18 - 82, mid - bh / 2, 82, bh, arm ? 'Tap again' : many ? 'Give all' : 'Give', () => giveN(s.qty), arm ? '#c0392b' : ok ? '#238636' : '#2a2f3a', ok); key(buttons[buttons.length - 1], 'all');
       y += rowH;
     }
     if (pages > 1) pager(g, px + 18, py + h - 40, w - 36, giftPage, pages, p => { giftPage = p; });
@@ -355,16 +358,30 @@
       feed({ t: 'p', n: 'Cal', map: 'over', x: player.x, y: player.y + 40, fx: 0, fy: -1, mv: false, wt: 0, hp: 9, mhp: 25, lv: 2, look: null, mech: null, dead: false, def: 50, act: null });
       const n0 = notice; feed({ t: 'error', code: 'elsewhere', text: 'opened elsewhere' }); const elsewhere = !REMOTE.Cal && !!notice && notice.text === 'Your knight was opened somewhere else.'; notice = n0;
       check(P + "'left' removes a knight at once; six seconds of silence removes one too; 'elsewhere' clears everyone and says so", gone && timedOut && elsewhere, { gone, timedOut, elsewhere }); }
-    // layout: the chip overlaps no other button at four screen sizes (desktop layout; touch when the device is touch)
-    { const vw0 = window.innerWidth, vh0 = window.innerHeight, hits = [], sizes = []; const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-      const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
-      for (const [w, hh, name] of [[390, 844, 'phone'], [844, 390, 'landscape'], [768, 1024, 'tablet'], [1280, 800, 'desktop']]) {
-        closePanel(); if (!setSize(w, hh)) continue; sizes.push(name); const bs = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0); const mine = bs.filter(b => /^ONLINE/.test(b.label));
-        for (const a of mine) for (const b of bs) if (a !== b && overlap(a, b)) hits.push(name + ': ' + a.label + ' × ' + b.label);
-        if (!mine.length) hits.push(name + ': no chip');
+    // layout: the chip overlaps no other button at four screen sizes, in the touch layout and the desktop one. It reads
+    // touchMode() (forced both ways here), not the device's isTouch, which is always false headless — so the touch
+    // layout, the one the iPad and the phones use, is really tested. On touch it is also a full 44 px control and
+    // stays out of the joystick's circle (05-input matches buttons before it starts the stick). Two frames per size: the
+    // first frame after a size or layout change reads last frame's hotbar position (10-hud places its boss-bar row
+    // before it publishes this frame's layout), and what matters is where the chip settles.
+    { const vw0 = window.innerWidth, vh0 = window.innerHeight, t0 = window.__forceTouch, hits = [], sizes = []; const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); render(); return VW === w && VH === hh; };
+      for (const t of [true, false]) {
+        window.__forceTouch = t;
+        for (const [w, hh, name] of [[390, 844, 'phone'], [844, 390, 'landscape'], [768, 1024, 'tablet'], [1280, 800, 'desktop']]) {
+          closePanel(); if (!setSize(w, hh)) continue; const where = name + (t ? ' touch' : ' desktop'); sizes.push(where);
+          const bs = buttons.filter(b => !b.offscreen && b.w > 0 && b.h > 0); const mine = bs.filter(b => /^ONLINE/.test(b.label));
+          for (const a of mine) for (const b of bs) if (a !== b && overlap(a, b)) hits.push(where + ': ' + a.label + ' × ' + b.label);
+          if (!mine.length) hits.push(where + ': no chip');
+          if (t) for (const a of mine) {
+            if (a.w < 44 || a.h < 44) hits.push(where + ': ' + a.label + ' is ' + Math.round(a.w) + 'x' + Math.round(a.h));
+            const cx = window.__stickRight === true ? VW - 110 : 110;
+            if (overlap(a, { x: cx - 60, y: VH - 170, w: 120, h: 120 })) hits.push(where + ': ' + a.label + ' is inside the joystick');
+          }
+        }
       }
-      setSize(vw0, vh0);
-      check(P + 'the ONLINE chip sits clear of every other button at phone, landscape, tablet and desktop sizes', hits.length === 0 && sizes.length > 0, { hits, sizes }); }
+      window.__forceTouch = t0; setSize(vw0, vh0);
+      check(P + 'the ONLINE chip sits clear of every other button at phone, landscape, tablet and desktop sizes', hits.length === 0 && sizes.length === 8, { hits, sizes }); }
     // put the world back
     NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
     clearAll(); lastSig = null; pending.length = 0; lastGiftAt = -1e9;
