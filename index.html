@@ -11266,9 +11266,16 @@ HOOKS.selfTest.push((check, F, h) => {
 // them. 36-skycity sizes the instance from it; 88-aerie reads its spots; 91-cloudkingdom paints ROWS into the
 // instance once at load, cell for cell, with no random numbers — every client builds the same city.
 //
-// ROWS: 100 x 80 tiles, one character per tile, 48 px a tile (4800 x 3840 px). Copied byte for byte from the
-// judge's plan-rows.txt (sha1 a0fd9636f9c2584e0491b1e8a5389d6addc3dd10); do not edit a row here without
-// re-measuring every count the self-tests quote. GLYPHS says which tile NAME each character paints.
+// ROWS: 100 x 80 tiles, one character per tile, 48 px a tile (4800 x 3840 px). First copied byte for byte from the
+// judge's plan-rows.txt (sha1 a0fd9636f9c2584e0491b1e8a5389d6addc3dd10), then changed on 2026-09-25 after review
+// round 1: the Crown (x 80-99, rows 5-29) was bare cloud and is now the Rookery Yard, the Crown Walk, a garden and
+// a paved ring round the Songstone; and the paving left over between the streets became lawn (the Guild Green,
+// the chapel lawn and the back gardens along the south wall). Do not edit a row here without re-measuring every
+// count the self-tests quote (91's K1, K3 and K4). GLYPHS says which tile NAME each character paints.
+//
+// ROADS: which paving cells are STREET, not yard. A street is still a KING_PAVE tile (you walk on it the same way),
+// but 91 paints it as grey-blue setts with a white kerb and a gold gutter on every edge, so the streets read as
+// streets and the paving between them (pavements, squares, the Wind Landing) as pale flagstones.
 //
 //     0         1         2         3         4         5         6         7         8         9
 //     0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789
@@ -11280,31 +11287,31 @@ HOOKS.selfTest.push((check, F, h) => {
     '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~r=========r~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~r=========r~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~+++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~+++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~,,,~~~~~',
-    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~+++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~,,,P,,,~~~',
-    '~~~~~~~~~~~~~~~~,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,~~~~~~~~~~~,,,,,,,~~~',
-    '~~~~~~~~~~~~~~,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,~~~~~~~~,P,,,,,P,~~',
-    '~~~~~~~~~~~~~,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,~~~~~~,,,,,,,,,,,~',
-    '~~~~~~~~~~~~~,,TTT,,,,,,,,,,,,,TTT,,,,,,,,,,TTT,,,TTT,,,,,,,,,,TTT,,,,,,,,,,,,TTT,~~~~~~,,,,,,,,,,,~',
-    '~~~~~~~~~~~~,,,TTT#############TTT##########TTT#G#TTT##########TTT############TTT,,~~~~~,,,,,,,,,,^~',
-    '~~~~~~~~~~~~,,,TTT=============TTT==========TTT===TTT==========TTT============TTT,,~~~~,,n,,,,,,,n,,',
-    '~~~~~~~~~~~~,,,,#=============================================================TTT,,~~~~,,,,,,,,,,,,,',
-    '~~~~~~~~~~~~,,,,#==""""t"****"""""t"oooooo""t"l===l=CCCCCCCCC"t"""p"""t"""p"t=TTT,,~~~~,x,,,,,,,,,,,',
-    '~~~~~~~~~~~~,,,,#=="t"""""""""t"""""oooooo"""""=====Cq_____qC""""""""""""""""=TTT,,~~~~,,,,,,,,,,,,,',
-    '~~~~~~~~~~~~,,,,#=="""""""""""""S"""oooooo""""t=====C__a_a__C==================G,,,++++,,,,,,,,,,,,,',
-    '~~~~~~~~~~~~,,,,#==""""l""""""""""""b"b""b"""""=====C_______C==================G,,,++++,,,,,,,,,,,,,',
-    '~~~~~~~~~~~~,,,,#===================================C_______C==================G,,,++++,,,,,,,,,,,,,',
-    '~~~~~~~~~~~~,,,,#=="""""""=""""l""""""""""l""""=====CCCCDCCCCl==========l=====TTT,,~~~~,,,,,,,,,U,,,',
-    '~~~~~~~~~~~~,,,,#=="""""""=""***""""""****""t"l===============================TTT,,~~~~,x,,,,,,,,,,,',
-    '~~~~~~~~~~~~,,,,#=="t"""""=""""""t"""""""""""""===============================TTT,,~~~~,,,,,,,,,,,,,',
-    '~~~~~~~~~~~~,,,,#==""hhhhh"hhhhh""~~~~~~~~~~~~~+++~~~~~~~~~~~~~""========="""==#,,,~~~~,,,,,___,,,,,',
-    '~~~~~~~~~~~~,,,TTT=""h"""""""""h""~~~~~~~~~~~~~+++~~~~~~~~~~~~~t"CCCCCCCCC"""==#,,,~~~~~,,,,_O_,,,,~',
-    '~~~~~~~~~~~~,,,TTT=t"h"hhhhhhh"h""~~===p=================p===~~""C__kkk__C"""==#,,,~~~~~,^,,___,,,,~',
-    '~~~~~~~~~~~~,,,TTT=""h"h"""""""h"t~~=s========l===l========s=~~""C_______C"""==#,,,~~~~~,,,,,,,,,,,~',
-    '~~~~~~~~~~~~,,,,#==""h"h"hhhhhhh""~~=====CCCCCCCCCCCCCCC=====~~""C_______C"""==#,,,~~~~~~,,,,,,,,,~~',
-    '~~~~~~~~~~~~,,,,#==""h"h"h*""""h*"~~="""=C_x_________x_C="""=~~""C_b___b_C"S"==#,,,~~~~~~~n,,,,,U~~~',
-    '~~~~~~~~~~~~,,,,#=="*h"h"hhhhh"h""~~="t"=C______Y______C="t"=~~""C_______C"""==#,,,~~~~~~~,,,,,,,~~~',
-    '~~~~~~~~~~~~,,,,#=="*h"h"""""h"h""~~="""=C_____________C="""=~~""C_b___b_C"""==#,,,~~~~~~~~~,,,~~~~~',
+    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~+++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~===~~~~~',
+    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~+++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~===P===~~~',
+    '~~~~~~~~~~~~~~~~,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,~~~~~~~~~~~l=====l~~~',
+    '~~~~~~~~~~~~~~,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,~~~~~~~~=P=====P=~~',
+    '~~~~~~~~~~~~~,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,~~~~~~*=========*~',
+    '~~~~~~~~~~~~~,,TTT,,,,,,,,,,,,,TTT,,,,,,,,,,TTT,,,TTT,,,,,,,,,,TTT,,,,,,,,,,,,TTT,~~~~~~*=========*~',
+    '~~~~~~~~~~~~,,,TTT#############TTT##########TTT#G#TTT##########TTT############TTT,,~~~~~l=========^~',
+    '~~~~~~~~~~~~,,,TTT=============TTT==========TTT===TTT==========TTT============TTT,,~~~~""n""===""n""',
+    '~~~~~~~~~~~~,,,,#=============================================================TTT,,~~~~"*"""==="""*"',
+    '~~~~~~~~~~~~,,,,#==""""t"****"""""t"oooooo""t"l===l=CCCCCCCCC"t"""p"""t"""p"t=TTT,,~~~~"x"t"==="t"""',
+    '~~~~~~~~~~~~,,,,#=="t"""""""""t"""""oooooo"""""=====Cq_____qC""""""""""""""""=TTT,,~~~~"""l"==="l"""',
+    '~~~~~~~~~~~~,,,,#=="""""""""""""S"""oooooo""""t=====C__a_a__C==================G===++++========""*""',
+    '~~~~~~~~~~~~,,,,#==""""l""""""""""""b"b""b"""""=====C_______C==================G===++++========"""p"',
+    '~~~~~~~~~~~~,,,,#===================================C_______C==================G===++++========""*""',
+    '~~~~~~~~~~~~,,,,#=="""""""=""""l""""""""""l""""=====CCCCDCCCCl""""""""""l""""=TTT,,~~~~"""""====U"""',
+    '~~~~~~~~~~~~,,,,#=="""""""=""***""""""****""t"l==============""""t""""t""""""=TTT,,~~~~"x"t"===""t""',
+    '~~~~~~~~~~~~,,,,#=="t"""""=""""""t"""""""""""""=============="*"""""""""""*""=TTT,,~~~~""*"=====""*"',
+    '~~~~~~~~~~~~,,,,#==""hhhhh"hhhhh""~~~~~~~~~~~~~+++~~~~~~~~~~~~~""""""""""""""==#,,,~~~~"l""=___=""l"',
+    '~~~~~~~~~~~~,,,TTT=""h"""""""""h""~~~~~~~~~~~~~+++~~~~~~~~~~~~~t"CCCCCCCCC"""==#,,,~~~~~*"b=_O_=b"*~',
+    '~~~~~~~~~~~~,,,TTT=t"h"hhhhhhh"h""~~===p=================p===~~""C__kkk__C"""==#,,,~~~~~"^"=___="""~',
+    '~~~~~~~~~~~~,,,TTT=""h"h"""""""h"t~~=s========l===l========s=~~""C_______C"""==#,,,~~~~~"*"====="*"~',
+    '~~~~~~~~~~~~,,,,#==""h"h"hhhhhhh""~~=====CCCCCCCCCCCCCCC=====~~""C_______C"""==#,,,~~~~~~""""===""~~',
+    '~~~~~~~~~~~~,,,,#==""h"h"h*""""h*"~~="""=C_x_________x_C="""=~~""C_b___b_C"S"==#,,,~~~~~~~n"====U~~~',
+    '~~~~~~~~~~~~,,,,#=="*h"h"hhhhh"h""~~="t"=C______Y______C="t"=~~""C_______C"""==#,,,~~~~~~~""*"*""~~~',
+    '~~~~~~~~~~~~,,,,#=="*h"h"""""h"h""~~="""=C_____________C="""=~~""C_b___b_C"""==#,,,~~~~~~~~~"l"~~~~~',
     '~~~~~~~~~~~~,,,,#==""h"hhhhhhh"h"t~~="*"=C__C___R___C__C="*"=~~""C_______C"""==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#==""h"""""""""h""~~="""=C______R______C="""=~~""C_______C""t==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#==t"hhhhhhhhhhh""~~="t"=C______R______C="t"=~~""CCCCDCCCC"""==#,,,~~~~~~~~~~~~~~~~~',
@@ -11332,8 +11339,8 @@ HOOKS.selfTest.push((check, F, h) => {
     '~~~~~~~~~~~~,,,,#=="n"""""w""t"""""=H___H=H__H======C_______C===H____H==Ha__H==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,G==""""""""""""""""=Ha__H=H_qHp===p=C_______C===H____H==H___H==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#=="""=========""""=HHHHH=HHHH======Cq_____qC===HHHHHH==HHHHH==#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,,#=="""U"""""""""n""=================CCCCCCCCC==================#,,,~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~,,,,#==""""""""""""""""========TTT=====TTT=========================#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,,#=="""U"""""""""n""""""""*""""======CCCCCCCCC""*"""""*"""""""==#,,,~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~,,,,#=="""""""""""""""""""t""""TTT=====TTT"""t""""""""t"""""""t""==#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,,#==========================TTT=====TTT=========================#,,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,TTT===========TTT===========TTT=====TTT===============TTT=TTT==TTT,,~~~~~~~~~~~~~~~~~',
     '~~~~~~~~~~~~,,,TTT###########TTT###########TTT#GGG#TTT###############TTTGTTT##TTT,,~~~~~~~~~~~~~~~~~',
@@ -11503,6 +11510,26 @@ HOOKS.selfTest.push((check, F, h) => {
     { name: 'The Underside', sub: 'Everything the city drops', x0: 0, y0: 66, x1: 36, y1: 79 },
     { name: 'The Spire Run', sub: 'Six flags over the drop', x0: 76, y0: 66, x1: 99, y1: 79 },
   ];
+  // the streets: every '=' (and every gate) cell inside one of a street's rects is that street; nothing else is
+  const ROADS = [
+    { id: 'kingsway', name: 'The Kingsway', rects: [[47, 12, 49, 21], [47, 51, 49, 60], [47, 62, 49, 66]] },
+    { id: 'ring', name: 'The Ring Road', rects: [[17, 12, 78, 13], [17, 59, 78, 60], [17, 12, 18, 60], [77, 12, 78, 60]] },
+    { id: 'forge', name: 'Forge Street', rects: [[19, 51, 76, 52]] },
+    { id: 'garden', name: 'The Garden Walk', rects: [[19, 18, 46, 18], [26, 19, 26, 21]] },
+    { id: 'crown', name: 'Crown Street', rects: [[61, 16, 78, 18], [80, 16, 82, 18]] },
+    { id: 'guild', name: 'Guild Row', rects: [[50, 20, 60, 21]] },
+    { id: 'span', name: 'Span Street', rects: [[19, 35, 33, 37]] },
+    { id: 'market', name: 'Market Way', rects: [[63, 35, 76, 37]] },
+    { id: 'inn', name: 'Inn Lane', rects: [[19, 45, 33, 46]] },
+    { id: 'crownwalk', name: 'The Crown Walk', rects: [[87, 16, 94, 18], [92, 12, 94, 21], [91, 21, 95, 25], [92, 19, 95, 19], [92, 26, 95, 27]] },
+    { id: 'rookery', name: 'The Rookery Yard', rects: [[89, 5, 97, 11]] },
+  ];
+  const ROAD_AT = new Int8Array(W * H).fill(-1);
+  // a small prop standing in a street (a perch in the Rookery Yard, a lamp) stands on the street's setts; where two
+  // streets cross, the one listed first owns the crossing (the Kingsway runs unbroken from gate to gate)
+  ROADS.forEach((r, i) => { for (const [x0, y0, x1, y1] of r.rects) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const c = ROWS[y][x]; if (ROAD_AT[y * W + x] < 0 && (c === '=' || c === 'G' || ('lPnxU'.includes(c) && groundAt(x, y) === '='))) ROAD_AT[y * W + x] = i; } });
+  // the street a cell is on, or null
+  const roadAt = (x, y) => (x >= 0 && y >= 0 && x < W && y < H && ROAD_AT[y * W + x] >= 0) ? ROADS[ROAD_AT[y * W + x]] : null;
   const wardAt = (x, y) => WARDS.find(w => x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1) || null;
   // people who walk the city, on routes every tile of which is walkable, kept 2+ tiles off every standing person.
   // Positions come from the wall clock, so every knight online sees them in the same place without a message.
@@ -11521,8 +11548,8 @@ HOOKS.selfTest.push((check, F, h) => {
 
   window.AERIE_PLAN = {
     W, H, ROWS, GLYPHS, KINDS, SPOTS, BUILDINGS, GATES, WARDS, DRAFTS, ROYAL, RUN_OFFSET: [27, 47],
-    STATUE_NAMES, SPIRE_NAMES, BRIDGES, WALKERS, FLIERS,
-    at, groundAt, scan, inBuilding, doorOf, wardAt,
+    STATUE_NAMES, SPIRE_NAMES, BRIDGES, WALKERS, FLIERS, ROADS,
+    at, groundAt, scan, inBuilding, doorOf, wardAt, roadAt,
   };
 }
 
@@ -30558,6 +30585,8 @@ HOOKS.selfTest.push((check, F, h) => {
   // 12. drawing
   // =========================================================================
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
+  // how many perch-towers and nest-houses were drawn (the self-test reads it through AERIE.ART)
+  const ART = { perchTowers: 0, nests: 0 };
   const underRegion = (tx, ty) => underCell(tx, ty);
   function deck(g, tx, ty, low) {
     const x = tx * TILE, y = ty * TILE, r = hash(tx, ty);
@@ -30576,15 +30605,34 @@ HOOKS.selfTest.push((check, F, h) => {
     g.fillStyle = '#cbd6e6'; g.fillRect(x, y + 24, TILE, 5); g.fillRect(x, y + 34, TILE, 3);
     g.fillStyle = '#e9eef5'; g.fillRect(x + 2, y + 24, TILE - 4, 2);
   }
+  // the knight behind something tall is drawn through it (half see-through), so he never vanishes
+  function behind(x0, y0, x1, y1, footY) {
+    if (player.dead || player.y + player.r >= footY) return 1;
+    return (player.x + 14 > x0 && player.x - 14 < x1 && player.y + 14 > y0 && player.y - 34 < y1) ? 0.45 : 1;
+  }
+  // a nest-house: a woven round house up on four posts, with a little blue roof and a gold finial
   function drawNest(g, tx, ty) {
-    const cx = tc(tx), y = ty * TILE;
-    g.fillStyle = 'rgba(60,90,140,0.25)'; g.beginPath(); g.ellipse(cx, y + 42, 20, 7, 0, 0, 7); g.fill();
-    g.fillStyle = '#b79a63'; g.beginPath(); g.ellipse(cx, y + 30, 21, 15, 0, 0, 7); g.fill();
-    g.strokeStyle = '#8a7040'; g.lineWidth = 1.4;
-    for (let k = 0; k < 6; k++) { const a = k * 1.05; g.beginPath(); g.ellipse(cx, y + 30, 21 - k * 1.5, 15 - k, a * 0.2, 0, 7); g.stroke(); }
-    g.fillStyle = '#d8c69a'; g.beginPath(); g.ellipse(cx, y + 18, 17, 10, 0, 0, 7); g.fill();
-    g.fillStyle = '#2a2f3a'; g.beginPath(); g.ellipse(cx, y + 22, 7, 5, 0, 0, 7); g.fill();   // the doorway
-    g.fillStyle = '#f0e4c4'; g.beginPath(); g.arc(cx + 10, y + 14, 3, 0, 7); g.fill();        // a feather tucked in the weave
+    const cx = tc(tx), y = ty * TILE, a = behind(cx - 26, y - 44, cx + 26, y + 40, y + 44);
+    ART.nests++;
+    g.save(); g.globalAlpha = a;
+    g.fillStyle = 'rgba(60,90,140,0.25)'; g.beginPath(); g.ellipse(cx, y + 44, 21, 6, 0, 0, 7); g.fill();
+    // the posts and the ladder
+    g.fillStyle = '#7a5a36'; for (const px of [-15, -6, 6, 15]) g.fillRect(cx + px - 2, y + 14, 4, 30);
+    g.fillStyle = '#8a6a44'; g.fillRect(cx - 17, y + 30, 34, 3);
+    g.strokeStyle = '#9a7a50'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx + 3, y + 44); g.lineTo(cx + 5, y + 16); g.moveTo(cx + 11, y + 44); g.lineTo(cx + 12, y + 16); for (let k = 0; k < 4; k++) { g.moveTo(cx + 3.5, y + 40 - k * 7); g.lineTo(cx + 11.4, y + 40 - k * 7); } g.stroke();
+    // the platform
+    g.fillStyle = '#b08a55'; g.fillRect(cx - 20, y + 10, 40, 6); g.fillStyle = '#c9a36a'; g.fillRect(cx - 20, y + 10, 40, 2);
+    // the woven house
+    g.fillStyle = '#b79a63'; g.beginPath(); g.ellipse(cx, y + 2, 18, 12, 0, 0, 7); g.fill();
+    g.strokeStyle = '#8a7040'; g.lineWidth = 1.2;
+    for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(cx, y + 2, 18 - k * 1.6, 12 - k * 1.2, 0, 0.1, Math.PI - 0.1); g.stroke(); }
+    g.fillStyle = '#2a2f3a'; g.beginPath(); g.ellipse(cx - 2, y + 6, 6, 5, 0, Math.PI, 0); g.fillRect(cx - 8, y + 6, 12, 4); g.fill();   // the doorway
+    g.fillStyle = '#f0e4c4'; g.beginPath(); g.arc(cx + 11, y + 1, 2.6, 0, 7); g.fill();        // a feather tucked in the weave
+    // the little roof
+    g.fillStyle = '#3b5ba8'; g.beginPath(); g.moveTo(cx - 23, y - 6); g.lineTo(cx, y - 30); g.lineTo(cx + 23, y - 6); g.closePath(); g.fill();
+    g.fillStyle = '#5b8fd6'; g.beginPath(); g.moveTo(cx - 23, y - 6); g.lineTo(cx, y - 30); g.lineTo(cx - 2, y - 6); g.closePath(); g.fill();
+    g.fillStyle = '#e8c25a'; g.fillRect(cx - 23, y - 7, 46, 2.5); g.beginPath(); g.arc(cx, y - 32, 3, 0, 7); g.fill();
+    g.restore();
   }
   function drawBrazier(g, tx, ty) {
     const cx = tc(tx), y = ty * TILE, f = Math.sin(time * 5 + tx) * 2;
@@ -30627,14 +30675,31 @@ HOOKS.selfTest.push((check, F, h) => {
     g.fillStyle = '#9fd8ff'; g.beginPath(); g.arc(x + 16, y + 24, 3, 0, 7); g.fill();
     g.fillStyle = '#f0e4c4'; g.beginPath(); g.arc(x + 30, y + 24, 3, 0, 7); g.fill();
   }
+  // a perch-tower: a slender white stone tower banded in gold, the perch bar and the fish plate at the top, and a
+  // pennant flying from a pole above it (a skyhawk comes down to the plate when you carry a fish)
   function drawPerch(g, tx, ty) {
-    const cx = tc(tx), y = ty * TILE;
-    g.fillStyle = 'rgba(60,90,140,0.22)'; g.beginPath(); g.ellipse(cx, y + 44, 11, 4, 0, 0, 7); g.fill();
-    g.fillStyle = '#8a6a3a'; g.fillRect(cx - 3, y + 14, 6, 30);
-    g.fillStyle = '#c9a36a'; g.fillRect(cx - 15, y + 10, 30, 5);
+    const cx = tc(tx), y = ty * TILE, top = y - 58, a = behind(cx - 22, top - 44, cx + 22, y + 40, y + 44);
+    ART.perchTowers++;
+    g.save(); g.globalAlpha = a;
+    g.fillStyle = 'rgba(60,90,140,0.25)'; g.beginPath(); g.ellipse(cx + 3, y + 44, 16, 5, 0, 0, 7); g.fill();
+    // the plinth and the shaft
+    g.fillStyle = '#dcd4c2'; g.fillRect(cx - 13, y + 32, 26, 12); g.fillStyle = '#f4f0e7'; g.fillRect(cx - 13, y + 30, 26, 4); g.fillStyle = '#e8c25a'; g.fillRect(cx - 13, y + 30, 26, 1.5);
+    const sh = g.createLinearGradient(cx - 8, 0, cx + 8, 0); sh.addColorStop(0, '#d9d2c4'); sh.addColorStop(0.45, '#fbf8f2'); sh.addColorStop(1, '#cfc7b6');
+    g.fillStyle = sh; g.fillRect(cx - 8, top + 8, 16, y + 30 - top - 8);
+    g.fillStyle = '#e8c25a'; for (const by of [y + 12, y - 16, top + 10]) g.fillRect(cx - 9, by, 18, 3);
+    g.fillStyle = '#5b8fd6'; g.fillRect(cx - 3, y - 2, 6, 9); g.fillStyle = '#2f4f8f'; g.fillRect(cx - 2, y, 4, 6);   // a slit window
+    // the top: a gold-edged platform, the wooden perch bar across it, the plate
+    g.fillStyle = '#f4f0e7'; g.fillRect(cx - 14, top, 28, 8); g.fillStyle = '#e8c25a'; g.fillRect(cx - 14, top + 7, 28, 2);
+    g.fillStyle = '#8a6a3a'; g.fillRect(cx - 18, top - 4, 36, 4);
     const hasFish = FISH() >= 0;
-    g.fillStyle = hasFish ? '#9fb7c9' : 'rgba(255,255,255,0.25)'; g.beginPath(); g.ellipse(cx, y + 6, 7, 3.5, 0, 0, 7); g.fill();
-    if (!hasFish) { g.strokeStyle = 'rgba(240,228,196,0.6)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - 9, y + 6); g.lineTo(cx + 9, y + 6); g.stroke(); }
+    g.fillStyle = hasFish ? '#9fb7c9' : 'rgba(255,255,255,0.5)'; g.beginPath(); g.ellipse(cx - 8, top - 6, 6, 3, 0, 0, 7); g.fill();
+    // the pole and the pennant
+    const px = cx + 9, pole = top - 40, sw = Math.sin(time * 2.4 + tx) * 3;
+    g.fillStyle = '#8e9bb0'; g.fillRect(px - 1, pole, 2.5, 40);
+    g.fillStyle = '#e8c25a'; g.beginPath(); g.arc(px, pole - 1, 2.5, 0, 7); g.fill();
+    g.fillStyle = '#3b5ba8'; g.beginPath(); g.moveTo(px + 1, pole + 2); g.quadraticCurveTo(px + 14, pole + 4 + sw, px + 26, pole + 8 + sw); g.lineTo(px + 1, pole + 15); g.closePath(); g.fill();
+    g.fillStyle = '#f5c542'; g.beginPath(); g.moveTo(px + 1, pole + 6); g.quadraticCurveTo(px + 10, pole + 7 + sw * 0.7, px + 18, pole + 8 + sw); g.lineTo(px + 1, pole + 10); g.closePath(); g.fill();
+    g.restore();
   }
   function drawSong(g, tx, ty) {
     const cx = tc(tx), y = ty * TILE, q = Q(), lit = q.songstone ? 1 : 0.35;
@@ -30785,7 +30850,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // 14. handle
   // =========================================================================
   window.AERIE = {
-    TILES: { UNDER, RAIL, NEST, BRAZIER, STATUE, UPDRAFT, PERCH, SONG, SNAG, SPIRE, STALL, FLAG },
+    TILES: { UNDER, RAIL, NEST, BRAZIER, STATUE, UPDRAFT, PERCH, SONG, SNAG, SPIRE, STALL, FLAG }, ART, drawPerch, drawNest,
     W: NW, H: NH, SPAN, CROWN, CATCH, ENTRY, FOLK, DRAFTS, RUN_BASE, RUN_OFFSET, RUN_MARKS, RUN_PLATES, RUN_GAPS, RUN_LOGS, RUN_NETS, PERCHES, SNAGS, SONG_T, STATUES, NESTS, STALLS, SPIRES, BRAZIERS, RAILS, ORGAN,
     SALVAGE, SING, FLETCH, RUN_LV, RUN_XP, RUN_PURSE, RUN_EVERY, CLOAK_LAPS, GODLY_LINE,
     Q, talk: talkFolk, inFront: folkInFront, grew: () => GREW, regrow: REGROW,
@@ -32460,6 +32525,12 @@ HOOKS.selfTest.push((check, F, h) => {
 // bridges, the Queen's Garden with a hedge maze and the Mirror Pond, and lamps, banners, planters, awnings and bunting.
 // People live there, and the Queen has one small story: Lark's First Flight.
 //
+// STREETS (review round 1): the paving is two things now. The eleven named streets of PLAN.ROADS (the Kingsway from the
+// Great Gate to the Flight Gate, the Ring Road inside the wall, Forge Street, the Garden Walk, Crown Street, Guild Row,
+// Span Street, Market Way, Inn Lane, and on the Crown the Crown Walk and the Rookery Yard) are grey-blue setts with a
+// white kerb and a gold gutter on every edge; the paving between them is pale flagstones. The Crown, once bare cloud,
+// is a garden with a low white-and-gold wall round its edge (K3b, K3c).
+//
 // src/36-aerieplan.js is the plan (100 x 80 characters). 36-skycity sizes the instance from it and lays the sky;
 // this file paints every other cell of it once, at load, with no random numbers, so every knight online builds
 // exactly the same city. 88-aerie keeps the Rookery, the Songstone, the Catch, the Spire Run and the six updrafts,
@@ -32729,7 +32800,7 @@ HOOKS.selfTest.push((check, F, h) => {
       giveOrDrop('coins', 250, player.x, player.y);
       say('I saw it from the top of the keep. A girl who would not fly and a knight who cannot, standing at the Long Rail together. And then she flew.', who);
       say('You gave my daughter the sky, and you did it without wings. Aerie will not forget it.', who);
-      say('She gave you her first feather. Keep it. The gold updraft stones know it now. Stand on one and Lark will carry you anywhere in the city.', who);
+      say('She gave you her first feather. Keep it. The gold updraft stones know it now. Walk up to one and use it, and Lark will carry you anywhere in the city.', who);
       levelBanner = { text: 'LARK FLIES', sub: "Lark's First Flight", t: 3.5 }; sfx('quest');
       burst(player.x, player.y, '#f5c542', 40, 200); burst(player.x, player.y - 20, '#fff6d8', 24, 140); save();
       return true;
@@ -32858,7 +32929,7 @@ HOOKS.selfTest.push((check, F, h) => {
     levelBanner = { text: 'FIRST FEATHER', sub: 'Lark flew', t: 3.5 }; sfx('quest');
     if (inside()) burst(LARK.px, LARK.py, '#fffaf0', 30, 160);
     say('It caught me. It really caught me. The wind was there the whole time.', 'Lark');
-    say('Here. This is my first feather. You get one when you fly for the first time, and you give it to someone who helped. Stand on a gold updraft stone with it, and I will come.', 'Lark');
+    say('Here. This is my first feather. You get one when you fly for the first time, and you give it to someone who helped. Walk up to a gold updraft stone and use it, and I will come.', 'Lark');
     say('Now go and tell my mother. No, wait. I will tell her. I will fly and tell her!', 'Lark');
     // she flies off, and from now on she stands on the plaza
     if (inside()) { LARK.mode = 'flyoff'; LARK.t0 = time; LARK.from = { x: LARK.px, y: LARK.py }; }
@@ -32890,7 +32961,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // ---------- the quest log, the map, the new game ----------
   HOOKS.questText.lark = () => {
     const s = Q().stage;
-    if (s === 'done') return "Done. Lark's first feather is on your keyring: stand on a gold updraft stone in Aerie and Lark will fly you anywhere in the city.";
+    if (s === 'done') return "Done. Lark's first feather is on your keyring. Walk up to a gold updraft stone in Aerie and use it (E, or tap it), and Lark will fly you anywhere in the city.";
     return {
       0: 'Not started. Queen Seraphel, in her keep in Aerie, will ask for help once the Song of Above is sung.',
       1: "Queen Seraphel's daughter Lark is ten today and should fly from the Long Rail, but she is hiding. Ask Captain Aldric at the Great Gate whether she went out.",
@@ -33017,6 +33088,7 @@ HOOKS.selfTest.push((check, F, h) => {
         if (t === FOUNTAIN) { const f = fountainAt(p.tx, p.ty); if (f) return f.name.replace(/^The /, ''); }
         if (t === SPIRE) { const s = spireAt(p.tx, p.ty); if (s) return s.name.replace(/^The /, ''); }
         if (t === GATE) { const g = gateAt(p.tx, p.ty); if (g) return g.name.replace(/^The /, ''); }
+        if (t === PAVE) { const r = PLAN.roadAt(p.tx, p.ty); if (r) return r.name.replace(/^The /, ''); }
         const plain = { [PAVE]: 'Paving', [BRIDGE]: 'Bridge', [LAWN]: 'Lawn', [BLOOM]: 'Flower bed', [WALL]: 'City wall', [TOWER]: 'Wall tower', [POND]: 'Mirror Pond' }[t];
         if (plain) return plain;
         if (t === T.UPDRAFT && royalAt(p.tx, p.ty) >= 0) return 'Royal updraft';
@@ -33196,7 +33268,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // =========================================================================
   const SS = 2;                                   // patterns and sprites are drawn at 2x, like the core's textures
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const STATS = { frames: 0, curtain: 0, drawn: {}, gates: 0, fountains: 0, awnings: 0, banners: 0, pennants: 0, spires: 0, towers: 0, items: 0, chunks: 0, chunksPainted: 0 };
+  const STATS = { frames: 0, curtain: 0, drawn: {}, kerbs: 0, parapets: 0, gates: 0, fountains: 0, awnings: 0, banners: 0, pennants: 0, spires: 0, towers: 0, items: 0, chunks: 0, chunksPainted: 0 };
   const CACHE = {};
   function sprite(key, w, h, ax, ay, fn) {
     let s = CACHE[key];
@@ -33232,11 +33304,13 @@ HOOKS.selfTest.push((check, F, h) => {
   }
 
   // ---------- the ground: what each cell is painted with ----------
-  const G_NONE = 0, G_PAVE = 1, G_PLAZA = 2, G_LAWN = 3, G_BLOOM = 4, G_MARBLE = 5, G_CWALL = 6, G_HWALL = 7, G_RUG = 8, G_DOOR = 9, G_BRIDGE = 10, G_CLOUD = 11, G_UNDER = 12;
+  // G_ROAD is a street (PLAN.ROADS: grey-blue setts, a white kerb and a gold gutter on every edge); G_PAVE is the paving
+  // between the streets (pavements, squares, yards: big pale flagstones), so a street never runs into its surroundings
+  const G_NONE = 0, G_PAVE = 1, G_PLAZA = 2, G_LAWN = 3, G_BLOOM = 4, G_MARBLE = 5, G_CWALL = 6, G_HWALL = 7, G_RUG = 8, G_DOOR = 9, G_BRIDGE = 10, G_CLOUD = 11, G_UNDER = 12, G_ROAD = 13;
   const PLAZA = { x0: 36, y0: 24, x1: 60, y1: 48 };
   const inPlaza = (x, y) => x >= PLAZA.x0 && x <= PLAZA.x1 && y >= PLAZA.y0 && y <= PLAZA.y1;
   const GROUND = new Uint8Array(W * H), VAR = new Uint8Array(W * H), BRIDGE_AT = new Int8Array(W * H).fill(-1);
-  const codeFor = (c, x, y) => (c === '=' || c === 'G') ? (inPlaza(x, y) ? G_PLAZA : G_PAVE) : c === '"' ? G_LAWN : c === '*' ? G_BLOOM
+  const codeFor = (c, x, y) => (c === '=' || c === 'G') ? (PLAN.roadAt(x, y) ? G_ROAD : inPlaza(x, y) ? G_PLAZA : G_PAVE) : c === '"' ? G_LAWN : c === '*' ? G_BLOOM
     : (c === '_' || c === 'a' || c === 'q' || c === 'c') ? G_MARBLE : c === 'C' ? G_CWALL : c === 'H' ? G_HWALL : c === 'R' ? G_RUG : c === 'D' ? G_DOOR
     : c === '+' ? G_BRIDGE : c === ',' ? G_CLOUD : c === 'u' ? G_UNDER : G_NONE;
   const OUR_GROUND = '="*G_aqcCHRD+', OUR_PROPS = '#TSFohtpblYw', THEIR_PROPS = 'sknxr^UPOzfLNg';
@@ -33244,8 +33318,8 @@ HOOKS.selfTest.push((check, F, h) => {
     const c = PLAN.ROWS[y][x], i = y * W + x; let code = G_NONE;
     VAR[i] = Math.floor(hash(x, y) * 3);
     if (OUR_GROUND.includes(c)) code = codeFor(c, x, y);
-    else if (OUR_PROPS.includes(c)) code = codeFor(PLAN.groundAt(x, y), x, y);
-    else if (THEIR_PROPS.includes(c)) { const gc = PLAN.groundAt(x, y); if (gc === '=' || gc === '"' || gc === '_') code = codeFor(gc, x, y); }
+    else if (OUR_PROPS.includes(c)) code = PLAN.roadAt(x, y) ? G_ROAD : codeFor(PLAN.groundAt(x, y), x, y);
+    else if (THEIR_PROPS.includes(c)) { const gc = PLAN.groundAt(x, y); if (gc === '=' || gc === '"' || gc === '_') code = PLAN.roadAt(x, y) ? G_ROAD : codeFor(gc, x, y); }
     GROUND[i] = code;
   }
   PLAN.BRIDGES.forEach((b, bi) => { for (const [x0, y0, x1, y1] of b.rects) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) BRIDGE_AT[y * W + x] = bi; });
@@ -33259,19 +33333,34 @@ HOOKS.selfTest.push((check, F, h) => {
   for (const b of AER_BUILDINGS) { const [dx, dy] = PLAN.doorOf(b), up = b.doorTop !== undefined; STEPS[(dx) + ',' + (up ? dy - 1 : dy + 1)] = up; }
 
   // ---------- the patterns (48 x 48, cached at 2x) ----------
+  // the paving between the streets: big square flagstones, cool white with blue-grey joints (the walls are cream brick)
   function patPave(g, v) {
     const r = mulberry32(0x9a5e + v * 131);
-    g.fillStyle = '#b9ab90'; g.fillRect(0, 0, 48, 48);
-    for (let row = 0; row < 3; row++) {
-      const off = ((row + v) % 2) ? 12 : 0, y = row * 16;
-      for (let c = -1; c < 3; c++) {
-        const x = c * 24 + off;
-        g.fillStyle = ['#e4d9c3', '#ddd1b9', '#e8dfcb', '#d8cbb1', '#e1d6bf'][Math.floor(r() * 5)]; g.fillRect(x + 1, y + 1, 22, 14);
-        g.fillStyle = 'rgba(255,250,235,0.55)'; g.fillRect(x + 1, y + 1, 22, 1.4);
-        g.fillStyle = 'rgba(110,95,70,0.2)'; g.fillRect(x + 1, y + 13.4, 22, 1.6);
+    g.fillStyle = '#b7c0ce'; g.fillRect(0, 0, 48, 48);
+    const cols = ['#eef0f4', '#e6eaf0', '#f2f3f5', '#e3e7ee'];
+    for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
+      const x = i * 24, y = j * 24;
+      g.fillStyle = cols[Math.floor(r() * cols.length)]; g.fillRect(x + 1, y + 1, 22, 22);
+      g.fillStyle = 'rgba(255,255,255,0.7)'; g.fillRect(x + 1, y + 1, 22, 1.2); g.fillRect(x + 1, y + 1, 1.2, 22);
+      g.fillStyle = 'rgba(90,105,130,0.12)'; g.fillRect(x + 1, y + 21.6, 22, 1.4);
+    }
+    g.strokeStyle = 'rgba(140,155,180,0.18)'; g.lineWidth = 0.7; g.beginPath(); g.moveTo(4 + v * 9, 30); g.quadraticCurveTo(14, 26 + v * 3, 21, 36); g.stroke();
+    for (let i = 0; i < 6; i++) { g.fillStyle = `rgba(120,135,160,${(0.08 + r() * 0.1).toFixed(3)})`; g.fillRect(r() * 46, r() * 46, 1.2, 1.2); }
+  }
+  // a street: grey-blue setts, small stones in staggered courses, darker than anything round them
+  function patRoad(g, v) {
+    const r = mulberry32(0x40ad + v * 211);
+    g.fillStyle = '#566174'; g.fillRect(0, 0, 48, 48);
+    const cols = ['#8793a8', '#909cb0', '#7f8ca2', '#98a3b6', '#8a96ab'];
+    for (let row = 0; row < 6; row++) {
+      const off = ((row + v) % 2) ? 6 : 0, y = row * 8;
+      for (let c = -1; c < 5; c++) {
+        const x = c * 12 + off;
+        g.fillStyle = cols[Math.floor(r() * cols.length)]; g.fillRect(x + 1, y + 1, 10.4, 6.4);
+        g.fillStyle = 'rgba(225,232,245,0.35)'; g.fillRect(x + 1, y + 1, 10.4, 1.2);
+        g.fillStyle = 'rgba(30,38,55,0.22)'; g.fillRect(x + 1, y + 6.2, 10.4, 1.2);
       }
     }
-    for (let i = 0; i < 8; i++) { g.fillStyle = `rgba(130,115,90,${(0.1 + r() * 0.12).toFixed(3)})`; g.fillRect(r() * 46, r() * 46, 1.3, 1.3); }
   }
   function patPlaza(g, v) {
     const r = mulberry32(0x71a2 + v * 57);
@@ -33349,6 +33438,7 @@ HOOKS.selfTest.push((check, F, h) => {
     const v = VAR[i];
     switch (code) {
       case G_PAVE: return pat('pave' + v, g => patPave(g, v));
+      case G_ROAD: return pat('road' + v, g => patRoad(g, v));
       case G_PLAZA: return pat('plaza' + v, g => patPlaza(g, v));
       case G_LAWN: return pat('lawn' + v, g => patLawn(g, v));
       case G_BLOOM: return pat('bloom' + v, g => patBloom(g, v));
@@ -33434,9 +33524,37 @@ HOOKS.selfTest.push((check, F, h) => {
         // a stone lip where plain paving ends over open sky
         if (code === G_PAVE && isSky(tx, ty + 1)) { g.fillStyle = '#d6cebe'; g.fillRect(x, y + 42, 48, 6); g.fillStyle = '#e8c25a'; g.fillRect(x, y + 41, 48, 1.5); }
       }
+      if (code === G_ROAD) drawRoadEdges(g, tx, ty, x, y);
+      if (CROWN_ISLE.has(tx, ty)) drawParapet(g, tx, ty, x, y);
       if (code === G_BRIDGE) drawBridgeRails(g, tx, ty, x, y);
       if (code === G_DOOR) { drawDoorProp(g, tx, ty, false); g.strokeStyle = '#e8c25a'; g.lineWidth = 2; g.strokeRect(x + 7, y + 1, 34, 46); }
       const st = STEPS[tx + ',' + ty]; if (st !== undefined) drawDoorstep(g, tx, ty, st, false);
+    }
+  }
+  // a street's edge, on every side where the next cell is not street (nor a gate or a bridge the street runs on to):
+  // a white stone kerb on the outside and a gold gutter just inside it
+  const roadOn = (x, y) => paintsGround(x, y) && (GROUND[y * W + x] === G_ROAD || glyph(x, y) === '+' || glyph(x, y) === 'G');
+  function drawRoadEdges(g, tx, ty, x, y) {
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      if (roadOn(tx + dx, ty + dy)) continue;
+      STATS.kerbs++;
+      if (dy) { const ky = dy < 0 ? y : y + 43; g.fillStyle = '#f1ede4'; g.fillRect(x, ky, 48, 5); g.fillStyle = 'rgba(40,50,70,0.3)'; g.fillRect(x, dy < 0 ? ky + 5 : ky - 1, 48, 1); g.fillStyle = '#d9b44a'; g.fillRect(x, dy < 0 ? ky + 6 : ky - 3.5, 48, 2.5); }
+      else { const kx = dx < 0 ? x : x + 43; g.fillStyle = '#f1ede4'; g.fillRect(kx, y, 5, 48); g.fillStyle = 'rgba(40,50,70,0.3)'; g.fillRect(dx < 0 ? kx + 5 : kx - 1, y, 1, 48); g.fillStyle = '#d9b44a'; g.fillRect(dx < 0 ? kx + 6 : kx - 3.5, y, 2.5, 48); }
+    }
+  }
+  // the Crown: a low wall of white stone with a gold coping round the island's edge (the bridge end stays open)
+  const CROWN_ISLE = { x0: 87, y0: 5, x1: 99, y1: 29, has(x, y) { return x >= this.x0 && x <= this.x1 && y >= this.y0 && y <= this.y1; } };
+  function drawParapet(g, tx, ty, x, y) {
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      if (!isSky(tx + dx, ty + dy)) continue;
+      STATS.parapets++;
+      if (dy < 0) { g.fillStyle = '#dcd4c2'; g.fillRect(x, y, 48, 9); g.fillStyle = '#f6f2ea'; g.fillRect(x, y, 48, 5); g.fillStyle = '#e8c25a'; g.fillRect(x, y, 48, 2); g.fillStyle = 'rgba(40,60,100,0.22)'; g.fillRect(x, y + 9, 48, 3); }
+      else if (dy > 0) { g.fillStyle = '#f6f2ea'; g.fillRect(x, y + 34, 48, 5); g.fillStyle = '#dcd4c2'; g.fillRect(x, y + 39, 48, 9); g.fillStyle = '#e8c25a'; g.fillRect(x, y + 34, 48, 2); g.fillStyle = 'rgba(150,135,110,0.35)'; for (let k = 0; k < 4; k++) g.fillRect(x + k * 12 + 5, y + 40, 1, 8); }
+      else { const kx = dx < 0 ? x : x + 40; g.fillStyle = '#dcd4c2'; g.fillRect(kx, y, 8, 48); g.fillStyle = '#f6f2ea'; g.fillRect(kx + (dx < 0 ? 0 : 3), y, 5, 48); g.fillStyle = '#e8c25a'; g.fillRect(kx + (dx < 0 ? 0 : 6), y, 2, 48); g.fillStyle = 'rgba(40,60,100,0.2)'; g.fillRect(dx < 0 ? kx + 8 : kx - 3, y, 3, 48); }
+      // a post at each end of the stretch, gold-capped
+      g.fillStyle = '#fbf8f2';
+      if (dy) for (const px of [x + 1, x + 41]) { g.fillRect(px, dy < 0 ? y : y + 32, 6, dy < 0 ? 11 : 16); g.fillStyle = '#e8c25a'; g.fillRect(px, dy < 0 ? y : y + 32, 6, 2); g.fillStyle = '#fbf8f2'; }
+      else for (const py of [y + 1, y + 41]) { g.fillRect(dx < 0 ? x : x + 39, py, 9, 6); g.fillStyle = '#e8c25a'; g.fillRect(dx < 0 ? x : x + 39, py, 9, 2); g.fillStyle = '#fbf8f2'; }
     }
   }
   // ---------- the ground, cached in chunks ----------
@@ -34456,7 +34574,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // =========================================================================
   ITEMS.lark_feather = { name: "Lark's first feather", value: 0, color: '#fffaf0', shape: 'silk', stack: 1 };
   ITEMS.lark_feather.id = 'lark_feather';
-  if (window.KEYRING && KEYRING.register) KEYRING.register('lark_feather', "Lark's first feather. Stand on a gold updraft stone in Aerie and she flies you anywhere in the city.");
+  if (window.KEYRING && KEYRING.register) KEYRING.register('lark_feather', "Lark's first feather. Walk up to a gold updraft stone in Aerie and use it (E, or tap it), and she flies you anywhere in the city.");
   if (window.ICONS && ICONS.set) ICONS.set('lark_feather', (g, size, item) => {
     // a small downy white feather with a curled gold tip, and a sky-blue ribbon tied round the quill
     g.save(); g.rotate(-0.7);
@@ -34495,9 +34613,12 @@ HOOKS.selfTest.push((check, F, h) => {
       'Queen Seraphel (in her keep)', 'Master Halcyon (at the sky forge)', 'Keeper Pell (the Rookery)', 'Quill Windward (the Windward Market)', 'Skyla Fleetwing (the Spire Run)', 'Old Ferris (the Underside)',
       ...who,
       `Sky sentinels (${SP.sentinels.length}), level ${MONSTER_DEFS.sky_sentinel ? MONSTER_DEFS.sky_sentinel.level : 35}: winged guards who only fight back.`,
+      { t: 'STREETS', c: '#8b949e' },
+      'The Kingsway runs from the Great Gate to the Flight Gate. The Ring Road goes all the way round inside the wall.',
+      `${PLAN.ROADS.filter(r => r.id !== 'kingsway' && r.id !== 'ring').map(r => r.name).join(', ')}.`,
       { t: 'GETTING ROUND', c: '#8b949e' },
       'Six updraft stones carry you between the Wind Landing, the Crown, the Underside and the Spire Run.',
-      "Two more stones are edged in gold, at the Wind Landing and on the Royal Plaza. With Lark's first feather, stand at either and she flies you to any of six places in the city.",
+      "Two more stones are edged in gold, at the Wind Landing and on the Royal Plaza. With Lark's first feather, walk up to either and use it (E, or tap it), and she flies you to any of six places in the city.",
       "On foot: the Great Gate from the Wind Landing, the Flight Gate to the Long Rail, the Crown Gate and the Crown Bridge to the Rookery, the Spire Gate and the Runners' Bridge to the Spire Run, the Postern and the Low Stair down to the Underside.",
       { t: 'SHOPS', c: '#8b949e' },
       'The Windward Market (Quill Windward)', 'The Cloud Oven (Tamsin): bread 12, berry pie 40, fish pie 46',
@@ -34509,7 +34630,7 @@ HOOKS.selfTest.push((check, F, h) => {
     WIKI.add('items', { id: 'lark_feather', lines: [
       "Lark's first feather. Every child of Aerie gets one on their first flight, and gives it to someone who helped.",
       "Lark gives it to you on the Long Rail at the end of Lark's First Flight. It lives on your keyring: no pack space, and you cannot lose it.",
-      `Stand at one of the two gold updraft stones (the Wind Landing and the Royal Plaza) and use it: Lark flies you to ${DESTS.map(d => d.name).join(', ')}.`,
+      `Walk up to one of the two gold updraft stones (the Wind Landing and the Royal Plaza) and use it (E, or tap it): Lark flies you to ${DESTS.map(d => d.name).join(', ')}.`,
       'Each knight has their own Lark.' ] });
   }
 
@@ -34594,9 +34715,11 @@ HOOKS.selfTest.push((check, F, h) => {
       for (const d of PLAN.DRAFTS.concat(PLAN.ROYAL)) { if (PLAN.at(d.t[0], d.t[1]) !== 'U') bad.push('draft@' + d.t); if (!WALK.includes(PLAN.at(d.land[0], d.land[1]))) bad.push('land@' + d.land); }
       for (const g of PLAN.GATES) for (const [x, y] of g.cells) if (PLAN.at(x, y) !== 'G') bad.push('gate ' + g.id + '@' + x + ',' + y);
       for (const s of PLAN.SPIRE_NAMES) if (PLAN.at(s.x, s.y) !== 'S') bad.push('spire@' + s.x + ',' + s.y);
-      // the glyph counts the judge's plan-check.js measured on plan-rows.txt (sha1 a0fd9636...)
-      const COUNTS = { '=': 1582, '#': 160, 'T': 189, 'G': 9, '+': 73, '"': 469, '*': 17, 'h': 71, 't': 24, 'o': 18, 'F': 18, 'S': 5, 'l': 26, 'p': 10, 'b': 9, 'w': 1, 'Y': 1, 's': 4,
-        'k': 7, 'n': 7, 'x': 6, 'r': 21, '^': 8, 'U': 8, 'P': 3, 'O': 1, 'z': 6, 'f': 6, 'L': 9, 'N': 3, 'g': 4, 'W': 3, 'J': 1, 'C': 136, 'H': 118, '_': 279, 'D': 12, 'R': 7, 'a': 13, 'q': 6, 'c': 4, 'u': 270, ',': 1226, '~': 3150 };
+      // the glyph counts, measured on the plan: first the judge's plan-check.js on plan-rows.txt (sha1 a0fd9636...), then
+      // re-measured 2026-09-25 after review round 1 made the Crown a garden and a yard and turned leftover paving to lawn
+      // ('=' 1582 -> 1592, '"' 469 -> 666, '*' 17 -> 38, 'l' 26 -> 34, 't' 24 -> 34, 'p' 10 -> 11, 'b' 9 -> 11, ',' 1226 -> 977)
+      const COUNTS = { '=': 1592, '#': 160, 'T': 189, 'G': 9, '+': 73, '"': 666, '*': 38, 'h': 71, 't': 34, 'o': 18, 'F': 18, 'S': 5, 'l': 34, 'p': 11, 'b': 11, 'w': 1, 'Y': 1, 's': 4,
+        'k': 7, 'n': 7, 'x': 6, 'r': 21, '^': 8, 'U': 8, 'P': 3, 'O': 1, 'z': 6, 'f': 6, 'L': 9, 'N': 3, 'g': 4, 'W': 3, 'J': 1, 'C': 136, 'H': 118, '_': 279, 'D': 12, 'R': 7, 'a': 13, 'q': 6, 'c': 4, 'u': 270, ',': 977, '~': 3150 };
       const off = Object.keys(COUNTS).filter(c => glyphCount(c) !== COUNTS[c]).map(c => c + ' ' + glyphCount(c) + ' want ' + COUNTS[c]);
       const total = Object.values(COUNTS).reduce((a, b) => a + b, 0);
       check(K + 'K1 the plan: 100x80, every row 100 wide, every glyph known and named, every spot on its glyph, tile ids fit a byte (max <= 255), and every glyph count is the measured one',
@@ -34629,26 +34752,96 @@ HOOKS.selfTest.push((check, F, h) => {
       A.gates = GATES.length === 5 && count(tl, GATE) === 9;
       A.fountains = FOUNTAINS.length === 2 && count(tl, FOUNTAIN) === 18;
       A.buildings = mounted() === 12;
-      // ROADS: 1,582 paving stones, and from the Great Gate the streets (with gates, bridges, doors, floors, carpet, lawn and flower beds) reach every door and every gate
+      // ROADS: 1,592 paving stones, and from the Great Gate the streets (with gates, bridges, doors, floors, carpet, lawn and flower beds) reach every door and every gate
       { const road = new Set([PAVE, GATE, BRIDGE, T.DOOR, T.FLOOR, T.RUG, LAWN, BLOOM]); const d = flood(tl, 48, 61, t => road.has(t));
         const doors = AER_BUILDINGS.map(b => PLAN.doorOf(b)).filter(([x, y]) => d[y * W + x] >= 0).length;
         const gates = SP.gateCells.filter(([x, y]) => d[y * W + x] >= 0).length;
-        A.roads = count(tl, PAVE) === 1582 && doors === 12 && gates === 9; A.roadInfo = { pave: count(tl, PAVE), doors, gates }; }
+        A.roads = count(tl, PAVE) === 1592 && doors === 12 && gates === 9; A.roadInfo = { pave: count(tl, PAVE), doors, gates }; }
       A.bridges = PLAN.BRIDGES.length === 8 && count(tl, BRIDGE) === 73;
       // PARKS: the lawns, trees, hedges, pond, flower beds, benches and the well; the maze's middle only through its gate
       { let trees = 0, hedges = 0, benches = 0, wells = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = kindAt(x, y); if (k === 'tree') trees++; else if (k === 'hedge') hedges++; else if (k === 'bench' || k === 'pew') benches++; else if (k === 'well') wells++; }
         const open = flood(tl, SP.entry[0], SP.entry[1], walkable), shut = flood(tl, SP.entry[0], SP.entry[1], (t, x, y) => walkable(t) && !(x === SP.mazeGate[0] && y === SP.mazeGate[1]));
         const mid = SP.larkMaze[1] * W + SP.larkMaze[0];
-        A.parks = count(tl, LAWN) === 469 && trees === 24 && hedges === 71 && count(tl, POND) === 18 && count(tl, BLOOM) === 17 && benches === 9 && wells === 1 && open[mid] > 0 && shut[mid] === -1;
+        A.parks = count(tl, LAWN) === 666 && trees === 34 && hedges === 71 && count(tl, POND) === 18 && count(tl, BLOOM) === 38 && benches === 11 && wells === 1 && open[mid] > 0 && shut[mid] === -1;
         A.parkInfo = { lawn: count(tl, LAWN), trees, hedges, pond: count(tl, POND), bloom: count(tl, BLOOM), benches, wells, maze: open[mid], mazeShut: shut[mid] }; }
       // DECORATIONS: lamps, planters, statues, the awninged stalls, banners on the wall, pennants on the towers
       { let lamps = 0, planters = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = kindAt(x, y); if (k === 'lamp') lamps++; else if (k === 'planter') planters++; }
         const a0 = STATS.awnings, { g } = recorder(); for (const [sx, sy] of SP.stalls) drawAwning(g, sx, sy); const awnings = STATS.awnings - a0;
         const banners = SP.banners.filter(([x, y]) => tl[y * W + x] === WALL).length;
-        A.decor = lamps === 26 && planters === 10 && count(tl, T.WIND_STATUE) === 4 && awnings === 4 && SP.stalls.length === 4 && banners === 12 && SP.banners.length === 12 && A.towerInfo.pennants === 19;
+        A.decor = lamps === 34 && planters === 11 && count(tl, T.WIND_STATUE) === 4 && awnings === 4 && SP.stalls.length === 4 && banners === 12 && SP.banners.length === 12 && A.towerInfo.pennants === 19;
         A.decorInfo = { lamps, planters, statues: count(tl, T.WIND_STATUE), awnings, banners }; }
-      check(K + "K3 Cohen's list: walls (160, a closed ring), towers (19, 189 tiles, a pennant each), the keep (15x12, throne, carpet, 4 pillars), spires (5), gates (5 over 9 tiles), fountains (2), buildings (12), roads (1,582 paving reaching every door and gate), bridges (8, 73 tiles), parks and decorations",
+      check(K + "K3 Cohen's list: walls (160, a closed ring), towers (19, 189 tiles, a pennant each), the keep (15x12, throne, carpet, 4 pillars), spires (5), gates (5 over 9 tiles), fountains (2), buildings (12), roads (1,592 paving reaching every door and gate), bridges (8, 73 tiles), parks and decorations",
         A.walls && A.towers && A.keep && A.spires && A.gates && A.fountains && A.buildings && A.roads && A.bridges && A.parks && A.decor, A); }
+
+    // a canvas that records what is set on it too (fillStyle is a property set, which recorder() cannot see)
+    const setRecorder = () => { const log = []; const g = new Proxy({}, {
+      get: (t, k) => k === 'measureText' ? (x => ({ width: String(x).length * 6 })) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: () => { } })) : typeof k === 'string' ? ((...a) => { log.push([k, a]); }) : undefined,
+      set: (t, k, v) => { log.push(['=' + String(k), [v]]); return true; } }); return { g, log }; };
+    const lum = hex => { const n = parseInt(hex.slice(1), 16); return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; };
+    const meanFill = paintFn => { const { g, log } = setRecorder(); paintFn(g); const hs = log.filter(e => e[0] === '=fillStyle' && /^#[0-9a-f]{6}$/i.test(e[1][0])).map(e => e[1][0]); return hs.length ? hs.reduce((a, h) => a + lum(h), 0) / hs.length : -1; };
+
+    // ---- K3b. the streets read as streets ----
+    // Review round 1: 1,509 cells inside the walls were one cream brick, the same brick as the wall. A street is now its own
+    // surface (grey-blue setts, a white kerb and a gold gutter on every edge) and the paving between streets pale flagstones.
+    { const r = {}, KW = PLAN.ROADS.find(o => o.id === 'kingsway'), ROADC = G_ROAD;
+      // every Kingsway paving cell is painted as street
+      const kw = []; for (const [x0, y0, x1, y1] of KW.rects) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (glyph(x, y) === '=') kw.push([x, y]);
+      r.kingsway = kw.length >= 60 && kw.every(([x, y]) => GROUND[y * W + x] === ROADC && PLAN.roadAt(x, y) === KW); r.kwCells = kw.length;
+      // and bordered by what is not street: beside it (x 46 and x 50) only a street that crosses it is street
+      let bothOff = 0; const sideBad = [];
+      for (const [x0, y0, x1, y1] of KW.rects) for (let y = y0; y <= y1; y++) {
+        const sides = [x0 - 1, x1 + 1].map(x => GROUND[y * W + x] === ROADC ? PLAN.roadAt(x, y) : null);
+        for (const sd of sides) if (sd && sd.id === 'kingsway') sideBad.push(y);
+        if (sides.every(sd => !sd)) bothOff++;
+      }
+      r.bordered = sideBad.length === 0 && bothOff >= 14; r.bothOff = bothOff;
+      // every street has street on it, and every street joins the Great Gate over street, gates and bridges
+      const d = flood(inst().tiles, 48, 61, (t, x, y) => GROUND[y * W + x] === ROADC || glyph(x, y) === 'G' || glyph(x, y) === '+');
+      const cut = PLAN.ROADS.filter(rd => { let any = false, all = true; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (PLAN.roadAt(x, y) === rd && glyph(x, y) === '=') { any = true; if (d[y * W + x] < 0) all = false; } return !(any && all); }).map(rd => rd.name);
+      r.joined = cut.length === 0 && PLAN.ROADS.length === 11; r.cut = cut;
+      // no single surface is the ground inside the walls any more (it was one brick on half of it)
+      const share = {}; let n = 0; for (let y = 12; y <= 60; y++) for (let x = 17; x <= 78; x++) { const c = GROUND[y * W + x]; if (!c || c === G_CWALL || c === G_HWALL) continue; share[c] = (share[c] || 0) + 1; n++; }
+      const top = Math.max(...Object.values(share)) / n; r.mixed = top < 0.4; r.topShare = Math.round(top * 1000) / 10;
+      // the setts are dark and the flagstones and the wall brick light: a street never looks like the wall beside it
+      const road = meanFill(g => patRoad(g, 0)), pave = meanFill(g => patPave(g, 0)), brick = meanFill(g => patCwall(g, 0));
+      r.contrast = road > 0 && road < 0.62 && pave > 0.85 && brick > 0.75 && pave - road > 0.25 && brick - road > 0.2; r.lum = [road, pave, brick].map(v => Math.round(v * 100) / 100);
+      // drawn: a Kingsway row between two planters has a kerb on each outer side (none between its own cells), with the gold gutter
+      { const k0 = STATS.kerbs, { g, log } = setRecorder(); drawGroundRow(g, 55, 47, 49); r.kerbs = STATS.kerbs - k0 === 2 && log.some(e => e[0] === '=fillStyle' && e[1][0] === '#d9b44a') && log.some(e => e[0] === '=fillStyle' && e[1][0] === '#f1ede4'); }
+      // and a tap on it names it
+      r.named = tapLabelFor({ kind: 'walk', t: PAVE, tx: 48, ty: 55 }) === 'Kingsway' && tapLabelFor({ kind: 'walk', t: PAVE, tx: 30, ty: 51 }) === 'Forge Street' && tapLabelFor({ kind: 'walk', t: PAVE, tx: 70, ty: 44 }) === 'Paving';
+      check(K + 'K3b the streets read as streets: all 11 join the Great Gate; the Kingsway is setts from end to end with pavement or planters beside it (both sides off-street on 14+ rows); setts dark, flagstones and wall brick light; a kerb and a gold gutter on its edges; no surface covers 40% of the city',
+        Object.values(r).every(v => v !== false), r); }
+
+    // ---- K3c. the Crown is part of the kingdom ----
+    // Review round 1: 240 of the Crown's 273 walkable cells were bare cloud. Now: the Rookery Yard in setts, perch-towers
+    // with pennants, nest-houses on posts, a garden with beds, trees and lamps, a paved ring round the Songstone, a low
+    // white-and-gold wall round the edge.
+    { const r = {}, tl = inst().tiles, C = CROWN_ISLE; let walk = 0, cloud = 0, beds = 0, lamps = 0, trees = 0, benches = 0, open = 0;
+      for (let y = C.y0; y <= C.y1; y++) for (let x = C.x0; x <= C.x1; x++) {
+        const t = tl[y * W + x], k = kindAt(x, y);
+        if (!SOLID.has(t)) walk++; if (t === SKYCITY.CLOUD) cloud++; if (t === BLOOM) beds++;
+        if (k === 'lamp') lamps++; else if (k === 'tree') trees++; else if (k === 'bench') benches++;
+        if (glyph(x, y) !== '~') for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (isSky(x + dx, y + dy)) open++;
+      }
+      r.noBareCloud = cloud === 0 && walk >= 190; r.counts = { walk, cloud, beds, lamps, trees, benches };
+      r.garden = beds >= 12 && lamps >= 8 && trees >= 4 && benches === 2;
+      const RK = PLAN.ROADS.find(o => o.id === 'rookery'); let yard = 0, yardOk = true;
+      for (const [x0, y0, x1, y1] of RK.rects) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (glyph(x, y) === '=') { yard++; if (GROUND[y * W + x] !== G_ROAD) yardOk = false; }
+      r.rookeryYard = yardOk && yard === 48 && SP.perches.every(([x, y]) => GROUND[y * W + x] === G_ROAD && tl[y * W + x] === T.HAWK_PERCH);
+      // the paved ring: every one of the 16 cells round the Songstone's 3x3 floor is street
+      const R0 = SP.songRing; let ring = 0; for (let y = R0.y0 - 1; y <= R0.y1 + 1; y++) for (let x = R0.x0 - 1; x <= R0.x1 + 1; x++) { const edge = x === R0.x0 - 1 || x === R0.x1 + 1 || y === R0.y0 - 1 || y === R0.y1 + 1; if (edge && GROUND[y * W + x] === G_ROAD) ring++; }
+      r.songRing = ring === 16;
+      // the low wall: drawn on every side of the island that faces open sky (the bridge end stays open)
+      { const p0 = STATS.parapets, { g } = recorder(); for (let y = C.y0; y <= C.y1; y++) drawGroundRow(g, y, C.x0, C.x1); r.parapet = STATS.parapets - p0 === open && open >= 40; r.parapetSides = [STATS.parapets - p0, open]; }
+      // the perch-towers stand tall (over two tiles above their foot) and fly a pennant; the nest-houses have a roof over their posts
+      { const art = AERIE.ART, a0 = art.perchTowers, n0 = art.nests, { g, log } = recorder(); const [px, py] = SP.perches[0];
+        AERIE.drawPerch(g, px, py); const topY = Math.min(...log.filter(e => e[0] === 'fillRect' || e[0] === 'moveTo').map(e => e[1][1]));
+        const { g: g2, log: log2 } = recorder(); const [nx, ny] = SP.nests[3]; AERIE.drawNest(g2, nx, ny); const roofY = Math.min(...log2.filter(e => e[0] === 'moveTo' || e[0] === 'lineTo').map(e => e[1][1]));
+        r.towers = art.perchTowers - a0 === 1 && topY < (py + 1) * TILE - 2.5 * TILE && art.nests - n0 === 1 && roofY < ny * TILE - 20; r.art = { topY: topY - py * TILE, roofY: roofY - ny * TILE }; }
+      // and it is all still walkable to: Pell, the three perches, the Songstone and both Crown updrafts from the bridge
+      { const d = flood(tl, 87, 17, walkable); r.walked = reachAt(d, SP.pell[0], SP.pell[1]) >= 0 && SP.perches.every(([x, y]) => reachAt(d, x, y) >= 0) && reachAt(d, SP.songstone[0], SP.songstone[1]) >= 0 && reachAt(d, 96, 19) >= 0 && reachAt(d, 96, 27) >= 0; }
+      check(K + 'K3c the Crown: no bare cloud left; the Rookery Yard in setts under the three perch-towers (over two and a half tiles tall, with a pennant); nest-houses with roofs; a garden of 12+ beds, 8+ lamps, 4+ trees and 2 benches; all 16 cells round the Songstone paved; a low wall on every side facing the sky; Pell, the perches, the Songstone and both updrafts in reach',
+        Object.values(r).every(v => v !== false), r); }
 
     // ---- K4. everything on foot from the Wind Landing, without an updraft ----
     { const tl = inst().tiles, d = flood(tl, SP.entry[0], SP.entry[1], walkable), miss = [];
@@ -34670,7 +34863,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const sera = d[SP.seraphel[1] * W + SP.seraphel[0]], pell = d[SP.pell[1] * W + SP.pell[0]];
       let total = 0; for (let i = 0; i < W * H; i++) if (d[i] >= 0) total++;
       check(K + 'K4 on foot from the Wind Landing with no updraft: every resident, all 12 doors, the Long Rail, the Songstone, the perches, snags, wisps, updraft stones and a side of every prop; the Queen is 46 tiles away and Pell 107',
-        miss.length === 0 && loneOk && sera === 46 && pell === 107 && total === 3958, { miss: miss.slice(0, 6), lone: lone.filter((k, i) => i < 6), loneOk, sera, pell, total }); }
+        miss.length === 0 && loneOk && sera === 46 && pell === 107 && total === 3937, { miss: miss.slice(0, 6), lone: lone.filter((k, i) => i < 6), loneOk, sera, pell, total }); }
 
     // ---- K5. the buildings never leak out of Aerie ----
     { leave(); render();
@@ -34865,6 +35058,28 @@ HOOKS.selfTest.push((check, F, h) => {
       closePanel(); drain();
       check(K + "K13 the gold stones: without Lark's feather they refuse and you stay put; with it either stone opens 'Where to, knight?' with 6 places, each landing on walkable ground in its ward (the Royal Plaza at 41,45); one column of 44 px buttons on a narrow screen",
         Object.values(r).every(Boolean), Object.assign(r, { landed })); }
+
+    // ---- K13b. how the gold stones are used, said the same way everywhere ----
+    // The stone is solid: you cannot stand on it. Walking into it does nothing; E or a tap uses it. Review round 1 found
+    // "stand on" in four of the five places a child reads about it, so every line about the stones is gathered and read.
+    { const r = {}, lines = [];
+      const strings = o => { const out = [], seen = new Set(); const walk = (v, depth) => { if (typeof v === 'string') out.push(v); else if (v && typeof v === 'object' && depth < 4 && !seen.has(v)) { seen.add(v); (Array.isArray(v) ? v : Object.values(v)).forEach(u => walk(u, depth + 1)); } }; walk(o, 0); return out; };
+      // the Queen when she pays, and Lark when she gives the feather
+      quest.sky = { stage: 'done', wisps: 0, forged: 0 }; quest.kingdom = { stage: 6, wishes: 0, seen: {} }; larkFromStage(); featherOff(); enter(); closePanel(); drain();
+      F.tp(48, 30); F.step([]); F.face(48, 29); F.press('KeyE'); F.sim(2, []); r.queen = Q().stage === 'done'; lines.push(...said().map(d => d.text)); drain();
+      SCENE.active = true; SCENE.land = null; sceneFinish(); lines.push(...said().filter(d => d.who === 'Lark').map(d => d.text)); drain();
+      // the quest log, the keyring and the book
+      quest.kingdom = { stage: 'done', wishes: 0, seen: {} }; larkFromStage();
+      lines.push(questText('lark'), KEYRING.KEYS.lark_feather ? KEYRING.KEYS.lark_feather.note : '');
+      lines.push(...strings(WIKI.get('items', 'lark_feather')), ...strings(WIKI.get('places', 'aerie')));
+      const about = lines.filter(t => /updraft stone|stones are edged in gold|gold stone/i.test(t) && /(gold|feather|Lark)/.test(t));
+      r.found = about.length >= 5;
+      r.noStandOn = about.every(t => !/\bstand (on|at)\b/i.test(t));
+      r.useIt = about.every(t => /\buse it\b/i.test(t));
+      r.keysTold = [questText('lark'), KEYRING.KEYS.lark_feather.note].every(t => /\(E, or tap it\)/.test(t));
+      restoreKit(); closePanel(); drain();
+      check(K + 'K13b the gold stones are explained the same way everywhere a child reads about them (the Queen, Lark, the quest log, the keyring, the book): walk up to one and use it (E, or tap it); never "stand on"',
+        Object.values(r).every(Boolean), Object.assign(r, { about })); }
 
     // ---- K14. the Song comes first ----
     { quest.kingdom = { stage: 0, wishes: 0, seen: {} }; featherOff(); enter(); const r = {}; const Qn = SKYCITY.SKY_NPCS[0];

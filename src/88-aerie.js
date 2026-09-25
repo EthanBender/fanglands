@@ -558,6 +558,8 @@
   // 12. drawing
   // =========================================================================
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
+  // how many perch-towers and nest-houses were drawn (the self-test reads it through AERIE.ART)
+  const ART = { perchTowers: 0, nests: 0 };
   const underRegion = (tx, ty) => underCell(tx, ty);
   function deck(g, tx, ty, low) {
     const x = tx * TILE, y = ty * TILE, r = hash(tx, ty);
@@ -576,15 +578,34 @@
     g.fillStyle = '#cbd6e6'; g.fillRect(x, y + 24, TILE, 5); g.fillRect(x, y + 34, TILE, 3);
     g.fillStyle = '#e9eef5'; g.fillRect(x + 2, y + 24, TILE - 4, 2);
   }
+  // the knight behind something tall is drawn through it (half see-through), so he never vanishes
+  function behind(x0, y0, x1, y1, footY) {
+    if (player.dead || player.y + player.r >= footY) return 1;
+    return (player.x + 14 > x0 && player.x - 14 < x1 && player.y + 14 > y0 && player.y - 34 < y1) ? 0.45 : 1;
+  }
+  // a nest-house: a woven round house up on four posts, with a little blue roof and a gold finial
   function drawNest(g, tx, ty) {
-    const cx = tc(tx), y = ty * TILE;
-    g.fillStyle = 'rgba(60,90,140,0.25)'; g.beginPath(); g.ellipse(cx, y + 42, 20, 7, 0, 0, 7); g.fill();
-    g.fillStyle = '#b79a63'; g.beginPath(); g.ellipse(cx, y + 30, 21, 15, 0, 0, 7); g.fill();
-    g.strokeStyle = '#8a7040'; g.lineWidth = 1.4;
-    for (let k = 0; k < 6; k++) { const a = k * 1.05; g.beginPath(); g.ellipse(cx, y + 30, 21 - k * 1.5, 15 - k, a * 0.2, 0, 7); g.stroke(); }
-    g.fillStyle = '#d8c69a'; g.beginPath(); g.ellipse(cx, y + 18, 17, 10, 0, 0, 7); g.fill();
-    g.fillStyle = '#2a2f3a'; g.beginPath(); g.ellipse(cx, y + 22, 7, 5, 0, 0, 7); g.fill();   // the doorway
-    g.fillStyle = '#f0e4c4'; g.beginPath(); g.arc(cx + 10, y + 14, 3, 0, 7); g.fill();        // a feather tucked in the weave
+    const cx = tc(tx), y = ty * TILE, a = behind(cx - 26, y - 44, cx + 26, y + 40, y + 44);
+    ART.nests++;
+    g.save(); g.globalAlpha = a;
+    g.fillStyle = 'rgba(60,90,140,0.25)'; g.beginPath(); g.ellipse(cx, y + 44, 21, 6, 0, 0, 7); g.fill();
+    // the posts and the ladder
+    g.fillStyle = '#7a5a36'; for (const px of [-15, -6, 6, 15]) g.fillRect(cx + px - 2, y + 14, 4, 30);
+    g.fillStyle = '#8a6a44'; g.fillRect(cx - 17, y + 30, 34, 3);
+    g.strokeStyle = '#9a7a50'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx + 3, y + 44); g.lineTo(cx + 5, y + 16); g.moveTo(cx + 11, y + 44); g.lineTo(cx + 12, y + 16); for (let k = 0; k < 4; k++) { g.moveTo(cx + 3.5, y + 40 - k * 7); g.lineTo(cx + 11.4, y + 40 - k * 7); } g.stroke();
+    // the platform
+    g.fillStyle = '#b08a55'; g.fillRect(cx - 20, y + 10, 40, 6); g.fillStyle = '#c9a36a'; g.fillRect(cx - 20, y + 10, 40, 2);
+    // the woven house
+    g.fillStyle = '#b79a63'; g.beginPath(); g.ellipse(cx, y + 2, 18, 12, 0, 0, 7); g.fill();
+    g.strokeStyle = '#8a7040'; g.lineWidth = 1.2;
+    for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(cx, y + 2, 18 - k * 1.6, 12 - k * 1.2, 0, 0.1, Math.PI - 0.1); g.stroke(); }
+    g.fillStyle = '#2a2f3a'; g.beginPath(); g.ellipse(cx - 2, y + 6, 6, 5, 0, Math.PI, 0); g.fillRect(cx - 8, y + 6, 12, 4); g.fill();   // the doorway
+    g.fillStyle = '#f0e4c4'; g.beginPath(); g.arc(cx + 11, y + 1, 2.6, 0, 7); g.fill();        // a feather tucked in the weave
+    // the little roof
+    g.fillStyle = '#3b5ba8'; g.beginPath(); g.moveTo(cx - 23, y - 6); g.lineTo(cx, y - 30); g.lineTo(cx + 23, y - 6); g.closePath(); g.fill();
+    g.fillStyle = '#5b8fd6'; g.beginPath(); g.moveTo(cx - 23, y - 6); g.lineTo(cx, y - 30); g.lineTo(cx - 2, y - 6); g.closePath(); g.fill();
+    g.fillStyle = '#e8c25a'; g.fillRect(cx - 23, y - 7, 46, 2.5); g.beginPath(); g.arc(cx, y - 32, 3, 0, 7); g.fill();
+    g.restore();
   }
   function drawBrazier(g, tx, ty) {
     const cx = tc(tx), y = ty * TILE, f = Math.sin(time * 5 + tx) * 2;
@@ -627,14 +648,31 @@
     g.fillStyle = '#9fd8ff'; g.beginPath(); g.arc(x + 16, y + 24, 3, 0, 7); g.fill();
     g.fillStyle = '#f0e4c4'; g.beginPath(); g.arc(x + 30, y + 24, 3, 0, 7); g.fill();
   }
+  // a perch-tower: a slender white stone tower banded in gold, the perch bar and the fish plate at the top, and a
+  // pennant flying from a pole above it (a skyhawk comes down to the plate when you carry a fish)
   function drawPerch(g, tx, ty) {
-    const cx = tc(tx), y = ty * TILE;
-    g.fillStyle = 'rgba(60,90,140,0.22)'; g.beginPath(); g.ellipse(cx, y + 44, 11, 4, 0, 0, 7); g.fill();
-    g.fillStyle = '#8a6a3a'; g.fillRect(cx - 3, y + 14, 6, 30);
-    g.fillStyle = '#c9a36a'; g.fillRect(cx - 15, y + 10, 30, 5);
+    const cx = tc(tx), y = ty * TILE, top = y - 58, a = behind(cx - 22, top - 44, cx + 22, y + 40, y + 44);
+    ART.perchTowers++;
+    g.save(); g.globalAlpha = a;
+    g.fillStyle = 'rgba(60,90,140,0.25)'; g.beginPath(); g.ellipse(cx + 3, y + 44, 16, 5, 0, 0, 7); g.fill();
+    // the plinth and the shaft
+    g.fillStyle = '#dcd4c2'; g.fillRect(cx - 13, y + 32, 26, 12); g.fillStyle = '#f4f0e7'; g.fillRect(cx - 13, y + 30, 26, 4); g.fillStyle = '#e8c25a'; g.fillRect(cx - 13, y + 30, 26, 1.5);
+    const sh = g.createLinearGradient(cx - 8, 0, cx + 8, 0); sh.addColorStop(0, '#d9d2c4'); sh.addColorStop(0.45, '#fbf8f2'); sh.addColorStop(1, '#cfc7b6');
+    g.fillStyle = sh; g.fillRect(cx - 8, top + 8, 16, y + 30 - top - 8);
+    g.fillStyle = '#e8c25a'; for (const by of [y + 12, y - 16, top + 10]) g.fillRect(cx - 9, by, 18, 3);
+    g.fillStyle = '#5b8fd6'; g.fillRect(cx - 3, y - 2, 6, 9); g.fillStyle = '#2f4f8f'; g.fillRect(cx - 2, y, 4, 6);   // a slit window
+    // the top: a gold-edged platform, the wooden perch bar across it, the plate
+    g.fillStyle = '#f4f0e7'; g.fillRect(cx - 14, top, 28, 8); g.fillStyle = '#e8c25a'; g.fillRect(cx - 14, top + 7, 28, 2);
+    g.fillStyle = '#8a6a3a'; g.fillRect(cx - 18, top - 4, 36, 4);
     const hasFish = FISH() >= 0;
-    g.fillStyle = hasFish ? '#9fb7c9' : 'rgba(255,255,255,0.25)'; g.beginPath(); g.ellipse(cx, y + 6, 7, 3.5, 0, 0, 7); g.fill();
-    if (!hasFish) { g.strokeStyle = 'rgba(240,228,196,0.6)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - 9, y + 6); g.lineTo(cx + 9, y + 6); g.stroke(); }
+    g.fillStyle = hasFish ? '#9fb7c9' : 'rgba(255,255,255,0.5)'; g.beginPath(); g.ellipse(cx - 8, top - 6, 6, 3, 0, 0, 7); g.fill();
+    // the pole and the pennant
+    const px = cx + 9, pole = top - 40, sw = Math.sin(time * 2.4 + tx) * 3;
+    g.fillStyle = '#8e9bb0'; g.fillRect(px - 1, pole, 2.5, 40);
+    g.fillStyle = '#e8c25a'; g.beginPath(); g.arc(px, pole - 1, 2.5, 0, 7); g.fill();
+    g.fillStyle = '#3b5ba8'; g.beginPath(); g.moveTo(px + 1, pole + 2); g.quadraticCurveTo(px + 14, pole + 4 + sw, px + 26, pole + 8 + sw); g.lineTo(px + 1, pole + 15); g.closePath(); g.fill();
+    g.fillStyle = '#f5c542'; g.beginPath(); g.moveTo(px + 1, pole + 6); g.quadraticCurveTo(px + 10, pole + 7 + sw * 0.7, px + 18, pole + 8 + sw); g.lineTo(px + 1, pole + 10); g.closePath(); g.fill();
+    g.restore();
   }
   function drawSong(g, tx, ty) {
     const cx = tc(tx), y = ty * TILE, q = Q(), lit = q.songstone ? 1 : 0.35;
@@ -785,7 +823,7 @@
   // 14. handle
   // =========================================================================
   window.AERIE = {
-    TILES: { UNDER, RAIL, NEST, BRAZIER, STATUE, UPDRAFT, PERCH, SONG, SNAG, SPIRE, STALL, FLAG },
+    TILES: { UNDER, RAIL, NEST, BRAZIER, STATUE, UPDRAFT, PERCH, SONG, SNAG, SPIRE, STALL, FLAG }, ART, drawPerch, drawNest,
     W: NW, H: NH, SPAN, CROWN, CATCH, ENTRY, FOLK, DRAFTS, RUN_BASE, RUN_OFFSET, RUN_MARKS, RUN_PLATES, RUN_GAPS, RUN_LOGS, RUN_NETS, PERCHES, SNAGS, SONG_T, STATUES, NESTS, STALLS, SPIRES, BRAZIERS, RAILS, ORGAN,
     SALVAGE, SING, FLETCH, RUN_LV, RUN_XP, RUN_PURSE, RUN_EVERY, CLOAK_LAPS, GODLY_LINE,
     Q, talk: talkFolk, inFront: folkInFront, grew: () => GREW, regrow: REGROW,
