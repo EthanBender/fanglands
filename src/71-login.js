@@ -359,12 +359,16 @@
   }
   // while a knight is typing, the game's key listeners must not hear it (they sit on window, bubble phase; this
   // capturing listener runs first and stops the event there — the input still gets its default action). Escape blurs.
+  // stopPropagation, NOT stopImmediatePropagation: the other text boxes (chat, the admin search) have their own capturing
+  // listeners on window, registered after this one, and they must still hear Enter. With the immediate stop the chat box
+  // never saw Enter, so typed messages could not be sent (only the quick-phrase taps worked).
+  // tools/dom-keys.js checks this with real key presses in a browser before every deploy.
   if (canListen) {
     const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA'); };
     for (const type of ['keydown', 'keyup', 'keypress']) window.addEventListener(type, e => {
       if (!typing()) return;
       if (type === 'keydown' && e.key === 'Escape') { try { document.activeElement.blur(); } catch (err) { } }
-      e.stopImmediatePropagation(); keys.clear();
+      e.stopPropagation(); keys.clear();
     }, true);
   }
 

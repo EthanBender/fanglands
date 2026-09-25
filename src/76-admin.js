@@ -533,7 +533,9 @@
       input.setAttribute('autocapitalize', 'none'); input.setAttribute('autocorrect', 'off'); input.setAttribute('enterkeyhint', 'done'); input.setAttribute('aria-label', 'Search');
       input.style.cssText = 'position:fixed;display:none;z-index:15;box-sizing:border-box;margin:0;padding:0 10px;font:16px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:#0b0f14;border:1px solid #f5c542;border-radius:8px;outline:none;-webkit-appearance:none;appearance:none;';
       input.addEventListener('input', () => typed(input.value));
-      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); try { input.blur(); } catch (err) { } } });
+      // Enter closes the keyboard. It listens on window in the capture phase, like the chat box: 71-login's guard stops
+      // key events at window before they reach any text box, so a listener on the input itself never heard Enter.
+      window.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement === input) { e.preventDefault(); try { input.blur(); } catch (err) { } } }, true);
       document.body.appendChild(input);
       dom = { input, shown: false, key: '', sig: '' };
     } catch (e) { dom = false; }
