@@ -51,12 +51,13 @@
     for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
       const n = tileName(tileAt(x, y));
       count[n] = (count[n] || 0) + 1;
-      if (n === 'GRASS' || n === 'FLOWERS' || n === 'MUSHROOM') {
-        if (y < r.y0 + ASHFIELDS.SEAM_ROWS) seamGreen++; else deepGreen++;
+      // (93-ashedge burns the seam's last grass to singed straw, so the fade into the wood is straw now, not green)
+      if (n === 'GRASS' || n === 'FLOWERS' || n === 'MUSHROOM' || n === 'AF_SINGED') {
+        if (y < r.y0 + ASHFIELDS.SEAM_ROWS) seamGreen++; else if (n !== 'AF_SINGED') deepGreen++;
       }
     }
-    // nothing green below the seam, and the seam itself still dithers into the wood above
-    check(P + 'no grass anywhere in the Ashfields below the seam, and the seam still fades into the wood', deepGreen === 0 && seamGreen > 0, { deepGreen, seamGreen, burned: ASHFIELDS.tally.burned, wasGreen: ASHFIELDS.tally.before });
+    // nothing green below the seam, and the seam itself still fades into the wood above
+    check(P + 'no grass anywhere in the Ashfields below the seam, and the seam still fades into the wood', deepGreen === 0 && seamGreen > 0, { deepGreen, seamFade: seamGreen, burned: ASHFIELDS.tally.burned, wasGreen: ASHFIELDS.tally.before });
     // and it is a burnt field, not one flat grey sheet
     const ash = count.ASH || 0, scorch = count.SCORCH || 0, dirt = count.DIRT || 0;
     check(P + 'the burnt ground is a mix of ash, scorch and bare dirt rather than one flat colour', ash > 0 && scorch > 0 && dirt > 0 && ash > scorch && ash > dirt, { ash, scorch, dirt, lava: count.LAVA || 0 });

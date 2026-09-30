@@ -420,6 +420,19 @@
   // darkness: an offscreen layer with holes cut by destination-out (the core's cave technique). Drawn as the last
   // world item so it sits over the lair but under the HUD. Lights: the knight, every magma crack, the boss, fireballs, lightning, the open gate.
   const fangDark = document.createElement('canvas');
+  // a rectangle of dark whose edges fade to nothing over f pixels: a solid middle, four gradient strips, four corners
+  function softRect(dg, x, y, w, h, f, rgb) {
+    const full = rgb + '0.6)', none = rgb + '0)';
+    dg.fillStyle = full; dg.fillRect(x + f, y + f, w - 2 * f, h - 2 * f);
+    const lin = (x0, y0, x1, y1, rx, ry, rw, rh) => { const gr = dg.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, none); gr.addColorStop(1, full); dg.fillStyle = gr; dg.fillRect(rx, ry, rw, rh); };
+    lin(0, y, 0, y + f, x + f, y, w - 2 * f, f);                  // top
+    lin(0, y + h, 0, y + h - f, x + f, y + h - f, w - 2 * f, f);  // bottom
+    lin(x, 0, x + f, 0, x, y + f, f, h - 2 * f);                  // left
+    lin(x + w, 0, x + w - f, 0, x + w - f, y + f, f, h - 2 * f);  // right
+    for (const [cx, cy, sx, sy] of [[x + f, y + f, x, y], [x + w - f, y + f, x + w - f, y], [x + f, y + h - f, x, y + h - f], [x + w - f, y + h - f, x + w - f, y + h - f]]) {
+      const gr = dg.createRadialGradient(cx, cy, 0, cx, cy, f); gr.addColorStop(0, full); gr.addColorStop(1, none); dg.fillStyle = gr; dg.fillRect(sx, sy, f, f);
+    }
+  }
   function drawDark(g) {
     const inside = player.region === LAIR_NAME;
     const rx = LAIR.x0 * TILE - cam.x, ry = LAIR.y0 * TILE - cam.y, rw = (LAIR.x1 - LAIR.x0 + 1) * TILE, rh = (LAIR.y1 - LAIR.y0 + 1) * TILE;
@@ -428,7 +441,9 @@
     const dg = fangDark.getContext('2d');
     dg.setTransform(DPR, 0, 0, DPR, 0, 0); dg.globalCompositeOperation = 'source-over'; dg.clearRect(0, 0, VW, VH);
     dg.fillStyle = inside ? 'rgba(6,3,10,0.72)' : 'rgba(6,3,10,0.6)';
-    if (inside) dg.fillRect(0, 0, VW, VH); else dg.fillRect(rx, ry, rw, rh);
+    // (from outside, the dark fades in across the walls instead of stopping at their outer face: a hard-edged dark
+    // rectangle laid over the fields read as a black box pasted on the map, owner 2026-09-25)
+    if (inside) dg.fillRect(0, 0, VW, VH); else softRect(dg, rx, ry, rw, rh, TILE * 1.6, 'rgba(6,3,10,');
     dg.globalCompositeOperation = 'destination-out';
     const lights = [];
     if (inside) lights.push({ x: player.x, y: player.y, r: 150 });
