@@ -78,22 +78,23 @@ test('migrate on the live schema: every old row stays byte for byte, the new col
   const { sql } = oldWorld();
   const before = dump(sql);
   const first = wake(sql);
-  assert.deepEqual(first, { via: 'pragma', added: ['role', 'muted_until'] });
+  assert.deepEqual(first, { via: 'pragma', added: ['role', 'muted_until', 'online_ms'] });
   assert.deepEqual(dump(sql), before);
   const second = wake(sql);
   assert.deepEqual(second, { via: 'pragma', added: [] });
   assert.deepEqual(dump(sql), before);
   // the accounts table is the old one with two columns on the end, nothing else moved or retyped
   const info = sql.exec('PRAGMA table_info(accounts)').toArray();
-  assert.deepEqual(info.map(c => c.name), [...OLD_COLUMNS.accounts, 'role', 'muted_until']);
-  assert.deepEqual(info.map(c => c.type), ['TEXT', 'TEXT', 'TEXT', 'TEXT', 'INTEGER', 'INTEGER', 'INTEGER', 'INTEGER', 'INTEGER', 'TEXT', 'INTEGER']);
+  assert.deepEqual(info.map(c => c.name), [...OLD_COLUMNS.accounts, 'role', 'muted_until', 'online_ms']);
+  assert.deepEqual(info.map(c => c.type), ['TEXT', 'TEXT', 'TEXT', 'TEXT', 'INTEGER', 'INTEGER', 'INTEGER', 'INTEGER', 'INTEGER', 'TEXT', 'INTEGER', 'INTEGER']);
   for (const t of ['sessions', 'saves', 'chat', 'settings']) assert.deepEqual(sql.exec(`PRAGMA table_info(${t})`).toArray().map(c => c.name), OLD_COLUMNS[t]);
   assert.deepEqual(sql.exec('SELECT name_lc, role, muted_until FROM accounts ORDER BY name_lc').toArray(),
     [{ name_lc: 'cohen', role: 'player', muted_until: 0 }, { name_lc: 'mudgoll', role: 'player', muted_until: 0 }, { name_lc: 'sam the brave', role: 'player', muted_until: 0 }]);
   // the new tables and indexes are there, empty; the old index is still there
   const names = sql.exec("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").toArray().map(r => r.type + ' ' + r.name);
-  assert.deepEqual(names, ['index crackers_by_lighter', 'index sessions_by_name', 'table accounts', 'table chat', 'table crackers', 'table mod_log', 'table parties', 'table save_pins', 'table saves', 'table sessions', 'table settings']);
-  for (const t of ['mod_log', 'save_pins', 'parties', 'crackers']) assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM ${t}`).one().n, 0);
+  assert.deepEqual(names, ['index crackers_by_lighter', 'index logins_by_name', 'index sessions_by_name', 'index trades_by_a', 'index trades_by_b', 'table accounts', 'table chat', 'table crackers', 'table logins', 'table mod_log', 'table parties', 'table save_pins', 'table saves', 'table sessions', 'table settings', 'table trades']);
+  for (const t of ['mod_log', 'save_pins', 'parties', 'crackers', 'logins', 'trades']) assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM ${t}`).one().n, 0);
+  assert.deepEqual(sql.exec('SELECT DISTINCT online_ms FROM accounts').toArray(), [{ online_ms: 0 }]);
   // what the store reads from a migrated world
   const store = new SqlStore(sql);
   assert.deepEqual(store.account('Sam the  Brave'), { name: 'Sam the Brave', lc: 'sam the brave', role: 'player', mutedUntil: 0, banned: true });
@@ -107,7 +108,7 @@ test('migrate: when a runtime refuses PRAGMA it reads the columns from SELECT * 
   run(plain, OLD_SCHEMA);
   plain.exec("INSERT INTO accounts (name_lc, name, salt, hash, created, last_seen) VALUES ('cohen', 'Cohen', 's', 'h', 1, 2)");
   run(strict, SCHEMA);
-  assert.deepEqual(migrate(strict), { via: 'columnNames', added: ['role', 'muted_until'] });
+  assert.deepEqual(migrate(strict), { via: 'columnNames', added: ['role', 'muted_until', 'online_ms'] });
   assert.deepEqual(migrate(strict), { via: 'columnNames', added: [] });
   assert.deepEqual(migrate(plain), { via: 'pragma', added: [] });   // and the two ways agree
   assert.deepEqual(plain.exec('SELECT name, role, muted_until FROM accounts').toArray(), [{ name: 'Cohen', role: 'player', muted_until: 0 }]);
@@ -115,7 +116,7 @@ test('migrate: when a runtime refuses PRAGMA it reads the columns from SELECT * 
 
 test('a brand new world gets the same tables and columns as a migrated one', () => {
   const fresh = sqlOf(new DatabaseSync(':memory:'));
-  assert.deepEqual(wake(fresh), { via: 'pragma', added: ['role', 'muted_until'] });
+  assert.deepEqual(wake(fresh), { via: 'pragma', added: ['role', 'muted_until', 'online_ms'] });
   const { sql: old } = oldWorld(); wake(old);
   const shape = sql => sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").toArray()
     .map(r => r.name + ': ' + sql.exec(`PRAGMA table_info(${r.name})`).toArray().map(c => c.name + ' ' + c.type + (c.notnull ? ' NOT NULL' : '') + (c.dflt_value != null ? ' DEFAULT ' + c.dflt_value : '')).join(', '));
@@ -203,6 +204,20 @@ function script(store) {
   say('unclaimed sam after the clean-up', store.unclaimed('sam', 0));
   say('claim of a cleaned party', store.claim(pid, 1, 'sam'));
   say('pid2 still there', store.light(pid2, 0, 'bo', 7000, { id: 'bread', qty: 1 }));
+  // finished trades: one row each, re-sent until each side acks, the parent page's list newest first
+  const tid1 = say('trade 1', store.addTrade({ at: 8000, a: 'Sam', b: 'Ada', aGave: [{ id: 'bread', qty: 5 }], bGave: [{ id: 'coins', qty: 20 }] }));
+  say('trade 2', store.addTrade({ at: 9000, a: 'Ada', b: 'Bo', aGave: [{ id: 'party_hat_red', qty: 1 }], bGave: [] }));
+  say('unacked sam', store.unackedTrades('Sam', 0));
+  say('unacked ada', store.unackedTrades('ada', 0));
+  say('unacked ada since 8500', store.unackedTrades('ada', 8500));
+  say('ack by a stranger', store.ackTrade(tid1, 'bo'));
+  say('ack by sam', store.ackTrade(tid1, 'sam'));
+  say('ack twice', store.ackTrade(tid1, 'SAM'));
+  say('ack no such trade', store.ackTrade(999, 'sam'));
+  say('unacked sam after ack', store.unackedTrades('sam', 0));
+  say('unacked ada after sam acked', store.unackedTrades('ada', 0));
+  say('trade log', store.tradeLog(10));
+  say('trade log 1', store.tradeLog(1));
   // mod_log keeps its newest 5,000 (trimmed on the first write after a wake and every 200 writes after that)
   for (let i = 0; i < 5300; i++) store.log({ at: 100 + i, by: 'MudGoll', act: 'mute', target: 'Sam', detail: String(i) });
   const all = store.modLog(100000);
@@ -238,6 +253,15 @@ test('SqlStore and MemoryStore give the same answer to every call of one script,
   assert.deepEqual(got['unclaimed sam after claim'], [{ id: 'p1.1', reward: { id: 'party_hat_purple', qty: 1, hat: 'purple' } }]);
   assert.deepEqual(got['unclaimed ada'], [{ id: 'p1.2', reward: { id: 'bread', qty: 1 } }]);
   assert.deepEqual(got['live after end'], []);
+  assert.equal(got['trade 1'], 1); assert.equal(got['trade 2'], 2);
+  assert.deepEqual(got['unacked sam'], [{ tid: 1, with: 'Ada', gave: [{ id: 'bread', qty: 5 }], got: [{ id: 'coins', qty: 20 }] }]);
+  assert.deepEqual(got['unacked ada'], [{ tid: 1, with: 'Sam', gave: [{ id: 'coins', qty: 20 }], got: [{ id: 'bread', qty: 5 }] }, { tid: 2, with: 'Bo', gave: [{ id: 'party_hat_red', qty: 1 }], got: [] }]);
+  assert.deepEqual(got['unacked ada since 8500'].map(r => r.tid), [2]);
+  assert.equal(got['ack by a stranger'], false); assert.equal(got['ack by sam'], true); assert.equal(got['ack twice'], true); assert.equal(got['ack no such trade'], false);
+  assert.deepEqual(got['unacked sam after ack'], []);
+  assert.deepEqual(got['unacked ada after sam acked'].map(r => r.tid), [1, 2]);
+  assert.deepEqual(got['trade log'].map(r => [r.tid, r.a, r.b, r.aAck, r.bAck]), [[2, 'Ada', 'Bo', false, false], [1, 'Sam', 'Ada', true, false]]);
+  assert.deepEqual(got['trade log 1'][0].aGave, [{ id: 'party_hat_red', qty: 1 }]);
   assert.equal(got['pid2'], 2);
   assert.deepEqual(got['live at 6000'].map(p => p.id), [2]); assert.deepEqual(got['live at expiry'], []);
   assert.equal(got['pid3'], 3);

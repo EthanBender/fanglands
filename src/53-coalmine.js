@@ -236,19 +236,35 @@
   });
 
   // ---------- the shift clock on screen ----------
-  // MIGRATED to the HUD kit (src/59-hudkit.js). The shift clock was a lone box floating at the top centre
-  // of the screen, in its own size, with its own outline that turned red. It is now a chip in the left
-  // column with everything else that is happening to you right now: the roof is a meter on the same
-  // green/amber/red ramp as your health, and the coal you have cut is a quiet second line.
+  // A PLAQUE in the kit's reserved column (src/59-hudkit.js HK.addPlaque): a pit-prop roundel, ROOF with the coal you
+  // have cut beside it (a plaque with a bar has no second line, so COAL CUT rides in the name), the seconds left in
+  // the shift, and the roof's share as a bar on the health ramp (green, amber, red: the same meaning as your shield).
+  // The plate's edge turns red when the roof is about to give.
+  // The first of several field sets that fits the plaque column's width, so no word is ever squeezed out of its plate.
+  // It measures the way the kit's plaque lays out (src/59-hudkit.js plaque(): a 36 px roundel, the name in Cinzel shrinking
+  // to 9 px and no further, the value on the right in Cinzel 11, drawn stars 16 px each, one line of sans under it).
+  // (A local copy in each world-status file: HK.addPlaque could take such a list itself.)
+  const fitFields = (g, list) => {
+    const P = HK.cur().plaques, w = P && P[0] ? P[0].w : 0;
+    if (!w) return list[0];
+    for (const o of list) {
+      const tx = (o.emblem || o.portrait) ? 48 : 10, rw = o.right != null && o.right !== '' ? HK.tw(g, String(o.right), HK.FC(800, 11)) + 12 : 0, stars = o.stars ? o.stars.of * 16 + 6 : 0;
+      if (HK.tw(g, String(o.name || ''), HK.FC(800, 9)) > w - 14 - rw - stars - tx) continue;
+      if (o.sub && o.frac == null && HK.tw(g, String(o.sub), HK.FS(600, 12)) > w - 14 - tx) continue;
+      return o;
+    }
+    return list[list.length - 1];
+  };
+  // on a narrow plaque column (a landscape phone) the name gives way to a shorter one
+  function roofPlaque(g, r = run) {
+    if (!r) return null;
+    const f = Math.max(0, Math.min(1, r.roof / PROP_RESET));
+    const base = { id: 'roof', emblem: 'prop', right: `${Math.max(0, Math.ceil(r.t))} s`, frac: f, edge: r.roof < ROOF_WARN ? HK.T.gules : null };
+    return fitFields(g, [`ROOF · COAL CUT ${r.coal}`, `ROOF · COAL ${r.coal}`, 'ROOF'].map(name => Object.assign({}, base, { name })));
+  }
   HOOKS.hud.push((g, narrow) => {
     if (!running()) return;
-    const pad = 9, f = Math.max(0, Math.min(1, run.roof / PROP_RESET));
-    const tone = f > 0.45 ? HK.C.GOOD : f > 0.2 ? HK.C.WARN : HK.C.BAD;
-    const s = HK.slot(pad * 2 + HK.meterH() + HK.GUT + HK.LINE());
-    HK.plate(g, s.x, s.y, s.w, s.h, { tone: run.roof < ROOF_WARN ? HK.C.BAD : null });
-    const ix = s.x + pad + 2, iw = s.w - pad * 2 - 2;
-    const used = HK.meter(g, ix, s.y + pad, iw, { label: 'ROOF', value: `${Math.max(0, Math.ceil(run.t))}s`, template: '000s', frac: f, tone });
-    HK.readout(g, ix, s.y + pad + used + HK.GUT, iw, [{ label: 'COAL CUT', value: `${run.coal}` }]);
+    const pq = roofPlaque(g); if (pq) HK.addPlaque(g, pq);
   });
 
   // ---------- the cart and the rails in Deepholm ----------
@@ -343,7 +359,7 @@
     g.beginPath(); g.arc(x + 8, y + 8, 4, 0, 7); g.fill();
   }
 
-  window.COALMINE = { MINE, CART_T, RUN_SECONDS, SEAM_LIVE, PROP_RESET, ROOF_FUSE, tiles: { cart: T_CART, seam: T_SEAM, prop: T_PROP, haul: T_HAUL, rail: T_RAIL }, HAUL, EXIT, ENTRY, state: st, get run() { return run; }, startRun, endRun, openFace, FACE_SPOTS };
+  window.COALMINE = { MINE, CART_T, RUN_SECONDS, SEAM_LIVE, PROP_RESET, ROOF_FUSE, tiles: { cart: T_CART, seam: T_SEAM, prop: T_PROP, haul: T_HAUL, rail: T_RAIL }, HAUL, EXIT, ENTRY, state: st, get run() { return run; }, startRun, endRun, openFace, FACE_SPOTS, ROOF_WARN, plaque: roofPlaque };
 
   // ---------- self-test ----------
   const P = 'coalmine: ';
@@ -402,6 +418,24 @@
         const fell = r2.fell >= 1 && (player.hp < hp0 || r2.coal < 6);
         check(P + 'the roof runs down on a clock, a prop resets it, and a fall costs health and coal off the cart', reset && fell, { reset, fell, roof: Math.round(r2.roof), coal: r2.coal, hp: player.hp, hp0 });
       } else check(P + 'the roof runs down on a clock, a prop resets it, and a fall costs health and coal off the cart', false, { noRun: true });
+      // the shift on screen: the ROOF plaque comes through the kit (HK.addPlaque) in a reserved slot: the pit prop, the
+      // coal cut in the name, the seconds left, the roof's share on the health ramp, and a red edge only when it is low
+      if (COALMINE.run) {
+        const r4 = COALMINE.run, rec = [], add0 = HK.addPlaque, fc = HK.audit.fitCtx(), p0 = paused;
+        HK.addPlaque = (g, o) => { rec.push({ o: Object.assign({}, o), r: add0(g, o) }); return rec[rec.length - 1].r; };
+        let low = null, safe = null;
+        try {
+          paused = false;
+          const t0 = r4.t, roof0 = r4.roof, coal0 = r4.coal;
+          r4.coal = 7; r4.t = 41.3; r4.roof = 3; rec.length = 0; drawHud(fc); low = rec.find(q => q.o.id === 'roof') || null;
+          r4.roof = COALMINE.PROP_RESET; rec.length = 0; drawHud(fc); safe = rec.find(q => q.o.id === 'roof') || null;
+          r4.t = t0; r4.roof = roof0; r4.coal = coal0;
+        } finally { HK.addPlaque = add0; paused = p0; }
+        const okLow = !!low && !!low.r && low.o.emblem === 'prop' && low.o.name === 'ROOF · COAL CUT 7' && low.o.right === '42 s' && Math.abs(low.o.frac - 3 / COALMINE.PROP_RESET) < 1e-9 && low.o.edge === HK.T.gules && !low.o.sub;
+        const okSafe = !!safe && safe.o.frac === 1 && !safe.o.edge;
+        check(P + 'the shift shows as a ROOF plaque through HK.addPlaque in a reserved slot: a pit prop, ROOF · COAL CUT 7, the 42 s left, the roof share on the health ramp, and a red edge only while the roof is about to give',
+          okLow && okSafe, { low: low && low.o, safe: safe && safe.o });
+      } else check(P + 'the shift shows as a ROOF plaque through HK.addPlaque in a reserved slot', false, { noRun: true });
       // calling it at the haul cart pays out, records a best, and puts you back in Deepholm
       if (COALMINE.run) {
         const r3 = COALMINE.run; r3.coal = 21; player.hp = player.maxHp;

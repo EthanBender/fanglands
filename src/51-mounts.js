@@ -130,20 +130,49 @@
     return true;
   };
   }
+  // Fennick's rail: the mare herself on a plate of vellum with her price in Cinzel, what she will and will not do in
+  // plain words, the knight's own coins (and how many more he needs), a primary Buy plate and Fennick's stall.
+  const STABLE_LINES = ['She carries a knight at twice walking pace.', 'She will not go indoors, down a dungeon, or into water.', 'No swinging a sword from the saddle: get down first.'];
+  function stableGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP();
+    const w = Math.min(460, PANEL_KIT.room().aw), inner = w - 36, f = K.SENT(13), lh = K.lineH(f);
+    const textH = STABLE_LINES.reduce((a, t) => a + K.linesOf(g, t, inner, f) * lh, 0) + K.linesOf(g, coinLine(), inner, f) * lh;
+    return { K, R, G, w, inner, f, lh, textH, h: 62 + 96 + 10 + textH + 10 + R + G + R + 12 };
+  }
+  const coinLine = () => coins() >= HORSE_PRICE ? `You have ${coins()} coins.` : `You have ${coins()} coins. ${HORSE_PRICE - coins()} more to go.`;
   HOOKS.panel.stable = (g, narrow) => {
-    const { px, py, w, h } = panelBox(g, Math.min(440, VW - 20), 250, "Fennick's rail", `A grey mare — ${HORSE_PRICE} coins`);
-    const lines = [
-      'She carries a knight at twice walking pace.',
-      'She will not go indoors, down a dungeon, or into water.',
-      'No swinging a sword from the saddle: get down first.',
-      `You have ${coins()} coins.`,
-    ];
-    g.font = '13px sans-serif'; g.textAlign = 'left';
-    lines.forEach((t, i) => { g.fillStyle = i === lines.length - 1 ? '#c9a36a' : '#8b949e'; g.fillText(t, px + 18, py + 78 + i * 20); });
+    const Q = stableGeom(g), { K, R, G } = Q;
+    const { px, py, h } = panelBox(g, Q.w, Q.h, "Fennick's rail", `A grey mare called ${NAME}, for ${HORSE_PRICE} coins.`);
+    const x0 = px + 18; let y = py + 62;
+    // the mare, grazing on her plate, and her price
+    K.card(g, x0, y, Q.inner, 96);
+    g.save(); g.beginPath(); g.rect(x0 + 3, y + 3, Q.inner - 6, 90); g.clip();
+    g.translate(x0 + 70, y + 60); g.scale(1.25, 1.25);
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 20, 28, 7, 0, 0, 7); g.fill();
+    drawHorse(g, parkedMare(0, 0), false, null);
+    g.restore();
+    const tx = x0 + 150, tw0 = Q.inner - 150 - 12;
+    K.say(g, NAME, tx, y + 34, tw0, { font: K.NAME(16), color: HK.T.goldHi, id: 'stable:name' });
+    K.say(g, 'A grey mare', tx, y + 54, tw0, { font: Q.f, color: HK.T.inkDim, id: 'stable:kind' });
+    HK.coin(g, tx + 8, y + 72, 8);
+    K.say(g, `${HORSE_PRICE} coins`, tx + 22, y + 77, tw0 - 22, { font: K.NAME(14), color: HK.T.goldHi, id: 'stable:price' });
+    y += 96 + 10;
+    for (const t of STABLE_LINES) y += K.para(g, t, x0, y + 13, Q.inner, 99, { font: Q.f, color: HK.T.ink, id: 'stable:line' });
     const enough = coins() >= HORSE_PRICE;
-    button(g, px + 18, py + h - 100, w - 36, 40, `Buy the mare — ${HORSE_PRICE} coins`, buyHorse, '#238636', enough);
-    button(g, px + 18, py + h - 52, w - 36, 40, 'Trade pelts and scrap', () => { closePanel(); openPanel('shop', 'trader'); }, '#21262d');
+    y += K.para(g, coinLine(), x0, y + 13, Q.inner, 99, { font: Q.f, color: enough ? HK.T.good : HK.T.warn, id: 'stable:coins' });
+    const by = py + h - 12 - R - G - R;
+    K.plate(g, x0, by, Q.inner, R, `Buy ${NAME} for ${HORSE_PRICE} coins`, `Buy the mare — ${HORSE_PRICE} coins`, buyHorse, 'primary', enough, { em: 'coin', name: 'Buy the mare' });
+    K.plate(g, x0, by + R + G, Q.inner, R, 'Trade pelts and scrap', 'Trade pelts and scrap', () => { closePanel(); openPanel('shop', 'trader'); }, null, true);
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): short of coins, then with enough
+  PLACE_KIT.scene({
+    id: 'stable', panel: 'stable', name: "Fennick's rail (short of coins, and with enough)",
+    setup() { const inv = player.inv.map(s => (s ? { ...s } : null)); player.inv = new Array(INV_SLOTS).fill(null); return () => { player.inv = inv; }; },
+    variants: [
+      { name: 'short', open: () => { player.inv = new Array(INV_SLOTS).fill(null); addItem('coins', 340); openPanel('stable'); } },
+      { name: 'enough', open: () => { player.inv = new Array(INV_SLOTS).fill(null); addItem('coins', 999999); openPanel('stable'); } },
+    ],
+  });
 
   // ---------- getting on ----------
   // Every refusal is a real one, checked before anything moves.
@@ -282,21 +311,17 @@
   });
   HOOKS.newGame.push(() => { rideWas = false; handled = false; refuseT = -1e9; });
 
-  // ---------- HUD: her name over the core's "Walker" line, and a RIDE / GET DOWN button ----------
-  // MIGRATED to the HUD kit: the mare's hp is the second meter in the status plate (hudMechName), not a
-  // brown-outlined pill at a hardcoded x, and RIDE / GET DOWN is a control on the left column's grid.
+  // ---------- HUD: her name on the crest, and RIDE / GET DOWN on the context seat ----------
+  // The mare's hp is the crest's big number while you ride (hudMechName names her). RIDE and GET DOWN are faces of the
+  // kit's context seat (src/59-hudkit.js): a horseshoe RIDE when your mare is near (after LEAVE and BUILD), the down-into-
+  // the-tray GET DOWN while you are up. The key is G, read from the same handler the update uses (X also gets you down).
+  // A seat under an open panel takes no taps (10-hud drops a HUD control a panel covers), so a click on a panel never
+  // throws you off.
   hudMechName(() => riding() ? NAME : null);
-  HOOKS.hud.push((g, narrow) => {
-    const near = !player.dead && !riding() && H().owned && !player.mech && !!horseNear();
-    if (!riding() && !near) return;
-    // HOOKS.hud runs before the panels are drawn, and a click is matched against the button list before it is
-    // matched against the open panel — so a button drawn under a panel would still eat the click. Draw nothing
-    // while anything is over the world: the panel sits right on top of this rect (Skills starts at x 14, y 90).
-    if (panel || paused) return;
-    const s = HK.slot(HK.row());
-    button(g, s.x, s.y, HK.ctrlW(), s.h, riding() ? 'GET DOWN' : 'RIDE', tryRide, riding() ? '#21262d' : '#238636');
-    if (!touchMode()) { g.fillStyle = HK.C.DIM; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText(riding() ? 'R or X' : 'R', s.x + HK.ctrlW() + 8, s.y + s.h / 2 + 4); }
-  });
+  hudSeatFace('ctx', { id: 'getdown', prio: 50, when: () => riding() && !player.dead, emblem: 'getdown', ribbon: 'GET DOWN', key: 'G', name: 'Get down (G or X)', action: tryRide });
+  hudSeatFace('ctx', { id: 'ride', prio: 10, when: () => !player.dead && !riding() && H().owned && !player.mech && !!horseNear(), emblem: 'horseshoe', ribbon: 'RIDE', key: 'G', name: `Ride ${NAME}`, action: tryRide });
+  // the coach: "[G] Ride" at the knight the first times his mare is near
+  HOOKS.hud.push(() => { if (!paused && !panel && !player.dead && !riding() && H().owned && !player.mech && horseNear()) HK.teach('ride', 'G', 'Ride', { x: player.x, y: player.y, lift: 46 }, { emblem: 'horseshoe' }); });
 
   // ---------- art: a grey mare with the knight in the saddle, drawn right at all four facings ----------
   // Two builds. Side-on when she faces left or right (mirrored by the sign of facing.x), and end-on when she
@@ -540,7 +565,11 @@
     // matched against the button list before the open panel, so a button left drawn under a panel would still
     // eat the click and throw the knight off his horse. With Skills open the button must not be registered at
     // all, and the click must be swallowed by the panel it landed on.
-    { const up = ride(); render();
+    { const up = ride();
+      // a tall phone with the stick on the right puts the context seat (GET DOWN) at the bottom-left, under the Skills list:
+      // exactly where a ghost button could eat the click (src/59-hudkit.js layout)
+      const own = kk => Object.getOwnPropertyDescriptor(window, kk), sz0 = { w: own('innerWidth'), h: own('innerHeight') }, t0 = window.__forceTouch, sr0 = window.__stickRight;
+      window.innerWidth = 390; window.innerHeight = 844; window.__forceTouch = true; window.__stickRight = true; render();
       dialog.cur = null; dialog.queue.length = 0;
       const btn = buttons.find(b => b.label === 'GET DOWN');
       openPanel('skills'); render();
@@ -554,6 +583,8 @@
       const stillUp = riding(), stillOpen = panel === 'skills';
       closePanel(); render();
       const back = buttons.some(b => b.label === 'GET DOWN') && riding();
+      if (sz0.w) { Object.defineProperty(window, 'innerWidth', sz0.w); Object.defineProperty(window, 'innerHeight', sz0.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+      window.__forceTouch = t0; window.__stickRight = sr0; render();
       F.press('KeyX'); F.sim(2, []); // leave the lane the way the checks below expect it: on foot, mare parked
       check(P + 'no ghost RIDE / GET DOWN button under an open panel — a click on Skills stays on Skills and never throws you off',
         up && !!btn && overlaps && gone && stillUp && stillOpen && back && !riding(),

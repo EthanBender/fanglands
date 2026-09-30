@@ -15,6 +15,8 @@
   const LERP_T = 0.12;        // seconds a puppet takes to glide onto a new snapshot position
   const GONE_AFTER = 1;       // a puppet missing from the stream this long is hidden
   const DROP_AFTER = 2;       // ...and dropped from the array this long after that
+  const STALL_AFTER = 6;      // when the WHOLE stream has stopped, everything stays standing this long (longer than a handoff takes)
+  const BEAT_EVERY = 1;       // a keeper with nobody near still sends an empty snapshot this often: the world's sign it is alive
   const NEAR = 24 * TILE;     // snapshot radius around every knight on the map
   const FREEZE = 1e6;         // the stunT value that makes the core loop skip a monster for one frame
   const MAX_DMG = 500;
@@ -116,6 +118,19 @@
     return { type, nid, x, y, home: home ? { x: home.x, y: home.y } : { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: !!d.aggro, state: 'idle', wanderT: Math.random() * 2,
       wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0 };
   }
+  // Alone, every walk into an instance builds it fresh. Shared, the keeper's instance is the one everyone sees, so once it was
+  // cleared a friend walking in found it empty for as long as the keeper stayed. A knight arriving at a cleared instance now
+  // has the keeper fill it again (the same spawns, fresh). Nobody's 'dungeon cleared' progress changes.
+  function refillIfCleared() {
+    if (!isKeeper() || S.map === 'over' || !window.INSTANCES || typeof INSTANCES.get !== 'function') return false;
+    const inst = INSTANCES.get(S.map); if (!inst || !Array.isArray(inst.spawns) || !inst.spawns.length) return false;
+    if (monsters.some(m => !m.dead && !m.remote && !m.phantom)) return false;
+    const fresh = inst.spawns.map(([type, tx, ty], i) => MONSTER_DEFS[type] ? makeReal(type, tc(tx), tc(ty), 'i' + i) : null).filter(Boolean);
+    for (const m of fresh) monsters.push(m);
+    for (const m of monsters.filter(m => m.dead && m.nid && fresh.some(f => f.nid === m.nid))) { const k = monsters.indexOf(m); if (k >= 0) monsters.splice(k, 1); }
+    S.idxLen = -1; S.snapAcc = SNAP_EVERY;
+    return true;
+  }
   function applyMon(msg) {
     if (!puppetMode() || !msg || !Array.isArray(msg.list)) return;
     if (msg.n !== undefined && msg.n !== S.keeper) return;
@@ -124,9 +139,11 @@
     for (let i = 0; i < n; i++) {
       const e = msg.list[i];
       if (!Array.isArray(e) || e.length < 14) continue;
-      const nid = e[0], type = e[1], x = num(e[2]), y = num(e[3]), hp = num(e[4]), maxHp = num(e[5]), state = e[6], fx = num(e[7]), fy = num(e[8]), hurt = num(e[9]), attackT = num(e[12]), stunT = num(e[13]);
+      // the row is [nid, type, x, y, hp, maxHp, state, fx, fy, moving, hurt, dead, attackT, stunT] (docs/ONLINE.md). Moving and
+      // hurt were once read the wrong way round: every walking monster flashed pink and a standing one never walked.
+      const nid = e[0], type = e[1], x = num(e[2]), y = num(e[3]), hp = num(e[4]), maxHp = num(e[5]), state = e[6], fx = num(e[7]), fy = num(e[8]), moving = num(e[9]), hurt = num(e[10]), attackT = num(e[12]), stunT = num(e[13]);
       if (typeof nid !== 'string' || typeof type !== 'string' || !MONSTER_DEFS[type]) continue;
-      if (x === null || y === null || hp === null || maxHp === null || fx === null || fy === null || hurt === null || attackT === null || stunT === null) continue;
+      if (x === null || y === null || hp === null || maxHp === null || fx === null || fy === null || moving === null || hurt === null || attackT === null || stunT === null) continue;
       let p = idx.get(nid);
       if (p && (!p.remote || p.type !== type)) { const k = monsters.indexOf(p); if (k >= 0) monsters.splice(k, 1); p = null; }
       if (!p) { p = makePuppet(nid, type, x, y); if (!p) continue; monsters.push(p); idx.set(nid, p); added = true; }
@@ -135,16 +152,21 @@
       if (!dead && p.dead && time < p.localDeadUntil) { p.seen = time; continue; }   // our own blow just felled it; give the keeper a moment to agree
       if (dead !== p.dead) p.deadT = 0;
       p.dead = dead; p.hp = hp; if (maxHp > 0) p.maxHp = maxHp; p.state = typeof state === 'string' ? state : 'idle';
-      p.facing.x = fx; p.facing.y = fy; p.moving = !!e[10]; p.hurtT = hurt; p.attackT = attackT; p.stunT = stunT; p.respawnT = 1e9;
+      p.facing.x = fx; p.facing.y = fy; p.moving = !!moving; p.hurtT = hurt; p.attackT = attackT; p.stunT = stunT; p.respawnT = 1e9;
       p.seen = time; p.gone = false;
     }
     if (added) { S.idxArr = monsters; S.idxLen = monsters.length; }
+    S.lastMonAt = time;
   }
   function policePuppets() {
     let arr = monsters, dirty = false;
     for (const m of arr) { if (!m.remote) { dirty = true; break; } if (m.gone && time - m.seen > DROP_AFTER) { dirty = true; break; } }
     if (dirty) { arr = arr.filter(m => m.remote && !(m.gone && time - m.seen > DROP_AFTER)); monsters = arr; }
-    for (const p of arr) if (!p.gone && time - p.seen > GONE_AFTER) { p.gone = true; p.dead = true; p.deadT = 9; }
+    // while the keeper's stream flows, a puppet it stopped listing (it died, or went out of range) goes after GONE_AFTER; when
+    // the whole stream stalls (the keeper's phone locked, a handoff on its way) the monsters stay standing up to STALL_AFTER
+    // instead of all vanishing at once
+    const flowing = time - (S.lastMonAt || -1e9) < 0.75;
+    for (const p of arr) if (!p.gone && time - p.seen > (flowing ? GONE_AFTER : STALL_AFTER)) { p.gone = true; p.dead = true; p.deadT = 9; }
     S.puppets = arr;
   }
 
@@ -255,10 +277,17 @@
       }
       return;
     }
+    // a keeper whose game is running keeps talking even with nobody near: an empty snapshot is a heartbeat, so the world never
+    // takes a working keeper for a frozen one and hands the map to a knight whose phone is locked (the monsters then vanished).
+    // A paused keeper or one on the title screen stays quiet on purpose, so the world hands the map to someone who is playing.
+    if (isKeeper() && online() && !paused && !(title && title.active)) {
+      S.beatAcc = (S.beatAcc || 0) + dt;
+      if (S.beatAcc >= BEAT_EVERY && !(pre && pre.kind === 'keeper' && S.here.length)) { S.beatAcc = 0; NET.send({ t: 'mon', list: [] }); }
+    }
     if (!pre || pre.kind !== 'keeper') return;
     if (!paused) for (const f of pre.frozen) { const m = f.m; if (!m.dead && m.stunT <= 0 && monsters.includes(m)) stepRemote(m, f.target, dt); }
     S.snapAcc += dt;
-    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
+    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; S.beatAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
   }
   const _update = update;
   update = function (dt) { const pre = before(dt); _update(dt); after(dt, pre); };
@@ -301,7 +330,9 @@
       if (typeof msg.n !== 'string' || msg.n === NET.me || typeof msg.map !== 'string') return;
       const x = num(msg.x), y = num(msg.y); if (x === null || y === null) return;
       const r = S.remotes[msg.n] || (S.remotes[msg.n] = { n: msg.n });
-      r.x = x; r.y = y; r.map = msg.map; r.def = num(msg.def); r.dead = !!msg.dead; r.hp = num(msg.hp); r.lv = num(msg.lv); r.seen = time;
+      const arrived = r.map !== msg.map;
+      r.x = x; r.y = y; r.map = msg.map;
+      if (arrived && msg.map === S.map) refillIfCleared(); r.def = num(msg.def); r.dead = !!msg.dead; r.hp = num(msg.hp); r.lv = num(msg.lv); r.seen = time;
     });
     NET.on('left', msg => { if (typeof msg.n === 'string') delete S.remotes[msg.n]; });
     NET.on('who', msg => { if (!Array.isArray(msg.list)) return; const names = new Set(); for (const e of msg.list) if (e && typeof e.n === 'string') names.add(e.n); for (const n in S.remotes) if (!names.has(n)) delete S.remotes[n]; });
@@ -333,7 +364,7 @@
     });
   }
 
-  window.COOP = {
+  window.COOP = { refill: refillIfCleared,
     isKeeper, keeper: () => S.keeper, map: () => S.map, remotes: () => Object.values(S.remotes), knightsHere, puppets: () => S.puppets,
     get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), find, apply: applyMon, reset, state: S,
   };
@@ -372,6 +403,13 @@
       const farExists = real.some(m => !m.dead && !near(m.x, m.y)), farListed = list.some(e => !sentNear(e[2], e[3]));
       check(P + 'the keeper streams snapshots in the contract shape, only for monsters near a knight', NET.online() && COOP.isKeeper() && COOP.map() === 'over' && mons.length >= 1 && shapeOk && farExists && !farListed && list.some(e => e[0] === gob.nid), { online: NET.online(), keeper: COOP.keeper(), map: COOP.map(), snapshots: mons.length, listed: list.length, shapeOk, farExists, farListed });
 
+      // (a2) a keeper with nobody near still sends a heartbeat (an empty snapshot) about once a second, so the world never
+      // takes it for frozen; a paused keeper stays quiet on purpose so the world hands the map to someone playing
+      { push({ t: 'left', n: 'Ann', map: 'over' }); sent.length = 0; F.sim(90);
+        const beats = sentOf('mon').filter(m => Array.isArray(m.list) && m.list.length === 0).length;
+        const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length; paused = p0;
+        check(P + 'a keeper with nobody near sends a heartbeat about once a second, and none while paused', beats >= 1 && beats <= 3 && whilePaused === 0, { beats, whilePaused });
+        push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 }); }
       // (b) a non-keeper shows puppets that hold still while the stream is silent
       push({ t: 'keeper', map: 'over', n: 'Ann' });
       const parked = COOP.parked;
@@ -379,6 +417,12 @@
       const row = (nid, type, x, y, hp, mhp, state) => [nid, type, x, y, hp, mhp, state, 1, 0, 0, 0, 0, 0, 0];
       push({ t: 'mon', n: 'Ann', list: [row('Ann:1', 'goblin', ax, ay, 12, 12, 'idle'), row(s0.nid, s0.type, ax + 40, ay + 40, 5, s0.maxHp, 'chase')] });
       const p1 = COOP.find('Ann:1'), p2 = COOP.find(s0.nid);
+      // (b2) moving (row 9) and hurt (row 10) land in the right fields: a walking monster walks and is not pink, a hurt one flashes
+      { push({ t: 'mon', n: 'Ann', list: [['Ann:w', 'goblin', ax + 80, ay, 12, 12, 'chase', 1, 0, 1, 0, 0, 0, 0], ['Ann:h', 'goblin', ax + 120, ay, 9, 12, 'idle', 1, 0, 0, 0.18, 0, 0, 0]] });
+        const pw = COOP.find('Ann:w'), ph = COOP.find('Ann:h');
+        check(P + 'a walking monster from the keeper walks and is not pink; a hurt one flashes (moving and hurt read from the right places)', !!pw && pw.moving === true && pw.hurtT === 0 && !!ph && ph.moving === false && ph.hurtT > 0, { walk: pw && [pw.moving, pw.hurtT], hurt: ph && [ph.moving, ph.hurtT] });
+        for (const q of [pw, ph]) { const k = q ? monsters.indexOf(q) : -1; if (k >= 0) monsters.splice(k, 1); }
+        S.idxLen = -1; }
       let drew = true; try { render(); } catch (e) { drew = false; }
       monsters.push(makeReal('goblin', ax, ay + 200, null, null));   // a boss file spawning locally on a non-keeper: dropped after the next update
       F.sim(60);
@@ -445,6 +489,18 @@
       sent.length = 0; F.sim(180);
       const hurts = sentOf('hurt');
       check(P + 'a remote knight beside an aggressive monster gets hurt messages from the keeper while the keeper stands far away, and the monster chases them', dist(player.x, player.y, gob.home.x, gob.home.y) > 8 * TILE && hurts.length >= 1 && hurts.every(m => m.to === 'Ann' && Number.isFinite(m.dmg) && m.dmg >= 0 && m.dmg <= MONSTER_DEFS.goblin.maxHit) && gob.state === 'chase' && dist(gob.x, gob.y, ann2.x, ann2.y) < 60 && sentOf('mon').length >= 10, { keeperAway: Math.round(dist(player.x, player.y, gob.home.x, gob.home.y) / TILE), hurts: hurts.length, state: gob.state, gap: Math.round(dist(gob.x, gob.y, ann2.x, ann2.y)), snapshots: sentOf('mon').length });
+      // (h) a knight walking into a cleared instance finds it filled again (alone, every entry is fresh; shared, it stayed empty)
+      if (typeof INSTANCES !== 'undefined' && INSTANCES.get && INSTANCES.get('spider_den')) {
+        push({ t: 'keeper', map: 'over', n: NET.me });
+        const inDen = INSTANCES.enter('spider_den');
+        push({ t: 'keeper', map: 'spider_den', n: NET.me });
+        for (const m of monsters) m.dead = true;
+        const refilled = !!COOP.refill && (push({ t: 'p', n: 'Bo', map: 'spider_den', x: player.x + TILE, y: player.y, def: 500, dead: false, hp: 20, lv: 2 }), true);
+        const alive = monsters.filter(m => !m.dead).length, want = INSTANCES.get('spider_den').spawns.length;
+        const again = COOP.refill ? COOP.refill() : null;
+        check(P + 'a knight arriving at a cleared instance finds it filled again, once (not while monsters still stand)', inDen && refilled && alive === want && again === false, { inDen, alive, want, again });
+        INSTANCES.leave(); push({ t: 'left', n: 'Bo', map: 'spider_den' });
+      }
     } finally {
       NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
       reset();

@@ -57,17 +57,50 @@
     save();
   }
 
+  // The wreck's panel: what the choice is in plain words, what stripping pays (the parts in a pouch, the exact range
+  // and the Crafting xp), a primary Repair plate and the Strip plate, which asks twice and turns red when armed.
+  const WRECK_TEXT = 'Put it back together and drive it, or break it down for parts. Nix the scrapper in Grubmarket trades parts for the machine plans you are missing.';
+  function wreckGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
+    const w = Math.min(PANEL_KIT.room().aw, 440), inner = w - 36, f = K.SENT(13), lh = K.lineH(f);
+    const textH = K.linesOf(g, WRECK_TEXT, inner, f) * lh;
+    return { K, R, G, S, w, inner, f, lh, textH, h: 62 + textH + 8 + 18 + S + 16 + 10 + R + G + R + 12 };
+  }
   HOOKS.panel.salvage = (g, narrow) => {
     const at = panelArg || {};
-    const t = tileAt(at.tx, at.ty), y = yieldFor(t);
-    if (!y) { closePanel(); return; }
-    const { px, py, w } = panelBox(g, narrow ? 320 : 400, 210, 'A wrecked machine', `${y.name} · ${y.lo}-${y.hi} machine parts if you strip it`);
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left';
-    wrapText(g, 'Put it back together and drive it, or break it down for parts. Nix the scrapper in Grubmarket trades parts for the machine plans you are missing.', px + 18, py + 62, w - 36, 16);
-    button(g, px + 18, py + 118, w - 36, 34, 'Repair it and drive it', () => { closePanel(); repairThrough(); });
+    const t = tileAt(at.tx, at.ty), y0 = yieldFor(t);
+    if (!y0) { closePanel(); return; }
+    const Q = wreckGeom(g), { K, R, G, S } = Q;
+    const { px, py, h } = panelBox(g, Q.w, Q.h, 'A wrecked machine', `A wrecked ${y0.name}.`);
+    const x0 = px + 18; let y = py + 62;
+    y += K.para(g, WRECK_TEXT, x0, y + 13, Q.inner, 99, { font: Q.f, color: HK.T.inkDim, id: 'wreck:text' }) + 8;
+    y += K.head(g, x0, y, Q.inner, 'If you strip it');
+    K.pouch(g, x0, y, S, 'machine_parts', y0.hi);
+    const tx = x0 + S + 12, tw0 = Q.inner - S - 12;
+    K.say(g, `${y0.lo} to ${y0.hi} machine parts`, tx, y + 17, tw0, { font: K.NAME(13), color: HK.T.ink, id: 'wreck:parts' });
+    K.say(g, `and ${y0.xp} Crafting xp. Sometimes some goblin scrap too.`, tx, y + 36, tw0, { font: Q.f, color: HK.T.inkDim, id: 'wreck:xp' });
     const armed = confirmActive('strip');
-    button(g, px + 18, py + 158, w - 36, 34, armed ? 'Really strip it? Tap again' : 'Strip it for parts', () => confirmTap('strip', () => { closePanel(); stripWreck(at.tx, at.ty); }), armed ? '#c0392b' : '#8b2e2e');
+    const by = py + h - 12 - R - G - R;
+    K.plate(g, x0, by, Q.inner, R, 'Repair it and drive it', 'Repair it and drive it', () => { closePanel(); repairThrough(); }, 'primary', true);
+    K.plate(g, x0, by + R + G, Q.inner, R, armed ? 'Really strip it? Tap again' : 'Strip it for parts', armed ? 'Really strip it? Tap again' : 'Strip it for parts', () => confirmTap('strip', () => { closePanel(); stripWreck(at.tx, at.ty); }), armed ? 'danger' : null, true);
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): a walker wreck, then with the Strip plate armed
+  {
+    let spot = null, was = null;
+    const wreckAt = () => { for (let i = 0; i < map.length; i++) if (isWreck(map[i])) return { tx: i % MAP_W, ty: (i / MAP_W) | 0, made: false }; return null; };
+    PLACE_KIT.scene({
+      id: 'salvage', panel: 'salvage', name: 'A wrecked machine (as it opens, and with Strip armed)',
+      setup() {
+        spot = wreckAt();
+        if (!spot) { spot = { tx: 60, ty: 26, made: true }; was = tileAt(60, 26); changeTile(60, 26, T.WRECK); }
+        return () => { if (spot && spot.made) changeTile(spot.tx, spot.ty, was); spot = null; uxConfirm = null; };
+      },
+      variants: [
+        { name: '', open: () => { uxConfirm = null; openPanel('salvage', { tx: spot.tx, ty: spot.ty }); } },
+        { name: 'armed', open: () => { openPanel('salvage', { tx: spot.tx, ty: spot.ty }); uxConfirm = { label: 'strip', until: nowMs() + 60000 }; } },
+      ],
+    });
+  }
 
   // ---------- Nix sells plans, quietly ----------
   const PRICE = { blueprint_drill: 12, blueprint_ram: 16, blueprint_irondrill: 24, blueprint_boiler: 32 };
@@ -86,34 +119,71 @@
     return true;
   };
 
+  // Nix's panel: what the knight carries (parts and scrap, in pouches with exact counts), then one card per plan —
+  // the blueprint in a pouch, its name, its exact price in parts, and Buy the plan (green), "Need n more" (greyed) or a
+  // drawn tick and "You have it". Melting scrap into parts is the plate at the bottom.
+  function nixGeom(g) {
+    const K = PLACE_KIT, R = K.R(), G = K.GAP(), S = K.POUCH();
+    const ids = Object.keys(PRICE).filter(id => ITEMS[id]);
+    const bw = touchMode() ? 124 : 112, rowH = Math.max(S, R) + 16;
+    // the plans stand in one column, or two side by side when the screen is too short for one (a phone on its side)
+    const hOf = cols => 62 + 18 + S + 18 + 6 + 18 + Math.ceil(ids.length / cols) * (rowH + G) + R + 12;
+    const cols = hOf(1) > PANEL_KIT.room().ah && PANEL_KIT.room().aw >= 720 ? 2 : 1;
+    const w = Math.min(PANEL_KIT.room().aw, cols === 2 ? 760 : 500), inner = w - 36, colW = (inner - (cols - 1) * 16) / cols;
+    return { K, R, G, S, ids, w, inner, bw, rowH, cols, colW, h: hOf(cols) };
+  }
   HOOKS.panel.nix_parts = (g, narrow) => {
     const parts = countItem('machine_parts'), scrap = countItem('goblin_scrap');
-    const ids = Object.keys(PRICE).filter(id => ITEMS[id]);
-    const { px, py, w } = panelBox(g, narrow ? 340 : 470, 150 + ids.length * 40, 'Nix the scrapper', `${parts} machine parts · ${scrap} goblin scrap · you never had these from me`);
-    let y = py + 58;
-    for (const id of ids) {
+    const Q = nixGeom(g), { K, R, G, S } = Q;
+    const { px, py, h } = panelBox(g, Q.w, Q.h, 'Nix the scrapper', 'Plans for machine parts. You never had these from me.');
+    const x0 = px + 18; let y = py + 62;
+    y += K.head(g, x0, y, Q.inner, 'You carry');
+    const half = (Q.inner - G) / 2;
+    K.pouch(g, x0, y, S, 'machine_parts', parts || 0);
+    K.say(g, `${parts} machine parts`, x0 + S + 8, y + S / 2 + 5, half - S - 8, { font: K.NAME(12), color: HK.T.ink, id: 'nix:have' });
+    K.pouch(g, x0 + half + G, y, S, 'goblin_scrap', scrap || 0);
+    K.say(g, `${scrap} goblin scrap`, x0 + half + G + S + 8, y + S / 2 + 5, half - S - 8, { font: K.NAME(12), color: HK.T.ink, id: 'nix:have' });
+    y += S + 18 + 6;
+    y += K.head(g, x0, y, Q.inner, 'Plans');
+    const top = y;
+    Q.ids.forEach((id, n) => {
       const cost = PRICE[id], have = hasBP(id), can = !have && parts >= cost;
-      g.fillStyle = have ? '#3fb950' : can ? '#e6edf3' : '#6e7681'; g.font = '12px sans-serif'; g.textAlign = 'left';
-      drawItemIcon(g, id, px + 26, y + 16, 14);
-      g.fillText(`${bpName(id)} — ${cost} parts`, px + 44, y + 20);
-      if (have) { g.fillStyle = '#3fb950'; g.textAlign = 'right'; g.fillText('you have it', px + w - 22, y + 20); g.textAlign = 'left'; }
-      else button(g, px + w - 132, y, 110, 30, can ? 'Buy the plan' : `Need ${cost - parts} more`, () => {
+      const cx = x0 + (n % Q.cols) * (Q.colW + 16), y = top + Math.floor(n / Q.cols) * (Q.rowH + G);
+      K.card(g, cx, y, Q.colW, Q.rowH, can ? HK.T.gold : null);
+      K.pouch(g, cx + 10, y + 8, S, id, 1);
+      const tx = cx + 10 + S + 12, tw0 = Q.colW - 10 - S - 12 - Q.bw - 22;
+      K.say(g, bpName(id).replace(/^Blueprint: /, ''), tx, y + Q.rowH / 2 - 3, tw0, { font: K.NAME(13), color: have ? HK.T.good : HK.T.ink, id: 'nix:name' });
+      K.say(g, `${cost} machine parts`, tx, y + Q.rowH / 2 + 15, tw0, { font: K.NAME(11), color: can ? HK.T.goldHi : HK.T.inkDim, id: 'nix:price' });
+      const bx = cx + Q.colW - 10 - Q.bw, by = y + (Q.rowH - R) / 2;
+      if (have) K.mark(g, true, bx + 8, by + R / 2 + 5, 'You have it', { w: Q.bw - 26 });
+      else K.plate(g, bx, by, Q.bw, R, can ? 'Buy the plan' : `Need ${cost - parts} more`, can ? 'Buy the plan' : `Need ${cost - parts} more`, () => {
         if (countItem('machine_parts') < cost || hasBP(id)) return;
         removeItem('machine_parts', cost); giveOrDrop(id, 1, player.x, player.y);
         nixState().bought++; sfx('coin'); burst(player.x, player.y, '#3b6fb6', 14, 80);
         floatText(player.x, player.y - 34, bpName(id), '#3b6fb6', 14);
         say('Take it. Burn it when you are done. And if anyone asks, you found it in the yard.', 'Nix the scrapper');
         save();
-      }, can ? '#1f6feb' : '#21262d', can);
-      y += 40;
-    }
+      }, can ? 'primary' : null, can, { name: 'Buy the ' + bpName(id).toLowerCase() });
+    });
     const canMelt = scrap >= SCRAP_PER_PART;
-    button(g, px + 18, y + 6, w - 36, 32, canMelt ? `Melt ${SCRAP_PER_PART} goblin scrap into 1 machine part` : `Melting needs ${SCRAP_PER_PART} goblin scrap`, () => {
+    const melt = canMelt ? `Melt ${SCRAP_PER_PART} goblin scrap into 1 machine part` : `Melting needs ${SCRAP_PER_PART} goblin scrap`;
+    K.plate(g, x0, py + h - 12 - R, Q.inner, R, melt, melt, () => {
       if (countItem('goblin_scrap') < SCRAP_PER_PART || !canFit('machine_parts', 1)) return;
       removeItem('goblin_scrap', SCRAP_PER_PART); giveOrDrop('machine_parts', 1, player.x, player.y);
       nixState().melted++; gainXp('crafting', 12); sfx('ui'); save();
-    }, canMelt ? '#21262d' : '#161b22', canMelt);
+    }, null, canMelt);
   };
+  // the panel audit's scene (PLACE_KIT, run from 63-house): 20 parts and 7 scrap, the drill plan already held
+  PLACE_KIT.scene({
+    id: 'nix', panel: 'nix_parts', name: 'Nix the scrapper (20 parts, 7 scrap, one plan held, one affordable)',
+    setup() {
+      const inv = player.inv.map(s => (s ? { ...s } : null)), bank = player.bank.map(s => ({ ...s })), up0 = player.dozerUp ? { ...player.dozerUp } : null;
+      player.inv = new Array(INV_SLOTS).fill(null); addItem('machine_parts', 20); addItem('goblin_scrap', 7); addItem('blueprint_drill', 1);
+      player.dozerUp = { drill: false, irondrill: false, ram: false, boiler: false };
+      return () => { player.inv = inv; player.bank = bank; player.dozerUp = up0; };
+    },
+    variants: [{ name: '', open: () => openPanel('nix_parts') }],
+  });
 
   // the audit's progression table should know parts are a Crafting source
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => {

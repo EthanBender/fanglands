@@ -100,15 +100,15 @@
   // fires the ordinary attack on the Space press, so a tap is unchanged — this only takes over once the input
   // has been down past HOLD_TO_CHARGE, and it fires on release. `held` is public so the art can show the charge.
   let held = 0, firedFromHold = false, holdSource = null;
-  let beaconRect = null;                                   // set by the HUD each frame on touch
-  const inBeacon = p => !!beaconRect && p && p.x >= beaconRect.x && p.x <= beaconRect.x + beaconRect.w && p.y >= beaconRect.y && p.y <= beaconRect.y + beaconRect.h;
+  // the hold target is the kit's BLOCK seat while in a machine (src/59-hudkit.js); its rect, for anything that asks
+  const beaconRect0 = () => { const q = typeof HK !== 'undefined' ? HK.seat('block') : null; return q && machineKind() ? { x: q.x - q.r, y: q.y - q.r, w: q.r * 2, h: q.r * 2 } : null; };
   // charge 0..1 while winding up by hand, then the special's own wind-up takes over
   const chargeFrac = () => (sp ? (sp.phase === 'wind' ? sp.t / WIND : 1) : Math.max(0, Math.min(1, (held - HOLD_TO_CHARGE) / 0.55)));
   const armed = () => firedFromHold;
   HOOKS.update.push(dt => {
     if (!machineKind() || sp) { held = 0; firedFromHold = false; holdSource = null; return; }
     const key = keys.has('Space');
-    const touchHold = touchMode() && !!touch.press && inBeacon(touch.press);
+    const touchHold = typeof HK !== 'undefined' && HK.held('block');   // a finger (or a mouse) held on the special's seat (src/59-hudkit.js)
     const down = key || touchHold;
     if (down) {
       if (!holdSource) holdSource = key ? 'key' : 'touch';
@@ -268,35 +268,21 @@
     } });
   });
 
-  // the on-screen button, so it works on an iPad, and a small state chip while it is live
-  HOOKS.hud.push((g, narrow) => {
-    if (!machineKind()) return;
-    if (!touchMode()) return; // on a desktop the key is the control; a corner button there is just confusing
-    // A HOLD target, not a tap: it is deliberately NOT a button() entry, because 05-input fires a button on
-    // press and would never see the release. It publishes its rect and the update loop watches touch.press
-    // against it, so holding it charges exactly the way holding Space does.
-    const R = 30, pad = 16;
-    const cx = window.__stickRight ? pad + R : VW - pad - R;   // opposite the move stick, wherever that is
-    const cy = Math.max(HUD_LAYOUT.hotbarY - R - 16, 140);
-    beaconRect = { x: cx - R, y: cy - R, w: R * 2, h: R * 2 };
-    const charge = chargeFrac(), broken = cool > 0 && !sp;
-    const lit = armed() ? (Math.sin(time * 26) > 0 ? 1 : 0.2) : broken ? 0.15 : 0.5 + charge * 0.5;
-    g.beginPath(); g.arc(cx, cy, R, 0, 7);
-    g.fillStyle = broken ? 'rgba(20,22,28,0.85)' : `rgba(${Math.round(120 + 90 * lit)},${Math.round(30 + 30 * lit)},28,0.85)`;
-    g.fill();
-    g.strokeStyle = broken ? '#3a3a42' : `rgba(255,140,110,${0.4 + 0.5 * lit})`; g.lineWidth = 2; g.stroke();
-    // the charge ring fills as you hold
-    if (!broken && (charge > 0 || sp)) {
-      g.strokeStyle = armed() || sp ? '#f5c542' : '#d29922'; g.lineWidth = 4;
-      g.beginPath(); g.arc(cx, cy, R - 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, sp ? 1 : charge)); g.stroke();
-  // (feat/hud had migrated the old 66x30 STEAM button onto the kit's left column; master replaced that button
-  //  with the corner HOLD target above before the merge, so the migration has nothing left to migrate.)
-    }
-    g.textAlign = 'center'; g.font = 'bold 11px sans-serif';
-    g.fillStyle = broken ? '#6e7681' : '#ffe9e0';
-    g.fillText(sp ? (sp.phase === 'wind' ? 'WIND' : 'GO') : broken ? `${Math.ceil(cool)}s` : armed() ? 'LET GO' : 'HOLD', cx, cy + 4);
-    g.textAlign = 'left';
+  // The on-screen control is the BLOCK seat of the kit's four (src/59-hudkit.js): you cannot lift a shield in a machine,
+  // so in any machine that seat holds the special — a bolt, a gold charge ring filling as you hold, and the ribbon saying
+  // what to do: HOLD, LET GO, WIND, GO, or the seconds until it is ready again. It is a HOLD target (hold: true), so the
+  // kit does not fire it on the press; the update above watches HK.held('block') the way it watches the Space key.
+  // The mare has no special seat (the open question in the spec: V on the mare is not guarded).
+  hudSeatFace('block', {
+    id: 'special', prio: 10, hold: true, when: () => !!machineKind() && machineKind() !== 'horse', emblem: 'bolt', key: 'V',
+    name: () => (SPECIALS[machineKind()] || SPECIALS.walker).name + ' (hold)',
+    ribbon: () => sp ? (sp.phase === 'wind' ? 'WIND' : 'GO') : cool > 0 ? `${Math.ceil(cool)}s` : armed() ? 'LET GO' : 'HOLD',
+    lit: () => armed() || !!sp, disabled: () => cool > 0 && !sp,
+    charge: () => (sp ? 1 : chargeFrac()) || null,
+    cool: () => cool > 0 && !sp ? { frac: cool / (SPECIALS[machineKind()] || SPECIALS.walker).cool, text: `${Math.ceil(cool)}` } : null,
   });
+  // the coach: "[V] Hold for the special" the first times a machine's special is ready
+  HOOKS.hud.push(() => { const k = machineKind(); if (k && k !== 'horse' && !sp && cool <= 0 && !paused && !panel) HK.teach('special', 'V', 'Hold for the special', { x: player.x, y: player.y, lift: 58 }, { emblem: 'bolt' }); });
 
   // ---------- C. over the palisade, on the town side ----------
   const VAULT_LV = 15, VAULT_XP = 70;
@@ -351,7 +337,7 @@
 
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => add('agility', 'vault the goblin camp palisade (town side)', VAULT_LV, VAULT_XP, 5, 'a shortcut in from Thistledown instead of the walk to the gate'));
 
-  window.RIDING = { riderOffset, chargeFrac, armed, get beaconRect() { return beaconRect; }, WIND, RUN, SPEED, COOL, COOL_BOILER, HIT_DMG, VAULT_LV, VAULT_XP, vault, tile: T_VAULT, startSteam, SPECIALS, HOLD_TO_CHARGE, machineKind, get special() { return sp; }, get cooldown() { return cool; }, resetCool: () => { cool = 0; sp = null; } };
+  window.RIDING = { riderOffset, chargeFrac, armed, get beaconRect() { return beaconRect0(); }, WIND, RUN, SPEED, COOL, COOL_BOILER, HIT_DMG, VAULT_LV, VAULT_XP, vault, tile: T_VAULT, startSteam, SPECIALS, HOLD_TO_CHARGE, machineKind, get special() { return sp; }, get cooldown() { return cool; }, resetCool: () => { cool = 0; sp = null; } };
 
   // ---------- self-test ----------
   const P = 'riding: ';

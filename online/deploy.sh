@@ -9,6 +9,8 @@ cd "$(dirname "$0")/.."
 node tools/headless.js
 node --test online/test/
 [ -f tools/mmo-sim.js ] && node tools/mmo-sim.js && node tools/mmo-sim.js --room
+# real key presses in a real browser (the suite has no DOM): typed chat sends, typing does not move the knight
+[ -f tools/dom-keys.js ] && node tools/dom-keys.js index.html
 [ -f tools/mmo-sim-admin.js ] && node tools/mmo-sim-admin.js
 [ -f tools/mmo-sim-party.js ] && node tools/mmo-sim-party.js
 cp index.html online/public/index.html

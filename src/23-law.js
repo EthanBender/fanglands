@@ -17,7 +17,8 @@ let lawArmed = false; // true while guards have been told to fight; stand them d
 
 const lawIsGuard = m => LAW_GUARD_TYPES.includes(m.type);
 function law() { if (!player.law) player.law = { wanted: 0, timer: 0, fines: 0 }; return player.law; }
-const lawStars = n => '★'.repeat(n) + '☆'.repeat(Math.max(0, 3 - n));
+// the wanted level in plain words (stars are only ever DRAWN, on the WANTED plaque and in the Captain's panel)
+const lawStars = n => `${n} of 3 star${n === 1 ? '' : 's'}`;
 const lawFine = () => law().fines + law().wanted * LAW_LEVEL_FINE;
 const lawOwes = () => law().wanted > 0 || law().fines > 0;
 
@@ -26,8 +27,8 @@ function lawOffend(level) {
   const L = law(); const before = L.wanted;
   L.wanted = clamp(level, 0, 3); L.timer = LAW_HIT_TIMER;
   if (L.wanted > before) {
-    floatText(player.x, player.y - 42, 'WANTED ' + '★'.repeat(L.wanted), '#ff6b6b', 16);
-    notify(L.wanted >= 3 ? 'The whole watch is after you! Reinforcements at the gates.' : `The watch is after you! Wanted ${lawStars(L.wanted)}`);
+    floatText(player.x, player.y - 42, `WANTED: ${L.wanted} star${L.wanted === 1 ? '' : 's'}`, '#ff6b6b', 16);
+    notify(L.wanted >= 3 ? 'The whole watch is after you! Reinforcements at the gates.' : `The watch is after you! Wanted: ${lawStars(L.wanted)}.`);
     if (before === 0) say("Striking the watch inside the walls? The Captain will want words. And coin.", 'The Voice');
     save();
   }
@@ -79,7 +80,7 @@ HOOKS.update.push(dt => {
     L.timer -= dt;
     if (L.timer <= 0) {
       L.wanted -= 1; L.timer = L.wanted > 0 ? LAW_DECAY : 0;
-      notify(L.wanted > 0 ? `The watch is losing interest. Wanted ${lawStars(L.wanted)}` : L.fines > 0 ? 'The watch has lost interest. Your fine still stands.' : 'The watch has lost interest in you.');
+      notify(L.wanted > 0 ? `The watch is losing interest. Wanted: ${lawStars(L.wanted)}.` : L.fines > 0 ? 'The watch has lost interest. Your fine still stands.' : 'The watch has lost interest in you.');
       save();
     }
   }
@@ -114,16 +115,46 @@ HOOKS.talk.captain = n => {
   } else say(pick(LAW_CAPTAIN_LINES), n.name);
   openPanel('captain');
 };
+// The Captain's panel wears the book frame (panelBox). The wanted level is DRAWN (three stars, the lit ones gold) beside
+// the words, the reason for the fine is one plain sentence, and the verbs are iron plate buttons a kit row tall:
+// green (the choice to make) when it can be done, greyed and inert when it cannot. Nothing here is danger red.
+const LAW_PAD = 18;
+function lawDrawStars(g, x, cy, n, r = 8) {
+  for (let i = 0; i < 3; i++) {
+    const sx = x + r + i * (r * 2 + 4);
+    HK.starPath(g, sx, cy, r, r * 0.42);
+    g.fillStyle = i < n ? HK.T.goldHi : 'rgba(0,0,0,0.5)'; g.fill();
+    g.strokeStyle = i < n ? '#3a2708' : 'rgba(217,178,92,0.45)'; g.lineWidth = 1; g.stroke();
+  }
+  return 3 * (r * 2 + 4) - 4;
+}
 HOOKS.panel.captain = (g, narrow) => {
   const L = law(); const cost = lawFine(); const scrap = countItem('goblin_scrap');
-  const { px, py, w, h } = panelBox(g, 440, 262, 'Captain of the Watch', lawOwes() ? `Wanted ${lawStars(L.wanted)} · fine ${cost} coins` : 'Thistledown is at peace with you.');
-  g.fillStyle = '#c9d1d9'; g.font = '13px sans-serif'; g.textAlign = 'left';
+  const rh = HK.row(), gap = rh >= 44 ? 10 : 8;
+  const w = Math.min(460, VW - 20), inner = w - LAW_PAD * 2;
   const parts = [];
   if (L.fines) parts.push(`${L.fines} for the guard${L.fines > LAW_KILL_FINE ? 's' : ''} you cut down`);
   if (L.wanted) parts.push(`${L.wanted * LAW_LEVEL_FINE} for ${L.wanted} star${L.wanted > 1 ? 's' : ''}`);
-  wrapText(g, lawOwes() ? `Settle up and the watch stands down: ${parts.join(', and ')}.` : `The watch buys goblin scrap at ${LAW_SCRAP_PAY} coins a piece. You carry ${scrap}.`, px + 18, py + 78, w - 36, 18);
+  const words = lawOwes() ? `Settle up and the watch stands down: ${parts.join(', and ')}.` : `The watch buys goblin scrap at ${LAW_SCRAP_PAY} coins a piece. You carry ${scrap}.`;
+  const f = HK.FS(600, 14), lh = Math.round(14 * HK.k() * 1.42);
+  const lines = HK.wrap(g, words, inner, 10, f).lines;
+  const starRow = L.wanted > 0 ? 30 : 0;
+  const h = 62 + starRow + lines.length * lh + 16 + 3 * rh + 2 * gap + 18;
+  const sub = !lawOwes() ? 'Thistledown is at peace with you.' : L.wanted ? `Wanted: ${lawStars(L.wanted)} · fine ${cost} coins` : `Fine to pay: ${cost} coins`;
+  const { px, py, h: ph } = panelBox(g, w, h, 'Captain of the Watch', sub);
+  let y = py + 62;
+  if (starRow) {
+    HK.text(g, 'WANTED', px + LAW_PAD, y + 16, { font: HK.FC(800, 13), color: HK.T.bad });
+    const sw = lawDrawStars(g, px + LAW_PAD + HK.tw(g, 'WANTED', HK.FC(800, 13)) + 10, y + 11, L.wanted);
+    HK.text(g, L.timer > 0 ? `${Math.ceil(L.timer)} s` : '', px + LAW_PAD + HK.tw(g, 'WANTED', HK.FC(800, 13)) + 10 + sw + 10, y + 16, { font: HK.FC(800, 12), color: HK.T.inkDim });
+    y += starRow;
+  }
+  lines.forEach((ln, i) => HK.text(g, ln, px + LAW_PAD, y + 14 + i * lh, { font: f, color: HK.T.ink, box: { x: px + LAW_PAD, y, w: inner, h: lh }, fitId: 'captain:words' }));
+  y += lines.length * lh + 16;
   const canPay = lawOwes() && coins() >= cost;
-  button(g, px + 18, py + 122, w - 36, 36, lawOwes() ? `Pay fine (${cost} coins)` : 'Pay fine (nothing owed)', () => {
+  // the verbs sit at the foot of the page (a short screen clips the page, never the buttons)
+  y = Math.min(y, py + ph - 18 - 3 * rh - 2 * gap);
+  button(g, px + LAW_PAD, y, inner, rh, lawOwes() ? `Pay fine (${cost} coins)` : 'Pay fine (nothing owed)', () => {
     const due = lawFine(); if (!lawOwes()) return;
     if (!payCoins(due)) { notify(`Not enough coins. The fine is ${due}.`); return; }
     L.wanted = 0; L.timer = 0; L.fines = 0; lawStandDown();
@@ -131,35 +162,54 @@ HOOKS.panel.captain = (g, narrow) => {
     levelBanner = { text: 'FINE PAID', sub: 'The watch stands down', t: 2.6 };
     say('Paid in full. The watch stands down. Keep it that way, knight.', LAW_CAPTAIN.name);
     closePanel(); save();
-  }, canPay ? '#8b2e2e' : '#2a2f3a', canPay);
-  button(g, px + 18, py + 166, w - 36, 36, `Hand in goblin scrap (${scrap} × ${LAW_SCRAP_PAY} coins)`, () => {
+  }, '#238636', canPay);
+  y += rh + gap;
+  button(g, px + LAW_PAD, y, inner, rh, `Hand in goblin scrap (${scrap} for ${scrap * LAW_SCRAP_PAY} coins)`, () => {
     const n = countItem('goblin_scrap'); if (!n) { notify('You have no goblin scrap.'); return; }
     removeItem('goblin_scrap', n); const pay = n * LAW_SCRAP_PAY;
     giveOrDrop('coins', pay, player.x, player.y, true); floatText(player.x, player.y - 30, `+${pay} coins`, '#ffd166');
     notify(`The Captain takes ${n} scrap and pays ${pay} coins.`); save();
-  }, scrap > 0 ? '#238636' : '#2a2f3a', scrap > 0);
-  button(g, px + 18, py + h - 44, w - 36, 30, 'Close', closePanel, '#21262d');
+  }, '#238636', scrap > 0);
+  y += rh + gap;
+  button(g, px + LAW_PAD, y, inner, rh, 'Close', closePanel, '#21262d');
 };
 
 // ---------- HUD ----------
-// MIGRATED to the HUD kit (src/59-hudkit.js). Two content-sized tags with their own fills and outlines
-// become two chips on the left column's grid: BAD down the edge for WANTED (the Watch is coming for you)
-// and WARN for an unpaid fine (something to deal with, not something chasing you). The text is plain ink —
-// the colour is in the rule, which is the kit's rule everywhere.
+// Two PLAQUES in the kit's reserved column (src/59-hudkit.js HK.addPlaque), no hand placing:
+//   WANTED: a skull roundel, the word, the wanted level as DRAWN stars (never star characters), the seconds until the
+//           watch loses interest, and a red edge (red = danger: the watch is coming for you).
+//   FINE TO PAY: a coin roundel, the exact coins, and an amber edge (something to settle, not something chasing you).
+// The first of several field sets that fits the plaque column's width, so no word is ever squeezed out of its plate.
+// It measures the way the kit's plaque lays out (src/59-hudkit.js plaque(): a 36 px roundel, the name in Cinzel shrinking
+// to 9 px and no further, the value on the right in Cinzel 11, drawn stars 16 px each, one line of sans under it).
+// (A local copy in each world-status file: HK.addPlaque could take such a list itself.)
+const lawFitFields = (g, list) => {
+  const P = HK.cur().plaques, w = P && P[0] ? P[0].w : 0;
+  if (!w) return list[0];
+  for (const o of list) {
+    const tx = (o.emblem || o.portrait) ? 48 : 10, rw = o.right != null && o.right !== '' ? HK.tw(g, String(o.right), HK.FC(800, 11)) + 12 : 0, stars = o.stars ? o.stars.of * 16 + 6 : 0;
+    if (HK.tw(g, String(o.name || ''), HK.FC(800, 9)) > w - 14 - rw - stars - tx) continue;
+    if (o.sub && o.frac == null && HK.tw(g, String(o.sub), HK.FS(600, 12)) > w - 14 - tx) continue;
+    return o;
+  }
+  return list[list.length - 1];
+};
+// on a narrow plaque column (a landscape phone) the longer words give way to shorter ones, in this order
+function lawPlaques(g) {
+  const L = law(), out = [];
+  if (L.wanted > 0) {
+    const s = Math.max(0, Math.ceil(L.timer)), base = { id: 'wanted', emblem: 'skull', name: 'WANTED', stars: { n: L.wanted, of: 3 }, edge: HK.T.gules };
+    out.push(lawFitFields(g, [{ right: `${s} s`, sub: 'The watch is after you' }, { right: `${s} s`, sub: 'The watch wants you' }, { right: null, sub: `${s} s left` }].map(o => Object.assign({}, base, o))));
+  }
+  if (L.fines > 0) {
+    const base = { id: 'fine', emblem: 'coin', right: `${lawFine()} coins`, edge: HK.T.warn };
+    out.push(lawFitFields(g, [{ name: 'FINE TO PAY', sub: 'Pay the Captain' }, { name: 'FINE', sub: 'Pay the Captain' }].map(o => Object.assign({}, base, o))));
+  }
+  return out;
+}
 HOOKS.hud.push((g, narrow) => {
   if (!lawOwes()) return;
-  const L = law();
-  const pad = 8;
-  const tag = (label, value, tone) => {
-    const s = HK.slot(HK.chipH());
-    HK.plate(g, s.x, s.y, s.w, s.h, { tone });
-    g.textBaseline = 'middle'; g.textAlign = 'left';
-    g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.fillText(label, s.x + pad + 4, s.y + s.h / 2);
-    g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; g.textAlign = 'right'; g.fillText(value, s.x + s.w - pad - 4, s.y + s.h / 2);
-    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-  };
-  if (L.wanted > 0) tag(`WANTED ${lawStars(L.wanted)}`, `${Math.ceil(L.timer)}s`, HK.C.BAD);
-  if (L.fines > 0) tag('FINE TO PAY', `${lawFine()} coins`, HK.C.WARN);
+  for (const p of lawPlaques(g)) HK.addPlaque(g, p);
 });
 
 // ---------- quest entry ----------
@@ -206,4 +256,45 @@ HOOKS.selfTest.push((check, F, h) => {
   // falling while wanted = arrested: stars become fine, no death loop
   { law().wanted = 2; law().timer = 120; law().fines = 0; player.dead = true; player.deadT = 0; F.sim(2, []); const arrested = law().wanted === 0 && law().fines === 50; F.sim(200, []); check('law: dying while wanted turns the stars into a fine and stands the watch down', arrested && !player.dead, { arrested, fines: law().fines, dead: player.dead }); }
   reset(); lawStandDown(); h.peace(false); closePanel(); F.sim(2, []);
+});
+
+// ---------- self-test: the plaques and the Captain's words ----------
+// WANTED and FINE TO PAY come through the kit (HK.addPlaque) with the spec's fields, and nothing the law paints (the
+// plaques, the Captain's panel, the notices and the floating word) carries a star CHARACTER: stars are drawn shapes.
+HOOKS.selfTest.push((check, F, h) => {
+  const L0 = JSON.parse(JSON.stringify(law())), p0 = paused, fl0 = floaters.length, n0 = notice;
+  const rec = [], add0 = HK.addPlaque, fc = HK.audit.fitCtx();
+  let painted = '';
+  const recCtx = new Proxy({}, {
+    get: (t, k) => (k === 'fillText' || k === 'strokeText') ? (s => { painted += String(s) + '\n'; }) : fc[k],
+    set: (t, k, v) => { fc[k] = v; return true; },
+  });
+  HK.addPlaque = (g, o) => { rec.push({ o: Object.assign({}, o), r: add0(g, o) }); return rec[rec.length - 1].r; };
+  const STAR = /[★☆]/;
+  const out = {};
+  try {
+    paused = false; closePanel();
+    const L = law(); L.wanted = 2; L.timer = 37.2; L.fines = 150;
+    rec.length = 0; drawHud(recCtx);
+    const w = rec.find(q => q.o.id === 'wanted'), f = rec.find(q => q.o.id === 'fine');
+    out.wanted = w && w.o; out.fine = f && f.o;
+    const okW = !!w && !!w.r && w.o.emblem === 'skull' && w.o.name === 'WANTED' && w.o.stars && w.o.stars.n === 2 && w.o.stars.of === 3 && w.o.right === '38 s' && w.o.edge === HK.T.gules;
+    const okF = !!f && !!f.r && f.o.emblem === 'coin' && f.o.name === 'FINE TO PAY' && f.o.right === `${150 + 2 * LAW_LEVEL_FINE} coins` && f.o.edge === HK.T.warn;
+    // only a wanted level, no fine: one plaque; nothing owed: none
+    L.fines = 0; rec.length = 0; drawHud(fc); const onlyW = rec.filter(q => q.o.id === 'wanted' || q.o.id === 'fine').map(q => q.o.id).join();
+    L.wanted = 0; L.timer = 0; rec.length = 0; drawHud(fc); const clean = rec.filter(q => q.o.id === 'wanted' || q.o.id === 'fine').length;
+    // the Captain's panel with a wanted level, and the words the law says out loud
+    L.wanted = 2; L.timer = 37.2; L.fines = 150; openPanel('captain'); drawHud(recCtx);
+    const panelWords = painted.includes('Wanted: 2 of 3 stars') && painted.includes('Captain of the Watch');
+    closePanel();
+    L.wanted = 0; L.timer = 0; L.fines = 0; floaters.length = fl0; lawOffend(2);
+    const said = [notice && notice.text, ...floaters.slice(fl0).map(q => q.text)].filter(Boolean);
+    const floatOk = floaters.slice(fl0).some(q => q.text === 'WANTED: 2 stars');
+    out.said = said; out.onlyW = onlyW; out.clean = clean; out.panelWords = panelWords;
+    check('law: WANTED and FINE TO PAY come through HK.addPlaque in reserved slots (a skull, 2 drawn stars of 3, the seconds, a red edge; a coin, the exact coins, an amber edge), and nothing the law paints or says carries a star character: the Captain says "Wanted: 2 of 3 stars", the floating word says "WANTED: 2 stars"',
+      okW && okF && onlyW === 'wanted' && clean === 0 && panelWords && floatOk && !STAR.test(painted) && !said.some(s => STAR.test(s)), out);
+  } finally {
+    HK.addPlaque = add0; closePanel(); paused = p0;
+    Object.assign(law(), L0); floaters.length = fl0; notice = n0; dialog.cur = null; dialog.queue.length = 0; lawStandDown(); save();
+  }
 });

@@ -11,25 +11,39 @@
 // Settings (43-settings addRow: persisted under fanglands.settings like every other setting, so a new game on this
 // device starts the way the last one was left). A save that is loaded wins over the device. Kid mode keeps it on.
 // Controls: the "Fight back when hit: ON / OFF" button in the pack (the iPad control), the Settings row, and O.
-// Who counts as the attacker: the nearest live monster standing at the spot the hit came from (hurtPlayer's fromX,
-// fromY). hurtPlayer is wrapped rather than HOOKS.hurt used, because HOOKS.hurt does not run for a miss or for a hit
-// taken inside a machine, and a miss is still an attack. People who only turn on the knight for something he did (the
-// watch, the dwarf and castle guards, the sentinels: human and not aggressive) are never fought back automatically:
-// that would make a small crime a big one without the child choosing it.
+// Who counts as the attacker: only a monster that really attacked him, traced (see "who hit him" below): the monster
+// whose own position the hit names, the thrower of the bomb that went off, or online the keeper's monster the 'hurt'
+// message names. A hurt with no monster behind it (a fall, lava, a trap, a storm bolt) starts no fight, and nothing
+// standing nearby is ever blamed. hurtPlayer is wrapped rather than HOOKS.hurt used, because HOOKS.hurt does not run
+// for a miss or for a hit taken inside a machine, and a miss is still an attack. People who only turn on the knight for
+// something he did (the watch, the dwarf and castle guards, the sentinels: human and not aggressive) are never fought
+// back automatically: hitting one raises the wanted level (23-law), and that is a choice the child makes, not the switch.
+// He does not try when he cannot: from the saddle, with the shield up, or with a bow and no arrows (said once). A swing
+// the game refuses for any other reason is tried once and then left for QUIET seconds, so no reason is said every hit.
+// A line of talk that simply comes up mid-fight (the Voice, a quest line) does not stop him: nobody told him to do
+// anything, and a tap on the box only moves the talk on. Talking to someone (USE, a tap on a person) does stop him.
 // Online (75-coop): a non-keeper is hurt by a 'hurt' message carrying the keeper's monster position; the puppet there is
 // the attacker, and the swing goes through hitMonster, which routes a hit on a puppet to the keeper.
-// Feature file: HOOKS plus wrapped core functions (hurtPlayer, useAction, talkTo, panelBox, drawPanels). Test handle:
+// Feature file: HOOKS plus wrapped core functions (hurtPlayer, playerAttack, useAction, talkTo) and a row in the pack (10-hud PACK_ROWS). Test handle:
 // window.RETALIATE.
 // ============================================================================
 const RETALIATE = (() => {
-  const LEASH = 4 * TILE;    // how far past his reach he walks to a monster that hit him
-  const ANCHOR = 5 * TILE;   // never further than this from where he was hit
-  const FIND = TILE;         // the attacker stands within its own radius + this of the spot the hit came from
-  const GIVE_UP = 6;         // seconds without a swing (walking into something the whole time) and he stops
-  const MAX_PATH = 8;        // a way round longer than this many steps is not "the short way": he stays put
+  // how far past his reach he walks to a monster that hit him
+  const LEASH = 4 * TILE;
+  // never further than this from where he was hit
+  const ANCHOR = 5 * TILE;
+  // online only: a puppet stands within its own radius + this of the rounded spot a keeper's 'hurt' names
+  const FIND = TILE;
+  // seconds without a swing (walking into something the whole time) and he stops
+  const GIVE_UP = 6;
+  // a way round longer than this many steps is not "the short way": he stays put
+  const MAX_PATH = 8;
   const KEY = 'KeyO';
-  const HOLD = 2;            // seconds after a swing of his own in which a hit does not take the fight over (he is already fighting)
-  const R = { target: null, anchor: null, idle: 0, path: null, repathT: 0, stuckT: 0, why: null, starts: 0, swings: 0, struck: 0, hold: 0, own: false };
+  // seconds a refused swing keeps him from trying again
+  const QUIET = 6;
+  // seconds after a swing of his own in which a hit does not take the fight over (he is already fighting)
+  const HOLD = 2;
+  const R = { target: null, anchor: null, idle: 0, path: null, repathT: 0, stuckT: 0, why: null, starts: 0, swings: 0, struck: 0, hold: 0, own: false, quiet: 0, saidBow: false };
   let seenPlayer = null;
 
   // ---------- the switch ----------
@@ -59,29 +73,71 @@ const RETALIATE = (() => {
   }
 
   // ---------- who hit him ----------
+  // Only a monster that really attacked him is ever fought back. Guessing "the nearest monster to the spot" (the first
+  // build) blamed bystanders: a guard's hit next to a calm boar killed the boar, and a slip off an agility log, a palisade
+  // prick or a falling rock next to a grazing goblin turned him on the goblin. So the attacker is traced, three ways:
+  //   1. a swing, a ram, a slam or a heat pulse passes the monster's own position (hurtPlayer(dmg, m.x, m.y)): exact match;
+  //   2. a thrown sticky bomb explodes where it landed, far from the thrower: every monster projectile is tagged with the
+  //      monster that threw it on its first tick (tagThrown) and the explosion is matched to its bomb;
+  //   3. online, a keeper's monster hits us through a 'hurt' message with rounded coordinates: the nearest puppet there.
+  // Anything else (lava, a storm bolt, a fall, a trap, a dragon's fireball) has no attacker to fight back.
   const peacekeeper = def => !!def.human && !def.aggro;
+  const eligible = m => { const def = m && MONSTER_DEFS[m.type]; return !!def && !def.harmless && !peacekeeper(def); };
   function live(m) { return !!m && !m.dead && !m.gone && monsters.includes(m) && !!MONSTER_DEFS[m.type] && !MONSTER_DEFS[m.type].harmless; }
-  function attackerAt(x, y) {
+  function attackerAt(x, y, sure) {
+    for (const m of monsters) if (!m.dead && !m.gone && m.x === x && m.y === y) return eligible(m) ? m : null;
+    for (const p of projectiles) if (p.owner === 'monster' && p.x === x && p.y === y) return p.from && live(p.from) && eligible(p.from) ? p.from : null;
+    // 75-coop's 'hurt' passes no 'sure'; every hazard in the list above passes true
+    if (sure === true) return null;
     let best = null, bd = Infinity;
     for (const m of monsters) {
-      if (m.dead || m.gone) continue; const def = MONSTER_DEFS[m.type]; if (!def || def.harmless || peacekeeper(def)) continue;
+      if (!m.remote || m.dead || m.gone || !eligible(m)) continue;
       const d = dist(x, y, m.x, m.y); if (d <= (m.r || 12) + FIND && d < bd) { bd = d; best = m; }
     }
     return best;
   }
-  const horse = () => !!(player.mech && player.mech.kind === 'horse');   // 51-mounts: no swinging from the saddle
+  // a monster projectile remembers who threw it: the nearest monster to where it left (the sapper throws from its middle,
+  // the Hollowford captain and the Gnasher from a hand a little off it)
+  function tagThrown() {
+    for (const p of projectiles) {
+      if (p.owner !== 'monster' || p.from !== undefined) continue;
+      // only a bomb just thrown can be traced back to a hand; one found late (already landed) has no thrower we can know
+      if (!(p.t <= 0.1)) { p.from = null; continue; }
+      const ox = p.x - (p.vx || 0) * Math.min(p.t, p.life || 0), oy = p.y - (p.vy || 0) * Math.min(p.t, p.life || 0);
+      let best = null, bd = Infinity;
+      for (const m of monsters) { if (m.dead || m.gone) continue; const d = dist(ox, oy, m.x, m.y); if (d <= (m.r || 12) + 30 && d < bd) { bd = d; best = m; } }
+      p.from = best;
+    }
+  }
+  // 51-mounts: no swinging from the saddle
+  const horse = () => !!(player.mech && player.mech.kind === 'horse');
   const moving = () => inputVector().m > 0;
   // walking somewhere on purpose, fighting something he tapped, a panel or the menu up: he is busy, a hit does not turn him
   const tapBusy = () => typeof tapActive === 'function' && tapActive() && !(tap.gather && !tap.kind && !tap.path);
-  function struck(fx, fy) {
+  // the shield up (47-outliers): he is blocking on purpose, and the game refuses a swing then
+  const blocking = () => !player.mech && !!window.OUTLIERS && OUTLIERS.BLOCK.t > 0 && !!OUTLIERS.shieldOn();
+  // a bow with nothing to shoot: said once (until he has arrows again or puts the bow away), then he just takes it
+  function emptyBow() {
+    const w = weaponDef(), empty = !!w && !!w.weapon.ranged && !player.mech && arrowSlot() < 0;
+    if (!empty) R.saidBow = false;
+    else if (!R.saidBow) { R.saidBow = true; notify('No arrows, so you cannot fight back with the bow. Make arrows at a workbench, or hold a sword.'); }
+    return empty;
+  }
+  function struck(fx, fy, sure) {
     if (player.dead || !Number.isFinite(fx) || !Number.isFinite(fy)) return;
-    const m = attackerAt(fx, fy); if (!m) return;
-    R.struck++;                                              // a monster attacked (hit or miss): counted whether or not he answers
+    const m = attackerAt(fx, fy, sure); if (!m) return;
+    // a monster attacked (hit or miss): counted whether or not he answers
+    R.struck++;
     if (!isOn() || horse()) return;
-    if (live(R.target)) return;                              // already fighting back: he keeps the one he is on
-    if (R.hold > 0) return;                                  // swinging on his own just now: already in a fight he chose (RuneScape does the same)
-    if (paused || panel || moving() || tapBusy()) return;
-    if (typeof tapActive === 'function' && tapActive()) tapCancel('retarget');   // a tap-to-chop loop: the hit ends it
+    // already fighting back: he keeps the one he is on
+    if (live(R.target)) return;
+    // swinging on his own just now: already in a fight he chose (RuneScape does the same)
+    if (R.hold > 0) return;
+    // the last try was refused by the game (see tick): no second try for a while, so the reason is not said on every hit
+    if (R.quiet > 0) return;
+    if (paused || panel || moving() || tapBusy() || blocking() || emptyBow()) return;
+    // a tap-to-chop loop: the hit ends it
+    if (typeof tapActive === 'function' && tapActive()) tapCancel('retarget');
     player.action = null;
     R.target = m; R.anchor = { x: player.x, y: player.y }; R.idle = 0; R.path = null; R.repathT = 0; R.stuckT = 0; R.why = null; R.starts++;
   }
@@ -89,7 +145,7 @@ const RETALIATE = (() => {
 
   // ---------- the wrapped core ----------
   { const _hurtPlayer = hurtPlayer;
-    hurtPlayer = function (dmg, fromX, fromY, sure) { const r = _hurtPlayer(dmg, fromX, fromY, sure); struck(fromX, fromY); return r; }; }
+    hurtPlayer = function (dmg, fromX, fromY, sure) { const r = _hurtPlayer(dmg, fromX, fromY, sure); struck(fromX, fromY, sure); return r; }; }
   // using something or talking is being told to do something else
   { const _useAction = useAction; useAction = function () { stop('use'); return _useAction(); }; }
   { const _talkTo = talkTo; talkTo = function (npc) { stop('talk'); return _talkTo(npc); }; }
@@ -128,6 +184,7 @@ const RETALIATE = (() => {
     if (typeof tapActive === 'function' && tapActive()) return stop('tap');
     if (player.action) return stop('busy');
     if (horse()) return stop('horse');
+    if (blocking()) return stop('shield');
     const reach = reachOf(m), d = dist(player.x, player.y, m.x, m.y);
     if (d > reach + LEASH || dist(player.x, player.y, R.anchor.x, R.anchor.y) > ANCHOR) return stop('ran');
     R.idle += dt;
@@ -136,7 +193,7 @@ const RETALIATE = (() => {
       if (player.attackCd <= 0) {
         R.own = true; try { playerAttack(); } finally { R.own = false; }
         // refused (no arrows, the shield is up, ...): the game has already said why once; he stops rather than ask every frame
-        if (player.attackCd <= 0) return stop('cannot');
+        if (player.attackCd <= 0) { R.quiet = QUIET; return stop('cannot'); }
         R.swings++; R.idle = 0;
       }
     } else walkToward(m, dt);
@@ -144,9 +201,12 @@ const RETALIATE = (() => {
   }
   HOOKS.update.push(dt => {
     syncPlayer();
-    R.hold = Math.max(0, R.hold - dt);
-    if (window.__kidmode && player.retaliate === false) set(true, true);   // kid mode keeps it on
-    if (pressed.has(KEY) && !paused) toggle();
+    R.hold = Math.max(0, R.hold - dt); R.quiet = Math.max(0, R.quiet - dt);
+    tagThrown();
+    // kid mode keeps it on
+    if (window.__kidmode && player.retaliate === false) set(true, true);
+    // not while a panel is up: the wiki's search box takes letters from the same keys, and typing "goblin" must not flip it
+    if (pressed.has(KEY) && !paused && !panel) toggle();
     tick(dt);
   });
   HOOKS.keyHelp.push({ action: 'Fight back on / off', codes: [KEY] });
@@ -162,38 +222,40 @@ const RETALIATE = (() => {
   });
 
   // ---------- the pack control (the iPad's way to flip it) ----------
-  // Wide packs (10 columns) have room at the right end of the Eat / Drop row. A narrow (phone) pack has none, so it
-  // grows by one row and the switch sits along its foot, right of the worn column.
-  const PACK = 'Your pack';
-  const narrowPack = () => VW < 640;
-  const footH = () => HK.row() + 16;
-  { const _panelBox = panelBox;
-    panelBox = function (g, w, h, title, subtitle) { if (title === PACK && narrowPack()) h += footH(); return _panelBox(g, w, h, title, subtitle); }; }
+  // A switch on its own row at the foot of the pack (10-hud PACK_ROWS): an iron plate with the sword emblem, its edge
+  // green while it is on, one kit row tall (44 px on touch). The pack measures the row in, so it never lands on anything.
   const label = () => `Fight back when hit: ${isOn() ? 'ON' : 'OFF'}`;
-  function packRect() {
-    if (!panelRect) return null;
-    const rowH = HK.row(), eqw = 70, { x: px, y: py, w, h } = panelRect;
-    if (narrowPack()) return { x: px + 18 + eqw, y: py + h - rowH - 14, w: w - 36 - eqw, h: rowH };
-    const cols = 10, size = 46, gap = 6, gy = py + 66 + Math.ceil(INV_SLOTS / cols) * (size + gap), bw = 220;
-    return { x: px + w - 18 - bw, y: gy + 58, w: bw, h: rowH };
-  }
-  function drawPackControl(g) {
-    const r = packRect(); if (!r) return;
-    HK.control(g, r.x, r.y, r.w, r.h, label(), () => { if (window.__kidmode) { notify('Kid mode keeps fighting back on. Turn kid mode off in Settings to change it.'); return; } toggle(); }, { tone: isOn() ? HK.C.GOOD : null, on: isOn(), hit: 'retaliate' });
-  }
-  { const _drawPanels = drawPanels;
-    drawPanels = function (g, narrow, short, qh, hb) { const r = _drawPanels(g, narrow, short, qh, hb); if (panel === 'inventory' && !paused) drawPackControl(g); return r; }; }
+  // where the row is narrow (beside the keyring on an upright phone) it says the short form, "Fight back: ON"
+  const short = () => `Fight back: ${isOn() ? 'ON' : 'OFF'}`;
+  PACK_ROWS.push({ id: 'retaliate',
+    minW: (g, h) => PANEL_KIT.verbW(g, short(), 'swing', h),
+    draw: (g, x, y, w, h) => {
+      const long = PANEL_KIT.verbW(g, label(), 'swing', h) <= w, text = long ? label() : short();
+      const bw = Math.min(w, Math.max(long ? 220 : 0, PANEL_KIT.verbW(g, text, 'swing', h)));
+      PANEL_KIT.verb(g, x, y, bw, h, 'retaliate', () => { if (window.__kidmode) { notify('Kid mode keeps fighting back on. Turn kid mode off in Settings to change it.'); return; } toggle(); },
+        { text, emblem: 'swing', on: isOn(), name: 'Fight back when hit: a monster that hits you gets hit back', keys: ['O'] });
+    } });
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'fight back: ';
     const real = monsters, kid0 = window.__kidmode, on0 = player.retaliate, peace0 = window.__peace, touch0 = window.__forceTouch;
-    const keep = { x: player.x, y: player.y, hp: player.hp, kills: player.kills, skills: JSON.stringify(player.skills), facing: { ...player.facing }, drops: drops.length, mech: player.mech, equip: { ...player.equip }, companion: player.companion, law: player.law ? JSON.stringify(player.law) : null };
-    const r0 = Math.random;
+    const keep = { x: player.x, y: player.y, hp: player.hp, dead: player.dead, dayTime: player.dayTime, kills: player.kills, skills: JSON.stringify(player.skills), facing: { ...player.facing }, drops: drops.length, mech: player.mech, r: player.r, speed: player.speed, inv: JSON.stringify(player.inv), equip: { ...player.equip }, companion: player.companion, law: player.law ? JSON.stringify(player.law) : null };
+    // the ground these checks fight on goes back as it was: a bulldozer that walks to a goblin plows what it drives over,
+    // and a later check that looks for clean grass there (the drop party's crackers) must still find it
+    // and so do the graves the kills here lay (54-graves: a cross in front of the knight answers USE before anything else)
+    const o0 = h.openSpot(40, 24), ground = [], regrow0 = new Set(regrow), fires0 = new Set(fires);
+    const graves0 = Array.isArray(quest.graves) ? quest.graves.slice() : null, laid0 = quest.graveNight ? quest.graveNight.laid : null;
+    for (let y = o0.y - 16; y <= o0.y + 16; y++) for (let x = o0.x - 16; x <= o0.x + 16; x++) if (inMap(x, y)) { const i = idx(x, y); ground.push([x, y, map[i], mapDiffs.has(i), mapDiffs.get(i)]); }
+    const r0 = Math.random, notify0 = notify, proj0 = new Set(projectiles), block0 = window.OUTLIERS ? OUTLIERS.BLOCK.t : 0;
     // a world of one goblin: nothing else can wander in, hit him or be hit (the real array is put back in finally)
-    const goblin = (x, y) => { const d = MONSTER_DEFS.goblin; return { type: 'goblin', x, y, home: { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: true, state: 'chase', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: -1, y: 0 }, walkT: 0, moving: false, stunT: 0 }; };
+    const goblin = (x, y, type = 'goblin') => { const d = MONSTER_DEFS[type]; return { type, x, y, home: { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: true, state: 'chase', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: -1, y: 0 }, walkT: 0, moving: false, stunT: 0 }; };
     // tough: a goblin that must still be standing when the check looks (a knight fresh off the playthrough kills one in a swing)
+    // a step that never lets him fall: a fall would put his pack in Death's chest and leave him dead for the checks after these
+    const safe = () => { if (player.hp < player.maxHp / 2) player.hp = player.maxHp; F.step([]); };
     const stage = (dx, seed, tough) => {
+      // nothing in the air: a bomb or an arrow from the check before (or from a check before these) would land in this one
+      projectiles = [];
       Math.random = mulberry32(seed); closePanel(); dialog.cur = null; dialog.queue.length = 0; if (typeof tapCancel === 'function') tapCancel('manual');
       const o = h.openSpot(40, 24); F.tp(o.x, o.y); player.hp = player.maxHp; player.facing = { x: -1, y: 0 }; player.attackCd = 0; player.attackT = 0; player.action = null; stop('test'); R.hold = 0;
       const g = goblin(player.x + dx, player.y); if (tough) { g.hp = g.maxHp = 999; } monsters = [g]; return g;
@@ -248,6 +310,53 @@ const RETALIATE = (() => {
       // peacekeepers and harmless things are never fought back on their own
       { const g = stage(34, 0x5E80); g.type = 'guard_m'; hurtPlayer(1, g.x, g.y); const guard = R.target === null; stop('test'); monsters = [];
         check(P + 'a town guard is never fought back automatically (it would make the knight wanted)', guard, { target: R.target && R.target.type }); }
+      // a line of talk that comes up mid-fight is not an order: he keeps fighting while it shows and after a tap moves it on
+      { const g = stage(34, 0x5E8A, true); let started = false; for (let s = 0; s < 240 && !started; s++) { safe(); started = R.target === g; }
+        say('A line in the middle of a fight.', 'The Voice'); const sw0 = R.swings; for (let s = 0; s < 120; s++) safe(); const during = R.swings - sw0;
+        advanceDialog(); const sw1 = R.swings; for (let s = 0; s < 120; s++) safe(); const after = R.swings - sw1;
+        check(P + 'a line of talk that comes up mid-fight does not stop him (talking to someone does)', started && during >= 1 && after >= 1 && R.target === g, { started, during, after, why: R.why }); dialog.cur = null; dialog.queue.length = 0; }
+      // a sapper stays two to five tiles off and throws sticky bombs: the bomb goes off where it landed, far from the sapper,
+      // so the sapper is found through its bomb, and he walks to it and fights it
+      { const g = stage(3.5 * TILE, 0x5E83); const sp = goblin(g.x, g.y, 'sapper'); monsters = [sp]; const st0 = R.struck, s0 = R.starts;
+        let aimed = false, s = 0; for (; s < 1200 && !sp.dead && !player.dead; s++) { safe(); if (R.target === sp) aimed = true; }
+        check(P + 'a sapper that bombs from range is traced through its bomb and fought until it dies', R.struck - st0 >= 1 && aimed && sp.dead && !player.dead, { attacks: R.struck - st0, starts: R.starts - s0, aimed, dead: sp.dead, steps: s, knightHp: Math.round(player.hp), why: R.why }); }
+      // only the monster that attacked: a guard's hit beside a calm boar leaves the boar alone, and a hurt with no monster
+      // behind it (a slip off an agility log, a palisade prick, a falling rock) beside a grazing goblin starts no fight
+      // (what is watched is who he picks: at night in a long run a grave can open beside him and a skeleton that really
+      // attacks is fair game, and his swing at it may clip whatever stands by, so hit points are not the measure)
+      { stage(34, 0x5E84); const gd = goblin(player.x + 34, player.y, 'guard_m'); const boar = goblin(player.x + 40, player.y + 30, 'boar'); boar.angry = false; boar.state = 'idle'; boar.stunT = 99;
+        monsters = [gd, boar]; const picked = new Set(); const watch = () => { if (R.target) picked.add(R.target); };
+        hurtPlayer(1, gd.x, gd.y); watch(); for (let s = 0; s < 60; s++) { safe(); watch(); } const byGuard = !picked.has(gd) && !picked.has(boar);
+        const calm = goblin(player.x + 60, player.y); calm.angry = false; calm.state = 'idle'; calm.stunT = 99; monsters = [calm]; const tx = Math.floor(calm.x / TILE), ty = Math.floor(calm.y / TILE);
+        hurtPlayer(1, tc(tx), tc(ty), true); watch(); hurtPlayer(2, player.x, player.y + 20, true); watch(); for (let s = 0; s < 60; s++) { safe(); watch(); } const byHazard = !picked.has(calm);
+        check(P + 'only the monster that attacked: not a boar beside a guard, not a goblin beside a slip or a prick', byGuard && byHazard, { byGuard, byHazard, picked: [...picked].map(m => m.type) }); }
+      // a bow with no arrows: said once, not on every hit, and no swing is tried; with arrows he shoots back
+      { const g = stage(34, 0x5E85, true); player.equip.weapon = 'shortbow'; player.inv = player.inv.map(x => x && ITEMS[x.id].arrow ? null : x); R.saidBow = false;
+        const notes = []; notify = t => { notes.push(t); return notify0(t); }; const s0 = R.starts; for (let s = 0; s < 600; s++) safe(); notify = notify0;
+        const said = notes.filter(t => /arrow/i.test(t)).length, dry = R.starts - s0;
+        const g2 = stage(34, 0x5E86); player.equip.weapon = 'shortbow'; addItem('stone_arrow', 40); const a0 = countItem('stone_arrow');
+        let s = 0; for (; s < 1500 && !g2.dead && !player.dead; s++) safe(); const shot = a0 - countItem('stone_arrow');
+        check(P + 'a bow with no arrows says so once and tries nothing; with arrows he shoots back', said === 1 && dry === 0 && g.hp === g.maxHp && g2.dead && shot >= 1, { said, dry, shot, dead: g2.dead, steps: s }); player.equip.weapon = 'iron_sword'; }
+      // the shield up: he is blocking on purpose, so no swing is tried (the game would refuse it and say so every hit)
+      if (window.OUTLIERS) { const g = stage(34, 0x5E87, true); player.equip.shield = Object.keys(ITEMS).find(k => ITEMS[k].shape === 'shield');
+        const notes = []; notify = t => { notes.push(t); return notify0(t); }; let fought = false;
+        for (let s = 0; s < 300; s++) { OUTLIERS.BLOCK.t = 1; safe(); if (R.target) fought = true; } notify = notify0; OUTLIERS.BLOCK.t = block0; player.equip.shield = null;
+        const refused = notes.filter(t => /cannot swing/i.test(t)).length;
+        check(P + 'with the shield up he blocks and does not swing back', !fought && refused === 0 && g.hp === g.maxHp && R.struck > 0, { fought, refused, goblinHp: g.hp }); }
+      // a refused swing (anything the game says no to) is tried once, then not again for a while
+      { const g = stage(34, 0x5E88, true); const w0 = player.equip.weapon; let tries = 0;
+        const quietWas = R.quiet; safe(); for (let s = 0; s < 240 && R.target !== g; s++) safe();
+        const _pa = playerAttack; playerAttack = function () { if (R.own) { tries++; return; } return _pa(); };
+        for (let s = 0; s < 240; s++) safe(); playerAttack = _pa; player.equip.weapon = w0;
+        check(P + 'a swing the game refuses is tried once, then left for ' + QUIET + ' s', tries === 1 && R.quiet > 0, { tries, quiet: +R.quiet.toFixed(2), quietWas }); R.quiet = 0; }
+      // riding: the walker, the bulldozer and the Barrelbeast fight back with the machine's stomp; the horse never does
+      { const res = {};
+        for (const kind of ['walker', 'dozer', 'beast', 'horse']) {
+          const g = stage(50, 0x5E89); player.mech = kind === 'walker' ? { hp: 130, maxHp: 130 } : { hp: 130, maxHp: 130, kind }; player.r = 20; player.speed = 120;
+          let s = 0; for (; s < 900 && !g.dead && player.mech; s++) safe(); res[kind] = { dead: g.dead, hp: g.hp, steps: s };
+          player.mech = null; player.r = keep.r; player.speed = keep.speed;
+        }
+        check(P + 'from the walker, the bulldozer and the Barrelbeast he fights back; from the saddle he does not', res.walker.dead && res.dozer.dead && res.beast.dead && !res.horse.dead && res.horse.hp === MONSTER_DEFS.goblin.hp, res); }
       // kid mode keeps it on
       { set(true, true); window.__kidmode = true; set(false, true); F.step([]); const kept = isOn() && player.retaliate === true; window.__kidmode = false;
         check(P + 'kid mode keeps it on', kept, { on: isOn(), saved: player.retaliate }); }
@@ -273,11 +382,12 @@ const RETALIATE = (() => {
       // Settings mirrors it, O flips it, and the choice survives a save and a load (and goes to the device's settings)
       { set(true, true); openPanel('settings'); render(); const row = F.clickButton('set:retaliate'); const bySettings = player.retaliate === false && !isOn(); closePanel();
         F.press(KEY); const byKey = player.retaliate === true; F.press(KEY);
+        let typing = true; if (window.WIKI) { WIKI.open('monsters', null); const was = player.retaliate; F.press(KEY); typing = player.retaliate === was && panel !== null; closePanel(); }
         save(); player.retaliate = true; SETTINGS.set('retaliate', true); const ok = load(); F.step([]);
         const kept = ok && player.retaliate === false && !isOn() && SETTINGS.get('retaliate') === false;
         const listed = SETTINGS.keyMap().some(r => r.codes.includes(KEY));
         set(true, true); save();
-        check(P + 'Settings mirrors the switch, O flips it, and OFF survives a save and a load', row && bySettings && byKey && kept && listed, { row, bySettings, byKey, kept, listed }); }
+        check(P + 'Settings mirrors the switch, O flips it (not while typing in the wiki), and OFF survives a save and a load', row && bySettings && byKey && typing && kept && listed, { row, bySettings, byKey, typing, kept, listed }); }
       // online: a puppet (someone else keeps the map) that hits us is hit back, and the hit goes to the keeper
       if (typeof NET !== 'undefined' && window.COOP) {
         const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake };
@@ -303,14 +413,22 @@ const RETALIATE = (() => {
         }
       }
     } finally {
-      Math.random = r0; monsters = real; stop('test'); closePanel(); dialog.cur = null; dialog.queue.length = 0;
+      const touched = new Set();
+      for (const [x, y, t, had, v] of ground) { const i = idx(x, y); touched.add(i); if (map[i] !== t) { setTile(x, y, t); miniDirtyTiles.add(i); } if (had) mapDiffs.set(i, v); else mapDiffs.delete(i); }
+      if (graves0) { quest.graves.length = 0; quest.graves.push(...graves0); } else delete quest.graves;
+      if (laid0 !== null && quest.graveNight) quest.graveNight.laid = laid0;
+      regrow = regrow.filter(r => regrow0.has(r) || !touched.has(r.i)); fires = fires.filter(f => fires0.has(f) || !touched.has(f.i));
+      // and the clock: these fights take game minutes, and dusk arriving earlier would put the Voice's "the light is going"
+      // line (and the night's graves) into whatever check runs next
+      if (keep.dayTime !== undefined) player.dayTime = keep.dayTime;
+      projectiles = [...proj0]; Math.random = r0; notify = notify0; if (!keep.dead) { player.dead = false; player.deadT = 0; } if (window.OUTLIERS) OUTLIERS.BLOCK.t = block0; R.quiet = 0; monsters = real; stop('test'); closePanel(); dialog.cur = null; dialog.queue.length = 0;
       window.__kidmode = kid0; window.__peace = peace0; window.__forceTouch = touch0;
       player.x = keep.x; player.y = keep.y; player.hp = Math.max(1, keep.hp); player.kills = keep.kills; player.skills = JSON.parse(keep.skills); player.facing = keep.facing;
-      player.mech = keep.mech; player.companion = keep.companion; Object.assign(player.equip, keep.equip); recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp); if (keep.law) player.law = JSON.parse(keep.law); else delete player.law;
+      player.mech = keep.mech; player.r = keep.r; player.speed = keep.speed; player.inv = JSON.parse(keep.inv); player.companion = keep.companion; Object.assign(player.equip, keep.equip); recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp); if (keep.law) player.law = JSON.parse(keep.law); else delete player.law;
       drops = drops.slice(0, keep.drops); set(on0 !== false, true); render();
     }
   });
 
-  return { isOn, set, toggle, state: R, LEASH, ANCHOR, KEY, label, packRect, attackerAt };
+  return { isOn, set, toggle, state: R, LEASH, ANCHOR, KEY, label, packRect: () => { const b = buttons.find(q => q.label === 'retaliate'); return b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null; }, attackerAt };
 })();
 window.RETALIATE = RETALIATE;

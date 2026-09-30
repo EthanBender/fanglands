@@ -6,8 +6,11 @@
 // Pure JavaScript: no Cloudflare APIs, so plain Node can load it.
 //
 // Migrations keep everything: the old CREATE TABLE statements run unchanged, the new tables are only ever
-// created if missing, and migrate() adds the two new accounts columns only when they are not there yet. Nothing
+// created if missing, and migrate() adds the new accounts columns only when they are not there yet. Nothing
 // is dropped, renamed or retyped, and running it again changes nothing. docs/ONLINE.md, "The database".
+//
+// Logins (docs/ONLINE.md, "Accounts"): one row per socket a knight opens, from join to close, the newest LOGINS_KEPT
+// per knight. Every closed row adds its length to accounts.online_ms, so the total never shrinks when old rows go.
 // ============================================================================
 
 import { PRIZE_KEEP, crackerId } from './party.js';
@@ -15,6 +18,8 @@ import { PRIZE_KEEP, crackerId } from './party.js';
 export const ALWAYS = 8640000000000000;   // the last date JavaScript knows: muted "until an admin unmutes"
 const MOD_LOG_KEPT = 5000;                 // the newest rows of mod_log that are kept
 const PRUNE_EVERY = 200;                   // mod_log writes between two trims (and the first write after a wake)
+const TRADES_KEPT = 5000;                  // the newest rows of trades that are kept (the same trim rhythm)
+export const LOGINS_KEPT = 50;             // login rows kept per knight (the totals live in accounts.online_ms)
 
 // The first six statements are world.js's schema from before admins, verbatim. Split on ';' to run.
 export const SCHEMA = `
@@ -31,7 +36,12 @@ CREATE TABLE IF NOT EXISTS mod_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at INT
 CREATE TABLE IF NOT EXISTS save_pins (name_lc TEXT PRIMARY KEY, json TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS parties (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, by TEXT NOT NULL, map TEXT NOT NULL, region TEXT NOT NULL DEFAULT '', hat INTEGER NOT NULL, table_json TEXT NOT NULL, count INTEGER NOT NULL, expires INTEGER NOT NULL, ended INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS crackers (party INTEGER NOT NULL, k INTEGER NOT NULL, tx INTEGER NOT NULL, ty INTEGER NOT NULL, lit_by TEXT, lit_at INTEGER, reward TEXT, claimed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (party, k));
-CREATE INDEX IF NOT EXISTS crackers_by_lighter ON crackers (lit_by, claimed)
+CREATE INDEX IF NOT EXISTS crackers_by_lighter ON crackers (lit_by, claimed);
+CREATE TABLE IF NOT EXISTS trades (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, a TEXT NOT NULL, a_lc TEXT NOT NULL, b TEXT NOT NULL, b_lc TEXT NOT NULL, a_gave TEXT NOT NULL, b_gave TEXT NOT NULL, a_ack INTEGER NOT NULL DEFAULT 0, b_ack INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS trades_by_a ON trades (a_lc, a_ack);
+CREATE INDEX IF NOT EXISTS trades_by_b ON trades (b_lc, b_ack);
+CREATE TABLE IF NOT EXISTS logins (id INTEGER PRIMARY KEY AUTOINCREMENT, name_lc TEXT NOT NULL, started INTEGER NOT NULL, seen INTEGER NOT NULL, ended INTEGER);
+CREATE INDEX IF NOT EXISTS logins_by_name ON logins (name_lc, id)
 `;
 
 // The columns accounts gained for admins. Added with ALTER TABLE ... ADD COLUMN, which never rewrites a row:
@@ -39,6 +49,7 @@ CREATE INDEX IF NOT EXISTS crackers_by_lighter ON crackers (lit_by, claimed)
 const ACCOUNT_COLUMNS = [
   ['role', "TEXT NOT NULL DEFAULT 'player'"],
   ['muted_until', 'INTEGER NOT NULL DEFAULT 0'],
+  ['online_ms', 'INTEGER NOT NULL DEFAULT 0'],   // the length of every closed login, added up (the accounts list's "Time online")
 ];
 
 // Adds whatever accounts column is missing, and nothing else. Answers {via, added} so the World can say what it did.
@@ -67,7 +78,7 @@ const parse = s => { try { return JSON.parse(s); } catch (e) { return null; } };
 // SqlStore: over ctx.storage.sql (sql.exec(query, ...args) -> a cursor with toArray()).
 // ---------------------------------------------------------------------------
 export class SqlStore {
-  constructor(sql) { this.sql = sql; this.logWrites = 0; }
+  constructor(sql) { this.sql = sql; this.logWrites = 0; this.tradeWrites = 0; }
   rows(q, ...args) { return this.sql.exec(q, ...args).toArray(); }
   row(q, ...args) { return this.rows(q, ...args)[0] || null; }
 
@@ -128,6 +139,79 @@ export class SqlStore {
   }
   // only the knight who lit it can claim it; claiming twice is harmless (the second answers true again)
   claim(pid, k, lc) { return this.rows('UPDATE crackers SET claimed = 1 WHERE party = ? AND k = ? AND lit_by = ? RETURNING k', pid, k, lc).length === 1; }
+
+  // ---------- finished trades (docs/ONLINE.md, "Trading") ----------
+  // One row per trade that happened: who, what each gave, and whether each side's game has said it is in its save.
+  addTrade({ at, a, b, aGave, bGave }) {
+    const id = this.row('INSERT INTO trades (at, a, a_lc, b, b_lc, a_gave, b_gave) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      at, String(a), norm(a), String(b), norm(b), JSON.stringify(aGave || []), JSON.stringify(bGave || [])).id;
+    if (++this.tradeWrites % PRUNE_EVERY === 1) this.sql.exec('DELETE FROM trades WHERE id <= (SELECT id FROM trades ORDER BY id DESC LIMIT 1 OFFSET ?)', TRADES_KEPT);
+    return id;
+  }
+  // the trades this knight's game has not acked since `since`, oldest first, as that knight sees them
+  unackedTrades(lc, since) {
+    const l = norm(lc);
+    return this.rows('SELECT id, a, a_lc, b, b_lc, a_gave, b_gave FROM trades WHERE at >= ? AND ((a_lc = ? AND a_ack = 0) OR (b_lc = ? AND b_ack = 0)) ORDER BY id', since, l, l)
+      .map(r => r.a_lc === l ? { tid: r.id, with: r.b, gave: parse(r.a_gave) || [], got: parse(r.b_gave) || [] } : { tid: r.id, with: r.a, gave: parse(r.b_gave) || [], got: parse(r.a_gave) || [] });
+  }
+  // only one of the two knights in it can ack a trade; acking twice is harmless
+  ackTrade(tid, lc) {
+    const l = norm(lc);
+    const a = this.rows('UPDATE trades SET a_ack = 1 WHERE id = ? AND a_lc = ? RETURNING id', tid, l).length;
+    const b = this.rows('UPDATE trades SET b_ack = 1 WHERE id = ? AND b_lc = ? RETURNING id', tid, l).length;
+    return a + b > 0;
+  }
+  // the parent page's list, newest first
+  tradeLog(limit = 200) {
+    return this.rows('SELECT id, at, a, b, a_gave, b_gave, a_ack, b_ack FROM trades ORDER BY id DESC LIMIT ?', limit)
+      .map(r => ({ tid: r.id, at: r.at, a: r.a, b: r.b, aGave: parse(r.a_gave) || [], bGave: parse(r.b_gave) || [], aAck: !!r.a_ack, bAck: !!r.b_ack }));
+  }
+  // ---------- logins: one row per socket, join to close ----------
+  // When the counting began: written the first time it is asked for (the first wake of this code), never changed.
+  trackingSince(now) {
+    this.sql.exec("INSERT INTO settings (key, value) VALUES ('logins_since', ?) ON CONFLICT(key) DO NOTHING", String(Math.floor(now)));
+    return Number(this.row("SELECT value FROM settings WHERE key = 'logins_since'").value) || Math.floor(now);
+  }
+  // a new open row; the oldest closed rows past LOGINS_KEPT for that knight go (the total is already in online_ms)
+  loginStart(lc, at) {
+    const l = norm(lc);
+    const id = this.row('INSERT INTO logins (name_lc, started, seen) VALUES (?, ?, ?) RETURNING id', l, at, at).id;
+    this.sql.exec('DELETE FROM logins WHERE name_lc = ? AND ended IS NOT NULL AND id NOT IN (SELECT id FROM logins WHERE name_lc = ? ORDER BY id DESC LIMIT ?)', l, l, LOGINS_KEPT);
+    return id;
+  }
+  // the last time the world heard from that socket: where a login the world lost track of is said to have ended
+  loginSeen(id, at) { this.sql.exec('UPDATE logins SET seen = ? WHERE id = ? AND ended IS NULL AND seen < ?', at, id, at); }
+  // closes an open row and adds its length to the knight's total; true only for the call that closed it
+  loginEnd(id, at) {
+    const r = this.row('UPDATE logins SET ended = MAX(started, ?) WHERE id = ? AND ended IS NULL RETURNING name_lc, started, ended', at, id);
+    if (!r) return false;
+    this.sql.exec('UPDATE accounts SET online_ms = online_ms + ? WHERE name_lc = ?', r.ended - r.started, r.name_lc);
+    return true;
+  }
+  // every open row whose socket is not in keep (a Set of ids) ends at the last time it was heard from; answers how many
+  closeStaleLogins(keep, now) {
+    let n = 0;
+    for (const r of this.rows('SELECT id, started, seen FROM logins WHERE ended IS NULL ORDER BY id')) {
+      if (keep.has(r.id)) continue;
+      if (this.loginEnd(r.id, Math.min(now, Math.max(r.started, r.seen)))) n++;
+    }
+    return n;
+  }
+  // newest first: [{id, started, seen, ended}], ended null while it is still open
+  logins(lc, limit = 10) {
+    return this.rows('SELECT id, started, seen, ended FROM logins WHERE name_lc = ? ORDER BY id DESC LIMIT ?', norm(lc), limit)
+      .map(r => ({ id: r.id, started: r.started, seen: r.seen, ended: r.ended == null ? null : r.ended }));
+  }
+  // the closed logins added up, in ms (an open one is the caller's to add: it knows the time)
+  onlineMs(lc) { const r = this.row('SELECT online_ms FROM accounts WHERE name_lc = ?', norm(lc)); return r ? Number(r.online_ms) || 0 : 0; }
+  // a new secret word: the hash and salt, the wrong-tries count cleared, every session gone
+  setSecret(lc, salt, hash) {
+    const l = norm(lc);
+    this.sql.exec('UPDATE accounts SET salt = ?, hash = ?, tries = 0, locked_until = 0 WHERE name_lc = ?', salt, hash, l);
+    this.sql.exec('DELETE FROM sessions WHERE name_lc = ?', l);
+  }
+  // how many rows of that act this knight wrote to mod_log since then (the reset's rate limit)
+  actsSince(by, act, since) { return Number(this.row('SELECT COUNT(*) AS n FROM mod_log WHERE by = ? AND act = ? AND at > ?', String(by), String(act), since).n) || 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -141,13 +225,19 @@ export class MemoryStore {
     this.logWrites = 0;
     this.partyRows = new Map();  // id -> {id, at, by, map, region, hat, table, count, expires, ended, crackers: [...]}
     this.nextPartyId = 1;
+    this.tradeRows = [];         // {id, at, a, a_lc, b, b_lc, a_gave, b_gave (JSON), a_ack, b_ack}, oldest first
+    this.nextTradeId = 1;
+    this.tradeWrites = 0;
+    this.loginRows = [];         // {id, lc, started, seen, ended}
+    this.nextLoginId = 1;
+    this.since = null;           // trackingSince: set the first time it is asked for
   }
   addAccount(name, role = 'player') {
     const lc = norm(name);
     if (!lc) return;
     const a = this.accounts.get(lc);
     if (a) { a.role = roleWord(role); return; }
-    this.accounts.set(lc, { name: String(name).replace(/\s+/g, ' ').trim().slice(0, 40), lc, role: roleWord(role), mutedUntil: 0, banned: false });
+    this.accounts.set(lc, { name: String(name).replace(/\s+/g, ' ').trim().slice(0, 40), lc, role: roleWord(role), mutedUntil: 0, banned: false, onlineMs: 0 });
   }
 
   account(name) {
@@ -204,4 +294,57 @@ export class MemoryStore {
     c.claimed = true;
     return true;
   }
+
+  addTrade({ at, a, b, aGave, bGave }) {
+    const id = this.nextTradeId++;
+    this.tradeRows.push({ id, at, a: String(a), a_lc: norm(a), b: String(b), b_lc: norm(b), a_gave: JSON.stringify(aGave || []), b_gave: JSON.stringify(bGave || []), a_ack: false, b_ack: false });
+    if (++this.tradeWrites % PRUNE_EVERY === 1 && this.tradeRows.length > TRADES_KEPT) this.tradeRows.splice(0, this.tradeRows.length - TRADES_KEPT);
+    return id;
+  }
+  unackedTrades(lc, since) {
+    const l = norm(lc);
+    return this.tradeRows.filter(r => r.at >= since && ((r.a_lc === l && !r.a_ack) || (r.b_lc === l && !r.b_ack)))
+      .map(r => r.a_lc === l ? { tid: r.id, with: r.b, gave: parse(r.a_gave) || [], got: parse(r.b_gave) || [] } : { tid: r.id, with: r.a, gave: parse(r.b_gave) || [], got: parse(r.a_gave) || [] });
+  }
+  ackTrade(tid, lc) {
+    const l = norm(lc), r = this.tradeRows.find(x => x.id === tid);
+    if (!r) return false;
+    let hit = false;
+    if (r.a_lc === l) { r.a_ack = true; hit = true; }
+    if (r.b_lc === l) { r.b_ack = true; hit = true; }
+    return hit;
+  }
+  tradeLog(limit = 200) {
+    return this.tradeRows.slice(-Math.max(0, limit)).reverse()
+      .map(r => ({ tid: r.id, at: r.at, a: r.a, b: r.b, aGave: parse(r.a_gave) || [], bGave: parse(r.b_gave) || [], aAck: r.a_ack, bAck: r.b_ack }));
+  }
+  // ---------- logins: the same answers as SqlStore's ----------
+  trackingSince(now) { if (this.since == null) this.since = Math.floor(now); return this.since; }
+  loginStart(lc, at) {
+    const l = norm(lc), id = this.nextLoginId++;
+    this.loginRows.push({ id, lc: l, started: at, seen: at, ended: null });
+    const mine = this.loginRows.filter(r => r.lc === l).sort((a, b) => b.id - a.id), keep = new Set(mine.slice(0, LOGINS_KEPT).map(r => r.id));
+    this.loginRows = this.loginRows.filter(r => r.lc !== l || r.ended == null || keep.has(r.id));
+    return id;
+  }
+  loginSeen(id, at) { const r = this.loginRows.find(x => x.id === id); if (r && r.ended == null && r.seen < at) r.seen = at; }
+  loginEnd(id, at) {
+    const r = this.loginRows.find(x => x.id === id);
+    if (!r || r.ended != null) return false;
+    r.ended = Math.max(r.started, at);
+    const a = this.accounts.get(r.lc); if (a) a.onlineMs = (a.onlineMs || 0) + (r.ended - r.started);
+    return true;
+  }
+  closeStaleLogins(keep, now) {
+    let n = 0;
+    for (const r of this.loginRows.slice().sort((a, b) => a.id - b.id)) if (r.ended == null && !keep.has(r.id) && this.loginEnd(r.id, Math.min(now, Math.max(r.started, r.seen)))) n++;
+    return n;
+  }
+  logins(lc, limit = 10) {
+    const l = norm(lc);
+    return this.loginRows.filter(r => r.lc === l).sort((a, b) => b.id - a.id).slice(0, limit).map(r => ({ id: r.id, started: r.started, seen: r.seen, ended: r.ended }));
+  }
+  onlineMs(lc) { const a = this.accounts.get(norm(lc)); return a ? a.onlineMs || 0 : 0; }
+  setSecret(lc, salt, hash) { const a = this.accounts.get(norm(lc)); if (a) { a.salt = salt; a.hash = hash; } }
+  actsSince(by, act, since) { return this.modRows.filter(r => r.by === String(by) && r.act === String(act) && r.at > since).length; }
 }

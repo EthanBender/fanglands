@@ -12,7 +12,9 @@
 //   room.tick()                fire whatever is due: gift timeouts, a held-back roster, a party running out
 //   room.setRole(name)         the parent page changed a role: re-read it, tell that knight and the roster
 //   room.muteChanged(name)     the parent page changed a mute: re-read it, tell that knight
-//   room.store                 where roles, mutes, bans, parties and prizes live (store.js)
+//   room.settleLogins()        after a wake's restores: every login row no socket carries any more is closed
+//   room.loginOf(name)         the open login row of a knight on line: {id, started} or null
+//   room.store                 where roles, mutes, bans, parties, prizes, logins and finished trades live (store.js)
 //
 // Timers: the room never calls setTimeout itself. When something becomes due it calls wake(ms) once, and
 // the host calls tick() at that time (the World uses a Durable Object alarm, which survives hibernation).
@@ -23,8 +25,19 @@
 // are in the store, never in memory alone: every wake builds a new Room, which loads the live parties from the
 // store and reads each knight's role from it again.
 //
+// Logins (docs/ONLINE.md, "Accounts"): every socket a knight opens is one row in the store's logins, opened at join and
+// closed in remove(), which every way out goes through: the socket closing, the same knight logging in elsewhere, a
+// kick, a ban, a new secret word, the world full of strikes. The row's id rides the attachment, so a nap keeps it open;
+// a row that no socket carries after a wake (the world was restarted under it) ends at the last time it was heard from.
+//
 // Admins (docs/ONLINE.md, "Admins and drop parties"): only the parent page makes one. Every admin message reads
 // the sender's role from the store, fresh, before it does anything; the socket's memory is never the lock.
+//
+// Trades (docs/ONLINE.md, "Trading"): the Room holds both offers and is the only truth about them. It opens a trade
+// only between two knights on one map within a few tiles, un-accepts both on any change, and moves nothing until both
+// knights accepted and then confirmed the very same offers. A finished trade is a row in the store, re-sent after every
+// welcome until each side's game says it is in its save, so nothing is lost or doubled. An open trade lives in memory
+// only: a disconnect, a map change, a walk away, a fall or a nap ends it, and then nothing moves.
 // ============================================================================
 
 import { cleanChat } from './filter.js';
@@ -60,19 +73,38 @@ export const CAPS = {
   party_end: { rate: 1, burst: 2 },
   light: { rate: 4, burst: 8 },
   claim: { rate: 10, burst: 50 },
+  trade_ask: { rate: 0.5, burst: 3 },
+  trade_answer: { rate: 2, burst: 4 },
+  trade_offer: { rate: 5, burst: 10 },
+  trade_accept: { rate: 4, burst: 8 },
+  trade_confirm: { rate: 4, burst: 8 },
+  trade_full: { rate: 2, burst: 4 },
+  trade_close: { rate: 2, burst: 4 },
+  trade_ack: { rate: 10, burst: 50 },
 };
 for (const c of Object.values(CAPS)) if (!c.burst) c.burst = Math.max(2, Math.round(c.rate * 2));
 
 export const ROSTER_EVERY = 2000;      // a changed roster goes out at most this often (join/leave go at once)
 // A keeper that streams no monsters for this long while others share its map (paused, on the title screen, a
 // sleeping tab) hands the map to the next knight; it is eligible again once that knight leaves.
-export const KEEPER_STALE = 4000;
+export const KEEPER_STALE = 3000;
+// A knight whose game sends no presence for this long (a locked phone, a tab in the background: a playing game sends at
+// least one a second) is never chosen to keep a map while someone who is playing is there.
+export const PRESENCE_STALE = 3500;
 export const GIFT_WAIT = 10000;        // no answer to a gift within this: it comes back to the sender
 // How long each mute lasts; 'always' means until an admin (or the parent page) turns chat back on.
 export const MUTE_SPANS = { '5m': 5 * 60 * 1000, '1h': 3600 * 1000, '1d': 24 * 3600 * 1000, always: ALWAYS };
 export const SPAWN_MAX = 20;           // monsters in one spawn message
 export const KICK_TEXT = 'An admin sent you out of the world. You can come back in.';
+// Trading (docs/ONLINE.md, "Trading")
+export const TRADE_NEAR = 5 * TILE;           // px: ask, and say yes, within five tiles of each other
+export const TRADE_LEAVE = 8 * TILE;          // px: a knight who walks more than eight tiles away ends the trade
+export const TRADE_ASK_LIFE = 30000;          // an ask nobody answers is over after this
+export const TRADE_ITEMS = 12;                // different things in one offer
+export const TRADE_QTY_MAX = 1000000000;      // of one thing in one offer
+export const TRADE_KEEP = PRIZE_KEEP;         // a finished trade is re-sent after welcome for 7 days until each side acks it
 const STRIKES_FORGIVEN_AFTER = 10000;  // a socket that behaves for this long gets its warning back
+export const SEEN_EVERY = 60000;       // a login's "last heard from" is written at most this often
 const MAX_FRAME = 64 * 1024;           // bigger than any honest message (a mon list is a few KB)
 const MAX_P = 4096;                    // presence is small; anything bigger is junk
 const OVERWORLD = 'over';
@@ -98,7 +130,9 @@ export class Room {
     this.maps = new Map();      // map name -> { members: Set<knight>, keeper: knight|null }
     this.gifts = new Map();     // gid -> { gid, from, to (lower-case names), id, qty, due }
     this.parties = new Map();   // pid -> { id, at, by, map, region, hat, table, expires, crackers: Map k -> {k, tx, ty, litBy} }
+    this.trades = new Map();    // id -> an open trade (see openTrade)
     this.nextGid = 1;
+    this.nextTradeId = 1;
     this.spawnSeq = 0;
     this.rosterAt = -Infinity;
     this.rosterDirty = false;
@@ -137,6 +171,7 @@ export class Room {
     }
     const k = this.makeKnight(sock, { name: String(name), since: this.now() });
     k.role = acc ? acc.role : 'player';   // a name with no account (tests, simulations) is a plain player
+    k.loginId = this.loginStart(k.lc, k.since);
     this.attach(k);
   }
 
@@ -156,6 +191,8 @@ export class Room {
     if (old) { if (old.since <= state.since) { try { sock.close(4000, 'logged in elsewhere'); } catch (e) { } return; } this.drop(old, 4000, 'logged in elsewhere'); }
     const k = this.makeKnight(sock, state);
     k.role = acc ? acc.role : 'player';
+    // the login this socket has carried since it joined; a socket from before logins were kept starts one at its join time
+    k.loginId = Number.isInteger(state.loginId) ? state.loginId : this.loginStart(k.lc, k.since);
     if (k.hello && k.map) this.enterMap(k, k.map, { quiet: true, silent: true, at: k.mapAt });
     for (const g of state.gifts || []) {
       if (!g || g.gid == null) continue;
@@ -171,7 +208,9 @@ export class Room {
       sock, name: s.name, lc: low(s.name), since: s.since || this.now(),
       hello: !!s.hello, map: s.map || null, mapAt: s.mapAt || s.since || this.now(), region: s.region || '', lv: s.lv || 0,
       role: 'player', x: null, y: null,   // x, y: the last presence, for party and cracker range checks (not kept over a nap)
+      loginId: null, seenAt: 0,           // the store's logins row for this socket, and when its "last heard from" was written
       last: null, buckets: {}, strikes: 0, strikeAt: 0, gifts: new Set(),
+      dead: false, trade: null, ask: null,   // trading: the open trade, and this knight's own unanswered ask { to (lower case), due }
     };
     this.knights.set(sock, k);
     this.byName.set(k.lc, k);
@@ -185,10 +224,10 @@ export class Room {
 
   // Throws a knight out: an error first so the screen can say why, then the close. kicked closes with 4005 and
   // banned with 4003 (the wire reconnects after neither); anything else with 4000.
-  kick(name, code, text) {
+  kick(name, code, text, extra) {
     const k = this.byName.get(low(name));
     if (!k) return false;
-    this.send(k.sock, { t: 'error', code, text });
+    this.send(k.sock, Object.assign({ t: 'error', code, text }, extra || {}));
     this.drop(k, code === 'kicked' ? 4005 : code === 'banned' ? 4003 : 4000, String(text || code).slice(0, 120));
     return true;
   }
@@ -201,7 +240,12 @@ export class Room {
   remove(k) {
     if (this.knights.get(k.sock) !== k) return;
     this.knights.delete(k.sock);
+    this.loginEnd(k);
     if (this.byName.get(k.lc) === k) this.byName.delete(k.lc);
+    // an open trade ends with nothing moved; this knight's own ask is withdrawn, and asks put to it are answered 'offline'
+    if (k.trade) this.cancelTrade(k.trade, 'left', k);
+    this.dropAsk(k);
+    for (const o of this.knights.values()) if (o.ask && o.ask.to === k.lc) { o.ask = null; this.send(o.sock, { t: 'trade_no', code: 'offline', n: k.name }); }
     if (k.hello && k.map) this.leaveMap(k);
     // gifts on their way to this knight go straight back; gifts this knight sent have nowhere to go
     for (const g of Array.from(this.gifts.values())) {
@@ -216,6 +260,7 @@ export class Room {
   message(sock, str) {
     const k = this.knights.get(sock);
     if (!k || typeof str !== 'string') return;
+    this.heard(k);
     if (str.length > MAX_FRAME) return this.strike(k, CAPS.p);
     let m;
     try { m = JSON.parse(str); } catch (e) { return; }
@@ -241,6 +286,14 @@ export class Room {
       case 'party_end': return this.onPartyEnd(k);
       case 'light': return this.onLight(k, m);
       case 'claim': return this.onClaim(k, m);
+      case 'trade_ask': return this.onTradeAsk(k, m);
+      case 'trade_answer': return this.onTradeAnswer(k, m);
+      case 'trade_offer': return this.onTradeOffer(k, m);
+      case 'trade_accept': return this.onTradeAccept(k, m);
+      case 'trade_confirm': return this.onTradeConfirm(k, m);
+      case 'trade_full': return this.onTradeFull(k, m);
+      case 'trade_close': return this.onTradeClose(k, m);
+      case 'trade_ack': return this.onTradeAck(k, m);
       case 'ping': return this.send(sock, { t: 'pong' });   // the real server answers this without waking; the sim lands here
       default: return;                                       // unknown t: ignored, as the contract says
     }
@@ -263,19 +316,25 @@ export class Room {
     if (acc && acc.mutedUntil > now) this.send(k.sock, { t: 'muted', left: leftOf(acc.mutedUntil, now) });
     this.sendPartiesOn(k, k.map);
     for (const w of this.store.unclaimed(k.lc, now - PRIZE_KEEP)) this.send(k.sock, { t: 'prize', id: w.id, reward: w.reward });
+    // and every finished trade this knight's game never said it has (id null: the window is long gone)
+    for (const r of this.store.unackedTrades(k.lc, now - TRADE_KEEP)) this.send(k.sock, { t: 'trade_done', tid: r.tid, id: null, with: r.with, gave: r.gave, got: r.got });
     this.arm();
   }
 
   onPresence(k, m, str) {
     if (!k.hello) return;
+    k.pAt = this.now();
     if (str.length > MAX_P) return this.strike(k, CAPS.p);
     const map = (typeof m.map === 'string' && m.map) ? m.map.slice(0, 64) : k.map;
     let changed = false;
     if (map !== k.map) { this.moveMap(k, map); changed = true; }
     if (typeof m.region === 'string' && m.region.slice(0, 40) !== k.region) { k.region = m.region.slice(0, 40); changed = true; }
     if (typeof m.lv === 'number' && m.lv !== k.lv) { k.lv = m.lv; changed = true; }
-    // where the knight stands, for the party and cracker range checks
+    // where the knight stands, for the party, cracker and trade range checks
     if (Number.isFinite(m.x) && Number.isFinite(m.y)) { k.x = m.x; k.y = m.y; }
+    k.dead = !!m.dead;
+    // an open trade ends when either knight falls or walks away
+    if (k.trade) { const o = this.otherOf(k.trade, k); if (k.dead) this.cancelTrade(k.trade, 'dead', k); else if (!this.within(k, o, TRADE_LEAVE, true)) this.cancelTrade(k.trade, 'far', k); }
     if (changed) { this.attach(k); this.rosterLater(); }
     // the role on a relayed p is always the server's word: whatever the sender put there is overwritten
     const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: k.map, role: k.role }));
@@ -589,11 +648,195 @@ export class Room {
     if (c) this.store.claim(c.pid, c.k, k.lc);
   }
 
+  // ---------- trading (docs/ONLINE.md, "Trading") ----------
+  // Two knights within `r` px of each other by their last presence. With a position missing: `unknown` (true only where
+  // "not heard yet" must not end anything, as in a presence check; an ask always needs both positions).
+  within(a, b, r, unknown) {
+    if (!a || !b || a.x == null || a.y == null || b.x == null || b.y == null) return !!unknown;
+    return Math.hypot(a.x - b.x, a.y - b.y) <= r;
+  }
+  otherOf(t, k) { return t.a === k ? t.b : t.a; }
+  sideOf(t, k) { return t.a === k ? 'a' : 'b'; }
+
+  // An offer as the game sends it, checked: at most TRADE_ITEMS different ids, each an item id and a whole number
+  // 1..TRADE_QTY_MAX, no id twice. Answers the clean list, or null (then nothing changes).
+  static cleanOffer(items) {
+    if (!Array.isArray(items) || items.length > TRADE_ITEMS) return null;
+    const seen = new Set(), out = [];
+    for (const it of items) {
+      if (!it || typeof it !== 'object' || typeof it.id !== 'string' || !ID_RE.test(it.id) || seen.has(it.id)) return null;
+      if (!Number.isInteger(it.qty) || it.qty < 1 || it.qty > TRADE_QTY_MAX) return null;
+      seen.add(it.id); out.push({ id: it.id, qty: it.qty });
+    }
+    return out;
+  }
+  static sameOffer(x, y) { return x.length === y.length && x.every((it, i) => it.id === y[i].id && it.qty === y[i].qty); }
+
+  // Why these two cannot open a trade right now, as the code trade_no carries (and whose fault, for its n), or null.
+  tradeBlock(k, o) {
+    if (!o || !o.hello) return ['offline', o];
+    if (o === k) return ['self', k];
+    if (o.map !== k.map) return ['map', o];
+    if (k.trade) return ['busy', k];
+    if (o.trade) return ['busy', o];
+    if (k.dead) return ['dead', k];
+    if (o.dead) return ['dead', o];
+    if (!this.within(k, o, TRADE_NEAR)) return ['far', o];
+    return null;
+  }
+  // An ask that ends unanswered (it ran out, or the asker left, asked someone else or started another trade): the
+  // knight it was put to hears trade_ask_off, so the question goes away.
+  dropAsk(k, why) {
+    const a = k.ask; if (!a) return;
+    k.ask = null;
+    const to = this.byName.get(a.to);
+    if (to && to.hello) this.send(to.sock, { t: 'trade_ask_off', from: k.name });
+    if (why === 'timeout') this.send(k.sock, { t: 'trade_no', code: 'timeout', n: to ? to.name : a.to });
+  }
+
+  // trade_ask {to}: put the question to a knight on your map within five tiles. If they already asked you, the trade
+  // opens at once (the RuneScape way: you both chose each other).
+  onTradeAsk(k, m) {
+    if (!k.hello) return;
+    const asked = typeof m.to === 'string' ? m.to.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    const o = asked ? this.byName.get(low(asked)) : null;
+    const no = (code, who) => this.send(k.sock, { t: 'trade_no', code, n: who ? who.name : asked });
+    if (!asked) return no('bad');
+    const block = this.tradeBlock(k, o);
+    if (block) return no(block[0], block[1]);
+    const now = this.now();
+    if (o.ask && o.ask.to === k.lc && o.ask.due > now) { o.ask = null; this.dropAsk(k); return this.openTrade(o, k); }
+    if (k.ask && k.ask.to === o.lc && k.ask.due > now) return no('wait', o);   // asked already: they have the question
+    this.dropAsk(k);
+    k.ask = { to: o.lc, due: now + TRADE_ASK_LIFE };
+    this.send(o.sock, { t: 'trade_ask', from: k.name, role: k.role });
+    this.send(k.sock, { t: 'trade_asked', to: o.name });
+    this.arm();
+  }
+
+  // trade_answer {from, yes}: yes opens the trade when the two can still trade; no tells the asker.
+  onTradeAnswer(k, m) {
+    if (!k.hello) return;
+    const from = typeof m.from === 'string' ? this.byName.get(low(m.from.replace(/\s+/g, ' ').trim())) : null;
+    const now = this.now();
+    if (!from || !from.ask || from.ask.to !== k.lc || from.ask.due <= now) return this.send(k.sock, { t: 'trade_no', code: 'gone', n: from ? from.name : String(m.from || '').slice(0, 40) });
+    from.ask = null;
+    if (m.yes !== true) return this.send(from.sock, { t: 'trade_no', code: 'declined', n: k.name });
+    const block = this.tradeBlock(from, k);
+    if (block) { const out = { t: 'trade_no', code: block[0], n: block[1].name }; this.send(from.sock, out); this.send(k.sock, out); return; }
+    this.openTrade(from, k);
+  }
+
+  openTrade(a, b) {
+    this.dropAsk(a); this.dropAsk(b);
+    const t = { id: this.nextTradeId++, a, b, offer: { a: [], b: [] }, acc: { a: false, b: false }, conf: { a: false, b: false }, stage: 'offer', ver: 1 };
+    this.trades.set(t.id, t);
+    a.trade = t; b.trade = t;
+    this.send(a.sock, { t: 'trade_open', id: t.id, with: b.name, ver: t.ver });
+    this.send(b.sock, { t: 'trade_open', id: t.id, with: a.name, ver: t.ver });
+    this.sendTrade(t);
+  }
+
+  // The whole truth about a trade, as each side sees it: its own offer, the other's, and who has accepted / confirmed.
+  tradeStateFor(t, k) {
+    const s = this.sideOf(t, k), o = s === 'a' ? 'b' : 'a';
+    return { t: 'trade_state', id: t.id, ver: t.ver, stage: t.stage, mine: t.offer[s], theirs: t.offer[o], acc: [t.acc[s], t.acc[o]], conf: [t.conf[s], t.conf[o]] };
+  }
+  sendTrade(t, only) {
+    for (const k of only ? [only] : [t.a, t.b]) this.send(k.sock, this.tradeStateFor(t, k));
+  }
+  // Every trade message names its trade; one this knight is not in (a trade that ended, or one lost in a nap) is
+  // answered trade_end gone, so its window closes and nothing moves.
+  tradeOf(k, m) {
+    if (!k.hello) return null;
+    if (k.trade && m.id === k.trade.id) return k.trade;
+    if (Number.isInteger(m.id)) this.send(k.sock, { t: 'trade_end', id: m.id, code: 'gone', n: k.name });
+    return null;
+  }
+  unaccept(t) { t.stage = 'offer'; t.acc.a = t.acc.b = false; t.conf.a = t.conf.b = false; }
+
+  // trade_offer {id, items}: this side's whole offer. Any change un-accepts both and goes back to the first screen.
+  onTradeOffer(k, m) {
+    const t = this.tradeOf(k, m); if (!t) return;
+    const items = Room.cleanOffer(m.items);
+    if (!items) return this.sendTrade(t, k);   // refused: the knight hears the truth again
+    const s = this.sideOf(t, k);
+    if (Room.sameOffer(items, t.offer[s])) return;
+    t.offer[s] = items; t.ver++;
+    this.unaccept(t);
+    this.sendTrade(t);
+  }
+
+  // trade_accept {id, ver}: the first screen. Only for the offers of version ver, and never for two empty offers.
+  onTradeAccept(k, m) {
+    const t = this.tradeOf(k, m); if (!t) return;
+    if (t.stage !== 'offer' || m.ver !== t.ver || (!t.offer.a.length && !t.offer.b.length)) return this.sendTrade(t, k);
+    t.acc[this.sideOf(t, k)] = true;
+    if (t.acc.a && t.acc.b) { t.stage = 'confirm'; t.conf.a = t.conf.b = false; }
+    this.sendTrade(t);
+  }
+
+  // trade_confirm {id, ver}: "Are you sure?". When both have confirmed version ver, the trade happens.
+  onTradeConfirm(k, m) {
+    const t = this.tradeOf(k, m); if (!t) return;
+    if (t.stage !== 'confirm' || m.ver !== t.ver) return this.sendTrade(t, k);
+    t.conf[this.sideOf(t, k)] = true;
+    if (t.conf.a && t.conf.b) return this.completeTrade(t);
+    this.sendTrade(t);
+  }
+
+  // trade_full {id, why}: this knight's pack cannot hold what it would get ('full'), or its game does not know an item
+  // ('new'). Both are un-accepted and told whose pack it is; the window stays open so the offers can change.
+  onTradeFull(k, m) {
+    const t = this.tradeOf(k, m); if (!t) return;
+    this.unaccept(t);
+    this.sendTrade(t);
+    const out = { t: 'trade_note', id: t.id, code: m.why === 'new' ? 'new' : 'full', n: k.name };
+    this.send(t.a.sock, out); this.send(t.b.sock, out);
+  }
+
+  // trade_close {id}: the window was closed (or No pressed): the trade is off and nothing moves.
+  onTradeClose(k, m) {
+    if (!k.hello || !k.trade || m.id !== k.trade.id) return;
+    this.cancelTrade(k.trade, 'closed', k);
+  }
+
+  // trade_ack {tid}: this knight's game has the finished trade in its save. No answer.
+  onTradeAck(k, m) {
+    if (!k.hello || !Number.isInteger(m.tid)) return;
+    this.store.ackTrade(m.tid, k.lc);
+  }
+
+  // Ends an open trade with nothing moved. code: closed | left | far | dead; n = the knight it was about.
+  cancelTrade(t, code, who) {
+    if (this.trades.get(t.id) !== t) return;
+    this.trades.delete(t.id);
+    if (t.a.trade === t) t.a.trade = null;
+    if (t.b.trade === t) t.b.trade = null;
+    const out = { t: 'trade_end', id: t.id, code, n: who ? who.name : '' };
+    for (const k of [t.a, t.b]) if (this.knights.get(k.sock) === k) this.send(k.sock, out);
+  }
+
+  // Both confirmed the same offers. Checked once more (one map, in reach, neither fallen), written to the store, and
+  // both games told in the same moment: each takes out what it gave and puts in what it got, once (the tid).
+  completeTrade(t) {
+    const { a, b } = t;
+    if (a.map !== b.map) return this.cancelTrade(t, 'left', a.map == null ? a : b);
+    if (a.dead || b.dead) return this.cancelTrade(t, 'dead', a.dead ? a : b);
+    if (!this.within(a, b, TRADE_LEAVE, true)) return this.cancelTrade(t, 'far', b);
+    this.trades.delete(t.id);
+    a.trade = null; b.trade = null;
+    const tid = this.store.addTrade({ at: this.now(), a: a.name, b: b.name, aGave: t.offer.a, bGave: t.offer.b });
+    this.send(a.sock, { t: 'trade_done', tid, id: t.id, with: b.name, gave: t.offer.a, got: t.offer.b });
+    this.send(b.sock, { t: 'trade_done', tid, id: t.id, with: a.name, gave: t.offer.b, got: t.offer.a });
+  }
+
   // ---------- maps and keepers ----------
   members(map) { const g = this.maps.get(map); return g ? g.members : []; }
   keeperOf(map) { const g = this.maps.get(map); return g ? g.keeper : null; }
 
   moveMap(k, map) {
+    if (k.trade) this.cancelTrade(k.trade, 'left', k);   // a trade is only ever between two knights on one map
     this.leaveMap(k);
     this.enterMap(k, map, { quiet: false });
     this.sendPartiesOn(k, map);   // crackers already lying on the new map
@@ -637,7 +880,11 @@ export class Room {
     if (g.keeper && g.keeper.keeperAt == null) g.keeper.keeperAt = now;   // a restored keeper starts its grace now
     // a keeper that has gone quiet while others are here goes to the back of the line (see KEEPER_STALE)
     const stale = o => o === g.keeper && g.members.size > 1 && now - Math.max(o.monAt || 0, o.keeperAt || 0) > KEEPER_STALE;
-    const before = (a, b) => { const sa = stale(a), sb = stale(b); if (sa !== sb) return !sa; return a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc); };
+    // and a knight whose game has gone silent (see PRESENCE_STALE) is never picked over one who is playing
+    // (alive = its presence, its monster stream, or its arrival on the map is recent)
+    const silentKnight = o => g.members.size > 1 && now - Math.max(o.pAt || 0, o.monAt || 0, o.keeperAt || 0, o.mapAt || 0) > PRESENCE_STALE;
+    const back = o => stale(o) || silentKnight(o);
+    const before = (a, b) => { const sa = back(a), sb = back(b); if (sa !== sb) return !sa; return a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc); };
     let best = null;
     for (const o of g.members) if (!best || before(o, best)) best = o;
     if (g.keeper === best) return;
@@ -650,6 +897,31 @@ export class Room {
     const out = JSON.stringify({ t: 'keeper', map, n: best.name });
     for (const o of g.members) if (o !== except) this.raw(o.sock, out);
   }
+
+  // ---------- logins (the store keeps them; a store without them, as an older simulation's, is simply not asked) ----------
+  hasLogins() { return typeof this.store.loginStart === 'function'; }
+  loginStart(lc, at) { if (!this.hasLogins()) return null; try { return this.store.loginStart(lc, at); } catch (e) { return null; } }
+  loginEnd(k) {
+    if (k.loginId == null || !this.hasLogins()) return;
+    const id = k.loginId; k.loginId = null;
+    try { this.store.loginEnd(id, this.now()); } catch (e) { }
+  }
+  // any message at all: the login was alive now (written at most every SEEN_EVERY, so a busy knight costs one row a minute)
+  heard(k) {
+    if (k.loginId == null || !this.hasLogins()) return;
+    const now = this.now();
+    if (now - k.seenAt < SEEN_EVERY) return;
+    k.seenAt = now;
+    try { this.store.loginSeen(k.loginId, now); } catch (e) { }
+  }
+  // After a wake has restored every socket: an open row no knight here carries belongs to a socket that is gone.
+  settleLogins() {
+    if (!this.hasLogins() || typeof this.store.closeStaleLogins !== 'function') return 0;
+    const keep = new Set();
+    for (const k of this.knights.values()) if (k.loginId != null) keep.add(k.loginId);
+    return this.store.closeStaleLogins(keep, this.now());
+  }
+  loginOf(name) { const k = this.byName.get(low(name)); return k && k.loginId != null ? { id: k.loginId, started: k.since } : null; }
 
   // ---------- the roster ----------
   online() {
@@ -698,6 +970,7 @@ export class Room {
     for (const g of this.gifts.values()) if (d == null || g.due < d) d = g.due;
     for (const g of this.maps.values()) if (g.keeper && g.members.size > 1) { const t = Math.max(g.keeper.monAt || 0, g.keeper.keeperAt || 0) + KEEPER_STALE + 50; if (d == null || t < d) d = t; }
     for (const p of this.parties.values()) if (d == null || p.expires < d) d = p.expires;
+    for (const k of this.knights.values()) if (k.ask && (d == null || k.ask.due < d)) d = k.ask.due;
     return d;
   }
   arm() {
@@ -712,6 +985,7 @@ export class Room {
     const now = this.now();
     this.expire();   // parties whose 15 minutes are up
     for (const g of Array.from(this.gifts.values())) if (g.due <= now) this.settleGift(g, 'gift_back');
+    for (const k of Array.from(this.knights.values())) if (k.ask && k.ask.due <= now) this.dropAsk(k, 'timeout');
     if (this.rosterDirty && now - this.rosterAt >= ROSTER_EVERY) this.sendRoster(now);
     for (const map of Array.from(this.maps.keys())) this.elect(map, null);   // a quiet keeper steps down
     this.arm();
@@ -724,6 +998,6 @@ export class Room {
     if (!k.sock.attach) return;
     const gifts = [];
     for (const gid of k.gifts) { const g = this.gifts.get(gid); if (g) gifts.push({ gid: g.gid, to: g.to, id: g.id, qty: g.qty, due: g.due }); }
-    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts }); } catch (e) { }
+    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId }); } catch (e) { }
   }
 }

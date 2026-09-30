@@ -108,27 +108,17 @@
   HOOKS.newGame.push(() => { beastWas = false; beastSnap = null; bombCd = 0; rams = 0; bombsLobbed = 0; });
 
   // ---------- HUD ----------
-  // MIGRATED to the HUD kit (src/59-hudkit.js): the machine's hp is now the second meter in the status
-  // plate (hudMechName below), and the bomb chute is a chip on the left column instead of a lilac-outlined
-  // pill floating at x=186. Amber while it reloads, neutral when it is ready — the kit's one meaning for
-  // amber is "wait", which is exactly what a cooldown is.
+  // The machine's hp is the crest's big number while you drive (hudMechName names it). The bomb chute is the USE seat
+  // of the kit's four (src/59-hudkit.js): BOMB with its reload sweep and seconds (B on the keys). While a plank is in
+  // front the core's CRUSH face takes the seat for a moment, and the reload keeps counting underneath.
   hudMechName(() => driving() ? 'Barrelbeast' : null);
-  HOOKS.hud.push(g => {
-    if (!driving()) return;
-    const ready = bombCd <= 0, pad = 8;
-    const s = HK.slot(HK.chipH());
-    HK.plate(g, s.x, s.y, s.w, s.h, { tone: ready ? null : HK.C.WARN });
-    g.font = 'bold 11px sans-serif'; g.fillStyle = HK.C.DIM; g.textAlign = 'left'; g.textBaseline = 'middle';
-    g.fillText(touchMode() ? 'BOMB' : 'BOMB (B)', s.x + pad + 4, s.y + s.h / 2);
-    g.font = 'bold 12px sans-serif'; g.fillStyle = HK.C.INK; g.textAlign = 'right';
-    g.fillText(ready ? 'ready' : `${bombCd.toFixed(1)}s`, s.x + s.w - pad - 4, s.y + s.h / 2);
-    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-    if (touchMode()) { // seat 4 of the kit's thumb grid — HOME's seat, and HOME is hidden while in any machine
-      const p = HK.thumbSeat(4);
-      HK.disc(g, p.x, p.y, p.r, ready ? 'BOMB' : bombCd.toFixed(1), { enabled: ready });
-      buttons.push({ x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2, label: 'BOMB', action: () => touch.taps.push('bomb') });
-    }
+  hudSeatFace('use', {
+    id: 'bomb', prio: 30, when: () => driving(), emblem: 'bomb', ribbon: 'BOMB', key: 'B', name: 'Lob a bomb',
+    cool: () => bombCd > 0 ? { frac: bombCd / BOMB_CD, text: bombCd.toFixed(1) } : null,
+    action: () => touch.taps.push('bomb'),
   });
+  // the coach: "[B] Bomb" over the beast the first times the chute is loaded
+  HOOKS.hud.push(() => { if (driving() && bombCd <= 0 && !paused && !panel && monsters.some(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 260)) HK.teach('bomb', 'B', 'Bomb', { x: player.x, y: player.y, lift: 52 }, { emblem: 'bomb' }); });
 
   // ---------- art ----------
   // The sprite lives in 20-hollowford.js (HOOKS.drawMonster.barrelbeast); its fourth argument is the pilot look and
@@ -166,7 +156,7 @@
     }
     if (!player.dead && !player.mech) { // use-highlight for the beast tiles (the core only highlights its own INTERESTING tiles)
       const { tx, ty } = frontTile(player); const t = tileAt(tx, ty);
-      if (t === T_BEAST || t === T_BEAST_WRECK) items.push({ y: 1e9, draw: () => { g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2; g.setLineDash([5, 4]); roundRect(g, tx * TILE + 3, ty * TILE + 3, TILE - 6, TILE - 6, 6); g.stroke(); g.setLineDash([]); } });
+      if (t === T_BEAST || t === T_BEAST_WRECK) items.push({ y: 1e9, draw: () => { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); } });
     }
   });
 

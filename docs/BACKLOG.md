@@ -84,6 +84,7 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
 (28 scenarios each) and 86 server tests passed before each deploy.
 
 ## NEXT WEEK — improvements held back so the work could ship
+- On a phone, the place-name banner (THISTLEDOWN) draws over an open page for its second or two. Seen 2026-09-30 on the quest page.
 
 Built but NOT through its adversarial review yet (it passed the suite and was deployed; review it properly next):
 | What | Where it is | What is left |
