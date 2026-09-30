@@ -50754,7 +50754,7 @@ window.RETALIATE = RETALIATE;
     return (x, y) => clamp(0.5 + (oct(x, y, cell) * 0.7 + oct(x + 37.3, y + 11.7, cell / 2) * 0.3 - 0.5) * 1.7, 0, 1);
   };
   const WOB = makeNoise(SEED + 1, 11), FINE = makeNoise(SEED + 2, 3), PATCH = makeNoise(SEED + 3, 4), DEPTH = makeNoise(SEED + 4, 3.5), PICK = makeNoise(SEED + 5, 2.5), RAG = makeNoise(SEED + 6, 4);
-  const CREST = makeNoise(SEED + 7, 4.5), BED = makeNoise(SEED + 8, 5), BURN = makeNoise(SEED + 9, 5), JIT = makeNoise(SEED + 10, 1.6);
+  const RIDGE = makeNoise(SEED + 11, 9), CREST = makeNoise(SEED + 7, 4.5), BED = makeNoise(SEED + 8, 5), BURN = makeNoise(SEED + 9, 5), JIT = makeNoise(SEED + 10, 1.6);
 
   const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], N8 = [...N4, [1, 1], [-1, 1], [1, -1], [-1, -1]];
   // a small deterministic hash per tile and slot, 0..1 (world passes and drawing both use it)
@@ -50962,19 +50962,30 @@ window.RETALIATE = RETALIATE;
     // climbs by a noise height per column, onto burnt ground (open for solid only where the local test says it cuts
     // nothing) or in place of a tree (solid for solid). A column stops at the first tile it may not take, so no rock
     // floats. Nothing near the warden's road, the stone circle or the watchtower (the guards in `free`).
-    S.crest = 0; AE.crestTop = [];
+    S.crest = 0; S.foot = 0; AE.crestTop = [];
+    const FOOTABLE = new Set([ASH, SCORCH, CINDERS, SINGED].filter(v => v >= 0));
     const RIM_CLIFF = RIM;
     if (RIM_CLIFF >= 0) for (let x = 1; x <= 99; x++) {
       AE.crestTop[x] = 95;
       if (x >= 54 && x <= 66) continue;
       if (at(x, 95) !== RIM_CLIFF) continue;
-      // (a slow noise for the rise and fall, a quick one so neighbouring columns seldom stand level for long)
-      const up = clamp(Math.round(CREST(x, 3.7) * 3.8 + (JIT(x, 7.7) - 0.5) * 2.6 - 0.5), 0, 3);
+      // (a slow noise for hills and dips several columns long, a quicker one on top, and a quick one so neighbouring
+      // columns seldom stand level for long). Owner 2026-09-30 by eye: a 0 to 3 rise averaged one row and still read as
+      // a ruled line on the map, so the ridge now climbs up to five rows where the slow noise is high ...
+      const up = clamp(Math.round(RIDGE(x, 2.9) * 7 - 1.8 + (CREST(x, 3.7) - 0.5) * 2 + (JIT(x, 7.7) - 0.5) * 1.6), 0, 5);
       for (let y = 94; y >= 95 - up; y--) {
         const t = at(x, y);
         if (TREES.has(t) || t === CHAR || t === DEADTREE) { if (!free(x, y)) break; set(x, y, RIM_CLIFF); }
         else if (!stand(x, y, RIM_CLIFF)) break;
         S.crest++; band[I(x, y)] = 1; AE.crestTop[x] = y;
+      }
+      // ... and where it is low the rock steps down into the ash instead, up to three rows, so the face itself wanders
+      // (open burnt ground only, each rock through the local test; 1g gives back any that shut something off)
+      const down = clamp(Math.round((0.5 - RIDGE(x, 2.9)) * 8 + (JIT(x, 3.1) - 0.5) * 1.4), 0, 3);
+      for (let y = 96; y <= 95 + down; y++) {
+        const t = at(x, y);
+        if (!FOOTABLE.has(t) || !free(x, y) || nearTrack(x, y) || !stand(x, y, RIM_CLIFF)) break;
+        S.foot++; band[I(x, y)] = 1;
       }
     }
 
