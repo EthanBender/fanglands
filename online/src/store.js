@@ -15,6 +15,7 @@ import { PRIZE_KEEP, crackerId } from './party.js';
 export const ALWAYS = 8640000000000000;   // the last date JavaScript knows: muted "until an admin unmutes"
 const MOD_LOG_KEPT = 5000;                 // the newest rows of mod_log that are kept
 const PRUNE_EVERY = 200;                   // mod_log writes between two trims (and the first write after a wake)
+const TRADES_KEPT = 5000;                  // the newest rows of trades that are kept (the same trim rhythm)
 
 // The first six statements are world.js's schema from before admins, verbatim. Split on ';' to run.
 export const SCHEMA = `
@@ -31,7 +32,10 @@ CREATE TABLE IF NOT EXISTS mod_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at INT
 CREATE TABLE IF NOT EXISTS save_pins (name_lc TEXT PRIMARY KEY, json TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS parties (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, by TEXT NOT NULL, map TEXT NOT NULL, region TEXT NOT NULL DEFAULT '', hat INTEGER NOT NULL, table_json TEXT NOT NULL, count INTEGER NOT NULL, expires INTEGER NOT NULL, ended INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS crackers (party INTEGER NOT NULL, k INTEGER NOT NULL, tx INTEGER NOT NULL, ty INTEGER NOT NULL, lit_by TEXT, lit_at INTEGER, reward TEXT, claimed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (party, k));
-CREATE INDEX IF NOT EXISTS crackers_by_lighter ON crackers (lit_by, claimed)
+CREATE INDEX IF NOT EXISTS crackers_by_lighter ON crackers (lit_by, claimed);
+CREATE TABLE IF NOT EXISTS trades (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, a TEXT NOT NULL, a_lc TEXT NOT NULL, b TEXT NOT NULL, b_lc TEXT NOT NULL, a_gave TEXT NOT NULL, b_gave TEXT NOT NULL, a_ack INTEGER NOT NULL DEFAULT 0, b_ack INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS trades_by_a ON trades (a_lc, a_ack);
+CREATE INDEX IF NOT EXISTS trades_by_b ON trades (b_lc, b_ack)
 `;
 
 // The columns accounts gained for admins. Added with ALTER TABLE ... ADD COLUMN, which never rewrites a row:
@@ -67,7 +71,7 @@ const parse = s => { try { return JSON.parse(s); } catch (e) { return null; } };
 // SqlStore: over ctx.storage.sql (sql.exec(query, ...args) -> a cursor with toArray()).
 // ---------------------------------------------------------------------------
 export class SqlStore {
-  constructor(sql) { this.sql = sql; this.logWrites = 0; }
+  constructor(sql) { this.sql = sql; this.logWrites = 0; this.tradeWrites = 0; }
   rows(q, ...args) { return this.sql.exec(q, ...args).toArray(); }
   row(q, ...args) { return this.rows(q, ...args)[0] || null; }
 
@@ -128,6 +132,33 @@ export class SqlStore {
   }
   // only the knight who lit it can claim it; claiming twice is harmless (the second answers true again)
   claim(pid, k, lc) { return this.rows('UPDATE crackers SET claimed = 1 WHERE party = ? AND k = ? AND lit_by = ? RETURNING k', pid, k, lc).length === 1; }
+
+  // ---------- finished trades (docs/ONLINE.md, "Trading") ----------
+  // One row per trade that happened: who, what each gave, and whether each side's game has said it is in its save.
+  addTrade({ at, a, b, aGave, bGave }) {
+    const id = this.row('INSERT INTO trades (at, a, a_lc, b, b_lc, a_gave, b_gave) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      at, String(a), norm(a), String(b), norm(b), JSON.stringify(aGave || []), JSON.stringify(bGave || [])).id;
+    if (++this.tradeWrites % PRUNE_EVERY === 1) this.sql.exec('DELETE FROM trades WHERE id <= (SELECT id FROM trades ORDER BY id DESC LIMIT 1 OFFSET ?)', TRADES_KEPT);
+    return id;
+  }
+  // the trades this knight's game has not acked since `since`, oldest first, as that knight sees them
+  unackedTrades(lc, since) {
+    const l = norm(lc);
+    return this.rows('SELECT id, a, a_lc, b, b_lc, a_gave, b_gave FROM trades WHERE at >= ? AND ((a_lc = ? AND a_ack = 0) OR (b_lc = ? AND b_ack = 0)) ORDER BY id', since, l, l)
+      .map(r => r.a_lc === l ? { tid: r.id, with: r.b, gave: parse(r.a_gave) || [], got: parse(r.b_gave) || [] } : { tid: r.id, with: r.a, gave: parse(r.b_gave) || [], got: parse(r.a_gave) || [] });
+  }
+  // only one of the two knights in it can ack a trade; acking twice is harmless
+  ackTrade(tid, lc) {
+    const l = norm(lc);
+    const a = this.rows('UPDATE trades SET a_ack = 1 WHERE id = ? AND a_lc = ? RETURNING id', tid, l).length;
+    const b = this.rows('UPDATE trades SET b_ack = 1 WHERE id = ? AND b_lc = ? RETURNING id', tid, l).length;
+    return a + b > 0;
+  }
+  // the parent page's list, newest first
+  tradeLog(limit = 200) {
+    return this.rows('SELECT id, at, a, b, a_gave, b_gave, a_ack, b_ack FROM trades ORDER BY id DESC LIMIT ?', limit)
+      .map(r => ({ tid: r.id, at: r.at, a: r.a, b: r.b, aGave: parse(r.a_gave) || [], bGave: parse(r.b_gave) || [], aAck: !!r.a_ack, bAck: !!r.b_ack }));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +172,9 @@ export class MemoryStore {
     this.logWrites = 0;
     this.partyRows = new Map();  // id -> {id, at, by, map, region, hat, table, count, expires, ended, crackers: [...]}
     this.nextPartyId = 1;
+    this.tradeRows = [];         // {id, at, a, a_lc, b, b_lc, a_gave, b_gave (JSON), a_ack, b_ack}, oldest first
+    this.nextTradeId = 1;
+    this.tradeWrites = 0;
   }
   addAccount(name, role = 'player') {
     const lc = norm(name);
@@ -203,5 +237,29 @@ export class MemoryStore {
     if (!c || c.litBy !== lc) return false;
     c.claimed = true;
     return true;
+  }
+
+  addTrade({ at, a, b, aGave, bGave }) {
+    const id = this.nextTradeId++;
+    this.tradeRows.push({ id, at, a: String(a), a_lc: norm(a), b: String(b), b_lc: norm(b), a_gave: JSON.stringify(aGave || []), b_gave: JSON.stringify(bGave || []), a_ack: false, b_ack: false });
+    if (++this.tradeWrites % PRUNE_EVERY === 1 && this.tradeRows.length > TRADES_KEPT) this.tradeRows.splice(0, this.tradeRows.length - TRADES_KEPT);
+    return id;
+  }
+  unackedTrades(lc, since) {
+    const l = norm(lc);
+    return this.tradeRows.filter(r => r.at >= since && ((r.a_lc === l && !r.a_ack) || (r.b_lc === l && !r.b_ack)))
+      .map(r => r.a_lc === l ? { tid: r.id, with: r.b, gave: parse(r.a_gave) || [], got: parse(r.b_gave) || [] } : { tid: r.id, with: r.a, gave: parse(r.b_gave) || [], got: parse(r.a_gave) || [] });
+  }
+  ackTrade(tid, lc) {
+    const l = norm(lc), r = this.tradeRows.find(x => x.id === tid);
+    if (!r) return false;
+    let hit = false;
+    if (r.a_lc === l) { r.a_ack = true; hit = true; }
+    if (r.b_lc === l) { r.b_ack = true; hit = true; }
+    return hit;
+  }
+  tradeLog(limit = 200) {
+    return this.tradeRows.slice(-Math.max(0, limit)).reverse()
+      .map(r => ({ tid: r.id, at: r.at, a: r.a, b: r.b, aGave: parse(r.a_gave) || [], bGave: parse(r.b_gave) || [], aAck: r.a_ack, bAck: r.b_ack }));
   }
 }

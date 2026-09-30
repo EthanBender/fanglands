@@ -19,6 +19,9 @@
 // winner's game only; a party hat handed over with the ordinary gift; Ann bans Ben (close 4003, every join refused
 // until she unbans), and so does the parent page (the store, then the world's kick by name); and Ben sending every admin
 // message is refused with nothing changed.
+// Then trading (docs/ONLINE.md, "Trading"), through the games' own buttons: Ann taps Ben and trades 5 bread for 20 coins,
+// exactly once; Ben changes his offer after Ann accepted and nothing moves until both accept again; closing the window,
+// walking away and a disconnect each end a trade with nothing moved.
 // Exit 0 only when every line passes.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path');
@@ -45,7 +48,10 @@ const CAPS = {
   hello: [0, 1], p: [8, 16], chat: [1 / 1.5, 2], mon: [8, 16], hit: [20, 40], gift: [1, 2],
   mute: [1, 3], unmute: [1, 3], kick: [1, 3], ban: [1, 3], unban: [1, 3], modlist: [1, 2], spawn: [1, 3], spawn_clear: [1, 2],
   party: [0.2, 2], party_end: [1, 2], light: [4, 8], claim: [10, 50],
+  trade_ask: [0.5, 3], trade_answer: [2, 4], trade_offer: [5, 10], trade_accept: [4, 8], trade_confirm: [4, 8], trade_full: [2, 4], trade_close: [2, 4], trade_ack: [10, 50],
 };
+// Trading (docs/ONLINE.md, "Trading"): the ranges in px, the ask's life, an offer's limits, how long a finished trade is re-sent
+const TRADE_NEAR = 5 * TILE_PX, TRADE_LEAVE = 8 * TILE_PX, TRADE_ASK_LIFE = 30000, TRADE_ITEMS = 12, TRADE_QTY_MAX = 1000000000, TRADE_KEEP = PRIZE_KEEP;
 const lcOf = name => String(name == null ? '' : name).replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 40);
 const leftOf = (until, now) => until >= ALWAYS ? -1 : Math.max(0, Math.ceil((until - now) / 1000));
 const commas = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -126,6 +132,14 @@ class FakeStore {
     return out.sort((a, b) => (a.at - b.at) || (a.pid - b.pid) || (a.k - b.k)).map(({ id, reward }) => ({ id, reward }));
   }
   claim(pid, k, lc) { const p = this.partyRows.get(pid), c = p && p.crackers[k]; if (!c || c.litBy !== lc) return false; c.claimed = true; return true; }
+  // finished trades: one row each, with an ack per side (the store's addTrade / unackedTrades / ackTrade / tradeLog)
+  addTrade(r) { this.trades = this.trades || []; const tid = this.trades.length + 1; this.trades.push({ tid, at: r.at, a: r.a, b: r.b, aGave: JSON.parse(JSON.stringify(r.aGave)), bGave: JSON.parse(JSON.stringify(r.bGave)), aAck: false, bAck: false }); return tid; }
+  unackedTrades(lc, since) {
+    return (this.trades || []).filter(r => r.at >= since && ((lcOf(r.a) === lc && !r.aAck) || (lcOf(r.b) === lc && !r.bAck)))
+      .map(r => lcOf(r.a) === lc ? { tid: r.tid, with: r.b, gave: r.aGave, got: r.bGave } : { tid: r.tid, with: r.a, gave: r.bGave, got: r.aGave });
+  }
+  ackTrade(tid, lc) { const r = (this.trades || []).find(x => x.tid === tid); if (!r) return false; let hit = false; if (lcOf(r.a) === lc) { r.aAck = true; hit = true; } if (lcOf(r.b) === lc) { r.bAck = true; hit = true; } return hit; }
+  tradeLog(limit = 200) { return (this.trades || []).slice(-limit).reverse().map(r => Object.assign({}, r)); }
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +164,10 @@ class FakeStore {
 //   light (gone / map / taken / far; the roll, then the fuse; the first light wins; a hat is announced; the last one lit
 //   ends the party); claim (the lighter only); party_end; crackers after welcome and on arriving on a map; a prize after
 //   welcome for every unclaimed one of the last 7 days; parties end when their 15 minutes are up.
+//   Trading: an ask to a knight on your map within five tiles (self / offline / map / busy / dead / far / wait refused,
+//   two asks to each other open it at once, 30 s to answer, trade_ask_off when an ask goes unanswered); both offers held
+//   here, a change un-accepting both, accept then confirm of the same version, trade_done to both, a store row re-sent
+//   after welcome until acked; closed / left / far / dead end it with nothing moved.
 // ---------------------------------------------------------------------------
 class FakeWorld {
   constructor({ now, log, store, random } = {}) {
@@ -175,12 +193,15 @@ class FakeWorld {
     if (old) { this.send(old, { t: 'error', code: 'elsewhere', text: 'this knight logged in somewhere else' }); this.drop(old, 4000); }
     if (this.k.size >= MAX_KNIGHTS) { this.send(bare, { t: 'error', code: 'full', text: 'the world is full right now, try again in a bit' }); try { sock.close(4004, 'full'); } catch (e) { } return; }
     const now = this.now();
-    this.k.set(sock, { sock, name: String(name), lc: lcOf(name), since: now, hello: false, map: null, mapAt: now, region: '', lv: 0, role: 'player', x: null, y: null, last: null, buckets: {}, strikes: 0, strikeAt: 0, monAt: 0, keeperAt: 0 });
+    this.k.set(sock, { sock, name: String(name), lc: lcOf(name), since: now, hello: false, map: null, mapAt: now, region: '', lv: 0, role: 'player', x: null, y: null, last: null, buckets: {}, strikes: 0, strikeAt: 0, monAt: 0, keeperAt: 0, dead: false, trade: null, ask: null });
   }
   leave(sock) { const k = this.k.get(sock); if (k) this.remove(k); }
   remove(k) {
     if (this.k.get(k.sock) !== k) return;
     this.k.delete(k.sock);
+    if (k.trade) this.tradeEnd(k.trade, 'left', k);
+    this.unask(k, false);
+    for (const o of this.k.values()) if (o.ask && o.ask.to === k.lc) { o.ask = null; this.send(o, { t: 'trade_no', code: 'offline', n: k.name }); }
     if (k.hello && k.map) this.leaveMap(k);
     for (const g of Array.from(this.gifts.values())) { if (g.to === k.lc) this.settle(g, 'gift_back'); else if (g.from === k.lc) this.gifts.delete(g.gid); }
     if (k.hello) this.who();
@@ -252,6 +273,11 @@ class FakeWorld {
     if (t === 'party_end') { if (!this.asAdmin(k)) return; for (const p of this.store.open()) if (p.map === k.map) this.endParty(p); return; }
     if (t === 'light') return this.light(k, m);
     if (t === 'claim') { const c = crackerOf(m.id); if (c) this.store.claim(c.pid, c.k, k.lc); return; }
+    if (t === 'trade_ask') return this.tradeAsk(k, m);
+    if (t === 'trade_answer') return this.tradeAnswer(k, m);
+    if (t === 'trade_offer' || t === 'trade_accept' || t === 'trade_confirm' || t === 'trade_full') return this.tradeStep(k, m);
+    if (t === 'trade_close') { if (k.trade && m.id === k.trade.id) this.tradeEnd(k.trade, 'closed', k); return; }
+    if (t === 'trade_ack') { if (Number.isInteger(m.tid)) this.store.ackTrade(m.tid, k.lc); return; }
   }
   hello(k, m) {
     k.hello = true;
@@ -265,14 +291,17 @@ class FakeWorld {
     if (acc && acc.mutedUntil > now) this.send(k, { t: 'muted', left: leftOf(acc.mutedUntil, now) });
     this.crackersTo(k);
     for (const w of this.store.unclaimed(k.lc, now - PRIZE_KEEP)) this.send(k, { t: 'prize', id: w.id, reward: w.reward });
+    for (const r of this.store.unackedTrades(k.lc, now - TRADE_KEEP)) this.send(k, { t: 'trade_done', tid: r.tid, id: null, with: r.with, gave: r.gave, got: r.got });
   }
   presence(k, m, str) {
     if (str.length > 4096) return this.strike(k, CAPS.p[1]);
     const map = typeof m.map === 'string' && m.map ? m.map.slice(0, 64) : k.map;
-    if (map !== k.map) { this.leaveMap(k); this.enter(k, map, false); this.crackersTo(k); this.rosterDirty = true; }
+    if (map !== k.map) { if (k.trade) this.tradeEnd(k.trade, 'left', k); this.leaveMap(k); this.enter(k, map, false); this.crackersTo(k); this.rosterDirty = true; }
     if (typeof m.region === 'string' && m.region.slice(0, 40) !== k.region) { k.region = m.region.slice(0, 40); this.rosterDirty = true; }
     if (typeof m.lv === 'number' && m.lv !== k.lv) { k.lv = m.lv; this.rosterDirty = true; }
     if (Number.isFinite(m.x) && Number.isFinite(m.y)) { k.x = m.x; k.y = m.y; }
+    k.dead = !!m.dead;
+    if (k.trade) { const o = k.trade.a === k ? k.trade.b : k.trade.a; if (k.dead) this.tradeEnd(k.trade, 'dead', k); else if (!this.near(k, o, TRADE_LEAVE, true)) this.tradeEnd(k.trade, 'far', k); }
     const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: k.map, role: k.role }));   // the server's role, always
     k.last = out;
     for (const o of this.onMap(k.map)) if (o !== k) this.raw(o, out);
@@ -421,6 +450,101 @@ class FakeWorld {
     if (!p.crackers.some(x => !x.litBy)) this.endParty(p);   // the last one lit ends the party
   }
 
+  // ---------- trading ----------
+  near(a, b, r, unknownOk) { if (a.x == null || b.x == null) return !!unknownOk; return Math.hypot(a.x - b.x, a.y - b.y) <= r; }
+  unask(k, timedOut) {
+    if (!k.ask) return; const to = this.named(k.ask.to); k.ask = null;
+    if (to && to.hello) this.send(to, { t: 'trade_ask_off', from: k.name });
+    if (timedOut) this.send(k, { t: 'trade_no', code: 'timeout', n: to ? to.name : '' });
+  }
+  cannot(k, o) {
+    if (!o || !o.hello) return ['offline', null];
+    if (o === k) return ['self', k];
+    if (o.map !== k.map) return ['map', o];
+    if (k.trade) return ['busy', k];
+    if (o.trade) return ['busy', o];
+    if (k.dead) return ['dead', k];
+    if (o.dead) return ['dead', o];
+    if (!this.near(k, o, TRADE_NEAR)) return ['far', o];
+    return null;
+  }
+  tradeAsk(k, m) {
+    const name = typeof m.to === 'string' ? m.to.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    const o = name ? this.named(name) : null, now = this.now();
+    if (!name) return this.send(k, { t: 'trade_no', code: 'bad', n: '' });
+    const why = this.cannot(k, o);
+    if (why) return this.send(k, { t: 'trade_no', code: why[0], n: why[1] ? why[1].name : name });
+    if (o.ask && o.ask.to === k.lc && o.ask.due > now) { o.ask = null; this.unask(k, false); return this.tradeOpen(o, k); }
+    if (k.ask && k.ask.to === o.lc && k.ask.due > now) return this.send(k, { t: 'trade_no', code: 'wait', n: o.name });
+    this.unask(k, false);
+    k.ask = { to: o.lc, due: now + TRADE_ASK_LIFE };
+    this.send(o, { t: 'trade_ask', from: k.name, role: k.role });
+    this.send(k, { t: 'trade_asked', to: o.name });
+  }
+  tradeAnswer(k, m) {
+    const from = typeof m.from === 'string' ? this.named(m.from) : null;
+    if (!from || !from.ask || from.ask.to !== k.lc || from.ask.due <= this.now()) return this.send(k, { t: 'trade_no', code: 'gone', n: from ? from.name : String(m.from || '').slice(0, 40) });
+    from.ask = null;
+    if (m.yes !== true) return this.send(from, { t: 'trade_no', code: 'declined', n: k.name });
+    const why = this.cannot(from, k);
+    if (why) { const out = { t: 'trade_no', code: why[0], n: why[1] ? why[1].name : k.name }; this.send(from, out); this.send(k, out); return; }
+    this.tradeOpen(from, k);
+  }
+  tradeOpen(a, b) {
+    this.unask(a, false); this.unask(b, false);
+    this.nextTrade = (this.nextTrade || 0) + 1;
+    const tr = { id: this.nextTrade, a, b, offers: new Map([[a, []], [b, []]]), acc: new Set(), conf: new Set(), stage: 'offer', ver: 1 };
+    a.trade = tr; b.trade = tr;
+    this.send(a, { t: 'trade_open', id: tr.id, with: b.name, ver: 1 }); this.send(b, { t: 'trade_open', id: tr.id, with: a.name, ver: 1 });
+    this.tradeTell(tr);
+  }
+  tradeTell(tr, only) {
+    for (const k of only ? [only] : [tr.a, tr.b]) {
+      const o = k === tr.a ? tr.b : tr.a;
+      this.send(k, { t: 'trade_state', id: tr.id, ver: tr.ver, stage: tr.stage, mine: tr.offers.get(k), theirs: tr.offers.get(o), acc: [tr.acc.has(k), tr.acc.has(o)], conf: [tr.conf.has(k), tr.conf.has(o)] });
+    }
+  }
+  tradeEnd(tr, code, who) {
+    if (tr.a.trade !== tr && tr.b.trade !== tr) return;
+    tr.a.trade = null; tr.b.trade = null;
+    for (const k of [tr.a, tr.b]) if (this.k.get(k.sock) === k) this.send(k, { t: 'trade_end', id: tr.id, code, n: who.name });
+  }
+  tradeStep(k, m) {
+    const tr = k.trade;
+    if (!tr || m.id !== tr.id) { if (Number.isInteger(m.id)) this.send(k, { t: 'trade_end', id: m.id, code: 'gone', n: k.name }); return; }
+    const reset = () => { tr.stage = 'offer'; tr.acc.clear(); tr.conf.clear(); };
+    if (m.t === 'trade_offer') {
+      const list = m.items, seen = new Set(), clean = [];
+      const ok = Array.isArray(list) && list.length <= TRADE_ITEMS && list.every(it => { if (!it || typeof it.id !== 'string' || !ID_RE.test(it.id) || seen.has(it.id) || !isInt(it.qty, 1, TRADE_QTY_MAX)) return false; seen.add(it.id); clean.push({ id: it.id, qty: it.qty }); return true; });
+      if (!ok) return this.tradeTell(tr, k);
+      if (JSON.stringify(clean) === JSON.stringify(tr.offers.get(k))) return;
+      tr.offers.set(k, clean); tr.ver++; reset(); return this.tradeTell(tr);
+    }
+    if (m.t === 'trade_full') {
+      reset(); this.tradeTell(tr);
+      const out = { t: 'trade_note', id: tr.id, code: m.why === 'new' ? 'new' : 'full', n: k.name };
+      this.send(tr.a, out); this.send(tr.b, out); return;
+    }
+    const empty = !tr.offers.get(tr.a).length && !tr.offers.get(tr.b).length;
+    if (m.t === 'trade_accept') {
+      if (tr.stage !== 'offer' || m.ver !== tr.ver || empty) return this.tradeTell(tr, k);
+      tr.acc.add(k); if (tr.acc.size === 2) { tr.stage = 'confirm'; tr.conf.clear(); }
+      return this.tradeTell(tr);
+    }
+    if (tr.stage !== 'confirm' || m.ver !== tr.ver) return this.tradeTell(tr, k);
+    tr.conf.add(k);
+    if (tr.conf.size < 2) return this.tradeTell(tr);
+    const { a, b } = tr;
+    if (a.map !== b.map) return this.tradeEnd(tr, 'left', b);
+    if (a.dead || b.dead) return this.tradeEnd(tr, 'dead', a.dead ? a : b);
+    if (!this.near(a, b, TRADE_LEAVE, true)) return this.tradeEnd(tr, 'far', b);
+    a.trade = null; b.trade = null;
+    const ga = tr.offers.get(a), gb = tr.offers.get(b);
+    const tid = this.store.addTrade({ at: this.now(), a: a.name, b: b.name, aGave: ga, bGave: gb });
+    this.send(a, { t: 'trade_done', tid, id: tr.id, with: b.name, gave: ga, got: gb });
+    this.send(b, { t: 'trade_done', tid, id: tr.id, with: a.name, gave: gb, got: ga });
+  }
+
   // ---------- caps and timers ----------
   allow(k, t, [rate, burst]) {
     const now = this.now(); let b = k.buckets[t];
@@ -440,6 +564,7 @@ class FakeWorld {
     const now = this.now();
     this.expire();
     for (const g of Array.from(this.gifts.values())) if (g.due <= now) this.settle(g, 'gift_back');
+    for (const k of Array.from(this.k.values())) if (k.ask && k.ask.due <= now) this.unask(k, true);
     if (this.rosterDirty && now - this.rosterAt >= ROSTER_EVERY) this.who();
     for (const map of Array.from(this.keepers.keys())) this.elect(map, null);   // a quiet keeper steps down
   }
@@ -959,6 +1084,92 @@ async function main() {
     const benOn = B.NET.online() && B.NET.me === 'Ben' && B.NET.role === 'player';
     line('13. Ben (a player) sends mute, unmute, kick, ban, unban, modlist, spawn, spawn_clear, party and party_end: each is answered error admin; Ann is untouched, nothing is spawned or thrown, the mod log is unchanged, and Ben stays on',
       refusals === msgs.length && annFine && nothing && benOn, { refusals, of: msgs.length, annFine, nothing, benOn });
+  }
+
+  // =====================================================================================================================
+  // Trading (docs/ONLINE.md, "Trading"), through the games' own buttons: Ann taps Ben, Trade; Ben's Accept; the pack's
+  // pouches and the amounts; Accept on both; "Are you sure?"; Confirm on both.
+  // =====================================================================================================================
+  const holdingOf = (g, id) => ev(g, `countItem(${JSON.stringify(id)})`);
+  const setPack = (g, list) => ev(g, `player.inv = new Array(INV_SLOTS).fill(null); ${JSON.stringify(list)}.forEach(([id, q]) => addItem(id, q)); player.trades = { done: [] };`);
+  const tapKnight = (g, n) => ev(g, `(() => { render(); const e = PLAYERS.remote[${JSON.stringify(n)}]; if (!e) return false; tap.lastTap = null; const sx = e.shown.x - cam.x, sy = e.shown.y - 8 - cam.y; pointerDown(sx, sy, 'mouse'); pointerUp('mouse', sx, sy); render(); return !!TRADE.menu && TRADE.menu.n === ${JSON.stringify(n)}; })()`);
+  const tradeRows0 = () => room.store.tradeLog(1000).length;
+  {
+    calm(); tick(60);
+    const meet = openSpot(A, 70, 40, 3); A.FANGLANDS.tp(meet.x, meet.y); B.FANGLANDS.tp(meet.x + 2, meet.y); tick(20);
+    setPack(A, [['bread', 5], ['iron_dagger', 1]]); setPack(B, [['coins', 100]]);
+    const a0 = mark(A), b0 = mark(B), rows0 = tradeRows0();
+    const menu = tapKnight(A, 'Ben');
+    const noSwing = ev(A, '!(player.attackT > 0) && !player.walkPath');
+    const asked = click(A, 'knight:trade'); tick(3);
+    const askCard = !!B.TRADE.asks.find(q => q.from === 'Ann');
+    const yes = click(B, 'ask:yes'); tick(3);
+    const open = !!A.TRADE.cur && !!B.TRADE.cur && A.TRADE.cur.id === B.TRADE.cur.id && ev(A, "panel") === 'trade' && ev(B, "panel") === 'trade';
+    // Ann offers her 5 bread (the pouch, then Add all); Ben 20 coins (the pouch, then Add 10 twice)
+    const aPick = click(A, 'trade:pack:bread:') && click(A, 'trade:add:all'); tick(2);
+    const bPick = click(B, 'trade:pack:coins:') && click(B, 'trade:add:ten'); tick(2); const bTen2 = click(B, 'trade:add:ten'); tick(2); click(B, 'trade:back');
+    const offers = same(A.TRADE.cur.mine, [{ id: 'bread', qty: 5 }]) && same(A.TRADE.cur.theirs, [{ id: 'coins', qty: 20 }]) && same(B.TRADE.cur.theirs, [{ id: 'bread', qty: 5 }]);
+    const accA = click(A, 'trade:accept'); tick(2); const accB = click(B, 'trade:accept'); tick(2);
+    const sure = A.TRADE.cur && A.TRADE.cur.stage === 'confirm' && B.TRADE.cur && B.TRADE.cur.stage === 'confirm';
+    const before = { aBread: holdingOf(A, 'bread'), aCoins: holdingOf(A, 'coins'), bBread: holdingOf(B, 'bread'), bCoins: holdingOf(B, 'coins') };
+    const cfA = click(A, 'trade:confirm'); tick(2);
+    const stillBefore = holdingOf(A, 'bread') === 5 && holdingOf(B, 'coins') === 100;   // one confirm moves nothing
+    const cfB = click(B, 'trade:confirm'); tick(4);
+    const after = { aBread: holdingOf(A, 'bread'), aCoins: holdingOf(A, 'coins'), bBread: holdingOf(B, 'bread'), bCoins: holdingOf(B, 'coins') };
+    const doneA = got(A, 'trade_done', a0).length, doneB = got(B, 'trade_done', b0).length;
+    const rows = room.store.tradeLog(1000).slice(0, tradeRows0() - rows0);
+    const row = rows[0] || {};
+    const logged = rows.length === 1 && row.a === 'Ann' && row.b === 'Ben' && same(row.aGave, [{ id: 'bread', qty: 5 }]) && same(row.bGave, [{ id: 'coins', qty: 20 }]) && row.aAck === true && row.bAck === true;
+    // the same trade told again (a reconnect) moves nothing more; and a real reconnect hears nothing (both acked)
+    const tid = got(A, 'trade_done', a0)[0] && got(A, 'trade_done', a0)[0].tid;
+    A.NET.emit('trade_done', { t: 'trade_done', tid, id: null, with: 'Ben', gave: [{ id: 'bread', qty: 5 }], got: [{ id: 'coins', qty: 20 }] }); tick(2);
+    const a1 = mark(A); A.NET.disconnect(); wire.flush(); A.NET.connect(); wire.flush(); tick(80);   // a second: Ben's presence comes round again
+    const again = holdingOf(A, 'bread') === 0 && holdingOf(A, 'coins') === 20 && got(A, 'trade_done', a1).length === 0;
+    const closed = A.TRADE.cur === null && B.TRADE.cur === null && ev(A, 'panel') !== 'trade' && ev(B, 'panel') !== 'trade';
+    line('14. Ann taps Ben (a card, no swing, no walk) and trades 5 bread for 20 coins through the buttons: Ben accepts the ask, both offer from their packs, both accept, "Are you sure?", both confirm; it happens exactly once on both sides, one row in the trade log with both acks, and nothing more on a repeat or a reconnect',
+      menu && noSwing && asked && askCard && yes && open && aPick && bPick && bTen2 && offers && accA && accB && sure && cfA && stillBefore && cfB && same(before, { aBread: 5, aCoins: 0, bBread: 0, bCoins: 100 }) && same(after, { aBread: 0, aCoins: 20, bBread: 5, bCoins: 80 }) && doneA === 1 && doneB === 1 && logged && again && closed,
+      { menu, noSwing, asked, askCard, yes, open, offers, sure, stillBefore, before, after, doneA, doneB, logged, rows: rows.length, again, closed });
+  }
+  {
+    calm();
+    setPack(A, [['bread', 3]]); setPack(B, [['coins', 50]]);
+    const a0 = mark(A), b0 = mark(B), rows0 = tradeRows0();
+    const askedOk = A.TRADE.ask('Ben'); tick(3); const yesOk = click(B, 'ask:yes'); tick(3);
+    const id = A.TRADE.cur && A.TRADE.cur.id;
+    A.TRADE.add('bread', 3); B.TRADE.add('coins', 20); tick(3);
+    click(A, 'trade:accept'); tick(3);
+    const verA = A.TRADE.cur.ver, accepted = B.TRADE.cur.acc[1] === true;
+    // Ben changes his offer after Ann accepted: 15 coins, not 20
+    click(B, 'trade:mine:coins:'); click(B, 'trade:take:one'); for (let i = 0; i < 4; i++) B.TRADE.take('coins', 1); tick(4); click(B, 'trade:back');
+    const c = A.TRADE.cur;
+    const unaccepted = !!c && c.stage === 'offer' && c.ver > verA && same(c.acc, [false, false]) && same(c.theirs, [{ id: 'coins', qty: 15 }]);
+    // Ann's old accept, sent again, and Ben's accept: still nothing moves (Ann has not accepted the new offer)
+    A.NET.send({ t: 'trade_accept', id, ver: verA }); tick(2); click(B, 'trade:accept'); tick(3);
+    const confirmNow = A.TRADE.confirm(); tick(2);
+    const heldBack = A.TRADE.cur && A.TRADE.cur.stage === 'offer' && same(A.TRADE.cur.acc, [false, true]) && confirmNow === false && holdingOf(A, 'bread') === 3 && holdingOf(B, 'coins') === 50 && tradeRows0() === rows0 && got(A, 'trade_done', a0).length === 0;
+    // both accept the new offer, then both confirm: it moves once, with the new amounts
+    click(A, 'trade:accept'); tick(3); click(A, 'trade:confirm'); click(B, 'trade:confirm'); tick(4);
+    const moved = holdingOf(A, 'bread') === 0 && holdingOf(A, 'coins') === 15 && holdingOf(B, 'bread') === 3 && holdingOf(B, 'coins') === 35 && got(A, 'trade_done', a0).length === 1 && got(B, 'trade_done', b0).length === 1 && tradeRows0() === rows0 + 1;
+    const row = room.store.tradeLog(1)[0];
+    line('15. Ben changes his offer after Ann accepted: both are un-accepted at once (a new version), Ann\'s old accept and a confirm move nothing, and only when both accept again and both confirm does it happen, once, with the new amounts',
+      !!id && accepted && unaccepted && heldBack && moved && same(row.bGave, [{ id: 'coins', qty: 15 }]), { id, accepted, unaccepted, heldBack, moved, row: row && [row.aGave, row.bGave] });
+  }
+  {
+    // closing the window, walking away and a disconnect all end a trade with nothing moved
+    calm();
+    setPack(A, [['bread', 4]]); setPack(B, [['coins', 10]]);
+    const rows0 = tradeRows0(), ends = [];
+    // an ask every two seconds at most (the cap: 0.5 a second, a burst of 3), so each one waits its turn
+    const openOne = () => { tick(130); A.TRADE.ask('Ben'); tick(3); click(B, 'ask:yes'); tick(3); A.TRADE.add('bread', 4); B.TRADE.add('coins', 10); tick(3); click(A, 'trade:accept'); click(B, 'trade:accept'); tick(3); return !!A.TRADE.cur && A.TRADE.cur.stage === 'confirm'; };
+    const b0 = mark(B);
+    const o1 = openOne(); click(A, '×'); tick(4); ends.push(got(B, 'trade_end', b0).map(m => m.code).join());
+    const b1 = mark(B), o2 = openOne(); const p = A.FANGLANDS.player; A.FANGLANDS.tp(Math.floor(p.x / T) + 12, Math.floor(p.y / T)); tick(16); ends.push(got(B, 'trade_end', b1).map(m => m.code).join());
+    A.FANGLANDS.tp(Math.floor(B.FANGLANDS.player.x / T) - 2, Math.floor(B.FANGLANDS.player.y / T)); tick(16);
+    const b2 = mark(B), o3 = openOne(); A.NET.disconnect(); wire.flush(); tick(4); ends.push(got(B, 'trade_end', b2).map(m => m.code).join());
+    A.NET.connect(); wire.flush(); tick(80);
+    const nothing = holdingOf(A, 'bread') === 4 && holdingOf(B, 'coins') === 10 && holdingOf(A, 'coins') === 0 && tradeRows0() === rows0 && A.TRADE.cur === null && B.TRADE.cur === null;
+    line('16. a trade on its last screen ends with nothing moved when Ann closes the window, walks twelve tiles away, or disconnects; Ben hears why each time',
+      o1 && o2 && o3 && same(ends, ['closed', 'far', 'left']) && nothing, { o1, o2, o3, ends, nothing });
   }
 
   const failed = results.filter(r => !r).length;

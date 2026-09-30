@@ -4,7 +4,8 @@
 // This is what "see your friends" means. Our presence goes out on the wire (70-net) a few times a second, theirs comes
 // in, and every knight on the same map is drawn among the monsters and the trees with a name over their head. A chip at
 // the top says how many are on and opens the Friends panel: who, what level, where, a Give button that hands something
-// over (docs/ONLINE.md: gift / gift_ok / gift_no / gift_back) and Follow, which marks a friend on the map.
+// over (docs/ONLINE.md: gift / gift_ok / gift_no / gift_back) and Follow, which walks after a friend and marks them on the map
+// (78-trade does the walking; tapping a knight in the world opens the same Trade / Follow card).
 // Feature file: HOOKS only, plus one core function wrapped by reassignment (drawPanels — the 61-markers trick), because
 // the world map is painted after every HUD hook has run and friends should be named on it.
 // window.PLAYERS = { lookOf, presence, mapId, remote, online, me, near, give, follow, following } — 74-chat draws the
@@ -293,8 +294,10 @@
       r.where.forEach((l, i) => HK.text(g, l, tx, nameTop + 16 + (i + 1) * r.lh, { font: r.wf, color: r.here ? T().ink : T().inkDim, box: { x: tx, y, w: r.textW, h: r.h }, fitId: 'friends:where' }));
       const by = r.twoTier ? y + r.h - bh - 10 : y + (r.h - bh) / 2, bx1 = x0 + iw - 12 - r.bw1, bx2 = bx1 - 8 - r.bw2;
       platePush(g, bx1, by, r.bw1, bh, 'Give', 'Give', () => { giftPage = 0; openPanel('gift', o.n); }, 'primary', { enabled: close, name: close ? `Give something to ${o.n}` : `Walk up to ${o.n} to give` });
-      const fl = fol ? (narrow ? 'Following' : 'Stop following') : (narrow ? 'Follow' : 'Follow on map');
-      platePush(g, bx2, by, r.bw2, bh, fl, fl, () => { following = fol ? null : o.n; sfx('open'); }, fol ? 'warn' : null, { enabled: r.here, name: fol ? `Stop following ${o.n}` : `Mark ${o.n} on the map` });
+      // Follow is the real follow (78-trade walks the knight after the friend and marks them on the map); without it, the mark only
+      const fl = fol ? (narrow ? 'Following' : 'Stop following') : 'Follow';
+      const doFollow = () => { if (window.TRADE) { if (fol) TRADE.stopFollow('panel'); else TRADE.follow(o.n); } else following = fol ? null : o.n; sfx('open'); };
+      platePush(g, bx2, by, r.bw2, bh, fl, fl, doFollow, fol ? 'warn' : null, { enabled: r.here, name: fol ? `Stop following ${o.n}` : `Follow ${o.n}` });
       y += r.h + gap;
     }
     const note = 'Give works when you stand within two tiles of a friend.' + (touchMode() ? '' : ' F opens this panel.');

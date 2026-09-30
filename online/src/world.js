@@ -10,6 +10,7 @@
 //   signup  invite (401/403)  taken (409)  name (the filter refused it, 400)  pass (secret word under 4 chars, 400)
 //   any     auth (dead or missing token, 401)  full (a cap hit: too big, or the world is full)
 //   admins  admin (only an admin may, 403)  nopin (no pinned backup, 404)
+// Finished trades are rows of the trades table (store.js), listed for the parent page at GET /api/admin/trades.
 //
 // The tables and the one migration live in store.js (SCHEMA, migrate): every wake runs the old CREATE TABLE
 // statements unchanged, creates the new tables if they are missing, and adds the new accounts columns only when
@@ -355,6 +356,11 @@ export class World {
     if (call === 'modlog' && method === 'GET') {
       const limit = Math.max(1, Math.min(2000, parseInt(url.searchParams.get('limit'), 10) || 200));
       return json(this.store.modLog(limit).map(r => ({ at: r.at, by: r.by, act: r.act, n: r.target, detail: r.detail })));
+    }
+    if (call === 'trades' && method === 'GET') {
+      // every finished trade, newest first: who, and exactly what each knight gave (docs/ONLINE.md, "Trading")
+      const limit = Math.max(1, Math.min(2000, parseInt(url.searchParams.get('limit'), 10) || 200));
+      return json(this.store.tradeLog(limit).map(r => ({ at: r.at, a: r.a, b: r.b, aGave: r.aGave, bGave: r.bGave })));
     }
     if (call === 'saves' && method === 'GET') {
       const a = this.account(url.searchParams.get('name'));

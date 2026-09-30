@@ -85,7 +85,8 @@ online/
 | `GET /api/admin/saves?name=` | — | `[{ver, at, bytes}]` | the kept versions; a pinned backup is listed first as `ver: 'pin'` |
 | `POST /api/admin/rollback` | `{name, ver}` | `{ok}` | make that version the current save (`ver: 'pin'` copies the pin forward and keeps it) |
 | `GET /api/admin/online` | — | `[{n, map, region, lv, since, role}]` | |
-| `GET /api/admin/export` | — | `{at, accounts, saves, chat, settings, mod_log, save_pins, parties, crackers}` | every row of every table but `sessions` (`online/src/backup.js`): the backup taken before a deploy |
+| `GET /api/admin/trades?limit=200` | — | `[{at, a, b, aGave, bGave}]` | newest first (limit 1 to 2,000): every finished trade, who and exactly what each gave (see *Trading*) |
+| `GET /api/admin/export` | — | `{at, accounts, saves, chat, settings, mod_log, save_pins, parties, crackers, trades}` | every row of every table but `sessions` (`online/src/backup.js`): the backup taken before a deploy |
 | `GET /api/admin/bookmark` | — | `{bookmark, at}` | a Cloudflare point-in-time restore bookmark, also kept in `settings` |
 | `POST /api/admin/restore` | `{bookmark}` | `{ok, restoring}` | rewinds the whole world to that bookmark; every knight reconnects to it |
 
@@ -124,6 +125,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `gift_ok` / `gift_no` | `gid` | — | the receiver took it / could not (full pack); `gift_no` makes the server send `gift_back` |
 | `ping` | — | — | keepalive every 25 s |
 | `mute` `unmute` `kick` `ban` `unban` `modlist` `spawn` `spawn_clear` `party` `party_end` `light` `claim` | | | see *Admins and drop parties* |
+| `trade_ask` `trade_answer` `trade_offer` `trade_accept` `trade_confirm` `trade_full` `trade_close` `trade_ack` | | | see *Trading* |
 
 ### Server → client
 
@@ -143,6 +145,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `gift_ok` / `gift_back` | `gid, id, qty` | the receiver took it / it comes back to you |
 | `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `elsewhere` (the same knight opened on another device: this socket is closed with code 4000 and must not reconnect), `wait`, `full`, `banned` (close 4003, no reconnect), `kicked` (close 4005, no reconnect), `admin` (that was an admin message), `bad` |
 | `role` `mod` `modlist` `muted` `unmuted` `spawn` `spawn_clear` `crackers` `boom` `party_end` `light_no` `prize` `party_no` `announce` | | see *Admins and drop parties* |
+| `trade_ask` `trade_asked` `trade_ask_off` `trade_no` `trade_open` `trade_state` `trade_note` `trade_end` `trade_done` | | see *Trading* |
 | `pong` | — | |
 
 ### The monster snapshot (`mon.list`)
@@ -591,6 +594,133 @@ The cap runs before the role check, so a knight hammering admin messages is drop
 
 `index.html` is generated: each branch rebuilds and commits it, and the integration rebuilds it again.
 
+## Trading
+
+Owner (2026-09-25): *"and you should be able to click other players to trade or follow them"*
+
+This section is the contract between `online/src/room.js` (and `store.js`, `world.js`, `public/admin.html`) and the game
+file `src/78-trade.js` (with one edit in `src/73-players.js`: the Friends panel's Follow is the real follow).
+
+### In one screen
+
+- **A tap (or a click, or a right-click) on another knight on your map** opens a small card at them, drawn with the HUD
+  kit: their name (the gold ADMIN pill for an admin), **Trade**, **Follow** (**Stop following** while you do) and **Close**.
+  It never swings and never walks. A tap anywhere else while it is open only closes it. On a screen too crowded to hold
+  the card beside the knight (an upright phone: the notice lane and the knight fill the middle) the same three buttons
+  open as a small panel instead. A long press on a knight names them.
+- **Follow** is the game's alone: nothing is sent, and the friend sees nothing at all. The knight walks after the friend
+  with the tap-to-walk pathing (17-tap), planned again every 0.35 s or when they change tiles, stops about a tile behind
+  (1.3 tiles; walks on again past 2), and ends when you move yourself (stick, keys, a tap somewhere), when they leave your
+  map (a quiet note), after 3 s with no way to them, or on Stop following. A plaque says "Following Sam". The Friends
+  panel's Follow does the same.
+- **Trade** asks at once when the knight is within four tiles; further away it walks up first (a follow that asks when it
+  gets there). The world holds both offers as the only truth and decides everything below.
+
+### The trade, step by step
+
+1. `trade_ask {to}` → the world checks and sends the other knight `trade_ask {from, role}`, and the asker `trade_asked {to}`.
+   Their screen shows "Sam wants to trade with you." with **Accept** and **No** (a card at the asker, or a small panel on a
+   crowded screen, or a plaque while another panel is open). Two knights who ask each other open the trade at once.
+2. `trade_answer {from, yes}`. No: the asker hears `trade_no declined`. Yes: both get `trade_open {id, with, ver}` and the
+   window opens (a panel: "Trade with Sam").
+3. Each side sends its **whole** offer, `trade_offer {id, items: [{id, qty}]}`, from its pack (never the keyring). Every
+   change raises `ver`, un-accepts **both** and goes back to the first screen; both get `trade_state`.
+4. `trade_accept {id, ver}` accepts exactly the offers of version `ver`. Two empty offers cannot be accepted. When both have
+   accepted the same version the stage is `confirm`: "Are you sure?" shows exactly what each gets.
+5. `trade_confirm {id, ver}`. When both confirmed version `ver`, the world checks once more (one map, within eight tiles,
+   neither fallen), writes a `trades` row, and sends both `trade_done` in the same moment. Each game takes out what it gave
+   and puts in what it got (pack, then bank, then at its feet), **once**: the `tid` goes into `player.trades.done` (the newest
+   300, saved with the knight) before `trade_ack {tid}` goes out; with the cloud save on, the ack waits for a cloud push that
+   holds that id (the claim rule of *Drop parties*). After every `welcome` the world re-sends `trade_done` (with `id: null`)
+   for each trade of the last 7 days that knight never acked; a game that already has the `tid` only acks it.
+6. Before its Accept and its Confirm a game checks that its pack still holds its offer (else it sends the smaller offer,
+   which un-accepts both) and that its pack will hold what comes back once its own offer is out. If not it sends
+   `trade_full {id, why}` (`why`: `'full'`, or `'new'` for an item this game does not know) instead: both are un-accepted,
+   both hear `trade_note`, and the window stays open ("Sam's pack is too full for this trade."). A `trade_done` naming an
+   item the game does not know moves nothing and is not acked ("That trade needs the newest game. Reload the page to get
+   it."); the world sends it again after the reload.
+
+A trade ends with nothing moved (`trade_end`) when either knight closes the window or presses Decline (`trade_close`),
+disconnects (or logs in elsewhere), changes map, walks more than eight tiles away, or falls. An open trade lives in the
+Room's memory only: a nap of the world ends it too, and the next trade message is answered `trade_end gone`.
+
+### Client → server
+
+| `t` | Fields | Cap (per s, burst) | Meaning |
+|---|---|---|---|
+| `trade_ask` | `to` | 0.5, 3 | ask a knight to trade |
+| `trade_answer` | `from, yes` | 2, 4 | answer an ask (`yes` must be `true` to open it) |
+| `trade_offer` | `id, items: [{id, qty}]` | 5, 10 | my whole offer: at most 12 different ids, each `^[a-z0-9_]{1,40}$`, `qty` a whole number 1 to 1,000,000,000, no id twice |
+| `trade_accept` | `id, ver` | 4, 8 | the first screen, for version `ver` |
+| `trade_confirm` | `id, ver` | 4, 8 | "Are you sure?", for version `ver` |
+| `trade_full` | `id, why` | 2, 4 | my pack cannot hold it (`'full'`) or my game does not know an item (`'new'`) |
+| `trade_close` | `id` | 2, 4 | I closed the window: the trade is off |
+| `trade_ack` | `tid` | 10, 50 | the finished trade is in my save |
+
+### Server → client
+
+| `t` | Fields | To | Meaning |
+|---|---|---|---|
+| `trade_ask` | `from, role` | the knight asked | `role` is the world's word, for the ADMIN pill |
+| `trade_asked` | `to` | the asker | the ask went out |
+| `trade_ask_off` | `from` | the knight asked | that ask is over unanswered (it ran out after 30 s, or the asker left, asked someone else or started another trade) |
+| `trade_no` | `code, n` | the asker (and, for a yes that cannot open, both) | see the codes below; `n` is the knight it is about |
+| `trade_open` | `id, with, ver` | both | the window opens |
+| `trade_state` | `id, ver, stage, mine, theirs, acc: [me, them], conf: [me, them]` | both, after every change; one knight, after a refused message | `stage` is `'offer'` or `'confirm'` |
+| `trade_note` | `id, code, n` | both | `full` / `new`: `n`'s pack or game (see step 6); both are un-accepted |
+| `trade_end` | `id, code, n` | both (the one who left excepted) | nothing moved. `closed`, `left` (disconnected or changed map), `far`, `dead`, or `gone` (no such trade: over, or lost in a nap) |
+| `trade_done` | `tid, id, with, gave, got` | both at once; again after `welcome` until acked (`id: null`) | take out `gave`, put in `got`, once per `tid`, then `trade_ack` |
+
+`trade_no` codes: `self` (yourself), `offline` (no such knight online; also when the knight asked leaves), `map` (on another
+map), `busy` (`n` is already trading: you or them), `dead` (`n` has fallen), `far` (more than five tiles apart by the
+world's last presence of each, or no presence yet), `wait` (you asked them already and it has not run out), `declined`,
+`timeout` (30 s and no answer), `gone` (answering an ask that is over), `bad` (no name).
+
+The words the game says: "Walk up to Sam first." "Finish your trade first." "Sam is trading with someone else." "Sam said
+no to trading." "Sam did not answer." "Sam's pack is too full for this trade." / "Your pack is too full for this trade."
+"Sam walked away, so the trade is off. Nothing was swapped." "Traded with Sam: you gave 5 Bread and got 20 coins."
+
+### The numbers
+
+`TRADE_NEAR` 240 px (five tiles: ask and answer), `TRADE_LEAVE` 384 px (eight tiles: further ends it),
+`TRADE_ASK_LIFE` 30 s, `TRADE_ITEMS` 12, `TRADE_QTY_MAX` 1,000,000,000, `TRADE_KEEP` 7 days — all exported by `room.js`.
+The game asks from four tiles and follows until it is there.
+
+### The trade log (the store and the parent page)
+
+```
+trades (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, a TEXT NOT NULL, a_lc TEXT NOT NULL, b TEXT NOT NULL,
+        b_lc TEXT NOT NULL, a_gave TEXT NOT NULL, b_gave TEXT NOT NULL, a_ack INTEGER NOT NULL DEFAULT 0,
+        b_ack INTEGER NOT NULL DEFAULT 0)
+CREATE INDEX IF NOT EXISTS trades_by_a ON trades (a_lc, a_ack)
+CREATE INDEX IF NOT EXISTS trades_by_b ON trades (b_lc, b_ack)
+```
+
+A new table only (`CREATE TABLE IF NOT EXISTS`, in `SCHEMA`); nothing existing changes, and `wrangler.toml`'s migrations
+stay at `v1`. It keeps its newest 5,000 rows. The store gains `addTrade({at, a, b, aGave, bGave})` → `tid`,
+`unackedTrades(lc, since)` → `[{tid, with, gave, got}]` (as that knight sees it, oldest first), `ackTrade(tid, lc)` → `true`
+only for one of the two knights in it (twice is harmless), and `tradeLog(limit)` → `[{tid, at, a, b, aGave, bGave, aAck,
+bAck}]` newest first; `MemoryStore` answers the same. The parent page lists them under **Trades**, newest first ("3:41 pm —
+Ann gave 5 bread; Ben gave 20 coins."), from `GET /api/admin/trades`; `GET /api/admin/export` includes the table.
+
+### Testing
+
+- **Server** (`node --test online/test/`, `trade.test.mjs`): the ask and its answers, every refusal code, asks that run out
+  or are withdrawn, two asks to each other, the whole state machine (any change un-accepts both, accepting an old version,
+  empty offers, confirming early), every bad offer, messages for a trade you are not in, a full pack, every way a trade
+  ends with nothing moved (closed, disconnected, a new map, walking away, falling, another device, a nap), `trade_done`
+  re-sent after welcome until acked and only by the two knights, the caps. `store.test.mjs` runs the trade calls against
+  both stores.
+- **Game** (78's self-test, a fake wire): the card opens on a knight and not on the ground, without a swing or a walk; the
+  card at all 8 sizes (or its panel); follow keeps up with a moving friend, stops beside them, and a key, a tap or their
+  leaving ends it; Trade asks or walks up first; the window flow (offer, take back, accept the version shown, a change
+  un-accepts, "Are you sure?", confirm), completion adds and removes exactly once, cancellation moves nothing, a full pack
+  sends `trade_full`, the keyring cannot be offered, the window at every size, and the cloud-held ack.
+- **Two games** (`tools/mmo-sim.js`, FakeWorld and `--room`): 14, Ann taps Ben and they trade 5 bread for 20 coins through
+  the buttons, exactly once (one row, both acks, nothing more on a repeat or a reconnect); 15, Ben changes his offer after
+  Ann accepted and nothing moves until both accept again; 16, closing, walking away and disconnecting each end a trade with
+  nothing moved. `tools/dom-keys.js`: a real right-click on a knight opens the card with no browser menu.
+
 ## Safety rules (binding)
 
 - Invite-only signups. Names and chat pass `online/src/filter.js`. Chat is logged with the name and time.
@@ -603,12 +733,14 @@ The cap runs before the role check, so a knight hammering admin messages is drop
   on the parent page. Nobody can mute, kick or ban an admin from inside the game.
 - An admin's powers change only that admin's own knight; *Unlock everything* runs only after a pinned backup, which
   the parent page can restore too.
+- Trades: only between two knights on one map who both said yes, both accepted and both confirmed the very same offers; the
+  world holds the offers and moves nothing that does not add up. Every finished trade is kept and shown on the parent page.
 
 ## Where things are
 
 - Play: https://gorkscape.ca (the invite code is with Ethan; nothing on this page is public).
 - Parents: https://gorkscape.ca/admin — accounts, reset a forgotten secret word, ban, the invite code, the chat log, save rollback,
-  who is an admin (Make admin / Make player), mutes, the moderation log, pinned backups. Needs the admin key.
+  who is an admin (Make admin / Make player), mutes, the moderation log, pinned backups, every trade. Needs the admin key.
 - The old address https://ethanbender.github.io/fanglands/ is the offline copy; its title screen has no login.
 
 ## Testing
@@ -619,6 +751,6 @@ The cap runs before the role check, so a knight hammering admin messages is drop
   election, hit routing, the kill going to the right knight, chat, and handoff when the keeper leaves; then the admins
   and drop parties (*Admins and drop parties*, *Testing*). Run both ways in `deploy.sh` before every deploy.
 - `node --test online/test/` for the server's own logic (password hashing, filter, room routing, rate caps, roles,
-  moderation, the store and its migration, drop parties and the party-hat odds).
+  moderation, the store and its migration, drop parties and the party-hat odds, trading).
 - `tools/mmo-sim-admin.js` and `tools/mmo-sim-party.js`: the admin and party scenarios, two games against the real
   Room (see *Admins and drop parties*, *Testing*). `deploy.sh` runs them with the others.

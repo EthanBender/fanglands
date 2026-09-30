@@ -25,11 +25,11 @@
   input, select { background: #0f1114; color: #e7eaf0; border: 1px solid #3c4356; border-radius: 4px; padding: 6px 8px; font: inherit; }
   select { padding: 5px 6px; margin: 0 4px 4px 0; }
   code { background: #0f1114; padding: 2px 6px; border-radius: 3px; }
-  #chat, #modlog { background: #0f1114; border: 1px solid #23262d; border-radius: 4px; padding: 8px 10px; overflow: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  #chat, #modlog, #trades { background: #0f1114; border: 1px solid #23262d; border-radius: 4px; padding: 8px 10px; overflow: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
   #chat { height: 420px; }
-  #modlog { max-height: 320px; }
-  #chat div, #modlog div { white-space: pre-wrap; }
-  #chat .t, #modlog .t { color: #6f7688; }
+  #modlog, #trades { max-height: 320px; }
+  #chat div, #modlog div, #trades div { white-space: pre-wrap; }
+  #chat .t, #modlog .t, #trades .t { color: #6f7688; }
   #chat .n { color: #9bc1ff; }
   #chat .n.admin { color: #f5c542; }
   #modlog .hat { color: #f5c542; }
@@ -86,6 +86,10 @@
     <h2>What admins did</h2>
     <p class="note">Newest at the top. Every mute, kick, ban, new admin, drop party and party hat, from the game and from this page. Refreshes with the chat log.</p>
     <div id="modlog"></div>
+
+    <h2>Trades</h2>
+    <p class="note">Newest at the top. Every trade two knights finished in the game: who, and exactly what each one gave. Refreshes with the chat log.</p>
+    <div id="trades"></div>
   </div>
 </main>
 <script>
@@ -223,10 +227,19 @@
     for (const r of list) { const d = document.createElement('div'); if (r.act === 'hat') d.className = 'hat'; const t = document.createElement('span'); t.className = 't'; t.textContent = clock(r.at) + ' — '; d.append(t, document.createTextNode(sentence(r))); box.appendChild(d); }
   }
 
+  // "5 bread, 20 coins": an item id in plain words (the page does not know the game's item names)
+  const things = list => (list && list.length) ? list.map(it => it.qty.toLocaleString() + ' ' + String(it.id).replace(/_/g, ' ')).join(', ') : 'nothing';
+  async function loadTrades() {
+    const list = await api('GET', '/api/admin/trades?limit=200');
+    const box = $('trades'); box.innerHTML = '';
+    if (!list.length) box.textContent = 'Nothing yet.';
+    for (const r of list) { const d = document.createElement('div'); const t = document.createElement('span'); t.className = 't'; t.textContent = clock(r.at) + ' — '; d.append(t, document.createTextNode(r.a + ' gave ' + things(r.aGave) + '; ' + r.b + ' gave ' + things(r.bGave) + '.')); box.appendChild(d); }
+  }
+
   async function refresh(all) {
     try {
       if (all) await loadAccounts();
-      await loadOnline(); await loadChat(); await loadModlog();
+      await loadOnline(); await loadChat(); await loadModlog(); await loadTrades();
       if (all) await loadInvite();
       say('Updated ' + new Date().toLocaleTimeString() + '.');
     } catch (e) { say(e.message, true); if (/admin key/.test(e.message)) lock(); }

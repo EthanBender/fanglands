@@ -18,7 +18,7 @@ async function scene(browser, touch) {
   await page.evaluate(() => {
     newGame(); title.active = false; window.__sent = [];
     NET.enabled = true;
-    NET.useFake({ call: async () => ({}), open: () => { const s = { readyState: 1, send(str) { const m = JSON.parse(str); window.__sent.push(m); if (m.t === 'hello') setTimeout(() => s.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Tester', keeper: 'Tester', role: 'admin' }) }), 0); }, close() { } }; return s; } });
+    NET.useFake({ call: async () => ({}), open: () => { const s = { readyState: 1, send(str) { window.__sock = s; const m = JSON.parse(str); window.__sent.push(m); if (m.t === 'hello') setTimeout(() => s.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Tester', keeper: 'Tester', role: 'admin' }) }), 0); }, close() { } }; return s; } });
     NET.token = 'x'; NET.connect();
   });
   await page.waitForTimeout(300);
@@ -51,6 +51,21 @@ async function scene(browser, touch) {
     else { await page.keyboard.type('mud'); await page.keyboard.press('Enter'); await page.waitForTimeout(100);
       const blurred = await page.evaluate(() => document.activeElement !== document.getElementById('admin-search'));
       check('admin search: Enter closes the keyboard', blurred, { blurred }); }
+    await page.close(); }
+  // a right-click (and a plain click) on another knight opens their card, and the browser's own menu never shows
+  { const { page, errors } = await scene(browser, false);
+    const at = await page.evaluate(() => {
+      __sock.onmessage({ data: JSON.stringify({ t: 'p', n: 'Ava', map: 'over', x: Math.round(player.x + 90), y: Math.round(player.y), fx: -1, fy: 0, mv: false, wt: 0, hp: 20, mhp: 20, lv: 7, look: null, mech: null, dead: false, def: 100, act: null, role: 'player' }) });
+      FANGLANDS.step([]); render(); const e = PLAYERS.remote.Ava; return { x: e.shown.x - cam.x, y: e.shown.y - 8 - cam.y };
+    });
+    const prevented = await page.evaluate(({ x, y }) => { const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2 }); document.getElementById('game').dispatchEvent(ev); return ev.defaultPrevented; }, at);
+    await page.mouse.click(at.x, at.y, { button: 'right' }); await page.waitForTimeout(150);
+    const right = await page.evaluate(() => ({ menu: TRADE.menu && TRADE.menu.n, walk: !!player.walkPath, swing: player.attackT > 0 }));
+    await page.evaluate(() => TRADE.closeMenu()); await page.waitForTimeout(400);
+    await page.mouse.click(at.x, at.y); await page.waitForTimeout(150);
+    const left = await page.evaluate(() => ({ menu: TRADE.menu && TRADE.menu.n, walk: !!player.walkPath }));
+    check("a right-click on another knight opens their card (Trade, Follow, Close) with no browser menu, no walk and no swing; a plain click does too", prevented && right.menu === 'Ava' && !right.walk && !right.swing && left.menu === 'Ava' && !left.walk, { prevented, right, left });
+    check('right-click: no page errors', errors.length === 0, errors);
     await page.close(); }
   await browser.close();
   const bad = results.filter(r => !r[1]).length;
