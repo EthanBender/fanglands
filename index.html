@@ -2939,7 +2939,7 @@ function drawQuestsPanel(g, narrow) {
       const id = it.id, tracked = quest.tracked === id, ch = it.h - 8;
       HK.vellumPlate(g, x0, y, cw, ch, tracked ? { edge: 'rgba(247,220,143,0.95)' } : {});
       const tw = K.verbW(g, 'Untrack', 'pin', R);
-      K.verb(g, x0 + cw - 10 - tw, y + 8, tw, R, tracked ? 'Untrack' : 'Track', () => { if (tracked) { quest.tracked = null; if (id === 'main') quest.untrackedByPlayer = true; } else { quest.tracked = id; if (id === 'main') quest.untrackedByPlayer = false; } save(); }, { emblem: 'pin', tone: tracked ? null : 'primary' });
+      K.verb(g, x0 + cw - 10 - tw, y + 8, tw, R, tracked ? 'Untrack' : 'Track', () => { if (tracked) { quest.tracked = null; if (id === 'main') quest.untrackedByPlayer = true; } else { quest.tracked = id; if (id === 'main') quest.untrackedByPlayer = false; if (window.QUESTBOX) QUESTBOX.show(); } save(); }, { emblem: 'pin', tone: tracked ? null : 'primary' });
       const nw = cw - 24 - tw - 12;
       K.name(g, QUEST_DEFS[id].name, x0 + 12, y + 8 + R / 2 - 1, nw, { size: 13, color: tracked ? T.goldHi : T.ink });
       HK.text(g, id === 'main' ? 'Main story' : 'Side quest', x0 + 12, y + 8 + R / 2 + 14, { font: K.FB(11), color: T.inkMute, box: { x: x0 + 12, y: y + 8, w: nw, h: R }, fitId: 'quest:kind' });
@@ -3511,7 +3511,7 @@ window.FANGLANDS = {
     { peace(true); const w = F.nearestTile([T.WATER]); const r = F.goAdjacent(w.x, w.y, 8000); F.calm(); F.goAdjacent(w.x, w.y, 3000); F.press('KeyE'); const r2 = F.untilAction(1500, () => countItem('raw_shrimp') >= 1); check('fishing: rod, timed, shrimp', typeof r === 'number' && typeof r2 === 'number' && player.skills.fishing.xp >= 10, { r, r2, fxp: player.skills.fishing.xp }); }
     // ---------- farming ----------
     give('bronze_hoe', 1); give('potato_seed', 1);
-    { const o = openSpot(70, 30); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y }; F.goAdjacent(gt.x, gt.y); F.press('KeyE'); const r = F.untilAction(200, () => tileAt(gt.x, gt.y) === T.SOIL); F.face(gt.x, gt.y); F.press('KeyE'); F.sim(2, []); const planted = tileAt(gt.x, gt.y) === T.CROP; const c = crops.find(c => c.i === idx(gt.x, gt.y)); if (c) c.stage = 3; F.press('KeyE'); F.sim(2, []); check('farming: till, plant, grow, harvest potatoes', typeof r === 'number' && planted && countItem('potato') >= 2 && tileAt(gt.x, gt.y) === T.SOIL && player.skills.farming.xp >= 40, { r, planted, potato: countItem('potato'), farmxp: player.skills.farming.xp }); }
+    { const noMarker = (x, y) => { if (!window.GRAVES) return true; for (let yy = y - 2; yy <= y + 2; yy++) for (let xx = x - 3; xx <= x + 3; xx++) if (GRAVES.markerAt(xx, yy)) return false; return true; }; const o = openSpot(70, 30, noMarker); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y }; F.goAdjacent(gt.x, gt.y); F.press('KeyE'); const r = F.untilAction(200, () => tileAt(gt.x, gt.y) === T.SOIL); F.face(gt.x, gt.y); F.press('KeyE'); F.sim(2, []); const planted = tileAt(gt.x, gt.y) === T.CROP; const c = crops.find(c => c.i === idx(gt.x, gt.y)); if (c) c.stage = 3; F.press('KeyE'); F.sim(2, []); check('farming: till, plant, grow, harvest potatoes', typeof r === 'number' && planted && countItem('potato') >= 2 && tileAt(gt.x, gt.y) === T.SOIL && player.skills.farming.xp >= 40, { r, planted, potato: countItem('potato'), farmxp: player.skills.farming.xp }); }
     // ---------- smithing at forge + anvil ----------
     clearJunk(); give('iron_ore', 2);
     { F.tp(93, 39); F.face(92, 37); F.walkTo(92, 38, 500); F.face(92, 37); F.press('KeyE'); const open = panel === 'station' && panelArg === 'forge'; const c1 = F.clickButton('Iron ore → Iron bar'); const r = F.untilAction(200, () => countItem('iron_bar') >= 1); closePanel(); F.face(92, 37); F.press('KeyE'); F.clickButton('Iron ore → Iron bar'); F.untilAction(200, () => countItem('iron_bar') >= 2); closePanel(); check('forge smelts ore into bars (timed)', open && c1 && typeof r === 'number' && countItem('iron_bar') === 2 && player.skills.smithing.xp === 24, { open, bars: countItem('iron_bar') });
@@ -18418,6 +18418,9 @@ window.SETTINGS = SETTINGS;
     // these checks are made on foot: a mech soaks the scald, and an instance will not take one through the door
     if (player.mech) { player.mech = null; player.r = 13; player.speed = typeof BASE_SPEED !== 'undefined' ? BASE_SPEED : 175; }
     h.peace(true); window.__kidmode = false;
+    // the heat and heal numbers below are measured with the knight standing still: fighting back when hit (69-retaliate,
+    // on by default) would walk him into the wight's reach and add its swings to the scald. Put back as it was at the end.
+    const fightBack0 = window.RETALIATE ? RETALIATE.isOn() : null; if (window.RETALIATE) RETALIATE.set(false, true);
 
     // 1. the creature and where it stands
     { const homes = ws.map(homeT);
@@ -18637,6 +18640,7 @@ window.SETTINGS = SETTINGS;
         { name: w && w.name, where: w && w.where, tablePct: w && +w.tablePct.toFixed(2), heart: hh && hh.name, heartWhere: hh && hh.where.length }); }
 
     player.hp = Math.min(hp0, player.maxHp); player.mech = mech0; player.r = r0; player.speed = speed0; player.hurtT = 0; h.peace(false);
+    if (window.RETALIATE) RETALIATE.set(fightBack0, true);
   });
 }
 
@@ -25015,7 +25019,7 @@ const HK = (() => {
     return Math.hypot(Math.max(dx, 0), Math.max(dy, 0));
   }
   function layoutFor(W, H, o) {
-    o = Object.assign({ touch: true, stickRight: false, bosses: 0, minimap: true, chat: 0, dialog: false, plaques: 99, online: true, home: true }, o);
+    o = Object.assign({ touch: true, stickRight: false, bosses: 0, minimap: true, chat: 0, dialog: false, plaques: 99, online: true, home: true, questHidden: false, questTracked: true }, o);
     const fam = family(W, H, o.touch), S = insets(W, H, fam, o.touch), M = Mx[fam];
     const L = { VW: W, VH: H, fam, S, M, items: [], touch: o.touch, stickRight: o.stickRight, opts: o };
     const add = it => { L.items.push(it); return it; };
@@ -25065,9 +25069,12 @@ const HK = (() => {
     if (fam === 'phoneL') { const x = crest.x + cw + 14, w = mmx - RR - 12 - x; scroll = { x, y: top, w, h: 67 }; }
     else { const w = fam === 'desk' ? 318 : fam === 'tab' ? 330 : Math.min(300, mmx - RR - 10 - left); scroll = { x: left, y: crest.y + ch + 10, w, h: fam === 'desk' ? 67 : fam === 'tab' ? 74 : 84 }; }
     const bossInScroll = o.bosses > 0 && !bossTop;
-    const scrollRolled = bossInScroll || (fam === 'phoneL' && o.dialog);
-    const scrollHidden = scrollRolled || (fam === 'phoneP' && o.dialog);
-    L.scroll = scroll; L.scrollRolled = scrollRolled; L.scrollHidden = scrollHidden; L.bossTop = bossTop;
+    // owner 2026-09-30: on a phone the scroll is gone while no quest is followed, and the Quest helper setting (67-questbox)
+    // takes it off every screen; gone means gone: no scroll, no rolled strip, the space is the game's
+    const questOff = o.questHidden || (!o.questTracked && (fam === 'phoneP' || fam === 'phoneL'));
+    const scrollRolled = !questOff && (bossInScroll || (fam === 'phoneL' && o.dialog));
+    const scrollHidden = questOff || bossInScroll || (fam === 'phoneL' && o.dialog) || (fam === 'phoneP' && o.dialog);
+    L.scroll = scroll; L.scrollRolled = scrollRolled; L.scrollHidden = scrollHidden; L.questOff = questOff; L.bossTop = bossTop;
     if (!scrollHidden) Rr('scroll', scroll.x, scroll.y, scroll.w, scroll.h, true, { persist: true });
     L.boss = [];
     if (bossInScroll && !(fam === 'phoneP' && o.dialog)) {
@@ -25291,6 +25298,7 @@ const HK = (() => {
     online: !!(window.NET && NET.enabled),
     home: !!(typeof player !== 'undefined' && player && player.home),
     bosses: FRAME.bosses.length, dialog: !!(typeof dialog !== 'undefined' && dialog && dialog.cur),
+    questHidden: !!(window.SETTINGS && SETTINGS.get && SETTINGS.get('questHelper') === false), questTracked: !!trackedQuest(),
     chat: FRAME.chatLines, plaques: 99,
   });
   // One banner per monster, two at most. 10-hud's hudBosses() lists the core's big monsters first (key = the monster) and
@@ -31052,6 +31060,19 @@ HOOKS.selfTest.push((check, F, h) => {
     if (!L || !L.questH || !L.questW) return null;
     return { x: L.questX, y: L.questY, w: L.questW, h: L.questH };
   };
+  // owner 2026-09-30: "the quest helper needs to be completely hidable on the phone ... when nothing is tracked it needs
+  // to be gone". The Quest helper setting takes the scroll off every screen (59-hudkit layout: questHidden); on a phone it
+  // is also gone while no quest is followed. Hide helper in this panel turns it off; Track on a quest (the book's quest
+  // list, or ALSO ON THE GO here) or the Settings row brings it back.
+  if (window.SETTINGS && SETTINGS.addRow) {
+    SETTINGS.addRow({ key: 'questHelper', name: 'Quest helper', hint: () => 'The scroll that says what to do next. On a phone it is gone while no quest is followed.' }, true, [true, false], 'minimap', () => { });
+  }
+  const helperShown = () => !(window.SETTINGS && SETTINGS.get && SETTINGS.get('questHelper') === false);
+  function show() { if (!helperShown()) SETTINGS.set('questHelper', true); }
+  function hide() {
+    if (window.SETTINGS && SETTINGS.set) SETTINGS.set('questHelper', false);
+    closePanel(); notify('Quest helper hidden. Press Track on a quest in your book, or use Settings, to bring it back.');
+  }
   const tracked = () => (quest.tracked && typeof activeQuests === 'function' && activeQuests().includes(quest.tracked) ? quest.tracked : null);
   const nameOf = id => (QUEST_DEFS[id] ? QUEST_DEFS[id].name : id);
   const textOf = id => { try { return questText(id) || ''; } catch (e) { return ''; } };
@@ -31111,16 +31132,47 @@ HOOKS.selfTest.push((check, F, h) => {
       y += 26;
       for (const q of others) {
         if (y + rh > py + h - Q.foot) break;              // never run under the footer
-        button(g, px + PAD, y, inner, rh, nameOf(q), () => { quest.tracked = q; quest.untrackedByPlayer = false; save(); }, '#21262d');
+        button(g, px + PAD, y, inner, rh, nameOf(q), () => { quest.tracked = q; quest.untrackedByPlayer = false; show(); save(); }, '#21262d');
         y += rh + gap;
       }
     }
-    button(g, px + PAD, py + h - rh - 18, inner, rh, 'Close', () => closePanel(), '#21262d');
+    const half = (inner - 10) / 2, fy = py + h - rh - 18;
+    if (helperShown()) button(g, px + PAD, fy, half, rh, 'Hide helper', hide, '#21262d');
+    else button(g, px + PAD, fy, half, rh, 'Show helper', () => { show(); closePanel(); }, '#21262d');
+    button(g, px + PAD + half + 10, fy, half, rh, 'Close', () => closePanel(), '#21262d');
   };
 
-  window.QUESTBOX = { boxRect, tracked };
+  window.QUESTBOX = { boxRect, tracked, show, hide, helperShown };
 
   const P = 'questbox: ';
+  HOOKS.selfTest.push((check, F) => {
+    const t0 = quest.tracked, u0 = quest.untrackedByPlayer, w0 = window.innerWidth, h0 = window.innerHeight, ft0 = window.__forceTouch;
+    const set0 = window.SETTINGS ? SETTINGS.get('questHelper') : true;
+    const live = (typeof activeQuests === 'function' ? activeQuests() : []).filter(q => QUEST_DEFS[q]);
+    const size = (w, h) => { try { window.innerWidth = w; window.innerHeight = h; } catch (e) { } };
+    const scrollUp = () => { render(); return !!buttons.find(b => b.label === 'questbox:open') && !!boxRect(); };
+    const put = () => { closePanel(); SETTINGS.set('questHelper', set0); quest.tracked = t0; quest.untrackedByPlayer = u0; size(w0, h0); window.__forceTouch = ft0; render(); };
+    try {
+      SETTINGS.set('questHelper', true); closePanel();
+      // a phone with nothing followed: no scroll, no tap spot, no rolled strip
+      size(390, 844); window.__forceTouch = true; quest.tracked = null; quest.untrackedByPlayer = true;
+      const emptyPhone = scrollUp(), emptyRolled = !!(HUD_LAYOUT && HUD_LAYOUT.questH);
+      size(844, 390); const emptyPhoneL = scrollUp();
+      // a computer with nothing followed still shows "Click to pick one"
+      size(1280, 800); window.__forceTouch = false; const emptyDesk = scrollUp();
+      check(P + 'on a phone the quest helper is gone while no quest is followed (upright and sideways); a computer still offers one', !emptyPhone && !emptyRolled && !emptyPhoneL && emptyDesk, { emptyPhone, emptyRolled, emptyPhoneL, emptyDesk });
+      if (!live.length) { check(P + 'Hide helper takes it off the phone, and Track on a quest brings it back', false, { noActiveQuests: true }); return; }
+      // a phone following a quest: the scroll is there; Hide helper in its panel takes it away completely
+      size(390, 844); window.__forceTouch = true; quest.tracked = live[0]; quest.untrackedByPlayer = false;
+      const before = scrollUp();
+      const open = buttons.find(b => b.label === 'questbox:open'); if (open) open.action(); render();
+      const hid = F.clickButton('Hide helper'); const after = scrollUp(), off = SETTINGS.get('questHelper') === false;
+      // Track on a quest in the book puts it back
+      quest.tracked = null; quest.untrackedByPlayer = true; openPanel('quests'); render(); const tr = F.clickButton('Track'); closePanel();
+      const back = SETTINGS.get('questHelper') === true && scrollUp();
+      check(P + 'Hide helper takes it off the phone, and Track on a quest brings it back', before && !!hid && !after && off && !!tr && back, { before, hid: !!hid, after, off, tr: !!tr, back });
+    } finally { put(); }
+  });
   HOOKS.selfTest.push((check, F) => {
     // put a quest on the tracker, then check the box is a control that opens the whole text
     const t0 = quest.tracked, u0 = quest.untrackedByPlayer;
@@ -31634,25 +31686,39 @@ HOOKS.selfTest.push((check, F, h) => {
 // Settings (43-settings addRow: persisted under fanglands.settings like every other setting, so a new game on this
 // device starts the way the last one was left). A save that is loaded wins over the device. Kid mode keeps it on.
 // Controls: the "Fight back when hit: ON / OFF" button in the pack (the iPad control), the Settings row, and O.
-// Who counts as the attacker: the nearest live monster standing at the spot the hit came from (hurtPlayer's fromX,
-// fromY). hurtPlayer is wrapped rather than HOOKS.hurt used, because HOOKS.hurt does not run for a miss or for a hit
-// taken inside a machine, and a miss is still an attack. People who only turn on the knight for something he did (the
-// watch, the dwarf and castle guards, the sentinels: human and not aggressive) are never fought back automatically:
-// that would make a small crime a big one without the child choosing it.
+// Who counts as the attacker: only a monster that really attacked him, traced (see "who hit him" below): the monster
+// whose own position the hit names, the thrower of the bomb that went off, or online the keeper's monster the 'hurt'
+// message names. A hurt with no monster behind it (a fall, lava, a trap, a storm bolt) starts no fight, and nothing
+// standing nearby is ever blamed. hurtPlayer is wrapped rather than HOOKS.hurt used, because HOOKS.hurt does not run
+// for a miss or for a hit taken inside a machine, and a miss is still an attack. People who only turn on the knight for
+// something he did (the watch, the dwarf and castle guards, the sentinels: human and not aggressive) are never fought
+// back automatically: hitting one raises the wanted level (23-law), and that is a choice the child makes, not the switch.
+// He does not try when he cannot: from the saddle, with the shield up, or with a bow and no arrows (said once). A swing
+// the game refuses for any other reason is tried once and then left for QUIET seconds, so no reason is said every hit.
+// A line of talk that simply comes up mid-fight (the Voice, a quest line) does not stop him: nobody told him to do
+// anything, and a tap on the box only moves the talk on. Talking to someone (USE, a tap on a person) does stop him.
 // Online (75-coop): a non-keeper is hurt by a 'hurt' message carrying the keeper's monster position; the puppet there is
 // the attacker, and the swing goes through hitMonster, which routes a hit on a puppet to the keeper.
-// Feature file: HOOKS plus wrapped core functions (hurtPlayer, useAction, talkTo) and a row in the pack (10-hud PACK_ROWS). Test handle:
+// Feature file: HOOKS plus wrapped core functions (hurtPlayer, playerAttack, useAction, talkTo) and a row in the pack (10-hud PACK_ROWS). Test handle:
 // window.RETALIATE.
 // ============================================================================
 const RETALIATE = (() => {
-  const LEASH = 4 * TILE;    // how far past his reach he walks to a monster that hit him
-  const ANCHOR = 5 * TILE;   // never further than this from where he was hit
-  const FIND = TILE;         // the attacker stands within its own radius + this of the spot the hit came from
-  const GIVE_UP = 6;         // seconds without a swing (walking into something the whole time) and he stops
-  const MAX_PATH = 8;        // a way round longer than this many steps is not "the short way": he stays put
+  // how far past his reach he walks to a monster that hit him
+  const LEASH = 4 * TILE;
+  // never further than this from where he was hit
+  const ANCHOR = 5 * TILE;
+  // online only: a puppet stands within its own radius + this of the rounded spot a keeper's 'hurt' names
+  const FIND = TILE;
+  // seconds without a swing (walking into something the whole time) and he stops
+  const GIVE_UP = 6;
+  // a way round longer than this many steps is not "the short way": he stays put
+  const MAX_PATH = 8;
   const KEY = 'KeyO';
-  const HOLD = 2;            // seconds after a swing of his own in which a hit does not take the fight over (he is already fighting)
-  const R = { target: null, anchor: null, idle: 0, path: null, repathT: 0, stuckT: 0, why: null, starts: 0, swings: 0, struck: 0, hold: 0, own: false };
+  // seconds a refused swing keeps him from trying again
+  const QUIET = 6;
+  // seconds after a swing of his own in which a hit does not take the fight over (he is already fighting)
+  const HOLD = 2;
+  const R = { target: null, anchor: null, idle: 0, path: null, repathT: 0, stuckT: 0, why: null, starts: 0, swings: 0, struck: 0, hold: 0, own: false, quiet: 0, saidBow: false };
   let seenPlayer = null;
 
   // ---------- the switch ----------
@@ -31682,29 +31748,71 @@ const RETALIATE = (() => {
   }
 
   // ---------- who hit him ----------
+  // Only a monster that really attacked him is ever fought back. Guessing "the nearest monster to the spot" (the first
+  // build) blamed bystanders: a guard's hit next to a calm boar killed the boar, and a slip off an agility log, a palisade
+  // prick or a falling rock next to a grazing goblin turned him on the goblin. So the attacker is traced, three ways:
+  //   1. a swing, a ram, a slam or a heat pulse passes the monster's own position (hurtPlayer(dmg, m.x, m.y)): exact match;
+  //   2. a thrown sticky bomb explodes where it landed, far from the thrower: every monster projectile is tagged with the
+  //      monster that threw it on its first tick (tagThrown) and the explosion is matched to its bomb;
+  //   3. online, a keeper's monster hits us through a 'hurt' message with rounded coordinates: the nearest puppet there.
+  // Anything else (lava, a storm bolt, a fall, a trap, a dragon's fireball) has no attacker to fight back.
   const peacekeeper = def => !!def.human && !def.aggro;
+  const eligible = m => { const def = m && MONSTER_DEFS[m.type]; return !!def && !def.harmless && !peacekeeper(def); };
   function live(m) { return !!m && !m.dead && !m.gone && monsters.includes(m) && !!MONSTER_DEFS[m.type] && !MONSTER_DEFS[m.type].harmless; }
-  function attackerAt(x, y) {
+  function attackerAt(x, y, sure) {
+    for (const m of monsters) if (!m.dead && !m.gone && m.x === x && m.y === y) return eligible(m) ? m : null;
+    for (const p of projectiles) if (p.owner === 'monster' && p.x === x && p.y === y) return p.from && live(p.from) && eligible(p.from) ? p.from : null;
+    // 75-coop's 'hurt' passes no 'sure'; every hazard in the list above passes true
+    if (sure === true) return null;
     let best = null, bd = Infinity;
     for (const m of monsters) {
-      if (m.dead || m.gone) continue; const def = MONSTER_DEFS[m.type]; if (!def || def.harmless || peacekeeper(def)) continue;
+      if (!m.remote || m.dead || m.gone || !eligible(m)) continue;
       const d = dist(x, y, m.x, m.y); if (d <= (m.r || 12) + FIND && d < bd) { bd = d; best = m; }
     }
     return best;
   }
-  const horse = () => !!(player.mech && player.mech.kind === 'horse');   // 51-mounts: no swinging from the saddle
+  // a monster projectile remembers who threw it: the nearest monster to where it left (the sapper throws from its middle,
+  // the Hollowford captain and the Gnasher from a hand a little off it)
+  function tagThrown() {
+    for (const p of projectiles) {
+      if (p.owner !== 'monster' || p.from !== undefined) continue;
+      // only a bomb just thrown can be traced back to a hand; one found late (already landed) has no thrower we can know
+      if (!(p.t <= 0.1)) { p.from = null; continue; }
+      const ox = p.x - (p.vx || 0) * Math.min(p.t, p.life || 0), oy = p.y - (p.vy || 0) * Math.min(p.t, p.life || 0);
+      let best = null, bd = Infinity;
+      for (const m of monsters) { if (m.dead || m.gone) continue; const d = dist(ox, oy, m.x, m.y); if (d <= (m.r || 12) + 30 && d < bd) { bd = d; best = m; } }
+      p.from = best;
+    }
+  }
+  // 51-mounts: no swinging from the saddle
+  const horse = () => !!(player.mech && player.mech.kind === 'horse');
   const moving = () => inputVector().m > 0;
   // walking somewhere on purpose, fighting something he tapped, a panel or the menu up: he is busy, a hit does not turn him
   const tapBusy = () => typeof tapActive === 'function' && tapActive() && !(tap.gather && !tap.kind && !tap.path);
-  function struck(fx, fy) {
+  // the shield up (47-outliers): he is blocking on purpose, and the game refuses a swing then
+  const blocking = () => !player.mech && !!window.OUTLIERS && OUTLIERS.BLOCK.t > 0 && !!OUTLIERS.shieldOn();
+  // a bow with nothing to shoot: said once (until he has arrows again or puts the bow away), then he just takes it
+  function emptyBow() {
+    const w = weaponDef(), empty = !!w && !!w.weapon.ranged && !player.mech && arrowSlot() < 0;
+    if (!empty) R.saidBow = false;
+    else if (!R.saidBow) { R.saidBow = true; notify('No arrows, so you cannot fight back with the bow. Make arrows at a workbench, or hold a sword.'); }
+    return empty;
+  }
+  function struck(fx, fy, sure) {
     if (player.dead || !Number.isFinite(fx) || !Number.isFinite(fy)) return;
-    const m = attackerAt(fx, fy); if (!m) return;
-    R.struck++;                                              // a monster attacked (hit or miss): counted whether or not he answers
+    const m = attackerAt(fx, fy, sure); if (!m) return;
+    // a monster attacked (hit or miss): counted whether or not he answers
+    R.struck++;
     if (!isOn() || horse()) return;
-    if (live(R.target)) return;                              // already fighting back: he keeps the one he is on
-    if (R.hold > 0) return;                                  // swinging on his own just now: already in a fight he chose (RuneScape does the same)
-    if (paused || panel || moving() || tapBusy()) return;
-    if (typeof tapActive === 'function' && tapActive()) tapCancel('retarget');   // a tap-to-chop loop: the hit ends it
+    // already fighting back: he keeps the one he is on
+    if (live(R.target)) return;
+    // swinging on his own just now: already in a fight he chose (RuneScape does the same)
+    if (R.hold > 0) return;
+    // the last try was refused by the game (see tick): no second try for a while, so the reason is not said on every hit
+    if (R.quiet > 0) return;
+    if (paused || panel || moving() || tapBusy() || blocking() || emptyBow()) return;
+    // a tap-to-chop loop: the hit ends it
+    if (typeof tapActive === 'function' && tapActive()) tapCancel('retarget');
     player.action = null;
     R.target = m; R.anchor = { x: player.x, y: player.y }; R.idle = 0; R.path = null; R.repathT = 0; R.stuckT = 0; R.why = null; R.starts++;
   }
@@ -31712,7 +31820,7 @@ const RETALIATE = (() => {
 
   // ---------- the wrapped core ----------
   { const _hurtPlayer = hurtPlayer;
-    hurtPlayer = function (dmg, fromX, fromY, sure) { const r = _hurtPlayer(dmg, fromX, fromY, sure); struck(fromX, fromY); return r; }; }
+    hurtPlayer = function (dmg, fromX, fromY, sure) { const r = _hurtPlayer(dmg, fromX, fromY, sure); struck(fromX, fromY, sure); return r; }; }
   // using something or talking is being told to do something else
   { const _useAction = useAction; useAction = function () { stop('use'); return _useAction(); }; }
   { const _talkTo = talkTo; talkTo = function (npc) { stop('talk'); return _talkTo(npc); }; }
@@ -31751,6 +31859,7 @@ const RETALIATE = (() => {
     if (typeof tapActive === 'function' && tapActive()) return stop('tap');
     if (player.action) return stop('busy');
     if (horse()) return stop('horse');
+    if (blocking()) return stop('shield');
     const reach = reachOf(m), d = dist(player.x, player.y, m.x, m.y);
     if (d > reach + LEASH || dist(player.x, player.y, R.anchor.x, R.anchor.y) > ANCHOR) return stop('ran');
     R.idle += dt;
@@ -31759,7 +31868,7 @@ const RETALIATE = (() => {
       if (player.attackCd <= 0) {
         R.own = true; try { playerAttack(); } finally { R.own = false; }
         // refused (no arrows, the shield is up, ...): the game has already said why once; he stops rather than ask every frame
-        if (player.attackCd <= 0) return stop('cannot');
+        if (player.attackCd <= 0) { R.quiet = QUIET; return stop('cannot'); }
         R.swings++; R.idle = 0;
       }
     } else walkToward(m, dt);
@@ -31767,9 +31876,12 @@ const RETALIATE = (() => {
   }
   HOOKS.update.push(dt => {
     syncPlayer();
-    R.hold = Math.max(0, R.hold - dt);
-    if (window.__kidmode && player.retaliate === false) set(true, true);   // kid mode keeps it on
-    if (pressed.has(KEY) && !paused) toggle();
+    R.hold = Math.max(0, R.hold - dt); R.quiet = Math.max(0, R.quiet - dt);
+    tagThrown();
+    // kid mode keeps it on
+    if (window.__kidmode && player.retaliate === false) set(true, true);
+    // not while a panel is up: the wiki's search box takes letters from the same keys, and typing "goblin" must not flip it
+    if (pressed.has(KEY) && !paused && !panel) toggle();
     tick(dt);
   });
   HOOKS.keyHelp.push({ action: 'Fight back on / off', codes: [KEY] });
@@ -31803,12 +31915,22 @@ const RETALIATE = (() => {
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'fight back: ';
     const real = monsters, kid0 = window.__kidmode, on0 = player.retaliate, peace0 = window.__peace, touch0 = window.__forceTouch;
-    const keep = { x: player.x, y: player.y, hp: player.hp, kills: player.kills, skills: JSON.stringify(player.skills), facing: { ...player.facing }, drops: drops.length, mech: player.mech, equip: { ...player.equip }, companion: player.companion, law: player.law ? JSON.stringify(player.law) : null };
-    const r0 = Math.random;
+    const keep = { x: player.x, y: player.y, hp: player.hp, dead: player.dead, dayTime: player.dayTime, kills: player.kills, skills: JSON.stringify(player.skills), facing: { ...player.facing }, drops: drops.length, mech: player.mech, r: player.r, speed: player.speed, inv: JSON.stringify(player.inv), equip: { ...player.equip }, companion: player.companion, law: player.law ? JSON.stringify(player.law) : null };
+    // the ground these checks fight on goes back as it was: a bulldozer that walks to a goblin plows what it drives over,
+    // and a later check that looks for clean grass there (the drop party's crackers) must still find it
+    // and so do the graves the kills here lay (54-graves: a cross in front of the knight answers USE before anything else)
+    const o0 = h.openSpot(40, 24), ground = [], regrow0 = new Set(regrow), fires0 = new Set(fires);
+    const graves0 = Array.isArray(quest.graves) ? quest.graves.slice() : null, laid0 = quest.graveNight ? quest.graveNight.laid : null;
+    for (let y = o0.y - 16; y <= o0.y + 16; y++) for (let x = o0.x - 16; x <= o0.x + 16; x++) if (inMap(x, y)) { const i = idx(x, y); ground.push([x, y, map[i], mapDiffs.has(i), mapDiffs.get(i)]); }
+    const r0 = Math.random, notify0 = notify, proj0 = new Set(projectiles), block0 = window.OUTLIERS ? OUTLIERS.BLOCK.t : 0;
     // a world of one goblin: nothing else can wander in, hit him or be hit (the real array is put back in finally)
-    const goblin = (x, y) => { const d = MONSTER_DEFS.goblin; return { type: 'goblin', x, y, home: { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: true, state: 'chase', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: -1, y: 0 }, walkT: 0, moving: false, stunT: 0 }; };
+    const goblin = (x, y, type = 'goblin') => { const d = MONSTER_DEFS[type]; return { type, x, y, home: { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: true, state: 'chase', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: -1, y: 0 }, walkT: 0, moving: false, stunT: 0 }; };
     // tough: a goblin that must still be standing when the check looks (a knight fresh off the playthrough kills one in a swing)
+    // a step that never lets him fall: a fall would put his pack in Death's chest and leave him dead for the checks after these
+    const safe = () => { if (player.hp < player.maxHp / 2) player.hp = player.maxHp; F.step([]); };
     const stage = (dx, seed, tough) => {
+      // nothing in the air: a bomb or an arrow from the check before (or from a check before these) would land in this one
+      projectiles = [];
       Math.random = mulberry32(seed); closePanel(); dialog.cur = null; dialog.queue.length = 0; if (typeof tapCancel === 'function') tapCancel('manual');
       const o = h.openSpot(40, 24); F.tp(o.x, o.y); player.hp = player.maxHp; player.facing = { x: -1, y: 0 }; player.attackCd = 0; player.attackT = 0; player.action = null; stop('test'); R.hold = 0;
       const g = goblin(player.x + dx, player.y); if (tough) { g.hp = g.maxHp = 999; } monsters = [g]; return g;
@@ -31863,6 +31985,53 @@ const RETALIATE = (() => {
       // peacekeepers and harmless things are never fought back on their own
       { const g = stage(34, 0x5E80); g.type = 'guard_m'; hurtPlayer(1, g.x, g.y); const guard = R.target === null; stop('test'); monsters = [];
         check(P + 'a town guard is never fought back automatically (it would make the knight wanted)', guard, { target: R.target && R.target.type }); }
+      // a line of talk that comes up mid-fight is not an order: he keeps fighting while it shows and after a tap moves it on
+      { const g = stage(34, 0x5E8A, true); let started = false; for (let s = 0; s < 240 && !started; s++) { safe(); started = R.target === g; }
+        say('A line in the middle of a fight.', 'The Voice'); const sw0 = R.swings; for (let s = 0; s < 120; s++) safe(); const during = R.swings - sw0;
+        advanceDialog(); const sw1 = R.swings; for (let s = 0; s < 120; s++) safe(); const after = R.swings - sw1;
+        check(P + 'a line of talk that comes up mid-fight does not stop him (talking to someone does)', started && during >= 1 && after >= 1 && R.target === g, { started, during, after, why: R.why }); dialog.cur = null; dialog.queue.length = 0; }
+      // a sapper stays two to five tiles off and throws sticky bombs: the bomb goes off where it landed, far from the sapper,
+      // so the sapper is found through its bomb, and he walks to it and fights it
+      { const g = stage(3.5 * TILE, 0x5E83); const sp = goblin(g.x, g.y, 'sapper'); monsters = [sp]; const st0 = R.struck, s0 = R.starts;
+        let aimed = false, s = 0; for (; s < 1200 && !sp.dead && !player.dead; s++) { safe(); if (R.target === sp) aimed = true; }
+        check(P + 'a sapper that bombs from range is traced through its bomb and fought until it dies', R.struck - st0 >= 1 && aimed && sp.dead && !player.dead, { attacks: R.struck - st0, starts: R.starts - s0, aimed, dead: sp.dead, steps: s, knightHp: Math.round(player.hp), why: R.why }); }
+      // only the monster that attacked: a guard's hit beside a calm boar leaves the boar alone, and a hurt with no monster
+      // behind it (a slip off an agility log, a palisade prick, a falling rock) beside a grazing goblin starts no fight
+      // (what is watched is who he picks: at night in a long run a grave can open beside him and a skeleton that really
+      // attacks is fair game, and his swing at it may clip whatever stands by, so hit points are not the measure)
+      { stage(34, 0x5E84); const gd = goblin(player.x + 34, player.y, 'guard_m'); const boar = goblin(player.x + 40, player.y + 30, 'boar'); boar.angry = false; boar.state = 'idle'; boar.stunT = 99;
+        monsters = [gd, boar]; const picked = new Set(); const watch = () => { if (R.target) picked.add(R.target); };
+        hurtPlayer(1, gd.x, gd.y); watch(); for (let s = 0; s < 60; s++) { safe(); watch(); } const byGuard = !picked.has(gd) && !picked.has(boar);
+        const calm = goblin(player.x + 60, player.y); calm.angry = false; calm.state = 'idle'; calm.stunT = 99; monsters = [calm]; const tx = Math.floor(calm.x / TILE), ty = Math.floor(calm.y / TILE);
+        hurtPlayer(1, tc(tx), tc(ty), true); watch(); hurtPlayer(2, player.x, player.y + 20, true); watch(); for (let s = 0; s < 60; s++) { safe(); watch(); } const byHazard = !picked.has(calm);
+        check(P + 'only the monster that attacked: not a boar beside a guard, not a goblin beside a slip or a prick', byGuard && byHazard, { byGuard, byHazard, picked: [...picked].map(m => m.type) }); }
+      // a bow with no arrows: said once, not on every hit, and no swing is tried; with arrows he shoots back
+      { const g = stage(34, 0x5E85, true); player.equip.weapon = 'shortbow'; player.inv = player.inv.map(x => x && ITEMS[x.id].arrow ? null : x); R.saidBow = false;
+        const notes = []; notify = t => { notes.push(t); return notify0(t); }; const s0 = R.starts; for (let s = 0; s < 600; s++) safe(); notify = notify0;
+        const said = notes.filter(t => /arrow/i.test(t)).length, dry = R.starts - s0;
+        const g2 = stage(34, 0x5E86); player.equip.weapon = 'shortbow'; addItem('stone_arrow', 40); const a0 = countItem('stone_arrow');
+        let s = 0; for (; s < 1500 && !g2.dead && !player.dead; s++) safe(); const shot = a0 - countItem('stone_arrow');
+        check(P + 'a bow with no arrows says so once and tries nothing; with arrows he shoots back', said === 1 && dry === 0 && g.hp === g.maxHp && g2.dead && shot >= 1, { said, dry, shot, dead: g2.dead, steps: s }); player.equip.weapon = 'iron_sword'; }
+      // the shield up: he is blocking on purpose, so no swing is tried (the game would refuse it and say so every hit)
+      if (window.OUTLIERS) { const g = stage(34, 0x5E87, true); player.equip.shield = Object.keys(ITEMS).find(k => ITEMS[k].shape === 'shield');
+        const notes = []; notify = t => { notes.push(t); return notify0(t); }; let fought = false;
+        for (let s = 0; s < 300; s++) { OUTLIERS.BLOCK.t = 1; safe(); if (R.target) fought = true; } notify = notify0; OUTLIERS.BLOCK.t = block0; player.equip.shield = null;
+        const refused = notes.filter(t => /cannot swing/i.test(t)).length;
+        check(P + 'with the shield up he blocks and does not swing back', !fought && refused === 0 && g.hp === g.maxHp && R.struck > 0, { fought, refused, goblinHp: g.hp }); }
+      // a refused swing (anything the game says no to) is tried once, then not again for a while
+      { const g = stage(34, 0x5E88, true); const w0 = player.equip.weapon; let tries = 0;
+        const quietWas = R.quiet; safe(); for (let s = 0; s < 240 && R.target !== g; s++) safe();
+        const _pa = playerAttack; playerAttack = function () { if (R.own) { tries++; return; } return _pa(); };
+        for (let s = 0; s < 240; s++) safe(); playerAttack = _pa; player.equip.weapon = w0;
+        check(P + 'a swing the game refuses is tried once, then left for ' + QUIET + ' s', tries === 1 && R.quiet > 0, { tries, quiet: +R.quiet.toFixed(2), quietWas }); R.quiet = 0; }
+      // riding: the walker, the bulldozer and the Barrelbeast fight back with the machine's stomp; the horse never does
+      { const res = {};
+        for (const kind of ['walker', 'dozer', 'beast', 'horse']) {
+          const g = stage(50, 0x5E89); player.mech = kind === 'walker' ? { hp: 130, maxHp: 130 } : { hp: 130, maxHp: 130, kind }; player.r = 20; player.speed = 120;
+          let s = 0; for (; s < 900 && !g.dead && player.mech; s++) safe(); res[kind] = { dead: g.dead, hp: g.hp, steps: s };
+          player.mech = null; player.r = keep.r; player.speed = keep.speed;
+        }
+        check(P + 'from the walker, the bulldozer and the Barrelbeast he fights back; from the saddle he does not', res.walker.dead && res.dozer.dead && res.beast.dead && !res.horse.dead && res.horse.hp === MONSTER_DEFS.goblin.hp, res); }
       // kid mode keeps it on
       { set(true, true); window.__kidmode = true; set(false, true); F.step([]); const kept = isOn() && player.retaliate === true; window.__kidmode = false;
         check(P + 'kid mode keeps it on', kept, { on: isOn(), saved: player.retaliate }); }
@@ -31888,11 +32057,12 @@ const RETALIATE = (() => {
       // Settings mirrors it, O flips it, and the choice survives a save and a load (and goes to the device's settings)
       { set(true, true); openPanel('settings'); render(); const row = F.clickButton('set:retaliate'); const bySettings = player.retaliate === false && !isOn(); closePanel();
         F.press(KEY); const byKey = player.retaliate === true; F.press(KEY);
+        let typing = true; if (window.WIKI) { WIKI.open('monsters', null); const was = player.retaliate; F.press(KEY); typing = player.retaliate === was && panel !== null; closePanel(); }
         save(); player.retaliate = true; SETTINGS.set('retaliate', true); const ok = load(); F.step([]);
         const kept = ok && player.retaliate === false && !isOn() && SETTINGS.get('retaliate') === false;
         const listed = SETTINGS.keyMap().some(r => r.codes.includes(KEY));
         set(true, true); save();
-        check(P + 'Settings mirrors the switch, O flips it, and OFF survives a save and a load', row && bySettings && byKey && kept && listed, { row, bySettings, byKey, kept, listed }); }
+        check(P + 'Settings mirrors the switch, O flips it (not while typing in the wiki), and OFF survives a save and a load', row && bySettings && byKey && typing && kept && listed, { row, bySettings, byKey, typing, kept, listed }); }
       // online: a puppet (someone else keeps the map) that hits us is hit back, and the hit goes to the keeper
       if (typeof NET !== 'undefined' && window.COOP) {
         const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake };
@@ -31918,10 +32088,18 @@ const RETALIATE = (() => {
         }
       }
     } finally {
-      Math.random = r0; monsters = real; stop('test'); closePanel(); dialog.cur = null; dialog.queue.length = 0;
+      const touched = new Set();
+      for (const [x, y, t, had, v] of ground) { const i = idx(x, y); touched.add(i); if (map[i] !== t) { setTile(x, y, t); miniDirtyTiles.add(i); } if (had) mapDiffs.set(i, v); else mapDiffs.delete(i); }
+      if (graves0) { quest.graves.length = 0; quest.graves.push(...graves0); } else delete quest.graves;
+      if (laid0 !== null && quest.graveNight) quest.graveNight.laid = laid0;
+      regrow = regrow.filter(r => regrow0.has(r) || !touched.has(r.i)); fires = fires.filter(f => fires0.has(f) || !touched.has(f.i));
+      // and the clock: these fights take game minutes, and dusk arriving earlier would put the Voice's "the light is going"
+      // line (and the night's graves) into whatever check runs next
+      if (keep.dayTime !== undefined) player.dayTime = keep.dayTime;
+      projectiles = [...proj0]; Math.random = r0; notify = notify0; if (!keep.dead) { player.dead = false; player.deadT = 0; } if (window.OUTLIERS) OUTLIERS.BLOCK.t = block0; R.quiet = 0; monsters = real; stop('test'); closePanel(); dialog.cur = null; dialog.queue.length = 0;
       window.__kidmode = kid0; window.__peace = peace0; window.__forceTouch = touch0;
       player.x = keep.x; player.y = keep.y; player.hp = Math.max(1, keep.hp); player.kills = keep.kills; player.skills = JSON.parse(keep.skills); player.facing = keep.facing;
-      player.mech = keep.mech; player.companion = keep.companion; Object.assign(player.equip, keep.equip); recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp); if (keep.law) player.law = JSON.parse(keep.law); else delete player.law;
+      player.mech = keep.mech; player.r = keep.r; player.speed = keep.speed; player.inv = JSON.parse(keep.inv); player.companion = keep.companion; Object.assign(player.equip, keep.equip); recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp); if (keep.law) player.law = JSON.parse(keep.law); else delete player.law;
       drops = drops.slice(0, keep.drops); set(on0 !== false, true); render();
     }
   });
@@ -32158,6 +32336,8 @@ window.RETALIATE = RETALIATE;
     if (code === 'taken' || code === 'exists') return 'That name is already taken. Pick another.';
     if (code === 'name' || code === 'bad_name' || code === 'filtered') return kind === 'login' ? 'No knight by that name yet. Tap New knight.' : 'That name will not do here. Try another.';
     if (code === 'full') return 'The world is full right now. Try again soon.';
+    // an admin (or the parent page) gave the knight a new secret word: the world says why on the error (why: 'reset')
+    if (code === 'auth' && err.why === 'reset') return 'An admin changed your secret word. Ask them for the new one, then log in again.';
     if (code === 'auth') return 'You were logged out. Log in again.';
     if (kind === 'login' && st === 401) return 'That secret word is wrong.';
     if (kind === 'login' && st === 404) return 'No knight by that name yet. Tap New knight.';
@@ -33764,6 +33944,8 @@ window.RETALIATE = RETALIATE;
   const LERP_T = 0.12;        // seconds a puppet takes to glide onto a new snapshot position
   const GONE_AFTER = 1;       // a puppet missing from the stream this long is hidden
   const DROP_AFTER = 2;       // ...and dropped from the array this long after that
+  const STALL_AFTER = 6;      // when the WHOLE stream has stopped, everything stays standing this long (longer than a handoff takes)
+  const BEAT_EVERY = 1;       // a keeper with nobody near still sends an empty snapshot this often: the world's sign it is alive
   const NEAR = 24 * TILE;     // snapshot radius around every knight on the map
   const FREEZE = 1e6;         // the stunT value that makes the core loop skip a monster for one frame
   const MAX_DMG = 500;
@@ -33865,6 +34047,19 @@ window.RETALIATE = RETALIATE;
     return { type, nid, x, y, home: home ? { x: home.x, y: home.y } : { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: !!d.aggro, state: 'idle', wanderT: Math.random() * 2,
       wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0 };
   }
+  // Alone, every walk into an instance builds it fresh. Shared, the keeper's instance is the one everyone sees, so once it was
+  // cleared a friend walking in found it empty for as long as the keeper stayed. A knight arriving at a cleared instance now
+  // has the keeper fill it again (the same spawns, fresh). Nobody's 'dungeon cleared' progress changes.
+  function refillIfCleared() {
+    if (!isKeeper() || S.map === 'over' || !window.INSTANCES || typeof INSTANCES.get !== 'function') return false;
+    const inst = INSTANCES.get(S.map); if (!inst || !Array.isArray(inst.spawns) || !inst.spawns.length) return false;
+    if (monsters.some(m => !m.dead && !m.remote && !m.phantom)) return false;
+    const fresh = inst.spawns.map(([type, tx, ty], i) => MONSTER_DEFS[type] ? makeReal(type, tc(tx), tc(ty), 'i' + i) : null).filter(Boolean);
+    for (const m of fresh) monsters.push(m);
+    for (const m of monsters.filter(m => m.dead && m.nid && fresh.some(f => f.nid === m.nid))) { const k = monsters.indexOf(m); if (k >= 0) monsters.splice(k, 1); }
+    S.idxLen = -1; S.snapAcc = SNAP_EVERY;
+    return true;
+  }
   function applyMon(msg) {
     if (!puppetMode() || !msg || !Array.isArray(msg.list)) return;
     if (msg.n !== undefined && msg.n !== S.keeper) return;
@@ -33873,9 +34068,11 @@ window.RETALIATE = RETALIATE;
     for (let i = 0; i < n; i++) {
       const e = msg.list[i];
       if (!Array.isArray(e) || e.length < 14) continue;
-      const nid = e[0], type = e[1], x = num(e[2]), y = num(e[3]), hp = num(e[4]), maxHp = num(e[5]), state = e[6], fx = num(e[7]), fy = num(e[8]), hurt = num(e[9]), attackT = num(e[12]), stunT = num(e[13]);
+      // the row is [nid, type, x, y, hp, maxHp, state, fx, fy, moving, hurt, dead, attackT, stunT] (docs/ONLINE.md). Moving and
+      // hurt were once read the wrong way round: every walking monster flashed pink and a standing one never walked.
+      const nid = e[0], type = e[1], x = num(e[2]), y = num(e[3]), hp = num(e[4]), maxHp = num(e[5]), state = e[6], fx = num(e[7]), fy = num(e[8]), moving = num(e[9]), hurt = num(e[10]), attackT = num(e[12]), stunT = num(e[13]);
       if (typeof nid !== 'string' || typeof type !== 'string' || !MONSTER_DEFS[type]) continue;
-      if (x === null || y === null || hp === null || maxHp === null || fx === null || fy === null || hurt === null || attackT === null || stunT === null) continue;
+      if (x === null || y === null || hp === null || maxHp === null || fx === null || fy === null || moving === null || hurt === null || attackT === null || stunT === null) continue;
       let p = idx.get(nid);
       if (p && (!p.remote || p.type !== type)) { const k = monsters.indexOf(p); if (k >= 0) monsters.splice(k, 1); p = null; }
       if (!p) { p = makePuppet(nid, type, x, y); if (!p) continue; monsters.push(p); idx.set(nid, p); added = true; }
@@ -33884,16 +34081,21 @@ window.RETALIATE = RETALIATE;
       if (!dead && p.dead && time < p.localDeadUntil) { p.seen = time; continue; }   // our own blow just felled it; give the keeper a moment to agree
       if (dead !== p.dead) p.deadT = 0;
       p.dead = dead; p.hp = hp; if (maxHp > 0) p.maxHp = maxHp; p.state = typeof state === 'string' ? state : 'idle';
-      p.facing.x = fx; p.facing.y = fy; p.moving = !!e[10]; p.hurtT = hurt; p.attackT = attackT; p.stunT = stunT; p.respawnT = 1e9;
+      p.facing.x = fx; p.facing.y = fy; p.moving = !!moving; p.hurtT = hurt; p.attackT = attackT; p.stunT = stunT; p.respawnT = 1e9;
       p.seen = time; p.gone = false;
     }
     if (added) { S.idxArr = monsters; S.idxLen = monsters.length; }
+    S.lastMonAt = time;
   }
   function policePuppets() {
     let arr = monsters, dirty = false;
     for (const m of arr) { if (!m.remote) { dirty = true; break; } if (m.gone && time - m.seen > DROP_AFTER) { dirty = true; break; } }
     if (dirty) { arr = arr.filter(m => m.remote && !(m.gone && time - m.seen > DROP_AFTER)); monsters = arr; }
-    for (const p of arr) if (!p.gone && time - p.seen > GONE_AFTER) { p.gone = true; p.dead = true; p.deadT = 9; }
+    // while the keeper's stream flows, a puppet it stopped listing (it died, or went out of range) goes after GONE_AFTER; when
+    // the whole stream stalls (the keeper's phone locked, a handoff on its way) the monsters stay standing up to STALL_AFTER
+    // instead of all vanishing at once
+    const flowing = time - (S.lastMonAt || -1e9) < 0.75;
+    for (const p of arr) if (!p.gone && time - p.seen > (flowing ? GONE_AFTER : STALL_AFTER)) { p.gone = true; p.dead = true; p.deadT = 9; }
     S.puppets = arr;
   }
 
@@ -34004,10 +34206,17 @@ window.RETALIATE = RETALIATE;
       }
       return;
     }
+    // a keeper whose game is running keeps talking even with nobody near: an empty snapshot is a heartbeat, so the world never
+    // takes a working keeper for a frozen one and hands the map to a knight whose phone is locked (the monsters then vanished).
+    // A paused keeper or one on the title screen stays quiet on purpose, so the world hands the map to someone who is playing.
+    if (isKeeper() && online() && !paused && !(title && title.active)) {
+      S.beatAcc = (S.beatAcc || 0) + dt;
+      if (S.beatAcc >= BEAT_EVERY && !(pre && pre.kind === 'keeper' && S.here.length)) { S.beatAcc = 0; NET.send({ t: 'mon', list: [] }); }
+    }
     if (!pre || pre.kind !== 'keeper') return;
     if (!paused) for (const f of pre.frozen) { const m = f.m; if (!m.dead && m.stunT <= 0 && monsters.includes(m)) stepRemote(m, f.target, dt); }
     S.snapAcc += dt;
-    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
+    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; S.beatAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
   }
   const _update = update;
   update = function (dt) { const pre = before(dt); _update(dt); after(dt, pre); };
@@ -34050,7 +34259,9 @@ window.RETALIATE = RETALIATE;
       if (typeof msg.n !== 'string' || msg.n === NET.me || typeof msg.map !== 'string') return;
       const x = num(msg.x), y = num(msg.y); if (x === null || y === null) return;
       const r = S.remotes[msg.n] || (S.remotes[msg.n] = { n: msg.n });
-      r.x = x; r.y = y; r.map = msg.map; r.def = num(msg.def); r.dead = !!msg.dead; r.hp = num(msg.hp); r.lv = num(msg.lv); r.seen = time;
+      const arrived = r.map !== msg.map;
+      r.x = x; r.y = y; r.map = msg.map;
+      if (arrived && msg.map === S.map) refillIfCleared(); r.def = num(msg.def); r.dead = !!msg.dead; r.hp = num(msg.hp); r.lv = num(msg.lv); r.seen = time;
     });
     NET.on('left', msg => { if (typeof msg.n === 'string') delete S.remotes[msg.n]; });
     NET.on('who', msg => { if (!Array.isArray(msg.list)) return; const names = new Set(); for (const e of msg.list) if (e && typeof e.n === 'string') names.add(e.n); for (const n in S.remotes) if (!names.has(n)) delete S.remotes[n]; });
@@ -34082,7 +34293,7 @@ window.RETALIATE = RETALIATE;
     });
   }
 
-  window.COOP = {
+  window.COOP = { refill: refillIfCleared,
     isKeeper, keeper: () => S.keeper, map: () => S.map, remotes: () => Object.values(S.remotes), knightsHere, puppets: () => S.puppets,
     get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), find, apply: applyMon, reset, state: S,
   };
@@ -34121,6 +34332,13 @@ window.RETALIATE = RETALIATE;
       const farExists = real.some(m => !m.dead && !near(m.x, m.y)), farListed = list.some(e => !sentNear(e[2], e[3]));
       check(P + 'the keeper streams snapshots in the contract shape, only for monsters near a knight', NET.online() && COOP.isKeeper() && COOP.map() === 'over' && mons.length >= 1 && shapeOk && farExists && !farListed && list.some(e => e[0] === gob.nid), { online: NET.online(), keeper: COOP.keeper(), map: COOP.map(), snapshots: mons.length, listed: list.length, shapeOk, farExists, farListed });
 
+      // (a2) a keeper with nobody near still sends a heartbeat (an empty snapshot) about once a second, so the world never
+      // takes it for frozen; a paused keeper stays quiet on purpose so the world hands the map to someone playing
+      { push({ t: 'left', n: 'Ann', map: 'over' }); sent.length = 0; F.sim(90);
+        const beats = sentOf('mon').filter(m => Array.isArray(m.list) && m.list.length === 0).length;
+        const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length; paused = p0;
+        check(P + 'a keeper with nobody near sends a heartbeat about once a second, and none while paused', beats >= 1 && beats <= 3 && whilePaused === 0, { beats, whilePaused });
+        push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 }); }
       // (b) a non-keeper shows puppets that hold still while the stream is silent
       push({ t: 'keeper', map: 'over', n: 'Ann' });
       const parked = COOP.parked;
@@ -34128,6 +34346,12 @@ window.RETALIATE = RETALIATE;
       const row = (nid, type, x, y, hp, mhp, state) => [nid, type, x, y, hp, mhp, state, 1, 0, 0, 0, 0, 0, 0];
       push({ t: 'mon', n: 'Ann', list: [row('Ann:1', 'goblin', ax, ay, 12, 12, 'idle'), row(s0.nid, s0.type, ax + 40, ay + 40, 5, s0.maxHp, 'chase')] });
       const p1 = COOP.find('Ann:1'), p2 = COOP.find(s0.nid);
+      // (b2) moving (row 9) and hurt (row 10) land in the right fields: a walking monster walks and is not pink, a hurt one flashes
+      { push({ t: 'mon', n: 'Ann', list: [['Ann:w', 'goblin', ax + 80, ay, 12, 12, 'chase', 1, 0, 1, 0, 0, 0, 0], ['Ann:h', 'goblin', ax + 120, ay, 9, 12, 'idle', 1, 0, 0, 0.18, 0, 0, 0]] });
+        const pw = COOP.find('Ann:w'), ph = COOP.find('Ann:h');
+        check(P + 'a walking monster from the keeper walks and is not pink; a hurt one flashes (moving and hurt read from the right places)', !!pw && pw.moving === true && pw.hurtT === 0 && !!ph && ph.moving === false && ph.hurtT > 0, { walk: pw && [pw.moving, pw.hurtT], hurt: ph && [ph.moving, ph.hurtT] });
+        for (const q of [pw, ph]) { const k = q ? monsters.indexOf(q) : -1; if (k >= 0) monsters.splice(k, 1); }
+        S.idxLen = -1; }
       let drew = true; try { render(); } catch (e) { drew = false; }
       monsters.push(makeReal('goblin', ax, ay + 200, null, null));   // a boss file spawning locally on a non-keeper: dropped after the next update
       F.sim(60);
@@ -34194,6 +34418,18 @@ window.RETALIATE = RETALIATE;
       sent.length = 0; F.sim(180);
       const hurts = sentOf('hurt');
       check(P + 'a remote knight beside an aggressive monster gets hurt messages from the keeper while the keeper stands far away, and the monster chases them', dist(player.x, player.y, gob.home.x, gob.home.y) > 8 * TILE && hurts.length >= 1 && hurts.every(m => m.to === 'Ann' && Number.isFinite(m.dmg) && m.dmg >= 0 && m.dmg <= MONSTER_DEFS.goblin.maxHit) && gob.state === 'chase' && dist(gob.x, gob.y, ann2.x, ann2.y) < 60 && sentOf('mon').length >= 10, { keeperAway: Math.round(dist(player.x, player.y, gob.home.x, gob.home.y) / TILE), hurts: hurts.length, state: gob.state, gap: Math.round(dist(gob.x, gob.y, ann2.x, ann2.y)), snapshots: sentOf('mon').length });
+      // (h) a knight walking into a cleared instance finds it filled again (alone, every entry is fresh; shared, it stayed empty)
+      if (typeof INSTANCES !== 'undefined' && INSTANCES.get && INSTANCES.get('spider_den')) {
+        push({ t: 'keeper', map: 'over', n: NET.me });
+        const inDen = INSTANCES.enter('spider_den');
+        push({ t: 'keeper', map: 'spider_den', n: NET.me });
+        for (const m of monsters) m.dead = true;
+        const refilled = !!COOP.refill && (push({ t: 'p', n: 'Bo', map: 'spider_den', x: player.x + TILE, y: player.y, def: 500, dead: false, hp: 20, lv: 2 }), true);
+        const alive = monsters.filter(m => !m.dead).length, want = INSTANCES.get('spider_den').spawns.length;
+        const again = COOP.refill ? COOP.refill() : null;
+        check(P + 'a knight arriving at a cleared instance finds it filled again, once (not while monsters still stand)', inDen && refilled && alive === want && again === false, { inDen, alive, want, again });
+        INSTANCES.leave(); push({ t: 'left', n: 'Bo', map: 'spider_den' });
+      }
     } finally {
       NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
       reset();
@@ -34226,6 +34462,8 @@ window.RETALIATE = RETALIATE;
 //   D. Monsters: spawn any MONSTER_DEFS type near yourself; the map's keeper makes them (any client can be the keeper, so
 //      the keeper's half lives here too: NET.on('spawn') / ('spawn_clear') and the no-respawn rule for '!' monsters)
 //   E. Party: the button into 77-dropparty's panel
+//   F. tabs other files add with ADMIN.addTab (78-accounts: Accounts). Their drawing, state and tests live in their own
+//      file; this one only lays the tab buttons out (in two rows when the panel is too narrow for one) and hands over.
 // Wraps by reassignment, all with explicit arguments: hurtPlayer and die (Can't be hurt), pointerDown (where the last
 // tap was, for Teleport), drawPanels (the Teleport button over the world map, and the one search box), closePanel (the
 // search box goes when the panel does). Feature file: HOOKS only otherwise. window.ADMIN is the register.
@@ -34243,6 +34481,18 @@ window.RETALIATE = RETALIATE;
   // the contract's caps (rate per second, burst): the client stays under them, so the world never drops the admin for speed
   const CAPS = { mute: [1, 3], unmute: [1, 3], kick: [1, 3], ban: [1, 3], unban: [1, 3], modlist: [1, 2], spawn: [1, 3], spawn_clear: [1, 2] };
   const TABS = [['knights', 'Knights'], ['powers', 'Powers'], ['monsters', 'Monsters'], ['party', 'Party']];
+  // F. tabs from other files: { id, name, after, subtitle, short, draw(g, x, y, w, h, T), open() }, placed after the tab `after`
+  const EXTRA = [];
+  const extraTab = id => EXTRA.find(t => t.id === id) || null;
+  function allTabs() {
+    const out = TABS.slice();
+    for (const t of EXTRA) { const i = out.findIndex(o => o[0] === t.after); out.splice(i >= 0 ? i + 1 : out.length, 0, [t.id, t.name]); }
+    return out;
+  }
+  function addTab(spec) {
+    if (!spec || typeof spec.id !== 'string' || typeof spec.draw !== 'function' || TABS.some(t => t[0] === spec.id) || extraTab(spec.id)) return false;
+    EXTRA.push(spec); return true;
+  }
   const SUBTITLE = {
     knights: 'Mute, send out or ban a knight. Nobody can do that to an admin.',
     powers: 'These change only your own knight.',
@@ -34831,12 +35081,13 @@ window.RETALIATE = RETALIATE;
 
   // ---------- the panel ----------
   function onTab(tab) {
+    const ex = extraTab(tab); if (ex && typeof ex.open === 'function') ex.open();
     if (tab === 'knights') askModlist();
     if (tab === 'powers' && (S.pinAt === undefined || nowMs() - S.pinAskedAt > 30000)) pin();
   }
   function open(tab) {
     if (!isAdmin()) return false;
-    if (tab && TABS.some(t => t[0] === tab)) S.tab = tab;
+    if (tab && allTabs().some(t => t[0] === tab)) S.tab = tab;
     S.view = null; freshSearch();
     openPanel('admin'); onTab(S.tab);
     return true;
@@ -34846,11 +35097,17 @@ window.RETALIATE = RETALIATE;
     const touchy = touchMode(), T = touchy ? 44 : 32;
     const { px, py, w, h } = panelBox(g, narrow ? VW - 20 : Math.min(660, VW - 20), Math.min(VH - 20, 660), 'Admin', '');
     // the book frame's umber close seal is already a kit row (44 px on touch), so the panel keeps it
-    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; const subW = w - 36 - 60; g.fillText(fit(g, g.measureText(SUBTITLE[S.tab]).width <= subW ? SUBTITLE[S.tab] : SUBTITLE_SHORT[S.tab], subW), px + 18, py + 50);
-    const tabW = (w - 36 - 3 * 6) / 4;
-    TABS.forEach(([id, name], i) => btn(g, px + 18 + i * (tabW + 6), py + 60, tabW, T, name, () => { if (S.tab !== id) { S.tab = id; S.view = null; freshSearch(); onTab(id); } }, S.tab === id ? SEL : '#21262d', true, 'admin:tab:' + id));
-    const x = px + 18, y = py + 60 + T + 10, cw = w - 36, ch = py + h - 12 - y;
-    if (S.tab === 'knights') { if (S.view && S.view.kind === 'mute') drawMuteChooser(g, x, y, cw, ch, T); else drawKnights(g, x, y, cw, ch, T); }
+    const tabs = allTabs(), ex = extraTab(S.tab);
+    if (!tabs.some(t => t[0] === S.tab)) S.tab = 'knights';
+    const sub = ex ? ex.subtitle || '' : SUBTITLE[S.tab], subShort = ex ? ex.short || ex.subtitle || '' : SUBTITLE_SHORT[S.tab];
+    g.fillStyle = '#8b949e'; g.font = '12px sans-serif'; g.textAlign = 'left'; const subW = w - 36 - 60; g.fillText(fit(g, g.measureText(sub).width <= subW ? sub : subShort, subW), px + 18, py + 50);
+    // one row of tabs when each can be at least 96 px wide, else as few rows as that allows (a phone: two)
+    const per0 = clamp(Math.floor((w - 36 + 6) / (96 + 6)), 1, tabs.length), rows = Math.ceil(tabs.length / per0), per = Math.ceil(tabs.length / rows);
+    const tabW = (w - 36 - (per - 1) * 6) / per;
+    tabs.forEach(([id, name], i) => btn(g, px + 18 + (i % per) * (tabW + 6), py + 60 + Math.floor(i / per) * (T + 6), tabW, T, name, () => { if (S.tab !== id) { S.tab = id; S.view = null; freshSearch(); onTab(id); } }, S.tab === id ? '#7a5a12' : '#21262d', true, 'admin:tab:' + id));
+    const x = px + 18, y = py + 60 + rows * (T + 6) + 4, cw = w - 36, ch = py + h - 12 - y;
+    if (ex) ex.draw(g, x, y, cw, ch, T);
+    else if (S.tab === 'knights') { if (S.view && S.view.kind === 'mute') drawMuteChooser(g, x, y, cw, ch, T); else drawKnights(g, x, y, cw, ch, T); }
     else if (S.tab === 'powers') { if (S.view && S.view.kind === 'give') drawGive(g, x, y, cw, ch, T); else drawPowers(g, x, y, cw, ch, T); }
     else if (S.tab === 'monsters') drawMonsters(g, x, y, cw, ch, T);
     else drawParty(g, x, y, cw, ch, T);
@@ -35093,6 +35350,7 @@ window.RETALIATE = RETALIATE;
     get god() { return S.god; }, setGod, teleportTo, startTeleport, give, spawn, clearSpawns,
     mute, unmute, kick, ban, unban, askModlist, get modlist() { return S.modlist; },
     isSpawn, SPAWN_LIVE_MAX, UNLOCKS, modSentence, plural, amount, monName, setSearch, setQty, state: S,
+    addTab, tabs: () => allTabs().map(t => t[0]),
   };
   window.ADMIN = ADMIN;
 
@@ -36500,6 +36758,679 @@ window.RETALIATE = RETALIATE;
       deathKeep = was.deathKeep; player.party = was.party; notice = was.notice; levelBanner = was.levelBanner;
       dialog.cur = was.dc; dialog.queue.length = 0; dialog.queue.push(...was.dq); drops = was.drops;
       tapCancel('manual'); closePanel(); h.peace(!!was.peace); recomputeMaxHp(); render();
+    }
+  });
+}
+
+// ---- src/78-accounts.js ----
+// ============================================================================
+// ACCOUNTS — every knight the world knows, in the Admin panel, logged in or not
+// Owner (2026-09-25): "can you add to the admin consol to see all the active accounts even if they are looged out with
+// the ability to reset their passwords and see how much time they have logged playing and when they have logged in"
+// docs/ONLINE.md, "Accounts", is the contract. The world answers GET /api/accounts only for a session whose knight is an
+// admin in its database, and checks the same on every POST /api/accounts/reset: this tab hiding itself from a player is
+// a convenience, never the lock.
+//
+// What is here, all inside 76-admin's panel as one more tab (ADMIN.addTab, after Knights), so the HUD work on 76 and this
+// file never touch the same lines:
+//   A. the list: every account, the ones on line first (a green dot and where they are), then the rest by when they
+//      were last on; each row says when they were last on, their time on line, their knight's play time and when the
+//      knight was made. It scrolls by drag, by the mouse wheel and by the Up / Down buttons. Refresh, and every 30 s by
+//      itself while the tab is open.
+//   B. a knight's page (a still tap on a row): the last 10 logins with how long each lasted, mute and ban (76's own
+//      calls, the same messages the Knights tab sends), and Reset secret word
+//   C. Reset secret word: a real text box over the canvas (guarded the way 71-login and 74-chat guard theirs, so no key
+//      reaches the game), a confirm step drawn in the panel (no confirm()), and the world's answer in plain words
+// Wraps by reassignment, with explicit arguments: pointerDown / pointerMove / pointerUp (a drag scrolls, a still tap
+// opens a row) and drawPanels (the text box shows only while its view is up). window.ACCOUNTS is the register.
+// ============================================================================
+{
+  const GOLD = '#f5c542', GREEN = '#3fb950', RED = '#f85149', ORANGE = '#ffb86b', DIM = '#8b949e', INK = '#e6edf3';
+  const REFRESH_EVERY = 30000;         // ms between automatic refreshes while the tab is open
+  const DRAG_SLOP = 8;                 // px a finger may wander and still be a tap
+  const ALWAYS = 8640000000000000;     // muted "until an admin unmutes" (online/src/store.js)
+  const WORD_MIN = 4, WORD_MAX = 40;   // the world takes 4 to 200; nobody types 40 on an iPad for a ten-year-old
+  const SPANS = [['5m', '5 minutes'], ['1h', '1 hour'], ['1d', '1 day'], ['always', 'Until I unmute']];
+
+  const S = {
+    list: null,           // the world's answer, cleaned: [{name, role, online, map, region, lastOn, ...}]
+    at: 0,                // nowMs() when it arrived: open logins and time on line keep counting from here
+    loading: false, error: null, askedAt: -1e9, asks: 0,
+    view: null,           // null = the list | { kind: 'acct', n } | { kind: 'mute', n } | { kind: 'reset', n, step, text }
+    scroll: { list: 0, acct: 0 }, areas: {},
+    drag: null,           // { key, id, x0, y0, s0, moved } while a finger or the mouse is down on a scroll area
+    down: null, mouse: null,
+    word: '',             // the new secret word being typed (never kept once the view closes)
+  };
+  const isAdmin = () => !!(window.ADMIN && ADMIN.is());
+  const tabOpen = () => isAdmin() && panel === 'admin' && ADMIN.state.tab === 'accounts';
+  const me = () => String(NET.me || '').toLowerCase();
+
+  // ---------- calls to /api, the way 76-admin makes them: a fake may answer on the spot ----------
+  const api = (method, path, body) => {
+    try { return NET.fake ? NET.fake.call(method, path, body, NET.token) : NET.call(method, path, body); }
+    catch (e) { return { __threw: e || new Error('failed') }; }
+  };
+  const when = (v, ok, bad) => {
+    if (v && typeof v.then === 'function') { v.then(ok, bad).catch(e => console.error('accounts', e)); return; }
+    if (v && v.__threw) bad(v.__threw); else ok(v);
+  };
+
+  // ---------- plain words: real dates in local time, exact lengths ----------
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // "Fri 25 Sep" (with the year when it is not this one)
+  const dayWords = ms => { const d = new Date(ms); return `${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}` + (d.getFullYear() !== new Date().getFullYear() ? ' ' + d.getFullYear() : ''); };
+  // "7:42 pm"
+  const clockWords = ms => { const d = new Date(ms), h = d.getHours(); return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`; };
+  // "Fri 25 Sep, 7:42 pm"
+  const whenWords = ms => dayWords(ms) + ', ' + clockWords(ms);
+  // "3h 12m", "12m", "under a minute"
+  const spanWords = ms => { const s = Math.floor(Math.max(0, ms) / 1000); if (s < 60) return 'under a minute'; const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60; return h ? `${h}h ${m}m` : `${m}m`; };
+  const fit = (g, text, maxW) => { let s = String(text); if (maxW <= 0) return ''; if (g.measureText(s).width <= maxW) return s; while (s.length > 1 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s + '…'; };
+  const whereOf = a => (!a.map || a.map === 'over') ? (a.region || 'the Fanglands') : (((window.INSTANCES && INSTANCES.get && INSTANCES.get(a.map)) || {}).name || a.region || String(a.map));
+  const onlineMsOf = a => a.onlineMs + (a.online ? Math.max(0, nowMs() - S.at) : 0);
+  const loginMsOf = l => l.ms + (l.open ? Math.max(0, nowMs() - S.at) : 0);
+  const playWords = a => a.playSeconds != null ? spanWords(a.playSeconds * 1000) : a.saveAt ? 'unknown' : 'no save yet';
+  const timeOnLine = a => `Time online: ${a.onlineMs > 0 || a.online ? spanWords(onlineMsOf(a)) : 'none yet'} (since ${dayWords(a.countedSince)})`;
+  const muteWords = a => { const left = a.mutedUntil - Date.now(); if (!(left > 0)) return null; return a.mutedUntil >= ALWAYS ? 'Muted until an admin turns chat back on' : `Muted for ${ADMIN.amount(left / 1000)} more`; };
+
+  // ---------- the world's list, cleaned (a field of the wrong kind is dropped, never drawn) ----------
+  const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+  function clean(a) {
+    if (!a || typeof a.name !== 'string' || !a.name) return null;
+    const logins = (Array.isArray(a.logins) ? a.logins : []).filter(l => l && num(l.at) !== null && num(l.ms) !== null).slice(0, 10).map(l => ({ at: l.at, ms: Math.max(0, l.ms), open: !!l.open }));
+    return {
+      name: a.name.slice(0, 40), role: a.role === 'admin' ? 'admin' : 'player', online: !!a.online, map: typeof a.map === 'string' ? a.map : null,
+      region: typeof a.region === 'string' ? a.region : null, created: num(a.created) || 0, lastOn: num(a.lastOn) || num(a.lastSeen) || 0,
+      lastLogin: num(a.lastLogin), onlineMs: Math.max(0, num(a.onlineMs) || 0), countedSince: num(a.countedSince) || num(a.created) || 0,
+      playSeconds: num(a.playSeconds), saveAt: num(a.saveAt), banned: !!a.banned, mutedUntil: num(a.mutedUntil) || 0, logins,
+    };
+  }
+  // the ones on line first (by name), then everyone else, the most recently on first
+  const byName = (a, b) => a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0;
+  const order = list => list.slice().sort((a, b) => (a.online !== b.online) ? (a.online ? -1 : 1) : a.online ? byName(a, b) : (b.lastOn - a.lastOn) || byName(a, b));
+  const find = n => (S.list || []).find(a => a.name.toLowerCase() === String(n).toLowerCase()) || null;
+
+  // force: ask again even while an answer is still on its way (the newest answer wins; a call that never answers stops
+  // blocking after 20 s)
+  function refresh(force) {
+    if (!isAdmin() || (S.loading && !force && nowMs() - S.askedAt < 20000)) return false;
+    S.loading = true; S.askedAt = nowMs();
+    const seq = ++S.asks;
+    when(api('GET', '/api/accounts'), r => {
+      if (seq !== S.asks) return;
+      S.loading = false;
+      if (!Array.isArray(r)) { S.error = 'bad'; return; }
+      S.list = order(r.map(clean).filter(Boolean)); S.at = nowMs(); S.error = null;
+    }, e => { if (seq !== S.asks) return; S.loading = false; S.error = (e && e.code) || (e && e.status ? 'http' : 'down'); });
+    return true;
+  }
+  const errorWords = code => code === 'admin' ? 'Only an admin can see this.' : code === 'auth' ? 'You are logged out. Log in again.' : 'Could not get the list. Tap Refresh to try again.';
+
+  // ---------- B. moderation from a knight's page: 76's own calls, so the world hears exactly what Knights sends ----------
+  // the world's answer (76 says it in words); a change that worked shows in the list at once
+  NET.on('mod', m => { if (m && m.ok && tabOpen()) refresh(true); });
+
+  // ---------- C. Reset secret word ----------
+  const RESET_WORDS = {
+    isadmin: "You can't change another admin's secret word.", self: 'Change your own secret word on the parent page.',
+    unknown: 'No knight by that name.', pass: 'The secret word needs at least 4 letters.', admin: 'Only an admin can do that.',
+    wait: 'That is a lot of changes at once. Wait a minute, then try again.', auth: 'You are logged out. Log in again.',
+  };
+  const cleanWord = w => String(w || '').replace(/\s+/g, ' ').trim().slice(0, WORD_MAX);
+  function setWord(text) { S.word = String(text == null ? '' : text).slice(0, WORD_MAX); if (box && box.input.value !== S.word) box.input.value = S.word; }
+  function startReset(n) { const a = find(n); if (!a || a.role === 'admin' || a.name.toLowerCase() === me()) return false; setWord(''); S.view = { kind: 'reset', n: a.name, step: 'type', text: '' }; return true; }
+  // Next: a word long enough goes to the confirm step; nothing is sent yet
+  function resetNext() {
+    const v = S.view; if (!v || v.kind !== 'reset' || v.step !== 'type') return false;
+    const w = cleanWord(S.word);
+    if (w.length < WORD_MIN) { v.text = 'That is too short. Use at least 4 letters.'; return false; }
+    v.word = w; v.step = 'confirm'; v.text = ''; blurBox(); return true;
+  }
+  // Yes: the one call; the answer in plain words
+  function resetSend() {
+    const v = S.view; if (!v || v.kind !== 'reset' || v.step !== 'confirm' || !isAdmin()) return false;
+    v.step = 'busy';
+    const n = v.n, word = v.word;
+    when(api('POST', '/api/accounts/reset', { name: n, pass: word }), r => {
+      if (S.view !== v) return;
+      if (!r || r.ok !== true) { v.step = 'failed'; v.text = 'That did not work. Try again.'; return; }
+      v.step = 'done'; v.text = `Done. ${r.name || n}'s secret word is now "${word}". Tell ${r.name || n}, then they log in with it.`;
+      v.word = ''; setWord(''); sfx('ui'); refresh(true);
+    }, e => {
+      if (S.view !== v) return;
+      v.step = 'failed'; v.text = RESET_WORDS[e && e.code] || 'That did not work. Try again.';
+      if (v.text === RESET_WORDS.pass) v.step = 'type';
+    });
+    return true;
+  }
+  function leaveReset() { const v = S.view; setWord(''); blurBox(); S.view = v && v.n ? { kind: 'acct', n: v.n } : null; }
+
+  // ---------- the text box: a real <input> over the canvas (16 px so Safari does not zoom), guarded ----------
+  // Built on first use, only where there is a document body (tools/headless.js has none). While it has the keyboard no
+  // key reaches the game: 05-input listens on window in the bubble phase, this listens in the capture phase and stops
+  // the event there (74-chat's guard). Enter is Next, Escape lets go of the keyboard.
+  let box = null, want = null;
+  function ensureBox() {
+    if (box !== null) return box;
+    if (typeof document === 'undefined' || !document.body || typeof document.createElement !== 'function' || typeof document.body.appendChild !== 'function') { box = false; return box; }
+    try {
+      const input = document.createElement('input');
+      input.type = 'text'; input.id = 'admin-secret'; input.autocomplete = 'off'; input.spellcheck = false; input.maxLength = WORD_MAX;
+      input.setAttribute('autocapitalize', 'none'); input.setAttribute('autocorrect', 'off'); input.setAttribute('enterkeyhint', 'next'); input.setAttribute('aria-label', 'New secret word');
+      input.placeholder = 'New secret word';
+      input.style.cssText = 'position:fixed;display:none;z-index:15;box-sizing:border-box;margin:0;padding:0 12px;font:16px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:#0b0f14;border:1px solid #f5c542;border-radius:8px;outline:none;-webkit-appearance:none;appearance:none;';
+      input.addEventListener('input', () => { S.word = String(input.value).slice(0, WORD_MAX); });
+      const guard = e => {
+        if (!box || document.activeElement !== box.input) return;
+        if (e.type === 'keydown') { if (e.key === 'Enter') { e.preventDefault(); resetNext(); } else if (e.key === 'Escape') { e.preventDefault(); blurBox(); } }
+        e.stopPropagation(); keys.clear();
+      };
+      for (const t of ['keydown', 'keyup', 'keypress']) window.addEventListener(t, guard, true);
+      document.body.appendChild(input);
+      box = { input, shown: false, key: '' };
+    } catch (e) { box = false; }
+    return box;
+  }
+  function showBox(w) {
+    const d = ensureBox(); if (!d) return;
+    // while it has the keyboard it rides just above the iPad's on-screen keyboard, never under it
+    let top = w.y;
+    const vv = window.visualViewport;
+    if (vv && typeof vv.height === 'number' && document.activeElement === d.input) { const bottom = (vv.offsetTop || 0) + vv.height - 8; if (top + w.h > bottom) top = Math.max(8, bottom - w.h); }
+    const k = [w.x, top, w.w, w.h].join(',');
+    if (d.key !== k) { d.key = k; const s = d.input.style; s.left = Math.round(w.x) + 'px'; s.top = Math.round(top) + 'px'; s.width = Math.round(w.w) + 'px'; s.height = Math.round(w.h) + 'px'; }
+    if (d.input.value !== S.word) d.input.value = S.word;
+    if (!d.shown) { d.shown = true; d.input.style.display = 'block'; }
+  }
+  function blurBox() { if (box && box.input) { try { box.input.blur(); } catch (e) { } } }
+  function hideBox() { if (!box || !box.shown) return; box.shown = false; box.key = ''; blurBox(); box.input.value = ''; box.input.style.display = 'none'; }
+  function focusBox() { const d = ensureBox(); if (!d) return; d.input.value = S.word; try { d.input.focus(); } catch (e) { } }
+
+  // ---------- drawing helpers ----------
+  function btn(g, x, y, w, h, text, action, color, enabled, key) {
+    g.font = 'bold 13px sans-serif'; button(g, x, y, w, h, fit(g, text, w - 10), action, color || '#238636', enabled !== false);
+    const b = buttons[buttons.length - 1]; if (key) b.label = (b.disabled ? 'disabled:' : '') + key; return b;
+  }
+  // a row of buttons: fixed widths first, then 'fill' ones share what is left
+  function row(g, x, y, w, h, specs) {
+    const gap = 6, fixed = specs.reduce((a, s) => a + (s.w === 'fill' ? 0 : s.w), 0), fills = specs.filter(s => s.w === 'fill').length;
+    const fillW = fills ? Math.max(44, (w - fixed - gap * (specs.length - 1)) / fills) : 0;
+    let cx = x;
+    for (const s of specs) { const bw = s.w === 'fill' ? fillW : s.w; btn(g, cx, y, bw, h, s.text, s.action, s.color, s.enabled, s.key); cx += bw + gap; }
+  }
+  function text(g, str, x, y, maxW, color, font) { g.font = font || '12px sans-serif'; g.textAlign = 'left'; g.fillStyle = color || DIM; g.fillText(fit(g, str, maxW), x, y); }
+  function pill(g, x, y) {
+    if (window.PLAYERS && PLAYERS.adminPill) return PLAYERS.adminPill(g, x, y, 9);
+    g.font = 'bold 9px sans-serif'; const w = g.measureText('ADMIN').width + 10;
+    roundRect(g, x, y - 7, w, 13, 6); g.fillStyle = GOLD; g.fill(); g.fillStyle = '#1a1300'; g.textAlign = 'center'; g.fillText('ADMIN', x + w / 2, y + 3); g.textAlign = 'left';
+    return w;
+  }
+  function dot(g, x, y, on) {
+    g.beginPath(); g.arc(x, y, 5, 0, Math.PI * 2);
+    if (on) { g.fillStyle = GREEN; g.fill(); } else { g.strokeStyle = '#484f58'; g.lineWidth = 1.5; g.stroke(); }
+  }
+  // the name, gold with the ADMIN tag for an admin; answers the x after it
+  function nameLine(g, a, x, y, maxW) {
+    g.font = 'bold 14px sans-serif'; g.textAlign = 'left'; g.fillStyle = a.role === 'admin' ? GOLD : INK;
+    const nm = fit(g, a.name, Math.max(30, maxW - (a.role === 'admin' ? 58 : 0))); g.fillText(nm, x, y);
+    let cx = x + g.measureText(nm).width + 6;
+    if (a.role === 'admin') cx += pill(g, cx, y - 4) + 6;
+    return cx;
+  }
+
+  // ---------- scrolling: one area per view, dragged, wheeled or stepped ----------
+  // The area's own hit rect goes in first, so every button drawn inside it (on top) still wins its tap; a button scrolled
+  // even partly out of sight is taken back out of `buttons`, so nothing hidden can be pressed.
+  function scrollArea(g, key, x, y, w, h, contentH, draw) {
+    const max = Math.max(0, Math.ceil(contentH - h));
+    S.scroll[key] = clamp(S.scroll[key] || 0, 0, max);
+    S.areas[key] = { x, y, w, h, max };
+    buttons.push({ x, y, w, h, label: 'acct:area:' + key, action: () => startDrag(key) });
+    const from = buttons.length;
+    g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
+    draw(y - S.scroll[key]);
+    g.restore();
+    for (let i = buttons.length - 1; i >= from; i--) { const b = buttons[i]; if (b.y < y - 0.5 || b.y + b.h > y + h + 0.5) buttons.splice(i, 1); }
+    if (max > 0) {   // where in the list this is: a thin bar on the right edge
+      const th = Math.max(24, h * h / contentH), ty = y + (h - th) * (S.scroll[key] / max);
+      roundRect(g, x + w - 4, ty, 3, th, 1.5); g.fillStyle = 'rgba(230,237,243,0.35)'; g.fill();
+    }
+    return max;
+  }
+  const scrollBy = (key, dy) => { const a = S.areas[key]; if (!a) return; S.scroll[key] = clamp((S.scroll[key] || 0) + dy, 0, a.max); };
+  function startDrag(key) {
+    const d = S.down; if (!d) return;
+    S.drag = { key, id: d.id, x0: d.x, y0: d.y, s0: S.scroll[key] || 0, moved: 0 };
+  }
+  // a still tap on the list opens that knight's page
+  function tapList(y) {
+    const a = S.areas.list, L = S.rows; if (!a || !L) return false;
+    const i = Math.floor((y - a.y + S.scroll.list) / S.rowH);
+    if (i < 0 || i >= L.length || y < a.y || y > a.y + a.h) return false;
+    openAccount(L[i].name); return true;
+  }
+  function openAccount(n) { const a = find(n); if (!a) return false; S.view = { kind: 'acct', n: a.name }; S.scroll.acct = 0; sfx('open'); return true; }
+  { const _pointerDown = pointerDown; pointerDown = function (x, y, id) { S.down = { x, y, id }; S.drag = null; return _pointerDown(x, y, id); }; }
+  { const _pointerMove = pointerMove;
+    pointerMove = function (x, y, id) {
+      if (id === 'mouse') S.mouse = { x, y };
+      const d = S.drag;
+      if (d && d.id === id) { d.moved = Math.max(d.moved, Math.hypot(x - d.x0, y - d.y0)); if (d.moved > DRAG_SLOP) { const a = S.areas[d.key]; S.scroll[d.key] = clamp(d.s0 - (y - d.y0), 0, a ? a.max : 0); } }
+      return _pointerMove(x, y, id);
+    }; }
+  { const _pointerUp = pointerUp;
+    pointerUp = function (id) {
+      const d = S.drag;
+      if (d && d.id === id) { S.drag = null; if (d.moved <= DRAG_SLOP && d.key === 'list' && tabOpen() && !S.view) tapList(d.y0); }
+      return _pointerUp(id);
+    }; }
+  // the mouse wheel over a scroll area (a laptop)
+  try {
+    if (typeof canvas !== 'undefined' && canvas && typeof canvas.addEventListener === 'function') canvas.addEventListener('wheel', e => {
+      if (!tabOpen() || !S.mouse) return;
+      for (const key of ['list', 'acct']) { const a = S.areas[key]; if (a && (key === 'list' ? !S.view : S.view && S.view.kind === 'acct') && inRect(S.mouse.x, S.mouse.y, a)) { e.preventDefault(); scrollBy(key, e.deltaY); return; } }
+    }, { passive: false });
+  } catch (e) { }
+
+  // ---------- A. the list ----------
+  function drawList(g, x, y, w, h, T) {
+    const wide = w >= 560;
+    const L = S.list || [];
+    const on = L.filter(a => a.online).length;
+    const summary = S.list ? `${L.length} knight${L.length === 1 ? '' : 's'}, ${on} online now · updated ${clockWords(Date.now() - (nowMs() - S.at))}` : S.loading ? 'Looking up every knight…' : errorWords(S.error);
+    // the bar: Refresh, what this is, Up / Down
+    const upDown = [
+      { text: 'Up', w: 64, action: () => scrollBy('list', -Math.max(S.rowH, (S.areas.list ? S.areas.list.h : 200) - S.rowH)), color: '#21262d', enabled: (S.scroll.list || 0) > 0, key: 'acct:up' },
+      { text: 'Down', w: 64, action: () => scrollBy('list', Math.max(S.rowH, (S.areas.list ? S.areas.list.h : 200) - S.rowH)), color: '#21262d', enabled: !!S.areas.list && (S.scroll.list || 0) < S.areas.list.max, key: 'acct:down' },
+    ];
+    const refreshBtn = { text: S.loading ? 'Looking…' : 'Refresh', w: wide ? 110 : 'fill', action: () => { refresh(); }, color: '#1f4e78', enabled: !S.loading, key: 'acct:refresh' };
+    let top;
+    if (wide) { row(g, x, y, 110, T, [refreshBtn]); row(g, x + w - 134, y, 134, T, upDown); text(g, summary, x + 120, y + T / 2 + 4, w - 120 - 142, S.error && !S.list ? ORANGE : DIM); top = y + T + 8; }
+    else { row(g, x, y, w, T, [refreshBtn].concat(upDown)); text(g, summary, x, y + T + 16, w, S.error && !S.list ? ORANGE : DIM); top = y + T + 24; }
+    if (!S.list) return;
+    if (!L.length) { text(g, 'No knights yet.', x, top + 18, w, DIM); return; }
+    S.rowH = wide ? 70 : 106; S.rows = L;
+    scrollArea(g, 'list', x, top, w, y + h - top, L.length * S.rowH, oy => {
+      L.forEach((a, i) => { const ry = oy + i * S.rowH; if (ry + S.rowH < top || ry > y + h) return; listRow(g, a, x, ry, w - 8, S.rowH - 6, wide); });
+    });
+  }
+  function listRow(g, a, x, y, w, h, wide) {
+    roundRect(g, x, y, w, h, 8); g.fillStyle = a.role === 'admin' ? 'rgba(245,197,66,0.08)' : 'rgba(255,255,255,0.05)'; g.fill();
+    dot(g, x + 14, y + 17, a.online);
+    const tags = [a.banned ? ['Banned', RED] : null, muteWords(a) ? ['Muted', ORANGE] : null].filter(Boolean);
+    g.font = 'bold 12px sans-serif'; const tagW = tags.reduce((s, t) => s + g.measureText(t[0]).width + 10, 0);
+    nameLine(g, a, x + 26, y + 22, w - 40 - tagW);
+    let tx = x + w - 10; g.textAlign = 'right';
+    for (const [t, c] of tags) { g.font = 'bold 12px sans-serif'; g.fillStyle = c; g.fillText(t, tx, y + 22); tx -= g.measureText(t).width + 10; }
+    g.textAlign = 'left';
+    const status = a.online ? `Online now in ${whereOf(a)}` : `Last on ${whenWords(a.lastOn)}`, made = `Made ${dayWords(a.created)}`, play = `Knight play time: ${playWords(a)}`;
+    const tw = w - 38;
+    if (wide) {
+      text(g, status, x + 26, y + 41, tw * 0.62, a.online ? GREEN : '#c9d1d9', '13px sans-serif');
+      text(g, made, x + 26 + tw * 0.64, y + 41, tw * 0.36, DIM);
+      text(g, timeOnLine(a), x + 26, y + 58, tw * 0.62, DIM);
+      text(g, play, x + 26 + tw * 0.64, y + 58, tw * 0.36, DIM);
+    } else {
+      text(g, status, x + 26, y + 41, tw, a.online ? GREEN : '#c9d1d9', '13px sans-serif');
+      text(g, timeOnLine(a), x + 26, y + 58, tw, DIM);
+      text(g, play, x + 26, y + 75, tw, DIM);
+      text(g, made, x + 26, y + 92, tw, DIM);
+    }
+  }
+
+  // ---------- B. a knight's page ----------
+  function drawAccount(g, x, y, w, h, T) {
+    const a = find(S.view.n);
+    const isMe = !!a && a.name.toLowerCase() === me();
+    // the bar: Back, the name, Up / Down when the page is taller than the panel
+    const over = S.areas.acct && S.areas.acct.max > 0;
+    btn(g, x, y, 90, T, 'Back', () => { S.view = null; }, '#21262d', true, 'acct:back');
+    if (over) row(g, x + w - 134, y, 134, T, [
+      { text: 'Up', w: 64, action: () => scrollBy('acct', -(S.areas.acct.h - 40)), color: '#21262d', enabled: (S.scroll.acct || 0) > 0, key: 'acct:page:up' },
+      { text: 'Down', w: 64, action: () => scrollBy('acct', S.areas.acct.h - 40), color: '#21262d', enabled: (S.scroll.acct || 0) < S.areas.acct.max, key: 'acct:page:down' }]);
+    if (!a) { text(g, S.loading ? 'Looking…' : 'That knight is not in the list any more.', x + 100, y + T / 2 + 5, w - 100, DIM, '13px sans-serif'); return; }
+    dot(g, x + 106, y + T / 2, a.online);
+    nameLine(g, a, x + 118, y + T / 2 + 5, w - 118 - (over ? 140 : 0));
+    const top = y + T + 10, wide = w >= 560;
+    // what the page holds, laid out once, then drawn at the scroll offset
+    const lines = [
+      [a.online ? `Online now in ${whereOf(a)}` : `Last on ${whenWords(a.lastOn)}`, a.online ? GREEN : INK],
+      [a.lastLogin ? `Last login: ${whenWords(a.lastLogin)}` : `Last login: none since ${dayWords(a.countedSince)}`, INK],
+      [timeOnLine(a), INK],
+      [`Knight play time: ${playWords(a)}`, INK],
+      [`Made ${whenWords(a.created)}`, DIM],
+      [muteWords(a) || 'Chat: on', muteWords(a) ? ORANGE : DIM],
+    ];
+    if (a.banned) lines.push(["Banned: can't log in", RED]);
+    if (isMe) lines.push(['This is you. Change your own secret word on the parent page.', GOLD]);
+    else if (a.role === 'admin') lines.push(['An admin. Only the parent page can change an admin.', GOLD]);
+    const LH = 20, colW = wide ? Math.floor(w * 0.5) - 8 : w - 8;
+    // a sentence too long for the column goes onto a second line rather than losing its end
+    for (let i = lines.length - 1; i >= 0; i--) { const parts = wrap(g, lines[i][0], colW, '13px sans-serif'); if (parts.length > 1) lines.splice(i, 1, ...parts.map(p => [p, lines[i][1]])); }
+    const acts = !isMe && a.role !== 'admin';
+    const leftH = lines.length * LH + 6 + (acts ? 2 * (T + 8) : 0);
+    const L = a.logins, logH = 24 + Math.max(1, L.length) * LH;
+    const contentH = wide ? Math.max(leftH, logH) : leftH + 12 + logH;
+    scrollArea(g, 'acct', x, top, w, y + h - top, contentH + 4, oy => {
+      lines.forEach(([s, c], i) => text(g, s, x, oy + 15 + i * LH, colW, c, '13px sans-serif'));
+      let by = oy + lines.length * LH + 6;
+      if (acts) {
+        const armB = confirmActive('acct:ban:' + a.name), armK = confirmActive('acct:kick:' + a.name), muted = !!muteWords(a);
+        const specs = [
+          muted ? { text: 'Unmute', w: 'fill', action: () => ADMIN.unmute(a.name), color: '#1f4e78', key: 'acct:unmute' }
+            : { text: 'Mute', w: 'fill', action: () => { S.view = { kind: 'mute', n: a.name }; }, color: '#1f4e78', key: 'acct:mute' },
+          a.banned ? { text: 'Unban', w: 'fill', action: () => ADMIN.unban(a.name), color: '#238636', key: 'acct:unban' }
+            : { text: armB ? 'Tap again' : 'Ban', w: 'fill', action: () => confirmTap('acct:ban:' + a.name, () => ADMIN.ban(a.name)), color: armB ? '#c0392b' : '#8b2e2e', key: 'acct:ban' },
+        ];
+        if (a.online) specs.push({ text: armK ? 'Tap again' : 'Kick', w: 'fill', action: () => confirmTap('acct:kick:' + a.name, () => ADMIN.kick(a.name)), color: armK ? '#c0392b' : '#6b4f2a', key: 'acct:kick' });
+        row(g, x, by, colW, T, specs); by += T + 8;
+        row(g, x, by, colW, T, [{ text: 'Reset secret word', w: 'fill', action: () => startReset(a.name), color: '#7a5a12', key: 'acct:reset' }]);
+      }
+      // the logins: beside the rest on a wide panel, under it on a narrow one
+      const lx = wide ? x + colW + 16 : x, ly = wide ? oy : oy + leftH + 12, lw = wide ? w - colW - 24 : w - 8;
+      text(g, L.length ? `LAST ${L.length === 1 ? 'LOGIN' : L.length + ' LOGINS'}` : 'LOGINS', lx, ly + 14, lw, GOLD, 'bold 12px sans-serif');
+      if (!L.length) text(g, `None since ${dayWords(a.countedSince)}, when counting began.`, lx, ly + 24 + 15, lw, DIM, '13px sans-serif');
+      L.forEach((l, i) => {
+        const yy = ly + 24 + i * LH + 15, len = l.open ? `on now, ${spanWords(loginMsOf(l))} so far` : spanWords(l.ms);
+        g.font = '13px sans-serif'; const lenW = g.measureText(len).width;
+        text(g, whenWords(l.at), lx, yy, lw - lenW - 12, INK, '13px sans-serif');
+        g.textAlign = 'right'; g.fillStyle = l.open ? GREEN : DIM; g.fillText(len, lx + lw, yy); g.textAlign = 'left';
+      });
+    });
+  }
+  // mute, from a knight's page: the four lengths, then back to that page
+  function drawMute(g, x, y, w, h, T) {
+    const n = S.view.n;
+    btn(g, x, y, 90, T, 'Back', () => { S.view = { kind: 'acct', n }; }, '#21262d', true, 'acct:mute:back');
+    text(g, `Mute ${n} for how long?`, x + 100, y + T / 2 + 5, w - 100, INK, 'bold 15px sans-serif');
+    text(g, 'They can still play. Only their chat is off.', x, y + T + 22, w, DIM);
+    const cols = w >= 420 ? 2 : 1, bw = (w - (cols - 1) * 8) / cols;
+    SPANS.forEach(([span, words], i) => btn(g, x + (i % cols) * (bw + 8), y + T + 36 + Math.floor(i / cols) * (T + 8), bw, T, words, () => { if (ADMIN.mute(n, span)) S.view = { kind: 'acct', n }; }, '#1f4e78', true, 'acct:span:' + span));
+  }
+  // C. the new secret word: type it, check it, change it
+  function drawReset(g, x, y, w, h, T) {
+    const v = S.view, n = v.n;
+    btn(g, x, y, 90, T, 'Back', leaveReset, '#21262d', v.step !== 'busy', 'acct:reset:back');
+    text(g, v.step === 'done' ? `${n} has a new secret word` : `New secret word for ${n}`, x + 100, y + T / 2 + 5, w - 100, INK, 'bold 15px sans-serif');
+    let yy = y + T + 14;
+    const lines = (s, color, font) => { for (const l of wrap(g, s, w, font || '13px sans-serif')) { text(g, l, x, yy + 14, w, color, font || '13px sans-serif'); yy += 20; } };
+    if (v.step === 'type') {
+      // the box: drawn here, the real <input> laid over it by the drawPanels wrap below
+      roundRect(g, x, yy, w, T, 8); g.fillStyle = '#0b0f14'; g.fill(); g.strokeStyle = GOLD; g.lineWidth = 1; g.stroke();
+      g.font = '15px sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = S.word ? INK : '#6e7681'; g.fillText(fit(g, S.word || 'Tap here and type it', w - 24), x + 12, yy + T / 2); g.textBaseline = 'alphabetic';
+      buttons.push({ x, y: yy, w, h: T, label: 'acct:wordbox', action: focusBox });
+      want = { x, y: yy, w, h: T };
+      yy += T + 8;
+      if (v.text) lines(v.text, ORANGE);
+      lines(`At least 4 letters. ${n} is sent out of the world and logs in again with the new word.`, DIM);
+      yy += 6;
+      btn(g, x, yy, Math.min(w, 220), T, 'Next', resetNext, '#238636', cleanWord(S.word).length >= WORD_MIN, 'acct:reset:next');
+    } else if (v.step === 'confirm') {
+      lines(`Change ${n}'s secret word to "${v.word}"?`, INK, 'bold 15px sans-serif');
+      lines(`${n} is sent out of the world straight away and needs this word to log in again.`, DIM);
+      yy += 6;
+      row(g, x, yy, Math.min(w, 460), T, [
+        { text: 'No, go back', w: 'fill', action: () => { v.step = 'type'; v.text = ''; }, color: '#21262d', key: 'acct:reset:no' },
+        { text: 'Yes, change it', w: 'fill', action: resetSend, color: '#c0392b', key: 'acct:reset:yes' }]);
+    } else if (v.step === 'busy') {
+      lines('Changing it…', DIM);
+    } else {
+      lines(v.text, v.step === 'done' ? GREEN : ORANGE, v.step === 'done' ? 'bold 14px sans-serif' : '13px sans-serif');
+      yy += 6;
+      btn(g, x, yy, Math.min(w, 220), T, `Back to ${n}`, leaveReset, '#21262d', true, 'acct:reset:done');
+    }
+  }
+  // words onto lines no wider than w
+  function wrap(g, s, w, font) {
+    g.font = font; const out = []; let cur = '';
+    for (const word of String(s).split(' ')) { const t = cur ? cur + ' ' + word : word; if (cur && g.measureText(t).width > w) { out.push(cur); cur = word; } else cur = t; }
+    if (cur) out.push(cur); return out;
+  }
+
+  function draw(g, x, y, w, h, T) {
+    if (!isAdmin()) return;
+    const v = S.view;
+    if (v && v.kind === 'acct') drawAccount(g, x, y, w, h, T);
+    else if (v && v.kind === 'mute') drawMute(g, x, y, w, h, T);
+    else if (v && v.kind === 'reset') drawReset(g, x, y, w, h, T);
+    else drawList(g, x, y, w, h, T);
+  }
+
+  // one more tab in the Admin panel, after Knights
+  if (window.ADMIN && ADMIN.addTab) ADMIN.addTab({
+    id: 'accounts', name: 'Accounts', after: 'knights', draw,
+    subtitle: 'Every knight, online or not: when they were on, for how long, and a new secret word.',
+    short: 'Every knight, online or not.',
+    open: () => { S.view = null; S.scroll.list = 0; refresh(); },
+  });
+
+  // the text box shows only while its view is drawn (and never under the pause menu)
+  { const _drawPanels = drawPanels;
+    drawPanels = function (g, narrow, short, qh, hb) {
+      want = null;
+      const r = _drawPanels(g, narrow, short, qh, hb);
+      const v = S.view;
+      if (want && tabOpen() && !paused && v && v.kind === 'reset' && v.step === 'type') showBox(want); else hideBox();
+      return r;
+    }; }
+
+  // ---------- every frame: the 30 s refresh; everything forgotten when the role or the line goes ----------
+  function forget() { S.asks++; S.list = null; S.view = null; S.error = null; S.loading = false; S.askedAt = -1e9; S.drag = null; S.scroll = { list: 0, acct: 0 }; S.areas = {}; setWord(''); hideBox(); }
+  NET.on('welcome', forget);
+  NET.on('offline', forget);
+  NET.on('role', () => { if (NET.role !== 'admin') forget(); });
+  HOOKS.update.push(() => {
+    if (!tabOpen()) { if (S.view && S.view.kind === 'reset') leaveReset(); if (S.drag) S.drag = null; return; }
+    if (!S.loading && nowMs() - S.askedAt >= REFRESH_EVERY) refresh();
+  });
+
+  const ACCOUNTS = {
+    refresh, openAccount, startReset, resetNext, resetSend, setWord, scrollBy, tapList,
+    whenWords, dayWords, spanWords, order, clean, REFRESH_EVERY, state: S,
+  };
+  window.ACCOUNTS = ACCOUNTS;
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'accounts: ';
+    if (window.INSTANCES && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, touch: window.__forceTouch, peace: window.__peace, notice, paused, vw: window.innerWidth, vh: window.innerHeight, tab: ADMIN.state.tab };
+    // a small world: welcomes MudGoll with whatever role the test says, answers the two account calls, records everything
+    let sock = null, role = 'admin';
+    const sent = [], calls = [];
+    const world = {
+      list: [], resetFail: null,
+      call(method, path, body) {
+        calls.push({ method, path, body });
+        const fail = (code, status) => { const e = new Error(code); e.code = code; e.status = status; throw e; };
+        if (path === '/api/accounts' && method === 'GET') return JSON.parse(JSON.stringify(world.list));
+        if (path === '/api/accounts/reset' && method === 'POST') { if (world.resetFail) fail(world.resetFail, 403); return { ok: true, name: body.name }; }
+        if (path === '/api/save/pin') return { at: null, bytes: 0 };
+        return {};
+      },
+      open() { const s = { readyState: 1, send(str) { const m = JSON.parse(str); sent.push(m); if (m.t === 'hello') s.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'MudGoll', at: 1, keeper: 'MudGoll', role }) }); }, close() { s.readyState = 3; } }; sock = s; return s; },
+    };
+    const feed = m => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(m) }); };
+    const connect = r => { role = r; NET.disconnect(); NET.token = 'accounts-test'; NET.connect(); };
+    const gets = () => calls.filter(c => c.path === '/api/accounts').length;
+    const resets = () => calls.filter(c => c.path === '/api/accounts/reset');
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const has = label => buttons.some(b => b.label === label);
+    // a canvas that remembers what was written
+    const rec = [], st = {};
+    const g2 = new Proxy(st, { get: (t, k) => k === 'measureText' ? (s => ({ width: String(s).length * 6 })) : k === 'fillText' ? ((s) => { rec.push(String(s)); }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : (k in st ? st[k] : () => { }), set: (t, k, v) => { st[k] = v; return true; } });
+    const drawn = () => { rec.length = 0; HOOKS.panel.admin(g2, false); const out = rec.splice(0); render(); return out; };
+    // the list the world answers: three on line (one of them the admin himself), an admin, a banned knight with no save,
+    // a muted one whose save has no play time, and twenty more
+    const now = Date.now(), M = 60000, HR = 60 * M, DAY = 24 * HR, since = now - 2 * DAY;
+    const lg = (ago, ms, open) => ({ at: now - ago, ms, open: !!open });
+    const base = { role: 'player', online: false, map: null, region: null, lv: null, created: now - 20 * DAY, lastLogin: null, onlineMs: 0, countedSince: since, playSeconds: 600, saveAt: now - DAY, banned: false, mutedUntil: 0, logins: [] };
+    const acct = o => Object.assign({}, base, o);
+    const cohenLogins = [lg(71 * M, 71 * M, true), lg(20 * HR, 48 * M), lg(22 * HR, 12 * M), lg(DAY + 3 * HR, 64 * M), lg(DAY + 6 * HR, 20 * M), lg(DAY + 9 * HR, 30000), lg(2 * DAY, 9 * M), lg(2 * DAY + HR, 17 * M), lg(2 * DAY + 2 * HR, 41 * M), lg(2 * DAY + 3 * HR, 25 * M)];
+    const denName = ((window.INSTANCES && INSTANCES.get('spider_den')) || {}).name || 'Spider Den';
+    world.list = [
+      acct({ name: 'Ada', role: 'admin', lastOn: now - 3 * HR, lastLogin: now - 5 * HR, onlineMs: 6 * HR, playSeconds: 30 * 3600, logins: [lg(5 * HR, 2 * HR)] }),
+      acct({ name: 'Bo', banned: true, lastOn: now - 4 * DAY, playSeconds: null, saveAt: null }),
+      acct({ name: 'Cohen', online: true, map: 'over', region: 'Wolfwood', lv: 34, created: now - 28 * DAY, lastOn: now, lastLogin: now - 71 * M, onlineMs: 3 * HR + 12 * M, playSeconds: 14 * 3600 + 5 * 60, logins: cohenLogins }),
+      acct({ name: 'MudGoll', role: 'admin', online: true, map: 'over', region: 'Thistledown', lv: 99, lastOn: now, lastLogin: now - 40 * M, onlineMs: 9 * HR, logins: [lg(40 * M, 40 * M, true)] }),
+      acct({ name: 'Pip', mutedUntil: now + 10 * M, lastOn: now - 30 * HR, lastLogin: now - 31 * HR, onlineMs: 58 * M, playSeconds: null, logins: [lg(31 * HR, 58 * M)] }),
+      acct({ name: 'Sam', online: true, map: 'spider_den', region: 'Spider Den', lv: 21, lastOn: now, lastLogin: now - 18 * M, onlineMs: 18 * M, logins: [lg(18 * M, 18 * M, true)] }),
+    ];
+    for (let i = 1; i <= 20; i++) world.list.push(acct({ name: 'Knight ' + String(i).padStart(2, '0'), lastOn: now - (40 + i) * HR, lastLogin: now - (41 + i) * HR, onlineMs: i * M, logins: [lg((41 + i) * HR, i * M)] }));
+    try {
+      NET.enabled = true; NET.useFake(world); dialog.cur = null; dialog.queue.length = 0; closePanel(); paused = false; h.peace(true); window.__forceTouch = false;
+      try { window.innerWidth = 1000; window.innerHeight = 700; } catch (e) { } render();
+
+      // ---- the words: real dates in local time, exact lengths ----
+      { const Y = new Date().getFullYear(), d = new Date(Y, 8, 25, 19, 42), old = new Date(Y - 1, 0, 3, 9, 5);
+        const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const words = [whenWords(d.getTime()), whenWords(old.getTime()), spanWords((3 * 3600 + 12 * 60) * 1000), spanWords(12 * 60000 + 59000), spanWords(59999), spanWords((14 * 3600 + 5 * 60) * 1000), dayWords(d.getTime())];
+        const want = [dow[d.getDay()] + ' 25 Sep, 7:42 pm', dow[old.getDay()] + ' 3 Jan ' + (Y - 1) + ', 9:05 am', '3h 12m', '12m', 'under a minute', '14h 5m', dow[d.getDay()] + ' 25 Sep'];
+        check(P + 'dates read like "Fri 25 Sep, 7:42 pm" in local time (the year only when it is not this one); lengths like "3h 12m", "12m", "under a minute"', same(words, want), { words, want }); }
+
+      // ---- a player never sees the tab, never asks for the list ----
+      { connect('player'); closePanel(); const noOpen = ADMIN.open('accounts') === false; openPanel('admin'); render(); const shut = panel !== 'admin';
+        const noRefresh = refresh() === false, noTab = !has('admin:tab:accounts'), none = gets() === 0;
+        // the world refusing a player (a stale admin screen) reads in plain words and draws no list
+        connect('admin'); closePanel(); const w0 = world.call; world.call = (m, p, b) => { if (p === '/api/accounts') { calls.push({ path: p }); const e = new Error('admin'); e.code = 'admin'; e.status = 403; throw e; } return w0(m, p, b); };
+        ADMIN.open('accounts'); render(); const refusedText = drawn(); world.call = w0;
+        const refused = S.list === null && S.error === 'admin' && refusedText.includes('Only an admin can see this.');
+        check(P + "a player never sees Accounts: no tab, the panel will not open, and nothing is asked of the world; the world's own refusal reads in plain words", noOpen && shut && noRefresh && noTab && none && refused, { noOpen, shut, noRefresh, noTab, none, refused, error: S.error }); }
+
+      // ---- an admin: the tab after Knights, one ask, every account in order ----
+      { closePanel(); calls.length = 0; ADMIN.open('knights'); render(); F.clickButton('admin:tab:accounts'); render();
+        const tabs = ADMIN.tabs().join(','), asked = gets() === 1, tabHere = has('admin:tab:accounts');
+        const names = (S.list || []).map(a => a.name);
+        const wantOrder = ['Cohen', 'MudGoll', 'Sam', 'Ada', 'Pip', 'Bo'].concat(world.list.filter(a => /^Knight/.test(a.name)).map(a => a.name));
+        wantOrder.splice(5, 0, ...wantOrder.splice(6, 20));   // the twenty (41 h and more ago) come before Bo (4 days ago)
+        // walk the whole list with Down, collecting what was drawn on every page
+        const seen = new Set(drawn()); let downs = 0;
+        while (has('acct:down') && downs < 40) { F.clickButton('acct:down'); downs++; for (const t of drawn()) seen.add(t); }
+        const upAgain = F.clickButton('acct:up') && S.scroll.list < S.areas.list.max;
+        const text = Array.from(seen), onlyNames = names.every(n => text.includes(n));
+        const a = n => world.list.find(x => x.name === n);
+        const lines = [
+          'Online now in Wolfwood', 'Online now in ' + denName, 'Online now in Thistledown',
+          'Time online: 3h 12m (since ' + dayWords(since) + ')', 'Knight play time: 14h 5m', 'Made ' + dayWords(a('Cohen').created),
+          'Last on ' + whenWords(a('Ada').lastOn), 'Last on ' + whenWords(a('Knight 20').lastOn), 'Time online: 20m (since ' + dayWords(since) + ')',
+          'Time online: none yet (since ' + dayWords(since) + ')', 'Banned', 'Muted', 'ADMIN',
+        ];
+        const missing = lines.filter(l => !text.some(t => t === l || t.startsWith(l)));
+        const phoneLines = ['Knight play time: no save yet', 'Made ' + dayWords(a('Bo').created), 'Knight play time: unknown', 'Made ' + dayWords(a('Pip').created)];
+        try { window.innerWidth = 390; window.innerHeight = 844; } catch (e) { } render();
+        const phone = new Set(); S.scroll.list = 0; for (let i = 0; i < 40; i++) { for (const t of drawn()) phone.add(t); if (!has('acct:down')) break; F.clickButton('acct:down'); }
+        const phoneMissing = phoneLines.filter(l => !phone.has(l));
+        try { window.innerWidth = 1000; window.innerHeight = 700; } catch (e) { } S.scroll.list = 0; render();
+        check(P + 'an admin gets the Accounts tab after Knights; opening it asks the world once; every account is drawn, the ones on line first with where they are, then by when they were last on, each with its time on line, knight play time and the day it was made; Down walks the whole list and Up comes back', tabs === 'knights,accounts,powers,monsters,party' && asked && tabHere && same(names, wantOrder) && onlyNames && downs > 0 && upAgain && missing.length === 0 && phoneMissing.length === 0,
+          { tabs, asked, tabHere, order: same(names, wantOrder) ? 'ok' : names, onlyNames, downs, upAgain, missing, phoneMissing }); }
+
+      // ---- scrolling by drag, and a still tap that opens a knight's page ----
+      { closePanel(); ADMIN.open('accounts'); render(); drawn();
+        const A = S.areas.list, rh = S.rowH, s0 = S.scroll.list;
+        const cx = A.x + A.w / 2, cy = A.y + A.h - 20;
+        pointerDown(cx, cy, 'mouse'); pointerMove(cx, cy - 60, 'mouse'); pointerMove(cx, cy - 150, 'mouse'); pointerUp('mouse');
+        const dragged = S.scroll.list === s0 + 150 && S.view === null;
+        render();
+        const i = Math.floor((A.y + 30 - A.y + S.scroll.list) / rh), who = S.rows[i].name;
+        pointerDown(cx, A.y + 30, 'mouse'); pointerMove(cx + 3, A.y + 33, 'mouse'); pointerUp('mouse');
+        const opened = !!S.view && S.view.kind === 'acct' && S.view.n === who;
+        render(); F.clickButton('acct:back'); const back = S.view === null;
+        // a drag that starts on a row and ends far away is a scroll, never a tap
+        render(); pointerDown(cx, A.y + 100, 'mouse'); pointerMove(cx, A.y + 20, 'mouse'); pointerUp('mouse'); const noTap = S.view === null;
+        check(P + 'the list scrolls by drag (150 px of finger is 150 px of list) and a still tap on a row opens that knight; a drag that starts on a row never opens it', dragged && opened && back && noTap, { dragged, scroll: [s0, S.scroll.list], who, opened, back, noTap }); }
+
+      // ---- a knight's page: the last 10 logins, and mute / ban / kick through the same messages Knights sends ----
+      { closePanel(); ADMIN.open('accounts'); render(); calls.length = 0; sent.length = 0; openAccount('Cohen'); render();
+        const text = drawn();
+        const logins = cohenLogins.every(l => text.includes(whenWords(l.at))) && text.includes('48m') && text.includes('1h 4m') && text.includes('under a minute') && text.some(t => /^on now, 1h 11m so far$/.test(t)) && text.includes('LAST 10 LOGINS');
+        const info = ['Online now in Wolfwood', 'Last login: ' + whenWords(now - 71 * M), 'Knight play time: 14h 5m', 'Chat: on'].every(l => text.includes(l));
+        const btns = ['acct:mute', 'acct:ban', 'acct:kick', 'acct:reset'].every(has);
+        F.clickButton('acct:mute'); render(); const chooser = S.view.kind === 'mute' && has('acct:span:1h');
+        F.clickButton('acct:span:1h'); const muted = same(sent.filter(m => m.t === 'mute').pop(), { t: 'mute', n: 'Cohen', span: '1h' }) && S.view.kind === 'acct';
+        render(); F.clickButton('acct:ban'); const armed = !sent.some(m => m.t === 'ban'); render(); F.clickButton('acct:ban'); const banned = same(sent.filter(m => m.t === 'ban').pop(), { t: 'ban', n: 'Cohen' });
+        const g0 = gets(); feed({ t: 'mod', ok: true, act: 'ban', n: 'Cohen' }); const again = gets() === g0 + 1;
+        openAccount('Ada'); const adaText = drawn(); const adaBare = !['acct:mute', 'acct:ban', 'acct:kick', 'acct:reset', 'acct:unmute'].some(has) && adaText.join(' ').includes('An admin. Only the parent page can change an admin.');
+        openAccount('MudGoll'); const meText = drawn(); const meBare = !['acct:mute', 'acct:ban', 'acct:reset'].some(has) && meText.join(' ').includes('This is you. Change your own secret word on the parent page.');
+        openAccount('Pip'); const pipText = drawn(); const pip = has('acct:unmute') && !has('acct:kick') && pipText.some(t => /^Muted for 10 minutes more$/.test(t)) && pipText.includes('LAST LOGIN');
+        openAccount('Bo'); const boText = drawn(); const bo = has('acct:unban') && boText.includes("Banned: can't log in") && boText.includes('Last login: none since ' + dayWords(since)) && boText.includes('None since ' + dayWords(since) + ', when counting began.');
+        check(P + "a knight's page: the last 10 logins with the day, time and length (the open one still counting), where they are, their times; Mute (by the chooser), Ban (two taps) and Kick send the Knights tab's messages and the list refreshes after; an admin and yourself get no buttons; Unmute and Unban when muted or banned", logins && info && btns && chooser && muted && armed && banned && again && adaBare && meBare && pip && bo,
+          { logins, info, btns, chooser, muted, armed, banned, again, adaBare, meBare, pip, bo }); }
+
+      // ---- Reset secret word: type, a check in the page, one call, the answer in plain words ----
+      { closePanel(); ADMIN.open('accounts'); render(); calls.length = 0; openAccount('Cohen'); render();
+        F.clickButton('acct:reset'); render();
+        const typing = S.view.kind === 'reset' && S.view.step === 'type' && has('acct:wordbox');
+        setWord('ab'); render(); const off = has('disabled:acct:reset:next') && resetNext() === false && S.view.text === 'That is too short. Use at least 4 letters.' && resets().length === 0;
+        setWord('  dragon   fire '); render(); F.clickButton('acct:reset:next'); const text = drawn();
+        const asks = S.view.step === 'confirm' && resets().length === 0 && text.includes('Change Cohen\'s secret word to "dragon fire"?') && has('acct:reset:yes') && has('acct:reset:no');
+        F.clickButton('acct:reset:no'); const backToType = S.view.step === 'type' && S.word === '  dragon   fire ';
+        render(); F.clickButton('acct:reset:next'); render(); const g0 = gets(); F.clickButton('acct:reset:yes');
+        const r = resets(); const one = r.length === 1 && same(r[0].body, { name: 'Cohen', pass: 'dragon fire' }) && r[0].method === 'POST';
+        const doneText = drawn();
+        const done = S.view.step === 'done' && doneText.includes('Cohen has a new secret word') && S.view.text === 'Done. Cohen\'s secret word is now "dragon fire". Tell Cohen, then they log in with it.' && S.word === '' && gets() === g0 + 1;
+        F.clickButton('acct:reset:done'); const home = S.view.kind === 'acct' && S.view.n === 'Cohen';
+        // the world says no: each code in plain words, nothing else changes
+        const said = {};
+        for (const code of ['isadmin', 'self', 'wait', 'unknown', 'boom']) { world.resetFail = code; startReset('Cohen'); setWord('shield'); resetNext(); resetSend(); said[code] = S.view.step + ': ' + S.view.text; }
+        world.resetFail = 'pass'; startReset('Cohen'); setWord('shield'); resetNext(); resetSend(); const passBack = S.view.step === 'type' && S.view.text === 'The secret word needs at least 4 letters.';
+        world.resetFail = null;
+        const wantSaid = { isadmin: "failed: You can't change another admin's secret word.", self: 'failed: Change your own secret word on the parent page.', wait: 'failed: That is a lot of changes at once. Wait a minute, then try again.', unknown: 'failed: No knight by that name.', boom: 'failed: That did not work. Try again.' };
+        // closing the panel with a word typed forgets the word
+        startReset('Cohen'); setWord('secret'); closePanel(); F.step([]); const forgot = S.word === '' && S.view && S.view.kind === 'acct';
+        const noAdmin = startReset('Ada') === false && startReset('MudGoll') === false;
+        check(P + 'Reset secret word: Next stays off under 4 letters; the page asks "Change Cohen\'s secret word to ...?" before anything is sent; No goes back with the word kept; Yes sends exactly POST /api/accounts/reset {name, pass} (spaces tidied), says it is done in plain words and refreshes the list; each refusal reads as a sentence; the word is forgotten once done or when the panel closes; never offered for an admin or yourself',
+          typing && off && asks && backToType && one && done && home && same(said, wantSaid) && passBack && forgot && noAdmin, { typing, off, asks, backToType, one, body: r[0] && r[0].body, done, view: S.view && S.view.text, home, said, passBack, forgot, noAdmin }); }
+
+      // ---- every 30 s while open, never while shut; a demotion forgets everything ----
+      { closePanel(); ADMIN.open('accounts'); render(); const g0 = gets();
+        S.askedAt = nowMs() - REFRESH_EVERY - 1; F.step([]); const ticked = gets() === g0 + 1;
+        F.step([]); const once = gets() === g0 + 1;
+        closePanel(); S.askedAt = nowMs() - REFRESH_EVERY - 1; F.step([]); const quiet = gets() === g0 + 1;
+        ADMIN.open('accounts'); openAccount('Cohen'); startReset('Cohen'); setWord('sneaky');
+        feed({ t: 'role', role: 'player' }); const gone = panel !== 'admin' && S.list === null && S.view === null && S.word === '';
+        connect('admin');
+        check(P + 'the list refreshes itself every 30 s while the tab is open and never while it is shut; a demotion closes it and forgets the list, the page and any word typed', ticked && once && quiet && gone, { ticked, once, quiet, gone }); }
+
+      // ---- layout: every view keeps its buttons inside the panel, clear of each other, 44 px on touch ----
+      { closePanel(); connect('admin');
+        const sizes = [[390, 844, 'phone'], [844, 390, 'landscape phone'], [768, 1024, 'iPad'], [1024, 768, 'iPad landscape'], [1280, 800, 'laptop']];
+        const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+        const hits = [], small = [], done = [];
+        for (const touchOn of [false, true]) {
+          window.__forceTouch = touchOn;
+          for (const [w, hh, name] of sizes) {
+            try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { }
+            closePanel(); render(); if (VW !== w || VH !== hh) continue;
+            const tag = name + (touchOn ? ' touch' : '');
+            for (const view of ['list', 'acct', 'acct-admin', 'mute', 'type', 'confirm', 'done']) {
+              ADMIN.open('accounts'); render();
+              if (view !== 'list') openAccount(view === 'acct-admin' ? 'Ada' : 'Cohen');
+              if (view === 'mute') S.view = { kind: 'mute', n: 'Cohen' };
+              if (view === 'type' || view === 'confirm' || view === 'done') { startReset('Cohen'); setWord('dragon'); if (view !== 'type') resetNext(); if (view === 'done') resetSend(); }
+              render(); render();
+              const r = panelRect, mine = buttons.slice(ADMIN.state.panelFrom || 0).filter(b => b.w > 0 && b.h > 0 && !/^acct:area:/.test(b.label));
+              for (const b of mine) if (!r || b.x < r.x - 1 || b.y < r.y - 1 || b.x + b.w > r.x + r.w + 1 || b.y + b.h > r.y + r.h + 1) hits.push(`${tag} ${view}: ${b.label} leaves the panel`);
+              for (let i = 0; i < mine.length; i++) for (let j = i + 1; j < mine.length; j++) if (overlap(mine[i], mine[j])) hits.push(`${tag} ${view}: ${mine[i].label} × ${mine[j].label}`);
+              const area = S.areas[view === 'list' ? 'list' : 'acct'];
+              if (area && (view === 'list' || /^acct/.test(view)) && (area.h < 88 || area.y + area.h > r.y + r.h)) hits.push(`${tag} ${view}: the scroll area is ${Math.round(area.h)} px tall`);
+              if (touchOn) for (const b of mine) if (b.h < 44 || b.w < 44) small.push(`${tag} ${view}: ${b.label} ${Math.round(b.w)}x${Math.round(b.h)}`);
+              done.push(tag + ' ' + view); closePanel(); F.step([]);
+            }
+          }
+        }
+        try { window.innerWidth = was.vw; window.innerHeight = was.vh; } catch (e) { } window.__forceTouch = was.touch;
+        check(P + 'layout: the list, a knight\'s page (a player\'s and an admin\'s), the mute chooser and every step of Reset secret word keep their buttons inside the panel and clear of each other at phone, landscape phone, iPad (both ways) and laptop sizes, touch on and off, with room to scroll; on touch every button is at least 44 px', hits.length === 0 && small.length === 0 && done.length === 70, { hits: hits.slice(0, 12), small: small.slice(0, 12), done: done.length }); }
+    } catch (e) {
+      check(P + 'the accounts self-test ran to the end without an exception', false, { error: String((e && e.stack) || e).slice(0, 800) });
+    } finally {
+      forget(); world.resetFail = null;
+      NET.disconnect(); NET.emit('offline', { t: 'offline' }); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; NET.role = 'player';
+      if (window.COOP) COOP.reset();
+      window.__forceTouch = was.touch; try { window.innerWidth = was.vw; window.innerHeight = was.vh; } catch (e) { }
+      ADMIN.state.tab = 'knights'; ADMIN.state.view = null;
+      closePanel(); h.peace(was.peace); paused = was.paused; notice = was.notice;
+      render();
     }
   });
 }

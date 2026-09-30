@@ -6,8 +6,11 @@
 // Pure JavaScript: no Cloudflare APIs, so plain Node can load it.
 //
 // Migrations keep everything: the old CREATE TABLE statements run unchanged, the new tables are only ever
-// created if missing, and migrate() adds the two new accounts columns only when they are not there yet. Nothing
+// created if missing, and migrate() adds the new accounts columns only when they are not there yet. Nothing
 // is dropped, renamed or retyped, and running it again changes nothing. docs/ONLINE.md, "The database".
+//
+// Logins (docs/ONLINE.md, "Accounts"): one row per socket a knight opens, from join to close, the newest LOGINS_KEPT
+// per knight. Every closed row adds its length to accounts.online_ms, so the total never shrinks when old rows go.
 // ============================================================================
 
 import { PRIZE_KEEP, crackerId } from './party.js';
@@ -16,6 +19,7 @@ export const ALWAYS = 8640000000000000;   // the last date JavaScript knows: mut
 const MOD_LOG_KEPT = 5000;                 // the newest rows of mod_log that are kept
 const PRUNE_EVERY = 200;                   // mod_log writes between two trims (and the first write after a wake)
 const TRADES_KEPT = 5000;                  // the newest rows of trades that are kept (the same trim rhythm)
+export const LOGINS_KEPT = 50;             // login rows kept per knight (the totals live in accounts.online_ms)
 
 // The first six statements are world.js's schema from before admins, verbatim. Split on ';' to run.
 export const SCHEMA = `
@@ -35,7 +39,9 @@ CREATE TABLE IF NOT EXISTS crackers (party INTEGER NOT NULL, k INTEGER NOT NULL,
 CREATE INDEX IF NOT EXISTS crackers_by_lighter ON crackers (lit_by, claimed);
 CREATE TABLE IF NOT EXISTS trades (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, a TEXT NOT NULL, a_lc TEXT NOT NULL, b TEXT NOT NULL, b_lc TEXT NOT NULL, a_gave TEXT NOT NULL, b_gave TEXT NOT NULL, a_ack INTEGER NOT NULL DEFAULT 0, b_ack INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS trades_by_a ON trades (a_lc, a_ack);
-CREATE INDEX IF NOT EXISTS trades_by_b ON trades (b_lc, b_ack)
+CREATE INDEX IF NOT EXISTS trades_by_b ON trades (b_lc, b_ack);
+CREATE TABLE IF NOT EXISTS logins (id INTEGER PRIMARY KEY AUTOINCREMENT, name_lc TEXT NOT NULL, started INTEGER NOT NULL, seen INTEGER NOT NULL, ended INTEGER);
+CREATE INDEX IF NOT EXISTS logins_by_name ON logins (name_lc, id)
 `;
 
 // The columns accounts gained for admins. Added with ALTER TABLE ... ADD COLUMN, which never rewrites a row:
@@ -43,6 +49,7 @@ CREATE INDEX IF NOT EXISTS trades_by_b ON trades (b_lc, b_ack)
 const ACCOUNT_COLUMNS = [
   ['role', "TEXT NOT NULL DEFAULT 'player'"],
   ['muted_until', 'INTEGER NOT NULL DEFAULT 0'],
+  ['online_ms', 'INTEGER NOT NULL DEFAULT 0'],   // the length of every closed login, added up (the accounts list's "Time online")
 ];
 
 // Adds whatever accounts column is missing, and nothing else. Answers {via, added} so the World can say what it did.
@@ -159,6 +166,52 @@ export class SqlStore {
     return this.rows('SELECT id, at, a, b, a_gave, b_gave, a_ack, b_ack FROM trades ORDER BY id DESC LIMIT ?', limit)
       .map(r => ({ tid: r.id, at: r.at, a: r.a, b: r.b, aGave: parse(r.a_gave) || [], bGave: parse(r.b_gave) || [], aAck: !!r.a_ack, bAck: !!r.b_ack }));
   }
+  // ---------- logins: one row per socket, join to close ----------
+  // When the counting began: written the first time it is asked for (the first wake of this code), never changed.
+  trackingSince(now) {
+    this.sql.exec("INSERT INTO settings (key, value) VALUES ('logins_since', ?) ON CONFLICT(key) DO NOTHING", String(Math.floor(now)));
+    return Number(this.row("SELECT value FROM settings WHERE key = 'logins_since'").value) || Math.floor(now);
+  }
+  // a new open row; the oldest closed rows past LOGINS_KEPT for that knight go (the total is already in online_ms)
+  loginStart(lc, at) {
+    const l = norm(lc);
+    const id = this.row('INSERT INTO logins (name_lc, started, seen) VALUES (?, ?, ?) RETURNING id', l, at, at).id;
+    this.sql.exec('DELETE FROM logins WHERE name_lc = ? AND ended IS NOT NULL AND id NOT IN (SELECT id FROM logins WHERE name_lc = ? ORDER BY id DESC LIMIT ?)', l, l, LOGINS_KEPT);
+    return id;
+  }
+  // the last time the world heard from that socket: where a login the world lost track of is said to have ended
+  loginSeen(id, at) { this.sql.exec('UPDATE logins SET seen = ? WHERE id = ? AND ended IS NULL AND seen < ?', at, id, at); }
+  // closes an open row and adds its length to the knight's total; true only for the call that closed it
+  loginEnd(id, at) {
+    const r = this.row('UPDATE logins SET ended = MAX(started, ?) WHERE id = ? AND ended IS NULL RETURNING name_lc, started, ended', at, id);
+    if (!r) return false;
+    this.sql.exec('UPDATE accounts SET online_ms = online_ms + ? WHERE name_lc = ?', r.ended - r.started, r.name_lc);
+    return true;
+  }
+  // every open row whose socket is not in keep (a Set of ids) ends at the last time it was heard from; answers how many
+  closeStaleLogins(keep, now) {
+    let n = 0;
+    for (const r of this.rows('SELECT id, started, seen FROM logins WHERE ended IS NULL ORDER BY id')) {
+      if (keep.has(r.id)) continue;
+      if (this.loginEnd(r.id, Math.min(now, Math.max(r.started, r.seen)))) n++;
+    }
+    return n;
+  }
+  // newest first: [{id, started, seen, ended}], ended null while it is still open
+  logins(lc, limit = 10) {
+    return this.rows('SELECT id, started, seen, ended FROM logins WHERE name_lc = ? ORDER BY id DESC LIMIT ?', norm(lc), limit)
+      .map(r => ({ id: r.id, started: r.started, seen: r.seen, ended: r.ended == null ? null : r.ended }));
+  }
+  // the closed logins added up, in ms (an open one is the caller's to add: it knows the time)
+  onlineMs(lc) { const r = this.row('SELECT online_ms FROM accounts WHERE name_lc = ?', norm(lc)); return r ? Number(r.online_ms) || 0 : 0; }
+  // a new secret word: the hash and salt, the wrong-tries count cleared, every session gone
+  setSecret(lc, salt, hash) {
+    const l = norm(lc);
+    this.sql.exec('UPDATE accounts SET salt = ?, hash = ?, tries = 0, locked_until = 0 WHERE name_lc = ?', salt, hash, l);
+    this.sql.exec('DELETE FROM sessions WHERE name_lc = ?', l);
+  }
+  // how many rows of that act this knight wrote to mod_log since then (the reset's rate limit)
+  actsSince(by, act, since) { return Number(this.row('SELECT COUNT(*) AS n FROM mod_log WHERE by = ? AND act = ? AND at > ?', String(by), String(act), since).n) || 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -175,13 +228,16 @@ export class MemoryStore {
     this.tradeRows = [];         // {id, at, a, a_lc, b, b_lc, a_gave, b_gave (JSON), a_ack, b_ack}, oldest first
     this.nextTradeId = 1;
     this.tradeWrites = 0;
+    this.loginRows = [];         // {id, lc, started, seen, ended}
+    this.nextLoginId = 1;
+    this.since = null;           // trackingSince: set the first time it is asked for
   }
   addAccount(name, role = 'player') {
     const lc = norm(name);
     if (!lc) return;
     const a = this.accounts.get(lc);
     if (a) { a.role = roleWord(role); return; }
-    this.accounts.set(lc, { name: String(name).replace(/\s+/g, ' ').trim().slice(0, 40), lc, role: roleWord(role), mutedUntil: 0, banned: false });
+    this.accounts.set(lc, { name: String(name).replace(/\s+/g, ' ').trim().slice(0, 40), lc, role: roleWord(role), mutedUntil: 0, banned: false, onlineMs: 0 });
   }
 
   account(name) {
@@ -262,4 +318,33 @@ export class MemoryStore {
     return this.tradeRows.slice(-Math.max(0, limit)).reverse()
       .map(r => ({ tid: r.id, at: r.at, a: r.a, b: r.b, aGave: parse(r.a_gave) || [], bGave: parse(r.b_gave) || [], aAck: r.a_ack, bAck: r.b_ack }));
   }
+  // ---------- logins: the same answers as SqlStore's ----------
+  trackingSince(now) { if (this.since == null) this.since = Math.floor(now); return this.since; }
+  loginStart(lc, at) {
+    const l = norm(lc), id = this.nextLoginId++;
+    this.loginRows.push({ id, lc: l, started: at, seen: at, ended: null });
+    const mine = this.loginRows.filter(r => r.lc === l).sort((a, b) => b.id - a.id), keep = new Set(mine.slice(0, LOGINS_KEPT).map(r => r.id));
+    this.loginRows = this.loginRows.filter(r => r.lc !== l || r.ended == null || keep.has(r.id));
+    return id;
+  }
+  loginSeen(id, at) { const r = this.loginRows.find(x => x.id === id); if (r && r.ended == null && r.seen < at) r.seen = at; }
+  loginEnd(id, at) {
+    const r = this.loginRows.find(x => x.id === id);
+    if (!r || r.ended != null) return false;
+    r.ended = Math.max(r.started, at);
+    const a = this.accounts.get(r.lc); if (a) a.onlineMs = (a.onlineMs || 0) + (r.ended - r.started);
+    return true;
+  }
+  closeStaleLogins(keep, now) {
+    let n = 0;
+    for (const r of this.loginRows.slice().sort((a, b) => a.id - b.id)) if (r.ended == null && !keep.has(r.id) && this.loginEnd(r.id, Math.min(now, Math.max(r.started, r.seen)))) n++;
+    return n;
+  }
+  logins(lc, limit = 10) {
+    const l = norm(lc);
+    return this.loginRows.filter(r => r.lc === l).sort((a, b) => b.id - a.id).slice(0, limit).map(r => ({ id: r.id, started: r.started, seen: r.seen, ended: r.ended }));
+  }
+  onlineMs(lc) { const a = this.accounts.get(norm(lc)); return a ? a.onlineMs || 0 : 0; }
+  setSecret(lc, salt, hash) { const a = this.accounts.get(norm(lc)); if (a) { a.salt = salt; a.hash = hash; } }
+  actsSince(by, act, since) { return this.modRows.filter(r => r.by === String(by) && r.act === String(act) && r.at > since).length; }
 }

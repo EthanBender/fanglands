@@ -336,6 +336,9 @@
     // these checks are made on foot: a mech soaks the scald, and an instance will not take one through the door
     if (player.mech) { player.mech = null; player.r = 13; player.speed = typeof BASE_SPEED !== 'undefined' ? BASE_SPEED : 175; }
     h.peace(true); window.__kidmode = false;
+    // the heat and heal numbers below are measured with the knight standing still: fighting back when hit (69-retaliate,
+    // on by default) would walk him into the wight's reach and add its swings to the scald. Put back as it was at the end.
+    const fightBack0 = window.RETALIATE ? RETALIATE.isOn() : null; if (window.RETALIATE) RETALIATE.set(false, true);
 
     // 1. the creature and where it stands
     { const homes = ws.map(homeT);
@@ -555,5 +558,6 @@
         { name: w && w.name, where: w && w.where, tablePct: w && +w.tablePct.toFixed(2), heart: hh && hh.name, heartWhere: hh && hh.where.length }); }
 
     player.hp = Math.min(hp0, player.maxHp); player.mech = mech0; player.r = r0; player.speed = speed0; player.hurtT = 0; h.peace(false);
+    if (window.RETALIATE) RETALIATE.set(fightBack0, true);
   });
 }

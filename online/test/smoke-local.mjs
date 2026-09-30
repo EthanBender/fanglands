@@ -466,14 +466,20 @@ test('a drop party over real sockets: two knights light the same cracker, one bo
   await wait(300);
 });
 
-test('the backup export (taken before every schema-changing deploy) needs the key and carries every table but sessions, the admins\' four too', { skip }, async () => {
+test('the backup export (taken before every schema-changing deploy) needs the key and carries every table but sessions, the admins\' four and the logins too', { skip }, async () => {
   let r = await call('GET', '/api/admin/export');
   assert.equal(r.status, 401);
   r = await admin('GET', '/api/admin/export');
   assert.equal(r.status, 200);
-  assert.deepEqual(Object.keys(r.data).filter(k => k !== 'at'), ['accounts', 'saves', 'chat', 'settings', 'mod_log', 'save_pins', 'parties', 'crackers']);
+  assert.deepEqual(Object.keys(r.data).filter(k => k !== 'at'), ['accounts', 'saves', 'chat', 'settings', 'mod_log', 'save_pins', 'parties', 'crackers', 'logins']);
   const mud = r.data.accounts.find(a => a.name === NAME_M);
   assert.ok(mud); assert.equal(mud.role, 'admin'); assert.equal(typeof mud.muted_until, 'number');
+  // the logins (docs/ONLINE.md, "Accounts"): the admin's sockets above are rows, every closed one added to online_ms
+  const mine = r.data.logins.filter(l => l.name_lc === NAME_M.toLowerCase());
+  assert.ok(mine.length >= 1);
+  const closed = mine.filter(l => l.ended !== null);
+  assert.ok(closed.every(l => l.ended >= l.started));
+  assert.equal(mud.online_ms, closed.reduce((s, l) => s + (l.ended - l.started), 0));
   assert.ok(r.data.mod_log.some(x => x.act === 'party' && x.by === NAME_M));
   const party = r.data.parties.find(p => p.by === NAME_M);
   assert.ok(party); assert.equal(party.count, 5); assert.equal(party.ended, 1);
