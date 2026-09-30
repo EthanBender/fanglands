@@ -12,6 +12,19 @@
     if (!L || !L.questH || !L.questW) return null;
     return { x: L.questX, y: L.questY, w: L.questW, h: L.questH };
   };
+  // owner 2026-09-30: "the quest helper needs to be completely hidable on the phone ... when nothing is tracked it needs
+  // to be gone". The Quest helper setting takes the scroll off every screen (59-hudkit layout: questHidden); on a phone it
+  // is also gone while no quest is followed. Hide helper in this panel turns it off; Track on a quest (the book's quest
+  // list, or ALSO ON THE GO here) or the Settings row brings it back.
+  if (window.SETTINGS && SETTINGS.addRow) {
+    SETTINGS.addRow({ key: 'questHelper', name: 'Quest helper', hint: () => 'The scroll that says what to do next. On a phone it is gone while no quest is followed.' }, true, [true, false], 'minimap', () => { });
+  }
+  const helperShown = () => !(window.SETTINGS && SETTINGS.get && SETTINGS.get('questHelper') === false);
+  function show() { if (!helperShown()) SETTINGS.set('questHelper', true); }
+  function hide() {
+    if (window.SETTINGS && SETTINGS.set) SETTINGS.set('questHelper', false);
+    closePanel(); notify('Quest helper hidden. Press Track on a quest in your book, or use Settings, to bring it back.');
+  }
   const tracked = () => (quest.tracked && typeof activeQuests === 'function' && activeQuests().includes(quest.tracked) ? quest.tracked : null);
   const nameOf = id => (QUEST_DEFS[id] ? QUEST_DEFS[id].name : id);
   const textOf = id => { try { return questText(id) || ''; } catch (e) { return ''; } };
@@ -71,16 +84,47 @@
       y += 26;
       for (const q of others) {
         if (y + rh > py + h - Q.foot) break;              // never run under the footer
-        button(g, px + PAD, y, inner, rh, nameOf(q), () => { quest.tracked = q; quest.untrackedByPlayer = false; save(); }, '#21262d');
+        button(g, px + PAD, y, inner, rh, nameOf(q), () => { quest.tracked = q; quest.untrackedByPlayer = false; show(); save(); }, '#21262d');
         y += rh + gap;
       }
     }
-    button(g, px + PAD, py + h - rh - 18, inner, rh, 'Close', () => closePanel(), '#21262d');
+    const half = (inner - 10) / 2, fy = py + h - rh - 18;
+    if (helperShown()) button(g, px + PAD, fy, half, rh, 'Hide helper', hide, '#21262d');
+    else button(g, px + PAD, fy, half, rh, 'Show helper', () => { show(); closePanel(); }, '#21262d');
+    button(g, px + PAD + half + 10, fy, half, rh, 'Close', () => closePanel(), '#21262d');
   };
 
-  window.QUESTBOX = { boxRect, tracked };
+  window.QUESTBOX = { boxRect, tracked, show, hide, helperShown };
 
   const P = 'questbox: ';
+  HOOKS.selfTest.push((check, F) => {
+    const t0 = quest.tracked, u0 = quest.untrackedByPlayer, w0 = window.innerWidth, h0 = window.innerHeight, ft0 = window.__forceTouch;
+    const set0 = window.SETTINGS ? SETTINGS.get('questHelper') : true;
+    const live = (typeof activeQuests === 'function' ? activeQuests() : []).filter(q => QUEST_DEFS[q]);
+    const size = (w, h) => { try { window.innerWidth = w; window.innerHeight = h; } catch (e) { } };
+    const scrollUp = () => { render(); return !!buttons.find(b => b.label === 'questbox:open') && !!boxRect(); };
+    const put = () => { closePanel(); SETTINGS.set('questHelper', set0); quest.tracked = t0; quest.untrackedByPlayer = u0; size(w0, h0); window.__forceTouch = ft0; render(); };
+    try {
+      SETTINGS.set('questHelper', true); closePanel();
+      // a phone with nothing followed: no scroll, no tap spot, no rolled strip
+      size(390, 844); window.__forceTouch = true; quest.tracked = null; quest.untrackedByPlayer = true;
+      const emptyPhone = scrollUp(), emptyRolled = !!(HUD_LAYOUT && HUD_LAYOUT.questH);
+      size(844, 390); const emptyPhoneL = scrollUp();
+      // a computer with nothing followed still shows "Click to pick one"
+      size(1280, 800); window.__forceTouch = false; const emptyDesk = scrollUp();
+      check(P + 'on a phone the quest helper is gone while no quest is followed (upright and sideways); a computer still offers one', !emptyPhone && !emptyRolled && !emptyPhoneL && emptyDesk, { emptyPhone, emptyRolled, emptyPhoneL, emptyDesk });
+      if (!live.length) { check(P + 'Hide helper takes it off the phone, and Track on a quest brings it back', false, { noActiveQuests: true }); return; }
+      // a phone following a quest: the scroll is there; Hide helper in its panel takes it away completely
+      size(390, 844); window.__forceTouch = true; quest.tracked = live[0]; quest.untrackedByPlayer = false;
+      const before = scrollUp();
+      const open = buttons.find(b => b.label === 'questbox:open'); if (open) open.action(); render();
+      const hid = F.clickButton('Hide helper'); const after = scrollUp(), off = SETTINGS.get('questHelper') === false;
+      // Track on a quest in the book puts it back
+      quest.tracked = null; quest.untrackedByPlayer = true; openPanel('quests'); render(); const tr = F.clickButton('Track'); closePanel();
+      const back = SETTINGS.get('questHelper') === true && scrollUp();
+      check(P + 'Hide helper takes it off the phone, and Track on a quest brings it back', before && !!hid && !after && off && !!tr && back, { before, hid: !!hid, after, off, tr: !!tr, back });
+    } finally { put(); }
+  });
   HOOKS.selfTest.push((check, F) => {
     // put a quest on the tracker, then check the box is a control that opens the whole text
     const t0 = quest.tracked, u0 = quest.untrackedByPlayer;

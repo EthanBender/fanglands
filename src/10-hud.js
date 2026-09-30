@@ -608,7 +608,7 @@ function drawQuestsPanel(g, narrow) {
       const id = it.id, tracked = quest.tracked === id, ch = it.h - 8;
       HK.vellumPlate(g, x0, y, cw, ch, tracked ? { edge: 'rgba(247,220,143,0.95)' } : {});
       const tw = K.verbW(g, 'Untrack', 'pin', R);
-      K.verb(g, x0 + cw - 10 - tw, y + 8, tw, R, tracked ? 'Untrack' : 'Track', () => { if (tracked) { quest.tracked = null; if (id === 'main') quest.untrackedByPlayer = true; } else { quest.tracked = id; if (id === 'main') quest.untrackedByPlayer = false; } save(); }, { emblem: 'pin', tone: tracked ? null : 'primary' });
+      K.verb(g, x0 + cw - 10 - tw, y + 8, tw, R, tracked ? 'Untrack' : 'Track', () => { if (tracked) { quest.tracked = null; if (id === 'main') quest.untrackedByPlayer = true; } else { quest.tracked = id; if (id === 'main') quest.untrackedByPlayer = false; if (window.QUESTBOX) QUESTBOX.show(); } save(); }, { emblem: 'pin', tone: tracked ? null : 'primary' });
       const nw = cw - 24 - tw - 12;
       K.name(g, QUEST_DEFS[id].name, x0 + 12, y + 8 + R / 2 - 1, nw, { size: 13, color: tracked ? T.goldHi : T.ink });
       HK.text(g, id === 'main' ? 'Main story' : 'Side quest', x0 + 12, y + 8 + R / 2 + 14, { font: K.FB(11), color: T.inkMute, box: { x: x0 + 12, y: y + 8, w: nw, h: R }, fitId: 'quest:kind' });

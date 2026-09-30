@@ -1526,7 +1526,7 @@ const HK = (() => {
     return Math.hypot(Math.max(dx, 0), Math.max(dy, 0));
   }
   function layoutFor(W, H, o) {
-    o = Object.assign({ touch: true, stickRight: false, bosses: 0, minimap: true, chat: 0, dialog: false, plaques: 99, online: true, home: true }, o);
+    o = Object.assign({ touch: true, stickRight: false, bosses: 0, minimap: true, chat: 0, dialog: false, plaques: 99, online: true, home: true, questHidden: false, questTracked: true }, o);
     const fam = family(W, H, o.touch), S = insets(W, H, fam, o.touch), M = Mx[fam];
     const L = { VW: W, VH: H, fam, S, M, items: [], touch: o.touch, stickRight: o.stickRight, opts: o };
     const add = it => { L.items.push(it); return it; };
@@ -1576,9 +1576,12 @@ const HK = (() => {
     if (fam === 'phoneL') { const x = crest.x + cw + 14, w = mmx - RR - 12 - x; scroll = { x, y: top, w, h: 67 }; }
     else { const w = fam === 'desk' ? 318 : fam === 'tab' ? 330 : Math.min(300, mmx - RR - 10 - left); scroll = { x: left, y: crest.y + ch + 10, w, h: fam === 'desk' ? 67 : fam === 'tab' ? 74 : 84 }; }
     const bossInScroll = o.bosses > 0 && !bossTop;
-    const scrollRolled = bossInScroll || (fam === 'phoneL' && o.dialog);
-    const scrollHidden = scrollRolled || (fam === 'phoneP' && o.dialog);
-    L.scroll = scroll; L.scrollRolled = scrollRolled; L.scrollHidden = scrollHidden; L.bossTop = bossTop;
+    // owner 2026-09-30: on a phone the scroll is gone while no quest is followed, and the Quest helper setting (67-questbox)
+    // takes it off every screen; gone means gone: no scroll, no rolled strip, the space is the game's
+    const questOff = o.questHidden || (!o.questTracked && (fam === 'phoneP' || fam === 'phoneL'));
+    const scrollRolled = !questOff && (bossInScroll || (fam === 'phoneL' && o.dialog));
+    const scrollHidden = questOff || bossInScroll || (fam === 'phoneL' && o.dialog) || (fam === 'phoneP' && o.dialog);
+    L.scroll = scroll; L.scrollRolled = scrollRolled; L.scrollHidden = scrollHidden; L.questOff = questOff; L.bossTop = bossTop;
     if (!scrollHidden) Rr('scroll', scroll.x, scroll.y, scroll.w, scroll.h, true, { persist: true });
     L.boss = [];
     if (bossInScroll && !(fam === 'phoneP' && o.dialog)) {
@@ -1802,6 +1805,7 @@ const HK = (() => {
     online: !!(window.NET && NET.enabled),
     home: !!(typeof player !== 'undefined' && player && player.home),
     bosses: FRAME.bosses.length, dialog: !!(typeof dialog !== 'undefined' && dialog && dialog.cur),
+    questHidden: !!(window.SETTINGS && SETTINGS.get && SETTINGS.get('questHelper') === false), questTracked: !!trackedQuest(),
     chat: FRAME.chatLines, plaques: 99,
   });
   // One banner per monster, two at most. 10-hud's hudBosses() lists the core's big monsters first (key = the monster) and
