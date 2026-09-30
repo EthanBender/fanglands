@@ -270,8 +270,9 @@ pieces (e.g. `HK.audit.frameIssues(where)` after a `drawHud`) so a feature's own
 `say(text, who)`, `notify(text)`, `floatText(x, y, text, color)`, `burst(x, y, color, n, speed)`,
 `addItem(id, qty)` (returns what did not fit), `removeItem`, `countItem`, `coins()`, `payCoins(n)`, `giveOrDrop(id, qty, x, y)`,
 `gainXp(skill, xp)`, `skillLv(skill)`, `combatLevel()`, `hitMonster(m, dmg, knock)`, `hurtPlayer(dmg, fromX, fromY, sure)`,
-`rollHit(attRoll, defRoll, maxHit)`, `playerAttackRoll()`, `playerMaxHit()`, `moveEntity(e, dx, dy, 'person'|'beast')`,
-`collides(x, y, r, who)`, `changeTile(tx, ty, t)` (persists), `tileAt`, `insideBuilding(tx, ty)`, `regionAt(tx, ty)`,
+`rollHit(attRoll, defRoll, maxHit)`, `playerAttackRoll()`, `playerMaxHit()`, `moveEntity(e, dx, dy, 'person'|'beast'|'rider')`,
+`collides(x, y, r, who)` (who: `'player'` the knight on foot, `'person'` villagers, `'beast'` monsters, `'rider'` the knight on any mount or machine —
+a beast that rides through a GATE or a PORTCULLIS but not a DOOR; `playerWho()` gives the knight's own), `changeTile(tx, ty, t)` (persists), `tileAt`, `insideBuilding(tx, ty)`, `regionAt(tx, ty)`,
 `levelBanner = { text, sub, t }` (banners queue: one replaced within 1.5 s comes up after the new one; `bannerAhead(text)` asks whether it is on screen or waiting), `openPanel(name, arg)`, `closePanel()`, `drawHuman(g, e, look)`, `drawMech(g, e, hurt, pilot)`, `drawItemIcon`.
 Monsters: `monsters` array (each has `x y r hp maxHp state angry dead home facing`), `MONSTER_SPAWNS`, `spawnMonsters()`.
 Player: `player.x/y/hp/maxHp/facing/equip/inv/skills/mech/home`.

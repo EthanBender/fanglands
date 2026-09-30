@@ -29,7 +29,7 @@
   }
   function enterBeast(tx, ty) {
     changeTile(tx, ty, T.DIRT);
-    const spot = safeSpot(tc(tx), tc(ty), BEAST_R, 'beast') || { x: tc(tx), y: tc(ty) }; // it is wider than a tile: never embed it in the wall it was parked against
+    const spot = safeSpot(tc(tx), tc(ty), BEAST_R, 'rider') || { x: tc(tx), y: tc(ty) }; // it is wider than a tile: never embed it in the wall it was parked against
     player.mech = { hp: BEAST_HP, maxHp: BEAST_HP, kind: 'beast' }; player.x = spot.x; player.y = spot.y; player.r = BEAST_R; player.speed = BEAST_SPEED; player.action = null; bombCd = 0;
     notify('You are in the Barrelbeast. Space rams. B lobs a bomb. X climbs down.'); save();
   }

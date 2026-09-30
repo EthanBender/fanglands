@@ -17,7 +17,8 @@ function moveEntity(e, dx, dy, who = 'person') {
   if (dy && !collides(e.x, e.y + dy, e.r, who)) e.y += dy;
   e.x = clamp(e.x, e.r, MAP_W * TILE - e.r); e.y = clamp(e.y, e.r, MAP_H * TILE - e.r);
 }
-const playerWho = () => player.mech ? 'beast' : 'player';
+// the knight's collision: on foot 'player'; on a mount or in a machine 'rider' (00-core solidFor: a beast that rides through gates)
+const playerWho = () => player.mech ? 'rider' : 'player';
 // the given point if it is free, else the nearest free tile centre in an expanding ring (up to 6 tiles); null if nothing is free
 function safeSpot(x, y, r = 13, who = 'person') {
   if (!collides(x, y, r, who)) return { x, y };
