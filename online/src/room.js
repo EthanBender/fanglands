@@ -73,7 +73,10 @@ for (const c of Object.values(CAPS)) if (!c.burst) c.burst = Math.max(2, Math.ro
 export const ROSTER_EVERY = 2000;      // a changed roster goes out at most this often (join/leave go at once)
 // A keeper that streams no monsters for this long while others share its map (paused, on the title screen, a
 // sleeping tab) hands the map to the next knight; it is eligible again once that knight leaves.
-export const KEEPER_STALE = 4000;
+export const KEEPER_STALE = 3000;
+// A knight whose game sends no presence for this long (a locked phone, a tab in the background: a playing game sends at
+// least one a second) is never chosen to keep a map while someone who is playing is there.
+export const PRESENCE_STALE = 3500;
 export const GIFT_WAIT = 10000;        // no answer to a gift within this: it comes back to the sender
 // How long each mute lasts; 'always' means until an admin (or the parent page) turns chat back on.
 export const MUTE_SPANS = { '5m': 5 * 60 * 1000, '1h': 3600 * 1000, '1d': 24 * 3600 * 1000, always: ALWAYS };
@@ -282,6 +285,7 @@ export class Room {
 
   onPresence(k, m, str) {
     if (!k.hello) return;
+    k.pAt = this.now();
     if (str.length > MAX_P) return this.strike(k, CAPS.p);
     const map = (typeof m.map === 'string' && m.map) ? m.map.slice(0, 64) : k.map;
     let changed = false;
@@ -651,7 +655,11 @@ export class Room {
     if (g.keeper && g.keeper.keeperAt == null) g.keeper.keeperAt = now;   // a restored keeper starts its grace now
     // a keeper that has gone quiet while others are here goes to the back of the line (see KEEPER_STALE)
     const stale = o => o === g.keeper && g.members.size > 1 && now - Math.max(o.monAt || 0, o.keeperAt || 0) > KEEPER_STALE;
-    const before = (a, b) => { const sa = stale(a), sb = stale(b); if (sa !== sb) return !sa; return a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc); };
+    // and a knight whose game has gone silent (see PRESENCE_STALE) is never picked over one who is playing
+    // (alive = its presence, its monster stream, or its arrival on the map is recent)
+    const silentKnight = o => g.members.size > 1 && now - Math.max(o.pAt || 0, o.monAt || 0, o.keeperAt || 0, o.mapAt || 0) > PRESENCE_STALE;
+    const back = o => stale(o) || silentKnight(o);
+    const before = (a, b) => { const sa = back(a), sb = back(b); if (sa !== sb) return !sa; return a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc); };
     let best = null;
     for (const o of g.members) if (!best || before(o, best)) best = o;
     if (g.keeper === best) return;

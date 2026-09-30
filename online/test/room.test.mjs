@@ -1,7 +1,7 @@
 // The Room: joins, relays, keepers, hits, gifts, caps, roster cadence. In-memory sockets, a fake clock.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Room, CAPS, GIFT_WAIT, ROSTER_EVERY, KEEPER_STALE } from '../src/room.js';
+import { Room, CAPS, GIFT_WAIT, ROSTER_EVERY, KEEPER_STALE, PRESENCE_STALE } from '../src/room.js';
 
 // A pretend world with a clock we control and a log we can read.
 function world() {
@@ -324,10 +324,12 @@ test('a keeper that goes quiet while someone shares its map hands the map on, an
   const a = w.knight('Cohen', 'over'), b = w.knight('Sam', 'over');
   w.settle(a, b);
   w.say(a, { t: 'mon', list: [] });                       // Cohen is streaming
-  w.t += KEEPER_STALE - 500; w.room.tick();
+  // Sam is playing: a playing game sends presence at least once a second (the room only hands a map to someone playing)
+  const samPlays = () => w.say(b, { t: 'p', map: 'over', x: 1, y: 2, lv: 3 });
+  w.t += KEEPER_STALE - 500; samPlays(); w.room.tick();
   assert.equal(w.room.keeperOf('over').name, 'Cohen');    // not quiet for long enough yet
   assert.equal(a.of('keeper').length, 0);
-  w.t += 1000; w.room.tick();                             // now it is
+  w.t += 1000; samPlays(); w.room.tick();                 // now it is
   assert.equal(w.room.keeperOf('over').name, 'Sam');
   assert.deepEqual(a.last('keeper'), { t: 'keeper', map: 'over', n: 'Sam' });
   assert.deepEqual(b.last('keeper'), { t: 'keeper', map: 'over', n: 'Sam' });
@@ -350,4 +352,33 @@ test('a keeper alone on its map is never stepped down for being quiet', () => {
   w.t += KEEPER_STALE * 3; w.room.tick();
   assert.equal(w.room.keeperOf('over').name, 'Cohen');
   assert.equal(a.of('keeper').length, 0);
+});
+
+test('a keeper whose game froze is replaced by one who is playing, and the frozen knight is not chosen again while it stays silent', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'), b = w.knight('Sam', 'over');
+  w.settle(a, b);
+  assert.equal(w.room.keeperOf('over').name, 'Cohen');
+  // Cohen's phone locks: no more mon, no more presence. Sam keeps playing: presence every second, and once he keeps, a heartbeat
+  for (let i = 0; i < 12; i++) {
+    w.t += 1000;
+    w.say(b, { t: 'p', map: 'over', x: 5, y: 5, lv: 3 });
+    if (w.room.keeperOf('over').name === 'Sam') w.say(b, { t: 'mon', list: [] });
+    w.room.tick();
+  }
+  assert.equal(w.room.keeperOf('over').name, 'Sam');
+  assert.ok(b.of('keeper').some(m => m.n === 'Sam'));
+  // and the map never went back to the silent knight in those 12 seconds
+  assert.ok(!b.of('keeper').some(m => m.n === 'Cohen'));
+});
+
+test('a playing knight is chosen over a silent one when the keeper leaves', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'), b = w.knight('Sam', 'over'), c = w.knight('Ava', 'over');
+  w.settle(a, b, c);
+  // Sam goes silent; Ava keeps playing; Cohen (keeper) leaves
+  w.t += PRESENCE_STALE + 500;
+  w.say(c, { t: 'p', map: 'over', x: 1, y: 1, lv: 2 }); w.say(a, { t: 'mon', list: [] });
+  w.room.leave(a);
+  assert.equal(w.room.keeperOf('over').name, 'Ava');
 });

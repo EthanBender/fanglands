@@ -285,7 +285,7 @@
     else { row(g, x, y, w, T, [refreshBtn].concat(upDown)); text(g, summary, x, y + T + 16, w, S.error && !S.list ? ORANGE : DIM); top = y + T + 24; }
     if (!S.list) return;
     if (!L.length) { text(g, 'No knights yet.', x, top + 18, w, DIM); return; }
-    S.rowH = wide ? 70 : 90; S.rows = L;
+    S.rowH = wide ? 70 : 106; S.rows = L;
     scrollArea(g, 'list', x, top, w, y + h - top, L.length * S.rowH, oy => {
       L.forEach((a, i) => { const ry = oy + i * S.rowH; if (ry + S.rowH < top || ry > y + h) return; listRow(g, a, x, ry, w - 8, S.rowH - 6, wide); });
     });
@@ -309,7 +309,8 @@
     } else {
       text(g, status, x + 26, y + 41, tw, a.online ? GREEN : '#c9d1d9', '13px sans-serif');
       text(g, timeOnLine(a), x + 26, y + 58, tw, DIM);
-      text(g, play + '  ·  ' + made, x + 26, y + 75, tw, DIM);
+      text(g, play, x + 26, y + 75, tw, DIM);
+      text(g, made, x + 26, y + 92, tw, DIM);
     }
   }
 
@@ -551,7 +552,7 @@
           'Time online: none yet (since ' + dayWords(since) + ')', 'Banned', 'Muted', 'ADMIN',
         ];
         const missing = lines.filter(l => !text.some(t => t === l || t.startsWith(l)));
-        const phoneLines = ['Knight play time: no save yet  ·  Made ' + dayWords(a('Bo').created), 'Knight play time: unknown  ·  Made ' + dayWords(a('Pip').created)];
+        const phoneLines = ['Knight play time: no save yet', 'Made ' + dayWords(a('Bo').created), 'Knight play time: unknown', 'Made ' + dayWords(a('Pip').created)];
         try { window.innerWidth = 390; window.innerHeight = 844; } catch (e) { } render();
         const phone = new Set(); S.scroll.list = 0; for (let i = 0; i < 40; i++) { for (const t of drawn()) phone.add(t); if (!has('acct:down')) break; F.clickButton('acct:down'); }
         const phoneMissing = phoneLines.filter(l => !phone.has(l));
