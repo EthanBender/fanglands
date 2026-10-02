@@ -16,7 +16,11 @@
 // the castle's walls sit 24 px from the middle of each portcullis tile — the Barrelbeast (radius 26) rode straight
 // down the street and stopped dead on that corner, 2 px short. Easing is at most EASE px, and every spot it moves
 // the rider to is checked with the same collides() as any other step, so it can never take him past a wall.
-// Feature file: wraps moveEntity by reassignment with explicit args; the wrapper returns at once for anyone else.
+// It also keeps a machine from being parked in a gateway (X while standing in a gate): see exitMech below.
+// Feature file: wraps moveEntity and exitMech by reassignment with explicit args; the moveEntity wrapper returns at
+// once for anyone who is not a rider.
+// Not changed, on purpose: the Barrelbeast (52 px across) is wider than any one-tile gap, so the one-tile pen gates
+// do not take it, exactly as no one-tile gap between two fences does. The town's gates are three tiles and take it.
 // ============================================================================
 {
   const EASE = 8; // px: the furthest a rider is eased sideways round a corner he would otherwise catch on
@@ -43,6 +47,18 @@
     move0(e, dx, dy, who);
     if (dx && e.x === x0 && Math.abs(dx) >= Math.abs(dy)) ease(e, dx, 0, who);
     else if (dy && e.y === y0 && Math.abs(dy) > Math.abs(dx)) ease(e, 0, dy, who);
+  };
+
+  // No getting down in a gateway. Climbing out parks the machine on a tile (06-systems exitMech: the tile ahead, or the
+  // tile he is on when the one ahead will not take it). Parked on a gate it would replace the gate, and getting back in
+  // turns that tile to plain dirt (enterMech): a hole in the town wall that any monster could walk through. So while
+  // the knight's middle is on a gate tile, X / EXIT says to ride clear first and nothing changes. The mare needs no
+  // guard: 51-mounts dismount only ever stands her on ground she can be put down on (PLACEABLE_ON), never on a gate.
+  const inGateway = () => RIDE_THROUGH.has(tileAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)));
+  const exit0 = exitMech;
+  exitMech = function () {
+    if (player.mech && player.mech.kind !== 'horse' && inGateway()) { notify('You are in a gateway. Ride clear of it, then climb down.'); return; }
+    exit0();
   };
 
   // the gates this file promises, read off the map (57-townwall keeps them as T.GATE on the town's west and east lines)
@@ -250,6 +266,56 @@
       }
       onFoot();
       check(P + 'online: a friend sees a knight on the mare ride through the gate (the puppet crosses the wall line and is drawn)', !!r.up && r.sent >= 3 && r.crossed && r.beyond && r.drew === true && r.mech === 'horse', r); }
+
+    // 8. no climbing out in a gateway: X in the middle of a gate keeps him riding and leaves the gate a gate (a machine
+    // parked there would turn it to dirt when he got back in); one tile further in, X works as it always has
+    { const g = gates[0]; const log = {}; let ok = !!g;
+      const gateTiles = () => g.rows.every(y => tileAt(g.x, y) === T.GATE);
+      for (const K of (g ? KINDS : [])) {
+        const up = board(K, g.x - g.dir * 3, g.mid);
+        if (up) ride(g.dir > 0 ? 'KeyD' : 'KeyA', () => Math.floor(player.x / TILE) === g.x);
+        const inGate = Math.floor(player.x / TILE) === g.x;
+        // everything round the gate is borrowed, so wherever a machine parks it goes back afterwards
+        for (let y = g.mid - 4; y <= g.mid + 4; y++) for (let x = g.x - 4; x <= g.x + 4; x++) borrow(x, y);
+        player.facing = { x: 0, y: -1 }; notice = null; F.press('KeyX'); F.step([]); F.step([]);
+        const stayed = kindNow() === K.kind, said = !!notice && /gateway|No room/.test(notice.text), whole = gateTiles();
+        let out = false;
+        if (up && stayed) { ride(g.dir > 0 ? 'KeyD' : 'KeyA', () => Math.floor(player.x / TILE) === g.x + g.dir * 2); player.facing = { x: g.dir, y: 0 }; F.press('KeyX'); F.step([]); F.step([]); out = !player.mech; }
+        const whole2 = gateTiles();
+        giveBack(); drain();
+        log[K.kind] = { up, inGate, stayed, said, whole, out, whole2 };
+        if (!(up && inGate && stayed && said && whole && out && whole2)) ok = false;
+        onFoot();
+      }
+      check(P + 'X in the middle of a town gate keeps the knight on every mount and the gate stays a gate; one tile into the town, X gets him down', ok, log); }
+
+    // 9. a gate is a gate: every gate in the world (pens, the Grubmarket wall, the town) lets a rider through and stops a monster.
+    // The mare (r 16), the walker (r 20) and the bulldozer (r 22) fit a one-tile gate (48 px); the Barrelbeast (r 26, 52 px
+    // across) is wider than any one-tile gap, so only the town's three-tile gates take it (checked in 1).
+    { const all = []; const seen = new Set();
+      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === T.GATE && !seen.has(idx(x, y))) {
+        const cells = []; const q = [[x, y]]; seen.add(idx(x, y));
+        while (q.length) { const [cx, cy] = q.pop(); cells.push([cx, cy]); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = cx + dx, ny = cy + dy; if (inMap(nx, ny) && map[idx(nx, ny)] === T.GATE && !seen.has(idx(nx, ny))) { seen.add(idx(nx, ny)); q.push([nx, ny]); } } }
+        all.push(cells);
+      }
+      const bad = [];
+      for (const cells of all) {
+        const xs = cells.map(c => c[0]), ys = cells.map(c => c[1]);
+        const across = Math.min(...xs) === Math.max(...xs) && cells.length > 1 ? 'x' : (cells.length > 1 ? 'y' : (solidFor(tileAt(xs[0], ys[0] - 1), 'rider') ? 'x' : 'y'));
+        const mid = cells[Math.floor(cells.length / 2)];
+        for (const r of [16, 20, 22, 13]) for (const sg of [1, -1]) {
+          const who = r === 13 ? 'beast' : 'rider';
+          // start two tiles out, or nearer where the ground before the gate is narrow (the agility course's gate has a fence a tile behind it)
+          const back = [2, 1.5, 1].find(b => !collides(tc(mid[0]) - (across === 'x' ? sg * b * TILE : 0), tc(mid[1]) - (across === 'y' ? sg * b * TILE : 0), r, who));
+          if (back === undefined) { bad.push({ at: mid, r, sg, why: 'no room to start' }); continue; }
+          const e = { x: tc(mid[0]) - (across === 'x' ? sg * back * TILE : 0), y: tc(mid[1]) - (across === 'y' ? sg * back * TILE : 0), r };
+          for (let k = 0; k < 64; k++) moveEntity(e, across === 'x' ? sg * 3 : 0, across === 'y' ? sg * 3 : 0, who);
+          const pastLine = across === 'x' ? (sg > 0 ? e.x > (mid[0] + 1) * TILE : e.x < mid[0] * TILE) : (sg > 0 ? e.y > (mid[1] + 1) * TILE : e.y < mid[1] * TILE);
+          if (pastLine !== (who === 'rider')) bad.push({ at: mid, r, who, sg, across, end: [+(e.x / TILE).toFixed(2), +(e.y / TILE).toFixed(2)] });
+        }
+      }
+      check(P + 'every gate in the world lets the knight ride through it both ways on the mare, the walker and the bulldozer, and stops a monster',
+        all.length >= 9 && !bad.length, { gates: all.length, bad: bad.slice(0, 8) }); }
 
     // put everything back
     giveBack(); onFoot(); if (typeof tapCancel === 'function') tapCancel('manual');
