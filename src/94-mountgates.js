@@ -17,7 +17,8 @@
 // down the street and stopped dead on that corner, 2 px short. Easing is at most EASE px, and every spot it moves
 // the rider to is checked with the same collides() as any other step, so it can never take him past a wall.
 // It also keeps a machine from being parked in a gateway (X while standing in a gate): see exitMech below.
-// Feature file: wraps moveEntity and exitMech by reassignment with explicit args; the moveEntity wrapper returns at
+// It also keeps a machine wrecked in a gateway from vanishing: see wreckMech below.
+// Feature file: wraps moveEntity, exitMech and wreckMech by reassignment with explicit args; the moveEntity wrapper returns at
 // once for anyone who is not a rider.
 // Not changed, on purpose: the Barrelbeast (52 px across) is wider than any one-tile gap, so the one-tile pen gates
 // do not take it, exactly as no one-tile gap between two fences does. The town's gates are three tiles and take it.
@@ -61,6 +62,36 @@
     exit0();
   };
 
+  // A machine wrecked in a gateway. The core (06-systems wreckMech) leaves the wreck on the tile under the knight, but
+  // only when that tile is plain ground (PLACEABLE_ON), and a gate is not: so in a gateway the machine just vanished,
+  // while the Voice still promised it could be repaired (and 32-beast, finding no wreck, left the Barrelbeast called
+  // "the walker"). So before the core runs, the knight is moved onto the plain tile beside the gate (the one behind
+  // him first, then the nearer one) and turned to face it from the gate. The core then puts the wreck on that tile and
+  // steps him back one tile, which is the gate itself (open to a knight on foot), so the wreck is right in front of
+  // him: exactly where 32-beast looks to swap in the Barrelbeast's own wreck. The gate stays a gate.
+  // The mare never wrecks (51-mounts: she bolts), so she is passed straight through.
+  function wreckSpot() {
+    const gx = Math.floor(player.x / TILE), gy = Math.floor(player.y / TILE);
+    const fx = player.facing.x, fy = player.facing.y;
+    const out = [];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
+      const tx = gx + dx, ty = gy + dy;
+      if (!inMap(tx, ty) || !PLACEABLE_ON.has(tileAt(tx, ty)) || insideBuilding(tx, ty)) continue;
+      const far = Math.abs(dx) + Math.abs(dy) > 1 ? 1 : 0, behind = -(Math.sign(dx) * fx + Math.sign(dy) * fy);
+      out.push({ tx, ty, ux: Math.sign(dx), uy: Math.sign(dy), far, behind, d: dist(player.x, player.y, tc(tx), tc(ty)) });
+    }
+    out.sort((a, b) => a.far - b.far || b.behind - a.behind || a.d - b.d);
+    return out[0] || null;
+  }
+  const wreck0 = wreckMech;
+  wreckMech = function () {
+    if (player.mech && player.mech.kind !== 'horse' && inGateway()) {
+      const s = wreckSpot();
+      if (s) { player.x = tc(s.tx); player.y = tc(s.ty); player.facing = { x: s.ux, y: s.uy }; }
+    }
+    wreck0();
+  };
+
   // the gates this file promises, read off the map (57-townwall keeps them as T.GATE on the town's west and east lines)
   function cityGates() {
     const out = [];
@@ -70,7 +101,7 @@
     }
     return out;
   }
-  window.MOUNTGATES = { EASE, cityGates, ride: RIDE_THROUGH };
+  window.MOUNTGATES = { EASE, cityGates, ride: RIDE_THROUGH, wreckSpot };
 
   // ---------- self-test ----------
   const P = 'mountgates: ';
@@ -316,6 +347,52 @@
       }
       check(P + 'every gate in the world lets the knight ride through it both ways on the mare, the walker and the bulldozer, and stops a monster',
         all.length >= 9 && !bad.length, { gates: all.length, bad: bad.slice(0, 8) }); }
+
+    // 10. a machine wrecked in a gateway leaves its own wreck beside the gate (it can be repaired, as the Voice says), the gate
+    // stays a gate, the knight is on his feet clear of the wall, and the Voice names the right machine. In each town gate
+    // (the middle row, and the top row against the wall for the Barrelbeast) and under the castle portcullis.
+    { const log = {}; let ok = gates.length === 2;
+      const px = (() => { for (let x = CASTLE.x; x < CASTLE.x + CASTLE.w; x++) if (tileAt(x, CASTLE.y) === T.PORTCULLIS) return x; return -1; })();
+      const spots = gates.map(g => ({ name: g.side + ' gate', tx: g.x, ty: g.mid, from: [g.x - g.dir * 3, g.mid], key: g.dir > 0 ? 'KeyD' : 'KeyA', hitFrom: [-g.dir, 0], cells: g.rows.map(y => [g.x, y]), t: T.GATE }));
+      if (px >= 0) spots.push({ name: 'castle portcullis', tx: px, ty: CASTLE.y, from: [px, CASTLE.y - 3], key: 'KeyS', hitFrom: [0, -1], cells: [[px, CASTLE.y], [px + 1, CASTLE.y]], t: T.PORTCULLIS });
+      else ok = false;
+      if (gates[0]) spots.push({ ...spots[0], name: 'west gate, top row', ty: gates[0].rows[0], from: [gates[0].x - 3, gates[0].rows[0]], only: 'beast' });
+      // and once with the blow landing between ticks, after 32-beast's hook has run (its line is then already showing)
+      if (gates[1]) spots.push({ ...spots[1], name: 'east gate, blow between ticks', only: 'beast', between: true });
+      const MACH = [{ K: KINDS[0], wreck: T.WRECK, line: /The walker gives out/ }, { K: KINDS[1], wreck: T.DOZER_WRECK, line: /The bulldozer gives out/ }, { K: KINDS[2], wreck: BEAST.tiles.BEAST_WRECK, line: /The Barrelbeast gives out/ }];
+      const WRECKS = [T.WRECK, T.DOZER_WRECK, BEAST.tiles.BEAST_WRECK];
+      for (const sp of spots) for (const M of MACH) {
+        if (sp.only && sp.only !== M.K.kind) continue;
+        const up = board(M.K, sp.from[0], sp.from[1]);
+        // borrowed after boarding (board hands back everything borrowed so far), so the wreck goes away again afterwards
+        for (let y = sp.ty - 4; y <= sp.ty + 4; y++) for (let x = sp.tx - 4; x <= sp.tx + 4; x++) borrow(x, y);
+        if (up) ride(sp.key, () => Math.floor(player.x / TILE) === sp.tx && Math.floor(player.y / TILE) === sp.ty);
+        const inGate = tileAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)) === sp.t;
+        drain();
+        // a monster on the outside lands the last blow, inside a tick as a real one does
+        const blow = () => { HOOKS.update.splice(HOOKS.update.indexOf(blow), 1); if (player.mech) { player.mech.hp = 1; hurtPlayer(30, player.x + sp.hitFrom[0] * 30, player.y + sp.hitFrom[1] * 30); } };
+        if (up && inGate && sp.between) { HOOKS.update.unshift(blow); blow(); F.step([]); }
+        else if (up && inGate) { HOOKS.update.unshift(blow); F.step([]); if (HOOKS.update.includes(blow)) HOOKS.update.splice(HOOKS.update.indexOf(blow), 1); }
+        F.step([]);
+        const said = [dialog.cur, ...dialog.queue].filter(Boolean).map(d => d.text).join(' | ');
+        const found = [];
+        for (let y = sp.ty - 4; y <= sp.ty + 4; y++) for (let x = sp.tx - 4; x <= sp.tx + 4; x++) if (WRECKS.includes(tileAt(x, y))) found.push({ at: [x, y], own: tileAt(x, y) === M.wreck, d: Math.max(Math.abs(x - sp.tx), Math.abs(y - sp.ty)) });
+        const own = found.length === 1 && found[0].own && found[0].d <= 2;
+        const whole = sp.cells.every(([x, y]) => tileAt(x, y) === sp.t);
+        const clear = !player.mech && !player.dead && !collides(player.x, player.y, player.r, 'player');
+        const named = M.line.test(said) && !(M.K.kind === 'beast' && /walker/.test(said));
+        log[M.K.kind + ' in ' + sp.name] = { up, inGate, found, whole, clear, at: at(), said: said.slice(0, 90) };
+        if (!(up && inGate && own && whole && clear && named)) ok = false;
+        onFoot(); giveBack(); drain();
+      }
+      // and every gate and portcullis tile anywhere in the world has plain ground beside it for a wreck to land on
+      const noSpot = []; let gateTiles = 0;
+      { const sx = player.x, sy = player.y;
+        for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (RIDE_THROUGH.has(map[idx(x, y)])) { gateTiles++; player.x = tc(x); player.y = tc(y); if (!wreckSpot()) noSpot.push([x, y]); }
+        player.x = sx; player.y = sy; }
+      log.world = { gateTiles, noSpot };
+      if (noSpot.length || gateTiles < 9) ok = false;
+      check(P + 'a walker, bulldozer or Barrelbeast wrecked in a town gate or under the portcullis leaves its own wreck beside the gate, the gate stays whole, and the Voice names the right machine; every gate tile in the world has ground beside it for a wreck', ok, log); }
 
     // put everything back
     giveBack(); onFoot(); if (typeof tapCancel === 'function') tapCancel('manual');

@@ -76,9 +76,13 @@
   function afterBeastLeft(snap) {
     if (player.dead) return;
     const wx = Math.floor((player.x + player.facing.x * TILE) / TILE), wy = Math.floor((player.y + player.facing.y * TILE) / TILE);
-    if (tileAt(wx, wy) === T.WRECK && dialog.queue.some(d => /walker gives out/.test(d.text))) {
+    // the line is still queued when the blow came earlier in this tick; it is already showing when the blow came after
+    // this hook last ran (a later feature file's hazard, or a test between ticks), so look in both places
+    const walkerLine = d => !!d && /walker gives out/.test(d.text);
+    if (tileAt(wx, wy) === T.WRECK && (dialog.queue.some(walkerLine) || walkerLine(dialog.cur))) {
       changeTile(wx, wy, T_BEAST_WRECK);
-      dialog.queue = dialog.queue.filter(d => !/walker gives out/.test(d.text));
+      dialog.queue = dialog.queue.filter(d => !walkerLine(d));
+      if (walkerLine(dialog.cur)) dialog.cur = null;
       say('The Barrelbeast gives out under you. It can be repaired again: iron bars, scrap and blast powder.', 'The Voice');
       return;
     }
