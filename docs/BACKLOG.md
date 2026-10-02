@@ -84,6 +84,10 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
 (28 scenarios each) and 86 server tests passed before each deploy.
 
 ## NEXT WEEK — improvements held back so the work could ship
+- PICK UP TUESDAY 2026-10-06 (paused by the owner 2026-09-30 evening). His three asks, in this order:
+  1. "mounts should be able to pass through the gats at the main city": branch fix/mount-gates (~/fanglands-wt/mountgates), WIP 2f618e5 NOT yet tested (src/94-mountgates.js + small edits to 00-core, 06-systems, 51-mounts, 55-riding, 32-beast, 04-state). Finish, test, review, ship.
+  2. "bosses shoould all be redefeatable": not started (the run was still finding bosses). The Gnasher's Arena lever is the pattern. Use a NEW worktree path (~/fanglands-wt/bossrematch): ~/fanglands-wt/bosses is an older boss-dungeons draft on feat/bosses (3db206f, src/75-bossdungeons.js, untested) worth reading first.
+  3. "do the same process on the main city" (the Cloud Kingdom process for Thistledown): not started (the run was still designing).
 - Flaky checks seen once each on 2026-09-30 (passed 3 runs straight after): goblincity "killing the Gnasher completes the quest" (and the three checks after it that depend on it), and boats "Ironclad Isle costs 25 coins; first landing gets a Voice line".
 - Ashfields at map scale: the rim rock and the ash are close in colour on the minimap and world map, so the new ridge reads faintly there (it is plain at ground level). The Fang's Lair still reads as a black box on the map (its walls are untouchable).
 - On a phone, the place-name banner (THISTLEDOWN) draws over an open page for its second or two. Seen 2026-09-30 on the quest page.
