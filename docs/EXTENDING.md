@@ -53,7 +53,8 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   `HOOKS.leaveInstance.push(id => ...)` runs as the knight is about to leave instance `id` (every way out: LEAVE, L, the exit, a ride, a respawn, a load),
   while it is still the active map: settle there anything you owe him that a timer was still holding back (91-royalmine pays the golem's fall this way).
 - Named bosses come back (owner: *"bosses shoould all be redefeatable"*). A boss a control or a visit wakes registers it once:
-  `HOOKS.bossCall = HOOKS.bossCall || {}; HOOKS.bossCall.my_boss = { map: 'over' | '<instance id>', near: [tx, ty, tiles] | null, name, type, alive: () => bool, wake: askerName => {...} }`,
+  `HOOKS.bossCall = HOOKS.bossCall || {}; HOOKS.bossCall.my_boss = { map: 'over' | '<instance id>', near: [tx, ty, tiles] | null, name, type, alive: () => bool, wake: (askerName, first) => {...} }`
+  (`first`: the asker said it is his own story fight; 28-thefang marks such a Fang `friendStory` and 37 brings the Dragon Killers for it),
   and the on-screen control calls `window.COOP && COOP.call ? COOP.call('my_boss') : HOOKS.bossCall.my_boss.wake(null)`. Offline or on the
   map's keeper that wakes it at once (`'woke'`); on anyone else it asks the keeper (`'sent'`), who checks the map, the range and
   that none is up (docs/ONLINE.md, *Named bosses*). `wake(null)` is this knight's own call; `wake('Ben')` must never set the
