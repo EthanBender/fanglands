@@ -2314,6 +2314,8 @@
     ID: RM, W, H, ENTRY, STAIR_UP, STAIR_DOWN, STAIR_STAND, LAYOUT, RECTS, WEST, EAST, VEINS, FORGES, HEAPS, SEAT, SEAT_C, GIANTS, GATE, SPAWNS, PEBBLE_MINE, PEBBLE_HOME, NUM, PATTERNS,
     tiles: { ROYAL_STAIR, ROYAL_PILLAR, ORE_BED, HEART_VEIN, HEART_FORGE, GOLEM_GATE, ROYAL_COAL, ROYAL_STORMSTONE },
     clock, setClock(fn) { clockFn = typeof fn === 'function' ? fn : null; }, litVeins,
+    // the golem's own picture, for the fall 79-deaths draws over his rubble
+    drawColossus,
     // overridable by tests: whether a rock that reaches its roll wakes, and what a hot stone hits for
     rollWake: type => Math.random() < (NUM.GIANT[type] ? NUM.GIANT[type].wakeChance : 0),
     heartDmg: () => heartDmgBase(),
