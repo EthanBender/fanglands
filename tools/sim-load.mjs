@@ -46,7 +46,7 @@ async function startWrangler() {
   await sleep(800);
   return { log, stop: async () => { try { process.kill(-p.pid, 'SIGTERM'); } catch (e) { } await sleep(1500); try { process.kill(-p.pid, 'SIGKILL'); } catch (e) { } fs.rmSync(persist, { recursive: true, force: true }); } };
 }
-const api = async (method, p, body, tok) => { const h = { 'content-type': 'application/json' }; if (tok) h.authorization = 'Bearer ' + tok; const r = await fetch(BASE + p, { method, headers: h, body: body ? JSON.stringify(body) : undefined }); let d = null; try { d = await r.json(); } catch (e) { } return { status: r.status, data: d }; };
+const api = async (method, p, body, tok, ip) => { const h = { 'content-type': 'application/json' }; if (tok) h.authorization = 'Bearer ' + tok; if (ip) h['cf-connecting-ip'] = ip; const r = await fetch(BASE + p, { method, headers: h, body: body ? JSON.stringify(body) : undefined }); let d = null; try { d = await r.json(); } catch (e) { } return { status: r.status, data: d }; };
 async function heap() {
   const WS = createRequire('/opt/homebrew/lib/node_modules/wrangler/package.json')('ws');
   const ws = new WS(`ws://127.0.0.1:${INSPECT}/ws`, { headers: { Origin: 'https://devtools.devprod.cloudflare.dev' } });
@@ -121,7 +121,8 @@ try {
   let k = 0;
   for (const [map, n] of MAPS) for (let i = 0; i < n && bots.length < BOTS; i++, k++) {
     const name = 'Load ' + String.fromCharCode(65 + Math.floor(k / 26)) + String.fromCharCode(65 + k % 26);
-    const s = await api('POST', '/api/signup', { name, pass: 'load-' + k + '-word', invite: INVITE });
+    // each bot signs up from its own made-up address: the world lets 10 new knights a hour from one (world.js SIGNUPS_PER_HOUR)
+    const s = await api('POST', '/api/signup', { name, pass: 'load-' + k + '-word', invite: INVITE }, null, '10.9.0.' + (k + 1));
     if (s.status !== 200) throw new Error('signup ' + name + ': ' + JSON.stringify(s.data));
     bots.push(new Bot(k, name, s.data.token, map));
   }
@@ -129,8 +130,12 @@ try {
   for (const b of bots) { await b.open(); await sleep(150); }
   const t0 = Date.now(), end = t0 + MINUTES * 60000;
   let next = t0, sampleAt = t0 + 30000;
+  // the driver's own stalls: this process (not the World) late on its 100 ms step by 250 ms or more means the machine itself
+  // stood still (another program's run), which the World's tick times feel too; a fallback next to one is the machine's
+  const stalls = [];
   while (Date.now() < end) {
     const t = Date.now();
+    if (t - next >= 250) stalls.push({ at: t, lateMs: t - next });
     for (const b of bots) b.step(t);
     if (t >= sampleAt) {
       sampleAt += 30000;
@@ -159,8 +164,12 @@ try {
   await sleep(1500);
   out.result.heap = await heap().catch(e => ({ error: String(e.message || e) }));
   const R = out.result, fell = (R.log || []).filter(x => x.to === 'keeper' && x.reason !== 'parent page' && x.reason !== 'master');
+  // the tick p99 judged over every 30 s window of the run (each window reads the newest 3,000 ticks), not only the last
+  R.tickP99Worst = Math.max(...out.samples.map(x => x.tick && x.tick.p99 != null ? x.tick.p99 : 0), R.tick && R.tick.p99 != null ? R.tick.p99 : 0);
+  R.driverStalls = stalls;
+  R.fallbacks = fell.map(f => ({ ...f, machineStall: stalls.filter(x => Math.abs(x.at - f.at) <= 5000) }));
   out.pass = {
-    tickP99: R.tick && R.tick.p99 !== null && R.tick.p99 < 10,
+    tickP99: R.tickP99Worst < 10,
     noFallback: !fell.length && !Object.keys(R.held || {}).length && R.keepers.every(n => typeof n === 'string' && n.startsWith('@world:')),
     heap: typeof R.heap.usedMB === 'number' && R.heap.usedMB < 64,
     requests: R.requestsPerKnightHour.world <= R.requestsPerKnightHour.keeperPath,

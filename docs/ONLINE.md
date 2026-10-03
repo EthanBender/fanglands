@@ -1891,7 +1891,7 @@ world: { modes: {map: 'keeper' | 'joining' | 'world'}, running, ticks, tick: {n,
 
 The **Shared world** section gains "Monsters run by the world": one line for the master switch with its button, one row per
 map (its mode, how many knights, its copy's monsters and boot time) with a button that flips it ("Let the world run it" /
-"Give it back to a knight's game"), the tick line ("Ticks: 10 a second, half under 0.4 ms, 99 in 100 under 1 ms"), and the
+"Give it back to a knight's game"), the tick line ("Running now: 3 places, 10 ticks a second, half under 1.0 ms, 99 in 100 under 9.3 ms."), and the
 newest changes from `sim_log`. Every button asks first. It reads nothing new: the same one `GET /api/admin/sim`.
 
 **A slow world says so.** A game that said hello and has had no `welcome` for 1.5 s says "Waking the world..." once (a
@@ -1908,7 +1908,8 @@ the pieces the checks press given back (`tools/build-sim.mjs --test-ui`): the dr
 (08-draw, 09-render, 10-hud, 59-hudkit), the title (14-title) and the playthrough bot (42-playthrough), with every drawing
 registration kept so a panel has its buttons. Every other stripped file (the sounds, the music, the book, the icons, the
 monster art and look, the lighting) stays the server's stand-in. The run must pass with the same count as the full build,
-less exactly the stripped files' own checks; the kept six are covered by check 0 (every rule that reads one of their names is
+less exactly the stripped files' own checks, the checks of a listed chapter that cannot run without the drawing, and the
+listed UI-only checks (on 3 Oct: 1,262 less 61, 3 and 14 is 1,184 of 1,199, nothing stray); the kept six are covered by check 0 (every rule that reads one of their names is
 listed with its reason) and the parity checks (3a, 3b, 4b). Check 6 holds the look fields: every `LOOK_FIELDS` type, set up
 in a copy in the state its field shows, reaches a puppet in a real game with that field.
 
