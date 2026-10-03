@@ -234,9 +234,10 @@
       if (running && Math.random() < 0.5) burst(player.x - fx * 26, player.y - fy * 26, '#6e7178', 2, 60);
     }
 
-    // the beacon on the roof
+    // the beacon on the roof; on a machine in the new art (82-knightgear) it sits just over the rider's helm
     items.push({ y: player.y + player.r + 2, draw: () => {
-      const bx = player.x, by = player.y - player.r - 6;
+      const st = window.KNIGHTGEAR && KNIGHTGEAR.seatAt ? KNIGHTGEAR.seatAt(machineKind(), player.facing) : null;
+      const bx = player.x + (st ? st.x : 0), by = st ? player.y + st.top - 9 : player.y - player.r - 6;
       g.fillStyle = '#3a3a42'; g.fillRect(bx - 5, by + 4, 10, 4);            // the mount
       if (broken) {
         // burnt out: a dark stub with smoke curling off it, sputtering as it comes back

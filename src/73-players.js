@@ -180,7 +180,9 @@
     // An admin's tag row starts with the gold ADMIN pill and the name is gold; the level stays.
     // a knight in gear can stand taller (a party hat, an upright spear): the name goes above whatever he wears
     const tall = !onMech && !e.dead && look.gear && window.KNIGHTGEAR ? Math.min(0, Math.round(KNIGHTGEAR.extent(look).t) + 29) : 0;
-    const top = Math.round(y) - (onMech ? MECH_TOP[kind] : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
+    // over a machine in the new art (82-knightgear) the name goes just over the drawing, as a monster's does
+    const mTop = onMech && window.KNIGHTGEAR && KNIGHTGEAR.machineTop ? KNIGHTGEAR.machineTop(kind) : 0;
+    const top = Math.round(y) - (onMech ? mTop || MECH_TOP[kind] : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
     g.font = 'bold 8px sans-serif'; const pw = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 + 4 : 0;
     g.font = 'bold 11px sans-serif'; const nw = g.measureText(e.n).width;
     g.font = '9px sans-serif'; const lw = g.measureText(lv).width;
@@ -556,11 +558,13 @@
     // what a friend does and rides shows on your screen: each swing he starts (presence's sw counts up, and his game
     // plays the 0.22 s swing), his raised shield, a pick that swings and the royal mine's stone that he holds still; and
     // the mare, the bulldozer, the Barrelbeast and the walker are each drawn with him in its seat (not a knight standing
-    // on the grass, or a walker for every machine)
+    // on the grass, or a walker for every machine); the three machines in the monster look's new art
+    // (MONSTER_LOOK.drawMachine, through 82-knightgear) with his knight in the seat, and his name over the drawing
     if (window.KNIGHTGEAR) {
       const r = {}, q0 = Object.assign({}, player.equip), a0 = player.action, O = window.OUTLIERS, bt0 = O && O.BLOCK ? O.BLOCK.t : 0;
       const saved = { horse: window.MOUNTS ? MOUNTS.drawHorse : null, dozer: typeof drawDozer === 'function' ? drawDozer : null, beast: HOOKS.drawMonster.barrelbeast, walker: drawMech };
-      const drawn = [], recG = () => new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : k === 'getTransform' ? () => undefined : (k in t ? t[k] : () => { }), set: (t, k, v) => { t[k] = v; return true; } });
+      const ML = window.MONSTER_LOOK, dm0 = ML ? ML.drawMachine : null, machines = [], names = {};
+      const drawn = [], recG = () => new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : k === 'getTransform' ? () => undefined : k === 'fillText' ? (txt, x, y) => { names[txt] = y; } : (k in t ? t[k] : () => { }), set: (t, k, v) => { t[k] = v; return true; } });
       try {
         // out
         const sw0 = PLAYERS.presence().sw; player.attackT = 0.22; F.step([]); r.swOut = PLAYERS.presence().sw === sw0 + 1; player.attackT = 0;
@@ -584,6 +588,8 @@
         if (saved.dozer) drawDozer = function (g, e, hurt, pilot, up) { drawn.push(['dozer', e.n, !!pilot && !!pilot.gear]); return saved.dozer(g, e, hurt, pilot, up); };
         HOOKS.drawMonster.barrelbeast = function (g, e, hurt, pilot) { drawn.push(['beast', e.n, !!pilot && !!pilot.gear]); return saved.beast(g, e, hurt, pilot); };
         drawMech = function (g, e, hurt, pilot) { drawn.push(['walker', e.n, !!pilot && !!pilot.gear]); return saved.walker(g, e, hurt, pilot); };
+        // the new art's drawer: which machine, and that the seat it was handed drew a knight in gear
+        if (dm0) ML.drawMachine = function (g, e, kind, pilot) { const m = [kind, typeof pilot === 'function', 0]; machines.push(m); const d0 = KNIGHTGEAR.MACH.seated; const ok = dm0(g, e, kind, pilot); m[2] = KNIGHTGEAR.MACH.seated - d0; return ok; };
         const kinds = { Ria: 'horse', Doz: 'dozer', Bea: 'beast', Wal: 'walker' };
         let i = 0;
         for (const n in kinds) feed(Object.assign({ t: 'p', n, x: player.x - 60 + 40 * i++, y: player.y + 40, look: PLAYERS.lookOf() }, at, { mech: { kind: kinds[n], hp: 50, maxHp: 100 } }));
@@ -592,6 +598,13 @@
         for (const n in kinds) { const it = items.find(x => x.who === n); if (it) it.draw(); }
         r.mounts = Object.keys(kinds).every(n => drawn.some(d => d[1] === n && d[0] === kinds[n] && d[2])) && drawn.length === 4;
         r.drawn = drawn.map(d => d.join(' '));
+        // the machines in the new art: one drawMachine each (bulldozer, barrelbeast, walker), each with a seat that drew
+        // the knight once; the name over each sits at or above the drawing's top (the monster look's headroom)
+        const want = { Doz: 'bulldozer', Bea: 'barrelbeast', Wal: 'walker' }, KM = { Doz: 'dozer', Bea: 'beast', Wal: 'walker' };
+        r.newArt = machines.length === 3 && Object.values(want).every(k => machines.some(m => m[0] === k && m[1] && m[2] === 1));
+        r.machines = machines.map(m => m.join(' '));
+        r.names = Object.keys(want).every(n => typeof names[n] === 'number' && KNIGHTGEAR.machineTop(KM[n]) >= 90 && names[n] <= REMOTE[n].shown.y - KNIGHTGEAR.machineTop(KM[n]) + 0.5);
+        r.nameAt = Object.keys(want).map(n => n + ' ' + (names[n] - REMOTE[n].shown.y));
         // on foot, a friend in gear goes through 82's picture cache (one blit), and his name sits over his tallest gear
         // (a dragon spear upright): its baseline above the top of what he wears
         Object.assign(player.equip, { helm: 'dragon_helm', body: 'dragon_body', weapon: 'dragon_spear', shield: null });
@@ -606,10 +619,11 @@
       } catch (e) { r.threw = String(e && e.message); }
       finally {
         if (window.MOUNTS) MOUNTS.drawHorse = saved.horse; if (saved.dozer) drawDozer = saved.dozer; HOOKS.drawMonster.barrelbeast = saved.beast; drawMech = saved.walker;
+        if (dm0) ML.drawMachine = dm0;
         for (const k in player.equip) if (!(k in q0)) delete player.equip[k];
         Object.assign(player.equip, q0); player.action = a0; if (O && O.BLOCK) O.BLOCK.t = bt0; ['Swi', 'Ria', 'Doz', 'Bea', 'Wal', 'Tal'].forEach(forget);
       }
-      check(P + 'what a friend does and rides shows: each swing he starts plays on your screen (and ends), his raised shield, a pick that swings and a stone held still go out in his look; on the mare, in the bulldozer, on the Barrelbeast or in the walker he is drawn in that machine\'s own seat; on foot he is one blit from the picture cache, his name above his tallest gear', !r.threw && r.swOut && r.blockOut && r.stillOut && r.pickOut && r.swIn && r.swEnds && r.oldTool && r.stillIn && r.mounts && r.cache && r.tag, r); }
+      check(P + 'what a friend does and rides shows: each swing he starts plays on your screen (and ends), his raised shield, a pick that swings and a stone held still go out in his look; on the mare, in the bulldozer, on the Barrelbeast or in the walker he is drawn in that machine\'s own seat, the three machines in the new art (MONSTER_LOOK.drawMachine) with his knight in the seat and his name over them as high as over a monster; on foot he is one blit from the picture cache, his name above his tallest gear', !r.threw && r.swOut && r.blockOut && r.stillOut && r.pickOut && r.swIn && r.swEnds && r.oldTool && r.stillIn && r.mounts && r.newArt && r.names && r.cache && r.tag, r); }
     // layout: the chip overlaps no other button at four screen sizes, in the touch layout and the desktop one. It reads
     // touchMode() (forced both ways here), not the device's isTouch, which is always false headless — so the touch
     // layout, the one the iPad and the phones use, is really tested. On touch it is also a full 44 px control and

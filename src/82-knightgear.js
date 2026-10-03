@@ -36,7 +36,8 @@
 // WRAPS (by reassignment, explicit arguments): playerLook (adds gear), drawHuman (a knight look comes here, every other
 // look goes on down unchanged; 77's crown and 79's braid are drawn here for a knight), drawCharacter (the player on
 // foot: the core bobbed the whole figure, this bobs only the body so the feet stay planted), drawMech, drawDozer and
-// HOOKS.drawMonster.barrelbeast (a seat counter: a pilot is drawn without legs). title.KNIGHT gets the Iron knight's gear.
+// HOOKS.drawMonster.barrelbeast (the knight's machines in the monster look's new art, MONSTER_LOOK.drawMachine, with
+// the knight in the seat; a pilot is drawn without legs). title.KNIGHT gets the Iron knight's gear.
 //
 // SPEED. The knight is about 7x the old drawing's work, so other knights online (73-players, possibly 50 on one map)
 // are drawn from pictures: one per (gear, girl, 8 facings, step, animation phase, screen pixel ratio). At rest the
@@ -1337,11 +1338,108 @@ const KNIGHTGEAR = (() => {
     drawHuman(g, e, look);
     g.restore();
   };
-  // the seats: a pilot sits, so no legs
-  const seat = fn => function (g, e, hurt, pilot, up) { KG.seat++; try { return fn(g, e, hurt, pilot, up); } finally { KG.seat--; } };
-  { const _m = drawMech; drawMech = function (g, e, hurt, pilot) { KG.seat++; try { return _m(g, e, hurt, pilot); } finally { KG.seat--; } }; }
-  if (typeof drawDozer === 'function') { const _d = drawDozer; drawDozer = seat(_d); }
-  if (HOOKS.drawMonster.barrelbeast) { const _b = HOOKS.drawMonster.barrelbeast; HOOKS.drawMonster.barrelbeast = function (g, e, hurt, pilot) { KG.seat++; try { return _b(g, e, hurt, pilot); } finally { KG.seat--; } }; }
+  // the seats: a pilot sits, so no legs.
+  // The knight's own machines (the walker, the bulldozer, the Barrelbeast; his own, a friend's online, a parked one and a
+  // wreck) are drawn in the monster look's new art (MONSTER_LOOK.drawMachine, 78-monsterlook) with the knight in his gear
+  // in the main seat, or nobody aboard when parked or wrecked. A machine with a goblin at the controls (the title screen) and every
+  // machine while the new monster look is off go on down to the old drawing. A hit flashes the machine and its rider red,
+  // the way a hurt monster flashes (drawn on a spare canvas and tinted, on the world canvas only).
+  const MACHINE_KIND = { walker: 'walker', dozer: 'bulldozer', beast: 'barrelbeast' };
+  const MACH = { drawn: 0, seated: 0, by: {} };
+  // where he sits: the goblin's seat is (x, y) at scale s in the machine's frame; the goblin's neck is 4.6 above it and
+  // his tunic ends 7 below it (the seat's rail or tub covers below that). The knight's own frame is game pixels with his
+  // feet at 0 and his neck at PILOT.neck: his neck goes where the goblin's was, at PILOT.k times the goblin's scale, and
+  // everything of him below the goblin's tunic's hem is cut off (his cape and his body would hang down over the hull).
+  const PILOT = { k: 0.95, neck: -3 };
+  const pilotIn = look => (g, x, y, s, back, fx) => {
+    const f = back ? { x: 0, y: -1 } : fx ? { x: fx > 0 ? 1 : -1, y: 0 } : { x: 0, y: 1 };
+    g.save(); g.translate(x, y);
+    g.beginPath(); g.rect(-60 * s, -80 * s, 120 * s, 87 * s); g.clip();
+    g.translate(0, -4.6 * s); g.scale(s * PILOT.k, s * PILOT.k); g.translate(0, -PILOT.neck);
+    MACH.seated++;
+    KG.seat++; try { drawHuman(g, { facing: f, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, look); } finally { KG.seat--; g.restore(); }
+  };
+  let machScratch = null;
+  const newMachines = () => !!(window.MONSTER_LOOK && MONSTER_LOOK.drawMachine && MONSTER_LOOK.ON && MONSTER_LOOK.ON.on);
+  // true when it drew the machine in the new art
+  function drawMachineNew(g, e, which, hurt, pilot) {
+    const kind = MACHINE_KIND[which];
+    // with nobody aboard: a parked one, and a wreck (its tile's drawing says `parked` either way, false for the walker's
+    // wreck); a machine that never says (the title screen's) keeps its goblin
+    if (!newMachines() || !e || !e.facing || !(pilot || 'parked' in e)) return false;
+    const seatFn = pilot ? pilotIn(pilot) : null;
+    // its damage: the machine's own hp (the knight's mech, a friend's mech in presence), else what the caller set
+    const hp = e.mech && e.mech.maxHp > 0 ? e.mech : e;
+    const v = { facing: e.facing, moving: !!e.moving, walkT: +e.walkT || 0, attackT: +e.attackT || 0, hurtT: 0, seed: +e.seed || 0, chargeT: +e.chargeT || 0,
+      hp: +hp.hp >= 0 ? +hp.hp : 1, maxHp: +hp.maxHp > 0 ? +hp.maxHp : 1, rodGlow: +e.rodGlow || 0, parked: !!e.parked, type: kind };
+    let ok = false;
+    const cv = hurt && typeof ctx !== 'undefined' && g === ctx && typeof document !== 'undefined' && document.createElement;
+    if (cv) {
+      const b = MONSTER_LOOK.boxOf(kind, true), pad = 40, ss = Math.max(1, Math.min(2, typeof DPR === 'number' && DPR > 0 ? DPR : 1));
+      const x0 = b[0] - pad, y0 = b[1] - pad, W = Math.ceil((b[2] - b[0] + pad * 2) * ss), Hh = Math.ceil((b[3] - b[1] + pad * 2) * ss);
+      if (!machScratch || machScratch.width < W || machScratch.height < Hh) { const c = document.createElement('canvas'); c.width = Math.max(W, machScratch ? machScratch.width : 0); c.height = Math.max(Hh, machScratch ? machScratch.height : 0); machScratch = c.getContext ? c : null; }
+      const cg = machScratch && machScratch.getContext('2d');
+      if (cg) {
+        cg.setTransform(1, 0, 0, 1, 0, 0); cg.clearRect(0, 0, W, Hh);
+        cg.setTransform(ss, 0, 0, ss, -x0 * ss, -y0 * ss); ok = MONSTER_LOOK.drawMachine(cg, v, kind, seatFn);
+        cg.setTransform(1, 0, 0, 1, 0, 0); cg.globalCompositeOperation = 'source-atop'; cg.fillStyle = 'rgba(255,90,90,0.45)'; cg.fillRect(0, 0, W, Hh); cg.globalCompositeOperation = 'source-over';
+        if (ok) g.drawImage(machScratch, 0, 0, W, Hh, x0, y0, W / ss, Hh / ss);
+      }
+    }
+    if (!ok) ok = MONSTER_LOOK.drawMachine(g, v, kind, seatFn);
+    if (ok) { MACH.drawn++; MACH.by[which] = (MACH.by[which] || 0) + 1; }
+    return ok;
+  }
+  // how far above his feet a name goes over a machine in the new art (as over a monster: just over the drawing's box);
+  // 0 when the old drawing is in use or this is no machine (the mare). The friends' Barrelbeast is drawn at 0.9.
+  const MACHINE_SCALE = { beast: 0.9 };
+  function machineTop(which) {
+    const kind = MACHINE_KIND[which];
+    if (!kind || !newMachines() || !MONSTER_LOOK.headroom) return 0;
+    return Math.round((MONSTER_LOOK.headroom(kind) - 7) * (MACHINE_SCALE[which] || 1));
+  }
+  // where the rider sits on a machine in the new art, in game pixels from the machine's feet (x: his middle, top: the top
+  // of his helm, neck), for things drawn over him (55-riding's beacon). Worked out once per machine and facing by drawing
+  // the machine onto a context that only follows the moves, with the friends' and the own Barrelbeast's 0.9.
+  const SEATS = new Map();
+  function seatAt(which, facing) {
+    const kind = MACHINE_KIND[which];
+    if (!kind || !newMachines()) return null;
+    // his helm's top (a hat or a horned helm stands taller; a spear held upright is not his head)
+    const l0 = playerLook(), bare = Object.assign({}, l0, { gear: Object.assign({}, l0.gear, { weapon: null, shield: null }), weapon: null, fists: true, tool: null, rod: false });
+    const f = facing || { x: 0, y: 1 }, fx = Math.sign(Math.round(f.x * 10)), fy = Math.sign(Math.round(f.y * 10));
+    const key = which + fx + ',' + fy + '|' + (bare.gear.helm || '') + (bare.hat || '') + (bare.girl ? 'g' : '');
+    if (SEATS.has(key)) return SEATS.get(key);
+    if (SEATS.size > 60) SEATS.clear();
+    let m = [1, 0, 0, 1, 0, 0]; const stack = []; let at = null;
+    const mul = (a, b, c, d, e, f2) => { const [A, B, C, D, E, F2] = m; m = [A * a + C * b, B * a + D * b, A * c + C * d, B * c + D * d, A * e + C * f2 + E, B * e + D * f2 + F2]; };
+    const moves = {
+      save: () => stack.push(m.slice()), restore: () => { if (stack.length) m = stack.pop(); },
+      translate: (x, y) => mul(1, 0, 0, 1, x, y), scale: (x, y) => mul(x, 0, 0, y, 0, 0),
+      rotate: r => mul(Math.cos(r), Math.sin(r), -Math.sin(r), Math.cos(r), 0, 0), transform: (a, b, c, d, e, f2) => mul(a, b, c, d, e, f2),
+      setTransform: (a, b, c, d, e, f2) => { m = typeof a === 'number' ? [a, b, c, d, e, f2] : [1, 0, 0, 1, 0, 0]; }, resetTransform: () => { m = [1, 0, 0, 1, 0, 0]; },
+      createLinearGradient: () => ({ addColorStop() { } }), createRadialGradient: () => ({ addColorStop() { } }), createPattern: () => null,
+      measureText: () => ({ width: 10 }), getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+    };
+    const g = new Proxy({}, { get: (t, k) => k in moves ? moves[k] : k in t ? t[k] : typeof k === 'string' ? () => { } : undefined, set: (t, k, v) => { t[k] = v; return true; } });
+    const ext = extent(bare);
+    const seatFn = (gg, x, y, sc) => {
+      const pt = (px, py) => ({ x: m[0] * px + m[2] * py + m[4], y: m[1] * px + m[3] * py + m[5] });
+      const neck = pt(x, y - 4.6 * sc), top = pt(x, y - 4.6 * sc + sc * PILOT.k * (ext.t - PILOT.neck));
+      at = { x: neck.x, neck: neck.y, top: top.y };
+    };
+    const k = MACHINE_SCALE[which] || 1; moves.scale(k, k);
+    try { MONSTER_LOOK.drawMachine(g, { facing: { x: fx, y: fy }, moving: false, walkT: 0, attackT: 0, hurtT: 0, seed: 0, hp: 1, maxHp: 1 }, kind, seatFn); } catch (err) { at = null; }
+    SEATS.set(key, at);
+    return at;
+  }
+  const seat = (which, fn) => function (g, e, hurt, pilot, up) {
+    if (drawMachineNew(g, e, which, hurt, pilot)) return;
+    KG.seat++; try { return fn(g, e, hurt, pilot, up); } finally { KG.seat--; }
+  };
+  drawMech = seat('walker', drawMech);
+  if (typeof drawDozer === 'function') drawDozer = seat('dozer', drawDozer);
+  if (HOOKS.drawMonster.barrelbeast) HOOKS.drawMonster.barrelbeast = seat('beast', HOOKS.drawMonster.barrelbeast);
   // the title screen's knight: the sample's "Iron knight" (79-boygirl dresses it as a girl when the last knight was one)
   if (typeof title !== 'undefined' && title.KNIGHT) title.KNIGHT.gear = { helm: 'iron_helm', body: 'iron_body', legs: 'iron_legs', shield: 'iron_shield', cape: null, weapon: 'iron_sword' };
 
@@ -1612,6 +1710,32 @@ const KNIGHTGEAR = (() => {
         for (const [name, fn] of seatsAt) seats[name] = legs(fn, look, bootOf) + legs(fn, plainLook, '#3a2a1c');
         const foot = legs((g, lk) => draw(g, ent(FACES[0]), lk, null), look, bootOf) + legs((g, lk) => draw(g, ent(FACES[0]), lk, null), plainLook, '#3a2a1c');
         check(P0 + 'a pilot sits: no legs or boots in the walker, the dozer, the beast or on the mare; on foot both boots show', Object.values(seats).every(n => n === 0) && Object.keys(seats).length === 5 && foot === 4 && KG.seat === 0, { seats, foot, seat: KG.seat }); }
+
+      // 8b. his own machines, a friend's and a parked one in the monster look's new art (MONSTER_LOOK.drawMachine): the
+      // walker, the bulldozer and the Barrelbeast each with his knight drawn once in the seat, parked ones with every seat
+      // empty, a goblin at the controls (the title screen) still the old drawing; where he sits is known for every
+      // machine and facing (his helm's top above his neck); a name over a machine goes higher than the old drawing's, the
+      // mare keeps hers
+      if (window.MONSTER_LOOK && MONSTER_LOOK.drawMachine && MONSTER_LOOK.ON.on) {
+        const ML = MONSTER_LOOK, dm0 = ML.drawMachine, calls = [];
+        ML.drawMachine = function (g, e, kind, pilot) { calls.push([kind, typeof pilot === 'function' ? 'knight' : pilot === null ? 'empty' : String(pilot), !!e.parked].join(' ')); return dm0.apply(this, arguments); };
+        const look = lookWith({ helm: 'iron_helm', body: 'iron_body', weapon: 'iron_sword' }), s0 = MACH.seated;
+        let old = -1, threw = false;
+        try {
+          for (const f of FACES) { const e = ent(f, { hp: 50, maxHp: 100 }); drawMech(recorder().g, e, false, look); drawDozer(recorder().g, e, false, look, null); HOOKS.drawMonster.barrelbeast(recorder().g, e, false, look); }
+          const pk = ent(FACES[0], { parked: true }); drawMech(recorder().g, pk, false, null); drawDozer(recorder().g, pk, false, null); HOOKS.drawMonster.barrelbeast(recorder().g, pk, false, null);
+          drawMech(recorder().g, ent(FACES[0], { parked: false }), false, null);
+          const n0 = calls.length; drawMech(recorder().g, ent(FACES[1]), false, null); old = calls.length - n0;
+        } catch (err) { threw = String(err && err.message); } finally { ML.drawMachine = dm0; }
+        const seated = MACH.seated - s0, want = [];
+        for (let i = 0; i < FACES.length; i++) want.push('walker knight false', 'bulldozer knight false', 'barrelbeast knight false');
+        want.push('walker empty true', 'bulldozer empty true', 'barrelbeast empty true', 'walker empty false');
+        const st = ['walker', 'dozer', 'beast'].flatMap(w => FACES.map(f => seatAt(w, f)));
+        const seatOk = st.every(a => a && [a.x, a.neck, a.top].every(Number.isFinite) && a.top < a.neck - 8 && a.neck < -20);
+        const tops = ['walker', 'dozer', 'beast'].map(machineTop), horse = machineTop('horse');
+        check(P0 + 'his machines in the new art: the walker, the bulldozer and the Barrelbeast with his knight once in the seat in every facing, parked ones and the walker\'s wreck empty, a goblin at the controls still the old drawing; his seat is known in each, a name goes over the drawing', threw === false && calls.join('|') === want.join('|') && seated === FACES.length * 3 && old === 0 && seatOk && tops.every(t => t > 60) && horse === 0,
+          { threw, calls: calls.slice(0, 8), n: calls.length, seated, old, tops, horse, st: st.slice(0, 4) });
+      }
 
       // 9. the crowd's pictures: six other knights drawn twice make no new picture the second time; at a 1.5 screen the
       // pictures are made at 1.5; the cache never touches the town's building pictures
@@ -1980,6 +2104,6 @@ const KNIGHTGEAR = (() => {
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 
-  return { draw, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf: e => POSE.get(e), STATS, PICS, WPICS, clearPics, picCap: () => picCap, KG, SLOTS, REST_HAND, SHOULDER, REACH };
+  return { draw, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf: e => POSE.get(e), STATS, PICS, WPICS, clearPics, picCap: () => picCap, KG, SLOTS, REST_HAND, SHOULDER, REACH, MACH, PILOT, drawMachineNew, machineTop, seatAt };
 })();
 window.KNIGHTGEAR = KNIGHTGEAR;

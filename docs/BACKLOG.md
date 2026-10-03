@@ -98,7 +98,10 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
   - Captain Roderick, Dunstan, Warden Brann, the Master of Skills, Marlow, Hux and the two unnamed fliers (the winged porter and guard) are not in the sample: they wear the sample's own new-style default villager, not a drawing of their own. A drawing of their own is new art: it goes into the approved sample first (the owner's call), then the generator adds them.
   - In a crowd made on purpose (26 townsfolk walking about in the square at once) a frame costs about 0.2 to 0.6 ms more than master while their pictures are first made; the normal square measures the same as master. That is the price of making each picture once, and no player sees it. Standing loops are now 2 to 6 s long (up to 36 pictures a facing for a standing person, 12 before), inside the same cache (2400 pictures, 48 MB).
 - Monster look leftovers (2026-10-03; all 47 monster types in the approved look, live in 0d0788a):
-  - The knight's own machines (walker, dozer, beast pilots' seats) and the wreck tiles they leave still draw in the old look.
+  - Done 2026-10-03 on fix/leftovers-looks: the knight's own walker, bulldozer and Barrelbeast, a friend's online, the parked ones and their wrecks draw in the new art through MONSTER_LOOK.drawMachine (82-knightgear calls it), the knight in his gear in the main seat. What is left of the machines, and why:
+    - The goblins' hands on the levers (small green dots) and the red lever knob are still drawn when the knight drives, and on an empty parked machine. They are part of the machine drawing (78-monsterart, made by make-art.py), which only the monster look's own work changes: it should leave them out, or draw them as the knight's gauntlets, when e.pilot is set.
+    - The bulldozer's upgrades (drill, iron drill, ram plate, big boiler) are not drawn on the new bulldozer: the new art has no drawing of them yet. They still work. Drawing them is new art for the monster look's sample.
+    - The title screen's walker (a goblin at the controls) is still the old drawing: drawMachine draws the knight's seat or an empty one, not a goblin.
   - Some hit circles grew with the bigger pictures but were capped at 24 (walker, bulldozer, the yard twins, dustjaw). In one-tile gaps a capped circle can sit over the wall edge.
   - The Fang fight costs about 1 ms more per frame than before (mean 9.2/9.7 ms went to 10.2/11.5 ms). Eight bosses on one screen went from 8.5 to 10.1 ms. Common crowds are slightly faster than before.
   - The boss banners in the HUD still use the old emblems, not the new pictures.
@@ -109,7 +112,10 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
 - Knight gear refit leftovers (reviewers' minor findings, 2026-10-03; the refit is live in 9c625b6). Swept 2026-10-03
   (fix/leftovers-looks): friends online on their mare, bulldozer or Barrelbeast, their swings, raised shields and still
   tools; the stone and the pot's rope in his hand; the shield raised facing away shows; nothing over the ferry's hull;
-  the statue's bow and laurel; the party hat in the pack is the cone; and the checks the reviews asked for. Already
+  the statue's bow and laurel; the party hat in the pack is the cone; and the checks the reviews asked for. The mounts
+  are the new art too (the owner asked, 2026-10-03): his walker, bulldozer and Barrelbeast, a friend's, the parked ones
+  and the wrecks (see the monster look block above for what is left there); a friend's name and chat bubble sit over
+  the bigger drawing, and the special's red beacon sits over the rider's helm instead of on his face. Already
   fixed before the sweep (removed): seated on the mare, check 3's own numbers, the hero statue in gear, the bow's margin,
   the old screenshots, the merge note, the stray worktree edits. Left, and why:
   - Facing away, open helms show brown hair at the back of the head, where the approved sample shows a skin patch. Left as it is: the back of a head is hair, and the townsfolk show it the same way. The owner says if he wants the sample's skin patch back.
