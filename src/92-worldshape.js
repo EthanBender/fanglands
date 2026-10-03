@@ -688,7 +688,9 @@
     KIND.set(fn, ok); return ok;
   };
   const INF = Infinity;
-  const bisect = (pred, vertical) => { let lo = -64, hi = 400;
+  // the search window runs 64 past the map's longer side, so it holds every tile however the map grows (the spread: 400x280)
+  const BISECT_HI = () => Math.max(MAP_W, MAP_H) + 64;
+  const bisect = (pred, vertical) => { let lo = -64, hi = BISECT_HI();
     while (lo < hi) { const mid = Math.floor((lo + hi) / 2);
       const ok = vertical ? pred({ x0: -INF, x1: INF, y0: lo, y1: mid }) : pred({ x0: lo, x1: mid, y0: -INF, y1: INF });
       if (ok) hi = mid; else lo = mid + 1; }
@@ -712,9 +714,20 @@
     }, writable: true, configurable: true, enumerable: false,
   });
 
+  WS.bisect = bisect; WS.bisectHi = BISECT_HI;
+
   // ---------- self-test ----------
   const P = 'worldshape: ';
   HOOKS.selfTest.push((check, F, h) => {
+    // the far corner (and the other three) resolve through the bisect: it finds the exact tile, and regionAt answers what the outlines say
+    { const corners = [[0, 0], [MAP_W - 1, 0], [0, MAP_H - 1], [MAP_W - 1, MAP_H - 1]], bad = [];
+      for (const [cx, cy] of corners) {
+        const pred = r => cx >= r.x0 && cx <= r.x1 && cy >= r.y0 && cy <= r.y1;
+        const bx = bisect(pred, false), by = bisect(pred, true), got = regionAt(cx, cy), want = WS.regionAt(cx, cy);
+        if (bx !== cx || by !== cy || !got || !want || got.name !== want.name) bad.push({ at: [cx, cy], bisect: [bx, by], regionAt: got && got.name, outline: want && want.name });
+      }
+      check(P + `the map's far corner (${MAP_W - 1},${MAP_H - 1}) and the other three resolve through regionAt's bisect, whose window (to ${BISECT_HI()}) holds the whole map`,
+        bad.length === 0 && BISECT_HI() > Math.max(MAP_W, MAP_H) && WS.on(), { bad, hi: BISECT_HI(), on: WS.on() }); }
     const S = WS.pass || {}, tiles = window.PLAYTHROUGH ? PLAYTHROUGH.pristine : map;
     const TREES2 = new Set([T.TREE, T.OAK]);
     const flood = (block, from) => {
