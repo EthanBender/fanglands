@@ -96,7 +96,7 @@ const DEATHS = (() => {
     const body = Object.assign({}, m);
     body.x = 0; body.y = 0; body.dead = false; body.hurtT = 0; body.moving = false; body.attackT = 0; body.stunT = 0; body.facing = { x: fx0, y: fy0 };
     // a person's weapon leaves his hand at once: the sprite is drawn without it (08-draw, drawHuman below, 33's drawGob)
-    if (kindOf(m.type) === 'person') body.unarmed = true;
+    if (kind === 'person') body.unarmed = true;
     const r = m.r || def.r || 12;
     const seed = (++made) * 7.31 + (m.x || 0) * 0.013 + (m.y || 0) * 0.007;
     const c = {
