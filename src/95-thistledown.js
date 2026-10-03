@@ -2378,8 +2378,8 @@
       const tilesOk = ids.every(id => typeof id === 'number' && id <= 255) && SOLID.has(HEDGE) && SOLID.has(PROP) && SOLID.has(FOUNT) && !SOLID.has(LAWN) && PLACEABLE_ON.has(LAWN) && LAWN !== T.GRASS;
       // round 1 of review: the Smithy Yard, the Bell Green, the inn's garden and the kitchen garden took 184 plain grass
       // cells ('.' 215 -> 31); one lamp moved from 121,29 to 117,30 (still 22)
-      const COUNTS = { '-': 202, '#': 144, 'T': 80, 'G': 6, '@': 507, '=': 282, '+': 443, '"': 262, 'h': 82, 'd': 1, 'O': 1, 'P': 2, 'u': 2, 't': 26, '*': 19, 'l': 22, 's': 4, 'p': 1, 'n': 12, 'k': 8, 'i': 2, 'B': 4, 'N': 1, 'D': 1, 'f': 62, '.': 31, ',': 135, 'a': 20, 'Y': 34, '~': 87, 'b': 10, 'j': 1, 'F': 20, 'x': 1, 'S': 4, 'C': 56, 'g': 2,
-        'v': 21, 'w': 5, 'c': 2, 'A': 1, 'q': 1, 'V': 1, 'U': 2 };
+      const COUNTS = { '-': 202, '#': 144, 'T': 80, 'G': 6, '@': 507, '=': 282, '+': 457, '"': 262, 'h': 82, 'd': 1, 'O': 1, 'P': 2, 'u': 2, 't': 26, '*': 19, 'l': 22, 's': 4, 'p': 1, 'n': 12, 'k': 8, 'i': 2, 'B': 4, 'N': 1, 'D': 1, 'f': 62, '.': 31, ',': 119, 'a': 20, 'Y': 34, '~': 87, 'b': 10, 'j': 1, 'F': 20, 'x': 1, 'S': 4, 'C': 56, 'g': 2,
+        'v': 21, 'w': 7, 'c': 2, 'A': 1, 'q': 1, 'V': 1, 'U': 2 };
       const off = Object.keys(COUNTS).filter(c => (PLAN.COUNTS[c] || 0) !== COUNTS[c]).map(c => `${c} ${PLAN.COUNTS[c]} want ${COUNTS[c]}`);
       const extra = Object.keys(PLAN.COUNTS).filter(c => !(c in COUNTS));
       const total = Object.values(COUNTS).reduce((a, b) => a + b, 0);
@@ -2392,8 +2392,8 @@
       // the biggest patch of plain overworld grass ('.' and the dozer bay's 'D') left inside the walls
       let bigGrass = 0; { const seen = new Set(); for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) { const g0 = c => c === '.' || c === 'D'; if (!g0(glyph(x, y)) || seen.has(x + ',' + y)) continue; let n = 0; const st = [[x, y]]; seen.add(x + ',' + y); while (st.length) { const [cx, cy] = st.pop(); n++; for (const [dx, dy] of N4c) { const k = (cx + dx) + ',' + (cy + dy); if (!seen.has(k) && g0(glyph(cx + dx, cy + dy))) { seen.add(k); st.push([cx + dx, cy + dy]); } } } bigGrass = Math.max(bigGrass, n); } }
       const sha = (() => { let hsh = 0; for (const r of PLAN.ROWS) for (let i = 0; i < r.length; i++) hsh = (Math.imul(hsh, 31) + r.charCodeAt(i)) | 0; return hsh; })();
-      check(P + 'C1 the plan: 45 rows of 58, every glyph known; TD_LAWN, TD_HEDGE, TD_PROP and TD_FOUNTAIN exist (ids <= 255); every glyph count is the plan\'s (2610 cells); 66 prop, 148 hedge and 20 fountain cells all have a kind; 18 towers (14 of 2x2, 4 of 2x3), 64 moat + 23 pond, 12 + 4 + 4 fountain cells, 14 fruit + 12 cherry trees, 22 lamps, and no plain grass patch inside the walls bigger than 6 cells',
-        rowsOk && known && tilesOk && !off.length && !extra.length && total === 2610 && kProp === 66 && nProp === 66 && kHedge === 148 && nHedge === 148 && kFount === 20 && nFount === 20
+      check(P + 'C1 the plan: 45 rows of 58, every glyph known; TD_LAWN, TD_HEDGE, TD_PROP and TD_FOUNTAIN exist (ids <= 255); every glyph count is the plan\'s (2610 cells); 68 prop, 148 hedge and 20 fountain cells all have a kind; 18 towers (14 of 2x2, 4 of 2x3), 64 moat + 23 pond, 12 + 4 + 4 fountain cells, 14 fruit + 12 cherry trees, 22 lamps, and no plain grass patch inside the walls bigger than 6 cells',
+        rowsOk && known && tilesOk && !off.length && !extra.length && total === 2610 && kProp === 68 && nProp === 68 && kHedge === 148 && nHedge === 148 && kFount === 20 && nFount === 20
         && towers.length === 18 && t22 === 14 && t23 === 4 && moat === 64 && pond === 23 && fr2.great === 12 && fr2.market === 4 && fr2.rose === 4 && trees.fruit === 14 && trees.cherry === 12 && LAMPS_N === 22 && bigGrass <= 6,
         { rowsOk, known, ids, maxId, tilesOk, off, extra, total, kProp, kHedge, kFount, towers: [towers.length, t22, t23], moat, pond, fountains: fr2, trees, lamps: LAMPS_N, bigGrass, sha }); }
 
@@ -2519,7 +2519,7 @@
         v1: [100, 32], v2: [118, 32], v3: [112, 24], v4: [96, 33], v5: [128, 34], v6: [114, 40], skillmaster: [108, 44], captain: [110, 40],
         osric: [91, 30], ambrose: [110, 17], hettie: [114, 19], mabel: [119, 19], moll: [114, 25], wynn: [131, 24] };
       const bad = Object.keys(HOMES).filter(id => { const n = npc(id); return !n || n.x !== HOMES[id][0] || n.y !== HOMES[id][1]; }).map(id => { const n = npc(id); return id + (n ? '@' + n.x + ',' + n.y : ' missing'); });
-      const GUARDS = ['guard_m@87,30', 'guard_m@118,36', 'guard_m@113,43', 'guard_f@104,23', 'guard_f@126,33', 'guard_f@110,43'];
+      const GUARDS = ['guard_m@89,30', 'guard_m@118,36', 'guard_m@113,43', 'guard_f@104,23', 'guard_f@126,33', 'guard_f@110,43'];
       const inT = MONSTER_SPAWNS.filter(s => inTown(s.tx, s.ty)).map(s => s.type + '@' + s.tx + ',' + s.ty).sort();
       const guardsOk = JSON.stringify(inT) === JSON.stringify(GUARDS.slice().sort());
       const roles = ['osric', 'ambrose', 'wynn'].every(id => HOOKS.talk[npc(id).role]) && ['hettie', 'mabel', 'moll'].every(id => npc(id).role === 'villager' && npc(id).lines.length === 2) && PLAN.PEOPLE.every(p => !npc(p.id).wander);

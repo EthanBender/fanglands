@@ -55,8 +55,8 @@
     '-#,,cc@@@@@@@,,@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
     '-#ffff@@@@@@@,,@@@@@@@++l++++p+l++++++++++==+++l+++++++.#-',
     '-#,,,,@@@@@@@,,ww,,~~~~~~~~bb~~~~~~~~~~+++==+++++++++++.#-',
-    '-#,,u,f,,,,A,,,,,,,~CCCCCCCPPCCCCCCCCC~+++==+++,,**""t"TT-',
-    '-#,,,,g,,,,,D,q,,,,~C++++++++++++++++C~+++==+++,,""""""TT-',
+    '-#,,u,fw+++A,,,+++w~CCCCCCCPPCCCCCCCCC~+++==+++,,**""t"TT-',
+    '-#,,,,g++++,D,q++++~C++++++++++++++++C~+++==+++,,""""""TT-',
     '-#,,u,f,,,,,,,,,,,,~C++++++++++++++++C~@@@@@@@@,,""FF"n.#-',
     '-#,,,,f,,,,,,,,,,,,~C++++++++++++++++C~@@@@@@@@,,""FF"".#-',
     '-#fffff"@@@@""@@@@"~C+++@@@@@@@@@@+++C~@@@@@@@@,,"""""".#-',
@@ -126,8 +126,9 @@
   const BELL = { x: 111, y: 15, w: 2, h: 2, stand: [[111, 17], [112, 17]], plaza: [[109, 15, 110, 18], [113, 15, 114, 16]] };
   const SUNDIAL = { x: 132, y: 18, stand: [133, 18], mazeGate: [133, 23] };
   const POND = { x0: 130, y0: 25, x1: 137, y1: 28, bridge: [133, 134], jetty: [130, 26], boat: [130, 27], swans: [{ x0: 131, x1: 132, y0: 25, y1: 28 }, { x0: 135, x1: 137, y0: 25, y1: 28, ducklings: 4 }] };
-  // bunting strung between two lamp heads
-  const BUNTING = [[[88, 30], [90, 34]], [[104, 30], [103, 34]], [[121, 30], [124, 34]], [[110, 26], [113, 26]]];
+  // bunting strung between two lamp heads (the first runs along the south pavement: strung from 88,30 to 90,34 it crossed
+  // the High Street in the West Gate's mouth, over the face of every knight walking in)
+  const BUNTING = [[[90, 34], [95, 34]], [[104, 30], [103, 34]], [[121, 30], [124, 34]], [[110, 26], [113, 26]]];
   // Tess and Robin play tag round the fountain: a U path, ping-pong, by the wall clock (not Nell: Nell is the Hollowford
   // survivor who runs the rebuild, and a second Nell would muddle her story)
   const KIDS = { path: [[109, 34], [109, 37], [114, 37], [114, 34]], speed: 1.6, lag: 1.2, names: ['Tess', 'Robin'] };
