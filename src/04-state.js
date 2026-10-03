@@ -207,10 +207,20 @@ function advanceQuest(stage) {
 }
 
 // ---------- save / load ----------
+const NEWER_WORLD = 'This knight lives in a newer world. Reload.';
+// the plaque while a newer world's knight is refused (SAVE_LOCK): its tap reloads the page, the same way 96-atlas's does
+HOOKS.hud.push(g => {
+  if (!SAVE_LOCK || paused || panel) return;
+  const r = HK.addPlaque(g, { id: 'newer_world', emblem: 'map', name: 'NEWER WORLD', nameColor: HK.T.goldHi, edge: HK.T.warn, sub: NEWER_WORLD });
+  if (!r) return;
+  const reload = () => { if (typeof window.__atlasReload === 'function') return window.__atlasReload(); try { location.reload(); } catch (e) { } };
+  buttons.push({ x: r.x, y: r.y, w: r.w, h: r.h, label: 'NEWER WORLD', action: reload, up: true, name: 'Reload the game', sub: NEWER_WORLD });
+});
 function save() {
+  if (SAVE_LOCK) return;   // this page refused a save from a newer world: it writes nothing until it is reloaded
   try {
     // tiles go out by NAME (see tileId in 03-textures): numeric ids shift when feature files come and go
-    const data = { player, quest, swordTaken, deathKeep, mapDiffs: [...mapDiffs.entries()].map(([i, t]) => [i, tileName(t)]), regrow: regrow.map(r => ({ ...r, t: tileName(r.t) })), crops, fires: fires.map(f => ({ ...f, under: f.under === undefined ? undefined : tileName(f.under) })), time, mapW: MAP_W };
+    const data = { player, quest, swordTaken, deathKeep, mapDiffs: [...mapDiffs.entries()].map(([i, t]) => [i, tileName(t)]), regrow: regrow.map(r => ({ ...r, t: tileName(r.t) })), crops, fires: fires.map(f => ({ ...f, under: f.under === undefined ? undefined : tileName(f.under) })), time, mapW: MAP_W, worldV: WORLD_V };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch (e) { /* storage unavailable: play on without saving */ }
 }
@@ -219,6 +229,10 @@ function load() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return false;
     const d = JSON.parse(raw);
+    // a knight from a newer world (this page is older than the save: a rollback): load nothing, write nothing, say so
+    if ((d.worldV | 0) > WORLD_V) { SAVE_LOCK = true; notify(NEWER_WORLD); return false; }
+    // a knight from an older world: the spread's migration prepares the save first (no hook registers at world 1)
+    if ((d.worldV | 0) < WORLD_V) for (const f of HOOKS.saveIn) f(d);
     const fresh = newPlayer();
     player = Object.assign(fresh, d.player, { attackT: 0, attackCd: 0, hurtT: 0, dead: false, deadT: 0, action: null });
     player.equip = Object.assign({ weapon: null, helm: null, body: null, legs: null, shield: null }, d.player.equip || {});
