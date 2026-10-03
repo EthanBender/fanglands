@@ -2216,7 +2216,8 @@ const MONSTER_ART = (() => {
     g.restore(); ell(g, x, y - h - 0.2, 0.45, 0.45); g.fillStyle = '#d4a017'; g.fill();
   }
   // the goblin at the controls: the top of his tunic and the approved goblin head (ears, eyes, teeth, his hat), drawn small
-  function mch_pilot(g, e, x, y, s, hat, back, fx, tunic) {
+  function mch_pilot(g, e, x, y, s, hat, back, fx, tunic, side) {
+    if (e.pilot !== undefined) { if (typeof e.pilot === 'function' && !side) e.pilot(g, x, y, s, back, fx); return; }
     g.save(); g.translate(x, y); g.scale(s, s);
     g.beginPath(); g.moveTo(-7, 7); g.quadraticCurveTo(-8.2, -3.6, 0, -4.6); g.quadraticCurveTo(8.2, -3.6, 7, 7); g.closePath();
     g.fillStyle = vfill(g, tunic || '#7a5a3a', -4.6, 7); g.fill(); outline(g, 0.9);
@@ -2690,9 +2691,9 @@ const MONSTER_ART = (() => {
     g.strokeStyle = '#5a3a1e'; g.lineWidth = 0.7; g.beginPath(); g.moveTo(-4, -0.4); g.lineTo(4.2, -0.4); g.stroke();
     // the crew behind the deck rail: a helmed goblin, the driver at the lever, the bomber in goggles with a lit bomb
     mch_rod(g, 13.6, -11.6, -30.4);
-    mch_pilot(g, e, -5.8, -16, 0.42, spikeHelm, false, 1, '#6b4a2a');
+    mch_pilot(g, e, -5.8, -16, 0.42, spikeHelm, false, 1, '#6b4a2a', true);
     mch_pilot(g, e, 0.4, -17, 0.42, null, false, 1, '#7a5a3a');
-    mch_pilot(g, e, 6.4, -16, 0.42, gogglesHat, false, 1, '#6b5a46');
+    mch_pilot(g, e, 6.4, -16, 0.42, gogglesHat, false, 1, '#6b5a46', true);
     rr(g, -12.6, -16.6, 24, 3.6, 0.6); g.fillStyle = vfill(g, '#8a5a32', -16.6, -13); g.fill(); outline(g, 0.5);
     g.strokeStyle = 'rgba(40,20,8,0.45)'; g.lineWidth = 0.3; g.beginPath(); g.moveTo(-12.6, -14.8); g.lineTo(11.4, -14.8); g.stroke();
     for (const x of [-12, -4, 4, 11]) { rr(g, x - 0.6, -17.6, 1.2, 4.8, 0.4); g.fillStyle = '#5a3a1e'; g.fill(); outline(g, 0.3); }
@@ -2735,14 +2736,14 @@ const MONSTER_ART = (() => {
     const fx = back ? 0 : e.facing.x;
     if (!back) {
       boiler(-8.4, -20.4); mch_pennant(g, -12.6, -19, -32, -1); mch_rod(g, 10.4, -20.4, -32.4);
-      mch_pilot(g, e, -6, -18.6, 0.42, spikeHelm, false, fx, '#6b4a2a'); mch_pilot(g, e, 6, -18.6, 0.42, gogglesHat, false, fx, '#6b5a46'); mch_pilot(g, e, 0, -19.6, 0.42, null, false, fx, '#7a5a3a');
+      mch_pilot(g, e, -6, -18.6, 0.42, spikeHelm, false, fx, '#6b4a2a', true); mch_pilot(g, e, 6, -18.6, 0.42, gogglesHat, false, fx, '#6b5a46', true); mch_pilot(g, e, 0, -19.6, 0.42, null, false, fx, '#7a5a3a');
       rail();
       const lv = e.moving ? Math.sin(e.walkT * 2) * 0.5 : 0;
       mch_beam(g, [[1.6, -21], [2.4 + lv - hit, -24.6]], 0.55, '#3a3a42', 0.45); mch_bolt(g, 2.4 + lv - hit, -24.6, 0.8, '#c0392b'); mch_hand(g, 2.1 + lv - hit, -24, 0.85);
       mch_bomb(g, 9.6, -22.8 - hit, 1.25); mch_hand(g, 8.6, -22, 0.85);
     } else {
       mch_rod(g, -10.4, -20.4, -32.4);
-      mch_pilot(g, e, 6, -18.6, 0.42, spikeHelm, true, 0, '#6b4a2a'); mch_pilot(g, e, -6, -18.6, 0.42, gogglesHat, true, 0, '#6b5a46'); mch_pilot(g, e, 0, -19.6, 0.42, null, true, 0, '#7a5a3a');
+      mch_pilot(g, e, 6, -18.6, 0.42, spikeHelm, true, 0, '#6b4a2a', true); mch_pilot(g, e, -6, -18.6, 0.42, gogglesHat, true, 0, '#6b5a46', true); mch_pilot(g, e, 0, -19.6, 0.42, null, true, 0, '#7a5a3a');
       rail(); mch_pennant(g, 12.6, -19, -32, 1); boiler(8.4, -15.6);
     }
     mch_barrelEnd(g, 0, -5, 13.6, 12.4, mch_BB.wood, mch_BB.band, 14);
