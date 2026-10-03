@@ -104,7 +104,9 @@
   { const base14 = MAP_TARGETS[14] || { x: 18, y: 108, label: "The Fang's lair" };
     Object.defineProperty(MAP_TARGETS, 14, { configurable: true, enumerable: true, get() {
       const s = quest.sky ? quest.sky.stage : 0;
-      if (s !== 'done') return s === 1 || s === 2 ? { x: 58, y: 3, label: 'The wind shrine' } : { x: 30, y: 78, label: 'Old Wren' };
+      // the wind shrine is where 36-skycity puts it (SKYCITY.SHRINE_T, (62,6) on the Grey Quarry heights)
+      const shrine = window.SKYCITY && SKYCITY.SHRINE_T ? SKYCITY.SHRINE_T : { x: 62, y: 6 };
+      if (s !== 'done') return s === 1 || s === 2 ? { x: shrine.x, y: shrine.y, label: 'The wind shrine' } : { x: 30, y: 78, label: 'Old Wren' };
       if (!DK().formed) return { x: 112, y: 49, label: 'Duke Ferrin' };
       return base14;
     } }); }

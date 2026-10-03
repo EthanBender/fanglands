@@ -697,6 +697,8 @@ function recipeRow(g, x, y, w, h, rec, label, can, action) {
     ln.forEach((s, i) => HK.text(g, s, tx, y + h / 2 + 4 - (ln.length - 1) * lh / 2 + i * lh + dy, { font: f, color: col, box: { x: tx, y, w: room, h }, fitId: 'recipe' }));
   }
 }
+// what the crafting panel laid out last (rows a page, pages, tab rows, the tabs), for checks
+const CRAFT_VIEW = { perPage: 0, pages: 0, tabRows: 0, tiers: [] };
 function drawCraftPanel(g) {
   const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G, t } = Rm;
   const station = panel === 'craft' ? null : panelArg;
@@ -705,13 +707,22 @@ function drawCraftPanel(g) {
   const skillKey = station === 'forge' || station === 'anvil' ? 'smithing' : 'crafting';
   // tabs by tier when the list is long; 8 rows a page (fewer on a short screen) with Prev / Next
   const tabbed = all.length > 8;
-  const tiers = tabbed ? ['Bronze/Iron', 'Steel', 'Mithril', 'Godly', 'Other'].filter(tn => all.some(r => recipeTier(r) === tn)) : [];
+  const tiers = tabbed ? RECIPE_TIERS.map(q => q[0]).concat('Other').filter(tn => all.some(r => recipeTier(r) === tn)) : [];
   if (tabbed && !tiers.includes(recipeTab)) recipeTab = tiers[0];
   const list = tabbed ? all.filter(r => recipeTier(r) === recipeTab) : all;
-  const W = Math.min(Rm.aw, t ? 480 : 440), cw = W - 36;
+  // the anvil has eight metals: the panel widens (as far as the screen allows) to keep its tabs on one row, so a short
+  // landscape phone still has room for recipe rows under them
+  const nat = tabbed ? tiers.map(tn => Math.max(t ? 56 : 60, K.verbW(g, tn, null, R))) : [];
+  const oneRow = nat.reduce((a, b) => a + b, 0) + G * Math.max(0, nat.length - 1) + 36;
+  const W = Math.min(Rm.aw, Math.max(t ? 480 : 440, tabbed ? oneRow : 0)), cw = W - 36;
   // the tab rows' height, measured the way K.tabs lays them out
-  let tabsH = 0;
-  if (tabbed) { const nat = tiers.map(tn => Math.max(t ? 56 : 60, K.verbW(g, tn, null, R))); tabsH = (nat.reduce((a, b) => a + b, 0) + G * (tiers.length - 1) <= cw ? R : 2 * R + G) + 10; }
+  // (one row when they fit; else two, or three when a name will not fit a half-row plate)
+  let tabsH = 0, tabRows = 1;
+  if (tabbed) {
+    const fitsIn = rows => { const per = Math.ceil(tiers.length / rows), eq = Math.floor((cw - G * (per - 1)) / per); return nat.every(x => x <= eq); };
+    tabRows = nat.reduce((a, b) => a + b, 0) + G * (tiers.length - 1) <= cw ? 1 : fitsIn(2) ? 2 : 3;
+    tabsH = tabRows * R + (tabRows - 1) * G + 10;
+  }
   const pitch = R + 8, y0 = 62 + tabsH, n = list.length, pagerH = R + 14;
   const noHammer = station === 'anvil' && !hasTool('hammer'), warnH = noHammer ? 20 : 0;
   const needPager = n > 8 || y0 + n * pitch + 16 + warnH > Rm.ah;
@@ -720,8 +731,9 @@ function drawCraftPanel(g) {
   else { perPage = Math.max(1, n); h = Math.max(160, y0 + n * pitch + 16 + warnH); }
   const { px, py, w, h: ph } = panelBox(g, W, h, station ? titles[station] || 'Station' : 'Crafting', station ? `${SKILL_DEFS.find(s => s.key === skillKey).name} level ${skillLv(skillKey)}${station === 'anvil' ? '. Needs a hammer.' : ''}` : 'Simple things craft from your pack. Stations in Thistledown make the rest.');
   const x0 = px + 18;
-  if (tabbed) K.tabs(g, x0, py + 62, w - 36, tiers.map(tn => ({ label: tn })), recipeTab, tn => { recipeTab = tn; recipePage = 0; });
+  if (tabbed) K.tabs(g, x0, py + 62, w - 36, tiers.map(tn => ({ label: tn })), recipeTab, tn => { recipeTab = tn; recipePage = 0; }, { rows3: tabRows === 3 });
   const pages = Math.max(1, Math.ceil(n / perPage)); recipePage = clamp(recipePage, 0, pages - 1);
+  CRAFT_VIEW.perPage = perPage; CRAFT_VIEW.pages = pages; CRAFT_VIEW.tabRows = tabRows; CRAFT_VIEW.tiers = tiers;
   const canMake = r => { const rec = station === 'forge' ? { ...r, station: 'forge', skill: 'smithing', qty: 1 } : r; const has = rec.needs.every(([id, q]) => countItem(id) >= q); const lvOk = !rec.skill || skillLv(rec.skill) >= rec.lv; return { rec, can: has && lvOk && !(station === 'anvil' && !hasTool('hammer')) }; };
   const labelOf = rec => rec.label + (rec.lv > 1 ? `  (lv ${rec.lv})` : '');
   const pageList = list.slice(recipePage * perPage, recipePage * perPage + perPage);
