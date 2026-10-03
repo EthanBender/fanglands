@@ -193,7 +193,11 @@ sees exactly your gear; other people's looks (townsfolk, guards) are still drawn
 no `gear` at all; a newer client may send an item this page does not know) is read back from the colour fields, which
 map back to exactly one item each (`hat: 'red'` is `party_hat_red`), and a colour that is no item draws that family's
 plain piece in that colour. Old clients ignore `gear`. A knight on a machine
-adds `mech: {kind, hp, maxHp}` and is drawn with `drawMech`. Mounts add `mount: id`. A worn party hat adds `hat: '<colour>'`
+adds `mech: {kind, hp, maxHp}` (`kind` is `walker`, `dozer`, `beast` or `horse`; a bulldozer with fitted upgrades adds
+`up`, a comma list of `drill`, `irondrill`, `ram`, `boiler`, and a change to it counts as a look change) and is drawn on
+it by `src/84-mountlook.js` (`MOUNT_LOOK.rider`): on Cinder in her saddle, or in the seat of his machine in the monster
+refit's machine art, his name over it. A `kind` this page does not know is drawn as the walker. The server relays `mech`
+unchanged. A worn party hat adds `hat: '<colour>'`
 (`null` otherwise; see *Party hats*). `girl` is a boolean, always sent: `true` for a girl knight (`player.gender`, chosen on
 the "Boy or girl?" card on the title before the knight comes into the world, or in Settings, `src/79-boygirl.js`), and then `hair` is her hair colour; any `drawHuman` draws a look
 with `girl` with the skirt and long hair, a braid with a ribbon (out of any helm) and a bow on a bare head. A change of

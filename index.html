@@ -13137,7 +13137,7 @@ window.PLACE_KIT = PLACE_KIT;
     action: () => touch.taps.push('bomb'),
   });
   // the coach: "[B] Bomb" over the beast the first times the chute is loaded
-  HOOKS.hud.push(() => { if (driving() && bombCd <= 0 && !paused && !panel && monsters.some(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 260)) HK.teach('bomb', 'B', 'Bomb', { x: player.x, y: player.y, lift: window.MOUNT_LOOK ? MOUNT_LOOK.top('beast') - 30 : 52 }, { emblem: 'bomb' }); });
+  HOOKS.hud.push(() => { if (driving() && bombCd <= 0 && !paused && !panel && monsters.some(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 260)) HK.teach('bomb', 'B', 'Bomb', { x: player.x, y: player.y, lift: window.MOUNT_LOOK ? MOUNT_LOOK.top('beast') + 54 : 52 }, { emblem: 'bomb' }); });
 
   // ---------- art ----------
   // The sprite lives in 20-hollowford.js (HOOKS.drawMonster.barrelbeast); its fourth argument is the pilot look and
@@ -24718,13 +24718,18 @@ window.SETTINGS = SETTINGS;
   // her and she vanished underneath). Side-mounted, with a small downward bias, she is beside the hull at every
   // facing and always painted just after it — clinging to the rail, leaning out, rather than sitting on it.
   const RIDE_SIDE = 21, RIDE_BACK = 5, RIDE_DEPTH = 6;
+  // Seen from the front or behind, a machine in the new look (84-mountlook) is wide across: she holds on at its edge,
+  // not hidden under it. Half its width that way, in pixels, as drawn (the mare is narrow: the old 21 still clears her).
+  const END_HALF = { walker: 34, dozer: 46, beast: 38 };
   const riderOffset = () => {
     const f = player.facing || { x: 1, y: 0 };
     const d = Math.hypot(f.x, f.y) || 1;
     const fx = f.x / d, fy = f.y / d;
+    const kind = player.mech ? (player.mech.kind || 'walker') : null;
+    const side = Math.abs(fy) > 0.55 && END_HALF[kind] ? END_HALF[kind] + 8 : RIDE_SIDE;
     const sx = -fy, sy = fx;                                  // ninety degrees off the line of travel
     const bob = player.moving ? Math.sin(time * 11) * 1.6 : 0; // she swings a little while it rolls
-    return { x: player.x + sx * RIDE_SIDE - fx * RIDE_BACK, y: player.y + sy * RIDE_SIDE - fy * RIDE_BACK + RIDE_DEPTH + bob };
+    return { x: player.x + sx * side - fx * RIDE_BACK, y: player.y + sy * side - fy * RIDE_BACK + RIDE_DEPTH + bob };
   };
   // 21-companion moves the hero in its own update; this file loads later, so its hook runs after and has the
   // last word on where she ends up. Nothing about her bow, her rolls or her hurt changes — she just holds on.
@@ -24740,6 +24745,8 @@ window.SETTINGS = SETTINGS;
   HOOKS.draw.push((g, items) => {
     const c = comp();
     if (!c || !c.id || !c.riding || !onMachine()) return;
+    // on the mare she just holds on at her side: no running board, no rail
+    if (player.mech.kind === 'horse') return;
     const p = riderOffset();
     // a running board under her boots and a grab rail from the hull to her hands, so she reads as hanging on
     items.push({ y: p.y - 2, draw: () => {
@@ -57947,11 +57954,19 @@ const MOUNT_LOOK = (() => {
   });
 
   // ---------- the old entry points, for every other caller ----------
+  const TITLE_K = 0.6;
   // drawMech(g, e, hurt, pilot): the walker (the title screen's, a parked one, a knight in it)
   { const _drawMech = drawMech;
     drawMech = function (g, e, hurt, pilot) {
       if (!ON.on || !e) return _drawMech(g, e, hurt, pilot);
-      if (!pilot && !e.parked) { const v = viewOf(e, 'walker', {}); if (hurt && g === ctx && tinted(g, 'walker', v, {}, HURT)) return; LOOK.paint(g, v, 'walker', null, null); return; }
+      // no pilot and nobody parked it: the title screen's goblin walker (monsters are drawn by 78-monsterlook, never here).
+      // The title has room for the old walker, so the new one stands there at that size, its feet on the title's shadow
+      if (!pilot && !e.parked) {
+        const v = viewOf(e, 'walker', {});
+        g.save(); g.translate(0, 22); g.scale(TITLE_K, TITLE_K); g.translate(0, -22);
+        try { if (!(hurt && g === ctx && tinted(g, 'walker', v, { k: 1 }, HURT))) LOOK.paint(g, v, 'walker', null, null); } finally { g.restore(); }
+        return;
+      }
       machine(g, e, 'walker', { pilot: pilot || null, parked: !pilot, hurt });
     }; }
   if (typeof drawDozer === 'function') {

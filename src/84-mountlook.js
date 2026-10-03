@@ -296,11 +296,19 @@ const MOUNT_LOOK = (() => {
   });
 
   // ---------- the old entry points, for every other caller ----------
+  const TITLE_K = 0.6;
   // drawMech(g, e, hurt, pilot): the walker (the title screen's, a parked one, a knight in it)
   { const _drawMech = drawMech;
     drawMech = function (g, e, hurt, pilot) {
       if (!ON.on || !e) return _drawMech(g, e, hurt, pilot);
-      if (!pilot && !e.parked) { const v = viewOf(e, 'walker', {}); if (hurt && g === ctx && tinted(g, 'walker', v, {}, HURT)) return; LOOK.paint(g, v, 'walker', null, null); return; }
+      // no pilot and nobody parked it: the title screen's goblin walker (monsters are drawn by 78-monsterlook, never here).
+      // The title has room for the old walker, so the new one stands there at that size, its feet on the title's shadow
+      if (!pilot && !e.parked) {
+        const v = viewOf(e, 'walker', {});
+        g.save(); g.translate(0, 22); g.scale(TITLE_K, TITLE_K); g.translate(0, -22);
+        try { if (!(hurt && g === ctx && tinted(g, 'walker', v, { k: 1 }, HURT))) LOOK.paint(g, v, 'walker', null, null); } finally { g.restore(); }
+        return;
+      }
       machine(g, e, 'walker', { pilot: pilot || null, parked: !pilot, hurt });
     }; }
   if (typeof drawDozer === 'function') {
