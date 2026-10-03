@@ -117,7 +117,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `t` | Fields | Cap | Meaning |
 |---|---|---|---|
 | `hello` | `v: 1, map?` | once | first frame after open; the server answers `welcome`. Without `map` the knight is on `over` until its first `p` |
-| `p` | `map, region, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act` | 8/s | presence. `region` is the region or instance name the roster shows; `look` is the serialisable part of `playerLook()` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null |
+| `p` | `map, region, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act` | 8/s | presence. `region` is the region or instance name the roster shows; `look` is the serialisable part of `playerLook()`, with the six worn item ids in `look.gear` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null |
 | `chat` | `text` | 1 per 1.5 s, ≤ 120 chars | filtered and logged server-side, then sent to everyone |
 | `mon` | `list` | 8/s, keeper only | monster snapshot for the map (format below) |
 | `hit` | `nid, dmg, knock, bomb` | 20/s | a non-keeper hit a monster; routed to the keeper |
@@ -169,13 +169,22 @@ The 24-tile test uses the true position, so a listed `x, y` can sit up to √½ 
 
 ### `look`
 
-`{tunic, hair, shoulder, helm, body, shield, weapon: {shape, color}, tool, toolColor, rod, fists, hat, girl}` — exactly
-what `drawHuman(g, e, look)` reads, with the weapon reduced to its shape and colour. A knight on a machine
+`{tunic, hair, shoulder, helm, body, shield, weapon: {shape, color}, tool, toolColor, rod, fists, hat, girl, gear}` — the
+knight's look, with the weapon reduced to its shape and colour. `gear` is `{helm, body, legs, shield, cape, weapon}`: the
+ids of the six worn items, each a string or `null` (the obsidian helm, worn in `equip.head`, is sent as `gear.helm`).
+A look with `gear` is drawn by `src/82-knightgear.js` (each item in its own shape, legs and capes included), so a friend
+sees exactly your gear; other people's looks (townsfolk, guards) are still drawn by the old `drawHuman`. On arrival
+(`src/73-players.js`) only ids that are real items for their slot are kept; a slot with no known id (an old client sends
+no `gear` at all; a newer client may send an item this page does not know) is read back from the colour fields, which
+map back to exactly one item each (`hat: 'red'` is `party_hat_red`), and a colour that is no item draws that family's
+plain piece in that colour. Old clients ignore `gear`. A knight on a machine
 adds `mech: {kind, hp, maxHp}` and is drawn with `drawMech`. Mounts add `mount: id`. A worn party hat adds `hat: '<colour>'`
 (`null` otherwise; see *Party hats*). `girl` is a boolean, always sent: `true` for a girl knight (`player.gender`, chosen on
 the "Boy or girl?" card on the title before the knight comes into the world, or in Settings, `src/79-boygirl.js`), and then `hair` is her hair colour; any `drawHuman` draws a look
 with `girl` with the skirt and long hair, a braid with a ribbon (out of any helm) and a bow on a bare head. A change of
-`player.gender` counts as a look change, so presence goes out at once. The server relays it unchanged.
+`player.gender` counts as a look change, so presence goes out at once, and so does a change of any worn item (`lookKey`
+counts the weapon, helm, head, body, legs, shield and cape). The server relays the look unchanged: it checks nothing in it,
+only the size of the whole message (`MAX_P`, 4096 characters; a full look with every slot worn is about 600) and the rate.
 
 ## The keeper model, in the client
 
