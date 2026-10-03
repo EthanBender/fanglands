@@ -51,7 +51,9 @@ export class World {
     for (const stmt of SCHEMA.split(';')) if (stmt.trim()) this.sql.exec(stmt);
     const migrated = migrate(this.sql);
     if (migrated.added.length) console.log('accounts gained ' + migrated.added.join(', ') + ' (columns read with ' + migrated.via + ')');
-    this.store = new SqlStore(this.sql);
+    this.store = new SqlStore(this.sql, typeof ctx.storage.transactionSync === 'function' ? (fn => ctx.storage.transactionSync(fn)) : null);
+    // the place of a lockout that is over is not kept (docs/ONLINE.md, "Kept out")
+    try { this.store.forgetPlaces(this.now()); } catch (e) { console.error('places', e); }
     this.chatWrites = 0;
     this.wraps = new WeakMap();
     this.room = new Room({
@@ -138,21 +140,18 @@ export class World {
   // push before the third strike's kick must land, or the next login would load an older save).
   session(token, opts) {
     if (!token) throw oops(401, 'please log in', 'auth');
-    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until, a.last_ip FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
+    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
     if (!s) throw oops(401, 'that login has run out, please log in again', 'auth');
     const now = this.now();
     if (s.expires < now) { this.sql.exec('DELETE FROM sessions WHERE token = ?', token); throw oops(401, 'that login has run out, please log in again', 'auth'); }
     if (s.banned) { this.sql.exec('DELETE FROM sessions WHERE name_lc = ?', s.name_lc); throw oops(403, 'this knight is banned', 'banned'); }
     // kept out for bad words: the session is kept (it works again when the time is up), but nothing goes through until then
-    // except a save. The place is not noted while kept out: it stays the one the knight was playing from when it was sent out.
-    const out = Number(s.words_locked_until) > now;
-    if (!out) this.noteIp(s.name_lc, s.last_ip, opts && opts.ip);
+    // except a save. No address is written here: only the third strike notes one (Room.wordStrike, from the socket).
     if (!(opts && opts.saving)) this.refuseIfKeptOut(s.words_locked_until, now);
     this.sql.exec('UPDATE accounts SET last_seen = ? WHERE name_lc = ?', now, s.name_lc);
     return s;
   }
-  auth(req, opts) { return this.session(bearer(req), Object.assign({ ip: ipOf(req) }, opts)); }
-  noteIp(lc, was, ip) { if (ip && ip !== was) this.sql.exec('UPDATE accounts SET last_ip = ? WHERE name_lc = ?', ip, lc); }
+  auth(req, opts) { return this.session(bearer(req), opts); }
   refuseIfKeptOut(until, now) {
     until = Number(until) || 0;
     if (until > now) throw oops(403, wordsText(until, now), 'words', { until });
@@ -186,16 +185,17 @@ export class World {
     if (!invite) throw oops(403, 'no invite code is set on the world yet', 'invite');
     // typed by a ten-year-old: spaces around it and capital letters do not count against them
     if (String(b.invite || '').trim().toLowerCase() !== invite.toLowerCase()) throw oops(403, 'that invite code is wrong', 'invite');
-    // a knight kept out for bad words cannot skip the 24 hours with a new knight: not from the place it last came from
+    // a knight kept out for bad words cannot skip the 24 hours with a new knight: not from the place it was sent out from
     const ip = ipOf(req), now = this.now();
     if (ip) {
       const k = this.row('SELECT MAX(words_locked_until) AS until FROM accounts WHERE last_ip = ? AND words_locked_until > ?', ip, now);
       if (k && k.until) throw oops(403, wordsText(k.until, now), 'words', { until: k.until });
     }
     const lc = name.toLowerCase();
-    if (this.row('SELECT 1 FROM accounts WHERE name_lc = ?', lc)) throw oops(409, 'that name is taken', 'taken');
+    // a name an admin changed still logs in as the knight it became (login, renamedFrom), so it is never free for a new one
+    if (this.row('SELECT 1 FROM accounts WHERE name_lc = ?', lc) || this.store.renamedFrom(lc)) throw oops(409, 'that name is taken', 'taken');
     const { salt, hash } = await makeHash(pass);
-    this.sql.exec('INSERT INTO accounts (name_lc, name, salt, hash, created, last_seen, last_ip) VALUES (?, ?, ?, ?, ?, ?, ?)', lc, name, salt, hash, now, now, ip);
+    this.sql.exec('INSERT INTO accounts (name_lc, name, salt, hash, created, last_seen) VALUES (?, ?, ?, ?, ?, ?)', lc, name, salt, hash, now, now);
     return json({ token: this.newSession(lc), name });
   }
 
@@ -221,7 +221,6 @@ export class World {
       throw oops(401, 'wrong secret word', 'pass', { left: WRONG_TRIES - tries });
     }
     this.sql.exec('UPDATE accounts SET tries = 0, locked_until = 0, last_seen = ? WHERE name_lc = ?', now, lc);
-    if (!(Number(a.words_locked_until) > now)) this.noteIp(lc, a.last_ip, ipOf(req));
     // the right secret word, but kept out for bad words: said with the time it ends, and no session is made
     this.refuseIfKeptOut(a.words_locked_until, now);
     return json({ token: this.newSession(lc), name: a.name });
@@ -366,6 +365,9 @@ export class World {
     if (!to) throw oops(400, 'that name will not do: 2 to 16 letters, digits or spaces, and nothing rude', 'name');
     const lc = to.toLowerCase();
     if (lc !== target.lc && this.row('SELECT 1 FROM accounts WHERE name_lc = ?', lc)) throw oops(409, 'that name is taken', 'taken');
+    // another knight's old name is taken too (it logs in as that knight); a knight may go back to one of its own
+    const was = lc !== target.lc && this.store.renamedFrom(lc);
+    if (was && norm(was) !== target.lc) throw oops(409, 'that name is taken', 'taken');
     if (to === target.name) return to;
     this.store.rename(target.lc, to);
     this.store.log({ at: now, by, act: 'rename', target: to, detail: target.name });
@@ -397,11 +399,12 @@ export class World {
   // ---------- the socket ----------
   openSocket(req, url) {
     if ((req.headers.get('upgrade') || '').toLowerCase() !== 'websocket') throw oops(426, 'this address is the game socket', 'ws');
-    const s = this.session(url.searchParams.get('token') || '', { ip: ipOf(req) });   // a bad token is a 401 before any upgrade
+    const s = this.session(url.searchParams.get('token') || '');   // a bad token is a 401 before any upgrade
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
-    this.room.join(this.wrap(server), s.name);
+    // the socket's place rides with the knight (never written down) so a third strike can note where it was sent out from
+    this.room.join(this.wrap(server), s.name, { ip: ipOf(req) });
     return this.upgraded(client);
   }
   // the 101 that hands the socket over (a seam for the Node tests, whose Response cannot carry a 101)

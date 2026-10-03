@@ -176,7 +176,9 @@ export class Room {
   }
 
   // ---------- joining and leaving ----------
-  join(sock, name) {
+  // opts.ip: the place the socket came from (CF-Connecting-IP), kept with the knight only so a third word strike can note
+  // where it was sent out from (store.setWordLock); never sent to anyone.
+  join(sock, name, opts) {
     if (this.knights.has(sock)) return;
     // the World already refuses a banned knight's login; this is the lock behind it (and the simulations' only one)
     const acc = this.store.account(name);
@@ -194,7 +196,7 @@ export class Room {
       try { sock.close(4004, 'full'); } catch (e) { }
       return;
     }
-    const k = this.makeKnight(sock, { name: String(name), since: this.now() });
+    const k = this.makeKnight(sock, { name: String(name), since: this.now(), ip: opts && opts.ip });
     k.role = acc ? acc.role : 'player';   // a name with no account (tests, simulations) is a plain player
     k.loginId = this.loginStart(k.lc, k.since);
     this.attach(k);
@@ -242,7 +244,7 @@ export class Room {
 
   makeKnight(sock, s) {
     const k = {
-      sock, name: s.name, lc: low(s.name), since: s.since || this.now(),
+      sock, name: s.name, lc: low(s.name), since: s.since || this.now(), ip: typeof s.ip === 'string' ? s.ip.slice(0, 64) : '',
       hello: !!s.hello, map: s.map || null, mapAt: s.mapAt || s.since || this.now(), region: s.region || '', lv: s.lv || 0,
       role: 'player', x: null, y: null,   // x, y: the last presence, for party and cracker range checks (not kept over a nap)
       loginId: null, seenAt: 0,           // the store's logins row for this socket, and when its "last heard from" was written
@@ -415,7 +417,8 @@ export class Room {
       return this.send(k.sock, { t: 'strike', n, text: n === 1 ? WORD_WARN_1 : WORD_WARN_2 });
     }
     const until = now + WORD_LOCK_MS;
-    this.store.setWordLock(acc.lc, until);
+    // the place it was sent out from goes with the lockout (no new knight from there until it ends), and with it only
+    this.store.setWordLock(acc.lc, until, k.ip || '');
     this.store.log({ at: now, by: 'word filter', act: 'strike', target: acc.name, detail: n + ', kept out 24 hours' + typed });
     this.kick(k.name, 'words', wordsText(until, now), { until, n });
   }
@@ -1079,6 +1082,6 @@ export class Room {
     if (!k.sock.attach) return;
     const gifts = [];
     for (const gid of k.gifts) { const g = this.gifts.get(gid); if (g) gifts.push({ gid: g.gid, to: g.to, id: g.id, qty: g.qty, due: g.due }); }
-    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId }); } catch (e) { }
+    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId, ip: k.ip || '' }); } catch (e) { }
   }
 }

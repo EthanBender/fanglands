@@ -297,9 +297,9 @@ async function call(w, method, path, body, token) {
 }
 const parent = (w, method, path, body) => call(w, method, path, body, ENV.ADMIN_KEY);
 async function signup(w, name, pass = 'sword') { const r = await call(w, 'POST', '/api/signup', { name, pass, invite: 'TEST-1234' }); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.token; }
-async function socket(w, token) { return w.fetch(new Request('http://world/ws?token=' + token, { headers: { upgrade: 'websocket' } })); }
-async function online(w, token) {
-  const r = await socket(w, token);
+async function socket(w, token, ip) { return w.fetch(new Request('http://world/ws?token=' + token, { headers: ip ? { upgrade: 'websocket', 'cf-connecting-ip': ip } : { upgrade: 'websocket' } })); }
+async function online(w, token, ip) {
+  const r = await socket(w, token, ip);
   assert.equal(r.status, 101);
   const server = w.ctx.sockets[w.ctx.sockets.length - 1];
   w.webSocketMessage(server, JSON.stringify({ t: 'hello', v: 1 }));
@@ -316,8 +316,8 @@ async function knights() {
   for (const n of ['MudGoll', 'Ada']) assert.equal((await parent(w, 'POST', '/api/admin/role', { name: n, role: 'admin' })).status, 200);
   return { ctx, w, tok };
 }
-async function keepOut(w, tok, name) {
-  const s = await online(w, tok[name]);
+async function keepOut(w, tok, name, ip) {
+  const s = await online(w, tok[name], ip);
   for (const t of ['shit', 'shit', 'shit']) chat(w, s, t);
   assert.equal(s.closed.code, 4006);
   return T + WORD_LOCK_MS;
@@ -524,8 +524,11 @@ async function from(w, ip, method, path, body, token) {
 test('signup: no new knight from the place a kept-out knight last came from, until the time is up or an admin clears it', async () => {
   const { w, tok } = await knights();
   const HOME = '203.0.113.7', FRIEND = '198.51.100.20', SCHOOL = '192.0.2.44';
-  // Sam plays from home: the login and the socket both note the place
+  // Sam plays from home; Leo-to-be and everyone else call from where they are. No address is written down for any of it.
   const t = (await from(w, HOME, 'POST', '/api/login', { name: 'Sam', pass: 'sword' })).data.token;
+  assert.equal((await from(w, FRIEND, 'GET', '/api/me', undefined, tok.Pip)).status, 200);
+  const placesKept = () => w.sql.exec("SELECT name_lc, last_ip FROM accounts WHERE last_ip != '' ORDER BY name_lc").toArray().map(r => [r.name_lc, r.last_ip]);
+  assert.deepEqual(placesKept(), []);
   const r101 = await w.fetch(new Request('http://world/ws?token=' + t, { headers: { upgrade: 'websocket', 'cf-connecting-ip': HOME } }));
   assert.equal(r101.status, 101);
   const s = w.ctx.sockets[w.ctx.sockets.length - 1];
@@ -545,20 +548,73 @@ test('signup: no new knight from the place a kept-out knight last came from, unt
   assert.equal((await from(w, SCHOOL, 'GET', '/api/me', undefined, tok.Sam)).status, 403);
   assert.equal((await from(w, SCHOOL, 'POST', '/api/login', { name: 'Sam', pass: 'sword' })).status, 403);
   assert.equal((await sign(HOME, 'Sam Three')).status, 403);
-  assert.deepEqual(w.sql.exec("SELECT last_ip FROM accounts WHERE name_lc = 'sam'").toArray()[0], { last_ip: HOME });
+  // review round 3: the only address kept anywhere is the one Sam was sent out from, and only while Sam is kept out
+  assert.deepEqual(placesKept(), [['sam', HOME]]);
   // the place is never on a list
   const list = (await call(w, 'GET', '/api/accounts', undefined, tok.MudGoll)).data;
   assert.ok(!JSON.stringify(list).includes(HOME) && !JSON.stringify(list).includes(FRIEND));
   // a minute before the end: still no; at the end: yes
   T = until - 60000; assert.equal((await sign(HOME, 'Sam Two')).status, 403);
   T = until; assert.equal((await sign(HOME, 'Sam Two')).status, 200);
+  // the knight made at home is not noted either, and a wake after the end forgets Sam's place
+  assert.deepEqual(placesKept(), [['sam', HOME]]);
+  const again = new TestWorld(w.ctx, ENV);
+  assert.deepEqual(again.sql.exec("SELECT COUNT(*) AS n FROM accounts WHERE last_ip != ''").toArray()[0].n, 0);
 });
 test('signup: an admin clearing the strikes lets the place sign up again at once', async () => {
   const { w, tok } = await knights();
   const HOME = '203.0.113.9';
-  assert.equal((await from(w, HOME, 'GET', '/api/me', undefined, tok.Pip)).status, 200);
-  await keepOut(w, tok, 'Pip');
+  await keepOut(w, tok, 'Pip', HOME);
   assert.equal((await from(w, HOME, 'POST', '/api/signup', { name: 'Pip Two', pass: 'sword', invite: 'TEST-1234' })).status, 403);
   assert.equal((await call(w, 'POST', '/api/accounts/strikes', { name: 'Pip' }, tok.MudGoll)).status, 200);
+  // clearing forgets the place too
+  assert.equal(w.sql.exec("SELECT last_ip FROM accounts WHERE name_lc = 'pip'").toArray()[0].last_ip, '');
   assert.equal((await from(w, HOME, 'POST', '/api/signup', { name: 'Pip Two', pass: 'sword', invite: 'TEST-1234' })).status, 200);
+});
+
+// Review round 3 (minors): a renamed knight's old name. Signup checked only accounts, so a new knight could take the old
+// name and a login with it then hit the new knight (wrong secret word, and 5 of them locked that knight out).
+test('an old name stays taken: no new knight and no rename to it, but a knight may go back to its own', async () => {
+  const { w, tok } = await knights();
+  assert.equal((await parent(w, 'POST', '/api/admin/rename', { name: 'Sam', to: 'Brave Sam' })).status, 200);
+  const r = await call(w, 'POST', '/api/signup', { name: 'sam', pass: 'other', invite: 'TEST-1234' });
+  assert.deepEqual([r.status, r.data.code], [409, 'taken']);
+  // the old name still logs Sam in, as Brave Sam
+  const back = await call(w, 'POST', '/api/login', { name: 'Sam', pass: 'sword' });
+  assert.deepEqual([back.status, back.data.name], [200, 'Brave Sam']);
+  // another knight cannot be renamed to it either; Brave Sam can go back to it
+  const pip = await parent(w, 'POST', '/api/admin/rename', { name: 'Pip', to: 'Sam' });
+  assert.deepEqual([pip.status, pip.data.code], [409, 'taken']);
+  assert.equal((await parent(w, 'POST', '/api/admin/rename', { name: 'Brave Sam', to: 'Sam' })).status, 200);
+  assert.equal((await call(w, 'POST', '/api/login', { name: 'Sam', pass: 'sword' })).data.name, 'Sam');
+});
+
+test('the rename row is never trimmed from mod_log, so the old name logs in however many strikes come after', () => {
+  for (const make of [() => new MemoryStore(), () => { const db = new DatabaseSync(':memory:'), sql = sqlOf(db); for (const st of SCHEMA.split(';')) if (st.trim()) sql.exec(st); migrate(sql); return new SqlStore(sql); }]) {
+    const st = make();
+    st.log({ at: 1, by: 'parent page', act: 'rename', target: 'Brave Sam', detail: 'Sam' });
+    for (let i = 0; i < 5600; i++) st.log({ at: 2 + i, by: 'word filter', act: 'strike', target: 'Pip', detail: '1: shit' });
+    assert.equal(st.renamedFrom('sam'), 'Brave Sam');
+    // the strikes themselves are trimmed to the newest 5000 (the rename row kept on top)
+    assert.ok(st.modLog(10000).length <= 5000 + 200 + 1, String(st.modLog(10000).length));
+    assert.equal(st.modLog(10000).filter(r => r.act === 'rename').length, 1);
+  }
+});
+
+test('a rename is all or nothing: a write that fails part-way changes no table', () => {
+  const db = new DatabaseSync(':memory:'), sql = sqlOf(db); for (const st of SCHEMA.split(';')) if (st.trim()) sql.exec(st); migrate(sql);
+  const txn = fn => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+  let failOn = null;
+  const flaky = { exec(q, ...a) { if (failOn && q.includes(failOn)) throw new Error('disk said no'); return sql.exec(q, ...a); } };
+  const st = new SqlStore(flaky, txn);
+  sql.exec("INSERT INTO accounts (name_lc, name, salt, hash, created, last_seen) VALUES ('sam', 'Sam', 's', 'h', 1, 1)");
+  sql.exec("INSERT INTO sessions (token, name_lc, expires) VALUES ('t1', 'sam', 99)");
+  sql.exec("INSERT INTO chat (at, name, text) VALUES (1, 'Sam', 'hi')");
+  failOn = 'UPDATE trades SET b';
+  assert.throws(() => st.rename('sam', 'Brave Sam'), /disk said no/);
+  const names = () => [sql.exec('SELECT name FROM accounts').toArray()[0].name, sql.exec('SELECT name_lc FROM sessions').toArray()[0].name_lc, sql.exec('SELECT name FROM chat').toArray()[0].name];
+  assert.deepEqual(names(), ['Sam', 'sam', 'Sam']);
+  failOn = null;
+  assert.deepEqual(st.rename('sam', 'Brave Sam'), { from: 'Sam', to: 'Brave Sam' });
+  assert.deepEqual(names(), ['Brave Sam', 'brave sam', 'Brave Sam']);
 });

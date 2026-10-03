@@ -945,7 +945,7 @@ the masked line alone.
 accounts  + word_strikes       INTEGER NOT NULL DEFAULT 0   -- bad lines counted (read through strikesNow: it fades)
           + word_strike_at     INTEGER NOT NULL DEFAULT 0   -- when the last one was counted (ms; 0 = never)
           + words_locked_until INTEGER NOT NULL DEFAULT 0   -- kept out until then (ms; 0 = not kept out)
-          + last_ip            TEXT NOT NULL DEFAULT ''     -- where the knight last played from (CF-Connecting-IP)
+          + last_ip            TEXT NOT NULL DEFAULT ''     -- where a kept-out knight was sent out from, only while kept out
 ```
 
 Added by `migrate()` like the other columns: only when missing, nothing dropped or rewritten. They are their own columns:
@@ -977,13 +977,23 @@ words." (today, tomorrow or the day, from `until` in the device's own clock), on
 - **Saving is not playing**: `PUT /api/save` alone goes through while kept out. The game saves and sends its waiting push
   the moment `error` `words` arrives (as it does for `kicked`), so the next login 24 hours later loads the knight as it was
   at the third strike, never an older cloud save.
-- **No new knight to skip it**: `World.session` and a good login keep `accounts.last_ip` (the `CF-Connecting-IP` the
-  knight played from; not changed while kept out, so it stays the place the knight was sent out from). `POST /api/signup`
-  from a place a knight is kept out from right now answers 403 `words` with that knight's `until` and makes nothing; when
-  the time is up, or an admin clears the strikes, signing up works again. A local world with no address skips it. The
-  address is never on any list (only the parent's full export carries it). On the device, the game keeps
-  `fanglands.keptOutUntil`: while it is in the future the card says the sentence (after Not me too) and greys out New
-  knight; it is forgotten when the time is up or the world lets a knight in (`/api/me` or a login).
+- **No new knight to skip it**: the socket's `CF-Connecting-IP` rides with the knight in the Room (and its hibernation
+  attachment), never written down; the third strike writes it to `accounts.last_ip` with `words_locked_until`
+  (`store.setWordLock(lc, until, ip)`). Nothing else writes an address: not a login, not an `/api` call, not a signup.
+  Clearing the strikes empties it, and every wake of the World empties it for every lockout that is over
+  (`store.forgetPlaces`), so an address is kept only while that knight is kept out. `POST /api/signup` from a place a
+  knight is kept out from right now answers 403 `words` with that knight's `until` and makes nothing; when the time is up,
+  or an admin clears the strikes, signing up works again. A socket with no address (a local world) skips it. The address
+  is never on any list (only the parent's full export carries it, and only while the lockout lasts).
+- **On the device** the game keeps `fanglands.keptOutUntil`. On "Playing as <name>" the card says "You're kept out until
+  ...", Play is greyed (it would only say it again), and the game asks `/api/me` again quietly every 60 s, so a lockout an
+  admin cleared gives Play back without a reload. After Not me, or when the world refuses a New knight from this place, the
+  card speaks about the device, not a knight, because a brother or sister on the same iPad reads it: "New knight is off
+  here until 12:28 am tomorrow. Your own knight can still log in." New knight is greyed. It is forgotten when the time is
+  up or the world lets a knight in (`/api/me` or a login).
+- **The warnings**: the first is a red chat line a sentence and a notice; the last warning is also the big centre banner
+  ("LAST WARNING", "Do it again: kept out 24 hours"), the size a level-up is said in. An open chat box is shut when the
+  knight is sent out (kicked, kept out, banned or logged out by the world).
 
 ### Clearing strikes
 
@@ -1000,14 +1010,16 @@ the list grew). Only the words count, not the length or the characters.
 `POST /api/accounts/rename {name, to}` from an admin's game (401 `auth`, 403 `admin`, 404 `unknown`, 403 `self`, 403
 `isadmin`, 429 `wait` after 3 in a minute) or `POST /api/admin/rename {name, to}` from the parent page (anyone). The new
 name passes `cleanName` like a new knight's (400 `name`) and nobody else has it (409 `taken`; a change of capitals only is
-the same knight). Asking for the very name it has changes nothing. Then `store.rename` rewrites it everywhere it is kept:
+the same knight), nor had it before a rename (409 `taken`: another knight's old name logs in as that knight; a knight may
+go back to its own old name). `POST /api/signup` refuses an old name the same way. Asking for the very name it has changes nothing. Then `store.rename` rewrites it everywhere it is kept:
 `accounts.name` / `name_lc`, `sessions`, `saves`, `save_pins`, `logins`, `crackers.lit_by`, both sides of `trades`
 (`a`/`a_lc`, `b`/`b_lc`), and the display copies in `chat.name`, `mod_log.by` / `target` and `parties.by`. One `mod_log`
 row: `act: 'rename'`, `target` the new name, `detail` the old one. An online knight gets `{t:'error', code:'renamed',
 name, text: "An admin changed your knight's name to Brave Sam."}` and close **4007**; the wire comes straight back with
 the same session, which now belongs to the new name, and the game remembers it as `fanglands.lastname` for the login
 card (also from `/api/me` and the login answer). The old name still logs in with the same secret word, as the new one
-(found through the `rename` row in `mod_log`).
+(found through the `rename` row in `mod_log`, which trimming never removes). `store.rename` runs its dozen `UPDATE`s as
+one transaction (`ctx.storage.transactionSync`): a failure part-way changes nothing.
 
 ### The Accounts tab and the parent page
 
