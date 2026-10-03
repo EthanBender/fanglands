@@ -8,8 +8,10 @@ either side. `src/70-net.js` is the wire; the server lives in `online/`.
 
 ## What it is
 
-- **https://gorkscape.ca** serves the game (the same `index.html` the GitHub Pages address serves) from one
-  Cloudflare Worker named `fanglands`. Nothing runs on any of our computers. `www.gorkscape.ca` is the same.
+- **https://fanglands.com** serves the game (the same `index.html` the GitHub Pages address serves) from one
+  Cloudflare Worker named `fanglands`. Nothing runs on any of our computers. `www.fanglands.com` sends to it.
+  The first address, **gorkscape.ca**, hands each browser over to fanglands.com with its login and saves (see
+  *Two addresses*); its `/api` and `/ws` keep answering, so nothing already running there breaks.
 - One **Durable Object** (`World`, SQLite-backed, the singleton `idFromName('world')`) holds the accounts, the
   cloud saves, the chat log and the live room. It costs nothing on the Workers free plan at this scale.
 - **Invite-only.** A new knight needs the invite code Ethan hands out. No email, no real names, nothing public.
@@ -17,7 +19,7 @@ either side. `src/70-net.js` is the wire; the server lives in `online/`.
 - **One knight per account.** Online there are no save slots: the account is the knight, saved in the cloud, so
   the same knight plays from the iPad, the laptop, or a friend's house.
 - **The GitHub Pages address keeps working** exactly as before, offline and single-player. The title screen on
-  gorkscape.ca can pull a knight across from it (see *The bridge*).
+  fanglands.com can pull a knight across from it (see *The bridge*).
 
 ## The model, honestly
 
@@ -40,9 +42,12 @@ routes.
 
 ```
 online/
-  wrangler.toml      name = "fanglands"; assets ./public; DO binding WORLD -> class World (new_sqlite_classes)
-                     routes gorkscape.ca + www.gorkscape.ca (custom_domain = true: the DNS is made for us)
-  src/worker.js      the Worker: /api/*, /ws -> the World object; everything else -> static assets
+  wrangler.toml      name = "fanglands"; assets ./public (run_worker_first = true); DO binding WORLD -> class World
+                     (new_sqlite_classes); routes fanglands.com + www.fanglands.com + gorkscape.ca + www.gorkscape.ca
+                     (custom_domain = true: the DNS and the certificates are made for us)
+  src/worker.js      the Worker: /api/*, /ws -> the World object on every address; the front door (handoff.js) for
+                     the old address and www; everything else -> static assets
+  src/handoff.js     two addresses: the front door, the hand-over page, and the offer and claim (*Two addresses*)
   src/world.js       the Durable Object: accounts, saves, sessions, chat log, the live room (hibernating WebSockets)
   src/room.js        the routing logic as a plain class with no Cloudflare APIs, so tools/mmo-sim.js can run it
   src/filter.js      the word filter (names and chat)
@@ -106,7 +111,7 @@ all, reads "The world is asleep right now."
 
 ## The socket
 
-`wss://gorkscape.ca/ws?token=<session>`. JSON text frames, one message each, always with a string `t`.
+`wss://fanglands.com/ws?token=<session>` (the page's own address: `wss://gorkscape.ca/ws` still works for a page open there). JSON text frames, one message each, always with a string `t`.
 The server hibernates idle sockets and answers `{"t":"ping"}` with `{"t":"pong"}` without waking.
 
 Maps are named `over` (the overworld) or the instance id (`INSTANCES.active.id`). Presence is only relayed
@@ -269,14 +274,115 @@ together. Two rules make that safe on a shared map; `src/75-coop.js` owns both.
 
 ## The bridge (bringing a knight from the old address)
 
-`bridge.html` at the repo root is served by GitHub Pages. gorkscape.ca loads it in a hidden iframe and posts
-`{fanglands: 'give-save'}`; the bridge answers, only to `https://gorkscape.ca` and `https://www.gorkscape.ca`,
+`bridge.html` at the repo root is served by GitHub Pages. The online game loads it in a hidden iframe and posts
+`{fanglands: 'give-save'}`; the bridge answers, only to the game's own addresses (`fanglands.com`, `www.` and `test.`
+of it, and the same three of `gorkscape.ca`),
 with `{fanglands: 'save', slots: {1: {save, at} | null, 2: ..., 3: ...}}` holding the three slot strings and
 their `.at` stamps (a browser from before the slots existed hands its legacy `fanglands.save.v2` over as slot 1
 with `at: 0`). The login flow waits up to 3 s, believes answers only from `https://ethanbender.github.io`, and
-offers the most recent slot when the account has no cloud save yet. Nothing is deleted on the old side. On
-gorkscape.ca the online knight lives in slot 1; a save that *Play alone* left there is moved to an empty slot
+offers the most recent slot when the account has no cloud save yet. Nothing is deleted on the old side. Online
+the knight lives in slot 1; a save that *Play alone* left there is moved to an empty slot
 first (`fanglands.slot.1.online` marks slot 1 as the cloud knight's).
+
+The copy GitHub Pages serves is the one on GitHub's `master`: the list of addresses it answers changes there only
+when `master` is pushed to GitHub. Until then it answers only gorkscape.ca, so a knight on fanglands.com asking it
+gets no answer and the login flow starts fresh after 3 s, exactly as when the old address has nothing. Browsers now
+keep a hidden iframe's storage apart from the same address opened on its own (Safari on the iPad always has, Chrome
+and Firefox do too), so the bridge mostly finds nothing in any case; the hand-over (*Two addresses*) is what moves a
+knight from gorkscape.ca.
+
+## Two addresses
+
+Owner (2026-10-03): *"can you port everything over to the new proper domain but have gorkscape redirect to fang lands
+so anyone with the old domain doesnt notice the diffrance for now?"*
+
+**fanglands.com** is the game's home. The same Worker, the same World, the same accounts answer on every address
+below; only what a *page* gets differs.
+
+| Address | A page (the game, `/admin`, any HTML) | A file | `/api/*` and `/ws` |
+|---|---|---|---|
+| `fanglands.com` | the game | the file | the world |
+| `www.fanglands.com` | 301 to `fanglands.com`, same path and query | 301 the same way | the world |
+| `gorkscape.ca`, `www.gorkscape.ca` | the hand-over page, then `fanglands.com` | 302 to `fanglands.com` | the world, exactly as before |
+| `test.fanglands.com` | the test world's game | the file | the test world |
+| `test.gorkscape.ca` | the hand-over page, then `test.fanglands.com` | 302 | the test world |
+
+`run_worker_first = true` in `wrangler.toml` sends every request to the Worker first, so it can see the address before
+a file is served; on fanglands.com it hands the request straight to the static files. A page is what the browser says
+is a page (`Sec-Fetch-Dest: document`), or for an older browser one that accepts `text/html`, or `/`, `/index.html`,
+`/admin`.
+
+### Why a hand-over and not a plain redirect
+
+A browser keeps its storage per address. The login (`fanglands.session`), the last name typed (`fanglands.lastname`),
+the three local save slots (`fanglands.slot.1..3`, their `.at` stamps, `fanglands.slot.current`, the cloud mark
+`fanglands.slot.1.online`), the old single save (`fanglands.save.v2`), the settings (`fanglands.settings` and the
+older `fanglands.muted`, `fanglands.music`, `fanglands.kidmode`) and the hint counters (`fl_learn_*`, `fl_coach_*`)
+all live in gorkscape.ca's storage. A plain redirect would land the kid on fanglands.com logged out with no local
+saves. A hidden iframe cannot fetch them either: Safari on the iPad keeps an iframe's storage apart by the page it
+sits in. So the old address's own page reads them and hands them over through the world.
+
+### The hand-over, step by step
+
+1. A page on gorkscape.ca is the **hand-over page** (`online/src/handoff.js`, `handoverPage`): a dark page with no
+   game on it. Its script reads every key in that browser's storage that is the game's (`KEY_RE`:
+   `fanglands.*` and `fl_*`, never `fanglands.handoff.*`), packs them under 1.4 MB (the login and the small keys
+   first, then the slots newest first, the old single save last), and posts `{keys}` to `/api/handoff/offer` on
+   gorkscape.ca.
+2. The World stores the keys under the SHA-256 of a fresh 256-bit code and answers `{code, expires}`.
+3. The page goes to `https://fanglands.com` + the same path and query + `#handoff=<code>`. The code is after `#`:
+   a browser never sends that part to any server, so it is in no request line, no log and no Referer.
+4. On fanglands.com, `src/00-handoff.js` runs before any other part of the game reads storage. It posts `{code}` to
+   `/api/handoff/claim`, gets `{keys}`, and writes each group only where fanglands.com does not already have it newer:
+   - a slot (the slot with its `.at` stamp, and slot 1's cloud mark): when this address has no save in that slot, or
+     its copy is older by the stamp;
+   - the login (the token with the last name): only when this address is not logged in at all;
+   - anything else: only when it is not here yet.
+   It remembers a fingerprint of each group it was offered (`fanglands.handoff.seen`), so the same offer coming
+   again changes nothing: a slot deleted on fanglands.com, or a logout there, stays that way.
+5. It takes the code off the address with `history.replaceState` and starts the page again, so the game boots with
+   the knight in place. The kid sees the same "Playing as" card or the same slots as on gorkscape.ca.
+
+Nothing is ever deleted on gorkscape.ca, so opening it again simply hands over again (and the rules above make that
+harmless). With nothing to hand over, or if the world does not answer within 8 s, the hand-over page just goes on
+with no code. A code that ran out, was used, or never was changes nothing on fanglands.com; the game simply starts.
+The parent page's admin key is per tab (`sessionStorage`) and is never handed over: type it again on fanglands.com.
+
+### The rules the world keeps (`online/test/handoff.test.mjs` proves each one)
+
+- `POST /api/handoff/offer {keys}` → `{code, expires}`. Only on a gorkscape address (`gorkscape.ca`, `www.`, `test.`),
+  with an `Origin` that is exactly that address. Every key must match `KEY_RE` and every value be a string; at most
+  400 keys and 1,500,000 bytes (413 `full`). At most 300 offers or 48 MB waiting at once (503 `busy`).
+- `POST /api/handoff/claim {code}` → `{keys}`. Only on a fanglands address (`fanglands.com`, `www.`, `test.`), with an
+  `Origin` that is exactly that address (403 `origin` otherwise; a refused claim does not use the code up).
+- One use: the row is deleted before the answer goes back. A code lives 3 minutes. Run out, used, made up or broken:
+  the same 404 `gone`.
+- Only the code's SHA-256 is stored, in the World's `handoffs` table; rows that ran out are swept by the next call
+  to the world (at most a minute apart). The backup export (`/api/admin/export`) never carries them, like sessions.
+- Per IP address, a minute at a time: 10 offers and 20 claims (429 `wait`), counted apart.
+- Nothing about a hand-over is ever logged.
+
+What it does not stop: someone could make an offer of their own and send a kid a fanglands.com link with that code.
+On a browser that is not logged in on fanglands.com yet, that logs it in as *their* knight (the card says whose); it
+never logs in over a knight already there, and it can take nobody's login away.
+
+### Shipping it, and the switch
+
+`HANDOVER` (a Worker variable, on unless it says `off`): with `./online/deploy.sh --var HANDOVER:off` the old addresses
+keep serving the game exactly as before while fanglands.com is attached and its certificate is made. Once
+`https://fanglands.com/api/status` answers, a plain `./online/deploy.sh` turns the hand-over on. The same switch
+is the quick way back: deploy with `--var HANDOVER:off` and gorkscape.ca is the game again (nothing was deleted
+there; anything played on fanglands.com in between stays on fanglands.com and in the cloud).
+
+An iPad home-screen icon made on gorkscape.ca opens the old address; its page hands over and goes to fanglands.com,
+which iOS shows with an address bar because it is a different site from the icon's. Adding the icon again from
+fanglands.com gives the old full-screen look.
+
+### The test world
+
+`~/.fanglands/tools/deploy-test.sh` gives the test Worker `test.<each bare live domain>`: `test.gorkscape.ca`, and
+`test.fanglands.com` once the tree's `wrangler.toml` lists fanglands.com. Both `src/70-net.js` host lists carry the
+three fanglands.com names and the three gorkscape.ca ones, so a page still open on gorkscape.ca keeps playing online.
 
 ## Admins and drop parties
 
@@ -890,10 +996,11 @@ under the row. A reset shows in *What admins did* ("MudGoll gave Sam a new secre
 
 ## Where things are
 
-- Play: https://gorkscape.ca (the invite code is with Ethan; nothing on this page is public).
-- Parents: https://gorkscape.ca/admin — accounts, reset a forgotten secret word, ban, the invite code, the chat log, save rollback,
+- Play: https://fanglands.com (the invite code is with Ethan; nothing on this page is public). https://gorkscape.ca
+  hands over to it (*Two addresses*).
+- Parents: https://fanglands.com/admin — accounts, reset a forgotten secret word, ban, the invite code, the chat log, save rollback,
   who is an admin (Make admin / Make player), mutes, the moderation log, pinned backups, every trade. Needs the admin key.
-- Parents: https://gorkscape.ca/admin — accounts (last login, time online, knight play time, the last 10 logins), reset a forgotten secret word, ban, the invite code, the chat log, save rollback,
+- Parents: https://fanglands.com/admin — accounts (last login, time online, knight play time, the last 10 logins), reset a forgotten secret word, ban, the invite code, the chat log, save rollback,
   who is an admin (Make admin / Make player), mutes, the moderation log, pinned backups. Needs the admin key.
 - The old address https://ethanbender.github.io/fanglands/ is the offline copy; its title screen has no login.
 
@@ -905,6 +1012,7 @@ under the row. A reset shows in *What admins did* ("MudGoll gave Sam a new secre
   election, hit routing, the kill going to the right knight, chat, and handoff when the keeper leaves; then the admins
   and drop parties (*Admins and drop parties*, *Testing*). Run both ways in `deploy.sh` before every deploy.
 - `node --test online/test/` for the server's own logic (password hashing, filter, room routing, rate caps, roles,
-  moderation, the store and its migration, drop parties and the party-hat odds, trading).
+  moderation, the store and its migration, drop parties and the party-hat odds, trading, the two addresses and the
+  hand-over).
 - `tools/mmo-sim-admin.js` and `tools/mmo-sim-party.js`: the admin and party scenarios, two games against the real
   Room (see *Admins and drop parties*, *Testing*). `deploy.sh` runs them with the others.

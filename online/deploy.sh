@@ -15,4 +15,5 @@ node --test online/test/
 [ -f tools/mmo-sim-party.js ] && node tools/mmo-sim-party.js
 cp index.html online/public/index.html
 [ -f bridge.html ] && cp bridge.html online/public/bridge.html
-cd online && CI=1 wrangler deploy
+# extra arguments go to wrangler: ./online/deploy.sh --var HANDOVER:off (docs/ONLINE.md, "Two addresses")
+cd online && CI=1 wrangler deploy "$@"

@@ -1,5 +1,6 @@
 # Fanglands online — one Cloudflare Worker serves the game and runs the world.
 # Nothing runs on any of our computers. Deploy: ./deploy.sh (from the repo root: build, test, then this).
+# Two addresses (docs/ONLINE.md): fanglands.com is the home; gorkscape.ca hands each browser over to it.
 name = "fanglands"
 main = "src/worker.js"
 compatibility_date = "2026-09-01"
@@ -7,7 +8,8 @@ compatibility_date = "2026-09-01"
 [assets]
 directory = "./public"
 binding = "ASSETS"
-run_worker_first = ["/api/*", "/ws", "/admin", "/admin/*"]
+# every request reaches the worker first, so a page on gorkscape.ca can be the hand-over page (src/handoff.js)
+run_worker_first = true
 
 [[durable_objects.bindings]]
 name = "WORLD"
@@ -23,4 +25,12 @@ custom_domain = true
 
 [[routes]]
 pattern = "www.gorkscape.ca"
+custom_domain = true
+
+[[routes]]
+pattern = "fanglands.com"
+custom_domain = true
+
+[[routes]]
+pattern = "www.fanglands.com"
 custom_domain = true

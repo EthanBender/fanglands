@@ -1,13 +1,16 @@
 # Fanglands Online — the world server
 
-One Cloudflare Worker named `fanglands` serves the game at https://gorkscape.ca and runs the world: accounts,
+One Cloudflare Worker named `fanglands` serves the game at https://fanglands.com and runs the world: accounts,
 cloud saves, the chat log and the live room where knights see each other. Nothing runs on any of our
 computers. `docs/ONLINE.md` (repo root) is the contract between this folder and the game's online files.
+The first address, https://gorkscape.ca, hands each browser over to fanglands.com with its login and saves, and its
+`/api` and `/ws` keep answering (docs/ONLINE.md, "Two addresses").
 
 ```
 online/
-  wrangler.toml       the Worker's name, the static assets folder, the World object, the two domains
+  wrangler.toml       the Worker's name, the static assets folder (the worker runs first), the World object, the domains
   src/worker.js       the front door: /api/* and /ws go to the World, /admin and everything else are static files
+  src/handoff.js      two addresses: gorkscape.ca's hand-over page, www -> bare, the offer and claim in the World
   src/world.js        the Durable Object: sessions, saves, the chat log, pinned backups, the admin routes, the sockets
   src/room.js         who is on which map, who keeps its monsters, where every message goes (no Cloudflare APIs)
   src/store.js        the tables (SCHEMA), the one migration (migrate), and the two stores the room can use
@@ -28,7 +31,7 @@ online/
   `settings` (the invite code), the admin tables `mod_log`, `save_pins`, `parties` and `crackers`, `logins` (one row per socket a knight opens, for
   the Accounts list), and the live room.
 - A knight signs up with the invite code, gets a token (32 random bytes as hex, good for 90 days) and opens
-  `wss://gorkscape.ca/ws?token=...`. The World checks the token before the upgrade; a bad one is a 401.
+  `wss://fanglands.com/ws?token=...`. The World checks the token before the upgrade; a bad one is a 401.
 - The room (`room.js`) relays presence between knights on the same map, names one knight per map the
   **keeper** (whoever has been on that map longest; it only changes when the keeper leaves), routes hits to
   the keeper, kills and hurts to the knight they name, gifts to the receiver with a ten-second timer, and
@@ -147,7 +150,7 @@ cracker. Point it at another port with `SMOKE_BASE=http://127.0.0.1:<port>`.
 
 ## The admin page
 
-`https://gorkscape.ca/admin`. It asks for the admin key once per browser tab (kept in `sessionStorage`) and
+`https://fanglands.com/admin` (gorkscape.ca/admin hands over to it). It asks for the admin key once per browser tab (kept in `sessionStorage`) and
 shows who is on line (admins marked ADMIN in gold), every account, online ones first (when each was last on, the last
 login, time online, knight play time, and **Logins** for the last 10 with how long each lasted; with **Make admin** / **Make player**, how long
 they are muted with **Mute** and **Unmute**, **Reset secret word**, **Ban** / **Unban** and **Saves**, which lists

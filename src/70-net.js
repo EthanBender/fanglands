@@ -1,5 +1,5 @@
 // ============================================================================
-// THE WIRE — how the game talks to the world server at gorkscape.ca
+// THE WIRE — how the game talks to the world server at fanglands.com
 // Owner: "make it an online MMORPG so Cohen and his friends can log in and play together."
 // This file is the whole network layer the online files build on: whether we are online at all, the session
 // token, JSON calls to /api, and one WebSocket to the world that reconnects by itself. It knows nothing about
@@ -7,7 +7,9 @@
 // Feature file: registers through HOOKS only. window.NET is the register.
 // ============================================================================
 {
-  const HOSTS = ['gorkscape.ca', 'www.gorkscape.ca', 'test.gorkscape.ca'];   // test.gorkscape.ca: the owner's separate test world
+  // fanglands.com is the home; the gorkscape.ca names stay so a page already open there keeps playing (docs/ONLINE.md,
+  // "Two addresses"); test.*: the owner's separate test world
+  const HOSTS = ['fanglands.com', 'www.fanglands.com', 'test.fanglands.com', 'gorkscape.ca', 'www.gorkscape.ca', 'test.gorkscape.ca'];
   const host = (typeof location !== 'undefined' && location.hostname) || '';
   const search = (typeof location !== 'undefined' && location.search) || '';
   // online on the real address, on any address with ?online, or when a test says so before this file runs

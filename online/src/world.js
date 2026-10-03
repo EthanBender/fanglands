@@ -29,6 +29,7 @@ import { cleanName } from './filter.js';
 import { makeHash, checkPassword, randomHex, sameString } from './auth.js';
 import { json, oops, failFrom, readJson, bearer } from './http.js';
 import { backupCall } from './backup.js';
+import { handoffCall } from './handoff.js';
 
 const SESSION_MS = 90 * 24 * 3600 * 1000;   // a token is good for 90 days
 const SAVE_MAX = 512 * 1024;                // bytes; a slot is well under 100 KB
@@ -105,6 +106,7 @@ export class World {
   // Every /api call and the socket, by path and method.
   async route(req, url, path, method) {
     if (path === '/ws') return this.openSocket(req, url);
+    { const r = await handoffCall(this, req, url, path, method); if (r) return r; }   // two addresses: handoff.js
     if (path === '/api/status' && method === 'GET') return this.status();
     if (path.startsWith('/api/admin/')) return await this.admin(req, url, path.slice('/api/admin/'.length), method);
     if (path === '/api/signup' && method === 'POST') return await this.signup(req);

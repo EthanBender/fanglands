@@ -1,5 +1,5 @@
 // ============================================================================
-// LOGIN — the online title screen at gorkscape.ca
+// LOGIN — the online title screen at fanglands.com
 // Owner: "make it an online MMORPG so Cohen and his friends can log in and play together."
 // When the wire says we are online (NET.enabled) the three slot cards give way to one card: a real HTML form
 // (so the iPad keyboard works) for the knight's name and secret word, a New knight switch that asks for the
@@ -330,7 +330,7 @@
     u.statusText = el('span', {});
     u.alone = el('button', { type: 'button', cls: 'fl-dim', text: 'Play alone', onclick: LOGIN.playAlone });
     u.status = el('div', { cls: 'fl-status' }, u.statusText, u.alone);
-    u.card = el('div', { cls: 'fl-card' }, el('h2', { text: 'Play online at gorkscape.ca' }), u.form, u.who, u.offer, u.busy, u.busyErr, u.status);
+    u.card = el('div', { cls: 'fl-card' }, el('h2', { text: 'Play online at fanglands.com' }), u.form, u.who, u.offer, u.busy, u.busyErr, u.status);
     u.root = el('div', { id: 'fl-login' }, u.card);
     document.body.appendChild(u.root);
     ui = u;
@@ -385,10 +385,10 @@
     }
     if (!ui) {
       // no HTML to hold the card (should never happen in a browser): say so on the canvas rather than show nothing
-      HK.text(g, 'Play online at gorkscape.ca', VW / 2, F.headBottom + 40, { font: HK.FC(800, 18), align: 'center', color: T.goldHi, halo: 3 });
+      HK.text(g, 'Play online at fanglands.com', VW / 2, F.headBottom + 40, { font: HK.FC(800, 18), align: 'center', color: T.goldHi, halo: 3 });
       HK.text(g, LOGIN.status || '', VW / 2, F.headBottom + 64, { font: HK.FS(600, 13), align: 'center', color: T.inkDim, halo: 3 });
     }
-    title.chrome(g, F, ['Your knight is saved in the cloud at gorkscape.ca.', 'Saved in the cloud at gorkscape.ca.', 'Saved in the cloud.']);
+    title.chrome(g, F, ['Your knight is saved in the cloud at fanglands.com.', 'Saved in the cloud at fanglands.com.', 'Saved in the cloud.']);
   }
   // Play alone keeps a way back: a Play online plate at the left end of the title's bottom row
   title.leftButton = () => (title.active && NET.enabled && LOGIN.alone && !LOGIN.showing) ? { label: 'Play online', action: LOGIN.backOnline, emblem: 'friends' } : null;
