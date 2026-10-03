@@ -40280,20 +40280,26 @@ const DEATHS = (() => {
 
   // ---------- moments: dust, sparks, the clatter, the crash, the flash ----------
   const EVENTS = {
-    beast: [[0.3, c => burst(c.x, c.y + c.r * 0.5, '#b9a98a', 8, 60)]],
-    person: [[0.32, c => burst(c.x - c.fx * 9, c.y + c.r * 0.5, '#b9a98a', 6, 50)], [0.324, c => clink(c, 5)], [0.5, c => clink(c, 3)]],
-    undead: [[0.1, c => burst(c.x, c.y - c.r * 0.6, dust(c)[1], 10, 50)], [0.45, c => burst(c.x, c.y + c.r * 0.6, dust(c)[0], 8, 40)]],
-    machine: [[0.04, c => spark(c)], [0.16, c => spark(c)], [0.28, c => spark(c)], [0.42, c => { burst(c.x, c.y, '#ff8a1a', 14, 150); burst(c.x, c.y, '#4a4a52', 12, 110); }]],
-    dragon: [[0.32, c => { burst(c.x, c.y + c.r * 0.4, '#a08a6a', 16, 120); if (window.IMPACT && IMPACT.wave) IMPACT.wave(c.x, c.y, c.boss ? 1.8 : 1.1); }]],
-    golem: [[0.34, c => { burst(c.x, c.y, (c.rocks && c.rocks[0].col) || '#8f887a', 18, 120); burst(c.x, c.y - c.r * 0.4, '#d8d0c0', 8, 70); }]],
+    beast: [[0.3, c => puff(c, c.x, c.y + c.r * 0.5, '#b9a98a', 8, 60)]],
+    person: [[0.32, c => puff(c, c.x - c.fx * 9, c.y + c.r * 0.5, '#b9a98a', 6, 50)], [0.324, c => clink(c, 5)], [0.5, c => clink(c, 3)]],
+    undead: [[0.1, c => puff(c, c.x, c.y - c.r * 0.6, dust(c)[1], 10, 50)], [0.45, c => puff(c, c.x, c.y + c.r * 0.6, dust(c)[0], 8, 40)]],
+    machine: [[0.04, c => spark(c)], [0.16, c => spark(c)], [0.28, c => spark(c)], [0.42, c => { puff(c, c.x, c.y, '#ff8a1a', 14, 150); puff(c, c.x, c.y, '#4a4a52', 12, 110); }]],
+    dragon: [[0.32, c => { puff(c, c.x, c.y + c.r * 0.4, '#a08a6a', 16, 120); if (window.IMPACT && IMPACT.wave) IMPACT.wave(c.x, c.y, c.boss ? 1.8 : 1.1); }]],
+    golem: [[0.34, c => { puff(c, c.x, c.y, (c.rocks && c.rocks[0].col) || '#8f887a', 18, 120); puff(c, c.x, c.y - c.r * 0.4, '#d8d0c0', 8, 70); }]],
   };
-  function clink(c, n) { const w = pose(c).weapon; if (w) burst(c.x + w.x, c.y + w.y, '#e8ecf2', n, 70); }
-  function spark(c) { burst(c.x + (hash(c.seed + c.t, 1) - 0.5) * c.r, c.y - c.r * 0.3, '#ffd166', 6, 110); }
+  // the core's burst() draws on Math.random; these puffs are the same particles from the corpse's own seed, so a death
+  // never moves the game's dice (a fight, a drop table or the bot's wander rolls exactly as it would have)
+  function puff(c, x, y, color, n, speed) {
+    const k = (c.puffs = (c.puffs || 0) + 1) * 17.3 + c.seed;
+    for (let i = 0; i < n; i++) { const a = hash(k, i) * Math.PI * 2, sp = speed * (0.3 + hash(k, 50 + i)); particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0.5 + hash(k, 100 + i) * 0.4, color, r: 2 + hash(k, 150 + i) * 2.5 }); }
+  }
+  function clink(c, n) { const w = pose(c).weapon; if (w) puff(c, c.x + w.x, c.y + w.y, '#e8ecf2', n, 70); }
+  function spark(c) { puff(c, c.x + (hash(c.seed + c.t, 1) - 0.5) * c.r, c.y - c.r * 0.3, '#ffd166', 6, 110); }
   function flashFx(c) {
     c.flashed = true;
     if (window.SETTINGS && typeof SETTINGS.startShake === 'function') SETTINGS.startShake(c.r > 35 ? 8 : 6, 0.45);
     if (window.IMPACT && IMPACT.wave) IMPACT.wave(c.x, c.y, 1.6);
-    burst(c.x, c.y, '#fff2c0', 24, 200);
+    puff(c, c.x, c.y, '#fff2c0', 24, 200);
   }
 
   // ---------- each tick ----------
@@ -40491,6 +40497,14 @@ const DEATHS = (() => {
           NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
           COOP.reset(); monsters = real; COOP.state.idxLen = -1; player.kills = kills0;
         }
+      }
+      // (5b) a death never rolls the game's dice: every puff, spark, clatter and flash comes from the corpse's own seed
+      {
+        const m = mk('walker', 0, -3 * TILE); down(m); F.step([]); const c = API.of(m), r0 = Math.random; let rolls = 0, fired = 0;
+        Math.random = () => { rolls++; return r0(); };
+        try { for (const k of Object.keys(EVENTS)) for (const [, fn] of EVENTS[k]) { const kind = c.kind; c.kind = k; fn(c); c.kind = kind; fired++; } flashFx(c); drawCorpse(rec().g, c); }
+        finally { Math.random = r0; }
+        check(P + 'a death never rolls the game\'s dice (its dust, sparks, clatter and flash come from its own seed)', !!c && fired >= 10 && rolls === 0, { fired, rolls });
       }
       // (6) ten deaths at once stay cheap: each is its sprite (four times at most) and a few dozen shapes
       {
