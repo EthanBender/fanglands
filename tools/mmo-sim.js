@@ -49,6 +49,7 @@ const CAPS = {
   mute: [1, 3], unmute: [1, 3], kick: [1, 3], ban: [1, 3], unban: [1, 3], modlist: [1, 2], spawn: [1, 3], spawn_clear: [1, 2],
   party: [0.2, 2], party_end: [1, 2], light: [4, 8], claim: [10, 50],
   trade_ask: [0.5, 3], trade_answer: [2, 4], trade_offer: [5, 10], trade_accept: [4, 8], trade_confirm: [4, 8], trade_full: [2, 4], trade_close: [2, 4], trade_ack: [10, 50],
+  boss_call: [0.5, 2],
 };
 // Trading (docs/ONLINE.md, "Trading"): the ranges in px, the ask's life, an offer's limits, how long a finished trade is re-sent
 const TRADE_NEAR = 5 * TILE_PX, TRADE_LEAVE = 8 * TILE_PX, TRADE_ASK_LIFE = 30000, TRADE_ITEMS = 12, TRADE_QTY_MAX = 1000000000, TRADE_KEEP = PRIZE_KEEP;
@@ -261,6 +262,7 @@ class FakeWorld {
     if (t === 'chat') return this.chat(k, m);
     if (t === 'mon') return this.mon(k, m);
     if (t === 'hit') return this.hit(k, m);
+    if (t === 'boss_call') return this.bossCall(k, m);
     if (t === 'kill') return this.toKnight(k, m, ['nid', 'type', 'x', 'y']);
     if (t === 'hurt') return this.toKnight(k, m, ['dmg', 'x', 'y']);
     if (t === 'gift') return this.gift(k, m);
@@ -325,6 +327,12 @@ class FakeWorld {
     const kp = this.keepers.get(k.map);
     if (!kp || kp === k || typeof m.nid !== 'string') return;
     this.send(kp, { t: 'hit', n: k.name, nid: m.nid, dmg: m.dmg, knock: m.knock, bomb: m.bomb });
+  }
+  // a named boss: from a knight to the keeper of its map, with the knight's name (docs/ONLINE.md, "Named bosses")
+  bossCall(k, m) {
+    const kp = this.keepers.get(k.map);
+    if (!kp || kp === k || typeof m.id !== 'string' || !/^[a-z_]{1,24}$/.test(m.id)) return;
+    this.send(kp, { t: 'boss_call', n: k.name, id: m.id });
   }
   toKnight(k, m, fields) {
     if (this.keepers.get(k.map) !== k) return;

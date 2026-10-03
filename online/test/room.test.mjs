@@ -382,3 +382,65 @@ test('a playing knight is chosen over a silent one when the keeper leaves', () =
   w.room.leave(a);
   assert.equal(w.room.keeperOf('over').name, 'Ava');
 });
+
+// ---------- named bosses: boss_call (docs/ONLINE.md, "Named bosses: boss_call and helper credit") ----------
+test('boss_call from a non-keeper reaches only the keeper of the sender\'s map, with the sender named', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'); w.t += 10;
+  const b = w.knight('Jack', 'over'); w.t += 10;
+  const c = w.knight('Zed', 'over');
+  w.settle(a, b, c);
+  w.say(b, { t: 'boss_call', id: 'the_fang' });
+  assert.deepEqual(a.of('boss_call'), [{ t: 'boss_call', n: 'Jack', id: 'the_fang' }]);
+  assert.equal(b.of('boss_call').length, 0);
+  assert.equal(c.of('boss_call').length, 0);
+});
+
+test('boss_call from the keeper is not relayed anywhere', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'); w.t += 10;
+  const b = w.knight('Jack', 'over');
+  w.settle(a, b);
+  w.say(a, { t: 'boss_call', id: 'gnasher' });
+  assert.equal(a.of('boss_call').length, 0);
+  assert.equal(b.of('boss_call').length, 0);
+});
+
+test('boss_call with a bad id (capitals, longer than 24, not a string, missing) is dropped', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'); w.t += 10;
+  const b = w.knight('Jack', 'over');
+  w.settle(a, b);
+  for (const id of ['The_Fang', 'a'.repeat(25), 42, null, undefined, '', 'war-shed', 'fang 1']) { w.t += 5000; w.say(b, { t: 'boss_call', id }); }
+  assert.equal(a.of('boss_call').length, 0);
+  w.t += 5000; w.say(b, { t: 'boss_call', id: 'a'.repeat(24) });
+  assert.equal(a.of('boss_call').length, 1);
+});
+
+test('boss_call is capped at 0.5 a second with a burst of 2', () => {
+  assert.equal(CAPS.boss_call.rate, 0.5); assert.equal(CAPS.boss_call.burst, 2);
+  const w = world();
+  const a = w.knight('Cohen', 'over'); w.t += 10;
+  const b = w.knight('Jack', 'over');
+  w.settle(a, b);
+  for (let i = 0; i < 4; i++) w.say(b, { t: 'boss_call', id: 'war_shed' });
+  assert.equal(a.of('boss_call').length, 2);
+  assert.equal(b.last('error').code, 'bad');
+  b.clear(); a.clear();
+  // two seconds later one more token has come back, and sending at the cap is never punished
+  for (let i = 0; i < 10; i++) { w.t += 2000; w.say(b, { t: 'boss_call', id: 'war_shed' }); }
+  assert.equal(a.of('boss_call').length, 10);
+  assert.equal(b.of('error').length, 0);
+});
+
+test('a keeper on another map does not receive boss_call', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'tinker_lab'); w.t += 10;
+  const b = w.knight('Jack', 'over'); w.t += 10;
+  const c = w.knight('Zed', 'over');
+  w.settle(a, b, c);
+  // Jack keeps the overworld; Cohen keeps the lab. Zed asks from the overworld: only Jack hears it
+  w.say(c, { t: 'boss_call', id: 'gnasher' });
+  assert.equal(a.of('boss_call').length, 0);
+  assert.deepEqual(b.of('boss_call'), [{ t: 'boss_call', n: 'Zed', id: 'gnasher' }]);
+});

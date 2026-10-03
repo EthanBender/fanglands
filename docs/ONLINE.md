@@ -125,6 +125,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `hurt` | `to, dmg, x, y` | — | keeper: a monster hit this knight for `dmg` (already rolled against their `def`) |
 | `gift` | `to, id, qty` | 1/s | hand an item over; the sender has already taken it out of the pack |
 | `gift_ok` / `gift_no` | `gid` | — | the receiver took it / could not (full pack); `gift_no` makes the server send `gift_back` |
+| `boss_call` | `id` | 0.5/s, burst 2 | ask the keeper of your map to wake a named boss (`id` matches `^[a-z_]{1,24}$`; see *Named bosses* below). Dropped when you are the keeper, nobody keeps the map, or the id is bad |
 | `ping` | — | — | keepalive every 25 s |
 | `mute` `unmute` `kick` `ban` `unban` `modlist` `spawn` `spawn_clear` `party` `party_end` `light` `claim` | | | see *Admins and drop parties* |
 | `trade_ask` `trade_answer` `trade_offer` `trade_accept` `trade_confirm` `trade_full` `trade_close` `trade_ack` | | | see *Trading* |
@@ -145,6 +146,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `hurt` | `dmg, x, y` | a monster hit you: `hurtPlayer(dmg, x, y)` |
 | `gift` | `gid, from, id, qty` | take it if it fits, answer `gift_ok`/`gift_no` |
 | `gift_ok` / `gift_back` | `gid, id, qty` | the receiver took it / it comes back to you |
+| `boss_call` | `n, id` | (to the keeper) knight `n` on your map asks you to wake the named boss `id`; your game decides (see *Named bosses*) |
 | `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `elsewhere` (the same knight opened on another device: this socket is closed with code 4000 and must not reconnect), `wait`, `full`, `banned` (close 4003, no reconnect), `kicked` (close 4005, no reconnect), `admin` (that was an admin message), `bad` |
 | `role` `mod` `modlist` `muted` `unmuted` `spawn` `spawn_clear` `crackers` `boom` `party_end` `light_no` `prize` `party_no` `announce` | | see *Admins and drop parties* |
 | `trade_ask` `trade_asked` `trade_ask_off` `trade_no` `trade_open` `trade_state` `trade_note` `trade_end` `trade_done` | | see *Trading* |
@@ -212,6 +214,36 @@ adds `mech: {kind, hp, maxHp}` and is drawn with `drawMech`. Mounts add `mount: 
   What must match without being a monster comes from the wall clock: which veins glow is a hash of
   `Math.floor(clock / 20000)`, the clock corrected by the server time in `welcome`. `node tools/golem-sim.js`
   (and `--room`) proves it with two whole games.
+
+### Named bosses: boss_call and helper credit
+
+Every named boss can be beaten again (owner, 2026-10-02: *"bosses shoould all be redefeatable"*), and friends fight it
+together. Two rules make that safe on a shared map; `src/75-coop.js` owns both.
+
+- **Waking a boss.** A boss file registers how its boss comes up: `HOOKS.bossCall[id] = { map, near, alive, wake, name, type }`
+  (`map` is the map it lives on, `near` is `[tx, ty, tiles]` or `null`, `alive()` says whether one is up, `wake(askerName | null)`
+  makes it). The on-screen control calls `COOP.call(id)`. Offline, or on the keeper, that runs `wake(null)` at once and answers
+  `'woke'`. On anyone else it sends `{t: 'boss_call', id}` (at most one every 2.5 s) and answers `'sent'`; the world relays it to
+  the keeper of the sender's map as `{t: 'boss_call', n, id}`. The keeper wakes it only when all of these hold: the id is
+  registered and its `map` is the keeper's map, the asker is on that map, the asker stands within `near[2]` tiles of `near`
+  (the Fang: 4 tiles of the summoning circle), no such boss is up already, and 3 s have passed since the last wake of that id.
+  Then it runs `wake(n)` and shows "Ben called The Fang." Anything else is ignored without a word. If no live boss has
+  appeared 3 s after a `'sent'`, the asker reads "Nobody answered. Try again in a moment." (an older world drops the unknown
+  `t`, and this covers it). What the asker's own story knows (first fight or rematch, a rest still running) is decided on the
+  asker's game before it calls; `wake` never sets the keeper's own quest flags when someone else asked.
+  The ids today: `the_fang` (`over`, near the circle at (18,117)), `war_shed` (the War Shed's Barrelbeast) and `gnasher`
+  (Tinkerton's lab).
+- **Helper credit.** For `the_fang`, `barrelbeast`, `thunderbird`, `gnasher`, `brood_mother` and `count_ashvane` the keeper counts
+  every landed hit per knight (`m.hitters[name] = {n, t}`, the count starting again when the last hit is more than 60 s
+  old). When one dies, the killer is credited as before (the keeper's own kill, or `kill` to the knight who landed the last
+  hit), and then every other knight on the map with 3 or more hits gets a `kill` message too; the keeper, when it is one of
+  them, runs its own kill on a phantom. Nobody is credited twice (`m.credited`). Each knight's game then decides what the
+  kill means for that knight: a first kill pays the first kill's story rewards, a repeat pays the repeat purse. Every other
+  monster keeps last-hit credit.
+- An instance boss a friend brought down stays down for the rest of that visit (`respawnT = Infinity`), as the keeper's own
+  blow would leave it. A knight arriving at an instance whose boss is down while the rest still stand finds the boss alone
+  stood up again at its own spawn tile; nobody's `cleared` count changes.
+- After a handoff, a live boss the old keeper had woken is `awake` on the new keeper too, so the Fang's Echo stays up.
 
 ## The bridge (bringing a knight from the old address)
 
