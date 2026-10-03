@@ -44,7 +44,7 @@
     the_fang: 'Fight again: sound the dragon horn on the summoning circle. The Echo rises once a day (600 s).',
     barrelbeast: 'Fight again: the War Shed on the road below the Goblin Camp, the boiler valve, every 300 s.',
     thunderbird: 'Fight again: the wind shrine, Into the storm, every 300 s.',
-    gnasher: "Fight again: the Arena lever in Tinkerton's lab.",
+    gnasher: "Fight again: the Arena lever in Tinkerton's lab, every 180 s.",
     brood_mother: 'Fight again: comes back every time you go in.',
     count_ashvane: 'Fight again: comes back every time you go in.',
   };

@@ -238,7 +238,9 @@ together. Two rules make that safe on a shared map; `src/75-coop.js` owns both.
   broke). The asker's `refused(left)` says how long in m:ss and ends his call. A call whose boss stood up on the asker's screen
   and then stayed down 3 s is spent, paid or not: the asker's own rest starts and nothing calls it again by itself (the 3 s let
   the keeper's `kill` message for the asker's own last blow land first). Rests: the Fang 600 s, the War Shed 300 s, the storm
-  300 s; the Gnasher has none (the house pattern).
+  300 s; the Gnasher 180 s (a rematch kill starts it; Tinkerton's first fight never waits). The Gnasher's lever follows the same
+  rule: a non-keeper whose lever Gnasher stood up and then stayed down 3 s has spent his rematch, and only his owed first
+  fight (stage 2) is ever asked for again by itself.
 - **The pay is each knight's own.** `resting(m)` says this knight is still resting from his last paid kill of that boss. A kill
   then (his own, a helper's `kill` message, the keeper's phantom) pays nothing: `m.noPay` is set before the kill hooks run, core
   `rollDrops` is held back, and the boss files, the kill bonus (30-ashdrake, 45-progression), the dragon item
