@@ -870,6 +870,98 @@ The accounts table gains *On now / last on*, *Last login*, *Time online* and *Kn
 a line saying when time online began to be counted, and a *Logins* button per knight that opens the last 10 logins
 under the row. A reset shows in *What admins did* ("MudGoll gave Sam a new secret word").
 
+## The shared world (phase 1: the server runs the monsters)
+
+Owner-approved plan (`~/.fanglands/work/phase1/spec.md`): the world server runs every monster in its own copy of the game,
+so every knight on a map sees the same monsters at the same moment, RuneScape-style. It ships in stages, and every stage
+ships switched off (or only watching). Until a map is switched to `world`, the keeper model above is exactly how that map
+works, and the keeper code in `src/75-coop.js` stays as the fallback through all of phase 1.
+
+### Stage 0: the meter (live) and the harness (built, not wired)
+
+Players see nothing. The only server change that reaches the live world is the **meter**: it counts what the free plan
+counts, so the cost gates before later stages read real numbers instead of guesses.
+
+**The meter.** One row per UTC day in a new table (created only if missing, nothing else in the schema changes):
+
+```
+req_meter (day TEXT PRIMARY KEY, ws_in INTEGER NOT NULL DEFAULT 0, http INTEGER NOT NULL DEFAULT 0, est_requests INTEGER NOT NULL DEFAULT 0)
+```
+
+- `day` is the UTC date, `'2026-10-03'`. The free plan's day also starts at 00:00 UTC (8 pm in Ontario in summer, 7 pm in winter).
+- `ws_in` counts every `webSocketMessage` the World receives. Pings answered by the runtime (`{"t":"ping"}`) never reach
+  the World and are not counted.
+- `http` counts every request that reaches the World's `fetch`: every `/api/...` call (the parent page's included) and every
+  `/ws` upgrade. Static files (the game, `/admin`) never reach the World and are not counted.
+- `est_requests` = `ceil(ws_in / 20) + http`: Durable Object requests as Cloudflare bills them (incoming WebSocket messages
+  count 20 to 1). The free plan allows 100,000 a day.
+- The counts are kept in memory and written with one upsert per day touched: when 200 are waiting, when the last write was
+  10 s or more ago (checked on every message and request), on every socket close and on every alarm. A nap can lose at most the
+  last 10 s of counts. That is at most 360 rows written an hour while knights play (the free plan allows 100,000 rows written a day).
+- Rows older than 400 days are deleted on the first write of each new day.
+- The admin export (`GET /api/admin/export`) includes `req_meter`.
+
+`GET /api/admin/sim` (Bearer ADMIN_KEY) answers, for now, only the meter:
+
+```
+{ meter: { today: {day, wsIn, http, est}, days: [{day, wsIn, http, est}, ... newest first, 14 days], freeLimit: 100000, waiting: n } }
+```
+
+`today` includes the counts not yet written (`waiting` says how many). Later stages add `modes`, `tick`, `boot`, `heap`,
+`copies`, `fallbacks`, `move`, `combat` beside `meter`, and `POST /api/admin/sim` for the switches; nothing reads them yet.
+
+The parent page (`/admin`) has a **Shared world** section with one line for today and the last 7 days under it:
+"Today (UTC): 12,345 socket messages and 678 calls, about 1,296 of the 100,000 requests a day the free plan allows (1.3%)."
+
+**The game copy** (built by every `./build.sh`, not imported by the Worker yet, so it is not deployed):
+
+- `tools/build-sim.mjs` turns `index.html` into `online/src/sim/game.mjs` (git-ignored, rebuilt by `build.sh` and so by both
+  deploy scripts): `export function makeGame(window) { ...the whole game...; return { peek, poke, window } }` plus
+  `export const FILES` (each `src/` file's first line in the module, for reading stack traces). Every call is an independent
+  world. An acorn + eslint-scope pass rewrites every name the script reads without declaring it to `window.NAME`, `Math` and
+  `Date` included, so each copy has its own seeded dice and its own clock. `--strip` (what `build.sh` writes) turns the 12
+  presentation files into no-op stand-ins (a stand-in remembers what is written to it, so `title.active = false` reads back
+  `false`) and removes the drawing, HUD, panel, key-help and self-test registrations; `--keep-tests` keeps the self-tests.
+  Every `HOOKS` function a copy holds is tagged with the file that registered it (`fn.__file`, e.g. `'35-night'`).
+  acorn 8.18.0 and eslint-scope 8.4.0 are `online/` devDependencies; `build.sh` installs them with `npm ci` when they are missing.
+- `online/src/sim/window.js`: `makeWindow({ seed, now })` is the screen-less browser one copy lives in (stub DOM, a canvas
+  that swallows everything, memory localStorage), with a seeded `Math`, a clock the host drives (`window.__now`, in ms;
+  `Date.now()`, `new Date()` and `performance.now()` read it) and a sim-time scheduler: `setTimeout`/`clearTimeout` are
+  recorded and `window.__runTimers()` runs the ones that are due; `setInterval` and `requestAnimationFrame` do nothing.
+- `src/79-worldkeeper.js`, the **stand-in**: in a browser it does nothing (no `window.__worldKeeper`). In a copy, the host
+  sets `window.__worldKeeper = { map, worldGen, send(msg) }` before the game loads, and the file:
+  - makes `save()` a no-op;
+  - with `worldGen: false`, makes `generateWorld()` a blank map with no spawns (instances that prove they build the same
+    without the overworld; `tools/sim-suite.mjs` checks each one);
+  - gives the copy `window.WORLDKEEPER = { map, me, start(), step(dt), deliver(msg), off }`. `start()` starts a new game the
+    way the title does, enters the instance for an instance map, then points `NET` at a virtual socket: `NET.online()` is
+    true and `NET.me` is `'@world:<map>'`, which the socket's own welcome names keeper. Everything the copy sends goes to
+    `send(msg)`; `deliver(msg)` hands the copy a message as if the world sent it (a knight's `p`, `left`, `hit`, `boss_call`).
+  - parks the stand-in knight dead on the solid tile (0, 0) with `deadT` zeroed before every `step`, so it never respawns
+    (`respawnPoint()` and the instance's `leaveInstance()` never run) and 75-coop's keeper half aims every monster at a real
+    knight (`stepRemote`);
+  - applies the `serverOff` list: the `HOOKS` entries, by file and hook name, that would act on the dead stand-in. The
+    first list is the Stage 0 audit (below); a file leaves it when it is ported.
+- `online/src/sim/host.js`, **SimHost** (not wired to the Room until Stage 2): one copy per map, `boot(map)`,
+  `setKnights(map, list)` (accepted presence `{n, x, y, fx, fy, dead, def, lv, att, mh, law, spd}`, delivered to the copy as
+  `p`, and `left` for a knight who went), `deliver(map, msg)` (queued, run at the start of the next tick), `tick()`,
+  `start()`/`stop()`, `drop(map)`, `stats()`. A tick is every 100 ms by a `setTimeout` chain (never alarms): it sets
+  `window.__now`, runs due timers, drains the queued messages, refreshes the knights, runs 3 substeps of `update(1/30)` and
+  collects what the copy sent. At most 3 catch-up ticks; beyond that the time is skipped and counted. The loop stops 60 s
+  after the last knight leaves; a copy is dropped 60 s after its map empties. The cap is the overworld plus 3 instance copies.
+  The **watchdog** hands a map back to the keeper path (`onFallback(map, reason)`, reasons `boot`, `throws`, `slow`, `heap`,
+  `cap`) on a boot throw, 3 tick throws within 10 s, 3 ticks in a row over 25 ms, the heap over budget, or more copies
+  than the cap. Inside workerd the clock only moves on I/O, so there a tick's cost is read as the lateness of the next timer.
+- `tools/sim-suite.mjs` (a deploy gate): the whole `HOOKS.selfTest` suite through `makeGame` (full build) with the same
+  pass count as `tools/headless.js`; two copies share nothing (`INSTANCES`, `COOP`, `NIGHT`, `monsters`); stripped equals
+  full after 600 ticks (same map hash, same monster and knight state hash), alone and through SimHost with 5 knights
+  fighting; the stand-in never respawns and never leaves an instance; each instance's `worldGen: false` build matches its
+  full build.
+
+**Deploy gates.** `online/deploy.sh` and `~/.fanglands/tools/deploy-test.sh` run, each only when its file is there:
+`node tools/sim-suite.mjs`, `node tools/mmo-sim.js --sim`, `node tools/mmo-sim-world.js`, `node online/test/atlas-drift.mjs`.
+A red check never deploys.
+
 ## Safety rules (binding)
 
 - Invite-only signups. Names and chat pass `online/src/filter.js`. Chat is logged with the name and time.
