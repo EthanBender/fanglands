@@ -179,7 +179,7 @@ test('the World counts every request and socket message, writes on close and ala
   assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 5, admin: 2, gameHttp: 3, est: 7, gameEst: 5 });
   assert.equal(r.data.meter.freeLimit, 100000);
   assert.equal(r.data.meter.waiting, 30);
-  assert.deepEqual(Object.keys(r.data), ['meter'], 'only the meter in Stage 0');
+  assert.deepEqual(Object.keys(r.data), ['meter', 'sim', 'atlas', 'move'], 'the meter, and from Stage 1 the switch, the Atlas and the movement check');
   w.webSocketClose(sock, 1000, 'bye');
   assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-03', ws_in: 25, http: 5, est_requests: 7 }], 'a socket close writes');
   assert.deepEqual(adminOf(ctx.storage.sql), [{ day: '2026-10-03', http: 2 }], 'and the admin calls with it');
@@ -273,4 +273,48 @@ test('every alarm is counted as a billed request, and an alarm that throws still
   try { w.alarm(); } finally { console.error = err; w.room.tick = tick; }
   assert.equal(rowsOf(ctx.storage.sql)[0].http, 4);
   assert.deepEqual(adminOf(ctx.storage.sql), [], 'an alarm is the game\'s, not the admin page\'s');
+});
+
+// the shared world, Stage 1: the switch, the Atlas in welcome, the movement check's tables, all through the World
+test('the World: welcome names the Atlas, the movement check counts into move_day and move_log, POST /api/admin/sim switches it and a nap keeps the switch', async () => {
+  const db = new DatabaseSync(':memory:'), ctx = makeCtx(db);
+  T = at('2026-10-03T15:00:00Z');
+  const w = new TestWorld(ctx, ENV);
+  let r = await call(w, 'POST', '/api/signup', { name: 'Cohen', pass: 'sword', invite: 'TEST-1234' });
+  const tok = r.data.token;
+  await w.fetch(new Request('http://world/ws?token=' + tok, { headers: { upgrade: 'websocket' } }));
+  const sock = ctx.sockets[ctx.sockets.length - 1];
+  r = await call(w, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
+  const hash = r.data.atlas.hash;
+  assert.match(hash, /^[0-9a-f]{16}$/);
+  assert.ok(r.data.atlas.places > 30 && r.data.atlas.fixed > 1000);
+  assert.deepEqual(r.data.sim, { move: 'observe' });
+  w.webSocketMessage(sock, JSON.stringify({ t: 'hello', v: 1, caps: [], atlas: hash }));
+  assert.equal(sock.got.find(m => m.t === 'welcome').atlas, hash);
+  // the Cave: a knight steps from its floor (5, 7) through its rock border at y 0 to off the map: one wall
+  w.webSocketMessage(sock, JSON.stringify({ t: 'p', map: 'over', x: 5 * 48 + 24, y: 7 * 48 + 24, j: 0, spd: 175 }));
+  T += 125; w.webSocketMessage(sock, JSON.stringify({ t: 'p', map: 'over', x: 5 * 48 + 24 + 20, y: 7 * 48 + 24, j: 0, spd: 175 }));
+  T += 125; w.webSocketMessage(sock, JSON.stringify({ t: 'p', map: 'over', x: 5 * 48 + 24 + 20, y: 10, j: 0, spd: 175 }));
+  r = await call(w, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
+  assert.equal(r.data.move.mode, 'observe');
+  assert.equal(r.data.move.today.checked, 2); assert.equal(r.data.move.today.wall, 1);
+  assert.equal(r.data.move.recent[0].n, 'Cohen'); assert.equal(r.data.move.recent[0].kind, 'wall');
+  assert.deepEqual(r.data.move.knights, [{ n: 'Cohen', map: 'over', atlas: 'same', caps: [] }]);
+  // the switch: only {move: 'observe' | 'off'}
+  for (const bad of [{}, { move: 'correct' }, { move: 'off', maps: {} }, { combat: 'on' }]) assert.equal((await call(w, 'POST', '/api/admin/sim', bad, ENV.ADMIN_KEY)).status, 400, JSON.stringify(bad));
+  assert.equal((await call(w, 'POST', '/api/admin/sim', { move: 'off' })).status, 401);
+  r = await call(w, 'POST', '/api/admin/sim', { move: 'off' }, ENV.ADMIN_KEY);
+  assert.equal(r.status, 200); assert.equal(r.data.move.mode, 'off'); assert.deepEqual(r.data.sim, { move: 'off' });
+  T += 125; w.webSocketMessage(sock, JSON.stringify({ t: 'p', map: 'over', x: -500, y: -500, j: 0, spd: 175 }));
+  w.webSocketClose(sock, 1000, 'bye');
+  const day = ctx.storage.sql.exec('SELECT checked, wall FROM move_day').toArray();
+  assert.deepEqual(day.map(x => [x.checked, x.wall]), [[2, 1]], 'off: nothing more counted; a close writes');
+  // a nap keeps the switch (settings 'sim'), keeping any key a later stage put beside it
+  ctx.storage.sql.exec("UPDATE settings SET value = ? WHERE key = 'sim'", JSON.stringify({ move: 'off', later: 1 }));
+  const w2 = new TestWorld(ctx, ENV);
+  assert.equal(w2.room.sim.move, 'off');
+  r = await call(w2, 'POST', '/api/admin/sim', { move: 'observe' }, ENV.ADMIN_KEY);
+  assert.deepEqual(JSON.parse(ctx.storage.sql.exec("SELECT value FROM settings WHERE key = 'sim'").toArray()[0].value), { move: 'observe', later: 1 });
+  r = await call(w2, 'GET', '/api/admin/export', undefined, ENV.ADMIN_KEY);
+  assert.equal(r.data.move_day.length, 1); assert.equal(r.data.move_log.length, 1);
 });

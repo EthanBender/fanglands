@@ -13,6 +13,9 @@ sed -n '/^<script>$/,/^<\/script>$/p' index.html | sed '1d;$d' > .build-check.js
 if grep -nE '\(\?<[=!]' .build-check.js; then echo "build.sh: a regex lookbehind is in the game (iPadOS 16.3 and older cannot run it). Use a lookahead." >&2; rm -f .build-check.js; exit 1; fi
 node --check .build-check.js && echo "built index.html ($(wc -l < index.html) lines)"
 rm -f .build-check.js
+# The Atlas (docs/ONLINE.md, "The shared world", Stage 1): online/src/atlas.json, made from this index.html, committed with it.
+# online/test/atlas-drift.mjs fails a deploy whose atlas.json does not match the game it ships with.
+node tools/atlas.mjs --quiet || { echo "build.sh: the Atlas could not be made from index.html (tools/atlas.mjs)" >&2; exit 1; }
 # The server's copy of the game (docs/ONLINE.md, "The shared world"): online/src/sim/game.mjs, git-ignored, rebuilt on
 # every build so the deploy gates always test this index.html. acorn and eslint-scope are online/'s devDependencies.
 if [ ! -d online/node_modules/acorn ] || [ ! -d online/node_modules/eslint-scope ]; then

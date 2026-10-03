@@ -42,7 +42,10 @@
   const me = () => NET.me;
   const mapId = () => (window.INSTANCES && INSTANCES.active && INSTANCES.active()) || 'over';
   const instName = id => { const i = window.INSTANCES && INSTANCES.get ? INSTANCES.get(id) : null; return i && i.name ? i.name : String(id); };
-  const whereOf = o => o.map === 'over' || !o.map ? (o.region || 'The Fanglands') : instName(o.map);
+  // every knight's island is his own (the world keys it by his name and still calls it 'house' on the wire): a friend whose
+  // map is 'house' is on HIS island, never ours, even while we stand on our own
+  const ownIsland = o => !!o && o.map === 'house';
+  const whereOf = o => ownIsland(o) ? 'On their own island' : o.map === 'over' || !o.map ? (o.region || 'The Fanglands') : instName(o.map);
   // where we are, in words, for the roster and the admin page: the instance's name inside one, else the region under our feet
   const regionName = () => { const id = mapId(); if (id !== 'over') return instName(id); if (player.region) return String(player.region); const r = regionAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); return r && r.name ? r.name : 'The Fanglands'; };
   const forget = n => { delete REMOTE[n]; if (following === n) following = null; };
@@ -72,17 +75,31 @@
       t: 'p', map: mapId(), region: regionName(), x: Math.round(player.x), y: Math.round(player.y), fx: +player.facing.x.toFixed(2), fy: +player.facing.y.toFixed(2),
       mv: !!player.moving, wt: +(player.walkT % 100).toFixed(1), hp: Math.ceil(player.hp), mhp: player.maxHp, lv: combatLevel(), look: lookOf(),
       mech: m ? { kind: m.kind || 'walker', hp: Math.ceil(m.hp), maxHp: m.maxHp } : null, dead: !!player.dead, def: playerDefRoll(), act: a ? a.type : null,
+      // the shared world's movement check (docs/ONLINE.md, "The shared world", Stage 1): the jump counter and his own speed
+      j: JUMP.n, spd: speedNow(),
     };
   }
+  // j: one more every time the knight's own position moves more than 3 x speed x dt in one frame (a teleport, a respawn, a
+  // door into an instance, a ferry's landing, a shove), so the world never reads a jump as running too fast. Counted
+  // offline too: it costs a subtraction, and the presence that goes out first after coming online carries the true count.
+  const JUMP = { n: 0, x: null, y: null };
+  // his speed now: the mover's own, or a machine's FULL STEAM run while it lasts (55-riding: 430 px/s for 1.15 s)
+  const speedNow = () => Math.round(Math.max(player.speed || 175, window.RIDING && RIDING.special ? RIDING.SPEED : 0));
+  HOOKS.update.push(dt => {
+    const x = player.x, y = player.y;
+    if (JUMP.x !== null && Math.hypot(x - JUMP.x, y - JUMP.y) > 3 * Math.max(player.speed || 0, 175) * Math.max(dt, 1 / 240) + 1) JUMP.n++;
+    JUMP.x = x; JUMP.y = y;
+  });
   // a cheap signature of everything the contract counts as a change; the full message is only built when it differs
   const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || ''); };
   const sig = () => mapId() + '|' + Math.round(player.x) + ',' + Math.round(player.y) + '|' + player.facing.x.toFixed(2) + ',' + player.facing.y.toFixed(2) + '|' + (player.moving ? 1 : 0) + '|' + Math.ceil(player.hp) + '/' + player.maxHp + '|' + (player.dead ? 1 : 0) + '|' + lookKey();
-  let lastSig = null, lastSentAt = -1e9;
+  let lastSig = null, lastSentAt = -1e9, sent = 0, sentSock = null;
 
   HOOKS.update.push(dt => {
     if (NET.online()) {
       const s = sig(), since = time - lastSentAt;
-      if ((s !== lastSig && since >= SEND_EVERY) || since >= SEND_IDLE) { if (NET.send(presence())) { lastSig = s; lastSentAt = time; } }
+      // s counts this socket's presences from 1 (a new socket starts again)
+      if ((s !== lastSig && since >= SEND_EVERY) || since >= SEND_IDLE) { if (sentSock !== NET.sock) { sentSock = NET.sock; sent = 0; } const p = presence(); p.s = sent + 1; if (NET.send(p)) { sent++; lastSig = s; lastSentAt = time; } }
     } else lastSig = null;
     // the knights we know: slide toward where they really are, tick the hurt flash, forget the silent
     const now = nowMs(), k = Math.min(1, dt / LERP_S);
@@ -271,7 +288,7 @@
     const twoTier = iw - 24 - btnW - 12 < 170;
     const textW = twoTier ? iw - 24 : iw - 24 - btnW - 12, wf = HK.FS(600, 12), lh = Math.round(15 * HK.k() * 10) / 10;
     return list.map(o => {
-      const here = o.map === mapId();
+      const here = o.map === mapId() && !ownIsland(o);
       const where = HK.wrap(g, (here ? 'On your map: ' : '') + whereOf(o), textW, 2, wf).lines;
       const textH = 12 + 16 + where.length * lh + 8;
       const h = twoTier ? textH + bh + 12 : Math.max(bh + 16, textH);
@@ -396,6 +413,11 @@
         && !!p.look && typeof p.look.tunic === 'string' && typeof p.look.hair === 'string' && typeof p.look.shoulder === 'string' && (p.look.weapon ? typeof p.look.weapon.shape === 'string' && typeof p.look.weapon.color === 'string' : p.look.fists === true);
       const n0 = ps().length; F.sim(30, ['KeyD']); F.sim(30, ['KeyA']); const moving = ps().length - n0; const n1 = ps().length; player.hp = player.maxHp; F.sim(120, []); const still = ps().length - n1;
       check(P + 'presence goes out with the contract fields, at most 8 a second while moving and about once a second when still', fields && shaped && moving >= 2 && moving <= 9 && still >= 1 && still <= 4, { fields, shaped, moving, still, p: p && { map: p.map, x: p.x, y: p.y, mv: p.mv, lv: p.lv, act: p.act, look: p.look } }); }
+    // the shared world's movement fields: walking keeps j, a teleport adds one, spd is the knight's speed, s counts 1, 2, 3 per socket
+    { F.sim(20, ['KeyD']); const a = lastP(); F.sim(20, ['KeyD']); const b = lastP(); const here = { x: player.x, y: player.y };
+      F.tp(Math.floor(here.x / TILE) + 12, Math.floor(here.y / TILE)); F.sim(20, []); const c = lastP(); F.tp(Math.floor(here.x / TILE), Math.floor(here.y / TILE)); F.sim(2, []);
+      const seq = ps().map(m => m.s), counting = seq.every((v, i) => v === i + 1);
+      check(P + 'presence carries j (the same while walking, one more after a teleport), spd (175 on foot) and s (1, 2, 3, ... on this socket)', !!a && !!b && !!c && b.j === a.j && c.j === b.j + 1 && a.spd === 175 && counting && seq.length > 5, { j: [a && a.j, b && b.j, c && c.j], spd: a && a.spd, counting, n: seq.length }); }
     // inside an instance the map is the instance id, and it is 'over' again outside
     { const id = INSTANCES.list().includes('spider_den') ? 'spider_den' : INSTANCES.list()[0]; const entered = INSTANCES.enter(id); F.sim(12, []); const inside = lastP(); const left = INSTANCES.leave(); F.sim(12, []); const outside = lastP();
       const instRegion = !!inside && inside.region === INSTANCES.get(id).name;
@@ -420,6 +442,20 @@
       if (follow) follow.action(); const followed = PLAYERS.following === 'Ava'; render(); const stop = buttons.find(b => /Stop following|Following/.test(b.label)); const target = mapTargets().find(t => t.id === 'friend'); if (stop) stop.action();
       closePanel(); F.press('KeyF'); const byKey = panel === 'friends'; F.press('KeyF'); const closed = panel === null;
       check(P + 'the FRIENDS seal (its badge counting the 3 knights online) is a button that opens Friends (F does too): Give is live within two tiles, Follow marks a friend on the map', !!chip && opened && giveOn && !!follow && !follow.disabled && !!benFollow && benFollow.disabled && followed && !!stop && !!target && target.label === 'Ava' && PLAYERS.following === null && byKey && closed, { chip: !!chip, opened, giveOn, follow: follow && follow.label, ben: benFollow && benFollow.label, followed, stop: !!stop, target, byKey, closed }); }
+    // every knight's island is his own: a friend the roster puts on 'house' is on HIS island. Standing on ours he is not
+    // 'here' (no blue edge, Follow stays dark) and the row says 'On their own island', never 'Your Island'; off it, the same
+    { const fol0 = following, hs = window.HOUSE ? HOUSE.state() : null, seen0 = hs ? hs.seen : null;
+      feed({ t: 'who', list: [{ n: 'Cohen', map: 'house', region: 'Your Island', lv: 5 }, { n: 'Ava', map: 'house', region: 'Your Island', lv: 7 }] });
+      const went = window.HOUSE ? HOUSE.enter() : INSTANCES.enter('house'); F.sim(4, []); const onIt = mapId() === 'house';
+      closePanel(); openPanel('friends'); render();
+      const row = friendRows(ctx, ONLINE.filter(k => k.n !== 'Cohen'), 400, false).find(r => r.o.n === 'Ava'), words = row ? row.where.join(' ') : '';
+      const fb = buttons.find(b => /Follow/.test(b.label)), dark = !!fb && !!fb.disabled; if (fb) fb.action(); const stillNone = following === fol0;
+      closePanel(); const left = window.HOUSE ? HOUSE.leave() : INSTANCES.leave(); F.sim(4, []); if (hs) hs.seen = seen0; dialog.cur = null; dialog.queue.length = 0;
+      const offRow = friendRows(ctx, ONLINE.filter(k => k.n !== 'Cohen'), 400, false).find(r => r.o.n === 'Ava'), offWords = offRow ? offRow.where.join(' ') : '';
+      F.tp(o.x, o.y); F.step([]);
+      check(P + "a friend on his own island (the roster's map 'house') is never on your map, even on your island: no blue edge, Follow dark, and the row says 'On their own island'",
+        !!went && onIt && !!row && row.here === false && /^On their own island$/.test(words) && !/Your Island|On your map/.test(words) && dark && stillNone && !!left && mapId() === 'over' && !!offRow && offRow.here === false && offWords === 'On their own island',
+        { went: !!went, onIt, here: row && row.here, words, dark, follow: fb && fb.label, stillNone, left: !!left, offHere: offRow && offRow.here, offWords }); }
     // gifts: out of the pack and onto the wire; back into the pack when the world sends it back; a friend's gift lands
     { const inv0 = player.inv.map(s => s ? { ...s } : null);
       feed({ t: 'p', n: 'Ava', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 7, look: null, mech: null, dead: false, def: 100, act: null }); F.step([]);

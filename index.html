@@ -120,6 +120,213 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+// ---- src/01-atlas.js ----
+// ============================================================================
+// THE ATLAS — one table of every place in the Fanglands, for the shared world (docs/ONLINE.md, "The shared world", Stage 1)
+// Owner-approved plan (phase 1): the world server will run the monsters, so it has to know the land the way the game does:
+// which place each tile belongs to, where many knights may fight one monster (multi) and where one fights one (single),
+// and which tiles no honest knight can ever stand in (FIXED_SOLID). The Room has no game, so it reads the same table from
+// online/src/atlas.json, which tools/atlas.mjs writes from this file (run by build.sh); online/test/atlas-drift.mjs fails a
+// deploy whose atlas.json is stale.
+//
+// Names are never written twice: a place's name and sub come from the REGIONS entry or the INSTANCES.define its feature
+// already declares. ATLAS_RULES below only says how a place differs from the default (a region or instance with no rule is
+// single combat, on its own rect or map), and draws the few areas no feature declares. Moving a border is one line.
+//
+// This file only defines; src/96-atlas.js runs the build as the very last HOOKS.world pass (after every feature has
+// carved the world, before a save's changes are laid on it) and holds the drift self-tests and the reload plaque.
+//
+// window.ATLAS = { places, get(id), place(map, tx, ty), at(tx, ty), zoneAt(map, tx, ty), combatAt(map, tx, ty),
+//                  inside(id, k), spawn(id), solidAt(map, tx, ty), hash(), export(), RULES, FIXED_TILES, SPEED_CAP, slug }
+// ============================================================================
+{
+  const ATLAS_V = 1;
+  const ID_RE = /^[a-z0-9_]{1,40}$/;
+  const AREA_PRI = 2000;   // an area beats every region (regions are 1000 - their REGIONS index)
+  // "The Fang's Lair" -> fang_lair, "Goblin Camp" -> goblin_camp, "Miller's Pond" -> miller_pond
+  const slug = name => String(name || '').toLowerCase().replace(/^the\s+/, '').replace(/['’]s\b/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+
+  // ---------- the hand table (only where a place differs from the default) ----------
+  // { id, kind, of, combat, pri, rects, spawn, call, pvp, safe, loose }
+  const ATLAS_RULES = [
+    // multi on the overworld: the gang fights
+    { id: 'goblin_camp', combat: 'multi', rects: [[142, 18, 159, 42]] },     // + the camp spawns' rect (generateWorld marks camp spawns from x 142; the region starts at 145)
+    { id: 'fang_lair', combat: 'multi' },
+    { id: 'hollowford_square', kind: 'area', of: 'hollowford', combat: 'multi', rects: [[130, 70, 150, 90]] },   // the cracked well and the Barrelbeast's ground
+    { id: 'ashfields_dragons', kind: 'area', of: 'ashfields', combat: 'multi', rects: [[40, 110, 99, 139]] },    // where the green and red dragons sleep
+    { id: 'iron_isle_wreck', kind: 'area', of: 'ironclad_isle', combat: 'multi', rects: [[182, 43, 194, 56]] },  // the goblin wreck and its crew
+    { id: 'deep_wilderlands', kind: 'reserved', combat: 'multi', pvp: true },                                   // named now, on no tile yet
+    // Hollowford is rebuilt in play (31-rebuild, 41-guild): its building walls come and go, so they never count as fixed
+    { id: 'hollowford', loose: true },
+    // the square by the Great Fountain; safe stays the option the spec keeps off
+    { id: 'thistledown', safe: false, spawn: [112, 33] },
+    // every boss instance is multi (the Royal Mine's golem is its boss though the define names none)
+    { id: 'spider_den', combat: 'multi' }, { id: 'war_shed', combat: 'multi' }, { id: 'tinker_lab', combat: 'multi' },
+    { id: 'stormfront', combat: 'multi' }, { id: 'afterlands', combat: 'multi' }, { id: 'royalmine', combat: 'multi' },
+  ];
+  // What no honest knight can stand in, by tile name: rock and cave walls (every instance's walls too), castle, building and
+  // town walls, cliffs and crags. Never water or lava (hover armour, boats, the ferry), never anything a knight can chop,
+  // mine, burn, build, open or climb. 96-atlas's self-tests hold that.
+  const FIXED_TILES = ['WALL', 'CWALL', 'HWALL', 'TOWN_WALL', 'KING_WALL', 'KING_TOWER', 'CLIFF', 'REDCLIFF', 'AF_CRAG'];
+  // The fastest each mover goes, px/s (from the mounts' and machines' own tables; 96-atlas checks them against those tables);
+  // steam is a machine's FULL STEAM run (55-riding), 1.15 s at a time. The movement check never allows more than the max.
+  const SPEED_CAP = { foot: 175, hover: 200, horse: 350, dozer: 250, walker: 115, beast: 100, steam: 430 };
+  const SPEED_MAX = Math.max(...Object.values(SPEED_CAP));
+
+  // ---------- run-length codes (what atlas.json carries) ----------
+  // a place grid: [value, count, value, count, ...]
+  const runs = arr => { const out = []; let v = arr[0], n = 0; for (let i = 0; i < arr.length; i++) { if (arr[i] === v) n++; else { out.push(v, n); v = arr[i]; n = 1; } } if (arr.length) out.push(v, n); return out; };
+  // a 0/1 mask: counts that alternate, starting with a run of 0s (which may be 0 long)
+  const bitRuns = arr => { const out = []; let v = 0, n = 0; for (let i = 0; i < arr.length; i++) { const b = arr[i] ? 1 : 0; if (b === v) n++; else { out.push(n); v = b; n = 1; } } out.push(n); return out; };
+  // a 64-bit hash of a string, as 16 hex digits (two 32-bit lanes, each a murmur-style mix)
+  function hash64(s) {
+    let h1 = 0xdeadbeef ^ s.length, h2 = 0x41c6ce57 ^ s.length;
+    for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    const hex = n => (n >>> 0).toString(16).padStart(8, '0');
+    return hex(h2) + hex(h1);
+  }
+
+  // ---------- the built Atlas (filled by build(), from the last world pass) ----------
+  const A = { places: [], byId: {}, grid: null, fixed: null, inst: {}, problems: [], facts: {}, hash: null, built: false };
+  const OVER = 'over';
+  const isHouse = map => typeof map === 'string' && (map === 'house' || map.startsWith('house:'));
+  const inRect = (r, tx, ty) => tx >= r[0] && tx <= r[2] && ty >= r[1] && ty <= r[3];
+
+  function build() {
+    const places = [], problems = [], byId = {};
+    const add = p => { if (byId[p.id]) { problems.push('two places are called ' + p.id); return null; } p.i = places.length; places.push(p); byId[p.id] = p; return p; };
+    const base = (id, name, sub, kind, map) => ({ i: -1, id, name: String(name || id), sub: String(sub || ''), kind, map, combat: 'single', pri: 0, rects: [], spawn: null, call: null, pvp: false, safe: false, loose: false, of: null });
+    const I = window.INSTANCES, ids = I && I.list ? I.list() : [];
+    // an instance's own region sits at REGIONS[0] while the knight is inside it: that one is the instance, not a region
+    const instNames = new Set(ids.map(id => (I.get(id) || {}).name));
+    const regs = REGIONS.filter(r => !instNames.has(r.name));
+    regs.forEach((r, k) => { const p = add(base(slug(r.name), r.name, r.sub, 'region', OVER)); if (p) { p.pri = 1000 - k; p.rects.push([r.x0, r.y0, r.x1, r.y1]); } });
+    for (const id of ids) {
+      const d = I.get(id); if (!d) continue;
+      const p = add(base(id, d.name, d.sub, 'instance', id)); if (!p) continue;
+      p.pri = 1000; p.rects.push([0, 0, d.w - 1, d.h - 1]); p.spawn = Array.isArray(d.entry) ? [d.entry[0], d.entry[1]] : null;
+      if (d.boss) p.boss = true;
+    }
+    for (const r of ATLAS_RULES) {
+      let p = byId[r.id];
+      if (!p) {
+        if (r.kind !== 'area' && r.kind !== 'reserved') { problems.push('a rule names ' + r.id + ', which is no region or instance'); continue; }
+        const parent = r.of ? byId[r.of] : null;
+        if (r.kind === 'area' && !parent) { problems.push('the area ' + r.id + ' is part of ' + r.of + ', which is no place'); continue; }
+        p = add(base(r.id, parent ? parent.name : r.id, parent ? parent.sub : '', r.kind, parent ? parent.map : OVER)); if (!p) continue;
+        p.of = parent ? parent.id : null; p.pri = AREA_PRI;
+      }
+      if (r.combat) p.combat = r.combat;
+      if (typeof r.pri === 'number') p.pri = r.pri;
+      if (r.rects) for (const q of r.rects) p.rects.push(q.slice(0, 4));
+      if (r.spawn) p.spawn = r.spawn.slice(0, 2);
+      if (r.call) p.call = r.call;
+      for (const f of ['pvp', 'safe', 'loose']) if (typeof r[f] === 'boolean') p[f] = r[f];
+    }
+    // the overworld grid: every place painted lowest priority first, so the highest one owns each tile
+    const grid = new Uint8Array(MAP_W * MAP_H).fill(255);
+    const painted = places.filter(p => p.map === OVER && p.kind !== 'reserved').sort((a, b) => a.pri - b.pri || a.i - b.i);
+    for (const p of painted) for (const r of p.rects) {
+      const x0 = Math.max(0, r[0]), y0 = Math.max(0, r[1]), x1 = Math.min(MAP_W - 1, r[2]), y1 = Math.min(MAP_H - 1, r[3]);
+      for (let y = y0; y <= y1; y++) grid.fill(p.i, y * MAP_W + x0, y * MAP_W + x1 + 1);
+    }
+    // the boss calls, from the boss files themselves: an overworld call is on the place under its `near` tile
+    const calls = HOOKS.bossCall || {};
+    for (const cid of Object.keys(calls).sort()) {
+      const c = calls[cid]; if (!c) continue;
+      const p = c.map === OVER ? (Array.isArray(c.near) ? places[grid[c.near[1] * MAP_W + c.near[0]]] : null) : byId[c.map];
+      if (p && !p.call) p.call = cid;
+      if (p && p.kind === 'instance') p.boss = true;
+    }
+    // FIXED_SOLID on the overworld, from the world as generated
+    const fixedIds = new Set(FIXED_TILES.map(n => T[n]).filter(v => v !== undefined));
+    const fixed = new Uint8Array(MAP_W * MAP_H);
+    for (let i = 0; i < fixed.length; i++) {
+      const t = map[i]; if (!fixedIds.has(t)) continue;
+      const p = places[grid[i]];
+      if (t === T.HWALL && p && (p.loose || (p.of && byId[p.of] && byId[p.of].loose))) continue;
+      fixed[i] = 1;
+    }
+    // generateWorld makes every NPC's own tile walkable after the passes: never count one
+    for (const n of NPCS) if (n.x >= 0 && n.y >= 0 && n.x < MAP_W && n.y < MAP_H) fixed[n.y * MAP_W + n.x] = 0;
+    // each instance's mask from its built tiles (the island is every knight's own and is never checked)
+    const inst = {};
+    for (const id of ids) {
+      const d = I.get(id); if (!d || !d.tiles || id === 'house') continue;
+      const m = new Uint8Array(d.w * d.h);
+      for (let i = 0; i < m.length; i++) if (fixedIds.has(d.tiles[i])) m[i] = 1;
+      inst[id] = { w: d.w, h: d.h, mask: m };
+    }
+    // what the self-tests read later: the spawn tiles as the world made them (the suite changes tiles as it goes)
+    const facts = { spawnOk: {}, worldPasses: HOOKS.world.length };
+    for (const p of places) if (p.spawn && p.map === OVER) facts.spawnOk[p.id] = !SOLID.has(map[p.spawn[1] * MAP_W + p.spawn[0]]);
+    for (const p of places) if (p.spawn && p.map !== OVER) { const d = I.get(p.map); facts.spawnOk[p.id] = !!d && !SOLID.has(d.tiles[p.spawn[1] * d.w + p.spawn[0]]); }
+    for (const p of places) if (!ID_RE.test(p.id)) problems.push('the id ' + JSON.stringify(p.id) + ' is not a plain lower-case id');
+    A.places = places; A.byId = byId; A.grid = grid; A.fixed = fixed; A.inst = inst; A.problems = problems; A.facts = facts; A.built = true;
+    A.hash = hash64(JSON.stringify(judged()));
+    return A;
+  }
+
+  // what the world judges by, in a fixed order: this is what hash() covers
+  function judged() {
+    const inst = {};
+    for (const id of Object.keys(A.inst).sort()) inst[id] = [A.inst[id].w, A.inst[id].h, bitRuns(A.inst[id].mask)];
+    return [ATLAS_V, MAP_W, MAP_H, TILE, A.places.map(p => [p.id, p.kind, p.map, p.combat, p.pri, p.rects, p.pvp, p.safe]), runs(A.grid), bitRuns(A.fixed), inst];
+  }
+
+  // ---------- lookups ----------
+  const get = id => A.byId[id] || null;
+  function place(mapId, tx, ty) {
+    if (!A.built) return null;
+    const m = mapId || OVER;
+    if (m === OVER) return (tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_H) ? (A.places[A.grid[ty * MAP_W + tx]] || null) : null;
+    const p = A.byId[isHouse(m) ? 'house' : m];
+    if (!p || p.kind !== 'instance') return null;
+    return inRect(p.rects[0], tx, ty) ? p : null;
+  }
+  const at = (tx, ty) => place(OVER, tx, ty);
+  const zoneAt = (mapId, tx, ty) => { const p = place(mapId, tx, ty); return p ? p.id : null; };
+  const combatAt = (mapId, tx, ty) => { const p = place(mapId, tx, ty); return p ? (p.safe ? 'safe' : p.combat) : null; };
+  // a knight or monster { x, y, map? } in pixels stands on that place (or on an area of it)
+  const inside = (id, k) => { if (!k) return false; const p = place(k.map || OVER, Math.floor(k.x / TILE), Math.floor(k.y / TILE)); return !!p && (p.id === id || p.of === id); };
+  const spawn = id => { const p = get(id); return p && p.spawn ? p.spawn.slice() : null; };
+  function solidAt(mapId, tx, ty) {
+    const m = mapId || OVER;
+    if (m === OVER) { if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return true; return !!(A.fixed && A.fixed[ty * MAP_W + tx]); }
+    const q = A.inst[m]; if (!q) return false;
+    if (tx < 0 || ty < 0 || tx >= q.w || ty >= q.h) return true;
+    return !!q.mask[ty * q.w + tx];
+  }
+
+  // ---------- what tools/atlas.mjs writes (online/src/atlas.json) ----------
+  function exportAtlas() {
+    if (!A.built) return null;
+    const keep = p => { const o = {}; for (const k of ['i', 'id', 'name', 'sub', 'kind', 'map', 'combat', 'pri', 'rects', 'spawn', 'call', 'pvp', 'safe', 'loose', 'of']) o[k] = p[k]; return o; };
+    const fixed = { over: bitRuns(A.fixed) };
+    for (const id of Object.keys(A.inst).sort()) fixed[id] = { w: A.inst[id].w, h: A.inst[id].h, runs: bitRuns(A.inst[id].mask) };
+    const I = window.INSTANCES, doors = {};
+    for (const id of (I && I.list ? I.list() : [])) { const d = I.get(id); doors[id] = { door: d.door || null, step: d.step || null, entry: d.entry || null, exit: d.exit || null }; }
+    const calls = {};
+    for (const cid of Object.keys(HOOKS.bossCall || {}).sort()) {
+      const c = HOOKS.bossCall[cid]; if (!c) continue;
+      const p = A.places.find(q => q.call === cid);
+      calls[cid] = { map: c.map, near: c.near || null, type: c.type || null, place: p ? p.id : null };
+    }
+    return {
+      v: ATLAS_V, hash: A.hash, MAP_W, MAP_H, TILE, places: A.places.map(keep), grid: runs(A.grid), fixed,
+      spawns: MONSTER_SPAWNS.map(s => [s.type, s.tx, s.ty, !!s.camp]), doors, calls, speed: Object.assign({}, SPEED_CAP, { max: SPEED_MAX }),
+    };
+  }
+
+  window.ATLAS = {
+    get places() { return A.places; }, get, place, at, zoneAt, combatAt, inside, spawn, solidAt,
+    hash: () => A.hash, export: exportAtlas, build, built: () => A.built, problems: () => A.problems.slice(), facts: () => A.facts,
+    RULES: ATLAS_RULES, FIXED_TILES, SPEED_CAP, SPEED_MAX, V: ATLAS_V, slug, runs, bitRuns, hash64,
+  };
+}
+
 // ---- src/01-items.js ----
 // ============================================================================
 // ITEMS, GEAR, RECIPES, SHOPS, SKILLS, MONSTERS
@@ -33838,6 +34045,10 @@ window.RETALIATE = RETALIATE;
     for (const fn of (NET.listeners['*'] || []).slice()) { try { fn(msg); } catch (e) { console.error('NET *', e); } }
   };
   NET.setToken = tok => { NET.token = tok || null; lsSet(TOKEN_KEY, tok || null); };
+  // the shared world (docs/ONLINE.md, "The shared world", Stage 1): what this game can do of its new messages (none yet), and
+  // the hash of the Atlas this page was built with, so the world knows whether it judges this knight by the same map
+  NET.caps = [];
+  NET.hello = () => ({ t: 'hello', v: 1, caps: NET.caps.slice(), atlas: window.ATLAS && ATLAS.hash ? ATLAS.hash() : null });
 
   // ---------- HTTP: every /api call goes through here, so the token is never forgotten ----------
   NET.call = async (method, path, body) => {
@@ -33861,7 +34072,7 @@ window.RETALIATE = RETALIATE;
     return proto + location.host + '/ws?token=' + encodeURIComponent(NET.token);
   };
   function wire(sock) {
-    sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send({ t: 'hello', v: 1 }, true); };
+    sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send(NET.hello(), true); };
     sock.onmessage = ev => {
       let msg = null; try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (!msg || typeof msg.t !== 'string') return;
@@ -34789,7 +35000,10 @@ window.RETALIATE = RETALIATE;
   const me = () => NET.me;
   const mapId = () => (window.INSTANCES && INSTANCES.active && INSTANCES.active()) || 'over';
   const instName = id => { const i = window.INSTANCES && INSTANCES.get ? INSTANCES.get(id) : null; return i && i.name ? i.name : String(id); };
-  const whereOf = o => o.map === 'over' || !o.map ? (o.region || 'The Fanglands') : instName(o.map);
+  // every knight's island is his own (the world keys it by his name and still calls it 'house' on the wire): a friend whose
+  // map is 'house' is on HIS island, never ours, even while we stand on our own
+  const ownIsland = o => !!o && o.map === 'house';
+  const whereOf = o => ownIsland(o) ? 'On their own island' : o.map === 'over' || !o.map ? (o.region || 'The Fanglands') : instName(o.map);
   // where we are, in words, for the roster and the admin page: the instance's name inside one, else the region under our feet
   const regionName = () => { const id = mapId(); if (id !== 'over') return instName(id); if (player.region) return String(player.region); const r = regionAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); return r && r.name ? r.name : 'The Fanglands'; };
   const forget = n => { delete REMOTE[n]; if (following === n) following = null; };
@@ -34819,17 +35033,31 @@ window.RETALIATE = RETALIATE;
       t: 'p', map: mapId(), region: regionName(), x: Math.round(player.x), y: Math.round(player.y), fx: +player.facing.x.toFixed(2), fy: +player.facing.y.toFixed(2),
       mv: !!player.moving, wt: +(player.walkT % 100).toFixed(1), hp: Math.ceil(player.hp), mhp: player.maxHp, lv: combatLevel(), look: lookOf(),
       mech: m ? { kind: m.kind || 'walker', hp: Math.ceil(m.hp), maxHp: m.maxHp } : null, dead: !!player.dead, def: playerDefRoll(), act: a ? a.type : null,
+      // the shared world's movement check (docs/ONLINE.md, "The shared world", Stage 1): the jump counter and his own speed
+      j: JUMP.n, spd: speedNow(),
     };
   }
+  // j: one more every time the knight's own position moves more than 3 x speed x dt in one frame (a teleport, a respawn, a
+  // door into an instance, a ferry's landing, a shove), so the world never reads a jump as running too fast. Counted
+  // offline too: it costs a subtraction, and the presence that goes out first after coming online carries the true count.
+  const JUMP = { n: 0, x: null, y: null };
+  // his speed now: the mover's own, or a machine's FULL STEAM run while it lasts (55-riding: 430 px/s for 1.15 s)
+  const speedNow = () => Math.round(Math.max(player.speed || 175, window.RIDING && RIDING.special ? RIDING.SPEED : 0));
+  HOOKS.update.push(dt => {
+    const x = player.x, y = player.y;
+    if (JUMP.x !== null && Math.hypot(x - JUMP.x, y - JUMP.y) > 3 * Math.max(player.speed || 0, 175) * Math.max(dt, 1 / 240) + 1) JUMP.n++;
+    JUMP.x = x; JUMP.y = y;
+  });
   // a cheap signature of everything the contract counts as a change; the full message is only built when it differs
   const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || ''); };
   const sig = () => mapId() + '|' + Math.round(player.x) + ',' + Math.round(player.y) + '|' + player.facing.x.toFixed(2) + ',' + player.facing.y.toFixed(2) + '|' + (player.moving ? 1 : 0) + '|' + Math.ceil(player.hp) + '/' + player.maxHp + '|' + (player.dead ? 1 : 0) + '|' + lookKey();
-  let lastSig = null, lastSentAt = -1e9;
+  let lastSig = null, lastSentAt = -1e9, sent = 0, sentSock = null;
 
   HOOKS.update.push(dt => {
     if (NET.online()) {
       const s = sig(), since = time - lastSentAt;
-      if ((s !== lastSig && since >= SEND_EVERY) || since >= SEND_IDLE) { if (NET.send(presence())) { lastSig = s; lastSentAt = time; } }
+      // s counts this socket's presences from 1 (a new socket starts again)
+      if ((s !== lastSig && since >= SEND_EVERY) || since >= SEND_IDLE) { if (sentSock !== NET.sock) { sentSock = NET.sock; sent = 0; } const p = presence(); p.s = sent + 1; if (NET.send(p)) { sent++; lastSig = s; lastSentAt = time; } }
     } else lastSig = null;
     // the knights we know: slide toward where they really are, tick the hurt flash, forget the silent
     const now = nowMs(), k = Math.min(1, dt / LERP_S);
@@ -35018,7 +35246,7 @@ window.RETALIATE = RETALIATE;
     const twoTier = iw - 24 - btnW - 12 < 170;
     const textW = twoTier ? iw - 24 : iw - 24 - btnW - 12, wf = HK.FS(600, 12), lh = Math.round(15 * HK.k() * 10) / 10;
     return list.map(o => {
-      const here = o.map === mapId();
+      const here = o.map === mapId() && !ownIsland(o);
       const where = HK.wrap(g, (here ? 'On your map: ' : '') + whereOf(o), textW, 2, wf).lines;
       const textH = 12 + 16 + where.length * lh + 8;
       const h = twoTier ? textH + bh + 12 : Math.max(bh + 16, textH);
@@ -35143,6 +35371,11 @@ window.RETALIATE = RETALIATE;
         && !!p.look && typeof p.look.tunic === 'string' && typeof p.look.hair === 'string' && typeof p.look.shoulder === 'string' && (p.look.weapon ? typeof p.look.weapon.shape === 'string' && typeof p.look.weapon.color === 'string' : p.look.fists === true);
       const n0 = ps().length; F.sim(30, ['KeyD']); F.sim(30, ['KeyA']); const moving = ps().length - n0; const n1 = ps().length; player.hp = player.maxHp; F.sim(120, []); const still = ps().length - n1;
       check(P + 'presence goes out with the contract fields, at most 8 a second while moving and about once a second when still', fields && shaped && moving >= 2 && moving <= 9 && still >= 1 && still <= 4, { fields, shaped, moving, still, p: p && { map: p.map, x: p.x, y: p.y, mv: p.mv, lv: p.lv, act: p.act, look: p.look } }); }
+    // the shared world's movement fields: walking keeps j, a teleport adds one, spd is the knight's speed, s counts 1, 2, 3 per socket
+    { F.sim(20, ['KeyD']); const a = lastP(); F.sim(20, ['KeyD']); const b = lastP(); const here = { x: player.x, y: player.y };
+      F.tp(Math.floor(here.x / TILE) + 12, Math.floor(here.y / TILE)); F.sim(20, []); const c = lastP(); F.tp(Math.floor(here.x / TILE), Math.floor(here.y / TILE)); F.sim(2, []);
+      const seq = ps().map(m => m.s), counting = seq.every((v, i) => v === i + 1);
+      check(P + 'presence carries j (the same while walking, one more after a teleport), spd (175 on foot) and s (1, 2, 3, ... on this socket)', !!a && !!b && !!c && b.j === a.j && c.j === b.j + 1 && a.spd === 175 && counting && seq.length > 5, { j: [a && a.j, b && b.j, c && c.j], spd: a && a.spd, counting, n: seq.length }); }
     // inside an instance the map is the instance id, and it is 'over' again outside
     { const id = INSTANCES.list().includes('spider_den') ? 'spider_den' : INSTANCES.list()[0]; const entered = INSTANCES.enter(id); F.sim(12, []); const inside = lastP(); const left = INSTANCES.leave(); F.sim(12, []); const outside = lastP();
       const instRegion = !!inside && inside.region === INSTANCES.get(id).name;
@@ -35167,6 +35400,20 @@ window.RETALIATE = RETALIATE;
       if (follow) follow.action(); const followed = PLAYERS.following === 'Ava'; render(); const stop = buttons.find(b => /Stop following|Following/.test(b.label)); const target = mapTargets().find(t => t.id === 'friend'); if (stop) stop.action();
       closePanel(); F.press('KeyF'); const byKey = panel === 'friends'; F.press('KeyF'); const closed = panel === null;
       check(P + 'the FRIENDS seal (its badge counting the 3 knights online) is a button that opens Friends (F does too): Give is live within two tiles, Follow marks a friend on the map', !!chip && opened && giveOn && !!follow && !follow.disabled && !!benFollow && benFollow.disabled && followed && !!stop && !!target && target.label === 'Ava' && PLAYERS.following === null && byKey && closed, { chip: !!chip, opened, giveOn, follow: follow && follow.label, ben: benFollow && benFollow.label, followed, stop: !!stop, target, byKey, closed }); }
+    // every knight's island is his own: a friend the roster puts on 'house' is on HIS island. Standing on ours he is not
+    // 'here' (no blue edge, Follow stays dark) and the row says 'On their own island', never 'Your Island'; off it, the same
+    { const fol0 = following, hs = window.HOUSE ? HOUSE.state() : null, seen0 = hs ? hs.seen : null;
+      feed({ t: 'who', list: [{ n: 'Cohen', map: 'house', region: 'Your Island', lv: 5 }, { n: 'Ava', map: 'house', region: 'Your Island', lv: 7 }] });
+      const went = window.HOUSE ? HOUSE.enter() : INSTANCES.enter('house'); F.sim(4, []); const onIt = mapId() === 'house';
+      closePanel(); openPanel('friends'); render();
+      const row = friendRows(ctx, ONLINE.filter(k => k.n !== 'Cohen'), 400, false).find(r => r.o.n === 'Ava'), words = row ? row.where.join(' ') : '';
+      const fb = buttons.find(b => /Follow/.test(b.label)), dark = !!fb && !!fb.disabled; if (fb) fb.action(); const stillNone = following === fol0;
+      closePanel(); const left = window.HOUSE ? HOUSE.leave() : INSTANCES.leave(); F.sim(4, []); if (hs) hs.seen = seen0; dialog.cur = null; dialog.queue.length = 0;
+      const offRow = friendRows(ctx, ONLINE.filter(k => k.n !== 'Cohen'), 400, false).find(r => r.o.n === 'Ava'), offWords = offRow ? offRow.where.join(' ') : '';
+      F.tp(o.x, o.y); F.step([]);
+      check(P + "a friend on his own island (the roster's map 'house') is never on your map, even on your island: no blue edge, Follow dark, and the row says 'On their own island'",
+        !!went && onIt && !!row && row.here === false && /^On their own island$/.test(words) && !/Your Island|On your map/.test(words) && dark && stillNone && !!left && mapId() === 'over' && !!offRow && offRow.here === false && offWords === 'On their own island',
+        { went: !!went, onIt, here: row && row.here, words, dark, follow: fb && fb.label, stillNone, left: !!left, offHere: offRow && offRow.here, offWords }); }
     // gifts: out of the pack and onto the wire; back into the pack when the world sends it back; a friend's gift lands
     { const inv0 = player.inv.map(s => s ? { ...s } : null);
       feed({ t: 'p', n: 'Ava', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 7, look: null, mech: null, dead: false, def: 100, act: null }); F.step([]);
@@ -37209,7 +37456,8 @@ window.RETALIATE = RETALIATE;
     btn(g, x + w - 90, y, 90, T, 'Next', () => { S.page[which] = Math.min(pages - 1, p + 1); }, '#21262d', p < pages - 1, 'admin:' + which + ':next');
   }
   const adminPill = (g, x, y, size) => window.PLAYERS && PLAYERS.adminPill ? PLAYERS.adminPill(g, x, y, size) : 0;
-  const whereOf = o => (!o.map || o.map === 'over') ? (o.region || 'The Fanglands') : (((window.INSTANCES && INSTANCES.get && INSTANCES.get(o.map)) || {}).name || o.region || String(o.map));
+  // another knight on 'house' is on HIS own island (the world keys each island by its owner), never 'Your Island'
+  const whereOf = o => o.map === 'house' ? 'On their own island' : (!o.map || o.map === 'over') ? (o.region || 'The Fanglands') : (((window.INSTANCES && INSTANCES.get && INSTANCES.get(o.map)) || {}).name || o.region || String(o.map));
 
   // ---------- A. the chip ----------
   // A plaque in the kit's reserved column (src/59-hudkit.js HK.addPlaque): a star roundel, ADMIN in gold with a gold edge,
@@ -37573,6 +37821,13 @@ window.RETALIATE = RETALIATE;
           say({ ok: false, act: 'mute', n: 'Ada', code: 'admin' }), say({ ok: false, act: 'kick', n: 'Nobody', code: 'unknown' }), say({ ok: false, act: 'kick', n: 'Sam', code: 'offline' }), say({ ok: false, act: 'ban', n: 'MudGoll', code: 'self' }), say({ ok: false, act: 'mute', n: 'Sam', code: 'bad' })];
         const want = ['Sam is muted for 5 minutes.', 'Sam is muted for 1 hour.', 'Sam is muted for 1 day.', 'Sam is muted until you unmute.', 'Sam can chat again.', 'Sam was sent out of the world.', 'Sam is banned.', 'Sam is unbanned.', "You can't do that to an admin.", 'No knight by that name.', 'Sam is not online.', 'That is you.', 'That did not work. Try again.'];
         check(P + "the world's mod answers become the contract's sentences", same(words, want), { words }); }
+
+      // ---- Knights: a knight on his own island reads 'On their own island', never 'Your Island' ----
+      { feed({ t: 'who', list: [{ n: 'MudGoll', map: 'over', region: 'Thistledown', lv: 99, role: 'admin' }, { n: 'Kai', map: 'house', region: 'Your Island', lv: 4, role: 'player' }] });
+        feed({ t: 'modlist', muted: [], banned: [] }); refill(); closePanel(); render(); F.clickButton('ADMIN'); F.clickButton('admin:tab:knights'); render();
+        rec.length = 0; HOOKS.panel.admin(g2, false); const drawn = rec.splice(0); closePanel(); render();
+        const own = drawn.includes('On their own island'), notMine = !drawn.some(t => /Your Island/.test(t)), kai = drawn.some(t => /^Kai/.test(t));
+        check(P + "Knights: a knight on his own island (the roster's map 'house') reads 'On their own island', never 'Your Island'", kai && own && notMine, { kai, own, notMine, drawn: drawn.filter(t => /Island|island|Kai/.test(t)) }); }
 
       // ---- Can't be hurt: hurtPlayer, die and a keeper's hurt message do nothing; hp topped up; off again, it hurts ----
       { refill(); closePanel(); player.dead = false; player.mech = null; player.r = 13; player.hp = player.maxHp; player.skills.defence.xp = xpForLevel(skillLv('defence'));
@@ -65933,7 +66188,9 @@ window.KNIGHTGEAR = KNIGHTGEAR;
         res.oldSave.kept && res.newCity.kept, res); }
 
     // ---- C18. determinism ----
-    check(P + 'C18 the painter is the very first world pass (HOOKS.world[0]) and the snapshot the last; C2 shows it draws no random number', HOOKS.world[0] === paint && HOOKS.world[HOOKS.world.length - 1] === snap, { first: HOOKS.world[0] === paint, last: HOOKS.world[HOOKS.world.length - 1] === snap });
+    // the snapshot is the last pass that can write a tile: only the Atlas's pass (src/96-atlas.js), which only reads, comes after it
+    const writers = HOOKS.world.filter(f => !(window.ATLAS && f === ATLAS.pass));
+    check(P + 'C18 the painter is the very first world pass (HOOKS.world[0]) and the snapshot the last that writes (only the Atlas reads after it); C2 shows it draws no random number', HOOKS.world[0] === paint && writers[writers.length - 1] === snap, { first: HOOKS.world[0] === paint, last: writers[writers.length - 1] === snap });
 
     // ---- C19. drawing ----
     { const keepSize = { k: Object.getOwnPropertyDescriptor(window, 'innerWidth'), l: Object.getOwnPropertyDescriptor(window, 'innerHeight') }; const setSize = (w, hh) => { Object.defineProperty(window, 'innerWidth', { value: w, configurable: true, writable: true }); Object.defineProperty(window, 'innerHeight', { value: hh, configurable: true, writable: true }); resize(); };
@@ -66187,6 +66444,135 @@ window.KNIGHTGEAR = KNIGHTGEAR;
     timeLine, spanWords, dialAngle, lineFor, tapName, useThing, heroName, TALK, BELLST, BARK, CAT, KIDS, kidAt, swanAt, smallFolk,
     CHUNKS, get chunkMax() { return chunkMax; }, drawHook, TOWERS, TORCHES, LAMP_TOP, TREE_R, GCODE, drawTownBuilding, rimFor, TOWN_GATE_CELLS,
   };
+}
+
+// ---- src/96-atlas.js ----
+// ============================================================================
+// THE ATLAS, BUILT — the last world pass, the drift self-tests, and the reload plaque (docs/ONLINE.md, "The shared world", Stage 1)
+// src/01-atlas.js defines window.ATLAS and its hand table; this file builds it as the very last HOOKS.world pass, after
+// every feature has carved the world and before a save's changes are laid on it, so every game (and the world server's
+// atlas.json, written by tools/atlas.mjs from this same build) holds the same table and the same hash.
+//
+// A page older than the world: when the world's welcome names another Atlas hash than this page's own, a gold plaque in the
+// kit's column says "A newer world is ready. Tap to reload." and the whole plaque reloads the page. Until then the knight
+// plays exactly as before; the world just does not check his movement.
+// ============================================================================
+{
+  // it only reads the world (95-thistledown's snapshot stays the last pass that writes a tile)
+  const pass = () => { ATLAS.build(); };
+  HOOKS.world.push(pass);
+  ATLAS.pass = pass;
+
+  // ---------- an older page than the world ----------
+  const S = { stale: false, told: false, theirs: null };
+  const SENTENCE = () => 'A newer world is ready. ' + (typeof touchMode === 'function' && touchMode() ? 'Tap' : 'Click') + ' to reload.';
+  const reload = () => { if (typeof window.__atlasReload === 'function') return window.__atlasReload(); try { location.reload(); } catch (e) { } };
+  const onWelcome = msg => {
+    const theirs = msg && typeof msg.atlas === 'string' ? msg.atlas : null;
+    S.theirs = theirs;
+    S.stale = !!theirs && ATLAS.built() && theirs !== ATLAS.hash();
+    if (S.stale && !S.told) { S.told = true; notify(SENTENCE()); }
+  };
+  if (window.NET && NET.on) NET.on('welcome', onWelcome);
+  HOOKS.hud.push(g => {
+    if (!S.stale || paused || panel) return;
+    const r = HK.addPlaque(g, { id: 'atlas_new', emblem: 'map', name: 'NEW WORLD', nameColor: HK.T.goldHi, edge: HK.T.gold, sub: SENTENCE() });
+    if (!r) return;
+    buttons.push({ x: r.x, y: r.y, w: r.w, h: r.h, label: 'NEW WORLD', action: reload, up: true, name: 'Reload the game', sub: 'A newer world is ready' });
+  });
+
+  // ---------- self-tests: the Atlas never drifts from the world it describes ----------
+  const P = 'atlas: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    const A = window.ATLAS, f = A.facts();
+    check(P + 'the Atlas is built by the very last world pass, from the world as it was generated', A.built() && HOOKS.world[HOOKS.world.length - 1] === pass && f.worldPasses === HOOKS.world.length && /^[0-9a-f]{16}$/.test(A.hash() || ''), { built: A.built(), last: HOOKS.world[HOOKS.world.length - 1] === pass, passes: HOOKS.world.length, hash: A.hash() });
+
+    // names: every region and instance has its place, every rule matches one, every id is plain
+    const I = INSTANCES, ids = I.list(), instNames = new Set(ids.map(id => I.get(id).name));
+    const regs = REGIONS.filter(r => !instNames.has(r.name));
+    const noRegion = regs.filter(r => { const p = A.get(A.slug(r.name)); return !p || p.name !== r.name || p.sub !== (r.sub || '') || p.kind !== 'region'; }).map(r => r.name);
+    const noInst = ids.filter(id => { const p = A.get(id); return !p || p.kind !== 'instance' || p.name !== I.get(id).name || p.map !== id; });
+    const badIds = A.places.filter(p => !/^[a-z0-9_]{1,40}$/.test(p.id)).map(p => p.id);
+    check(P + 'every REGIONS name and every instance id has a place with its own name, every rule matches a place, every id is plain', !noRegion.length && !noInst.length && !badIds.length && !A.problems().length && A.places.length === regs.length + ids.length + A.RULES.filter(r => r.kind === 'area' || r.kind === 'reserved').length, { noRegion, noInst, badIds, problems: A.problems(), places: A.places.length });
+
+    // tiles: exactly one place each; outside the areas and a region's added rects it is the region regionAt names
+    const count = new Array(A.places.length).fill(0); let none = 0, differs = 0; const firstDiff = [];
+    const firstMatch = (tx, ty) => regs.find(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1);
+    const added = A.places.filter(p => p.kind === 'region' && p.rects.length > 1);
+    for (let ty = 0; ty < MAP_H; ty++) for (let tx = 0; tx < MAP_W; tx++) {
+      const p = A.at(tx, ty); if (!p) { none++; continue; }
+      count[p.i]++;
+      const want = firstMatch(tx, ty), base = p.kind === 'area' ? A.get(p.of) : p;
+      if (!want || base.name !== want.name) { if (added.some(q => q === p && q.rects.slice(1).some(r => tx >= r[0] && tx <= r[2] && ty >= r[1] && ty <= r[3]))) continue; differs++; if (firstDiff.length < 3) firstDiff.push([tx, ty, p.id, want && want.name]); }
+    }
+    const empty = A.places.filter(p => p.kind !== 'reserved' && p.kind !== 'instance' && !count[p.i]).map(p => p.id);
+    const areas = A.places.filter(p => p.kind === 'area');
+    const overlap = []; for (let a = 0; a < areas.length; a++) for (let b = a + 1; b < areas.length; b++) for (const r of areas[a].rects) for (const q of areas[b].rects) if (r[0] <= q[2] && q[0] <= r[2] && r[1] <= q[3] && q[1] <= r[3]) overlap.push([areas[a].id, areas[b].id]);
+    const reservedClear = A.places.filter(p => p.kind === 'reserved').every(p => !count[p.i] && !p.rects.length);
+    check(P + 'every overworld tile has exactly one place, which is the region regionAt names (or an area of it, or a rect its rule adds); every place covers ground; no two areas overlap', none === 0 && differs === 0 && !empty.length && !overlap.length && reservedClear, { none, differs, firstDiff, empty, overlap, reservedClear });
+
+    // combat: the boss instances, the camp, the circle, the fields
+    const bossInst = ids.filter(id => I.get(id).boss || Object.values(HOOKS.bossCall || {}).some(c => c && c.map === id));
+    const spec = ['spider_den', 'war_shed', 'tinker_lab', 'stormfront', 'afterlands', 'royalmine'];
+    const notMulti = bossInst.concat(spec).filter(id => !A.get(id) || A.get(id).combat !== 'multi');
+    check(P + 'every boss instance is multi (a boss in its define, a boss call on its map, or one the spec names), and Deepholm, Aerie, the Coal Road and the island are single', !notMulti.length && ['deepholm', 'aerie', 'coalmine', 'house'].every(id => A.get(id) && A.get(id).combat === 'single'), { bossInst, notMulti });
+    const camp = MONSTER_SPAWNS.filter(s => s.camp), outCamp = camp.filter(s => !A.inside('goblin_camp', { x: tc(s.tx), y: tc(s.ty) })).map(s => [s.type, s.tx, s.ty]);
+    check(P + 'the Goblin Camp covers every camp spawn', camp.length >= 10 && !outCamp.length, { camp: camp.length, outCamp });
+    const spawnOk = f.spawnOk, bad = Object.keys(spawnOk).filter(id => !spawnOk[id]);
+    check(P + 'every place spawn is a walkable tile (every instance entry and Thistledown\'s square)', Object.keys(spawnOk).length >= ids.length && !bad.length, { n: Object.keys(spawnOk).length, bad });
+    const kinds = (types, area) => MONSTER_SPAWNS.filter(s => types.includes(s.type) && (area !== 'iron_isle_wreck' || A.inside('ironclad_isle', { x: tc(s.tx), y: tc(s.ty) })));
+    const dragons = kinds(['green_dragon', 'red_dragon']), crew = kinds(['brute', 'sapper'], 'iron_isle_wreck'), beast = MONSTER_SPAWNS.filter(s => s.type === 'barrelbeast');
+    const inArea = (list, id) => list.length > 0 && list.every(s => A.zoneAt('over', s.tx, s.ty) === id);
+    const fang = (HOOKS.bossCall || {}).the_fang, circle = fang && fang.near;
+    const look = {
+      circle: circle ? A.combatAt('over', circle[0], circle[1]) : null, circlePlace: circle ? A.zoneAt('over', circle[0], circle[1]) : null,
+      fields: A.combatAt('over', 70, 40), fieldsPlace: A.zoneAt('over', 70, 40), square: A.zoneAt('over', 112, 33), squareCombat: A.combatAt('over', 112, 33),
+      campCentre: A.combatAt('over', 150, 30), wilds: A.zoneAt('over', 259, 179), off: A.place('over', -1, 5), offFar: A.place('over', MAP_W, 0),
+      den: A.combatAt('spider_den', 5, 5), denOut: A.place('spider_den', I.get('spider_den').w, 0), deep: A.combatAt('deepholm', 3, 3), house: A.zoneAt('house:ben', 3, 3),
+    };
+    check(P + 'zone lookups: the Fang\'s circle is multi in fang_lair, the fields by Thistledown and Thistledown\'s square are single, the camp is multi; the dragons, the wreck crew and the square\'s beast stand in their areas; off the map is no place',
+      look.circle === 'multi' && look.circlePlace === 'fang_lair' && look.fields === 'single' && look.fieldsPlace === 'goblin_fields' && look.square === 'thistledown' && look.squareCombat === 'single' && look.campCentre === 'multi' && look.wilds === 'wilds' && look.off === null && look.offFar === null
+      && look.den === 'multi' && look.denOut === null && look.deep === 'single' && look.house === 'house' && inArea(dragons, 'ashfields_dragons') && inArea(crew, 'iron_isle_wreck') && inArea(beast, 'hollowford_square'),
+      Object.assign(look, { dragons: dragons.length, crew: crew.length, beast: beast.length }));
+
+    // FIXED_SOLID: only what no honest knight can stand in
+    const fixedIds = A.FIXED_TILES.map(n => T[n]);
+    const placed = Object.values(ITEMS).filter(it => it && it.place && A.FIXED_TILES.includes(it.place)).map(it => it.id);
+    const walkOver = A.FIXED_TILES.filter(n => WALK_OVER.has(T[n]));
+    // every tile any feature ever lets a knight cross (WALK_OVER.add(...)) is read from the game's own source when the runner has it
+    let srcAdds = null;
+    if (typeof window.__gameSource === 'string') { srcAdds = []; const re = /WALK_OVER\.add\(([^)]*)\)/g; let mm; while ((mm = re.exec(window.__gameSource))) srcAdds.push(mm[1].trim()); }
+    const srcBad = srcAdds ? srcAdds.filter(a => A.FIXED_TILES.some(n => a === 'T.' + n || a === n)) : [];
+    let nFixed = 0, onNpc = 0; for (let ty = 0; ty < MAP_H; ty++) for (let tx = 0; tx < MAP_W; tx++) if (A.solidAt('over', tx, ty)) nFixed++;
+    for (const n of NPCS) if (A.solidAt('over', n.x, n.y)) onNpc++;
+    const edges = A.solidAt('over', -1, 0) && A.solidAt('over', MAP_W, 0) && A.solidAt('over', 0, MAP_H) && A.solidAt('spider_den', -1, 0) && !A.solidAt('house', 3, 3);
+    const water = (() => { for (let i = 0; i < MAP_W * MAP_H; i++) if (map[i] === T.WATER) return A.solidAt('over', i % MAP_W, (i / MAP_W) | 0); return null; })();
+    check(P + 'FIXED_SOLID: every fixed tile kind is solid, none is placed by an item or crossed through WALK_OVER (now, or by any feature\'s source), no NPC stands in one, water is never fixed, the map\'s edge always is',
+      fixedIds.every(t => t !== undefined && SOLID.has(t)) && !placed.length && !walkOver.length && !srcBad.length && !onNpc && edges && water === false && nFixed > 1000 && Object.keys(A.export().fixed).length >= ids.length,
+      { placed, walkOver, srcAdds: srcAdds && srcAdds.length, srcBad, onNpc, edges, water, nFixed, inst: Object.keys(A.export().fixed) });
+
+    // SPEED_CAP against the movers' own tables (a new mover, or a faster one, must be added there or honest riders read as too fast)
+    {
+      const C = A.SPEED_CAP, own = { horse: window.MOUNTS && MOUNTS.SPEED, steam: window.RIDING && RIDING.SPEED, dozer: typeof DOZER_BOILER_SPEED !== 'undefined' ? DOZER_BOILER_SPEED : null };
+      check(P + 'SPEED_CAP matches the movers\' own tables (the mare, the bulldozer with its boiler, FULL STEAM) and its max is the fastest', C.foot === 175 && C.horse === own.horse && C.steam === own.steam && C.dozer === own.dozer && A.SPEED_MAX === Math.max(...Object.values(C)), { cap: C, own, max: A.SPEED_MAX });
+    }
+    // the old page: a welcome with another Atlas shows the plaque, its tap reloads; the same Atlas (or none) shows nothing
+    {
+      const reloads = [], was = window.__atlasReload; window.__atlasReload = () => reloads.push(1);
+      const p0 = paused, pn = panel; paused = false; if (panel) closePanel();
+      const plaqueTap = () => { render(); return buttons.find(b => b.label === 'NEW WORLD'); };
+      const told0 = S.told; S.told = true;   // the notice is said once a session: the test does not use up the real one
+      onWelcome({ t: 'welcome', me: NET.me, atlas: A.hash() }); const same = S.stale, sameBtn = plaqueTap();
+      onWelcome({ t: 'welcome', me: NET.me }); const noneSaid = S.stale;
+      onWelcome({ t: 'welcome', me: NET.me, atlas: '0000000000000000' }); const other = S.stale, btn = plaqueTap();
+      if (btn) btn.action();
+      S.stale = false; S.theirs = null; S.told = told0; window.__atlasReload = was; paused = p0; render();
+      if (pn) openPanel(pn);
+      check(P + 'a welcome naming another Atlas shows the NEW WORLD plaque ("A newer world is ready.") and its tap reloads; the same Atlas, or a world with none, shows nothing',
+        same === false && !sameBtn && noneSaid === false && other === true && !!btn && btn.w >= 44 && btn.h >= 32 && reloads.length === 1 && /^A newer world is ready\. (Tap|Click) to reload\.$/.test(SENTENCE()),
+        { same, sameBtn: !!sameBtn, noneSaid, other, btn: btn && { w: btn.w, h: btn.h }, reloads: reloads.length });
+    }
+  });
 }
 
 // ---- src/96-fixes.js ----
