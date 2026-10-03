@@ -54062,6 +54062,14 @@ window.RETALIATE = RETALIATE;
   }
   if (window.INSTANCES) { const _leave = INSTANCES.leave; INSTANCES.leave = () => { const r = _leave(); keepOrder(); return r; }; }
   { const _load2 = load; load = function () { const ok = _load2(); keepOrder(); return ok; }; }
+  // A villager who walks into a lawn, a lamp or a hedge is turned back by the core (07-update) with a new direction on
+  // the very next tick, so against the city's many edges he spun in place, rolling dice every frame. Here he stops for a
+  // second and a half first (the core rolls again after that), like someone choosing which way to go.
+  const PAUSE = 1.5;
+  HOOKS.update.push(() => {
+    if (away()) return;
+    for (const n of NPCS) if (n.wander && n.wanderT === 0 && inTown(Math.floor(n.px / TILE), Math.floor(n.py / TILE))) { n.wanderT = PAUSE; n.dir = null; n.moving = false; }
+  });
   // a knight put down inside the city's stonework (a fountain, a hedge, a lamp, a tower) by a teleport steps out of it
   const STUCK = { moves: 0 };
   HOOKS.update.push(() => {
@@ -54496,8 +54504,13 @@ window.RETALIATE = RETALIATE;
     // ---- C22. order and the stonework (the safety nets in section 11) ----
     { leave(); const ids0 = BUILDINGS.map(b => b.id).join(','); INSTANCES.enter('aerie', [SKYCITY.STEP_T.x, SKYCITY.STEP_T.y]); F.sim(2, []); INSTANCES.leave(); F.step([]); const ids1 = BUILDINGS.map(b => b.id).join(',');
       onFoot(); drain(); F.tp(111, 35); F.step([]); const t = tileAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)), outOf = !SOLID.has(t) && !collides(player.x, player.y, player.r, 'player');
-      check(P + 'C22 after a visit to Aerie the buildings are back in the order the world was built in; a knight put down inside the Great Fountain steps out of it',
-        ids0 === ids1 && outOf, { same: ids0 === ids1, outOf, at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)] }); }
+      // a villager who walks into the lawn west of Crown Street stops for PAUSE seconds instead of turning every frame
+      const cass = npc('v3'), ck = { px: cass.px, py: cass.py, dir: cass.dir, wanderT: cass.wanderT };
+      F.tp(112, 30); cass.px = 111 * TILE + 0.5; cass.py = tc(23); cass.dir = { x: -1, y: 0 }; cass.wanderT = 5; F.step([]);
+      const paused = cass.wanderT === PAUSE && cass.dir === null && cass.px === 111 * TILE + 0.5;
+      Object.assign(cass, ck);
+      check(P + 'C22 after a visit to Aerie the buildings are back in the order the world was built in; a knight put down inside the Great Fountain steps out of it; a villager who walks into a lawn stops for a moment instead of turning every frame',
+        ids0 === ids1 && outOf && paused, { same: ids0 === ids1, outOf, paused, at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)] }); }
 
     // ---- C23. the small things: Osric's welcome, the children, Duchess, the after-story lines, the art wraps, the words elsewhere ----
     { const r = {}, q = Q();
