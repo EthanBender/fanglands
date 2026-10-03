@@ -59,7 +59,7 @@ const MONSTER_LOOK = (() => {
   const HIT_R_WAS = { brute: 15, walker: 22, cow: 15, brood_mother: 28, barrelbeast: 30, bulldozer: 22, the_fang: 40, yard_walker: 22, yard_dozer: 22,
     gnasher: 30, count_ashvane: 14, cinderwight: 20, dustjaw: 21 };
   const ON = { on: true, pics: true };
-  const STATS = { live: 0, pics: 0, made: 0, hits: 0, wrapped: 0, passed: 0, colossus: 0, by: {} };
+  const STATS = { live: 0, pics: 0, made: 0, hits: 0, held: 0, heldPaints: 0, wrapped: 0, passed: 0, colossus: 0, by: {} };
   const isMonsterKind = kind => typeof kind === 'string' && kind !== 'player' && kind !== 'playermech' && !!NEW[kind] && !!MONSTER_DEFS[kind];
 
   // ---------- what this file remembers of each monster it draws (never on the monster: it is saved and sent) ----------
@@ -322,8 +322,42 @@ const MONSTER_LOOK = (() => {
     STATS.pics++;
     return true;
   }
-  // a big one drawn live and flashing: into a scratch picture first, so the flash colours the body and not the ground under it
+  // ---------- held pictures: the big ones, each its own picture, painted again a dozen times a second ----------
+  // A big monster (a machine, a golem, a dragon, a boss) is too big and has too many poses and states to keep a picture
+  // of every pose. Each one keeps its own picture instead, painted afresh 12 times a second walking, 10 standing, 24 in a
+  // swing, and at once when it is hit or its state or phase changes; in between that picture is put down where the
+  // monster now is, so it moves smoothly and only its pose steps. A hit flashes it red (a stone colossus white), the body
+  // and not the ground.
+  // A picture not drawn for 2 s is let go.
+  const HELD = new Set(), HELD_FPS = 12, HELD_IDLE_FPS = 10, HELD_SWING_FPS = 24, HELD_KEEP = 2;
   let scratch = null;
+  function heldCanvas(h, which, W, Hh) {
+    let o = h[which];
+    if (!o || o.c.width < W || o.c.height < Hh || o.c.width > W * 2 || o.c.height > Hh * 2) { if (o) { try { o.c.width = 0; o.c.height = 0; } catch (err) { } } o = h[which] = canvasOf(W, Hh); }
+    return o;
+  }
+  function drawHeld(g, s, draw, swinging, moving, tintCol, keyMore, render) {
+    const ss = picScale(), b = boxOf(draw, swinging), W = Math.ceil((b[2] - b[0]) * ss), Hh = Math.ceil((b[3] - b[1]) * ss);
+    const h = s.held || (s.held = { key: null, used: 0 });
+    // each monster's own moments (its seed staggers them), so a crowd of big ones is not all painted on the same frame
+    const fps = swinging ? HELD_SWING_FPS : moving ? HELD_FPS : HELD_IDLE_FPS;
+    const key = Math.floor(time * fps + (s.seed || 0) / TWO_PI) + '|' + fps + '|' + (tintCol || '') + '|' + keyMore + '|' + ss + '|' + draw;
+    const o = heldCanvas(h, swinging ? 'atk' : 'rest', W, Hh); if (!o) return false;
+    if (h.key !== key) {
+      o.cg.setTransform(1, 0, 0, 1, 0, 0); o.cg.clearRect(0, 0, o.c.width, o.c.height);
+      o.cg.setTransform(ss, 0, 0, ss, -b[0] * ss, -b[1] * ss); render(o.cg);
+      if (tintCol) tint(o.cg, W, Hh, tintCol);
+      h.key = key; STATS.heldPaints++;
+    }
+    h.used = time; HELD.add(s);
+    g.drawImage(o.c, 0, 0, W, Hh, b[0], b[1], W / ss, Hh / ss);
+    STATS.held++;
+    return true;
+  }
+  function releaseHeld(all) {
+    for (const s of HELD) { const h = s.held; if (!h) { HELD.delete(s); continue; } if (all || time - h.used > HELD_KEEP || time < h.used) { for (const k of ['rest', 'atk']) if (h[k]) { try { h[k].c.width = 0; h[k].c.height = 0; } catch (err) { } } s.held = null; HELD.delete(s); } }
+  }
+  // drawn live, off the world canvas (a portrait, a test) or when there is no canvas to hold a picture in
   function drawLiveTinted(g, v, draw, e, s, col) {
     const ss = picScale(), b = boxOf(draw, true), w = b[2] - b[0], h = b[3] - b[1], W = Math.ceil(w * ss), Hh = Math.ceil(h * ss);
     if (!scratch || scratch.c.width < W || scratch.c.height < Hh) scratch = canvasOf(Math.max(W, scratch ? scratch.c.width : 0), Math.max(Hh, scratch ? scratch.c.height : 0));
@@ -344,6 +378,7 @@ const MONSTER_LOOK = (() => {
     if (echo) { g.save(); g.globalAlpha *= 0.75; }
     try {
       if (PIC_TYPES.has(draw) && g === ctx && ON.pics && drawPic(g, v, draw, s)) { }
+      else if (g === ctx && ON.pics && !PIC_TYPES.has(draw) && drawHeld(g, s, draw, v.attackT > 0, v.moving, v.hurtT > 0 ? HURT : null, (s.ph || '') + '/' + s.st + '/' + Math.round((v.hp / (v.maxHp || 1)) * 20), cg => paint(cg, v, draw, e, s))) { }
       else { STATS.live++; if (v.hurtT > 0 && g === ctx) drawLiveTinted(g, v, draw, e, s, HURT); else paint(g, v, draw, e, s); }
       if (type === 'ally_knight') allyName(g, e, v);
     } finally { if (echo) g.restore(); }
@@ -412,7 +447,8 @@ const MONSTER_LOOK = (() => {
   }
   // drawn at the origin of g: in his mine at the size the approved sample shows him, in a portrait fitted to its box
   function drawColossusLook(g, e, flash) {
-    const v = colossusView(e);
+    const v = colossusView(e), s = MEM.get(e);
+    if (g === ctx && ON.pics && drawHeld(g, s, 'ginormous_golem', v.slam || v.attackT > 0, false, flash ? FLASH : null, s.st + '/' + Math.round((v.hp / (v.maxHp || 1)) * 20), cg => paintColossus(cg, v))) return;
     if (!flash || g !== ctx) { paintColossus(g, v); return; }
     const ss = picScale(), b = boxOf('ginormous_golem', true), W = Math.ceil((b[2] - b[0]) * ss), Hh = Math.ceil((b[3] - b[1]) * ss);
     if (!scratch || scratch.c.width < W || scratch.c.height < Hh) scratch = canvasOf(Math.max(W, scratch ? scratch.c.width : 0), Math.max(Hh, scratch ? scratch.c.height : 0));
@@ -459,7 +495,8 @@ const MONSTER_LOOK = (() => {
   const _monsterTop = monsterTop, _monsterPad = monsterPad;
   monsterTop = m => (ON.on && m && BOX[m.type]) ? Math.max(m.r || 0, headroom(m.type) - 7) : _monsterTop(m);
   monsterPad = m => (ON.on && m && BOX[m.type]) ? Math.max(80, reach(m.type)) : _monsterPad(m);
-  HOOKS.draw.push((g, items) => installColossus());
+  HOOKS.draw.push((g, items) => { installColossus(); if (HELD.size) releaseHeld(false); });
+  HOOKS.newGame.push(() => { releaseHeld(true); clearPics(); });
 
   // a portrait (44-wiki, 76-admin): the scale and the offset that fit the whole drawing standing in a size x size box
   function fit(type, size, most) {
@@ -595,6 +632,14 @@ const MONSTER_LOOK = (() => {
         const later = STATS.made - warm;
         check(P + 'a crowd of 40 common monsters walking and standing is drawn from pictures: none live, and once warm no new pictures are made (frame time against master is measured in headless Chromium, see the report)',
           STATS.live === live0 && later <= 2 && STATS.made - made0 > 0 && PICS.size <= 1400, { live: STATS.live - live0, made: STATS.made - made0, later, pics: PICS.size }); }
+      // 7b. the big ones each hold one picture, painted again at most 12 times a second walking and 10 standing
+      { const bigs = ['the_fang', 'red_dragon', 'barrelbeast', 'walker', 'ginormous_golem'].map((t, i) => ent(t, { nid: 'big' + i, moving: i % 2 === 0, state: t === 'ginormous_golem' ? 'fight' : 'idle' }));
+        time = 60; const p0 = STATS.heldPaints, l0 = STATS.live;
+        for (let k = 0; k < 120; k++) { time += 1 / 60; for (const e of bigs) drawCharacter(ctx, e, e.type); }
+        const paints = STATS.heldPaints - p0, held = bigs.every(e => MEM.get(e) && MEM.get(e).held);
+        time += 5; releaseHeld(false); const let_go = bigs.every(e => !MEM.get(e).held) && !HELD.size;
+        check(P + 'the big monsters each keep one picture of their own, painted again 10 to 12 times a second (not every frame), and let go when no longer drawn',
+          held && paints >= 5 * 18 && paints <= 5 * 26 && STATS.live === l0 && let_go, { paints, held, live: STATS.live - l0, let_go }); }
       // 8. labels over the heads, big ones drawn while they reach into the view, portraits fitted, the golem's own picture
       { const tall = ent('guard_m'), big = ent('the_fang');
         const labels = monsterTop(tall) >= headroom('guard_m') - 7 && monsterTop(tall) > tall.r && monsterPad(big) >= 190;
@@ -609,6 +654,6 @@ const MONSTER_LOOK = (() => {
   });
 
   return { ON, STATS, LOOK_FIELDS, HIT_R, HIT_R_WAS, ATTACK_T, BOX, PIC_TYPES, viewOf, lookType, isMonsterKind, drawLook, boxOf, reach, headroom, picPose, clearPics,
-    PICS, MEM, fit, drawWeapon, drawColossusLook, colossusView, installColossus, paint, _drawCharacter };
+    PICS, HELD, releaseHeld, MEM, fit, drawWeapon, drawColossusLook, colossusView, installColossus, paint, _drawCharacter };
 })();
 window.MONSTER_LOOK = MONSTER_LOOK;
