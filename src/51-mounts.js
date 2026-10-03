@@ -375,7 +375,8 @@
     if (vert) horseEnd(g, e, hurt); else horseSide(g, e, hurt, !rider);
     if (rider) {
       g.save(); g.translate(0, vert ? -11 : -20); g.scale(0.85, 0.85);
-      drawHuman(g, { facing: e.facing, hurtT: e.hurtT || 0, attackT: 0 }, rider);
+      // seated: the knight (82-knightgear) sits in the saddle, no legs
+      drawHuman(g, { facing: e.facing, hurtT: e.hurtT || 0, attackT: 0, seated: true }, rider);
       g.restore();
     }
   }
@@ -436,7 +437,7 @@
   window.MOUNTS = {
     tiles: { HORSE: T_HORSE, HITCH: T_HITCH },
     get post() { return POST; },
-    riding, tryRide, mount, dismount, whistle, buyHorse,
+    riding, tryRide, mount, dismount, whistle, buyHorse, drawHorse,
     PRICE: HORSE_PRICE, SPEED: HORSE_SPEED, R: HORSE_R, HP: HORSE_HP,
     get state() { return H(); },
   };

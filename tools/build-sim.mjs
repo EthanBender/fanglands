@@ -205,28 +205,32 @@ return { peek: __peek, poke: (n, v) => { try { __poke(n, v); } catch (e) { throw
 // ============================================================================
 export const STRIP_READS = {
   drawCharacter: {
-    files: ['79-deaths'],
-    why: '79-deaths wraps it at load to draw a falling body; the wrapper only runs when something draws, which a copy never does',
+    files: ['79-deaths', '82-knightgear'],
+    why: '79-deaths wraps it at load to draw a falling body, 82-knightgear to draw the player as the new knight; the wrappers only run when something draws, which a copy never does',
+  },
+  drawMech: {
+    files: ['82-knightgear'],
+    why: '82-knightgear wraps it at load so a pilot is drawn seated (no legs); the wrapper only runs when something draws, which a copy never does',
   },
   drawDrop: {
     files: ['79-deaths'],
     why: '79-deaths wraps it at load to draw loot popping out of a body; the wrapper only runs when something draws, which a copy never does',
   },
   HK: {
-    files: ['05-input', '17-tap', '21-companion', '23-law', '24-dwarves', '29-quests', '43-settings', '47-outliers', '53-coalmine', '54-graves', '55-riding', '61-markers', '66-storm', '71-login', '73-players', '74-chat', '78-trade', '79-deaths'],
-    why: 'the HUD kit (59-hudkit): fonts, colours, text widths, panel rows, plaques, seats and safe insets, read by panel, plaque, chat-wrap and tap code; the two update-time reads are a held BLOCK seat, used only for the copy\'s own knight on a machine (55-riding returns first: the parked stand-in has no machine) and a pointer release (05-input, a copy has no pointer)',
+    files: ['05-input', '17-tap', '21-companion', '23-law', '24-dwarves', '29-quests', '43-settings', '47-outliers', '53-coalmine', '54-graves', '55-riding', '61-markers', '66-storm', '71-login', '73-players', '74-chat', '78-trade', '79-boygirl', '79-deaths'],
+    why: 'the HUD kit (59-hudkit): fonts, colours, text widths, panel rows, plaques, seats and safe insets, read by panel, plaque, chat-wrap and tap code (79-boygirl: its "Boy or girl?" card on the title, drawn only while the title is up); the two update-time reads are a held BLOCK seat, used only for the copy\'s own knight on a machine (55-riding returns first: the parked stand-in has no machine) and a pointer release (05-input, a copy has no pointer)',
   },
   title: {
-    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '75-coop', '76-admin', '77-dropparty', '78-trade', '91-royalmine', '99-boot'],
-    why: 'title.active reads false in a copy (STUB_SEED and the stand-in\'s start(), as for a knight past the title); the rest are the title\'s save slots (slotKey, slot) for login, cloud saves and admin, which a copy never uses (save() does nothing, NET.call throws), the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
+    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '75-coop', '76-admin', '77-dropparty', '78-trade', '79-boygirl', '82-knightgear', '91-royalmine', '99-boot'],
+    why: 'title.active reads false in a copy (STUB_SEED and the stand-in\'s start(), as for a knight past the title); 79-boygirl wraps the title\'s door, slot start, open and knight sprite at load and reads a slot\'s save before it is loaded, none of which a copy ever calls (it starts with newGame(), never from the title); 82-knightgear gives the title\'s knight figure (title.KNIGHT) its gear at load, which only the title\'s drawing reads; the rest are the title\'s save slots (slotKey, slot) for login, cloud saves and admin, which a copy never uses (save() does nothing, NET.call throws), the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
   },
   cam: {
     files: ['17-tap', '24-dwarves', '78-trade', '88-aerie', '91-cloudkingdom', '91-royalmine', '95-thistledown', '79-deaths'],
     why: 'the camera: screen-to-world for a tap, where a name tag, a sky or a bark is drawn, and the drawing passes\' default view',
   },
   playerLook: {
-    files: ['22-bulldozer', '32-beast', '73-players', '77-dropparty', '95-thistledown'],
-    why: 'the copy\'s own knight\'s look: drawn in a machine or a beast (22, 32), the party hat wrapper (77), the stone statue (95), and 73-players\' lookOf() for its own presence, which is the parked stand-in\'s and drawn by nobody',
+    files: ['22-bulldozer', '32-beast', '73-players', '77-dropparty', '79-boygirl', '82-knightgear', '95-thistledown'],
+    why: 'the copy\'s own knight\'s look: drawn in a machine or a beast (22, 32), the party hat wrapper (77), the girl knight wrapper (79-boygirl, which only adds `girl` from player.gender), the knight gear wrapper (82-knightgear, which only adds the six worn item ids, the tool held at work and the raised shield, and reads it for the player on foot inside its drawCharacter wrapper), the stone statue (95), and 73-players\' lookOf() for its own presence, which is the parked stand-in\'s and drawn by nobody',
   },
   render: {
     files: ['43-settings', '61-markers', '88-aerie', '91-cloudkingdom'],
@@ -235,9 +239,9 @@ export const STRIP_READS = {
   drawPanels: { files: ['61-markers', '73-players', '76-admin', '78-accounts'], why: 'wrappers that keep the panel drawing to call it, then draw their own panel' },
   drawMinimap: { files: ['43-settings', '61-markers'], why: 'wrappers that keep the minimap drawing to call it' },
   drawCompass: { files: ['43-settings'], why: 'a wrapper that keeps the compass drawing to call it' },
-  drawHud: { files: ['71-login'], why: 'a wrapper that keeps the HUD drawing to call it' },
+  drawHud: { files: ['71-login', '79-boygirl'], why: 'wrappers that keep the HUD drawing to call it: the login card\'s title (71) and the "Boy or girl?" card on the title (79); a copy never draws' },
   drawBossBars: { files: ['91-royalmine'], why: 'a wrapper that keeps the boss bars\' drawing to call it' },
-  drawHuman: { files: ['77-dropparty', '79-deaths'], why: 'wrappers that keep the drawing to call it: the party hat (77) and a falling person (79); they only run when something draws, which a copy never does' },
+  drawHuman: { files: ['77-dropparty', '79-boygirl', '79-deaths', '82-knightgear'], why: 'wrappers that keep the drawing to call it: the party hat (77), a girl knight\'s braid and ribbon (79-boygirl), a falling person (79-deaths) and the new knight for a look with gear (82-knightgear); they only run when something draws, which a copy never does' },
   drawItemIcon: { files: ['38-agility'], why: 'a wrapper that keeps the item icon drawing to call it' },
   drawFenceProp: { files: ['95-thistledown'], why: 'a wrapper that keeps the fence drawing to call it' },
   drawFireProp: { files: ['95-thistledown'], why: 'a wrapper that keeps the fire drawing to call it' },

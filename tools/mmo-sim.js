@@ -5,7 +5,7 @@
 //   node tools/mmo-sim.js --room     online/src/room.js (the real routing class) does it instead (MMO_ROOM=path overrides the file)
 //
 // What it proves, in order: two knights log in with fake tokens; the first one in is the keeper of the
-// overworld; the second sees the first's presence; standing by the same goblin, the second knight's hit
+// overworld; the second sees the first's presence (and her girl knight's look, 79-boygirl); standing by the same goblin, the second knight's hit
 // reaches the keeper's monster, the keeper's hp shows on the puppet after the next snapshot, and the last
 // hit gives the kill to the second knight and not the keeper; a goblin chases the second knight while the
 // keeper stands far away; a chat line crosses; and when the keeper disconnects the other becomes keeper
@@ -735,6 +735,21 @@ async function main() {
   tick(10);
   const seen = B.COOP.remotes().find(r => r.n === 'Ann');
   line('B sees A\'s presence on the same map', !!seen && seen.map === 'over' && Math.abs(seen.x - Math.round(A.FANGLANDS.player.x)) <= 1, seen && { x: seen.x, ax: Math.round(A.FANGLANDS.player.x), map: seen.map });
+
+  // ---- 2b. boy or girl (79-boygirl): A's choice reaches B's game, and B draws her as a girl knight ----
+  {
+    const lookOnB = () => { const r = B.PLAYERS && B.PLAYERS.remote && B.PLAYERS.remote.Ann; return r && r.look; };
+    // a recording canvas: every fill colour B's drawHuman paints for Ann's look
+    const fillsOf = look => { const fills = []; const g2 = new Proxy({}, { get: (o, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : k in o ? o[k] : () => { }, set: (o, k, v) => { if (k === 'fillStyle') fills.push(v); o[k] = v; return true; } }); B.drawHuman(g2, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, Object.assign({}, look)); return fills; };
+    const ribbon = B.BOYGIRL && B.BOYGIRL.RIBBON;
+    const g0 = A.FANGLANDS.player.gender;
+    A.FANGLANDS.player.gender = 'girl'; tick(12);
+    const asGirl = lookOnB(), girlDrawn = !!asGirl && fillsOf(asGirl).includes(ribbon);
+    A.FANGLANDS.player.gender = 'boy'; tick(12);
+    const asBoy = lookOnB(), boyDrawn = !!asBoy && !fillsOf(asBoy).includes(ribbon);
+    if (g0 === undefined) delete A.FANGLANDS.player.gender; else A.FANGLANDS.player.gender = g0;
+    line('A chooses a girl knight: B\'s copy of her look says girl and B draws her ribbon; back to a boy, neither', !!ribbon && !!asGirl && asGirl.girl === true && girlDrawn && !!asBoy && asBoy.girl === false && boyDrawn, { girl: asGirl && asGirl.girl, girlDrawn, boy: asBoy && asBoy.girl, boyDrawn });
+  }
 
   // ---- 3. the same goblin ----
   const AM = A.FANGLANDS.monsters, T = A.FANGLANDS.TILE;

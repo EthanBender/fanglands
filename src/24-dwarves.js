@@ -685,9 +685,10 @@ PEOPLE_UI.auditPrompt = function (p) {
     }
     // the dwarves stand in Deepholm and only there: on the surface those tiles are the starting cave and Death's House
     if (inside()) for (const d of DWARVES) if (d.px > cam.x - 60 && d.px < cam.x + VW + 60 && d.py > cam.y - 60 && d.py < cam.y + VH + 60) items.push({ y: d.py + 13 + (d.sortY || 0), draw: () => dwDrawDwarf(g, d) });
-    // the pickaxe in hand while mining mithril (the core only animates its own 'mine' action)
+    // the pickaxe in hand while mining mithril (the core only animates its own 'mine' action); the knight drawn by
+    // 82-knightgear holds it in his own hand, so it is not drawn here then
     const a = player.action;
-    if (a && a.type === 'mine_mithril' && !player.dead) items.push({ y: player.y + player.r + 0.01, draw: () => {
+    if (a && a.type === 'mine_mithril' && !player.dead && !window.KNIGHTGEAR) items.push({ y: player.y + player.r + 0.01, draw: () => {
       const ang = Math.atan2(player.facing.y, player.facing.x), sw = Math.sin(time * 14) * 0.6;
       g.save(); g.translate(player.x, player.y); g.rotate(ang - 0.7 + sw); g.fillStyle = '#8a6a3a'; g.fillRect(2, -1.5, 26, 3);
       g.fillStyle = a.tier >= 3 ? MITHRIL : a.tier === 2 ? '#a9adb5' : '#b8863a'; g.beginPath(); g.moveTo(24, -2); g.quadraticCurveTo(30, -8, 34, -6); g.lineTo(30, 0); g.lineTo(34, 6); g.quadraticCurveTo(30, 8, 24, 2); g.closePath(); g.fill(); g.restore();

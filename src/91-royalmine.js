@@ -1984,7 +1984,8 @@
   function drawCarry(g) {
     if (player.dead) return;
     const a = player.action, ang = Math.atan2(player.facing.y, player.facing.x);
-    if (a && (a.type === 'rm_giant' || a.type === 'rm_vein')) {
+    // the pick swing; the knight drawn by 82-knightgear holds the pick in his own hand, so it is not drawn here then
+    if (a && (a.type === 'rm_giant' || a.type === 'rm_vein') && !window.KNIGHTGEAR) {
       const sw = Math.sin(time * 14) * 0.6;
       g.save(); g.translate(player.x, player.y); g.rotate(ang - 0.7 + sw); g.fillStyle = '#6b4a2a'; g.fillRect(2, -1.5, 26, 3);
       g.fillStyle = hasHeartPick() ? '#e0583c' : (a.tier >= 3 ? '#7aa0d0' : a.tier === 2 ? '#a9adb5' : '#b8863a');

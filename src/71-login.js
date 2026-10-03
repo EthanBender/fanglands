@@ -224,12 +224,18 @@
     if (yes && c) { claim(c.save, c.at || Date.now()); start(true, true); }
     else { fresh(); start(true, false); }
   };
+  // into the world through the title's door (title.ask, 14-title): a question asked there first (79-boygirl's "Boy or
+  // girl?" for a knight who has not chosen) is answered before the knight is in the world, the socket open or the
+  // cloud pushed. The card is put away while it is asked; title.open() brings it back if the question is dropped.
   function start(push, had) {
-    LOGIN.playing = true; LOGIN.alone = false; hide();
-    title.startSlot(1);
-    notify(had ? `Welcome back, ${LOGIN.name}.` : `Welcome to the world, ${LOGIN.name}.`);
-    NET.connect();
-    if (push && window.CLOUD) window.CLOUD.push(true);
+    hide();
+    title.ask(1, () => {
+      LOGIN.playing = true; LOGIN.alone = false; hide();
+      title.startSlot(1);
+      notify(had ? `Welcome back, ${LOGIN.name}.` : `Welcome to the world, ${LOGIN.name}.`);
+      NET.connect();
+      if (push && window.CLOUD) window.CLOUD.push(true);
+    });
   }
   const askStatus = () => when(api('GET', '/api/status'),
     r => { LOGIN.asleep = false; LOGIN.status = statusWords(r); refresh(); },

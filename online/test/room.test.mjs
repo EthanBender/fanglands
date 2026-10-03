@@ -58,6 +58,32 @@ test('presence is relayed to the same map only, with the name on it', () => {
   assert.equal(c.of('p').length, 0);
 });
 
+test('a full knight look (the six worn item ids, a girl) is relayed exactly; only a presence over 4096 characters is refused', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'), b = w.knight('Jack', 'over');
+  a.clear(); b.clear();
+  // the longest ids the game has in each slot, as src/73-players.js lookOf() sends them
+  const look = {
+    tunic: '#3b6fb6', hair: '#8a4f24', shoulder: '#9a86e0', helm: '#9a86e0', body: '#9a86e0', shield: '#9a86e0',
+    weapon: { shape: 'sword', color: '#9a86e0' }, tool: null, toolColor: null, rod: false, fists: false, hat: null, girl: true,
+    gear: { helm: 'stormstone_helm', body: 'stormstone_body', legs: 'stormstone_legs', shield: 'stormstone_shield', cape: 'cape_woodcutting', weapon: 'fang_of_the_fang' },
+  };
+  const p = { t: 'p', map: 'over', region: 'Thistledown', x: 1234, y: 5678, fx: -0.71, fy: 0.71, mv: true, wt: 12.3, hp: 99, mhp: 123, lv: 126, look, mech: null, dead: false, def: 9999, act: null };
+  const str = JSON.stringify(p);
+  assert.ok(str.length < 1000, 'a full presence is about 600 characters: ' + str.length);
+  w.say(a, p);
+  assert.deepEqual(b.last('p'), Object.assign({}, p, { n: 'Cohen', role: 'player' }));
+  // the server checks nothing inside look: only the size of the whole message (MAX_P) and the rate (CAPS.p)
+  b.clear();
+  const big = Object.assign({}, p, { look: Object.assign({}, look, { tunic: 'x'.repeat(4096 - str.length + 40) }) });
+  assert.ok(JSON.stringify(big).length > 4096);
+  // a second later, well inside the rate cap: what is refused is the size
+  w.t += 1000; w.say(a, p); assert.equal(b.of('p').length, 1); assert.equal(a.of('error').length, 0); b.clear();
+  w.say(a, big);
+  assert.equal(b.of('p').length, 0);
+  assert.equal(a.last('error').code, 'bad');
+});
+
 test('a knight who arrives sees the standing-still knights already on the map', () => {
   const w = world();
   const a = w.knight('Cohen', 'over');

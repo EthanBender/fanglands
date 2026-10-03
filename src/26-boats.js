@@ -312,7 +312,8 @@
     g.save(); g.translate(-14, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0 }, { tunic: '#3f4f3a', hair: '#d9d0c0', beard: true, helm: '#7a3b2e', shoulder: '#2f3a2c' }); g.restore();
     g.strokeStyle = '#8a6a3a'; g.lineWidth = 3; g.beginPath(); g.moveTo(-10, -6); g.lineTo(-30 - Math.sin(time * 3) * 6, 18); g.stroke();
     // the knight, sitting in the bow
-    g.save(); g.translate(20, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0 }, playerLook()); g.restore();
+    // seated: the knight (82-knightgear) sits in the bow, no legs
+    g.save(); g.translate(20, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0, seated: true }, playerLook()); g.restore();
     g.restore();
   }
   function drawBoatProp(g, tx, ty, L) { // moored at a dock: seen from above, bobbing

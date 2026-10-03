@@ -1238,22 +1238,51 @@
     if (a < 1) g.restore();
     STATS.statues++;
   }
-  // the knight's own look in stone, for the statue on the waiting plinth
+  // the knight's own look in stone, for the statue on the waiting plinth. With 82-knightgear it also carries what he
+  // wears (the six item ids) and `stone`: the new knight is drawn, in his own helm, armour, shield and weapon, all of
+  // him in stone
+  const KG = () => window.KNIGHTGEAR || null;
   function heroLook() {
     const l = playerLook(), w = weaponDef(), o = STONE_LOOK({});
     if (l.helm) o.helm = '#cfc9bc'; if (l.body) o.body = '#c3bdb0'; if (l.shield) o.shield = '#bfb8a9';
     if (w && w.shape) o.weapon = { shape: w.shape, color: '#d8d2c6' };
+    // a girl knight's statue (79-boygirl): her braid and ribbon in stone
+    if (l.girl) { o.girl = true; o.woman = true; o.ribbon = '#cfc9bc'; }
+    if (KG() && l.gear) { o.gear = Object.assign({}, l.gear); o.stone = true; if (!o.weapon) o.fists = true; }
     return o;
   }
+  // The new knight can stand taller and wider than the old one (an upright spear, a party hat, a battleaxe's blade), so
+  // he is fitted: his feet on the plinth's top (y -31 from the foot), his top under the sprite's (-89), his sides inside
+  // its 96 px, never bigger than the old statue (1.32). y0 is where his own feet's centre goes.
+  const HERO_FEET = -31, HERO_TOP = -89, HERO_HALF = 46, HERO_S = 1.32;
+  function heroFit(look) {
+    const x = KG().extent(look), fb = KG().extent({ gear: {}, fists: true }).b;
+    const s = Math.min(HERO_S, HERO_HALF / Math.max(1, -x.l, x.r), (HERO_FEET - HERO_TOP) / Math.max(1, fb - x.t));
+    return { s, y0: HERO_FEET - fb * s };
+  }
+  // the statue's sprite: one per look (and, for the new knight, per what he wears)
+  const heroKey = look => 'plinth-hero:' + [look.helm, look.body, look.shield, look.weapon && look.weapon.shape, look.girl ? 'girl' : '', look.gear ? KG().SLOTS.map(k => look.gear[k] || '').join(',') : ''].join('|');
   function drawPlinth(g) {
     const cx = tc(PL.x), foot = (PL.y + 1) * TILE - 2;
     if (!statueDone()) { blit(g, sprite('plinth-empty', 48, 40, 24, 36, cg => paintPlinth(cg, '#8f8a80')), cx, foot); return; }
-    const look = heroLook(), key = 'plinth-hero:' + [look.helm, look.body, look.shield, look.weapon && look.weapon.shape].join('|');
+    const look = heroLook(), key = heroKey(look);
     const a = behindAlpha(cx - 22, foot - 86, cx + 22, foot, foot);
     if (a < 1) { g.save(); g.globalAlpha = a; }
-    blit(g, sprite(key, 48, 96, 24, 90, cg => { paintPlinth(cg, GOLD); paintFigure(cg, look, false, 1.32); }), cx, foot);
-    // the gold laurel on his head
-    g.strokeStyle = GOLD; g.lineWidth = 2; g.beginPath(); g.arc(cx, foot - 48 - 1.32 * 12, 1.32 * 8.5, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
+    if (look.gear) {
+      const f = heroFit(look);
+      blit(g, sprite(key, 96, 96, 48, 90, cg => {
+        paintPlinth(cg, GOLD);
+        cg.save(); cg.translate(0, f.y0); cg.scale(f.s, f.s);
+        drawHuman(cg, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, look);
+        cg.restore();
+      }), cx, foot);
+      // the gold laurel round the top of his head (the new knight's head is at (0, -11) r 8 in his own frame)
+      g.strokeStyle = GOLD; g.lineWidth = 2; g.beginPath(); g.arc(cx, foot + f.y0 - 15 * f.s, 8.5 * f.s, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
+    } else {
+      blit(g, sprite(key, 48, 96, 24, 90, cg => { paintPlinth(cg, GOLD); paintFigure(cg, look, false, 1.32); }), cx, foot);
+      // the gold laurel on his head
+      g.strokeStyle = GOLD; g.lineWidth = 2; g.beginPath(); g.arc(cx, foot - 48 - 1.32 * 12, 1.32 * 8.5, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
+    }
     if (a < 1) g.restore();
   }
 
@@ -2585,6 +2614,37 @@
       quest.stage = st0; drain();
       check(P + 'C14 the waiting plinth: before stage 16 it is empty; at stage 16 it holds the knight (his name saved once, offline THE KNIGHT FROM THE CAVE), the plaque carries the name, the statue is drawn, and the Voice says so exactly once; online no name is saved until the world says who he is, then it is his own (COHEN), and an offline name gives way to it; the Fang\'s homecoming tile 112,48 is still open in the castle',
         empty && name === 'THE KNIGHT FROM THE CAVE' && told === 1 && told2 === 0 && plaque && statue && fangRoad && onlineOk, { empty, name, told, told2, plaque, statue, box, fangRoad, online }); }
+
+    // ---- C14b. the statue is the knight as drawn everywhere else (82-knightgear), in stone, in what he wears ----
+    if (window.KNIGHTGEAR) {
+      const K = KNIGHTGEAR, st0 = quest.stage, eq0 = Object.assign({}, player.equip), r = {};
+      // a context that keeps every colour set (fills, strokes, gradient stops)
+      const cols = [], rg = new Proxy({}, { get: (o, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: (t, c) => cols.push(c) }) : (k in o ? o[k] : () => { }), set: (o, k, v) => { if ((k === 'fillStyle' || k === 'strokeStyle') && typeof v === 'string') cols.push(v); o[k] = v; return true; } });
+      const rgb = c => { let m = /^#([0-9a-f]{6})$/i.exec(c); if (m) { const n = parseInt(m[1], 16); return [n >> 16, (n >> 8) & 255, n & 255]; } m = /^rgba?\(([\d.]+),([\d.]+),([\d.]+)/.exec(String(c).replace(/\s/g, '')); return m ? [+m[1], +m[2], +m[3]] : null; };
+      try {
+        quest.stage = 16;
+        // the Dragon slayer's kit and its upright spear (the tallest thing a knight holds)
+        Object.assign(player.equip, { helm: 'dragon_helm', body: 'dragon_body', legs: 'dragon_legs', shield: null, cape: 'cape_melee', weapon: 'dragon_spear' });
+        const look = heroLook(), f = heroFit(look), x = K.extent(look), fb = K.extent({ gear: {}, fists: true }).b;
+        r.look = !!look.stone && !!look.gear && look.gear.helm === 'dragon_helm' && look.gear.weapon === 'dragon_spear';
+        // in the sprite (96 x 96, anchored 48, 90): his top under its top, his sides inside it, his feet on the plinth
+        r.fits = f.y0 + x.t * f.s >= -90 && Math.max(-x.l, x.r) * f.s <= 48 && Math.abs(f.y0 + fb * f.s - HERO_FEET) < 0.01 && f.s > 0.9 && f.s <= 1.32;
+        // drawn: the new knight's drawing runs (in the stone palette) when the sprite is made, and not again while he
+        // wears the same; a change of helm makes a new one (the two sprites are dropped first: an earlier run made them)
+        const other = heroLook(); other.gear.helm = 'iron_helm';
+        delete CACHE[heroKey(look)]; delete CACHE[heroKey(other)];
+        const t0 = K.STATS.tinted, l0 = K.STATS.live; drawPlinth(ctx); r.made = [K.STATS.tinted - t0, K.STATS.live - l0];
+        const l1 = K.STATS.live; drawPlinth(ctx); r.again = K.STATS.live - l1;
+        player.equip.helm = 'iron_helm'; const l2 = K.STATS.live; drawPlinth(ctx); r.changed = K.STATS.live - l2;
+        r.keys = heroKey(look) !== heroKey(other);
+        // all of him in stone: every colour he sets is grey stone (no channel more than 14 from another)
+        cols.length = 0; drawHuman(rg, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, heroLook());
+        const parsed = cols.map(rgb).filter(Boolean);
+        r.stone = parsed.length >= 40 && parsed.every(([a, b, c]) => Math.max(a, b, c) - Math.min(a, b, c) <= 14);
+        r.colours = parsed.length;
+      } finally { for (const k in player.equip) if (!(k in eq0)) delete player.equip[k]; Object.assign(player.equip, eq0); quest.stage = st0; }
+      check(P + 'C14b the statue on the plinth is the knight as he is drawn everywhere (82-knightgear) in what he wears, all of him in stone: the Dragon slayer\'s kit with its upright spear fits the sprite with his feet on the plinth, the drawing runs once to make the sprite, again only when his gear changes',
+        r.look && r.fits && r.made[0] >= 1 && r.made[1] >= 1 && r.again === 0 && r.changed >= 1 && r.keys && r.stone, r); }
 
     // ---- C15. night ----
     { const N = window.NIGHT, d0 = player.dayTime;

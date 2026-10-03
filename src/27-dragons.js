@@ -471,16 +471,17 @@
     // Dunstan's hat and pitchfork over the core's sprite
     const dun = NPCS.find(n => n.id === 'dunstan');
     if (dun && dun.px > cam.x - 60 && dun.px < cam.x + VW + 60 && dun.py > cam.y - 60 && dun.py < cam.y + VH + 60) items.push({ y: dun.py + 13.5, draw: () => drDrawDunstanLook(g, dun) });
-    // the knight: pickaxe while mining obsidian, wings on the godly helm, an aura under the full set
-    const a = player.action;
+    // the knight: pickaxe while mining obsidian, wings on the godly helm, an aura under the full set. The knight drawn by
+    // 82-knightgear holds the pickaxe in his hand and wears the winged helm's own two wings, so neither is drawn here then
+    const a = player.action, kg = !!window.KNIGHTGEAR;
     if (!player.dead && !player.mech) {
-      if (a && a.type === 'mine_obsidian') items.push({ y: player.y + player.r + 0.01, draw: () => {
+      if (a && a.type === 'mine_obsidian' && !kg) items.push({ y: player.y + player.r + 0.01, draw: () => {
         const ang = Math.atan2(player.facing.y, player.facing.x), sw = Math.sin(time * 14) * 0.6;
         g.save(); g.translate(player.x, player.y); g.rotate(ang - 0.7 + sw); g.fillStyle = '#8a6a3a'; g.fillRect(2, -1.5, 26, 3);
         g.fillStyle = a.tier >= 3 ? '#7aa0d0' : a.tier === 2 ? '#a9adb5' : '#b8863a'; g.beginPath(); g.moveTo(24, -2); g.quadraticCurveTo(30, -8, 34, -6); g.lineTo(30, 0); g.lineTo(34, 6); g.quadraticCurveTo(30, 8, 24, 2); g.closePath(); g.fill(); g.restore();
       } });
       if (drFullGodly()) items.push({ y: player.y + player.r - 0.5, draw: () => drDrawAura(g) });
-      if (player.equip.helm && ITEMS[player.equip.helm].wings) items.push({ y: player.y + player.r + 0.5, draw: () => drDrawWings(g) });
+      if (player.equip.helm && ITEMS[player.equip.helm].wings && !kg) items.push({ y: player.y + player.r + 0.5, draw: () => drDrawWings(g) });
     }
     // fireballs above the world, ash drifting over dragon country
     for (const p of DR.fire) items.push({ y: 1e8, draw: () => drDrawFire(g, p) });

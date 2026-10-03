@@ -92,7 +92,12 @@ window.FANGLANDS.title = title;
     else save(); // a brand-new slot claims its key straight away
     keys.clear(); pressed.clear(); touch.taps.length = 0;
   };
-  title.continue = () => { const n = title.recent(); title.startSlot(n || 1); };
+  // title.ask(n, go): the one door from the title into the world (a slot's card, Continue, Enter, and 71-login's start).
+  // A feature may ask the child something first, on the title, and call go() once it is answered (79-boygirl's
+  // "Boy or girl?"). By itself it asks nothing. title.startSlot stays the plain load the tools and self-tests call.
+  title.ask = (n, go) => go();
+  title.enter = n => title.ask(n, () => title.startSlot(n));
+  title.continue = () => title.enter(title.recent() || 1);
   title.deleteTap = n => {
     if (title.deleteArmed !== n) { title.deleteArmed = n; title.deleteAt = title.t; return false; }
     lsDel(SLOT_KEY(n)); lsDel(AT_KEY(n)); title.deleteArmed = 0; title.refresh(); return true;
@@ -110,6 +115,8 @@ window.FANGLANDS.title = title;
   // for Continue / Delete / Sound, and nothing tappable in the notch or home-indicator bands. 71-login draws the online
   // title with the same heading, sprites and bottom row (title.heading / title.sprites / title.chrome).
   const KNIGHT = { tunic: '#3b6fb6', hair: '#5a3a1e', helm: '#8f96a3', shoulder: '#9aa3b2', shield: '#8a6a3a', weapon: ITEMS.iron_sword || ITEMS.wooden_sword };
+  // 79-boygirl dresses it as the last knight played on this device (a boy or a girl)
+  title.KNIGHT = KNIGHT;
   // the frame every title screen shares: safe insets, the heading's place, the bottom row's place
   title.frame = () => {
     const t = touchMode(), fam = HK.family(VW, VH, t), S = HK.insets(VW, VH, fam, t), M = 12;
@@ -200,7 +207,7 @@ window.FANGLANDS.title = title;
       lines.forEach((l, i) => HK.text(g, l, cx + 16, nameY + 19 + i * lh, { font: lf, color: c ? T.inkDim : T.inkMute, box: { x: cx + 16, y, w: textW, h: ch }, fitId: 'title:line' }));
       // the card is its own button (Delete sits beside its tap area, never under it)
       const dx = cx + cw - 12 - delW;
-      buttons.push({ x: cx, y, w: c ? dx - 8 - cx : cw, h: ch, label: `Slot ${n}`, action: () => title.startSlot(n), up: true, name: c ? `Play slot ${n}` : `Start a new game in slot ${n}` });
+      buttons.push({ x: cx, y, w: c ? dx - 8 - cx : cw, h: ch, label: `Slot ${n}`, action: () => title.enter(n), up: true, name: c ? `Play slot ${n}` : `Start a new game in slot ${n}` });
       if (c) platePush(g, dx, y + Math.round((ch - delH) / 2), delW, delH, armed ? 'Sure?' : 'Delete', armed ? 'Sure?' : 'Delete', () => title.deleteTap(n), 'danger', { name: armed ? 'Tap again to delete this slot' : 'Delete this slot' });
       y += ch + gap;
     }

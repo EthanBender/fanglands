@@ -334,6 +334,30 @@ a beast that rides through a GATE or a PORTCULLIS but not a DOOR; `playerWho()` 
 Monsters: `monsters` array (each has `x y r hp maxHp state angry dead home facing`), `MONSTER_SPAWNS`, `spawnMonsters()`.
 Player: `player.x/y/hp/maxHp/facing/equip/inv/skills/mech/home`.
 
+### The knight (`src/82-knightgear.js`)
+
+The knight is drawn in his own style, wearing each item's own shape (the owner's approved "knight gear" look). A KNIGHT
+look is any look with a `gear` object `{ helm, body, legs, shield, cape, weapon }` (item ids or null); `playerLook()` adds
+it, 73-players sends it, `title.KNIGHT` has one. `drawHuman(g, e, look)` sends a knight look to `KNIGHTGEAR.draw(g, e,
+look, opts)` and every other look (townsfolk, guards, the four old heroes' statues) to the old drawing, untouched.
+- A knight look with `stone: true` (95-thistledown's statue of the knight himself) is drawn in stone: every colour he
+  sets goes through a stone palette, his clock stopped. While `e.hurtT > 0` the whole knight flashes red the same way
+  (every colour, drawn live), so the flash shows through a closed helm and plate.
+- To draw the knight somewhere new: `drawHuman(g, e, playerLook())`, translated to his feet's centre (draw your own
+  shadow). `e.seated` (or `opts.seated`, or being inside `drawMech` / `drawDozer` / the barrel beast) leaves his legs off.
+  A panel that shows him big fits him with `KNIGHTGEAR.fit(look, w, h, foot, maxScale)`: he is taller than the old
+  knight (an upright spear, a party hat).
+- His pose (weapon angle, hand) lives in a WeakMap keyed by the entity, never on it (the player is saved whole).
+- Pictures (`opts.cache`) are for 73's world-scale remote knights only, and only onto the world canvas `ctx`.
+- A slot with no known id is read back from the look's colour fields (`helm`, `body`, `shield`, `weapon`, `hat`).
+- Do not draw things onto the player from a draw hook (a loose tool, a second cape, wings, a raised shield): the knight
+  draws what he wears and holds himself, in its place in front of or behind him. A new action that holds a tool maps
+  its type in 82's `TOOL_ACTS` (the knight then holds that tool in his hand); the block's shield comes from
+  `look.block`. 82's self-test fails if anything else paints at the player's place in the draw list.
+- A NEW WEARABLE ITEM draws as its family's plain piece (a plain helm, plate, heater shield, sword) until it gets a
+  branch: `helmFam` / `bodyFam` / `shieldFam` / `weaponFam`, or its metal in `tierOf` and the tier switches. The
+  self-test draws every wearable in the game and names any two of a slot that draw the same shape.
+
 ## Self-test
 
 Register checks: `HOOKS.selfTest.push((check, F, h) => { ... check('name', boolean, infoObject); ... })`.

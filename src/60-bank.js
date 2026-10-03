@@ -343,11 +343,14 @@
   function drawKnight(g, x, y, w, h) {
     PLACE_KIT.card(g, x, y, w, h);
     g.save(); g.beginPath(); g.rect(x + 3, y + 3, w - 6, h - 6); g.clip();
-    g.translate(x + w / 2, y + h * 0.64);
-    const s = Math.min(w / 34, h / 44);
-    g.scale(s, s);
+    const look = playerLook();
+    // the knight in his gear (82-knightgear) stands taller than the old one (an upright spear, a party hat): fit what he
+    // wears in the card, the same size as before at most
+    const f = window.KNIGHTGEAR && look.gear ? KNIGHTGEAR.fit(look, w - 10, h - 10, 18, Math.min(w / 34, h / 44)) : null;
+    if (f) { g.translate(x + 5 + f.x, y + 5 + f.y); g.scale(f.s, f.s); }
+    else { g.translate(x + w / 2, y + h * 0.64); const s = Math.min(w / 34, h / 44); g.scale(s, s); }
     g.fillStyle = 'rgba(0,0,0,0.30)'; g.beginPath(); g.ellipse(0, 13, 12, 5, 0, 0, 7); g.fill();
-    drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, playerLook());
+    drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, look);
     g.restore();
   }
   const gearLines = () => ['Strength +' + gearBonus('str'), 'Accuracy +' + gearBonus('att'), 'Defence +' + gearBonus('def')];
