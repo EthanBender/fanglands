@@ -814,17 +814,19 @@ const KNIGHTGEAR = (() => {
   const REST_HAND = { up: { x: 10.4, y: 4.8 }, bow: { x: 10.8, y: 3.6 } };
   function angDiff(a, b) { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; }
   const POSE = new WeakMap();
+  // at rest: the weapon's angle and the hand at his waist, for this facing and step
+  function restPose(S, fam) {
+    const side = !S.back && Math.abs(S.fxm) > 0.7 && Math.abs(S.fy) < 0.6, rh = fam === 'bow' ? REST_HAND.bow : REST_HAND.up;
+    return { wa: restAngle(fam, side) + S.step * 0.1, hx: rh.x, hy: rh.y + S.step * 0.5 };
+  }
   // once a draw per knight: the weapon's angle and the hand ease back to rest after a swing (dt from the game clock)
   function pose(e, S, fam) {
     let rec = POSE.get(e);
-    const swing = S.swing, ang = S.ang, step = S.step, side = !S.back && Math.abs(S.fxm) > 0.7 && Math.abs(S.fy) < 0.6;
-    let target;
-    if (swing >= 0) target = fam === 'bow' ? ang : ang + lerp(-1.4, 1.2, kEase(swing));
-    else target = restAngle(fam, side) + step * 0.1;
+    const swing = S.swing, ang = S.ang;
+    let target, tx, ty;
     // the hand: round the shoulder while he swings, down at his waist at rest
-    let tx, ty;
-    if (swing >= 0) { tx = SHOULDER.x + Math.cos(target) * REACH; ty = SHOULDER.y + Math.sin(target) * REACH; }
-    else { const rh = fam === 'bow' ? REST_HAND.bow : REST_HAND.up; tx = rh.x; ty = rh.y + step * 0.5; }
+    if (swing >= 0) { target = fam === 'bow' ? ang : ang + lerp(-1.4, 1.2, kEase(swing)); tx = SHOULDER.x + Math.cos(target) * REACH; ty = SHOULDER.y + Math.sin(target) * REACH; }
+    else { const r = restPose(S, fam); target = r.wa; tx = r.hx; ty = r.hy; }
     if (!rec) { rec = { wa: target, hx: tx, hy: ty, mirror: S.mirror, t: time }; POSE.set(e, rec); return rec; }
     const dt = clamp(time - rec.t, 0, 0.05), k = Math.min(1, dt * 11);
     rec.t = time;
@@ -945,7 +947,6 @@ const KNIGHTGEAR = (() => {
 
   // ---------- pictures, for the crowd of other knights ----------
   const PIC_MAX = 300, WPIC_MAX = 80;
-  const PIC = { w: 48, h: 56, ax: 24, ay: 36 };          // css px round the knight's feet-centre: the party cone to the cape's hem
   const WP = { x0: -22, y0: -19, w: 68, h: 38 };          // css px round the hand, the weapon along +x (the spear tip at 41)
   const PICS = new Map(), WPICS = new Map();
   const picScale = () => Math.round(Math.max(1, Math.min(2, typeof DPR === 'number' && DPR > 0 ? DPR : 1)) * 100) / 100;
@@ -964,43 +965,60 @@ const KNIGHTGEAR = (() => {
   }
   const animatedBody = P => (P.helm && (ANIMATED.has(P.helm.id) || P.helm.fam === 'party')) || (P.body && ANIMATED.has(P.body.id)) || (P.shield && ANIMATED.has(P.shield.id)) || (P.cape && ANIMATED.has(P.cape.id));
   const STEPS = 8, PHASES = 4, TWO_PI = Math.PI * 2;
+  // A picture is cut to what is drawn in it (the bounds of every path, plus a pixel), so a plain knight is a small one.
+  // At rest (no swing, not easing back from one, nothing else in the hand) the weapon and its hand are in the picture
+  // too: one blit a knight. Otherwise the body is one picture and the weapon another, turned to its angle.
   function drawCached(g, e, look, P) {
     const ss = picScale();
-    // 8 facings, 8 steps of the walk (0 = standing), 4 phases of the clock for the pieces that move with it
+    // 8 facings, 8 steps of the walk (-1 = standing), 4 phases of the clock for the pieces that move with it
     const a = Math.atan2(e.facing ? +e.facing.y || 0 : 1, e.facing ? +e.facing.x || 0 : 0);
     const dir = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8, da = dir * Math.PI / 4;
     const moving = !!e.moving;
     const sb = moving ? Math.floor((((+e.walkT || 0) % TWO_PI) + TWO_PI) % TWO_PI / TWO_PI * STEPS) : -1;
     const wt = moving ? (sb + 0.5) / STEPS * TWO_PI : 0;
-    const anim = animatedBody(P), ph = anim ? Math.floor(time * 4) % PHASES : 0;
-    const tPic = moving ? sb * 0.29 + ph * 0.37 : ph * 0.37 + 0.2;
-    const key = gearKey(P) + '|' + (GIRL ? 'g' + HAIR + RIB : 'b' + HAIR) + '|' + TUNIC + SKIN + '|' + dir + '|' + sb + '|' + ph + '|' + ss;
     const fe = { facing: { x: Math.cos(da), y: Math.sin(da) }, moving, walkT: wt, attackT: e.attackT, hurtT: e.hurtT };
-    // the stance with the picture's own facing and step, so the weapon sits on the picture's body
     const T0 = T;
-    T = tPic;
+    // the stance with the picture's own facing and step, so the weapon sits on the picture's body
     const S = stance(fe, false, wt);
-    T = T0;
+    const hold = holdOf(e, S, look);
+    const W = P.weapon, fam = W ? W.fam : null;
+    S.rec = hold || pose(e, S, fam);
+    let rest = null;
+    if (!hold && S.swing < 0) { const r = restPose(S, fam); if (!W || (Math.abs(angDiff(S.rec.wa, r.wa)) < 0.03 && Math.abs(S.rec.hx - r.hx) < 0.15 && Math.abs(S.rec.hy - r.hy) < 0.15)) rest = r; }
+    // walking, the step itself moves the clock on (8 pictures a walk, not 32); standing, the clock's own 4 phases
+    const anim = !moving && (animatedBody(P) || (!!rest && !!W && WANIMATED.has(W.id))), ph = anim ? Math.floor(time * 4) % PHASES : 0;
+    const tPic = moving ? sb * 0.29 : ph * 0.37 + 0.2;
+    const key = gearKey(P) + '|' + (rest ? 'R' + (look.fists ? 'f' : '') : '') + '|' + (GIRL ? 'g' + HAIR + RIB : 'b' + HAIR) + '|' + TUNIC + SKIN + '|' + dir + '|' + sb + '|' + ph + '|' + ss;
     let p = lruGet(PICS, key);
     if (!p) {
-      const cv = makeCanvas(PIC.w, PIC.h, ss);
-      if (!cv) return false;
       T = tPic;
-      try { cv.cg.scale(ss, ss); cv.cg.translate(PIC.ax, PIC.ay); cv.cg.scale(S.mirror ? -1.08 : 1.08, 1.08); paintBody(cv.cg, S, P, false, 'all'); }
-      catch (err) { T = T0; return false; }
+      const S2 = stance(fe, false, wt);
+      if (rest) S2.rec = rest;
+      const paint = cg => {
+        cg.scale(S2.mirror ? -1.08 : 1.08, 1.08);
+        if (!rest) paintBody(cg, S2, P, false, 'all');
+        else if (S2.back) { paintBody(cg, S2, P, false, 'behind'); paintHeld(cg, S2, P, look, null, null); paintBody(cg, S2, P, false, 'rest'); }
+        else { paintBody(cg, S2, P, false, 'all'); paintHeld(cg, S2, P, look, null, null); }
+      };
+      let cv = null, bx = null;
+      try {
+        const tr = tracker(); paint(tr.g); bx = tr.b;
+        const x0 = Math.floor(bx.l) - 1, y0 = Math.floor(bx.t) - 1, w = Math.ceil(bx.r) + 1 - x0, h = Math.ceil(bx.b) + 1 - y0;
+        cv = makeCanvas(w, h, ss);
+        if (cv) { cv.cg.scale(ss, ss); cv.cg.translate(-x0, -y0); paint(cv.cg); p = { c: cv.c, x0, y0, w, h, ss }; }
+      } catch (err) { p = null; }
       T = T0;
-      p = { c: cv.c }; lruPut(PICS, key, p, PIC_MAX); STATS.pics++;
+      if (!p) return false;
+      lruPut(PICS, key, p, PIC_MAX); STATS.pics++;
     }
     STATS.blits++;
-    const hold = holdOf(e, S, look);
-    S.rec = hold || pose(e, S, P.weapon ? P.weapon.fam : null);
     const held = () => { g.save(); g.scale(S.mirror ? -1.08 : 1.08, 1.08); paintHeld(g, S, P, look, hold, weaponPic); g.restore(); };
-    if (S.back) held();
-    g.drawImage(p.c, -PIC.ax, -PIC.ay, PIC.w, PIC.h);
-    if (!S.back) held();
+    if (!rest && S.back) held();
+    g.drawImage(p.c, p.x0, p.y0, p.c.width / p.ss, p.c.height / p.ss);
+    if (!rest && !S.back) held();
     return true;
   }
-  // a weapon's picture, turned to its angle; a bow being drawn is drawn live
+  // a weapon's picture, turned to its angle (while he swings or eases back); a bow being drawn is drawn live
   function weaponPic(g, W, swing) {
     if (W.fam === 'bow' && swing >= 0) return false;
     const ss = picScale(), anim = WANIMATED.has(W.id), ph = anim ? Math.floor(time * 4) % PHASES : 0;
@@ -1035,7 +1053,7 @@ const KNIGHTGEAR = (() => {
     setColours(e, look);
     try {
       const seated = !!opts.seated || KG.seat > 0 || !!e.seated;
-      if (opts.cache && !seated && g === ctx && !(e.attackT > 0) && drawCached(g, e, look, P)) return;
+      if (opts.cache && !seated && g === ctx && drawCached(g, e, look, P)) return;
       drawLive(g, e, look, P, seated);
     } finally { T = T0; }
   }
@@ -1044,12 +1062,8 @@ const KNIGHTGEAR = (() => {
   // The new knight stands taller than the old one (an upright spear reaches about -39 px over his feet, a party hat -34),
   // so a panel fits the box round what he really wears: he is drawn once, facing down, into a context that only keeps
   // the outermost point of every path (through every translate, scale and rotate). Kept per look (gear, girl, held).
-  const EXT = new Map();
-  function extent(look) {
-    look = look || {};
-    const P = partsOf(look), key = gearKey(P) + '|' + (look.girl ? 'g' : '') + '|' + (look.tool || '') + (look.rod ? 'r' : '') + (look.weapon ? 'w' : '');
-    let x = EXT.get(key);
-    if (x) return x;
+  // a context that draws nothing and keeps the outermost point of every path, through translate, scale and rotate
+  function tracker() {
     const b = { l: 0, t: 0, r: 0, b: 0 };
     let m = [1, 0, 0, 1, 0, 0];
     const stack = [];
@@ -1066,7 +1080,16 @@ const KNIGHTGEAR = (() => {
       createLinearGradient: () => ({ addColorStop: () => { } }), createRadialGradient: () => ({ addColorStop: () => { } }),
     };
     const tg = new Proxy({}, { get: (o, k) => fns[k] || (k in o ? o[k] : () => { }), set: (o, k, v) => { o[k] = v; return true; } });
-    try { draw(tg, { facing: { x: 0, y: 1 }, moving: false, walkT: 0, attackT: 0, hurtT: 0 }, look, { t: 0 }); } catch (e) { return { l: -20, t: -24, r: 20, b: 17 }; }
+    return { g: tg, b };
+  }
+  const EXT = new Map();
+  function extent(look) {
+    look = look || {};
+    const P = partsOf(look), key = gearKey(P) + '|' + (look.girl ? 'g' : '') + '|' + (look.tool || '') + (look.rod ? 'r' : '') + (look.weapon ? 'w' : '');
+    let x = EXT.get(key);
+    if (x) return x;
+    const tr = tracker(), b = tr.b;
+    try { draw(tr.g, { facing: { x: 0, y: 1 }, moving: false, walkT: 0, attackT: 0, hurtT: 0 }, look, { t: 0 }); } catch (e) { return { l: -20, t: -24, r: 20, b: 17 }; }
     x = { l: b.l, t: b.t, r: b.r, b: b.b };
     if (EXT.size > 60) EXT.clear();
     EXT.set(key, x);
@@ -1290,12 +1313,13 @@ const KNIGHTGEAR = (() => {
       { const looks = [{ helm: 'iron_helm', body: 'iron_body', weapon: 'iron_sword' }, { helm: 'party_hat_blue', body: 'silk_cloak', weapon: 'yew_bow', cape: 'cape_hitpoints' }, { helm: 'necro_hood', body: 'necro_robe', shield: 'soul_lantern', weapon: 'mithril_dagger' }, { helm: 'dragon_helm', body: 'dragon_body', weapon: 'dragon_spear' }, { helm: 'godly_helm', body: 'godly_body', legs: 'godly_legs' }, { body: 'ruined_body' }].map((gr, i) => ({ look: lookWith(gr, i === 1 ? { girl: true, woman: true } : null), e: ent(FACES[i % 4], { moving: i % 2 === 1, walkT: i }) }));
         PICS.clear(); WPICS.clear(); time = 50;
         const frame = () => { for (const k of looks) draw(ctx, k.e, k.look, { cache: true }); };
-        frame(); const n1 = STATS.pics, w1 = STATS.wpics; frame(); const n2 = STATS.pics, w2 = STATS.wpics;
+        const w0 = STATS.wpics; frame(); const n1 = STATS.pics, w1 = STATS.wpics; frame(); const n2 = STATS.pics, w2 = STATS.wpics;
         const madeFirst = PICS.size;
         DPR = 1.5; PICS.clear(); WPICS.clear(); frame();
-        const sizes = [...PICS.values()].map(p => p.c.width);
+        const sizes = [...PICS.values()].map(p => [p.c.width, p.w, p.ss]);
         DPR = dpr0;
-        check(P0 + 'six other knights drawn twice: the first frame makes their pictures, the second makes none; at a 1.5 screen the pictures are made at 1.5 (72 px wide)', madeFirst === 6 && n2 === n1 && w2 === w1 && sizes.length === 6 && sizes.every(w => w === Math.ceil(PIC.w * 1.5)), { madeFirst, again: n2 - n1, wagain: w2 - w1, sizes }); }
+        // at rest the weapon is in the picture (one blit a knight): no weapon pictures were needed
+        check(P0 + 'six other knights drawn twice: the first frame makes their pictures (weapon and all, at rest), the second makes none; at a 1.5 screen the pictures are made at 1.5', madeFirst === 6 && n2 === n1 && w2 === w1 && w1 === w0 && sizes.length === 6 && sizes.every(([cw, w, ss]) => ss === 1.5 && cw === Math.ceil(w * 1.5) && w > 20 && w < 90), { madeFirst, again: n2 - n1, wagain: w2 - w1, w1, sizes }); }
 
       // 10. saves carry no pose: the player drawn, swinging, then saved
       { const look = playerLook(); player.attackT = 0.1; draw(recorder().g, player, look, null); player.attackT = 0;

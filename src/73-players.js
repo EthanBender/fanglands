@@ -140,7 +140,9 @@
     g.restore();
     // the name, the level in smaller grey after it, an hp bar when hurt, a ring when close enough to hand things over.
     // An admin's tag row starts with the gold ADMIN pill and the name is gold; the level stays.
-    const top = Math.round(y) - (onMech ? 46 : 33), lv = 'lv ' + e.lv, admin = isAdmin(e);
+    // a knight in gear can stand taller (a party hat, an upright spear): the name goes above whatever he wears
+    const tall = !onMech && !e.dead && look.gear && window.KNIGHTGEAR ? Math.min(0, Math.round(KNIGHTGEAR.extent(look).t) + 29) : 0;
+    const top = Math.round(y) - (onMech ? 46 : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
     g.font = 'bold 8px sans-serif'; const pw = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 + 4 : 0;
     g.font = 'bold 11px sans-serif'; const nw = g.measureText(e.n).width;
     g.font = '9px sans-serif'; const lw = g.measureText(lv).width;
