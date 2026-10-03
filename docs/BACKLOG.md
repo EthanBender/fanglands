@@ -84,6 +84,12 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
 (28 scenarios each) and 86 server tests passed before each deploy.
 
 ## NEXT WEEK — improvements held back so the work could ship
+- Monster look leftovers (2026-10-03; all 47 monster types in the approved look, live in 0d0788a):
+  - The knight's own machines (walker, dozer, beast pilots' seats) and the wreck tiles they leave still draw in the old look.
+  - Some hit circles grew with the bigger pictures but were capped at 24 (walker, bulldozer, the yard twins, dustjaw). In one-tile gaps a capped circle can sit over the wall edge.
+  - The Fang fight costs about 1 ms more per frame than before (mean 9.2/9.7 ms went to 10.2/11.5 ms). Eight bosses on one screen went from 8.5 to 10.1 ms. Common crowds are slightly faster than before.
+  - The boss banners in the HUD still use the old emblems, not the new pictures.
+  - The golem's mend ring is not in the online monster row, so on a friend's screen the mending glow does not show. It could ride as phase "mend" once monsters run on the server.
 - Knight gear refit leftovers (reviewers' minor findings, 2026-10-03; the refit is live in 9c625b6):
   - Facing away, open helms now show brown hair at the back of the head, where the approved sample shows a skin patch. The builder disclosed this. It reads better than the sample, but it is a visible change to the approved look.
   - On the mare he is drawn standing, with his leg armour and boots showing on the saddle, instead of seated without legs like the walker, dozer and beast pilots.
