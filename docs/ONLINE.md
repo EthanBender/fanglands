@@ -929,12 +929,13 @@ The parent page (`/admin`) has a **Shared world** section with one line for toda
   `Date.now()`, `new Date()` and `performance.now()` read it) and a sim-time scheduler: `setTimeout`/`clearTimeout` are
   recorded and `window.__runTimers()` runs the ones that are due; `setInterval` and `requestAnimationFrame` do nothing.
 - `src/79-worldkeeper.js`, the **stand-in**: in a browser it does nothing (no `window.__worldKeeper`). In a copy, the host
-  sets `window.__worldKeeper = { map, worldGen, send(msg) }` before the game loads, and the file:
+  sets `window.__worldKeeper = { map, worldGen, send(msg), reseed() }` before the game loads, and the file:
   - makes `save()` a no-op;
   - with `worldGen: false`, makes `generateWorld()` a blank map with no spawns (instances that prove they build the same
     without the overworld; `tools/sim-suite.mjs` checks each one);
   - gives the copy `window.WORLDKEEPER = { map, me, start(), step(dt), deliver(msg), off }`. `start()` starts a new game the
-    way the title does, enters the instance for an instance map, then points `NET` at a virtual socket: `NET.online()` is
+    way the title does, calls `reseed()` (the host's fresh dice from there on, so a copy's run never depends on what its
+    build rolled), enters the instance for an instance map, then points `NET` at a virtual socket: `NET.online()` is
     true and `NET.me` is `'@world:<map>'`, which the socket's own welcome names keeper. Everything the copy sends goes to
     `send(msg)`; `deliver(msg)` hands the copy a message as if the world sent it (a knight's `p`, `left`, `hit`, `boss_call`).
   - parks the stand-in knight dead on the solid tile (0, 0) with `deadT` zeroed before every `step`, so it never respawns

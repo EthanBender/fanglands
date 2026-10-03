@@ -5,3 +5,5 @@ online/public/bridge.html
 online/node_modules/
 online/.wrangler/
 online/.dev.vars
+online/src/sim/game.mjs
+online/src/sim/game.*.mjs
