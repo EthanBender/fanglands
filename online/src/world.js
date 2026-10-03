@@ -8,8 +8,10 @@
 // Error codes the title screen turns into one sentence (HTTP status is its fallback):
 //   login   pass (wrong secret word, 401)  unknown (no such knight, 404)  wait (too many tries, 429)  banned (403)
 //   signup  invite (401/403)  taken (409)  name (the filter refused it, 400)  pass (secret word under 4 chars, 400)
+//           words (403, with until: a knight kept out for bad words last came from this place, so no new knight from it)
 //   any     auth (dead or missing token, 401)  full (a cap hit: too big, or the world is full)
-//           words (kept out for bad words, 403, with until = ms when they may come back: login, every /api call and /ws)
+//           words (kept out for bad words, 403, with until = ms when they may come back: login, every /api call and /ws;
+//           PUT /api/save alone still goes through, so the last push before the kick is never lost)
 //   admins  admin (only an admin may, 403)  nopin (no pinned backup, 404)
 // Finished trades are rows of the trades table (store.js), listed for the parent page at GET /api/admin/trades.
 //   accounts (an admin's game, docs/ONLINE.md "Accounts")  unknown (no such knight, 404)  self (your own secret word:
@@ -131,19 +133,26 @@ export class World {
   row(q, ...args) { return this.rows(q, ...args)[0] || null; }
 
   // ---------- sessions ----------
-  session(token) {
+  // opts.ip: where the call came from (kept on the account, so a knight kept out for bad words cannot make a new knight from
+  // the same place: signup). opts.saving: PUT /api/save, which goes through while kept out (saving is not playing: the last
+  // push before the third strike's kick must land, or the next login would load an older save).
+  session(token, opts) {
     if (!token) throw oops(401, 'please log in', 'auth');
-    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
+    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until, a.last_ip FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
     if (!s) throw oops(401, 'that login has run out, please log in again', 'auth');
     const now = this.now();
     if (s.expires < now) { this.sql.exec('DELETE FROM sessions WHERE token = ?', token); throw oops(401, 'that login has run out, please log in again', 'auth'); }
     if (s.banned) { this.sql.exec('DELETE FROM sessions WHERE name_lc = ?', s.name_lc); throw oops(403, 'this knight is banned', 'banned'); }
     // kept out for bad words: the session is kept (it works again when the time is up), but nothing goes through until then
-    this.refuseIfKeptOut(s.words_locked_until, now);
+    // except a save. The place is not noted while kept out: it stays the one the knight was playing from when it was sent out.
+    const out = Number(s.words_locked_until) > now;
+    if (!out) this.noteIp(s.name_lc, s.last_ip, opts && opts.ip);
+    if (!(opts && opts.saving)) this.refuseIfKeptOut(s.words_locked_until, now);
     this.sql.exec('UPDATE accounts SET last_seen = ? WHERE name_lc = ?', now, s.name_lc);
     return s;
   }
-  auth(req) { return this.session(bearer(req)); }
+  auth(req, opts) { return this.session(bearer(req), Object.assign({ ip: ipOf(req) }, opts)); }
+  noteIp(lc, was, ip) { if (ip && ip !== was) this.sql.exec('UPDATE accounts SET last_ip = ? WHERE name_lc = ?', ip, lc); }
   refuseIfKeptOut(until, now) {
     until = Number(until) || 0;
     if (until > now) throw oops(403, wordsText(until, now), 'words', { until });
@@ -177,11 +186,16 @@ export class World {
     if (!invite) throw oops(403, 'no invite code is set on the world yet', 'invite');
     // typed by a ten-year-old: spaces around it and capital letters do not count against them
     if (String(b.invite || '').trim().toLowerCase() !== invite.toLowerCase()) throw oops(403, 'that invite code is wrong', 'invite');
+    // a knight kept out for bad words cannot skip the 24 hours with a new knight: not from the place it last came from
+    const ip = ipOf(req), now = this.now();
+    if (ip) {
+      const k = this.row('SELECT MAX(words_locked_until) AS until FROM accounts WHERE last_ip = ? AND words_locked_until > ?', ip, now);
+      if (k && k.until) throw oops(403, wordsText(k.until, now), 'words', { until: k.until });
+    }
     const lc = name.toLowerCase();
     if (this.row('SELECT 1 FROM accounts WHERE name_lc = ?', lc)) throw oops(409, 'that name is taken', 'taken');
     const { salt, hash } = await makeHash(pass);
-    const now = this.now();
-    this.sql.exec('INSERT INTO accounts (name_lc, name, salt, hash, created, last_seen) VALUES (?, ?, ?, ?, ?, ?)', lc, name, salt, hash, now, now);
+    this.sql.exec('INSERT INTO accounts (name_lc, name, salt, hash, created, last_seen, last_ip) VALUES (?, ?, ?, ?, ?, ?, ?)', lc, name, salt, hash, now, now, ip);
     return json({ token: this.newSession(lc), name });
   }
 
@@ -207,6 +221,7 @@ export class World {
       throw oops(401, 'wrong secret word', 'pass', { left: WRONG_TRIES - tries });
     }
     this.sql.exec('UPDATE accounts SET tries = 0, locked_until = 0, last_seen = ? WHERE name_lc = ?', now, lc);
+    if (!(Number(a.words_locked_until) > now)) this.noteIp(lc, a.last_ip, ipOf(req));
     // the right secret word, but kept out for bad words: said with the time it ends, and no session is made
     this.refuseIfKeptOut(a.words_locked_until, now);
     return json({ token: this.newSession(lc), name: a.name });
@@ -232,7 +247,8 @@ export class World {
   }
 
   async putSave(req) {
-    const s = this.auth(req);
+    // goes through while kept out for bad words (session, opts.saving)
+    const s = this.auth(req, { saving: true });
     const text = await this.saveBody(req);
     const ver = this.storeSave(s.name_lc, text);
     return json({ at: ver.at, ver: ver.ver });
@@ -381,7 +397,7 @@ export class World {
   // ---------- the socket ----------
   openSocket(req, url) {
     if ((req.headers.get('upgrade') || '').toLowerCase() !== 'websocket') throw oops(426, 'this address is the game socket', 'ws');
-    const s = this.session(url.searchParams.get('token') || '');   // a bad token is a 401 before any upgrade
+    const s = this.session(url.searchParams.get('token') || '', { ip: ipOf(req) });   // a bad token is a 401 before any upgrade
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
@@ -509,6 +525,8 @@ export class World {
 }
 
 const roleWord = role => role === 'admin' ? 'admin' : 'player';
+// where a call came from, as Cloudflare says it ('' when it does not: a local test world)
+const ipOf = req => String((req && req.headers && req.headers.get('cf-connecting-ip')) || '').trim().slice(0, 64);
 
 // A body nobody read (a refused token, a wrong admin key, a player asking for an admin's pin) is read to the end, and
 // thrown away as it comes, before the answer goes back. Otherwise the runtime is still pumping it in from the Worker

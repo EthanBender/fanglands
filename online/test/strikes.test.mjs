@@ -84,7 +84,7 @@ test('kept out: join and restore are refused with the time until it ends; after 
   w.t = until; sam = w.knight('Sam');
   assert.equal(sam.closed, null); assert.equal(sam.last('welcome').me, 'Sam');
   // the count is still 3: the very next bad line is out for 24 hours again (third and every later strike)
-  w.say(sam, 'stupid');
+  w.say(sam, 'you stupid');
   assert.equal(sam.closed.code, 4006);
   assert.equal(sam.last('error').n, 4);
   assert.equal(w.store.wordStrikes('Sam', w.t).lockedUntil, w.t + WORD_LOCK_MS);
@@ -119,6 +119,21 @@ test('no strike for a muted line (it goes nowhere), for a knight with no account
   assert.equal(w.store.wordStrikes('MudGoll', w.t).strikes, 0);
   w.say(mud, 'shut up');
   assert.deepEqual(mud.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
+});
+
+// Review round 1 (by eye and play): a kid chatting about the game was out of the world 15 seconds after his first line.
+test('game talk in a real Room is no strike, and the other knight sees it as it was said; a line aimed at a knight on line is', () => {
+  const w = world(); w.store.addAccount('Cohen'); w.store.addAccount('Leo');
+  const cohen = w.knight('Cohen'), leo = w.knight('Leo');
+  const lines = ['this boss is stupid hard', 'lets go die to the dragon again', 'stupid lag', 'ur dumb sword is cool', 'your fat dragon pet', 'im gonna go die in the lava', 'shut up no way you got the sword?', "I'm such a loser lol"];
+  for (const t of lines) w.say(cohen, t);
+  assert.deepEqual(leo.all('chat').map(m => m.text), lines);
+  assert.equal(cohen.all('strike').length, 0); assert.equal(cohen.closed, null);
+  assert.equal(w.store.wordStrikes('Cohen', w.t).strikes, 0);
+  // the name of a knight on line after "shut up" means it was said to that knight
+  w.say(cohen, 'shut up leo');
+  assert.equal(leo.last('chat').text, '**** ** leo');
+  assert.deepEqual(cohen.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
 });
 
 test('a Room given an old-style filter (a string back) still filters and counts nothing', () => {
@@ -283,11 +298,21 @@ test('the World: the third strike keeps the knight out of login, every /api call
   const until = await keepOut(w, tok, 'Sam');
   const want = { code: 'words', until };
   const words = r => ({ code: r.data && r.data.code, until: r.data && r.data.until });
-  // the session is kept, but nothing goes through
-  for (const [m, p, b] of [['GET', '/api/me'], ['GET', '/api/save'], ['PUT', '/api/save', JSON.stringify({ player: {} })], ['GET', '/api/save/pin']]) {
+  // the session is kept, but nothing goes through but a save
+  for (const [m, p, b] of [['GET', '/api/me'], ['GET', '/api/save'], ['GET', '/api/save/pin'], ['POST', '/api/save/restore']]) {
     const r = await call(w, m, p, b, tok.Sam);
     assert.equal(r.status, 403, m + ' ' + p); assert.deepEqual(words(r), want, m + ' ' + p);
   }
+  // PUT /api/save goes through, right after the kick and all day (saving is not playing): the push the game sends as it is
+  // sent out lands, so the next login loads the knight as it was at the third strike, not an older save
+  const last = JSON.stringify({ player: { kills: 77 } });
+  let put = await call(w, 'PUT', '/api/save', last, tok.Sam);
+  assert.equal(put.status, 200, JSON.stringify(put.data));
+  T += 3 * 3600 * 1000;
+  put = await call(w, 'PUT', '/api/save', last, tok.Sam);
+  assert.equal(put.status, 200);
+  assert.equal((await call(w, 'GET', '/api/me', undefined, tok.Sam)).status, 403);
+  assert.equal(w.sql.exec("SELECT json FROM saves WHERE name_lc = 'sam' ORDER BY ver DESC LIMIT 1").toArray()[0].json, last);
   const ws = await socket(w, tok.Sam);
   assert.equal(ws.status, 403); assert.deepEqual((await ws.json()).code, 'words');
   // login: the wrong secret word is still just wrong (and counts as a try); the right one says kept out, and makes no session
@@ -303,9 +328,10 @@ test('the World: the third strike keeps the knight out of login, every /api call
   assert.deepEqual(w.sql.exec("SELECT tries, locked_until, word_strikes, words_locked_until FROM accounts WHERE name_lc = 'sam'").toArray()[0], { tries: 0, locked_until: 0, word_strikes: 3, words_locked_until: until });
   // nobody else is touched
   assert.equal((await call(w, 'GET', '/api/me', undefined, tok.Pip)).status, 200);
-  // time up: the same session works again, the socket opens, a login works
+  // time up: the same session works again (with the save pushed at the kick), the socket opens, a login works
   T = until;
   assert.equal((await call(w, 'GET', '/api/me', undefined, tok.Sam)).data.name, 'Sam');
+  assert.equal((await call(w, 'GET', '/api/save', undefined, tok.Sam)).data.save, last);
   assert.equal((await socket(w, tok.Sam)).status, 101);
   assert.equal((await call(w, 'POST', '/api/login', { name: 'Sam', pass: 'sword' })).status, 200);
 });
@@ -347,7 +373,7 @@ test('clearing strikes: an admin from the game (not their own), the parent page 
   const s = await online(w, tok.Sam); chat(w, s, 'shit');
   assert.deepEqual(s.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
   // the parent page clears anyone, an admin too
-  const ada = await online(w, tok.Ada); chat(w, ada, 'stupid');
+  const ada = await online(w, tok.Ada); chat(w, ada, 'you stupid');
   assert.equal((await parent(w, 'POST', '/api/admin/strikes', { name: 'Ada' })).status, 200);
   assert.equal(w.store.wordStrikes('ada', T).strikes, 0);
   assert.equal((await parent(w, 'POST', '/api/admin/strikes', { name: 'Nobody' })).status, 404);
@@ -455,4 +481,54 @@ test('a rename rewrites the name everywhere it is kept, sends an online knight o
   assert.deepEqual([(await ren('Pip Two', 'Pip Three')).data.code], ['wait']);
   T += 60001;
   assert.equal((await ren('Pip Two', 'Pip Three')).status, 200);
+});
+
+// Review round 1: a kept-out kid could tap Not me, tick New knight, type the invite code everyone knows and play again.
+async function from(w, ip, method, path, body, token) {
+  const headers = { 'content-type': 'application/json', 'cf-connecting-ip': ip };
+  if (token) headers.authorization = 'Bearer ' + token;
+  const res = await w.fetch(new Request('http://world' + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }));
+  let data = null; try { data = await res.json(); } catch (e) { }
+  return { status: res.status, data };
+}
+test('signup: no new knight from the place a kept-out knight last came from, until the time is up or an admin clears it', async () => {
+  const { w, tok } = await knights();
+  const HOME = '203.0.113.7', FRIEND = '198.51.100.20', SCHOOL = '192.0.2.44';
+  // Sam plays from home: the login and the socket both note the place
+  const t = (await from(w, HOME, 'POST', '/api/login', { name: 'Sam', pass: 'sword' })).data.token;
+  const r101 = await w.fetch(new Request('http://world/ws?token=' + t, { headers: { upgrade: 'websocket', 'cf-connecting-ip': HOME } }));
+  assert.equal(r101.status, 101);
+  const s = w.ctx.sockets[w.ctx.sockets.length - 1];
+  w.webSocketMessage(s, JSON.stringify({ t: 'hello', v: 1 }));
+  for (const line of ['shit', 'shit', 'shit']) chat(w, s, line);
+  assert.equal(s.closed.code, 4006);
+  const until = T + WORD_LOCK_MS;
+  const sign = (ip, name) => from(w, ip, 'POST', '/api/signup', { name, pass: 'sword', invite: 'TEST-1234' });
+  // the new knight from home: refused with the same sentence and the same time, and nothing is made
+  let r = await sign(HOME, 'Sam Two');
+  assert.deepEqual([r.status, r.data.code, r.data.until, r.data.error], [403, 'words', until, wordsText(until, T)]);
+  assert.equal(w.sql.exec("SELECT COUNT(*) AS n FROM accounts WHERE name_lc = 'sam two'").toArray()[0].n, 0);
+  // a friend somewhere else signs up as usual (and so does a local world with no address at all)
+  assert.equal((await sign(FRIEND, 'Leo')).status, 200);
+  assert.equal((await call(w, 'POST', '/api/signup', { name: 'Mia', pass: 'sword', invite: 'TEST-1234' })).status, 200);
+  // Sam's session tried from school while kept out: refused, and the place stays home (the one Sam was sent out from)
+  assert.equal((await from(w, SCHOOL, 'GET', '/api/me', undefined, tok.Sam)).status, 403);
+  assert.equal((await from(w, SCHOOL, 'POST', '/api/login', { name: 'Sam', pass: 'sword' })).status, 403);
+  assert.equal((await sign(HOME, 'Sam Three')).status, 403);
+  assert.deepEqual(w.sql.exec("SELECT last_ip FROM accounts WHERE name_lc = 'sam'").toArray()[0], { last_ip: HOME });
+  // the place is never on a list
+  const list = (await call(w, 'GET', '/api/accounts', undefined, tok.MudGoll)).data;
+  assert.ok(!JSON.stringify(list).includes(HOME) && !JSON.stringify(list).includes(FRIEND));
+  // a minute before the end: still no; at the end: yes
+  T = until - 60000; assert.equal((await sign(HOME, 'Sam Two')).status, 403);
+  T = until; assert.equal((await sign(HOME, 'Sam Two')).status, 200);
+});
+test('signup: an admin clearing the strikes lets the place sign up again at once', async () => {
+  const { w, tok } = await knights();
+  const HOME = '203.0.113.9';
+  assert.equal((await from(w, HOME, 'GET', '/api/me', undefined, tok.Pip)).status, 200);
+  await keepOut(w, tok, 'Pip');
+  assert.equal((await from(w, HOME, 'POST', '/api/signup', { name: 'Pip Two', pass: 'sword', invite: 'TEST-1234' })).status, 403);
+  assert.equal((await call(w, 'POST', '/api/accounts/strikes', { name: 'Pip' }, tok.MudGoll)).status, 200);
+  assert.equal((await from(w, HOME, 'POST', '/api/signup', { name: 'Pip Two', pass: 'sword', invite: 'TEST-1234' })).status, 200);
 });

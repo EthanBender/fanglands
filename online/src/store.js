@@ -60,6 +60,9 @@ const ACCOUNT_COLUMNS = [
   ['word_strikes', 'INTEGER NOT NULL DEFAULT 0'],        // bad lines counted (read through strikesNow: it fades)
   ['word_strike_at', 'INTEGER NOT NULL DEFAULT 0'],      // when the last one was counted (0: never)
   ['words_locked_until', 'INTEGER NOT NULL DEFAULT 0'],  // kept out for bad words until then (0: not kept out)
+  // the place (CF-Connecting-IP) the knight last logged in or called from: only so a knight kept out for bad words cannot make
+  // a new knight from the same place (world.signup). Never shown on any list.
+  ['last_ip', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 // Adds whatever accounts column is missing, and nothing else. Answers {via, added} so the World can say what it did.

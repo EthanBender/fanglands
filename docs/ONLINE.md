@@ -63,12 +63,12 @@ online/
 
 | Call | Body | Answer | Notes |
 |---|---|---|---|
-| `POST /api/signup` | `{name, pass, invite}` | `{token, name}` | name 2–16 chars, letters/digits/spaces, filtered; pass ≥ 4 chars ("your secret word"); invite must match |
+| `POST /api/signup` | `{name, pass, invite}` | `{token, name}` | name 2–16 chars, letters/digits/spaces, filtered; pass ≥ 4 chars ("your secret word"); invite must match; 403 `words` with `until` from a place a knight is kept out from (see *Word strikes*) |
 | `POST /api/login` | `{name, pass}` | `{token, name}` | case-insensitive name; 5 wrong tries → 60 s wait (`code: "wait"`); a name an admin changed still logs in (as the new one: `name` is the new name); the right secret word while kept out for bad words is 403 `words` with `until` and no session (see *Word strikes*) |
 | `POST /api/logout` | — | `{ok}` | drops the session |
 | `GET /api/me` | — | `{name, created, saveAt, online, role}` | `role` is `'player'` or `'admin'` (see *Admins and drop parties*) |
 | `GET /api/save` | — | `{save, at}` (`save` null when none) | the save is the slot JSON string, verbatim |
-| `PUT /api/save` | the save JSON string | `{at}` | ≤ 512 KB; server keeps the last 3 versions |
+| `PUT /api/save` | the save JSON string | `{at}` | ≤ 512 KB; server keeps the last 3 versions; goes through while kept out for bad words |
 | `GET /api/save/pin` | — | `{at, bytes}` or `{at: null, bytes: 0}` | admins only (403 `admin`): the pinned backup (*Admins and drop parties*) |
 | `POST /api/save/pin` | the save JSON string | `{at, pinned}` | admins only; an existing pin is kept unless `?replace=1` |
 | `POST /api/save/restore` | — | `{save, at, ver}` | admins only; the pin becomes the current save and is removed; 404 `nopin` |
@@ -107,7 +107,7 @@ fallback when a code is missing): `pass` (wrong secret word; also 401 on login),
 401/403 on signup), `taken` (name already used; also 409 on signup), `name` (a name the filter refused), `full`,
 `auth` (token dead), `kicked` (an admin sent the knight out; the session stays good), `words` (kept out for bad words,
 403 with `until`: "You're kept out until 7:42 pm tomorrow for bad words.", in the device's own clock; the session stays
-good for when the time is up). Any call with a session answers `words` while the knight is kept out. Anything else, or
+good for when the time is up). Any call with a session but `PUT /api/save` answers `words` while the knight is kept out. Anything else, or
 no answer at all, reads "The world is asleep right now."
 
 ## The socket
@@ -888,15 +888,35 @@ insults count as well as swear words, including "gay" used as an insult. All of 
 
 ### What counts
 
-`checkChat(text)` answers `{text, masked}`: the line with bad words starred out, and whether any word had to be. A line
-with `masked: true` is a strike. The words are `BLOCKED` (swearing, bodies, slurs, hate, drugs) and, new, `INSULTS`:
-idiot, stupid, loser, moron and the like on their own, "shut up", "go die", "hate you"; and `SAID_ABOUT_YOU` (gay, dumb,
-ugly, fat) only after one of `YOU_ARE` (you, u, ur, you're, your, you are, u r, ...), so "you are gay" and "ur so dumb"
-count but "the dumb goblin" and "the fat dragon" do not. "gay" also counts in `GAY_INSULTS` ("that's gay", "so gay",
-"gay boy", ...), in gaylord and the like, and as a line that is only "gay". "Sam is gay" reads the same as "my uncle is
-gay" to a word list, so "is gay" is left off on purpose; a parent who wants it caught adds `'is gay'` to `INSULTS`.
-Every list is plain lower-case words, one place to edit. Apostrophes are read both ways (you're = youre) and stretched
-spellings are caught (gaaay). `cleanChat` still answers the masked line alone.
+`checkChat(text, {names})` answers `{text, masked}`: the line with bad words starred out, and whether any word had to be.
+A line with `masked: true` is a strike. `names` are the knights on line (the Room passes them), so "shut up sam" is known
+to be said to Sam. Three strikes is 24 hours out, so **only what is said at someone counts as an insult**: kids in a
+fighting game say "this boss is stupid hard", "stupid lag", "lets go die to the dragon again", "your fat dragon pet" and
+"I'm such a loser lol" all evening, and none of that is a strike (`filter.test.mjs` keeps a list of such lines that must
+never count, and `strikes.test.mjs` says them in a real Room). The lists, all in `filter.js`:
+
+- `BLOCKED` (swearing, bodies, slurs, hate, drugs) and `INSULTS` (stupidhead, nitwit, gaylord and the like; "go die in a
+  hole", "just go die", "go die already") count wherever they are.
+- `SAID_ABOUT_YOU` (gay, dumb, ugly, fat, stupid, idiot, loser, moron, dumbo, ...) count only right after "you":
+  `YOU_ARE` (you, u, you're, you are, u r, ...) anywhere in the line ("you idiot", "you stupid goblin"), with any of
+  `BETWEEN` in the middle ("you are so dumb", "you're such an idiot", "you big idiot"). `YOU_OR_YOUR` (ur, your, yur, ya)
+  could be "you're" or "your", so after them the word counts only when it ends the line or the sentence, or a laugh or a
+  person comes next ("ur dumb", "your gay!", "ur dumb lol", "see ya loser"), never before another word ("ur dumb sword
+  is cool", "your fat dragon", "your ugly ogre").
+- `AT_SOMEONE` ("shut up", "hate you") counts at the end of the line or the sentence, before a person (`PEOPLE`: you, noob,
+  kid, dude, ...) or a knight's name, or as the whole line: "shut up", "ok shut up!", "shut up sam", "i hate you"; not
+  "shut up no way", "shut up and take my coins", "i hate you goblin king".
+- `SAID_TO_SOMEONE` ("go die") counts only as the whole line or before a person or a knight's name: "go die", "go die
+  noob"; not "dont go die", "go die goblin", "im gonna go die in the lava".
+- `LINE_ALONE` (gay, idiot, loser, moron): a line that is only that word (laughs aside: "loser lol") is said at someone.
+- "gay" also counts in `GAY_INSULTS` ("that's gay", "so gay", "gay boy", ...). "Sam is gay" reads the same as "my uncle is
+  gay" to a word list, so "is gay" is left off on purpose; a parent who wants it caught adds `'is gay'` to `INSULTS`.
+- Names have nobody else to say it about: `NAME_INSULTS` (stupid, idiot, loser, moron, ...) are refused anywhere in a name,
+  spaced out too ("Stupid Sam", "Big Loser", "Stu Pid"); "Fat Cat", "Dumbo" and "Big Dummy" pass.
+
+Every list is plain lower-case words, one place to edit; **the owner decides the final lists** (the builder's choices are
+above). Apostrophes are read both ways (you're = youre) and stretched spellings are caught (gaaay). `cleanChat` still
+answers the masked line alone.
 
 ### The count
 
@@ -904,6 +924,7 @@ spellings are caught (gaaay). `cleanChat` still answers the masked line alone.
 accounts  + word_strikes       INTEGER NOT NULL DEFAULT 0   -- bad lines counted (read through strikesNow: it fades)
           + word_strike_at     INTEGER NOT NULL DEFAULT 0   -- when the last one was counted (ms; 0 = never)
           + words_locked_until INTEGER NOT NULL DEFAULT 0   -- kept out until then (ms; 0 = not kept out)
+          + last_ip            TEXT NOT NULL DEFAULT ''     -- where the knight last played from (CF-Connecting-IP)
 ```
 
 Added by `migrate()` like the other columns: only when missing, nothing dropped or rewritten. They are their own columns:
@@ -929,6 +950,17 @@ While `words_locked_until` is in the future: `POST /api/login` with the right se
 back) send `{t:'error', code:'words', text, until}` and close 4006. When the time is up the same session works again.
 The wire does not reconnect after `words`/4006; `LOGIN.sentence` says "You're kept out until 7:42 pm tomorrow for bad
 words." (today, tomorrow or the day, from `until` in the device's own clock), on the card under "Playing as <name>".
+
+- **Saving is not playing**: `PUT /api/save` alone goes through while kept out. The game saves and sends its waiting push
+  the moment `error` `words` arrives (as it does for `kicked`), so the next login 24 hours later loads the knight as it was
+  at the third strike, never an older cloud save.
+- **No new knight to skip it**: `World.session` and a good login keep `accounts.last_ip` (the `CF-Connecting-IP` the
+  knight played from; not changed while kept out, so it stays the place the knight was sent out from). `POST /api/signup`
+  from a place a knight is kept out from right now answers 403 `words` with that knight's `until` and makes nothing; when
+  the time is up, or an admin clears the strikes, signing up works again. A local world with no address skips it. The
+  address is never on any list (only the parent's full export carries it). On the device, the game keeps
+  `fanglands.keptOutUntil`: while it is in the future the card says the sentence (after Not me too) and greys out New
+  knight; it is forgotten when the time is up or the world lets a knight in (`/api/me` or a login).
 
 ### Clearing strikes
 
