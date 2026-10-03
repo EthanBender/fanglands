@@ -107,6 +107,28 @@ async function scene(browser, touch) {
     check('parent page at 1280: the accounts table fits, every Logins / Reset secret word / Ban / Saves button in view', got.table <= got.box && got.inView, got);
     check('parent page: a word strike says what was typed ("Sam got word strike 3 for typing "what the shit", kept out 24 hours"); an older row says the count', JSON.stringify(got.log) === JSON.stringify(['Sam got word strike 3 for typing "what the shit", kept out 24 hours', 'Pip got word strike 1']) && errors.length === 0, { log: got.log, errors });
     await page.close(); }
+  // device knights on the login card, in a real page (headless has no DOM, so its last check passes as 'no DOM'): the plain
+  // line under the form and on "Playing as", the offer's cards and buttons 44 px and up, and a burst of real taps after
+  // Start fresh never starting fresh (src/72-deviceknights.js: its own self-test, run here with the DOM), on an iPad and a phone
+  for (const [w, hh] of [[768, 1024], [390, 844]]) {
+    const page = await browser.newPage({ viewport: { width: w, height: hh }, hasTouch: true });
+    const errors = []; page.on('pageerror', e => errors.push(e.message));
+    await page.goto('file://' + file, { waitUntil: 'load' });
+    await page.waitForFunction(() => window.FANGLANDS && window.FANGLANDS.title);
+    const dk = await page.evaluate(() => {
+      const rep = {}, chk = (n, ok, info) => { rep[n] = { ok: !!ok, info: JSON.stringify(info === undefined ? null : info) }; };
+      newGame(); window.__forceTouch = true;
+      const ask = title.ask; title.ask = (n, go) => go();   // no "Boy or girl?" (79-boygirl is quiet in a self-test run)
+      DEVKNIGHTS.inSelfTest = true;
+      try { for (const h of HOOKS.selfTest) if (h.toString().includes('DK.testView = true; clearAll')) h(chk, FANGLANDS, { peace: () => { }, give: () => { }, openSpot: () => ({}), clearJunk: () => { } }); }
+      catch (e) { rep.crash = { ok: false, info: e.message }; }
+      finally { DEVKNIGHTS.inSelfTest = false; title.ask = ask; }
+      return rep;
+    });
+    const all = Object.entries(dk), failed = all.filter(([, v]) => !v.ok).map(([k, v]) => k.slice(0, 90) + ' ' + v.info.slice(0, 400));
+    const card = all.find(([k]) => /on the card: the line shows/.test(k)), live = !!card && card[1].ok && /"live":true/.test(card[1].info);
+    check(`device knights on the login card in a real page at ${w}x${hh}: every deviceknights check passes, the line, the 44 px buttons and the Start fresh taps measured live`, all.length >= 11 && failed.length === 0 && live && errors.length === 0, { total: all.length, failed, live, errors });
+    await page.close(); }
   await browser.close();
   const bad = results.filter(r => !r[1]).length;
   console.log(bad ? `dom-keys: ${bad} FAILED of ${results.length}` : `dom-keys: ALL ${results.length} PASS`);
