@@ -2,6 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { GAME_TALK, GAME_NAMES } from './game-talk.mjs';
+import { gameWords, fileText, OUT as GAME_WORDS_FILE } from '../../tools/game-words.mjs';
 import { cleanName, cleanChat, checkChat, nameRude, BLOCKED, BLOCKED_INSIDE, INSULTS, SAID_ABOUT_YOU, YOU_ARE, YOU_OR_YOUR, BETWEEN, GAY_INSULTS, GAY_SAID, AT_SOMEONE, SAID_TO_SOMEONE, AIM_BEFORE, AIM_AFTER, LINE_ALONE, PEOPLE, AIMED_AT, AFTER_YOU, ASKING, REPORTED, LAUGHS, NAME_INSULTS, MASK_ONLY, RESERVED_NAMES } from '../src/filter.js';
 
 test('names: plain names pass, tidied', () => {
@@ -104,7 +106,7 @@ test('the lists are plain lower-case words a parent can edit', () => {
 // surely a bad word said as a bad word (a strike). Three strikes is 24 hours out for a ten-year-old, so the strike side is
 // held to "never for game talk": masking may be generous, a strike may not.
 // ---------------------------------------------------------------------------
-const N = { names: ['Sam', 'Leo', 'Big Dummy'] };
+const N = { names: ['Sam', 'Leo', 'Sir Zorbo', 'Big Dummy'] };
 const res = (s, opts) => checkChat(s, opts || N);
 
 test('checkChat: the masked line, whether anything was masked, and whether it is a strike; cleanChat is its text', () => {
@@ -209,7 +211,9 @@ test('a bad word hidden inside an ordinary word is never a strike (it may be sta
   for (const s of ['booboo', 'swanky', 'pussycat', 'fire retardant', 'Montenegro', 'Scunthorpe', 'shitake mushrooms', 'cockpit', 'peacock', 'Hancock',
     'assassin', 'class', 'grass', 'bass', 'cocktail', 'Dickens', 'Sussex', 'analysis', 'therapist', 'grape', 'drape', 'skyscraper', 'button', 'titan', 'title',
     'raccoon', 'tycoon', 'cocoon', 'spicy', 'niggle', 'snigger', 'arsenal', 'assume', 'bassoon', 'cumulus', 'document', 'scrapbook', 'butter', 'shell', 'hello',
-    'Matsushita', 'penistone', 'sexton', 'Essex', 'twatch', 'shitzu', 'cockatrice', 'hoe', 'dumbbell', 'Bobb', 'Bobbies', 'kk', 'xx', 'kkk', 'xxx', 'xxxx'])
+    'Matsushita', 'penistone', 'sexton', 'Essex', 'twatch', 'shitzu', 'cockatrice', 'hoe', 'dumbbell', 'Bobb', 'Bobbies', 'kk', 'xx', 'kkk', 'xxx', 'xxxx',
+    // review round 4, finding 6: two of a letter, or a word ending in "ss", is how ordinary words are spelled
+    'assess', 'assesses', 'annals', 'annal', 'Shiite', 'Shiites', 'rappe', 'looser', 'lets assess the damage', 'read the annals', 'you looser', 'ur a looser'])
     assert.equal(res(s).strike, false, s + ' -> ' + JSON.stringify(res(s)));
   // and the ones a kid really types are not starred out either
   for (const s of ['class', 'grass', 'bass', 'cockpit', 'assassin', 'title', 'raccoon', 'cocoon', 'kk', 'xx', 'Bobb', 'hello']) assert.equal(res(s).masked, false, s);
@@ -217,47 +221,7 @@ test('a bad word hidden inside an ordinary word is never a strike (it may be sta
 
 // Review round 3 finding 2 and the "mild words" minor: game talk that was a strike, with the reason each one is not.
 test('game talk is never a strike: about a boss, the lag, lava, a pet, yourself, a question, somebody else, or a surprised shout', () => {
-  const lines = [
-    // about the game, a monster or yourself
-    'this boss is stupid hard', 'lets go die to the dragon again', 'stupid lag', 'ur dumb sword is cool', 'your fat dragon pet',
-    'your ugly ogre', 'im gonna go die in the lava', 'dont go die', 'my stupid brother', 'idiot proof plan', 'Dumbo the elephant',
-    "I'm such a loser lol", 'I am stupid', 'the stupid goblin keeps hitting me', 'i am a loser at this', 'go die goblin', 'i hate you goblin king',
-    'your fat dragon is cool', 'your dumb pet', 'your ugly sweater lol', 'your fat stack of coins', 'see ya later', 'is that your sword',
-    'the dumb goblin', 'you win', 'you are cool', 'my uncle is gay', 'im an idiot', "i'm such an idiot", 'I am so dumb', 'what an idiot i am',
-    'idiot me fell in the lava', 'i feel so dumb', 'pls go die dragon', 'go die already boss', 'just go die to the boss lol', 'i always go die in a hole',
-    // finding 2 (1): a "you" that ends one sentence never joins the next
-    'thank you. stupid lag', 'thank you! stupid goblin hit me', 'got you. dumb boss is down', 'love you. idiot me fell in lava', 'see you. loser gets the last loot',
-    'i got you, stupid troll is dead', 'u there? dumb question but where is the bank', 'thank u. ugly hat though', 'are you on? fat dragon is up',
-    'mine not you. stupid me', 'after you. dumb door is stuck',
-    // finding 2 (2): taunting a monster after "you"
-    'you stupid goblin', 'you dumb dragon get back here', 'you ugly troll', 'you fat slime', 'take that you stupid spider', 'u r a dumb boss',
-    'you stupid rock golem', 'die you ugly bat', 'you idiot goblin you missed', 'you dumb chicken', 'you fat ogre', 'you big ugly brute',
-    // finding 2 (3): a surprised "no way!", somebody else's words, or "i hate you" to a boss
-    'shut up!', 'SHUT UP!!', 'shut up, you got the dragon?', 'shut up no way', 'shut up dude no way', 'shut up dude!', 'shut up shut up shut up', 'ok shut up!',
-    'shut up no way!', 'shut up and take my coins', 'shut up you got the sword?', 'shut up you guys this is amazing',
-    'my mom said shut up', 'my mom says go die is mean', 'he said you idiot to me', 'my sister called me a loser', 'dont say shut up', 'he told me to go die',
-    'you can type shut up?', 'she typed you are dumb', 'i hate you', 'i hate you!', 'ugh i hate you boss', 'i hate you so much dragon', 'hate you lava',
-    // questions
-    'are you stupid?', 'are you dumb', 'do you think im stupid', 'r u dumb or what', 'did you fat finger it',
-    // mild words: starred out, never a strike (filter.js, MASK_ONLY)
-    'damn', 'dammit i died', 'wtf', 'wtf was that', 'lmfao', 'crap', 'oh crap the boss', 'that sword is badass', 'a bastard sword', 'a chink in his armour',
-    'the cock crowed', 'a blue tit', 'blue tits in the tree', 'suicide mission', 'sexy armor', 'i thot so', 'naked knight lol', 'prick your finger on the thorn',
-    'jackass', 'the nazis in ww2', 'hitler was bad', 'what sex is your knight', 'love you xxx', 'kkkk', 'bugger', 'piss off', 'pissed off at this boss',
-    'can you kill yourself with a bomb', 'dont kill yourself in the lava', 'how do you kill yourself to respawn', 'it’s gay pride week', "it's a gay old time",
-    'my uncle is a gay guy', 'there is a gay kid in my class', 'gay rights', 'L0SER', 'id10t', 'st00pid',
-    // everyday kid talk
-    'gg', 'gg wp', 'ez', 'brb', 'afk', 'omg', 'lol', 'lmao', 'xd', 'kk', 'ok', 'k', 'np', 'ty', 'thx', 'hi', 'hey sam', 'sup leo', 'wanna trade',
-    'can u help me kill the dragon', 'you are so good at this', 'u r so fast', 'ur so lucky', 'your so lucky', 'you big hero', 'you are a legend',
-    "you're a pro", 'ur the best', 'you got a big sword', 'is your knight a boy or a girl', 'follow me', 'where is the bank', 'i need wood',
-    'kill the goblin', 'I made a hoe', 'class is in session', 'u r a bum', 'niger is a country', 'hit the dummy', 'die die die', 'kill it kill it',
-    'i died again', 'the boss killed me', 'shoot the bat', 'smash the rock', 'nice hat', 'lets go', 'come on', 'wait for me', 'whats your level',
-    'i got the fang', 'whos the keeper', 'go to the island', 'build a house', 'my house is cool', 'you can come to my house', 'i have a dragon',
-    'you go first', 'you take the left side', 'you have more hp', 'you are on fire lol', 'you missed', 'you got this', 'u ok?', 'u there', 'ur turn',
-    'your turn', 'your house is huge', 'your pet is so cute', 'you need a better sword', 'you need to eat food', 'are you coming', 'can you give me 455 coins',
-    'i will give you 8008 gold', 'trade you 422 logs', 'you owe me 7175 coins', 'whats 455 plus 422', 'i hit 5318008 dmg lol', 'boss has 8008 hp',
-    'the goblin king is dumb lol', 'that was so stupid lol', 'stupid me', 'dumb me', 'oops my bad', 'my bad sorry', 'no way', 'no way you got it',
-    'that boss is ugly', 'the troll is fat', 'what a loser goblin', 'idiot goblin', 'moron troll walked into lava', 'ha loser goblin',
-  ];
+  const lines = GAME_TALK;
   for (const s of lines) {
     const r = res(s);
     assert.equal(r.strike, false, s + ' -> ' + JSON.stringify(r));
@@ -267,7 +231,7 @@ test('game talk is never a strike: about a boss, the lag, lava, a pet, yourself,
 
 // Every NPC, place, item, quest, boss and line of talk in the game is a string in src/: a kid typing any of them is no
 // strike, as the whole string or any word of it.
-test('every name and line in the game is no strike, whole or word by word', () => {
+function gameStringsSaid(opts) {
   const dir = new URL('../../src/', import.meta.url);
   const strs = new Set();
   for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.js'))) {
@@ -281,14 +245,45 @@ test('every name and line in the game is no strike, whole or word by word', () =
   const words = new Set();
   for (const s of strs) {
     for (const w of s.split(/\s+/)) if (w) words.add(w);
-    const r = checkChat(s, N);
+    const r = checkChat(s, opts);
     if (r.strike) assert.fail(JSON.stringify(s) + ' -> ' + r.text);
   }
-  for (const w of words) if (checkChat(w, N).strike) assert.fail(JSON.stringify(w) + ' is a strike');
+  for (const w of words) if (checkChat(w, opts).strike) assert.fail(JSON.stringify(w) + ' is a strike');
   // the names a kid says most, by hand as well
   for (const s of ['Aldous the banker', 'Gnasher', 'Ironclad', 'the Fang', 'Cinderwight', 'Thistledown', 'Ashfields', 'Hollowford', 'MudGoll', 'Barrelbeast',
     'Ginormous Golem', 'Ash drake', 'Spider Den', 'Cloud Kingdom', 'goblin city', 'Royal Mine', 'Aerie', 'Ashedge', 'Bank of Thistledown', 'Tobin'])
-    assert.equal(checkChat(s, N).strike, false, s);
+    assert.equal(checkChat(s, opts).strike, false, s);
+  return strs.size;
+}
+test('every name and line in the game is no strike, whole or word by word', () => { gameStringsSaid(N); });
+
+// Review round 4, finding 1: a knight on line named Goblin (or Dragon, Boss, King, Wolf, Bro, Now...) turned "you stupid
+// goblin" into a strike, and three of those were 24 hours out. A name counts for a strike only when it can be nobody but
+// that knight: not when every word of it is a word of the game or of every day.
+test('knights on line named Goblin, Dragon, Boss, King, Wolf, Bro, Dude or Now: game talk and every game string are still no strike', () => {
+  const opts = { names: GAME_NAMES.concat(['Sam', 'Leo']) };
+  for (const s of GAME_TALK) { const r = checkChat(s, opts); assert.equal(r.strike, false, s + ' -> ' + JSON.stringify(r)); }
+  // each name alone on line too (one name can never stand for another)
+  for (const n of GAME_NAMES) for (const s of GAME_TALK) if (checkChat(s, { names: [n] }).strike) assert.fail(n + ' on line: ' + s);
+  assert.ok(gameStringsSaid(opts) > 3000);
+  // the name is still starred out after an insult (masking stays generous), and a name that is nobody else still counts
+  assert.deepEqual(checkChat('shut up goblin', { names: ['Goblin'] }), { text: '**** ** goblin', masked: true, strike: false });
+  assert.deepEqual(checkChat('you stupid goblin', { names: ['Goblin'] }), { text: '*** ****** goblin', masked: true, strike: false });
+  assert.equal(checkChat('shut up sam', opts).strike, true);
+  assert.equal(checkChat('you idiot leo', opts).strike, true);
+  // real people the game's own text names ("A game by Cohen", "Ask Ethan") still count as a person
+  assert.equal(checkChat('shut up cohen', { names: ['Cohen'] }).strike, true);
+  assert.equal(checkChat('go die ethan', { names: ['Ethan'] }).strike, true);
+});
+
+// The game words are made from src/ by tools/game-words.mjs (build.sh runs it): the file the filter imports must be today's.
+test('online/src/gamewords.js is made from src/ as it is today (run ./build.sh after changing the game)', () => {
+  const words = gameWords();
+  assert.equal(fs.readFileSync(GAME_WORDS_FILE, 'utf8'), fileText(words), 'online/src/gamewords.js is out of date: run ./build.sh');
+  assert.ok(words.length > 2000, String(words.length));
+  for (const w of ['goblin', 'dragon', 'gnasher', 'boss', 'king', 'wolf', 'fang', 'golem', 'spider', 'dummy', 'thistledown', 'tobin']) assert.ok(words.includes(w), w);
+  // the self-tests' made-up knights are not words of the game
+  for (const w of ['sam', 'leo', 'zed', 'mudgoll']) assert.ok(!words.includes(w), w);
 });
 
 test('insults said at someone are a strike: after "you", to a knight or a person who ends the sentence, or as the whole line', () => {
@@ -299,12 +294,13 @@ test('insults said at someone are a strike: after "you", to a knight or a person
     'you idiot i had that': '*** ***** i had that', 'you are so dumb at this': '*** *** ** **** at this', 'you stupid noob': '*** ****** noob',
     'you dumb nerd': '*** **** nerd', 'you moron lol': '*** ***** lol', 'thank you idiot': 'thank *** *****', 'you idiot sam': '*** ***** sam',
     'you are a moron.': '*** *** * ******', 'you idiots': '*** ******', 'you gay noob': '*** *** ****',
-    'shut up sam': '**** ** sam', 'shut up big dummy': '**** ** big dummy', 'shut up noob': '**** ** noob', 'shut up you': '**** ** you', 'shut up sam!': '**** ** sam!',
-    'ok shut up sam, nobody asked': 'ok **** ** sam, nobody asked', 'hate you Sam': '**** *** Sam', 'i hate you sam': 'i **** *** sam', 'i hate you noob lol': 'i **** *** noob lol',
+    'shut up sam': '**** ** sam', 'shut up sir zorbo': '**** ** sir zorbo', 'shut up noob': '**** ** noob', 'shut up you': '**** ** you', 'shut up sam!': '**** ** sam!',
+    'ok shut up sam. nobody asked': 'ok **** ** sam. nobody asked', 'hate you Sam': '**** *** Sam', 'i hate you sam': 'i **** *** sam', 'i hate you noob lol': 'i **** *** noob lol',
     'go die': '** ***', 'go die noob': '** *** noob', 'go die sam': '** *** sam', 'just go die': '**** ** ***', 'go die in a hole': '** *** ** * ****',
     'pls go die': '*** ** ***', 'go die already': '** *** *******', 'go and die': '** *** ***', 'ok go die.': 'ok ** ****',
     'kill yourself': '**** ********', 'pls kill yourself': 'pls **** ********', 'kill yourself noob': '**** ******** noob', 'kys': '***',
-    'loser lol': '***** lol', 'idiot': '*****', 'MORON!': '******', 'loser': '*****',
+    'you idiot, sam': '*** ****** sam', 'go die, sam': '** **** sam', 'shut up, sam': '**** *** sam', 'you idiot; sam': '*** ****** sam', 'kill yourself, noob': '**** ********* noob',
+    'go die lol': '** *** lol', 'go die.': '** ****', 'lol go die': 'lol ** ***', 'you stupid, noob': '*** ******* noob',
     'you are gay': '*** *** ***', 'ur gay': '** ***', "that's gay": '****** ***', 'this game is so gay': 'this game is ** ***', 'thats gay lol': '***** *** lol',
     'gay': '***', 'GAY!': '****', 'gaaay': '*****', 'gaylord': '*******',
     'what the fuck': 'what the ****', 'fuck': '****', 'FUCK!': '*****', 'fuuuck': '******', 'shit': '****', '$hit happens': '**** happens', 'sh!t': '****',
@@ -314,14 +310,25 @@ test('insults said at someone are a strike: after "you", to a knight or a person
     'you jackass': '*** *******', 'you bastard': '*** *******', 'you pussy': '*** *****', 'u fag': '* ***',
   };
   for (const [s, text] of Object.entries(want)) assert.deepEqual(res(s), { text, masked: true, strike: true }, s);
+  // but more words after a comma or a full stop: help, not an insult (review round 4, finding 2)
+  for (const s of ['go die, it puts you back at town', 'go die. its faster than walking', 'go die, you respawn']) assert.equal(res(s).strike, false, s);
   assert.ok(Object.keys(want).length > 90);
   // a name only counts for a knight the world says is on line
   assert.equal(checkChat('shut up leo', { names: ['Sam'] }).strike, false);
   assert.equal(checkChat('shut up leo', { names: ['Leo'] }).strike, true);
 });
 
+// Review round 4, finding 8: a line that is only "idiot" or "loser" is often a kid talking about himself after a death. Starred
+// out, no strike, until the owner says otherwise (LINE_ALONE_STRIKE). A line that is only "gay" still is, but not as a question.
+test('a lone idiot, loser or moron is starred out and no strike; a lone "gay" is a strike, "gay?" is not', () => {
+  const want = { 'idiot': '*****', 'idiot!': '******', 'lol idiot': 'lol *****', 'lol loser': 'lol *****', 'loser': '*****', 'loser lol': '***** lol', 'MORON!': '******',
+    'loser!!!': '********', 'imbecile': '********', 'idiots': '******', 'gay?': '****', 'gay lol?': '*** lol?' };
+  for (const [s, text] of Object.entries(want)) assert.deepEqual(res(s), { text, masked: true, strike: false }, s);
+  for (const s of ['gay', 'GAY!', 'gay lol', 'gaaay']) assert.equal(res(s).strike, true, s);
+});
+
 test('a strike is always starred out: nothing that counts reaches another screen', () => {
-  const all = ['you idiot', 'go die', 'shut up sam', 'kys', 'f u c k', 'fuuuck', 'heil hitler', 'thats gay', 'loser lol', 'ok go die.', 'you are so dumb at this'];
+  const all = ['you idiot', 'go die', 'shut up sam', 'kys', 'f u c k', 'fuuuck', 'heil hitler', 'thats gay', 'gay lol', 'ok go die.', 'you are so dumb at this'];
   for (const s of all) { const r = res(s); assert.ok(r.strike && r.masked, s); }
   // and over every two-word line the lists can make, a strike is never left unmasked
   const words = [].concat(BLOCKED, INSULTS, SAID_ABOUT_YOU, YOU_ARE, YOU_OR_YOUR, AT_SOMEONE, SAID_TO_SOMEONE, LINE_ALONE, AIMED_AT, ['sam', 'goblin', 'lol', '.']);

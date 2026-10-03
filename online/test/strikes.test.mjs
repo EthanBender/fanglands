@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Room, WORD_WARN_1, WORD_WARN_2, WORDS_CODE, RENAMED_CODE, wordsText, renamedText } from '../src/room.js';
 import { MemoryStore, SqlStore, SCHEMA, migrate, WORD_STRIKE_FADE, WORD_LOCK_MS } from '../src/store.js';
 import { makeHash } from '../src/auth.js';
+import { GAME_TALK, GAME_NAMES } from './game-talk.mjs';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -47,9 +48,9 @@ test('a clean line is no strike; a starred-out line is, with the warning, then t
   assert.equal(WORD_WARN_2, "Last warning. Do it again and you'll be kept out for 24 hours.");
   assert.equal(sam.closed, null);
   // the third: the line goes out masked, then the error with the time it ends, then close 4006
-  w.say(sam, 'idiot');
+  w.say(sam, 'you idiot');
   const at = w.t;
-  assert.equal(ada.last('chat').text, '*****');
+  assert.equal(ada.last('chat').text, '*** *****');
   assert.deepEqual(sam.last('error'), { t: 'error', code: 'words', text: wordsText(at + WORD_LOCK_MS, at), until: at + WORD_LOCK_MS, n: 3 });
   assert.equal(wordsText(at + WORD_LOCK_MS, at), "You're kept out for 24 hours more for bad words.");
   assert.equal(sam.closed.code, WORDS_CODE); assert.equal(WORDS_CODE, 4006);
@@ -58,7 +59,7 @@ test('a clean line is no strike; a starred-out line is, with the warning, then t
   // one mod_log row per strike, by the word filter, with the line as it was typed (review round 3: the parent page has to be
   // able to tell whether a strike was fair); the chat log has only the masked lines
   assert.deepEqual(w.store.modLog(10).reverse().map(r => [r.by, r.act, r.target, r.detail]),
-    [['word filter', 'strike', 'Sam', '1: you are gay'], ['word filter', 'strike', 'Sam', '2: what the f u c k'], ['word filter', 'strike', 'Sam', '3, kept out 24 hours: idiot']]);
+    [['word filter', 'strike', 'Sam', '1: you are gay'], ['word filter', 'strike', 'Sam', '2: what the f u c k'], ['word filter', 'strike', 'Sam', '3, kept out 24 hours: you idiot']]);
   assert.ok(w.logged.every(l => !/gay|fuck|idiot|f u c k/i.test(l.text)));
   // Ada never had a strike
   assert.equal(w.store.wordStrikes('Ada', w.t).strikes, 0);
@@ -164,6 +165,39 @@ test('a kid saying coin counts, hidden words, mild words, monster taunts and sur
   w.say(cohen, 'shut up leo');
   assert.deepEqual(cohen.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
   assert.deepEqual(w.store.modLog(1).map(r => [r.act, r.target, r.detail]), [['strike', 'Cohen', '1: shut up leo']]);
+});
+
+// Review round 4 (by eye and play, iPad + laptop): with a knight named Goblin on line, Cohen's "you stupid goblin", "die you
+// dumb goblin" and "you ugly goblin" were strikes 1, 2 and 3, and he was kept out for 24 hours. "go die, it puts you back at
+// town" (dying puts a knight back at the respawn point) was a strike too, and so were "got you. stupid lol" and "idiot".
+test('round 4: knights named Goblin, Dragon, Boss, King and Wolf on line; game talk, help to "go die" and monster taunts are no strike', () => {
+  const w = world();
+  const names = ['Cohen', 'Leo', 'Goblin', 'Dragon', 'Boss', 'King', 'Wolf', 'Gnasher', 'Bro', 'Now'];
+  for (const n of names) w.store.addAccount(n);
+  const k = Object.fromEntries(names.map(n => [n, w.knight(n)]));
+  const said = [
+    'you stupid goblin', 'die you dumb goblin', 'you ugly goblin', 'you stupid dragon', 'shut up dragon', 'i hate you goblin', 'go die goblin', 'you fat king', 'shut up boss',
+    'go die, it puts you back at town', 'just go die, you respawn at the castle', 'stuck? just go die. you respawn', 'go die. its faster than walking', 'go die then',
+    'you stupid, ugly goblin', "you're so dumb, dragon", 'you idiot, gnasher', 'you ugly, fat troll', 'haha you dumb, slow spider',
+    'thank you. idiot i forgot my sword', 'got you. stupid lol', 'see you. loser lol', 'thank you. dumb!',
+    'idiot', 'idiot!', 'lol idiot', 'lol loser', 'loser', 'MORON!', 'gay?', 'lets assess the damage', 'read the annals',
+  ];
+  for (const t of said) w.say(k.Cohen, t);
+  assert.equal(k.Cohen.all('strike').length, 0); assert.equal(k.Cohen.closed, null);
+  assert.equal(w.store.wordStrikes('Cohen', w.t).strikes, 0);
+  // every line of the shared game-talk list, said by Cohen and by the knight named Goblin, with all of them on line
+  for (const t of GAME_TALK) { w.say(k.Cohen, t); w.say(k.Goblin, t); }
+  for (const n of names) { assert.equal(k[n].all('strike').length, 0, n); assert.equal(w.store.wordStrikes(n, w.t).strikes, 0, n); }
+  assert.equal(w.store.modLog(1000).filter(r => r.act === 'strike').length, 0);
+  assert.equal(w.room.isOnline('Cohen'), true);
+  // the other knights still see every line (starred where it has to be)
+  assert.equal(k.Leo.all('chat').filter(m => m.n === 'Cohen').length, said.length + GAME_TALK.length);
+  // a knight's own name is never "the person": Cohen saying his own name is no strike; Leo saying it at him is
+  w.say(k.Cohen, 'shut up cohen'); assert.equal(k.Cohen.all('strike').length, 0);
+  w.say(k.Leo, 'shut up cohen'); assert.deepEqual(k.Leo.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
+  // and an insult with a comma said to a knight whose name is nobody else's still counts
+  w.say(k.Cohen, 'you idiot, leo'); assert.deepEqual(k.Cohen.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
+  assert.ok(GAME_NAMES.includes('Goblin'));
 });
 
 test('a Room given an old-style filter (a string back) still filters and counts nothing', () => {

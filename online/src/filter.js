@@ -5,6 +5,7 @@
 // line is what gets logged for the parent to read at /admin.
 // No Cloudflare APIs here: the tests and tools/mmo-sim.js load this file in plain Node.
 // ============================================================================
+import { GAME_WORDS } from './gamewords.js';
 
 // Words nobody should see or type. One per line so a parent can edit the list without knowing any code.
 // Each is matched as a whole word, case does not matter, after look-alike digits and symbols are put back
@@ -133,19 +134,40 @@ export const GAY_SAID = ['thats gay', 'that is gay', 'its gay', 'it is gay', 'th
 // shut up" is somebody else talking.
 export const AT_SOMEONE = ['shut up', 'shutup', 'hate you', 'hate u', 'hate ya'];
 // Starred out as the whole line ("go die", "kill yourself", "go die in a hole") or before a person ("go die noob"); "kill
-// yourself" is starred out anywhere. A strike only as the whole sentence (one of AIM_BEFORE may come first, one of
-// AIM_AFTER after: "just go die", "go die already", "pls kill yourself") or before a person who ends the sentence ("go die
-// noob", "kill yourself sam"); never "dont go die", "lets go die to the dragon again", "can you kill yourself with a bomb".
+// yourself" is starred out anywhere. A strike only as the WHOLE LINE (one of AIM_BEFORE may come first, one of AIM_AFTER
+// or a laugh after: "go die", "just go die", "go die already", "pls kill yourself") or before a person who ends the line
+// ("go die noob", "kill yourself sam"). Never with more words after a comma or a full stop: dying puts a knight back at the
+// respawn point, so "go die, it puts you back at town" and "stuck? just go die. you respawn" are real help to a friend;
+// never "dont go die", "go die then", "lets go die to the dragon again", "can you kill yourself with a bomb".
 export const SAID_TO_SOMEONE = ['go die', 'go and die', 'go die in a hole', 'kill yourself', 'kill urself', 'kill ur self', 'kill your self'];
-export const AIM_BEFORE = ['just', 'pls', 'plz', 'please', 'ok', 'okay', 'now', 'so', 'then', 'and', 'yeah', 'well'];
-export const AIM_AFTER = ['already', 'now', 'pls', 'plz', 'please', 'then'];
-// A line that is only one of these (laughs aside: "loser lol") is said at someone, and is a strike.
+export const AIM_BEFORE = ['just', 'pls', 'plz', 'please', 'ok', 'okay', 'now', 'so', 'and', 'yeah', 'well'];
+export const AIM_AFTER = ['already', 'now', 'pls', 'plz', 'please'];
+// A line that is only one of these (laughs aside: "loser lol") is starred out: it is often said at someone, but a kid who
+// just died types "idiot" or "lol loser" about himself too, so only LINE_ALONE_STRIKE ("gay") is a strike as the whole
+// line, and never as a question ("gay?"). The owner decides whether the others should count.
 export const LINE_ALONE = ['gay', 'idiot', 'idiots', 'moron', 'morons', 'loser', 'losers', 'imbecile'];
+export const LINE_ALONE_STRIKE = ['gay'];
 // People: after AT_SOMEONE, SAID_TO_SOMEONE or YOU_OR_YOUR, these mean the words were aimed at someone (so does the name of
 // any knight on line, which the world passes in). For starring out.
 export const PEOPLE = ['you', 'u', 'ur', 'ya', 'noob', 'noobs', 'kid', 'dude', 'bro', 'nerd', 'loser', 'idiot', 'moron'];
 // The people that make it a strike: "dude" and "bro" are left off ("shut up dude, no way!" is a surprised shout).
 export const AIMED_AT = ['you', 'u', 'noob', 'noobs', 'nerd', 'nerds', 'loser', 'losers', 'idiot', 'idiots', 'moron', 'morons', 'baby', 'cheater'];
+// A knight's name makes it a strike only when the name could be nobody but that knight. Kids name knights Goblin, Dragon,
+// Gnasher, Boss, King or Wolf, and "you stupid goblin" is still a kid shouting at a monster. So for a strike a name does not
+// count when every word of it is a word the game itself says (GAME_WORDS: every monster, NPC, place and item, and every
+// word of its talk, made from src/ by tools/game-words.mjs) or one of these everyday words. Starring out still uses it.
+export const NOT_A_NAME = [
+  'now', 'then', 'bro', 'bruh', 'dude', 'boss', 'me', 'no', 'ok', 'okay', 'yes', 'yeah', 'yep', 'nope', 'man', 'guy', 'guys', 'mate',
+  'buddy', 'pal', 'kid', 'kids', 'boy', 'girl', 'mom', 'mum', 'dad', 'sis', 'everyone', 'everybody', 'all', 'team', 'there',
+  'here', 'again', 'today', 'too', 'this', 'that', 'it', 'him', 'her', 'them', 'us', 'we', 'they', 'he', 'she', 'please', 'pls', 'plz',
+  'sir', 'lord', 'lady', 'king', 'queen', 'prince', 'princess', 'knight', 'baby', 'pro', 'noob', 'dummy', 'game', 'lag', 'thing',
+  'troll', 'ogre', 'orc', 'zombie', 'skeleton', 'slime', 'bat', 'rat', 'monster', 'beast', 'mob', 'mobs', 'npc', 'bot', 'ghost', 'demon',
+  'giant', 'witch', 'wizard', 'dino', 'creeper', 'chicken', 'cow', 'pig', 'sheep', 'dog', 'cat', 'bear', 'snake', 'bug', 'ant', 'bee',
+  'fish', 'frog', 'duck', 'horse', 'dragon', 'goblin', 'wolf', 'spider', 'boar', 'golem', 'drake', 'fang', 'cheese', 'potato', 'rock',
+];
+// Real people the game's own text names (the title says "A game by Cohen"; the login card says "Ask Ethan"): they are words of
+// the game, but nobody shouts at a monster called Cohen, so a knight with one of these names still counts as a person.
+export const REAL_PEOPLE = ['cohen', 'ethan'];
 // After "you idiot" these still leave it said at someone ("you idiot i had that", "you are so dumb at this"); any other word
 // might be what the insult is about ("you stupid goblin" is a kid shouting at a monster), so it is no strike.
 export const AFTER_YOU = ['and', 'at', 'to', 'too', 'now', 'or', 'but', 'because', 'cuz', 'bc', 'i', 'im', 'ever', 'again', 'for', 'who', 'like', 'lol'];
@@ -190,6 +212,14 @@ const stretchOf = (f, w) => {
   const a = runs(f), b = runs(w);
   return a.length === b.length && a.every((n, i) => n >= b[i]);
 };
+// For a strike a held letter must be held for sure: three or more of it, more than the word has (fuuuck, asss, gaaay). Two of
+// a letter is how ordinary words are spelled: assess is not "asses", annals is not "anal", Shiite is not "shite", looser is
+// not "loser".
+const surelyStretched = (f, w) => {
+  if (f === w || !stretchOf(f, w)) return false;
+  const a = runs(f), b = runs(w);
+  return a.some((n, i) => n >= 3 && n > b[i]);
+};
 // A number, with or without a unit or a sign: 455, 8008, 7175, 4:55, 1,000, 455k, 8008g, 50xp, x2, #3, $455, 3rd, 45%.
 // Its digits are never read as letters.
 const NUMBER = /^[#$x×+\-~]?\d[\d.,:/%+\-]*(k|m|b|g|gp|gold|coins?|xp|hp|mp|dmg|x|s|st|nd|rd|th|lvl|lv|am|pm|min|mins|sec|secs|s|h|hr|hrs|d|kg|lb|lbs|ft|km)?$/i;
@@ -221,7 +251,12 @@ const ABOUT_SURE = split(YOU_ARE), ABOUT_MAYBE = split(YOU_OR_YOUR), BETWEEN_W =
 const ABOUT_W = SAID_ABOUT_YOU.map(prep), AT_W = split(AT_SOMEONE), GAY_W = split(GAY_SAID);
 const ALONE_W = LINE_ALONE.map(prep), PEOPLE_W = PEOPLE.map(prep), LAUGH_W = LAUGHS.map(prep), NAME_W = new Set(NAME_INSULTS.map(prep));
 const AIMED_W = AIMED_AT.map(prep), AFTER_YOU_W = AFTER_YOU.map(prep), ASKING_W = ASKING.map(prep), REPORTED_W = REPORTED.map(prep);
-const BEFORE_W = AIM_BEFORE.map(prep), TRAIL_W = AIM_AFTER.map(prep);
+const BEFORE_W = AIM_BEFORE.map(prep), TRAIL_W = AIM_AFTER.map(prep), ALONE_STRIKE_W = LINE_ALONE_STRIKE.map(prep);
+// the words a knight's name may not be made of alone, for a strike (NOT_A_NAME); REAL_PEOPLE are taken back out
+const PLAIN = new Set(GAME_WORDS.split(' ').concat(NOT_A_NAME.map(prep)));
+for (const w of REAL_PEOPLE) PLAIN.delete(prep(w));
+// a knight's name (its words) that can be nobody but that knight: some word of it is not a word of the game or of every day
+const sureName = ws => ws.some(w => !PLAIN.has(w));
 
 // Every reading of one token for starring out: as typed, with edge punctuation dropped (fuck! -> fuck), both digit
 // readings, and without a trailing s. All lower case. A number is read only as itself.
@@ -248,11 +283,12 @@ function sureForms(tok) {
     const n = x.toLowerCase().replace(/[@$!|+]/g, c => sw[c]);
     if (!/^[a-z]+$/.test(n)) continue;
     out.add(n);
-    if (n.length > 3 && n.endsWith('s')) out.add(n.slice(0, -1));
+    // a plural, but never a word that ends in "ss" (assess is not "asses")
+    if (n.length > 3 && n.endsWith('s') && !n.endsWith('ss')) out.add(n.slice(0, -1));
   }
   return out;
 }
-const stretchedIn = (f, set) => { if (!stretched(f)) return false; for (const w of SQUEEZED.get(squeeze(f)) || []) if ((!set || set.has(w)) && stretchOf(f, w)) return true; return false; };
+const stretchedIn = (f, set) => { if (!stretched(f)) return false; for (const w of SQUEEZED.get(squeeze(f)) || []) if ((!set || set.has(w)) && (set ? surelyStretched(f, w) : stretchOf(f, w))) return true; return false; };
 function formBad(f) {
   if (WORDS.has(f) || stretchedIn(f)) return true;
   for (const w of INSIDE) if (f.includes(w)) return true;
@@ -267,7 +303,7 @@ export function isBadWord(tok) {
 const isSureWord = tok => { for (const f of sureForms(tok)) if (formSure(f)) return true; return false; };
 
 // One token says this word of a phrase: as typed, or stretched (so gaaay, ur -> urrr). key: 'forms' to star out, 'sforms' to strike.
-const saysWord = (t, w, key) => { const fs = t[key || 'forms']; if (fs.has(w)) return true; for (const f of fs) if (stretched(f) && stretchOf(f, w)) return true; return false; };
+const saysWord = (t, w, key) => { const fs = t[key || 'forms']; if (fs.has(w)) return true; for (const f of fs) if (stretched(f) && (key === 'sforms' ? surelyStretched(f, w) : stretchOf(f, w))) return true; return false; };
 // toks[i...] says these words, one token each: the index just after them, or -1
 const saysAt = (toks, i, words, key) => {
   if (i < 0 || i + words.length > toks.length) return -1;
@@ -292,28 +328,35 @@ const aimed = (toks, i, k, names) => wholeLine(toks, i, k) || saysOne(toks[k], P
 
 // ---------- what is sure enough to be a strike ----------
 const S = 'sforms';   // the token's sure readings (sureForms)
+// For a strike only . ! and ? end a sentence. A comma or a semicolon does not: "you stupid, ugly goblin" is one taunt at a
+// monster, and "you idiot, sam" is still said to Sam.
+const endsStrict = t => /[.!?]["')\]]*$/.test(t.text);
 // the first token of the sentence toks[i] is in
-const sentenceStart = (toks, i) => { let j = i - 1; while (j >= 0 && !endsSentence(toks[j])) j--; return j + 1; };
+const sentenceStart = (toks, i) => { let j = i - 1; while (j >= 0 && !endsStrict(toks[j])) j--; return j + 1; };
 // somebody else's words: "said", "told" and the like earlier in the same sentence
 const reported = (toks, i) => { for (let j = sentenceStart(toks, i); j < i; j++) if (saysOne(toks[j], REPORTED_W, S)) return true; return false; };
 // the sentence ends after toks[k-1], laughs allowed in between ("ur dumb lol", "shut up sam haha.")
 const endsAfter = (toks, k) => {
-  if (k >= toks.length || endsSentence(toks[k - 1])) return true;
-  for (let j = k; j < toks.length && saysOne(toks[j], LAUGH_W, S); j++) if (j === toks.length - 1 || endsSentence(toks[j])) return true;
+  if (k >= toks.length || endsStrict(toks[k - 1])) return true;
+  for (let j = k; j < toks.length && saysOne(toks[j], LAUGH_W, S); j++) if (j === toks.length - 1 || endsStrict(toks[j])) return true;
   return false;
 };
-// a knight on line or one of AIMED_AT at toks[k], and the sentence ends with it: the index after it, or -1
-const personEnd = (toks, k, names) => {
-  if (k >= toks.length || endsSentence(toks[k - 1])) return -1;
-  let e = saysOne(toks[k], AIMED_W, S) ? k + 1 : nameEnd(toks, k, names, S);
+// a knight on line or one of AIMED_AT at toks[k], and the sentence ends with it: the index after it, or -1.
+// snames: only the names that can be nobody but that knight (sureName)
+const personEnd = (toks, k, snames) => {
+  if (k >= toks.length || endsStrict(toks[k - 1])) return -1;
+  let e = saysOne(toks[k], AIMED_W, S) ? k + 1 : nameEnd(toks, k, snames, S);
   return e > k && endsAfter(toks, e) ? e : -1;
 };
+// the line asks something: a question is no strike ("gay?", "are you stupid?")
+const asks = toks => toks.some(t => /\?/.test(t.text));
 
 // Marks which whitespace-separated tokens of s are bad (to be starred out) and which are sure (a strike): on their own,
 // as a phrase, or as letters spaced out. opts.names: the knights on line (a name after "shut up" or "go die" means it was
 // said to someone); opts.name: s is a knight's name, where NAME_INSULTS count anywhere. Every sure token is also bad.
 function markBad(s, opts) {
   const names = ((opts && opts.names) || []).map(n => prep(n)).filter(Boolean).map(n => n.split(' '));
+  const snames = names.filter(sureName);
   const inName = !!(opts && opts.name);
   const toks = [];
   const re = /\S+/g; let m;
@@ -345,25 +388,28 @@ function markBad(s, opts) {
         const w = saysAt(toks, js, mid, S); if (w < 0 || w >= toks.length || !saysOne(toks[w], ABOUT_W, S)) continue;
         if (!oneSentence(toks, i, w + 1)) continue;
         const k = w + 1;
-        const after = endsAfter(toks, k) || personEnd(toks, k, names) > 0 || (sure && (saysOne(toks[k], AIMED_W, S) || nameEnd(toks, k, names, S) > k || saysOne(toks[k], AFTER_YOU_W, S)));
+        const after = endsAfter(toks, k) || personEnd(toks, k, snames) > 0 || (sure && (saysOne(toks[k], AIMED_W, S) || nameEnd(toks, k, snames, S) > k || saysOne(toks[k], AFTER_YOU_W, S)));
         if (after) strike(i, k);
       }
     }
     for (const words of AT_W) {
       const k = saysAt(toks, i, words); if (k > 0 && (endsHere(toks, k, names) || wholeLine(toks, i, k))) mark(i, k);
-      const ks = saysAt(toks, i, words, S); if (ks > 0 && !reported(toks, i) && personEnd(toks, ks, names) > 0) strike(i, ks);
+      const ks = saysAt(toks, i, words, S); if (ks > 0 && !reported(toks, i) && personEnd(toks, ks, snames) > 0) strike(i, ks);
     }
     for (const words of TO_W) {
       const k = saysAt(toks, i, words); if (k > 0 && aimed(toks, i, k, names)) mark(i, k);
       const ks = saysAt(toks, i, words, S); if (ks < 0 || reported(toks, i)) continue;
-      // the whole sentence ("just go die", "go die already."), or said to a person who ends it ("go die noob")
-      let st = sentenceStart(toks, i), from = i; while (from > st && saysOne(toks[from - 1], BEFORE_W.concat(LAUGH_W), S)) from--;
-      let e = ks; while (e < toks.length && !endsSentence(toks[e - 1]) && saysOne(toks[e], TRAIL_W.concat(LAUGH_W), S)) e++;
-      if ((from === st && endsAfter(toks, e)) || personEnd(toks, ks, names) > 0) strike(i, ks);
+      // the whole line ("go die", "just go die", "go die already.", "go die lol"), or said to a person who ends the line ("go
+      // die noob"); never with more words after it ("go die, it puts you back at town", "go die. its faster than walking")
+      let from = i; while (from > 0 && saysOne(toks[from - 1], BEFORE_W.concat(LAUGH_W), S)) from--;
+      let e = ks; while (e < toks.length && saysOne(toks[e], TRAIL_W.concat(LAUGH_W), S)) e++;
+      const pe = personEnd(toks, ks, snames);
+      if ((from === 0 && e === toks.length) || (pe > 0 && laughOnly(toks, pe, toks.length))) strike(i, ks);
     }
     for (const words of GAY_W) { const ks = saysAt(toks, i, words, S); if (ks > 0 && !reported(toks, i) && endsAfter(toks, ks)) strike(i, ks); }
-    // a line that is only "gay" (gay! gaaay g4y) or only "loser" (laughs aside) is said at someone
-    if (wholeLine(toks, i, i + 1) && saysOne(toks[i], ALONE_W)) { mark(i, i + 1); if (saysOne(toks[i], ALONE_W, S)) strike(i, i + 1); }
+    // a line that is only "gay" (gay! gaaay g4y) or only "loser" (laughs aside) is starred out; only "gay" is a strike, and
+    // not as a question ("gay?")
+    if (wholeLine(toks, i, i + 1) && saysOne(toks[i], ALONE_W)) { mark(i, i + 1); if (saysOne(toks[i], ALONE_STRIKE_W, S) && !asks(toks)) strike(i, i + 1); }
   }
   // f u c k: three or more single letters in a row read as one word (a strike only when they are all letters)
   for (let i = 0; i < toks.length; i++) {

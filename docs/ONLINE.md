@@ -890,7 +890,12 @@ insults count as well as swear words, including "gay" used as an insult. All of 
 
 `checkChat(text, {names})` answers `{text, masked, strike}`: the line with bad words starred out, whether any word had to
 be, and whether one of them was **surely a bad word said as a bad word**. Only `strike: true` is a strike; starring out
-alone counts nothing. `names` are the knights on line (the Room passes them), so "shut up sam" is known to be said to Sam.
+alone counts nothing. `names` are the other knights on line (the Room passes them, never the speaker's own name), so "shut
+up sam" is known to be said to Sam. For a strike a name counts only when it can be nobody but that knight: when every word of
+it is a word the game says (`GAME_WORDS` in `online/src/gamewords.js`, made from every string in `src/` outside the
+self-tests by `tools/game-words.mjs`, which `build.sh` runs) or one of `NOT_A_NAME` (now, bro, dude, boss, troll, ...), it
+does not count, so a knight named Goblin, Dragon, Boss, King or Wolf never turns "you stupid goblin" into a strike.
+`REAL_PEOPLE` (cohen, ethan: the game's text names them) still count. Starring out uses every name.
 
 The most important rule (owner, 2026-10-03): a kid is never warned, struck or kept out for something that is not clearly a
 bad word aimed as a bad word. Starring a word out is harmless, so masking is generous; a strike is 24 hours out after
@@ -901,6 +906,8 @@ three, so it needs a sure match:
 - **A bad word hidden inside an ordinary word is never a strike** (booboo, swanky, pussycat, fire retardant, Montenegro,
   Scunthorpe): `BLOCKED_INSIDE` stars them out, nothing more. A strike is a whole word, as typed or held longer (fuuuck,
   asss; never shorter: "Bobb" is not "boob", "kk" is not "kkk"), with symbols read as letters ($hit, sh!t) but never digits.
+  Held longer means three or more of a letter: two is how ordinary words are spelled (assess, annals, Shiite, looser), and a
+  word that ends in "ss" is never read as a plural.
 - **`MASK_ONLY`**: words that are starred out but are never a strike on their own, because they are mild or a kid has an
   everyday reason to type them in a knight game: damn, crap, wtf, lmfao, badass, a bastard sword, a chink in his armour,
   the cock crowed, a blue tit, a suicide mission, sexy armour, "i thot so", naked, nazi, hitler and the like. Some of them
@@ -914,16 +921,22 @@ three, so it needs a sure match:
   word after it might be what it is about, so "you stupid goblin" (a kid shouting at a monster) is starred out and no
   strike. After `YOU_OR_YOUR` (ur, your, ya: "you're" or "your") only the end of the line or sentence, a laugh or a person
   counts ("ur dumb", "see ya loser"; never "ur dumb sword is cool").
-- **Sentences**: a "you" that ends one sentence never joins the next ("thank you. stupid lag"). A question is no strike
+- **Sentences**: for a strike only `.`, `!` and `?` end a sentence; a comma or a semicolon does not ("you stupid, ugly
+  goblin" is no strike, "you idiot, sam" is). A "you" that ends one sentence never joins the next ("thank you. stupid lag",
+  "got you. stupid lol"). A question is no strike
   (`ASKING`: "are you stupid?"), nor is somebody else's speech (`REPORTED` earlier in the sentence: "my mom said shut up",
   "he told me to go die").
 - `AT_SOMEONE` ("shut up", "hate you") is a strike only before a knight on line or one of `AIMED_AT` that ends the sentence
   ("shut up sam", "shut up noob", "i hate you sam"). "shut up!" on its own is also a surprised "no way!", and "i hate you"
   is said to bosses: those are starred out, no strike.
-- `SAID_TO_SOMEONE` ("go die", "go and die", "go die in a hole", "kill yourself") is a strike as the whole sentence (with
-  `AIM_BEFORE` / `AIM_AFTER` around it: "just go die", "go die already", "pls kill yourself") or before a person who ends the
-  sentence ("go die noob"); never "lets go die to the dragon again", "go die goblin", "can you kill yourself with a bomb".
-- `LINE_ALONE` (gay, idiot, loser, moron): a line that is only that word (laughs aside: "loser lol") is a strike.
+- `SAID_TO_SOMEONE` ("go die", "go and die", "go die in a hole", "kill yourself") is a strike as the whole line (with
+  `AIM_BEFORE` / `AIM_AFTER` or a laugh around it: "just go die", "go die already", "pls kill yourself") or before a person
+  who ends the line ("go die noob"); never with more words after a comma or a full stop (dying puts a knight back at the
+  respawn point, so "go die, it puts you back at town" is help), never "go die then", "lets go die to the dragon again",
+  "go die goblin", "can you kill yourself with a bomb".
+- `LINE_ALONE` (gay, idiot, loser, moron): a line that is only that word (laughs aside: "loser lol") is starred out. Only
+  `LINE_ALONE_STRIKE` ("gay") is a strike that way, and never as a question ("gay?"): a kid types "idiot" or "lol loser"
+  about himself after a death. The owner decides whether the others should count.
 - "gay": `GAY_INSULTS` ("that's gay", "so gay", "gay boy", ...) are all starred out; `GAY_SAID` ("thats gay", "this is
   gay", "so gay", ...) is a strike only when it ends the line or the sentence ("this game is so gay"), never "it's gay
   pride week". "Sam is gay" reads the same as "my uncle is gay" to a word list, so "is gay" is left off on purpose.
@@ -933,8 +946,10 @@ three, so it needs a sure match:
 
 The tests hold the rule: `filter.test.mjs` says every number from 0 to 99,999 (and with units), more than 200 lines of
 ordinary game talk, and every string in the game's own source (every NPC, place, item, quest and line of talk, whole and
-word by word), and none of it is a strike; a list of real insults all are; a strike is always starred out.
-`strikes.test.mjs` says coin counts, hidden words, mild words, monster taunts and surprised shouts in a real Room.
+word by word), and none of it is a strike, also with knights named Goblin, Dragon, Boss, King, Wolf, Bro, Dude and Now on
+line; a list of real insults all are; a strike is always starred out; `gamewords.js` is today's. The game-talk list is
+`online/test/game-talk.mjs`, shared with `strikes.test.mjs`, which says coin counts, hidden words, mild words, monster
+taunts, surprised shouts and every game-talk line in a real Room with those knights on line.
 
 Every list is plain lower-case words, one place to edit; **the owner decides the final lists**. `cleanChat` still answers
 the masked line alone.

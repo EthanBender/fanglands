@@ -392,8 +392,9 @@ export class Room {
     const now = this.now();
     if (acc && acc.mutedUntil > now) return this.send(k.sock, { t: 'muted', left: leftOf(acc.mutedUntil, now) });
     if (acc) this.syncRole(k, acc.role);
-    // the knights on line go with it, so "shut up sam" is known to be said to Sam (filter.js, AT_SOMEONE)
-    const { text, strike } = this.check(typeof m.text === 'string' ? m.text : '', { names: Array.from(this.byName.values(), o => o.name) });
+    // the other knights on line go with it, so "shut up sam" is known to be said to Sam (filter.js, AT_SOMEONE); never the
+    // speaker's own name: nobody says an insult to himself by name, and his name may be a monster's ("you stupid goblin")
+    const { text, strike } = this.check(typeof m.text === 'string' ? m.text : '', { names: Array.from(this.byName.values()).filter(o => o !== k).map(o => o.name) });
     if (!text) return;
     const at = now;
     this.log(k.name, text, at);

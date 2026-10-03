@@ -1,6 +1,8 @@
 #!/bin/sh
 # Builds index.html from src/page.html + src/*.js (in name order). No dependencies beyond node for the syntax check.
 cd "$(dirname "$0")"
+# the game's own words for the word filter (online/src/gamewords.js): a knight named Goblin is never "the person" in "you stupid goblin"
+node tools/game-words.mjs || exit 1
 {
   sed -n '1,/<!-- SCRIPTS -->/p' src/page.html | sed '$d'
   echo '<script>'
