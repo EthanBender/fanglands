@@ -12,7 +12,7 @@
 //   - a browser with nothing to hand over goes straight to the same path on fanglands.com.
 //   - a browser with Fanglands keys offers them to the world, bound to a pull (a secret both of this browser's
 //     addresses keep), and goes to fanglands.com/handoff#land=<code>. That landing page claims the code WITH the pull,
-//     merges what is missing (handoff-merge.js), takes the code off the address and history, and goes on to the same
+//     merges what is missing (handoff-merge.js, carried as text), takes the code off the address and history, and goes on to the same
 //     path: the game, /admin, any page. The game page is loaded and parsed once.
 //   - the first time, the pull is fetched from fanglands.com (/handoff#back=...), then both addresses keep it, so later
 //     visits skip those two hops.
@@ -27,7 +27,7 @@
 
 import { json, oops } from './http.js';
 import { randomHex, sameString } from './auth.js';
-import { handoffMerge } from './handoff-merge.js';
+import { MERGE_SOURCE } from './handoff-merge.js';
 
 // where each old address hands over to (the test world mirrors the live one), and the old addresses each new one takes
 export const MOVES = { 'gorkscape.ca': 'fanglands.com', 'www.gorkscape.ca': 'fanglands.com', 'test.gorkscape.ca': 'test.fanglands.com' };
@@ -271,7 +271,7 @@ export function landingPage(host, head) {
   const olds = OLDS[host] || [];
   const script = `(function () {
   var OLDS = ${JSON.stringify(olds)}, PULL_KEY = ${JSON.stringify(PULL_KEY)}, PULL_LIFE = ${PULL_MS}, ARRIVING = ${JSON.stringify(ARRIVING_KEY)};
-  var merge = ${handoffMerge.toString()};
+  var merge = ${MERGE_SOURCE};
   ${CARD_JS}
   var h = location.hash || '';
   try { history.replaceState(null, '', location.pathname); } catch (e) { }

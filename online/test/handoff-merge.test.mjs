@@ -1,10 +1,11 @@
 // Two addresses (docs/ONLINE.md, "Two addresses"): what a browser arriving on fanglands.com writes from what its old
-// address offered (online/src/handoff-merge.js). The landing page runs this very function (its source), so every rule
+// address offered (online/src/handoff-merge.js). The landing page runs this very function (its source, kept as text), so every rule
 // is proved here directly, and once more through the page in handoff.test.mjs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { handoffMerge as merge } from '../src/handoff-merge.js';
+import { MERGE_SOURCE } from '../src/handoff-merge.js';
+const merge = new Function('return (' + MERGE_SOURCE + ')')();
 
 const NOW = 1000000;
 const mem = init => { const s = Object.assign({}, init); return { s, get: k => (k in s ? s[k] : null), set: (k, v) => { s[k] = String(v); }, del: k => { delete s[k]; }, keys: () => Object.keys(s) }; };
@@ -137,11 +138,11 @@ test('merge: the knights already brought into an account are joined from both li
 });
 
 test('merge: the function is self-contained (the landing page carries its source), and its rule for "other keys" is the game\'s', () => {
-  const fn = new Function('return (' + merge.toString() + ')')();
+  const fn = new Function('"use strict"; return (' + MERGE_SOURCE + ')')();
   const a = mem();
   fn(OLD, a, NOW, 'gorkscape.ca');
   assert.equal(a.s['fanglands.slot.2'], '{"b":2}');
   const game = readFileSync(new URL('../../src/00-handoff.js', import.meta.url), 'utf8');
   const rule = s => /const isOther = (k => [^\n]*);/.exec(s)[1];
-  assert.equal(rule(game), rule(merge.toString()));
+  assert.equal(rule(game), rule(MERGE_SOURCE));
 });

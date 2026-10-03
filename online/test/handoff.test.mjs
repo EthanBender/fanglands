@@ -760,3 +760,27 @@ test('the whole hop against a real world: logged in (first visit and later), log
   assert.equal(c.store['fanglands.slot.4'], dev['fanglands.slot.2']);
   assert.ok(JSON.parse(c.store['fanglands.handoff.seen'])['www.gorkscape.ca|slot.2']);
 });
+
+// The landing page as the Worker ships it: wrangler bundles with esbuild and keep_names, which rewrites functions (the
+// round-3 test world showed a claim that landed and wrote nothing, because the page's merge called a __name it did
+// not have). Built here the same way when wrangler's esbuild is on this computer.
+test('landing page, as wrangler bundles it (esbuild, keep_names): the claim still writes what is missing', async t => {
+  const { existsSync, mkdtempSync, writeFileSync } = await import('node:fs');
+  const { createRequire } = await import('node:module');
+  const os = await import('node:os'), pathM = await import('node:path');
+  const where = ['/opt/homebrew/lib/node_modules/wrangler/node_modules/esbuild', '/usr/local/lib/node_modules/wrangler/node_modules/esbuild'].find(p => existsSync(p));
+  if (!where) { t.skip('no wrangler esbuild on this computer'); return; }
+  const esbuild = createRequire(import.meta.url)(where);
+  const out = await esbuild.build({ entryPoints: [new URL('../src/handoff.js', import.meta.url).pathname], bundle: true, format: 'esm', keepNames: true, write: false, platform: 'neutral' });
+  const dir = mkdtempSync(pathM.join(os.tmpdir(), 'fl-bundle-')), file = pathM.join(dir, 'handoff.bundle.mjs');
+  writeFileSync(file, out.outputFiles[0].text);
+  assert.match(out.outputFiles[0].text, /__name\(/, 'the bundle really rewrites functions');
+  const bundled = await import(file);
+  const offered = { 'fanglands.session': 'a'.repeat(64), 'fanglands.slot.2': '{"player":{"level":7}}', 'fanglands.settings': '{"kid":true}' };
+  const r = await runPage(bundled.landingPage('fanglands.com'), {
+    at: 'https://fanglands.com/handoff#land=' + CODE + '&to=%2F&from=gorkscape.ca', store: { [PULL_KEY]: FRESH() },
+    answer: () => ({ status: 200, json: { keys: offered, from: 'gorkscape.ca' } }),
+  });
+  assert.deepEqual(r.nav, ['/']);
+  for (const k of Object.keys(offered)) assert.equal(r.store[k], offered[k], k);
+});

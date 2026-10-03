@@ -2,8 +2,12 @@
 // THE HAND-OVER MERGE — what a browser arriving on fanglands.com writes from what its old address offered
 // docs/ONLINE.md, "Two addresses". The landing page on the new address (handoff.js landingPage) claims the code and runs
 // this function in the browser, before the game (or /admin, or any page) loads, so the game boots once with everything
-// in place. The page carries this function's own source (handoffMerge.toString()), so it must stay self-contained: no
-// names from outside it, nothing but the arguments. online/test/handoff-merge.test.mjs runs every rule here directly.
+// in place. The page carries this function's source as text (MERGE_SOURCE, below), so it must stay self-contained: no
+// names from outside it, nothing but the arguments. It is kept as text, not as a function, because the bundler that
+// ships the Worker rewrites functions (wrangler's keep_names adds __name(...) calls the page does not have; the round-3
+// test world showed a claim that landed and wrote nothing): a string reaches the page exactly as written here.
+// The Worker never runs it (Workers allow no eval); online/test/handoff-merge.test.mjs makes it a function and runs
+// every rule, and handoff.test.mjs runs the landing page as the bundler ships it.
 //
 // keys: {name: string} as the old address offered them; ls: {get, set, del, keys}; now: ms; from: the old address the
 // offer was made on ('gorkscape.ca', 'www.gorkscape.ca', ...), which the world says, not the page.
@@ -28,7 +32,7 @@
 //   - A stamp (.at) from the future is brought back to now.
 // ============================================================================
 
-export function handoffMerge(keys, ls, now, from) {
+export const MERGE_SOURCE = String.raw`function handoffMerge(keys, ls, now, from) {
   const SEEN_KEY = 'fanglands.handoff.seen', BOOT_KEY = 'fanglands.handoff.boot';
   const TOKEN = 'fanglands.session', NAME = 'fanglands.lastname', MARK = 'fanglands.slot.1.online', BROUGHT = 'fanglands.brought';
   const KEY_RE = /^(fanglands\.|fl_)[A-Za-z0-9_.:-]{1,160}$/;
@@ -118,4 +122,4 @@ export function handoffMerge(keys, ls, now, from) {
   ls.set(SEEN_KEY, JSON.stringify(seen));
   ls.set(BOOT_KEY, JSON.stringify(boot));
   return { wrote, kept, moved, left, replaced };
-}
+}`;
