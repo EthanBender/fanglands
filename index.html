@@ -34170,7 +34170,9 @@ window.RETALIATE = RETALIATE;
   };
   LOGIN.hide = hide;
   LOGIN.playAs = () => { if (LOGIN.mode !== 'me' || LOGIN.keptOutUntil()) return false; afterLogin(); return true; };
-  LOGIN.notMe = () => { when(api('POST', '/api/logout'), noop, noop); NET.setToken(null); LOGIN.name = null; LOGIN.mode = 'form'; LOGIN.error = ''; refresh(); };
+  // a different knight may log in next on this device: the chat of this one (its lines, its warnings) is forgotten (74-chat)
+  const forgetChat = () => { if (window.CHAT && CHAT.forget) CHAT.forget(); };
+  LOGIN.notMe = () => { when(api('POST', '/api/logout'), noop, noop); NET.setToken(null); LOGIN.name = null; LOGIN.mode = 'form'; LOGIN.error = ''; forgetChat(); refresh(); };
   LOGIN.playAlone = () => { LOGIN.alone = true; hide(); title.refresh(); };
   LOGIN.backOnline = () => { LOGIN.alone = false; LOGIN.show(); };
   LOGIN.logout = () => {
@@ -34178,7 +34180,7 @@ window.RETALIATE = RETALIATE;
     save();
     const finish = () => {
       when(api('POST', '/api/logout'), noop, noop);
-      NET.disconnect(); NET.setToken(null); LOGIN.name = null; LOGIN.playing = false;
+      NET.disconnect(); NET.setToken(null); LOGIN.name = null; LOGIN.playing = false; forgetChat();
       title.open();
     };
     // the last push goes first, but a hung PUT must not hold the knight on the pause menu
@@ -35362,8 +35364,26 @@ window.RETALIATE = RETALIATE;
     notify(text);
   });
   NET.on('unmuted', () => { mutedUntil = 0; system('An admin turned your chat back on.', MUTE_RED); notify('An admin turned your chat back on.'); });
+  // ---------- a different knight on this device: nothing of the last one's chat stays ----------
+  // A brother or sister taps Not me (or Log out) and logs in on the same iPad: the first knight's lines, its warnings ("Last
+  // warning.") and its mute must not show in the new knight's strip and log, where they read as said to them. Not me and Log
+  // out call CHAT.forget (71-login); a welcome for a different name than the last does it too. Other files clear what they
+  // show for the old knight through CHAT.onForget (79-strikes: a strike notice and the LAST WARNING banner).
+  let knight = null;            // the name the log belongs to (null: nobody yet, or forgotten)
+  const forgetters = [];
+  function forget() {
+    log.length = 0; for (const n in bubbles) delete bubbles[n];
+    mutedUntil = 0; lastLineAt = -1e9; knight = null;
+    if (isOpen) close();
+    for (const f of forgetters) { try { f(); } catch (e) { console.error('chat forget', e); } }
+  }
   // a new session starts unmuted; the world follows its welcome with a muted if the knight still is
-  NET.on('welcome', () => { mutedUntil = 0; lastLineAt = -1e9; });
+  NET.on('welcome', m => {
+    const who = m && typeof m.me === 'string' ? m.me : null;
+    if (who && knight !== null && who !== knight) forget();
+    if (who) knight = who;
+    mutedUntil = 0; lastLineAt = -1e9;
+  });
 
   // ---------- keys, timers ----------
   HOOKS.update.push(dt => {
@@ -35490,6 +35510,9 @@ window.RETALIATE = RETALIATE;
 
   window.CHAT = {
     open, close, send, system, isOpen: () => isOpen, bubbles, log, PHRASES, MAX, stripLines, CSS, drawBubble, bubbleLines,
+    // a different knight on this device (Not me, Log out): empty the log and bubbles; onForget(fn) runs fn then too.
+    // sameKnight(name): the knight was renamed by an admin, so the welcome as the new name is still the same knight.
+    forget, onForget: fn => { if (typeof fn === 'function') forgetters.push(fn); }, sameKnight: name => { if (typeof name === 'string' && name) knight = name; }, knight: () => knight,
     // seconds of mute left: 0 when the chat is on, -1 until an admin turns it back on
     muted: () => mutedUntil === Infinity ? -1 : isMuted() ? Math.ceil((mutedUntil - nowMs()) / 1000) : 0,
   };
@@ -40398,11 +40421,13 @@ window.RETALIATE = RETALIATE;
 
   // ---------- A. the knight ----------
   // A warning stays up a little longer than an ordinary notice: it is the one a kid has to read.
+  let said = null;   // the notice say() put up last: a different knight on this device must not read it
   function say(text, color) {
     // the chat strip cuts a long line, so each sentence is a line of its own (74-chat does the same for being muted).
     // A lookahead only: iPadOS 16.3 and older refuse a regex that looks behind, and with it the whole game script.
     if (window.CHAT && CHAT.system) for (const part of text.replace(/\. (?=[A-Z])/g, '.\n').split('\n')) CHAT.system(part, color);
     notify(text); if (notice) notice.t = 6;
+    said = notice;
   }
   // The last warning is the one message between a kid and 24 hours out, so it is also the big centre banner (the size a
   // level-up is said in), not only the small ribbon a kid misses mid-fight on an iPad.
@@ -40413,11 +40438,22 @@ window.RETALIATE = RETALIATE;
     say(text, RED); sfx('open');
     if (m.n >= 2) levelBanner = Object.assign({}, LAST);
   });
+  // Not me, Log out, or a welcome as a different knight (74-chat): this knight's warning notice and LAST WARNING banner go
+  // with its chat, on screen and waiting in the banner queue alike
+  if (window.CHAT && CHAT.onForget) CHAT.onForget(() => {
+    if (notice && notice === said) notice = null;
+    said = null;
+    if (levelBanner && levelBanner.text === LAST.text) levelBanner = null;
+    bannerQueue = bannerQueue.filter(b => !b || b.text !== LAST.text);
+    S.msg = null;
+  });
   NET.on('error', m => {
     if (!m || m.code !== 'renamed' || typeof m.name !== 'string' || !NAME_RE.test(tidy(m.name)) || tidy(m.name).length > 16) return;
     const name = tidy(m.name);
     lsSet(NAME_KEY, name);
     if (window.LOGIN) LOGIN.name = name;
+    // the same knight comes back under its new name: its chat stays
+    if (window.CHAT && CHAT.sameKnight) CHAT.sameKnight(name);
     say(`An admin changed your knight's name to ${name}.`, GOLD);
   });
 
@@ -40616,6 +40652,26 @@ window.RETALIATE = RETALIATE;
         // the last warning is the big centre banner as well
         const big = noBig && !!levelBanner && levelBanner.text === 'LAST WARNING' && levelBanner.sub === 'Do it again: kept out 24 hours' && levelBanner.t >= 6; clearBanners();
         check(P + 'a strike is said to the knight in plain words, in red in the chat log (a line a sentence, so the strip never cuts it) and as a notice that stays up: the first "' + WARN[1] + '", the second "' + WARN[2] + '", which is also the big centre banner LAST WARNING', one && red1 && two && big && WARN[1] === "That word isn't allowed here. This is your warning." && WARN[2] === "Last warning. Do it again and you'll be kept out for 24 hours.", { one, red1, two, big, notice, last: CHAT.log.slice(-2) }); }
+
+      // ---- a different knight on this device: nothing of the last one's warnings or lines is shown to it ----
+      { const warned = () => CHAT.log.filter(l => l.n === 'Cohen' || /warning|kept out|isn't allowed/i.test(l.text)).length;
+        const noneLeft = () => warned() === 0 && !(notice && /warning/i.test(notice.text)) && !bannerAhead(LAST.text) && !CHAT.bubbles.Cohen;
+        const strike2 = () => { feed({ t: 'chat', n: 'Cohen', text: 'die *** **** goblin', at: 5 }); feed({ t: 'strike', n: 1, text: WARN[1] }); feed({ t: 'chat', n: 'Cohen', text: '*** **** goblin', at: 6 }); feed({ t: 'strike', n: 2, text: WARN[2] }); };
+        // Not me, then Ada logs in on the same iPad
+        connect('player', 'Cohen'); CHAT.log.length = 0; clearBanners(); notice = null; strike2();
+        const before = warned() >= 4 && bannerAhead(LAST.text) && notice && notice.text === WARN[2] && !!CHAT.bubbles.Cohen;
+        LOGIN.notMe(); const atCard = noneLeft();
+        connect('player', 'Ada'); feed({ t: 'chat', n: 'Leo', text: 'hi ada', at: 7 });
+        const ada = noneLeft() && CHAT.log.length === 1 && CHAT.log[0].text === 'hi ada' && NET.me === 'Ada';
+        // no Not me: a welcome as a different name forgets too (a kept-out session that ends, a second login)
+        connect('player', 'Cohen'); CHAT.log.length = 0; clearBanners(); notice = null; strike2();
+        connect('player', 'Ada'); const welcomeOnly = noneLeft();
+        // a rename by an admin is the same knight: its warning stays with it
+        connect('player', 'Cohen'); CHAT.log.length = 0; clearBanners(); notice = null; feed({ t: 'strike', n: 1, text: WARN[1] });
+        feed({ t: 'error', code: 'renamed', name: 'Brave Cohen' }); connect('player', 'Brave Cohen');
+        const renamedKeeps = CHAT.log.some(l => l.text === "That word isn't allowed here.");
+        clearBanners(); notice = null; CHAT.log.length = 0;
+        check(P + "a different knight on this device: after a strike for Cohen, Not me (or a welcome as another name) empties the chat log and bubbles and takes down the warning notice and LAST WARNING, so Ada never reads Cohen's \"Last warning.\" or his starred lines; a rename keeps them (same knight)", before && atCard && ada && welcomeOnly && renamedKeeps, { before, atCard, ada, welcomeOnly, renamedKeeps, log: CHAT.log.map(l => (l.n || '-') + ': ' + l.text), notice }); }
 
       // ---- the lockout sentence: the real time it ends, in this device's clock ----
       { const Y = new Date().getFullYear(), t0 = new Date(Y, 9, 3, 19, 42).getTime(), dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

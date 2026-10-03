@@ -263,7 +263,9 @@
   };
   LOGIN.hide = hide;
   LOGIN.playAs = () => { if (LOGIN.mode !== 'me' || LOGIN.keptOutUntil()) return false; afterLogin(); return true; };
-  LOGIN.notMe = () => { when(api('POST', '/api/logout'), noop, noop); NET.setToken(null); LOGIN.name = null; LOGIN.mode = 'form'; LOGIN.error = ''; refresh(); };
+  // a different knight may log in next on this device: the chat of this one (its lines, its warnings) is forgotten (74-chat)
+  const forgetChat = () => { if (window.CHAT && CHAT.forget) CHAT.forget(); };
+  LOGIN.notMe = () => { when(api('POST', '/api/logout'), noop, noop); NET.setToken(null); LOGIN.name = null; LOGIN.mode = 'form'; LOGIN.error = ''; forgetChat(); refresh(); };
   LOGIN.playAlone = () => { LOGIN.alone = true; hide(); title.refresh(); };
   LOGIN.backOnline = () => { LOGIN.alone = false; LOGIN.show(); };
   LOGIN.logout = () => {
@@ -271,7 +273,7 @@
     save();
     const finish = () => {
       when(api('POST', '/api/logout'), noop, noop);
-      NET.disconnect(); NET.setToken(null); LOGIN.name = null; LOGIN.playing = false;
+      NET.disconnect(); NET.setToken(null); LOGIN.name = null; LOGIN.playing = false; forgetChat();
       title.open();
     };
     // the last push goes first, but a hung PUT must not hold the knight on the pause menu

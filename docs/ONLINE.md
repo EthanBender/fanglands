@@ -1006,6 +1006,9 @@ words." (today, tomorrow or the day, from `until` in the device's own clock), on
   card speaks about the device, not a knight, because a brother or sister on the same iPad reads it: "New knight is off
   here until 12:28 am tomorrow. Your own knight can still log in." New knight is greyed. It is forgotten when the time is
   up or the world lets a knight in (`/api/me` or a login).
+- **A different knight on the same device** never reads the last one's chat: Not me, Log out, and a welcome for a
+  different name than the last empty the chat log and the bubbles and take down that knight's warning notice and LAST
+  WARNING banner (`CHAT.forget`, `CHAT.onForget`; 74, 71, 79). An admin's rename is the same knight: its chat stays.
 - **The warnings**: the first is a red chat line a sentence and a notice; the last warning is also the big centre banner
   ("LAST WARNING", "Do it again: kept out 24 hours"), the size a level-up is said in. An open chat box is shut when the
   knight is sent out (kicked, kept out, banned or logged out by the world).
