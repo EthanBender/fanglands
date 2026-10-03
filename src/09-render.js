@@ -38,6 +38,10 @@ function refreshMini() {
   miniDirtyTiles.clear(); miniDirty = false; miniDiffCount = mapDiffs.size;
 }
 const miniNeedsPaint = () => miniDirty || miniDirtyTiles.size > 0;
+// Where a monster's name, health bar and stun stars sit (this far above its middle) and how far past the edge of the view
+// it is still drawn: its hit radius and 80 px, unless a look that knows its own size says otherwise (78-monsterlook).
+let monsterTop = m => m.r;
+let monsterPad = m => 80;
 function render() {
   if (window.innerWidth !== VW || window.innerHeight !== VH) resize();
   const g = ctx;
@@ -95,9 +99,9 @@ function render() {
   for (const b of BUILDINGS) if (b !== inside && (b.x + b.w) * TILE > cam.x && b.x * TILE < cam.x + VW && (b.y + b.h) * TILE > cam.y && b.y * TILE < cam.y + VH) items.push({ y: (b.y + b.h) * TILE - 1, draw: () => drawBuilding(g, b) });
   for (const n of NPCS) if (n.px > cam.x - 60 && n.px < cam.x + VW + 60 && n.py > cam.y - 60 && n.py < cam.y + VH + 60) items.push({ y: n.py + 13, draw: () => drawNpc(g, n) });
   for (const m of monsters) {
-    if (m.x < cam.x - 80 || m.x > cam.x + VW + 80 || m.y < cam.y - 80 || m.y > cam.y + VH + 80) continue;
+    const pad = monsterPad(m); if (m.x < cam.x - pad || m.x > cam.x + VW + pad || m.y < cam.y - pad || m.y > cam.y + VH + pad) continue;
     if (m.dead) { if (m.deadT < 0.8) items.push({ y: m.y, draw: () => { g.save(); g.globalAlpha = 1 - m.deadT / 0.8; g.translate(m.x, m.y); g.rotate(1.3); g.translate(-m.x, -m.y); drawCharacter(g, m, m.type); g.restore(); } }); continue; }
-    items.push({ y: m.y + m.r, draw: () => { drawCharacter(g, m, m.type); const def = MONSTER_DEFS[m.type]; if (m.hp < m.maxHp || dist(m.x, m.y, player.x, player.y) < 140) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(m.x - 14, m.y - m.r - 16, 28, 5); g.fillStyle = '#e63946'; g.fillRect(m.x - 14, m.y - m.r - 16, 28 * (m.hp / m.maxHp), 5); g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillStyle = def.level > combatLevel() + 3 ? '#ff6b6b' : '#e6edf3'; g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(`${def.name} · lv ${def.level}`, m.x, m.y - m.r - 20); g.fillText(`${def.name} · lv ${def.level}`, m.x, m.y - m.r - 20); } if (m.stunT > 0) { g.fillStyle = '#ffe066'; for (let k = 0; k < 3; k++) { const a = time * 6 + k * 2.1; g.beginPath(); g.arc(m.x + Math.cos(a) * 12, m.y - m.r - 6 + Math.sin(a) * 4, 2, 0, 7); g.fill(); } } } });
+    items.push({ y: m.y + m.r, draw: () => { drawCharacter(g, m, m.type); const top = monsterTop(m), def = MONSTER_DEFS[m.type]; if (m.hp < m.maxHp || dist(m.x, m.y, player.x, player.y) < 140) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(m.x - 14, m.y - top - 16, 28, 5); g.fillStyle = '#e63946'; g.fillRect(m.x - 14, m.y - top - 16, 28 * (m.hp / m.maxHp), 5); g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillStyle = def.level > combatLevel() + 3 ? '#ff6b6b' : '#e6edf3'; g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(`${def.name} · lv ${def.level}`, m.x, m.y - top - 20); g.fillText(`${def.name} · lv ${def.level}`, m.x, m.y - top - 20); } if (m.stunT > 0) { g.fillStyle = '#ffe066'; for (let k = 0; k < 3; k++) { const a = time * 6 + k * 2.1; g.beginPath(); g.arc(m.x + Math.cos(a) * 12, m.y - top - 6 + Math.sin(a) * 4, 2, 0, 7); g.fill(); } } } });
   }
   if (!player.dead) items.push({ y: player.y + player.r, draw: () => drawCharacter(g, player, player.mech ? 'playermech' : 'player') });
   else items.push({ y: player.y + player.r, draw: () => { g.save(); g.globalAlpha = Math.max(0.15, 1 - player.deadT / 1.5); g.translate(player.x, player.y); g.rotate(1.4); g.translate(-player.x, -player.y); drawCharacter(g, player, 'player'); g.restore(); } });

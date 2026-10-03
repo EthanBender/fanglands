@@ -154,16 +154,19 @@ const MONSTER_DEFS = {
     drops: { always: [['coins', 3, 9]], table: [['nothing', 0, 0, 30], ['goblin_scrap', 1, 1, 18], ['bread', 1, 1, 8], ['potato_seed', 1, 3, 10], ['blast_powder', 1, 1, 5], ['ruined_helm', 1, 1, 3], ['ruined_body', 1, 1, 2], ['bronze_dagger', 1, 1, 4]], rare: { chance: 40, table: [['iron_dagger', 1, 1, 3], ['iron_helm', 1, 1, 1]] } } },
   sapper: { name: 'Goblin sapper', level: 7, r: 12, hp: 24, att: 8, maxHit: 5, def: 6, speed: 110, aggro: true, sight: 6 * TILE, respawn: 40, thrower: true,
     drops: { always: [['coins', 6, 14], ['blast_powder', 1, 2]], table: [['nothing', 0, 0, 20], ['goblin_scrap', 1, 2, 20], ['bomb', 1, 1, 6], ['iron_ore', 1, 2, 8]], rare: { chance: 30, table: [['iron_warhammer', 1, 1, 1]] } } },
-  brute: { name: 'Goblin brute', level: 9, r: 15, hp: 45, att: 10, maxHit: 8, def: 7, speed: 105, aggro: true, sight: 5 * TILE, respawn: 45,
+  // r 18: the hit circle grown to fit the new, bigger look (78-monsterlook; was 15)
+  brute: { name: 'Goblin brute', level: 9, r: 18, hp: 45, att: 10, maxHit: 8, def: 7, speed: 105, aggro: true, sight: 5 * TILE, respawn: 45,
     drops: { always: [['coins', 8, 20]], table: [['nothing', 0, 0, 24], ['goblin_scrap', 1, 3, 20], ['iron_ore', 1, 2, 12], ['ruined_body', 1, 1, 6], ['coal', 1, 1, 6]], rare: { chance: 25, table: [['iron_sword', 1, 1, 2], ['iron_body', 1, 1, 1]] } } },
-  walker: { name: 'Goblin walker', level: 18, r: 22, hp: 110, att: 18, maxHit: 11, def: 12, speed: 70, aggro: true, sight: 6 * TILE, respawn: 3600, mech: true,
+  // r 24: grown to fit the new look (78-monsterlook; was 22) and no further: at 25 or more it could not pass the camp's one-tile gaps
+  walker: { name: 'Goblin walker', level: 18, r: 24, hp: 110, att: 18, maxHit: 11, def: 12, speed: 70, aggro: true, sight: 6 * TILE, respawn: 3600, mech: true,
     drops: { always: [['goblin_scrap', 4, 8], ['iron_ore', 2, 4]], table: [['iron_bar', 1, 2, 10], ['blast_powder', 1, 3, 10], ['coal', 1, 2, 6]], rare: { chance: 6, table: [['iron_battleaxe', 1, 1, 1], ['iron_warhammer', 1, 1, 1]] } } },
   wolf: { name: 'Wolf', level: 6, r: 13, hp: 22, att: 7, maxHit: 5, def: 4, speed: 175, aggro: true, sight: 6 * TILE, respawn: 35,
     drops: { always: [['wolf_pelt', 1, 1]], table: [['nothing', 0, 0, 8], ['raw_beef', 1, 1, 4]] } },
   boar: { name: 'Boar', level: 4, r: 14, hp: 18, att: 5, maxHit: 4, def: 3, speed: 150, aggro: false, sight: 4 * TILE, respawn: 30,
     drops: { always: [['raw_beef', 1, 1]], table: [['nothing', 0, 0, 4], ['boar_tusk', 1, 1, 1]] } },
   sheep: { name: 'Sheep', level: 1, r: 12, hp: 8, att: 1, maxHit: 1, def: 1, speed: 70, aggro: false, sight: 3 * TILE, respawn: 40, drops: { always: [['wool', 1, 2]] } },
-  cow: { name: 'Cow', level: 2, r: 15, hp: 14, att: 2, maxHit: 2, def: 2, speed: 60, aggro: false, sight: 3 * TILE, respawn: 45, drops: { always: [['raw_beef', 1, 2]] } },
+  // r 17: the hit circle grown to fit the new, bigger look (78-monsterlook; was 15)
+  cow: { name: 'Cow', level: 2, r: 17, hp: 14, att: 2, maxHit: 2, def: 2, speed: 60, aggro: false, sight: 3 * TILE, respawn: 45, drops: { always: [['raw_beef', 1, 2]] } },
   guard_m: { name: 'Town guard', level: 12, r: 13, hp: 55, att: 14, maxHit: 8, def: 12, speed: 150, aggro: false, sight: 6 * TILE, respawn: 60, human: true,
     drops: { always: [['coins', 10, 22]], table: [['nothing', 0, 0, 10], ['bread', 1, 1, 5], ['iron_dagger', 1, 1, 1]], rare: { chance: 30, table: [['iron_helm', 1, 1, 1]] } } },
   guard_f: { name: 'Town guard', level: 12, r: 13, hp: 55, att: 14, maxHit: 8, def: 12, speed: 150, aggro: false, sight: 6 * TILE, respawn: 60, human: true, woman: true,

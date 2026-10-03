@@ -72,7 +72,8 @@
   };
 
   // ---------- The Fang ----------
-  MONSTER_DEFS.the_fang = { name: 'The Fang', level: 80, r: 40, hp: 900, att: 80, maxHit: 32, def: 55, speed: 80, aggro: true, sight: 9 * TILE, respawn: 900, drops: {} };
+  // r 48: the hit circle grown to fit the new, bigger look (78-monsterlook; was 40)
+  MONSTER_DEFS.the_fang = { name: 'The Fang', level: 80, r: 48, hp: 900, att: 80, maxHit: 32, def: 55, speed: 80, aggro: true, sight: 9 * TILE, respawn: 900, drops: {} };
   // sprite: a serpentine body three times the knight's size — long tail, four clawed legs, two beating wings,
   // a crested, horned head with one enormous fang, wrapped in an aura that takes the colour of the element
   HOOKS.drawMonster.the_fang = (g, e, hurt) => {
@@ -640,7 +641,7 @@
     // the boss and its def
     const m = fang(); const d = MONSTER_DEFS.the_fang;
     { if (m) { m.dead = false; m.hp = m.maxHp; m.element = 'fire'; m.elemT = 0; m.stunT = 0; m.state = 'idle'; F.sim(1, []); } // one tick: maxHit follows the element (48 during stone)
-      check('fang: The Fang exists in the lair: lv 80, r 40, 900 hp, att 80, max hit 32, def 55, speed 80, aggro, sight 9, respawn 900, sprite', !!m && d.level === 80 && d.r === 40 && d.hp === 900 && d.att === 80 && d.maxHit === 32 && d.def === 55 && d.speed === 80 && d.aggro && d.sight === 9 * TILE && d.respawn === 900 && Math.floor(m.home.x / TILE) === FANG_HOME.x && Math.floor(m.home.y / TILE) === FANG_HOME.y && typeof HOOKS.drawMonster.the_fang === 'function' && ITEMS.fang_of_the_fang.weapon.str === 40, { found: !!m, home: m && [m.home.x / TILE, m.home.y / TILE] }); }
+      check('fang: The Fang exists in the lair: lv 80, r 48, 900 hp, att 80, max hit 32, def 55, speed 80, aggro, sight 9, respawn 900, sprite', !!m && d.level === 80 && d.r === 48 && d.hp === 900 && d.att === 80 && d.maxHit === 32 && d.def === 55 && d.speed === 80 && d.aggro && d.sight === 9 * TILE && d.respawn === 900 && Math.floor(m.home.x / TILE) === FANG_HOME.x && Math.floor(m.home.y / TILE) === FANG_HOME.y && typeof HOOKS.drawMonster.the_fang === 'function' && ITEMS.fang_of_the_fang.weapon.str === 40, { found: !!m, home: m && [m.home.x / TILE, m.home.y / TILE] }); }
     if (!m) { player.skills.defence.xp = defXp0; h.peace(false); return; }
     // element rotation
     { m.element = 'fire'; m.elemT = 0; const seen = ['fire']; for (let k = 0; k < 4; k++) { m.elemT = 24.99; F.sim(1, []); seen.push(m.element); }

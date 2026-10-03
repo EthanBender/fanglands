@@ -44,7 +44,8 @@
   // ---------- monsters ----------
   MONSTER_DEFS.giant_spider = { name: 'Giant spider', level: 8, r: 16, hp: 30, att: 9, maxHit: 5, def: 6, speed: 130, aggro: true, sight: 5 * TILE, respawn: 60,
     drops: { always: [['spider_silk', 1, 3]], table: [['coins', 5, 15, 3], ['bread', 1, 1, 1]] } };
-  MONSTER_DEFS.brood_mother = { name: 'Brood Mother', level: 15, r: 28, hp: 140, att: 16, maxHit: 9, def: 12, speed: 90, aggro: true, sight: 8 * TILE, respawn: 600,
+  // r 34: the hit circle grown to fit the new, bigger look (78-monsterlook; was 28)
+  MONSTER_DEFS.brood_mother = { name: 'Brood Mother', level: 15, r: 34, hp: 140, att: 16, maxHit: 9, def: 12, speed: 90, aggro: true, sight: 8 * TILE, respawn: 600,
     drops: { always: [['spider_silk', 10, 10], ['coins', 60, 120]] } };
 
   // a bigger, hairier cave spider with striped legs

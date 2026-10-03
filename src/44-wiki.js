@@ -292,8 +292,10 @@
         const r = def ? (def.r || 13) : 13;
         // a character is drawn roughly from -1.3r (helmet, raised weapon) to +0.9r (feet, shadow), so its visual
         // middle sits about a fifth of r above the origin. Fit that whole extent in the box, then re-centre on it.
-        const scale = Math.min(1.8, (size * 0.8) / (2.2 * Math.max(9, r)));
-        g.translate(x + size / 2, y + size / 2 + r * scale * 0.2);
+        // the new looks (78-monsterlook) are fitted by their own drawn size
+        const fit = window.MONSTER_LOOK ? MONSTER_LOOK.fit(wk.id, size, 1.8) : null;
+        const scale = fit ? fit.scale : Math.min(1.8, (size * 0.8) / (2.2 * Math.max(9, r)));
+        g.translate(x + size / 2 + (fit ? fit.ox : 0), y + size / 2 + (fit ? fit.oy : r * scale * 0.2));
         g.scale(scale, scale);
         // a still, face-on pose: no bobbing, no swing, no hurt flash, so the picture is the creature at rest
         const pose = { x: 0, y: 0, r, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, hp: def ? def.hp : 10, maxHp: def ? def.hp : 10, type: wk.id, stunT: 0 };
