@@ -21,7 +21,11 @@
   const HF = () => { const h = quest.hollowford || (quest.hollowford = { rewarded: false, beastKilled: false, wreck: null }); if (typeof h.freed !== 'boolean') h.freed = false; if (typeof h.barHits !== 'number') h.barHits = 0;
     h.shedUp = h.shedUp ?? false; h.shedRestUntil = h.shedRestUntil ?? 0; h.shedKills = h.shedKills ?? 0; h.wreckDue = h.wreckDue ?? false; h.toldShed = h.toldShed ?? false; return h; };
   HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null, freed: false, barHits: 0, shedUp: false, shedRestUntil: 0, shedKills: 0, wreckDue: false, toldShed: false }; });
-  const SHED = { id: 'war_shed', w: 28, h: 20 }, SHED_DOOR = [147, 44], SHED_STEP = [148, 44], SHED_HOME = { x: 14, y: 9 }, VALVE_T = { x: 14, y: 3 };
+  // the valve stands on row 7, under the boiler (row 6), with the stocks three rows below it: on row 3 it sat under the top
+  // HUD of a phone held upright (the crest, the quest scroll, two plaques: down to 323 px), where the camera cannot scroll
+  // past the shed's top wall
+  const SHED = { id: 'war_shed', w: 28, h: 20 }, SHED_DOOR = [147, 44], SHED_STEP = [148, 44], SHED_HOME = { x: 14, y: 11 }, VALVE_T = { x: 14, y: 7 };
+  const BOILER_T = [[13, 6], [14, 6], [15, 6]];
   const SHED_ENTRY = [14, 18], SHED_EXIT = [14, 19], SHED_REST = 300;
   const SHED_WALL = [[145, 43], [146, 43], [147, 43], [145, 44], [146, 44], [145, 45], [146, 45], [147, 45]];
   const WRECK_SPOTS = [[144, 47], [143, 47], [144, 48], [143, 48]];
@@ -286,6 +290,8 @@
         [1, 5, T.SHELF], [1, 6, T.SHELF], [1, 12, T.TABLE], [26, 5, T.SHELF], [26, 6, T.SHELF], [26, 12, T.TABLE], [26, 13, T.TABLE],
         [3, 4, T.RUBBLE], [23, 4, T.RUBBLE], [4, 15, T.RUBBLE], [22, 16, T.RUBBLE], [6, 10, T.PLANK], [21, 9, T.PLANK], [8, 16, T.PLANK], [19, 14, T.RUBBLE]]) set(x, y, t);
       set(VALVE_T.x, VALVE_T.y, T_VALVE);
+      // the boiler the valve feeds: three cells of the same solid, so E or a tap on the boiler spins the valve too
+      for (const [x, y] of BOILER_T) set(x, y, T_VALVE);
     },
   });
   // the shed on the camp road: plank walls with the door on the east face, facing the road. Built once the rest of the
@@ -388,15 +394,46 @@
   function drawValve(g, tx, ty) {
     const cx = tc(tx), cy = tc(ty), up = !!liveBeast(), spin = up ? time * 6 : 0;
     g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 16, 16, 5, 0, 0, 7); g.fill();
-    g.fillStyle = '#4a4a52'; g.fillRect(cx - 5, cy - 44, 10, 46); g.fillStyle = '#5a5a62'; g.fillRect(cx - 5, cy - 44, 3, 46);
-    g.fillStyle = '#3a3a42'; g.fillRect(cx - 9, cy - 46, 18, 6); g.fillRect(cx - 9, cy + 2, 18, 8);
+    // a short pipe down out of the boiler's belly, and the wheel on it
+    g.fillStyle = '#4a4a52'; g.fillRect(cx - 5, cy - 34, 10, 36); g.fillStyle = '#5a5a62'; g.fillRect(cx - 5, cy - 34, 3, 36);
+    g.fillStyle = '#3a3a42'; g.fillRect(cx - 9, cy + 2, 18, 8);
     g.save(); g.translate(cx, cy - 12); g.rotate(spin);
     g.strokeStyle = '#7a1f1f'; g.lineWidth = 5; g.beginPath(); g.arc(0, 0, 14, 0, 7); g.stroke();
     g.strokeStyle = '#c0504d'; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 14, 0, 7); g.stroke();
     for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * 14, Math.sin(a) * 14); g.stroke(); }
     g.fillStyle = '#e0d070'; g.beginPath(); g.arc(0, 0, 3.5, 0, 7); g.fill();
     g.restore();
-    if (up) for (let k = 0; k < 3; k++) { const ph = (time * 0.8 + k * 0.33) % 1; g.fillStyle = `rgba(220,220,230,${0.4 * (1 - ph)})`; g.beginPath(); g.arc(cx + 8 + Math.sin(time * 3 + k) * 3, cy - 46 - ph * 22, 3 + ph * 5, 0, 7); g.fill(); }
+  }
+  // the boiler: a riveted iron tank across three cells, a firebox that glows (brighter while a beast stands), a gauge, and
+  // a chimney pipe up through the shed's top wall that steams while the beast is up
+  function drawBoiler(g) {
+    const x0 = BOILER_T[0][0] * TILE + 2, x1 = (BOILER_T[2][0] + 1) * TILE - 2, row = BOILER_T[0][1] * TILE, top = row - 30, bot = row + 42, up = !!liveBeast();
+    const chx = x1 - 30;
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse((x0 + x1) / 2, bot + 2, (x1 - x0) / 2, 7, 0, 0, 7); g.fill();
+    // the chimney pipe, up to the wall
+    g.fillStyle = '#3a3a42'; g.fillRect(chx - 6, TILE - 6, 12, top - TILE + 12); g.fillStyle = '#4a4a52'; g.fillRect(chx - 6, TILE - 6, 4, top - TILE + 12);
+    g.fillStyle = '#2e2e36'; for (const yy of [TILE + 10, top - 14]) g.fillRect(chx - 8, yy, 16, 5);
+    // the tank
+    g.fillStyle = '#4a4a52'; roundRect(g, x0, top, x1 - x0, bot - top, 16); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.08)'; roundRect(g, x0 + 6, top + 4, x1 - x0 - 12, 12, 6); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.22)'; roundRect(g, x0 + 4, bot - 16, x1 - x0 - 8, 12, 6); g.fill();
+    g.strokeStyle = '#2e2e36'; g.lineWidth = 4; for (const ox of [0.25, 0.5, 0.75]) { const x = lerp(x0, x1, ox); g.beginPath(); g.moveTo(x, top + 2); g.lineTo(x, bot - 2); g.stroke(); }
+    g.fillStyle = '#8f96a3'; for (const ox of [0.25, 0.5, 0.75]) for (const yy of [top + 10, (top + bot) / 2, bot - 10]) { g.beginPath(); g.arc(lerp(x0, x1, ox), yy, 2, 0, 7); g.fill(); }
+    g.strokeStyle = '#25252b'; g.lineWidth = 2; roundRect(g, x0, top, x1 - x0, bot - top, 16); g.stroke();
+    // the firebox door, left of the valve
+    const fx = x0 + 22, fy = (top + bot) / 2 - 2, glow = up ? 0.75 + Math.sin(time * 10) * 0.2 : 0.35 + Math.sin(time * 3) * 0.08;
+    g.fillStyle = '#2a2a30'; roundRect(g, fx - 13, fy - 11, 26, 22, 4); g.fill();
+    g.fillStyle = `rgba(255,${up ? 110 : 150},40,${glow.toFixed(3)})`; for (let k = 0; k < 3; k++) g.fillRect(fx - 9, fy - 7 + k * 6, 18, 3);
+    // the pressure gauge, right of the valve: the needle climbs while the beast is up
+    const gx = x1 - 24, gy = top + 18;
+    g.fillStyle = '#c9a02a'; g.beginPath(); g.arc(gx, gy, 9, 0, 7); g.fill(); g.fillStyle = '#efe6cc'; g.beginPath(); g.arc(gx, gy, 7, 0, 7); g.fill();
+    const a = up ? -0.3 + Math.sin(time * 4) * 0.15 : -2.4; g.strokeStyle = '#7a1f1f'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(gx, gy); g.lineTo(gx + Math.cos(a) * 6, gy + Math.sin(a) * 6); g.stroke();
+    if (up) for (let k = 0; k < 4; k++) { const ph = (time * 0.8 + k * 0.25) % 1; g.fillStyle = `rgba(220,220,230,${(0.45 * (1 - ph)).toFixed(3)})`; g.beginPath(); g.arc(chx + Math.sin(time * 3 + k) * 4, TILE + 4 - ph * 30, 4 + ph * 7, 0, 7); g.fill(); }
+  }
+  function drawShedScrap(g, tx, ty) {
+    const floor = tex[TEX_NAME[T.FLOOR] + (variant[idx(tx, ty)] || 0)] || tex[TEX_NAME[T.FLOOR] + 0];
+    if (floor) g.drawImage(floor, tx * TILE, ty * TILE, TILE, TILE);
+    drawRubbleProp(g, tx, ty);
   }
   function drawStocks(g) {
     const x0 = (SHED_HOME.x - 2) * TILE, x1 = (SHED_HOME.x + 3) * TILE, y0 = (SHED_HOME.y - 1) * TILE, y1 = (SHED_HOME.y + 2) * TILE;
@@ -432,7 +469,10 @@
   }
   HOOKS.draw.push((g, items, cam) => {
     if (inShed()) {
+      // the scrap heaps (RUBBLE) lie on the shed's plank floor: the core paints a rubble cell on grass
+      for (let y = 1; y < SHED.h - 1; y++) for (let x = 1; x < SHED.w - 1; x++) if (tileAt(x, y) === T.RUBBLE) items.push({ y: -1e9 + 3, scrap: true, draw: () => drawShedScrap(g, x, y) });
       items.push({ y: -1e8 + SHED_HOME.y * TILE + 2, draw: () => drawStocks(g) });
+      items.push({ y: BOILER_T[0][1] * TILE + TILE - 6, draw: () => drawBoiler(g) });
       items.push({ y: VALVE_T.y * TILE + TILE - 6, draw: () => drawValve(g, VALVE_T.x, VALVE_T.y) });
       if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => { const { tx, ty } = frontTile(player); if (tileAt(tx, ty) === T_VALVE) HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); } });
       return;
@@ -725,6 +765,22 @@
         check(P + 'the War Shed door at (147,44) with step (148,44) is reachable from the road and enters war_shed; PLAYTHROUGH.instanceConnectivity passes',
           !!road && doorTile && walls && entered && region === 'The War Shed' && rows.length >= 2 && rows.every(r => r.dist >= 0) && tileAt(VALVE_T.x, VALVE_T.y) === T_VALVE && SOLID.has(T_VALVE) && INTERESTING_TILES.has(T_VALVE),
           { road: road && road.length, doorTile, walls, entered, region, rows: rows.map(r => [r.name, r.dist]) }); }
+      // B1b: the scrap heaps lie on the plank floor (the core paints a RUBBLE cell on grass), and on a phone held upright the
+      // valve's wheel is in sight: clear of the crest, the quest scroll and both plaque slots, with the camera at the top wall
+      { const items = []; for (const d of HOOKS.draw) { try { d(ctx, items, cam); } catch (e) { } }
+        let rubble = 0; for (let y = 1; y < SHED.h - 1; y++) for (let x = 1; x < SHED.w - 1; x++) if (tileAt(x, y) === T.RUBBLE) rubble++;
+        const scrap = items.filter(i => i.scrap).length;
+        const w0 = window.innerWidth, h0 = window.innerHeight, t0 = window.__forceTouch, p0 = { x: player.x, y: player.y };
+        let wheel = null, hits = [], camY = null;
+        try {
+          window.innerWidth = 390; window.innerHeight = 844; window.__forceTouch = true; resize(); F.tp(VALVE_T.x, VALVE_T.y + 1); render();
+          const L = HK.FRAME.L; camY = cam.y;
+          wheel = { x: tc(VALVE_T.x) - 16 - cam.x, y: tc(VALVE_T.y) - 28 - cam.y, w: 32, h: 32 };
+          const over = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          hits = L ? [L.crest, L.scroll].concat(L.plaques || []).filter(r => r && over(wheel, r)) : ['no layout'];
+        } finally { window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); player.x = p0.x; player.y = p0.y; render(); }
+        check(P + "the War Shed's scrap heaps lie on its plank floor (a floor patch under every RUBBLE cell), and at 390x844 the valve's wheel is clear of the crest, the scroll and both plaque slots",
+          rubble >= 5 && scrap === rubble && camY === 0 && !!wheel && hits.length === 0, { rubble, scrap, camY, wheel, hits }); }
       // B2: before this knight's own beast is down the crew only laughs
       { hf.beastKilled = false; quest.stage = 11; valve();
         check(P + 'offline, the valve refuses before the first kill (still walking in Hollowford)', beasts().length === 0 && said(/still walking in Hollowford/) && !hf.shedUp, { said: dialog.cur && dialog.cur.text, beasts: beasts().length });
