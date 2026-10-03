@@ -888,35 +888,56 @@ insults count as well as swear words, including "gay" used as an insult. All of 
 
 ### What counts
 
-`checkChat(text, {names})` answers `{text, masked}`: the line with bad words starred out, and whether any word had to be.
-A line with `masked: true` is a strike. `names` are the knights on line (the Room passes them), so "shut up sam" is known
-to be said to Sam. Three strikes is 24 hours out, so **only what is said at someone counts as an insult**: kids in a
-fighting game say "this boss is stupid hard", "stupid lag", "lets go die to the dragon again", "your fat dragon pet" and
-"I'm such a loser lol" all evening, and none of that is a strike (`filter.test.mjs` keeps a list of such lines that must
-never count, and `strikes.test.mjs` says them in a real Room). The lists, all in `filter.js`:
+`checkChat(text, {names})` answers `{text, masked, strike}`: the line with bad words starred out, whether any word had to
+be, and whether one of them was **surely a bad word said as a bad word**. Only `strike: true` is a strike; starring out
+alone counts nothing. `names` are the knights on line (the Room passes them), so "shut up sam" is known to be said to Sam.
 
-- `BLOCKED` (swearing, bodies, slurs, hate, drugs) and `INSULTS` (stupidhead, nitwit, gaylord and the like; "go die in a
-  hole", "just go die", "go die already") count wherever they are.
-- `SAID_ABOUT_YOU` (gay, dumb, ugly, fat, stupid, idiot, loser, moron, dumbo, ...) count only right after "you":
-  `YOU_ARE` (you, u, you're, you are, u r, ...) anywhere in the line ("you idiot", "you stupid goblin"), with any of
-  `BETWEEN` in the middle ("you are so dumb", "you're such an idiot", "you big idiot"). `YOU_OR_YOUR` (ur, your, yur, ya)
-  could be "you're" or "your", so after them the word counts only when it ends the line or the sentence, or a laugh or a
-  person comes next ("ur dumb", "your gay!", "ur dumb lol", "see ya loser"), never before another word ("ur dumb sword
-  is cool", "your fat dragon", "your ugly ogre").
-- `AT_SOMEONE` ("shut up", "hate you") counts at the end of the line or the sentence, before a person (`PEOPLE`: you, noob,
-  kid, dude, ...) or a knight's name, or as the whole line: "shut up", "ok shut up!", "shut up sam", "i hate you"; not
-  "shut up no way", "shut up and take my coins", "i hate you goblin king".
-- `SAID_TO_SOMEONE` ("go die") counts only as the whole line or before a person or a knight's name: "go die", "go die
-  noob"; not "dont go die", "go die goblin", "im gonna go die in the lava".
-- `LINE_ALONE` (gay, idiot, loser, moron): a line that is only that word (laughs aside: "loser lol") is said at someone.
-- "gay" also counts in `GAY_INSULTS` ("that's gay", "so gay", "gay boy", ...). "Sam is gay" reads the same as "my uncle is
-  gay" to a word list, so "is gay" is left off on purpose; a parent who wants it caught adds `'is gay'` to `INSULTS`.
+The most important rule (owner, 2026-10-03): a kid is never warned, struck or kept out for something that is not clearly a
+bad word aimed as a bad word. Starring a word out is harmless, so masking is generous; a strike is 24 hours out after
+three, so it needs a sure match:
+
+- **A number is never a strike, and never even starred out**: 455, 8008, 7175, 455k, 8008g, x8008, 4:55, $455. Digits are
+  read as letters (sh1t, a55) only inside a word that has letters too, and then only to star it out, never for a strike.
+- **A bad word hidden inside an ordinary word is never a strike** (booboo, swanky, pussycat, fire retardant, Montenegro,
+  Scunthorpe): `BLOCKED_INSIDE` stars them out, nothing more. A strike is a whole word, as typed or held longer (fuuuck,
+  asss; never shorter: "Bobb" is not "boob", "kk" is not "kkk"), with symbols read as letters ($hit, sh!t) but never digits.
+- **`MASK_ONLY`**: words that are starred out but are never a strike on their own, because they are mild or a kid has an
+  everyday reason to type them in a knight game: damn, crap, wtf, lmfao, badass, a bastard sword, a chink in his armour,
+  the cock crowed, a blue tit, a suicide mission, sexy armour, "i thot so", naked, nazi, hitler and the like. Some of them
+  are a strike when said about someone ("you jackass", "you pussy": they are in `SAID_ABOUT_YOU` too).
+- Every other word of `BLOCKED` (swearing, sex, slurs, kys, heil hitler) and `INSULTS` (stupidhead, nitwit, gaylord, ...)
+  is a strike wherever it is.
+- `SAID_ABOUT_YOU` (gay, dumb, ugly, fat, stupid, idiot, loser, moron, ...) right after "you" (`YOU_ARE`: you, u, you're,
+  you are, u r; with `BETWEEN` in the middle: "you are so dumb", "you're such an idiot") is a strike when the line or the
+  sentence ends after it ("you idiot", "u r stupid lol"), when a knight on line or one of `AIMED_AT` (noob, nerd, loser,
+  ...) comes next ("you stupid noob"), or one of `AFTER_YOU` ("you idiot i had that", "you are so dumb at this"). Any other
+  word after it might be what it is about, so "you stupid goblin" (a kid shouting at a monster) is starred out and no
+  strike. After `YOU_OR_YOUR` (ur, your, ya: "you're" or "your") only the end of the line or sentence, a laugh or a person
+  counts ("ur dumb", "see ya loser"; never "ur dumb sword is cool").
+- **Sentences**: a "you" that ends one sentence never joins the next ("thank you. stupid lag"). A question is no strike
+  (`ASKING`: "are you stupid?"), nor is somebody else's speech (`REPORTED` earlier in the sentence: "my mom said shut up",
+  "he told me to go die").
+- `AT_SOMEONE` ("shut up", "hate you") is a strike only before a knight on line or one of `AIMED_AT` that ends the sentence
+  ("shut up sam", "shut up noob", "i hate you sam"). "shut up!" on its own is also a surprised "no way!", and "i hate you"
+  is said to bosses: those are starred out, no strike.
+- `SAID_TO_SOMEONE` ("go die", "go and die", "go die in a hole", "kill yourself") is a strike as the whole sentence (with
+  `AIM_BEFORE` / `AIM_AFTER` around it: "just go die", "go die already", "pls kill yourself") or before a person who ends the
+  sentence ("go die noob"); never "lets go die to the dragon again", "go die goblin", "can you kill yourself with a bomb".
+- `LINE_ALONE` (gay, idiot, loser, moron): a line that is only that word (laughs aside: "loser lol") is a strike.
+- "gay": `GAY_INSULTS` ("that's gay", "so gay", "gay boy", ...) are all starred out; `GAY_SAID` ("thats gay", "this is
+  gay", "so gay", ...) is a strike only when it ends the line or the sentence ("this game is so gay"), never "it's gay
+  pride week". "Sam is gay" reads the same as "my uncle is gay" to a word list, so "is gay" is left off on purpose.
 - Names have nobody else to say it about: `NAME_INSULTS` (stupid, idiot, loser, moron, ...) are refused anywhere in a name,
-  spaced out too ("Stupid Sam", "Big Loser", "Stu Pid"); "Fat Cat", "Dumbo" and "Big Dummy" pass.
+  spaced out too ("Stupid Sam", "Big Loser", "Stu Pid"); "Fat Cat", "Dumbo" and "Big Dummy" pass. `RESERVED_NAMES` include
+  "Word Filter" and "Parent Page" (who mod_log says made a strike or a change), spaces not counting.
 
-Every list is plain lower-case words, one place to edit; **the owner decides the final lists** (the builder's choices are
-above). Apostrophes are read both ways (you're = youre) and stretched spellings are caught (gaaay). `cleanChat` still
-answers the masked line alone.
+The tests hold the rule: `filter.test.mjs` says every number from 0 to 99,999 (and with units), more than 200 lines of
+ordinary game talk, and every string in the game's own source (every NPC, place, item, quest and line of talk, whole and
+word by word), and none of it is a strike; a list of real insults all are; a strike is always starred out.
+`strikes.test.mjs` says coin counts, hidden words, mild words, monster taunts and surprised shouts in a real Room.
+
+Every list is plain lower-case words, one place to edit; **the owner decides the final lists**. `cleanChat` still answers
+the masked line alone.
 
 ### The count
 
@@ -931,7 +952,7 @@ Added by `migrate()` like the other columns: only when missing, nothing dropped 
 the wrong-secret-word `tries` / `locked_until` are never touched by a strike.
 
 - `onChat`: a muted knight's line goes nowhere and is no strike. Otherwise the masked line is logged and sent to everyone
-  as before, and then, if it was masked and the knight has an account, `store.addWordStrike` adds one to the count as it
+  as before, and then, if the filter called it a strike and the knight has an account, `store.addWordStrike` adds one to the count as it
   stands now. A knight with no account (tests, simulations) counts nothing. Admins count like anyone.
 - **Fading**: when the last strike is 30 days old or more (`WORD_STRIKE_FADE`), the count reads 0 and the next one is a
   first warning again. 29 days on, it still counts.
@@ -939,8 +960,10 @@ the wrong-secret-word `tries` / `locked_until` are never touched by a strike.
 - Strike 2: `{t:'strike', n:2, text:"Last warning. Do it again and you'll be kept out for 24 hours."}`.
 - Strike 3 and every one after it (the count stays at 3 or more until it fades or is cleared): `words_locked_until` =
   now + 24 hours (`WORD_LOCK_MS`), then `{t:'error', code:'words', text, until, n}` and close **4006**.
-- Each strike is one `mod_log` row: `by: 'word filter'`, `act: 'strike'`, `target` the knight, `detail` the count
-  (`'1'`, `'2'`, `'3, kept out 24 hours'`).
+- Each strike is one `mod_log` row: `by: 'word filter'`, `act: 'strike'`, `target` the knight, `detail` the count and
+  then the line as it was typed (`'1: shut up sam'`, `'3, kept out 24 hours: you idiot'`), so the parent page can tell
+  whether it was fair ("Sam got word strike 1 for typing "shut up sam""). Only the parent page reads `mod_log`; the chat
+  log keeps the starred line.
 
 ### Kept out
 

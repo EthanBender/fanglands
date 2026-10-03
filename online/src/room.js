@@ -31,7 +31,8 @@
 // kick, a ban, a new secret word, the world full of strikes. The row's id rides the attachment, so a nap keeps it open;
 // a row that no socket carries after a wake (the world was restarted under it) ends at the last time it was heard from.
 //
-// Word strikes (docs/ONLINE.md, "Word strikes"): a chat line the filter had to star out is a strike on the knight's account
+// Word strikes (docs/ONLINE.md, "Word strikes"): a chat line the filter calls a strike (surely a bad word said as a bad word,
+// never a number, a word hidden in another, a mild word or game talk; starring out alone is no strike) is one on the knight's account
 // (the store keeps the count, which fades after 30 clean days). The first two are warnings said to the knight alone; the
 // third and every one after it sends the knight out (close 4006) and keeps it out for 24 hours, which join and restore
 // check here and the World checks on every login, /api call and socket.
@@ -140,8 +141,8 @@ export class Room {
   constructor(opts = {}) {
     this.now = opts.now || (() => Date.now());
     this.log = opts.log || (() => {});
-    // the word filter: {text, masked}. An old-style opts.filter (a string back) still works; it counts no strikes.
-    this.check = opts.check || (opts.filter ? (s => ({ text: opts.filter(s), masked: false })) : checkChat);
+    // the word filter: {text, masked, strike}. An old-style opts.filter (a string back) still works; it counts no strikes.
+    this.check = opts.check || (opts.filter ? (s => ({ text: opts.filter(s), masked: false, strike: false })) : checkChat);
     this.max = opts.max || 50;
     this.wake = opts.wake || (ms => { const t = setTimeout(() => this.tick(), ms); if (t && t.unref) t.unref(); });
     this.store = opts.store || new MemoryStore();
@@ -390,28 +391,32 @@ export class Room {
     if (acc && acc.mutedUntil > now) return this.send(k.sock, { t: 'muted', left: leftOf(acc.mutedUntil, now) });
     if (acc) this.syncRole(k, acc.role);
     // the knights on line go with it, so "shut up sam" is known to be said to Sam (filter.js, AT_SOMEONE)
-    const { text, masked } = this.check(typeof m.text === 'string' ? m.text : '', { names: Array.from(this.byName.values(), o => o.name) });
+    const { text, strike } = this.check(typeof m.text === 'string' ? m.text : '', { names: Array.from(this.byName.values(), o => o.name) });
     if (!text) return;
     const at = now;
     this.log(k.name, text, at);
     const out = JSON.stringify({ t: 'chat', n: k.name, text, at, role: k.role });
     for (const o of this.knights.values()) if (o.hello) this.raw(o.sock, out);
-    // a word had to be starred out: a strike (after the masked line went out, so the knight sees what was hidden)
-    if (masked && acc) this.wordStrike(k, acc, now);
+    // surely a bad word said as a bad word: a strike (after the masked line went out, so the knight sees what was hidden).
+    // A line that was only starred out (a mild word, a word hidden in another, a taunt at a monster) counts nothing.
+    if (strike === true && acc) this.wordStrike(k, acc, now, typeof m.text === 'string' ? m.text : '');
   }
 
-  // One more word strike on this knight's account: a warning, a last warning, then out for 24 hours. One mod_log row each.
-  wordStrike(k, acc, now) {
+  // One more word strike on this knight's account: a warning, a last warning, then out for 24 hours. One mod_log row each,
+  // with the line as it was typed after the count ("2: shut up sam"), so the parent page can tell whether it was fair (only
+  // the parent page reads mod_log; the chat log keeps the starred line).
+  wordStrike(k, acc, now, said) {
+    const typed = ': ' + String(said || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
     if (typeof this.store.addWordStrike !== 'function') return;
     const n = this.store.addWordStrike(acc.lc, now);
     if (!n) return;
     if (n < 3) {
-      this.store.log({ at: now, by: 'word filter', act: 'strike', target: acc.name, detail: String(n) });
+      this.store.log({ at: now, by: 'word filter', act: 'strike', target: acc.name, detail: String(n) + typed });
       return this.send(k.sock, { t: 'strike', n, text: n === 1 ? WORD_WARN_1 : WORD_WARN_2 });
     }
     const until = now + WORD_LOCK_MS;
     this.store.setWordLock(acc.lc, until);
-    this.store.log({ at: now, by: 'word filter', act: 'strike', target: acc.name, detail: n + ', kept out 24 hours' });
+    this.store.log({ at: now, by: 'word filter', act: 'strike', target: acc.name, detail: n + ', kept out 24 hours' + typed });
     this.kick(k.name, 'words', wordsText(until, now), { until, n });
   }
 
