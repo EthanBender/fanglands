@@ -2778,7 +2778,9 @@
         res.oldSave.kept && res.newCity.kept, res); }
 
     // ---- C18. determinism ----
-    check(P + 'C18 the painter is the very first world pass (HOOKS.world[0]) and the snapshot the last; C2 shows it draws no random number', HOOKS.world[0] === paint && HOOKS.world[HOOKS.world.length - 1] === snap, { first: HOOKS.world[0] === paint, last: HOOKS.world[HOOKS.world.length - 1] === snap });
+    // the snapshot is the last pass that can write a tile: only the Atlas's pass (src/96-atlas.js), which only reads, comes after it
+    const writers = HOOKS.world.filter(f => !(window.ATLAS && f === ATLAS.pass));
+    check(P + 'C18 the painter is the very first world pass (HOOKS.world[0]) and the snapshot the last that writes (only the Atlas reads after it); C2 shows it draws no random number', HOOKS.world[0] === paint && writers[writers.length - 1] === snap, { first: HOOKS.world[0] === paint, last: writers[writers.length - 1] === snap });
 
     // ---- C19. drawing ----
     { const keepSize = { k: Object.getOwnPropertyDescriptor(window, 'innerWidth'), l: Object.getOwnPropertyDescriptor(window, 'innerHeight') }; const setSize = (w, hh) => { Object.defineProperty(window, 'innerWidth', { value: w, configurable: true, writable: true }); Object.defineProperty(window, 'innerHeight', { value: hh, configurable: true, writable: true }); resize(); };
