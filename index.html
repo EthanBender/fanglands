@@ -44589,7 +44589,10 @@ const MONSTER_LOOK = (() => {
       // 6. hit circles: each r is the table's, and every spawn of a grown one still stands on clear ground with room to move
       { const wrong = types.filter(t => MONSTER_DEFS[t].r !== HIT_R[t]).map(t => t + ' ' + MONSTER_DEFS[t].r + '/' + HIT_R[t]);
         const grown = new Set(Object.keys(HIT_R_WAS)), stuck = [];
-        const room = (x0, y0, r) => { if (collides(x0, y0, r, 'beast')) return 0; let n = 0; const S = 16; for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) if (!collides(x0 + dx * S, y0 + dy * S, r, 'beast')) n++; return n; };
+        // measured on the map as a new game has it: a --play run leaves the walker's wreck wherever it fell, beside the camp's brute
+        const tiles = window.PLAYTHROUGH ? PLAYTHROUGH.pristine : map;
+        const hits = (x, y, r) => { for (let ty = Math.floor((y - r) / TILE); ty <= Math.floor((y + r) / TILE); ty++) for (let tx = Math.floor((x - r) / TILE); tx <= Math.floor((x + r) / TILE); tx++) if (solidFor(inMap(tx, ty) ? tiles[idx(tx, ty)] : T.WALL, 'beast') && circleHitsTile(x, y, r, tx, ty)) return true; return false; };
+        const room = (x0, y0, r) => { if (hits(x0, y0, r)) return 0; let n = 0; const S = 16; for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) if (!hits(x0 + dx * S, y0 + dy * S, r)) n++; return n; };
         if (!window.__instance) for (const sp of MONSTER_SPAWNS) if (grown.has(sp.type)) { const n = room(tc(sp.tx), tc(sp.ty), MONSTER_DEFS[sp.type].r); if (n < 12) stuck.push(sp.type + '@' + sp.tx + ',' + sp.ty + ' ' + n); }
         const pc = window.PLAYTHROUGH ? PLAYTHROUGH.connectivity() : null, ic = window.PLAYTHROUGH ? PLAYTHROUGH.instanceConnectivity().filter(r => r.dist < 0) : [];
         check(P + `hit circles fit the new looks: all ${types.length} radii as the table says (${Object.keys(HIT_R_WAS).length} grown), every grown one's spawn stands clear with room to move, and the world and every instance stay connected`,
