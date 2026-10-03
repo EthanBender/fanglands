@@ -309,7 +309,8 @@
     g.strokeStyle = 'rgba(0,0,0,0.2)'; g.lineWidth = 1; g.beginPath(); g.moveTo(2, -40); g.lineTo(22, -22); g.stroke();
     g.fillStyle = '#c0504d'; g.beginPath(); g.moveTo(-1, -60); g.lineTo(-12, -56); g.lineTo(-1, -52); g.closePath(); g.fill();
     // Harl at the oars
-    g.save(); g.translate(-14, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0 }, { tunic: '#3f4f3a', hair: '#d9d0c0', beard: true, helm: '#7a3b2e', shoulder: '#2f3a2c' }); g.restore();
+    // seated at the oars (83-townsfolk: no legs, no shadow; his hands are on the oar the boat draws, so the main hand is empty)
+    g.save(); g.translate(-14, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0, seated: true, unarmed: true }, { who: 'harl', tunic: '#3f4f3a', hair: '#d9d0c0', beard: true, helm: '#7a3b2e', shoulder: '#2f3a2c' }); g.restore();
     g.strokeStyle = '#8a6a3a'; g.lineWidth = 3; g.beginPath(); g.moveTo(-10, -6); g.lineTo(-30 - Math.sin(time * 3) * 6, 18); g.stroke();
     // the knight, sitting in the bow
     // seated: the knight (82-knightgear) sits in the bow, no legs
@@ -414,16 +415,21 @@
     const e = { x: px, y: py, r: 13, facing: who.facing, hurtT: 0, attackT: 0, moving: false, walkT: 0 };
     const near = dist(player.x, player.y, e.x, e.y) < 110;
     if (near) e.facing = { x: Math.sign(player.x - e.x) || 0, y: Math.sign(player.y - e.y) || 1 };
-    g.save(); g.translate(e.x, e.y);
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill();
-    drawHuman(g, e, look);
-    if (hat === 'wool') { g.fillStyle = '#d9d0c0'; g.beginPath(); g.ellipse(0, 0, 5.5, 6, 0, 0, Math.PI); g.fill(); g.fillStyle = '#c9a36a'; g.beginPath(); g.arc(0, -19, 2.6, 0, 7); g.fill(); g.strokeStyle = 'rgba(255,255,255,0.2)'; g.lineWidth = 2; g.beginPath(); g.arc(-3, 3, 9, 2.6, 4.2); g.stroke(); }
-    if (hat === 'straw') { g.fillStyle = '#d9c88a'; g.beginPath(); g.ellipse(0, -12, 14, 4.5, 0, 0, 7); g.fill(); g.beginPath(); g.arc(0, -13, 8, Math.PI, 0); g.fill(); g.fillStyle = '#8a6a3a'; g.fillRect(-8, -14, 16, 2); }
-    g.restore();
-    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(who.name, e.x, e.y - 28); g.fillStyle = '#ffe9a8'; g.fillText(who.name, e.x, e.y - 28); }
+    // the new look (83-townsfolk) draws Harl's sou'wester and Pete's straw hat itself, and the shadow
+    const nl = !!(window.TOWNSFOLK && TOWNSFOLK.put(g, e.x, e.y, e, look));
+    const up = nl ? TOWNSFOLK.labelUp(look.who, 28) : 28;
+    if (!nl) {
+      g.save(); g.translate(e.x, e.y);
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill();
+      drawHuman(g, e, look);
+      if (hat === 'wool') { g.fillStyle = '#d9d0c0'; g.beginPath(); g.ellipse(0, 0, 5.5, 6, 0, 0, Math.PI); g.fill(); g.fillStyle = '#c9a36a'; g.beginPath(); g.arc(0, -19, 2.6, 0, 7); g.fill(); g.strokeStyle = 'rgba(255,255,255,0.2)'; g.lineWidth = 2; g.beginPath(); g.arc(-3, 3, 9, 2.6, 4.2); g.stroke(); }
+      if (hat === 'straw') { g.fillStyle = '#d9c88a'; g.beginPath(); g.ellipse(0, -12, 14, 4.5, 0, 0, 7); g.fill(); g.beginPath(); g.arc(0, -13, 8, Math.PI, 0); g.fill(); g.fillStyle = '#8a6a3a'; g.fillRect(-8, -14, 16, 2); }
+      g.restore();
+    }
+    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(who.name, e.x, e.y - up); g.fillStyle = '#ffe9a8'; g.fillText(who.name, e.x, e.y - up); }
   }
-  const HARL_LOOK = { tunic: '#3f4f3a', hair: '#d9d0c0', beard: true, helm: '#7a3b2e', shoulder: '#2f3a2c' };
-  const PETE_LOOK = { tunic: '#8a7a5a', hair: '#e0d8c0', beard: true, shoulder: '#6a5a4a' };
+  const HARL_LOOK = { who: 'harl', tunic: '#3f4f3a', hair: '#d9d0c0', beard: true, helm: '#7a3b2e', shoulder: '#2f3a2c' };
+  const PETE_LOOK = { who: 'pete', tunic: '#8a7a5a', hair: '#e0d8c0', beard: true, shoulder: '#6a5a4a' };
   const B_USABLE = [B_LOBSTER, B_BOTTLE, B_STRONGBOX, B_HULL, B_BOAT, B_PALM, B_SEAROCK];
   HOOKS.draw.push((g, items) => {
     const x0 = Math.max(0, Math.floor(cam.x / TILE)), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE));

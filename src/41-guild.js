@@ -331,15 +331,21 @@
     g.fillStyle = '#7a2e2e'; g.beginPath(); g.arc(cx, cy + 2, 4.5, 0, 7); g.fill(); g.fillStyle = '#f5c542'; g.font = `700 6px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('G', cx, cy + 4);
     g.fillStyle = open ? '#c9a02a' : '#8f96a3'; g.fillRect(cx - 3, cy - 8, 6, 6); if (!open) { g.strokeStyle = '#c9ccd3'; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy - 9, 3, Math.PI, 0); g.stroke(); } // the lock, gold once it opens for you
   };
-  const drawPerson = (g, p) => {
+  // who: the person's id (Pip on the escort is 'pip'); the new look (83-townsfolk) draws them whole, in one outfit everywhere
+  const drawPerson = (g, p, who) => {
     const e = { x: p.px, y: p.py, r: 13, facing: p.facing, hurtT: 0, attackT: 0, moving: p.moving, walkT: p.walkT };
     const near = dist(player.x, player.y, e.x, e.y) < 110;
     if (near && !p.moving) e.facing = { x: Math.sign(player.x - e.x) || 0, y: Math.sign(player.y - e.y) || 1 };
-    g.save(); g.translate(e.x, e.y + (p.moving ? Math.sin(p.walkT) * 2 : 0));
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill();
-    drawHuman(g, e, { tunic: p.tunic, hair: p.hair, woman: p.woman, beard: p.beard, shoulder: '#7a2e2e' });
-    g.restore();
-    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(p.name, e.x, e.y - 26); g.fillStyle = '#ffe9a8'; g.fillText(p.name, e.x, e.y - 26); }
+    const look = { who, tunic: p.tunic, hair: p.hair, woman: p.woman, beard: p.beard, shoulder: '#7a2e2e' };
+    const nl = !!(window.TOWNSFOLK && TOWNSFOLK.put(g, e.x, e.y, e, look));
+    if (!nl) {
+      g.save(); g.translate(e.x, e.y + (p.moving ? Math.sin(p.walkT) * 2 : 0));
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill();
+      drawHuman(g, e, look);
+      g.restore();
+    }
+    const up = nl ? TOWNSFOLK.labelUp(who, 26) : 26;
+    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(p.name, e.x, e.y - up); g.fillStyle = '#ffe9a8'; g.fillText(p.name, e.x, e.y - up); }
   };
   const drawPennant = g => { // the guild colour over the door, with the rank's stripes
     const cx = tc(DOOR_POS.x), top = HALL.y * TILE + 14, wave = Math.sin(time * 2.2) * 2, stripes = G().rank;
@@ -351,7 +357,7 @@
     const gd = G();
     const x0 = Math.max(0, Math.floor(cam.x / TILE)), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE));
     const y0 = Math.max(0, Math.floor(cam.y / TILE)), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE) + 3);
-    if (escort && escort.px > cam.x - 60 && escort.px < cam.x + VW + 60 && escort.py > cam.y - 60 && escort.py < cam.y + VH + 60) items.push({ y: escort.py + 13, draw: () => drawPerson(g, Object.assign({}, LOOKS.pip, escort)) });
+    if (escort && escort.px > cam.x - 60 && escort.px < cam.x + VW + 60 && escort.py > cam.y - 60 && escort.py < cam.y + VH + 60) items.push({ y: escort.py + 13, draw: () => drawPerson(g, Object.assign({}, LOOKS.pip, escort), 'pip') });
     if (x1 < HF_RECT.x0 || x0 > HF_RECT.x1 || y1 < HF_RECT.y0 || y0 > HF_RECT.y1) return;
     const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
     const mark = gd.founded && JOBS.some(j => !cooling(j) && (j.kind === 'deliver' ? countItem(j.item) >= j.n : false));
@@ -360,7 +366,7 @@
       if (t === T_GBOARD) items.push({ y: ty * TILE + TILE - 6, draw: () => drawGuildBoard(g, tx, ty, mark) });
       else if (t === T_GCHEST) items.push({ y: ty * TILE + TILE - 6, draw: () => drawGuildChest(g, tx, ty) });
     }
-    for (const s of staff) items.push({ y: s.py + 13, draw: () => drawPerson(g, s) });
+    for (const s of staff) items.push({ y: s.py + 13, draw: () => drawPerson(g, s, s.id) });
     if (gd.founded && !inHall(ptx, pty) && (HALL.x + HALL.w) * TILE > cam.x && HALL.x * TILE < cam.x + VW && (HALL.y + HALL.h) * TILE > cam.y && HALL.y * TILE < cam.y + VH) items.push({ y: (HALL.y + HALL.h) * TILE - 1, draw: () => { drawBuilding(g, HALL); drawPennant(g); } });
     if (!player.dead && !player.mech && staff.length) items.push({ y: 1e9 + 4, draw: () => {
       if (npcInFront()) return;

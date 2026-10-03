@@ -397,14 +397,20 @@
     const ent = { x: e.px, y: e.py, r: 12, facing: e.facing, hurtT: 0, attackT: 0, moving: false, walkT: 0 };
     const near = dist(player.x, player.y, ent.x, ent.y) < 110;
     if (near) ent.facing = { x: Math.sign(player.x - ent.x) || 0, y: Math.sign(player.y - ent.y) || 1 };
-    g.save(); g.translate(ent.x, ent.y);
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 11, 5, 0, 0, 7); g.fill();
-    g.scale(0.95, 1.1);
-    elLongHair(g, e.hair);
-    drawHuman(g, ent, { tunic: e.tunic, hair: e.hair, apron: e.apron, crown: e.crown, woman: e.woman, skin: '#f0d0b0', shoulder: e.crown ? '#c9a36a' : '#6b4a2a', weapon: e.bow ? { shape: 'bow', color: '#7a5a2a' } : null });
-    elEars(g, '#f0d0b0');
-    g.restore();
-    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(e.name, ent.x, ent.y - 28); g.fillStyle = '#c8f0c0'; g.fillText(e.name, ent.x, ent.y - 28); }
+    const look = { who: e.id, tunic: e.tunic, hair: e.hair, apron: e.apron, crown: e.crown, woman: e.woman, skin: '#f0d0b0', shoulder: e.crown ? '#c9a36a' : '#6b4a2a', weapon: e.bow ? { shape: 'bow', color: '#7a5a2a' } : null };
+    // the new look (83-townsfolk) draws the elf whole: long hair, the ears and the shadow are its own
+    const nl = !!(window.TOWNSFOLK && TOWNSFOLK.put(g, ent.x, ent.y, ent, look));
+    if (!nl) {
+      g.save(); g.translate(ent.x, ent.y);
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 11, 5, 0, 0, 7); g.fill();
+      g.scale(0.95, 1.1);
+      elLongHair(g, e.hair);
+      drawHuman(g, ent, look);
+      elEars(g, '#f0d0b0');
+      g.restore();
+    }
+    const up = nl ? TOWNSFOLK.labelUp(e.id, 28) : 28;
+    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(e.name, ent.x, ent.y - up); g.fillStyle = '#c8f0c0'; g.fillText(e.name, ent.x, ent.y - up); }
   }
   function drawHoverGlow(g) {
     const bob = Math.sin(time * 2.2) * 2, onWater = tileAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)) === T.WATER;

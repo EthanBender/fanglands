@@ -319,7 +319,8 @@
     g.fillStyle = '#6b4a2a'; g.fillRect(x + 3, y + 8, TILE - 6, TILE - 12);
     g.fillStyle = '#8a5a2b'; for (let k = 0; k < 4; k++) g.fillRect(x + 5, y + 11 + k * 9, TILE - 10, 6);
     g.fillStyle = '#c9b676'; for (const [ox, oy] of [[-10, 8], [6, 12], [-2, 4], [12, 2]]) { g.beginPath(); g.ellipse(cx + ox, cy + oy, 5, 2, 0.3, 0, 7); g.fill(); }
-    if (!open) { g.save(); g.translate(cx, cy + 2); g.scale(0.85, 0.85); drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0 }, { tunic: HEROES.sera.look.tunic, hair: HEROES.sera.look.hair, woman: true, shoulder: '#5a4a3a' }); g.restore(); }
+    // Sera in the new look (83-townsfolk) at her own size, her bow hidden in the straw (unarmed: an empty hand)
+    if (!open) { const sl = { who: 'sera', tunic: HEROES.sera.look.tunic, hair: HEROES.sera.look.hair, woman: true, shoulder: '#5a4a3a' }; g.save(); g.translate(cx, cy + 2); if (!(window.TOWNSFOLK && TOWNSFOLK.takes(sl))) g.scale(0.85, 0.85); drawHuman(g, { x: cx, y: cy, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, unarmed: true }, sl); g.restore(); }
     g.strokeStyle = '#8f96a3'; g.lineWidth = 3; g.lineCap = 'round';
     for (let k = 0; k < 5; k++) { const bx = x + 8 + k * 8; if (open && k >= 3) continue; g.beginPath(); g.moveTo(bx, y + 4); g.lineTo(bx, y + TILE - 6); g.stroke(); }
     g.beginPath(); g.moveTo(x + 5, y + 4); g.lineTo(x + TILE - 5, y + 4); g.moveTo(x + 5, y + TILE - 6); g.lineTo(x + TILE - 5, y + TILE - 6); g.stroke();
@@ -327,16 +328,25 @@
     g.fillStyle = '#5a5d64'; for (const [ox, oy] of [[x + 6, y + 4], [x + TILE - 6, y + 4], [x + 6, y + TILE - 6], [x + TILE - 6, y + TILE - 6]]) { g.beginPath(); g.arc(ox, oy, 2.5, 0, 7); g.fill(); }
     if (!open && dist(player.x, player.y, cx, cy) < 160) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText('Sera · E', cx, y - 6); g.fillStyle = '#ffe9a8'; g.fillText('Sera · E', cx, y - 6); }
   }
+  // the new look (83-townsfolk) draws the hero whole, by id: her own shadow, step and swing, so no bob or shadow here;
+  // the name, the health bar and 'waiting' go over the new head
+  const HERO_LOOK = {};
+  const heroLook = id => HERO_LOOK[id] || (HERO_LOOK[id] = Object.assign({ who: id }, HEROES[id].look));
   function drawCompanion(g, c, def) {
-    const e = { x: c.x, y: c.y, r: 13, facing: live.facing, hurtT: live.hurtT, attackT: live.attackT, moving: live.moving, walkT: live.walkT };
-    g.save(); g.translate(e.x, e.y + (e.moving ? Math.sin(e.walkT) * 2 : 0));
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill();
-    drawHuman(g, e, def.look);
-    g.restore();
+    const e = { x: c.x, y: c.y, r: 13, facing: live.facing, hurtT: live.hurtT, attackT: live.attackT, moving: live.moving && !c.riding, walkT: live.walkT };
+    const look = window.TOWNSFOLK ? heroLook(c.id) : def.look, nl = !!(window.TOWNSFOLK && TOWNSFOLK.takes(look));
+    if (nl) { g.save(); g.translate(e.x, e.y); drawHuman(g, e, look); g.restore(); }
+    else {
+      g.save(); g.translate(e.x, e.y + (e.moving ? Math.sin(e.walkT) * 2 : 0));
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill();
+      drawHuman(g, e, def.look);
+      g.restore();
+    }
+    const up = nl ? TOWNSFOLK.labelUp(c.id, 26) : 26;
     const near = dist(player.x, player.y, e.x, e.y) < 140, hurt = c.hp < def.hp;
-    if (near || hurt) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(def.name, e.x, e.y - 26); g.fillStyle = '#9fe0b0'; g.fillText(def.name, e.x, e.y - 26); }
-    if (hurt) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(e.x - 14, e.y - 22, 28, 4); g.fillStyle = '#3fb950'; g.fillRect(e.x - 14, e.y - 22, 28 * clamp(c.hp / def.hp, 0, 1), 4); }
-    if (c.mode === 'stay' && near) { g.fillStyle = '#8b949e'; g.font = '9px sans-serif'; g.fillText('waiting', e.x, e.y - 36); }
+    if (near || hurt) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(def.name, e.x, e.y - up); g.fillStyle = '#9fe0b0'; g.fillText(def.name, e.x, e.y - up); }
+    if (hurt) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(e.x - 14, e.y - up + 4, 28, 4); g.fillStyle = '#3fb950'; g.fillRect(e.x - 14, e.y - up + 4, 28 * clamp(c.hp / def.hp, 0, 1), 4); }
+    if (c.mode === 'stay' && near) { g.fillStyle = '#8b949e'; g.font = '9px sans-serif'; g.fillText('waiting', e.x, e.y - up - 10); }
   }
   HOOKS.draw.push((g, items, cam) => {
     const c = comp();
@@ -349,7 +359,8 @@
   // the exact "44 / 60" and a bar on the health ramp (green, amber, red: the same meaning as your own shield).
   // Down: a red edge, "SERA IS DOWN" and "up in 12 s". Waiting where you left her: "SERA · WAITING".
   // The portrait keeps the hero's own colours (hair, tunic): that says WHICH hero, not how she is doing.
-  function heroFace(def, down) { return { hair: def.look.helm || def.look.hair, tunic: def.look.tunic, down: !!down }; }
+  // who: which hero, so the kit's portrait (59-hudkit) draws her in the new look (83-townsfolk)
+  function heroFace(def, down) { return { who: Object.keys(HEROES).find(k => HEROES[k] === def), hair: def.look.helm || def.look.hair, tunic: def.look.tunic, down: !!down }; }
   // The first of several field sets that fits the plaque column's width, so no word is ever squeezed out of its plate.
   // It measures the way the kit's plaque lays out (src/59-hudkit.js plaque(): a 36 px roundel, the name in Cinzel shrinking
   // to 9 px and no further, the value on the right in Cinzel 11, drawn stars 16 px each, one line of sans under it).

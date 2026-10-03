@@ -295,13 +295,19 @@
     const e = { x: n.px, y: n.py, r: 13, facing: n.facing, hurtT: 0, attackT: 0, moving: false, walkT: 0 };
     const near = dist(player.x, player.y, e.x, e.y) < 110;
     if (near) e.facing = { x: Math.sign(player.x - e.x) || 0, y: Math.sign(player.y - e.y) || 1 };
-    const hover = Math.sin(time * 1.8 + n.x) * 1.5;
-    g.save(); g.translate(e.x, e.y + hover);
-    g.fillStyle = 'rgba(80,110,170,0.25)'; g.beginPath(); g.ellipse(0, 12 - hover, 12, 5, 0, 0, 7); g.fill();
-    skWings(g, n.wing, Math.sin(time * 1.6 + n.x) * 0.15, n.role === 'sky_queen' ? '#fffaf0' : '#f0e8d8');
-    drawHuman(g, e, { tunic: n.tunic, hair: n.hair, crown: n.crown, woman: n.woman, beard: n.beard, apron: n.apron, shoulder: n.role === 'sky_queen' ? '#c9a36a' : '#7a8aa0', skin: '#f0d8c0', tool: n.role === 'sky_smith' ? 'hammer' : undefined, toolColor: '#c9ccd3' });
-    g.restore();
-    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(n.name, e.x, e.y - 28); g.fillStyle = '#ffe9a8'; g.fillText(n.name, e.x, e.y - 28); }
+    const look = { who: n.id, tunic: n.tunic, hair: n.hair, crown: n.crown, woman: n.woman, beard: n.beard, apron: n.apron, shoulder: n.role === 'sky_queen' ? '#c9a36a' : '#7a8aa0', skin: '#f0d8c0', tool: n.role === 'sky_smith' ? 'hammer' : undefined, toolColor: '#c9ccd3', wing: n.wing };
+    // the new look (83-townsfolk) draws the sky folk whole, their own wings (and the smith's hammer) included
+    const nl = !!(window.TOWNSFOLK && TOWNSFOLK.put(g, e.x, e.y, e, look));
+    if (!nl) {
+      const hover = Math.sin(time * 1.8 + n.x) * 1.5;
+      g.save(); g.translate(e.x, e.y + hover);
+      g.fillStyle = 'rgba(80,110,170,0.25)'; g.beginPath(); g.ellipse(0, 12 - hover, 12, 5, 0, 0, 7); g.fill();
+      skWings(g, n.wing, Math.sin(time * 1.6 + n.x) * 0.15, n.role === 'sky_queen' ? '#fffaf0' : '#f0e8d8');
+      drawHuman(g, e, look);
+      g.restore();
+    }
+    const up = nl ? TOWNSFOLK.labelUp(n.id, 28) : 28;
+    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(n.name, e.x, e.y - up); g.fillStyle = '#ffe9a8'; g.fillText(n.name, e.x, e.y - up); }
   }
   HOOKS.draw.push((g, items, cam) => {
     const x0 = Math.max(0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE) + 1);

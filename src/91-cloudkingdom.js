@@ -168,12 +168,12 @@
     { id: 'orla', name: 'Warden Orla', at: SP.orla, wing: 1.05, look: { tunic: '#c9d6ea', hair: '#e8d9a0', woman: true, helm: '#dfe6f0', spear: true, shoulder: '#9ab0d0', skin: '#f0d8c0' } },
     { id: 'brisk', name: 'Warden Brisk', at: SP.brisk, wing: 1.05, look: { tunic: '#c9d6ea', hair: '#5a3a1e', helm: '#dfe6f0', spear: true, shoulder: '#9ab0d0', skin: '#e8c0a0' } },
   ];
-  for (const p of PEOPLE) { p.x = p.at[0]; p.y = p.at[1]; p.px = tc(p.x); p.py = tc(p.y); p.facing = { x: 0, y: 1 }; p.b = PLAN.inBuilding(p.x, p.y); }
+  for (const p of PEOPLE) { p.x = p.at[0]; p.y = p.at[1]; p.px = tc(p.x); p.py = tc(p.y); p.facing = { x: 0, y: 1 }; p.b = PLAN.inBuilding(p.x, p.y); p.look.who = p.id; p.look.wing = p.wing; }
   // Lark: where she stands depends on her story (the maze, then at the knight's heel, then the plaza). She is this
   // knight's own: online, every knight has their own Lark, in their own place in the story.
   const LARK = { id: 'lark', name: 'Lark', px: tc(SP.larkMaze[0]), py: tc(SP.larkMaze[1]), facing: { x: 0, y: 1 }, mode: 'maze', trail: [], bubble: null,
     n: 0, t0: 0, from: null, moving: false, walkT: 0, far: false, lastX: null, lastY: null };
-  const LOOK_LARK = { tunic: '#7fb2e8', hair: '#f5d77a', woman: true, shoulder: '#f5c542', skin: '#f5dcc8' };
+  const LOOK_LARK = { who: 'lark', wing: 0.8, tunic: '#7fb2e8', hair: '#f5d77a', woman: true, shoulder: '#f5c542', skin: '#f5dcc8' };
   const LARK_LOG = [];          // every line Lark says out loud while she walks (the checks read it)
   function larkFromStage() {
     const s = Q().stage;
@@ -215,6 +215,7 @@
       : w.id === 'brannoc' ? { tunic: '#7a5a3a', hair: '#3a2a1a', shoulder: '#c9a36a', skin: '#e0b894' }
       : w.id === 'fen' ? { tunic: '#58a6ff', hair: '#7a4a2a', shoulder: '#f5c542', skin: '#f2d6bf' }
       : { tunic: '#ff9ec8', hair: '#f0c060', woman: true, shoulder: '#ffffff', skin: '#f5dcc8' } }));
+  for (const w of WALKERS) { w.look.who = w.id; w.look.wing = w.child ? 0.7 : 0.95; }
   const FLIERS = PLAN.FLIERS.map((f, i) => ({ id: f.id, name: f.name, i, px: 0, py: 0, dx: 0, dy: 1 }));
   function walkerCache() {
     const ms = wallMs();
@@ -1901,6 +1902,8 @@
     const near = dist(player.x, player.y, p.px, p.py) < 3 * TILE;
     const facing = (near && !p.moving) ? { x: Math.sign(player.x - p.px) || 0, y: Math.sign(player.y - p.py) || 1 } : (p.facing || { x: 0, y: 1 });
     const e = { x: p.px, y: p.py, r: 13, facing, hurtT: 0, attackT: 0, moving: !!p.moving, walkT: p.walkT || 0 };
+    // the new look (83-townsfolk) draws the person whole at their own size (a child's build, Lark's), wings and all
+    if (window.TOWNSFOLK && TOWNSFOLK.put(g, p.px, p.py, e, look)) { if (near && name) label(g, name, p.px, p.py - TOWNSFOLK.labelUp(look.who, 28 * scale)); return; }
     const bob = p.moving ? Math.abs(Math.sin((p.walkT || 0) * 1.2)) * 2 : Math.sin(time * 1.8 + p.px * 0.01) * 1.2;
     g.save(); g.translate(p.px, p.py - bob); if (scale !== 1) g.scale(scale, scale);
     g.fillStyle = 'rgba(80,110,170,0.25)'; g.beginPath(); g.ellipse(0, 12 + bob, 12, 5, 0, 0, 7); g.fill();
@@ -1935,6 +1938,8 @@
   function larkFigure(g, pose) {
     g.save(); g.globalAlpha = Math.max(0, Math.min(1, pose.a));
     if (pose.air) { g.fillStyle = 'rgba(60,90,140,0.18)'; g.beginPath(); g.ellipse(pose.x, pose.y + 46, 12 * pose.s, 4 * pose.s, 0, 0, 7); g.fill(); }
+    // the new look (83-townsfolk): Lark at her own size (pose.s on top), her own wings beating fast in the air, no ground shadow
+    if (window.TOWNSFOLK && TOWNSFOLK.takes(LOOK_LARK)) { g.translate(pose.x, pose.y); g.scale(pose.s, pose.s); drawHuman(g, { x: pose.x, y: pose.y, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, air: true, flapK: pose.air ? 4 : 1 }, LOOK_LARK); g.restore(); return; }
     g.translate(pose.x, pose.y); g.scale(0.8 * pose.s, 0.8 * pose.s);
     wings(g, pose.wings, Math.sin(time * (pose.air ? 9 : 2)) * (pose.air ? 0.45 : 0.12), '#fffaf0');
     drawHuman(g, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, LOOK_LARK);
@@ -1958,9 +1963,12 @@
   function flierShadow(g, f) { g.fillStyle = 'rgba(60,90,140,0.16)'; g.beginPath(); g.ellipse(f.px, f.py + 10, 13, 4.5, 0, 0, 7); g.fill(); }
   function drawFlier(g, f) {
     const y = f.py - 70, flap = Math.sin(time * 8 + f.i) * 0.5;
+    const look = f.id === 'wick' ? { who: 'wick', tunic: '#2b8c8c', hair: '#f0d0b0', shoulder: '#f5c542', skin: '#f0d8c0', wing: 1.3 } : { who: f.id, tunic: '#c9d6ea', hair: '#e8d9a0', shoulder: '#9ab0d0', skin: '#f0d8c0', wing: 1.3 };
+    // the new look (83-townsfolk) brings its own wings, beating fast in the air (flierShadow is the ground shadow)
+    const nl = !!(window.TOWNSFOLK && TOWNSFOLK.takes(look));
     g.save(); g.translate(f.px, y); g.rotate(Math.atan2(f.dy, f.dx) * 0.15);
-    wings(g, 1.3, flap, '#fbf6e6');
-    drawHuman(g, { x: 0, y: 0, r: 13, facing: { x: f.dx, y: f.dy }, hurtT: 0, attackT: 0, moving: true, walkT: time * 6 }, f.id === 'wick' ? { tunic: '#2b8c8c', hair: '#f0d0b0', shoulder: '#f5c542', skin: '#f0d8c0' } : { tunic: '#c9d6ea', hair: '#e8d9a0', shoulder: '#9ab0d0', skin: '#f0d8c0' });
+    if (!nl) wings(g, 1.3, flap, '#fbf6e6');
+    drawHuman(g, { x: f.px, y, r: 13, facing: { x: f.dx, y: f.dy }, hurtT: 0, attackT: 0, moving: true, walkT: time * 6, air: true, flapK: 3.6 }, look);
     g.restore();
   }
   // ---------- the sky curtain ----------
