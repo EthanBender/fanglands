@@ -12,6 +12,9 @@
 //                every frame it runs unpaused, online or not, since the knight was made.
 // ============================================================================
 
+import { strikesNow } from './store.js';
+import { nameRude } from './filter.js';
+
 export const LOGINS_SHOWN = 10;          // the last logins each row carries
 export const RESETS_PER_MINUTE = 3;      // secret words one admin may change in any minute, from the game
 export const RESET_TEXT = 'An admin changed your secret word. Ask them for the new one, then log in again.';
@@ -38,9 +41,12 @@ export function playSecondsOf(sql, lc) {
 //    online, map, region, lv,                  where the knight is now (null when not on line)
 //    lastLogin, lastOn,                        the newest login's start; the last moment the world heard from them
 //    onlineMs, countedSince, playSeconds,      the two clocks above
-//    logins: [{at, ms, open}]}                 the last LOGINS_SHOWN logins, newest first; open = still on
+//    logins: [{at, ms, open}],                 the last LOGINS_SHOWN logins, newest first; open = still on
+//    strikes, strikeAt, wordsLockedUntil,      word strikes as they stand now (faded after 30 clean days), when the last
+//                                              was counted, and when a knight kept out for bad words may come back (0: not)
+//    badName}                                  the word filter refuses this name today (docs/ONLINE.md, "Renaming a knight")
 export function accountList({ sql, store, room, now, since }) {
-  const rows = sql.exec('SELECT a.name_lc, a.name, a.created, a.last_seen, a.banned, a.role, a.muted_until, a.online_ms, (SELECT MAX(at) FROM saves s WHERE s.name_lc = a.name_lc) AS save_at FROM accounts a ORDER BY a.name_lc').toArray();
+  const rows = sql.exec('SELECT a.name_lc, a.name, a.created, a.last_seen, a.banned, a.role, a.muted_until, a.online_ms, a.word_strikes, a.word_strike_at, a.words_locked_until, (SELECT MAX(at) FROM saves s WHERE s.name_lc = a.name_lc) AS save_at FROM accounts a ORDER BY a.name_lc').toArray();
   const on = new Map(room.online().map(k => [String(k.n).toLowerCase(), k]));
   return rows.map(a => {
     const k = on.get(a.name_lc) || null;
@@ -63,6 +69,9 @@ export function accountList({ sql, store, room, now, since }) {
       countedSince: Math.max(Number(since) || 0, Number(a.created) || 0),
       playSeconds: playSecondsOf(sql, a.name_lc),
       logins,
+      strikes: strikesNow(a.word_strikes, a.word_strike_at, now), strikeAt: Number(a.word_strike_at) || 0,
+      wordsLockedUntil: (Number(a.words_locked_until) || 0) > now ? Number(a.words_locked_until) : 0,
+      badName: nameRude(a.name),
     };
   });
 }

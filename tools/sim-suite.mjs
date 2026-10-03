@@ -77,6 +77,8 @@ function headlessWindow() {
     document: { getElementById: () => mkCanvas(), createElement: () => mkCanvas(), fonts: null },
   };
   g.window = g; g.__fullPlaythrough = false;
+  // as tools/headless.js does: the script as text, for the self-tests that read the source itself (79-strikes: no regex lookbehind)
+  g.__gameSource = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
   return g;
 }
 function runSuite(how) {

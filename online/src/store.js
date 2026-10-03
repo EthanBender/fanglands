@@ -20,6 +20,12 @@ const MOD_LOG_KEPT = 5000;                 // the newest rows of mod_log that ar
 const PRUNE_EVERY = 200;                   // mod_log writes between two trims (and the first write after a wake)
 const TRADES_KEPT = 5000;                  // the newest rows of trades that are kept (the same trim rhythm)
 export const LOGINS_KEPT = 50;             // login rows kept per knight (the totals live in accounts.online_ms)
+// Word strikes (docs/ONLINE.md, "Word strikes"): a knight's count goes back to 0 after this long with no new strike, and the
+// third strike (and every one after it) keeps the knight out for WORD_LOCK_MS.
+export const WORD_STRIKE_FADE = 30 * 24 * 3600 * 1000;
+export const WORD_LOCK_MS = 24 * 3600 * 1000;
+// The count as it stands now: a count whose last strike is WORD_STRIKE_FADE or more ago has faded to 0.
+export const strikesNow = (strikes, at, now) => (Number(at) > 0 && now - Number(at) >= WORD_STRIKE_FADE) ? 0 : Math.max(0, Math.floor(Number(strikes) || 0));
 
 // The first six statements are world.js's schema from before admins, verbatim. Split on ';' to run.
 export const SCHEMA = `
@@ -50,6 +56,14 @@ const ACCOUNT_COLUMNS = [
   ['role', "TEXT NOT NULL DEFAULT 'player'"],
   ['muted_until', 'INTEGER NOT NULL DEFAULT 0'],
   ['online_ms', 'INTEGER NOT NULL DEFAULT 0'],   // the length of every closed login, added up (the accounts list's "Time online")
+  // word strikes: their own columns, never the wrong-secret-word tries / locked_until
+  ['word_strikes', 'INTEGER NOT NULL DEFAULT 0'],        // bad lines counted (read through strikesNow: it fades)
+  ['word_strike_at', 'INTEGER NOT NULL DEFAULT 0'],      // when the last one was counted (0: never)
+  ['words_locked_until', 'INTEGER NOT NULL DEFAULT 0'],  // kept out for bad words until then (0: not kept out)
+  // the place (CF-Connecting-IP) a knight kept out for bad words was sent out from: only so it cannot make a new knight from
+  // there (world.signup). Written with the lockout and nowhere else, emptied when the lockout is cleared or over (the World
+  // empties lapsed ones on every wake); '' the rest of the time. Never shown on any list.
+  ['last_ip', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 // Adds whatever accounts column is missing, and nothing else. Answers {via, added} so the World can say what it did.
@@ -78,7 +92,9 @@ const parse = s => { try { return JSON.parse(s); } catch (e) { return null; } };
 // SqlStore: over ctx.storage.sql (sql.exec(query, ...args) -> a cursor with toArray()).
 // ---------------------------------------------------------------------------
 export class SqlStore {
-  constructor(sql) { this.sql = sql; this.logWrites = 0; this.tradeWrites = 0; }
+  // txn(fn): runs fn as one transaction (the World passes ctx.storage.transactionSync), so a write that fails part-way leaves
+  // nothing half done. Without one, fn just runs.
+  constructor(sql, txn) { this.sql = sql; this.txn = typeof txn === 'function' ? txn : (fn => fn()); this.logWrites = 0; this.tradeWrites = 0; }
   rows(q, ...args) { return this.sql.exec(q, ...args).toArray(); }
   row(q, ...args) { return this.rows(q, ...args)[0] || null; }
 
@@ -98,8 +114,9 @@ export class SqlStore {
 
   log({ at, by, act, target, detail }) {
     this.sql.exec('INSERT INTO mod_log (at, by, act, target, detail) VALUES (?, ?, ?, ?, ?)', at, String(by), String(act), String(target), String(detail || ''));
-    // keep the newest MOD_LOG_KEPT: on the first write after a wake and every PRUNE_EVERY writes after that
-    if (++this.logWrites % PRUNE_EVERY === 1) this.sql.exec('DELETE FROM mod_log WHERE id <= (SELECT id FROM mod_log ORDER BY id DESC LIMIT 1 OFFSET ?)', MOD_LOG_KEPT);
+    // keep the newest MOD_LOG_KEPT: on the first write after a wake and every PRUNE_EVERY writes after that. A rename row is
+    // always kept: a login with the old name finds the knight through it (renamedFrom), however many strikes came after.
+    if (++this.logWrites % PRUNE_EVERY === 1) this.sql.exec("DELETE FROM mod_log WHERE act != 'rename' AND id <= (SELECT id FROM mod_log ORDER BY id DESC LIMIT 1 OFFSET ?)", MOD_LOG_KEPT);
   }
   modLog(limit = 200) {
     return this.rows('SELECT at, by, act, target, detail FROM mod_log ORDER BY id DESC LIMIT ?', limit)
@@ -212,6 +229,53 @@ export class SqlStore {
   }
   // how many rows of that act this knight wrote to mod_log since then (the reset's rate limit)
   actsSince(by, act, since) { return Number(this.row('SELECT COUNT(*) AS n FROM mod_log WHERE by = ? AND act = ? AND at > ?', String(by), String(act), since).n) || 0; }
+
+  // ---------- word strikes (docs/ONLINE.md, "Word strikes") ----------
+  // {strikes (faded), at, lockedUntil}, or null for no such knight
+  wordStrikes(lc, now) {
+    const r = this.row('SELECT word_strikes, word_strike_at, words_locked_until FROM accounts WHERE name_lc = ?', norm(lc));
+    return r ? { strikes: strikesNow(r.word_strikes, r.word_strike_at, now), at: Number(r.word_strike_at) || 0, lockedUntil: Number(r.words_locked_until) || 0 } : null;
+  }
+  // one more strike on top of the count as it stands now (a faded count starts again at 1); answers the new count
+  addWordStrike(lc, now) {
+    const cur = this.wordStrikes(lc, now);
+    if (!cur) return null;
+    this.sql.exec('UPDATE accounts SET word_strikes = ?, word_strike_at = ? WHERE name_lc = ?', cur.strikes + 1, Math.floor(now), norm(lc));
+    return cur.strikes + 1;
+  }
+  // ip: the place the knight was sent out from ('' when the socket did not say), kept only as long as the lockout
+  setWordLock(lc, until, ip) { this.sql.exec('UPDATE accounts SET words_locked_until = ?, last_ip = ? WHERE name_lc = ?', clampUntil(until), String(ip || '').slice(0, 64), norm(lc)); }
+  clearWordStrikes(lc) { this.sql.exec("UPDATE accounts SET word_strikes = 0, word_strike_at = 0, words_locked_until = 0, last_ip = '' WHERE name_lc = ?", norm(lc)); }
+  // the places of lockouts that are over are forgotten (the World, on every wake)
+  forgetPlaces(now) { this.sql.exec("UPDATE accounts SET last_ip = '' WHERE last_ip != '' AND words_locked_until <= ?", now); }
+
+  // ---------- a new name (docs/ONLINE.md, "Renaming a knight") ----------
+  // Rewrites the name everywhere it is kept: the account, its sessions, saves, pinned backup, logins and the crackers it lit
+  // (by lower-case name), both sides of its trades, and the display copies in chat, mod_log and drop parties. The caller
+  // has already checked the new name (the filter, and nobody else has it). Answers {from, to}, or null for no such knight.
+  rename(lc, name) {
+    const o = norm(lc), to = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 40), n = norm(to);
+    const a = o && this.row('SELECT name FROM accounts WHERE name_lc = ?', o);
+    if (!a || !n) return null;
+    // a dozen UPDATEs: all of them or none (a failure part-way would leave the name changed in some tables only)
+    this.txn(() => this.renameRows(o, to, n));
+    return { from: a.name, to };
+  }
+  renameRows(o, to, n) {
+    this.sql.exec('UPDATE accounts SET name = ?, name_lc = ? WHERE name_lc = ?', to, n, o);
+    if (n !== o) for (const [table, col] of [['sessions', 'name_lc'], ['saves', 'name_lc'], ['save_pins', 'name_lc'], ['logins', 'name_lc'], ['crackers', 'lit_by']]) this.sql.exec(`UPDATE ${table} SET ${col} = ? WHERE ${col} = ?`, n, o);
+    this.sql.exec('UPDATE trades SET a = ?, a_lc = ? WHERE a_lc = ?', to, n, o);
+    this.sql.exec('UPDATE trades SET b = ?, b_lc = ? WHERE b_lc = ?', to, n, o);
+    this.sql.exec('UPDATE chat SET name = ? WHERE lower(name) = ?', to, o);
+    this.sql.exec('UPDATE mod_log SET target = ? WHERE lower(target) = ?', to, o);
+    this.sql.exec('UPDATE mod_log SET by = ? WHERE lower(by) = ?', to, o);
+    this.sql.exec('UPDATE parties SET by = ? WHERE lower(by) = ?', to, o);
+  }
+  // the name a rename gave the knight once called this (the newest), or null: a knight logging in with the old name
+  renamedFrom(name) {
+    const r = this.row("SELECT target FROM mod_log WHERE act = 'rename' AND lower(detail) = ? ORDER BY id DESC LIMIT 1", norm(name));
+    return r ? r.target : null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +301,7 @@ export class MemoryStore {
     if (!lc) return;
     const a = this.accounts.get(lc);
     if (a) { a.role = roleWord(role); return; }
-    this.accounts.set(lc, { name: String(name).replace(/\s+/g, ' ').trim().slice(0, 40), lc, role: roleWord(role), mutedUntil: 0, banned: false, onlineMs: 0 });
+    this.accounts.set(lc, { name: String(name).replace(/\s+/g, ' ').trim().slice(0, 40), lc, role: roleWord(role), mutedUntil: 0, banned: false, onlineMs: 0, wordStrikes: 0, wordStrikeAt: 0, wordsLockedUntil: 0 });
   }
 
   account(name) {
@@ -250,7 +314,10 @@ export class MemoryStore {
 
   log({ at, by, act, target, detail }) {
     this.modRows.push({ id: this.nextLogId++, at, by: String(by), act: String(act), target: String(target), detail: String(detail || '') });
-    if (++this.logWrites % PRUNE_EVERY === 1 && this.modRows.length > MOD_LOG_KEPT) this.modRows.splice(0, this.modRows.length - MOD_LOG_KEPT);
+    if (++this.logWrites % PRUNE_EVERY === 1 && this.modRows.length > MOD_LOG_KEPT) {
+      const cut = this.modRows[this.modRows.length - MOD_LOG_KEPT - 1].id;   // as SqlStore: rows up to that id go, a rename row stays
+      this.modRows = this.modRows.filter(r => r.act === 'rename' || r.id > cut);
+    }
   }
   modLog(limit = 200) {
     return this.modRows.slice(-Math.max(0, limit)).reverse().map(r => ({ at: r.at, by: r.by, act: r.act, target: r.target, detail: r.detail }));
@@ -347,4 +414,35 @@ export class MemoryStore {
   onlineMs(lc) { const a = this.accounts.get(norm(lc)); return a ? a.onlineMs || 0 : 0; }
   setSecret(lc, salt, hash) { const a = this.accounts.get(norm(lc)); if (a) { a.salt = salt; a.hash = hash; } }
   actsSince(by, act, since) { return this.modRows.filter(r => r.by === String(by) && r.act === String(act) && r.at > since).length; }
+
+  // ---------- word strikes and renames: the same answers as SqlStore's ----------
+  wordStrikes(lc, now) {
+    const a = this.accounts.get(norm(lc));
+    return a ? { strikes: strikesNow(a.wordStrikes, a.wordStrikeAt, now), at: a.wordStrikeAt || 0, lockedUntil: a.wordsLockedUntil || 0 } : null;
+  }
+  addWordStrike(lc, now) {
+    const a = this.accounts.get(norm(lc)), cur = this.wordStrikes(lc, now);
+    if (!a || !cur) return null;
+    a.wordStrikes = cur.strikes + 1; a.wordStrikeAt = Math.floor(now);
+    return a.wordStrikes;
+  }
+  setWordLock(lc, until, ip) { const a = this.accounts.get(norm(lc)); if (a) { a.wordsLockedUntil = clampUntil(until); a.lastIp = String(ip || '').slice(0, 64); } }
+  clearWordStrikes(lc) { const a = this.accounts.get(norm(lc)); if (a) { a.wordStrikes = 0; a.wordStrikeAt = 0; a.wordsLockedUntil = 0; a.lastIp = ''; } }
+  forgetPlaces(now) { for (const a of this.accounts.values()) if (a.wordsLockedUntil <= now) a.lastIp = ''; }
+  rename(lc, name) {
+    const o = norm(lc), to = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 40), n = norm(to), a = this.accounts.get(o);
+    if (!a || !n) return null;
+    const from = a.name;
+    this.accounts.delete(o); a.name = to; a.lc = n; this.accounts.set(n, a);
+    for (const r of this.loginRows) if (r.lc === o) r.lc = n;
+    for (const r of this.tradeRows) { if (r.a_lc === o) { r.a = to; r.a_lc = n; } if (r.b_lc === o) { r.b = to; r.b_lc = n; } }
+    for (const r of this.modRows) { if (r.target.toLowerCase() === o) r.target = to; if (r.by.toLowerCase() === o) r.by = to; }
+    for (const p of this.partyRows.values()) { if (p.by.toLowerCase() === o) p.by = to; for (const c of p.crackers) if (c.litBy === o) c.litBy = n; }
+    return { from, to };
+  }
+  renamedFrom(name) {
+    const l = norm(name);
+    for (let i = this.modRows.length - 1; i >= 0; i--) { const r = this.modRows[i]; if (r.act === 'rename' && r.detail.toLowerCase() === l) return r.target; }
+    return null;
+  }
 }

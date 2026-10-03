@@ -14,6 +14,7 @@
 //   room.muteChanged(name)     the parent page changed a mute: re-read it, tell that knight
 //   room.settleLogins()        after a wake's restores: every login row no socket carries any more is closed
 //   room.loginOf(name)         the open login row of a knight on line: {id, started} or null
+//   room.renamed(from, to)     the World gave a knight a new name: an online one is sent out to come straight back as it
 //   room.store                 where roles, mutes, bans, parties, prizes, logins and finished trades live (store.js)
 //
 // Timers: the room never calls setTimeout itself. When something becomes due it calls wake(ms) once, and
@@ -30,6 +31,13 @@
 // kick, a ban, a new secret word, the world full of strikes. The row's id rides the attachment, so a nap keeps it open;
 // a row that no socket carries after a wake (the world was restarted under it) ends at the last time it was heard from.
 //
+// Word strikes (docs/ONLINE.md, "Word strikes"): a chat line with a word of the filter's STRIKE_WORDS in it (a swear word or a
+// slur, whole or in a common disguise; never a number, a word hidden in another, an insult or a mild word; starring out
+// alone is no strike) is one on the knight's account
+// (the store keeps the count, which fades after 30 clean days). The first two are warnings said to the knight alone; the
+// third and every one after it sends the knight out (close 4006) and keeps it out for 24 hours, which join and restore
+// check here and the World checks on every login, /api call and socket.
+//
 // Admins (docs/ONLINE.md, "Admins and drop parties"): only the parent page makes one. Every admin message reads
 // the sender's role from the store, fresh, before it does anything; the socket's memory is never the lock.
 //
@@ -40,8 +48,8 @@
 // only: a disconnect, a map change, a walk away, a fall or a nap ends it, and then nothing moves.
 // ============================================================================
 
-import { cleanChat } from './filter.js';
-import { MemoryStore, ALWAYS } from './store.js';
+import { checkChat } from './filter.js';
+import { MemoryStore, ALWAYS, WORD_LOCK_MS } from './store.js';
 import {
   TILE, HAT_CHOICES, PARTY_LIFE, PRIZE_KEEP, LIGHT_RANGE, MAX_LIVE_CRACKERS, FUSE_MIN, FUSE_MAX, ID_RE,
   rollCracker, crackerId, parseCrackerId, checkTable, checkSpots, cryptoRandom, commas,
@@ -98,6 +106,18 @@ export const GIFT_WAIT = 10000;        // no answer to a gift within this: it co
 export const MUTE_SPANS = { '5m': 5 * 60 * 1000, '1h': 3600 * 1000, '1d': 24 * 3600 * 1000, always: ALWAYS };
 export const SPAWN_MAX = 20;           // monsters in one spawn message
 export const KICK_TEXT = 'An admin sent you out of the world. You can come back in.';
+// Word strikes: what the knight is told (the game says the lockout with the real time it ends, from `until`)
+export const WORD_WARN_1 = "That word isn't allowed here. This is your warning.";
+export const WORD_WARN_2 = "Last warning. Do it again and you'll be kept out for 24 hours.";
+export const WORDS_CODE = 4006;      // the close for a knight kept out for bad words (the wire does not reconnect)
+export const RENAMED_CODE = 4007;    // the close for a knight given a new name (the wire reconnects, as the new name)
+// The words the world itself says about a lockout (the game builds its own sentence from `until`, in local time).
+export function wordsText(until, now) {
+  const mins = Math.max(1, Math.ceil((until - now) / 60000)), h = Math.floor(mins / 60), m = mins % 60;
+  const left = (h ? h + (h === 1 ? ' hour' : ' hours') : '') + (h && m ? ' ' : '') + (m ? m + (m === 1 ? ' minute' : ' minutes') : '');
+  return "You're kept out for " + left + ' more for bad words.';
+}
+export const renamedText = to => "An admin changed your knight's name to " + to + '.';
 // Trading (docs/ONLINE.md, "Trading")
 export const TRADE_NEAR = 5 * TILE;           // px: ask, and say yes, within five tiles of each other
 export const TRADE_LEAVE = 8 * TILE;          // px: a knight who walks more than eight tiles away ends the trade
@@ -122,7 +142,8 @@ export class Room {
   constructor(opts = {}) {
     this.now = opts.now || (() => Date.now());
     this.log = opts.log || (() => {});
-    this.filter = opts.filter || cleanChat;
+    // the word filter: {text, masked, strike}. An old-style opts.filter (a string back) still works; it counts no strikes.
+    this.check = opts.check || (opts.filter ? (s => ({ text: opts.filter(s), masked: false, strike: false })) : checkChat);
     this.max = opts.max || 50;
     this.wake = opts.wake || (ms => { const t = setTimeout(() => this.tick(), ms); if (t && t.unref) t.unref(); });
     this.store = opts.store || new MemoryStore();
@@ -156,11 +177,16 @@ export class Room {
   }
 
   // ---------- joining and leaving ----------
-  join(sock, name) {
+  // opts.ip: the place the socket came from (CF-Connecting-IP), kept with the knight only so a third word strike can note
+  // where it was sent out from (store.setWordLock); never sent to anyone.
+  join(sock, name, opts) {
     if (this.knights.has(sock)) return;
     // the World already refuses a banned knight's login; this is the lock behind it (and the simulations' only one)
     const acc = this.store.account(name);
     if (acc && acc.banned) return this.refuseBanned(sock);
+    // kept out for bad words: the World refuses the socket first; this is the lock behind it
+    const until = acc ? this.wordLock(acc.lc) : 0;
+    if (until) return this.refuseWords(sock, until);
     const lc = low(name);
     const old = this.byName.get(lc);
     // one socket per knight: the newest login wins, the old screen is told why (an error it can act on,
@@ -171,7 +197,7 @@ export class Room {
       try { sock.close(4004, 'full'); } catch (e) { }
       return;
     }
-    const k = this.makeKnight(sock, { name: String(name), since: this.now() });
+    const k = this.makeKnight(sock, { name: String(name), since: this.now(), ip: opts && opts.ip });
     k.role = acc ? acc.role : 'player';   // a name with no account (tests, simulations) is a plain player
     k.loginId = this.loginStart(k.lc, k.since);
     this.attach(k);
@@ -181,6 +207,16 @@ export class Room {
     this.send(sock, { t: 'error', code: 'banned', text: 'this knight is banned' });
     try { sock.close(4003, 'banned'); } catch (e) { }
   }
+  refuseWords(sock, until) {
+    this.send(sock, { t: 'error', code: 'words', text: wordsText(until, this.now()), until });
+    try { sock.close(WORDS_CODE, 'bad words'); } catch (e) { }
+  }
+  // when a knight kept out for bad words may come back (ms), or 0 when it is not kept out
+  wordLock(lc) {
+    if (typeof this.store.wordStrikes !== 'function') return 0;
+    const w = this.store.wordStrikes(lc, this.now());
+    return w && w.lockedUntil > this.now() ? w.lockedUntil : 0;
+  }
 
   // Rebuilds a knight from the state attach() handed out, without telling anyone: the others already know.
   // The role comes from the store again, never from the attachment.
@@ -188,6 +224,8 @@ export class Room {
     if (!state || !state.name || this.knights.has(sock)) return;
     const acc = this.store.account(state.name);
     if (acc && acc.banned) return this.refuseBanned(sock);
+    const until = acc ? this.wordLock(acc.lc) : 0;
+    if (until) return this.refuseWords(sock, until);
     const lc = low(state.name);
     const old = this.byName.get(lc);
     if (old) { if (old.since <= state.since) { try { sock.close(4000, 'logged in elsewhere'); } catch (e) { } return; } this.drop(old, 4000, 'logged in elsewhere'); }
@@ -207,7 +245,7 @@ export class Room {
 
   makeKnight(sock, s) {
     const k = {
-      sock, name: s.name, lc: low(s.name), since: s.since || this.now(),
+      sock, name: s.name, lc: low(s.name), since: s.since || this.now(), ip: typeof s.ip === 'string' ? s.ip.slice(0, 64) : '',
       hello: !!s.hello, map: s.map || null, mapAt: s.mapAt || s.since || this.now(), region: s.region || '', lv: s.lv || 0,
       role: 'player', x: null, y: null,   // x, y: the last presence, for party and cracker range checks (not kept over a nap)
       loginId: null, seenAt: 0,           // the store's logins row for this socket, and when its "last heard from" was written
@@ -224,13 +262,15 @@ export class Room {
     if (k) this.remove(k);
   }
 
-  // Throws a knight out: an error first so the screen can say why, then the close. kicked closes with 4005 and
-  // banned with 4003 (the wire reconnects after neither); anything else with 4000.
+  // Throws a knight out: an error first so the screen can say why, then the close. kicked closes with 4005, banned with
+  // 4003 and words (kept out for bad words) with 4006 (the wire reconnects after none of them); renamed with 4007 (the wire
+  // comes straight back, as the new name); anything else with 4000.
   kick(name, code, text, extra) {
     const k = this.byName.get(low(name));
     if (!k) return false;
     this.send(k.sock, Object.assign({ t: 'error', code, text }, extra || {}));
-    this.drop(k, code === 'kicked' ? 4005 : code === 'banned' ? 4003 : 4000, String(text || code).slice(0, 120));
+    const close = code === 'kicked' ? 4005 : code === 'banned' ? 4003 : code === 'words' ? WORDS_CODE : code === 'renamed' ? RENAMED_CODE : 4000;
+    this.drop(k, close, String(text || code).slice(0, 120));
     return true;
   }
 
@@ -353,13 +393,40 @@ export class Room {
     const now = this.now();
     if (acc && acc.mutedUntil > now) return this.send(k.sock, { t: 'muted', left: leftOf(acc.mutedUntil, now) });
     if (acc) this.syncRole(k, acc.role);
-    const text = this.filter(typeof m.text === 'string' ? m.text : '');
+    // the line alone: who is on line, who said it and who it was about never change what counts (filter.js, STRIKE_WORDS)
+    const { text, strike } = this.check(typeof m.text === 'string' ? m.text : '');
     if (!text) return;
     const at = now;
     this.log(k.name, text, at);
     const out = JSON.stringify({ t: 'chat', n: k.name, text, at, role: k.role });
     for (const o of this.knights.values()) if (o.hello) this.raw(o.sock, out);
+    // a swear word or a slur: a strike (after the masked line went out, so the knight sees what was hidden). A line that was
+    // only starred out (an insult, a mild word, a word hidden in another) counts nothing.
+    if (strike === true && acc) this.wordStrike(k, acc, now, typeof m.text === 'string' ? m.text : '');
   }
+
+  // One more word strike on this knight's account: a warning, a last warning, then out for 24 hours. One mod_log row each,
+  // with the line as it was typed after the count ("2: what the shit"), so the parent page can tell whether it was fair (only
+  // the parent page reads mod_log; the chat log keeps the starred line).
+  wordStrike(k, acc, now, said) {
+    const typed = ': ' + String(said || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (typeof this.store.addWordStrike !== 'function') return;
+    const n = this.store.addWordStrike(acc.lc, now);
+    if (!n) return;
+    if (n < 3) {
+      this.store.log({ at: now, by: 'word filter', act: 'strike', target: acc.name, detail: String(n) + typed });
+      return this.send(k.sock, { t: 'strike', n, text: n === 1 ? WORD_WARN_1 : WORD_WARN_2 });
+    }
+    const until = now + WORD_LOCK_MS;
+    // the place it was sent out from goes with the lockout (no new knight from there until it ends), and with it only
+    this.store.setWordLock(acc.lc, until, k.ip || '');
+    this.store.log({ at: now, by: 'word filter', act: 'strike', target: acc.name, detail: n + ', kept out 24 hours' + typed });
+    this.kick(k.name, 'words', wordsText(until, now), { until, n });
+  }
+
+  // The World renamed a knight (the store is already rewritten). An online one is told its new name and sent out; the wire
+  // comes straight back with the same session, which now belongs to the new name.
+  renamed(from, to) { return this.kick(from, 'renamed', renamedText(to), { name: to }); }
 
   onMon(k, m) {
     if (!k.hello || !Array.isArray(m.list)) return;
@@ -1016,6 +1083,6 @@ export class Room {
     if (!k.sock.attach) return;
     const gifts = [];
     for (const gid of k.gifts) { const g = this.gifts.get(gid); if (g) gifts.push({ gid: g.gid, to: g.to, id: g.id, qty: g.qty, due: g.due }); }
-    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId }); } catch (e) { }
+    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId, ip: k.ip || '' }); } catch (e) { }
   }
 }
