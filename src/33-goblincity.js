@@ -861,6 +861,19 @@
         check(P + "(fake NET non-keeper): his lever Gnasher stands up and then falls on the keeper's game without paying him: after 3 s down his rematch is spent, and no call goes out again by itself",
           asked && seenUp && spent && recalls === 0, { asked, seenUp, early, rematch: TQ().rematch, recalls });
         window.INSTANCES.leave(); NET.disconnect(); window.COOP.reset(); }
+      // G8: online, not the lab's keeper: the keeper answers his lever call with boss_wait (the Gnasher fell there lately): his
+      // rematch call is over, Tinkerton says how long in m:ss, and nothing asks again by itself
+      { me = 'Cohen'; keeper = 'Ann'; NET.useFake(fake); NET.token = 'gnasher-test'; NET.connect();
+        quest.tinker = Object.assign(freshT(), { stage: 3, rematch: false, kills: 1, restUntil: 0 });
+        enterLab(); push({ t: 'keeper', map: INST_ID, n: 'Ann' }); F.sim(2, []);
+        sent.length = 0; lever(); const asked = sent.filter(m => m.t === 'boss_call').length === 1 && TQ().rematch;
+        drain(); push({ t: 'boss_wait', id: 'gnasher', left: 120 }); F.sim(2, []);
+        const told = [dialog.cur, ...dialog.queue].some(l => l && /still patching it up\. Ready in 2:00\./.test(l.text)), over = TQ().rematch === false;
+        sent.length = 0; for (let k = 0; k < 40; k++) { push({ t: 'mon', n: 'Ann', list: [] }); F.sim(10, []); }
+        const recalls = sent.filter(m => m.t === 'boss_call').length;
+        check(P + "(fake NET non-keeper): boss_wait for his lever call ends it (rematch false), Tinkerton says Ready in 2:00, and no call goes out again by itself",
+          asked && told && over && recalls === 0, { asked, told, over, recalls });
+        window.INSTANCES.leave(); NET.disconnect(); window.COOP.reset(); }
       // G4: online, the lab's keeper: a friend's call makes exactly one; a second while it stands makes none
       { me = 'Cohen'; keeper = 'Cohen'; NET.useFake(fake); NET.token = 'gnasher-test'; NET.connect();
         quest.tinker = Object.assign(freshT(), { stage: 3, rematch: false, kills: 1 });
@@ -870,6 +883,18 @@
         window.COOP.state.calls.gnasher = time - 10;
         push({ t: 'boss_call', n: 'Bo', id: 'gnasher' }); F.sim(2, []); const still = monsters.filter(m => m.type === 'gnasher' && !m.dead).length;
         check(P + '(fake NET keeper): a boss_call from a remote in the lab spawns exactly one; a second call while it lives spawns none', one === 1 && still === 1 && !TQ().rematch, { one, still });
+        // G7: the keeper brings it down: the lab's Gnasher rests 180 s on his game. Bo's next call gets boss_wait, to Bo alone,
+        // and spawns nothing; Bo's own first fight (stage 2, the first flag) is not held back
+        { const g = monsters.find(m => m.type === 'gnasher' && !m.dead), n0 = drops.length;
+          if (g) { g.stunT = 0; g.hp = 1; hitMonster(g, 5, 0); } F.sim(3, []); drops = drops.slice(0, n0);
+          window.COOP.state.calls = {}; sent.length = 0;
+          push({ t: 'boss_call', n: 'Bo', id: 'gnasher' }); F.sim(2, []);
+          const wait = sent.find(m => m.t === 'boss_wait'), held = !monsters.some(m => m.type === 'gnasher' && !m.dead);
+          window.COOP.state.calls = {};
+          push({ t: 'boss_call', n: 'Bo', id: 'gnasher', first: true }); F.sim(2, []);
+          const firstUp = monsters.filter(m => m.type === 'gnasher' && !m.dead).length === 1;
+          check(P + "(fake NET keeper): after the keeper brings the lab's Gnasher down, a friend's lever call gets boss_wait (to him alone, 178 to 180 s) and spawns nothing; a friend's first fight still wakes it",
+            !!g && !!wait && wait.to === 'Bo' && wait.id === 'gnasher' && wait.left >= 178 && wait.left <= 180 && held && firstUp, { killed: !!g, wait, held, firstUp }); }
         window.INSTANCES.leave(); }
     } finally {
       player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);

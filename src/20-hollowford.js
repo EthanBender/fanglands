@@ -954,6 +954,33 @@
           hf9.beastKilled = true; hf9.toldShed = false; quest.stage = st9;
         } finally { if (INSTANCES.active()) INSTANCES.leave(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
       }
+      // B18: online, the shed's keeper: a friend's valve call stands one beast up; once the keeper brings it down the shed rests
+      // 300 s on his game, so the friend's next call gets boss_wait (to him alone) and stands nothing up, while a friend's own
+      // first fight (the first flag) is not held back
+      if (typeof NET !== 'undefined' && window.COOP) {
+        const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
+        const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+        NET.enabled = true; NET.token = 'shed-keeper-test';
+        NET.useFake({ call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const mm = JSON.parse(str); sent.push(mm); if (mm.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } });
+        try {
+          NET.connect(); Object.assign(HF(), { beastKilled: true, shedUp: false, shedRestUntil: 0 });
+          enterShed(); push({ t: 'keeper', map: SHED.id, n: 'Cohen' }); F.sim(2, []);
+          push({ t: 'p', n: 'Bo', map: SHED.id, x: tc(VALVE_T.x), y: tc(VALVE_T.y + 2), def: 500, dead: false, hp: 90, lv: 40 });
+          COOP.state.calls = {}; COOP.state.restAt = {};
+          push({ t: 'boss_call', n: 'Bo', id: SHED.id }); F.sim(2, []);
+          const up = beasts().length === 1;
+          slay(); drops = drops.filter(() => false); F.sim(3, []);
+          COOP.state.calls = {}; sent.length = 0;
+          push({ t: 'boss_call', n: 'Bo', id: SHED.id }); F.sim(2, []);
+          const wait = sent.find(mm => mm.t === 'boss_wait'), held = beasts().length === 0;
+          COOP.state.calls = {};
+          push({ t: 'boss_call', n: 'Bo', id: SHED.id, first: true }); F.sim(2, []);
+          const firstUp = beasts().length === 1;
+          check(P + "(fake NET keeper): a friend's valve call stands one beast up; after the keeper brings it down, the friend's next call gets boss_wait (to him alone, 298 to 300 s) and stands nothing up; a friend's first fight still does",
+            up && !!wait && wait.to === 'Bo' && wait.id === SHED.id && wait.left >= 298 && wait.left <= 300 && held && firstUp, { up, wait, held, firstUp });
+          for (const b of beasts()) { b.dead = true; b.deadT = 5; } F.sim(2, []);
+        } finally { if (INSTANCES.active()) INSTANCES.leave(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
+      }
     } finally {
       player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       if (INSTANCES.active()) INSTANCES.leave();
