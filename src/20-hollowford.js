@@ -229,7 +229,7 @@
   // knight's own rest pays nothing (m.noPay, 75-coop: no drops, no purse).
   HOOKS.kill.push(m => {
     if (m.type !== 'barrelbeast') return;
-    const hf = HF(), first = storyBeast();
+    const hf = HF(), first = firstFor(m);
     m.strikes = []; m.rodGlow = 0; m.enrage = 0; MONSTER_DEFS.barrelbeast.maxHit = BEAST_BASE.maxHit; m.speed = BEAST_BASE.speed;
     burst(m.x, m.y, '#ff8a1a', 40, 220); burst(m.x, m.y, '#3a3a3a', 24, 140);
     if (!first && m.noPay) {
@@ -309,10 +309,14 @@
   }
   // this knight's own story beast: not yet broken, and his story has reached Hollowford (stage 9 or later)
   const storyBeast = () => !HF().beastKilled && quest.stage >= 9;
+  // a kill that is this knight's first Barrelbeast: his story beast, or (at any stage, as it always was) the square's beast
+  // killed on his own game, offline or as the map's keeper. Only a friend's beast (a coop phantom) or a goblin spare in the
+  // shed waits for his story to reach Hollowford.
+  const firstFor = m => storyBeast() || (!HF().beastKilled && !!m && !m.phantom && !m.shed);
   HOOKS.bossCall = HOOKS.bossCall || {};
   HOOKS.bossCall.war_shed = { map: SHED.id, near: null, name: 'the Barrelbeast', type: 'barrelbeast', rest: SHED_REST, alive: () => !!liveBeast(), wake: () => { spawnShedBeast(); },
     // 75-coop's pay gate: a repeat beast inside this knight's own rest pays nothing
-    resting: () => !storyBeast() && restLeft(HF().shedRestUntil) > 0,
+    resting: m => !firstFor(m) && restLeft(HF().shedRestUntil) > 0,
     // the shed's keeper says its beast fell lately: this knight's rematch call is over, and he is told how long
     refused: left => { const hf = HF(); if (hf.beastKilled) { hf.shedUp = false; save(); } shedSeen = true; say(`The crew is still bolting it back together. Ready in ${mmss(left)}.`, 'Boiler valve'); } };
   const callShed = () => window.COOP && COOP.call ? COOP.call(SHED.id, storyBeast()) : (spawnShedBeast(), 'woke');
@@ -806,6 +810,19 @@
         check(P + "this knight's own valve beast felled by a friend's blow clears shedUp, starts his 300 s rest, and no beast stands up again on this visit",
           up && !hf6.shedUp && Math.abs(hf6.shedRestUntil - day - 300) < 3 && !liveBeast(), { up, shedUp: hf6.shedUp, rest: hf6.shedRestUntil - day, again: !!liveBeast() });
         INSTANCES.leave(); }
+      // B15: offline, a knight whose story has not reached Hollowford (stage 5) who walks in and kills the square's beast has
+      // made his first kill, as it always was (beastKilled, one wreck, the stage left alone), and nobody calls it a friend's fight
+      { const hf7 = HF(), st = quest.stage, keep = { wreck: hf7.wreck, map: map.slice(), stats: JSON.stringify(player.skills) };
+        Object.assign(hf7, { beastKilled: false, wreckDue: false, shedUp: false, shedRestUntil: 0, wreck: null }); quest.stage = 5;
+        const sq = monsters.find(m => m.type === 'barrelbeast' && !m.shed); F.tp(137, 86); const w0 = wrecks(); clearBanners(); drain();
+        if (sq) { sq.dead = false; delete sq.awake; sq.hp = 1; sq.x = player.x + 60; sq.y = player.y; sq.stunT = 0; }
+        F.sim(1, []); const offline = typeof NET === 'undefined' || !NET.online(); if (sq) hitMonster(sq, 5, 0); F.sim(2, []);
+        const r = { offline, dead: !!sq && sq.dead, killed: hf7.beastKilled, stage: quest.stage, wrecks: wrecks() - w0, friend: said(/friend/), banner: bannerAhead('BEAST DOWN'), tips: said(/tips, groans, and comes apart/) };
+        check(P + "offline at stage 5, the square's beast killed is his first kill as it always was: beastKilled, one wreck, stage stays 5, and no word of a friend",
+          r.offline && r.dead && r.killed && r.stage === 5 && r.wrecks === 1 && !r.friend && !r.banner && r.tips, r);
+        for (let i = 0; i < map.length; i++) if (map[i] !== keep.map[i]) changeTile(i % MAP_W, Math.floor(i / MAP_W), keep.map[i]);
+        hf7.wreck = keep.wreck; hf7.beastKilled = true; quest.stage = st; player.skills = JSON.parse(keep.stats); recomputeMaxHp();
+        if (sq) { sq.dead = true; sq.respawnT = Infinity; } drops = drops.filter(() => false); drain(); clearBanners(); }
       // B10: online and not the shed's keeper: the valve asks the keeper and makes nothing itself
       if (typeof NET !== 'undefined' && window.COOP) {
         const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
