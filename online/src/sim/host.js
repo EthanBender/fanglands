@@ -32,6 +32,9 @@ export const DROP_EMPTY_MS = 60000;   // a copy is dropped this long after its m
 export const CAP = 4;                 // copies at once: the overworld plus 3 instances
 export const WATCH = { throws: 3, throwWindowMs: 10000, slowMs: 25, slowRun: 3, heapBytes: 100 * 1048576, heapEveryTicks: 100 };
 export const NEVER = new Set(['house']);   // never simulated (each knight's own house is his alone)
+// the instances that build the same without the overworld (tools/sim-suite.mjs check 5, 3 Oct 2026): Stage 2 passes these
+// as worldGenFree, and each boots in about 25 ms instead of about 900 ms in workerd
+export const WORLDGEN_FREE = ['war_shed', 'tinker_lab', 'stormfront'];
 const KEPT_TICKS = 3000;              // tick times kept for p50 / p99 (5 minutes)
 
 const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;

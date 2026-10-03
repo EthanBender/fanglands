@@ -281,7 +281,8 @@
   }
 
   // the meter (docs/ONLINE.md, "The shared world"): today in one sentence, the last 7 days under it
-  const pct = (n, of) => (100 * n / of).toFixed(1) + '%';
+  // a share of the free plan: one decimal from 1% up, two significant figures under it (0.012%), never a bare 0.0%
+  const pct = (n, of) => { const v = 100 * n / of; return (v === 0 ? '0' : v >= 1 ? v.toFixed(1) : String(+v.toPrecision(2))) + '%'; };
   async function loadSim() {
     let r;
     try { r = await api('GET', '/api/admin/sim'); } catch (e) { $('meter').textContent = 'The meter could not be read: ' + e.message; return; }
@@ -289,7 +290,7 @@
     const t = m.today, n = v => Number(v || 0).toLocaleString();
     $('meter').textContent = 'Today (UTC): ' + n(t.wsIn) + ' socket messages and ' + n(t.http) + ' calls, about ' + n(t.est) + ' of the ' + n(m.freeLimit) + ' requests a day the free plan allows (' + pct(t.est, m.freeLimit) + ').';
     const tb = $('meterdays').querySelector('tbody'); tb.innerHTML = '';
-    for (const d of m.days.slice(0, 7)) { const tr = document.createElement('tr'); cell(tr, d.day); cell(tr, n(d.wsIn)); cell(tr, n(d.http)); cell(tr, n(d.est)); cell(tr, pct(d.est, m.freeLimit)); tb.appendChild(tr); }
+    for (const d of m.days.slice(0, 7)) { const tr = document.createElement('tr'); cell(tr, d.day).className = 'nowrap'; cell(tr, n(d.wsIn)); cell(tr, n(d.http)); cell(tr, n(d.est)); cell(tr, pct(d.est, m.freeLimit)); tb.appendChild(tr); }
   }
 
   async function refresh(all) {

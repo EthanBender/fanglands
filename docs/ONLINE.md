@@ -898,7 +898,7 @@ req_meter (day TEXT PRIMARY KEY, ws_in INTEGER NOT NULL DEFAULT 0, http INTEGER 
 - The counts are kept in memory and written with one upsert per day touched: when 200 are waiting, when the last write was
   10 s or more ago (checked on every message and request), on every socket close and on every alarm. A nap can lose at most the
   last 10 s of counts. That is at most 360 rows written an hour while knights play (the free plan allows 100,000 rows written a day).
-- Rows older than 400 days are deleted on the first write of each new day.
+- Rows older than 400 days are deleted on the first write of each day after a wake.
 - The admin export (`GET /api/admin/export`) includes `req_meter`.
 
 `GET /api/admin/sim` (Bearer ADMIN_KEY) answers, for now, only the meter:
@@ -960,8 +960,56 @@ The parent page (`/admin`) has a **Shared world** section with one line for toda
   full build.
 
 **Deploy gates.** `online/deploy.sh` and `~/.fanglands/tools/deploy-test.sh` run, each only when its file is there:
-`node tools/sim-suite.mjs`, `node tools/mmo-sim.js --sim`, `node tools/mmo-sim-world.js`, `node online/test/atlas-drift.mjs`.
-A red check never deploys.
+`node tools/sim-suite.mjs`, `node tools/mmo-sim.js --sim` (once `tools/mmo-sim.js` knows `'--sim'`, written that way),
+`node tools/mmo-sim-world.js`, `node online/test/atlas-drift.mjs`. A red check never deploys.
+
+**The audit and the first serverOff list** (`node tools/sim-audit.mjs`; the log is
+`~/.fanglands/work/phase1/sw-0/audit.json`). 30 minutes of game time on the overworld copy with 4 scripted knights touring
+all 21 regions (every named boss there called), then 5 minutes in each of the 9 instances with two knights, every boss
+called. Every monster created, removed or hurt was logged with whose code did it. Through the 75-coop path (knights' hits
+routed to the keeper): 4,564 hurts and 241 kills on the overworld, and every instance's fights. Outside it, only these
+`HOOKS` entries, which are the first `SERVER_OFF` list in `src/79-worldkeeper.js`:
+
+| File | Hook | What it did on its own | Leaves the list in |
+|---|---|---|---|
+| 20-hollowford | update | cleared the War Shed's Barrelbeast away after it fell (5) | Stage 8 |
+| 28-thefang | update | the Fang's own rest killed it (1) | Stage 6d |
+| 33-goblincity | update | cleared the Gnasher away after it fell (5) | Stage 8 |
+| 66-storm | hit, update | the Thunderbird's own hurts (10 + 4) | Stage 8 |
+| 91-royalmine | update | the golem's split: 21 golemlings and golems made and removed, the giants hurt and killed | Stage 8 |
+
+No hook changed the parked stand-in (its place, hp, death, mount or speed). Night zombies, graves and the other
+knight-centred spawners made nothing: they spawn around `player`, who is dead. With the list on, the audit's only
+monsters made outside the 75-coop path are the two bosses its `boss_call` wakes (the Barrelbeast, the Gnasher).
+
+**What the copies cost, measured** (3 Oct 2026, MacBook Pro, load average about 10 from other builders' runs, stripped
+build, `tools/sim-bench.mjs` under `wrangler dev --local` 4.92.0, workerd's local runtime capped at compatibility date
+2026-05-22; raw figures in `~/.fanglands/work/phase1/sw-0/bench.json`):
+
+| | workerd (local) | node 26 |
+|---|---|---|
+| Overworld copy boot (the game's load code, generateWorld, a new game, the stand-in's start) | 1,160 / 1,404 / 1,434 ms (three boots) | 671 ms (sim-suite); 1,084, 1,338 and 1,706 ms in a later run under the same load |
+| Tick, overworld (119 monsters), 1 knight | mean 0.535 ms; p50 1 ms, p99 1 ms, max 2 ms | p50 0.289 ms, p99 1.054 ms |
+| Tick, 5 knights | mean 0.433 ms; p50 0 ms, p99 1 ms, max 2 ms | p50 0.432 ms, p99 4.756 ms (max 37.9 ms once) |
+| Tick, 20 knights | mean 0.458 ms (0.533 ms timed from outside); p50 0 ms, p99 1 ms, max 1 ms | p50 0.450 ms, p99 2.061 ms |
+| SimHost's own 10 Hz loop, 20 knights, 10 s | 100 ticks of 100, 0 skipped, no fallback; lag-timed p50 2 ms, p99 3 ms (the zero-delay timer's own cost included) | |
+| Heap: the module alone / the overworld / the overworld + 3 instances (deepholm, aerie, spider_den) | 5.6 MB / 17.0 MB / 30.7 MB used (6.0 / 34.6 / 59.4 MB total) of the 128 MB isolate | |
+| Instance boot, full build / `worldGen: false` | spider_den 926 / 25 ms, war_shed 909 / 36, deepholm 1,219 / 22, tinker_lab 1,057 / 24, afterlands 905 / 20, aerie 938 / 24, coalmine 907 / 22, stormfront 900 / 36, royalmine 950 / 16 | 665 to 815 / 15 to 19 ms |
+
+workerd's clock moves in whole milliseconds, so a single tick there reads 0, 1 or 2 ms; the means are 600 ticks timed
+together (inside, and from outside less an empty round trip of 3.4 ms; the two agree). The zero-delay timer does move
+the clock inside workerd (a boot timed inside matched the outside time to 1 to 3 ms), so SimHost's `lag` timing works there.
+`worldGen: false` saves about 900 ms per instance copy, but only these instances build the same without the overworld
+over 300 ticks with two knights fighting (`tools/sim-suite.mjs` check 5): **war_shed, tinker_lab, stormfront**. The others
+(spider_den, deepholm, afterlands, aerie, royalmine) drift apart from the first ticks in their monsters' idle wandering,
+and coalmine had no monster to fight in 300 ticks; they keep the full build. The cause of the drift is not traced.
+
+**The proof on the test world** (`~/.fanglands/work/phase1/sw-0/proof/meter-proof.js`, 3 Oct 2026, nobody else on): Probe
+Knight and Probe Two played side by side for about a minute in two real browsers, the keeper model exactly as today (Probe
+Knight kept the overworld; neither game had a stand-in). The meter grew by exactly the 1,201 socket messages the two games
+sent (972 from the keeper, whose `mon` stream is most of it, 229 from the other) and the 23 calls that reached the World (21
+from the pages, among them 13 cloud saves and the 2 socket opens, plus the proof's own two reads), and the estimate read
+ceil(3,251 / 20) + 77 = 240 for the day so far.
 
 ## Safety rules (binding)
 

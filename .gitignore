@@ -7,3 +7,4 @@ online/.wrangler/
 online/.dev.vars
 online/src/sim/game.mjs
 online/src/sim/game.*.mjs
+**/.wrangler/
