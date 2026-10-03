@@ -305,6 +305,7 @@ below; only what a *page* gets differs.
 | `www.fanglands.com` | 301 to `fanglands.com`, same path and query | 301 the same way | the world |
 | `gorkscape.ca`, `www.gorkscape.ca` | the hand-over page, then `fanglands.com` | 302 to `fanglands.com` | the world, exactly as before |
 | `test.fanglands.com` | the test world's game | the file | the test world |
+| `fanglands.com/handoff`, `test.fanglands.com/handoff` | the start page (below) | | |
 | `test.gorkscape.ca` | the hand-over page, then `test.fanglands.com` | 302 | the test world |
 
 `run_worker_first = true` in `wrangler.toml` sends every request to the Worker first, so it can see the address before
@@ -324,47 +325,87 @@ sits in. So the old address's own page reads them and hands them over through th
 
 ### The hand-over, step by step
 
+A code made by one browser must never work in another, so the new address takes part before anything is offered:
+it keeps a random **pull** in its own storage, and a claim only works with the pull the offer was bound to.
+
 1. A page on gorkscape.ca is the **hand-over page** (`online/src/handoff.js`, `handoverPage`): a dark page with no
-   game on it. Its script reads every key in that browser's storage that is the game's (`KEY_RE`:
-   `fanglands.*` and `fl_*`, never `fanglands.handoff.*`), packs them under 1.4 MB (the login and the small keys
-   first, then the slots newest first, the old single save last), and posts `{keys}` to `/api/handoff/offer` on
-   gorkscape.ca.
-2. The World stores the keys under the SHA-256 of a fresh 256-bit code and answers `{code, expires}`.
-3. The page goes to `https://fanglands.com` + the same path and query + `#handoff=<code>`. The code is after `#`:
-   a browser never sends that part to any server, so it is in no request line, no log and no Referer.
-4. On fanglands.com, `src/00-handoff.js` runs before any other part of the game reads storage. It posts `{code}` to
-   `/api/handoff/claim`, gets `{keys}`, and writes each group only where fanglands.com does not already have it newer:
-   - a slot (the slot with its `.at` stamp, and slot 1's cloud mark): when this address has no save in that slot, or
-     its copy is older by the stamp;
+   game on it. Its script reads every key in that browser's storage that is the game's (`KEY_RE`: `fanglands.*` and
+   `fl_*`, never `fanglands.handoff.*`). With none it goes straight to the same path and query on fanglands.com, and
+   that is the whole visit. With some, and no pull yet, it goes to the **start page**
+   `https://fanglands.com/handoff#back=<the path and query>`.
+2. The start page (`startPage`, served by the Worker) keeps a fresh 128-bit pull in fanglands.com's storage
+   (`fanglands.handoff.pull`, `{n, at}`; one still fresh is used again, so two tabs at once both land) and goes back to
+   `https://gorkscape.ca<path>#handoff-pull=<pull>`. A `back` that is not a plain path becomes `/`. If fanglands.com
+   cannot keep anything (storage off), it goes straight into the game there instead.
+3. The hand-over page, now with the pull, packs the keys under 1.4 MB (the login and the small keys first, then the
+   slots newest first, the old single save last) and posts `{keys, pull}` to `/api/handoff/offer` on gorkscape.ca.
+   The World stores the keys under the SHA-256 of a fresh 256-bit code, with the SHA-256 of the pull, and answers
+   `{code, expires}`. The page goes to `https://fanglands.com` + the same path and query + `#handoff=<code>`.
+4. On fanglands.com, `src/00-handoff.js` runs before any other part of the game reads storage. With no fresh pull kept
+   here it claims nothing (so a link with someone else's code does nothing at all). Otherwise it posts `{code, pull}`
+   to `/api/handoff/claim`, gets `{keys}`, and writes only what this address is missing. It never writes over anything:
+   - a slot (with its `.at` stamp, and slot 1's cloud mark) lands in its own slot when that slot is empty here. When
+     that slot holds another save, the offered one goes into an empty slot 2 or 3 instead (the way 71-login parks a
+     Play-alone knight when the cloud knight takes slot 1); slot 1 is the cloud knight's, so a moved knight never
+     goes there. With no empty slot it is left on gorkscape.ca and offered again next time, so it lands once a slot is
+     free. A save already in any slot here is not brought twice. A slot 1 that is only the cloud knight's copy (it has
+     the mark) is skipped when slot 1 here is taken: logging in brings it back. A stamp from the future is brought
+     back to now (the world does the same when it takes the offer).
    - the login (the token with the last name): only when this address is not logged in at all;
-   - anything else: only when it is not here yet.
-   It remembers a fingerprint of each group it was offered (`fanglands.handoff.seen`), so the same offer coming
-   again changes nothing: a slot deleted on fanglands.com, or a logout there, stays that way.
+   - anything else (settings, hints, the current slot, the old single save): when it is not here, or when what is
+     here is still exactly what the game wrote by itself at boot. The game saves its default settings the first time
+     it loads, so without this a first look at fanglands.com would shut out the kid's own kid mode, text size and
+     sound. `00-handoff.js` notes what each boot wrote (`fanglands.handoff.boot`): a key the boot wrote, or one still
+     holding what the last boot wrote, counts as "never changed here"; anything the kid changed, or a hand-over
+     wrote, is the kid's own from then on.
+   It remembers a fingerprint of each group that landed (`fanglands.handoff.seen`), so the same offer coming again
+   changes nothing: a slot deleted on fanglands.com, or a logout there, stays that way.
 5. It takes the code off the address with `history.replaceState` and starts the page again, so the game boots with
    the knight in place. The kid sees the same "Playing as" card or the same slots as on gorkscape.ca.
 
+When something goes wrong on the way:
+- **The world is busy or slow on the offer** (429, 503, no answer in 7 s): the hand-over page tries twice more (1.5 s
+  and 3 s later). After three misses it says *"Your knight could not come across to fanglands.com just now."* with a
+  **Try again** button (this page again, from the start) and a smaller *"Go to fanglands.com without it"*. It never
+  goes on by itself without the code, and it shows "One moment..." after 2.5 s while it works.
+- **The claim's answer never comes back** (a Wi-Fi blip, 9 s with no answer): `00-handoff.js` goes back once to
+  `https://gorkscape.ca<path>#handoff-pull2=<the same pull>`; that offer comes back as `#handoff2=<code>`, which never
+  goes back a second time. The first code is single-use and may already be spent; the second offer is a new one.
+- **The code is refused** (404: used, ran out, made up, or bound to another pull): nothing is written, the game starts.
+
 Nothing is ever deleted on gorkscape.ca, so opening it again simply hands over again (and the rules above make that
-harmless). With nothing to hand over, or if the world does not answer within 8 s, the hand-over page just goes on
-with no code. A code that ran out, was used, or never was changes nothing on fanglands.com; the game simply starts.
-The parent page's admin key is per tab (`sessionStorage`) and is never handed over: type it again on fanglands.com.
+harmless). A `#handoff...` fragment that arrives *at* gorkscape.ca is never passed on: the hand-over page drops it
+(other fragments ride along). The parent page's admin key is per tab (`sessionStorage`) and is never handed over:
+type it again on fanglands.com.
 
 ### The rules the world keeps (`online/test/handoff.test.mjs` proves each one)
 
-- `POST /api/handoff/offer {keys}` → `{code, expires}`. Only on a gorkscape address (`gorkscape.ca`, `www.`, `test.`),
-  with an `Origin` that is exactly that address. Every key must match `KEY_RE` and every value be a string; at most
-  400 keys and 1,500,000 bytes (413 `full`). At most 300 offers or 48 MB waiting at once (503 `busy`).
-- `POST /api/handoff/claim {code}` → `{keys}`. Only on a fanglands address (`fanglands.com`, `www.`, `test.`), with an
-  `Origin` that is exactly that address (403 `origin` otherwise; a refused claim does not use the code up).
-- One use: the row is deleted before the answer goes back. A code lives 3 minutes. Run out, used, made up or broken:
-  the same 404 `gone`.
-- Only the code's SHA-256 is stored, in the World's `handoffs` table; rows that ran out are swept by the next call
-  to the world (at most a minute apart). The backup export (`/api/admin/export`) never carries them, like sessions.
-- Per IP address, a minute at a time: 10 offers and 20 claims (429 `wait`), counted apart.
-- Nothing about a hand-over is ever logged.
+- `POST /api/handoff/offer {keys, pull}` → `{code, expires}`. Only on a gorkscape address (`gorkscape.ca`, `www.`,
+  `test.`), with an `Origin` that is exactly that address. `pull` is 32 hex. Every key must match `KEY_RE` and every
+  value be a string; at most 400 keys and 1,500,000 bytes (413 `full`). A slot stamp (`fanglands.slot.N.at`) later
+  than now is stored as now.
+- `POST /api/handoff/claim {code, pull}` → `{keys}`. Only on a fanglands address (`fanglands.com`, `www.`, `test.`),
+  with an `Origin` that is exactly that address (403 `origin` otherwise). The pull must be the one the offer was bound
+  to: any other pull gets 404 `gone` and does NOT use the code up.
+- One use: the row is deleted before the answer goes back. A code lives 3 minutes. Run out, used, made up, broken or
+  the wrong pull: the same 404 `gone`.
+- Only SHA-256s of the code, the pull and the offering address are stored, in the World's `handoffs` table; rows
+  that ran out are swept by the next call to the world (at most a minute apart). The backup export
+  (`/api/admin/export`) never carries them, like sessions.
+- Per address, a minute at a time: 10 offers and 20 claims (429 `wait`), counted apart. An IPv6 address counts by its
+  /64 (one home gets a whole /64). Each address may have at most 3 MB of offers waiting (429 `wait`), so a few
+  addresses cannot fill the store; everything waiting at once is capped at 300 offers or 48 MB (503 `busy`).
+- Nothing about a hand-over is ever logged. The code and the pull only ride after `#`, so they are in no request line,
+  no log and no Referer.
 
-What it does not stop: someone could make an offer of their own and send a kid a fanglands.com link with that code.
-On a browser that is not logged in on fanglands.com yet, that logs it in as *their* knight (the card says whose); it
-never logs in over a knight already there, and it can take nobody's login away.
+What it does not stop: anyone can make an offer of their own, with any keys and any `Origin` (a script is not a
+browser). It does them no good. Their code only works with their own pull, which lives in their own browser, so a
+link to `fanglands.com/#handoff=<their code>` does nothing in anyone else's browser: no claim is even made without a
+pull kept there, and a claim with a different pull is refused. A link to `gorkscape.ca/#handoff-pull=<their pull>`
+makes the kid's own browser offer the kid's own keys bound to that pull, but the code it gets goes only into the kid's
+own address bar, never to them; nothing is claimed and it runs out in 3 minutes. Even a claim that did get through
+could only ever add: `merge` never writes over a save slot, a login or a setting the kid has. Someone with the kid's
+browser in their hands (or its storage) can of course do anything, as before.
 
 ### Shipping it, and the switch
 
@@ -372,11 +413,18 @@ never logs in over a knight already there, and it can take nobody's login away.
 keep serving the game exactly as before while fanglands.com is attached and its certificate is made. Once
 `https://fanglands.com/api/status` answers, a plain `./online/deploy.sh` turns the hand-over on. The same switch
 is the quick way back: deploy with `--var HANDOVER:off` and gorkscape.ca is the game again (nothing was deleted
-there; anything played on fanglands.com in between stays on fanglands.com and in the cloud).
+there; anything played on fanglands.com in between stays on fanglands.com and in the cloud). The start page
+`fanglands.com/handoff` answers either way; with the hand-over off it just sends back to the game on gorkscape.ca.
 
 An iPad home-screen icon made on gorkscape.ca opens the old address; its page hands over and goes to fanglands.com,
-which iOS shows with an address bar because it is a different site from the icon's. Adding the icon again from
-fanglands.com gives the old full-screen look.
+which iOS shows with an address bar because it is a different site from the icon's. **Keep the old icon.** On iOS a
+home-screen web app keeps its own storage, apart from Safari's, so the hand-over from that icon lands inside the
+icon's own copy of fanglands.com, and does so again every time the icon is opened (harmlessly: an offer that landed
+before changes nothing). A new icon added from Safari's fanglands.com may start logged out and with no Play-alone
+saves, and deleting the old icon deletes its saves with it. Never delete the old icon until its Play-alone saves
+have come across (playing them while logged in puts the cloud knight in the cloud; a Play-alone knight lives only on
+that iPad). This was proved in headless Chromium only; the live notes ask for a real iPad check on the test world
+before shipping.
 
 ### The test world
 
