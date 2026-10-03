@@ -937,7 +937,7 @@ function pointerDown(x, y, id) {
   if (typeof HK !== 'undefined') HK.pressDrop(id);   // a new press with this id ends any press it left unreleased
   for (let i = buttons.length - 1; i >= 0; i--) {
     const b = buttons[i]; if (!hitButton(b, x, y)) continue;
-    if (b.inert) return;
+    if (b.inert) { if (typeof b.press === 'function') b.press(); return; }
     if (b.up || b.hold) { if (typeof HK !== 'undefined') HK.pressStart(b, x, y, id, false); return; }
     if (typeof HK !== 'undefined') HK.pressStart(b, x, y, id, true);
     sfx('ui'); b.action(); return;
@@ -40434,6 +40434,9 @@ const BOYGIRL = (() => {
   let quiet = 0, ask = null, want = null;
   const ARM_MS = 500;
   const armed = () => !!ask && nowMs() - ask.at >= ARM_MS;
+  // a press on the card while it is still waiting starts the wait again, so a burst of taps (two, three, ten) never picks:
+  // only a tap after the child has stopped tapping for half a second can (05-input calls an inert button's press)
+  const rearm = () => { if (ask) ask.at = nowMs(); };
   const chosen = () => player.gender === 'girl' || player.gender === 'boy';
   // the choice in a slot's save, read before it is loaded (null: an empty slot, one that cannot be read, or no choice)
   const savedChoice = n => {
@@ -40531,11 +40534,11 @@ const BOYGIRL = (() => {
       // the word on an iron plate along the card's foot (drawn only: the whole card is the tap)
       HK.plateButton(g, { x: cx + 10, y: cy + cardH - R - 10 + dy, w: cardW - 20, h: R }, null, word, 'primary', { cinzel: true, hover: st.hover });
       buttons.push(live ? { x: cx, y: cy, w: cardW, h: cardH, label, action: () => answer(gnd), up: true, name: word === 'Boy' ? 'A boy knight' : 'A girl knight' }
-        : { x: cx, y: cy, w: cardW, h: cardH, label: 'wait:' + label, action: () => { }, inert: true });
+        : { x: cx, y: cy, w: cardW, h: cardH, label: 'wait:' + label, action: () => { }, inert: true, press: rearm });
     });
     const lx = Math.round(VW / 2 - laterW / 2), ly = y + headH + cardH + 12;
     if (live) platePush(g, lx, ly, laterW, R, 'boygirl:later', 'Decide later', () => answer(null), null, { name: 'Play as a boy for now; it asks again next time' });
-    else { HK.plateButton(g, { x: lx, y: ly, w: laterW, h: R }, null, 'Decide later', null, {}); buttons.push({ x: lx, y: ly, w: laterW, h: R, label: 'wait:boygirl:later', action: () => { }, inert: true }); }
+    else { HK.plateButton(g, { x: lx, y: ly, w: laterW, h: R }, null, 'Decide later', null, {}); buttons.push({ x: lx, y: ly, w: laterW, h: R, label: 'wait:boygirl:later', action: () => { }, inert: true, press: rearm }); }
     g.restore();
   }
   const _drawHud = drawHud;
@@ -40678,6 +40681,27 @@ const BOYGIRL = (() => {
           armedPick = { title: title.active, gender: player.gender, saved: savedOf(2) };
         } finally { window.__forceTouch = t0; restore(); }
         check(P + 'a double tap never picks: a second tap on the slot card or Continue that put "Boy or girl?" up (on the spot where Boy or Girl is drawn, right away or up to 450 ms later, iPad and phone) leaves the card up, the knight out of the world and nothing saved; half a second later the same spot picks', tries === 96 && bad.length === 0 && onCard >= 40 && armedPick && !armedPick.title && armedPick.gender === 'boy' && armedPick.saved === 'boy', { tries, onCard, bad: bad.slice(0, 6), total: bad.length, armedPick }); }
+      // 5c. a burst of taps never picks: three, five or ten quick taps (150 ms apart) on the spot where Boy is drawn keep the
+      // card waiting, because every press on the waiting card starts its half second again; the first tap after the child
+      // stops for half a second picks. (Before this, any tap 500 ms after the card went up picked, so a triple tap could.)
+      { const res = []; let pick = null;
+        NET.enabled = false; window.__forceTouch = true;
+        try {
+          panelSetSize(768, 1024);
+          for (const taps of [3, 5, 10]) {
+            lsDel(SK(2)); lsDel(AK(2)); title.open(); render();
+            const b = buttons.find(q => q.label === 'Slot 2'), x = b.x + b.w * 0.3, y = b.y + b.h / 2;
+            tapAt(x, y);
+            for (let k = 0; k < taps; k++) { if (ask) { ask.at -= 150; render(); } tapAt(x, y); render(); title.tick(1 / 60); }
+            res.push({ taps, asking: !!ask, title: title.active, saved: lsGet(SK(2)) !== null });
+          }
+          // the child stops for half a second, then taps Boy's spot once: that picks
+          if (ask) { ask.at = nowMs() - ARM_MS - 1; render(); }
+          const b = buttons.find(q => q.label === 'choose:boy'); if (b) { tapAt(b.x + b.w / 2, b.y + b.h / 2); render(); }
+          pick = { asking: !!ask, title: title.active, gender: player.gender, saved: savedOf(2) };
+        } finally { window.__forceTouch = t0; restore(); }
+        check(P + 'a burst of taps never picks: 3, 5 or 10 quick taps where Boy is drawn leave the card up and nothing saved; one tap after a half-second pause picks Boy',
+          res.every(r => r.asking && r.title && !r.saved) && !!pick && !pick.asking && !pick.title && pick.gender === 'boy' && pick.saved === 'boy', { res, pick }); }
       // 6. a knight from before this (no choice in his save): Enter on the title (Continue) asks first; Boy starts him as a boy
       { unchoose(3); title.open(); pressed.add('Enter'); title.tick(1 / 60);
         const r = { asking: !!ask, n: ask && ask.n, fresh: ask && ask.fresh, title: title.active };
