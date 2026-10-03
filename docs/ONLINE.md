@@ -2008,20 +2008,30 @@ max 1,393 ms, felt it too). That run did not yet record the driver's own stalls,
 the World stood still; the tool now writes every 250 ms stall of its own beside each fallback (`driverStalls`). The
 watchdog did what this contract says (three slow ticks in a row, the map held, a `sim_log` row, a knight's game keeps it).
 
-**The proof** (`~/.fanglands/work/phase1/sw-2/proof/`, 3 Oct 2026; `node stage2-proof.js`). Two real browsers, a laptop
-(1280 x 800) and an iPad (1024 x 1366, touch), both opened with `?debug=tick`, on a local `wrangler dev` world running this
-branch, two fresh test knights; the parent page in a third. Deepholm switched to `world` on the parent page (the overworld
-refused, 400 `later`). 1: both screens said `keeper @world:deepholm (the world)`, 10 `mon` a second, the same two guards
-at the same places with the same hp. 2: both swung at one guard on the keys (Space); it died and the kill went to the
-laptop, who did all 93 of its damage (the iPad's 3 swings missed). 3: mid-fight the parent page gave Deepholm to a knight's
-game (the laptop, there longest) and back: 228 samples over both screens, nothing vanished, nothing twice, both stayed in
-Deepholm, `sim_log` has both turns. 4: the iPad's tab closed mid-fight; the laptop played on with the world as keeper, and
-the iPad back in Deepholm saw the same monsters. 5: the iPad frozen 30 s (its page stopped, the socket open) while the
-laptop fought on: 267 samples, nothing vanished, no keeper message to either, the world never handed the map back; the iPad
-woke to the monsters there from its first frame. No page errors. The harness keeps both knights from falling (no blow
-takes the last hit point): the first run lost check 5 because the guards felled the laptop and it woke on the overworld,
-and lost check 3 to the old keeper's one-round-trip blink, fixed above. Screenshots: `deepholm-{laptop,ipad}.png`,
-`fight-*.png`, `admin-world-{before,keeper,after}.png`, `unlocked-ipad.png`, `locked-laptop.png`.
+**The proof** (`~/.fanglands/work/phase1/sw-2/proof/`, 3 Oct 2026; `node stage2-proof.js`, on this branch merged with master
+4a374f0). Two real browsers, a laptop (1280 x 800) and an iPad (1024 x 1366, touch), both opened with `?debug=tick`, on a
+local `wrangler dev` world running this branch, two fresh test knights; the parent page in a third. Deepholm switched to
+`world` on the parent page (the overworld refused, 400 `later`). 1: both screens said `keeper @world:deepholm (the world)`,
+10 `mon` a second, the same two guards at the same places with the same hp. 2: both swung at one guard on the keys (Space,
+14 and 11 swings); it died and the kill went to the laptop, who did 99 of its damage to the iPad's 4, and only to him.
+3: mid-fight the parent page gave Deepholm to a knight's game (the laptop, there longest) and back: 230 samples over both
+screens, nothing vanished, nothing twice, both stayed in Deepholm, `sim_log` has both turns. 4: the iPad's tab closed
+mid-fight; the laptop played on with the world as keeper (47 samples, nothing vanished), and the iPad back in Deepholm saw
+the same monsters. 5: the iPad frozen 30 s (its page stopped, the socket open) while the laptop fought on: 276 samples,
+nothing vanished, no keeper message to either, the world never handed the map back; the iPad woke to the same standing
+monsters as the laptop from its first frame. No page errors. The harness keeps both knights from falling (no blow takes the
+last hit point). Earlier runs, kept beside it (`run1/` to `run3/`): run 1 lost check 5 because the guards felled the laptop
+and it woke on the overworld (a death, not a hand-back), and lost check 3 to the old keeper's one-round-trip blink, fixed
+above; run 3 read "0 monsters" on the waking iPad as a failure when the laptop had felled both guards (the check now
+compares the iPad with the laptop). Screenshots: `deepholm-{laptop,ipad}.png`, `fight-*.png`,
+`admin-world-{before,keeper,after}.png`, `unlocked-ipad.png`, `locked-laptop.png`.
+
+**On the test world** (https://test.gorkscape.ca, 3 Oct 2026, deployed with `~/.fanglands/tools/deploy-test.sh` after the
+backup `~/.fanglands/backups/20261003-190639-pre-shared-2-test`, every gate green): the World loaded its game copy
+(`GET /api/admin/sim`: `world.loaded` true, cap 4), every place on `keeper`, master `on`, nothing held, `sim_log` empty; the
+parent page shows "Monsters run by the world". The Worker is now 2,904.58 KiB (752.66 KiB gzipped; the game copy is most of
+it), startup 6 ms; it was 184.95 KiB before the copy was bundled. Nobody switched a place on there: an agent may not sign
+the probe knights in on a world that is not on this machine, so the two-browser run on the test world is the owner's.
 
 ## Safety rules (binding)
 
