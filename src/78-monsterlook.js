@@ -650,13 +650,45 @@ const MONSTER_LOOK = (() => {
         installColossus(); const c0 = STATS.colossus; if (window.ROYALMINE) ROYALMINE.drawColossus(recorder().g, ent('ginormous_golem', { state: 'sleep' }), false);
         const golem = !window.ROYALMINE || STATS.colossus === c0 + 1;
         check(P + 'a name and health bar sit over the new head, a big monster is drawn while its body reaches into the view, every portrait fits its box, and the Ginormous Golem\'s own pass draws his new look', labels && fits && golem, { labels, fits, golem }); }
+      // 9. the knight's own machines: his pilot sits in the main seat once per drawing (never a goblin), null leaves the seats
+      //    empty, the Barrelbeast's two side seats stay empty, and the entity is put back as it was
+      { const bad = []; const F4 = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+        for (const kind of MACHINES) for (const [fx, fy] of F4) for (const moving of [false, true]) {
+          const e = { x: 0, y: 0, facing: { x: fx, y: fy }, moving, walkT: 1.3, attackT: 0, hurtT: 0, seed: 3, hp: 100, maxHp: 100, type: 'knight_mech' };
+          const calls = []; const seat = (g, x, y, s, back, f) => { calls.push([x, y, s, back, f]); };
+          const rd = recorder(); MONSTER_ART.drawNewMob(rd.g, Object.assign({}, e, { type: kind }));
+          const rp = recorder(); const okP = drawMachine(rp.g, e, kind, seat);
+          const re = recorder(); drawMachine(re.g, e, kind, null);
+          const tag = kind + ' ' + fx + ',' + fy + (moving ? ' walking' : '');
+          if (!okP) bad.push(tag + ' not drawn');
+          if (calls.length !== 1) bad.push(tag + ' seats ' + calls.length);
+          else if (!calls[0].slice(0, 3).every(Number.isFinite) || calls[0][2] <= 0 || calls[0][3] !== (fy < 0 && !fx)) bad.push(tag + ' seat ' + JSON.stringify(calls[0]));
+          if (!(re.n < rd.n && rp.n === re.n)) bad.push(tag + ' ops ' + rd.n + '/' + rp.n + '/' + re.n);
+          if (e.type !== 'knight_mech' || 'pilot' in e) bad.push(tag + ' not put back');
+        }
+        const none = !drawMachine(recorder().g, { facing: { x: 0, y: 1 } }, 'goblin', null);
+        check(P + `the knight's own machines (${MACHINES.size}): his pilot sits in the main seat once in every facing, walking or standing, never a goblin; null leaves the seats empty; the entity is put back`, !bad.length && none, { bad: bad.slice(0, 6), none }); }
     } finally {
       for (const k of Object.keys(HOOKS.drawMonster)) HOOKS.drawMonster[k] = hooks0[k];
       time = T0; window.__peace = peace0; ON.on = on0; ON.pics = pics0;
     }
   });
 
-  return { ON, STATS, LOOK_FIELDS, HIT_R, HIT_R_WAS, ATTACK_T, BOX, PIC_TYPES, viewOf, lookType, isMonsterKind, drawLook, boxOf, reach, headroom, picPose, clearPics,
+  // ---------- the knight's own machines in the new look (for 08-draw, 22-bulldozer and the Barrelbeast's riders) ----------
+  // kind: walker, yard_walker, bulldozer, yard_dozer or barrelbeast. pilot(g, x, y, s, back, fx) draws whoever sits in the
+  // main seat, in the machine's own frame where the goblin sat at scale s (back: seen from behind; fx: the way he faces
+  // side-on); null leaves every seat empty (a wreck, a parked machine). The machine is drawn at its approved size about the
+  // point g is translated to. e needs facing, moving, walkT, attackT and hurtT (seed sways it standing) and is put back as it was.
+  const MACHINES = new Set(['walker', 'yard_walker', 'bulldozer', 'yard_dozer', 'barrelbeast']);
+  function drawMachine(g, e, kind, pilot) {
+    if (!MACHINES.has(kind) || !NEW[kind]) return false;
+    const had = Object.prototype.hasOwnProperty.call(e, 'pilot'), was = e.pilot, t0 = e.type;
+    e.pilot = typeof pilot === 'function' ? pilot : null; e.type = kind;
+    try { paint(g, e, kind, null, null); } finally { e.type = t0; if (had) e.pilot = was; else delete e.pilot; }
+    return true;
+  }
+
+  return { ON, STATS, LOOK_FIELDS, MACHINES, drawMachine, HIT_R, HIT_R_WAS, ATTACK_T, BOX, PIC_TYPES, viewOf, lookType, isMonsterKind, drawLook, boxOf, reach, headroom, picPose, clearPics,
     PICS, HELD, releaseHeld, MEM, fit, drawWeapon, drawColossusLook, colossusView, installColossus, paint, _drawCharacter };
 })();
 window.MONSTER_LOOK = MONSTER_LOOK;

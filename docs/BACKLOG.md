@@ -84,6 +84,14 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
 (28 scenarios each) and 86 server tests passed before each deploy.
 
 ## NEXT WEEK — improvements held back so the work could ship
+- No Play alone leftovers (2026-10-03; feat/no-play-alone-min):
+  - On a small phone (375x667) the first tap on Start fresh shows the question, but "Yes, start fresh" and "Go back" sit below the fold of the card's scroll box with nothing showing it scrolls. iPad and 390x844 are fine.
+  - "Yes, start fresh" looks greyed and ignores taps until 0.8 s pass with no press; a kid tapping it faster never gets through, and no words say to wait. Taps that land off the offer box (its heading, the canvas) do not restart the wait.
+  - The device-knight line never says who has a knight already; on a family iPad it stays on the sign-up form for good because device knights are never removed.
+  - The canvas footer says "Your knight is saved in the cloud at fanglands.com." while the card says "This device has a knight saved on it ... It is safe here." For a Play-alone kid with no account the two lines disagree.
+  - Other files' self-tests still write LOGIN.alone (harmless, dead).
+  - Not covered by a test: two of the no-room guards. The "no Play alone button" check on the HTML card never runs with a DOM.
+  - Known and accepted: with the world asleep nobody can play; a Play-alone kid's own knight played further offline is parked as a device knight at login (as before) and offered only when the account's cloud is empty; with HANDOVER on, a sibling's kept device knights keep that browser on gorkscape.ca; the GitHub Pages copy is still single-player.
 - Townsfolk look leftovers (2026-10-03; all 74 approved people, feat/townsfolk). Swept 2026-10-03 (fix/leftovers-looks):
   one talker per line, a dark outline when hurt, Harl's lantern set down at the oars, the talk brackets over the new
   heads, standing loops of each person's own length, the Last Knight's statue in the new look. Left, and why:
