@@ -445,7 +445,8 @@
   hudSeatFace('ctx', { id: 'leave', prio: 30, when: () => !!active && !player.mech && !player.dead, emblem: 'leave', ribbon: 'LEAVE', key: 'L', name: 'Leave', action: leaveNow });
   HOOKS.hud.push(() => { if (active && !paused && !panel && !player.dead) HK.teach('leave', 'L', 'Leave', { x: player.x, y: player.y, lift: 46 }, { emblem: 'leave' }); });
   HOOKS.hud.push((g, narrow) => {
-    if (!active) return;
+    // (a place with its own plaque says so with inst.plaque = false: your island, 63-house)
+    if (!active || active.inst.plaque === false) return;
     if (panel || paused) return;
     // (a boss that is not standing, the War Shed's before the valve or a storm still gathering, is not called awake)
     const inst = active.inst, alive = monsters.filter(m => !m.dead).length, bossUp = !!inst.boss && monsters.some(m => !m.dead && m.type === inst.boss);
