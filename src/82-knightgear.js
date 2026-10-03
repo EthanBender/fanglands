@@ -1786,14 +1786,18 @@ const KNIGHTGEAR = (() => {
         } finally { DPR = dpr; WPICS.clear(); T = 0; }
         check(P0 + 'a weapon\'s turned picture holds the whole weapon and little more: all ' + n + ' weapons, and together less than half the pixels of the old fixed box', !bad.length && n >= 25 && area < 0.5 * n * 68 * 38, { bad: bad.slice(0, 5), n, area, old: n * 68 * 38 }); }
       // 19. a picture is the live knight. Every other knight online is drawn from pictures (drawCached), so here the
-      // pictures are made as recorders (PICTEST) and put down on a recorder, and set beside the live drawing: four outfits
-      // (a boy and a girl, two tunics, a skill cape, a shield and the lantern, an upright sword, a spear and the bow) at all
-      // 8 facings, standing and at the four poses of a walk, and two of them mid-swing at all 8.
-      // (a) a picture at rest paints exactly what the live knight paints at the picture's own facing and step (colours,
-      // legs and all); (b) a facing to his left (3, 4, 5) is put down inside a scale(-1, 1) and no other is; (c) facing
-      // away, his weapon, its hand, the shield or lantern and the other hand are painted before his torso, standing,
-      // walking or mid-swing; facing us or side-on the weapon and its hand after it; (d) two knights alike but for the
-      // tunic, the skin, the hair, boy or girl, or the ribbon get a picture each (the same knight twice gets one).
+      // pictures are made as recorders (PICTEST) and put down on a recorder, and set beside the live drawing. Four outfits
+      // (two boys alike but for their gear, two girls, two tunics, a skill cape, a shield and the lantern, an upright sword,
+      // a spear, the bow and a dagger) at all 8 facings: standing at two times of the clock, at the four poses of a walk,
+      // and mid-swing, one after another with the pictures kept, as in a crowd, so a picture handed to the wrong knight
+      // shows; then two of them standing again on a screen of ratio 1.
+      // (a) a picture at rest paints exactly what the live knight paints at the picture's own facing, step and clock
+      // (colours, legs and all), at the screen's ratio, and is put down where it was painted, at its own size; (b) a facing
+      // to his left (3, 4, 5) is put down inside a scale(-1, 1) and no other is; (c) he holds one weapon, in his picture at
+      // rest and outside it mid-swing; facing away his weapon, its hand, the shield or lantern and the other hand are
+      // painted before his torso, standing, walking or mid-swing; facing us or side-on the weapon and its hand after it;
+      // (d) two knights alike but for the tunic, the skin, the hair, boy or girl, or the ribbon get a picture each (the
+      // same knight twice gets one).
       { const _t = drawTorso, _w = drawWeapon, _a = drawWeaponArm, _s = drawShield, _o = drawOffHand;
         const crowd0 = [crowdN, crowdHi, picCap], dpr = DPR, pics = [];
         const r = { cases: 0, rest: 0, same: 0, bad: [], flips: [], order: [], own: {}, twice: 0 };
@@ -1805,50 +1809,61 @@ const KNIGHTGEAR = (() => {
           drawWeaponArm = function (g, B, hx, hy) { mk(g, 'MKarm'); return _a(g, B, hx, hy); };
           drawShield = function (g, S, back, at) { mk(g, 'MKshield'); return _s(g, S, back, at); };
           drawOffHand = function (g, B, step) { mk(g, 'MKoff'); return _o(g, B, step); };
-          PICTEST = (w, hh, ss) => { const rc = recorder(), c = { width: Math.ceil(w * ss), height: Math.ceil(hh * ss) }; pics.push({ c, rc }); return { c, cg: rc.g }; };
-          DPR = 2; time = 0;
+          PICTEST = (w, hh, ss) => { const rc = recorder(), c = { width: Math.ceil(w * ss), height: Math.ceil(hh * ss) }; pics.push({ c, rc, w, h: hh, ss }); return { c, cg: rc.g }; };
+          clearPics(); DPR = 2;
           const looks = [
             lookWith({ helm: 'iron_helm', body: 'iron_body', legs: 'iron_legs', shield: 'iron_shield', weapon: 'iron_sword' }),
             lookWith({ body: 'silk_cloak', legs: 'iron_legs', shield: 'soul_lantern', cape: 'cape_hitpoints', weapon: 'dragon_spear' }, { girl: true, woman: true, tunic: '#8a3b3b', hair: '#c9a050', ribbon: '#3bb08a' }),
-            lookWith({ helm: 'mithril_helm', body: 'mithril_body', shield: 'iron_shield', cape: 'cape_melee', weapon: 'yew_bow' }, { tunic: '#8a3b3b' }),
+            lookWith({ helm: 'mithril_helm', body: 'mithril_body', shield: 'iron_shield', cape: 'cape_melee', weapon: 'yew_bow' }),
             lookWith({ helm: 'iron_helm', body: 'necro_robe', legs: 'mithril_legs', shield: 'soul_lantern', weapon: 'mithril_dagger' }, { girl: true, woman: true }),
           ];
           const D8 = [...Array(8)].map((_, k) => ({ x: Math.cos(k * Math.PI / 4), y: Math.sin(k * Math.PI / 4) }));
           // the picture's ops after its own setup (scale to the screen ratio, translate to its corner) laid in where it is put down
           const flat = (ops, out) => { for (const o of ops) { if (o.startsWith('IMG ')) { const p = pics[+o.slice(4)]; out.push('['); if (p) flat(p.rc.ops.slice(2), out); else out.push('IMG?'); out.push(']'); } else out.push(o); } return out; };
           const signs = ops => { const st = [], out = []; let sg = 1; for (const o of ops) { const k = o.split(' '); if (k[0] === 'save') st.push(sg); else if (k[0] === 'restore') sg = st.length ? st.pop() : 1; else if (k[0] === 'scale') sg *= Math.sign(+k[1]) || 1; else if (k[0] === 'IMG') out.push(sg); } return out; };
-          // mode: -1 standing, 0..7 a step of the walk, 's' mid-swing
-          const one = (li, dir, mode) => {
-            const look = looks[li], swing = mode === 's', moving = !swing && mode >= 0, walkT = moving ? (mode + 0.5) / STEPS * TWO_PI : 0;
-            clearPics(); const n0 = pics.length, b0 = STATS.blits;
-            const o = recorder(); o.g.drawImage = img => { o.ops.push('IMG ' + pics.findIndex(p => p.c === img)); };
+          const f1 = n => n.toFixed(1);
+          // mode: -1 standing, 0..7 a step of the walk, 's' mid-swing; clock: the game's time
+          const one = (li, dir, mode, clock) => {
+            const look = looks[li], P = partsOf(look), swing = mode === 's', moving = !swing && mode >= 0, walkT = moving ? (mode + 0.5) / STEPS * TWO_PI : 0;
+            time = clock;
+            const b0 = STATS.blits, put = [], o = recorder();
+            o.g.drawImage = (img, x, y, w, h) => { const k = pics.findIndex(p => p.c === img); put.push({ p: pics[k], x, y, w, h }); o.ops.push('IMG ' + k); };
             draw(o.g, ent(D8[dir], { moving, walkT, attackT: swing ? 0.11 : 0 }), look, { cache: true, t: 0.2 });
             r.cases++;
-            const tag = li + '/' + dir + '/' + mode, made = pics.slice(n0), body = made.find(p => p.rc.ops.includes('MKtorso '));
-            if (STATS.blits !== b0 + 1 || !body || !/^scale /.test(body.rc.ops[0]) || !/^translate /.test(body.rc.ops[1])) { r.bad.push(tag + ': no picture'); return; }
+            const tag = li + '/' + dir + '/' + mode + '@' + clock + 'x' + DPR, body = put.map(q => q.p).find(p => p && p.rc.ops.includes('MKtorso '));
+            if (STATS.blits !== b0 + 1 || !body) { r.bad.push(tag + ': no picture'); return; }
+            // (a) each picture painted from its corner and put down at that corner at its own size; the body at the screen's ratio
+            const off = put.find(q => !q.p || q.p.rc.ops[0] !== 'scale ' + f1(q.p.ss) + ' ' + f1(q.p.ss) || q.p.rc.ops[1] !== 'translate ' + f1(-q.x) + ' ' + f1(-q.y) || Math.abs(q.w - q.p.w) > 1e-6 || Math.abs(q.h - q.p.h) > 1e-6);
+            if (body.ss !== picScale() || off) r.bad.push({ tag, ss: body.ss, off: off && [off.x, off.y, off.w, off.h, off.p && off.p.rc.ops.slice(0, 2), off.p && [off.p.w, off.p.h]] });
             // (b)
             const flip = dir >= 3 && dir <= 5, sg = signs(o.ops);
             if (!sg.length || sg.some(v => v !== (flip ? -1 : 1))) r.flips.push(tag + ': ' + sg.join());
             // (c)
             const all = flat(o.ops, []), at = m => all.reduce((a, s, i) => (s === m + ' ' ? a.concat(i) : a), []);
-            const torso = at('MKtorso')[0], wpn = at('MKweapon'), arm = at('MKarm'), sh = at('MKshield'), off = at('MKoff');
-            const back = dir >= 5 && dir <= 7;
-            const okOrder = back ? [wpn, arm, sh, off].every(x => x.length >= 1 && x.every(i => i < torso)) : wpn.length >= 1 && arm.length >= 1 && wpn.every(i => i > torso) && arm.every(i => i > torso);
-            if (!okOrder) r.order.push({ tag, torso, wpn, arm, sh, off });
-            // (a) at rest, against the live knight at the picture's own facing and step
+            const torso = at('MKtorso'), wpn = at('MKweapon'), arm = at('MKarm'), sh = at('MKshield'), oh = at('MKoff');
+            const back = dir >= 5 && dir <= 7, inPic = body.rc.ops.includes('MKweapon ');
+            const okOrder = torso.length === 1 && wpn.length === 1 && arm.length === 1 && inPic === !swing && (back ? [wpn, arm, sh, oh].every(x => x.length >= 1 && x.every(i => i < torso[0])) : wpn[0] > torso[0] && arm[0] > torso[0]);
+            if (!okOrder) r.order.push({ tag, torso, wpn, arm, sh, oh, inPic });
+            // (a) at rest, against the live knight at the picture's own facing, step and clock
             if (swing) return;
-            if (!body.rc.ops.includes('MKweapon ')) { r.bad.push(tag + ': weapon not in the picture at rest'); return; }
             r.rest++;
             const pdir = flip ? (12 - dir) % 8 : dir, s8 = moving ? mode : -1, sb = s8 < 0 ? -1 : s8 < 4 ? Math.min(s8, 3 - s8) : 4 + Math.min(s8 - 4, 7 - s8);
-            const wt = moving ? (sb + 0.5) / STEPS * TWO_PI : 0, tPic = moving ? sb * 0.29 : 0.2;
+            const ph = !moving && (animatedBody(P) || WANIMATED.has(P.weapon.id)) ? Math.floor(clock * 4) % PHASES : 0;
+            const wt = moving ? (sb + 0.5) / STEPS * TWO_PI : 0, tPic = moving ? sb * 0.29 : ph * 0.37 + 0.2;
             const lv = recorder();
             draw(lv.g, { facing: { x: Math.cos(pdir * Math.PI / 4), y: Math.sin(pdir * Math.PI / 4) }, moving, walkT: wt, attackT: 0, hurtT: 0 }, look, { t: tPic });
             const a = body.rc.ops.slice(2), b = lv.ops.slice(1, -1);
             if (a.join(';') === b.join(';')) r.same++;
             else { let i = 0; while (i < a.length && a[i] === b[i]) i++; r.bad.push({ tag, at: i, pic: a.slice(i, i + 3), live: b.slice(i, i + 3), n: [a.length, b.length] }); }
           };
-          for (let li = 0; li < looks.length; li++) for (let dir = 0; dir < 8; dir++) for (const mode of [-1, 0, 1, 4, 5]) one(li, dir, mode);
-          for (const li of [0, 2]) for (let dir = 0; dir < 8; dir++) one(li, dir, 's');
+          for (let li = 0; li < looks.length; li++) for (let dir = 0; dir < 8; dir++) {
+            one(li, dir, -1, 0.05); one(li, dir, -1, 0.55);
+            for (const mode of [0, 1, 4, 5]) one(li, dir, mode, 0.05);
+            one(li, dir, 's', 0.05);
+          }
+          DPR = 1;
+          for (const li of [0, 1]) for (let dir = 0; dir < 8; dir++) one(li, dir, -1, 0.05);
+          DPR = 2;
           // (d)
           const base = lookWith({ helm: 'iron_helm', body: 'iron_body', weapon: 'iron_sword' }, { girl: true, woman: true, ribbon: '#d0567f' });
           const two = (l1, l2) => { clearPics(); const p0 = STATS.pics; draw(recorder().g, ent(D8[2]), l1, { cache: true, t: 0.2 }); draw(recorder().g, ent(D8[2]), l2, { cache: true, t: 0.2 }); return STATS.pics - p0; };
@@ -1860,7 +1875,7 @@ const KNIGHTGEAR = (() => {
           PICTEST = null; clearPics(); DPR = dpr; [crowdN, crowdHi, picCap] = crowd0;
         }
         const ownOk = Object.keys(r.own).length === 5 && Object.values(r.own).every(n => n === 2) && r.twice === 1;
-        check(P0 + 'every other knight online is drawn from a picture, and the picture is the live knight: 4 outfits (boy and girl, two tunics, a skill cape, a shield and the lantern, a sword, a spear and the bow) at all 8 facings standing and walking (' + r.rest + ' pictures) paint exactly what the live knight paints, colours and legs and all; facing left the picture is flipped; facing away his weapon, hands and shield or lantern are behind his body, mid-swing too; a different tunic, skin, hair, ribbon or boy or girl gets its own picture', r.cases === 176 && r.rest === 160 && r.same === 160 && !r.bad.length && !r.flips.length && !r.order.length && ownOk, { cases: r.cases, rest: r.rest, same: r.same, bad: r.bad.slice(0, 3), flips: r.flips.slice(0, 4), order: r.order.slice(0, 3), own: r.own, twice: r.twice }); }
+        check(P0 + 'every other knight online is drawn from a picture, and the picture is the live knight: 4 outfits (boy and girl, two tunics, a skill cape, a shield and the lantern, a sword, a spear, the bow and a dagger) at all 8 facings, standing and walking, the pictures kept as in a crowd (' + r.rest + ' at rest), paint exactly what the live knight paints, colours and legs and all, at the screen\'s ratio, put down where they were painted; facing left the picture is flipped; he holds one weapon, in his picture at rest; facing away his weapon, hands and shield or lantern are behind his body, mid-swing too; a different tunic, skin, hair, ribbon or boy or girl gets its own picture', r.cases === 240 && r.rest === 208 && r.same === 208 && !r.bad.length && !r.flips.length && !r.order.length && ownOk, { cases: r.cases, rest: r.rest, same: r.same, bad: r.bad.slice(0, 3), flips: r.flips.slice(0, 4), order: r.order.slice(0, 3), own: r.own, twice: r.twice }); }
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 
