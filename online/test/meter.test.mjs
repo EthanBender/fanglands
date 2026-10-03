@@ -179,7 +179,7 @@ test('the World counts every request and socket message, writes on close and ala
   assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 5, admin: 2, gameHttp: 3, est: 7, gameEst: 5 });
   assert.equal(r.data.meter.freeLimit, 100000);
   assert.equal(r.data.meter.waiting, 30);
-  assert.deepEqual(Object.keys(r.data), ['meter', 'sim', 'atlas', 'move'], 'the meter, and from Stage 1 the switch, the Atlas and the movement check');
+  assert.deepEqual(Object.keys(r.data), ['meter', 'sim', 'world', 'atlas', 'move'], 'the meter, and from Stage 1 the switch, the Atlas and the movement check, and from Stage 2 the world-run maps');
   w.webSocketClose(sock, 1000, 'bye');
   assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-03', ws_in: 25, http: 5, est_requests: 7 }], 'a socket close writes');
   assert.deepEqual(adminOf(ctx.storage.sql), [{ day: '2026-10-03', http: 2 }], 'and the admin calls with it');
@@ -288,7 +288,8 @@ test('the World: welcome names the Atlas, the movement check counts into move_da
   const hash = r.data.atlas.hash;
   assert.match(hash, /^[0-9a-f]{16}$/);
   assert.ok(r.data.atlas.places > 30 && r.data.atlas.fixed > 1000);
-  assert.deepEqual(r.data.sim, { move: 'observe' });
+  const KEEPERS = { deepholm: 'keeper', aerie: 'keeper', coalmine: 'keeper' };
+  assert.deepEqual(r.data.sim, { move: 'observe', master: 'on', maps: KEEPERS, held: {} });
   w.webSocketMessage(sock, JSON.stringify({ t: 'hello', v: 1, caps: [], atlas: hash }));
   assert.equal(sock.got.find(m => m.t === 'welcome').atlas, hash);
   // the Cave: a knight steps from its floor (5, 7) through its rock border at y 0 to off the map: one wall
@@ -304,7 +305,7 @@ test('the World: welcome names the Atlas, the movement check counts into move_da
   for (const bad of [{}, { move: 'correct' }, { move: 'off', maps: {} }, { combat: 'on' }]) assert.equal((await call(w, 'POST', '/api/admin/sim', bad, ENV.ADMIN_KEY)).status, 400, JSON.stringify(bad));
   assert.equal((await call(w, 'POST', '/api/admin/sim', { move: 'off' })).status, 401);
   r = await call(w, 'POST', '/api/admin/sim', { move: 'off' }, ENV.ADMIN_KEY);
-  assert.equal(r.status, 200); assert.equal(r.data.move.mode, 'off'); assert.deepEqual(r.data.sim, { move: 'off' });
+  assert.equal(r.status, 200); assert.equal(r.data.move.mode, 'off'); assert.deepEqual(r.data.sim, { move: 'off', master: 'on', maps: KEEPERS, held: {} });
   T += 125; w.webSocketMessage(sock, JSON.stringify({ t: 'p', map: 'over', x: -500, y: -500, j: 0, spd: 175 }));
   w.webSocketClose(sock, 1000, 'bye');
   const day = ctx.storage.sql.exec('SELECT checked, wall FROM move_day').toArray();
@@ -314,7 +315,17 @@ test('the World: welcome names the Atlas, the movement check counts into move_da
   const w2 = new TestWorld(ctx, ENV);
   assert.equal(w2.room.sim.move, 'off');
   r = await call(w2, 'POST', '/api/admin/sim', { move: 'observe' }, ENV.ADMIN_KEY);
-  assert.deepEqual(JSON.parse(ctx.storage.sql.exec("SELECT value FROM settings WHERE key = 'sim'").toArray()[0].value), { move: 'observe', later: 1 });
+  assert.deepEqual(JSON.parse(ctx.storage.sql.exec("SELECT value FROM settings WHERE key = 'sim'").toArray()[0].value), { move: 'observe', later: 1, master: 'on', maps: KEEPERS, held: {} });
   r = await call(w2, 'GET', '/api/admin/export', undefined, ENV.ADMIN_KEY);
   assert.equal(r.data.move_day.length, 1); assert.equal(r.data.move_log.length, 1);
+  // Stage 2: which maps the world runs itself. Only the three plain instances may be 'world'; a flip is a sim_log row
+  for (const bad of [{ maps: { nowhere: 'world' } }, { maps: { deepholm: 'yes' } }, { master: 'maybe' }, { maps: [] }]) assert.equal((await call(w2, 'POST', '/api/admin/sim', bad, ENV.ADMIN_KEY)).status, 400, JSON.stringify(bad));
+  for (const later of ['over', 'spider_den', 'royalmine']) { const x = await call(w2, 'POST', '/api/admin/sim', { maps: { [later]: 'world' } }, ENV.ADMIN_KEY); assert.equal(x.status, 400); assert.equal(x.data.code, 'later'); }
+  r = await call(w2, 'POST', '/api/admin/sim', { maps: { deepholm: 'world' } }, ENV.ADMIN_KEY);
+  assert.equal(r.status, 200); assert.deepEqual(r.data.sim.maps, { deepholm: 'world', aerie: 'keeper', coalmine: 'keeper' });
+  assert.equal(r.data.sim.move, 'observe', 'the movement check is left as it was');
+  r = await call(w2, 'POST', '/api/admin/sim', { master: 'off' }, ENV.ADMIN_KEY);
+  assert.equal(r.data.sim.master, 'off'); assert.equal(r.data.sim.maps.deepholm, 'world', 'master off keeps the maps as they were');
+  r = await call(w2, 'GET', '/api/admin/export', undefined, ENV.ADMIN_KEY);
+  assert.ok(Array.isArray(r.data.sim_log) && Array.isArray(r.data.realm_state), 'the backup has the two new tables');
 });

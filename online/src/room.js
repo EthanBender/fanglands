@@ -18,6 +18,8 @@
 //   room.store                 where roles, mutes, bans, parties, prizes, logins and finished trades live (store.js)
 //   room.setSim(sim)           the parent page's shared-world switches ({move: 'observe' | 'off'}, docs/ONLINE.md "The shared world")
 //   room.atlas, room.move      the Atlas the world judges by (atlas.js, from opts.atlas) and the movement check (move.js)
+//   room.worlds                the maps the world runs itself (sim/worlds.js: the virtual knight '@world:<map>' as their keeper,
+//                              Stage 2); room.modeOf(map), room.setMode(map, mode, reason), room.joinVirtual(sock, name, map)
 //
 // Timers: the room never calls setTimeout itself. When something becomes due it calls wake(ms) once, and
 // the host calls tick() at that time (the World uses a Durable Object alarm, which survives hibernation).
@@ -54,6 +56,7 @@ import { checkChat } from './filter.js';
 import { MoveCheck, MoveBook, wireMap } from './move.js';
 import { isHouse } from './atlas.js';
 import { MemoryStore, ALWAYS, WORD_LOCK_MS } from './store.js';
+import { Worlds } from './sim/worlds.js';
 import {
   TILE, HAT_CHOICES, PARTY_LIFE, PRIZE_KEEP, LIGHT_RANGE, MAX_LIVE_CRACKERS, FUSE_MIN, FUSE_MAX, ID_RE,
   rollCracker, crackerId, parseCrackerId, checkTable, checkSpots, cryptoRandom, commas,
@@ -162,6 +165,8 @@ export class Room {
     this.atlas = opts.atlas || null;
     this.move = new MoveCheck({ atlas: this.atlas, book: opts.moveBook || new MoveBook(null, this.now), now: this.now });
     this.sim = { move: this.move.mode };
+    // the shared world, Stage 2: maps whose monsters the world's own game copy runs (the World gives it its SimHost)
+    this.worlds = new Worlds(this, { book: opts.simBook || null, save: opts.simSave || (() => { }) });
     this.knights = new Map();   // sock -> knight
     this.byName = new Map();    // lower-case name -> knight
     this.maps = new Map();      // map name -> { members: Set<knight>, keeper: knight|null }
@@ -179,11 +184,15 @@ export class Room {
   }
 
   // The parent page's shared-world switches (the World reads them from settings 'sim'). Stage 1 has one: move.
-  setSim(sim) {
+  setSim(sim, why) {
     const move = sim && (sim.move === 'off' || sim.move === 'observe') ? sim.move : 'observe';
     this.sim = { move };
     this.move.mode = move;
+    this.worlds.setSwitches(sim, why || null);
   }
+  modeOf(map) { return this.worlds.modeOf(map); }
+  setMode(map, mode, reason) { const sw = this.worlds.sw; return this.worlds.setSwitches({ ...sw, maps: { ...sw.maps, [map]: mode }, held: Object.fromEntries(Object.entries(sw.held).filter(([m]) => m !== map)) }, reason || 'parent page'); }
+  joinVirtual(sock, name, map) { return this.worlds.joinVirtual(sock, name, map); }
 
   // Every wake builds a new Room: the parties that were running when the world fell asleep come back from the store.
   loadParties() {
@@ -376,6 +385,7 @@ export class Room {
     const keeper = this.keeperOf(k.map);
     const welcome = { t: 'welcome', me: k.name, at: this.now(), keeper: keeper ? keeper.name : null, role: k.role };
     if (this.atlas) welcome.atlas = this.atlas.hash;
+    if (this.worlds.host) welcome.sim = this.worlds.welcomeSim();   // a world that can run maps itself says which
     this.send(k.sock, welcome);
     this.attach(k);
     this.rosterNow();
@@ -402,6 +412,7 @@ export class Room {
     // where the knight stands, for the party, cracker and trade range checks
     if (Number.isFinite(m.x) && Number.isFinite(m.y)) { k.x = m.x; k.y = m.y; }
     k.dead = !!m.dead;
+    this.worlds.presence(k, m);   // a world-run map's copy is told where its knights are
     // the movement check only watches (move.js): it never sends, and nothing it finds changes what is relayed
     try { this.move.judge(k, m, this.now()); } catch (e) { }
     // an open trade ends when either knight falls or walks away
@@ -459,6 +470,8 @@ export class Room {
     if (!k.hello || !Array.isArray(m.list)) return;
     const g = this.maps.get(k.map);
     if (!g || g.keeper !== k) return;   // only the keeper's monsters are real; a late snapshot after handoff is dropped
+    this.worlds.keeperMon(k, m);        // a copy taking this map over reads the keeper's stream first
+    if (g.keeper !== k) return;
     k.monAt = this.now();
     const out = JSON.stringify({ t: 'mon', n: k.name, list: m.list });
     for (const o of g.members) if (o !== k) this.raw(o.sock, out);
@@ -960,10 +973,12 @@ export class Room {
     let g = this.maps.get(map);
     if (!g) { g = { members: new Set(), keeper: null }; this.maps.set(map, g); }
     g.members.add(k);
+    this.worlds.entering(k, map, g);   // a world-run map whose copy is still running: the world keeps it at once
     // the newcomer is the youngest on the map so the keeper only changes when the map was empty
     this.elect(map, quiet ? k : null, silent);
+    this.worlds.entered(k, map);
     this.arm();   // with two on a map the keeper's silence is now something to watch for
-    if (!quiet) this.send(k.sock, { t: 'keeper', map: wireMap(map), n: g.keeper ? g.keeper.name : null });
+    if (!quiet) this.send(k.sock, this.worlds.keeperMsg(map, g.keeper));
     // whoever is already here shows up at once, even if they are standing still
     for (const o of g.members) if (o !== k && o.last) this.raw(k.sock, o.last);
   }
@@ -976,6 +991,7 @@ export class Room {
     g.members.delete(k);
     const out = JSON.stringify({ t: 'left', n: k.name, map: wireMap(map) });
     for (const o of g.members) this.raw(o.sock, out);
+    this.worlds.leaving(k, map, g);
     this.elect(map, null);
   }
 
@@ -988,6 +1004,7 @@ export class Room {
     const g = this.maps.get(map);
     if (!g) return;
     if (g.members.size === 0) { this.maps.delete(map); return; }
+    if (this.worlds.holds(map, g)) return;   // a world-run map: the virtual knight is its keeper (sim/worlds.js)
     const now = this.now();
     if (g.keeper && g.keeper.keeperAt == null) g.keeper.keeperAt = now;   // a restored keeper starts its grace now
     // a keeper that has gone quiet while others are here goes to the back of the line (see KEEPER_STALE)
@@ -1006,7 +1023,7 @@ export class Room {
     if (old && stale(old)) old.mapAt = now;
     g.keeper = best; best.keeperAt = now;
     if (silent) return;
-    const out = JSON.stringify({ t: 'keeper', map: wireMap(map), n: best.name });
+    const out = JSON.stringify(this.worlds.keeperMsg(map, best));
     for (const o of g.members) if (o !== except) this.raw(o.sock, out);
   }
 
@@ -1086,7 +1103,8 @@ export class Room {
   due() {
     let d = this.rosterDirty ? this.rosterAt + ROSTER_EVERY : null;
     for (const g of this.gifts.values()) if (d == null || g.due < d) d = g.due;
-    for (const g of this.maps.values()) if (g.keeper && g.members.size > 1) { const t = Math.max(g.keeper.monAt || 0, g.keeper.keeperAt || 0) + KEEPER_STALE + 50; if (d == null || t < d) d = t; }
+    for (const g of this.maps.values()) if (g.keeper && !g.keeper.virtual && g.members.size > 1) { const t = Math.max(g.keeper.monAt || 0, g.keeper.keeperAt || 0) + KEEPER_STALE + 50; if (d == null || t < d) d = t; }
+    { const w = this.worlds.due(); if (w != null && (d == null || w < d)) d = w; }
     for (const p of this.parties.values()) if (d == null || p.expires < d) d = p.expires;
     for (const k of this.knights.values()) if (k.ask && (d == null || k.ask.due < d)) d = k.ask.due;
     return d;
@@ -1106,6 +1124,7 @@ export class Room {
     for (const k of Array.from(this.knights.values())) if (k.ask && k.ask.due <= now) this.dropAsk(k, 'timeout');
     if (this.rosterDirty && now - this.rosterAt >= ROSTER_EVERY) this.sendRoster(now);
     for (const map of Array.from(this.maps.keys())) this.elect(map, null);   // a quiet keeper steps down
+    this.worlds.tick();   // world-run maps: copies to build, take-overs to finish, a copy gone silent
     this.arm();
   }
 

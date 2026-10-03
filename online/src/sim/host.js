@@ -9,7 +9,8 @@
 // and a row written each):
 //   1. set window.__now;  2. run the copy's due timers;  3. hand it the messages queued since the last tick;
 //   4. hand it every knight on its map as a `p` (the accepted presence);  5. SUBSTEPS x update(1/30);
-//   6. pass on what the copy sent (onSend).  Then drop the copies whose map has been empty DROP_EMPTY_MS.
+//   6. pass on what the copy sent (onSend), with its monsters' rows as { t: 'mon', list, k, at, world: true } (Stage 2).
+//   Then drop the copies whose map has been empty DROP_EMPTY_MS.
 // The loop catches up at most MAX_CATCHUP ticks; beyond that the time is skipped and counted. It stops IDLE_STOP_MS after
 // the last knight leaves, so the Durable Object naps exactly as it does today.
 //
@@ -138,6 +139,7 @@ export class SimHost {
     for (const n of c.knights.keys()) if (!next.has(n)) c.queue.push({ t: 'left', n, map });
     c.knights = next;
     c.emptySince = next.size ? null : (c.emptySince == null ? this.now() : c.emptySince);
+    if (next.size) this.idleSince = null;   // a knight back on any copy: the 60 s before the loop stops start again when he goes
     if (next.size && !this.running) this.start();
     return true;
   }
@@ -159,6 +161,8 @@ export class SimHost {
         for (const k of c.knights.values()) c.wk.deliver(presenceOf(k, c.map));
         for (let s = 0; s < SUBSTEPS; s++) c.wk.step(1 / 30);
         c.ticks++;
+        // Stage 2: the copy's monsters as the world sends them, once a tick (the Room filters them for each knight)
+        if (typeof c.wk.rows === 'function') c.out.push({ t: 'mon', list: c.wk.rows(), k: c.ticks, at, world: true });
       } catch (e) {
         c.errors++;
         c.throws = c.throws.filter(t => at - t < this.watch.throwWindowMs); c.throws.push(at);
@@ -238,7 +242,8 @@ export class SimHost {
     if (t0 !== null) this.lagged(t - t0);
     if (!this.knightCount()) {
       if (this.idleSince === null) this.idleSince = t;
-      if (t - this.idleSince >= IDLE_STOP_MS) { this.stop(); return; }
+      // every copy has been empty at least this long (none had a knight since idleSince), so each goes with the loop
+      if (t - this.idleSince >= IDLE_STOP_MS) { for (const c of [...this.copies.values()]) if (!c.knights.size) this.drop(c.map); this.stop(); return; }
     } else this.idleSince = null;
     this.schedule(this.nextAt - t);
   }

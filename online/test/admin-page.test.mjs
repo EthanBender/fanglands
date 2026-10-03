@@ -24,12 +24,12 @@ function fakeEl() {
 }
 
 function page({ hidden = false, sim = null, yes = false } = {}) {
-  const els = new Map(), calls = [], intervals = new Map(), listeners = {};
+  const els = new Map(), calls = [], intervals = new Map(), listeners = {}, made = [];
   let seq = 0;
   const document = {
     hidden,
     getElementById: id => { if (!els.has(id)) els.set(id, fakeEl()); return els.get(id); },
-    createElement: () => fakeEl(),
+    createElement: () => { const e = fakeEl(); made.push(e); return e; },
     createTextNode: () => fakeEl(),
     addEventListener: (type, f) => { (listeners[type] = listeners[type] || []).push(f); },
   };
@@ -58,7 +58,7 @@ function page({ hidden = false, sim = null, yes = false } = {}) {
   const advance = async ms => { for (let t = 0; t < ms; t += 10000) { for (const { f } of [...intervals.values()]) f(); await settle(); } };
   const show = async on => { document.hidden = !on; for (const f of listeners.visibilitychange || []) f(); await settle(); };
   const take = () => { const c = calls.splice(0); const by = {}; for (const p of c) by[p] = (by[p] || 0) + 1; return { n: c.length, by }; };
-  return { settle, advance, show, take, intervals, els, posts };
+  return { settle, advance, show, take, intervals, els, posts, made };
 }
 
 test('the admin page: the meter is read on opening and on Refresh, never by the 10 s refresh', async () => {
@@ -127,4 +127,37 @@ test('the admin page: the movement check and the Atlas ride the meter\'s read (n
   assert.equal(P.take().by['/api/admin/sim'], 1, 'the switch is the one POST');
   await P.advance(60000);
   assert.equal(P.take().by['/api/admin/sim'], undefined, 'the 10 s refresh still never reads it');
+});
+
+// the shared world, Stage 2: the maps the world runs itself ride the same read; each button asks, then posts one switch
+test('the admin page: the places the world runs, from the same read; a place\'s button and the master switch each post one switch', async () => {
+  const world = (maps, master = 'on', held = {}) => ({ sim: { move: 'observe', master, maps, held }, world: { modes: { deepholm: maps.deepholm === 'world' && !held.deepholm ? 'world' : 'keeper', aerie: 'keeper', coalmine: 'keeper' }, loaded: true, running: maps.deepholm === 'world', ticks: 900, tick: { n: 900, p50: 0.31, p99: 0.9, max: 2 }, boot: { deepholm: 1210 }, heap: null, copies: maps.deepholm === 'world' ? [{ map: 'deepholm', bootMs: 1210, knights: 2, monsters: 2, ticks: 900, errors: 0 }] : [], cap: 4, skipped: 0, log: [{ at: Date.now(), map: 'deepholm', from: 'world', to: 'keeper', reason: 'throws', tickP99: 1 }] } });
+  const sim = posts => {
+    const last = posts.length ? posts[posts.length - 1].body : {};
+    if (last.master) return world({ deepholm: 'world', aerie: 'keeper', coalmine: 'keeper' }, last.master);
+    if (last.maps) return world({ deepholm: last.maps.deepholm || 'keeper', aerie: 'keeper', coalmine: 'keeper' });
+    return world({ deepholm: 'keeper', aerie: 'keeper', coalmine: 'keeper' }, 'on', { deepholm: { reason: 'throws', at: Date.now() } });
+  };
+  const P = page({ sim, yes: true });
+  await P.settle();
+  assert.equal(P.take().by['/api/admin/sim'], 1, 'still the one read on opening');
+  assert.match(String(P.els.get('worldline').textContent), /^Switched on: .*Not running now/);
+  const held = P.made.find(e => /handed back .* because it hit an error 3 times/.test(String(e.textContent)));
+  assert.ok(held, 'a held place says why');
+  const runIt = P.made.filter(e => String(e.textContent) === 'Let the world run it');
+  assert.equal(runIt.length, 3, 'one button per place');
+  await runIt[0].onclick(); await P.settle();
+  assert.deepEqual(P.posts.map(p => p.body), [{ maps: { deepholm: 'world' } }]);
+  assert.match(String(P.els.get('worldline').textContent), /Running now: 1 place, 10 ticks a second, half under 0\.31 ms, 99 in 100 under 0\.90 ms\./);
+  await P.els.get('mastertoggle').onclick(); await P.settle();
+  assert.deepEqual(P.posts.map(p => p.body)[1], { master: 'off' });
+  assert.match(String(P.els.get('worldline').textContent), /^Switched off: /);
+  assert.equal(P.take().by['/api/admin/sim'], 2, 'two POSTs, nothing else');
+  await P.advance(60000);
+  assert.equal(P.take().by['/api/admin/sim'], undefined, 'the 10 s refresh never reads it');
+  // a page that says no posts nothing
+  const Q = page({ sim, yes: false }); await Q.settle();
+  for (const b of Q.made.filter(e => String(e.textContent) === 'Let the world run it')) await b.onclick();
+  await Q.els.get('mastertoggle').onclick(); await Q.settle();
+  assert.equal(Q.posts.length, 0);
 });
