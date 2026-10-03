@@ -113,7 +113,7 @@
 
   function define(id, def) {
     if (!def || !(def.w > 0) || !(def.h > 0) || def.w > MAP_W || def.h > MAP_H) throw new Error('defineInstance: bad size for ' + id);
-    const inst = { id, name: def.name || id, sub: def.sub || '', w: def.w, h: def.h, spawns: def.spawns || [], exit: def.exit || null, entry: def.entry || [1, 1], dark: !!def.dark, boss: def.boss || null, onClear: def.onClear || null, door: def.door || null, step: def.step || null, voice: def.voice || null, lateDoor: !!def.lateDoor, build: def.build, tiles: null, vars: null };
+    const inst = { id, name: def.name || id, sub: def.sub || '', w: def.w, h: def.h, spawns: def.spawns || [], exit: def.exit || null, entry: def.entry || [1, 1], dark: !!def.dark, boss: def.boss || null, onClear: def.onClear || null, door: def.door || null, step: def.step || null, voice: def.voice || null, again: def.again || null, lateDoor: !!def.lateDoor, build: def.build, tiles: null, vars: null };
     inst.tiles = new Uint8Array(inst.w * inst.h).fill(T.WALL);
     inst.vars = new Uint8Array(inst.w * inst.h);
     const rnd = mulberry32(0x5eed ^ (id.length * 7919) ^ Math.imul(id.charCodeAt(0), 2654435761));
@@ -173,6 +173,8 @@
     miniDirty = true; window.__instance = id;
     burst(player.x, player.y, '#9aa6b8', 14, 80); sfx('open');
     const q = Q(); if (!q.visited[id]) { q.visited[id] = true; if (inst.voice) say(inst.voice, 'The Voice'); }
+    // a boss that comes back on every visit says so in plain words once it has been beaten (`again`)
+    if (inst.again && (q.cleared[id] || 0) >= 1) say(inst.again, 'The Voice');
     return true;
   }
   function leaveInstance() {
@@ -490,6 +492,7 @@
     name: 'The Spider Den', sub: 'Silk, and the thing that spins it', w: DEN.w, h: DEN.h, dark: true, boss: 'brood_mother',
     build: buildDen, spawns: DEN_SPAWNS, exit: DEN_EXIT, entry: DEN_ENTRY, door: [22, 3], step: [23, 3],
     voice: 'Silk. And the thing that spins it.',
+    again: 'A new mother has grown into the den. She is just as big, and just as hungry.',
     onClear: first => {
       say('The Brood Mother curls up and is still. The den is yours. Her chest at the back is webbed shut no longer.', 'The Voice');
       if (first) { giveOrDrop('silk_cloak', 1, player.x, player.y); say('A cloak of her silk. Light, and stronger than it looks.', 'The Voice'); }
@@ -562,6 +565,13 @@
       enterByDoor(); F.tp(DEN_BOSS[0] + 3, DEN_BOSS[1]); const fresh = monsters.some(m => m.type === 'brood_mother' && !m.dead); const k2 = kill(); F.sim(3, []);
       check('instance: a second visit brings the Brood Mother back; a second kill gives no second cloak', fresh && k2 && cloak() === 1 && q.cleared[DEN.id] === 2, { fresh, k2, cloak: cloak(), cleared: q.cleared[DEN.id] });
       drops = drops.filter(d => d.id !== 'silk_cloak' && d.id !== 'spider_silk' && d.id !== 'coins'); }
+    // the den says why she is back: the `again` line plays on a visit after a clear, never on the first
+    { if (active) leaveInstance(); const q = Q(), c0 = q.cleared[DEN.id], v0 = q.visited[DEN.id];
+      const heard = () => [dialog.cur, ...dialog.queue].some(l => l && /new mother has grown/.test(l.text));
+      q.cleared[DEN.id] = 0; q.visited[DEN.id] = false; dialog.queue.length = 0; dialog.cur = null; enterInstance(DEN.id); const first = heard(); leaveInstance();
+      q.cleared[DEN.id] = 1; dialog.queue.length = 0; dialog.cur = null; enterInstance(DEN.id); const second = heard(); leaveInstance();
+      q.cleared[DEN.id] = c0; q.visited[DEN.id] = v0; dialog.queue.length = 0; dialog.cur = null;
+      check('instances: the again line plays on the second visit to the Spider Den, not the first', !first && second && den.again === 'A new mother has grown into the den. She is just as big, and just as hungry.', { first, second }); }
     // save inside → the save describes the overworld with the knight on the step; load lands outside
     { if (!active) enterByDoor(); F.tp(DEN_BOSS[0] + 3, DEN_BOSS[1]); save(); const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); const still = active && active.id === DEN.id && Math.floor(player.x / TILE) === DEN_BOSS[0] + 3;
       const ok = load(); F.sim(2, []);
