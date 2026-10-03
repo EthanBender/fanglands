@@ -152,6 +152,8 @@
   });
   // define() paints the entry tile CAVE (a cave floor on a grass island); the porch cobble belongs there
   inst.tiles[hidx(ENTRY[0], ENTRY[1])] = T.COBBLE;
+  // the island has its own plaque (YOUR ISLAND, arches and things built): no "0 left" dungeon plaque beside it
+  inst.plaque = false;
   const baseAt = i => inst.tiles[i];
 
   // ---------- the island's own save ----------

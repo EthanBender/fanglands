@@ -86,7 +86,8 @@
           const where = `${w}x${hh} ${t ? 'touch' : 'mouse'}`;
           setSize(w, hh); window.__forceTouch = t;
           const went = goIn(); closePanel(); dialog.cur = null; dialog.queue.length = 0; render();
-          const ctx = HK.face('ctx'), blk = HK.face('block');
+          const ctx = HK.face('ctx'), blk = HK.face('block'), plaques = (HK.FRAME.plaqueIds || []).slice();
+          const onePlaque = !plaques.includes('dungeon') && (plaques.includes('island') || HK.FRAME.overflow > 0);
           const b = buttons.find(q => q.label === 'BUILD'), l = buttons.find(q => q.label === 'LEAVE');
           const big = q => !!q && (q.r ? q.r * 2 : Math.min(q.w, q.h)) >= (t ? 44 : 32) - 0.5;
           // BUILD opens the build panel, the way a tap does
@@ -96,11 +97,11 @@
           // LEAVE takes him home to the step by the portal, the island packed away
           const pressedL = F.clickButton('LEAVE'); F.sim(1, []);
           const home = !HOUSE.inside && !(window.INSTANCES && INSTANCES.active()) && Math.floor(player.x / TILE) === HOUSE.STEP.x && Math.floor(player.y / TILE) === HOUSE.STEP.y;
-          seen[where] = { went, ctx: ctx && ctx.id, block: blk && blk.id, buildBig: big(b), leaveBig: big(l), pressedB, opened, pressedL, home };
+          seen[where] = { went, plaques, onePlaque, ctx: ctx && ctx.id, block: blk && blk.id, buildBig: big(b), leaveBig: big(l), pressedB, opened, pressedL, home };
         }
         putBack();
-        const ok = Object.values(seen).every(s => s.went && s.ctx === 'build' && s.block === 'island_leave' && s.buildBig && s.leaveBig && s.pressedB && s.opened && s.pressedL && s.home);
-        check(P + 'on the island BUILD is the context seat and LEAVE the block seat, both on screen at 44 px or more on the iPad and the phone (and on the laptop\'s belt); BUILD opens the build panel and LEAVE takes him home to the portal step',
+        const ok = Object.values(seen).every(s => s.went && s.onePlaque && s.ctx === 'build' && s.block === 'island_leave' && s.buildBig && s.leaveBig && s.pressedB && s.opened && s.pressedL && s.home);
+        check(P + 'on the island BUILD is the context seat and LEAVE the block seat, both on screen at 44 px or more on the iPad and the phone (and on the laptop\'s belt); BUILD opens the build panel and LEAVE takes him home to the portal step; the island shows its own plaque, not a "0 left" dungeon one',
           ok, seen); }
 
       // --- B. walls and doors are refused in the shared world, with a plain line; Q puts the bed down instead ---
