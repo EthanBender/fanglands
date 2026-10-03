@@ -264,6 +264,11 @@
       }
       say('The Barrelbeast tips, groans, and comes apart. Boiler, barrel, four iron legs. The goblin crew runs for the trees. They will build another. They always do.', 'The Voice');
       say('The wreck stays. Six iron bars, ten goblin scrap and two blast powder would set it walking again, with you at the lever. Hollowford is quiet now. Go to the chapel and tell them.', 'The Voice');
+    } else if (!inShed()) {
+      // a friend's own first fight in Hollowford's square, after this knight broke his own beast: a helping hand, not a
+      // shed rematch (no REMATCH WON, no word of the shed); the def drops are his and his valve rests as for a rematch
+      levelBanner = { text: 'BEAST DOWN', sub: 'You helped a friend', t: 3.5 };
+      say("You helped a friend bring down the Barrelbeast in Hollowford's square. The square is quiet again.", 'The Voice');
     } else {
       hf.shedKills = (hf.shedKills || 0) + 1;
       levelBanner = { text: 'REMATCH WON', sub: hf.shedKills + 1 === 1 ? 'The Barrelbeast, beaten once' : `The Barrelbeast, beaten ${hf.shedKills + 1} times`, t: 3.5 }; sfx('quest');
@@ -830,7 +835,8 @@
         F.tp(137, 86); const w0 = wrecks(); clearBanners();
         if (sq) { sq.dead = false; sq.awake = true; sq.hp = 1; sq.x = player.x + 60; sq.y = player.y; sq.stunT = 0; }
         F.sim(1, []); const alive = !!sq && !sq.dead; if (sq) hitMonster(sq, 5, 0); F.sim(2, []);
-        const rematch = bannerAhead('REMATCH WON'); F.sim(30, []);
+        // (a friend's beast in the square: BEAST DOWN for the helping hand, never REMATCH WON, which is the shed's)
+        const rematch = bannerAhead('BEAST DOWN') && !bannerAhead('REMATCH WON'); F.sim(30, []);
         const down = !!sq && sq.dead && sq.awake === false && sq.respawnT === Infinity;
         const okLoad = (() => { save(); const ok = load(); const s2 = monsters.find(m => m.type === 'barrelbeast'); if (s2) { delete s2.awake; s2.dead = false; s2.hp = s2.maxHp; s2.respawnT = 0; } F.sim(3, []); return ok && !!s2 && s2.dead && s2.respawnT === Infinity; })();
         check(P + 'a repeat kill of the square beast places no wreck; its adopted awake ends with it (dead, awake false, respawnT Infinity, and still down after a reload)', alive && sq.dead && wrecks() === w0 && rematch && down && okLoad,
@@ -880,6 +886,16 @@
         for (let i = 0; i < map.length; i++) if (map[i] !== keep.map[i]) changeTile(i % MAP_W, Math.floor(i / MAP_W), keep.map[i]);
         hf7.wreck = keep.wreck; hf7.beastKilled = true; quest.stage = st; player.skills = JSON.parse(keep.stats); recomputeMaxHp();
         if (sq) { sq.dead = true; sq.respawnT = Infinity; } drops = drops.filter(() => false); drain(); clearBanners(); }
+      // B16: a friend's own first beast in Hollowford's square (a phantom), helped by a knight who broke his own long ago:
+      // BEAST DOWN, 'You helped a friend', the def drops; never REMATCH WON or the line about the back of the shed
+      { const hf8 = HF(), st = quest.stage; Object.assign(hf8, { beastKilled: true, shedUp: false, shedRestUntil: 0 }); quest.stage = Math.max(11, st);
+        if (INSTANCES.active()) INSTANCES.leave(); F.tp(137, 86); clearBanners(); drain(); const k0 = hf8.shedKills, n0 = drops.length;
+        const ph = window.COOP ? COOP.phantomOf({ type: 'barrelbeast', nid: 'Ann:9', x: player.x + 60, y: player.y }) : null;
+        const rnd0 = Math.random; try { Math.random = () => 0.9; if (ph) killMonster(ph); } finally { Math.random = rnd0; } F.sim(2, []);
+        const r = { ph: !!ph, banner: bannerAhead('BEAST DOWN'), sub: levelBanner && levelBanner.sub, rematch: bannerAhead('REMATCH WON'), shed: said(/back of the shed/), helped: said(/You helped a friend bring down the Barrelbeast/), kills: hf8.shedKills - k0, scrap: drops.slice(n0).filter(d => d.id === 'goblin_scrap').reduce((n, d) => n + d.qty, 0) };
+        check(P + "a friend's first beast in Hollowford's square, helped by a knight who broke his own: BEAST DOWN, 'You helped a friend', the def drops; no REMATCH WON, no shed line, no shed rematch counted",
+          r.ph && r.banner && !r.rematch && !r.shed && r.helped && r.kills === 0 && r.scrap >= 8, r);
+        drops = drops.slice(0, n0); quest.stage = st; drain(); clearBanners(); }
       // B10: online and not the shed's keeper: the valve asks the keeper and makes nothing itself
       if (typeof NET !== 'undefined' && window.COOP) {
         const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
