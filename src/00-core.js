@@ -78,6 +78,8 @@ const HOOKS = {
   mainQuest: {},    // mainQuest[stage] = { text, onEnter: fn() } for main-quest stages beyond the core
   selfTest: [],     // fn(check, F, helpers) — extra self-test checks
   newGame: [],      // fn() — reset feature state
+  leaveInstance: [], // fn(id) — the knight is about to leave instance id (any way out: LEAVE, L, the exit, a ride, a respawn, a load);
+                    // runs while it is still the active map, so a feature can settle what it owes him there (91-royalmine's golem fall)
   pathBlock: [],    // fn(tx, ty, who) → true: tap-to-move and the bot's walkTo must not route through this cell right now (e.g. a balance log above the knight's Agility)
 };
 // a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it

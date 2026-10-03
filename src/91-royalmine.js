@@ -1147,6 +1147,16 @@
     if (!scene && window.IMPACT) IMPACT.wave(SEAT_C.x, SEAT_C.y, 2.2);
     sfx('boss');
   }
+  // leaving while he falls (LEAVE, L, the exit, the ride down, a respawn): the knight is paid NOW, while this is still the
+  // mine, exactly as if he had stayed for the flash. The show waits for the flash; what he earned never does (owner's rule:
+  // a kid is never punished for tapping LEAVE). A load is not a leave: it brings back the saved game as it was.
+  HOOKS.leaveInstance.push(id => {
+    if (id !== RM || loading) return;
+    const gm = golemMon(), L = run.life;
+    if (!gm || !gm.dead || gm.hp > 0 || L.told) return;
+    if (L.deadSince === null) L.deadSince = time;
+    L.fallen = true; L.told = true; onFall();
+  });
   function onFall() {
     const q = R(), L = run.life;
     if (!inMine()) return;
@@ -1277,7 +1287,8 @@
   };
   // load: a save never describes an instance, so the throne comes back from the loaded quest at once
   const _load = load;
-  load = function () { const r = _load(); resetRun(); seqClear(); syncDeepholm(); return r; };
+  let loading = false;
+  load = function () { loading = true; let r; try { r = _load(); } finally { loading = false; } resetRun(); seqClear(); syncDeepholm(); return r; };
 
   // =========================================================================
   // 17. USE (E, and a tap on a tile, which walks up and presses E)
@@ -2733,6 +2744,26 @@
         const pity = have('heartstone_pickaxe') - p1 === 1 && R().gotPick && R().dry === 0;
         check(P + 'the fall: the killing stone adds no core drops; once he has fallen (after his flash) a helper gets one roll of the golem\'s table (coins, mithril bars) and 200 Mining, Smithing and Melee; stage 5 → 6 with PEBBLE IS FREE; a rare roll gives the pickaxe once; a knight who did not help gets nothing; 24 dry falls make the next one give the pickaxe',
           noCore && paid && freed && once && noRoll && pity, { noCore, paid, freed, once, noRoll, pity, stage: R().stage, banner: levelBanner && levelBanner.text });
+        out(); }
+
+      // ---- 26b. leaving while he falls ----
+      // a helper who taps LEAVE (or presses L) while the golem is still falling, before his flash, is paid once all the
+      // same: his loot comes out with him, the stage goes 5 -> 6 and PEBBLE IS FREE shows outside; coming back pays nothing more
+      { fresh({ stage: 5 }); out(); const ow = new Set(drops); intoMine(); drain(); emptyPack(); ROYALMINE.debug.wake(); const g = golemMon(); g.rm.lingT = 9999; F.tp(18, 30); F.sim(5, []); drain();
+        const D = window.DEATHS, FALL_WAIT = Math.ceil(((D ? D.FLASH + D.HOLD : NUM.FALL_HOLD) + 0.2) * 60);
+        const coinsOut = () => countItem('coins') + drops.filter(d => d.id === 'coins' && !ow.has(d)).reduce((a, d) => a + d.qty, 0);
+        const barsOut = () => countItem('mithril_bar') + drops.filter(d => d.id === 'mithril_bar' && !ow.has(d)).reduce((a, d) => a + d.qty, 0);
+        const c0 = coinsOut(), b0 = barsOut(), xm = player.skills.mining.xp;
+        run.life.landed = NUM.HELP_STONES; g.hp = 1; hitMonster(g, 55, 0, true, 'heartstone');
+        for (let i = 0; i < 78; i++) { F.step([]); drain(); }
+        const mid = { dead: g.dead, stage: R().stage, fights: R().fights, flashed: !!(D && D.of(g) && D.of(g).flashed) };
+        notice = null; F.press('KeyL'); const left = !inMine(); F.step([]); F.step([]);
+        const outside = { left, stage: R().stage, fights: R().fights, coins: coinsOut() - c0, bars: barsOut() - b0, xp: player.skills.mining.xp - xm, banner: levelBanner && levelBanner.text, pebble: pebbleSpot() };
+        drain(); intoMine(); F.sim(FALL_WAIT + 30, []); drain();
+        const back = { stage: R().stage, fights: R().fights, coins: countItem('coins') - c0, xp: player.skills.mining.xp - xm };
+        check(P + 'leaving while he falls (L at 1.3 s, before his flash): a helper is still paid once (his loot comes out with him, 200 Mining), stage 5 -> 6 with PEBBLE IS FREE; coming back pays nothing more',
+          mid.dead && mid.stage === 5 && mid.fights === 0 && !mid.flashed && outside.left && outside.stage === 6 && outside.fights === 1 && outside.coins >= 150 && outside.bars >= 2 && outside.xp === 200 && outside.banner === 'PEBBLE IS FREE'
+          && back.stage === 6 && back.fights === 1 && back.xp === 200, { mid, outside, back });
         out(); }
 
       // ---- 27. he pulls himself back together ----
