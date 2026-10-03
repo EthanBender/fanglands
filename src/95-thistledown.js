@@ -475,13 +475,19 @@
   const great = FOUNTAINS.find(f => f.id === 'great');
   const greatC = { x: (great.x + great.w / 2) * TILE, y: (great.y + great.h / 2) * TILE };
   function splash() { burst(greatC.x + (Math.random() - 0.5) * 50, greatC.y - 6, '#bfe6ff', 12, 70); sfx('splash'); }
+  // the fountain's line takes the place of the one it is showing, so E pressed again and again (a keyboard: E does not turn
+  // the page) shows each toss at once instead of stacking them behind the first
+  function fountainSays(text, who) {
+    if (dialog.cur && dialog.cur.who === who) { dialog.cur = { text, who }; dialog.shown = 0; dialog.t = 0; dialog.queue = dialog.queue.filter(l => l.who !== who); }
+    else say(text, who);
+  }
   function useGreat() {
     const q = Q(), who = 'The Great Fountain', now = time + 1;
     const armed = q.tossArmed > 0 && now >= q.tossArmed && now - q.tossArmed <= 6;
-    if (!armed) { q.tossArmed = now; say(lineFor(great.x, great.y)[1], who); return; }
-    if (coins() < 1) { say('You have no coins to toss.', who); return; }
+    if (!armed) { q.tossArmed = now; fountainSays(lineFor(great.x, great.y)[1], who); return; }
+    if (coins() < 1) { fountainSays('You have no coins to toss.', who); return; }
     payCoins(1); const line = TOSS[q.tossed % TOSS.length]; q.tossed++; q.tossArmed = now;
-    splash(); say(line, who); save();
+    splash(); fountainSays(line, who); save();
   }
   // the story's two places: the sundial in the maze, and the Bell Tower
   function useSundial() {
@@ -2592,9 +2598,12 @@
       setCoins(0); F.sim(10, []); F.press('KeyE'); const l3 = texts()[0], c3 = coins(), t3 = q.tossed; drain();
       // and after 6 s the toss is not armed any more: E gives the first line again
       setCoins(2); F.sim(400, []); F.press('KeyE'); const l4 = texts()[0], c4 = coins(); drain();
-      check(P + 'C11 the coin toss: one E gives the line and spends nothing; a second E within 6 s costs exactly 1 coin and counts the toss; with no coins it says so and nothing changes; after 6 s E gives the first line again',
-        /^The Great Fountain\. People toss a coin/.test(l1 || '') && c1 === 5 && l2 === TOSS[t0 % 6] && c2 === 4 && t2 === t0 + 1 && l3 === 'You have no coins to toss.' && c3 === 0 && t3 === t2 && /^The Great Fountain\. People toss/.test(l4 || '') && c4 === 2,
-        { l1, c1, l2, c2, tossed: [t0, t2, t3], l3, c3, l4, c4 }); }
+      // E five times running on a keyboard (it does not turn the page): one line on the page at a time, the newest toss
+      setCoins(5); q.tossArmed = 0; const t5 = q.tossed; for (let k = 0; k < 5; k++) { F.press('KeyE'); F.sim(6, []); }
+      const page = texts(), c5 = coins(), quick = page.length === 1 && page[0] === TOSS[(q.tossed - 1) % 6] && q.tossed === t5 + 4 && c5 === 1; drain();
+      check(P + 'C11 the coin toss: one E gives the line and spends nothing; a second E within 6 s costs exactly 1 coin and counts the toss; with no coins it says so and nothing changes; after 6 s E gives the first line again; E pressed five times running shows one line, the newest toss, never a stack',
+        /^The Great Fountain\. People toss a coin/.test(l1 || '') && c1 === 5 && l2 === TOSS[t0 % 6] && c2 === 4 && t2 === t0 + 1 && l3 === 'You have no coins to toss.' && c3 === 0 && t3 === t2 && /^The Great Fountain\. People toss/.test(l4 || '') && c4 === 2 && quick,
+        { l1, c1, l2, c2, tossed: [t0, t2, t3], l3, c3, l4, c4, page, c5 }); }
 
     // ---- C12. the clock and the bell ----
     { const N = window.NIGHT, d0 = player.dayTime;
