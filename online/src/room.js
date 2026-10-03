@@ -389,7 +389,8 @@ export class Room {
     const now = this.now();
     if (acc && acc.mutedUntil > now) return this.send(k.sock, { t: 'muted', left: leftOf(acc.mutedUntil, now) });
     if (acc) this.syncRole(k, acc.role);
-    const { text, masked } = this.check(typeof m.text === 'string' ? m.text : '');
+    // the knights on line go with it, so "shut up sam" is known to be said to Sam (filter.js, AT_SOMEONE)
+    const { text, masked } = this.check(typeof m.text === 'string' ? m.text : '', { names: Array.from(this.byName.values(), o => o.name) });
     if (!text) return;
     const at = now;
     this.log(k.name, text, at);

@@ -1,7 +1,7 @@
 // The word filter: names and chat. node --test online/test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanName, cleanChat, checkChat, nameRude, BLOCKED, BLOCKED_INSIDE, INSULTS, SAID_ABOUT_YOU, YOU_ARE, GAY_INSULTS } from '../src/filter.js';
+import { cleanName, cleanChat, checkChat, nameRude, BLOCKED, BLOCKED_INSIDE, INSULTS, SAID_ABOUT_YOU, YOU_ARE, YOU_OR_YOUR, BETWEEN, GAY_INSULTS, AT_SOMEONE, SAID_TO_SOMEONE, LINE_ALONE, PEOPLE, LAUGHS, NAME_INSULTS } from '../src/filter.js';
 
 test('names: plain names pass, tidied', () => {
   assert.equal(cleanName('Cohen'), 'Cohen');
@@ -113,8 +113,10 @@ test('checkChat: the masked line and whether anything was masked; cleanChat is i
 });
 
 test('insults are masked and counted: plain insults, and words said about someone', () => {
-  assert.deepEqual(checkChat('you idiot'), { text: 'you *****', masked: true });
-  assert.deepEqual(checkChat('this stupid goblin'), { text: 'this ****** goblin', masked: true });
+  assert.deepEqual(checkChat('you idiot'), { text: '*** *****', masked: true });
+  // about a monster it is no insult: only what is said AT someone counts (3 strikes is 24 hours out)
+  assert.deepEqual(checkChat('this stupid goblin'), { text: 'this stupid goblin', masked: false });
+  assert.deepEqual(checkChat('you stupid goblin'), { text: '*** ****** goblin', masked: true });
   assert.deepEqual(checkChat('L0SER'), { text: '*****', masked: true });
   assert.deepEqual(checkChat('shut up'), { text: '**** **', masked: true });
   assert.deepEqual(checkChat('you dumb'), { text: '*** ****', masked: true });
@@ -134,7 +136,11 @@ test('"gay" used as an insult is masked; other uses are not', () => {
 
 test('the insult lists are plain lower-case words a parent can edit', () => {
   for (const w of INSULTS.concat(SAID_ABOUT_YOU, YOU_ARE, GAY_INSULTS)) assert.match(w, /^[a-z]+( [a-z]+)*$/, w);
-  assert.ok(INSULTS.includes('idiot') && INSULTS.includes('stupid') && SAID_ABOUT_YOU.includes('gay'));
+  for (const w of YOU_OR_YOUR.concat(BETWEEN, AT_SOMEONE, SAID_TO_SOMEONE, LINE_ALONE, PEOPLE, LAUGHS, NAME_INSULTS)) assert.match(w, /^[a-z]+( [a-z]+)*$/, w);
+  assert.ok(SAID_ABOUT_YOU.includes('idiot') && SAID_ABOUT_YOU.includes('stupid') && SAID_ABOUT_YOU.includes('gay'));
+  // the words a kid says about the game all evening are never on a list that counts anywhere in a line
+  for (const w of ['stupid', 'loser', 'idiot', 'moron', 'dumbo', 'go die', 'shut up', 'hate you']) assert.ok(!INSULTS.includes(w) && !BLOCKED.includes(w), w);
+  assert.ok(!YOU_ARE.includes('your') && !YOU_ARE.includes('ur') && !YOU_ARE.includes('yur'));
 });
 
 test('names: insults are refused at sign-up; nameRude flags an old name for what it says, not its shape', () => {
@@ -144,4 +150,40 @@ test('names: insults are refused at sign-up; nameRude flags an old name for what
   for (const n of ['admin', 'A', 'Name with seventeen', 'Co-hen']) assert.equal(nameRude(n), false, n);
   for (const n of ['xXfuckerXx', 'fu ck', 'Sh1thead']) assert.equal(nameRude(n), true, n);
   assert.equal(nameRude(null), false); assert.equal(nameRude(''), false);
+});
+
+// Review round 1: a kid is kept out for 24 hours after three strikes, so everyday game talk must never count.
+// Each of these was a strike on the first build of the list (said in a real Room with two knights, and by checkChat).
+test('game talk is never a strike: about a boss, the lag, lava, a pet, yourself, or a surprised shout', () => {
+  const names = ['Sam', 'Leo'];
+  for (const s of [
+    'this boss is stupid hard', 'lets go die to the dragon again', 'stupid lag', 'ur dumb sword is cool', 'your fat dragon pet',
+    'your ugly ogre', 'im gonna go die in the lava', 'dont go die', 'shut up no way you got the sword?', 'my stupid brother',
+    'idiot proof plan', 'Dumbo the elephant', "I'm such a loser lol", 'I am stupid', 'the stupid goblin keeps hitting me',
+    'shut up no way!', 'shut up and take my coins', 'i am a loser at this', 'go die goblin', 'i hate you goblin king',
+    'your fat dragon is cool', 'your dumb pet', 'your ugly sweater lol', 'your fat stack of coins', 'see ya later',
+    'is that your sword', 'the dumb goblin', 'you win', 'you are cool', 'my uncle is gay',
+  ]) assert.deepEqual(checkChat(s, { names }), { text: s, masked: false }, s);
+});
+
+test('insults said at someone still count: after "you", at the end of the line, to a person, or as the whole line', () => {
+  const names = ['Sam', 'Big Dummy'];
+  const want = {
+    'you idiot': '*** *****', 'you are stupid': '*** *** ******', 'ur a loser': '** * *****', 'ur stupid': '** ******',
+    'u r stupid': '* * ******', 'your so stupid': '**** ** ******', "you're such an idiot": '****** **** ** *****', 'you big idiot': '*** *** *****',
+    'ur dumb': '** ****', 'ur dumb lol': '** **** lol', 'ur dumb, sword is cool': '** ***** sword is cool', 'your dumb': '**** ****', 'see ya loser': 'see ** *****',
+    'shut up': '**** **', 'ok shut up!': 'ok **** ***', 'shut up sam': '**** ** sam', 'shut up big dummy': '**** ** big dummy', 'shut up noob': '**** ** noob', 'shut up, no way': '**** *** no way',
+    'i hate you': 'i **** ***', 'hate you Sam': '**** *** Sam', 'i hate you lol': 'i **** *** lol',
+    'go die': '** ***', 'go die noob': '** *** noob', 'go die sam': '** *** sam', 'just go die': '**** ** ***', 'go die in a hole': '** *** ** * ****',
+    'L0SER': '*****', 'loser lol': '***** lol', 'idiot': '*****', 'MORON!': '******',
+  };
+  for (const [s, text] of Object.entries(want)) assert.deepEqual(checkChat(s, { names }), { text, masked: true }, s);
+  // a name only counts for a knight the world says is on line
+  assert.equal(checkChat('shut up leo', { names }).masked, false);
+  assert.equal(checkChat('shut up leo', { names: ['Leo'] }).masked, true);
+});
+
+test('names: NAME_INSULTS count anywhere in a name, spaced out too; harmless names still pass', () => {
+  for (const n of ['Stu Pid', 'Loser Leo', 'Moron', 'Sir Idiot']) assert.equal(cleanName(n), null, n);
+  for (const n of ['Fat Cat', 'Dumbo', 'Big Dummy', 'Ugly Duckling', 'Sam Gay']) assert.equal(cleanName(n), n, n);
 });
