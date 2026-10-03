@@ -16,6 +16,9 @@
   const BRIDGE_URL = BRIDGE_ORIGIN + '/fanglands/bridge.html';
   const BRIDGE_WAIT = 3000;
   const NAME_KEY = 'fanglands.lastname';
+  // when a knight on this device may come back after being kept out for bad words (ms); while it is in the future the card
+  // says so and New knight is greyed out (the world refuses a new knight from the same place as well: docs/ONLINE.md)
+  const KEPT_KEY = 'fanglands.keptOutUntil';
   const MARK_KEY = 'fanglands.slot.1.online';
   const CHAPTERS = ['The Cave', 'Thistledown', 'Goblin Tech', 'Hollowford', 'The Fang'];
   const NAME_RE = /^[A-Za-z0-9 ]{2,16}$/;
@@ -63,9 +66,18 @@
     const when = days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `on ${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`;
     return `You're kept out until ${clock} ${when} for bad words.`;
   };
+  // the device remembers a lockout the world told it about, until it ends
+  LOGIN.keptOutUntil = now => {
+    now = now == null ? Date.now() : now;
+    const v = Number(lsGet(KEPT_KEY)) || 0;
+    if (v && v <= now) { lsDel(KEPT_KEY); return 0; }
+    return v;
+  };
+  LOGIN.noteKeptOut = until => { until = Number(until); if (Number.isFinite(until) && until > Date.now()) lsSet(KEPT_KEY, Math.floor(until)); };
+  LOGIN.KEPT_KEY = KEPT_KEY;
   LOGIN.sentence = (err, kind) => {
     const code = err && err.code, st = err && err.status;
-    if (code === 'words') return LOGIN.keptOut(err.until);
+    if (code === 'words') { LOGIN.noteKeptOut(err.until); return LOGIN.keptOut(err.until); }
     if (code === 'renamed') return `An admin changed your knight's name to ${err.name}.`;
     if (code === 'wait' || st === 429) return 'Too many tries. Wait a minute.';
     if (code === 'kicked') return 'An admin sent you out of the world. You can come back in.';
@@ -163,6 +175,7 @@
     if (LOGIN.busy) return false;
     if (!NAME_RE.test(name)) return oops("A knight's name is 2 to 16 letters or numbers.");
     if (pass.length < 4) return oops('The secret word needs at least 4 letters.');
+    if (isNew && LOGIN.keptOutUntil()) { LOGIN.newKnight = false; return oops(LOGIN.keptOut(LOGIN.keptOutUntil())); }
     if (isNew && !invite) return oops('Type the invite code. Ask Ethan for it.');
     LOGIN.error = ''; LOGIN.busy = true; LOGIN.mode = 'busy'; refresh();
     const kind = isNew ? 'signup' : 'login';
@@ -171,6 +184,8 @@
         LOGIN.busy = false;
         if (!r || typeof r.token !== 'string' || !r.token) return oops('The world gave a strange answer. Try again.');
         NET.setToken(r.token); LOGIN.name = (typeof r.name === 'string' && r.name) || name; lsSet(NAME_KEY, LOGIN.name); LOGIN.stats[kind]++;
+        // the world let a knight in, so it is not kept out (an admin may have cleared it early)
+        lsDel(KEPT_KEY);
         afterLogin();
       },
       e => { LOGIN.busy = false; LOGIN.mode = 'form'; LOGIN.error = LOGIN.sentence(e, kind); refresh(); });
@@ -205,7 +220,7 @@
     r => { LOGIN.asleep = false; LOGIN.status = statusWords(r); refresh(); },
     () => { LOGIN.asleep = true; LOGIN.status = 'The world is asleep right now.'; refresh(); });
   const checkMe = () => when(api('GET', '/api/me'),
-    r => { if (LOGIN.mode !== 'checking') return; LOGIN.name = (r && typeof r.name === 'string' && r.name) || LOGIN.name || lsGet(NAME_KEY) || 'knight'; if (r && typeof r.name === 'string' && r.name) lsSet(NAME_KEY, r.name); LOGIN.mode = 'me'; refresh(); },
+    r => { if (LOGIN.mode !== 'checking') return; lsDel(KEPT_KEY); LOGIN.name = (r && typeof r.name === 'string' && r.name) || LOGIN.name || lsGet(NAME_KEY) || 'knight'; if (r && typeof r.name === 'string' && r.name) lsSet(NAME_KEY, r.name); LOGIN.mode = 'me'; refresh(); },
     e => {
       if (LOGIN.mode !== 'checking') return;
       // kept out for bad words: the session stays (Play works again when the time is up), the card says until when
@@ -222,7 +237,13 @@
   };
   const hide = () => { LOGIN.showing = false; if (ui) { ui.root.hidden = true; try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) { } } };
   // the error line the card is showing right now: under the form, or under "Playing as <name>" (and "Looking for your knight...")
-  LOGIN.shownError = () => (LOGIN.mode === 'form' || LOGIN.mode === 'me' || LOGIN.mode === 'checking') ? LOGIN.error : '';
+  // (kept out for bad words on this device, with nothing else to say: the sentence with the time it ends)
+  LOGIN.shownError = () => {
+    if (LOGIN.mode !== 'form' && LOGIN.mode !== 'me' && LOGIN.mode !== 'checking') return '';
+    if (LOGIN.error) return LOGIN.error;
+    const kept = LOGIN.keptOutUntil();
+    return kept ? LOGIN.keptOut(kept) : '';
+  };
   LOGIN.hide = hide;
   LOGIN.playAs = () => { if (LOGIN.mode !== 'me') return false; afterLogin(); return true; };
   LOGIN.notMe = () => { when(api('POST', '/api/logout'), noop, noop); NET.setToken(null); LOGIN.name = null; LOGIN.mode = 'form'; LOGIN.error = ''; refresh(); };
@@ -242,12 +263,15 @@
     return true;
   };
   // the world can end a session from its side (token dead, knight banned, an admin sent the knight out, kept out for bad
-  // words): back to the title, in plain words. Kept out keeps the session too: the card says until when. Kicked keeps the session: the card says "Playing as <name>" and Play goes straight back in,
-  // and because the session still works, the last few seconds of play go up to the cloud first.
+  // words): back to the title, in plain words. Kicked keeps the session: the card says "Playing as <name>" and Play goes
+  // straight back in. Kept out keeps it too, and the card says until when. For both, the last few seconds of play go up to
+  // the cloud first.
   NET.on('error', m => {
     if (!LOGIN.playing || !m || (m.code !== 'auth' && m.code !== 'banned' && m.code !== 'kicked' && m.code !== 'words')) return;
     const text = LOGIN.sentence(m, 'login');
-    if (m.code === 'kicked' && window.CLOUD) { save(); window.CLOUD.flush(); }
+    // kicked and kept out both keep the session, and the world takes a save from either (a save goes through while kept out),
+    // so the last few seconds of play go up before the title: never lost to an older cloud save at the next login
+    if ((m.code === 'kicked' || m.code === 'words') && window.CLOUD) { save(); window.CLOUD.flush(); }
     LOGIN.playing = false; NET.disconnect(); if (m.code === 'banned') NET.setToken(null);
     title.open(); LOGIN.error = text; refresh();
   });
@@ -278,6 +302,8 @@
   title.tick = dt => {
     if (!LOGIN.showing) return _tick(dt);
     title.t += dt; time += dt;
+    // a lockout that ended while the card was up: New knight comes back and the sentence goes
+    if (LOGIN.keptShown && !LOGIN.keptOutUntil()) { LOGIN.keptShown = 0; refresh(); }
     pressed.clear(); keys.clear(); touch.taps.length = 0;
   };
 
@@ -305,6 +331,7 @@
 #fl-login button:disabled{color:#8c8170;background:linear-gradient(180deg,#24272c,#15171a);box-shadow:none;cursor:default;transform:none}
 #fl-login .fl-check{display:flex;align-items:center;gap:10px;min-height:44px;margin-top:8px;font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;letter-spacing:0;color:#f4ead3;cursor:pointer}
 #fl-login .fl-check input{width:22px;height:22px;margin:0;accent-color:#d9b25c}
+#fl-login .fl-check.fl-off{color:#8c8170;cursor:default}
 #fl-login .fl-hint{font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#cdbf9e;margin-top:5px}
 #fl-login .fl-err{font:700 14px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#ef4b3f;min-height:18px;margin-top:10px}
 #fl-login .fl-err:empty{margin-top:0;min-height:0}
@@ -333,7 +360,7 @@
     u.form = el('form', { onsubmit: e => { e.preventDefault(); LOGIN.submit(u.name.value, u.pass.value, u.invite.value, u.newBox.checked); } },
       el('label', { for: 'fl-name', text: "Knight's name" }), u.name,
       el('label', { for: 'fl-pass', text: 'Secret word' }), u.pass,
-      el('label', { cls: 'fl-check', for: 'fl-new' }, u.newBox, el('span', { text: 'New knight' })),
+      (u.newLabel = el('label', { cls: 'fl-check', for: 'fl-new' }, u.newBox, el('span', { text: 'New knight' }))),
       u.inviteBox, u.err, el('div', { cls: 'fl-row' }, u.submit));
     u.whoName = el('b', {});
     u.who = el('div', {}, el('div', { cls: 'fl-line' }, el('span', { text: 'Playing as ' }), u.whoName),
@@ -365,6 +392,9 @@
     const m = LOGIN.mode;
     ui.form.hidden = m !== 'form'; ui.who.hidden = m !== 'me'; ui.offer.hidden = m !== 'offer'; ui.busy.hidden = m !== 'busy' && m !== 'checking';
     ui.busy.textContent = m === 'checking' ? 'Looking for your knight...' : 'One moment...';
+    const kept = LOGIN.keptOutUntil(); LOGIN.keptShown = kept;
+    if (kept) LOGIN.newKnight = false;
+    ui.newBox.disabled = !!kept; ui.newLabel.classList.toggle('fl-off', !!kept);
     ui.inviteBox.hidden = !LOGIN.newKnight; ui.newBox.checked = LOGIN.newKnight;
     ui.submit.textContent = LOGIN.newKnight ? 'Make my knight' : 'Play'; ui.submit.disabled = LOGIN.busy;
     ui.pass.setAttribute('autocomplete', LOGIN.newKnight ? 'new-password' : 'current-password');

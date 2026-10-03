@@ -9,5 +9,7 @@ cd "$(dirname "$0")"
   sed -n '/<!-- SCRIPTS -->/,$p' src/page.html | sed '1d'
 } > index.html
 sed -n '/^<script>$/,/^<\/script>$/p' index.html | sed '1d;$d' > .build-check.js
+# Safari learned regex lookbehind in 16.4: on an older iPad one lookbehind anywhere stops the whole game script, so it is refused here
+if grep -nE '\(\?<[=!]' .build-check.js; then echo "build.sh: a regex lookbehind is in the game (iPadOS 16.3 and older cannot run it). Use a lookahead." >&2; rm -f .build-check.js; exit 1; fi
 node --check .build-check.js && echo "built index.html ($(wc -l < index.html) lines)"
 rm -f .build-check.js

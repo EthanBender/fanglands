@@ -29,8 +29,9 @@
   // ---------- A. the knight ----------
   // A warning stays up a little longer than an ordinary notice: it is the one a kid has to read.
   function say(text, color) {
-    // the chat strip cuts a long line, so each sentence is a line of its own (74-chat does the same for being muted)
-    if (window.CHAT && CHAT.system) for (const part of text.split(/(?<=\.) (?=[A-Z])/)) CHAT.system(part, color);
+    // the chat strip cuts a long line, so each sentence is a line of its own (74-chat does the same for being muted).
+    // A lookahead only: iPadOS 16.3 and older refuse a regex that looks behind, and with it the whole game script.
+    if (window.CHAT && CHAT.system) for (const part of text.replace(/\. (?=[A-Z])/g, '.\n').split('\n')) CHAT.system(part, color);
     notify(text); if (notice) notice.t = 6;
   }
   NET.on('strike', m => {
@@ -176,6 +177,7 @@
     // the title card test sends the game to the title screen: the game is saved first and started again from its slot after
     if (!title.active) save();
     const game = { slot: title.slot, active: title.active };
+    const keptWas = (() => { try { return localStorage.getItem(LOGIN.KEPT_KEY); } catch (e) { return null; } })();
     const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, touch: window.__forceTouch, peace: window.__peace, notice, paused, vw: window.innerWidth, vh: window.innerHeight, tab: ADMIN.state.tab, last: (() => { try { return localStorage.getItem(NAME_KEY); } catch (e) { return null; } })(), loginName: window.LOGIN ? LOGIN.name : null, playing: window.LOGIN ? LOGIN.playing : false };
     let sock = null, role = 'admin', me0 = 'MudGoll';
     const calls = [], socks = [];
@@ -188,8 +190,9 @@
         if (path === '/api/accounts' && method === 'GET') return JSON.parse(JSON.stringify(world.list));
         if (path === '/api/accounts/strikes') return { ok: true, name: body.name };
         if (path === '/api/accounts/rename') return { ok: true, from: body.name, name: body.to };
-        // kept out: every call with the session is refused, as the world does
-        if (world.meFail && (path === '/api/me' || path === '/api/save')) no(world.meFail.code, 403, world.meFail.extra);
+        // kept out: every call with the session is refused but a save, as the world does
+        if (world.meFail && (path === '/api/me' || (path === '/api/save' && method !== 'PUT'))) no(world.meFail.code, 403, world.meFail.extra);
+        if (path === '/api/save' && method === 'PUT') return { at: 1, ver: 1 };
         if (path === '/api/me') return { name: me0 };
         if (path === '/api/save/pin') return { at: null, bytes: 0 };
         if (path === '/api/status') return { ok: true, online: 0, names: [] };
@@ -221,6 +224,11 @@
       NET.enabled = true; NET.useFake(world); dialog.cur = null; dialog.queue.length = 0; closePanel(); paused = false; h.peace(true); window.__forceTouch = false;
       try { window.innerWidth = 1000; window.innerHeight = 700; } catch (e) { } render();
 
+      // ---- the script itself: no regex lookbehind anywhere (Safari learned it in 16.4; older iPads refuse the whole game) ----
+      { const src = String(window.__gameSource || (typeof document !== 'undefined' && document.querySelectorAll ? Array.from(document.querySelectorAll('script'), q => q.textContent).join('\n') : ''));
+        const look = new RegExp('\\(\\?<[=!]'), m = look.exec(src);
+        check(P + 'the game script has no regex lookbehind, which iPadOS 16.3 and older refuse (and with it the whole game, leaving the page blank)', src.length > 100000 && !m, { len: src.length, at: m ? src.slice(Math.max(0, m.index - 80), m.index + 40) : null }); }
+
       // ---- A. the warnings, as the knight hears them ----
       { connect('player', 'Cohen'); if (window.CHAT) CHAT.log.length = 0; notice = null;
         feed({ t: 'strike', n: 1, text: WARN[1] }); const one = notice && notice.text === WARN[1] && notice.t >= 6;
@@ -248,7 +256,14 @@
       // ---- the title card: kicked while playing, and the card when the world says kept out ----
       { connect('player', 'Cohen'); LOGIN.playing = true; const until = now + 23 * HR;
         world.meFail = { code: 'words', extra: { until } };
+        // a push is waiting (saves are held 12 s): the kick sends it at once, so the next login never loads an older save
+        if (window.CLOUD) CLOUD.reset(); try { localStorage.removeItem(LOGIN.KEPT_KEY); } catch (e) { } calls.length = 0;
+        const slotKey = title.active ? null : title.slotKey(title.slot);
         feed({ t: 'error', code: 'words', text: 'out', until });
+        const slotRaw = slotKey && (() => { try { return localStorage.getItem(slotKey); } catch (e) { return null; } })();
+        const puts = calls.filter(c => c.method === 'PUT' && c.path === '/api/save');
+        const pushed = !!slotRaw && puts.length === 1 && puts[0].body === slotRaw && CLOUD.pending === null && CLOUD.fails === 0;
+        check(P + "kept out while playing: the game is saved and the waiting push goes up at once (the world takes a save while kept out), as it does for an admin's kick", pushed, { puts: puts.length, slot: !!slotRaw, pending: !!(window.CLOUD && CLOUD.pending), fails: window.CLOUD && CLOUD.fails });
         const sentence = LOGIN.keptOut(until);
         const card = !LOGIN.playing && LOGIN.showing && NET.token === 'strikes-test' && LOGIN.mode === 'me' && LOGIN.shownError() === sentence;
         // Play: the world still says kept out, and the card says it again (never "wrong secret word")
@@ -256,8 +271,21 @@
         // a fresh login: the right word, kept out
         NET.setToken(null); LOGIN.mode = 'form'; world.fail['/api/login'] = { code: 'words', status: 403, extra: { until } };
         LOGIN.submit('Cohen', 'sword', '', false); const login = LOGIN.mode === 'form' && LOGIN.shownError() === sentence && NET.token === null;
-        delete world.fail['/api/login']; world.meFail = null;
+        delete world.fail['/api/login'];
         check(P + 'kept out while playing: back to the title with "Playing as" and the sentence (the session kept), Play says it again, and a login with the right secret word says it too', card && again && login, { card, again, login, mode: LOGIN.mode, shown: LOGIN.shownError(), sentence });
+        // no way round it with a new knight: the device remembers until when, Not me still says it, New knight is refused on
+        // the spot (no call), and a new knight the world refuses (kept out from this place) says the sentence too
+        { const kept = LOGIN.keptOutUntil() === until;
+          NET.setToken('strikes-test'); LOGIN.mode = 'me'; LOGIN.notMe(); const notMe = LOGIN.mode === 'form' && LOGIN.shownError() === sentence;
+          calls.length = 0; LOGIN.submit('Cohen Two', 'sword', 'TEST-1234', true);
+          const refused = LOGIN.shownError() === sentence && !calls.some(c => c.path === '/api/signup') && !NET.token && !LOGIN.newKnight;
+          try { localStorage.removeItem(LOGIN.KEPT_KEY); } catch (e) { }
+          world.fail['/api/signup'] = { code: 'words', status: 403, extra: { until } }; LOGIN.error = '';
+          LOGIN.submit('Cohen Two', 'sword', 'TEST-1234', true); delete world.fail['/api/signup'];
+          const place = calls.some(c => c.path === '/api/signup') && LOGIN.shownError() === sentence && LOGIN.keptOutUntil() === until;
+          const gone = LOGIN.keptOutUntil(until + 1) === 0 && (() => { try { return localStorage.getItem(LOGIN.KEPT_KEY) === null; } catch (e) { return true; } })();
+          check(P + 'kept out on this device: the card keeps the sentence after Not me, a New knight is refused before the world is asked, a new knight the world refuses (this place is kept out) says the sentence too, and the device forgets it once the time is up', kept && notMe && refused && place && gone, { kept, notMe, refused, place, gone, shown: LOGIN.shownError() }); }
+        world.meFail = null; NET.token = 'strikes-test';
         // back to the game the suite was playing
         LOGIN.hide(); LOGIN.playing = false; NET.disconnect(); title.startSlot(game.slot); }
 
@@ -268,8 +296,9 @@
         NET.disconnect(); try { localStorage.setItem(NAME_KEY, 'Pip'); } catch (e) { }
         connect('player', 'Pip'); feed({ t: 'error', code: 'renamed', name: 'Bad Name!!' }); const junk = lsName() === 'Pip';
         // the login card learns a new name from the world's answer too (/api/me after a rename while logged out)
-        NET.disconnect(); me0 = 'Brave Sam'; NET.token = 'strikes-test'; LOGIN.show(); const fromMe = lsName() === 'Brave Sam' && LOGIN.name === 'Brave Sam'; LOGIN.hide();
-        check(P + 'a new name from an admin: remembered as the last name for the login card, said in words, and the wire comes back; a junk name is ignored; the login card takes the name the world answers', kept && junk && fromMe, { kept, junk, fromMe, last: lsName(), notice }); }
+        NET.disconnect(); me0 = 'Brave Sam'; NET.token = 'strikes-test'; LOGIN.noteKeptOut(now + HR); LOGIN.show();
+        const fromMe = lsName() === 'Brave Sam' && LOGIN.name === 'Brave Sam' && LOGIN.keptOutUntil() === 0; LOGIN.hide();
+        check(P + 'a new name from an admin: remembered as the last name for the login card, said in words, and the wire comes back; a junk name is ignored; the login card takes the name the world answers (and a good answer forgets an old lockout: an admin may have cleared it)', kept && junk && fromMe, { kept, junk, fromMe, last: lsName(), notice }); }
 
       // ---- B. the Accounts tab: tags on the list, words on a knight's page ----
       { connect('admin'); closePanel(); ADMIN.open('accounts'); render();
@@ -350,6 +379,8 @@
       if (window.COOP) COOP.reset();
       if (window.LOGIN) { LOGIN.name = was.loginName; LOGIN.playing = was.playing; LOGIN.showing = false; LOGIN.error = ''; LOGIN.mode = 'form'; }
       try { if (was.last == null) localStorage.removeItem(NAME_KEY); else localStorage.setItem(NAME_KEY, was.last); } catch (e) { }
+      try { if (keptWas == null) localStorage.removeItem(LOGIN.KEPT_KEY); else localStorage.setItem(LOGIN.KEPT_KEY, keptWas); } catch (e) { }
+      if (window.CLOUD) CLOUD.reset();
       if (window.CHAT) CHAT.log.length = 0;
       window.__forceTouch = was.touch; try { window.innerWidth = was.vw; window.innerHeight = was.vh; } catch (e) { }
       ADMIN.state.tab = 'knights'; ADMIN.state.view = null; A.state.view = null;
