@@ -2976,7 +2976,8 @@ HOOKS.selfTest.push((check, F, h) => {
             // each boss scene shows its one banner, with its words
             const want = { 'fang-fire': ['THE FANG', 'FIRE', null], 'fang-stone': ['THE FANG', 'STONE', 'Wait it out'], wight: ['CINDERWIGHT', null, 'Break the heart'], 'bird-perch': ['THE STORM BIRD', null, 'On the mast: hit it now'], 'bird-hunt': ['THE STORM BIRD', null, 'Hunting: keep moving'] }[sc];
             if (want) {
-              const bs = HK.FRAME.bosses, b = bs.find(q => q.name === want[0]);
+              // (a knight who has slain The Fang reads its Echo: 28-thefang names the banner ECHO OF THE FANG for him)
+              const bs = HK.FRAME.bosses, b = bs.find(q => q.name === want[0] || (want[0] === 'THE FANG' && q.name === 'ECHO OF THE FANG'));
               if (!b || bs.length !== 1 || HK.cur().boss.length !== 1) problems.push(`${where}: ${bs.length} banners (${bs.map(q => q.name).join(', ')}) for one boss`);
               else if ((want[1] && b.phase !== want[1]) || (b.sub || null) !== want[2] || (sc === 'wight' && !b.heart)) problems.push(`${where}: the banner says ${JSON.stringify([b.phase, b.sub, !!b.heart])}`);
             }
