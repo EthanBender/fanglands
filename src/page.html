@@ -21,12 +21,17 @@
 <script data-arrive>/* two addresses (src/00-handoff.js, docs/ONLINE.md): read before the game itself is.
   An ordinary tab on the old address holding the home-screen icon's cookie (a shared cookie jar) is sent to /handoff-leave
   at once, which clears it and hands the tab over; after a hand-over the card shows while the game page loads, with
-  "Still working on it..." after 4 s. */
+  "Still working on it..." after 4 s. The one-load marker of the hops that keep a tab on the old address (?fl_hop=stay or
+  here) is taken off the address at once and kept as window.FL_HOP for src/00-handoff.js. */
 (function () { try {
   var card = function () { document.getElementById('fl-arrive').hidden = false; setTimeout(function () { var m = document.getElementById('fl-arrive-more'); if (m) m.hidden = false; }, 4000); };
   var app = navigator.standalone === true || !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  var rest = [], hop = null;
+  (location.search || '').replace(/^\?/, '').split('&').forEach(function (p) { if (!p) return; if (p.split('=')[0] === 'fl_hop') hop = p.slice(7); else rest.push(p); });
+  var search = rest.length ? '?' + rest.join('&') : '';
+  if (hop !== null) { window.FL_HOP = hop; try { history.replaceState(history.state, '', location.pathname + search + (location.hash || '')); } catch (e) { } }
   if (/^(www\.|test\.)?gorkscape\.ca$/.test(location.hostname) && !app && /(^|;)\s*fl_stay=1\s*(;|$)/.test(document.cookie)) {
-    window.FL_LEAVING = true; card(); location.replace('/handoff-leave?to=' + encodeURIComponent(location.pathname + location.search)); return;
+    window.FL_LEAVING = true; card(); location.replace('/handoff-leave?to=' + encodeURIComponent(location.pathname + search)); return;
   }
   if (sessionStorage.getItem('fanglands.handoff.arriving')) card();
 } catch (e) { } })();

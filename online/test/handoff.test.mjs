@@ -14,8 +14,9 @@ import worker from '../src/worker.js';
 import vm from 'node:vm';
 import {
   frontDoor, MOVES, HANDOFF_MS, HANDOFF_MAX, CLAIM_FAILS_PER_MIN, ACCT_WAITING_MAX, ACCT_PER_HOUR, WAITING_MAX, CARRY,
-  PULL_KEY, ARRIVING_KEY, TRIES_KEY, STAY_COOKIE, HERE_COOKIE, HERE_SECS, addressOf, handoffCall,
+  PULL_KEY, ARRIVING_KEY, TRIES_KEY, STAY_COOKIE, HERE_COOKIE, HERE_SECS, HOP_PARAM, addressOf, handoffCall,
 } from '../src/handoff.js';
+import { knightOf } from '../src/handoff-merge.js';
 
 // ---------------------------------------------------------------------------
 // The front door (worker.js + handoff.js frontDoor)
@@ -116,7 +117,7 @@ test('front door: a home-screen icon stays: /handoff-stay, asked by the old addr
   const { env, seen } = fakeEnv();
   const res = await worker.fetch(own('https://gorkscape.ca/handoff-stay?to=' + encodeURIComponent('/admin?x=1')), env);
   assert.equal(res.status, 302);
-  assert.equal(res.headers.get('location'), '/admin?x=1');
+  assert.equal(res.headers.get('location'), '/admin?x=1&fl_hop=stay', 'this load is the game, cookie or none');
   const c = res.headers.get('set-cookie');
   assert.match(c, new RegExp('^' + STAY_COOKIE + '=1; Max-Age=\\d+; Path=/; Secure; SameSite=Lax$'));
   assert.ok(+/Max-Age=(\d+)/.exec(c)[1] >= 365 * 86400);
@@ -134,7 +135,7 @@ test('front door: a home-screen icon stays: /handoff-stay, asked by the old addr
   assert.match(leave.headers.get('set-cookie'), new RegExp('^' + STAY_COOKIE + '=; Max-Age=0; Path=/'));
   for (const to of ['//evil.example/x', 'https://evil.example', '/\\evil.example', 'admin', '/a b']) {
     const r = await worker.fetch(own('https://gorkscape.ca/handoff-stay?to=' + encodeURIComponent(to)), env);
-    assert.equal(r.headers.get('location'), '/', to);
+    assert.equal(r.headers.get('location'), '/?fl_hop=stay', to);
   }
   assert.equal(await (await worker.fetch(nav('https://fanglands.com/handoff-stay'), env)).text(), 'asset /handoff-stay');
 });
@@ -154,13 +155,58 @@ test('front door: a link from anywhere else can never set either cookie (it just
 test('front door: a tab the hand-over page keeps on the old address (a knight only on its device) gets the game for one load: /handoff-here sets a one-minute cookie the game clears', async () => {
   const { env } = fakeEnv();
   const res = await worker.fetch(own('https://www.gorkscape.ca/handoff-here?to=' + encodeURIComponent('/?online')), env);
-  assert.deepEqual([res.status, res.headers.get('location')], [302, '/?online']);
+  assert.deepEqual([res.status, res.headers.get('location')], [302, '/?online&fl_hop=here']);
   const c = res.headers.get('set-cookie');
   assert.equal(c, HERE_COOKIE + '=1; Max-Age=' + HERE_SECS + '; Path=/; Secure; SameSite=Lax');
   assert.ok(HERE_SECS <= 60);
   const r = await worker.fetch(nav('https://www.gorkscape.ca/?online', { cookie: HERE_COOKIE + '=1' }), env);
   assert.equal(await r.text(), 'asset /');
   assert.match(await (await worker.fetch(nav('https://www.gorkscape.ca/', { cookie: HERE_COOKIE + '=' }), env)).text(), /handoff\/offer/);
+});
+
+test('front door: a browser that never keeps the cookie (blocked cookies, a managed profile) never goes round: the hop\'s one-load marker gets it the game within 2 hops, for an icon and for a kept tab', async () => {
+  const { env, seen } = fakeEnv();
+  for (const [kind, path] of [['stay', '/handoff-stay'], ['here', '/handoff-here']]) {
+    // the hand-over page sent this tab to the hop (location.replace on its own address); the browser drops every cookie
+    let url = 'https://gorkscape.ca' + path + '?to=' + encodeURIComponent('/admin?x=1'), hops = 0, res;
+    for (; hops < 6; hops++) {
+      res = await worker.fetch(own(url), env);
+      const loc = res.headers.get('location');
+      if (!loc) break;
+      url = new URL(loc, url).href;
+    }
+    assert.equal(await res.text(), 'asset /admin', kind + ': the game (here the parent page) after ' + hops + ' hops');
+    assert.ok(hops <= 2, kind + ' ' + hops);
+    assert.equal(new URL(url).searchParams.get(HOP_PARAM), kind);
+  }
+  assert.equal(seen.assets.length, 2);
+  // the marker is believed only from this address's own hop: a link from anywhere else with it gets the hand-over page
+  for (const site of ['cross-site', 'same-site', 'none']) {
+    const r = await worker.fetch(nav('https://gorkscape.ca/?fl_hop=stay', { 'sec-fetch-site': site }), env);
+    assert.match(await r.text(), /handoff\/offer/, site);
+  }
+  for (const v of ['', 'x', 'STAY']) assert.match(await (await worker.fetch(own('https://gorkscape.ca/?fl_hop=' + v), env)).text(), /handoff\/offer/, v);
+  // without the fix: the old hop sent the tab back to the hand-over page, which sent it to the hop again
+  const back = await worker.fetch(own('https://gorkscape.ca/handoff-stay?to=%2F'), env);
+  const again = await worker.fetch(own(new URL(back.headers.get('location'), 'https://gorkscape.ca/').href), env);
+  assert.equal(await again.text(), 'asset /');
+});
+
+test('front door + hand-over page: an installed app whose browser drops the cookie, run end to end: page, hop, game; never a second hand-over page', async () => {
+  const { env } = fakeEnv();
+  let url = 'https://gorkscape.ca/', pages = 0, game = null;
+  for (let i = 0; i < 8 && !game; i++) {
+    const res = await worker.fetch(own(url), env);
+    const loc = res.headers.get('location');
+    if (loc) { url = new URL(loc, url).href; continue; }
+    const html = await res.text();
+    if (html.startsWith('asset ')) { game = html; break; }
+    pages++;
+    const r = await runPage(new Response(html), { at: url, standalone: 'ios', store: {} });
+    url = new URL(r.nav[0], url).href;
+  }
+  assert.equal(game, 'asset /');
+  assert.equal(pages, 1);
 });
 
 test('front door: /api and /ws reach the world on every address, old ones too, exactly as before', async () => {
@@ -256,6 +302,7 @@ test('hand-over: an offer of the login and settings gets a 256-bit code and the 
   assert.equal(o.status, 200);
   assert.match(o.data.code, /^[0-9a-f]{64}$/);
   assert.equal(o.data.name, 'cohen');
+  assert.equal(o.data.knight, null, 'no knight in the world yet');
   assert.equal(o.data.expires, T + HANDOFF_MS);
   assert.ok(HANDOFF_MS <= 3 * 60 * 1000, 'a short life');
   const c = await claim(w, o.data.code);
@@ -264,6 +311,19 @@ test('hand-over: an offer of the login and settings gets a 256-bit code and the 
   assert.equal((await claim(w, o.data.code)).status, 404, 'one use');
   const o2 = await offer(w, keysOf(tok), {}, 'www.gorkscape.ca');
   assert.equal((await claim(w, o2.data.code)).data.from, 'www.gorkscape.ca');
+});
+
+test('hand-over: the offer\'s answer says what the world holds of the account\'s knight (its latest save, summarised: never the save itself), so the page can tell a knight here the world has from one it does not', async () => {
+  const w = newWorld();
+  const tok = account(w, 'Cohen'); account(w, 'Sam');
+  const save = (lc, ver, json) => w.db.prepare('INSERT INTO saves (name_lc, ver, json, at) VALUES (?, ?, ?, ?)').run(lc, ver, json, T);
+  const old = JSON.stringify({ player: { playSeconds: 10, line: [['a', 0]] } }), now = JSON.stringify({ player: { playSeconds: 90, line: [['a', 0], ['b', 50]] }, quest: { stage: 2 } });
+  save('cohen', 1, old); save('cohen', 2, now); save('sam', 1, JSON.stringify({ player: { playSeconds: 5 } }));
+  const o = await offer(w, keysOf(tok));
+  assert.equal(o.status, 200);
+  assert.deepEqual(o.data.knight, knightOf(now));
+  assert.deepEqual(o.data.knight.line, [['a', 0], ['b', 50]]);
+  assert.ok(!JSON.stringify(o.data).includes('quest'), 'a summary, never the knight');
 });
 
 test('hand-over: no login, no hand-over: no Bearer token, one the world does not know, run out or banned is 401 from the headers alone, its body never read', async () => {
@@ -344,7 +404,7 @@ test('hand-over: per account ACCT_PER_HOUR offers an hour; one past it is refuse
   assert.equal((await offer(w, keysOf(tok))).status, 200);
 });
 
-test('hand-over: the free plan: a hand-over writes NO row, ever (offers, claims, refusals, a full hour at the cap); the only statement it runs is one read of the login', async () => {
+test('hand-over: the free plan: a hand-over writes NO row, ever (offers, claims, refusals, a full hour at the cap); it only reads: the login, and on an offer the account\'s latest save', async () => {
   const w = newWorld();
   const tok = account(w, 'Cohen');
   w.log.length = 0;
@@ -355,7 +415,8 @@ test('hand-over: the free plan: a hand-over writes NO row, ever (offers, claims,
   // the request meter (meter.js) counts every call to the World, a hand-over's too, in its own rows every 10 s: not the hand-over's
   const mine = w.log.filter(e => !/req_meter/.test(e.q));
   assert.deepEqual(mine.filter(e => e.write || e.rowsWritten), [], 'no write');
-  assert.ok(mine.length > 0 && mine.every(e => /^SELECT s\.name_lc AS lc FROM sessions s JOIN accounts a/.test(e.q)), mine.map(e => e.q).join('\n'));
+  assert.ok(mine.length > 0 && mine.every(e => /^SELECT s\.name_lc AS lc FROM sessions s JOIN accounts a|^SELECT json FROM saves WHERE name_lc = \? ORDER BY ver DESC LIMIT 1$/.test(e.q)), mine.map(e => e.q).join('\n'));
+  assert.equal(mine.filter(e => /FROM saves/.test(e.q)).length, ACCT_PER_HOUR, 'one read of the save per offer made, none for one refused');
   assert.ok(!w.db.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'handoff%'").all().length, 'no table for it');
 });
 
@@ -545,15 +606,16 @@ async function runPage(res, { at, store = {}, session = {}, broken = false, stan
 }
 const pageAt = (url, env, extra) => worker.fetch(nav(url, extra), env || fakeEnv().env);
 const CODE = 'c'.repeat(64), EVIL = 'e'.repeat(64), TOK = 'a'.repeat(64);
-const OK = { status: 200, json: { code: CODE, expires: 1, name: 'cohen' } };
+// Cohen's knight, the game's own way (play seconds and the knight's line); the world's answer holds it
+const KNIGHT = '{"player":{"playSeconds":500,"level":7,"line":[["s1",0],["s2",300]]}}', OTHER = '{"player":{"playSeconds":40,"level":2}}';
+const OK = { status: 200, json: { code: CODE, expires: 1, name: 'cohen', knight: knightOf(KNIGHT) } };
 const FRESH = () => JSON.stringify({ n: PULL, at: Date.now() - 1000 });
 const fp = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36) + '.' + s.length; };
-const KNIGHT = '{"player":{"playSeconds":500,"level":7}}', OTHER = '{"player":{"playSeconds":40,"level":2}}';
-// a browser on the old address the way feat/no-play-alone leaves it: logged in as Cohen, slot 1 his cloud copy (owner
-// and synced notes), the settings and hints. Nothing in it is only on this device.
+// a browser on the old address the way a login leaves it (feat/no-play-alone: slot 1 is the world's copy, marked with
+// the account, and no other note), the settings and hints. Nothing in it is only on this device.
 const SYNCED = {
   'fanglands.session': TOK, 'fanglands.lastname': 'Cohen',
-  'fanglands.slot.1': KNIGHT, 'fanglands.slot.1.at': '500', 'fanglands.slot.1.online': 'cohen', 'fanglands.slot.1.synced': 'cohen|' + fp(KNIGHT), 'fanglands.slot.current': '1',
+  'fanglands.slot.1': KNIGHT, 'fanglands.slot.1.at': '500', 'fanglands.slot.1.online': 'cohen', 'fanglands.slot.current': '1',
   'fanglands.settings': '{"kid":true,"text":"large"}', 'fanglands.kidmode': '1', 'fl_learn_bag': '3',
 };
 
@@ -583,15 +645,11 @@ test('hand-over page: no login and no save: a plain redirect to the same path, n
   assert.deepEqual(r.nav, ['https://fanglands.com/']);
 });
 
-test('hand-over page: a knight here that is not on the server stays: /handoff-here (the game right here, with its note), no offer, no card; logged out with any save, or logged in with a knight no account owns, or one ahead of the cloud', async () => {
+test('hand-over page: logged out with a knight saved here (nothing is known to be on the server): /handoff-here (the game right here, with its note), no offer, no card', async () => {
   const cases = {
-    'logged out, a save': { 'fanglands.slot.2': OTHER },
-    'logged out, the old single save the game would still make slot 1': { 'fanglands.save.v2': OTHER },
-    'logged out, even a cloud copy (no login: nothing is known to be on the server)': Object.assign({}, SYNCED, { 'fanglands.session': undefined }),
-    'logged in, a knight with no owner beside the cloud copy': Object.assign({}, SYNCED, { 'fanglands.slot.2': OTHER }),
-    'logged in, his own copy ahead of the cloud\'s (offline progress)': Object.assign({}, SYNCED, { 'fanglands.slot.5': '{"player":{"playSeconds":900}}', 'fanglands.slot.5.online': 'cohen' }),
-    'logged in, slot 1 changed since the world confirmed it': Object.assign({}, SYNCED, { 'fanglands.slot.1': '{"player":{"playSeconds":510}}' }),
-    'logged in, master\'s old mark only (before no-play-alone: nothing is known to be in the cloud)': { 'fanglands.session': TOK, 'fanglands.slot.1': KNIGHT, 'fanglands.slot.1.online': '1' },
+    'a save': { 'fanglands.slot.2': OTHER },
+    'the old single save the game would still make slot 1': { 'fanglands.save.v2': OTHER },
+    'even a copy of the world\'s (with no login nothing is known)': Object.assign({}, SYNCED, { 'fanglands.session': undefined }),
   };
   for (const [what, st] of Object.entries(cases)) {
     for (const k of Object.keys(st)) if (st[k] === undefined) delete st[k];
@@ -603,6 +661,42 @@ test('hand-over page: a knight here that is not on the server stays: /handoff-he
   }
 });
 
+test('hand-over page: logged in, the world says what it holds of the knight; a knight here outside it stays (/handoff-here), whatever notes it has: no account\'s, another account\'s, or this account\'s with progress that never reached the world', async () => {
+  const cases = {
+    'a knight with no owner beside the world\'s copy': { 'fanglands.slot.2': OTHER },
+    'another account\'s parked copy': { 'fanglands.slot.6': '{"player":{"playSeconds":90,"line":[["ivy",0]]}}', 'fanglands.slot.6.online': 'ivy' },
+    'slot 1 played on past the world\'s copy (its upload never landed)': { 'fanglands.slot.1': '{"player":{"playSeconds":540,"level":7,"line":[["s1",0],["s2",300]]}}' },
+    'slot 1 marked as the account\'s, but a save from before the line that is not the world\'s string': { 'fanglands.slot.1': '{"player":{"playSeconds":500}}' },
+  };
+  for (const [what, st] of Object.entries(cases)) {
+    const r = await runPage(await pageAt('https://gorkscape.ca/?online'), { at: 'https://gorkscape.ca/?online#castle', store: Object.assign({ [PULL_KEY]: FRESH() }, SYNCED, st), answer: () => OK });
+    assert.equal(r.calls.length, 1, what);
+    assert.deepEqual(r.nav, ['/handoff-here?to=' + encodeURIComponent('/?online') + '#castle'], what);
+  }
+  // the same browsers, with the knight the world holds in every slot that has one, go across
+  const r = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/', store: Object.assign({ [PULL_KEY]: FRESH() }, SYNCED, { 'fanglands.slot.4': '{"player":{"playSeconds":200,"line":[["s1",0]]}}', 'fanglands.kept.cohen': OTHER, 'fanglands.kept': '["cohen"]' }), answer: () => OK });
+  assert.match(r.nav[0], /^https:\/\/fanglands\.com\/handoff#land=/, 'an older copy inside the world\'s, and a backup (not a knight), go across');
+  // a world with no knight for this login: every knight here is only here
+  const none = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/', store: Object.assign({ [PULL_KEY]: FRESH() }, SYNCED), answer: () => ({ status: 200, json: { code: CODE, expires: 1, name: 'cohen', knight: null } }) });
+  assert.deepEqual(none.nav, ['/handoff-here?to=%2F']);
+});
+
+test('hand-over page: https://gorkscape.ca/#kept (the admin\'s list of a device\'s backups) is never sent across, logged in or not', async () => {
+  for (const st of [{}, SYNCED, Object.assign({ [PULL_KEY]: FRESH() }, SYNCED)]) {
+    const r = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/#kept', store: st, answer: () => OK });
+    assert.deepEqual(r.nav, ['/handoff-here?to=%2F#kept']);
+    assert.equal(r.calls.length, 0);
+  }
+});
+
+test('hand-over page: a ?fl_hop marker that came with the address is never passed on', async () => {
+  const X = { 'sec-fetch-site': 'cross-site' };   // a link from elsewhere: the front door gives it the hand-over page
+  let r = await runPage(await pageAt('https://gorkscape.ca/?fl_hop=stay&online', undefined, X), { at: 'https://gorkscape.ca/?fl_hop=stay&online' });
+  assert.deepEqual(r.nav, ['https://fanglands.com/?online']);
+  r = await runPage(await pageAt('https://gorkscape.ca/admin?fl_hop=here', undefined, X), { at: 'https://gorkscape.ca/admin?fl_hop=here', store: { 'fanglands.slot.2': OTHER } });
+  assert.deepEqual(r.nav, ['/handoff-here?to=%2Fadmin']);
+});
+
 test('hand-over page: a login with nothing only here: the first time it fetches a pull from the new address (www.gorkscape.ca has its own storage)', async () => {
   const r = await runPage(await pageAt('https://www.gorkscape.ca/admin'), { at: 'https://www.gorkscape.ca/admin', store: SYNCED });
   assert.deepEqual(r.nav, ['https://fanglands.com/handoff#back=%2Fadmin&from=www.gorkscape.ca']);
@@ -611,7 +705,8 @@ test('hand-over page: a login with nothing only here: the first time it fetches 
 });
 
 test('hand-over page: with a pull it offers ONLY the login, the last name and the settings (never a slot, an owner note or the parent page\'s key), the login as a Bearer token too, and goes to the landing page with the code', async () => {
-  const store = Object.assign({ 'fanglands.adminKey': 'k', 'fanglands.dk.kept': '[]', 'fanglands.slot.4': OTHER, 'fanglands.slot.4.online': 'cohen', 'fl_coach_swing': '1', 'fl_other': '1' }, SYNCED);
+  const INSIDE = '{"player":{"playSeconds":200,"line":[["s1",0]]}}';   // an older copy, inside the world's
+  const store = Object.assign({ 'fanglands.adminKey': 'k', 'fanglands.dk.told': '[]', 'fanglands.slot.4': INSIDE, 'fanglands.slot.4.online': 'cohen', 'fl_coach_swing': '1', 'fl_other': '1' }, SYNCED);
   const r = await runPage(await pageAt('https://gorkscape.ca/?online'), { at: 'https://gorkscape.ca/?online#handoff-pull=' + PULL, store, answer: () => OK });
   assert.equal(r.calls.length, 1);
   assert.equal(r.calls[0].url, '/api/handoff/offer');
@@ -620,7 +715,7 @@ test('hand-over page: with a pull it offers ONLY the login, the last name and th
   assert.deepEqual(r.nav, ['https://fanglands.com/handoff#land=' + CODE + '&to=%2F%3Fonline&from=gorkscape.ca']);
   assert.deepEqual(r.hist, ['/?online'], 'the pull leaves the address');
   assert.equal(JSON.parse(r.store[PULL_KEY]).n, PULL, 'the pull that came is kept here from now on');
-  assert.equal(r.store['fanglands.slot.4'], OTHER);
+  assert.equal(r.store['fanglands.slot.4'], INSIDE);
 });
 
 test('hand-over page: under 8 KB whatever the storage holds: the login always goes, then the settings, then the hints while they fit', async () => {
@@ -634,8 +729,8 @@ test('hand-over page: under 8 KB whatever the storage holds: the login always go
   assert.ok(Object.keys(r.calls[0].body.keys).filter(k => k.startsWith('fl_learn_tip')).length > 50);
 });
 
-test('hand-over page: the world says whose the login is: a cloud copy of ANOTHER account here is not on the server for this login, so the tab stays after all (no landing)', async () => {
-  const r = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/', store: Object.assign({ [PULL_KEY]: FRESH() }, SYNCED), answer: () => ({ status: 200, json: { code: CODE, expires: 1, name: 'sam' } }) });
+test('hand-over page: the world holds another knight for this login (the knight here is not that account\'s), so the tab stays after all (no landing)', async () => {
+  const r = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/', store: Object.assign({ [PULL_KEY]: FRESH() }, SYNCED), answer: () => ({ status: 200, json: { code: CODE, expires: 1, name: 'sam', knight: knightOf(OTHER) } }) });
   assert.equal(r.calls.length, 1);
   assert.deepEqual(r.nav, ['/handoff-here?to=%2F']);
 });
@@ -737,6 +832,7 @@ const X = s => s.replace(/[0-9a-f]{32,}/g, 'X');
 test('the whole hop against a real world: logged in (first visit, later visits), a knight only on the device stays, logged out goes straight across, www, an /admin path, a planted pull heals', async () => {
   const w = newWorld();
   const tok = account(w, 'Cohen');
+  w.db.prepare('INSERT INTO saves (name_lc, ver, json, at) VALUES (?, ?, ?, ?)').run('cohen', 1, KNIGHT, T);
   const kid = Object.assign({}, SYNCED, { 'fanglands.session': tok });
   let c = await chain(w, { oldStore: kid, path: '/?online' });
   assert.deepEqual(c.hops.map(X), ['https://gorkscape.ca/?online', 'https://fanglands.com/handoff#back=%2F%3Fonline&from=gorkscape.ca', 'https://gorkscape.ca/?online#handoff-pull=X', 'https://fanglands.com/handoff#land=X&to=%2F%3Fonline&from=gorkscape.ca', 'https://fanglands.com/?online']);
@@ -747,9 +843,16 @@ test('the whole hop against a real world: logged in (first visit, later visits),
   const later = await chain(w, { oldStore: c.old, newStore: c.store, path: '/admin' });
   assert.equal(later.hops.length, 3, 'a later visit: the old page, the landing, the page');
   assert.equal(later.hops[2], 'https://fanglands.com/admin');
-  // a knight only on this device: the tab stays on the old address, nothing offered
-  c = await chain(w, { oldStore: Object.assign({}, kid, { 'fanglands.slot.2': OTHER }), path: '/' });
+  // a knight only on this device: the tab stays on the old address (the world was asked what it holds; no landing)
+  c = await chain(w, { oldStore: Object.assign({ [PULL_KEY]: FRESH() }, kid, { 'fanglands.slot.2': OTHER }), path: '/' });
   assert.deepEqual(c.hops, ['https://gorkscape.ca/', 'https://gorkscape.ca/handoff-here?to=%2F']);
+  // progress whose upload never landed stays too; once the world holds it (the game pushed it there), the next visit goes
+  const ahead = '{"player":{"playSeconds":560,"level":7,"line":[["s1",0],["s2",300]]}}';
+  c = await chain(w, { oldStore: Object.assign({ [PULL_KEY]: FRESH() }, kid, { 'fanglands.slot.1': ahead }), path: '/' });
+  assert.deepEqual(c.hops, ['https://gorkscape.ca/', 'https://gorkscape.ca/handoff-here?to=%2F']);
+  w.db.prepare('INSERT INTO saves (name_lc, ver, json, at) VALUES (?, ?, ?, ?)').run('cohen', 2, ahead, T);
+  c = await chain(w, { oldStore: c.old, path: '/' });
+  assert.equal(c.hops[c.hops.length - 1], 'https://fanglands.com/');
   // logged out with nothing saved, from www: straight across
   c = await chain(w, { host: 'www.gorkscape.ca', path: '/admin?x=1', oldStore: { 'fanglands.settings': '{"kid":true}' } });
   assert.deepEqual(c.hops, ['https://www.gorkscape.ca/admin?x=1', 'https://fanglands.com/admin?x=1']);
@@ -780,7 +883,9 @@ test('pages, as wrangler bundles them (esbuild, keep_names): the claim still wri
   });
   assert.deepEqual(r.nav, ['/']);
   for (const k of Object.keys(offered)) assert.equal(r.store[k], offered[k], k);
-  r = await runPage(bundled.handoverPage('gorkscape.ca', 'fanglands.com'), { at: 'https://gorkscape.ca/', store: Object.assign({}, SYNCED, { 'fanglands.slot.2': OTHER }) });
+  r = await runPage(bundled.handoverPage('gorkscape.ca', 'fanglands.com'), { at: 'https://gorkscape.ca/', store: Object.assign({ [PULL_KEY]: FRESH() }, SYNCED, { 'fanglands.slot.2': OTHER }), answer: () => OK });
+  assert.deepEqual(r.nav, ['/handoff-here?to=%2F']);
+  r = await runPage(bundled.handoverPage('gorkscape.ca', 'fanglands.com'), { at: 'https://gorkscape.ca/', store: { 'fanglands.slot.2': OTHER } });
   assert.deepEqual(r.nav, ['/handoff-here?to=%2F']);
   r = await runPage(bundled.handoverPage('gorkscape.ca', 'fanglands.com'), { at: 'https://gorkscape.ca/', store: Object.assign({ [PULL_KEY]: FRESH() }, SYNCED), answer: () => OK });
   assert.match(r.nav[0], /#land=/);
@@ -789,19 +894,19 @@ test('pages, as wrangler bundles them (esbuild, keep_names): the claim still wri
 // ---------------------------------------------------------------------------
 // The game page's own first script (src/page.html), before the game is read
 // ---------------------------------------------------------------------------
-function runInline({ host = 'gorkscape.ca', cookie = '', standalone = false, arriving = false, until = 5000 } = {}) {
+function runInline({ host = 'gorkscape.ca', cookie = '', standalone = false, arriving = false, until = 5000, search = '?x=1', hash = '' } = {}) {
   const html = readFileSync(new URL('../../src/page.html', import.meta.url), 'utf8');
   const script = /<script data-arrive>([\s\S]*?)<\/script>/.exec(html)[1];
-  const els = { 'fl-arrive': { hidden: true }, 'fl-arrive-more': { hidden: true } }, navs = [], c = clock();
+  const els = { 'fl-arrive': { hidden: true }, 'fl-arrive-more': { hidden: true } }, navs = [], c = clock(), hist = [];
   const ctx = vm.createContext({
-    location: { hostname: host, pathname: '/admin', search: '?x=1', replace: u => navs.push(u) },
+    location: { hostname: host, pathname: '/admin', search, hash, replace: u => navs.push(u) }, history: { state: null, replaceState: (st, t, u) => hist.push(u) },
     document: { cookie, getElementById: id => els[id] || null },
     navigator: { standalone: standalone ? true : undefined }, matchMedia: () => ({ matches: false }),
     sessionStorage: { getItem: k => (arriving && k === ARRIVING_KEY ? '1' : null) }, setTimeout: c.setTimeout,
   });
   ctx.window = ctx;
   vm.runInContext(script, ctx);
-  return c.run(until).then(() => ({ navs, els, leaving: ctx.FL_LEAVING === true }));
+  return c.run(until).then(() => ({ navs, els, hist, hop: ctx.FL_HOP, leaving: ctx.FL_LEAVING === true }));
 }
 test('the game page, before the game is read: an ordinary tab on the old address with the icon\'s cookie is sent to /handoff-leave at once, with the card; an icon, a kept tab (fl_here) or the new address are not; the arriving card says "Still working on it..." after 4 s', async () => {
   let r = await runInline({ cookie: 'a=1; fl_stay=1' });
@@ -815,4 +920,15 @@ test('the game page, before the game is read: an ordinary tab on the old address
   assert.ok(!r.els['fl-arrive'].hidden && r.els['fl-arrive-more'].hidden);
   r = await runInline({ host: 'fanglands.com', arriving: true, until: 4500 });
   assert.ok(!r.els['fl-arrive-more'].hidden);
+});
+test('the game page, before the game is read: the hop\'s one-load marker (?fl_hop) leaves the address at once, the rest of it kept, and is left for the game in window.FL_HOP', async () => {
+  let r = await runInline({ search: '?x=1&fl_hop=here', hash: '#castle', cookie: '' });
+  assert.deepEqual(r.hist, ['/admin?x=1#castle']); assert.equal(r.hop, 'here'); assert.deepEqual(r.navs, []);
+  r = await runInline({ search: '?fl_hop=stay', standalone: true });
+  assert.deepEqual(r.hist, ['/admin']); assert.equal(r.hop, 'stay');
+  r = await runInline({ search: '?x=1' });
+  assert.deepEqual(r.hist, [], 'no marker: the address is left alone'); assert.equal(r.hop, undefined);
+  // an ordinary tab with a stale icon cookie still leaves, without the marker
+  r = await runInline({ search: '?fl_hop=here&x=1', cookie: 'fl_stay=1' });
+  assert.deepEqual(r.navs, ['/handoff-leave?to=%2Fadmin%3Fx%3D1']);
 });

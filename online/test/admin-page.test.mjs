@@ -23,7 +23,7 @@ function fakeEl() {
   return p;
 }
 
-function page({ hidden = false } = {}) {
+function page({ hidden = false, search = '', hist = [] } = {}) {
   const els = new Map(), calls = [], intervals = new Map(), listeners = {};
   let seq = 0;
   const document = {
@@ -45,7 +45,7 @@ function page({ hidden = false } = {}) {
     setInterval: (f, ms) => { const id = ++seq; intervals.set(id, { f, ms }); return id; },
     clearInterval: id => { intervals.delete(id); },
     setTimeout: (f) => { Promise.resolve().then(f); return 0; }, clearTimeout() { },
-    confirm: () => false, alert() { }, location: { reload() { } }, navigator: {},
+    confirm: () => false, alert() { }, location: { reload() { }, pathname: '/admin', search, hash: '' }, history: { state: null, replaceState: (st, t, u) => hist.push(u) }, navigator: {},
     Date, Math, JSON, Promise, Number, String, Object, Array, Set, Map, Error, encodeURIComponent, URLSearchParams,
   };
   ctx.window = ctx;
@@ -101,4 +101,12 @@ test('the admin page opened in a hidden tab starts no timer until it is shown', 
   assert.equal(P.intervals.size, 0);
   await P.advance(600000);
   assert.equal(P.take().n, 0);
+});
+
+test('two addresses: the one-load marker of a hop that kept this tab on the old address (?fl_hop) leaves the address at once, the rest kept', async () => {
+  const hist = [];
+  const p = page({ search: '?x=1&fl_hop=here', hist }); await p.settle();
+  assert.deepEqual(hist, ['/admin?x=1']);
+  const none = []; const q = page({ search: '?x=1', hist: none }); await q.settle();
+  assert.deepEqual(none, []);
 });

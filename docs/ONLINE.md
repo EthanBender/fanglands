@@ -332,9 +332,9 @@ below; only what a *page* gets differs. With the switch on (*Shipping it, and th
 | `fanglands.com` | the game | the file | the world |
 | `www.fanglands.com` | 301 to `fanglands.com`, same path and query | 301 the same way | the world |
 | `gorkscape.ca`, `www.gorkscape.ca` (each its own storage) | the hand-over page (below), then the same path on `fanglands.com`, or the game right there | the file, as before | the world, exactly as before |
-| the same, with `fl_stay=1` (a home-screen icon) or `fl_here=1` (a tab kept for a knight only on its device) | the game, right there, as today | the file | the world |
+| the same, with `fl_stay=1` (a home-screen icon) or `fl_here=1` (a tab kept for a knight only on its device), or this one load's `?fl_hop=stay` / `?fl_hop=here` from those hops | the game, right there, as today | the file | the world |
 | `fanglands.com/handoff`, `test.fanglands.com/handoff` | the start and landing page (below) | | |
-| `gorkscape.ca/handoff-stay`, `/handoff-here`, `/handoff-leave` | set `fl_stay`, set `fl_here`, clear `fl_stay`; then 302 to the path | | |
+| `gorkscape.ca/handoff-stay`, `/handoff-here`, `/handoff-leave` | set `fl_stay`, set `fl_here` (each then 302 to the path with `fl_hop=stay` / `fl_hop=here` added to its query), clear `fl_stay` (302 to the path) | | |
 | `test.fanglands.com`, `test.gorkscape.ca` | the same, on the test world | | |
 
 `run_worker_first = true` in `wrangler.toml` sends every request to the Worker first, so it can see the address before
@@ -367,39 +367,62 @@ loaded:
 
 1. **An installed home-screen app** (`navigator.standalone`, or `matchMedia('(display-mode: standalone)')`; a desktop
    browser's fullscreen is not one): never sent. It goes to `/handoff-stay?to=<path>` (below) and stays.
-2. **A knight saved here that is not on the server** (a *device-only knight*): not sent. The page goes to
-   `/handoff-here?to=<path>`, which sets `fl_here=1` for one minute (only when the page on this same address asked:
-   `Sec-Fetch-Site: same-origin`) and sends back to the path, where the Worker serves the game exactly as today. The game
-   clears `fl_here` as it boots (`src/00-handoff.js`), so a reload or the next visit asks the hand-over page again, and
-   shows a calm one-time note (OK; `fanglands.handoff.tabnoted`): *"Fanglands has a new home: fanglands.com. Log in and
-   bring your knight into your account first."* The kid logs in there and brings the knight into an account on the
-   address where it lives (`src/72-deviceknights.js`, feat/no-play-alone). **Once nothing is left only on this device,
-   the next visit is sent across.** A knight nobody brings in (one with no owner, kept for a new knight Ethan has not
-   handed out a code for yet) keeps that browser playing on gorkscape.ca, exactly as today; nothing is ever lost.
-3. **No login and no save**: a plain redirect to the same path and query on fanglands.com (no card, nothing offered).
-4. **A login**: the hand-over below. The world says which account the login is, and the page checks the knights again
-   against that account (step 2's rule, now strict); a knight left only here sends the tab to `/handoff-here` after
-   all, with no landing.
+2. **`https://gorkscape.ca/#kept`** (the admin's list of the backups a device keeps, `src/72-deviceknights.js`): not
+   sent, so that list stays reachable on the device that holds the backups. The page goes to `/handoff-here` (below).
+3. **No login**: nothing is known to be on the server, so **any knight saved here** keeps the tab (a *device-only
+   knight*): the page goes to `/handoff-here?to=<path>`, which sets `fl_here=1` for one minute (only when the page on
+   this same address asked: `Sec-Fetch-Site: same-origin`) and sends back to the path with `fl_hop=here`, where the
+   Worker serves the game exactly as today. The game clears `fl_here` as it boots (`src/00-handoff.js`), so a reload or
+   the next visit asks the hand-over page again, and shows a calm one-time note (OK; `fanglands.handoff.tabnoted`):
+   *"Fanglands has a new home: fanglands.com. Log in and bring your knight into your account first."* The kid logs in
+   there; the game settles the knight (feat/no-play-alone's `src/72-deviceknights.js`: its own copy goes up if the world
+   is behind, a knight no account owns is offered to a new account). **Once nothing is left only on this device, the
+   next visit is sent across.** With no login and no knight saved here: a plain redirect to the same path and query on
+   fanglands.com (no card, nothing offered).
+4. **A login**: the hand-over below. The world's answer says what it holds of that account's knight, and the page checks
+   every knight here against it (the rule below); a knight here that the world does not hold sends the tab to
+   `/handoff-here` after all, with no landing (the offer just runs out in the World's memory).
 
 **Which knights are on the server** is one function, `deviceKnights` (`KNIGHTS_SOURCE` in `handoff-merge.js`; the
-game's `src/00-handoff.js` has it word for word, and a test holds them together). It reads feat/no-play-alone's notes
-(`fanglands.slot.N.online` = the account that owns that slot; `fanglands.slot.N.synced` = `account|fingerprint` when
-the world confirmed holding that exact string; `fanglands.dk.kept`). A save that reads as a knight (JSON with a
-`player`) is on the server when:
-- it is a **cloud copy** of the logged-in account: its owner note is that account and its synced note matches its exact
-  string (or it is the same string as such a copy);
-- or its owner note is that account and the account **chose the world's copy** over it (`fanglands.dk.kept`);
-- or its owner note is that account and it is **not ahead** of a cloud copy of the account held here (72-deviceknights'
-  own test: more play time, or a later stamp at no less play time).
+game's `src/00-handoff.js` has it word for word, and a test holds them together). It reads **no note of any other
+file**, only the slots (`fanglands.slot.N`) and the save in each, against what the world holds of the logged-in
+account's knight: the offer's answer `knight` (`knightOf` in `handoff-merge.js`: the fingerprint of the save string, its
+play seconds and its line, from one read of the account's latest save), or the save string itself (the game asks
+`GET /api/save` for the icon note). A slot holding a knight (JSON with a `player`) is on the server when:
+- it is **the very string the world holds** (the same fingerprint: the world keeps a save as the exact string the game
+  sent, and a login writes the world's string into slot 1), whatever notes it has;
+- or it is **inside the world's copy by the knight's line** (`player.line`, which feat/no-play-alone writes: one
+  `[segment, play seconds when it began]` per start): the two share a segment and this copy's play on it ends where the
+  world's copy went on, or before. This is 72-deviceknights' own `lineIn`, so an older copy the world has gone past is
+  not held back.
 
-Everything else counts as device-only: a knight with no owner, another account's copy, a copy with progress the world
-may not have, and *every* save when there is no login. A browser from before feat/no-play-alone has no synced notes, so
-every save in it counts: such a browser is never sent across until the game there has brought its knights in (if the
-switch were turned on before feat/no-play-alone lands, every browser holding any save would simply stay on gorkscape.ca
-as today). The old single save `fanglands.save.v2` counts only when the game would still make it slot 1 (no slot 1 and
-no current slot); otherwise it is a mirror of a slot. The page's first look (step 2, before the world has said whose the
-login is) counts an owner note of any account as "the account", which can only count fewer knights than the strict
-look; a strict look that finds one still keeps the tab.
+Everything else counts as device-only: every knight when nothing is known (no login, the world did not answer, or the
+account has no knight in the world yet), a knight no account owns, another account's parked copy (it may hold progress
+only here; that browser moves once that account has logged in there too and nothing else is left), **progress the world
+does not have** (an upload that never landed: the tab stays, the kid logs in, the game pushes it, and the next visit
+moves; nothing is stranded on gorkscape.ca), and a save from before the line that is not the world's exact string. The
+old single save `fanglands.save.v2` counts only when the game would still make it slot 1 (no slot 1 and no current
+slot); otherwise it is a mirror of a slot. A backup 72-deviceknights keeps (`fanglands.kept.<name>`) is not a knight
+(step 2 keeps `#kept` reachable). Because the rule reads only the saves, a renamed note in another file cannot change
+it; `00-handoff.js`'s self-test runs the game's real login (71-login, 72-cloudsave and, on a tree that has it,
+72-deviceknights) against a small world and checks the answer, so a change in how a login leaves the knight fails the
+headless gate. In round 5 this rule read feat/no-play-alone's `fanglands.slot.N.synced` and `fanglands.dk.kept`, which
+that branch then removed (its d367fdd, "The cache model"): every browser that had played would have stayed on
+gorkscape.ca for good.
+
+### A browser that keeps no cookie never goes round
+
+`/handoff-stay` and `/handoff-here` send this one load to the game with a marker on its query, `fl_hop=stay` or
+`fl_hop=here`, as well as setting their cookie. The Worker serves the game for a page whose query has it, only when the
+request came from this address's own page (`Sec-Fetch-Site: same-origin`, or a browser that does not say); a link from
+anywhere else with it gets the hand-over page. The game page's first script (`src/page.html`) takes the marker off the
+address at once (`history.replaceState`, the rest of the query and the fragment kept) and leaves it for the game in
+`window.FL_HOP`, which shows the same note as the cookie would; `/admin` takes it off too, and the hand-over page never
+passes one on. Without it, an installed app whose browser refuses the cookie (blocked cookies, a managed profile) went
+hand-over page, `/handoff-stay`, hand-over page... for ever through a script's `location.replace` (no browser counts
+that as too many redirects): two Worker requests a turn, enough for one iPad left open to spend the free plan's 100,000
+requests a day and stop every address until 00:00 UTC. Now such a browser takes three requests per load (the page, the
+hop, the game) and the cookie, when kept, makes later loads one.
 
 ### Home-screen icons stay where they are
 
@@ -407,17 +430,18 @@ An iPad home-screen icon added on gorkscape.ca is an installed web app whose sco
 fanglands.com would open an in-app browser bar (address and Done) over a smaller game, on every launch. So it is never
 sent: the page goes to `/handoff-stay?to=<path>`, which sets `fl_stay=1` (400 days, `Secure`, `SameSite=Lax`, readable
 by the game; only when the page on this same address asked, so a link from anywhere else can never park a browser) and
-sends back to the path. From then on the Worker serves the game to that icon on gorkscape.ca as today, with no hops at
+sends back to the path (with `fl_hop=stay` for this load). From then on the Worker serves the game to that icon on gorkscape.ca as today, with no hops at
 all: same Worker, same World, same accounts. iOS keeps a home-screen app's cookies and storage apart from Safari's, so
 a Safari tab never gets the cookie. The title says *"Play online at gorkscape.ca"* there (it names the address it is
 on). The game shows the icon a calm one-time note (`fanglands.handoff.noted`) with OK. Its words follow the facts,
 because a new icon keeps its own storage: it starts logged out and without the knights saved on this device, so the
 note never says the old icon can go.
-- Logged in, a cloud copy of that account here (the account is the last name typed), and no knight here that is only
-  on this device (the rule above): *"Fanglands has a new home: fanglands.com. Your knight is saved in the cloud. A new
-  icon starts logged out: log in with your knight's name and secret word."*
-- Anything else: *"Fanglands has a new home: fanglands.com. Keep this icon: knights saved on this device live here. A
-  new icon starts logged out: log in with your knight's name and secret word."*
+- Logged in, the world holds a knight for that account (the game asks `GET /api/save` once, a read, when it shows the
+  note; 5 s at most), and no knight here is outside it (the rule above): *"Fanglands has a new home: fanglands.com.
+  Your knight is saved in the cloud. A new icon starts logged out: log in with your knight's name and secret word."*
+- Anything else (logged out, no answer, a knight here the world does not hold): *"Fanglands has a new home:
+  fanglands.com. Keep this icon: knights saved on this device live here. A new icon starts logged out: log in with your
+  knight's name and secret word."*
 
 That a new icon starts logged out is reasoned from WebKit's documented behaviour, not yet seen on a real iPad. If
 `fl_stay` ever reaches an ordinary tab (a computer whose app windows share the browser's cookies), the game page's own
@@ -429,8 +453,8 @@ to `/handoff-leave` (which clears the cookie); the hand-over then runs as for an
 A code made by one browser must never work in another, so both addresses of one browser keep the same random **pull**,
 and a claim only works with the pull the offer was bound to.
 
-1. With a login and nothing only on this device, the hand-over page shows the card **"Bringing your knight over..."**
-   (and **"Still working on it..."** after 4 s).
+1. With a login, the hand-over page shows the card **"Bringing your knight over..."** (and **"Still working on it..."**
+   after 4 s).
 2. The first time only (no pull kept here): it goes to the start page
    `https://fanglands.com/handoff#back=<path and query>&from=<this address>`, which keeps a 128-bit pull in
    fanglands.com's storage (`fanglands.handoff.pull`, `{n, at}`, used again for 30 days) and goes back to
@@ -438,8 +462,10 @@ and a claim only works with the pull the offer was bound to.
    takes it off the address. `from` is checked against fanglands.com's own old addresses; a path that is not a plain
    path becomes `/`. If fanglands.com cannot keep anything (storage off), it goes straight into the game there.
 3. It posts `{keys, pull}` to `/api/handoff/offer` with the login as `authorization: Bearer <token>`. The World answers
-   `{code, expires, name}` (`name`: the account, lower case). The page checks its knights against `name` (above) and
-   goes to the **landing page** `https://fanglands.com/handoff#land=<code>&to=<path and query>&from=<this address>`.
+   `{code, expires, name, knight}` (`name`: the account, lower case; `knight`: what the world holds of its knight,
+   `{fp, play, line}`, or null). The page checks every knight here against `knight` (above): one the world does not hold
+   keeps the tab (`/handoff-here`); otherwise it goes to the **landing page**
+   `https://fanglands.com/handoff#land=<code>&to=<path and query>&from=<this address>`.
 4. The landing page first takes the fragment off the address and the history (`history.replaceState`), then posts
    `{code, pull}` (its own kept pull) to `/api/handoff/claim`, gets `{keys, from}` (`from` is the old address the
    world saw the offer on), writes what is missing (`handoffMerge`, which the page carries as text), marks the tab
@@ -478,7 +504,7 @@ type it again on fanglands.com/admin.
 
 ### The rules the world keeps (`online/test/handoff.test.mjs` and `handoff-merge.test.mjs` prove each one)
 
-- `POST /api/handoff/offer {keys, pull}` with `authorization: Bearer <token>` → `{code, expires, name}`. Only on a
+- `POST /api/handoff/offer {keys, pull}` with `authorization: Bearer <token>` → `{code, expires, name, knight}`. Only on a
   gorkscape address (`gorkscape.ca`, `www.`, `test.`), with an `Origin` that is exactly that address (403 `origin`).
   In this order, and nothing is read, kept or counted before the step that needs it:
   1. **A login, from the header alone**: a live login the world knows (read only: no `last_seen`, no deletes; a banned
@@ -491,7 +517,8 @@ type it again on fanglands.com/admin.
      (400 `bad`).
   5. Kept **in the World's memory** under the SHA-256 of a 256-bit code, bound to the SHA-256 of the pull, for **two
      minutes**. At most **2 wait per account**: a third replaces that account's oldest. No other account can touch
-     them.
+     them. Then one read of the account's latest save (the same primary-key read `GET /api/save` makes) gives
+     `knight` (`knightOf`: a fingerprint, play seconds and at most 40 line segments, under 1.2 KB; never the save).
 - `POST /api/handoff/claim {code, pull}` → `{keys, from}`. Only on a fanglands address, with an `Origin` that is
   exactly that address (403 `origin`). The pull must be the one the offer was bound to: any other pull gets 404 `gone`
   and does NOT use the code up. **One use**: nothing is awaited between finding the offer and taking it out of memory,
@@ -502,7 +529,8 @@ type it again on fanglands.com/admin.
   the World's memory (`world.handoff`). A restart of the World (a deploy, or Cloudflare putting an idle World to sleep)
   forgets them: a code waiting then is simply gone (the landing page goes back once and the old address offers again),
   and a count starts again, which costs nothing because an offer writes nothing. So nothing about a hand-over is ever in
-  a backup either. The only statement a hand-over runs is the read of the login.
+  a backup either. The only statements a hand-over runs are reads: the login, and for an offer that was kept, the
+  account's latest save.
 - Nothing about a hand-over is ever logged. The code and the pull only ride after `#`, so they are in no request line,
   no log and no Referer. The landing page takes them off the address bar and the back/forward history before it
   claims; a browser's own list of visited addresses may still hold the old URL (one-use, two-minute code, useless
@@ -522,13 +550,15 @@ The World is on the Workers free plan: **100,000 rows written a day** (a miss st
   offers, claims, refusals and an expired claim, and finds no write but the request meter's own (`meter.js`, at most
   360 rows an hour while knights play, whatever they do); another fills an account's hour and proves the 31st is
   refused before its body is read and before anything is kept or written.
-- **Rows read**: one read of the login per offer, two primary-key lookups (`sessions` by token, `accounts` by name),
-  about 2 rows. The same worst case with today's ~30 accounts: 30 × 720 × 2 = **43,200 rows read a day, under 1%** of
-  5,000,000. An unknown token is one lookup that finds nothing.
+- **Rows read**: per offer, the login (two primary-key lookups, `sessions` by token and `accounts` by name, about 2
+  rows) and, for an offer that was kept, the account's latest save (one row by its primary key, `ORDER BY ver DESC
+  LIMIT 1`): about 3 rows. A refused offer reads only the login. The same worst case with today's ~30 accounts:
+  30 × 720 × 3 = **64,800 rows read a day, about 1.3%** of 5,000,000. An unknown token is one lookup that finds nothing.
 - **Requests** are the limit the hand-over cannot protect: each request counts before any code of ours runs, and
   anyone can spend them on any address (`/api/status` as well as a hand-over). A real kid's visit through an old
   bookmark is about five (the hand-over page, the offer, the landing page, the claim, the game page); ten such visits a
-  day for thirty kids is 1,500, 1.5% of the day.
+  day for thirty kids is 1,500, 1.5% of the day. A kept tab or icon whose browser drops cookies is three a load (the
+  page, the hop, the game), never a loop (above).
 
 ### What it does not stop
 
@@ -552,9 +582,9 @@ from every tree carries it (and the test world keeps it; `--var HANDOVER:on` ove
 exactly `"on"` hands over; `"off"`, a missing line or a misspelling keeps the old addresses serving the game as before
 (it fails closed). Off, fanglands.com is attached and its certificate made while nothing changes for anyone. Once
 `https://fanglands.com/api/status` answers (and has for the 30 minutes a cached "no such name" can last), **a commit on
-master** that sets `HANDOVER = "on"`, then a deploy, turns the hand-over on. Turn it on only once feat/no-play-alone is
-on master (before that no browser is known to have its knights on the server, so every browser with a save would stay
-on gorkscape.ca: safe, but nothing moves). The way back is the same: a commit on master setting it to `"off"`, then a
+master** that sets `HANDOVER = "on"`, then a deploy, turns the hand-over on. Turn it on once feat/no-play-alone is on
+master: the rule above does not depend on it (a browser whose knight is the world's moves either way), but it is what
+lets a kid bring a knight saved only on a device into an account, so that browser can move too. The way back is the same: a commit on master setting it to `"off"`, then a
 deploy (nothing was deleted on gorkscape.ca). Never switch with `--var` alone on the live world: the next plain deploy
 from any session would undo it. `/handoff-stay`, `/handoff-here` and `/handoff-leave` answer either way, so a
 home-screen icon or a kept tab never loops.

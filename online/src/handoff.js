@@ -11,15 +11,21 @@
 //   - an installed home-screen app (an iPad icon) is never sent away: /handoff-stay sets a cookie and the old address
 //     serves it the game exactly as today, full screen, no hops (src/00-handoff.js shows a calm one-time note).
 //   - a knight saved here that is NOT on the server (a device-only knight: src/00-handoff.js and the page share the
-//     rule, KNIGHTS_SOURCE in handoff-merge.js): not sent. /handoff-here serves the game right here, as today, with a
-//     calm one-time note, so the kid brings that knight into an account where it lives (src/72-deviceknights.js). Once
-//     nothing is left only here, the next visit is sent across.
+//     rule, KNIGHTS_SOURCE in handoff-merge.js, which compares each slot with what the world holds of the logged-in
+//     account's knight): not sent. /handoff-here serves the game right here, as today, with a calm one-time note, so the
+//     kid logs in there and brings that knight into an account (src/72-deviceknights.js). Once nothing is left only
+//     here, the next visit is sent across. https://gorkscape.ca/#kept (the admin's list of the backups on a device) stays
+//     too.
 //   - no login and no save: a plain redirect to the same path on fanglands.com.
 //   - a login: the login, the last name typed and a short list of settings (CARRY, under 8 KB) are offered to the world
 //     WITH the login as "authorization: Bearer" (checked before the body is read; 401 without one), bound to a pull (a
-//     secret both of this browser's addresses keep), and the page goes to fanglands.com/handoff#land=<code>. That page
+//     secret both of this browser's addresses keep). The world answers with a code and what it holds of that account's
+//     knight; with nothing here only on this device, the page goes to fanglands.com/handoff#land=<code>. That page
 //     claims the code WITH the pull, writes what is missing (handoff-merge.js), takes the code off the address and the
 //     history, and goes on to the same path: the game, /admin, any page.
+// /handoff-stay and /handoff-here set a cookie so the next load goes straight to the game, and send this load to the
+// game with a one-load marker (?fl_hop=stay or here, taken off the address by the game page at once), so a browser that
+// refuses the cookie never goes round and round.
 // Every page the kid sees on the way shows a small dark card, "Bringing your knight over...", never a blank screen.
 // An offer waits in the World's MEMORY, never in its database: a hand-over writes no row, ever (the free plan's rows
 // written a day stay the game's). Per account at most 2 wait and 30 are made an hour. /api/* and /ws answer on every
@@ -28,7 +34,7 @@
 
 import { json, oops, bearer } from './http.js';
 import { randomHex, sameString } from './auth.js';
-import { MERGE_SOURCE, KNIGHTS_SOURCE, CARRY, HINT_RE } from './handoff-merge.js';
+import { MERGE_SOURCE, KNIGHTS_SOURCE, CARRY, HINT_RE, knightOf } from './handoff-merge.js';
 
 // where each old address sends to (the test world mirrors the live one), and the old addresses each new one takes
 export const MOVES = { 'gorkscape.ca': 'fanglands.com', 'www.gorkscape.ca': 'fanglands.com', 'test.gorkscape.ca': 'test.fanglands.com' };
@@ -40,6 +46,7 @@ export const HERE_PATH = '/handoff-here';         // on an old address: a tab wi
 export const LEAVE_PATH = '/handoff-leave';       // on an old address: fl_stay reached an ordinary tab (clears it)
 export const STAY_COOKIE = 'fl_stay', STAY_DAYS = 400;
 export const HERE_COOKIE = 'fl_here', HERE_SECS = 60;   // only for the one game page load that follows (the game clears it)
+export const HOP_PARAM = 'fl_hop';               // ?fl_hop=stay|here: this one load is the game, cookie or none (no loop)
 export const PULL_KEY = 'fanglands.handoff.pull'; // where each address keeps the pull: {n: 32 hex, at}
 export const PULL_MS = 30 * 24 * 3600 * 1000;     // a pull is kept for 30 days on both addresses, then a new one is made
 export const ARRIVING_KEY = 'fanglands.handoff.arriving';   // sessionStorage: the game page shows the card while it loads
@@ -64,8 +71,8 @@ const plainPath = p => (typeof p === 'string' && PLAIN_PATH.test(p) ? p : '/');
 // ---------- the front door: what an address serves when it is not /api or /ws ----------
 // www.fanglands.com sends to the bare address for good (301, path and query kept). /handoff on a new address is the
 // start and landing page. On an old address: /handoff-stay, /handoff-here and /handoff-leave set and clear the two
-// cookies; with either cookie the game is served exactly as today; otherwise a PAGE (the game, /admin, any HTML) is the
-// hand-over page. Files are served on the old address as before. Returns null when the static files should answer.
+// cookies; with either cookie, or the one-load marker those two hops add (?fl_hop=, asked by this address's own page),
+// the game is served exactly as today; otherwise a PAGE (the game, /admin, any HTML) is the hand-over page. Files are served on the old address as before. Returns null when the static files should answer.
 // The hand-over runs only when env.HANDOVER is exactly 'on' ([vars] in wrangler.toml, committed: every deploy carries
 // it). Anything else (off, missing, misspelled) keeps the old addresses serving the game as before.
 export function frontDoor(req, url, env) {
@@ -79,7 +86,7 @@ export function frontDoor(req, url, env) {
   if (url.pathname === HERE_PATH) return cookieHop(req, url, HERE_COOKIE, HERE_SECS);
   if (url.pathname === LEAVE_PATH) return redirect(plainPath(url.searchParams.get('to')), 302, `${STAY_COOKIE}=; Max-Age=0; Path=/; Secure; SameSite=Lax`);
   if (!env || env.HANDOVER !== 'on') return null;
-  if (hasCookie(req, STAY_COOKIE) || hasCookie(req, HERE_COOKIE)) return null;
+  if (hasCookie(req, STAY_COOKIE) || hasCookie(req, HERE_COOKIE) || hopped(req, url)) return null;
   if (get && isPage(req, url)) return handoverPage(host, to, head);
   return null;
 }
@@ -90,13 +97,20 @@ function redirect(location, status, cookie) {
 }
 // A cookie is set only when the hand-over page on this same address asked (Sec-Fetch-Site: same-origin; an older
 // browser that does not say is believed). A link from anywhere else just goes to the path: nobody can park a browser on
-// the old address from outside.
+// the old address from outside. The hop goes to the path WITH the one-load marker, so this load is the game even when the
+// browser drops the cookie (blocked cookies, a managed profile): without it, an installed app that keeps no cookie went
+// hand-over page, /handoff-stay, hand-over page... for ever, two Worker requests a turn, through a script's
+// location.replace that no browser counts as too many redirects (round 5 review).
 function cookieHop(req, url, name, secs) {
-  const site = req.headers.get('sec-fetch-site');
   const to = plainPath(url.searchParams.get('to'));
-  if (site && site !== 'same-origin') return redirect(to, 302);
-  return redirect(to, 302, `${name}=1; Max-Age=${secs}; Path=/; Secure; SameSite=Lax`);
+  if (!sameSite(req)) return redirect(to, 302);
+  const q = to.indexOf('?'), parts = q < 0 ? [] : to.slice(q + 1).split('&').filter(p => p && p.split('=')[0] !== HOP_PARAM);
+  parts.push(HOP_PARAM + '=' + (name === STAY_COOKIE ? 'stay' : 'here'));
+  return redirect((q < 0 ? to : to.slice(0, q)) + '?' + parts.join('&'), 302, `${name}=1; Max-Age=${secs}; Path=/; Secure; SameSite=Lax`);
 }
+const sameSite = req => { const site = req.headers.get('sec-fetch-site'); return !site || site === 'same-origin'; };
+// the one-load marker, only from this address's own hop (a link from elsewhere with it gets the hand-over page)
+export const hopped = (req, url) => ['stay', 'here'].includes(url.searchParams.get(HOP_PARAM)) && sameSite(req);
 export function hasCookie(req, name) {
   return (req.headers.get('cookie') || '').split(';').some(c => c.trim() === name + '=1');
 }
@@ -159,16 +173,20 @@ ${script}
 
 // The hand-over page on an old address, in this order:
 //   1. opened as an installed web app (an iPad home-screen icon): /handoff-stay, and the game from then on, as today.
-//   2. a knight here the server does not have, by the strictest rule this page can apply on its own (any account's cloud
-//      copy counts as on the server): /handoff-here, the game right here with its one-time note. No offer, no card.
-//   3. no login: a plain redirect to the same path on the new address (nothing else of this browser's goes there).
+//   2. https://gorkscape.ca/#kept (the admin's list of the backups this device keeps, 72-deviceknights): /handoff-here.
+//   3. no login: any knight saved here is not known to be on the server, so with one, /handoff-here (the game right here
+//      with its one-time note; no offer, no card); with none, a plain redirect to the same path on the new address
+//      (nothing else of this browser's goes there).
 //   4. a login: the card; the pull (fetched once from the new address); the offer of the login and the settings with the
-//      login as a Bearer token. The world answers with the code and the account the login is: with that account known,
-//      the same rule again (now only that account's cloud copies count as on the server); a knight left only here goes
-//      to /handoff-here after all. Otherwise to the landing page with the code.
+//      login as a Bearer token. The world answers with the code, the account, and what it holds of that account's knight
+//      (knightOf: its fingerprint, play time and line). A knight here that is not inside that copy (another account's,
+//      no account's, or this account's with progress that never reached the world) sends the tab to /handoff-here after
+//      all: it logs in there and the game settles it (an upload that never landed goes up then), and the next visit
+//      moves. Otherwise to the landing page with the code.
 // A world that will not take the login (401: it ran out or was banned) is the same as no login. A world that is too busy
 // or cannot be reached (tried twice): with any knight saved here the game is served here; with none, the card's Try
-// again (or go to the game and log in). A #handoff fragment that arrived is never passed on. Nothing here is deleted.
+// again (or go to the game and log in). A #handoff fragment or a ?fl_hop marker that arrived is never passed on.
+// Nothing here is deleted.
 export function handoverPage(self, to, head) {
   const script = `(function () {
   var HOME = ${JSON.stringify('https://' + to)}, SELF = ${JSON.stringify(self)};
@@ -178,7 +196,8 @@ export function handoverPage(self, to, head) {
   ${CARD_JS}
   var path = location.pathname || '/';
   if (!${PLAIN_PATH.toString()}.test(path)) path = '/';
-  var here = path + (location.search || '');
+  var search = (location.search || '').replace(/^[?]/, '').split('&').filter(function (p) { return p && p.split('=')[0] !== ${JSON.stringify(HOP_PARAM)}; }).join('&');
+  var here = path + (search ? '?' + search : '');
   var h = location.hash || '';
   var handoffFrag = h.indexOf('#handoff') === 0;
   var frag = handoffFrag ? '' : h;
@@ -194,9 +213,11 @@ export function handoverPage(self, to, head) {
   var across = function () { go(HOME + here + frag); };
   var token = get(TOKEN);
   if (typeof token !== 'string' || !token) token = '';
-  // 2 and 3: a knight only here stays here; nothing to bring goes straight across
-  if (deviceKnights(get, names, token ? '*' : null) > 0) { stay(); return; }
-  if (!token || typeof fetch !== 'function') { across(); return; }
+  // 2: the admin's list of this device's backups lives here
+  if (h === '#kept') { stay(); return; }
+  // 3: no login: a knight here stays here (nothing is known to be on the server); nothing to bring goes straight across
+  var alone = function () { if (deviceKnights(get, names, null) > 0) stay(); else across(); };
+  if (!token || typeof fetch !== 'function') { alone(); return; }
   // 4: the pull: the one that just came (kept here from now on), or the one kept here, or fetch one from the new address
   var pull = null;
   try {
@@ -227,14 +248,14 @@ export function handoverPage(self, to, head) {
     fetch('/api/handoff/offer', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ keys: keys, pull: pull }), cache: 'no-store', credentials: 'same-origin', signal: ctl ? ctl.signal : undefined })
       .then(function (r) {
         if (over || gone) return;
-        if (r.status === 401) { over = true; clearTimeout(timer); if (deviceKnights(get, names, null) > 0) stay(); else across(); return; }
+        if (r.status === 401) { over = true; clearTimeout(timer); alone(); return; }
         if (r.status === 429 || r.status === 503) { over = true; clearTimeout(timer); cannot(); return; }
         if (!r.ok) { miss(); return; }
         return r.json().then(function (d) {
           if (over || gone) return;
           if (!d || typeof d.code !== 'string' || !/^[0-9a-f]{64}$/.test(d.code) || typeof d.name !== 'string') { miss(); return; }
           over = true; clearTimeout(timer);
-          if (deviceKnights(get, names, d.name) > 0) { stay(); return; }
+          if (deviceKnights(get, names, d.knight && typeof d.knight === 'object' ? d.knight : null) > 0) { stay(); return; }
           go(landAt(d.code));
         });
       })
@@ -326,7 +347,8 @@ export function landingPage(host, head) {
 // Everything lives in the World's memory (world.handoff): the offers waiting, each account's count for the hour, the
 // claims that found nothing per address. A restart of the World forgets it all: a code waiting then is simply gone (the
 // landing page goes back once and the old address offers again), and a count starts again (which costs nothing: an
-// offer writes no row). Nothing about a hand-over ever touches the database but one read of the login.
+// offer writes no row). Nothing about a hand-over ever touches the database but reads: the login, and on an offer the
+// account's latest save (what the world holds of its knight).
 export async function handoffCall(world, req, url, path, method) {
   if (!path.startsWith('/api/handoff/')) return null;
   const now = world.now();
@@ -387,8 +409,10 @@ export function loginOf(world, token, now) {
 //   4. the body: at most HANDOFF_MAX bytes (413 `full`), the pull (32 hex), only the keys in CARRY or HINT_RE, only
 //      strings, and the login in it the same one as the header (400 `bad`)
 //   5. kept in memory under the SHA-256 of a 256-bit code, bound to the SHA-256 of the pull, for HANDOFF_MS; past
-//      ACCT_WAITING_MAX for the account, its oldest goes. `name` is the account (lower case): the page checks its
-//      knights against it.
+//      ACCT_WAITING_MAX for the account, its oldest goes. `name` is the account (lower case); `knight` is what the world
+//      holds of its knight (knightOf: fingerprint, play time, line; null for none), from one more read of its latest
+//      save (a read: the free plan's writes are untouched), so the page can tell a knight here the world has from one
+//      it does not.
 async function offer(world, h, req, now, host) {
   const token = bearer(req);
   const acct = loginOf(world, token, now);
@@ -418,7 +442,8 @@ async function offer(world, h, req, now, host) {
   if (h.offers.size >= WAITING_MAX) throw oops(503, 'too many hand-overs at once: try again soon', 'busy');
   const expires = now + HANDOFF_MS;
   h.offers.set(id, { bind, text, acct, src: host, expires });
-  return json({ code, expires, name: acct });
+  const row = world.sql.exec('SELECT json FROM saves WHERE name_lc = ? ORDER BY ver DESC LIMIT 1', acct).toArray()[0];
+  return json({ code, expires, name: acct, knight: knightOf(row ? row.json : null) });
 }
 
 // {code, pull} -> {keys, from}. One claim per code: it is taken out of memory before the answer goes back, whatever

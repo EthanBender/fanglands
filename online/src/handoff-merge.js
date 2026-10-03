@@ -57,48 +57,64 @@ export const MERGE_SOURCE = String.raw`function handoffMerge(keys, ls, from) {
   return { wrote, kept };
 }`;
 
-// deviceKnights(get, keys, acct): how many knights this browser holds that are NOT on the server, read from storage
+// deviceKnights(get, keys, world): how many knights this browser holds that are NOT on the server, read from storage
 // (get: k -> string or null; keys: every name in storage). src/00-handoff.js has the same function word for word (a
-// test holds them together). acct is the account a login is (lower case, as the world says it), '*' for any account
-// (the hand-over page's first look, before the world has said whose the login is), or null for no login.
-// A save that reads as a knight (JSON with a player) is ON THE SERVER when, by feat/no-play-alone's notes
-// (src/71-login.js: fanglands.slot.N.online = the account, fanglands.slot.N.synced = "account|fingerprint" when the
-// world confirmed holding that exact string; src/72-deviceknights.js: fanglands.dk.kept):
-//   - it is a cloud copy: its owner note is acct and its synced note matches its exact string, or it is the same string
-//     as such a copy;
-//   - or its owner note is acct and that account chose the world's copy over it (fanglands.dk.kept);
-//   - or its owner note is acct and it is not ahead of a cloud copy of acct held here (the same test as
-//     72-deviceknights' ahead: more play time, or a later stamp at no less play time).
-// Anything else counts: a knight with no owner, another account's copy, a copy with progress the world may not have, and
-// every save when there is no login. A browser with none of the notes (before feat/no-play-alone) has no cloud copy,
-// so every save counts. The old single save (fanglands.save.v2) counts only when the game would still make it slot 1
-// (no slot 1 and no current slot, src/14-title.js); otherwise it is a mirror of a slot.
-export const KNIGHTS_SOURCE = String.raw`function deviceKnights(get, keys, acct) {
-  var SLOT_RE = /^fanglands\.slot\.(\d+)$/, S = function (n) { return 'fanglands.slot.' + n; };
+// test holds them together). world is what the world holds of the logged-in account's knight: null when nothing is
+// known (no login, or the world did not answer), the summary the offer answers with ({fp, play, line}: knightOf below;
+// fp null when the account has no knight in the world yet), or the world's save string itself (the game asks for it).
+// It reads no note of any other file, only the slots and the save inside them, so no renamed note can change it:
+//   - a slot (fanglands.slot.N) holding a knight (JSON with a player) is ON THE SERVER when it is the very string the
+//     world holds (the same fingerprint), or when it is inside the world's copy by the knight's line (player.line, which
+//     feat/no-play-alone writes: [segment, play seconds when it began] per start; the same test as 72-deviceknights'
+//     lineIn: they share a segment and this copy's play on it ends where the world's copy went on, or before);
+//   - anything else counts: every knight when nothing is known, a knight no account owns, another account's copy (it may
+//     hold progress only here), a copy of this account with progress the world does not have (an upload that never
+//     landed: it must not be stranded here), a save from before the line that is not the world's exact string.
+// The old single save (fanglands.save.v2) counts only when the game would still make it slot 1 (no slot 1 and no
+// current slot, src/14-title.js); otherwise it is a mirror of a slot. A backup 72-deviceknights keeps
+// (fanglands.kept.<name>) is not a knight; the admin's https://gorkscape.ca/#kept, which lists them, is never sent across.
+export const KNIGHTS_SOURCE = String.raw`function deviceKnights(get, keys, world) {
+  var SLOT_RE = /^fanglands\.slot\.(\d+)$/, i, j, k, raw, d;
   var fp = function (s) { s = String(s); var h = 0x811c9dc5; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36) + '.' + s.length; };
-  var play = function (raw) { try { var d = JSON.parse(raw); return d && typeof d === 'object' && d.player && typeof d.player === 'object' ? (+d.player.playSeconds || 0) : -1; } catch (e) { return -1; } };
-  var mine = function (own) { return typeof own === 'string' && own !== '' && (acct === '*' || own === acct); };
-  var kept = []; try { kept = JSON.parse(get('fanglands.dk.kept') || '[]'); } catch (e) { } if (!Array.isArray(kept)) kept = [];
-  var slots = [], cloud = [], i, j, m, raw, own;
-  for (i = 0; i < keys.length; i++) { m = SLOT_RE.exec(keys[i]); if (m) slots.push(m[1]); }
-  for (i = 0; i < slots.length; i++) {
-    raw = get(S(slots[i])); own = get(S(slots[i]) + '.online');
-    if (raw && play(raw) >= 0 && mine(own) && get(S(slots[i]) + '.synced') === own + '|' + fp(raw)) cloud.push({ raw: raw, own: own, play: play(raw), at: +get(S(slots[i]) + '.at') || 0 });
-  }
-  var covered = function (raw, own, at) {
-    var p = play(raw);
-    for (j = 0; j < cloud.length; j++) if (cloud[j].raw === raw) return true;
-    if (!mine(own)) return false;
-    if (kept.indexOf(own + '|' + fp(raw)) >= 0) return true;
-    for (j = 0; j < cloud.length; j++) if (cloud[j].own === own && !(p > cloud[j].play || (p >= cloud[j].play && at > cloud[j].at))) return true;
+  var parse = function (raw) { try { var d = JSON.parse(raw); return d && typeof d === 'object' && d.player && typeof d.player === 'object' && !Array.isArray(d.player) ? d : null; } catch (e) { return null; } };
+  var playOf = function (d) { return +d.player.playSeconds || 0; };
+  var lineOf = function (l) { var out = []; if (Array.isArray(l)) for (var i = 0; i < l.length; i++) if (Array.isArray(l[i]) && typeof l[i][0] === 'string' && isFinite(+l[i][1])) out.push([l[i][0], +l[i][1]]); return out; };
+  if (typeof world === 'string') { d = parse(world); world = d ? { fp: fp(world), play: playOf(d), line: d.player.line } : null; }
+  var w = world && typeof world === 'object' && typeof world.fp === 'string' && world.fp ? { fp: world.fp, play: +world.play || 0, line: lineOf(world.line) } : null;
+  var inside = function (d) {
+    var lx = lineOf(d.player.line), ly = w.line, px = playOf(d);
+    if (!lx.length || !ly.length) return false;
+    for (i = lx.length - 1; i >= 0; i--) {
+      for (j = ly.length - 1; j >= 0 && ly[j][0] !== lx[i][0]; j--) { }
+      if (j < 0) continue;
+      var xAt = i === lx.length - 1 ? px : (px <= lx[i + 1][1] ? lx[i + 1][1] : Infinity);
+      var yLeft = j === ly.length - 1 ? w.play : ly[j + 1][1];
+      return xAt <= yLeft;
+    }
     return false;
   };
+  var counts = function (raw) { var d = raw ? parse(raw) : null; return !!d && !(w && (fp(raw) === w.fp || inside(d))); };
   var n = 0;
-  for (i = 0; i < slots.length; i++) {
-    raw = get(S(slots[i])); if (!raw || play(raw) < 0) continue;
-    if (!covered(raw, get(S(slots[i]) + '.online'), +get(S(slots[i]) + '.at') || 0)) n++;
-  }
+  for (k = 0; k < keys.length; k++) if (SLOT_RE.test(keys[k]) && counts(get(keys[k]))) n++;
   raw = get('fanglands.save.v2');
-  if (raw && play(raw) >= 0 && get(S(1)) == null && get('fanglands.slot.current') == null && !covered(raw, null, 0)) n++;
+  if (get('fanglands.slot.1') == null && get('fanglands.slot.current') == null && counts(raw)) n++;
   return n;
 }`;
+
+// knightOf(raw): what the offer's answer says of the account's knight in the world, for deviceKnights above: its
+// fingerprint, its play seconds and its line (the last LINE_MAX segments, each [segment, play seconds]). null when the
+// account has no knight there (or it is not a knight). The World runs this one (the pages run the text above); a test
+// holds the two to the same answers.
+export const LINE_MAX = 40;
+export function knightOf(raw) {
+  if (typeof raw !== 'string' || !raw) return null;
+  let d = null;
+  try { d = JSON.parse(raw); } catch (e) { return null; }
+  if (!d || typeof d !== 'object' || !d.player || typeof d.player !== 'object' || Array.isArray(d.player)) return null;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  const line = (Array.isArray(d.player.line) ? d.player.line : [])
+    .filter(e => Array.isArray(e) && typeof e[0] === 'string' && e[0].length <= 64 && Number.isFinite(+e[1]))
+    .slice(-LINE_MAX).map(e => [e[0], +e[1]]);
+  return { fp: h.toString(36) + '.' + raw.length, play: +d.player.playSeconds || 0, line };
+}
