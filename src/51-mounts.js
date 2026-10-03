@@ -303,6 +303,8 @@
       if (player.speed !== HORSE_SPEED) player.speed = HORSE_SPEED; // hover armour / agility / webs all reset speed for the knight on foot
       player.mech.maxHp = HORSE_HP;
       // the core owns several "walker" strings; while a horse is under you they should read as a horse
+      // (the core's "Press X to climb out of the walker" names a machine's key: on her it is G, or GET DOWN on a touch screen)
+      if (notice && /climb out of the walker/i.test(notice.text)) notice.text = touchMode() ? `Tap GET DOWN to get off ${NAME} first.` : `Press G to get off ${NAME} first.`;
       if (notice && /walker/i.test(notice.text)) notice.text = notice.text.replace(/\bthe walker\b/gi, NAME).replace(/\bwalker\b/gi, 'mare');
       for (const f of floaters) if (f.text.indexOf('(walker)') >= 0) f.text = f.text.replace('(walker)', `(${NAME})`);
     } else if (H().owned && H().hp < HORSE_HP) {
