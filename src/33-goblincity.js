@@ -265,11 +265,14 @@
       say('The Gnasher stops. Its arms drop. The boiler sighs once and goes quiet.', 'The Voice');
       say('It worked! It WORKED. For a bit. Four hundred coins, knight, and my spare goggles. And the lever in the corner: when you miss it, pull it. I can always build it again.', 'Tinkerton');
       levelBanner = { text: 'QUEST COMPLETE', sub: 'A Tinker Gone Wrong', t: 3.5 }; sfx('quest');
+    } else if (tq.stage < 2) {
+      // a friend's Gnasher, before this knight has built his own with Tinkerton: no rematch to win, nothing to pay
+      say(tq.stage === 0 ? "Your friend's Gnasher folds. Tinkerton has not met you yet: find him at the gate of Grubmarket." : "Your friend's Gnasher folds. Tinkerton pays for his own Gnasher only: bring him the four parts first.", 'The Voice');
     } else {
       // every other Gnasher is a rematch: the lever's own, or one a friend woke that this knight helped bring down
       tq.rematch = false; tq.kills = (tq.kills || 0) + 1;
       giveOrDrop('coins', 150, player.x, player.y); giveOrDrop('goblin_scrap', 5, player.x, player.y);
-      levelBanner = { text: 'REMATCH WON', sub: `The Gnasher, ${tq.kills + (tq.stage >= 3 ? 1 : 0)} times`, t: 3 };
+      levelBanner = { text: 'REMATCH WON', sub: `The Gnasher, ${tq.kills + 1} times`, t: 3 };
       say(pick(['Down again. Tinkerton pays out of the boiler: 150 coins and a handful of scrap.', 'The Gnasher folds. Coins and scrap, as promised. The lever waits.']), 'The Voice');
     }
     save();
@@ -738,6 +741,16 @@
         killMonster(ph); F.sim(2, []);
         check(P + 'a kill at stage 3 with rematch false (a helper phantom) pays 150 coins + 5 goblin scrap and no goggles', coins() === c0 + 150 && countItem('goblin_scrap') === s0 + 5 && countItem('tinker_goggles') === g0 && TQ().kills === 1 && TQ().stage === 3 && !TQ().rematch,
           { coins: coins() - c0, scrap: countItem('goblin_scrap') - s0, goggles: countItem('tinker_goggles') - g0, kills: TQ().kills });
+        window.INSTANCES.leave(); }
+      // G5 (offline): a kill at stage 0 (a friend's Gnasher, before this knight has met Tinkerton) pays no purse and counts nothing
+      { quest.tinker = Object.assign(freshT(), { stage: 0, rematch: false, kills: 0 }); makeRoom(3); enterLab(); F.sim(1, []); drain(); clearBanners();
+        const gn = spawnGnasher(), c0 = coins(), s0 = countItem('goblin_scrap'), g0 = countItem('tinker_goggles');
+        const ph = window.COOP.phantomOf({ type: 'gnasher', nid: 'Ann:8', x: gn.x, y: gn.y }); monsters.splice(monsters.indexOf(gn), 1);
+        killMonster(ph); F.sim(2, []);
+        const said = [dialog.cur, ...dialog.queue].some(l => l && /Tinkerton has not met you yet: find him at the gate of Grubmarket/.test(l.text));
+        check(P + "a kill at stage 0 (a friend's Gnasher before this knight met Tinkerton) pays no purse, counts no rematch, says where Tinkerton is",
+          coins() === c0 && countItem('goblin_scrap') === s0 && countItem('tinker_goggles') === g0 && TQ().kills === 0 && TQ().stage === 0 && !bannerAhead('REMATCH WON') && said,
+          { coins: coins() - c0, scrap: countItem('goblin_scrap') - s0, kills: TQ().kills, said });
         window.INSTANCES.leave(); }
       // G2: online, not the lab's keeper: the lever asks, sets the rematch, and makes nothing
       { me = 'Cohen'; keeper = 'Ann'; NET.enabled = true; NET.token = 'gnasher-test'; NET.useFake(fake); NET.connect();
