@@ -273,7 +273,7 @@ test('Stage 2: the first knight keeps a world map in his own game; the copy buil
   assert.deepEqual(mons[mons.length - 1].list.map(r => r[0]), ['i0'], 'only the monster within 24 tiles of her');
 });
 
-test('Stage 2: the virtual knight is always keeper and never stale; it is never in who, never sent presence, and its keeper message says server', () => {
+test('Stage 2: the virtual knight is always keeper and never stale; it is never in who, never sent presence, never gifted, traded with or logged in, and its keeper message says server', () => {
   const S = shared();
   const ann = S.knight('Ann', 'deepholm'); S.takeOver(ann);
   const ben = S.knight('Ben', 'deepholm', 640, 1032);
@@ -285,6 +285,13 @@ test('Stage 2: the virtual knight is always keeper and never stale; it is never 
   assert.ok(!ben.last('who').list.some(k => k.n.startsWith('@world')));
   assert.ok(!S.socks.some(s => s.of('p').some(p => p.n.startsWith('@world'))), 'no presence from it');
   assert.ok(S.room.worlds.view().modes.deepholm === 'world');
+  // never gifted, traded with or logged in: it is not one of the Room's knights at all
+  S.say(ben, { t: 'gift', to: '@world:deepholm', id: 'coins', qty: 5 });
+  assert.equal(ben.last('gift_back').id, 'coins', 'a gift to it comes straight back');
+  S.say(ben, { t: 'trade_ask', to: '@world:deepholm' });
+  assert.equal(ben.last('trade_no').code, 'offline', 'a trade with it is refused');
+  assert.equal(S.room.isOnline('@world:deepholm'), false);
+  assert.equal(S.room.loginOf('@world:deepholm'), null, 'no login row');
   // a hit and a boss call go to the copy, as to any keeper
   S.say(ben, { t: 'hit', nid: 'i0', dmg: 4, knock: 14, bomb: false });
   S.T.advance(100);
