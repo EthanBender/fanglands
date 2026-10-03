@@ -882,10 +882,11 @@ works, and the keeper code in `src/75-coop.js` stays as the fallback through all
 Players see nothing. The only server change that reaches the live world is the **meter**: it counts what the free plan
 counts, so the cost gates before later stages read real numbers instead of guesses.
 
-**The meter.** One row per UTC day in a new table (created only if missing, nothing else in the schema changes):
+**The meter.** One row per UTC day in two new tables (each created only if missing, nothing else in the schema changes):
 
 ```
-req_meter (day TEXT PRIMARY KEY, ws_in INTEGER NOT NULL DEFAULT 0, http INTEGER NOT NULL DEFAULT 0, est_requests INTEGER NOT NULL DEFAULT 0)
+req_meter       (day TEXT PRIMARY KEY, ws_in INTEGER NOT NULL DEFAULT 0, http INTEGER NOT NULL DEFAULT 0, est_requests INTEGER NOT NULL DEFAULT 0)
+req_meter_admin (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0)
 ```
 
 - `day` is the UTC date, `'2026-10-03'`. The free plan's day also starts at 00:00 UTC (8 pm in Ontario in summer, 7 pm in winter).
@@ -895,31 +896,47 @@ req_meter (day TEXT PRIMARY KEY, ws_in INTEGER NOT NULL DEFAULT 0, http INTEGER 
   `/ws` upgrade. Static files (the game, `/admin`) never reach the World and are not counted.
 - `est_requests` = `ceil(ws_in / 20) + http`: Durable Object requests as Cloudflare bills them (incoming WebSocket messages
   count 20 to 1). The free plan allows 100,000 a day.
+- `req_meter_admin.http` counts, of those calls, the ones to `/api/admin/*` (refused ones included: Cloudflare bills them
+  too): the parent page and the backups. The game's share is `http - admin` and `ceil(ws_in / 20) + http - admin`, and
+  that is what the cost gate reads. A second table rather than a new column, because phase 1 only ever adds
+  `CREATE TABLE IF NOT EXISTS`.
 - The counts are kept in memory and written with one upsert per day touched: when 200 are waiting, when the last write was
   10 s or more ago (checked on every message and request), on every socket close and on every alarm. A nap can lose at most the
   last 10 s of counts. That is at most 360 rows written an hour while knights play (the free plan allows 100,000 rows written a day).
 - Rows older than 400 days are deleted on the first write of each day after a wake.
-- The admin export (`GET /api/admin/export`) includes `req_meter`.
+- The admin export (`GET /api/admin/export`) includes `req_meter` and `req_meter_admin`.
 
 `GET /api/admin/sim` (Bearer ADMIN_KEY) answers, for now, only the meter:
 
 ```
-{ meter: { today: {day, wsIn, http, est}, days: [{day, wsIn, http, est}, ... newest first, 14 days], freeLimit: 100000, waiting: n } }
+{ meter: { today: {day, wsIn, http, admin, gameHttp, est, gameEst}, days: [same, ... newest first, 14 days], freeLimit: 100000, waiting: n } }
 ```
 
 `today` includes the counts not yet written (`waiting` says how many). Later stages add `modes`, `tick`, `boot`, `heap`,
 `copies`, `fallbacks`, `move`, `combat` beside `meter`, and `POST /api/admin/sim` for the switches; nothing reads them yet.
 
 The parent page (`/admin`) has a **Shared world** section with one line for today and the last 7 days under it:
-"Today (UTC): 12,345 socket messages and 678 calls, about 1,296 of the 100,000 requests a day the free plan allows (1.3%)."
+"Today (UTC), read at 7:42:10 PM: the game sent 12,345 socket messages and made 678 calls, about 1,296 of the 100,000
+requests a day the free plan allows (1.3%). This page and the backups made 40 calls on top, so about 1,336 in all (1.3%)."
+The table's columns: day, messages, game calls, the game's requests, its share of the free plan, this page's calls, and
+everything's share.
+
+**The parent page's own traffic.** Its 10 s refresh reads who is online, the chat, the moderation log and the trades:
+24 calls a minute while the page is in view. It reads the meter only when it opens and when Refresh is pressed, never
+every 10 s, and while the page is hidden (another tab, a closed laptop, a locked iPad) the timer is stopped and it makes no
+calls at all; shown again, it refreshes once and the timer starts again. `online/test/admin-page.test.mjs` runs the page's
+script against a stand-in DOM and holds it to exactly that. Left open and in view all day it would still be 34,560 calls
+(1,440 minutes × 24), which is why its calls are counted apart.
 
 **The game copy** (built by every `./build.sh`, not imported by the Worker yet, so it is not deployed):
 
 - `tools/build-sim.mjs` turns `index.html` into `online/src/sim/game.mjs` (git-ignored, rebuilt by `build.sh` and so by both
   deploy scripts): `export function makeGame(window) { ...the whole game...; return { peek, poke, window } }` plus
   `export const FILES` (each `src/` file's first line in the module, for reading stack traces). Every call is an independent
-  world. An acorn + eslint-scope pass rewrites every name the script reads without declaring it to `window.NAME`, `Math` and
-  `Date` included, so each copy has its own seeded dice and its own clock. `--strip` (what `build.sh` writes) turns the 12
+  world. An acorn + eslint-scope pass rewrites every name the script reads without declaring it to `window.NAME`, `Math`,
+  `Date` and `performance` included, so each copy has its own seeded dice and its own clock. A small probe,
+  `__simProbe()` (`Date.now()`, `new Date()`, `performance.now()`, `Math.random()` written as the game writes them), goes
+  through the same rewrite, so a check can read the clock and dice exactly as the game's code does. `--strip` (what `build.sh` writes) turns the 12
   presentation files into no-op stand-ins (a stand-in remembers what is written to it, so `title.active = false` reads back
   `false`) and removes the drawing, HUD, panel, key-help and self-test registrations; `--keep-tests` keeps the self-tests.
   Every `HOOKS` function a copy holds is tagged with the file that registered it (`fn.__file`, e.g. `'35-night'`).
@@ -953,11 +970,31 @@ The parent page (`/admin`) has a **Shared world** section with one line for toda
   The **watchdog** hands a map back to the keeper path (`onFallback(map, reason)`, reasons `boot`, `throws`, `slow`, `heap`,
   `cap`) on a boot throw, 3 tick throws within 10 s, 3 ticks in a row over 25 ms, the heap over budget, or more copies
   than the cap. Inside workerd the clock only moves on I/O, so there a tick's cost is read as the lateness of the next timer.
-- `tools/sim-suite.mjs` (a deploy gate): the whole `HOOKS.selfTest` suite through `makeGame` (full build) with the same
-  pass count as `tools/headless.js`; two copies share nothing (`INSTANCES`, `COOP`, `NIGHT`, `monsters`); stripped equals
-  full after 600 ticks (same map hash, same monster and knight state hash), alone and through SimHost with 5 knights
-  fighting; the stand-in never respawns and never leaves an instance; each instance's `worldGen: false` build matches its
-  full build.
+- `tools/sim-suite.mjs` (a deploy gate):
+  - 0, **what the stripped copy reads from the stripped files.** A stripped name is a stand-in that reads as a truthy
+    proxy, `0` as a number and nothing when iterated, so a game rule that reads one would quietly differ on the server.
+    Every place a kept `src/` file reads the value of a stripped name (or of the `window.HK`, `WIKI`, `ICONS`, `LIGHTS`,
+    `PLAYTHROUGH` stand-ins) must be on `STRIP_READS` in `tools/build-sim.mjs`, by name and file, with the reason it is
+    safe. Not counted: `typeof`, a call whose result is thrown away (`sfx('hit');`), a write, and code nobody can reach
+    once the drawing registrations are gone (named functions whose only callers were removed, found by scope analysis).
+    Today: 289 reads of 29 names, all listed (`node tools/build-sim.mjs --strip --reads` prints each with its line). Two
+    reads in update code were looked at closely: `title.active` (75-coop, 91-royalmine) reads `false`, as for a knight past
+    the title; `HK.held('block')` (55-riding) is a truthy stand-in, but only reached for the copy's own knight on a machine,
+    and the parked stand-in has none. The render wrappers' extra work (43-settings' sound flags, 91-cloudkingdom re-mounting
+    its buildings) never runs in a copy, which never renders; 91's is also done by `INSTANCES.enter`/`leave`, `load()` and
+    `respawnPoint()`.
+  - 1, the whole `HOOKS.selfTest` suite through `makeGame` (**full build only**) with the same pass count as
+    `tools/headless.js`. Through the stripped build the suite cannot run: its first chapter presses panel buttons that only
+    the stripped drawing makes. Check 0 and the parity runs (3a, 3b, 4b) stand for the stripped build; that is the gap the
+    owner's Claude accepts, or not, before Stage 2.
+  - 2, two copies share nothing (`INSTANCES`, `COOP`, `NIGHT`, `monsters`, the map, `HOOKS`, the knight); 2a, each has its
+    own dice and clock **read through the game's own code** (`rint()`, `nowMs()`, the Royal Mine's vein clock and the probe:
+    an hour on in one copy is an hour on there and nowhere else); 2b, both generated modules name no clock, dice, timer or
+    global of the machine: every name they do not declare is on a fixed list of plain built-ins kept in the suite itself.
+    Leaving `Date`, `Math` or `performance` un-rewritten turns 2a and 2b red.
+  - 3, stripped equals full after 600 ticks (same map hash, same monster and knight state hash), alone and through SimHost
+    with 5 knights fighting; 4, the stand-in never respawns and never leaves an instance; 5, each instance's
+    `worldGen: false` build matches its full build.
 
 **Deploy gates.** `online/deploy.sh` and `~/.fanglands/tools/deploy-test.sh` run, each only when its file is there:
 `node tools/sim-suite.mjs`, `node tools/mmo-sim.js --sim` (once `tools/mmo-sim.js` knows `'--sim'`, written that way),
