@@ -34,13 +34,25 @@
     greater_poultice: { name: 'Greater poultice', value: 260, color: '#4fbf6a', shape: 'powder', heal: 45 },
     scale_cloak: { name: 'Scale cloak', value: 900, color: '#4a7a5a', shape: 'cape', stack: 1, armour: { slot: EQUIP_SLOTS.includes('cape') ? 'cape' : 'body', def: 12 } },
     golden_bread: { name: 'Golden loaf', value: 90, color: '#f0d878', shape: 'bread', heal: 24 },
-    obsidian_blade: { name: 'Obsidian blade', value: 1400, color: '#2f2a3a', shape: 'sword', stack: 1, weapon: { att: 30, maxHit: 17 } },
-    obsidian_helm: { name: 'Obsidian helm', value: 800, color: '#332d3f', shape: 'helm', stack: 1, armour: { slot: 'head', def: 26 } },
+    // a blade needs str and cd like every weapon (playerMaxHit reads str; it once had a stray maxHit and hit for nothing);
+    // Smithing 45, one step over the stormstone sword's 34 / 30
+    obsidian_blade: { name: 'Obsidian blade', value: 1400, color: '#2f2a3a', shape: 'sword', stack: 1, weapon: { str: 36, att: 30, cd: 0.45 } },
+    // the helm slot is 'helm' (EQUIP_SLOTS): it once said 'head', and gave no defence
+    obsidian_helm: { name: 'Obsidian helm', value: 800, color: '#332d3f', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 26 } },
   });
   for (const id of ['herb_seed', 'herbs', 'goldenwheat_seed', 'golden_wheat', 'dragonfruit_seed', 'dragonfruit', 'raw_pike', 'pike', 'raw_salmon', 'salmon',
     'raw_swordfish', 'swordfish', 'raw_shark', 'shark', 'herb_poultice', 'greater_poultice', 'scale_cloak', 'golden_bread', 'obsidian_blade', 'obsidian_helm']) {
     ITEMS[id].id = id; if (ITEMS[id].stack === undefined) ITEMS[id].stack = 50;
   }
+
+  // a knight who wore the obsidian helm while its slot said 'head' has it in player.equip.head, where nothing reads it:
+  // it goes on his head (the helm slot) if that is free, and back in his pack (or at his feet) if not
+  HOOKS.update.push(() => {
+    const e = player.equip; if (!e || !e.head) return;
+    const id = e.head; delete e.head;
+    if (!e.helm) e.helm = id; else giveOrDrop(id, 1, player.x, player.y, true);
+    save();
+  });
 
   // ---------- Greta sells the seeds; Salt Pete sells the deep-sea bait ----------
   if (SHOPS.seeds) SHOPS.seeds.stock.push(['herb_seed', 8], ['goldenwheat_seed', 30], ['dragonfruit_seed', 90]);

@@ -45,10 +45,7 @@
     cloud_essence: { name: 'Cloud essence', value: 120, color: '#dff0ff', shape: 'powder' },
   });
   ITEMS.wind_flute.id = 'wind_flute'; ITEMS.cloud_essence.id = 'cloud_essence'; ITEMS.cloud_essence.stack = 50;
-  // Godly Plated is forged in Aerie now, not at Brakka's anvil: the four recipes (registered by the Ashfields file, which loads
-  // earlier) leave the anvil list. They keep their objects, re-stationed to 'skyforge' (no station panel lists that), so
-  // `RECIPES.find(r => r.out === 'godly_body')` used by older self-tests still resolves.
-  for (const r of RECIPES) if (/^godly_/.test(r.out) && r.station === 'anvil') r.station = 'skyforge';
+  // Godly Plated is forged in Aerie, not at Brakka's anvil (27-dragons no longer puts any Godly row on the anvil).
   // Halcyon's own table: dragon scale + mithril + obsidian, Smithing 30, no anvil, no hammer
   const FORGE = [
     { out: 'godly_helm', scales: 8, mithril: 2, label: '8 Dragon scales + 2 Mithril bars + Obsidian → Godly winged helm' },
@@ -58,6 +55,10 @@
   ];
   const FORGE_LV = 30, FORGE_XP = 500;
   const forgeNeeds = f => [['dragon_scale', f.scales], ['mithril_bar', f.mithril], ['obsidian', 1]];
+  // the four rows in RECIPES are this table, at station 'skyforge' (no station panel lists it; the wiki reads FORGE), so
+  // `RECIPES.find(r => r.out === 'godly_body')` resolves and any list built off RECIPES shows what Halcyon really asks
+  for (const r of RECIPES.filter(q => /^godly_/.test(q.out))) RECIPES.splice(RECIPES.indexOf(r), 1);
+  for (const f of FORGE) RECIPES.push({ out: f.out, qty: 1, needs: forgeNeeds(f), station: 'skyforge', skill: 'smithing', lv: FORGE_LV, xp: FORGE_XP, label: f.label });
   const canForge = f => skillLv('smithing') >= FORGE_LV && forgeNeeds(f).every(([id, q]) => countItem(id) >= q);
   function forge(f) {
     if (!ITEMS[f.out]) { notify('Halcyon frowns: the pattern for that is lost.'); return false; }
