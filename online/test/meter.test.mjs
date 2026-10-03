@@ -185,15 +185,15 @@ test('the World counts every request and socket message, writes on close and ala
   assert.deepEqual(adminOf(ctx.storage.sql), [{ day: '2026-10-03', http: 2 }], 'and the admin calls with it');
   await call(w, 'GET', '/api/status');
   w.alarm();
-  assert.equal(rowsOf(ctx.storage.sql)[0].http, 6, 'an alarm writes');
+  assert.equal(rowsOf(ctx.storage.sql)[0].http, 7, 'an alarm writes, and is itself a billed request (the status call 6, the alarm 7)');
   // the export carries the table; a nap (a new World on the same storage) keeps counting the same day
   r = await call(w, 'GET', '/api/admin/export', undefined, ENV.ADMIN_KEY);
-  assert.deepEqual(r.data.req_meter, [{ day: '2026-10-03', ws_in: 25, http: 6, est_requests: 8 }]);
+  assert.deepEqual(r.data.req_meter, [{ day: '2026-10-03', ws_in: 25, http: 7, est_requests: 9 }]);
   assert.deepEqual(r.data.req_meter_admin, [{ day: '2026-10-03', http: 2 }]);
   // the export call itself still waits in this World's memory: a nap right now loses it (at most 10 s of counts)
   const w2 = new TestWorld(ctx, ENV);
   r = await call(w2, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
-  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 7, admin: 3, gameHttp: 4, est: 9, gameEst: 6 });
+  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 8, admin: 3, gameHttp: 5, est: 10, gameEst: 7 });
 });
 
 test('admin calls land in their own column: every /api/admin/* call, refused or not; nothing else', async () => {
@@ -208,7 +208,7 @@ test('admin calls land in their own column: every /api/admin/* call, refused or 
   let r = await call(w, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
   assert.deepEqual(r.data.meter.today, { day: '2026-10-04', wsIn: 0, http: 34, admin: 32, gameHttp: 2, est: 34, gameEst: 2 });
   w.alarm();
-  assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-04', ws_in: 0, http: 34, est_requests: 34 }], 'req_meter still counts every call (what is billed)');
+  assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-04', ws_in: 0, http: 35, est_requests: 35 }], 'req_meter still counts every call (what is billed), and the alarm is one more');
   assert.deepEqual(adminOf(ctx.storage.sql), [{ day: '2026-10-04', http: 32 }]);
   // a Meter on its own: http(true) is the admin's, http() the game's
   const sql = sqlOf(new DatabaseSync(':memory:')), m = new Meter(sql, () => at('2026-10-04T10:00:00Z'));
@@ -260,4 +260,17 @@ test('the meter on a world made by the live schema: two new tables, nothing else
   const m2 = new Meter(sql2, () => at('2026-10-03T12:00:00Z'));
   assert.deepEqual(m2.view().today, { day: '2026-10-03', wsIn: 40, http: 10, admin: 0, gameHttp: 10, est: 12, gameEst: 12 });
   assert.equal(rows(), rowsBefore);
+});
+
+test('every alarm is counted as a billed request, and an alarm that throws still counts', async () => {
+  const db = new DatabaseSync(':memory:'), ctx = makeCtx(db);
+  T = at('2026-10-05T10:00:00Z');
+  const w = new TestWorld(ctx, ENV);
+  for (let i = 0; i < 3; i++) w.alarm();
+  assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-05', ws_in: 0, http: 3, est_requests: 3 }]);
+  const tick = w.room.tick; w.room.tick = () => { throw new Error('boom'); };
+  const err = console.error; console.error = () => { };
+  try { w.alarm(); } finally { console.error = err; w.room.tick = tick; }
+  assert.equal(rowsOf(ctx.storage.sql)[0].http, 4);
+  assert.deepEqual(adminOf(ctx.storage.sql), [], 'an alarm is the game\'s, not the admin page\'s');
 });

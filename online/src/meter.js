@@ -2,7 +2,8 @@
 // THE METER — what the free plan counts, one row per UTC day (docs/ONLINE.md, "The shared world", Stage 0)
 // Cloudflare bills a Durable Object for every HTTP request that reaches it and for every 20 incoming WebSocket
 // messages; the free plan allows 100,000 of those a day, and the day starts at 00:00 UTC. The World counts both here
-// so the cost gates before the shared-world stages read real numbers. Pings the runtime answers by itself never reach
+// so the cost gates before the shared-world stages read real numbers. Every alarm the World runs is billed as a request
+// too, so world.js counts each one as an HTTP request. Pings the runtime answers by itself never reach
 // the World, so they are not counted (and are not billed as messages the World handled).
 //
 // Writing a row per message would cost more than it measures, so the counts wait in memory and go out as one upsert

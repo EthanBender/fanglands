@@ -89,7 +89,8 @@ export class World {
   webSocketMessage(ws, msg) { this.meter.ws(); if (typeof msg === 'string') this.room.message(this.wrap(ws), msg); }
   webSocketClose(ws, code, reason) { this.room.leave(this.wrap(ws)); try { ws.close(1000, 'bye'); } catch (e) { } this.meter.flush(); }
   webSocketError(ws) { this.room.leave(this.wrap(ws)); this.meter.flush(); }
-  alarm() { try { this.room.tick(); } catch (e) { console.error('tick', e); } this.meter.flush(); }
+  // Cloudflare bills every alarm invocation as a Durable Object request, so the meter counts it as one
+  alarm() { this.meter.http(false); try { this.room.tick(); } catch (e) { console.error('tick', e); } this.meter.flush(); }
 
   // ---------- HTTP ----------
   async fetch(req) {

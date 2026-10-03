@@ -986,7 +986,10 @@ script against a stand-in DOM and holds it to exactly that. Left open and in vie
   - 1, the whole `HOOKS.selfTest` suite through `makeGame` (**full build only**) with the same pass count as
     `tools/headless.js`. Through the stripped build the suite cannot run: its first chapter presses panel buttons that only
     the stripped drawing makes. Check 0 and the parity runs (3a, 3b, 4b) stand for the stripped build; that is the gap the
-    owner's Claude accepts, or not, before Stage 2.
+    owner's Claude accepts, or not, before Stage 2. Decided 2026-10-03: accepted for Stages 0 and 1 (no copy runs
+    anything a player sees). Before Stage 2 turns a copy on for any map, every selfTest check that exercises monsters,
+    combat, drops, instances or night must also run through the STRIPPED build (give the copy the stand-ins those
+    checks press, or mark the UI-only checks and run the rest), with the same pass count.
   - 2, two copies share nothing (`INSTANCES`, `COOP`, `NIGHT`, `monsters`, the map, `HOOKS`, the knight); 2a, each has its
     own dice and clock **read through the game's own code** (`rint()`, `nowMs()`, the Royal Mine's vein clock and the probe:
     an hour on in one copy is an hour on there and nowhere else); 2b, both generated modules name no clock, dice, timer or
