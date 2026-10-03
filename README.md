@@ -3,7 +3,7 @@
 A 2D top-down knight adventure. Textured shapes, not pixels. Goblins with machines.
 A dragon only legends have heard about.
 
-- **Play online:** https://gorkscape.ca — the same game, served from a Cloudflare Worker, with accounts, cloud
+- **Play online:** https://fanglands.com (the first address, gorkscape.ca, hands over to it) — the same game, served from a Cloudflare Worker, with accounts, cloud
   saves and friends on the same map (see `docs/ONLINE.md`). The GitHub Pages address stays the offline, single-player copy.
 - **Play:** open `index.html` in any browser. No install.
 - **Edit:** the source lives in `src/*.js` (one module per system). Run `./build.sh` to

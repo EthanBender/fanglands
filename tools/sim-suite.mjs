@@ -72,7 +72,7 @@ function headlessWindow() {
   const quiet = Object.assign(Object.create(console), { table: () => { }, log: noop, info: noop, warn: noop, error: noop });
   const g = {
     innerWidth: 1000, innerHeight: 700, devicePixelRatio: 1, addEventListener: noop, requestAnimationFrame: noop, setInterval: noop, setTimeout, clearTimeout,
-    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
+    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; }, key: i => { const k = Object.keys(store)[i]; return k === undefined ? null : k; }, get length() { return Object.keys(store).length; } },
     performance: { now: () => Date.now() }, console: quiet, navigator: { maxTouchPoints: 0 },
     document: { getElementById: () => mkCanvas(), createElement: () => mkCanvas(), fonts: null },
   };

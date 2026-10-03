@@ -99,15 +99,20 @@ const SETTINGS = (() => {
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { } };
 
   // ---------- persistence ----------
+  // values saved for rows another file adds later (addRow: 67-questbox's questHelper, 69-retaliate's retaliate). The
+  // boot loads before those files run, so a value it cannot place yet is kept here as it was, saved with the rest, and
+  // handed to the row when it is added; without this every boot put Fight back and the quest helper back to on.
+  let kept = {};
   function save() {
-    lsSet(KEY, JSON.stringify(S));
+    lsSet(KEY, JSON.stringify(Object.assign({}, kept, S)));
     for (const k in LEGACY) lsSet(LEGACY[k][0], LEGACY[k][2](S[k]));
   }
   // JSON first, then the legacy keys win for sound / music / kid (the core toggles write only those)
   function load() {
     Object.assign(S, DEFAULTS);
     const raw = lsGet(KEY);
-    if (raw) { try { const j = JSON.parse(raw); for (const k in OPTIONS) if (j && OPTIONS[k].includes(j[k])) S[k] = j[k]; } catch (e) { } }
+    kept = {};
+    if (raw) { try { const j = JSON.parse(raw); for (const k in OPTIONS) if (j && OPTIONS[k].includes(j[k])) S[k] = j[k]; if (j && typeof j === 'object') for (const k in j) if (!(k in OPTIONS) && /^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(k) && j[k] !== null && typeof j[k] !== 'object') kept[k] = j[k]; } catch (e) { } }
     for (const k in LEGACY) { const v = lsGet(LEGACY[k][0]); if (v !== null) S[k] = LEGACY[k][1](v); }
     apply(); save();
   }
@@ -135,7 +140,8 @@ const SETTINGS = (() => {
   function addRow(row, def, options, after, onApply) {
     DEFAULTS[row.key] = def; OPTIONS[row.key] = options; EXTRA[row.key] = onApply;
     let v = def; const raw = lsGet(KEY);
-    if (raw) { try { const j = JSON.parse(raw); if (j && options.includes(j[row.key])) v = j[row.key]; } catch (e) { } }
+    if (row.key in kept) { if (options.includes(kept[row.key])) v = kept[row.key]; delete kept[row.key]; }
+    else if (raw) { try { const j = JSON.parse(raw); if (j && options.includes(j[row.key])) v = j[row.key]; } catch (e) { } }
     S[row.key] = v;
     const i = ROWS.findIndex(r => r.key === after); ROWS.splice(i < 0 ? ROWS.length : i + 1, 0, row);
   }
@@ -502,6 +508,16 @@ const SETTINGS = (() => {
         const migrated = S.sound === false && S.music === false && S.kid === true && audioMuted === true && MUSIC.enabled() === false && window.__kidmode === true && !!lsGet(KEY) && S.text === 'normal';
         lsSet(KEY, keep.j); lsSet('fanglands.muted', keep.m); lsSet('fanglands.music', keep.u); lsSet('fanglands.kidmode', keep.k); load();
         check('settings: persist as JSON under fanglands.settings and round-trip; the legacy muted / music / kidmode keys migrate on a first load', saved && back && migrated, { saved, back, migrated }); }
+      // a row another file adds after the boot's load (questHelper, retaliate) keeps its saved value through a reload
+      { const keepJ = lsGet(KEY), j0 = JSON.parse(keepJ || '{}');
+        lsSet(KEY, JSON.stringify(Object.assign({}, j0, { zzLater: 'b' }))); load();
+        const survived = JSON.parse(lsGet(KEY)).zzLater === 'b';
+        addRow({ key: 'zzLater', name: 'Later row' }, 'a', ['a', 'b'], 'kid', () => { });
+        const took = S.zzLater === 'b';
+        const ri = ROWS.findIndex(r => r.key === 'zzLater'); if (ri >= 0) ROWS.splice(ri, 1);
+        delete DEFAULTS.zzLater; delete OPTIONS.zzLater; delete EXTRA.zzLater; delete S.zzLater; delete kept.zzLater;
+        lsSet(KEY, keepJ); load();
+        check('settings: a value saved for a row another file adds later (Fight back, the quest helper) survives the boot\'s load and lands when the row is added', survived && took, { survived, took }); }
       // reset: two taps
       { set('text', 'large'); set('damage', false); set('stick', 'right'); openPanel('settings'); seek('set:reset'); const c1 = F.clickButton('set:reset'); const still = S.text === 'large' && S.damage === false && buttons.some(b => b.label === 'set:reset'); render();
         const c2 = F.clickButton('set:reset'); const done = S.text === 'normal' && S.damage === true && S.stick === 'left' && JSON.parse(lsGet(KEY)).text === 'normal'; closePanel(); uxConfirm = null;
