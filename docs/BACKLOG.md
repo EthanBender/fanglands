@@ -199,16 +199,14 @@ Built but NOT through its adversarial review yet (it passed the suite and was de
 | Ashfields edge, auto-retaliate | fix/0925-ashfields, fix/0925-retaliate, in master | Stopped mid-build and shipped as saved: both passed the suite together, neither was reviewed. Check the Ashfields edge all the way round and try to break auto-retaliate (two monsters, throwers, rivers, machines, online). |
 | Redcut edge, axe in the stump, instance maps + banners | fix/0925-canyon, fix/0925-axe, fix/map-labels-banners, in master | Finished by their builders, not reviewed. |
 
-Cloud Kingdom polish (unfinished work saved on feat/cloudkingdom as 6a9b2ef, taken OUT of the release because it
-crashed a check; screenshots of the problems in ~/.fanglands/work/cohen/rescued/ckr3rev/):
-- The two Great Gate towers are drawn over the inside of Halcyon's Sky Forge and the house aer_h4 (the one real bug).
-- The market square is mostly empty; stalls should read as shops with goods.
-- The Sky Forge has no hearth or anvil; the Cloud Oven bakery has no oven.
-- The market fountain's statue does not read as a winged person.
-- The east and west walls read as a walkway from above.
-- The 'day' sun is a white glare disc that bleaches buildings under the minimap.
-- A stray row of flagstone by the Wishing Well joins nothing.
-- On a laptop the keep's cone and pennant are cut off from the plaza.
+Cloud Kingdom polish: DONE on `feat/cloudkingdom-polish` (2026-10-03, not merged; the owner decides). Every item of the
+list: the Great Gate's towers no longer draw over the Sky Forge or the house aer_h4 (a room reads whole, K23); the market
+has four two-cell stalls with goods and a seller each, two shoppers, crates and barrels (K24); the Sky Forge has a hearth,
+bellows, the cloud-anvil and a tool rack, the Cloud Oven its great oven and bread racks (K24); the market statue is a
+winged person (K26); the west and east walls stand as walls (K26); the day sun is off the screen, no glare (88's daylight
+check); the flagstones by the Wishing Well are a garden path from the Ring Road to the lane (K25); the keep's cone and
+pennant are on a 1280x800 screen from the door to the fountain's star (a small camera nudge, HOOKS.camera, K27).
+Screenshots in ~/fanglands-wt/kingdompolish-shots/final/.
 
 The new HUD (Storybook Heraldry) — the biggest item. Owner: "the HUD needs work because is crowded and not organized or
 cohesive looks like a bunch of AI coded buttons" and "it should feel good from iPhone to iPad to computer". Chosen by two
