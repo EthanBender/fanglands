@@ -4,65 +4,94 @@
 // so anyone with the old domain doesnt notice the diffrance for now?"
 //
 // A browser keeps its saves and its login per address, so a plain redirect would land a kid on fanglands.com logged
-// out with no local saves. So a page on gorkscape.ca is a tiny hand-over page instead of the game. The hop, for a
-// browser that has something to hand over (docs/ONLINE.md, "Two addresses"):
-//   1. gorkscape.ca/<path>             the hand-over page sees Fanglands keys here and asks the new address for a pull
-//   2. fanglands.com/handoff           the start page keeps a fresh random pull in fanglands.com's own storage and goes
-//                                      back with it after # (#handoff-pull=<32 hex>)
-//   3. gorkscape.ca/<path>#handoff-pull=<pull>   the hand-over page offers this browser's keys, bound to that pull,
-//                                      and gets a one-time code
-//   4. fanglands.com/<path>#handoff=<code>       src/00-handoff.js claims the code WITH the pull it kept, writes what
-//                                      is missing, takes the code off the address and starts the game
-// The code and the pull only ever ride after # (never sent to any server, in no log). A claim needs both, so a code
-// made by anyone else is useless in this browser: it never kept their pull. A browser with nothing to hand over just
-// goes across (step 1 straight to the game).
-//
-// The front door (frontDoor, used by worker.js) decides what each address serves. The offer and the claim
-// (handoffCall, used by world.js) live in the World: one table, short-lived rows, nothing kept after a claim.
-// /api/* and /ws answer on every address exactly as before, so an open game on gorkscape.ca never notices.
+// out. So a page on gorkscape.ca (or www.gorkscape.ca: its own storage, its own hand-over) is a tiny hand-over page,
+// not the game. docs/ONLINE.md, "Two addresses", has the whole story; in short:
+//   - an iPad home-screen icon (a page opened as an installed web app) is never sent away: the first launch sets a
+//     cookie on the old address (/handoff-stay) and from then on the old address serves the game to it exactly as
+//     today, full screen, no hops. The game shows a calm one-time note about the new home (src/00-handoff.js).
+//   - a browser with nothing to hand over goes straight to the same path on fanglands.com.
+//   - a browser with Fanglands keys offers them to the world, bound to a pull (a secret both of this browser's
+//     addresses keep), and goes to fanglands.com/handoff#land=<code>. That landing page claims the code WITH the pull,
+//     merges what is missing (handoff-merge.js), takes the code off the address and history, and goes on to the same
+//     path: the game, /admin, any page. The game page is loaded and parsed once.
+//   - the first time, the pull is fetched from fanglands.com (/handoff#back=...), then both addresses keep it, so later
+//     visits skip those two hops.
+// Every page the kid sees on the way shows a small dark card, "Bringing your knight over...", never a blank screen.
+// The code and the pull only ever ride after # (never sent to any server, in no log). A code made by anyone else is
+// useless in this browser: it was bound to their pull. The keys wait in the World sealed with a key made from the code,
+// which is never stored, so a row at rest (or in a backup bookmark) is unreadable.
+// The world keeps two budgets: an offer carrying a login the world knows (a real kid) has its own per-account budget
+// that no anonymous offer can touch; anonymous offers (knights held only on a device) are capped hard globally and per
+// address (an IPv6 address counts by its /48). /api/* and /ws answer on every address exactly as before.
 // ============================================================================
 
 import { json, oops } from './http.js';
 import { randomHex, sameString } from './auth.js';
+import { handoffMerge } from './handoff-merge.js';
 
-// where each old address hands over to (the test world mirrors the live one), and back
+// where each old address hands over to (the test world mirrors the live one), and the old addresses each new one takes
 export const MOVES = { 'gorkscape.ca': 'fanglands.com', 'www.gorkscape.ca': 'fanglands.com', 'test.gorkscape.ca': 'test.fanglands.com' };
 export const HOMES = ['fanglands.com', 'www.fanglands.com', 'test.fanglands.com'];
-export const BACK = { 'fanglands.com': 'gorkscape.ca', 'www.fanglands.com': 'gorkscape.ca', 'test.fanglands.com': 'test.gorkscape.ca' };
-export const START_PATH = '/handoff';             // the start page on a new address (step 2)
-export const PULL_KEY = 'fanglands.handoff.pull'; // where the start page keeps the pull in the new address's storage
-export const PULL_MS = 5 * 60 * 1000;             // a pull is good for 5 minutes on the new address
+export const OLDS = { 'fanglands.com': ['gorkscape.ca', 'www.gorkscape.ca'], 'test.fanglands.com': ['test.gorkscape.ca'] };
+export const START_PATH = '/handoff';             // the start and landing page on a new address
+export const STAY_PATH = '/handoff-stay';         // on an old address: a home-screen icon stays here (sets the cookie)
+export const LEAVE_PATH = '/handoff-leave';       // on an old address: the cookie went somewhere it should not (clears it)
+export const STAY_COOKIE = 'fl_stay';
+export const STAY_DAYS = 400;
+export const PULL_KEY = 'fanglands.handoff.pull'; // where each address keeps the pull: {n: 32 hex, at}
+export const PULL_MS = 30 * 24 * 3600 * 1000;     // a pull is kept for 30 days on both addresses, then a new one is made
+export const ARRIVING_KEY = 'fanglands.handoff.arriving';   // sessionStorage: the game page shows the card while it loads
 export const HANDOFF_MS = 3 * 60 * 1000;          // a code is good for 3 minutes, then it is gone
 export const HANDOFF_MAX = 1500000;               // bytes in one offer: three slots of up to 512 KB (SAVE_MAX) are about this
 export const HANDOFF_KEYS_MAX = 400;              // keys in one offer
-export const OFFERS_PER_MIN = 10, CLAIMS_PER_MIN = 20;   // per address (an IPv6 address counts by its /64)
-export const ADDRESS_BYTES_MAX = 3 * 1024 * 1024; // offer bytes one address may have waiting at once
-export const STORED_MAX = 300, STORED_BYTES_MAX = 48 * 1024 * 1024;   // all offers waiting at once
-// the keys a browser may hand over: the game's own (fanglands.* and the fl_ hints), never the hand-over's own notes
+// anonymous offers (no login the world knows): per address (an IPv6 address by its /48) and all together
+export const OFFERS_PER_MIN = 10, ADDRESS_BYTES_MAX = 3 * 1024 * 1024;
+export const ANON_ROWS_MAX = 200, ANON_BYTES_MAX = 32 * 1024 * 1024;
+// offers with a login the world knows: per account, and all together (a flood here needs hundreds of real accounts)
+export const ACCT_PER_MIN = 20, ACCT_ROWS_MAX = 3;
+export const LOGGED_ROWS_MAX = 2000, LOGGED_BYTES_MAX = 256 * 1024 * 1024;
+export const CLAIM_FAILS_PER_MIN = 20, REFUSED_PER_MIN = 20;   // per address: claims that found nothing, calls from elsewhere
+// the keys a browser may hand over: the game's own (fanglands.* and the fl_ hints), never the hand-over's own notes and
+// never anything to do with the parent page (its key lives in sessionStorage today; this keeps it that way if it moves)
 export const KEY_RE = /^(fanglands\.|fl_)[A-Za-z0-9_.:-]{1,160}$/;
+export const keyAllowed = k => typeof k === 'string' && KEY_RE.test(k) && !k.startsWith('fanglands.handoff') && !/admin/i.test(k);
 const CODE_RE = /^[0-9a-f]{64}$/;
 const PULL_RE = /^[0-9a-f]{32}$/;
 const AT_RE = /^fanglands\.slot\.\d+\.at$/;
-const enc = new TextEncoder();
+const enc = new TextEncoder(), dec = new TextDecoder();
+// a plain path on this address: starts with one /, no // or /\ (which a browser reads as another site), no spaces
+export const PLAIN_PATH = /^\/(?![\/\\])[^\s\\#]*$/;
+const plainPath = p => (typeof p === 'string' && PLAIN_PATH.test(p) ? p : '/');
 
 // ---------- the front door: what an address serves when it is not /api or /ws ----------
 // www.fanglands.com sends to the bare address for good (301, path and query kept). /handoff on a new address is the
-// start page. On a gorkscape address a page (the game, /admin, any HTML) is the hand-over page; anything else (an icon,
-// a file) is sent on with a 302. Returns null when the address is the game's home and the static files should answer.
+// start and landing page. On an old address: /handoff-stay and /handoff-leave set and clear the home-screen cookie;
+// with the cookie the game is served exactly as today; otherwise a page (the game, /admin, any HTML) is the hand-over
+// page and anything else (an icon, a file) is sent on with a 302. Returns null when the static files should answer.
 // env.HANDOVER = 'off' (wrangler deploy --var HANDOVER:off) keeps the old addresses serving the game as before: the
 // first ship attaches fanglands.com with it off, so nobody is sent there before its address and certificate answer.
 export function frontDoor(req, url, env) {
   const host = url.hostname.toLowerCase();
+  const get = req.method === 'GET' || req.method === 'HEAD', head = req.method === 'HEAD';
   if (host === 'www.fanglands.com') return redirect('https://fanglands.com' + url.pathname + url.search, 301);
-  if (BACK[host] && url.pathname === START_PATH) return (req.method === 'GET' || req.method === 'HEAD') ? startPage(BACK[host], req.method === 'HEAD') : redirect('https://' + host + '/', 302);
+  if (OLDS[host] && url.pathname === START_PATH) return get ? landingPage(host, head) : redirect('https://' + host + '/', 302);
   const to = MOVES[host];
-  if (!to || (env && env.HANDOVER === 'off')) return null;
-  const target = 'https://' + to + url.pathname + url.search;
-  if ((req.method === 'GET' || req.method === 'HEAD') && isPage(req, url)) return handoverPage(to, req.method === 'HEAD');
-  return redirect(target, 302);
+  if (!to) return null;
+  if (url.pathname === STAY_PATH) return redirect(plainPath(url.searchParams.get('to')), 302, `${STAY_COOKIE}=1; Max-Age=${STAY_DAYS * 86400}; Path=/; Secure; SameSite=Lax`);
+  if (url.pathname === LEAVE_PATH) return redirect(plainPath(url.searchParams.get('to')), 302, `${STAY_COOKIE}=; Max-Age=0; Path=/; Secure; SameSite=Lax`);
+  if (env && env.HANDOVER === 'off') return null;
+  if (stays(req)) return null;
+  if (get && isPage(req, url)) return handoverPage(host, to, head);
+  return redirect('https://' + to + url.pathname + url.search, 302);
 }
-function redirect(location, status) {
-  return new Response(null, { status, headers: { location, 'cache-control': status === 301 ? 'public, max-age=86400' : 'no-store', 'referrer-policy': 'no-referrer' } });
+function redirect(location, status, cookie) {
+  const headers = { location, 'cache-control': status === 301 ? 'public, max-age=86400' : 'no-store', 'referrer-policy': 'no-referrer' };
+  if (cookie) headers['set-cookie'] = cookie;
+  return new Response(null, { status, headers });
+}
+// the home-screen cookie: set only by a page that was opened as an installed web app (handoverPage)
+export function stays(req) {
+  return (req.headers.get('cookie') || '').split(';').some(c => c.trim() === STAY_COOKIE + '=1');
 }
 // a page load, not a file the page asked for: what the browser says (Sec-Fetch-Dest), or for an older browser what it
 // accepts, or the game's own paths
@@ -73,19 +102,39 @@ export function isPage(req, url) {
   return /^\/(index\.html|admin|admin\/|admin\.html)?$/.test(url.pathname);
 }
 
-const STYLE = `html,body{margin:0;height:100%;background:#0b0f14;color:#8b949e;font:16px "Trebuchet MS","Segoe UI",system-ui,sans-serif}
-main{position:fixed;left:16px;right:16px;bottom:28px;text-align:center}p{margin:0 0 14px}
-a{color:#d9b25f}a.go{display:inline-block;padding:12px 22px;border:1px solid #d9b25f;border-radius:8px;text-decoration:none;font-weight:700;margin:0 6px 10px}
-#wait,#stuck{display:none}`;
-function page(nonce, body, script, head) {
+// ---------- the pages: one small dark card, the same on every hop ----------
+const STYLE = `html,body{margin:0;height:100%;background:#0b0f14;color:#c9d1d9;font:16px "Trebuchet MS","Segoe UI",system-ui,sans-serif}
+main{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px}
+.box{max-width:340px;background:#141a22;border:1px solid #2a3340;border-radius:12px;padding:18px 22px;text-align:center;box-shadow:0 8px 30px #0008}
+p{margin:0 0 12px;line-height:1.4}p:last-child{margin-bottom:0}.dim{color:#8b949e;font-size:14px}
+a{color:#d9b25f}a.go{display:inline-block;min-width:96px;padding:12px 22px;border:1px solid #d9b25f;border-radius:8px;text-decoration:none;font-weight:700;margin:4px 0 12px}
+[hidden]{display:none!important}`;
+const CARD = `<main id="card" hidden><div class="box">
+<div id="work"><p id="msg">Bringing your knight over...</p><p id="more" class="dim" hidden>Still working on it...</p></div>
+<div id="waits" hidden><p id="waitText"></p><a class="go" id="ok" href="">OK</a></div>
+<div id="stuck" hidden><p>Your knight is safe. It could not come across just now.</p><a class="go" id="again" href="">Try again</a><p class="dim"><a id="anyway" href="">Go to the game</a></p></div>
+</div></main>`;
+// the card's helpers, the same in every page script
+const CARD_JS = `var $ = function (id) { return document.getElementById(id); };
+  var show = function (id) { var e = $(id); if (e) e.hidden = false; };
+  var hide = function (id) { var e = $(id); if (e) e.hidden = true; };
+  var gone = false;
+  var go = function (u) { if (gone) return; gone = true; location.replace(u); };
+  var card = function () { show('card'); setTimeout(function () { if (!gone) show('more'); }, 4000); };
+  var stuck = function (again, anyway) { hide('work'); hide('waits'); var a = $('again'); if (a) a.setAttribute('href', again); var b = $('anyway'); if (b) b.setAttribute('href', anyway); show('stuck'); show('card'); };`;
+function page(script, head) {
+  const nonce = randomHex(16);
   const html = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0b0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fanglands">
 <title>Fanglands</title>
 <style>${STYLE}</style>
-<main>${body}</main>
+${CARD}
 <script nonce="${nonce}">
 ${script}
 </script>
@@ -102,149 +151,220 @@ ${script}
   });
 }
 
-// The hand-over page (steps 1 and 3). No game here. It reads this browser's Fanglands keys; with none it goes straight
-// to the same path and query on the new address. With some and no pull yet, it asks the new address for one (step 2).
-// With a pull it offers the keys bound to it and goes on with the code after #. A #handoff... fragment that arrived
-// here is never passed on: it may be someone else's code. If the world does not take the offer it tries twice more,
-// then says so with a Try again button, so a kid is never dropped on the new address without a word. It never deletes
-// anything here, so a hand-over that went wrong can simply be tried again by opening the old address.
-export function handoverPage(to, head) {
-  const home = 'https://' + to;
-  const body = `<p id="wait">One moment...</p>
-<div id="stuck"><p>Your knight could not come across to ${to} just now.</p>
-<a class="go" id="again" href="">Try again</a><br><a id="anyway" href="${home}/">Go to ${to} without it</a></div>`;
+// The hand-over page on an old address. Opened as an installed web app (an iPad home-screen icon): it stays, through
+// /handoff-stay, so the old address serves the game from now on. Otherwise it reads this browser's Fanglands keys,
+// leaving out what the server already has (slot 1 with the cloud mark, knights already brought into an account). With
+// none it goes straight to the same path on the new address. With some, it shows the card and offers them bound to the
+// pull: the one that came after # (and is now kept here too), or the one kept here from before; with neither, it first
+// fetches one from the new address. A #handoff... fragment that arrived is never passed on: it may be someone else's.
+// The world refusing an anonymous offer (too many at once) is said plainly, with what waits, and the kid goes on; a
+// world that cannot be reached is tried twice, then the card says so with Try again. Nothing here is ever deleted.
+export function handoverPage(self, to, head) {
   const script = `(function () {
-  var HOME = ${JSON.stringify(home)};
-  var CAP = 1400000;
-  var KEY_RE = ${KEY_RE.toString()};
-  var SLOT_RE = /^fanglands\\.slot\\.(\\d+)$/;
-  var here = location.pathname + location.search;
+  var HOME = ${JSON.stringify('https://' + to)}, SELF = ${JSON.stringify(self)};
+  var PULL_KEY = ${JSON.stringify(PULL_KEY)}, PULL_LIFE = ${PULL_MS}, CAP = 1400000;
+  var KEY_RE = ${KEY_RE.toString()}, SLOT_RE = /^fanglands\\.slot\\.(\\d+)$/, MARK = 'fanglands.slot.1.online';
+  ${CARD_JS}
+  var path = location.pathname || '/';
+  if (!${PLAIN_PATH.toString()}.test(path)) path = '/';
+  var here = path + (location.search || '');
   var h = location.hash || '';
-  var pull = /^#handoff-pull(2?)=([0-9a-f]{32})$/.exec(h);
-  var bad = h.indexOf('#handoff-pull') === 0 && !pull;
-  if (h.indexOf('#handoff') === 0) h = '';   // never pass a hand-over fragment on: it may be someone else's
-  var gone = false;
-  function go(code) {
-    if (gone) return; gone = true;
-    location.replace(HOME + here + (code ? '#handoff' + pull[1] + '=' + code : h));
-  }
-  var all = {}, n = 0;
+  var handoffFrag = h.indexOf('#handoff') === 0;
+  var standalone = false;
+  try { standalone = navigator.standalone === true || !!(window.matchMedia && (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches)); } catch (e) { }
+  if (standalone) { location.replace(${JSON.stringify(STAY_PATH)} + '?to=' + encodeURIComponent(here) + (handoffFrag ? '' : h)); return; }
+  var pullIn = /^#handoff-pull(2?)=([0-9a-f]{32})$/.exec(h);
+  var frag = handoffFrag ? '' : h;
+  if (handoffFrag) { try { history.replaceState(null, '', here); } catch (e) { } }
+  var fp = function (s) { var x = 0x811c9dc5; for (var i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 0x01000193) >>> 0; } return x.toString(36) + '.' + s.length; };
+  var all = {}, i, k, v;
   try {
-    for (var i = 0; i < localStorage.length; i++) {
-      var k = localStorage.key(i);
-      if (!k || !KEY_RE.test(k) || k.indexOf('fanglands.handoff') === 0) continue;
-      var v = localStorage.getItem(k);
-      if (typeof v === 'string') { all[k] = v; n++; }
+    for (i = 0; i < localStorage.length; i++) {
+      k = localStorage.key(i);
+      if (!k || !KEY_RE.test(k) || k.indexOf('fanglands.handoff') === 0 || /admin/i.test(k)) continue;
+      v = localStorage.getItem(k);
+      if (typeof v === 'string') all[k] = v;
     }
   } catch (e) { }
-  if (!n || bad || typeof fetch !== 'function' || typeof JSON === 'undefined') { go(null); return; }
-  if (!pull) { gone = true; location.replace(HOME + ${JSON.stringify(START_PATH)} + '#back=' + encodeURIComponent(here)); return; }
+  // already on the server: the account's working copy (slot 1 with its mark), and knights brought into an account
+  if (all[MARK] != null) { delete all['fanglands.slot.1']; delete all['fanglands.slot.1.at']; delete all[MARK]; }
+  var brought = []; try { brought = JSON.parse(all['fanglands.brought'] || '[]'); } catch (e) { } if (!Array.isArray(brought)) brought = [];
+  var knights = 0;
+  for (k in all) { var sm = SLOT_RE.exec(k); if (!sm) continue; if (brought.indexOf(fp(all[k])) >= 0) { delete all[k]; delete all[k + '.at']; } }
+  for (k in all) if (SLOT_RE.test(k)) knights++;
+  var any = false; for (k in all) { any = true; break; }
+  if (!any || typeof fetch !== 'function' || typeof JSON === 'undefined') { go(HOME + here + frag); return; }
+  // the pull: the one that just came (kept here from now on), or the one kept here, or fetch one from the new address
+  var pull = null;
+  try {
+    if (pullIn) { pull = pullIn[2]; localStorage.setItem(PULL_KEY, JSON.stringify({ n: pull, at: Date.now() })); }
+    else {
+      var had = JSON.parse(localStorage.getItem(PULL_KEY) || 'null');
+      if (had && /^[0-9a-f]{32}$/.test(had.n) && Date.now() - had.at >= 0 && Date.now() - had.at < PULL_LIFE) pull = had.n;
+    }
+  } catch (e) { if (pullIn) pull = pullIn[2]; }
+  card();
+  if (!pull) { go(HOME + ${JSON.stringify(START_PATH)} + '#back=' + encodeURIComponent(here) + '&from=' + SELF); return; }
   // packed under the cap: the login and the small keys first, then the slots newest first, the oldest kind of save last
   var size = function (k, v) { return unescape(encodeURIComponent(JSON.stringify(k) + JSON.stringify(v))).length + 2; };
   var groups = [], small = {}, slots = [], key;
   for (key in all) {
     var m = SLOT_RE.exec(key);
-    if (m) { var g = {}; g[key] = all[key]; var at = key + '.at'; if (all[at] != null) g[at] = all[at]; if (m[1] === '1' && all['fanglands.slot.1.online'] != null) g['fanglands.slot.1.online'] = all['fanglands.slot.1.online']; slots.push({ at: +all[at] || 0, g: g }); }
+    if (m) { var g = {}; g[key] = all[key]; var at = key + '.at'; if (all[at] != null) g[at] = all[at]; slots.push({ at: +all[at] || 0, g: g }); }
   }
   var inSlots = {}; for (i = 0; i < slots.length; i++) for (key in slots[i].g) inSlots[key] = 1;
-  for (key in all) if (!inSlots[key] && key !== 'fanglands.save.v2') small[key] = all[key];
+  for (key in all) if (!inSlots[key] && key !== 'fanglands.save.v2' && !/^fanglands\\.slot\\.\\d+\\.at$/.test(key)) small[key] = all[key];
   groups.push(small);
   slots.sort(function (a, b) { return b.at - a.at; });
   for (i = 0; i < slots.length; i++) groups.push(slots[i].g);
   if (all['fanglands.save.v2'] != null) groups.push({ 'fanglands.save.v2': all['fanglands.save.v2'] });
-  var keys = {}, used = 64, any = false;
+  var keys = {}, used = 64, sent = 0;
   for (i = 0; i < groups.length; i++) {
     var gs = 0; for (key in groups[i]) gs += size(key, groups[i][key]);
     if (used + gs > CAP) continue;
-    used += gs; for (key in groups[i]) { keys[key] = groups[i][key]; any = true; }
+    used += gs; for (key in groups[i]) { keys[key] = groups[i][key]; sent++; }
   }
-  if (!any) { go(null); return; }
-  var show = function (id) { var e = document.getElementById(id); if (e) e.style.display = 'block'; };
-  var hide = function (id) { var e = document.getElementById(id); if (e) e.style.display = 'none'; };
-  setTimeout(function () { if (!gone) show('wait'); }, 2500);
+  if (!sent) { go(HOME + here + frag); return; }
+  var land = function (code) { go(HOME + ${JSON.stringify(START_PATH)} + '#land=' + code + '&to=' + encodeURIComponent(here) + '&from=' + SELF + (pullIn && pullIn[1] ? '&n=2' : '')); };
+  var waits = function () {
+    if (!knights) { go(HOME + here + frag); return; }
+    var t = knights === 1 ? 'Your knight saved on this device will come across next time. It is safe here.' : 'Your ' + knights + ' knights saved on this device will come across next time. They are safe here.';
+    var w = $('waitText'); if (w) w.textContent = t;
+    var ok = $('ok'); if (ok) ok.setAttribute('href', HOME + here + frag);
+    hide('work'); show('waits');
+  };
   var tries = 0;
-  function stuck() {
-    hide('wait');
-    var a = document.getElementById('again'); if (a) a.setAttribute('href', here);
-    var b = document.getElementById('anyway'); if (b) b.setAttribute('href', HOME + here);
-    show('stuck');
-  }
   function attempt() {
     tries++;
     var over = false, ctl = null;
     try { ctl = new AbortController(); } catch (e) { }
-    var miss = function () { if (over || gone) return; over = true; if (tries < 3) setTimeout(attempt, tries * 1500); else stuck(); };
-    var timer = setTimeout(function () { if (ctl) ctl.abort(); miss(); }, 7000);
-    fetch('/api/handoff/offer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ keys: keys, pull: pull[2] }), cache: 'no-store', credentials: 'same-origin', signal: ctl ? ctl.signal : undefined })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) {
-        if (over) return;
-        if (d && typeof d.code === 'string' && /^[0-9a-f]{64}$/.test(d.code)) { over = true; clearTimeout(timer); go(d.code); }
-        else { clearTimeout(timer); miss(); }
-      }, function () { clearTimeout(timer); miss(); });
+    var miss = function () { if (over || gone) return; over = true; clearTimeout(timer); if (tries < 2) setTimeout(attempt, 1500); else stuck(here, HOME + here + frag); };
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); miss(); }, 8000);
+    fetch('/api/handoff/offer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ keys: keys, pull: pull }), cache: 'no-store', credentials: 'same-origin', signal: ctl ? ctl.signal : undefined })
+      .then(function (r) {
+        if (over || gone) return;
+        if (r.status === 429 || r.status === 503) { over = true; clearTimeout(timer); waits(); return; }
+        if (!r.ok) { miss(); return; }
+        return r.json().then(function (d) {
+          if (over || gone) return;
+          if (d && typeof d.code === 'string' && /^[0-9a-f]{64}$/.test(d.code)) { over = true; clearTimeout(timer); land(d.code); }
+          else miss();
+        });
+      })
+      .catch(miss);
   }
   attempt();
 })();`;
-  return page(randomHex(16), body, script, head);
+  return page(script, head);
 }
 
-// The start page on a new address (step 2). It keeps a pull in this address's own storage (reusing one that is still
-// fresh, so two tabs at once both land) and goes back to the old address with it after #, to the path the old page was
-// on. A path that is not a plain path on that address becomes /. If this address cannot keep anything (storage off),
-// there is nothing to bind an offer to: it goes straight into the game here.
-export function startPage(back, head) {
+// The start and landing page on a new address (/handoff). Two jobs, by what came after #:
+//   #back=<path>&from=<old>: the first visit. It keeps a pull here (reusing the one kept, while it is under 30 days old)
+//     and goes back to the old address it came from with it after #.
+//   #land=<code>&to=<path>&from=<old>[&n=2]: it takes the fragment off the address and history first, claims the code
+//     WITH the pull kept here, merges what is missing (handoff-merge.js) and goes on to the path: the game, /admin, any
+//     page. A claim that finds nothing (the pull here is not the one the old address used, or the code ran out) or gets
+//     no answer goes back to the old address once with this address's pull, so it offers again (it keeps everything
+//     there); a second miss shows the card's Try again. A path that is not a plain path here becomes /; an old address
+//     that is not one of this address's own becomes the first of them.
+export function landingPage(host, head) {
+  const olds = OLDS[host] || [];
   const script = `(function () {
-  var BACK = ${JSON.stringify('https://' + back)};
-  var KEY = ${JSON.stringify(PULL_KEY)}, LIFE = ${PULL_MS - 60000};
-  var m = /^#back=(.*)$/.exec(location.hash || ''), path = '/';
-  try { if (m) path = decodeURIComponent(m[1]); } catch (e) { }
-  if (!/^\\/(?![\\/\\\\])[^\\s\\\\#]*$/.test(path)) path = '/';
-  var pull = null;
-  try {
-    var had = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (had && /^[0-9a-f]{32}$/.test(had.n) && Date.now() - had.at >= 0 && Date.now() - had.at < LIFE) pull = had.n;
-    else {
+  var OLDS = ${JSON.stringify(olds)}, PULL_KEY = ${JSON.stringify(PULL_KEY)}, PULL_LIFE = ${PULL_MS}, ARRIVING = ${JSON.stringify(ARRIVING_KEY)};
+  var merge = ${handoffMerge.toString()};
+  ${CARD_JS}
+  var h = location.hash || '';
+  try { history.replaceState(null, '', location.pathname); } catch (e) { }
+  var q = {};
+  h.replace(/^#/, '').split('&').forEach(function (p) { var i = p.indexOf('='); if (i > 0) { try { q[p.slice(0, i)] = decodeURIComponent(p.slice(i + 1)); } catch (e) { q[p.slice(0, i)] = ''; } } });
+  var plain = function (p) { return typeof p === 'string' && ${PLAIN_PATH.toString()}.test(p) ? p : '/'; };
+  var to = plain(q.back != null ? q.back : q.to);
+  var from = OLDS.indexOf(q.from) >= 0 ? q.from : OLDS[0];
+  var OLD = 'https://' + from;
+  var LS = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, String(v)); } catch (e) { } },
+    del: function (k) { try { localStorage.removeItem(k); } catch (e) { } },
+  };
+  // the pull kept here: the one from before while it is under 30 days old, or a new one; null when storage is off
+  var keepPull = function () {
+    try {
+      var had = JSON.parse(localStorage.getItem(PULL_KEY) || 'null');
+      if (had && /^[0-9a-f]{32}$/.test(had.n) && Date.now() - had.at >= 0 && Date.now() - had.at < PULL_LIFE) return had.n;
       var a = new Uint8Array(16); crypto.getRandomValues(a);
-      pull = ''; for (var i = 0; i < a.length; i++) pull += (a[i] < 16 ? '0' : '') + a[i].toString(16);
-      localStorage.setItem(KEY, JSON.stringify({ n: pull, at: Date.now() }));
-      if (JSON.parse(localStorage.getItem(KEY)).n !== pull) pull = null;
-    }
-  } catch (e) { pull = null; }
-  location.replace(pull ? BACK + path + '#handoff-pull=' + pull : path);
+      var n = ''; for (var i = 0; i < a.length; i++) n += (a[i] < 16 ? '0' : '') + a[i].toString(16);
+      localStorage.setItem(PULL_KEY, JSON.stringify({ n: n, at: Date.now() }));
+      return JSON.parse(localStorage.getItem(PULL_KEY)).n === n ? n : null;
+    } catch (e) { return null; }
+  };
+  if (!from) { go(to); return; }
+  if (q.back != null) { var p0 = keepPull(); if (p0) { card(); go(OLD + to + '#handoff-pull=' + p0); } else go(to); return; }
+  if (!/^[0-9a-f]{64}$/.test(q.land || '')) { go(to); return; }
+  card();
+  var second = q.n === '2';
+  var again = function () {
+    if (gone) return;
+    var p = keepPull();
+    if (second || !p) { stuck(OLD + to, to); return; }
+    go(OLD + to + '#handoff-pull2=' + p);
+  };
+  var pull = keepPull();
+  if (!pull) { go(to); return; }
+  var over = false, ctl = null;
+  try { ctl = new AbortController(); } catch (e) { }
+  var timer = setTimeout(function () { if (over) return; over = true; if (ctl) ctl.abort(); again(); }, 9000);
+  fetch('/api/handoff/claim', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: q.land, pull: pull }), cache: 'no-store', credentials: 'same-origin', signal: ctl ? ctl.signal : undefined })
+    .then(function (r) {
+      if (over) return;
+      if (!r.ok) { over = true; clearTimeout(timer); again(); return; }
+      return r.json().then(function (d) {
+        if (over) return;
+        over = true; clearTimeout(timer);
+        if (!d || !d.keys || typeof d.keys !== 'object') { again(); return; }
+        try { merge(d.keys, LS, Date.now(), d.from); } catch (e) { }
+        if (!/^\\/admin/.test(to)) { try { sessionStorage.setItem(ARRIVING, '1'); } catch (e) { } }
+        go(to);
+      });
+    })
+    .catch(function () { if (over) return; over = true; clearTimeout(timer); again(); });
 })();`;
-  return page(randomHex(16), '<p id="wait">One moment...</p>', script, head);
+  return page(script, head);
 }
 
 // ---------- the World's side: POST /api/handoff/offer and POST /api/handoff/claim ----------
-// Called by World.route for every /api call: it clears out codes that have run out (at most once a minute), and
-// answers the two hand-over calls. Returns null for every other call.
+// Called by World.route for every /api call: answers the two hand-over calls, and clears out codes that ran out (after
+// every hand-over call, and at most once a minute on any other). Returns null for every other call.
 export async function handoffCall(world, req, url, path, method) {
   const now = world.now();
-  const h = world.handoff || (world.handoff = { made: false, swept: 0, rate: new Map() });
+  const h = world.handoff || (world.handoff = { made: false, swept: 0, rate: new Map(), salt: randomHex(16) });
   if (!h.made) {
     world.sql.exec('CREATE TABLE IF NOT EXISTS handoffs (id TEXT PRIMARY KEY, keys TEXT NOT NULL, bytes INTEGER NOT NULL, expires INTEGER NOT NULL)');
-    // the pull a claim must bring, and which address offered (both as SHA-256): added to a table made before them
-    for (const col of ['bind', 'who']) { try { world.sql.exec(`ALTER TABLE handoffs ADD COLUMN ${col} TEXT`); } catch (e) { } }
+    // added to a table made before them: the pull a claim must bring (SHA-256), which address offered (salted SHA-256,
+    // anonymous offers only), the account a login offer is for, and the old address it was made on
+    for (const col of ['bind', 'who', 'acct', 'src']) { try { world.sql.exec(`ALTER TABLE handoffs ADD COLUMN ${col} TEXT`); } catch (e) { } }
     h.made = true;
   }
-  const isOffer = path === '/api/handoff/offer', isClaim = path === '/api/handoff/claim';
-  if (isOffer || isClaim || now - h.swept > 60000) { world.sql.exec('DELETE FROM handoffs WHERE expires <= ?', now); h.swept = now; }
-  if (!path.startsWith('/api/handoff/')) return null;
-  if (!isOffer && !isClaim) throw oops(404, 'no such call', 'nope');
-  if (method !== 'POST') throw oops(405, 'post it', 'bad');
-  // only the game's own addresses: an offer is made on an old address, a claim on the new one
-  const host = url.hostname.toLowerCase();
-  const origin = req.headers.get('origin') || '';
-  const okHost = isOffer ? Object.prototype.hasOwnProperty.call(MOVES, host) : HOMES.includes(host);
-  const okOrigin = origin === 'https://' + host;
-  if (!okHost || !okOrigin) throw oops(403, 'not from here', 'origin');
-  const who = addressOf(req.headers.get('cf-connecting-ip'));
-  limit(h.rate, (isOffer ? 'o:' : 'c:') + who, isOffer ? OFFERS_PER_MIN : CLAIMS_PER_MIN, now);
-  return isOffer ? offer(world, req, now, who) : claim(world, req, now);
+  const sweep = () => { world.sql.exec('DELETE FROM handoffs WHERE expires <= ?', now); h.swept = now; };
+  if (!path.startsWith('/api/handoff/')) { if (now - h.swept > 60000) sweep(); return null; }
+  try {
+    const isOffer = path === '/api/handoff/offer', isClaim = path === '/api/handoff/claim';
+    if (!isOffer && !isClaim) throw oops(404, 'no such call', 'nope');
+    if (method !== 'POST') throw oops(405, 'post it', 'bad');
+    const who = addressOf(req.headers.get('cf-connecting-ip'));
+    // only the game's own addresses: an offer is made on an old address, a claim on the new one (refusals count too)
+    const host = url.hostname.toLowerCase();
+    const okHost = isOffer ? Object.prototype.hasOwnProperty.call(MOVES, host) : HOMES.includes(host);
+    if (!okHost || (req.headers.get('origin') || '') !== 'https://' + host) {
+      limit(h.rate, 'x:' + who, REFUSED_PER_MIN, now);
+      throw oops(403, 'not from here', 'origin');
+    }
+    return isOffer ? await offer(world, h, req, now, who, host) : await claim(world, h, req, now, who);
+  } finally { sweep(); }
 }
 
-// The address a limit counts by: an IPv4 address as it is, an IPv6 address by its /64 (one home connection gets a
-// whole /64, so counting each address in it apart would let one home make thousands of "addresses").
+// The address a limit counts by: an IPv4 address as it is, an IPv6 address by its /48 (one home or one cloud machine
+// often gets a whole /48 to /56, so counting each smaller block apart would let one place make thousands of
+// "addresses").
 export function addressOf(ip) {
   ip = String(ip || '').trim().toLowerCase();
   if (!ip) return '?';
@@ -255,10 +375,10 @@ export function addressOf(ip) {
   const head = a ? a.split(':') : [], tail = b !== undefined && b ? b.split(':') : [];
   const fill = b !== undefined ? Math.max(0, 8 - head.length - tail.length) : 0;
   const all = head.concat(Array(fill).fill('0'), tail);
-  return all.slice(0, 4).map(x => (parseInt(x, 16) || 0).toString(16)).join(':') + '::/64';
+  return all.slice(0, 3).map(x => (parseInt(x, 16) || 0).toString(16)).join(':') + '::/48';
 }
 
-// A fixed one-minute window per address, kept in memory (a restart forgets it, which only ever lets more through).
+// A fixed one-minute window per key, kept in memory (a restart forgets it, which only ever lets more through).
 function limit(rate, key, max, now) {
   if (rate.size > 5000) for (const [k, v] of rate) if (now - v.start >= 60000) rate.delete(k);
   let r = rate.get(key);
@@ -277,16 +397,42 @@ async function readCapped(req, max) {
   return v;
 }
 
-async function sha(text) {
-  const d = await crypto.subtle.digest('SHA-256', enc.encode(text));
-  return Array.from(new Uint8Array(d), b => b.toString(16).padStart(2, '0')).join('');
+const hexOf = buf => Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+async function sha(text) { return hexOf(await crypto.subtle.digest('SHA-256', enc.encode(text))); }
+// the keys wait sealed (AES-GCM) with a key made from the code, which is never stored: a row alone is unreadable
+async function sealKey(code) {
+  const raw = await crypto.subtle.digest('SHA-256', enc.encode('fanglands handoff seal:' + code));
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+async function seal(code, text) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await sealKey(code), enc.encode(text)));
+  const out = new Uint8Array(12 + ct.length); out.set(iv, 0); out.set(ct, 12);
+  return out;
+}
+async function unseal(code, blob) {
+  if (typeof blob === 'string' || blob == null) return null;   // a row from before the keys were sealed: gone
+  const b = blob instanceof Uint8Array ? blob : new Uint8Array(blob);
+  if (b.length < 13) return null;
+  try { return dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12) }, await sealKey(code), b.slice(12))); } catch (e) { return null; }
 }
 
-// {keys: {name: value}, pull} -> {code, expires}. Every name must be one of the game's own keys and every value a
-// string; pull is the 128-bit value the new address kept (step 2). The code is 256 random bits; only its SHA-256 is
-// stored, with the pull's SHA-256, so the table alone cannot be used to claim anything. A save slot's .at stamp from
-// the future is brought back to now, so it can never look newer than anything played later.
-async function offer(world, req, now, who) {
+// the account a token belongs to, when the world knows it and it is live: read only (no last_seen, no deletes)
+export function loginOf(world, token, now) {
+  if (typeof token !== 'string' || !token || token.length > 200) return null;
+  const r = world.sql.exec('SELECT s.name_lc AS lc FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ? AND s.expires >= ? AND a.banned = 0', token, now).toArray()[0];
+  return r ? r.lc : null;
+}
+
+// {keys: {name: value}, pull} -> {code, expires, kind}. Every name must be one of the game's own keys and every value a
+// string; pull is the 128-bit value this browser's addresses keep. The code is 256 random bits; only its SHA-256 is
+// stored (with the pull's), and the keys are sealed with a key made from it. A save slot's .at stamp from the future is
+// brought back to now. Then the budget: an offer whose fanglands.session is a live login has its account's own (at
+// most ACCT_ROWS_MAX waiting: a fourth replaces the oldest; ACCT_PER_MIN a minute), which anonymous offers never
+// touch; any other offer is anonymous (OFFERS_PER_MIN and ADDRESS_BYTES_MAX per address, ANON_ROWS_MAX and
+// ANON_BYTES_MAX all together). Everything that waits is done first, so the checks and the write happen with nothing
+// else in between.
+async function offer(world, h, req, now, who, host) {
   const b = await readCapped(req, HANDOFF_MAX + 200);
   const keys = b.keys;
   if (!keys || typeof keys !== 'object' || Array.isArray(keys)) throw oops(400, 'send the keys', 'bad');
@@ -295,36 +441,55 @@ async function offer(world, req, now, who) {
   if (!names.length) throw oops(400, 'nothing to hand over', 'bad');
   if (names.length > HANDOFF_KEYS_MAX) throw oops(413, 'that is too much to hand over', 'full');
   for (const k of names) {
-    if (!KEY_RE.test(k) || k.startsWith('fanglands.handoff')) throw oops(400, 'that is not a Fanglands key', 'bad');
+    if (!keyAllowed(k)) throw oops(400, 'that is not a Fanglands key', 'bad');
     if (typeof keys[k] !== 'string') throw oops(400, 'every value is a string', 'bad');
     if (AT_RE.test(k) && +keys[k] > now) keys[k] = String(now);
   }
   const text = JSON.stringify(keys);
   const bytes = enc.encode(text).length;
   if (bytes > HANDOFF_MAX) throw oops(413, 'that is too much to hand over', 'full');
-  const whoId = await sha('who:' + who);
-  const mine = world.sql.exec('SELECT COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE who = ?', whoId).toArray()[0] || { b: 0 };
-  if (mine.b + bytes > ADDRESS_BYTES_MAX) throw oops(429, 'too many at once: wait a minute', 'wait', { wait: Math.ceil(HANDOFF_MS / 1000) });
-  const held = world.sql.exec('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM handoffs').toArray()[0] || { n: 0, b: 0 };
-  if (held.n >= STORED_MAX || held.b + bytes > STORED_BYTES_MAX) throw oops(503, 'too many hand-overs at once: try again soon', 'busy');
   const code = randomHex(32);
+  const [id, bind, sealed, whoId] = [await sha(code), await sha('pull:' + b.pull), await seal(code, text), await sha(h.salt + who)];
+  // from here to the INSERT nothing waits
+  const acct = loginOf(world, keys['fanglands.session'], now);
+  if (acct) {
+    limit(h.rate, 'a:' + acct, ACCT_PER_MIN, now);
+    const mine = world.sql.exec('SELECT id FROM handoffs WHERE acct = ? AND expires > ? ORDER BY expires ASC', acct, now).toArray();
+    for (let i = 0; i <= mine.length - ACCT_ROWS_MAX; i++) world.sql.exec('DELETE FROM handoffs WHERE id = ?', mine[i].id);
+    const held = world.sql.exec('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NOT NULL AND expires > ?', now).toArray()[0] || { n: 0, b: 0 };
+    if (held.n >= LOGGED_ROWS_MAX || held.b + bytes > LOGGED_BYTES_MAX) throw oops(503, 'too many hand-overs at once: try again soon', 'busy');
+  } else {
+    limit(h.rate, 'o:' + who, OFFERS_PER_MIN, now);
+    const mine = world.sql.exec('SELECT COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NULL AND who = ? AND expires > ?', whoId, now).toArray()[0] || { b: 0 };
+    if (mine.b + bytes > ADDRESS_BYTES_MAX) throw oops(429, 'too many at once: wait a minute', 'wait', { wait: Math.ceil(HANDOFF_MS / 1000) });
+    const held = world.sql.exec('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NULL AND expires > ?', now).toArray()[0] || { n: 0, b: 0 };
+    if (held.n >= ANON_ROWS_MAX || held.b + bytes > ANON_BYTES_MAX) throw oops(503, 'too many hand-overs at once: try again soon', 'busy');
+  }
   const expires = now + HANDOFF_MS;
-  world.sql.exec('INSERT INTO handoffs (id, keys, bytes, expires, bind, who) VALUES (?, ?, ?, ?, ?, ?)', await sha(code), text, bytes, expires, await sha('pull:' + b.pull), whoId);
-  return json({ code, expires });
+  world.sql.exec('INSERT INTO handoffs (id, keys, bytes, expires, bind, who, acct, src) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, sealed, bytes, expires, bind, acct ? null : whoId, acct, host);
+  return json({ code, expires, kind: acct ? 'login' : 'device' });
 }
 
-// {code, pull} -> {keys}. One claim per code: the row is deleted before the answer goes back, whatever happens next.
-// The pull must be the one the offer was bound to; a claim with any other pull is refused and does NOT use the code
-// up. A code that ran out, was claimed already, never was, or comes with the wrong pull: all get the same answer.
-async function claim(world, req, now) {
+// {code, pull} -> {keys, from}. One claim per code: the row is deleted before the answer goes back, whatever happens
+// next, and nothing waits between reading the row and deleting it, so two claims of one code can never both get it.
+// The pull must be the one the offer was bound to; a claim with any other pull is refused and does NOT use the code up.
+// A code that ran out, was claimed already, never was, or comes with the wrong pull: all get the same answer, and count
+// against the address (CLAIM_FAILS_PER_MIN). A real code with its pull always lands.
+async function claim(world, h, req, now, who) {
   const b = await readCapped(req, 1024);
   const code = typeof b.code === 'string' ? b.code : '';
   const pull = typeof b.pull === 'string' ? b.pull : '';
-  if (!CODE_RE.test(code) || !PULL_RE.test(pull)) throw oops(404, 'that hand-over is gone', 'gone');
-  const id = await sha(code);
-  const row = world.sql.exec('SELECT keys, expires, bind FROM handoffs WHERE id = ?', id).toArray()[0];
-  if (!row || row.expires <= now) { world.sql.exec('DELETE FROM handoffs WHERE id = ?', id); throw oops(404, 'that hand-over is gone', 'gone'); }
-  if (!row.bind || !sameString(row.bind, await sha('pull:' + pull))) throw oops(404, 'that hand-over is gone', 'gone');
+  const gone = () => { limit(h.rate, 'c:' + who, CLAIM_FAILS_PER_MIN, now); return oops(404, 'that hand-over is gone', 'gone'); };
+  if (!CODE_RE.test(code) || !PULL_RE.test(pull)) throw gone();
+  const id = await sha(code), bind = await sha('pull:' + pull);
+  const row = world.sql.exec('SELECT keys, expires, bind, src FROM handoffs WHERE id = ?', id).toArray()[0];
+  if (!row) throw gone();
+  if (row.expires <= now) { world.sql.exec('DELETE FROM handoffs WHERE id = ?', id); throw gone(); }
+  if (!row.bind || !sameString(row.bind, bind)) throw gone();
   world.sql.exec('DELETE FROM handoffs WHERE id = ?', id);
-  return json({ keys: JSON.parse(row.keys) });
+  const text = await unseal(code, row.keys);
+  if (text == null) throw gone();
+  let keys = null; try { keys = JSON.parse(text); } catch (e) { }
+  if (!keys || typeof keys !== 'object' || Array.isArray(keys)) throw gone();
+  return json({ keys, from: typeof row.src === 'string' ? row.src : null });
 }

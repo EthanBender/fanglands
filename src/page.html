@@ -13,7 +13,10 @@
   html, body { margin: 0; padding: 0; background: #0b0f14; overflow: hidden; height: 100%; }
   body { background: #0b0f14; font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif; }
   #game { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  #fl-arrive[hidden] { display: none !important; }
 </style>
 <canvas id="game"></canvas>
 <div id="safe-probe" aria-hidden="true" style="position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)"></div>
+<div id="fl-arrive" hidden style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;z-index:50;pointer-events:none"><div style="max-width:340px;background:#141a22;border:1px solid #2a3340;border-radius:12px;padding:18px 22px;text-align:center;color:#c9d1d9;font:16px &quot;Trebuchet MS&quot;,&quot;Segoe UI&quot;,system-ui,sans-serif;line-height:1.4">Bringing your knight over...</div></div>
+<script data-arrive>/* two addresses (src/00-handoff.js): the card shows while the game page loads after a hand-over */ try { if (sessionStorage.getItem('fanglands.handoff.arriving')) document.getElementById('fl-arrive').hidden = false; } catch (e) { }</script>
 <!-- SCRIPTS -->
