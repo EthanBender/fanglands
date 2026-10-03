@@ -523,6 +523,19 @@ const DEATHS = (() => {
         const info = idx.map(i => { const x = mid[i]; return { type: KINDS[i][0], born: !!born[i] && born[i].kind === kind && !born[i].boss, t: x && +x.t.toFixed(2), shows: !!x && SHOWS[kind](x.p, x.c), drawn: x && x.drawn, oldFade: x && x.old, legacy: legacy[i], gone: after[i] }; });
         check(P + WORDS[kind] + '; about 1 s, then gone (the core\'s old tip-and-fade is not drawn as well)', info.every(o => o.born && Math.abs(o.t - 0.5) < 0.02 && o.shows && o.drawn > 20 && o.oldFade === 0 && o.legacy > 0 && o.gone), info);
       }
+      // (1b) the legs that come out as an animal rolls over fit it: four on a wolf, two on a bird, none added to a spider
+      // (it already shows eight), and a cow's end in dark hooves
+      {
+        const tally = f => { const st = {}; f(new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop() { } }) : typeof k === 'string' ? () => { st[k] = (st[k] || 0) + 1; } : undefined, set: () => true })); return st; };
+        const ls = ['wolf', 'rimhawk', 'giant_spider', 'cow'].map((type, i) => mk(type, (i - 1.5) * 2 * TILE, 4 * TILE));
+        ls.forEach(down); F.sim(24, []);
+        const legs = ls.map(m => { const c = API.of(m); if (!c) return { type: m.type, corpse: false }; const a = tally(g => drawCorpse(g, c)), b = tally(g => drawCharacter(g, c.body, c.type));
+          return { type: m.type, corpse: true, full: pose(c).legs === 1, strokes: (a.stroke || 0) - (b.stroke || 0), hooves: (a.arc || 0) - (b.arc || 0) }; });
+        const by = Object.fromEntries(legs.map(o => [o.type, o]));
+        check(P + 'an animal rolled onto its side shows legs that fit it: four on a wolf, two on a bird, none added to a spider, and a cow\'s end in hooves',
+          legs.every(o => o.corpse && o.full) && by.wolf.strokes === 4 && by.wolf.hooves === 0 && by.rimhawk.strokes === 2 && by.giant_spider.strokes === 0 && by.cow.strokes === 4 && by.cow.hooves === 4, legs);
+        F.sim(50, []);
+      }
       // (2) a boss: a slow fall, the flash and a short shake at 1.8 s, gone at 3 s; with Screen shake off, no shake and no flash over the screen
       for (const shake of [true, false]) {
         if (typeof SETTINGS !== 'undefined') SETTINGS.set('shake', shake);
