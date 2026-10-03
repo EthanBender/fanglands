@@ -198,7 +198,7 @@
       // the keeper's row turning dead is its word that this monster died: every screen shows the death on receipt, once
       // (deathSeen). One first seen already dead died before this knight could see it, so it plays nothing.
       if (!dead) p.deathSeen = false;
-      else if (!p.deathSeen) { p.deathSeen = true; if (!born) monsterDied(p, 'row', S.keeper); }
+      else if (!p.deathSeen) { p.deathSeen = true; if (!born) monsterDied(p, 'row', S.keeper); else p.deadT = 9; }   // 9: past the core's fade too
     }
     if (added) { S.idxArr = monsters; S.idxLen = monsters.length; }
     S.lastMonAt = time;

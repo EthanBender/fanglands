@@ -672,7 +672,8 @@ const DEATHS = (() => {
           {
             const nid = 'Ann:old'; push({ t: 'mon', n: 'Ann', list: [[nid, 'brood_mother', x, y + 6 * TILE, 0, MONSTER_DEFS.brood_mother.hp, 'idle', -1, 0, 0, 0, 1, 0, 0]] }); F.step([]);
             const q = COOP.find(nid); for (let i = 0; i < 5; i++) { push({ t: 'mon', n: 'Ann', list: [[nid, 'brood_mother', x, y + 6 * TILE, 0, MONSTER_DEFS.brood_mother.hp, 'idle', -1, 0, 0, 0, 1, 0, 0]] }); F.step([]); }
-            check(P + 'online: a monster first seen already dead (killed before this knight arrived) plays no death, no flash and no shake', !!q && q.dead && !API.of(q) && fired(nid) === 0 && !corpses.some(k => k.nid === nid), { puppet: !!q, dead: q && q.dead, fired: fired(nid) });
+            const old = !!q && { dead: q.dead, deadT: q.deadT, core: q.deadT < 0.8 };
+            check(P + 'online: a monster first seen already dead (killed before this knight arrived) plays no death, no flash and no shake (not even the core\'s old tip-and-fade)', !!q && q.dead && !old.core && !API.of(q) && fired(nid) === 0 && !corpses.some(k => k.nid === nid), { puppet: !!q, old, fired: fired(nid) });
           }
           // the keeper's 'kill' comes back a round trip after Cohen's own last blow felled the puppet (0.25 s, 0.5 s, 0.87 s,
           // after the pop would have started, and 1.25 s, after the body is gone): its drops wait for the body or pop out of
