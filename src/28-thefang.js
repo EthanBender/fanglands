@@ -355,8 +355,10 @@
   // the Duke learns of the kill from you, not from your footsteps: at stage 15 talking to him ends the story (the castle-entry trigger stays as a fallback)
   HOOKS.talkBefore.duke = n => {
     if (quest.stage === 14 && window.DRAGON_KILLERS) return window.DRAGON_KILLERS.duke(n); // 37-dragonkillers: the Song, the group, the horn
-    if (quest.stage === 15) { say('The Fang? Slain? Then the old songs were waiting for you, knight. Thistledown owes you more than a keep can hold. The Dragon Killers will be sung about for a hundred years.', n.name); say('Sit. Eat. Tomorrow the whole town hears it from my mouth. Tonight, hear it from me: thank you.', n.name); advanceQuest(16); return true; }
-    if (quest.stage >= 16) { say('The knight of legend, in my hall. Rest, friend. The Fanglands are at peace because of you.', n.name); say('They say the lava in that lair still remembers the dragon. Sound the horn on the circle if you miss it.', n.name); return true; }
+    // (37-dragonkillers' hornFor: a knight who slew it beside a friend before the Duke gave him a horn is handed one now, once)
+    const horn = () => { if (window.DRAGON_KILLERS && DRAGON_KILLERS.hornFor) DRAGON_KILLERS.hornFor(n); };
+    if (quest.stage === 15) { say('The Fang? Slain? Then the old songs were waiting for you, knight. Thistledown owes you more than a keep can hold. The Dragon Killers will be sung about for a hundred years.', n.name); say('Sit. Eat. Tomorrow the whole town hears it from my mouth. Tonight, hear it from me: thank you.', n.name); horn(); advanceQuest(16); return true; }
+    if (quest.stage >= 16) { say('The knight of legend, in my hall. Rest, friend. The Fanglands are at peace because of you.', n.name); say('They say the lava in that lair still remembers the dragon. Sound the horn on the circle if you miss it.', n.name); horn(); return true; }
     return false;
   };
   // ---------- main quest, stages 14–16 ----------
@@ -694,6 +696,7 @@
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
     const said = re => [dialog.cur, ...dialog.queue].some(l => l && re.test(l.text));
     const keep = { fq: JSON.stringify(fq), stage: quest.stage, day: player.dayTime, dk: JSON.stringify(quest.dk || null), hp: player.hp };
+    const DK_formed = () => !!(quest.dk && quest.dk.formed);
     const hornHad = countItem('dragon_horn'); if (!hornHad) h.give('dragon_horn', 1);
     h.peace(true); closePanel();
     // a reload makes the dragon afresh at its home, standing, knowing nothing (spawnMonsters); then the tick decides
@@ -791,6 +794,23 @@
       { const q = FQ(); Object.assign(q, { slain: true, echoUp: false }); m.dead = false; m.awake = true; m.hp = m.maxHp; F.sim(3, []); const stays = !m.dead;
         m.awake = false; F.sim(1, []); const down = m.dead;
         check(P + 'a live Fang with awake true (adopted in a handoff) is not forced dead by a keeper whose fq.slain is set', stays && down, { stays, down }); }
+      // F16: a friend's helper slew it at stage 14 before the Duke formed the Dragon Killers (no Song yet), so he never had the
+      // horn: the Duke hands him exactly one after the slaying, and the circle then raises the Echo for him
+      if (window.COOP && COOP.phantomOf && window.DRAGON_KILLERS) {
+        const keepSky = JSON.stringify(quest.sky || null), horns0 = countItem('dragon_horn');
+        removeItem('dragon_horn', horns0); quest.dk = { formed: false, gate: true, slainWith: false }; quest.sky = Object.assign({}, quest.sky || {}, { stage: 1 });
+        Object.assign(FQ(), { slain: false, summoned: false, echoUp: false, restUntil: 0 }); quest.stage = 14; m.dead = true; m.awake = false; F.sim(1, []); credits = null;
+        const ph = COOP.phantomOf({ type: 'the_fang', nid: 'Ann:5', x: m.x, y: m.y }); killMonster(ph); F.sim(2, []);
+        const after = { stage: quest.stage, slain: FQ().slain, horn: countItem('dragon_horn'), formed: DK_formed() };
+        drops = drops.filter(d => dist(d.x, d.y, ph.x, ph.y) > 80); credits = null; clearBanners(); drain();
+        F.tp(111, 48); F.talk('duke'); F.sim(2, []); const given = countItem('dragon_horn'), stage1 = quest.stage, told = said(/without my horn/);
+        drain(); F.talk('duke'); F.sim(2, []); const again = countItem('dragon_horn'); credits = null; clearBanners();
+        player.dayTime = FQ().restUntil + 1; m.dead = true; m.awake = false; horn();
+        const echo = !m.dead && m.awake === true && FQ().echoUp === true;
+        check(P + "a helper's first kill at stage 14 with no Song (no horn) moves him to 15; the Duke then hands over exactly one horn, and the circle raises the Echo with it",
+          after.stage === 15 && after.slain && after.horn === 0 && !after.formed && given === 1 && told && stage1 === 16 && again === 1 && echo, { after, given, told, stage1, again, echo });
+        removeItem('dragon_horn', countItem('dragon_horn')); if (horns0) addItem('dragon_horn', horns0); quest.sky = JSON.parse(keepSky);
+        m.dead = true; m.awake = false; Object.assign(FQ(), { echoUp: false }); quest.stage = 16; drain(); }
       // F10: online and not the keeper: the horn asks the keeper, makes nothing, no Dragon Killers walk here, and a
       // dragon the keeper streams is never put down by this knight's flags
       if (typeof NET !== 'undefined' && window.COOP) {

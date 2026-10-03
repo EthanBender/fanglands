@@ -124,12 +124,22 @@
       const names = [compName(), 'Sergeant Hale', compId() === 'garrick' ? null : 'Sir Garrick'].filter(Boolean);
       say("Sung? Then Thistledown rides. I name you the Dragon Killers: " + names.join(', ') + " and you, knight, at the head.", n.name);
       say("Hale and Garrick will meet you inside the lair. And take this: a dragon horn, from the last one that tried. The Fang sleeps under the lava. Sound the horn on the old circle in its lair and it will come up to answer.", n.name);
-      giveOrDrop('dragon_horn', 1, player.x, player.y);
+      giveOrDrop('dragon_horn', 1, player.x, player.y); q.horn = true;
       levelBanner = { text: 'THE DRAGON KILLERS', sub: names.join(' · ') + ' · you', t: 4.5 }; sfx('quest'); burst(player.x, player.y, '#f5c542', 40, 200);
       save(); return true;
     }
     say("The Dragon Killers are yours, knight. Hale and Garrick wait for you inside the lair. Sound the horn on the circle, and the Fang will come.", n.name);
     return true;
+  }
+
+  // a knight who slew the Fang beside a friend before the Duke formed his company (stage 14, before the Song) never had the
+  // horn: the Duke hands it over once, after the slaying, so the circle can raise the Echo for him too
+  function hornFor(n) {
+    const q = DK(), fq = fangQ();
+    if (!fq.slain || q.formed || q.horn || countItem('dragon_horn') > 0) return false;
+    q.horn = true; giveOrDrop('dragon_horn', 1, player.x, player.y); sfx('quest');
+    say('You went after the dragon without my horn? Then take it now. It is a dragon horn, from the last knight who tried. Sound it on the circle in the lair if you ever miss the dragon.', n.name);
+    save(); return true;
   }
 
   // ---------- allies ----------
@@ -216,7 +226,7 @@
   };
 
   // ---------- debug handle (28-thefang's Duke talk calls .duke at stage 14) ----------
-  window.DRAGON_KILLERS = { chance, DK, duke, allies, ALLY_DEFS, WARDEN_GATE, GATE_T, openGate, closeGate, warden, stats, DRAGON_ITEMS };
+  window.DRAGON_KILLERS = { chance, DK, duke, hornFor, allies, ALLY_DEFS, WARDEN_GATE, GATE_T, openGate, closeGate, warden, stats, DRAGON_ITEMS };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
