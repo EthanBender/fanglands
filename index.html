@@ -2751,8 +2751,11 @@ function render() {
   const g = ctx;
   g.setTransform(DPR, 0, 0, DPR, 0, 0);
   g.imageSmoothingEnabled = true;
-  cam.x = clamp(player.x - VW / 2, 0, MAP_W * TILE - VW);
-  cam.y = clamp(player.y - VH / 2, 0, MAP_H * TILE - VH);
+  // HOOKS.camera (optional, made by the feature that first needs it): each fn() may return { x, y } in pixels to nudge the view
+  let camDX = 0, camDY = 0;
+  if (HOOKS.camera) for (const f of HOOKS.camera) { const o = f(); if (o) { camDX += o.x || 0; camDY += o.y || 0; } }
+  cam.x = clamp(player.x - VW / 2 + camDX, 0, MAP_W * TILE - VW);
+  cam.y = clamp(player.y - VH / 2 + camDY, 0, MAP_H * TILE - VH);
   if (MAP_W * TILE < VW) cam.x = (MAP_W * TILE - VW) / 2;
   if (MAP_H * TILE < VH) cam.y = (MAP_H * TILE - VH) / 2;
   g.fillStyle = '#0b0f14'; g.fillRect(0, 0, VW, VH);
@@ -57430,29 +57433,36 @@ window.TOWNSFOLK = TOWNSFOLK;
   setMode('deepholm', 'lamplit');
 
   // ---------- the day layer ----------
+  // The polish (Cloud Kingdom, 2026-10-03): the sun was a white-hot disc painted 'lighter' at a fixed spot on the screen,
+  // just under the minimap, and it bleached whatever building stood there: it read as a glitch, not a sun. The view looks
+  // down on the city, so the sun is never in it: it stands off the top-right edge of the screen (SUN_AT, in screen
+  // fractions), and what reaches the city is its light: a warm tint laid over (never added to) the stone, strongest in the
+  // top-right corner, and five faint rays fanning in from there. No part of the layer lifts a pixel by more than
+  // DAY.maxLift of 255 (the self-test reads it).
+  const SUN_AT = { x: 0.9, y: -0.45 };
+  const DAY = { tint: 0.12, ray: 0.028, maxLift: 0 };
   function drawDay(g, inst) {
-    const sx = VW * 0.78 - (cam.x % 400) * 0.05, sy = VH * 0.13 - (cam.y % 400) * 0.04;
+    const sx = VW * SUN_AT.x - (cam.x % 400) * 0.03, sy = VH * SUN_AT.y;
     g.save(); g.setTransform(DPR, 0, 0, DPR, 0, 0);
-    // the sun's warmth over everything
-    g.globalCompositeOperation = 'lighter';
-    const R = Math.max(VW, VH) * 0.95;
+    // the sun's warmth: a warm tint, laid over the city (source-over), fading away from the top-right corner
+    g.globalCompositeOperation = 'source-over';
+    const R = Math.max(VW, VH) * 1.15;
     const warm = g.createRadialGradient(sx, sy, 10, sx, sy, R);
-    warm.addColorStop(0, 'rgba(255,244,214,0.20)'); warm.addColorStop(0.45, 'rgba(255,240,205,0.09)'); warm.addColorStop(1, 'rgba(255,240,205,0)');
+    warm.addColorStop(0, `rgba(255,222,150,${DAY.tint})`); warm.addColorStop(0.5, `rgba(255,228,170,${(DAY.tint * 0.45).toFixed(3)})`); warm.addColorStop(1, 'rgba(255,230,180,0)');
     g.fillStyle = warm; g.fillRect(0, 0, VW, VH);
-    // five long rays, turning slowly
+    // five long rays fanning in from the corner, turning slowly
     const rays = 5;
+    g.globalCompositeOperation = 'lighter';
     for (let k = 0; k < rays; k++) {
-      const a = 1.9 + k * 0.24 + Math.sin(time * 0.11 + k) * 0.05, w = 0.055;
-      g.fillStyle = 'rgba(255,247,225,0.045)';
+      const a = 1.95 + k * 0.2 + Math.sin(time * 0.11 + k) * 0.04, w = 0.05;
+      g.fillStyle = `rgba(255,244,214,${DAY.ray})`;
       g.beginPath(); g.moveTo(sx, sy);
-      g.lineTo(sx + Math.cos(a - w) * R * 1.6, sy + Math.sin(a - w) * R * 1.6);
-      g.lineTo(sx + Math.cos(a + w) * R * 1.6, sy + Math.sin(a + w) * R * 1.6);
+      g.lineTo(sx + Math.cos(a - w) * R * 2, sy + Math.sin(a - w) * R * 2);
+      g.lineTo(sx + Math.cos(a + w) * R * 2, sy + Math.sin(a + w) * R * 2);
       g.closePath(); g.fill();
     }
-    // the sun itself
-    const disc = g.createRadialGradient(sx, sy, 4, sx, sy, 96);
-    disc.addColorStop(0, 'rgba(255,253,240,0.85)'); disc.addColorStop(0.25, 'rgba(255,240,190,0.35)'); disc.addColorStop(1, 'rgba(255,240,190,0)');
-    g.fillStyle = disc; g.beginPath(); g.arc(sx, sy, 96, 0, 7); g.fill();
+    // the most any pixel is lifted: two rays crossing (lighter adds); the warm tint is laid over, never added
+    DAY.maxLift = Math.round(255 * DAY.ray * 2);
     // cloud shadow drifting under the city, and the cold air off the drop at the bottom of the screen
     g.globalCompositeOperation = 'source-over';
     const shadows = 3;
@@ -57467,7 +57477,7 @@ window.TOWNSFOLK = TOWNSFOLK;
     g.fillStyle = drop; g.fillRect(0, VH * 0.82, VW, VH * 0.18);
     g.restore();
     STATS.painted++; STATS.lastMode = 'day';
-    LAST.mode = 'day'; LAST.id = inst && inst.id; LAST.scrim = 0; LAST.warm = 0.20; LAST.rays = rays; LAST.shadows = shadows; LAST.sun = { x: Math.round(sx), y: Math.round(sy) };
+    LAST.mode = 'day'; LAST.id = inst && inst.id; LAST.scrim = 0; LAST.warm = DAY.tint; LAST.rays = rays; LAST.shadows = shadows; LAST.sun = { x: Math.round(sx), y: Math.round(sy), onScreen: sx >= 0 && sx <= VW && sy >= 0 && sy <= VH, disc: false };
   }
 
   HOOKS.draw.push((g, items) => {
@@ -57502,7 +57512,7 @@ window.TOWNSFOLK = TOWNSFOLK;
   };
 
   window.INSTANCE_LIGHT = {
-    MODES, define: defineMode, set: setMode, of: modeOf, stats: STATS, last: LAST,
+    MODES, define: defineMode, set: setMode, of: modeOf, stats: STATS, last: LAST, DAY, SUN_AT,
     suppressing: () => suppressing,
     list: () => (window.INSTANCES ? INSTANCES.list() : []).map(id => ({ id, mode: modeOf(id), dark: !!(instOf(id) && instOf(id).dark) })),
   };
@@ -58295,9 +58305,12 @@ window.TOWNSFOLK = TOWNSFOLK;
     { const S = INSTANCE_LIGHT.stats;
       INSTANCES.enter('aerie'); F.tp(20, 15); const b = S.blocked, p = S.painted; render();
       const L = INSTANCE_LIGHT.last, over = overlays();
-      check(A + "Aerie is lit as open daylight: sun, 5 rays and 3 drifting cloud shadows, no scrim at all, and the cave rectangle no longer lands on the Queen's Garden",
-        S.painted > p && S.blocked > b && L.mode === 'day' && L.id === 'aerie' && L.scrim === 0 && L.warm > 0 && L.rays === 5 && L.shadows === 3 && !!L.sun && over.n === 1 && inst('aerie').dark === false,
-        { painted: S.painted - p, blocked: S.blocked - b, last: L, overlays: over.n }); }
+      // the polish: the sun is off the top of the screen (never a disc over a building); what shows is a warm tint laid over
+      // the stone and faint rays, and nothing lifts a pixel by more than 16 of 255
+      const offScreen = !!L.sun && !L.sun.onScreen && L.sun.disc === false && L.sun.y < 0 && INSTANCE_LIGHT.DAY.maxLift <= 16;
+      check(A + "Aerie is lit as open daylight: the sun off the top-right of the screen (no disc over the city), a warm tint, 5 faint rays (no pixel lifted more than 16 of 255) and 3 drifting cloud shadows, no scrim at all, and the cave rectangle no longer lands on the Queen's Garden",
+        S.painted > p && S.blocked > b && L.mode === 'day' && L.id === 'aerie' && L.scrim === 0 && L.warm > 0 && L.rays === 5 && L.shadows === 3 && offScreen && over.n === 1 && inst('aerie').dark === false,
+        { painted: S.painted - p, blocked: S.blocked - b, last: L, maxLift: INSTANCE_LIGHT.DAY.maxLift, overlays: over.n }); }
 
     // ---- 4. Aerie is the walled city: the plan, painted exactly, with its three outer islands ----
     { const W = AERIE.W, H = AERIE.H, a = inst('aerie'), P2 = window.AERIE_PLAN;
@@ -61526,6 +61539,8 @@ window.TOWNSFOLK = TOWNSFOLK;
       if (code === G_BRIDGE) drawBridgeRails(g, tx, ty, x, y);
       if (code === G_DOOR) { drawDoorProp(g, tx, ty, false); g.strokeStyle = '#e8c25a'; g.lineWidth = 2; g.strokeRect(x + 7, y + 1, 34, 46); }
       const st = STEPS[tx + ',' + ty]; if (st !== undefined) drawDoorstep(g, tx, ty, st, false);
+      // the shadow a west or east wall throws on the ground east of it (the light comes from the west)
+      if (glyph(tx - 1, ty) === '#' && ty !== 11 && ty !== 61) { const sh = g.createLinearGradient(x + 6, 0, x + 34, 0); sh.addColorStop(0, 'rgba(40,60,100,0.34)'); sh.addColorStop(1, 'rgba(40,60,100,0)'); g.fillStyle = sh; g.fillRect(x + 6, y, 28, 48); }
     }
   }
   // a street's edge, on every side where the next cell is not street (nor a gate or a bridge the street runs on to):
@@ -61709,20 +61724,63 @@ window.TOWNSFOLK = TOWNSFOLK;
     blit(g, sprite('wallH' + (tx % 2), 48, 68, 0, 10, cg => paintWallH(cg, tx % 2)), tx * TILE, ty * TILE);
     if (BANNERS.has(tx + ',' + ty)) drawBanner(g, tx * TILE + 24, ty * TILE + 16, 38, 16);
   }
-  function paintWallV(g, cap) {
-    g.fillStyle = 'rgba(40,60,100,0.14)'; g.fillRect(44, 0, 9, 48);
-    g.fillStyle = '#d8cebb'; g.fillRect(4, 0, 40, 48);
-    g.fillStyle = '#e9e2d4'; g.fillRect(11, 0, 26, 48);
-    g.fillStyle = 'rgba(145,130,105,0.22)'; for (let r = 0; r < 4; r++) g.fillRect(11, r * 12 + 11, 26, 1);
-    for (let k = 0; k < 4; k += 2) {
-      const my = k * 12;
-      for (const ex of [4, 36]) { g.fillStyle = '#e1d8c6'; g.fillRect(ex, my - 6, 8, 12); g.fillStyle = '#f5c542'; g.fillRect(ex, my - 7, 8, 2); g.fillStyle = '#d8d0c0'; g.fillRect(ex, my + 6, 8, 4); }
+  // The west and east runs (the polish, 2026-10-03: they were a pale strip with merlons lined up on both edges, rung for
+  // rung, and read as a ladder or a walkway). Now a run is drawn as a wall seen from above, in the north wall's own
+  // colours: a brick face down each side in the tan of the north wall's face (lit on the west, in shade on the east, darker
+  // towards the foot, so the run stands up off the ground), and on top a narrow paved wall-walk between a crenellated
+  // parapet on the sky side (raised merlons with gold caps every 24 px, lined up with the world, each throwing a shadow on
+  // the walk) and a low plain parapet on the city side. Nothing repeats straight across the run (the flagstone joints are
+  // staggered and the merlons stand on one side only), and the ground east
+  // of the wall lies in its shadow (drawGroundRow). Where a run ends over open ground its south face shows.
+  const WV = { face: 13, over: 6, merlon: 12, every: 24 };
+  function paintWallV(g, cap, outerLeft, v) {
+    const mirror = !outerLeft;
+    if (mirror) { g.translate(48, 0); g.scale(-1, 1); }
+    // the light comes from the west: on the west run the sky side is lit, on the east run (mirrored) the city side is
+    const litOuter = outerLeft, F = WV.face;
+    const brick = (x, w, lit) => {
+      const gr = g.createLinearGradient(x, 0, x + w, 0);
+      const a = lit ? '#e2d7c1' : '#bfb196', b = lit ? '#cfc2a8' : '#9d8f74';
+      if (x < 24) { gr.addColorStop(0, b); gr.addColorStop(1, a); } else { gr.addColorStop(0, a); gr.addColorStop(1, b); }
+      g.fillStyle = gr; g.fillRect(x, 0, w, 48);
+      g.fillStyle = 'rgba(120,105,80,0.35)';
+      for (let r = 0; r < 4; r++) { const yy = r * 12; g.fillRect(x, yy + 11, w, 1); g.fillRect(x + ((r + v) % 2 ? 2 : w - 3), yy, 1, 11); }
+    };
+    // the two faces
+    const O = WV.over;
+    brick(-O, F, litOuter); brick(48 + O - F, F, !litOuter);
+    g.fillStyle = 'rgba(60,50,40,0.45)'; g.fillRect(-O - 1, 0, 1, 48); g.fillRect(48 + O, 0, 1, 48);
+    // the top: the wall-walk in pale flags, joints staggered by the variant
+    const t0 = F - O, t1 = 48 + O - F;
+    g.fillStyle = 'rgba(60,50,40,0.3)'; g.fillRect(t0 - 1, 0, 1, 48); g.fillRect(t1, 0, 1, 48);
+    g.fillStyle = '#efe8da'; g.fillRect(t0, 0, t1 - t0, 48);
+    g.fillStyle = 'rgba(150,135,110,0.32)';
+    const joints = v ? [7, 19, 33, 44] : [3, 15, 27, 40];
+    joints.forEach((jy, k) => g.fillRect(t0 + 10 + (k % 2 ? 8 : 0), jy, 10, 1));
+    g.fillRect(t0 + 19, 0, 1, 48);
+    // the city side: a low plain parapet, a gold line along its top
+    g.fillStyle = '#e6decd'; g.fillRect(t1 - 7, 0, 7, 48);
+    g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillRect(t1 - 7, 0, 2, 48);
+    g.fillStyle = '#e8c25a'; g.fillRect(t1 - 2, 0, 2, 48);
+    // the sky side: merlons, every other 12 px, raised, with a gold cap; each throws a short shadow on the walk
+    g.fillStyle = '#ddd4c2'; g.fillRect(t0, 0, 9, 48);
+    for (const my of [0, 24]) {
+      g.fillStyle = 'rgba(60,70,100,0.22)'; g.fillRect(t0 + 9, my + 2, 6, WV.merlon);
+      g.fillStyle = '#f4efe5'; g.fillRect(t0 - 1, my - 3, 11, WV.merlon);
+      g.fillStyle = '#d6cbb6'; g.fillRect(t0 - 1, my + WV.merlon - 3, 11, 3);
+      g.fillStyle = '#f5c542'; g.fillRect(t0 - 1, my - 4, 11, 2);
     }
-    if (cap) { g.fillStyle = '#e2dbcd'; g.fillRect(4, 34, 40, 14); g.fillStyle = '#e8c25a'; g.fillRect(4, 33, 40, 2); g.fillStyle = 'rgba(40,60,100,0.15)'; g.fillRect(4, 48, 40, 8); }
+    if (cap) {
+      // the run's south face where it ends over open ground: brick courses and a gold string course, and its shadow
+      g.fillStyle = 'rgba(40,60,100,0.16)'; g.fillRect(-O, 48, 48 + 2 * O, 8);
+      g.fillStyle = '#dad0bd'; g.fillRect(-O, 26, 48 + 2 * O, 22);
+      g.fillStyle = 'rgba(145,130,105,0.32)'; for (let r = 0; r < 2; r++) { const yy = 27 + r * 11; g.fillRect(-O, yy + 10, 48 + 2 * O, 1); for (let c = 0; c < 3; c++) g.fillRect(-O + (r % 2 ? 12 : 0) + c * 24, yy, 1, 10); }
+      g.fillStyle = '#e8c25a'; g.fillRect(-O, 24, 48 + 2 * O, 3);
+    }
   }
   function drawWallV(g, tx, ty) {
-    const cap = !wallish(tx, ty + 1);
-    blit(g, sprite('wallV' + (cap ? 1 : 0), 56, 64, 0, 8, cg => paintWallV(cg, cap)), tx * TILE, ty * TILE);
+    const cap = !wallish(tx, ty + 1), outerLeft = tx < W / 2, v = ty % 2;
+    blit(g, sprite('wallV' + (cap ? 1 : 0) + (outerLeft ? 'w' : 'e') + v, 64, 64, 8, 8, cg => paintWallV(cg, cap, outerLeft, v)), tx * TILE, ty * TILE);
   }
 
   // ---------- the towers: nineteen, each with a pennant ----------
@@ -62126,12 +62184,53 @@ window.TOWNSFOLK = TOWNSFOLK;
     bowl(g, 0, -70, 12, 4.5);
     g.fillStyle = '#f5c542'; g.beginPath(); g.arc(0, -78, 4.5, 0, 7); g.fill(); goldWing(g, 2, -84, 9); g.save(); g.translate(0, -84); g.scale(-1, 1); goldWing(g, 2, 0, 9); g.restore();
   }
+  // the first wingwright, holding the first letter up to the wind (the polish, 2026-10-03: it was a white box with hair-line
+  // wings and read as nothing; now a winged figure in pale blue-grey stone with a soft outline, so it stands out against the
+  // white basin: a round gold-banded plinth, a slim open robe, wings spread wide and up feather by feather, hair bound up,
+  // and, in the game's own way of drawing people, no arms: two hands float up beside the head and hold the letter high)
   function paintWingwright(g) {
-    // the first wingwright, holding the first letter
-    g.fillStyle = '#e6dfd1'; g.fillRect(-12, -30, 24, 30); g.fillStyle = '#e8c25a'; g.fillRect(-13, -31, 26, 3);
-    for (const s of [-1, 1]) { g.save(); g.translate(0, -58); g.scale(s, 1); g.fillStyle = '#f7f4ee'; g.beginPath(); g.moveTo(4, 0); g.quadraticCurveTo(22, -16, 28, -34); g.quadraticCurveTo(16, -18, 6, 10); g.closePath(); g.fill(); g.strokeStyle = 'rgba(160,150,130,0.5)'; g.lineWidth = 1; g.stroke(); g.restore(); }
-    g.fillStyle = '#f2eee6'; g.beginPath(); g.ellipse(0, -44, 8, 14, 0, 0, 7); g.fill(); g.beginPath(); g.arc(0, -64, 6, 0, 7); g.fill();
-    g.fillStyle = '#fffaf0'; g.fillRect(5, -58, 10, 7); g.strokeStyle = '#c9a23a'; g.lineWidth = 1; g.strokeRect(5, -58, 10, 7); g.beginPath(); g.moveTo(5, -58); g.lineTo(10, -54); g.lineTo(15, -58); g.stroke();
+    const STONE = '#d9dfe9', LIT = '#f1f4f8', SHADE = '#aab4c5', LINE = '#5f6a80';
+    const ol = (w) => { g.strokeStyle = LINE; g.lineWidth = w || 1.2; g.stroke(); };
+    // the plinth, standing in the water
+    g.fillStyle = 'rgba(40,60,100,0.25)'; g.beginPath(); g.ellipse(5, -1, 22, 6, 0, 0, 7); g.fill();
+    g.fillStyle = '#ccd3de'; g.beginPath(); g.moveTo(-16, -22); g.lineTo(16, -22); g.lineTo(16, -2); g.quadraticCurveTo(0, 4, -16, -2); g.closePath(); g.fill(); ol();
+    g.fillStyle = SHADE; g.beginPath(); g.moveTo(5, -22); g.lineTo(16, -22); g.lineTo(16, -2); g.quadraticCurveTo(10, 1, 5, 1.5); g.closePath(); g.fill();
+    g.fillStyle = '#e8c25a'; g.fillRect(-16, -13, 32, 3);
+    g.fillStyle = STONE; g.beginPath(); g.ellipse(0, -22, 16, 5, 0, 0, 7); g.fill(); ol();
+    // the wings, behind the body: spread wide and lifted, a rounded leading edge, a scalloped trailing edge of long
+    // feathers, and three rows of feather lines
+    for (const sd of [-1, 1]) {
+      g.save(); g.translate(sd * 5, -62); g.scale(sd, 1);
+      g.beginPath(); g.moveTo(0, -2);
+      g.quadraticCurveTo(14, -30, 40, -34);
+      const tips = [[42, -26], [41, -16], [37, -7], [31, 1], [23, 7], [14, 11], [6, 13]];
+      let px = 40, py = -34;
+      for (const [tx, ty] of tips) { g.quadraticCurveTo((px + tx) / 2 + 4, (py + ty) / 2 + 3, tx, ty); px = tx; py = ty; }
+      g.lineTo(0, 8); g.closePath();
+      g.fillStyle = STONE; g.fill(); ol(1.3);
+      // the covert feathers near the shoulder, lighter, and the feather lines
+      g.fillStyle = LIT; g.beginPath(); g.moveTo(0, -2); g.quadraticCurveTo(12, -24, 30, -28); g.quadraticCurveTo(20, -14, 6, 4); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(111,122,144,0.7)'; g.lineWidth = 0.9;
+      for (const [tx, ty] of tips.slice(0, 6)) { g.beginPath(); g.moveTo(tx * 0.45, ty * 0.35 - 6); g.lineTo(tx - 2, ty - 1); g.stroke(); }
+      g.restore();
+    }
+    // the slim open robe: an outer robe open down the front over a plain under-robe, falling to the plinth
+    g.fillStyle = STONE; g.beginPath(); g.moveTo(-7, -66); g.lineTo(7, -66); g.quadraticCurveTo(10, -45, 13, -24); g.lineTo(-13, -24); g.quadraticCurveTo(-10, -45, -7, -66); g.closePath(); g.fill(); ol();
+    g.fillStyle = SHADE; g.beginPath(); g.moveTo(-2.5, -60); g.lineTo(2.5, -60); g.lineTo(4.5, -24); g.lineTo(-4.5, -24); g.closePath(); g.fill(); ol(0.8);
+    g.strokeStyle = 'rgba(111,122,144,0.55)'; g.lineWidth = 0.9; for (const fx of [-9, 8]) { g.beginPath(); g.moveTo(fx * 0.55, -56); g.quadraticCurveTo(fx * 0.9, -40, fx * 1.25, -26); g.stroke(); }
+    g.fillStyle = '#e8c25a'; g.fillRect(-7, -54, 14, 2.2);
+    // the head, looking up at the letter, hair bound up in a knot
+    g.fillStyle = STONE; g.beginPath(); g.arc(0, -73, 7.5, 0, 7); g.fill(); ol();
+    g.fillStyle = SHADE; g.beginPath(); g.arc(0, -75, 7.5, Math.PI * 1.05, Math.PI * 1.95); g.closePath(); g.fill();
+    g.fillStyle = STONE; g.beginPath(); g.arc(0, -83, 4, 0, 7); g.fill(); ol(1);
+    g.fillStyle = LINE; g.beginPath(); g.arc(-2.6, -72.5, 0.9, 0, 7); g.arc(2.6, -72.5, 0.9, 0, 7); g.fill();
+    // the two floating hands, and the letter they hold up: white, sealed in gold
+    for (const hx of [-10, 10]) { g.fillStyle = LIT; g.beginPath(); g.ellipse(hx, -94, 4.2, 5, hx < 0 ? 0.4 : -0.4, 0, 7); g.fill(); ol(1.1); }
+    g.save(); g.translate(0, -101); g.rotate(-0.06);
+    g.fillStyle = '#fffdf6'; g.fillRect(-11, -7, 22, 14); g.strokeStyle = '#a58a3a'; g.lineWidth = 1.2; g.strokeRect(-11, -7, 22, 14);
+    g.beginPath(); g.moveTo(-11, -7); g.lineTo(0, 1.5); g.lineTo(11, -7); g.stroke();
+    g.fillStyle = '#e8c25a'; g.beginPath(); g.arc(0, 1.5, 3, 0, 7); g.fill(); g.strokeStyle = '#a58a3a'; g.lineWidth = 0.8; g.stroke();
+    g.restore();
   }
   function drawFountain(g, f) {
     const cx = (f.x0 + 1.5) * TILE, cy = (f.y0 + 1.5) * TILE, t = time, R = FR, K = FK, royal = f.id === 'royal';
@@ -62146,7 +62245,7 @@ window.TOWNSFOLK = TOWNSFOLK;
       // the jet, and it arcs up and back
       for (let k = 0; k < 4; k++) { const ph = (t * 1.3 + k / 4) % 1; g.strokeStyle = `rgba(230,246,255,${(0.7 * (1 - ph)).toFixed(3)})`; g.lineWidth = 2.2; g.beginPath(); g.moveTo(cx, cy - 86); g.quadraticCurveTo(cx + (k - 1.5) * 10, cy - 116 - ph * 8, cx + (k - 1.5) * 18, cy - 90 + ph * 12); g.stroke(); }
     } else {
-      blit(g, sprite('wingwright', 70, 104, 35, 100, paintWingwright), cx, cy);
+      blit(g, sprite('wingwright2', 130, 140, 65, 124, paintWingwright), cx, cy);
       // four spouts
       for (let k = 0; k < 4; k++) { const a = Math.PI / 4 + k * Math.PI / 2, sx = cx + Math.cos(a) * 12, sy = cy - 22 + Math.sin(a) * 5, ex = cx + Math.cos(a) * 42, ey = cy + Math.sin(a) * 24; for (let j = 0; j < 2; j++) { const ph = (t * 1.5 + j * 0.5 + k * 0.2) % 1; g.strokeStyle = `rgba(225,244,255,${(0.75 - ph * 0.4).toFixed(3)})`; g.lineWidth = 2.2; g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + ex) / 2, sy - 18 - ph * 4, ex, ey); g.stroke(); } }
     }
@@ -62609,8 +62708,11 @@ window.TOWNSFOLK = TOWNSFOLK;
     g.fillStyle = '#f5c542'; g.beginPath(); g.arc(cx, ct - 3, 4, 0, 7); g.fill(); g.fillRect(cx - 1, ct - 16, 2, 13);
     return ct - 16;
   }
+  // how tall the keep's parts stand (px): the front face, the donjon's foot over the face, the donjon, and its cone, ball
+  // and pennant staff together (KEEP_VIEW reads them to know where the pennant's top is)
+  const KEEP_ART = { face: 100, lift: 40, donjon: 170, spire: 158 };
   function drawKeep(g, b, x, y, w, h) {
-    const FH = 100, faceY = y + h - FH, terr = y - 24;
+    const FH = KEEP_ART.face, faceY = y + h - FH, terr = y - 24;
     g.fillStyle = 'rgba(40,60,100,0.2)'; g.fillRect(x + 10, y + h - 2, w, 12);
     // the two back turrets
     turret(g, x + 30, terr + 40, terr - 60, 30); turret(g, x + w - 30, terr + 40, terr - 60, 30);
@@ -62621,7 +62723,7 @@ window.TOWNSFOLK = TOWNSFOLK;
     for (let k = 0; k < Math.floor(w / 12); k++) if (!(k % 2)) { g.fillStyle = '#ede7da'; g.fillRect(x + k * 12, terr - 12, 12, 12); g.fillStyle = '#f5c542'; g.fillRect(x + k * 12, terr - 14, 12, 2.5); }
     for (let k = 0; k < Math.floor((faceY - terr) / 12); k++) if (!(k % 2)) { g.fillStyle = '#ede7da'; g.fillRect(x, terr + k * 12, 9, 10); g.fillRect(x + w - 9, terr + k * 12, 9, 10); }
     // the donjon: a square tower in the middle of the keep, five tiles over the roof, the royal pennant on top
-    const dw = 150, dx = x + w / 2 - dw / 2, dBase = faceY - 40, dTop = dBase - 200;
+    const dw = 150, dx = x + w / 2 - dw / 2, dBase = faceY - KEEP_ART.lift, dTop = dBase - KEEP_ART.donjon;
     g.fillStyle = 'rgba(40,60,100,0.18)'; g.fillRect(dx + 8, dBase - 4, dw, 12);
     stoneFace(g, dx, dTop, dw, dBase - dTop);
     g.fillStyle = 'rgba(40,60,100,0.14)'; g.fillRect(dx + dw - 22, dTop, 22, dBase - dTop);
@@ -62867,6 +62969,28 @@ window.TOWNSFOLK = TOWNSFOLK;
     STATS.items = items.length - n0;
   };
   HOOKS.draw.push(drawHook);
+
+  // ---------- the keep, seen whole from its plaza ----------
+  // The polish (2026-10-03): on a laptop (1280x800), standing on the plaza in front of the keep's door, the donjon's cone
+  // and the royal pennant were above the top of the screen. On the plaza the view is nudged up (the knight stands lower
+  // on the screen) just far enough to show the pennant with KEEP_VIEW.margin px to spare, never so far that he stands
+  // below KEEP_VIEW.low of the screen's height. The nudge is a smooth function of where he stands: nothing in the hall
+  // (the pennant is in view already), growing as he walks south, full in front of the keep (x 41-55, down to the fountain's
+  // star), and fading to nothing over five tiles towards the plaza's west, east and south edges, so walking never makes the
+  // view jump (a quarter tile's step moves it at most 13 px more than the knight). (HOOKS.camera: see docs/EXTENDING.md.)
+  const KEEP_VIEW = { top: 0, margin: 16, low: 0.82, x0: 36, x1: 60, y1: 46, fade: 5 };
+  { const b = PLAN.BUILDINGS.find(o => o.id === 'aer_keep'); KEEP_VIEW.top = (b.y + b.h) * TILE - KEEP_ART.face - KEEP_ART.lift - KEEP_ART.donjon - KEEP_ART.spire; }
+  function keepNudge() {
+    if (!inside() || player.dead) return null;
+    const px = player.x / TILE, py = player.y / TILE, V = KEEP_VIEW;
+    const wx = clamp((px - V.x0) / V.fade, 0, 1) * clamp((V.x1 + 1 - px) / V.fade, 0, 1), wy = clamp((V.y1 + 1 - py) / V.fade, 0, 1);
+    const w = wx * wy; if (w <= 0) return null;
+    const need = (V.top - V.margin) - (player.y - VH / 2);
+    const dy = Math.max(-VH * (V.low - 0.5), Math.min(0, need));
+    return dy < 0 ? { x: 0, y: dy * w } : null;
+  }
+  HOOKS.camera = HOOKS.camera || [];
+  HOOKS.camera.push(keepNudge);
 
   // =========================================================================
   // 10. registers: Lark's feather, the Cloud Oven, the marker, the book, the Voice
@@ -63533,6 +63657,49 @@ window.TOWNSFOLK = TOWNSFOLK;
       const [wx, wy] = SP.well, path = PLAN.at(wx, wy + 1) === '=' && [...Array(17).keys()].every(i => PLAN.at(18 + i, wy + 2) === '=') && !!PLAN.roadAt(18, wy + 2);
       check(K + 'K25 no paving joins nothing: every stretch of flagstone in the city touches a street, a gate, a bridge, a door or the cloud; the path by the Wishing Well runs from the Ring Road to the lane at x 35 and up to the well',
         stray.length === 0 && path && parts >= 6, { stray, path, parts }); }
+
+    // ---- K26. the west and east walls stand as walls; the market statue is a winged person ----
+    { // a recording canvas that also keeps the fill colour each call was made with
+      const track = () => { const log = []; let fs = null; const g = new Proxy({}, {
+        get: (t, k) => (k === 'createLinearGradient' || k === 'createRadialGradient') ? ((...a) => { log.push([k, a, fs]); return { addColorStop: () => { } }; }) : k === 'measureText' ? (s => ({ width: String(s).length * 6 })) : typeof k === 'string' ? ((...a) => { log.push([k, a, fs]); }) : undefined,
+        set: (t, k, v) => { if (k === 'fillStyle') fs = v; return true; } }); return { g, log }; };
+      const west = track(); paintWallV(west.g, false, true, 0);
+      const rects = west.log.filter(([k]) => k === 'fillRect');
+      const caps = rects.filter(([, , fs]) => fs === '#f5c542'), O = WV.over, F = WV.face;
+      const wall = {
+        merlons: caps.length, skySide: caps.every(([, a]) => a[0] + a[2] <= 24),
+        cityParapet: rects.some(([, a, fs]) => fs === '#e8c25a' && a[0] >= 24 && a[3] === 48),
+        faces: rects.some(([, a]) => a[0] === -O && a[2] === F && a[3] === 48) && rects.some(([, a]) => a[0] === 48 + O - F && a[2] === F && a[3] === 48),
+      };
+      const east = track(); paintWallV(east.g, false, false, 0);
+      wall.eastMirrored = east.log.some(([k, a]) => k === 'scale' && a[0] === -1 && a[1] === 1);
+      const ground = track(); drawGroundRow(ground.g, 30, 17, 17);
+      wall.shadow = ground.log.some(([k, a]) => k === 'createLinearGradient' && a[0] === 17 * TILE + 6 && a[2] === 17 * TILE + 34);
+      const st = track(); paintWingwright(st.g);
+      const statue = {
+        wings: st.log.filter(([k, a]) => k === 'scale' && a[1] === 1 && Math.abs(a[0]) === 1).length, feathers: st.log.filter(([k]) => k === 'quadraticCurveTo').length,
+        head: st.log.some(([k, a]) => k === 'arc' && a[1] === -73), hands: st.log.filter(([k, a]) => k === 'ellipse' && a[1] === -94).length,
+        letter: st.log.some(([k]) => k === 'strokeRect'),
+      };
+      check(K + 'K26 the west and east walls stand as walls: a tan brick face down each side, 2 merlons a tile on the sky side only (nothing lined up across the run like rungs), a low parapet with a gold line on the city side, the east run the mirror of the west, a shadow on the ground beside it; the market statue is a winged person (two wings, a head, two floating hands holding the letter up, no arms)',
+        wall.merlons === 2 && wall.skySide && wall.cityParapet && wall.faces && wall.eastMirrored && wall.shadow && statue.wings === 2 && statue.feathers >= 20 && statue.head && statue.hands === 2 && statue.letter,
+        { wall, statue }); }
+
+    // ---- K27. the keep is seen whole from its plaza on a laptop, and the view never jumps ----
+    { enter(); const iw = window.innerWidth, ih = window.innerHeight;
+      window.innerWidth = 1280; window.innerHeight = 800;
+      const at = (x, y) => { player.x = x * TILE; player.y = y * TILE; render(); return { cam: cam.y, knight: player.y - cam.y, pennant: KEEP_VIEW.top - cam.y }; };
+      const front = [38, 39, 40, 41].map(y => at(48.5, y + 0.5));
+      const whole = front.every(v => v.pennant >= 0 && v.knight <= KEEP_VIEW.low * VH + 1);
+      // walking every way across the plaza (a quarter tile a step), the view moves no more than the knight does, plus 12 px
+      let jump = 0;
+      const walk = pts => { let last = null; for (const [x, y] of pts) { const v = at(x, y); if (last) jump = Math.max(jump, Math.abs((v.cam - last.cam) - (y - last.y) * TILE)); last = { cam: v.cam, y }; } };
+      walk(Array.from({ length: 49 }, (_, i) => [48.5, 33 + i / 4]));
+      for (const y of [39.5, 41.5, 44.5]) walk(Array.from({ length: 121 }, (_, i) => [33 + i / 4, y]));
+      const hall = at(48.5, 30.5), street = at(48.5, 20.5), noNudge = Math.abs(hall.knight - VH / 2) < 1 && Math.abs(street.knight - VH / 2) < 1;
+      window.innerWidth = iw; window.innerHeight = ih; F.tp(48, 40); render();
+      check(K + "K27 the keep from its plaza on a 1280x800 screen: standing anywhere from its door to the fountain's star (48, 38-41) the cone and the royal pennant are on screen and the knight stands no lower than 82% of the screen; walking the plaza every way the view never jumps (13 px past the knight at most, a quarter tile a step); in the hall and on the Kingsway the view is centred",
+        whole && jump <= 13 && noNudge, { front, jump: Math.round(jump * 10) / 10, hall: hall.knight, street: street.knight }); }
 
     // ---- put everything back ----
     leave(); closePanel(); drain(); tapCancel('manual');
