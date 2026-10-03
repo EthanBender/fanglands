@@ -150,15 +150,15 @@
 
   // ---------- people in the square (own lists) ----------
   const SURVIVOR_LOOKS = {
-    tam: { name: 'Old Tam', x: 137, y: 81, tunic: '#5a5048', hair: '#d9d0c0', beard: true, lines: ['Out of the crypt at last. Sun on my face.', 'A chair with your name on it, knight. I said it and I meant it.', "Nell drew the plan. Don't tell her, but the roof is upside down."], after: ['Sir, Dame, whichever you like. Hollowford has a knight again, that is the truth of it.', 'Sit in your chair. You earned the chair.'] },
-    nell: { name: 'Nell', x: 140, y: 77, tunic: '#6a4a4a', hair: '#3a2a1a', woman: true, lines: ["Planks. Bring me planks and I'll bring you a town.", "The board has the plan. I drew it. Don't laugh at the roof.", 'Stone from the quarry, planks from the mill. The rest is sweat.'], after: ['Look at it. Look at it! I could cry, so I will.', 'The bell rang this morning. I stood in the square and listened.'] },
-    pip: { name: 'Pip', x: 142, y: 81, tunic: '#4a5a6a', hair: '#c9843a', lines: ["I'm helping! I carried a plank. A whole one.", 'Can the smithy make me a sword? A small one?', 'When I am big I am going to be a knight. Like you. But taller.'], after: ['Your house has a LODESTONE in it. Can I touch it? I touched it.', 'The new house has a cellar too. I checked.'] },
+    tam: { id: 'tam', name: 'Old Tam', x: 137, y: 81, tunic: '#5a5048', hair: '#d9d0c0', beard: true, lines: ['Out of the crypt at last. Sun on my face.', 'A chair with your name on it, knight. I said it and I meant it.', "Nell drew the plan. Don't tell her, but the roof is upside down."], after: ['Sir, Dame, whichever you like. Hollowford has a knight again, that is the truth of it.', 'Sit in your chair. You earned the chair.'] },
+    nell: { id: 'nell', name: 'Nell', x: 140, y: 77, tunic: '#6a4a4a', hair: '#3a2a1a', woman: true, lines: ["Planks. Bring me planks and I'll bring you a town.", "The board has the plan. I drew it. Don't laugh at the roof.", 'Stone from the quarry, planks from the mill. The rest is sweat.'], after: ['Look at it. Look at it! I could cry, so I will.', 'The bell rang this morning. I stood in the square and listened.'] },
+    pip: { id: 'pip', name: 'Pip', x: 142, y: 81, tunic: '#4a5a6a', hair: '#c9843a', lines: ["I'm helping! I carried a plank. A whole one.", 'Can the smithy make me a sword? A small one?', 'When I am big I am going to be a knight. Like you. But taller.'], after: ['Your house has a LODESTONE in it. Can I touch it? I touched it.', 'The new house has a cellar too. I checked.'] },
   };
   const VILLAGER_DEFS = [
-    { name: 'Hob', tunic: '#7a5a3a', hair: '#3a2a1a', lines: ["Heard a knight was paying for planks. Wait. You are the knight? You are paying planks?", 'My cousin had the house by the smithy. Had. Will again, Nell says.', 'Cobbles! Real cobbles. Mind, I said I would not cry.'] },
-    { name: 'Wenna', tunic: '#5a6a7a', hair: '#e0c080', woman: true, lines: ['Nell says the roof goes on before the rain. Nell says a lot of things.', 'I came back the day I heard the well was working.', 'A bell tower next, they say. I miss the bell. I never thought I would miss a bell.'] },
+    { id: 'hob', name: 'Hob', tunic: '#7a5a3a', hair: '#3a2a1a', lines: ["Heard a knight was paying for planks. Wait. You are the knight? You are paying planks?", 'My cousin had the house by the smithy. Had. Will again, Nell says.', 'Cobbles! Real cobbles. Mind, I said I would not cry.'] },
+    { id: 'wenna', name: 'Wenna', tunic: '#5a6a7a', hair: '#e0c080', woman: true, lines: ['Nell says the roof goes on before the rain. Nell says a lot of things.', 'I came back the day I heard the well was working.', 'A bell tower next, they say. I miss the bell. I never thought I would miss a bell.'] },
   ];
-  const mkPerson = (d, x, y) => ({ name: d.name, tunic: d.tunic, hair: d.hair, beard: !!d.beard, woman: !!d.woman, lines: d.lines, after: d.after, px: tc(x), py: tc(y), home: { x: tc(x), y: tc(y) }, facing: { x: 0, y: 1 }, walkT: 0, moving: false, wanderT: Math.random() * 3, dir: null });
+  const mkPerson = (d, x, y) => ({ id: d.id, name: d.name, tunic: d.tunic, hair: d.hair, beard: !!d.beard, woman: !!d.woman, lines: d.lines, after: d.after, px: tc(x), py: tc(y), home: { x: tc(x), y: tc(y) }, facing: { x: 0, y: 1 }, walkT: 0, moving: false, wanderT: Math.random() * 3, dir: null });
   const freed = () => !!(quest.hollowford && quest.hollowford.freed);           // the crypt bars are broken (20-hollowford)
   const atGuild = () => !!(quest.guild && quest.guild.founded && quest.guild.rank >= 4); // the three work in the guild hall (41-guild)
   const placePeople = () => {
@@ -328,11 +328,17 @@
     const e = { x: p.px, y: p.py, r: 13, facing: p.facing, hurtT: 0, attackT: 0, moving: p.moving, walkT: p.walkT };
     const near = dist(player.x, player.y, e.x, e.y) < 110;
     if (near && !p.moving) e.facing = { x: Math.sign(player.x - e.x) || 0, y: Math.sign(player.y - e.y) || 1 };
-    g.save(); g.translate(e.x, e.y + (p.moving ? Math.sin(p.walkT) * 2 : 0));
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill();
-    drawHuman(g, e, { tunic: p.tunic, hair: p.hair, woman: p.woman, beard: p.beard, shoulder: '#7a6a5a' });
-    g.restore();
-    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(p.name, e.x, e.y - 26); g.fillStyle = '#ffe9a8'; g.fillText(p.name, e.x, e.y - 26); }
+    const look = { who: p.id, tunic: p.tunic, hair: p.hair, woman: p.woman, beard: p.beard, shoulder: '#7a6a5a' };
+    // the new look (83-townsfolk) draws the person whole, with its own step and shadow
+    const nl = !!(window.TOWNSFOLK && TOWNSFOLK.put(g, e.x, e.y, e, look));
+    if (!nl) {
+      g.save(); g.translate(e.x, e.y + (p.moving ? Math.sin(p.walkT) * 2 : 0));
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill();
+      drawHuman(g, e, look);
+      g.restore();
+    }
+    const up = nl ? TOWNSFOLK.labelUp(p.id, 26) : 26;
+    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(p.name, e.x, e.y - up); g.fillStyle = '#ffe9a8'; g.fillText(p.name, e.x, e.y - up); }
   };
   const drawTownBanner = (g) => { // a cloth banner over the board once everything stands
     const cx = tc(BOARD_POS.x), cy = tc(BOARD_POS.y) - 58, wave = Math.sin(time * 2) * 2;

@@ -505,16 +505,24 @@
     else { g.strokeStyle = '#4a3a2a'; g.lineWidth = 2; g.beginPath(); g.arc(0, -8, 8.5, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
     g.restore();
   }
+  const FOLK_LOOK = {};
   function drawFolk(g, n, p) {
     const e = { x: p.px, y: p.py, r: 12, facing: n.facing || { x: 0, y: 1 }, hurtT: 0, attackT: 0 };
     const near = dist(player.x, player.y, e.x, e.y) < 110;
     if (near) e.facing = { x: Math.sign(player.x - e.x) || 0, y: Math.sign(player.y - e.y) || 1 };
+    // the new look (83-townsfolk): the goblin townsfolk are the new goblin (the monsters' own head), each by id (this
+    // city's Pip is the sample's 'pipsqueak', so it never meets Hollowford's Pip); King Gnash still sits up on his throne
+    const who = n.id === 'pip' ? 'pipsqueak' : n.id, look = FOLK_LOOK[who] || (FOLK_LOOK[who] = Object.assign({ who }, n.look));
+    const nl = !!(window.TOWNSFOLK && TOWNSFOLK.takes(look)), up = nl ? TOWNSFOLK.labelUp(who, 26) : 26;
     g.save(); g.translate(e.x, e.y + (n.role === 'gnash' ? -6 : 0));
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 10, n.look.small ? 8 : 12, 5, 0, 0, 7); g.fill();
-    drawGob(g, e, n.look, false);
-    if (n.role === 'tinker' && TQ().stage === 1) { const bob = Math.sin(time * 4) * 2; g.font = `800 14px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText('?', 0, -28 + bob); g.fillStyle = '#f5c542'; g.fillText('?', 0, -28 + bob); }
+    if (nl) drawHuman(g, e, look);
+    else {
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 10, n.look.small ? 8 : 12, 5, 0, 0, 7); g.fill();
+      drawGob(g, e, n.look, false);
+    }
+    if (n.role === 'tinker' && TQ().stage === 1) { const bob = Math.sin(time * 4) * 2, qy = nl ? -up - 12 : -28; g.font = `800 14px ${DISPLAY}`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText('?', 0, qy + bob); g.fillStyle = '#f5c542'; g.fillText('?', 0, qy + bob); }
     g.restore();
-    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(n.name, e.x, e.y - 26); g.fillStyle = '#ffe9a8'; g.fillText(n.name, e.x, e.y - 26); }
+    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(n.name, e.x, e.y - up); g.fillStyle = '#ffe9a8'; g.fillText(n.name, e.x, e.y - up); }
   }
   HOOKS.drawMonster.castle_guard = (g, e, hurt) => drawGob(g, e, { tunic: '#7a2e2e', hat: 'helm', spear: true, apron: false }, hurt);
   HOOKS.drawMonster.yard_walker = (g, e, hurt) => drawMech(g, e, hurt, null);
