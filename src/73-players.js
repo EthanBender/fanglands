@@ -61,6 +61,9 @@
       tunic: l.tunic, hair: l.hair, shoulder: l.shoulder, helm: l.helm || null, body: l.body || null, shield: l.shield || null,
       weapon: l.weapon ? { shape: l.weapon.shape || 'sword', color: l.weapon.color || '#c9ccd3' } : null,
       tool: l.tool || null, toolColor: l.toolColor || null, rod: !!l.rod, fists: !!l.fists,
+      // whether the tool swings (a pick, an axe) or is held still (82-knightgear: the royal mine's stone, the pot's rope),
+      // and how hot that stone is; the shield raised (47-outliers' block): friends see it too
+      toolSwing: !!l.toolSwing, toolHeat: typeof l.toolHeat === 'number' ? +l.toolHeat.toFixed(2) : 0, block: !!l.block,
       // a worn party hat (77-dropparty's playerLook wrapper sets the colour word), so everyone sees it
       hat: l.hat || null,
       // a girl knight (79-boygirl): drawHuman draws her skirt, long hair, braid and ribbon from this one flag
@@ -75,6 +78,8 @@
       t: 'p', map: mapId(), region: regionName(), x: Math.round(player.x), y: Math.round(player.y), fx: +player.facing.x.toFixed(2), fy: +player.facing.y.toFixed(2),
       mv: !!player.moving, wt: +(player.walkT % 100).toFixed(1), hp: Math.ceil(player.hp), mhp: player.maxHp, lv: combatLevel(), look: lookOf(),
       mech: m ? { kind: m.kind || 'walker', hp: Math.ceil(m.hp), maxHp: m.maxHp } : null, dead: !!player.dead, def: playerDefRoll(), act: a ? a.type : null,
+      // sw: how many swings he has started (a friend's game plays the swing when it goes up)
+      sw: SWING.n,
       // the shared world's movement check (docs/ONLINE.md, "The shared world", Stage 1): the jump counter and his own speed
       j: JUMP.n, spd: speedNow(),
     };
@@ -83,15 +88,21 @@
   // door into an instance, a ferry's landing, a shove), so the world never reads a jump as running too fast. Counted
   // offline too: it costs a subtraction, and the presence that goes out first after coming online carries the true count.
   const JUMP = { n: 0, x: null, y: null };
+  // a swing starts when player.attackT goes up (06-systems sets it to 0.22): counted, so a friend sees each one
+  const SWING = { n: 0, last: 0 };
   // his speed now: the mover's own, or a machine's FULL STEAM run while it lasts (55-riding: 430 px/s for 1.15 s)
   const speedNow = () => Math.round(Math.max(player.speed || 175, window.RIDING && RIDING.special ? RIDING.SPEED : 0));
   HOOKS.update.push(dt => {
     const x = player.x, y = player.y;
     if (JUMP.x !== null && Math.hypot(x - JUMP.x, y - JUMP.y) > 3 * Math.max(player.speed || 0, 175) * Math.max(dt, 1 / 240) + 1) JUMP.n++;
     JUMP.x = x; JUMP.y = y;
+    const at = +player.attackT || 0;
+    if (at > SWING.last + 1e-6) SWING.n++;
+    SWING.last = at;
   });
   // a cheap signature of everything the contract counts as a change; the full message is only built when it differs
-  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || ''); };
+  const blocking = () => { const O = window.OUTLIERS; return !!(O && O.BLOCK && O.BLOCK.t > 0); };
+  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || '') + '|' + SWING.n + '|' + (blocking() ? 'B' : ''); };
   const sig = () => mapId() + '|' + Math.round(player.x) + ',' + Math.round(player.y) + '|' + player.facing.x.toFixed(2) + ',' + player.facing.y.toFixed(2) + '|' + (player.moving ? 1 : 0) + '|' + Math.ceil(player.hp) + '/' + player.maxHp + '|' + (player.dead ? 1 : 0) + '|' + lookKey();
   let lastSig = null, lastSentAt = -1e9, sent = 0, sentSock = null;
 
@@ -109,6 +120,7 @@
       e.shown.x += (e.x - e.shown.x) * k; e.shown.y += (e.y - e.shown.y) * k;
       if (e.moving) e.walkT += dt * 9;
       if (e.hurtT > 0) e.hurtT -= dt;
+      if (e.attackT > 0) e.attackT = Math.max(0, e.attackT - dt);
     }
     if (pressed.has('KeyF') && !player.dead) toggleFriends();
   });
@@ -135,31 +147,40 @@
     if (typeof m.mhp === 'number' && m.mhp > 0) e.mhp = m.mhp;
     if (typeof m.lv === 'number') e.lv = m.lv;
     if (m.look && typeof m.look === 'object') {
-      e.look = m.look; if (e.look.tool) e.look.toolSwing = true;
+      // an older game sends no toolSwing: its tools all swing
+      e.look = m.look; if (e.look.tool && typeof e.look.toolSwing !== 'boolean') e.look.toolSwing = true;
       // the gear: only real item ids in the right slot are kept; an old client's look (no gear) gets an empty one and
       // is drawn from its colours (82-knightgear reads them back as items)
       if (window.KNIGHTGEAR) e.look.gear = KNIGHTGEAR.cleanGear(e.look.gear);
     }
     e.mech = m.mech && typeof m.mech === 'object' ? m.mech : null; e.r = e.mech ? 20 : 13;
     e.dead = !!m.dead; e.act = typeof m.act === 'string' ? m.act : null; e.lastAt = nowMs();
+    // a new swing: play it (the knight's own 0.22 s), as 06-systems does for the knight himself
+    if (typeof m.sw === 'number') { if (typeof e.sw === 'number' && m.sw !== e.sw && !e.dead) e.attackT = 0.22; e.sw = m.sw; }
   });
 
   // ---------- drawing: among the y-sorted world items, like a monster or the knight himself ----------
+  // what a friend rides is drawn as the knight sees his own: the mare (51-mounts), the bulldozer (22), the Barrelbeast
+  // (32, its sprite in 20-hollowford) or the walker (the core), each with the knight in its seat in his own gear
+  const MECH_TOP = { horse: 52, dozer: 46, beast: 62, walker: 46 };
   function drawKnight(g, e) {
-    const look = e.look || DEFAULT_LOOK, x = e.shown.x, y = e.shown.y, onMech = !!e.mech && e.mech.kind !== 'horse';
+    const look = e.look || DEFAULT_LOOK, x = e.shown.x, y = e.shown.y, kind = e.mech ? (MECH_TOP[e.mech.kind] ? e.mech.kind : 'walker') : null, onMech = !!kind;
+    const hurt = e.hurtT > 0, shadow = (sy, rx, ry) => { g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, sy, rx, ry, 0, 0, 7); g.fill(); };
     g.save(); g.translate(x, y);
     if (e.dead) { g.globalAlpha = 0.3; g.rotate(1.4); drawHuman(g, e, look); g.restore(); return; }   // fallen: lying down and faint, as the knight himself is
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, onMech ? 14 : 11, onMech ? 22 : 12, onMech ? 9 : 6, 0, 0, 7); g.fill();
-    if (onMech) drawMech(g, e, e.hurtT > 0, look);
+    if (kind === 'horse' && window.MOUNTS && MOUNTS.drawHorse) { shadow(20, 30, 10); MOUNTS.drawHorse(g, e, hurt, look); }
+    else if (kind === 'dozer' && typeof drawDozer === 'function') drawDozer(g, e, hurt, look, null);
+    else if (kind === 'beast' && HOOKS.drawMonster.barrelbeast) { shadow(22, 48, 16); g.scale(0.9, 0.9); HOOKS.drawMonster.barrelbeast(g, Object.assign({}, e, { hp: +e.mech.hp || 1, maxHp: +e.mech.maxHp || 1 }), hurt, look); }
+    else if (onMech) { shadow(14, 22, 9); drawMech(g, e, hurt, look); }
     // a knight look (with gear) bobs only his body, from a picture (82-knightgear: the crowd stays cheap)
-    else if (look.gear && window.KNIGHTGEAR) KNIGHTGEAR.draw(g, e, look, { cache: true });
-    else { g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
+    else if (look.gear && window.KNIGHTGEAR) { shadow(11, 12, 6); KNIGHTGEAR.draw(g, e, look, { cache: true }); }
+    else { shadow(11, 12, 6); g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
     g.restore();
     // the name, the level in smaller grey after it, an hp bar when hurt, a ring when close enough to hand things over.
     // An admin's tag row starts with the gold ADMIN pill and the name is gold; the level stays.
     // a knight in gear can stand taller (a party hat, an upright spear): the name goes above whatever he wears
     const tall = !onMech && !e.dead && look.gear && window.KNIGHTGEAR ? Math.min(0, Math.round(KNIGHTGEAR.extent(look).t) + 29) : 0;
-    const top = Math.round(y) - (onMech ? 46 : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
+    const top = Math.round(y) - (onMech ? MECH_TOP[kind] : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
     g.font = 'bold 8px sans-serif'; const pw = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 + 4 : 0;
     g.font = 'bold 11px sans-serif'; const nw = g.measureText(e.n).width;
     g.font = '9px sans-serif'; const lw = g.measureText(lv).width;
@@ -532,6 +553,52 @@
       Object.assign(player.equip, q0);
       ['Kit', 'Old', 'New'].forEach(forget);
       check(P + 'the knight\'s gear goes online: presence carries the six item ids, a change of leg armour goes out at once, a knight off the wire is drawn in exactly the sender\'s items, and an old client\'s look (colours only) or an unknown id reads back from the colours and draws in the new style', sent && same && read && drew === true && styled.Kit && styled.Old && styled.New, { sent, gear: p && p.look.gear, same, read, drew, styled }); }
+    // what a friend does and rides shows on your screen: each swing he starts (presence's sw counts up, and his game
+    // plays the 0.22 s swing), his raised shield, a pick that swings and the royal mine's stone that he holds still; and
+    // the mare, the bulldozer, the Barrelbeast and the walker are each drawn with him in its seat (not a knight standing
+    // on the grass, or a walker for every machine)
+    if (window.KNIGHTGEAR) {
+      const r = {}, q0 = Object.assign({}, player.equip), a0 = player.action, O = window.OUTLIERS, bt0 = O && O.BLOCK ? O.BLOCK.t : 0;
+      const saved = { horse: window.MOUNTS ? MOUNTS.drawHorse : null, dozer: typeof drawDozer === 'function' ? drawDozer : null, beast: HOOKS.drawMonster.barrelbeast, walker: drawMech };
+      const drawn = [], recG = () => new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : k === 'getTransform' ? () => undefined : (k in t ? t[k] : () => { }), set: (t, k, v) => { t[k] = v; return true; } });
+      try {
+        // out
+        const sw0 = PLAYERS.presence().sw; player.attackT = 0.22; F.step([]); r.swOut = PLAYERS.presence().sw === sw0 + 1; player.attackT = 0;
+        Object.assign(player.equip, { shield: 'iron_shield' });
+        if (O && O.BLOCK) { O.BLOCK.t = 0.5; r.blockOut = PLAYERS.lookOf().block === true; O.BLOCK.t = 0; } else r.blockOut = true;
+        player.action = { type: 'rm_warm', t: 1, need: 2 }; const st = PLAYERS.lookOf(); r.stillOut = st.tool === 'stone' && st.toolSwing === false && st.toolHeat === 0.5;
+        player.action = { type: 'mine_mithril', t: 0, need: 9, tier: 2 }; const pk = PLAYERS.lookOf(); r.pickOut = pk.tool === 'pickaxe' && pk.toolSwing === true;
+        player.action = null;
+        // in: two presences, the second with one more swing
+        const at = { map: 'over', fx: 0, fy: -1, mv: false, wt: 0, hp: 20, mhp: 20, lv: 9, mech: null, dead: false, def: 100, act: null };
+        feed(Object.assign({ t: 'p', n: 'Swi', x: player.x + 30, y: player.y, look: PLAYERS.lookOf(), sw: 4 }, at)); F.step([]);
+        const before = REMOTE.Swi.attackT;
+        feed(Object.assign({ t: 'p', n: 'Swi', x: player.x + 30, y: player.y, look: PLAYERS.lookOf(), sw: 5 }, at));
+        r.swIn = before === 0 && REMOTE.Swi.attackT === 0.22; F.sim(20, []); r.swEnds = REMOTE.Swi.attackT === 0;
+        // an older game's tool (no toolSwing) swings; a still one stays still
+        feed(Object.assign({ t: 'p', n: 'Swi', x: player.x + 30, y: player.y, look: Object.assign(PLAYERS.lookOf(), { tool: 'pickaxe', toolSwing: undefined }) }, at)); r.oldTool = REMOTE.Swi.look.toolSwing === true;
+        feed(Object.assign({ t: 'p', n: 'Swi', x: player.x + 30, y: player.y, look: Object.assign(PLAYERS.lookOf(), { tool: 'stone', toolSwing: false }) }, at)); r.stillIn = REMOTE.Swi.look.toolSwing === false;
+        forget('Swi');
+        // the mounts: each friend's machine is drawn by its own drawer, with his look in the seat
+        if (window.MOUNTS) MOUNTS.drawHorse = function (g, e, hurt, rider) { drawn.push(['horse', e.n, !!rider && !!rider.gear]); return saved.horse(g, e, hurt, rider); };
+        if (saved.dozer) drawDozer = function (g, e, hurt, pilot, up) { drawn.push(['dozer', e.n, !!pilot && !!pilot.gear]); return saved.dozer(g, e, hurt, pilot, up); };
+        HOOKS.drawMonster.barrelbeast = function (g, e, hurt, pilot) { drawn.push(['beast', e.n, !!pilot && !!pilot.gear]); return saved.beast(g, e, hurt, pilot); };
+        drawMech = function (g, e, hurt, pilot) { drawn.push(['walker', e.n, !!pilot && !!pilot.gear]); return saved.walker(g, e, hurt, pilot); };
+        const kinds = { Ria: 'horse', Doz: 'dozer', Bea: 'beast', Wal: 'walker' };
+        let i = 0;
+        for (const n in kinds) feed(Object.assign({ t: 'p', n, x: player.x - 60 + 40 * i++, y: player.y + 40, look: PLAYERS.lookOf() }, at, { mech: { kind: kinds[n], hp: 50, maxHp: 100 } }));
+        F.step([]);
+        const items = []; for (const hk of HOOKS.draw) hk(recG(), items, cam);
+        for (const n in kinds) { const it = items.find(x => x.who === n); if (it) it.draw(); }
+        r.mounts = Object.keys(kinds).every(n => drawn.some(d => d[1] === n && d[0] === kinds[n] && d[2])) && drawn.length === 4;
+        r.drawn = drawn.map(d => d.join(' '));
+      } catch (e) { r.threw = String(e && e.message); }
+      finally {
+        if (window.MOUNTS) MOUNTS.drawHorse = saved.horse; if (saved.dozer) drawDozer = saved.dozer; HOOKS.drawMonster.barrelbeast = saved.beast; drawMech = saved.walker;
+        for (const k in player.equip) if (!(k in q0)) delete player.equip[k];
+        Object.assign(player.equip, q0); player.action = a0; if (O && O.BLOCK) O.BLOCK.t = bt0; ['Swi', 'Ria', 'Doz', 'Bea', 'Wal'].forEach(forget);
+      }
+      check(P + 'what a friend does and rides shows: each swing he starts plays on your screen (and ends), his raised shield, a pick that swings and a stone held still go out in his look; on the mare, in the bulldozer, on the Barrelbeast or in the walker he is drawn in that machine\'s own seat', !r.threw && r.swOut && r.blockOut && r.stillOut && r.pickOut && r.swIn && r.swEnds && r.oldTool && r.stillIn && r.mounts, r); }
     // layout: the chip overlaps no other button at four screen sizes, in the touch layout and the desktop one. It reads
     // touchMode() (forced both ways here), not the device's isTouch, which is always false headless — so the touch
     // layout, the one the iPad and the phones use, is really tested. On touch it is also a full 44 px control and

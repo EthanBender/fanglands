@@ -3,7 +3,7 @@
 // Owner: "...make it so i can drop party hats that will be SUPER RARE". src/77-dropparty.js makes the six hats (the
 // items, the crown on the knight's head, the Death rule); this file only draws their icons, because ICONS.set lives in
 // src/80-icons.js and this file loads after it. Six colours, six different drawings: the icon audit counts a recolour
-// as the same picture (docs/ONLINE.md, "Party hats"), so every paper crown carries its own mark on the band: dots,
+// as the same picture (docs/ONLINE.md, "Party hats"), so every hat (the striped cone the knight wears) carries its own mark on the band: dots,
 // stripes, a star, a zigzag, a diamond, checks. Nothing but a cracker gives one and each is worth 10,000, so the rarity
 // tiers call them unique and the gold halo goes behind them. That is right.
 // Feature file: registers through window.ICONS and HOOKS.selfTest only.
@@ -11,15 +11,19 @@
 {
   const COLOURS = ['red', 'yellow', 'blue', 'green', 'purple', 'white'];
   const pale = hex => { const h = String(hex || '#888888').replace('#', ''); const n = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); return (n[0] * 0.299 + n[1] * 0.587 + n[2] * 0.114) / 255 > 0.6; };
-  // the paper crown every hat shares: four points, a band a shade lighter, the fold down the middle.
+  // the hat every colour shares, as the knight wears it (82-knightgear): a cone with white stripes across it and a white
+  // bobble on its tip, on a band round its foot a shade lighter (the colour's mark goes on the band). It was a paper
+  // crown, but worn it is the cone: in the pack and the bank it is the same hat.
   // Answers the ink for the mark: dark on the pale yellow and white hats, white on the others.
   function crown(g, item) {
-    g.fillStyle = item.color;
-    g.beginPath(); g.moveTo(-8.4, 7.4); g.lineTo(-8.4, -3.6); g.lineTo(-5.6, 0.6); g.lineTo(-2.8, -6.8); g.lineTo(0, -1.2);
-    g.lineTo(2.8, -6.8); g.lineTo(5.6, 0.6); g.lineTo(8.4, -3.6); g.lineTo(8.4, 7.4); g.closePath();
-    g.fill(); g.stroke();
+    const cone = () => { g.beginPath(); g.moveTo(-6.6, 2.6); g.lineTo(0, -8); g.lineTo(6.6, 2.6); g.closePath(); };
+    g.fillStyle = item.color; cone(); g.fill(); g.stroke();
+    g.save(); cone(); g.clip(); g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 1.6;
+    for (const y of [-0.6, -4.4]) { g.beginPath(); g.moveTo(-8, y + 1.4); g.lineTo(8, y - 1.4); g.stroke(); }
+    g.restore();
+    g.fillStyle = item.color; g.beginPath(); g.rect(-8.4, 2.4, 16.8, 5); g.fill(); g.stroke();
     g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(-8.4, 2.4, 16.8, 5);
-    g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, -1.2); g.lineTo(0, 2.4); g.stroke();
+    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(0, -8.2, 2, 0, 7); g.fill(); g.stroke();
     return pale(item.color) ? '#2d333b' : '#ffffff';
   }
   const MARK = {
