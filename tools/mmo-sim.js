@@ -3,6 +3,9 @@
 //
 //   node tools/mmo-sim.js            the FakeWorld below routes messages by docs/ONLINE.md's rules
 //   node tools/mmo-sim.js --room     online/src/room.js (the real routing class) does it instead (MMO_ROOM=path overrides the file)
+//   node tools/mmo-sim.js --sim      the real Room with the world's own game copy wired in (docs/ONLINE.md, "The shared world",
+//                                    Stage 2): every scenario below with every map on 'keeper' (nothing may change), then
+//                                    Deepholm switched to 'world': both games are shown the copy's monsters and a hit reaches it
 //
 // What it proves, in order: two knights log in with fake tokens; the first one in is the keeper of the
 // overworld; the second sees the first's presence (and her girl knight's look, 79-boygirl); standing by the same goblin, the second knight's hit
@@ -685,7 +688,8 @@ function mulberry32(seed) {
 
 async function main() {
   const t0 = Date.now();
-  const useRoom = process.argv.includes('--room');
+  const useSim = process.argv.includes('--sim');
+  const useRoom = process.argv.includes('--room') || useSim;
   let vnow = Date.now(); const now = () => vnow;
   // the world's dice: seeded, and every draw written down, so each prize can be recomputed from the contract
   const worldDice = mulberry32(20260925), draws = [];
@@ -694,6 +698,22 @@ async function main() {
   const logChat = (n, text, at) => chatLog.push({ n, text, at });
   const room = useRoom ? await loadRoom(now, { random, log: logChat }) : new FakeWorld({ now, random, log: logChat });
   if (!room.store || typeof room.store.addAccount !== 'function') { console.error('this world has no store with addAccount (the admins build of room.js has one): point MMO_ROOM at it'); process.exit(1); }
+  // --sim: the world's game copy (tools/build-sim.mjs --strip, from this index.html) in a real SimHost on the same fake clock
+  let simPump = null, simHost = null, simBook = null;
+  if (useSim) {
+    const { pathToFileURL } = require('url');
+    const lib = await import(pathToFileURL(path.join(ROOT, 'tools', 'sim-lib.mjs')).href);
+    const { SimHost } = await import(pathToFileURL(path.join(ROOT, 'online', 'src', 'sim', 'host.js')).href);
+    const { SimBook } = await import(pathToFileURL(path.join(ROOT, 'online', 'src', 'sim', 'book.js')).href);
+    const strip = await lib.loadGame({ strip: true });
+    const timers = []; let seq = 0;
+    const timer = { set: (f, ms) => { const id = ++seq; timers.push({ id, at: vnow + Math.max(0, ms), f }); return id; }, clear: id => { const i = timers.findIndex(t => t.id === id); if (i >= 0) timers.splice(i, 1); } };
+    simPump = () => { for (let guard = 0; guard < 100; guard++) { timers.sort((a, b) => a.at - b.at || a.id - b.id); if (!timers.length || timers[0].at > vnow) break; timers.shift().f(); } };
+    simBook = new SimBook(null, now);
+    room.worlds.book = simBook;
+    simHost = new SimHost({ makeGame: strip.makeGame, now, clock: () => performance.now(), timer, seed: 5, onFallback: (m, r, row) => room.worlds.fell(m, r, row), onSend: (m, l) => room.worlds.fromCopy(m, l) });
+    room.worlds.useHost(simHost);
+  }
   // the parent page's work, done before anyone logs in: Ann is an admin, Ben a player
   room.store.addAccount('Ann', 'admin'); room.store.addAccount('Ben');
   const wire = new Wire(room);
@@ -717,6 +737,7 @@ async function main() {
       if (frames % 8 === 0) for (const g of both) presence(g);
       vnow += FRAME_MS; frames++;
       if (typeof room.tick === 'function') room.tick();
+      if (simPump) simPump();
       wire.flush();
       if (each) each();
     }
@@ -1415,8 +1436,30 @@ async function main() {
     A.NET.connect(); wire.flush(); tick(40);
   }
 
+  // ---- --sim: Deepholm switched to 'world' (docs/ONLINE.md, "The shared world", Stage 2) ----
+  if (useSim) {
+    line('S0. with the world\'s copy wired in and every map on keeper, no copy was ever built and nothing went to sim_log', Object.keys(simHost.bootTimes).length === 0 && simBook.recent(5).length === 0, { boots: simHost.bootTimes, log: simBook.recent(5) });
+    room.setSim({ move: 'observe', maps: { deepholm: 'world' } }, 'parent page');
+    for (const g of both) if (!g.NET.online()) { g.NET.connect(); wire.flush(); }
+    const ev = (g, code) => vm.runInContext(code, g);
+    ev(A, "(() => { INSTANCES.enter('deepholm'); const m = monsters.find(o => o.type === 'dwarf_guard'); player.x = m.home.x - 30; player.y = m.home.y + 60; window.__peace = true; })()"); tick(4);
+    ev(B, "(() => { INSTANCES.enter('deepholm'); const m = monsters.find(o => o.type === 'dwarf_guard'); player.x = m.home.x + 30; player.y = m.home.y + 60; window.__peace = true; })()");
+    tick(150);
+    const copy = simHost.copies.get('deepholm'), g = copy && copy.api.peek;
+    const kA = ev(A, 'COOP.keeper()'), kB = ev(B, 'COOP.keeper()');
+    const real = g ? JSON.stringify(g('monsters').filter(m => !m.dead).map(m => m.nid).sort()) : null;
+    const pA = JSON.stringify(ev(A, 'monsters.filter(m => m.remote && !m.dead).map(m => m.nid).sort()')), pB = JSON.stringify(ev(B, 'monsters.filter(m => m.remote && !m.dead).map(m => m.nid).sort()'));
+    line('S1. Deepholm switched to world: both games are told @world:deepholm keeps it and show exactly the copy\'s monsters', kA === '@world:deepholm' && kB === '@world:deepholm' && !!real && pA === real && pB === real, { kA, kB, real, pA, pB });
+    const m = g && g('monsters').find(o => o.type === 'dwarf_guard' && !o.dead), hp0 = m && m.hp;
+    if (m) { B.NET.send({ t: 'hit', nid: m.nid, dmg: 7, knock: 0, bomb: false }); wire.flush(); tick(12); }
+    line('S2. Ben\'s hit on a puppet goes to the world\'s copy', !!m && m.hp === hp0 - 7, { nid: m && m.nid, hp0, hp: m && m.hp });
+    room.setSim({ move: 'observe', maps: { deepholm: 'keeper' } }, 'parent page'); tick(20);
+    const back = room.keeperOf('deepholm') && room.keeperOf('deepholm').name;
+    line('S3. switched back: a knight\'s game keeps Deepholm again (Ann, longest there), both games agree, and sim_log has both changes', back === 'Ann' && ev(A, 'COOP.isKeeper()') && ev(B, 'COOP.keeper()') === 'Ann' && simBook.recent(2).map(r => r.to).join() === 'keeper,world', { back, log: simBook.recent(2) });
+  }
+
   const failed = results.filter(r => !r).length;
-  console.log((failed ? `${failed} FAILED of ${results.length}` : `ALL ${results.length} PASS`) + ` (${useRoom ? (process.env.MMO_ROOM || 'online/src/room.js') : 'FakeWorld'}, ${frames} frames, ${Date.now() - t0} ms)`);
+  console.log((failed ? `${failed} FAILED of ${results.length}` : `ALL ${results.length} PASS`) + ` (${useRoom ? (process.env.MMO_ROOM || 'online/src/room.js') + (useSim ? ' with the world\'s copy' : '') : 'FakeWorld'}, ${frames} frames, ${Date.now() - t0} ms)`);
   process.exit(failed ? 1 : 0);
 }
 // Run as a script: the scenarios above. Required as a module (tools/mmo-sim-admin.js, tools/mmo-sim-party.js): the

@@ -23,7 +23,7 @@
   const REMOTE_STALE = 15;    // seconds without presence before a remote knight is forgotten
   const KNIGHT_R = 13;
 
-  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false };
+  const S = { dbg: { k: null, rows: 0, times: [] }, map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false };
   // Named bosses (docs/ONLINE.md, "Named bosses: boss_call and helper credit"). A boss file registers how its boss is woken in
   // HOOKS.bossCall[id] = { map, near: [tx, ty, tiles] | null, alive: () => bool, wake: askerName|null => void, name, type,
   //   rest: seconds | undefined, resting: m => bool, told: askerName => string, refused: secondsLeft => void };
@@ -176,6 +176,8 @@
     if (msg.n !== undefined && msg.n !== S.keeper) return;
     const idx = index(); let added = false;
     const n = Math.min(msg.list.length, 400);
+    // ?debug=tick (docs/ONLINE.md, Stage 2): the world's tick and how often its stream lands
+    S.dbg.k = num(msg.k); S.dbg.rows = n; S.dbg.times.push(time); while (S.dbg.times.length && S.dbg.times[0] < time - 1) S.dbg.times.shift();
     for (let i = 0; i < n; i++) {
       const e = msg.list[i];
       if (!Array.isArray(e) || e.length < 14) continue;
@@ -195,6 +197,15 @@
       p.dead = dead; p.hp = hp; if (maxHp > 0) p.maxHp = maxHp; p.state = typeof state === 'string' ? state : 'idle';
       p.facing.x = fx; p.facing.y = fy; p.moving = !!moving; p.hurtT = hurt; p.attackT = attackT; p.stunT = stunT; p.respawnT = 1e9;
       p.seen = time; p.gone = false;
+      // the world's optional columns [tgt, lock, phase, vx, vy, look] (docs/ONLINE.md, Stage 2): the one extra state a monster's
+      // look reads rides on the puppet (78-monsterlook reads phase, ally and emberT); a row without them clears them
+      if (e.length > 14) {
+        const ph = e[16], lk = e[19] && typeof e[19] === 'object' ? e[19] : null;
+        p.tgt = typeof e[14] === 'string' ? e[14] : null;
+        p.phase = typeof ph === 'string' && ph.length <= 24 ? ph : undefined;
+        p.ally = lk && typeof lk.ally === 'string' && lk.ally.length <= 24 ? lk.ally : undefined;
+        p.emberT = lk && num(lk.emberT) !== null ? lk.emberT : undefined;
+      } else if (p.tgt || p.phase !== undefined || p.ally !== undefined || p.emberT !== undefined) { p.tgt = null; p.phase = undefined; p.ally = undefined; p.emberT = undefined; }
       // the keeper's row turning dead is its word that this monster died: every screen shows the death on receipt, once
       // (deathSeen). One first seen already dead died before this knight could see it, so it plays nothing.
       if (!dead) p.deathSeen = false;
@@ -308,9 +319,14 @@
     m.state = 'chase';
     const dx = t.x - m.x, dy = t.y - m.y, d = dp || 1, stop = m.r + KNIGHT_R + 4;
     let vx = 0, vy = 0;
-    if (dp > stop) { vx = dx / d; vy = dy / d; }
     m.facing = { x: dx / d, y: dy / d };
-    if (dp <= stop + 10 && m.attackCd <= 0) {
+    // a thrower (the sapper) keeps its distance and throws its sticky bomb, as the core loop does at its own knight. Only the
+    // world's copy steps throwers here (before() leaves them to the core in a browser); the bomb's blast is the copy's to hurt with
+    if (def.thrower && dp < 5 * TILE && dp > 1.5 * TILE) {
+      if (dp < 2.5 * TILE) { vx = -dx / d; vy = -dy / d; }
+      if (m.attackCd <= 0) { m.attackCd = 2.4; m.attackT = 0.2; const sp = 260; projectiles.push({ kind: 'sticky', x: m.x, y: m.y, vx: dx / d * sp, vy: dy / d * sp, t: 0, life: dp / sp, fuse: 1.3, owner: 'monster' }); }
+    } else if (dp > stop) { vx = dx / d; vy = dy / d; }
+    if (!(def.thrower && dp < 5 * TILE && dp > 1.5 * TILE) && dp <= stop + 10 && m.attackCd <= 0) {
       m.attackCd = def.mech ? 1.6 : 1.1; m.attackT = 0.2;
       const dmg = rollHit((def.att + 8) * 64, t.def, def.maxHit);
       NET.send({ t: 'hurt', to: t.n, dmg, x: Math.round(m.x), y: Math.round(m.y) });
@@ -340,7 +356,8 @@
     const frozen = [];
     for (const m of monsters) {
       if (m.dead || m.remote || m.phantom || (m.stunT || 0) > 0) continue;
-      const def = MONSTER_DEFS[m.type]; if (!def || def.thrower || def.harmless) continue;
+      // throwers aim only at the keeper's own knight in a browser; the world's copy (79-worldkeeper) steps them at every knight
+      const def = MONSTER_DEFS[m.type]; if (!def || (def.thrower && !window.WORLDKEEPER) || def.harmless) continue;
       let best = null, bd = player.dead ? Infinity : dist(m.x, m.y, player.x, player.y);
       for (const k of here) { if (k.dead) continue; const d = dist(m.x, m.y, k.x, k.y); if (d < bd) { bd = d; best = k; } }
       if (!best) continue;
@@ -515,8 +532,20 @@
 
   window.COOP = { refill: refillIfCleared, call, CREDIT, phantomOf, bossCall: onBossCall, bossWait: onBossWait, mmss,
     isKeeper, keeper: () => S.keeper, map: () => S.map, remotes: () => Object.values(S.remotes), knightsHere, puppets: () => S.puppets,
-    get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), find, apply: applyMon, reset, state: S,
+    get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), find, apply: applyMon, reset, state: S, debugTick: () => DEBUG_TICK,
   };
+
+  // ?debug=tick (the two-browser proofs, docs/ONLINE.md "The shared world", Stage 2): who keeps this map, how often its stream
+  // lands, the world's tick, the rows in the last mon and the puppets. Nobody sees it without the address saying so.
+  const DEBUG_TICK = typeof location !== 'undefined' && !!location && /[?&]debug=tick\b/.test(String(location.search || ''));
+  if (DEBUG_TICK) HOOKS.hud.push(g => {
+    const k = S.keeper, world = typeof k === 'string' && k.indexOf('@world:') === 0;
+    const lines = ['keeper ' + (k || '-') + (world ? ' (the world)' : (k && typeof NET !== 'undefined' && k === NET.me ? ' (you)' : '')),
+      'mon ' + S.dbg.times.length + '/s   k ' + (S.dbg.k === null ? '-' : S.dbg.k) + '   rows ' + S.dbg.rows, 'puppets ' + (S.puppets ? S.puppets.length : 0) + '   map ' + S.map];
+    g.save(); g.font = '12px monospace'; g.fillStyle = 'rgba(0,0,0,0.65)'; g.fillRect(6, 6, 300, 54); g.fillStyle = '#e6edf3';
+    for (let i = 0; i < lines.length; i++) g.fillText(lines[i], 12, 22 + i * 15);
+    g.restore();
+  });
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {

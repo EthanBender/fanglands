@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 // ============================================================================
 // SIM-SUITE — the deploy gate for the server's game copy (docs/ONLINE.md, "The shared world", Stage 0)
-//   node tools/sim-suite.mjs [index.html] [--only=reads,selftest,isolation,parity,instances]
+//   node tools/sim-suite.mjs [index.html] [--only=reads,selftest,strippedtests,isolation,parity,instances,looks]
 // 0. The stripped copy reads no stripped name's value from a kept file unless tools/build-sim.mjs STRIP_READS lists it
-//    with its reason (the self-tests below run through the full build only: most of them press panel buttons that only
-//    the stripped drawing makes, so this static gate and the parity runs are what stand for the stripped build).
+//    with its reason (with check 1b and the parity runs, what stands for the stripped build).
 // 1. The whole HOOKS.selfTest suite through makeGame (the full build), with the same pass count as tools/headless.js
 //    (which this runs too, in the same way headless.js does, for the count). A run with a failure is run once more:
 //    the suite has a few known random flakes.
@@ -15,6 +14,10 @@
 // 4. The stand-in: parked dead on a solid tile, never respawns, never leaves its instance, keeper of its map.
 // 5. Each instance's worldGen:false copy matches its full build (tiles, monsters, 300 ticks with two knights); the
 //    ones that match are printed as the list SimHost may build without the overworld.
+// 1b (Stage 2). The same self-test suite through the STRIPPED build, with the pieces the checks press given back
+//    (build-sim --test-ui): the full build's count, less the stripped files' own checks and the listed UI-only ones.
+// 6 (Stage 2). The monsters' look fields: read from 78-monsterlook when the copy is built, carried by the rows, and each one
+//    reaches a puppet in a real game.
 // Exit 1 on any FAIL. Takes one of the machine's test slots, like tools/headless.js.
 // ============================================================================
 import fs from 'node:fs';
@@ -23,7 +26,7 @@ import path from 'node:path';
 import { loadGame, takeSlot, plainCopy, mapHash, stateHash, Bots, ROOT, makeWindow, mulberry32 } from './sim-lib.mjs';
 import { SimHost } from '../online/src/sim/host.js';
 import { createRequire } from 'node:module';
-import { checkStrippedReads } from './build-sim.mjs';
+import { checkStrippedReads, TEST_UI_FILES } from './build-sim.mjs';
 
 // every name a module reads or writes without declaring it, with how often (acorn + eslint-scope, as build-sim parses)
 function freeNames(code) {
@@ -81,23 +84,96 @@ function headlessWindow() {
   g.__gameSource = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
   return g;
 }
-function runSuite(how) {
+function runSuite(how, makeGame = full.makeGame) {
   const g = headlessWindow();
+  const byFile = {};
   if (how === 'vm') { vm.createContext(g); const script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>')); vm.runInContext(script, g, { filename: 'index.html' }); }
-  else { g.Math = Math; g.Date = Date; full.makeGame(g); }
+  else {
+    g.Math = Math; g.Date = Date;
+    const api = makeGame(g);
+    // each file's chapter on its own: the check names it made, and a chapter that throws is one FAIL named for its file
+    // (the rest of the suite still runs). The checks themselves are untouched.
+    const H = api.peek('HOOKS');
+    H.selfTest = H.selfTest.map(f => {
+      const file = f.__file || '?';
+      const w = function (check, F, h) {
+        const mine = (n, ok, info) => { (byFile[file] = byFile[file] || []).push(n); return check(n, ok, info); };
+        try { return f(mine, F, h); } catch (e) { mine('THREW ' + file + ': ' + String(e && e.message).slice(0, 160), false); }
+      };
+      w.__file = file; return w;
+    });
+  }
   const r = g.FANGLANDS.selfTest();
   const names = Object.keys(r).filter(k => k !== 'summary');
-  return { summary: r.summary, total: names.length, pass: names.filter(k => !String(r[k]).startsWith('FAIL')).length, fails: names.filter(k => String(r[k]).startsWith('FAIL')).map(k => k + ': ' + String(r[k]).slice(0, 200)), names };
+  const fileOf = {}; for (const [f, list] of Object.entries(byFile)) for (const n of list) fileOf[n] = f;
+  return { summary: r.summary, total: names.length, pass: names.filter(k => !String(r[k]).startsWith('FAIL')).length, fails: names.filter(k => String(r[k]).startsWith('FAIL')).map(k => k + ': ' + String(r[k]).slice(0, 200)), failNames: names.filter(k => String(r[k]).startsWith('FAIL')), names, byFile, fileOf, report: r };
 }
+let f1 = null;
 if (want('selftest')) {
   const timed = how => { const a = Date.now(); let r = runSuite(how); if (r.fails.length) { console.log(`  (${how}: ${r.fails.length} failed, running once more: ${r.fails.slice(0, 3).join(' / ')})`); r = runSuite(how); } r.ms = Date.now() - a; return r; };
-  const v = timed('vm'), f = timed('factory');
+  const v = timed('vm'), f = timed('factory'); f1 = f;
   for (const x of f.fails) console.log('  factory: ' + x);
   for (const x of v.fails) console.log('  headless: ' + x);
   const onlyF = f.names.filter(n => !v.names.includes(n)), onlyV = v.names.filter(n => !f.names.includes(n));
   check(`1. the whole self-test suite through makeGame (full build) passes with the same count as tools/headless.js: ${f.summary} vs ${v.summary}`,
     !f.fails.length && !v.fails.length && f.pass === v.pass && f.total === v.total, { factory: { pass: f.pass, total: f.total, ms: f.ms }, headless: { pass: v.pass, total: v.total, ms: v.ms }, namesOnlyInOne: onlyF.length + onlyV.length });
   if (onlyF.length) console.log(`  (${onlyF.length} check names differ between the two runs: they carry random numbers, e.g. "${onlyF[0].slice(0, 90)}")`);
+}
+
+// ---------------------------------------------------------------------------
+// 1b. the same suite through the STRIPPED build (decided 2026-10-03, before any copy runs monsters for players): the self-tests
+// kept, and the pieces the checks press given back (tools/build-sim.mjs TEST_UI_FILES: the drawing that lays out a panel's
+// buttons, the title, the playthrough bot, with every drawing registration kept). Every other stripped file stays the
+// server's stand-in. It must pass with the full build's count, less exactly: the stripped files' own checks, and the checks
+// below, each of which reads one of those stand-ins (the book, the music, the icons) and none of which is about monsters,
+// combat, drops, instances or night. A listed check that passes is fine; a check that fails and is not listed fails the gate.
+// ---------------------------------------------------------------------------
+export const UI_ONLY = [
+  { file: '10-hud', re: /^THREW 10-hud: .*not valid JSON/, why: 'the panel layout audit keeps the book\'s state with JSON.parse(JSON.stringify(WIKI.state)); the book (44-wiki) is a stand-in, so its three panel-layout checks never run' },
+  { file: '17-tap', re: /^tap: the long-press tag on a monster carries a wiki mark/, why: 'the mark opens the book (44-wiki), a stand-in' },
+  { file: '43-settings', re: /^settings: music row drives 15-music/, why: 'the music (15-music) is a stand-in' },
+  { file: '43-settings', re: /^settings: persist as JSON under fanglands\.settings/, why: 'the legacy music key migrates through MUSIC.enabled() (15-music), a stand-in' },
+  { file: '43-settings', re: /^settings: the Controls line is built from the real key handlers/, why: 'the K (book) and N (music) handlers live in the stripped 44-wiki and 15-music' },
+  { file: '43-settings', re: /^settings: the key table lists every key the game answers/, why: 'the K (book) and N (music) handlers live in the stripped 44-wiki and 15-music' },
+  { file: '46-cinderwight', re: /^cinderwight: the wiki page names it/, why: 'the book (44-wiki) is a stand-in' },
+  { file: '46-scales', re: /^scales: the wiki ash drake page/, why: 'the book (44-wiki) is a stand-in' },
+  { file: '47-outliers', re: /^outliers: the first blow taken while wearing a shield teaches the block, once a game, and the book carries a Blocking page/, why: 'the Blocking page is the book\'s (44-wiki), a stand-in (the lesson itself is checked: taught and once pass)' },
+  { file: '62-ores', re: /^ores: each new rock is solid, tappable on the iPad, mined through the core GATHER table, and the book has a page/, why: 'the page is the book\'s (44-wiki), a stand-in (solid, tappable and gathered are checked and pass)' },
+  { file: '69-retaliate', re: /^fight back: Settings mirrors the switch, O flips it \(not while typing in the wiki\)/, why: 'typing in the book (44-wiki, a stand-in) and settings persistence through MUSIC.enabled() (15-music); every fight back check itself passes' },
+  { file: '81-partyhats', re: /^party hats: six icons of their own/, why: 'the icons (80-icons, 81-icons-art) are stand-ins' },
+  { file: '91-cloudkingdom', re: /^kingdom: K13b the gold stones are explained the same way everywhere a child reads about them/, why: 'one of the places is the book (44-wiki), a stand-in' },
+  { file: '91-cloudkingdom', re: /^kingdom: K20 the wiki/, why: 'the book (44-wiki) is a stand-in' },
+  { file: '91-royalmine', re: /^royalmine: audits: every new XP source is declared; progression has no dead gate; the book has pages/, why: 'the book\'s pages (44-wiki) and the item icons (80-icons) are stand-ins' },
+];
+if (want('selftest') || want('strippedtests')) {
+  const fullRun = typeof f1 !== 'undefined' && f1 ? f1 : (() => { const r = runSuite('factory'); return r; })();
+  const ui = await loadGame({ strip: true, keepTests: true, testUi: true, html: htmlFile });
+  const a = Date.now();
+  let st = runSuite('factory', ui.makeGame);
+  const listedFail = n => { const f = st.fileOf[n]; return UI_ONLY.find(u => u.file === f && u.re.test(n)) || UI_ONLY.find(u => u.re.test(n) && n.startsWith('THREW ' + u.file)); };
+  let stray = st.failNames.filter(n => !listedFail(n));
+  if (stray.length) { console.log(`  (stripped: ${stray.length} unlisted failures, running once more: ${stray.slice(0, 3).map(x => x.slice(0, 100)).join(' / ')})`); st = runSuite('factory', ui.makeGame); stray = st.failNames.filter(n => !listedFail(n)); }
+  st.ms = Date.now() - a;
+  const stripped = new Set(ui.report.strippedFiles.map(x => x.file));
+  const count = r => { const c = { core: 0 }; for (const n of r.names) { const f = r.fileOf[n] || 'core'; c[f] = (c[f] || 0) + 1; } return c; };
+  const cf = count(fullRun), cs = count(st);
+  let own = 0, lost = 0; const odd = [];
+  const threw = new Set(st.failNames.filter(n => n.startsWith('THREW ')).map(n => st.fileOf[n]));
+  for (const f of new Set([...Object.keys(cf), ...Object.keys(cs)])) {
+    const nf = cf[f] || 0, ns = cs[f] || 0;
+    if (stripped.has(f)) { own += nf; if (ns) odd.push(f + ' (stripped, yet ' + ns + ' checks ran)'); continue; }
+    if (threw.has(f)) { lost += Math.max(0, nf - (ns - 1)); continue; }
+    if (nf !== ns) odd.push(`${f}: ${nf} checks in the full build, ${ns} stripped`);
+  }
+  const listed = st.failNames.filter(n => listedFail(n));
+  const listedChecks = listed.filter(n => !n.startsWith('THREW '));
+  const expected = fullRun.pass - own - lost - listedChecks.length;
+  for (const n of stray) console.log('  stripped, not listed: ' + n.slice(0, 220) + '   ' + String(st.report[n]).slice(0, 200));
+  for (const n of listed) { const u = listedFail(n); console.log(`  UI-only (${u.file}): ${n.slice(0, 110)}... (${u.why})`); }
+  for (const u of UI_ONLY) if (!listed.some(n => listedFail(n) === u)) console.log(`  (listed, passed this run: ${u.file} ${u.re})`);
+  for (const o of odd) console.log('  count differs: ' + o);
+  check(`1b. the self-test suite through the STRIPPED build (the buttons' drawing given back: ${TEST_UI_FILES.join(', ')}): ${st.pass} of ${st.total} pass; the full build's ${fullRun.pass}, less the ${own} checks of the stripped files themselves${lost ? ', the ' + lost + ' a listed chapter could not run' : ''} and the ${listedChecks.length} listed UI-only checks, is ${expected}`,
+    !stray.length && !odd.length && st.pass === expected, { strip: { pass: st.pass, total: st.total, ms: st.ms }, full: { pass: fullRun.pass, total: fullRun.total }, ownChecksOfStrippedFiles: own, lostInListedThrow: lost, uiOnlyFailed: listedChecks.length, stray: stray.length, countsDiffer: odd.length });
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +302,61 @@ if (want('instances')) {
   check(`5. every instance boots as a copy; worldGen:false matches the full build for: ${free.join(', ') || 'none'}` + (kept.length ? `; full build kept for: ${kept.join(', ')}` : ''), !broken.length, { broken });
   console.log('  WORLDGEN_FREE = ' + JSON.stringify(free));
   console.log('  boot ms in node (full / worldGen:false): ' + JSON.stringify(boots));
+}
+
+// ---------------------------------------------------------------------------
+// 6. the monsters' look fields (docs/ONLINE.md, Stage 2; the monster-look addendum): every field 78-monsterlook's LOOK_FIELDS
+// names is carried by the copy's rows, read from the look file when the copy is built (window.__LOOK_FIELDS), and each one,
+// set on a monster in a real copy, reaches a puppet in a real game with that field
+// ---------------------------------------------------------------------------
+if (want('looks')) {
+  const host = new SimHost({ makeGame: strip.makeGame, now: () => NOW, clock: () => performance.now(), timer: noTimer, seed: 3 });
+  const c = host.boot('coalmine');
+  const g = c.api.peek, w = c.w, T = g('TILE');
+  const fullLook = plainCopy(full.makeGame, 1).w.MONSTER_LOOK.LOOK_FIELDS;
+  const want6 = Object.fromEntries(Object.entries(fullLook).map(([t, v]) => [t, v.field]));
+  const built = w.__LOOK_FIELDS, carried = w.WORLDKEEPER.carries();
+  const missing = Object.keys(built).filter(t => built[t] !== 'state' && !(carried[t] === built[t] || (built[t] === 'element' && carried[t] === 'phase')));
+  check(`6a. the copy reads 78-monsterlook's LOOK_FIELDS when it is built (${Object.keys(built).length} types) and its rows carry every field that is not a row column already`, JSON.stringify(built) === JSON.stringify(want6) && !missing.length, { built: Object.keys(built).length, full: Object.keys(want6).length, missing });
+  // one monster of each type beside a knight, in the state its field shows
+  const e0 = c.w.INSTANCES.get('coalmine').entry, kx = (e0[0] + 0.5) * T, ky = (e0[1] + 0.5) * T;
+  host.setKnights('coalmine', [{ n: 'Ann', x: kx, y: ky, dead: false, def: 576, lv: 99, hp: 99, mhp: 99, spd: 175 }]);
+  host.tick(NOW + 100);
+  const SET = {
+    thunderbird: [m => { m.phase = 'perch'; }, 'phase', 'perch'], the_fang: [m => { m.element = 'ice'; }, 'phase', 'ice'],
+    zombie_brute: [m => { m.windT = 0.5; }, 'phase', 'wind'], cinderwight: [m => { m.coldT = 1; }, 'phase', 'cold'],
+    barrelbeast: [m => { m.rodGlow = 0.5; }, 'phase', 'volley'], gnasher: [m => { m.armT = 0.2; }, 'phase', 'arm'],
+    bulldozer: [m => { m.chargeT = 1; }, 'phase', 'charge'], yard_dozer: [m => { m.chargeT = 1; }, 'phase', 'charge'],
+    ally_knight: [m => { m.ally = 'garrick'; }, 'ally', 'garrick'], cinder_heart: [m => { m.emberT = 3.5; }, 'emberT', 3.5],
+    ginormous_golem: [() => { w.ROYALMINE.run.mendFlash = g('time'); }, 'phase', 'mend'],
+    giant_mithril: [m => { m.state = 'stir'; }, 'state', 'stir'], giant_stormstone: [m => { m.state = 'waking'; }, 'state', 'waking'], golemling: [m => { m.state = 'emerge'; }, 'state', 'emerge'],
+    zombie_calm: [m => { m.state = 'chase'; }, 'state', 'chase'], grave_zombie_calm: [m => { m.state = 'chase'; }, 'state', 'chase'],
+  };
+  const D = g('MONSTER_DEFS'), mons = g('monsters');
+  const types = Object.keys(built), notSet = types.filter(t => !SET[t]);
+  types.forEach((type, i) => {
+    const d = D[type]; if (!d || !SET[type]) return;
+    const x = kx + 20 + (i % 6) * 30, y = ky + 20 + Math.floor(i / 6) * 30;
+    const m = { type, nid: 'look' + i, x, y, home: { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: false, state: 'idle', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0 };
+    SET[type][0](m); mons.push(m);
+  });
+  const rows = c.wk.rows();
+  // a real game (the full build) that is not the keeper: the rows land on its puppets
+  const G = plainCopy(full.makeGame, 2);
+  let sock = null;
+  G.w.NET.enabled = true; G.w.NET.token = 'look';
+  G.w.NET.useFake({ call: async () => ({}), open: () => (sock = { readyState: 1, send(str) { const m = JSON.parse(str); if (m.t === 'hello') sock.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Cy', at: NOW, keeper: '@world:coalmine' }) }); }, close() { } }) });
+  G.w.NET.connect();
+  G.w.COOP.apply({ t: 'mon', n: '@world:coalmine', list: rows, k: 1, at: NOW });
+  const got = {}, bad = [];
+  types.forEach((type, i) => {
+    if (!SET[type]) return;
+    const p = G.w.COOP.find('look' + i), [, field, value] = SET[type];
+    got[type] = p ? p[field] : '(no puppet)';
+    if (!p || p[field] !== value) bad.push(type);
+    else { try { G.w.MONSTER_LOOK.viewOf(p, type); } catch (e) { bad.push(type + ' (the look threw: ' + e.message + ')'); } }
+  });
+  check(`6b. each of the ${types.length} look fields, set on a monster in a real copy, reaches a puppet in a real game with that field (the golem's mend as phase 'mend'), and the look reads it`, !bad.length && !notSet.length && G.w.COOP.puppets() && rows.length >= types.length, { bad, notSet, rows: rows.length, got });
 }
 
 console.log(fails ? `sim-suite: ${fails} FAIL, ${passes} PASS (${Math.round((Date.now() - t0) / 1000)} s)` : `sim-suite: ALL ${passes} PASS (${Math.round((Date.now() - t0) / 1000)} s)`);

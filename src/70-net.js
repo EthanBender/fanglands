@@ -61,12 +61,12 @@
     return proto + location.host + '/ws?token=' + encodeURIComponent(NET.token);
   };
   function wire(sock) {
-    sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send(NET.hello(), true); };
+    sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send(NET.hello(), true); NET.helloWait = 0; NET.wakeSaid = false; };
     sock.onmessage = ev => {
       let msg = null; try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (!msg || typeof msg.t !== 'string') return;
       NET.stats.got++;
-      if (msg.t === 'welcome') { NET.status = 'on'; NET.me = msg.me; }
+      if (msg.t === 'welcome') { NET.status = 'on'; NET.me = msg.me; NET.helloWait = -1; }
       // the role is the world's word, set before anyone hears the message; a missing one (an older server) is 'player'
       if (msg.t === 'welcome' || msg.t === 'role') NET.role = msg.role === 'admin' ? 'admin' : 'player';
       if (msg.t === 'error' && msg.code === 'auth') { NET.setToken(null); NET.closedByUs = true; }
@@ -116,6 +116,34 @@
   if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('visibilitychange', () => { if (!document.hidden && NET.enabled && NET.token && !NET.sock) NET.connect(); });
 
   window.NET = NET;
+
+  // A world slow to answer hello is waking up (docs/ONLINE.md, "The shared world", Stage 2: a copy of the game being built, or
+  // the World itself starting): after WAKE_SAY seconds with no welcome the knight reads it, once per socket.
+  const WAKE_SAY = 1.5;
+  NET.helloWait = -1; NET.wakeSaid = false;
+  HOOKS.update.push(dt => {
+    if (NET.helloWait < 0) return;
+    if (!NET.sock || NET.status === 'on') { NET.helloWait = -1; return; }
+    NET.helloWait += dt;
+    if (!NET.wakeSaid && NET.helloWait >= WAKE_SAY) { NET.wakeSaid = true; if (typeof notify === 'function') notify('Waking the world...'); }
+  });
+  HOOKS.selfTest.push((check, F) => {
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake };
+    let sock = null;
+    const fake = { call: async () => ({}), open: () => (sock = { readyState: 1, sent: [], send(str) { sock.sent.push(JSON.parse(str)); }, close() { sock.readyState = 3; } }) };
+    NET.enabled = true; NET.token = 'wake-test'; NET.useFake(fake); NET.connect();
+    notify('');
+    F.sim(60, []);
+    const early = notice && notice.text;
+    F.sim(40, []);
+    const said = notice && notice.text, hello = sock && sock.sent.some(m => m.t === 'hello');
+    notify(''); F.sim(200, []);
+    const once = !(notice && notice.text === 'Waking the world...');
+    if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }) });
+    const on = NET.status === 'on' && NET.helloWait === -1;
+    check('net: a world that has not answered hello after 1.5 s says "Waking the world..." once; its welcome ends the wait', hello && early !== 'Waking the world...' && said === 'Waking the world...' && once && on, { hello, early, said, once, on });
+    NET.useFake(was.fake); NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; NET.role = 'player';
+  });
 
   const P = 'net: ';
   HOOKS.selfTest.push((check) => {
