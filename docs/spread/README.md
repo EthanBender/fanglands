@@ -11,6 +11,22 @@ make and read. Nothing here is loaded by the game.
 | `literals-allow.json` | by hand | Literals the gate lets through (instance-local and UI numbers), each with a reason. |
 | `strict-allow.json` | by hand (Stage 1 on) | Frame points the strict report may log (relative geometry, such as the rim notch), each with a reason. |
 
+## The tools (Stage 0)
+
+| Tool | What it does |
+|---|---|
+| `node tools/fingerprint.mjs [index.html] --diff docs/spread/baseline-fingerprint.json` | Boots the build headless, runs newGame(), hashes every table a player could see move, names each changed table and its first 20 differing entries, and prints the strict report (frame points past box + guard + 12, as `src/file:line`); exit 1 on a changed table or a strict entry not in `strict-allow.json`. |
+| `node tools/literals.mjs [files]` | Counts bare coordinate-shaped literals per file (pairs, `{x, y}`, x0 rects, setTile/tileAt/changeTile/tp/openSpot/bfs/... calls, `tc(N)`, `N * TILE`, comparisons of 10+ against a coordinate name), skipping anything inside a frame call and anything `literals-allow.json` lists. `--inventory` writes `inventory.json`; `--gate` is the build's gate over `converted.json`. |
+| `node tools/anchor-of.mjs X Y [X Y ...]` / `--port ID` | The place a literal belongs to: the smallest old box holding it (ties listed for a human), every box that holds it, and where it lands at the spread; "world" on open land. Reads `src/01-atlas.js` directly, same rule as `ATLAS.anchorOf`. |
+| `node tools/frame-codemod.mjs src/NN-file.js [--write] [--as anchor]` | Rewrites the mechanical patterns (pairs, points, rects, two-number calls; comparisons only with `--as`) as frame reads and prints the diff; refuses ties, one-axis literals (`tc(N)`, `N * TILE`), comparisons without `--as` and rects whose corners disagree. Read the diff: an instance's own coordinates come out as `cave` points and must be allow-listed, never wrapped. |
+
+`build.sh` runs `literals.mjs --gate` after the syntax check; with `converted.json` empty it does nothing (and needs no acorn).
+
+Stage 0 proof of the codemod: in a scratch copy, `frame-codemod --write` over 69-axestump, 57-townwall, 34-food, 24-dwarves
+and 02-world (221 literals converted, 75 refused for the hand pass) built and gave a fingerprint identical to the baseline
+with 0 strict entries. A deliberate `ATLAS.frame('wren').p(200, 150)` added at the end of 57-townwall was reported as
+`src/57-townwall.js:72: wren point 200,150` and failed `--diff`.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```

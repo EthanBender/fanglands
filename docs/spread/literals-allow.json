@@ -1,0 +1,12 @@
+[
+  { "file": "01-atlas.js", "decl": "ANCHORS", "reason": "the anchor table itself: every place's old box and spread top-left, the one place these numbers live" },
+  { "file": "01-atlas.js", "decl": "PORTS", "reason": "the port table itself: each point in its own anchor's old frame (or the 400x280 plan's)" },
+  { "file": "01-atlas.js", "decl": "TRACKS", "reason": "the track table itself: points already tagged port, world or anchor" },
+  { "file": "01-atlas.js", "decl": "WORLD", "reason": "the stretch's breakpoints" },
+  { "file": "01-atlas.js", "decl": "PINS", "reason": "the seam pin table" },
+  { "file": "15-music.js", "reason": "MIDI note numbers and beats, no map coordinates" },
+  { "file": "03-textures.js", "reason": "pixel positions inside a 48 px tile texture" },
+  { "file": "59-hudkit.js", "reason": "HUD kit: screen pixels and emblem drawing, no map coordinates" },
+  { "file": "78-monsterart.js", "reason": "monster sprite drawing in sprite units, no map coordinates" },
+  { "file": "83-townsart.js", "reason": "townsfolk sprite drawing in sprite units, no map coordinates" }
+]

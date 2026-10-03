@@ -19,6 +19,8 @@
 //   node tools/fingerprint.mjs [index.html] --out FILE [--from LABEL]   write the fingerprint (hashes, and every table gzipped) to FILE
 //   node tools/fingerprint.mjs [index.html] --diff FILE        compare with FILE; name each changed table and its first
 //                                                              20 differing entries; exit 1 on any difference
+// --diff also prints the strict report (ATLAS.strict(), as src file:line) and fails on an entry docs/spread/strict-allow.json
+// does not list ({ file?, anchor, x, y, reason }).
 // The baseline (docs/spread/baseline-fingerprint.json) is master at the start of each stage, regenerated after every peer
 // merge and before any conversion goes on top of it.
 // ============================================================================
@@ -113,7 +115,18 @@ export function fingerprint(htmlFile) {
   const hashes = {};
   for (const k of Object.keys(tables)) hashes[k] = sha(JSON.stringify(tables[k]));
   hashes.all = sha(JSON.stringify(hashes));
-  return { hashes, tables };
+  // the strict report (§8): frame points written far outside their own place, with the src file and line that wrote them.
+  // Not part of the hashes: --diff fails on any entry docs/spread/strict-allow.json does not list.
+  const raw = JSON.parse(vm.runInContext('JSON.stringify(window.ATLAS && ATLAS.strict ? ATLAS.strict() : [])', g));
+  const html = fs.readFileSync(htmlFile, 'utf8'), lines = html.slice(html.indexOf('<script>') + 8).split('\n'), marks = [];
+  lines.forEach((l, i) => { const m = /^\/\/ ---- src\/(.+) ----$/.exec(l); if (m) marks.push([i + 1, m[1]]); });
+  const srcOf = at => { const m = /index\.html:(\d+)/.exec(at); if (!m) return at; const n = +m[1]; let f = null; for (const mk of marks) if (mk[0] < n) f = mk; else break; return f ? `src/${f[1]}:${n - f[0]}` : at; };
+  const strict = raw.map(([at, anchor, x, y]) => ({ at: srcOf(at), anchor, x, y }));
+  return { hashes, tables, strict };
+}
+export function strictNew(strict, allowFile = path.join(ROOT, 'docs', 'spread', 'strict-allow.json')) {
+  const allow = fs.existsSync(allowFile) ? JSON.parse(fs.readFileSync(allowFile, 'utf8')) : [];
+  return strict.filter(e => !allow.some(a => a.anchor === e.anchor && a.x === e.x && a.y === e.y && (!a.file || e.at.startsWith(a.file))));
 }
 
 // the first n differing entries of one table, as readable lines
@@ -148,7 +161,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const base = JSON.parse(fs.readFileSync(diffFile, 'utf8'));
     if (base.tablesGz && !base.tables) base.tables = JSON.parse(zlib.gunzipSync(Buffer.from(base.tablesGz, 'base64')).toString('utf8'));
     const changed = Object.keys({ ...base.hashes, ...fp.hashes }).filter(k => k !== 'all' && base.hashes[k] !== fp.hashes[k]);
-    if (!changed.length) { console.log(`fingerprint ${fp.hashes.all}: identical to ${diffFile}`); process.exit(0); }
+    const fresh = strictNew(fp.strict);
+    for (const e of fresh) console.log(`strict report: ${e.at}: ${e.anchor} point ${e.x},${e.y} lies past its box + guard + 12 (docs/spread/strict-allow.json does not list it)`);
+    if (!changed.length) { console.log(`fingerprint ${fp.hashes.all}: identical to ${diffFile}; strict report: ${fp.strict.length} entr${fp.strict.length === 1 ? 'y' : 'ies'}, ${fresh.length} new`); process.exit(fresh.length ? 1 : 0); }
     console.log(`fingerprint ${fp.hashes.all} differs from ${diffFile} (${base.hashes.all}) in ${changed.length} table${changed.length > 1 ? 's' : ''}: ${changed.join(', ')}`);
     for (const k of changed) {
       console.log(`changed table: ${k}`);
