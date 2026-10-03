@@ -20,17 +20,19 @@
 //   N  the notice board's cell   O  the island portal's cell   D  the dozer bay's cell   Y  the agility track
 //   x  the square's brazier   S  Greta's and Fennick's stalls   C  the castle wall   P  the portcullis
 //   f  fence   g  a yard gate   u  a training dummy
+//   v  a flower bed   w  a woodpile   c  the smithy's handcart (two tiles)   A  the old anvil on its stump   q  a water trough
+//   V  the well on the Bell Green   U  a table in the inn's garden
 // ============================================================================
 {
   const X0 = 84, Y0 = 13, W = 58, H = 45;
   const ROWS = [
     '----------------------------------------------------------',
     '-TT#####TT########TT################TT###TT############TT-',
-    '-TT"""""TT""""""""TT*""""++BB++.....TT...TT.=hhhhhhhhhhTT-',
-    '-#."t""t""t""t""t""t""t"n++BB++.===.........=h""""h"""hh#-',
-    '-#.""""""""""""""""""""""++======O=.........=h"hh"h"h"hh#-',
-    '-#.""t""t""t""t""t""t""tl++========.........=h"hd"""h"hh#-',
-    '-#l==========================++++++++l......=h"hhhhhh"hh#-',
+    '-TT"""""TT""""""""TT*""""++BB++"vv""TTvvvTT"=hhhhhhhhhhTT-',
+    '-#."t""t""t""t""t""t""t"n++BB++"===t"""""""t=h""""h"""hh#-',
+    '-#.""""""""""""""""""""""++======O="v""V""v"=h"hh"h"h"hh#-',
+    '-#.""t""t""t""t""t""t""tl++========"v"n"n"v"=h"hd"""h"hh#-',
+    '-#l==========================++++++++l""""""=h"hhhhhh"hh#-',
     '-#.+++@@@@@@@==@@@@@@@@""""==+kk+++kk+@@@@@@=h"""h""""hh#-',
     '-TT+++@@@@@@@==@@@@@@@@"t""==+++FF++++@@@@@@=hhh"h"hhhhTT-',
     '-TT+l+@@@@@@@==@@@@@@@@"""n==+++FF++++@@@@@@=h""""""""hTT-',
@@ -40,33 +42,33 @@
     '-#.+@@@@+++++++++++++++n++l==ln+++++++++++++="j~~bb~~~".#-',
     '-#.+@@@@.@@@@==@@@@@+N+++++==++++++,,l++@@@@="~~~bb~~~".#-',
     '-TT+@@@@.@@@@==@@@@@++++SS+==+++SS+,,+++@@@@=t~~~bb~~~tTT-',
-    '-TT+@@@@.@@@@==@@@@@+++++++==++++++,,l++@@@@=""n"++"n**TT-',
-    '-TT+l++++@@@@++@@@@@l++++++==++++++++l++@@@@=hhhh++hhhhTT-',
+    '-TT+@@@@.@@@@==@@@@@+++++++==++++++,,+++@@@@=""n"++"n**TT-',
+    '-TT+l++++@@@@++@@@@@l++++++==++++l+++l++@@@@=hhhh++hhhhTT-',
     '-G======================================================G-',
     '-G======================================================G-',
     '-G======================================================G-',
     '-TTi++l++++l++++l++l++++++FFFF+++++++l++l+==++l+++++l+iTT-',
-    '-TT.................++s+++FFFF+++s++++++++==...."".....TT-',
-    '-TT...@@@@@@@..@@@@@@@++++FFFF+++++++@@@@@==@@@@t"@@@@@TT-',
-    '-#....@@@@@@@..@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
-    '-#....@@@@@@@..@@@@@@@s++++++++++s+x+@@@@@==@@@@"*@@@@@.#-',
-    '-#....@@@@@@@..@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
-    '-#ffff@@@@@@@..@@@@@@@++l++++p+l++++++++++==+++l+++++++.#-',
-    '-#,,,,@@@@@@@......~~~~~~~~bb~~~~~~~~~~+++==+++++++++++.#-',
-    '-#,,u,f............~CCCCCCCPPCCCCCCCCC~+++==+++,,**""t"TT-',
-    '-#,,,,g.....D......~C++++++++++++++++C~+++==+++,,""""""TT-',
+    '-TT"""vv"v"n",,"v"vv++s+++FFFF+++s++++++++=="v""""""v""TT-',
+    '-TTw,,@@@@@@@,,@@@@@@@++++FFFF+++++++@@@@@==@@@@t"@@@@@TT-',
+    '-#w,,,@@@@@@@,,@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
+    '-#w,,,@@@@@@@,,@@@@@@@s++++++++++s+x+@@@@@==@@@@"*@@@@@.#-',
+    '-#,,cc@@@@@@@,,@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
+    '-#ffff@@@@@@@,,@@@@@@@++l++++p+l++++++++++==+++l+++++++.#-',
+    '-#,,,,@@@@@@@,,ww,,~~~~~~~~bb~~~~~~~~~~+++==+++++++++++.#-',
+    '-#,,u,f,,,,A,,,,,,,~CCCCCCCPPCCCCCCCCC~+++==+++,,**""t"TT-',
+    '-#,,,,g,,,,,D,q,,,,~C++++++++++++++++C~+++==+++,,""""""TT-',
     '-#,,u,f,,,,,,,,,,,,~C++++++++++++++++C~@@@@@@@@,,""FF"n.#-',
     '-#,,,,f,,,,,,,,,,,,~C++++++++++++++++C~@@@@@@@@,,""FF"".#-',
-    '-#fffff.@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,"""""".#-',
-    '-#......@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,n""""*.#-',
-    '-TT.....@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,@@@@@@TT-',
-    '-TT.....@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,@@@@@@TT-',
-    '-#fgfffffffffffffff~C**+@@@@@@@@@@+**C~...aaaaa,,@@@@@@.#-',
-    '-#YYYYYYYYYYYYYYYYf~C**+@@@@@@@@@@+**C~...aaaaa,,@@@@@@.#-',
-    '-#YffffffffffffffYf~C**+@@@@@@@@@@+**C~...aaaaa,,@@@@@@.#-',
-    '-#YYYYYYYYYYYYYYYYf~C++++++++++++++++C~...aaaaa,,,,,,,,.#-',
-    '-#fffffffffffffffff~CCCCCCCCCCCCCCCCCC~........,,,,,,,,.#-',
-    '-TThhhhhhhhhhhhhhhh~~~~~~~~~~~~~~~~~~~~.....TT.,,......TT-',
+    '-#fffff"@@@@""@@@@"~C+++@@@@@@@@@@+++C~@@@@@@@@,,"""""".#-',
+    '-#""t"""@@@@""@@@@"~C+++@@@@@@@@@@+++C~@@@@@@@@,,n""""*.#-',
+    '-TT"""n"@@@@""@@@@"~C+++@@@@@@@@@@+++C~@@@@@@@@,,@@@@@@TT-',
+    '-TT"vv""@@@@""@@@@"~C+++@@@@@@@@@@+++C~@@@@@@@@,,@@@@@@TT-',
+    '-#fgfffffffffffffff~C**+@@@@@@@@@@+**C~"U"aaaaa,,@@@@@@.#-',
+    '-#YYYYYYYYYYYYYYYYf~C**+@@@@@@@@@@+**C~"""aaaaa,,@@@@@@.#-',
+    '-#YffffffffffffffYf~C**+@@@@@@@@@@+**C~"U"aaaaa,,@@@@@@.#-',
+    '-#YYYYYYYYYYYYYYYYf~C++++++++++++++++C~"""aaaaa,,,,,,,,.#-',
+    '-#fffffffffffffffff~CCCCCCCCCCCCCCCCCC~t""""""",,,,,,,,.#-',
+    '-TThhhhhhhhhhhhhhhh~~~~~~~~~~~~~~~~~~~~""vv"TT",,""""""TT-',
     '-TT#########################################TT#########TT-',
     '----------------------------------------------------------',
   ];
@@ -77,12 +79,14 @@
     '"': 'TD_LAWN', '.': 'GRASS', 'D': 'GRASS', ',': 'DIRT', 'a': 'SOIL', 'Y': 'DIRT',
     '~': 'WATER', 'b': 'BRIDGE', 'j': 'BRIDGE',
     'T': 'TOWN_WALL', 'F': 'TD_FOUNTAIN',
-    'h': 'TD_HEDGE', 't': 'TD_HEDGE', '*': 'TD_HEDGE',
+    'h': 'TD_HEDGE', 't': 'TD_HEDGE', '*': 'TD_HEDGE', 'v': 'TD_HEDGE',
     'l': 'TD_PROP', 's': 'TD_PROP', 'p': 'TD_PROP', 'n': 'TD_PROP', 'k': 'TD_PROP', 'i': 'TD_PROP', 'B': 'TD_PROP', 'd': 'TD_PROP',
+    'w': 'TD_PROP', 'c': 'TD_PROP', 'A': 'TD_PROP', 'q': 'TD_PROP', 'V': 'TD_PROP', 'U': 'TD_PROP',
     'x': 'FIRE', 'S': 'STALL', 'C': 'CWALL', 'P': 'PORTCULLIS', 'f': 'FENCE', 'g': 'GATE', 'u': 'DUMMY',
   };
   // what a prop, a piece of greenery or a fountain cell is ('t' is a fruit tree or a cherry, 'F' one of three fountains: see kindAt)
-  const KIND_OF = { l: 'lamp', s: 'statue', p: 'plinth', n: 'bench', k: 'stall', i: 'sign', B: 'bell', d: 'sundial', h: 'hedge', t: 'tree', '*': 'roses', F: 'fountain' };
+  const KIND_OF = { l: 'lamp', s: 'statue', p: 'plinth', n: 'bench', k: 'stall', i: 'sign', B: 'bell', d: 'sundial', h: 'hedge', t: 'tree', '*': 'roses', F: 'fountain',
+    v: 'flowers', w: 'woodpile', c: 'cart', A: 'oldanvil', q: 'trough', V: 'well', U: 'table' };
 
   // ---------- named places (world tiles) ----------
   // the eighteen wall towers: top-left, 2 wide, 2 tall unless h is 3 (the four gate towers)
@@ -123,9 +127,10 @@
   const SUNDIAL = { x: 132, y: 18, stand: [133, 18], mazeGate: [133, 23] };
   const POND = { x0: 130, y0: 25, x1: 137, y1: 28, bridge: [133, 134], jetty: [130, 26], boat: [130, 27], swans: [{ x0: 131, x1: 132, y0: 25, y1: 28 }, { x0: 135, x1: 137, y0: 25, y1: 28, ducklings: 4 }] };
   // bunting strung between two lamp heads
-  const BUNTING = [[[88, 30], [90, 34]], [[104, 30], [103, 34]], [[121, 30], [121, 34]], [[110, 26], [113, 26]]];
-  // Nell and Robin play tag round the fountain: a U path, ping-pong, by the wall clock
-  const KIDS = { path: [[109, 34], [109, 37], [114, 37], [114, 34]], speed: 1.6, lag: 1.2, names: ['Nell', 'Robin'] };
+  const BUNTING = [[[88, 30], [90, 34]], [[104, 30], [103, 34]], [[121, 30], [124, 34]], [[110, 26], [113, 26]]];
+  // Tess and Robin play tag round the fountain: a U path, ping-pong, by the wall clock (not Nell: Nell is the Hollowford
+  // survivor who runs the rebuild, and a second Nell would muddle her story)
+  const KIDS = { path: [[109, 34], [109, 37], [114, 37], [114, 34]], speed: 1.6, lag: 1.2, names: ['Tess', 'Robin'] };
   const DUCHESS = { x: 113, y: 16 };
   // the wards: a banner on the way into each (see 95's wardsTick)
   const WARDS = [

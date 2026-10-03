@@ -86,8 +86,12 @@ numbers and writes nothing outside x 85..140, y 14..56, so the rest of the world
 builds the same city; the last world pass snapshots the result as `CAPITAL.base`. The ground layer (setts, flagstones,
 lawn, coping) is cached in 8x8 chunks and paints a cell only while its live tile still equals `CAPITAL.base`, so a fire,
 a plank or a tilled cell shows the core's own art at once. Every fixed-coordinate draw skips instances
-(`if (window.__instance) return;`): Aerie's map overlaps x 85..99 of the town. Old-save diffs inside stone, water or a
-hedge are reverted on load by `CAPITAL.migrate()` (what was placed is given back); a cell in `OPEN` ground keeps its diff.
+(`if (window.__instance) return;`): Aerie's map overlaps x 85..99 of the town. The ground chunks sort at y -1e9 - 10,
+under every other file's ground marks (17-tap's ring and dots, 69-retaliate's ring): a new ground overlay must sort at
+or above -1e9. Old saves: on the FIRST load of a save made before the rebuild (`player.cityV` not 1), `CAPITAL.migrate()`
+reverts its diffs inside stone, water or a hedge (what was placed is given back) and MOVES a machine, a beast, a wreck or
+the mare to the nearest open ground (never deletes one); a cell in `OPEN` ground keeps its diff. After that a knight's
+changes in the city are his and no load touches them.
 The seventeen town buildings (`b.town`) draw through the `drawBuilding` wrap; Death's House keeps the core's art.
 
 ## HUD (src/59-hudkit.js, the Storybook Heraldry kit) — the API every feature file uses

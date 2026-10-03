@@ -52122,17 +52122,19 @@ window.RETALIATE = RETALIATE;
 //   N  the notice board's cell   O  the island portal's cell   D  the dozer bay's cell   Y  the agility track
 //   x  the square's brazier   S  Greta's and Fennick's stalls   C  the castle wall   P  the portcullis
 //   f  fence   g  a yard gate   u  a training dummy
+//   v  a flower bed   w  a woodpile   c  the smithy's handcart (two tiles)   A  the old anvil on its stump   q  a water trough
+//   V  the well on the Bell Green   U  a table in the inn's garden
 // ============================================================================
 {
   const X0 = 84, Y0 = 13, W = 58, H = 45;
   const ROWS = [
     '----------------------------------------------------------',
     '-TT#####TT########TT################TT###TT############TT-',
-    '-TT"""""TT""""""""TT*""""++BB++.....TT...TT.=hhhhhhhhhhTT-',
-    '-#."t""t""t""t""t""t""t"n++BB++.===.........=h""""h"""hh#-',
-    '-#.""""""""""""""""""""""++======O=.........=h"hh"h"h"hh#-',
-    '-#.""t""t""t""t""t""t""tl++========.........=h"hd"""h"hh#-',
-    '-#l==========================++++++++l......=h"hhhhhh"hh#-',
+    '-TT"""""TT""""""""TT*""""++BB++"vv""TTvvvTT"=hhhhhhhhhhTT-',
+    '-#."t""t""t""t""t""t""t"n++BB++"===t"""""""t=h""""h"""hh#-',
+    '-#.""""""""""""""""""""""++======O="v""V""v"=h"hh"h"h"hh#-',
+    '-#.""t""t""t""t""t""t""tl++========"v"n"n"v"=h"hd"""h"hh#-',
+    '-#l==========================++++++++l""""""=h"hhhhhh"hh#-',
     '-#.+++@@@@@@@==@@@@@@@@""""==+kk+++kk+@@@@@@=h"""h""""hh#-',
     '-TT+++@@@@@@@==@@@@@@@@"t""==+++FF++++@@@@@@=hhh"h"hhhhTT-',
     '-TT+l+@@@@@@@==@@@@@@@@"""n==+++FF++++@@@@@@=h""""""""hTT-',
@@ -52142,33 +52144,33 @@ window.RETALIATE = RETALIATE;
     '-#.+@@@@+++++++++++++++n++l==ln+++++++++++++="j~~bb~~~".#-',
     '-#.+@@@@.@@@@==@@@@@+N+++++==++++++,,l++@@@@="~~~bb~~~".#-',
     '-TT+@@@@.@@@@==@@@@@++++SS+==+++SS+,,+++@@@@=t~~~bb~~~tTT-',
-    '-TT+@@@@.@@@@==@@@@@+++++++==++++++,,l++@@@@=""n"++"n**TT-',
-    '-TT+l++++@@@@++@@@@@l++++++==++++++++l++@@@@=hhhh++hhhhTT-',
+    '-TT+@@@@.@@@@==@@@@@+++++++==++++++,,+++@@@@=""n"++"n**TT-',
+    '-TT+l++++@@@@++@@@@@l++++++==++++l+++l++@@@@=hhhh++hhhhTT-',
     '-G======================================================G-',
     '-G======================================================G-',
     '-G======================================================G-',
     '-TTi++l++++l++++l++l++++++FFFF+++++++l++l+==++l+++++l+iTT-',
-    '-TT.................++s+++FFFF+++s++++++++==...."".....TT-',
-    '-TT...@@@@@@@..@@@@@@@++++FFFF+++++++@@@@@==@@@@t"@@@@@TT-',
-    '-#....@@@@@@@..@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
-    '-#....@@@@@@@..@@@@@@@s++++++++++s+x+@@@@@==@@@@"*@@@@@.#-',
-    '-#....@@@@@@@..@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
-    '-#ffff@@@@@@@..@@@@@@@++l++++p+l++++++++++==+++l+++++++.#-',
-    '-#,,,,@@@@@@@......~~~~~~~~bb~~~~~~~~~~+++==+++++++++++.#-',
-    '-#,,u,f............~CCCCCCCPPCCCCCCCCC~+++==+++,,**""t"TT-',
-    '-#,,,,g.....D......~C++++++++++++++++C~+++==+++,,""""""TT-',
+    '-TT"""vv"v"n",,"v"vv++s+++FFFF+++s++++++++=="v""""""v""TT-',
+    '-TTw,,@@@@@@@,,@@@@@@@++++FFFF+++++++@@@@@==@@@@t"@@@@@TT-',
+    '-#w,,,@@@@@@@,,@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
+    '-#w,,,@@@@@@@,,@@@@@@@s++++++++++s+x+@@@@@==@@@@"*@@@@@.#-',
+    '-#,,cc@@@@@@@,,@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
+    '-#ffff@@@@@@@,,@@@@@@@++l++++p+l++++++++++==+++l+++++++.#-',
+    '-#,,,,@@@@@@@,,ww,,~~~~~~~~bb~~~~~~~~~~+++==+++++++++++.#-',
+    '-#,,u,f,,,,A,,,,,,,~CCCCCCCPPCCCCCCCCC~+++==+++,,**""t"TT-',
+    '-#,,,,g,,,,,D,q,,,,~C++++++++++++++++C~+++==+++,,""""""TT-',
     '-#,,u,f,,,,,,,,,,,,~C++++++++++++++++C~@@@@@@@@,,""FF"n.#-',
     '-#,,,,f,,,,,,,,,,,,~C++++++++++++++++C~@@@@@@@@,,""FF"".#-',
-    '-#fffff.@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,"""""".#-',
-    '-#......@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,n""""*.#-',
-    '-TT.....@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,@@@@@@TT-',
-    '-TT.....@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,@@@@@@TT-',
-    '-#fgfffffffffffffff~C**+@@@@@@@@@@+**C~...aaaaa,,@@@@@@.#-',
-    '-#YYYYYYYYYYYYYYYYf~C**+@@@@@@@@@@+**C~...aaaaa,,@@@@@@.#-',
-    '-#YffffffffffffffYf~C**+@@@@@@@@@@+**C~...aaaaa,,@@@@@@.#-',
-    '-#YYYYYYYYYYYYYYYYf~C++++++++++++++++C~...aaaaa,,,,,,,,.#-',
-    '-#fffffffffffffffff~CCCCCCCCCCCCCCCCCC~........,,,,,,,,.#-',
-    '-TThhhhhhhhhhhhhhhh~~~~~~~~~~~~~~~~~~~~.....TT.,,......TT-',
+    '-#fffff"@@@@""@@@@"~C+++@@@@@@@@@@+++C~@@@@@@@@,,"""""".#-',
+    '-#""t"""@@@@""@@@@"~C+++@@@@@@@@@@+++C~@@@@@@@@,,n""""*.#-',
+    '-TT"""n"@@@@""@@@@"~C+++@@@@@@@@@@+++C~@@@@@@@@,,@@@@@@TT-',
+    '-TT"vv""@@@@""@@@@"~C+++@@@@@@@@@@+++C~@@@@@@@@,,@@@@@@TT-',
+    '-#fgfffffffffffffff~C**+@@@@@@@@@@+**C~"U"aaaaa,,@@@@@@.#-',
+    '-#YYYYYYYYYYYYYYYYf~C**+@@@@@@@@@@+**C~"""aaaaa,,@@@@@@.#-',
+    '-#YffffffffffffffYf~C**+@@@@@@@@@@+**C~"U"aaaaa,,@@@@@@.#-',
+    '-#YYYYYYYYYYYYYYYYf~C++++++++++++++++C~"""aaaaa,,,,,,,,.#-',
+    '-#fffffffffffffffff~CCCCCCCCCCCCCCCCCC~t""""""",,,,,,,,.#-',
+    '-TThhhhhhhhhhhhhhhh~~~~~~~~~~~~~~~~~~~~""vv"TT",,""""""TT-',
     '-TT#########################################TT#########TT-',
     '----------------------------------------------------------',
   ];
@@ -52179,12 +52181,14 @@ window.RETALIATE = RETALIATE;
     '"': 'TD_LAWN', '.': 'GRASS', 'D': 'GRASS', ',': 'DIRT', 'a': 'SOIL', 'Y': 'DIRT',
     '~': 'WATER', 'b': 'BRIDGE', 'j': 'BRIDGE',
     'T': 'TOWN_WALL', 'F': 'TD_FOUNTAIN',
-    'h': 'TD_HEDGE', 't': 'TD_HEDGE', '*': 'TD_HEDGE',
+    'h': 'TD_HEDGE', 't': 'TD_HEDGE', '*': 'TD_HEDGE', 'v': 'TD_HEDGE',
     'l': 'TD_PROP', 's': 'TD_PROP', 'p': 'TD_PROP', 'n': 'TD_PROP', 'k': 'TD_PROP', 'i': 'TD_PROP', 'B': 'TD_PROP', 'd': 'TD_PROP',
+    'w': 'TD_PROP', 'c': 'TD_PROP', 'A': 'TD_PROP', 'q': 'TD_PROP', 'V': 'TD_PROP', 'U': 'TD_PROP',
     'x': 'FIRE', 'S': 'STALL', 'C': 'CWALL', 'P': 'PORTCULLIS', 'f': 'FENCE', 'g': 'GATE', 'u': 'DUMMY',
   };
   // what a prop, a piece of greenery or a fountain cell is ('t' is a fruit tree or a cherry, 'F' one of three fountains: see kindAt)
-  const KIND_OF = { l: 'lamp', s: 'statue', p: 'plinth', n: 'bench', k: 'stall', i: 'sign', B: 'bell', d: 'sundial', h: 'hedge', t: 'tree', '*': 'roses', F: 'fountain' };
+  const KIND_OF = { l: 'lamp', s: 'statue', p: 'plinth', n: 'bench', k: 'stall', i: 'sign', B: 'bell', d: 'sundial', h: 'hedge', t: 'tree', '*': 'roses', F: 'fountain',
+    v: 'flowers', w: 'woodpile', c: 'cart', A: 'oldanvil', q: 'trough', V: 'well', U: 'table' };
 
   // ---------- named places (world tiles) ----------
   // the eighteen wall towers: top-left, 2 wide, 2 tall unless h is 3 (the four gate towers)
@@ -52225,9 +52229,10 @@ window.RETALIATE = RETALIATE;
   const SUNDIAL = { x: 132, y: 18, stand: [133, 18], mazeGate: [133, 23] };
   const POND = { x0: 130, y0: 25, x1: 137, y1: 28, bridge: [133, 134], jetty: [130, 26], boat: [130, 27], swans: [{ x0: 131, x1: 132, y0: 25, y1: 28 }, { x0: 135, x1: 137, y0: 25, y1: 28, ducklings: 4 }] };
   // bunting strung between two lamp heads
-  const BUNTING = [[[88, 30], [90, 34]], [[104, 30], [103, 34]], [[121, 30], [121, 34]], [[110, 26], [113, 26]]];
-  // Nell and Robin play tag round the fountain: a U path, ping-pong, by the wall clock
-  const KIDS = { path: [[109, 34], [109, 37], [114, 37], [114, 34]], speed: 1.6, lag: 1.2, names: ['Nell', 'Robin'] };
+  const BUNTING = [[[88, 30], [90, 34]], [[104, 30], [103, 34]], [[121, 30], [124, 34]], [[110, 26], [113, 26]]];
+  // Tess and Robin play tag round the fountain: a U path, ping-pong, by the wall clock (not Nell: Nell is the Hollowford
+  // survivor who runs the rebuild, and a second Nell would muddle her story)
+  const KIDS = { path: [[109, 34], [109, 37], [114, 37], [114, 34]], speed: 1.6, lag: 1.2, names: ['Tess', 'Robin'] };
   const DUCHESS = { x: 113, y: 16 };
   // the wards: a banner on the way into each (see 95's wardsTick)
   const WARDS = [
@@ -52330,7 +52335,7 @@ window.RETALIATE = RETALIATE;
 // Every fixed-coordinate draw starts with `if (window.__instance) return;` (Aerie's map overlaps x 85..99 of the town).
 //
 // ONLINE (docs/ONLINE.md): the plan is a literal and the painter uses no random numbers. MONSTER_SPAWNS keeps its
-// length and order. Nell, Robin and the swans move by the wall clock (CLOCK.fixed ?? Date.now()), so friends see the
+// length and order. Tess, Robin and the swans move by the wall clock (CLOCK.fixed ?? Date.now()), so friends see the
 // same thing with no message. Talk, the coin toss, the story, the plinth and the bell are per knight, saved in
 // quest.capital and player.cityV. No new net message and no server change. Everyone still arrives at 112,33.
 //
@@ -52366,7 +52371,10 @@ window.RETALIATE = RETALIATE;
   const WALL_T = () => (window.TOWNWALL ? TOWNWALL.tile : T.TOWN_WALL);
 
   // what each prop, piece of greenery or fountain cell is (0 = nothing)
-  const KIND_NAMES = ['', 'lamp', 'statue', 'plinth', 'bench', 'stall', 'sign', 'bell', 'sundial', 'hedge', 'fruit', 'cherry', 'roses', 'great', 'market', 'rose'];
+  const KIND_NAMES = ['', 'lamp', 'statue', 'plinth', 'bench', 'stall', 'sign', 'bell', 'sundial', 'hedge', 'fruit', 'cherry', 'roses', 'great', 'market', 'rose',
+    'flowers', 'woodpile', 'cart', 'oldanvil', 'trough', 'well', 'table'];
+  // the greenery kinds (TD_HEDGE); every other kind but the three fountains is a TD_PROP
+  const GREEN_KINDS = new Set(['hedge', 'fruit', 'cherry', 'roses', 'flowers']);
   const KIND_CODE = {}; KIND_NAMES.forEach((n, i) => { if (n) KIND_CODE[n] = i; });
   const KIND = new Uint8Array(W * H);
   for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) { const k = PLAN.kindAt(x, y); if (k) KIND[pi(x, y)] = KIND_CODE[k]; }
@@ -52456,8 +52464,11 @@ window.RETALIATE = RETALIATE;
   // 5. old saves: migrate() after every load
   // =========================================================================
   // Saves keep tile changes and positions. A save from before the city was rebuilt can hold a bed in what is now the
-  // fountain, a lodestone in a hedge, the mare in a flower stall, or the knight in the moat. Every rule here is
-  // idempotent: a second load changes nothing.
+  // fountain, a lodestone in a hedge, the mare in a flower stall, a parked walker on the new Great Fountain, or the knight
+  // in the moat. The tile rules run ONCE per knight, on the first load of a save made before the rebuild (player.cityV is
+  // not 1); after that a knight's own changes in the city are his and are never undone on a load. A machine, a beast,
+  // the mare or a wreck is never taken away: if its cell must be cleared it is moved to the nearest open ground.
+  // Every rule is idempotent: a second load changes nothing.
   const OPEN = () => new Set([T.GRASS, T.DIRT, T.COBBLE, T.SOIL, T.FLOOR, LAWN]);
   let KEEP_CLEAR = null;
   function keepClear() {
@@ -52468,32 +52479,68 @@ window.RETALIATE = RETALIATE;
     for (const b of BUILDINGS) if (inTown(b.x, b.y)) { const [dx, dy] = doorOf(b), [sx, sy] = stepOf(b); add(dx, dy); add(sx, sy); }
     for (let y = 32; y <= 33; y++) for (let x = 111; x <= 113; x++) add(x, y);
     for (let y = 31; y <= 33; y++) { add(86, y); add(139, y); }
-    const post = window.MOUNTS && MOUNTS.post;
-    if (post) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) add(post.x + dx, post.y + dy);
+    // (the hitching rail's four sides are NOT kept clear: 51-mounts' own whistle ties the mare there)
     return (KEEP_CLEAR = s);
   }
-  const MIG = { reverted: 0, kept: 0, refunds: [], log: [] };
+  // the tiles that are a thing the knight owns or can mend, never deleted by a load: the walker, the bulldozer, the
+  // Barrelbeast, their wrecks, and the mare
+  const VEHICLE_NAMES = ['MECH', 'WRECK', 'DOZER', 'DOZER_WRECK', 'BEAST', 'BEAST_WRECK', 'HORSE'];
+  const vehicleTiles = () => new Set(VEHICLE_NAMES.map(n => T[n]).concat(window.MOUNTS && MOUNTS.tiles ? [MOUNTS.tiles.HORSE] : []).filter(t => typeof t === 'number'));
+  const MIG = { reverted: 0, kept: 0, moved: 0, refunds: [], log: [] };
   function placedItemFor(t) {
     const name = tileName(t);
     for (const id in ITEMS) if (ITEMS[id] && ITEMS[id].place === name) return id;
     return null;
   }
+  // the nearest cell round (cx, cy), rings 1..R, where a moved machine may stand: the city's own open ground, as the world
+  // made it (nothing of the knight's on it), not by a door, a gate or a person, not in a building, nobody standing on it,
+  // not on a guard's post, and never on the High Street itself (rows 31..33 stay clear from gate to gate for riders)
+  function parkSpot(cx, cy, R, open, clear) {
+    const posts = new Set(MONSTER_SPAWNS.filter(sp => inTown(sp.tx, sp.ty)).map(sp => idx(sp.tx, sp.ty)));
+    for (let r = 1; r <= R; r++) {
+      let best = null;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const x = cx + dx, y = cy + dy, i = idx(x, y);
+        if (!inTown(x, y) || !inPlan(x, y) || (y >= 31 && y <= 33) || posts.has(i) || !open.has(base[pi(x, y)]) || tileAt(x, y) !== base[pi(x, y)] || mapDiffs.has(i) || clear.has(i)) continue;
+        if (insideBuilding(x, y) || buildingAt(x, y) || !PLACEABLE_ON.has(tileAt(x, y))) continue;
+        if (NPCS.some(n => circleHitsTile(n.px, n.py, 14, x, y)) || circleHitsTile(player.x, player.y, player.r, x, y)) continue;
+        const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d };
+      }
+      if (best) return best;
+    }
+    return null;
+  }
   function migrate() {
     if (away() || !snapped) return null;
-    const open = OPEN(), clear = keepClear(), H0 = window.MOUNTS ? MOUNTS.tiles.HORSE : -1;
+    const pre = player.cityV !== 1;
+    const open = OPEN(), clear = keepClear(), H0 = window.MOUNTS ? MOUNTS.tiles.HORSE : -1, VEH = vehicleTiles();
     const refund = { pack: {}, bank: {} };
-    let horse = null, changed = 0;
-    for (const [i, t] of [...mapDiffs.entries()]) {
+    let changed = 0;
+    if (pre) for (const [i, t] of [...mapDiffs.entries()]) {
       const x = i % MAP_W, y = Math.floor(i / MAP_W);
       if (x < RECT.x0 || x > RECT.x1 || y < RECT.y0 || y > RECT.y1) continue;
       const b = base[pi(x, y)];
       if (t === b) continue;
       if (open.has(b) && !clear.has(i)) { MIG.kept++; continue; }
       // undo it: the ground the city has there, with no crop, fire or regrowth left behind
-      setTile(x, y, b); mapDiffs.delete(i); miniDirtyTiles.add(i); changed++; MIG.reverted++;
+      setTile(x, y, b); mapDiffs.delete(i); miniDirtyTiles.add(i); changed++;
       crops = crops.filter(c => c.i !== i); fires = fires.filter(f => f.i !== i); regrow = regrow.filter(r => r.i !== i);
-      MIG.log.push([x, y, tileName(t)]);
-      if (t === H0) { horse = { x, y }; continue; }
+      if (VEH.has(t)) {
+        // a machine, a beast, a wreck or the mare: moved, never lost (the mare to her rail)
+        const post = window.MOUNTS && MOUNTS.post, home = t === H0 && post ? post : { x, y };
+        const s = parkSpot(home.x, home.y, t === H0 ? 3 : 4, open, clear) || parkSpot(x, y, 8, open, clear);
+        if (s) {
+          const prev = tileAt(s.x, s.y); changeTile(s.x, s.y, t); MIG.moved++;
+          if (t === H0 && player.horse) { player.horse.at = [s.x, s.y]; player.horse.under = tileName(prev); }
+          MIG.log.push([x, y, tileName(t), 'moved', s.x, s.y]);
+        } else {
+          // nowhere open near it: it keeps its cell (still the knight's), never deleted
+          changeTile(x, y, t); MIG.kept++; MIG.log.push([x, y, tileName(t), 'stays']);
+        }
+        continue;
+      }
+      MIG.reverted++; MIG.log.push([x, y, tileName(t)]);
       const id = placedItemFor(t);
       if (id) {
         const left = addItem(id, 1);
@@ -52501,27 +52548,6 @@ window.RETALIATE = RETALIATE;
         else refund.pack[id] = (refund.pack[id] || 0) + 1;
       }
     }
-    // the mare: back beside the rail, on open ground
-    if (horse && player.horse && player.horse.owned) {
-      const post = MOUNTS.post || { x: 119, y: 27 };
-      let spot = null;
-      for (let r = 1; r <= 3 && !spot; r++) {
-        let best = null;
-        for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          const x = post.x + dx, y = post.y + dy;
-          if (!inMap(x, y) || !PLACEABLE_ON.has(tileAt(x, y)) || insideBuilding(x, y) || buildingAt(x, y) || clear.has(idx(x, y))) continue;
-          if (NPCS.some(n => circleHitsTile(n.px, n.py, 14, x, y))) continue;
-          const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d };
-        }
-        spot = best;
-      }
-      if (spot) {
-        const prev = tileAt(spot.x, spot.y);
-        changeTile(spot.x, spot.y, H0);
-        player.horse.at = [spot.x, spot.y]; player.horse.under = tileName(prev);
-      } else { player.horse.at = null; player.horse.under = null; }
-    } else if (horse && player.horse) { player.horse.at = null; player.horse.under = null; }
     // where he wakes and where his lodestone takes him: only while the bed and the lodestone are still there
     const tileOfPx = p => [Math.floor(p.x / TILE), Math.floor(p.y / TILE)];
     if (player.bedSpawn) { const [x, y] = tileOfPx(player.bedSpawn); if (inTown(x, y) && tileAt(x, y) !== T.BED) player.bedSpawn = null; }
@@ -52531,7 +52557,7 @@ window.RETALIATE = RETALIATE;
     miniDirty = true;
     // one line per knight, the first time he loads into the new city
     const lines = [];
-    if (player.cityV !== 1 && player.visitedVillage) {
+    if (pre && player.visitedVillage) {
       lines.push('Thistledown has been rebuilt while you were away. Go and see the Great Fountain.');
       const words = (o, where) => { const parts = Object.keys(o).map(id => `${o[id]} ${(ITEMS[id].name || id).toLowerCase()}`); return parts.length ? `Back in your ${where}: ${parts.join(', ')}.` : null; };
       const a = words(refund.pack, 'pack'), b2 = words(refund.bank, 'bank');
@@ -52539,8 +52565,7 @@ window.RETALIATE = RETALIATE;
       for (const l of lines) say(l, 'The Voice');
     }
     if (Object.keys(refund.pack).length || Object.keys(refund.bank).length) MIG.refunds.push(refund);
-    if (player.cityV !== 1) { player.cityV = 1; save(); }
-    else if (changed) save();
+    if (pre) { player.cityV = 1; save(); }
     return { changed, lines, refund };
   }
   { const _load = load; load = function () { const ok = _load(); if (ok) migrate(); return ok; }; }
@@ -52659,10 +52684,18 @@ window.RETALIATE = RETALIATE;
     roses: "Roses. The Duke's own. Nobody picks these.",
     market: 'The market fountain. Children dare each other to drink from it.',
     rose: 'A little fountain. A frog sits on the rim and ignores you.',
+    flowers: 'A flower bed. The bees are busy in it.',
+    woodpile: "A woodpile for the smithy's fires. Every log is split the same size.",
+    cart: "Brakka's handcart, heaped with charcoal for the forges.",
+    oldanvil: 'An old anvil on a tree stump. The apprentices practise on it.',
+    trough: 'A water trough. The smith cools hot iron in it, and it hisses.',
+    well: 'The well on the Bell Green. The water is cold and clear.',
+    table: "A table in the inn's garden. Somebody has left a tankard on it.",
   };
   const TOWER_LINE = 'A tower of the town wall. A guard on top waves at you.';
   const SUNDIAL_LINE = "The middle of the Duke's maze. Someone scratched into the sundial: FERRIN WAS HERE. AGED 10.";
-  const KIND_TAP = { lamp: 'Street lamp', bench: 'Bench', stall: 'Market stall', sign: 'Signpost', bell: 'Bell Tower', sundial: 'Sundial', hedge: 'Hedge', fruit: 'Fruit tree', cherry: 'Cherry tree', roses: 'Roses', great: 'The Great Fountain', market: 'Market fountain', rose: 'Rose Garden fountain' };
+  const KIND_TAP = { lamp: 'Street lamp', bench: 'Bench', stall: 'Market stall', sign: 'Signpost', bell: 'Bell Tower', sundial: 'Sundial', hedge: 'Hedge', fruit: 'Fruit tree', cherry: 'Cherry tree', roses: 'Roses', great: 'The Great Fountain', market: 'Market fountain', rose: 'Rose Garden fountain',
+    flowers: 'Flower bed', woodpile: 'Woodpile', cart: 'Handcart', oldanvil: 'Old anvil', trough: 'Water trough', well: 'Well', table: 'Garden table' };
   const TOSS = [
     'You toss a coin. It spins, splashes, and sinks with the others.',
     'Plink. A fish nibbles it, decides it is not food, and swims off.',
@@ -52672,7 +52705,19 @@ window.RETALIATE = RETALIATE;
     'You make a wish. The fountain keeps it a secret.',
   ];
   const statueDone = () => quest.stage >= 16;
-  function heroNameNow() { const me = window.NET && NET.status === 'on' && NET.me ? String(NET.me) : null; return me ? me.toUpperCase() : 'THE KNIGHT FROM THE CAVE'; }
+  const OFFLINE_HERO = 'THE KNIGHT FROM THE CAVE';
+  const onlineName = () => window.NET && NET.status === 'on' && NET.me ? String(NET.me).toUpperCase() : null;
+  function heroNameNow() { return onlineName() || OFFLINE_HERO; }
+  // a knight on the way into the online world: 71-login has loaded his save, but the world's welcome (and with it his
+  // name, NET.me) has not come yet, or the line dropped. His plinth name waits for it.
+  const joining = () => !!(window.NET && NET.enabled && NET.status !== 'on' && (NET.status === 'connecting' || (window.LOGIN && LOGIN.playing)));
+  // the name on the plinth, saved the first time the Fang is seen dead: online it is the knight's own name; a name saved
+  // offline gives way to it the first time this knight plays online
+  function heroTick(q) {
+    if (quest.stage < 16) return;
+    if (!q.heroName) { if (!joining()) { q.heroName = heroNameNow(); save(); } }
+    else if (q.heroName === OFFLINE_HERO && onlineName()) { q.heroName = onlineName(); save(); }
+  }
   const heroName = () => Q().heroName || heroNameNow();
   const plinthLine = () => statueDone() ? `${heroName()}, WHO SLEW THE FANG. Thistledown will not forget.` : 'AN EMPTY PLINTH. Carved on the front: KEPT FOR THE KNIGHT WHO ENDS THE DRAGON.';
   // the name a tap shows and the speaker a use is said by
@@ -52752,7 +52797,7 @@ window.RETALIATE = RETALIATE;
     return false;
   });
 
-  // ---------- the small folk: Duchess, Nell and Robin ----------
+  // ---------- the small folk: Duchess, Tess and Robin ----------
   // the wall clock moves them, so every knight online sees them in the same place without a message
   const CLOCK = { fixed: null };
   const wallMs = () => CLOCK.fixed !== null && CLOCK.fixed !== undefined ? CLOCK.fixed : Date.now();
@@ -52769,8 +52814,8 @@ window.RETALIATE = RETALIATE;
     return { x: KP[0][0], y: KP[0][1], dx: 0, dy: 1 };
   }
   const KIDS = [
-    { id: 'nell', name: 'Nell', lag: 0, line: 'Catch me if you can!', look: { tunic: '#c94a6a', hair: '#e0c080', woman: true, shoulder: '#e9d8b8', skin: '#f2d6bf' } },
-    { id: 'robin', name: 'Robin', lag: PLAN.KIDS.lag, line: 'You are it! No, wait. Nell is it!', look: { tunic: '#3f7db8', hair: '#6a3a1a', shoulder: '#d9c9a0', skin: '#e8c0a0' } },
+    { id: 'tess', name: 'Tess', lag: 0, line: 'Catch me if you can!', look: { tunic: '#c94a6a', hair: '#e0c080', woman: true, shoulder: '#e9d8b8', skin: '#f2d6bf' } },
+    { id: 'robin', name: 'Robin', lag: PLAN.KIDS.lag, line: 'You are it! No, wait. Tess is it!', look: { tunic: '#3f7db8', hair: '#6a3a1a', shoulder: '#d9c9a0', skin: '#e8c0a0' } },
   ];
   function kidsNow() { const ms = wallMs(); for (const k of KIDS) { const p = kidAt(ms - k.lag * 1000); k.px = tc(0) + (p.x - 0.5) * TILE; k.py = (p.y) * TILE; k.dx = p.dx; k.dy = p.dy; } return KIDS; }
   const duchessHome = () => ({ x: tc(PLAN.DUCHESS.x), y: tc(PLAN.DUCHESS.y) + 8 });
@@ -52843,11 +52888,13 @@ window.RETALIATE = RETALIATE;
   // 8. every tick: the wards, Osric's welcome, the plinth, the bell
   // =========================================================================
   const WARD = { name: null, shown: null, since: -1e9, region: null, log: [] };
-  const BARK = { t: 0 };
+  const BARK = { t: 0, pending: false, log: [] };
+  // a banner across the top of the screen that the welcome tag would sit under
+  const bannerUp = () => !!((areaBanner && areaBanner.t > 0.3) || (typeof levelBanner !== 'undefined' && levelBanner && levelBanner.t > 0.3));
   const PL = PLAN.PLINTH;
   HOOKS.update.push(dt => {
     const q = Q();
-    if (quest.stage >= 16 && !q.heroName) { q.heroName = heroNameNow(); save(); }
+    heroTick(q);
     if (BARK.t > 0) BARK.t = Math.max(0, BARK.t - dt);
     if (player.region !== WARD.region) { WARD.region = player.region; WARD.since = time; }
     if (away() || player.dead) return;
@@ -52856,9 +52903,15 @@ window.RETALIATE = RETALIATE;
     const w = inTown(tx, ty) ? PLAN.wardAt(tx, ty) : null;
     WARD.name = w ? w.name : null;
     if (w && w.name !== WARD.shown && time - WARD.since >= 3.2) { WARD.shown = w.name; areaBanner = { name: w.name, sub: w.sub, t: 2.4 }; WARD.log.push(w.name); }
-    // Gatewarden Osric calls out once, the first time a knight comes near
+    // Gatewarden Osric calls out once, the first time a knight comes near; never while a banner is up (THISTLEDOWN as the
+    // knight comes in at the gate, a ward's, a level's), or his tag would be drawn under it: he waits for it to go
     const os = npc('osric');
-    if (!q.barked && os && dist(player.x, player.y, os.px, os.py) <= 3 * TILE) { q.barked = true; BARK.t = 4; save(); }
+    if (!q.barked && os) {
+      const d = dist(player.x, player.y, os.px, os.py);
+      if (d <= 3 * TILE) BARK.pending = true;
+      else if (d > 9 * TILE) BARK.pending = false;
+      if (BARK.pending && !bannerUp()) { BARK.pending = false; q.barked = true; BARK.t = 4; BARK.log.push({ t: time, area: !!areaBanner, level: !!levelBanner }); save(); }
+    }
     // the waiting plinth, once it holds the knight who slew the Fang
     if (statueDone() && !q.plinthTold && !dialog.cur && !dialog.queue.length && dist(player.x, player.y, tc(PL.x), tc(PL.y)) <= 8 * TILE) {
       q.plinthTold = true; say('The empty plinth by the castle gate is empty no longer.', 'The Voice'); save();
@@ -52878,7 +52931,7 @@ window.RETALIATE = RETALIATE;
   function resetCapital() {
     quest.capital = fresh(); player.cityV = 1;
     WARD.name = null; WARD.shown = null; WARD.since = -1e9; WARD.region = null; WARD.log.length = 0;
-    BARK.t = 0; TALK.ambrose = 0; TALK.wynn = 0; CAT.t0 = -99; BELLST.prev = null; BELLST.swingT0 = -99;
+    BARK.t = 0; BARK.pending = false; TALK.ambrose = 0; TALK.wynn = 0; CAT.t0 = -99; BELLST.prev = null; BELLST.swingT0 = -99;
     KEEP_CLEAR = null;
   }
   HOOKS.newGame.push(resetCapital);
@@ -52903,17 +52956,20 @@ window.RETALIATE = RETALIATE;
 
   // =========================================================================
   // 9. drawing
-  //   Layers (y): the ground, blitted from cached chunks at -1e8 - 2 (then the doorsteps and the drops on it, redrawn);
+  //   Layers (y): the ground, blitted from cached chunks at -1e9 - 10, under every other file's ground marks (the tap ring,
+  //   the fight-back ring), then the doorsteps and the drops on it, redrawn;
   //   the lily pads at -1e8 - 1; walls, towers, lamps, statues, fountains, greenery, stalls, the Bell Tower, the castle
   //   and the people y-sorted at the foot of their footprint; the lamp glow and the bunting at 9e8, over every head;
   //   Osric's welcome at 1e9 + 3, over the night. Every item's draw takes no arguments, and every static body is a cached
   //   sprite (only water, flags, flames, smoke and creatures move).
   // =========================================================================
   const SS = 2;
+  // the y the ground chunks sort at: before everything else that is drawn as an item
+  const GROUND_Y = -1e9 - 10;
   // the fractional part, always 0..1 (a % 1 of a negative clock is negative)
   const fr = v => v - Math.floor(v);
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, record: false, boxes: [] };
+  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, bellAlpha: 1, record: false, boxes: [] };
   const CACHE = {};
   function sprite(key, w, h, ax, ay, fn) {
     let s = CACHE[key];
@@ -52981,13 +53037,15 @@ window.RETALIATE = RETALIATE;
   }
 
   // ---------- the ground ----------
-  const G_NONE = 0, G_STREET = 1, G_FLAG = 2, G_ASHLAR = 3, G_LAWN = 4, G_GRASS = 5, G_DIRT = 6, G_BRIDGE = 7, G_JETTY = 8, G_WATER = 9, G_GATE = 10, G_PORT = 11;
+  // G_UDIRT / G_UGRASS: the core's own dirt or grass, painted under a prop that stands on it (the woodpiles, the cart, the
+  // trough), where the core would show the prop tile's cobble texture
+  const G_NONE = 0, G_STREET = 1, G_FLAG = 2, G_ASHLAR = 3, G_LAWN = 4, G_GRASS = 5, G_DIRT = 6, G_BRIDGE = 7, G_JETTY = 8, G_WATER = 9, G_GATE = 10, G_PORT = 11, G_UDIRT = 12, G_UGRASS = 13;
   const inCastle = (x, y) => x >= CASTLE.x && x < CASTLE.x + CASTLE.w && y >= CASTLE.y && y < CASTLE.y + CASTLE.h;
   const codeOf = (c, x, y) => c === '=' ? G_STREET : c === 'G' ? G_GATE : (c === '+' || c === 'N' || c === 'O') ? (inCastle(x, y) ? G_ASHLAR : G_FLAG) : c === 'P' ? G_PORT
     : c === '"' ? G_LAWN : c === 'b' ? G_BRIDGE : c === 'j' ? G_JETTY : c === '~' ? G_WATER : c === '.' || c === 'D' ? G_GRASS : c === ',' || c === 'Y' ? G_DIRT : G_NONE;
   // a solid thing stands on the ground most of its four neighbours share
   const UNDER = '+"=.,bNO';
-  const SOLID_GLYPHS = 'lsnpkiBdhtF*xS';
+  const SOLID_GLYPHS = 'lsnpkiBdhtF*xSvwcAqVU';
   const GCODE = new Uint8Array(W * H), GVAR = new Uint8Array(W * H);
   for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) {
     const c = glyph(x, y), i = pi(x, y);
@@ -52996,8 +53054,7 @@ window.RETALIATE = RETALIATE;
       const n = {}; for (const [dx, dy] of N4) { const d = glyph(x + dx, y + dy); if (UNDER.includes(d)) n[d] = (n[d] || 0) + 1; }
       let best = null; for (const d of UNDER) if (n[d] && (!best || n[d] > n[best])) best = d;
       const code = best ? codeOf(best, x, y) : G_NONE;
-      // only the city's own ground: grass and dirt under a prop are the core's textures, drawn by the core
-      GCODE[i] = (code === G_STREET || code === G_FLAG || code === G_ASHLAR || code === G_LAWN) ? code : G_NONE;
+      GCODE[i] = (code === G_STREET || code === G_FLAG || code === G_ASHLAR || code === G_LAWN) ? code : code === G_DIRT ? G_UDIRT : code === G_GRASS ? G_UGRASS : G_NONE;
     } else {
       const code = codeOf(c, x, y);
       GCODE[i] = (code === G_GRASS || code === G_DIRT) ? G_NONE : code;
@@ -53070,6 +53127,7 @@ window.RETALIATE = RETALIATE;
       case G_LAWN: { const light = x % 2 === 0; return pat('lawn' + v + (light ? 'l' : 'd'), g => patLawn(g, v, light)); }
       case G_BRIDGE: { const d = x >= 133 && x <= 134 && y >= 25 && y <= 28 ? 'ew' : 'ew'; return pat('plank' + d + v, g => patPlank(g, d, v)); }
       case G_JETTY: return pat('plankns' + v, g => patPlank(g, 'ns', v));
+      case G_UDIRT: case G_UGRASS: { const c = typeof tex !== 'undefined' && tex[(code === G_UDIRT ? 'dirt' : 'grass') + v]; return c ? { c } : null; }
     }
     return null;
   }
@@ -53207,12 +53265,13 @@ window.RETALIATE = RETALIATE;
     for (let k = 0; k < 4; k += 2) { const my = k * 12; g.fillStyle = '#8b8f96'; g.fillRect(outer, my, 8, 12); g.fillStyle = '#a9aeb5'; g.fillRect(outer, my, 8, 2.5); }
     g.fillStyle = '#5f6268'; g.fillRect(outer, 12, 8, 12); g.fillRect(outer, 36, 8, 12);
   }
-  function drawTorch(g, x, y) {
+  // a torch on an iron bracket: lit from dusk (the gatehouse's two burn day and night: always)
+  function drawTorch(g, x, y, always) {
     g.fillStyle = '#2a2a30'; g.fillRect(x - 1.5, y - 2, 3, 12); g.fillRect(x - 5, y + 2, 10, 2.5);
     g.fillStyle = '#5a3a1e'; g.fillRect(x - 2, y - 10, 4, 9);
-    if (lit()) {
+    if (always || lit()) {
       const f = 0.8 + Math.sin(time * 9 + x) * 0.2;
-      const gl = g.createRadialGradient(x, y - 14, 1, x, y - 14, 20); gl.addColorStop(0, `rgba(255,190,90,${(0.45 * f).toFixed(3)})`); gl.addColorStop(1, 'rgba(255,170,60,0)'); g.fillStyle = gl; g.beginPath(); g.arc(x, y - 14, 20, 0, 7); g.fill();
+      if (lit()) { const gl = g.createRadialGradient(x, y - 14, 1, x, y - 14, 20); gl.addColorStop(0, `rgba(255,190,90,${(0.45 * f).toFixed(3)})`); gl.addColorStop(1, 'rgba(255,170,60,0)'); g.fillStyle = gl; g.beginPath(); g.arc(x, y - 14, 20, 0, 7); g.fill(); }
       g.fillStyle = '#ff8a1a'; g.beginPath(); g.moveTo(x - 4, y - 10); g.quadraticCurveTo(x - 4, y - 18 - f * 3, x, y - 22 - f * 3); g.quadraticCurveTo(x + 4, y - 18 - f * 3, x + 4, y - 10); g.closePath(); g.fill();
       g.fillStyle = '#ffe066'; g.beginPath(); g.ellipse(x, y - 13, 1.8, 3.5, 0, 0, 7); g.fill();
     }
@@ -53252,51 +53311,98 @@ window.RETALIATE = RETALIATE;
     g.fillStyle = GOLD_D; g.beginPath(); g.ellipse(0, rim - 3, R - 3, ry - 2.5, 0, 0, Math.PI); g.lineTo(-R + 3, rim - 1); g.ellipse(0, rim - 1, R - 3, ry - 2.5, 0, Math.PI, 0, true); g.closePath(); g.fill();
     g.fillStyle = GOLD; g.beginPath(); g.arc(0, apex - 3, 3.5, 0, 7); g.fill(); g.fillRect(-1, apex - 13, 2, 10);
   }
-  const TOWER_DEF = { wall: { R: 30, base: 30, rim: -14, apex: -64 }, gate: { R: 34, base: 50, rim: -8, apex: -58 } };
+  // the gate towers are clearly bigger than the wall's: radius 42, tall slate cones, long banners
+  const TOWER_DEF = { wall: { R: 30, base: 30, rim: -14, apex: -64 }, gate: { R: 42, base: 52, rim: -14, apex: -106 } };
   const TOWERS = PLAN.TOWERS.map((t, i) => Object.assign({}, t, { i, gate: t.h === 3, cx: (t.x + 1) * TILE, cy: (t.y + t.h / 2) * TILE }));
   function drawTownTower(g, t) {
     const d = t.gate ? TOWER_DEF.gate : TOWER_DEF.wall, sortY = (t.y + t.h) * TILE - 2;
-    const s = sprite(t.gate ? 'tower-gate' : 'tower-wall', 2 * d.R + 30, d.base - d.apex + 40, d.R + 12, -d.apex + 16, cg => paintRoundTower(cg, d.R, d.base, d.rim, d.apex, true));
-    const a = behindAlpha(t.cx - d.R, t.cy + d.apex - 14, t.cx + d.R, t.cy + d.base, sortY);
+    const s = sprite(t.gate ? 'tower-gate2' : 'tower-wall', 2 * d.R + 30, d.base - d.apex + 40, d.R + 12, -d.apex + 16, cg => paintRoundTower(cg, d.R, d.base, d.rim, d.apex, true));
+    const a = behindAlpha(t.cx - d.R, t.cy + d.apex - 20, t.cx + d.R, t.cy + d.base, sortY);
     if (a < 1) { g.save(); g.globalAlpha = a; }
     blit(g, s, t.cx, t.cy);
-    if (t.gate) hangBanner(g, t.cx, t.cy - 2, 40, 18, t.i);
+    if (t.gate) { hangBanner(g, t.cx, t.cy - 8, 60, 26, t.i); pennant(g, t.cx + 1, t.cy + d.apex - 12, 30); }
     else if (t.i % 2 === 0) pennant(g, t.cx + 1, t.cy + d.apex - 12, 24);
     if (a < 1) g.restore();
     STATS.towers++;
   }
-  // the gatehouse arch over each town gate: the wall walk crosses the passage from tower to tower as two stone ribs (the
-  // field side with its merlons, the town side with the raised portcullis: its iron teeth hang from the rib's edge), the
-  // Duke's arms on the keystone between them, and the passage under it in shade, so the road is seen running through.
-  // Faint (25%) while the knight's middle is on a gate cell or within a tile of one.
-  function drawArch(g, gate) {
-    const x = gate.x * TILE, y0 = 31 * TILE - 10, y1 = 34 * TILE - 2;
-    const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
-    const near = Math.abs(ptx - gate.x) <= 1 && pty >= 30 && pty <= 34;
-    g.save(); g.globalAlpha = near ? 0.25 : 1;
-    const outerX = gate.dir > 0 ? x - 2 : x + 34, innerX = gate.dir > 0 ? x + 34 : x - 2;
-    // the shadow the walk throws across the passage
-    const sh = g.createLinearGradient(x, 0, x + 48, 0); sh.addColorStop(0, 'rgba(15,12,10,0.32)'); sh.addColorStop(0.5, 'rgba(15,12,10,0.12)'); sh.addColorStop(1, 'rgba(15,12,10,0.32)');
-    g.fillStyle = sh; g.fillRect(x, 31 * TILE, 48, 3 * TILE);
-    for (const [rx, outer] of [[outerX, true], [innerX, false]]) {
-      g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(rx + 2, y0 + 8, 16, y1 - y0);
-      g.fillStyle = STONE[0]; g.fillRect(rx, y0, 16, y1 - y0);
-      g.fillStyle = STONE[2]; g.fillRect(rx + 2, y0, 12, y1 - y0);
-      g.fillStyle = 'rgba(70,70,75,0.4)'; for (let yy = y0 + 14; yy < y1; yy += 14) g.fillRect(rx + 2, yy, 12, 1);
-      g.fillStyle = '#b4b9c0'; g.fillRect(rx + 2, y0, 12, 2);
-      if (outer) for (let yy = y0; yy < y1 - 6; yy += 20) { g.fillStyle = '#8b8f96'; g.fillRect(gate.dir > 0 ? rx - 4 : rx + 12, yy, 8, 10); g.fillStyle = '#b4b9c0'; g.fillRect(gate.dir > 0 ? rx - 4 : rx + 12, yy, 8, 2); }
-      else {
-        // the raised portcullis: its bottom bar along the rib and the teeth hanging into the passage
-        const tx0 = gate.dir > 0 ? rx - 1 : rx + 13;
-        g.fillStyle = '#2a2d33'; g.fillRect(tx0, y0 + 4, 4, y1 - y0 - 6);
-        g.fillStyle = '#3d4048'; for (let yy = y0 + 8; yy < y1 - 6; yy += 9) { g.beginPath(); g.moveTo(tx0 + (gate.dir > 0 ? 0 : 4), yy); g.lineTo(tx0 + (gate.dir > 0 ? -7 : 11), yy + 3.5); g.lineTo(tx0 + (gate.dir > 0 ? 0 : 4), yy + 7); g.closePath(); g.fill(); }
+  // THE GATEHOUSE over each town gate: a raised block of stone between the two gate towers, stepping out 16 px past both
+  // faces of the wall, battlements round its roof, the Duke's arms on a carved boss and THISTLEDOWN on its lintel stone.
+  // The passage runs under it in deep shade; at its outer face the portcullis is drawn up, its iron teeth hanging over the
+  // dark mouth of the passage, and a torch burns either side, day and night. The road is never covered for good: the
+  // whole gatehouse is faint (25%) while the knight is in the passage or within a tile of it.
+  // RAISE: how far the roof stands over its footprint; the block's top (merlons) stays under row 30's top edge + 8, clear
+  // of the house by the west gate (h2, whose wall ends at y 30 x 48).
+  const GH = { half: 64, raise: 24, merlon: 10 };
+  const gateBox = gate => {
+    const cx = (gate.dir > 0 ? gate.x + 1 : gate.x) * TILE, x0 = cx - GH.half, x1 = cx + GH.half;
+    const foot0 = 31 * TILE - 6, foot1 = 34 * TILE + 6, top = foot0 - GH.raise, bot = foot1 - GH.raise;
+    return { cx, x0, x1, foot0, foot1, top, bot, outer: gate.dir > 0 ? x0 : x1, out: gate.dir > 0 ? -1 : 1 };
+  };
+  const nearGate = gate => { const b = gateBox(gate), pty = Math.floor(player.y / TILE); return player.x > b.x0 - TILE && player.x < b.x1 + TILE && pty >= 30 && pty <= 34; };
+  // the roof, cached once per side: walkway flags, battlements, the boss with the arms, the lintel with the name
+  function paintGateRoof(g, w, h, out) {
+    // local origin: the roof's top-left; the front face hangs GH.raise below it. The roof is the vault over the passage:
+    // at each end an archway is cut into it (a half-ellipse, AW deep), and through it the road is seen going into the
+    // shade of the passage; the outer archway carries the portcullis's iron teeth, drawn up
+    const AW = 24, cy = h / 2, ry = h / 2 - 14;
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(6, 8, w, h + GH.raise);
+    // the front (south) face: coursed stone under a string course
+    stoneWall(g, 0, h, w, GH.raise); g.fillStyle = '#5f6268'; g.fillRect(0, h, w, 3);
+    // the roof: a parapet all round a walk of flags
+    g.fillStyle = '#7d8087'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#a7acb3'; g.fillRect(10, 10, w - 20, h - 20);
+    for (let r = 0; r * 16 < h - 20; r++) for (let c = 0; c * 24 < w - 20; c++) { g.fillStyle = ['#b4b9c0', '#aeb3ba', '#babfc6'][(r + c) % 3]; g.fillRect(11 + c * 24, 11 + r * 16, Math.min(22, w - 21 - c * 24), Math.min(14, h - 21 - r * 16)); }
+    g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(10, 10, w - 20, 3);
+    // the battlements on the north and south edges, and on the end walls beyond the archways
+    const merlon = (x, y, mw, mh) => { g.fillStyle = '#8b8f96'; g.fillRect(x, y, mw, mh); g.fillStyle = '#c3c7cc'; g.fillRect(x, y, mw, 2.5); g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(x + mw - 2, y + 2.5, 2, mh - 2.5); };
+    for (let x = 0; x < w; x += 20) { merlon(x, -GH.merlon, 12, GH.merlon + 6); merlon(x, h - 10, 12, 10); }
+    // the carved boss with the Duke's arms in the middle of the roof
+    const by = cy + 14;
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.arc(w / 2 + 3, by + 3, 25, 0, 7); g.fill();
+    g.fillStyle = '#8b8f96'; g.beginPath(); g.arc(w / 2, by, 25, 0, 7); g.fill(); g.fillStyle = '#c3c7cc'; g.beginPath(); g.arc(w / 2, by, 21, 0, 7); g.fill();
+    g.strokeStyle = GOLD_D; g.lineWidth = 2; g.beginPath(); g.arc(w / 2, by, 21, 0, 7); g.stroke();
+    arms(g, w / 2, by + 1, 30);
+    // the two archways, cut out of the roof
+    g.save(); g.globalCompositeOperation = 'destination-out'; g.fillStyle = '#000';
+    for (const ex of [0, w]) { g.beginPath(); g.ellipse(ex, cy, AW, ry, 0, 0, 7); g.fill(); }
+    g.restore();
+    // their arches: a ring of pale voussoirs with a keystone; the outer one has the portcullis teeth hanging in it
+    for (const [ex, side] of [[0, 1], [w, -1]]) {
+      const a0 = side > 0 ? -Math.PI / 2 : Math.PI / 2, a1 = side > 0 ? Math.PI / 2 : Math.PI * 1.5;
+      g.strokeStyle = '#5f6268'; g.lineWidth = 12; g.beginPath(); g.ellipse(ex, cy, AW + 5, ry + 5, 0, a0, a1); g.stroke();
+      g.strokeStyle = '#c3c7cc'; g.lineWidth = 8; g.beginPath(); g.ellipse(ex, cy, AW + 5, ry + 5, 0, a0, a1); g.stroke();
+      g.strokeStyle = 'rgba(60,60,65,0.55)'; g.lineWidth = 1;
+      for (let k = 1; k < 12; k++) { const a = a0 + (a1 - a0) * k / 12; g.beginPath(); g.moveTo(ex + Math.cos(a) * (AW + 1), cy + Math.sin(a) * (ry + 1)); g.lineTo(ex + Math.cos(a) * (AW + 9), cy + Math.sin(a) * (ry + 9)); g.stroke(); }
+      // the keystone
+      const kx = ex + side * (AW + 5);
+      g.fillStyle = '#d6d9dd'; g.beginPath(); g.moveTo(kx - side * 6, cy - 9); g.lineTo(kx + side * 7, cy - 12); g.lineTo(kx + side * 7, cy + 12); g.lineTo(kx - side * 6, cy + 9); g.closePath(); g.fill();
+      g.strokeStyle = GOLD_D; g.lineWidth = 1.2; g.stroke();
+      if (side === out) continue;
+      // the outer arch: the portcullis drawn up, its iron teeth hanging into the archway
+      for (let k = 0; k < 13; k++) {
+        const a = a0 + (a1 - a0) * (k + 0.5) / 13, px = ex + Math.cos(a) * AW, py = cy + Math.sin(a) * ry, ix = ex + Math.cos(a) * (AW - 11), iy = cy + Math.sin(a) * (ry - 11);
+        const nx = -Math.sin(a) * 3.5, ny = Math.cos(a) * 3.5;
+        g.fillStyle = '#2a2d33'; g.beginPath(); g.moveTo(px + nx, py + ny); g.lineTo(ix, iy); g.lineTo(px - nx, py - ny); g.closePath(); g.fill();
       }
+      g.strokeStyle = '#2a2d33'; g.lineWidth = 3; g.beginPath(); g.ellipse(ex, cy, AW, ry, 0, a0, a1); g.stroke();
     }
-    // the keystone across the middle of the passage, with the arms of Thistledown
-    const ky = 32.5 * TILE - 13;
-    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x + 2, ky + 4, 48, 26);
-    g.fillStyle = STONE[1]; g.fillRect(x - 2, ky, 52, 26); g.fillStyle = STONE[2]; g.fillRect(x - 2, ky, 52, 3);
-    arms(g, x + 24, ky + 13, 20);
+    // the lintel stone with the city's name, across the roof over the outer archway's crown
+    const lw = w - 2 * AW - 12, lx = AW + 6, ly = 16;
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(lx + 2, ly + 2, lw, 17);
+    g.fillStyle = '#3a3f4a'; g.fillRect(lx, ly, lw, 17); g.strokeStyle = GOLD_D; g.lineWidth = 1.5; g.strokeRect(lx + 0.5, ly + 0.5, lw - 1, 16);
+    g.fillStyle = GOLD; g.font = `800 9px ${DISPLAY}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('THISTLEDOWN', w / 2, ly + 9); g.textBaseline = 'alphabetic';
+  }
+  function drawGatehouse(g, gate) {
+    const b = gateBox(gate), w = b.x1 - b.x0, h = b.bot - b.top;
+    // the passage under the block, in deep shade (drawn at full strength: the road can be seen running into it)
+    const sh = g.createLinearGradient(b.x0 - 18, 0, b.x1 + 18, 0);
+    sh.addColorStop(0, 'rgba(12,10,8,0)'); sh.addColorStop(0.14, 'rgba(12,10,8,0.55)'); sh.addColorStop(0.5, 'rgba(12,10,8,0.7)'); sh.addColorStop(0.86, 'rgba(12,10,8,0.55)'); sh.addColorStop(1, 'rgba(12,10,8,0)');
+    g.fillStyle = sh; g.fillRect(b.x0 - 18, 31 * TILE, w + 36, 3 * TILE);
+    const near = nearGate(gate);
+    g.save(); g.globalAlpha = near ? 0.25 : 1;
+    blit(g, sprite('gatehouse3' + b.out, w + 12, h + GH.raise + GH.merlon + 12, 0, GH.merlon, cg => paintGateRoof(cg, w, h, b.out)), b.x0, b.top);
+    // a torch either side of the outer archway, always burning
+    for (const ty of [b.top + 14, b.bot - 2]) drawTorch(g, b.outer + b.out * 5, ty, true);
     g.restore();
   }
 
@@ -53539,6 +53645,122 @@ window.RETALIATE = RETALIATE;
     for (let i = 0; i < 11; i++) { const x = 9 + r() * 30, y = 10 + r() * 22, c = cols[(i + v) % cols.length]; g.fillStyle = c; g.beginPath(); g.arc(x, y, 3.2, 0, 7); g.fill(); g.strokeStyle = 'rgba(80,0,20,0.35)'; g.lineWidth = 0.8; g.beginPath(); g.arc(x, y, 1.6, 0, 5); g.stroke(); }
   }
   const drawRoses = (g, tx, ty) => { const v = GVAR[pi(tx, ty)]; blit(g, sprite('roses' + v, 48, 48, 0, 0, cg => paintRoses(cg, v)), tx * TILE, ty * TILE); };
+  // a flower bed in a timber frame: lavender spikes, marigolds, white daisies and cornflowers (the Duke's roses are the red ones)
+  function paintFlowerBed(g, v) {
+    const r = mulberry32(0xf10e + v * 23);
+    g.fillStyle = 'rgba(0,0,0,0.2)'; g.beginPath(); g.ellipse(25, 42, 21, 5, 0, 0, 7); g.fill();
+    g.fillStyle = '#5a3c22'; g.fillRect(3, 24, 42, 18); g.fillStyle = '#7d5832'; g.fillRect(3, 24, 42, 3); g.fillRect(3, 37, 42, 5);
+    g.fillStyle = 'rgba(255,230,190,0.25)'; g.fillRect(3, 37, 42, 1.2);
+    g.fillStyle = '#4a3020'; g.fillRect(6, 27, 36, 10);
+    g.fillStyle = '#3f7d33'; for (let i = 0; i < 9; i++) { g.beginPath(); g.arc(8 + r() * 32, 22 + r() * 10, 4 + r() * 2.5, 0, 7); g.fill(); }
+    g.fillStyle = '#5aa045'; for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(8 + r() * 32, 20 + r() * 9, 2.4 + r() * 1.5, 0, 7); g.fill(); }
+    // lavender spikes at the back, flowers in front
+    for (let i = 0; i < 6; i++) { const x = 8 + i * 6.4 + r() * 2, top = 6 + r() * 6; g.strokeStyle = '#4f7a3a'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, 26); g.lineTo(x, top + 6); g.stroke(); g.fillStyle = (i + v) % 2 ? '#8a6ad0' : '#a888e0'; for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(x, top + k * 2.6, 1.6, 1.9, 0, 0, 7); g.fill(); } }
+    const cols = ['#f5a623', '#ffffff', '#4a7ad8', '#f5c542', '#e0506a'];
+    for (let i = 0; i < 9; i++) { const x = 8 + r() * 32, y = 20 + r() * 12, c = cols[(i + v) % cols.length]; g.fillStyle = c; for (let p = 0; p < 5; p++) { const a = p / 5 * Math.PI * 2; g.beginPath(); g.arc(x + Math.cos(a) * 1.7, y + Math.sin(a) * 1.7, 1.3, 0, 7); g.fill(); } g.fillStyle = c === '#ffffff' ? '#f5c542' : '#7a4a1a'; g.beginPath(); g.arc(x, y, 0.9, 0, 7); g.fill(); }
+  }
+  const drawFlowerBed = (g, tx, ty) => { const v = GVAR[pi(tx, ty)]; blit(g, sprite('flowerbed' + v, 48, 48, 0, 0, cg => paintFlowerBed(cg, v)), tx * TILE, ty * TILE); };
+
+  // ---------- the Smithy Yard, the Bell Green and the inn's garden ----------
+  // a woodpile of split logs, end-on, stacked between two stakes (inside its own tile: it stands against walls)
+  function paintWoodpile(g, v) {
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(26, 44, 22, 4, 0, 0, 7); g.fill();
+    g.fillStyle = '#4a3420'; g.fillRect(3, 6, 4, 38); g.fillRect(41, 6, 4, 38);
+    g.fillStyle = '#6b4a2a'; g.fillRect(4, 40, 40, 4);
+    const rows = [[8, 36, 5], [11, 27, 4], [14, 18, 3], [20, 10, 2]];
+    rows.forEach(([x0, y, n], ri) => { for (let k = 0; k < n; k++) { const cx = x0 + 4 + k * 9 + (ri === 3 ? 4 : 0), cy = y; g.fillStyle = '#5a3c22'; g.beginPath(); g.arc(cx, cy, 4.8, 0, 7); g.fill(); g.fillStyle = (k + ri + v) % 3 ? '#d9b380' : '#caa06a'; g.beginPath(); g.arc(cx, cy, 3.6, 0, 7); g.fill(); g.strokeStyle = 'rgba(120,80,40,0.5)'; g.lineWidth = 0.7; g.beginPath(); g.arc(cx, cy, 2, 0, 7); g.stroke(); } });
+    g.fillStyle = 'rgba(255,240,210,0.2)'; g.fillRect(4, 6, 1.4, 38);
+  }
+  // the smithy's handcart: a plank box on one big spoked wheel, heaped with charcoal, its handles to the west (two tiles)
+  function paintCart(g) {
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(50, 46, 40, 6, 0, 0, 7); g.fill();
+    g.strokeStyle = '#4a3420'; g.lineWidth = 3.5; g.lineCap = 'round'; g.beginPath(); g.moveTo(22, 26); g.lineTo(-2, 34); g.moveTo(22, 20); g.lineTo(0, 28); g.stroke(); g.lineCap = 'butt';
+    g.fillStyle = '#4a3420'; g.fillRect(80, 28, 4, 16);
+    // the charcoal heap
+    g.fillStyle = '#26221f'; g.beginPath(); g.moveTo(22, 12); g.quadraticCurveTo(36, -14, 52, -4); g.quadraticCurveTo(66, -14, 84, 12); g.closePath(); g.fill();
+    g.fillStyle = '#3d3834'; for (const [x, y] of [[32, 2], [44, -4], [56, 0], [68, 4], [40, 8], [62, -6], [74, 9]]) { g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill(); }
+    // the box
+    g.fillStyle = '#7d5832'; g.fillRect(20, 10, 66, 22); g.fillStyle = '#94693c'; g.fillRect(20, 10, 66, 3);
+    g.fillStyle = 'rgba(30,18,8,0.4)'; g.fillRect(20, 20, 66, 1.4); for (const x of [38, 56, 72]) g.fillRect(x, 10, 1.4, 22);
+    g.fillStyle = '#2a2d33'; g.fillRect(20, 10, 3, 22); g.fillRect(83, 10, 3, 22);
+    // the wheel
+    g.fillStyle = '#3d2a1a'; g.beginPath(); g.arc(52, 34, 14, 0, 7); g.fill(); g.fillStyle = '#94693c'; g.beginPath(); g.arc(52, 34, 11, 0, 7); g.fill(); g.fillStyle = '#3d2a1a'; g.beginPath(); g.arc(52, 34, 8.5, 0, 7); g.fill();
+    g.strokeStyle = '#94693c'; g.lineWidth = 2; for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; g.beginPath(); g.moveTo(52, 34); g.lineTo(52 + Math.cos(a) * 9, 34 + Math.sin(a) * 9); g.stroke(); }
+    g.fillStyle = '#2a2d33'; g.beginPath(); g.arc(52, 34, 2.6, 0, 7); g.fill();
+    g.strokeStyle = '#2a2d33'; g.lineWidth = 1.4; g.beginPath(); g.arc(52, 34, 13.5, 0, 7); g.stroke();
+  }
+  // the old anvil on a tree stump, a hammer resting against it (inside its tile: the smithy's wall is just north)
+  function paintOldAnvil(g) {
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(26, 44, 18, 4, 0, 0, 7); g.fill();
+    g.fillStyle = '#6b4a2a'; g.fillRect(11, 26, 26, 18); g.fillStyle = '#5a3c22'; g.fillRect(31, 26, 6, 18);
+    g.strokeStyle = 'rgba(30,18,8,0.45)'; g.lineWidth = 1; for (const x of [16, 22, 28]) { g.beginPath(); g.moveTo(x, 28); g.lineTo(x + 1, 43); g.stroke(); }
+    g.fillStyle = '#c9a36a'; g.beginPath(); g.ellipse(24, 26, 13, 5, 0, 0, 7); g.fill(); g.strokeStyle = 'rgba(120,80,40,0.6)'; g.beginPath(); g.ellipse(24, 26, 8, 3, 0, 0, 7); g.stroke(); g.beginPath(); g.ellipse(24, 26, 4, 1.5, 0, 0, 7); g.stroke();
+    // the anvil: horn to the west, a flat face, a waist and a foot
+    g.fillStyle = '#2f3238'; g.fillRect(19, 18, 10, 6); g.fillRect(15, 22, 18, 3);
+    g.beginPath(); g.moveTo(10, 12); g.lineTo(16, 10); g.lineTo(36, 10); g.lineTo(36, 17); g.lineTo(18, 17); g.closePath(); g.fill();
+    g.fillStyle = '#5d6370'; g.fillRect(16, 10, 20, 2.4); g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(18, 10, 14, 1);
+    // the hammer, leaning on the stump
+    g.strokeStyle = '#7a5530'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(40, 44); g.lineTo(37, 24); g.stroke();
+    g.fillStyle = '#3d4048'; g.fillRect(33, 20, 9, 5);
+  }
+  // a water trough of planks with iron bands; the water is drawn live
+  function paintTrough(g) {
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(25, 42, 22, 4, 0, 0, 7); g.fill();
+    g.fillStyle = '#5a3c22'; g.fillRect(3, 18, 42, 24); g.fillStyle = '#7d5832'; g.fillRect(3, 26, 42, 16);
+    g.fillStyle = 'rgba(30,18,8,0.35)'; g.fillRect(3, 33, 42, 1.2);
+    g.fillStyle = '#2a2d33'; g.fillRect(9, 26, 3, 16); g.fillRect(36, 26, 3, 16);
+    g.fillStyle = '#94693c'; g.fillRect(3, 18, 42, 3); g.fillRect(3, 18, 3, 9); g.fillRect(42, 18, 3, 9);
+    g.fillStyle = '#3d7fb0'; g.fillRect(6, 21, 36, 5);
+  }
+  function drawTrough(g, tx, ty) {
+    const x = tx * TILE, y = ty * TILE;
+    blit(g, sprite('trough', 48, 48, 0, 0, paintTrough), x, y);
+    const ph = fr(time * 0.7 + tx * 0.1); g.strokeStyle = `rgba(255,255,255,${(0.5 * (1 - ph)).toFixed(3)})`; g.lineWidth = 1; g.beginPath(); g.ellipse(x + 24, y + 23.5, 4 + ph * 12, 1.4 + ph * 1.2, 0, 0, 7); g.stroke();
+  }
+  // the well on the Bell Green: a stone ring, two posts, a little shingled roof, a crank, a rope and a bucket (origin: the foot)
+  function paintWell(g) {
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(4, -2, 26, 7, 0, 0, 7); g.fill();
+    // the posts and the roof
+    g.fillStyle = '#5a3c22'; g.fillRect(-22, -64, 5, 50); g.fillRect(17, -64, 5, 50);
+    g.fillStyle = '#7a4a2a'; g.beginPath(); g.moveTo(-28, -60); g.lineTo(0, -82); g.lineTo(28, -60); g.lineTo(24, -56); g.lineTo(0, -75); g.lineTo(-24, -56); g.closePath(); g.fill();
+    g.fillStyle = '#a0603a'; g.beginPath(); g.moveTo(-26, -61); g.lineTo(0, -80); g.lineTo(0, -75); g.lineTo(-24, -57); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(40,20,10,0.35)'; g.lineWidth = 1; for (let k = 1; k < 4; k++) { const f = k / 4; g.beginPath(); g.moveTo(-26 + 26 * f, -61 - 19 * f); g.lineTo(26 - 26 * f, -61 - 19 * f); g.stroke(); }
+    g.fillStyle = GOLD; g.beginPath(); g.arc(0, -83, 2.4, 0, 7); g.fill();
+    // the windlass and its crank
+    g.fillStyle = '#6b4a2a'; g.fillRect(-18, -48, 36, 6); g.fillStyle = '#2a2d33'; g.fillRect(18, -47, 8, 2.5); g.fillRect(25, -47, 2.5, 9);
+    g.strokeStyle = '#c9a36a'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(2, -42); g.lineTo(2, -24); g.stroke();
+    g.fillStyle = '#6b4a2a'; g.fillRect(-3, -26, 10, 9); g.fillStyle = '#2a2d33'; g.fillRect(-3, -24, 10, 1.6);
+    // the stone ring: the far rim, the dark water, the near wall
+    g.fillStyle = '#9aa0a8'; g.beginPath(); g.ellipse(0, -18, 22, 8, 0, 0, 7); g.fill();
+    g.fillStyle = '#1d3550'; g.beginPath(); g.ellipse(0, -18, 16, 5, 0, 0, 7); g.fill();
+    g.fillStyle = '#7d8087'; g.beginPath(); g.moveTo(-22, -18); g.lineTo(-22, -2); g.ellipse(0, -2, 22, 8, 0, Math.PI, 0, true); g.lineTo(22, -18); g.ellipse(0, -18, 22, 8, 0, 0, Math.PI); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(40,40,45,0.4)'; g.lineWidth = 1; for (const yy of [-12, -6]) { g.beginPath(); g.ellipse(0, yy, 22, 8, 0, 0.1, Math.PI - 0.1); g.stroke(); }
+    for (const [a, yy] of [[0.5, -15], [1.4, -15], [2.3, -15], [0.95, -9], [1.9, -9]]) { const sx = Math.cos(a) * 22; g.beginPath(); g.moveTo(sx, yy + Math.sin(a) * 8 - 3); g.lineTo(sx, yy + Math.sin(a) * 8 + 3); g.stroke(); }
+    g.fillStyle = '#b4b9c0'; g.beginPath(); g.ellipse(0, -18, 22, 8, 0, Math.PI, 0); g.ellipse(0, -18, 18, 6, 0, 0, Math.PI, true); g.closePath(); g.fill();
+  }
+  // a trestle table in the inn's garden, a bench either side, a tankard and a plate on it
+  function paintTable(g, v) {
+    g.fillStyle = 'rgba(0,0,0,0.2)'; g.beginPath(); g.ellipse(25, 40, 22, 6, 0, 0, 7); g.fill();
+    // the far bench, the table, the near bench
+    g.fillStyle = '#6b4a2a'; g.fillRect(6, 8, 36, 5); g.fillStyle = '#4a3420'; g.fillRect(8, 13, 3, 5); g.fillRect(37, 13, 3, 5);
+    g.fillStyle = '#4a3420'; g.fillRect(9, 26, 4, 12); g.fillRect(35, 26, 4, 12);
+    g.fillStyle = '#8a6238'; g.fillRect(3, 14, 42, 14); g.fillStyle = '#9c7444'; g.fillRect(3, 14, 42, 2);
+    g.fillStyle = 'rgba(30,18,8,0.3)'; g.fillRect(3, 20, 42, 1); g.fillRect(3, 24, 42, 1); g.fillStyle = '#5a3c22'; g.fillRect(3, 27, 42, 2.5);
+    g.fillStyle = '#7d5832'; g.fillRect(5, 34, 38, 5); g.fillStyle = '#4a3420'; g.fillRect(7, 39, 3, 5); g.fillRect(38, 39, 3, 5);
+    // a tankard, and a plate with a heel of bread
+    const tx = v % 2 ? 31 : 13;
+    g.fillStyle = '#9aa0a8'; g.fillRect(tx, 12, 7, 9); g.fillStyle = '#f3ead2'; g.fillRect(tx, 11, 7, 2.4); g.strokeStyle = '#9aa0a8'; g.lineWidth = 1.4; g.beginPath(); g.arc(tx + 8, 16, 2.4, -1.4, 1.4); g.stroke();
+    const px = v % 2 ? 15 : 31; g.fillStyle = '#e8e2d4'; g.beginPath(); g.ellipse(px, 20, 6, 3, 0, 0, 7); g.fill(); g.fillStyle = '#c98a3a'; g.beginPath(); g.ellipse(px, 19, 3.2, 1.8, 0, 0, 7); g.fill();
+  }
+  function drawWell(g, tx, ty) {
+    const cx = tc(tx), foot = (ty + 1) * TILE - 2;
+    const a = behindAlpha(cx - 28, foot - 86, cx + 28, foot, foot);
+    if (a < 1) { g.save(); g.globalAlpha = a; }
+    blit(g, sprite('well', 64, 96, 32, 90, paintWell), cx, foot);
+    // a glint on the water
+    const ph = fr(time * 0.5); g.fillStyle = `rgba(200,230,255,${(0.5 * Math.sin(ph * Math.PI)).toFixed(3)})`; g.beginPath(); g.ellipse(cx - 4 + ph * 8, foot - 18, 3, 1, 0, 0, 7); g.fill();
+    if (a < 1) g.restore();
+  }
 
   // ---------- benches, signposts, the sundial ----------
   function paintBench(g) {
@@ -53607,7 +53829,8 @@ window.RETALIATE = RETALIATE;
   // a square stone tower about five tiles tall on its 2 x 2 footprint: the day-and-night dial on its south face, an open
   // belfry with the bronze bell, a slate pyramid roof and a pennant
   // FACE: the top of the dial's stretch of wall; BELFRY: the belfry's floor (both above the foot, in px)
-  const BT = { x: PLAN.BELL.x * TILE, foot: (PLAN.BELL.y + PLAN.BELL.h) * TILE, w: PLAN.BELL.w * TILE, FACE: -118, BELFRY: -150 };
+  // TOP: the highest drawn pixel (the pennant's crest), over the foot
+  const BT = { x: PLAN.BELL.x * TILE, foot: (PLAN.BELL.y + PLAN.BELL.h) * TILE, w: PLAN.BELL.w * TILE, FACE: -118, BELFRY: -150, TOP: -280 };
   function paintBellTower(g) {
     // local origin: the footprint's bottom-left; the tower rises 236 px
     const w = BT.w, face = BT.FACE, belfry = BT.BELFRY;
@@ -53633,6 +53856,14 @@ window.RETALIATE = RETALIATE;
   }
   function drawBellTower(g) {
     const x = BT.x, foot = BT.foot, w = BT.w, belfry = foot + BT.BELFRY;
+    // it rises over the north wall: a knight (or a friend) on the grass outside, behind it, sees through it
+    const a = behindAlpha(x - 6, foot + BT.TOP, x + w + 6, foot, foot - 2);
+    STATS.bellAlpha = Math.min(STATS.bellAlpha, a);
+    if (a < 1) { g.save(); g.globalAlpha = a; }
+    drawBellTowerBody(g, x, foot, w, belfry);
+    if (a < 1) g.restore();
+  }
+  function drawBellTowerBody(g, x, foot, w, belfry) {
     blit(g, sprite('belltower', w + 20, 300, 10, 284, paintBellTower), x, foot);
     // the dial: blue sky with a sun over navy night with a moon, and one gold hand at dayT / DAY x 2 pi
     const dx = x + w / 2, dy = foot + BT.FACE + 40, R = 25;
@@ -53714,11 +53945,20 @@ window.RETALIATE = RETALIATE;
   }
   function drawTurret(g, t) { blit(g, sprite('ctower-turret', 66, 110, 33, 84, cg => paintCastleTower(cg, 21, 18, -18, -66)), t.cx, t.cy); STATS.towers++; }
   // the castle's corner towers: the core's drawTower, wrapped (larger, with a gold pennant); an instance keeps the core's
+  // The two at the back of the castle (its north side, by the moat) stand right under the Tinker's Workshop and house h1,
+  // so they are squat: nothing of them rises over row 41, the moat, and their pennants fly outward (the NW one west).
+  // The two at the front (south) are tall. Each draw records its box for C19.
+  // top: the highest drawn pixel over the tower's centre (the pennant's crest)
+  const CORNER = { north: { R: 32, base: 22, rim: -18, apex: -52, top: -72 }, south: { R: 32, base: 22, rim: -30, apex: -96, top: -117 } };
+  const cornerTop = d => d.top;
   { const _drawTower = drawTower;
     drawTower = function (g, cx, cy) {
       if (away()) return _drawTower(g, cx, cy);
-      blit(g, sprite('ctower-corner', 100, 160, 50, 120, cg => paintCastleTower(cg, 32, 22, -30, -96)), cx, cy);
-      pennant(g, cx + 1, cy - 96 - 14, 28, GOLD);
+      const north = cy < tc(CASTLE.y + 1), d = north ? CORNER.north : CORNER.south, west = cx < tc(CASTLE.x + 1);
+      blit(g, sprite(north ? 'ctower-corner-n' : 'ctower-corner', 100, 40 - cornerTop(d), 50, -cornerTop(d), cg => paintCastleTower(cg, d.R, d.base, d.rim, d.apex)), cx, cy);
+      // the pennant on the finial's pole (it reaches 6.5 px over its anchor), flying outward from the castle
+      pennant(g, cx + (west ? -1 : 1), cy + d.apex - (north ? 12 : 14), west ? -26 : 26, GOLD);
+      if (STATS.record) STATS.boxes.push({ x0: cx - 50, y0: cy + cornerTop(d), x1: cx + 50, y1: cy + 40, own: 'castle', y: cy + TILE / 2 });
       STATS.towers++;
     };
   }
@@ -54048,7 +54288,7 @@ window.RETALIATE = RETALIATE;
   // ---------- the hook ----------
   const GATE_TOWERS = TOWERS.filter(t => t.gate);
   const drawHook = (g, items, c0) => {
-    STATS.chunks = 0; STATS.repaints = 0; STATS.items = 0; STATS.towers = 0; STATS.lampsLit = 0; STATS.fountains = 0; STATS.statues = 0; STATS.keep = 0; STATS.townBuildings = 0;
+    STATS.chunks = 0; STATS.repaints = 0; STATS.items = 0; STATS.towers = 0; STATS.lampsLit = 0; STATS.fountains = 0; STATS.statues = 0; STATS.keep = 0; STATS.townBuildings = 0; STATS.bellAlpha = 1;
     if (STATS.record) STATS.boxes.length = 0;
     // every instance is written into the map's top-left corner: nothing of the town is drawn inside one
     if (window.__instance) return;
@@ -54056,7 +54296,9 @@ window.RETALIATE = RETALIATE;
     STATS.frames++;
     const vx0 = Math.floor(c.x / TILE) - 2, vx1 = Math.ceil((c.x + VW) / TILE) + 2, vy0 = Math.floor(c.y / TILE) - 2, vy1 = Math.ceil((c.y + VH) / TILE) + 5;
     if (vx1 < X0 || vx0 >= X0 + W || vy1 < Y0 || vy0 >= Y0 + H) return;
-    put(items, -1e8 - 2, null, () => drawGround(g, c));
+    // under every ground overlay of the other files: 17-tap's ring and path dots (-1e9, -1e9 + 1), 69-retaliate's red ring
+    // (-1e9 + 2) and 39-worldblend's feathers (-1e9, drawn on GRASS cells only, which the chunks never paint)
+    put(items, GROUND_Y, null, () => drawGround(g, c));
     for (const [x, y, h0] of LILIES) if (x >= vx0 && x <= vx1 && y >= vy0 && y <= vy1) put(items, -1e8 - 1, null, () => drawLily(g, x, y, h0));
     const x0 = Math.max(X0, vx0), x1 = Math.min(X0 + W - 1, vx1), y0 = Math.max(Y0, vy0), y1 = Math.min(Y0 + H - 1, vy1);
     const WT = WALL_T();
@@ -54066,7 +54308,7 @@ window.RETALIATE = RETALIATE;
       if (t === T.CWALL && ch === 'C') { put(items, tc(y) + 1, [x * TILE, y * TILE - 14, (x + 1) * TILE, (y + 1) * TILE], () => drawCastleWall(g, x, y)); continue; }
       const k = KIND_NAMES[KIND[pi(x, y)]];
       if (!k) continue;
-      const want = k === 'great' || k === 'market' || k === 'rose' ? FOUNT : (k === 'hedge' || k === 'fruit' || k === 'cherry' || k === 'roses') ? HEDGE : PROP;
+      const want = k === 'great' || k === 'market' || k === 'rose' ? FOUNT : GREEN_KINDS.has(k) ? HEDGE : PROP;
       if (t !== want) continue;
       const px = x * TILE, py = y * TILE, by = (y + 1) * TILE;
       if (k === 'lamp') { put(items, by - 6, [tc(x) - 11, LAMP_TOP[x + ',' + y], tc(x) + 11, by], () => drawLamp(g, x, y)); if (lit()) put(items, 9e8 - 1, null, () => lampGlow(g, x, y)); }
@@ -54075,11 +54317,18 @@ window.RETALIATE = RETALIATE;
       else if (k === 'bench') put(items, by - 5, [tc(x) - 21, by - 37, tc(x) + 21, by], () => blit(g, sprite('bench', 48, 40, 24, 36, paintBench), tc(x), by - 5));
       else if (k === 'sign') { const s = signAt(x, y); if (s) put(items, by - 5, [tc(x) - 22, by - 72, tc(x) + 22, by], () => blit(g, sprite('sign-' + s.side, 48, 72, 24, 68, cg => paintSign(cg, s.side)), tc(x), by - 4)); }
       else if (k === 'stall') { const s = stallAt(x, y); if (s && s.x === x) put(items, by - 3, [px - 4, py - 24, px + 100, by], () => drawStall(g, s)); }
-      else if (k === 'bell') { if (x === PLAN.BELL.x && y === PLAN.BELL.y) put(items, BT.foot - 2, [BT.x - 6, BT.foot + BT.BELFRY - 130, BT.x + BT.w + 6, BT.foot], () => drawBellTower(g)); }
+      else if (k === 'bell') { if (x === PLAN.BELL.x && y === PLAN.BELL.y) put(items, BT.foot - 2, [BT.x - 6, BT.foot + BT.TOP, BT.x + BT.w + 6, BT.foot], () => drawBellTower(g)); }
       else if (k === 'sundial') put(items, by - 4, [tc(x) - 17, by - 42, tc(x) + 17, by], () => drawSundial(g, x, y));
       else if (k === 'hedge') put(items, by - 3, [px, py - 10, px + 48, by], () => drawHedge(g, x, y));
       else if (k === 'fruit' || k === 'cherry') { const R = TREE_R[x + ',' + y] || 26; put(items, by - 6, [tc(x) - R, by - 6 - 84, tc(x) + R, by], () => drawTree(g, x, y, k)); }
       else if (k === 'roses') put(items, by - 4, [px, py, px + 48, by], () => drawRoses(g, x, y));
+      else if (k === 'flowers') put(items, by - 4, [px, py, px + 48, by], () => drawFlowerBed(g, x, y));
+      else if (k === 'woodpile') { const v = GVAR[pi(x, y)] % 2; put(items, by - 3, [px, py, px + 48, by], () => blit(g, sprite('woodpile' + v, 48, 48, 0, 0, cg => paintWoodpile(cg, v)), px, py)); }
+      else if (k === 'cart') { if (glyph(x - 1, y) !== 'c') put(items, by - 3, [px - 4, py - 22, px + 96, by], () => blit(g, sprite('cart', 100, 76, 2, 22, paintCart), px, py)); }
+      else if (k === 'oldanvil') put(items, by - 4, [px, py, px + 48, by], () => blit(g, sprite('oldanvil', 48, 48, 0, 0, paintOldAnvil), px, py));
+      else if (k === 'trough') put(items, by - 4, [px, py, px + 48, by], () => drawTrough(g, x, y));
+      else if (k === 'well') put(items, by - 2, [tc(x) - 28, by - 86, tc(x) + 28, by], () => drawWell(g, x, y));
+      else if (k === 'table') { const v = GVAR[pi(x, y)] % 2; put(items, by - 4, [px, py, px + 48, by], () => blit(g, sprite('table' + v, 48, 48, 0, 0, cg => paintTable(cg, v)), px, py)); }
       else if (k === 'great') { if (x === great.x && y === great.y) put(items, (great.y + great.h) * TILE - 4, [GF.cx - GF.rx - 2, 34 * TILE - 24, GF.cx + GF.rx + 2, (great.y + great.h) * TILE], () => drawGreatFountain(g)); }
       else if (k === 'market' || k === 'rose') { const f = fountainAt(x, y); if (f && x === f.x && y === f.y) put(items, (f.y + f.h) * TILE - 4, [f.x * TILE, f.y * TILE - 30, (f.x + f.w) * TILE, (f.y + f.h) * TILE], () => drawSmallFountain(g, f)); }
     }
@@ -54089,7 +54338,7 @@ window.RETALIATE = RETALIATE;
       if (!vis(c, t.cx - d.R - 30, t.cy + d.apex - 20, t.cx + d.R + 30, t.cy + d.base + 10)) continue;
       put(items, (t.y + t.h) * TILE - 2, [t.cx - d.R, t.cy + d.apex - 14, t.cx + d.R, (t.y + t.h) * TILE], () => drawTownTower(g, t));
     }
-    for (const gt of PLAN.GATES) if (vis(c, gt.x * TILE - 20, 30 * TILE, gt.x * TILE + 70, 35 * TILE)) put(items, 34 * TILE - 1, [gt.x * TILE - 6, 31 * TILE - 12, gt.x * TILE + 54, 34 * TILE + 6], () => drawArch(g, gt));
+    for (const gt of PLAN.GATES) { const b = gateBox(gt); if (vis(c, b.x0 - 24, b.top - 24, b.x1 + 24, b.foot1 + 10)) put(items, 34 * TILE - 1, [b.x0 - 18, b.top - GH.merlon, b.x1 + 18, b.foot1 + 2], () => drawGatehouse(g, gt), 'gatehouse'); }
     // the castle: its gate towers, the raised portcullis, the turrets, the drawbridge's chains
     if (vis(c, 102 * TILE, 38 * TILE, 124 * TILE, 56 * TILE)) {
       CASTLE_GATE_TOWERS.forEach((t, i) => put(items, 43 * TILE - 2, [t.cx - 30, t.cy - 100, t.cx + 30, 43 * TILE], () => drawCastleGateTower(g, t, i)));
@@ -54105,7 +54354,7 @@ window.RETALIATE = RETALIATE;
         for (let i = 0; i < SWAN_LOOPS.length; i++) { const p = swanAt(i, ms); put(items, p.y + 4, null, () => drawSwan(g, p, 1)); }
         for (let k = 1; k <= 4; k++) { const p = swanAt(1, ms, k * 1.4); put(items, p.y + 2, null, () => drawDuckling(g, p)); }
       } }
-    // the small folk: Nell and Robin round the fountain, Duchess on the bell plaza (or running there)
+    // the small folk: Tess and Robin round the fountain, Duchess on the bell plaza (or running there)
     for (const k of kidsNow()) if (vis(c, k.px - 30, k.py - 40, k.px + 30, k.py + 20)) put(items, k.py + 10, null, () => drawKid(g, k));
     { const u = (time - CAT.t0) / 2;
       if (u >= 0 && u < 1) { const fx = (PLAN.BELL.x + 0.5) * TILE, fy = BT.foot + 6, d = duchessHome(); const x = lerp(fx, d.x, u), y = lerp(fy, d.y, u) - Math.abs(Math.sin(u * Math.PI * 4)) * 6; put(items, y + 6, null, () => drawCat(g, x, y, true, time)); }
@@ -54123,6 +54372,7 @@ window.RETALIATE = RETALIATE;
     const on = lit(), inside = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
     if (on) for (const [x, y] of LAMPS) if (inside(x, y)) out.push({ x: tc(x), y: y * TILE - 16, r: 110, kind: 'lamp' });
     if (on) for (const key of TORCHES) { const [x, y] = key.split(',').map(Number); if (inside(x, y)) out.push({ x: tc(x), y: tc(y) - 14, r: 70, kind: 'torch' }); }
+    if (on) for (const gt of PLAN.GATES) if (inside(gt.x, 32)) { const b = gateBox(gt); for (const ty of [b.top + 14, b.bot - 2]) out.push({ x: b.outer + b.out * 5, y: ty - 14, r: 80, kind: 'gate torch' }); }
     if (inside(great.x + 1, great.y + 1)) out.push({ x: greatC.x, y: greatC.y, r: 90, kind: 'fountain' });
     if (inside(PLAN.BELL.x, PLAN.BELL.y)) out.push({ x: BT.x + BT.w / 2, y: BT.foot + BT.FACE + 40, r: 80, kind: 'dial' });
   });
@@ -54149,11 +54399,13 @@ window.RETALIATE = RETALIATE;
       { t: 'THE BELL TOWER', c: '#8b949e' },
       'At the north end of Crown Street. Its dial shows the day and the night. Ambrose rings the bell at dawn and at dusk.',
       { t: 'THE PARKS', c: '#8b949e' },
-      `The Duke's Orchard along the north wall: ${PLAN.fruitTrees} apple trees. The Duke's Green: a hedge maze with a sundial in the middle, and Swan Pond with two swans, four ducklings, a footbridge and a rowing boat. The Rose Garden by the inn, with a little lily fountain.`,
+      `The Duke's Orchard along the north wall: ${PLAN.fruitTrees} apple trees. The Duke's Green: a hedge maze with a sundial in the middle, and Swan Pond with two swans, four ducklings, a footbridge and a rowing boat. The Rose Garden by the inn, with a little lily fountain. The Bell Green beside the Bell Tower, with a well, benches and two cherry trees. The inn's garden behind The Barrel & Boar, with tables on the lawn.`,
+      { t: 'THE SMITHY YARD', c: '#8b949e' },
+      'Behind the smithy and the Tinker\'s Workshop: the woodpiles, Brakka\'s handcart of charcoal, an old anvil on a stump, a water trough, and the pit where the bulldozer is mended.',
       { t: 'WHO STANDS WHERE', c: '#8b949e' },
       'Gatewarden Osric, inside the West Gate. Ambrose the bell-ringer, at the Bell Tower. Hettie, Mabel and Moll, at their stalls. Wynn, by Swan Pond.',
       'Marta at the General Store, Aldous at the bank, Rosalind at the bakery, Brakka at the smithy, Pim at the Tinker\'s Workshop, Dorran at The Barrel & Boar, Greta and Fennick on the square, Tobin by the fountain, Sergeant Hale in his yard, Death in his stone house, and Duke Ferrin in the keep.',
-      'Nell and Robin play tag round the fountain.',
+      'Tess and Robin play tag round the fountain.',
     ];
     WIKI.add('places', { id: 'thistledown_landmarks', name: 'Thistledown landmarks', sub: 'The city that still stands', kind: 'town', lines });
     WIKI.add('quests', { id: 'td_bell', name: 'The Bell at Midnight', giver: 'Ambrose the bell-ringer, at the Bell Tower in Thistledown, once you have met the Duke', reward: '75 coins', kind: 'Side quest' });
@@ -54240,7 +54492,10 @@ window.RETALIATE = RETALIATE;
       const known = PLAN.ROWS.every(r => [...r].every(c => c in PLAN.GLYPHS));
       const ids = ['TD_LAWN', 'TD_HEDGE', 'TD_PROP', 'TD_FOUNTAIN'].map(n => T[n]), maxId = Math.max(...Object.values(T));
       const tilesOk = ids.every(id => typeof id === 'number' && id <= 255) && SOLID.has(HEDGE) && SOLID.has(PROP) && SOLID.has(FOUNT) && !SOLID.has(LAWN) && !PLACEABLE_ON.has(LAWN) && LAWN !== T.GRASS;
-      const COUNTS = { '-': 202, '#': 144, 'T': 80, 'G': 6, '@': 507, '=': 282, '+': 443, '"': 166, 'h': 82, 'd': 1, 'O': 1, 'P': 2, 'u': 2, 't': 22, '*': 19, 'l': 22, 's': 4, 'p': 1, 'n': 8, 'k': 8, 'i': 2, 'B': 4, 'N': 1, 'D': 1, 'f': 62, '.': 215, ',': 88, 'a': 20, 'Y': 34, '~': 87, 'b': 10, 'j': 1, 'F': 20, 'x': 1, 'S': 4, 'C': 56, 'g': 2 };
+      // round 1 of review: the Smithy Yard, the Bell Green, the inn's garden and the kitchen garden took 184 plain grass
+      // cells ('.' 215 -> 31); one lamp moved from 121,29 to 117,30 (still 22)
+      const COUNTS = { '-': 202, '#': 144, 'T': 80, 'G': 6, '@': 507, '=': 282, '+': 443, '"': 262, 'h': 82, 'd': 1, 'O': 1, 'P': 2, 'u': 2, 't': 26, '*': 19, 'l': 22, 's': 4, 'p': 1, 'n': 12, 'k': 8, 'i': 2, 'B': 4, 'N': 1, 'D': 1, 'f': 62, '.': 31, ',': 135, 'a': 20, 'Y': 34, '~': 87, 'b': 10, 'j': 1, 'F': 20, 'x': 1, 'S': 4, 'C': 56, 'g': 2,
+        'v': 21, 'w': 5, 'c': 2, 'A': 1, 'q': 1, 'V': 1, 'U': 2 };
       const off = Object.keys(COUNTS).filter(c => (PLAN.COUNTS[c] || 0) !== COUNTS[c]).map(c => `${c} ${PLAN.COUNTS[c]} want ${COUNTS[c]}`);
       const extra = Object.keys(PLAN.COUNTS).filter(c => !(c in COUNTS));
       const total = Object.values(COUNTS).reduce((a, b) => a + b, 0);
@@ -54250,11 +54505,13 @@ window.RETALIATE = RETALIATE;
       let moat = 0, pond = 0; for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) if (glyph(x, y) === '~') { if (x >= PLAN.POND.x0 && x <= PLAN.POND.x1 && y >= PLAN.POND.y0 && y <= PLAN.POND.y1) pond++; else moat++; }
       const fr2 = { great: 0, market: 0, rose: 0 }; for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) { const k = kindAt(x, y); if (k in fr2) fr2[k]++; }
       const trees = { fruit: PLAN.TREES.filter(t => t.kind === 'fruit').length, cherry: PLAN.TREES.filter(t => t.kind === 'cherry').length };
+      // the biggest patch of plain overworld grass ('.' and the dozer bay's 'D') left inside the walls
+      let bigGrass = 0; { const seen = new Set(); for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) { const g0 = c => c === '.' || c === 'D'; if (!g0(glyph(x, y)) || seen.has(x + ',' + y)) continue; let n = 0; const st = [[x, y]]; seen.add(x + ',' + y); while (st.length) { const [cx, cy] = st.pop(); n++; for (const [dx, dy] of N4c) { const k = (cx + dx) + ',' + (cy + dy); if (!seen.has(k) && g0(glyph(cx + dx, cy + dy))) { seen.add(k); st.push([cx + dx, cy + dy]); } } } bigGrass = Math.max(bigGrass, n); } }
       const sha = (() => { let hsh = 0; for (const r of PLAN.ROWS) for (let i = 0; i < r.length; i++) hsh = (Math.imul(hsh, 31) + r.charCodeAt(i)) | 0; return hsh; })();
-      check(P + 'C1 the plan: 45 rows of 58, every glyph known; TD_LAWN, TD_HEDGE, TD_PROP and TD_FOUNTAIN exist (ids <= 255); every glyph count is the spec\'s (2610 cells); 50 prop, 123 hedge and 20 fountain cells all have a kind; 18 towers (14 of 2x2, 4 of 2x3), 64 moat + 23 pond, 12 + 4 + 4 fountain cells, 14 fruit + 8 cherry trees, 22 lamps',
-        rowsOk && known && tilesOk && !off.length && !extra.length && total === 2610 && kProp === 50 && nProp === 50 && kHedge === 123 && nHedge === 123 && kFount === 20 && nFount === 20
-        && towers.length === 18 && t22 === 14 && t23 === 4 && moat === 64 && pond === 23 && fr2.great === 12 && fr2.market === 4 && fr2.rose === 4 && trees.fruit === 14 && trees.cherry === 8 && LAMPS_N === 22,
-        { rowsOk, known, ids, maxId, tilesOk, off, extra, total, kProp, kHedge, kFount, towers: [towers.length, t22, t23], moat, pond, fountains: fr2, trees, lamps: LAMPS_N, sha }); }
+      check(P + 'C1 the plan: 45 rows of 58, every glyph known; TD_LAWN, TD_HEDGE, TD_PROP and TD_FOUNTAIN exist (ids <= 255); every glyph count is the plan\'s (2610 cells); 66 prop, 148 hedge and 20 fountain cells all have a kind; 18 towers (14 of 2x2, 4 of 2x3), 64 moat + 23 pond, 12 + 4 + 4 fountain cells, 14 fruit + 12 cherry trees, 22 lamps, and no plain grass patch inside the walls bigger than 6 cells',
+        rowsOk && known && tilesOk && !off.length && !extra.length && total === 2610 && kProp === 66 && nProp === 66 && kHedge === 148 && nHedge === 148 && kFount === 20 && nFount === 20
+        && towers.length === 18 && t22 === 14 && t23 === 4 && moat === 64 && pond === 23 && fr2.great === 12 && fr2.market === 4 && fr2.rose === 4 && trees.fruit === 14 && trees.cherry === 12 && LAMPS_N === 22 && bigGrass <= 6,
+        { rowsOk, known, ids, maxId, tilesOk, off, extra, total, kProp, kHedge, kFount, towers: [towers.length, t22, t23], moat, pond, fountains: fr2, trees, lamps: LAMPS_N, bigGrass, sha }); }
 
     // ---- C2. nothing outside the town changes ----
     { let draws = 0, spawnCalls = 0; const rnd = () => { draws++; return 0.5; };
@@ -54302,6 +54559,18 @@ window.RETALIATE = RETALIATE;
         wR === '31,32,33' && eR === '31,32,33' && sides && towersOk && TOWNWALL.tally.gates === 6 && portOk && bridge && moat === 64, { wR, eR, sides, towersOk, gates: TOWNWALL.tally.gates, port, bridge, moat }); }
 
     // ---- C5. the road ----
+    // The fields outside the walls are not the city's: the goblin walker leaves its wreck wherever it falls, and a knight
+    // parks where he likes. For C5 and C6 the road outside (x 76..84 and 141..147, rows 30..34) is borrowed clear of
+    // anything solid, and a machine or wreck a knight left on the High Street is lifted off it; all of it goes back after C6.
+    const roadKept = [];
+    { const VEH = vehicleTiles();
+      const lift = (x, y, to) => { const i = idx(x, y); roadKept.push({ x, y, t: tileAt(x, y), had: mapDiffs.has(i), d: mapDiffs.get(i) }); setTile(x, y, to); mapDiffs.delete(i); };
+      for (let y = 30; y <= 34; y++) for (let x = 76; x <= 147; x++) {
+        const t = tileAt(x, y), outside = x < 85 || x > 140;
+        if (outside && (solidFor(t, 'rider') || solidFor(t, 'player'))) lift(x, y, T.GRASS);
+        else if (!outside && VEH.has(t) && y >= 31 && y <= 33) lift(x, y, base[pi(x, y)]);
+      } }
+    const roadBack = () => { while (roadKept.length) { const b = roadKept.pop(); setTile(b.x, b.y, b.t); if (b.had) mapDiffs.set(idx(b.x, b.y), b.d); else mapDiffs.delete(idx(b.x, b.y)); } };
     { const blocked = []; for (let y = 31; y <= 33; y++) for (let x = 84; x <= 141; x++) { const t = tileAt(x, y); if (solidFor(t, 'player') || solidFor(t, 'rider')) blocked.push(x + ',' + y); }
       const e = { x: tc(80), y: tc(32), r: 26 }; let hit = null, steps = 0;
       while (e.x < tc(145) && steps < 2000) { const x0 = e.x, y0 = e.y; moveEntity(e, 4, 0, 'rider'); steps++; if (e.x !== x0 + 4 || e.y !== y0) { hit = [+(e.x / TILE).toFixed(2), +(e.y / TILE).toFixed(2)]; break; } }
@@ -54345,7 +54614,7 @@ window.RETALIATE = RETALIATE;
         if (!(foot.east && foot.back && foot.rowsOk)) ok = false;
         check(P + 'C6 on the mare and on the Barrelbeast the knight rides in through the West Gate, down the High Street and out of the East Gate (crossing both gate lines on rows 31..33, still mounted), and back; and from the fountain over the drawbridge into the castle yard and back; and on foot gate to gate', ok, log);
       }
-      onFoot(); giveBack(); drain(); }
+      onFoot(); giveBack(); roadBack(); drain(); }
 
     // ---- C7. anchors on their tiles ----
     { const want = [[105, 27, 'BOARD'], [108, 28, 'STALL'], [109, 28, 'STALL'], [116, 28, 'STALL'], [117, 28, 'STALL'], [119, 27, 'HITCH'], [117, 17, 'HOUSE_PORTAL'], [96, 43, 'DOZER_BAY'], [119, 38, 'FIRE'],
@@ -54393,7 +54662,7 @@ window.RETALIATE = RETALIATE;
       for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) { const t = tileAt(x, y); if (t !== PROP && t !== FOUNT && t !== HEDGE) continue; if (!kindAt(x, y) || !tapName(x, y) || !lineFor(x, y)) bad.push(x + ',' + y); }
       // groups: the cells of one thing (a fountain, the bell, a hedge row): each needs open ground beside it, except a hedge
       // row that is only scenery against the wall (as 91's K4 allows), which is counted and named
-      const seen = new Set(), groups = []; const keyOf = (x, y) => { const k = kindAt(x, y); return k === 'great' || k === 'market' || k === 'rose' || k === 'bell' ? k : k === 'hedge' || k === 'fruit' || k === 'cherry' || k === 'roses' ? 'green' : k + '@' + x + ',' + y; };
+      const seen = new Set(), groups = []; const keyOf = (x, y) => { const k = kindAt(x, y); return k === 'great' || k === 'market' || k === 'rose' || k === 'bell' ? k : GREEN_KINDS.has(k) ? 'green' : k + '@' + x + ',' + y; };
       for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) { const t = tileAt(x, y); if ((t !== PROP && t !== FOUNT && t !== HEDGE) || seen.has(x + ',' + y)) continue; const key = keyOf(x, y), cells = [], st = [[x, y]]; seen.add(x + ',' + y);
         while (st.length) { const [cx, cy] = st.pop(); cells.push([cx, cy]); for (const [dx, dy] of N4c) { const nx = cx + dx, ny = cy + dy, kk = nx + ',' + ny; if (seen.has(kk) || !inTown(nx, ny) || ![PROP, FOUNT, HEDGE].includes(tileAt(nx, ny)) || keyOf(nx, ny) !== key) continue; seen.add(kk); st.push([nx, ny]); } }
         groups.push({ key, cells, open: cells.some(([cx, cy]) => N4c.some(([dx, dy]) => walkable(cx + dx, cy + dy))) }); }
@@ -54481,9 +54750,23 @@ window.RETALIATE = RETALIATE;
       STATS.record = true; render(); const box = STATS.boxes.find(b => b.x0 === tc(PL.x) - 22 && b.y1 === (PL.y + 1) * TILE); STATS.record = false;
       const statue = !!box && box.y0 === (PL.y + 1) * TILE - 92;
       const fangRoad = !SOLID.has(tileAt(112, 48)) && regionAt(112, 48).name === 'Castle Thistledown' && !!HOOKS.mainQuest[16];
+      // online: 71-login loads the save first and the world's welcome (with the knight's name) comes a moment later. While
+      // it is on its way no name is saved; then the plinth carries his own name. A name saved offline gives way to it.
+      const net0 = window.NET ? { enabled: NET.enabled, status: NET.status, me: NET.me } : null, online = {};
+      if (net0) {
+        try {
+          q.heroName = null; NET.enabled = true; NET.status = 'connecting'; NET.me = null;
+          for (let k = 0; k < 3; k++) heroTick(q); online.waiting = q.heroName;
+          NET.status = 'on'; NET.me = 'Cohen'; heroTick(q); online.named = q.heroName; online.plaque = lineFor(PL.x, PL.y)[1];
+          q.heroName = OFFLINE_HERO; heroTick(q); online.repaired = q.heroName;
+          NET.status = 'off'; NET.me = null; NET.enabled = false; q.heroName = null; heroTick(q); online.offline = q.heroName;
+        } finally { NET.enabled = net0.enabled; NET.status = net0.status; NET.me = net0.me; }
+      }
+      const onlineOk = !net0 || (online.waiting === null && online.named === 'COHEN' && online.plaque === 'COHEN, WHO SLEW THE FANG. Thistledown will not forget.' && online.repaired === 'COHEN' && online.offline === OFFLINE_HERO);
+      q.heroName = name;
       quest.stage = st0; drain();
-      check(P + 'C14 the waiting plinth: before stage 16 it is empty; at stage 16 it holds the knight (his name saved once, offline THE KNIGHT FROM THE CAVE), the plaque carries the name, the statue is drawn, and the Voice says so exactly once; the Fang\'s homecoming tile 112,48 is still open in the castle',
-        empty && name === 'THE KNIGHT FROM THE CAVE' && told === 1 && told2 === 0 && plaque && statue && fangRoad, { empty, name, told, told2, plaque, statue, box, fangRoad }); }
+      check(P + 'C14 the waiting plinth: before stage 16 it is empty; at stage 16 it holds the knight (his name saved once, offline THE KNIGHT FROM THE CAVE), the plaque carries the name, the statue is drawn, and the Voice says so exactly once; online no name is saved until the world says who he is, then it is his own (COHEN), and an offline name gives way to it; the Fang\'s homecoming tile 112,48 is still open in the castle',
+        empty && name === 'THE KNIGHT FROM THE CAVE' && told === 1 && told2 === 0 && plaque && statue && fangRoad && onlineOk, { empty, name, told, told2, plaque, statue, box, fangRoad, online }); }
 
     // ---- C15. night ----
     { const N = window.NIGHT, d0 = player.dayTime;
@@ -54518,7 +54801,7 @@ window.RETALIATE = RETALIATE;
     { leave(); onFoot(); drain(); save();
       const sk = 'fanglands.slot.' + title.slot, raw0 = localStorage.getItem(sk), mirror0 = localStorage.getItem(SAVE_KEY);
       const d = JSON.parse(raw0 || mirror0);
-      const cells = { bed: [111, 35], lode: [130, 21], fire: [100, 32], crop: [131, 51], horse: [114, 25] };
+      const cells = { bed: [111, 35], lode: [130, 21], fire: [100, 32], crop: [131, 51], horse: [114, 25], mech: [112, 35], wreck: [86, 32] };
       const touched = Object.values(cells);
       d.player.visitedVillage = true; delete d.player.cityV; d.player.x = tc(103); d.player.y = tc(45); d.player.mech = null; d.player.r = 13; d.player.speed = 175; d.player.dead = false; d.player.hp = Math.max(1, d.player.hp || 10);
       d.player.bedSpawn = { x: tc(111), y: tc(35) }; d.player.home = { x: tc(130), y: tc(22) };
@@ -54526,13 +54809,16 @@ window.RETALIATE = RETALIATE;
       d.player.inv = (d.player.inv || []).map((s, i) => i < 16 ? s : null);
       const ix = ([x, y]) => idx(x, y);
       d.mapDiffs = (d.mapDiffs || []).filter(([i]) => { const x = i % MAP_W, y = Math.floor(i / MAP_W); return !inTown(x, y); })
-        .concat([[ix(cells.bed), 'BED'], [ix(cells.lode), 'LODESTONE'], [ix(cells.fire), 'FIRE'], [ix(cells.crop), 'CROP'], [ix(cells.horse), 'HORSE']]);
+        .concat([[ix(cells.bed), 'BED'], [ix(cells.lode), 'LODESTONE'], [ix(cells.fire), 'FIRE'], [ix(cells.crop), 'CROP'], [ix(cells.horse), 'HORSE'], [ix(cells.mech), 'MECH'], [ix(cells.wreck), 'WRECK']]);
       d.fires = [{ i: ix(cells.fire), timer: 600 }]; d.crops = [{ i: ix(cells.crop), stage: 1, t: 0, crop: 'potato' }];
       const packBefore = { bed: (d.player.inv || []).filter(s => s && s.id === 'bed').reduce((a, s) => a + s.qty, 0), lodestone: (d.player.inv || []).filter(s => s && s.id === 'lodestone').reduce((a, s) => a + s.qty, 0) };
       const crafted = JSON.stringify(d);
       localStorage.setItem(sk, crafted); localStorage.setItem(SAVE_KEY, crafted);
+      const log0 = MIG.log.length;
       const ok = load(); F.step([]);
       const lines = texts();
+      // the walker parked on what is now the Great Fountain, and a wreck in the West Gate's mouth: moved, never lost
+      const movedTo = (cell, name) => { const m = MIG.log.slice(log0).find(e => e[0] === cell[0] && e[1] === cell[1] && e[3] === 'moved'); return m && T[name] === tileAt(m[4], m[5]) && mapDiffs.get(idx(m[4], m[5])) === T[name] && tileAt(cell[0], cell[1]) === base[pi(cell[0], cell[1])] && Math.max(Math.abs(m[4] - cell[0]), Math.abs(m[5] - cell[1])) <= 4 ? [m[4], m[5]] : null; };
       const r = {
         ok, bed: tileAt(...cells.bed) === base[pi(...cells.bed)] && !mapDiffs.has(ix(cells.bed)), lode: tileAt(...cells.lode) === base[pi(...cells.lode)] && !mapDiffs.has(ix(cells.lode)),
         refunded: countItem('bed') === packBefore.bed + 1 && countItem('lodestone') === packBefore.lodestone + 1, spawnCleared: !player.bedSpawn && !player.home,
@@ -54542,17 +54828,39 @@ window.RETALIATE = RETALIATE;
         free: !collides(player.x, player.y, player.r, playerWho()),
         voice: lines.filter(l => l === 'Thistledown has been rebuilt while you were away. Go and see the Great Fountain.').length, back: lines.filter(l => l === 'Back in your pack: 1 bed, 1 lodestone.').length,
         cityV: player.cityV,
+        mech: movedTo(cells.mech, 'MECH'), wreck: movedTo(cells.wreck, 'WRECK'),
       };
       drain(); save(); const snapDiffs = JSON.stringify([...mapDiffs.entries()]), rev0 = MIG.reverted, at0 = [player.x, player.y], horse0 = JSON.stringify(player.horse);
       const ok2 = load(); F.step([]);
       r.second = ok2 && JSON.stringify([...mapDiffs.entries()]) === snapDiffs && MIG.reverted === rev0 && Math.abs(player.x - at0[0]) < 1 && Math.abs(player.y - at0[1]) < 1 && JSON.stringify(player.horse) === horse0 && texts().length === 0;
       // put the save, the map and the knight back as they were
-      const horseCell = player.horse && player.horse.at;
-      for (const c of touched.concat(horseCell ? [horseCell] : [])) setTile(c[0], c[1], base[pi(c[0], c[1])]);
+      const horseCell = player.horse && player.horse.at, movedCells = MIG.log.slice(log0).filter(e => e[3] === 'moved').map(e => [e[4], e[5]]);
+      for (const c of touched.concat(horseCell ? [horseCell] : [], movedCells)) setTile(c[0], c[1], base[pi(c[0], c[1])]);
       if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0);
       load(); F.step([]); drain();
       check(P + 'C17 an old save loads into the new city: the bed in the fountain and the lodestone in the hedge are taken back and refunded (bedSpawn and home cleared), the fire on the street and the crop in the allotment stay, the mare in the flower stall is re-parked beside the rail on open ground, the knight saved in the moat stands clear, the Voice says the city was rebuilt and "Back in your pack: 1 bed, 1 lodestone." once each; a second load changes nothing',
-        r.ok && r.bed && r.lode && r.refunded && r.spawnCleared && r.fire && r.crop && r.horseOk && r.oldHorse && r.free && r.voice === 1 && r.back === 1 && r.cityV === 1 && r.second, r); }
+        r.ok && r.bed && r.lode && r.refunded && r.spawnCleared && r.fire && r.crop && r.horseOk && r.oldHorse && r.free && r.voice === 1 && r.back === 1 && r.cityV === 1 && r.second && !!r.mech && !!r.wreck, r); }
+
+    // ---- C24. a knight's machines and wrecks in the new city are his: never moved or deleted by a load ----
+    { leave(); onFoot(); drain(); save();
+      const sk = 'fanglands.slot.' + title.slot, raw0 = localStorage.getItem(sk), mirror0 = localStorage.getItem(SAVE_KEY);
+      // the walker on the spawn, the bulldozer on Tobin's tile, the Barrelbeast by the fountain, a wreck just inside the
+      // West Gate and the mare tied where 51-mounts' whistle ties her (under the rail): all of them KEEP_CLEAR cells
+      const park = [[112, 33, 'MECH'], [110, 33, 'DOZER'], [113, 32, 'BEAST'], [86, 32, 'WRECK'], [MOUNTS.post.x, MOUNTS.post.y + 1, 'HORSE']].filter(([, , n]) => typeof T[n] === 'number');
+      const cv0 = player.cityV; player.cityV = 1;
+      for (const [x, y] of park) borrow(x, y);
+      F.tp(108, 38); F.step([]);
+      for (const [x, y, n] of park) changeTile(x, y, T[n]);
+      const diffs0 = mapDiffs.size, rev0 = MIG.reverted, mv0 = MIG.moved;
+      const stillThere = () => park.every(([x, y, n]) => tileAt(x, y) === T[n] && mapDiffs.get(idx(x, y)) === T[n]);
+      save(); const ok1 = load(); F.step([]); const after1 = stillThere() && mapDiffs.size === diffs0;
+      save(); const ok2 = load(); F.step([]); const after2 = stillThere() && mapDiffs.size === diffs0 && MIG.reverted === rev0 && MIG.moved === mv0;
+      const where = park.map(([x, y]) => [x, y, tileName(tileAt(x, y))]);
+      giveBack(); player.cityV = cv0;
+      if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0);
+      load(); F.step([]); drain();
+      check(P + 'C24 in the new city a knight\'s own things stay put across two saves and loads: the walker on the spawn, the bulldozer by Tobin, the Barrelbeast by the fountain, a wreck inside the West Gate and the mare under the rail (no change is undone, nothing is moved or deleted)',
+        ok1 && ok2 && after1 && after2 && park.length === 5, { ok1, ok2, after1, after2, where, n: park.length }); }
 
     // ---- C18. determinism ----
     check(P + 'C18 the painter is the very first world pass (HOOKS.world[0]) and the snapshot the last; C2 shows it draws no random number', HOOKS.world[0] === paint && HOOKS.world[HOOKS.world.length - 1] === snap, { first: HOOKS.world[0] === paint, last: HOOKS.world[HOOKS.world.length - 1] === snap });
@@ -54560,7 +54868,10 @@ window.RETALIATE = RETALIATE;
     // ---- C19. drawing ----
     { const keepSize = { k: Object.getOwnPropertyDescriptor(window, 'innerWidth'), l: Object.getOwnPropertyDescriptor(window, 'innerHeight') }; const setSize = (w, hh) => { Object.defineProperty(window, 'innerWidth', { value: w, configurable: true, writable: true }); Object.defineProperty(window, 'innerHeight', { value: hh, configurable: true, writable: true }); resize(); };
       const putSize = () => { if (keepSize.k) Object.defineProperty(window, 'innerWidth', keepSize.k); if (keepSize.l) Object.defineProperty(window, 'innerHeight', keepSize.l); resize(); };
-      const views = [[112, 33], [88, 32], [112, 40], [116, 22], [133, 22], [135, 44], [95, 17], [144, 32], [112, 38]], N = window.NIGHT, d0 = player.dayTime, r = {}, overlaps = [];
+      // (104,40) and (100,42): the castle's corner towers beside the Tinker's Workshop; (121,18) the Bell Green; (127,52) the
+      // inn's garden; (89,38) the woodyard; (81,32) the West Gate's gatehouse from the road
+      const views = [[112, 33], [88, 32], [112, 40], [116, 22], [133, 22], [135, 44], [95, 17], [144, 32], [112, 38], [104, 40], [100, 42], [121, 18], [127, 52], [89, 38], [81, 32]], N = window.NIGHT, d0 = player.dayTime, r = {}, overlaps = [];
+      let castleBoxes = 0, gateBoxes = 0;
       let threw = null;
       setSize(1280, 800);
       try {
@@ -54568,6 +54879,7 @@ window.RETALIATE = RETALIATE;
         for (const [x, y] of views) {
           F.tp(x, y); STATS.record = true; render(); STATS.record = false;
           r[x + ',' + y] = { items: STATS.items, chunks: STATS.chunks, towers: STATS.towers, lamps: LAMPS.filter(([lx, ly]) => Math.abs(lx - x) < 15 && Math.abs(ly - y) < 10).length, fountains: STATS.fountains, statues: STATS.statues, keep: STATS.keep };
+          castleBoxes += STATS.boxes.filter(b => b.own === 'castle').length; gateBoxes += STATS.boxes.filter(b => b.own === 'gatehouse').length;
           for (const b of STATS.boxes) for (const bd of BUILDINGS) { if (bd.id === b.own) continue; const bx0 = bd.x * TILE, by0 = bd.y * TILE, bx1 = (bd.x + bd.w) * TILE, by1 = (bd.y + bd.h) * TILE; if (b.x1 > bx0 && b.x0 < bx1 && b.y1 > by0 && b.y0 < by1) overlaps.push({ view: [x, y], box: [b.x0, b.y0, b.x1, b.y1].map(v => Math.round(v)), own: b.own, building: bd.id }); }
         }
         player.dayTime = N.LIGHT + N.DUSK + 30; F.tp(112, 33); render(); r.night = { lampsLit: STATS.lampsLit };
@@ -54589,9 +54901,9 @@ window.RETALIATE = RETALIATE;
       } catch (e) { threw = String(e && e.stack || e).slice(0, 300); }
       STATS.record = false; player.dayTime = d0; putSize();
       const v88 = r['88,32'], v38 = r['112,38'], p = r.perf || {};
-      check(P + 'C19 every view renders (spawn, both gates, the square, the drawbridge, the market, the Green, the Rose Garden, the Orchard, outside the East Gate, and at night); towers and lamps at the West Gate; the Great Fountain, 4 statues and the keep from the square; at the spawn at most 20 chunk blits and 160 items, a still frame repaints nothing, and the chunk cache stays at or under 40; no drawn box covers another building; the Great Fountain stays under 24 px over row 34',
-        !threw && !!v88 && v88.towers > 0 && v88.lamps > 0 && !!v38 && v38.fountains >= 1 && v38.statues === 4 && v38.keep === 1 && p.chunks > 0 && p.chunks <= 20 && p.items <= 160 && p.repaints === 0 && p.size <= p.max && p.max <= 40 && !overlaps.length && r.gfTop !== null && r.gfTop >= 34 * TILE - 24 && r.gfDrawnTop >= 34 * TILE - 24 && r.night.lampsLit > 0,
-        { threw, views: r, overlaps: overlaps.slice(0, 6) }); }
+      check(P + 'C19 every view renders (spawn, both gates, the square, the drawbridge, the market, the Green, the Rose Garden, the Orchard, outside the East Gate, the castle\'s corner by the Tinker\'s Workshop, the Smithy Yard, the Bell Green, the inn\'s garden, and at night); towers and lamps at the West Gate; the Great Fountain, 4 statues and the keep from the square; at the spawn at most 20 chunk blits and 160 items, a still frame repaints nothing, and the chunk cache stays at or under 40; no drawn box covers another building (the castle\'s corner towers and the gatehouses record theirs too); the Great Fountain stays under 24 px over row 34',
+        castleBoxes > 0 && gateBoxes > 0 && !threw && !!v88 && v88.towers > 0 && v88.lamps > 0 && !!v38 && v38.fountains >= 1 && v38.statues === 4 && v38.keep === 1 && p.chunks > 0 && p.chunks <= 20 && p.items <= 160 && p.repaints === 0 && p.size <= p.max && p.max <= 40 && !overlaps.length && r.gfTop !== null && r.gfTop >= 34 * TILE - 24 && r.gfDrawnTop >= 34 * TILE - 24 && r.night.lampsLit > 0,
+        { threw, views: r, overlaps: overlaps.slice(0, 6), castleBoxes, gateBoxes }); }
 
     // ---- C20. ward banners ----
     { onFoot(); drain(); areaBanner = null; const shown = []; WARD.shown = null;
@@ -54629,18 +54941,30 @@ window.RETALIATE = RETALIATE;
     // ---- C23. the small things: Osric's welcome, the children, Duchess, the after-story lines, the art wraps, the words elsewhere ----
     { const r = {}, q = Q();
       // Osric calls "Welcome to Thistledown!" once, the first time a knight comes within 3 tiles, as a tag (not a dialog)
-      onFoot(); drain(); q.barked = false; BARK.t = 0; F.tp(96, 32); F.step([]); const before = BARK.t;
+      onFoot(); drain(); areaBanner = null; levelBanner = null; q.barked = false; BARK.t = 0; BARK.pending = false; F.tp(96, 32); F.step([]); const before = BARK.t;
       F.tp(91, 32); F.step([]); const on = BARK.t > 3.9 && q.barked && !said().some(d => /Welcome to Thistledown!/.test(d.text));
       const cap = { items: null }; const hook = (g, items) => { cap.items = items; }; HOOKS.draw.push(hook); try { render(); } finally { HOOKS.draw.splice(HOOKS.draw.indexOf(hook), 1); }
       const tagItem = (cap.items || []).some(i => i.capital && i.y === 1e9 + 3);
       BARK.t = 0; F.tp(96, 32); F.step([]); F.tp(91, 32); F.step([]); const once = BARK.t === 0;
       r.bark = before === 0 && on && tagItem && once;
-      // Nell and Robin: a pure function of the wall clock (the same on every client), on the U path, Robin 1.2 s behind Nell
+      // ... but never under a banner: with THISTLEDOWN still up he waits, and calls out once it has gone
+      q.barked = false; BARK.t = 0; BARK.pending = false; F.tp(96, 32); F.step([]);
+      areaBanner = { name: 'Thistledown', sub: 'The city that still stands', t: 2.5 }; F.tp(91, 32); F.step([]);
+      const held = BARK.t === 0 && BARK.pending && !q.barked;
+      let waited = 0; while (areaBanner && waited < 400) { F.step([]); waited++; }
+      F.step([]); const after = BARK.t > 3.5 && q.barked && !areaBanner;
+      r.barkHeld = held && after;
+      // the town's new people have names no one else in the Fanglands has (a second Nell muddled Hollowford's Nell)
+      const ours = new Set(PLAN.PEOPLE.map(p => p.name).concat(KIDS.map(k => k.name), ['Duchess']));
+      const clash = NPCS.filter(n => !PLAN.PEOPLE.some(p => p.id === n.id)).map(n => n.name).filter(nm => ours.has(nm) || [...ours].some(o => o.split(' ')[0] === String(nm).split(' ')[0]));
+      r.names = clash.length === 0 && KIDS[0].name === 'Tess';
+      if (!r.names) r.clash = clash;
+      // Tess and Robin: a pure function of the wall clock (the same on every client), on the U path, Robin 1.2 s behind Tess
       const a = kidAt(123456), b = kidAt(123456), path = PLAN.KIDS.path, onU = p => p.x >= path[0][0] + 0.5 - 1e-6 && p.x <= path[2][0] + 0.5 + 1e-6 && p.y >= path[0][1] + 0.5 - 1e-6 && p.y <= path[1][1] + 0.5 + 1e-6;
       let allOn = true; for (let ms = 0; ms < 20000; ms += 137) if (!onU(kidAt(ms))) allOn = false;
-      CLOCK.fixed = 50000; const kids = smallFolk().filter(p => p.id === 'td_nell' || p.id === 'td_robin'); const lag = kidAt(50000 - PLAN.KIDS.lag * 1000);
+      CLOCK.fixed = 50000; const kids = smallFolk().filter(p => p.id === 'td_tess' || p.id === 'td_robin'); const lag = kidAt(50000 - PLAN.KIDS.lag * 1000);
       r.kids = a.x === b.x && a.y === b.y && allOn && kids.length === 2 && Math.abs(kids[1].x - tc(0) - (lag.x - 0.5) * TILE) < 1e-6;
-      drain(); kids[0].talk(); r.nell = texts()[0] === 'Catch me if you can!'; drain(); kids[1].talk(); r.robin = texts()[0] === 'You are it! No, wait. Nell is it!'; drain();
+      drain(); kids[0].talk(); r.tess = texts()[0] === 'Catch me if you can!'; drain(); kids[1].talk(); r.robin = texts()[0] === 'You are it! No, wait. Tess is it!'; drain();
       // the swans swim by the clock too, each its own side of the footbridge
       const sw = [0, 1].map(i => swanAt(i, 77777)); r.swans = sw[0].x < PLAN.POND.bridge[0] * TILE && sw[1].x > (PLAN.POND.bridge[1] + 1) * TILE && swanAt(1, 77777).x === sw[1].x;
       // Duchess: only after the story, tappable, and her line
@@ -54666,8 +54990,27 @@ window.RETALIATE = RETALIATE;
       r.wiki = !window.WIKI || (!!WIKI.get('places', 'thistledown_landmarks') && !!WIKI.get('quests', 'td_bell'));
       // the first visit: the Voice's line
       { const v0 = player.visitedVillage; player.visitedVillage = false; drain(); F.tp(96, 32); F.step([]); r.voice = said().some(d => d.who === 'The Voice' && d.text === 'Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is just past it, over the moat.'); player.visitedVillage = v0; drain(); }
-      check(P + "C23 the small things: Osric's welcome shows once as a tag over his head; Nell and Robin and the swans move by the wall clock on their paths; Duchess comes after the story; Ambrose and Wynn have their after-story lines; the town gates draw no wooden gate, the square's fire is a brazier, the castle towers and the town buildings draw themselves (Death's House keeps its own); Ada, the region, the island arch, the sounds, the book and the Voice say the new words",
+      check(P + "C23 the small things: Osric's welcome shows once as a tag over his head, never under a banner (he waits for THISTLEDOWN to go); the town's new people have names nobody else has; Tess and Robin and the swans move by the wall clock on their paths; Duchess comes after the story; Ambrose and Wynn have their after-story lines; the town gates draw no wooden gate, the square's fire is a brazier, the castle towers and the town buildings draw themselves (Death's House keeps its own); Ada, the region, the island arch, the sounds, the book and the Voice say the new words",
         Object.values(r).every(Boolean), r); }
+
+    // ---- C25. nothing of the city hides the knight's own marks, or the knight ----
+    { leave(); onFoot(); drain(); closePanel();
+      // a tap to walk on the paving: 17-tap's ring and path dots (and 69-retaliate's red ring) sort after the city's ground
+      clearFolk(108, 31, 8); clearMonsters(108, 31, 8); F.tp(112, 33); F.step([]); screenTap(108, 31);
+      const cap = { items: null }; const hook = (g, items) => { cap.items = items; }; HOOKS.draw.push(hook);
+      try { render(); } finally { HOOKS.draw.splice(HOOKS.draw.indexOf(hook), 1); }
+      const items = cap.items || [], ground = items.find(i => i.capital && i.y === GROUND_Y);
+      const marks = items.filter(i => !i.capital && (i.y === -1e9 || i.y === -1e9 + 1 || i.y === -1e9 + 2));
+      const under = items.filter(i => !i.capital && i.y <= GROUND_Y).length;
+      const ringShown = !!tap.marker && marks.some(i => i.y === -1e9 + 1);
+      tapCancel('manual');
+      // the Bell Tower rises over the north wall: a knight on the grass behind it, outside, sees through it
+      clearMonsters(112, 12, 6); F.tp(112, 12); F.step([]); const open = !SOLID.has(tileAt(112, 12)) && Math.floor(player.y / TILE) === 12;
+      STATS.record = true; render(); STATS.record = false; const bellA = STATS.bellAlpha;
+      F.tp(112, 33); F.step([]); render(); const bellFront = STATS.bellAlpha;
+      check(P + 'C25 the city\'s ground sorts under every other ground mark: a tap to walk on the paving shows its ring and dots (nothing sorts under the ground); a knight on the grass behind the Bell Tower, outside the north wall, sees it drawn see-through (and from the fountain it is solid)',
+        !!ground && ringShown && under === 0 && marks.every(i => i.y > ground.y) && open && bellA < 1 && bellFront === 1,
+        { ground: !!ground, ringShown, marks: marks.length, under, open, bellA, bellFront }); }
 
     // ---- put everything back ----
     leave(); giveBack(); onFoot(); drain(); closePanel(); tapCancel('manual');
