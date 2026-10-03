@@ -37,8 +37,8 @@ test('a clean line is no strike; a starred-out line is, with the warning, then t
   assert.equal(w.store.wordStrikes('Sam', w.t).strikes, 0);
   assert.equal(sam.all('strike').length, 0);
   // the first: the masked line still goes out to everyone, then the warning to Sam alone
-  w.say(sam, 'you are gay');
-  assert.deepEqual(ada.last('chat').text, '*** *** ***');
+  w.say(sam, 'you are a bitch');
+  assert.deepEqual(ada.last('chat').text, 'you are a *****');
   assert.deepEqual(sam.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
   assert.equal(ada.all('strike').length, 0);
   assert.equal(WORD_WARN_1, "That word isn't allowed here. This is your warning.");
@@ -48,9 +48,9 @@ test('a clean line is no strike; a starred-out line is, with the warning, then t
   assert.equal(WORD_WARN_2, "Last warning. Do it again and you'll be kept out for 24 hours.");
   assert.equal(sam.closed, null);
   // the third: the line goes out masked, then the error with the time it ends, then close 4006
-  w.say(sam, 'you idiot');
+  w.say(sam, 'sh1t');
   const at = w.t;
-  assert.equal(ada.last('chat').text, '*** *****');
+  assert.equal(ada.last('chat').text, '****');
   assert.deepEqual(sam.last('error'), { t: 'error', code: 'words', text: wordsText(at + WORD_LOCK_MS, at), until: at + WORD_LOCK_MS, n: 3 });
   assert.equal(wordsText(at + WORD_LOCK_MS, at), "You're kept out for 24 hours more for bad words.");
   assert.equal(sam.closed.code, WORDS_CODE); assert.equal(WORDS_CODE, 4006);
@@ -59,8 +59,8 @@ test('a clean line is no strike; a starred-out line is, with the warning, then t
   // one mod_log row per strike, by the word filter, with the line as it was typed (review round 3: the parent page has to be
   // able to tell whether a strike was fair); the chat log has only the masked lines
   assert.deepEqual(w.store.modLog(10).reverse().map(r => [r.by, r.act, r.target, r.detail]),
-    [['word filter', 'strike', 'Sam', '1: you are gay'], ['word filter', 'strike', 'Sam', '2: what the f u c k'], ['word filter', 'strike', 'Sam', '3, kept out 24 hours: you idiot']]);
-  assert.ok(w.logged.every(l => !/gay|fuck|idiot|f u c k/i.test(l.text)));
+    [['word filter', 'strike', 'Sam', '1: you are a bitch'], ['word filter', 'strike', 'Sam', '2: what the f u c k'], ['word filter', 'strike', 'Sam', '3, kept out 24 hours: sh1t']]);
+  assert.ok(w.logged.every(l => !/bitch|fuck|sh1t|f u c k/i.test(l.text)));
   // Ada never had a strike
   assert.equal(w.store.wordStrikes('Ada', w.t).strikes, 0);
 });
@@ -86,7 +86,7 @@ test('kept out: join and restore are refused with the time until it ends; after 
   w.t = until; sam = w.knight('Sam');
   assert.equal(sam.closed, null); assert.equal(sam.last('welcome').me, 'Sam');
   // the count is still 3: the very next bad line is out for 24 hours again (third and every later strike)
-  w.say(sam, 'you stupid');
+  w.say(sam, 'fuuuck');
   assert.equal(sam.closed.code, 4006);
   assert.equal(sam.last('error').n, 4);
   assert.equal(w.store.wordStrikes('Sam', w.t).lockedUntil, w.t + WORD_LOCK_MS);
@@ -119,26 +119,28 @@ test('no strike for a muted line (it goes nowhere), for a knight with no account
   assert.equal(ghost.all('strike').length, 0);
   for (const t of ['kill the goblin', 'I made a hoe', 'my uncle is gay', 'hit the dummy']) w.say(mud, t);
   assert.equal(w.store.wordStrikes('MudGoll', w.t).strikes, 0);
-  // "shut up!" on its own is also a surprised "no way!": starred out, no strike. Said to a noob it is one.
-  w.say(mud, 'shut up');
+  // an insult is starred out and never a strike, said to anyone (round 5); a swear word is one, for an admin too
+  for (const t of ['shut up', 'shut up noob', 'you idiot', 'go die']) w.say(mud, t);
   assert.equal(w.store.wordStrikes('MudGoll', w.t).strikes, 0);
-  w.say(mud, 'shut up noob');
+  w.say(mud, 'shit');
   assert.deepEqual(mud.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
 });
 
 // Review round 1 (by eye and play): a kid chatting about the game was out of the world 15 seconds after his first line.
-test('game talk in a real Room is no strike, and the other knight sees it as it was said; a line aimed at a knight on line is', () => {
+test('game talk in a real Room is no strike, and the other knight sees it as it was said; an insult at a knight on line is starred out, no strike', () => {
   const w = world(); w.store.addAccount('Cohen'); w.store.addAccount('Leo');
   const cohen = w.knight('Cohen'), leo = w.knight('Leo');
   const lines = ['this boss is stupid hard', 'lets go die to the dragon again', 'stupid lag', 'ur dumb sword is cool', 'your fat dragon pet', 'im gonna go die in the lava', 'shut up no way you got the sword?', "I'm such a loser lol"];
   for (const t of lines) w.say(cohen, t);
-  assert.deepEqual(leo.all('chat').map(m => m.text), lines);
+  // Leo sees every line, with the insults starred out (round 5: starred wherever they are, never counted)
+  assert.deepEqual(leo.all('chat').map(m => m.text), ['this boss is ****** hard', 'lets ** *** to the dragon again', '****** lag', 'ur **** sword is cool', 'your fat dragon pet', 'im gonna ** *** in the lava', '**** ** no way you got the sword?', "I'm such a ***** lol"]);
   assert.equal(cohen.all('strike').length, 0); assert.equal(cohen.closed, null);
   assert.equal(w.store.wordStrikes('Cohen', w.t).strikes, 0);
-  // the name of a knight on line after "shut up" means it was said to that knight
+  // "shut up leo" is starred out (round 5: insults never count, whoever they are said to)
   w.say(cohen, 'shut up leo');
   assert.equal(leo.last('chat').text, '**** ** leo');
-  assert.deepEqual(cohen.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
+  assert.equal(cohen.all('strike').length, 0);
+  assert.equal(w.store.wordStrikes('Cohen', w.t).strikes, 0);
 });
 
 // Review round 3: a kid was kept out for 24 hours for typing his coin count (455 read as "ass"), for an ordinary word with a
@@ -161,10 +163,10 @@ test('a kid saying coin counts, hidden words, mild words, monster taunts and sur
   assert.equal(cohen.all('strike').length, 0); assert.equal(cohen.closed, null);
   assert.equal(w.store.wordStrikes('Cohen', w.t).strikes, 0);
   assert.equal(w.store.modLog(100).filter(r => r.act === 'strike').length, 0);
-  // and an insult said at Leo still counts, with what was typed on the row for the parent page
-  w.say(cohen, 'shut up leo');
+  // a swear word counts, with what was typed on the row for the parent page
+  w.say(cohen, 'shut up leo you dickhead');
   assert.deepEqual(cohen.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
-  assert.deepEqual(w.store.modLog(1).map(r => [r.act, r.target, r.detail]), [['strike', 'Cohen', '1: shut up leo']]);
+  assert.deepEqual(w.store.modLog(1).map(r => [r.act, r.target, r.detail]), [['strike', 'Cohen', '1: shut up leo you dickhead']]);
 });
 
 // Review round 4 (by eye and play, iPad + laptop): with a knight named Goblin on line, Cohen's "you stupid goblin", "die you
@@ -172,7 +174,7 @@ test('a kid saying coin counts, hidden words, mild words, monster taunts and sur
 // town" (dying puts a knight back at the respawn point) was a strike too, and so were "got you. stupid lol" and "idiot".
 test('round 4: knights named Goblin, Dragon, Boss, King and Wolf on line; game talk, help to "go die" and monster taunts are no strike', () => {
   const w = world();
-  const names = ['Cohen', 'Leo', 'Goblin', 'Dragon', 'Boss', 'King', 'Wolf', 'Gnasher', 'Bro', 'Now'];
+  const names = ['Cohen', 'Leo', 'Goblin', 'Dragon', 'Boss', 'King', 'Wolf', 'Gnasher', 'Bro', 'Now', 'Lol', 'Omg', 'Xd', 'Rn'];
   for (const n of names) w.store.addAccount(n);
   const k = Object.fromEntries(names.map(n => [n, w.knight(n)]));
   const said = [
@@ -192,12 +194,34 @@ test('round 4: knights named Goblin, Dragon, Boss, King and Wolf on line; game t
   assert.equal(w.room.isOnline('Cohen'), true);
   // the other knights still see every line (starred where it has to be)
   assert.equal(k.Leo.all('chat').filter(m => m.n === 'Cohen').length, said.length + GAME_TALK.length);
-  // a knight's own name is never "the person": Cohen saying his own name is no strike; Leo saying it at him is
-  w.say(k.Cohen, 'shut up cohen'); assert.equal(k.Cohen.all('strike').length, 0);
-  w.say(k.Leo, 'shut up cohen'); assert.deepEqual(k.Leo.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
-  // and an insult with a comma said to a knight whose name is nobody else's still counts
-  w.say(k.Cohen, 'you idiot, leo'); assert.deepEqual(k.Cohen.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
+  // round 5: names never matter. Insults said straight at a knight by name are starred out and no strike
+  for (const t of ['shut up cohen', 'you idiot, cohen', 'go die cohen', 'i hate you cohen']) w.say(k.Leo, t);
+  assert.equal(k.Leo.all('strike').length, 0);
+  // a swear word is one, whoever is on line
+  w.say(k.Leo, 'shit'); assert.deepEqual(k.Leo.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
   assert.ok(GAME_NAMES.includes('Goblin'));
+});
+
+// Review round 5 (by eye and play): Cohen agreeing with Leo ("ya so dumb"), a surprised "SHUT UP LEO!! no way" and "just go
+// die lol" as help were strikes, and with a knight named Lol on line "shut up lol" was one too. Redesign: only swear words
+// and slurs count. Two knights chat an evening of it; the insults are starred out, and nobody gets a strike.
+test('round 5: two friends chat a whole evening, insults and all, and only a swear word or a slur is a strike', () => {
+  const w = world(); for (const n of ['Cohen', 'Leo', 'Lol']) w.store.addAccount(n);
+  const cohen = w.knight('Cohen'), leo = w.knight('Leo'), lol = w.knight('Lol');
+  const evening = ['ya so dumb', 'ya stupid', 'ya so stupid', 'SHUT UP LEO!! no way', 'shut up leo', 'just go die lol', 'go die lol', 'shut up lol', 'i hate you lol',
+    'you stupid omg', 'you idiot', 'ur gay', 'gay', 'loser', 'kys', 'stfu', 'wtf', 'damn', '455', 'i have 8008 coins', 'class', 'Scunthorpe', 'assess', 'go ok'];
+  for (let i = 0; i < 3; i++) for (const t of evening) { w.say(cohen, t); w.say(leo, t); }
+  for (const k of [cohen, leo, lol]) { assert.equal(k.all('strike').length, 0); assert.equal(k.closed, null); }
+  for (const n of ['Cohen', 'Leo', 'Lol']) assert.equal(w.store.wordStrikes(n, w.t).strikes, 0, n);
+  assert.equal(w.store.modLog(1000).filter(r => r.act === 'strike').length, 0);
+  // the insults reached the others starred out
+  assert.equal(lol.all('chat').find(m => m.n === 'Cohen' && /dumb/.test(m.text)), undefined);
+  assert.equal(lol.all('chat').filter(m => m.n === 'Cohen')[0].text, 'ya so ****');
+  // a swear word or a slur, in a disguise too, is a strike: warning, last warning, kept out
+  w.say(cohen, 'ya so dumb lol sh1t'); assert.deepEqual(cohen.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
+  w.say(cohen, 'f u c k'); assert.deepEqual(cohen.last('strike'), { t: 'strike', n: 2, text: WORD_WARN_2 });
+  w.say(cohen, 'n1gger'); assert.equal(cohen.closed.code, 4006);
+  assert.equal(leo.all('strike').length, 0);
 });
 
 test('a Room given an old-style filter (a string back) still filters and counts nothing', () => {
@@ -437,7 +461,7 @@ test('clearing strikes: an admin from the game (not their own), the parent page 
   const s = await online(w, tok.Sam); chat(w, s, 'shit');
   assert.deepEqual(s.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
   // the parent page clears anyone, an admin too
-  const ada = await online(w, tok.Ada); chat(w, ada, 'you stupid');
+  const ada = await online(w, tok.Ada); chat(w, ada, 'fuck');
   assert.equal((await parent(w, 'POST', '/api/admin/strikes', { name: 'Ada' })).status, 200);
   assert.equal(w.store.wordStrikes('ada', T).strikes, 0);
   assert.equal((await parent(w, 'POST', '/api/admin/strikes', { name: 'Nobody' })).status, 404);

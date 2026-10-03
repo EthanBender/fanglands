@@ -1,6 +1,7 @@
-// Ordinary kid game talk that must never be a word strike (online/src/filter.js, "the most important rule"). Shared by
-// filter.test.mjs (the filter on its own) and strikes.test.mjs (said in a real Room), so a line added here is held both ways.
-// Each group says which review round or finding it came from.
+// Ordinary kid chat that must never be a word strike (online/src/filter.js: only STRIKE_WORDS, swear words and slurs, ever
+// count). Shared by filter.test.mjs (the filter on its own) and strikes.test.mjs (said in a real Room), so a line added here
+// is held both ways. Insults are in it on purpose: they are starred out, never counted (owner, round 5: a kid is never
+// punished on a guess). Each group says where it came from.
 export const GAME_TALK = [
     // about the game, a monster or yourself
     'this boss is stupid hard', 'lets go die to the dragon again', 'stupid lag', 'ur dumb sword is cool', 'your fat dragon pet',
@@ -57,8 +58,37 @@ export const GAME_TALK = [
     'you fat king', 'shut up boss', 'pls go die dragon', 'you dumb dragon', 'i hate you gnasher!', 'go die gnasher', 'ugh i hate you dragon',
     'shut up bro', 'shut up dude', 'shut up now', 'shut up wolf', 'you dumb wolf', 'go die fang', 'you idiot golem', 'shut up goblin king',
     'i hate you boss', 'you stupid boss', 'go die wolf', 'you ugly spider!', 'die you stupid dragon!', 'kill yourself goblin',
+    // round 5: "ya" is "yeah" (agreeing with a friend), and a surprised "shut up" with a friend's name or a laugh
+    'ya so dumb', 'ya stupid', 'ya so stupid', 'ya dumb lol', 'ya ur right', 'ya that boss is so dumb', 'ya ya', 'ya lol',
+    'shut up lol', 'shut up omg', 'SHUT UP LEO!! no way', 'shut up leo', 'shut up sam!', 'shut up cohen', 'shut up xd', 'shut up rn',
+    'go die lol', 'just go die lol', 'go die', 'pls go die', 'go die noob', 'go die sam',
+    // round 5: insults said straight at a friend are starred out, and still never a strike (only swear words and slurs count)
+    'you idiot', 'you are stupid', 'ur a loser', 'ur stupid', 'u r stupid', 'your so stupid', "you're such an idiot", 'you big idiot',
+    'ur dumb', 'ur dumb lol', 'see ya loser', 'you dumb!', 'you idiot i had that', 'you stupid noob', 'you idiot, sam', 'you idiot leo',
+    'i hate you sam', 'i hate you noob lol', 'kill yourself', 'pls kill yourself', 'kys', 'go die in a hole', 'loser', 'gay', 'GAY!', 'gaaay',
+    'you are gay', 'ur gay', "that's gay", 'this game is so gay', 'thats gay lol', 'gay lol', 'gaylord', 'stupidhead', 'nitwit', 'u gay',
+    'you jackass', 'you bastard', 'you pussy', 'u fag', 'stfu', 'gtfo', 'wtf', 'omfg', 'lmfao', 'ffs', 'smh', 'idgaf',
+    // round 5: chat slang and names a kid could pick (Lol, Omg, Xd, Rn are names cleanName allows)
+    'lol', 'lool', 'loool', 'lmao', 'lmaooo', 'rofl', 'omg', 'omgg', 'omggg', 'wow', 'woww', 'xd', 'xdd', 'xddd', 'haha', 'hahaha', 'jk', 'idk', 'idc', 'rn',
+    'tbh', 'ngl', 'fr', 'frfr', 'no cap', 'bruh', 'bruhhh', 'sus', 'sussy', 'pog', 'poggers', 'gg ez', 'noob', 'nooob', 'pro', 'op', 'nerf', 'buff', 'lag', 'laggy',
+    'yeet', 'yessss', 'nooooo', 'whaaat', 'hiii', 'byeee', 'plsss', 'tyyy', 'kkk', 'okkk', 'sooo', 'toooo', 'meee', 'helppp', 'uhhh', 'hmmm', 'grr', 'brrr',
+    // round 5: numbers, coin counts, prices, levels and times (digits alone are never letters)
+    '455', '422', '8008', '7175', '5318008', '80085', '58008', '455k', '8008g', 'x8008', '#455', '$455', '4:55', '1,455,000', '45%', '3rd',
+    'i have 455 coins', 'got 422 gold', '8008 xp to go', 'i need 7175 more', 'its 4:55 already', 'lvl 55', 'sell it for 455?', '455!', '(8008)',
+    'x2 455k', '4 5 5', '5 5 5', '1 2 3', 'trade 55 logs for 455 coins', 'boss at 455 hp', 'room 55', 'i am lvl 5', 'gimme 5', 'i got 5/5', 'b4', 'gr8', 'l8r', 'm8', '2day', 'w8',
+    // round 5: words with a swear or slur inside them, and ordinary words spelled like one with a letter held
+    'class', 'grass', 'bass', 'glass', 'pass', 'mass', 'assassin', 'assist', 'assume', 'assemble', 'passage', 'massive', 'embassy', 'harass', 'bassoon',
+    'cockpit', 'peacock', 'Hancock', 'cocktail', 'shuttlecock', 'Dickens', 'dickie bird', 'Scunthorpe', 'shitake mushrooms', 'shiitake', 'Matsushita',
+    'niggle', 'niggling', 'snigger', 'Niger', 'Nigeria', 'Montenegro', 'fire retardant', 'retardant', 'skyscraper', 'therapist', 'grape', 'drape', 'scrape',
+    'title', 'titan', 'titanic', 'button', 'butter', 'buttress', 'arsenal', 'parse', 'sparse', 'hearse', 'coarse', 'Sussex', 'Essex', 'analysis', 'document',
+    'cumulus', 'cucumber', 'circumstance', 'spicy', 'spice', 'raccoon', 'tycoon', 'cocoon', 'pussycat', 'booboo', 'swanky', 'pakistan', 'packing', 'whorl',
+    'shirt', 'shift', 'shine', 'ship', 'sheet', 'shot', 'bitter', 'pitch', 'witch', 'switch', 'twitch', 'kitchen', 'stitch', 'glitch', 'snitch', 'ditch',
+    'dicky', 'dice', 'duck', 'luck', 'puck', 'stuck', 'truck', 'tuck', 'fudge', 'funk', 'fun', 'cut', 'cunning', 'hunt', 'count', 'cute', 'slot', 'smut', 'slug',
+    'twatch', 'shitzu', 'cockatrice', 'dumbbell', 'Bobb', 'Bobbies', 'kk', 'xx', 'xxx', 'xxxx', 'assess', 'assesses', 'annals', 'Shiite', 'Shiites', 'looser',
+    'asses', 'gook', 'go ok', 'go.ok', 'go,ok', 'go-ok', "who're you", 'whos there', 'who are you', 'retro', 'pack it', 'pa ki', 'as s', 'sh it', 'fu ck', 'di ck',
+    'cum on', 'cumming soon', 'hell yeah', 'what the heck', 'oh my gosh', 'frick', 'fricking', 'freaking', 'shoot', 'shucks', 'dang', 'darn', 'heck',
 ];
 
-// Knights on line whose names are game words or everyday words (review round 4, finding 1). With any of them on line,
-// GAME_TALK and every string of the game are still no strike.
-export const GAME_NAMES = ['Dragon', 'Gnasher', 'Goblin', 'Wolf', 'Fang', 'Boss', 'King', 'Bro', 'Dude', 'Now', 'Spider', 'Golem', 'Goblin King', 'Big Dummy'];
+// Knights on line whose names are game words, everyday words or chat slang (review round 4, finding 1; round 5). Who is on
+// line never changes what counts: with any of them on line, GAME_TALK and every string of the game are still no strike.
+export const GAME_NAMES = ['Dragon', 'Gnasher', 'Goblin', 'Wolf', 'Fang', 'Boss', 'King', 'Bro', 'Dude', 'Now', 'Spider', 'Golem', 'Goblin King', 'Big Dummy', 'Lol', 'Omg', 'Wow', 'Xd', 'Lmao', 'Haha', 'Jk', 'Idk', 'Rn', 'Sam', 'Leo', 'Cohen', 'Ethan'];

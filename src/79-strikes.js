@@ -3,9 +3,9 @@
 // Cohen (2026-10-03): bad words and bad names should get warnings and then a kick-out. The owner's decisions: the first
 // strike is a warning, the second a last warning, the third and every one after it sends the knight out of the world and
 // keeps it out for 24 hours; strikes fade after 30 clean days; the owner and MudGoll (admins) can see and clear strikes;
-// insults count as well as swear words. docs/ONLINE.md, "Word strikes" and "Renaming a knight", is the contract. The world
-// does the counting and the keeping out (online/src/room.js, world.js), so no game can skip it; this file only says it and
-// draws the admins' tools. 70-net keeps the wire from reconnecting while kept out; 71-login says until when on the card.
+// only swear words and slurs count (round 5: insults are starred out, never counted). docs/ONLINE.md, "Word strikes" and
+// "Renaming a knight", is the contract. The world does the counting and the keeping out (online/src/room.js, world.js), so
+// no game can skip it; this file only says it and draws the admins' tools. 70-net keeps the wire from reconnecting while kept out; 71-login says until when on the card.
 //   A. the knight: a strike's warning in red in the chat log and as a notice; a new name from an admin is remembered for
 //      the login card (the wire comes straight back as the new name).
 //   B. the Accounts tab (78, through ACCOUNTS.extend): each row tags its strikes, "Kept out" and "Bad name"; a knight's page

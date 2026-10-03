@@ -156,7 +156,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `boss_call` | `n, id, first?` | (to the keeper) knight `n` on your map asks you to wake the named boss `id`; `first` is passed on only when it was exactly `true`; your game decides (see *Named bosses*) |
 | `boss_wait` | `id, left` | the keeper says the boss you asked for rests there `left` more seconds: the boss file says so in m:ss and your ask is over |
 | `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `elsewhere` (the same knight opened on another device: this socket is closed with code 4000 and must not reconnect), `wait`, `full`, `banned` (close 4003, no reconnect), `kicked` (close 4005, no reconnect), `words` (kept out for bad words, with `until` and `n`: close 4006, no reconnect, the session kept), `renamed` (an admin gave the knight a new name, with `name`: close 4007, the wire comes straight back as it), `admin` (that was an admin message), `bad` |
-| `strike` | `n, text` | a chat line of yours had a word starred out: `n` 1 is the warning, 2 the last warning (the third is `error` `words`); see *Word strikes* |
+| `strike` | `n, text` | a chat line of yours had a swear word or a slur in it: `n` 1 is the warning, 2 the last warning (the third is `error` `words`); see *Word strikes* |
 | `role` `mod` `modlist` `muted` `unmuted` `spawn` `spawn_clear` `crackers` `boom` `party_end` `light_no` `prize` `party_no` `announce` | | see *Admins and drop parties* |
 | `trade_ask` `trade_asked` `trade_ask_off` `trade_no` `trade_open` `trade_state` `trade_note` `trade_end` `trade_done` | | see *Trading* |
 | `pong` | — | |
@@ -888,74 +888,66 @@ under the row. A reset shows in *What admins did* ("MudGoll gave Sam a new secre
 
 Cohen (2026-10-03): bad words and bad names should get warnings and then a kick-out. The owner's decisions: the first
 strike is a warning, the second a last warning, the third and every one after it sends the knight out of the world and
-keeps it out for 24 hours; strikes fade after 30 clean days; the owner and MudGoll (admins) can see and clear strikes;
-insults count as well as swear words, including "gay" used as an insult. All of it is server-side (`online/src/filter.js`,
+keeps it out for 24 hours; strikes fade after 30 clean days; the owner and MudGoll (admins) can see and clear strikes.
+Round 5 (2026-10-03, the owner's rule that a kid is never punished on a guess): **only swear words and slurs count**.
+Insults ("stupid", "dumb", "shut up", "go die", "loser", "gay" used as an insult) are starred out and never a strike.
+All of it is server-side (`online/src/filter.js`,
 `room.js`, `world.js`, `store.js`), so no game can skip it; the game only says it (`src/79-strikes.js`, 70, 71).
 
 ### What counts
 
-`checkChat(text, {names})` answers `{text, masked, strike}`: the line with bad words starred out, whether any word had to
-be, and whether one of them was **surely a bad word said as a bad word**. Only `strike: true` is a strike; starring out
-alone counts nothing. `names` are the other knights on line (the Room passes them, never the speaker's own name), so "shut
-up sam" is known to be said to Sam. For a strike a name counts only when it can be nobody but that knight: when every word of
-it is a word the game says (`GAME_WORDS` in `online/src/gamewords.js`, made from every string in `src/` outside the
-self-tests by `tools/game-words.mjs`, which `build.sh` runs) or one of `NOT_A_NAME` (now, bro, dude, boss, troll, ...), it
-does not count, so a knight named Goblin, Dragon, Boss, King or Wolf never turns "you stupid goblin" into a strike.
-`REAL_PEOPLE` (cohen, ethan: the game's text names them) still count. Starring out uses every name.
+`checkChat(text)` answers `{text, masked, strike}`: the line with bad words starred out, whether any word had to be, and
+whether one of them is a word that strikes. Only `strike: true` is a strike; starring out alone counts nothing. The line
+alone decides: who said it, who it was about and who is on line never change anything (the Room passes the text only).
 
-The most important rule (owner, 2026-10-03): a kid is never warned, struck or kept out for something that is not clearly a
-bad word aimed as a bad word. Starring a word out is harmless, so masking is generous; a strike is 24 hours out after
-three, so it needs a sure match:
+**A strike is one thing only: a word on `STRIKE_WORDS`** (`online/src/filter.js`), a fixed list of swear words and slurs
+that mean nothing else a kid would type (fuck, shit, ass, bitch, cunt, dick, twat, wanker, slut, whore, the n-word,
+faggot, retard, kike, paki and their plain forms: fucking, shitty, asshole, dickhead, bullshit, motherfucker, ...). It
+matches as a **whole word**, case aside, and in the common disguises of those exact words:
 
-- **A number is never a strike, and never even starred out**: 455, 8008, 7175, 455k, 8008g, x8008, 4:55, $455. Digits are
-  read as letters (sh1t, a55) only inside a word that has letters too, and then only to star it out, never for a strike.
-- **A bad word hidden inside an ordinary word is never a strike** (booboo, swanky, pussycat, fire retardant, Montenegro,
-  Scunthorpe): `BLOCKED_INSIDE` stars them out, nothing more. A strike is a whole word, as typed or held longer (fuuuck,
-  asss; never shorter: "Bobb" is not "boob", "kk" is not "kkk"), with symbols read as letters ($hit, sh!t) but never digits.
-  Held longer means three or more of a letter: two is how ordinary words are spelled (assess, annals, Shiite, looser), and a
-  word that ends in "ss" is never read as a plural.
-- **`MASK_ONLY`**: words that are starred out but are never a strike on their own, because they are mild or a kid has an
-  everyday reason to type them in a knight game: damn, crap, wtf, lmfao, badass, a bastard sword, a chink in his armour,
-  the cock crowed, a blue tit, a suicide mission, sexy armour, "i thot so", naked, nazi, hitler and the like. Some of them
-  are a strike when said about someone ("you jackass", "you pussy": they are in `SAID_ABOUT_YOU` too).
-- Every other word of `BLOCKED` (swearing, sex, slurs, kys, heil hitler) and `INSULTS` (stupidhead, nitwit, gaylord, ...)
-  is a strike wherever it is.
-- `SAID_ABOUT_YOU` (gay, dumb, ugly, fat, stupid, idiot, loser, moron, ...) right after "you" (`YOU_ARE`: you, u, you're,
-  you are, u r; with `BETWEEN` in the middle: "you are so dumb", "you're such an idiot") is a strike when the line or the
-  sentence ends after it ("you idiot", "u r stupid lol"), when a knight on line or one of `AIMED_AT` (noob, nerd, loser,
-  ...) comes next ("you stupid noob"), or one of `AFTER_YOU` ("you idiot i had that", "you are so dumb at this"). Any other
-  word after it might be what it is about, so "you stupid goblin" (a kid shouting at a monster) is starred out and no
-  strike. After `YOU_OR_YOUR` (ur, your, ya: "you're" or "your") only the end of the line or sentence, a laugh or a person
-  counts ("ur dumb", "see ya loser"; never "ur dumb sword is cool").
-- **Sentences**: for a strike only `.`, `!` and `?` end a sentence; a comma or a semicolon does not ("you stupid, ugly
-  goblin" is no strike, "you idiot, sam" is). A "you" that ends one sentence never joins the next ("thank you. stupid lag",
-  "got you. stupid lol"). A question is no strike
-  (`ASKING`: "are you stupid?"), nor is somebody else's speech (`REPORTED` earlier in the sentence: "my mom said shut up",
-  "he told me to go die").
-- `AT_SOMEONE` ("shut up", "hate you") is a strike only before a knight on line or one of `AIMED_AT` that ends the sentence
-  ("shut up sam", "shut up noob", "i hate you sam"). "shut up!" on its own is also a surprised "no way!", and "i hate you"
-  is said to bosses: those are starred out, no strike.
-- `SAID_TO_SOMEONE` ("go die", "go and die", "go die in a hole", "kill yourself") is a strike as the whole line (with
-  `AIM_BEFORE` / `AIM_AFTER` or a laugh around it: "just go die", "go die already", "pls kill yourself") or before a person
-  who ends the line ("go die noob"); never with more words after a comma or a full stop (dying puts a knight back at the
-  respawn point, so "go die, it puts you back at town" is help), never "go die then", "lets go die to the dragon again",
-  "go die goblin", "can you kill yourself with a bomb".
-- `LINE_ALONE` (gay, idiot, loser, moron): a line that is only that word (laughs aside: "loser lol") is starred out. Only
-  `LINE_ALONE_STRIKE` ("gay") is a strike that way, and never as a question ("gay?"): a kid types "idiot" or "lol loser"
-  about himself after a death. The owner decides whether the others should count.
-- "gay": `GAY_INSULTS` ("that's gay", "so gay", "gay boy", ...) are all starred out; `GAY_SAID` ("thats gay", "this is
-  gay", "so gay", ...) is a strike only when it ends the line or the sentence ("this game is so gay"), never "it's gay
-  pride week". "Sam is gay" reads the same as "my uncle is gay" to a word list, so "is gay" is left off on purpose.
-- Names have nobody else to say it about: `NAME_INSULTS` (stupid, idiot, loser, moron, ...) are refused anywhere in a name,
-  spaced out too ("Stupid Sam", "Big Loser", "Stu Pid"); "Fat Cat", "Dumbo" and "Big Dummy" pass. `RESERVED_NAMES` include
-  "Word Filter" and "Parent Page" (who mod_log says made a strike or a change), spaces not counting.
+- a letter held longer: three or more of any letter (fuuuck, shiiit, asss), or the last letter doubled when the word has
+  no double letter (fuckk, shitt, dickk). Never a letter in the middle held twice ("Shiite" is not "shite"), never a word
+  with its own double letter held twice ("assess" is not "asses");
+- the letters split up: one letter a token (f u c k, n i g g a, "f . u . c . k"), or marks between them inside a word
+  (f.u.c.k, s-h-i-t, a_s_s, f*u*c*k), only when every piece is one letter, so "go.ok" or "go ok" is never a slur;
+- look-alike digits and symbols inside a word that has letters (sh1t, $hit, b!tch, a55, 4ss, n1gger, f@ggot), or made of
+  symbols alone (@$$). **Never a number**: a token of digits alone, with or without a unit or sign (455, 8008, 7175,
+  455k, #455, $455, 4:55, "4 5 5"), is never read as letters, never a strike and never even starred out;
+- edge punctuation and joins: "fuck!", "(shit)", "shit's", "ok,fuck", "fuck-you". A contraction is two words ("who're" is
+  never "whore");
+- `STRIKE_INSIDE`: "fuck" also strikes inside any word (xXfuckXx, fuckfuckfuck), because it is in no ordinary word.
+  Nothing else does: shit is in shitake, cunt in Scunthorpe, ass in class, dick in Dickens, nigg in niggle.
 
-The tests hold the rule: `filter.test.mjs` says every number from 0 to 99,999 (and with units), more than 200 lines of
-ordinary game talk, and every string in the game's own source (every NPC, place, item, quest and line of talk, whole and
-word by word), and none of it is a strike, also with knights named Goblin, Dragon, Boss, King, Wolf, Bro, Dude and Now on
-line; a list of real insults all are; a strike is always starred out; `gamewords.js` is today's. The game-talk list is
-`online/test/game-talk.mjs`, shared with `strikes.test.mjs`, which says coin counts, hidden words, mild words, monster
-taunts, surprised shouts and every game-talk line in a real Room with those knights on line.
+**Never part of a longer ordinary word**: class, assassin, assess, Scunthorpe, Dickens, cockpit, niggle, Niger,
+retardant, therapist, pakistan, shiitake are no strike. Left off the list on purpose, because they mean something else or
+are mild (starred out, never a strike): damn, crap, hell, piss, bastard, cock, prick, tit, boob, pussy, fag, dyke, spic,
+coon, chink, gook, tranny, homo, negro, jackass, badass, wtf, stfu, gtfo, lmfao, cum, kys, and the sex, drug and hate words.
+
+**Nothing else ever strikes.** There is no sentence analysis, no "you" / "ya" / "u" targeting, no names: the round-4
+machinery (`SAID_ABOUT_YOU`, `YOU_ARE`, `YOU_OR_YOUR`, `AT_SOMEONE`, `SAID_TO_SOMEONE`, `LINE_ALONE`, `NOT_A_NAME`,
+`REAL_PEOPLE`, sentence joining, the knights-on-line names and `online/src/gamewords.js` with `tools/game-words.mjs`) is
+deleted, not patched.
+
+**Starring out** stays generous, because it is harmless: every word of `BLOCKED` (swearing, sex, slurs, hate, drugs), a
+bad word hidden inside another (`BLOCKED_INSIDE`: swanky, pussycat, Scunthorpe), look-alike spellings and spaced letters,
+and `INSULTS` wherever they are: stupid, dumb, idiot, moron, loser, nitwit, gaylord, ... (a letter held longer only with
+three or more of it, so "looser" is left alone) and the phrases "shut up", "go die", "go and die", "kill yourself", "hate
+you". "Gay" used as an insult (`GAY_INSULTS`: "that's gay", "so gay", "ur gay", "gay boy", ..., and a line that is only
+"gay", laughs aside) is starred out; "gay" anywhere else ("my uncle is gay", "gay rights") is left alone. A strike is
+always starred out too.
+
+Names: anything starred out in chat, insults included, is refused in a name, spaced out too ("Stupid Sam", "Big Loser",
+"Stu Pid", "Dumb Dog"); "Fat Cat", "Dumbo", "Big Dummy", "Lol" and "Omg" pass. `RESERVED_NAMES` include "Word Filter" and
+"Parent Page" (who mod_log says made a strike or a change), spaces not counting.
+
+The tests hold the rule (`online/test/filter.test.mjs`): every number from 0 to 99,999 (and with units); more than 550
+lines of ordinary kid chat in `online/test/game-talk.mjs` (game talk, "ya so dumb", "shut up lol", "SHUT UP LEO!! no
+way", "go die lol", insults said straight at a friend, chat slang, coin counts, words with a swear inside); every string in
+the game's source (every NPC, place, item, quest and line of talk, whole and word by word); and the system dictionary
+(235,000 words, where a strike only ever comes from an entry with a whole word on the list): zero strikes. Every word on
+`STRIKE_WORDS` in every disguise above (more than 3,000 spellings): a strike, and starred out. Who is on line changes
+nothing. `strikes.test.mjs` says the game talk in a real Room with knights named Goblin, Lol, Omg and Rn on line, and two
+friends' evening of insults, with zero strikes, and then a swear word in a disguise that is one.
 
 Every list is plain lower-case words, one place to edit; **the owner decides the final lists**. `cleanChat` still answers
 the masked line alone.
@@ -982,8 +974,8 @@ the wrong-secret-word `tries` / `locked_until` are never touched by a strike.
 - Strike 3 and every one after it (the count stays at 3 or more until it fades or is cleared): `words_locked_until` =
   now + 24 hours (`WORD_LOCK_MS`), then `{t:'error', code:'words', text, until, n}` and close **4006**.
 - Each strike is one `mod_log` row: `by: 'word filter'`, `act: 'strike'`, `target` the knight, `detail` the count and
-  then the line as it was typed (`'1: shut up sam'`, `'3, kept out 24 hours: you idiot'`), so the parent page can tell
-  whether it was fair ("Sam got word strike 1 for typing "shut up sam""). Only the parent page reads `mod_log`; the chat
+  then the line as it was typed (`'1: what the shit'`, `'3, kept out 24 hours: sh1t'`), so the parent page can tell
+  whether it was fair ("Sam got word strike 1 for typing "what the shit""). Only the parent page reads `mod_log`; the chat
   log keeps the starred line.
 
 ### Kept out
@@ -1249,7 +1241,8 @@ view 24, a minute hidden 0, 20 s shown again 12, and the admin column grew by ex
 ## Safety rules (binding)
 
 - Invite-only signups. Names and chat pass `online/src/filter.js`. Chat is logged with the name and time.
-- A starred-out chat line is a word strike: a warning, a last warning, then 24 hours out (see *Word strikes*). Strikes
+- A chat line with a swear word or a slur in it is a word strike: a warning, a last warning, then 24 hours out (see
+  *Word strikes*); an insult or anything else only starred out is never one. Strikes
   fade after 30 clean days; only an admin or the parent page clears them, and every strike, clear and rename is in
   `mod_log`.
 - No free text anywhere else: no profiles, no descriptions. Quick-chat phrases are the default on touch.

@@ -276,7 +276,7 @@
       case 'party': return r.by + ' threw a drop party: ' + r.detail;
       case 'hat': return r.n + ' found a ' + r.detail + ' party hat (' + r.by + "'s party)";
       case 'reset': return r.by + ' gave ' + r.n + ' a new secret word';
-      // detail: the count, then what was typed ("3, kept out 24 hours: shut up sam"); older rows have the count alone
+      // detail: the count, then what was typed ("3, kept out 24 hours: what the shit"); older rows have the count alone
       case 'strike': {
         const i = r.detail.indexOf(': '); if (i < 0) return r.n + ' got word strike ' + r.detail;
         const [n, ...more] = r.detail.slice(0, i).split(', ');

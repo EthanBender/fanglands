@@ -31,8 +31,9 @@
 // kick, a ban, a new secret word, the world full of strikes. The row's id rides the attachment, so a nap keeps it open;
 // a row that no socket carries after a wake (the world was restarted under it) ends at the last time it was heard from.
 //
-// Word strikes (docs/ONLINE.md, "Word strikes"): a chat line the filter calls a strike (surely a bad word said as a bad word,
-// never a number, a word hidden in another, a mild word or game talk; starring out alone is no strike) is one on the knight's account
+// Word strikes (docs/ONLINE.md, "Word strikes"): a chat line with a word of the filter's STRIKE_WORDS in it (a swear word or a
+// slur, whole or in a common disguise; never a number, a word hidden in another, an insult or a mild word; starring out
+// alone is no strike) is one on the knight's account
 // (the store keeps the count, which fades after 30 clean days). The first two are warnings said to the knight alone; the
 // third and every one after it sends the knight out (close 4006) and keeps it out for 24 hours, which join and restore
 // check here and the World checks on every login, /api call and socket.
@@ -392,21 +393,20 @@ export class Room {
     const now = this.now();
     if (acc && acc.mutedUntil > now) return this.send(k.sock, { t: 'muted', left: leftOf(acc.mutedUntil, now) });
     if (acc) this.syncRole(k, acc.role);
-    // the other knights on line go with it, so "shut up sam" is known to be said to Sam (filter.js, AT_SOMEONE); never the
-    // speaker's own name: nobody says an insult to himself by name, and his name may be a monster's ("you stupid goblin")
-    const { text, strike } = this.check(typeof m.text === 'string' ? m.text : '', { names: Array.from(this.byName.values()).filter(o => o !== k).map(o => o.name) });
+    // the line alone: who is on line, who said it and who it was about never change what counts (filter.js, STRIKE_WORDS)
+    const { text, strike } = this.check(typeof m.text === 'string' ? m.text : '');
     if (!text) return;
     const at = now;
     this.log(k.name, text, at);
     const out = JSON.stringify({ t: 'chat', n: k.name, text, at, role: k.role });
     for (const o of this.knights.values()) if (o.hello) this.raw(o.sock, out);
-    // surely a bad word said as a bad word: a strike (after the masked line went out, so the knight sees what was hidden).
-    // A line that was only starred out (a mild word, a word hidden in another, a taunt at a monster) counts nothing.
+    // a swear word or a slur: a strike (after the masked line went out, so the knight sees what was hidden). A line that was
+    // only starred out (an insult, a mild word, a word hidden in another) counts nothing.
     if (strike === true && acc) this.wordStrike(k, acc, now, typeof m.text === 'string' ? m.text : '');
   }
 
   // One more word strike on this knight's account: a warning, a last warning, then out for 24 hours. One mod_log row each,
-  // with the line as it was typed after the count ("2: shut up sam"), so the parent page can tell whether it was fair (only
+  // with the line as it was typed after the count ("2: what the shit"), so the parent page can tell whether it was fair (only
   // the parent page reads mod_log; the chat log keeps the starred line).
   wordStrike(k, acc, now, said) {
     const typed = ': ' + String(said || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
