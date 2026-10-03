@@ -29,7 +29,7 @@ export function makeWindow({ seed = 1, now = 0, clock = 'host', errorsKept = 200
   const w = {
     innerWidth: 1000, innerHeight: 700, devicePixelRatio: 1, addEventListener: noop, removeEventListener: noop,
     requestAnimationFrame: noop, setInterval: noop, clearInterval: noop,
-    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
+    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; }, key: i => { const k = Object.keys(store)[i]; return k === undefined ? null : k; }, get length() { return Object.keys(store).length; } },
     console: { log: noop, info: noop, warn: noop, debug: noop, table: noop, error: (...a) => { if (errors.length < errorsKept) errors.push(a.map(x => x && x.stack ? x.stack.split('\n').slice(0, 3).join(' | ') : String(x)).join(' ').slice(0, 400)); } },
     navigator: { maxTouchPoints: 0, userAgent: 'fanglands-server' },
     document: { getElementById: () => mkCanvas(), createElement: () => mkCanvas(), fonts: null, body: mkCanvas(), addEventListener: noop, removeEventListener: noop, hidden: false },
