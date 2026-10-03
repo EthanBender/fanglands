@@ -150,6 +150,9 @@
   }
   const stormInst = INSTANCES.define(ST.id, {
     name: ST.name, sub: ST.sub, w: ST.w, h: ST.h, dark: false, build: buildStorm, boss: 'thunderbird',
+    // a knight walking into a shared storm whose bird is down does not refill it (75-coop): the bird comes back only for a
+    // knight whose own rest is over, or who never broke it, by a call to the storm's keeper (HOOKS.bossCall.stormfront)
+    refill: false,
     spawns: [['thunderbird', BIRD_HOME[0], BIRD_HOME[1]]], entry: ENTRY,
     voice: 'The wind carries you into the black. This is not weather, knight — something lives in it, and it has been keeping the winged folk indoors. Watch the cloud under your boots.',
   });
@@ -250,6 +253,66 @@
     }
   }
 
+  // ---------- the bird online: the storm's keeper raises it, and the rest lives with the storm ----------
+  // Everyone in a shared storm fights the keeper's one bird. A knight who arrives finds it as the keeper left it (refill:
+  // false above); if it is down, a knight whose rest is over (or who never broke it) asks the keeper once, and the keeper
+  // answers boss_wait while the storm is still gathering from the last fall, unless it is that knight's first fight. A knight
+  // still resting who walks in can help a friend, never raise a bird of his own: the storm he builds alone has no bird in it.
+  function wakeBird() {
+    if (!inStorm() || bird()) return;
+    let m = monsters.find(o => o.type === 'thunderbird' && !o.remote && !o.phantom);
+    if (!m) {
+      const d = MONSTER_DEFS.thunderbird, x = tc(BIRD_HOME[0]), y = tc(BIRD_HOME[1]);
+      m = { type: 'thunderbird', nid: 'i0', x, y, home: { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: d.aggro, state: 'idle', wanderT: 1,
+        wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: Infinity, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0 };
+      monsters.push(m);
+    }
+    Object.assign(m, { dead: false, deadT: 0, hp: m.maxHp, x: tc(BIRD_HOME[0]), y: tc(BIRD_HOME[1]), respawnT: Infinity, stunT: 0, hurtT: 0, state: 'idle', perchAt: null, hitters: {}, credited: false, lastHitBy: null });
+    delete m.phase; m.wasUp = false;
+    burst(m.x, m.y, '#9ecbff', 30, 180); burst(m.x, m.y, '#3a3a5a', 20, 120); sfx('boom');
+    floatText(m.x, m.y - m.r - 34, 'THE STORM GATHERS', '#9ecbff', 16);
+  }
+  HOOKS.bossCall = HOOKS.bossCall || {};
+  HOOKS.bossCall.stormfront = { map: ST.id, near: null, name: 'the Thunderbird', type: 'thunderbird', rest: STORM_REST,
+    alive: () => !!bird(), wake: () => { wakeBird(); },
+    // 75-coop's pay gate: a repeat bird inside this knight's own rest pays nothing
+    resting: () => !!StQ().beaten && restLeft(StQ()) > 0,
+    refused: left => { birdAsked = true; notify(`The storm is gathering. Ready in ${mmss(left)}.`); } };
+  let wasInStorm = false, stormVisit, birdAsked = false, noBirdT = 0, birdCallAt = -1e9, birdDownAt = null;
+  HOOKS.update.push(dt => {
+    if (!inStorm()) { wasInStorm = false; return; }
+    const q = StQ(), key = stormInst.lastLeft;
+    if (!wasInStorm || key !== stormVisit) {
+      wasInStorm = true; stormVisit = key; birdAsked = false; noBirdT = 0; birdDownAt = null;
+      // a resting knight's own storm has no bird (online his real array waits parked while a friend keeps the storm: that
+      // one too, so a handoff never hands him a whole bird of his own)
+      if (q.beaten && restLeft(q) > 0) for (const arr of [monsters, window.COOP && COOP.parked]) if (Array.isArray(arr)) for (const o of arr) if (o.type === 'thunderbird' && !o.remote && !o.phantom) { o.dead = true; o.deadT = 99; o.respawnT = Infinity; }
+    }
+    // the bird seen to fall (dead, not just out of the stream): the storm breaks for every knight in it who has broken it
+    // before, paid or not, so a rest starts for him too (a kill that paid him started it already)
+    // (this knight's own last blow lays a puppet down at once, before the keeper's kill message lands: so the rest starts
+    // only once the bird has stayed down a while, and a kill that paid him started it first)
+    for (const o of monsters) if (o.type === 'thunderbird' && !o.phantom) {
+      if (!o.dead) { o.wasUp = true; birdDownAt = null; }
+      else if (o.wasUp && !o.gone) { o.wasUp = false; if (birdDownAt === null) birdDownAt = time; }
+    }
+    if (birdDownAt !== null && (time < birdDownAt || time - birdDownAt >= 3)) {
+      birdDownAt = null;
+      if (!bird() && q.beaten && restLeft(q) === 0) { q.restUntil = (player.dayTime || 0) + STORM_REST; notify(`The storm breaks. It gathers again in ${mmss(STORM_REST)}.`); save(); }
+    }
+    // not the storm's keeper, the bird down, and this knight may raise one: ask the keeper, every 5 s until it stands
+    if (!runsHere()) {
+      // (the keeper's bird, as this screen shows it: until the world names the keeper, the array here is still the one this
+      // game built on the way in, and its bird is nobody's)
+      const b = monsters.find(o => o.type === 'thunderbird' && o.remote && !o.dead), may = !q.beaten || restLeft(q) === 0;
+      if (b) birdAsked = true;
+      if (!b && !birdAsked && may && !player.dead) {
+        noBirdT += dt;
+        if (noBirdT >= 2 && (time < birdCallAt || time - birdCallAt >= 5)) { birdCallAt = time; if (window.COOP && COOP.call) COOP.call(ST.id, !q.beaten); }
+      } else noBirdT = 0;
+    }
+  });
+
   HOOKS.update.push(dt => {
     if (!inStorm()) { if (trail.length || strikes.length) { trail.length = 0; strikes.length = 0; flash = 0; } return; }
     flash = Math.max(0, flash - dt * 3.4);
@@ -314,9 +377,15 @@
   HOOKS.kill.push(m => {
     if (m.type !== 'thunderbird') return;
     const q = StQ(), first = !q.beaten;
-    q.beaten = true; q.kills = (q.kills || 0) + 1; q.birdHp = null; q.restUntil = (player.dayTime || 0) + STORM_REST;
     strikes.length = 0; flash = 1;
     for (const [c, n, s] of [['#fff7c0', 44, 250], ['#9ecbff', 30, 180], ['#3a3a5a', 24, 140]]) burst(m.x, m.y, c, n, s);
+    // a repeat inside this knight's own rest (he followed a friend in to help): nothing paid, nothing counted (75-coop m.noPay)
+    if (!first && m.noPay) {
+      floatText(player.x, player.y - 44, 'You helped', '#c9d1d9', 14);
+      say(`You helped bring it down. Your own reward is ready in ${mmss(restLeft(q))}.`, 'The Voice');
+      save(); return;
+    }
+    q.beaten = true; q.kills = (q.kills || 0) + 1; q.birdHp = null; q.restUntil = (player.dayTime || 0) + STORM_REST;
     // the loot lands on the deck a knight can walk to (a bird felled on its mast would drop it inside the iron)
     const at = (typeof safeSpot === 'function' && safeSpot(m.x, m.y, 14, 'player')) || { x: m.x, y: m.y };
     for (const [id, qty] of first ? FIRST_LOOT : AGAIN_LOOT) if (ITEMS[id]) drops.push({ x: at.x + rint(-6, 6), y: at.y + rint(-6, 6), id, qty, t: 0 });
@@ -466,7 +535,7 @@
 
   window.STORM = {
     ST, DECK, VOID, MAST, UPDRAFT, DOWNDRAFT, ENTRY, UP_T, DOWN_T, MASTS, BIRD_HOME, HUNT_FOR, HIGH_FOR, PERCH_FOR, MEM, WARN, BOLT_R, BOLT_DMG,
-    inStorm, bird, shrine, toAerie, intoStorm, tryIntoStorm, stormOpen, friendInStorm, FIRST_LOOT, AGAIN_LOOT, callBolt, setPhase, memoryPoint, state: StQ, boss: birdBoss,
+    inStorm, bird, shrine, toAerie, intoStorm, tryIntoStorm, stormOpen, friendInStorm, wakeBird, FIRST_LOOT, AGAIN_LOOT, callBolt, setPhase, memoryPoint, state: StQ, boss: birdBoss,
     get trail() { return trail; }, get strikes() { return strikes; },
   };
 
@@ -836,6 +905,61 @@
           R.Ann = { n: 'Ann', map: ST.id, x: 0, y: 0 }; render(); F.clickButton('Into the storm'); F.sim(3, []); opened = INSTANCES.active() === ST.id; delete R.Ann; }
         check(P + '(fake remotes): with a friend on stormfront, Into the storm is open during the rest', !!R && closedFirst && opened && restLeft(StQ()) > 0, { closedFirst, opened, left: restLeft(StQ()) });
         if (INSTANCES.active()) INSTANCES.leave(); }
+      // T8: a bird felled inside this knight's own rest (he followed a friend in to help) pays nothing; kills and rest unchanged
+      { if (INSTANCES.active()) INSTANCES.leave(); StQ().restUntil = 0; INSTANCES.enter(ST.id); F.sim(2, []); const up = !!bird();
+        const q = StQ(); q.restUntil = (player.dayTime || 0) + 150; const until = q.restUntil, k0 = q.kills, n0 = drops.length; drain(); clearBanners();
+        const at = slayBird(); const got = drops.slice(n0).map(d => d.id);
+        check(P + "a bird felled inside this knight's own rest pays nothing (no coins, essence or feather); kills and the rest unchanged; says Your own reward is ready in m:ss",
+          up && !!at && got.length === 0 && q.kills === k0 && q.restUntil === until && [dialog.cur, ...dialog.queue].some(l => l && /Your own reward is ready in \d+:\d\d\./.test(l.text)) && !bannerAhead('THE STORM BREAKS'),
+          { up, got, kills: q.kills - k0, rest: q.restUntil - until });
+        drops = drops.slice(0, n0); INSTANCES.leave(); }
+      // T9: the bird seen to fall without paying a knight who broke it before (a friend's blow): the storm breaks for him too
+      { const q = StQ(); q.restUntil = 0; INSTANCES.enter(ST.id); F.sim(2, []); const m = bird(), up = !!m; notice = null;
+        const day = player.dayTime || 0; if (m) { m.dead = true; m.deadT = 0; m.respawnT = Infinity; } F.sim(60, []); const early = q.restUntil === 0; F.sim(150, []);
+        const left = q.restUntil - (player.dayTime || 0);
+        check(P + "the bird seen to fall without paying a knight who broke it before (and staying down 3 s) starts his 300 s rest and says the storm gathers again",
+          up && early && left > 295 && left <= 300 && !!notice && /storm breaks\. It gathers again in 5:00/.test(notice.text), { up, early, left, rest: q.restUntil - day, notice: notice && notice.text });
+        INSTANCES.leave(); }
+      // T10: a knight still resting who builds the storm alone finds no bird in it; rested, he finds a whole one
+      { const q = StQ(); q.restUntil = (player.dayTime || 0) + 100; INSTANCES.enter(ST.id); F.sim(2, []);
+        const none = !bird() && monsters.some(o => o.type === 'thunderbird' && o.dead); INSTANCES.leave();
+        q.restUntil = 0; INSTANCES.enter(ST.id); F.sim(2, []); const m = bird();
+        check(P + 'a knight still resting who builds the storm alone finds no bird in it; rested, a 340 hp bird', none && !!m && m.hp === 340, { none, hp: m && m.hp });
+        INSTANCES.leave(); }
+      // T11/T12: online. As the storm's keeper: a friend walking in does not refill a fallen bird; his call inside the storm's
+      // rest gets boss_wait; a friend's first fight still raises it. Not the keeper: arriving rested asks once (no first flag),
+      // boss_wait stops it, a knight who never broke it asks with the first flag, and a resting one does not ask at all
+      if (typeof NET !== 'undefined' && window.COOP) {
+        const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null; let me = 'Cohen', keeper = 'Cohen';
+        const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+        const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const mm = JSON.parse(str); sent.push(mm); if (mm.t === 'hello') push({ t: 'welcome', me, at: 0, keeper }); }, close() { sock.readyState = 3; } }; return sock; } };
+        NET.enabled = true; NET.token = 'storm-test';
+        try {
+          { NET.useFake(fake); NET.connect(); const q = StQ(); q.restUntil = 0;
+            INSTANCES.enter(ST.id); push({ t: 'keeper', map: ST.id, n: 'Cohen' }); F.sim(2, []);
+            const m = bird(); const up = !!m; if (m) { setPhase(m, 'perch'); m.phaseT = -1e5; m.hp = 1; hitMonster(m, 5, 0); } F.sim(2, []);
+            drops = drops.filter(d => !['coins', 'cloud_essence', 'storm_feather'].includes(d.id));
+            push({ t: 'p', n: 'Bo', map: ST.id, x: tc(ENTRY[0]), y: tc(ENTRY[1]), def: 500, dead: false, hp: 50, lv: 40 }); F.sim(2, []);
+            const stillDown = !bird();
+            COOP.state.calls = {}; sent.length = 0; push({ t: 'boss_call', n: 'Bo', id: ST.id }); F.sim(2, []);
+            const wait = sent.find(mm => mm.t === 'boss_wait'), held = !bird();
+            COOP.state.calls = {}; push({ t: 'boss_call', n: 'Bo', id: ST.id, first: true }); F.sim(2, []); const b2 = bird();
+            check(P + "(fake NET keeper): a friend walking into the storm does not refill its fallen bird; his call inside the storm's 300 s rest gets boss_wait; a friend's first fight raises a 340 hp bird",
+              up && stillDown && !!wait && wait.to === 'Bo' && wait.left >= 298 && wait.left <= 300 && held && !!b2 && b2.hp === 340, { up, stillDown, wait, held, hp: b2 && b2.hp });
+            INSTANCES.leave(); NET.disconnect(); COOP.reset(); }
+          { me = 'Cohen'; keeper = 'Ann'; NET.useFake(fake); NET.connect(); const q = StQ();
+            const visit = (beaten, rest) => { if (INSTANCES.active()) INSTANCES.leave(); F.sim(1, []); q.beaten = beaten; q.restUntil = rest ? (player.dayTime || 0) + rest : 0; INSTANCES.enter(ST.id); push({ t: 'keeper', map: ST.id, n: 'Ann' }); sent.length = 0; };
+            visit(true, 0); F.sim(170, []); const rested = sent.filter(mm => mm.t === 'boss_call');
+            notice = null; push({ t: 'boss_wait', id: ST.id, left: 192 }); F.sim(2, []); const told = !!notice && /gathering\. Ready in 3:12\./.test(notice.text);
+            sent.length = 0; F.sim(400, []); const after = sent.filter(mm => mm.t === 'boss_call').length;
+            visit(false, 0); F.sim(170, []); const firstCall = sent.filter(mm => mm.t === 'boss_call');
+            visit(true, 100); F.sim(400, []); const resting = sent.filter(mm => mm.t === 'boss_call').length;
+            check(P + '(fake NET non-keeper): arriving rested asks the keeper once for the bird with no first flag; boss_wait says Ready in 3:12 and stops it; a knight who never broke it asks with the first flag; a resting one never asks',
+              rested.length === 1 && rested[0].id === ST.id && rested[0].first === undefined && told && after === 0 && firstCall.length === 1 && firstCall[0].first === true && resting === 0,
+              { rested, told, after, firstCall, resting });
+            q.beaten = true; INSTANCES.leave(); }
+        } finally { if (INSTANCES.active()) INSTANCES.leave(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
+      }
       // T7: the panel passes the panel audit at every size, touch and mouse, Normal and Large text (rested and resting)
       { const day = player.dayTime;
         const a = PEOPLE_UI.auditPanels([
