@@ -431,9 +431,10 @@
       else if (t === EL_LANTERN) items.push({ y: ty * TILE + TILE - 6, draw: () => drawLantern(g, tx, ty) });
     }
     for (const e of ELVES) if (e.px > cam.x - 60 && e.px < cam.x + VW + 60 && e.py > cam.y - 60 && e.py < cam.y + VH + 60) items.push({ y: e.py + 13 + (e.sortY || 0), draw: () => drawElf(g, e) });
-    // the axe in hand while chopping a jungle tree (the core only animates its own 'chop' action)
+    // the axe in hand while chopping a jungle tree (the core only animates its own 'chop' action); the knight drawn by
+    // 82-knightgear holds it in his own hand, so it is not drawn here then
     const a = player.action;
-    if (a && a.type === 'chop_jungle' && !player.dead) items.push({ y: player.y + player.r + 0.01, draw: () => {
+    if (a && a.type === 'chop_jungle' && !player.dead && !window.KNIGHTGEAR) items.push({ y: player.y + player.r + 0.01, draw: () => {
       const ang = Math.atan2(player.facing.y, player.facing.x), sw = Math.sin(time * 14) * 0.6;
       g.save(); g.translate(player.x, player.y); g.rotate(ang - 0.7 + sw); g.fillStyle = '#8a6a3a'; g.fillRect(2, -1.5, 26, 3);
       g.fillStyle = a.tier >= 3 ? '#7aa0d0' : a.tier === 2 ? '#a9adb5' : '#b8863a'; g.beginPath(); g.moveTo(20, -3); g.quadraticCurveTo(30, -10, 30, 0); g.quadraticCurveTo(30, 10, 20, 3); g.closePath(); g.fill(); g.restore();

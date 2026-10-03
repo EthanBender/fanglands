@@ -126,8 +126,10 @@
   // the shield itself, held out in front of the knight while it is up
   // 09-render calls each draw hook as h(g, items, cam), and later runs every item's draw() with NO
   // arguments. So the handler takes (g, items) and the item closes over g.
+  // The knight drawn by 82-knightgear raises his own shield (in its own shape and colours, in front of him or behind him
+  // as he faces), so this plain one is drawn only for the old knight.
   function drawShield(g, items) {
-    if (!(BLOCK.t > 0) || player.dead || player.mech) return;
+    if (!(BLOCK.t > 0) || player.dead || player.mech || window.KNIGHTGEAR) return;
     const sh = shieldOn(); if (!sh) return;
     items.push({ y: player.y + 1, draw: () => {
       g.save(); g.translate(player.x + player.facing.x * 15, player.y + player.facing.y * 15 - 6);
@@ -221,14 +223,19 @@
       let drawErr = null;
       if (pushed) { try { list[0].draw(); } catch (e) { drawErr = String((e && e.message) || e); } }
       const drew = pushed && !drawErr && painted.includes('fill') && painted.includes('stroke') && painted.includes('restore');
-      // and with the shield down the hook draws nothing at all
+      // the knight drawn by 82-knightgear raises his own shield: this hook lists nothing and his look says the shield is
+      // up (82's self-test checks that he draws it, in front of him or behind him)
+      const kg = !!window.KNIGHTGEAR, raised = kg && playerLook().block === true;
+      // and with the shield down the hook draws nothing at all (and the knight's look has it down)
       BLOCK.t = 0; const down = [];
       drawShield(probe, down, cam);
+      const lowered = !kg || !playerLook().block;
       BLOCK.t = t0; player.equip.shield = eq1; player.dead = dead0; player.mech = mech0;
       recomputeMaxHp(); player.hp = player.maxHp;
-      check(P + 'the raised shield is put in the draw list and paints with no arguments; with the shield down nothing is drawn',
-        drew && down.length === 0 && stray.length === 0,
-        { hookErr, pushed, listed: list.length, stray, drawErr, painted: painted.length, whenDown: down.length }); }
+      check(P + (kg ? 'the raised shield is the knight\'s own: the hook lists nothing and his look has the shield up; with the shield down nothing is drawn and his look has it down'
+        : 'the raised shield is put in the draw list and paints with no arguments; with the shield down nothing is drawn'),
+        (kg ? !hookErr && list.length === 0 && raised && lowered : drew) && down.length === 0 && stray.length === 0,
+        { kg, raised, lowered, hookErr, pushed, listed: list.length, stray, drawErr, painted: painted.length, whenDown: down.length }); }
 
     // ---- the same mistake, guarded for every feature file ----
     // 09-render calls each hook as h(g, items, cam) and then each item's draw() with no arguments. A hook

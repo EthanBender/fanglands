@@ -352,9 +352,10 @@
       } else if (t === AG_STONE) items.push({ y: flat(tx, ty), draw: () => drawStone(g, tx, ty) });
       else if (t === AG_CLIMB) items.push({ y: ty * TILE + TILE - 4, draw: () => drawClimb(g, tx, ty) });
     }
-    // the cape on the knight's back: drawn just under the player entry, trailing opposite the facing
+    // the cape on the knight's back: drawn just under the player entry, trailing opposite the facing. The knight drawn
+    // by 82-knightgear wears his cape himself (one cape that sways, its badge on his back), so this one is not drawn then
     const k = capeOf();
-    if (k && !player.dead && !player.mech) items.push({ y: player.y + player.r - 0.01, draw: () => drawCape(g, player, CAPE_COLOR[k] || '#c9a36a') });
+    if (k && !player.dead && !player.mech && !window.KNIGHTGEAR) items.push({ y: player.y + player.r - 0.01, draw: () => drawCape(g, player, CAPE_COLOR[k] || '#c9a36a') });
   });
   function drawCape(g, e, color) {
     const bx = -e.facing.x, by = -e.facing.y, px = -by, py = bx; // trail direction and its perpendicular

@@ -347,6 +347,10 @@ look, opts)` and every other look (townsfolk, guards, the statue) to the old dra
 - His pose (weapon angle, hand) lives in a WeakMap keyed by the entity, never on it (the player is saved whole).
 - Pictures (`opts.cache`) are for 73's world-scale remote knights only, and only onto the world canvas `ctx`.
 - A slot with no known id is read back from the look's colour fields (`helm`, `body`, `shield`, `weapon`, `hat`).
+- Do not draw things onto the player from a draw hook (a loose tool, a second cape, wings, a raised shield): the knight
+  draws what he wears and holds himself, in its place in front of or behind him. A new action that holds a tool maps
+  its type in 82's `TOOL_ACTS` (the knight then holds that tool in his hand); the block's shield comes from
+  `look.block`. 82's self-test fails if anything else paints at the player's place in the draw list.
 - A NEW WEARABLE ITEM draws as its family's plain piece (a plain helm, plate, heater shield, sword) until it gets a
   branch: `helmFam` / `bodyFam` / `shieldFam` / `weaponFam`, or its metal in `tierOf` and the tier switches. The
   self-test draws every wearable in the game and names any two of a slot that draw the same shape.
