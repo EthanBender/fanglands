@@ -50054,7 +50054,7 @@ window.DEATHS = DEATHS;
 // newer client's item) is read back from the colour fields: every (slot, colour) and (weapon shape, colour) pair is
 // unique across the items, so an old look comes back as its exact items; `hat: 'red'` is party_hat_red; a colour that is
 // no item draws that family's plain piece in that colour. Looks without gear (townsfolk, guards, monsters, the four
-// old heroes' statues) go to the old drawHuman untouched. Thistledown's statue of the knight himself is a knight look
+// old heroes' statues) go on down untouched (a townsperson's look, with `who`, never reaches here: 83-townsfolk). Thistledown's statue of the knight himself is a knight look
 // with `stone`: the knight in what he wears, every colour mapped to stone (see tintCtx).
 //
 // HURT: while e.hurtT > 0 the whole knight flashes red: your own knight drawn live (every colour he sets, through
@@ -51312,7 +51312,7 @@ const KNIGHTGEAR = (() => {
   };
   // a frame begins: the crowd of the last one sizes the picture cache
   HOOKS.draw.push((g, items) => { newFrame(); });
-  // drawHuman: a knight look is drawn here; every other look (townsfolk, guards, the statue) goes on down unchanged
+  // drawHuman: a knight look is drawn here; every other look goes on down unchanged (83-townsfolk, outside this one, takes the townsfolk)
   const _drawHuman = drawHuman;
   // a stone look (95-thistledown's statue of the knight) stands still: its clock is stopped at 0 (no breathing bob)
   const STILL = { t: 0 };
@@ -51788,7 +51788,7 @@ const KNIGHTGEAR = (() => {
           draw(recorder().g, ent(FACES[0], { unarmed: true }), lk, { t: 0.5 }); r.unarmed = swords;
         } finally { drawWeapon = _dw; }
         const ok = k => r[k] && r[k].calls === 1 && r[k].knight && r[k].oldToNew === 0 && r[k].people >= 1;
-        check(P0 + 'falling and getting up: in a real frame the knight just fallen (hurt), fading, and back on his feet is drawn once each time as the new knight; the townsfolk beside him (looks without gear) still go to the old drawing; a fallen (unarmed) knight look drops his weapon', ok('fallen') && ok('fading') && ok('up') && r.armed === 1 && r.unarmed === 0, r); }
+        check(P0 + 'falling and getting up: in a real frame the knight just fallen (hurt), fading, and back on his feet is drawn once each time as the new knight; the townsfolk beside him (looks without gear) never reach the knight drawing; a fallen (unarmed) knight look drops his weapon', ok('fallen') && ok('fading') && ok('up') && r.armed === 1 && r.unarmed === 0, r); }
 
       // 18. a weapon's picture (another knight online swinging, or easing back after a swing) is cut to the weapon: for
       // every weapon in the game it holds the whole weapon, every path's points and the widest stroke's half (1.7 px)
