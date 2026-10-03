@@ -9,11 +9,14 @@
 //   login   pass (wrong secret word, 401)  unknown (no such knight, 404)  wait (too many tries, 429)  banned (403)
 //   signup  invite (401/403)  taken (409)  name (the filter refused it, 400)  pass (secret word under 4 chars, 400)
 //   any     auth (dead or missing token, 401)  full (a cap hit: too big, or the world is full)
+//           words (kept out for bad words, 403, with until = ms when they may come back: login, every /api call and /ws)
 //   admins  admin (only an admin may, 403)  nopin (no pinned backup, 404)
 // Finished trades are rows of the trades table (store.js), listed for the parent page at GET /api/admin/trades.
 //   accounts (an admin's game, docs/ONLINE.md "Accounts")  unknown (no such knight, 404)  self (your own secret word:
 //           the parent page does that, 403)  isadmin (another admin's, 403)  pass (under 4 or over 200, 400)
 //           wait (too many resets in a minute, 429, with wait = seconds)
+//   strikes and renames (docs/ONLINE.md, "Word strikes", "Renaming a knight"): the same unknown / self / isadmin / wait,
+//           plus name (the new name will not do, 400) and taken (another knight has it, 409)
 //
 // The tables and the one migration live in store.js (SCHEMA, migrate): every wake runs the old CREATE TABLE
 // statements unchanged, creates the new tables if they are missing, and adds the new accounts columns only when
@@ -21,8 +24,8 @@
 // the mod log and drop parties through a SqlStore over the same SQLite.
 // ============================================================================
 
-import { Room, MUTE_SPANS } from './room.js';
-import { SCHEMA, migrate, SqlStore, ALWAYS } from './store.js';
+import { Room, MUTE_SPANS, wordsText } from './room.js';
+import { SCHEMA, migrate, SqlStore, ALWAYS, norm } from './store.js';
 import { accountList, RESETS_PER_MINUTE, RESET_TEXT } from './accounts.js';
 import { cryptoRandom } from './party.js';
 import { cleanName } from './filter.js';
@@ -118,6 +121,8 @@ export class World {
     if (path === '/api/save/restore' && method === 'POST') return this.restorePin(req);
     if (path === '/api/accounts' && method === 'GET') return this.accountsForAdmin(req);
     if (path === '/api/accounts/reset' && method === 'POST') return await this.resetForAdmin(req);
+    if (path === '/api/accounts/strikes' && method === 'POST') return await this.clearStrikesForAdmin(req);
+    if (path === '/api/accounts/rename' && method === 'POST') return await this.renameForAdmin(req);
     throw oops(404, 'no such call', 'nope');
   }
 
@@ -128,15 +133,21 @@ export class World {
   // ---------- sessions ----------
   session(token) {
     if (!token) throw oops(401, 'please log in', 'auth');
-    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
+    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
     if (!s) throw oops(401, 'that login has run out, please log in again', 'auth');
     const now = this.now();
     if (s.expires < now) { this.sql.exec('DELETE FROM sessions WHERE token = ?', token); throw oops(401, 'that login has run out, please log in again', 'auth'); }
     if (s.banned) { this.sql.exec('DELETE FROM sessions WHERE name_lc = ?', s.name_lc); throw oops(403, 'this knight is banned', 'banned'); }
+    // kept out for bad words: the session is kept (it works again when the time is up), but nothing goes through until then
+    this.refuseIfKeptOut(s.words_locked_until, now);
     this.sql.exec('UPDATE accounts SET last_seen = ? WHERE name_lc = ?', now, s.name_lc);
     return s;
   }
   auth(req) { return this.session(bearer(req)); }
+  refuseIfKeptOut(until, now) {
+    until = Number(until) || 0;
+    if (until > now) throw oops(403, wordsText(until, now), 'words', { until });
+  }
   newSession(lc) {
     const token = randomHex(32);
     const now = this.now();
@@ -176,9 +187,11 @@ export class World {
 
   async login(req) {
     const b = await readJson(req);
-    const lc = String(b.name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    let lc = String(b.name || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const pass = typeof b.pass === 'string' ? b.pass : '';
-    const a = lc && this.row('SELECT * FROM accounts WHERE name_lc = ?', lc);
+    let a = lc && this.row('SELECT * FROM accounts WHERE name_lc = ?', lc);
+    // a knight an admin renamed may still type the old name: it logs in as the new one (the answer carries the new name)
+    if (!a && lc) { const moved = this.store.renamedFrom(lc); if (moved) { lc = norm(moved); a = this.row('SELECT * FROM accounts WHERE name_lc = ?', lc); } }
     if (!a) throw oops(404, 'no knight by that name', 'unknown');
     if (a.banned) throw oops(403, 'this knight is banned', 'banned');
     const now = this.now();
@@ -194,6 +207,8 @@ export class World {
       throw oops(401, 'wrong secret word', 'pass', { left: WRONG_TRIES - tries });
     }
     this.sql.exec('UPDATE accounts SET tries = 0, locked_until = 0, last_seen = ? WHERE name_lc = ?', now, lc);
+    // the right secret word, but kept out for bad words: said with the time it ends, and no session is made
+    this.refuseIfKeptOut(a.words_locked_until, now);
     return json({ token: this.newSession(lc), name: a.name });
   }
 
@@ -297,6 +312,51 @@ export class World {
     await this.newSecret(target, pass, s.name, now);
     return json({ ok: true, name: target.name });
   }
+  // Clears a knight's word strikes and any lockout, from an admin's game: never your own, at most RESETS_PER_MINUTE a minute.
+  async clearStrikesForAdmin(req) {
+    const s = this.adminSession(req);
+    const b = await readJson(req);
+    const target = this.store.account(typeof b.name === 'string' ? b.name : '');
+    if (!target) throw oops(404, 'no knight by that name', 'unknown');
+    if (target.lc === s.name_lc) throw oops(403, 'ask the parent page to clear your own', 'self');
+    const now = this.now();
+    if (this.store.actsSince(s.name, 'strikes_clear', now - 60000) >= RESETS_PER_MINUTE) throw oops(429, 'too many at once: wait a minute', 'wait', { wait: 60 });
+    this.clearStrikes(target, s.name, now);
+    return json({ ok: true, name: target.name });
+  }
+  clearStrikes(target, by, now) {
+    const was = this.store.wordStrikes(target.lc, now);
+    this.store.clearWordStrikes(target.lc);
+    this.store.log({ at: now, by, act: 'strikes_clear', target: target.name, detail: was ? String(was.strikes) + (was.lockedUntil > now ? ', was kept out' : '') : '' });
+  }
+  // A new name for a knight, from an admin's game: never your own, never another admin's; the filter's rules for a name.
+  async renameForAdmin(req) {
+    const s = this.adminSession(req);
+    const b = await readJson(req);
+    const target = this.store.account(typeof b.name === 'string' ? b.name : '');
+    if (!target) throw oops(404, 'no knight by that name', 'unknown');
+    if (target.lc === s.name_lc) throw oops(403, 'change your own name on the parent page', 'self');
+    if (target.role === 'admin') throw oops(403, "you can't change another admin's name", 'isadmin');
+    const now = this.now();
+    if (this.store.actsSince(s.name, 'rename', now - 60000) >= RESETS_PER_MINUTE) throw oops(429, 'too many at once: wait a minute', 'wait', { wait: 60 });
+    const to = this.renameKnight(target, b.to, s.name, now);
+    return json({ ok: true, from: target.name, name: to });
+  }
+  // The one way a name changes (the parent page and an admin's game both come here): checked like a new knight's name,
+  // rewritten everywhere it is kept (store.js rename), the knight sent out to come straight back as the new name if on line,
+  // one line in mod_log with the old name in its detail (so a login with the old name finds the knight). Answers the new name.
+  renameKnight(target, wanted, by, now) {
+    const to = cleanName(typeof wanted === 'string' ? wanted : '');
+    if (!to) throw oops(400, 'that name will not do: 2 to 16 letters, digits or spaces, and nothing rude', 'name');
+    const lc = to.toLowerCase();
+    if (lc !== target.lc && this.row('SELECT 1 FROM accounts WHERE name_lc = ?', lc)) throw oops(409, 'that name is taken', 'taken');
+    if (to === target.name) return to;
+    this.store.rename(target.lc, to);
+    this.store.log({ at: now, by, act: 'rename', target: to, detail: target.name });
+    this.room.renamed(target.name, to);
+    return to;
+  }
+
   // The one way a secret word changes (the parent page and an admin's game both come here): hashed with a new salt,
   // every session of that knight deleted, the knight sent back to the login card if on line, one line in mod_log.
   async newSecret(target, pass, by, now) {
@@ -370,6 +430,22 @@ export class World {
       this.store.log({ at: this.now(), by: PARENT, act: banned ? 'ban' : 'unban', target: a.name, detail: '' });
       if (banned) this.room.kick(a.name, 'banned', 'this knight is banned');
       return json({ ok: true });
+    }
+    if (call === 'strikes' && post) {
+      // clear a knight's word strikes and any lockout (an admin's too, its own knight's too)
+      const b = await readJson(req);
+      const a = this.store.account(typeof b.name === 'string' ? b.name : '');
+      if (!a) throw oops(404, 'no knight by that name', 'nope');
+      this.clearStrikes(a, PARENT, this.now());
+      return json({ ok: true, name: a.name });
+    }
+    if (call === 'rename' && post) {
+      // a new name for any knight, an admin's too
+      const b = await readJson(req);
+      const a = this.store.account(typeof b.name === 'string' ? b.name : '');
+      if (!a) throw oops(404, 'no knight by that name', 'nope');
+      const to = this.renameKnight(a, b.to, PARENT, this.now());
+      return json({ ok: true, from: a.name, name: to });
     }
     if (call === 'role' && post) {
       const b = await readJson(req);
