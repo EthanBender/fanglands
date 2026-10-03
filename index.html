@@ -36634,7 +36634,7 @@ window.RETALIATE = RETALIATE;
       if (dead !== p.dead) p.deadT = 0;
       p.dead = dead; p.hp = hp; if (maxHp > 0) p.maxHp = maxHp; p.state = typeof state === 'string' ? state : 'idle';
       p.facing.x = fx; p.facing.y = fy; p.moving = !!moving; p.hurtT = hurt; p.attackT = attackT; p.stunT = stunT; p.respawnT = 1e9;
-      p.seen = time; p.gone = false;
+      p.seen = time; p.gone = false; p.seed = false;
       // the world's optional columns [tgt, lock, phase, vx, vy, look] (docs/ONLINE.md, Stage 2): the one extra state a monster's
       // look reads rides on the puppet (78-monsterlook reads phase, ally and emberT); a row without them clears them
       if (e.length > 14) {
@@ -36649,6 +36649,9 @@ window.RETALIATE = RETALIATE;
       if (!dead) p.deathSeen = false;
       else if (!p.deathSeen) { p.deathSeen = true; if (!born) monsterDied(p, 'row', S.keeper); else p.deadT = 9; }   // 9: past the core's fade too
     }
+    // the old keeper's own monsters held up over a keeper change (setKeeper): the new keeper's first list is the word now, so
+    // one it does not list is out of this knight's view there and goes
+    if (monsters.some(m => m.seed)) { monsters = monsters.filter(m => !m.seed); S.puppets = monsters; S.idxLen = -1; added = false; }
     if (added) { S.idxArr = monsters; S.idxLen = monsters.length; }
     S.lastMonAt = time;
   }
@@ -36668,7 +36671,23 @@ window.RETALIATE = RETALIATE;
   function setKeeper(n) {
     const me = NET.me;
     if (n && n !== me) {
-      if (!S.puppets) { S.parked[S.map] = monsters; S.puppets = []; monsters = S.puppets; }
+      if (!S.puppets) {
+        S.parked[S.map] = monsters;
+        // a game that kept this map hands it on (to the world's copy taking it over, docs/ONLINE.md Stage 2, or to another
+        // knight): the monsters on its own screen (within NEAR) stay standing as puppets, where they were, until the new
+        // keeper's first mon (applyMon), so the screen never blinks empty for a round trip. Only the old keeper does this: a
+        // game arriving on a map knows nothing yet.
+        const seed = [];
+        if (S.keeper && S.keeper === me) for (const m of monsters) {
+          if (!m.nid || m.dead || m.remote || m.phantom || dist(m.x, m.y, player.x, player.y) > NEAR) continue;
+          const p = makePuppet(m.nid, m.type, m.x, m.y); if (!p) continue;
+          p.seed = true;
+          p.hp = m.hp; p.maxHp = m.maxHp; p.state = typeof m.state === 'string' ? m.state : 'idle'; p.facing.x = m.facing ? m.facing.x : 1; p.facing.y = m.facing ? m.facing.y : 0;
+          if (m.home) p.home = { x: m.home.x, y: m.home.y };
+          seed.push(p);
+        }
+        S.puppets = seed; monsters = S.puppets; S.idxLen = -1;
+      }
       S.keeper = n;
     } else {
       if (S.puppets) handoff();
@@ -36977,6 +36996,7 @@ window.RETALIATE = RETALIATE;
   // lands, the world's tick, the rows in the last mon and the puppets. Nobody sees it without the address saying so.
   const DEBUG_TICK = typeof location !== 'undefined' && !!location && /[?&]debug=tick\b/.test(String(location.search || ''));
   if (DEBUG_TICK) HOOKS.hud.push(g => {
+    while (S.dbg.times.length && S.dbg.times[0] < time - 1) S.dbg.times.shift();   // a stream that stopped reads 0 a second
     const k = S.keeper, world = typeof k === 'string' && k.indexOf('@world:') === 0;
     const lines = ['keeper ' + (k || '-') + (world ? ' (the world)' : (k && typeof NET !== 'undefined' && k === NET.me ? ' (you)' : '')),
       'mon ' + S.dbg.times.length + '/s   k ' + (S.dbg.k === null ? '-' : S.dbg.k) + '   rows ' + S.dbg.rows, 'puppets ' + (S.puppets ? S.puppets.length : 0) + '   map ' + S.map];
@@ -37027,11 +37047,16 @@ window.RETALIATE = RETALIATE;
         check(P + 'a keeper with nobody near sends a heartbeat about once a second, and none while paused', beats >= 1 && beats <= 3 && whilePaused === 0, { beats, whilePaused });
         push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 }); }
       // (b) a non-keeper shows puppets that hold still while the stream is silent
+      const nearReal = real.filter(m => m.nid && !m.dead && !m.remote && dist(m.x, m.y, player.x, player.y) <= NEAR).map(m => m.nid).sort();
       push({ t: 'keeper', map: 'over', n: 'Ann' });
       const parked = COOP.parked;
+      // (b0) handing the map on: until Ann's first mon this screen keeps showing the monsters it ran, where they stood
+      const seeded = (COOP.puppets() || []).filter(p => p.seed), gs = seeded.find(p => p.nid === gob.nid);
       const ax = gob.home.x, ay = gob.home.y;
       const row = (nid, type, x, y, hp, mhp, state) => [nid, type, x, y, hp, mhp, state, 1, 0, 0, 0, 0, 0, 0];
       push({ t: 'mon', n: 'Ann', list: [row('Ann:1', 'goblin', ax, ay, 12, 12, 'idle'), row(s0.nid, s0.type, ax + 40, ay + 40, 5, s0.maxHp, 'chase')] });
+      { const left = monsters.filter(m => m.seed).length, listed = !!COOP.find(s0.nid) && !COOP.find(s0.nid).seed;
+        check(P + 'a keeper handing its map on keeps showing the monsters on its screen (same nids, places and hp) until the new keeper\'s first mon, which then decides', seeded.length === nearReal.length && seeded.length > 0 && seeded.map(p => p.nid).sort().join() === nearReal.join() && !!gs && gs.x === gob.x && gs.y === gob.y && gs.hp === gob.hp && gs.remote && left === 0 && listed, { seeded: seeded.length, near: nearReal.length, gob: gs && [gs.x - gob.x, gs.y - gob.y, gs.hp], left, listed }); }
       const p1 = COOP.find('Ann:1'), p2 = COOP.find(s0.nid);
       // (b2) moving (row 9) and hurt (row 10) land in the right fields: a walking monster walks and is not pink, a hurt one flashes
       { push({ t: 'mon', n: 'Ann', list: [['Ann:w', 'goblin', ax + 80, ay, 12, 12, 'chase', 1, 0, 1, 0, 0, 0, 0], ['Ann:h', 'goblin', ax + 120, ay, 9, 12, 'idle', 1, 0, 0, 0.18, 0, 0, 0]] });

@@ -124,22 +124,25 @@ async function main() {
     tick(40); heal();
     const fighting = ev(A, `(() => { const m = monsters.find(o => o.nid === '${nid}'); return m && m.state; })()`);
     const ann0 = JSON.parse(ev(A, "JSON.stringify(monsters.filter(m => !m.remote).map(m => ({ nid: m.nid, hp: m.hp, dead: !!m.dead, x: Math.round(m.x), y: Math.round(m.y) })))"));
-    const seenB = new Map(); let doubled = 0, vanished = 0;
+    const seenB = new Map(); let doubled = 0, vanished = 0, annBlank = 0;
     room.setMode('deepholm', 'world', 'parent page');
     for (let i = 0; i < 90; i++) {
       tick(1); heal();
       const ids = ev(B, 'monsters.filter(m => m.remote && !m.gone).map(m => m.nid)');
       if (new Set(ids).size !== ids.length) doubled++;
       for (const x of ann0) if (!x.dead && !ids.includes(x.nid)) vanished++;
+      // and on Ann's own screen (her game kept the map until now): never a frame without them while the world takes over
+      const own = ev(A, 'monsters.filter(m => !m.gone && !m.dead).map(m => m.nid)');
+      for (const x of ann0) if (!x.dead && !own.includes(x.nid)) annBlank++;
     }
     const c = copyOf(), g = c && c.api.peek;
     const copy = g ? g('monsters').map(m => ({ nid: m.nid, hp: m.hp, x: Math.round(m.x), y: Math.round(m.y), dead: !!m.dead })) : [];
     const same = ann0.filter(a => !a.dead).every(a => { const m = copy.find(x => x.nid === a.nid); return m && Math.abs(m.hp - a.hp) < 1e-6 && Math.hypot(m.x - a.x, m.y - a.y) <= 3 * 48; });
     // and one that was down in her game is down in the copy too: nothing comes back to life in the hand-over
     const stayedDown = ann0.filter(a => a.dead).every(a => { const m = copy.find(x => x.nid === a.nid); return !m || m.dead; });
-    line('4. a keeper-to-world flip mid-fight: the guard chasing Ben in Ann\'s game is taken over by the copy with the same nid and hp (and where it was, give or take the 1.5 s it kept walking), the one she had felled stays down; Ben\'s puppets never vanish or double; both games say @world:deepholm; sim_log says parent page',
-      fighting === 'chase' && !!c && same && stayedDown && !doubled && !vanished && ev(A, 'COOP.keeper()') === '@world:deepholm' && ev(B, 'COOP.keeper()') === '@world:deepholm' && book.recent(1)[0].reason === 'parent page' && book.recent(1)[0].to === 'world',
-      { fighting, copy: !!c, same, stayedDown, doubled, vanished, ann0, copyNow: copy, log: book.recent(1)[0] });
+    line('4. a keeper-to-world flip mid-fight: the guard chasing Ben in Ann\'s game is taken over by the copy with the same nid and hp (and where it was, give or take the 1.5 s it kept walking), the one she had felled stays down; Ben\'s puppets never vanish or double, and on Ann\'s own screen her monsters never blink out while the world takes over; both games say @world:deepholm; sim_log says parent page',
+      fighting === 'chase' && !!c && same && stayedDown && !doubled && !vanished && !annBlank && ev(A, 'COOP.keeper()') === '@world:deepholm' && ev(B, 'COOP.keeper()') === '@world:deepholm' && book.recent(1)[0].reason === 'parent page' && book.recent(1)[0].to === 'world',
+      { fighting, copy: !!c, same, stayedDown, doubled, vanished, annBlank, ann0, copyNow: copy, log: book.recent(1)[0] });
   }
 
   // ---- 5. a game with no caps (an older page) ----
