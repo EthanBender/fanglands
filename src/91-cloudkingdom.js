@@ -755,7 +755,7 @@
   // =========================================================================
   const SS = 2;                                   // patterns and sprites are drawn at 2x, like the core's textures
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const STATS = { frames: 0, curtain: 0, drawn: {}, kerbs: 0, parapets: 0, gates: 0, fountains: 0, awnings: 0, banners: 0, pennants: 0, spires: 0, towers: 0, items: 0, chunks: 0, chunksPainted: 0 };
+  const STATS = { frames: 0, curtain: 0, drawn: {}, kerbs: 0, parapets: 0, gates: 0, fountains: 0, awnings: 0, banners: 0, pennants: 0, spires: 0, towers: 0, items: 0, chunks: 0, chunksPainted: 0, roomClips: 0 };
   const CACHE = {};
   function sprite(key, w, h, ax, ay, fn) {
     let s = CACHE[key];
@@ -1880,12 +1880,38 @@
     const x = b.x * TILE, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
     const a = behindAlpha(x, y - riseOf(b), x + w, y + h, (b.y + b.h) * TILE - 1);
     g.save(); if (a < 1) g.globalAlpha = a;
+    // the knight is in another building with its roof off: nothing of this one is drawn over that room
+    const room = roomOf();
+    if (room && room !== b && b.y + b.h > room.y) { g.beginPath(); g.rect(x - 6 * TILE, y - 14 * TILE, w + 12 * TILE, h + 20 * TILE); roomRect(g, room); g.clip('evenodd'); STATS.roomClips++; }
     if (b.id === 'aer_keep') drawKeep(g, b, x, y, w, h);
     else if (b.id === 'aer_chapel') drawChapel(g, b, x, y, w, h);
     else drawHall(g, b, x, y, w, h);
     g.restore();
   }
   { const _drawBuilding = drawBuilding; drawBuilding = function (g, b) { return (b && b.kingdom) ? drawKingBuilding(g, b) : _drawBuilding(g, b); }; }
+
+  // ---------- the room the knight stands in ----------
+  // Polish (2026-10-03): the Great Gate's two towers were drawn over the inside of Halcyon's Sky Forge and the house
+  // aer_h4 once their roofs lifted, because a tall thing south of a room is drawn after the room's floor and reaches up
+  // over it. While the knight stands in a kingdom building, every tall thing of this file whose foot is outside that
+  // building (walls, towers, spires, gates, fountains, stalls, trees, lamps, the other buildings) is drawn with the
+  // room's rectangle cut out of it, so the room reads whole. People are never cut (a head just south of a wall is fine).
+  function roomOf() { if (!inside() || player.dead) return null; const a = ptile(), b = buildingAt(a.tx, a.ty); return b && b.kingdom ? b : null; }
+  const roomRect = (g, b) => g.rect(b.x * TILE, b.y * TILE, b.w * TILE, b.h * TILE);
+  const inRoom = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+  function clipRooms(g, items, n0, c) {
+    const room = roomOf(); if (!room) return 0;
+    let n = 0;
+    for (let i = n0; i < items.length; i++) {
+      const it = items[i];
+      if (!it.tall || inRoom(room, it.tall[0], it.tall[1]) || it.y < room.y * TILE) continue;
+      const d = it.draw;
+      it.draw = () => { g.save(); g.beginPath(); g.rect(c.x - 6 * TILE, c.y - 14 * TILE, VW + 12 * TILE, VH + 28 * TILE); roomRect(g, room); g.clip('evenodd'); try { d(); } finally { g.restore(); } };
+      it.roomClip = room.id; n++;
+    }
+    STATS.roomClips += n;
+    return n;
+  }
 
   // ---------- people: wings, a person, the name when you are close ----------
   function wings(g, scale, flap, tone) {
@@ -2008,9 +2034,9 @@
       const row = PLAN.ROWS[ty];
       for (let tx = x0; tx <= x1; tx++) {
         const ch = row[tx];
-        if (ch === '#') { if (ARCH_STUBS.has(tx + ',' + ty)) continue; const horiz = ty === 11 || ty === 61; items.push({ y: (ty + 1) * TILE - 2, draw: () => horiz ? drawWallH(g, tx, ty) : drawWallV(g, tx, ty) }); continue; }
+        if (ch === '#') { if (ARCH_STUBS.has(tx + ',' + ty)) continue; const horiz = ty === 11 || ty === 61; items.push({ y: (ty + 1) * TILE - 2, tall: [tx, ty], draw: () => horiz ? drawWallH(g, tx, ty) : drawWallV(g, tx, ty) }); continue; }
         const k = KIND_NAMES[KIND[ty * W + tx]];
-        if (k) { items.push({ y: (ty + 1) * TILE - (k === 'hedge' ? 3 : 6), draw: () => drawKind(g, k, tx, ty) }); continue; }
+        if (k) { items.push({ y: (ty + 1) * TILE - (k === 'hedge' ? 3 : 6), tall: [tx, ty], kind: k, draw: () => drawKind(g, k, tx, ty) }); continue; }
         if (ch === 'C') { const b = PLAN.inBuilding(tx, ty); if (b && b.id === 'aer_keep' && tx > b.x && tx < b.x + b.w - 1 && ty > b.y && ty < b.y + b.h - 1) items.push({ y: (ty + 1) * TILE - 8, draw: () => blit(g, sprite('pillar', 40, 90, 20, 80, paintPillar), tc(tx), (ty + 1) * TILE - 8) }); }
         // a wisp is white on white cloud, and an updraft stone pale: a ring of sky-blue on the ground under each, so they read
         else if ((ch === 'W' && window.SKYCITY && tileAt(tx, ty) === SKYCITY.WISP) || (ch === 'U' && royalAt(tx, ty) < 0)) items.push({ y: -1e8 + ty * TILE + 0.8, draw: () => groundRing(g, tx, ty, ch === 'W') });
@@ -2018,21 +2044,21 @@
     }
     // the towers, the spires, the fountains, the pond, the gates
     for (const t of TOWERS) {
-      if (t.kind !== 'gate') { const cx = tc(t.x), cy = tc(t.y); if (vis(c, cx - 80, cy - 215, cx + 80, cy + 60)) items.push({ y: (t.y + 2) * TILE - 2, draw: () => drawRoundTower(g, t) }); }
-      else { const x = t.x0 * TILE, y = t.y0 * TILE; if (vis(c, x, y - 170, x + 150, (t.y1 + 1) * TILE + 12)) items.push({ y: (t.y1 + 1) * TILE - 2, draw: () => drawGateTower(g, t) }); }
+      if (t.kind !== 'gate') { const cx = tc(t.x), cy = tc(t.y); if (vis(c, cx - 80, cy - 215, cx + 80, cy + 60)) items.push({ y: (t.y + 2) * TILE - 2, tall: [t.x, t.y], tower: t.kind, draw: () => drawRoundTower(g, t) }); }
+      else { const x = t.x0 * TILE, y = t.y0 * TILE; if (vis(c, x, y - 170, x + 150, (t.y1 + 1) * TILE + 12)) items.push({ y: (t.y1 + 1) * TILE - 2, tall: [t.x, t.y1], tower: 'gate', draw: () => drawGateTower(g, t) }); }
     }
-    for (const s of SPIRES) { const cx = tc(s.x), by = (s.y + 1) * TILE; if (vis(c, cx - 40, by - 260, cx + 40, by + 12)) items.push({ y: by - 6, spire: s.name, draw: () => drawSpire(g, s) }); }
-    for (const f of FOUNTAINS) { const x = f.x0 * TILE, y = f.y0 * TILE; if (vis(c, x - 10, y - 140, x + 154, y + 160)) items.push({ y: (f.y1 + 1) * TILE - 4, draw: () => drawFountain(g, f) }); }
+    for (const s of SPIRES) { const cx = tc(s.x), by = (s.y + 1) * TILE; if (vis(c, cx - 40, by - 260, cx + 40, by + 12)) items.push({ y: by - 6, spire: s.name, tall: [s.x, s.y], draw: () => drawSpire(g, s) }); }
+    for (const f of FOUNTAINS) { const x = f.x0 * TILE, y = f.y0 * TILE; if (vis(c, x - 10, y - 140, x + 154, y + 160)) items.push({ y: (f.y1 + 1) * TILE - 4, tall: [f.x0, f.y1], draw: () => drawFountain(g, f) }); }
     { const p = SP.pond; if (vis(c, p.x0 * TILE, p.y0 * TILE, (p.x1 + 1) * TILE, (p.y1 + 1) * TILE)) items.push({ y: (p.y1 + 1) * TILE - 40, draw: () => drawPond(g) }); }
     for (const gt of GATES) {
       const xs = gt.cells.map(q => q[0]), ys = gt.cells.map(q => q[1]), gx0 = (Math.min(...xs) - 1) * TILE, gx1 = (Math.max(...xs) + 2) * TILE, gy0 = (Math.min(...ys) - 3) * TILE, gy1 = (Math.max(...ys) + 1) * TILE;
       if (!vis(c, gx0, gy0, gx1, gy1)) continue;
       const f = GATE_DRAW[gt.id], by = gateSortY(gt), topRow = Math.min(...ys);
-      items.push({ y: topRow * TILE + 2, draw: () => f(g, gt, 'back') });
-      items.push({ y: by, draw: () => f(g, gt, 'front') });
+      items.push({ y: topRow * TILE + 2, tall: gt.cells[0], draw: () => f(g, gt, 'back') });
+      items.push({ y: by, tall: gt.cells[0], draw: () => f(g, gt, 'front') });
     }
     // the market's awnings and bunting, the royal updrafts' gold
-    for (const [sx, sy] of SP.stalls) if (vis(c, sx * TILE - 8, sy * TILE - 8, (sx + 1) * TILE + 8, (sy + 1) * TILE)) items.push({ y: (sy + 1) * TILE - 3, draw: () => drawAwning(g, sx, sy) });
+    for (const [sx, sy] of SP.stalls) if (vis(c, sx * TILE - 8, sy * TILE - 8, (sx + 1) * TILE + 8, (sy + 1) * TILE)) items.push({ y: (sy + 1) * TILE - 3, tall: [sx, sy], stall: sx, draw: () => drawAwning(g, sx, sy) });
     { const [a, b] = SP.bunting; if (vis(c, a[0] * TILE, a[1] * TILE - 70, (b[0] + 1) * TILE, (a[1] + 1) * TILE)) items.push({ y: 4.8e7, draw: () => drawBunting(g) }); }
     for (const r of ROYAL) if (vis(c, r.t[0] * TILE - 20, r.t[1] * TILE - 40, (r.t[0] + 1) * TILE + 20, (r.t[1] + 1) * TILE)) items.push({ y: (r.t[1] + 1) * TILE - 3, draw: () => drawRoyalRim(g, r) });
     // a kingdom building whose footprint is off the screen while its towers are not: the core culls by footprint
@@ -2040,7 +2066,7 @@
       const bx = b.x * TILE, by = b.y * TILE, bw = b.w * TILE, bh = b.h * TILE;
       const coreSees = (b.x + b.w) * TILE > c.x && b.x * TILE < c.x + VW && (b.y + b.h) * TILE > c.y && b.y * TILE < c.y + VH;
       const pt = ptile();
-      if (!coreSees && vis(c, bx - 20, by - riseOf(b), bx + bw + 20, by + bh) && buildingAt(pt.tx, pt.ty) !== b && BUILDINGS.includes(b)) items.push({ y: (b.y + b.h) * TILE - 1, draw: () => drawBuilding(g, b) });
+      if (!coreSees && vis(c, bx - 20, by - riseOf(b), bx + bw + 20, by + bh) && buildingAt(pt.tx, pt.ty) !== b && BUILDINGS.includes(b)) items.push({ y: (b.y + b.h) * TILE - 1, tall: [b.x, b.y + b.h - 1], draw: () => drawBuilding(g, b) });
     }
     // people: the residents, Lark on the ground, the walkers; the fliers and Lark flying in the air
     for (const p of PEOPLE) if (vis(c, p.px - 60, p.py - 70, p.px + 60, p.py + 30)) items.push({ y: p.py + 13, draw: () => drawPerson(g, p, p.look, p.wing, 1, p.name) });
@@ -2059,6 +2085,7 @@
       const p = inFront() || walkerInFront(); if (!p) return;
       g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.arc(p.px, p.py, 22, 0, 7); g.stroke(); g.setLineDash([]);
     } });
+    clipRooms(g, items, n0, c);
     STATS.items = items.length - n0;
   };
   HOOKS.draw.push(drawHook);
@@ -2662,6 +2689,26 @@
       quest.graves = graves0; if (graves0 === undefined) delete quest.graves;
       check(K + "K21b the overworld's things drawn by coordinate stay out of Aerie: a grave marker at (48,40) draws on the overworld and not on the Royal Plaza, and so do the river crossing posts inside the city's rectangle",
         !!graveHook && !!crossHook && outside.grave >= 1 && inside.grave === 0 && outside.posts.every(n => n >= 1) && inside.posts.every(n => n === 0), { outside, inside, posts: posts.length }); }
+
+    // ---- K23. the room the knight stands in reads whole: nothing tall from outside it is drawn over it ----
+    { const roomCase = (tx, ty, id) => {
+        enter(); F.tp(tx, ty); render();
+        const room = BY_ID[id], { g, log } = recorder(), items = [];
+        drawHook(g, items, cam);
+        const gate = items.filter(it => it.tower === 'gate');
+        const over = gate.filter(it => it.roomClip === id);
+        // the clip really cuts the room's own rectangle out (even-odd), around the tower's drawing
+        let cut = false;
+        if (over.length) { log.length = 0; over[0].draw(); const r = log.find(([k, a]) => k === 'rect' && a[0] === room.x * TILE && a[1] === room.y * TILE && a[2] === room.w * TILE && a[3] === room.h * TILE); cut = !!r && log.some(([k, a]) => k === 'clip' && a[0] === 'evenodd'); }
+        // and nothing whose foot is inside the room is cut
+        const ownCut = items.filter(it => it.tall && it.roomClip && it.tall[0] >= room.x && it.tall[0] < room.x + room.w && it.tall[1] >= room.y && it.tall[1] < room.y + room.h).length;
+        return { inRoom: buildingAt(tx, ty) === room, gates: gate.length, clipped: over.length, cut, ownCut };
+      };
+      const forge = roomCase(55, 54, 'aer_forge'), h4 = roomCase(43, 55, 'aer_h4');
+      enter(); F.tp(56, 50); render();
+      const street = (() => { const { g } = recorder(), items = []; drawHook(g, items, cam); return { gates: items.filter(it => it.tower === 'gate').length, clipped: items.filter(it => it.roomClip).length }; })();
+      check(K + "K23 a room reads whole: standing in Halcyon's Sky Forge and in the house by the Great Gate, the Great Gate's towers are drawn with the room cut out of them (nothing inside the room is cut); out on Forge Street they are drawn whole",
+        [forge, h4].every(r => r.inRoom && r.gates >= 1 && r.clipped === r.gates && r.cut && r.ownCut === 0) && street.gates >= 1 && street.clipped === 0, { forge, h4, street }); }
 
     // ---- put everything back ----
     leave(); closePanel(); drain(); tapCancel('manual');
