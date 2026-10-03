@@ -24,8 +24,8 @@
 // file keeps one value per browser; this keeps it equal to the knight's own), and "put every setting back" never
 // changes a knight.
 //
-// Wraps by reassignment with explicit arguments: playerLook, drawHuman, title.startSlot, title.sprites,
-// HOOKS.panel.settings, FANGLANDS.selfTest.
+// Wraps by reassignment with explicit arguments: playerLook, drawHuman, title.startSlot, title.sprites, update (the story
+// waits while the page is up), HOOKS.panel.settings, FANGLANDS.selfTest.
 // ============================================================================
 const BOYGIRL = (() => {
   const GIRL_HAIR = '#8a4f24', RIBBON = '#d0567f';
@@ -124,10 +124,33 @@ const BOYGIRL = (() => {
   HOOKS.update.push(() => {
     if (!pending || quiet || title.active) return;
     if (player.gender === 'girl' || player.gender === 'boy') { pending = false; return; }
-    // another page is open, or a place's name is across the middle of the screen: ask when it has gone
-    if (panel || areaBanner) return;
+    // another page is open, a place's name is across the middle of the screen, or someone is talking: ask when it has gone
+    if (panel || areaBanner || dialog.cur || dialog.queue.length) return;
     pending = false; openPanel('boygirl');
   });
+  // The story waits for the choice. While the page is up (or about to come up) the wake-up timer stays at 0, so The
+  // Voice's "You're finally awake." starts 1.4 s after the knight is chosen, not on top of the page. Any line that is
+  // said while the page is open waits in the queue (no talk box over the cards, no timer running it out unread) and
+  // plays from its start when the page closes.
+  const asking = () => !quiet && !(player.gender === 'girl' || player.gender === 'boy') && (panel === 'boygirl' || pending);
+  const _update = update;
+  update = function (dt) {
+    let held = null;
+    const d0 = dialog;
+    if (asking()) {
+      introT = Math.min(introT, 0);
+      if (panel === 'boygirl') {
+        held = dialog.queue.splice(0, dialog.queue.length);
+        if (dialog.cur) { held.unshift(dialog.cur); dialog.cur = null; dialog.shown = 0; dialog.t = 0; }
+      }
+    }
+    _update(dt);
+    if (asking()) introT = Math.min(introT, 0);
+    // a new game inside the tick makes a new dialog: the old lines belong to the old knight
+    if (held && held.length && dialog === d0) dialog.queue.unshift(...held);
+  };
+  // the key table (43-settings) reads the core's own handler through __inner
+  update.__inner = _update;
   // the self-test drives startSlot and newGame for its own reasons: it never gets the page unless a check asks for it
   { const F = window.FANGLANDS, _selfTest = F.selfTest;
     F.selfTest = function () { quiet++; try { return _selfTest.call(this); } finally { quiet--; } }; }
@@ -167,6 +190,9 @@ const BOYGIRL = (() => {
       HK.plateButton(g, { x: cx + 10, y: cy + cardH - R - 10 + (st.pressed ? 1.5 : 0), w: cardW - 20, h: R }, null, word, on ? 'primary' : null, { cinzel: true, hover: st.hover });
       buttons.push({ x: cx, y: cy, w: cardW, h: cardH, label, action: () => choose(gnd), up: true, name: word === 'Boy' ? 'A boy knight' : 'A girl knight' });
     });
+    // The talk box is drawn over the page. The story waits while the page is up, so none should show; if one ever does,
+    // a tap on it goes to the talk box the child can see, never to a card hidden under it.
+    if (dialog.cur && dialogRect) { const D = dialogRect; buttons.push({ x: D.x, y: D.y, w: D.w, h: D.h, label: 'dialog', action: advanceDialog, up: true, name: 'Next line', keys: ['Enter'] }); }
   };
 
   // ---------- Settings: "Your knight" ----------
@@ -199,7 +225,7 @@ const BOYGIRL = (() => {
   };
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'boy or girl: ';
-    const g0 = player.gender, slot0 = title.slot, dc = dialog.cur, dq = dialog.queue.slice();
+    const g0 = player.gender, slot0 = title.slot, dc = dialog.cur, dq = dialog.queue.slice(), log0 = dialogLog.slice();
     const q0 = quiet; quiet = 0;
     const SK = n => title.slotKey(n), AK = n => title.slotKey(n) + '.at';
     const keep3 = [lsGet(SK(3)), lsGet(AK(3))], dev0 = lsGet(DEVICE_KEY);
@@ -225,23 +251,59 @@ const BOYGIRL = (() => {
         if (HOOKS.drawMonster.barrelbeast) one('beast', () => HOOKS.drawMonster.barrelbeast(rec.g, e, false, playerLook()));
         delete player.gender;
         check(P + 'in the walker, the dozer and the beast the rider is the girl knight (her ribbon is drawn)', Object.values(seats).every(v => v === true) && 'walker' in seats && 'dozer' in seats, seats); }
-      // 4. a new game asks: the page comes up, a tap on the girl card chooses, saves and closes it
-      { save(); localStorage.removeItem(SK(3)); localStorage.removeItem(AK(3));
-        title.open(); title.startSlot(3); dialog.cur = null; dialog.queue.length = 0; untilAsked();
-        const asked = panel === 'boygirl'; render();
-        const cards = ['choose:boy', 'choose:girl'].map(l => buttons.find(b => b.label === l)).filter(Boolean);
-        const big = cards.length === 2 && cards.every(b => b.w >= 44 && b.h >= 44);
-        const tapped = F.clickButton('choose:girl');
-        const saved = JSON.parse(lsGet(SK(3)) || '{}').player || {};
-        check(P + 'a new game (an empty slot) puts up "Boy or girl?" with both knights as big cards; tapping Girl makes a girl knight, saves it and closes the page', asked && big && tapped && player.gender === 'girl' && saved.gender === 'girl' && panel === null && playerLook().girl === true, { asked, big, tapped, gender: player.gender, saved: saved.gender, panel });
+      // 4. a real new game on an iPad held upright, the story left to run: the page comes up and stays up, and The Voice
+      // waits (no talk box over the cards, the story still at its start) for 5 s. A talk box forced up over the page takes
+      // its own tap (the card under it is not chosen). Tapping Girl makes a girl knight, saves it and closes the page, and
+      // then "You're finally awake." plays from its start.
+      { const restore = panelSizeSaver(), t0 = window.__forceTouch; let r = {};
+        try {
+          panelSetSize(768, 1024); window.__forceTouch = true;
+          save(); localStorage.removeItem(SK(3)); localStorage.removeItem(AK(3));
+          title.open(); title.startSlot(3);
+          let open = 0, talk = 0, box = 0;
+          for (let i = 0; i < 300; i++) { F.step([]); if (i % 10 === 9) { render(); if (panel === 'boygirl' && dialogRect) box++; } if (panel === 'boygirl') open++; if (dialog.cur) talk++; }
+          r.wait = { open, talk, box, stage: quest.stage };
+          render();
+          const cards = ['choose:boy', 'choose:girl'].map(l => buttons.find(b => b.label === l)).filter(Boolean);
+          r.big = cards.length === 2 && cards.every(b => b.w >= 44 && b.h >= 44);
+          // a talk box over the page: the tap goes to it where it covers a card
+          dialog.cur = { who: 'The Voice', text: "You're finally awake.", t: 0 }; dialog.shown = dialog.cur.text.length; dialog.t = 0; render();
+          const D = dialogRect && { ...dialogRect }, B = cards[0];
+          let tx = D ? D.x + D.w / 2 : -1, ty = D ? D.y + D.h / 2 : -1, overCard = false;
+          if (D && B) { const x0 = Math.max(D.x, B.x), x1 = Math.min(D.x + D.w, B.x + B.w), y0 = Math.max(D.y, B.y), y1 = Math.min(D.y + D.h, B.y + B.h); if (x1 > x0 && y1 > y0) { tx = (x0 + x1) / 2; ty = (y0 + y1) / 2; overCard = true; } }
+          if (D) { pointerDown(tx, ty, 'boygirl-test'); pointerUp('boygirl-test', tx, ty); }
+          r.forced = { box: !!D, overCard, gender: player.gender || null, panel, line: dialog.cur ? dialog.cur.text : null };
+          dialog.cur = null; render();
+          r.tapped = F.clickButton('choose:girl');
+          r.saved = (JSON.parse(lsGet(SK(3)) || '{}').player || {}).gender || null;
+          r.after = { gender: player.gender, panel, look: playerLook().girl === true };
+          let n = 0; for (; n < 240 && !dialog.cur; n++) F.step([]);
+          r.voice = { frames: n, line: dialog.cur ? dialog.cur.text : null, t: dialog.cur ? +dialog.t.toFixed(3) : null, stage: quest.stage };
+        } finally { window.__forceTouch = t0; restore(); }
+        const W = r.wait || {}, Fd = r.forced || {}, A = r.after || {}, V = r.voice || {};
+        check(P + 'a real new game (iPad upright, the story left to run): the page stays up 5 s with no talk box over it and the story waits at its start', W.open === 300 && W.talk === 0 && W.box === 0 && W.stage === 0 && r.big, r.wait);
+        check(P + 'a talk box drawn over the page takes the tap where it covers the Boy card: no knight is chosen and the page stays up', Fd.box && Fd.gender === null && Fd.panel === 'boygirl' && Fd.line === null, r.forced);
+        check(P + 'tapping Girl makes a girl knight, saves it and closes the page; then "You\'re finally awake." plays from its start, 1.4 s later', r.tapped && A.gender === 'girl' && r.saved === 'girl' && A.panel === null && A.look && V.line === "You're finally awake." && V.t < 0.05 && V.frames >= 80 && V.stage === 1, { tapped: r.tapped, saved: r.saved, after: r.after, voice: r.voice });
+        dialog.cur = null; dialog.queue.length = 0;
         // the choice is kept: loading it again asks nothing
         title.open(); title.startSlot(3); F.step([]); F.step([]);
         check(P + 'a knight who has chosen is not asked again when the slot is loaded', panel !== 'boygirl' && player.gender === 'girl', { panel, gender: player.gender }); }
-      // 5. an old save with no choice: asked once on this load; closed, it stays closed (and the knight looks like a boy)
+      // 5. an old save with no choice: asked once on this load, after the line that was playing; a line said while the
+      // page is up waits and plays from its start when it closes; closed, the page stays closed (and the knight is a boy)
       { const d = JSON.parse(lsGet(SK(3))); delete d.player.gender; lsSet(SK(3), JSON.stringify(d));
-        title.open(); title.startSlot(3); dialog.cur = null; dialog.queue.length = 0; untilAsked();
-        const asked = panel === 'boygirl'; closePanel(); F.sim(30, []);
-        check(P + 'an existing knight who never chose is asked once on the next load; closing the page keeps the boy look and it does not pop back up', asked && panel === null && !player.gender && !playerLook().girl, { asked, panel, gender: player.gender }); }
+        title.open(); title.startSlot(3); dialog.cur = null; dialog.queue.length = 0;
+        say('A line that was playing when the knight came in.', 'The Voice');
+        for (let i = 0; i < 30; i++) F.step([]);
+        const waitedTalk = panel !== 'boygirl' && !!dialog.cur;
+        advanceDialog(); untilAsked();
+        const asked = panel === 'boygirl';
+        say('A line said while the page is up.', 'The Voice');
+        for (let i = 0; i < 60; i++) F.step([]);
+        const held = panel === 'boygirl' && !dialog.cur && dialog.queue.length === 1;
+        closePanel(); F.step([]);
+        const played = !!dialog.cur && dialog.cur.text === 'A line said while the page is up.' && dialog.t < 0.05;
+        dialog.cur = null; dialog.queue.length = 0; F.sim(30, []);
+        check(P + 'an existing knight who never chose is asked once on the next load, after the line that was playing; a line said while the page is up waits and then plays from its start; closing the page keeps the boy look and it does not pop back up', waitedTalk && asked && held && played && panel === null && !player.gender && !playerLook().girl, { waitedTalk, asked, held, played, panel, gender: player.gender }); }
       // 6. the pause menu's New game in the same visit asks again
       { newGame(); untilAsked(); const asked = panel === 'boygirl'; render(); F.clickButton('choose:boy');
         check(P + 'the pause menu\'s New game asks too; tapping Boy makes a boy knight', asked && player.gender === 'boy' && panel === null && !playerLook().girl, { asked, gender: player.gender, panel }); }
@@ -310,6 +372,7 @@ const BOYGIRL = (() => {
       pending = false; closePanel();
       if (g0 === undefined) delete player.gender; else player.gender = g0;
       dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq);
+      dialogLog.length = 0; dialogLog.push(...log0);
     }
   });
 
