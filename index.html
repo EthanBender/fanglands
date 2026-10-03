@@ -9514,7 +9514,8 @@ PEOPLE_UI.auditPrompt = function (p) {
     g.save(); g.translate(-14, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0 }, { tunic: '#3f4f3a', hair: '#d9d0c0', beard: true, helm: '#7a3b2e', shoulder: '#2f3a2c' }); g.restore();
     g.strokeStyle = '#8a6a3a'; g.lineWidth = 3; g.beginPath(); g.moveTo(-10, -6); g.lineTo(-30 - Math.sin(time * 3) * 6, 18); g.stroke();
     // the knight, sitting in the bow
-    g.save(); g.translate(20, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0 }, playerLook()); g.restore();
+    // seated: the knight (82-knightgear) sits in the bow, no legs
+    g.save(); g.translate(20, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0, seated: true }, playerLook()); g.restore();
     g.restore();
   }
   function drawBoatProp(g, tx, ty, L) { // moored at a dock: seen from above, bobbing
@@ -28182,11 +28183,14 @@ HOOKS.selfTest.push((check, F, h) => {
   function drawKnight(g, x, y, w, h) {
     PLACE_KIT.card(g, x, y, w, h);
     g.save(); g.beginPath(); g.rect(x + 3, y + 3, w - 6, h - 6); g.clip();
-    g.translate(x + w / 2, y + h * 0.64);
-    const s = Math.min(w / 34, h / 44);
-    g.scale(s, s);
+    const look = playerLook();
+    // the knight in his gear (82-knightgear) stands taller than the old one (an upright spear, a party hat): fit what he
+    // wears in the card, the same size as before at most
+    const f = window.KNIGHTGEAR && look.gear ? KNIGHTGEAR.fit(look, w - 10, h - 10, 18, Math.min(w / 34, h / 44)) : null;
+    if (f) { g.translate(x + 5 + f.x, y + 5 + f.y); g.scale(f.s, f.s); }
+    else { g.translate(x + w / 2, y + h * 0.64); const s = Math.min(w / 34, h / 44); g.scale(s, s); }
     g.fillStyle = 'rgba(0,0,0,0.30)'; g.beginPath(); g.ellipse(0, 13, 12, 5, 0, 0, 7); g.fill();
-    drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, playerLook());
+    drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, look);
     g.restore();
   }
   const gearLines = () => ['Strength +' + gearBonus('str'), 'Accuracy +' + gearBonus('att'), 'Defence +' + gearBonus('def')];
@@ -40525,7 +40529,9 @@ const BOYGIRL = (() => {
   // the card on a phone), so the hair, the bow and the braid show plainly. Only its own three controls are on the
   // screen: the two cards and "Decide later".
   const BASE = { tunic: '#3b6fb6', hair: '#5a3a1e', shoulder: '#9aa3b2', fists: true };
-  const cardLook = gnd => { const l = Object.assign({}, BASE); return gnd === 'girl' ? dress(l) : l; };
+  // With 82-knightgear the card's knights are knight looks (an empty gear: no armour, nothing in the hands), so they are
+  // drawn in the new style like every other knight in the game
+  const cardLook = gnd => { const l = Object.assign({}, BASE); if (window.KNIGHTGEAR) l.gear = {}; return gnd === 'girl' ? dress(l) : l; };
   let askRect = null;   // where the card was last drawn (the self-test reads it)
   function drawAsk(g) {
     const F = title.frame(), T = HK.T, t = F.t, R = HK.row();
@@ -40551,10 +40557,15 @@ const BOYGIRL = (() => {
       const label = 'choose:' + gnd, st = HK.stateOf(label), dy = st.pressed ? 1.5 : 0;
       HK.vellumPlate(g, cx, cy + dy, cardW, cardH, { edge: st.hover || st.pressed ? 'rgba(247,220,143,0.95)' : null });
       // the knight, big and facing out of the card, on a soft shadow
-      const s = clamp(Math.min(cardW / 46, artH / 44), 1.4, 3.4), fx = cx + cardW / 2, fy = cy + 8 + artH * 0.56 + dy;
+      const look = cardLook(gnd);
+      // a knight look (82-knightgear) is fitted to what it draws in the art box (the new knight's hair and outline
+      // reach further than the old one's)
+      const kf = window.KNIGHTGEAR && look.gear ? KNIGHTGEAR.fit(look, cardW - 12, artH - 2, 17, 3.4) : null;
+      const s = kf ? kf.s : clamp(Math.min(cardW / 46, artH / 44), 1.4, 3.4);
+      const fx = kf ? cx + 6 + kf.x : cx + cardW / 2, fy = (kf ? cy + 6 + kf.y : cy + 8 + artH * 0.56) + dy;
       g.save(); g.translate(fx, fy); g.scale(s, s);
       g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 12, 12, 5, 0, 0, 7); g.fill();
-      drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, cardLook(gnd));
+      drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, look);
       g.restore();
       // the word on an iron plate along the card's foot (drawn only: the whole card is the tap)
       HK.plateButton(g, { x: cx + 10, y: cy + cardH - R - 10 + dy, w: cardW - 20, h: R }, null, word, 'primary', { cinzel: true, hover: st.hover });
@@ -44900,7 +44911,8 @@ const KNIGHTGEAR = (() => {
       g.beginPath(); g.arc(0, hy - 0.6, r + 0.3, Math.PI * 1.02, Math.PI * 1.98); g.quadraticCurveTo(4, hy - 4, 0, hy - 3.2); g.quadraticCurveTo(-4, hy - 4.6, -r, hy - 1); g.closePath(); g.fill();
       g.beginPath(); g.moveTo(-1, hy - r); g.quadraticCurveTo(1, hy - r - 3, 2.6, hy - r - 1.6); g.quadraticCurveTo(1, hy - r - 0.6, 0.6, hy - r + 0.6); g.fill();
     };
-    const face = () => { ell(g, 0, hy, r, r); g.fillStyle = SKIN; g.fill(); outline(g, 0.8); };
+    // facing away, the head under an open helm (bronze, iron, goggles) is the back of his head: hair, not a face
+    const face = () => { ell(g, 0, hy, r, r); g.fillStyle = back ? HAIR : SKIN; g.fill(); outline(g, 0.8); };
     const helmBall = (fill) => { ell(g, 0, hy, r + 0.6, r + 0.6); g.fillStyle = fill || metalFill(g, c, hy - r, hy + r); g.fill(); outline(g, 0.9); };
     const slit = (col) => { if (back) return; const ox = fxm * 1.6, oy = fy * 1.2; rr(g, -5.2 + ox, hy - 0.2 + oy, 10.4, 1.5, 0.75); g.fillStyle = '#121418'; g.fill(); g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(-4.6 + ox, hy - 0.6 + oy, 9.2, 0.4); if (col) { g.fillStyle = col; ell(g, -2.4 + ox, hy + 0.5 + oy, 0.9, 0.55); g.fill(); ell(g, 2.4 + ox, hy + 0.5 + oy, 0.9, 0.55); g.fill(); } };
     const ridge = (col) => { g.strokeStyle = col || shade(c, 0.6); g.lineWidth = 0.9; g.beginPath(); g.moveTo(0, hy - r - 0.4); g.lineTo(0, hy - 2.4); g.stroke(); };
@@ -45454,7 +45466,8 @@ const KNIGHTGEAR = (() => {
   }
 
   // the one way in: a knight look (one with gear) on entity e, at (0, 0) = his feet's centre, as drawHuman is
-  // opts: { seated, cache, t }. cache is for 73's world-scale remote knights only (and only onto the world canvas).
+  // opts: { seated, cache, t }; e.seated works too (the boat). cache is for 73's world-scale remote knights only (and only
+  // onto the world canvas).
   function draw(g, e, look, opts) {
     opts = opts || {};
     e = e || {};
@@ -45466,10 +45479,50 @@ const KNIGHTGEAR = (() => {
     T = typeof opts.t === 'number' ? opts.t : time;
     setColours(e, look);
     try {
-      const seated = !!opts.seated || KG.seat > 0;
+      const seated = !!opts.seated || KG.seat > 0 || !!e.seated;
       if (opts.cache && !seated && g === ctx && !(e.attackT > 0) && drawCached(g, e, look, P)) return;
       drawLive(g, e, look, P, seated);
     } finally { T = T0; }
+  }
+
+  // ---------- how much room the knight takes (for the panels that show him big: the bank, the choice cards) ----------
+  // The new knight stands taller than the old one (an upright spear reaches about -39 px over his feet, a party hat -34),
+  // so a panel fits the box round what he really wears: he is drawn once, facing down, into a context that only keeps
+  // the outermost point of every path (through every translate, scale and rotate). Kept per look (gear, girl, held).
+  const EXT = new Map();
+  function extent(look) {
+    look = look || {};
+    const P = partsOf(look), key = gearKey(P) + '|' + (look.girl ? 'g' : '') + '|' + (look.tool || '') + (look.rod ? 'r' : '') + (look.weapon ? 'w' : '');
+    let x = EXT.get(key);
+    if (x) return x;
+    const b = { l: 0, t: 0, r: 0, b: 0 };
+    let m = [1, 0, 0, 1, 0, 0];
+    const stack = [];
+    const pt = (px, py) => { const X = m[0] * px + m[2] * py + m[4], Y = m[1] * px + m[3] * py + m[5]; if (X < b.l) b.l = X; if (X > b.r) b.r = X; if (Y < b.t) b.t = Y; if (Y > b.b) b.b = Y; };
+    const box = (x0, y0, w, h) => { pt(x0, y0); pt(x0 + w, y0); pt(x0, y0 + h); pt(x0 + w, y0 + h); };
+    const mul = (a, c, d, e, f, h) => { const [A, B, C, D, E, F] = m; m = [A * a + C * c, B * a + D * c, A * d + C * e, B * d + D * e, A * f + C * h + E, B * f + D * h + F]; };
+    const fns = {
+      save: () => stack.push(m.slice()), restore: () => { if (stack.length) m = stack.pop(); },
+      translate: (tx, ty) => mul(1, 0, 0, 1, tx, ty), scale: (sx, sy) => mul(sx, 0, 0, sy, 0, 0),
+      rotate: a => { const c = Math.cos(a), s2 = Math.sin(a); mul(c, s2, -s2, c, 0, 0); },
+      moveTo: pt, lineTo: pt, quadraticCurveTo: (a, b2, c, d) => { pt(a, b2); pt(c, d); }, bezierCurveTo: (a, b2, c, d, e, f) => { pt(a, b2); pt(c, d); pt(e, f); },
+      arcTo: (a, b2, c, d) => { pt(a, b2); pt(c, d); }, arc: (cx, cy, r) => box(cx - r, cy - r, 2 * r, 2 * r),
+      ellipse: (cx, cy, rx, ry) => { const r = Math.max(rx, ry); box(cx - r, cy - r, 2 * r, 2 * r); }, rect: box, fillRect: box,
+      createLinearGradient: () => ({ addColorStop: () => { } }), createRadialGradient: () => ({ addColorStop: () => { } }),
+    };
+    const tg = new Proxy({}, { get: (o, k) => fns[k] || (k in o ? o[k] : () => { }), set: (o, k, v) => { o[k] = v; return true; } });
+    try { draw(tg, { facing: { x: 0, y: 1 }, moving: false, walkT: 0, attackT: 0, hurtT: 0 }, look, { t: 0 }); } catch (e) { return { l: -20, t: -24, r: 20, b: 17 }; }
+    x = { l: b.l, t: b.t, r: b.r, b: b.b };
+    if (EXT.size > 60) EXT.clear();
+    EXT.set(key, x);
+    return x;
+  }
+  // the scale and the offset that fit the knight (and a shadow reaching `foot` below his feet) in a w x h box, at most maxS
+  function fit(look, w, h, foot, maxS) {
+    const x = extent(look), t = x.t, bot = Math.max(x.b, foot || 0), l = Math.min(x.l, -12), r = Math.max(x.r, 12);
+    const s = Math.min(maxS || 99, w / (r - l), h / (bot - t));
+    // centred on the box; his feet's centre is where the caller translates to
+    return { s, x: w / 2 - (l + r) / 2 * s, y: (h - (bot - t) * s) / 2 - t * s };
   }
 
   // ---------- the wraps ----------
@@ -45707,7 +45760,7 @@ const KNIGHTGEAR = (() => {
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 
-  return { draw, partsOf, gearKey, cleanGear, poseOf: e => POSE.get(e), STATS, PICS, WPICS, KG, SLOTS, REST_HAND, SHOULDER, REACH };
+  return { draw, partsOf, gearKey, cleanGear, extent, fit, poseOf: e => POSE.get(e), STATS, PICS, WPICS, KG, SLOTS, REST_HAND, SHOULDER, REACH };
 })();
 window.KNIGHTGEAR = KNIGHTGEAR;
 

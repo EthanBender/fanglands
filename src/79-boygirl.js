@@ -175,7 +175,9 @@ const BOYGIRL = (() => {
   // the card on a phone), so the hair, the bow and the braid show plainly. Only its own three controls are on the
   // screen: the two cards and "Decide later".
   const BASE = { tunic: '#3b6fb6', hair: '#5a3a1e', shoulder: '#9aa3b2', fists: true };
-  const cardLook = gnd => { const l = Object.assign({}, BASE); return gnd === 'girl' ? dress(l) : l; };
+  // With 82-knightgear the card's knights are knight looks (an empty gear: no armour, nothing in the hands), so they are
+  // drawn in the new style like every other knight in the game
+  const cardLook = gnd => { const l = Object.assign({}, BASE); if (window.KNIGHTGEAR) l.gear = {}; return gnd === 'girl' ? dress(l) : l; };
   let askRect = null;   // where the card was last drawn (the self-test reads it)
   function drawAsk(g) {
     const F = title.frame(), T = HK.T, t = F.t, R = HK.row();
@@ -201,10 +203,15 @@ const BOYGIRL = (() => {
       const label = 'choose:' + gnd, st = HK.stateOf(label), dy = st.pressed ? 1.5 : 0;
       HK.vellumPlate(g, cx, cy + dy, cardW, cardH, { edge: st.hover || st.pressed ? 'rgba(247,220,143,0.95)' : null });
       // the knight, big and facing out of the card, on a soft shadow
-      const s = clamp(Math.min(cardW / 46, artH / 44), 1.4, 3.4), fx = cx + cardW / 2, fy = cy + 8 + artH * 0.56 + dy;
+      const look = cardLook(gnd);
+      // a knight look (82-knightgear) is fitted to what it draws in the art box (the new knight's hair and outline
+      // reach further than the old one's)
+      const kf = window.KNIGHTGEAR && look.gear ? KNIGHTGEAR.fit(look, cardW - 12, artH - 2, 17, 3.4) : null;
+      const s = kf ? kf.s : clamp(Math.min(cardW / 46, artH / 44), 1.4, 3.4);
+      const fx = kf ? cx + 6 + kf.x : cx + cardW / 2, fy = (kf ? cy + 6 + kf.y : cy + 8 + artH * 0.56) + dy;
       g.save(); g.translate(fx, fy); g.scale(s, s);
       g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 12, 12, 5, 0, 0, 7); g.fill();
-      drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, cardLook(gnd));
+      drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, look);
       g.restore();
       // the word on an iron plate along the card's foot (drawn only: the whole card is the tap)
       HK.plateButton(g, { x: cx + 10, y: cy + cardH - R - 10 + dy, w: cardW - 20, h: R }, null, word, 'primary', { cinzel: true, hover: st.hover });

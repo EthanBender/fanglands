@@ -466,7 +466,8 @@ const KNIGHTGEAR = (() => {
       g.beginPath(); g.arc(0, hy - 0.6, r + 0.3, Math.PI * 1.02, Math.PI * 1.98); g.quadraticCurveTo(4, hy - 4, 0, hy - 3.2); g.quadraticCurveTo(-4, hy - 4.6, -r, hy - 1); g.closePath(); g.fill();
       g.beginPath(); g.moveTo(-1, hy - r); g.quadraticCurveTo(1, hy - r - 3, 2.6, hy - r - 1.6); g.quadraticCurveTo(1, hy - r - 0.6, 0.6, hy - r + 0.6); g.fill();
     };
-    const face = () => { ell(g, 0, hy, r, r); g.fillStyle = SKIN; g.fill(); outline(g, 0.8); };
+    // facing away, the head under an open helm (bronze, iron, goggles) is the back of his head: hair, not a face
+    const face = () => { ell(g, 0, hy, r, r); g.fillStyle = back ? HAIR : SKIN; g.fill(); outline(g, 0.8); };
     const helmBall = (fill) => { ell(g, 0, hy, r + 0.6, r + 0.6); g.fillStyle = fill || metalFill(g, c, hy - r, hy + r); g.fill(); outline(g, 0.9); };
     const slit = (col) => { if (back) return; const ox = fxm * 1.6, oy = fy * 1.2; rr(g, -5.2 + ox, hy - 0.2 + oy, 10.4, 1.5, 0.75); g.fillStyle = '#121418'; g.fill(); g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(-4.6 + ox, hy - 0.6 + oy, 9.2, 0.4); if (col) { g.fillStyle = col; ell(g, -2.4 + ox, hy + 0.5 + oy, 0.9, 0.55); g.fill(); ell(g, 2.4 + ox, hy + 0.5 + oy, 0.9, 0.55); g.fill(); } };
     const ridge = (col) => { g.strokeStyle = col || shade(c, 0.6); g.lineWidth = 0.9; g.beginPath(); g.moveTo(0, hy - r - 0.4); g.lineTo(0, hy - 2.4); g.stroke(); };
@@ -1020,7 +1021,8 @@ const KNIGHTGEAR = (() => {
   }
 
   // the one way in: a knight look (one with gear) on entity e, at (0, 0) = his feet's centre, as drawHuman is
-  // opts: { seated, cache, t }. cache is for 73's world-scale remote knights only (and only onto the world canvas).
+  // opts: { seated, cache, t }; e.seated works too (the boat). cache is for 73's world-scale remote knights only (and only
+  // onto the world canvas).
   function draw(g, e, look, opts) {
     opts = opts || {};
     e = e || {};
@@ -1032,10 +1034,50 @@ const KNIGHTGEAR = (() => {
     T = typeof opts.t === 'number' ? opts.t : time;
     setColours(e, look);
     try {
-      const seated = !!opts.seated || KG.seat > 0;
+      const seated = !!opts.seated || KG.seat > 0 || !!e.seated;
       if (opts.cache && !seated && g === ctx && !(e.attackT > 0) && drawCached(g, e, look, P)) return;
       drawLive(g, e, look, P, seated);
     } finally { T = T0; }
+  }
+
+  // ---------- how much room the knight takes (for the panels that show him big: the bank, the choice cards) ----------
+  // The new knight stands taller than the old one (an upright spear reaches about -39 px over his feet, a party hat -34),
+  // so a panel fits the box round what he really wears: he is drawn once, facing down, into a context that only keeps
+  // the outermost point of every path (through every translate, scale and rotate). Kept per look (gear, girl, held).
+  const EXT = new Map();
+  function extent(look) {
+    look = look || {};
+    const P = partsOf(look), key = gearKey(P) + '|' + (look.girl ? 'g' : '') + '|' + (look.tool || '') + (look.rod ? 'r' : '') + (look.weapon ? 'w' : '');
+    let x = EXT.get(key);
+    if (x) return x;
+    const b = { l: 0, t: 0, r: 0, b: 0 };
+    let m = [1, 0, 0, 1, 0, 0];
+    const stack = [];
+    const pt = (px, py) => { const X = m[0] * px + m[2] * py + m[4], Y = m[1] * px + m[3] * py + m[5]; if (X < b.l) b.l = X; if (X > b.r) b.r = X; if (Y < b.t) b.t = Y; if (Y > b.b) b.b = Y; };
+    const box = (x0, y0, w, h) => { pt(x0, y0); pt(x0 + w, y0); pt(x0, y0 + h); pt(x0 + w, y0 + h); };
+    const mul = (a, c, d, e, f, h) => { const [A, B, C, D, E, F] = m; m = [A * a + C * c, B * a + D * c, A * d + C * e, B * d + D * e, A * f + C * h + E, B * f + D * h + F]; };
+    const fns = {
+      save: () => stack.push(m.slice()), restore: () => { if (stack.length) m = stack.pop(); },
+      translate: (tx, ty) => mul(1, 0, 0, 1, tx, ty), scale: (sx, sy) => mul(sx, 0, 0, sy, 0, 0),
+      rotate: a => { const c = Math.cos(a), s2 = Math.sin(a); mul(c, s2, -s2, c, 0, 0); },
+      moveTo: pt, lineTo: pt, quadraticCurveTo: (a, b2, c, d) => { pt(a, b2); pt(c, d); }, bezierCurveTo: (a, b2, c, d, e, f) => { pt(a, b2); pt(c, d); pt(e, f); },
+      arcTo: (a, b2, c, d) => { pt(a, b2); pt(c, d); }, arc: (cx, cy, r) => box(cx - r, cy - r, 2 * r, 2 * r),
+      ellipse: (cx, cy, rx, ry) => { const r = Math.max(rx, ry); box(cx - r, cy - r, 2 * r, 2 * r); }, rect: box, fillRect: box,
+      createLinearGradient: () => ({ addColorStop: () => { } }), createRadialGradient: () => ({ addColorStop: () => { } }),
+    };
+    const tg = new Proxy({}, { get: (o, k) => fns[k] || (k in o ? o[k] : () => { }), set: (o, k, v) => { o[k] = v; return true; } });
+    try { draw(tg, { facing: { x: 0, y: 1 }, moving: false, walkT: 0, attackT: 0, hurtT: 0 }, look, { t: 0 }); } catch (e) { return { l: -20, t: -24, r: 20, b: 17 }; }
+    x = { l: b.l, t: b.t, r: b.r, b: b.b };
+    if (EXT.size > 60) EXT.clear();
+    EXT.set(key, x);
+    return x;
+  }
+  // the scale and the offset that fit the knight (and a shadow reaching `foot` below his feet) in a w x h box, at most maxS
+  function fit(look, w, h, foot, maxS) {
+    const x = extent(look), t = x.t, bot = Math.max(x.b, foot || 0), l = Math.min(x.l, -12), r = Math.max(x.r, 12);
+    const s = Math.min(maxS || 99, w / (r - l), h / (bot - t));
+    // centred on the box; his feet's centre is where the caller translates to
+    return { s, x: w / 2 - (l + r) / 2 * s, y: (h - (bot - t) * s) / 2 - t * s };
   }
 
   // ---------- the wraps ----------
@@ -1273,6 +1315,6 @@ const KNIGHTGEAR = (() => {
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 
-  return { draw, partsOf, gearKey, cleanGear, poseOf: e => POSE.get(e), STATS, PICS, WPICS, KG, SLOTS, REST_HAND, SHOULDER, REACH };
+  return { draw, partsOf, gearKey, cleanGear, extent, fit, poseOf: e => POSE.get(e), STATS, PICS, WPICS, KG, SLOTS, REST_HAND, SHOULDER, REACH };
 })();
 window.KNIGHTGEAR = KNIGHTGEAR;
