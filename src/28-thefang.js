@@ -608,6 +608,9 @@
   // the Echo is drawn a little see-through, for a knight who knows the real one is dead
   { const draw0 = HOOKS.drawMonster.the_fang;
     HOOKS.drawMonster.the_fang = (g, e, hurt) => { if (!FQ().slain) return draw0(g, e, hurt); g.save(); g.globalAlpha = 0.75; try { draw0(g, e, hurt); } finally { g.restore(); } }; }
+  // and its name: the tag over its head (09-render) and the long-press name (17-tap) read m.tag before the type's name,
+  // so a knight who slew the dragon reads 'Echo of the Fang', as the boss banner does
+  HOOKS.update.push(() => { const m = fang(); if (m) m.tag = FQ().slain ? 'Echo of the Fang' : undefined; });
   // the progression audit (42-playthrough reads HOOKS.xpSource): the Echo, once a day of the knight's clock
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => { const D = MONSTER_DEFS.the_fang; add('melee', 'Echo of the Fang (one per 600 s)', 80, D.hp * 4 + D.level * 10, ECHO_REST, '28-thefang: the horn on the circle'); });
 
@@ -723,6 +726,12 @@
         check(P + 'after the slaying, the horn on the circle (18,117) raises the Echo at home with 900 hp and the banner THE ECHO RISES; fq.echoUp saved',
           !m.dead && m.hp === 900 && m.awake && dist(m.x, m.y, m.home.x, m.home.y) < 2 * TILE && bannerAhead('THE ECHO RISES') && q.echoUp === true && saved && said(/lava remembers its shape/),
           { dead: m.dead, hp: m.hp, awake: m.awake, banner: levelBanner && levelBanner.text, echoUp: q.echoUp, saved }); }
+      // F2b: its name over its head and on a long press is the Echo's, never the dead dragon's (09-render and 17-tap
+      // both read m.tag before the type's name)
+      { F.sim(1, []);
+        const tap = typeof tapLabelFor === 'function' ? tapLabelFor({ kind: 'monster', monster: m }) : null;
+        check(P + "the Echo's name tag over its head and its long-press name read 'Echo of the Fang · lv 80', never 'The Fang · lv 80'",
+          m.tag === 'Echo of the Fang' && tap === 'Echo of the Fang · lv 80', { tag: m.tag, tap }); }
       // F3: the Echo's purse, and nothing of the story
       { const q = FQ(); const fang0 = held('fang_of_the_fang'), looted0 = JSON.stringify(q.looted), chest0 = q.chest, echoes0 = q.echoes, st0 = quest.stage;
         drops = drops.filter(d => !['coins', 'dragon_scale', 'mithril_bar'].includes(d.id)); clearBanners(); credits = null;
