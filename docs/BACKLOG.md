@@ -84,6 +84,44 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
 (28 scenarios each) and 86 server tests passed before each deploy.
 
 ## NEXT WEEK — improvements held back so the work could ship
+- Knight gear refit leftovers (reviewers' minor findings, 2026-10-03; the refit is live in 9c625b6):
+  - Facing away, open helms now show brown hair at the back of the head, where the approved sample shows a skin patch. The builder disclosed this. It reads better than the sample, but it is a visible change to the approved look.
+  - On the mare he is drawn standing, with his leg armour and boots showing on the saddle, instead of seated without legs like the walker, dozer and beast pilots.
+  - The 'hand at the waist' part of check 3 compares the hand with the REST_HAND constant itself, so it cannot catch a regression of the owner's decision 2.
+  - The added Mia2 assertion (7 hair fills plus the ribbon) also passes when the remote girl is drawn in the OLD style, so it does not prove what the report says it proves. The 73 gear check does cover the new style.
+  - The screenshots offered as proof predate commits 4b94661 (05:03: hair on the back of the head, the fit, the ferry) and 75c1a27 (05:13: the weapon baked into the crowd pictures). z-lineup-back.png still shows the bronze and iron knights facing away with a bare skin patch, which the notes say was f...
+  - In the pack and the bank, a party hat is still a paper crown with a mark per colour (dots, stripes, star, zigzag, diamond, checks). Worn, it is now a striped cone with a sparkle, the same cone in six colours. The owner approved the cone, but a ten-year-old sees a crown in the bag and a cone on hi...
+  - Under a full-face helm (godly, dragon, steel, stormstone), the Boy and Girl cards look almost the same. Only two small locks and a thin braid tell them apart, so the 'Boy or girl?' choice is hard to read in full armour.
+  - Friends never see each other swing (73 never sets attackT), so the new swing pose and swoosh never show online. A remote knight on a horse is drawn on foot. The builder flagged both as already there, but they limit owner decision 2 online.
+  - The hero statue on Thistledown's plinth (the player's own knight, in stone) is still drawn by the old drawHuman. The builder left it in the old style on purpose and flagged it.
+  - Some small drawing changes go beyond the approved sample. Each greave now has a metal mark (bronze rivets, an iron band, a steel ridge, a mithril curl, a sunstone dot). The bronze dagger has a wider blade, and the steel blade and hilt have rivets. Under an open helm facing away, the back of his h...
+  - A remote knight's name sits above his height at rest, facing down. A long weapon raised in a swing facing away, like the dragon spear, reaches into the 'R lv9' name for the moment of the swing.
+  - lookOf sends tool and toolColor but not toolSwing. So on a friend's screen, a knight mining obsidian or mithril, chopping jungle or working the royal mine holds his pick still in his floating hand. On your own screen it swings.
+  - No check guards the new mirrored crowd pictures, where facings to his left reuse the picture of facing right. If they break, every friend walking left online is drawn facing right, and the suite stays green. The code is correct today; the only evidence was a screenshot.
+  - The stone he holds while warming it in the royal mine still floats in front of him with no hand on it. That is against decision 1 (floating hands on what he holds). The builder says so and left it.
+  - The statue of the player's own knight at Thistledown is still built with no gear, so it is drawn in the old style while every other picture of his knight is in the new one. The owner asked for the new knight 'everywhere a knight is drawn'.
+  - Friends online do not see you raise your shield. That is the same as the base (47's old plain shield was only ever drawn locally), so it is not a regression, but decision 3's shield placement only ever shows on your own screen.
+  - The royal mine's warming stone floats at his feet with no hand under it, against Decision 1 (hands on what he holds). The builder knew and left it. The lobster pot's rope starts from his chest (player.facing*10, y-4), not from a hand, while he holds his sword at rest.
+  - A friend riding the mare online is drawn as a knight standing on foot, moving at horse speed with no horse. A friend in a dozer is drawn as a walker. The same is true in base, so nothing regressed, but 'the knight on the mare' does not hold for remote knights.
+  - Blocking while facing away with a small or round shield shows nothing. The raised shield is completely hidden behind his back, so you cannot tell he is blocking. Only the tall steel kite peeks out at one corner.
+  - On the boy-or-girl cards, in gear that hides the face and hair (necromancer hood and robe, godly helm), the girl card looks almost the same as the boy card. Facing down, her braid and ribbon hang on the weapon side, where the floating hand and the dagger cover them.
+  - A flake that is not on the known list and that this build hits. Whether the check passes depends on whether the day clock has passed 7 minutes when he lands on Ironclad Isle. If it has, the Voice's night line comes first and the check fails. The clock at that point drifts by more than 50 s from r...
+  - There is a test gap on owner decision 3 for every other knight online. Remote knights are drawn from pictures. Swapping the front or behind order inside the picture code fails no check. Check 4 only exercises the live path through a recorder. Today the cached drawing matches the live one (pixel c...
+  - Three changes have no check that fails without them:
+- the remote knight going through the picture cache at all;
+- the name tag lifted above tall gear;
+- the bank card fitting the taller knight.
+The crowd checks (9, 15) call KNIGHTGEAR.draw directly, not 73's draw hook.
+  - If heroLook stops carrying gear, C14b throws a TypeError inside a try that has no catch. The whole selfTest run aborts, and every other result is lost, instead of this one check reporting FAIL.
+  - The report says boy-girl "merges cleanly". That is no longer true. Both branches add a check called "10c" at the same place in src/79-boygirl.js, so merging knight-gear onto the current boy-girl conflicts. The conflict is trivial: I kept both blocks and renamed knight-gear's to 10d, and the combi...
+  - At f8d66b9 a bow's 3.4 px outline stroke can be clipped by a pixel at the edge of a remote knight's picture. The tracker records path points, not the half-width of the stroke. 468917d widens the margin to 2 px.
+  - This is latent: harmless today because presence carries no swing, so remote attackT is always 0. Once a remote knight is ever drawn mid-swing (non-rest), he needs a second set of body pictures, and 28 a knight is too few for that. A crowd that swings then remakes about 1.7 pictures every frame an...
+  - Two existing checks were re-pointed when KNIGHTGEAR is present, which the brief does not allow. Both were disclosed. The new conditions are equal or stronger, and the drawing they used to cover is now covered by 82's checks 6 and 13.
+  - The boats check "at combat level 8 Ironclad Isle costs 25 coins; first landing gets a Voice line" failed once in three suite runs on HEAD. It is not on the list of known flakes.
+  - On the stone statue, the bow that hangs at his side reaches below his feet and runs down over the front face of the plinth and its gold laurel. The gold laurel ring also sits across the middle of the party-hat cone.
+  - On the ferry, the seated knight's upright stave (and any long weapon) runs down past his seat and over the hull planks.
+  - Another knight online who is riding the mare is drawn standing, with no mare under him. This is the same on base, so it is not caused by this branch, but 'the knight on the mare' does not show for friends online.
+  - The worktree still has uncommitted edits to src/82-knightgear.js and tools/build-sim.mjs that the builder says are not his. Its index.html is built with them, so it is not the committed index.html.
 - Thistledown capital leftovers (reviewers' minor findings, 2026-10-03; the city is live):
   - On the first walk in, Osric's 'Welcome to Thistledown!' tag appears in the same moment as the THISTLEDOWN region banner and sits right under it. The two boxes touch, and the child gets two 'Thistledown' messages stacked in the middle of the screen.
   - At night Fountain Square is almost as bright as day. The 22 lamp pools of r 110, the fountain's r 90 and the pale paving wash out the night overlay. The lamps themselves show no visible glow around their heads. The town loses its night feel, even though Ambrose says 'get indoors or get your sword out'.
