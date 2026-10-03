@@ -1048,6 +1048,13 @@ sent (972 from the keeper, whose `mon` stream is most of it, 229 from the other)
 from the pages, among them 13 cloud saves and the 2 socket opens, plus the proof's own two reads), and the estimate read
 ceil(3,251 / 20) + 77 = 240 for the day so far.
 
+After the admin column (`meter-proof-2.js` beside it, same day, test world redeployed): the two games' 1,010 socket
+messages counted exactly; the 7 `/api/admin/*` calls (5 reads, one refused, the final read) landed in the admin column
+and the pages' 21 calls in the game's. One of three runs counted 2 game calls more than the pages made; the data does not
+show where they came from (the test world was open to other builders, and Probe Two was on it minutes before). The page
+itself, on a local `wrangler dev` (`admin-traffic.js`, iPad size): opening made 9 calls with one meter read, a minute in
+view 24, a minute hidden 0, 20 s shown again 12, and the admin column grew by exactly those calls plus the final read.
+
 ## Safety rules (binding)
 
 - Invite-only signups. Names and chat pass `online/src/filter.js`. Chat is logged with the name and time.
