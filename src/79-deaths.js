@@ -23,7 +23,7 @@
 // and its banner are matched to the body by the monster's nid (two NET listeners, one each side of 75-coop's), not by age.
 // What a kill lays on the ground waits for the body too: a grave marker (54-graves) and the Ginormous Golem's rubble heap
 // (91-royalmine) come up as the body fades (markerAlpha, remains), and the golem's banner, loot and words come after his
-// flash (payOut, from 91-royalmine's fall).
+// flash (payOut, from 91-royalmine's fall; a knight who leaves the mine before that is paid as he leaves, HOOKS.leaveInstance).
 // Setting: Screen shake (43-settings) off means no shake, no flash over the screen and no ground wave (64-impact
 // gates its own); the bodies still fall.
 // Cost: one symbol read per monster per tick; nothing at all while no corpse is up. Drawing a corpse is its sprite
@@ -149,7 +149,10 @@ const DEATHS = (() => {
   function hide(d, c) {
     if (!d || d[PIN] !== undefined) return;
     const wait = Math.max(0, popAt(c) - c.t);
-    d[PIN] = wait; d[PT] = wait > 0 ? undefined : 0; d[PFX] = c.x; d[PFY] = c.y; d[POWN] = c;
+    // not enumerable: a copy of the drop ({ ...d }, 16-instances carrying the floor out with the knight) is a plain drop
+    // that shows at once, never one hidden for good by a wait nobody counts down
+    const set = (k, v) => Object.defineProperty(d, k, { value: v, writable: true, configurable: true, enumerable: false });
+    set(PIN, wait); set(PT, wait > 0 ? undefined : 0); set(PFX, c.x); set(PFY, c.y); set(POWN, c);
     pending.push(d);
   }
 
@@ -570,6 +573,18 @@ const DEATHS = (() => {
           && !!side && (!side0 || side0.kind !== 'item') && sideLabel0 !== ITEMS[side.id].name && !!side08 && side08.kind === 'item' && side08.drop === side;
         check(P + 'nothing of a dead monster can be tapped: a tap or a long-press on the falling body does nothing, and loot still hidden cannot be tapped or named until it pops out',
           ok, { before: before && before.kind, after0, label0, walked, ring, kind0, after08: after08 && after08.kind, side0: side0 && side0.kind, sideLabel0, side08: side08 && side08.kind });
+      }
+      // (3a2) a drop still hidden under a body when the knight leaves an instance comes out with him (16-instances copies
+      // the floor onto the step): the copy is a plain drop that shows at once, never one hidden for good
+      if (typeof INSTANCES !== 'undefined' && INSTANCES.get && INSTANCES.get('spider_den')) {
+        const ow = new Set(drops), inDen = INSTANCES.enter('spider_den'); F.step([]);
+        const cow = mk('cow', 3 * TILE, 0); cow.hp = 0; const n0 = drops.length; killMonster(cow);
+        const fresh = drops.slice(n0), hid = fresh.length >= 1 && fresh.every(d => API.hidden(d));
+        INSTANCES.leave();
+        const carried = drops.filter(d => !ow.has(d)), plain = carried.map(d => ({ hidden: API.hidden(d), popping: API.popping(d), drawn: calls(g => drawDrop(g, d)).n }));
+        drops = drops.filter(d => ow.has(d));
+        check(P + 'loot still hidden under a body when the knight leaves a dungeon comes out with him as plain loot, drawn at once (never hidden for good)',
+          inDen && hid && carried.length === fresh.length && plain.every(o => !o.hidden && !o.popping && o.drawn > 0), { inDen, hid, made: fresh.length, carried: carried.length, plain });
       }
       // (3b) the start of a death is HOOKS.monsterDeath and nothing else (phase-1 spec rule 9): a monster that only reached 0 hp
       // plays nothing; killMonster fires the hook once, with { k, by, how, x, y }, and the body comes from it; a paid kill's
