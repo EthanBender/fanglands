@@ -44529,11 +44529,13 @@ window.DEATHS = DEATHS;
 // HOOKS.drawMonster.barrelbeast (a seat counter: a pilot is drawn without legs). title.KNIGHT gets the Iron knight's gear.
 //
 // SPEED. The knight is about 7x the old drawing's work, so other knights online (73-players, possibly 50 on one map)
-// are drawn from pictures: one per (gear, girl, hurt, 8 facings, step, animation phase, screen pixel ratio), holding
-// everything but the weapon, which has its own picture per (weapon, phase, ratio) and is turned to its angle. Both are
-// LRU maps; the body pictures' one is sized to the crowd (28 a knight, 300 to 1600, under 64 MB of pixels) and a facing
-// to his left shares the picture of its mirror to his right (WPIC_MAX for the weapons). Everything else (your own knight, the seats, the bank, the title, the choice cards) is
-// drawn live, so it is never soft at a panel's scale. Pictures are only made for the world canvas (`ctx`).
+// are drawn from pictures: one per (gear, girl, 8 facings, step, animation phase, screen pixel ratio). At rest the
+// weapon and its hand are in that picture (one blit a knight); while he swings or eases back the weapon has its own
+// picture per (weapon, phase, ratio), cut to the weapon's own size, turned to its angle. Both are LRU maps; the body
+// pictures' one is sized to the crowd (28 a knight, 300 to 1600, under 64 MB of pixels) and a facing to his left shares
+// the picture of its mirror to his right (WPIC_MAX for the weapons). A hurt knight (the red flash) and everything else
+// (your own knight, the seats, the bank, the title, the choice cards, the statue's sprite) is drawn live, so it is
+// never soft at a panel's scale. Pictures are only made for the world canvas (`ctx`).
 //
 // POSE. Where the weapon points and where the hand is ease from frame to frame. It lives in a WeakMap keyed by the
 // entity, never on it: the player object is saved whole into every save.
@@ -45521,7 +45523,6 @@ const KNIGHTGEAR = (() => {
     crowdHi = Math.max(crowdN, crowdHi - 0.05); crowdN = 0;
     picCap = clamp(Math.ceil(crowdHi) * PIC_EACH, PIC_MIN, PIC_TOP);
   }
-  const WP = { x0: -22, y0: -19, w: 68, h: 38 };          // css px round the hand, the weapon along +x (the spear tip at 41)
   const PICS = new Map(), WPICS = new Map();
   const picScale = () => Math.round(Math.max(1, Math.min(2, typeof DPR === 'number' && DPR > 0 ? DPR : 1)) * 100) / 100;
   // a Map is in the order things went in: touching an entry moves it to the end, so the front is the least lately used
@@ -45548,7 +45549,7 @@ const KNIGHTGEAR = (() => {
   }
   const animatedBody = P => (P.helm && (ANIMATED.has(P.helm.id) || P.helm.fam === 'party')) || (P.body && ANIMATED.has(P.body.id)) || (P.shield && ANIMATED.has(P.shield.id)) || (P.cape && ANIMATED.has(P.cape.id));
   const STEPS = 8, PHASES = 4, TWO_PI = Math.PI * 2;
-  // A picture is cut to what is drawn in it (the bounds of every path, plus a pixel), so a plain knight is a small one.
+  // A picture is cut to what is drawn in it (the bounds of every path, plus two pixels), so a plain knight is a small one.
   // At rest (no swing, not easing back from one, nothing else in the hand) the weapon and its hand are in the picture
   // too: one blit a knight. Otherwise the body is one picture and the weapon another, turned to its angle.
   function drawCached(g, e, look, P) {
@@ -45598,7 +45599,9 @@ const KNIGHTGEAR = (() => {
       let cv = null, bx = null;
       try {
         const tr = tracker(); measuring(() => paint(tr.g)); bx = tr.b;
-        const x0 = Math.floor(bx.l) - 1, y0 = Math.floor(bx.t) - 1, w = Math.ceil(bx.r) + 1 - x0, h = Math.ceil(bx.b) + 1 - y0;
+        // two pixels round what is drawn: the tracker keeps a path's points, and a stroke reaches half its width past them
+        // (the bow's outline is 3.4 px wide)
+        const x0 = Math.floor(bx.l) - 2, y0 = Math.floor(bx.t) - 2, w = Math.ceil(bx.r) + 2 - x0, h = Math.ceil(bx.b) + 2 - y0;
         cv = makeCanvas(w, h, ss);
         if (cv) { cv.cg.scale(ss, ss); cv.cg.translate(-x0, -y0); paint(cv.cg); p = { c: cv.c, x0, y0, w, h, ss }; }
       } catch (err) { p = null; }
@@ -45617,23 +45620,30 @@ const KNIGHTGEAR = (() => {
     return true;
   }
   function clearPics() { for (const o of PICS.values()) { try { o.c.width = 0; o.c.height = 0; } catch (e) { } } PICS.clear(); WPICS.clear(); picBytes = 0; }
-  // a weapon's picture, turned to its angle (while he swings or eases back); a bow being drawn is drawn live
+  // a weapon's picture, turned to its angle (while he swings or eases back); a bow being drawn is drawn live. The
+  // picture is cut to the weapon itself (its own bounds, measured once, plus two pixels): a turned picture costs for every
+  // pixel it covers, and most weapons are far smaller than a spear.
   function weaponPic(g, W, swing) {
     if (W.fam === 'bow' && swing >= 0) return false;
     const ss = picScale(), anim = WANIMATED.has(W.id), ph = anim ? Math.floor(time * 4) % PHASES : 0;
     const key = keyOf(W) + '|' + ph + '|' + ss;
     let p = lruGet(WPICS, key);
     if (!p) {
-      // made at 1.08x the screen ratio: the knight's own frame is scaled 1.08
-      const s2 = ss * 1.08, cv = makeCanvas(WP.w, WP.h, s2);
-      if (!cv) return false;
       const T0 = T; T = ph * 0.37 + 0.2;
-      try { cv.cg.scale(s2, s2); cv.cg.translate(-WP.x0, -WP.y0); drawWeapon(cv.cg, W, -1); }
-      catch (err) { T = T0; return false; }
+      try {
+        const tr = tracker(); measuring(() => drawWeapon(tr.g, W, -1)); const bx = tr.b;
+        // two pixels round it: the tracker keeps a path's points, and the bow's string is a 3.4 px wide stroke
+        const x0 = Math.floor(bx.l) - 2, y0 = Math.floor(bx.t) - 2, w = Math.ceil(bx.r) + 2 - x0, h = Math.ceil(bx.b) + 2 - y0;
+        // made at 1.08x the screen ratio: the knight's own frame is scaled 1.08
+        const s2 = ss * 1.08, cv = makeCanvas(w, h, s2);
+        if (!cv) { T = T0; return false; }
+        cv.cg.scale(s2, s2); cv.cg.translate(-x0, -y0); drawWeapon(cv.cg, W, -1);
+        p = { c: cv.c, x0, y0, w, h };
+      } catch (err) { T = T0; return false; }
       T = T0;
-      p = { c: cv.c }; lruPut(WPICS, key, p, WPIC_MAX, 0); STATS.wpics++;
+      lruPut(WPICS, key, p, WPIC_MAX, 0); STATS.wpics++;
     }
-    g.drawImage(p.c, WP.x0, WP.y0, WP.w, WP.h);
+    g.drawImage(p.c, p.x0, p.y0, p.w, p.h);
     return true;
   }
 
@@ -45663,28 +45673,42 @@ const KNIGHTGEAR = (() => {
   // The new knight stands taller than the old one (an upright spear reaches about -39 px over his feet, a party hat -34),
   // so a panel fits the box round what he really wears: he is drawn once, facing down, into a context that only keeps
   // the outermost point of every path (through every translate, scale and rotate). Kept per look (gear, girl, held).
-  // a context that draws nothing and keeps the outermost point of every path, through translate, scale and rotate
   // a measuring pass (into a tracker) is not a drawing: the counters the self-tests read are left as they were
   function measuring(fn) { const a = STATS.live, b = STATS.skirts, c = STATS.tinted; try { return fn(); } finally { STATS.live = a; STATS.skirts = b; STATS.tinted = c; } }
-  function tracker() {
-    const b = { l: 0, t: 0, r: 0, b: 0 };
-    let m = [1, 0, 0, 1, 0, 0];
-    const stack = [];
-    const pt = (px, py) => { const X = m[0] * px + m[2] * py + m[4], Y = m[1] * px + m[3] * py + m[5]; if (X < b.l) b.l = X; if (X > b.r) b.r = X; if (Y < b.t) b.t = Y; if (Y > b.b) b.b = Y; };
-    const box = (x0, y0, w, h) => { pt(x0, y0); pt(x0 + w, y0); pt(x0, y0 + h); pt(x0 + w, y0 + h); };
-    const mul = (a, c, d, e, f, h) => { const [A, B, C, D, E, F] = m; m = [A * a + C * c, B * a + D * c, A * d + C * e, B * d + D * e, A * f + C * h + E, B * f + D * h + F]; };
-    const fns = {
-      save: () => stack.push(m.slice()), restore: () => { if (stack.length) m = stack.pop(); },
-      translate: (tx, ty) => mul(1, 0, 0, 1, tx, ty), scale: (sx, sy) => mul(sx, 0, 0, sy, 0, 0),
-      rotate: a => { const c = Math.cos(a), s2 = Math.sin(a); mul(c, s2, -s2, c, 0, 0); },
-      moveTo: pt, lineTo: pt, quadraticCurveTo: (a, b2, c, d) => { pt(a, b2); pt(c, d); }, bezierCurveTo: (a, b2, c, d, e, f) => { pt(a, b2); pt(c, d); pt(e, f); },
-      arcTo: (a, b2, c, d) => { pt(a, b2); pt(c, d); }, arc: (cx, cy, r) => box(cx - r, cy - r, 2 * r, 2 * r),
-      ellipse: (cx, cy, rx, ry) => { const r = Math.max(rx, ry); box(cx - r, cy - r, 2 * r, 2 * r); }, rect: box, fillRect: box,
-      createLinearGradient: () => ({ addColorStop: () => { } }), createRadialGradient: () => ({ addColorStop: () => { } }),
-    };
-    const tg = new Proxy({}, { get: (o, k) => fns[k] || (k in o ? o[k] : () => { }), set: (o, k, v) => { o[k] = v; return true; } });
-    return { g: tg, b };
+  // a context that draws nothing and keeps the outermost point of every path, through translate, scale and rotate.
+  // It is a plain object, not a Proxy: every picture a crowd needs is measured through it first, and a Proxy's traps (a
+  // new function for every fill and stroke) are slow. Every other drawing call on a canvas is a no-op here (the rest of
+  // the CanvasRenderingContext2D API, and HEAD / HEADEND, marks a self-test writes); a colour or width set on it is kept.
+  const NOOP = () => { }, NOGRAD = { addColorStop: NOOP }, NOTEXT = { width: 10 };
+  const TRACK_NOOPS = ['beginPath', 'closePath', 'fill', 'stroke', 'clip', 'clearRect', 'strokeRect', 'fillText', 'strokeText', 'drawImage', 'setLineDash', 'putImageData', 'drawFocusIfNeeded', 'reset', 'roundRect', 'transform', 'setTransform', 'resetTransform', 'HEAD', 'HEADEND'];
+  class Tracker {
+    constructor() { this.b = { l: 0, t: 0, r: 0, b: 0 }; this.m = [1, 0, 0, 1, 0, 0]; this.st = []; }
+    pt(px, py) { const m = this.m, b = this.b, X = m[0] * px + m[2] * py + m[4], Y = m[1] * px + m[3] * py + m[5]; if (X < b.l) b.l = X; if (X > b.r) b.r = X; if (Y < b.t) b.t = Y; if (Y > b.b) b.b = Y; }
+    box(x0, y0, w, h) { this.pt(x0, y0); this.pt(x0 + w, y0); this.pt(x0, y0 + h); this.pt(x0 + w, y0 + h); }
+    mul(a, c, d, e, f, h) { const [A, B, C, D, E, F] = this.m; this.m = [A * a + C * c, B * a + D * c, A * d + C * e, B * d + D * e, A * f + C * h + E, B * f + D * h + F]; }
+    save() { this.st.push(this.m.slice()); }
+    restore() { if (this.st.length) this.m = this.st.pop(); }
+    translate(tx, ty) { this.mul(1, 0, 0, 1, tx, ty); }
+    scale(sx, sy) { this.mul(sx, 0, 0, sy, 0, 0); }
+    rotate(a) { const c = Math.cos(a), s2 = Math.sin(a); this.mul(c, s2, -s2, c, 0, 0); }
+    moveTo(x, y) { this.pt(x, y); }
+    lineTo(x, y) { this.pt(x, y); }
+    quadraticCurveTo(a, b2, c, d) { this.pt(a, b2); this.pt(c, d); }
+    bezierCurveTo(a, b2, c, d, e, f) { this.pt(a, b2); this.pt(c, d); this.pt(e, f); }
+    arcTo(a, b2, c, d) { this.pt(a, b2); this.pt(c, d); }
+    arc(cx, cy, r) { this.box(cx - r, cy - r, 2 * r, 2 * r); }
+    ellipse(cx, cy, rx, ry) { const r = Math.max(rx, ry); this.box(cx - r, cy - r, 2 * r, 2 * r); }
+    rect(x0, y0, w, h) { this.box(x0, y0, w, h); }
+    fillRect(x0, y0, w, h) { this.box(x0, y0, w, h); }
+    createLinearGradient() { return NOGRAD; }
+    createRadialGradient() { return NOGRAD; }
+    createConicGradient() { return NOGRAD; }
+    createPattern() { return null; }
+    measureText() { return NOTEXT; }
+    getTransform() { return undefined; }
   }
+  for (const k of TRACK_NOOPS) Tracker.prototype[k] = NOOP;
+  function tracker() { const tg = new Tracker(); return { g: tg, b: tg.b }; }
   const EXT = new Map();
   function extent(look) {
     look = look || {};
@@ -45971,6 +45995,45 @@ const KNIGHTGEAR = (() => {
         const boy = recorder(); draw(boy.g, ent(FACES[0]), lookWith({ helm: 'iron_helm' }, { hair: HAIR0 }), { t: 0.5 });
         check(P0 + 'a girl knight is drawn in the new style: under the iron helm her locks and braid (3+ hair fills) and the ribbon; bare-headed the bow too; facing away the braid down her back; a party hat shows her hair; a skirt, lashes; a boy under a helm shows no hair', style && n(helm) >= 3 && rib(helm) >= 3 && rib(bare) >= 6 && n(back) >= 4 && rib(back) >= 3 && n(party) >= 5 && skirt && lashes && n(boy) === 0, { style, helm: [n(helm), rib(helm)], bare: rib(bare), back: [n(back), rib(back)], party: n(party), skirt, lashes, boy: n(boy) }); }
 
+      // 6b. a girl walking up the screen (facing away) has no face: the old drawing drew her face and her braid from the
+      // chin down the front, so she looked bearded. Bare-headed and in every helm in the game, with and without a cape,
+      // standing and walking: no skin on her head, no eyes, brows, cheeks or lashes; the braid's ribbon knot is on her
+      // back (x 0, below her head) and drawn after her head. Facing us the same detectors do find her face (so they work).
+      { const HAIR0 = '#654321', SKIN0 = '#e8b791', helms = [null];
+        for (const id in ITEMS) if (slotOf(ITEMS[id]) === 'helm') helms.push(id);
+        const brow = shade(HAIR0, -0.2), cheek = 'rgba(232,108,120,0.5)';
+        const faceOf = rec => {
+          const o = rec.ops;
+          return {
+            skin: o.filter(x => x === '@fill ' + SKIN0).length,
+            eyes: o.filter(x => { const n = x.split(' '); return n[0] === 'ellipse' && n[3] === '1.1' && n[4] === '1.3'; }).length,
+            brows: o.filter(x => x === '#ss ' + brow).length,
+            cheeks: o.filter(x => x === '@fill ' + cheek).length,
+            lashes: o.filter(x => x === '#ss #222').length,
+          };
+        };
+        // the ribbon's knot: the r 0.9 circle filled in the ribbon's colour (the bow on a bare head is another, at y -17);
+        // where it is and when (op index). The head is marked by wrapping drawHead (the recorder writes down any call).
+        const knotOf = rec => { const o = rec.ops; for (let i = o.length - 1; i >= 2; i--) if (o[i] === '@fill ' + RIBBON && /^ellipse \S+ \S+ 0\.9 0\.9/.test(o[i - 2])) { const e = o[i - 2].split(' '); if (+e[2] > -14) return { x: +e[1], y: +e[2], i }; } return null; };
+        const headAt = rec => rec.ops.lastIndexOf('HEADEND ');
+        const _dh = drawHead;
+        const bad = []; let tried = 0, front = null;
+        drawHead = function (g, H, fxm, fy, back) { g.HEAD(); try { return _dh(g, H, fxm, fy, back); } finally { g.HEADEND(); } };
+        try {
+          for (const helm of helms) for (const cape of [null, 'cape_melee']) for (const moving of [false, true]) {
+            const look = lookWith({ helm, cape, body: 'iron_body' }, { girl: true, woman: true, hair: HAIR0, skin: SKIN0 });
+            const rec = recorder(); draw(rec.g, ent(FACES[2], { moving, walkT: 1.1 }), look, { t: 0.5 }); tried++;
+            const f = faceOf(rec), k = knotOf(rec), hd = headAt(rec);
+            const faceless = !f.skin && !f.eyes && !f.brows && !f.cheeks && !f.lashes;
+            const onBack = !!k && Math.abs(k.x) < 0.5 && k.y > -2.8 && k.y < 8 && k.i > hd && hd >= 0;
+            if (!faceless || !onBack) bad.push({ helm, cape, moving, f, knot: k, head: hd });
+          }
+          front = recorder(); draw(front.g, ent(FACES[0]), lookWith({}, { girl: true, woman: true, hair: HAIR0, skin: SKIN0 }), { t: 0.5 });
+        } finally { drawHead = _dh; }
+        const ff = faceOf(front), fk = knotOf(front);
+        const sees = ff.skin >= 1 && ff.eyes === 2 && ff.brows >= 1 && ff.cheeks === 2 && ff.lashes >= 1 && !!fk && Math.abs(fk.x) > 5;
+        check(P0 + 'a girl knight facing away (walking up the screen) has no face and her braid hangs down her back: bare-headed and in all ' + (helms.length - 1) + ' helms, with and without a cape, standing and walking (' + tried + ' drawings), no skin on her head, no eyes, brows, cheeks or lashes, and the ribbon knot on her back below her head, drawn after it; facing us the face is found', sees && !bad.length && tried >= 80, { tried, sees, front: ff, frontKnot: fk, bad: bad.slice(0, 4), n: bad.length }); }
+
       // 7. an old look with no gear reads back as its exact items; colours that are no item still draw
       { const old = { tunic: '#3b6fb6', hair: '#5a3a1e', shoulder: '#9aa3b2', helm: ITEMS.iron_helm.color, weapon: { shape: 'sword', color: ITEMS.iron_sword.color }, hat: null, gear: {} };
         const P = partsOf(old), hat = partsOf({ hat: 'red', gear: {} }), odd = partsOf({ helm: '#888', body: '#ccc', weapon: { shape: 'sword', color: '#ccc' }, gear: {} });
@@ -46137,6 +46200,62 @@ const KNIGHTGEAR = (() => {
         const p0 = STATS.pics; clearPics(); draw(ctx, ent(FACES[0], { hurtT: 0.2 }), look, { cache: true });
         const pic = STATS.pics - p0;
         check(P0 + 'hurt, the whole knight flashes: in full Mithril (closed helm and plate) facing down, side-on and away, every colour he sets (' + n + ') changes and moves toward red, none is a calm colour, the drawing is the same; a hurt knight online is drawn live (no picture kept)', !bad.length && n >= 150 && pic === 0, { bad: bad.slice(0, 4), n, pic }); }
+
+      // 17. falling and getting up: the core's fall (09-render tips the knight over and fades him) and 79-deaths (which
+      // wraps drawCharacter and drawHuman for monsters and people) still draw the knight in the new look. A real frame
+      // (render) is drawn with the knight just fallen and hurt, fading, and back on his feet: each time the player is
+      // drawn once, as the new knight (a knight look, the new drawing run once); every look without gear (townsfolk,
+      // guards) still goes to the old drawing. A knight look marked unarmed (79-deaths: a fallen person's weapon leaves
+      // his hand) is drawn without his weapon.
+      { const back = keep(), hurt0 = player.hurtT, dT0 = player.deadT, seen = [], _dh = drawHuman, r = {};
+        try {
+          // beside a townsperson, so the frame has looks without gear in it too
+          const tp = NPCS.find(n => !n.ghost), o = tp ? h.openSpot(Math.floor(tp.px / TILE) + 1, Math.floor(tp.py / TILE)) : h.openSpot(40, 20);
+          F.tp(o.x, o.y); player.mech = null; player.action = null; player.attackT = 0; F.step([]);
+          Object.assign(player.equip, { helm: 'iron_helm', body: 'iron_body', legs: 'iron_legs', shield: 'iron_shield', weapon: 'iron_sword' });
+          drawHuman = function (g, e, l) { const a = STATS.live; try { return _dh(g, e, l); } finally { seen.push({ e, knight: !!(l && l.gear), live: STATS.live - a }); } };
+          const frame = () => {
+            seen.length = 0; render();
+            const me = seen.filter(s => s.e === player);
+            return { calls: me.length, knight: me.length > 0 && me.every(s => s.knight && s.live === 1), people: seen.filter(s => !s.knight).length, oldToNew: seen.filter(s => !s.knight && s.live !== 0).length };
+          };
+          player.dead = true; player.deadT = 0.3; player.hurtT = 0.3; r.fallen = frame();
+          player.deadT = 1.4; player.hurtT = 0; r.fading = frame();
+          player.dead = false; player.deadT = 0; player.facing = { x: 1, y: 0 }; r.up = frame();
+        } finally { drawHuman = _dh; back(); player.hurtT = hurt0; player.deadT = dT0; }
+        const _dw = drawWeapon; let swords = 0;
+        try {
+          drawWeapon = function (g, W, s) { swords++; return _dw(g, W, s); };
+          const lk = lookWith({ body: 'iron_body', weapon: 'iron_sword' });
+          draw(recorder().g, ent(FACES[0]), lk, { t: 0.5 }); r.armed = swords; swords = 0;
+          draw(recorder().g, ent(FACES[0], { unarmed: true }), lk, { t: 0.5 }); r.unarmed = swords;
+        } finally { drawWeapon = _dw; }
+        const ok = k => r[k] && r[k].calls === 1 && r[k].knight && r[k].oldToNew === 0 && r[k].people >= 1;
+        check(P0 + 'falling and getting up: in a real frame the knight just fallen (hurt), fading, and back on his feet is drawn once each time as the new knight; the townsfolk beside him (looks without gear) still go to the old drawing; a fallen (unarmed) knight look drops his weapon', ok('fallen') && ok('fading') && ok('up') && r.armed === 1 && r.unarmed === 0, r); }
+
+      // 18. a weapon's picture (another knight online swinging, or easing back after a swing) is cut to the weapon: for
+      // every weapon in the game it holds the whole weapon, every path's points and the widest stroke's half (1.7 px)
+      // round them, and at most 3 px more on any side; together they cover less than half the pixels of the old fixed
+      // 68 x 38 box (a turned picture costs for every pixel it covers)
+      { const bad = [], dpr = DPR; let area = 0, n = 0;
+        try {
+          DPR = 1; WPICS.clear();
+          for (const id in ITEMS) {
+            if (slotOf(ITEMS[id]) !== 'weapon') continue;
+            const W = partsOf(lookWith({ weapon: id })).weapon;
+            if (!W) { bad.push(id + ': no weapon'); continue; }
+            const tr = tracker(); T = 0.2; drawWeapon(tr.g, W, -1); const b = tr.b;
+            // easing back after a swing (a bow too: only a bow being drawn is drawn live)
+            if (!weaponPic(recorder().g, W, -1)) { bad.push(id + ': no picture'); continue; }
+            const ph = WANIMATED.has(W.id) ? Math.floor(time * 4) % PHASES : 0;
+            const p = lruGet(WPICS, keyOf(W) + '|' + ph + '|' + picScale()); if (!p) { bad.push(id + ': not kept'); continue; }
+            n++; area += p.w * p.h;
+            const holds = p.x0 <= b.l - 1.7 && p.y0 <= b.t - 1.7 && p.x0 + p.w >= b.r + 1.7 && p.y0 + p.h >= b.b + 1.7;
+            const tight = p.x0 >= b.l - 4.7 && p.y0 >= b.t - 4.7 && p.x0 + p.w <= b.r + 4.7 && p.y0 + p.h <= b.b + 4.7;
+            if (!holds || !tight) bad.push({ id, pic: [p.x0, p.y0, p.w, p.h], bounds: [b.l, b.t, b.r, b.b].map(v => +v.toFixed(1)) });
+          }
+        } finally { DPR = dpr; WPICS.clear(); T = 0; }
+        check(P0 + 'a weapon\'s turned picture holds the whole weapon and little more: all ' + n + ' weapons, and together less than half the pixels of the old fixed box', !bad.length && n >= 25 && area < 0.5 * n * 68 * 38, { bad: bad.slice(0, 5), n, area, old: n * 68 * 38 }); }
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 
