@@ -48,7 +48,8 @@ const mkCanvas = () => ({ width: 0, height: 0, style: {}, getContext: () => ctx2
 const store = {};
 const g = {
   innerWidth: 1000, innerHeight: 700, devicePixelRatio: 1, addEventListener: noop, requestAnimationFrame: noop, setInterval: noop, setTimeout, clearTimeout,
-  localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
+  // as a browser's: key(i) and length too (src/00-handoff.js reads every key, as the hand-over page does)
+  localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; }, key: i => { const k = Object.keys(store)[i]; return k === undefined ? null : k; }, get length() { return Object.keys(store).length; } },
   performance: { now: () => Date.now() }, console: Object.assign(Object.create(console), { table: () => { } }), navigator: { maxTouchPoints: 0 },
   document: { getElementById: () => mkCanvas(), createElement: () => mkCanvas(), fonts: null },
 };

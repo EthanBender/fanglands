@@ -84,12 +84,24 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
 (28 scenarios each) and 86 server tests passed before each deploy.
 
 ## NEXT WEEK — improvements held back so the work could ship
+- Townsfolk look leftovers (2026-10-03; all 74 approved people, feat/townsfolk):
+  - The talking pose finds the speaker by the first proper word of the name on the line ("Old Harl" and "Harl the ferryman" both read "harl"), within 4 tiles of the knight. Two people with the same first word side by side would both talk.
+  - Captain Roderick, Dunstan, Warden Brann, the Master of Skills, Marlow, Hux and the two unnamed fliers (the winged porter and guard) are not in the sample: they wear the sample's own new-style default villager, not a drawing of their own.
+  - The pictures' standing clock loops every 2 s, so a slow motion (wings settling, a lantern's swing) steps back a fraction every 2 s. Death is drawn live for this reason (his hourglass and blink run slower).
+  - In a crowd made on purpose (26 townsfolk walking about in the square at once) a frame costs about 0.2 to 0.6 ms more than master while their pictures are first made; the normal square measures the same as master.
+  - The gold talk brackets round the person you face (PEOPLE_UI) are still sized for the old, shorter people.
+  - Harl rows with his lantern still in his other hand (the boat draws the oar; his main hand is empty).
+  - The hurt flash is the knight's palette: it lightens the soft outline too, so a hurt follower looks a little pale as well as red.
+  - The statue of the Last Knight of Hollowford on the Great Fountain is not a sample person: it stays in the old drawing, in stone.
 - Monster look leftovers (2026-10-03; all 47 monster types in the approved look, live in 0d0788a):
   - The knight's own machines (walker, dozer, beast pilots' seats) and the wreck tiles they leave still draw in the old look.
   - Some hit circles grew with the bigger pictures but were capped at 24 (walker, bulldozer, the yard twins, dustjaw). In one-tile gaps a capped circle can sit over the wall edge.
   - The Fang fight costs about 1 ms more per frame than before (mean 9.2/9.7 ms went to 10.2/11.5 ms). Eight bosses on one screen went from 8.5 to 10.1 ms. Common crowds are slightly faster than before.
   - The boss banners in the HUD still use the old emblems, not the new pictures.
   - The golem's mend ring is not in the online monster row, so on a friend's screen the mending glow does not show. It could ride as phase "mend" once monsters run on the server.
+- Two test flakes seen 2026-10-03 (one failure each in 4 plain headless runs on e3229b3 plus the hit-circle fix; neither is something a player sees):
+  - "the bot's hunt waits for a respawn at a safe base ... (the stage 13 dung)" (42-playthrough): the bot killed the drake but came back with dragon_dung 0/1 ({"dung":0,"at":[55,102],"log":["hunt ash_drake #1: walk true, brawl 69, dragon_dung 0/1, kills +1"]}).
+  - "storm: (fake NET non-keeper): arriving rested asks the keeper once" (66-storm): on the first visit nothing asked for the bird (rested: []), while the later visits behaved. The suspect is the fake socket not being online yet on that first visit, so the call wakes the bird at home instead of asking.
 - Knight gear refit leftovers (reviewers' minor findings, 2026-10-03; the refit is live in 9c625b6):
   - Facing away, open helms now show brown hair at the back of the head, where the approved sample shows a skin patch. The builder disclosed this. It reads better than the sample, but it is a visible change to the approved look.
   - On the mare he is drawn standing, with his leg armour and boots showing on the saddle, instead of seated without legs like the walker, dozer and beast pilots.

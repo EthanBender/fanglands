@@ -1,5 +1,5 @@
 // ============================================================================
-// LOGIN — the online title screen at gorkscape.ca
+// LOGIN — the online title screen at fanglands.com
 // Owner: "make it an online MMORPG so Cohen and his friends can log in and play together."
 // When the wire says we are online (NET.enabled) the three slot cards give way to one card: a real HTML form
 // (so the iPad keyboard works) for the knight's name and secret word, a New knight switch that asks for the
@@ -85,10 +85,15 @@
   };
   LOGIN.noteKeptOut = until => { until = Number(until); if (Number.isFinite(until) && until > Date.now()) lsSet(KEPT_KEY, Math.floor(until)); };
   LOGIN.KEPT_KEY = KEPT_KEY;
+  // the address this page is on, as the title names it: fanglands.com is the home; a page still served on gorkscape.ca
+  // (a home-screen icon, or a tab with a knight only on this device: docs/ONLINE.md, "Two addresses") says gorkscape.ca
+  LOGIN.siteOf = host => /(^|\.)gorkscape\.ca$/.test(String(host || '')) ? 'gorkscape.ca' : 'fanglands.com';
+  LOGIN.site = LOGIN.siteOf(typeof location !== 'undefined' && location.hostname);
   LOGIN.sentence = (err, kind) => {
     const code = err && err.code, st = err && err.status;
     if (code === 'words') { LOGIN.noteKeptOut(err.until); return kind === 'signup' ? LOGIN.newKnightOff(err.until) : LOGIN.keptOut(err.until); }
     if (code === 'renamed') return `An admin changed your knight's name to ${err.name}.`;
+    if (code === 'signups') return 'Too many new knights from here this hour. Try again later.';
     if (code === 'wait' || st === 429) return 'Too many tries. Wait a minute.';
     if (code === 'kicked') return 'An admin sent you out of the world. You can come back in.';
     if (code === 'banned') return 'This knight is not allowed in. Ask Ethan.';
@@ -404,7 +409,7 @@
     u.statusText = el('span', {});
     u.alone = el('button', { type: 'button', cls: 'fl-dim', text: 'Play alone', onclick: LOGIN.playAlone });
     u.status = el('div', { cls: 'fl-status' }, u.statusText, u.alone);
-    u.card = el('div', { cls: 'fl-card' }, el('h2', { text: 'Play online at gorkscape.ca' }), u.form, u.who, u.offer, u.busy, u.busyErr, u.status);
+    u.card = el('div', { cls: 'fl-card' }, el('h2', { text: 'Play online at ' + LOGIN.site }), u.form, u.who, u.offer, u.busy, u.busyErr, u.status);
     u.root = el('div', { id: 'fl-login' }, u.card);
     document.body.appendChild(u.root);
     ui = u;
@@ -464,10 +469,10 @@
     }
     if (!ui) {
       // no HTML to hold the card (should never happen in a browser): say so on the canvas rather than show nothing
-      HK.text(g, 'Play online at gorkscape.ca', VW / 2, F.headBottom + 40, { font: HK.FC(800, 18), align: 'center', color: T.goldHi, halo: 3 });
+      HK.text(g, 'Play online at ' + LOGIN.site, VW / 2, F.headBottom + 40, { font: HK.FC(800, 18), align: 'center', color: T.goldHi, halo: 3 });
       HK.text(g, LOGIN.status || '', VW / 2, F.headBottom + 64, { font: HK.FS(600, 13), align: 'center', color: T.inkDim, halo: 3 });
     }
-    title.chrome(g, F, ['Your knight is saved in the cloud at gorkscape.ca.', 'Saved in the cloud at gorkscape.ca.', 'Saved in the cloud.']);
+    title.chrome(g, F, [`Your knight is saved in the cloud at ${LOGIN.site}.`, `Saved in the cloud at ${LOGIN.site}.`, 'Saved in the cloud.']);
   }
   // Play alone keeps a way back: a Play online plate at the left end of the title's bottom row
   title.leftButton = () => (title.active && NET.enabled && LOGIN.alone && !LOGIN.showing) ? { label: 'Play online', action: LOGIN.backOnline, emblem: 'friends' } : null;
@@ -530,6 +535,8 @@
       check(P + 'a name or secret word that is too short is caught before the world is asked', /2 to 16/.test(shortName) && /at least 4/.test(shortPass) && world.calls.length === calls0, { shortName, shortPass });
       const wrongs = ['wait', 'banned', 'invite', 'pass', 'unknown'].map(code => LOGIN.sentence({ code }, 'login'));
       check(P + 'the contract codes read as plain sentences', wrongs.join('|') === 'Too many tries. Wait a minute.|This knight is not allowed in. Ask Ethan.|That invite code is not right.|That secret word is wrong.|No knight by that name yet. Tap New knight.', { wrongs });
+      check(P + 'too many new knights from one place in an hour says the hour, not a minute (429 signups)', LOGIN.sentence({ code: 'signups', status: 429 }, 'signup') === 'Too many new knights from here this hour. Try again later.', { said: LOGIN.sentence({ code: 'signups', status: 429 }, 'signup') });
+      check(P + 'the title names the address it is on: fanglands.com, or gorkscape.ca where the old address still serves the game', ['gorkscape.ca', 'www.gorkscape.ca', 'test.gorkscape.ca', 'fanglands.com', 'test.fanglands.com', 'localhost', ''].map(LOGIN.siteOf).join(' ') === 'gorkscape.ca gorkscape.ca gorkscape.ca fanglands.com fanglands.com fanglands.com fanglands.com', { site: LOGIN.site });
       LOGIN.submit('Cohen', 'sword', '', false);
       check(P + 'the right secret word logs in: token kept, the cloud save lands in slot 1 and is the game now, the socket opens', NET.token === 'tok-cohen' && lsGet(SLOT(1)) === cloud && player.kills === 42 && title.slot === 1 && LOGIN.playing && !LOGIN.showing && !title.active && NET.status === 'on' && NET.me === 'Cohen' && lsGet(NAME_KEY) === 'Cohen' && lsGet(MARK_KEY) === '1', { token: NET.token, kills: player.kills, status: NET.status, me: NET.me, showing: LOGIN.showing });
       paused = true; render(); const menu = buttons.some(b => b.label === 'Log out') && buttons.some(b => b.label.startsWith('Title screen')); paused = false;

@@ -126,6 +126,8 @@
 </main>
 <script>
 (() => {
+  // two addresses (docs/ONLINE.md): the one-load marker of a hop that kept this tab on the old address never stays
+  if (/[?&]fl_hop=/.test(location.search)) { try { const q = new URLSearchParams(location.search); q.delete('fl_hop'); const s = q.toString(); history.replaceState(history.state, '', location.pathname + (s ? '?' + s : '') + location.hash); } catch (e) { } }
   const KEY = 'fanglands.adminKey';
   const COLS = 12;                   // the accounts table's columns
   const ALWAYS = 8640000000000000;   // muted "until unmuted"

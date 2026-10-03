@@ -863,6 +863,8 @@ const HK = (() => {
   const ramp = f => f > 0.5 ? T.good : f > 0.25 ? T.warn : T.bad;
   const RAMP_BAR = { [T.good]: ['#9ce68e', '#3fae4a', '#1d5a22'], [T.warn]: ['#ffd08a', '#e8a33d', '#7a4a0e'], [T.bad]: ['#ff8266', '#d8322b', '#6d1016'] };
   function portrait(g, cx, cy, r, o = {}) {
+    // a person the new look knows (o.who: Sera, Garrick) is drawn as they are in the world (83-townsfolk)
+    if (o.who && window.TOWNSFOLK && TOWNSFOLK.portrait(g, cx, cy, r, o)) return;
     g.save(); g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.clip();
     g.fillStyle = o.down ? '#3a1d1d' : '#35506b'; g.fillRect(cx - r, cy - r, 2 * r, 2 * r);
     g.beginPath(); g.arc(cx, cy - r * 0.05, r * 0.62, Math.PI * 1.05, Math.PI * 1.95); g.lineTo(cx + r * 0.68, cy + r * 0.9); g.lineTo(cx - r * 0.68, cy + r * 0.9); g.closePath(); g.fillStyle = o.hair || '#9a4a1f'; g.fill();
