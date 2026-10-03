@@ -16727,7 +16727,8 @@ window.PLACE_KIT = PLACE_KIT;
     add('range', 'arrows on a goblin (4 xp per damage)', 1, 4 * 3, 0.6, 'stone arrows, avg hit 3'); add('range', "Wren's silk (once)", 1, 60, 0, 'quest'); if (ITEMS.elven_arrow) add('range', "Lira's twenty (once)", 1, 500, 0, 'quest');
     for (const f of HOOKS.xpSource) { try { f(add); } catch (e) { } } // features declare their own (45-progression)
     kill('goblin', 'goblin soldier', 1, 'walk + kill;'); kill('wolf', 'wolf', 6); kill('sapper', 'goblin sapper', 7); kill('brute', 'goblin brute', 9); kill('walker', 'goblin walker', 18);
-    if (MONSTER_DEFS.barrelbeast) add('melee', 'the Barrelbeast (once)', 28, killXp('barrelbeast'), 0, 'boss, dies once');
+    // the square's beast dies once; the War Shed's (20-hollowford) is a rematch at most once every 300 s of the day clock
+    if (MONSTER_DEFS.barrelbeast) add('melee', 'the War Shed Barrelbeast (one per 300 s)', 28, killXp('barrelbeast'), 300, '20-hollowford');
     if (MONSTER_DEFS.ash_drake) kill('ash_drake', 'ash drake', 30); if (MONSTER_DEFS.green_dragon) kill('green_dragon', 'green dragon', 45); if (MONSTER_DEFS.red_dragon) kill('red_dragon', 'red dragon', 60);
     add('defence', 'being hit (1.5 xp per damage)', 1, 1.5 * 2, 1.1, 'a goblin, avg hit 2');
     add('hitpoints', 'a third of Melee and Range xp', 1, 0, 0, 'passive (38-agility)');
@@ -17097,7 +17098,39 @@ window.PLACE_KIT = PLACE_KIT;
     { const rows = chain(), bad = rows.filter(r => !r.ok); check(P + 'main quest chain: every stage 0→16 walks from the last, story gates opened by a prior stage', bad.length === 0, { stages: rows.length, tiles: rows.reduce((s, r) => s + r.dist, 0), bad: bad.map(r => ({ stage: r.stage, legs: r.legs.filter(l => !l.ok).map(l => `${l.from}→${l.to} dist ${l.dist} gate ${l.gate} opens ${l.opensAt}`) })), gates: rows.filter(r => r.legs.some(l => l.gate)).map(r => `${r.stage}: ${r.legs.filter(l => l.gate).map(l => l.gate + '@' + l.opensAt).join(',')}`) }); }
     { const p = progression(), dead = p.rows.filter(r => r.dead && r.kind !== 'cape'); check(P + `progression: every skill gate has an XP source below it (${p.rows.length} gates)`, dead.length === 0, { gates: p.rows.length, dead: dead.map(r => `${r.skill} ${r.lv} ${r.what}`) });
       const wide = Object.entries(p.bands).filter(([, b]) => b.gap > 10).map(([k, b]) => `${k}: ${b.gap} levels (nothing new after ${b.lastNew} until ${b.at})`);
-      check(P + 'progression: widest stretch of levels with no new XP source, per skill (10+ listed)', true, { wide }); }
+      check(P + 'progression: widest stretch of levels with no new XP source, per skill (10+ listed)', true, { wide });
+      // the rematches are a fair purse, not a farm: none of them pays melee faster than the cinderwight
+      const melee = p.sources.melee || [], rate = name => { const r = melee.find(x => x.name === name); return r ? r.rate : null; };
+      const wight = melee.filter(x => /cinderwight/.test(x.name)).reduce((m, x) => Math.max(m, x.rate || 0), 0);
+      const rows = ['the War Shed Barrelbeast (one per 300 s)', 'Echo of the Fang (one per 600 s)', 'the Thunderbird (one per 300 s)'].map(n => [n, rate(n)]);
+      check('progression: the War Shed, Echo and Thunderbird rows are present, and none outpaces the cinderwight melee rate', wight > 0 && rows.every(([, r]) => r > 0 && r < wight), { wight, rows }); }
+    // every boss in the game has a way back after its first defeat (owner: "bosses shoould all be redefeatable")
+    { const types = new Set([...BOSS_TYPES, ...(window.WIKI && WIKI.BOSS_TYPES ? WIKI.BOSS_TYPES : []), ...(window.COOP && COOP.CREDIT ? COOP.CREDIT : []),
+        ...Object.keys(MONSTER_DEFS).filter(t => MONSTER_DEFS[t].level >= 25 && MONSTER_DEFS[t].hp >= 300 && !MONSTER_DEFS[t].harmless),
+        'ginormous_golem', 'mithril_golem', 'stormstone_golem', 'zombie_brute', 'dustjaw', 'cinderwight', 'ash_drake']);
+      const inInst = new Set(); if (window.INSTANCES) for (const id of INSTANCES.list()) for (const [t] of INSTANCES.get(id).spawns || []) inInst.add(t);
+      const calls = HOOKS.bossCall ? Object.keys(HOOKS.bossCall).map(id => HOOKS.bossCall[id]) : [];
+      const RM = window.ROYALMINE, giants = RM && RM.NUM && RM.NUM.GIANT ? Object.values(RM.NUM.GIANT) : [];
+      // the ones that come back by a rule of their own file: risen from each night's headstones, woken out of a regrown giant
+      // ore, stood up by the mine's keeper 30 s after he falls
+      const SPECIAL = {
+        zombie_brute: () => !!(window.GRAVES && typeof GRAVES.raise === 'function'),
+        stormstone_golem: () => giants.some(gi => gi.golem === 'stormstone_golem' && gi.regrow > 0 && gi.wakeChance > 0),
+        mithril_golem: () => giants.some(gi => gi.golem === 'mithril_golem' && gi.regrow > 0 && gi.wakeChance > 0),
+        ginormous_golem: () => !!(RM && RM.NUM && RM.NUM.REVIVE > 0),
+      };
+      const ways = {}, none = [], HELD = new Set(['the_fang', 'barrelbeast']);
+      for (const t of types) {
+        if (!MONSTER_DEFS[t]) continue;
+        const w = [];
+        // (the Fang and the square's Barrelbeast are on the spawn list but held down by their story once slain: their timer is no way back)
+        if (!HELD.has(t) && MONSTER_SPAWNS.some(sp => sp.type === t) && MONSTER_DEFS[t].respawn > 0 && MONSTER_DEFS[t].respawn < 1e8) w.push('respawn ' + MONSTER_DEFS[t].respawn + ' s');
+        if (inInst.has(t)) w.push('every entry');
+        for (const hc of calls) if (hc && hc.type === t) w.push('bossCall ' + (hc.map || '?'));
+        if (SPECIAL[t] && SPECIAL[t]()) w.push('its own rule');
+        ways[t] = w.join(', '); if (!w.length) none.push(t);
+      }
+      check('bosses: every type in 44-wiki BOSS_TYPES, 42 BOSS_TYPES and the coop CREDIT set has a way back.', none.length === 0 && Object.keys(ways).length >= 20, { none, ways }); }
     // the bot's hunt (what the --play run does at stage 13 for the dung). Each check puts the drakes down by hand, runs
     // hunt() for real, and puts everything back: position, pack, skills, quest, drops, the drakes and the bot's counters.
     { const drakes = monsters.filter(m => m.type === 'ash_drake'), dun = NPCS.find(o => o.id === 'dunstan'), death = NPCS.find(o => o.id === 'death2');
@@ -17749,10 +17782,23 @@ window.SETTINGS = SETTINGS;
     grave_zombie: ['Near graves, after dark'],
     ally_knight: ["Fights beside you in The Fang's Lair (the Duke's Dragon Killers)"],
     the_fang: ["The Fang's Lair — sound the dragon horn to wake it"],
+    barrelbeast: ['The War Shed, on the road below the Goblin Camp (the boiler valve, after Hollowford)'],
   };
-  // loot that is not in a drops table: 28-thefang (first kill), 33-goblincity (Gnash's treasury)
+  // loot that is not in a drops table: 28-thefang (first kill, then every Echo), 66-storm (first kill, then every rematch)
   const EXTRA_DROPS = {
-    the_fang: [['coins', 1000, 1000, 100, 'first kill only'], ['fang_of_the_fang', 1, 1, 100, 'first kill only'], ['mithril_bar', 4, 4, 100, 'first kill only'], ['dragon_scale', 10, 10, 100, 'first kill only']],
+    the_fang: [['coins', 1000, 1000, 100, 'first kill only'], ['fang_of_the_fang', 1, 1, 100, 'first kill only'], ['mithril_bar', 4, 4, 100, 'first kill only'], ['dragon_scale', 10, 10, 100, 'first kill only'],
+      ['coins', 300, 300, 100, 'every Echo'], ['dragon_scale', 3, 3, 100, 'every Echo'], ['mithril_bar', 1, 1, 100, 'every Echo']],
+    thunderbird: [['coins', 400, 400, 100, 'first kill only'], ['storm_feather', 1, 1, 100, 'first kill only'], ['cloud_essence', 3, 3, 100, 'first kill only'],
+      ['coins', 200, 200, 100, 'every rematch'], ['cloud_essence', 1, 1, 100, 'every rematch']],
+  };
+  // how a named boss is fought again (owner: "bosses shoould all be redefeatable"); shown on its page in place of a respawn time
+  const FIGHT_AGAIN = {
+    the_fang: 'Fight again: sound the dragon horn on the summoning circle. The Echo rises once a day (600 s).',
+    barrelbeast: 'Fight again: the War Shed on the road below the Goblin Camp, the boiler valve, every 300 s.',
+    thunderbird: 'Fight again: the wind shrine, Into the storm, every 300 s.',
+    gnasher: "Fight again: the Arena lever in Tinkerton's lab.",
+    brood_mother: 'Fight again: comes back every time you go in.',
+    count_ashvane: 'Fight again: comes back every time you go in.',
   };
   // items given by people, chests and quests (id → [text]). 06-systems, 16-instances, 20, 25, 26, 29, 33, 35, 36, 37, 38, 41.
   const GIVEN = {
@@ -17860,7 +17906,8 @@ window.SETTINGS = SETTINGS;
     if (bp) for (const id of bp.pool) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: 100 / bp.chance, kind: 'extra', note: bp.pool.length > 1 ? `1 in ${bp.chance}: one of ${bp.pool.length} blueprints, the ones you are missing first` : bp.chance === 1 ? 'every kill while you are missing it' : `1 in ${bp.chance}, while you are missing it` });
     // 37-dragonkillers: one of four dragon items
     const dk = window.DRAGON_KILLERS && typeof DRAGON_KILLERS.chance === 'function' ? DRAGON_KILLERS.chance(type) : 0;
-    if (dk > 0) for (const id of DRAGON_KILLERS.DRAGON_ITEMS) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: dk * 100 / DRAGON_KILLERS.DRAGON_ITEMS.length, kind: 'extra', note: `1 in ${Math.round(1 / dk)} for any dragon item, then one of four` });
+    const echo = type === 'the_fang' ? DRAGON_KILLERS.chance(type, { repeat: true }) : 0;
+    if (dk > 0) for (const id of DRAGON_KILLERS.DRAGON_ITEMS) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: dk * 100 / DRAGON_KILLERS.DRAGON_ITEMS.length, kind: 'extra', note: `1 in ${Math.round(1 / dk)} for any dragon item${echo && echo !== dk ? ` (the first kill; 1 in ${Math.round(1 / echo)} on every Echo)` : ''}, then one of four` });
     for (const [id, a, b, p, note] of EXTRA_DROPS[type] || []) if (ITEMS[id]) rows.push({ id, min: a, max: b, pct: p, kind: 'extra', note });
     return rows;
   }
@@ -17890,7 +17937,7 @@ window.SETTINGS = SETTINGS;
         boss: BOSS_TYPES.has(type) || ((def.level | 0) >= 25 && def.hp >= 300), where: [...(where[type] || [])], drops: dropRows(type, def) };
       for (const x of EXTRA_WHERE[type] || []) { const place = x.split(/[,—(]/)[0].trim(); const i = e.where.indexOf(place); if (i >= 0) e.where[i] = x; else e.where.push(x); }
       e.tablePct = e.drops.filter(r => r.kind === 'table').reduce((s, r) => s + r.pct, 0);
-      e.blurb = monsterBlurb(def, e); out.monsters[type] = e;
+      e.blurb = monsterBlurb(def, e); e.again = FIGHT_AGAIN[type] || null; out.monsters[type] = e;
     }
     // ---- items ----
     const sources = {}; const src = (id, s) => { if (ITEMS[id]) (sources[id] = sources[id] || []).push(s); };
@@ -18037,7 +18084,8 @@ window.SETTINGS = SETTINGS;
       const kinds = [['always', 'Every time'], ['table', 'One of these each kill'], ['rare', 'Rare'], ['extra', 'Special']];
       for (const [k, title] of kinds) { const rows = e.drops.filter(r => r.kind === k); if (!rows.length) continue; out.push(P(title + ':', '#8b949e'));
         for (const r of rows) { if (r.id === 'nothing') { out.push(P(`   Nothing · ${pct(r.pct)}%`, '#6e7681')); continue; } out.push(L(`${itemName(r.id)} × ${qtyText(r.min, r.max)} · ${pct(r.pct)}%${r.note ? ' · ' + r.note : ''}`, 'items', r.id, r.id)); } }
-      if (e.respawn) out.push(P(`Comes back after about ${e.respawn >= 1e8 ? 'never (once only)' : e.respawn >= 60 ? Math.round(e.respawn / 60) + ' min' : e.respawn + ' s'}.`, '#6e7681'));
+      if (e.again) out.push(P(e.again, '#8b949e'));
+      else if (e.respawn) out.push(P(`Comes back after about ${e.respawn >= 1e8 ? 'never (once only)' : e.respawn >= 60 ? Math.round(e.respawn / 60) + ' min' : e.respawn + ' s'}.`, '#6e7681'));
     }
     if (section === 'items') {
       const def = e.def || ITEMS[id] || {};
@@ -18284,7 +18332,7 @@ window.SETTINGS = SETTINGS;
   // The Wiki plate under a chosen pack item is drawn by the pack itself (src/10-hud.js), in its one row of verbs.
 
   window.WIKI = {
-    sections: SECTIONS, state: wk,
+    sections: SECTIONS, state: wk, BOSS_TYPES, FIGHT_AGAIN,
     add(section, entry) { if (!SECTIONS.includes(section) || !entry || !entry.id) return false; custom[section][entry.id] = Object.assign({ name: entry.id }, entry); data = null; return true; },
     get(section, id) { const d = ensure(); return (d[section] && d[section][id]) || null; },
     open, rebuild() { data = null; return ensure(); }, lines: pageLines, list: listFor,
@@ -35680,9 +35728,9 @@ window.RETALIATE = RETALIATE;
   // ---------- C. Unlock everything ----------
   // What "everything" means, enumerated from the code (the report carries this table): each entry says what unlocked
   // means, sets it the way the game itself would have left it, and can say whether it holds. Tile changes go through
-  // changeTile so they live in the save. The one-time bosses the world shares (the Barrelbeast, The Fang) are left
-  // standing on purpose: through the keeper model a boss slain in MudGoll's save would stay down for every friend on
-  // his map, and the fights are the fun part. Their gates are open; the Fang comes when he sounds the horn.
+  // changeTile so they live in the save. The story bosses (the Barrelbeast, The Fang) are left unslain on purpose: the
+  // first fights are the fun part, and a square beast slain in MudGoll's save would stay down for every friend on his map
+  // while he keeps it (they would have to use the War Shed). Their gates are open; the Fang comes when he sounds the horn.
   const lastStage = () => Math.max(16, ...Object.keys(HOOKS.mainQuest).map(Number).filter(Number.isFinite));
   const qo = (key, fresh) => { const v = quest[key]; if (v && typeof v === 'object') return v; quest[key] = fresh(); return quest[key]; };
   const tileId = name => (name in T ? T[name] : undefined);

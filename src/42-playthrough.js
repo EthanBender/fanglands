@@ -237,7 +237,8 @@
     add('range', 'arrows on a goblin (4 xp per damage)', 1, 4 * 3, 0.6, 'stone arrows, avg hit 3'); add('range', "Wren's silk (once)", 1, 60, 0, 'quest'); if (ITEMS.elven_arrow) add('range', "Lira's twenty (once)", 1, 500, 0, 'quest');
     for (const f of HOOKS.xpSource) { try { f(add); } catch (e) { } } // features declare their own (45-progression)
     kill('goblin', 'goblin soldier', 1, 'walk + kill;'); kill('wolf', 'wolf', 6); kill('sapper', 'goblin sapper', 7); kill('brute', 'goblin brute', 9); kill('walker', 'goblin walker', 18);
-    if (MONSTER_DEFS.barrelbeast) add('melee', 'the Barrelbeast (once)', 28, killXp('barrelbeast'), 0, 'boss, dies once');
+    // the square's beast dies once; the War Shed's (20-hollowford) is a rematch at most once every 300 s of the day clock
+    if (MONSTER_DEFS.barrelbeast) add('melee', 'the War Shed Barrelbeast (one per 300 s)', 28, killXp('barrelbeast'), 300, '20-hollowford');
     if (MONSTER_DEFS.ash_drake) kill('ash_drake', 'ash drake', 30); if (MONSTER_DEFS.green_dragon) kill('green_dragon', 'green dragon', 45); if (MONSTER_DEFS.red_dragon) kill('red_dragon', 'red dragon', 60);
     add('defence', 'being hit (1.5 xp per damage)', 1, 1.5 * 2, 1.1, 'a goblin, avg hit 2');
     add('hitpoints', 'a third of Melee and Range xp', 1, 0, 0, 'passive (38-agility)');
@@ -607,7 +608,39 @@
     { const rows = chain(), bad = rows.filter(r => !r.ok); check(P + 'main quest chain: every stage 0→16 walks from the last, story gates opened by a prior stage', bad.length === 0, { stages: rows.length, tiles: rows.reduce((s, r) => s + r.dist, 0), bad: bad.map(r => ({ stage: r.stage, legs: r.legs.filter(l => !l.ok).map(l => `${l.from}→${l.to} dist ${l.dist} gate ${l.gate} opens ${l.opensAt}`) })), gates: rows.filter(r => r.legs.some(l => l.gate)).map(r => `${r.stage}: ${r.legs.filter(l => l.gate).map(l => l.gate + '@' + l.opensAt).join(',')}`) }); }
     { const p = progression(), dead = p.rows.filter(r => r.dead && r.kind !== 'cape'); check(P + `progression: every skill gate has an XP source below it (${p.rows.length} gates)`, dead.length === 0, { gates: p.rows.length, dead: dead.map(r => `${r.skill} ${r.lv} ${r.what}`) });
       const wide = Object.entries(p.bands).filter(([, b]) => b.gap > 10).map(([k, b]) => `${k}: ${b.gap} levels (nothing new after ${b.lastNew} until ${b.at})`);
-      check(P + 'progression: widest stretch of levels with no new XP source, per skill (10+ listed)', true, { wide }); }
+      check(P + 'progression: widest stretch of levels with no new XP source, per skill (10+ listed)', true, { wide });
+      // the rematches are a fair purse, not a farm: none of them pays melee faster than the cinderwight
+      const melee = p.sources.melee || [], rate = name => { const r = melee.find(x => x.name === name); return r ? r.rate : null; };
+      const wight = melee.filter(x => /cinderwight/.test(x.name)).reduce((m, x) => Math.max(m, x.rate || 0), 0);
+      const rows = ['the War Shed Barrelbeast (one per 300 s)', 'Echo of the Fang (one per 600 s)', 'the Thunderbird (one per 300 s)'].map(n => [n, rate(n)]);
+      check('progression: the War Shed, Echo and Thunderbird rows are present, and none outpaces the cinderwight melee rate', wight > 0 && rows.every(([, r]) => r > 0 && r < wight), { wight, rows }); }
+    // every boss in the game has a way back after its first defeat (owner: "bosses shoould all be redefeatable")
+    { const types = new Set([...BOSS_TYPES, ...(window.WIKI && WIKI.BOSS_TYPES ? WIKI.BOSS_TYPES : []), ...(window.COOP && COOP.CREDIT ? COOP.CREDIT : []),
+        ...Object.keys(MONSTER_DEFS).filter(t => MONSTER_DEFS[t].level >= 25 && MONSTER_DEFS[t].hp >= 300 && !MONSTER_DEFS[t].harmless),
+        'ginormous_golem', 'mithril_golem', 'stormstone_golem', 'zombie_brute', 'dustjaw', 'cinderwight', 'ash_drake']);
+      const inInst = new Set(); if (window.INSTANCES) for (const id of INSTANCES.list()) for (const [t] of INSTANCES.get(id).spawns || []) inInst.add(t);
+      const calls = HOOKS.bossCall ? Object.keys(HOOKS.bossCall).map(id => HOOKS.bossCall[id]) : [];
+      const RM = window.ROYALMINE, giants = RM && RM.NUM && RM.NUM.GIANT ? Object.values(RM.NUM.GIANT) : [];
+      // the ones that come back by a rule of their own file: risen from each night's headstones, woken out of a regrown giant
+      // ore, stood up by the mine's keeper 30 s after he falls
+      const SPECIAL = {
+        zombie_brute: () => !!(window.GRAVES && typeof GRAVES.raise === 'function'),
+        stormstone_golem: () => giants.some(gi => gi.golem === 'stormstone_golem' && gi.regrow > 0 && gi.wakeChance > 0),
+        mithril_golem: () => giants.some(gi => gi.golem === 'mithril_golem' && gi.regrow > 0 && gi.wakeChance > 0),
+        ginormous_golem: () => !!(RM && RM.NUM && RM.NUM.REVIVE > 0),
+      };
+      const ways = {}, none = [], HELD = new Set(['the_fang', 'barrelbeast']);
+      for (const t of types) {
+        if (!MONSTER_DEFS[t]) continue;
+        const w = [];
+        // (the Fang and the square's Barrelbeast are on the spawn list but held down by their story once slain: their timer is no way back)
+        if (!HELD.has(t) && MONSTER_SPAWNS.some(sp => sp.type === t) && MONSTER_DEFS[t].respawn > 0 && MONSTER_DEFS[t].respawn < 1e8) w.push('respawn ' + MONSTER_DEFS[t].respawn + ' s');
+        if (inInst.has(t)) w.push('every entry');
+        for (const hc of calls) if (hc && hc.type === t) w.push('bossCall ' + (hc.map || '?'));
+        if (SPECIAL[t] && SPECIAL[t]()) w.push('its own rule');
+        ways[t] = w.join(', '); if (!w.length) none.push(t);
+      }
+      check('bosses: every type in 44-wiki BOSS_TYPES, 42 BOSS_TYPES and the coop CREDIT set has a way back.', none.length === 0 && Object.keys(ways).length >= 20, { none, ways }); }
     // the bot's hunt (what the --play run does at stage 13 for the dung). Each check puts the drakes down by hand, runs
     // hunt() for real, and puts everything back: position, pack, skills, quest, drops, the drakes and the bot's counters.
     { const drakes = monsters.filter(m => m.type === 'ash_drake'), dun = NPCS.find(o => o.id === 'dunstan'), death = NPCS.find(o => o.id === 'death2');

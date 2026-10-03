@@ -67,6 +67,23 @@ async function scene(browser, touch) {
     check("a right-click on another knight opens their card (Trade, Follow, Close) with no browser menu, no walk and no swing; a plain click does too", prevented && right.menu === 'Ava' && !right.walk && !right.swing && left.menu === 'Ava' && !left.walk, { prevented, right, left });
     check('right-click: no page errors', errors.length === 0, errors);
     await page.close(); }
+  // the rematches by real key presses: E on the War Shed's valve stands a Barrelbeast up; E on the wind shrine (the storm
+  // broken) opens its two choices and a real click on Into the storm goes in
+  { const { page, errors } = await scene(browser, false);
+    await page.evaluate(() => { const hf = quest.hollowford || (quest.hollowford = {}); Object.assign(hf, { beastKilled: true, rewarded: true, freed: true, shedUp: false, shedRestUntil: 0 }); INSTANCES.enter('war_shed'); __sock.onmessage({ data: JSON.stringify({ t: 'keeper', map: 'war_shed', n: 'Tester' }) }); FANGLANDS.tp(14, 4); FANGLANDS.face(14, 3); dialog.cur = null; dialog.queue.length = 0; });
+    await page.waitForTimeout(150); await page.keyboard.press('e');
+    await page.waitForFunction(() => monsters.some(m => m.type === 'barrelbeast' && !m.dead), null, { timeout: 4000 }).catch(() => { });
+    const shed = await page.evaluate(() => ({ inst: INSTANCES.active(), up: monsters.filter(m => m.type === 'barrelbeast' && !m.dead).length, shedUp: quest.hollowford.shedUp }));
+    check('E on the War Shed valve stands one Barrelbeast up off the stocks', shed.inst === 'war_shed' && shed.up === 1 && shed.shedUp === true, shed);
+    await page.evaluate(() => { INSTANCES.leave(); quest.storm = Object.assign(quest.storm || {}, { beaten: true, restUntil: 0 }); if (!countItem('wind_flute')) addItem('wind_flute', 1); FANGLANDS.tp(62, 7); FANGLANDS.face(62, 6); dialog.cur = null; dialog.queue.length = 0; closePanel(); });
+    await page.waitForTimeout(150); await page.keyboard.press('e');
+    await page.waitForFunction(() => panel === 'windshrine' && buttons.some(x => x.label === 'Into the storm'), null, { timeout: 4000 }).catch(() => { });
+    const btn = await page.evaluate(() => { const b = buttons.find(x => x.label === 'Into the storm'); return { panel, b: b && { x: b.x + b.w / 2, y: b.y + b.h / 2, h: b.h } }; });
+    if (btn.b) { await page.mouse.click(btn.b.x, btn.b.y); await page.waitForFunction(() => INSTANCES.active() === 'stormfront' && !!STORM.bird(), null, { timeout: 4000 }).catch(() => { }); }
+    const storm = await page.evaluate(() => ({ inst: INSTANCES.active(), bird: !!STORM.bird() }));
+    check('E on the wind shrine (the storm broken) opens its two choices; a click on Into the storm goes in to the Thunderbird', btn.panel === 'windshrine' && !!btn.b && btn.b.h >= 44 && storm.inst === 'stormfront' && storm.bird, { btn, storm });
+    check('rematch keys: no page errors', errors.length === 0, errors);
+    await page.close(); }
   await browser.close();
   const bad = results.filter(r => !r[1]).length;
   console.log(bad ? `dom-keys: ${bad} FAILED of ${results.length}` : `dom-keys: ALL ${results.length} PASS`);

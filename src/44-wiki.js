@@ -30,10 +30,23 @@
     grave_zombie: ['Near graves, after dark'],
     ally_knight: ["Fights beside you in The Fang's Lair (the Duke's Dragon Killers)"],
     the_fang: ["The Fang's Lair — sound the dragon horn to wake it"],
+    barrelbeast: ['The War Shed, on the road below the Goblin Camp (the boiler valve, after Hollowford)'],
   };
-  // loot that is not in a drops table: 28-thefang (first kill), 33-goblincity (Gnash's treasury)
+  // loot that is not in a drops table: 28-thefang (first kill, then every Echo), 66-storm (first kill, then every rematch)
   const EXTRA_DROPS = {
-    the_fang: [['coins', 1000, 1000, 100, 'first kill only'], ['fang_of_the_fang', 1, 1, 100, 'first kill only'], ['mithril_bar', 4, 4, 100, 'first kill only'], ['dragon_scale', 10, 10, 100, 'first kill only']],
+    the_fang: [['coins', 1000, 1000, 100, 'first kill only'], ['fang_of_the_fang', 1, 1, 100, 'first kill only'], ['mithril_bar', 4, 4, 100, 'first kill only'], ['dragon_scale', 10, 10, 100, 'first kill only'],
+      ['coins', 300, 300, 100, 'every Echo'], ['dragon_scale', 3, 3, 100, 'every Echo'], ['mithril_bar', 1, 1, 100, 'every Echo']],
+    thunderbird: [['coins', 400, 400, 100, 'first kill only'], ['storm_feather', 1, 1, 100, 'first kill only'], ['cloud_essence', 3, 3, 100, 'first kill only'],
+      ['coins', 200, 200, 100, 'every rematch'], ['cloud_essence', 1, 1, 100, 'every rematch']],
+  };
+  // how a named boss is fought again (owner: "bosses shoould all be redefeatable"); shown on its page in place of a respawn time
+  const FIGHT_AGAIN = {
+    the_fang: 'Fight again: sound the dragon horn on the summoning circle. The Echo rises once a day (600 s).',
+    barrelbeast: 'Fight again: the War Shed on the road below the Goblin Camp, the boiler valve, every 300 s.',
+    thunderbird: 'Fight again: the wind shrine, Into the storm, every 300 s.',
+    gnasher: "Fight again: the Arena lever in Tinkerton's lab.",
+    brood_mother: 'Fight again: comes back every time you go in.',
+    count_ashvane: 'Fight again: comes back every time you go in.',
   };
   // items given by people, chests and quests (id → [text]). 06-systems, 16-instances, 20, 25, 26, 29, 33, 35, 36, 37, 38, 41.
   const GIVEN = {
@@ -141,7 +154,8 @@
     if (bp) for (const id of bp.pool) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: 100 / bp.chance, kind: 'extra', note: bp.pool.length > 1 ? `1 in ${bp.chance}: one of ${bp.pool.length} blueprints, the ones you are missing first` : bp.chance === 1 ? 'every kill while you are missing it' : `1 in ${bp.chance}, while you are missing it` });
     // 37-dragonkillers: one of four dragon items
     const dk = window.DRAGON_KILLERS && typeof DRAGON_KILLERS.chance === 'function' ? DRAGON_KILLERS.chance(type) : 0;
-    if (dk > 0) for (const id of DRAGON_KILLERS.DRAGON_ITEMS) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: dk * 100 / DRAGON_KILLERS.DRAGON_ITEMS.length, kind: 'extra', note: `1 in ${Math.round(1 / dk)} for any dragon item, then one of four` });
+    const echo = type === 'the_fang' ? DRAGON_KILLERS.chance(type, { repeat: true }) : 0;
+    if (dk > 0) for (const id of DRAGON_KILLERS.DRAGON_ITEMS) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: dk * 100 / DRAGON_KILLERS.DRAGON_ITEMS.length, kind: 'extra', note: `1 in ${Math.round(1 / dk)} for any dragon item${echo && echo !== dk ? ` (the first kill; 1 in ${Math.round(1 / echo)} on every Echo)` : ''}, then one of four` });
     for (const [id, a, b, p, note] of EXTRA_DROPS[type] || []) if (ITEMS[id]) rows.push({ id, min: a, max: b, pct: p, kind: 'extra', note });
     return rows;
   }
@@ -171,7 +185,7 @@
         boss: BOSS_TYPES.has(type) || ((def.level | 0) >= 25 && def.hp >= 300), where: [...(where[type] || [])], drops: dropRows(type, def) };
       for (const x of EXTRA_WHERE[type] || []) { const place = x.split(/[,—(]/)[0].trim(); const i = e.where.indexOf(place); if (i >= 0) e.where[i] = x; else e.where.push(x); }
       e.tablePct = e.drops.filter(r => r.kind === 'table').reduce((s, r) => s + r.pct, 0);
-      e.blurb = monsterBlurb(def, e); out.monsters[type] = e;
+      e.blurb = monsterBlurb(def, e); e.again = FIGHT_AGAIN[type] || null; out.monsters[type] = e;
     }
     // ---- items ----
     const sources = {}; const src = (id, s) => { if (ITEMS[id]) (sources[id] = sources[id] || []).push(s); };
@@ -318,7 +332,8 @@
       const kinds = [['always', 'Every time'], ['table', 'One of these each kill'], ['rare', 'Rare'], ['extra', 'Special']];
       for (const [k, title] of kinds) { const rows = e.drops.filter(r => r.kind === k); if (!rows.length) continue; out.push(P(title + ':', '#8b949e'));
         for (const r of rows) { if (r.id === 'nothing') { out.push(P(`   Nothing · ${pct(r.pct)}%`, '#6e7681')); continue; } out.push(L(`${itemName(r.id)} × ${qtyText(r.min, r.max)} · ${pct(r.pct)}%${r.note ? ' · ' + r.note : ''}`, 'items', r.id, r.id)); } }
-      if (e.respawn) out.push(P(`Comes back after about ${e.respawn >= 1e8 ? 'never (once only)' : e.respawn >= 60 ? Math.round(e.respawn / 60) + ' min' : e.respawn + ' s'}.`, '#6e7681'));
+      if (e.again) out.push(P(e.again, '#8b949e'));
+      else if (e.respawn) out.push(P(`Comes back after about ${e.respawn >= 1e8 ? 'never (once only)' : e.respawn >= 60 ? Math.round(e.respawn / 60) + ' min' : e.respawn + ' s'}.`, '#6e7681'));
     }
     if (section === 'items') {
       const def = e.def || ITEMS[id] || {};
@@ -565,7 +580,7 @@
   // The Wiki plate under a chosen pack item is drawn by the pack itself (src/10-hud.js), in its one row of verbs.
 
   window.WIKI = {
-    sections: SECTIONS, state: wk,
+    sections: SECTIONS, state: wk, BOSS_TYPES, FIGHT_AGAIN,
     add(section, entry) { if (!SECTIONS.includes(section) || !entry || !entry.id) return false; custom[section][entry.id] = Object.assign({ name: entry.id }, entry); data = null; return true; },
     get(section, id) { const d = ensure(); return (d[section] && d[section][id]) || null; },
     open, rebuild() { data = null; return ensure(); }, lines: pageLines, list: listFor,

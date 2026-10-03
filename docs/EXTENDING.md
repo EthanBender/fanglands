@@ -38,9 +38,21 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
 - More hooks: `HOOKS.talkBefore.my_role = npc => handled` runs before the core dialogue; `HOOKS.mapTarget.push(() => ({ x, y, label }))`
   puts a marker on the world map (add `map: '<instance id>'` for a target inside an instance: inside an instance only that instance's targets are listed, and
   anything drawn on the maps reads `mapView()`, `miniWindow(size)` and `mapLayout` instead of assuming the whole world); `HOOKS.hurt.push((e, dmg, source) => ...)` sees every hit the player takes.
+- Named bosses come back (owner: *"bosses shoould all be redefeatable"*). A boss a control or a visit wakes registers it once:
+  `HOOKS.bossCall = HOOKS.bossCall || {}; HOOKS.bossCall.my_boss = { map: 'over' | '<instance id>', near: [tx, ty, tiles] | null, name, type, alive: () => bool, wake: askerName => {...} }`,
+  and the on-screen control calls `window.COOP && COOP.call ? COOP.call('my_boss') : HOOKS.bossCall.my_boss.wake(null)`. Offline or on the
+  map's keeper that wakes it at once (`'woke'`); on anyone else it asks the keeper (`'sent'`), who checks the map, the range and
+  that none is up (docs/ONLINE.md, *Named bosses*). `wake(null)` is this knight's own call; `wake('Ben')` must never set the
+  keeper's own quest flags. Decide first-kill or repeat in the kill hook from this knight's own flags, so a friend's kill
+  (a phantom, through the helper credit) pays each knight his own reward. Anything the boss spawns or moves runs only where
+  `!window.NET || !NET.online() || (window.COOP && COOP.isKeeper())`. A rematch's rest is timed on `player.dayTime` (saved,
+  always counts up, in instances too), never on `time`. `src/28-thefang.js`, `src/20-hollowford.js` (the War Shed),
+  `src/66-storm.js` (the wind shrine) and `src/33-goblincity.js` (the Arena lever) are the four patterns.
+  An instance whose boss simply comes back on every entry says why with `INSTANCES.define(id, { ..., again: 'A plain sentence.' })`:
+  The Voice reads it on every visit after the first clear (16-instances, 35-night).
 - Pathfinding: `HOOKS.pathBlock.push((tx, ty, who) => blocked)` keeps tap-to-move and the self-test bot's `walkTo` off a cell the
   knight could step onto but cannot get across right now (an agility log above his level). Test cheaply: it runs for every cell a search visits.
-- Instances (`src/16-instances.js`): `INSTANCES.define('my_cave', { name, sub, w, h, build(setTile, rnd), spawns: [[type, x, y]], exit: [x, y], door: [x, y], step: [x, y], boss, onClear })`;
+- Instances (`src/16-instances.js`): `INSTANCES.define('my_cave', { name, sub, w, h, build(setTile, rnd), spawns: [[type, x, y]], exit: [x, y], door: [x, y], step: [x, y], boss, onClear, voice, again })`;
   a `door` places a DUNGEON_DOOR tile at world-gen and E on it enters, or call `INSTANCES.enter('my_cave')` yourself and `INSTANCES.leave()`. The instance map replaces `map` while active; the save always records the overworld.
   **Instance-local BUILDINGS** (a roof that lifts when you walk in, inside an instance): mount them into `BUILDINGS` on enter and
   unmount them on every way out, because 16-instances hides the overworld buildings in the instance's rectangle and puts them back

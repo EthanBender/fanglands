@@ -1180,6 +1180,123 @@ async function main() {
       o1 && o2 && o3 && same(ends, ['closed', 'far', 'left']) && nothing, { o1, o2, o3, ends, nothing });
   }
 
+  // =====================================================================================================================
+  // Named bosses (docs/ONLINE.md, "Named bosses: boss_call and helper credit"): every boss can be beaten again, friends fight
+  // it together, the keeper makes it, and each knight's first kill is his own.
+  // =====================================================================================================================
+  const keepOver = () => {
+    // Ann keeps the overworld: Ben steps into a cave and out again, so she is the one who has been there longest
+    if (A.COOP.isKeeper() && A.COOP.map() === 'over' && B.COOP.map() === 'over') return true;
+    ev(A, "if (INSTANCES.active()) INSTANCES.leave()"); ev(B, "if (INSTANCES.active()) INSTANCES.leave()"); tick(20);
+    ev(B, "INSTANCES.enter('spider_den')"); tick(20); ev(B, "INSTANCES.leave()"); tick(30);
+    return A.COOP.isKeeper() && B.COOP.keeper() === 'Ann';
+  };
+  const sumNear = (g, id, qty) => ev(g, `drops.filter(d => d.id === ${JSON.stringify(id)}${qty ? ' && d.qty === ' + qty : ''}).reduce((n, d) => n + d.qty, 0)`);
+  const hitBoss = (g, type, dmg) => ev(g, `(() => { const m = monsters.find(o => o.type === ${JSON.stringify(type)} && !o.dead); if (!m) return false; hitMonster(m, ${dmg}, 0); return true; })()`);
+  // ---- M1. the Fang: Ann has slain it (stage 16); Ben, at stage 14, sounds the horn; both fight; Ben lands the last blow ----
+  {
+    calm(); const kept = keepOver();
+    const fangOf = g => ev(g, "(() => { const m = monsters.find(o => o.type === 'the_fang'); return m ? { dead: m.dead, remote: !!m.remote, hp: m.hp } : null; })()");
+    ev(A, "quest.stage = 16; quest.dragons = Object.assign(quest.dragons || {}, { salve: true }); quest.fang = { gateOpen: true, warned: true, slain: true, seen: true, looted: [], chest: false, summoned: true, echoUp: false, restUntil: 0, echoes: 0 }; drops = [];");
+    ev(B, "quest.stage = 14; quest.dragons = Object.assign(quest.dragons || {}, { salve: true }); quest.fang = { gateOpen: true, warned: true, slain: false, seen: true, looted: [], chest: false, summoned: false, echoUp: false, restUntil: 0, echoes: 0 }; drops = []; if (!countItem('dragon_horn')) addItem('dragon_horn', 1);");
+    for (const g of both) ev(g, "for (let x = 17; x <= 19; x++) if (tileAt(x, 108) !== T.CAVE) changeTile(x, 108, T.CAVE)");
+    A.FANGLANDS.tp(20, 116); B.FANGLANDS.tp(18, 116); tick(30);
+    const calls0 = []; const offCall = A.NET.on('boss_call', m => calls0.push(m));
+    B.FANGLANDS.face(18, 117); B.FANGLANDS.press('KeyE'); tick(30);
+    A.NET.off('boss_call', offCall);
+    const up = fangOf(A), pup = fangOf(B);
+    const bothSee = !!up && !up.dead && !up.remote && !!pup && !pup.dead && pup.remote;
+    // three hits each (Ann on her own dragon, Ben on his puppet: routed to Ann), then Ben's last
+    ev(A, "(() => { const m = monsters.find(o => o.type === 'the_fang'); m.hp = 100; m.element = 'fire'; m.elemT = 0; })()"); tick(10);
+    for (let i = 0; i < 3; i++) { hitBoss(A, 'the_fang', 10); tick(3); hitBoss(B, 'the_fang', 10); tick(6); }
+    hitBoss(B, 'the_fang', 60); tick(20);
+    const ben = ev(B, "({ slain: quest.fang.slain, stage: quest.stage, fang: drops.filter(d => d.id === 'fang_of_the_fang').length + countItem('fang_of_the_fang') })");
+    const ann = ev(A, "({ slain: quest.fang.slain, stage: quest.stage, fang: drops.filter(d => d.id === 'fang_of_the_fang').length + countItem('fang_of_the_fang'), echoes: quest.fang.echoes })");
+    const annPurse = { coins: sumNear(A, 'coins', 300), scales: sumNear(A, 'dragon_scale', 3), mithril: sumNear(A, 'mithril_bar', 1) };
+    const benFirst = { coins: sumNear(B, 'coins', 1000), scales: sumNear(B, 'dragon_scale', 10), mithril: sumNear(B, 'mithril_bar', 4) };
+    const down = fangOf(A);
+    line('M1. Ann keeps the lair (she slew the Fang, stage 16); Ben (stage 14) sounds the horn: his boss_call wakes the one Fang on both screens; both land 3+ hits and Ben the last: Ben gets the first kill (slain, stage 15, the Fang of the Fang, 1000 coins), Ann the Echo purse (300 coins + 3 scales + 1 mithril, still stage 16, no second tooth)',
+      kept && calls0.length === 1 && calls0[0].n === 'Ben' && calls0[0].id === 'the_fang' && bothSee && ben.slain && ben.stage === 15 && ben.fang === 1 && benFirst.coins === 1000 && benFirst.scales === 10 && benFirst.mithril === 4
+        && ann.slain && ann.stage === 16 && ann.fang === 0 && ann.echoes === 1 && annPurse.coins === 300 && annPurse.scales === 3 && annPurse.mithril === 1 && !!down && down.dead,
+      { kept, calls: calls0.map(m => m.n + ':' + m.id), up, pup, ben, benFirst, ann, annPurse, down });
+  }
+  // ---- M3. the keeper leaves mid-Echo: the Echo stays up on the new keeper ----
+  {
+    calm(); const kept = keepOver();
+    ev(A, "quest.fang.restUntil = 0; quest.fang.echoUp = false; if (!countItem('dragon_horn')) addItem('dragon_horn', 1);");
+    A.FANGLANDS.tp(18, 116); B.FANGLANDS.tp(21, 118); tick(20);
+    A.FANGLANDS.face(18, 117); A.FANGLANDS.press('KeyE'); tick(30);
+    const echoA = ev(A, "(() => { const m = monsters.find(o => o.type === 'the_fang'); return !!m && !m.dead && m.awake === true && quest.fang.echoUp === true; })()");
+    const seenB = ev(B, "(() => { const m = monsters.find(o => o.type === 'the_fang'); return !!m && !m.dead && !!m.remote; })()");
+    A.NET.disconnect(); wire.flush(); tick(60);
+    const onB = ev(B, "(() => { const m = monsters.find(o => o.type === 'the_fang'); return { keeper: COOP.isKeeper(), alive: !!m && !m.dead, real: !!m && !m.remote, awake: !!m && m.awake === true, mine: quest.fang.slain }; })()");
+    line('M3. Ann (keeper) raises the Echo and Ben sees it; Ann leaves: Ben becomes keeper and the Echo stays up on his game (awake), though his own flags say his Fang is slain',
+      kept && echoA && seenB && onB.keeper && onB.alive && onB.real && onB.awake && onB.mine, { kept, echoA, seenB, onB });
+    // put it back to sleep, and Ann back in
+    ev(B, "(() => { const m = monsters.find(o => o.type === 'the_fang'); if (m) { m.dead = true; m.awake = false; m.respawnT = Infinity; } })()");
+    A.NET.connect(); wire.flush(); tick(40);
+  }
+  // ---- M2. Tinkerton's lab: Ben (not the keeper) pulls the lever; both see exactly one Gnasher ----
+  {
+    calm();
+    for (const g of both) ev(g, "if (INSTANCES.active()) INSTANCES.leave(); quest.tinker = Object.assign(quest.tinker || {}, { stage: 3, rematch: false, kills: 1, parts: {}, visited: true, friends: 4, bundle: true });");
+    tick(10); ev(A, "INSTANCES.enter('tinker_lab')"); tick(30); ev(B, "INSTANCES.enter('tinker_lab')"); tick(30);
+    const keeperA = A.COOP.isKeeper() && A.COOP.map() === 'tinker_lab' && B.COOP.keeper() === 'Ann';
+    B.FANGLANDS.tp(21, 14); B.FANGLANDS.face(21, 15); B.FANGLANDS.press('KeyE'); tick(40);
+    const nA = ev(A, "monsters.filter(m => m.type === 'gnasher' && !m.dead).length"), nB = ev(B, "monsters.filter(m => m.type === 'gnasher' && !m.dead && m.remote).length"), localB = ev(B, "monsters.filter(m => m.type === 'gnasher' && !m.remote).length");
+    tick(120);
+    const nA2 = ev(A, "monsters.filter(m => m.type === 'gnasher' && !m.dead).length"), nB2 = ev(B, "monsters.filter(m => m.type === 'gnasher' && !m.dead).length");
+    line('M2. In the lab Ann keeps the map; Ben pulls the Arena lever: his call wakes one Gnasher on Ann\'s game, Ben sees it as a puppet, and two seconds later there is still exactly one on each side',
+      keeperA && nA === 1 && nB === 1 && localB === 0 && nA2 === 1 && nB2 === 1 && ev(B, 'quest.tinker.rematch') === true, { keeperA, nA, nB, localB, nA2, nB2 });
+    // Ann brings it down for both: Ben's rematch purse goes nowhere without three hits; tidy
+    ev(A, "(() => { const m = monsters.find(o => o.type === 'gnasher' && !o.dead); if (m) { m.hp = 1; hitMonster(m, 5, 0); } })()"); tick(60);
+    for (const g of both) ev(g, "if (INSTANCES.active()) INSTANCES.leave(); quest.tinker.rematch = false;"); tick(30);
+  }
+  // ---- M4. the storm: Ann has broken it and is resting; Ben has not. Ben goes in; Ann may follow; both fight ----
+  {
+    calm();
+    ev(A, "quest.storm = { beaten: true, taught: true, bolts: 0, dodged: 0, hits: 0, kills: 1, birdHp: null, restUntil: (player.dayTime || 0) + 200 }; drops = [];");
+    ev(B, "quest.storm = { beaten: false, taught: true, bolts: 0, dodged: 0, hits: 0, kills: 0, birdHp: null, restUntil: 0 }; drops = [];");
+    // (the roster, who is on which map, goes out at most every 2 s)
+    ev(B, "INSTANCES.enter('stormfront')"); tick(150);
+    const shutAlone = ev(A, "(() => { if (INSTANCES.active()) INSTANCES.leave(); return true; })()") && ev(B, "COOP.map()") === 'stormfront';
+    tick(10);
+    const openForFriend = ev(A, "STORM.stormOpen()");
+    ev(A, "STORM.tryIntoStorm()"); tick(40);
+    const inBoth = ev(A, "INSTANCES.active()") === 'stormfront' && ev(B, "INSTANCES.active()") === 'stormfront' && B.COOP.isKeeper();
+    ev(B, "(() => { const m = STORM.bird(); if (m) { STORM.setPhase(m, 'hunt'); m.phaseT = -1e5; m.boltCd = 1e5; m.hp = 100; } })()"); tick(10);
+    for (let i = 0; i < 3; i++) { hitBoss(A, 'thunderbird', 10); tick(6); hitBoss(B, 'thunderbird', 10); tick(3); }
+    hitBoss(B, 'thunderbird', 60); tick(30);
+    const ben = { coins: sumNear(B, 'coins', 400), feather: sumNear(B, 'storm_feather'), essence: sumNear(B, 'cloud_essence', 3), beaten: ev(B, 'quest.storm.beaten') };
+    const ann = { coins: sumNear(A, 'coins', 200), feather: sumNear(A, 'storm_feather'), essence: sumNear(A, 'cloud_essence', 1), kills: ev(A, 'quest.storm.kills') };
+    line('M4. The storm: Ben (never beaten it) goes in and keeps it; Ann (beaten, still resting) may follow because a friend is fighting; both land 3+ hits, Ben the last: Ben gets 400 coins + the feather + 3 cloud essence, Ann 200 coins + 1 essence',
+      shutAlone && openForFriend && inBoth && ben.coins === 400 && ben.feather === 1 && ben.essence === 3 && ben.beaten && ann.coins === 200 && ann.feather === 0 && ann.essence === 1 && ann.kills === 2,
+      { shutAlone, openForFriend, inBoth, ben, ann });
+    for (const g of both) ev(g, "if (INSTANCES.active()) INSTANCES.leave();"); tick(30);
+  }
+  // ---- M5. the War Shed: Ann (keeper) broke the square's beast; Ben (stage 9, sent to the shed) fights his first there ----
+  {
+    calm();
+    ev(A, "quest.hollowford = Object.assign(quest.hollowford || {}, { beastKilled: true, rewarded: true, freed: true, shedUp: false, shedRestUntil: 0, shedKills: 0, wreckDue: false, toldShed: false }); quest.stage = Math.max(quest.stage, 11); drops = [];");
+    ev(B, "quest.hollowford = Object.assign(quest.hollowford || {}, { beastKilled: false, rewarded: false, freed: false, wreck: null, shedUp: false, shedRestUntil: 0, shedKills: 0, wreckDue: false, toldShed: true }); quest.stage = 9; drops = [];");
+    const wrecksA0 = ev(A, "(() => { let n = 0; for (let i = 0; i < map.length; i++) if (map[i] === T.BEAST_WRECK) n++; return n; })()");
+    ev(A, "INSTANCES.enter('war_shed')"); tick(30); ev(B, "INSTANCES.enter('war_shed')"); tick(30);
+    const keeperA = A.COOP.isKeeper() && A.COOP.map() === 'war_shed';
+    B.FANGLANDS.tp(14, 4); B.FANGLANDS.face(14, 3); B.FANGLANDS.press('KeyE'); tick(40);
+    const upA = ev(A, "monsters.filter(m => m.type === 'barrelbeast' && !m.dead).length"), upB = ev(B, "monsters.filter(m => m.type === 'barrelbeast' && !m.dead && m.remote).length");
+    ev(A, "(() => { const m = monsters.find(o => o.type === 'barrelbeast' && !o.dead); if (m) m.hp = 100; })()"); tick(10);
+    for (let i = 0; i < 3; i++) { hitBoss(B, 'barrelbeast', 10); tick(6); hitBoss(A, 'barrelbeast', 10); tick(3); }
+    hitBoss(A, 'barrelbeast', 60); tick(30);
+    const ben = ev(B, "({ stage: quest.stage, killed: quest.hollowford.beastKilled, due: quest.hollowford.wreckDue })");
+    const annIn = ev(A, "({ due: quest.hollowford.wreckDue, kills: quest.hollowford.shedKills })");
+    for (const g of both) ev(g, "if (INSTANCES.active()) INSTANCES.leave();"); tick(20);
+    const wrecksA = ev(A, "(() => { let n = 0; for (let i = 0; i < map.length; i++) if (map[i] === T.BEAST_WRECK) n++; return n; })()");
+    const benWreck = ev(B, "(() => { const w = quest.hollowford.wreck; return !!w && map[idx(w[0], w[1])] === T.BEAST_WRECK && !quest.hollowford.wreckDue; })()");
+    line('M5. The War Shed: Ann keeps it; Ben (stage 9, told about the shed) spins the valve and his call wakes one beast on both screens; both land 3+ hits, Ann the last: Ben\'s first kill moves him to stage 10 with his wreck due and rolled out on leaving; Ann\'s kill is a rematch with no wreck',
+      keeperA && upA === 1 && upB === 1 && ben.stage >= 10 && ben.killed && ben.due && !annIn.due && annIn.kills === 1 && wrecksA === wrecksA0 && benWreck,
+      { keeperA, upA, upB, ben, annIn, wrecks: [wrecksA0, wrecksA], benWreck });
+  }
+
   const failed = results.filter(r => !r).length;
   console.log((failed ? `${failed} FAILED of ${results.length}` : `ALL ${results.length} PASS`) + ` (${useRoom ? (process.env.MMO_ROOM || 'online/src/room.js') : 'FakeWorld'}, ${frames} frames, ${Date.now() - t0} ms)`);
   process.exit(failed ? 1 : 0);
