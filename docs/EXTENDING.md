@@ -128,7 +128,8 @@ or above -1e9. Old saves: on the FIRST load of a save made before the rebuild (`
 reverts its diffs inside stone, water or a hedge (what was placed is given back) and MOVES a machine, a beast, a wreck or
 the mare to the nearest open ground (never deletes one); a cell in `OPEN` ground keeps its diff. After that a knight's
 changes in the city are his and no load touches them (a home beside its lodestone included).
-The seventeen town buildings (`b.town`) draw through the `drawBuilding` wrap; Death's House keeps the core's art. What
+The sixteen town buildings (`b.town`) and Death's House (`death2`, its own painter `drawDeathHouse`) draw through the
+`drawBuilding` wrap; a door on a north wall (h6, h7, the inn) is a porch drawn as its own item over the step (`drawPorch`). What
 never moves on a building is a cached picture (one per building, per day or night, the 10 drawn least lately dropped);
 only smoke, lanterns, signs, the awning and banners are drawn each frame, so a new moving part must be drawn in the
 `BPASS` 2 pass. The core skips its own ground texture under the cells the city's chunks cover (`window.GROUND_COVER`,

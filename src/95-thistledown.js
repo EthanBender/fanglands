@@ -743,7 +743,7 @@
   // the fractional part, always 0..1 (a % 1 of a negative clock is negative)
   const fr = v => v - Math.floor(v);
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, porches: 0, bellAlpha: 1, gateAlpha: {}, gateWho: {}, pics: 0, record: false, boxes: [] };
+  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, deathHouse: 0, porches: 0, bellAlpha: 1, gateAlpha: {}, gateWho: {}, pics: 0, record: false, boxes: [] };
   const CACHE = {};
   function sprite(key, w, h, ax, ay, fn) {
     let s = CACHE[key];
@@ -2077,6 +2077,45 @@
     // (a door on the north wall is its porch, drawn on its own: drawPorch)
     if (b.sign && still()) wordPlate(g, x + w / 2 + (b.door !== undefined && Math.abs(b.door * TILE + 24 - w / 2) < 30 ? 60 : 0), eave - 18, b.sign);
   }
+  // Death's House at the east end (death2): dark coursed stone, narrow arched windows with a violet glow, a steep slate
+  // roof with a crow on the ridge, the coffin door between two violet lanterns, and the REST plate. It kept the core's flat
+  // dark box beside the new roofed fronts and was the one building that looked unfinished.
+  const DEATH_ID = 'death2';
+  function deathStone(g, x, y, w, h) {
+    g.fillStyle = '#34323b'; g.fillRect(x, y, w, h);
+    for (let r = 0; r * 12 < h; r++) { const yy = y + r * 12, off = r % 2 ? 12 : 0; for (let c = -1; c * 24 < w + 24; c++) { const xx = x + off + c * 24; const x0 = Math.max(x, xx + 1), x1 = Math.min(x + w, xx + 23); if (x1 > x0) { g.fillStyle = ['#46434f', '#4d4a57', '#423f4a'][(r + c + 9) % 3]; g.fillRect(x0, yy + 1, x1 - x0, Math.min(10, y + h - yy - 1)); } } }
+    const sh = g.createLinearGradient(0, y, 0, y + h); sh.addColorStop(0, 'rgba(255,255,255,0.06)'); sh.addColorStop(1, 'rgba(0,0,0,0.3)'); g.fillStyle = sh; g.fillRect(x, y, w, h);
+  }
+  function drawDeathHouse(g, b, x, y, w, h) {
+    const FH = 60, eave = y + h - FH, bottom = y + h, dcx = x + b.door * TILE + 24, glow = lit() ? 0.85 : 0.55;
+    if (still()) {
+      g.fillStyle = 'rgba(0,0,0,0.32)'; g.fillRect(x + 6, bottom - 4, w, 8);
+      deathStone(g, x, eave, w, FH);
+      // narrow arched windows, one each side of the door, a faint violet light inside
+      for (const c of [0, 1, 4, 5]) {
+        const cx = x + c * TILE + 24, top = eave + 12, ww = 12, hh = 26;
+        g.fillStyle = '#25232b'; g.beginPath(); g.moveTo(cx - ww / 2 - 3, top + hh + 2); g.lineTo(cx - ww / 2 - 3, top + 4); g.arc(cx, top + 4, ww / 2 + 3, Math.PI, 0); g.lineTo(cx + ww / 2 + 3, top + hh + 2); g.closePath(); g.fill();
+        g.fillStyle = `rgba(181,140,255,${glow.toFixed(2)})`; g.beginPath(); g.moveTo(cx - ww / 2, top + hh); g.lineTo(cx - ww / 2, top + 4); g.arc(cx, top + 4, ww / 2, Math.PI, 0); g.lineTo(cx + ww / 2, top + hh); g.closePath(); g.fill();
+        g.fillStyle = '#25232b'; g.fillRect(cx - 1, top - 2, 2, hh + 2); g.fillRect(cx - ww / 2, top + 13, ww, 2);
+        g.fillStyle = '#6a6774'; g.fillRect(cx - ww / 2 - 4, top + hh + 2, ww + 8, 3);
+      }
+      hipRoof(g, x, y + 2, w, eave, '#3a3644');
+      // a crow on the ridge
+      const rx = x + w * 0.62, ry = y + 2 + (eave - y - 2) * 0.38 - 2;
+      g.fillStyle = '#141318'; g.beginPath(); g.ellipse(rx, ry - 6, 7, 5, -0.2, 0, 7); g.fill(); g.beginPath(); g.arc(rx + 6, ry - 11, 3.6, 0, 7); g.fill();
+      g.beginPath(); g.moveTo(rx - 6, ry - 6); g.lineTo(rx - 13, ry - 2); g.lineTo(rx - 6, ry - 3); g.closePath(); g.fill();
+      g.fillStyle = '#5a5560'; g.beginPath(); g.moveTo(rx + 9, ry - 11); g.lineTo(rx + 13, ry - 10); g.lineTo(rx + 9, ry - 9.5); g.closePath(); g.fill();
+      g.fillStyle = '#c9b8ff'; g.fillRect(rx + 6.5, ry - 12.5, 1.4, 1.4);
+      // the coffin door, silver-edged, and the step's dark stone
+      g.fillStyle = '#2a2a33'; g.beginPath(); g.moveTo(dcx - 10, bottom - 40); g.lineTo(dcx + 10, bottom - 40); g.lineTo(dcx + 17, bottom - 28); g.lineTo(dcx + 12, bottom); g.lineTo(dcx - 12, bottom); g.lineTo(dcx - 17, bottom - 28); g.closePath(); g.fill();
+      g.strokeStyle = '#8b8b9a'; g.lineWidth = 2; g.stroke();
+      g.strokeStyle = '#6a6a7a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(dcx, bottom - 34); g.lineTo(dcx, bottom - 6); g.moveTo(dcx - 9, bottom - 26); g.lineTo(dcx + 9, bottom - 26); g.stroke();
+      // the REST plate over the door: dark, with the violet word
+      g.font = `700 10px ${DISPLAY}`; g.fillStyle = '#2a2a33'; g.fillRect(dcx - 34, eave - 20, 68, 16); g.strokeStyle = '#8b8b9a'; g.lineWidth = 1; g.strokeRect(dcx - 34, eave - 20, 68, 16);
+      g.fillStyle = '#b58cff'; g.textAlign = 'center'; g.fillText(b.sign || 'REST', dcx, eave - 8);
+    }
+    if (moving()) { drawLantern(g, dcx - 24, bottom - 22, true); drawLantern(g, dcx + 24, bottom - 22, true); }
+  }
   // the keep: a crenellated parapet, a slate great-hall roof, the Duke's arms over the north door, two front turrets at
   // the north corners, and a square tower with a spire in its south half. Only the turrets' cones rise over row 46.
   function keepTurret(g, cx, base, rim, apex, R) {
@@ -2142,12 +2181,12 @@
   }
   function drawTownBuilding(g, b) {
     const x = b.x * TILE, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
-    STATS.townBuildings++; if (b.id === 'keep') STATS.keep++;
+    if (b.town) STATS.townBuildings++; if (b.id === 'keep') STATS.keep++; if (b.id === DEATH_ID) STATS.deathHouse++;
     if (STATS.record) STATS.boxes.push({ x0: x, y0: y - riseOf(b), x1: x + w, y1: y + h, own: b.id, building: true });
     g.save();
     // the keep fades only where its two front turrets rise over row 46 and the knight is behind them
     if (b.id === 'keep') { const sy = (b.y + b.h) * TILE - 1, a = Math.min(behindAlpha(x, y - 60, x + 60, y + 70, sy), behindAlpha(x + w - 60, y - 60, x + w, y + 70, sy)); if (a < 1) g.globalAlpha = a; }
-    const paint = b.id === 'keep' ? drawKeep : drawHall;
+    const paint = b.id === 'keep' ? drawKeep : b.id === DEATH_ID ? drawDeathHouse : drawHall;
     // what never moves comes from a picture made once (per day or night); smoke, lanterns, signs and banners go on top
     const pic = buildingPic(b, paint, x, y, w, h);
     if (pic) { g.drawImage(pic.c, pic.x0, pic.y0, pic.w, pic.h); BPASS = 2; try { paint(g, b, x, y, w, h); } finally { BPASS = 0; } }
@@ -2173,7 +2212,7 @@
     p.used = ++picUse;
     return p;
   }
-  { const _drawBuilding = drawBuilding; drawBuilding = function (g, b) { return (b && b.town && !window.__instance) ? drawTownBuilding(g, b) : _drawBuilding(g, b); }; }
+  { const _drawBuilding = drawBuilding; drawBuilding = function (g, b) { return (b && (b.town || b.id === DEATH_ID) && !window.__instance) ? drawTownBuilding(g, b) : _drawBuilding(g, b); }; }
   // the six town gate cells draw no wooden gate (the gatehouse is drawn instead)
   const TOWN_GATE_CELLS = new Set(PLAN.GATES.flatMap(gt => gt.rows.map(y => gt.x + ',' + y)));
   { const _drawFenceProp = drawFenceProp; drawFenceProp = function (g, tx, ty, gate) { if (!window.__instance && TOWN_GATE_CELLS.has(tx + ',' + ty)) return; return _drawFenceProp(g, tx, ty, gate); }; }
@@ -3045,7 +3084,9 @@
       r.gates = calls(g => drawFenceProp(g, 85, 32, true)) === 0 && calls(g => drawFenceProp(g, 140, 31, true)) === 0 && calls(g => drawFenceProp(g, 80, 43, true)) > 0;
       r.brazier = (() => { const { g, log } = recorder(); drawFireProp(g, 119, 38); return log.filter(e => e[0] === 'ellipse').length >= 3; })() && calls(g => drawFireProp(g, 150, 30)) > 0;
       { const t0 = STATS.towers; calls(g => drawTower(g, tc(104), tc(42))); r.tower = STATS.towers === t0 + 1; }
-      { const b0 = STATS.townBuildings; calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'bakery'))); calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'death2'))); r.buildings = STATS.townBuildings === b0 + 1 && BUILDINGS.filter(b => b.town).length === 16; }
+      // (Death's House draws through the capital's own painter too, and is not one of the sixteen town buildings)
+      { const b0 = STATS.townBuildings, d0 = STATS.deathHouse; calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'bakery'))); calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'death2'))); calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'death1')));
+        r.buildings = STATS.townBuildings === b0 + 1 && STATS.deathHouse === d0 + 1 && BUILDINGS.filter(b => b.town).length === 16; }
       // the words elsewhere: Ada, the region, the island arch, the sounds, the book
       const ada = npc('v1'); r.ada = ada.lines[0] === 'Lost? Find the Great Fountain. Every street comes back to it.' && ada.lines.length === 3;
       r.region = REGIONS.find(x => x.name === 'Thistledown').sub === 'The city that still stands';
