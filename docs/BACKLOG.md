@@ -97,7 +97,6 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
   - Some small drawing changes go beyond the approved sample. Each greave now has a metal mark (bronze rivets, an iron band, a steel ridge, a mithril curl, a sunstone dot). The bronze dagger has a wider blade, and the steel blade and hilt have rivets. Under an open helm facing away, the back of his h...
   - A remote knight's name sits above his height at rest, facing down. A long weapon raised in a swing facing away, like the dragon spear, reaches into the 'R lv9' name for the moment of the swing.
   - lookOf sends tool and toolColor but not toolSwing. So on a friend's screen, a knight mining obsidian or mithril, chopping jungle or working the royal mine holds his pick still in his floating hand. On your own screen it swings.
-  - No check guards the new mirrored crowd pictures, where facings to his left reuse the picture of facing right. If they break, every friend walking left online is drawn facing right, and the suite stays green. The code is correct today; the only evidence was a screenshot.
   - The stone he holds while warming it in the royal mine still floats in front of him with no hand on it. That is against decision 1 (floating hands on what he holds). The builder says so and left it.
   - The statue of the player's own knight at Thistledown is still built with no gear, so it is drawn in the old style while every other picture of his knight is in the new one. The owner asked for the new knight 'everywhere a knight is drawn'.
   - Friends online do not see you raise your shield. That is the same as the base (47's old plain shield was only ever drawn locally), so it is not a regression, but decision 3's shield placement only ever shows on your own screen.
@@ -106,7 +105,6 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
   - Blocking while facing away with a small or round shield shows nothing. The raised shield is completely hidden behind his back, so you cannot tell he is blocking. Only the tall steel kite peeks out at one corner.
   - On the boy-or-girl cards, in gear that hides the face and hair (necromancer hood and robe, godly helm), the girl card looks almost the same as the boy card. Facing down, her braid and ribbon hang on the weapon side, where the floating hand and the dagger cover them.
   - A flake that is not on the known list and that this build hits. Whether the check passes depends on whether the day clock has passed 7 minutes when he lands on Ironclad Isle. If it has, the Voice's night line comes first and the check fails. The clock at that point drifts by more than 50 s from r...
-  - There is a test gap on owner decision 3 for every other knight online. Remote knights are drawn from pictures. Swapping the front or behind order inside the picture code fails no check. Check 4 only exercises the live path through a recorder. Today the cached drawing matches the live one (pixel c...
   - Three changes have no check that fails without them:
 - the remote knight going through the picture cache at all;
 - the name tag lifted above tall gear;
