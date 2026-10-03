@@ -168,8 +168,26 @@
     notify(text);
   });
   NET.on('unmuted', () => { mutedUntil = 0; system('An admin turned your chat back on.', MUTE_RED); notify('An admin turned your chat back on.'); });
+  // ---------- a different knight on this device: nothing of the last one's chat stays ----------
+  // A brother or sister taps Not me (or Log out) and logs in on the same iPad: the first knight's lines, its warnings ("Last
+  // warning.") and its mute must not show in the new knight's strip and log, where they read as said to them. Not me and Log
+  // out call CHAT.forget (71-login); a welcome for a different name than the last does it too. Other files clear what they
+  // show for the old knight through CHAT.onForget (79-strikes: a strike notice and the LAST WARNING banner).
+  let knight = null;            // the name the log belongs to (null: nobody yet, or forgotten)
+  const forgetters = [];
+  function forget() {
+    log.length = 0; for (const n in bubbles) delete bubbles[n];
+    mutedUntil = 0; lastLineAt = -1e9; knight = null;
+    if (isOpen) close();
+    for (const f of forgetters) { try { f(); } catch (e) { console.error('chat forget', e); } }
+  }
   // a new session starts unmuted; the world follows its welcome with a muted if the knight still is
-  NET.on('welcome', () => { mutedUntil = 0; lastLineAt = -1e9; });
+  NET.on('welcome', m => {
+    const who = m && typeof m.me === 'string' ? m.me : null;
+    if (who && knight !== null && who !== knight) forget();
+    if (who) knight = who;
+    mutedUntil = 0; lastLineAt = -1e9;
+  });
 
   // ---------- keys, timers ----------
   HOOKS.update.push(dt => {
@@ -296,6 +314,9 @@
 
   window.CHAT = {
     open, close, send, system, isOpen: () => isOpen, bubbles, log, PHRASES, MAX, stripLines, CSS, drawBubble, bubbleLines,
+    // a different knight on this device (Not me, Log out): empty the log and bubbles; onForget(fn) runs fn then too.
+    // sameKnight(name): the knight was renamed by an admin, so the welcome as the new name is still the same knight.
+    forget, onForget: fn => { if (typeof fn === 'function') forgetters.push(fn); }, sameKnight: name => { if (typeof name === 'string' && name) knight = name; }, knight: () => knight,
     // seconds of mute left: 0 when the chat is on, -1 until an admin turns it back on
     muted: () => mutedUntil === Infinity ? -1 : isMuted() ? Math.ceil((mutedUntil - nowMs()) / 1000) : 0,
   };
