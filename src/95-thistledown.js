@@ -581,8 +581,9 @@
   // =========================================================================
   const WARD = { name: null, shown: null, since: -1e9, region: null, log: [] };
   const BARK = { t: 0, pending: false, log: [] };
-  // a banner across the top of the screen that the welcome tag would sit under
-  const bannerUp = () => !!((areaBanner && areaBanner.t > 0.3) || (typeof levelBanner !== 'undefined' && levelBanner && levelBanner.t > 0.3));
+  // a banner across the top of the screen that the welcome tag would sit under, or a talk box (on a phone the Voice's box
+  // is at the top of the screen, right where the tag is)
+  const bannerUp = () => !!(dialog.cur || (areaBanner && areaBanner.t > 0.3) || (typeof levelBanner !== 'undefined' && levelBanner && levelBanner.t > 0.3));
   const PL = PLAN.PLINTH;
   HOOKS.update.push(dt => {
     const q = Q();
@@ -596,7 +597,8 @@
     WARD.name = w ? w.name : null;
     if (w && w.name !== WARD.shown && time - WARD.since >= 3.2) { WARD.shown = w.name; areaBanner = { name: w.name, sub: w.sub, t: 2.4 }; WARD.log.push(w.name); }
     // Gatewarden Osric calls out once, the first time a knight comes near; never while a banner is up (THISTLEDOWN as the
-    // knight comes in at the gate, a ward's, a level's), or his tag would be drawn under it: he waits for it to go
+    // knight comes in at the gate, a ward's, a level's) or a talk box is open, or his tag would be drawn under it: he
+    // waits for it to go
     const os = npc('osric');
     if (!q.barked && os) {
       const d = dist(player.x, player.y, os.px, os.py);
@@ -2252,8 +2254,9 @@
 
     // ---- C5. the road ----
     // The fields outside the walls are not the city's: the goblin walker leaves its wreck wherever it falls, and a knight
-    // parks where he likes. For C5 and C6 the road outside (x 76..84 and 141..147, rows 30..34) is borrowed clear of
-    // anything solid, and a machine or wreck a knight left on the High Street is lifted off it; all of it goes back after C6.
+    // parks where he likes. For C5, C6 and C9 the road outside (x 76..84 and 141..147, rows 30..34) is borrowed clear of
+    // anything solid, and a machine or wreck a knight left on the High Street is lifted off it; all of it goes back after C9
+    // (the --play bot once left the goblin walker's wreck on 142,32, right outside the East Gate).
     const roadKept = [];
     { const VEH = vehicleTiles();
       const lift = (x, y, to) => { const i = idx(x, y); roadKept.push({ x, y, t: tileAt(x, y), had: mapDiffs.has(i), d: mapDiffs.get(i) }); setTile(x, y, to); mapDiffs.delete(i); };
@@ -2306,7 +2309,7 @@
         if (!(foot.east && foot.back && foot.rowsOk)) ok = false;
         check(P + 'C6 on the mare and on the Barrelbeast the knight rides in through the West Gate, down the High Street and out of the East Gate (crossing both gate lines on rows 31..33, still mounted), and back; and from the fountain over the drawbridge into the castle yard and back; and on foot gate to gate', ok, log);
       }
-      onFoot(); giveBack(); roadBack(); drain(); }
+      onFoot(); giveBack(); drain(); }
 
     // ---- C7. anchors on their tiles ----
     { const want = [[105, 27, 'BOARD'], [108, 28, 'STALL'], [109, 28, 'STALL'], [116, 28, 'STALL'], [117, 28, 'STALL'], [119, 27, 'HITCH'], [117, 17, 'HOUSE_PORTAL'], [96, 43, 'DOZER_BAY'], [119, 38, 'FIRE'],
@@ -2346,6 +2349,7 @@
       const pc = window.PLAYTHROUGH ? PLAYTHROUGH.connectivity() : null, unreach = pc ? pc.unreachable : ['no PLAYTHROUGH'];
       const pockets = []; for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) if (glyph(x, y) !== '@' && !SOLID.has(tileAt(x, y)) && at(x, y) < 0) pockets.push(x + ',' + y);
       const paths = { duke: at(112, 48), board: reach(105, 27), forge: at(92, 38), workbench: at(100, 38), death: at(134, 51), maze: at(133, 18), eastGate: at(140, 32), bell: at(111, 17), captain: reach(110, 40) };
+      roadBack();
       check(P + 'C9 from outside the West Gate (80,32) a knight walks to every door step, every person, every guard, every station stand, the Duke, the board, the portal, the coffin, the sundial, the bell, the footbridge, the jetty, the agility start and out of the East Gate; the playthrough audit finds nothing unreachable; no walkable cell in the town is cut off',
         !miss.length && !unreach.length && !pockets.length, { miss, unreach: unreach.slice(0, 4), pockets: pockets.slice(0, 8), paths }); }
 
@@ -2642,10 +2646,13 @@
       // ... but never under a banner: with THISTLEDOWN still up he waits, and calls out once it has gone
       q.barked = false; BARK.t = 0; BARK.pending = false; F.tp(96, 32); F.step([]);
       areaBanner = { name: 'Thistledown', sub: 'The city that still stands', t: 2.5 }; F.tp(91, 32); F.step([]);
-      const held = BARK.t === 0 && BARK.pending && !q.barked;
-      let waited = 0; while (areaBanner && waited < 400) { F.step([]); waited++; }
-      F.step([]); const after = BARK.t > 3.5 && q.barked && !areaBanner;
-      r.barkHeld = held && after;
+      for (let k = 0; k < 30; k++) F.step([]);
+      const held = BARK.t === 0 && BARK.pending && !q.barked && !!areaBanner;
+      // the banner goes, but the Voice is talking (its box is at the top of a phone's screen): he waits for that too
+      say('A line from the Voice.', 'The Voice'); areaBanner = null; F.step([]); const heldTalk = BARK.t === 0 && BARK.pending && !q.barked;
+      drain(); F.step([]); const after = BARK.t > 3.5 && q.barked && !areaBanner;
+      r.barkHeld = held && heldTalk && after;
+      if (!r.barkHeld) r.barkWhy = { held, heldTalk, after };
       // the town's new people have names no one else in the Fanglands has (a second Nell muddled Hollowford's Nell)
       const ours = new Set(PLAN.PEOPLE.map(p => p.name).concat(KIDS.map(k => k.name), ['Duchess']));
       const clash = NPCS.filter(n => !PLAN.PEOPLE.some(p => p.id === n.id)).map(n => n.name).filter(nm => ours.has(nm) || [...ours].some(o => o.split(' ')[0] === String(nm).split(' ')[0]));
@@ -2682,7 +2689,7 @@
       r.wiki = !window.WIKI || (!!WIKI.get('places', 'thistledown_landmarks') && !!WIKI.get('quests', 'td_bell'));
       // the first visit: the Voice's line
       { const v0 = player.visitedVillage; player.visitedVillage = false; drain(); F.tp(96, 32); F.step([]); r.voice = said().some(d => d.who === 'The Voice' && d.text === 'Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is just past it, over the moat.'); player.visitedVillage = v0; drain(); }
-      check(P + "C23 the small things: Osric's welcome shows once as a tag over his head, never under a banner (he waits for THISTLEDOWN to go); the town's new people have names nobody else has; Tess and Robin and the swans move by the wall clock on their paths; Duchess comes after the story; Ambrose and Wynn have their after-story lines; the town gates draw no wooden gate, the square's fire is a brazier, the castle towers and the town buildings draw themselves (Death's House keeps its own); Ada, the region, the island arch, the sounds, the book and the Voice say the new words",
+      check(P + "C23 the small things: Osric's welcome shows once as a tag over his head, never under a banner or a talk box (he waits for THISTLEDOWN, and the Voice, to go); the town's new people have names nobody else has; Tess and Robin and the swans move by the wall clock on their paths; Duchess comes after the story; Ambrose and Wynn have their after-story lines; the town gates draw no wooden gate, the square's fire is a brazier, the castle towers and the town buildings draw themselves (Death's House keeps its own); Ada, the region, the island arch, the sounds, the book and the Voice say the new words",
         Object.values(r).every(Boolean), r); }
 
     // ---- C25. nothing of the city hides the knight's own marks, or the knight ----
