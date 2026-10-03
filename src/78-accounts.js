@@ -18,6 +18,8 @@
 //      reaches the game), a confirm step drawn in the panel (no confirm()), and the world's answer in plain words
 // Wraps by reassignment, with explicit arguments: pointerDown / pointerMove / pointerUp (a drag scrolls, a still tap
 // opens a row) and drawPanels (the text box shows only while its view is up). window.ACCOUNTS is the register.
+// ACCOUNTS.extend({tags, lines, actions, views}) lets a later file add to a row and a knight's page without touching the
+// drawing here (79-strikes: word strikes, the lockout, a bad name and Rename); ACCOUNTS.textBox lends its view the text box.
 // ============================================================================
 {
   const GOLD = '#f5c542', GREEN = '#3fb950', RED = '#f85149', ORANGE = '#ffb86b', DIM = '#8b949e', INK = '#e6edf3';
@@ -79,6 +81,8 @@
       region: typeof a.region === 'string' ? a.region : null, created: num(a.created) || 0, lastOn: num(a.lastOn) || num(a.lastSeen) || 0,
       lastLogin: num(a.lastLogin), onlineMs: Math.max(0, num(a.onlineMs) || 0), countedSince: num(a.countedSince) || num(a.created) || 0,
       playSeconds: num(a.playSeconds), saveAt: num(a.saveAt), banned: !!a.banned, mutedUntil: num(a.mutedUntil) || 0, logins,
+      // word strikes (docs/ONLINE.md, "Word strikes"): the count now, when the last was, kept out until (0: not), a bad name
+      strikes: Math.max(0, Math.floor(num(a.strikes) || 0)), strikeAt: num(a.strikeAt) || 0, wordsLockedUntil: num(a.wordsLockedUntil) || 0, badName: !!a.badName,
     };
   }
   // the ones on line first (by name), then everyone else, the most recently on first
@@ -145,7 +149,7 @@
   // Built on first use, only where there is a document body (tools/headless.js has none). While it has the keyboard no
   // key reaches the game: 05-input listens on window in the bubble phase, this listens in the capture phase and stops
   // the event there (74-chat's guard). Enter is Next, Escape lets go of the keyboard.
-  let box = null, want = null;
+  let box = null, want = null, boxEnter = null;
   function ensureBox() {
     if (box !== null) return box;
     if (typeof document === 'undefined' || !document.body || typeof document.createElement !== 'function' || typeof document.body.appendChild !== 'function') { box = false; return box; }
@@ -158,7 +162,7 @@
       input.addEventListener('input', () => { S.word = String(input.value).slice(0, WORD_MAX); });
       const guard = e => {
         if (!box || document.activeElement !== box.input) return;
-        if (e.type === 'keydown') { if (e.key === 'Enter') { e.preventDefault(); resetNext(); } else if (e.key === 'Escape') { e.preventDefault(); blurBox(); } }
+        if (e.type === 'keydown') { if (e.key === 'Enter') { e.preventDefault(); (boxEnter || resetNext)(); } else if (e.key === 'Escape') { e.preventDefault(); blurBox(); } }
         e.stopPropagation(); keys.clear();
       };
       for (const t of ['keydown', 'keyup', 'keypress']) window.addEventListener(t, guard, true);
@@ -176,6 +180,9 @@
     const k = [w.x, top, w.w, w.h].join(',');
     if (d.key !== k) { d.key = k; const s = d.input.style; s.left = Math.round(w.x) + 'px'; s.top = Math.round(top) + 'px'; s.width = Math.round(w.w) + 'px'; s.height = Math.round(w.h) + 'px'; }
     if (d.input.value !== S.word) d.input.value = S.word;
+    // what the box is for: the secret word, or whatever a view that borrowed it says (ACCOUNTS.textBox)
+    const ph = w.placeholder || 'New secret word';
+    if (d.input.placeholder !== ph) { d.input.placeholder = ph; d.input.setAttribute('aria-label', ph); }
     if (!d.shown) { d.shown = true; d.input.style.display = 'block'; }
   }
   function blurBox() { if (box && box.input) { try { box.input.blur(); } catch (e) { } } }
@@ -294,6 +301,7 @@
     roundRect(g, x, y, w, h, 8); g.fillStyle = a.role === 'admin' ? 'rgba(245,197,66,0.08)' : 'rgba(255,255,255,0.05)'; g.fill();
     dot(g, x + 14, y + 17, a.online);
     const tags = [a.banned ? ['Banned', RED] : null, muteWords(a) ? ['Muted', ORANGE] : null].filter(Boolean);
+    for (const fn of EXT.tags) for (const t of fn(a) || []) tags.push(t);
     g.font = 'bold 12px sans-serif'; const tagW = tags.reduce((s, t) => s + g.measureText(t[0]).width + 10, 0);
     nameLine(g, a, x + 26, y + 22, w - 40 - tagW);
     let tx = x + w - 10; g.textAlign = 'right';
@@ -338,13 +346,16 @@
       [muteWords(a) || 'Chat: on', muteWords(a) ? ORANGE : DIM],
     ];
     if (a.banned) lines.push(["Banned: can't log in", RED]);
+    for (const fn of EXT.lines) for (const l of fn(a) || []) lines.push(l);
     if (isMe) lines.push(['This is you. Change your own secret word on the parent page.', GOLD]);
     else if (a.role === 'admin') lines.push(['An admin. Only the parent page can change an admin.', GOLD]);
     const LH = 20, colW = wide ? Math.floor(w * 0.5) - 8 : w - 8;
     // a sentence too long for the column goes onto a second line rather than losing its end
     for (let i = lines.length - 1; i >= 0; i--) { const parts = wrap(g, lines[i][0], colW, '13px sans-serif'); if (parts.length > 1) lines.splice(i, 1, ...parts.map(p => [p, lines[i][1]])); }
     const acts = !isMe && a.role !== 'admin';
-    const leftH = lines.length * LH + 6 + (acts ? 2 * (T + 8) : 0);
+    // a later file's rows of buttons (never on your own page): each a row under the others
+    const extra = isMe ? [] : EXT.actions.map(fn => fn(a)).filter(r => r && r.length);
+    const leftH = lines.length * LH + 6 + (acts ? 2 * (T + 8) : 0) + extra.length * (T + 8);
     const L = a.logins, logH = 24 + Math.max(1, L.length) * LH;
     const contentH = wide ? Math.max(leftH, logH) : leftH + 12 + logH;
     scrollArea(g, 'acct', x, top, w, y + h - top, contentH + 4, oy => {
@@ -360,8 +371,9 @@
         ];
         if (a.online) specs.push({ text: armK ? 'Tap again' : 'Kick', w: 'fill', action: () => confirmTap('acct:kick:' + a.name, () => ADMIN.kick(a.name)), color: armK ? '#c0392b' : '#6b4f2a', key: 'acct:kick' });
         row(g, x, by, colW, T, specs); by += T + 8;
-        row(g, x, by, colW, T, [{ text: 'Reset secret word', w: 'fill', action: () => startReset(a.name), color: '#7a5a12', key: 'acct:reset' }]);
+        row(g, x, by, colW, T, [{ text: 'Reset secret word', w: 'fill', action: () => startReset(a.name), color: '#7a5a12', key: 'acct:reset' }]); by += T + 8;
       }
+      for (const specs of extra) { row(g, x, by, colW, T, specs); by += T + 8; }
       // the logins: beside the rest on a wide panel, under it on a narrow one
       const lx = wide ? x + colW + 16 : x, ly = wide ? oy : oy + leftH + 12, lw = wide ? w - colW - 24 : w - 8;
       text(g, L.length ? `LAST ${L.length === 1 ? 'LOGIN' : L.length + ' LOGINS'}` : 'LOGINS', lx, ly + 14, lw, GOLD, 'bold 12px sans-serif');
@@ -429,6 +441,7 @@
     if (v && v.kind === 'acct') drawAccount(g, x, y, w, h, T);
     else if (v && v.kind === 'mute') drawMute(g, x, y, w, h, T);
     else if (v && v.kind === 'reset') drawReset(g, x, y, w, h, T);
+    else if (v && EXT.views[v.kind]) EXT.views[v.kind](g, x, y, w, h, T, v);
     else drawList(g, x, y, w, h, T);
   }
 
@@ -443,10 +456,10 @@
   // the text box shows only while its view is drawn (and never under the pause menu)
   { const _drawPanels = drawPanels;
     drawPanels = function (g, narrow, short, qh, hb) {
-      want = null;
+      want = null; boxEnter = null;
       const r = _drawPanels(g, narrow, short, qh, hb);
       const v = S.view;
-      if (want && tabOpen() && !paused && v && v.kind === 'reset' && v.step === 'type') showBox(want); else hideBox();
+      if (want && tabOpen() && !paused && v && (v.kind === 'reset' ? v.step === 'type' : !!EXT.views[v.kind])) showBox(want); else hideBox();
       return r;
     }; }
 
@@ -456,13 +469,33 @@
   NET.on('offline', forget);
   NET.on('role', () => { if (NET.role !== 'admin') forget(); });
   HOOKS.update.push(() => {
-    if (!tabOpen()) { if (S.view && S.view.kind === 'reset') leaveReset(); if (S.drag) S.drag = null; return; }
+    if (!tabOpen()) { if (S.view && (S.view.kind === 'reset' || EXT.views[S.view.kind])) leaveReset(); if (S.drag) S.drag = null; return; }
     if (!S.loading && nowMs() - S.askedAt >= REFRESH_EVERY) refresh();
   });
 
+  // ---------- extending the tab from a later file ----------
+  // tags(a) -> [[text, colour]] on the list row; lines(a) -> [[text, colour]] on a knight's page; actions(a) -> button specs
+  // ({text, w: 'fill', action, color, enabled, key}) for one more row on a knight's page (not your own); views: {kind: draw}
+  // for a page of its own (S.view = {kind, n, ...}; draw(g, x, y, w, h, T, view); Back is the view's to draw).
+  const EXT = { tags: [], lines: [], actions: [], views: {} };
+  function extend(o) {
+    for (const k of ['tags', 'lines', 'actions']) if (o && typeof o[k] === 'function') EXT[k].push(o[k]);
+    if (o && o.views) for (const kind in o.views) if (typeof o.views[kind] === 'function') EXT.views[kind] = o.views[kind];
+  }
+  // A view's text box: drawn here like the secret word's, the real <input> laid over it while the view is up. The words
+  // typed are S.word (setWord); Enter calls enter. Answers the box's rect.
+  function textBox(g, x, y, w, h, placeholder, enter) {
+    roundRect(g, x, y, w, h, 8); g.fillStyle = '#0b0f14'; g.fill(); g.strokeStyle = GOLD; g.lineWidth = 1; g.stroke();
+    g.font = '15px sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = S.word ? INK : '#6e7681'; g.fillText(fit(g, S.word || placeholder, w - 24), x + 12, y + h / 2); g.textBaseline = 'alphabetic';
+    buttons.push({ x, y, w, h, label: 'acct:wordbox', action: focusBox });
+    want = { x, y, w, h, placeholder }; boxEnter = enter || null;
+    return want;
+  }
+
   const ACCOUNTS = {
     refresh, openAccount, startReset, resetNext, resetSend, setWord, scrollBy, tapList,
-    whenWords, dayWords, spanWords, order, clean, REFRESH_EVERY, state: S,
+    whenWords, dayWords, spanWords, clockWords, order, clean, REFRESH_EVERY, state: S,
+    extend, textBox, find, btn, row, text, wrap, leaveView: leaveReset, blurBox,
   };
   window.ACCOUNTS = ACCOUNTS;
 

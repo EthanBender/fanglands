@@ -52,8 +52,21 @@
   };
 
   // ---------- the world's answers in plain words ----------
+  // Kept out for bad words: the real time it ends, in this device's own clock: "You're kept out until 7:42 pm tomorrow for bad words."
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  LOGIN.keptOut = (until, now) => {
+    until = Number(until); now = now == null ? Date.now() : now;
+    if (!Number.isFinite(until) || until <= 0) return "You're kept out for 24 hours for bad words.";
+    const d = new Date(until), h = d.getHours(), clock = `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
+    const day0 = new Date(now); day0.setHours(0, 0, 0, 0);
+    const days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - day0.getTime()) / 86400000);
+    const when = days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `on ${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`;
+    return `You're kept out until ${clock} ${when} for bad words.`;
+  };
   LOGIN.sentence = (err, kind) => {
     const code = err && err.code, st = err && err.status;
+    if (code === 'words') return LOGIN.keptOut(err.until);
+    if (code === 'renamed') return `An admin changed your knight's name to ${err.name}.`;
     if (code === 'wait' || st === 429) return 'Too many tries. Wait a minute.';
     if (code === 'kicked') return 'An admin sent you out of the world. You can come back in.';
     if (code === 'banned') return 'This knight is not allowed in. Ask Ethan.';
@@ -157,7 +170,7 @@
       r => {
         LOGIN.busy = false;
         if (!r || typeof r.token !== 'string' || !r.token) return oops('The world gave a strange answer. Try again.');
-        NET.setToken(r.token); LOGIN.name = (typeof r.name === 'string' && r.name) || name; lsSet(NAME_KEY, name); LOGIN.stats[kind]++;
+        NET.setToken(r.token); LOGIN.name = (typeof r.name === 'string' && r.name) || name; lsSet(NAME_KEY, LOGIN.name); LOGIN.stats[kind]++;
         afterLogin();
       },
       e => { LOGIN.busy = false; LOGIN.mode = 'form'; LOGIN.error = LOGIN.sentence(e, kind); refresh(); });
@@ -192,9 +205,11 @@
     r => { LOGIN.asleep = false; LOGIN.status = statusWords(r); refresh(); },
     () => { LOGIN.asleep = true; LOGIN.status = 'The world is asleep right now.'; refresh(); });
   const checkMe = () => when(api('GET', '/api/me'),
-    r => { if (LOGIN.mode !== 'checking') return; LOGIN.name = (r && typeof r.name === 'string' && r.name) || LOGIN.name || lsGet(NAME_KEY) || 'knight'; LOGIN.mode = 'me'; refresh(); },
+    r => { if (LOGIN.mode !== 'checking') return; LOGIN.name = (r && typeof r.name === 'string' && r.name) || LOGIN.name || lsGet(NAME_KEY) || 'knight'; if (r && typeof r.name === 'string' && r.name) lsSet(NAME_KEY, r.name); LOGIN.mode = 'me'; refresh(); },
     e => {
       if (LOGIN.mode !== 'checking') return;
+      // kept out for bad words: the session stays (Play works again when the time is up), the card says until when
+      if (e && e.code === 'words') { LOGIN.name = LOGIN.name || lsGet(NAME_KEY) || 'knight'; LOGIN.mode = 'me'; LOGIN.error = LOGIN.sentence(e, 'login'); refresh(); return; }
       if (e && (e.code === 'auth' || e.status === 401 || e.code === 'banned' || e.status === 403)) { NET.setToken(null); LOGIN.error = e.code === 'banned' ? LOGIN.sentence(e, 'login') : ''; }
       LOGIN.mode = 'form'; refresh();
     });
@@ -226,11 +241,11 @@
     if (window.CLOUD) { when(window.CLOUD.flush(), once, once); setTimeout(once, 2000); } else once();
     return true;
   };
-  // the world can end a session from its side (token dead, knight banned, an admin sent the knight out): back to the
-  // title, in plain words. Kicked keeps the session: the card says "Playing as <name>" and Play goes straight back in,
+  // the world can end a session from its side (token dead, knight banned, an admin sent the knight out, kept out for bad
+  // words): back to the title, in plain words. Kept out keeps the session too: the card says until when. Kicked keeps the session: the card says "Playing as <name>" and Play goes straight back in,
   // and because the session still works, the last few seconds of play go up to the cloud first.
   NET.on('error', m => {
-    if (!LOGIN.playing || !m || (m.code !== 'auth' && m.code !== 'banned' && m.code !== 'kicked')) return;
+    if (!LOGIN.playing || !m || (m.code !== 'auth' && m.code !== 'banned' && m.code !== 'kicked' && m.code !== 'words')) return;
     const text = LOGIN.sentence(m, 'login');
     if (m.code === 'kicked' && window.CLOUD) { save(); window.CLOUD.flush(); }
     LOGIN.playing = false; NET.disconnect(); if (m.code === 'banned') NET.setToken(null);
