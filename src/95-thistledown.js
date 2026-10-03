@@ -86,7 +86,8 @@
   // =========================================================================
   // 2. the buildings and the people
   // =========================================================================
-  // the seventeen buildings of the town draw themselves here (drawBuilding is wrapped below); Death's House keeps the core's art
+  // the sixteen buildings of the town draw themselves here (drawBuilding is wrapped below), and Death's House with its own
+  // painter (drawDeathHouse)
   const TOWN_IDS = new Set(['store', 'bank', 'bakery', 'smithy', 'workshop', 'inn', 'keep', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9']);
   BUILDINGS.forEach(b => { if (TOWN_IDS.has(b.id)) b.town = true; });
   const TOWN_BUILDINGS = () => BUILDINGS.filter(b => b.town);
@@ -181,6 +182,26 @@
   const VEHICLE_NAMES = ['MECH', 'WRECK', 'DOZER', 'DOZER_WRECK', 'BEAST', 'BEAST_WRECK', 'HORSE'];
   const vehicleTiles = () => new Set(VEHICLE_NAMES.map(n => T[n]).concat(window.MOUNTS && MOUNTS.tiles ? [MOUNTS.tiles.HORSE] : []).filter(t => typeof t === 'number'));
   const MIG = { reverted: 0, kept: 0, moved: 0, refunds: [], log: [] };
+  // The town's buildings as they stood before the rebuild (x, y, w, h, from master's 02-world before 50dbe74). A knight's
+  // change on what was outdoor ground then and is a new house's floor now is undone like one in a hedge: a plank, a bed or
+  // the mare is not left in somebody's house. A change inside a building that stood there before is still his.
+  const OLD_RECTS = [[90, 20, 7, 6], [99, 20, 8, 6], [122, 20, 6, 6], [90, 36, 7, 6], [99, 36, 7, 6], [122, 44, 8, 6], [108, 46, 10, 7], [133, 48, 6, 5],
+    [130, 20, 5, 5], [88, 28, 4, 4], [94, 28, 4, 4], [124, 27, 4, 4], [130, 27, 5, 4], [92, 46, 4, 4], [98, 46, 4, 4], [134, 36, 5, 4], [126, 36, 4, 4]];
+  const wasIndoors = (x, y) => OLD_RECTS.some(([bx, by, bw, bh]) => x >= bx && x < bx + bw && y >= by && y < by + bh);
+  const newIndoors = (x, y) => { const b = buildingAt(x, y); return !!b && inTown(x, y) && !wasIndoors(x, y); };
+  // the High Street, gate to gate (rows 31..33): an old save's solid thing there (a plank, a fence, a door, a walker wreck)
+  // is taken off it, so the road is clear for riders from gate to gate
+  const onHighStreet = (x, y) => y >= 31 && y <= 33 && x >= 86 && x <= 139;
+  // the inn moved one tile east: its bed was at 128,48 and is at 129,48
+  const OLD_INN_BED = [128, 48], INN_BED = [129, 48];
+  // "17 planks, 1 bed and 1 lodestone"
+  const many = (n, w) => n === 1 || /s$/.test(w) ? w : w + 's';
+  function refundWords(o, where) {
+    const parts = Object.keys(o).map(id => `${o[id]} ${many(o[id], (ITEMS[id].name || id).toLowerCase())}`);
+    if (!parts.length) return null;
+    const list = parts.length === 1 ? parts[0] : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+    return where === 'ground' ? `On the ground by you: ${list}.` : `Back in your ${where}: ${list}.`;
+  }
   function placedItemFor(t) {
     const name = tileName(t);
     for (const id in ITEMS) if (ITEMS[id] && ITEMS[id].place === name) return id;
@@ -209,14 +230,16 @@
     if (away() || !snapped) return null;
     const pre = player.cityV !== 1;
     const open = OPEN(), clear = keepClear(), H0 = window.MOUNTS ? MOUNTS.tiles.HORSE : -1, VEH = vehicleTiles();
-    const refund = { pack: {}, bank: {} };
+    const refund = { pack: {}, bank: {}, ground: {} };
     let changed = 0;
     if (pre) for (const [i, t] of [...mapDiffs.entries()]) {
       const x = i % MAP_W, y = Math.floor(i / MAP_W);
       if (x < RECT.x0 || x > RECT.x1 || y < RECT.y0 || y > RECT.y1) continue;
       const b = base[pi(x, y)];
       if (t === b) continue;
-      if (open.has(b) && !clear.has(i)) { MIG.kept++; continue; }
+      // (a fire burns down to ashes by itself: it stays, as a fire anywhere else on a street does)
+      const blocks = (SOLID.has(t) || PUSH_THROUGH.has(t) || VEH.has(t)) && t !== T.FIRE;
+      if (open.has(b) && !clear.has(i) && !newIndoors(x, y) && !(onHighStreet(x, y) && blocks)) { MIG.kept++; continue; }
       // undo it: the ground the city has there, with no crop, fire or regrowth left behind
       setTile(x, y, b); mapDiffs.delete(i); miniDirtyTiles.add(i); changed++;
       crops = crops.filter(c => c.i !== i); fires = fires.filter(f => f.i !== i); regrow = regrow.filter(r => r.i !== i);
@@ -238,7 +261,8 @@
       const id = placedItemFor(t);
       if (id) {
         const left = addItem(id, 1);
-        if (left) { if (bankAdd(id, 1)) refund.bank[id] = (refund.bank[id] || 0) + 1; }
+        // a full pack and a full bank: it waits on the ground by the knight, and he is told (never lost without a word)
+        if (left) { if (bankAdd(id, 1)) refund.bank[id] = (refund.bank[id] || 0) + 1; else refund.ground[id] = (refund.ground[id] || 0) + 1; }
         else refund.pack[id] = (refund.pack[id] || 0) + 1;
       }
     }
@@ -247,21 +271,29 @@
     // a tile or two to the side of the stone when something solid stands just south of it, so a home is kept while any
     // lodestone is within 3 tiles of it (a home made in the new city is never touched: the pass runs once per knight)
     const tileOfPx = p => [Math.floor(p.x / TILE), Math.floor(p.y / TILE)];
-    if (pre && player.bedSpawn) { const [x, y] = tileOfPx(player.bedSpawn); if (inTown(x, y) && tileAt(x, y) !== T.BED) player.bedSpawn = null; }
+    // a knight who paid Dorran and slept at the inn wakes at the inn's bed, one tile east of where it stood; any other bed the
+    // pass took away is gone, and he is told where he will wake
+    let bedLost = false;
+    if (pre && player.bedSpawn) {
+      const [x, y] = tileOfPx(player.bedSpawn);
+      if (x === OLD_INN_BED[0] && y === OLD_INN_BED[1] && tileAt(...INN_BED) === T.BED) player.bedSpawn = { x: tc(INN_BED[0]), y: tc(INN_BED[1]) };
+      else if (inTown(x, y) && tileAt(x, y) !== T.BED) { player.bedSpawn = null; bedLost = true; }
+    }
     if (pre && player.home) { const [x, y] = tileOfPx(player.home); if (inTown(x, y) && !nearestTileOfType(x, y, T.LODESTONE, 3)) player.home = null; }
     // and the knight himself, out of anything solid
-    if (collides(player.x, player.y, player.r, playerWho())) { const sp = safeSpot(player.x, player.y, player.r, playerWho()) || respawnPoint(); player.x = sp.x; player.y = sp.y; }
+    if (collides(player.x, player.y, player.r, playerWho())) { const sp = safeSpot(player.x, player.y, player.r, playerWho()) || respawnPoint(); player.x = sp.x; player.y = sp.y; MIG.unstuck = (MIG.unstuck || 0) + 1; }
+    // what neither the pack nor the bank could take lies by him, where he now stands
+    for (const id of Object.keys(refund.ground)) drops.push({ x: player.x + rint(-10, 10), y: player.y + rint(-10, 10), id, qty: refund.ground[id], t: 0 });
     miniDirty = true;
     // one line per knight, the first time he loads into the new city
     const lines = [];
     if (pre && player.visitedVillage) {
       lines.push('Thistledown has been rebuilt while you were away. Go and see the Great Fountain.');
-      const words = (o, where) => { const parts = Object.keys(o).map(id => `${o[id]} ${(ITEMS[id].name || id).toLowerCase()}`); return parts.length ? `Back in your ${where}: ${parts.join(', ')}.` : null; };
-      const a = words(refund.pack, 'pack'), b2 = words(refund.bank, 'bank');
-      if (a) lines.push(a); if (b2) lines.push(b2);
+      for (const w of ['pack', 'bank', 'ground']) { const l = refundWords(refund[w], w); if (l) lines.push(l); }
+      if (bedLost) lines.push('The bed you slept in is gone. Until you sleep somewhere new, you will wake by the Great Fountain.');
       for (const l of lines) say(l, 'The Voice');
     }
-    if (Object.keys(refund.pack).length || Object.keys(refund.bank).length) MIG.refunds.push(refund);
+    if (Object.keys(refund.pack).length || Object.keys(refund.bank).length || Object.keys(refund.ground).length) MIG.refunds.push(refund);
     if (pre) { player.cityV = 1; save(); }
     return { changed, lines, refund };
   }
@@ -291,9 +323,12 @@
   // counters that only change which line comes next (not saved)
   const TALK = { ambrose: 0, wynn: 0 };
   const DUCHESS_LINE = 'Duchess came back for her cream last night. The bell rang once. Nobody minded.';
+  const AMBROSE_HELLO = 'I ring the bell at dawn and at dusk. When you hear it at dusk, get indoors or get your sword out.';
   HOOKS.talk.td_bell = n => {
     const q = Q(), s = q.bell, who = n.name;
     if (s === 0 && quest.stage >= 6) {
+      // a knight meeting him for the first time hears who he is before the story (after the Duke, the first talk is both)
+      if (!q.ambroseMet) say(AMBROSE_HELLO, who);
       q.bell = 1; q.ambroseMet = true;
       say('Knight, may I ask you something? It will sound silly.', who);
       say('Every night at midnight, my bell rings once. Bong. Just once. Nobody is in the tower, and I have the only key.', who);
@@ -308,10 +343,10 @@
     if (s === 4) {
       q.bell = 5;
       say('Grey fur and a gold thistle? Then it is no ghost.', who);
-      say('Here, take the key. Climb up the Bell Tower and look at the bell. Quietly.', who);
+      say('I will unlock the tower door for you. Climb up the Bell Tower and look at the bell. Quietly.', who);
       save(); return;
     }
-    if (s === 5) { say('The key is yours. Climb the Bell Tower and look at the bell. Quietly.', who); return; }
+    if (s === 5) { say('The tower door is open. Climb the Bell Tower and look at the bell. Quietly.', who); return; }
     if (s === 6) {
       q.bell = 'done';
       say('A grey cat with a purple collar? That is Duchess, the Duke\'s own cat. He has been looking for her all week.', who);
@@ -321,12 +356,12 @@
       banner('NO GHOST', 'The Bell at Midnight'); save();
       return;
     }
-    if (!q.ambroseMet) { q.ambroseMet = true; say('I ring the bell at dawn and at dusk. When you hear it at dusk, get indoors or get your sword out.', who); save(); return; }
+    if (!q.ambroseMet) { q.ambroseMet = true; say(AMBROSE_HELLO, who); save(); return; }
     if (storyDone() && TALK.ambrose++ % 2 === 1) { say(DUCHESS_LINE, who); return; }
     say(timeLine(), who);
   };
   const OSRIC = q => [
-    'Welcome to Thistledown, knight. The High Street runs gate to gate. The Great Fountain is in the middle, and the castle is just past it.',
+    'Welcome to Thistledown, knight. The High Street runs gate to gate. The Great Fountain is in the middle, and the castle is south of it, across the moat.',
     quest.walkerKilled ? 'They say you brought down the goblin walker. The watch has never slept so well.' : 'The gates stay open day and night. Horses ride through. Goblins do not.',
     'The smithy and the tinker are on your right as you come in. Sergeant Hale drills in the yard behind them.',
   ];
@@ -460,19 +495,19 @@
     }
     say(SUNDIAL_LINE, 'Sundial');
   }
-  const BELLST = { prev: null, swingT0: -99, rings: 0 };
+  const BELLST = { prev: null, swingT0: -99, rings: 0, midnights: 0 };
   const CAT = { t0: -99 };
   const BELL_TOP = { x: (PLAN.BELL.x + 1) * TILE, y: (PLAN.BELL.y + PLAN.BELL.h) * TILE - 210 };
-  function ringBell() {
+  function ringBell(word) {
     BELLST.swingT0 = time; BELLST.rings++;
     sfx('bell');
-    if (!away()) floatText(BELL_TOP.x, BELL_TOP.y, 'DONG', '#f5c542', 20);
+    if (!away()) floatText(BELL_TOP.x, BELL_TOP.y, word || 'DONG', '#f5c542', 20);
   }
   function useBell() {
     const q = Q();
     if (q.bell === 5) {
       q.bell = 6;
-      say('You climb the steps to the belfry. Two green eyes look back at you from the dark.', 'The Voice');
+      say('You climb the steps to the top of the tower, where the bell hangs. Two green eyes look back at you from the dark.', 'The Voice');
       say('A big grey cat is curled up on the bell, where the sun has warmed it all day. She yawns.', 'The Voice');
       say('She jumps down past you, and her tail catches the rope. The bell rings. BONG.', 'The Voice');
       say('Round her neck is a purple collar. The little gold charm is missing from it.', 'The Voice');
@@ -644,14 +679,19 @@
       q.plinthTold = true; say('The empty plinth by the castle gate is empty no longer.', 'The Voice'); save();
     }
   });
-  // the bell rings at dawn and at dusk, for a knight in the town or the castle
+  // the bell rings at dawn and at dusk, for a knight in the town or the castle; and once at midnight, BONG, as the story
+  // says (Duchess jumping down off it: the ghost of The Bell at Midnight), the middle of the night on the day clock
+  const MIDNIGHT = N0 => N0.LIGHT + N0.DUSK + (N0.DAY - N0.LIGHT - N0.DUSK) / 2;
   HOOKS.update.push(() => {
     const N = window.NIGHT; if (!N) return;
     const t = N.dayT();
     if (BELLST.prev !== null && !away()) {
       const dawn = t < BELLST.prev && BELLST.prev - t > N.DAY / 2;
       const dusk = BELLST.prev < N.LIGHT && t >= N.LIGHT && t - BELLST.prev < N.DAY / 2;
-      if ((dawn || dusk) && (player.region === 'Thistledown' || player.region === 'Castle Thistledown')) ringBell();
+      const mid = MIDNIGHT(N), midnight = BELLST.prev < mid && t >= mid && t - BELLST.prev < N.DAY / 2;
+      const here = player.region === 'Thistledown' || player.region === 'Castle Thistledown';
+      if ((dawn || dusk) && here) ringBell();
+      else if (midnight && here) { ringBell('BONG'); BELLST.midnights++; }
     }
     BELLST.prev = t;
   });
@@ -672,11 +712,12 @@
     2: 'Osric heard a jug fall at the bakery at midnight. Ask Rosalind at the bakery, north of the High Street.',
     3: "Small footprints with a tail went from the bakery towards the Duke's maze. Look in the middle of the maze, at the sundial.",
     4: 'You found grey fur and a gold thistle charm on the sundial. Tell Ambrose at the Bell Tower.',
-    5: 'Ambrose gave you the key. Climb the Bell Tower: walk up to it and press E or tap it.',
+    // (the keys a child reads are the ones in his hands: USE on a touch screen, E on a keyboard)
+    5: () => `Ambrose unlocked the Bell Tower. Climb it: walk up to the tower and ${touchMode() ? 'tap USE, or tap the tower' : 'press E'}.`,
     6: 'The ghost was a cat. Tell Ambrose.',
     done: "Done. The ghost of Thistledown is Duchess, the Duke's cat.",
   };
-  HOOKS.questText.td_bell = () => QTEXT[Q().bell] || QTEXT[0];
+  HOOKS.questText.td_bell = () => { const v = QTEXT[Q().bell] || QTEXT[0]; return typeof v === 'function' ? v() : v; };
   HOOKS.activeQuests.push(() => storyOpen() ? ['td_bell'] : []);
   const TARGETS = { 1: [91, 30, 'Gatewarden Osric'], 2: [125, 22, 'Rosalind, the bakery'], 3: [133, 18, 'The sundial'], 4: [110, 17, 'Ambrose'], 5: [111, 17, 'The Bell Tower'], 6: [110, 17, 'Ambrose'] };
   HOOKS.mapTarget.push(() => { if (!storyOpen()) return null; const [x, y, label] = TARGETS[Q().bell]; return { x, y, label, id: 'td_bell' }; });
@@ -2222,7 +2263,7 @@
     const lines = [
       'Thistledown, the city that still stands: the capital of the Fanglands, where every knight wakes and where a fallen knight comes back.',
       { t: 'THE GATES AND THE WALL', c: '#8b949e' },
-      `A curtain wall of grey stone with ${PLAN.TOWERS.length} towers. The West Gate and the East Gate are stone gatehouses, open day and night; horses ride through, goblins do not.`,
+      `A high wall of grey stone with ${PLAN.TOWERS.length} towers goes all the way round the city. The West Gate and the East Gate are stone gate towers, open day and night; horses ride through, goblins do not.`,
       { t: 'THE STREETS', c: '#8b949e' },
       `${st('high')} runs straight from gate to gate under ${LAMPS_N} iron lamps, with bunting across it. ${st('crown')} runs north from the fountain to the Bell Tower.`,
       `${PLAN.STREETS.filter(s => s.id !== 'high' && s.id !== 'crown').map(s => s.name).join(', ')}.`,
@@ -2230,7 +2271,7 @@
       'The Great Fountain is in the middle of the city: toss a coin in for luck. Four hero statues stand round it: the Last Knight of Hollowford, King Thrain of the Dwarves, Queen Aelith of the Elves and Queen Seraphel of Aerie.',
       'An empty plinth by the castle gate is kept for the knight who ends the dragon.',
       { t: 'CASTLE THISTLEDOWN', c: '#8b949e' },
-      'The castle stands in a moat. Cross the oak drawbridge, under the portcullis, to the keep, where Duke Ferrin sits. The Duke grows roses in the courtyard.',
+      'The castle stands in a moat. Cross the oak drawbridge, under the iron gate that is always pulled up, to the keep, where Duke Ferrin sits. The Duke grows roses in the courtyard.',
       { t: 'THE MARKET COURT', c: '#8b949e' },
       'Four stalls round the market fountain: Hettie\'s apples, Mabel\'s candles, Moll\'s flowers, and a cloth stall that is always BACK SOON.',
       { t: 'THE BELL TOWER', c: '#8b949e' },
@@ -2240,7 +2281,7 @@
       { t: 'THE SMITHY YARD', c: '#8b949e' },
       'Behind the smithy and the Tinker\'s Workshop: the woodpiles, Brakka\'s handcart of charcoal, an old anvil on a stump, a water trough, and the pit where the bulldozer is mended.',
       { t: 'WHO STANDS WHERE', c: '#8b949e' },
-      'Gatewarden Osric, inside the West Gate. Ambrose the bell-ringer, at the Bell Tower. Hettie, Mabel and Moll, at their stalls. Wynn, by Swan Pond.',
+      'Gatewarden Osric, inside the West Gate. Ambrose the bell-ringer, at the Bell Tower. Hettie, Mabel and Moll, at their stalls. Wynn, by Swan Pond. Captain Roderick of the guard, at the castle gate. The Master of Skills, in the castle yard.',
       'Marta at the General Store, Aldous at the bank, Rosalind at the bakery, Brakka at the smithy, Pim at the Tinker\'s Workshop, Dorran at The Barrel & Boar, Greta and Fennick on the square, Tobin by the fountain, Sergeant Hale in his yard, Death in his stone house, and Duke Ferrin in the keep.',
       'Tess and Robin play tag round the fountain.',
     ];
@@ -2562,16 +2603,18 @@
       onFoot(); F.tp(112, 33); F.step([]); const region = player.region;
       player.dayTime = N.LIGHT - 0.5; BELLST.prev = null; F.step([]); const r0 = BELLST.rings; F.sim(90, []); const rang = BELLST.rings - r0;
       F.sim(60, []); const again = BELLST.rings - r0;
+      // and once at midnight: BONG, the ghost of the story
+      player.dayTime = MIDNIGHT(N) - 0.5; BELLST.prev = null; F.step([]); const m0 = BELLST.midnights, mr0 = BELLST.rings; F.sim(90, []); const midnight = BELLST.midnights - m0, midRings = BELLST.rings - mr0;
       player.dayTime = 100; const ang = Math.abs(dialAngle() - N.dayT() / N.DAY * Math.PI * 2) < 1e-9;
       player.dayTime = d0; BELLST.prev = null;
-      check(P + 'C12 Ambrose reads the clock ("The sun is up. Dusk comes in 4 minutes 10 seconds.", "Dusk. It will be dark in 35 seconds.", "Night. The sun comes up in 1 minute 1 second."); with the knight at the fountain the bell rings exactly once as dusk comes; the dial\'s hand is dayT / DAY x 2 pi',
-        a === 'The sun is up. Dusk comes in 4 minutes 10 seconds.' && b === 'Dusk. It will be dark in 35 seconds.' && c === 'Night. The sun comes up in 1 minute 1 second.' && words.join('|') === '4 minutes 10 seconds|35 seconds|1 minute 1 second|1 minute|1 second|1 second|2 minutes 1 second' && region === 'Thistledown' && rang === 1 && again === 1 && ang,
-        { a, b, c, words, region, rang, again, ang }); }
+      check(P + 'C12 Ambrose reads the clock ("The sun is up. Dusk comes in 4 minutes 10 seconds.", "Dusk. It will be dark in 35 seconds.", "Night. The sun comes up in 1 minute 1 second."); with the knight at the fountain the bell rings exactly once as dusk comes, and exactly once at midnight (BONG); the dial\'s hand is dayT / DAY x 2 pi',
+        a === 'The sun is up. Dusk comes in 4 minutes 10 seconds.' && b === 'Dusk. It will be dark in 35 seconds.' && c === 'Night. The sun comes up in 1 minute 1 second.' && words.join('|') === '4 minutes 10 seconds|35 seconds|1 minute 1 second|1 minute|1 second|1 second|2 minutes 1 second' && region === 'Thistledown' && rang === 1 && again === 1 && midnight === 1 && midRings === 1 && ang,
+        { a, b, c, words, region, rang, again, midnight, midRings, ang }); }
 
     // ---- C13. the story ----
     { const st0 = quest.stage, c0 = coins(), q = Q(), log = [];
       const tq = () => HOOKS.questText.td_bell(), mt = () => mapTargets().find(m => m.id === 'td_bell') || null;
-      const step = (label) => { const m = mt(), b = Q().bell; log.push({ label, bell: b, text: tq() === QTEXT[b], target: b === 'done' ? !m : !!m && TARGETS[b] && m.x === TARGETS[b][0] && m.y === TARGETS[b][1], active: activeQuests().includes('td_bell') === storyOpen() }); };
+      const step = (label) => { const m = mt(), b = Q().bell; log.push({ label, bell: b, text: tq() === (typeof QTEXT[b] === 'function' ? QTEXT[b]() : QTEXT[b]), target: b === 'done' ? !m : !!m && TARGETS[b] && m.x === TARGETS[b][0] && m.y === TARGETS[b][1], active: activeQuests().includes('td_bell') === storyOpen() }); };
       Object.assign(q, fresh()); drain(); quest.stage = 5;
       F.talk('ambrose'); const before = q.bell === 0 && !texts().some(t => /silly/.test(t)); drain();
       quest.stage = 6; clearBanners();
@@ -2594,6 +2637,18 @@
       check(P + 'C13 The Bell at Midnight: at stage 5 Ambrose has only his own line; at stage 6 the story goes Ambrose, Osric, Rosalind (no shop that time), the sundial, Ambrose, the Bell Tower, Ambrose: 1,2,3,4,5,6,done, with NEW QUEST and NO GHOST and exactly 75 coins; the quest log and the map ring are right at every step; Rosalind\'s next talk opens her shop; the Duke\'s talk is not touched; a save and load keeps the step; a new game resets it',
         before && newQ && order === '1,2,3,4,5,6,done' && log.every(l => l.text && l.target && l.active) && noShop && kept && noGhost && shop && duke && reset && rang >= 1,
         { before, newQ, order, log, noShop, kept, noGhost, shop, duke, reset }); }
+
+    // ---- C13b. the words of the story: no key that never comes, the keys the child has in his hands, Ambrose's hello ----
+    { const st0 = quest.stage, q = Q(), keep = JSON.stringify(q), t0 = window.__forceTouch; drain();
+      Object.assign(q, fresh()); quest.stage = 6; F.talk('ambrose'); const hello = said().map(d => d.text), first = hello[0] === AMBROSE_HELLO && hello.some(t => /silly/.test(t)) && q.ambroseMet; drain();
+      q.bell = 4; F.talk('ambrose'); const keyless = !said().some(d => /\bkey\b/i.test(d.text)) && said().some(d => /unlock the tower door/.test(d.text)); drain();
+      window.__forceTouch = false; const desk = HOOKS.questText.td_bell(); window.__forceTouch = true; const touch = HOOKS.questText.td_bell(); window.__forceTouch = t0;
+      const log = /press E\./.test(desk) && /tap USE/.test(touch) && !/press E/.test(touch) && !/\bkey\b/i.test(desk + touch);
+      Object.assign(q, JSON.parse(keep)); quest.stage = st0; drain();
+      // and he is a quest giver on the maps, as every other one in town is (61-markers' QUEST_ROLES)
+      let marked = null; if (window.MARKERS && MARKERS.refresh && MARKERS.all) { MARKERS.refresh(); marked = MARKERS.all().some(m => m.kind === 'quest' && /Ambrose/.test(m.label || '')); }
+      check(P + "C13b at stage 6 Ambrose's first talk opens with his own hello, then the story; no 'key' is promised (he unlocks the door); the quest log says press E on a keyboard and tap USE on a touch screen; Ambrose has a Quest marker on the maps",
+        first && keyless && log && marked === true, { hello, keyless, desk, touch, marked }); }
 
     // ---- C14. the plinth ----
     { const st0 = quest.stage, q = Q(); drain();
@@ -2714,7 +2769,7 @@
         horseAt: player.horse && player.horse.at, horseOk: !!(player.horse && player.horse.at && tileAt(player.horse.at[0], player.horse.at[1]) === MOUNTS.tiles.HORSE && Math.max(Math.abs(player.horse.at[0] - MOUNTS.post.x), Math.abs(player.horse.at[1] - MOUNTS.post.y)) <= 3 && !keepClear().has(idx(player.horse.at[0], player.horse.at[1]))),
         oldHorse: tileAt(...cells.horse) === base[pi(...cells.horse)],
         free: !collides(player.x, player.y, player.r, playerWho()),
-        voice: lines.filter(l => l === 'Thistledown has been rebuilt while you were away. Go and see the Great Fountain.').length, back: lines.filter(l => l === 'Back in your pack: 1 bed, 1 lodestone.').length,
+        voice: lines.filter(l => l === 'Thistledown has been rebuilt while you were away. Go and see the Great Fountain.').length, back: lines.filter(l => l === 'Back in your pack: 1 bed and 1 lodestone.').length, bedTold: lines.filter(l => /bed you slept in is gone/.test(l)).length,
         cityV: player.cityV,
         mech: movedTo(cells.mech, 'MECH'), wreck: movedTo(cells.wreck, 'WRECK'),
       };
@@ -2726,8 +2781,42 @@
       for (const c of touched.concat(horseCell ? [horseCell] : [], movedCells)) setTile(c[0], c[1], base[pi(c[0], c[1])]);
       if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0);
       load(); F.step([]); drain();
-      check(P + 'C17 an old save loads into the new city: the bed in the fountain and the lodestone in the hedge are taken back and refunded (bedSpawn and home cleared), the fire on the street and the crop in the allotment stay, the mare in the flower stall is re-parked beside the rail on open ground, the knight saved in the moat stands clear, the Voice says the city was rebuilt and "Back in your pack: 1 bed, 1 lodestone." once each; a second load changes nothing',
-        r.ok && r.bed && r.lode && r.refunded && r.spawnCleared && r.fire && r.crop && r.horseOk && r.oldHorse && r.free && r.voice === 1 && r.back === 1 && r.cityV === 1 && r.second && !!r.mech && !!r.wreck, r); }
+      check(P + 'C17 an old save loads into the new city: the bed in the fountain and the lodestone in the hedge are taken back and refunded (bedSpawn and home cleared), the fire on the street and the crop in the allotment stay, the mare in the flower stall is re-parked beside the rail on open ground, the knight saved in the moat stands clear, the Voice says the city was rebuilt, "Back in your pack: 1 bed and 1 lodestone." and that his bed is gone, once each; a second load changes nothing',
+        r.ok && r.bed && r.lode && r.refunded && r.spawnCleared && r.fire && r.crop && r.horseOk && r.oldHorse && r.free && r.voice === 1 && r.back === 1 && r.bedTold === 1 && r.cityV === 1 && r.second && !!r.mech && !!r.wreck, r); }
+
+    // ---- C17b. an old save's things where new houses stand and on the High Street, a full pack and bank, the inn's bed, and a
+    // knight saved on his own door where a hedge now grows ----
+    { leave(); onFoot(); drain(); save();
+      const sk = 'fanglands.slot.' + title.slot, raw0 = localStorage.getItem(sk), mirror0 = localStorage.getItem(SAVE_KEY);
+      const d = JSON.parse(raw0 || mirror0);
+      const cells = { plank: [101, 28], mech: [123, 37], door: [95, 32], wreck: [120, 31], hedgeDoor: [132, 15] };
+      const ix = ([x, y]) => idx(x, y);
+      d.player.visitedVillage = true; delete d.player.cityV; d.player.mech = null; d.player.r = 13; d.player.speed = 175; d.player.dead = false; d.player.hp = Math.max(1, d.player.hp || 10);
+      d.player.x = tc(cells.hedgeDoor[0]); d.player.y = tc(cells.hedgeDoor[1]); d.player.bedSpawn = { x: tc(128), y: tc(48) }; d.player.home = null; d.player.horse = null;
+      d.player.inv = new Array(INV_SLOTS).fill(null).map(() => ({ id: 'stone', qty: 50 }));
+      d.player.bank = Object.keys(ITEMS).filter(id => !['plank', 'door', 'coins', 'stone'].includes(id)).slice(0, BANK_SLOTS).map(id => ({ id, qty: 1 }));
+      d.mapDiffs = (d.mapDiffs || []).filter(([i]) => { const x = i % MAP_W, y = Math.floor(i / MAP_W); return !inTown(x, y); })
+        .concat([[ix(cells.plank), 'PLANK'], [ix(cells.mech), 'MECH'], [ix(cells.door), 'DOOR'], [ix(cells.wreck), 'WRECK'], [ix(cells.hedgeDoor), 'DOOR']]);
+      const crafted = JSON.stringify(d);
+      localStorage.setItem(sk, crafted); localStorage.setItem(SAVE_KEY, crafted);
+      const log0 = MIG.log.length, un0 = MIG.unstuck || 0, n0 = drops.length;
+      const ok = load(); F.step([]);
+      const lines = texts(), moved = cell => MIG.log.slice(log0).find(e => e[0] === cell[0] && e[1] === cell[1] && e[3] === 'moved');
+      const ground = drops.slice(n0).filter(dd => dist(dd.x, dd.y, player.x, player.y) < 40).map(dd => dd.id + ':' + dd.qty).sort().join(',');
+      const r = { ok,
+        plank: tileAt(...cells.plank) === base[pi(...cells.plank)] && !mapDiffs.has(ix(cells.plank)), door: tileAt(...cells.door) === base[pi(...cells.door)] && !mapDiffs.has(ix(cells.door)),
+        mech: !!moved(cells.mech) && !insideBuilding(moved(cells.mech)[4], moved(cells.mech)[5]), wreck: !!moved(cells.wreck) && !onHighStreet(moved(cells.wreck)[4], moved(cells.wreck)[5]),
+        ground, groundLine: lines.filter(l => l === 'On the ground by you: 1 plank and 2 doors.').length,
+        bed: !!player.bedSpawn && Math.floor(player.bedSpawn.x / TILE) === 129 && Math.floor(player.bedSpawn.y / TILE) === 48 && tileAt(129, 48) === T.BED && !lines.some(l => /bed you slept in is gone/.test(l)),
+        free: !collides(player.x, player.y, player.r, playerWho()) && tileAt(...cells.hedgeDoor) === HEDGE, unstuck: (MIG.unstuck || 0) - un0,
+        words: refundWords({ plank: 17, bed: 1, lodestone: 1 }, 'pack') };
+      // put the save, the map and the knight back as they were
+      for (const c of Object.values(cells).concat(MIG.log.slice(log0).filter(e => e[3] === 'moved').map(e => [e[4], e[5]]))) setTile(c[0], c[1], base[pi(c[0], c[1])]);
+      drops = drops.slice(0, n0);
+      if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0);
+      load(); F.step([]); drain();
+      check(P + "C17b an old save: a plank on what is now h5's floor and a door and a walker wreck on the High Street are taken off (the walker moved into the open, out of h1 and off the street); with the pack and the bank full the refunds lie by the knight ('On the ground by you: 1 plank and 2 doors.'); the inn's bed moves with the inn (129,48); a knight saved on his door where a hedge now grows is moved out by the pass itself; refunds read '17 planks, 1 bed and 1 lodestone'",
+        r.ok && r.plank && r.door && r.mech && r.wreck && r.ground === 'door:2,plank:1' && r.groundLine === 1 && r.bed && r.free && r.unstuck === 1 && r.words === 'Back in your pack: 17 planks, 1 bed and 1 lodestone.', r); }
 
     // ---- C24. a knight's machines and wrecks in the new city are his: never moved or deleted by a load ----
     { leave(); onFoot(); drain(); save();
@@ -2919,7 +3008,7 @@
       r.sounds = typeof SFX.bell === 'function' && typeof SFX.splash === 'function';
       r.wiki = !window.WIKI || (!!WIKI.get('places', 'thistledown_landmarks') && !!WIKI.get('quests', 'td_bell'));
       // the first visit: the Voice's line
-      { const v0 = player.visitedVillage; player.visitedVillage = false; drain(); F.tp(96, 32); F.step([]); r.voice = said().some(d => d.who === 'The Voice' && d.text === 'Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is just past it, over the moat.'); player.visitedVillage = v0; drain(); }
+      { const v0 = player.visitedVillage; player.visitedVillage = false; drain(); F.tp(96, 32); F.step([]); r.voice = said().some(d => d.who === 'The Voice' && d.text === 'Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is south of it, across the moat.'); player.visitedVillage = v0; drain(); }
       check(P + "C23 the small things: Osric's welcome shows once as a tag over his head, never under a banner or a talk box (he waits for THISTLEDOWN, and the Voice, to go); the town's new people have names nobody else has; Tess and Robin and the swans move by the wall clock on their paths; Duchess comes after the story; Ambrose and Wynn have their after-story lines; the town gates draw no wooden gate, the square's fire is a brazier, the castle towers and the town buildings draw themselves (Death's House keeps its own); Ada, the region, the island arch, the sounds, the book and the Voice say the new words",
         Object.values(r).every(Boolean), r); }
 

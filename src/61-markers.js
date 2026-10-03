@@ -70,7 +70,7 @@
   // ---------- what the world already holds ----------
   const SHOP_BY_ID = { dunstan: 'dung' };                 // his NPC record carries the role, not the shop key
   const SHOP_BY_ROLE = { trader: 'trader' };              // 06-systems opens Fennick's stall as shop 'trader'
-  const QUEST_ROLES = { duke: 1, bread: 1, hermit: 1, captain: 1, warden: 1, survivor: 1, dungfarmer: 1 };
+  const QUEST_ROLES = { duke: 1, bread: 1, hermit: 1, captain: 1, warden: 1, survivor: 1, dungfarmer: 1, td_bell: 1 };
   // people who live on a feature's own list rather than in NPCS (dwarves, elves): found live through TAP_PEOPLE
   const PEOPLE = {
     brunhild: { kind: 'shop', shop: 'dwarf' },
