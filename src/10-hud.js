@@ -516,7 +516,7 @@ function helpRows() {
     { keys: K('Swing', ['Space']), name: 'Swing', text: 'Hit, shoot or stomp.' },
     { keys: K('Use / talk', ['E']), name: 'Use', text: 'Talk, chop, mine, fish, cook, open or enter what you face.' },
     { keys: K('Block', ['R']), name: 'Block', text: 'Hold up your shield just before a hit lands.' },
-    { keys: K('Place', ['Q']), name: 'Place', text: 'Put down a plank, door, bed, lodestone or trap.' },
+    { keys: K('Place', ['Q']), name: 'Place', text: 'Put down a bed, lodestone or trap. Planks and doors go on your island.' },
     { keys: ['1–5'], name: 'Belt', text: 'Eat or use the five things on your belt.' },
     { keys: [K('Bag', ['I'])[0], K('Craft', ['C'])[0], K('Skills', ['Tab'])[0]], name: 'Pack, craft, skills', text: 'Your pack, crafting, and your skills.' },
     { keys: K('Fight back on / off', ['O']), name: 'Fight back', text: 'On or off: a monster that hits you gets hit back. Also in the pack.' },
