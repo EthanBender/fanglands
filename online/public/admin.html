@@ -12,6 +12,7 @@
   main { max-width: 1440px; margin: 0 auto; padding: 24px 16px 80px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   h2 { font-size: 17px; margin: 32px 0 10px; border-bottom: 1px solid #2c3038; padding-bottom: 6px; }
+  h3.sub { font-size: 15px; margin: 22px 0 6px; }
   p.note { color: #8a90a0; margin: 0 0 16px; }
   .scroll { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; }
@@ -107,11 +108,13 @@
     <p class="note">The world server will run the monsters itself, a step at a time; nothing is switched on yet. This counts what Cloudflare's free plan counts: each call to the world is one request, and every 20 messages from the knights' games are one more. The free plan allows 100,000 a day, and its day starts at midnight UTC (8 pm here in summer, 7 pm in winter). This page's own calls (and the backups') are counted on their own, so the game's share is what the cost gate reads. The meter is read when this page opens and when you press Refresh; while the page is hidden, nothing refreshes at all.</p>
     <p id="meter">…</p>
     <div class="scroll"><table id="meterdays"><thead><tr><th>Day (UTC)</th><th>Messages</th><th>Game calls</th><th>The game, about</th><th>Of the free plan</th><th>This page's calls</th><th>Everything, of the free plan</th></tr></thead><tbody></tbody></table></div>
+    <h3 class="sub">Movement check</h3>
     <p class="note">The movement check watches where each knight's game says he is, against the world's map: too fast for what he rides, or into or through a wall nobody can cross. It only counts; it never moves or stops anyone. A knight whose page is older than the world is asked to reload, and is not checked until he does.</p>
     <p id="movecheck">…</p>
     <p id="atlasline"></p>
     <div class="row"><button id="movetoggle" class="gold">Turn the movement check off</button></div>
-    <div class="scroll"><table id="moverecent"><thead><tr><th>When</th><th>Knight</th><th>Map</th><th>What</th><th>From</th><th>To</th><th>Gap</th><th>His speed</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
+    <p id="movenone" class="note"></p>
+    <div class="scroll" id="moverecentbox"><table id="moverecent"><thead><tr><th>When</th><th>Knight</th><th>Map</th><th>What</th><th>From</th><th>To</th><th>Gap</th><th>His speed</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
   </div>
 </main>
 <script>
@@ -341,7 +344,10 @@
     $('movetoggle').classList.remove('hidden');
     $('movetoggle').textContent = mv.mode === 'off' ? 'Turn the movement check back on' : 'Turn the movement check off';
     const tb = $('moverecent').querySelector('tbody'); tb.innerHTML = '';
-    for (const v of mv.recent || []) {
+    const recent = mv.recent || [];
+    $('moverecentbox').classList.toggle('hidden', !recent.length);
+    $('movenone').textContent = recent.length ? 'The newest it found, newest first:' : 'Nothing found in the last 60 days.';
+    for (const v of recent) {
       const tr = document.createElement('tr');
       cell(tr, clock(v.at)).className = 'nowrap'; cell(tr, v.n); cell(tr, v.map); cell(tr, (WHAT[v.kind] || v.kind) + (v.kind === 'wall' ? (v.detail === 'in' ? ' (stood in one)' : ' (went through one)') : ''));
       cell(tr, v.px != null ? n(v.px) + ', ' + n(v.py) : ''); cell(tr, n(v.x) + ', ' + n(v.y)); cell(tr, v.ms != null ? n(v.ms) + ' ms' : ''); cell(tr, v.spd != null ? n(v.spd) : ''); cell(tr, v.kind === 'wall' ? '' : v.detail || '');
