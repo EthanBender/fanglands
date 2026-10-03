@@ -1856,6 +1856,12 @@ monsters as `mon` (below). Anything else a copy sends (its stand-in's own presen
 3. At the first `mon` it has read (or after 1.5 s with none), the virtual knight becomes the keeper: the copy's own
    `handoff()` turns the puppets into its real monsters, with the same nids, hp and positions, and every knight on the map
    hears `keeper` naming `'@world:<map>'`. The old keeper's game turns into a non-keeper, as for any keeper change.
+   Its screen never blinks empty meanwhile (75-coop `setKeeper`, a game of this build): a game that kept the map and hears
+   another keeper named keeps the monsters on its own screen (within 24 tiles of its knight, alive, with nids) standing as
+   puppets where they were, with their hp, until the new keeper's first `mon`; that list is the word, and a held-up puppet
+   it does not name goes. A game arriving on a map holds nothing up (it knows nothing yet). This is true of every keeper
+   change, a knight's or the world's. An older game blinks empty for one round trip (about 100 ms) at the change, as it
+   always did when its keeper changed.
 
 The parent page flipping a busy map to `world` takes it over the same way. A copy whose map empties runs on for 60 s
 (SimHost's `DROP_EMPTY_MS`); a knight back inside that time finds the same monsters, and the virtual knight is keeper at
@@ -1921,7 +1927,44 @@ never stale; a flip sends `keeper` both ways; a throw, three slow ticks, a boot 
 every map on `keeper` (nothing changes), then deepholm on `world`. `node tools/mmo-sim-world.js`: both games see the same
 rows at the same tick; the kill goes to the top damager; an injected throw falls back to a knight's game keeping every nid,
 hp and position; a keeper-to-world flip mid-fight; a game with no caps plays as before; an admin `spawn` reaches the copy.
-`node tools/sim-load.mjs`: 20 bot knights against a local `wrangler dev` for 30 minutes.
+`node tools/sim-load.mjs`: 20 bot knights against a local `wrangler dev` for 30 minutes. Check 4 of `mmo-sim-world.js` also
+watches the old keeper's own screen through the take-over; with the hold-up above switched off it fails (5 blank frames).
+
+**What it costs, measured** (3 Oct 2026, MacBook Pro, node 26, wrangler 4.92 local, other builders' suites running on the
+same machine). `node tools/sim-load.mjs --minutes 30`, `~/.fanglands/work/phase1/sw-2/sim-load.{txt,json}`: 20 bots (8 in
+Deepholm, 8 in the Aerie, 4 in the coal mine, all three world-run), 10.0 knight-hours.
+
+| | |
+|---|---|
+| Copy boot | Deepholm 992 ms, the Aerie 1,175 ms, the coal mine 981 ms (full builds; the World waits that long once per copy) |
+| Tick (all three copies, one tick) | p50 2 ms, p99 4 ms over the last 3,000 ticks; the worst p99 of any 30 s window 6 ms; max 28 ms; 17 ticks skipped (at the three boots) |
+| Fallbacks | none; every bot's keeper stayed `@world:<map>` for 30 minutes; 0 copy errors in 17,972 ticks each |
+| `mon` to each knight | 9.98 a second; the gap between two p50 100 ms, p99 104 ms, max 266 ms |
+| Heap (the isolate, read last) | 20.0 MB used, 21.0 MB total |
+| Requests a knight-hour | 895.1 world-run, against 1,111.1 for the same knights on the keeper path (whose keeper sends 8 `mon` a second) |
+| Play in it | 1,258 hits sent, 91 hurts and 45 kills sent back by the copies |
+
+Pass bar: tick p99 under 10 ms, no fallback, heap under 64 MB, requests not above the keeper path: all four met. An earlier
+30-minute run (`sim-load-run2-aerie-slow.*`) handed the Aerie back once at 24.4 minutes, reason `slow`: one tick read
+607 ms, then 21 ticks were skipped (the whole process stood still about 2 s; the other two copies and the bots' gaps,
+max 1,393 ms, felt it too). That run did not yet record the driver's own stalls, so it does not show whether the machine or
+the World stood still; the tool now writes every 250 ms stall of its own beside each fallback (`driverStalls`). The
+watchdog did what this contract says (three slow ticks in a row, the map held, a `sim_log` row, a knight's game keeps it).
+
+**The proof** (`~/.fanglands/work/phase1/sw-2/proof/`, 3 Oct 2026; `node stage2-proof.js`). Two real browsers, a laptop
+(1280 x 800) and an iPad (1024 x 1366, touch), both opened with `?debug=tick`, on a local `wrangler dev` world running this
+branch, two fresh test knights; the parent page in a third. Deepholm switched to `world` on the parent page (the overworld
+refused, 400 `later`). 1: both screens said `keeper @world:deepholm (the world)`, 10 `mon` a second, the same two guards
+at the same places with the same hp. 2: both swung at one guard on the keys (Space); it died and the kill went to the
+laptop, who did all 93 of its damage (the iPad's 3 swings missed). 3: mid-fight the parent page gave Deepholm to a knight's
+game (the laptop, there longest) and back: 228 samples over both screens, nothing vanished, nothing twice, both stayed in
+Deepholm, `sim_log` has both turns. 4: the iPad's tab closed mid-fight; the laptop played on with the world as keeper, and
+the iPad back in Deepholm saw the same monsters. 5: the iPad frozen 30 s (its page stopped, the socket open) while the
+laptop fought on: 267 samples, nothing vanished, no keeper message to either, the world never handed the map back; the iPad
+woke to the monsters there from its first frame. No page errors. The harness keeps both knights from falling (no blow
+takes the last hit point): the first run lost check 5 because the guards felled the laptop and it woke on the overworld,
+and lost check 3 to the old keeper's one-round-trip blink, fixed above. Screenshots: `deepholm-{laptop,ipad}.png`,
+`fight-*.png`, `admin-world-{before,keeper,after}.png`, `unlocked-ipad.png`, `locked-laptop.png`.
 
 ## Safety rules (binding)
 

@@ -168,4 +168,8 @@ test('the admin page: the places the world runs, from the same read; a place\'s 
   for (const b of Q.made.filter(e => String(e.textContent) === 'Let the world run it')) await b.onclick();
   await Q.els.get('mastertoggle').onclick(); await Q.settle();
   assert.equal(Q.posts.length, 0);
+  // a place being taken over (the loop running, its copy not built yet) says so, with no knight count of 0
+  const R = page({ sim: () => { const v = world({ deepholm: 'world', aerie: 'keeper', coalmine: 'keeper' }); v.world.copies = []; return v; } }); await R.settle();
+  assert.match(String(R.els.get('worldline').textContent), /Starting a place now\./);
+  assert.ok(!/Running now: 0 places/.test(String(R.els.get('worldline').textContent)));
 });
