@@ -84,6 +84,15 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
 (28 scenarios each) and 86 server tests passed before each deploy.
 
 ## NEXT WEEK — improvements held back so the work could ship
+- Townsfolk look leftovers (2026-10-03; all 74 approved people, feat/townsfolk):
+  - The talking pose finds the speaker by the first proper word of the name on the line ("Old Harl" and "Harl the ferryman" both read "harl"), within 4 tiles of the knight. Two people with the same first word side by side would both talk.
+  - Captain Roderick, Dunstan, Warden Brann, the Master of Skills, Marlow, Hux and the two unnamed fliers (the winged porter and guard) are not in the sample: they wear the sample's own new-style default villager, not a drawing of their own.
+  - The pictures' standing clock loops every 2 s, so a slow motion (wings settling, a lantern's swing) steps back a fraction every 2 s. Death is drawn live for this reason (his hourglass and blink run slower).
+  - In a crowd made on purpose (26 townsfolk walking about in the square at once) a frame costs about 0.2 to 0.6 ms more than master while their pictures are first made; the normal square measures the same as master.
+  - The gold talk brackets round the person you face (PEOPLE_UI) are still sized for the old, shorter people.
+  - Harl rows with his lantern still in his other hand (the boat draws the oar; his main hand is empty).
+  - The hurt flash is the knight's palette: it lightens the soft outline too, so a hurt follower looks a little pale as well as red.
+  - The statue of the Last Knight of Hollowford on the Great Fountain is not a sample person: it stays in the old drawing, in stone.
 - Monster look leftovers (2026-10-03; all 47 monster types in the approved look, live in 0d0788a):
   - The knight's own machines (walker, dozer, beast pilots' seats) and the wreck tiles they leave still draw in the old look.
   - Some hit circles grew with the bigger pictures but were capped at 24 (walker, bulldozer, the yard twins, dustjaw). In one-tile gaps a capped circle can sit over the wall edge.
