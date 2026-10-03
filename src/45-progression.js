@@ -108,7 +108,8 @@
   // 30-ashdrake pays melee/range a level x 10 bonus on a level-10+ kill. Defence had nothing but being hit.
   const DEF_KILL_MIN = 10, DEF_KILL_PER = 4;
   HOOKS.kill.push(m => {
-    const def = MONSTER_DEFS[m.type]; if (!def || (def.level | 0) < DEF_KILL_MIN || window.__companionHit) return;
+    // (m.noPay: a named boss this knight helped with while still resting from his last paid kill of it; 75-coop)
+    const def = MONSTER_DEFS[m.type]; if (!def || (def.level | 0) < DEF_KILL_MIN || window.__companionHit || m.noPay) return;
     const xp = def.level * DEF_KILL_PER;
     // same rule as 30-ashdrake's melee bonus: a boss kill's own banner (DUNGEON CLEARED, THE FANG IS SLAIN) was set
     // by an earlier kill hook, so a Defence level-up in the same tick is announced beside the knight instead

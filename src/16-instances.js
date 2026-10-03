@@ -113,7 +113,7 @@
 
   function define(id, def) {
     if (!def || !(def.w > 0) || !(def.h > 0) || def.w > MAP_W || def.h > MAP_H) throw new Error('defineInstance: bad size for ' + id);
-    const inst = { id, name: def.name || id, sub: def.sub || '', w: def.w, h: def.h, spawns: def.spawns || [], exit: def.exit || null, entry: def.entry || [1, 1], dark: !!def.dark, boss: def.boss || null, onClear: def.onClear || null, door: def.door || null, step: def.step || null, voice: def.voice || null, again: def.again || null, lateDoor: !!def.lateDoor, build: def.build, tiles: null, vars: null };
+    const inst = { id, name: def.name || id, sub: def.sub || '', w: def.w, h: def.h, spawns: def.spawns || [], exit: def.exit || null, entry: def.entry || [1, 1], dark: !!def.dark, boss: def.boss || null, onClear: def.onClear || null, door: def.door || null, step: def.step || null, voice: def.voice || null, again: def.again || null, lateDoor: !!def.lateDoor, refill: def.refill !== false, build: def.build, tiles: null, vars: null };
     inst.tiles = new Uint8Array(inst.w * inst.h).fill(T.WALL);
     inst.vars = new Uint8Array(inst.w * inst.h);
     const rnd = mulberry32(0x5eed ^ (id.length * 7919) ^ Math.imul(id.charCodeAt(0), 2654435761));
@@ -447,8 +447,9 @@
   HOOKS.hud.push((g, narrow) => {
     if (!active) return;
     if (panel || paused) return;
-    const inst = active.inst, alive = monsters.filter(m => !m.dead).length;
-    const sub = inst.boss && !active.cleared ? `${alive} left, the boss is awake` : active.cleared ? 'Cleared' : `${alive} left`;
+    // (a boss that is not standing, the War Shed's before the valve or a storm still gathering, is not called awake)
+    const inst = active.inst, alive = monsters.filter(m => !m.dead).length, bossUp = !!inst.boss && monsters.some(m => !m.dead && m.type === inst.boss);
+    const sub = inst.boss && !active.cleared ? `${alive} left, ${bossUp ? 'the boss is awake' : 'the boss is not up yet'}` : active.cleared ? 'Cleared' : `${alive} left`;
     HK.addPlaque(g, { id: 'dungeon', emblem: 'door', name: inst.name.toUpperCase(), sub, right: active.webT > 0 ? `webbed ${active.webT.toFixed(1)}s` : '', rightColor: HK.T.warn, edge: active.webT > 0 ? HK.T.warn : null });
   });
 

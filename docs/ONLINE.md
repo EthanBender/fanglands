@@ -125,7 +125,8 @@ between knights on the same map; chat and the roster go to everyone.
 | `hurt` | `to, dmg, x, y` | — | keeper: a monster hit this knight for `dmg` (already rolled against their `def`) |
 | `gift` | `to, id, qty` | 1/s | hand an item over; the sender has already taken it out of the pack |
 | `gift_ok` / `gift_no` | `gid` | — | the receiver took it / could not (full pack); `gift_no` makes the server send `gift_back` |
-| `boss_call` | `id` | 0.5/s, burst 2 | ask the keeper of your map to wake a named boss (`id` matches `^[a-z_]{1,24}$`; see *Named bosses* below). Dropped when you are the keeper, nobody keeps the map, or the id is bad |
+| `boss_call` | `id, first?` | 0.5/s, burst 2 | ask the keeper of your map to wake a named boss (`id` matches `^[a-z_]{1,24}$`; `first: true` when it is your own first fight; see *Named bosses* below). Dropped when you are the keeper, nobody keeps the map, or the id is bad |
+| `boss_wait` | `to, id, left` | 1/s, burst 3 | keeper: the boss `to` asked for is resting on this map, `left` seconds more (relayed like `kill`: only from the keeper, only to a knight on its map) |
 | `ping` | — | — | keepalive every 25 s |
 | `mute` `unmute` `kick` `ban` `unban` `modlist` `spawn` `spawn_clear` `party` `party_end` `light` `claim` | | | see *Admins and drop parties* |
 | `trade_ask` `trade_answer` `trade_offer` `trade_accept` `trade_confirm` `trade_full` `trade_close` `trade_ack` | | | see *Trading* |
@@ -146,7 +147,8 @@ between knights on the same map; chat and the roster go to everyone.
 | `hurt` | `dmg, x, y` | a monster hit you: `hurtPlayer(dmg, x, y)` |
 | `gift` | `gid, from, id, qty` | take it if it fits, answer `gift_ok`/`gift_no` |
 | `gift_ok` / `gift_back` | `gid, id, qty` | the receiver took it / it comes back to you |
-| `boss_call` | `n, id` | (to the keeper) knight `n` on your map asks you to wake the named boss `id`; your game decides (see *Named bosses*) |
+| `boss_call` | `n, id, first?` | (to the keeper) knight `n` on your map asks you to wake the named boss `id`; `first` is passed on only when it was exactly `true`; your game decides (see *Named bosses*) |
+| `boss_wait` | `id, left` | the keeper says the boss you asked for rests there `left` more seconds: the boss file says so in m:ss and your ask is over |
 | `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `elsewhere` (the same knight opened on another device: this socket is closed with code 4000 and must not reconnect), `wait`, `full`, `banned` (close 4003, no reconnect), `kicked` (close 4005, no reconnect), `admin` (that was an admin message), `bad` |
 | `role` `mod` `modlist` `muted` `unmuted` `spawn` `spawn_clear` `crackers` `boom` `party_end` `light_no` `prize` `party_no` `announce` | | see *Admins and drop parties* |
 | `trade_ask` `trade_asked` `trade_ask_off` `trade_no` `trade_open` `trade_state` `trade_note` `trade_end` `trade_done` | | see *Trading* |
@@ -220,19 +222,37 @@ adds `mech: {kind, hp, maxHp}` and is drawn with `drawMech`. Mounts add `mount: 
 Every named boss can be beaten again (owner, 2026-10-02: *"bosses shoould all be redefeatable"*), and friends fight it
 together. Two rules make that safe on a shared map; `src/75-coop.js` owns both.
 
-- **Waking a boss.** A boss file registers how its boss comes up: `HOOKS.bossCall[id] = { map, near, alive, wake, name, type }`
-  (`map` is the map it lives on, `near` is `[tx, ty, tiles]` or `null`, `alive()` says whether one is up, `wake(askerName | null)`
-  makes it). The on-screen control calls `COOP.call(id)`. Offline, or on the keeper, that runs `wake(null)` at once and answers
+- **Waking a boss.** A boss file registers how its boss comes up: `HOOKS.bossCall[id] = { map, near, alive, wake, name, type,
+  rest, resting, told, refused }` (`map` is the map it lives on, `near` is `[tx, ty, tiles]` or `null`, `alive()` says whether one
+  is up, `wake(askerName | null)` makes it; the last four are below). The on-screen control calls `COOP.call(id, first)`. Offline, or on the keeper, that runs `wake(null)` at once and answers
   `'woke'`. On anyone else it sends `{t: 'boss_call', id}` (at most one every 2.5 s) and answers `'sent'`; the world relays it to
   the keeper of the sender's map as `{t: 'boss_call', n, id}`. The keeper wakes it only when all of these hold: the id is
   registered and its `map` is the keeper's map, the asker is on that map, the asker stands within `near[2]` tiles of `near`
   (the Fang: 4 tiles of the summoning circle), no such boss is up already, and 3 s have passed since the last wake of that id.
-  Then it runs `wake(n)` and shows "Ben called The Fang." Anything else is ignored without a word. If no live boss has
+  Then it runs `wake(n)` and shows the entry's `told(n)` line (the Fang: "Ben sounded the horn. The Fang rises in its lair.",
+  or "Ben is fighting something far to the south." to a keeper whose story has not reached the dragon; the summoning banner
+  shows only to a knight in the lair), or "Ben called The Fang." Anything else is ignored without a word.
+- **The rest lives where the boss lives.** The keeper notes when a called boss falls on its map (`S.restAt[id]`, its own clock).
+  For `rest` seconds after that it answers a call with `{t: 'boss_wait', to, id, left}` instead of waking it, unless the call
+  says `first: true` (the asker's own story fight: his first Fang at stage 14, his first beast at stage 9, a storm he never
+  broke). The asker's `refused(left)` says how long in m:ss and ends his call. A call whose boss stood up on the asker's screen
+  and then stayed down 3 s is spent, paid or not: the asker's own rest starts and nothing calls it again by itself (the 3 s let
+  the keeper's `kill` message for the asker's own last blow land first). Rests: the Fang 600 s, the War Shed 300 s, the storm
+  300 s; the Gnasher has none (the house pattern).
+- **The pay is each knight's own.** `resting(m)` says this knight is still resting from his last paid kill of that boss. A kill
+  then (his own, a helper's `kill` message, the keeper's phantom) pays nothing: `m.noPay` is set before the kill hooks run, core
+  `rollDrops` is held back, and the boss files, the kill bonus (30-ashdrake, 45-progression), the dragon item
+  (37-dragonkillers) and the blueprints (40-dozerup) all read it. He reads "You helped bring it down. Your own reward is ready
+  in m:ss." A first kill is never gated. So a friend's calls can never pay anyone twice inside his own rest.
+- **The storm is never refilled.** `INSTANCES.define('stormfront', { ..., refill: false })`: a knight arriving at a storm whose
+  bird is down does not bring it back. A knight whose rest is over (or who never broke it) asks the keeper once with
+  `boss_call stormfront` on the way in; a knight still resting can walk in to help a friend, and the storm he builds alone has
+  no bird in it. If no live boss has
   appeared 3 s after a `'sent'`, the asker reads "Nobody answered. Try again in a moment." (an older world drops the unknown
   `t`, and this covers it). What the asker's own story knows (first fight or rematch, a rest still running) is decided on the
   asker's game before it calls; `wake` never sets the keeper's own quest flags when someone else asked.
-  The ids today: `the_fang` (`over`, near the circle at (18,117)), `war_shed` (the War Shed's Barrelbeast) and `gnasher`
-  (Tinkerton's lab).
+  The ids today: `the_fang` (`over`, near the circle at (18,117)), `war_shed` (the War Shed's Barrelbeast), `stormfront`
+  (the Thunderbird, asked for on the way into the storm) and `gnasher` (Tinkerton's lab).
 - **Helper credit.** For `the_fang`, `barrelbeast`, `thunderbird`, `gnasher`, `brood_mother` and `count_ashvane` the keeper counts
   every landed hit per knight (`m.hitters[name] = {n, t}`, the count starting again when the last hit is more than 60 s
   old). When one dies, the killer is credited as before (the keeper's own kill, or `kill` to the knight who landed the last

@@ -444,3 +444,32 @@ test('a keeper on another map does not receive boss_call', () => {
   assert.equal(a.of('boss_call').length, 0);
   assert.deepEqual(b.of('boss_call'), [{ t: 'boss_call', n: 'Zed', id: 'gnasher' }]);
 });
+
+test('boss_call passes the first flag on only when it is exactly true', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'); w.t += 10;
+  const b = w.knight('Jack', 'over');
+  w.settle(a, b);
+  w.say(b, { t: 'boss_call', id: 'the_fang', first: true }); w.t += 3000;
+  w.say(b, { t: 'boss_call', id: 'the_fang', first: 'yes' }); w.t += 3000;
+  w.say(b, { t: 'boss_call', id: 'the_fang', first: 1 });
+  assert.deepEqual(a.of('boss_call'), [{ t: 'boss_call', n: 'Jack', id: 'the_fang', first: true }, { t: 'boss_call', n: 'Jack', id: 'the_fang' }, { t: 'boss_call', n: 'Jack', id: 'the_fang' }]);
+});
+
+test('boss_wait from the keeper reaches only the named knight on its map, with id and left', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'); w.t += 10;
+  const b = w.knight('Jack', 'over'); w.t += 10;
+  const c = w.knight('Zed', 'over'); w.t += 10;
+  const d = w.knight('Pip', 'tinker_lab');
+  w.settle(a, b, c, d);
+  w.say(a, { t: 'boss_wait', to: 'Jack', id: 'the_fang', left: 125, extra: 'x' });
+  assert.deepEqual(b.of('boss_wait'), [{ t: 'boss_wait', id: 'the_fang', left: 125 }]);
+  assert.equal(c.of('boss_wait').length, 0);
+  // a knight on another map, and a boss_wait from a knight who does not keep the map, go nowhere
+  w.t += 2000; w.say(a, { t: 'boss_wait', to: 'Pip', id: 'gnasher', left: 5 });
+  w.t += 2000; w.say(c, { t: 'boss_wait', to: 'Jack', id: 'the_fang', left: 5 });
+  assert.equal(d.of('boss_wait').length, 0);
+  assert.equal(b.of('boss_wait').length, 1);
+  assert.equal(CAPS.boss_wait.rate, 1); assert.equal(CAPS.boss_wait.burst, 3);
+});

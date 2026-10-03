@@ -23,11 +23,16 @@
   const REMOTE_STALE = 15;    // seconds without presence before a remote knight is forgotten
   const KNIGHT_R = 13;
 
-  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9 };
+  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false };
   // Named bosses (docs/ONLINE.md, "Named bosses: boss_call and helper credit"). A boss file registers how its boss is woken in
-  // HOOKS.bossCall[id] = { map, near: [tx, ty, tiles] | null, alive: () => bool, wake: askerName|null => void, name, type };
-  // COOP.call(id) wakes it here when this knight runs the map, and otherwise asks the map's keeper. Every knight who landed
-  // CREDIT_HITS hits on one of these in the last CREDIT_FOR seconds gets the kill, not only the one who landed the last.
+  // HOOKS.bossCall[id] = { map, near: [tx, ty, tiles] | null, alive: () => bool, wake: askerName|null => void, name, type,
+  //   rest: seconds | undefined, resting: m => bool, told: askerName => string, refused: secondsLeft => void };
+  // COOP.call(id, first) wakes it here when this knight runs the map, and otherwise asks the map's keeper. Every knight who
+  // landed CREDIT_HITS hits on one of these in the last CREDIT_FOR seconds gets the kill, not only the one who landed the last.
+  // The rest lives where the boss lives: the keeper remembers when each one fell (S.restAt) and answers a call inside `rest`
+  // with boss_wait, unless the caller says it is his own first fight. And the pay is each knight's own: `resting(m)` says this
+  // knight is still resting from his last paid kill, and then his kill pays nothing (no purse, no drops, no dragon item, no
+  // kill bonus): m.noPay, which the boss files, 30-ashdrake, 45-progression and 37-dragonkillers read.
   HOOKS.bossCall = HOOKS.bossCall || {};
   const CREDIT = new Set(['the_fang', 'barrelbeast', 'thunderbird', 'gnasher', 'brood_mother', 'count_ashvane']);
   const CREDIT_HITS = 3, CREDIT_FOR = 60;
@@ -36,6 +41,10 @@
   const CALL_GAP = 3, CALL_WAIT = 3, SEND_GAP = 2.5;
 
   const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+  const mmss = s => { const c = Math.max(0, Math.ceil(s)); return Math.floor(c / 60) + ':' + String(c % 60).padStart(2, '0'); };
+  // the named-boss entry for a monster type on this map (the square's Barrelbeast and the shed's share a type: the entry
+  // whose map is this one wins, else any with the type, for its pay rule)
+  const entryOf = type => { let any = null; for (const id of Object.keys(HOOKS.bossCall)) { const h = HOOKS.bossCall[id]; if (!h || h.type !== type) continue; if (h.map === S.map) return [id, h]; if (!any) any = [id, h]; } return any; };
   const r2 = v => Math.round(v * 100) / 100;
   const mapId = () => {
     const I = window.INSTANCES; if (!I) return 'over';
@@ -138,7 +147,7 @@
   // a knight arriving at an instance whose boss is down while the rest still stand: the boss alone stands up again at its own
   // spawn tile (the keeper's instance is the one everyone fights in). Nobody's 'dungeon cleared' count changes.
   function reviveBoss(inst) {
-    if (!inst || !inst.boss) return false;
+    if (!inst || !inst.boss || inst.refill === false) return false;
     const i = inst.spawns.findIndex(s => s && s[0] === inst.boss); if (i < 0) return false;
     const m = monsters.find(o => o.nid === 'i' + i && !o.remote && !o.phantom); if (!m || !m.dead) return false;
     const [, tx, ty] = inst.spawns[i];
@@ -153,6 +162,8 @@
   function refillIfCleared() {
     if (!isKeeper() || S.map === 'over' || !window.INSTANCES || typeof INSTANCES.get !== 'function') return false;
     const inst = INSTANCES.get(S.map); if (!inst || !Array.isArray(inst.spawns) || !inst.spawns.length) return false;
+    // an instance that says refill: false (the storm) is never filled by an arrival: its boss comes back only by a call
+    if (inst.refill === false) return false;
     if (monsters.some(m => !m.dead && !m.remote && !m.phantom)) { reviveBoss(inst); return false; }
     const fresh = inst.spawns.map(([type, tx, ty], i) => MONSTER_DEFS[type] ? makeReal(type, tc(tx), tc(ty), 'i' + i) : null).filter(Boolean);
     for (const m of fresh) monsters.push(m);
@@ -235,17 +246,19 @@
     S.idxLen = -1;
     tagInstance(id);
   }
-  function reset() { if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; }
+  function reset() { if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; S.restAt = {}; S.lootless = false; }
 
   // ---------- named bosses: waking one, here or on the keeper ----------
   const bossAlive = h => { try { return !!h.alive(); } catch (e) { return false; } };
   // 'woke' (this game runs the map: offline, or the keeper), 'sent' (the keeper was asked), 'none' (no such boss)
-  function call(id) {
+  // first: this is the caller's own story fight (his first Fang, his first Barrelbeast, his first storm), which the keeper's
+  // rest does not hold back
+  function call(id, first) {
     const h = HOOKS.bossCall[id]; if (!h) return 'none';
     if (!online() || isKeeper()) { S.calls[id] = time; h.wake(null); return 'woke'; }
     // one ask on its way is enough: a second tap inside SEND_GAP is the same ask, not a new message
     // (the game clock goes back on a load or a new game: a time from before that has passed)
-    if (time < S.sentAt || time - S.sentAt >= SEND_GAP) { S.sentAt = time; NET.send({ t: 'boss_call', id }); }
+    if (time < S.sentAt || time - S.sentAt >= SEND_GAP) { S.sentAt = time; NET.send(first ? { t: 'boss_call', id, first: true } : { t: 'boss_call', id }); }
     if (!S.pending || S.pending.id !== id) S.pending = { id, t: time };
     return 'sent';
   }
@@ -259,9 +272,26 @@
     if (bossAlive(h)) return false;
     const last = S.calls[msg.id];
     if (last !== undefined && time >= last && time - last < CALL_GAP) return false;
+    // the boss is resting on this map (it fell here lately): the asker is told how long, unless it is his first fight
+    const fell = S.restAt[msg.id], rest = num(h.rest) || 0;
+    if (rest > 0 && msg.first !== true && fell !== undefined && time >= fell && time - fell < rest) {
+      NET.send({ t: 'boss_wait', to: msg.n, id: msg.id, left: Math.ceil(rest - (time - fell)) });
+      return false;
+    }
     S.calls[msg.id] = time;
     h.wake(msg.n);
-    notify(`${msg.n} called ${h.name || msg.id}.`);
+    let line = null; try { line = typeof h.told === 'function' ? h.told(msg.n) : null; } catch (e) { line = null; }
+    notify(typeof line === 'string' && line ? line : `${msg.n} called ${h.name || msg.id}.`);
+    return true;
+  }
+  // the asker's side: the keeper says the boss is resting on that map
+  function onBossWait(msg) {
+    if (!online() || isKeeper() || !msg || typeof msg.id !== 'string' || !Object.prototype.hasOwnProperty.call(HOOKS.bossCall, msg.id)) return false;
+    const left = num(msg.left); if (left === null || left < 0 || left > 3600) return false;
+    const h = HOOKS.bossCall[msg.id]; if (!h) return false;
+    if (S.pending && S.pending.id === msg.id) S.pending = null;
+    if (typeof h.refused === 'function') { try { h.refused(left); } catch (e) { } }
+    else notify(`Not yet. Ready in ${mmss(left)}.`);
     return true;
   }
 
@@ -322,6 +352,8 @@
   }
   function after(dt, pre) {
     // an ask the keeper never answered (an older world, a keeper changing hands): say so once, plainly
+    // (an ask the keeper did answer is over the moment its boss stands up on this screen)
+    if (S.pending) { const h = HOOKS.bossCall[S.pending.id]; if (h && bossAlive(h)) S.pending = null; }
     if (S.pending && (time < S.pending.t || time - S.pending.t >= CALL_WAIT)) {
       const h = HOOKS.bossCall[S.pending.id]; S.pending = null;
       if (online() && !isKeeper() && h && !bossAlive(h)) notify('Nobody answered. Try again in a moment.');
@@ -389,9 +421,25 @@
   }
   hitMonster.__inner = _hitMonster;
   const _killMonster = killMonster;
+  // one kill on this knight's game, through every kill hook, with the pay gate: a knight still resting from his last paid
+  // kill of a named boss is paid nothing for this one (the drops, the purse, the dragon item and the kill bonus all look at
+  // m.noPay; core rollDrops is held back below while S.lootless)
+  function payKill(m) {
+    let gate = false;
+    const e = CREDIT.has(m.type) ? entryOf(m.type) : null;
+    if (e && typeof e[1].resting === 'function') { try { gate = !!e[1].resting(m); } catch (err) { gate = false; } }
+    m.noPay = gate;
+    S.lootless = gate;
+    try { _killMonster(m); } finally { S.lootless = false; }
+  }
+  const _rollDrops = rollDrops;
+  rollDrops = function (def, x, y) { if (S.lootless) return; return _rollDrops(def, x, y); };
+  rollDrops.__inner = _rollDrops;
   killMonster = function (m) {
     if (m.remote) { m.dead = true; m.deadT = 0; m.respawnT = 1e9; m.localDeadUntil = time + 0.5; return; }   // the keeper decides drops, XP and credit
     let share = null;
+    // the keeper remembers when a called boss fell on this map: its rest starts here, whoever landed the blow
+    if (!m.phantom && isKeeper()) for (const id of Object.keys(HOOKS.bossCall)) { const h = HOOKS.bossCall[id]; if (h && h.type === m.type && h.map === S.map) S.restAt[id] = time; }
     if (!m.phantom && !m.credited && CREDIT.has(m.type) && isKeeper()) { m.credited = true; share = sharers(m, m.lastHitBy || NET.me); }
     if (m.lastHitBy && isKeeper()) {
       const d = MONSTER_DEFS[m.type], to = m.lastHitBy; m.lastHitBy = null;
@@ -403,10 +451,10 @@
       const I = window.INSTANCES, inst = I && I.active && I.active() ? I.get(I.active()) : null;
       if (inst && inst.boss === m.type) m.respawnT = Infinity;
       NET.send({ t: 'kill', nid: m.nid, type: m.type, x: Math.round(m.x), y: Math.round(m.y), to });
-    } else _killMonster(m);
+    } else payKill(m);
     if (share) {
       for (const n of share.remote) NET.send({ t: 'kill', nid: m.nid, type: m.type, x: Math.round(m.x), y: Math.round(m.y), to: n });
-      if (share.me) _killMonster(phantomOf(m));
+      if (share.me) payKill(phantomOf(m));
     }
   };
   killMonster.__inner = _killMonster;
@@ -443,9 +491,10 @@
       const nid = typeof msg.nid === 'string' ? msg.nid : null;
       const p = nid ? find(nid) : null;
       if (p && p.remote) { p.dead = true; p.deadT = 0; p.respawnT = 1e9; p.localDeadUntil = time + 0.5; }
-      _killMonster(phantomOf({ type: msg.type, nid, x, y }));
+      payKill(phantomOf({ type: msg.type, nid, x, y }));
     });
     NET.on('boss_call', onBossCall);
+    NET.on('boss_wait', onBossWait);
     NET.on('hurt', msg => {
       if (!online()) return;
       const dmg = num(msg.dmg); if (dmg === null || dmg < 0 || dmg > MAX_DMG) return;
@@ -454,7 +503,7 @@
     });
   }
 
-  window.COOP = { refill: refillIfCleared, call, CREDIT, phantomOf, bossCall: onBossCall,
+  window.COOP = { refill: refillIfCleared, call, CREDIT, phantomOf, bossCall: onBossCall, bossWait: onBossWait, mmss,
     isKeeper, keeper: () => S.keeper, map: () => S.map, remotes: () => Object.values(S.remotes), knightsHere, puppets: () => S.puppets,
     get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), find, apply: applyMon, reset, state: S,
   };
@@ -702,6 +751,30 @@
         check(P + 'boss_call: the keeper honours a registered id only on its own map, from a knight on that map, in range (the Fang within 4 tiles of the circle), with no live boss and after the 3 s cooldown',
           absent.length === 0 && far.length === 0 && near.join() === 'Ann' && cooling.length === 0 && alive.length === 0 && again.join() === 'Ann' && wrongMap.length === 0 && unknown.length === 0 && proto.length === 0 && elsewhere.length === 0 && fangRule,
           { absent, far, near, cooling, alive, again, wrongMap, unknown, proto, elsewhere, fangRule }); }
+      // (C8) the pay gate: a kill message for a named boss this knight still rests from pays nothing (no drops, no kill bonus,
+      // no dragon item); the same message once he has rested pays the def drops
+      { const keepBC = HOOKS.bossCall.test_pay; let rests = true;
+        HOOKS.bossCall.test_pay = { map: 'spider_den', near: null, type: 'brood_mother', name: 'the test mother', alive: () => false, wake: () => { }, resting: () => rests };
+        const n0 = drops.length, mx0 = player.skills.melee.xp, dx0 = player.skills.defence.xp, seen = [];
+        const look = m => { if (m.type === 'brood_mother') seen.push(!!m.noPay); }; HOOKS.kill.push(look);
+        try {
+          push({ t: 'kill', nid: 'Ann:p1', type: 'brood_mother', x: player.x, y: player.y, to: 'Cohen' });
+          const resting = { drops: drops.length - n0, melee: player.skills.melee.xp - mx0, defence: player.skills.defence.xp - dx0 };
+          rests = false; push({ t: 'kill', nid: 'Ann:p2', type: 'brood_mother', x: player.x, y: player.y, to: 'Cohen' });
+          const rested = { drops: drops.length - n0 - resting.drops, defence: player.skills.defence.xp - dx0 - resting.defence };
+          check(P + 'pay gate: a kill message for a named boss this knight still rests from pays nothing (no drops, no kill bonus); rested, the same message pays its drops and bonus',
+            resting.drops === 0 && resting.melee === 0 && resting.defence === 0 && seen.join() === 'true,false' && rested.drops > 0 && rested.defence > 0 && !S.lootless, { resting, rested, seen });
+        } finally { HOOKS.kill.splice(HOOKS.kill.indexOf(look), 1); if (keepBC) HOOKS.bossCall.test_pay = keepBC; else delete HOOKS.bossCall.test_pay; drops = drops.slice(0, n0); }
+      }
+      // (C9) boss_wait: only a sane answer for a registered boss is read, and it ends the ask (no 'Nobody answered' after it)
+      { const told = []; HOOKS.bossCall.test_wait = { map: 'over', near: null, name: 'the test boss', alive: () => false, wake: () => { }, refused: left => told.push(left) };
+        S.keeper = 'Ann'; S.pending = { id: 'test_wait', t: time };
+        for (const msg of [{ id: 'test_wait', left: -1 }, { id: 'test_wait', left: 99999 }, { id: 'test_wait', left: 'x' }, { id: 'no_such', left: 5 }, { id: 'toString', left: 5 }]) push(Object.assign({ t: 'boss_wait' }, msg));
+        const ignored = told.length === 0 && !!S.pending;
+        push({ t: 'boss_wait', id: 'test_wait', left: 125 });
+        check(P + 'boss_wait: a bad left, an unknown id or a prototype name is ignored; a sane one for a registered boss reaches its refused(left) and ends the ask',
+          ignored && told.join() === '125' && S.pending === null && mmss(125) === '2:05' && mmss(600) === '10:00', { ignored, told, pending: S.pending });
+        delete HOOKS.bossCall.test_wait; S.keeper = 'Cohen'; }
       // (C7) handoff: a live adopted monster is awake on the new keeper
       { const s0 = real.find(m => /^s\d+$/.test(m.nid || '') && m.type === 'goblin' && !m.dead) || real.find(m => /^s\d+$/.test(m.nid || ''));
         const s1 = real.find(m => m !== s0 && /^s\d+$/.test(m.nid || ''));

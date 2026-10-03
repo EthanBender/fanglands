@@ -29,7 +29,9 @@
   const BOSSES = ['walker', 'bulldozer', 'barrelbeast', 'brood_mother', 'gnasher', 'count_ashvane'];
   // the Echo of the Fang (28-thefang marks a repeat kill m.repeat) is a rematch, not the legend: 1 in 30, not 1 in 3
   const ECHO = 1 / 30;
+  // (a helper still resting from his own last paid kill, m.noPay from 75-coop, rolls nothing)
   function chance(type, m) {
+    if (m && m.noPay) return 0;
     if (type === 'the_fang' && m && m.repeat) return ECHO;
     if (type in FIXED) return FIXED[type];
     if (BOSSES.includes(type) && MONSTER_DEFS[type]) return Math.min(1 / 20, (MONSTER_DEFS[type].level || 0) / 1500);
