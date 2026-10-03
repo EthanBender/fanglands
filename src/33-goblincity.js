@@ -488,7 +488,7 @@
     if (look.cape) { g.fillStyle = '#4a1e1e'; g.beginPath(); g.moveTo(-12, -4); g.quadraticCurveTo(-16, 10, -10, 16); g.lineTo(10, 16); g.quadraticCurveTo(16, 10, 12, -4); g.closePath(); g.fill(); }
     g.fillStyle = hurt ? '#ffb0b0' : look.tunic; g.beginPath(); g.ellipse(0, 3, look.fat ? 13 : 11, 10, 0, 0, 7); g.fill();
     if (look.apron) { g.fillStyle = look.apronColor || '#d9d0c0'; g.beginPath(); g.ellipse(0, 6, 6.5, 6.5, 0, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1; g.beginPath(); g.moveTo(-4, 4); g.lineTo(4, 4); g.stroke(); }
-    if (look.spear) { g.save(); g.rotate(Math.atan2(fy, fx) + (e.attackT > 0 ? -0.2 : 0.75)); g.fillStyle = '#8a6a3a'; g.fillRect(-12, -1.5, 36, 3); g.fillStyle = '#c9ccd3'; g.beginPath(); g.moveTo(24, -4); g.lineTo(33, 0); g.lineTo(24, 4); g.closePath(); g.fill(); g.restore(); }
+    if (look.spear && !e.unarmed) { g.save(); g.rotate(Math.atan2(fy, fx) + (e.attackT > 0 ? -0.2 : 0.75)); g.fillStyle = '#8a6a3a'; g.fillRect(-12, -1.5, 36, 3); g.fillStyle = '#c9ccd3'; g.beginPath(); g.moveTo(24, -4); g.lineTo(33, 0); g.lineTo(24, 4); g.closePath(); g.fill(); g.restore(); }
     g.fillStyle = hurt ? '#ffc0c0' : (look.skin || '#8ad35a'); g.beginPath(); g.arc(0, -7, 8, 0, 7); g.fill();
     g.beginPath(); g.moveTo(-7, -9); g.lineTo(-16, -14); g.lineTo(-6, -4); g.closePath(); g.fill();
     g.beginPath(); g.moveTo(7, -9); g.lineTo(16, -14); g.lineTo(6, -4); g.closePath(); g.fill();

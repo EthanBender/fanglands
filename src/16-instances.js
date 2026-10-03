@@ -179,6 +179,8 @@
   }
   function leaveInstance() {
     if (!active) return false;
+    // a feature settles what it owes the knight here first, while this is still the active map (HOOKS.leaveInstance)
+    for (const f of HOOKS.leaveInstance) f(active.id);
     const { snap, inst } = active;
     // whatever still lies on the dungeon floor comes out with the knight and lands on the step
     const carried = drops.map(d => ({ ...d, x: snap.step.x + rint(-14, 14), y: snap.step.y + rint(-14, 14) }));
