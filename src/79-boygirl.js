@@ -20,8 +20,9 @@
 // own hair colour. drawHuman draws, for any look with `girl`, a braid over the shoulder with a ribbon (it hangs out of
 // any helm, so she still reads as a girl in full armour), locks of hair under a helm's rim, a bow in the hair when the
 // head is bare, and rosy cheeks. That is the old look (a look with no gear). A KNIGHT look (with gear) is drawn by
-// 82-knightgear, which draws her skirt, long hair, locks, braid, ribbon, bow, cheeks and lashes in the new style. Everything that draws the knight goes through playerLook + drawHuman (on foot, the
-// mare, the walker / dozer / beast seats, the bank, the boat, Thistledown's statue), so all of it follows.
+// 82-knightgear, which draws her skirt, long hair, locks, braid, ribbon, bow, cheeks and lashes in the new style.
+// Everything that draws the knight goes through playerLook + drawHuman (on foot, the mare, the walker / dozer / beast
+// seats, the bank, the boat, Thistledown's statue), so all of it follows.
 //
 // Online: 73-players' lookOf sends `girl` (a boolean) in presence; a remote knight's look with `girl` is drawn the same
 // way. The server relays presence unchanged. docs/ONLINE.md (`look`) lists the field.
@@ -54,13 +55,8 @@ const BOYGIRL = (() => {
     if (isGirl()) dress(l);
     return l;
   };
-  // a look for the choice page: the knight as she or he would be, in the armour worn right now. It goes through the
-  // whole playerLook chain (77's party hat, this file's dress, 82-knightgear's gear), with the gender set for the moment.
-  const lookAs = gnd => {
-    const g0 = player.gender; player.gender = gnd === 'girl' ? 'girl' : 'boy';
-    try { const l = playerLook(); if (gnd !== 'girl') { delete l.girl; delete l.woman; } return l; }
-    finally { if (g0 === undefined) delete player.gender; else player.gender = g0; }
-  };
+  // a look for the choice page: the knight as she or he would be, in the armour worn right now
+  const lookAs = gnd => { const l = _playerLook(); return gnd === 'girl' ? dress(l) : l; };
 
   // ---------- drawing her ----------
   // The head is the circle at (0,-8) r 8, the body the ellipse at (0,3) 12x11, a helm the half disc at (0,-9) r 9 and
@@ -179,8 +175,12 @@ const BOYGIRL = (() => {
   // drawn in the new style like every other knight in the game
   const cardLook = gnd => { const l = Object.assign({}, BASE); if (window.KNIGHTGEAR) l.gear = {}; return gnd === 'girl' ? dress(l) : l; };
   let askRect = null;   // where the card was last drawn (the self-test reads it)
+  // where each card's knight was last drawn: his look, his feet's centre and scale, and the card's art box above its word
+  // plate (the self-test reads it)
+  const cardArt = [];
   function drawAsk(g) {
     const F = title.frame(), T = HK.T, t = F.t, R = HK.row();
+    cardArt.length = 0;
     title.backdrop(g);
     title.heading(g, F);
     const top = Math.round(F.headBottom + (F.short ? 8 : 18)), bottom = VH - F.S.b - F.M;
@@ -209,6 +209,7 @@ const BOYGIRL = (() => {
       const kf = window.KNIGHTGEAR && look.gear ? KNIGHTGEAR.fit(look, cardW - 12, artH - 2, 17, 3.4) : null;
       const s = kf ? kf.s : clamp(Math.min(cardW / 46, artH / 44), 1.4, 3.4);
       const fx = kf ? cx + 6 + kf.x : cx + cardW / 2, fy = (kf ? cy + 6 + kf.y : cy + 8 + artH * 0.56) + dy;
+      cardArt.push({ gnd, look, x: fx, y: fy, s, box: { x: cx, y: cy + dy, w: cardW, h: cardH - R - 10 } });
       g.save(); g.translate(fx, fy); g.scale(s, s);
       g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 12, 12, 5, 0, 0, 7); g.fill();
       drawHuman(g, { facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, walkT: 0, moving: false }, look);
@@ -370,17 +371,49 @@ const BOYGIRL = (() => {
           const look = { tunic: '#a33', hair: '#654321', shoulder: '#999', helm: '#888', body: null, shield: null, weapon: { shape: 'sword', color: '#ccc' }, tool: null, toolColor: null, rod: false, fists: false, hat: null, girl: true };
           sock.onmessage({ data: JSON.stringify({ t: 'p', n: 'Mia', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: false, wt: 0, hp: 20, mhp: 20, lv: 5, look, mech: null, dead: false, def: 100, act: null }) });
           F.step([]); const rec = recorder(), items = []; for (const hk of HOOKS.draw) { try { hk(rec.g, items, cam); } catch (err) { } }
-          const mia = items.find(it => it.who === 'Mia'); rec.fills.length = 0; if (mia) mia.draw();
-          // the wire carries only `girl`: her skirt (drawHuman's `woman`, a second fill in her tunic colour) must come from it
+          const KG = window.KNIGHTGEAR, sk = () => KG ? KG.STATS.skirts : 0;
+          const mia = items.find(it => it.who === 'Mia'); rec.fills.length = 0; const sk0 = sk(); if (mia) mia.draw();
+          // the wire carries only `girl`: her skirt must come from it. The old drawHuman (a look with no gear) draws it as
+          // drawHuman's `woman`, a second fill in her tunic colour; with 82-knightgear a knight off the wire is a knight look
+          // (73 gives an old look an empty gear) and 82 draws her skirt itself (its girlSkirt, counted)
           const tunics = l => { const r2 = recorder(); _drawHuman(r2.g, { facing: { x: -1, y: 0 }, hurtT: 0, attackT: 0 }, l); return r2.fills.filter(f => f === '#a33').length; };
           const plain = tunics(Object.assign({}, look, { girl: false })), skirted = tunics(Object.assign({}, look, { girl: false, woman: true }));
-          res = { sent, bw, drawn: !!mia, hair: rec.fills.filter(f => f === '#654321').length, ribbon: rec.fills.includes(RIBBON), tunic: rec.fills.filter(f => f === '#a33').length, plain, skirted };
+          const remoteLook = PLAYERS.remote.Mia && PLAYERS.remote.Mia.look, knight = !!KG && !!remoteLook && !!remoteLook.gear;
+          // the same knight as a boy, drawn the way Mia was: no skirt
+          const sk1 = sk(); if (knight) drawHuman(recorder().g, { facing: { x: -1, y: 0 }, hurtT: 0, attackT: 0 }, Object.assign({}, remoteLook, { girl: false, woman: false }));
+          res = { sent, bw, drawn: !!mia, hair: rec.fills.filter(f => f === '#654321').length, ribbon: rec.fills.includes(RIBBON), tunic: rec.fills.filter(f => f === '#a33').length, plain, skirted, knight, skirt: sk1 - sk0, boySkirt: sk() - sk1 };
         } finally { NET.disconnect(); NET.enabled = was.enabled; NET.token = was.token; NET.useFake(was.fake); if (PLAYERS.remote.Mia) delete PLAYERS.remote.Mia; }
-        check(P + 'online: presence carries look.girl (false for a boy), a change goes out at once, and a remote girl knight in a helm is drawn with her braid, ribbon and skirt', res.sent === true && res.bw === false && res.drawn && res.hair >= 3 && res.ribbon && res.skirted > res.plain && res.tunic >= res.skirted, res); }
+        const skirtOk = res.skirted > res.plain && (res.knight ? res.skirt === 1 && res.boySkirt === 0 : res.tunic >= res.skirted);
+        check(P + 'online: presence carries look.girl (false for a boy), a change goes out at once, and a remote girl knight in a helm is drawn with her braid, ribbon and skirt', res.sent === true && res.bw === false && res.drawn && res.hair >= 3 && res.ribbon && skirtOk, res); }
       // 10b. the title screen's knight is the last knight played here
       { remember('girl'); const K = title.KNIGHT; title.sprites(recorder().g, 0, 0, 1, 0, 0, 1); const girl = !!(K && K.girl);
         remember('boy'); title.sprites(recorder().g, 0, 0, 1, 0, 0, 1); const boy = !!(K && !K.girl && K.hair === '#5a3a1e');
         check(P + 'the title screen\'s knight matches the last knight played on this device', girl && boy, { girl, boy }); }
+      // 10c. the card's knights are drawn as every knight in the game is (82-knightgear's new style: knight looks, the
+      // new drawing runs for each), the girl card a girl and the boy card a boy, and each knight with his shadow is inside
+      // his card above its word plate, at all 8 device sizes, touch and mouse
+      if (window.KNIGHTGEAR) {
+        const K = KNIGHTGEAR, problems = []; let tried = 0;
+        const _dh = drawHuman, seen = [];
+        try {
+          drawHuman = function (g, e, l) { const a = K.STATS.live; const r = _dh(g, e, l); seen.push({ l, live: K.STATS.live - a }); return r; };
+          for (const [w, hh] of HK.audit.SIZES) {
+            if (!panelSetSize(w, hh)) continue; tried++;
+            for (const tch of [true, false]) {
+              window.__forceTouch = tch; title.open(); ask = { n: 3, go: () => { }, fresh: true }; seen.length = 0; render();
+              const where = `${w}x${hh} ${tch ? 'touch' : 'mouse'}`;
+              if (cardArt.length !== 2) { problems.push(where + ': ' + cardArt.length + ' knights'); continue; }
+              for (const A of cardArt) {
+                const L = A.look, drawn = seen.find(q => q.l === L), x = K.extent(L);
+                if (!L.gear || !drawn || drawn.live !== 1) problems.push(`${where} ${A.gnd}: not the new knight`);
+                if ((A.gnd === 'girl') !== (L.girl === true)) problems.push(`${where} ${A.gnd}: girl ${!!L.girl}`);
+                const l = A.x + Math.min(x.l, -12) * A.s, r = A.x + Math.max(x.r, 12) * A.s, t = A.y + x.t * A.s, b = A.y + Math.max(x.b, 17) * A.s, B = A.box;
+                if (l < B.x || r > B.x + B.w || t < B.y || b > B.y + B.h) problems.push(`${where} ${A.gnd}: knight ${[l, t, r, b].map(Math.round)} out of ${[B.x, B.y, B.x + B.w, B.y + B.h].map(Math.round)}`);
+              }
+            }
+          }
+        } finally { drawHuman = _dh; ask = null; window.__forceTouch = t0; restore(); }
+        check(P + 'the card\'s two knights are drawn in the new style (82-knightgear) as every knight in the game, the girl card a girl and the boy card a boy, each with his shadow inside his card above its word plate, at all 8 device sizes, touch and mouse', tried === 8 && problems.length === 0, { tried, problems: problems.slice(0, 6), total: problems.length }); }
       // 11. the card at every device size, touch and mouse, Large text, a new game and a knight from before: the cards big,
       // every control 44 px on touch and apart, on screen, out of the bands, every word inside its box, the card under the
       // FANGLANDS heading and above the bottom of the screen

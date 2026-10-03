@@ -339,7 +339,10 @@ Player: `player.x/y/hp/maxHp/facing/equip/inv/skills/mech/home`.
 The knight is drawn in his own style, wearing each item's own shape (the owner's approved "knight gear" look). A KNIGHT
 look is any look with a `gear` object `{ helm, body, legs, shield, cape, weapon }` (item ids or null); `playerLook()` adds
 it, 73-players sends it, `title.KNIGHT` has one. `drawHuman(g, e, look)` sends a knight look to `KNIGHTGEAR.draw(g, e,
-look, opts)` and every other look (townsfolk, guards, the statue) to the old drawing, untouched.
+look, opts)` and every other look (townsfolk, guards, the four old heroes' statues) to the old drawing, untouched.
+- A knight look with `stone: true` (95-thistledown's statue of the knight himself) is drawn in stone: every colour he
+  sets goes through a stone palette, his clock stopped. While `e.hurtT > 0` the whole knight flashes red the same way
+  (every colour, drawn live), so the flash shows through a closed helm and plate.
 - To draw the knight somewhere new: `drawHuman(g, e, playerLook())`, translated to his feet's centre (draw your own
   shadow). `e.seated` (or `opts.seated`, or being inside `drawMech` / `drawDozer` / the barrel beast) leaves his legs off.
   A panel that shows him big fits him with `KNIGHTGEAR.fit(look, w, h, foot, maxScale)`: he is taller than the old

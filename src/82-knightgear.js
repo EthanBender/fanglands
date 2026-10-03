@@ -25,8 +25,11 @@
 // helm/body/shield colours, weapon, tool, rod, fists, hat, girl). A slot with no id this game knows (an old client, a
 // newer client's item) is read back from the colour fields: every (slot, colour) and (weapon shape, colour) pair is
 // unique across the items, so an old look comes back as its exact items; `hat: 'red'` is party_hat_red; a colour that is
-// no item draws that family's plain piece in that colour. Looks without gear (townsfolk, guards, monsters, the stone
-// statue) go to the old drawHuman untouched.
+// no item draws that family's plain piece in that colour. Looks without gear (townsfolk, guards, monsters, the four
+// old heroes' statues) go to the old drawHuman untouched. Thistledown's statue of the knight himself is a knight look
+// with `stone`: the knight in what he wears, every colour mapped to stone (see tintCtx).
+//
+// HURT: while e.hurtT > 0 the whole knight flashes red (every colour he sets, through tintCtx), drawn live.
 //
 // WRAPS (by reassignment, explicit arguments): playerLook (adds gear), drawHuman (a knight look comes here, every other
 // look goes on down unchanged; 77's crown and 79's braid are drawn here for a knight), drawCharacter (the player on
@@ -36,7 +39,7 @@
 // SPEED. The knight is about 7x the old drawing's work, so other knights online (73-players, possibly 50 on one map)
 // are drawn from pictures: one per (gear, girl, hurt, 8 facings, step, animation phase, screen pixel ratio), holding
 // everything but the weapon, which has its own picture per (weapon, phase, ratio) and is turned to its angle. Both are
-// LRU maps; the body pictures' one is sized to the crowd (16 a knight, 300 to 1600, under 64 MB of pixels) and a facing
+// LRU maps; the body pictures' one is sized to the crowd (28 a knight, 300 to 1600, under 64 MB of pixels) and a facing
 // to his left shares the picture of its mirror to his right (WPIC_MAX for the weapons). Everything else (your own knight, the seats, the bank, the title, the choice cards) is
 // drawn live, so it is never soft at a panel's scale. Pictures are only made for the world canvas (`ctx`).
 //
@@ -51,7 +54,7 @@ const KNIGHTGEAR = (() => {
   let TUNIC = '#3b6fb6', SKIN = '#e8b790', HAIR = '#5a3a1e', RIB = '#d0567f', GIRL = false;
   const GOLD = '#e0b546', OUT = 'rgba(22,14,8,0.62)', RIBBON = '#d0567f';
   const KG = { seat: 0 };
-  const STATS = { pics: 0, wpics: 0, live: 0, blits: 0 };
+  const STATS = { pics: 0, wpics: 0, live: 0, blits: 0, skirts: 0, tinted: 0 };
   const kEase = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
   // a colour off the wire is only ever used if it is a #rgb or #rrggbb hex (a gradient stop with a bad colour throws)
@@ -75,6 +78,44 @@ const KNIGHTGEAR = (() => {
   }
   function rr(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
   function ell(g, x, y, rx, ry, rot) { g.beginPath(); g.ellipse(x, y, rx, ry, rot || 0, 0, Math.PI * 2); }
+
+  // ---------- the whole knight in other colours: hurt (a red flash) and stone (Thistledown's statue) ----------
+  // The knight is drawn as always, through a context that passes every colour he sets through a palette: fillStyle,
+  // strokeStyle, shadowColor and every gradient stop. So the flash covers his plate, helm and shield, not only the tunic
+  // and the face (a closed helm and plate hid those), and the statue is all of him in stone.
+  // hurt: 40% of the way to #ff6b6b. stone: the colour's lightness on pale warm stone (dark lines stay dark grey).
+  const PALETTES = {
+    hurt: (r, gg, b) => [r + (255 - r) * 0.4, gg + (107 - gg) * 0.4, b + (107 - b) * 0.4],
+    stone: (r, gg, b) => { const v = 70 + (0.3 * r + 0.59 * gg + 0.11 * b) * 0.6; return [v + 5, v + 1, v - 7]; },
+  };
+  const TINTED = new Map();
+  function tinted(c, kind) {
+    if (typeof c !== 'string') return c;
+    const k = kind + c;
+    let o = TINTED.get(k);
+    if (o !== undefined) return o;
+    let r, gg, b, a = 1, m;
+    if ((m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c))) { let h = m[1]; if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2]; const n = parseInt(h, 16); r = n >> 16; gg = (n >> 8) & 255; b = n & 255; }
+    else if ((m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(c))) { r = +m[1]; gg = +m[2]; b = +m[3]; if (m[4] !== undefined) a = +m[4]; }
+    else o = c;
+    if (o === undefined) { const q = PALETTES[kind](r, gg, b).map(v => Math.max(0, Math.min(255, Math.round(v)))); o = a < 1 ? `rgba(${q[0]},${q[1]},${q[2]},${a})` : `rgb(${q[0]},${q[1]},${q[2]})`; }
+    if (TINTED.size > 4000) TINTED.clear();
+    TINTED.set(k, o);
+    return o;
+  }
+  function tintCtx(g, kind) {
+    STATS.tinted++;
+    const fix = v => typeof v === 'string' ? tinted(v, kind) : v && v.__tg ? v.__tg : v;
+    return new Proxy(g, {
+      get(o, k) {
+        const v = o[k];
+        if (typeof v !== 'function') return v;
+        if (k === 'createLinearGradient' || k === 'createRadialGradient') return (...a) => { const gr = v.apply(o, a); return { __tg: gr, addColorStop: (t, c) => gr.addColorStop(t, tinted(c, kind)) }; };
+        return (...a) => v.apply(o, a);
+      },
+      set(o, k, v) { o[k] = k === 'fillStyle' || k === 'strokeStyle' || k === 'shadowColor' ? fix(v) : v; return true; },
+    });
+  }
 
   // ---------- the families: what kind of piece each item is ----------
   const tierOf = id => { const m = /^(ruined|wooden|bronze|iron|steel|mithril|blackiron|sunstone|stormstone|godly|dragon|obsidian|stoneheart|scale)/.exec(id || ''); return m ? m[1] : null; };
@@ -614,6 +655,7 @@ const KNIGHTGEAR = (() => {
   const SKIRT_HEM = [[-10.2, 10, -8.6, 10.4, -6.8, 9], [-6.8, 9, -5.4, 9.4, -3.9, 8.8], [-3.9, 8.8, -2.6, 9.4, -1.2, 8.8], [-1.2, 8.8, 0, 9.6, 1.2, 8.8], [1.2, 8.8, 2.6, 9.4, 3.9, 8.8], [3.9, 8.8, 5.4, 9.4, 6.8, 9], [6.8, 9, 8.6, 10.4, 10.2, 10]];
   function girlSkirt(g, B) {
     if (B && B.fam === 'robe') return;
+    STATS.skirts++;
     const sk = () => {
       g.beginPath(); g.moveTo(-7.6, 4.4); g.quadraticCurveTo(-9.4, 7, -10.2, 10);
       for (const h of SKIRT_HEM) g.quadraticCurveTo(h[2], h[3], h[4], h[5]);
@@ -975,10 +1017,11 @@ const KNIGHTGEAR = (() => {
   }
 
   // ---------- pictures, for the crowd of other knights ----------
-  // The body pictures' LRU is sized to the crowd: each knight drawn from pictures walks through 4 poses a facing, so the
-  // cap is 16 pictures for every one drawn in the busiest recent frame (300 at least, 1600 at most), and the pictures'
-  // pixels are held under PIC_BYTES. Facings to his left are the mirror of those to his right, so they share pictures.
-  const PIC_MIN = 300, PIC_TOP = 1600, PIC_EACH = 16, PIC_BYTES = 64 * 1024 * 1024, WPIC_MAX = 80;
+  // The body pictures' LRU is sized to the crowd. A knight who walks and turns needs 5 facings (the left ones are
+  // mirrors) x 4 poses of the walk = 20 pictures, and a standing one more; 16 a knight was too few (a turning crowd
+  // made pictures for ever), so the cap is 28 for every knight drawn in the busiest recent frame (300 at least, 1600 at
+  // most), and the pictures' pixels are held under PIC_BYTES.
+  const PIC_MIN = 300, PIC_TOP = 1600, PIC_EACH = 28, PIC_BYTES = 64 * 1024 * 1024, WPIC_MAX = 80;
   let picCap = PIC_MIN, picBytes = 0, crowdN = 0, crowdHi = 0;
   // once a frame (the first HOOKS.draw handler call of a render): the crowd of the last frame sets the cap; it falls
   // back slowly (one knight every 20 frames) when the crowd thins
@@ -1062,7 +1105,7 @@ const KNIGHTGEAR = (() => {
       };
       let cv = null, bx = null;
       try {
-        const tr = tracker(); paint(tr.g); bx = tr.b;
+        const tr = tracker(); measuring(() => paint(tr.g)); bx = tr.b;
         const x0 = Math.floor(bx.l) - 1, y0 = Math.floor(bx.t) - 1, w = Math.ceil(bx.r) + 1 - x0, h = Math.ceil(bx.b) + 1 - y0;
         cv = makeCanvas(w, h, ss);
         if (cv) { cv.cg.scale(ss, ss); cv.cg.translate(-x0, -y0); paint(cv.cg); p = { c: cv.c, x0, y0, w, h, ss }; }
@@ -1117,8 +1160,10 @@ const KNIGHTGEAR = (() => {
     setColours(e, look);
     try {
       const seated = !!opts.seated || KG.seat > 0 || !!e.seated;
-      if (opts.cache && !seated && g === ctx && drawCached(g, e, look, P)) return;
-      drawLive(g, e, look, P, seated);
+      // hurt, the whole knight flashes red (drawn live for the flash); a stone look (the statue) is all stone
+      const hurt = e.hurtT > 0, stone = !!look.stone;
+      if (opts.cache && !seated && !hurt && !stone && g === ctx && drawCached(g, e, look, P)) return;
+      drawLive(stone ? tintCtx(g, 'stone') : hurt ? tintCtx(g, 'hurt') : g, e, look, P, seated);
     } finally { T = T0; }
   }
 
@@ -1127,6 +1172,8 @@ const KNIGHTGEAR = (() => {
   // so a panel fits the box round what he really wears: he is drawn once, facing down, into a context that only keeps
   // the outermost point of every path (through every translate, scale and rotate). Kept per look (gear, girl, held).
   // a context that draws nothing and keeps the outermost point of every path, through translate, scale and rotate
+  // a measuring pass (into a tracker) is not a drawing: the counters the self-tests read are left as they were
+  function measuring(fn) { const a = STATS.live, b = STATS.skirts, c = STATS.tinted; try { return fn(); } finally { STATS.live = a; STATS.skirts = b; STATS.tinted = c; } }
   function tracker() {
     const b = { l: 0, t: 0, r: 0, b: 0 };
     let m = [1, 0, 0, 1, 0, 0];
@@ -1153,7 +1200,7 @@ const KNIGHTGEAR = (() => {
     let x = EXT.get(key);
     if (x) return x;
     const tr = tracker(), b = tr.b;
-    try { draw(tr.g, { facing: { x: 0, y: 1 }, moving: false, walkT: 0, attackT: 0, hurtT: 0 }, look, { t: 0 }); } catch (e) { return { l: -20, t: -24, r: 20, b: 17 }; }
+    try { measuring(() => draw(tr.g, { facing: { x: 0, y: 1 }, moving: false, walkT: 0, attackT: 0, hurtT: 0 }, look, { t: 0 })); } catch (e) { return { l: -20, t: -24, r: 20, b: 17 }; }
     x = { l: b.l, t: b.t, r: b.r, b: b.b };
     if (EXT.size > 60) EXT.clear();
     EXT.set(key, x);
@@ -1173,7 +1220,10 @@ const KNIGHTGEAR = (() => {
   // knight holds that tool in his hand too, coloured by the action's tier as 08-draw does. Those files used to draw a
   // loose pick or axe over the old knight; they leave it to the knight now (see 24-dwarves, 25-elves, 27-dragons,
   // 91-royalmine).
-  const TOOL_ACTS = { mine_obsidian: 'pickaxe', mine_mithril: 'pickaxe', chop_jungle: 'axe', rm_giant: 'pickaxe', rm_vein: 'pickaxe' };
+  // 53-coalmine's coal face ('coalface') is a pickaxe swing too. The other work actions draw their own things and hold no
+  // tool: the lobster pot on its rope (26-boats), the stone held into the heat (91's rm_heat, rm_warm), standing still
+  // (rm_watch), cooking (the core: no tool, as before).
+  const TOOL_ACTS = { mine_obsidian: 'pickaxe', mine_mithril: 'pickaxe', chop_jungle: 'axe', rm_giant: 'pickaxe', rm_vein: 'pickaxe', coalface: 'pickaxe' };
   const heartPick = () => (typeof countItem === 'function' && countItem('heartstone_pickaxe') > 0) || player.equip.weapon === 'heartstone_pickaxe';
   const toolTint = a => /^rm_/.test(a.type) && heartPick() ? '#e0583c' : a.tier >= 3 ? '#7aa0d0' : a.tier === 2 ? '#a9adb5' : '#b8863a';
   const _playerLook = playerLook;
@@ -1182,7 +1232,8 @@ const KNIGHTGEAR = (() => {
     const q = (player && player.equip) || {};
     l.gear = { helm: q.helm || q.head || null, body: q.body || null, legs: q.legs || null, shield: q.shield || null, cape: q.cape || null, weapon: q.weapon || null };
     const a = player && player.action;
-    if (a && TOOL_ACTS[a.type] && !l.tool && !l.rod) { l.tool = TOOL_ACTS[a.type]; l.toolSwing = true; l.toolColor = toolTint(a); delete l.weapon; delete l.fists; }
+    // an action with no tier of its own (the coal face) is tinted by the best tool of that kind he has, as the core's mine
+    if (a && TOOL_ACTS[a.type] && !l.tool && !l.rod) { const tool = TOOL_ACTS[a.type], tier = typeof a.tier === 'number' ? a.tier : (typeof hasTool === 'function' ? hasTool(tool) : 1); l.tool = tool; l.toolSwing = true; l.toolColor = toolTint({ type: a.type, tier }); delete l.weapon; delete l.fists; }
     // the shield raised (47-outliers' block): your own knight only (it is not in the presence look)
     const O = window.OUTLIERS;
     if (O && O.BLOCK && O.BLOCK.t > 0 && !player.mech && !player.dead && q.shield && ITEMS[q.shield]) l.block = true;
@@ -1192,9 +1243,11 @@ const KNIGHTGEAR = (() => {
   HOOKS.draw.push((g, items) => { newFrame(); });
   // drawHuman: a knight look is drawn here; every other look (townsfolk, guards, the statue) goes on down unchanged
   const _drawHuman = drawHuman;
+  // a stone look (95-thistledown's statue of the knight) stands still: its clock is stopped at 0 (no breathing bob)
+  const STILL = { t: 0 };
   drawHuman = function (g, e, look) {
     if (!look || !look.gear || typeof look.gear !== 'object') return _drawHuman(g, e, look);
-    draw(g, e, look, null);
+    draw(g, e, look, look.stone ? STILL : null);
   };
   // the player on foot: the core bobbed the whole figure; the knight bobs only his body, so his feet stay planted
   const _drawCharacter = drawCharacter;
@@ -1366,9 +1419,21 @@ const KNIGHTGEAR = (() => {
           for (let i = 0; i < 30; i++) { time += 1 / 60; draw(recorder().g, e, look, null); }
           rec = POSE.get(e);
           const back = Math.hypot(rec.hx - rh.x, rec.hy - rh.y) <= 0.3 && (f === 'bow' ? Math.abs(rec.wa) < 0.25 : rec.wa > -1.5 && rec.wa < -1.05);
-          if (!(upright && atWaist && reach && back)) bad.push({ f, id, upright, atWaist, reach, back, wa: +rec.wa.toFixed(2), hand: [+rec.hx.toFixed(1), +rec.hy.toFixed(1)] });
+          // the hand as DRAWN at rest, at all four facings: the gauntlet's own circle (r 2.2), below the shoulder plates
+          // and at the belt (y 4 to 6 in his own frame, the breathing bob aside); a bow's hand at his side
+          const low = [];
+          for (const fc of FACES) {
+            const r2 = recorder(), e2 = ent(fc); draw(r2.g, e2, look, { t: 0 });
+            const hands = r2.ops.filter(o => /^ellipse \S+ \S+ 2\.2 2\.2/.test(o)).map(o => o.split(' ').slice(1, 3).map(Number)).filter(([x]) => x > 7 && x < 13);
+            const hy = hands.length === 1 ? hands[0][1] : NaN;
+            if (!(f === 'bow' ? hy >= SHOULDER.y + 2 && hy <= 5 : hy >= SHOULDER.y + 3 && hy <= 6)) low.push([fc.x, fc.y, hy]);
+          }
+          if (!(upright && atWaist && reach && back && !low.length)) bad.push({ f, id, upright, atWaist, reach, back, low, wa: +rec.wa.toFixed(2), hand: [+rec.hx.toFixed(1), +rec.hy.toFixed(1)] });
         }
-        check(P0 + 'at rest every weapon family (' + Object.keys(fams).length + ') stands upright with the hand at his waist (the bow hangs at his side); a swing lifts the hand round the shoulder and half a second after it the hand is back at the waist', !bad.length && Object.keys(fams).length >= 10, { bad, fams: Object.keys(fams) }); }
+        // the owner's numbers themselves (the checks above compare the hand with REST_HAND, so they alone cannot see it moved)
+        const near = (p, x, y) => !!p && Math.abs(p.x - x) <= 0.3 && Math.abs(p.y - y) <= 0.3;
+        const nums = near(REST_HAND.up, 10.4, 4.8) && near(REST_HAND.bow, 10.8, 3.6);
+        check(P0 + 'at rest every weapon family (' + Object.keys(fams).length + ') stands upright with the hand at his waist (REST_HAND 10.4, 4.8; the bow at his side, 10.8, 3.6), drawn below the shoulder plates at the belt at all four facings; a swing lifts the hand round the shoulder and half a second after it the hand is back at the waist', nums && !bad.length && Object.keys(fams).length >= 10, { nums, rest: REST_HAND, bad, fams: Object.keys(fams) }); }
 
       // 4. what is in front and what is behind: facing us, the weapon after the body, shoulders and head, the shield after
       // the body; facing away, both hands, the weapon and the shield before the body
@@ -1478,21 +1543,24 @@ const KNIGHTGEAR = (() => {
       // 12. one knight at the player's place: the old trailing cape (38-agility), the godly helm's old gold wings
       // (27-dragons) and the loose pick or axe of the obsidian, mithril, jungle and royal-mine work are not drawn over
       // the knight; for that work the knight holds the tool himself (one tool, two hands)
-      { const back = keep(), bad = [];
+      { const back = keep(), bad = [], picks0 = countItem('steel_pickaxe');
         try {
           const o = h.openSpot(40, 20); F.tp(o.x, o.y); player.y += 0.37; player.mech = null; player.dead = false; player.facing = { x: 0, y: 1 }; player.attackT = 0;
           const hand = shade(ITEMS.iron_body.color, -0.15);
-          const cases = [['cape_melee', { cape: 'cape_melee' }], ['godly_helm', { helm: 'godly_helm' }], ['mine_obsidian', null, 'pickaxe'], ['mine_mithril', null, 'pickaxe'], ['chop_jungle', null, 'axe'], ['rm_giant', null, 'pickaxe'], ['rm_vein', null, 'pickaxe']];
-          for (const [name, eq, tool] of cases) {
+          const cases = [['cape_melee', { cape: 'cape_melee' }], ['godly_helm', { helm: 'godly_helm' }], ['mine_obsidian', null, 'pickaxe'], ['mine_mithril', null, 'pickaxe'], ['chop_jungle', null, 'axe'], ['rm_giant', null, 'pickaxe'], ['rm_vein', null, 'pickaxe'], ['coalface', null, 'pickaxe', true]];
+          for (const [name, eq, tool, noTier] of cases) {
             Object.assign(player.equip, { helm: null, cape: null, body: 'iron_body', shield: null }, eq || {});
-            player.action = tool ? { type: name, tier: 2, t: 0, need: 9, tx: o.x, ty: o.y + 1 } : null;
+            // 53-coalmine's coal face carries no tier: the pick is tinted by the best pickaxe he has (a steel one here: tier 2)
+            if (noTier) h.give('steel_pickaxe', 1);
+            player.action = tool ? Object.assign({ type: name, t: 0, need: 9, tx: o.x, ty: o.y + 1 }, noTier ? {} : { tier: 2 }) : null;
             const r = atPlayer(), n = c => r.ops.filter(x => x === '@fill ' + c).length;
             const lk = playerLook();
-            const ok = r.painting === 1 && (!tool || (lk.tool === tool && n('#8a6a3a') === 1 && n(hand) === 2 && !lk.weapon));
-            if (!ok) bad.push({ name, painting: r.painting, tool: lk.tool, hafts: n('#8a6a3a'), hands: n(hand) });
+            const tint = !noTier || (hasTool('pickaxe') >= 2 && lk.toolColor === '#a9adb5');
+            const ok = r.painting === 1 && (!tool || (lk.tool === tool && n('#8a6a3a') === 1 && n(hand) === 2 && !lk.weapon && tint));
+            if (!ok) bad.push({ name, painting: r.painting, tool: lk.tool, color: lk.toolColor, hafts: n('#8a6a3a'), hands: n(hand) });
           }
-        } finally { back(); }
-        check(P0 + 'one knight at the player\'s place: in a skill cape, in the winged helm, mining obsidian or mithril, chopping jungle and in the royal mine nothing else is drawn over him, and at that work he holds the tool himself (one tool, two hands)', !bad.length, { bad }); }
+        } finally { back(); const extra = countItem('steel_pickaxe') - picks0; if (extra > 0) removeItem('steel_pickaxe', extra); }
+        check(P0 + 'one knight at the player\'s place: in a skill cape, in the winged helm, mining obsidian or mithril, chopping jungle, in the royal mine and at the coal face nothing else is drawn over him, and at that work he holds the tool himself (one tool, two hands; at the coal face tinted by his best pickaxe)', !bad.length, { bad }); }
 
       // 13. blocking: the knight raises his own shield (its own shape and colours, once), in front of him facing down or
       // side-on and behind his body facing away; 47-outliers' plain shield is not drawn; every shield and the lantern
@@ -1534,8 +1602,10 @@ const KNIGHTGEAR = (() => {
         }
         check(P0 + 'a girl\'s greaves show under her skirt: for each of the ' + ids.length + ' leg items nothing drawn after her legs reaches below y 9.6 over them, and no two draw alike on her', ids.length >= 9 && !covered.length && !same.length, { covered: covered.slice(0, 5), same }); }
 
-      // 15. the crowd's pictures keep up with a crowd: 50 walking knights in 50 different outfits, warmed for a second,
-      // then drawn for 60 frames more, make less than one new picture a frame (the cache grows to the crowd)
+      // 15. the crowd's pictures keep up with a crowd that turns: 50 knights in 50 different outfits walk a whole step
+      // cycle (42 frames) at each of the 8 facings and then stand for a second; then, for 60 frames more, they turn
+      // through all 8 facings again (a new one every 5 frames) and stand. Those 60 frames make (close to) no new picture:
+      // the cache holds every knight's 20 walking pictures and his standing ones (28 a knight, 1400 for the 50)
       { clearPics(); crowdN = 0; crowdHi = 0; picCap = PIC_MIN;
         const by = {}; for (const id in ITEMS) { const s = slotOf(ITEMS[id]); if (s) (by[s] = by[s] || []).push(id); }
         const D8 = [...Array(8)].map((_, k) => ({ x: Math.cos(k * Math.PI / 4), y: Math.sin(k * Math.PI / 4) }));
@@ -1543,11 +1613,38 @@ const KNIGHTGEAR = (() => {
         for (let i = 0; i < 50; i++) { const gr = {}; SLOTS.forEach((sl, j) => { const L = by[sl]; gr[sl] = L[(i * (j + 3) + j * 7) % L.length]; }); crowd.push({ look: lookWith(gr, i % 2 ? { girl: true, woman: true } : null), e: ent(D8[i % 8], { moving: true, walkT: i }) }); }
         const outfits = new Set(crowd.map(k => gearKey(partsOf(k.look)) + (k.look.girl ? 'g' : ''))).size;
         time = 200;
-        const frame = () => { newFrame(); time += 1 / 60; for (const k of crowd) { k.e.walkT += 9 / 60; draw(ctx, k.e, k.look, { cache: true }); } };
-        for (let f = 0; f < 60; f++) frame();
-        const p0 = STATS.pics; for (let f = 0; f < 60; f++) frame(); const made = STATS.pics - p0, cap = picCap, size = PICS.size;
+        const frame = () => { newFrame(); time += 1 / 60; for (const k of crowd) { if (k.e.moving) k.e.walkT += 9 / 60; draw(ctx, k.e, k.look, { cache: true }); } };
+        const set = (moving, dir) => crowd.forEach((k, i) => { k.e.moving = moving; k.e.facing = D8[(i + dir) % 8]; });
+        for (let d = 0; d < 8; d++) { set(true, d); for (let f = 0; f < 42; f++) frame(); }
+        set(false, 7); for (let f = 0; f < 60; f++) frame();
+        const warm = STATS.pics, p0 = STATS.pics;
+        for (let f = 0; f < 60; f++) { if (f < 40) set(true, Math.floor(f / 5)); else set(false, 7); frame(); }
+        const made = STATS.pics - p0, cap = picCap, size = PICS.size;
         clearPics(); crowdN = 0; crowdHi = 0; picCap = PIC_MIN;
-        check(P0 + 'a crowd of 50 walking knights in ' + outfits + ' outfits: once warm, 60 frames make less than one new picture a frame (made ' + made + '; the cache grew to ' + cap + ')', outfits >= 45 && made < 60 && cap >= 50 * PIC_EACH && size >= 50 * 4, { made, cap, size, outfits }); }
+        check(P0 + 'a crowd of 50 knights in ' + outfits + ' outfits that walk at all 8 facings and stand: once warm, 60 frames of turning through every facing and standing make (close to) no new picture (made ' + made + ' of ' + size + ' kept; the cache grew to ' + cap + ')', outfits >= 45 && made <= 5 && PIC_EACH >= 26 && cap >= 50 * 26 && size >= 50 * 20, { made, cap, size, warm, outfits }); }
+
+      // 16. hurt, the whole knight flashes red: a knight in full Mithril (closed helm, plate, greaves, shield, sword),
+      // facing down, side-on and away, sets no colour hurt that he sets calm (fills, strokes and gradient stops alike), and
+      // every one is nearer #ff6b6b; the drawing itself is the same. Another knight online who is hurt makes no picture.
+      { const look = lookWith({ helm: 'mithril_helm', body: 'mithril_body', legs: 'mithril_legs', shield: 'mithril_shield', weapon: 'mithril_sword' });
+        const rgbOf = c => { let m = /^#([0-9a-f]{6})$/i.exec(c); if (m) { const n = parseInt(m[1], 16); return [n >> 16, (n >> 8) & 255, n & 255]; } if ((m = /^#([0-9a-f]{3})$/i.exec(c))) return [...m[1]].map(d => parseInt(d + d, 16)); m = /^rgba?\(([\d.]+),([\d.]+),([\d.]+)/.exec(String(c).replace(/\s/g, '')); return m ? [+m[1], +m[2], +m[3]] : null; };
+        const toRed = c => { const q = rgbOf(c); return q ? Math.hypot(q[0] - 255, q[1] - 107, q[2] - 107) : null; };
+        const colours = rec => { const out = []; for (const o of rec.ops) { if (o.startsWith('#fs ') || o.startsWith('#ss ')) { const v = o.slice(4); if (v.startsWith('grad(')) out.push(...v.slice(5, -1).split(/,(?![^(]*\))/)); else out.push(v); } } return out; };
+        const bad = [];
+        let n = 0;
+        for (const f of [FACES[0], FACES[1], FACES[2]]) {
+          const c = recorder(), h2 = recorder();
+          draw(c.g, ent(f), look, { t: 0.5 }); draw(h2.g, ent(f, { hurtT: 0.2 }), look, { t: 0.5 });
+          const a = colours(c), b = colours(h2), calm = new Set(a);
+          if (c.shape() !== h2.shape() || a.length !== b.length) { bad.push({ f, shape: c.shape() === h2.shape(), n: [a.length, b.length] }); continue; }
+          for (let i = 0; i < a.length; i++) {
+            const d0 = toRed(a[i]), d1 = toRed(b[i]); n++;
+            if (calm.has(b[i]) || d0 === null || d1 === null || !(d1 < d0 || d0 < 1)) { bad.push({ f, calm: a[i], hurt: b[i] }); break; }
+          }
+        }
+        const p0 = STATS.pics; clearPics(); draw(ctx, ent(FACES[0], { hurtT: 0.2 }), look, { cache: true });
+        const pic = STATS.pics - p0;
+        check(P0 + 'hurt, the whole knight flashes: in full Mithril (closed helm and plate) facing down, side-on and away, every colour he sets (' + n + ') changes and moves toward red, none is a calm colour, the drawing is the same; a hurt knight online is drawn live (no picture kept)', !bad.length && n >= 150 && pic === 0, { bad: bad.slice(0, 4), n, pic }); }
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 
