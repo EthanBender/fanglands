@@ -209,5 +209,7 @@ Open `online/src/filter.js`. `BLOCKED` is one word per line; add or remove lines
 caught as a whole word in chat and names (case does not matter), with look-alike digits and symbols put back
 (sh1t, $hit), plurals (dicks), stretched spellings (fuuuck) and spaced-out letters (f u c k). Two-word lines are
 phrases. `BLOCKED_INSIDE` is the short list also refused *inside* a name or a chat word (xXfuckerXx); keep it
-short, since a word there also refuses innocent names that contain it. `RESERVED_NAMES` are names nobody may
-take. Run `node --test online/test/` after editing: the tests include game words that must stay allowed.
+short, since a word there also refuses innocent names that contain it. `INSULTS` and `GAY_INSULTS` are starred out
+too. Only `STRIKE_WORDS` (swear words and slurs; each must be on `BLOCKED` as well) count as a word strike; nothing
+else ever does (docs/ONLINE.md, "Word strikes"). `RESERVED_NAMES` are names nobody may take. Run
+`node --test online/test/` after editing: the tests include game words and kid chat that must never strike.

@@ -42,7 +42,7 @@
     if (NET.token) headers.authorization = 'Bearer ' + NET.token;
     const r = await fetch(NET.base + path, { method, headers, body: body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)), keepalive: method === 'PUT' });
     let data = null; try { data = await r.json(); } catch (e) { }
-    if (!r.ok) { const err = new Error((data && data.error) || ('HTTP ' + r.status)); err.status = r.status; err.code = data && data.code; throw err; }
+    if (!r.ok) { const err = new Error((data && data.error) || ('HTTP ' + r.status)); err.status = r.status; err.code = data && data.code; if (data && data.until != null) err.until = data.until; throw err; }
     return data;
   };
   NET.get = path => NET.call('GET', path);
@@ -70,12 +70,15 @@
       if (msg.t === 'error' && msg.code === 'elsewhere') NET.closedByUs = true;
       // an admin sent this knight out (kicked) or banned it: the wire must not fight that by reconnecting; a ban also ends the session
       if (msg.t === 'error' && (msg.code === 'kicked' || msg.code === 'banned')) { NET.closedByUs = true; if (msg.code === 'banned') NET.setToken(null); }
+      // kept out for bad words (docs/ONLINE.md, "Word strikes"): no reconnecting until the time is up; the session is kept for then
+      if (msg.t === 'error' && msg.code === 'words') NET.closedByUs = true;
       NET.emit(msg.t, msg);
     };
-    // close codes the world uses on purpose: 4000 elsewhere, 4003 banned, 4005 kicked. None of them is a dropped line, so none reconnects.
+    // close codes the world uses on purpose: 4000 elsewhere, 4003 banned, 4005 kicked, 4006 kept out for bad words. None of them is
+    // a dropped line, so none reconnects. (4007, a new name, does: the session now belongs to the new name.)
     sock.onclose = ev => {
       if (NET.sock !== sock) return;
-      if (ev && (ev.code === 4000 || ev.code === 4003 || ev.code === 4005)) NET.closedByUs = true;
+      if (ev && (ev.code === 4000 || ev.code === 4003 || ev.code === 4005 || ev.code === 4006)) NET.closedByUs = true;
       NET.sock = null; NET.role = 'player'; const was = NET.status; NET.status = 'off';
       if (was === 'on') NET.emit('offline', { t: 'offline' });
       if (!NET.closedByUs) scheduleReconnect();

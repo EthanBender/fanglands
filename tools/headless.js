@@ -53,6 +53,8 @@ const g = {
   document: { getElementById: () => mkCanvas(), createElement: () => mkCanvas(), fonts: null },
 };
 g.window = g; g.__fullPlaythrough = play;
+// the script as text, for the checks that read the source itself (79-strikes: no regex lookbehind, which old iPads refuse)
+g.__gameSource = script;
 vm.createContext(g);
 vm.runInContext(script, g, { filename: 'index.html' });
 let bad = 0;

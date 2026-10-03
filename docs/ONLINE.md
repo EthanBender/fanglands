@@ -63,21 +63,25 @@ online/
 
 | Call | Body | Answer | Notes |
 |---|---|---|---|
-| `POST /api/signup` | `{name, pass, invite}` | `{token, name}` | name 2–16 chars, letters/digits/spaces, filtered; pass ≥ 4 chars ("your secret word"); invite must match |
-| `POST /api/login` | `{name, pass}` | `{token, name}` | case-insensitive name; 5 wrong tries → 60 s wait (`code: "wait"`) |
+| `POST /api/signup` | `{name, pass, invite}` | `{token, name}` | name 2–16 chars, letters/digits/spaces, filtered; pass ≥ 4 chars ("your secret word"); invite must match; 403 `words` with `until` from a place a knight is kept out from (see *Word strikes*) |
+| `POST /api/login` | `{name, pass}` | `{token, name}` | case-insensitive name; 5 wrong tries → 60 s wait (`code: "wait"`); a name an admin changed still logs in (as the new one: `name` is the new name); the right secret word while kept out for bad words is 403 `words` with `until` and no session (see *Word strikes*) |
 | `POST /api/logout` | — | `{ok}` | drops the session |
 | `GET /api/me` | — | `{name, created, saveAt, online, role}` | `role` is `'player'` or `'admin'` (see *Admins and drop parties*) |
 | `GET /api/save` | — | `{save, at}` (`save` null when none) | the save is the slot JSON string, verbatim |
-| `PUT /api/save` | the save JSON string | `{at}` | ≤ 512 KB; server keeps the last 3 versions |
+| `PUT /api/save` | the save JSON string | `{at}` | ≤ 512 KB; server keeps the last 3 versions; goes through while kept out for bad words |
 | `GET /api/save/pin` | — | `{at, bytes}` or `{at: null, bytes: 0}` | admins only (403 `admin`): the pinned backup (*Admins and drop parties*) |
 | `POST /api/save/pin` | the save JSON string | `{at, pinned}` | admins only; an existing pin is kept unless `?replace=1` |
 | `POST /api/save/restore` | — | `{save, at, ver}` | admins only; the pin becomes the current save and is removed; 404 `nopin` |
 | `GET /api/status` | — | `{ok, online, names}` | no auth; the title screen uses it to say who is on |
 | `GET /api/accounts` | — | `[account]` (see *Accounts*) | admins only (403 `admin`, 401 `auth`): every knight, online or not, for the in-game Accounts tab |
 | `POST /api/accounts/reset` | `{name, pass}` | `{ok, name}` | admins only: a new secret word for another player; 404 `unknown`, 403 `self`, 403 `isadmin`, 400 `pass`, 429 `wait` (see *Accounts*) |
+| `POST /api/accounts/strikes` | `{name}` | `{ok, name}` | admins only: clear a knight's word strikes and any lockout; 404 `unknown`, 403 `self`, 429 `wait` (see *Word strikes*) |
+| `POST /api/accounts/rename` | `{name, to}` | `{ok, from, name}` | admins only: a new name for a player; 404 `unknown`, 403 `self`, 403 `isadmin`, 400 `name`, 409 `taken`, 429 `wait` (see *Renaming a knight*) |
 | `GET /api/admin/accounts` | — | `[account]` (see *Accounts*) | `Authorization: Bearer <ADMIN_KEY>`; the same rows as `GET /api/accounts` |
 | `POST /api/admin/reset` | `{name, pass}` | `{ok}` | new secret word; works on anyone, admins and the parent's own knight too; the knight is sent out, written to `mod_log` (`by: 'parent page'`) |
 | `POST /api/admin/ban` | `{name, banned}` | `{ok}` | banned knights cannot log in; their save stays; written to `mod_log` |
+| `POST /api/admin/strikes` | `{name}` | `{ok, name}` | clear anyone's word strikes and lockout, an admin's too; written to `mod_log` |
+| `POST /api/admin/rename` | `{name, to}` | `{ok, from, name}` | a new name for anyone, an admin too; 400 `name`, 409 `taken`; written to `mod_log` |
 | `POST /api/admin/role` | `{name, role}` | `{ok, role}` | `'player'` or `'admin'`; an online knight is told at once |
 | `POST /api/admin/mute` | `{name, span}` | `{ok, mutedUntil}` | `'5m'`, `'1h'`, `'1d'`, `'always'` or `'off'` |
 | `GET /api/admin/modlog?limit=200` | — | `[{at, by, act, n, detail}]` | newest first: every role change, mute, kick, ban, party and party hat |
@@ -101,8 +105,10 @@ The login card turns a 4xx `{error, code}` into one plain sentence. Use these co
 fallback when a code is missing): `pass` (wrong secret word; also 401 on login), `unknown` (no such knight; also
 404 on login), `wait` (too many tries; also 429), `banned` (also 403 on login), `invite` (bad invite code; also
 401/403 on signup), `taken` (name already used; also 409 on signup), `name` (a name the filter refused), `full`,
-`auth` (token dead), `kicked` (an admin sent the knight out; the session stays good). Anything else, or no answer at
-all, reads "The world is asleep right now."
+`auth` (token dead), `kicked` (an admin sent the knight out; the session stays good), `words` (kept out for bad words,
+403 with `until`: "You're kept out until 7:42 pm tomorrow for bad words.", in the device's own clock; the session stays
+good for when the time is up). Any call with a session but `PUT /api/save` answers `words` while the knight is kept out. Anything else, or
+no answer at all, reads "The world is asleep right now."
 
 ## The socket
 
@@ -149,7 +155,8 @@ between knights on the same map; chat and the roster go to everyone.
 | `gift_ok` / `gift_back` | `gid, id, qty` | the receiver took it / it comes back to you |
 | `boss_call` | `n, id, first?` | (to the keeper) knight `n` on your map asks you to wake the named boss `id`; `first` is passed on only when it was exactly `true`; your game decides (see *Named bosses*) |
 | `boss_wait` | `id, left` | the keeper says the boss you asked for rests there `left` more seconds: the boss file says so in m:ss and your ask is over |
-| `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `elsewhere` (the same knight opened on another device: this socket is closed with code 4000 and must not reconnect), `wait`, `full`, `banned` (close 4003, no reconnect), `kicked` (close 4005, no reconnect), `admin` (that was an admin message), `bad` |
+| `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `elsewhere` (the same knight opened on another device: this socket is closed with code 4000 and must not reconnect), `wait`, `full`, `banned` (close 4003, no reconnect), `kicked` (close 4005, no reconnect), `words` (kept out for bad words, with `until` and `n`: close 4006, no reconnect, the session kept), `renamed` (an admin gave the knight a new name, with `name`: close 4007, the wire comes straight back as it), `admin` (that was an admin message), `bad` |
+| `strike` | `n, text` | a chat line of yours had a swear word or a slur in it: `n` 1 is the warning, 2 the last warning (the third is `error` `words`); see *Word strikes* |
 | `role` `mod` `modlist` `muted` `unmuted` `spawn` `spawn_clear` `crackers` `boom` `party_end` `light_no` `prize` `party_no` `announce` | | see *Admins and drop parties* |
 | `trade_ask` `trade_asked` `trade_ask_off` `trade_no` `trade_open` `trade_state` `trade_note` `trade_end` `trade_done` | | see *Trading* |
 | `pong` | — | |
@@ -609,8 +616,9 @@ The cap runs before the role check, so a knight hammering admin messages is drop
 
 ### Close codes and error codes
 
-- Close codes: 4000 elsewhere, 4001 lost, 4003 banned, 4004 full, **4005 kicked**, 4008 too fast. The wire never
-  reconnects after 4000, 4003 or 4005, nor after an `error` `elsewhere`, `banned` or `kicked`.
+- Close codes: 4000 elsewhere, 4001 lost, 4003 banned, 4004 full, **4005 kicked**, **4006 kept out for bad words**,
+  **4007 renamed**, 4008 too fast. The wire never reconnects after 4000, 4003, 4005 or 4006, nor after an `error`
+  `elsewhere`, `banned`, `kicked` or `words`. After 4007 it reconnects at once, with the same session (now the new name's).
 - Socket `error` codes gain `kicked` and `admin`. HTTP error codes gain `admin` (403: only an admin may) and `nopin`
   (404: no pinned backup). `LOGIN.sentence` reads `kicked` as "An admin sent you out of the world. You can come back in."
 
@@ -888,6 +896,180 @@ The accounts table gains *On now / last on*, *Last login*, *Time online* and *Kn
 a line saying when time online began to be counted, and a *Logins* button per knight that opens the last 10 logins
 under the row. A reset shows in *What admins did* ("MudGoll gave Sam a new secret word").
 
+## Word strikes
+
+Cohen (2026-10-03): bad words and bad names should get warnings and then a kick-out. The owner's decisions: the first
+strike is a warning, the second a last warning, the third and every one after it sends the knight out of the world and
+keeps it out for 24 hours; strikes fade after 30 clean days; the owner and MudGoll (admins) can see and clear strikes.
+Round 5 (2026-10-03, the owner's rule that a kid is never punished on a guess): **only swear words and slurs count**.
+Insults ("stupid", "dumb", "shut up", "go die", "loser", "gay" used as an insult) are starred out and never a strike.
+All of it is server-side (`online/src/filter.js`,
+`room.js`, `world.js`, `store.js`), so no game can skip it; the game only says it (`src/79-strikes.js`, 70, 71).
+
+### What counts
+
+`checkChat(text)` answers `{text, masked, strike}`: the line with bad words starred out, whether any word had to be, and
+whether one of them is a word that strikes. Only `strike: true` is a strike; starring out alone counts nothing. The line
+alone decides: who said it, who it was about and who is on line never change anything (the Room passes the text only).
+
+**A strike is one thing only: a word on `STRIKE_WORDS`** (`online/src/filter.js`), a fixed list of swear words and slurs
+a kid would not type for anything else (fuck, shit, ass, bitch, cunt, twat, wanker, slut, whore, the n-word, faggot,
+retard, paki and their plain forms: fucking, shitty, asshole, dickhead, bullshit, motherfucker, ...). It
+matches as a **whole word**, case aside, and in the common disguises of those exact words:
+
+- a letter held longer: three or more of any letter (fuuuck, shiiit, asss), or the last letter doubled when the word has
+  no double letter (fuckk, shitt, bitchh). Never a letter in the middle held twice ("Shiite" is not "shite"), never a word
+  with its own double letter held twice ("assess" is not "asses");
+- the letters split up: one letter a token (f u c k, n i g g a, "f . u . c . k"), or marks between them inside a word
+  (f.u.c.k, s-h-i-t, a_s_s, f*u*c*k), only when every piece is one letter or one look-alike symbol, so "go.ok" or
+  "go ok" is never a slur. A lone digit is never one of those letters: it ends the run, so "a 5 5" (dice, a score),
+  "it was a 2 2 tie" and "a-5-5" are never "ass" or "azz" (a spaced "s h 1 t" is starred out but no strike);
+- look-alike symbols inside a word that has letters ($hit, b!tch, f@ggot), and look-alike DIGITS only in a word that comes
+  out 5 letters or longer with at least 3 real letters (b1tch, n1gger, wh0re, d1ckhead). A short word with a digit (sh1t,
+  a55, 4ss) is starred out but never a strike, because phone models and shorthand look just like it (a22, a55, a2z); or made of
+  symbols alone (@$$). **Never a number**: a token of digits alone, with or without a unit or sign (455, 8008, 7175,
+  455k, #455, $455, 4:55, "4 5 5", "the 455's"), is never read as letters, never a strike and never even starred out.
+  A number joined to a word by a mark is split off first and never read either: "gold:455", "hp:455", "x:455 y:422",
+  "room#455", "455-pts", "455:me", "lvl-455" and "455-ish" are no strike and are not starred out;
+- edge punctuation and joins: "fuck!", "(shit)", "shit's", "ok,fuck", "fuck-you". A contraction is two words ("who're" is
+  never "whore");
+- `STRIKE_INSIDE`: "fuck" also strikes inside any word (xXfuckXx, fuckfuckfuck), because it is in no ordinary word.
+  Nothing else does: shit is in shitake, cunt in Scunthorpe, ass in class, nigg in niggle.
+
+**Never part of a longer ordinary word**: class, assassin, assess, Scunthorpe, Dickens, cockpit, niggle, Niger,
+retardant, therapist, pakistan, shiitake are no strike. Left off the list on purpose, because they mean something else or
+are mild (starred out, never a strike): damn, crap, hell, piss, bastard, cock, prick, tit, boob, pussy, fag, dyke, spic,
+coon, chink, gook, dick (Dick Grayson is Robin and Nightwing; Moby Dick; dickhead still strikes), kike (Kike Hernandez
+the baseball player, a nickname for Enrique; **the owner may want it back as a strike**), tranny, homo, negro, jackass, badass, wtf, stfu, gtfo, lmfao, cum, kys, and the sex, drug and hate words.
+
+**Nothing else ever strikes.** There is no sentence analysis, no "you" / "ya" / "u" targeting, no names: the round-4
+machinery (`SAID_ABOUT_YOU`, `YOU_ARE`, `YOU_OR_YOUR`, `AT_SOMEONE`, `SAID_TO_SOMEONE`, `LINE_ALONE`, `NOT_A_NAME`,
+`REAL_PEOPLE`, sentence joining, the knights-on-line names and `online/src/gamewords.js` with `tools/game-words.mjs`) is
+deleted, not patched.
+
+**Starring out** stays generous, because it is harmless: every word of `BLOCKED` (swearing, sex, slurs, hate, drugs), a
+bad word hidden inside another (`BLOCKED_INSIDE`: swanky, pussycat, Scunthorpe), look-alike spellings and spaced letters,
+and `INSULTS` wherever they are: stupid, dumb, idiot, moron, loser, nitwit, gaylord, ... (a letter held longer only with
+three or more of it, so "looser" is left alone) and the phrases "shut up", "go die", "go and die", "kill yourself", "hate
+you". "Gay" used as an insult (`GAY_INSULTS`: "that's gay", "so gay", "ur gay", "gay boy", ..., and a line that is only
+"gay", laughs aside) is starred out; "gay" anywhere else ("my uncle is gay", "gay rights") is left alone. A strike is
+always starred out too.
+
+Names: anything starred out in chat, insults included, is refused in a name, spaced out too ("Stupid Sam", "Big Loser",
+"Stu Pid", "Dumb Dog"); "Fat Cat", "Dumbo", "Big Dummy", "Lol" and "Omg" pass. `RESERVED_NAMES` include "Word Filter" and
+"Parent Page" (who mod_log says made a strike or a change), spaces not counting.
+
+The tests hold the rule (`online/test/filter.test.mjs`): every number from 0 to 99,999 (and with units, and joined to
+a word: gold:N, N:me, room#N, N-pts, N's, lvl-N, N-ish, "a N N"); more than 550
+lines of ordinary kid chat in `online/test/game-talk.mjs` (game talk, "ya so dumb", "shut up lol", "SHUT UP LEO!! no
+way", "go die lol", insults said straight at a friend, chat slang, coin counts, words with a swear inside); every string in
+the game's source (every NPC, place, item, quest and line of talk, whole and word by word); and the system dictionary
+(235,000 words, where a strike only ever comes from an entry with a whole word on the list): zero strikes. Every word on
+`STRIKE_WORDS` in every disguise above (more than 3,000 spellings): a strike, and starred out. Who is on line changes
+nothing. `strikes.test.mjs` says the game talk in a real Room with knights named Goblin, Lol, Omg and Rn on line, and two
+friends' evening of insults, with zero strikes, and then a swear word in a disguise that is one.
+
+Every list is plain lower-case words, one place to edit; **the owner decides the final lists**. `cleanChat` still answers
+the masked line alone.
+
+### The count
+
+```
+accounts  + word_strikes       INTEGER NOT NULL DEFAULT 0   -- bad lines counted (read through strikesNow: it fades)
+          + word_strike_at     INTEGER NOT NULL DEFAULT 0   -- when the last one was counted (ms; 0 = never)
+          + words_locked_until INTEGER NOT NULL DEFAULT 0   -- kept out until then (ms; 0 = not kept out)
+          + last_ip            TEXT NOT NULL DEFAULT ''     -- where a kept-out knight was sent out from, only while kept out
+```
+
+Added by `migrate()` like the other columns: only when missing, nothing dropped or rewritten. They are their own columns:
+the wrong-secret-word `tries` / `locked_until` are never touched by a strike.
+
+- `onChat`: a muted knight's line goes nowhere and is no strike. Otherwise the masked line is logged and sent to everyone
+  as before, and then, if the filter called it a strike and the knight has an account, `store.addWordStrike` adds one to the count as it
+  stands now. A knight with no account (tests, simulations) counts nothing. Admins count like anyone.
+- **Fading**: when the last strike is 30 days old or more (`WORD_STRIKE_FADE`), the count reads 0 and the next one is a
+  first warning again. 29 days on, it still counts.
+- Strike 1: `{t:'strike', n:1, text:"That word isn't allowed here. This is your warning."}` to that knight alone.
+- Strike 2: `{t:'strike', n:2, text:"Last warning. Do it again and you'll be kept out for 24 hours."}`.
+- Strike 3 and every one after it (the count stays at 3 or more until it fades or is cleared): `words_locked_until` =
+  now + 24 hours (`WORD_LOCK_MS`), then `{t:'error', code:'words', text, until, n}` and close **4006**.
+- Each strike is one `mod_log` row: `by: 'word filter'`, `act: 'strike'`, `target` the knight, `detail` the count and
+  then the line as it was typed (`'1: what the shit'`, `'3, kept out 24 hours: sh!t'`), so the parent page can tell
+  whether it was fair ("Sam got word strike 1 for typing "what the shit""). Only the parent page reads `mod_log`; the chat
+  log keeps the starred line.
+
+### Kept out
+
+While `words_locked_until` is in the future: `POST /api/login` with the right secret word answers 403 `words` with
+`until` and makes no session (a wrong word is still 401 `pass`); `World.session` (every `/api` call with a token and
+`/ws`) answers 403 `words` with `until` and keeps the session; `Room.join` and `Room.restore` (a socket a nap brings
+back) send `{t:'error', code:'words', text, until}` and close 4006. When the time is up the same session works again.
+The wire does not reconnect after `words`/4006; `LOGIN.sentence` says "You're kept out until 7:42 pm tomorrow for bad
+words." (today, tomorrow or the day, from `until` in the device's own clock), on the card under "Playing as <name>".
+
+- **Saving is not playing**: `PUT /api/save` alone goes through while kept out. The game saves and sends its waiting push
+  the moment `error` `words` arrives (as it does for `kicked`), so the next login 24 hours later loads the knight as it was
+  at the third strike, never an older cloud save.
+- **No new knight to skip it**: the socket's `CF-Connecting-IP` rides with the knight in the Room (and its hibernation
+  attachment), never written down; the third strike writes it to `accounts.last_ip` with `words_locked_until`
+  (`store.setWordLock(lc, until, ip)`). Nothing else writes an address: not a login, not an `/api` call, not a signup.
+  Clearing the strikes empties it, and every wake of the World empties it for every lockout that is over
+  (`store.forgetPlaces`), so an address is kept only while that knight is kept out. `POST /api/signup` from a place a
+  knight is kept out from right now answers 403 `words` with that knight's `until` and makes nothing; when the time is up,
+  or an admin clears the strikes, signing up works again. A socket with no address (a local world) skips it. The address
+  is never on any list (only the parent's full export carries it, and only while the lockout lasts).
+- **On the device** the game keeps `fanglands.keptOutUntil`. On "Playing as <name>" the card says "You're kept out until
+  ...", Play is greyed (it would only say it again), and the game asks `/api/me` again quietly every 60 s, so a lockout an
+  admin cleared gives Play back without a reload. After Not me, or when the world refuses a New knight from this place, the
+  card speaks about the device, not a knight, because a brother or sister on the same iPad reads it: "New knight is off
+  here until 12:28 am tomorrow. Your own knight can still log in." New knight is greyed. It is forgotten when the time is
+  up or the world lets a knight in (`/api/me` or a login).
+- **A different knight on the same device** never reads the last one's chat: Not me, Log out, and a welcome for a
+  different name than the last empty the chat log and the bubbles and take down that knight's warning notice and LAST
+  WARNING banner (`CHAT.forget`, `CHAT.onForget`; 74, 71, 79). An admin's rename is the same knight: its chat stays.
+- **The warnings**: the first is a red chat line a sentence and a notice; the last warning is also the big centre banner
+  ("LAST WARNING", "Do it again: kept out 24 hours"), the size a level-up is said in. An open chat box is shut when the
+  knight is sent out (kicked, kept out, banned or logged out by the world).
+
+### Clearing strikes
+
+`POST /api/accounts/strikes {name}` from an admin's game (401 `auth`, 403 `admin`, 404 `unknown`, 403 `self`: an admin
+cannot clear their own, 429 `wait` after 3 in a minute) or `POST /api/admin/strikes {name}` from the parent page (anyone).
+Both set the three columns to 0, so a knight kept out is let in at once and starts again at a warning. One `mod_log` row:
+`act: 'strikes_clear'`, `by` the admin or `'parent page'`, `detail` what there was (`'3, was kept out'`).
+
+### Renaming a knight
+
+Every account row carries `badName`: true when `nameRude(name)` finds a word the filter refuses today (a name made before
+the list grew). Only the words count, not the length or the characters.
+
+`POST /api/accounts/rename {name, to}` from an admin's game (401 `auth`, 403 `admin`, 404 `unknown`, 403 `self`, 403
+`isadmin`, 429 `wait` after 3 in a minute) or `POST /api/admin/rename {name, to}` from the parent page (anyone). The new
+name passes `cleanName` like a new knight's (400 `name`) and nobody else has it (409 `taken`; a change of capitals only is
+the same knight), nor had it before a rename (409 `taken`: another knight's old name logs in as that knight; a knight may
+go back to its own old name). `POST /api/signup` refuses an old name the same way. Asking for the very name it has changes nothing. Then `store.rename` rewrites it everywhere it is kept:
+`accounts.name` / `name_lc`, `sessions`, `saves`, `save_pins`, `logins`, `crackers.lit_by`, both sides of `trades`
+(`a`/`a_lc`, `b`/`b_lc`), and the display copies in `chat.name`, `mod_log.by` / `target` and `parties.by`. One `mod_log`
+row: `act: 'rename'`, `target` the new name, `detail` the old one. An online knight gets `{t:'error', code:'renamed',
+name, text: "An admin changed your knight's name to Brave Sam."}` and close **4007**; the wire comes straight back with
+the same session, which now belongs to the new name, and the game remembers it as `fanglands.lastname` for the login
+card (also from `/api/me` and the login answer). The old name still logs in with the same secret word, as the new one
+(found through the `rename` row in `mod_log`, which trimming never removes). `store.rename` runs its dozen `UPDATE`s as
+one transaction (`ctx.storage.transactionSync`): a failure part-way changes nothing.
+
+### The Accounts tab and the parent page
+
+The game's Accounts tab (`src/78-accounts.js`, extended by `src/79-strikes.js` through `ACCOUNTS.extend`): each row tags
+"2 strikes", "Kept out" and "Bad name"; a knight's page says "Kept out for bad words until Sun 4 Oct, 7:42 pm", "Word
+strikes: 2. The last was ... They go on ... if there are no more." and "This name has a bad word in it. Tap Rename to give
+a new one."; **Clear strikes** (two taps, when there is anything to clear; not on your own page) and **Rename** (not for
+an admin or yourself: a text box, Next, "Change Stupid Sam's name to Brave Sam?", Yes). The parent page's accounts table
+gains a *Bad words* column with the count, the lockout, a Bad name flag, Clear strikes and Rename, and *What admins did*
+says each strike, clear and rename.
+
+The rows (`GET /api/accounts`, `GET /api/admin/accounts`) gain: `strikes` (the count now, faded), `strikeAt` (when the
+last was counted, 0 for never), `wordsLockedUntil` (ms, 0 when not kept out), `badName`.
+
 ## The shared world (phase 1: the server runs the monsters)
 
 Owner-approved plan (`~/.fanglands/work/phase1/spec.md`): the world server runs every monster in its own copy of the game,
@@ -1079,6 +1261,10 @@ view 24, a minute hidden 0, 20 s shown again 12, and the admin column grew by ex
 ## Safety rules (binding)
 
 - Invite-only signups. Names and chat pass `online/src/filter.js`. Chat is logged with the name and time.
+- A chat line with a swear word or a slur in it is a word strike: a warning, a last warning, then 24 hours out (see
+  *Word strikes*); an insult or anything else only starred out is never one. Strikes
+  fade after 30 clean days; only an admin or the parent page clears them, and every strike, clear and rename is in
+  `mod_log`.
 - No free text anywhere else: no profiles, no descriptions. Quick-chat phrases are the default on touch.
 - Rate limits on every message type (table above). A socket over its cap is dropped with `error: bad`.
 - The admin page is a single HTML file behind `ADMIN_KEY`; it never leaves Ethan's hands.
@@ -1111,6 +1297,7 @@ view 24, a minute hidden 0, 20 s shown again 12, and the admin column grew by ex
   election, hit routing, the kill going to the right knight, chat, and handoff when the keeper leaves; then the admins
   and drop parties (*Admins and drop parties*, *Testing*). Run both ways in `deploy.sh` before every deploy.
 - `node --test online/test/` for the server's own logic (password hashing, filter, room routing, rate caps, roles,
-  moderation, the store and its migration, drop parties and the party-hat odds, trading).
+  moderation, the store and its migration, drop parties and the party-hat odds, trading, word strikes and renames in
+  `strikes.test.mjs`).
 - `tools/mmo-sim-admin.js` and `tools/mmo-sim-party.js`: the admin and party scenarios, two games against the real
   Room (see *Admins and drop parties*, *Testing*). `deploy.sh` runs them with the others.
