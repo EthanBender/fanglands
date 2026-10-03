@@ -3119,7 +3119,7 @@ function helpRows() {
     { keys: K('Swing', ['Space']), name: 'Swing', text: 'Hit, shoot or stomp.' },
     { keys: K('Use / talk', ['E']), name: 'Use', text: 'Talk, chop, mine, fish, cook, open or enter what you face.' },
     { keys: K('Block', ['R']), name: 'Block', text: 'Hold up your shield just before a hit lands.' },
-    { keys: K('Place', ['Q']), name: 'Place', text: 'Put down a plank, door, bed, lodestone or trap.' },
+    { keys: K('Place', ['Q']), name: 'Place', text: 'Put down a bed, lodestone or trap. Planks and doors go on your island.' },
     { keys: ['1–5'], name: 'Belt', text: 'Eat or use the five things on your belt.' },
     { keys: [K('Bag', ['I'])[0], K('Craft', ['C'])[0], K('Skills', ['Tab'])[0]], name: 'Pack, craft, skills', text: 'Your pack, crafting, and your skills.' },
     { keys: K('Fight back on / off', ['O']), name: 'Fight back', text: 'On or off: a monster that hits you gets hit back. Also in the pack.' },
@@ -3300,6 +3300,8 @@ function recipeRow(g, x, y, w, h, rec, label, can, action) {
     ln.forEach((s, i) => HK.text(g, s, tx, y + h / 2 + 4 - (ln.length - 1) * lh / 2 + i * lh + dy, { font: f, color: col, box: { x: tx, y, w: room, h }, fitId: 'recipe' }));
   }
 }
+// what the crafting panel laid out last (rows a page, pages, tab rows, the tabs), for checks
+const CRAFT_VIEW = { perPage: 0, pages: 0, tabRows: 0, tiers: [] };
 function drawCraftPanel(g) {
   const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G, t } = Rm;
   const station = panel === 'craft' ? null : panelArg;
@@ -3308,13 +3310,22 @@ function drawCraftPanel(g) {
   const skillKey = station === 'forge' || station === 'anvil' ? 'smithing' : 'crafting';
   // tabs by tier when the list is long; 8 rows a page (fewer on a short screen) with Prev / Next
   const tabbed = all.length > 8;
-  const tiers = tabbed ? ['Bronze/Iron', 'Steel', 'Mithril', 'Godly', 'Other'].filter(tn => all.some(r => recipeTier(r) === tn)) : [];
+  const tiers = tabbed ? RECIPE_TIERS.map(q => q[0]).concat('Other').filter(tn => all.some(r => recipeTier(r) === tn)) : [];
   if (tabbed && !tiers.includes(recipeTab)) recipeTab = tiers[0];
   const list = tabbed ? all.filter(r => recipeTier(r) === recipeTab) : all;
-  const W = Math.min(Rm.aw, t ? 480 : 440), cw = W - 36;
+  // the anvil has eight metals: the panel widens (as far as the screen allows) to keep its tabs on one row, so a short
+  // landscape phone still has room for recipe rows under them
+  const nat = tabbed ? tiers.map(tn => Math.max(t ? 56 : 60, K.verbW(g, tn, null, R))) : [];
+  const oneRow = nat.reduce((a, b) => a + b, 0) + G * Math.max(0, nat.length - 1) + 36;
+  const W = Math.min(Rm.aw, Math.max(t ? 480 : 440, tabbed ? oneRow : 0)), cw = W - 36;
   // the tab rows' height, measured the way K.tabs lays them out
-  let tabsH = 0;
-  if (tabbed) { const nat = tiers.map(tn => Math.max(t ? 56 : 60, K.verbW(g, tn, null, R))); tabsH = (nat.reduce((a, b) => a + b, 0) + G * (tiers.length - 1) <= cw ? R : 2 * R + G) + 10; }
+  // (one row when they fit; else two, or three when a name will not fit a half-row plate)
+  let tabsH = 0, tabRows = 1;
+  if (tabbed) {
+    const fitsIn = rows => { const per = Math.ceil(tiers.length / rows), eq = Math.floor((cw - G * (per - 1)) / per); return nat.every(x => x <= eq); };
+    tabRows = nat.reduce((a, b) => a + b, 0) + G * (tiers.length - 1) <= cw ? 1 : fitsIn(2) ? 2 : 3;
+    tabsH = tabRows * R + (tabRows - 1) * G + 10;
+  }
   const pitch = R + 8, y0 = 62 + tabsH, n = list.length, pagerH = R + 14;
   const noHammer = station === 'anvil' && !hasTool('hammer'), warnH = noHammer ? 20 : 0;
   const needPager = n > 8 || y0 + n * pitch + 16 + warnH > Rm.ah;
@@ -3323,8 +3334,9 @@ function drawCraftPanel(g) {
   else { perPage = Math.max(1, n); h = Math.max(160, y0 + n * pitch + 16 + warnH); }
   const { px, py, w, h: ph } = panelBox(g, W, h, station ? titles[station] || 'Station' : 'Crafting', station ? `${SKILL_DEFS.find(s => s.key === skillKey).name} level ${skillLv(skillKey)}${station === 'anvil' ? '. Needs a hammer.' : ''}` : 'Simple things craft from your pack. Stations in Thistledown make the rest.');
   const x0 = px + 18;
-  if (tabbed) K.tabs(g, x0, py + 62, w - 36, tiers.map(tn => ({ label: tn })), recipeTab, tn => { recipeTab = tn; recipePage = 0; });
+  if (tabbed) K.tabs(g, x0, py + 62, w - 36, tiers.map(tn => ({ label: tn })), recipeTab, tn => { recipeTab = tn; recipePage = 0; }, { rows3: tabRows === 3 });
   const pages = Math.max(1, Math.ceil(n / perPage)); recipePage = clamp(recipePage, 0, pages - 1);
+  CRAFT_VIEW.perPage = perPage; CRAFT_VIEW.pages = pages; CRAFT_VIEW.tabRows = tabRows; CRAFT_VIEW.tiers = tiers;
   const canMake = r => { const rec = station === 'forge' ? { ...r, station: 'forge', skill: 'smithing', qty: 1 } : r; const has = rec.needs.every(([id, q]) => countItem(id) >= q); const lvOk = !rec.skill || skillLv(rec.skill) >= rec.lv; return { rec, can: has && lvOk && !(station === 'anvil' && !hasTool('hammer')) }; };
   const labelOf = rec => rec.label + (rec.lv > 1 ? `  (lv ${rec.lv})` : '');
   const pageList = list.slice(recipePage * perPage, recipePage * perPage + perPage);
@@ -3760,7 +3772,7 @@ window.FANGLANDS = {
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y); F.press('KeyE'); F.untilAction(player.action && player.action.type === 'chop' ? 24 * (Math.ceil(player.action.need * 60) + 1) : 1, () => countItem('wood') >= 2); } peace(false); // the second log is timed too: a goblin's hit cancels the swing and every plank check after it fails
     topUp('wood', 2); openPanel('craft'); render(); const crafted = F.clickButton('2 Logs → 4 Planks'); closePanel();
     check('craft planks from the pack', crafted && countItem('plank') === 4 && countItem('wood') === 0, { plank: countItem('plank') });
-    F.fight(3000); { const o = openSpot(Math.floor(player.x / TILE), Math.floor(player.y / TILE), clutterFree); F.tp(o.x, o.y); } topUp('plank', 4); player.facing = { x: 1, y: 0 }; { const ft = frontTile(player, 40); F.press('KeyQ'); F.sim(3, []); check('place a plank', countItem('plank') === 3 && tileAt(ft.tx, ft.ty) === T.PLANK, { after: tileAt(ft.tx, ft.ty) }); if (tileAt(ft.tx, ft.ty) !== T.PLANK) { changeTile(ft.tx, ft.ty, T.PLANK); if (countItem('plank') > 3) removeItem('plank', countItem('plank') - 3); } F.press('KeyE'); F.sim(2, []); check('pick a placed plank back up', countItem('plank') === 4 && tileAt(ft.tx, ft.ty) === T.GRASS, { tile: tileAt(ft.tx, ft.ty) }); }
+    F.fight(3000); { const o = openSpot(Math.floor(player.x / TILE), Math.floor(player.y / TILE), clutterFree); F.tp(o.x, o.y); } topUp('plank', 4); player.facing = { x: 1, y: 0 }; { const ft = frontTile(player, 40), was = tileAt(ft.tx, ft.ty); notice = null; F.press('KeyQ'); F.sim(3, []); check('a plank is not placed in the shared world: Q leaves the plank in the pack and the ground as it was, and says to build on the island (64-island)', countItem('plank') === 4 && tileAt(ft.tx, ft.ty) === was && !!notice && /your island/i.test(notice.text), { after: tileAt(ft.tx, ft.ty), notice: notice && notice.text }); if (tileAt(ft.tx, ft.ty) !== T.PLANK) { changeTile(ft.tx, ft.ty, T.PLANK); if (countItem('plank') > 3) removeItem('plank', countItem('plank') - 3); } F.press('KeyE'); F.sim(2, []); check('pick up a plank laid in the world (one put down before the island rule)', countItem('plank') === 4 && tileAt(ft.tx, ft.ty) === T.GRASS, { tile: tileAt(ft.tx, ft.ty) }); }
     { const a = player.inv[0], b = player.inv[2]; openPanel('inventory'); render(); F.clickButton('slot0'); F.clickButton('slot2'); closePanel(); check('rearrange the pack (tap, tap = swap)', JSON.stringify(player.inv[2]) === JSON.stringify(a) && JSON.stringify(player.inv[0]) === JSON.stringify(b), {}); }
     { const inv0 = player.inv.map(s => s ? { ...s } : null); for (let i = 0; i < INV_SLOTS; i++) if (!player.inv[i]) player.inv[i] = { id: 'stone', qty: 50 }; const left = addItem('wool', 3); check('pack has limited slots', left === 3, { left }); player.inv = inv0; }
     // ---------- drop tables ----------
@@ -3821,7 +3833,7 @@ window.FANGLANDS = {
     const bag = player.inv; player.inv = new Array(INV_SLOTS).fill(null); give('lodestone', 1); give('bed', 1); give('door', 1);
     // the base goes on ground no fight left loot on and no monster stands on: openSpot(36, 22) alone is two tiles from the arena the range, bomb,
     // trap and aggression checks fight in (openSpot(40, 20)), and a coin or a goblin on the lodestone's, bed's or door's tile is refused, as it is for a player
-    peace(true); { const o = openSpot(36, 22, clutterFree); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; placeAction('lodestone'); const home = player.home && { ...player.home }; player.facing = { x: 0, y: 1 }; placeAction('bed'); const bt = frontTile(player, 40); F.face(bt.tx, bt.ty); F.press('KeyE'); F.sim(2, []); const bed = !!player.bedSpawn; player.facing = { x: 0, y: -1 }; placeAction('door'); const dt = frontTile(player, 40); const door = tileAt(dt.tx, dt.ty) === T.DOOR; F.tp(40, 30); goHome(); check('lodestone sets home, bed sets respawn, doors push through, H teleports home', !!home && bed && door && dist(player.x, player.y, home.x, home.y) < 2 && !collides(tc(dt.tx), tc(dt.ty), 13, 'person') && collides(tc(dt.tx), tc(dt.ty), 13, 'beast'), { home, bed, door }); }
+    peace(true); { const o = openSpot(36, 22, clutterFree); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; placeAction('lodestone'); const home = player.home && { ...player.home }; player.facing = { x: 0, y: 1 }; placeAction('bed'); const bt = frontTile(player, 40); F.face(bt.tx, bt.ty); F.press('KeyE'); F.sim(2, []); const bed = !!player.bedSpawn; player.facing = { x: 0, y: -1 }; const dt = frontTile(player, 40); changeTile(dt.tx, dt.ty, T.DOOR); const door = tileAt(dt.tx, dt.ty) === T.DOOR; F.tp(40, 30); goHome(); check('lodestone sets home, bed sets respawn, doors push through, H teleports home', !!home && bed && door && dist(player.x, player.y, home.x, home.y) < 2 && !collides(tc(dt.tx), tc(dt.ty), 13, 'person') && collides(tc(dt.tx), tc(dt.ty), 13, 'beast'), { home, bed, door }); }
     player.inv = bag;
     // ---------- death: Death's chest in his house ----------
     { player.inv = new Array(INV_SLOTS).fill(null); give('coins', 100); give('goblin_scrap', 2); give('wood', 3); player.bedSpawn = null;
@@ -4277,7 +4289,8 @@ const needsConfirm = def => !!(def && (def.weapon || def.armour || def.tool || d
 
 // ---------- paging state ----------
 let recipeTab = null, recipePage = 0, bankPage = 0, coffinPage = 0, questsTab = 'quests';
-const RECIPE_TIERS = [['Bronze/Iron', /^(bronze|iron)_/], ['Steel', /^steel_/], ['Mithril', /^mithril_/], ['Godly', /^godly_/]];
+// the anvil's tabs, weakest metal first (62-ores' blackiron, sunstone and stormstone, and 45-progression's obsidian, have their own)
+const RECIPE_TIERS = [['Bronze/Iron', /^(bronze|iron)_/], ['Steel', /^steel_/], ['Blackiron', /^blackiron_/], ['Mithril', /^mithril_/], ['Sunstone', /^sunstone_/], ['Stormstone', /^stormstone_/], ['Obsidian', /^obsidian_/], ['Godly', /^godly_/]];
 function recipeTier(r) { const id = r.out || ''; for (const [name, re] of RECIPE_TIERS) if (re.test(id)) return name; return 'Other'; }
 
 // ---------- map targets ----------
@@ -4354,8 +4367,8 @@ HOOKS.selfTest.push((check, F, h) => {
   { const inv0 = player.inv.map(s => s ? { ...s } : null); const d0 = drops.length; player.inv[0] = { id: 'iron_dagger', qty: 1 }; openPanel('inventory'); render(); F.clickButton('slot0'); render(); const c1 = F.clickButton('Drop'); render(); const still = player.inv[0] && player.inv[0].id === 'iron_dagger' && buttons.some(b => b.label.startsWith('Tap again')); const c2 = F.clickButton('Tap again'); render(); const dropped = !player.inv[0] && drops.length === d0 + 1; closePanel(); drops.length = d0; player.inv = inv0;
     check('ux: dropping a weapon needs a second tap', c1 && still && c2 && dropped, { c1, still, c2, dropped }); }
   // recipe tabs + paging on the anvil (26 recipes)
-  { openPanel('station', 'anvil'); render(); const per = Math.max(2, Math.min(8, Math.floor((panelRect.h - 92 - 54) / 40))); const vis = () => buttons.filter(b => b.x >= 0 && b.label.includes('→')).map(b => b.label); const p0 = vis(); const tabs = buttons.filter(b => ['Bronze/Iron', 'Steel', 'Mithril', 'Godly', 'Other'].includes(b.label.replace(/^disabled:/, ''))).length; const n = F.clickButton('Next'); render(); const p1 = vis(); const m = F.clickButton('Mithril'); render(); const p2 = vis(); const anvil = RECIPES.filter(r => r.station === 'anvil'); const total = anvil.length, bi = anvil.filter(r => recipeTier(r) === 'Bronze/Iron').length; closePanel();
-    check('ux: anvil recipes come in tier tabs, 8 per page, Prev/Next pages', total >= 26 && p0.length === per && tabs >= 3 && n && p1.length === Math.min(per, bi - per) && p0[0] !== p1[0] && m && p2.length === Math.min(per, 8) && p2.every(l => /Mithril/.test(l)), { total, bi, per, p0: p0.length, p1: p1.length, tabs, p2: p2.length }); }
+  { openPanel('station', 'anvil'); render(); const per = Math.max(2, Math.min(8, Math.floor((panelRect.h - 92 - 54) / 40))); const vis = () => buttons.filter(b => b.x >= 0 && b.label.includes('→')).map(b => b.label); const p0 = vis(); const tabs = buttons.filter(b => RECIPE_TIERS.map(q => q[0]).concat('Other').includes(b.label.replace(/^disabled:/, ''))).length; const n = F.clickButton('Next'); render(); const p1 = vis(); const m = F.clickButton('Mithril'); render(); const p2 = vis(); const anvil = RECIPES.filter(r => r.station === 'anvil'); const total = anvil.length, bi = anvil.filter(r => recipeTier(r) === 'Bronze/Iron').length; closePanel();
+    check('ux: anvil recipes come in tier tabs, 8 per page, Prev/Next pages', total >= 26 && per === 8 && p0.length === per && tabs >= 3 && n && p1.length === Math.min(per, bi - per) && p0[0] !== p1[0] && m && p2.length === Math.min(per, 8) && p2.every(l => /Mithril/.test(l)), { total, bi, per, p0: p0.length, p1: p1.length, tabs, p2: p2.length }); }
   // bank paging
   { const bank0 = player.bank.map(s => ({ ...s })); player.bank = []; for (let i = 0; i < 40; i++) player.bank.push({ id: i % 2 ? 'stone' : 'wood', qty: 1 + i }); openPanel('bank'); render(); const per = VW < 640 ? 15 : 30; const c0 = buttons.filter(b => b.label.startsWith('bank')).length; const n = F.clickButton('Next'); render(); const c1 = buttons.filter(b => b.label.startsWith('bank')).length; const pg = bankPage; const p = F.clickButton('Prev'); render(); const c2 = buttons.filter(b => b.label.startsWith('bank')).length; closePanel(); player.bank = bank0;
     check('ux: bank pages 30 slots at a time (15 narrow) with Prev/Next', c0 === per && n && pg === 1 && c1 === Math.min(per, 40 - per) && p && c2 === per, { c0, c1, c2, per, pg }); }
@@ -5387,7 +5400,8 @@ const MUSIC = (() => {
   hudSeatFace('ctx', { id: 'leave', prio: 30, when: () => !!active && !player.mech && !player.dead, emblem: 'leave', ribbon: 'LEAVE', key: 'L', name: 'Leave', action: leaveNow });
   HOOKS.hud.push(() => { if (active && !paused && !panel && !player.dead) HK.teach('leave', 'L', 'Leave', { x: player.x, y: player.y, lift: 46 }, { emblem: 'leave' }); });
   HOOKS.hud.push((g, narrow) => {
-    if (!active) return;
+    // (a place with its own plaque says so with inst.plaque = false: your island, 63-house)
+    if (!active || active.inst.plaque === false) return;
     if (panel || paused) return;
     // (a boss that is not standing, the War Shed's before the valve or a storm still gathering, is not called awake)
     const inst = active.inst, alive = monsters.filter(m => !m.dead).length, bossUp = !!inst.boss && monsters.some(m => !m.dead && m.type === inst.boss);
@@ -10081,12 +10095,8 @@ PEOPLE_UI.auditPrompt = function (p) {
   for (const k of ['dragon_dung', 'dragon_scale', 'dragon_bone', 'obsidian', 'fireproof_salve', 'godly_helm', 'godly_body', 'godly_legs', 'godly_shield', 'scale_plate', 'scale_helm', 'scale_shield', 'mithril_bar']) {
     ITEMS[k].id = k; if (!ITEMS[k].stack) ITEMS[k].stack = ITEMS[k].armour ? 1 : 50;
   }
-  RECIPES.push(
-    { out: 'godly_helm', qty: 1, needs: [['dragon_scale', 6], ['mithril_bar', 2], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 32, xp: 500, label: '6 Dragon scales + 2 Mithril bars + Obsidian → Godly winged helm' },
-    { out: 'godly_shield', qty: 1, needs: [['dragon_scale', 6], ['mithril_bar', 2], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 34, xp: 500, label: '6 Dragon scales + 2 Mithril bars + Obsidian → Godly shield' },
-    { out: 'godly_legs', qty: 1, needs: [['dragon_scale', 7], ['mithril_bar', 3], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 36, xp: 500, label: '7 Dragon scales + 3 Mithril bars + Obsidian → Godly platelegs' },
-    { out: 'godly_body', qty: 1, needs: [['dragon_scale', 8], ['mithril_bar', 3], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 40, xp: 500, label: '8 Dragon scales + 3 Mithril bars + Obsidian → Godly platebody' },
-  );
+  // Godly Plated is forged by Halcyon in Aerie (36-skycity's FORGE table, which also puts the four rows in RECIPES with
+  // its real costs). The old anvil rows that stood here are gone: they still showed the costs the anvil once asked.
   // the Smithing 28–40 filler between mithril (30) and Godly (32–40): dragon scales smelt into plates, plates smith into scale gear
   SMELT.push({ out: 'scale_plate', needs: [['dragon_scale', 3]], lv: 28, xp: 60, label: '3 Dragon scales → Scale plate' });
   RECIPES.push(
@@ -10575,15 +10585,14 @@ PEOPLE_UI.auditPrompt = function (p) {
         player.skills.mining.xp = Math.max(mxSaved, XP_TABLE[28]); o0 = countItem('obsidian'); mx0 = player.skills.mining.xp; F.face(r.x, r.y); F.press('KeyE'); started = player.action && player.action.type === 'mine_obsidian';
         steps = F.untilAction(600, () => countItem('obsidian') > o0); player.action = null; }
       check('dragons: obsidian needs a pickaxe, then Mining 28; mining it gives obsidian and 120 xp', !!side && noPick && lowLv && started && typeof steps === 'number' && countItem('obsidian') === o0 + 1 && player.skills.mining.xp === mx0 + 120, { r, side, noPick, lowLv, started, steps, obsidian: countItem('obsidian') }); }
-    // the godly platebody at Brakka's anvil
+    // the godly platebody: not at Brakka's anvil any more; Halcyon forges it in Aerie from his own table (36-skycity)
     { h.clearJunk(); for (let n = 0; n < 5 && player.inv.filter(s => !s).length < 5; n++) { const i = player.inv.findIndex(s => s && !ITEMS[s.id].armour && !ITEMS[s.id].weapon && !ITEMS[s.id].tool && s.id !== 'coins' && !s.id.startsWith('dragon') && s.id !== 'obsidian'); if (i < 0) break; player.inv[i] = null; }
-      while (countItem('dragon_scale') < 8) h.give('dragon_scale', 1); while (countItem('mithril_bar') < 3) h.give('mithril_bar', 1); while (countItem('obsidian') < 1) h.give('obsidian', 1); if (!hasTool('hammer')) h.give('hammer', 1);
-      if (player.skills.smithing.xp < XP_TABLE[40]) player.skills.smithing.xp = XP_TABLE[40];
+      while (countItem('dragon_scale') < 12) h.give('dragon_scale', 1); while (countItem('mithril_bar') < 4) h.give('mithril_bar', 1); while (countItem('obsidian') < 1) h.give('obsidian', 1);
+      if (player.skills.smithing.xp < XP_TABLE[30]) player.skills.smithing.xp = XP_TABLE[30];
       const sc0 = countItem('dragon_scale'), mb0 = countItem('mithril_bar'), ob0 = countItem('obsidian'), b0 = countItem('godly_body'), sx0 = player.skills.smithing.xp;
-      F.tp(93, 39); F.walkTo(94, 39, 500); F.face(94, 38); F.press('KeyE'); const open = panel === 'station' && panelArg === 'anvil';
-      let viaButton = F.clickButton('8 Dragon scales + 3 Mithril bars + Obsidian → Godly platebody'); if (!viaButton) craft(RECIPES.find(r => r.out === 'godly_body')); // the anvil list is cut short on small screens
-      const steps = F.untilAction(300, () => countItem('godly_body') > b0); closePanel();
-      check('dragons: 8 dragon scales + 3 mithril bars + obsidian smith a Godly platebody at the anvil (Smithing 40, 500 xp)', open && typeof steps === 'number' && countItem('godly_body') === b0 + 1 && countItem('dragon_scale') === sc0 - 8 && countItem('mithril_bar') === mb0 - 3 && countItem('obsidian') === ob0 - 1 && player.skills.smithing.xp === sx0 + 500 && ITEMS.godly_body.armour.def === 55, { open, viaButton, steps, body: countItem('godly_body'), xp: player.skills.smithing.xp - sx0 }); }
+      const onAnvil = RECIPES.some(r => r.station === 'anvil' && /^godly_/.test(r.out));
+      const f = window.SKYCITY && SKYCITY.FORGE.find(x => x.out === 'godly_body'), made = !!f && SKYCITY.forge(f);
+      check('dragons: the Godly platebody is not on the anvil; Halcyon forges it from 12 dragon scales + 4 mithril bars + obsidian (Smithing 30, 500 xp)', !onAnvil && made && countItem('godly_body') === b0 + 1 && countItem('dragon_scale') === sc0 - 12 && countItem('mithril_bar') === mb0 - 4 && countItem('obsidian') === ob0 - 1 && player.skills.smithing.xp === sx0 + 500 && ITEMS.godly_body.armour.def === 55, { onAnvil, made, body: countItem('godly_body'), xp: player.skills.smithing.xp - sx0 }); }
     // the winged helm equips (the wings are drawn by HOOKS.draw when player.equip.helm has wings: true)
     { const prev = player.equip.helm; if (prev) { player.equip.helm = null; } h.give('godly_helm', 1); const slot = player.inv.findIndex(s => s && s.id === 'godly_helm'); if (slot >= 0) equipItem(slot);
       check('dragons: the Godly winged helm equips (def 30, wings drawn on the knight)', player.equip.helm === 'godly_helm' && ITEMS.godly_helm.wings === true && ITEMS.godly_helm.armour.def === 30 && gearBonus('def') >= 30, { helm: player.equip.helm, slot });
@@ -12187,9 +12196,9 @@ window.PLACE_KIT = PLACE_KIT;
       F.tp(dun.x, dun.y + 1); F.face(dun.x, dun.y); drain(); F.press('KeyE'); F.sim(2, []); const first = coins() - c0, left1 = countItem('potato'); closePanel();
       F.face(dun.x, dun.y); drain(); F.press('KeyE'); F.sim(2, []); const second = coins() - c0 - first, left2 = countItem('potato'); closePanel(); drain();
       check('ashdrake: Dunstan buys potatoes at 3 coins (their value), at most 20 per hand-in', dun && first === 60 && left1 === 5 && second === 15 && left2 === 0 && ITEMS.potato.value === 3, { first, left1, second, left2 }); }
-    // 5. the Godly gate is 32–40 now
+    // 5. the Godly gate: Halcyon's sky forge asks Smithing 30 for each of the four (36-skycity; the anvil's 32-40 rows are gone)
     { const lv = RECIPES.filter(r => r.out.startsWith('godly_')).map(r => r.lv).sort((a, b) => a - b);
-      check('ashdrake: Godly recipes sit at Smithing 32 / 34 / 36 / 40 (was 40–48)', lv.join(',') === '32,34,36,40' && lv.every(x => x >= 32 && x <= 40), { lv }); }
+      check('ashdrake: Godly recipes sit at Smithing 30, at Halcyon\'s sky forge (was 32 / 34 / 36 / 40 at the anvil)', lv.join(',') === '30,30,30,30', { lv }); }
     // 6. the 28–40 filler: 3 scales smelt into a plate at Brakka's forge (Smithing 28), a plate smiths into a scale helm (29)
     { h.clearJunk(); while (countItem('dragon_scale') < 3) h.give('dragon_scale', 1); if (!hasTool('hammer')) h.give('hammer', 1);
       if (player.skills.smithing.xp < XP_TABLE[29]) player.skills.smithing.xp = XP_TABLE[29];
@@ -14840,10 +14849,7 @@ window.PLACE_KIT = PLACE_KIT;
     cloud_essence: { name: 'Cloud essence', value: 120, color: '#dff0ff', shape: 'powder' },
   });
   ITEMS.wind_flute.id = 'wind_flute'; ITEMS.cloud_essence.id = 'cloud_essence'; ITEMS.cloud_essence.stack = 50;
-  // Godly Plated is forged in Aerie now, not at Brakka's anvil: the four recipes (registered by the Ashfields file, which loads
-  // earlier) leave the anvil list. They keep their objects, re-stationed to 'skyforge' (no station panel lists that), so
-  // `RECIPES.find(r => r.out === 'godly_body')` used by older self-tests still resolves.
-  for (const r of RECIPES) if (/^godly_/.test(r.out) && r.station === 'anvil') r.station = 'skyforge';
+  // Godly Plated is forged in Aerie, not at Brakka's anvil (27-dragons no longer puts any Godly row on the anvil).
   // Halcyon's own table: dragon scale + mithril + obsidian, Smithing 30, no anvil, no hammer
   const FORGE = [
     { out: 'godly_helm', scales: 8, mithril: 2, label: '8 Dragon scales + 2 Mithril bars + Obsidian → Godly winged helm' },
@@ -14853,6 +14859,10 @@ window.PLACE_KIT = PLACE_KIT;
   ];
   const FORGE_LV = 30, FORGE_XP = 500;
   const forgeNeeds = f => [['dragon_scale', f.scales], ['mithril_bar', f.mithril], ['obsidian', 1]];
+  // the four rows in RECIPES are this table, at station 'skyforge' (no station panel lists it; the wiki reads FORGE), so
+  // `RECIPES.find(r => r.out === 'godly_body')` resolves and any list built off RECIPES shows what Halcyon really asks
+  for (const r of RECIPES.filter(q => /^godly_/.test(q.out))) RECIPES.splice(RECIPES.indexOf(r), 1);
+  for (const f of FORGE) RECIPES.push({ out: f.out, qty: 1, needs: forgeNeeds(f), station: 'skyforge', skill: 'smithing', lv: FORGE_LV, xp: FORGE_XP, label: f.label });
   const canForge = f => skillLv('smithing') >= FORGE_LV && forgeNeeds(f).every(([id, q]) => countItem(id) >= q);
   function forge(f) {
     if (!ITEMS[f.out]) { notify('Halcyon frowns: the pattern for that is lost.'); return false; }
@@ -15304,7 +15314,9 @@ window.PLACE_KIT = PLACE_KIT;
   { const base14 = MAP_TARGETS[14] || { x: 18, y: 108, label: "The Fang's lair" };
     Object.defineProperty(MAP_TARGETS, 14, { configurable: true, enumerable: true, get() {
       const s = quest.sky ? quest.sky.stage : 0;
-      if (s !== 'done') return s === 1 || s === 2 ? { x: 58, y: 3, label: 'The wind shrine' } : { x: 30, y: 78, label: 'Old Wren' };
+      // the wind shrine is where 36-skycity puts it (SKYCITY.SHRINE_T, (62,6) on the Grey Quarry heights)
+      const shrine = window.SKYCITY && SKYCITY.SHRINE_T ? SKYCITY.SHRINE_T : { x: 62, y: 6 };
+      if (s !== 'done') return s === 1 || s === 2 ? { x: shrine.x, y: shrine.y, label: 'The wind shrine' } : { x: 30, y: 78, label: 'Old Wren' };
       if (!DK().formed) return { x: 112, y: 49, label: 'Duke Ferrin' };
       return base14;
     } }); }
@@ -17387,7 +17399,8 @@ window.PLACE_KIT = PLACE_KIT;
   }
   const killXp = type => { const m = MONSTER_DEFS[type]; return m.hp * 4 + (m.level >= 10 ? m.level * 10 : 0); };
   // what a recipe's materials cost in seconds at the code's own gather rates (bronze tools, at the level each opens); a bar is its ore plus a smelt
-  const MATERIAL_SECS = { wood: 4, oak_log: 4, jungle_log: 2.2, stone: 4, iron_ore: 4, coal: 4, mithril_ore: 2, obsidian: 2.2, iron_bar: 5.5, steel_bar: 9.5, mithril_bar: 11.5, plank: 2, spider_silk: 10, wool: 8, blast_powder: 15, goblin_scrap: 10, potato: 40, wheat: 40, berries: 5, flour: 80, raw_beef: 10, raw_trout: 8, dragon_scale: 60, scale_plate: 180 };
+  // (62-ores' three metals: a lump at its 4.0 s swing, then 1 / 2 / 3 coal at 4 s each, then the 1.5 s smelt)
+  const MATERIAL_SECS = { wood: 4, oak_log: 4, jungle_log: 2.2, stone: 4, iron_ore: 4, coal: 4, mithril_ore: 2, obsidian: 2.2, iron_bar: 5.5, steel_bar: 9.5, mithril_bar: 11.5, blackiron_ore: 4, sunstone_ore: 4, stormstone_ore: 4, blackiron_bar: 9.5, sunstone_bar: 13.5, stormstone_bar: 17.5, plank: 2, spider_silk: 10, wool: 8, blast_powder: 15, goblin_scrap: 10, potato: 40, wheat: 40, berries: 5, flour: 80, raw_beef: 10, raw_trout: 8, dragon_scale: 60, scale_plate: 180 };
   const materialSecs = needs => needs.reduce((s, [id, q]) => s + q * (MATERIAL_SECS[id] || 10), 0);
   // how many of a monster the world offers per hour: spawns × respawn (the Goblin Camp's own refill every 1800 s)
   const supplyPerHour = type => { let n = 0; for (const s of MONSTER_SPAWNS) if (s.type === type) n += 3600 / (s.camp ? 1800 : (MONSTER_DEFS[type].respawn || 25)); return n; };
@@ -17433,7 +17446,7 @@ window.PLACE_KIT = PLACE_KIT;
     for (const t in GATHER) { const g = GATHER[t]; if (g.lv > 1) add(g.skill, g.lv, `gather ${g.label}`); }
     if (Tn('JUNGLE') >= 0) add('woodcutting', 15, 'jungle trees (Queen Aelith wants 8 logs)'); if (Tn('MITHRIL') >= 0) add('mining', 20, 'mithril rock'); if (Tn('OBSIDIAN') >= 0) add('mining', 28, 'obsidian (Godly Plated needs one per piece)');
     add('fishing', 5, 'trout'); if (ITEMS.lobster_pot) add('fishing', 25, 'lobster pots');
-    for (const r of RECIPES) if (r.skill && r.lv > 1) add(r.skill, r.lv, r.label + (r.station === 'skyforge' ? ' [anvil recipe, dead: Halcyon forges it at 30]' : ''));
+    for (const r of RECIPES) if (r.skill && r.lv > 1) add(r.skill, r.lv, r.label + (r.station === 'skyforge' ? " (Halcyon's sky forge, Aerie)" : ''));
     for (const s of SMELT) if (s.lv > 1) add('smithing', s.lv, s.label);
     if (window.INSTANCES && INSTANCES.get('aerie')) add('smithing', 30, "Halcyon's sky forge (Godly Plated)");
     if (window.DOZERUP) for (const u of DOZERUP.UPGRADES) add('crafting', u.lv, `dozer upgrade: ${u.name}`);
@@ -17773,7 +17786,7 @@ window.PLACE_KIT = PLACE_KIT;
     return PLAY;
   }
 
-  window.PLAYTHROUGH = { connectivity, instanceConnectivity, chain, chainStages, progression, sources, gates, play, PLAY, get pristine() { return pristine(); }, killSecs, killXp, gatherSecs, fishSecs };
+  window.PLAYTHROUGH = { connectivity, instanceConnectivity, chain, chainStages, progression, sources, gates, play, PLAY, get pristine() { return pristine(); }, killSecs, killXp, gatherSecs, fishSecs, MATERIAL_SECS };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -19169,13 +19182,25 @@ window.SETTINGS = SETTINGS;
     greater_poultice: { name: 'Greater poultice', value: 260, color: '#4fbf6a', shape: 'powder', heal: 45 },
     scale_cloak: { name: 'Scale cloak', value: 900, color: '#4a7a5a', shape: 'cape', stack: 1, armour: { slot: EQUIP_SLOTS.includes('cape') ? 'cape' : 'body', def: 12 } },
     golden_bread: { name: 'Golden loaf', value: 90, color: '#f0d878', shape: 'bread', heal: 24 },
-    obsidian_blade: { name: 'Obsidian blade', value: 1400, color: '#2f2a3a', shape: 'sword', stack: 1, weapon: { att: 30, maxHit: 17 } },
-    obsidian_helm: { name: 'Obsidian helm', value: 800, color: '#332d3f', shape: 'helm', stack: 1, armour: { slot: 'head', def: 26 } },
+    // a blade needs str and cd like every weapon (playerMaxHit reads str; it once had a stray maxHit and hit for nothing);
+    // Smithing 45, one step over the stormstone sword's 34 / 30
+    obsidian_blade: { name: 'Obsidian blade', value: 1400, color: '#2f2a3a', shape: 'sword', stack: 1, weapon: { str: 36, att: 30, cd: 0.45 } },
+    // the helm slot is 'helm' (EQUIP_SLOTS): it once said 'head', and gave no defence
+    obsidian_helm: { name: 'Obsidian helm', value: 800, color: '#332d3f', shape: 'helm', stack: 1, armour: { slot: 'helm', def: 26 } },
   });
   for (const id of ['herb_seed', 'herbs', 'goldenwheat_seed', 'golden_wheat', 'dragonfruit_seed', 'dragonfruit', 'raw_pike', 'pike', 'raw_salmon', 'salmon',
     'raw_swordfish', 'swordfish', 'raw_shark', 'shark', 'herb_poultice', 'greater_poultice', 'scale_cloak', 'golden_bread', 'obsidian_blade', 'obsidian_helm']) {
     ITEMS[id].id = id; if (ITEMS[id].stack === undefined) ITEMS[id].stack = 50;
   }
+
+  // a knight who wore the obsidian helm while its slot said 'head' has it in player.equip.head, where nothing reads it:
+  // it goes on his head (the helm slot) if that is free, and back in his pack (or at his feet) if not
+  HOOKS.update.push(() => {
+    const e = player.equip; if (!e || !e.head) return;
+    const id = e.head; delete e.head;
+    if (!e.helm) e.helm = id; else giveOrDrop(id, 1, player.x, player.y, true);
+    save();
+  });
 
   // ---------- Greta sells the seeds; Salt Pete sells the deep-sea bait ----------
   if (SHOPS.seeds) SHOPS.seeds.stock.push(['herb_seed', 8], ['goldenwheat_seed', 30], ['dragonfruit_seed', 90]);
@@ -25734,21 +25759,32 @@ const HK = (() => {
       g.beginPath(); g.arc(rcx, rcy, rd / 2 - 1, 0, TAU); g.strokeStyle = o.edge || 'rgba(217,178,92,0.7)'; g.lineWidth = 2; g.stroke();
       tx = x + rd + 12;
     }
-    const right = o.right != null ? String(o.right) : '';
-    const rf = FC(800, 11), rw = right ? tw(g, right, rf) + 12 : 0;
+    let right = o.right != null ? String(o.right) : '', subText = o.sub;
+    const rf = FC(800, 11);
     const stars = o.stars ? o.stars.of * 16 + 6 : 0;
-    const lineTop = (o.sub || o.frac != null) ? y + 17 : y + h / 2 + 5;
-    let ns = 13; const name = String(o.name || '');
+    const name = String(o.name || '');
+    // foldRight: on a narrow plaque where the name would have to shrink below 11 px beside the right-hand words, those
+    // words move down to the sub line ("0 built, 2 of 6 arches"; just "2 of 6 arches" when both will not fit on one
+    // line), so the name and the count never run into each other
+    if (o.foldRight && right && subText && o.frac == null && tw(g, name, FC(800, 11)) > x + w - 14 - tx - (tw(g, right, rf) + 12) - stars) {
+      const both = `${subText}, ${right}`;
+      subText = tw(g, both, FS(600, 12)) <= x + w - 14 - tx ? both : right; right = '';
+    }
+    const rw = right ? tw(g, right, rf) + 12 : 0;
+    const lineTop = (subText || o.frac != null) ? y + 17 : y + h / 2 + 5;
+    let ns = 13;
     while (ns > 9 && tw(g, name, FC(800, ns)) > x + w - 14 - tx - rw - stars) ns -= 0.5;
     text(g, name, tx, lineTop, { font: FC(800, ns), color: o.nameColor || T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y: y, w: x + w - 14 - rw - stars - tx, h }, fitId: 'plaque:name' });
     if (o.stars) { let sx = tx + tw(g, name, FC(800, ns)) + 8; for (let i = 0; i < o.stars.of; i++) { starPath(g, sx + 7, y + 12, 7, 3); g.fillStyle = i < o.stars.n ? T.goldHi : 'rgba(0,0,0,0.5)'; g.fill(); g.strokeStyle = '#3a2708'; g.lineWidth = 1; g.stroke(); sx += 16; } }
     if (right) text(g, right, x + w - 14, y + 17, { font: rf, align: 'right', color: o.rightColor || T.inkDim, shadow: 'rgba(0,0,0,0.9)' });
+    // where the name ends and the right-hand words start, by plaque id, for checks
+    if (o.id) (FRAME.plaqueText = FRAME.plaqueText || {})[o.id] = { nameEnd: tx + tw(g, name, FC(800, ns)), rightStart: right ? x + w - 14 - (rw - 12) : null, right, sub: subText || null, subFits: !subText || tw(g, String(subText), FS(600, 12)) <= x + w - 14 - tx, size: ns };
     if (o.frac != null) {
       const col = o.bar ? (o.bar === 'good' ? T.good : o.bar === 'warn' ? T.warn : o.bar === 'bad' ? T.bad : o.bar) : ramp(o.frac);
       const st = RAMP_BAR[col] || ['#ff8266', col, '#6d1016'];
       meterBar(g, tx, y + h - 15, x + w - 14 - tx, 9, o.frac, st[1], { hi: st[0], lo: st[2] });
-    } else if (o.sub) {
-      const sf = FS(600, 12); let sub = String(o.sub);
+    } else if (subText) {
+      const sf = FS(600, 12); let sub = String(subText);
       const maxW = x + w - 14 - tx;
       if (tw(g, sub, sf) > maxW) { const ww = wrap(g, sub, maxW, 1, sf); sub = ww.lines[0] || ''; }
       text(g, sub, tx, y + h - 9, { font: sf, color: o.subColor || T.inkDim, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: maxW, h }, fitId: 'plaque:sub' });
@@ -26781,7 +26817,7 @@ const HK = (() => {
   // ---------- plaque slots: HK.slot() / HK.claim() keep the old cursor contract (HUD.leftY) but hand out plaque slots ----------
   const OFF = { x: -4000, y: -4000 };
   function beginPlaques(L, reserveFirst) {
-    FRAME.plaqueRects = L.plaques.slice(); FRAME.overflow = 0; FRAME.plaqueStart = reserveFirst ? 1 : 0; FRAME.plaqueIds = [];
+    FRAME.plaqueRects = L.plaques.slice(); FRAME.overflow = 0; FRAME.plaqueStart = reserveFirst ? 1 : 0; FRAME.plaqueIds = []; FRAME.plaqueText = {};
     HUD.leftCol = 0; HUD.leftY = L.plaques[FRAME.plaqueStart] ? L.plaques[FRAME.plaqueStart].y : L.plaques.length ? L.plaques[L.plaques.length - 1].y + 52 : L.crest.y + L.crest.h + 10;
   }
   function slotAt(h, peek) {
@@ -27827,10 +27863,17 @@ HOOKS.selfTest.push((check, F, h) => {
               else if ((want[1] && b.phase !== want[1]) || (b.sub || null) !== want[2] || (sc === 'wight' && !b.heart)) problems.push(`${where}: the banner says ${JSON.stringify([b.phase, b.sub, !!b.heart])}`);
             }
             if (sc === 'island') {
-              const ctxF = HK.FRAME.faces.ctx;
-              if (!ctxF || (ctxF.id !== 'build' && ctxF.id !== 'leave')) problems.push(`${where}: the ctx seat wears ${ctxF ? ctxF.id : 'nothing'} on the island`);
+              // BUILD on the ctx seat (the only way to build on touch) and LEAVE on the block seat (64-island): both on screen
+              const ctxF = HK.FRAME.faces.ctx, blkF = HK.FRAME.faces.block;
+              if (!ctxF || ctxF.id !== 'build') problems.push(`${where}: the ctx seat wears ${ctxF ? ctxF.id : 'nothing'} on the island, not build`);
+              if (!blkF || blkF.id !== 'island_leave') problems.push(`${where}: the block seat wears ${blkF ? blkF.id : 'nothing'} on the island, not leave`);
               // the island's plaque, or (one slot on an iPhone SE, and a landscape phone with the stick on the right) the +n badge it folds into
               if (!(HK.FRAME.plaqueIds || []).includes('island') && !(HK.FRAME.overflow > 0)) problems.push(`${where}: no island plaque (${(HK.FRAME.plaqueIds || []).join(', ')})`);
+              // its name and its arch count never run into each other (a landscape phone folds the count into the sub line)
+              const pt = (HK.FRAME.plaqueText || {}).island;
+              if (pt && pt.rightStart != null && pt.nameEnd > pt.rightStart - 4) problems.push(`${where}: the island plaque's name runs into "${pt.right}" (${Math.round(pt.nameEnd)} > ${Math.round(pt.rightStart)} - 4)`);
+              if (pt && pt.size < 11) problems.push(`${where}: the island plaque's name shrinks to ${pt.size} px`);
+              if (pt && !pt.subFits) problems.push(`${where}: the island plaque's line "${pt.sub}" is cut short`);
             }
             if (sc === 'dungeon' || sc === 'island' || /^bird/.test(sc)) leaveAny();
             if (sc === 'talk' && !buttons.some(b => b.label === 'dialog')) problems.push(`${where}: the talk page is not a tap`);
@@ -29988,8 +30031,8 @@ HOOKS.selfTest.push((check, F, h) => {
 //   placeAction  — saplings only plant on your own ground; a lodestone will not bind on floating rock
 //   finishGather — chopping a tree in the world sometimes drops a sapling for the island
 //
-// Keeping building in the overworld exactly as it was is deliberate (see the summary): this gives him
-// somewhere better, it does not take anything away.
+// Walls, floors and doors now go only on the island's own ground (owner, 3 Oct: 64-island); beds, workbenches,
+// goblin traps and the lodestone keep the core's rules in the world.
 // window.HOUSE exposes everything the self-test and any later feature needs.
 // ============================================================================
 {
@@ -30105,6 +30148,8 @@ HOOKS.selfTest.push((check, F, h) => {
   });
   // define() paints the entry tile CAVE (a cave floor on a grass island); the porch cobble belongs there
   inst.tiles[hidx(ENTRY[0], ENTRY[1])] = T.COBBLE;
+  // the island has its own plaque (YOUR ISLAND, arches and things built): no "0 left" dungeon plaque beside it
+  inst.plaque = false;
   const baseAt = i => inst.tiles[i];
 
   // ---------- the island's own save ----------
@@ -30350,10 +30395,14 @@ HOOKS.selfTest.push((check, F, h) => {
       for (const d of DESTS) if (!h.been[d.key] && d.region === player.region) { h.been[d.key] = true; found = d; }
       if (found) { if (h.seen) notify(`${found.name}. Your island can hold an arch to it now.`); save(); }
     }
-    // P only when nothing else owns the keyboard: the wiki and the settings panel type letters
-    if ((pressed.has('KeyP') && !dialog.cur && (!panel || panel === 'house_build')) || tapped('housebuild')) {
+    // P only when nothing else owns the keyboard: the wiki and the settings panel type letters. Neither P nor the BUILD
+    // button opens the panel while someone is talking (the talk page would sit on top of it); a tap then is dropped
+    const tapB = tapped('housebuild');
+    if (((pressed.has('KeyP') && (!panel || panel === 'house_build')) || tapB) && !dialog.cur) {
       pressed.delete('KeyP');
-      if (inside) { panel === 'house_build' ? closePanel() : openPanel('house_build'); }
+      // the area banner ("YOUR ISLAND") and the arrival line ("Tap BUILD to put something up") are drawn over panels
+      // (on a phone the line lands on the second card): both go when the build panel opens
+      if (inside) { if (panel === 'house_build') closePanel(); else { openPanel('house_build'); areaBanner = null; notice = null; } }
       else notify(`Your island is through the stone portal in Thistledown, inside the north wall at ${PORTAL.x}, ${PORTAL.y}.`);
     }
     if (!inside) return;
@@ -30452,13 +30501,17 @@ HOOKS.selfTest.push((check, F, h) => {
 
   // ---------- HUD ----------
   // On your island: a plaque in the kit's column (src/59-hudkit.js) with the arch mark, "Your island", the arches
-  // standing and the things built; BUILD is the context seat's face (the arch; P on the keys), after LEAVE.
-  hudSeatFace('ctx', { id: 'build', prio: 20, when: () => inside && !player.mech && !player.dead, emblem: 'build', ribbon: 'BUILD', key: 'P', name: 'Build on your island', action: () => { touch.taps.push('housebuild'); } });
+  // standing and the things built; BUILD is the context seat's face (the arch; P on the keys). It outranks 16-instances'
+  // LEAVE (prio 30), because the island is an instance too and touch has no P key: with LEAVE first, the iPad had no way
+  // to build at all. LEAVE moves to the block seat on the island (64-island), and the arch by the porch still goes home.
+  // (dimmed while someone talks: the panel does not open under the talk page)
+  hudSeatFace('ctx', { id: 'build', prio: 35, when: () => inside && !player.mech && !player.dead, disabled: () => !!dialog.cur, emblem: 'build', ribbon: 'BUILD', key: 'P', name: 'Build on your island', action: () => { touch.taps.push('housebuild'); } });
   HOOKS.hud.push(() => { if (inside && !paused && !panel && !player.dead) HK.teach('build', 'P', 'Build', { x: player.x, y: player.y, lift: 46 }, { emblem: 'build' }); });
   HOOKS.hud.push((g, narrow) => {
     if (!inside || paused) return;
     const h = H();
-    HK.addPlaque(g, { id: 'island', emblem: 'build', name: 'YOUR ISLAND', right: `${archCount()} of ${DESTS.length} arches`, sub: `${h.made} built` });
+    // (foldRight: on a landscape phone's narrow plaque the arch count moves under "YOUR ISLAND" instead of running into it)
+    HK.addPlaque(g, { id: 'island', emblem: 'build', name: 'YOUR ISLAND', right: `${archCount()} of ${DESTS.length} arches`, sub: `${h.made} built`, foldRight: true });
   });
 
   // ---------- drawing ----------
@@ -31377,6 +31430,243 @@ HOOKS.selfTest.push((check, F, h) => {
       ramsWas = -1; steamWas = null; fangRef = null; fangAlive = false; fangEl = null;
       setShake(shake0);
       h.peace(peace0);
+    }
+  });
+}
+
+// ---- src/64-island.js ----
+// ============================================================================
+// YOUR ISLAND, PART TWO — a Build button on every device, and walls only on your own ground
+// Cohen (on his iPad): "I can't see the build button in the house on my iPad, so there should be a build button on
+// all the devices when you're in the house. And you shouldn't be able to place blocks outside of ... the house floor."
+//
+// Why the button was missing: the island is an instance (16-instances), so 16-instances' LEAVE face (ctx seat, prio 30)
+// always beat 63-house's BUILD face (prio 20). A keyboard has P; touch has nothing else. 63-house's BUILD now sits at
+// prio 35, and this file gives LEAVE a seat of its own on the island: the block seat (nothing fights you there, so
+// a shield has nothing to do). Both are on screen at every size, touch and mouse; P and L still work on the keys, and
+// the arch by the porch still takes you home.
+//
+// Placement (owner's decision, 3 Oct): walls, floors and doors (an item whose place is PLANK, DOOR, FLOOR or WALL) go
+// only on the island's own land: never in the shared world, never in a dungeon, never out over the sky. Beds,
+// workbenches, goblin traps and the lodestone keep the core's rules. When Q (no item named) would put down a wall where
+// one cannot go, he gets the plain line and nothing else goes down in the wall's place.
+//
+// Wraps placeAction by reassignment, explicit args (63-house and 54-graves wrap it before this file; this one runs first).
+// window.ISLAND exposes the rule for checks.
+// ============================================================================
+{
+  const WALL_PLACES = new Set(['PLANK', 'DOOR', 'FLOOR', 'WALL']);
+  const ORDER = ['plank', 'door', 'bed', 'lodestone', 'workbench', 'goblin_trap'];   // the core's own Q order (06-systems)
+  const NOT_HERE = 'Build walls and floors on your island.';
+  const NOT_SKY = 'Build on the island’s own ground, not out over the sky.';
+  const isWall = id => !!(id && ITEMS[id] && WALL_PLACES.has(ITEMS[id].place));
+  const onIsland = () => !!(window.HOUSE && HOUSE.inside && window.INSTANCES && INSTANCES.active() === HOUSE.ID);
+  // the island's own land: inside its grid and not sky in the island as it was built
+  const islandLand = (tx, ty) => onIsland() && tx >= 0 && ty >= 0 && tx < HOUSE.W && ty < HOUSE.H && HOUSE.base(HOUSE.hidx(tx, ty)) !== HOUSE.tiles.sky;
+  // why a wall cannot go in front of the knight (null when it can)
+  function wallRefusal() {
+    if (!onIsland()) return NOT_HERE;
+    const { tx, ty } = frontTile(player, 40);
+    return islandLand(tx, ty) ? null : NOT_SKY;
+  }
+
+  const _placeAction = placeAction;
+  placeAction = function (id) {
+    if (player.dead || player.mech) return _placeAction(id);
+    if (!id) {
+      // Q: the core takes the first of its list. When that is a wall that cannot go here he is told so, and nothing
+      // else goes down in its place (a bed, a workbench or the lodestone cannot be picked back up in the world, and
+      // a lodestone would move his home)
+      const first = ORDER.find(k => ITEMS[k] && countItem(k) > 0);
+      if (isWall(first)) { const why = wallRefusal(); if (why) { notify(why); return; } }
+      return _placeAction(id);
+    }
+    if (isWall(id)) { const why = wallRefusal(); if (why) { notify(why); return; } }
+    return _placeAction(id);
+  };
+
+  // ---------- LEAVE on the island: the block seat ----------
+  const leaveIsland = () => { if (window.HOUSE && HOUSE.leave()) notify('You step back through into Thistledown.'); };
+  hudSeatFace('block', { id: 'island_leave', prio: 30, when: () => onIsland() && !player.mech && !player.dead, emblem: 'leave', ribbon: 'LEAVE', key: 'L', name: 'Leave your island', action: leaveIsland });
+
+  window.ISLAND = { WALL_PLACES, NOT_HERE, NOT_SKY, isWall, islandLand, wallRefusal };
+
+  // ---------- self-test ----------
+  const P = 'island: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    if (!window.HOUSE) { check(P + 'the island is there', false, {}); return; }
+    const own = k => Object.getOwnPropertyDescriptor(window, k);
+    const keep = { w: own('innerWidth'), h: own('innerHeight'), t: window.__forceTouch, sr: window.__stickRight, bag: player.inv.map(s => (s ? { ...s } : null)), house: JSON.parse(JSON.stringify(player.house || {})), x: player.x, y: player.y };
+    const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; resize(); };
+    const putBack = () => {
+      if (keep.w) { Object.defineProperty(window, 'innerWidth', keep.w); Object.defineProperty(window, 'innerHeight', keep.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
+      resize(); window.__forceTouch = keep.t; window.__stickRight = keep.sr;
+    };
+    const out = () => { if (HOUSE.inside) HOUSE.leave(); if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave(); F.sim(1, []); };
+    const goIn = () => { out(); closePanel(); return HOUSE.enter(); };
+    const empty = () => { player.inv = player.inv.map(() => null); };
+    // a clear grass tile on the island with clear grass in front (north)
+    const standAt = (x, y) => {
+      if (SOLID.has(tileAt(x, y))) changeTile(x, y, T.GRASS);
+      if (tileAt(x, y - 1) !== T.GRASS) changeTile(x, y - 1, T.GRASS);
+      F.tp(x, y); F.face(x, y - 1); player.action = null;
+      drops = drops.filter(d => !circleHitsTile(d.x, d.y, 8, x, y - 1));
+      return [x, y - 1];
+    };
+    h.peace(true);
+    try {
+      // --- A. BUILD and LEAVE are both on screen on the island: iPad, phone and laptop ---
+      { const seen = {};
+        for (const [w, hh, t] of [[768, 1024, true], [390, 844, true], [1280, 800, false]]) {
+          const where = `${w}x${hh} ${t ? 'touch' : 'mouse'}`;
+          setSize(w, hh); window.__forceTouch = t;
+          const went = goIn(); closePanel(); dialog.cur = null; dialog.queue.length = 0; render();
+          const ctx = HK.face('ctx'), blk = HK.face('block'), plaques = (HK.FRAME.plaqueIds || []).slice();
+          const onePlaque = !plaques.includes('dungeon') && (plaques.includes('island') || HK.FRAME.overflow > 0);
+          const b = buttons.find(q => q.label === 'BUILD'), l = buttons.find(q => q.label === 'LEAVE');
+          const big = q => !!q && (q.r ? q.r * 2 : Math.min(q.w, q.h)) >= (t ? 44 : 32) - 0.5;
+          // BUILD opens the build panel, the way a tap does
+          const pressedB = !!b && F.clickButton('BUILD'); F.sim(1, []);
+          const opened = panel === 'house_build';
+          closePanel(); render();
+          // LEAVE takes him home to the step by the portal, the island packed away
+          const pressedL = F.clickButton('LEAVE'); F.sim(1, []);
+          const home = !HOUSE.inside && !(window.INSTANCES && INSTANCES.active()) && Math.floor(player.x / TILE) === HOUSE.STEP.x && Math.floor(player.y / TILE) === HOUSE.STEP.y;
+          seen[where] = { went, plaques, onePlaque, ctx: ctx && ctx.id, block: blk && blk.id, buildBig: big(b), leaveBig: big(l), pressedB, opened, pressedL, home };
+        }
+        putBack();
+        const ok = Object.values(seen).every(s => s.went && s.onePlaque && s.ctx === 'build' && s.block === 'island_leave' && s.buildBig && s.leaveBig && s.pressedB && s.opened && s.pressedL && s.home);
+        check(P + 'on the island BUILD is the context seat and LEAVE the block seat, both on screen at 44 px or more on the iPad and the phone (and on the laptop\'s belt); BUILD opens the build panel and LEAVE takes him home to the portal step; the island shows its own plaque, not a "0 left" dungeon one',
+          ok, seen); }
+
+      // --- B. walls and doors are refused in the shared world, with a plain line; Q puts the bed down instead ---
+      { out(); empty();
+        const o = h.openSpot(58, 30); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 };
+        const f = frontTile(player, 40), was = tileAt(f.tx, f.ty);
+        drops = drops.filter(d => !circleHitsTile(d.x, d.y, 8, f.tx, f.ty));
+        const said = {};
+        for (const id of ['plank', 'door']) {
+          empty(); h.give(id, 2); notice = null;
+          placeAction(id);
+          said[id] = { kept: countItem(id) === 2, ground: tileAt(f.tx, f.ty) === was, line: notice && notice.text };
+          if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
+        }
+        // Q with planks first in the pack: refused with the line, and nothing else goes down in their place (a bed
+        // put down in the world cannot be picked back up; a lodestone would move his home)
+        const qWith = {};
+        for (const other of ['bed', 'workbench', 'lodestone']) {
+          empty(); h.give('plank', 3); h.give(other, 1); notice = null;
+          const home0 = player.home ? { x: player.home.x, y: player.home.y } : null;
+          F.press('KeyQ'); F.sim(1, []);
+          const home1 = player.home ? { x: player.home.x, y: player.home.y } : null;
+          qWith[other] = { ground: tileAt(f.tx, f.ty) === was, kept: countItem(other) === 1 && countItem('plank') === 3, line: notice && notice.text, home: JSON.stringify(home0) === JSON.stringify(home1) };
+          if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
+          if (home0) player.home = home0;
+        }
+        const bedKept = Object.values(qWith).every(q => q.ground && q.kept && q.line === NOT_HERE && q.home);
+        // Q with only planks: refused with the line
+        empty(); h.give('plank', 3); notice = null;
+        F.press('KeyQ'); F.sim(1, []);
+        const qRefused = tileAt(f.tx, f.ty) === was && countItem('plank') === 3 && !!notice && notice.text === NOT_HERE;
+        if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
+        // and a workbench still goes down in the world, as it always has
+        empty(); h.give('workbench', 1); placeAction('workbench');
+        const benchDown = tileAt(f.tx, f.ty) === T.WORKBENCH && countItem('workbench') === 0;
+        if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
+        const refused = ['plank', 'door'].every(id => said[id].kept && said[id].ground && said[id].line === NOT_HERE);
+        check(P + 'in the shared world a plank or a door stays in the pack and the ground stays as it was, with "' + NOT_HERE + '"; Q there with planks and a bed, a workbench or the lodestone is refused with the same line, puts nothing down, keeps the pack and leaves home where it was; a workbench named still goes down',
+          refused && bedKept && qRefused && benchDown, { said, qWith, qRefused, benchDown, ground: tileName(was) }); }
+
+      // --- C. in a dungeon too: a dungeon is not his island ---
+      { out(); empty();
+        const went = !!(window.INSTANCES && INSTANCES.enter('spider_den'));
+        let refused = false, info = {};
+        if (went) {
+          // any open cave floor with open floor north of it
+          let spot = null;
+          for (let y = 2; y < 29 && !spot; y++) for (let x = 2; x < 39 && !spot; x++) if (tileAt(x, y) === T.CAVE && tileAt(x, y - 1) === T.CAVE && !SOLID.has(tileAt(x, y))) spot = [x, y];
+          if (spot) {
+            for (const m of monsters) m.x = -9999;
+            F.tp(spot[0], spot[1]); F.face(spot[0], spot[1] - 1);
+            drops = drops.filter(d => !circleHitsTile(d.x, d.y, 8, spot[0], spot[1] - 1));
+            h.give('plank', 1); notice = null; placeAction('plank');
+            refused = tileAt(spot[0], spot[1] - 1) === T.CAVE && countItem('plank') === 1 && !!notice && notice.text === NOT_HERE;
+            info = { spot, tile: tileName(tileAt(spot[0], spot[1] - 1)), line: notice && notice.text };
+          }
+        }
+        out();
+        check(P + 'a plank is refused in a dungeon too (the Spider Den): the cave floor stays bare', went && refused, { went, ...info }); }
+
+      // --- D. on the island: walls and doors go on its grass, never out over the sky ---
+      { const went = goIn(); empty();
+        const [px, py] = standAt(HOUSE.ENTRY[0] - 4, HOUSE.ENTRY[1] - 4);
+        h.give('plank', 2); h.give('door', 1);
+        placeAction('plank');
+        const plank = tileAt(px, py) === T.PLANK && countItem('plank') === 1;
+        const [dx, dy] = standAt(HOUSE.ENTRY[0] + 4, HOUSE.ENTRY[1] - 4);
+        placeAction('door');
+        const door = tileAt(dx, dy) === T.DOOR && countItem('door') === 0;
+        // the edge of the land: the westmost grass on the middle row, facing west into the sky
+        const row = Math.floor(HOUSE.H / 2); let ex = -1;
+        for (let x = 0; x < HOUSE.W && ex < 0; x++) if (HOUSE.base(HOUSE.hidx(x, row)) !== HOUSE.tiles.sky) ex = x;
+        if (SOLID.has(tileAt(ex, row))) changeTile(ex, row, T.GRASS);
+        F.tp(ex, row); F.face(ex - 1, row); player.action = null; notice = null;
+        const sky0 = tileAt(ex - 1, row);
+        placeAction('plank');
+        const skyKept = sky0 === HOUSE.tiles.sky && tileAt(ex - 1, row) === HOUSE.tiles.sky && countItem('plank') === 1 && !!notice && notice.text === NOT_SKY;
+        // Q with planks and a bed, faced out over the sky: the sky line, and the bed stays in the pack
+        empty(); h.give('plank', 2); h.give('bed', 1); notice = null;
+        F.press('KeyQ'); F.sim(1, []);
+        const qSky = { tile: tileName(tileAt(ex - 1, row)), bed: countItem('bed'), planks: countItem('plank'), line: notice && notice.text };
+        const skyQ = tileAt(ex - 1, row) === HOUSE.tiles.sky && qSky.bed === 1 && qSky.planks === 2 && qSky.line === NOT_SKY;
+        const rule = !ISLAND.islandLand(ex - 1, row) && ISLAND.islandLand(ex, row) && !ISLAND.islandLand(HOUSE.W, row) && ISLAND.isWall('plank') && ISLAND.isWall('door') && !ISLAND.isWall('bed') && !ISLAND.isWall('lodestone') && !ISLAND.isWall('workbench') && !ISLAND.isWall('goblin_trap');
+        out();
+        check(P + 'on his island a plank and a door go up on the grass, and a plank faced out over the sky stays in the pack with "' + NOT_SKY + '" (Q with planks and a bed there too: nothing goes over the sky, the bed stays packed)',
+          went && plank && door && skyKept && skyQ && rule, { went, plank, door, skyKept, skyQ, qSky, rule, edge: [ex, row], line: notice && notice.text }); }
+
+      // --- E. arriving while the Voice talks and the "YOUR ISLAND" banner is up: BUILD waits for the talk to end, then
+      //        opens the build panel with nothing drawn over it (no talk page, no banner, no arrival line) ---
+      { setSize(768, 1024); window.__forceTouch = true;
+        const went = goIn(); closePanel();
+        if (!dialog.cur && !dialog.queue.length) say('Grass, sky, and nobody else.', 'The Voice');
+        notify('Your island. Tap BUILD to put something up. USE on the arch to go home.');
+        F.sim(1, []); render();
+        const talking = !!dialog.cur, banner0 = !!areaBanner;
+        const face = HK.face('ctx'), dim = !!face && face.id === 'build' && !!face.disabled;
+        const tapped0 = F.clickButton('BUILD'); F.sim(1, []);
+        const tapHeld = panel !== 'house_build';
+        F.press('KeyP'); F.sim(1, []);
+        const heldOff = tapHeld && panel !== 'house_build';
+        // the talk ends: the tap made during it does not open the panel later on its own
+        dialog.cur = null; dialog.queue.length = 0; F.sim(2, []); render();
+        const noLate = panel !== 'house_build';
+        const banner1 = !!areaBanner, line1 = !!notice;
+        const tapped1 = F.clickButton('BUILD'); F.sim(1, []); render();
+        const opened = panel === 'house_build', clear = !dialog.cur && !dialogRect && areaBanner === null && notice === null;
+        closePanel(); out(); putBack();
+        check(P + 'arriving while the Voice talks with the area banner up: BUILD is dimmed and neither its tap nor P opens the panel under the talk page (nor later on its own); after the talk BUILD opens the build panel with no talk page, no banner and no arrival line over it',
+          went && talking && banner0 && dim && tapped0 && heldOff && noLate && banner1 && line1 && tapped1 && opened && clear, { went, talking, banner0, dim, tapped0, heldOff, noLate, banner1, line1, tapped1, opened, clear }); }
+
+      // --- F. the island plaque on a landscape phone: "YOUR ISLAND" and the arch count never run together ---
+      { const seen = {}; let shown = 0;
+        for (const [w, hh] of [[844, 390], [667, 375], [932, 430], [768, 1024], [1280, 800]]) for (const right of [false, true]) {
+          const t = w !== 1280, where = `${w}x${hh}${t ? ' touch' : ''} stick-${right ? 'right' : 'left'}`;
+          setSize(w, hh); window.__forceTouch = t; window.__stickRight = right;
+          goIn(); closePanel(); dialog.cur = null; dialog.queue.length = 0; areaBanner = null; notice = null;
+          drawHud(HK.audit.fitCtx());
+          const pt = (HK.FRAME.plaqueText || {}).island, folded = !pt && HK.FRAME.overflow > 0;
+          const ok = folded || (!!pt && (pt.rightStart == null || pt.nameEnd <= pt.rightStart - 4) && pt.size >= 11 && pt.subFits && /of \d+ arches/.test((pt.right || '') + ' ' + (pt.sub || '')));
+          if (pt) shown++;
+          seen[where] = pt ? { ok, nameEnd: Math.round(pt.nameEnd), rightStart: pt.rightStart == null ? null : Math.round(pt.rightStart), right: pt.right, sub: pt.sub, size: pt.size } : { ok, folded };
+          out();
+        }
+        putBack();
+        check(P + 'the island plaque never runs "YOUR ISLAND" into its arch count: on a landscape phone (844x390, 667x375, 932x430) the count moves to the line under the name, the name stays 11 px or more and every word fits; the iPad and the laptop keep it on the right',
+          shown >= 6 && seen['844x390 touch stick-left'].ok && /arches/.test(seen['844x390 touch stick-left'].sub || '') && /arches/.test(seen['768x1024 touch stick-left'].right || '') && /arches/.test(seen['1280x800 stick-left'].right || '') && Object.values(seen).every(q => q.ok), seen); }
+    } finally {
+      putBack(); out(); closePanel();
+      player.inv = keep.bag; player.house = keep.house; player.x = keep.x; player.y = keep.y;
+      h.peace(false);
     }
   });
 }
@@ -40229,6 +40519,121 @@ window.RETALIATE = RETALIATE;
       player.inv = inv0; player.bank = bank0; player.trades = trades0; player.mech = mech0; window.__forceTouch = t0;
       dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); closePanel(); tapCancel('manual'); h.peace(false); notice = null; render();
     }
+  });
+}
+
+// ---- src/79-worldkeeper.js ----
+// ============================================================================
+// THE WORLD KEEPER — the stand-in knight of a server game copy (docs/ONLINE.md, "The shared world")
+// Owner-approved plan: the world server runs the monsters in its own copy of this game, so every knight on a map sees
+// the same world. In a browser this file does nothing at all: there is no window.__worldKeeper there.
+// In a copy (online/src/sim/host.js sets window.__worldKeeper = { map, worldGen, send, reseed } before the game loads):
+//   - save() does nothing (a copy has no knight to save);
+//   - worldGen: false makes generateWorld() a blank map with no spawns (an instance copy that builds the same without
+//     the overworld; tools/sim-suite.mjs proves which ones);
+//   - WORLDKEEPER.start() starts a new game the way the title does, enters the instance for an instance map, and points
+//     NET at a virtual socket: NET.online() is true and NET.me is '@world:<map>', which the socket's welcome names the
+//     keeper, so 75-coop's keeper half runs here. What the copy sends goes to send(msg); deliver(msg) hands the copy a
+//     message as if the world sent it (a knight's p, left, hit, boss_call);
+//   - the stand-in knight is parked dead on the solid tile (0, 0) and its deadT is zeroed before every step(dt), so it
+//     never respawns (respawnPoint() and an instance's leaveInstance() never run) and every monster takes a real knight
+//     as its target through 75-coop (a dead player is never the nearest);
+//   - SERVER_OFF switches off the HOOKS entries (by file and hook name) that would act on the dead stand-in. A file
+//     leaves the list when it is ported. Each copy's HOOKS functions carry the file that registered them (fn.__file,
+//     tagged by tools/build-sim.mjs), which is how the list finds them.
+// Feature file: registers through HOOKS only, edits no core file. window.WORLDKEEPER is the register (copies only).
+// ============================================================================
+{
+  const WK = window.__worldKeeper;
+  // file -> the HOOKS lists of that file that stay off in a copy. The first list is the Stage 0 audit (tools/sim-audit.mjs,
+  // 30 minutes through the 21 overworld regions and 5 in each instance, every boss called): these hooks created, removed or
+  // hurt monsters on their own, outside the 75-coop path. Each leaves the list when its file is ported (the spec's stage):
+  // 20-hollowford the War Shed's Barrelbeast cleared away after it falls (8); 28-thefang the Fang's own rest (6d);
+  // 33-goblincity the Gnasher cleared away after it falls (8); 66-storm the Thunderbird's own hurts (8);
+  // 91-royalmine the golem's split, golemlings and the giants (8). No hook changed the parked stand-in.
+  const SERVER_OFF = {
+    '20-hollowford': ['update'],
+    '28-thefang': ['update'],
+    '33-goblincity': ['update'],
+    '66-storm': ['hit', 'update'],
+    '91-royalmine': ['update'],
+  };
+  const PARK = { tx: 0, ty: 0 };   // solid on the overworld (the cave's corner) and in every instance (its wall corner)
+
+  if (WK && typeof WK === 'object') {
+    const mapName = typeof WK.map === 'string' && WK.map ? WK.map : 'over';
+    const me = '@world:' + mapName;
+    const noSave = function () { };
+    noSave.__worldKeeperNoop = true;
+    save = noSave;
+    if (WK.worldGen === false) {
+      // a blank map with no spawns: the instance writes its own tiles and monsters when it is entered
+      generateWorld = function () { MONSTER_SPAWNS.length = 0; map.fill(T.WALL); variant.fill(0); };
+    }
+    let sock = null, started = false;
+    const off = [];
+    const send = m => { if (typeof WK.send === 'function') WK.send(m); };
+    const fake = {
+      call: async () => { throw new Error('no world calls from a server game copy'); },
+      open: () => {
+        sock = {
+          readyState: 1,
+          send(str) {
+            let m = null; try { m = JSON.parse(str); } catch (e) { return; }
+            if (!m || typeof m.t !== 'string') return;
+            // the virtual socket's own welcome: this copy is the keeper of its map
+            if (m.t === 'hello') { deliver({ t: 'welcome', me, at: Date.now(), keeper: me, role: 'player', map: mapName }); return; }
+            send(m);
+          },
+          close() { sock.readyState = 3; },
+        };
+        return sock;
+      },
+    };
+    function deliver(msg) {
+      if (!sock || !sock.onmessage) return false;
+      sock.onmessage({ data: typeof msg === 'string' ? msg : JSON.stringify(msg) });
+      return true;
+    }
+    function park() {
+      player.dead = true; player.deadT = 0; player.hp = 0;
+      player.x = tc(PARK.tx); player.y = tc(PARK.ty);
+      player.action = null; player.moving = false; player.mech = null;
+    }
+    function applyServerOff() {
+      for (const hook of Object.keys(HOOKS)) {
+        const list = HOOKS[hook]; if (!Array.isArray(list)) continue;
+        for (let i = list.length - 1; i >= 0; i--) {
+          const f = list[i], file = f && f.__file, rule = file && SERVER_OFF[file];
+          if (rule && (rule === '*' || rule.includes(hook))) { list.splice(i, 1); off.push({ file, hook }); }
+        }
+      }
+    }
+    function start() {
+      if (started) return WORLDKEEPER;
+      newGame();
+      try { title.active = false; } catch (e) { }
+      // the host's fresh dice from here on, so a copy's run never depends on how many it rolled while it was built
+      if (typeof WK.reseed === 'function') WK.reseed();
+      if (mapName !== 'over') {
+        if (!window.INSTANCES || !INSTANCES.enter(mapName)) throw new Error('the copy could not enter ' + mapName);
+      }
+      NET.enabled = true; NET.token = 'world'; NET.useFake(fake); NET.token = 'world';
+      if (!NET.connect() || !NET.online() || NET.me !== me) throw new Error('the virtual socket did not open');
+      if (WK.serverOff !== false) applyServerOff();   // only tools/sim-audit.mjs says false: it audits everything
+      park();
+      started = true;
+      return WORLDKEEPER;
+    }
+    // one substep of the game: the stand-in stays parked dead, then the game's own update (every wrapper included)
+    function step(dt) { park(); update(dt); }
+    window.WORLDKEEPER = { map: mapName, me, start, step, deliver, park, off, SERVER_OFF, PARK, get started() { return started; } };
+  }
+
+  HOOKS.selfTest.push(check => {
+    check('worldkeeper: in a browser the stand-in does nothing (no window.WORLDKEEPER, save() is the game\'s own, the wire is not the virtual socket)',
+      !window.__worldKeeper && !window.WORLDKEEPER && typeof save === 'function' && !save.__worldKeeperNoop && !(typeof NET !== 'undefined' && typeof NET.me === 'string' && NET.me.startsWith('@world:')),
+      { wk: !!window.WORLDKEEPER, me: typeof NET !== 'undefined' ? NET.me : null });
   });
 }
 
@@ -57146,6 +57551,105 @@ window.RETALIATE = RETALIATE;
     timeLine, spanWords, dialAngle, lineFor, tapName, useThing, heroName, TALK, BELLST, BARK, CAT, KIDS, kidAt, swanAt, smallFolk,
     CHUNKS, get chunkMax() { return chunkMax; }, drawHook, TOWERS, TORCHES, LAMP_TOP, TREE_R, GCODE, drawTownBuilding, rimFor, TOWN_GATE_CELLS,
   };
+}
+
+// ---- src/96-fixes.js ----
+// ============================================================================
+// SMALL FIXES, CHECKED — six bugs found while looking at the island, each fixed where it lives and proved here
+//   1. the obsidian blade had no str and no cd: playerMaxHit() was NaN and it hit for 0 (45-progression)
+//   2. the obsidian helm said slot 'head', which is not in EQUIP_SLOTS: it gave no defence (45-progression; a helm
+//      already worn in 'head' moves to 'helm')
+//   3. the wind shrine's map marker pointed at (58,3); the shrine stands at (62,6) (37-dragonkillers)
+//   4. the dead Godly anvil rows showed the anvil's old costs; the four rows are now Halcyon's own table (27, 36)
+//   5. the anvil's tabs knew only bronze, iron, steel, mithril and godly: blackiron, sunstone, stormstone and obsidian
+//      all fell into Other (13-ux, 10-hud)
+//   6. the playthrough audit timed blackiron, sunstone and stormstone at the 10 s default (42-playthrough)
+// Feature file: checks only (each fix sits in the file that owns the data).
+// ============================================================================
+{
+  const P = 'fixes: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    // --- 1. every weapon has numbers for str, att and cd; the obsidian blade hits harder than the stormstone sword ---
+    { const broken = Object.keys(ITEMS).filter(id => { const w = ITEMS[id].weapon; return w && !(Number.isFinite(w.str) && Number.isFinite(w.att) && Number.isFinite(w.cd) && w.cd > 0); });
+      const wep0 = player.equip.weapon;
+      const hitWith = id => { player.equip.weapon = id; return playerMaxHit(); };
+      const ob = hitWith('obsidian_blade'), st = hitWith('stormstone_sword');
+      player.equip.weapon = wep0;
+      check(P + 'every weapon has str, att and cd; with the obsidian blade playerMaxHit() is a real number, above the stormstone sword\'s',
+        broken.length === 0 && Number.isFinite(ob) && ob > 0 && ob >= st && ITEMS.obsidian_blade.weapon.str > ITEMS.stormstone_sword.weapon.str,
+        { broken, obsidian: ob, stormstone: st, blade: ITEMS.obsidian_blade.weapon }); }
+
+    // --- 2. every armour slot is a real slot; the obsidian helm gives its 26; one worn in 'head' moves to 'helm' ---
+    { const lost = Object.keys(ITEMS).filter(id => ITEMS[id].armour && !EQUIP_SLOTS.includes(ITEMS[id].armour.slot));
+      const eq0 = { ...player.equip }, bag0 = player.inv.map(s => (s ? { ...s } : null));
+      for (const k of Object.keys(player.equip)) player.equip[k] = null;
+      delete player.equip.head;
+      player.inv = player.inv.map(() => null); h.give('obsidian_helm', 1);
+      equipItem(player.inv.findIndex(s => s && s.id === 'obsidian_helm'));
+      const worn = player.equip.helm === 'obsidian_helm' && gearBonus('def') === 26;
+      // an old save: the helm sits in equip.head, where nothing reads it, and his helm slot is empty
+      player.equip.helm = null; player.equip.head = 'obsidian_helm'; F.sim(1, []);
+      const moved = player.equip.helm === 'obsidian_helm' && !('head' in player.equip) && gearBonus('def') === 26;
+      // and with a helm already on, it comes back to the pack instead
+      player.equip.helm = 'iron_helm'; player.equip.head = 'obsidian_helm'; F.sim(1, []);
+      const packed = player.equip.helm === 'iron_helm' && !('head' in player.equip) && countItem('obsidian_helm') === 1;
+      for (const k of Object.keys(player.equip)) delete player.equip[k];
+      Object.assign(player.equip, eq0); player.inv = bag0;
+      check(P + 'every armour piece names a slot the knight has; the obsidian helm goes on his head for 26 defence, and one an old save left in "head" moves to the helm slot (or back to the pack)',
+        lost.length === 0 && worn && moved && packed, { lost, worn, moved, packed }); }
+
+    // --- 3. the wind shrine's map marker is on the wind shrine ---
+    { const had = Object.prototype.hasOwnProperty.call(quest, 'sky'), sky0 = quest.sky;
+      const S = window.SKYCITY && SKYCITY.SHRINE_T;
+      const at = {};
+      for (const stage of [1, 2]) { quest.sky = Object.assign({}, sky0 || {}, { stage }); const t = MAP_TARGETS[14]; at[stage] = t && [t.x, t.y, t.label]; }
+      if (had) quest.sky = sky0; else delete quest.sky;
+      const on = !!S && [1, 2].every(st => at[st] && at[st][0] === S.x && at[st][1] === S.y) && tileAt(S.x, S.y) === SKYCITY.WIND_SHRINE;
+      check(P + 'the Song of Above\'s map marker (stages 1 and 2) stands on the wind shrine itself, at (62,6) on the Grey Quarry heights',
+        on && S.x === 62 && S.y === 6, { at, shrine: S && [S.x, S.y], tile: S && tileName(tileAt(S.x, S.y)) }); }
+
+    // --- 4. the four Godly rows are Halcyon's table: his costs, his level, his xp, and none on the anvil ---
+    { const rows = RECIPES.filter(r => /^godly_/.test(r.out)), F2 = window.SKYCITY ? SKYCITY.FORGE : [];
+      const wrong = [];
+      for (const f of F2) {
+        const r = rows.find(q => q.out === f.out);
+        const want = JSON.stringify([['dragon_scale', f.scales], ['mithril_bar', f.mithril], ['obsidian', 1]]);
+        if (!r) wrong.push(`${f.out} missing`);
+        else if (r.station !== 'skyforge' || JSON.stringify(r.needs) !== want || r.lv !== 30 || r.xp !== 500 || r.label !== f.label) wrong.push(`${f.out} ${r.station} ${JSON.stringify(r.needs)} lv ${r.lv} xp ${r.xp}`);
+      }
+      check(P + 'the four Godly rows in RECIPES say what Halcyon asks (8 / 12 / 10 / 8 scales, 2 / 4 / 3 / 2 mithril, an obsidian, Smithing 30, 500 xp), and none is on the anvil',
+        F2.length === 4 && rows.length === 4 && wrong.length === 0 && !rows.some(r => r.station === 'anvil'), { wrong, rows: rows.map(r => `${r.out} ${r.station} lv ${r.lv}`) }); }
+
+    // --- 5. the anvil has a tab for each metal, and each tab holds that metal's recipes ---
+    { const bag0 = player.inv.map(s => (s ? { ...s } : null)), tab0 = recipeTab;
+      if (!hasTool('hammer')) h.give('hammer', 1);
+      closePanel(); openPanel('station', 'anvil'); render();
+      const tiers = CRAFT_VIEW.tiers.slice(), seen = {};
+      const want = ['Blackiron', 'Sunstone', 'Stormstone', 'Obsidian'];
+      const tierOfLabel = l => { const r = RECIPES.find(q => q.station === 'anvil' && (l === q.label || l.startsWith(q.label + '  '))); return r ? recipeTier(r) : null; };
+      for (const tn of want) {
+        const clicked = F.clickButton(tn); render();
+        const rows = buttons.filter(b => b.x >= 0 && !b.offscreen && b.label.includes('→')).map(b => b.label.replace(/^disabled:/, ''));
+        seen[tn] = { clicked, on: recipeTab === tn, rows: rows.length, per: CRAFT_VIEW.perPage, all: rows.every(l => tierOfLabel(l) === tn), count: RECIPES.filter(r => r.station === 'anvil' && recipeTier(r) === tn).length };
+      }
+      const other = RECIPES.filter(r => r.station === 'anvil' && recipeTier(r) === 'Other').map(r => r.out);
+      closePanel(); recipeTab = tab0; player.inv = bag0;
+      const ok = want.every(tn => tiers.includes(tn) && seen[tn].clicked && seen[tn].on && seen[tn].rows === Math.min(seen[tn].per, seen[tn].count) && seen[tn].rows > 0 && seen[tn].all)
+        && !other.some(id => /^(blackiron|sunstone|stormstone|obsidian)_/.test(id));
+      check(P + 'the anvil has Blackiron, Sunstone, Stormstone and Obsidian tabs; each shows only its own metal, and none of them is left in Other',
+        ok, { tiers, seen, other }); }
+
+    // --- 6. the playthrough audit times the three new metals at the code's own rates, never the 10 s default ---
+    { const MS = window.PLAYTHROUGH && PLAYTHROUGH.MATERIAL_SECS, O = window.ORES;
+      const wrong = [];
+      if (MS && O) for (const t of O.TIERS) {
+        const ore = O.swingSecs, bar = ore + t.coal * MS.coal + 1.5;
+        if (MS[t.ore] !== ore) wrong.push(`${t.ore} ${MS[t.ore]} wanted ${ore}`);
+        if (MS[t.bar] !== bar) wrong.push(`${t.bar} ${MS[t.bar]} wanted ${bar}`);
+      }
+      check(P + 'the playthrough audit times blackiron, sunstone and stormstone bars at 9.5, 13.5 and 17.5 s (a 4 s lump, 1 / 2 / 3 coal at 4 s, a 1.5 s smelt), and each lump at 4 s',
+        !!MS && !!O && O.TIERS.length === 3 && wrong.length === 0 && MS.blackiron_bar === 9.5 && MS.sunstone_bar === 13.5 && MS.stormstone_bar === 17.5, { wrong }); }
+  });
 }
 
 // ---- src/99-boot.js ----

@@ -889,21 +889,32 @@ const HK = (() => {
       g.beginPath(); g.arc(rcx, rcy, rd / 2 - 1, 0, TAU); g.strokeStyle = o.edge || 'rgba(217,178,92,0.7)'; g.lineWidth = 2; g.stroke();
       tx = x + rd + 12;
     }
-    const right = o.right != null ? String(o.right) : '';
-    const rf = FC(800, 11), rw = right ? tw(g, right, rf) + 12 : 0;
+    let right = o.right != null ? String(o.right) : '', subText = o.sub;
+    const rf = FC(800, 11);
     const stars = o.stars ? o.stars.of * 16 + 6 : 0;
-    const lineTop = (o.sub || o.frac != null) ? y + 17 : y + h / 2 + 5;
-    let ns = 13; const name = String(o.name || '');
+    const name = String(o.name || '');
+    // foldRight: on a narrow plaque where the name would have to shrink below 11 px beside the right-hand words, those
+    // words move down to the sub line ("0 built, 2 of 6 arches"; just "2 of 6 arches" when both will not fit on one
+    // line), so the name and the count never run into each other
+    if (o.foldRight && right && subText && o.frac == null && tw(g, name, FC(800, 11)) > x + w - 14 - tx - (tw(g, right, rf) + 12) - stars) {
+      const both = `${subText}, ${right}`;
+      subText = tw(g, both, FS(600, 12)) <= x + w - 14 - tx ? both : right; right = '';
+    }
+    const rw = right ? tw(g, right, rf) + 12 : 0;
+    const lineTop = (subText || o.frac != null) ? y + 17 : y + h / 2 + 5;
+    let ns = 13;
     while (ns > 9 && tw(g, name, FC(800, ns)) > x + w - 14 - tx - rw - stars) ns -= 0.5;
     text(g, name, tx, lineTop, { font: FC(800, ns), color: o.nameColor || T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y: y, w: x + w - 14 - rw - stars - tx, h }, fitId: 'plaque:name' });
     if (o.stars) { let sx = tx + tw(g, name, FC(800, ns)) + 8; for (let i = 0; i < o.stars.of; i++) { starPath(g, sx + 7, y + 12, 7, 3); g.fillStyle = i < o.stars.n ? T.goldHi : 'rgba(0,0,0,0.5)'; g.fill(); g.strokeStyle = '#3a2708'; g.lineWidth = 1; g.stroke(); sx += 16; } }
     if (right) text(g, right, x + w - 14, y + 17, { font: rf, align: 'right', color: o.rightColor || T.inkDim, shadow: 'rgba(0,0,0,0.9)' });
+    // where the name ends and the right-hand words start, by plaque id, for checks
+    if (o.id) (FRAME.plaqueText = FRAME.plaqueText || {})[o.id] = { nameEnd: tx + tw(g, name, FC(800, ns)), rightStart: right ? x + w - 14 - (rw - 12) : null, right, sub: subText || null, subFits: !subText || tw(g, String(subText), FS(600, 12)) <= x + w - 14 - tx, size: ns };
     if (o.frac != null) {
       const col = o.bar ? (o.bar === 'good' ? T.good : o.bar === 'warn' ? T.warn : o.bar === 'bad' ? T.bad : o.bar) : ramp(o.frac);
       const st = RAMP_BAR[col] || ['#ff8266', col, '#6d1016'];
       meterBar(g, tx, y + h - 15, x + w - 14 - tx, 9, o.frac, st[1], { hi: st[0], lo: st[2] });
-    } else if (o.sub) {
-      const sf = FS(600, 12); let sub = String(o.sub);
+    } else if (subText) {
+      const sf = FS(600, 12); let sub = String(subText);
       const maxW = x + w - 14 - tx;
       if (tw(g, sub, sf) > maxW) { const ww = wrap(g, sub, maxW, 1, sf); sub = ww.lines[0] || ''; }
       text(g, sub, tx, y + h - 9, { font: sf, color: o.subColor || T.inkDim, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: maxW, h }, fitId: 'plaque:sub' });
@@ -1936,7 +1947,7 @@ const HK = (() => {
   // ---------- plaque slots: HK.slot() / HK.claim() keep the old cursor contract (HUD.leftY) but hand out plaque slots ----------
   const OFF = { x: -4000, y: -4000 };
   function beginPlaques(L, reserveFirst) {
-    FRAME.plaqueRects = L.plaques.slice(); FRAME.overflow = 0; FRAME.plaqueStart = reserveFirst ? 1 : 0; FRAME.plaqueIds = [];
+    FRAME.plaqueRects = L.plaques.slice(); FRAME.overflow = 0; FRAME.plaqueStart = reserveFirst ? 1 : 0; FRAME.plaqueIds = []; FRAME.plaqueText = {};
     HUD.leftCol = 0; HUD.leftY = L.plaques[FRAME.plaqueStart] ? L.plaques[FRAME.plaqueStart].y : L.plaques.length ? L.plaques[L.plaques.length - 1].y + 52 : L.crest.y + L.crest.h + 10;
   }
   function slotAt(h, peek) {
@@ -2982,10 +2993,17 @@ HOOKS.selfTest.push((check, F, h) => {
               else if ((want[1] && b.phase !== want[1]) || (b.sub || null) !== want[2] || (sc === 'wight' && !b.heart)) problems.push(`${where}: the banner says ${JSON.stringify([b.phase, b.sub, !!b.heart])}`);
             }
             if (sc === 'island') {
-              const ctxF = HK.FRAME.faces.ctx;
-              if (!ctxF || (ctxF.id !== 'build' && ctxF.id !== 'leave')) problems.push(`${where}: the ctx seat wears ${ctxF ? ctxF.id : 'nothing'} on the island`);
+              // BUILD on the ctx seat (the only way to build on touch) and LEAVE on the block seat (64-island): both on screen
+              const ctxF = HK.FRAME.faces.ctx, blkF = HK.FRAME.faces.block;
+              if (!ctxF || ctxF.id !== 'build') problems.push(`${where}: the ctx seat wears ${ctxF ? ctxF.id : 'nothing'} on the island, not build`);
+              if (!blkF || blkF.id !== 'island_leave') problems.push(`${where}: the block seat wears ${blkF ? blkF.id : 'nothing'} on the island, not leave`);
               // the island's plaque, or (one slot on an iPhone SE, and a landscape phone with the stick on the right) the +n badge it folds into
               if (!(HK.FRAME.plaqueIds || []).includes('island') && !(HK.FRAME.overflow > 0)) problems.push(`${where}: no island plaque (${(HK.FRAME.plaqueIds || []).join(', ')})`);
+              // its name and its arch count never run into each other (a landscape phone folds the count into the sub line)
+              const pt = (HK.FRAME.plaqueText || {}).island;
+              if (pt && pt.rightStart != null && pt.nameEnd > pt.rightStart - 4) problems.push(`${where}: the island plaque's name runs into "${pt.right}" (${Math.round(pt.nameEnd)} > ${Math.round(pt.rightStart)} - 4)`);
+              if (pt && pt.size < 11) problems.push(`${where}: the island plaque's name shrinks to ${pt.size} px`);
+              if (pt && !pt.subFits) problems.push(`${where}: the island plaque's line "${pt.sub}" is cut short`);
             }
             if (sc === 'dungeon' || sc === 'island' || /^bird/.test(sc)) leaveAny();
             if (sc === 'talk' && !buttons.some(b => b.label === 'dialog')) problems.push(`${where}: the talk page is not a tap`);

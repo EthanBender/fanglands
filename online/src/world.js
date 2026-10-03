@@ -30,6 +30,7 @@ import { makeHash, checkPassword, randomHex, sameString } from './auth.js';
 import { json, oops, failFrom, readJson, bearer } from './http.js';
 import { backupCall } from './backup.js';
 import { handoffCall } from './handoff.js';
+import { Meter, isAdminPath } from './meter.js';
 
 const SESSION_MS = 90 * 24 * 3600 * 1000;   // a token is good for 90 days
 const SAVE_MAX = 512 * 1024;                // bytes; a slot is well under 100 KB
@@ -48,6 +49,7 @@ export class World {
     const migrated = migrate(this.sql);
     if (migrated.added.length) console.log('accounts gained ' + migrated.added.join(', ') + ' (columns read with ' + migrated.via + ')');
     this.store = new SqlStore(this.sql);
+    this.meter = new Meter(this.sql, () => this.now());   // what the free plan counts, per UTC day (meter.js)
     this.chatWrites = 0;
     this.wraps = new WeakMap();
     this.room = new Room({
@@ -85,15 +87,17 @@ export class World {
     }
     return w;
   }
-  webSocketMessage(ws, msg) { if (typeof msg === 'string') this.room.message(this.wrap(ws), msg); }
-  webSocketClose(ws, code, reason) { this.room.leave(this.wrap(ws)); try { ws.close(1000, 'bye'); } catch (e) { } }
-  webSocketError(ws) { this.room.leave(this.wrap(ws)); }
-  alarm() { try { this.room.tick(); } catch (e) { console.error('tick', e); } }
+  webSocketMessage(ws, msg) { this.meter.ws(); if (typeof msg === 'string') this.room.message(this.wrap(ws), msg); }
+  webSocketClose(ws, code, reason) { this.room.leave(this.wrap(ws)); try { ws.close(1000, 'bye'); } catch (e) { } this.meter.flush(); }
+  webSocketError(ws) { this.room.leave(this.wrap(ws)); this.meter.flush(); }
+  // Cloudflare bills every alarm invocation as a Durable Object request, so the meter counts it as one
+  alarm() { this.meter.http(false); try { this.room.tick(); } catch (e) { console.error('tick', e); } this.meter.flush(); }
 
   // ---------- HTTP ----------
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname, method = req.method;
+    this.meter.http(isAdminPath(path));   // an /api/admin/* call is counted as the admin's too (meter.js)
     let res;
     try { res = await this.route(req, url, path, method); } catch (e) {
       if (!(e && e.status)) console.error(path, e);
@@ -341,6 +345,7 @@ export class World {
     const post = method === 'POST';
     { const r = await backupCall(this, req, url, call, method); if (r) return r; }
     if (call === 'accounts' && method === 'GET') return json(this.accountsView());
+    if (call === 'sim' && method === 'GET') return json({ meter: this.meter.view() });   // the shared world: only the meter so far
     if (call === 'online' && method === 'GET') return json(this.room.online());
     if (call === 'chat' && method === 'GET') {
       const limit = Math.max(1, Math.min(5000, parseInt(url.searchParams.get('limit'), 10) || 500));

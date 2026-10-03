@@ -1,0 +1,14 @@
+# LOCAL ONLY: the Stage 0 measurements under `wrangler dev --local` (tools/sim-bench/run.sh). Never deploy this:
+# it has no routes and no account on purpose. docs/ONLINE.md, "The shared world".
+name = "fanglands-sim-bench-local"
+main = "worker.mjs"
+compatibility_date = "2026-05-01"
+workers_dev = false
+
+[[durable_objects.bindings]]
+name = "BENCH"
+class_name = "Bench"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Bench"]

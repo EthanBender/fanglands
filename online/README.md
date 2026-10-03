@@ -18,6 +18,9 @@ online/
   src/filter.js       the word list and the name/chat filter
   src/auth.js         secret-word hashing (PBKDF2-SHA256, 100,000 rounds)
   src/http.js         JSON helpers shared by the Worker and the World
+  src/meter.js        the request meter: socket messages and World calls per UTC day (req_meter; the admin calls also in req_meter_admin), for the cost gates
+  src/sim/            the shared world (docs/ONLINE.md, "The shared world"), not imported by the Worker yet:
+                      window.js (a copy's window), host.js (SimHost), game.mjs (git-ignored, built by ../build.sh)
   public/admin.html   the parent's page (served at /admin)
   public/index.html   the built game, copied in by deploy.sh (git-ignored)
   test/               node --test online/test/  (unit tests + a local smoke test)
@@ -137,7 +140,9 @@ node --test online/test/            # filter, secret-word hashing, room routing 
 node --test online/test/smoke-local.mjs   # against wrangler dev on port 8790; skipped when nothing answers there
 ```
 
-`node --test online/test/` runs `room.test.mjs` (routing and caps), `admin.test.mjs` (roles on every message, the
+`node --test online/test/` runs `meter.test.mjs` (the request meter: batches, UTC days, the nap, the World's counts, the
+admin calls in their own column and `GET /api/admin/sim`), `admin-page.test.mjs` (the admin page's own calls: the meter on
+opening and Refresh only, nothing while the page is hidden), `sim-host.test.mjs` (SimHost's tick, loop and watchdog with a stub game), `room.test.mjs` (routing and caps), `admin.test.mjs` (roles on every message, the
 role check, mute, kick, ban, unban, the mod log, naps, spawning), `party.test.mjs` (the party-hat odds over a
 million seeded rolls, the party checks, first light wins, naps, expiry, prizes and claims), `store.test.mjs` (the
 migration on the live schema with node's built-in SQLite, twice, every old row byte for byte; SqlStore and
@@ -171,9 +176,10 @@ GET  /api/admin/saves?name=           the pin first (ver 'pin'), then the kept v
 POST /api/admin/rollback {name, ver}  ver a number, or 'pin' (copied forward; the pin stays)
 POST /api/admin/reset, GET/POST /api/admin/invite, GET /api/admin/chat   as before
 GET  /api/admin/export                every table but sessions: accounts, saves, chat, settings, mod_log,
-                                      save_pins, parties, crackers, logins (online/src/backup.js)
+                                      save_pins, parties, crackers, logins, trades, req_meter, req_meter_admin (online/src/backup.js)
 GET  /api/admin/bookmark              a point-in-time restore bookmark, also kept in settings
 POST /api/admin/restore {bookmark}    rewinds the whole world to that bookmark; everyone reconnects
+GET  /api/admin/sim                   the shared world: for now only the request meter, {meter: {today, days, freeLimit, waiting}} (each day: wsIn, http, admin, gameHttp, est, gameEst)
 ```
 
 An admin's own game uses `GET /api/save/pin`, `POST /api/save/pin` (`?replace=1`) and `POST /api/save/restore`

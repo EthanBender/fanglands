@@ -13,6 +13,11 @@ node --test online/test/
 [ -f tools/dom-keys.js ] && node tools/dom-keys.js index.html
 [ -f tools/mmo-sim-admin.js ] && node tools/mmo-sim-admin.js
 [ -f tools/mmo-sim-party.js ] && node tools/mmo-sim-party.js
+# the shared world (docs/ONLINE.md, "The shared world"): each gate runs once its stage has built it; a red one never deploys
+[ -f tools/sim-suite.mjs ] && node tools/sim-suite.mjs
+grep -q -- "'--sim'" tools/mmo-sim.js && node tools/mmo-sim.js --sim
+[ -f tools/mmo-sim-world.js ] && node tools/mmo-sim-world.js
+[ -f online/test/atlas-drift.mjs ] && node online/test/atlas-drift.mjs
 cp index.html online/public/index.html
 [ -f bridge.html ] && cp bridge.html online/public/bridge.html
 # extra arguments go to wrangler: ./online/deploy.sh --var HANDOVER:off (docs/ONLINE.md, "Two addresses")
