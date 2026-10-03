@@ -2026,6 +2026,11 @@ above; run 3 read "0 monsters" on the waking iPad as a failure when the laptop h
 compares the iPad with the laptop). Screenshots: `deepholm-{laptop,ipad}.png`, `fight-*.png`,
 `admin-world-{before,keeper,after}.png`, `unlocked-ipad.png`, `locked-laptop.png`.
 
+**Old code on the new store** (`~/.fanglands/work/phase1/sw-2/migrate-proof.{sh,txt}`, local `wrangler dev --persist-to` on
+one directory): this branch made `sim_log` and `realm_state` and wrote two `sim_log` rows and the new `sim` keys; master's
+`online/` then ran on it (status, `GET /api/admin/sim`, a `move` switch and the export all answered), and this branch again
+read back every key (master's `move: 'off'` kept beside `master`, `maps` and `held`) and both rows.
+
 **On the test world** (https://test.gorkscape.ca, 3 Oct 2026, deployed with `~/.fanglands/tools/deploy-test.sh` after the
 backup `~/.fanglands/backups/20261003-190639-pre-shared-2-test`, every gate green): the World loaded its game copy
 (`GET /api/admin/sim`: `world.loaded` true, cap 4), every place on `keeper`, master `on`, nothing held, `sim_log` empty; the
