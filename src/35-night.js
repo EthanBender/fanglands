@@ -59,7 +59,8 @@
   MONSTER_DEFS.grave_zombie_calm = { ...MONSTER_DEFS.grave_zombie, aggro: false, respawn: 120 };
   MONSTER_DEFS.vampire = { name: 'Vampire', level: 30, r: 13, hp: 110, att: 30, maxHit: 14, def: 22, speed: 190, aggro: true, sight: 7 * TILE, respawn: 120, human: true,
     drops: { always: [['coins', 30, 60], ['grave_dust', 1, 2]], rare: { chance: 10, table: [['vampire_fang', 1, 1, 1]] } } };
-  MONSTER_DEFS.count_ashvane = { name: 'Count Ashvane', level: 40, r: 14, hp: 300, att: 38, maxHit: 18, def: 30, speed: 120, aggro: true, sight: 8 * TILE, respawn: 600, human: true,
+  // r 18: the hit circle grown to fit the new, bigger look (78-monsterlook; was 14)
+  MONSTER_DEFS.count_ashvane = { name: 'Count Ashvane', level: 40, r: 18, hp: 300, att: 38, maxHit: 18, def: 30, speed: 120, aggro: true, sight: 8 * TILE, respawn: 600, human: true,
     drops: { always: [['vampire_fang', 1, 1], ['coins', 150, 250], ['grave_dust', 3, 5]] } };
   const VAMPIRES = new Set(['vampire', 'count_ashvane']);
 

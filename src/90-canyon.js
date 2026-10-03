@@ -199,7 +199,8 @@
   // ---------- monsters ----------
   MONSTER_DEFS.rimhawk = { name: 'Rimhawk', level: 34, r: 14, hp: 130, att: 34, maxHit: 14, def: 26, speed: 205, aggro: true, sight: 7 * TILE, respawn: 65,
     drops: { always: [['coins', 18, 44]], table: [['nothing', 0, 0, 10], ['raw_beef', 1, 2, 12], ['stone_arrow', 6, 14, 10], ['iron_arrow', 3, 8, 6], ['redsalt', 1, 1, 4]], rare: { chance: 45, table: [['redsalt', 3, 6, 3], ['steel_bar', 1, 1, 1]] } } };
-  MONSTER_DEFS.dustjaw = { name: 'Dustjaw', level: 42, r: 21, hp: 300, att: 40, maxHit: 20, def: 40, speed: 62, aggro: true, sight: 3.5 * TILE, respawn: 95,
+  // r 24: grown to fit the new look (78-monsterlook; was 21) and no further: at 25 or more two of the four could not stand on their canyon spawns
+  MONSTER_DEFS.dustjaw = { name: 'Dustjaw', level: 42, r: 24, hp: 300, att: 40, maxHit: 20, def: 40, speed: 62, aggro: true, sight: 3.5 * TILE, respawn: 95,
     drops: { always: [['coins', 40, 90], ['redsalt', 1, 3]], table: [['nothing', 0, 0, 8], ['coal', 2, 5, 12], ['stone', 3, 6, 10], ['iron_ore', 2, 4, 8]], rare: { chance: 30, table: [['redsalt', 5, 9, 3], ['steel_bar', 1, 2, 2]] } } };
 
   HOOKS.drawMonster.rimhawk = (g, e, hurt) => {

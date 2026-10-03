@@ -277,16 +277,19 @@ const MONSTER_DEFS = {
     drops: { always: [['coins', 3, 9]], table: [['nothing', 0, 0, 30], ['goblin_scrap', 1, 1, 18], ['bread', 1, 1, 8], ['potato_seed', 1, 3, 10], ['blast_powder', 1, 1, 5], ['ruined_helm', 1, 1, 3], ['ruined_body', 1, 1, 2], ['bronze_dagger', 1, 1, 4]], rare: { chance: 40, table: [['iron_dagger', 1, 1, 3], ['iron_helm', 1, 1, 1]] } } },
   sapper: { name: 'Goblin sapper', level: 7, r: 12, hp: 24, att: 8, maxHit: 5, def: 6, speed: 110, aggro: true, sight: 6 * TILE, respawn: 40, thrower: true,
     drops: { always: [['coins', 6, 14], ['blast_powder', 1, 2]], table: [['nothing', 0, 0, 20], ['goblin_scrap', 1, 2, 20], ['bomb', 1, 1, 6], ['iron_ore', 1, 2, 8]], rare: { chance: 30, table: [['iron_warhammer', 1, 1, 1]] } } },
-  brute: { name: 'Goblin brute', level: 9, r: 15, hp: 45, att: 10, maxHit: 8, def: 7, speed: 105, aggro: true, sight: 5 * TILE, respawn: 45,
+  // r 18: the hit circle grown to fit the new, bigger look (78-monsterlook; was 15)
+  brute: { name: 'Goblin brute', level: 9, r: 18, hp: 45, att: 10, maxHit: 8, def: 7, speed: 105, aggro: true, sight: 5 * TILE, respawn: 45,
     drops: { always: [['coins', 8, 20]], table: [['nothing', 0, 0, 24], ['goblin_scrap', 1, 3, 20], ['iron_ore', 1, 2, 12], ['ruined_body', 1, 1, 6], ['coal', 1, 1, 6]], rare: { chance: 25, table: [['iron_sword', 1, 1, 2], ['iron_body', 1, 1, 1]] } } },
-  walker: { name: 'Goblin walker', level: 18, r: 22, hp: 110, att: 18, maxHit: 11, def: 12, speed: 70, aggro: true, sight: 6 * TILE, respawn: 3600, mech: true,
+  // r 24: grown to fit the new look (78-monsterlook; was 22) and no further: at 25 or more it could not pass the camp's one-tile gaps
+  walker: { name: 'Goblin walker', level: 18, r: 24, hp: 110, att: 18, maxHit: 11, def: 12, speed: 70, aggro: true, sight: 6 * TILE, respawn: 3600, mech: true,
     drops: { always: [['goblin_scrap', 4, 8], ['iron_ore', 2, 4]], table: [['iron_bar', 1, 2, 10], ['blast_powder', 1, 3, 10], ['coal', 1, 2, 6]], rare: { chance: 6, table: [['iron_battleaxe', 1, 1, 1], ['iron_warhammer', 1, 1, 1]] } } },
   wolf: { name: 'Wolf', level: 6, r: 13, hp: 22, att: 7, maxHit: 5, def: 4, speed: 175, aggro: true, sight: 6 * TILE, respawn: 35,
     drops: { always: [['wolf_pelt', 1, 1]], table: [['nothing', 0, 0, 8], ['raw_beef', 1, 1, 4]] } },
   boar: { name: 'Boar', level: 4, r: 14, hp: 18, att: 5, maxHit: 4, def: 3, speed: 150, aggro: false, sight: 4 * TILE, respawn: 30,
     drops: { always: [['raw_beef', 1, 1]], table: [['nothing', 0, 0, 4], ['boar_tusk', 1, 1, 1]] } },
   sheep: { name: 'Sheep', level: 1, r: 12, hp: 8, att: 1, maxHit: 1, def: 1, speed: 70, aggro: false, sight: 3 * TILE, respawn: 40, drops: { always: [['wool', 1, 2]] } },
-  cow: { name: 'Cow', level: 2, r: 15, hp: 14, att: 2, maxHit: 2, def: 2, speed: 60, aggro: false, sight: 3 * TILE, respawn: 45, drops: { always: [['raw_beef', 1, 2]] } },
+  // r 17: the hit circle grown to fit the new, bigger look (78-monsterlook; was 15)
+  cow: { name: 'Cow', level: 2, r: 17, hp: 14, att: 2, maxHit: 2, def: 2, speed: 60, aggro: false, sight: 3 * TILE, respawn: 45, drops: { always: [['raw_beef', 1, 2]] } },
   guard_m: { name: 'Town guard', level: 12, r: 13, hp: 55, att: 14, maxHit: 8, def: 12, speed: 150, aggro: false, sight: 6 * TILE, respawn: 60, human: true,
     drops: { always: [['coins', 10, 22]], table: [['nothing', 0, 0, 10], ['bread', 1, 1, 5], ['iron_dagger', 1, 1, 1]], rare: { chance: 30, table: [['iron_helm', 1, 1, 1]] } } },
   guard_f: { name: 'Town guard', level: 12, r: 13, hp: 55, att: 14, maxHit: 8, def: 12, speed: 150, aggro: false, sight: 6 * TILE, respawn: 60, human: true, woman: true,
@@ -2223,6 +2226,10 @@ function refreshMini() {
   miniDirtyTiles.clear(); miniDirty = false; miniDiffCount = mapDiffs.size;
 }
 const miniNeedsPaint = () => miniDirty || miniDirtyTiles.size > 0;
+// Where a monster's name, health bar and stun stars sit (this far above its middle) and how far past the edge of the view
+// it is still drawn: its hit radius and 80 px, unless a look that knows its own size says otherwise (78-monsterlook).
+let monsterTop = m => m.r;
+let monsterPad = m => 80;
 function render() {
   if (window.innerWidth !== VW || window.innerHeight !== VH) resize();
   const g = ctx;
@@ -2280,9 +2287,9 @@ function render() {
   for (const b of BUILDINGS) if (b !== inside && (b.x + b.w) * TILE > cam.x && b.x * TILE < cam.x + VW && (b.y + b.h) * TILE > cam.y && b.y * TILE < cam.y + VH) items.push({ y: (b.y + b.h) * TILE - 1, draw: () => drawBuilding(g, b) });
   for (const n of NPCS) if (n.px > cam.x - 60 && n.px < cam.x + VW + 60 && n.py > cam.y - 60 && n.py < cam.y + VH + 60) items.push({ y: n.py + 13, draw: () => drawNpc(g, n) });
   for (const m of monsters) {
-    if (m.x < cam.x - 80 || m.x > cam.x + VW + 80 || m.y < cam.y - 80 || m.y > cam.y + VH + 80) continue;
+    const pad = monsterPad(m); if (m.x < cam.x - pad || m.x > cam.x + VW + pad || m.y < cam.y - pad || m.y > cam.y + VH + pad) continue;
     if (m.dead) { if (m.deadT < 0.8) items.push({ y: m.y, draw: () => { g.save(); g.globalAlpha = 1 - m.deadT / 0.8; g.translate(m.x, m.y); g.rotate(1.3); g.translate(-m.x, -m.y); drawCharacter(g, m, m.type); g.restore(); } }); continue; }
-    items.push({ y: m.y + m.r, draw: () => { drawCharacter(g, m, m.type); const def = MONSTER_DEFS[m.type]; if (m.hp < m.maxHp || dist(m.x, m.y, player.x, player.y) < 140) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(m.x - 14, m.y - m.r - 16, 28, 5); g.fillStyle = '#e63946'; g.fillRect(m.x - 14, m.y - m.r - 16, 28 * (m.hp / m.maxHp), 5); g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillStyle = def.level > combatLevel() + 3 ? '#ff6b6b' : '#e6edf3'; g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(`${def.name} · lv ${def.level}`, m.x, m.y - m.r - 20); g.fillText(`${def.name} · lv ${def.level}`, m.x, m.y - m.r - 20); } if (m.stunT > 0) { g.fillStyle = '#ffe066'; for (let k = 0; k < 3; k++) { const a = time * 6 + k * 2.1; g.beginPath(); g.arc(m.x + Math.cos(a) * 12, m.y - m.r - 6 + Math.sin(a) * 4, 2, 0, 7); g.fill(); } } } });
+    items.push({ y: m.y + m.r, draw: () => { drawCharacter(g, m, m.type); const top = monsterTop(m), def = MONSTER_DEFS[m.type]; if (m.hp < m.maxHp || dist(m.x, m.y, player.x, player.y) < 140) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(m.x - 14, m.y - top - 16, 28, 5); g.fillStyle = '#e63946'; g.fillRect(m.x - 14, m.y - top - 16, 28 * (m.hp / m.maxHp), 5); g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillStyle = def.level > combatLevel() + 3 ? '#ff6b6b' : '#e6edf3'; g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(`${def.name} · lv ${def.level}`, m.x, m.y - top - 20); g.fillText(`${def.name} · lv ${def.level}`, m.x, m.y - top - 20); } if (m.stunT > 0) { g.fillStyle = '#ffe066'; for (let k = 0; k < 3; k++) { const a = time * 6 + k * 2.1; g.beginPath(); g.arc(m.x + Math.cos(a) * 12, m.y - top - 6 + Math.sin(a) * 4, 2, 0, 7); g.fill(); } } } });
   }
   if (!player.dead) items.push({ y: player.y + player.r, draw: () => drawCharacter(g, player, player.mech ? 'playermech' : 'player') });
   else items.push({ y: player.y + player.r, draw: () => { g.save(); g.globalAlpha = Math.max(0.15, 1 - player.deadT / 1.5); g.translate(player.x, player.y); g.rotate(1.4); g.translate(-player.x, -player.y); drawCharacter(g, player, 'player'); g.restore(); } });
@@ -4761,7 +4768,8 @@ const MUSIC = (() => {
   // ---------- monsters ----------
   MONSTER_DEFS.giant_spider = { name: 'Giant spider', level: 8, r: 16, hp: 30, att: 9, maxHit: 5, def: 6, speed: 130, aggro: true, sight: 5 * TILE, respawn: 60,
     drops: { always: [['spider_silk', 1, 3]], table: [['coins', 5, 15, 3], ['bread', 1, 1, 1]] } };
-  MONSTER_DEFS.brood_mother = { name: 'Brood Mother', level: 15, r: 28, hp: 140, att: 16, maxHit: 9, def: 12, speed: 90, aggro: true, sight: 8 * TILE, respawn: 600,
+  // r 34: the hit circle grown to fit the new, bigger look (78-monsterlook; was 28)
+  MONSTER_DEFS.brood_mother = { name: 'Brood Mother', level: 15, r: 34, hp: 140, att: 16, maxHit: 9, def: 12, speed: 90, aggro: true, sight: 8 * TILE, respawn: 600,
     drops: { always: [['spider_silk', 10, 10], ['coins', 60, 120]] } };
 
   // a bigger, hairier cave spider with striped legs
@@ -5897,7 +5905,8 @@ HOOKS.selfTest.push((check, F, h) => {
 
   // ---------- the Barrelbeast ----------
   MONSTER_DEFS.barrelbeast = {
-    name: 'The Barrelbeast', level: 28, r: 30, hp: 400, att: 26, maxHit: 16, def: 24, speed: 55, aggro: true, sight: 7 * TILE, respawn: 600,
+    // r 36: the hit circle grown to fit the new, bigger look (78-monsterlook; was 30)
+    name: 'The Barrelbeast', level: 28, r: 36, hp: 400, att: 26, maxHit: 16, def: 24, speed: 55, aggro: true, sight: 7 * TILE, respawn: 600,
     drops: { always: [['goblin_scrap', 8, 12], ['iron_bar', 2, 4], ['steel_bar', 1, 2], ['coins', 80, 160]], rare: { chance: 3, table: [['steel_battleaxe', 1, 1, 1], ['steel_body', 1, 1, 1]] } },
   };
   // Cohen's fight: the beast cracks and gets STRONGER as it takes hits (enrage stacks), it carries a lightning rod,
@@ -7211,7 +7220,8 @@ const T_DOZER = addTile('DOZER', { solid: true, tex: 'dirt', mini: '#6b6b7a' });
 // NOTE: deliberately NOT `mech: true` — the core's killMonster would place a walker T.WRECK, speak the
 // walker's line and tick the walker quest flag. The bulldozer's wreck is placed in HOOKS.kill instead.
 MONSTER_DEFS.bulldozer = {
-  name: 'Goblin bulldozer', level: 14, r: 22, hp: 110, att: 15, maxHit: 10, def: 14, speed: 60, aggro: true, sight: 5 * TILE, respawn: 3600,
+  // r 24: grown to fit the new look (78-monsterlook; was 22) and no further: at 25 or more the camp one could not stand on its spawn
+  name: 'Goblin bulldozer', level: 14, r: 24, hp: 110, att: 15, maxHit: 10, def: 14, speed: 60, aggro: true, sight: 5 * TILE, respawn: 3600,
   drops: { always: [['goblin_scrap', 3, 6], ['iron_ore', 1, 3]], table: [['iron_bar', 1, 2, 10], ['blast_powder', 1, 2, 8], ['coal', 1, 2, 6]], rare: { chance: 8, table: [['iron_warhammer', 1, 1, 1]] } },
 };
 const DOZER_CHARGE_EVERY = 5, DOZER_CHARGE_TIME = 1, DOZER_CHARGE_SPEED = 220;
@@ -7502,7 +7512,7 @@ HOOKS.draw.unshift((g, items, cam) => {
 // ---------- self-test ----------
 HOOKS.selfTest.push((check, F, h) => {
   const dz = monsters.filter(m => m.type === 'bulldozer');
-  check('bulldozer: two spawn (camp + fields) with the right def', dz.length === 2 && dz.every(m => m.maxHp === 110 && m.r === 22 && m.speed === 60) && MONSTER_DEFS.bulldozer.level === 14 && MONSTER_DEFS.bulldozer.maxHit === 10 && MONSTER_DEFS.bulldozer.def === 14 && MONSTER_DEFS.bulldozer.sight === 5 * TILE && MONSTER_DEFS.bulldozer.respawn === 3600 && !MONSTER_DEFS.bulldozer.mech,
+  check('bulldozer: two spawn (camp + fields) with the right def', dz.length === 2 && dz.every(m => m.maxHp === 110 && m.r === 24 && m.speed === 60) && MONSTER_DEFS.bulldozer.level === 14 && MONSTER_DEFS.bulldozer.maxHit === 10 && MONSTER_DEFS.bulldozer.def === 14 && MONSTER_DEFS.bulldozer.sight === 5 * TILE && MONSTER_DEFS.bulldozer.respawn === 3600 && !MONSTER_DEFS.bulldozer.mech,
     { n: dz.length, homes: dz.map(m => [Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)]) });
   { let scrap = 0, ore = 0; for (let i = 0; i < 40; i++) { const b = drops.length; rollDrops(MONSTER_DEFS.bulldozer, -999, -999); const got = drops.slice(b); if (got.some(d => d.id === 'goblin_scrap' && d.qty >= 3 && d.qty <= 6)) scrap++; if (got.some(d => d.id === 'iron_ore')) ore++; } drops = drops.filter(d => d.x > 0); check('bulldozer: always drops 3-6 scrap + iron ore', scrap === 40 && ore === 40, { scrap, ore }); }
   // a flat grass lane (o.x-1 .. o.x+9, o.y-1 .. o.y+1) in the open fields south of the road, west of the animal pens
@@ -10444,7 +10454,8 @@ PEOPLE_UI.auditPrompt = function (p) {
   };
 
   // ---------- The Fang ----------
-  MONSTER_DEFS.the_fang = { name: 'The Fang', level: 80, r: 40, hp: 900, att: 80, maxHit: 32, def: 55, speed: 80, aggro: true, sight: 9 * TILE, respawn: 900, drops: {} };
+  // r 48: the hit circle grown to fit the new, bigger look (78-monsterlook; was 40)
+  MONSTER_DEFS.the_fang = { name: 'The Fang', level: 80, r: 48, hp: 900, att: 80, maxHit: 32, def: 55, speed: 80, aggro: true, sight: 9 * TILE, respawn: 900, drops: {} };
   // sprite: a serpentine body three times the knight's size — long tail, four clawed legs, two beating wings,
   // a crested, horned head with one enormous fang, wrapped in an aura that takes the colour of the element
   HOOKS.drawMonster.the_fang = (g, e, hurt) => {
@@ -11012,7 +11023,7 @@ PEOPLE_UI.auditPrompt = function (p) {
     // the boss and its def
     const m = fang(); const d = MONSTER_DEFS.the_fang;
     { if (m) { m.dead = false; m.hp = m.maxHp; m.element = 'fire'; m.elemT = 0; m.stunT = 0; m.state = 'idle'; F.sim(1, []); } // one tick: maxHit follows the element (48 during stone)
-      check('fang: The Fang exists in the lair: lv 80, r 40, 900 hp, att 80, max hit 32, def 55, speed 80, aggro, sight 9, respawn 900, sprite', !!m && d.level === 80 && d.r === 40 && d.hp === 900 && d.att === 80 && d.maxHit === 32 && d.def === 55 && d.speed === 80 && d.aggro && d.sight === 9 * TILE && d.respawn === 900 && Math.floor(m.home.x / TILE) === FANG_HOME.x && Math.floor(m.home.y / TILE) === FANG_HOME.y && typeof HOOKS.drawMonster.the_fang === 'function' && ITEMS.fang_of_the_fang.weapon.str === 40, { found: !!m, home: m && [m.home.x / TILE, m.home.y / TILE] }); }
+      check('fang: The Fang exists in the lair: lv 80, r 48, 900 hp, att 80, max hit 32, def 55, speed 80, aggro, sight 9, respawn 900, sprite', !!m && d.level === 80 && d.r === 48 && d.hp === 900 && d.att === 80 && d.maxHit === 32 && d.def === 55 && d.speed === 80 && d.aggro && d.sight === 9 * TILE && d.respawn === 900 && Math.floor(m.home.x / TILE) === FANG_HOME.x && Math.floor(m.home.y / TILE) === FANG_HOME.y && typeof HOOKS.drawMonster.the_fang === 'function' && ITEMS.fang_of_the_fang.weapon.str === 40, { found: !!m, home: m && [m.home.x / TILE, m.home.y / TILE] }); }
     if (!m) { player.skills.defence.xp = defXp0; h.peace(false); return; }
     // element rotation
     { m.element = 'fire'; m.elemT = 0; const seen = ['fire']; for (let k = 0; k < 4; k++) { m.elemT = 24.99; F.sim(1, []); seen.push(m.element); }
@@ -12814,7 +12825,8 @@ window.PLACE_KIT = PLACE_KIT;
   MONSTER_DEFS.yard_dozer = MONSTER_DEFS.bulldozer ? { ...MONSTER_DEFS.bulldozer, name: 'Yard dozer', aggro: false }
     : { name: 'Yard dozer', level: 14, r: 22, hp: 110, att: 15, maxHit: 10, def: 14, speed: 60, aggro: false, sight: 5 * TILE, respawn: 300, drops: { always: [['goblin_scrap', 3, 6], ['iron_ore', 1, 3]] } };
   // the Gnasher: not `mech` (the core would leave a walker wreck and speak the walker's line); arms and bombs are in HOOKS.update below
-  MONSTER_DEFS.gnasher = { name: 'The Gnasher', level: 22, r: 30, hp: 320, att: 22, maxHit: 14, def: 18, speed: 75, aggro: true, sight: 7 * TILE, respawn: 1e9,
+  // r 36: the hit circle grown to fit the new, bigger look (78-monsterlook; was 30)
+  MONSTER_DEFS.gnasher = { name: 'The Gnasher', level: 22, r: 36, hp: 320, att: 22, maxHit: 14, def: 18, speed: 75, aggro: true, sight: 7 * TILE, respawn: 1e9,
     drops: { always: [['iron_ore', 1, 2]], table: [['nothing', 0, 0, 6], ['goblin_scrap', 1, 3, 6], ['blast_powder', 1, 2, 4]] } };
   const GN_ARM_EVERY = 2, GN_ARM_REACH = 1.5 * TILE, GN_BOMB_EVERY = 5;
   // a rematch rests the lever this long on the knight's own day clock (player.dayTime, saved with him): a fair purse, not a
@@ -13418,7 +13430,7 @@ window.PLACE_KIT = PLACE_KIT;
       check("goblincity: E on the hut door enters Tinkerton's Lab (an instance, 24×18, stations, the lever, Tinkerton inside; the townsfolk are out of reach)", ok && (!HAS_INST || (window.__instance === INST_ID && player.region === "Tinkerton's Lab" && INSTANCES.list().includes(INST_ID) && tileAt(LEVER_T.x, LEVER_T.y) === GC_LEVER && tileAt(0, 0) === T.HWALL && tileAt(LAB_EXIT[0], LAB_EXIT[1]) === T.DUNGEON_EXIT)) && stations && grubbHidden && !!tk && tk.x === TINK_LAB.x && tk.y === TINK_LAB.y, { ok, inst: window.__instance, region: player.region, stations, grubbHidden, tk }); }
     // all four to Tinkerton: the Gnasher wakes
     { F.tp(TINK_LAB.x, TINK_LAB.y + 1); F.face(TINK_LAB.x, TINK_LAB.y); drain(); F.press('KeyE'); F.sim(3, []); const gn = liveGnasher(); const d = MONSTER_DEFS.gnasher;
-      check('goblincity: delivering all four parts spawns the Gnasher on the lab floor (lv 22, r 30, 320 hp, att 22, max hit 14, def 18, speed 75, aggro, not a walker)', TQ().stage === 2 && !!gn && gn.maxHp === 320 && gn.r === 30 && d.level === 22 && d.att === 22 && d.maxHit === 14 && d.def === 18 && d.speed === 75 && d.aggro && !d.mech && PART_IDS.every(id => countItem(id) === 0) && dist(gn.x, gn.y, tc(GN_HOME.x), tc(GN_HOME.y)) < 3 * TILE && !!levelBanner && levelBanner.text === 'THE GNASHER WAKES' && typeof HOOKS.drawMonster.gnasher === 'function', { stage: TQ().stage, gn: !!gn, hp: gn && gn.maxHp, banner: levelBanner && levelBanner.text }); }
+      check('goblincity: delivering all four parts spawns the Gnasher on the lab floor (lv 22, r 36, 320 hp, att 22, max hit 14, def 18, speed 75, aggro, not a walker)', TQ().stage === 2 && !!gn && gn.maxHp === 320 && gn.r === 36 && d.level === 22 && d.att === 22 && d.maxHit === 14 && d.def === 18 && d.speed === 75 && d.aggro && !d.mech && PART_IDS.every(id => countItem(id) === 0) && dist(gn.x, gn.y, tc(GN_HOME.x), tc(GN_HOME.y)) < 3 * TILE && !!levelBanner && levelBanner.text === 'THE GNASHER WAKES' && typeof HOOKS.drawMonster.gnasher === 'function', { stage: TQ().stage, gn: !!gn, hp: gn && gn.maxHp, banner: levelBanner && levelBanner.text }); }
     // arms and bombs: chase for a while at full hp
     { const gn = liveGnasher(); if (gn) { F.tp(GN_HOME.x - 3, GN_HOME.y); gn.x = player.x + 2 * TILE; gn.y = player.y; gn.home = { x: gn.x, y: gn.y }; gn.state = 'idle'; gn.stunT = 0; gn.armCd = 0.2; gn.bombCd = 0.5; gn.swings = 0; gn.bombs = 0; const hp0 = player.hp; player.hp = 5000; projectiles = [];
         h.peace(false); F.sim(200, []); const swings = gn.swings, bombs = gn.bombs, sticky = projectiles.some(p => p.kind === 'sticky' && p.owner === 'monster'); h.peace(true); projectiles = []; player.hp = Math.min(hp0, player.maxHp); player.hurtT = 0; gn.state = 'idle';
@@ -13800,7 +13812,8 @@ window.PLACE_KIT = PLACE_KIT;
   MONSTER_DEFS.grave_zombie_calm = { ...MONSTER_DEFS.grave_zombie, aggro: false, respawn: 120 };
   MONSTER_DEFS.vampire = { name: 'Vampire', level: 30, r: 13, hp: 110, att: 30, maxHit: 14, def: 22, speed: 190, aggro: true, sight: 7 * TILE, respawn: 120, human: true,
     drops: { always: [['coins', 30, 60], ['grave_dust', 1, 2]], rare: { chance: 10, table: [['vampire_fang', 1, 1, 1]] } } };
-  MONSTER_DEFS.count_ashvane = { name: 'Count Ashvane', level: 40, r: 14, hp: 300, att: 38, maxHit: 18, def: 30, speed: 120, aggro: true, sight: 8 * TILE, respawn: 600, human: true,
+  // r 18: the hit circle grown to fit the new, bigger look (78-monsterlook; was 14)
+  MONSTER_DEFS.count_ashvane = { name: 'Count Ashvane', level: 40, r: 18, hp: 300, att: 38, maxHit: 18, def: 30, speed: 120, aggro: true, sight: 8 * TILE, respawn: 600, human: true,
     drops: { always: [['vampire_fang', 1, 1], ['coins', 150, 250], ['grave_dust', 3, 5]] } };
   const VAMPIRES = new Set(['vampire', 'count_ashvane']);
 
@@ -19277,8 +19290,9 @@ window.SETTINGS = SETTINGS;
   // and dragon bone sell, grave dust every kill, and one kill in twenty-four hands over a vampire fang or
   // mithril bars. Only items that already exist, so nothing here is a trophy with no use.
   const has = id => id === 'nothing' || !!ITEMS[id];
+  // r 22: the hit circle grown to fit the new, bigger look (78-monsterlook; was 20)
   MONSTER_DEFS[WIGHT] = {
-    name: 'Cinderwight', level: 66, r: 20, hp: 520, att: 62, maxHit: 26, def: 46, speed: 108, aggro: true, sight: 8 * TILE, respawn: 240,
+    name: 'Cinderwight', level: 66, r: 22, hp: 520, att: 62, maxHit: 26, def: 46, speed: 108, aggro: true, sight: 8 * TILE, respawn: 240,
     drops: {
       always: [['coins', 150, 280], ['grave_dust', 1, 2]].filter(r => has(r[0])),
       table: [['obsidian', 1, 2, 10], ['dragon_bone', 1, 2, 8], ['coal', 2, 4, 7], ['dragon_scale', 1, 1, 5], ['nothing', 0, 0, 10]].filter(r => has(r[0])),
@@ -39603,8 +39617,9 @@ window.RETALIATE = RETALIATE;
 // MONSTER ART — every monster's new look, the owner-approved sample (2026-10-03, "all approved"), drawn in the style of
 // the approved knight (82-knightgear). This file is the sample's drawing code PORTED, NOT REDESIGNED: mobs-new.js (the
 // helpers and the first 14) and the four groups (people, undead, machines, bosses: the other 33), byte for byte inside
-// one closure, with only two mechanical changes: the review page's own clock (`let time = 0`) is gone so the drawings read
-// the game's `time`, and every comment that trailed code now sits on its own line. The review page is
+// one closure, with only three mechanical changes: the review page's own clock (`let time = 0`) is gone so the drawings
+// read the game's `time`; every comment that trailed code now sits on its own line; and a person whose weapon has left
+// his hand (e.unarmed: 79-deaths draws it flying off as he falls) is drawn without it. The review page is
 // https://claude.ai/artifact/MdLhCpWTGUDabEbHL3G5et; the sample lives in ~/.fanglands/work/mob-sample and this file is
 // regenerated from it by ~/.fanglands/work/monsterlook/gen/make-art.py.
 // The owner's binding calls are in the drawings: weapons upright with the hand at the waist, floating hands and no arms,
@@ -39714,7 +39729,7 @@ const MONSTER_ART = (() => {
     g.save(); shadow(g, 0, 11.4 * P.s, 9.5 * P.s, 3.8 * P.s);
     g.scale(mirror ? -P.s : P.s, P.s);
     if (P.sway) g.rotate(Math.sin(e.walkT * 0.5) * (e.moving ? 0.06 : 0.02));
-    const weapon = () => { g.save(); g.translate(W.hx, W.hy + bob); g.rotate(W.a); P.weapon(g, W.sw); g.restore(); };
+    const weapon = () => { if (e.unarmed) return; g.save(); g.translate(W.hx, W.hy + bob); g.rotate(W.a); P.weapon(g, W.sw); g.restore(); };
     const hand = () => { if (P.weapon) bipedHand(g, W.hx, W.hy + bob, P.hand); };
     const off = () => { if (P.off) { g.save(); g.translate(-10.6, 3 + bob - step * 1.2); P.off(g, back); g.restore(); } else if (!P.reach) bipedHand(g, -10.2, 3.6 + bob - step * 1.2, P.hand); };
     if (back) { off(); if (P.weapon) { weapon(); hand(); } if (P.reach) P.reach(g, e, bob, true); }
@@ -40280,7 +40295,7 @@ const MONSTER_ART = (() => {
     const C = { e, f, back, mirror, fx, fy, step, bob, W, sh };
     g.save(); shadow(g, 0, (P.ground || 12) * s, (P.shW || 9.8) * s, (P.shH || 3.9) * s);
     g.scale(mirror ? -s : s, s);
-    const weapon = () => { if (!P.weapon) return; g.save(); g.translate(W.hx, W.hy + bob); g.rotate(W.a); P.weapon(g, W, C); g.restore(); if (P.hand) bipedHand(g, W.hx, W.hy + bob, P.hand); };
+    const weapon = () => { if (!P.weapon) return; if (e.unarmed) { if (P.hand) bipedHand(g, W.hx, W.hy + bob, P.hand); return; } g.save(); g.translate(W.hx, W.hy + bob); g.rotate(W.a); P.weapon(g, W, C); g.restore(); if (P.hand) bipedHand(g, W.hx, W.hy + bob, P.hand); };
     const off = () => { g.save(); g.translate(-10.6, 3 + bob - step * 1.2); if (P.off) P.off(g, back, C); else bipedHand(g, 0.4, 0.6, P.offHand || P.hand); g.restore(); };
     const trail = () => { if (W.sw >= 0 && P.trail !== false) (P.trail || ((g, W, C) => swoosh(g, sh.x, sh.y + C.bob, W.ang, W.sw, P.swooshR || 27)))(g, W, C); };
     if (back) { off(); trail(); weapon(); }
@@ -53158,7 +53173,8 @@ window.KNIGHTGEAR = KNIGHTGEAR;
   // ---------- monsters ----------
   MONSTER_DEFS.rimhawk = { name: 'Rimhawk', level: 34, r: 14, hp: 130, att: 34, maxHit: 14, def: 26, speed: 205, aggro: true, sight: 7 * TILE, respawn: 65,
     drops: { always: [['coins', 18, 44]], table: [['nothing', 0, 0, 10], ['raw_beef', 1, 2, 12], ['stone_arrow', 6, 14, 10], ['iron_arrow', 3, 8, 6], ['redsalt', 1, 1, 4]], rare: { chance: 45, table: [['redsalt', 3, 6, 3], ['steel_bar', 1, 1, 1]] } } };
-  MONSTER_DEFS.dustjaw = { name: 'Dustjaw', level: 42, r: 21, hp: 300, att: 40, maxHit: 20, def: 40, speed: 62, aggro: true, sight: 3.5 * TILE, respawn: 95,
+  // r 24: grown to fit the new look (78-monsterlook; was 21) and no further: at 25 or more two of the four could not stand on their canyon spawns
+  MONSTER_DEFS.dustjaw = { name: 'Dustjaw', level: 42, r: 24, hp: 300, att: 40, maxHit: 20, def: 40, speed: 62, aggro: true, sight: 3.5 * TILE, respawn: 95,
     drops: { always: [['coins', 40, 90], ['redsalt', 1, 3]], table: [['nothing', 0, 0, 8], ['coal', 2, 5, 12], ['stone', 3, 6, 10], ['iron_ore', 2, 4, 8]], rare: { chance: 30, table: [['redsalt', 5, 9, 3], ['steel_bar', 1, 2, 2]] } } };
 
   HOOKS.drawMonster.rimhawk = (g, e, hurt) => {

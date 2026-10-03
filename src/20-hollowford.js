@@ -63,7 +63,8 @@
 
   // ---------- the Barrelbeast ----------
   MONSTER_DEFS.barrelbeast = {
-    name: 'The Barrelbeast', level: 28, r: 30, hp: 400, att: 26, maxHit: 16, def: 24, speed: 55, aggro: true, sight: 7 * TILE, respawn: 600,
+    // r 36: the hit circle grown to fit the new, bigger look (78-monsterlook; was 30)
+    name: 'The Barrelbeast', level: 28, r: 36, hp: 400, att: 26, maxHit: 16, def: 24, speed: 55, aggro: true, sight: 7 * TILE, respawn: 600,
     drops: { always: [['goblin_scrap', 8, 12], ['iron_bar', 2, 4], ['steel_bar', 1, 2], ['coins', 80, 160]], rare: { chance: 3, table: [['steel_battleaxe', 1, 1, 1], ['steel_body', 1, 1, 1]] } },
   };
   // Cohen's fight: the beast cracks and gets STRONGER as it takes hits (enrage stacks), it carries a lightning rod,

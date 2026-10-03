@@ -53,8 +53,9 @@
   // and dragon bone sell, grave dust every kill, and one kill in twenty-four hands over a vampire fang or
   // mithril bars. Only items that already exist, so nothing here is a trophy with no use.
   const has = id => id === 'nothing' || !!ITEMS[id];
+  // r 22: the hit circle grown to fit the new, bigger look (78-monsterlook; was 20)
   MONSTER_DEFS[WIGHT] = {
-    name: 'Cinderwight', level: 66, r: 20, hp: 520, att: 62, maxHit: 26, def: 46, speed: 108, aggro: true, sight: 8 * TILE, respawn: 240,
+    name: 'Cinderwight', level: 66, r: 22, hp: 520, att: 62, maxHit: 26, def: 46, speed: 108, aggro: true, sight: 8 * TILE, respawn: 240,
     drops: {
       always: [['coins', 150, 280], ['grave_dust', 1, 2]].filter(r => has(r[0])),
       table: [['obsidian', 1, 2, 10], ['dragon_bone', 1, 2, 8], ['coal', 2, 4, 7], ['dragon_scale', 1, 1, 5], ['nothing', 0, 0, 10]].filter(r => has(r[0])),

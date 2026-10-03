@@ -2,8 +2,9 @@
 // MONSTER ART — every monster's new look, the owner-approved sample (2026-10-03, "all approved"), drawn in the style of
 // the approved knight (82-knightgear). This file is the sample's drawing code PORTED, NOT REDESIGNED: mobs-new.js (the
 // helpers and the first 14) and the four groups (people, undead, machines, bosses: the other 33), byte for byte inside
-// one closure, with only two mechanical changes: the review page's own clock (`let time = 0`) is gone so the drawings read
-// the game's `time`, and every comment that trailed code now sits on its own line. The review page is
+// one closure, with only three mechanical changes: the review page's own clock (`let time = 0`) is gone so the drawings
+// read the game's `time`; every comment that trailed code now sits on its own line; and a person whose weapon has left
+// his hand (e.unarmed: 79-deaths draws it flying off as he falls) is drawn without it. The review page is
 // https://claude.ai/artifact/MdLhCpWTGUDabEbHL3G5et; the sample lives in ~/.fanglands/work/mob-sample and this file is
 // regenerated from it by ~/.fanglands/work/monsterlook/gen/make-art.py.
 // The owner's binding calls are in the drawings: weapons upright with the hand at the waist, floating hands and no arms,
@@ -113,7 +114,7 @@ const MONSTER_ART = (() => {
     g.save(); shadow(g, 0, 11.4 * P.s, 9.5 * P.s, 3.8 * P.s);
     g.scale(mirror ? -P.s : P.s, P.s);
     if (P.sway) g.rotate(Math.sin(e.walkT * 0.5) * (e.moving ? 0.06 : 0.02));
-    const weapon = () => { g.save(); g.translate(W.hx, W.hy + bob); g.rotate(W.a); P.weapon(g, W.sw); g.restore(); };
+    const weapon = () => { if (e.unarmed) return; g.save(); g.translate(W.hx, W.hy + bob); g.rotate(W.a); P.weapon(g, W.sw); g.restore(); };
     const hand = () => { if (P.weapon) bipedHand(g, W.hx, W.hy + bob, P.hand); };
     const off = () => { if (P.off) { g.save(); g.translate(-10.6, 3 + bob - step * 1.2); P.off(g, back); g.restore(); } else if (!P.reach) bipedHand(g, -10.2, 3.6 + bob - step * 1.2, P.hand); };
     if (back) { off(); if (P.weapon) { weapon(); hand(); } if (P.reach) P.reach(g, e, bob, true); }
@@ -679,7 +680,7 @@ const MONSTER_ART = (() => {
     const C = { e, f, back, mirror, fx, fy, step, bob, W, sh };
     g.save(); shadow(g, 0, (P.ground || 12) * s, (P.shW || 9.8) * s, (P.shH || 3.9) * s);
     g.scale(mirror ? -s : s, s);
-    const weapon = () => { if (!P.weapon) return; g.save(); g.translate(W.hx, W.hy + bob); g.rotate(W.a); P.weapon(g, W, C); g.restore(); if (P.hand) bipedHand(g, W.hx, W.hy + bob, P.hand); };
+    const weapon = () => { if (!P.weapon) return; if (e.unarmed) { if (P.hand) bipedHand(g, W.hx, W.hy + bob, P.hand); return; } g.save(); g.translate(W.hx, W.hy + bob); g.rotate(W.a); P.weapon(g, W, C); g.restore(); if (P.hand) bipedHand(g, W.hx, W.hy + bob, P.hand); };
     const off = () => { g.save(); g.translate(-10.6, 3 + bob - step * 1.2); if (P.off) P.off(g, back, C); else bipedHand(g, 0.4, 0.6, P.offHand || P.hand); g.restore(); };
     const trail = () => { if (W.sw >= 0 && P.trail !== false) (P.trail || ((g, W, C) => swoosh(g, sh.x, sh.y + C.bob, W.ang, W.sw, P.swooshR || 27)))(g, W, C); };
     if (back) { off(); trail(); weapon(); }
