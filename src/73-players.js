@@ -73,13 +73,15 @@
       mv: !!player.moving, wt: +(player.walkT % 100).toFixed(1), hp: Math.ceil(player.hp), mhp: player.maxHp, lv: combatLevel(), look: lookOf(),
       mech: m ? { kind: m.kind || 'walker', hp: Math.ceil(m.hp), maxHp: m.maxHp } : null, dead: !!player.dead, def: playerDefRoll(), act: a ? a.type : null,
       // the shared world's movement check (docs/ONLINE.md, "The shared world", Stage 1): the jump counter and his own speed
-      j: JUMP.n, spd: Math.round(player.speed || 175),
+      j: JUMP.n, spd: speedNow(),
     };
   }
   // j: one more every time the knight's own position moves more than 3 x speed x dt in one frame (a teleport, a respawn, a
   // door into an instance, a ferry's landing, a shove), so the world never reads a jump as running too fast. Counted
   // offline too: it costs a subtraction, and the presence that goes out first after coming online carries the true count.
   const JUMP = { n: 0, x: null, y: null };
+  // his speed now: the mover's own, or a machine's FULL STEAM run while it lasts (55-riding: 430 px/s for 1.15 s)
+  const speedNow = () => Math.round(Math.max(player.speed || 175, window.RIDING && RIDING.special ? RIDING.SPEED : 0));
   HOOKS.update.push(dt => {
     const x = player.x, y = player.y;
     if (JUMP.x !== null && Math.hypot(x - JUMP.x, y - JUMP.y) > 3 * Math.max(player.speed || 0, 175) * Math.max(dt, 1 / 240) + 1) JUMP.n++;

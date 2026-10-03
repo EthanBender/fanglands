@@ -102,6 +102,11 @@
       fixedIds.every(t => t !== undefined && SOLID.has(t)) && !placed.length && !walkOver.length && !srcBad.length && !onNpc && edges && water === false && nFixed > 1000 && Object.keys(A.export().fixed).length >= ids.length,
       { placed, walkOver, srcAdds: srcAdds && srcAdds.length, srcBad, onNpc, edges, water, nFixed, inst: Object.keys(A.export().fixed) });
 
+    // SPEED_CAP against the movers' own tables (a new mover, or a faster one, must be added there or honest riders read as too fast)
+    {
+      const C = A.SPEED_CAP, own = { horse: window.MOUNTS && MOUNTS.SPEED, steam: window.RIDING && RIDING.SPEED, dozer: typeof DOZER_BOILER_SPEED !== 'undefined' ? DOZER_BOILER_SPEED : null };
+      check(P + 'SPEED_CAP matches the movers\' own tables (the mare, the bulldozer with its boiler, FULL STEAM) and its max is the fastest', C.foot === 175 && C.horse === own.horse && C.steam === own.steam && C.dozer === own.dozer && A.SPEED_MAX === Math.max(...Object.values(C)), { cap: C, own, max: A.SPEED_MAX });
+    }
     // the old page: a welcome with another Atlas shows the plaque, its tap reloads; the same Atlas (or none) shows nothing
     {
       const reloads = [], was = window.__atlasReload; window.__atlasReload = () => reloads.push(1);

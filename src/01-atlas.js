@@ -45,8 +45,9 @@
   // town walls, cliffs and crags. Never water or lava (hover armour, boats, the ferry), never anything a knight can chop,
   // mine, burn, build, open or climb. 96-atlas's self-tests hold that.
   const FIXED_TILES = ['WALL', 'CWALL', 'HWALL', 'TOWN_WALL', 'KING_WALL', 'KING_TOWER', 'CLIFF', 'REDCLIFF', 'AF_CRAG'];
-  // The fastest each mover goes, px/s (from the mounts' and machines' own tables); the movement check never allows more than max
-  const SPEED_CAP = { foot: 175, hover: 200, horse: 350, dozer: 250, walker: 115, beast: 100 };
+  // The fastest each mover goes, px/s (from the mounts' and machines' own tables; 96-atlas checks them against those tables);
+  // steam is a machine's FULL STEAM run (55-riding), 1.15 s at a time. The movement check never allows more than the max.
+  const SPEED_CAP = { foot: 175, hover: 200, horse: 350, dozer: 250, walker: 115, beast: 100, steam: 430 };
   const SPEED_MAX = Math.max(...Object.values(SPEED_CAP));
 
   // ---------- run-length codes (what atlas.json carries) ----------

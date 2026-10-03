@@ -61,7 +61,7 @@ test('FIXED_SOLID: walls and cliffs are, water and grass are not, the edge alway
   assert.equal(atlas.knows('nowhere'), false);
   assert.equal(isHouse('house:ben'), true);
   assert.equal(isHouse('housey'), false);
-  assert.equal(atlas.speedMax, 350);
+  assert.equal(atlas.speedMax, 430);   // a machine's FULL STEAM run
 });
 
 test('the Room\'s reading matches the game\'s own Atlas on every overworld tile and every instance tile', () => {

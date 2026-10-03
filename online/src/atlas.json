@@ -73,6 +73,6 @@
   "the_fang": {"map":"over","near":[18,117,4],"type":"the_fang","place":"fang_lair","file":"28-thefang"},
   "war_shed": {"map":"war_shed","near":null,"type":"barrelbeast","place":"war_shed","file":"20-hollowford"}
 },
-"speed": {"foot":175,"hover":200,"horse":350,"dozer":250,"walker":115,"beast":100,"max":350},
+"speed": {"foot":175,"hover":200,"horse":350,"dozer":250,"walker":115,"beast":100,"steam":430,"max":430},
 "realm": ["20-hollowford","28-thefang","33-goblincity","66-storm"]
 }

@@ -1314,7 +1314,7 @@ game, so it reads that file through `online/src/atlas.js`. The game's own copies
   { w, h, runs } }`, runs of 0 and 1 starting with a run of 0s; `spawns` is `MONSTER_SPAWNS` (the index is the `s<i>` nid)
   as `[type, tx, ty, camp]`; `doors` each instance's `{ door, step, entry, exit }`; `calls` each boss call's `{ map, near,
   type, place, file }`; `speed` is SPEED_CAP, the fastest each mover goes (px/s: `foot` 175, `hover` 200, `horse` 350,
-  `dozer` 250, `walker` 115, `beast` 100) and `max`; `realm` the files that hold a boss rest (Stage 2's `realm_state`).
+  `dozer` 250, `walker` 115, `beast` 100, `steam` 430: a machine's FULL STEAM run) and `max`; `realm` the files that hold a boss rest (Stage 2's `realm_state`).
 - **`hash()`** is a 64-bit hash, as 16 hex digits, of what the world judges by: `v`, MAP_W, MAP_H, TILE, every place's
   `id, kind, map, combat, pri, rects, pvp, safe` and the `grid` and `fixed` runs. Names and subs are not in it, so a
   reworded sign never makes anyone reload. The game works it out once per world build; `atlas.json` carries the same
@@ -1349,7 +1349,7 @@ game, so it reads that file through `online/src/atlas.js`. The game's own copies
 | field | meaning |
 |---|---|
 | `j` | a jump counter: `src/73-players.js` adds 1 whenever the knight's own position moves more than 3 x speed x dt in one frame (speed at least 175). A teleport, a respawn, a portal or a door into an instance, a ferry's landing, an admin's jump, a knockback shove: each is a jump |
-| `spd` | the knight's own speed now, px/s (`player.speed`: 175 on foot, the mount's or machine's otherwise) |
+| `spd` | the knight's own speed now, px/s (`player.speed`: 175 on foot, the mount's or machine's otherwise; 430 while a machine's FULL STEAM run lasts) |
 | `s` | this socket's presence count, 1, 2, 3, ... (what Stage 9's `fix` will answer to) |
 
 Old worlds relay them like any other field; the Room relays them too.
@@ -1377,7 +1377,7 @@ changes what is relayed.
 - **Through a wall** (`wall`): the new spot is in a FIXED_SOLID tile or off the map, or the straight line from the last spot
   crosses the middle of one (a FIXED_SOLID tile shrunk by 12 px on each side: a knight's 13 px body keeps his centre that
   far from any wall, and a step cut across a wall's corner cannot reach the middle unless it is over 70 px long; the fastest
-  honest step, the horse's, is 44 px).
+  honest step, a machine's FULL STEAM run, is 54 px).
 - **Kept** in two new tables (created only if missing; nothing else in the schema changes):
 
 ```

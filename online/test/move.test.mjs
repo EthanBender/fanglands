@@ -65,7 +65,7 @@ test('the speed window with mounts: the horse at 350 (spd 350) passes; the same 
   assert.ok(lie.c.speed >= 3 && lie.c.speed <= 5, 'about once a second for 4 s: ' + lie.c.speed);
   assert.equal(lie.r.book.view().recent[0].kind, 'speed');
   assert.match(lie.r.book.view().recent[0].detail, /px in .* s, \d+ allowed/);
-  const big = run(100000, 1000 / 8, 16);     // 1,000 px/s claiming any speed it likes: judged at the horse's 350 at most
+  const big = run(100000, 1000 / 8, 16);     // 1,000 px/s claiming any speed it likes: judged at FULL STEAM's 430 at most
   assert.ok(big.c.speed >= 1);
   // the dozer at 250 (spd 250) and hover armour at 200 (spd 200)
   assert.equal(run(250, 250 / 8, 32).c.speed, 0);
