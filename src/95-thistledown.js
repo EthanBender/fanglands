@@ -1260,11 +1260,12 @@
     const s = Math.min(HERO_S, HERO_HALF / Math.max(1, -x.l, x.r), (HERO_FEET - HERO_TOP) / Math.max(1, fb - x.t));
     return { s, y0: HERO_FEET - fb * s };
   }
+  // the statue's sprite: one per look (and, for the new knight, per what he wears)
+  const heroKey = look => 'plinth-hero:' + [look.helm, look.body, look.shield, look.weapon && look.weapon.shape, look.girl ? 'girl' : '', look.gear ? KG().SLOTS.map(k => look.gear[k] || '').join(',') : ''].join('|');
   function drawPlinth(g) {
     const cx = tc(PL.x), foot = (PL.y + 1) * TILE - 2;
     if (!statueDone()) { blit(g, sprite('plinth-empty', 48, 40, 24, 36, cg => paintPlinth(cg, '#8f8a80')), cx, foot); return; }
-    const look = heroLook(), gear = look.gear ? KG().SLOTS.map(k => look.gear[k] || '').join(',') : '';
-    const key = 'plinth-hero:' + [look.helm, look.body, look.shield, look.weapon && look.weapon.shape, look.girl ? 'girl' : '', gear].join('|');
+    const look = heroLook(), key = heroKey(look);
     const a = behindAlpha(cx - 22, foot - 86, cx + 22, foot, foot);
     if (a < 1) { g.save(); g.globalAlpha = a; }
     if (look.gear) {
@@ -2629,10 +2630,13 @@
         // in the sprite (96 x 96, anchored 48, 90): his top under its top, his sides inside it, his feet on the plinth
         r.fits = f.y0 + x.t * f.s >= -90 && Math.max(-x.l, x.r) * f.s <= 48 && Math.abs(f.y0 + fb * f.s - HERO_FEET) < 0.01 && f.s > 0.9 && f.s <= 1.32;
         // drawn: the new knight's drawing runs (in the stone palette) when the sprite is made, and not again while he
-        // wears the same; a change of helm makes a new one
+        // wears the same; a change of helm makes a new one (the two sprites are dropped first: an earlier run made them)
+        const other = heroLook(); other.gear.helm = 'iron_helm';
+        delete CACHE[heroKey(look)]; delete CACHE[heroKey(other)];
         const t0 = K.STATS.tinted, l0 = K.STATS.live; drawPlinth(ctx); r.made = [K.STATS.tinted - t0, K.STATS.live - l0];
         const l1 = K.STATS.live; drawPlinth(ctx); r.again = K.STATS.live - l1;
         player.equip.helm = 'iron_helm'; const l2 = K.STATS.live; drawPlinth(ctx); r.changed = K.STATS.live - l2;
+        r.keys = heroKey(look) !== heroKey(other);
         // all of him in stone: every colour he sets is grey stone (no channel more than 14 from another)
         cols.length = 0; drawHuman(rg, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, heroLook());
         const parsed = cols.map(rgb).filter(Boolean);
@@ -2640,7 +2644,7 @@
         r.colours = parsed.length;
       } finally { for (const k in player.equip) if (!(k in eq0)) delete player.equip[k]; Object.assign(player.equip, eq0); quest.stage = st0; }
       check(P + 'C14b the statue on the plinth is the knight as he is drawn everywhere (82-knightgear) in what he wears, all of him in stone: the Dragon slayer\'s kit with its upright spear fits the sprite with his feet on the plinth, the drawing runs once to make the sprite, again only when his gear changes',
-        r.look && r.fits && r.made[0] >= 1 && r.made[1] >= 1 && r.again === 0 && r.changed >= 1 && r.stone, r); }
+        r.look && r.fits && r.made[0] >= 1 && r.made[1] >= 1 && r.again === 0 && r.changed >= 1 && r.keys && r.stone, r); }
 
     // ---- C15. night ----
     { const N = window.NIGHT, d0 = player.dayTime;
