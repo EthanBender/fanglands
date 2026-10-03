@@ -29,7 +29,8 @@
   // ---------- A. the knight ----------
   // A warning stays up a little longer than an ordinary notice: it is the one a kid has to read.
   function say(text, color) {
-    if (window.CHAT && CHAT.system) CHAT.system(text, color);
+    // the chat strip cuts a long line, so each sentence is a line of its own (74-chat does the same for being muted)
+    if (window.CHAT && CHAT.system) for (const part of text.split(/(?<=\.) (?=[A-Z])/)) CHAT.system(part, color);
     notify(text); if (notice) notice.t = 6;
   }
   NET.on('strike', m => {
@@ -223,9 +224,9 @@
       // ---- A. the warnings, as the knight hears them ----
       { connect('player', 'Cohen'); if (window.CHAT) CHAT.log.length = 0; notice = null;
         feed({ t: 'strike', n: 1, text: WARN[1] }); const one = notice && notice.text === WARN[1] && notice.t >= 6;
-        const l1 = window.CHAT ? CHAT.log[CHAT.log.length - 1] : null; const red1 = !!l1 && l1.n === null && l1.text === WARN[1] && l1.color === RED;
-        feed({ t: 'strike', n: 2, text: 'anything' }); const two = notice.text === WARN[2] && CHAT.log[CHAT.log.length - 1].text === WARN[2];
-        check(P + 'a strike is said to the knight in plain words, in red in the chat log and as a notice that stays up: the first "' + WARN[1] + '", the second "' + WARN[2] + '"', one && red1 && two && WARN[1] === "That word isn't allowed here. This is your warning." && WARN[2] === "Last warning. Do it again and you'll be kept out for 24 hours.", { one, red1, two, notice, last: CHAT.log.slice(-2) }); }
+        const l1 = window.CHAT ? CHAT.log.slice(-2) : []; const red1 = l1.length === 2 && l1.every(l => l.n === null && l.color === RED) && l1.map(l => l.text).join(' ') === WARN[1] && l1[0].text === "That word isn't allowed here.";
+        feed({ t: 'strike', n: 2, text: 'anything' }); const two = notice.text === WARN[2] && CHAT.log.slice(-2).map(l => l.text).join(' ') === WARN[2];
+        check(P + 'a strike is said to the knight in plain words, in red in the chat log (a line a sentence, so the strip never cuts it) and as a notice that stays up: the first "' + WARN[1] + '", the second "' + WARN[2] + '"', one && red1 && two && WARN[1] === "That word isn't allowed here. This is your warning." && WARN[2] === "Last warning. Do it again and you'll be kept out for 24 hours.", { one, red1, two, notice, last: CHAT.log.slice(-2) }); }
 
       // ---- the lockout sentence: the real time it ends, in this device's clock ----
       { const Y = new Date().getFullYear(), t0 = new Date(Y, 9, 3, 19, 42).getTime(), dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
