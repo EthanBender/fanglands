@@ -11,8 +11,8 @@
 //
 // Placement (owner's decision, 3 Oct): walls, floors and doors (an item whose place is PLANK, DOOR, FLOOR or WALL) go
 // only on the island's own land: never in the shared world, never in a dungeon, never out over the sky. Beds,
-// workbenches, goblin traps and the lodestone keep the core's rules. Q with no item named skips the walls where they
-// cannot go, so Q still puts a bed down in the world when the pack holds planks and a bed.
+// workbenches, goblin traps and the lodestone keep the core's rules. When Q (no item named) would put down a wall where
+// one cannot go, he gets the plain line and nothing else goes down in the wall's place.
 //
 // Wraps placeAction by reassignment, explicit args (63-house and 54-graves wrap it before this file; this one runs first).
 // window.ISLAND exposes the rule for checks.
@@ -37,13 +37,11 @@
   placeAction = function (id) {
     if (player.dead || player.mech) return _placeAction(id);
     if (!id) {
-      // Q: the core would take the first of its list; a wall that cannot go here is passed over for the next thing
-      const has = ORDER.filter(k => ITEMS[k] && countItem(k) > 0);
-      if (has.length && isWall(has[0]) && wallRefusal()) {
-        const other = has.find(k => !isWall(k));
-        if (!other) { notify(wallRefusal()); return; }
-        id = other;
-      }
+      // Q: the core takes the first of its list. When that is a wall that cannot go here he is told so, and nothing
+      // else goes down in its place (a bed, a workbench or the lodestone cannot be picked back up in the world, and
+      // a lodestone would move his home)
+      const first = ORDER.find(k => ITEMS[k] && countItem(k) > 0);
+      if (isWall(first)) { const why = wallRefusal(); if (why) { notify(why); return; } }
       return _placeAction(id);
     }
     if (isWall(id)) { const why = wallRefusal(); if (why) { notify(why); return; } }
@@ -61,11 +59,11 @@
   HOOKS.selfTest.push((check, F, h) => {
     if (!window.HOUSE) { check(P + 'the island is there', false, {}); return; }
     const own = k => Object.getOwnPropertyDescriptor(window, k);
-    const keep = { w: own('innerWidth'), h: own('innerHeight'), t: window.__forceTouch, bag: player.inv.map(s => (s ? { ...s } : null)), house: JSON.parse(JSON.stringify(player.house || {})), x: player.x, y: player.y };
+    const keep = { w: own('innerWidth'), h: own('innerHeight'), t: window.__forceTouch, sr: window.__stickRight, bag: player.inv.map(s => (s ? { ...s } : null)), house: JSON.parse(JSON.stringify(player.house || {})), x: player.x, y: player.y };
     const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; resize(); };
     const putBack = () => {
       if (keep.w) { Object.defineProperty(window, 'innerWidth', keep.w); Object.defineProperty(window, 'innerHeight', keep.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
-      resize(); window.__forceTouch = keep.t;
+      resize(); window.__forceTouch = keep.t; window.__stickRight = keep.sr;
     };
     const out = () => { if (HOUSE.inside) HOUSE.leave(); if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave(); F.sim(1, []); };
     const goIn = () => { out(); closePanel(); return HOUSE.enter(); };
@@ -116,11 +114,19 @@
           said[id] = { kept: countItem(id) === 2, ground: tileAt(f.tx, f.ty) === was, line: notice && notice.text };
           if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
         }
-        // Q with planks first in the pack: in the world it passes them over and puts the bed down
-        empty(); h.give('plank', 3); h.give('bed', 1); notice = null;
-        F.press('KeyQ'); F.sim(1, []);
-        const bedDown = tileAt(f.tx, f.ty) === T.BED && countItem('bed') === 0 && countItem('plank') === 3;
-        if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
+        // Q with planks first in the pack: refused with the line, and nothing else goes down in their place (a bed
+        // put down in the world cannot be picked back up; a lodestone would move his home)
+        const qWith = {};
+        for (const other of ['bed', 'workbench', 'lodestone']) {
+          empty(); h.give('plank', 3); h.give(other, 1); notice = null;
+          const home0 = player.home ? { x: player.home.x, y: player.home.y } : null;
+          F.press('KeyQ'); F.sim(1, []);
+          const home1 = player.home ? { x: player.home.x, y: player.home.y } : null;
+          qWith[other] = { ground: tileAt(f.tx, f.ty) === was, kept: countItem(other) === 1 && countItem('plank') === 3, line: notice && notice.text, home: JSON.stringify(home0) === JSON.stringify(home1) };
+          if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
+          if (home0) player.home = home0;
+        }
+        const bedKept = Object.values(qWith).every(q => q.ground && q.kept && q.line === NOT_HERE && q.home);
         // Q with only planks: refused with the line
         empty(); h.give('plank', 3); notice = null;
         F.press('KeyQ'); F.sim(1, []);
@@ -131,8 +137,8 @@
         const benchDown = tileAt(f.tx, f.ty) === T.WORKBENCH && countItem('workbench') === 0;
         if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
         const refused = ['plank', 'door'].every(id => said[id].kept && said[id].ground && said[id].line === NOT_HERE);
-        check(P + 'in the shared world a plank or a door stays in the pack and the ground stays as it was, with "' + NOT_HERE + '"; Q there passes the planks over and puts the bed down; a workbench still goes down',
-          refused && bedDown && qRefused && benchDown, { said, bedDown, qRefused, benchDown, ground: tileName(was) }); }
+        check(P + 'in the shared world a plank or a door stays in the pack and the ground stays as it was, with "' + NOT_HERE + '"; Q there with planks and a bed, a workbench or the lodestone is refused with the same line, puts nothing down, keeps the pack and leaves home where it was; a workbench named still goes down',
+          refused && bedKept && qRefused && benchDown, { said, qWith, qRefused, benchDown, ground: tileName(was) }); }
 
       // --- C. in a dungeon too: a dungeon is not his island ---
       { out(); empty();
@@ -171,10 +177,55 @@
         const sky0 = tileAt(ex - 1, row);
         placeAction('plank');
         const skyKept = sky0 === HOUSE.tiles.sky && tileAt(ex - 1, row) === HOUSE.tiles.sky && countItem('plank') === 1 && !!notice && notice.text === NOT_SKY;
+        // Q with planks and a bed, faced out over the sky: the sky line, and the bed stays in the pack
+        empty(); h.give('plank', 2); h.give('bed', 1); notice = null;
+        F.press('KeyQ'); F.sim(1, []);
+        const qSky = { tile: tileName(tileAt(ex - 1, row)), bed: countItem('bed'), planks: countItem('plank'), line: notice && notice.text };
+        const skyQ = tileAt(ex - 1, row) === HOUSE.tiles.sky && qSky.bed === 1 && qSky.planks === 2 && qSky.line === NOT_SKY;
         const rule = !ISLAND.islandLand(ex - 1, row) && ISLAND.islandLand(ex, row) && !ISLAND.islandLand(HOUSE.W, row) && ISLAND.isWall('plank') && ISLAND.isWall('door') && !ISLAND.isWall('bed') && !ISLAND.isWall('lodestone') && !ISLAND.isWall('workbench') && !ISLAND.isWall('goblin_trap');
         out();
-        check(P + 'on his island a plank and a door go up on the grass, and a plank faced out over the sky stays in the pack with "' + NOT_SKY + '"',
-          went && plank && door && skyKept && rule, { went, plank, door, skyKept, rule, edge: [ex, row], line: notice && notice.text }); }
+        check(P + 'on his island a plank and a door go up on the grass, and a plank faced out over the sky stays in the pack with "' + NOT_SKY + '" (Q with planks and a bed there too: nothing goes over the sky, the bed stays packed)',
+          went && plank && door && skyKept && skyQ && rule, { went, plank, door, skyKept, skyQ, qSky, rule, edge: [ex, row], line: notice && notice.text }); }
+
+      // --- E. arriving while the Voice talks and the "YOUR ISLAND" banner is up: BUILD waits for the talk to end, then
+      //        opens the build panel with nothing drawn over it (no talk page, no banner, no arrival line) ---
+      { setSize(768, 1024); window.__forceTouch = true;
+        const went = goIn(); closePanel();
+        if (!dialog.cur && !dialog.queue.length) say('Grass, sky, and nobody else.', 'The Voice');
+        notify('Your island. Tap BUILD to put something up. USE on the arch to go home.');
+        F.sim(1, []); render();
+        const talking = !!dialog.cur, banner0 = !!areaBanner;
+        const face = HK.face('ctx'), dim = !!face && face.id === 'build' && !!face.disabled;
+        const tapped0 = F.clickButton('BUILD'); F.sim(1, []);
+        const tapHeld = panel !== 'house_build';
+        F.press('KeyP'); F.sim(1, []);
+        const heldOff = tapHeld && panel !== 'house_build';
+        // the talk ends: the tap made during it does not open the panel later on its own
+        dialog.cur = null; dialog.queue.length = 0; F.sim(2, []); render();
+        const noLate = panel !== 'house_build';
+        const banner1 = !!areaBanner, line1 = !!notice;
+        const tapped1 = F.clickButton('BUILD'); F.sim(1, []); render();
+        const opened = panel === 'house_build', clear = !dialog.cur && !dialogRect && areaBanner === null && notice === null;
+        closePanel(); out(); putBack();
+        check(P + 'arriving while the Voice talks with the area banner up: BUILD is dimmed and neither its tap nor P opens the panel under the talk page (nor later on its own); after the talk BUILD opens the build panel with no talk page, no banner and no arrival line over it',
+          went && talking && banner0 && dim && tapped0 && heldOff && noLate && banner1 && line1 && tapped1 && opened && clear, { went, talking, banner0, dim, tapped0, heldOff, noLate, banner1, line1, tapped1, opened, clear }); }
+
+      // --- F. the island plaque on a landscape phone: "YOUR ISLAND" and the arch count never run together ---
+      { const seen = {}; let shown = 0;
+        for (const [w, hh] of [[844, 390], [667, 375], [932, 430], [768, 1024], [1280, 800]]) for (const right of [false, true]) {
+          const t = w !== 1280, where = `${w}x${hh}${t ? ' touch' : ''} stick-${right ? 'right' : 'left'}`;
+          setSize(w, hh); window.__forceTouch = t; window.__stickRight = right;
+          goIn(); closePanel(); dialog.cur = null; dialog.queue.length = 0; areaBanner = null; notice = null;
+          drawHud(HK.audit.fitCtx());
+          const pt = (HK.FRAME.plaqueText || {}).island, folded = !pt && HK.FRAME.overflow > 0;
+          const ok = folded || (!!pt && (pt.rightStart == null || pt.nameEnd <= pt.rightStart - 4) && pt.size >= 11 && pt.subFits && /of \d+ arches/.test((pt.right || '') + ' ' + (pt.sub || '')));
+          if (pt) shown++;
+          seen[where] = pt ? { ok, nameEnd: Math.round(pt.nameEnd), rightStart: pt.rightStart == null ? null : Math.round(pt.rightStart), right: pt.right, sub: pt.sub, size: pt.size } : { ok, folded };
+          out();
+        }
+        putBack();
+        check(P + 'the island plaque never runs "YOUR ISLAND" into its arch count: on a landscape phone (844x390, 667x375, 932x430) the count moves to the line under the name, the name stays 11 px or more and every word fits; the iPad and the laptop keep it on the right',
+          shown >= 6 && seen['844x390 touch stick-left'].ok && /arches/.test(seen['844x390 touch stick-left'].sub || '') && /arches/.test(seen['768x1024 touch stick-left'].right || '') && /arches/.test(seen['1280x800 stick-left'].right || '') && Object.values(seen).every(q => q.ok), seen); }
     } finally {
       putBack(); out(); closePanel();
       player.inv = keep.bag; player.house = keep.house; player.x = keep.x; player.y = keep.y;

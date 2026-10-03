@@ -4103,8 +4103,8 @@ HOOKS.selfTest.push((check, F, h) => {
   { const inv0 = player.inv.map(s => s ? { ...s } : null); const d0 = drops.length; player.inv[0] = { id: 'iron_dagger', qty: 1 }; openPanel('inventory'); render(); F.clickButton('slot0'); render(); const c1 = F.clickButton('Drop'); render(); const still = player.inv[0] && player.inv[0].id === 'iron_dagger' && buttons.some(b => b.label.startsWith('Tap again')); const c2 = F.clickButton('Tap again'); render(); const dropped = !player.inv[0] && drops.length === d0 + 1; closePanel(); drops.length = d0; player.inv = inv0;
     check('ux: dropping a weapon needs a second tap', c1 && still && c2 && dropped, { c1, still, c2, dropped }); }
   // recipe tabs + paging on the anvil (26 recipes)
-  { openPanel('station', 'anvil'); render(); const per = CRAFT_VIEW.perPage; const vis = () => buttons.filter(b => b.x >= 0 && b.label.includes('→')).map(b => b.label); const p0 = vis(); const tabs = buttons.filter(b => RECIPE_TIERS.map(q => q[0]).concat('Other').includes(b.label.replace(/^disabled:/, ''))).length; const n = F.clickButton('Next'); render(); const p1 = vis(); const m = F.clickButton('Mithril'); render(); const p2 = vis(); const anvil = RECIPES.filter(r => r.station === 'anvil'); const total = anvil.length, bi = anvil.filter(r => recipeTier(r) === 'Bronze/Iron').length; closePanel();
-    check('ux: anvil recipes come in tier tabs, 8 per page, Prev/Next pages', total >= 26 && p0.length === per && tabs >= 3 && n && p1.length === Math.min(per, bi - per) && p0[0] !== p1[0] && m && p2.length === Math.min(per, 8) && p2.every(l => /Mithril/.test(l)), { total, bi, per, p0: p0.length, p1: p1.length, tabs, p2: p2.length }); }
+  { openPanel('station', 'anvil'); render(); const per = Math.max(2, Math.min(8, Math.floor((panelRect.h - 92 - 54) / 40))); const vis = () => buttons.filter(b => b.x >= 0 && b.label.includes('→')).map(b => b.label); const p0 = vis(); const tabs = buttons.filter(b => RECIPE_TIERS.map(q => q[0]).concat('Other').includes(b.label.replace(/^disabled:/, ''))).length; const n = F.clickButton('Next'); render(); const p1 = vis(); const m = F.clickButton('Mithril'); render(); const p2 = vis(); const anvil = RECIPES.filter(r => r.station === 'anvil'); const total = anvil.length, bi = anvil.filter(r => recipeTier(r) === 'Bronze/Iron').length; closePanel();
+    check('ux: anvil recipes come in tier tabs, 8 per page, Prev/Next pages', total >= 26 && per === 8 && p0.length === per && tabs >= 3 && n && p1.length === Math.min(per, bi - per) && p0[0] !== p1[0] && m && p2.length === Math.min(per, 8) && p2.every(l => /Mithril/.test(l)), { total, bi, per, p0: p0.length, p1: p1.length, tabs, p2: p2.length }); }
   // bank paging
   { const bank0 = player.bank.map(s => ({ ...s })); player.bank = []; for (let i = 0; i < 40; i++) player.bank.push({ id: i % 2 ? 'stone' : 'wood', qty: 1 + i }); openPanel('bank'); render(); const per = VW < 640 ? 15 : 30; const c0 = buttons.filter(b => b.label.startsWith('bank')).length; const n = F.clickButton('Next'); render(); const c1 = buttons.filter(b => b.label.startsWith('bank')).length; const pg = bankPage; const p = F.clickButton('Prev'); render(); const c2 = buttons.filter(b => b.label.startsWith('bank')).length; closePanel(); player.bank = bank0;
     check('ux: bank pages 30 slots at a time (15 narrow) with Prev/Next', c0 === per && n && pg === 1 && c1 === Math.min(per, 40 - per) && p && c2 === per, { c0, c1, c2, per, pg }); }
@@ -25495,21 +25495,32 @@ const HK = (() => {
       g.beginPath(); g.arc(rcx, rcy, rd / 2 - 1, 0, TAU); g.strokeStyle = o.edge || 'rgba(217,178,92,0.7)'; g.lineWidth = 2; g.stroke();
       tx = x + rd + 12;
     }
-    const right = o.right != null ? String(o.right) : '';
-    const rf = FC(800, 11), rw = right ? tw(g, right, rf) + 12 : 0;
+    let right = o.right != null ? String(o.right) : '', subText = o.sub;
+    const rf = FC(800, 11);
     const stars = o.stars ? o.stars.of * 16 + 6 : 0;
-    const lineTop = (o.sub || o.frac != null) ? y + 17 : y + h / 2 + 5;
-    let ns = 13; const name = String(o.name || '');
+    const name = String(o.name || '');
+    // foldRight: on a narrow plaque where the name would have to shrink below 11 px beside the right-hand words, those
+    // words move down to the sub line ("0 built, 2 of 6 arches"; just "2 of 6 arches" when both will not fit on one
+    // line), so the name and the count never run into each other
+    if (o.foldRight && right && subText && o.frac == null && tw(g, name, FC(800, 11)) > x + w - 14 - tx - (tw(g, right, rf) + 12) - stars) {
+      const both = `${subText}, ${right}`;
+      subText = tw(g, both, FS(600, 12)) <= x + w - 14 - tx ? both : right; right = '';
+    }
+    const rw = right ? tw(g, right, rf) + 12 : 0;
+    const lineTop = (subText || o.frac != null) ? y + 17 : y + h / 2 + 5;
+    let ns = 13;
     while (ns > 9 && tw(g, name, FC(800, ns)) > x + w - 14 - tx - rw - stars) ns -= 0.5;
     text(g, name, tx, lineTop, { font: FC(800, ns), color: o.nameColor || T.ink, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y: y, w: x + w - 14 - rw - stars - tx, h }, fitId: 'plaque:name' });
     if (o.stars) { let sx = tx + tw(g, name, FC(800, ns)) + 8; for (let i = 0; i < o.stars.of; i++) { starPath(g, sx + 7, y + 12, 7, 3); g.fillStyle = i < o.stars.n ? T.goldHi : 'rgba(0,0,0,0.5)'; g.fill(); g.strokeStyle = '#3a2708'; g.lineWidth = 1; g.stroke(); sx += 16; } }
     if (right) text(g, right, x + w - 14, y + 17, { font: rf, align: 'right', color: o.rightColor || T.inkDim, shadow: 'rgba(0,0,0,0.9)' });
+    // where the name ends and the right-hand words start, by plaque id, for checks
+    if (o.id) (FRAME.plaqueText = FRAME.plaqueText || {})[o.id] = { nameEnd: tx + tw(g, name, FC(800, ns)), rightStart: right ? x + w - 14 - (rw - 12) : null, right, sub: subText || null, subFits: !subText || tw(g, String(subText), FS(600, 12)) <= x + w - 14 - tx, size: ns };
     if (o.frac != null) {
       const col = o.bar ? (o.bar === 'good' ? T.good : o.bar === 'warn' ? T.warn : o.bar === 'bad' ? T.bad : o.bar) : ramp(o.frac);
       const st = RAMP_BAR[col] || ['#ff8266', col, '#6d1016'];
       meterBar(g, tx, y + h - 15, x + w - 14 - tx, 9, o.frac, st[1], { hi: st[0], lo: st[2] });
-    } else if (o.sub) {
-      const sf = FS(600, 12); let sub = String(o.sub);
+    } else if (subText) {
+      const sf = FS(600, 12); let sub = String(subText);
       const maxW = x + w - 14 - tx;
       if (tw(g, sub, sf) > maxW) { const ww = wrap(g, sub, maxW, 1, sf); sub = ww.lines[0] || ''; }
       text(g, sub, tx, y + h - 9, { font: sf, color: o.subColor || T.inkDim, shadow: 'rgba(0,0,0,0.9)', box: { x: tx, y, w: maxW, h }, fitId: 'plaque:sub' });
@@ -26542,7 +26553,7 @@ const HK = (() => {
   // ---------- plaque slots: HK.slot() / HK.claim() keep the old cursor contract (HUD.leftY) but hand out plaque slots ----------
   const OFF = { x: -4000, y: -4000 };
   function beginPlaques(L, reserveFirst) {
-    FRAME.plaqueRects = L.plaques.slice(); FRAME.overflow = 0; FRAME.plaqueStart = reserveFirst ? 1 : 0; FRAME.plaqueIds = [];
+    FRAME.plaqueRects = L.plaques.slice(); FRAME.overflow = 0; FRAME.plaqueStart = reserveFirst ? 1 : 0; FRAME.plaqueIds = []; FRAME.plaqueText = {};
     HUD.leftCol = 0; HUD.leftY = L.plaques[FRAME.plaqueStart] ? L.plaques[FRAME.plaqueStart].y : L.plaques.length ? L.plaques[L.plaques.length - 1].y + 52 : L.crest.y + L.crest.h + 10;
   }
   function slotAt(h, peek) {
@@ -27594,6 +27605,11 @@ HOOKS.selfTest.push((check, F, h) => {
               if (!blkF || blkF.id !== 'island_leave') problems.push(`${where}: the block seat wears ${blkF ? blkF.id : 'nothing'} on the island, not leave`);
               // the island's plaque, or (one slot on an iPhone SE, and a landscape phone with the stick on the right) the +n badge it folds into
               if (!(HK.FRAME.plaqueIds || []).includes('island') && !(HK.FRAME.overflow > 0)) problems.push(`${where}: no island plaque (${(HK.FRAME.plaqueIds || []).join(', ')})`);
+              // its name and its arch count never run into each other (a landscape phone folds the count into the sub line)
+              const pt = (HK.FRAME.plaqueText || {}).island;
+              if (pt && pt.rightStart != null && pt.nameEnd > pt.rightStart - 4) problems.push(`${where}: the island plaque's name runs into "${pt.right}" (${Math.round(pt.nameEnd)} > ${Math.round(pt.rightStart)} - 4)`);
+              if (pt && pt.size < 11) problems.push(`${where}: the island plaque's name shrinks to ${pt.size} px`);
+              if (pt && !pt.subFits) problems.push(`${where}: the island plaque's line "${pt.sub}" is cut short`);
             }
             if (sc === 'dungeon' || sc === 'island' || /^bird/.test(sc)) leaveAny();
             if (sc === 'talk' && !buttons.some(b => b.label === 'dialog')) problems.push(`${where}: the talk page is not a tap`);
@@ -30115,10 +30131,14 @@ HOOKS.selfTest.push((check, F, h) => {
       for (const d of DESTS) if (!h.been[d.key] && d.region === player.region) { h.been[d.key] = true; found = d; }
       if (found) { if (h.seen) notify(`${found.name}. Your island can hold an arch to it now.`); save(); }
     }
-    // P only when nothing else owns the keyboard: the wiki and the settings panel type letters
-    if ((pressed.has('KeyP') && !dialog.cur && (!panel || panel === 'house_build')) || tapped('housebuild')) {
+    // P only when nothing else owns the keyboard: the wiki and the settings panel type letters. Neither P nor the BUILD
+    // button opens the panel while someone is talking (the talk page would sit on top of it); a tap then is dropped
+    const tapB = tapped('housebuild');
+    if (((pressed.has('KeyP') && (!panel || panel === 'house_build')) || tapB) && !dialog.cur) {
       pressed.delete('KeyP');
-      if (inside) { panel === 'house_build' ? closePanel() : openPanel('house_build'); }
+      // the area banner ("YOUR ISLAND") and the arrival line ("Tap BUILD to put something up") are drawn over panels
+      // (on a phone the line lands on the second card): both go when the build panel opens
+      if (inside) { if (panel === 'house_build') closePanel(); else { openPanel('house_build'); areaBanner = null; notice = null; } }
       else notify(`Your island is through the stone portal in Thistledown, inside the north wall at ${PORTAL.x}, ${PORTAL.y}.`);
     }
     if (!inside) return;
@@ -30220,12 +30240,14 @@ HOOKS.selfTest.push((check, F, h) => {
   // standing and the things built; BUILD is the context seat's face (the arch; P on the keys). It outranks 16-instances'
   // LEAVE (prio 30), because the island is an instance too and touch has no P key: with LEAVE first, the iPad had no way
   // to build at all. LEAVE moves to the block seat on the island (64-island), and the arch by the porch still goes home.
-  hudSeatFace('ctx', { id: 'build', prio: 35, when: () => inside && !player.mech && !player.dead, emblem: 'build', ribbon: 'BUILD', key: 'P', name: 'Build on your island', action: () => { touch.taps.push('housebuild'); } });
+  // (dimmed while someone talks: the panel does not open under the talk page)
+  hudSeatFace('ctx', { id: 'build', prio: 35, when: () => inside && !player.mech && !player.dead, disabled: () => !!dialog.cur, emblem: 'build', ribbon: 'BUILD', key: 'P', name: 'Build on your island', action: () => { touch.taps.push('housebuild'); } });
   HOOKS.hud.push(() => { if (inside && !paused && !panel && !player.dead) HK.teach('build', 'P', 'Build', { x: player.x, y: player.y, lift: 46 }, { emblem: 'build' }); });
   HOOKS.hud.push((g, narrow) => {
     if (!inside || paused) return;
     const h = H();
-    HK.addPlaque(g, { id: 'island', emblem: 'build', name: 'YOUR ISLAND', right: `${archCount()} of ${DESTS.length} arches`, sub: `${h.made} built` });
+    // (foldRight: on a landscape phone's narrow plaque the arch count moves under "YOUR ISLAND" instead of running into it)
+    HK.addPlaque(g, { id: 'island', emblem: 'build', name: 'YOUR ISLAND', right: `${archCount()} of ${DESTS.length} arches`, sub: `${h.made} built`, foldRight: true });
   });
 
   // ---------- drawing ----------
@@ -31162,8 +31184,8 @@ HOOKS.selfTest.push((check, F, h) => {
 //
 // Placement (owner's decision, 3 Oct): walls, floors and doors (an item whose place is PLANK, DOOR, FLOOR or WALL) go
 // only on the island's own land: never in the shared world, never in a dungeon, never out over the sky. Beds,
-// workbenches, goblin traps and the lodestone keep the core's rules. Q with no item named skips the walls where they
-// cannot go, so Q still puts a bed down in the world when the pack holds planks and a bed.
+// workbenches, goblin traps and the lodestone keep the core's rules. When Q (no item named) would put down a wall where
+// one cannot go, he gets the plain line and nothing else goes down in the wall's place.
 //
 // Wraps placeAction by reassignment, explicit args (63-house and 54-graves wrap it before this file; this one runs first).
 // window.ISLAND exposes the rule for checks.
@@ -31188,13 +31210,11 @@ HOOKS.selfTest.push((check, F, h) => {
   placeAction = function (id) {
     if (player.dead || player.mech) return _placeAction(id);
     if (!id) {
-      // Q: the core would take the first of its list; a wall that cannot go here is passed over for the next thing
-      const has = ORDER.filter(k => ITEMS[k] && countItem(k) > 0);
-      if (has.length && isWall(has[0]) && wallRefusal()) {
-        const other = has.find(k => !isWall(k));
-        if (!other) { notify(wallRefusal()); return; }
-        id = other;
-      }
+      // Q: the core takes the first of its list. When that is a wall that cannot go here he is told so, and nothing
+      // else goes down in its place (a bed, a workbench or the lodestone cannot be picked back up in the world, and
+      // a lodestone would move his home)
+      const first = ORDER.find(k => ITEMS[k] && countItem(k) > 0);
+      if (isWall(first)) { const why = wallRefusal(); if (why) { notify(why); return; } }
       return _placeAction(id);
     }
     if (isWall(id)) { const why = wallRefusal(); if (why) { notify(why); return; } }
@@ -31212,11 +31232,11 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.selfTest.push((check, F, h) => {
     if (!window.HOUSE) { check(P + 'the island is there', false, {}); return; }
     const own = k => Object.getOwnPropertyDescriptor(window, k);
-    const keep = { w: own('innerWidth'), h: own('innerHeight'), t: window.__forceTouch, bag: player.inv.map(s => (s ? { ...s } : null)), house: JSON.parse(JSON.stringify(player.house || {})), x: player.x, y: player.y };
+    const keep = { w: own('innerWidth'), h: own('innerHeight'), t: window.__forceTouch, sr: window.__stickRight, bag: player.inv.map(s => (s ? { ...s } : null)), house: JSON.parse(JSON.stringify(player.house || {})), x: player.x, y: player.y };
     const setSize = (w, hh) => { window.innerWidth = w; window.innerHeight = hh; resize(); };
     const putBack = () => {
       if (keep.w) { Object.defineProperty(window, 'innerWidth', keep.w); Object.defineProperty(window, 'innerHeight', keep.h); } else { try { delete window.innerWidth; delete window.innerHeight; } catch (e) { } }
-      resize(); window.__forceTouch = keep.t;
+      resize(); window.__forceTouch = keep.t; window.__stickRight = keep.sr;
     };
     const out = () => { if (HOUSE.inside) HOUSE.leave(); if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave(); F.sim(1, []); };
     const goIn = () => { out(); closePanel(); return HOUSE.enter(); };
@@ -31267,11 +31287,19 @@ HOOKS.selfTest.push((check, F, h) => {
           said[id] = { kept: countItem(id) === 2, ground: tileAt(f.tx, f.ty) === was, line: notice && notice.text };
           if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
         }
-        // Q with planks first in the pack: in the world it passes them over and puts the bed down
-        empty(); h.give('plank', 3); h.give('bed', 1); notice = null;
-        F.press('KeyQ'); F.sim(1, []);
-        const bedDown = tileAt(f.tx, f.ty) === T.BED && countItem('bed') === 0 && countItem('plank') === 3;
-        if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
+        // Q with planks first in the pack: refused with the line, and nothing else goes down in their place (a bed
+        // put down in the world cannot be picked back up; a lodestone would move his home)
+        const qWith = {};
+        for (const other of ['bed', 'workbench', 'lodestone']) {
+          empty(); h.give('plank', 3); h.give(other, 1); notice = null;
+          const home0 = player.home ? { x: player.home.x, y: player.home.y } : null;
+          F.press('KeyQ'); F.sim(1, []);
+          const home1 = player.home ? { x: player.home.x, y: player.home.y } : null;
+          qWith[other] = { ground: tileAt(f.tx, f.ty) === was, kept: countItem(other) === 1 && countItem('plank') === 3, line: notice && notice.text, home: JSON.stringify(home0) === JSON.stringify(home1) };
+          if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
+          if (home0) player.home = home0;
+        }
+        const bedKept = Object.values(qWith).every(q => q.ground && q.kept && q.line === NOT_HERE && q.home);
         // Q with only planks: refused with the line
         empty(); h.give('plank', 3); notice = null;
         F.press('KeyQ'); F.sim(1, []);
@@ -31282,8 +31310,8 @@ HOOKS.selfTest.push((check, F, h) => {
         const benchDown = tileAt(f.tx, f.ty) === T.WORKBENCH && countItem('workbench') === 0;
         if (tileAt(f.tx, f.ty) !== was) changeTile(f.tx, f.ty, was);
         const refused = ['plank', 'door'].every(id => said[id].kept && said[id].ground && said[id].line === NOT_HERE);
-        check(P + 'in the shared world a plank or a door stays in the pack and the ground stays as it was, with "' + NOT_HERE + '"; Q there passes the planks over and puts the bed down; a workbench still goes down',
-          refused && bedDown && qRefused && benchDown, { said, bedDown, qRefused, benchDown, ground: tileName(was) }); }
+        check(P + 'in the shared world a plank or a door stays in the pack and the ground stays as it was, with "' + NOT_HERE + '"; Q there with planks and a bed, a workbench or the lodestone is refused with the same line, puts nothing down, keeps the pack and leaves home where it was; a workbench named still goes down',
+          refused && bedKept && qRefused && benchDown, { said, qWith, qRefused, benchDown, ground: tileName(was) }); }
 
       // --- C. in a dungeon too: a dungeon is not his island ---
       { out(); empty();
@@ -31322,10 +31350,55 @@ HOOKS.selfTest.push((check, F, h) => {
         const sky0 = tileAt(ex - 1, row);
         placeAction('plank');
         const skyKept = sky0 === HOUSE.tiles.sky && tileAt(ex - 1, row) === HOUSE.tiles.sky && countItem('plank') === 1 && !!notice && notice.text === NOT_SKY;
+        // Q with planks and a bed, faced out over the sky: the sky line, and the bed stays in the pack
+        empty(); h.give('plank', 2); h.give('bed', 1); notice = null;
+        F.press('KeyQ'); F.sim(1, []);
+        const qSky = { tile: tileName(tileAt(ex - 1, row)), bed: countItem('bed'), planks: countItem('plank'), line: notice && notice.text };
+        const skyQ = tileAt(ex - 1, row) === HOUSE.tiles.sky && qSky.bed === 1 && qSky.planks === 2 && qSky.line === NOT_SKY;
         const rule = !ISLAND.islandLand(ex - 1, row) && ISLAND.islandLand(ex, row) && !ISLAND.islandLand(HOUSE.W, row) && ISLAND.isWall('plank') && ISLAND.isWall('door') && !ISLAND.isWall('bed') && !ISLAND.isWall('lodestone') && !ISLAND.isWall('workbench') && !ISLAND.isWall('goblin_trap');
         out();
-        check(P + 'on his island a plank and a door go up on the grass, and a plank faced out over the sky stays in the pack with "' + NOT_SKY + '"',
-          went && plank && door && skyKept && rule, { went, plank, door, skyKept, rule, edge: [ex, row], line: notice && notice.text }); }
+        check(P + 'on his island a plank and a door go up on the grass, and a plank faced out over the sky stays in the pack with "' + NOT_SKY + '" (Q with planks and a bed there too: nothing goes over the sky, the bed stays packed)',
+          went && plank && door && skyKept && skyQ && rule, { went, plank, door, skyKept, skyQ, qSky, rule, edge: [ex, row], line: notice && notice.text }); }
+
+      // --- E. arriving while the Voice talks and the "YOUR ISLAND" banner is up: BUILD waits for the talk to end, then
+      //        opens the build panel with nothing drawn over it (no talk page, no banner, no arrival line) ---
+      { setSize(768, 1024); window.__forceTouch = true;
+        const went = goIn(); closePanel();
+        if (!dialog.cur && !dialog.queue.length) say('Grass, sky, and nobody else.', 'The Voice');
+        notify('Your island. Tap BUILD to put something up. USE on the arch to go home.');
+        F.sim(1, []); render();
+        const talking = !!dialog.cur, banner0 = !!areaBanner;
+        const face = HK.face('ctx'), dim = !!face && face.id === 'build' && !!face.disabled;
+        const tapped0 = F.clickButton('BUILD'); F.sim(1, []);
+        const tapHeld = panel !== 'house_build';
+        F.press('KeyP'); F.sim(1, []);
+        const heldOff = tapHeld && panel !== 'house_build';
+        // the talk ends: the tap made during it does not open the panel later on its own
+        dialog.cur = null; dialog.queue.length = 0; F.sim(2, []); render();
+        const noLate = panel !== 'house_build';
+        const banner1 = !!areaBanner, line1 = !!notice;
+        const tapped1 = F.clickButton('BUILD'); F.sim(1, []); render();
+        const opened = panel === 'house_build', clear = !dialog.cur && !dialogRect && areaBanner === null && notice === null;
+        closePanel(); out(); putBack();
+        check(P + 'arriving while the Voice talks with the area banner up: BUILD is dimmed and neither its tap nor P opens the panel under the talk page (nor later on its own); after the talk BUILD opens the build panel with no talk page, no banner and no arrival line over it',
+          went && talking && banner0 && dim && tapped0 && heldOff && noLate && banner1 && line1 && tapped1 && opened && clear, { went, talking, banner0, dim, tapped0, heldOff, noLate, banner1, line1, tapped1, opened, clear }); }
+
+      // --- F. the island plaque on a landscape phone: "YOUR ISLAND" and the arch count never run together ---
+      { const seen = {}; let shown = 0;
+        for (const [w, hh] of [[844, 390], [667, 375], [932, 430], [768, 1024], [1280, 800]]) for (const right of [false, true]) {
+          const t = w !== 1280, where = `${w}x${hh}${t ? ' touch' : ''} stick-${right ? 'right' : 'left'}`;
+          setSize(w, hh); window.__forceTouch = t; window.__stickRight = right;
+          goIn(); closePanel(); dialog.cur = null; dialog.queue.length = 0; areaBanner = null; notice = null;
+          drawHud(HK.audit.fitCtx());
+          const pt = (HK.FRAME.plaqueText || {}).island, folded = !pt && HK.FRAME.overflow > 0;
+          const ok = folded || (!!pt && (pt.rightStart == null || pt.nameEnd <= pt.rightStart - 4) && pt.size >= 11 && pt.subFits && /of \d+ arches/.test((pt.right || '') + ' ' + (pt.sub || '')));
+          if (pt) shown++;
+          seen[where] = pt ? { ok, nameEnd: Math.round(pt.nameEnd), rightStart: pt.rightStart == null ? null : Math.round(pt.rightStart), right: pt.right, sub: pt.sub, size: pt.size } : { ok, folded };
+          out();
+        }
+        putBack();
+        check(P + 'the island plaque never runs "YOUR ISLAND" into its arch count: on a landscape phone (844x390, 667x375, 932x430) the count moves to the line under the name, the name stays 11 px or more and every word fits; the iPad and the laptop keep it on the right',
+          shown >= 6 && seen['844x390 touch stick-left'].ok && /arches/.test(seen['844x390 touch stick-left'].sub || '') && /arches/.test(seen['768x1024 touch stick-left'].right || '') && /arches/.test(seen['1280x800 stick-left'].right || '') && Object.values(seen).every(q => q.ok), seen); }
     } finally {
       putBack(); out(); closePanel();
       player.inv = keep.bag; player.house = keep.house; player.x = keep.x; player.y = keep.y;
