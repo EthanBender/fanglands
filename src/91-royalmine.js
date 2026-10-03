@@ -2125,7 +2125,9 @@
     let line1 = null, tone = null;
     if (inCh) {
       const gm = golemMon();
-      if (!gm || gm.dead) line1 = 'THE GOLEM IS DOWN. UP AGAIN SOON';
+      // while his fall is still being shown, the chip does not tell the end before the banner does
+      if (gm && gm.dead && !run.life.told && window.DEATHS && DEATHS.of && DEATHS.of(gm)) line1 = 'HE IS FALLING!';
+      else if (!gm || gm.dead) line1 = 'THE GOLEM IS DOWN. UP AGAIN SOON';
       else if (!isAwake(gm)) line1 = 'STEP INTO THE GOLD RING TO WAKE HIM';
       else if (gm.state === 'windup' && inSlam()) { line1 = 'GET BACK! HE IS GOING TO SLAM'; tone = HK.C.BAD; }
       else if (lings().some(m => dist(m.x, m.y, SEAT_C.x, SEAT_C.y) <= 4 * TILE)) { line1 = 'SMASH THE LITTLE GOLEM!'; tone = HK.C.BAD; }
@@ -2706,14 +2708,14 @@
         try {
           F.sim(Math.ceil(1.2 * 60), []);
           const c = D && D.of(g);
-          early = { corpse: !!c, flashed: !!c && c.flashed, banner: levelBanner && levelBanner.text, coins: have('coins') - coins0, xp: player.skills.mining.xp - xm, stage: R().stage, heap: heapShown(), waves: waves.filter(k => k >= 1.5).length };
+          early = { corpse: !!c, flashed: !!c && c.flashed, banner: levelBanner && levelBanner.text, chip: chipInfo().line1, coins: have('coins') - coins0, xp: player.skills.mining.xp - xm, stage: R().stage, heap: heapShown(), waves: waves.filter(k => k >= 1.5).length };
           F.sim(FALL_WAIT - Math.ceil(1.2 * 60), []); F.step([]);
-          late = { flashed: !!c && c.flashed, waves: waves.filter(k => k >= 1.5) };
+          late = { flashed: !!c && c.flashed, waves: waves.filter(k => k >= 1.5), chip: chipInfo().line1 };
         } finally { if (w0) IMPACT.wave = w0; }
         F.sim(60, []); const heapAfter = heapShown();
-        const ordered = !!D && early.corpse && !early.flashed && early.banner !== 'PEBBLE IS FREE' && early.banner !== 'THE GOLEM IS DOWN' && early.coins === 0 && early.xp === 0 && early.stage === 5 && !early.heap && early.waves === 0
-          && late.flashed && late.waves.length === 1 && late.waves[0] === 2.2 && heapAfter;
-        check(P + 'the fall keeps the boss order: at 1.2 s he is still falling with no banner, no loot, no words and no rubble heap over him; one ground wave lands on his flash; the heap comes up as he fades',
+        const ordered = !!D && early.corpse && !early.flashed && early.banner !== 'PEBBLE IS FREE' && early.banner !== 'THE GOLEM IS DOWN' && early.coins === 0 && early.xp === 0 && early.stage === 5 && !early.heap && early.waves === 0 && !/DOWN/.test(early.chip || '')
+          && late.flashed && /DOWN/.test(late.chip || '') && late.waves.length === 1 && late.waves[0] === 2.2 && heapAfter;
+        check(P + 'the fall keeps the boss order: at 1.2 s he is still falling with no banner, no loot, no words (the chamber chip says he is falling) and no rubble heap over him; one ground wave lands on his flash; the heap comes up as he fades',
           ordered, { early, late, heapAfter });
         const paid = have('coins') - coins0 >= 150 && have('mithril_bar') - bars0 >= 2 && player.skills.mining.xp - xm === 200 && player.skills.smithing.xp - xs === 200 && player.skills.melee.xp - xl === 200;
         const freed = R().stage === 6 && !!levelBanner && levelBanner.text === 'PEBBLE IS FREE';
