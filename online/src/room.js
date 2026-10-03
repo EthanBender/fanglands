@@ -16,6 +16,8 @@
 //   room.loginOf(name)         the open login row of a knight on line: {id, started} or null
 //   room.renamed(from, to)     the World gave a knight a new name: an online one is sent out to come straight back as it
 //   room.store                 where roles, mutes, bans, parties, prizes, logins and finished trades live (store.js)
+//   room.setSim(sim)           the parent page's shared-world switches ({move: 'observe' | 'off'}, docs/ONLINE.md "The shared world")
+//   room.atlas, room.move      the Atlas the world judges by (atlas.js, from opts.atlas) and the movement check (move.js)
 //
 // Timers: the room never calls setTimeout itself. When something becomes due it calls wake(ms) once, and
 // the host calls tick() at that time (the World uses a Durable Object alarm, which survives hibernation).
@@ -49,6 +51,8 @@
 // ============================================================================
 
 import { checkChat } from './filter.js';
+import { MoveCheck, MoveBook, wireMap } from './move.js';
+import { isHouse } from './atlas.js';
 import { MemoryStore, ALWAYS, WORD_LOCK_MS } from './store.js';
 import {
   TILE, HAT_CHOICES, PARTY_LIFE, PRIZE_KEEP, LIGHT_RANGE, MAX_LIVE_CRACKERS, FUSE_MIN, FUSE_MAX, ID_RE,
@@ -94,6 +98,12 @@ export const CAPS = {
 };
 for (const c of Object.values(CAPS)) if (!c.burst) c.burst = Math.max(2, Math.round(c.rate * 2));
 
+// The shared world (docs/ONLINE.md, "The shared world"): the capabilities a game may name in hello, in this order
+export const KNOWN_CAPS = ['tick', 'die', 'roll', 'loot', 'zone', 'fix', 'day'];
+export const capsOf = c => Array.isArray(c) ? KNOWN_CAPS.filter(n => c.includes(n)) : [];
+export const atlasOf = a => typeof a === 'string' && /^[0-9a-z]{1,32}$/.test(a) ? a : null;
+// a knight's own island is his alone: the Room keys it by his name, and every message out names it 'house' again
+export const mapKey = (k, map) => isHouse(map) ? 'house:' + k.lc : map;
 export const ROSTER_EVERY = 2000;      // a changed roster goes out at most this often (join/leave go at once)
 // A keeper that streams no monsters for this long while others share its map (paused, on the title screen, a
 // sleeping tab) hands the map to the next knight; it is eligible again once that knight leaves.
@@ -148,6 +158,10 @@ export class Room {
     this.wake = opts.wake || (ms => { const t = setTimeout(() => this.tick(), ms); if (t && t.unref) t.unref(); });
     this.store = opts.store || new MemoryStore();
     this.random = typeof opts.random === 'function' ? opts.random : cryptoRandom;
+    // the shared world: the Atlas (atlas.js, or null: then nothing is judged) and the watching movement check (move.js)
+    this.atlas = opts.atlas || null;
+    this.move = new MoveCheck({ atlas: this.atlas, book: opts.moveBook || new MoveBook(null, this.now), now: this.now });
+    this.sim = { move: this.move.mode };
     this.knights = new Map();   // sock -> knight
     this.byName = new Map();    // lower-case name -> knight
     this.maps = new Map();      // map name -> { members: Set<knight>, keeper: knight|null }
@@ -162,6 +176,13 @@ export class Room {
     this.wakeAt = null;
     this.loadParties();
     this.arm();
+  }
+
+  // The parent page's shared-world switches (the World reads them from settings 'sim'). Stage 1 has one: move.
+  setSim(sim) {
+    const move = sim && (sim.move === 'off' || sim.move === 'observe') ? sim.move : 'observe';
+    this.sim = { move };
+    this.move.mode = move;
   }
 
   // Every wake builds a new Room: the parties that were running when the world fell asleep come back from the store.
@@ -247,6 +268,7 @@ export class Room {
     const k = {
       sock, name: s.name, lc: low(s.name), since: s.since || this.now(), ip: typeof s.ip === 'string' ? s.ip.slice(0, 64) : '',
       hello: !!s.hello, map: s.map || null, mapAt: s.mapAt || s.since || this.now(), region: s.region || '', lv: s.lv || 0,
+      caps: capsOf(s.caps), atlas: atlasOf(s.atlas),   // what this knight's game can do of the shared world, and its Atlas hash
       role: 'player', x: null, y: null,   // x, y: the last presence, for party and cracker range checks (not kept over a nap)
       loginId: null, seenAt: 0,           // the store's logins row for this socket, and when its "last heard from" was written
       last: null, buckets: {}, strikes: 0, strikeAt: 0, gifts: new Set(),
@@ -346,12 +368,15 @@ export class Room {
   onHello(k, m) {
     k.hello = true;
     // a save always records the overworld, so a fresh login stands on it until the first presence says otherwise
-    k.map = (typeof m.map === 'string' && m.map) ? m.map.slice(0, 64) : OVERWORLD;
+    k.map = mapKey(k, (typeof m.map === 'string' && m.map) ? m.map.slice(0, 64) : OVERWORLD);
+    k.caps = capsOf(m.caps); k.atlas = atlasOf(m.atlas);
     const acc = this.store.account(k.name);
     k.role = acc ? acc.role : 'player';
     this.enterMap(k, k.map, { quiet: true });
     const keeper = this.keeperOf(k.map);
-    this.send(k.sock, { t: 'welcome', me: k.name, at: this.now(), keeper: keeper ? keeper.name : null, role: k.role });
+    const welcome = { t: 'welcome', me: k.name, at: this.now(), keeper: keeper ? keeper.name : null, role: k.role };
+    if (this.atlas) welcome.atlas = this.atlas.hash;
+    this.send(k.sock, welcome);
     this.attach(k);
     this.rosterNow();
     // after welcome and the roster, in this order: a mute still running, the live parties on this map, and every
@@ -369,7 +394,7 @@ export class Room {
     if (!k.hello) return;
     k.pAt = this.now();
     if (str.length > MAX_P) return this.strike(k, CAPS.p);
-    const map = (typeof m.map === 'string' && m.map) ? m.map.slice(0, 64) : k.map;
+    const map = (typeof m.map === 'string' && m.map) ? mapKey(k, m.map.slice(0, 64)) : k.map;
     let changed = false;
     if (map !== k.map) { this.moveMap(k, map); changed = true; }
     if (typeof m.region === 'string' && m.region.slice(0, 40) !== k.region) { k.region = m.region.slice(0, 40); changed = true; }
@@ -377,11 +402,13 @@ export class Room {
     // where the knight stands, for the party, cracker and trade range checks
     if (Number.isFinite(m.x) && Number.isFinite(m.y)) { k.x = m.x; k.y = m.y; }
     k.dead = !!m.dead;
+    // the movement check only watches (move.js): it never sends, and nothing it finds changes what is relayed
+    try { this.move.judge(k, m, this.now()); } catch (e) { }
     // an open trade ends when either knight falls or walks away
     if (k.trade) { const o = this.otherOf(k.trade, k); if (k.dead) this.cancelTrade(k.trade, 'dead', k); else if (!this.within(k, o, TRADE_LEAVE, true)) this.cancelTrade(k.trade, 'far', k); }
     if (changed) { this.attach(k); this.rosterLater(); }
     // the role on a relayed p is always the server's word: whatever the sender put there is overwritten
-    const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: k.map, role: k.role }));
+    const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: wireMap(k.map), role: k.role }));
     k.last = out;
     for (const o of this.members(k.map)) if (o !== k) this.raw(o.sock, out);
   }
@@ -633,7 +660,7 @@ export class Room {
   crackersMsg(p) {
     const list = [];
     for (const c of p.crackers.values()) if (!c.litBy) list.push([crackerId(p.id, c.k), c.tx, c.ty]);
-    return JSON.stringify({ t: 'crackers', pid: p.id, map: p.map, by: p.by, list, left: Math.max(0, p.expires - this.now()) });
+    return JSON.stringify({ t: 'crackers', pid: p.id, map: wireMap(p.map), by: p.by, list, left: Math.max(0, p.expires - this.now()) });
   }
 
   // The live parties on a map, to one knight that has just arrived there (hello, or a map change; never a restore).
@@ -672,7 +699,7 @@ export class Room {
     this.parties.set(p.id, p);
     const out = this.crackersMsg(p);
     for (const o of this.members(p.map)) this.raw(o.sock, out);
-    this.everyone({ t: 'announce', kind: 'party', n: k.name, region: p.region, map: p.map, count: spots.length });
+    this.everyone({ t: 'announce', kind: 'party', n: k.name, region: p.region, map: wireMap(p.map), count: spots.length });
     this.store.log({ at: now, by: k.name, act: 'party', target: p.map, detail: spots.length + ' crackers in ' + (p.region || p.map) + ', party hats 1 in ' + commas(p.hat) });
     this.arm();
   }
@@ -687,7 +714,7 @@ export class Room {
     if (this.parties.get(p.id) !== p) return;
     this.parties.delete(p.id);
     this.store.endParty(p.id);
-    const out = JSON.stringify({ t: 'party_end', pid: p.id, map: p.map });
+    const out = JSON.stringify({ t: 'party_end', pid: p.id, map: wireMap(p.map) });
     for (const o of this.members(p.map)) this.raw(o.sock, out);
   }
 
@@ -936,7 +963,7 @@ export class Room {
     // the newcomer is the youngest on the map so the keeper only changes when the map was empty
     this.elect(map, quiet ? k : null, silent);
     this.arm();   // with two on a map the keeper's silence is now something to watch for
-    if (!quiet) this.send(k.sock, { t: 'keeper', map, n: g.keeper ? g.keeper.name : null });
+    if (!quiet) this.send(k.sock, { t: 'keeper', map: wireMap(map), n: g.keeper ? g.keeper.name : null });
     // whoever is already here shows up at once, even if they are standing still
     for (const o of g.members) if (o !== k && o.last) this.raw(k.sock, o.last);
   }
@@ -947,7 +974,7 @@ export class Room {
     k.map = null;
     if (!g) return;
     g.members.delete(k);
-    const out = JSON.stringify({ t: 'left', n: k.name, map });
+    const out = JSON.stringify({ t: 'left', n: k.name, map: wireMap(map) });
     for (const o of g.members) this.raw(o.sock, out);
     this.elect(map, null);
   }
@@ -979,7 +1006,7 @@ export class Room {
     if (old && stale(old)) old.mapAt = now;
     g.keeper = best; best.keeperAt = now;
     if (silent) return;
-    const out = JSON.stringify({ t: 'keeper', map, n: best.name });
+    const out = JSON.stringify({ t: 'keeper', map: wireMap(map), n: best.name });
     for (const o of g.members) if (o !== except) this.raw(o.sock, out);
   }
 
@@ -1011,8 +1038,14 @@ export class Room {
   // ---------- the roster ----------
   online() {
     const list = [];
-    for (const k of this.knights.values()) if (k.hello) list.push({ n: k.name, map: k.map, region: k.region, lv: k.lv, since: k.since, role: k.role });
+    for (const k of this.knights.values()) if (k.hello) list.push({ n: k.name, map: wireMap(k.map), region: k.region, lv: k.lv, since: k.since, role: k.role });
     return list;
+  }
+  // the parent page's view of each knight's game for the shared world: his map, his Atlas against the world's, his caps
+  knightsView() {
+    const out = [];
+    for (const k of this.knights.values()) if (k.hello) out.push({ n: k.name, map: wireMap(k.map), atlas: !k.atlas ? 'none' : (this.atlas && k.atlas === this.atlas.hash ? 'same' : 'old'), caps: k.caps.slice() });
+    return out;
   }
   isOnline(name) { const k = this.byName.get(low(name)); return !!(k && k.hello); }
 
@@ -1083,6 +1116,6 @@ export class Room {
     if (!k.sock.attach) return;
     const gifts = [];
     for (const gid of k.gifts) { const g = this.gifts.get(gid); if (g) gifts.push({ gid: g.gid, to: g.to, id: g.id, qty: g.qty, due: g.due }); }
-    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId, ip: k.ip || '' }); } catch (e) { }
+    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId, ip: k.ip || '', caps: k.caps, atlas: k.atlas }); } catch (e) { }
   }
 }

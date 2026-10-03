@@ -1372,7 +1372,8 @@ changes what is relayed.
   More than 6 jumps in 10 s is logged as `jumps` (not a violation).
 - **Too fast** (`speed`): over the last second (by those stamps) the path he reports, step by step and jumps left out, is
   longer than `1.25 x max(spd, 175) x seconds + 48 px`, with `spd` taken as the highest he reported in that second and no
-  more than SPEED_CAP's `max`. One violation is counted and that second starts again.
+  more than SPEED_CAP's `max`. One violation is counted, that second starts again, and no other is counted for a
+  second after it (at most one a second).
 - **Through a wall** (`wall`): the new spot is in a FIXED_SOLID tile or off the map, or the straight line from the last spot
   crosses the middle of one (a FIXED_SOLID tile shrunk by 12 px on each side: a knight's 13 px body keeps his centre that
   far from any wall, and a step cut across a wall's corner cannot reach the middle unless it is over 70 px long; the fastest
