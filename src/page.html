@@ -17,6 +17,18 @@
 </style>
 <canvas id="game"></canvas>
 <div id="safe-probe" aria-hidden="true" style="position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)"></div>
-<div id="fl-arrive" hidden style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;z-index:50;pointer-events:none"><div style="max-width:340px;background:#141a22;border:1px solid #2a3340;border-radius:12px;padding:18px 22px;text-align:center;color:#c9d1d9;font:16px &quot;Trebuchet MS&quot;,&quot;Segoe UI&quot;,system-ui,sans-serif;line-height:1.4">Bringing your knight over...</div></div>
-<script data-arrive>/* two addresses (src/00-handoff.js): the card shows while the game page loads after a hand-over */ try { if (sessionStorage.getItem('fanglands.handoff.arriving')) document.getElementById('fl-arrive').hidden = false; } catch (e) { }</script>
+<div id="fl-arrive" hidden style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;z-index:50;pointer-events:none"><div style="max-width:340px;background:#141a22;border:1px solid #2a3340;border-radius:12px;padding:18px 22px;text-align:center;color:#c9d1d9;font:16px &quot;Trebuchet MS&quot;,&quot;Segoe UI&quot;,system-ui,sans-serif;line-height:1.4">Bringing your knight over...<div id="fl-arrive-more" hidden style="margin-top:12px;color:#8b949e;font-size:14px">Still working on it...</div></div></div>
+<script data-arrive>/* two addresses (src/00-handoff.js, docs/ONLINE.md): read before the game itself is.
+  An ordinary tab on the old address holding the home-screen icon's cookie (a shared cookie jar) is sent to /handoff-leave
+  at once, which clears it and hands the tab over; after a hand-over the card shows while the game page loads, with
+  "Still working on it..." after 4 s. */
+(function () { try {
+  var card = function () { document.getElementById('fl-arrive').hidden = false; setTimeout(function () { var m = document.getElementById('fl-arrive-more'); if (m) m.hidden = false; }, 4000); };
+  var app = navigator.standalone === true || !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  if (/^(www\.|test\.)?gorkscape\.ca$/.test(location.hostname) && !app && /(^|;)\s*fl_stay=1\s*(;|$)/.test(document.cookie)) {
+    window.FL_LEAVING = true; card(); location.replace('/handoff-leave?to=' + encodeURIComponent(location.pathname + location.search)); return;
+  }
+  if (sessionStorage.getItem('fanglands.handoff.arriving')) card();
+} catch (e) { } })();
+</script>
 <!-- SCRIPTS -->

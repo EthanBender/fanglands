@@ -2,7 +2,7 @@
 // THE WORKER — the front door at fanglands.com (and the old gorkscape.ca)
 // /api/* and /ws go to the one World object on every address; /admin is the parent's page; everything else is the
 // game itself, served as static files from online/public (deploy.sh copies the built index.html there).
-// fanglands.com is the home. A page on gorkscape.ca is the hand-over page that moves that browser's login and saves
+// fanglands.com is the home. A page on gorkscape.ca is the hand-over page that moves that browser's login and settings
 // across, and www.fanglands.com sends to fanglands.com (handoff.js, docs/ONLINE.md "Two addresses"). The worker runs
 // first for every request (wrangler.toml run_worker_first = true), so it sees the address before any file is served.
 // The old GitHub Pages address is allowed to call the API too (CORS), so a knight there can reach the world.

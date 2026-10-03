@@ -44,7 +44,7 @@ const WRONG_TRIES = 5, LOCK_MS = 60000;     // five wrong secret words -> a minu
 const CHAT_KEPT = 20000;                    // lines; older ones are dropped now and then
 const PASS_MIN = 4, PASS_MAX = 200;
 // new accounts from one address (an IPv6 address by its /48) in an hour: a family or a party is under it; anyone
-// with the invite code making dozens (to fill the hand-over's login budget, handoff.js) is not
+// with the invite code making dozens (each account brings its own hand-over and save budgets) is not. 429 `signups`
 export const SIGNUPS_PER_HOUR = 10;
 const PARENT = 'parent page';               // mod_log's "by" for everything done from /admin
 
@@ -193,7 +193,7 @@ export class World {
     if (where) {
       if (made.size > 5000) for (const [k, v] of made) if (now0 - v.start >= 3600000) made.delete(k);
       const r = made.get(where);
-      if (r && now0 - r.start < 3600000 && r.n >= SIGNUPS_PER_HOUR) throw oops(429, 'too many new knights from here: wait a while', 'wait', { wait: Math.ceil((r.start + 3600000 - now0) / 1000) });
+      if (r && now0 - r.start < 3600000 && r.n >= SIGNUPS_PER_HOUR) throw oops(429, 'too many new knights from here: wait a while', 'signups', { wait: Math.ceil((r.start + 3600000 - now0) / 1000) });
     }
     const b = await readJson(req);
     const name = cleanName(b.name);
@@ -217,7 +217,7 @@ export class World {
       // counted here, with nothing waiting since the check, so signups at the same moment cannot all slip past it
       let r = made.get(where);
       if (!r || now0 - r.start >= 3600000) { r = { start: now0, n: 0 }; made.set(where, r); }
-      if (r.n >= SIGNUPS_PER_HOUR) throw oops(429, 'too many new knights from here: wait a while', 'wait', { wait: Math.ceil((r.start + 3600000 - now0) / 1000) });
+      if (r.n >= SIGNUPS_PER_HOUR) throw oops(429, 'too many new knights from here: wait a while', 'signups', { wait: Math.ceil((r.start + 3600000 - now0) / 1000) });
       r.n++;
     }
     const { salt, hash } = await makeHash(pass);

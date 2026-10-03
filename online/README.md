@@ -3,7 +3,7 @@
 One Cloudflare Worker named `fanglands` serves the game at https://fanglands.com and runs the world: accounts,
 cloud saves, the chat log and the live room where knights see each other. Nothing runs on any of our
 computers. `docs/ONLINE.md` (repo root) is the contract between this folder and the game's online files.
-The first address, https://gorkscape.ca, hands each browser over to fanglands.com with its login and saves, and its
+The first address, https://gorkscape.ca, sends each browser to fanglands.com carrying its login and settings, and its
 `/api` and `/ws` keep answering (docs/ONLINE.md, "Two addresses").
 
 ```

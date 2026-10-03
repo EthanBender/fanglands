@@ -6,8 +6,8 @@ main = "src/worker.js"
 compatibility_date = "2026-09-01"
 
 # The hand-over switch (src/handoff.js frontDoor; docs/ONLINE.md "Two addresses"), kept HERE so every deploy from any
-# tree carries it: "off" = gorkscape.ca serves the game as before; "on" = gorkscape.ca hands each browser over to
-# fanglands.com. It is turned on, or rolled back, by a commit on master, never by a --var alone (the next plain deploy
+# tree carries it: "on" = gorkscape.ca sends each browser to fanglands.com (with its login and settings); anything else
+# ("off", missing, misspelled) = gorkscape.ca serves the game as before. It is turned on, or rolled back, by a commit on master, never by a --var alone (the next plain deploy
 # from anywhere would undo that). The test world keeps these lines (deploy-test.sh); `--var HANDOVER:on` overrides it
 # there for a proof.
 [vars]
