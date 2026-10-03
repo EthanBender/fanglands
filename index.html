@@ -44521,7 +44521,9 @@ window.DEATHS = DEATHS;
 // old heroes' statues) go to the old drawHuman untouched. Thistledown's statue of the knight himself is a knight look
 // with `stone`: the knight in what he wears, every colour mapped to stone (see tintCtx).
 //
-// HURT: while e.hurtT > 0 the whole knight flashes red (every colour he sets, through tintCtx), drawn live.
+// HURT: while e.hurtT > 0 the whole knight flashes red: your own knight drawn live (every colour he sets, through
+// tintCtx); a knight online from his own picture with the same red laid over it (hurtOf), so a crowd of hurt friends
+// costs a blit each, not a live drawing.
 //
 // WRAPS (by reassignment, explicit arguments): playerLook (adds gear), drawHuman (a knight look comes here, every other
 // look goes on down unchanged; 77's crown and 79's braid are drawn here for a knight), drawCharacter (the player on
@@ -44548,7 +44550,7 @@ const KNIGHTGEAR = (() => {
   let TUNIC = '#3b6fb6', SKIN = '#e8b790', HAIR = '#5a3a1e', RIB = '#d0567f', GIRL = false;
   const GOLD = '#e0b546', OUT = 'rgba(22,14,8,0.62)', RIBBON = '#d0567f';
   const KG = { seat: 0 };
-  const STATS = { pics: 0, wpics: 0, live: 0, blits: 0, skirts: 0, tinted: 0 };
+  const STATS = { pics: 0, wpics: 0, live: 0, blits: 0, skirts: 0, tinted: 0, hurtPics: 0 };
   const kEase = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
   // a colour off the wire is only ever used if it is a #rgb or #rrggbb hex (a gradient stop with a bad colour throws)
@@ -45537,7 +45539,7 @@ const KNIGHTGEAR = (() => {
     while (M.size > max || (budget && picBytes > budget && M.size > 1)) {
       const [k0, o] = M.entries().next().value; M.delete(k0);
       if (budget) picBytes -= picBytesOf(o);
-      try { o.c.width = 0; o.c.height = 0; } catch (e) { }
+      try { o.c.width = 0; o.c.height = 0; if (o.hurt) { o.hurt.width = 0; o.hurt.height = 0; } } catch (e) { }
     }
   }
   function makeCanvas(w, h, ss) {
@@ -45552,7 +45554,7 @@ const KNIGHTGEAR = (() => {
   // A picture is cut to what is drawn in it (the bounds of every path, plus two pixels), so a plain knight is a small one.
   // At rest (no swing, not easing back from one, nothing else in the hand) the weapon and its hand are in the picture
   // too: one blit a knight. Otherwise the body is one picture and the weapon another, turned to its angle.
-  function drawCached(g, e, look, P) {
+  function drawCached(g, e, look, P, hurt) {
     // his shield raised is drawn live (only your own knight blocks; it is not in the presence look)
     if (look.block) return false;
     crowdN++;
@@ -45611,19 +45613,32 @@ const KNIGHTGEAR = (() => {
     }
     STATS.blits++;
     // S is the picture's own (unflipped) stance, so what he holds is flipped with the picture
-    const held = () => { g.save(); g.scale(S.mirror ? -1.08 : 1.08, 1.08); paintHeld(g, S, P, look, hold, weaponPic); g.restore(); };
+    const wp = hurt ? (g2, W2, sw) => weaponPic(g2, W2, sw, true) : weaponPic;
+    const held = () => { const gh = hurt ? tintCtx(g, 'hurt') : g; gh.save(); gh.scale(S.mirror ? -1.08 : 1.08, 1.08); paintHeld(gh, S, P, look, hold, wp); gh.restore(); };
     if (flip) { g.save(); g.scale(-1, 1); }
     if (!rest && S.back) held();
-    g.drawImage(p.c, p.x0, p.y0, p.c.width / p.ss, p.c.height / p.ss);
+    g.drawImage((hurt && hurtOf(p)) || p.c, p.x0, p.y0, p.c.width / p.ss, p.c.height / p.ss);
     if (!rest && !S.back) held();
     if (flip) g.restore();
     return true;
   }
-  function clearPics() { for (const o of PICS.values()) { try { o.c.width = 0; o.c.height = 0; } catch (e) { } } PICS.clear(); WPICS.clear(); picBytes = 0; }
+  function clearPics() { for (const o of [...PICS.values(), ...WPICS.values()]) { try { o.c.width = 0; o.c.height = 0; if (o.hurt) { o.hurt.width = 0; o.hurt.height = 0; } } catch (e) { } } PICS.clear(); WPICS.clear(); picBytes = 0; }
+  // a picture's hurt flash: the picture with 40% of #ff6b6b laid over what is drawn in it (source-atop keeps the clear
+  // pixels clear), which is exactly PALETTES.hurt's mix; made once and kept with the picture
+  function hurtOf(p) {
+    if (p.hurt) return p.hurt;
+    if (typeof document === 'undefined' || !document.createElement) return null;
+    const c = document.createElement('canvas'); c.width = p.c.width; c.height = p.c.height;
+    const cg = c.getContext ? c.getContext('2d') : null;
+    if (!cg || !c.width) return null;
+    cg.drawImage(p.c, 0, 0); cg.globalCompositeOperation = 'source-atop'; cg.globalAlpha = 0.4; cg.fillStyle = '#ff6b6b'; cg.fillRect(0, 0, c.width, c.height);
+    p.hurt = c; STATS.hurtPics++;
+    return c;
+  }
   // a weapon's picture, turned to its angle (while he swings or eases back); a bow being drawn is drawn live. The
   // picture is cut to the weapon itself (its own bounds, measured once, plus two pixels): a turned picture costs for every
   // pixel it covers, and most weapons are far smaller than a spear.
-  function weaponPic(g, W, swing) {
+  function weaponPic(g, W, swing, hurt) {
     if (W.fam === 'bow' && swing >= 0) return false;
     const ss = picScale(), anim = WANIMATED.has(W.id), ph = anim ? Math.floor(time * 4) % PHASES : 0;
     const key = keyOf(W) + '|' + ph + '|' + ss;
@@ -45643,7 +45658,7 @@ const KNIGHTGEAR = (() => {
       T = T0;
       lruPut(WPICS, key, p, WPIC_MAX, 0); STATS.wpics++;
     }
-    g.drawImage(p.c, p.x0, p.y0, p.w, p.h);
+    g.drawImage((hurt && hurtOf(p)) || p.c, p.x0, p.y0, p.w, p.h);
     return true;
   }
 
@@ -45662,9 +45677,9 @@ const KNIGHTGEAR = (() => {
     setColours(e, look);
     try {
       const seated = !!opts.seated || KG.seat > 0 || !!e.seated;
-      // hurt, the whole knight flashes red (drawn live for the flash); a stone look (the statue) is all stone
+      // hurt, the whole knight flashes red (a knight online from his red picture, your own live); a stone look is all stone
       const hurt = e.hurtT > 0, stone = !!look.stone;
-      if (opts.cache && !seated && !hurt && !stone && g === ctx && drawCached(g, e, look, P)) return;
+      if (opts.cache && !seated && !stone && g === ctx && drawCached(g, e, look, P, hurt)) return;
       drawLive(stone ? tintCtx(g, 'stone') : hurt ? tintCtx(g, 'hurt') : g, e, look, P, seated);
     } finally { T = T0; }
   }
@@ -46197,9 +46212,11 @@ const KNIGHTGEAR = (() => {
             if (calm.has(b[i]) || d0 === null || d1 === null || !(d1 < d0 || d0 < 1)) { bad.push({ f, calm: a[i], hurt: b[i] }); break; }
           }
         }
-        const p0 = STATS.pics; clearPics(); draw(ctx, ent(FACES[0], { hurtT: 0.2 }), look, { cache: true });
-        const pic = STATS.pics - p0;
-        check(P0 + 'hurt, the whole knight flashes: in full Mithril (closed helm and plate) facing down, side-on and away, every colour he sets (' + n + ') changes and moves toward red, none is a calm colour, the drawing is the same; a hurt knight online is drawn live (no picture kept)', !bad.length && n >= 150 && pic === 0, { bad: bad.slice(0, 4), n, pic }); }
+        const p0 = STATS.pics, h0 = STATS.hurtPics, l0 = STATS.live; clearPics();
+        // twenty hurt friends in the same gear, standing: one picture, one red copy of it, nothing drawn live
+        for (let k = 0; k < 20; k++) draw(ctx, ent(FACES[0], { hurtT: 0.2 }), look, { cache: true });
+        const pic = STATS.pics - p0, red = STATS.hurtPics - h0, live = STATS.live - l0;
+        check(P0 + 'hurt, the whole knight flashes: in full Mithril (closed helm and plate) facing down, side-on and away, every colour he sets (' + n + ') changes and moves toward red, none is a calm colour, the drawing is the same; twenty hurt knights online are each blitted from one picture and its one red copy, with nothing drawn live', !bad.length && n >= 150 && pic === 1 && red === 1 && live === 0, { bad: bad.slice(0, 4), n, pic, red, live }); }
 
       // 17. falling and getting up: the core's fall (09-render tips the knight over and fades him) and 79-deaths (which
       // wraps drawCharacter and drawHuman for monsters and people) still draw the knight in the new look. A real frame
