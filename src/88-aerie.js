@@ -676,6 +676,8 @@
       for (let k = 0; k < 5; k++) { g.fillStyle = k % 2 ? '#9fb0c6' : '#c6d3e4'; g.fillRect(x + 5 + k * 8, y + 44 - h[k], 6, h[k]); g.fillStyle = '#e9eef5'; g.fillRect(x + 5 + k * 8, y + 44 - h[k], 6, 3); }
       return;
     }
+    // the Windward Market's four stalls are drawn whole by 91-cloudkingdom (two cells wide, with their goods)
+    if (window.KINGDOM && KINGDOM.ownsStall && KINGDOM.ownsStall(tx, ty)) return;
     g.fillStyle = 'rgba(60,90,140,0.22)'; g.fillRect(x + 4, y + 40, TILE - 8, 5);
     g.fillStyle = '#8a6a3a'; g.fillRect(x + 5, y + 20, 4, 24); g.fillRect(x + TILE - 9, y + 20, 4, 24);
     g.fillStyle = '#c0906a'; g.fillRect(x + 2, y + 12, TILE - 4, 10);
