@@ -743,7 +743,7 @@
   // the fractional part, always 0..1 (a % 1 of a negative clock is negative)
   const fr = v => v - Math.floor(v);
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, bellAlpha: 1, gateAlpha: {}, gateWho: {}, pics: 0, record: false, boxes: [] };
+  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, porches: 0, bellAlpha: 1, gateAlpha: {}, gateWho: {}, pics: 0, record: false, boxes: [] };
   const CACHE = {};
   function sprite(key, w, h, ax, ay, fn) {
     let s = CACHE[key];
@@ -2000,8 +2000,8 @@
     g.fillStyle = '#efe2c4'; g.fillRect(cx - w / 2, y, w, 14); g.strokeStyle = '#5a3c22'; g.lineWidth = 1; g.strokeRect(cx - w / 2, y, w, 14);
     g.fillStyle = '#3a2a1a'; g.textAlign = 'center'; g.fillText(word, cx, y + 10.5);
   }
+  // the keep's door on its north wall: its frame on the roof's back edge, a lantern either side (as the core does for the keep)
   function topDoor(g, b, x, y) {
-    // a door on the north wall: its frame on the roof's back edge, a lantern either side (as the core does for the keep)
     const dx = x + b.doorTop * TILE;
     if (still()) {
       g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(dx + 6, y, 36, 26);
@@ -2011,6 +2011,30 @@
       g.fillStyle = GOLD; g.beginPath(); g.arc(dx + 30, y + 9, 2, 0, 7); g.fill();
     }
     if (moving()) { drawLantern(g, dx + 4, y + 12); drawLantern(g, dx + 44, y + 12); }
+  }
+  // A house's or the inn's door on its north wall (h6, h7, the inn): a little porch that stands out over the step behind
+  // the house (as Aerie's do), with its own gabled hood in the roof's colour, a door, a sill, a lantern either side and the
+  // inn's sign. On the roof's back edge, where the door was, it read as a door on top of the roof from the street. The
+  // porch is its own item, sorted at the step's middle (drawHook), so a knight standing on the step is drawn in front of it
+  // and one behind it is hidden by it; it is not part of the building's cached picture.
+  const PORCH_FOR = b => b.town && b.doorTop !== undefined && b.id !== 'keep';
+  function drawPorch(g, b) {
+    const cx = (b.x + b.doorTop) * TILE + 24, y = b.y * TILE, top = y - 20, roof = b.roof;
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(cx - 20, y + 2, 40, 6);
+    // the porch's front wall and its door, standing on the house's back edge
+    g.fillStyle = b.stone ? '#8a8d94' : '#efe4cc'; g.fillRect(cx - 19, top, 38, 28);
+    g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(cx + 11, top, 8, 28);
+    g.fillStyle = '#5a3a1e'; g.fillRect(cx - 11, top + 6, 22, 22); g.fillStyle = '#6e4826'; g.fillRect(cx - 11, top + 6, 22, 3);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(cx - 1, top + 9, 2, 19);
+    g.fillStyle = GOLD; g.beginPath(); g.arc(cx + 6, top + 18, 1.8, 0, 7); g.fill();
+    g.fillStyle = b.stone ? '#a4a8ae' : '#c9b48a'; g.fillRect(cx - 20, top + 27, 40, 3);
+    // the hood: a little gable in the roof's colour, its eaves past the walls
+    g.fillStyle = shade(roof, -0.18); g.beginPath(); g.moveTo(cx - 25, top + 4); g.lineTo(cx, top - 14); g.lineTo(cx + 25, top + 4); g.closePath(); g.fill();
+    g.fillStyle = roof; g.beginPath(); g.moveTo(cx - 25, top + 4); g.lineTo(cx, top - 14); g.lineTo(cx, top - 8); g.lineTo(cx - 19, top + 5); g.closePath(); g.fill();
+    g.fillStyle = shade(roof, -0.45); g.fillRect(cx - 25, top + 4, 50, 3);
+    drawLantern(g, cx - 26, top + 16); drawLantern(g, cx + 26, top + 16);
+    if (ICON[b.id]) bracketSign(g, cx + 30, top - 4, ICON[b.id], 1);
+    STATS.porches++;
   }
   // BPASS: 0 draws a building whole; 1 only what never moves (cached once per building and per day or night, see
   // drawTownBuilding); 2 only what moves or flickers (smoke, sparks, lanterns, the swinging signs, the awning, banners)
@@ -2049,10 +2073,8 @@
         g.fillStyle = '#5a3c22'; g.fillRect(dcx - 31, top - 2, 62, 3);
       }
       if (ICON[b.id] && moving()) bracketSign(g, dcx + 26, eave + 6, ICON[b.id], 1);
-    } else if (b.doorTop !== undefined) {
-      topDoor(g, b, x, y);
-      if (ICON[b.id] && moving()) bracketSign(g, x + b.doorTop * TILE + 46, y + 4, ICON[b.id], 1);
     }
+    // (a door on the north wall is its porch, drawn on its own: drawPorch)
     if (b.sign && still()) wordPlate(g, x + w / 2 + (b.door !== undefined && Math.abs(b.door * TILE + 24 - w / 2) < 30 ? 60 : 0), eave - 18, b.sign);
   }
   // the keep: a crenellated parapet, a slate great-hall roof, the Duke's arms over the north door, two front turrets at
@@ -2172,7 +2194,7 @@
   // ---------- the hook ----------
   const GATE_TOWERS = TOWERS.filter(t => t.gate);
   const drawHook = (g, items, c0) => {
-    STATS.chunks = 0; STATS.repaints = 0; STATS.items = 0; STATS.towers = 0; STATS.lampsLit = 0; STATS.fountains = 0; STATS.statues = 0; STATS.keep = 0; STATS.townBuildings = 0; STATS.bellAlpha = 1; STATS.gateAlpha = {}; STATS.gateWho = {};
+    STATS.chunks = 0; STATS.repaints = 0; STATS.items = 0; STATS.towers = 0; STATS.porches = 0; STATS.lampsLit = 0; STATS.fountains = 0; STATS.statues = 0; STATS.keep = 0; STATS.townBuildings = 0; STATS.bellAlpha = 1; STATS.gateAlpha = {}; STATS.gateWho = {};
     if (STATS.record) STATS.boxes.length = 0;
     // every instance is written into the map's top-left corner: nothing of the town is drawn inside one
     if (window.__instance) return;
@@ -2216,6 +2238,8 @@
       else if (k === 'great') { if (x === great.x && y === great.y) put(items, (great.y + great.h) * TILE - 4, [GF.cx - GF.rx - 2, 34 * TILE - 24, GF.cx + GF.rx + 2, (great.y + great.h) * TILE], () => drawGreatFountain(g)); }
       else if (k === 'market' || k === 'rose') { const f = fountainAt(x, y); if (f && x === f.x && y === f.y) put(items, (f.y + f.h) * TILE - 4, [f.x * TILE, f.y * TILE - 30, (f.x + f.w) * TILE, (f.y + f.h) * TILE], () => drawSmallFountain(g, f)); }
     }
+    // the back doors' porches, over the step behind the house, sorted at the step's middle
+    for (const b of TOWN_BUILDINGS()) if (PORCH_FOR(b) && vis(c, (b.x + b.doorTop) * TILE - 40, b.y * TILE - 50, (b.x + b.doorTop) * TILE + 90, b.y * TILE + 12)) put(items, b.y * TILE - TILE / 2, [(b.x + b.doorTop) * TILE - 4, b.y * TILE - 34, (b.x + b.doorTop) * TILE + 52, b.y * TILE + 8], () => drawPorch(g, b), b.id);
     // the towers and the two gatehouses
     for (const t of TOWERS) {
       const d = t.gate ? TOWER_DEF.gate : TOWER_DEF.wall;
@@ -2826,6 +2850,18 @@
       load(); F.step([]); drain();
       check(P + "C17b an old save: a plank on what is now h5's floor and a door and a walker wreck on the High Street are taken off (the walker moved into the open, out of h1 and off the street); with the pack and the bank full the refunds lie by the knight ('On the ground by you: 1 plank and 2 doors.'); the inn's bed moves with the inn (129,48); a knight saved on his door where a hedge now grows is moved out by the pass itself; refunds read '17 planks, 1 bed and 1 lodestone'",
         r.ok && r.plank && r.door && r.mech && r.wreck && r.ground === 'door:2,plank:1' && r.groundLine === 1 && r.bed && r.free && r.unstuck === 1 && r.words === 'Back in your pack: 17 planks, 1 bed and 1 lodestone.', r); }
+
+    // ---- C19b. a back door is a porch over the step behind the house, drawn in front of nothing but the step ----
+    { leave(); onFoot(); drain(); const r = {};
+      for (const id of ['inn', 'h6', 'h7']) {
+        const b = BUILDINGS.find(o => o.id === id); F.tp(b.x + b.doorTop, b.y - 1); F.step([]);
+        STATS.record = true; const items = []; try { drawHook(ctx, items, cam); } finally { STATS.record = false; }
+        const porch = STATS.boxes.filter(bx => bx.own === id && !bx.building && bx.y1 <= b.y * TILE + 8 && bx.y0 < b.y * TILE - 20);
+        // the knight standing on the step sorts after the porch (09-render sorts him at player.y + player.r): in front of it
+        r[id] = { porches: porch.length, before: porch.length === 1 && porch[0].y < player.y + player.r, n: STATS.porches };
+      }
+      check(P + 'C19b the inn, h6 and h7 each draw one porch over the step behind the house (their door on the north wall), sorted before a knight standing on that step',
+        Object.values(r).every(v => v.porches === 1 && v.before), r); }
 
     // ---- C24. a knight's machines and wrecks in the new city are his: never moved or deleted by a load ----
     { leave(); onFoot(); drain(); save();
