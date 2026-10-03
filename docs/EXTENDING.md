@@ -91,8 +91,13 @@ under every other file's ground marks (17-tap's ring and dots, 69-retaliate's ri
 or above -1e9. Old saves: on the FIRST load of a save made before the rebuild (`player.cityV` not 1), `CAPITAL.migrate()`
 reverts its diffs inside stone, water or a hedge (what was placed is given back) and MOVES a machine, a beast, a wreck or
 the mare to the nearest open ground (never deletes one); a cell in `OPEN` ground keeps its diff. After that a knight's
-changes in the city are his and no load touches them.
-The seventeen town buildings (`b.town`) draw through the `drawBuilding` wrap; Death's House keeps the core's art.
+changes in the city are his and no load touches them (a home beside its lodestone included).
+The seventeen town buildings (`b.town`) draw through the `drawBuilding` wrap; Death's House keeps the core's art. What
+never moves on a building is a cached picture (one per building, per day or night, the 10 drawn least lately dropped);
+only smoke, lanterns, signs, the awning and banners are drawn each frame, so a new moving part must be drawn in the
+`BPASS` 2 pass. The core skips its own ground texture under the cells the city's chunks cover (`window.GROUND_COVER`,
+read by 09-render). Night lights (`HOOKS.nightLights`, 35-night) are stamped from one cached picture per radius: push
+as many as you like, but give each a whole-number radius.
 
 ## HUD (src/59-hudkit.js, the Storybook Heraldry kit) — the API every feature file uses
 

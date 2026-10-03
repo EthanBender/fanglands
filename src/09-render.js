@@ -53,12 +53,16 @@ function render() {
   const y0 = Math.max(0, Math.floor(cam.y / TILE)), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE));
   const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
   const inside = buildingAt(ptx, pty); // roof hidden for this building
+  // a feature file that paints its own opaque ground over some cells later in the frame (95-thistledown's cached city
+  // ground) names them here, so their texture is not drawn twice
+  const covered = window.GROUND_COVER;
   for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
     const t = map[idx(tx, ty)];
     let v = variant[idx(tx, ty)];
     if (t === T.WATER) v = (v + Math.floor(time * 1.5)) % 3;
     const img = tex[TEX_NAME[t] + v];
-    if (img) g.drawImage(img, tx * TILE, ty * TILE, TILE, TILE);
+    if (covered && covered(tx, ty)) { }
+    else if (img) g.drawImage(img, tx * TILE, ty * TILE, TILE, TILE);
     else { window.__texMiss = (window.__texMiss || []).concat([[tx, ty, t, v, time]]).slice(-5); g.drawImage(tex.grass0, tx * TILE, ty * TILE, TILE, TILE); }
     if (t === T.WALL && !SOLID.has(tileAt(tx, ty + 1))) { g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(tx * TILE, ty * TILE + TILE - 6, TILE, 6); }
     if (t === T.FENCE || t === T.GATE) drawFenceProp(g, tx, ty, t === T.GATE);

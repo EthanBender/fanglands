@@ -330,6 +330,20 @@
   }
   // lights a feature keeps by coordinate rather than by tile (Thistledown's lamps, torches and fountain: src/95-thistledown.js)
   HOOKS.nightLights = HOOKS.nightLights || [];
+  // One hole in the dark per radius, painted once at the screen's pixel ratio and stamped for every light of that size
+  // (a fresh radial gradient for every light, every frame, was most of the cost of a lit town at night)
+  const LIGHT_SPRITES = new Map(), LIGHT_STATS = { made: 0 };
+  function lightSprite(r) {
+    const key = r + '@' + DPR;
+    let c = LIGHT_SPRITES.get(key);
+    if (!c) {
+      c = document.createElement('canvas'); c.width = c.height = Math.max(1, Math.ceil(r * 2 * DPR));
+      const sg = c.getContext ? c.getContext('2d') : null;
+      if (sg) { sg.setTransform(c.width / (r * 2), 0, 0, c.height / (r * 2), 0, 0); const gr = sg.createRadialGradient(r, r, 10, r, r, r); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); sg.fillStyle = gr; sg.beginPath(); sg.arc(r, r, r, 0, 7); sg.fill(); }
+      LIGHT_SPRITES.set(key, c); LIGHT_STATS.made++;
+    }
+    return c;
+  }
   function drawNight(g) {
     const a = overlayAlpha(); if (a <= 0) return;
     const inAfter = window.__instance === AFTER.id;
@@ -362,8 +376,7 @@
     for (const f of HOOKS.nightLights) f(lights, x0, y0, x1, y1);
     for (const L of lights) {
       const sx = L.x - cam.x, sy = L.y - cam.y; if (sx < -L.r || sy < -L.r || sx > VW + L.r || sy > VH + L.r) continue;
-      const gr = dg.createRadialGradient(sx, sy, 10, sx, sy, L.r); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
-      dg.fillStyle = gr; dg.beginPath(); dg.arc(sx, sy, L.r, 0, 7); dg.fill();
+      dg.drawImage(lightSprite(L.r), sx - L.r, sy - L.r, L.r * 2, L.r * 2);
     }
     g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(nightC, 0, 0); g.restore();
   }
@@ -385,7 +398,7 @@
   // reddening at dusk, with the moon riding it at night and the glass dimmed. It reads window.NIGHT.phase() and dayT().
 
   // ---------- test / debug handle ----------
-  window.NIGHT = { DAY, LIGHT, DUSK, phase, alpha, overlay: overlayAlpha, dayT, alive: nightAlive, resetTimer: () => { spawnT = 0; }, timer: () => spawnT, canSpawn, inNoGo, noGoRects, tiles: { crypt: T_CRYPT, deadTree: T_DEAD } };
+  window.NIGHT = { lightSprites: LIGHT_STATS, DAY, LIGHT, DUSK, phase, alpha, overlay: overlayAlpha, dayT, alive: nightAlive, resetTimer: () => { spawnT = 0; }, timer: () => spawnT, canSpawn, inNoGo, noGoRects, tiles: { crypt: T_CRYPT, deadTree: T_DEAD } };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {

@@ -240,10 +240,13 @@
         else refund.pack[id] = (refund.pack[id] || 0) + 1;
       }
     }
-    // where he wakes and where his lodestone takes him: only while the bed and the lodestone are still there
+    // where he wakes and where his lodestone takes him: only in the one pass that moves an old save into the new city, and
+    // only when that pass took the bed or the lodestone away. A home is wherever 06-systems' safeSpot put it, which can be
+    // a tile or two to the side of the stone when something solid stands just south of it, so a home is kept while any
+    // lodestone is within 3 tiles of it (a home made in the new city is never touched: the pass runs once per knight)
     const tileOfPx = p => [Math.floor(p.x / TILE), Math.floor(p.y / TILE)];
-    if (player.bedSpawn) { const [x, y] = tileOfPx(player.bedSpawn); if (inTown(x, y) && tileAt(x, y) !== T.BED) player.bedSpawn = null; }
-    if (player.home) { const [x, y] = tileOfPx(player.home); if (inTown(x, y - 1) && tileAt(x, y - 1) !== T.LODESTONE) player.home = null; }
+    if (pre && player.bedSpawn) { const [x, y] = tileOfPx(player.bedSpawn); if (inTown(x, y) && tileAt(x, y) !== T.BED) player.bedSpawn = null; }
+    if (pre && player.home) { const [x, y] = tileOfPx(player.home); if (inTown(x, y) && !nearestTileOfType(x, y, T.LODESTONE, 3)) player.home = null; }
     // and the knight himself, out of anything solid
     if (collides(player.x, player.y, player.r, playerWho())) { const sp = safeSpot(player.x, player.y, player.r, playerWho()) || respawnPoint(); player.x = sp.x; player.y = sp.y; }
     miniDirty = true;
@@ -551,16 +554,25 @@
   }
   // a tap on the middle of a fountain (or on the bell) walks to the nearest cell of it that has open ground beside it
   const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  // A cell to stand on beside a fountain or the bell is no good when one of the town's people who stay put stands on it or
+  // right next to it (Tobin at 110,33, by the Great Fountain's north-west rim): the knight would end up facing him
+  const STAYERS = () => NPCS.filter(n => !n.wander && inTown(n.x, n.y));
+  const byStayer = (x, y) => STAYERS().some(n => Math.abs(n.x - x) <= 1 && Math.abs(n.y - y) <= 1);
+  const standOpen = (x, y) => N4.some(([dx, dy]) => !SOLID.has(tileAt(x + dx, y + dy)) && !byStayer(x + dx, y + dy));
   function rimFor(tx, ty) {
     const k = kindAt(tx, ty), f = fountainAt(tx, ty);
     const same = (x, y) => f ? fountainAt(x, y) === f && tileAt(x, y) === FOUNT : kindAt(x, y) === k;
     const open = (x, y) => N4.some(([dx, dy]) => !SOLID.has(tileAt(x + dx, y + dy)));
-    let best = null, bd = 1e9;
-    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
-      const x = tx + dx, y = ty + dy; if (!same(x, y) || !open(x, y)) continue;
-      const d = dist(tc(x), tc(y), player.x, player.y); if (d < bd) { bd = d; best = [x, y]; }
+    // the nearest rim cell with a clear place to stand; failing that, the nearest with any open ground
+    for (const ok of [standOpen, open]) {
+      let best = null, bd = 1e9;
+      for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+        const x = tx + dx, y = ty + dy; if (!same(x, y) || !ok(x, y)) continue;
+        const d = dist(tc(x), tc(y), player.x, player.y); if (d < bd) { bd = d; best = [x, y]; }
+      }
+      if (best) return best;
     }
-    return best;
+    return null;
   }
   { const _tapPick = tapPick;
     tapPick = function (sx, sy) {
@@ -569,10 +581,29 @@
       const k = kindAt(p.tx, p.ty);
       if (!(p.t === FOUNT || k === 'bell')) return p;
       const middle = p.t === FOUNT && fountainAt(p.tx, p.ty) === great && p.ty === 35 && (p.tx === 111 || p.tx === 112);
-      const open = N4.some(([dx, dy]) => !SOLID.has(tileAt(p.tx + dx, p.ty + dy)));
-      if (!middle && open) return p;
+      if (!middle && standOpen(p.tx, p.ty)) return p;
       const r = rimFor(p.tx, p.ty);
       return r ? Object.assign({}, p, { tx: r[0], ty: r[1] }) : p;
+    };
+  }
+  // E on a fountain or a town thing answers as that thing, even with one of the town's people beside it (Tobin by the
+  // Great Fountain, the villager by the waiting plinth): the core talks to the person in front first. A person standing on
+  // the faced cell itself still answers, and so does one standing between the knight and the thing (nearer along the way
+  // the knight faces, and not off to one side), and so do the sellers over their stall counters.
+  { const _npcInFront = npcInFront;
+    npcInFront = function () {
+      const n = _npcInFront();
+      if (!n || away()) return n;
+      const ft = frontTile(player), tx = ft.tx, ty = ft.ty;
+      if (!inTown(tx, ty)) return n;
+      const t = tileAt(tx, ty);
+      if (t !== FOUNT && !(t === PROP && kindAt(tx, ty) !== 'stall')) return n;
+      if (Math.floor(n.px / TILE) === tx && Math.floor(n.py / TILE) === ty) return n;
+      const fx = player.facing.x, fy = player.facing.y, fl = Math.hypot(fx, fy) || 1, ux = fx / fl, uy = fy / fl;
+      const nx = n.px - player.x, ny = n.py - player.y, along = nx * ux + ny * uy, side = Math.abs(nx * uy - ny * ux);
+      const thing = (tc(tx) - player.x) * ux + (tc(ty) - player.y) * uy;
+      if (along > 0 && along < thing - 12 && side < 22) return n;
+      return null;
     };
   }
 
@@ -663,7 +694,7 @@
   // the fractional part, always 0..1 (a % 1 of a negative clock is negative)
   const fr = v => v - Math.floor(v);
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, bellAlpha: 1, record: false, boxes: [] };
+  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, bellAlpha: 1, gateAlpha: {}, gateWho: {}, pics: 0, record: false, boxes: [] };
   const CACHE = {};
   function sprite(key, w, h, ax, ay, fn) {
     let s = CACHE[key];
@@ -755,6 +786,11 @@
     }
   }
   const gcode = (x, y) => inPlan(x, y) ? GCODE[pi(x, y)] : G_NONE;
+  // the cells the chunks paint edge to edge in opaque stone, lawn, planks or the core's own grass and dirt (water only gets
+  // its coping): while one is as the world made it, the core skips its texture there (09-render reads GROUND_COVER), so
+  // the ground is not drawn twice. Only at a whole-number pixel ratio, where the chunks meet without a seam.
+  const COVERS = new Uint8Array(W * H); for (let i = 0; i < W * H; i++) COVERS[i] = GCODE[i] !== G_NONE && GCODE[i] !== G_WATER ? 1 : 0;
+  window.GROUND_COVER = (x, y) => !window.__instance && snapped && x >= X0 && y >= Y0 && x < X0 + W && y < Y0 + H && COVERS[pi(x, y)] === 1 && Number.isInteger(DPR) && tileAt(x, y) === base[pi(x, y)];
   const isStreet = (x, y) => { const k = gcode(x, y); return k === G_STREET || k === G_GATE || k === G_BRIDGE; };
   const isWaterG = (x, y) => glyph(x, y) === '~';
   // the patterns, 48 x 48 (cached at 2x)
@@ -959,13 +995,14 @@
     for (let k = 0; k < 4; k += 2) { const my = k * 12; g.fillStyle = '#8b8f96'; g.fillRect(outer, my, 8, 12); g.fillStyle = '#a9aeb5'; g.fillRect(outer, my, 8, 2.5); }
     g.fillStyle = '#5f6268'; g.fillRect(outer, 12, 8, 12); g.fillRect(outer, 36, 8, 12);
   }
-  // a torch on an iron bracket: lit from dusk (the gatehouse's two burn day and night: always)
+  // a torch on an iron bracket: lit from dusk (the gatehouse's two burn day and night: always); its glow is one sprite
+  const paintTorchGlow = cg => { const gl = cg.createRadialGradient(0, 0, 1, 0, 0, 20); gl.addColorStop(0, 'rgba(255,190,90,0.45)'); gl.addColorStop(1, 'rgba(255,170,60,0)'); cg.fillStyle = gl; cg.beginPath(); cg.arc(0, 0, 20, 0, 7); cg.fill(); };
   function drawTorch(g, x, y, always) {
     g.fillStyle = '#2a2a30'; g.fillRect(x - 1.5, y - 2, 3, 12); g.fillRect(x - 5, y + 2, 10, 2.5);
     g.fillStyle = '#5a3a1e'; g.fillRect(x - 2, y - 10, 4, 9);
     if (always || lit()) {
       const f = 0.8 + Math.sin(time * 9 + x) * 0.2;
-      if (lit()) { const gl = g.createRadialGradient(x, y - 14, 1, x, y - 14, 20); gl.addColorStop(0, `rgba(255,190,90,${(0.45 * f).toFixed(3)})`); gl.addColorStop(1, 'rgba(255,170,60,0)'); g.fillStyle = gl; g.beginPath(); g.arc(x, y - 14, 20, 0, 7); g.fill(); }
+      if (lit()) { const a0 = g.globalAlpha; g.globalAlpha = a0 * f; blit(g, sprite('torchglow', 40, 40, 20, 20, paintTorchGlow), x, y - 14); g.globalAlpha = a0; }
       g.fillStyle = '#ff8a1a'; g.beginPath(); g.moveTo(x - 4, y - 10); g.quadraticCurveTo(x - 4, y - 18 - f * 3, x, y - 22 - f * 3); g.quadraticCurveTo(x + 4, y - 18 - f * 3, x + 4, y - 10); g.closePath(); g.fill();
       g.fillStyle = '#ffe066'; g.beginPath(); g.ellipse(x, y - 13, 1.8, 3.5, 0, 0, 7); g.fill();
     }
@@ -1033,6 +1070,21 @@
     return { cx, x0, x1, foot0, foot1, top, bot, outer: gate.dir > 0 ? x0 : x1, out: gate.dir > 0 ? -1 : 1 };
   };
   const nearGate = gate => { const b = gateBox(gate), pty = Math.floor(player.y / TILE); return player.x > b.x0 - TILE && player.x < b.x1 + TILE && pty >= 30 && pty <= 34; };
+  // anybody under the roof: a friend online (where we draw her), a villager, a guard, a goblin. The roof sorts at row 34's
+  // top edge, so a figure whose middle is over the roof's span and whose feet are between the merlons' top and row 34 is
+  // drawn under it; while one is there the roof is faint, the same as for the knight himself
+  const underRoof = (b, x, y) => x > b.x0 - 6 && x < b.x1 + 6 && y > b.top - GH.merlon && y < 34 * TILE + 4;
+  function gateBusy(gate) {
+    const b = gateBox(gate);
+    if (nearGate(gate)) return 'knight';
+    if (window.PLAYERS && PLAYERS.remote && typeof PLAYERS.mapId === 'function') {
+      const my = PLAYERS.mapId();
+      for (const n in PLAYERS.remote) { const e = PLAYERS.remote[n], p = e && (e.shown || e); if (e && e.map === my && p && underRoof(b, p.x, p.y)) return 'friend'; }
+    }
+    for (const n of NPCS) if (underRoof(b, n.px, n.py)) return 'person';
+    for (const m of monsters) if (!m.dead && underRoof(b, m.x, m.y)) return 'monster';
+    return null;
+  }
   // the roof, cached once per side: walkway flags, battlements, the boss with the arms, the lintel with the name
   function paintGateRoof(g, w, h, out) {
     // local origin: the roof's top-left; the front face hangs GH.raise below it. The roof is the vault over the passage:
@@ -1092,8 +1144,9 @@
     const sh = g.createLinearGradient(b.x0 - 18, 0, b.x1 + 18, 0);
     sh.addColorStop(0, 'rgba(12,10,8,0)'); sh.addColorStop(0.14, 'rgba(12,10,8,0.55)'); sh.addColorStop(0.5, 'rgba(12,10,8,0.7)'); sh.addColorStop(0.86, 'rgba(12,10,8,0.55)'); sh.addColorStop(1, 'rgba(12,10,8,0)');
     g.fillStyle = sh; g.fillRect(b.x0 - 18, 31 * TILE, w + 36, 3 * TILE);
-    const near = nearGate(gate);
-    g.save(); g.globalAlpha = near ? 0.25 : 1;
+    const who = gateBusy(gate), a = who ? 0.25 : 1;
+    STATS.gateAlpha[gate.x] = a; STATS.gateWho[gate.x] = who;
+    g.save(); g.globalAlpha = a;
     blit(g, sprite('gatehouse3' + b.out, w + 12, h + GH.raise + GH.merlon + 12, 0, GH.merlon, cg => paintGateRoof(cg, w, h, b.out)), b.x0, b.top);
     // a torch either side of the outer archway, always burning
     for (const ty of [b.top + 14, b.bot - 2]) drawTorch(g, b.outer + b.out * 5, ty, true);
@@ -1126,11 +1179,13 @@
     else { g.fillStyle = 'rgba(70,82,96,0.85)'; g.fillRect(cx - 7, gy, 14, 13); g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(cx - 5, gy + 1, 2, 10); }
     g.strokeStyle = '#1f2126'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(cx, gy); g.lineTo(cx, gy + 13); g.stroke();
   }
+  // the warm glow round a lit lantern: one sprite painted once, drawn with the lamp's flicker as its alpha (no gradient is
+  // made per lamp per frame)
+  const paintLampGlow = cg => { const gl = cg.createRadialGradient(0, 0, 2, 0, 0, 46); gl.addColorStop(0, 'rgba(255,214,130,0.42)'); gl.addColorStop(1, 'rgba(255,200,110,0)'); cg.fillStyle = gl; cg.beginPath(); cg.arc(0, 0, 46, 0, 7); cg.fill(); };
   function lampGlow(g, tx, ty) {
     const cx = tc(tx), foot = (ty + 1) * TILE - 6, cy = foot - lampH(tx, ty) + 16;
-    const f = 0.85 + Math.sin(time * 5 + tx * 1.3) * 0.08;
-    const gl = g.createRadialGradient(cx, cy, 2, cx, cy, 46); gl.addColorStop(0, `rgba(255,214,130,${(0.42 * f).toFixed(3)})`); gl.addColorStop(1, 'rgba(255,200,110,0)');
-    g.fillStyle = gl; g.beginPath(); g.arc(cx, cy, 46, 0, 7); g.fill();
+    const f = 0.85 + Math.sin(time * 5 + tx * 1.3) * 0.08, a0 = g.globalAlpha;
+    g.globalAlpha = a0 * f; blit(g, sprite('lampglow', 92, 92, 46, 46, paintLampGlow), cx, cy); g.globalAlpha = a0;
   }
 
   // ---------- statues and the waiting plinth ----------
@@ -1852,50 +1907,57 @@
   function topDoor(g, b, x, y) {
     // a door on the north wall: its frame on the roof's back edge, a lantern either side (as the core does for the keep)
     const dx = x + b.doorTop * TILE;
-    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(dx + 6, y, 36, 26);
-    g.fillStyle = b.stone ? '#8a8d94' : '#efe4cc'; g.fillRect(dx + 7, y, 34, 24);
-    g.fillStyle = '#5a3a1e'; g.fillRect(dx + 12, y, 24, 18); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(dx + 23, y, 2, 18);
-    g.fillStyle = b.stone ? '#a4a8ae' : '#c9b48a'; g.fillRect(dx + 8, y + 18, 32, 4);
-    g.fillStyle = GOLD; g.beginPath(); g.arc(dx + 30, y + 9, 2, 0, 7); g.fill();
-    drawLantern(g, dx + 4, y + 12); drawLantern(g, dx + 44, y + 12);
+    if (still()) {
+      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(dx + 6, y, 36, 26);
+      g.fillStyle = b.stone ? '#8a8d94' : '#efe4cc'; g.fillRect(dx + 7, y, 34, 24);
+      g.fillStyle = '#5a3a1e'; g.fillRect(dx + 12, y, 24, 18); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(dx + 23, y, 2, 18);
+      g.fillStyle = b.stone ? '#a4a8ae' : '#c9b48a'; g.fillRect(dx + 8, y + 18, 32, 4);
+      g.fillStyle = GOLD; g.beginPath(); g.arc(dx + 30, y + 9, 2, 0, 7); g.fill();
+    }
+    if (moving()) { drawLantern(g, dx + 4, y + 12); drawLantern(g, dx + 44, y + 12); }
   }
+  // BPASS: 0 draws a building whole; 1 only what never moves (cached once per building and per day or night, see
+  // drawTownBuilding); 2 only what moves or flickers (smoke, sparks, lanterns, the swinging signs, the awning, banners)
+  let BPASS = 0;
+  const still = () => BPASS !== 2, moving = () => BPASS !== 1;
   function drawHall(g, b, x, y, w, h) {
     const big = BIG.has(b.id), stone = STONE_FRONT.has(b.id), FH = big ? 58 : 46, eave = y + h - FH, lit0 = lit();
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(x + 6, y + h - 4, w, 8);
-    if (stone) stoneWall(g, x, eave, w, FH); else plasterWall(g, x, eave, w, FH);
-    // windows across the front (the door's bay has none)
-    const doorC = b.door !== undefined ? b.door : -9;
-    for (let c = 0; c < b.w; c++) {
-      if (Math.abs(c - doorC) < 1) continue;
-      if (!big && b.w <= 4 && c !== 0 && c !== b.w - 1 && Math.abs(c - doorC) <= 1) continue;
-      windowAt(g, x + c * TILE + 24, eave + (big ? 12 : 10), big ? 16 : 14, big ? 20 : 16, !big || b.id === 'inn' || b.id === 'bakery', lit0);
+    if (still()) {
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(x + 6, y + h - 4, w, 8);
+      if (stone) stoneWall(g, x, eave, w, FH); else plasterWall(g, x, eave, w, FH);
+      // windows across the front (the door's bay has none)
+      const doorC = b.door !== undefined ? b.door : -9;
+      for (let c = 0; c < b.w; c++) {
+        if (Math.abs(c - doorC) < 1) continue;
+        if (!big && b.w <= 4 && c !== 0 && c !== b.w - 1 && Math.abs(c - doorC) <= 1) continue;
+        windowAt(g, x + c * TILE + 24, eave + (big ? 12 : 10), big ? 16 : 14, big ? 20 : 16, !big || b.id === 'inn' || b.id === 'bakery', lit0);
+      }
+      const roofCol = b.id === 'bank' ? '#3a3f4a' : b.id === 'smithy' ? '#4a4f5a' : b.roof;
+      hipRoof(g, x, y + 2, w, eave, roofCol);
     }
-    const roofCol = b.id === 'bank' ? '#3a3f4a' : b.id === 'smithy' ? '#4a4f5a' : b.roof;
-    const R = hipRoof(g, x, y + 2, w, eave, roofCol);
     // chimneys, standing on the back slope
-    if (b.id !== 'bank') { const chx = b.id === 'smithy' ? x + 40 : x + w - 30; chimney(g, chx, y + 6, b.id === 'smithy'); if (SMOKE.has(b.id)) { smoke(g, chx, y + 2, b.id === 'smithy'); if (b.id === 'smithy') sparks(g, chx, y + 2); } }
+    if (b.id !== 'bank') { const chx = b.id === 'smithy' ? x + 40 : x + w - 30; if (still()) chimney(g, chx, y + 6, b.id === 'smithy'); if (moving() && SMOKE.has(b.id)) { smoke(g, chx, y + 2, b.id === 'smithy'); if (b.id === 'smithy') sparks(g, chx, y + 2); } }
     if (b.door !== undefined) {
       const dcx = x + b.door * TILE + 24, bottom = y + h;
-      if (b.id === 'bank') {
+      if (b.id === 'bank' && still()) {
         // two stone columns and a pediment either side of the door
         for (const ox of [-28, 22]) { g.fillStyle = '#c3c7cc'; g.fillRect(dcx + ox, eave - 2, 6, FH); g.fillStyle = '#e1e3e6'; g.fillRect(dcx + ox, eave - 2, 2, FH); g.fillStyle = '#9aa0a8'; g.fillRect(dcx + ox - 2, eave - 4, 10, 4); g.fillRect(dcx + ox - 2, bottom - 4, 10, 4); }
         g.fillStyle = '#c3c7cc'; g.beginPath(); g.moveTo(dcx - 34, eave + 2); g.lineTo(dcx, eave - 12); g.lineTo(dcx + 34, eave + 2); g.closePath(); g.fill();
       }
-      woodDoor(g, dcx, bottom, big ? 24 : 20, big ? 38 : 32);
-      drawLantern(g, dcx - 19, bottom - 26); drawLantern(g, dcx + 19, bottom - 26);
-      if (b.id === 'store') {
+      if (still()) woodDoor(g, dcx, bottom, big ? 24 : 20, big ? 38 : 32);
+      if (moving()) { drawLantern(g, dcx - 19, bottom - 26); drawLantern(g, dcx + 19, bottom - 26); }
+      if (b.id === 'store' && moving()) {
         // a striped awning over the door
         const top = bottom - (big ? 44 : 38), fl = Math.sin(time * 2 + x) * 0.8;
         for (let k = 0; k < 6; k++) { g.fillStyle = k % 2 ? '#f6f1e6' : '#b8352b'; g.beginPath(); g.moveTo(dcx - 30 + k * 10, top); g.lineTo(dcx - 20 + k * 10, top); g.lineTo(dcx - 20 + k * 10, top + 12 + fl); g.lineTo(dcx - 30 + k * 10, top + 12 + fl); g.closePath(); g.fill(); g.beginPath(); g.arc(dcx - 25 + k * 10, top + 12 + fl, 5, 0, Math.PI); g.fill(); }
         g.fillStyle = '#5a3c22'; g.fillRect(dcx - 31, top - 2, 62, 3);
       }
-      if (ICON[b.id]) bracketSign(g, dcx + 26, eave + 6, ICON[b.id], 1);
+      if (ICON[b.id] && moving()) bracketSign(g, dcx + 26, eave + 6, ICON[b.id], 1);
     } else if (b.doorTop !== undefined) {
       topDoor(g, b, x, y);
-      if (ICON[b.id]) bracketSign(g, x + b.doorTop * TILE + 46, y + 4, ICON[b.id], 1);
+      if (ICON[b.id] && moving()) bracketSign(g, x + b.doorTop * TILE + 46, y + 4, ICON[b.id], 1);
     }
-    if (b.sign) wordPlate(g, x + w / 2 + (b.door !== undefined && Math.abs(b.door * TILE + 24 - w / 2) < 30 ? 60 : 0), eave - 18, b.sign);
-    void R;
+    if (b.sign && still()) wordPlate(g, x + w / 2 + (b.door !== undefined && Math.abs(b.door * TILE + 24 - w / 2) < 30 ? 60 : 0), eave - 18, b.sign);
   }
   // the keep: a crenellated parapet, a slate great-hall roof, the Duke's arms over the north door, two front turrets at
   // the north corners, and a square tower with a spire in its south half. Only the turrets' cones rise over row 46.
@@ -1913,6 +1975,16 @@
   function crenels(g, x, y, w) { for (let k = 0; k * 12 < w; k += 2) { g.fillStyle = '#a4a8ae'; g.fillRect(x + k * 12, y - 10, Math.min(12, w - k * 12), 10); g.fillStyle = '#d6d9dd'; g.fillRect(x + k * 12, y - 10, Math.min(12, w - k * 12), 2.5); } }
   function drawKeep(g, b, x, y, w, h) {
     const FH = 78, face = y + h - FH, lit0 = lit();
+    // what moves: the spire's pennant, the two banners on the south face, the north door's lanterns (none of them overlaps
+    // anything drawn after it in the whole keep, so they can go over the cached still keep)
+    if (BPASS === 2) {
+      pennant(g, x + w / 2 + 1, y + 40 - 22, 26);
+      hangBanner(g, x + 4.5 * TILE + 24 - 30, face + 10, 52, 22, 1);
+      hangBanner(g, x + 4.5 * TILE + 24 + 30, face + 10, 52, 22, 2);
+      topDoor(g, b, x, y);
+      return;
+    }
+    const mv = BPASS === 0;
     g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(x + 8, y + h - 4, w, 10);
     // the walls' tops: a parapet walk all round the great hall's roof
     g.fillStyle = '#9ca0a7'; g.fillRect(x, y, w, face - y);
@@ -1938,13 +2010,12 @@
     g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 1; for (let k = 1; k < 6; k++) { const f = k / 6, yy = tTop - 8 - (tTop - 8 - sTop) * f; g.beginPath(); g.moveTo(sb0 + (x + w / 2 - sb0) * f, yy); g.lineTo(sb1 - (sb1 - x - w / 2) * f, yy); g.stroke(); }
     g.fillStyle = GOLD_D; g.fillRect(sb0 - 2, tTop - 10, sb1 - sb0 + 4, 3);
     g.fillStyle = GOLD; g.beginPath(); g.arc(x + w / 2, sTop - 2, 3.5, 0, 7); g.fill(); g.fillRect(x + w / 2 - 1, sTop - 22, 2, 20);
-    pennant(g, x + w / 2 + 1, sTop - 22, 26);
+    if (mv) pennant(g, x + w / 2 + 1, sTop - 22, 26);
     // the south face: grey stone, a purple string course, tall windows, two banners, a crenellated top
     paleWall(g, x, face, w, FH);
     g.fillStyle = PURPLE; g.fillRect(x, face + 4, w, 3);
     for (const c of [1, 3, 6, 8]) windowAt(g, x + c * TILE + 24, face + 18, 14, 30, false, lit0);
-    hangBanner(g, x + 4.5 * TILE + 24 - 30, face + 10, 52, 22, 1);
-    hangBanner(g, x + 4.5 * TILE + 24 + 30, face + 10, 52, 22, 2);
+    if (mv) { hangBanner(g, x + 4.5 * TILE + 24 - 30, face + 10, 52, 22, 1); hangBanner(g, x + 4.5 * TILE + 24 + 30, face + 10, 52, 22, 2); }
     crenels(g, x, face, w);
     // little bartizans on the south face's corners, inside the footprint
     keepTurret(g, x + 18, face + 30, face - 20, face - 74, 16); keepTurret(g, x + w - 18, face + 30, face - 20, face - 74, 16);
@@ -1957,9 +2028,32 @@
     if (STATS.record) STATS.boxes.push({ x0: x, y0: y - riseOf(b), x1: x + w, y1: y + h, own: b.id, building: true });
     g.save();
     // the keep fades only where its two front turrets rise over row 46 and the knight is behind them
-    if (b.id === 'keep') { const sy = (b.y + b.h) * TILE - 1, a = Math.min(behindAlpha(x, y - 60, x + 60, y + 70, sy), behindAlpha(x + w - 60, y - 60, x + w, y + 70, sy)); if (a < 1) g.globalAlpha = a; drawKeep(g, b, x, y, w, h); }
-    else drawHall(g, b, x, y, w, h);
+    if (b.id === 'keep') { const sy = (b.y + b.h) * TILE - 1, a = Math.min(behindAlpha(x, y - 60, x + 60, y + 70, sy), behindAlpha(x + w - 60, y - 60, x + w, y + 70, sy)); if (a < 1) g.globalAlpha = a; }
+    const paint = b.id === 'keep' ? drawKeep : drawHall;
+    // what never moves comes from a picture made once (per day or night); smoke, lanterns, signs and banners go on top
+    const pic = buildingPic(b, paint, x, y, w, h);
+    if (pic) { g.drawImage(pic.c, pic.x0, pic.y0, pic.w, pic.h); BPASS = 2; try { paint(g, b, x, y, w, h); } finally { BPASS = 0; } }
+    else paint(g, b, x, y, w, h);
     g.restore();
+  }
+  // the pictures: the art round a building reaches 48 px past its sides and below it and up to its rise over its top
+  // (the keep's turret cones); at the screen's pixel ratio (1 or 2), the 10 drawn least lately dropped
+  const PICS = new Map(); let picUse = 0;
+  const PIC_MAX = 10;
+  function buildingPic(b, paint, x, y, w, h) {
+    const ss = Math.max(1, Math.min(2, Math.round(typeof DPR === 'number' ? DPR : 1))), key = b.id + (lit() ? '@n' : '@d') + ss;
+    let p = PICS.get(key);
+    if (!p) {
+      const x0 = x - TILE, y0 = y - riseOf(b) - 24, pw = w + 2 * TILE, ph = h + riseOf(b) + 24 + TILE;
+      const c = document.createElement('canvas'); c.width = Math.ceil(pw * ss); c.height = Math.ceil(ph * ss);
+      const cg = c.getContext ? c.getContext('2d') : null;
+      if (!cg || !c.width) return null;
+      try { cg.scale(ss, ss); cg.translate(-x0, -y0); BPASS = 1; paint(cg, b, x, y, w, h); } catch (e) { BPASS = 0; return null; } finally { BPASS = 0; }
+      p = { c, x0, y0, w: pw, h: ph, used: 0 }; PICS.set(key, p); STATS.pics++;
+      if (PICS.size > PIC_MAX) { const old = [...PICS.entries()].filter(([k]) => k !== key).sort((a, b2) => a[1].used - b2[1].used).slice(0, PICS.size - PIC_MAX); for (const [k, o] of old) { PICS.delete(k); try { o.c.width = 0; o.c.height = 0; } catch (e) { } } }
+    }
+    p.used = ++picUse;
+    return p;
   }
   { const _drawBuilding = drawBuilding; drawBuilding = function (g, b) { return (b && b.town && !window.__instance) ? drawTownBuilding(g, b) : _drawBuilding(g, b); }; }
   // the six town gate cells draw no wooden gate (the gatehouse is drawn instead)
@@ -1982,7 +2076,7 @@
   // ---------- the hook ----------
   const GATE_TOWERS = TOWERS.filter(t => t.gate);
   const drawHook = (g, items, c0) => {
-    STATS.chunks = 0; STATS.repaints = 0; STATS.items = 0; STATS.towers = 0; STATS.lampsLit = 0; STATS.fountains = 0; STATS.statues = 0; STATS.keep = 0; STATS.townBuildings = 0; STATS.bellAlpha = 1;
+    STATS.chunks = 0; STATS.repaints = 0; STATS.items = 0; STATS.towers = 0; STATS.lampsLit = 0; STATS.fountains = 0; STATS.statues = 0; STATS.keep = 0; STATS.townBuildings = 0; STATS.bellAlpha = 1; STATS.gateAlpha = {}; STATS.gateWho = {};
     if (STATS.record) STATS.boxes.length = 0;
     // every instance is written into the map's top-left corner: nothing of the town is drawn inside one
     if (window.__instance) return;
@@ -2254,15 +2348,17 @@
 
     // ---- C5. the road ----
     // The fields outside the walls are not the city's: the goblin walker leaves its wreck wherever it falls, and a knight
-    // parks where he likes. For C5, C6 and C9 the road outside (x 76..84 and 141..147, rows 30..34) is borrowed clear of
-    // anything solid, and a machine or wreck a knight left on the High Street is lifted off it; all of it goes back after C9
-    // (the --play bot once left the goblin walker's wreck on 142,32, right outside the East Gate).
+    // parks where he likes. For C5, C6 and C9 a knight's own solid things on the road outside (x 76..84 and 141..147,
+    // rows 30..34: only cells with a saved change, as changeTile lays a wreck, a machine or a plank) are borrowed off it,
+    // and a machine or wreck a knight left on the High Street is lifted off it; all of it goes back after C9 (the --play bot
+    // once left the goblin walker's wreck on 142,32, right outside the East Gate). The world's own tiles are never lifted,
+    // so anything the world itself lays across the road still fails C5, C6 and C9.
     const roadKept = [];
     { const VEH = vehicleTiles();
       const lift = (x, y, to) => { const i = idx(x, y); roadKept.push({ x, y, t: tileAt(x, y), had: mapDiffs.has(i), d: mapDiffs.get(i) }); setTile(x, y, to); mapDiffs.delete(i); };
       for (let y = 30; y <= 34; y++) for (let x = 76; x <= 147; x++) {
         const t = tileAt(x, y), outside = x < 85 || x > 140;
-        if (outside && (solidFor(t, 'rider') || solidFor(t, 'player'))) lift(x, y, T.GRASS);
+        if (outside && mapDiffs.has(idx(x, y)) && (solidFor(t, 'rider') || solidFor(t, 'player'))) lift(x, y, T.GRASS);
         else if (!outside && VEH.has(t) && y >= 31 && y <= 33) lift(x, y, base[pi(x, y)]);
       } }
     const roadBack = () => { while (roadKept.length) { const b = roadKept.pop(); setTile(b.x, b.y, b.t); if (b.had) mapDiffs.set(idx(b.x, b.y), b.d); else mapDiffs.delete(idx(b.x, b.y)); } };
@@ -2368,6 +2464,22 @@
       setCoins(3); Q().tossArmed = 0; clearFolk(112, 33, 8); clearMonsters(112, 33, 6); drain(); onFoot();
       F.tp(112, 30); F.step([]); screenTap(111, 35); const walked = !!tap.kind; untilTapDone();
       const tapLine = texts()[0] || null, tapOk = !!tapLine && /^The Great Fountain\. People toss a coin in for luck\. Press E again to toss 1 coin\.$/.test(tapLine);
+      // the west side of the fountain, where Tobin stands at 110,33: a tap from the West Gate road and from beside him, a
+      // tap on the rim cell next to him, and E facing the rim from the west, all answer as the fountain (never as Tobin)
+      const isFountain = l => !!l && /^The Great Fountain\. People toss a coin in for luck\./.test(l);
+      const west = {};
+      for (const [name, sx, sy, cx, cy] of [['tap 111,35 from 106,32', 106, 32, 111, 35], ['tap 111,35 from 108,33', 108, 33, 111, 35], ['tap 112,35 from 108,33', 108, 33, 112, 35], ['tap 110,34 from the spawn', 112, 33, 110, 34]]) {
+        drain(); Q().tossArmed = 0; onFoot(); F.tp(sx, sy); F.step([]); screenTap(cx, cy); untilTapDone(); const l = texts()[0] || null; west[name] = { ok: isFountain(l), line: l, at: [Math.floor(player.x / TILE), Math.floor(player.y / TILE)] };
+      }
+      for (const [name, sx, sy, fx, fy] of [['E from 109,35 facing east', 109, 35, 110, 35], ['E from 109,34 facing east', 109, 34, 110, 34]]) {
+        drain(); Q().tossArmed = 0; onFoot(); F.tp(sx, sy); F.face(fx, fy); F.step([]); F.press('KeyE'); const l = texts()[0] || null; west[name] = { ok: isFountain(l), line: l };
+      }
+      { drain(); Q().tossArmed = 0; onFoot(); F.tp(111, 33); player.x = 111.4 * TILE; player.y = 33.3 * TILE; F.face(110, 34); F.press('KeyE'); const l = texts()[0] || null; west['E from 111.4,33.3 facing 110,34'] = { ok: isFountain(l), line: l, ft: [frontTile(player).tx, frontTile(player).ty] }; }
+      // and Tobin still talks when he is the one faced, and when he stands between the knight and the fountain
+      { drain(); onFoot(); F.tp(109, 33); F.face(110, 33); F.step([]); F.press('KeyE'); const d0 = said()[0]; west['E on Tobin from 109,33'] = { ok: !!d0 && d0.who === npc('tobin').name, line: d0 && d0.text }; }
+      { drain(); onFoot(); F.tp(110, 32); player.y = tc(32) + 13; F.face(110, 34); F.step([]); F.press('KeyE'); const d0 = said()[0]; west['E on Tobin, between the knight and the fountain'] = { ok: !!d0 && d0.who === npc('tobin').name, line: d0 && d0.text, ft: [frontTile(player).tx, frontTile(player).ty] }; }
+      drain(); Q().tossArmed = 0;
+      const westOk = Object.values(west).every(v => v.ok);
       // a tap on each statue reads its plaque
       const plaques = {};
       for (const s of PLAN.STATUES) { drain(); clearFolk(s.x, s.y, 8); clearMonsters(s.x, s.y, 6); F.tp(s.x, s.y === 35 ? 33 : 40); F.step([]); screenTap(s.x, s.y); untilTapDone(); const d0 = said()[0]; plaques[s.id] = !!d0 && d0.who === 'Plaque' && d0.text === PLAQUES[s.id]; }
@@ -2379,9 +2491,9 @@
       finally { Math.random = R; quest.stage = st0; }
       const lampsLive = (() => { let n = 0; for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) if (tileAt(x, y) === PROP && kindAt(x, y) === 'lamp') n++; return n; })();
       const mabel22 = LINES.mabel[0].includes(`All ${lampsLive} of them`) && lampsLive === 22;
-      check(P + 'C10 every prop, fountain and hedge cell has a kind, a tap name and a use line; every prop and fountain has open ground beside it (hedge rows may be scenery); a tap on the middle of the Great Fountain walks to its rim and gives its first line; a tap on each statue reads its plaque; Osric, Ambrose, Hettie, Mabel, Moll and Wynn each give their first line; Mabel counts the 22 lamps',
-        !bad.length && !loneProps.length && walked && tapOk && Object.values(plaques).every(Boolean) && Object.values(first).every(Boolean) && mabel22,
-        { bad: bad.slice(0, 6), groups: groups.length, loneProps: loneProps.map(g => g.key), loneHedges, walked, tapLine, plaques, first, lampsLive }); }
+      check(P + 'C10 every prop, fountain and hedge cell has a kind, a tap name and a use line; every prop and fountain has open ground beside it (hedge rows may be scenery); a tap on the middle of the Great Fountain walks to its rim and gives its first line, from the West Gate road and from beside Tobin too, and E on its west rim is the fountain (Tobin still talks when faced); a tap on each statue reads its plaque; Osric, Ambrose, Hettie, Mabel, Moll and Wynn each give their first line; Mabel counts the 22 lamps',
+        !bad.length && !loneProps.length && walked && tapOk && westOk && Object.values(plaques).every(Boolean) && Object.values(first).every(Boolean) && mabel22,
+        { bad: bad.slice(0, 6), groups: groups.length, loneProps: loneProps.map(g => g.key), loneHedges, walked, tapLine, west, plaques, first, lampsLive }); }
 
     // ---- C11. the coin toss ----
     { drain(); clearFolk(111, 33, 8); clearMonsters(111, 33, 6); onFoot(); F.tp(111, 33); F.face(111, 34); setCoins(5); const q = Q(); q.tossArmed = 0; const t0 = q.tossed;
@@ -2558,6 +2670,43 @@
       check(P + 'C24 in the new city a knight\'s own things stay put across two saves and loads: the walker on the spawn, the bulldozer by Tobin, the Barrelbeast by the fountain, a wreck inside the West Gate and the mare under the rail (no change is undone, nothing is moved or deleted)',
         ok1 && ok2 && after1 && after2 && park.length === 5, { ok1, ok2, after1, after2, where, n: park.length }); }
 
+    // ---- C26. a knight's home stays his home across loads ----
+    // 06-systems puts a home with safeSpot one tile south of the lodestone, or a tile or two to the side when something solid
+    // stands just south of it (a lamp, a house wall). That home must survive every load: in an old save that is moved into
+    // the new city (the lodestone was on open ground, so it is kept) and in the new city itself.
+    { leave(); onFoot(); drain(); save();
+      const sk = 'fanglands.slot.' + title.slot, raw0 = localStorage.getItem(sk), mirror0 = localStorage.getItem(SAVE_KEY);
+      const homeFor = (tx, ty) => safeSpot(tc(tx), tc(ty) + TILE, 13, 'person') || { x: tc(tx), y: tc(ty) + TILE };
+      const tileOf = p => p ? [Math.floor(p.x / TILE), Math.floor(p.y / TILE)] : null;
+      const cv0 = player.cityV, home0 = player.home, res = {};
+      // 1. an old save: a lodestone on the lawn by the west wall with a street lamp right below it (86,18 over 86,19)
+      { const L = [86, 18]; borrow(L[0], L[1]);
+        const southSolid = SOLID.has(tileAt(L[0], L[1] + 1)), openBase = OPEN().has(base[pi(L[0], L[1])]) && !keepClear().has(idx(L[0], L[1]));
+        changeTile(L[0], L[1], T.LODESTONE); const home = homeFor(L[0], L[1]); player.home = home;
+        const aside = JSON.stringify(tileOf(home)) !== JSON.stringify([L[0], L[1] + 1]);
+        player.cityV = 0; F.tp(108, 38); F.step([]); save();
+        const ok1 = load(); F.step([]); drain(); const h1 = tileOf(player.home), lode1 = tileAt(L[0], L[1]) === T.LODESTONE;
+        save(); const ok2 = load(); F.step([]); drain(); const h2 = tileOf(player.home);
+        res.oldSave = { southSolid, openBase, aside, home: tileOf(home), ok1, ok2, h1, h2, lode1, cityV: player.cityV,
+          kept: southSolid && openBase && aside && ok1 && ok2 && lode1 && !!h1 && !!h2 && JSON.stringify(h1) === JSON.stringify(tileOf(home)) && JSON.stringify(h2) === JSON.stringify(tileOf(home)) && player.cityV === 1 };
+        giveBack(); }
+      // 2. the new city: a lodestone just inside the store, its wall right below it (92,24 over 92,25)
+      { const L = [92, 24]; borrow(L[0], L[1]);
+        const southSolid = SOLID.has(tileAt(L[0], L[1] + 1));
+        changeTile(L[0], L[1], T.LODESTONE); const home = homeFor(L[0], L[1]); player.home = home; player.cityV = 1;
+        const aside = JSON.stringify(tileOf(home)) !== JSON.stringify([L[0], L[1] + 1]);
+        F.tp(108, 38); F.step([]); save();
+        const ok1 = load(); F.step([]); drain(); const h1 = tileOf(player.home);
+        save(); const ok2 = load(); F.step([]); drain(); const h2 = tileOf(player.home);
+        res.newCity = { southSolid, aside, home: tileOf(home), ok1, ok2, h1, h2,
+          kept: southSolid && aside && ok1 && ok2 && !!h1 && !!h2 && JSON.stringify(h1) === JSON.stringify(tileOf(home)) && JSON.stringify(h2) === JSON.stringify(tileOf(home)) };
+        giveBack(); }
+      player.cityV = cv0; player.home = home0;
+      if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0);
+      load(); F.step([]); drain();
+      check(P + 'C26 a knight\'s home stays across two loads when his lodestone has something solid just south of it (the home sits a tile to the side): a lodestone kept from an old save on the lawn over a street lamp, and one in the new city inside the store over its wall',
+        res.oldSave.kept && res.newCity.kept, res); }
+
     // ---- C18. determinism ----
     check(P + 'C18 the painter is the very first world pass (HOOKS.world[0]) and the snapshot the last; C2 shows it draws no random number', HOOKS.world[0] === paint && HOOKS.world[HOOKS.world.length - 1] === snap, { first: HOOKS.world[0] === paint, last: HOOKS.world[HOOKS.world.length - 1] === snap });
 
@@ -2710,6 +2859,55 @@
       check(P + 'C25 the city\'s ground sorts under every other ground mark: a tap to walk on the paving shows its ring and dots (nothing sorts under the ground); a knight on the grass behind the Bell Tower, outside the north wall, sees it drawn see-through (and from the fountain it is solid)',
         !!ground && ringShown && under === 0 && marks.every(i => i.y > ground.y) && open && bellA < 1 && bellFront === 1,
         { ground: !!ground, ringShown, marks: marks.length, under, open, bellA, bellFront }); }
+
+    // ---- C27. nobody vanishes under a gatehouse ----
+    // The roof over each town gate is drawn faint (25%) while anybody is in the passage: the knight, a friend online, a
+    // villager or a guard. Before, only the knight himself made it faint, and a friend walking in at the gate vanished,
+    // name and all, for three tiles.
+    { leave(); onFoot(); drain(); closePanel(); player.dayTime = 100;
+      const R = window.PLAYERS && PLAYERS.remote, my = window.PLAYERS ? PLAYERS.mapId() : 'over', NAME = 'Capital Gate Test';
+      const res = {};
+      const put1 = (x, y) => { R[NAME] = { n: NAME, map: my, x, y, shown: { x, y }, facing: { x: 1, y: 0 }, moving: false, walkT: 0, hp: 20, mhp: 20, lv: 7, look: null, mech: null, dead: false, act: null, hurtT: 0, attackT: 0, r: 13, lastAt: Date.now(), role: 'player' }; };
+      const view = (tx, ty, gx) => { F.tp(tx, ty); render(); return { a: STATS.gateAlpha[gx], who: STATS.gateWho[gx] || null }; };
+      // anybody near the gates out of the way for the check (clearFolk parks wanderers 40 tiles east of home, which can be
+      // the East Gate itself), put back after it
+      const parked = NPCS.filter(n => n.id !== 'osric' && PLAN.GATES.some(gt => Math.abs(n.px - tc(gt.x)) < 5 * TILE && Math.abs(n.py - tc(32)) < 5 * TILE)).map(n => ({ n, x: n.px, y: n.py }));
+      for (const k of parked) { k.n.px = tc(5); k.n.py = tc(170); }
+      for (const [gx, fx, fy, lx] of [[85, 85.5, 32.5, 95], [140, 140.5, 31.6, 130]]) {
+        clearMonsters(gx, 32, 6);
+        const empty = view(lx, 32, gx);
+        let friend = { a: null, who: 'no PLAYERS' }; if (R) { put1(fx * TILE, fy * TILE); friend = view(lx, 32, gx); delete R[NAME]; }
+        // a villager in the passage (Osric, put there for a frame)
+        const os = npc('osric'), op = { x: os.px, y: os.py }; os.px = fx * TILE; os.py = fy * TILE; const person = view(lx, 32, gx); os.px = op.x; os.py = op.y;
+        // and the knight himself
+        F.tp(Math.floor(fx), 32); render(); const knight = { a: STATS.gateAlpha[gx], who: STATS.gateWho[gx] || null };
+        res[gx] = { empty, friend, person, knight };
+      }
+      if (R) delete R[NAME];
+      for (const k of parked) { k.n.px = k.x; k.n.py = k.y; }
+      const ok = [85, 140].every(gx => { const r = res[gx]; return r.empty.a === 1 && r.friend.a === 0.25 && r.friend.who === 'friend' && r.person.a === 0.25 && r.person.who === 'person' && r.knight.a === 0.25 && r.knight.who === 'knight'; });
+      check(P + 'C27 nobody vanishes under a gatehouse: with a friend online in the West or the East Gate\'s passage the roof over it is drawn faint (25%), the same for a villager there and for the knight himself, and with nobody there it is solid',
+        ok, res); }
+
+    // ---- C28. the city keeps its frame cheap ----
+    // Night lights are holes stamped from one picture per size (35-night), the lamps' glows are one picture, the town's
+    // buildings are pictures made once (per day or night) with only their smoke, lanterns, signs and banners drawn each
+    // frame, and the core does not draw a texture under the cells the city's own ground covers.
+    { leave(); onFoot(); drain(); closePanel(); clearFolk(112, 33, 10); clearMonsters(112, 33, 10);
+      F.tp(112, 33); player.dayTime = 100; render(); render();
+      const pics0 = STATS.pics; render(); render(); const picsDay = STATS.pics - pics0, bDay = STATS.townBuildings;
+      player.dayTime = NIGHT.LIGHT + NIGHT.DUSK + 30; render(); render();
+      const made0 = NIGHT.lightSprites.made, pics1 = STATS.pics; render(); render();
+      const lightsNew = NIGHT.lightSprites.made - made0, picsNight = STATS.pics - pics1, lit = STATS.lampsLit;
+      // the core's own texture pass: count the cells it would skip at the spawn, and that a cell a knight changed is drawn by it
+      const vx0 = Math.floor(cam.x / TILE), vx1 = Math.ceil((cam.x + VW) / TILE), vy0 = Math.floor(cam.y / TILE), vy1 = Math.ceil((cam.y + VH) / TILE);
+      let covered = 0, coveredOff = 0; for (let y = vy0; y <= vy1; y++) for (let x = vx0; x <= vx1; x++) if (window.GROUND_COVER(x, y)) { covered++; if (!inPlan(x, y) || tileAt(x, y) !== base[pi(x, y)] || gcode(x, y) === G_NONE || gcode(x, y) === G_WATER) coveredOff++; }
+      borrow(108, 32); changeTile(108, 32, T.FIRE); const fireDrawn = !window.GROUND_COVER(108, 32); giveBack();
+      const inst = window.INSTANCES && INSTANCES.enter('aerie', [SKYCITY.STEP_T.x, SKYCITY.STEP_T.y]); const inAerie = window.GROUND_COVER(92, 40) || window.GROUND_COVER(112, 33); leave();
+      player.dayTime = 100; F.tp(112, 33); render();
+      check(P + 'C28 the frame stays cheap: by day and by night a second frame at the spawn makes no new building picture and no new night-light picture (the town buildings and the lamps still draw), the core skips its texture only under the city\'s own unchanged ground (a fire a knight lit is still drawn by it), and never in an instance',
+        picsDay === 0 && picsNight === 0 && lightsNew === 0 && bDay > 0 && lit > 0 && covered > 100 && coveredOff === 0 && fireDrawn && !!inst && !inAerie,
+        { picsDay, picsNight, lightsNew, buildings: bDay, lampsLit: lit, covered, coveredOff, fireDrawn, inst: !!inst, inAerie, pics: STATS.pics }); }
 
     // ---- put everything back ----
     leave(); giveBack(); onFoot(); drain(); closePanel(); tapCancel('manual');
