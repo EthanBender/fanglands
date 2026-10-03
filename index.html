@@ -53719,6 +53719,12 @@ window.RETALIATE = RETALIATE;
     for (let r = 0; r * 12 < h; r++) { const yy = y + r * 12, off = r % 2 ? 12 : 0; for (let c = -1; c * 24 < w + 24; c++) { const xx = x + off + c * 24; const x0 = Math.max(x, xx + 1), x1 = Math.min(x + w, xx + 23); if (x1 > x0) { g.fillStyle = ['#9ca0a7', '#a6aab0', '#92969d'][(r + c + 9) % 3]; g.fillRect(x0, yy + 1, x1 - x0, Math.min(10, y + h - yy - 1)); } } }
     const sh = g.createLinearGradient(0, y, 0, y + h); sh.addColorStop(0, 'rgba(255,255,255,0.12)'); sh.addColorStop(1, 'rgba(0,0,0,0.2)'); g.fillStyle = sh; g.fillRect(x, y, w, h);
   }
+  // the castle's pale stone (the keep, its tower), a shade lighter than the town's grey
+  function paleWall(g, x, y, w, h) {
+    g.fillStyle = '#8a8d94'; g.fillRect(x, y, w, h);
+    for (let r = 0; r * 12 < h; r++) { const yy = y + r * 12, off = r % 2 ? 12 : 0; for (let c = -1; c * 24 < w + 24; c++) { const xx = x + off + c * 24; const x0 = Math.max(x, xx + 1), x1 = Math.min(x + w, xx + 23); if (x1 > x0) { g.fillStyle = ['#b9bcc2', '#aeb2b8', '#c3c6cb'][(r + c + 9) % 3]; g.fillRect(x0, yy + 1, x1 - x0, Math.min(10, y + h - yy - 1)); } } }
+    const sh = g.createLinearGradient(0, y, 0, y + h); sh.addColorStop(0, 'rgba(255,255,255,0.12)'); sh.addColorStop(1, 'rgba(0,0,0,0.2)'); g.fillStyle = sh; g.fillRect(x, y, w, h);
+  }
   function plasterWall(g, x, y, w, h) {
     g.fillStyle = '#efe4cc'; g.fillRect(x, y, w, h);
     g.fillStyle = '#6b4a2a'; g.fillRect(x, y, w, 5); g.fillRect(x, y + h - 6, w, 6);
@@ -53868,25 +53874,31 @@ window.RETALIATE = RETALIATE;
     // the north wall's door (112,46) with its lanterns, and the Duke's arms just inside it, under the frame
     topDoor(g, b, x, y);
     arms(g, x + b.doorTop * TILE + 24, y + 44, 26);
-    // the square tower in the south half, with a slate spire and a pennant
-    const tw = 112, tx0 = x + w / 2 - tw / 2, tBase = face - 4, tTop = y + 150;
-    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(tx0 + 8, tBase - 6, tw, 10);
-    stoneWall(g, tx0, tTop, tw, tBase - tTop);
-    g.fillStyle = 'rgba(0,0,0,0.16)'; g.fillRect(tx0 + tw - 18, tTop, 18, tBase - tTop);
-    for (const ox of [-28, 0, 28]) windowAt(g, x + w / 2 + ox, tTop + 22, 10, 22, false, lit0);
+    // the square tower in the south half, standing up out of the hall's roof, with a slim slate spire and a pennant
+    const tw = 88, tx0 = x + w / 2 - tw / 2, tBase = face - 2, tTop = y + 122;
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(tx0 + 10, tBase - 8, tw, 10); g.fillRect(tx0 + tw, tTop + 12, 10, tBase - tTop - 12);
+    paleWall(g, tx0, tTop, tw, tBase - tTop);
+    g.fillStyle = 'rgba(0,0,0,0.16)'; g.fillRect(tx0 + tw - 16, tTop, 16, tBase - tTop);
+    g.fillStyle = PURPLE; g.fillRect(tx0, tTop + 16, tw, 3);
+    for (const ox of [-22, 0, 22]) windowAt(g, x + w / 2 + ox, tTop + 30, 9, 22, false, lit0);
+    windowAt(g, x + w / 2, tTop + 72, 14, 26, false, lit0);
     crenels(g, tx0, tTop, tw); g.fillStyle = '#c3c7cc'; g.fillRect(tx0 - 2, tTop - 2, tw + 4, 5);
-    const sp = g.createLinearGradient(tx0, 0, tx0 + tw, 0); sp.addColorStop(0, '#2c3038'); sp.addColorStop(0.4, '#5d6370'); sp.addColorStop(1, '#262a31');
-    g.fillStyle = sp; g.beginPath(); g.moveTo(tx0 + 8, tTop - 6); g.lineTo(x + w / 2, y + 26); g.lineTo(tx0 + tw - 8, tTop - 6); g.closePath(); g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 1; for (let k = 1; k < 6; k++) { const f = k / 6, yy = tTop - 6 - (tTop - 6 - y - 26) * f; g.beginPath(); g.moveTo(tx0 + 8 + (tw / 2 - 8) * f, yy); g.lineTo(tx0 + tw - 8 - (tw / 2 - 8) * f, yy); g.stroke(); }
-    g.fillStyle = GOLD; g.beginPath(); g.arc(x + w / 2, y + 24, 3.5, 0, 7); g.fill(); g.fillRect(x + w / 2 - 1, y + 6, 2, 18);
-    pennant(g, x + w / 2 + 1, y + 6, 26);
+    const sb0 = tx0 + 14, sb1 = tx0 + tw - 14, sTop = y + 40;
+    const sp = g.createLinearGradient(sb0, 0, sb1, 0); sp.addColorStop(0, '#2c3038'); sp.addColorStop(0.42, '#6a707d'); sp.addColorStop(1, '#262a31');
+    g.fillStyle = sp; g.beginPath(); g.moveTo(sb0, tTop - 8); g.lineTo(x + w / 2, sTop); g.lineTo(sb1, tTop - 8); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 1; for (let k = 1; k < 6; k++) { const f = k / 6, yy = tTop - 8 - (tTop - 8 - sTop) * f; g.beginPath(); g.moveTo(sb0 + (x + w / 2 - sb0) * f, yy); g.lineTo(sb1 - (sb1 - x - w / 2) * f, yy); g.stroke(); }
+    g.fillStyle = GOLD_D; g.fillRect(sb0 - 2, tTop - 10, sb1 - sb0 + 4, 3);
+    g.fillStyle = GOLD; g.beginPath(); g.arc(x + w / 2, sTop - 2, 3.5, 0, 7); g.fill(); g.fillRect(x + w / 2 - 1, sTop - 22, 2, 20);
+    pennant(g, x + w / 2 + 1, sTop - 22, 26);
     // the south face: grey stone, a purple string course, tall windows, two banners, a crenellated top
-    stoneWall(g, x, face, w, FH);
+    paleWall(g, x, face, w, FH);
     g.fillStyle = PURPLE; g.fillRect(x, face + 4, w, 3);
     for (const c of [1, 3, 6, 8]) windowAt(g, x + c * TILE + 24, face + 18, 14, 30, false, lit0);
     hangBanner(g, x + 4.5 * TILE + 24 - 30, face + 10, 52, 22, 1);
     hangBanner(g, x + 4.5 * TILE + 24 + 30, face + 10, 52, 22, 2);
     crenels(g, x, face, w);
+    // little bartizans on the south face's corners, inside the footprint
+    keepTurret(g, x + 18, face + 30, face - 20, face - 74, 16); keepTurret(g, x + w - 18, face + 30, face - 20, face - 74, 16);
     // the two front turrets at the north corners (their cones may rise 60 px over row 46)
     keepTurret(g, x + 30, y + 66, y + 10, y - 52, 26); keepTurret(g, x + w - 30, y + 66, y + 10, y - 52, 26);
   }
@@ -53923,7 +53935,8 @@ window.RETALIATE = RETALIATE;
   const drawHook = (g, items, c0) => {
     STATS.chunks = 0; STATS.repaints = 0; STATS.items = 0; STATS.towers = 0; STATS.lampsLit = 0; STATS.fountains = 0; STATS.statues = 0; STATS.keep = 0; STATS.townBuildings = 0;
     if (STATS.record) STATS.boxes.length = 0;
-    if (away()) return;
+    // every instance is written into the map's top-left corner: nothing of the town is drawn inside one
+    if (window.__instance) return;
     const c = c0 || cam;
     STATS.frames++;
     const vx0 = Math.floor(c.x / TILE) - 2, vx1 = Math.ceil((c.x + VW) / TILE) + 2, vy0 = Math.floor(c.y / TILE) - 2, vy1 = Math.ceil((c.y + VH) / TILE) + 5;
@@ -53991,7 +54004,7 @@ window.RETALIATE = RETALIATE;
 
   // ---------- night: the lamps, the torches, the fountain and the dial light the street ----------
   if (HOOKS.nightLights) HOOKS.nightLights.push((out, x0, y0, x1, y1) => {
-    if (away()) return;
+    if (window.__instance) return;
     const on = lit(), inside = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
     if (on) for (const [x, y] of LAMPS) if (inside(x, y)) out.push({ x: tc(x), y: y * TILE - 16, r: 110, kind: 'lamp' });
     if (on) for (const key of TORCHES) { const [x, y] = key.split(',').map(Number); if (inside(x, y)) out.push({ x: tc(x), y: tc(y) - 14, r: 70, kind: 'torch' }); }

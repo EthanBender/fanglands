@@ -76,6 +76,20 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   `HOOKS.draw.push((g, items) => { items.push({ y, draw: () => { ...use g... } }) })`. A handler that takes one parameter gets
   the canvas context where it expects the list, and nothing renders, silently.
 
+## Thistledown is a plan (src/94-thistleplan.js, src/95-thistledown.js)
+
+`THISTLE_PLAN.ROWS` is the town: 45 strings of 58 characters over x 84..141, y 13..57, one character a tile, with
+the legend in `GLYPHS` (the tile each glyph is painted as, or null to leave the cell alone) and `KIND_OF`. **A town
+change is a row change**: move a lamp, a hedge or a bench by editing its row; lamps, benches, trees and every count are
+scanned from the rows at load. The painter is the very first world pass (`HOOKS.world.unshift`), runs no random
+numbers and writes nothing outside x 85..140, y 14..56, so the rest of the world never moves and every client online
+builds the same city; the last world pass snapshots the result as `CAPITAL.base`. The ground layer (setts, flagstones,
+lawn, coping) is cached in 8x8 chunks and paints a cell only while its live tile still equals `CAPITAL.base`, so a fire,
+a plank or a tilled cell shows the core's own art at once. Every fixed-coordinate draw skips instances
+(`if (window.__instance) return;`): Aerie's map overlaps x 85..99 of the town. Old-save diffs inside stone, water or a
+hedge are reverted on load by `CAPITAL.migrate()` (what was placed is given back); a cell in `OPEN` ground keeps its diff.
+The seventeen town buildings (`b.town`) draw through the `drawBuilding` wrap; Death's House keeps the core's art.
+
 ## HUD (src/59-hudkit.js, the Storybook Heraldry kit) — the API every feature file uses
 
 The HUD is one knight's kit, drawn from one file and laid out by one engine. **Never place a HUD control or readout by
