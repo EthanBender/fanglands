@@ -160,7 +160,8 @@
   function keepClear() {
     if (KEEP_CLEAR) return KEEP_CLEAR;
     const s = new Set(), add = (x, y) => { if (inMap(x, y)) s.add(idx(x, y)); };
-    for (const n of NPCS) if (inTown(n.x, n.y)) add(n.x, n.y);
+    // where the people who stand still stand (a villager who wanders has no one spot)
+    for (const n of NPCS) if (inTown(n.x, n.y) && !n.wander) add(n.x, n.y);
     for (const b of BUILDINGS) if (inTown(b.x, b.y)) { const [dx, dy] = doorOf(b), [sx, sy] = stepOf(b); add(dx, dy); add(sx, sy); }
     for (let y = 32; y <= 33; y++) for (let x = 111; x <= 113; x++) add(x, y);
     for (let y = 31; y <= 33; y++) { add(86, y); add(139, y); }
@@ -242,9 +243,2068 @@
   { const _load = load; load = function () { const ok = _load(); if (ok) migrate(); return ok; }; }
 
   const CHUNKS = new Map();
-  // @@PART2@@
+  // =========================================================================
+  // 6. what people say
+  // =========================================================================
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  // "4 minutes 10 seconds", "1 minute 1 second", "35 seconds": whole seconds, rounded up, never "0 seconds"
+  function spanWords(sec) {
+    const s = Math.max(1, Math.ceil(sec - 1e-9)), m = Math.floor(s / 60), r = s % 60;
+    if (m && r) return `${plural(m, 'minute')} ${plural(r, 'second')}`;
+    return m ? plural(m, 'minute') : plural(r, 'second');
+  }
+  // Ambrose reads the sky: the same clock 35-night runs (NIGHT.dayT, LIGHT, DUSK, DAY)
+  function timeLine() {
+    const N = window.NIGHT; if (!N) return 'The sun is up.';
+    const t = N.dayT();
+    if (t < N.LIGHT) return `The sun is up. Dusk comes in ${spanWords(N.LIGHT - t)}.`;
+    if (t < N.LIGHT + N.DUSK) return `Dusk. It will be dark in ${spanWords(N.LIGHT + N.DUSK - t)}.`;
+    return `Night. The sun comes up in ${spanWords(N.DAY - t)}.`;
+  }
+  const dialAngle = () => window.NIGHT ? NIGHT.dayT() / NIGHT.DAY * Math.PI * 2 : 0;
+  const banner = (text, sub) => { levelBanner = { text, sub, t: 3.5 }; sfx('quest'); };
+  // counters that only change which line comes next (not saved)
+  const TALK = { ambrose: 0, wynn: 0 };
+  const DUCHESS_LINE = 'Duchess came back for her cream last night. The bell rang once. Nobody minded.';
+  HOOKS.talk.td_bell = n => {
+    const q = Q(), s = q.bell, who = n.name;
+    if (s === 0 && quest.stage >= 6) {
+      q.bell = 1; q.ambroseMet = true;
+      say('Knight, may I ask you something? It will sound silly.', who);
+      say('Every night at midnight, my bell rings once. Bong. Just once. Nobody is in the tower, and I have the only key.', who);
+      say('The whole town says it is a ghost. I do not believe in ghosts. Mostly.', who);
+      say('Osric at the West Gate watches the wall all night. Ask him what he has seen.', who);
+      banner('NEW QUEST', 'The Bell at Midnight'); save();
+      return;
+    }
+    if (s === 1) { say('Osric is at the West Gate. Ask him what he saw last night.', who); return; }
+    if (s === 2) { say('A jug at the bakery? Then ask Rosalind what went missing.', who); return; }
+    if (s === 3) { say('Footprints going to the maze? Look in the middle of it, at the sundial.', who); return; }
+    if (s === 4) {
+      q.bell = 5;
+      say('Grey fur and a gold thistle? Then it is no ghost.', who);
+      say('Here, take the key. Climb up the Bell Tower and look at the bell. Quietly.', who);
+      save(); return;
+    }
+    if (s === 5) { say('The key is yours. Climb the Bell Tower and look at the bell. Quietly.', who); return; }
+    if (s === 6) {
+      q.bell = 'done';
+      say('A grey cat with a purple collar? That is Duchess, the Duke\'s own cat. He has been looking for her all week.', who);
+      say('She sleeps on the bell because it is warm. When she jumps down, the bell rings. Bong.', who);
+      say('So the ghost of Thistledown is a cat who likes cream. The Duke says she may keep her bed in the tower. Thank you, knight.', who);
+      giveOrDrop('coins', 75, player.x, player.y);
+      banner('NO GHOST', 'The Bell at Midnight'); save();
+      return;
+    }
+    if (!q.ambroseMet) { q.ambroseMet = true; say('I ring the bell at dawn and at dusk. When you hear it at dusk, get indoors or get your sword out.', who); save(); return; }
+    if (storyDone() && TALK.ambrose++ % 2 === 1) { say(DUCHESS_LINE, who); return; }
+    say(timeLine(), who);
+  };
+  const OSRIC = q => [
+    'Welcome to Thistledown, knight. The High Street runs gate to gate. The Great Fountain is in the middle, and the castle is just past it.',
+    quest.walkerKilled ? 'They say you brought down the goblin walker. The watch has never slept so well.' : 'The gates stay open day and night. Horses ride through. Goblins do not.',
+    'The smithy and the tinker are on your right as you come in. Sergeant Hale drills in the yard behind them.',
+  ];
+  HOOKS.talk.td_warden = n => {
+    const q = Q(), who = n.name;
+    if (q.bell === 1) {
+      q.bell = 2;
+      say('A ghost? Ha. Nobody came through my gate after dark. Nobody with two legs, anyway.', who);
+      say('But something small ran along the top of the wall last night, quick as a blink. Then, bong, the bell.', who);
+      say('And Rosalind\'s back window was open at midnight. I heard a jug fall over. Ask Rosalind at the bakery.', who);
+      save(); return;
+    }
+    const L = OSRIC(q); say(L[q.osricN % L.length], who); q.osricN++;
+  };
+  const WYNN = ['The swans are called Lord and Lady. The ducklings do not have names yet. I am working on it.', 'I am not allowed in the maze on my own. There is a sundial in the middle. I have never seen it.', 'The ghost was a cat? I knew it. I KNEW it.'];
+  HOOKS.talk.td_wynn = n => { const L = storyDone() ? WYNN : WYNN.slice(0, 2); say(L[TALK.wynn % L.length], n.name); TALK.wynn++; };
+  // Rosalind: one talk of the story at step 2 (no shop that time); the next talk opens her bakery as always
+  { const _shop = HOOKS.talkBefore.shop;
+    HOOKS.talkBefore.shop = n => {
+      if (n && n.id === 'rosalind' && Q().bell === 2) {
+        Q().bell = 3;
+        say('Oh, my cream! Somebody drank a whole jug of it last night. Somebody small.', n.name);
+        say('There were footprints in the flour. Four little feet, and a line between them. Like a tail.', n.name);
+        say('They went out the window and over the wall, towards the Duke\'s maze.', n.name);
+        save(); return true;
+      }
+      return _shop ? _shop(n) : false;
+    };
+  }
+
+  // =========================================================================
+  // 7. what E (or a tap) on the city's things says
+  // =========================================================================
+  const PLAQUES = {
+    last_knight: 'THE LAST KNIGHT OF HOLLOWFORD. He rode out alone to hold the road. His grave is in Wolfwood.',
+    thrain: 'KING THRAIN OF THE DWARVES. His halls are deep under the hills, below the Grey Quarry.',
+    aelith: 'QUEEN AELITH OF THE ELVES. Her people live in the jungle, far to the south.',
+    seraphel: 'QUEEN SERAPHEL OF AERIE, THE CITY ABOVE THE CLOUDS. Most people say Aerie is only a story.',
+  };
+  const STATUE_NAME = { last_knight: 'Statue of the Last Knight', thrain: 'Statue of King Thrain', aelith: 'Statue of Queen Aelith', seraphel: 'Statue of Queen Seraphel' };
+  const STALL_LINE = { apples: "Apples from the Duke's Orchard, in a heap.", candles: 'Candles of every size. Mabel makes them all.', flowers: 'Flowers in buckets. Moll picks them fresh.', cloth: 'Bolts of cloth. A sign says: BACK SOON.' };
+  const SIGN_LINE = {
+    west: 'WEST GATE. Out this way: the road to the cave where you woke, the Grey Quarry, and Wolfwood.',
+    east: "EAST GATE. Out this way: the Goblin Camp, and Harl's dock on the Grey Sea.",
+  };
+  const PLAIN_LINE = {
+    lamp: 'A street lamp. Mabel lights it at dusk.',
+    bench: 'You sit for a moment. Your feet are grateful.',
+    hedge: 'A hedge, clipped flat as a table.',
+    fruit: 'An apple tree. The apples are not ripe yet.',
+    cherry: 'A cherry tree in flower.',
+    roses: "Roses. The Duke's own. Nobody picks these.",
+    market: 'The market fountain. Children dare each other to drink from it.',
+    rose: 'A little fountain. A frog sits on the rim and ignores you.',
+  };
+  const TOWER_LINE = 'A tower of the town wall. A guard on top waves at you.';
+  const SUNDIAL_LINE = "The middle of the Duke's maze. Someone scratched into the sundial: FERRIN WAS HERE. AGED 10.";
+  const KIND_TAP = { lamp: 'Street lamp', bench: 'Bench', stall: 'Market stall', sign: 'Signpost', bell: 'Bell Tower', sundial: 'Sundial', hedge: 'Hedge', fruit: 'Fruit tree', cherry: 'Cherry tree', roses: 'Roses', great: 'The Great Fountain', market: 'Market fountain', rose: 'Rose Garden fountain' };
+  const TOSS = [
+    'You toss a coin. It spins, splashes, and sinks with the others.',
+    'Plink. A fish nibbles it, decides it is not food, and swims off.',
+    "The coin lands on the stone knight's boot and stays there.",
+    "Splash. Somewhere, somebody's wish just got a little bit closer.",
+    'The coin skips once, twice, and sinks. Good throw.',
+    'You make a wish. The fountain keeps it a secret.',
+  ];
+  const statueDone = () => quest.stage >= 16;
+  function heroNameNow() { const me = window.NET && NET.status === 'on' && NET.me ? String(NET.me) : null; return me ? me.toUpperCase() : 'THE KNIGHT FROM THE CAVE'; }
+  const heroName = () => Q().heroName || heroNameNow();
+  const plinthLine = () => statueDone() ? `${heroName()}, WHO SLEW THE FANG. Thistledown will not forget.` : 'AN EMPTY PLINTH. Carved on the front: KEPT FOR THE KNIGHT WHO ENDS THE DRAGON.';
+  // the name a tap shows and the speaker a use is said by
+  function tapName(x, y) {
+    const k = kindAt(x, y); if (!k) return null;
+    if (k === 'statue') { const s = statueAt(x, y); return s ? STATUE_NAME[s.id] : null; }
+    if (k === 'plinth') return statueDone() ? 'Statue of you' : 'Empty plinth';
+    return KIND_TAP[k] || null;
+  }
+  // the line a thing says when used (and who says it); the story steps and the toss are in useThing
+  function lineFor(x, y) {
+    const k = kindAt(x, y); if (!k) return null;
+    if (k === 'statue') { const s = statueAt(x, y); return s ? ['Plaque', PLAQUES[s.id]] : null; }
+    if (k === 'plinth') return ['Plaque', plinthLine()];
+    if (k === 'stall') { const s = stallAt(x, y); return s ? [KIND_TAP.stall, STALL_LINE[s.goods]] : null; }
+    if (k === 'sign') { const s = signAt(x, y); return s ? [KIND_TAP.sign, SIGN_LINE[s.side]] : null; }
+    if (k === 'bell') return ['Bell Tower', `The Bell Tower. ${timeLine()}`];
+    if (k === 'sundial') return ['Sundial', SUNDIAL_LINE];
+    if (k === 'great') return ['The Great Fountain', `The Great Fountain. People toss a coin in for luck. ${touchMode() ? 'Tap USE' : 'Press E'} again to toss 1 coin.`];
+    if (PLAIN_LINE[k]) return [KIND_TAP[k], PLAIN_LINE[k]];
+    return null;
+  }
+  const great = FOUNTAINS.find(f => f.id === 'great');
+  const greatC = { x: (great.x + great.w / 2) * TILE, y: (great.y + great.h / 2) * TILE };
+  function splash() { burst(greatC.x + (Math.random() - 0.5) * 50, greatC.y - 6, '#bfe6ff', 12, 70); sfx('splash'); }
+  function useGreat() {
+    const q = Q(), who = 'The Great Fountain', now = time + 1;
+    const armed = q.tossArmed > 0 && now >= q.tossArmed && now - q.tossArmed <= 6;
+    if (!armed) { q.tossArmed = now; say(lineFor(great.x, great.y)[1], who); return; }
+    if (coins() < 1) { say('You have no coins to toss.', who); return; }
+    payCoins(1); const line = TOSS[q.tossed % TOSS.length]; q.tossed++; q.tossArmed = now;
+    splash(); say(line, who); save();
+  }
+  // the story's two places: the sundial in the maze, and the Bell Tower
+  function useSundial() {
+    const q = Q();
+    if (q.bell === 3) {
+      q.bell = 4;
+      say('Someone scratched into the sundial: FERRIN WAS HERE. AGED 10.', 'The Voice');
+      say('On the warm stone lie tufts of soft grey fur, and a little gold thistle charm on a broken purple ribbon.', 'The Voice');
+      say('Whoever drank the cream sleeps somewhere warm. Tell Ambrose what you found.', 'The Voice');
+      save(); return;
+    }
+    say(SUNDIAL_LINE, 'Sundial');
+  }
+  const BELLST = { prev: null, swingT0: -99, rings: 0 };
+  const CAT = { t0: -99 };
+  const BELL_TOP = { x: (PLAN.BELL.x + 1) * TILE, y: PLAN.BELL.y * TILE - 150 };
+  function ringBell() {
+    BELLST.swingT0 = time; BELLST.rings++;
+    sfx('bell');
+    if (!away()) floatText(BELL_TOP.x, BELL_TOP.y, 'DONG', '#f5c542', 20);
+  }
+  function useBell() {
+    const q = Q();
+    if (q.bell === 5) {
+      q.bell = 6;
+      say('You climb the steps to the belfry. Two green eyes look back at you from the dark.', 'The Voice');
+      say('A big grey cat is curled up on the bell, where the sun has warmed it all day. She yawns.', 'The Voice');
+      say('She jumps down past you, and her tail catches the rope. The bell rings. BONG.', 'The Voice');
+      say('Round her neck is a purple collar. The little gold charm is missing from it.', 'The Voice');
+      ringBell(); CAT.t0 = time;
+      save(); return;
+    }
+    const l = lineFor(PLAN.BELL.x, PLAN.BELL.y); say(l[1], l[0]);
+  }
+  function useThing(k, x, y) {
+    if (k === 'great') return useGreat();
+    if (k === 'sundial') return useSundial();
+    if (k === 'bell') return useBell();
+    const l = lineFor(x, y); if (l) say(l[1], l[0]);
+  }
+  HOOKS.use.push((t, tx, ty) => {
+    if (away() || !inTown(tx, ty)) return false;
+    if (t === PROP || t === FOUNT || t === HEDGE) { const k = kindAt(tx, ty); if (!k) return false; useThing(k, tx, ty); return true; }
+    if (t === WALL_T() && isTowerCell(tx, ty)) { say(TOWER_LINE, 'Wall tower'); return true; }
+    return false;
+  });
+
+  // ---------- the small folk: Duchess, Nell and Robin ----------
+  // the wall clock moves them, so every knight online sees them in the same place without a message
+  const CLOCK = { fixed: null };
+  const wallMs = () => CLOCK.fixed !== null && CLOCK.fixed !== undefined ? CLOCK.fixed : Date.now();
+  const KP = PLAN.KIDS.path.map(([x, y]) => [x + 0.5, y + 0.5]);
+  const KLEN = (() => { let L = 0; for (let i = 0; i < KP.length - 1; i++) L += Math.hypot(KP[i + 1][0] - KP[i][0], KP[i + 1][1] - KP[i][1]); return L; })();
+  // where a child is (in tiles) and which way they run: ping-pong along the U at 1.6 tiles a second
+  function kidAt(ms) {
+    const u = ((ms / 1000 * PLAN.KIDS.speed) % (2 * KLEN) + 2 * KLEN) % (2 * KLEN), back = u > KLEN; let s = back ? 2 * KLEN - u : u;
+    for (let i = 0; i < KP.length - 1; i++) {
+      const [ax, ay] = KP[i], [bx, by] = KP[i + 1], d = Math.hypot(bx - ax, by - ay);
+      if (s <= d || i === KP.length - 2) { const k = d ? Math.min(1, s / d) : 0, dx = (bx - ax) / (d || 1), dy = (by - ay) / (d || 1); return { x: ax + (bx - ax) * k, y: ay + (by - ay) * k, dx: back ? -dx : dx, dy: back ? -dy : dy }; }
+      s -= d;
+    }
+    return { x: KP[0][0], y: KP[0][1], dx: 0, dy: 1 };
+  }
+  const KIDS = [
+    { id: 'nell', name: 'Nell', lag: 0, line: 'Catch me if you can!', look: { tunic: '#c94a6a', hair: '#e0c080', woman: true, shoulder: '#e9d8b8', skin: '#f2d6bf' } },
+    { id: 'robin', name: 'Robin', lag: PLAN.KIDS.lag, line: 'You are it! No, wait. Nell is it!', look: { tunic: '#3f7db8', hair: '#6a3a1a', shoulder: '#d9c9a0', skin: '#e8c0a0' } },
+  ];
+  function kidsNow() { const ms = wallMs(); for (const k of KIDS) { const p = kidAt(ms - k.lag * 1000); k.px = tc(0) + (p.x - 0.5) * TILE; k.py = (p.y) * TILE; k.dx = p.dx; k.dy = p.dy; } return KIDS; }
+  const duchessHome = () => ({ x: tc(PLAN.DUCHESS.x), y: tc(PLAN.DUCHESS.y) + 8 });
+  const duchessHere = () => { const s = Q().bell; return (s === 6 || s === 'done') && time - CAT.t0 >= 2; };
+  const DUCHESS_TAP = 'Duchess, the Duke\'s cat. She is pretending she cannot see you.';
+  function smallFolk() {
+    if (away()) return [];
+    const out = kidsNow().map(k => ({ x: k.px, y: k.py, r: 12, id: 'td_' + k.id, name: k.name, talk: () => { tapFaceTo(k.px, k.py); say(k.line, k.name); } }));
+    if (duchessHere()) { const d = duchessHome(); out.push({ x: d.x, y: d.y, r: 12, id: 'td_duchess', name: 'Duchess', talk: () => { tapFaceTo(d.x, d.y); say(DUCHESS_TAP, 'Duchess'); } }); }
+    return out;
+  }
+  function tapFaceTo(x, y) { const dx = x - player.x, dy = y - player.y, d = Math.hypot(dx, dy) || 1; player.facing = { x: dx / d, y: dy / d }; }
+  TAP_PEOPLE.push(() => smallFolk().filter(p => dist(p.x, p.y, player.x, player.y) < 30 * TILE));
+  // E on one of them: in front of the knight, within reach (after the city's own things, which the handler above answers)
+  function folkInFront() {
+    if (away() || player.dead || player.mech) return null;
+    let best = null, bd = 1e9;
+    for (const p of smallFolk()) {
+      const d = dist(player.x, player.y, p.x, p.y); if (d > 80) continue;
+      const dot = ((p.x - player.x) * player.facing.x + (p.y - player.y) * player.facing.y) / (d || 1);
+      if (dot < 0.3 && d > 30) continue;
+      if (d < bd) { bd = d; best = p; }
+    }
+    return best;
+  }
+  // pushed after the tile handler: facing a fountain or a lamp uses it even with a child running past
+  HOOKS.use.push(() => { if (away() || !inTown(Math.floor(player.x / TILE), Math.floor(player.y / TILE))) return false; const p = folkInFront(); if (!p) return false; p.talk(); return true; });
+
+  // a tap names the thing the way E does
+  { const _tapLabelFor = tapLabelFor;
+    tapLabelFor = function (p) {
+      if (p && !away() && (p.kind === 'use' || p.kind === 'walk' || p.kind === 'wall') && inTown(p.tx, p.ty)) {
+        const t = p.t;
+        if (t === PROP || t === FOUNT || t === HEDGE) { const n = tapName(p.tx, p.ty); if (n) return n; }
+        if (t === WALL_T() && isTowerCell(p.tx, p.ty)) return 'Wall tower';
+        if (t === T.COBBLE || t === LAWN) { const s = PLAN.streetAt(p.tx, p.ty); if (s) return s.name.replace(/^The /, ''); }
+        if (t === LAWN) return 'Lawn';
+      }
+      return _tapLabelFor(p);
+    };
+  }
+  // a tap on the middle of a fountain (or on the bell) walks to the nearest cell of it that has open ground beside it
+  const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  function rimFor(tx, ty) {
+    const k = kindAt(tx, ty), f = fountainAt(tx, ty);
+    const same = (x, y) => f ? fountainAt(x, y) === f && tileAt(x, y) === FOUNT : kindAt(x, y) === k;
+    const open = (x, y) => N4.some(([dx, dy]) => !SOLID.has(tileAt(x + dx, y + dy)));
+    let best = null, bd = 1e9;
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+      const x = tx + dx, y = ty + dy; if (!same(x, y) || !open(x, y)) continue;
+      const d = dist(tc(x), tc(y), player.x, player.y); if (d < bd) { bd = d; best = [x, y]; }
+    }
+    return best;
+  }
+  { const _tapPick = tapPick;
+    tapPick = function (sx, sy) {
+      const p = _tapPick(sx, sy);
+      if (!p || away() || p.kind !== 'use' || !inTown(p.tx, p.ty)) return p;
+      const k = kindAt(p.tx, p.ty);
+      if (!(p.t === FOUNT || k === 'bell')) return p;
+      const middle = p.t === FOUNT && fountainAt(p.tx, p.ty) === great && p.ty === 35 && (p.tx === 111 || p.tx === 112);
+      const open = N4.some(([dx, dy]) => !SOLID.has(tileAt(p.tx + dx, p.ty + dy)));
+      if (!middle && open) return p;
+      const r = rimFor(p.tx, p.ty);
+      return r ? Object.assign({}, p, { tx: r[0], ty: r[1] }) : p;
+    };
+  }
+
+  // =========================================================================
+  // 8. every tick: the wards, Osric's welcome, the plinth, the bell
+  // =========================================================================
+  const WARD = { name: null, shown: null, since: -1e9, region: null, log: [] };
+  const BARK = { t: 0 };
+  const PL = PLAN.PLINTH;
+  HOOKS.update.push(dt => {
+    const q = Q();
+    if (quest.stage >= 16 && !q.heroName) { q.heroName = heroNameNow(); save(); }
+    if (BARK.t > 0) BARK.t = Math.max(0, BARK.t - dt);
+    if (player.region !== WARD.region) { WARD.region = player.region; WARD.since = time; }
+    if (away() || player.dead) return;
+    const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE);
+    // a ward's banner on the way into it: not in the first 3.2 s after a region banner, never the same twice running
+    const w = inTown(tx, ty) ? PLAN.wardAt(tx, ty) : null;
+    WARD.name = w ? w.name : null;
+    if (w && w.name !== WARD.shown && time - WARD.since >= 3.2) { WARD.shown = w.name; areaBanner = { name: w.name, sub: w.sub, t: 2.4 }; WARD.log.push(w.name); }
+    // Gatewarden Osric calls out once, the first time a knight comes near
+    const os = npc('osric');
+    if (!q.barked && os && dist(player.x, player.y, os.px, os.py) <= 3 * TILE) { q.barked = true; BARK.t = 4; save(); }
+    // the waiting plinth, once it holds the knight who slew the Fang
+    if (statueDone() && !q.plinthTold && !dialog.cur && !dialog.queue.length && dist(player.x, player.y, tc(PL.x), tc(PL.y)) <= 8 * TILE) {
+      q.plinthTold = true; say('The empty plinth by the castle gate is empty no longer.', 'The Voice'); save();
+    }
+  });
+  // the bell rings at dawn and at dusk, for a knight in the town or the castle
+  HOOKS.update.push(() => {
+    const N = window.NIGHT; if (!N) return;
+    const t = N.dayT();
+    if (BELLST.prev !== null && !away()) {
+      const dawn = t < BELLST.prev && BELLST.prev - t > N.DAY / 2;
+      const dusk = BELLST.prev < N.LIGHT && t >= N.LIGHT && t - BELLST.prev < N.DAY / 2;
+      if ((dawn || dusk) && (player.region === 'Thistledown' || player.region === 'Castle Thistledown')) ringBell();
+    }
+    BELLST.prev = t;
+  });
+  function resetCapital() {
+    quest.capital = fresh(); player.cityV = 1;
+    WARD.name = null; WARD.shown = null; WARD.since = -1e9; WARD.region = null; WARD.log.length = 0;
+    BARK.t = 0; TALK.ambrose = 0; TALK.wynn = 0; CAT.t0 = -99; BELLST.prev = null; BELLST.swingT0 = -99;
+    KEEP_CLEAR = null;
+  }
+  HOOKS.newGame.push(resetCapital);
+  if (!SFX.bell) SFX.bell = () => { tone('sine', 523, 523, 1.4, 0.07); tone('sine', 1046, 1046, 1.4, 0.035); };
+  if (!SFX.splash) SFX.splash = () => noise(0.25, 0.07, 0, 900);
+
+  // ---------- the quest log and the map ----------
+  const QTEXT = {
+    0: 'Not started. Ambrose the bell-ringer, at the Bell Tower at the north end of Crown Street, has a question once you have met the Duke.',
+    1: "Ambrose's bell rings by itself at midnight. Ask Gatewarden Osric at the West Gate what he has seen.",
+    2: 'Osric heard a jug fall at the bakery at midnight. Ask Rosalind at the bakery, north of the High Street.',
+    3: "Small footprints with a tail went from the bakery towards the Duke's maze. Look in the middle of the maze, at the sundial.",
+    4: 'You found grey fur and a gold thistle charm on the sundial. Tell Ambrose at the Bell Tower.',
+    5: 'Ambrose gave you the key. Climb the Bell Tower: walk up to it and press E or tap it.',
+    6: 'The ghost was a cat. Tell Ambrose.',
+    done: "Done. The ghost of Thistledown is Duchess, the Duke's cat.",
+  };
+  HOOKS.questText.td_bell = () => QTEXT[Q().bell] || QTEXT[0];
+  HOOKS.activeQuests.push(() => storyOpen() ? ['td_bell'] : []);
+  const TARGETS = { 1: [91, 30, 'Gatewarden Osric'], 2: [125, 22, 'Rosalind, the bakery'], 3: [133, 18, 'The sundial'], 4: [110, 17, 'Ambrose'], 5: [111, 17, 'The Bell Tower'], 6: [110, 17, 'Ambrose'] };
+  HOOKS.mapTarget.push(() => { if (!storyOpen()) return null; const [x, y, label] = TARGETS[Q().bell]; return { x, y, label, id: 'td_bell' }; });
+
+  // =========================================================================
+  // 9. drawing
+  //   Layers (y): the ground, blitted from cached chunks at -1e8 - 2 (then the doorsteps and the drops on it, redrawn);
+  //   the lily pads at -1e8 - 1; walls, towers, lamps, statues, fountains, greenery, stalls, the Bell Tower, the castle
+  //   and the people y-sorted at the foot of their footprint; the lamp glow and the bunting at 9e8, over every head;
+  //   Osric's welcome at 1e9 + 3, over the night. Every item's draw takes no arguments, and every static body is a cached
+  //   sprite (only water, flags, flames, smoke and creatures move).
+  // =========================================================================
+  const SS = 2;
+  // the fractional part, always 0..1 (a % 1 of a negative clock is negative)
+  const fr = v => v - Math.floor(v);
+  const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
+  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, record: false, boxes: [] };
+  const CACHE = {};
+  function sprite(key, w, h, ax, ay, fn) {
+    let s = CACHE[key];
+    if (!s) {
+      const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w * SS)); c.height = Math.max(1, Math.ceil(h * SS));
+      const cg = c.getContext ? c.getContext('2d') : null;
+      if (cg) { try { cg.scale(SS, SS); cg.translate(ax, ay); fn(cg); } catch (e) { } }
+      s = CACHE[key] = { c, w, h, ax, ay };
+    }
+    return s;
+  }
+  const blit = (g, s, x, y) => g.drawImage(s.c, x - s.ax, y - s.ay, s.w, s.h);
+  const lit = () => !!(window.NIGHT && NIGHT.phase() !== 'day');
+  const vis = (c, x0, y0, x1, y1) => x1 > c.x && x0 < c.x + VW && y1 > c.y && y0 < c.y + VH;
+  // the knight behind something tall: it is drawn see-through, so he never vanishes behind it
+  function behindAlpha(x0, y0, x1, y1, sortY) {
+    if (player.dead || player.y + player.r >= sortY) return 1;
+    const k = { x0: player.x - 14, y0: player.y - 34, x1: player.x + 14, y1: player.y + 14 };
+    return (k.x1 > x0 && k.x0 < x1 && k.y1 > y0 && k.y0 < y1) ? 0.45 : 1;
+  }
+  // one item: drawn at y, and its box recorded for the self-test (C19) while STATS.record is on
+  function put(items, y, box, draw, own) {
+    items.push({ y, draw, capital: true });
+    STATS.items++;
+    if (STATS.record && box) STATS.boxes.push({ x0: box[0], y0: box[1], x1: box[2], y1: box[3], own: own || null, y });
+  }
+  const PURPLE = '#5a2e7a', PURPLE_D = '#42205a', PURPLE_L = '#7a4a9a', GOLD = '#f5c542', GOLD_D = '#c9a14a';
+  const STONE = ['#6e7178', '#7d8087', '#9aa0a8'], SLATE = ['#4a4f5a', '#3a3f4a', '#5d6370'];
+
+  // ---------- small pieces of heraldry ----------
+  // the thistle: a gold head with a spiky crown on a stem with two leaves
+  function thistle(g, x, y, s, col) {
+    g.save(); g.translate(x, y); g.scale(s / 10, s / 10);
+    g.strokeStyle = col || GOLD; g.fillStyle = col || GOLD; g.lineWidth = 1.6; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(0, 2); g.lineTo(0, 11); g.stroke();
+    g.beginPath(); g.moveTo(0, 7); g.quadraticCurveTo(-6, 4, -8, 8); g.quadraticCurveTo(-4, 9, 0, 8); g.fill();
+    g.beginPath(); g.moveTo(0, 7); g.quadraticCurveTo(6, 4, 8, 8); g.quadraticCurveTo(4, 9, 0, 8); g.fill();
+    g.beginPath(); g.ellipse(0, 0, 4, 3.4, 0, 0, 7); g.fill();
+    for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + (k - 2) * 0.38; g.beginPath(); g.moveTo(Math.cos(a) * 2.5, -1 + Math.sin(a) * 2.5); g.lineTo(Math.cos(a) * 7.5, -1.5 + Math.sin(a) * 7.5); g.stroke(); }
+    g.restore();
+  }
+  // the Duke's arms: a purple shield edged in gold with a gold thistle
+  function arms(g, x, y, s) {
+    g.save(); g.translate(x, y); g.scale(s / 20, s / 20);
+    g.fillStyle = GOLD_D; g.beginPath(); g.moveTo(-11, -12); g.lineTo(11, -12); g.lineTo(11, 0); g.quadraticCurveTo(10, 10, 0, 15); g.quadraticCurveTo(-10, 10, -11, 0); g.closePath(); g.fill();
+    g.fillStyle = PURPLE; g.beginPath(); g.moveTo(-9, -10); g.lineTo(9, -10); g.lineTo(9, 0); g.quadraticCurveTo(8, 8, 0, 12.5); g.quadraticCurveTo(-8, 8, -9, 0); g.closePath(); g.fill();
+    g.restore();
+    thistle(g, x, y - s * 0.12, s * 0.42, GOLD);
+  }
+  // a long banner hanging from a pole: purple with a gold edge and a gold thistle, a swallowtail that flutters
+  function hangBanner(g, cx, top, len, wd, phase) {
+    const sw = Math.sin(time * 1.9 + (phase || 0)) * 2.5;
+    g.fillStyle = '#3a3f4a'; g.fillRect(cx - wd / 2 - 3, top - 3, wd + 6, 3);
+    g.fillStyle = GOLD; g.beginPath(); g.arc(cx - wd / 2 - 3, top - 1.5, 2, 0, 7); g.arc(cx + wd / 2 + 3, top - 1.5, 2, 0, 7); g.fill();
+    g.fillStyle = PURPLE; g.beginPath(); g.moveTo(cx - wd / 2, top); g.lineTo(cx + wd / 2, top); g.lineTo(cx + wd / 2 + sw, top + len); g.lineTo(cx + sw * 0.5, top + len - wd * 0.42); g.lineTo(cx - wd / 2 + sw, top + len); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(cx - wd / 2, top, wd * 0.28, len - wd * 0.45);
+    g.strokeStyle = GOLD; g.lineWidth = 1.4; g.beginPath(); g.moveTo(cx - wd / 2 + 1.5, top); g.lineTo(cx - wd / 2 + 1.5 + sw, top + len - 1); g.moveTo(cx + wd / 2 - 1.5, top); g.lineTo(cx + wd / 2 - 1.5 + sw, top + len - 1); g.stroke();
+    thistle(g, cx + sw * 0.35, top + len * 0.36, wd * 0.6, GOLD);
+  }
+  function pennant(g, x, y, len, col) {
+    const t = time * 3 + x * 0.02, w1 = Math.sin(t) * 3.5, w2 = Math.sin(t + 1.3) * 4.5;
+    g.fillStyle = col || PURPLE;
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + len * 0.5, y - 3 + w1, x + len, y + 3 + w2); g.quadraticCurveTo(x + len * 0.5, y + 7 + w1, x, y + 9); g.closePath(); g.fill();
+    g.fillStyle = col === GOLD ? PURPLE : GOLD; g.beginPath(); g.moveTo(x + len * 0.7, y + 1.5 + w1 * 0.8); g.lineTo(x + len, y + 3 + w2); g.lineTo(x + len * 0.7, y + 7 + w1 * 0.8); g.closePath(); g.fill();
+  }
+
+  // ---------- the ground ----------
+  const G_NONE = 0, G_STREET = 1, G_FLAG = 2, G_ASHLAR = 3, G_LAWN = 4, G_GRASS = 5, G_DIRT = 6, G_BRIDGE = 7, G_JETTY = 8, G_WATER = 9, G_GATE = 10, G_PORT = 11;
+  const inCastle = (x, y) => x >= CASTLE.x && x < CASTLE.x + CASTLE.w && y >= CASTLE.y && y < CASTLE.y + CASTLE.h;
+  const codeOf = (c, x, y) => c === '=' ? G_STREET : c === 'G' ? G_GATE : (c === '+' || c === 'N' || c === 'O') ? (inCastle(x, y) ? G_ASHLAR : G_FLAG) : c === 'P' ? G_PORT
+    : c === '"' ? G_LAWN : c === 'b' ? G_BRIDGE : c === 'j' ? G_JETTY : c === '~' ? G_WATER : c === '.' || c === 'D' ? G_GRASS : c === ',' || c === 'Y' ? G_DIRT : G_NONE;
+  // a solid thing stands on the ground most of its four neighbours share
+  const UNDER = '+"=.,bNO';
+  const SOLID_GLYPHS = 'lsnpkiBdhtF*xS';
+  const GCODE = new Uint8Array(W * H), GVAR = new Uint8Array(W * H);
+  for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) {
+    const c = glyph(x, y), i = pi(x, y);
+    GVAR[i] = Math.floor(hash(x, y) * 3);
+    if (SOLID_GLYPHS.includes(c)) {
+      const n = {}; for (const [dx, dy] of N4) { const d = glyph(x + dx, y + dy); if (UNDER.includes(d)) n[d] = (n[d] || 0) + 1; }
+      let best = null; for (const d of UNDER) if (n[d] && (!best || n[d] > n[best])) best = d;
+      const code = best ? codeOf(best, x, y) : G_NONE;
+      // only the city's own ground: grass and dirt under a prop are the core's textures, drawn by the core
+      GCODE[i] = (code === G_STREET || code === G_FLAG || code === G_ASHLAR || code === G_LAWN) ? code : G_NONE;
+    } else {
+      const code = codeOf(c, x, y);
+      GCODE[i] = (code === G_GRASS || code === G_DIRT) ? G_NONE : code;
+    }
+  }
+  const gcode = (x, y) => inPlan(x, y) ? GCODE[pi(x, y)] : G_NONE;
+  const isStreet = (x, y) => { const k = gcode(x, y); return k === G_STREET || k === G_GATE || k === G_BRIDGE; };
+  const isWaterG = (x, y) => glyph(x, y) === '~';
+  // the patterns, 48 x 48 (cached at 2x)
+  function patSetts(g, v) {
+    const r = mulberry32(0x5e77 + v * 97);
+    g.fillStyle = '#3e352e'; g.fillRect(0, 0, 48, 48);
+    const cols = ['#6f6254', '#77695a', '#655a4e', '#7d7060', '#6a5d50'];
+    for (let row = 0; row < 6; row++) {
+      const off = ((row + v) % 2) ? 6 : 0, y = row * 8;
+      for (let c = -1; c < 5; c++) {
+        const x = c * 12 + off;
+        g.fillStyle = cols[Math.floor(r() * cols.length)]; roundRect(g, x + 1, y + 1, 10.4, 6.4, 1.6); g.fill();
+        g.fillStyle = 'rgba(255,236,205,0.16)'; g.fillRect(x + 2, y + 1.2, 8.4, 1.2);
+        g.fillStyle = 'rgba(25,18,12,0.25)'; g.fillRect(x + 1.5, y + 6.1, 9.4, 1.2);
+      }
+    }
+  }
+  function patFlag(g, v) {
+    const r = mulberry32(0xf1a6 + v * 131);
+    g.fillStyle = '#a5977a'; g.fillRect(0, 0, 48, 48);
+    const cols = ['#ddd2b9', '#d6caae', '#e2d8c0', '#d0c3a6'];
+    const layout = v === 0 ? [[0, 0, 24, 24], [24, 0, 24, 24], [0, 24, 24, 24], [24, 24, 24, 24]] : v === 1 ? [[0, 0, 30, 20], [30, 0, 18, 20], [0, 20, 18, 28], [18, 20, 30, 28]] : [[0, 0, 20, 28], [20, 0, 28, 18], [20, 18, 28, 30], [0, 28, 20, 20]];
+    for (const [x, y, w, h] of layout) {
+      g.fillStyle = cols[Math.floor(r() * cols.length)]; g.fillRect(x + 1, y + 1, w - 2, h - 2);
+      g.fillStyle = 'rgba(255,250,235,0.55)'; g.fillRect(x + 1, y + 1, w - 2, 1.2); g.fillRect(x + 1, y + 1, 1.2, h - 2);
+      g.fillStyle = 'rgba(90,70,40,0.12)'; g.fillRect(x + 1, y + h - 2.2, w - 2, 1.2);
+    }
+    for (let i = 0; i < 7; i++) { g.fillStyle = `rgba(110,90,60,${(0.08 + r() * 0.1).toFixed(3)})`; g.fillRect(r() * 46, r() * 46, 1.3, 1.3); }
+  }
+  function patAshlar(g, v) {
+    g.fillStyle = '#9b9384'; g.fillRect(0, 0, 48, 48);
+    const cols = ['#d3ccbd', '#cdc5b5', '#d8d1c3'];
+    for (let r0 = 0; r0 < 3; r0++) for (let c = -1; c < 3; c++) {
+      const off = (r0 + v) % 2 ? 12 : 0, x = c * 24 + off, y = r0 * 16;
+      g.fillStyle = cols[(r0 + c + v + 3) % 3]; g.fillRect(x + 1, y + 1, 22, 14);
+      g.fillStyle = 'rgba(255,255,250,0.45)'; g.fillRect(x + 1, y + 1, 22, 1.2);
+    }
+  }
+  function patLawn(g, v, light) {
+    const r = mulberry32(0x1a3 + v * 97 + (light ? 7 : 0));
+    g.fillStyle = light ? '#86cc63' : '#78bf56'; g.fillRect(0, 0, 48, 48);
+    // the mower's stripe: a little lighter down the middle of the light stripes
+    g.fillStyle = light ? 'rgba(220,255,190,0.18)' : 'rgba(20,70,20,0.10)'; g.fillRect(8, 0, 32, 48);
+    for (let i = 0; i < 26; i++) { const x = r() * 46, y = r() * 44; g.strokeStyle = r() < 0.5 ? 'rgba(45,110,35,0.35)' : 'rgba(205,250,170,0.45)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y + 4); g.lineTo(x + (r() - 0.5) * 3, y); g.stroke(); }
+    if (v === 2) for (let i = 0; i < 2; i++) { const x = 8 + r() * 32, y = 8 + r() * 32; g.fillStyle = '#ffffff'; for (let p = 0; p < 5; p++) { const a = p / 5 * Math.PI * 2; g.beginPath(); g.arc(x + Math.cos(a) * 1.7, y + Math.sin(a) * 1.7, 1, 0, 7); g.fill(); } g.fillStyle = '#ffd24a'; g.beginPath(); g.arc(x, y, 0.9, 0, 7); g.fill(); }
+  }
+  function patPlank(g, dir, v) {
+    g.fillStyle = '#3d2a1a'; g.fillRect(0, 0, 48, 48);
+    const cols = ['#8a6238', '#7d5832', '#94693c', '#83603a'];
+    for (let k = 0; k < 4; k++) {
+      g.fillStyle = cols[(k + v) % 4];
+      if (dir === 'ew') { g.fillRect(0, k * 12 + 1, 48, 10.2); g.fillStyle = 'rgba(255,230,190,0.22)'; g.fillRect(0, k * 12 + 1, 48, 1.4); g.fillStyle = 'rgba(30,18,8,0.4)'; g.fillRect(((k * 17 + v * 11) % 40) + 4, k * 12 + 1, 1.4, 10); }
+      else { g.fillRect(k * 12 + 1, 0, 10.2, 48); g.fillStyle = 'rgba(255,230,190,0.22)'; g.fillRect(k * 12 + 1, 0, 1.4, 48); g.fillStyle = 'rgba(30,18,8,0.4)'; g.fillRect(k * 12 + 1, ((k * 17 + v * 11) % 40) + 4, 10, 1.4); }
+    }
+    g.fillStyle = '#2b1d12'; for (let k = 0; k < 4; k++) { if (dir === 'ew') { g.beginPath(); g.arc(4, k * 12 + 6, 1.2, 0, 7); g.arc(44, k * 12 + 6, 1.2, 0, 7); g.fill(); } else { g.beginPath(); g.arc(k * 12 + 6, 4, 1.2, 0, 7); g.arc(k * 12 + 6, 44, 1.2, 0, 7); g.fill(); } }
+  }
+  const pat = (key, fn) => sprite('g:' + key, 48, 48, 0, 0, fn);
+  function groundSprite(code, x, y) {
+    const v = GVAR[pi(x, y)];
+    switch (code) {
+      case G_STREET: case G_GATE: return pat('setts' + v, g => patSetts(g, v));
+      case G_FLAG: return pat('flag' + v, g => patFlag(g, v));
+      case G_ASHLAR: case G_PORT: return pat('ashlar' + v, g => patAshlar(g, v));
+      case G_LAWN: { const light = x % 2 === 0; return pat('lawn' + v + (light ? 'l' : 'd'), g => patLawn(g, v, light)); }
+      case G_BRIDGE: { const d = x >= 133 && x <= 134 && y >= 25 && y <= 28 ? 'ew' : 'ew'; return pat('plank' + d + v, g => patPlank(g, d, v)); }
+      case G_JETTY: return pat('plankns' + v, g => patPlank(g, 'ns', v));
+    }
+    return null;
+  }
+  // one cell of the ground, with its trimmings: kerbs, lawn edges, coping, rails, the gate's shade
+  function drawCell(g, x, y) {
+    const code = GCODE[pi(x, y)]; if (!code) return;
+    const px = x * TILE, py = y * TILE;
+    if (code === G_WATER) { drawCoping(g, x, y, px, py); return; }
+    const s = groundSprite(code, x, y); if (s) g.drawImage(s.c, px, py, TILE, TILE);
+    if (code === G_STREET || code === G_GATE) {
+      // a pale kerb wherever the street meets flagstones, lawn or a wall
+      for (const [dx, dy] of N4) {
+        const nx = x + dx, ny = y + dy; if (isStreet(nx, ny)) continue;
+        const nc = glyph(nx, ny); if (nc === '#' || nc === 'T' || nc === '-' || nc === '~') continue;
+        if (dy) { const ky = dy < 0 ? py : py + 43; g.fillStyle = '#e4dac4'; g.fillRect(px, ky, 48, 5); g.fillStyle = 'rgba(40,30,20,0.35)'; g.fillRect(px, dy < 0 ? ky + 5 : ky - 1, 48, 1.2); g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(px, ky, 48, 1); for (let k = 1; k < 4; k++) { g.fillStyle = 'rgba(120,100,70,0.35)'; g.fillRect(px + k * 12, ky, 1, 5); } }
+        else { const kx = dx < 0 ? px : px + 43; g.fillStyle = '#e4dac4'; g.fillRect(kx, py, 5, 48); g.fillStyle = 'rgba(40,30,20,0.35)'; g.fillRect(dx < 0 ? kx + 5 : kx - 1, py, 1.2, 48); for (let k = 1; k < 4; k++) { g.fillStyle = 'rgba(120,100,70,0.35)'; g.fillRect(kx, py + k * 12, 5, 1); } }
+      }
+      // a drain grate in the gutter now and then
+      if (glyph(x, y) === '=' && hash(x * 3, y * 7) < 0.06) { g.fillStyle = '#2a2622'; g.fillRect(px + 18, py + 20, 12, 8); g.fillStyle = '#4c443c'; for (let k = 0; k < 4; k++) g.fillRect(px + 19 + k * 3, py + 21, 1.4, 6); }
+    }
+    if (code === G_GATE) { const sh = g.createLinearGradient(px, 0, px + 48, 0); sh.addColorStop(0, 'rgba(20,16,12,0.35)'); sh.addColorStop(0.5, 'rgba(20,16,12,0.18)'); sh.addColorStop(1, 'rgba(20,16,12,0.35)'); g.fillStyle = sh; g.fillRect(px, py, 48, 48); }
+    if (code === G_PORT) { g.fillStyle = 'rgba(20,16,12,0.3)'; g.fillRect(px, py, 48, 48); g.fillStyle = '#2a2622'; g.fillRect(px, py + 20, 48, 6); g.fillStyle = '#4c443c'; for (let k = 0; k < 8; k++) g.fillRect(px + 2 + k * 6, py + 21, 2, 4); }
+    if (code === G_LAWN) {
+      // a clipped edge where the lawn meets stone
+      g.fillStyle = 'rgba(30,70,25,0.45)';
+      for (const [dx, dy] of N4) { const k = gcode(x + dx, y + dy), c2 = glyph(x + dx, y + dy); if (k === G_LAWN || SOLID_GLYPHS.includes(c2) && GCODE[pi(x + dx, y + dy)] === G_LAWN) continue; if (dy) g.fillRect(px, dy < 0 ? py : py + 46, 48, 2); else g.fillRect(dx < 0 ? px : px + 46, py, 2, 48); }
+    }
+    if (code === G_BRIDGE || code === G_JETTY) drawRails(g, x, y, px, py, code);
+  }
+  // stone coping round the moat and the pond, on the water side of the edge
+  function drawCoping(g, x, y, px, py) {
+    const pond = x >= PLAN.POND.x0 && x <= PLAN.POND.x1 && y >= PLAN.POND.y0 && y <= PLAN.POND.y1;
+    const top = pond ? '#a7a08a' : '#a9adb3', face = pond ? '#857e68' : '#7d8087';
+    for (const [dx, dy] of N4) {
+      const c = glyph(x + dx, y + dy); if (c === '~' || c === 'b' || c === 'j' || c === '-') continue;
+      if (dy < 0) { g.fillStyle = top; g.fillRect(px, py, 48, 6); g.fillStyle = face; g.fillRect(px, py + 6, 48, 4); g.fillStyle = 'rgba(0,20,40,0.25)'; g.fillRect(px, py + 10, 48, 3); }
+      else if (dy > 0) { g.fillStyle = top; g.fillRect(px, py + 42, 48, 6); g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(px, py + 42, 48, 1); }
+      else { const kx = dx < 0 ? px : px + 42; g.fillStyle = top; g.fillRect(kx, py, 6, 48); g.fillStyle = 'rgba(0,20,40,0.22)'; g.fillRect(dx < 0 ? kx + 6 : kx - 3, py, 3, 48); }
+      if (pond) { g.fillStyle = 'rgba(80,130,60,0.45)'; for (let k = 0; k < 3; k++) { const h0 = hash(x * 5 + k, y * 3 + dx + dy * 2); if (dy) g.fillRect(px + h0 * 40, dy < 0 ? py + 2 : py + 43, 6, 3); else g.fillRect(dx < 0 ? px + 1 : px + 43, py + h0 * 40, 3, 6); } }
+    }
+  }
+  // the rails of the footbridge, the iron bands of the drawbridge, the jetty's posts
+  function drawRails(g, x, y, px, py, code) {
+    if (code === G_JETTY) { g.fillStyle = '#4a3420'; for (const [ox, oy] of [[3, 3], [41, 3], [3, 41], [41, 41]]) g.fillRect(px + ox, py + oy, 5, 5); return; }
+    if (x >= 111 && x <= 112 && y === 41) {
+      // the drawbridge: oak, with two iron bands across and the hinge pins at the castle end
+      g.fillStyle = '#3a3f4a'; g.fillRect(px, py + 10, 48, 4); g.fillRect(px, py + 34, 48, 4);
+      g.fillStyle = '#6b707a'; for (const yy of [11, 35]) for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(px + 6 + k * 12, py + yy + 1, 1.3, 0, 7); g.fill(); }
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x === 111 ? px : px + 45, py, 3, 48);
+      return;
+    }
+    // the footbridge over Swan Pond: rails on its east and west edges, lighter at the top of the arch
+    const mid = y === 26 || y === 27;
+    if (mid) { g.fillStyle = 'rgba(255,240,210,0.12)'; g.fillRect(px, py, 48, 48); }
+    const side = x === PLAN.POND.bridge[0] ? -1 : 1, rx = side < 0 ? px + 1 : px + 41;
+    g.fillStyle = '#5a3c22'; g.fillRect(rx, py, 6, 48); g.fillStyle = '#7a5530'; g.fillRect(rx + 1, py, 4, 48);
+    g.fillStyle = 'rgba(255,230,190,0.3)'; g.fillRect(rx + 1, py, 1.2, 48);
+    g.fillStyle = '#3d2a1a'; g.fillRect(rx - 1, py + 20, 8, 8);
+  }
+  // the chunks: 8 x 8 cells, painted at the screen's pixel ratio, the least recently used dropped past chunkMax
+  const CH = 8, CW = Math.ceil(W / CH), CHH = Math.ceil(H / CH);
+  let chunkMax = 20, chunkUse = 0;
+  function chunkHash(cx, cy) { let s = 7; for (let y = Y0 + cy * CH; y < Math.min(Y0 + H, Y0 + cy * CH + CH); y++) for (let x = X0 + cx * CH; x < Math.min(X0 + W, X0 + cx * CH + CH); x++) s = (Math.imul(s, 31) + tileAt(x, y)) | 0; return s; }
+  function paintChunk(ch, cx, cy, ss) {
+    const c = ch.c, cg = c.getContext ? c.getContext('2d') : null;
+    if (!cg) return;
+    try {
+      cg.setTransform(1, 0, 0, 1, 0, 0); cg.clearRect(0, 0, c.width, c.height);
+      cg.scale(ss, ss); cg.translate(-(X0 + cx * CH) * TILE, -(Y0 + cy * CH) * TILE);
+      for (let y = Y0 + cy * CH; y < Math.min(Y0 + H, Y0 + cy * CH + CH); y++) for (let x = X0 + cx * CH; x < Math.min(X0 + W, X0 + cx * CH + CH); x++) if (pristineAt(x, y)) drawCell(cg, x, y);
+    } catch (e) { }
+    STATS.painted++;
+  }
+  function groundChunk(cx, cy) {
+    const ss = Math.max(1, Math.min(2, Math.round(typeof DPR === 'number' ? DPR : 1))), key = cx + ',' + cy + '@' + ss;
+    let ch = CHUNKS.get(key);
+    const hsh = chunkHash(cx, cy);
+    if (!ch) {
+      const c = document.createElement('canvas'); c.width = CH * TILE * ss; c.height = CH * TILE * ss;
+      ch = { c, used: 0, hash: hsh }; CHUNKS.set(key, ch); paintChunk(ch, cx, cy, ss);
+      if (CHUNKS.size > chunkMax) {
+        const old = [...CHUNKS.entries()].filter(([k]) => k !== key).sort((a, b) => a[1].used - b[1].used).slice(0, CHUNKS.size - chunkMax);
+        for (const [k, o] of old) { CHUNKS.delete(k); try { o.c.width = 0; o.c.height = 0; } catch (e) { } }
+      }
+    } else if (ch.hash !== hsh) { ch.hash = hsh; paintChunk(ch, cx, cy, ss); STATS.repaints++; }
+    ch.used = ++chunkUse;
+    return ch;
+  }
+  // the town's door steps and the things lying on its paving: the chunks cover the core's, so they are drawn again on top
+  const STEP_LIST = () => BUILDINGS.filter(b => inTown(b.x, b.y)).map(b => { const [sx, sy] = stepOf(b); return { sx, sy, up: b.door === undefined, coffin: !!b.coffin }; });
+  function drawGround(g, c) {
+    const cx0 = Math.max(0, Math.floor((c.x / TILE - X0) / CH)), cx1 = Math.min(CW - 1, Math.floor(((c.x + VW) / TILE - X0) / CH));
+    const cy0 = Math.max(0, Math.floor((c.y / TILE - Y0) / CH)), cy1 = Math.min(CHH - 1, Math.floor(((c.y + VH) / TILE - Y0) / CH));
+    if (cx1 < cx0 || cy1 < cy0) return;
+    chunkMax = Math.min(40, Math.max(chunkMax, (cx1 - cx0 + 1) * (cy1 - cy0 + 1) + 4));
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+      const ch = groundChunk(cx, cy); if (!ch.c.width) continue;
+      g.drawImage(ch.c, (X0 + cx * CH) * TILE, (Y0 + cy * CH) * TILE, CH * TILE, CH * TILE); STATS.chunks++;
+    }
+    for (const s of STEP_LIST()) if (gcode(s.sx, s.sy) && pristineAt(s.sx, s.sy) && vis(c, s.sx * TILE - 40, s.sy * TILE - 40, s.sx * TILE + 88, s.sy * TILE + 88)) drawDoorstep(g, s.sx, s.sy, s.up, s.coffin);
+    for (const d of drops) { const tx = Math.floor(d.x / TILE), ty = Math.floor(d.y / TILE); if (gcode(tx, ty) && pristineAt(tx, ty) && vis(c, d.x - 30, d.y - 30, d.x + 30, d.y + 30)) drawDrop(g, d); }
+  }
+
+  // ---------- the curtain wall ----------
+  // what side of the town a wall cell is on: N and S runs show a face, W and E runs are seen from above
+  const wallSide = (x, y) => y === TOWN.y0 ? 'N' : y === TOWN.y1 ? 'S' : x === TOWN.x0 ? 'W' : x === TOWN.x1 ? 'E' : null;
+  // a torch on every sixth plain wall cell of each run
+  const TORCHES = new Set();
+  { const runs = { N: [], S: [], W: [], E: [] };
+    for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) { const s = wallSide(x, y); if (s && glyph(x, y) === '#') runs[s].push([x, y]); }
+    for (const s in runs) runs[s].forEach(([x, y], i) => { if (i % 6 === 3) TORCHES.add(x + ',' + y); }); }
+  function paintWallH(g, side, v) {
+    // the walkway on top, the face below it (the town side for the north wall, the field side for the south)
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(0, 46, 48, 6);
+    g.fillStyle = STONE[0]; g.fillRect(0, 14, 48, 34);
+    for (let r = 0; r < 3; r++) { const yy = 15 + r * 11, off = (r + v) % 2 ? 12 : 0; for (let c = -1; c < 3; c++) { g.fillStyle = ['#7d8087', '#767980', '#83868d'][(r + c + 3) % 3]; g.fillRect(off + c * 24 + 1, yy, 22, 10); } }
+    const sh = g.createLinearGradient(0, 14, 0, 48); sh.addColorStop(0, 'rgba(255,255,255,0.08)'); sh.addColorStop(1, 'rgba(0,0,0,0.18)'); g.fillStyle = sh; g.fillRect(0, 14, 48, 34);
+    g.fillStyle = STONE[2]; g.fillRect(0, 2, 48, 12);
+    g.fillStyle = '#b4b9c0'; g.fillRect(0, 2, 48, 3);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 13, 48, 1.5);
+    // merlons on the outer edge: the far edge of the north wall, the near edge of the south wall
+    for (let k = 0; k < 4; k += 2) {
+      const mx = k * 12 + (v ? 12 : 0);
+      if (side === 'N') { g.fillStyle = '#8b8f96'; g.fillRect(mx, -10, 12, 13); g.fillStyle = '#a9aeb5'; g.fillRect(mx, -10, 12, 3); g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(mx + 9, -7, 3, 10); }
+      else { g.fillStyle = '#8b8f96'; g.fillRect(mx, 2, 12, 14); g.fillStyle = '#b4b9c0'; g.fillRect(mx, 2, 12, 3); g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(mx + 9, 5, 3, 11); }
+    }
+  }
+  function paintWallV(g, side) {
+    const outer = side === 'W' ? 0 : 40, inner = side === 'W' ? 40 : 0;
+    g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(side === 'W' ? 44 : -4, 0, 8, 48);
+    g.fillStyle = STONE[0]; g.fillRect(0, 0, 48, 48);
+    g.fillStyle = STONE[2]; g.fillRect(8, 0, 32, 48);
+    g.fillStyle = 'rgba(70,70,75,0.35)'; for (let r = 0; r < 4; r++) g.fillRect(8, r * 12 + 11, 32, 1);
+    g.fillStyle = '#b4b9c0'; g.fillRect(inner + (side === 'W' ? 0 : 6), 0, 2, 48);
+    for (let k = 0; k < 4; k += 2) { const my = k * 12; g.fillStyle = '#8b8f96'; g.fillRect(outer, my, 8, 12); g.fillStyle = '#a9aeb5'; g.fillRect(outer, my, 8, 2.5); }
+    g.fillStyle = '#5f6268'; g.fillRect(outer, 12, 8, 12); g.fillRect(outer, 36, 8, 12);
+  }
+  function drawTorch(g, x, y) {
+    g.fillStyle = '#2a2a30'; g.fillRect(x - 1.5, y - 2, 3, 12); g.fillRect(x - 5, y + 2, 10, 2.5);
+    g.fillStyle = '#5a3a1e'; g.fillRect(x - 2, y - 10, 4, 9);
+    if (lit()) {
+      const f = 0.8 + Math.sin(time * 9 + x) * 0.2;
+      const gl = g.createRadialGradient(x, y - 14, 1, x, y - 14, 20); gl.addColorStop(0, `rgba(255,190,90,${(0.45 * f).toFixed(3)})`); gl.addColorStop(1, 'rgba(255,170,60,0)'); g.fillStyle = gl; g.beginPath(); g.arc(x, y - 14, 20, 0, 7); g.fill();
+      g.fillStyle = '#ff8a1a'; g.beginPath(); g.moveTo(x - 4, y - 10); g.quadraticCurveTo(x - 4, y - 18 - f * 3, x, y - 22 - f * 3); g.quadraticCurveTo(x + 4, y - 18 - f * 3, x + 4, y - 10); g.closePath(); g.fill();
+      g.fillStyle = '#ffe066'; g.beginPath(); g.ellipse(x, y - 13, 1.8, 3.5, 0, 0, 7); g.fill();
+    }
+  }
+  function drawWallCell(g, x, y) {
+    const side = wallSide(x, y); if (!side) return;
+    const px = x * TILE, py = y * TILE;
+    if (side === 'N' || side === 'S') blit(g, sprite('wallH' + side + (x % 2), 48, 64, 0, 12, cg => paintWallH(cg, side, x % 2)), px, py);
+    else blit(g, sprite('wallV' + side, 56, 48, side === 'E' ? 8 : 0, 0, cg => paintWallV(cg, side)), px, py);
+    if (TORCHES.has(x + ',' + y)) {
+      if (side === 'N') drawTorch(g, px + 24, py + 28);
+      else if (side === 'S') drawTorch(g, px + 24, py + 10);
+      else drawTorch(g, side === 'W' ? px + 40 : px + 8, py + 26);
+    }
+  }
+
+  // ---------- the towers ----------
+  // a round tower centred (cx, cy), radius R: its body from the base up to the rim, a merlon ring, a slate cone to the apex
+  function paintRoundTower(g, R, base, rim, apex, slit) {
+    const ry = R * 0.34;
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(6, base + 4, R + 8, ry + 4, 0, 0, 7); g.fill();
+    const body = g.createLinearGradient(-R, 0, R, 0);
+    body.addColorStop(0, '#55585e'); body.addColorStop(0.32, '#9aa0a8'); body.addColorStop(0.7, '#7d8087'); body.addColorStop(1, '#4f535a');
+    g.fillStyle = body; g.beginPath(); g.moveTo(-R, rim); g.lineTo(-R, base); g.ellipse(0, base, R, ry, 0, Math.PI, 0, true); g.lineTo(R, rim); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(40,40,45,0.35)'; g.lineWidth = 1;
+    for (let yy = base - 10; yy > rim + 6; yy -= 10) { g.beginPath(); g.ellipse(0, yy, R, ry, 0, 0.05, Math.PI - 0.05); g.stroke(); }
+    for (let yy = base - 5, r = 0; yy > rim + 6; yy -= 10, r++) for (let k = 0; k < 5; k++) { const a = (k + (r % 2) * 0.5) / 5 * Math.PI + 0.15; if (a > Math.PI - 0.1) continue; const sx = Math.cos(a) * R; g.beginPath(); g.moveTo(sx, yy + Math.sin(a) * ry - 5); g.lineTo(sx, yy + Math.sin(a) * ry + 5); g.stroke(); }
+    if (slit) { g.fillStyle = '#23262c'; roundRect(g, -2.5, (base + rim) / 2 - 8, 5, 16, 2); g.fill(); g.fillRect(-5, (base + rim) / 2 - 1.5, 10, 3); }
+    // the rim and its merlons
+    g.fillStyle = '#9aa0a8'; g.beginPath(); g.ellipse(0, rim, R + 3, ry + 2, 0, 0, 7); g.fill();
+    g.fillStyle = '#6e7178'; g.beginPath(); g.ellipse(0, rim, R - 4, ry - 2, 0, 0, 7); g.fill();
+    for (let k = 0; k < 8; k++) { const a = Math.PI * (0.06 + k * 0.125), mx = Math.cos(a) * (R + 1), my = rim + Math.sin(a) * (ry + 1); g.fillStyle = '#8b8f96'; g.fillRect(mx - 4, my - 9, 8, 9); g.fillStyle = '#b4b9c0'; g.fillRect(mx - 4, my - 9, 8, 2); }
+    // the slate cone and a gold finial
+    const cone = g.createLinearGradient(-R, 0, R, 0); cone.addColorStop(0, '#2c3038'); cone.addColorStop(0.35, '#5d6370'); cone.addColorStop(0.7, '#4a4f5a'); cone.addColorStop(1, '#262a31');
+    g.fillStyle = cone; g.beginPath(); g.moveTo(-R + 4, rim - 3); g.lineTo(0, apex); g.lineTo(R - 4, rim - 3); g.ellipse(0, rim - 3, R - 4, ry - 3, 0, 0, Math.PI); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 1; for (let k = 1; k < 4; k++) { const f = k / 4; g.beginPath(); g.ellipse(0, rim - 3 - (rim - 3 - apex) * f, (R - 4) * (1 - f), (ry - 3) * (1 - f), 0, 0.15, Math.PI - 0.15); g.stroke(); }
+    g.fillStyle = GOLD_D; g.beginPath(); g.ellipse(0, rim - 3, R - 3, ry - 2.5, 0, 0, Math.PI); g.lineTo(-R + 3, rim - 1); g.ellipse(0, rim - 1, R - 3, ry - 2.5, 0, Math.PI, 0, true); g.closePath(); g.fill();
+    g.fillStyle = GOLD; g.beginPath(); g.arc(0, apex - 3, 3.5, 0, 7); g.fill(); g.fillRect(-1, apex - 13, 2, 10);
+  }
+  const TOWER_DEF = { wall: { R: 30, base: 30, rim: -14, apex: -64 }, gate: { R: 34, base: 50, rim: -8, apex: -58 } };
+  const TOWERS = PLAN.TOWERS.map((t, i) => Object.assign({}, t, { i, gate: t.h === 3, cx: (t.x + 1) * TILE, cy: (t.y + t.h / 2) * TILE }));
+  function drawTownTower(g, t) {
+    const d = t.gate ? TOWER_DEF.gate : TOWER_DEF.wall, sortY = (t.y + t.h) * TILE - 2;
+    const s = sprite(t.gate ? 'tower-gate' : 'tower-wall', 2 * d.R + 30, d.base - d.apex + 40, d.R + 12, -d.apex + 16, cg => paintRoundTower(cg, d.R, d.base, d.rim, d.apex, true));
+    const a = behindAlpha(t.cx - d.R, t.cy + d.apex - 14, t.cx + d.R, t.cy + d.base, sortY);
+    if (a < 1) { g.save(); g.globalAlpha = a; }
+    blit(g, s, t.cx, t.cy);
+    if (t.gate) hangBanner(g, t.cx, t.cy - 2, 40, 18, t.i);
+    else if (t.i % 2 === 0) pennant(g, t.cx + 1, t.cy + d.apex - 12, 24);
+    if (a < 1) g.restore();
+    STATS.towers++;
+  }
+  // the gatehouse arch over each town gate: the wall walk crosses the passage from tower to tower as two stone ribs (the
+  // field side with its merlons, the town side with the raised portcullis: its iron teeth hang from the rib's edge), the
+  // Duke's arms on the keystone between them, and the passage under it in shade, so the road is seen running through.
+  // Faint (25%) while the knight's middle is on a gate cell or within a tile of one.
+  function drawArch(g, gate) {
+    const x = gate.x * TILE, y0 = 31 * TILE - 10, y1 = 34 * TILE - 2;
+    const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
+    const near = Math.abs(ptx - gate.x) <= 1 && pty >= 30 && pty <= 34;
+    g.save(); g.globalAlpha = near ? 0.25 : 1;
+    const outerX = gate.dir > 0 ? x - 2 : x + 34, innerX = gate.dir > 0 ? x + 34 : x - 2;
+    // the shadow the walk throws across the passage
+    const sh = g.createLinearGradient(x, 0, x + 48, 0); sh.addColorStop(0, 'rgba(15,12,10,0.32)'); sh.addColorStop(0.5, 'rgba(15,12,10,0.12)'); sh.addColorStop(1, 'rgba(15,12,10,0.32)');
+    g.fillStyle = sh; g.fillRect(x, 31 * TILE, 48, 3 * TILE);
+    for (const [rx, outer] of [[outerX, true], [innerX, false]]) {
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(rx + 2, y0 + 8, 16, y1 - y0);
+      g.fillStyle = STONE[0]; g.fillRect(rx, y0, 16, y1 - y0);
+      g.fillStyle = STONE[2]; g.fillRect(rx + 2, y0, 12, y1 - y0);
+      g.fillStyle = 'rgba(70,70,75,0.4)'; for (let yy = y0 + 14; yy < y1; yy += 14) g.fillRect(rx + 2, yy, 12, 1);
+      g.fillStyle = '#b4b9c0'; g.fillRect(rx + 2, y0, 12, 2);
+      if (outer) for (let yy = y0; yy < y1 - 6; yy += 20) { g.fillStyle = '#8b8f96'; g.fillRect(gate.dir > 0 ? rx - 4 : rx + 12, yy, 8, 10); g.fillStyle = '#b4b9c0'; g.fillRect(gate.dir > 0 ? rx - 4 : rx + 12, yy, 8, 2); }
+      else {
+        // the raised portcullis: its bottom bar along the rib and the teeth hanging into the passage
+        const tx0 = gate.dir > 0 ? rx - 1 : rx + 13;
+        g.fillStyle = '#2a2d33'; g.fillRect(tx0, y0 + 4, 4, y1 - y0 - 6);
+        g.fillStyle = '#3d4048'; for (let yy = y0 + 8; yy < y1 - 6; yy += 9) { g.beginPath(); g.moveTo(tx0 + (gate.dir > 0 ? 0 : 4), yy); g.lineTo(tx0 + (gate.dir > 0 ? -7 : 11), yy + 3.5); g.lineTo(tx0 + (gate.dir > 0 ? 0 : 4), yy + 7); g.closePath(); g.fill(); }
+      }
+    }
+    // the keystone across the middle of the passage, with the arms of Thistledown
+    const ky = 32.5 * TILE - 13;
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x + 2, ky + 4, 48, 26);
+    g.fillStyle = STONE[1]; g.fillRect(x - 2, ky, 52, 26); g.fillStyle = STONE[2]; g.fillRect(x - 2, ky, 52, 3);
+    arms(g, x + 24, ky + 13, 20);
+    g.restore();
+  }
+
+  // ---------- lamps ----------
+  // the post is one tile and the lantern sits up to 40 px over the tile; a lamp right under a building keeps its lantern
+  // below that building's wall (no art over another building)
+  const LAMP_TOP = {};
+  for (const [x, y] of LAMPS) { let top = y * TILE - 40; for (const b of BUILDINGS) { const bx0 = b.x * TILE, bx1 = (b.x + b.w) * TILE, by1 = (b.y + b.h) * TILE; if (x * TILE + 34 > bx0 && x * TILE + 14 < bx1 && by1 <= y * TILE + 1 && by1 > top) top = by1; } LAMP_TOP[x + ',' + y] = top; }
+  function paintLamp(g, H0) {
+    // local origin: the foot of the post (the tile's bottom, 6 px up); the finial on the lantern's cap is H0 + 3 px above it
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(4, 0, 11, 4, 0, 0, 7); g.fill();
+    g.fillStyle = '#1f2126'; g.fillRect(-6, -7, 12, 7); g.fillStyle = '#34373e'; g.fillRect(-4, -10, 8, 4);
+    g.fillStyle = '#1f2126'; g.fillRect(-2, -H0 + 26, 4, H0 - 34); g.fillStyle = '#3d4048'; g.fillRect(-2, -H0 + 26, 1.4, H0 - 34);
+    g.fillStyle = '#1f2126'; g.fillRect(-7, -H0 + 24, 14, 3);
+    // the lantern: an iron cage with glass sides and a cap
+    g.fillStyle = '#1f2126'; g.beginPath(); g.moveTo(-8, -H0 + 24); g.lineTo(-10, -H0 + 8); g.lineTo(10, -H0 + 8); g.lineTo(8, -H0 + 24); g.closePath(); g.fill();
+    g.fillStyle = '#c9a14a'; g.beginPath(); g.moveTo(-11, -H0 + 8); g.lineTo(0, -H0); g.lineTo(11, -H0 + 8); g.closePath(); g.fill();
+    g.fillStyle = '#1f2126'; g.beginPath(); g.arc(0, -H0 - 1, 2.4, 0, 7); g.fill();
+  }
+  const lampH = (tx, ty) => (ty + 1) * TILE - 6 - LAMP_TOP[tx + ',' + ty] - 4;
+  function drawLamp(g, tx, ty) {
+    const cx = tc(tx), foot = (ty + 1) * TILE - 6, H0 = lampH(tx, ty), lit0 = lit();
+    blit(g, sprite('lamp' + H0, 32, H0 + 14, 16, H0 + 6, cg => paintLamp(cg, H0)), cx, foot);
+    // the glass: dark by day, a warm flame from dusk (the glow over everything is LAMP_GLOW at 9e8)
+    const gy = foot - H0 + 10;
+    if (lit0) { const f = 0.85 + Math.sin(time * 6 + tx * 1.7) * 0.1; g.fillStyle = `rgba(255,214,120,${f.toFixed(3)})`; g.fillRect(cx - 7, gy, 14, 13); g.fillStyle = '#fff3c4'; g.beginPath(); g.ellipse(cx, gy + 7, 2.4, 4, 0, 0, 7); g.fill(); STATS.lampsLit++; }
+    else { g.fillStyle = 'rgba(70,82,96,0.85)'; g.fillRect(cx - 7, gy, 14, 13); g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(cx - 5, gy + 1, 2, 10); }
+    g.strokeStyle = '#1f2126'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(cx, gy); g.lineTo(cx, gy + 13); g.stroke();
+  }
+  function lampGlow(g, tx, ty) {
+    const cx = tc(tx), foot = (ty + 1) * TILE - 6, cy = foot - lampH(tx, ty) + 16;
+    const f = 0.85 + Math.sin(time * 5 + tx * 1.3) * 0.08;
+    const gl = g.createRadialGradient(cx, cy, 2, cx, cy, 46); gl.addColorStop(0, `rgba(255,214,130,${(0.42 * f).toFixed(3)})`); gl.addColorStop(1, 'rgba(255,200,110,0)');
+    g.fillStyle = gl; g.beginPath(); g.arc(cx, cy, 46, 0, 7); g.fill();
+  }
+
+  // ---------- statues and the waiting plinth ----------
+  const STONE_LOOK = (o) => Object.assign({ tunic: '#c9c3b6', hair: '#b7b0a2', skin: '#d6d0c3', shoulder: '#bdb6a8' }, o);
+  const STATUE_LOOK = {
+    last_knight: STONE_LOOK({ helm: '#cfc9bc', shield: '#bfb8a9', weapon: { shape: 'sword', color: '#d8d2c6' } }),
+    thrain: STONE_LOOK({ beard: true, crown: true, tool: 'hammer', toolColor: '#cfc9bc' }),
+    aelith: STONE_LOOK({ woman: true, crown: true, weapon: { shape: 'bow', color: '#cfc9bc' } }),
+    seraphel: STONE_LOOK({ woman: true, crown: true }),
+  };
+  function stoneWings(g) {
+    for (const s of [-1, 1]) { g.save(); g.scale(s, 1); g.fillStyle = '#d4cec1'; g.strokeStyle = 'rgba(110,100,85,0.6)'; g.lineWidth = 0.8;
+      for (let f = 0; f < 4; f++) { const a = -0.35 - f * 0.3, L = 20 - f * 3; g.beginPath(); g.moveTo(8, -2); g.quadraticCurveTo(8 + Math.cos(a) * L * 0.55, -2 + Math.sin(a) * L * 0.55 - 4, 8 + Math.cos(a) * L, -2 + Math.sin(a) * L); g.quadraticCurveTo(10 + Math.cos(a) * L * 0.5, Math.sin(a) * L * 0.5 + 2, 8, 2); g.closePath(); g.fill(); g.stroke(); }
+      g.restore(); }
+  }
+  // a plinth of pale stone with a bronze plaque; local origin is the foot (the tile's bottom)
+  function paintPlinth(g, laurel) {
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(4, -1, 21, 5, 0, 0, 7); g.fill();
+    g.fillStyle = '#8f8a80'; g.fillRect(-20, -8, 40, 7);
+    g.fillStyle = '#c8c2b5'; g.fillRect(-17, -27, 34, 20); g.fillStyle = '#ddd7cb'; g.fillRect(-17, -27, 34, 3);
+    g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(9, -27, 8, 20);
+    g.fillStyle = '#aaa395'; g.fillRect(-19, -30, 38, 4);
+    if (laurel) {
+      g.strokeStyle = laurel; g.lineWidth = 1.4; g.beginPath(); g.arc(0, -17, 7, Math.PI * 0.15, Math.PI * 0.85, true); g.stroke();
+      g.fillStyle = laurel; for (let k = 0; k < 5; k++) { for (const s of [-1, 1]) { const a = Math.PI * (0.5 + s * (0.25 + k * 0.13)); g.beginPath(); g.ellipse(Math.cos(a) * 7, -17 + Math.sin(a) * 7, 2.2, 1, a, 0, 7); g.fill(); } }
+    } else { g.fillStyle = '#9a6a2a'; g.fillRect(-8, -21, 16, 9); g.fillStyle = '#c9934a'; g.fillRect(-7, -20, 14, 1.4); g.fillStyle = 'rgba(60,35,10,0.6)'; for (let k = 0; k < 3; k++) g.fillRect(-5, -17 + k * 2.4, 10, 0.9); }
+  }
+  function paintFigure(g, look, wings, scale) {
+    g.save(); g.translate(0, -48); g.scale(scale, scale);
+    if (wings) { g.save(); g.translate(0, -2); stoneWings(g); g.restore(); }
+    drawHuman(g, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, look);
+    g.restore();
+  }
+  function drawStatue(g, s) {
+    const cx = tc(s.x), foot = (s.y + 1) * TILE - 2;
+    const spr = sprite('statue:' + s.id, 48, 96, 24, 90, cg => { paintPlinth(cg, null); paintFigure(cg, STATUE_LOOK[s.id], s.id === 'seraphel', 1.32); });
+    const a = behindAlpha(cx - 22, foot - 86, cx + 22, foot, foot);
+    if (a < 1) { g.save(); g.globalAlpha = a; }
+    blit(g, spr, cx, foot);
+    if (a < 1) g.restore();
+    STATS.statues++;
+  }
+  // the knight's own look in stone, for the statue on the waiting plinth
+  function heroLook() {
+    const l = playerLook(), w = weaponDef(), o = STONE_LOOK({});
+    if (l.helm) o.helm = '#cfc9bc'; if (l.body) o.body = '#c3bdb0'; if (l.shield) o.shield = '#bfb8a9';
+    if (w && w.shape) o.weapon = { shape: w.shape, color: '#d8d2c6' };
+    return o;
+  }
+  function drawPlinth(g) {
+    const cx = tc(PL.x), foot = (PL.y + 1) * TILE - 2;
+    if (!statueDone()) { blit(g, sprite('plinth-empty', 48, 40, 24, 36, cg => paintPlinth(cg, '#8f8a80')), cx, foot); return; }
+    const look = heroLook(), key = 'plinth-hero:' + [look.helm, look.body, look.shield, look.weapon && look.weapon.shape].join('|');
+    const a = behindAlpha(cx - 22, foot - 86, cx + 22, foot, foot);
+    if (a < 1) { g.save(); g.globalAlpha = a; }
+    blit(g, sprite(key, 48, 96, 24, 90, cg => { paintPlinth(cg, GOLD); paintFigure(cg, look, false, 1.32); }), cx, foot);
+    // the gold laurel on his head
+    g.strokeStyle = GOLD; g.lineWidth = 2; g.beginPath(); g.arc(cx, foot - 48 - 1.32 * 12, 1.32 * 8.5, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
+    if (a < 1) g.restore();
+  }
+
+  // ---------- the fountains ----------
+  function octagon(g, cx, cy, rx, ry) { g.beginPath(); for (let i = 0; i < 8; i++) { const a = Math.PI / 8 + i * Math.PI / 4, x = cx + Math.cos(a) * rx, y = cy + Math.sin(a) * ry; if (i) g.lineTo(x, y); else g.moveTo(x, y); } g.closePath(); }
+  // the Great Fountain: an octagonal basin about 190 x 140 px, an upper bowl on a pillar, and a bronze knight holding
+  // the thistle banner. Its centre is (112, 35.5) in tiles; its highest pixel is 24 px over row 34.
+  const GF = { cx: 112 * TILE, cy: 35.5 * TILE, rx: 95, ry: 52, bowlY: -30, bowlRx: 34, bowlRy: 11 };
+  const COINS = [[-50, 6], [-22, 22], [18, -14], [44, 12], [-6, -26], [30, 30], [-38, -12], [8, 34], [56, -4]];
+  function paintBasin(g) {
+    const { rx, ry } = GF;
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(6, 14, rx + 4, ry + 8, 0, 0, 7); g.fill();
+    octagon(g, 0, 10, rx, ry); g.fillStyle = '#8f8a80'; g.fill();
+    octagon(g, 0, 0, rx, ry); g.fillStyle = '#d8d1c3'; g.fill(); g.strokeStyle = '#a69f91'; g.lineWidth = 2; g.stroke();
+    // the rim's stones
+    g.strokeStyle = 'rgba(120,110,95,0.45)'; g.lineWidth = 1; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + Math.PI / 8; g.beginPath(); g.moveTo(Math.cos(a) * (rx - 9), Math.sin(a) * (ry - 6)); g.lineTo(Math.cos(a) * rx, Math.sin(a) * ry); g.stroke(); }
+    octagon(g, 0, 0, rx - 11, ry - 8); const wat = g.createLinearGradient(0, -ry, 0, ry); wat.addColorStop(0, '#6cc0ea'); wat.addColorStop(1, '#2b78b8'); g.fillStyle = wat; g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.22)'; g.beginPath(); g.ellipse(-40, -18, 20, 5, -0.2, 0, 7); g.fill();
+    // the near rim face, carved with a running band
+    g.fillStyle = '#c9c2b4'; for (let i = 0; i < 4; i++) { const a0 = Math.PI / 8 + i * Math.PI / 4, a1 = a0 + Math.PI / 4; const x0 = Math.cos(a0) * rx, y0 = Math.sin(a0) * ry, x1 = Math.cos(a1) * rx, y1 = Math.sin(a1) * ry; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.lineTo(x1, y1 + 10); g.lineTo(x0, y0 + 10); g.closePath(); g.fill(); g.strokeStyle = 'rgba(100,90,75,0.4)'; g.stroke(); }
+    g.fillStyle = PURPLE; for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 4; if (Math.sin(a) <= 0.1) continue; g.beginPath(); g.arc(Math.cos(a) * rx * 0.98, Math.sin(a) * ry + 5, 3, 0, 7); g.fill(); }
+  }
+  function paintUpper(g) {
+    // the pillar, the upper bowl, and the bronze knight on it with the thistle banner
+    const by = GF.bowlY;
+    g.fillStyle = '#bdb6a8'; g.fillRect(-9, by, 18, -by - 4); g.fillStyle = '#d8d1c3'; g.fillRect(-9, by, 5, -by - 4);
+    g.fillStyle = '#9b9488'; g.beginPath(); g.ellipse(0, by + 1, GF.bowlRx, GF.bowlRy + 6, 0, 0, Math.PI); g.fill();
+    g.fillStyle = '#d8d1c3'; g.beginPath(); g.ellipse(0, by, GF.bowlRx, GF.bowlRy, 0, 0, 7); g.fill();
+    g.fillStyle = '#4a9ad0'; g.beginPath(); g.ellipse(0, by + 0.5, GF.bowlRx - 4, GF.bowlRy - 3, 0, 0, 7); g.fill();
+    // the bronze knight: standing on a little drum in the middle of the bowl
+    g.fillStyle = '#7a5a2e'; g.fillRect(-7, by - 12, 14, 12);
+    g.save(); g.translate(0, by - 22); g.scale(0.92, 0.92);
+    drawHuman(g, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, { tunic: '#9a6b2f', hair: '#7a5424', skin: '#b07a3a', shoulder: '#8a5e28', helm: '#a87a3a', shield: '#8a5e28' });
+    g.restore();
+    // the banner pole in his right hand, up to 24 px over row 34, and the thistle banner on it
+    g.fillStyle = '#6a4a22'; g.fillRect(9, by - 64, 2.2, 50);
+    g.fillStyle = '#c9a14a'; g.beginPath(); g.arc(10.1, by - 65, 2.4, 0, 7); g.fill();
+  }
+  function drawGreatFountain(g) {
+    const { cx, cy, rx, ry } = GF, t = time;
+    const top = 34 * TILE - 24;
+    const a = behindAlpha(cx - rx, top, cx + rx, cy + ry + 10, 37 * TILE - 4);
+    if (a < 1) { g.save(); g.globalAlpha = a; }
+    blit(g, sprite('gf-basin', 2 * rx + 24, 2 * ry + 30, rx + 12, ry + 6, paintBasin), cx, cy);
+    // ripples, and coins glinting on the bottom (fixed places, so nothing rolls a die)
+    g.save(); octagon(g, cx, cy, rx - 12, ry - 9); g.clip();
+    for (let k = 0; k < 3; k++) { const ph = fr(t * 0.4 + k / 3), rr = 30 + ph * 60; g.strokeStyle = `rgba(255,255,255,${((1 - ph) * 0.5).toFixed(3)})`; g.lineWidth = 1.5; g.beginPath(); g.ellipse(cx, cy + 4, rr, rr * 0.55, 0, 0, 7); g.stroke(); }
+    COINS.forEach(([ox, oy], i) => { const gl = 0.5 + 0.5 * Math.sin(t * 2.3 + i * 1.7); g.fillStyle = `rgba(245,197,66,${(0.55 + 0.35 * gl).toFixed(3)})`; g.beginPath(); g.ellipse(cx + ox, cy + oy * 0.7, 3, 1.8, 0.3, 0, 7); g.fill(); if (gl > 0.92) { g.fillStyle = '#fffbe0'; g.fillRect(cx + ox - 0.6, cy + oy * 0.7 - 3, 1.2, 6); g.fillRect(cx + ox - 3, cy + oy * 0.7 - 0.6, 6, 1.2); } });
+    g.restore();
+    // four arcs of water from the upper bowl into the basin
+    const by = cy + GF.bowlY;
+    for (let k = 0; k < 4; k++) {
+      const ang = Math.PI / 4 + k * Math.PI / 2, ex = cx + Math.cos(ang) * (rx * 0.62), ey = cy + Math.sin(ang) * (ry * 0.62) + 2;
+      const sx = cx + Math.cos(ang) * (GF.bowlRx - 2), sy = by + Math.sin(ang) * (GF.bowlRy - 1);
+      for (let j = 0; j < 3; j++) { const ph = fr(t * 1.4 + j / 3 + k * 0.17); g.strokeStyle = `rgba(220,242,255,${(0.8 - ph * 0.45).toFixed(3)})`; g.lineWidth = 2.6 - j * 0.6; g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + ex) / 2 + Math.cos(ang) * 6, Math.min(sy, ey) - 14, ex, ey); g.stroke(); }
+      for (let j = 0; j < 2; j++) { const ph = fr(t * 1.8 + j * 0.5 + k * 0.3); g.strokeStyle = `rgba(255,255,255,${((1 - ph) * 0.6).toFixed(3)})`; g.lineWidth = 1.2; g.beginPath(); g.ellipse(ex, ey, 4 + ph * 9, (4 + ph * 9) * 0.45, 0, 0, 7); g.stroke(); }
+    }
+    blit(g, sprite('gf-upper', 90, 110, 45, 100, paintUpper), cx, cy);
+    // water falling off the upper bowl
+    for (let k = 0; k < 9; k++) { const an = Math.PI * (0.08 + k * 0.105), x = cx + Math.cos(an) * GF.bowlRx, y0 = by + Math.sin(an) * GF.bowlRy, ph = fr(t * 1.6 + k * 0.37); g.strokeStyle = `rgba(215,238,255,${(0.35 + 0.3 * Math.sin((ph + k) * 6.28)).toFixed(3)})`; g.lineWidth = 1.8; g.beginPath(); g.moveTo(x, y0); g.quadraticCurveTo(x + Math.cos(an) * 4, y0 + 8, x + Math.cos(an) * 6, y0 + 16); g.stroke(); }
+    // the thistle banner, fluttering at the top of the bronze knight's pole
+    { const px = cx + 10.1, py = by - 63, sw = Math.sin(t * 2.4) * 2;
+      g.fillStyle = PURPLE; g.beginPath(); g.moveTo(px, py); g.lineTo(px + 22, py + 1 + sw * 0.4); g.lineTo(px + 19 + sw, py + 8); g.lineTo(px + 22, py + 15 + sw * 0.4); g.lineTo(px, py + 16); g.closePath(); g.fill();
+      g.strokeStyle = GOLD; g.lineWidth = 1; g.stroke(); thistle(g, px + 9, py + 7, 7, GOLD); }
+    // spray: placed by the clock
+    const frame = Math.floor(t * 8);
+    for (let k = 0; k < 18; k++) { const h1 = hash(k, frame), h2 = hash(frame + 7, k * 13 + 1), an = h1 * Math.PI * 2, d = 14 + h2 * 50; g.fillStyle = `rgba(255,255,255,${(0.4 + h1 * 0.5).toFixed(3)})`; g.beginPath(); g.arc(cx + Math.cos(an) * d, cy - 4 + Math.sin(an) * d * 0.45 - h2 * 12, 1 + h2, 0, 7); g.fill(); }
+    if (a < 1) g.restore();
+    STATS.fountains++;
+  }
+  // the market fountain (one jet) and the Rose Garden's lily fountain (a stone fish spouting)
+  function paintSmallBasin(g, lily) {
+    g.fillStyle = 'rgba(0,0,0,0.2)'; g.beginPath(); g.ellipse(4, 8, 44, 26, 0, 0, 7); g.fill();
+    if (lily) { g.fillStyle = '#8f8a80'; g.beginPath(); g.ellipse(0, 6, 42, 26, 0, 0, 7); g.fill(); g.fillStyle = '#d4cdbf'; g.beginPath(); g.ellipse(0, 0, 42, 26, 0, 0, 7); g.fill(); g.fillStyle = '#3d8ac4'; g.beginPath(); g.ellipse(0, 1, 34, 19, 0, 0, 7); g.fill(); }
+    else { octagon(g, 0, 7, 42, 26); g.fillStyle = '#8f8a80'; g.fill(); octagon(g, 0, 0, 42, 26); g.fillStyle = '#d8d1c3'; g.fill(); octagon(g, 0, 0, 34, 19); g.fillStyle = '#3d8ac4'; g.fill(); }
+    g.fillStyle = 'rgba(255,255,255,0.2)'; g.beginPath(); g.ellipse(-12, -7, 10, 3, -0.2, 0, 7); g.fill();
+    if (lily) {
+      for (const [lx, ly, r] of [[-18, 4, 6], [14, 8, 5], [20, -6, 5]]) { g.fillStyle = '#4f9a45'; g.beginPath(); g.moveTo(lx, ly); g.arc(lx, ly, r, 0.4, Math.PI * 2 - 0.1); g.closePath(); g.fill(); }
+      g.fillStyle = '#ffb3cf'; for (let q = 0; q < 5; q++) { const a = q / 5 * Math.PI * 2; g.beginPath(); g.ellipse(-18 + Math.cos(a) * 2.5, 2 + Math.sin(a) * 1.6, 2.4, 1.4, a, 0, 7); g.fill(); }
+      // the stone fish on a rock, nose up
+      g.fillStyle = '#a8a193'; g.beginPath(); g.ellipse(0, -2, 9, 5, 0, 0, 7); g.fill();
+      g.fillStyle = '#cfc8ba'; g.save(); g.translate(0, -10); g.rotate(-1.1); g.beginPath(); g.ellipse(0, 0, 9, 4.5, 0, 0, 7); g.fill(); g.beginPath(); g.moveTo(-8, 0); g.lineTo(-14, -4); g.lineTo(-14, 4); g.closePath(); g.fill(); g.fillStyle = '#4a4540'; g.beginPath(); g.arc(4, -1.5, 1, 0, 7); g.fill(); g.restore();
+    } else { g.fillStyle = '#bdb6a8'; g.fillRect(-4, -18, 8, 18); g.fillStyle = '#d8d1c3'; g.beginPath(); g.ellipse(0, -18, 9, 3.5, 0, 0, 7); g.fill(); }
+  }
+  function drawSmallFountain(g, f) {
+    const cx = (f.x + 1) * TILE, cy = (f.y + 1) * TILE + 2, t = time, lily = f.id === 'rose';
+    blit(g, sprite(lily ? 'fount-lily' : 'fount-market', 100, 64, 50, 30, cg => paintSmallBasin(cg, lily)), cx, cy);
+    if (lily) {
+      // the fish spouts an arc into the pool
+      for (let j = 0; j < 3; j++) { const ph = fr(t * 1.3 + j / 3); g.strokeStyle = `rgba(220,242,255,${(0.8 - ph * 0.4).toFixed(3)})`; g.lineWidth = 2 - j * 0.4; g.beginPath(); g.moveTo(cx + 5, cy - 18); g.quadraticCurveTo(cx + 16, cy - 30, cx + 24, cy - 2); g.stroke(); }
+      const ph = fr(t * 1.5); g.strokeStyle = `rgba(255,255,255,${((1 - ph) * 0.6).toFixed(3)})`; g.lineWidth = 1.1; g.beginPath(); g.ellipse(cx + 24, cy, 3 + ph * 8, (3 + ph * 8) * 0.45, 0, 0, 7); g.stroke();
+    } else {
+      // one jet, up and back down
+      for (let j = 0; j < 4; j++) { const ph = fr(t * 1.6 + j / 4); g.strokeStyle = `rgba(225,244,255,${(0.75 * (1 - ph * 0.6)).toFixed(3)})`; g.lineWidth = 2; g.beginPath(); g.moveTo(cx, cy - 20); g.quadraticCurveTo(cx + (j - 1.5) * 6, cy - 44, cx + (j - 1.5) * 13, cy - 8 + ph * 6); g.stroke(); }
+      for (let k = 0; k < 8; k++) { const h1 = hash(k, Math.floor(t * 8)); g.fillStyle = `rgba(255,255,255,${(0.4 + h1 * 0.4).toFixed(3)})`; g.beginPath(); g.arc(cx + (h1 - 0.5) * 50, cy - 4 + hash(k * 3, Math.floor(t * 8)) * 12 - 6, 1.1, 0, 7); g.fill(); }
+    }
+    STATS.fountains++;
+  }
+
+  // ---------- greenery ----------
+  function paintHedge(g, n, e, s, w, v) {
+    const l = w ? 0 : 3, r = e ? 48 : 45, top = n ? -8 : -10, bot = s ? 38 : 30;
+    const r2 = mulberry32(0xed9e + v * 31 + (n ? 1 : 0) + (e ? 2 : 0) + (s ? 4 : 0) + (w ? 8 : 0));
+    g.fillStyle = '#3f8a3a'; g.fillRect(l, top, r - l, bot - top);
+    if (!s) { g.fillStyle = '#2a6127'; g.fillRect(l, 30, r - l, 14); g.fillStyle = 'rgba(15,45,15,0.4)'; g.fillRect(l, 40, r - l, 4); g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(l + 2, 44, r - l - 2, 4); }
+    for (let i = 0; i < 26; i++) { const x = l + 2 + r2() * (r - l - 4), y = top + 2 + r2() * (bot - top - 4); g.fillStyle = r2() < 0.55 ? 'rgba(130,200,100,0.45)' : 'rgba(25,80,25,0.45)'; g.beginPath(); g.arc(x, y, 2 + r2() * 2, 0, 7); g.fill(); }
+    if (!n) { g.fillStyle = 'rgba(190,240,150,0.5)'; g.fillRect(l, top, r - l, 2); }
+  }
+  function drawHedge(g, tx, ty) {
+    const H0 = (x, y) => kindAt(x, y) === 'hedge';
+    const n = H0(tx, ty - 1), e = H0(tx + 1, ty), s = H0(tx, ty + 1), w = H0(tx - 1, ty), v = GVAR[pi(tx, ty)] % 2;
+    blit(g, sprite('hedge' + (n ? 1 : 0) + (e ? 1 : 0) + (s ? 1 : 0) + (w ? 1 : 0) + v, 48, 60, 0, 12, cg => paintHedge(cg, n, e, s, w, v)), tx * TILE, ty * TILE);
+  }
+  function paintTree(g, kind, v, R) {
+    const r = mulberry32(0x7ee + v * 101 + (kind === 'fruit' ? 9 : 0));
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(4, 0, R - 2, 7, 0, 0, 7); g.fill();
+    g.fillStyle = kind === 'fruit' ? '#6b4a2a' : '#7a5a4a'; g.beginPath(); g.moveTo(-4, 0); g.quadraticCurveTo(-2 + v, -18, -3, -34); g.lineTo(3, -34); g.quadraticCurveTo(3 + v, -18, 4, 0); g.closePath(); g.fill();
+    const k = R / 26, puffs = [[-14, -46, 16], [13, -48, 16], [0, -58, 19], [-7, -68, 13], [10, -66, 13], [0, -42, 14]].map(([x, y, rr]) => [x * k, y, rr * k]);
+    const dark = kind === 'fruit' ? '#3f8a35' : '#e090b0', mid = kind === 'fruit' ? '#58a845' : '#f3add0', hi = kind === 'fruit' ? '#7cc35a' : '#ffd3e6';
+    for (const [x, y, rr] of puffs) { g.fillStyle = dark; g.beginPath(); g.arc(x + 2, y + 3, rr, 0, 7); g.fill(); }
+    for (const [x, y, rr] of puffs) { g.fillStyle = mid; g.beginPath(); g.arc(x, y, rr, 0, 7); g.fill(); }
+    for (const [x, y, rr] of puffs) { g.fillStyle = hi; g.beginPath(); g.arc(x - rr * 0.3, y - rr * 0.35, rr * 0.5, 0, 7); g.fill(); }
+    // blossom on the apple trees (white and pink), little green apples; cherry trees are all blossom
+    const n = kind === 'fruit' ? 16 : 22;
+    for (let i = 0; i < n; i++) { const a = r() * Math.PI * 2, d = r() * 22 * k, x = Math.cos(a) * d, y = -56 + Math.sin(a) * d * 0.8; g.fillStyle = kind === 'fruit' ? (r() < 0.6 ? '#ffffff' : '#ffc6dc') : (r() < 0.5 ? '#fff4f8' : '#ff9ec4'); g.beginPath(); g.arc(x, y, 1.5 + r() * 1.2, 0, 7); g.fill(); }
+    if (kind === 'fruit') for (let i = 0; i < 5; i++) { const a = r() * Math.PI * 2, d = r() * 18 * k; g.fillStyle = '#9fd04a'; g.beginPath(); g.arc(Math.cos(a) * d, -50 + Math.sin(a) * d * 0.7, 2.2, 0, 7); g.fill(); }
+  }
+  // a tree's half-width: 26 px, less where a building stands right beside it
+  const TREE_R = {};
+  for (const t of PLAN.TREES) { let R = 26; for (const b of BUILDINGS) { const bx0 = b.x * TILE, bx1 = (b.x + b.w) * TILE, by0 = b.y * TILE, by1 = (b.y + b.h) * TILE; if (by1 > t.y * TILE - 60 && by0 < (t.y + 1) * TILE) { const cx = tc(t.x); if (bx1 <= cx) R = Math.min(R, cx - bx1 - 1); if (bx0 >= cx) R = Math.min(R, bx0 - cx - 1); } } TREE_R[t.x + ',' + t.y] = Math.max(16, Math.min(26, R)); }
+  function drawTree(g, tx, ty, kind) {
+    const cx = tc(tx), by = (ty + 1) * TILE - 6, v = GVAR[pi(tx, ty)], R = TREE_R[tx + ',' + ty] || 26;
+    const a = behindAlpha(cx - R, by - 84, cx + R, by - 20, by);
+    if (a < 1) { g.save(); g.globalAlpha = a; }
+    blit(g, sprite('tree-' + kind + v + 'r' + R, 2 * R + 12, 96, R + 6, 88, cg => paintTree(cg, kind, v, R)), cx, by);
+    if (kind === 'cherry') for (let k = 0; k < 2; k++) { const h0 = hash(tx * 7 + k, ty * 3 + k), ph = fr(time * 0.25 + h0), px = cx - R * 0.7 + h0 * R * 1.4 + Math.sin(ph * 6 + k) * 4, py = by - 50 + ph * 46; g.fillStyle = `rgba(255,${180 + Math.floor(h0 * 50)},210,${(Math.sin(ph * Math.PI) * 0.85).toFixed(3)})`; g.beginPath(); g.ellipse(px, py, 2.2, 1.3, ph * 6, 0, 7); g.fill(); }
+    if (a < 1) g.restore();
+  }
+  function paintRoses(g, v) {
+    const r = mulberry32(0x7053 + v * 17);
+    g.fillStyle = 'rgba(0,0,0,0.2)'; g.beginPath(); g.ellipse(24, 40, 20, 5, 0, 0, 7); g.fill();
+    g.fillStyle = '#6b4a2a'; g.fillRect(6, 34, 36, 8); g.fillStyle = '#7a5a36'; g.fillRect(6, 34, 36, 2);
+    g.fillStyle = '#2f6b2a'; for (let i = 0; i < 10; i++) { g.beginPath(); g.arc(8 + r() * 32, 14 + r() * 20, 6 + r() * 3, 0, 7); g.fill(); }
+    g.fillStyle = '#3f8a3a'; for (let i = 0; i < 8; i++) { g.beginPath(); g.arc(8 + r() * 32, 12 + r() * 18, 3 + r() * 2, 0, 7); g.fill(); }
+    const cols = ['#c8243a', '#e0506a', '#ffffff', '#f06a8a'];
+    for (let i = 0; i < 11; i++) { const x = 9 + r() * 30, y = 10 + r() * 22, c = cols[(i + v) % cols.length]; g.fillStyle = c; g.beginPath(); g.arc(x, y, 3.2, 0, 7); g.fill(); g.strokeStyle = 'rgba(80,0,20,0.35)'; g.lineWidth = 0.8; g.beginPath(); g.arc(x, y, 1.6, 0, 5); g.stroke(); }
+  }
+  const drawRoses = (g, tx, ty) => { const v = GVAR[pi(tx, ty)]; blit(g, sprite('roses' + v, 48, 48, 0, 0, cg => paintRoses(cg, v)), tx * TILE, ty * TILE); };
+
+  // ---------- benches, signposts, the sundial ----------
+  function paintBench(g) {
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(-19, -3, 40, 5);
+    g.fillStyle = '#1f2126'; g.fillRect(-18, -18, 4, 17); g.fillRect(14, -18, 4, 17); g.fillRect(-18, -30, 3, 14); g.fillRect(15, -30, 3, 14);
+    g.fillStyle = '#8a6238'; for (let k = 0; k < 3; k++) g.fillRect(-20, -17 + k * 4, 40, 3); g.fillStyle = '#9c7444'; g.fillRect(-20, -17, 40, 1.2);
+    g.fillStyle = '#7d5832'; g.fillRect(-19, -30, 38, 4); g.fillRect(-19, -24, 38, 4);
+  }
+  function paintSign(g, side) {
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(4, 0, 10, 4, 0, 0, 7); g.fill();
+    g.fillStyle = '#5a3c22'; g.fillRect(-3, -60, 6, 60); g.fillStyle = '#7a5530'; g.fillRect(-3, -60, 2, 60);
+    const board = (y, dir, word) => {
+      g.fillStyle = '#3d2a1a'; g.beginPath(); if (dir < 0) { g.moveTo(-22, y); g.lineTo(-16, y - 7); g.lineTo(20, y - 7); g.lineTo(20, y + 7); g.lineTo(-16, y + 7); } else { g.moveTo(22, y); g.lineTo(16, y - 7); g.lineTo(-20, y - 7); g.lineTo(-20, y + 7); g.lineTo(16, y + 7); } g.closePath(); g.fill();
+      g.strokeStyle = GOLD_D; g.lineWidth = 1; g.stroke();
+      g.fillStyle = GOLD; g.font = `700 6.5px ${DISPLAY}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(word, dir < 0 ? 2 : -2, y + 0.5); g.textBaseline = 'alphabetic';
+    };
+    if (side === 'west') { board(-50, -1, 'WEST GATE'); board(-34, 1, 'FOUNTAIN'); } else { board(-50, 1, 'EAST GATE'); board(-34, -1, 'FOUNTAIN'); }
+    g.fillStyle = GOLD; g.beginPath(); g.arc(0, -62, 3, 0, 7); g.fill();
+  }
+  function paintSundial(g) {
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(3, 0, 17, 5, 0, 0, 7); g.fill();
+    g.fillStyle = '#9b9488'; g.fillRect(-15, -6, 30, 6); g.fillStyle = '#c8c2b5'; g.fillRect(-8, -22, 16, 17); g.fillStyle = '#ddd7cb'; g.fillRect(-8, -22, 4, 17);
+    g.fillStyle = '#b8b1a3'; g.beginPath(); g.ellipse(0, -24, 16, 7, 0, 0, 7); g.fill();
+    g.fillStyle = '#b07a3a'; g.beginPath(); g.ellipse(0, -25, 13, 5.5, 0, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(60,35,10,0.6)'; g.lineWidth = 0.8; for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; g.beginPath(); g.moveTo(Math.cos(a) * 9, -25 + Math.sin(a) * 3.8); g.lineTo(Math.cos(a) * 12, -25 + Math.sin(a) * 5); g.stroke(); }
+    g.fillStyle = '#7a5424'; g.beginPath(); g.moveTo(0, -25); g.lineTo(0, -34); g.lineTo(6, -25); g.closePath(); g.fill();
+  }
+  function drawSundial(g, tx, ty) {
+    const cx = tc(tx), foot = (ty + 1) * TILE - 4;
+    blit(g, sprite('sundial', 40, 44, 20, 38, paintSundial), cx, foot);
+    // the gnomon's shadow walks with the sun
+    if (!lit()) { const an = dialAngle() + Math.PI / 2; g.strokeStyle = 'rgba(40,25,10,0.45)'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx, foot - 25); g.lineTo(cx + Math.cos(an) * 10, foot - 25 + Math.sin(an) * 4); g.stroke(); }
+  }
+
+  // ---------- the Market Court's stalls ----------
+  function paintGoods(g, goods) {
+    if (goods === 'apples') for (let i = 0; i < 16; i++) { const x = -38 + (i % 8) * 10 + (i > 7 ? 5 : 0), y = -2 - (i > 7 ? 6 : 0); g.fillStyle = i % 3 ? '#c8243a' : '#8fbf3a'; g.beginPath(); g.arc(x, y, 4.2, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.4)'; g.beginPath(); g.arc(x - 1.4, y - 1.4, 1.2, 0, 7); g.fill(); }
+    else if (goods === 'candles') for (let i = 0; i < 9; i++) { const x = -38 + i * 9.5, h = 8 + (i * 7) % 10; g.fillStyle = ['#f3ead2', '#e8c86a', '#d9a0c0'][i % 3]; g.fillRect(x - 2.5, -h, 5, h); g.fillStyle = '#2a2018'; g.fillRect(x - 0.4, -h - 3, 0.8, 3); }
+    else if (goods === 'flowers') for (let i = 0; i < 5; i++) { const x = -34 + i * 17; g.fillStyle = '#6b707a'; g.fillRect(x - 6, -8, 12, 9); g.fillStyle = '#3f8a3a'; g.beginPath(); g.arc(x, -10, 6, 0, 7); g.fill(); const c = ['#e0506a', '#f5c542', '#ffffff', '#b07ad8', '#ff8a3a'][i]; g.fillStyle = c; for (let q = 0; q < 5; q++) { g.beginPath(); g.arc(x - 4 + q * 2, -13 + (q % 2) * 3, 2.4, 0, 7); g.fill(); } }
+    else for (let i = 0; i < 4; i++) { const x = -34 + i * 22, c = ['#5a2e7a', '#2e5a9a', '#b8352b', '#e6dcc4'][i]; g.fillStyle = c; roundRect(g, x - 9, -10, 18, 10, 3); g.fill(); g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(x - 8, -9, 16, 2); }
+  }
+  // a two-tile counter under a striped awning; the local origin is the middle of the counter's front edge
+  function paintStall(g, s) {
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(-46, 0, 96, 6);
+    // posts and the counter
+    g.fillStyle = '#5a3c22'; g.fillRect(-46, -52, 4, 52); g.fillRect(42, -52, 4, 52);
+    g.fillStyle = '#7d5832'; g.fillRect(-44, -20, 88, 20); g.fillStyle = '#94693c'; g.fillRect(-44, -24, 88, 6);
+    g.fillStyle = 'rgba(30,18,8,0.35)'; for (let k = 1; k < 4; k++) g.fillRect(-44 + k * 22, -18, 1.2, 18);
+    paintGoods(g, s.goods);
+    if (s.goods === 'cloth') { g.fillStyle = '#3d2a1a'; g.fillRect(14, -40, 26, 13); g.strokeStyle = GOLD_D; g.lineWidth = 1; g.strokeRect(14, -40, 26, 13); g.fillStyle = '#f3ead2'; g.font = `700 4.6px ${DISPLAY}`; g.textAlign = 'center'; g.fillText('BACK', 27, -34); g.fillText('SOON', 27, -29); g.fillStyle = '#3d2a1a'; g.fillRect(25, -27, 3, 7); }
+  }
+  function drawAwning(g, cx, top, col) {
+    const fl = Math.sin(time * 2.2 + cx * 0.01) * 1.2;
+    g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(cx - 50, top + 26, 100, 5);
+    for (let k = 0; k < 10; k++) { g.fillStyle = k % 2 ? '#f6f1e6' : col; g.beginPath(); g.moveTo(cx - 50 + k * 10, top); g.lineTo(cx - 40 + k * 10, top); g.lineTo(cx - 40 + k * 10 + fl * 0.3, top + 20 + fl); g.lineTo(cx - 50 + k * 10 + fl * 0.3, top + 20 + fl); g.closePath(); g.fill(); }
+    for (let k = 0; k < 10; k++) { g.fillStyle = k % 2 ? '#f6f1e6' : col; g.beginPath(); g.arc(cx - 45 + k * 10 + fl * 0.3, top + 20 + fl, 5, 0, Math.PI); g.fill(); }
+    g.fillStyle = '#5a3c22'; g.fillRect(cx - 51, top - 2, 102, 3);
+  }
+  function drawStall(g, s) {
+    const cx = (s.x + 1) * TILE, foot = (s.y + 1) * TILE - 4;
+    blit(g, sprite('stall-' + s.goods, 100, 60, 50, 56, cg => paintStall(cg, s)), cx, foot);
+    drawAwning(g, cx, s.y * TILE - 24, s.awning);
+  }
+
+  // ---------- the Bell Tower ----------
+  // a square stone tower about five tiles tall on its 2 x 2 footprint: the day-and-night dial on its south face, an open
+  // belfry with the bronze bell, a slate pyramid roof and a pennant
+  const BT = { x: PLAN.BELL.x * TILE, foot: (PLAN.BELL.y + PLAN.BELL.h) * TILE, w: PLAN.BELL.w * TILE };
+  function paintBellTower(g) {
+    // local origin: the footprint's bottom-left; the tower rises 236 px
+    const w = BT.w, face = -168, belfry = -214, eave = -226;
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(6, -6, w, 12);
+    g.fillStyle = STONE[0]; g.fillRect(0, belfry, w, -belfry);
+    for (let r = 0; r * 12 < -belfry; r++) { const yy = -12 - r * 12, off = r % 2 ? 12 : 0; for (let c = -1; c < 5; c++) { g.fillStyle = ['#7d8087', '#767980', '#83868d'][(r + c + 6) % 3]; const xx = off + c * 24 + 1; g.fillRect(Math.max(0, xx), yy + 1, Math.min(22, w - Math.max(0, xx)), 10); } }
+    g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(w - 16, belfry, 16, -belfry);
+    g.fillStyle = '#9aa0a8'; g.fillRect(-3, -8, w + 6, 8); g.fillRect(-2, face - 6, w + 4, 5); g.fillRect(-2, belfry - 2, w + 4, 6);
+    // the dial's stone ring (the dial itself is drawn live)
+    g.fillStyle = '#b4b9c0'; g.beginPath(); g.arc(w / 2, face + 40, 30, 0, 7); g.fill(); g.fillStyle = '#3a3f4a'; g.beginPath(); g.arc(w / 2, face + 40, 27, 0, 7); g.fill();
+    // the door at the foot
+    g.fillStyle = '#3d2a1a'; g.beginPath(); g.moveTo(w / 2 - 12, 0); g.lineTo(w / 2 - 12, -26); g.arc(w / 2, -26, 12, Math.PI, 0); g.lineTo(w / 2 + 12, 0); g.closePath(); g.fill();
+    g.strokeStyle = '#9aa0a8'; g.lineWidth = 2; g.stroke(); g.fillStyle = GOLD; g.beginPath(); g.arc(w / 2 + 6, -16, 1.6, 0, 7); g.fill();
+    g.fillStyle = '#23262c'; roundRect(g, w / 2 - 3, -110, 6, 22, 3); g.fill();
+    // the belfry: four corner piers and the open arches between them
+    g.fillStyle = '#2a2d33'; g.fillRect(6, belfry - 46, w - 12, 46);
+    g.fillStyle = '#8b8f96'; for (const px of [0, w / 2 - 5, w - 10]) g.fillRect(px, belfry - 46, 10, 46);
+    g.fillStyle = '#9aa0a8'; g.fillRect(-2, belfry - 50, w + 4, 6);
+    // the slate pyramid roof
+    const cone = g.createLinearGradient(0, 0, w, 0); cone.addColorStop(0, '#2c3038'); cone.addColorStop(0.4, '#5d6370'); cone.addColorStop(1, '#262a31');
+    g.fillStyle = cone; g.beginPath(); g.moveTo(-6, belfry - 48); g.lineTo(w / 2, belfry - 112); g.lineTo(w + 6, belfry - 48); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 1; for (let k = 1; k < 6; k++) { const f = k / 6, yy = belfry - 48 - 64 * f; g.beginPath(); g.moveTo(-6 + (w / 2 + 6) * f, yy); g.lineTo(w + 6 - (w / 2 + 6) * f, yy); g.stroke(); }
+    g.fillStyle = GOLD; g.beginPath(); g.arc(w / 2, belfry - 114, 3.2, 0, 7); g.fill(); g.fillRect(w / 2 - 1, belfry - 132, 2, 18);
+    void eave;
+  }
+  function drawBellTower(g) {
+    const x = BT.x, foot = BT.foot, w = BT.w, belfry = foot - 214;
+    blit(g, sprite('belltower', w + 20, 380, 10, 362, paintBellTower), x, foot);
+    // the dial: blue sky with a sun over navy night with a moon, and one gold hand at dayT / DAY x 2 pi
+    const dx = x + w / 2, dy = foot - 168 + 40, R = 25;
+    g.save(); g.beginPath(); g.arc(dx, dy, R, 0, 7); g.clip();
+    g.fillStyle = '#6fb6e8'; g.fillRect(dx - R, dy - R, 2 * R, R); g.fillStyle = '#1d2a52'; g.fillRect(dx - R, dy, 2 * R, R);
+    g.fillStyle = '#ffe27a'; g.beginPath(); g.arc(dx, dy - 13, 6, 0, 7); g.fill(); g.strokeStyle = '#ffe27a'; g.lineWidth = 1.2; for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; g.beginPath(); g.moveTo(dx + Math.cos(a) * 8, dy - 13 + Math.sin(a) * 8); g.lineTo(dx + Math.cos(a) * 10.5, dy - 13 + Math.sin(a) * 10.5); g.stroke(); }
+    g.fillStyle = '#f0f0e0'; g.beginPath(); g.arc(dx, dy + 13, 6, 0, 7); g.fill(); g.fillStyle = '#1d2a52'; g.beginPath(); g.arc(dx + 3, dy + 11.5, 5, 0, 7); g.fill();
+    g.fillStyle = '#ffffff'; for (const [sx, sy] of [[-14, 8], [12, 6], [-8, 18], [16, 16]]) g.fillRect(dx + sx, dy + sy, 1.3, 1.3);
+    g.restore();
+    g.strokeStyle = GOLD_D; g.lineWidth = 2; g.beginPath(); g.arc(dx, dy, R, 0, 7); g.stroke();
+    const an = dialAngle() - Math.PI / 2;
+    g.strokeStyle = GOLD; g.lineWidth = 3; g.lineCap = 'round'; g.beginPath(); g.moveTo(dx, dy); g.lineTo(dx + Math.cos(an) * (R - 4), dy + Math.sin(an) * (R - 4)); g.stroke(); g.lineCap = 'butt';
+    g.fillStyle = GOLD; g.beginPath(); g.arc(dx, dy, 3, 0, 7); g.fill();
+    if (lit()) { const gl = g.createRadialGradient(dx, dy, 4, dx, dy, 34); gl.addColorStop(0, 'rgba(255,220,140,0.25)'); gl.addColorStop(1, 'rgba(255,220,140,0)'); g.fillStyle = gl; g.beginPath(); g.arc(dx, dy, 34, 0, 7); g.fill(); }
+    // the bronze bell in the belfry; it swings for two seconds when it rings
+    const st = time - BELLST.swingT0, sw = st >= 0 && st < 2 ? Math.sin(st * 9) * 0.5 * (1 - st / 2) : 0;
+    g.save(); g.translate(x + w / 2, belfry - 42); g.rotate(sw);
+    g.fillStyle = '#5a3c22'; g.fillRect(-14, -2, 28, 4);
+    g.fillStyle = '#b07a3a'; g.beginPath(); g.moveTo(-11, 26); g.quadraticCurveTo(-11, 6, 0, 4); g.quadraticCurveTo(11, 6, 11, 26); g.closePath(); g.fill();
+    g.fillStyle = '#d9a75a'; g.fillRect(-12, 25, 24, 3); g.fillStyle = 'rgba(255,240,200,0.4)'; g.fillRect(-6, 9, 3, 15);
+    g.fillStyle = '#6a4a22'; g.beginPath(); g.arc(sw * 6, 29, 2.5, 0, 7); g.fill();
+    g.restore();
+    // the rope down the south face
+    g.strokeStyle = '#c9a36a'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(x + w / 2 + 14, belfry - 14); g.lineTo(x + w / 2 + 14 + sw * 4, belfry + 26); g.stroke();
+    pennant(g, x + w / 2 + 1, foot - 214 - 130, 26);
+  }
+
+  // ---------- Castle Thistledown ----------
+  const CW_SIDE = (x, y) => y === CASTLE.y ? 'N' : y === CASTLE.y + CASTLE.h - 1 ? 'S' : x === CASTLE.x ? 'W' : x === CASTLE.x + CASTLE.w - 1 ? 'E' : null;
+  function paintCastleWallH(g, side, v) {
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(0, 46, 48, 6);
+    g.fillStyle = '#8a8d94'; g.fillRect(0, 12, 48, 36);
+    for (let r = 0; r < 3; r++) { const yy = 13 + r * 12, off = (r + v) % 2 ? 12 : 0; for (let c = -1; c < 3; c++) { g.fillStyle = ['#a4a8ae', '#9a9ea5', '#aeb2b8'][(r + c + 3) % 3]; g.fillRect(off + c * 24 + 1, yy, 22, 11); } }
+    const sh = g.createLinearGradient(0, 12, 0, 48); sh.addColorStop(0, 'rgba(255,255,255,0.1)'); sh.addColorStop(1, 'rgba(0,0,0,0.2)'); g.fillStyle = sh; g.fillRect(0, 12, 48, 36);
+    g.fillStyle = '#c3c7cc'; g.fillRect(0, 0, 48, 12); g.fillStyle = '#d6d9dd'; g.fillRect(0, 0, 48, 2.5); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 11, 48, 1.5);
+    g.fillStyle = PURPLE; g.fillRect(0, 14, 48, 2);
+    for (let k = 0; k < 4; k += 2) {
+      const mx = k * 12 + (v ? 12 : 0);
+      if (side === 'N') { g.fillStyle = '#a4a8ae'; g.fillRect(mx, -12, 12, 13); g.fillStyle = '#d6d9dd'; g.fillRect(mx, -12, 12, 2.5); }
+      else { g.fillStyle = '#a4a8ae'; g.fillRect(mx, 0, 12, 14); g.fillStyle = '#d6d9dd'; g.fillRect(mx, 0, 12, 2.5); }
+    }
+  }
+  function paintCastleWallV(g, side) {
+    const outer = side === 'W' ? 0 : 40;
+    g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(side === 'W' ? 44 : -4, 0, 8, 48);
+    g.fillStyle = '#8a8d94'; g.fillRect(0, 0, 48, 48); g.fillStyle = '#c3c7cc'; g.fillRect(8, 0, 32, 48);
+    g.fillStyle = 'rgba(70,70,75,0.3)'; for (let r = 0; r < 4; r++) g.fillRect(8, r * 12 + 11, 32, 1);
+    for (let k = 0; k < 4; k += 2) { const my = k * 12; g.fillStyle = '#a4a8ae'; g.fillRect(outer, my, 8, 12); g.fillStyle = '#d6d9dd'; g.fillRect(outer, my, 8, 2.5); }
+    g.fillStyle = '#7a7d84'; g.fillRect(outer, 12, 8, 12); g.fillRect(outer, 36, 8, 12);
+  }
+  function drawCastleWall(g, x, y) {
+    const side = CW_SIDE(x, y); if (!side) return;
+    if (side === 'N' || side === 'S') blit(g, sprite('cwH' + side + (x % 2), 48, 64, 0, 14, cg => paintCastleWallH(cg, side, x % 2)), x * TILE, y * TILE);
+    else blit(g, sprite('cwV' + side, 56, 48, side === 'E' ? 8 : 0, 0, cg => paintCastleWallV(cg, side)), x * TILE, y * TILE);
+  }
+  // the castle's own round towers: pale stone, purple cones
+  function paintCastleTower(g, R, base, rim, apex) {
+    const ry = R * 0.34;
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(6, base + 4, R + 8, ry + 4, 0, 0, 7); g.fill();
+    const body = g.createLinearGradient(-R, 0, R, 0); body.addColorStop(0, '#74777e'); body.addColorStop(0.32, '#c3c7cc'); body.addColorStop(0.7, '#a4a8ae'); body.addColorStop(1, '#6a6d74');
+    g.fillStyle = body; g.beginPath(); g.moveTo(-R, rim); g.lineTo(-R, base); g.ellipse(0, base, R, ry, 0, Math.PI, 0, true); g.lineTo(R, rim); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(60,60,65,0.3)'; g.lineWidth = 1; for (let yy = base - 10; yy > rim + 6; yy -= 10) { g.beginPath(); g.ellipse(0, yy, R, ry, 0, 0.05, Math.PI - 0.05); g.stroke(); }
+    g.fillStyle = '#23262c'; roundRect(g, -2.5, (base + rim) / 2 - 8, 5, 16, 2); g.fill();
+    g.fillStyle = PURPLE; g.beginPath(); g.ellipse(0, rim + 10, R + 0.5, ry, 0, 0, Math.PI); g.lineTo(-R - 0.5, rim + 7); g.ellipse(0, rim + 7, R + 0.5, ry, 0, Math.PI, 0, true); g.closePath(); g.fill();
+    g.fillStyle = '#c3c7cc'; g.beginPath(); g.ellipse(0, rim, R + 3, ry + 2, 0, 0, 7); g.fill(); g.fillStyle = '#8a8d94'; g.beginPath(); g.ellipse(0, rim, R - 4, ry - 2, 0, 0, 7); g.fill();
+    for (let k = 0; k < 8; k++) { const a = Math.PI * (0.06 + k * 0.125), mx = Math.cos(a) * (R + 1), my = rim + Math.sin(a) * (ry + 1); g.fillStyle = '#a4a8ae'; g.fillRect(mx - 4, my - 9, 8, 9); g.fillStyle = '#d6d9dd'; g.fillRect(mx - 4, my - 9, 8, 2); }
+    const cone = g.createLinearGradient(-R, 0, R, 0); cone.addColorStop(0, PURPLE_D); cone.addColorStop(0.38, PURPLE_L); cone.addColorStop(0.7, PURPLE); cone.addColorStop(1, '#341848');
+    g.fillStyle = cone; g.beginPath(); g.moveTo(-R + 4, rim - 3); g.lineTo(0, apex); g.lineTo(R - 4, rim - 3); g.ellipse(0, rim - 3, R - 4, ry - 3, 0, 0, Math.PI); g.closePath(); g.fill();
+    g.fillStyle = GOLD; g.beginPath(); g.ellipse(0, rim - 3, R - 3, ry - 2.5, 0, 0, Math.PI); g.lineTo(-R + 3, rim - 1); g.ellipse(0, rim - 1, R - 3, ry - 2.5, 0, Math.PI, 0, true); g.closePath(); g.fill();
+    g.fillStyle = GOLD; g.beginPath(); g.arc(0, apex - 3, 3.5, 0, 7); g.fill(); g.fillRect(-1, apex - 14, 2, 11);
+  }
+  const CASTLE_GATE_TOWERS = [{ cx: 110 * TILE, cy: 42.5 * TILE }, { cx: 114 * TILE, cy: 42.5 * TILE }];
+  const TURRETS = [{ cx: tc(104), cy: tc(48) }, { cx: tc(121), cy: tc(48) }];
+  function drawCastleGateTower(g, t, i) {
+    blit(g, sprite('ctower-gate', 90, 150, 45, 116, cg => paintCastleTower(cg, 30, 22, -26, -86)), t.cx, t.cy);
+    hangBanner(g, t.cx, t.cy - 18, 34, 15, i + 3);
+    pennant(g, t.cx + 1, t.cy - 86 - 14, 22, GOLD);
+    STATS.towers++;
+  }
+  function drawTurret(g, t) { blit(g, sprite('ctower-turret', 66, 110, 33, 84, cg => paintCastleTower(cg, 21, 18, -18, -66)), t.cx, t.cy); STATS.towers++; }
+  // the castle's corner towers: the core's drawTower, wrapped (larger, with a gold pennant); an instance keeps the core's
+  { const _drawTower = drawTower;
+    drawTower = function (g, cx, cy) {
+      if (away()) return _drawTower(g, cx, cy);
+      blit(g, sprite('ctower-corner', 100, 160, 50, 120, cg => paintCastleTower(cg, 32, 22, -30, -96)), cx, cy);
+      pennant(g, cx + 1, cy - 96 - 14, 28, GOLD);
+      STATS.towers++;
+    };
+  }
+  // the portcullis between the castle's gate towers, raised, under a stone lintel
+  function drawCastleArch(g) {
+    const x = 111 * TILE, y = 42 * TILE;
+    const near = Math.floor(player.x / TILE) >= 110 && Math.floor(player.x / TILE) <= 113 && Math.floor(player.y / TILE) >= 41 && Math.floor(player.y / TILE) <= 43;
+    g.save(); g.globalAlpha = near ? 0.3 : 1;
+    g.fillStyle = '#c3c7cc'; g.fillRect(x - 2, y - 18, 100, 14); g.fillStyle = '#d6d9dd'; g.fillRect(x - 2, y - 18, 100, 2.5);
+    g.fillStyle = '#8a8d94'; g.fillRect(x - 2, y - 4, 100, 8);
+    g.fillStyle = '#2a2d33'; for (let k = 0; k < 13; k++) { const tx = x + 2 + k * 7.3; g.beginPath(); g.moveTo(tx, y + 4); g.lineTo(tx + 3, y + 11); g.lineTo(tx + 6, y + 4); g.closePath(); g.fill(); }
+    arms(g, x + 48, y - 11, 18);
+    g.restore();
+  }
+  // the drawbridge's two chains, up to the gate towers
+  function drawChains(g) {
+    for (const [ax, tx] of [[111 * TILE + 5, 110 * TILE + 24], [113 * TILE - 5, 114 * TILE - 24]]) {
+      const ay = 41 * TILE + 5, ty = 42.5 * TILE - 46;
+      g.strokeStyle = '#2a2d33'; g.lineWidth = 1.6;
+      const n = 9; for (let k = 0; k < n; k++) { const u = (k + 0.5) / n, x = lerp(ax, tx, u), y = lerp(ay, ty, u) + Math.sin(u * Math.PI) * 6; g.beginPath(); g.ellipse(x, y, k % 2 ? 1.6 : 2.6, k % 2 ? 2.6 : 1.6, Math.atan2(ty - ay, tx - ax), 0, 7); g.stroke(); }
+    }
+  }
+  // lily pads on the moat, bobbing
+  const LILIES = [];
+  for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) if (glyph(x, y) === '~' && !(x >= PLAN.POND.x0 && x <= PLAN.POND.x1 && y >= PLAN.POND.y0 && y <= PLAN.POND.y1) && hash(x * 7, y * 11) < 0.32) LILIES.push([x, y, hash(x, y * 3)]);
+  function drawLily(g, x, y, h0) {
+    const lx = x * TILE + 12 + h0 * 24, ly = y * TILE + 14 + hash(y, x) * 20, bob = Math.sin(time * 1.2 + h0 * 9) * 1.2;
+    g.fillStyle = '#3f8a3a'; g.beginPath(); g.moveTo(lx, ly + bob); g.arc(lx, ly + bob, 8, 0.35, Math.PI * 2 - 0.1); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(160,220,120,0.45)'; g.beginPath(); g.arc(lx - 2, ly + bob - 2, 3.5, 0, 7); g.fill();
+    if (h0 > 0.6) { g.fillStyle = '#ffd0e0'; for (let q = 0; q < 5; q++) { const a = q / 5 * Math.PI * 2; g.beginPath(); g.ellipse(lx + Math.cos(a) * 2.6, ly + bob - 2 + Math.sin(a) * 1.7, 2.6, 1.5, a, 0, 7); g.fill(); } g.fillStyle = '#ffe066'; g.beginPath(); g.arc(lx, ly + bob - 2, 1.3, 0, 7); g.fill(); }
+  }
+
+  // ---------- Swan Pond: the boat, the swans and the ducklings ----------
+  function drawBoat(g) {
+    const [bx, by] = PLAN.POND.boat, cx = tc(bx), cy = (by + 1) * TILE, bob = Math.sin(time * 1.4) * 1.5, tilt = Math.sin(time * 1.1) * 0.04;
+    g.save(); g.translate(cx, cy + bob); g.rotate(tilt);
+    g.fillStyle = 'rgba(0,30,60,0.25)'; g.beginPath(); g.ellipse(3, 4, 18, 44, 0, 0, 7); g.fill();
+    g.fillStyle = '#6b4a2a'; g.beginPath(); g.moveTo(0, -44); g.quadraticCurveTo(18, -30, 16, 20); g.quadraticCurveTo(12, 40, 0, 42); g.quadraticCurveTo(-12, 40, -16, 20); g.quadraticCurveTo(-18, -30, 0, -44); g.closePath(); g.fill();
+    g.fillStyle = '#9c7444'; g.beginPath(); g.moveTo(0, -38); g.quadraticCurveTo(13, -26, 11, 18); g.quadraticCurveTo(8, 34, 0, 36); g.quadraticCurveTo(-8, 34, -11, 18); g.quadraticCurveTo(-13, -26, 0, -38); g.closePath(); g.fill();
+    g.fillStyle = '#5a3c22'; g.fillRect(-11, -10, 22, 4); g.fillRect(-10, 14, 20, 4);
+    g.strokeStyle = '#c9a36a'; g.lineWidth = 2; g.beginPath(); g.moveTo(-12, 0); g.lineTo(-30, 8); g.moveTo(12, 0); g.lineTo(30, -4); g.stroke();
+    g.restore();
+    // the mooring rope to the jetty
+    g.strokeStyle = '#c9a36a'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(cx, cy - 40 + bob); g.quadraticCurveTo(cx + 4, cy - 46, cx + 2, PLAN.POND.jetty[1] * TILE + 40); g.stroke();
+  }
+  // the two swans loop slowly, each its own side of the footbridge; four ducklings follow the east one
+  function loopOf(L) { return { cx: (L.x0 + L.x1 + 1) / 2 * TILE, cy: (L.y0 + L.y1 + 1) / 2 * TILE, rx: Math.max(8, (L.x1 - L.x0 + 1) * TILE / 2 - 16), ry: (L.y1 - L.y0 + 1) * TILE / 2 - 18 }; }
+  const SWAN_LOOPS = PLAN.POND.swans.map(loopOf);
+  function swanAt(i, ms, lagS) { const L = SWAN_LOOPS[i], per = i ? 46 : 38, a = ((ms / 1000 - (lagS || 0)) / per) * Math.PI * 2 * (i ? 1 : -1) + i * 2.1; return { x: L.cx + Math.cos(a) * L.rx, y: L.cy + Math.sin(a) * L.ry, dx: -Math.sin(a) * L.rx * (i ? 1 : -1), dy: Math.cos(a) * L.ry * (i ? 1 : -1) }; }
+  function drawSwan(g, p, s) {
+    const face = p.dx >= 0 ? 1 : -1;
+    g.save(); g.translate(p.x, p.y); g.scale(face * s, s);
+    g.fillStyle = 'rgba(255,255,255,0.35)'; g.beginPath(); g.ellipse(0, 6, 15, 4, 0, 0, 7); g.fill();
+    g.fillStyle = '#f7f6f0'; g.beginPath(); g.ellipse(-2, 0, 13, 7.5, 0, 0, 7); g.fill();
+    g.fillStyle = '#e4e1d6'; g.beginPath(); g.ellipse(-5, -2, 8, 4.5, -0.2, 0, 7); g.fill();
+    g.strokeStyle = '#f7f6f0'; g.lineWidth = 4; g.lineCap = 'round'; g.beginPath(); g.moveTo(7, -1); g.quadraticCurveTo(14, -6, 9, -14); g.quadraticCurveTo(7, -19, 11, -19); g.stroke(); g.lineCap = 'butt';
+    g.fillStyle = '#e8702a'; g.beginPath(); g.moveTo(12, -20); g.lineTo(17, -18); g.lineTo(12, -17); g.closePath(); g.fill();
+    g.fillStyle = '#1a1a1a'; g.beginPath(); g.arc(11, -19.5, 0.9, 0, 7); g.fill();
+    g.restore();
+  }
+  function drawDuckling(g, p) { g.fillStyle = '#e8c860'; g.beginPath(); g.ellipse(p.x, p.y, 4.5, 3, 0, 0, 7); g.fill(); g.beginPath(); g.arc(p.x + (p.dx >= 0 ? 3 : -3), p.y - 3, 2.4, 0, 7); g.fill(); g.fillStyle = '#e8702a'; g.fillRect(p.x + (p.dx >= 0 ? 5 : -7), p.y - 3.5, 2, 1.2); }
+
+  // ---------- the small folk ----------
+  function drawCat(g, x, y, running, t) {
+    g.save(); g.translate(x, y);
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(0, 4, 9, 3, 0, 0, 7); g.fill();
+    if (running) {
+      const leg = Math.sin(t * 22) * 3;
+      g.fillStyle = '#8a8d94'; g.beginPath(); g.ellipse(0, -4, 10, 4.5, 0, 0, 7); g.fill();
+      g.fillRect(-7, -2, 2.5, 5 + leg); g.fillRect(5, -2, 2.5, 5 - leg);
+      g.beginPath(); g.arc(9, -8, 4.2, 0, 7); g.fill(); g.beginPath(); g.moveTo(7, -11); g.lineTo(8.5, -15); g.lineTo(10, -11); g.moveTo(10, -11); g.lineTo(12, -14.5); g.lineTo(12.5, -10); g.fill();
+      g.strokeStyle = '#8a8d94'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(-9, -5); g.quadraticCurveTo(-16, -12, -14, -16); g.stroke();
+      g.fillStyle = PURPLE; g.fillRect(6, -6, 5, 2);
+    } else {
+      // sitting, tail curled round her feet, a purple collar
+      g.fillStyle = '#8a8d94'; g.beginPath(); g.ellipse(0, -5, 7.5, 8, 0, 0, 7); g.fill();
+      g.beginPath(); g.arc(0, -15, 5.2, 0, 7); g.fill();
+      g.beginPath(); g.moveTo(-4.5, -18); g.lineTo(-3.5, -23); g.lineTo(-1, -19); g.moveTo(1, -19); g.lineTo(3.5, -23); g.lineTo(4.5, -18); g.fill();
+      g.strokeStyle = '#8a8d94'; g.lineWidth = 2.6; g.beginPath(); g.moveTo(5, 1); g.quadraticCurveTo(12, 2, 9, -6 + Math.sin(time * 1.5) * 1.5); g.stroke();
+      g.fillStyle = '#b8bbc2'; g.beginPath(); g.ellipse(0, -3, 3.5, 4.5, 0, 0, 7); g.fill();
+      g.fillStyle = PURPLE; g.fillRect(-4, -11.5, 8, 2);
+      g.fillStyle = '#7ad04a'; g.beginPath(); g.arc(-2, -15.5, 0.9, 0, 7); g.arc(2, -15.5, 0.9, 0, 7); g.fill();
+    }
+    g.restore();
+  }
+  function drawKid(g, k) {
+    const e = { x: 0, y: 0, r: 13, facing: { x: k.dx, y: k.dy }, hurtT: 0, attackT: 0, moving: true, walkT: time * 12 };
+    const bob = Math.abs(Math.sin(time * 10 + (k.lag || 0))) * 2;
+    g.save(); g.translate(k.px, k.py - 4 - bob); g.scale(0.72, 0.72);
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(0, 14 + bob, 11, 4.5, 0, 0, 7); g.fill();
+    drawHuman(g, e, k.look);
+    g.restore();
+  }
+  function drawBunting(g, a, b) {
+    const top = (p) => { const [x, y] = p; return { x: tc(x), y: (y + 1) * TILE - 6 - lampH(x, y) + 6 }; };
+    const p0 = top(a), p1 = top(b), sag = 22 + Math.sin(time * 1.3 + p0.x * 0.01) * 2;
+    const pt = u => ({ x: lerp(p0.x, p1.x, u), y: lerp(p0.y, p1.y, u) + Math.sin(u * Math.PI) * sag });
+    g.strokeStyle = '#3d2a1a'; g.lineWidth = 1.2; g.beginPath(); for (let k = 0; k <= 16; k++) { const p = pt(k / 16); if (k) g.lineTo(p.x, p.y); else g.moveTo(p.x, p.y); } g.stroke();
+    const n = Math.max(5, Math.round(Math.hypot(p1.x - p0.x, p1.y - p0.y) / 14)), cols = [PURPLE, GOLD, '#f6f1e6'];
+    for (let k = 1; k < n; k++) { const p = pt(k / n), sw = Math.sin(time * 3 + k) * 1.8; g.fillStyle = cols[k % 3]; g.beginPath(); g.moveTo(p.x - 5, p.y); g.lineTo(p.x + 5, p.y); g.lineTo(p.x + sw, p.y + 11); g.closePath(); g.fill(); }
+  }
+
+  // ---------- the town's buildings (drawBuilding is wrapped: a town building draws itself here) ----------
+  const hex2 = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  const shade = (h, k) => { const [r, g2, b] = hex2(h); const f = v => Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); return `rgb(${f(r)},${f(g2)},${f(b)})`; };
+  const BIG = new Set(['store', 'bank', 'bakery', 'smithy', 'workshop', 'inn']);
+  const STONE_FRONT = new Set(['bank', 'smithy']);
+  const SMOKE = new Set(['bakery', 'smithy', 'inn']);
+  // how far a building's art rises over its footprint (smoke from a chimney; the keep's two front turrets)
+  const riseOf = b => b.id === 'keep' ? 60 : SMOKE.has(b.id) ? 64 : 0;
+  function stoneWall(g, x, y, w, h) {
+    g.fillStyle = '#8a8d94'; g.fillRect(x, y, w, h);
+    for (let r = 0; r * 12 < h; r++) { const yy = y + r * 12, off = r % 2 ? 12 : 0; for (let c = -1; c * 24 < w + 24; c++) { const xx = x + off + c * 24; const x0 = Math.max(x, xx + 1), x1 = Math.min(x + w, xx + 23); if (x1 > x0) { g.fillStyle = ['#9ca0a7', '#a6aab0', '#92969d'][(r + c + 9) % 3]; g.fillRect(x0, yy + 1, x1 - x0, Math.min(10, y + h - yy - 1)); } } }
+    const sh = g.createLinearGradient(0, y, 0, y + h); sh.addColorStop(0, 'rgba(255,255,255,0.12)'); sh.addColorStop(1, 'rgba(0,0,0,0.2)'); g.fillStyle = sh; g.fillRect(x, y, w, h);
+  }
+  function plasterWall(g, x, y, w, h) {
+    g.fillStyle = '#efe4cc'; g.fillRect(x, y, w, h);
+    g.fillStyle = '#6b4a2a'; g.fillRect(x, y, w, 5); g.fillRect(x, y + h - 6, w, 6);
+    for (let c = 0; c <= Math.floor(w / 48); c++) g.fillRect(Math.min(x + w - 5, x + c * 48), y, 5, h);
+    // the timber braces in each bay
+    g.strokeStyle = '#6b4a2a'; g.lineWidth = 3.5;
+    for (let c = 0; c < Math.floor(w / 48); c++) { const bx = x + c * 48; if ((c + Math.floor(x / 48)) % 2) { g.beginPath(); g.moveTo(bx + 5, y + h - 6); g.lineTo(bx + 16, y + 5); g.stroke(); } }
+    const sh = g.createLinearGradient(0, y, 0, y + h); sh.addColorStop(0, 'rgba(255,255,255,0.1)'); sh.addColorStop(1, 'rgba(60,40,20,0.16)'); g.fillStyle = sh; g.fillRect(x, y, w, h);
+  }
+  function windowAt(g, cx, top, w, h, box, lit0) {
+    g.fillStyle = '#5a3c22'; g.fillRect(cx - w / 2 - 3, top - 3, w + 6, h + 6);
+    if (lit0) { const gl = g.createLinearGradient(0, top, 0, top + h); gl.addColorStop(0, '#ffe7a0'); gl.addColorStop(1, '#f5b24a'); g.fillStyle = gl; }
+    else { const gl = g.createLinearGradient(0, top, 0, top + h); gl.addColorStop(0, '#9fc3dc'); gl.addColorStop(1, '#4f6d88'); g.fillStyle = gl; }
+    g.fillRect(cx - w / 2, top, w, h);
+    if (!lit0) { g.fillStyle = 'rgba(255,255,255,0.45)'; g.beginPath(); g.moveTo(cx - w / 2 + 2, top + h - 3); g.lineTo(cx - w / 2 + 2, top + 2); g.lineTo(cx - w / 2 + 6, top + 2); g.closePath(); g.fill(); }
+    g.fillStyle = '#5a3c22'; g.fillRect(cx - 1, top, 2, h); g.fillRect(cx - w / 2, top + h / 2 - 1, w, 2);
+    g.fillStyle = '#c9b48a'; g.fillRect(cx - w / 2 - 4, top + h + 2, w + 8, 3);
+    if (box) {
+      g.fillStyle = '#7d5832'; g.fillRect(cx - w / 2 - 3, top + h + 4, w + 6, 6);
+      const cols = ['#e0506a', '#f5c542', '#ffffff', '#b07ad8'];
+      for (let k = 0; k < 4; k++) { const fx = cx - w / 2 - 1 + k * (w + 2) / 3; g.fillStyle = '#3f8a3a'; g.beginPath(); g.arc(fx, top + h + 3, 3, 0, 7); g.fill(); g.fillStyle = cols[(k + Math.floor(cx / 48)) % 4]; g.beginPath(); g.arc(fx, top + h + 1, 2.2, 0, 7); g.fill(); }
+    }
+  }
+  function woodDoor(g, cx, bottom, w, h) {
+    g.fillStyle = '#4a3420'; g.beginPath(); g.moveTo(cx - w / 2 - 3, bottom); g.lineTo(cx - w / 2 - 3, bottom - h + w / 2); g.arc(cx, bottom - h + w / 2, w / 2 + 3, Math.PI, 0); g.lineTo(cx + w / 2 + 3, bottom); g.closePath(); g.fill();
+    g.fillStyle = '#7d5832'; g.beginPath(); g.moveTo(cx - w / 2, bottom); g.lineTo(cx - w / 2, bottom - h + w / 2); g.arc(cx, bottom - h + w / 2, w / 2, Math.PI, 0); g.lineTo(cx + w / 2, bottom); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(40,24,12,0.45)'; for (let k = 1; k < 3; k++) g.fillRect(cx - w / 2 + k * w / 3 - 0.6, bottom - h + w / 2, 1.2, h - w / 2);
+    g.fillStyle = '#2a2d33'; g.fillRect(cx - w / 2, bottom - h * 0.7, w, 2.5); g.fillRect(cx - w / 2, bottom - h * 0.3, w, 2.5);
+    g.fillStyle = GOLD; g.beginPath(); g.arc(cx + w / 4, bottom - h * 0.45, 1.8, 0, 7); g.fill();
+  }
+  // a hipped roof from `top` (the back) to `eave` (the front), its ridge running east-west, tiles or slates in rows
+  function hipRoof(g, x, top, w, eave, col) {
+    const d = eave - top, inset = Math.min(w * 0.3, d * 0.55), ridge = top + d * 0.38;
+    g.fillStyle = shade(col, -0.32); g.beginPath(); g.moveTo(x - 4, top); g.lineTo(x + w + 4, top); g.lineTo(x + w - inset, ridge); g.lineTo(x + inset, ridge); g.closePath(); g.fill();
+    g.fillStyle = shade(col, -0.14); g.beginPath(); g.moveTo(x - 4, top); g.lineTo(x + inset, ridge); g.lineTo(x - 4, eave + 4); g.closePath(); g.fill();
+    g.fillStyle = shade(col, -0.4); g.beginPath(); g.moveTo(x + w + 4, top); g.lineTo(x + w - inset, ridge); g.lineTo(x + w + 4, eave + 4); g.closePath(); g.fill();
+    g.fillStyle = col; g.beginPath(); g.moveTo(x + inset, ridge); g.lineTo(x + w - inset, ridge); g.lineTo(x + w + 4, eave + 4); g.lineTo(x - 4, eave + 4); g.closePath(); g.fill();
+    g.save(); g.beginPath(); g.moveTo(x + inset, ridge); g.lineTo(x + w - inset, ridge); g.lineTo(x + w + 4, eave + 4); g.lineTo(x - 4, eave + 4); g.closePath(); g.clip();
+    g.strokeStyle = 'rgba(0,0,0,0.16)'; g.lineWidth = 1;
+    for (let yy = ridge + 7, r = 0; yy < eave + 4; yy += 7, r++) { g.beginPath(); g.moveTo(x - 4, yy); g.lineTo(x + w + 4, yy); g.stroke(); for (let xx = x - 4 + (r % 2) * 6; xx < x + w + 4; xx += 12) { g.beginPath(); g.moveTo(xx, yy - 7); g.lineTo(xx, yy); g.stroke(); } }
+    g.fillStyle = 'rgba(255,255,255,0.1)'; g.fillRect(x - 4, ridge, w + 8, (eave - ridge) * 0.3);
+    g.restore();
+    g.fillStyle = shade(col, -0.5); g.fillRect(x + inset, ridge - 2, w - inset * 2, 4);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x - 4, eave + 4, w + 8, 4);
+    return { ridge, inset };
+  }
+  function smoke(g, x, y, warm) {
+    for (let k = 0; k < 5; k++) { const ph = fr(time * 0.32 + k / 5); g.fillStyle = warm ? `rgba(200,195,190,${(0.6 * (1 - ph)).toFixed(3)})` : `rgba(230,230,230,${(0.55 * (1 - ph)).toFixed(3)})`; g.beginPath(); g.arc(x + Math.sin(ph * 5 + k) * 5 + ph * 10, y - ph * 56, 4 + ph * 10, 0, 7); g.fill(); }
+  }
+  function sparks(g, x, y) { for (let k = 0; k < 7; k++) { const h0 = hash(k, 3), ph = fr(time * (0.9 + h0) + h0); g.fillStyle = `rgba(255,${150 + Math.floor(h0 * 80)},60,${(1 - ph).toFixed(3)})`; g.fillRect(x - 6 + h0 * 12 + Math.sin(ph * 9 + k) * 4, y - ph * 40, 2, 2); } }
+  function chimney(g, cx, top, stone) { g.fillStyle = stone ? '#7d8087' : '#8a5a3a'; g.fillRect(cx - 7, top, 14, 18); g.fillStyle = stone ? '#9aa0a8' : '#a5704a'; g.fillRect(cx - 9, top - 2, 18, 4); g.fillStyle = '#2a2018'; g.fillRect(cx - 5, top - 2, 10, 2); }
+  // the iron bracket sign: an arm from the wall and a board hanging from it, with a drawn icon
+  function bracketSign(g, x, y, icon, dir) {
+    const d = dir || 1, sw = Math.sin(time * 1.7 + x * 0.03) * 0.07;
+    g.fillStyle = '#1f2126'; g.fillRect(x, y - 2, 4, 6); g.fillRect(x, y, d * 26, 2.4);
+    g.strokeStyle = '#1f2126'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x + 2, y + 10); g.quadraticCurveTo(x + d * 8, y + 2, x + d * 18, y + 1); g.stroke();
+    g.save(); g.translate(x + d * 16, y + 3); g.rotate(sw);
+    g.strokeStyle = '#1f2126'; g.lineWidth = 1; g.beginPath(); g.moveTo(-6, 0); g.lineTo(-6, 4); g.moveTo(6, 0); g.lineTo(6, 4); g.stroke();
+    g.fillStyle = '#3d2a1a'; roundRect(g, -11, 4, 22, 20, 3); g.fill(); g.strokeStyle = GOLD_D; g.lineWidth = 1.2; g.stroke();
+    g.save(); g.translate(0, 14); icon(g); g.restore();
+    g.restore();
+  }
+  const ICON = {
+    store: g => { g.fillStyle = '#a5763f'; g.fillRect(-7, -4, 8, 8); g.strokeStyle = '#5a3c22'; g.lineWidth = 1; g.strokeRect(-7, -4, 8, 8); g.beginPath(); g.moveTo(-7, -4); g.lineTo(1, 4); g.stroke(); g.fillStyle = '#d9c9a0'; g.beginPath(); g.moveTo(2, 5); g.quadraticCurveTo(1, -3, 5, -5); g.quadraticCurveTo(9, -3, 8, 5); g.closePath(); g.fill(); },
+    bank: g => { g.fillStyle = '#c9a02a'; g.beginPath(); g.arc(0, 0, 7, 0, 7); g.fill(); g.fillStyle = GOLD; g.beginPath(); g.arc(0, 0, 5.5, 0, 7); g.fill(); g.fillStyle = '#9a7a1a'; g.font = `800 7px ${DISPLAY}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('T', 0, 0.5); g.textBaseline = 'alphabetic'; },
+    bakery: g => { g.fillStyle = '#d9a04a'; g.beginPath(); g.ellipse(0, 0, 8, 5, 0, 0, 7); g.fill(); g.strokeStyle = '#8a5a2b'; g.lineWidth = 1; for (const k of [-3, 0, 3]) { g.beginPath(); g.moveTo(k - 1.5, -3); g.lineTo(k + 1.5, 2); g.stroke(); } },
+    smithy: g => { g.fillStyle = '#9aa0a8'; g.beginPath(); g.moveTo(-8, -3); g.lineTo(6, -3); g.lineTo(9, -1); g.lineTo(5, 0); g.lineTo(3, 2); g.lineTo(-3, 2); g.lineTo(-5, 0); g.closePath(); g.fill(); g.fillRect(-3, 2, 6, 5); g.fillRect(-6, 6, 12, 2); },
+    workshop: g => { g.fillStyle = '#d9a75a'; g.beginPath(); for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2, r = k % 2 ? 5.2 : 7.5; g.lineTo(Math.cos(a) * r, Math.sin(a) * r); } g.closePath(); g.fill(); g.fillStyle = '#3d2a1a'; g.beginPath(); g.arc(0, 0, 2.4, 0, 7); g.fill(); },
+    inn: g => { g.fillStyle = '#7d5832'; g.beginPath(); g.ellipse(-2, 3, 6, 4.5, 0, 0, 7); g.fill(); g.strokeStyle = '#2a2d33'; g.lineWidth = 0.8; g.beginPath(); g.ellipse(-2, 3, 6, 4.5, 0, 0, 7); g.stroke(); g.fillStyle = '#e8c86a'; g.fillRect(1, -7, 7, 8); g.fillStyle = '#ffffff'; g.fillRect(1, -8, 7, 2.5); g.strokeStyle = '#e8c86a'; g.lineWidth = 1.2; g.beginPath(); g.arc(8.5, -3, 2.2, -1.2, 1.2); g.stroke(); },
+  };
+  function wordPlate(g, cx, y, word) {
+    g.font = `700 9px ${DISPLAY}`; const w = Math.max(44, g.measureText ? g.measureText(word).width + 14 : 60);
+    g.fillStyle = '#efe2c4'; g.fillRect(cx - w / 2, y, w, 14); g.strokeStyle = '#5a3c22'; g.lineWidth = 1; g.strokeRect(cx - w / 2, y, w, 14);
+    g.fillStyle = '#3a2a1a'; g.textAlign = 'center'; g.fillText(word, cx, y + 10.5);
+  }
+  function topDoor(g, b, x, y) {
+    // a door on the north wall: its frame on the roof's back edge, a lantern either side (as the core does for the keep)
+    const dx = x + b.doorTop * TILE;
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(dx + 6, y, 36, 26);
+    g.fillStyle = b.stone ? '#8a8d94' : '#efe4cc'; g.fillRect(dx + 7, y, 34, 24);
+    g.fillStyle = '#5a3a1e'; g.fillRect(dx + 12, y, 24, 18); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(dx + 23, y, 2, 18);
+    g.fillStyle = b.stone ? '#a4a8ae' : '#c9b48a'; g.fillRect(dx + 8, y + 18, 32, 4);
+    g.fillStyle = GOLD; g.beginPath(); g.arc(dx + 30, y + 9, 2, 0, 7); g.fill();
+    drawLantern(g, dx + 4, y + 12); drawLantern(g, dx + 44, y + 12);
+  }
+  function drawHall(g, b, x, y, w, h) {
+    const big = BIG.has(b.id), stone = STONE_FRONT.has(b.id), FH = big ? 58 : 46, eave = y + h - FH, lit0 = lit();
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(x + 6, y + h - 4, w, 8);
+    if (stone) stoneWall(g, x, eave, w, FH); else plasterWall(g, x, eave, w, FH);
+    // windows across the front (the door's bay has none)
+    const doorC = b.door !== undefined ? b.door : -9;
+    for (let c = 0; c < b.w; c++) {
+      if (Math.abs(c - doorC) < 1) continue;
+      if (!big && b.w <= 4 && c !== 0 && c !== b.w - 1 && Math.abs(c - doorC) <= 1) continue;
+      windowAt(g, x + c * TILE + 24, eave + (big ? 12 : 10), big ? 16 : 14, big ? 20 : 16, !big || b.id === 'inn' || b.id === 'bakery', lit0);
+    }
+    const roofCol = b.id === 'bank' ? '#3a3f4a' : b.id === 'smithy' ? '#4a4f5a' : b.roof;
+    const R = hipRoof(g, x, y + 2, w, eave, roofCol);
+    // chimneys, standing on the back slope
+    if (b.id !== 'bank') { const chx = b.id === 'smithy' ? x + 40 : x + w - 30; chimney(g, chx, y + 6, b.id === 'smithy'); if (SMOKE.has(b.id)) { smoke(g, chx, y + 2, b.id === 'smithy'); if (b.id === 'smithy') sparks(g, chx, y + 2); } }
+    if (b.door !== undefined) {
+      const dcx = x + b.door * TILE + 24, bottom = y + h;
+      if (b.id === 'bank') {
+        // two stone columns and a pediment either side of the door
+        for (const ox of [-28, 22]) { g.fillStyle = '#c3c7cc'; g.fillRect(dcx + ox, eave - 2, 6, FH); g.fillStyle = '#e1e3e6'; g.fillRect(dcx + ox, eave - 2, 2, FH); g.fillStyle = '#9aa0a8'; g.fillRect(dcx + ox - 2, eave - 4, 10, 4); g.fillRect(dcx + ox - 2, bottom - 4, 10, 4); }
+        g.fillStyle = '#c3c7cc'; g.beginPath(); g.moveTo(dcx - 34, eave + 2); g.lineTo(dcx, eave - 12); g.lineTo(dcx + 34, eave + 2); g.closePath(); g.fill();
+      }
+      woodDoor(g, dcx, bottom, big ? 24 : 20, big ? 38 : 32);
+      drawLantern(g, dcx - 19, bottom - 26); drawLantern(g, dcx + 19, bottom - 26);
+      if (b.id === 'store') {
+        // a striped awning over the door
+        const top = bottom - (big ? 44 : 38), fl = Math.sin(time * 2 + x) * 0.8;
+        for (let k = 0; k < 6; k++) { g.fillStyle = k % 2 ? '#f6f1e6' : '#b8352b'; g.beginPath(); g.moveTo(dcx - 30 + k * 10, top); g.lineTo(dcx - 20 + k * 10, top); g.lineTo(dcx - 20 + k * 10, top + 12 + fl); g.lineTo(dcx - 30 + k * 10, top + 12 + fl); g.closePath(); g.fill(); g.beginPath(); g.arc(dcx - 25 + k * 10, top + 12 + fl, 5, 0, Math.PI); g.fill(); }
+        g.fillStyle = '#5a3c22'; g.fillRect(dcx - 31, top - 2, 62, 3);
+      }
+      if (ICON[b.id]) bracketSign(g, dcx + 26, eave + 6, ICON[b.id], 1);
+    } else if (b.doorTop !== undefined) {
+      topDoor(g, b, x, y);
+      if (ICON[b.id]) bracketSign(g, x + b.doorTop * TILE + 46, y + 4, ICON[b.id], 1);
+    }
+    if (b.sign) wordPlate(g, x + w / 2 + (b.door !== undefined && Math.abs(b.door * TILE + 24 - w / 2) < 30 ? 60 : 0), eave - 18, b.sign);
+    void R;
+  }
+  // the keep: a crenellated parapet, a slate great-hall roof, the Duke's arms over the north door, two front turrets at
+  // the north corners, and a square tower with a spire in its south half. Only the turrets' cones rise over row 46.
+  function keepTurret(g, cx, base, rim, apex, R) {
+    const ry = R * 0.34;
+    const body = g.createLinearGradient(cx - R, 0, cx + R, 0); body.addColorStop(0, '#74777e'); body.addColorStop(0.32, '#c3c7cc'); body.addColorStop(0.7, '#a4a8ae'); body.addColorStop(1, '#6a6d74');
+    g.fillStyle = body; g.beginPath(); g.moveTo(cx - R, rim); g.lineTo(cx - R, base); g.ellipse(cx, base, R, ry, 0, Math.PI, 0, true); g.lineTo(cx + R, rim); g.closePath(); g.fill();
+    g.fillStyle = '#23262c'; roundRect(g, cx - 2.5, (base + rim) / 2 - 7, 5, 14, 2); g.fill();
+    g.fillStyle = '#c3c7cc'; g.beginPath(); g.ellipse(cx, rim, R + 3, ry + 2, 0, 0, 7); g.fill();
+    for (let k = 0; k < 7; k++) { const a = Math.PI * (0.07 + k * 0.143), mx = cx + Math.cos(a) * (R + 1), my = rim + Math.sin(a) * (ry + 1); g.fillStyle = '#a4a8ae'; g.fillRect(mx - 4, my - 8, 8, 8); g.fillStyle = '#d6d9dd'; g.fillRect(mx - 4, my - 8, 8, 2); }
+    const cone = g.createLinearGradient(cx - R, 0, cx + R, 0); cone.addColorStop(0, PURPLE_D); cone.addColorStop(0.38, PURPLE_L); cone.addColorStop(1, '#341848');
+    g.fillStyle = cone; g.beginPath(); g.moveTo(cx - R + 3, rim - 3); g.lineTo(cx, apex); g.lineTo(cx + R - 3, rim - 3); g.ellipse(cx, rim - 3, R - 3, ry - 3, 0, 0, Math.PI); g.closePath(); g.fill();
+    g.fillStyle = GOLD; g.fillRect(cx - R + 3, rim - 4, 2 * R - 6, 2.5); g.beginPath(); g.arc(cx, apex - 2, 3, 0, 7); g.fill(); g.fillRect(cx - 1, apex - 10, 2, 8);
+  }
+  function crenels(g, x, y, w) { for (let k = 0; k * 12 < w; k += 2) { g.fillStyle = '#a4a8ae'; g.fillRect(x + k * 12, y - 10, Math.min(12, w - k * 12), 10); g.fillStyle = '#d6d9dd'; g.fillRect(x + k * 12, y - 10, Math.min(12, w - k * 12), 2.5); } }
+  function drawKeep(g, b, x, y, w, h) {
+    const FH = 78, face = y + h - FH, lit0 = lit();
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(x + 8, y + h - 4, w, 10);
+    // the walls' tops: a parapet walk all round the great hall's roof
+    g.fillStyle = '#9ca0a7'; g.fillRect(x, y, w, face - y);
+    g.fillStyle = '#c3c7cc'; g.fillRect(x, y, w, 30); g.fillRect(x, y, 26, face - y); g.fillRect(x + w - 26, y, 26, face - y);
+    g.fillStyle = 'rgba(70,70,75,0.3)'; for (let yy = y + 12; yy < face; yy += 14) { g.fillRect(x, yy, 26, 1); g.fillRect(x + w - 26, yy, 26, 1); }
+    // the great hall's slate roof inside the parapet
+    hipRoof(g, x + 26, y + 30, w - 52, face - 8, '#4a4f5a');
+    // the north wall's door (112,46) with its lanterns, and the Duke's arms just inside it, under the frame
+    topDoor(g, b, x, y);
+    arms(g, x + b.doorTop * TILE + 24, y + 44, 26);
+    // the square tower in the south half, with a slate spire and a pennant
+    const tw = 112, tx0 = x + w / 2 - tw / 2, tBase = face - 4, tTop = y + 150;
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(tx0 + 8, tBase - 6, tw, 10);
+    stoneWall(g, tx0, tTop, tw, tBase - tTop);
+    g.fillStyle = 'rgba(0,0,0,0.16)'; g.fillRect(tx0 + tw - 18, tTop, 18, tBase - tTop);
+    for (const ox of [-28, 0, 28]) windowAt(g, x + w / 2 + ox, tTop + 22, 10, 22, false, lit0);
+    crenels(g, tx0, tTop, tw); g.fillStyle = '#c3c7cc'; g.fillRect(tx0 - 2, tTop - 2, tw + 4, 5);
+    const sp = g.createLinearGradient(tx0, 0, tx0 + tw, 0); sp.addColorStop(0, '#2c3038'); sp.addColorStop(0.4, '#5d6370'); sp.addColorStop(1, '#262a31');
+    g.fillStyle = sp; g.beginPath(); g.moveTo(tx0 + 8, tTop - 6); g.lineTo(x + w / 2, y + 26); g.lineTo(tx0 + tw - 8, tTop - 6); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 1; for (let k = 1; k < 6; k++) { const f = k / 6, yy = tTop - 6 - (tTop - 6 - y - 26) * f; g.beginPath(); g.moveTo(tx0 + 8 + (tw / 2 - 8) * f, yy); g.lineTo(tx0 + tw - 8 - (tw / 2 - 8) * f, yy); g.stroke(); }
+    g.fillStyle = GOLD; g.beginPath(); g.arc(x + w / 2, y + 24, 3.5, 0, 7); g.fill(); g.fillRect(x + w / 2 - 1, y + 6, 2, 18);
+    pennant(g, x + w / 2 + 1, y + 6, 26);
+    // the south face: grey stone, a purple string course, tall windows, two banners, a crenellated top
+    stoneWall(g, x, face, w, FH);
+    g.fillStyle = PURPLE; g.fillRect(x, face + 4, w, 3);
+    for (const c of [1, 3, 6, 8]) windowAt(g, x + c * TILE + 24, face + 18, 14, 30, false, lit0);
+    hangBanner(g, x + 4.5 * TILE + 24 - 30, face + 10, 52, 22, 1);
+    hangBanner(g, x + 4.5 * TILE + 24 + 30, face + 10, 52, 22, 2);
+    crenels(g, x, face, w);
+    // the two front turrets at the north corners (their cones may rise 60 px over row 46)
+    keepTurret(g, x + 30, y + 66, y + 10, y - 52, 26); keepTurret(g, x + w - 30, y + 66, y + 10, y - 52, 26);
+  }
+  function drawTownBuilding(g, b) {
+    const x = b.x * TILE, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
+    STATS.townBuildings++; if (b.id === 'keep') STATS.keep++;
+    if (STATS.record) STATS.boxes.push({ x0: x, y0: y - riseOf(b), x1: x + w, y1: y + h, own: b.id, building: true });
+    g.save();
+    // the keep fades only where its two front turrets rise over row 46 and the knight is behind them
+    if (b.id === 'keep') { const sy = (b.y + b.h) * TILE - 1, a = Math.min(behindAlpha(x, y - 60, x + 60, y + 70, sy), behindAlpha(x + w - 60, y - 60, x + w, y + 70, sy)); if (a < 1) g.globalAlpha = a; drawKeep(g, b, x, y, w, h); }
+    else drawHall(g, b, x, y, w, h);
+    g.restore();
+  }
+  { const _drawBuilding = drawBuilding; drawBuilding = function (g, b) { return (b && b.town && !window.__instance) ? drawTownBuilding(g, b) : _drawBuilding(g, b); }; }
+  // the six town gate cells draw no wooden gate (the gatehouse is drawn instead)
+  const TOWN_GATE_CELLS = new Set(PLAN.GATES.flatMap(gt => gt.rows.map(y => gt.x + ',' + y)));
+  { const _drawFenceProp = drawFenceProp; drawFenceProp = function (g, tx, ty, gate) { if (!window.__instance && TOWN_GATE_CELLS.has(tx + ',' + ty)) return; return _drawFenceProp(g, tx, ty, gate); }; }
+  // the square's fire is an iron brazier on a stone ring (still a T.FIRE: you can cook on it)
+  const BRAZIER = { x: 119, y: 38 };
+  function drawBrazier(g, tx, ty) {
+    const cx = tc(tx), cy = tc(ty);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx + 3, cy + 16, 18, 6, 0, 0, 7); g.fill();
+    g.fillStyle = '#7d8087'; for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2; g.beginPath(); g.arc(cx + Math.cos(a) * 17, cy + 10 + Math.sin(a) * 6, 4, 0, 7); g.fill(); }
+    g.strokeStyle = '#1f2126'; g.lineWidth = 3; for (const ox of [-10, 0, 10]) { g.beginPath(); g.moveTo(cx + ox * 0.6, cy - 4); g.lineTo(cx + ox, cy + 12); g.stroke(); }
+    g.fillStyle = '#2a2d33'; g.beginPath(); g.ellipse(cx, cy - 4, 15, 6, 0, 0, Math.PI); g.lineTo(cx - 15, cy - 6); g.ellipse(cx, cy - 6, 15, 5, 0, Math.PI, 0, true); g.closePath(); g.fill();
+    g.fillStyle = '#4a2a14'; g.beginPath(); g.ellipse(cx, cy - 6, 12, 4, 0, 0, 7); g.fill();
+    for (let k = 0; k < 3; k++) { const ph = Math.sin(time * 9 + k * 2) * 3; g.fillStyle = ['#ff6a1a', '#ffa030', '#ffe066'][k]; g.beginPath(); g.moveTo(cx - 9 + k * 3, cy - 6); g.quadraticCurveTo(cx - 12 + k * 4, cy - 18 - ph, cx + (k - 1) * 3, cy - 30 - ph * 1.5 - k * 4); g.quadraticCurveTo(cx + 12 - k * 4, cy - 18 + ph, cx + 9 - k * 3, cy - 6); g.closePath(); g.fill(); }
+    const gr = g.createRadialGradient(cx, cy - 10, 5, cx, cy - 10, 60); gr.addColorStop(0, 'rgba(255,170,60,0.26)'); gr.addColorStop(1, 'rgba(255,170,60,0)'); g.fillStyle = gr; g.beginPath(); g.arc(cx, cy - 10, 60, 0, 7); g.fill();
+  }
+  { const _drawFireProp = drawFireProp; drawFireProp = function (g, tx, ty) { if (window.__instance || tx !== BRAZIER.x || ty !== BRAZIER.y) return _drawFireProp(g, tx, ty); drawBrazier(g, tx, ty); }; }
+
+  // ---------- the hook ----------
+  const GATE_TOWERS = TOWERS.filter(t => t.gate);
+  const drawHook = (g, items, c0) => {
+    STATS.chunks = 0; STATS.repaints = 0; STATS.items = 0; STATS.towers = 0; STATS.lampsLit = 0; STATS.fountains = 0; STATS.statues = 0; STATS.keep = 0; STATS.townBuildings = 0;
+    if (STATS.record) STATS.boxes.length = 0;
+    if (away()) return;
+    const c = c0 || cam;
+    STATS.frames++;
+    const vx0 = Math.floor(c.x / TILE) - 2, vx1 = Math.ceil((c.x + VW) / TILE) + 2, vy0 = Math.floor(c.y / TILE) - 2, vy1 = Math.ceil((c.y + VH) / TILE) + 5;
+    if (vx1 < X0 || vx0 >= X0 + W || vy1 < Y0 || vy0 >= Y0 + H) return;
+    put(items, -1e8 - 2, null, () => drawGround(g, c));
+    for (const [x, y, h0] of LILIES) if (x >= vx0 && x <= vx1 && y >= vy0 && y <= vy1) put(items, -1e8 - 1, null, () => drawLily(g, x, y, h0));
+    const x0 = Math.max(X0, vx0), x1 = Math.min(X0 + W - 1, vx1), y0 = Math.max(Y0, vy0), y1 = Math.min(Y0 + H - 1, vy1);
+    const WT = WALL_T();
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const t = tileAt(x, y), ch = glyph(x, y);
+      if (t === WT && inTown(x, y)) { put(items, tc(y), [x * TILE, y * TILE - 12, (x + 1) * TILE, (y + 1) * TILE], () => drawWallCell(g, x, y)); continue; }
+      if (t === T.CWALL && ch === 'C') { put(items, tc(y) + 1, [x * TILE, y * TILE - 14, (x + 1) * TILE, (y + 1) * TILE], () => drawCastleWall(g, x, y)); continue; }
+      const k = KIND_NAMES[KIND[pi(x, y)]];
+      if (!k) continue;
+      const want = k === 'great' || k === 'market' || k === 'rose' ? FOUNT : (k === 'hedge' || k === 'fruit' || k === 'cherry' || k === 'roses') ? HEDGE : PROP;
+      if (t !== want) continue;
+      const px = x * TILE, py = y * TILE, by = (y + 1) * TILE;
+      if (k === 'lamp') { put(items, by - 6, [tc(x) - 11, LAMP_TOP[x + ',' + y], tc(x) + 11, by], () => drawLamp(g, x, y)); if (lit()) put(items, 9e8 - 1, null, () => lampGlow(g, x, y)); }
+      else if (k === 'statue') { const s = statueAt(x, y); if (s) put(items, by - 2, [tc(x) - 22, by - 92, tc(x) + 22, by], () => drawStatue(g, s)); }
+      else if (k === 'plinth') put(items, by - 2, [tc(x) - 22, by - (statueDone() ? 92 : 36), tc(x) + 22, by], () => drawPlinth(g));
+      else if (k === 'bench') put(items, by - 5, [tc(x) - 21, by - 37, tc(x) + 21, by], () => blit(g, sprite('bench', 48, 40, 24, 36, paintBench), tc(x), by - 5));
+      else if (k === 'sign') { const s = signAt(x, y); if (s) put(items, by - 5, [tc(x) - 22, by - 72, tc(x) + 22, by], () => blit(g, sprite('sign-' + s.side, 48, 72, 24, 68, cg => paintSign(cg, s.side)), tc(x), by - 4)); }
+      else if (k === 'stall') { const s = stallAt(x, y); if (s && s.x === x) put(items, by - 3, [px - 4, py - 24, px + 100, by], () => drawStall(g, s)); }
+      else if (k === 'bell') { if (x === PLAN.BELL.x && y === PLAN.BELL.y) put(items, BT.foot - 2, [BT.x - 6, BT.foot - 362, BT.x + BT.w + 6, BT.foot], () => drawBellTower(g)); }
+      else if (k === 'sundial') put(items, by - 4, [tc(x) - 17, by - 42, tc(x) + 17, by], () => drawSundial(g, x, y));
+      else if (k === 'hedge') put(items, by - 3, [px, py - 10, px + 48, by], () => drawHedge(g, x, y));
+      else if (k === 'fruit' || k === 'cherry') { const R = TREE_R[x + ',' + y] || 26; put(items, by - 6, [tc(x) - R, by - 6 - 84, tc(x) + R, by], () => drawTree(g, x, y, k)); }
+      else if (k === 'roses') put(items, by - 4, [px, py, px + 48, by], () => drawRoses(g, x, y));
+      else if (k === 'great') { if (x === great.x && y === great.y) put(items, (great.y + great.h) * TILE - 4, [GF.cx - GF.rx - 2, 34 * TILE - 24, GF.cx + GF.rx + 2, (great.y + great.h) * TILE], () => drawGreatFountain(g)); }
+      else if (k === 'market' || k === 'rose') { const f = fountainAt(x, y); if (f && x === f.x && y === f.y) put(items, (f.y + f.h) * TILE - 4, [f.x * TILE, f.y * TILE - 30, (f.x + f.w) * TILE, (f.y + f.h) * TILE], () => drawSmallFountain(g, f)); }
+    }
+    // the towers and the two gatehouses
+    for (const t of TOWERS) {
+      const d = t.gate ? TOWER_DEF.gate : TOWER_DEF.wall;
+      if (!vis(c, t.cx - d.R - 30, t.cy + d.apex - 20, t.cx + d.R + 30, t.cy + d.base + 10)) continue;
+      put(items, (t.y + t.h) * TILE - 2, [t.cx - d.R, t.cy + d.apex - 14, t.cx + d.R, (t.y + t.h) * TILE], () => drawTownTower(g, t));
+    }
+    for (const gt of PLAN.GATES) if (vis(c, gt.x * TILE - 20, 30 * TILE, gt.x * TILE + 70, 35 * TILE)) put(items, 34 * TILE - 1, [gt.x * TILE - 6, 31 * TILE - 12, gt.x * TILE + 54, 34 * TILE + 6], () => drawArch(g, gt));
+    // the castle: its gate towers, the raised portcullis, the turrets, the drawbridge's chains
+    if (vis(c, 102 * TILE, 38 * TILE, 124 * TILE, 56 * TILE)) {
+      CASTLE_GATE_TOWERS.forEach((t, i) => put(items, 43 * TILE - 2, [t.cx - 30, t.cy - 100, t.cx + 30, 43 * TILE], () => drawCastleGateTower(g, t, i)));
+      put(items, 43 * TILE - 3, [111 * TILE - 2, 42 * TILE - 18, 113 * TILE + 2, 42 * TILE + 11], () => drawCastleArch(g));
+      for (const t of TURRETS) put(items, t.cy + 22, [t.cx - 21, t.cy - 80, t.cx + 21, t.cy + 24], () => drawTurret(g, t));
+      put(items, 42 * TILE + 1, null, () => drawChains(g));
+    }
+    // Swan Pond: the boat, the swans, the ducklings
+    { const P0 = PLAN.POND;
+      if (vis(c, P0.x0 * TILE - 40, P0.y0 * TILE - 40, (P0.x1 + 1) * TILE + 40, (P0.y1 + 1) * TILE + 40)) {
+        put(items, (P0.boat[1] + 2) * TILE - 10, null, () => drawBoat(g));
+        const ms = wallMs();
+        for (let i = 0; i < SWAN_LOOPS.length; i++) { const p = swanAt(i, ms); put(items, p.y + 4, null, () => drawSwan(g, p, 1)); }
+        for (let k = 1; k <= 4; k++) { const p = swanAt(1, ms, k * 1.4); put(items, p.y + 2, null, () => drawDuckling(g, p)); }
+      } }
+    // the small folk: Nell and Robin round the fountain, Duchess on the bell plaza (or running there)
+    for (const k of kidsNow()) if (vis(c, k.px - 30, k.py - 40, k.px + 30, k.py + 20)) put(items, k.py + 10, null, () => drawKid(g, k));
+    { const u = (time - CAT.t0) / 2;
+      if (u >= 0 && u < 1) { const fx = (PLAN.BELL.x + 0.5) * TILE, fy = BT.foot + 6, d = duchessHome(); const x = lerp(fx, d.x, u), y = lerp(fy, d.y, u) - Math.abs(Math.sin(u * Math.PI * 4)) * 6; put(items, y + 6, null, () => drawCat(g, x, y, true, time)); }
+      else if (duchessHere()) { const d = duchessHome(); if (vis(c, d.x - 30, d.y - 40, d.x + 30, d.y + 20)) put(items, d.y + 6, null, () => drawCat(g, d.x, d.y, false, time)); } }
+    // Gatewarden Osric's welcome, over his head for four seconds
+    if (BARK.t > 0) { const os = npc('osric'); if (os) put(items, 1e9 + 3, null, () => { g.save(); g.translate(Math.round(cam.x), Math.round(cam.y)); g.globalAlpha = Math.min(1, BARK.t * 2); HK.tag(g, os.px - cam.x, os.py - 30 - cam.y, 'Welcome to Thistledown!'); g.restore(); }); }
+    // bunting across the street, over every head
+    for (const [a, b] of PLAN.BUNTING) { const ax = tc(a[0]), bx = tc(b[0]); if (vis(c, Math.min(ax, bx) - 20, Math.min(a[1], b[1]) * TILE - 120, Math.max(ax, bx) + 20, Math.max(a[1], b[1]) * TILE + 10)) put(items, 9e8, null, () => drawBunting(g, a, b)); }
+  };
+  HOOKS.draw.push(drawHook);
+
+  // ---------- night: the lamps, the torches, the fountain and the dial light the street ----------
+  if (HOOKS.nightLights) HOOKS.nightLights.push((out, x0, y0, x1, y1) => {
+    if (away()) return;
+    const on = lit(), inside = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+    if (on) for (const [x, y] of LAMPS) if (inside(x, y)) out.push({ x: tc(x), y: y * TILE - 16, r: 110, kind: 'lamp' });
+    if (on) for (const key of TORCHES) { const [x, y] = key.split(',').map(Number); if (inside(x, y)) out.push({ x: tc(x), y: tc(y) - 14, r: 70, kind: 'torch' }); }
+    if (inside(great.x + 1, great.y + 1)) out.push({ x: greatC.x, y: greatC.y, r: 90, kind: 'fountain' });
+    if (inside(PLAN.BELL.x, PLAN.BELL.y)) out.push({ x: BT.x + BT.w / 2, y: BT.foot - 128, r: 80, kind: 'dial' });
+  });
+
+  // =========================================================================
+  // 10. the book
+  // =========================================================================
+  if (window.WIKI && WIKI.add) {
+    const st = id => PLAN.STREETS.find(s => s.id === id).name;
+    const lines = [
+      'Thistledown, the city that still stands: the capital of the Fanglands, where every knight wakes and where a fallen knight comes back.',
+      { t: 'THE GATES AND THE WALL', c: '#8b949e' },
+      `A curtain wall of grey stone with ${PLAN.TOWERS.length} towers. The West Gate and the East Gate are stone gatehouses, open day and night; horses ride through, goblins do not.`,
+      { t: 'THE STREETS', c: '#8b949e' },
+      `${st('high')} runs straight from gate to gate under ${LAMPS_N} iron lamps, with bunting across it. ${st('crown')} runs north from the fountain to the Bell Tower.`,
+      `${PLAN.STREETS.filter(s => s.id !== 'high' && s.id !== 'crown').map(s => s.name).join(', ')}.`,
+      { t: 'FOUNTAIN SQUARE', c: '#8b949e' },
+      'The Great Fountain is in the middle of the city: toss a coin in for luck. Four hero statues stand round it: the Last Knight of Hollowford, King Thrain of the Dwarves, Queen Aelith of the Elves and Queen Seraphel of Aerie.',
+      'An empty plinth by the castle gate is kept for the knight who ends the dragon.',
+      { t: 'CASTLE THISTLEDOWN', c: '#8b949e' },
+      'The castle stands in a moat. Cross the oak drawbridge, under the portcullis, to the keep, where Duke Ferrin sits. The Duke grows roses in the courtyard.',
+      { t: 'THE MARKET COURT', c: '#8b949e' },
+      'Four stalls round the market fountain: Hettie\'s apples, Mabel\'s candles, Moll\'s flowers, and a cloth stall that is always BACK SOON.',
+      { t: 'THE BELL TOWER', c: '#8b949e' },
+      'At the north end of Crown Street. Its dial shows the day and the night. Ambrose rings the bell at dawn and at dusk.',
+      { t: 'THE PARKS', c: '#8b949e' },
+      `The Duke's Orchard along the north wall: ${PLAN.fruitTrees} apple trees. The Duke's Green: a hedge maze with a sundial in the middle, and Swan Pond with two swans, four ducklings, a footbridge and a rowing boat. The Rose Garden by the inn, with a little lily fountain.`,
+      { t: 'WHO STANDS WHERE', c: '#8b949e' },
+      'Gatewarden Osric, inside the West Gate. Ambrose the bell-ringer, at the Bell Tower. Hettie, Mabel and Moll, at their stalls. Wynn, by Swan Pond.',
+      'Marta at the General Store, Aldous at the bank, Rosalind at the bakery, Brakka at the smithy, Pim at the Tinker\'s Workshop, Dorran at The Barrel & Boar, Greta and Fennick on the square, Tobin by the fountain, Sergeant Hale in his yard, Death in his stone house, and Duke Ferrin in the keep.',
+      'Nell and Robin play tag round the fountain.',
+    ];
+    WIKI.add('places', { id: 'thistledown_landmarks', name: 'Thistledown landmarks', sub: 'The city that still stands', kind: 'town', lines });
+    WIKI.add('quests', { id: 'td_bell', name: 'The Bell at Midnight', giver: 'Ambrose the bell-ringer, at the Bell Tower in Thistledown, once you have met the Duke', reward: '75 coins', kind: 'Side quest' });
+  }
+
+  // =========================================================================
+  // 11. keeping order, and never stuck in the stonework
+  // =========================================================================
+  // 16-instances hides the buildings inside an instance's rectangle (Aerie's takes in the town's west half) and puts
+  // them back at the END of BUILDINGS, so a lookup that takes the first match picks a different building after a visit
+  // to Aerie. Back on the overworld, BUILDINGS goes back to the order the world was built in.
+  const ORD = new Map(); BUILDINGS.forEach((b, i) => ORD.set(b, i));
+  const ordOf = b => ORD.has(b) ? ORD.get(b) : 1e9;
+  function keepOrder() {
+    if (away()) return false;
+    let sorted = true; for (let i = 1; i < BUILDINGS.length; i++) if (ordOf(BUILDINGS[i - 1]) > ordOf(BUILDINGS[i])) { sorted = false; break; }
+    if (sorted) return false;
+    const s = BUILDINGS.slice().sort((a, b) => ordOf(a) - ordOf(b)); BUILDINGS.length = 0; for (const b of s) BUILDINGS.push(b);
+    return true;
+  }
+  if (window.INSTANCES) { const _leave = INSTANCES.leave; INSTANCES.leave = () => { const r = _leave(); keepOrder(); return r; }; }
+  { const _load2 = load; load = function () { const ok = _load2(); keepOrder(); return ok; }; }
+  // a knight put down inside the city's stonework (a fountain, a hedge, a lamp, a tower) by a teleport steps out of it
+  const STUCK = { moves: 0 };
+  HOOKS.update.push(() => {
+    keepOrder();
+    if (away() || player.dead) return;
+    const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE), t = tileAt(tx, ty);
+    if (!inTown(tx, ty) || !(t === FOUNT || t === HEDGE || t === PROP || t === WALL_T())) return;
+    const sp = safeSpot(player.x, player.y, player.r, playerWho()); if (!sp) return;
+    player.x = sp.x; player.y = sp.y; STUCK.moves++;
+  });
+
+  // =========================================================================
+  // 12. self-test (C1-C21; every check puts back what it touched)
+  // =========================================================================
+  const DUKE_TALK0 = HOOKS.talkBefore.duke;
+  const RESET = resetCapital;
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'capital: ';
+    const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
+    const said = () => (dialog.cur ? [dialog.cur] : []).concat(dialog.queue);
+    const texts = () => said().map(d => d.text);
+    const leave = () => { if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave(); };
+    const N4c = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const names = {}; for (const k in T) names[T[k]] = k;
+    h.peace(true); closePanel(); drain(); leave();
+    const wasTouch = window.__forceTouch; window.__forceTouch = false;
+    // a tile the checks borrow goes back exactly as it was, save diff and all (94-mountgates' pattern)
+    const borrowed = [];
+    const borrow = (tx, ty) => { const i = idx(tx, ty); borrowed.push({ tx, ty, t: tileAt(tx, ty), had: mapDiffs.has(i), d: mapDiffs.get(i) }); };
+    const giveBack = () => { while (borrowed.length) { const b = borrowed.pop(); setTile(b.tx, b.ty, b.t); if (b.had) mapDiffs.set(idx(b.tx, b.ty), b.d); else mapDiffs.delete(idx(b.tx, b.ty)); } };
+    const keep = { x: player.x, y: player.y, quest: JSON.stringify(quest), inv: player.inv.map(s => s ? { ...s } : null), horse: player.horse ? JSON.parse(JSON.stringify(player.horse)) : player.horse,
+      mech: player.mech, r: player.r, speed: player.speed, day: player.dayTime, region: player.region, cityV: player.cityV, visited: player.visitedVillage, bed: player.bedSpawn, home: player.home, bank: player.bank.map(s => ({ ...s })) };
+    const onFoot = () => { player.mech = null; player.r = 13; player.speed = 175; player.action = null; };
+    const setCoins = n => { while (coins() > 0) payCoins(coins()); if (n > 0) h.give('coins', n); };
+    // villagers who wander, and monsters, out of the way of the checks (put back at the end)
+    const npcKeep = NPCS.map(n => ({ n, px: n.px, py: n.py, wanderT: n.wanderT }));
+    const clearFolk = (cx, cy, r) => { for (const v of NPCS) if (v.wander && dist(v.px, v.py, tc(cx), tc(cy)) < r * TILE) { v.px = v.home.x + 40 * TILE; v.py = v.home.y; v.wanderT = 99; v.dir = null; } };
+    const monKeep = monsters.map(m => ({ m, x: m.x, y: m.y }));
+    const clearMonsters = (cx, cy, r) => { for (const m of monsters) if (dist(m.x, m.y, tc(cx), tc(cy)) < r * TILE) { m.x = tc(5); m.y = tc(170); } };
+    CLOCK.fixed = 0;
+    // the children at a fixed moment, on the far side of the fountain from where the checks stand
+    const kidsAway = () => { for (let ms = 0; ms < 60000; ms += 250) { const ok = KIDS.every(k => { const p = kidAt(ms - k.lag * 1000); return p.y > 36; }); if (ok) { CLOCK.fixed = ms; return; } } };
+    kidsAway();
+    // a recording canvas: every call is logged with its arguments
+    const recorder = () => { const log = []; const g = new Proxy({}, {
+      get: (t, k) => k === 'measureText' ? (s => ({ width: String(s).length * 6 })) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? (() => ({ addColorStop: () => { } })) : typeof k === 'string' ? ((...a) => { log.push([k, a]); }) : undefined,
+      set: () => true }); return { g, log }; };
+    const screenTap = (tx, ty) => { render(); const sx = tc(tx) - cam.x, sy = tc(ty) - cam.y; tap.lastTap = null; tapCancel('manual'); pointerDown(sx, sy, 'mouse'); pointerUp('mouse'); };
+    const untilTapDone = (max = 600) => { let s = 0; while (s < max && (tap.kind || (tap.path && tap.path.length))) { F.step([]); s++; } F.step([]); return s; };
+    const walkable = (x, y) => !SOLID.has(tileAt(x, y));
+
+    // ---- C1. the plan ----
+    { const rowsOk = PLAN.ROWS.length === 45 && PLAN.ROWS.every(r => r.length === 58) && W === 58 && H === 45 && X0 === 84 && Y0 === 13;
+      const known = PLAN.ROWS.every(r => [...r].every(c => c in PLAN.GLYPHS));
+      const ids = ['TD_LAWN', 'TD_HEDGE', 'TD_PROP', 'TD_FOUNTAIN'].map(n => T[n]), maxId = Math.max(...Object.values(T));
+      const tilesOk = ids.every(id => typeof id === 'number' && id <= 255) && SOLID.has(HEDGE) && SOLID.has(PROP) && SOLID.has(FOUNT) && !SOLID.has(LAWN) && !PLACEABLE_ON.has(LAWN) && LAWN !== T.GRASS;
+      const COUNTS = { '-': 202, '#': 144, 'T': 80, 'G': 6, '@': 507, '=': 282, '+': 443, '"': 166, 'h': 82, 'd': 1, 'O': 1, 'P': 2, 'u': 2, 't': 22, '*': 19, 'l': 22, 's': 4, 'p': 1, 'n': 8, 'k': 8, 'i': 2, 'B': 4, 'N': 1, 'D': 1, 'f': 62, '.': 215, ',': 88, 'a': 20, 'Y': 34, '~': 87, 'b': 10, 'j': 1, 'F': 20, 'x': 1, 'S': 4, 'C': 56, 'g': 2 };
+      const off = Object.keys(COUNTS).filter(c => (PLAN.COUNTS[c] || 0) !== COUNTS[c]).map(c => `${c} ${PLAN.COUNTS[c]} want ${COUNTS[c]}`);
+      const extra = Object.keys(PLAN.COUNTS).filter(c => !(c in COUNTS));
+      const total = Object.values(COUNTS).reduce((a, b) => a + b, 0);
+      let kProp = 0, kHedge = 0, kFount = 0, nProp = 0, nHedge = 0, nFount = 0;
+      for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) { const n = PLAN.GLYPHS[glyph(x, y)], k = kindAt(x, y); if (n === 'TD_PROP') { nProp++; if (k) kProp++; } else if (n === 'TD_HEDGE') { nHedge++; if (k) kHedge++; } else if (n === 'TD_FOUNTAIN') { nFount++; if (k) kFount++; } }
+      const towers = PLAN.TOWERS, t22 = towers.filter(t => t.w === 2 && t.h === 2).length, t23 = towers.filter(t => t.w === 2 && t.h === 3).length;
+      let moat = 0, pond = 0; for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) if (glyph(x, y) === '~') { if (x >= PLAN.POND.x0 && x <= PLAN.POND.x1 && y >= PLAN.POND.y0 && y <= PLAN.POND.y1) pond++; else moat++; }
+      const fr2 = { great: 0, market: 0, rose: 0 }; for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) { const k = kindAt(x, y); if (k in fr2) fr2[k]++; }
+      const trees = { fruit: PLAN.TREES.filter(t => t.kind === 'fruit').length, cherry: PLAN.TREES.filter(t => t.kind === 'cherry').length };
+      const sha = (() => { let hsh = 0; for (const r of PLAN.ROWS) for (let i = 0; i < r.length; i++) hsh = (Math.imul(hsh, 31) + r.charCodeAt(i)) | 0; return hsh; })();
+      check(P + 'C1 the plan: 45 rows of 58, every glyph known; TD_LAWN, TD_HEDGE, TD_PROP and TD_FOUNTAIN exist (ids <= 255); every glyph count is the spec\'s (2610 cells); 50 prop, 123 hedge and 20 fountain cells all have a kind; 18 towers (14 of 2x2, 4 of 2x3), 64 moat + 23 pond, 12 + 4 + 4 fountain cells, 14 fruit + 8 cherry trees, 22 lamps',
+        rowsOk && known && tilesOk && !off.length && !extra.length && total === 2610 && kProp === 50 && nProp === 50 && kHedge === 123 && nHedge === 123 && kFount === 20 && nFount === 20
+        && towers.length === 18 && t22 === 14 && t23 === 4 && moat === 64 && pond === 23 && fr2.great === 12 && fr2.market === 4 && fr2.rose === 4 && trees.fruit === 14 && trees.cherry === 8 && LAMPS_N === 22,
+        { rowsOk, known, ids, maxId, tilesOk, off, extra, total, kProp, kHedge, kFount, towers: [towers.length, t22, t23], moat, pond, fountains: fr2, trees, lamps: LAMPS_N, sha }); }
+
+    // ---- C2. nothing outside the town changes ----
+    { let draws = 0, spawnCalls = 0; const rnd = () => { draws++; return 0.5; };
+      const rec = () => { const w = []; return { w, api: { setTile: (x, y, t) => w.push([x, y, t]), tileAt, spawnList: () => { spawnCalls++; }, road: () => { }, pen: () => { } } }; };
+      const a = rec(), b = rec(), R = Math.random; let threw = null;
+      Math.random = () => { throw new Error('Math.random was called'); };
+      try { paint(rnd, a.api); paint(rnd, b.api); } catch (e) { threw = e.message; } finally { Math.random = R; }
+      const outside = a.w.filter(([x, y]) => x < 85 || x > 140 || y < 14 || y > 56).length;
+      const same = JSON.stringify(a.w) === JSON.stringify(b.w);
+      const halo = TOWN_BUILDINGS().filter(bd => bd.id !== 'h8').filter(bd => !(bd.x >= 88 && bd.y >= 17 && bd.x + bd.w <= 138 && bd.y + bd.h <= 54)).map(bd => bd.id);
+      const h8 = BUILDINGS.find(bd => bd.id === 'h8'), d2 = BUILDINGS.find(bd => bd.id === 'death2');
+      const today = !!h8 && h8.x === 134 && h8.y === 36 && h8.w === 5 && h8.h === 4 && !!d2 && d2.x === 133 && d2.y === 48 && d2.w === 6 && d2.h === 5;
+      const npcOut = NPCS.filter(n => inTown(n.x, n.y) && n.id !== 'hale' && !(n.x >= 87 && n.x <= 138 && n.y >= 16 && n.y <= 54)).map(n => n.id);
+      const hale = npc('hale'), haleOk = !!hale && hale.x === 86 && hale.y === 43;
+      const edgeSpawns = MONSTER_SPAWNS.filter(s => inTown(s.tx, s.ty) && (s.tx <= 86 || s.tx >= 139 || s.ty <= 15 || s.ty >= 55)).map(s => s.type + '@' + s.tx + ',' + s.ty);
+      check(P + 'C2 the painter draws no random number (Math.random is never called), never spawns, writes only inside x 85..140, y 14..56, and two runs write the same list; the buildings keep a one-tile halo inside the wall (h8 and Death\'s House as today), every town person is inside x 87..138, y 16..54 (Hale as today), and no spawn is within a tile of the wall',
+        !threw && draws === 0 && spawnCalls === 0 && outside === 0 && same && a.w.length > 1000 && !halo.length && today && !npcOut.length && haleOk && !edgeSpawns.length,
+        { threw, draws, spawnCalls, writes: a.w.length, outside, same, halo, today, npcOut, haleOk, edgeSpawns }); }
+
+    // ---- C3. painted ----
+    { const AG_NAMES = new Set(['DIRT', 'COURSE_MARK', 'LOG_BALANCE', 'NET', 'JUMP_GAP']);
+      const owned = { '105,27': 'BOARD', '117,17': 'HOUSE_PORTAL', '119,27': 'HITCH', '96,43': 'DOZER_BAY', '87,50': 'GATE' };
+      const bad = [], live = [];
+      for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) {
+        const c = glyph(x, y), name = PLAN.GLYPHS[c]; if (!name) continue;
+        const b = names[base[pi(x, y)]], key = x + ',' + y;
+        if (owned[key]) { if (b !== owned[key]) bad.push(key + ' ' + b + ' want ' + owned[key]); }
+        else if (c === 'Y') { if (!AG_NAMES.has(b)) bad.push(key + ' Y ' + b); }
+        else if (b !== name) bad.push(key + ' ' + c + ' ' + b + ' want ' + name);
+        if (!mapDiffs.has(idx(x, y)) && tileAt(x, y) !== base[pi(x, y)]) live.push(key + ' ' + names[tileAt(x, y)] + ' base ' + b);
+      }
+      check(P + 'C3 painted: the world as generated is the plan cell for cell, except what later passes lay on top (the notice board 105,27, the island portal 117,17, the hitching rail 119,27, the dozer bay 96,43, the agility track and its gate 87,50); with no saved change on a cell, the live tile is the generated one',
+        snapped && !bad.length && !live.length, { snapped, bad: bad.slice(0, 8), live: live.slice(0, 8) }); }
+
+    // ---- C4. walls and gates ----
+    { const gateRows = x => { const r = []; for (let y = 14; y <= 56; y++) if (tileAt(x, y) === T.GATE) r.push(y); return r.join(','); };
+      const wR = gateRows(85), eR = gateRows(140);
+      const sides = [[85, 30], [85, 34], [140, 30], [140, 34]].every(([x, y]) => solidFor(tileAt(x, y), 'rider') && solidFor(tileAt(x, y), 'beast'));
+      const towersOk = PLAN.TOWERS.every(t => { for (let y = t.y; y < t.y + t.h; y++) for (let x = t.x; x < t.x + t.w; x++) if (tileAt(x, y) !== WALL_T()) return false; return true; });
+      const port = []; for (let x = 104; x <= 121; x++) if (tileAt(x, 42) === T.PORTCULLIS) port.push(x);
+      const portOk = port.join(',') === '111,112' && tileAt(110, 42) === T.CWALL && tileAt(113, 42) === T.CWALL;
+      const bridge = tileAt(111, 41) === T.BRIDGE && tileAt(112, 41) === T.BRIDGE;
+      let moat = 0; for (let x = 103; x <= 122; x++) for (const y of [41, 55]) if (tileAt(x, y) === T.WATER) moat++; for (let y = 42; y <= 54; y++) for (const x of [103, 122]) if (tileAt(x, y) === T.WATER) moat++;
+      check(P + 'C4 walls and gates: T.GATE on exactly rows 31..33 at x 85 and x 140, stone above and below each (solid to riders and beasts); all 18 towers are town wall; 57-townwall counts 6 gate tiles; the portcullis is 111..112 at y 42 between castle wall; the drawbridge 111..112,41 is a bridge; the moat ring is 64 water tiles',
+        wR === '31,32,33' && eR === '31,32,33' && sides && towersOk && TOWNWALL.tally.gates === 6 && portOk && bridge && moat === 64, { wR, eR, sides, towersOk, gates: TOWNWALL.tally.gates, port, bridge, moat }); }
+
+    // ---- C5. the road ----
+    { const blocked = []; for (let y = 31; y <= 33; y++) for (let x = 84; x <= 141; x++) { const t = tileAt(x, y); if (solidFor(t, 'player') || solidFor(t, 'rider')) blocked.push(x + ',' + y); }
+      const e = { x: tc(80), y: tc(32), r: 26 }; let hit = null, steps = 0;
+      while (e.x < tc(145) && steps < 2000) { const x0 = e.x, y0 = e.y; moveEntity(e, 4, 0, 'rider'); steps++; if (e.x !== x0 + 4 || e.y !== y0) { hit = [+(e.x / TILE).toFixed(2), +(e.y / TILE).toFixed(2)]; break; } }
+      check(P + 'C5 the High Street is open from x 84 to x 141 on rows 31..33 for a knight and a rider, and a body of radius 26 (the Barrelbeast) slides from (80,32) to (145,32) without touching anything',
+        !blocked.length && !hit && e.x >= tc(145), { blocked: blocked.slice(0, 6), hit, at: +(e.x / TILE).toFixed(2) }); }
+
+    // ---- C6. ride gate to gate on a mount ----
+    { const rideOk = solidFor(T.GATE, 'rider') === false;
+      if (!rideOk) check(P + 'C6 ride through Thistledown on a mount', false, { why: 'fix/mount-gates is not in this build' });
+      else {
+        const KINDS = [
+          { kind: 'horse', name: 'mare', board: (tx, ty) => { changeTile(tx, ty, MOUNTS.tiles.HORSE); F.tp(tx - 1, ty); MOUNTS.mount(tx, ty); } },
+          { kind: 'beast', name: 'Barrelbeast', board: (tx, ty) => { changeTile(tx, ty, BEAST.tiles.BEAST); for (const f of HOOKS.use) if (f(BEAST.tiles.BEAST, tx, ty)) break; } },
+        ];
+        const kindNow = () => player.mech ? (player.mech.kind || 'walker') : null;
+        const board = (K, tx, ty) => { onFoot(); borrow(tx, ty); borrow(tx - 1, ty); F.tp(tx, ty); K.board(tx, ty); giveBack(); drain(); F.tp(tx, ty); F.step([]); return kindNow() === K.kind; };
+        const log = {}; let ok = true;
+        const runEW = (who) => {
+          const cross = { 85: null, 140: null }; let s = 0, still = true;
+          while (s < 4000 && player.x < tc(144)) { F.sim(4, ['KeyD']); s += 4; const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE); if ((tx === 85 || tx === 140) && cross[tx] === null) cross[tx] = ty; if (who && kindNow() !== who) still = false; }
+          const east = player.x >= tc(144);
+          let b = 0; while (b < 4000 && player.x > tc(81)) { F.sim(4, ['KeyA']); b += 4; if (who && kindNow() !== who) still = false; }
+          const back = player.x <= tc(81);
+          return { east, back, cross, still, steps: [s, b], at: +(player.x / TILE).toFixed(2), rowsOk: [cross[85], cross[140]].every(r => r !== null && r >= 31 && r <= 33) };
+        };
+        for (const K of KINDS) {
+          const up = board(K, 80, 32);
+          const ew = up ? runEW(K.kind) : null;
+          const up2 = board(K, 111, 38);
+          let s = 0; while (up2 && s < 1600 && player.y < tc(44)) { F.sim(4, ['KeyS']); s += 4; }
+          const inYard = player.y >= tc(44);
+          let b = 0; while (up2 && b < 1600 && player.y > tc(39)) { F.sim(4, ['KeyW']); b += 4; }
+          const out = player.y <= tc(39) && kindNow() === K.kind;
+          log[K.kind] = { up, ew, up2, inYard, out };
+          if (!(up && ew && ew.east && ew.back && ew.still && ew.rowsOk && up2 && inYard && out)) ok = false;
+          onFoot();
+        }
+        // and on foot
+        onFoot(); F.tp(80, 32); F.step([]);
+        const foot = runEW(null); log.foot = foot;
+        if (!(foot.east && foot.back && foot.rowsOk)) ok = false;
+        check(P + 'C6 on the mare and on the Barrelbeast the knight rides in through the West Gate, down the High Street and out of the East Gate (crossing both gate lines on rows 31..33, still mounted), and back; and from the fountain over the drawbridge into the castle yard and back; and on foot gate to gate', ok, log);
+      }
+      onFoot(); giveBack(); drain(); }
+
+    // ---- C7. anchors on their tiles ----
+    { const want = [[105, 27, 'BOARD'], [108, 28, 'STALL'], [109, 28, 'STALL'], [116, 28, 'STALL'], [117, 28, 'STALL'], [119, 27, 'HITCH'], [117, 17, 'HOUSE_PORTAL'], [96, 43, 'DOZER_BAY'], [119, 38, 'FIRE'],
+        [112, 50, 'THRONE'], [135, 52, 'COFFINDOOR'], [88, 42, 'DUMMY'], [88, 44, 'DUMMY'], [87, 50, 'GATE']];
+      for (const b of TOWN_BUILDINGS()) for (const [t, rx, ry] of b.f || []) if ([T.FORGE, T.ANVIL, T.WORKBENCH, T.WORKSHOP, T.ALCHEMY, T.OVEN].includes(t)) want.push([b.x + rx, b.y + ry, names[t]]);
+      const bad = want.filter(([x, y, n]) => names[tileAt(x, y)] !== n).map(([x, y, n]) => `${x},${y} ${names[tileAt(x, y)]} want ${n}`);
+      const marks = window.AGILITY ? AGILITY.COURSES.yard.marks.filter(([x, y]) => tileAt(x, y) !== AGILITY.TILES.MARK) : ['no AGILITY'];
+      const open = [[111, 32], [112, 32], [113, 32], [111, 33], [112, 33], [113, 33], [111, 37], [111, 38], [111, 39], [110, 37], [112, 37]].filter(([x, y]) => SOLID.has(tileAt(x, y)));
+      const stations = want.filter(w => ['FORGE', 'ANVIL', 'WORKBENCH', 'WORKSHOP', 'ALCHEMY', 'OVEN'].includes(w[2])).length;
+      check(P + 'C7 every anchor is on its tile: the notice board, Greta\'s and Fennick\'s stalls, the hitching rail 119,27, the island portal, the dozer bay, the brazier 119,38, the forges, anvil, workbench, workshop, alchemy table and ovens, the throne, Death\'s coffin door, the dummies, the agility marks and its gate 87,50; the spawn cells and the Kings Walk are open',
+        !bad.length && !marks.length && !open.length && stations >= 7, { bad, marks, open, stations }); }
+
+    // ---- C8. people and spawns ----
+    { const HOMES = { marta: [92, 21], aldous: [102, 21], rosalind: [125, 22], brakka: [93, 39], pim: [103, 39], dorran: [125, 46], duke: [112, 49], hale: [86, 43], tobin: [110, 33], greta: [108, 27], fennick: [116, 27], death2: [135, 50],
+        v1: [100, 32], v2: [118, 32], v3: [112, 24], v4: [96, 33], v5: [128, 34], v6: [114, 40], skillmaster: [108, 44], captain: [110, 40],
+        osric: [91, 30], ambrose: [110, 17], hettie: [114, 19], mabel: [119, 19], moll: [114, 25], wynn: [131, 24] };
+      const bad = Object.keys(HOMES).filter(id => { const n = npc(id); return !n || n.x !== HOMES[id][0] || n.y !== HOMES[id][1]; }).map(id => { const n = npc(id); return id + (n ? '@' + n.x + ',' + n.y : ' missing'); });
+      const GUARDS = ['guard_m@87,30', 'guard_m@118,36', 'guard_m@113,43', 'guard_f@104,23', 'guard_f@126,33', 'guard_f@110,43'];
+      const inT = MONSTER_SPAWNS.filter(s => inTown(s.tx, s.ty)).map(s => s.type + '@' + s.tx + ',' + s.ty).sort();
+      const guardsOk = JSON.stringify(inT) === JSON.stringify(GUARDS.slice().sort());
+      const roles = ['osric', 'ambrose', 'wynn'].every(id => HOOKS.talk[npc(id).role]) && ['hettie', 'mabel', 'moll'].every(id => npc(id).role === 'villager' && npc(id).lines.length === 2) && PLAN.PEOPLE.every(p => !npc(p.id).wander);
+      check(P + 'C8 every town person stands where people expect them (the frozen table, plus the six new people, none of whom wander); the six guards are by type and tile and no other spawn is in the town; MONSTER_SPAWNS keeps its length (counted at the end of the world build)',
+        !bad.length && guardsOk && roles && MONSTER_SPAWNS.length === SNAP.spawns && SNAP.spawns > 100, { bad, inT, guardsOk, roles, spawns: MONSTER_SPAWNS.length, atSnap: SNAP.spawns }); }
+
+    // ---- C9. reach ----
+    { const d = new Int32Array(MAP_W * MAP_H).fill(-1), q = [idx(80, 32)]; d[q[0]] = 0;
+      for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4c) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = idx(nx, ny); if (d[n] >= 0 || SOLID.has(map[n])) continue; d[n] = d[c] + 1; q.push(n); } }
+      const at = (x, y) => d[idx(x, y)];
+      const reach = (x, y) => { let best = at(x, y); for (const [dx, dy] of N4c) { const v = at(x + dx, y + dy); if (v >= 0 && (best < 0 || v + 1 < best)) best = v + 1; } return best; };
+      const miss = [];
+      for (const b of TOWN_BUILDINGS()) { const [sx, sy] = stepOf(b); if (at(sx, sy) < 0) miss.push(b.id + ' step'); }
+      // a person is reached when a knight can stand within talking range (118 px) on the same side of the walls (42-playthrough's rule): Marta and Aldous stand behind their counters
+      const talkReach = (x, y) => { const ins = insideBuilding(x, y); for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { if (Math.hypot(dx, dy) * TILE > 118) continue; if (insideBuilding(x + dx, y + dy) !== ins) continue; if (at(x + dx, y + dy) >= 0) return true; } return false; };
+      for (const n of NPCS) if (inTown(n.x, n.y) && !talkReach(n.x, n.y)) miss.push(n.id);
+      for (const s of MONSTER_SPAWNS) if (inTown(s.tx, s.ty) && at(s.tx, s.ty) < 0) miss.push(s.type + '@' + s.tx + ',' + s.ty);
+      for (const [x, y] of [[92, 38], [94, 39], [100, 38], [102, 38], [104, 38], [112, 48], [105, 28], [117, 18], [134, 51], [135, 53], [133, 18], [111, 17], [133, 26], [130, 26], [86, 51], [142, 32]]) if (at(x, y) < 0) miss.push(x + ',' + y);
+      const pc = window.PLAYTHROUGH ? PLAYTHROUGH.connectivity() : null, unreach = pc ? pc.unreachable : ['no PLAYTHROUGH'];
+      const pockets = []; for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) if (glyph(x, y) !== '@' && !SOLID.has(tileAt(x, y)) && at(x, y) < 0) pockets.push(x + ',' + y);
+      const paths = { duke: at(112, 48), board: reach(105, 27), forge: at(92, 38), workbench: at(100, 38), death: at(134, 51), maze: at(133, 18), eastGate: at(140, 32), bell: at(111, 17), captain: reach(110, 40) };
+      check(P + 'C9 from outside the West Gate (80,32) a knight walks to every door step, every person, every guard, every station stand, the Duke, the board, the portal, the coffin, the sundial, the bell, the footbridge, the jetty, the agility start and out of the East Gate; the playthrough audit finds nothing unreachable; no walkable cell in the town is cut off',
+        !miss.length && !unreach.length && !pockets.length, { miss, unreach: unreach.slice(0, 4), pockets: pockets.slice(0, 8), paths }); }
+
+    // ---- C10. taps and uses ----
+    { const bad = [];
+      for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) { const t = tileAt(x, y); if (t !== PROP && t !== FOUNT && t !== HEDGE) continue; if (!kindAt(x, y) || !tapName(x, y) || !lineFor(x, y)) bad.push(x + ',' + y); }
+      // groups: the cells of one thing (a fountain, the bell, a hedge row): each needs open ground beside it, except a hedge
+      // row that is only scenery against the wall (as 91's K4 allows), which is counted and named
+      const seen = new Set(), groups = []; const keyOf = (x, y) => { const k = kindAt(x, y); return k === 'great' || k === 'market' || k === 'rose' || k === 'bell' ? k : k === 'hedge' || k === 'fruit' || k === 'cherry' || k === 'roses' ? 'green' : k + '@' + x + ',' + y; };
+      for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) { const t = tileAt(x, y); if ((t !== PROP && t !== FOUNT && t !== HEDGE) || seen.has(x + ',' + y)) continue; const key = keyOf(x, y), cells = [], st = [[x, y]]; seen.add(x + ',' + y);
+        while (st.length) { const [cx, cy] = st.pop(); cells.push([cx, cy]); for (const [dx, dy] of N4c) { const nx = cx + dx, ny = cy + dy, kk = nx + ',' + ny; if (seen.has(kk) || !inTown(nx, ny) || ![PROP, FOUNT, HEDGE].includes(tileAt(nx, ny)) || keyOf(nx, ny) !== key) continue; seen.add(kk); st.push([nx, ny]); } }
+        groups.push({ key, cells, open: cells.some(([cx, cy]) => N4c.some(([dx, dy]) => walkable(cx + dx, cy + dy))) }); }
+      const lone = groups.filter(g => !g.open), loneProps = lone.filter(g => g.key !== 'green');
+      const loneHedges = lone.filter(g => g.key === 'green').map(g => `${g.cells.length} hedge cells from ${g.cells[0]}`);
+      // a tap on the middle of the Great Fountain walks to its rim and uses it
+      setCoins(3); Q().tossArmed = 0; clearFolk(112, 33, 8); clearMonsters(112, 33, 6); drain(); onFoot();
+      F.tp(112, 30); F.step([]); screenTap(111, 35); const walked = !!tap.kind; untilTapDone();
+      const tapLine = texts()[0] || null, tapOk = !!tapLine && /^The Great Fountain\. People toss a coin in for luck\. Press E again to toss 1 coin\.$/.test(tapLine);
+      // a tap on each statue reads its plaque
+      const plaques = {};
+      for (const s of PLAN.STATUES) { drain(); clearFolk(s.x, s.y, 8); clearMonsters(s.x, s.y, 6); F.tp(s.x, s.y === 35 ? 33 : 40); F.step([]); screenTap(s.x, s.y); untilTapDone(); const d0 = said()[0]; plaques[s.id] = !!d0 && d0.who === 'Plaque' && d0.text === PLAQUES[s.id]; }
+      // the six new people, each one's first line
+      const st0 = quest.stage, R = Math.random; drain();
+      quest.stage = Math.min(quest.stage, 5); Q().ambroseMet = false; Q().bell = 0; Q().osricN = 0; TALK.wynn = 0;
+      const first = {}; Math.random = () => 0;
+      try { for (const [id, want] of [['osric', OSRIC(Q())[0]], ['ambrose', 'I ring the bell at dawn and at dusk. When you hear it at dusk, get indoors or get your sword out.'], ['hettie', LINES.hettie[0]], ['mabel', LINES.mabel[0]], ['moll', LINES.moll[0]], ['wynn', WYNN[0]]]) { drain(); clearFolk(npc(id).x, npc(id).y, 6); F.talk(id); const d0 = said()[0]; first[id] = !!d0 && d0.text === want && d0.who === npc(id).name; } }
+      finally { Math.random = R; quest.stage = st0; }
+      const lampsLive = (() => { let n = 0; for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) if (tileAt(x, y) === PROP && kindAt(x, y) === 'lamp') n++; return n; })();
+      const mabel22 = LINES.mabel[0].includes(`All ${lampsLive} of them`) && lampsLive === 22;
+      check(P + 'C10 every prop, fountain and hedge cell has a kind, a tap name and a use line; every prop and fountain has open ground beside it (hedge rows may be scenery); a tap on the middle of the Great Fountain walks to its rim and gives its first line; a tap on each statue reads its plaque; Osric, Ambrose, Hettie, Mabel, Moll and Wynn each give their first line; Mabel counts the 22 lamps',
+        !bad.length && !loneProps.length && walked && tapOk && Object.values(plaques).every(Boolean) && Object.values(first).every(Boolean) && mabel22,
+        { bad: bad.slice(0, 6), groups: groups.length, loneProps: loneProps.map(g => g.key), loneHedges, walked, tapLine, plaques, first, lampsLive }); }
+
+    // ---- C11. the coin toss ----
+    { drain(); clearFolk(111, 33, 8); clearMonsters(111, 33, 6); onFoot(); F.tp(111, 33); F.face(111, 34); setCoins(5); const q = Q(); q.tossArmed = 0; const t0 = q.tossed;
+      F.press('KeyE'); const l1 = texts()[0], c1 = coins(); drain();
+      F.sim(30, []); F.press('KeyE'); const l2 = texts()[0], c2 = coins(), t2 = q.tossed; drain();
+      setCoins(0); F.sim(10, []); F.press('KeyE'); const l3 = texts()[0], c3 = coins(), t3 = q.tossed; drain();
+      // and after 6 s the toss is not armed any more: E gives the first line again
+      setCoins(2); F.sim(400, []); F.press('KeyE'); const l4 = texts()[0], c4 = coins(); drain();
+      check(P + 'C11 the coin toss: one E gives the line and spends nothing; a second E within 6 s costs exactly 1 coin and counts the toss; with no coins it says so and nothing changes; after 6 s E gives the first line again',
+        /^The Great Fountain\. People toss a coin/.test(l1 || '') && c1 === 5 && l2 === TOSS[t0 % 6] && c2 === 4 && t2 === t0 + 1 && l3 === 'You have no coins to toss.' && c3 === 0 && t3 === t2 && /^The Great Fountain\. People toss/.test(l4 || '') && c4 === 2,
+        { l1, c1, l2, c2, tossed: [t0, t2, t3], l3, c3, l4, c4 }); }
+
+    // ---- C12. the clock and the bell ----
+    { const N = window.NIGHT, d0 = player.dayTime;
+      player.dayTime = N.LIGHT - 250; const a = timeLine(); player.dayTime = N.LIGHT + N.DUSK - 35; const b = timeLine(); player.dayTime = N.DAY - 61; const c = timeLine();
+      const words = [spanWords(250), spanWords(35), spanWords(61), spanWords(60), spanWords(1), spanWords(0.2), spanWords(121)];
+      onFoot(); F.tp(112, 33); F.step([]); const region = player.region;
+      player.dayTime = N.LIGHT - 0.5; BELLST.prev = null; F.step([]); const r0 = BELLST.rings; F.sim(90, []); const rang = BELLST.rings - r0;
+      F.sim(60, []); const again = BELLST.rings - r0;
+      player.dayTime = 100; const ang = Math.abs(dialAngle() - N.dayT() / N.DAY * Math.PI * 2) < 1e-9;
+      player.dayTime = d0; BELLST.prev = null;
+      check(P + 'C12 Ambrose reads the clock ("The sun is up. Dusk comes in 4 minutes 10 seconds.", "Dusk. It will be dark in 35 seconds.", "Night. The sun comes up in 1 minute 1 second."); with the knight at the fountain the bell rings exactly once as dusk comes; the dial\'s hand is dayT / DAY x 2 pi',
+        a === 'The sun is up. Dusk comes in 4 minutes 10 seconds.' && b === 'Dusk. It will be dark in 35 seconds.' && c === 'Night. The sun comes up in 1 minute 1 second.' && words.join('|') === '4 minutes 10 seconds|35 seconds|1 minute 1 second|1 minute|1 second|1 second|2 minutes 1 second' && region === 'Thistledown' && rang === 1 && again === 1 && ang,
+        { a, b, c, words, region, rang, again, ang }); }
+
+    // ---- C13. the story ----
+    { const st0 = quest.stage, c0 = coins(), q = Q(), log = [];
+      const tq = () => HOOKS.questText.td_bell(), mt = () => mapTargets().find(m => m.id === 'td_bell') || null;
+      const step = (label) => { const m = mt(), b = Q().bell; log.push({ label, bell: b, text: tq() === QTEXT[b], target: b === 'done' ? !m : !!m && TARGETS[b] && m.x === TARGETS[b][0] && m.y === TARGETS[b][1], active: activeQuests().includes('td_bell') === storyOpen() }); };
+      Object.assign(q, fresh()); drain(); quest.stage = 5;
+      F.talk('ambrose'); const before = q.bell === 0 && !texts().some(t => /silly/.test(t)); drain();
+      quest.stage = 6; clearBanners();
+      F.talk('ambrose'); const newQ = q.bell === 1 && bannerAhead('NEW QUEST'); step('ambrose'); drain();
+      F.talk('osric'); step('osric'); drain();
+      F.talk('rosalind'); const noShop = panel !== 'shop'; step('rosalind'); drain(); closePanel();
+      // a save and a load in the middle of the story keep the step
+      save(); const okLoad = load(); F.step([]); const kept = Q().bell === 3 && okLoad; drain();
+      onFoot(); F.tp(133, 18); F.face(132, 18); F.press('KeyE'); step('sundial'); drain();
+      F.talk('ambrose'); step('ambrose 2'); drain();
+      onFoot(); F.tp(111, 17); F.face(111, 16); F.press('KeyE'); const rang = BELLST.rings; step('bell'); drain();
+      clearBanners(); const c1 = coins();
+      F.talk('ambrose'); const noGhost = bannerAhead('NO GHOST') && coins() === c1 + 75; step('ambrose 3'); drain();
+      F.talk('rosalind'); const shop = panel === 'shop'; closePanel(); drain();
+      const order = log.map(l => l.bell).join(',');
+      const duke = HOOKS.talkBefore.duke === DUKE_TALK0 && npc('duke').role === 'duke';
+      // a new game puts the story back to the start
+      const keepQ = JSON.stringify(quest.capital); RESET(); const reset = quest.capital.bell === 0 && quest.capital.tossed === 0 && player.cityV === 1; quest.capital = JSON.parse(keepQ);
+      quest.stage = st0; setCoins(c0);
+      check(P + 'C13 The Bell at Midnight: at stage 5 Ambrose has only his own line; at stage 6 the story goes Ambrose, Osric, Rosalind (no shop that time), the sundial, Ambrose, the Bell Tower, Ambrose: 1,2,3,4,5,6,done, with NEW QUEST and NO GHOST and exactly 75 coins; the quest log and the map ring are right at every step; Rosalind\'s next talk opens her shop; the Duke\'s talk is not touched; a save and load keeps the step; a new game resets it',
+        before && newQ && order === '1,2,3,4,5,6,done' && log.every(l => l.text && l.target && l.active) && noShop && kept && noGhost && shop && duke && reset && rang >= 1,
+        { before, newQ, order, log, noShop, kept, noGhost, shop, duke, reset }); }
+
+    // ---- C14. the plinth ----
+    { const st0 = quest.stage, q = Q(); drain();
+      quest.stage = 15; const empty = lineFor(PL.x, PL.y)[1] === 'AN EMPTY PLINTH. Carved on the front: KEPT FOR THE KNIGHT WHO ENDS THE DRAGON.' && tapName(PL.x, PL.y) === 'Empty plinth';
+      q.heroName = null; q.plinthTold = false; quest.stage = 16;
+      // other lines may be showing at stage 16 (the Voice waits for an empty page): read and clear the page three times
+      const LINE = 'The empty plinth by the castle gate is empty no longer.';
+      onFoot(); F.tp(113, 37); let told = 0; for (let k = 0; k < 3; k++) { F.sim(20, []); told += said().filter(d => d.text === LINE).length; drain(); }
+      const name = q.heroName; F.sim(20, []); const told2 = said().filter(d => d.text === LINE).length;
+      const plaque = lineFor(PL.x, PL.y)[1] === `${name}, WHO SLEW THE FANG. Thistledown will not forget.` && tapName(PL.x, PL.y) === 'Statue of you';
+      STATS.record = true; render(); const box = STATS.boxes.find(b => b.x0 === tc(PL.x) - 22 && b.y1 === (PL.y + 1) * TILE); STATS.record = false;
+      const statue = !!box && box.y0 === (PL.y + 1) * TILE - 92;
+      const fangRoad = !SOLID.has(tileAt(112, 48)) && regionAt(112, 48).name === 'Castle Thistledown' && !!HOOKS.mainQuest[16];
+      quest.stage = st0; drain();
+      check(P + 'C14 the waiting plinth: before stage 16 it is empty; at stage 16 it holds the knight (his name saved once, offline THE KNIGHT FROM THE CAVE), the plaque carries the name, the statue is drawn, and the Voice says so exactly once; the Fang\'s homecoming tile 112,48 is still open in the castle',
+        empty && name === 'THE KNIGHT FROM THE CAVE' && told === 1 && told2 === 0 && plaque && statue && fangRoad, { empty, name, told, told2, plaque, statue, box, fangRoad }); }
+
+    // ---- C15. night ----
+    { const N = window.NIGHT, d0 = player.dayTime;
+      onFoot(); F.tp(112, 33); F.step([]);
+      player.dayTime = N.LIGHT + N.DUSK + 30;
+      const all = []; for (const f of HOOKS.nightLights) f(all, 0, 0, MAP_W - 1, MAP_H - 1);
+      const lamps = all.filter(l => l.kind === 'lamp').length, torches = all.filter(l => l.kind === 'torch').length;
+      const ov = N.overlay();
+      render(); const litN = STATS.lampsLit;
+      player.dayTime = 100; const day = []; for (const f of HOOKS.nightLights) f(day, 0, 0, MAP_W - 1, MAP_H - 1);
+      player.dayTime = N.LIGHT + N.DUSK + 30;
+      const inst = window.INSTANCES && INSTANCES.enter('aerie', [SKYCITY.STEP_T.x, SKYCITY.STEP_T.y]); const inside = []; for (const f of HOOKS.nightLights) f(inside, 0, 0, MAP_W - 1, MAP_H - 1); leave();
+      player.dayTime = d0;
+      check(P + 'C15 at night every lamp is a light (22 over the whole town), the wall torches light up, the night overlay is on, the lamps in view are drawn lit; by day no lamp is lit; in an instance the town lights nothing',
+        lamps === 22 && torches === TORCHES.size && torches > 10 && ov > 0 && litN > 0 && day.filter(l => l.kind === 'lamp').length === 0 && !!inst && inside.length === 0,
+        { lamps, torches, ov, litN, day: day.length, inst: !!inst, inside: inside.length }); }
+
+    // ---- C16. instances ----
+    { leave(); const ok = INSTANCES.enter('aerie', [SKYCITY.STEP_T.x, SKYCITY.STEP_T.y]); F.sim(2, []); drain(); F.tp(92, 40);
+      const cap = { items: null }; const hook = (g, items) => { cap.items = items; }; HOOKS.draw.push(hook);
+      let calls = 0;
+      try { render(); } finally { HOOKS.draw.splice(HOOKS.draw.indexOf(hook), 1); }
+      const ours = (cap.items || []).filter(i => i.capital).length;
+      const town = STATS.townBuildings, towers = STATS.towers;
+      const { g } = recorder(); const store = BUILDINGS.find(b => b.id === 'store');
+      const before = STATS.townBuildings; drawBuilding(g, store || { town: true, x: 0, y: 0, w: 1, h: 1, roof: '#000000' }); calls = STATS.townBuildings - before;
+      leave();
+      check(P + 'C16 in Aerie the town draws nothing: no capital item is pushed, no town building or tower is drawn, and drawBuilding hands a town building straight to what it wrapped',
+        !!ok && ours === 0 && town === 0 && towers === 0 && calls === 0, { ok: !!ok, ours, town, towers, calls }); }
+
+    // ---- C17. an old save ----
+    { leave(); onFoot(); drain(); save();
+      const sk = 'fanglands.slot.' + title.slot, raw0 = localStorage.getItem(sk), mirror0 = localStorage.getItem(SAVE_KEY);
+      const d = JSON.parse(raw0 || mirror0);
+      const cells = { bed: [111, 35], lode: [130, 21], fire: [100, 32], crop: [131, 51], horse: [114, 25] };
+      const touched = Object.values(cells);
+      d.player.visitedVillage = true; delete d.player.cityV; d.player.x = tc(103); d.player.y = tc(45); d.player.mech = null; d.player.r = 13; d.player.speed = 175; d.player.dead = false; d.player.hp = Math.max(1, d.player.hp || 10);
+      d.player.bedSpawn = { x: tc(111), y: tc(35) }; d.player.home = { x: tc(130), y: tc(22) };
+      d.player.horse = { owned: true, hp: (MOUNTS.HP || 30), at: cells.horse, under: 'COBBLE' };
+      d.player.inv = (d.player.inv || []).map((s, i) => i < 16 ? s : null);
+      const ix = ([x, y]) => idx(x, y);
+      d.mapDiffs = (d.mapDiffs || []).filter(([i]) => { const x = i % MAP_W, y = Math.floor(i / MAP_W); return !inTown(x, y); })
+        .concat([[ix(cells.bed), 'BED'], [ix(cells.lode), 'LODESTONE'], [ix(cells.fire), 'FIRE'], [ix(cells.crop), 'CROP'], [ix(cells.horse), 'HORSE']]);
+      d.fires = [{ i: ix(cells.fire), timer: 600 }]; d.crops = [{ i: ix(cells.crop), stage: 1, t: 0, crop: 'potato' }];
+      const packBefore = { bed: (d.player.inv || []).filter(s => s && s.id === 'bed').reduce((a, s) => a + s.qty, 0), lodestone: (d.player.inv || []).filter(s => s && s.id === 'lodestone').reduce((a, s) => a + s.qty, 0) };
+      const crafted = JSON.stringify(d);
+      localStorage.setItem(sk, crafted); localStorage.setItem(SAVE_KEY, crafted);
+      const ok = load(); F.step([]);
+      const lines = texts();
+      const r = {
+        ok, bed: tileAt(...cells.bed) === base[pi(...cells.bed)] && !mapDiffs.has(ix(cells.bed)), lode: tileAt(...cells.lode) === base[pi(...cells.lode)] && !mapDiffs.has(ix(cells.lode)),
+        refunded: countItem('bed') === packBefore.bed + 1 && countItem('lodestone') === packBefore.lodestone + 1, spawnCleared: !player.bedSpawn && !player.home,
+        fire: tileAt(...cells.fire) === T.FIRE && fires.some(f => f.i === ix(cells.fire)), crop: tileAt(...cells.crop) === T.CROP && crops.some(c => c.i === ix(cells.crop)),
+        horseAt: player.horse && player.horse.at, horseOk: !!(player.horse && player.horse.at && tileAt(player.horse.at[0], player.horse.at[1]) === MOUNTS.tiles.HORSE && Math.max(Math.abs(player.horse.at[0] - MOUNTS.post.x), Math.abs(player.horse.at[1] - MOUNTS.post.y)) <= 3 && !keepClear().has(idx(player.horse.at[0], player.horse.at[1]))),
+        oldHorse: tileAt(...cells.horse) === base[pi(...cells.horse)],
+        free: !collides(player.x, player.y, player.r, playerWho()),
+        voice: lines.filter(l => l === 'Thistledown has been rebuilt while you were away. Go and see the Great Fountain.').length, back: lines.filter(l => l === 'Back in your pack: 1 bed, 1 lodestone.').length,
+        cityV: player.cityV,
+      };
+      drain(); save(); const snapDiffs = JSON.stringify([...mapDiffs.entries()]), rev0 = MIG.reverted, at0 = [player.x, player.y], horse0 = JSON.stringify(player.horse);
+      const ok2 = load(); F.step([]);
+      r.second = ok2 && JSON.stringify([...mapDiffs.entries()]) === snapDiffs && MIG.reverted === rev0 && Math.abs(player.x - at0[0]) < 1 && Math.abs(player.y - at0[1]) < 1 && JSON.stringify(player.horse) === horse0 && texts().length === 0;
+      // put the save, the map and the knight back as they were
+      const horseCell = player.horse && player.horse.at;
+      for (const c of touched.concat(horseCell ? [horseCell] : [])) setTile(c[0], c[1], base[pi(c[0], c[1])]);
+      if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0);
+      load(); F.step([]); drain();
+      check(P + 'C17 an old save loads into the new city: the bed in the fountain and the lodestone in the hedge are taken back and refunded (bedSpawn and home cleared), the fire on the street and the crop in the allotment stay, the mare in the flower stall is re-parked beside the rail on open ground, the knight saved in the moat stands clear, the Voice says the city was rebuilt and "Back in your pack: 1 bed, 1 lodestone." once each; a second load changes nothing',
+        r.ok && r.bed && r.lode && r.refunded && r.spawnCleared && r.fire && r.crop && r.horseOk && r.oldHorse && r.free && r.voice === 1 && r.back === 1 && r.cityV === 1 && r.second, r); }
+
+    // ---- C18. determinism ----
+    check(P + 'C18 the painter is the very first world pass (HOOKS.world[0]) and the snapshot the last; C2 shows it draws no random number', HOOKS.world[0] === paint && HOOKS.world[HOOKS.world.length - 1] === snap, { first: HOOKS.world[0] === paint, last: HOOKS.world[HOOKS.world.length - 1] === snap });
+
+    // ---- C19. drawing ----
+    { const keepSize = { k: Object.getOwnPropertyDescriptor(window, 'innerWidth'), l: Object.getOwnPropertyDescriptor(window, 'innerHeight') }; const setSize = (w, hh) => { Object.defineProperty(window, 'innerWidth', { value: w, configurable: true, writable: true }); Object.defineProperty(window, 'innerHeight', { value: hh, configurable: true, writable: true }); resize(); };
+      const putSize = () => { if (keepSize.k) Object.defineProperty(window, 'innerWidth', keepSize.k); if (keepSize.l) Object.defineProperty(window, 'innerHeight', keepSize.l); resize(); };
+      const views = [[112, 33], [88, 32], [112, 40], [116, 22], [133, 22], [135, 44], [95, 17], [144, 32], [112, 38]], N = window.NIGHT, d0 = player.dayTime, r = {}, overlaps = [];
+      let threw = null;
+      setSize(1280, 800);
+      try {
+        onFoot();
+        for (const [x, y] of views) {
+          F.tp(x, y); STATS.record = true; render(); STATS.record = false;
+          r[x + ',' + y] = { items: STATS.items, chunks: STATS.chunks, towers: STATS.towers, lamps: LAMPS.filter(([lx, ly]) => Math.abs(lx - x) < 15 && Math.abs(ly - y) < 10).length, fountains: STATS.fountains, statues: STATS.statues, keep: STATS.keep };
+          for (const b of STATS.boxes) for (const bd of BUILDINGS) { if (bd.id === b.own) continue; const bx0 = bd.x * TILE, by0 = bd.y * TILE, bx1 = (bd.x + bd.w) * TILE, by1 = (bd.y + bd.h) * TILE; if (b.x1 > bx0 && b.x0 < bx1 && b.y1 > by0 && b.y0 < by1) overlaps.push({ view: [x, y], box: [b.x0, b.y0, b.x1, b.y1].map(v => Math.round(v)), own: b.own, building: bd.id }); }
+        }
+        player.dayTime = N.LIGHT + N.DUSK + 30; F.tp(112, 33); render(); r.night = { lampsLit: STATS.lampsLit };
+        player.dayTime = d0;
+        // the spawn at 1280 x 800: few chunks, few items, and a still second frame repaints nothing
+        F.tp(112, 33); render(); render(); const perf = { chunks: STATS.chunks, items: STATS.items, repaints: STATS.repaints, size: CHUNKS.size, max: chunkMax };
+        r.perf = perf;
+        // the Great Fountain's top
+        F.tp(112, 38); STATS.record = true; render(); STATS.record = false; const gf = STATS.boxes.find(b => b.x0 === GF.cx - GF.rx - 2); r.gfTop = gf ? gf.y0 : null;
+      } catch (e) { threw = String(e && e.stack || e).slice(0, 300); }
+      STATS.record = false; player.dayTime = d0; putSize();
+      const v88 = r['88,32'], v38 = r['112,38'], p = r.perf || {};
+      check(P + 'C19 every view renders (spawn, both gates, the square, the drawbridge, the market, the Green, the Rose Garden, the Orchard, outside the East Gate, and at night); towers and lamps at the West Gate; the Great Fountain, 4 statues and the keep from the square; at the spawn at most 20 chunk blits and 160 items, a still frame repaints nothing, and the chunk cache stays at or under 40; no drawn box covers another building; the Great Fountain stays under 24 px over row 34',
+        !threw && !!v88 && v88.towers > 0 && v88.lamps > 0 && !!v38 && v38.fountains >= 1 && v38.statues === 4 && v38.keep === 1 && p.chunks > 0 && p.chunks <= 20 && p.items <= 160 && p.repaints === 0 && p.size <= p.max && p.max <= 40 && !overlaps.length && r.gfTop !== null && r.gfTop >= 34 * TILE - 24 && r.night.lampsLit > 0,
+        { threw, views: r, overlaps: overlaps.slice(0, 6) }); }
+
+    // ---- C20. ward banners ----
+    { onFoot(); drain(); areaBanner = null; const shown = []; WARD.shown = null;
+      const watch = () => { if (areaBanner && (!shown.length || shown[shown.length - 1].name !== areaBanner.name || shown[shown.length - 1].at !== areaBanner)) { shown.push({ name: areaBanner.name, t: time, at: areaBanner }); } };
+      const walk = (tx, ty) => { const path = F.bfs(Math.floor(player.x / TILE), Math.floor(player.y / TILE), tx, ty); if (!path) return false; for (const [wx, wy] of path) { let s = 0; while (s < 120 && Math.hypot(tc(wx) - player.x, tc(wy) - player.y) > 4) { F.step(F.held(tc(wx) - player.x, tc(wy) - player.y)); watch(); s++; } } return true; };
+      F.tp(82, 32); F.sim(5, []); watch();
+      const ok = walk(86, 32) && walk(110, 32) && walk(111, 27) && walk(111, 32) && walk(127, 32) && walk(128, 24) && walk(130, 24);
+      for (let k = 0; k < 30; k++) { F.step([]); watch(); }
+      const names2 = shown.map(s => s.name), wards = names2.filter(n => PLAN.WARDS.some(w => w.name === n));
+      const regionT = (shown.find(s => s.name === 'Thistledown') || {}).t;
+      const fsT = (shown.find(s => s.name === 'Fountain Square') || {}).t;
+      const twice = wards.some((n, i) => i && wards[i - 1] === n);
+      check(P + 'C20 walking in at the West Gate, along the High Street to Crown Street and on to the Duke\'s Green shows Fountain Square and The Duke\'s Green once each, never within 3.2 s of the Thistledown banner, never the same twice running',
+        ok && wards.filter(n => n === 'Fountain Square').length === 1 && wards.filter(n => n === "The Duke's Green").length === 1 && !twice && regionT !== undefined && fsT - regionT >= 3.2,
+        { ok, shown: names2, gap: fsT - regionT }); }
+
+    // ---- C21. regions ----
+    { onFoot(); F.tp(82, 32); F.step([]); F.sim(60, ['KeyD']); const inRegion = player.region;
+      const a = regionAt(112, 41).name, b = regionAt(112, 43).name;
+      const bed0 = player.bedSpawn; player.bedSpawn = null; player.visitedVillage = true; const rp = respawnPoint(); player.bedSpawn = bed0;
+      check(P + 'C21 walking in through the West Gate is Thistledown; 112,41 (the drawbridge) is Thistledown and 112,43 Castle Thistledown; a fallen knight comes back within 5 px of the spawn by the fountain',
+        inRegion === 'Thistledown' && a === 'Thistledown' && b === 'Castle Thistledown' && dist(rp.x, rp.y, VILLAGE_SPAWN.x, VILLAGE_SPAWN.y) <= 5, { inRegion, a, b, rp: [rp.x, rp.y] }); }
+
+    // ---- C22. order and the stonework (the safety nets in section 11) ----
+    { leave(); const ids0 = BUILDINGS.map(b => b.id).join(','); INSTANCES.enter('aerie', [SKYCITY.STEP_T.x, SKYCITY.STEP_T.y]); F.sim(2, []); INSTANCES.leave(); F.step([]); const ids1 = BUILDINGS.map(b => b.id).join(',');
+      onFoot(); drain(); F.tp(111, 35); F.step([]); const t = tileAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)), outOf = !SOLID.has(t) && !collides(player.x, player.y, player.r, 'player');
+      check(P + 'C22 after a visit to Aerie the buildings are back in the order the world was built in; a knight put down inside the Great Fountain steps out of it',
+        ids0 === ids1 && outOf, { same: ids0 === ids1, outOf, at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)] }); }
+
+    // ---- put everything back ----
+    leave(); giveBack(); onFoot(); drain(); closePanel(); tapCancel('manual');
+    CLOCK.fixed = null; STATS.record = false;
+    for (const k of npcKeep) { k.n.px = k.px; k.n.py = k.py; k.n.wanderT = k.wanderT; }
+    for (const k of monKeep) { k.m.x = k.x; k.m.y = k.y; }
+    quest = Object.assign(quest, JSON.parse(keep.quest));
+    player.inv = keep.inv.map(s => s ? { ...s } : null); player.bank = keep.bank.map(s => ({ ...s }));
+    if (keep.horse === undefined) delete player.horse; else player.horse = keep.horse;
+    player.mech = keep.mech; player.r = keep.r; player.speed = keep.speed; player.dayTime = keep.day; player.cityV = keep.cityV; player.visitedVillage = keep.visited; player.bedSpawn = keep.bed; player.home = keep.home;
+    { const sp = safeSpot(keep.x, keep.y, player.r, playerWho()) || { x: keep.x, y: keep.y }; player.x = sp.x; player.y = sp.y; }
+    BELLST.prev = null; window.__forceTouch = wasTouch; h.peace(false); save();
+  });
 
   // the snapshot: the very last world pass (only 99-boot loads after this file, and it adds none)
   HOOKS.world.push(snap);
-  window.CAPITAL = { PLAN, TILES, KIND, KIND_NAMES, base, migrate, paint, snap, Q, MIG, kindAt, baseAt, pristineAt };
+  window.CAPITAL = {
+    PLAN, TILES, KIND, KIND_NAMES, base, STATS, CLOCK, WARD, migrate, paint, snap, Q, MIG, SNAP, kindAt, baseAt, pristineAt, keepClear,
+    timeLine, spanWords, dialAngle, lineFor, tapName, useThing, heroName, TALK, BELLST, BARK, CAT, KIDS, kidAt, swanAt, smallFolk,
+    CHUNKS, get chunkMax() { return chunkMax; }, drawHook, TOWERS, TORCHES, LAMP_TOP, TREE_R, GCODE, drawTownBuilding, rimFor, TOWN_GATE_CELLS,
+  };
 }
