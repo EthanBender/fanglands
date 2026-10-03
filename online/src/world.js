@@ -29,7 +29,7 @@ import { cleanName } from './filter.js';
 import { makeHash, checkPassword, randomHex, sameString } from './auth.js';
 import { json, oops, failFrom, readJson, bearer } from './http.js';
 import { backupCall } from './backup.js';
-import { Meter } from './meter.js';
+import { Meter, isAdminPath } from './meter.js';
 
 const SESSION_MS = 90 * 24 * 3600 * 1000;   // a token is good for 90 days
 const SAVE_MAX = 512 * 1024;                // bytes; a slot is well under 100 KB
@@ -95,7 +95,7 @@ export class World {
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname, method = req.method;
-    this.meter.http();
+    this.meter.http(isAdminPath(path));   // an /api/admin/* call is counted as the admin's too (meter.js)
     let res;
     try { res = await this.route(req, url, path, method); } catch (e) {
       if (!(e && e.status)) console.error(path, e);

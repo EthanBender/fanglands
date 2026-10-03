@@ -101,9 +101,9 @@
     <div id="trades"></div>
 
     <h2>Shared world</h2>
-    <p class="note">The world server will run the monsters itself, a step at a time; nothing is switched on yet. This counts what Cloudflare's free plan counts: each call to the world is one request, and every 20 messages from the knights' games are one more. The free plan allows 100,000 a day, and its day starts at midnight UTC (8 pm here in summer, 7 pm in winter). Refreshes with the chat log.</p>
+    <p class="note">The world server will run the monsters itself, a step at a time; nothing is switched on yet. This counts what Cloudflare's free plan counts: each call to the world is one request, and every 20 messages from the knights' games are one more. The free plan allows 100,000 a day, and its day starts at midnight UTC (8 pm here in summer, 7 pm in winter). This page's own calls (and the backups') are counted on their own, so the game's share is what the cost gate reads. The meter is read when this page opens and when you press Refresh; while the page is hidden, nothing refreshes at all.</p>
     <p id="meter">…</p>
-    <div class="scroll"><table id="meterdays"><thead><tr><th>Day (UTC)</th><th>Messages</th><th>Calls</th><th>About this many requests</th><th>Of the free plan</th></tr></thead><tbody></tbody></table></div>
+    <div class="scroll"><table id="meterdays"><thead><tr><th>Day (UTC)</th><th>Messages</th><th>Game calls</th><th>The game, about</th><th>Of the free plan</th><th>This page's calls</th><th>Everything, of the free plan</th></tr></thead><tbody></tbody></table></div>
   </div>
 </main>
 <script>
@@ -288,21 +288,30 @@
     try { r = await api('GET', '/api/admin/sim'); } catch (e) { $('meter').textContent = 'The meter could not be read: ' + e.message; return; }
     const m = r && r.meter; if (!m) { $('meter').textContent = 'No meter on this world yet.'; return; }
     const t = m.today, n = v => Number(v || 0).toLocaleString();
-    $('meter').textContent = 'Today (UTC): ' + n(t.wsIn) + ' socket messages and ' + n(t.http) + ' calls, about ' + n(t.est) + ' of the ' + n(m.freeLimit) + ' requests a day the free plan allows (' + pct(t.est, m.freeLimit) + ').';
+    // a meter from before the admin column has no game share: then every call is shown as the game's
+    const game = d => d.gameEst != null ? d.gameEst : d.est, gameCalls = d => d.gameHttp != null ? d.gameHttp : d.http, admin = d => Number(d.admin || 0);
+    $('meter').textContent = 'Today (UTC), read at ' + new Date().toLocaleTimeString() + ': the game sent ' + n(t.wsIn) + ' socket messages and made ' + n(gameCalls(t)) + ' calls, about ' + n(game(t)) + ' of the ' + n(m.freeLimit) + ' requests a day the free plan allows (' + pct(game(t), m.freeLimit) + '). This page and the backups made ' + n(admin(t)) + ' calls on top, so about ' + n(t.est) + ' in all (' + pct(t.est, m.freeLimit) + ').';
     const tb = $('meterdays').querySelector('tbody'); tb.innerHTML = '';
-    for (const d of m.days.slice(0, 7)) { const tr = document.createElement('tr'); cell(tr, d.day).className = 'nowrap'; cell(tr, n(d.wsIn)); cell(tr, n(d.http)); cell(tr, n(d.est)); cell(tr, pct(d.est, m.freeLimit)); tb.appendChild(tr); }
+    for (const d of m.days.slice(0, 7)) { const tr = document.createElement('tr'); cell(tr, d.day).className = 'nowrap'; cell(tr, n(d.wsIn)); cell(tr, n(gameCalls(d))); cell(tr, n(game(d))); cell(tr, pct(game(d), m.freeLimit)); cell(tr, n(admin(d))); cell(tr, pct(d.est, m.freeLimit)); tb.appendChild(tr); }
   }
 
   async function refresh(all) {
     try {
       if (all) await loadAccounts();
-      await loadOnline(); await loadChat(); await loadModlog(); await loadTrades(); await loadSim();
-      if (all) await loadInvite();
+      await loadOnline(); await loadChat(); await loadModlog(); await loadTrades();
+      if (all) { await loadInvite(); await loadSim(); }   // the meter: on opening and on Refresh only, never every 10 s
       say('Updated ' + new Date().toLocaleTimeString() + '.');
     } catch (e) { say(e.message, true); if (/admin key/.test(e.message)) lock(); }
   }
-  function unlock() { $('keybox').classList.add('hidden'); $('app').classList.remove('hidden'); refresh(true); if (timer) clearInterval(timer); timer = setInterval(() => refresh(false), 10000); }
-  function lock() { if (timer) clearInterval(timer); timer = null; key = null; try { sessionStorage.removeItem(KEY); } catch (e) { } $('app').classList.add('hidden'); $('keybox').classList.remove('hidden'); }
+  // the 10 s refresh runs only while the page is in view: a hidden tab (another tab, a locked iPad) makes no calls at all
+  function startTimer() { if (timer) clearInterval(timer); timer = (key && !document.hidden) ? setInterval(() => refresh(false), 10000) : null; }
+  function stopTimer() { if (timer) clearInterval(timer); timer = null; }
+  document.addEventListener('visibilitychange', () => {
+    if (!key || $('app').classList.contains('hidden')) return;
+    if (document.hidden) stopTimer(); else { refresh(false); startTimer(); }
+  });
+  function unlock() { $('keybox').classList.add('hidden'); $('app').classList.remove('hidden'); refresh(true); startTimer(); }
+  function lock() { stopTimer(); key = null; try { sessionStorage.removeItem(KEY); } catch (e) { } $('app').classList.add('hidden'); $('keybox').classList.remove('hidden'); }
 
   $('usekey').onclick = async () => {
     key = $('key').value.trim(); if (!key) return;

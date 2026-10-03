@@ -28,6 +28,7 @@ export async function backupCall(world, req, url, call, method) {
       trades: rows('SELECT * FROM trades ORDER BY id'),
       logins: rows('SELECT * FROM logins ORDER BY id'),
       req_meter: rows('SELECT * FROM req_meter ORDER BY day'),
+      req_meter_admin: rows('SELECT * FROM req_meter_admin ORDER BY day'),
     });
   }
   if (call === 'bookmark' && method === 'GET') {

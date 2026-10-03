@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { Meter, METER_SCHEMA, WRITE_AT, WRITE_EVERY, KEEP_DAYS, FREE_REQUESTS, dayOf, estimate } from '../src/meter.js';
+import { Meter, METER_SCHEMA, METER_ADMIN_SCHEMA, WRITE_AT, WRITE_EVERY, KEEP_DAYS, FREE_REQUESTS, dayOf, estimate, isAdminPath } from '../src/meter.js';
 import { SCHEMA, migrate } from '../src/store.js';
 
 // node's SQLite with the Durable Object SQL API's shape (as in store.test.mjs)
@@ -21,6 +21,7 @@ function sqlOf(db, { failWrites = () => false } = {}) {
   };
 }
 const rowsOf = sql => sql.exec('SELECT day, ws_in, http, est_requests FROM req_meter ORDER BY day').toArray();
+const adminOf = sql => sql.exec('SELECT day, http FROM req_meter_admin ORDER BY day').toArray();
 const at = iso => Date.parse(iso);
 
 test('estimate: 20 socket messages are one request, every World request is one', () => {
@@ -127,7 +128,7 @@ test('rows older than 400 days go on the first write of a day; the view shows 14
   const v = m.view();
   assert.equal(v.days.length, 14);
   assert.equal(v.days[0].day, '2026-10-03');
-  assert.deepEqual(v.days[1], { day: '2026-10-02', wsIn: 20, http: 0, est: 1 });
+  assert.deepEqual(v.days[1], { day: '2026-10-02', wsIn: 20, http: 0, admin: 0, gameHttp: 0, est: 1, gameEst: 1 });
   assert.equal(v.freeLimit, 100000);
 });
 
@@ -173,26 +174,71 @@ test('the World counts every request and socket message, writes on close and ala
   assert.deepEqual(rowsOf(ctx.storage.sql), [], 'all of it still waiting');
   r = await call(w, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
   assert.equal(r.status, 200);
-  // 5 World requests so far: the refused sim call, signup, status, the /ws upgrade, and this sim call; 25 messages
-  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 5, est: 7 });
+  // 5 World requests so far: the refused sim call, signup, status, the /ws upgrade, and this sim call; 25 messages.
+  // The two sim calls are the admin's (refused or not, Cloudflare bills them): the game made 3, about 2 + 3 = 5 requests
+  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 5, admin: 2, gameHttp: 3, est: 7, gameEst: 5 });
   assert.equal(r.data.meter.freeLimit, 100000);
   assert.equal(r.data.meter.waiting, 30);
   assert.deepEqual(Object.keys(r.data), ['meter'], 'only the meter in Stage 0');
   w.webSocketClose(sock, 1000, 'bye');
   assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-03', ws_in: 25, http: 5, est_requests: 7 }], 'a socket close writes');
+  assert.deepEqual(adminOf(ctx.storage.sql), [{ day: '2026-10-03', http: 2 }], 'and the admin calls with it');
   await call(w, 'GET', '/api/status');
   w.alarm();
   assert.equal(rowsOf(ctx.storage.sql)[0].http, 6, 'an alarm writes');
   // the export carries the table; a nap (a new World on the same storage) keeps counting the same day
   r = await call(w, 'GET', '/api/admin/export', undefined, ENV.ADMIN_KEY);
   assert.deepEqual(r.data.req_meter, [{ day: '2026-10-03', ws_in: 25, http: 6, est_requests: 8 }]);
+  assert.deepEqual(r.data.req_meter_admin, [{ day: '2026-10-03', http: 2 }]);
   // the export call itself still waits in this World's memory: a nap right now loses it (at most 10 s of counts)
   const w2 = new TestWorld(ctx, ENV);
   r = await call(w2, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
-  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 7, est: 9 });
+  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 7, admin: 3, gameHttp: 4, est: 9, gameEst: 6 });
 });
 
-test('the meter on a world made by the live schema: one new table, nothing else touched', () => {
+test('admin calls land in their own column: every /api/admin/* call, refused or not; nothing else', async () => {
+  assert.ok(isAdminPath('/api/admin/sim') && isAdminPath('/api/admin/export') && !isAdminPath('/api/status') && !isAdminPath('/ws') && !isAdminPath('/api/adminx') && !isAdminPath('/admin'));
+  const db = new DatabaseSync(':memory:'), ctx = makeCtx(db);
+  T = at('2026-10-04T10:00:00Z');
+  const w = new TestWorld(ctx, ENV);
+  // one minute of the admin page as it polled before (online, chat, modlog, trades, sim every 10 s): 30 admin calls
+  for (let i = 0; i < 6; i++) for (const c of ['online', 'chat?limit=500', 'modlog?limit=200', 'trades?limit=200', 'sim']) await call(w, 'GET', '/api/admin/' + c, undefined, ENV.ADMIN_KEY);
+  await call(w, 'GET', '/api/admin/sim');   // no key: refused, still billed, still the admin page's
+  await call(w, 'GET', '/api/status'); await call(w, 'GET', '/api/status');
+  let r = await call(w, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
+  assert.deepEqual(r.data.meter.today, { day: '2026-10-04', wsIn: 0, http: 34, admin: 32, gameHttp: 2, est: 34, gameEst: 2 });
+  w.alarm();
+  assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-04', ws_in: 0, http: 34, est_requests: 34 }], 'req_meter still counts every call (what is billed)');
+  assert.deepEqual(adminOf(ctx.storage.sql), [{ day: '2026-10-04', http: 32 }]);
+  // a Meter on its own: http(true) is the admin's, http() the game's
+  const sql = sqlOf(new DatabaseSync(':memory:')), m = new Meter(sql, () => at('2026-10-04T10:00:00Z'));
+  m.http(true); m.http(); m.ws(); m.flush();
+  assert.deepEqual(adminOf(sql), [{ day: '2026-10-04', http: 1 }]);
+  assert.deepEqual(m.view().today, { day: '2026-10-04', wsIn: 1, http: 2, admin: 1, gameHttp: 1, est: 3, gameEst: 2 });
+});
+
+test('a failed admin write keeps the admin counts for the next try; old admin rows go with the old days', () => {
+  const db = new DatabaseSync(':memory:');
+  let fail = false;
+  const base = sqlOf(db);
+  const sql = { exec(q, ...a) { if (fail && /INSERT INTO req_meter_admin/.test(q)) throw new Error('disk full'); return base.exec(q, ...a); } };
+  const T0 = at('2026-10-04T10:00:00Z');
+  sql.exec(METER_ADMIN_SCHEMA);
+  const old = T0 - (KEEP_DAYS + 1) * 86400000;
+  sql.exec('INSERT INTO req_meter_admin (day, http) VALUES (?, 5)', dayOf(old));
+  const m = new Meter(sql, () => T0);
+  fail = true;
+  const err = console.error; console.error = () => { };
+  try { m.http(true); m.http(true); m.flush(); } finally { console.error = err; }
+  assert.deepEqual(rowsOf(sql), [{ day: '2026-10-04', ws_in: 0, http: 2, est_requests: 2 }], 'the calls themselves are written');
+  assert.deepEqual(m.view().today.admin, 2, 'the admin share still waits');
+  fail = false;
+  m.http(true); m.flush();
+  assert.deepEqual(adminOf(sql), [{ day: '2026-10-04', http: 3 }], 'none lost, the 401-day-old admin row is gone');
+  assert.deepEqual(m.view().today, { day: '2026-10-04', wsIn: 0, http: 3, admin: 3, gameHttp: 0, est: 3, gameEst: 0 });
+});
+
+test('the meter on a world made by the live schema: two new tables, nothing else touched', () => {
   const db = new DatabaseSync(':memory:'), sql = sqlOf(db);
   for (const s of SCHEMA.split(';')) if (s.trim()) sql.exec(s);
   migrate(sql);
@@ -205,7 +251,13 @@ test('the meter on a world made by the live schema: one new table, nothing else 
   new Meter(sql, () => at('2026-10-03T12:00:00Z'));
   new Meter(sql, () => at('2026-10-03T12:00:00Z'));
   const after = objects();
-  assert.deepEqual(after.filter(o => o.name !== 'req_meter'), before, 'every other table and index exactly as it was');
-  assert.deepEqual(after.filter(o => o.name === 'req_meter').map(o => o.sql), [METER_SCHEMA.replace('CREATE TABLE IF NOT EXISTS', 'CREATE TABLE')]);
+  const ours = ['req_meter', 'req_meter_admin'];
+  assert.deepEqual(after.filter(o => !ours.includes(o.name)), before, 'every other table and index exactly as it was');
+  assert.deepEqual(after.filter(o => ours.includes(o.name) && o.type === 'table').map(o => o.sql), [METER_SCHEMA, METER_ADMIN_SCHEMA].map(q => q.replace('CREATE TABLE IF NOT EXISTS', 'CREATE TABLE')));
+  // the test world already has the first table from before the admin column: the Meter adds only the second
+  const db2 = new DatabaseSync(':memory:'), sql2 = sqlOf(db2);
+  sql2.exec(METER_SCHEMA); sql2.exec("INSERT INTO req_meter (day, ws_in, http, est_requests) VALUES ('2026-10-03', 40, 10, 12)");
+  const m2 = new Meter(sql2, () => at('2026-10-03T12:00:00Z'));
+  assert.deepEqual(m2.view().today, { day: '2026-10-03', wsIn: 40, http: 10, admin: 0, gameHttp: 10, est: 12, gameEst: 12 });
   assert.equal(rows(), rowsBefore);
 });
