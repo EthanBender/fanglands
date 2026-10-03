@@ -25,7 +25,11 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   three second boss scene (level 25+ with 300+ hp, an instance boss and a `HOOKS.bossCall` type already get it). A person's sprite
   must skip the weapon in its hand when `e.unarmed` is set (`drawHuman` does it for you), because the death draws it flying off.
   Drops are still rolled at the kill; the death only delays drawing them. Anything else a feature draws for a monster must
-  stop when `m.dead` is set, or it will show on top of the corpse.
+  stop when `m.dead` is set, or it will show on top of the corpse; something a kill lays on the ground should come up as the
+  body fades (`DEATHS.remains(m)`, 0 to 1, as 54-graves' markers and the golem's rubble heap do).
+  A death starts only from `HOOKS.monsterDeath(m, info)`, `info = { k, by, how, x, y }`: `killMonster` fires it (offline and
+  on the keeper), and online 75-coop fires it on the keeper's word, once. Setting `m.dead` or reaching 0 hp plays nothing; a
+  feature that kills a monster some other way calls `monsterDied(m, 'blow', by)` after setting it dead.
 - `RECIPES.push({ out, qty, needs: [[id, n]], station: 'workbench'|'anvil'|'workshop'|'alchemy'|null, skill, lv, xp, label })`,
   `SMELT.push(...)`, `SHOPS.my_shop = { name, stock: [[id, price]] }`.
 - Tiles: `const MY = addTile('MY', { solid, push, placeableOn, tex: 'cobble'|'dirt'|..., mini: '#hex' })`.

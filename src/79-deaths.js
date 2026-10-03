@@ -12,18 +12,24 @@
 // nearly done, then pops out of the body to where it lies. Picking it up works the whole time, as before.
 // How: the dead monster is copied into a corpse (DEATHS.list()) that this file ages and draws; the core's own
 // 0.8 s tip-and-fade is skipped for a monster that has a corpse (drawCharacter is wrapped). The corpse is not in
-// `monsters`, so nothing can tap, target or fight it. It is found two ways: killMonster (wrapped here, outside
-// 75-coop's wrap, so the keeper's own kills and the helper's share pass through) and a scan each tick for a monster
-// that has just turned dead without a kill call (a keeper's 'mon' row turning dead on a puppet, a companion's blow).
-// So a puppet online plays the same death on every screen. The keeper's 'kill' message pays this knight through
-// 75-coop's payKill (not killMonster), and it can come back long after his own blow started the body falling: its drops
+// `monsters`, and a tap on it is a tap on nothing (tapPick is wrapped), so nothing can tap, target or fight it, and a
+// drop still hidden under it can be neither tapped nor long-pressed.
+// A death starts ONLY from HOOKS.monsterDeath(m, info) (info = { k, by, how, x, y }; phase-1 spec rule 9): offline and on
+// the keeper, killMonster fires it (06-systems; 75-coop for a friend's last blow); on a friend's map 75-coop fires it on
+// the keeper's word, its 'kill' message or its row turning dead, once per death. Never because hp reached 0 here: Cohen's
+// own last blow on a friend's monster only holds it still and hurt (the stagger, at most 0.6 s) until the keeper's word
+// comes back. A monster first seen already dead plays nothing. The keeper's 'kill' message pays this knight through
+// 75-coop's payKill (not killMonster), and it can come back long after the body started falling: its drops, its grave
 // and its banner are matched to the body by the monster's nid (two NET listeners, one each side of 75-coop's), not by age.
+// What a kill lays on the ground waits for the body too: a grave marker (54-graves) and the Ginormous Golem's rubble heap
+// (91-royalmine) come up as the body fades (markerAlpha, remains), and the golem's banner, loot and words come after his
+// flash (payOut, from 91-royalmine's fall).
 // Setting: Screen shake (43-settings) off means no shake, no flash over the screen and no ground wave (64-impact
 // gates its own); the bodies still fall.
 // Cost: one symbol read per monster per tick; nothing at all while no corpse is up. Drawing a corpse is its sprite
 // once (four times while a machine breaks, twice while a golem splits) plus a few dozen plain shapes.
-// Feature file: HOOKS.update, HOOKS.draw, NET 'kill' (a listener each side of 75-coop's), wrapped killMonster /
-// drawCharacter / drawDrop / tickBanners / HK.drawBanners.
+// Feature file: HOOKS.monsterDeath, HOOKS.update, HOOKS.draw, NET 'kill' (a listener each side of 75-coop's), wrapped
+// killMonster / drawCharacter / drawHuman / drawDrop / tapPick / tickBanners / HK.drawBanners.
 // Test handle: window.DEATHS.
 // ============================================================================
 const DEATHS = (() => {
@@ -32,6 +38,8 @@ const DEATHS = (() => {
   const DA = Symbol('death');
   // a drop waiting on a death: seconds before it pops, the pop's progress, and where it pops from
   const PIN = Symbol('popIn'), PT = Symbol('popT'), PFX = Symbol('popX'), PFY = Symbol('popY'), POWN = Symbol('popOwner');
+  // a friend's monster Cohen's own blow felled, held still until the keeper's word (STAG); a grave marker waiting on a body (MK)
+  const STAG = Symbol('stagger'), MK = Symbol('graveOf'), STAG_FOR = 0.1;
   const KIND = {
     spider: 'beast', wolf: 'beast', boar: 'beast', sheep: 'beast', cow: 'beast', giant_spider: 'beast', brood_mother: 'beast',
     thunderbird: 'beast', rimhawk: 'beast', dustjaw: 'beast',
@@ -50,7 +58,12 @@ const DEATHS = (() => {
   const NO_BONES = new Set(['cinder_heart']);
   // how far ahead of its middle a dragon's snout is, in pixels (27-dragons, 30-ashdrake, 28-thefang)
   const MOUTH = { green_dragon: 46, red_dragon: 46, ash_drake: 38, the_fang: 88 };
-  const corpses = [], pending = [];
+  const corpses = [], pending = [], stagger = [];
+  // legs that come out of an animal rolled onto its side: birds show two thin legs, spiders already show eight (none
+  // added), a cow's are pale with dark hooves so they do not read as stripes; everything else four dark ones
+  const LEGS = { thunderbird: { n: 2, col: '#d8b04a', w: 0.07 }, rimhawk: { n: 2, col: '#d8b04a', w: 0.07 }, spider: { n: 0 }, giant_spider: { n: 0 }, brood_mother: { n: 0 },
+    cow: { n: 4, col: '#e6dfd0', hoof: '#2a2420' } };
+  const LEG_AT = { 2: [[-0.2, 0], [0.2, 2]], 4: [[-0.55, 0], [-0.3, 1], [0.3, 2], [0.5, 3]] };
   let made = 0;
   const API = { freeze: false };
 
@@ -129,6 +142,7 @@ const DEATHS = (() => {
   }
   function end(c) {
     const i = corpses.indexOf(c); if (i >= 0) corpses.splice(i, 1);
+    if (c.m && c.m[DA] === c) c.m[DA] = null;
     // its drops do not wait on a death that is not being shown any more
     for (const d of pending) if (d[POWN] === c && d[PIN] > 0) { d[PIN] = 0; d[PT] = 0; }
   }
@@ -207,12 +221,14 @@ const DEATHS = (() => {
       g.save(); g.translate(c.x + p.ox, c.y + p.oy); g.rotate(p.rot);
       // squash across the animal's own back (its facing), not across the screen
       g.rotate(ang); g.scale(1, p.sy); g.rotate(-ang); drawBody(g, c);
-      if (p.legs > 0) {
-        g.rotate(ang); g.strokeStyle = 'rgba(38,30,26,0.9)'; g.lineWidth = Math.max(1.5, r * 0.13); g.lineCap = 'round';
-        const up = c.side, base = r * 0.42 * p.sy, L = r * (0.3 + 0.4 * p.legs);
-        for (const [lx, ph] of [[-r * 0.55, 0], [-r * 0.3, 1], [r * 0.3, 2], [r * 0.5, 3]]) {
-          const k = p.kick * Math.sin(ph * 1.7 + 1) * r * 0.3, kx = lx + k * 0.6;
-          g.beginPath(); g.moveTo(lx, up * base); g.lineTo(kx + up * k * 0.2, up * (base + L - Math.abs(k) * 0.3)); g.stroke();
+      const lg = LEGS[c.type] || { n: 4 };
+      if (p.legs > 0 && lg.n) {
+        g.rotate(ang); g.strokeStyle = lg.col || 'rgba(38,30,26,0.9)'; g.lineWidth = Math.max(1.2, r * (lg.w || 0.13)); g.lineCap = 'round';
+        const up = c.side, base = r * 0.42 * p.sy, L = r * (0.3 + 0.4 * p.legs) * (lg.n === 2 ? 0.7 : 1);
+        for (const [f, ph] of LEG_AT[lg.n]) {
+          const lx = f * r, k = p.kick * Math.sin(ph * 1.7 + 1) * r * 0.3, kx = lx + k * 0.6, ex = kx + up * k * 0.2, ey = up * (base + L - Math.abs(k) * 0.3);
+          g.beginPath(); g.moveTo(lx, up * base); g.lineTo(ex, ey); g.stroke();
+          if (lg.hoof) { g.fillStyle = lg.hoof; g.beginPath(); g.arc(ex, ey, Math.max(1.4, r * 0.09), 0, 7); g.fill(); }
         }
       }
       g.restore();
@@ -328,16 +344,17 @@ const DEATHS = (() => {
   function flashFx(c) {
     c.flashed = true;
     if (window.SETTINGS && typeof SETTINGS.startShake === 'function') SETTINGS.startShake(c.r > 35 ? 8 : 6, 0.45);
-    if (window.IMPACT && IMPACT.wave) IMPACT.wave(c.x, c.y, 1.6);
+    // the Ginormous Golem's crash is the biggest in the game (91-royalmine leaves its own wave to this one)
+    if (window.IMPACT && IMPACT.wave) IMPACT.wave(c.x, c.y, c.type === 'ginormous_golem' ? 2.2 : 1.6);
     puff(c, c.x, c.y, '#fff2c0', 24, 200);
   }
 
   // ---------- each tick ----------
   function tick(dt) {
-    // a monster that has just turned dead without a kill call: a keeper's 'mon' row on a puppet, a companion's blow
-    for (const m of monsters) {
-      if (m.dead) { if (!m[DA] && m.deadT < FRESH && !m.gone && !m.phantom) spawn(m); }
-      else if (m[DA]) m[DA] = null;
+    // the stagger ends at the keeper's word (a corpse), when he says it lives, when it leaves, or after STAG_FOR past the wait
+    if (stagger.length) for (let i = stagger.length - 1; i >= 0; i--) {
+      const m = stagger[i];
+      if (m[DA] || !m.dead || m.gone || !monsters.includes(m) || !(time < (m.localDeadUntil || 0) + STAG_FOR)) { m[STAG] = false; stagger.splice(i, 1); }
     }
     if (corpses.length && !API.freeze) {
       const inst = here();
@@ -359,9 +376,13 @@ const DEATHS = (() => {
       if (d[PT] >= POP) { delete d[PIN]; delete d[PT]; delete d[PFX]; delete d[PFY]; delete d[POWN]; pending.splice(i, 1); }
     }
   }
+  // the one place a death starts (phase-1 spec rule 9)
+  HOOKS.monsterDeath.push(m => { if (m && m.dead && !m.gone && !m.phantom) spawn(m); });
   HOOKS.update.push(dt => tick(dt));
-  HOOKS.newGame.push(() => { while (corpses.length) end(corpses[0]); pending.length = 0; });
+  HOOKS.newGame.push(() => { while (corpses.length) end(corpses[0]); pending.length = 0; for (const m of stagger) m[STAG] = false; stagger.length = 0; });
   HOOKS.draw.push((g, items) => {
+    // the stagger: standing, hurt, still (the core skips drawing it, see drawCharacter below)
+    for (const m of stagger) items.push({ y: m.y, draw: () => _drawCharacter(g, Object.assign({}, m, { dead: false, moving: false, attackT: 0, hurtT: Math.max(0.12, m.hurtT || 0) }), m.type) });
     if (!corpses.length) return;
     const inst = here();
     for (const c of corpses) {
@@ -373,17 +394,28 @@ const DEATHS = (() => {
 
   // ---------- the wraps ----------
   const _killMonster = killMonster;
+  // a grave a kill lays is the last one in quest.graves (54-graves pushes it)
+  const lastGrave = () => (typeof quest !== 'undefined' && Array.isArray(quest.graves) && quest.graves.length) ? quest.graves[quest.graves.length - 1] : null;
+  // what one kill added (its drops, its grave, a boss's banner) waits on the body c
+  function adopt(c, was) {
+    if (drops === was.arr) for (let i = was.n0; i < drops.length; i++) if (drops[i] && drops[i].t === 0) hide(drops[i], c);
+    const gv = lastGrave(); if (gv && gv !== was.g0) gv[MK] = c;
+    if (c.boss && levelBanner && levelBanner !== was.b0 && c.t < FLASH + HOLD) c.banner = levelBanner;
+  }
+  const note = () => ({ arr: drops, n0: drops.length, b0: levelBanner, g0: lastGrave() });
+  // the kill itself starts nothing: HOOKS.monsterDeath (fired inside it) made the body; this only hands it what the kill made
   killMonster = function (m) {
-    const arr = drops, n0 = drops.length, b0 = levelBanner;
+    const was = note(), c0 = m ? m[DA] : null;
     _killMonster(m);
-    if (!m || m.phantom || !m.dead) return;
-    const c = spawn(m); if (!c) return;
-    if (drops === arr) for (let i = n0; i < drops.length; i++) if (drops[i] && drops[i].t === 0) hide(drops[i], c);
-    if (c.boss && levelBanner && levelBanner !== b0) c.banner = levelBanner;
+    if (!m || m.phantom) return;
+    // Cohen's own blow on a friend's monster: no death until the keeper's word, so it stands still and hurt till then
+    if (m.remote && m.dead && !m[DA] && !m[STAG]) { m[STAG] = true; stagger.push(m); return; }
+    const c = API.of(m); if (!c || c === c0) return;
+    adopt(c, was);
   };
   killMonster.__inner = _killMonster;
   const _drawCharacter = drawCharacter;
-  drawCharacter = function (g, e, kind) { if (e.dead === true && e[DA]) return; return _drawCharacter(g, e, kind); };
+  drawCharacter = function (g, e, kind) { if (e.dead === true && (e[DA] || e[STAG])) return; return _drawCharacter(g, e, kind); };
   const _drawHuman = drawHuman;
   drawHuman = function (g, e, look) { if (e && e.unarmed && look) look = Object.assign({}, look, { weapon: null, spear: false, tool: null }); return _drawHuman(g, e, look); };
   const _drawDrop = drawDrop;
@@ -403,21 +435,34 @@ const DEATHS = (() => {
   // banner as they were; one after it hands what that kill added to the body with the same nid (made now if the keeper's
   // 'mon' row has not turned it dead yet). A drop that comes late waits only for what is left of the fall (hide), so it
   // still pops out of the body; a boss banner is held until the flash just like one this knight's own kill set.
+  // The body is made by 75-coop's own listener (HOOKS.monsterDeath on the keeper's word) or was made by the dead row before;
+  // this never makes one. A kill that comes back after its body is gone (more than a second late) pays plain loot: the
+  // death is never played twice.
   function paidKill(msg, was) {
     if (!msg || typeof msg.type !== 'string' || !MONSTER_DEFS[msg.type]) return;
     const nid = typeof msg.nid === 'string' ? msg.nid : null, inst = here();
     let c = nid ? corpses.find(k => k.nid === nid && k.inst === inst) || null : null;
-    if (!c && nid && typeof COOP !== 'undefined' && COOP.find) { const p = COOP.find(nid); if (p && p.dead && !p.gone && !p.phantom) c = spawn(p); }
-    if (!c) { const x = Number(msg.x), y = Number(msg.y); for (const k of corpses) if (k.type === msg.type && k.inst === inst && Math.abs(x - k.x) < k.r + 48 && Math.abs(y - k.y) < k.r + 48) { c = k; break; } }
-    if (!c) return;
-    if (drops === was.arr) for (let i = was.n0; i < drops.length; i++) if (drops[i] && drops[i].t === 0) hide(drops[i], c);
-    if (c.boss && levelBanner && levelBanner !== was.b0 && c.t < FLASH + HOLD) c.banner = levelBanner;
+    if (!c && !nid) { const x = Number(msg.x), y = Number(msg.y); for (const k of corpses) if (k.type === msg.type && k.inst === inst && Math.abs(x - k.x) < k.r + 48 && Math.abs(y - k.y) < k.r + 48) { c = k; break; } }
+    if (c) adopt(c, was);
   }
   if (typeof NET !== 'undefined' && typeof NET.on === 'function') {
     let was = null;
-    (NET.listeners.kill = NET.listeners.kill || []).unshift(() => { was = { arr: drops, n0: drops.length, b0: levelBanner }; });
+    (NET.listeners.kill = NET.listeners.kill || []).unshift(() => { was = note(); });
     NET.on('kill', msg => { const w = was; was = null; if (w) paidKill(msg, w); });
   }
+  // a tap on a body still falling is a tap on nothing (no tap ring, no walk into it, no long-press name), and a drop still
+  // hidden under it cannot be picked, tapped or named by a long-press until it pops out
+  const _tapPick = tapPick;
+  tapPick = function (sx, sy) {
+    if (!pending.length && !corpses.length) return _tapPick(sx, sy);
+    let all = null;
+    if (pending.length) { all = drops; drops = drops.filter(d => !(d[PIN] > 0)); }
+    let p; try { p = _tapPick(sx, sy); } finally { if (all) drops = all; }
+    if (p && (p.kind === 'monster' || p.kind === 'npc' || p.kind === 'person' || p.kind === 'item')) return p;
+    const wx = sx + cam.x, wy = sy + cam.y, inst = here();
+    for (const c of corpses) if (c.inst === inst && Math.hypot(wx - c.x, wy - c.y) <= c.r + 8 && pose(c).alpha > 0.25) return null;
+    return p;
+  };
   function holding() {
     if (!corpses.length) return false;
     const lb = levelBanner; if (!lb) return false;
@@ -435,14 +480,16 @@ const DEATHS = (() => {
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'deaths: ';
     if (typeof INSTANCES !== 'undefined' && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
-    const keep = { px: player.x, py: player.y, hp: player.hp, kills: player.kills, drops: drops.slice(), peace: window.__peace, banner: levelBanner, shake: typeof SETTINGS !== 'undefined' ? SETTINGS.get('shake') : true, mons: monsters, dc: dialog.cur, dq: dialog.queue.slice() };
+    const keep = { px: player.x, py: player.y, hp: player.hp, kills: player.kills, drops: drops.slice(), peace: window.__peace, banner: levelBanner, shake: typeof SETTINGS !== 'undefined' ? SETTINGS.get('shake') : true, mons: monsters, dc: dialog.cur, dq: dialog.queue.slice(),
+      graves: Array.isArray(quest.graves) ? quest.graves.slice() : quest.graves, graveNight: quest.graveNight ? JSON.parse(JSON.stringify(quest.graveNight)) : quest.graveNight };
     const temp = [];
     const mk = (type, dx, dy, fx = 1) => {
       const d = MONSTER_DEFS[type], x = player.x + dx, y = player.y + dy;
       const m = { type, x, y, home: { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: false, state: 'idle', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 1e9, facing: { x: fx, y: 0 }, walkT: 0, moving: false, stunT: 0 };
       monsters.push(m); temp.push(m); return m;
     };
-    const down = m => { m.dead = true; m.deadT = 0; m.hp = 0; m.respawnT = 1e9; };
+    // the death's one entry (HOOKS.monsterDeath), as killMonster fires it, without the kill's drops, XP and graves
+    const down = m => { m.dead = true; m.deadT = 0; m.hp = 0; m.respawnT = 1e9; monsterDied(m, 'blow', 'test'); };
     // a recording canvas: counts every call, and fillRect on its own
     const rec = () => { const st = { n: 0, rect: 0 }; const fn = () => { st.n++; }; return { st, g: new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop() { } }) : k === 'fillRect' ? () => { st.n++; st.rect++; } : typeof k === 'string' ? fn : undefined, set: () => true }) }; };
     const calls = f => { const r = rec(); f(r.g); return r.st; };
@@ -490,18 +537,65 @@ const DEATHS = (() => {
       }
       if (typeof SETTINGS !== 'undefined') SETTINGS.set('shake', keep.shake);
       // (3) the loot is in the game's data at the moment of the kill; it is only drawn late, popping out as the death ends.
-      // Nothing of the dead monster can be tapped.
+      // Nothing of the dead monster can be tapped: a tap on the falling body is a tap on nothing (no walk, no ring, no
+      // name), and a drop still hidden cannot be tapped or named either (the core's tapPick would find the drop or the tile)
       {
         const cow = mk('cow', 3 * TILE, 0); F.step([]); render();
         const s0 = screenOf(cow), before = tapPick(s0.sx, s0.sy);
         cow.hp = 0; const n0 = drops.length; killMonster(cow);
         const fresh = drops.slice(n0), at0 = { n: fresh.length, hidden: fresh.every(d => API.hidden(d)), drawn: calls(g => { for (const d of fresh) drawDrop(g, d); }).n };
-        const after0 = tapPick(s0.sx, s0.sy);
+        // one drop is set down beside the body, where a kid could tap it on its own
+        const side = fresh[0]; if (side) { side.x = cow.x + cow.r + 26; side.y = cow.y; }
+        const sideAt = () => side ? tapPick(side.x - cam.x, side.y - cam.y) : null;
+        const after0 = tapPick(s0.sx, s0.sy), side0 = sideAt(), label0 = tapLabelFor(after0), sideLabel0 = tapLabelFor(side0);
+        const walked = tapAt(s0.sx, s0.sy), ring = !!tap.marker, kind0 = tap.kind; tapCancel('manual');
         F.sim(50, []); const at08 = { hidden: fresh.some(d => API.hidden(d)), popping: fresh.every(d => API.popping(d)), drawn: calls(g => { for (const d of fresh) drawDrop(g, d); }).n, inData: fresh.every(d => drops.includes(d)) };
-        const after08 = tapPick(s0.sx, s0.sy);
+        const after08 = tapPick(s0.sx, s0.sy), side08 = sideAt();
         F.sim(30, []); const at13 = { plain: fresh.every(d => !API.hidden(d) && !API.popping(d)), drawn: calls(g => { for (const d of fresh) drawDrop(g, d); }).n, inData: fresh.every(d => drops.includes(d)) };
         check(P + 'drops are in the game the moment the monster dies, drawn only when its death ends, then pop out (pickup data untouched)', at0.n >= 1 && at0.hidden && at0.drawn === 0 && !at08.hidden && at08.popping && at08.drawn > 0 && at08.inData && at13.plain && at13.drawn > 0 && at13.inData, { at0, at08, at13 });
-        check(P + 'nothing of a dead monster can be tapped: a tap on the falling body is not a monster', !!before && before.kind === 'monster' && before.monster === cow && (!after0 || after0.kind !== 'monster') && (!after08 || after08.kind !== 'monster'), { before: before && before.kind, after0: after0 && after0.kind, after08: after08 && after08.kind });
+        const ok = !!before && before.kind === 'monster' && before.monster === cow && after0 === null && label0 === null && !walked && !ring && kind0 === null && after08 === null
+          && !!side && (!side0 || side0.kind !== 'item') && sideLabel0 !== ITEMS[side.id].name && !!side08 && side08.kind === 'item' && side08.drop === side;
+        check(P + 'nothing of a dead monster can be tapped: a tap or a long-press on the falling body does nothing, and loot still hidden cannot be tapped or named until it pops out',
+          ok, { before: before && before.kind, after0, label0, walked, ring, kind0, after08: after08 && after08.kind, side0: side0 && side0.kind, sideLabel0, side08: side08 && side08.kind });
+      }
+      // (3b) the start of a death is HOOKS.monsterDeath and nothing else (phase-1 spec rule 9): a monster that only reached 0 hp
+      // plays nothing; killMonster fires the hook once, with { k, by, how, x, y }, and the body comes from it; a paid kill's
+      // phantom (no body) fires nothing
+      {
+        const seen = []; const spy = (m, info) => seen.push({ m, info }); HOOKS.monsterDeath.push(spy);
+        try {
+          const a = mk('wolf', -2 * TILE, 2 * TILE); a.hp = 0; a.dead = true; a.deadT = 0; F.step([]); F.step([]);
+          const quiet = !API.of(a) && !corpses.some(c => c.m === a) && seen.length === 0;
+          const b = mk('boar', 2 * TILE, 2 * TILE); b.hp = 0; killMonster(b);
+          const one = seen.filter(s => s.m === b), info = one[0] && one[0].info;
+          const shaped = one.length === 1 && !!info && ['k', 'by', 'how', 'x', 'y'].every(k => k in info) && info.how === 'blow' && info.x === b.x && info.y === b.y && info.k != null && !!API.of(b) && API.of(b).t === 0;
+          const n1 = seen.length, c1 = corpses.length;
+          if (typeof COOP !== 'undefined' && COOP.phantomOf) killMonster(COOP.phantomOf({ type: 'wolf', nid: 'deaths:ph', x: player.x, y: player.y + 2 * TILE }));
+          const phantom = seen.length === n1 && corpses.length === c1;
+          check(P + 'a death starts only from HOOKS.monsterDeath: 0 hp alone plays nothing, killMonster fires it once with { k, by, how, x, y }, a paid kill with no body fires nothing', quiet && shaped && phantom, { quiet, seen: seen.length, info, phantom });
+        } finally { HOOKS.monsterDeath.splice(HOOKS.monsterDeath.indexOf(spy), 1); }
+      }
+      // (3c) a grave a kill lays (54-graves) comes up as the body fades, never stuck through the falling body
+      if (typeof GRAVES !== 'undefined' && !window.__instance) {
+        // the game's own kill hooks (54-graves lays its marker in one) are back for this one kill
+        const w = mk('wolf', -3 * TILE, -2 * TILE), g0 = lastGrave(), was = HOOKS.kill.length; HOOKS.kill.push(...hk); w.hp = 0;
+        try { killMonster(w); } finally { HOOKS.kill.length = was; }
+        const mkr = lastGrave() !== g0 ? lastGrave() : null;
+        const shownNow = () => { const it = [], r = rec(); for (const hk of HOOKS.draw) hk(r.g, it, cam); return it.some(x => x.grave === mkr); };
+        const at0 = { a: mkr && API.markerAlpha(mkr), shown: shownNow() };
+        F.sim(44, []); const mid = { a: mkr && +API.markerAlpha(mkr).toFixed(2), shown: shownNow(), body: !!API.of(w) };
+        F.sim(30, []); const end = { a: mkr && API.markerAlpha(mkr), shown: shownNow(), body: !!API.of(w) };
+        check(P + 'a grave marker a kill lays is not drawn on the falling body: it comes up as the body fades, then stands as before', !!mkr && at0.a === 0 && !at0.shown && mid.body && mid.a > 0 && mid.a < 1 && mid.shown && !end.body && end.a === 1 && end.shown, { laid: !!mkr, at0, mid, end });
+      }
+      // (3d) a falling goblin, guard or castle guard is drawn without the weapon in his hand: it is only drawn flying off
+      {
+        const out = ['goblin', 'guard_m', 'castle_guard'].map((type, i) => {
+          const m = mk(type, (i - 1) * 2 * TILE, -4 * TILE); down(m); const c = API.of(m); if (!c) return { type, corpse: false };
+          const bare = calls(g => drawCharacter(g, c.body, type)).n, armed = calls(g => drawCharacter(g, Object.assign({}, c.body, { unarmed: false }), type)).n;
+          return { type, corpse: true, unarmed: c.body.unarmed === true, bare, armed };
+        });
+        F.sim(70, []);
+        check(P + 'a falling person\'s own sprite leaves the weapon out (goblin, town guard, castle guard), so it is never in his hand and flying at once', out.every(o => o.corpse && o.unarmed && o.bare > 0 && o.bare < o.armed), out);
       }
       // (4) the boss's own banner waits for the flash, and its time does not run while it waits
       {
@@ -516,12 +610,15 @@ const DEATHS = (() => {
         check(P + 'a boss\'s own banner is held until its flash (not drawn, its time not running), then shows as before', !!c && c.banner === lb && held0 && at1.held && at1.t === 3 && at1.ahead && !at1.drawn && !at22.held && at22.t < 3 && at22.ahead, { banner: !!lb, held0, at1, at22 });
         levelBanner = null;
       }
-      // (5) online: a puppet whose 'mon' row turns dead plays the same death, and the drops a friend's kill pays wait for it
+      // (5) online: a puppet's death starts on the keeper's word (its row turning dead, or its 'kill'), once; the drops a
+      // friend's kill pays wait for the body
       if (typeof NET !== 'undefined' && typeof COOP !== 'undefined') {
         const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }, real = monsters;
         let sock = null; const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
         const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
         const kills0 = player.kills, n0 = drops.length;
+        const seen = []; const spy = (m, info) => seen.push({ nid: m.nid, how: info.how }); HOOKS.monsterDeath.push(spy);
+        const fired = nid => seen.filter(s => s.nid === nid).length;
         try {
           NET.enabled = true; NET.token = 'deaths-test'; NET.useFake(fake); NET.connect();
           push({ t: 'keeper', map: 'over', n: 'Ann' });
@@ -530,33 +627,63 @@ const DEATHS = (() => {
           push({ t: 'mon', n: 'Ann', list: [row(false, 22)] }); F.step([]);
           const p = COOP.find('Ann:dd'), alive = !!p && p.remote && !p.dead && !API.of(p);
           push({ t: 'mon', n: 'Ann', list: [row(true, 0)] }); F.step([]);
-          const c = p && API.of(p), born = !!c && c.remote && c.kind === 'beast';
+          const c = p && API.of(p), born = !!c && c.remote && c.kind === 'beast' && fired('Ann:dd') === 1 && seen[seen.length - 1].how === 'row';
           push({ t: 'kill', nid: 'Ann:dd', type: 'wolf', x, y }); F.step([]);
           const paid = drops.slice(n0), waits = paid.length > 0 && paid.every(d => API.hidden(d));
           push({ t: 'mon', n: 'Ann', list: [row(true, 0)] }); F.sim(25, []);
           const mid = c && { t: +c.t.toFixed(2), fall: pose(c).fall, drawn: calls(g => drawCorpse(g, c)).n, tap: tapPick(p.x - cam.x, p.y - cam.y) };
           push({ t: 'mon', n: 'Ann', list: [row(true, 0)] }); F.sim(40, []);
-          const gone = !!c && !corpses.includes(c), shown = paid.every(d => !API.hidden(d));
-          check(P + 'online: a puppet whose row turns dead plays the same death, the drops a friend\'s kill pays wait for it, and it is gone after', alive && born && waits && !!mid && mid.fall === 1 && mid.drawn > 20 && (!mid.tap || mid.tap.kind !== 'monster') && gone && shown, { alive, born, paid: paid.length, waits, mid: mid && { t: mid.t, fall: mid.fall, drawn: mid.drawn, tap: mid.tap && mid.tap.kind }, gone, shown });
-          // the keeper's 'kill' comes back a round trip after Cohen's own last blow felled the puppet (0.25 s, 0.5 s, and 0.87 s,
-          // after the pop would have started): its drops wait for the body or pop out of it, never lie there plain while it falls
+          const gone = !!c && !corpses.includes(c), shown = paid.every(d => !API.hidden(d)), once = fired('Ann:dd') === 1;
+          check(P + 'online: a puppet whose row turns dead plays the same death (once, the kill after it starts nothing), the drops a friend\'s kill pays wait for it, and it is gone after', alive && born && waits && !!mid && mid.fall === 1 && mid.drawn > 20 && !mid.tap && gone && shown && once, { alive, born, paid: paid.length, waits, mid: mid && { t: mid.t, fall: mid.fall, drawn: mid.drawn, tap: mid.tap && mid.tap.kind }, gone, shown, fired: fired('Ann:dd') });
+          // Cohen's own last blow on a friend's monster starts no death: it stands still and hurt until the keeper's word
+          // (here its 'kill', coming back 0.2 s later while the rows still say alive), then falls; the rows that follow start nothing
+          {
+            const nid = 'Ann:own', ox = x, oy = y + 4 * TILE;
+            const rw = dead => [nid, 'wolf', ox, oy, dead ? 0 : 22, 22, 'chase', -1, 0, 0, 0, dead ? 1 : 0, 0, 0];
+            push({ t: 'mon', n: 'Ann', list: [rw(false)] }); F.step([]);
+            const q = COOP.find(nid); let hold = null, waitAt = null;
+            if (q) {
+              q.hp = 0; killMonster(q);
+              hold = { dead: q.dead, corpse: !!API.of(q), stag: API.staggering(q), core: calls(g => drawCharacter(g, q, q.type)).n, item: 0 };
+              { const it = [], r = rec(); for (const hk of HOOKS.draw) hk(r.g, it, cam); const n0 = r.st.n; for (const e of it) if (e.y === q.y) e.draw(); hold.item = r.st.n - n0; }
+              for (let i = 0; i < 12; i++) { push({ t: 'mon', n: 'Ann', list: [rw(false)] }); F.step([]); }
+              waitAt = { corpse: !!API.of(q), stag: API.staggering(q), dead: q.dead, fired: fired(nid) };
+              push({ t: 'kill', nid, type: 'wolf', x: ox, y: oy, to: 'Cohen' });
+            }
+            const qc = q && API.of(q), firedKill = fired(nid);
+            for (let i = 0; i < 70; i++) { push({ t: 'mon', n: 'Ann', list: [rw(true)] }); F.step([]); }
+            const res = { puppet: !!q, hold, waitAt, corpse: !!qc && qc.remote, firedKill, after: fired(nid), gone: !!qc && !corpses.includes(qc) };
+            check(P + 'online: Cohen\'s own last blow on a friend\'s monster starts no death on his say-so: it holds still and hurt until the keeper\'s word, then falls, once', !!q && hold.dead && !hold.corpse && hold.stag && hold.core === 0 && hold.item >= 1 && !waitAt.corpse && waitAt.stag && waitAt.fired === 0 && res.corpse && firedKill === 1 && res.after === 1 && res.gone, res);
+          }
+          // a knight who walks up to a monster the keeper killed before he got there sees it already dead: no death plays
+          {
+            const nid = 'Ann:old'; push({ t: 'mon', n: 'Ann', list: [[nid, 'brood_mother', x, y + 6 * TILE, 0, MONSTER_DEFS.brood_mother.hp, 'idle', -1, 0, 0, 0, 1, 0, 0]] }); F.step([]);
+            const q = COOP.find(nid); for (let i = 0; i < 5; i++) { push({ t: 'mon', n: 'Ann', list: [[nid, 'brood_mother', x, y + 6 * TILE, 0, MONSTER_DEFS.brood_mother.hp, 'idle', -1, 0, 0, 0, 1, 0, 0]] }); F.step([]); }
+            check(P + 'online: a monster first seen already dead (killed before this knight arrived) plays no death, no flash and no shake', !!q && q.dead && !API.of(q) && fired(nid) === 0 && !corpses.some(k => k.nid === nid), { puppet: !!q, dead: q && q.dead, fired: fired(nid) });
+          }
+          // the keeper's 'kill' comes back a round trip after Cohen's own last blow felled the puppet (0.25 s, 0.5 s, 0.87 s,
+          // after the pop would have started, and 1.25 s, after the body is gone): its drops wait for the body or pop out of
+          // it, never lie there plain while it falls, and a kill after the body is gone never plays the death a second time
           const late = [];
-          for (const lag of [15, 30, 52]) {
+          for (const lag of [15, 30, 52, 75]) {
             const nid = 'Ann:late' + lag, lx = x, ly = y + 2 * TILE;
             const rw = dead => [nid, 'wolf', lx, ly, dead ? 0 : 22, 22, 'chase', -1, 0, 0, 0, dead ? 1 : 0, 0, 0];
             push({ t: 'mon', n: 'Ann', list: [rw(false)] }); F.step([]);
             const q = COOP.find(nid); if (!q) { late.push({ lag, puppet: false }); continue; }
-            q.hp = 0; killMonster(q); const qc = API.of(q);
-            for (let i = 0; i < lag; i++) { push({ t: 'mon', n: 'Ann', list: [rw(true)] }); F.step([]); }
-            const m0 = drops.length, at = qc && +qc.t.toFixed(2);
+            q.hp = 0; killMonster(q); const own = !API.of(q);
+            push({ t: 'mon', n: 'Ann', list: [rw(true)] }); F.step([]);
+            const qc = API.of(q);
+            for (let i = 1; i < lag; i++) { push({ t: 'mon', n: 'Ann', list: [rw(true)] }); F.step([]); }
+            const m0 = drops.length, at = qc && +qc.t.toFixed(2), up = !!qc && corpses.includes(qc), c0 = corpses.length;
             push({ t: 'kill', nid, type: 'wolf', x: lx, y: ly, to: 'Cohen' });
-            const got = drops.slice(m0), waitsOrPops = got.length > 0 && got.every(d => API.hidden(d) || API.popping(d));
+            const got = drops.slice(m0), waitsOrPops = got.length > 0 && got.every(d => API.hidden(d) || API.popping(d)), second = corpses.length > c0 || corpses.some(k => k.nid === nid && k !== qc);
             let plain = 0, frames = 0;
             while (qc && corpses.includes(qc) && frames < 90) { for (const d of got) if (drops.includes(d) && !API.hidden(d) && !API.popping(d)) plain++; push({ t: 'mon', n: 'Ann', list: [rw(true)] }); F.step([]); frames++; }
             F.sim(30, []);
-            late.push({ lag, corpse: !!qc, at, paid: got.length, waitsOrPops, plain, gone: !!qc && !corpses.includes(qc), shown: got.every(d => !API.hidden(d) && !API.popping(d)) });
+            late.push({ lag, own, corpse: !!qc, up, at, paid: got.length, waitsOrPops, plain, second, fired: fired(nid), gone: !!qc && !corpses.includes(qc), shown: got.every(d => !API.hidden(d) && !API.popping(d)) });
           }
-          check(P + 'online: when the keeper\'s kill comes back late (0.25 s, 0.5 s, 0.87 s after Cohen\'s own last blow), its drops still wait for the falling body or pop out of it', late.length === 3 && late.every(o => o.corpse && o.paid > 0 && o.waitsOrPops && o.plain === 0 && o.gone && o.shown), late);
+          check(P + 'online: when the keeper\'s kill comes back late (0.25 s, 0.5 s, 0.87 s after Cohen\'s own last blow), its drops still wait for the falling body or pop out of it; at 1.25 s the body is gone, the loot lies plain and the death does not play twice',
+            late.length === 4 && late.every(o => o.own && o.corpse && o.paid > 0 && o.plain === 0 && !o.second && o.fired === 1 && o.gone && o.shown && (o.lag < 60 ? o.up && o.waitsOrPops : !o.up && !o.waitsOrPops)), late);
           // a boss a friend's game kills: the banner the kill pays this knight waits for the flash here too, whether the
           // keeper's dead row or the 'kill' reaches this knight first
           const bossRuns = [];
@@ -580,6 +707,7 @@ const DEATHS = (() => {
           }
           check(P + 'online: a boss\'s banner paid by a friend\'s kill is held until the flash on this screen too (not drawn, its time not running), then shows', bossRuns.every(o => o.boss && o.remote && o.banner && o.held0 && o.at1.held && o.at1.bt === 3 && o.at1.ahead && o.at22.flashed && !o.at22.held && o.at22.bt < 3 && o.gone), bossRuns);
         } finally {
+          HOOKS.monsterDeath.splice(HOOKS.monsterDeath.indexOf(spy), 1);
           NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
           COOP.reset(); monsters = real; COOP.state.idxLen = -1; player.kills = kills0;
         }
@@ -606,6 +734,7 @@ const DEATHS = (() => {
       for (const m of temp) { const i = monsters.indexOf(m); if (i >= 0) monsters.splice(i, 1); const j = keep.mons.indexOf(m); if (j >= 0) keep.mons.splice(j, 1); }
       API.clear(); API.freeze = false;
       drops = keep.drops; player.x = keep.px; player.y = keep.py; player.hp = keep.hp; player.kills = keep.kills; h.peace(keep.peace);
+      quest.graves = keep.graves; quest.graveNight = keep.graveNight;
       levelBanner = keep.banner; dialog.cur = keep.dc; dialog.queue.length = 0; dialog.queue.push(...keep.dq);
       if (typeof SETTINGS !== 'undefined') SETTINGS.set('shake', keep.shake);
     }
@@ -616,6 +745,12 @@ const DEATHS = (() => {
     list: () => corpses.slice(), of: m => (m && m[DA] && corpses.includes(m[DA])) ? m[DA] : null,
     spawn, pose, uOf, kindOf, isBoss, holding, popAt, draw: drawCorpse, drawFlash,
     hidden: d => !!d && d[PIN] > 0, popping: d => !!d && d[PIN] === 0 && d[PT] !== undefined, waiting: () => pending.length,
+    staggering: m => !!m && !!m[STAG] && stagger.includes(m),
+    // how much of what a death leaves on the ground shows: 0 while the body is up, rising as it fades, 1 once it is gone
+    remains: m => { const c = API.of(m); return c ? 1 - pose(c).alpha : 1; },
+    markerAlpha: mk => { const c = mk && mk[MK]; if (!c) return 1; if (!corpses.includes(c)) { mk[MK] = null; return 1; } return 1 - pose(c).alpha; },
+    // a boss file paying out after the flash (91-royalmine's golem): the drops fn makes pop out of m's body
+    payOut: (m, fn) => { const c = API.of(m), was = note(); fn(); if (c) adopt(c, was); },
     clear: () => { while (corpses.length) end(corpses[0]); },
   });
   return API;
