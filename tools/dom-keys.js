@@ -84,6 +84,29 @@ async function scene(browser, touch) {
     check('E on the wind shrine (the storm broken) opens its two choices; a click on Into the storm goes in to the Thunderbird', btn.panel === 'windshrine' && !!btn.b && btn.b.h >= 44 && storm.inst === 'stormfront' && storm.bird, { btn, storm });
     check('rematch keys: no page errors', errors.length === 0, errors);
     await page.close(); }
+  // the parent page (online/public/admin.html) as a laptop shows it: the accounts table fits 1280 with its last buttons in
+  // view, and a word strike's row says what was typed, so the parent can tell whether it was fair (review round 3)
+  { const admin = path.join(__dirname, '..', 'online', 'public', 'admin.html');
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }); const errors = []; page.on('pageerror', e => errors.push(e.message));
+    const now = Date.now(), H = 3600000, D = 24 * H;
+    const acct = o => Object.assign({ role: 'player', online: false, created: now - 20 * D, lastOn: now - D, lastSeen: now - D, lastLogin: now - D, onlineMs: 3 * H, countedSince: now - 9 * D, playSeconds: 7200, saveAt: now - D, banned: false, mutedUntil: 0, logins: [], strikes: 0, strikeAt: 0, wordsLockedUntil: 0, badName: false }, o);
+    const data = {
+      '/api/admin/accounts': [acct({ name: 'MudGoll', role: 'admin', online: true, map: 'over', region: 'Thistledown' }), acct({ name: 'Cohen', online: true, map: 'over', region: 'Wolfwood' }),
+        acct({ name: 'Sam', strikes: 3, strikeAt: now - H, wordsLockedUntil: now + 23 * H }), acct({ name: 'Pip', strikes: 1, strikeAt: now - 2 * H, mutedUntil: now + H }), acct({ name: 'Stupid Sam', badName: true })],
+      '/api/admin/online': [], '/api/admin/chat': [], '/api/admin/trades': [], '/api/admin/invite': { invite: 'TEST-1234' },
+      '/api/admin/modlog': [{ at: now - H, by: 'word filter', act: 'strike', n: 'Sam', detail: '3, kept out 24 hours: you idiot' }, { at: now - 2 * H, by: 'word filter', act: 'strike', n: 'Pip', detail: '1' }],
+    };
+    await page.route('http://parent.test/**', r => { const u = new URL(r.request().url()); return u.pathname === '/admin' ? r.fulfill({ contentType: 'text/html', body: fs.readFileSync(admin, 'utf8') }) : r.fulfill({ contentType: 'application/json', body: JSON.stringify(data[u.pathname] || {}) }); });
+    await page.goto('http://parent.test/admin'); await page.fill('#key', 'k'); await page.click('#usekey');
+    await page.waitForFunction(() => document.querySelectorAll('#accounts tbody tr').length === 5 && document.querySelectorAll('#modlog div').length === 2, null, { timeout: 4000 }).catch(() => { });
+    const got = await page.evaluate(() => {
+      const t = document.getElementById('accounts'), box = t.parentElement.getBoundingClientRect();
+      const last = Array.from(t.querySelectorAll('tbody tr td:last-child button')).map(b => b.getBoundingClientRect());
+      return { table: t.scrollWidth, box: t.parentElement.clientWidth, inView: last.length > 0 && last.every(r => r.right <= box.right + 0.5), log: Array.from(document.querySelectorAll('#modlog div'), d => d.textContent.replace(/^.*? — /, '')) };
+    });
+    check('parent page at 1280: the accounts table fits, every Logins / Reset secret word / Ban / Saves button in view', got.table <= got.box && got.inView, got);
+    check('parent page: a word strike says what was typed ("Sam got word strike 3 for typing "you idiot", kept out 24 hours"); an older row says the count', JSON.stringify(got.log) === JSON.stringify(['Sam got word strike 3 for typing "you idiot", kept out 24 hours', 'Pip got word strike 1']) && errors.length === 0, { log: got.log, errors });
+    await page.close(); }
   await browser.close();
   const bad = results.filter(r => !r[1]).length;
   console.log(bad ? `dom-keys: ${bad} FAILED of ${results.length}` : `dom-keys: ALL ${results.length} PASS`);

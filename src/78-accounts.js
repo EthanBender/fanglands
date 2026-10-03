@@ -149,7 +149,7 @@
   // Built on first use, only where there is a document body (tools/headless.js has none). While it has the keyboard no
   // key reaches the game: 05-input listens on window in the bubble phase, this listens in the capture phase and stops
   // the event there (74-chat's guard). Enter is Next, Escape lets go of the keyboard.
-  let box = null, want = null, boxEnter = null;
+  let box = null, want = null, boxEnter = null, boxMax = WORD_MAX;
   function ensureBox() {
     if (box !== null) return box;
     if (typeof document === 'undefined' || !document.body || typeof document.createElement !== 'function' || typeof document.body.appendChild !== 'function') { box = false; return box; }
@@ -159,7 +159,7 @@
       input.setAttribute('autocapitalize', 'none'); input.setAttribute('autocorrect', 'off'); input.setAttribute('enterkeyhint', 'next'); input.setAttribute('aria-label', 'New secret word');
       input.placeholder = 'New secret word';
       input.style.cssText = 'position:fixed;display:none;z-index:15;box-sizing:border-box;margin:0;padding:0 12px;font:16px "Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#e6edf3;background:#0b0f14;border:1px solid #f5c542;border-radius:8px;outline:none;-webkit-appearance:none;appearance:none;';
-      input.addEventListener('input', () => { S.word = String(input.value).slice(0, WORD_MAX); });
+      input.addEventListener('input', () => { S.word = String(input.value).slice(0, boxMax); });
       const guard = e => {
         if (!box || document.activeElement !== box.input) return;
         if (e.type === 'keydown') { if (e.key === 'Enter') { e.preventDefault(); (boxEnter || resetNext)(); } else if (e.key === 'Escape') { e.preventDefault(); blurBox(); } }
@@ -179,6 +179,9 @@
     if (vv && typeof vv.height === 'number' && document.activeElement === d.input) { const bottom = (vv.offsetTop || 0) + vv.height - 8; if (top + w.h > bottom) top = Math.max(8, bottom - w.h); }
     const k = [w.x, top, w.w, w.h].join(',');
     if (d.key !== k) { d.key = k; const s = d.input.style; s.left = Math.round(w.x) + 'px'; s.top = Math.round(top) + 'px'; s.width = Math.round(w.w) + 'px'; s.height = Math.round(w.h) + 'px'; }
+    // as many letters as the thing typed can have: a secret word WORD_MAX, a borrowed box its own (a name 16)
+    boxMax = w.max || WORD_MAX; if (d.input.maxLength !== boxMax) d.input.maxLength = boxMax;
+    if (S.word.length > boxMax) S.word = S.word.slice(0, boxMax);
     if (d.input.value !== S.word) d.input.value = S.word;
     // what the box is for: the secret word, or whatever a view that borrowed it says (ACCOUNTS.textBox)
     const ph = w.placeholder || 'New secret word';
@@ -348,7 +351,7 @@
     if (a.banned) lines.push(["Banned: can't log in", RED]);
     for (const fn of EXT.lines) for (const l of fn(a) || []) lines.push(l);
     if (isMe) lines.push(['This is you. Change your own secret word on the parent page.', GOLD]);
-    else if (a.role === 'admin') lines.push(['An admin. Only the parent page can change an admin.', GOLD]);
+    else if (a.role === 'admin') lines.push(['An admin. Only the parent page can mute, kick, ban, rename or reset an admin.', GOLD]);
     const LH = 20, colW = wide ? Math.floor(w * 0.5) - 8 : w - 8;
     // a sentence too long for the column goes onto a second line rather than losing its end
     for (let i = lines.length - 1; i >= 0; i--) { const parts = wrap(g, lines[i][0], colW, '13px sans-serif'); if (parts.length > 1) lines.splice(i, 1, ...parts.map(p => [p, lines[i][1]])); }
@@ -483,12 +486,12 @@
     if (o && o.views) for (const kind in o.views) if (typeof o.views[kind] === 'function') EXT.views[kind] = o.views[kind];
   }
   // A view's text box: drawn here like the secret word's, the real <input> laid over it while the view is up. The words
-  // typed are S.word (setWord); Enter calls enter. Answers the box's rect.
-  function textBox(g, x, y, w, h, placeholder, enter) {
+  // typed are S.word (setWord); Enter calls enter; max is the most letters it takes (WORD_MAX when not given). Answers the box's rect.
+  function textBox(g, x, y, w, h, placeholder, enter, max) {
     roundRect(g, x, y, w, h, 8); g.fillStyle = '#0b0f14'; g.fill(); g.strokeStyle = GOLD; g.lineWidth = 1; g.stroke();
     g.font = '15px sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = S.word ? INK : '#6e7681'; g.fillText(fit(g, S.word || placeholder, w - 24), x + 12, y + h / 2); g.textBaseline = 'alphabetic';
     buttons.push({ x, y, w, h, label: 'acct:wordbox', action: focusBox });
-    want = { x, y, w, h, placeholder }; boxEnter = enter || null;
+    want = { x, y, w, h, placeholder, max: max > 0 ? Math.min(max, WORD_MAX) : WORD_MAX }; boxEnter = enter || null;
     return want;
   }
 
@@ -496,6 +499,7 @@
     refresh, openAccount, startReset, resetNext, resetSend, setWord, scrollBy, tapList,
     whenWords, dayWords, spanWords, clockWords, order, clean, REFRESH_EVERY, state: S,
     extend, textBox, find, btn, row, text, wrap, leaveView: leaveReset, blurBox,
+    boxMax: () => want ? (want.max || WORD_MAX) : 0,   // the most letters the box on screen takes (self-tests)
   };
   window.ACCOUNTS = ACCOUNTS;
 
@@ -618,7 +622,7 @@
         F.clickButton('acct:span:1h'); const muted = same(sent.filter(m => m.t === 'mute').pop(), { t: 'mute', n: 'Cohen', span: '1h' }) && S.view.kind === 'acct';
         render(); F.clickButton('acct:ban'); const armed = !sent.some(m => m.t === 'ban'); render(); F.clickButton('acct:ban'); const banned = same(sent.filter(m => m.t === 'ban').pop(), { t: 'ban', n: 'Cohen' });
         const g0 = gets(); feed({ t: 'mod', ok: true, act: 'ban', n: 'Cohen' }); const again = gets() === g0 + 1;
-        openAccount('Ada'); const adaText = drawn(); const adaBare = !['acct:mute', 'acct:ban', 'acct:kick', 'acct:reset', 'acct:unmute'].some(has) && adaText.join(' ').includes('An admin. Only the parent page can change an admin.');
+        openAccount('Ada'); const adaText = drawn(); const adaBare = !['acct:mute', 'acct:ban', 'acct:kick', 'acct:reset', 'acct:unmute'].some(has) && adaText.join(' ').includes('An admin. Only the parent page can mute, kick, ban, rename or reset an admin.');
         openAccount('MudGoll'); const meText = drawn(); const meBare = !['acct:mute', 'acct:ban', 'acct:reset'].some(has) && meText.join(' ').includes('This is you. Change your own secret word on the parent page.');
         openAccount('Pip'); const pipText = drawn(); const pip = has('acct:unmute') && !has('acct:kick') && pipText.some(t => /^Muted for 10 minutes more$/.test(t)) && pipText.includes('LAST LOGIN');
         openAccount('Bo'); const boText = drawn(); const bo = has('acct:unban') && boText.includes("Banned: can't log in") && boText.includes('Last login: none since ' + dayWords(since)) && boText.includes('None since ' + dayWords(since) + ', when counting began.');

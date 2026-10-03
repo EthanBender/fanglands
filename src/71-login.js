@@ -57,14 +57,24 @@
   // ---------- the world's answers in plain words ----------
   // Kept out for bad words: the real time it ends, in this device's own clock: "You're kept out until 7:42 pm tomorrow for bad words."
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  LOGIN.keptOut = (until, now) => {
+  // "7:42 pm tomorrow", or null for no time
+  LOGIN.keptWhen = (until, now) => {
     until = Number(until); now = now == null ? Date.now() : now;
-    if (!Number.isFinite(until) || until <= 0) return "You're kept out for 24 hours for bad words.";
+    if (!Number.isFinite(until) || until <= 0) return null;
     const d = new Date(until), h = d.getHours(), clock = `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
     const day0 = new Date(now); day0.setHours(0, 0, 0, 0);
     const days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - day0.getTime()) / 86400000);
-    const when = days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `on ${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`;
-    return `You're kept out until ${clock} ${when} for bad words.`;
+    return `${clock} ${days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `on ${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`}`;
+  };
+  LOGIN.keptOut = (until, now) => {
+    const when = LOGIN.keptWhen(until, now);
+    return when ? `You're kept out until ${when} for bad words.` : "You're kept out for 24 hours for bad words.";
+  };
+  // The same lockout said about the device, not a knight: after Not me (or for a New knight the world refused from this
+  // place) a brother or sister on the same iPad reads it, and their own knight still logs in. Only New knight is off.
+  LOGIN.newKnightOff = (until, now) => {
+    const when = LOGIN.keptWhen(until, now);
+    return when ? `New knight is off here until ${when}. Your own knight can still log in.` : 'New knight is off here for 24 hours. Your own knight can still log in.';
   };
   // the device remembers a lockout the world told it about, until it ends
   LOGIN.keptOutUntil = now => {
@@ -77,7 +87,7 @@
   LOGIN.KEPT_KEY = KEPT_KEY;
   LOGIN.sentence = (err, kind) => {
     const code = err && err.code, st = err && err.status;
-    if (code === 'words') { LOGIN.noteKeptOut(err.until); return LOGIN.keptOut(err.until); }
+    if (code === 'words') { LOGIN.noteKeptOut(err.until); return kind === 'signup' ? LOGIN.newKnightOff(err.until) : LOGIN.keptOut(err.until); }
     if (code === 'renamed') return `An admin changed your knight's name to ${err.name}.`;
     if (code === 'wait' || st === 429) return 'Too many tries. Wait a minute.';
     if (code === 'kicked') return 'An admin sent you out of the world. You can come back in.';
@@ -175,7 +185,7 @@
     if (LOGIN.busy) return false;
     if (!NAME_RE.test(name)) return oops("A knight's name is 2 to 16 letters or numbers.");
     if (pass.length < 4) return oops('The secret word needs at least 4 letters.');
-    if (isNew && LOGIN.keptOutUntil()) { LOGIN.newKnight = false; return oops(LOGIN.keptOut(LOGIN.keptOutUntil())); }
+    if (isNew && LOGIN.keptOutUntil()) { LOGIN.newKnight = false; return oops(LOGIN.newKnightOff(LOGIN.keptOutUntil())); }
     if (isNew && !invite) return oops('Type the invite code. Ask Ethan for it.');
     LOGIN.error = ''; LOGIN.busy = true; LOGIN.mode = 'busy'; refresh();
     const kind = isNew ? 'signup' : 'login';
@@ -228,6 +238,13 @@
       if (e && (e.code === 'auth' || e.status === 401 || e.code === 'banned' || e.status === 403)) { NET.setToken(null); LOGIN.error = e.code === 'banned' ? LOGIN.sentence(e, 'login') : ''; }
       LOGIN.mode = 'form'; refresh();
     });
+  // Kept out on "Playing as": ask the world quietly, without "Looking for your knight...". Let in: the lockout is forgotten
+  // and Play comes back. Still kept out: the time it ends may have moved. Anything else: left as it is.
+  const RECHECK_S = 60, KEPT_WORDS = /^(You're kept out|New knight is off)/; LOGIN.recheckAt = null;
+  const recheck = () => when(api('GET', '/api/me'),
+    r => { if (LOGIN.mode !== 'me') return; lsDel(KEPT_KEY); if (KEPT_WORDS.test(LOGIN.error)) LOGIN.error = ''; LOGIN.keptShown = 0; refresh(); },
+    e => { if (LOGIN.mode !== 'me' || !e || e.code !== 'words') return; LOGIN.error = LOGIN.sentence(e, 'login'); refresh(); });
+  LOGIN.recheck = recheck;
   LOGIN.show = () => {
     LOGIN.showing = true; LOGIN.alone = false; LOGIN.playing = false; LOGIN.error = ''; LOGIN.offer = null; LOGIN.busy = false; LOGIN.asleep = false;
     LOGIN.status = 'Looking for the world...'; LOGIN.mode = NET.token ? 'checking' : 'form';
@@ -242,10 +259,10 @@
     if (LOGIN.mode !== 'form' && LOGIN.mode !== 'me' && LOGIN.mode !== 'checking') return '';
     if (LOGIN.error) return LOGIN.error;
     const kept = LOGIN.keptOutUntil();
-    return kept ? LOGIN.keptOut(kept) : '';
+    return !kept ? '' : LOGIN.mode === 'form' ? LOGIN.newKnightOff(kept) : LOGIN.keptOut(kept);
   };
   LOGIN.hide = hide;
-  LOGIN.playAs = () => { if (LOGIN.mode !== 'me') return false; afterLogin(); return true; };
+  LOGIN.playAs = () => { if (LOGIN.mode !== 'me' || LOGIN.keptOutUntil()) return false; afterLogin(); return true; };
   LOGIN.notMe = () => { when(api('POST', '/api/logout'), noop, noop); NET.setToken(null); LOGIN.name = null; LOGIN.mode = 'form'; LOGIN.error = ''; refresh(); };
   LOGIN.playAlone = () => { LOGIN.alone = true; hide(); title.refresh(); };
   LOGIN.backOnline = () => { LOGIN.alone = false; LOGIN.show(); };
@@ -272,6 +289,8 @@
     // kicked and kept out both keep the session, and the world takes a save from either (a save goes through while kept out),
     // so the last few seconds of play go up before the title: never lost to an older cloud save at the next login
     if ((m.code === 'kicked' || m.code === 'words') && window.CLOUD) { save(); window.CLOUD.flush(); }
+    // an open chat box would sit over the card (the third strike always comes from chat)
+    if (window.CHAT && CHAT.isOpen()) CHAT.close();
     LOGIN.playing = false; NET.disconnect(); if (m.code === 'banned') NET.setToken(null);
     title.open(); LOGIN.error = text; refresh();
   });
@@ -302,8 +321,13 @@
   title.tick = dt => {
     if (!LOGIN.showing) return _tick(dt);
     title.t += dt; time += dt;
-    // a lockout that ended while the card was up: New knight comes back and the sentence goes
-    if (LOGIN.keptShown && !LOGIN.keptOutUntil()) { LOGIN.keptShown = 0; refresh(); }
+    // a lockout that ended while the card was up: New knight and Play come back and the sentence goes
+    if (LOGIN.keptShown && !LOGIN.keptOutUntil()) { LOGIN.keptShown = 0; if (KEPT_WORDS.test(LOGIN.error)) LOGIN.error = ''; refresh(); }
+    // kept out on "Playing as": Play is greyed, so the world is asked again every RECHECK_S on its own (an admin may clear it)
+    if (LOGIN.keptShown && LOGIN.mode === 'me' && NET.token) {
+      if (LOGIN.recheckAt == null) LOGIN.recheckAt = title.t + RECHECK_S;
+      else if (title.t >= LOGIN.recheckAt) { LOGIN.recheckAt = title.t + RECHECK_S; recheck(); }
+    } else LOGIN.recheckAt = null;
     pressed.clear(); keys.clear(); touch.taps.length = 0;
   };
 
@@ -364,7 +388,7 @@
       u.inviteBox, u.err, el('div', { cls: 'fl-row' }, u.submit));
     u.whoName = el('b', {});
     u.who = el('div', {}, el('div', { cls: 'fl-line' }, el('span', { text: 'Playing as ' }), u.whoName),
-      el('div', { cls: 'fl-row' }, el('button', { type: 'button', text: 'Play', onclick: LOGIN.playAs }), el('button', { type: 'button', cls: 'fl-dim', text: 'Not me', onclick: LOGIN.notMe })));
+      el('div', { cls: 'fl-row' }, (u.play = el('button', { type: 'button', text: 'Play', onclick: LOGIN.playAs })), el('button', { type: 'button', cls: 'fl-dim', text: 'Not me', onclick: LOGIN.notMe })));
     u.offerText = el('div', { cls: 'fl-line' });
     u.offer = el('div', {}, u.offerText, el('div', { cls: 'fl-row' }, el('button', { type: 'button', text: 'Yes, bring my knight', onclick: () => LOGIN.bring(true) }), el('button', { type: 'button', cls: 'fl-dim', text: 'No, start fresh', onclick: () => LOGIN.bring(false) })));
     u.busy = el('div', { cls: 'fl-line', text: 'One moment...' });
@@ -395,6 +419,8 @@
     const kept = LOGIN.keptOutUntil(); LOGIN.keptShown = kept;
     if (kept) LOGIN.newKnight = false;
     ui.newBox.disabled = !!kept; ui.newLabel.classList.toggle('fl-off', !!kept);
+    // kept out on "Playing as": Play is greyed until the time is up (it would only say the same sentence again)
+    ui.play.disabled = !!kept && m === 'me';
     ui.inviteBox.hidden = !LOGIN.newKnight; ui.newBox.checked = LOGIN.newKnight;
     ui.submit.textContent = LOGIN.newKnight ? 'Make my knight' : 'Play'; ui.submit.disabled = LOGIN.busy;
     ui.pass.setAttribute('autocomplete', LOGIN.newKnight ? 'new-password' : 'current-password');

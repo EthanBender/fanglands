@@ -34,10 +34,14 @@
     if (window.CHAT && CHAT.system) for (const part of text.replace(/\. (?=[A-Z])/g, '.\n').split('\n')) CHAT.system(part, color);
     notify(text); if (notice) notice.t = 6;
   }
+  // The last warning is the one message between a kid and 24 hours out, so it is also the big centre banner (the size a
+  // level-up is said in), not only the small ribbon a kid misses mid-fight on an iPad.
+  const LAST = { text: 'LAST WARNING', sub: "Do it again: kept out 24 hours", t: 6 };
   NET.on('strike', m => {
     if (!m) return;
     const text = WARN[m.n] || (typeof m.text === 'string' && m.text ? m.text.slice(0, 160) : WARN[1]);
     say(text, RED); sfx('open');
+    if (m.n >= 2) levelBanner = Object.assign({}, LAST);
   });
   NET.on('error', m => {
     if (!m || m.code !== 'renamed' || typeof m.name !== 'string' || !NAME_RE.test(tidy(m.name)) || tidy(m.name).length > 16) return;
@@ -72,7 +76,7 @@
   function lines(a) {
     const out = [];
     if (keptOut(a)) out.push([`Kept out for bad words until ${A.whenWords(a.wordsLockedUntil)}`, RED]);
-    if (a.strikes > 0) out.push([`Word strikes: ${a.strikes}. The last was ${A.whenWords(a.strikeAt)}. They go on ${fadeDay(a)} if there are no more.`, ORANGE]);
+    if (a.strikes > 0) out.push([`Word strikes: ${a.strikes}. The last was ${A.whenWords(a.strikeAt)}. They are wiped on ${fadeDay(a)} if there are no new ones.`, ORANGE]);
     else out.push(['Word strikes: none', DIM]);
     if (a.badName) out.push(['This name has a bad word in it. Tap Rename to give a new one.', RED]);
     if (S.msg && S.msg.n.toLowerCase() === a.name.toLowerCase()) out.push([S.msg.text, S.msg.color]);
@@ -114,11 +118,14 @@
     A.setWord(''); A.state.view = { kind: 'rename', n: a.name, step: 'type', text: '' }; S.msg = null;
     return true;
   }
-  const shapeOk = t => t.length >= 2 && t.length <= 16 && NAME_RE.test(t);
+  const NAME_MAX = 16;
+  const shapeOk = t => t.length >= 2 && t.length <= NAME_MAX && NAME_RE.test(t);
+  // what is wrong with a name, in one sentence that says which part (the box takes 16 at most, so too long is a paste)
+  const shapeWords = t => t.length < 2 ? 'A name needs at least 2 letters or numbers.' : t.length > NAME_MAX ? `That is ${t.length} letters. A name is at most ${NAME_MAX}.` : 'Only letters, numbers and spaces.';
   function renameNext() {
     const v = A.state.view; if (!v || v.kind !== 'rename' || v.step !== 'type') return false;
     const to = tidy(A.state.word);
-    if (!shapeOk(to)) { v.text = 'A name is 2 to 16 letters or numbers.'; return false; }
+    if (!shapeOk(to)) { v.text = shapeWords(to); return false; }
     if (to === v.n) { v.text = `That is already ${v.n}'s name.`; return false; }
     v.to = to; v.step = 'confirm'; v.text = ''; A.blurBox(); return true;
   }
@@ -143,10 +150,11 @@
     let yy = y + T + 14;
     const say2 = (s, color, font) => { for (const l of A.wrap(g, s, w, font || '13px sans-serif')) { A.text(g, l, x, yy + 14, w, color, font || '13px sans-serif'); yy += 20; } };
     if (v.step === 'type') {
-      A.textBox(g, x, yy, w, T, 'New name', renameNext);
+      A.textBox(g, x, yy, w, T, 'New name', renameNext, NAME_MAX);
       yy += T + 8;
-      if (v.text) say2(v.text, ORANGE);
-      say2('2 to 16 letters or numbers, and nothing rude. Their knight, save and secret word stay the same.', DIM);
+      // the rule once: what is wrong in orange when something is, the rule in grey when nothing is yet
+      if (v.text) say2(v.text, ORANGE); else say2('2 to 16 letters or numbers, and nothing rude.', DIM);
+      say2('Their knight, save and secret word stay the same.', DIM);
       yy += 6;
       A.btn(g, x, yy, Math.min(w, 220), T, 'Next', renameNext, '#238636', shapeOk(tidy(A.state.word)), 'acct:rename:next');
     } else if (v.step === 'confirm') {
@@ -231,10 +239,13 @@
 
       // ---- A. the warnings, as the knight hears them ----
       { connect('player', 'Cohen'); if (window.CHAT) CHAT.log.length = 0; notice = null;
-        feed({ t: 'strike', n: 1, text: WARN[1] }); const one = notice && notice.text === WARN[1] && notice.t >= 6;
+        clearBanners(); feed({ t: 'strike', n: 1, text: WARN[1] }); const one = notice && notice.text === WARN[1] && notice.t >= 6 && !levelBanner;
         const l1 = window.CHAT ? CHAT.log.slice(-2) : []; const red1 = l1.length === 2 && l1.every(l => l.n === null && l.color === RED) && l1.map(l => l.text).join(' ') === WARN[1] && l1[0].text === "That word isn't allowed here.";
+        clearBanners(); const noBig = !levelBanner;
         feed({ t: 'strike', n: 2, text: 'anything' }); const two = notice.text === WARN[2] && CHAT.log.slice(-2).map(l => l.text).join(' ') === WARN[2];
-        check(P + 'a strike is said to the knight in plain words, in red in the chat log (a line a sentence, so the strip never cuts it) and as a notice that stays up: the first "' + WARN[1] + '", the second "' + WARN[2] + '"', one && red1 && two && WARN[1] === "That word isn't allowed here. This is your warning." && WARN[2] === "Last warning. Do it again and you'll be kept out for 24 hours.", { one, red1, two, notice, last: CHAT.log.slice(-2) }); }
+        // the last warning is the big centre banner as well
+        const big = noBig && !!levelBanner && levelBanner.text === 'LAST WARNING' && levelBanner.sub === 'Do it again: kept out 24 hours' && levelBanner.t >= 6; clearBanners();
+        check(P + 'a strike is said to the knight in plain words, in red in the chat log (a line a sentence, so the strip never cuts it) and as a notice that stays up: the first "' + WARN[1] + '", the second "' + WARN[2] + '", which is also the big centre banner LAST WARNING', one && red1 && two && big && WARN[1] === "That word isn't allowed here. This is your warning." && WARN[2] === "Last warning. Do it again and you'll be kept out for 24 hours.", { one, red1, two, big, notice, last: CHAT.log.slice(-2) }); }
 
       // ---- the lockout sentence: the real time it ends, in this device's clock ----
       { const Y = new Date().getFullYear(), t0 = new Date(Y, 9, 3, 19, 42).getTime(), dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -259,32 +270,43 @@
         // a push is waiting (saves are held 12 s): the kick sends it at once, so the next login never loads an older save
         if (window.CLOUD) CLOUD.reset(); try { localStorage.removeItem(LOGIN.KEPT_KEY); } catch (e) { } calls.length = 0;
         const slotKey = title.active ? null : title.slotKey(title.slot);
+        if (window.CHAT) CHAT.open(); const chatWas = !window.CHAT || CHAT.isOpen();
         feed({ t: 'error', code: 'words', text: 'out', until });
+        // an open chat box is shut: it would sit over the title card (the third strike always comes from chat)
+        const chatShut = chatWas && (!window.CHAT || !CHAT.isOpen());
         const slotRaw = slotKey && (() => { try { return localStorage.getItem(slotKey); } catch (e) { return null; } })();
         const puts = calls.filter(c => c.method === 'PUT' && c.path === '/api/save');
         const pushed = !!slotRaw && puts.length === 1 && puts[0].body === slotRaw && CLOUD.pending === null && CLOUD.fails === 0;
-        check(P + "kept out while playing: the game is saved and the waiting push goes up at once (the world takes a save while kept out), as it does for an admin's kick", pushed, { puts: puts.length, slot: !!slotRaw, pending: !!(window.CLOUD && CLOUD.pending), fails: window.CLOUD && CLOUD.fails });
+        check(P + "kept out while playing: the game is saved and the waiting push goes up at once (the world takes a save while kept out), as it does for an admin's kick, and an open chat box is shut", pushed && chatShut, { chatWas, chatShut, puts: puts.length, slot: !!slotRaw, pending: !!(window.CLOUD && CLOUD.pending), fails: window.CLOUD && CLOUD.fails });
         const sentence = LOGIN.keptOut(until);
         const card = !LOGIN.playing && LOGIN.showing && NET.token === 'strikes-test' && LOGIN.mode === 'me' && LOGIN.shownError() === sentence;
         // Play: the world still says kept out, and the card says it again (never "wrong secret word")
-        LOGIN.playAs(); const again = LOGIN.mode === 'me' && LOGIN.shownError() === sentence && NET.token === 'strikes-test';
+        // Play is greyed while kept out, and does nothing (no "One moment...", no call)
+        calls.length = 0; const playBtn = typeof document !== 'undefined' && document.querySelector ? Array.from(document.querySelectorAll('#fl-login button')).find(b => b.textContent === 'Play' && !b.closest('form')) : null;
+        const greyed = LOGIN.playAs() === false && calls.length === 0 && (!playBtn || playBtn.disabled === true);
+        const again = greyed && LOGIN.mode === 'me' && LOGIN.shownError() === sentence && NET.token === 'strikes-test';
+        // the world is asked again on its own now and then: an admin who cleared it gets Play back without a reload
+        world.meFail = null; LOGIN.recheck(); const back = LOGIN.mode === 'me' && LOGIN.keptOutUntil() === 0 && LOGIN.shownError() === '' && (!playBtn || playBtn.disabled === false);
+        world.meFail = { code: 'words', extra: { until } }; LOGIN.noteKeptOut(until); LOGIN.recheck(); const still = LOGIN.shownError() === sentence && LOGIN.keptOutUntil() === until;
         // a fresh login: the right word, kept out
         NET.setToken(null); LOGIN.mode = 'form'; world.fail['/api/login'] = { code: 'words', status: 403, extra: { until } };
         LOGIN.submit('Cohen', 'sword', '', false); const login = LOGIN.mode === 'form' && LOGIN.shownError() === sentence && NET.token === null;
         delete world.fail['/api/login'];
-        check(P + 'kept out while playing: back to the title with "Playing as" and the sentence (the session kept), Play says it again, and a login with the right secret word says it too', card && again && login, { card, again, login, mode: LOGIN.mode, shown: LOGIN.shownError(), sentence });
+        check(P + 'kept out while playing: back to the title with "Playing as" and the sentence (the session kept), Play greyed and doing nothing, the world asked again quietly (cleared: Play comes back; still out: the sentence stays), and a login with the right secret word says it too', card && again && back && still && login, { card, greyed, again, back, still, login, mode: LOGIN.mode, shown: LOGIN.shownError(), sentence });
         // no way round it with a new knight: the device remembers until when, Not me still says it, New knight is refused on
         // the spot (no call), and a new knight the world refuses (kept out from this place) says the sentence too
         { const kept = LOGIN.keptOutUntil() === until;
-          NET.setToken('strikes-test'); LOGIN.mode = 'me'; LOGIN.notMe(); const notMe = LOGIN.mode === 'form' && LOGIN.shownError() === sentence;
+          // after Not me the card speaks about this device, not a knight: a brother or sister reads it, and their knight still logs in
+          const off = LOGIN.newKnightOff(until);
+          NET.setToken('strikes-test'); LOGIN.mode = 'me'; LOGIN.notMe(); const notMe = LOGIN.mode === 'form' && LOGIN.shownError() === off && off.startsWith('New knight is off here until ') && off.endsWith('. Your own knight can still log in.') && !/kept out/.test(off);
           calls.length = 0; LOGIN.submit('Cohen Two', 'sword', 'TEST-1234', true);
-          const refused = LOGIN.shownError() === sentence && !calls.some(c => c.path === '/api/signup') && !NET.token && !LOGIN.newKnight;
+          const refused = LOGIN.shownError() === off && !calls.some(c => c.path === '/api/signup') && !NET.token && !LOGIN.newKnight;
           try { localStorage.removeItem(LOGIN.KEPT_KEY); } catch (e) { }
           world.fail['/api/signup'] = { code: 'words', status: 403, extra: { until } }; LOGIN.error = '';
           LOGIN.submit('Cohen Two', 'sword', 'TEST-1234', true); delete world.fail['/api/signup'];
-          const place = calls.some(c => c.path === '/api/signup') && LOGIN.shownError() === sentence && LOGIN.keptOutUntil() === until;
+          const place = calls.some(c => c.path === '/api/signup') && LOGIN.shownError() === off && LOGIN.keptOutUntil() === until;
           const gone = LOGIN.keptOutUntil(until + 1) === 0 && (() => { try { return localStorage.getItem(LOGIN.KEPT_KEY) === null; } catch (e) { return true; } })();
-          check(P + 'kept out on this device: the card keeps the sentence after Not me, a New knight is refused before the world is asked, a new knight the world refuses (this place is kept out) says the sentence too, and the device forgets it once the time is up', kept && notMe && refused && place && gone, { kept, notMe, refused, place, gone, shown: LOGIN.shownError() }); }
+          check(P + 'kept out on this device: after Not me the card says "New knight is off here until ..." (about the device, not a knight), a New knight is refused before the world is asked, a new knight the world refuses (this place is kept out) says the sentence too, and the device forgets it once the time is up', kept && notMe && refused && place && gone, { kept, notMe, refused, place, gone, shown: LOGIN.shownError() }); }
         world.meFail = null; NET.token = 'strikes-test';
         // back to the game the suite was playing
         LOGIN.hide(); LOGIN.playing = false; NET.disconnect(); title.startSlot(game.slot); }
@@ -305,12 +327,12 @@
         const text = drawn();
         const tagsOk = ['Kept out', '2 strikes', 'Bad name'].every(t => text.includes(t)) && !text.includes('3 strikes');
         A.openAccount('Sam'); const sam = drawn().join(' ');
-        const samOk = sam.includes('Kept out for bad words until ' + A.whenWords(now + 23 * HR)) && sam.includes('Word strikes: 3. The last was ' + A.whenWords(now - HR) + '. They go on ' + A.dayWords(now - HR + 30 * DAY) + ' if there are no more.') && has('acct:clear') && has('acct:rename');
+        const samOk = sam.includes('Kept out for bad words until ' + A.whenWords(now + 23 * HR)) && sam.includes('Word strikes: 3. The last was ' + A.whenWords(now - HR) + '. They are wiped on ' + A.dayWords(now - HR + 30 * DAY) + ' if there are no new ones.') && !/go on/.test(sam) && has('acct:clear') && has('acct:rename');
         A.openAccount('Cohen'); const cohen = drawn().join(' '); const cohenOk = cohen.includes('Word strikes: none') && !has('acct:clear') && has('acct:rename');
         A.openAccount('Stupid Sam'); const bad = drawn().join(' '); const badOk = bad.includes('This name has a bad word in it. Tap Rename to give a new one.') && has('acct:rename');
         A.openAccount('Ada'); drawn(); const adaOk = has('acct:clear') && !has('acct:rename');
         A.openAccount('MudGoll'); drawn(); const meOk = !has('acct:clear') && !has('acct:rename');
-        check(P + "Accounts: rows tag Kept out, the strikes and Bad name; a knight's page says until when, how many strikes, when the last was and when they go, and flags a bad name; Clear strikes only when there is something to clear, Rename never for an admin, neither on your own page", tagsOk && samOk && cohenOk && badOk && adaOk && meOk, { tagsOk, samOk, cohenOk, badOk, adaOk, meOk, sam, title: title.active, panel }); }
+        check(P + "Accounts: rows tag Kept out, the strikes and Bad name; a knight's page says until when, how many strikes, when the last was and the day they are wiped, and flags a bad name; Clear strikes only when there is something to clear, Rename never for an admin, neither on your own page", tagsOk && samOk && cohenOk && badOk && adaOk && meOk, { tagsOk, samOk, cohenOk, badOk, adaOk, meOk, sam, title: title.active, panel }); }
 
       // ---- Clear strikes: two taps, one call, the answer in words, the list asked again ----
       { closePanel(); ADMIN.open('accounts'); render(); A.openAccount('Sam'); render(); calls.length = 0;
@@ -325,9 +347,12 @@
 
       // ---- Rename: type, check, one call ----
       { closePanel(); ADMIN.open('accounts'); render(); A.openAccount('Stupid Sam'); render(); calls.length = 0;
-        F.clickButton('acct:rename'); render(); const typing = A.state.view.kind === 'rename' && has('acct:wordbox') && has('disabled:acct:rename:next');
-        A.setWord('x'); const short = STRIKES.renameNext() === false && A.state.view.text === 'A name is 2 to 16 letters or numbers.';
-        A.setWord('Sir-Sam'); const odd = STRIKES.renameNext() === false;
+        F.clickButton('acct:rename'); render(); const typing = A.state.view.kind === 'rename' && has('acct:wordbox') && has('disabled:acct:rename:next') && A.boxMax() === 16;
+        A.setWord('x'); const short = STRIKES.renameNext() === false && A.state.view.text === 'A name needs at least 2 letters or numbers.';
+        // the rule is said once: the orange sentence replaces the grey one
+        const once = (() => { const t = drawn().join(' '); return !t.includes('2 to 16 letters or numbers, and nothing rude.') && t.split('letters or numbers').length === 2; })();
+        A.setWord('Seventeen letters'); const long = STRIKES.renameNext() === false && A.state.view.text === 'That is 17 letters. A name is at most 16.';
+        A.setWord('Sir-Sam'); const odd = STRIKES.renameNext() === false && A.state.view.text === 'Only letters, numbers and spaces.';
         A.setWord('  Brave   Sam '); render(); F.clickButton('acct:rename:next'); const confirmText = drawn().join(' ');
         const asks = A.state.view.step === 'confirm' && confirmText.includes("Change Stupid Sam's name to Brave Sam?") && posts('/api/accounts/rename').length === 0;
         F.clickButton('acct:rename:no'); const back = A.state.view.step === 'type';
@@ -341,8 +366,8 @@
         const wantSaid = { name: 'type: That name will not do. Use 2 to 16 letters or numbers, and nothing rude.', taken: 'type: Another knight already has that name.', isadmin: "failed: You can't change another admin's name.", wait: 'failed: That is a lot of changes at once. Wait a minute, then try again.', boom: 'failed: That did not work. Try again.' };
         const noAdmin = STRIKES.startRename('Ada') === false && STRIKES.startRename('MudGoll') === false;
         STRIKES.startRename('Pip'); A.setWord('typed'); closePanel(); F.step([]); const forgot = A.state.word === '' && (!A.state.view || A.state.view.kind === 'acct');
-        check(P + 'Rename: Next stays off until the name is 2 to 16 letters or numbers; the page asks "Change Stupid Sam\'s name to Brave Sam?" first; No goes back; Yes sends exactly POST /api/accounts/rename {name, to} (spaces tidied) and says it is done; each refusal is a sentence; never for an admin; the word is forgotten when the panel closes',
-          typing && short && odd && asks && back && one && done && JSON.stringify(said) === JSON.stringify(wantSaid) && noAdmin && forgot, { typing, short, odd, asks, back, one, done, said, noAdmin, forgot }); }
+        check(P + 'Rename: the box takes 16 letters at most; Next stays off until the name is 2 to 16 letters or numbers; a refusal says which part is wrong (too short, how many letters too long, a character), once, in place of the grey rule; the page asks "Change Stupid Sam\'s name to Brave Sam?" first; No goes back; Yes sends exactly POST /api/accounts/rename {name, to} (spaces tidied) and says it is done; each refusal is a sentence; never for an admin; the word is forgotten when the panel closes',
+          typing && short && once && long && odd && asks && back && one && done && JSON.stringify(said) === JSON.stringify(wantSaid) && noAdmin && forgot, { typing, short, once, long, odd, asks, back, one, done, said, noAdmin, forgot }); }
 
       // ---- layout: the knight's page with the new rows and every step of Rename, at every size, 44 px on touch ----
       { closePanel(); connect('admin');

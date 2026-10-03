@@ -9,7 +9,7 @@
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin: 0; background: #14161a; color: #d7dae0; font: 15px/1.45 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
-  main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 80px; }
+  main { max-width: 1440px; margin: 0 auto; padding: 24px 16px 80px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   h2 { font-size: 17px; margin: 32px 0 10px; border-bottom: 1px solid #2c3038; padding-bottom: 6px; }
   p.note { color: #8a90a0; margin: 0 0 16px; }
@@ -17,6 +17,9 @@
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #23262d; vertical-align: top; }
   th { color: #8a90a0; font-weight: 600; font-size: 13px; white-space: nowrap; }
+  /* the accounts table fits a 1280 laptop with its last buttons in view: narrower cells, headers on two lines */
+  #accounts th, #accounts td { padding: 6px 5px; }
+  #accounts th { white-space: normal; }
   tr.banned td { color: #8a90a0; }
   button { background: #2b3140; color: #e7eaf0; border: 1px solid #3c4356; border-radius: 4px; padding: 5px 10px; font: inherit; cursor: pointer; margin: 0 4px 4px 0; white-space: nowrap; }
   button:hover { background: #363d4f; }
@@ -269,7 +272,11 @@
       case 'hat': return r.n + ' found a ' + r.detail + ' party hat (' + r.by + "'s party)";
       case 'reset': return r.by + ' gave ' + r.n + ' a new secret word';
       // detail: the count, then what was typed ("3, kept out 24 hours: shut up sam"); older rows have the count alone
-      case 'strike': { const i = r.detail.indexOf(': '); return r.n + ' got word strike ' + (i < 0 ? r.detail : r.detail.slice(0, i) + ' for typing "' + r.detail.slice(i + 2) + '"'); }
+      case 'strike': {
+        const i = r.detail.indexOf(': '); if (i < 0) return r.n + ' got word strike ' + r.detail;
+        const [n, ...more] = r.detail.slice(0, i).split(', ');
+        return r.n + ' got word strike ' + n + ' for typing "' + r.detail.slice(i + 2) + '"' + (more.length ? ', ' + more.join(', ') : '');
+      }
       case 'strikes_clear': return r.by + ' cleared ' + r.n + "'s word strikes" + (r.detail ? ' (' + r.detail + ')' : '');
       case 'rename': return r.by + ' renamed ' + r.detail + ' to ' + r.n;
       default: return r.by + ' ' + r.act + ' ' + r.n + (r.detail ? ' (' + r.detail + ')' : '');
