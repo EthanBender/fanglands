@@ -79,8 +79,9 @@ const plainPath = p => (typeof p === 'string' && PLAIN_PATH.test(p) ? p : '/');
 // start and landing page. On an old address: /handoff-stay and /handoff-leave set and clear the home-screen cookie;
 // with the cookie the game is served exactly as today; otherwise a page (the game, /admin, any HTML) is the hand-over
 // page and anything else (an icon, a file) is sent on with a 302. Returns null when the static files should answer.
-// env.HANDOVER = 'off' (wrangler deploy --var HANDOVER:off) keeps the old addresses serving the game as before: the
-// first ship attaches fanglands.com with it off, so nobody is sent there before its address and certificate answer.
+// env.HANDOVER = 'off' ([vars] in wrangler.toml, committed: every deploy carries it) keeps the old addresses serving the
+// game as before: the first ship attaches fanglands.com with it off, so nobody is sent there before its address and
+// certificate answer. A commit on master turns it on (or back off); `--var HANDOVER:on` overrides it on the test world.
 export function frontDoor(req, url, env) {
   const host = url.hostname.toLowerCase();
   const get = req.method === 'GET' || req.method === 'HEAD', head = req.method === 'HEAD';
