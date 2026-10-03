@@ -52606,7 +52606,7 @@ window.RETALIATE = RETALIATE;
   }
   const BELLST = { prev: null, swingT0: -99, rings: 0 };
   const CAT = { t0: -99 };
-  const BELL_TOP = { x: (PLAN.BELL.x + 1) * TILE, y: PLAN.BELL.y * TILE - 150 };
+  const BELL_TOP = { x: (PLAN.BELL.x + 1) * TILE, y: (PLAN.BELL.y + PLAN.BELL.h) * TILE - 210 };
   function ringBell() {
     BELLST.swingT0 = time; BELLST.rings++;
     sfx('bell');
@@ -53309,14 +53309,16 @@ window.RETALIATE = RETALIATE;
     g.save(); g.translate(0, by - 22); g.scale(0.92, 0.92);
     drawHuman(g, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, { tunic: '#9a6b2f', hair: '#7a5424', skin: '#b07a3a', shoulder: '#8a5e28', helm: '#a87a3a', shield: '#8a5e28' });
     g.restore();
-    // the banner pole in his right hand, up to 24 px over row 34, and the thistle banner on it
-    g.fillStyle = '#6a4a22'; g.fillRect(9, by - 64, 2.2, 50);
-    g.fillStyle = '#c9a14a'; g.beginPath(); g.arc(10.1, by - 65, 2.4, 0, 7); g.fill();
+    // the banner pole in his left hand (the west side, clear of a knight standing at the spawn north-east of it), up to
+    // 24 px over row 34, and the thistle banner on it
+    g.fillStyle = '#6a4a22'; g.fillRect(-11.2, by - 64, 2.2, 50);
+    g.fillStyle = '#c9a14a'; g.beginPath(); g.arc(-10.1, by - 65, 2.4, 0, 7); g.fill();
   }
   function drawGreatFountain(g) {
     const { cx, cy, rx, ry } = GF, t = time;
     const top = 34 * TILE - 24;
-    const a = behindAlpha(cx - rx, top, cx + rx, cy + ry + 10, 37 * TILE - 4);
+    // see-through only where the bronze knight and his banner rise over the rim, and only for a knight behind them
+    const a = behindAlpha(cx - 36, top, cx + 9, cy - 40, 37 * TILE - 4);
     if (a < 1) { g.save(); g.globalAlpha = a; }
     blit(g, sprite('gf-basin', 2 * rx + 24, 2 * ry + 30, rx + 12, ry + 6, paintBasin), cx, cy);
     // ripples, and coins glinting on the bottom (fixed places, so nothing rolls a die)
@@ -53336,9 +53338,9 @@ window.RETALIATE = RETALIATE;
     // water falling off the upper bowl
     for (let k = 0; k < 9; k++) { const an = Math.PI * (0.08 + k * 0.105), x = cx + Math.cos(an) * GF.bowlRx, y0 = by + Math.sin(an) * GF.bowlRy, ph = fr(t * 1.6 + k * 0.37); g.strokeStyle = `rgba(215,238,255,${(0.35 + 0.3 * Math.sin((ph + k) * 6.28)).toFixed(3)})`; g.lineWidth = 1.8; g.beginPath(); g.moveTo(x, y0); g.quadraticCurveTo(x + Math.cos(an) * 4, y0 + 8, x + Math.cos(an) * 6, y0 + 16); g.stroke(); }
     // the thistle banner, fluttering at the top of the bronze knight's pole
-    { const px = cx + 10.1, py = by - 63, sw = Math.sin(t * 2.4) * 2;
-      g.fillStyle = PURPLE; g.beginPath(); g.moveTo(px, py); g.lineTo(px + 22, py + 1 + sw * 0.4); g.lineTo(px + 19 + sw, py + 8); g.lineTo(px + 22, py + 15 + sw * 0.4); g.lineTo(px, py + 16); g.closePath(); g.fill();
-      g.strokeStyle = GOLD; g.lineWidth = 1; g.stroke(); thistle(g, px + 9, py + 7, 7, GOLD); }
+    { const px = cx - 10.1, py = by - 63, sw = Math.sin(t * 2.4) * 2;
+      g.fillStyle = PURPLE; g.beginPath(); g.moveTo(px, py); g.lineTo(px - 22, py + 1 + sw * 0.4); g.lineTo(px - 19 - sw, py + 8); g.lineTo(px - 22, py + 15 + sw * 0.4); g.lineTo(px, py + 16); g.closePath(); g.fill();
+      g.strokeStyle = GOLD; g.lineWidth = 1; g.stroke(); thistle(g, px - 9, py + 7, 7, GOLD); }
     // spray: placed by the clock
     const frame = Math.floor(t * 8);
     for (let k = 0; k < 18; k++) { const h1 = hash(k, frame), h2 = hash(frame + 7, k * 13 + 1), an = h1 * Math.PI * 2, d = 14 + h2 * 50; g.fillStyle = `rgba(255,255,255,${(0.4 + h1 * 0.5).toFixed(3)})`; g.beginPath(); g.arc(cx + Math.cos(an) * d, cy - 4 + Math.sin(an) * d * 0.45 - h2 * 12, 1 + h2, 0, 7); g.fill(); }
@@ -53490,10 +53492,11 @@ window.RETALIATE = RETALIATE;
   // ---------- the Bell Tower ----------
   // a square stone tower about five tiles tall on its 2 x 2 footprint: the day-and-night dial on its south face, an open
   // belfry with the bronze bell, a slate pyramid roof and a pennant
-  const BT = { x: PLAN.BELL.x * TILE, foot: (PLAN.BELL.y + PLAN.BELL.h) * TILE, w: PLAN.BELL.w * TILE };
+  // FACE: the top of the dial's stretch of wall; BELFRY: the belfry's floor (both above the foot, in px)
+  const BT = { x: PLAN.BELL.x * TILE, foot: (PLAN.BELL.y + PLAN.BELL.h) * TILE, w: PLAN.BELL.w * TILE, FACE: -118, BELFRY: -150 };
   function paintBellTower(g) {
     // local origin: the footprint's bottom-left; the tower rises 236 px
-    const w = BT.w, face = -168, belfry = -214, eave = -226;
+    const w = BT.w, face = BT.FACE, belfry = BT.BELFRY;
     g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(6, -6, w, 12);
     g.fillStyle = STONE[0]; g.fillRect(0, belfry, w, -belfry);
     for (let r = 0; r * 12 < -belfry; r++) { const yy = -12 - r * 12, off = r % 2 ? 12 : 0; for (let c = -1; c < 5; c++) { g.fillStyle = ['#7d8087', '#767980', '#83868d'][(r + c + 6) % 3]; const xx = off + c * 24 + 1; g.fillRect(Math.max(0, xx), yy + 1, Math.min(22, w - Math.max(0, xx)), 10); } }
@@ -53504,23 +53507,21 @@ window.RETALIATE = RETALIATE;
     // the door at the foot
     g.fillStyle = '#3d2a1a'; g.beginPath(); g.moveTo(w / 2 - 12, 0); g.lineTo(w / 2 - 12, -26); g.arc(w / 2, -26, 12, Math.PI, 0); g.lineTo(w / 2 + 12, 0); g.closePath(); g.fill();
     g.strokeStyle = '#9aa0a8'; g.lineWidth = 2; g.stroke(); g.fillStyle = GOLD; g.beginPath(); g.arc(w / 2 + 6, -16, 1.6, 0, 7); g.fill();
-    g.fillStyle = '#23262c'; roundRect(g, w / 2 - 3, -110, 6, 22, 3); g.fill();
     // the belfry: four corner piers and the open arches between them
     g.fillStyle = '#2a2d33'; g.fillRect(6, belfry - 46, w - 12, 46);
     g.fillStyle = '#8b8f96'; for (const px of [0, w / 2 - 5, w - 10]) g.fillRect(px, belfry - 46, 10, 46);
     g.fillStyle = '#9aa0a8'; g.fillRect(-2, belfry - 50, w + 4, 6);
     // the slate pyramid roof
     const cone = g.createLinearGradient(0, 0, w, 0); cone.addColorStop(0, '#2c3038'); cone.addColorStop(0.4, '#5d6370'); cone.addColorStop(1, '#262a31');
-    g.fillStyle = cone; g.beginPath(); g.moveTo(-6, belfry - 48); g.lineTo(w / 2, belfry - 112); g.lineTo(w + 6, belfry - 48); g.closePath(); g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 1; for (let k = 1; k < 6; k++) { const f = k / 6, yy = belfry - 48 - 64 * f; g.beginPath(); g.moveTo(-6 + (w / 2 + 6) * f, yy); g.lineTo(w + 6 - (w / 2 + 6) * f, yy); g.stroke(); }
-    g.fillStyle = GOLD; g.beginPath(); g.arc(w / 2, belfry - 114, 3.2, 0, 7); g.fill(); g.fillRect(w / 2 - 1, belfry - 132, 2, 18);
-    void eave;
+    g.fillStyle = cone; g.beginPath(); g.moveTo(-6, belfry - 48); g.lineTo(w / 2, belfry - 100); g.lineTo(w + 6, belfry - 48); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 1; for (let k = 1; k < 6; k++) { const f = k / 6, yy = belfry - 48 - 52 * f; g.beginPath(); g.moveTo(-6 + (w / 2 + 6) * f, yy); g.lineTo(w + 6 - (w / 2 + 6) * f, yy); g.stroke(); }
+    g.fillStyle = GOLD; g.beginPath(); g.arc(w / 2, belfry - 102, 3.2, 0, 7); g.fill(); g.fillRect(w / 2 - 1, belfry - 118, 2, 16);
   }
   function drawBellTower(g) {
-    const x = BT.x, foot = BT.foot, w = BT.w, belfry = foot - 214;
-    blit(g, sprite('belltower', w + 20, 380, 10, 362, paintBellTower), x, foot);
+    const x = BT.x, foot = BT.foot, w = BT.w, belfry = foot + BT.BELFRY;
+    blit(g, sprite('belltower', w + 20, 300, 10, 284, paintBellTower), x, foot);
     // the dial: blue sky with a sun over navy night with a moon, and one gold hand at dayT / DAY x 2 pi
-    const dx = x + w / 2, dy = foot - 168 + 40, R = 25;
+    const dx = x + w / 2, dy = foot + BT.FACE + 40, R = 25;
     g.save(); g.beginPath(); g.arc(dx, dy, R, 0, 7); g.clip();
     g.fillStyle = '#6fb6e8'; g.fillRect(dx - R, dy - R, 2 * R, R); g.fillStyle = '#1d2a52'; g.fillRect(dx - R, dy, 2 * R, R);
     g.fillStyle = '#ffe27a'; g.beginPath(); g.arc(dx, dy - 13, 6, 0, 7); g.fill(); g.strokeStyle = '#ffe27a'; g.lineWidth = 1.2; for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; g.beginPath(); g.moveTo(dx + Math.cos(a) * 8, dy - 13 + Math.sin(a) * 8); g.lineTo(dx + Math.cos(a) * 10.5, dy - 13 + Math.sin(a) * 10.5); g.stroke(); }
@@ -53542,7 +53543,7 @@ window.RETALIATE = RETALIATE;
     g.restore();
     // the rope down the south face
     g.strokeStyle = '#c9a36a'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(x + w / 2 + 14, belfry - 14); g.lineTo(x + w / 2 + 14 + sw * 4, belfry + 26); g.stroke();
-    pennant(g, x + w / 2 + 1, foot - 214 - 130, 26);
+    pennant(g, x + w / 2 + 1, belfry - 118, 26);
   }
 
   // ---------- Castle Thistledown ----------
@@ -53960,7 +53961,7 @@ window.RETALIATE = RETALIATE;
       else if (k === 'bench') put(items, by - 5, [tc(x) - 21, by - 37, tc(x) + 21, by], () => blit(g, sprite('bench', 48, 40, 24, 36, paintBench), tc(x), by - 5));
       else if (k === 'sign') { const s = signAt(x, y); if (s) put(items, by - 5, [tc(x) - 22, by - 72, tc(x) + 22, by], () => blit(g, sprite('sign-' + s.side, 48, 72, 24, 68, cg => paintSign(cg, s.side)), tc(x), by - 4)); }
       else if (k === 'stall') { const s = stallAt(x, y); if (s && s.x === x) put(items, by - 3, [px - 4, py - 24, px + 100, by], () => drawStall(g, s)); }
-      else if (k === 'bell') { if (x === PLAN.BELL.x && y === PLAN.BELL.y) put(items, BT.foot - 2, [BT.x - 6, BT.foot - 362, BT.x + BT.w + 6, BT.foot], () => drawBellTower(g)); }
+      else if (k === 'bell') { if (x === PLAN.BELL.x && y === PLAN.BELL.y) put(items, BT.foot - 2, [BT.x - 6, BT.foot + BT.BELFRY - 130, BT.x + BT.w + 6, BT.foot], () => drawBellTower(g)); }
       else if (k === 'sundial') put(items, by - 4, [tc(x) - 17, by - 42, tc(x) + 17, by], () => drawSundial(g, x, y));
       else if (k === 'hedge') put(items, by - 3, [px, py - 10, px + 48, by], () => drawHedge(g, x, y));
       else if (k === 'fruit' || k === 'cherry') { const R = TREE_R[x + ',' + y] || 26; put(items, by - 6, [tc(x) - R, by - 6 - 84, tc(x) + R, by], () => drawTree(g, x, y, k)); }
@@ -54009,7 +54010,7 @@ window.RETALIATE = RETALIATE;
     if (on) for (const [x, y] of LAMPS) if (inside(x, y)) out.push({ x: tc(x), y: y * TILE - 16, r: 110, kind: 'lamp' });
     if (on) for (const key of TORCHES) { const [x, y] = key.split(',').map(Number); if (inside(x, y)) out.push({ x: tc(x), y: tc(y) - 14, r: 70, kind: 'torch' }); }
     if (inside(great.x + 1, great.y + 1)) out.push({ x: greatC.x, y: greatC.y, r: 90, kind: 'fountain' });
-    if (inside(PLAN.BELL.x, PLAN.BELL.y)) out.push({ x: BT.x + BT.w / 2, y: BT.foot - 128, r: 80, kind: 'dial' });
+    if (inside(PLAN.BELL.x, PLAN.BELL.y)) out.push({ x: BT.x + BT.w / 2, y: BT.foot + BT.FACE + 40, r: 80, kind: 'dial' });
   });
 
   // =========================================================================
