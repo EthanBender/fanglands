@@ -140,9 +140,9 @@
       F.tp(dun.x, dun.y + 1); F.face(dun.x, dun.y); drain(); F.press('KeyE'); F.sim(2, []); const first = coins() - c0, left1 = countItem('potato'); closePanel();
       F.face(dun.x, dun.y); drain(); F.press('KeyE'); F.sim(2, []); const second = coins() - c0 - first, left2 = countItem('potato'); closePanel(); drain();
       check('ashdrake: Dunstan buys potatoes at 3 coins (their value), at most 20 per hand-in', dun && first === 60 && left1 === 5 && second === 15 && left2 === 0 && ITEMS.potato.value === 3, { first, left1, second, left2 }); }
-    // 5. the Godly gate is 32–40 now
+    // 5. the Godly gate: Halcyon's sky forge asks Smithing 30 for each of the four (36-skycity; the anvil's 32-40 rows are gone)
     { const lv = RECIPES.filter(r => r.out.startsWith('godly_')).map(r => r.lv).sort((a, b) => a - b);
-      check('ashdrake: Godly recipes sit at Smithing 32 / 34 / 36 / 40 (was 40–48)', lv.join(',') === '32,34,36,40' && lv.every(x => x >= 32 && x <= 40), { lv }); }
+      check('ashdrake: Godly recipes sit at Smithing 30, at Halcyon\'s sky forge (was 32 / 34 / 36 / 40 at the anvil)', lv.join(',') === '30,30,30,30', { lv }); }
     // 6. the 28–40 filler: 3 scales smelt into a plate at Brakka's forge (Smithing 28), a plate smiths into a scale helm (29)
     { h.clearJunk(); while (countItem('dragon_scale') < 3) h.give('dragon_scale', 1); if (!hasTool('hammer')) h.give('hammer', 1);
       if (player.skills.smithing.xp < XP_TABLE[29]) player.skills.smithing.xp = XP_TABLE[29];

@@ -60,12 +60,8 @@
   for (const k of ['dragon_dung', 'dragon_scale', 'dragon_bone', 'obsidian', 'fireproof_salve', 'godly_helm', 'godly_body', 'godly_legs', 'godly_shield', 'scale_plate', 'scale_helm', 'scale_shield', 'mithril_bar']) {
     ITEMS[k].id = k; if (!ITEMS[k].stack) ITEMS[k].stack = ITEMS[k].armour ? 1 : 50;
   }
-  RECIPES.push(
-    { out: 'godly_helm', qty: 1, needs: [['dragon_scale', 6], ['mithril_bar', 2], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 32, xp: 500, label: '6 Dragon scales + 2 Mithril bars + Obsidian → Godly winged helm' },
-    { out: 'godly_shield', qty: 1, needs: [['dragon_scale', 6], ['mithril_bar', 2], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 34, xp: 500, label: '6 Dragon scales + 2 Mithril bars + Obsidian → Godly shield' },
-    { out: 'godly_legs', qty: 1, needs: [['dragon_scale', 7], ['mithril_bar', 3], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 36, xp: 500, label: '7 Dragon scales + 3 Mithril bars + Obsidian → Godly platelegs' },
-    { out: 'godly_body', qty: 1, needs: [['dragon_scale', 8], ['mithril_bar', 3], ['obsidian', 1]], station: 'anvil', skill: 'smithing', lv: 40, xp: 500, label: '8 Dragon scales + 3 Mithril bars + Obsidian → Godly platebody' },
-  );
+  // Godly Plated is forged by Halcyon in Aerie (36-skycity's FORGE table, which also puts the four rows in RECIPES with
+  // its real costs). The old anvil rows that stood here are gone: they still showed the costs the anvil once asked.
   // the Smithing 28–40 filler between mithril (30) and Godly (32–40): dragon scales smelt into plates, plates smith into scale gear
   SMELT.push({ out: 'scale_plate', needs: [['dragon_scale', 3]], lv: 28, xp: 60, label: '3 Dragon scales → Scale plate' });
   RECIPES.push(
@@ -554,15 +550,14 @@
         player.skills.mining.xp = Math.max(mxSaved, XP_TABLE[28]); o0 = countItem('obsidian'); mx0 = player.skills.mining.xp; F.face(r.x, r.y); F.press('KeyE'); started = player.action && player.action.type === 'mine_obsidian';
         steps = F.untilAction(600, () => countItem('obsidian') > o0); player.action = null; }
       check('dragons: obsidian needs a pickaxe, then Mining 28; mining it gives obsidian and 120 xp', !!side && noPick && lowLv && started && typeof steps === 'number' && countItem('obsidian') === o0 + 1 && player.skills.mining.xp === mx0 + 120, { r, side, noPick, lowLv, started, steps, obsidian: countItem('obsidian') }); }
-    // the godly platebody at Brakka's anvil
+    // the godly platebody: not at Brakka's anvil any more; Halcyon forges it in Aerie from his own table (36-skycity)
     { h.clearJunk(); for (let n = 0; n < 5 && player.inv.filter(s => !s).length < 5; n++) { const i = player.inv.findIndex(s => s && !ITEMS[s.id].armour && !ITEMS[s.id].weapon && !ITEMS[s.id].tool && s.id !== 'coins' && !s.id.startsWith('dragon') && s.id !== 'obsidian'); if (i < 0) break; player.inv[i] = null; }
-      while (countItem('dragon_scale') < 8) h.give('dragon_scale', 1); while (countItem('mithril_bar') < 3) h.give('mithril_bar', 1); while (countItem('obsidian') < 1) h.give('obsidian', 1); if (!hasTool('hammer')) h.give('hammer', 1);
-      if (player.skills.smithing.xp < XP_TABLE[40]) player.skills.smithing.xp = XP_TABLE[40];
+      while (countItem('dragon_scale') < 12) h.give('dragon_scale', 1); while (countItem('mithril_bar') < 4) h.give('mithril_bar', 1); while (countItem('obsidian') < 1) h.give('obsidian', 1);
+      if (player.skills.smithing.xp < XP_TABLE[30]) player.skills.smithing.xp = XP_TABLE[30];
       const sc0 = countItem('dragon_scale'), mb0 = countItem('mithril_bar'), ob0 = countItem('obsidian'), b0 = countItem('godly_body'), sx0 = player.skills.smithing.xp;
-      F.tp(93, 39); F.walkTo(94, 39, 500); F.face(94, 38); F.press('KeyE'); const open = panel === 'station' && panelArg === 'anvil';
-      let viaButton = F.clickButton('8 Dragon scales + 3 Mithril bars + Obsidian → Godly platebody'); if (!viaButton) craft(RECIPES.find(r => r.out === 'godly_body')); // the anvil list is cut short on small screens
-      const steps = F.untilAction(300, () => countItem('godly_body') > b0); closePanel();
-      check('dragons: 8 dragon scales + 3 mithril bars + obsidian smith a Godly platebody at the anvil (Smithing 40, 500 xp)', open && typeof steps === 'number' && countItem('godly_body') === b0 + 1 && countItem('dragon_scale') === sc0 - 8 && countItem('mithril_bar') === mb0 - 3 && countItem('obsidian') === ob0 - 1 && player.skills.smithing.xp === sx0 + 500 && ITEMS.godly_body.armour.def === 55, { open, viaButton, steps, body: countItem('godly_body'), xp: player.skills.smithing.xp - sx0 }); }
+      const onAnvil = RECIPES.some(r => r.station === 'anvil' && /^godly_/.test(r.out));
+      const f = window.SKYCITY && SKYCITY.FORGE.find(x => x.out === 'godly_body'), made = !!f && SKYCITY.forge(f);
+      check('dragons: the Godly platebody is not on the anvil; Halcyon forges it from 12 dragon scales + 4 mithril bars + obsidian (Smithing 30, 500 xp)', !onAnvil && made && countItem('godly_body') === b0 + 1 && countItem('dragon_scale') === sc0 - 12 && countItem('mithril_bar') === mb0 - 4 && countItem('obsidian') === ob0 - 1 && player.skills.smithing.xp === sx0 + 500 && ITEMS.godly_body.armour.def === 55, { onAnvil, made, body: countItem('godly_body'), xp: player.skills.smithing.xp - sx0 }); }
     // the winged helm equips (the wings are drawn by HOOKS.draw when player.equip.helm has wings: true)
     { const prev = player.equip.helm; if (prev) { player.equip.helm = null; } h.give('godly_helm', 1); const slot = player.inv.findIndex(s => s && s.id === 'godly_helm'); if (slot >= 0) equipItem(slot);
       check('dragons: the Godly winged helm equips (def 30, wings drawn on the knight)', player.equip.helm === 'godly_helm' && ITEMS.godly_helm.wings === true && ITEMS.godly_helm.armour.def === 30 && gearBonus('def') >= 30, { helm: player.equip.helm, slot });
