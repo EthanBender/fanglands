@@ -14,6 +14,8 @@
   const WISP = addTile('CLOUD_WISP', { solid: true, tex: 'sand', mini: '#dff0ff' });         // pickup: cloud essence, regrows
   const LEAP = addTile('CLOUD_LEAP', { solid: true, tex: 'sand', mini: '#9ac2ff' });         // the way down
   const WIND_SHRINE = addTile('WIND_SHRINE', { solid: true, tex: 'cave', mini: '#bfe3ff' }); // the way up (Grey Quarry)
+  // the iPad's USE seat lights up at the shrine (59-hudkit usePreview only names INTERESTING_TILES)
+  INTERESTING_TILES.add(WIND_SHRINE);
 
   // ---------- geometry ----------
   // Aerie is the walled kingdom now (Cohen's ask; src/36-aerieplan.js is the plan, 91-cloudkingdom paints and draws it).

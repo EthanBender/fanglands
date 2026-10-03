@@ -31,6 +31,8 @@
   const HOARD = addTile('FANG_HOARD', { solid: true, tex: 'cave', mini: '#f5c542' });
   const FANG_CHEST = addTile('FANG_CHEST', { solid: true, tex: 'cave', mini: '#8a5a2b' });
   const SUMMON_CIRCLE = addTile('SUMMON_CIRCLE', { solid: true, tex: 'cave', mini: '#b58cff' });
+  // the iPad's USE seat lights up at the circle (59-hudkit usePreview only names INTERESTING_TILES)
+  INTERESTING_TILES.add(SUMMON_CIRCLE);
 
   // ---------- state ----------
   // saved: quest.fang. runtime only: ice patches, fireballs, lightning strikes, credits timer, heat timer
@@ -338,7 +340,7 @@
       for (const [id, q] of [['coins', 300], ['dragon_scale', 3], ['mithril_bar', 1]]) if (ITEMS[id]) drops.push({ x: m.x + rint(-30, 30), y: m.y + rint(-30, 30), id, qty: q, t: 0 });
       if (fq.slain) {
         fq.echoes = (fq.echoes || 0) + 1;
-        levelBanner = { text: 'THE ECHO FADES', sub: `Echo of the Fang, ${fq.echoes} times`, t: 4 };
+        levelBanner = { text: 'THE ECHO FADES', sub: fq.echoes === 1 ? 'Echo of the Fang, beaten once' : `Echo of the Fang, beaten ${fq.echoes} times`, t: 4 };
         say('The echo comes apart into ash and sparks. The Fang stays dead. The lava keeps its memory.', 'The Voice');
       } else {
         levelBanner = { text: 'THE FANG SINKS', sub: "Your friend's fight", t: 4 };

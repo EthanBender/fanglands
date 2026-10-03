@@ -169,7 +169,7 @@
     const step = (window.SKYCITY && SKYCITY.STEP_T) ? [SKYCITY.STEP_T.x, SKYCITY.STEP_T.y] : null;
     if (!INSTANCES.enter(ST.id, step)) { notify('The wind stirs, but will not lift you now.'); return true; }
     burst(player.x, player.y, '#9ecbff', 40, 220); burst(player.x, player.y, '#ffffff', 16, 130); sfx('levelup');
-    say(again ? 'The flute sings and the wind carries you back down into the black. Something big is turning in it again.' : 'The flute sings and the wind answers — and carries you up into the black. The winged folk will not fly through this. Aerie is on the far side of it.', 'The Voice');
+    say(again ? 'The flute sings and the wind carries you up into the black again. Something big is turning in it.' : 'The flute sings and the wind answers — and carries you up into the black. The winged folk will not fly through this. Aerie is on the far side of it.', 'The Voice');
     save(); return true;
   }
   // a friend fighting in the storm right now (online): a knight still resting may go in to help. Presence only crosses

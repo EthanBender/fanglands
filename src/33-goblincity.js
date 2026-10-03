@@ -19,6 +19,8 @@
   const GC_GOLD = addTile('GNASH_GOLD', { solid: true, tex: 'floor', mini: '#f5c542' });
   const GC_CHEST = addTile('GNASH_CHEST', { solid: true, tex: 'floor', mini: '#8a5a2b' });
   const GC_LEVER = addTile('ARENA_LEVER', { solid: true, tex: 'floor', mini: '#c0504d' });
+  // the iPad's USE seat lights up at the lever (59-hudkit usePreview only names INTERESTING_TILES)
+  INTERESTING_TILES.add(GC_LEVER);
   const KEEP_TILES = new Set([T.DOCK, T.BOAT, T.SEAROCK, T.DUNGEON_DOOR].filter(v => v !== undefined)); // the ferry's dock/boat and the lab door are placed by earlier feature files
   const HAS_INST = !!(window.INSTANCES && typeof window.INSTANCES.define === 'function');
   const INST_ID = 'tinker_lab';
@@ -285,7 +287,7 @@
       // every other Gnasher is a rematch: the lever's own, or one a friend woke that this knight helped bring down
       tq.rematch = false; tq.kills = (tq.kills || 0) + 1; tq.restUntil = (player.dayTime || 0) + GN_REST;
       giveOrDrop('coins', 150, player.x, player.y); giveOrDrop('goblin_scrap', 5, player.x, player.y);
-      levelBanner = { text: 'REMATCH WON', sub: `The Gnasher, ${tq.kills + 1} times`, t: 3 };
+      levelBanner = { text: 'REMATCH WON', sub: tq.kills + 1 === 1 ? 'The Gnasher, beaten once' : `The Gnasher, beaten ${tq.kills + 1} times`, t: 3 };
       say(pick(['Down again. Tinkerton pays out of the boiler: 150 coins and a handful of scrap.', 'The Gnasher folds. Coins and scrap, as promised. The lever waits.']), 'The Voice');
     }
     save();
@@ -617,7 +619,7 @@
     g.fillStyle = '#c9ccd3'; for (const ox of [-8, 8]) { g.beginPath(); g.arc(cx + ox, cy + 9, 1.6, 0, 7); g.fill(); }
     g.save(); g.translate(cx, cy + 2); g.rotate(a); g.fillStyle = '#8f96a3'; g.fillRect(-2, -26, 4, 26); g.fillStyle = '#c0504d'; g.beginPath(); g.arc(0, -27, 4.5, 0, 7); g.fill(); g.restore();
     g.fillStyle = live ? '#7ee787' : '#c0504d'; g.beginPath(); g.arc(cx + 8, cy + 4, 2, 0, 7); g.fill();
-    if (TQ().stage >= 3 && !live && dist(player.x, player.y, cx, cy) < 200) { g.font = 'bold 10px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText('REMATCH', cx, cy - 30); g.fillStyle = '#ffe9a8'; g.fillText('REMATCH', cx, cy - 30); }
+    if (TQ().stage >= 3 && !live && !(restLeft(TQ()) > 0) && dist(player.x, player.y, cx, cy) < 200) { g.font = 'bold 10px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText('REMATCH', cx, cy - 30); g.fillStyle = '#ffe9a8'; g.fillText('REMATCH', cx, cy - 30); }
   }
   const GC_USABLE = [GC_CHEST, GC_LEVER, GC_THRONE, GC_GOLD];
   HOOKS.draw.push((g, items) => {

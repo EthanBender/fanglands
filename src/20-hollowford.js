@@ -261,7 +261,7 @@
       say('The wreck stays. Six iron bars, ten goblin scrap and two blast powder would set it walking again, with you at the lever. Hollowford is quiet now. Go to the chapel and tell them.', 'The Voice');
     } else {
       hf.shedKills = (hf.shedKills || 0) + 1;
-      levelBanner = { text: 'REMATCH WON', sub: `The Barrelbeast, ${hf.shedKills + 1} times`, t: 3.5 }; sfx('quest');
+      levelBanner = { text: 'REMATCH WON', sub: hf.shedKills + 1 === 1 ? 'The Barrelbeast, beaten once' : `The Barrelbeast, beaten ${hf.shedKills + 1} times`, t: 3.5 }; sfx('quest');
       // the shed's own DUNGEON CLEARED would come up after this one: it is the same news, said once
       if (inShed()) bannerQueue = bannerQueue.filter(b => b.text !== 'DUNGEON CLEARED');
       say('It comes apart again. The goblins drag the pieces to the back of the shed. They will build it again.', 'The Voice');
@@ -740,7 +740,7 @@
         drops = drops.filter(() => false); INSTANCES.leave(); F.sim(2, []);
         check(P + 'a shed kill gives the def drops, no new wreck or mech tile anywhere, hf.wreck/rewarded/freed and the stage unchanged, banner REMATCH WON, shedKills +1, rest 300 s',
           inside.scrap >= 8 && inside.scrap <= 12 && inside.iron >= 2 && inside.iron <= 4 && inside.steel >= 1 && inside.steel <= 2 && inside.coins >= 80 && inside.coins <= 160
-            && wrecks() === w0 && JSON.stringify(hf.wreck) === wreck0 && !hf.wreckDue && hf.rewarded && hf.freed && quest.stage === st0 && banner && sub === `The Barrelbeast, ${k0 + 2} times` && hf.shedKills === k0 + 1 && !hf.shedUp && Math.abs(hf.shedRestUntil - killedAt - 300) < 1e-6,
+            && wrecks() === w0 && JSON.stringify(hf.wreck) === wreck0 && !hf.wreckDue && hf.rewarded && hf.freed && quest.stage === st0 && banner && sub === (k0 + 2 === 1 ? 'The Barrelbeast, beaten once' : `The Barrelbeast, beaten ${k0 + 2} times`) && hf.shedKills === k0 + 1 && !hf.shedUp && Math.abs(hf.shedRestUntil - killedAt - 300) < 1e-6,
           { inside, wrecks: [w0, wrecks()], banner, sub, kills: hf.shedKills - k0, rest: hf.shedRestUntil - killedAt, stage: [st0, quest.stage] }); }
       // B5: the rest, said in minutes and seconds; save and load keep it
       { const until = hf.shedRestUntil; save(); load(); F.sim(1, []); const kept = HF().shedRestUntil === until;
