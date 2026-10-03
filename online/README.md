@@ -10,7 +10,7 @@ The first address, https://gorkscape.ca, hands each browser over to fanglands.co
 online/
   wrangler.toml       the Worker's name, the static assets folder (the worker runs first), the World object, the domains
   src/worker.js       the front door: /api/* and /ws go to the World, /admin and everything else are static files
-  src/handoff.js      two addresses: gorkscape.ca's hand-over page, www -> bare, the offer and claim in the World
+  src/handoff.js      two addresses: gorkscape.ca's hand-over page, the /handoff start page, www -> bare, the offer and claim
   src/world.js        the Durable Object: sessions, saves, the chat log, pinned backups, the admin routes, the sockets
   src/room.js         who is on which map, who keeps its monsters, where every message goes (no Cloudflare APIs)
   src/store.js        the tables (SCHEMA), the one migration (migrate), and the two stores the room can use

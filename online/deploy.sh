@@ -1,5 +1,5 @@
 #!/bin/sh
-# Ships the game to gorkscape.ca. From anywhere: ./online/deploy.sh
+# Ships the game to fanglands.com (and gorkscape.ca's hand-over). From anywhere: ./online/deploy.sh
 # Build, run the whole headless suite, the server's own tests, the two-player simulations (and the admin and drop
 # party ones when they are there), copy the built game into the assets folder, deploy. Never deploys a build that
 # fails a check.
