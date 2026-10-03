@@ -44175,7 +44175,7 @@ const MONSTER_LOOK = (() => {
   const _monsterTop = monsterTop, _monsterPad = monsterPad;
   monsterTop = m => (ON.on && m && BOX[m.type]) ? Math.max(m.r || 0, headroom(m.type) - 7) : _monsterTop(m);
   monsterPad = m => (ON.on && m && BOX[m.type]) ? Math.max(80, reach(m.type)) : _monsterPad(m);
-  HOOKS.draw.push(() => installColossus());
+  HOOKS.draw.push((g, items) => installColossus());
 
   // a portrait (44-wiki, 76-admin): the scale and the offset that fit the whole drawing standing in a size x size box
   function fit(type, size, most) {
