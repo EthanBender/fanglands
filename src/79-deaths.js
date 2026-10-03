@@ -85,6 +85,8 @@ const DEATHS = (() => {
     if (!m || m.phantom || !MONSTER_DEFS[m.type]) return null;
     const old = m[DA];
     if (old && old.t === 0 && corpses.includes(old)) return old;
+    // one death, one corpse: a keeper handoff copies a puppet's fresh death onto the real monster with the same nid
+    if (m.nid) for (const c of corpses) if (c.nid === m.nid && c.t < FRESH + 0.2) { m[DA] = c; return c; }
     const def = MONSTER_DEFS[m.type], kind = kindOf(m.type), boss = isBoss(m.type);
     const fx0 = m.facing && Number.isFinite(m.facing.x) ? m.facing.x : 1, fy0 = m.facing && Number.isFinite(m.facing.y) ? m.facing.y : 0;
     const fl = Math.hypot(fx0, fy0) || 1, fx = fl ? fx0 / fl : 1, fy = fl ? fy0 / fl : 0;
@@ -95,7 +97,7 @@ const DEATHS = (() => {
     const r = m.r || def.r || 12;
     const seed = (++made) * 7.31 + (m.x || 0) * 0.013 + (m.y || 0) * 0.007;
     const c = {
-      m, type: m.type, kind, boss, x: m.x, y: m.y, r, fx, fy, side: fx < -0.2 ? 1 : fx > 0.2 ? -1 : (hash(seed, 1) < 0.5 ? -1 : 1),
+      m, nid: m.nid || null, type: m.type, kind, boss, x: m.x, y: m.y, r, fx, fy, side: fx < -0.2 ? 1 : fx > 0.2 ? -1 : (hash(seed, 1) < 0.5 ? -1 : 1),
       body, t: 0, dur: boss ? BOSS_DUR : DUR, inst: here(), seed, remote: !!m.remote, banner: null, flashed: false,
       ext: m.type === 'ginormous_golem' ? 150 : Math.max(36, r * 2.6),
       weapon: kind === 'person' ? (WEAPON[m.type] || 'sword') : null,
@@ -320,8 +322,9 @@ const DEATHS = (() => {
   }
 
   // ---------- each tick ----------
+  // only a corpse born this moment: an arrow that lands beside an older one is not its loot
   function nearCorpse(d) {
-    for (const c of corpses) if (c.t < popAt(c) && Math.abs(d.x - c.x) < c.r + 48 && Math.abs(d.y - c.y) < c.r + 48) return c;
+    for (const c of corpses) if (c.t < 0.2 && Math.abs(d.x - c.x) < c.r + 48 && Math.abs(d.y - c.y) < c.r + 48) return c;
     return null;
   }
   function tick(dt) {
@@ -353,6 +356,7 @@ const DEATHS = (() => {
     if (corpses.length) for (const d of drops) if (d.t < 0.12 && d[PIN] === undefined) { const c = nearCorpse(d); if (c) hide(d, c); }
   }
   HOOKS.update.push(dt => tick(dt));
+  HOOKS.newGame.push(() => { while (corpses.length) end(corpses[0]); pending.length = 0; });
   HOOKS.draw.push((g, items) => {
     if (!corpses.length) return;
     const inst = here();
