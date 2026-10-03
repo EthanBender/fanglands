@@ -173,7 +173,7 @@ The 24-tile test uses the true position, so a listed `x, y` can sit up to √½ 
 what `drawHuman(g, e, look)` reads, with the weapon reduced to its shape and colour. A knight on a machine
 adds `mech: {kind, hp, maxHp}` and is drawn with `drawMech`. Mounts add `mount: id`. A worn party hat adds `hat: '<colour>'`
 (`null` otherwise; see *Party hats*). `girl` is a boolean, always sent: `true` for a girl knight (`player.gender`, chosen on
-the "Boy or girl?" page or in Settings, `src/79-boygirl.js`), and then `hair` is her hair colour; any `drawHuman` draws a look
+the "Boy or girl?" card on the title before the knight comes into the world, or in Settings, `src/79-boygirl.js`), and then `hair` is her hair colour; any `drawHuman` draws a look
 with `girl` with the skirt and long hair, a braid with a ribbon (out of any helm) and a bow on a bare head. A change of
 `player.gender` counts as a look change, so presence goes out at once. The server relays it unchanged.
 
