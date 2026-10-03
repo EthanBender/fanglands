@@ -6,7 +6,11 @@
 // invite code, and a line saying who is on. Online there are no slots: the account is the knight. A login
 // pulls the cloud save into slot 1 and starts it exactly the way 14-title starts a slot; a knight with no cloud
 // save yet is offered the one on the old GitHub Pages address (bridge.html, in a hidden iframe) or starts fresh.
-// Play alone falls back to the ordinary three-slot title with no network at all.
+// There is no Play alone online (owner, 2026-10-03: "everything should be server side so that they can play on multiple
+// devices"): every knight is an account's, made with Ethan's invite code. A knight saved on this device that no account
+// owns (a Play alone knight from before) is never deleted or overwritten: park() moves it out of slot 1 first, and with
+// no room the start stops and says so. src/72-deviceknights.js names those knights on the card and offers them to a new
+// account. Offline (no NET) the title keeps its three slots exactly as before.
 // Feature file: registers through HOOKS and wraps title.open / title.tick / drawHud by reassignment. Nothing in
 // here touches the DOM without checking there is one (tools/headless.js has no document.body).
 // window.LOGIN is the register; docs/ONLINE.md is the contract.
@@ -33,9 +37,8 @@
   const LOGIN = {
     showing: false,   // the online card is up over the title backdrop
     playing: false,   // a knight started through this flow is in the game (72-cloudsave pushes saves while true)
-    alone: false,     // Play alone was chosen: the ordinary three-slot title, no network
     name: null,       // the knight's name once the world said yes
-    mode: 'form',     // form | checking | me | busy | offer
+    mode: 'form',     // form | checking | me | busy | offer | device (72-deviceknights' offer)
     newKnight: false, error: '', status: '', asleep: false, offer: null, busy: false,
     stats: { login: 0, signup: 0 },
     MARK_KEY, BRIDGE_ORIGIN,
@@ -130,16 +133,23 @@
   LOGIN.summarizeRaw = summarizeRaw;
 
   // ---------- slot 1 is the online knight's slot ----------
-  // A save that Play alone left in slot 1 is moved to an empty slot before the cloud knight takes the slot over,
-  // so nothing a kid played is thrown away. The mark says slot 1 currently holds a cloud knight; 72-cloudsave
-  // clears it when a local save lands there.
+  // A knight saved only on this device in slot 1 (no cloud mark: a Play alone knight from before) is never deleted or
+  // overwritten: it is moved to an empty slot (2 or 3) before a cloud knight takes slot 1 over. If slots 2 and 3 already
+  // hold it, it is safe as it is. With no room, park() says no and the start stops (claim and fresh write nothing). The
+  // mark says slot 1 currently holds a cloud knight; 72-cloudsave clears it when a local save lands there.
+  // park() is true when slot 1 may be written.
   const park = () => {
-    const cur = lsGet(SLOT(1)); if (!cur || lsGet(MARK_KEY) != null) return false;
+    const cur = lsGet(SLOT(1)); if (!cur || lsGet(MARK_KEY) != null) return true;
+    for (let n = 2; n <= 3; n++) if (lsGet(SLOT(n)) === cur) return true;
     for (let n = 2; n <= 3; n++) if (!lsGet(SLOT(n))) { lsSet(SLOT(n), cur); lsSet(AT(n), lsGet(AT(1)) || Date.now()); return true; }
     return false;
   };
-  const claim = (raw, at) => { if (lsGet(SLOT(1)) !== raw) park(); lsSet(SLOT(1), raw); lsSet(AT(1), at || Date.now()); lsSet(MARK_KEY, '1'); if (window.CLOUD) window.CLOUD.known = raw; };
-  const fresh = () => { park(); lsDel(SLOT(1)); lsDel(AT(1)); lsSet(MARK_KEY, '1'); if (window.CLOUD) window.CLOUD.known = null; };
+  const claim = (raw, at) => { if (!park()) return false; lsSet(SLOT(1), raw); lsSet(AT(1), at || Date.now()); lsSet(MARK_KEY, '1'); if (window.CLOUD) window.CLOUD.known = raw; return true; };
+  const fresh = () => { if (!park()) return false; lsDel(SLOT(1)); lsDel(AT(1)); lsSet(MARK_KEY, '1'); if (window.CLOUD) window.CLOUD.known = null; return true; };
+  // no room to keep this device's knights safe: the start stops here, nothing is written, the card says so
+  const NO_ROOM = 'There is no room on this device to keep its saved knights safe, so the game did not start. Ask Ethan for help.';
+  LOGIN.NO_ROOM = NO_ROOM;
+  const noRoom = () => { LOGIN.busy = false; LOGIN.offer = null; LOGIN.mode = NET.token ? 'me' : 'form'; LOGIN.error = NO_ROOM; refresh(); return false; };
 
   // ---------- the bridge: the knight saved on the old address ----------
   const bridge = {
@@ -205,8 +215,8 @@
     LOGIN.mode = 'busy'; LOGIN.error = ''; refresh();
     when(api('GET', '/api/save'),
       r => {
-        if (r && typeof r.save === 'string' && r.save) { claim(r.save, +r.at || Date.now()); start(false, true); return; }
-        bridge.ask(c => { if (c) { LOGIN.offer = c; LOGIN.mode = 'offer'; refresh(); } else { fresh(); start(true, false); } });
+        if (r && typeof r.save === 'string' && r.save) { if (!claim(r.save, +r.at || Date.now())) return noRoom(); start(false, true); return; }
+        bridge.ask(c => { if (c) { LOGIN.offer = c; LOGIN.mode = 'offer'; refresh(); } else { if (!fresh()) return noRoom(); start(true, false); } });
       },
       e => {
         if (e && (e.code === 'auth' || e.status === 401)) { NET.setToken(null); LOGIN.mode = 'form'; }
@@ -214,10 +224,12 @@
         LOGIN.error = LOGIN.sentence(e, 'save'); refresh();
       });
   }
+  // true when the knight went in (false: no room to keep this device's knights safe, and the card says so)
   LOGIN.bring = yes => {
     const c = LOGIN.offer; LOGIN.offer = null;
-    if (yes && c) { claim(c.save, c.at || Date.now()); start(true, true); }
-    else { fresh(); start(true, false); }
+    if (yes && c) { if (!claim(c.save, c.at || Date.now())) return noRoom(); start(true, true); }
+    else { if (!fresh()) return noRoom(); start(true, false); }
+    return true;
   };
   // into the world through the title's door (title.ask, 14-title): a question asked there first (79-boygirl's "Boy or
   // girl?" for a knight who has not chosen) is answered before the knight is in the world, the socket open or the
@@ -225,7 +237,7 @@
   function start(push, had) {
     hide();
     title.ask(1, () => {
-      LOGIN.playing = true; LOGIN.alone = false; hide();
+      LOGIN.playing = true; hide();
       title.startSlot(1);
       notify(had ? `Welcome back, ${LOGIN.name}.` : `Welcome to the world, ${LOGIN.name}.`);
       NET.connect();
@@ -252,7 +264,7 @@
     e => { if (LOGIN.mode !== 'me' || !e || e.code !== 'words') return; LOGIN.error = LOGIN.sentence(e, 'login'); refresh(); });
   LOGIN.recheck = recheck;
   LOGIN.show = () => {
-    LOGIN.showing = true; LOGIN.alone = false; LOGIN.playing = false; LOGIN.error = ''; LOGIN.offer = null; LOGIN.busy = false; LOGIN.asleep = false;
+    LOGIN.showing = true; LOGIN.playing = false; LOGIN.error = ''; LOGIN.offer = null; LOGIN.busy = false; LOGIN.asleep = false;
     LOGIN.status = 'Looking for the world...'; LOGIN.mode = NET.token ? 'checking' : 'form';
     build(); if (ui) { if (!ui.name.value) ui.name.value = lsGet(NAME_KEY) || ''; place(); } refresh();
     askStatus(); if (NET.token) checkMe();
@@ -268,12 +280,11 @@
     return !kept ? '' : LOGIN.mode === 'form' ? LOGIN.newKnightOff(kept) : LOGIN.keptOut(kept);
   };
   LOGIN.hide = hide;
+  LOGIN.refresh = () => refresh();   // 72-deviceknights repaints the card through this (and paints its part in LOGIN.afterRefresh)
   LOGIN.playAs = () => { if (LOGIN.mode !== 'me' || LOGIN.keptOutUntil()) return false; afterLogin(); return true; };
   // a different knight may log in next on this device: the chat of this one (its lines, its warnings) is forgotten (74-chat)
   const forgetChat = () => { if (window.CHAT && CHAT.forget) CHAT.forget(); };
   LOGIN.notMe = () => { when(api('POST', '/api/logout'), noop, noop); NET.setToken(null); LOGIN.name = null; LOGIN.mode = 'form'; LOGIN.error = ''; forgetChat(); refresh(); };
-  LOGIN.playAlone = () => { LOGIN.alone = true; hide(); title.refresh(); };
-  LOGIN.backOnline = () => { LOGIN.alone = false; LOGIN.show(); };
   LOGIN.logout = () => {
     if (!LOGIN.playing) return false;
     save();
@@ -303,12 +314,13 @@
     title.open(); LOGIN.error = text; refresh();
   });
   // Put my knight back (76-admin): the world hands back the pinned backup as a slot string. It goes into slot 1 exactly the way
-  // a login's cloud save does (a Play alone save there is parked first, the mark is set, the cloud knows it) and the game
+  // a login's cloud save does (a device knight there is parked first, the mark is set, the cloud knows it) and the game
   // starts on it. The socket is left alone: the knight never left the world. Any push of the knight being replaced is
   // dropped first, so it can never land on top of the one coming back.
   LOGIN.reload = (raw, at) => {
     if (typeof raw !== 'string' || !raw) return false;
     try { JSON.parse(raw); } catch (e) { return false; }
+    if (!park()) return false;   // no room to keep a device knight in slot 1 safe: nothing changes
     if (window.CLOUD) window.CLOUD.reset();
     claim(raw, +at || Date.now());
     title.startSlot(1);
@@ -323,11 +335,12 @@
     if (!NET.enabled) return;
     if (wasPlaying && window.CLOUD) window.CLOUD.flush();
     LOGIN.playing = false;
-    if (!LOGIN.alone) LOGIN.show();
+    LOGIN.show();   // online the title is always the login card: no Play alone, no local slots
   };
   const _tick = title.tick;
   title.tick = dt => {
-    if (!LOGIN.showing) return _tick(dt);
+    // online with the card put away (79-boygirl's question is up): Enter never starts a local slot
+    if (!LOGIN.showing) { if (!NET.enabled) return _tick(dt); title.t += dt; time += dt; pressed.clear(); keys.clear(); touch.taps.length = 0; return; }
     title.t += dt; time += dt;
     // a lockout that ended while the card was up: New knight and Play come back and the sentence goes
     if (LOGIN.keptShown && !LOGIN.keptOutUntil()) { LOGIN.keptShown = 0; if (KEPT_WORDS.test(LOGIN.error)) LOGIN.error = ''; refresh(); }
@@ -402,8 +415,7 @@
     u.busy = el('div', { cls: 'fl-line', text: 'One moment...' });
     u.busyErr = el('div', { cls: 'fl-err' });
     u.statusText = el('span', {});
-    u.alone = el('button', { type: 'button', cls: 'fl-dim', text: 'Play alone', onclick: LOGIN.playAlone });
-    u.status = el('div', { cls: 'fl-status' }, u.statusText, u.alone);
+    u.status = el('div', { cls: 'fl-status' }, u.statusText);
     u.card = el('div', { cls: 'fl-card' }, el('h2', { text: 'Play online at gorkscape.ca' }), u.form, u.who, u.offer, u.busy, u.busyErr, u.status);
     u.root = el('div', { id: 'fl-login' }, u.card);
     document.body.appendChild(u.root);
@@ -436,7 +448,8 @@
     ui.whoName.textContent = LOGIN.name || '';
     const o = LOGIN.offer;
     ui.offerText.textContent = o ? `Bring your knight from the old address? Level ${o.level} · Chapter ${o.chapter}: ${CHAPTERS[o.chapter - 1] || ''}` : '';
-    ui.statusText.textContent = LOGIN.status; ui.alone.hidden = !LOGIN.asleep;
+    ui.statusText.textContent = LOGIN.status;
+    if (LOGIN.afterRefresh) LOGIN.afterRefresh();
   }
   // while a knight is typing, the game's key listeners must not hear it (they sit on window, bubble phase; this
   // capturing listener runs first and stops the event there — the input still gets its default action). Escape blurs.
@@ -469,11 +482,10 @@
     }
     title.chrome(g, F, ['Your knight is saved in the cloud at gorkscape.ca.', 'Saved in the cloud at gorkscape.ca.', 'Saved in the cloud.']);
   }
-  // Play alone keeps a way back: a Play online plate at the left end of the title's bottom row
-  title.leftButton = () => (title.active && NET.enabled && LOGIN.alone && !LOGIN.showing) ? { label: 'Play online', action: LOGIN.backOnline, emblem: 'friends' } : null;
   const _drawHud = drawHud;
+  // online the title never draws the local slot cards, even with the card put away (79-boygirl draws its question over this)
   drawHud = function (g) {
-    if (!title.active || !LOGIN.showing) return _drawHud(g);
+    if (!title.active || (!LOGIN.showing && !NET.enabled)) return _drawHud(g);
     buttons.length = 0; minimapRect = null;
     g.textBaseline = 'alphabetic';
     drawOnlineTitle(g);
@@ -494,7 +506,7 @@
   const P = 'login: ';
   HOOKS.selfTest.push((check, F, h) => {
     if (!title.active) save();
-    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, status: NET.status, slot: title.slot, titleActive: title.active, showing: LOGIN.showing, playing: LOGIN.playing, alone: LOGIN.alone, name: LOGIN.name,
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, status: NET.status, slot: title.slot, titleActive: title.active, showing: LOGIN.showing, playing: LOGIN.playing, name: LOGIN.name,
       slots: [1, 2, 3].map(n => [lsGet(SLOT(n)), lsGet(AT(n))]), cur: lsGet('fanglands.slot.current'), mark: lsGet(MARK_KEY), lastName: lsGet(NAME_KEY), paused, notice };
     // a small world that answers on the spot: one knight (Cohen / sword) with a cloud save, invite code 'dragon'
     const base = JSON.parse(lsGet(SLOT(title.slot)) || lsGet(SAVE_KEY) || '{"player":{},"quest":{}}'); base.player = base.player || {}; base.player.kills = 42; const cloud = JSON.stringify(base);
@@ -517,7 +529,9 @@
       open: () => { const s = { readyState: 1, send(str) { const m = JSON.parse(str); if (m.t === 'hello') s.onmessage({ data: JSON.stringify({ t: 'welcome', me: LOGIN.name, at: 1, keeper: LOGIN.name }) }); }, close() { s.readyState = 3; if (s.onclose) s.onclose(); } }; return s; },
     };
     try {
-      NET.enabled = true; NET.useFake(world); NET.setToken(null); LOGIN.alone = false; LOGIN.playing = false; if (window.CLOUD) window.CLOUD.reset();
+      NET.enabled = true; NET.useFake(world); NET.setToken(null); LOGIN.playing = false; if (window.CLOUD) window.CLOUD.reset();
+      // these logins see no knights on this device (72-deviceknights' own test covers them; the finally puts the slots back)
+      for (let n = 1; n <= 3; n++) { lsDel(SLOT(n)); lsDel(AT(n)); } lsDel(MARK_KEY);
       title.open();
       check(P + 'on the online address the title puts up the card and asks the world who is on', LOGIN.showing && title.active && LOGIN.mode === 'form' && LOGIN.status === '2 knights online: Cohen, Sam' && !LOGIN.asleep, { status: LOGIN.status, mode: LOGIN.mode });
       render();
@@ -565,24 +579,29 @@
       title.toTitle(); LOGIN.notMe();
       check(P + 'Not me forgets the session and shows the form', !NET.token && LOGIN.mode === 'form' && LOGIN.showing && world.calls.filter(c => c === 'POST /api/logout').length === 2, { mode: LOGIN.mode });
       world.statusFails = true; LOGIN.show();
-      check(P + 'when the world does not answer, the card says it is asleep and offers Play alone', LOGIN.asleep && LOGIN.status === 'The world is asleep right now.', { status: LOGIN.status });
-      LOGIN.playAlone(); render();
-      check(P + 'Play alone falls back to the three local slots, with a way back online', !LOGIN.showing && LOGIN.alone && title.active && buttons.some(b => b.label === 'Slot 1') && buttons.some(b => b.label === 'Play online'), { labels: buttons.map(b => b.label) });
-      // the title in Play alone mode (Play online on the bottom row) and behind the online card, at all 8 device sizes
+      // owner, 2026-10-03: no Play alone online. Even with the world asleep there is no way past the card without an account:
+      // no Play alone on the card or in LOGIN, no slot cards, Continue or Play online plate on the canvas (not even with the
+      // card put away), and Enter starts nothing
+      { render(); const labels = buttons.map(b => b.label);
+        const html = hasDom() ? [...(build(), ui.card.querySelectorAll('button'))].map(b => b.textContent).join('|') : '';
+        LOGIN.showing = false; render(); const hidden = buttons.map(b => b.label); pressed.add('Enter'); title.tick(1 / 60); const entered = !title.active || LOGIN.playing; LOGIN.showing = true;
+        const local = l => /^Slot \d|^Continue|Play online|alone/i.test(l);
+        const none = typeof LOGIN.playAlone !== 'function' && typeof LOGIN.backOnline !== 'function' && !/alone/i.test(html) && !labels.some(local) && !hidden.some(local) && title.leftButton() === null && !entered;
+        check(P + 'online there is no Play alone: with the world asleep the card says so, and nothing on it, on the canvas (even with the card put away) or on Enter plays without an account', LOGIN.asleep && LOGIN.status === 'The world is asleep right now.' && LOGIN.showing && title.active && none && !LOGIN.playing, { status: LOGIN.status, labels, hidden, html, entered }); }
+      // the title behind the online card, at all 8 device sizes
       { const restore = panelSizeSaver(), t0 = window.__forceTouch, text0 = SETTINGS.get('text'), problems = []; let tried = 0;
         try {
           for (const [w, hh] of HK.audit.SIZES) {
             if (!panelSetSize(w, hh)) continue; tried++;
-            for (const tch of [true, false]) for (const big of ['normal', 'large']) for (const alone of [true, false]) {
-              window.__forceTouch = tch; SETTINGS.set('text', big); LOGIN.showing = !alone;
-              const where = `title ${alone ? 'alone' : 'online card'} ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big}`;
+            for (const tch of [true, false]) for (const big of ['normal', 'large']) {
+              window.__forceTouch = tch; SETTINGS.set('text', big); LOGIN.showing = true;
+              const where = `title online card ${w}x${hh} ${tch ? 'touch' : 'mouse'} ${big}`;
               problems.push(...panelFrame(where, { from: 0, panel: false }));
-              if (alone && !buttons.some(b => b.label === 'Play online')) problems.push(`${where}: no Play online`);
-              if (!alone && buttons.map(b => b.label).join() !== 'Sound: on' && buttons.map(b => b.label).join() !== 'Sound: off') problems.push(`${where}: the canvas should hold only Sound (${buttons.map(b => b.label).join(',')})`);
+              if (buttons.map(b => b.label).join() !== 'Sound: on' && buttons.map(b => b.label).join() !== 'Sound: off') problems.push(`${where}: the canvas should hold only Sound (${buttons.map(b => b.label).join(',')})`);
             }
           }
         } finally { LOGIN.showing = false; window.__forceTouch = t0; SETTINGS.set('text', text0); restore(); render(); }
-        check(P + 'the title with Play online (Play alone) and behind the online card, at all 8 device sizes, touch and mouse: controls 44 px on touch (26 with a mouse), 8 px apart (4), on screen, out of the bands, the words inside their plates', tried === 8 && problems.length === 0, { tried, problems: problems.slice(0, 8), total: problems.length }); }
+        check(P + 'the title behind the online card, at all 8 device sizes, touch and mouse: controls 44 px on touch (26 with a mouse), 8 px apart (4), on screen, out of the bands, the words inside their plates', tried === 8 && problems.length === 0, { tried, problems: problems.slice(0, 8), total: problems.length }); }
       // the card's CSS (headless has no DOM to measure): every button, box and the New knight switch is at least 44 px tall and
       // the inputs are 16 px (so iOS does not zoom); in a browser the live card is measured too
       { const rule = sel => { const m = CSS.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}')); return m ? m[1] : ''; };
@@ -592,14 +611,14 @@
         let live = 'no DOM';
         if (hasDom()) { build(); const was0 = ui.root.hidden; ui.root.hidden = false; try { const hs = [...ui.card.querySelectorAll('button,input[type=text],input[type=password],.fl-check')].filter(e => e.offsetParent !== null).map(e => e.getBoundingClientRect().height); const fs = parseFloat(getComputedStyle(ui.name).fontSize); live = hs.every(v => v >= 44) && fs >= 16; } finally { ui.root.hidden = was0; } }
         check(P + 'the login card: buttons, text boxes and the New knight switch are at least 44 px tall, and the text boxes use a 16 px font', css && live !== false, { css, live, inputs, btn: btn.slice(0, 60), chk }); }
-      world.statusFails = false; LOGIN.backOnline(); const back = LOGIN.showing && !LOGIN.alone;
+      world.statusFails = false; LOGIN.show(); const back = LOGIN.showing;
       // the bridge: only the old address is believed, and the newest slot wins
       const older = { save: cloud, at: 100 }, newerSave = JSON.parse(cloud); newerSave.player.kills = 3; const newer = { save: JSON.stringify(newerSave), at: 200 };
       let got = 'none'; bridge.waiting = c => { got = c; };
       bridge.onMessage({ origin: 'https://evil.example', data: { fanglands: 'save', slots: { 1: newer } } }); const ignored = got === 'none' && bridge.waiting !== null;
       bridge.onMessage({ origin: BRIDGE_ORIGIN, data: { fanglands: 'save', slots: { 1: older, 2: null, 3: newer } } });
       check(P + 'the bridge answer is believed only from the old address and the newest slot wins, summarised for the offer', back && ignored && got && got.slot === 3 && got.at === 200 && got.save === newer.save && got.level >= 1 && got.chapter >= 1 && bridge.waiting === null, { ignored, slot: got && got.slot, at: got && got.at, level: got && got.level });
-      // a Play alone save in slot 1 is parked in an empty slot before a cloud knight takes slot 1
+      // a knight saved only on this device in slot 1 (Play alone, before) is parked in an empty slot before a cloud knight takes slot 1
       lsDel(MARK_KEY); lsSet(SLOT(1), '{"player":{"kills":1},"quest":{}}'); lsSet(AT(1), '77'); lsDel(SLOT(2)); lsDel(AT(2));
       claim(cloud, 9);
       check(P + 'a knight played alone in slot 1 is moved to an empty slot, never thrown away, when the cloud knight takes slot 1', lsGet(SLOT(2)) === '{"player":{"kills":1},"quest":{}}' && lsGet(AT(2)) === '77' && lsGet(SLOT(1)) === cloud && lsGet(MARK_KEY) === '1', { slot2: lsGet(SLOT(2)) });
@@ -620,7 +639,7 @@
         check(P + 'LOGIN.reload puts a cloud save into slot 1 the way a login does and starts it, drops any pending push, leaves the socket alone, and refuses a broken string', ok && lsGet(SLOT(1)) === raw && lsGet(AT(1)) === '1234' && lsGet(MARK_KEY) === '1' && player.kills === 77 && title.slot === 1 && !title.active && NET.sock === sock && NET.status === 'on' && clean && LOGIN.reload('not json', 1) === false, { ok, kills: player.kills, slot: title.slot, same: NET.sock === sock, status: NET.status, clean }); }
     } finally {
       hide(); bridge.done(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.setToken(was.token); NET.status = 'off'; NET.me = null;
-      LOGIN.playing = was.playing; LOGIN.alone = was.alone; LOGIN.name = was.name; LOGIN.error = ''; LOGIN.offer = null; LOGIN.busy = false; LOGIN.mode = 'form';
+      LOGIN.playing = was.playing; LOGIN.name = was.name; LOGIN.error = ''; LOGIN.offer = null; LOGIN.busy = false; LOGIN.mode = 'form';
       for (let n = 1; n <= 3; n++) { const [s, a] = was.slots[n - 1]; if (s == null) { lsDel(SLOT(n)); lsDel(AT(n)); } else { lsSet(SLOT(n), s); lsSet(AT(n), a || Date.now()); } }
       if (was.cur == null) lsDel('fanglands.slot.current'); else lsSet('fanglands.slot.current', was.cur);
       if (was.mark == null) lsDel(MARK_KEY); else lsSet(MARK_KEY, was.mark);
