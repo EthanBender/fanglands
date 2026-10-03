@@ -249,6 +249,8 @@
         open: () => { const so = { readyState: 1, send(str) { if (JSON.parse(str).t === 'hello') so.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }) }); }, close() { so.readyState = 3; if (so.onclose) so.onclose(); } }; return so; },
       };
       const here = w => deviceKnights(LS.get, LS.keys(), w);
+      // a minute of play: play seconds only grow, and the knight's line tells copies apart by them (72-deviceknights)
+      const play = () => { player.kills++; player.playSeconds = (+player.playSeconds || 0) + 60; save(); };
       try {
         // a browser that never played: only what the login writes is in it
         for (const k of LS.keys()) if (/^fanglands\.(slot\.|save\.v2|session$|lastname$|kept|dk\.|marks)/.test(k)) LS.del(k);
@@ -256,9 +258,9 @@
         title.open();
         L.submit('Cohen', 'sword', '', false);
         const r1 = { playing: L.playing, slot1: LS.get(title.slotKey(1)) === world.saves.cohen, withWorld: here(world.saves.cohen), unknown: here(null) };
-        player.kills++; save(); C.flush();
+        play(); C.flush();
         const r2 = { pushed: JSON.parse(world.saves.cohen).player.kills === 43, withWorld: here(world.saves.cohen) };
-        world.up = false; player.kills++; save(); C.flush();
+        world.up = false; play(); C.flush();
         const r3 = { stranded: here(world.saves.cohen) };
         world.up = true; C.flush();
         const r4 = { landed: JSON.parse(world.saves.cohen).player.kills === 44, withWorld: here(world.saves.cohen) };
