@@ -48,7 +48,7 @@ test('a clean line is no strike; a starred-out line is, with the warning, then t
   assert.equal(WORD_WARN_2, "Last warning. Do it again and you'll be kept out for 24 hours.");
   assert.equal(sam.closed, null);
   // the third: the line goes out masked, then the error with the time it ends, then close 4006
-  w.say(sam, 'sh1t');
+  w.say(sam, 'sh!t');
   const at = w.t;
   assert.equal(ada.last('chat').text, '****');
   assert.deepEqual(sam.last('error'), { t: 'error', code: 'words', text: wordsText(at + WORD_LOCK_MS, at), until: at + WORD_LOCK_MS, n: 3 });
@@ -59,8 +59,8 @@ test('a clean line is no strike; a starred-out line is, with the warning, then t
   // one mod_log row per strike, by the word filter, with the line as it was typed (review round 3: the parent page has to be
   // able to tell whether a strike was fair); the chat log has only the masked lines
   assert.deepEqual(w.store.modLog(10).reverse().map(r => [r.by, r.act, r.target, r.detail]),
-    [['word filter', 'strike', 'Sam', '1: you are a bitch'], ['word filter', 'strike', 'Sam', '2: what the f u c k'], ['word filter', 'strike', 'Sam', '3, kept out 24 hours: sh1t']]);
-  assert.ok(w.logged.every(l => !/bitch|fuck|sh1t|f u c k/i.test(l.text)));
+    [['word filter', 'strike', 'Sam', '1: you are a bitch'], ['word filter', 'strike', 'Sam', '2: what the f u c k'], ['word filter', 'strike', 'Sam', '3, kept out 24 hours: sh!t']]);
+  assert.ok(w.logged.every(l => !/bitch|fuck|sh!t|f u c k/i.test(l.text)));
   // Ada never had a strike
   assert.equal(w.store.wordStrikes('Ada', w.t).strikes, 0);
 });
@@ -218,7 +218,7 @@ test('round 5: two friends chat a whole evening, insults and all, and only a swe
   assert.equal(lol.all('chat').find(m => m.n === 'Cohen' && /dumb/.test(m.text)), undefined);
   assert.equal(lol.all('chat').filter(m => m.n === 'Cohen')[0].text, 'ya so ****');
   // a swear word or a slur, in a disguise too, is a strike: warning, last warning, kept out
-  w.say(cohen, 'ya so dumb lol sh1t'); assert.deepEqual(cohen.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
+  w.say(cohen, 'ya so dumb lol sh!t'); assert.deepEqual(cohen.last('strike'), { t: 'strike', n: 1, text: WORD_WARN_1 });
   w.say(cohen, 'f u c k'); assert.deepEqual(cohen.last('strike'), { t: 'strike', n: 2, text: WORD_WARN_2 });
   w.say(cohen, 'n1gger'); assert.equal(cohen.closed.code, 4006);
   assert.equal(leo.all('strike').length, 0);

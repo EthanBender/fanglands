@@ -14,9 +14,12 @@
 
 // The words that are a strike: swear words and slurs a kid would not type for anything else. Each is matched as a whole
 // word, case does not matter, and in its common disguises: a letter held longer (fuuuck, shiiit), letters spaced or split
-// up (f u c k, f.u.c.k, s-h-i-t), and look-alike digits or symbols inside a word that has letters (sh1t, $hit, b!tch, a55,
-// @$$). Never a number, alone or joined to a word (455, 8008, gold:455, the 455's, a 5 5), and never as part of a longer
-// word (class, Scunthorpe, Dickens, cockpit).
+// up (f u c k, f.u.c.k, s-h-i-t), look-alike symbols inside a word ($hit, b!tch, @$$), and look-alike DIGITS only in a long
+// word: a digit is read as a letter for a strike only when the word comes out 5 letters or longer and has at least 3 real
+// letters (b1tch, n1gger, wh0re, d1ckhead). Short codes are never read that way, because phone models and shorthand look
+// just like them (a22, a55, a2z, s21): sh1t, a55 and 4ss are starred out but never a strike. Never a number, alone or
+// joined to a word (455, 8008, gold:455, the 455's, a 5 5), and never as part of a longer word (class, Scunthorpe,
+// Dickens, cockpit).
 // Left off on purpose, because they mean something else or are mild: damn, crap, hell, piss, bastard (a bastard sword),
 // cock (a rooster), gook (gunk), prick (a thorn), tit (a bird), pussy (a cat), fag (a cigarette), dyke (a wall), spic (spic and span),
 // coon (a raccoon), chink (in armour), dick (Dick Grayson, Moby Dick), kike (Kike Hernandez, a nickname for Enrique), tranny,
@@ -27,7 +30,7 @@ export const STRIKE_WORDS = [
   'fuck', 'fucks', 'fucker', 'fuckers', 'fucking', 'fuckin', 'fucked', 'fucka', 'fuckhead', 'fuckface', 'fuk', 'fuks', 'fukin', 'fuking', 'fvck', 'fcuk', 'phuck',
   'motherfucker', 'motherfuckers', 'motherfucking', 'mofo',
   'shit', 'shits', 'shitty', 'shitting', 'shithead', 'shitheads', 'shitface', 'bullshit', 'horseshit', 'dipshit', 'shyt', 'shite',
-  'ass', 'asshole', 'assholes', 'arse', 'arsehole', 'arseholes', 'dumbass', 'fatass', 'smartass', 'azz',
+  'ass', 'asshole', 'assholes', 'arse', 'arsehole', 'arseholes', 'dumbass', 'fatass', 'smartass',
   'bitch', 'bitches', 'bitchy', 'bitching', 'biatch',
   'cunt', 'cunts', 'kunt', 'cvnt',
   'dickhead', 'dickheads',
@@ -235,6 +238,8 @@ const insideList = w => STRIKE_INSIDE.some(s => squeeze(w).includes(squeeze(s)))
 const LOOKS = /^[@$!|+]+$/;
 const MARKS = /[^a-z0-9@$!|+]+/;
 const readable = p => /[a-z]/.test(p) ? !isNumber(p) : LOOKS.test(p);
+// a piece with a digit in it may only be read as a strike word when it is long and mostly letters (see STRIKE_WORDS)
+const digitOk = (raw, read) => !/[0-9]/.test(raw) || (read.length >= 5 && (raw.match(/[a-z]/g) || []).length >= 3);
 function strikeToken(tok) {
   const t = tok.toLowerCase().replace(/^[^a-z0-9@$]+|[^a-z0-9@$]+$/g, '');
   if (!t || isNumber(t)) return false;
@@ -246,7 +251,7 @@ function strikeToken(tok) {
   const spelled = pieces.length >= 3 && pieces.every(p => /^[a-z@$!|+]$/.test(p));
   for (const sw of [SWAP_I, SWAP_L]) {
     const parts = read.map(p => unleet(p, sw));
-    if (parts.some(p => onList(p) || insideList(p))) return true;
+    if (parts.some((p, k) => digitOk(read[k], p) && (onList(p) || insideList(p)))) return true;
     if (spelled && onList(parts.join(''))) return true;
   }
   return false;

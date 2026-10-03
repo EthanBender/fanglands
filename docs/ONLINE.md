@@ -912,7 +912,9 @@ matches as a **whole word**, case aside, and in the common disguises of those ex
   (f.u.c.k, s-h-i-t, a_s_s, f*u*c*k), only when every piece is one letter or one look-alike symbol, so "go.ok" or
   "go ok" is never a slur. A lone digit is never one of those letters: it ends the run, so "a 5 5" (dice, a score),
   "it was a 2 2 tie" and "a-5-5" are never "ass" or "azz" (a spaced "s h 1 t" is starred out but no strike);
-- look-alike digits and symbols inside a word that has letters (sh1t, $hit, b!tch, a55, 4ss, n1gger, f@ggot), or made of
+- look-alike symbols inside a word that has letters ($hit, b!tch, f@ggot), and look-alike DIGITS only in a word that comes
+  out 5 letters or longer with at least 3 real letters (b1tch, n1gger, wh0re, d1ckhead). A short word with a digit (sh1t,
+  a55, 4ss) is starred out but never a strike, because phone models and shorthand look just like it (a22, a55, a2z); or made of
   symbols alone (@$$). **Never a number**: a token of digits alone, with or without a unit or sign (455, 8008, 7175,
   455k, #455, $455, 4:55, "4 5 5", "the 455's"), is never read as letters, never a strike and never even starred out.
   A number joined to a word by a mark is split off first and never read either: "gold:455", "hp:455", "x:455 y:422",
@@ -980,7 +982,7 @@ the wrong-secret-word `tries` / `locked_until` are never touched by a strike.
 - Strike 3 and every one after it (the count stays at 3 or more until it fades or is cleared): `words_locked_until` =
   now + 24 hours (`WORD_LOCK_MS`), then `{t:'error', code:'words', text, until, n}` and close **4006**.
 - Each strike is one `mod_log` row: `by: 'word filter'`, `act: 'strike'`, `target` the knight, `detail` the count and
-  then the line as it was typed (`'1: what the shit'`, `'3, kept out 24 hours: sh1t'`), so the parent page can tell
+  then the line as it was typed (`'1: what the shit'`, `'3, kept out 24 hours: sh!t'`), so the parent page can tell
   whether it was fair ("Sam got word strike 1 for typing "what the shit""). Only the parent page reads `mod_log`; the chat
   log keeps the starred line.
 

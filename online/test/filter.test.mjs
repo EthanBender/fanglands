@@ -208,8 +208,14 @@ test('a number joined to a word, or after "a" in dice and scores, is never a str
     assert.equal(checkChat(s).strike, false, s);
   for (const s of ['gold:455', 'room#8008', "the 455's", '455-pts']) assert.equal(isStrikeWord(s), false, s);
   // the disguises of the words themselves still count: a digit inside a word with letters, and letters split up by marks
-  for (const s of ['sh1t', 'a55', '5h1t', 'a$$', '@$$', 'f.u.c.k', 'f u c k', 'n i g g a', 'a $ $', 'fuck-you', "shit's", 'gold:shit', 'ok-a55', '455:fuck', 'sh1t-455'])
+  for (const s of ['b1tch', 'a$$', '@$$', 'f.u.c.k', 'f u c k', 'n i g g a', 'a $ $', 'fuck-you', "shit's", 'gold:shit', '455:fuck', 'n1gger-455'])
     assert.equal(checkChat(s).strike, true, s);
+  // a short word with a digit in it is never a strike (phone models and shorthand look just like them), but it is starred
+  for (const s of ['sh1t', 'a55', '5h1t', '4ss', 'sh1t-455', 'p4ki'])
+    assert.deepEqual([checkChat(s).strike, checkChat(s).masked], [false, true], s);
+  assert.equal(checkChat('ok-a55').strike, false);
+  for (const s of ['a22', 'a2z', '4zz', 'az2', 'a22z', '42z', 'i got the samsung a55', 'seat a55', 'galaxy a55 lol', 'my a22 is slow', 'a to z, a2z', 's21 vs a55', 'azz'])
+    assert.equal(checkChat(s).strike, false, s);
 });
 
 // Review round 6: dick (Dick Grayson, Moby Dick) and kike (Kike Hernandez) are names a kid knows, so they are starred out
@@ -239,9 +245,11 @@ function disguises(w) {
   // letters split up
   for (const sep of [' ', '.', '-', '_', '*', ' . ']) out.push(w.split('').join(sep));
   out.push(w.split('').join(' ') + '!');
-  // a look-alike digit or symbol for one letter, inside the word (a "!" or "|" at either end is punctuation)
+  // a look-alike symbol for one letter, inside the word (a "!" or "|" at either end is punctuation); a look-alike DIGIT only
+  // in a word of 5 letters or more (a short word with a digit is never a strike: see the next test)
   for (let i = 0; i < w.length; i++) for (const c of LEET[w[i]] || []) {
     if ((i === 0 || i === w.length - 1) && /[!|+]/.test(c)) continue;
+    if (/[0-9]/.test(c) && w.length < 5) continue;
     out.push(w.slice(0, i) + c + w.slice(i + 1));
   }
   return out;
@@ -256,11 +264,11 @@ test('every word on the strike list is a strike, and so is each of its common di
   assert.ok(n > 3000, String(n));
   // by hand: the ones a kid really types
   for (const s of ['fuck', 'FUCK!', 'fuuuuck', 'fuckkk', 'fuckk', 'f u c k', 'f.u.c.k', 'f-u-c-k', 'fvck', 'phuck', 'fuk', 'xXfuckXx', 'fuckfuckfuck', 'motherfucker',
-    'shit', 'sh1t', '$hit', 'sh!t', 'shiiit', 'shitt', 's h i t', 'bullshit', 'ass', 'a55', '@$$', '4ss', 'asss', 'a s s', 'asshole', 'a$$hole', 'b!tch', 'b1tch', 'biiitch',
+    'shit', '$hit', 'sh!t', 'shiiit', 'shitt', 's h i t', 'bullshit', 'ass', '@$$', 'asss', 'a s s', 'asshole', 'a$$hole', 'a55hole', 'b!tch', 'b1tch', 'biiitch',
     'bitchh', 'dickhead', 'd1ckhead', 'dickheadd', 'cunt', 'c u n t', 'whore', 'wh0re', 'slut', 'twat', 'wanker', 'nigger', 'n1gger', 'nigga', 'n i g g a', 'faggot', 'f@ggot',
-    'retard', 'r3tard', 'retarded', 'wetback', 'paki', 'p4ki', 'beaner', "shit's", 'ok,shit', 'fuck-you'])
+    'retard', 'r3tard', 'retarded', 'wetback', 'paki', 'beaner', "shit's", 'ok,shit', 'fuck-you'])
     assert.equal(checkChat(s).strike, true, s);
-  assert.ok(isStrikeWord('sh1t') && isStrikeWord('fuuuck') && !isStrikeWord('455') && !isStrikeWord('class') && !isStrikeWord('idiot'));
+  assert.ok(isStrikeWord('b1tch') && isStrikeWord('fuuuck') && !isStrikeWord('sh1t') && !isStrikeWord('a55') && !isStrikeWord('455') && !isStrikeWord('class') && !isStrikeWord('idiot'));
 });
 
 // never part of a longer ordinary word, never a contraction, never two words run together that only look like one
@@ -327,4 +335,17 @@ test('a strike is always starred out: nothing that counts reaches another screen
     if (r.strike && !r.masked) assert.fail(s);
     if (r.strike && /\b(fuck|shit|cunt|bitch|nigg)/i.test(r.text)) assert.fail(s + ' -> ' + r.text);
   }
+});
+
+test('a short strike word with a look-alike digit in it is never a strike: phone models and shorthand look just like it', () => {
+  let n = 0;
+  for (const w of STRIKE_WORDS) {
+    if (w.length >= 5) continue;
+    for (let i = 0; i < w.length; i++) for (const c of LEET[w[i]] || []) {
+      if (!/[0-9]/.test(c)) continue;
+      const s = w.slice(0, i) + c + w.slice(i + 1);
+      assert.equal(checkChat(s).strike, false, s); n++;
+    }
+  }
+  assert.ok(n > 10, String(n));
 });
