@@ -592,13 +592,24 @@
         for (const n in kinds) { const it = items.find(x => x.who === n); if (it) it.draw(); }
         r.mounts = Object.keys(kinds).every(n => drawn.some(d => d[1] === n && d[0] === kinds[n] && d[2])) && drawn.length === 4;
         r.drawn = drawn.map(d => d.join(' '));
+        // on foot, a friend in gear goes through 82's picture cache (one blit), and his name sits over his tallest gear
+        // (a dragon spear upright): its baseline above the top of what he wears
+        Object.assign(player.equip, { helm: 'dragon_helm', body: 'dragon_body', weapon: 'dragon_spear', shield: null });
+        feed(Object.assign({ t: 'p', n: 'Tal', x: player.x + 50, y: player.y + 10, look: PLAYERS.lookOf() }, at)); F.step([]);
+        const tal = REMOTE.Tal, b0 = KNIGHTGEAR.STATS.blits, texts = [];
+        const tg = new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : k === 'fillText' ? (txt, x, y) => texts.push({ txt, y }) : k === 'getTransform' ? () => undefined : (k in t ? t[k] : () => { }), set: (t, k, v) => { t[k] = v; return true; } });
+        const its = []; for (const hk of HOOKS.draw) hk(ctx, its, cam); const ti = its.find(x => x.who === 'Tal'); if (ti) ti.draw();
+        r.cache = KNIGHTGEAR.STATS.blits === b0 + 1;
+        const its2 = []; for (const hk of HOOKS.draw) hk(tg, its2, cam); const t2 = its2.find(x => x.who === 'Tal'); if (t2) t2.draw();
+        const nameAt = texts.find(t => t.txt === 'Tal'), top = tal.shown.y + KNIGHTGEAR.extent(tal.look).t;
+        r.tag = !!nameAt && nameAt.y <= top - 3 && KNIGHTGEAR.extent(tal.look).t < -36;
       } catch (e) { r.threw = String(e && e.message); }
       finally {
         if (window.MOUNTS) MOUNTS.drawHorse = saved.horse; if (saved.dozer) drawDozer = saved.dozer; HOOKS.drawMonster.barrelbeast = saved.beast; drawMech = saved.walker;
         for (const k in player.equip) if (!(k in q0)) delete player.equip[k];
-        Object.assign(player.equip, q0); player.action = a0; if (O && O.BLOCK) O.BLOCK.t = bt0; ['Swi', 'Ria', 'Doz', 'Bea', 'Wal'].forEach(forget);
+        Object.assign(player.equip, q0); player.action = a0; if (O && O.BLOCK) O.BLOCK.t = bt0; ['Swi', 'Ria', 'Doz', 'Bea', 'Wal', 'Tal'].forEach(forget);
       }
-      check(P + 'what a friend does and rides shows: each swing he starts plays on your screen (and ends), his raised shield, a pick that swings and a stone held still go out in his look; on the mare, in the bulldozer, on the Barrelbeast or in the walker he is drawn in that machine\'s own seat', !r.threw && r.swOut && r.blockOut && r.stillOut && r.pickOut && r.swIn && r.swEnds && r.oldTool && r.stillIn && r.mounts, r); }
+      check(P + 'what a friend does and rides shows: each swing he starts plays on your screen (and ends), his raised shield, a pick that swings and a stone held still go out in his look; on the mare, in the bulldozer, on the Barrelbeast or in the walker he is drawn in that machine\'s own seat; on foot he is one blit from the picture cache, his name above his tallest gear', !r.threw && r.swOut && r.blockOut && r.stillOut && r.pickOut && r.swIn && r.swEnds && r.oldTool && r.stillIn && r.mounts && r.cache && r.tag, r); }
     // layout: the chip overlaps no other button at four screen sizes, in the touch layout and the desktop one. It reads
     // touchMode() (forced both ways here), not the device's isTouch, which is always false headless — so the touch
     // layout, the one the iPad and the phones use, is really tested. On touch it is also a full 44 px control and

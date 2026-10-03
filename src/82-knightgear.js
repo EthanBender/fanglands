@@ -1965,6 +1965,18 @@ const KNIGHTGEAR = (() => {
         } finally { back(); }
         const held = k => r[k] && r[k].still && !r[k].weapon && r[k].painting === 1 && r[k].hands === 2 && r[k].hafts === 0;
         check(P0 + 'what he holds still is in his hand: warming a stone in the royal mine (both ways in) he holds it, coloured as it warms, and nothing loose is drawn at his place; at the lobster pot he holds the rope\'s end; handAt is where his hand is drawn', held('rm_warm') && held('rm_heat') && held('lobster') && r.rm_warm.tool === 'stone' && r.rm_warm.stone >= 1 && r.lobster.tool === 'rope' && r.handOk, r); }
+
+      // 23. the bank's knight card (60-bank) fits the taller knight: in a party hat with a dragon spear (taller than the
+      // old knight) the card asks fit() for what he wears, and all of him, his shadow too, is inside the card
+      { const back = keep(), K = window.KNIGHTGEAR, calls = [], _fit = K.fit; let r = null;
+        try {
+          Object.assign(player.equip, { helm: 'party_hat_red', body: 'dragon_body', weapon: 'dragon_spear', shield: null, cape: null });
+          K.fit = function (look, w, hh, foot, maxS) { const f = _fit(look, w, hh, foot, maxS); calls.push({ look, w, h: hh, foot, f }); return f; };
+          openPanel('bank'); render();
+          const c = calls.find(q => q.look && q.look.gear && q.look.gear.weapon === 'dragon_spear' && q.look.gear.helm === 'party_hat_red');
+          if (c) { const x = extent(c.look), f = c.f; r = { top: +(f.y + x.t * f.s).toFixed(1), bottom: +(f.y + Math.max(x.b, c.foot) * f.s).toFixed(1), left: +(f.x + Math.min(x.l, -12) * f.s).toFixed(1), right: +(f.x + Math.max(x.r, 12) * f.s).toFixed(1), w: c.w, h: c.h, tall: x.t }; }
+        } finally { K.fit = _fit; closePanel(); back(); }
+        check(P0 + 'the bank\'s knight card fits the taller knight (a party hat and an upright dragon spear): all of him and his shadow are inside the card', !!r && r.tall < -36 && r.top >= -0.01 && r.left >= -0.01 && r.bottom <= r.h + 0.01 && r.right <= r.w + 0.01, r); }
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 

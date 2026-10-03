@@ -8465,7 +8465,9 @@ const PEOPLE_UI = (() => {
   const corePrompts = () => { const ft = frontTile(player); return typeof INTERESTING === 'function' && INTERESTING(tileAt(ft.tx, ft.ty)); };
   function brackets(g, p) {
     if (!p || corePrompts()) return false;
-    HK.brackets(g, p.px - 18, p.py - 24, 36, 44);
+    // p.up: how far above the feet the person reaches (83-townsfolk sets it for the people in the new look, taller than 24)
+    const up = Math.max(24, +p.up || 0);
+    HK.brackets(g, p.px - 18, p.py - up, 36, up + 20);
     return true;
   }
   // HK.usePreview answers for NPCS and tiles only; taught about these people, the core's own tag (when it frames an
@@ -8728,7 +8730,9 @@ PEOPLE_UI.auditPrompt = function (p) {
     for (const hh of HOOKS.hud) { try { hh(rec, VW < 640); } catch (e) { } }
     face = HK.face('use');
   } finally { HK.brackets = b0; HK.tag = t0; HK.teach = c0; }
-  const onPerson = got.brackets.some(b => Math.abs(b.x - (p.px - 18)) < 0.5 && Math.abs(b.y - (p.py - 24)) < 0.5 && b.w === 36 && b.h === 44);
+  // the corners from 18 px either side of the feet, 20 px below them, and at least 24 px above (higher for a taller person:
+  // 83-townsfolk sets p.up from the new drawing)
+  const onPerson = got.brackets.some(b => Math.abs(b.x - (p.px - 18)) < 0.5 && b.y <= p.py - 24 + 0.5 && Math.abs(b.y + b.h - (p.py + 20)) < 0.5 && b.w === 36);
   const sx = Math.round(p.px + 20 - cam.x), sy = Math.round(p.py - 6 - cam.y);
   const tagged = got.tags.some(q => q.label === 'Talk' && q.x === sx && q.y === sy && q.o.side === 'right') || got.coach.some(q => q.verb === 'Talk to ' + p.name && q.at && q.at.sx === sx && q.at.sy === sy);
   const faced = PEOPLE_UI.faced();
@@ -10067,7 +10071,8 @@ PEOPLE_UI.auditPrompt = function (p) {
     g.strokeStyle = '#8a6a3a'; g.lineWidth = 3; g.beginPath(); g.moveTo(-10, -6); g.lineTo(-30 - Math.sin(time * 3) * 6, 18); g.stroke();
     // the knight, sitting in the bow
     // seated: the knight (82-knightgear) sits in the bow, no legs
-    g.save(); g.translate(20, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0, seated: true }, playerLook()); g.restore();
+    // seatLine: he sits in the boat, so nothing of him below the gunwale is drawn over the hull (a stave, a robe's hem)
+    g.save(); g.translate(20, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0, seated: true, seatLine: 7.6 }, playerLook()); g.restore();
     g.restore();
   }
   function drawBoatProp(g, tx, ty, L) { // moored at a dock: seen from above, bobbing
@@ -10207,7 +10212,10 @@ PEOPLE_UI.auditPrompt = function (p) {
     const a = player.action;
     if (a && a.type === 'lobster' && !player.dead) items.push({ y: player.y + player.r + 0.01, draw: () => {
       const ex = tc(a.tx), ey = tc(a.ty), bob = Math.sin(time * 3) * 2;
-      g.strokeStyle = '#c9b676'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(player.x + player.facing.x * 10, player.y - 4); g.quadraticCurveTo((player.x + ex) / 2, (player.y + ey) / 2 + 8, ex, ey + 6 + bob); g.stroke();
+      // from his hand: the knight drawn by 82-knightgear holds the rope's end (its 'rope'), so it leaves where his hand is
+      const hd = window.KNIGHTGEAR && KNIGHTGEAR.handAt ? KNIGHTGEAR.handAt(player) : null;
+      const sx = hd ? player.x + hd.x : player.x + player.facing.x * 10, sy = hd ? player.y + hd.y : player.y - 4;
+      g.strokeStyle = '#c9b676'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + ex) / 2, (sy + ey) / 2 + 8, ex, ey + 6 + bob); g.stroke();
       g.strokeStyle = '#8a6a3a'; g.lineWidth = 2; g.beginPath(); g.ellipse(ex, ey + 8 + bob, 8, 4, 0, 0, 7); g.stroke(); g.beginPath(); g.moveTo(ex - 8, ey + 8 + bob); g.lineTo(ex - 6, ey + 14 + bob); g.lineTo(ex + 6, ey + 14 + bob); g.lineTo(ex + 8, ey + 8 + bob); g.stroke();
     } });
     // gulls over the grey water
@@ -10302,7 +10310,11 @@ PEOPLE_UI.auditPrompt = function (p) {
       const a = talkHarl(); const open = panel === 'ferry'; const cbLow = combatLevel(); const c1 = F.clickButton('Ironclad'); F.sim(3, []); const refused = q.where === 'gull' && !q.sailing && notice && /combat level 8/.test(notice.text);
       check('boats: Harl refuses Ironclad Isle below combat level 8', typeof a === 'number' && open && cbLow < 8 && c1 && refused, { a, open, cbLow, c1, notice: notice && notice.text });
       player.skills.melee.xp = XP_TABLE[8]; player.skills.defence.xp = XP_TABLE[8]; recomputeMaxHp(); h.give('coins', 50); const c0 = coins();
+      // the landing's Voice line is checked, so the day clock is set to morning first: past 7 minutes the night's own line
+      // would come first (a flake that hung on how long the checks before this one took)
+      const day0 = player.dayTime; player.dayTime = 0;
       if (panel !== 'ferry') talkHarl(); render(); const c2 = F.clickButton('Ironclad'); const s = !!q.sailing && q.sailing.to === 'ironclad'; F.sim(150, []);
+      player.dayTime = day0 + 150 / 60;
       check('boats: at combat level 8 Ironclad Isle costs 25 coins; first landing gets a Voice line', combatLevel() >= 8 && c2 && s && coins() === c0 - 25 && q.where === 'ironclad' && player.region === 'Ironclad Isle' && q.visited.ironclad && dialog.cur && dialog.cur.who === 'The Voice' && /Ironclad/.test(dialog.cur.text), { cb: combatLevel(), c2, s, paid: c0 - coins(), where: q.where, region: player.region, who: dialog.cur && dialog.cur.who }); }
     // the strongbox and the five wreck goblins
     { const wreck = wreckGoblins(); const alive0 = wreck.filter(m => !m.dead).length; q.strongbox = false; makeRoom(4);
@@ -35410,6 +35422,9 @@ window.RETALIATE = RETALIATE;
       tunic: l.tunic, hair: l.hair, shoulder: l.shoulder, helm: l.helm || null, body: l.body || null, shield: l.shield || null,
       weapon: l.weapon ? { shape: l.weapon.shape || 'sword', color: l.weapon.color || '#c9ccd3' } : null,
       tool: l.tool || null, toolColor: l.toolColor || null, rod: !!l.rod, fists: !!l.fists,
+      // whether the tool swings (a pick, an axe) or is held still (82-knightgear: the royal mine's stone, the pot's rope),
+      // and how hot that stone is; the shield raised (47-outliers' block): friends see it too
+      toolSwing: !!l.toolSwing, toolHeat: typeof l.toolHeat === 'number' ? +l.toolHeat.toFixed(2) : 0, block: !!l.block,
       // a worn party hat (77-dropparty's playerLook wrapper sets the colour word), so everyone sees it
       hat: l.hat || null,
       // a girl knight (79-boygirl): drawHuman draws her skirt, long hair, braid and ribbon from this one flag
@@ -35424,6 +35439,8 @@ window.RETALIATE = RETALIATE;
       t: 'p', map: mapId(), region: regionName(), x: Math.round(player.x), y: Math.round(player.y), fx: +player.facing.x.toFixed(2), fy: +player.facing.y.toFixed(2),
       mv: !!player.moving, wt: +(player.walkT % 100).toFixed(1), hp: Math.ceil(player.hp), mhp: player.maxHp, lv: combatLevel(), look: lookOf(),
       mech: m ? { kind: m.kind || 'walker', hp: Math.ceil(m.hp), maxHp: m.maxHp } : null, dead: !!player.dead, def: playerDefRoll(), act: a ? a.type : null,
+      // sw: how many swings he has started (a friend's game plays the swing when it goes up)
+      sw: SWING.n,
       // the shared world's movement check (docs/ONLINE.md, "The shared world", Stage 1): the jump counter and his own speed
       j: JUMP.n, spd: speedNow(),
     };
@@ -35432,15 +35449,21 @@ window.RETALIATE = RETALIATE;
   // door into an instance, a ferry's landing, a shove), so the world never reads a jump as running too fast. Counted
   // offline too: it costs a subtraction, and the presence that goes out first after coming online carries the true count.
   const JUMP = { n: 0, x: null, y: null };
+  // a swing starts when player.attackT goes up (06-systems sets it to 0.22): counted, so a friend sees each one
+  const SWING = { n: 0, last: 0 };
   // his speed now: the mover's own, or a machine's FULL STEAM run while it lasts (55-riding: 430 px/s for 1.15 s)
   const speedNow = () => Math.round(Math.max(player.speed || 175, window.RIDING && RIDING.special ? RIDING.SPEED : 0));
   HOOKS.update.push(dt => {
     const x = player.x, y = player.y;
     if (JUMP.x !== null && Math.hypot(x - JUMP.x, y - JUMP.y) > 3 * Math.max(player.speed || 0, 175) * Math.max(dt, 1 / 240) + 1) JUMP.n++;
     JUMP.x = x; JUMP.y = y;
+    const at = +player.attackT || 0;
+    if (at > SWING.last + 1e-6) SWING.n++;
+    SWING.last = at;
   });
   // a cheap signature of everything the contract counts as a change; the full message is only built when it differs
-  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || ''); };
+  const blocking = () => { const O = window.OUTLIERS; return !!(O && O.BLOCK && O.BLOCK.t > 0); };
+  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || '') + '|' + SWING.n + '|' + (blocking() ? 'B' : ''); };
   const sig = () => mapId() + '|' + Math.round(player.x) + ',' + Math.round(player.y) + '|' + player.facing.x.toFixed(2) + ',' + player.facing.y.toFixed(2) + '|' + (player.moving ? 1 : 0) + '|' + Math.ceil(player.hp) + '/' + player.maxHp + '|' + (player.dead ? 1 : 0) + '|' + lookKey();
   let lastSig = null, lastSentAt = -1e9, sent = 0, sentSock = null;
 
@@ -35458,6 +35481,7 @@ window.RETALIATE = RETALIATE;
       e.shown.x += (e.x - e.shown.x) * k; e.shown.y += (e.y - e.shown.y) * k;
       if (e.moving) e.walkT += dt * 9;
       if (e.hurtT > 0) e.hurtT -= dt;
+      if (e.attackT > 0) e.attackT = Math.max(0, e.attackT - dt);
     }
     if (pressed.has('KeyF') && !player.dead) toggleFriends();
   });
@@ -35484,31 +35508,40 @@ window.RETALIATE = RETALIATE;
     if (typeof m.mhp === 'number' && m.mhp > 0) e.mhp = m.mhp;
     if (typeof m.lv === 'number') e.lv = m.lv;
     if (m.look && typeof m.look === 'object') {
-      e.look = m.look; if (e.look.tool) e.look.toolSwing = true;
+      // an older game sends no toolSwing: its tools all swing
+      e.look = m.look; if (e.look.tool && typeof e.look.toolSwing !== 'boolean') e.look.toolSwing = true;
       // the gear: only real item ids in the right slot are kept; an old client's look (no gear) gets an empty one and
       // is drawn from its colours (82-knightgear reads them back as items)
       if (window.KNIGHTGEAR) e.look.gear = KNIGHTGEAR.cleanGear(e.look.gear);
     }
     e.mech = m.mech && typeof m.mech === 'object' ? m.mech : null; e.r = e.mech ? 20 : 13;
     e.dead = !!m.dead; e.act = typeof m.act === 'string' ? m.act : null; e.lastAt = nowMs();
+    // a new swing: play it (the knight's own 0.22 s), as 06-systems does for the knight himself
+    if (typeof m.sw === 'number') { if (typeof e.sw === 'number' && m.sw !== e.sw && !e.dead) e.attackT = 0.22; e.sw = m.sw; }
   });
 
   // ---------- drawing: among the y-sorted world items, like a monster or the knight himself ----------
+  // what a friend rides is drawn as the knight sees his own: the mare (51-mounts), the bulldozer (22), the Barrelbeast
+  // (32, its sprite in 20-hollowford) or the walker (the core), each with the knight in its seat in his own gear
+  const MECH_TOP = { horse: 52, dozer: 46, beast: 62, walker: 46 };
   function drawKnight(g, e) {
-    const look = e.look || DEFAULT_LOOK, x = e.shown.x, y = e.shown.y, onMech = !!e.mech && e.mech.kind !== 'horse';
+    const look = e.look || DEFAULT_LOOK, x = e.shown.x, y = e.shown.y, kind = e.mech ? (MECH_TOP[e.mech.kind] ? e.mech.kind : 'walker') : null, onMech = !!kind;
+    const hurt = e.hurtT > 0, shadow = (sy, rx, ry) => { g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, sy, rx, ry, 0, 0, 7); g.fill(); };
     g.save(); g.translate(x, y);
     if (e.dead) { g.globalAlpha = 0.3; g.rotate(1.4); drawHuman(g, e, look); g.restore(); return; }   // fallen: lying down and faint, as the knight himself is
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, onMech ? 14 : 11, onMech ? 22 : 12, onMech ? 9 : 6, 0, 0, 7); g.fill();
-    if (onMech) drawMech(g, e, e.hurtT > 0, look);
+    if (kind === 'horse' && window.MOUNTS && MOUNTS.drawHorse) { shadow(20, 30, 10); MOUNTS.drawHorse(g, e, hurt, look); }
+    else if (kind === 'dozer' && typeof drawDozer === 'function') drawDozer(g, e, hurt, look, null);
+    else if (kind === 'beast' && HOOKS.drawMonster.barrelbeast) { shadow(22, 48, 16); g.scale(0.9, 0.9); HOOKS.drawMonster.barrelbeast(g, Object.assign({}, e, { hp: +e.mech.hp || 1, maxHp: +e.mech.maxHp || 1 }), hurt, look); }
+    else if (onMech) { shadow(14, 22, 9); drawMech(g, e, hurt, look); }
     // a knight look (with gear) bobs only his body, from a picture (82-knightgear: the crowd stays cheap)
-    else if (look.gear && window.KNIGHTGEAR) KNIGHTGEAR.draw(g, e, look, { cache: true });
-    else { g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
+    else if (look.gear && window.KNIGHTGEAR) { shadow(11, 12, 6); KNIGHTGEAR.draw(g, e, look, { cache: true }); }
+    else { shadow(11, 12, 6); g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
     g.restore();
     // the name, the level in smaller grey after it, an hp bar when hurt, a ring when close enough to hand things over.
     // An admin's tag row starts with the gold ADMIN pill and the name is gold; the level stays.
     // a knight in gear can stand taller (a party hat, an upright spear): the name goes above whatever he wears
     const tall = !onMech && !e.dead && look.gear && window.KNIGHTGEAR ? Math.min(0, Math.round(KNIGHTGEAR.extent(look).t) + 29) : 0;
-    const top = Math.round(y) - (onMech ? 46 : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
+    const top = Math.round(y) - (onMech ? MECH_TOP[kind] : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
     g.font = 'bold 8px sans-serif'; const pw = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 + 4 : 0;
     g.font = 'bold 11px sans-serif'; const nw = g.measureText(e.n).width;
     g.font = '9px sans-serif'; const lw = g.measureText(lv).width;
@@ -35881,6 +35914,63 @@ window.RETALIATE = RETALIATE;
       Object.assign(player.equip, q0);
       ['Kit', 'Old', 'New'].forEach(forget);
       check(P + 'the knight\'s gear goes online: presence carries the six item ids, a change of leg armour goes out at once, a knight off the wire is drawn in exactly the sender\'s items, and an old client\'s look (colours only) or an unknown id reads back from the colours and draws in the new style', sent && same && read && drew === true && styled.Kit && styled.Old && styled.New, { sent, gear: p && p.look.gear, same, read, drew, styled }); }
+    // what a friend does and rides shows on your screen: each swing he starts (presence's sw counts up, and his game
+    // plays the 0.22 s swing), his raised shield, a pick that swings and the royal mine's stone that he holds still; and
+    // the mare, the bulldozer, the Barrelbeast and the walker are each drawn with him in its seat (not a knight standing
+    // on the grass, or a walker for every machine)
+    if (window.KNIGHTGEAR) {
+      const r = {}, q0 = Object.assign({}, player.equip), a0 = player.action, O = window.OUTLIERS, bt0 = O && O.BLOCK ? O.BLOCK.t : 0;
+      const saved = { horse: window.MOUNTS ? MOUNTS.drawHorse : null, dozer: typeof drawDozer === 'function' ? drawDozer : null, beast: HOOKS.drawMonster.barrelbeast, walker: drawMech };
+      const drawn = [], recG = () => new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : k === 'getTransform' ? () => undefined : (k in t ? t[k] : () => { }), set: (t, k, v) => { t[k] = v; return true; } });
+      try {
+        // out
+        const sw0 = PLAYERS.presence().sw; player.attackT = 0.22; F.step([]); r.swOut = PLAYERS.presence().sw === sw0 + 1; player.attackT = 0;
+        Object.assign(player.equip, { shield: 'iron_shield' });
+        if (O && O.BLOCK) { O.BLOCK.t = 0.5; r.blockOut = PLAYERS.lookOf().block === true; O.BLOCK.t = 0; } else r.blockOut = true;
+        player.action = { type: 'rm_warm', t: 1, need: 2 }; const st = PLAYERS.lookOf(); r.stillOut = st.tool === 'stone' && st.toolSwing === false && st.toolHeat === 0.5;
+        player.action = { type: 'mine_mithril', t: 0, need: 9, tier: 2 }; const pk = PLAYERS.lookOf(); r.pickOut = pk.tool === 'pickaxe' && pk.toolSwing === true;
+        player.action = null;
+        // in: two presences, the second with one more swing
+        const at = { map: 'over', fx: 0, fy: -1, mv: false, wt: 0, hp: 20, mhp: 20, lv: 9, mech: null, dead: false, def: 100, act: null };
+        feed(Object.assign({ t: 'p', n: 'Swi', x: player.x + 30, y: player.y, look: PLAYERS.lookOf(), sw: 4 }, at)); F.step([]);
+        const before = REMOTE.Swi.attackT;
+        feed(Object.assign({ t: 'p', n: 'Swi', x: player.x + 30, y: player.y, look: PLAYERS.lookOf(), sw: 5 }, at));
+        r.swIn = before === 0 && REMOTE.Swi.attackT === 0.22; F.sim(20, []); r.swEnds = REMOTE.Swi.attackT === 0;
+        // an older game's tool (no toolSwing) swings; a still one stays still
+        feed(Object.assign({ t: 'p', n: 'Swi', x: player.x + 30, y: player.y, look: Object.assign(PLAYERS.lookOf(), { tool: 'pickaxe', toolSwing: undefined }) }, at)); r.oldTool = REMOTE.Swi.look.toolSwing === true;
+        feed(Object.assign({ t: 'p', n: 'Swi', x: player.x + 30, y: player.y, look: Object.assign(PLAYERS.lookOf(), { tool: 'stone', toolSwing: false }) }, at)); r.stillIn = REMOTE.Swi.look.toolSwing === false;
+        forget('Swi');
+        // the mounts: each friend's machine is drawn by its own drawer, with his look in the seat
+        if (window.MOUNTS) MOUNTS.drawHorse = function (g, e, hurt, rider) { drawn.push(['horse', e.n, !!rider && !!rider.gear]); return saved.horse(g, e, hurt, rider); };
+        if (saved.dozer) drawDozer = function (g, e, hurt, pilot, up) { drawn.push(['dozer', e.n, !!pilot && !!pilot.gear]); return saved.dozer(g, e, hurt, pilot, up); };
+        HOOKS.drawMonster.barrelbeast = function (g, e, hurt, pilot) { drawn.push(['beast', e.n, !!pilot && !!pilot.gear]); return saved.beast(g, e, hurt, pilot); };
+        drawMech = function (g, e, hurt, pilot) { drawn.push(['walker', e.n, !!pilot && !!pilot.gear]); return saved.walker(g, e, hurt, pilot); };
+        const kinds = { Ria: 'horse', Doz: 'dozer', Bea: 'beast', Wal: 'walker' };
+        let i = 0;
+        for (const n in kinds) feed(Object.assign({ t: 'p', n, x: player.x - 60 + 40 * i++, y: player.y + 40, look: PLAYERS.lookOf() }, at, { mech: { kind: kinds[n], hp: 50, maxHp: 100 } }));
+        F.step([]);
+        const items = []; for (const hk of HOOKS.draw) hk(recG(), items, cam);
+        for (const n in kinds) { const it = items.find(x => x.who === n); if (it) it.draw(); }
+        r.mounts = Object.keys(kinds).every(n => drawn.some(d => d[1] === n && d[0] === kinds[n] && d[2])) && drawn.length === 4;
+        r.drawn = drawn.map(d => d.join(' '));
+        // on foot, a friend in gear goes through 82's picture cache (one blit), and his name sits over his tallest gear
+        // (a dragon spear upright): its baseline above the top of what he wears
+        Object.assign(player.equip, { helm: 'dragon_helm', body: 'dragon_body', weapon: 'dragon_spear', shield: null });
+        feed(Object.assign({ t: 'p', n: 'Tal', x: player.x + 50, y: player.y + 10, look: PLAYERS.lookOf() }, at)); F.step([]);
+        const tal = REMOTE.Tal, b0 = KNIGHTGEAR.STATS.blits, texts = [];
+        const tg = new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : k === 'fillText' ? (txt, x, y) => texts.push({ txt, y }) : k === 'getTransform' ? () => undefined : (k in t ? t[k] : () => { }), set: (t, k, v) => { t[k] = v; return true; } });
+        const its = []; for (const hk of HOOKS.draw) hk(ctx, its, cam); const ti = its.find(x => x.who === 'Tal'); if (ti) ti.draw();
+        r.cache = KNIGHTGEAR.STATS.blits === b0 + 1;
+        const its2 = []; for (const hk of HOOKS.draw) hk(tg, its2, cam); const t2 = its2.find(x => x.who === 'Tal'); if (t2) t2.draw();
+        const nameAt = texts.find(t => t.txt === 'Tal'), top = tal.shown.y + KNIGHTGEAR.extent(tal.look).t;
+        r.tag = !!nameAt && nameAt.y <= top - 3 && KNIGHTGEAR.extent(tal.look).t < -36;
+      } catch (e) { r.threw = String(e && e.message); }
+      finally {
+        if (window.MOUNTS) MOUNTS.drawHorse = saved.horse; if (saved.dozer) drawDozer = saved.dozer; HOOKS.drawMonster.barrelbeast = saved.beast; drawMech = saved.walker;
+        for (const k in player.equip) if (!(k in q0)) delete player.equip[k];
+        Object.assign(player.equip, q0); player.action = a0; if (O && O.BLOCK) O.BLOCK.t = bt0; ['Swi', 'Ria', 'Doz', 'Bea', 'Wal', 'Tal'].forEach(forget);
+      }
+      check(P + 'what a friend does and rides shows: each swing he starts plays on your screen (and ends), his raised shield, a pick that swings and a stone held still go out in his look; on the mare, in the bulldozer, on the Barrelbeast or in the walker he is drawn in that machine\'s own seat; on foot he is one blit from the picture cache, his name above his tallest gear', !r.threw && r.swOut && r.blockOut && r.stillOut && r.pickOut && r.swIn && r.swEnds && r.oldTool && r.stillIn && r.mounts && r.cache && r.tag, r); }
     // layout: the chip overlaps no other button at four screen sizes, in the touch layout and the desktop one. It reads
     // touchMode() (forced both ways here), not the device's isTouch, which is always false headless — so the touch
     // layout, the one the iPad and the phones use, is really tested. On touch it is also a full 44 px control and
@@ -46398,7 +46488,9 @@ const BOYGIRL = (() => {
           res = { sent, bw, drawn: !!mia, hair: rec.fills.filter(f => f === '#654321').length, ribbon: rec.fills.includes(RIBBON), tunic: rec.fills.filter(f => f === '#a33').length, plain, skirted, knight, skirt: sk1 - sk0, boySkirt: sk() - sk1 };
         } finally { NET.disconnect(); NET.enabled = was.enabled; NET.token = was.token; NET.useFake(was.fake); if (PLAYERS.remote.Mia) delete PLAYERS.remote.Mia; }
         const skirtOk = res.skirted > res.plain && (res.knight ? res.skirt === 1 && res.boySkirt === 0 : res.tunic >= res.skirted);
-        check(P + 'online: presence carries look.girl (false for a boy), a change goes out at once, and a remote girl knight in a helm is drawn with her braid, ribbon and skirt', res.sent === true && res.bw === false && res.drawn && res.hair >= 3 && res.ribbon && skirtOk, res); }
+        // with 82-knightgear she must be drawn as a knight look in the new style (82's own skirt, counted): hair and a
+        // ribbon alone would pass in the old drawing too
+        check(P + 'online: presence carries look.girl (false for a boy), a change goes out at once, and a remote girl knight in a helm is drawn with her braid, ribbon and skirt (with the knight gear: in the new style)', res.sent === true && res.bw === false && res.drawn && res.hair >= 3 && res.ribbon && skirtOk && (!window.KNIGHTGEAR || res.knight), res); }
       // 10b. the title screen's knight is the last knight played here
       { remember('girl'); const K = title.KNIGHT; title.sprites(recorder().g, 0, 0, 1, 0, 0, 1); const girl = !!(K && K.girl);
         remember('boy'); title.sprites(recorder().g, 0, 0, 1, 0, 0, 1); const boy = !!(K && !K.girl && K.hair === '#5a3a1e');
@@ -50547,7 +50639,7 @@ window.DEATHS = DEATHS;
 // Owner: "...make it so i can drop party hats that will be SUPER RARE". src/77-dropparty.js makes the six hats (the
 // items, the crown on the knight's head, the Death rule); this file only draws their icons, because ICONS.set lives in
 // src/80-icons.js and this file loads after it. Six colours, six different drawings: the icon audit counts a recolour
-// as the same picture (docs/ONLINE.md, "Party hats"), so every paper crown carries its own mark on the band: dots,
+// as the same picture (docs/ONLINE.md, "Party hats"), so every hat (the striped cone the knight wears) carries its own mark on the band: dots,
 // stripes, a star, a zigzag, a diamond, checks. Nothing but a cracker gives one and each is worth 10,000, so the rarity
 // tiers call them unique and the gold halo goes behind them. That is right.
 // Feature file: registers through window.ICONS and HOOKS.selfTest only.
@@ -50555,15 +50647,19 @@ window.DEATHS = DEATHS;
 {
   const COLOURS = ['red', 'yellow', 'blue', 'green', 'purple', 'white'];
   const pale = hex => { const h = String(hex || '#888888').replace('#', ''); const n = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); return (n[0] * 0.299 + n[1] * 0.587 + n[2] * 0.114) / 255 > 0.6; };
-  // the paper crown every hat shares: four points, a band a shade lighter, the fold down the middle.
+  // the hat every colour shares, as the knight wears it (82-knightgear): a cone with white stripes across it and a white
+  // bobble on its tip, on a band round its foot a shade lighter (the colour's mark goes on the band). It was a paper
+  // crown, but worn it is the cone: in the pack and the bank it is the same hat.
   // Answers the ink for the mark: dark on the pale yellow and white hats, white on the others.
   function crown(g, item) {
-    g.fillStyle = item.color;
-    g.beginPath(); g.moveTo(-8.4, 7.4); g.lineTo(-8.4, -3.6); g.lineTo(-5.6, 0.6); g.lineTo(-2.8, -6.8); g.lineTo(0, -1.2);
-    g.lineTo(2.8, -6.8); g.lineTo(5.6, 0.6); g.lineTo(8.4, -3.6); g.lineTo(8.4, 7.4); g.closePath();
-    g.fill(); g.stroke();
+    const cone = () => { g.beginPath(); g.moveTo(-6.6, 2.6); g.lineTo(0, -8); g.lineTo(6.6, 2.6); g.closePath(); };
+    g.fillStyle = item.color; cone(); g.fill(); g.stroke();
+    g.save(); cone(); g.clip(); g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 1.6;
+    for (const y of [-0.6, -4.4]) { g.beginPath(); g.moveTo(-8, y + 1.4); g.lineTo(8, y - 1.4); g.stroke(); }
+    g.restore();
+    g.fillStyle = item.color; g.beginPath(); g.rect(-8.4, 2.4, 16.8, 5); g.fill(); g.stroke();
     g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(-8.4, 2.4, 16.8, 5);
-    g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, -1.2); g.lineTo(0, 2.4); g.stroke();
+    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(0, -8.2, 2, 0, 7); g.fill(); g.stroke();
     return pale(item.color) ? '#2d333b' : '#ffffff';
   }
   const MARK = {
@@ -50662,7 +50758,7 @@ window.DEATHS = DEATHS;
 // are drawn from pictures: one per (gear, girl, 8 facings, step, animation phase, screen pixel ratio). At rest the
 // weapon and its hand are in that picture (one blit a knight); while he swings or eases back the weapon has its own
 // picture per (weapon, phase, ratio), cut to the weapon's own size, turned to its angle. Both are LRU maps; the body
-// pictures' one is sized to the crowd (28 a knight, 300 to 1600, under 64 MB of pixels) and a facing to his left shares
+// pictures' one is sized to the crowd (34 a knight, 300 to 1700, under 64 MB of pixels) and a facing to his left shares
 // the picture of its mirror to his right (WPIC_MAX for the weapons). A hurt knight (the red flash) and everything else
 // (your own knight, the seats, the bank, the title, the choice cards, the statue's sprite) is drawn live, so it is
 // never soft at a panel's scale. Pictures are only made for the world canvas (`ctx`).
@@ -50670,7 +50766,7 @@ window.DEATHS = DEATHS;
 // POSE. Where the weapon points and where the hand is ease from frame to frame. It lives in a WeakMap keyed by the
 // entity, never on it: the player object is saved whole into every save.
 //
-// window.KNIGHTGEAR = { draw, partsOf, gearKey, cleanGear, poseOf, STATS, PICS, WPICS }
+// window.KNIGHTGEAR = { draw, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf, STATS, PICS, WPICS, ... }
 // ============================================================================
 const KNIGHTGEAR = (() => {
   // ---------- the clock and the colours of the knight being drawn ----------
@@ -51453,8 +51549,23 @@ const KNIGHTGEAR = (() => {
     }
   }
   // NOT IN THE SAMPLE (ported minimally, flagged to the owner): the work tools and the fishing rod, in the same outline style
-  function drawTool(g, tool, col) {
+  // heat (0 to 1): how hot a held stone is (its glow)
+  function drawTool(g, tool, col, heat) {
     const c = hex(col, '#b8863a');
+    if (tool === 'stone') {
+      // the royal mine's stone, held in the hand into the heat (91's rm_heat and rm_warm), reddening as it warms: no haft
+      const h = clamp(+heat || 0, 0, 1), gl = g.createRadialGradient(4.2, 0, 1, 4.2, 0, 11);
+      gl.addColorStop(0, `rgba(255,190,110,${(0.3 + 0.6 * h).toFixed(3)})`); gl.addColorStop(1, 'rgba(255,120,60,0)'); g.fillStyle = gl; ell(g, 4.2, 0, 11, 11); g.fill();
+      g.beginPath(); g.moveTo(0.6, 1.8); g.lineTo(1.4, -2.6); g.lineTo(5, -4); g.lineTo(8.4, -1.2); g.lineTo(7.4, 3.2); g.lineTo(3.4, 4.2); g.closePath(); g.fillStyle = c; g.fill(); outline(g, 0.6);
+      g.fillStyle = 'rgba(255,255,255,0.3)'; ell(g, 4, -1.6, 1.4, 0.8, -0.3); g.fill();
+      return;
+    }
+    if (tool === 'rope') {
+      // the lobster pot's rope (26-boats): its end coiled in the hand; 26 draws the rope from the hand to the pot
+      g.strokeStyle = '#8a7a4a'; g.lineWidth = 1.6; ell(g, 2.6, 0, 3.2, 2.4); g.stroke();
+      g.strokeStyle = '#c9b676'; g.lineWidth = 1.1; ell(g, 2.6, 0, 3.2, 2.4); g.stroke(); ell(g, 3.4, 0.2, 2.4, 1.7); g.stroke();
+      return;
+    }
     rr(g, -4, -1.25, 26, 2.5, 1.1); g.fillStyle = '#8a6a3a'; g.fill(); outline(g, 0.5);
     if (tool === 'axe') {
       g.beginPath(); g.moveTo(17, -1.3); g.lineTo(18, -5.4); g.quadraticCurveTo(24, -9.4, 26.5, -4); g.quadraticCurveTo(24, -1.6, 22, -1.3); g.closePath(); g.fillStyle = metalFill(g, c, -9, 0); g.fill(); outline(g, 0.6);
@@ -51521,6 +51632,10 @@ const KNIGHTGEAR = (() => {
     return r;
   }
 
+  // where his weapon hand was last drawn, from his feet's centre, in the world's pixels (his frame is scaled 1.08 and
+  // mirrored facing left): 26-boats' pot rope starts there. null before he is drawn.
+  function handAt(e) { const r = e && POSE.get(e); return r ? { x: (r.mirror ? -r.hx : r.hx) * 1.08, y: r.hy * 1.08 } : null; }
+
   function drawTrail(g, ang, swing) {
     const a0 = ang - 1.4, a1 = ang + lerp(-1.4, 1.2, kEase(swing));
     g.save(); g.translate(SHOULDER.x, SHOULDER.y); g.strokeStyle = `rgba(255,255,255,${(0.42 * (1 - swing)).toFixed(3)})`; g.lineWidth = 5; g.lineCap = 'round';
@@ -51555,8 +51670,9 @@ const KNIGHTGEAR = (() => {
   // too, so behind his body from where we look (its inner face, the top showing over his shoulder).
   function raisedShield(g, S, P) {
     const k = clamp(S.fxm, 0, 1);
-    // facing away it is held out on his shield side, its top over his shoulder beside his head
-    const at = S.back ? { x: lerp(-9, -5, k), y: -4.2, rot: -0.1, sx: lerp(1.05, 0.85, k) } : { x: lerp(-2.6, 3.6, k), y: lerp(2.4, 1.6, k), rot: lerp(0, 0.06, k), sx: lerp(1.08, 0.86, k) };
+    // facing away it is held out on his shield side and up, so a small or round one still shows past his shoulder and over
+    // it beside his head (held at -9, -4.2 it was hidden behind his back: only the tall kite peeked out)
+    const at = S.back ? { x: lerp(-12.8, -9, k), y: -7, rot: -0.22, sx: lerp(1.05, 0.85, k) } : { x: lerp(-2.6, 3.6, k), y: lerp(2.4, 1.6, k), rot: lerp(0, 0.06, k), sx: lerp(1.08, 0.86, k) };
     g.save(); g.translate(0, S.bob);
     ell(g, at.x - 5.4 * at.sx, at.y + 1.2, 2, 2); g.fillStyle = handOf(P.body); g.fill(); outline(g, 0.5);
     drawShield(g, P.shield, S.back, at);
@@ -51599,7 +51715,7 @@ const KNIGHTGEAR = (() => {
     const W = P.weapon;
     if (hold) {
       g.save(); g.translate(hold.hx, hold.hy + S.bob); g.rotate(hold.wa);
-      if (look.rod) drawRod(g); else drawTool(g, look.tool, look.toolColor);
+      if (look.rod) drawRod(g); else drawTool(g, look.tool, look.toolColor, look.toolHeat);
       g.restore();
       g.save(); g.translate(0, S.bob); drawWeaponArm(g, P.body, hold.hx, hold.hy); g.restore();
       return;
@@ -51628,6 +51744,9 @@ const KNIGHTGEAR = (() => {
     S.block = !!look.block;
     g.save();
     g.scale(S.mirror ? -1.08 : 1.08, 1.08);
+    // e.seatLine: sitting IN something (the ferry's bow), nothing of him below that line in his own frame is drawn (an
+    // upright stave or spear, a robe's hem, a cape: they are down inside the boat, not over its planks)
+    if (seated && typeof e.seatLine === 'number') { g.beginPath(); g.rect(-60, -80, 120, 80 + e.seatLine); g.clip(); }
     if (S.back) {
       // facing away: the shield (or lantern) and its hand, the weapon and its hand, the swoosh, all behind his back
       paintBody(g, S, P, seated, 'behind');
@@ -51643,9 +51762,10 @@ const KNIGHTGEAR = (() => {
   // ---------- pictures, for the crowd of other knights ----------
   // The body pictures' LRU is sized to the crowd. A knight who walks and turns needs 5 facings (the left ones are
   // mirrors) x 4 poses of the walk = 20 pictures, and a standing one more; 16 a knight was too few (a turning crowd
-  // made pictures for ever), so the cap is 28 for every knight drawn in the busiest recent frame (300 at least, 1600 at
-  // most), and the pictures' pixels are held under PIC_BYTES.
-  const PIC_MIN = 300, PIC_TOP = 1600, PIC_EACH = 28, PIC_BYTES = 64 * 1024 * 1024, WPIC_MAX = 80;
+  // made pictures for ever), and friends online swing (73 plays each swing a presence carries): a swing's body has no
+  // weapon in it, one more picture a facing standing and up to four walking. So the cap is 34 for every knight drawn in
+  // the busiest recent frame (300 at least, 1700 at most), and the pictures' pixels are held under PIC_BYTES.
+  const PIC_MIN = 300, PIC_TOP = 1700, PIC_EACH = 34, PIC_BYTES = 64 * 1024 * 1024, WPIC_MAX = 80;
   let picCap = PIC_MIN, picBytes = 0, crowdN = 0, crowdHi = 0;
   // once a frame (the first HOOKS.draw handler call of a render): the crowd of the last frame sets the cap; it falls
   // back slowly (one knight every 20 frames) when the crowd thins
@@ -51883,10 +52003,15 @@ const KNIGHTGEAR = (() => {
   // knight holds that tool in his hand too, coloured by the action's tier as 08-draw does. Those files used to draw a
   // loose pick or axe over the old knight; they leave it to the knight now (see 24-dwarves, 25-elves, 27-dragons,
   // 91-royalmine).
-  // 53-coalmine's coal face ('coalface') is a pickaxe swing too. The other work actions draw their own things and hold no
-  // tool: the lobster pot on its rope (26-boats), the stone held into the heat (91's rm_heat, rm_warm), standing still
-  // (rm_watch), cooking (the core: no tool, as before).
-  const TOOL_ACTS = { mine_obsidian: 'pickaxe', mine_mithril: 'pickaxe', chop_jungle: 'axe', rm_giant: 'pickaxe', rm_vein: 'pickaxe', coalface: 'pickaxe' };
+  // 53-coalmine's coal face ('coalface') is a pickaxe swing too. Two hold something still, in his hand (owner's decision
+  // 1: hands on what he holds): the royal mine's stone held into the heat (91's rm_heat, rm_warm: 'stone', reddening as
+  // it warms; 91 no longer draws it loose in front of him) and the lobster pot's rope (26-boats: 'rope', its end in his
+  // hand; 26 draws the rope from that hand, handAt). Standing still (rm_watch) and cooking (the core) hold nothing.
+  const TOOL_ACTS = { mine_obsidian: 'pickaxe', mine_mithril: 'pickaxe', chop_jungle: 'axe', rm_giant: 'pickaxe', rm_vein: 'pickaxe', coalface: 'pickaxe', rm_heat: 'stone', rm_warm: 'stone', lobster: 'rope' };
+  const STILL_TOOLS = { stone: true, rope: true };
+  // the warming stone's colour: dull red to orange as it warms (the colours 91 drew it in)
+  const stoneHeat = a => clamp((+a.t || 0) / (+a.need || 1), 0, 1);
+  const stoneTint = k => '#' + [122 + 133 * k, 42 + 110 * k, 28 + 30 * k].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
   const heartPick = () => (typeof countItem === 'function' && countItem('heartstone_pickaxe') > 0) || player.equip.weapon === 'heartstone_pickaxe';
   const toolTint = a => /^rm_/.test(a.type) && heartPick() ? '#e0583c' : a.tier >= 3 ? '#7aa0d0' : a.tier === 2 ? '#a9adb5' : '#b8863a';
   const _playerLook = playerLook;
@@ -51896,7 +52021,12 @@ const KNIGHTGEAR = (() => {
     l.gear = { helm: q.helm || q.head || null, body: q.body || null, legs: q.legs || null, shield: q.shield || null, cape: q.cape || null, weapon: q.weapon || null };
     const a = player && player.action;
     // an action with no tier of its own (the coal face) is tinted by the best tool of that kind he has, as the core's mine
-    if (a && TOOL_ACTS[a.type] && !l.tool && !l.rod) { const tool = TOOL_ACTS[a.type], tier = typeof a.tier === 'number' ? a.tier : (typeof hasTool === 'function' ? hasTool(tool) : 1); l.tool = tool; l.toolSwing = true; l.toolColor = toolTint({ type: a.type, tier }); delete l.weapon; delete l.fists; }
+    if (a && TOOL_ACTS[a.type] && !l.tool && !l.rod) {
+      const tool = TOOL_ACTS[a.type];
+      if (STILL_TOOLS[tool]) { l.tool = tool; l.toolSwing = false; if (tool === 'stone') { l.toolHeat = stoneHeat(a); l.toolColor = stoneTint(l.toolHeat); } else l.toolColor = '#c9b676'; }
+      else { const tier = typeof a.tier === 'number' ? a.tier : (typeof hasTool === 'function' ? hasTool(tool) : 1); l.tool = tool; l.toolSwing = true; l.toolColor = toolTint({ type: a.type, tier }); }
+      delete l.weapon; delete l.fists;
+    }
     // the shield raised (47-outliers' block): your own knight only (it is not in the presence look)
     const O = window.OUTLIERS;
     if (O && O.BLOCK && O.BLOCK.t > 0 && !player.mech && !player.dead && q.shield && ITEMS[q.shield]) l.block = true;
@@ -52307,7 +52437,7 @@ const KNIGHTGEAR = (() => {
       // 15. the crowd's pictures keep up with a crowd that turns: 50 knights in 50 different outfits walk a whole step
       // cycle (42 frames) at each of the 8 facings and then stand for a second; then, for 60 frames more, they turn
       // through all 8 facings again (a new one every 5 frames) and stand. Those 60 frames make (close to) no new picture:
-      // the cache holds every knight's 20 walking pictures and his standing ones (28 a knight, 1400 for the 50)
+      // the cache holds every knight's 20 walking pictures and his standing ones (34 a knight, 1700 for the 50)
       { clearPics(); crowdN = 0; crowdHi = 0; picCap = PIC_MIN;
         const by = {}; for (const id in ITEMS) { const s = slotOf(ITEMS[id]); if (s) (by[s] = by[s] || []).push(id); }
         const D8 = [...Array(8)].map((_, k) => ({ x: Math.cos(k * Math.PI / 4), y: Math.sin(k * Math.PI / 4) }));
@@ -52496,10 +52626,77 @@ const KNIGHTGEAR = (() => {
         }
         const ownOk = Object.keys(r.own).length === 5 && Object.values(r.own).every(n => n === 2) && r.twice === 1;
         check(P0 + 'every other knight online is drawn from a picture, and the picture is the live knight: 4 outfits (boy and girl, two tunics, a skill cape, a shield and the lantern, a sword, a spear, the bow and a dagger) at all 8 facings, standing and walking, the pictures kept as in a crowd (' + r.rest + ' at rest), paint exactly what the live knight paints, colours and legs and all, at the screen\'s ratio, put down where they were painted; facing left the picture is flipped; he holds one weapon, in his picture at rest; facing away his weapon, hands and shield or lantern are behind his body, mid-swing too; a different tunic, skin, hair, ribbon or boy or girl gets its own picture', r.cases === 240 && r.rest === 208 && r.same === 208 && !r.bad.length && !r.flips.length && !r.order.length && ownOk, { cases: r.cases, rest: r.rest, same: r.same, bad: r.bad.slice(0, 3), flips: r.flips.slice(0, 4), order: r.order.slice(0, 3), own: r.own, twice: r.twice }); }
+
+      // 20. blocking facing away, every shield shows: held out on his shield side and up, its outer edge reaches past his
+      // shoulder plate (x -13.6) by 4 px or more and its top over the shoulders (y -6.2), so a small or round shield is
+      // not hidden behind his back; the lantern is held out too
+      { const bad = [];
+        for (const id in ITEMS) {
+          if (slotOf(ITEMS[id]) !== 'shield') continue;
+          const P = partsOf(lookWith({ shield: id, body: 'iron_body' })), S = stance(ent(FACES[2]), false); S.bob = 0;
+          const tr = tracker(); measuring(() => raisedShield(tr.g, S, P)); const b = tr.b;
+          const ok = P.shield.fam === 'lantern' ? b.l <= -17.5 : b.l <= -17.5 && b.t <= -11;
+          if (!ok) bad.push({ id, l: +b.l.toFixed(1), t: +b.t.toFixed(1) });
+        }
+        check(P0 + 'blocking facing away, every shield (and the lantern) is held out past his shoulder and up over it, so it shows: none is hidden behind his back', !bad.length, { bad: bad.slice(0, 6) }); }
+
+      // 21. sitting IN the ferry (26-boats gives him a seatLine), nothing of him is drawn below the gunwale: a stave or a
+      // spear, a robe's hem stay down in the boat, not over its planks. On the mare (no seatLine) nothing is cut.
+      { const r = {}, q = quest.boats || (quest.boats = {}), s0 = q.sailing, w0 = q.where, _dh = drawHuman, lines = [];
+        try {
+          q.sailing = { to: 'gull', t: 0.5, from: 'dock', fx: player.x, fy: player.y }; q.where = 'dock';
+          drawHuman = function (g, e, l) { if (l && l.gear) lines.push(e && e.seated ? e.seatLine : 'not seated'); return _dh(g, e, l); };
+          if (HOOKS.panel.sailing) HOOKS.panel.sailing(recorder().g, false);
+          r.ferry = lines.slice();
+        } finally { drawHuman = _dh; q.sailing = s0; q.where = w0; }
+        const look = lookWith({ body: 'necro_robe', weapon: 'bone_stave' });
+        const cut = recorder(); draw(cut.g, ent(FACES[1], { seated: true, seatLine: 7.6 }), look, { t: 0.5 });
+        const free = recorder(); draw(free.g, ent(FACES[1], { seated: true }), look, { t: 0.5 });
+        const clipAt = rec => { const i = rec.ops.findIndex(o => o === 'clip '); return i > 0 ? rec.ops[i - 1] : null; };
+        r.cut = clipAt(cut); r.free = free.ops.some(o => o.startsWith('rect -60.0 -80.0'));
+        check(P0 + 'sitting in the ferry he is cut at the gunwale (nothing of him below it over the hull: a stave, a robe\'s hem); on the mare nothing is cut', r.ferry.length === 1 && r.ferry[0] === 7.6 && r.cut === 'rect -60.0 -80.0 120.0 87.6' && r.free === false, r); }
+
+      // 22. what he holds still is in his hand (owner's decision 1): warming a stone in the royal mine he holds it (tinted
+      // as it warms, nothing else drawn at his place: 91 no longer draws it loose); at the lobster pot he holds the
+      // rope's end, and handAt is where his hand is drawn (26-boats starts the rope there)
+      { const back = keep(), r = {};
+        try {
+          const o = h.openSpot(40, 20); F.tp(o.x, o.y); player.y += 0.37; player.mech = null; player.dead = false; player.facing = { x: 1, y: 0 }; player.attackT = 0;
+          Object.assign(player.equip, { body: 'iron_body', shield: 'iron_shield', weapon: 'iron_sword', helm: null, cape: null });
+          const hand = shade(ITEMS.iron_body.color, -0.15);
+          for (const [type, tool] of [['rm_warm', 'stone'], ['rm_heat', 'stone'], ['lobster', 'rope']]) {
+            player.action = { type, t: 1, need: 2, tx: o.x + 1, ty: o.y };
+            const lk = playerLook(), at = atPlayer(), n = c => at.ops.filter(x => x === '@fill ' + c).length;
+            r[type] = { tool: lk.tool, still: lk.toolSwing === false, weapon: !!lk.weapon, painting: at.painting, hands: n(hand), hafts: n('#8a6a3a'), stone: tool === 'stone' ? n(lk.toolColor) : null };
+          }
+          player.action = null;
+          // the hand: at rest facing right and left, drawn where handAt says
+          const hands = [];
+          for (const f of [{ x: 1, y: 0 }, { x: -1, y: 0 }]) {
+            player.facing = f; const e = ent(f), rec = recorder(); draw(rec.g, e, lookWith({ weapon: 'iron_sword' }), { t: 0 });
+            const hp = handAt(e); hands.push(hp && [+hp.x.toFixed(1), +hp.y.toFixed(1)]);
+          }
+          r.hands = hands;
+          r.handOk = !!hands[0] && !!hands[1] && Math.abs(hands[0][0] - REST_HAND.up.x * 1.08) < 0.3 && Math.abs(hands[0][1] - REST_HAND.up.y * 1.08) < 0.3 && Math.abs(hands[1][0] + hands[0][0]) < 0.01;
+        } finally { back(); }
+        const held = k => r[k] && r[k].still && !r[k].weapon && r[k].painting === 1 && r[k].hands === 2 && r[k].hafts === 0;
+        check(P0 + 'what he holds still is in his hand: warming a stone in the royal mine (both ways in) he holds it, coloured as it warms, and nothing loose is drawn at his place; at the lobster pot he holds the rope\'s end; handAt is where his hand is drawn', held('rm_warm') && held('rm_heat') && held('lobster') && r.rm_warm.tool === 'stone' && r.rm_warm.stone >= 1 && r.lobster.tool === 'rope' && r.handOk, r); }
+
+      // 23. the bank's knight card (60-bank) fits the taller knight: in a party hat with a dragon spear (taller than the
+      // old knight) the card asks fit() for what he wears, and all of him, his shadow too, is inside the card
+      { const back = keep(), K = window.KNIGHTGEAR, calls = [], _fit = K.fit; let r = null;
+        try {
+          Object.assign(player.equip, { helm: 'party_hat_red', body: 'dragon_body', weapon: 'dragon_spear', shield: null, cape: null });
+          K.fit = function (look, w, hh, foot, maxS) { const f = _fit(look, w, hh, foot, maxS); calls.push({ look, w, h: hh, foot, f }); return f; };
+          openPanel('bank'); render();
+          const c = calls.find(q => q.look && q.look.gear && q.look.gear.weapon === 'dragon_spear' && q.look.gear.helm === 'party_hat_red');
+          if (c) { const x = extent(c.look), f = c.f; r = { top: +(f.y + x.t * f.s).toFixed(1), bottom: +(f.y + Math.max(x.b, c.foot) * f.s).toFixed(1), left: +(f.x + Math.min(x.l, -12) * f.s).toFixed(1), right: +(f.x + Math.max(x.r, 12) * f.s).toFixed(1), w: c.w, h: c.h, tall: x.t }; }
+        } finally { K.fit = _fit; closePanel(); back(); }
+        check(P0 + 'the bank\'s knight card fits the taller knight (a party hat and an upright dragon spear): all of him and his shadow are inside the card', !!r && r.tall < -36 && r.top >= -0.01 && r.left >= -0.01 && r.bottom <= r.h + 0.01 && r.right <= r.w + 0.01, r); }
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 
-  return { draw, partsOf, gearKey, cleanGear, extent, fit, poseOf: e => POSE.get(e), STATS, PICS, WPICS, clearPics, picCap: () => picCap, KG, SLOTS, REST_HAND, SHOULDER, REACH };
+  return { draw, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf: e => POSE.get(e), STATS, PICS, WPICS, clearPics, picCap: () => picCap, KG, SLOTS, REST_HAND, SHOULDER, REACH };
 })();
 window.KNIGHTGEAR = KNIGHTGEAR;
 
@@ -52525,6 +52722,8 @@ window.KNIGHTGEAR = KNIGHTGEAR;
 //   6. e.flapK beats the wings faster (the larger of it and a person's own rate): Lark and the fliers in the air;
 //   7. addPeople keeps each person's spec (NPC_SPEC, for the portraits), and two marks (NPC_MARK) let the self-test
 //      see where the body and the held thing are drawn. Neither changes a single pixel.
+//   8. seated and unarmed together (Harl at the oars, his hands on the oar the boat draws) also leave the other hand
+//      empty: his lantern is set down while he rows.
 // The owner's standing decisions are in the drawings: no arms, a hand floats beside the shoulder; held things rest
 // upright with the hand at the waist (a staff or spear stands beside them, a bow hangs at the side, a basket or tool at
 // the waist); facing us or side-on what they hold is in front, facing away it is behind; robes and cloaks slim and open
@@ -52676,9 +52875,10 @@ const TOWNSFOLK_ART = (() => {
     const P = C.P, B = C.B, k = C.talk ? Math.min(1, C.tt * 3) : 0;
     const wave = C.talk ? Math.sin(C.tt * 6.3) : 0;
     const x = lerp(-B.hand.x, -B.hand.x + 2.6, k) + wave * 0.9 * k, y = lerp(B.hand.y - 1.4 - C.step * 1.4, B.sh + 3.4, k) + Math.abs(wave) * -0.8 * k + C.bob;
-    if (P.off) { g.save(); g.translate(x, y); npc_prop(g, C, P.off, 'off'); g.restore(); }
+    const offHeld = P.off && !(C.e.seated && C.e.unarmed);
+    if (offHeld) { g.save(); g.translate(x, y); npc_prop(g, C, P.off, 'off'); g.restore(); }
     floatHand(g, x, y, handCol(C));
-    if (P.off && PROP_OVER[P.off.kind]) { g.save(); g.translate(x, y); PROP_OVER[P.off.kind](g, C, P.off); g.restore(); }
+    if (offHeld && PROP_OVER[P.off.kind]) { g.save(); g.translate(x, y); PROP_OVER[P.off.kind](g, C, P.off); g.restore(); }
   }
 
   // ---------- legs: trousers or stockings, boots that step; a long skirt hides all but the boots ----------
@@ -56743,10 +56943,11 @@ const TOWNSFOLK_ART = (() => {
 // same facing turn, then the person through drawHuman with its id, and the name over the new head). This file loads
 // after 82-knightgear, so its drawHuman is the outermost: a who look never reaches 77, 79 or 82.
 // COST: a busy town must not slow the frame. A person drawn onto the world canvas at the screen's own scale is a
-// picture, made once per person, facing (8), frame (8 steps of a walk, 4 of a swing, 12 of the standing clock at 6 a
-// second on a 2 s loop, staggered by the person's seed so a crowd does not breathe in step) and pixel ratio, kept in a
+// picture, made once per person, facing (8), frame (8 steps of a walk, 4 of a swing, the standing clock at 6 a second
+// on the person's own 2 to 6 s loop, staggered by the person's seed so a crowd does not breathe in step) and pixel ratio, kept in a
 // byte-budgeted cache (as 78-monsterlook and 82-knightgear do). Drawn live: a person talking, hurt off the world canvas,
-// seated, in stone, scaled or turned (a panel, a portrait, a statue's sprite, Lark in the air, a flier), and Death.
+// seated, in stone, scaled or turned (a panel, a portrait, a statue's sprite, Lark in the air, a flier), and Death,
+// Faelan and Pim (their clocks meet no loop: see LOOP).
 // window.TOWNSFOLK is the test handle.
 // ============================================================================
 const TOWNSFOLK = (() => {
@@ -56757,8 +56958,14 @@ const TOWNSFOLK = (() => {
   const DEFAULTS = { captain: 'thistledown', dunstan: 'thistledown', brann: 'thistledown', skillmaster: 'thistledown', marlow: 'thistledown', hux: 'thistledown', wing1: 'cloud', wing2: 'cloud' };
   // both Deaths (the cave and Thistledown) are the sample's one Death
   const ALIAS = { death1: 'death2' };
-  // drawn live always: Death's hourglass, blink and float run on clocks longer than a picture's 2 s loop
-  const LIVE = new Set(['death2']);
+  // drawn live always: Death's hourglass, blink and float run on clocks longer than a picture's loop; Faelan and Pim
+  // move on clocks no loop of 2 to 6 s meets (see LOOP)
+  const LIVE = new Set(['death2', 'faelan', 'pim']);
+  // A standing person's pictures loop: frame 0 comes again after the last. Where their slow motions (wings settling, a
+  // lantern's swing, a breath) do not come round in 2 s, the loop's end jumps back a little each time. LOOP is each
+  // person's own loop in seconds (2 when not named), the one of 2 to 6 s whose end meets its start best, measured from
+  // the drawings (check 12 measures it again, so a changed drawing that no longer meets its loop fails it).
+  const LOOP = { dagny: 3, aelith: 3, thessaly: 3, pipsqueak: 6, gnash: 5, halcyon: 3, quill: 5, fen: 6, v3: 5, tilly: 4, orla: 4, hale: 5, osric: 3, pete: 5, brisk: 3, wick: 3, moll: 3, thrain: 3, skyla: 3, hettie: 3, ratchet: 3, aubade: 3, tam: 3, sera: 5, mudge: 3, brakka: 3, snaggle: 3, tamsin: 3, lark: 3, brannoc: 3, rosalind: 3, greta: 3, nix: 3, dorran: 3, marta: 3, bellweather: 3, orik: 4, wren: 3, wenna: 6, pip: 3, wynn: 3, robin: 3, seraphel: 3, hob: 3, ferris: 3, tobin: 3, hilde: 3, mossbeard: 3 };
   const idOf = who => ALIAS[who] || who;
   const takes = look => ON.on && !!look && typeof look.who === 'string' && !look.gear;
 
@@ -56800,6 +57007,10 @@ const TOWNSFOLK = (() => {
     KEYS.set(s, k);
     return k;
   }
+  // Two people whose names share that word (two Harls side by side) would both talk: only one does, the one nearest the
+  // knight. A frame's people are drawn one after another, so the nearest is known only once all are drawn: each frame
+  // talks with the one found nearest in the frame before (the line's first frame: the first one drawn).
+  const TALK = { frame: -1, line: null, best: null, bestD: 0, first: null, won: null };
   function talkT(who, look, e) {
     const d = typeof dialog !== 'undefined' && dialog ? dialog.cur : null;
     if (!d || !d.who || typeof e.x !== 'number' || typeof e.y !== 'number' || typeof player === 'undefined') return -1;
@@ -56807,13 +57018,22 @@ const TOWNSFOLK = (() => {
     if (!name) return -1;
     const a = nameKey(d.who);
     if (!a || a !== nameKey(name)) return -1;
-    if (Math.hypot(player.x - e.x, player.y - e.y) > 4 * TILE) return -1;
+    const dd = Math.hypot(player.x - e.x, player.y - e.y);
+    if (dd > 4 * TILE) return -1;
+    const id = idOf(who), fr = STATS.frames || 0;
+    if (TALK.frame !== fr || TALK.line !== d) { TALK.won = TALK.line === d ? TALK.best : null; TALK.frame = fr; TALK.line = d; TALK.best = null; TALK.first = null; }
+    if (TALK.first === null) TALK.first = id;
+    if (TALK.best === null || dd < TALK.bestD) { TALK.best = id; TALK.bestD = dd; }
+    if ((TALK.won || TALK.first) !== id) return -1;
     return +dialog.t || 0;
   }
 
   // ---------- a context that turns every colour: hurt (a red flash) and stone (the statues) ----------
   // The knight's way (82-knightgear tintCtx): every fillStyle, strokeStyle and gradient stop goes through a palette.
   // hurt: 40% of the way to #ff6b6b. stone: the colour's lightness on pale warm stone.
+  // The soft dark outline (the drawings' OUT, rgba(22,14,8,0.62)) keeps its colour when hurt: lightened toward red it
+  // made a hurt follower look pale as well as red.
+  const OUTLINE = 'rgba(22,14,8,0.62)';
   const PALETTES = {
     hurt: (r, gg, b) => [r + (255 - r) * 0.4, gg + (107 - gg) * 0.4, b + (107 - b) * 0.4],
     stone: (r, gg, b) => { const v = 70 + (0.3 * r + 0.59 * gg + 0.11 * b) * 0.6; return [v + 5, v + 1, v - 7]; },
@@ -56821,6 +57041,7 @@ const TOWNSFOLK = (() => {
   const TINTED = new Map();
   function tinted(c, kind) {
     if (typeof c !== 'string') return c;
+    if (kind === 'hurt' && c === OUTLINE) return c;
     const k = kind + c;
     let o = TINTED.get(k);
     if (o !== undefined) return o;
@@ -56923,7 +57144,7 @@ const TOWNSFOLK = (() => {
   const labelUp = (who, old) => Math.max(old || 0, Math.ceil(-standOf(idOf(who)).t + 6));
 
   // ---------- pictures ----------
-  const WALK_N = 8, SWING_N = 4, IDLE_N = 12, IDLE_FPS = 6;
+  const WALK_N = 8, SWING_N = 4, IDLE_S = 2, IDLE_FPS = 6;
   const PIC_MAX = 2400, PIC_BYTES = 48 * 1024 * 1024;
   const PICS = new Map();
   let picBytes = 0;
@@ -56969,7 +57190,7 @@ const TOWNSFOLK = (() => {
     let frame, t;
     if (ai >= 0) { frame = 'a' + ai + (w8 >= 0 ? 'w' + w8 : ''); t = 0.3 + ai * 0.05 + Math.max(0, w8) * 0.25; }
     else if (w8 >= 0) { frame = 'w' + w8; t = 0.1 + w8 * 0.25; }
-    else { const i = ((Math.floor(time * IDLE_FPS + v.seed / TWO_PI * IDLE_N) % IDLE_N) + IDLE_N) % IDLE_N; frame = 'i' + i; t = i / IDLE_FPS; }
+    else { const n = (LOOP[id] || IDLE_S) * IDLE_FPS, i = ((Math.floor(time * IDLE_FPS + v.seed / TWO_PI * n) % n) + n) % n; frame = 'i' + i; t = i / IDLE_FPS; }
     const f = FACE8[dir];
     const pv = pose(f.x, f.y, { moving: w8 >= 0, walkT: w8 >= 0 ? (w8 + 0.5) / WALK_N * TWO_PI : 0, attackT: ai >= 0 ? 0.22 * (1 - (ai + 0.5) / SWING_N) : 0, unarmed: !!v.unarmed, flapK: v.flapK || 0 });
     return { key: id + '|' + dir + '|' + frame + '|' + (v.unarmed ? 'u' : '') + (v.flapK > 1 ? 'f' + v.flapK : '') + '|' + (v.hurtT > 0 ? 'h' : ''), pv, t };
@@ -56982,8 +57203,8 @@ const TOWNSFOLK = (() => {
       const cv = canvasOf(Math.ceil(w * ss), Math.ceil(h * ss));
       if (!cv) return false;
       cv.cg.setTransform(ss, 0, 0, ss, -b.l * ss, -b.t * ss);
-      at(P.t, () => d(cv.cg, P.pv));
-      if (v.hurtT > 0) { cv.cg.setTransform(1, 0, 0, 1, 0, 0); cv.cg.globalCompositeOperation = 'source-atop'; cv.cg.globalAlpha = 0.4; cv.cg.fillStyle = '#ff6b6b'; cv.cg.fillRect(0, 0, cv.c.width, cv.c.height); }
+      // hurt: the same palette as a live drawing (every colour toward red, the outline kept dark)
+      at(P.t, () => d(v.hurtT > 0 ? tintCtx(cv.cg, 'hurt') : cv.cg, P.pv));
       p = { c: cv.c, x0: b.l, y0: b.t, w, h, bytes: cv.c.width * cv.c.height * 4 };
       lruPut(key, p); STATS.made++;
     } else STATS.hits++;
@@ -57094,6 +57315,25 @@ const TOWNSFOLK = (() => {
       g.fillStyle = n.ghost ? '#b58cff' : '#ffe9a8'; g.fillText(n.name, e.x, y);
     }
   };
+
+  // the gold talk brackets round the person faced (24-dwarves' PEOPLE_UI) were sized for the old, shorter people: they
+  // reach over the new head (its hat, crown, hood or wings: standOf, 3 px more). The faced person is known by name, by
+  // its first proper word as the talking pose is (two of the sample's people with the same word: the taller of them).
+  let UPS = null;
+  function upOf(name) {
+    if (!UPS) {
+      UPS = new Map();
+      for (const id in ART.NPC_NAMES) { const k = nameKey(ART.NPC_NAMES[id]), u = Math.ceil(-standOf(id).t + 3); if (k && !(UPS.get(k) >= u)) UPS.set(k, u); }
+    }
+    return UPS.get(nameKey(name)) || 0;
+  }
+  if (typeof PEOPLE_UI !== 'undefined' && typeof PEOPLE_UI.brackets === 'function') {
+    const _br = PEOPLE_UI.brackets;
+    PEOPLE_UI.brackets = function (g, p) {
+      if (!ON.on || !p || typeof p.name !== 'string') return _br(g, p);
+      return _br(g, Object.assign({}, p, { up: upOf(p.name) }));
+    };
+  }
 
   // a frame begins: nothing is pushed (PEOPLE_UI's audit draws only items at 1e9 and above)
   HOOKS.draw.push((g, items) => { STATS.frames = (STATS.frames || 0) + 1; });
@@ -57322,13 +57562,15 @@ const TOWNSFOLK = (() => {
     { const at0 = { x: player.x, y: player.y }, t0 = time, d0 = dialog.cur; let r = null;
       try {
         F.tp(112, 33); dialog.cur = null; render();
-        const s1 = Object.assign({}, STATS), by1 = Object.values(STATS.by).reduce((a, b) => a + b, 0);
+        const s1 = Object.assign({}, STATS), b1 = Object.assign({}, STATS.by), by1 = Object.values(STATS.by).reduce((a, b) => a + b, 0);
         render();
         const by2 = Object.values(STATS.by).reduce((a, b) => a + b, 0);
-        r = { people: by2 - by1, made: STATS.made - s1.made, live: STATS.live - s1.live, blits: STATS.pics - s1.pics };
+        // the people always drawn live (LIVE: Death, Faelan, Pim) are not pictures
+        let always = 0; for (const w in STATS.by) if (LIVE.has(idOf(w))) always += STATS.by[w] - (b1[w] || 0);
+        r = { people: by2 - by1, made: STATS.made - s1.made, live: STATS.live - s1.live, always, blits: STATS.pics - s1.pics };
       } finally { player.x = at0.x; player.y = at0.y; time = t0; dialog.cur = d0; }
-      check(P + 'Thistledown\'s square, its people out: a frame drawn again makes no new picture and draws nobody live, one blit a person (' + (r ? r.people : 0) + ' people)',
-        r && r.people >= 8 && r.made === 0 && r.live === 0 && r.blits === r.people, r); }
+      check(P + 'Thistledown\'s square, its people out: a frame drawn again makes no new picture and draws nobody live but the ones always drawn live (Pim, whose clock meets no loop), one blit a person (' + (r ? r.people : 0) + ' people)',
+        r && r.people >= 8 && r.made === 0 && r.live === r.always && r.blits === r.people - r.always, r); }
 
     // 10. names sit over the new heads (hats, crowns, hoods and wings included), never lower than before; the talking pose:
     // the person whose line is up, near the knight, raises a hand and moves the mouth (drawn live)
@@ -57343,6 +57585,72 @@ const TOWNSFOLK = (() => {
         const l0 = STATS.live; drawHuman(ctx, { x: b.px, y: b.py, facing: { x: 0, y: 1 } }, { who: 'brakka' }); live = STATS.live === l0 + 1;
       } finally { ART.mark(null); dialog.cur = d0; player.x = p0.x; player.y = p0.y; }
       check(P + 'every name goes over the new head; the one whose line is up talks (a hand to the chest, the mouth moving), drawn live', !low.length && talk && live, { low, talk, live }); }
+
+    // 12. a standing person's pictures loop without a jump: for each person of the sample drawn from pictures, at their
+    // own LOOP, the moment the loop comes round (its end against its start) moves nothing further than one step of their
+    // standing clock does (a sixth of a second; 0.65 px at least); the two whose clocks meet no loop are drawn live
+    { const GEO = new Set(['moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo', 'arc', 'ellipse', 'arcTo', 'rect', 'fillRect', 'translate']);
+      class Num { constructor() { this.ops = []; this.fillStyle = '#000'; this.strokeStyle = '#000'; this.globalAlpha = 1; this.lineWidth = 1; } save() { } restore() { } createLinearGradient() { return { addColorStop() { } }; } createRadialGradient() { return { addColorStop() { } }; } createPattern() { return null; } measureText() { return { width: 10 }; } getTransform() { return undefined; } }
+      for (const k of REC_CALLS) Num.prototype[k] = function (...a) { this.ops.push(GEO.has(k) ? [k, a.filter(v => typeof v === 'number')] : [k, null]); };
+      const shot = (id, t) => { const r = new Num(); at(t, () => drawerOf(id)(r, pose(0, 1, { seed: seedOf(id) }))); return r.ops; };
+      // the furthest any point moved between two drawings of the same make (null: they are not the same make)
+      const moved = (a, b) => { if (a.length !== b.length) return null; let m = 0; for (let i = 0; i < a.length; i++) { if (a[i][0] !== b[i][0]) return null; const x = a[i][1], y = b[i][1]; if (!x) continue; const n = a[i][0] === 'arc' || a[i][0] === 'ellipse' ? 4 : x.length; for (let j = 0; j < n; j++) m = Math.max(m, Math.abs(x[j] - y[j])); } return m; };
+      const bad = []; let n = 0;
+      for (const id of ids) {
+        if (LIVE.has(id)) continue;
+        const L = LOOP[id] || IDLE_S, fr = [];
+        for (let i = 0; i <= L * IDLE_FPS; i++) fr.push(shot(id, i / IDLE_FPS));
+        let step = 0; for (let i = 0; i < fr.length - 1; i++) { const d = moved(fr[i], fr[i + 1]); if (d !== null) step = Math.max(step, d); }
+        const wrap = moved(fr[fr.length - 1], fr[0]); n++;
+        if (wrap === null || wrap > Math.max(0.65, 1.5 * step)) bad.push(id + ' ' + L + 's: ' + (wrap === null ? 'not the same drawing' : wrap.toFixed(2)) + ' (a step ' + step.toFixed(2) + ')');
+      }
+      const live = ['faelan', 'pim'].every(id => LIVE.has(id));
+      check(P + 'a standing person\'s pictures loop without a jump: for each of the ' + n + ' people drawn from pictures, the moment their own 2 to 6 s loop comes round moves nothing further than a step of their clock does; Faelan and Pim, whose clocks meet no loop, are drawn live', n >= 70 && !bad.length && live, { n, bad: bad.slice(0, 6), live }); }
+
+    // 13. two people whose names share the word a line is said under (two Harls), both near the knight: only one talks,
+    // the nearer one (from the next frame on; the line's first frame, the first one drawn)
+    { const d0 = dialog.cur, t0 = dialog.t, p0 = { x: player.x, y: player.y }, f0 = STATS.frames;
+      let r = null;
+      try {
+        player.x = 1000; player.y = 1000;
+        dialog.cur = { text: 'The sea is calm today.', who: 'Old Harl' }; dialog.t = 0.5;
+        const far = { x: 1120, y: 1000, facing: { x: 0, y: 1 } }, nearE = { x: 1040, y: 1000, facing: { x: 0, y: 1 } };
+        // one frame: the far one drawn first, then the near one; who talked
+        const frame = () => {
+          const out = []; let cur = null;
+          ART.mark((g, what, C) => { if (what === 'body' && C.talk && cur) out.push(cur); });
+          try { STATS.frames = (STATS.frames || 0) + 1; cur = 'far'; drawHuman(new Rec(), far, { who: 'pete', name: 'Harl the younger' }); cur = 'near'; drawHuman(new Rec(), nearE, { who: 'harl', name: 'Harl the ferryman' }); }
+          finally { ART.mark(null); }
+          return out;
+        };
+        const first = frame(), second = frame(), third = frame();
+        r = { first, second, third };
+      } finally { ART.mark(null); dialog.cur = d0; dialog.t = t0; player.x = p0.x; player.y = p0.y; STATS.frames = f0; }
+      check(P + 'two people whose names share the word a line is said under, both near the knight: only one talks at a time, and from the next frame on the nearer one', !!r && r.first.length === 1 && r.second.join() === 'near' && r.third.join() === 'near', r); }
+
+    // 14. hurt, a person flashes red but the soft dark outline stays dark (a hurt follower is red, not pale), drawn live
+    // and in a picture alike (a hurt picture is painted through the same palette)
+    { const r1 = new Rec(); drawHuman(r1, { facing: { x: 0, y: 1 }, hurtT: 0.2 }, { who: 'sera' });
+      const outline = r1.cols.filter(c => c === OUTLINE).length, lifted = r1.cols.filter(c => /^rgba\(115,51,48/.test(c)).length;
+      const on0 = ON.pics; let pic = null;
+      try { ON.pics = true; clearPics(); const t0 = STATS.tinted, m0 = STATS.made; drawHuman(ctx, { x: 0, y: 0, facing: { x: 0, y: 1 }, hurtT: 0.2, moving: false, walkT: 0, attackT: 0 }, { who: 'garrick' }); pic = { made: STATS.made - m0, tinted: STATS.tinted - t0 }; } finally { ON.pics = on0; clearPics(); }
+      check(P + 'hurt, a person flashes red with the soft dark outline kept dark (not lightened toward red), live and in a picture', outline >= 20 && lifted === 0 && !!pic && pic.made === 1 && pic.tinted === 1, { outline, lifted, pic }); }
+
+    // 15. Harl at the oars (seated, his hands on the oar the boat draws) holds no lantern; standing on his jetty he does
+    { const lit = o => { const r = new Rec(); drawHuman(r, Object.assign({ facing: { x: 1, y: 0 }, hurtT: 0 }, o), { who: 'harl' }); return r.cols.includes('#fffbe8'); };
+      const rowing = lit({ seated: true, unarmed: true }), standing = lit({}), seated = lit({ seated: true });
+      check(P + 'Harl rowing the ferry (seated, both hands on the oar) has set his lantern down; on his jetty he holds it', !rowing && standing && seated, { rowing, standing, seated }); }
+
+    // 16. the gold talk brackets round the person faced reach over the new head: for Old Harl (his sou\'wester) they start
+    // above the top of his drawing, not at the old 24 px
+    { let box = null; const _b = HK.brackets, p0 = { x: player.x, y: player.y, facing: player.facing };
+      try {
+        const o = h.openSpot(40, 20); F.tp(o.x, o.y); player.facing = { x: 0, y: 1 };
+        HK.brackets = (g, x, y, w, hh) => { box = { x, y, w, h: hh }; };
+        PEOPLE_UI.brackets(new Rec(), { px: 500, py: 500, name: 'Old Harl' });
+      } finally { HK.brackets = _b; Object.assign(player, p0); }
+      const top = 500 + standOf('harl').t;
+      check(P + 'the gold talk brackets round a person faced reach over the new head (Old Harl\'s hat): their top is above his drawing\'s', !!box && box.y <= top && box.y + box.h === 520 && box.w === 36, { box, top }); }
   });
 
   const API = { ON, STATS, ART, DEFAULTS, ALIAS, LIVE, takes, draw, put, portrait, statueFit, labelUp, boxOf, standOf, drawerOf, idOf, seedOf, nameKey, PICS, clearPics, tinted, Tracker, pose, headOf };
@@ -65134,8 +65442,9 @@ window.TOWNSFOLK = TOWNSFOLK;
       g.fillStyle = hasHeartPick() ? '#e0583c' : (a.tier >= 3 ? '#7aa0d0' : a.tier === 2 ? '#a9adb5' : '#b8863a');
       g.beginPath(); g.moveTo(24, -2); g.quadraticCurveTo(30, -8, 34, -6); g.lineTo(30, 0); g.lineTo(34, 6); g.quadraticCurveTo(30, 8, 24, 2); g.closePath(); g.fill(); g.restore();
     }
-    if (a && (a.type === 'rm_heat' || a.type === 'rm_warm')) {
-      // the stone held into the heat, reddening as it warms
+    // the stone held into the heat, reddening as it warms; the knight drawn by 82-knightgear holds it in his own hand
+    // (its TOOL_ACTS 'stone'), so it is not drawn here loose in front of him then
+    if (a && (a.type === 'rm_heat' || a.type === 'rm_warm') && !window.KNIGHTGEAR) {
       const k = clamp(a.t / (a.need || 1), 0, 1), hx = player.x + Math.cos(ang) * 22, hy = player.y + Math.sin(ang) * 22 - 6;
       const gr = g.createRadialGradient(hx, hy, 1, hx, hy, 16); gr.addColorStop(0, `rgba(255,190,110,${(0.3 + 0.6 * k).toFixed(3)})`); gr.addColorStop(1, 'rgba(255,120,60,0)'); g.fillStyle = gr; g.beginPath(); g.arc(hx, hy, 16, 0, 7); g.fill();
       g.fillStyle = `rgb(${Math.round(122 + 133 * k)},${Math.round(42 + 110 * k)},${Math.round(28 + 30 * k)})`; g.beginPath(); g.arc(hx, hy, 5.5, 0, 7); g.fill();
@@ -69866,7 +70175,9 @@ window.TOWNSFOLK = TOWNSFOLK;
   // ---------- statues and the waiting plinth ----------
   const STONE_LOOK = (o) => Object.assign({ tunic: '#c9c3b6', hair: '#b7b0a2', skin: '#d6d0c3', shoulder: '#bdb6a8' }, o);
   const STATUE_LOOK = {
-    last_knight: STONE_LOOK({ helm: '#cfc9bc', shield: '#bfb8a9', weapon: { shape: 'sword', color: '#d8d2c6' } }),
+    // the Last Knight of Hollowford: with 82-knightgear a knight look in stone (an iron helm, kite shield and sword, as
+    // the old statue held), so he is drawn as every knight in the game is
+    last_knight: STONE_LOOK({ helm: '#cfc9bc', shield: '#bfb8a9', weapon: { shape: 'sword', color: '#d8d2c6' }, gear: { helm: 'iron_helm', body: null, legs: null, shield: 'iron_shield', cape: null, weapon: 'iron_sword' }, stone: true }),
     thrain: STONE_LOOK({ who: 'thrain', stone: true, beard: true, crown: true, tool: 'hammer', toolColor: '#cfc9bc' }),
     aelith: STONE_LOOK({ who: 'aelith', stone: true, woman: true, crown: true, weapon: { shape: 'bow', color: '#cfc9bc' } }),
     seraphel: STONE_LOOK({ who: 'seraphel', stone: true, woman: true, crown: true, wing: 1.35 }),
@@ -69890,16 +70201,21 @@ window.TOWNSFOLK = TOWNSFOLK;
   }
   // a statue of one of the townsfolk (83-townsfolk, look.who and stone) is the person in the new look, all in stone, its
   // own wings and all, scaled to fit the sprite (never bigger than the old 1.32) with the feet on the plinth's top
+  // A knight look (the Last Knight, with 82-knightgear) is fitted as the knight's own statue is (heroFit): his feet on
+  // the plinth's top, inside the sprite, and nothing of him below the plinth's top (his cape's hem, a bow's tip)
   function paintFigure(g, look, wings, scale, half) {
     const fit = window.TOWNSFOLK && TOWNSFOLK.takes(look) ? TOWNSFOLK.statueFit(look.who, scale, 61, (half || 24) - 1) : null;
+    const kf = !fit && look.gear && KG() ? heroFit(look, (half || 24) - 1) : null;
     g.save();
     if (fit) { g.translate(0, -28 - fit.foot); g.scale(fit.s, fit.s); }
+    else if (kf) { g.beginPath(); g.rect(-(half || 24), -96, 2 * (half || 24), 96 + HERO_FEET + 1); g.clip(); g.translate(0, kf.y0); g.scale(kf.s, kf.s); }
     else { g.translate(0, -48); g.scale(scale, scale); }
     if (wings && !fit) { g.save(); g.translate(0, -2); stoneWings(g); g.restore(); }
     drawHuman(g, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, look);
     g.restore();
   }
-  const STATUE_HALF = { seraphel: 56 };
+  // the new Last Knight holds his sword upright at his side: his sprite is a little wider than the old one's 48 px
+  const STATUE_HALF = { seraphel: 56, last_knight: 32 };
   function drawStatue(g, s) {
     const cx = tc(s.x), foot = (s.y + 1) * TILE - 2;
     // Queen Seraphel's statue spreads her wings: her sprite is wider (STATUE_HALF)
@@ -69928,11 +70244,12 @@ window.TOWNSFOLK = TOWNSFOLK;
   // he is fitted: his feet on the plinth's top (y -31 from the foot), his top under the sprite's (-89), his sides inside
   // its 96 px, never bigger than the old statue (1.32). y0 is where his own feet's centre goes.
   const HERO_FEET = -31, HERO_TOP = -89, HERO_HALF = 46, HERO_S = 1.32;
-  function heroFit(look) {
+  function heroFit(look, half) {
     const x = KG().extent(look), fb = KG().extent({ gear: {}, fists: true }).b;
-    const s = Math.min(HERO_S, HERO_HALF / Math.max(1, -x.l, x.r), (HERO_FEET - HERO_TOP) / Math.max(1, fb - x.t));
+    const s = Math.min(HERO_S, (half || HERO_HALF) / Math.max(1, -x.l, x.r), (HERO_FEET - HERO_TOP) / Math.max(1, fb - x.t));
     return { s, y0: HERO_FEET - fb * s };
   }
+  const heroParty = look => !!look.gear && !!look.gear.helm && !!ITEMS[look.gear.helm] && !!ITEMS[look.gear.helm].partyHat;
   // the statue's sprite: one per look (and, for the new knight, per what he wears)
   const heroKey = look => 'plinth-hero:' + [look.helm, look.body, look.shield, look.weapon && look.weapon.shape, look.girl ? 'girl' : '', look.gear ? KG().SLOTS.map(k => look.gear[k] || '').join(',') : ''].join('|');
   function drawPlinth(g) {
@@ -69945,12 +70262,17 @@ window.TOWNSFOLK = TOWNSFOLK;
       const f = heroFit(look);
       blit(g, sprite(key, 96, 96, 48, 90, cg => {
         paintPlinth(cg, GOLD);
-        cg.save(); cg.translate(0, f.y0); cg.scale(f.s, f.s);
+        // nothing of him below the plinth's top: a bow at his side, a cape's hem would hang down over its front and laurel
+        cg.save(); cg.beginPath(); cg.rect(-48, -96, 96, 96 + HERO_FEET + 1); cg.clip(); cg.translate(0, f.y0); cg.scale(f.s, f.s);
         drawHuman(cg, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, look);
         cg.restore();
       }), cx, foot);
-      // the gold laurel round the top of his head (the new knight's head is at (0, -11) r 8 in his own frame)
-      g.strokeStyle = GOLD; g.lineWidth = 2; g.beginPath(); g.arc(cx, foot + f.y0 - 15 * f.s, 8.5 * f.s, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
+      // the gold laurel round the top of his head (the new knight's head is at (0, -11) r 8 in his own frame); in a party
+      // hat it rings the hat's brim (the cone's foot, (0.9, -17.7) turned 0.22), not across the middle of the cone
+      g.strokeStyle = GOLD; g.lineWidth = 2; g.beginPath();
+      if (heroParty(look)) g.ellipse(cx + 0.9 * f.s, foot + f.y0 - 17.7 * f.s, 6.8 * f.s, 1.9 * f.s, 0.22, 0, Math.PI);
+      else g.arc(cx, foot + f.y0 - 15 * f.s, 8.5 * f.s, Math.PI * 1.05, Math.PI * 1.95);
+      g.stroke();
     } else {
       blit(g, sprite(key, 48, 96, 24, 90, cg => { paintPlinth(cg, GOLD); paintFigure(cg, look, false, 1.32); }), cx, foot);
       // the gold laurel on his head
@@ -71317,9 +71639,36 @@ window.TOWNSFOLK = TOWNSFOLK;
         const parsed = cols.map(rgb).filter(Boolean);
         r.stone = parsed.length >= 40 && parsed.every(([a, b, c]) => Math.max(a, b, c) - Math.min(a, b, c) <= 14);
         r.colours = parsed.length;
-      } finally { for (const k in player.equip) if (!(k in eq0)) delete player.equip[k]; Object.assign(player.equip, eq0); quest.stage = st0; }
-      check(P + 'C14b the statue on the plinth is the knight as he is drawn everywhere (82-knightgear) in what he wears, all of him in stone: the Dragon slayer\'s kit with its upright spear fits the sprite with his feet on the plinth, the drawing runs once to make the sprite, again only when his gear changes',
-        r.look && r.fits && r.made[0] >= 1 && r.made[1] >= 1 && r.again === 0 && r.changed >= 1 && r.keys && r.stone, r); }
+        // in a party hat with a bow: the laurel rings the hat's brim (a flat ring, not an arc over the cone's middle), and
+        // the sprite is cut at the plinth's top (the bow at his side reached down over its front and its laurel)
+        Object.assign(player.equip, { helm: 'party_hat_red', body: 'silk_cloak', legs: null, cape: 'cape_hitpoints', weapon: 'yew_bow' });
+        const pl = heroLook(); delete CACHE[heroKey(pl)];
+        const ops = []; const og = new Proxy({}, { get: (o, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : (k in o ? o[k] : (...a) => ops.push(k + ' ' + a.filter(v => typeof v === 'number').map(v => v.toFixed(1)).join(' '))), set: (o, k, v) => { if (k === 'strokeStyle' && v === GOLD) ops.push('GOLD'); o[k] = v; return true; } });
+        drawPlinth(og);
+        const g0 = ops.lastIndexOf('GOLD'), after = ops.slice(g0);
+        r.brim = heroParty(pl) && after.some(o => o.startsWith('ellipse ')) && !after.some(o => o.startsWith('arc '));
+        // the sprite's own painting: a clip at the plinth's top before the knight
+        const sp = []; const sg = new Proxy({}, { get: (o, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : (k in o ? o[k] : (...a) => sp.push(k + ' ' + a.filter(v => typeof v === 'number').map(v => v.toFixed(1)).join(' '))), set: (o, k, v) => { o[k] = v; return true; } });
+        const _sprite = sprite; let painted = false;
+        try { sprite = (key, w, h, ax, ay, paint) => { if (key === heroKey(pl) && !painted) { painted = true; paint(sg); } return _sprite(key, w, h, ax, ay, paint); }; delete CACHE[heroKey(pl)]; drawPlinth(ctx); } finally { sprite = _sprite; }
+        r.cut = sp.includes('rect -48.0 -96.0 96.0 66.0') && sp.indexOf('clip ') > sp.indexOf('rect -48.0 -96.0 96.0 66.0');
+      } catch (err) { r.threw = String(err && err.message); }
+      finally { for (const k in player.equip) if (!(k in eq0)) delete player.equip[k]; Object.assign(player.equip, eq0); quest.stage = st0; }
+      check(P + 'C14b the statue on the plinth is the knight as he is drawn everywhere (82-knightgear) in what he wears, all of him in stone: the Dragon slayer\'s kit with its upright spear fits the sprite with his feet on the plinth, the drawing runs once to make the sprite, again only when his gear changes; in a party hat the laurel rings its brim, and nothing of him hangs below the plinth\'s top',
+        !r.threw && r.look && r.fits && r.made[0] >= 1 && r.made[1] >= 1 && r.again === 0 && r.changed >= 1 && r.keys && r.stone && r.brim && r.cut, r); }
+
+    // ---- C14c. the Last Knight of Hollowford at the Great Fountain is a knight drawn as every knight is (82-knightgear), in
+    // stone, inside his sprite with his feet on the plinth ----
+    if (window.KNIGHTGEAR) {
+      const look = STATUE_LOOK.last_knight, K = KNIGHTGEAR, r = {};
+      try {
+        r.knight = !!look.gear && !!look.stone && look.gear.weapon === 'iron_sword';
+        const f = heroFit(look, (STATUE_HALF.last_knight || 24) - 1), x = K.extent(look), fb = K.extent({ gear: {}, fists: true }).b;
+        r.fits = f.y0 + x.t * f.s >= -90 && Math.max(-x.l, x.r) * f.s <= (STATUE_HALF.last_knight || 24) && Math.abs(f.y0 + fb * f.s - HERO_FEET) < 0.01 && f.s >= 1;
+        const s0 = STATS.statues; delete CACHE['statue:last_knight']; const l0 = K.STATS.live; drawStatue(ctx, PLAN.STATUES.find(s => s.id === 'last_knight'));
+        r.drawn = K.STATS.live - l0 === 1 && STATS.statues === s0 + 1;
+      } catch (err) { r.threw = String(err && err.message); }
+      check(P + 'C14c the Last Knight of Hollowford at the Great Fountain is a knight in the new look (82-knightgear), in stone, his sword upright at his side, inside his sprite with his feet on the plinth', !r.threw && r.knight && r.fits && r.drawn, r); }
 
     // ---- C15. night ----
     { const N = window.NIGHT, d0 = player.dayTime;
