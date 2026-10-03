@@ -34572,9 +34572,10 @@ window.RETALIATE = RETALIATE;
 // save yet is offered the one on the old GitHub Pages address (bridge.html, in a hidden iframe) or starts fresh.
 // There is no Play alone online (owner, 2026-10-03: "everything should be server side so that they can play on multiple
 // devices"): every knight is an account's, made with Ethan's invite code. A knight saved on this device that no account
-// owns (a Play alone knight from before) is never deleted or overwritten: park() moves it out of slot 1 first, and with
-// no room the start stops and says so. src/72-deviceknights.js names those knights on the card and offers them to a new
-// account. Offline (no NET) the title keeps its three slots exactly as before.
+// owns (a Play alone knight from before) is never deleted or overwritten: park() moves it out of slot 1 first (to any
+// empty slot up to LOGIN.PARK_MAX), and only if storage has no room the start stops and says so. 72-deviceknights
+// names those knights on the card and offers them to a new account. Offline (no NET) the title
+// keeps its three slots exactly as before.
 // Feature file: registers through HOOKS and wraps title.open / title.tick / drawHud by reassignment. Nothing in
 // here touches the DOM without checking there is one (tools/headless.js has no document.body).
 // window.LOGIN is the register; docs/ONLINE.md is the contract.
@@ -34703,20 +34704,29 @@ window.RETALIATE = RETALIATE;
 
   // ---------- slot 1 is the online knight's slot ----------
   // A knight saved only on this device in slot 1 (no cloud mark: a Play alone knight from before) is never deleted or
-  // overwritten: it is moved to an empty slot (2 or 3) before a cloud knight takes slot 1 over. If slots 2 and 3 already
-  // hold it, it is safe as it is. With no room, park() says no and the start stops (claim and fresh write nothing). The
-  // mark says slot 1 currently holds a cloud knight; 72-cloudsave clears it when a local save lands there.
+  // overwritten: it is moved to the first empty slot from 2 to PARK_MAX before a cloud knight takes slot 1 over (online
+  // there are no slot cards, so slots past 3 are only ever this; 00-handoff counts every fanglands.slot.N as a knight). If
+  // another slot already holds the same string it is safe as it is. The move is read back; only when no slot is empty or
+  // storage refuses the write does park() say no, and then the start stops (claim and fresh write nothing). The mark says
+  // slot 1 currently holds a cloud knight; 72-cloudsave clears it when a local save lands there.
   // park() is true when slot 1 may be written.
+  const PARK_MAX = 9;
+  LOGIN.PARK_MAX = PARK_MAX;
   const park = () => {
     const cur = lsGet(SLOT(1)); if (!cur || lsGet(MARK_KEY) != null) return true;
-    for (let n = 2; n <= 3; n++) if (lsGet(SLOT(n)) === cur) return true;
-    for (let n = 2; n <= 3; n++) if (!lsGet(SLOT(n))) { lsSet(SLOT(n), cur); lsSet(AT(n), lsGet(AT(1)) || Date.now()); return true; }
+    for (let n = 2; n <= PARK_MAX; n++) if (lsGet(SLOT(n)) === cur) return true;
+    for (let n = 2; n <= PARK_MAX; n++) if (!lsGet(SLOT(n))) {
+      lsSet(SLOT(n), cur); lsSet(AT(n), lsGet(AT(1)) || Date.now());
+      if (lsGet(SLOT(n)) === cur) return true;
+      lsDel(SLOT(n)); lsDel(AT(n)); return false;   // storage refused it (full): nothing moved, slot 1 stays as it was
+    }
     return false;
   };
   const claim = (raw, at) => { if (!park()) return false; lsSet(SLOT(1), raw); lsSet(AT(1), at || Date.now()); lsSet(MARK_KEY, '1'); if (window.CLOUD) window.CLOUD.known = raw; return true; };
   const fresh = () => { if (!park()) return false; lsDel(SLOT(1)); lsDel(AT(1)); lsSet(MARK_KEY, '1'); if (window.CLOUD) window.CLOUD.known = null; return true; };
-  // no room to keep this device's knights safe: the start stops here, nothing is written, the card says so
-  const NO_ROOM = 'There is no room on this device to keep its saved knights safe, so the game did not start. Ask Ethan for help.';
+  // no room to keep this device's knights safe (every slot up to PARK_MAX holds one, or storage is full): the start stops
+  // here, nothing is written, the card says so
+  const NO_ROOM = 'This device has no room left to keep its saved knights safe, so the game did not start. They are all still here. Ask Ethan for help.';
   LOGIN.NO_ROOM = NO_ROOM;
   const noRoom = () => { LOGIN.busy = false; LOGIN.offer = null; LOGIN.mode = NET.token ? 'me' : 'form'; LOGIN.error = NO_ROOM; refresh(); return false; };
 
@@ -35370,16 +35380,20 @@ window.RETALIATE = RETALIATE;
 // DEVICE KNIGHTS — a knight saved on this device that no account owns is named, kept, and offered to a new account
 // Owner (2026-10-03): "everything should be server side so that they can play on multiple devices", and yes to taking
 // Play alone away, so every new knight needs Ethan's invite code. Online there is no Play alone any more (71-login).
-// Browsers that played alone before still hold knights no account owns: a title slot (fanglands.slot.1 to 3) with a save
-// in it, except slot 1 while it carries the cloud mark (that is an account's working copy) and a knight already brought
-// into an account (fanglands.brought, fingerprints, written once the world has the knight).
+// Browsers that played alone before still hold knights no account owns: a slot (fanglands.slot.1 to LOGIN.PARK_MAX: 1 to 3
+// from the title, past 3 only where 71-login's park() moved one) with a save in it, except slot 1 while it carries the
+// cloud mark (that is an account's working copy). A knight one account brought in stays on the device and is still named
+// and offered to everyone else (brother and sister on one iPad): only that account no longer sees it (fanglands.brought,
+// fingerprint -> the names that brought it, written once the world has the knight).
 // - NAMED where the kid is: under the login form and on the "Playing as" card, one plain line: "This device has a knight
 //   saved on it: Slot 2 (level 7). It is safe here. Make a new knight with Ethan's invite code to bring it with you."
-// - KEPT: 71-login never deletes or overwrites one (park() moves it out of slot 1, or the start stops and says so).
+// - KEPT: 71-login never deletes or overwrites one (park() moves it out of slot 1 to an empty slot up to PARK_MAX; only
+//   if storage itself has no room does the start stop and say so).
 // - OFFERED when an account's cloud is empty (a NEW account; 71-login asks the old address, and so this file, only then):
 //   Yes brings the knight in exactly the way the old address's knight comes in (LOGIN.bring: slot 1, the mark, a push at
 //   once); with several, the kid taps the one (cards 44 px and up); Start fresh asks first, and a double tap or a burst of
-//   taps can never pass the question. Nothing here deletes or rewrites a slot.
+//   taps can never pass the question. A knight another account brought in already says so on its card ("Ann brought this
+//   knight into an account already. You can bring it too."). Nothing here deletes or rewrites a slot.
 // Self-tests: while FANGLANDS.selfTest runs this file sees no device knights unless its own test turns DK.testView on, so
 // another file's sign-up (79-boygirl's Mia) is never offered a knight some other test left in a slot.
 // Offline (no NET: file://, the offline copy, the tests' own boot) none of this shows and the slots work as before.
@@ -35397,8 +35411,18 @@ window.RETALIATE = RETALIATE;
   const hasDom = () => typeof document !== 'undefined' && !!document.body && !!document.head && typeof document.createElement === 'function';
   // a short fingerprint of a slot string: only to know "this exact knight is in an account already"
   const fp = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36) + '.' + s.length; };
-  const brought = () => { try { const a = JSON.parse(lsGet(BROUGHT_KEY) || '[]'); return Array.isArray(a) ? a.filter(x => typeof x === 'string') : []; } catch (e) { return []; } };
-  const remember = raw => { const a = brought(), f = fp(raw); if (!a.includes(f)) { a.push(f); lsSet(BROUGHT_KEY, JSON.stringify(a.slice(-50))); } };
+  // fanglands.brought: { fingerprint: [the names of the accounts that brought that knight in] }
+  const brought = () => { try { const o = JSON.parse(lsGet(BROUGHT_KEY) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; } };
+  const namesOf = (o, f) => Array.isArray(o[f]) ? o[f].filter(x => typeof x === 'string') : [];
+  const same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+  const remember = (raw, name) => {
+    if (!name) return;
+    const o = brought(), f = fp(raw), a = namesOf(o, f); if (a.some(x => same(x, name))) return;
+    delete o[f]; o[f] = a.concat(name); const ks = Object.keys(o); while (ks.length > 50) delete o[ks.shift()];
+    lsSet(BROUGHT_KEY, JSON.stringify(o));
+  };
+  // the account on this card now (logged in: "Playing as", or the offer after its login); null on the form
+  const meNow = () => (NET.token && L.name) ? L.name : null;
   const fmtTime = s => { s = Math.floor(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60; return h ? `${h}h ${m}m` : m ? `${m}m` : 'under a minute'; };
 
   const DK = {
@@ -35408,21 +35432,24 @@ window.RETALIATE = RETALIATE;
     inSelfTest: false, testView: false,
     clock: () => performance.now() / 1000,
     stats: { offered: 0, brought: 0, fresh: 0 }, askOld: null, CONFIRM_SECS, BROUGHT_KEY, fp,
+    PARK_MAX: L.PARK_MAX,   // the highest slot 71-login's park() uses (00-handoff's self-test reads it)
   };
   window.DEVKNIGHTS = DK;
   const seeing = () => NET.enabled && (!DK.inSelfTest || DK.testView);
 
   // ---------- the knights on this device that no account owns, by slot ----------
+  // all of them, except one the account on the card brought in itself; `by` names the others that brought it in
   DK.find = () => {
     if (!seeing()) return [];
-    const seen = new Set(brought()), out = [];
-    for (let n = 1; n <= 3; n++) {
+    const o = brought(), me = meNow(), seen = new Set(), out = [];
+    for (let n = 1; n <= L.PARK_MAX; n++) {
       const raw = lsGet(SLOT(n)); if (!raw) continue;
       if (n === 1 && lsGet(L.MARK_KEY) != null) continue;
       let reads = false; try { const d = JSON.parse(raw); reads = !!d && typeof d === 'object' && !!d.player; } catch (e) { }
       if (!reads) continue;
       const f = fp(raw); if (seen.has(f)) continue; seen.add(f);
-      out.push(Object.assign({ slot: n, save: raw, at: +lsGet(AT(n)) || 0, device: true }, L.summarizeRaw(raw)));
+      const by = namesOf(o, f); if (me && by.some(x => same(x, me))) continue;
+      out.push(Object.assign({ slot: n, save: raw, at: +lsGet(AT(n)) || 0, device: true, by }, L.summarizeRaw(raw)));
     }
     return out;
   };
@@ -35437,6 +35464,8 @@ window.RETALIATE = RETALIATE;
     return `This device has ${one ? 'a knight' : list.length + ' knights'} saved on it: ${andList(list.map(nameOf))}. ` +
       (one ? "It is safe here. Make a new knight with Ethan's invite code to bring it with you." : "They are safe here. Make a new knight with Ethan's invite code to bring one with you.");
   };
+  // one more line on the card of a knight another account brought in already (it can still come in here too)
+  DK.already = k => k && k.by && k.by.length ? `${andList(k.by)} brought this knight into ${k.by.length === 1 ? 'an account' : 'accounts'} already. You can bring it too.` : '';
   DK.detail = k => { const ch = CHAPTERS[k.chapter - 1] || ''; return `Chapter ${k.chapter}: ${ch}` + (k.region && k.region !== 'Unknown' && k.region !== ch ? ` · in ${k.region}` : '') + ` · played ${fmtTime(k.playSeconds)}`; };
   DK.words = (list = DK.list) => {
     if (list.length === 1) return list[0].device ? `This device has a knight saved on it: ${nameOf(list[0])}. Bring it into your account?` : `Bring your knight from the old address? Level ${list[0].level}.`;
@@ -35458,8 +35487,9 @@ window.RETALIATE = RETALIATE;
     DK.list = list; DK.armed = false; L.offer = null; L.error = ''; L.mode = 'device'; DK.stats.offered++;
     L.refresh();
   });
-  // a knight brought in is remembered (so the next new account is not offered it) once the world has it: its first good push
-  const settle = () => { if (DK.pending && window.CLOUD && CLOUD.pushes > DK.pending.pushes && L.playing) { remember(DK.pending.save); DK.pending = null; } };
+  // a knight brought in is remembered for that account (it no longer sees it; everyone else still does) once the world
+  // has it: its first good push
+  const settle = () => { if (DK.pending && window.CLOUD && CLOUD.pushes > DK.pending.pushes && L.playing) { remember(DK.pending.save, DK.pending.name); DK.pending = null; } };
   HOOKS.update.push(settle);
   // Yes, or a tap on a knight's card: in it goes, the way the old address's knight does (LOGIN.bring). A knight in slot 1
   // is moved to an empty slot first (71-login's park), so what the device held stays on the device.
@@ -35467,7 +35497,7 @@ window.RETALIATE = RETALIATE;
     const k = DK.list[i]; if (L.mode !== 'device' || !k) return false;
     DK.list = []; DK.armed = false; L.mode = 'busy'; L.refresh();
     L.offer = { save: k.save, at: k.at || Date.now() };
-    DK.pending = k.device ? { save: k.save, pushes: window.CLOUD ? CLOUD.pushes : 0 } : null;
+    DK.pending = k.device ? { save: k.save, pushes: window.CLOUD ? CLOUD.pushes : 0, name: L.name } : null;
     const ok = L.bring(true);
     if (!ok) DK.pending = null; else { DK.stats.brought++; settle(); }
     return !!ok;
@@ -35541,13 +35571,15 @@ window.RETALIATE = RETALIATE;
     u.root.hidden = !offer; if (!offer) return;
     const one = DK.list.length === 1;
     u.text.textContent = DK.words();
-    u.sub.textContent = one ? DK.detail(DK.list[0]) + '.' : ''; u.sub.hidden = !one;
+    u.sub.textContent = one ? (DK.detail(DK.list[0]) + '. ' + DK.already(DK.list[0])).trim() : ''; u.sub.hidden = !one;
     u.list.hidden = one; u.list.textContent = '';
     if (!one) DK.list.forEach((k, i) => {
       const b = document.createElement('button'); b.type = 'button';
       const nm = document.createElement('span'); nm.className = 'fl-dk-name'; nm.textContent = k.device ? `Slot ${k.slot} · Level ${k.level}` : `The old address · Level ${k.level}`;
       const sb = document.createElement('span'); sb.className = 'fl-dk-sub'; sb.textContent = DK.detail(k);
-      b.append(nm, sb); b.setAttribute('aria-label', `Bring ${nameOf(k)} into your account`);
+      b.append(nm, sb);
+      if (DK.already(k)) { const al = document.createElement('span'); al.className = 'fl-dk-sub'; al.textContent = DK.already(k); b.append(al); }
+      b.setAttribute('aria-label', `Bring ${nameOf(k)} into your account`);
       b.addEventListener('click', () => DK.pick(i));
       u.list.appendChild(b);
     });
@@ -35567,15 +35599,16 @@ window.RETALIATE = RETALIATE;
   const P = 'deviceknights: ';
   HOOKS.selfTest.push((check, F, h) => {
     if (!title.active) save();
+    const ALL = []; for (let n = 1; n <= L.PARK_MAX; n++) ALL.push(n);
     const KEYS = [L.MARK_KEY, BROUGHT_KEY, 'fanglands.lastname', 'fanglands.slot.current', SAVE_KEY];
     const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, status: NET.status, slot: title.slot, titleActive: title.active, showing: L.showing, playing: L.playing, name: L.name,
-      slots: [1, 2, 3].map(n => [lsGet(SLOT(n)), lsGet(AT(n))]), keys: KEYS.map(k => lsGet(k)), paused, notice, askOld: DK.askOld, clock: DK.clock, view: DK.testView };
+      slots: ALL.map(n => [lsGet(SLOT(n)), lsGet(AT(n))]), keys: KEYS.map(k => lsGet(k)), paused, notice, askOld: DK.askOld, clock: DK.clock, view: DK.testView };
     const lsDel = k => { try { localStorage.removeItem(k); } catch (e) { } };
-    const clearAll = () => { for (let n = 1; n <= 3; n++) { lsDel(SLOT(n)); lsDel(AT(n)); } lsDel(L.MARK_KEY); lsDel(BROUGHT_KEY); };
+    const clearAll = () => { for (const n of ALL) { lsDel(SLOT(n)); lsDel(AT(n)); } lsDel(L.MARK_KEY); lsDel(BROUGHT_KEY); };
     const base = JSON.parse(lsGet(SLOT(title.slot)) || lsGet(SAVE_KEY) || '{"player":{},"quest":{}}'); base.player = base.player || {};
     const knight = (kills, stage, secs) => { const d = JSON.parse(JSON.stringify(base)); d.player.kills = kills; d.player.playSeconds = secs; d.quest = Object.assign({}, d.quest, { stage }); return JSON.stringify(d); };
     const put = (n, raw, at) => { lsSet(SLOT(n), raw); lsSet(AT(n), at); };
-    const slotsNow = () => [1, 2, 3].map(n => lsGet(SLOT(n)) + '@' + lsGet(AT(n))).join('|');
+    const slotsNow = () => ALL.map(n => lsGet(SLOT(n)) + '@' + lsGet(AT(n))).join('|');
     const kills = raw => { try { return JSON.parse(raw).player.kills; } catch (e) { return null; } };
     const cloudKnight = knight(42, 9, 7200);
     // a small world that answers on the spot: Cohen (sword) has a cloud save; the invite code is 'dragon'
@@ -35621,9 +35654,15 @@ window.RETALIATE = RETALIATE;
       check(P + 'a new account with an empty cloud is offered the knight: its slot and level, Yes / Start fresh, nothing sent and nothing written yet', L.mode === 'device' && DK.list.length === 1 && DK.list[0].slot === 2 && words === `This device has a knight saved on it: Slot 2 (level ${lv}). Bring it into your account?` && DK.detail(DK.list[0]).startsWith('Chapter 2: Thistledown') && /played 1h 4m$/.test(DK.detail(DK.list[0])) && !L.playing && world.puts.length === 0 && title.active && lsGet(SLOT(2)) === A, { mode: L.mode, words, detail: DK.list[0] && DK.detail(DK.list[0]) });
       const yes = DK.yes();
       check(P + 'Yes brings it in the way the old address does: slot 1 holds it with the cloud mark, it is the game, that exact string went up at once, and it is still in slot 2', yes && L.playing && !title.active && player.kills === 21 && quest.stage === 6 && world.puts.length === 1 && world.puts[0][0] === 'ann' && world.puts[0][1] === A && lsGet(SLOT(1)) === A && lsGet(L.MARK_KEY) === '1' && lsGet(SLOT(2)) === A && lsGet(AT(2)) === '500' && NET.status === 'on', { yes, kills: player.kills, puts: world.puts.length });
+      // brother and sister on one iPad: a knight one account brought in stays on the device, and every other new account is
+      // still offered it (with a line saying who brought it in already); only the account that brought it no longer sees it
       out(); const offered = DK.stats.offered;
+      const formAfter = DK.line() === want1;
       L.submit('Bea', 'castle', 'dragon', true);
-      check(P + 'once the world has it, it is not named or offered again: the next new account starts fresh', L.playing && DK.stats.offered === offered && player.kills === 0 && kills(world.saves.bea) === 0 && lsGet(SLOT(2)) === A && DK.find().length === 0, { offered: DK.stats.offered - offered, kills: player.kills });
+      const bea = { mode: L.mode, n: DK.list.length, slot: DK.list[0] && DK.list[0].slot, already: DK.already(DK.list[0]), offered: DK.stats.offered - offered };
+      const beaYes = DK.yes();
+      out(); NET.setToken('tok-ann'); L.name = 'Ann'; L.mode = 'me'; const annLine = DK.line(); NET.setToken(null); L.name = null; L.mode = 'form';
+      check(P + 'a knight Ann brought in stays on the device and is still named on the form; Bea (a new account) is offered it with "Ann brought this knight into an account already. You can bring it too." and brings it in too; Ann\'s own "Playing as" no longer names it', formAfter && bea.mode === 'device' && bea.n === 1 && bea.slot === 2 && bea.already === 'Ann brought this knight into an account already. You can bring it too.' && bea.offered === 1 && beaYes && kills(world.saves.bea) === 21 && lsGet(SLOT(2)) === A && annLine === '' && JSON.parse(lsGet(BROUGHT_KEY))[fp(A)].join() === 'Ann,Bea', { formAfter, bea, beaYes, annLine, brought: lsGet(BROUGHT_KEY) });
 
       // 3. several: the kid picks one card; a knight in slot 1 is moved to an empty slot before it is brought
       out(); clearAll(); put(1, B, 900); put(2, C, 700);
@@ -35643,15 +35682,33 @@ window.RETALIATE = RETALIATE;
       now = 300; DK.fresh(); now = 300.79; const early = DK.confirmFresh(); now = 301.2; const pressedAgain = DK.confirmFresh(); now = 302.1; const late = DK.confirmFresh();
       check(P + 'Start fresh asks first: a double tap, a 1.2 s burst of taps and a tap before 0.8 s never start fresh (each press starts the wait again); Go back returns; a tap after a 0.8 s pause makes a new knight and pushes it; every device knight stays', listed === 2 && t1 === false && t2 === false && burst.every(v => v === false) && held && back && early === false && pressedAgain === false && late === true && L.playing && player.kills === 0 && kills(world.saves.dee) === 0 && slotsNow().split('|').slice(1).join() === before4.split('|').slice(1).join() && lsGet(SLOT(3)) === B && lsGet(SLOT(2)) === C, { listed, t1, t2, burst, held, back, early, pressedAgain, late });
 
-      // 5. KEPT: no start path deletes or overwrites a knight no account owns; with no room the start stops and says so
-      out(); clearAll(); put(1, B, 901); put(2, C, 902); put(3, A, 903); const full = slotsNow(), puts5 = world.puts.length;
+      // 5. KEPT, and never stuck: with slots 1, 2 and 3 all holding knights no account owns, every start path moves the one in
+      //    slot 1 to slot 4 first and starts; every knight is still on this device. Only a device with no empty slot up to
+      //    PARK_MAX, or storage that refuses the write, stops the start (and says so; nothing written, nothing sent).
+      const full3 = () => { out(); clearAll(); put(1, B, 901); put(2, C, 902); put(3, A, 903); };
+      const kept3 = () => lsGet(SLOT(4)) === B && lsGet(AT(4)) === '901' && lsGet(SLOT(2)) === C && lsGet(AT(2)) === '902' && lsGet(SLOT(3)) === A && lsGet(AT(3)) === '903';
+      full3(); L.submit('Cohen', 'sword', '', false);
+      const login5 = { playing: L.playing, kills: player.kills, slot1: lsGet(SLOT(1)) === cloudKnight, kept: kept3() };
+      full3(); L.submit('Eve', 'castle', 'dragon', true); const offer5 = DK.list.map(k => k.slot).join();
+      now = 400; DK.fresh(); now = 401; const fresh5 = DK.confirmFresh();
+      const fresh5s = { ok: fresh5, playing: L.playing, kills: player.kills, mark: lsGet(L.MARK_KEY) === '1', kept: kept3() };
+      full3(); L.submit('Fay', 'castle', 'dragon', true); const pick5 = DK.pick(1);
+      const pick5s = { ok: pick5, playing: L.playing, kills: player.kills, cloud: world.saves.fay === C, slot1: lsGet(SLOT(1)) === C, kept: kept3() };
+      full3(); L.submit('Gus', 'castle', 'dragon', true); const pick1 = DK.pick(0);
+      const pick1s = { ok: pick1, playing: L.playing, kills: player.kills, cloud: world.saves.gus === B, kept: kept3() };
+      full3(); const reload5 = L.reload(cloudKnight, 5) === true && lsGet(SLOT(1)) === cloudKnight && kept3();
+      check(P + 'with slots 1, 2 and 3 all holding knights no account owns, a login with a cloud save, Start fresh, a pick (slot 2, and slot 1 itself) and Put my knight back each start, the knight in slot 1 first moved to slot 4, every knight still on this device', login5.playing && login5.kills === 42 && login5.slot1 && login5.kept && offer5 === '1,2,3' && fresh5s.ok && fresh5s.playing && fresh5s.kills === 0 && fresh5s.mark && fresh5s.kept && pick5s.ok && pick5s.playing && pick5s.kills === 2 && pick5s.cloud && pick5s.slot1 && pick5s.kept && pick1s.ok && pick1s.playing && pick1s.kills === 1 && pick1s.cloud && pick1s.kept && reload5 && DEVKNIGHTS.PARK_MAX === L.PARK_MAX && L.PARK_MAX >= 6, { login5, offer5, fresh5s, pick5s, pick1s, reload5 });
+      // no empty slot up to PARK_MAX at all, then storage that refuses the move: the start stops in plain words, nothing changes
+      out(); clearAll(); title.open(); for (const n of ALL) put(n, knight(100 + n, 1, n), 1000 + n); const fullAll = slotsNow(), puts5 = world.puts.length;
       L.submit('Cohen', 'sword', '', false);
-      const login5 = { mode: L.mode, error: L.error, playing: L.playing, same: slotsNow() === full, puts: world.puts.length - puts5, title: title.active };
-      L.notMe(); L.submit('Eve', 'castle', 'dragon', true); const offer5 = L.mode === 'device' && DK.list.length === 3;
-      now = 400; DK.fresh(); now = 401; const fresh5 = DK.confirmFresh(); const fresh5s = { mode: L.mode, error: L.error, playing: L.playing, same: slotsNow() === full };
-      L.mode = 'busy'; L.bridge.ask(() => { }); const pick5 = DK.pick(1) === false && slotsNow() === full && !L.playing;
-      const reload5 = L.reload(cloudKnight, 5) === false && slotsNow() === full;
-      check(P + 'with slots 1, 2 and 3 all holding knights no account owns, no start path writes a slot: a login with a cloud save, Start fresh, a pick and Put my knight back each stop and say so in plain words, and nothing is sent', login5.mode === 'me' && login5.error === L.NO_ROOM && !login5.playing && login5.same && login5.puts === 0 && login5.title && offer5 && fresh5 === false && fresh5s.error === L.NO_ROOM && !fresh5s.playing && fresh5s.same && pick5 && reload5 && world.puts.length === puts5, { login5, offer5, fresh5, fresh5s, pick5, reload5 });
+      const none5 = { mode: L.mode, error: L.error, playing: L.playing, same: slotsNow() === fullAll, puts: world.puts.length - puts5, title: title.active };
+      L.notMe(); clearAll(); put(1, B, 901); put(2, C, 902); const two5 = slotsNow();
+      const S = typeof Storage !== 'undefined' && localStorage instanceof Storage ? Storage.prototype : localStorage, realSet = S.setItem;
+      S.setItem = function (k, v) { if (/^fanglands\.slot\.[2-9]\d*$/.test(k)) { const e = new Error('The quota has been exceeded.'); e.name = 'QuotaExceededError'; throw e; } return realSet.call(this, k, v); };
+      let refused;
+      try { L.submit('Cohen', 'sword', '', false); refused = { mode: L.mode, error: L.error, playing: L.playing, same: slotsNow() === two5, puts: world.puts.length - puts5 }; }
+      finally { S.setItem = realSet; }
+      check(P + 'only with no empty slot up to PARK_MAX, or storage refusing the move, does a start stop: the card says so in plain words, nothing is written and nothing is sent', none5.mode === 'me' && none5.error === L.NO_ROOM && !none5.playing && none5.same && none5.puts === 0 && none5.title && refused.mode === 'me' && refused.error === L.NO_ROOM && !refused.playing && refused.same && refused.puts === 0 && /did not start/.test(L.NO_ROOM) && /still here/.test(L.NO_ROOM), { none5, refused });
       L.notMe(); lsDel(SLOT(3)); lsDel(AT(3)); const before5 = lsGet(SLOT(1));
       L.submit('Cohen', 'sword', '', false);
       check(P + 'with room, a login with a cloud save moves the knight in slot 1 to an empty slot first, then loads the cloud knight', L.playing && player.kills === 42 && lsGet(SLOT(1)) === cloudKnight && lsGet(SLOT(3)) === before5 && lsGet(AT(3)) === '901' && lsGet(SLOT(2)) === C, { kills: player.kills, slot3: kills(lsGet(SLOT(3))) });
@@ -35703,7 +35760,7 @@ window.RETALIATE = RETALIATE;
       L.hide(); L.bridge.done(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.setToken(was.token); NET.status = 'off'; NET.me = null;
       DK.askOld = was.askOld; DK.clock = was.clock; DK.testView = was.view; DK.list = []; DK.armed = false; DK.pending = null;
       L.playing = was.playing; L.name = was.name; L.error = ''; L.offer = null; L.busy = false; L.mode = 'form'; paint();
-      for (let n = 1; n <= 3; n++) { const [s, a] = was.slots[n - 1]; if (s == null) { lsDel(SLOT(n)); lsDel(AT(n)); } else { lsSet(SLOT(n), s); lsSet(AT(n), a || Date.now()); } }
+      for (const n of ALL) { const [s, a] = was.slots[n - 1]; if (s == null) { lsDel(SLOT(n)); lsDel(AT(n)); } else { lsSet(SLOT(n), s); lsSet(AT(n), a || Date.now()); } }
       KEYS.forEach((k, i) => { if (was.keys[i] == null) lsDel(k); else lsSet(k, was.keys[i]); });
       if (window.CLOUD) window.CLOUD.reset();
       if (was.titleActive) { title.open(); if (was.showing) L.show(); } else title.startSlot(was.slot);

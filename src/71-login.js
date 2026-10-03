@@ -8,9 +8,10 @@
 // save yet is offered the one on the old GitHub Pages address (bridge.html, in a hidden iframe) or starts fresh.
 // There is no Play alone online (owner, 2026-10-03: "everything should be server side so that they can play on multiple
 // devices"): every knight is an account's, made with Ethan's invite code. A knight saved on this device that no account
-// owns (a Play alone knight from before) is never deleted or overwritten: park() moves it out of slot 1 first, and with
-// no room the start stops and says so. src/72-deviceknights.js names those knights on the card and offers them to a new
-// account. Offline (no NET) the title keeps its three slots exactly as before.
+// owns (a Play alone knight from before) is never deleted or overwritten: park() moves it out of slot 1 first (to any
+// empty slot up to LOGIN.PARK_MAX), and only if storage has no room the start stops and says so. 72-deviceknights
+// names those knights on the card and offers them to a new account. Offline (no NET) the title
+// keeps its three slots exactly as before.
 // Feature file: registers through HOOKS and wraps title.open / title.tick / drawHud by reassignment. Nothing in
 // here touches the DOM without checking there is one (tools/headless.js has no document.body).
 // window.LOGIN is the register; docs/ONLINE.md is the contract.
@@ -139,20 +140,29 @@
 
   // ---------- slot 1 is the online knight's slot ----------
   // A knight saved only on this device in slot 1 (no cloud mark: a Play alone knight from before) is never deleted or
-  // overwritten: it is moved to an empty slot (2 or 3) before a cloud knight takes slot 1 over. If slots 2 and 3 already
-  // hold it, it is safe as it is. With no room, park() says no and the start stops (claim and fresh write nothing). The
-  // mark says slot 1 currently holds a cloud knight; 72-cloudsave clears it when a local save lands there.
+  // overwritten: it is moved to the first empty slot from 2 to PARK_MAX before a cloud knight takes slot 1 over (online
+  // there are no slot cards, so slots past 3 are only ever this; 00-handoff counts every fanglands.slot.N as a knight). If
+  // another slot already holds the same string it is safe as it is. The move is read back; only when no slot is empty or
+  // storage refuses the write does park() say no, and then the start stops (claim and fresh write nothing). The mark says
+  // slot 1 currently holds a cloud knight; 72-cloudsave clears it when a local save lands there.
   // park() is true when slot 1 may be written.
+  const PARK_MAX = 9;
+  LOGIN.PARK_MAX = PARK_MAX;
   const park = () => {
     const cur = lsGet(SLOT(1)); if (!cur || lsGet(MARK_KEY) != null) return true;
-    for (let n = 2; n <= 3; n++) if (lsGet(SLOT(n)) === cur) return true;
-    for (let n = 2; n <= 3; n++) if (!lsGet(SLOT(n))) { lsSet(SLOT(n), cur); lsSet(AT(n), lsGet(AT(1)) || Date.now()); return true; }
+    for (let n = 2; n <= PARK_MAX; n++) if (lsGet(SLOT(n)) === cur) return true;
+    for (let n = 2; n <= PARK_MAX; n++) if (!lsGet(SLOT(n))) {
+      lsSet(SLOT(n), cur); lsSet(AT(n), lsGet(AT(1)) || Date.now());
+      if (lsGet(SLOT(n)) === cur) return true;
+      lsDel(SLOT(n)); lsDel(AT(n)); return false;   // storage refused it (full): nothing moved, slot 1 stays as it was
+    }
     return false;
   };
   const claim = (raw, at) => { if (!park()) return false; lsSet(SLOT(1), raw); lsSet(AT(1), at || Date.now()); lsSet(MARK_KEY, '1'); if (window.CLOUD) window.CLOUD.known = raw; return true; };
   const fresh = () => { if (!park()) return false; lsDel(SLOT(1)); lsDel(AT(1)); lsSet(MARK_KEY, '1'); if (window.CLOUD) window.CLOUD.known = null; return true; };
-  // no room to keep this device's knights safe: the start stops here, nothing is written, the card says so
-  const NO_ROOM = 'There is no room on this device to keep its saved knights safe, so the game did not start. Ask Ethan for help.';
+  // no room to keep this device's knights safe (every slot up to PARK_MAX holds one, or storage is full): the start stops
+  // here, nothing is written, the card says so
+  const NO_ROOM = 'This device has no room left to keep its saved knights safe, so the game did not start. They are all still here. Ask Ethan for help.';
   LOGIN.NO_ROOM = NO_ROOM;
   const noRoom = () => { LOGIN.busy = false; LOGIN.offer = null; LOGIN.mode = NET.token ? 'me' : 'form'; LOGIN.error = NO_ROOM; refresh(); return false; };
 
