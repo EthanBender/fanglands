@@ -18,6 +18,14 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   warhammer pickaxe hoe hammer bow arrow bomb helm body legs shield. Unknown shapes draw a disc.
 - `MONSTER_DEFS.my_monster = { name, level, r, hp, att, maxHit, def, speed, aggro, sight, respawn, drops, human?, harmless?, thrower?, mech? }`
   and a sprite via `HOOKS.drawMonster.my_monster = (g, e, hurt) => {...}` (g is already translated to the monster's position; draw around 0,0; `e.facing`, `e.walkT`, `e.moving`, `e.attackT`).
+  Its death is drawn by `src/79-deaths.js` from the same sprite: one of six kinds, `beast` (falls onto its side, kicks, fades),
+  `person` (falls back, the weapon clatters away), `undead` (crumbles into dust and bones), `machine` (sparks, smokes, breaks apart),
+  `dragon` (crashes down, a last breath of smoke) or `golem` (cracks and splits into rubble). Name it in the def with
+  `death: 'undead'` (otherwise `mech` gives a machine, `human` a person, anything else a beast) and add `boss: true` for the
+  three second boss scene (level 25+ with 300+ hp, an instance boss and a `HOOKS.bossCall` type already get it). A person's sprite
+  must skip the weapon in its hand when `e.unarmed` is set (`drawHuman` does it for you), because the death draws it flying off.
+  Drops are still rolled at the kill; the death only delays drawing them. Anything else a feature draws for a monster must
+  stop when `m.dead` is set, or it will show on top of the corpse.
 - `RECIPES.push({ out, qty, needs: [[id, n]], station: 'workbench'|'anvil'|'workshop'|'alchemy'|null, skill, lv, xp, label })`,
   `SMELT.push(...)`, `SHOPS.my_shop = { name, stock: [[id, price]] }`.
 - Tiles: `const MY = addTile('MY', { solid, push, placeableOn, tex: 'cobble'|'dirt'|..., mini: '#hex' })`.

@@ -60,14 +60,17 @@ const DEATHS = (() => {
   const here = () => window.__instance || null;
   const shakeOn = () => { try { return typeof SETTINGS === 'undefined' || SETTINGS.get('shake') !== false; } catch (e) { return true; } };
 
+  // a monster's own def may name its death (`death: 'undead'`) and mark it a boss (`boss: true`); docs/EXTENDING.md
   function kindOf(type) {
-    if (KIND[type]) return KIND[type];
     const d = MONSTER_DEFS[type] || {};
+    if (typeof d.death === 'string' && EVENTS[d.death]) return d.death;
+    if (KIND[type]) return KIND[type];
     return d.mech ? 'machine' : d.human ? 'person' : 'beast';
   }
   function isBoss(type) {
-    if (BOSS_TYPES.has(type)) return true;
     const d = MONSTER_DEFS[type];
+    if (d && d.boss === true) return true;
+    if (BOSS_TYPES.has(type)) return true;
     // the same rule the core uses to put up a boss banner
     if (d && d.level >= 25 && d.hp >= 300) return true;
     if (HOOKS.bossCall) for (const k in HOOKS.bossCall) { const b = HOOKS.bossCall[k]; if (b && b.type === type) return true; }
