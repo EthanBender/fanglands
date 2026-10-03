@@ -29,7 +29,7 @@ function pointerDown(x, y, id) {
   if (typeof HK !== 'undefined') HK.pressDrop(id);   // a new press with this id ends any press it left unreleased
   for (let i = buttons.length - 1; i >= 0; i--) {
     const b = buttons[i]; if (!hitButton(b, x, y)) continue;
-    if (b.inert) return;
+    if (b.inert) { if (typeof b.press === 'function') b.press(); return; }
     if (b.up || b.hold) { if (typeof HK !== 'undefined') HK.pressStart(b, x, y, id, false); return; }
     if (typeof HK !== 'undefined') HK.pressStart(b, x, y, id, true);
     sfx('ui'); b.action(); return;

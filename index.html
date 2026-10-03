@@ -937,7 +937,7 @@ function pointerDown(x, y, id) {
   if (typeof HK !== 'undefined') HK.pressDrop(id);   // a new press with this id ends any press it left unreleased
   for (let i = buttons.length - 1; i >= 0; i--) {
     const b = buttons[i]; if (!hitButton(b, x, y)) continue;
-    if (b.inert) return;
+    if (b.inert) { if (typeof b.press === 'function') b.press(); return; }
     if (b.up || b.hold) { if (typeof HK !== 'undefined') HK.pressStart(b, x, y, id, false); return; }
     if (typeof HK !== 'undefined') HK.pressStart(b, x, y, id, true);
     sfx('ui'); b.action(); return;
@@ -40382,7 +40382,11 @@ window.RETALIATE = RETALIATE;
 // picks. A small "Decide later" goes in as a boy and asks again next time. The knight goes in only once it is answered,
 // so a new knight online is the girl in his first presence and in his first cloud save. title.open() drops an unanswered
 // card (the login card comes back). Nothing is asked while the self-test runs (it starts slots for its own reasons).
-// The pause menu's New game makes a fresh knight in the world; he is asked on the title the next time he comes in.
+// The card only takes taps once it has been up for half a second (ARM_MS): until then its knights are drawn faded and
+// its controls swallow a press and do nothing, so a double tap or an impatient second tap on the slot card, Continue or
+// Play that brought it up (they sit right where Boy and Girl are drawn) never picks for the child.
+// The pause menu's New game erases the progress, not the knight: a girl knight stays a girl (and is saved as one), so
+// she never comes back into the world as a boy and her friends never see her change.
 //
 // How she looks: playerLook() gains `girl: true` (and drawHuman's own `woman: true`: the skirt and the long hair) and her
 // own hair colour. drawHuman draws, for any look with `girl`, a braid over the shoulder with a ribbon (it hangs out of
@@ -40400,7 +40404,8 @@ window.RETALIATE = RETALIATE;
 // changes a knight.
 //
 // Wraps by reassignment with explicit arguments: playerLook, drawHuman, drawHud (the card, only while it is asked on
-// the title), title.sprites, title.ask, title.startSlot, title.open, HOOKS.panel.settings, FANGLANDS.selfTest.
+// the title), newGame (and FANGLANDS.newGame), title.sprites, title.ask, title.startSlot, title.open,
+// HOOKS.panel.settings, FANGLANDS.selfTest.
 // ============================================================================
 const BOYGIRL = (() => {
   const GIRL_HAIR = '#8a4f24', RIBBON = '#d0567f';
@@ -40488,7 +40493,13 @@ const BOYGIRL = (() => {
   // ---------- when to ask: on the title, before the knight is in the world ----------
   // ask: the card is up ({ n: the slot, go: what goes into the world, fresh: a new game }). want: the answer, laid on the
   // knight the moment title.startSlot has loaded him (inside go, before the socket opens or the cloud is pushed).
+  // at: when the card went up (nowMs); it takes taps only ARM_MS later (see armed)
   let quiet = 0, ask = null, want = null;
+  const ARM_MS = 500;
+  const armed = () => !!ask && nowMs() - ask.at >= ARM_MS;
+  // a press on the card while it is still waiting starts the wait again, so a burst of taps (two, three, ten) never picks:
+  // only a tap after the child has stopped tapping for half a second can (05-input calls an inert button's press)
+  const rearm = () => { if (ask) ask.at = nowMs(); };
   const chosen = () => player.gender === 'girl' || player.gender === 'boy';
   // the choice in a slot's save, read before it is loaded (null: an empty slot, one that cannot be read, or no choice)
   const savedChoice = n => {
@@ -40501,7 +40512,7 @@ const BOYGIRL = (() => {
     // takes the card's place (online, it would put a Play alone slot in the world instead of the knight who logged in)
     if (ask) return false;
     if (quiet || savedChoice(n)) return _ask(n, go);
-    ask = { n, go, fresh: !lsGet(title.slotKey(n)) };
+    ask = { n, go, fresh: !lsGet(title.slotKey(n)), at: nowMs() };
     keys.clear(); pressed.clear(); touch.taps.length = 0;
     return true;
   };
@@ -40521,6 +40532,16 @@ const BOYGIRL = (() => {
   };
   const _open = title.open;
   title.open = function () { ask = null; return _open(); };
+  // New game from the pause menu erases the progress, not the knight: the choice carries over and is saved with the
+  // fresh knight (title.startSlot calls the core newGame itself, so a slot's load never meets this)
+  const _newGame = newGame;
+  newGame = function () {
+    const gnd = player.gender;
+    const r = _newGame();
+    if (gnd === 'girl' || gnd === 'boy') { player.gender = gnd; save(); }
+    return r;
+  };
+  window.FANGLANDS.newGame = newGame;
   // the self-test drives startSlot, Continue and the login for its own reasons: it never meets the card unless a check
   // asks for it
   { const F = window.FANGLANDS, _selfTest = F.selfTest;
@@ -40566,6 +40587,9 @@ const BOYGIRL = (() => {
     const subs = ask.fresh ? ['Pick your new knight. Settings can change it later.', 'Pick your new knight.'] : ['Pick your knight. Settings can change it later.', 'Pick your knight.'];
     const sub = subs.find(s => HK.tw(g, s, sf) <= box.w) || subs[subs.length - 1];
     HK.text(g, sub, VW / 2, y + (F.short ? 43 : 54), { font: sf, align: 'center', color: T.inkDim, box, fitId: 'boygirl:sub' });
+    // not armed yet: the choices fade in and their places swallow a press (no press started now can pick when it lifts)
+    const live = armed(), fade = live ? 1 : 0.4 + 0.4 * clamp((nowMs() - ask.at) / ARM_MS, 0, 1);
+    g.save(); g.globalAlpha = fade;
     [['boy', 'Boy'], ['girl', 'Girl']].forEach(([gnd, word], i) => {
       const cx = x + pad + i * (cardW + gap), cy = y + headH;
       const label = 'choose:' + gnd, st = HK.stateOf(label), dy = st.pressed ? 1.5 : 0;
@@ -40584,9 +40608,13 @@ const BOYGIRL = (() => {
       g.restore();
       // the word on an iron plate along the card's foot (drawn only: the whole card is the tap)
       HK.plateButton(g, { x: cx + 10, y: cy + cardH - R - 10 + dy, w: cardW - 20, h: R }, null, word, 'primary', { cinzel: true, hover: st.hover });
-      buttons.push({ x: cx, y: cy, w: cardW, h: cardH, label, action: () => answer(gnd), up: true, name: word === 'Boy' ? 'A boy knight' : 'A girl knight' });
+      buttons.push(live ? { x: cx, y: cy, w: cardW, h: cardH, label, action: () => answer(gnd), up: true, name: word === 'Boy' ? 'A boy knight' : 'A girl knight' }
+        : { x: cx, y: cy, w: cardW, h: cardH, label: 'wait:' + label, action: () => { }, inert: true, press: rearm });
     });
-    platePush(g, Math.round(VW / 2 - laterW / 2), y + headH + cardH + 12, laterW, R, 'boygirl:later', 'Decide later', () => answer(null), null, { name: 'Play as a boy for now; it asks again next time' });
+    const lx = Math.round(VW / 2 - laterW / 2), ly = y + headH + cardH + 12;
+    if (live) platePush(g, lx, ly, laterW, R, 'boygirl:later', 'Decide later', () => answer(null), null, { name: 'Play as a boy for now; it asks again next time' });
+    else { HK.plateButton(g, { x: lx, y: ly, w: laterW, h: R }, null, 'Decide later', null, {}); buttons.push({ x: lx, y: ly, w: laterW, h: R, label: 'wait:boygirl:later', action: () => { }, inert: true, press: rearm }); }
+    g.restore();
   }
   const _drawHud = drawHud;
   drawHud = function (g) {
@@ -40639,8 +40667,13 @@ const BOYGIRL = (() => {
     const unchoose = n => { const d = JSON.parse(lsGet(SK(n))); delete d.player.gender; lsSet(SK(n), JSON.stringify(d)); };
     const labels = () => buttons.filter(b => !b.offscreen).map(b => b.label).sort().join(',');
     const CARD = 'boygirl:later,choose:boy,choose:girl';
-    // a real tap: down and up in the middle of the button
-    const tap = label => { render(); const b = buttons.find(q => q.label === label); if (!b) return false; const x = b.x + b.w / 2, y = b.y + b.h / 2; pointerDown(x, y, 'boygirl-test'); pointerUp('boygirl-test', x, y); render(); return true; };
+    // the card as it is half a second after it went up (it takes taps from then on)
+    const armNow = () => { if (ask) ask.at = nowMs() - ARM_MS - 1; render(); };
+    // a real tap: down and up at a spot on the screen, or in the middle of a button (on the card: once it is armed)
+    const tapAt = (x, y) => { pointerDown(x, y, 'boygirl-test'); pointerUp('boygirl-test', x, y); };
+    const tap = label => { if (ask) armNow(); else render(); const b = buttons.find(q => q.label === label); if (!b) return false; tapAt(b.x + b.w / 2, b.y + b.h / 2); render(); return true; };
+    // the card's controls as drawn right now, armed or not
+    const cardRects = () => buttons.filter(b => /^(wait:)?(choose:|boygirl:later)/.test(b.label));
     // every time a 'boygirl' page is opened in the world
     let opened = 0; const _openPanel = openPanel; openPanel = function (name, arg) { if (name === 'boygirl') opened++; return _openPanel(name, arg); };
     try {
@@ -40668,7 +40701,7 @@ const BOYGIRL = (() => {
       // Taps off it and the keys Enter, Space, Esc do nothing. Tapping Girl starts the game as a girl knight, saved.
       { NET.enabled = false; panelSetSize(768, 1024); window.__forceTouch = true;
         lsDel(SK(3)); lsDel(AK(3)); title.open(); render();
-        const tapped = F.clickButton('Slot 3');
+        const tapped = F.clickButton('Slot 3'); armNow();
         const a0 = ask, r = { tapped, asking: !!ask, n: ask && ask.n, fresh: ask && ask.fresh, title: title.active, saved: lsGet(SK(3)) !== null, labels: labels() };
         const cards = buttons.filter(b => /^choose:/.test(b.label)); r.big = cards.length === 2 && cards.every(b => b.w >= 120 && b.h >= 110);
         // stray presses: the four corners of the screen and the space under the card, then Enter, Space and Esc on the title's tick
@@ -40690,16 +40723,70 @@ const BOYGIRL = (() => {
       // 5. a knight who has chosen goes straight in from his slot
       { title.open(); render(); const tapped = F.clickButton('Slot 3');
         check(P + 'a knight who has chosen is not asked: his slot goes straight into the world', tapped && !ask && !title.active && player.gender === 'girl', { tapped, asking: !!ask, title: title.active, gender: player.gender }); }
+      // 5b. a double tap (or an impatient second tap) on the slot card or Continue that put the card up never picks: the
+      // second tap lands where Boy or Girl is drawn, but the card swallows every press for its first half second. Real
+      // taps (pointerDown + pointerUp) at spots across the button, the second one right after the first (before the next
+      // frame) or 120, 300 or 450 ms later, on an iPad upright and a phone. Once armed, the same spot picks.
+      { const bad = []; let tries = 0, onCard = 0, armedPick = null;
+        NET.enabled = false; window.__forceTouch = true;
+        try {
+          for (const [w, hh] of [[768, 1024], [390, 844]]) {
+            if (!panelSetSize(w, hh)) { bad.push(`${w}x${hh}: no such size`); continue; }
+            for (const kind of ['new', 'continue']) for (const [fx, fy] of [[0.15, 0.5], [0.3, 0.5], [0.5, 0.5], [0.7, 0.5], [0.3, 0.85], [0.85, 0.3]]) for (const gap of [0, 120, 300, 450]) {
+              // 'new': empty slot 2; 'continue': slot 3's knight with no choice, the latest game
+              lsDel(SK(2)); lsDel(AK(2)); unchoose(3); lsSet(AK(3), Date.now() + 1e7);
+              title.open(); render();
+              const where = `${w}x${hh} ${kind} ${fx},${fy} +${gap}ms`, n = kind === 'new' ? 2 : 3;
+              const b = buttons.find(q => q.label === (kind === 'new' ? 'Slot 2' : 'Continue'));
+              if (!b) { bad.push(`${where}: no button`); continue; }
+              const x = b.x + b.w * fx, y = b.y + b.h * fy; tries++;
+              tapAt(x, y);
+              if (!ask || ask.n !== n) { bad.push(`${where}: no card`); continue; }
+              if (gap) { ask.at = nowMs() - gap; render(); }
+              if (cardRects().some(c => hitButton(c, x, y))) onCard++;
+              tapAt(x, y); render(); title.tick(1 / 60);
+              const ok = !!ask && ask.n === n && title.active && (kind === 'new' ? lsGet(SK(2)) === null : savedOf(3) === null);
+              if (!ok) bad.push(`${where}: asking ${!!ask} title ${title.active} gender ${player.gender} saved ${kind === 'new' ? lsGet(SK(2)) !== null : savedOf(3)}`);
+            }
+          }
+          // armed: the same spot on an empty slot now picks (it is Boy's card), so the taps above were on a choice
+          panelSetSize(768, 1024); lsDel(SK(2)); lsDel(AK(2)); title.open(); render();
+          const b = buttons.find(q => q.label === 'Slot 2'), x = b.x + b.w * 0.3, y = b.y + b.h / 2;
+          tapAt(x, y); armNow(); tapAt(x, y); render();
+          armedPick = { title: title.active, gender: player.gender, saved: savedOf(2) };
+        } finally { window.__forceTouch = t0; restore(); }
+        check(P + 'a double tap never picks: a second tap on the slot card or Continue that put "Boy or girl?" up (on the spot where Boy or Girl is drawn, right away or up to 450 ms later, iPad and phone) leaves the card up, the knight out of the world and nothing saved; half a second later the same spot picks', tries === 96 && bad.length === 0 && onCard >= 40 && armedPick && !armedPick.title && armedPick.gender === 'boy' && armedPick.saved === 'boy', { tries, onCard, bad: bad.slice(0, 6), total: bad.length, armedPick }); }
+      // 5c. a burst of taps never picks: three, five or ten quick taps (150 ms apart) on the spot where Boy is drawn keep the
+      // card waiting, because every press on the waiting card starts its half second again; the first tap after the child
+      // stops for half a second picks. (Before this, any tap 500 ms after the card went up picked, so a triple tap could.)
+      { const res = []; let pick = null;
+        NET.enabled = false; window.__forceTouch = true;
+        try {
+          panelSetSize(768, 1024);
+          for (const taps of [3, 5, 10]) {
+            lsDel(SK(2)); lsDel(AK(2)); title.open(); render();
+            const b = buttons.find(q => q.label === 'Slot 2'), x = b.x + b.w * 0.3, y = b.y + b.h / 2;
+            tapAt(x, y);
+            for (let k = 0; k < taps; k++) { if (ask) { ask.at -= 150; render(); } tapAt(x, y); render(); title.tick(1 / 60); }
+            res.push({ taps, asking: !!ask, title: title.active, saved: lsGet(SK(2)) !== null });
+          }
+          // the child stops for half a second, then taps Boy's spot once: that picks
+          if (ask) { ask.at = nowMs() - ARM_MS - 1; render(); }
+          const b = buttons.find(q => q.label === 'choose:boy'); if (b) { tapAt(b.x + b.w / 2, b.y + b.h / 2); render(); }
+          pick = { asking: !!ask, title: title.active, gender: player.gender, saved: savedOf(2) };
+        } finally { window.__forceTouch = t0; restore(); }
+        check(P + 'a burst of taps never picks: 3, 5 or 10 quick taps where Boy is drawn leave the card up and nothing saved; one tap after a half-second pause picks Boy',
+          res.every(r => r.asking && r.title && !r.saved) && !!pick && !pick.asking && !pick.title && pick.gender === 'boy' && pick.saved === 'boy', { res, pick }); }
       // 6. a knight from before this (no choice in his save): Enter on the title (Continue) asks first; Boy starts him as a boy
       { unchoose(3); title.open(); pressed.add('Enter'); title.tick(1 / 60);
         const r = { asking: !!ask, n: ask && ask.n, fresh: ask && ask.fresh, title: title.active };
-        render(); r.labels = labels(); r.boy = F.clickButton('choose:boy');
+        armNow(); r.labels = labels(); r.boy = F.clickButton('choose:boy');
         r.after = { title: title.active, gender: player.gender, saved: savedOf(3), look: !playerLook().girl };
         check(P + 'a knight who never chose is asked on the title before Continue (Enter) puts him in the world; Boy starts him as a boy, saved', r.asking && r.n === 3 && r.fresh === false && r.title && r.labels === CARD && r.boy && !r.after.title && r.after.gender === 'boy' && r.after.saved === 'boy' && r.after.look, r); }
       // 7. "Decide later": he goes in as a boy with no choice saved, nothing asks in the world, and the title asks again
       // next time; title.open() drops an unanswered card
       { unchoose(3); title.open(); render(); const r = { cont: F.clickButton('Continue'), asking: !!ask };
-        render(); r.later = F.clickButton('boygirl:later');
+        armNow(); r.later = F.clickButton('boygirl:later');
         r.after = { title: title.active, gender: player.gender || null, saved: savedOf(3), look: !playerLook().girl };
         const o0 = opened; for (let i = 0; i < 120; i++) F.step([]); r.quiet = opened === o0 && panel !== 'boygirl';
         title.open(); render(); F.clickButton('Slot 3'); r.again = !!ask && title.active;
@@ -40757,7 +40844,17 @@ const BOYGIRL = (() => {
       { remember('girl'); const K = title.KNIGHT; title.sprites(recorder().g, 0, 0, 1, 0, 0, 1); const girl = !!(K && K.girl);
         remember('boy'); title.sprites(recorder().g, 0, 0, 1, 0, 0, 1); const boy = !!(K && !K.girl && K.hair === '#5a3a1e');
         check(P + 'the title screen\'s knight matches the last knight played on this device', girl && boy, { girl, boy }); }
-      // 10c. the card's knights are drawn as every knight in the game is (82-knightgear's new style: knight looks, the
+      // 10c. New game from the pause menu erases the progress, not the knight: a girl knight stays a girl in the world, in
+      // the slot's save and in what her next presence sends; a knight who never chose stays unchosen with nothing saved
+      { const menuNew = () => { paused = true; render(); const a = F.clickButton('New game'); render(); const b = F.clickButton('Really erase'); render(); paused = false; return a && b; };
+        player.gender = 'girl'; save(); quest.stage = Math.max(quest.stage, 1); const s0 = title.slot;
+        const r = { erased: menuNew() };
+        r.after = { title: title.active, asking: !!ask, gender: player.gender || null, saved: savedOf(s0), stage: quest.stage, look: playerLook().girl === true, wire: window.PLAYERS && PLAYERS.lookOf ? PLAYERS.lookOf().girl : 'none' };
+        for (let i = 0; i < 60; i++) F.step([]); r.later = { gender: player.gender || null, title: title.active };
+        delete player.gender; r.unchosenErased = menuNew(); r.unchosen = { gender: player.gender || null, saved: lsGet(SK(s0)) === null ? null : savedOf(s0) };
+        player.gender = 'boy';
+        check(P + 'New game from the pause menu keeps the knight: a girl stays a girl (in the world, her slot\'s save, her look and her presence) with the progress erased; a knight who never chose stays unchosen', r.erased && !r.after.title && !r.after.asking && r.after.gender === 'girl' && r.after.saved === 'girl' && r.after.stage === 0 && r.after.look && (r.after.wire === true || r.after.wire === 'none') && r.later.gender === 'girl' && !r.later.title && r.unchosenErased && r.unchosen.gender === null && r.unchosen.saved === null, r); }
+      // 10d. the card's knights are drawn as every knight in the game is (82-knightgear's new style: knight looks, the
       // new drawing runs for each), the girl card a girl and the boy card a boy, and each knight with his shadow is inside
       // his card above its word plate, at all 8 device sizes, touch and mouse
       if (window.KNIGHTGEAR) {
@@ -40790,7 +40887,7 @@ const BOYGIRL = (() => {
           for (const [w, hh] of HK.audit.SIZES) {
             if (!panelSetSize(w, hh)) continue; tried++;
             for (const tch of [true, false]) for (const fresh of [true, false]) {
-              window.__forceTouch = tch; SETTINGS.set('text', 'large'); title.open(); ask = { n: 3, go: () => { }, fresh };
+              window.__forceTouch = tch; SETTINGS.set('text', 'large'); title.open(); ask = { n: 3, go: () => { }, fresh, at: -1e9 };
               const where = `boygirl ${w}x${hh} ${tch ? 'touch' : 'mouse'}${fresh ? ' new' : ''}`;
               problems.push(...panelFrame(where, { from: 0, panel: false }));
               const cards = buttons.filter(b => /^choose:/.test(b.label)), Fr = title.frame(), A = askRect;
@@ -40826,7 +40923,7 @@ const BOYGIRL = (() => {
           NET.enabled = true; NET.useFake(world); NET.setToken(null); L.alone = false; L.playing = false; if (window.CLOUD) CLOUD.reset();
           // a new knight: after sign-up the card is on the title; the login card is put away, no socket, nothing pushed
           title.open(); const shown = L.showing;
-          L.submit('Mia', 'castle', 'dragon', true); render();
+          L.submit('Mia', 'castle', 'dragon', true); armNow();
           const a = { shown, asking: !!ask, fresh: ask && ask.fresh, title: title.active, playing: L.playing, showing: L.showing, socks: socks.length, puts: world.puts, labels: labels() };
           const a0 = ask; pressed.add('Enter'); title.tick(1 / 60); a.enter = ask === a0 && title.active && !L.playing;
           a.girl = tap('choose:girl');
@@ -40834,10 +40931,26 @@ const BOYGIRL = (() => {
           const ps = socks[0] ? socks[0].sent.filter(m => m.t === 'p') : [];
           a.after = { playing: L.playing, title: title.active, gender: player.gender, status: NET.status, cloud: cloudOf(), firstPresence: ps.length ? ps[0].look.girl : null };
           check(P + 'online, a new knight: after sign-up "Boy or girl?" is on the title (the login card put away, no socket, nothing pushed, Enter does nothing); Girl puts her in the world, her first cloud save and her first presence say girl', a.shown && a.asking && a.fresh === true && a.title && !a.playing && !a.showing && a.socks === 0 && a.puts === 0 && a.labels === CARD && a.enter && a.girl && a.after.playing && !a.after.title && a.after.gender === 'girl' && a.after.status === 'on' && a.after.cloud === 'girl' && a.after.firstPresence === true, a);
+          // a double tap on Play ("Playing as Mia", a knight with no choice): the first tap's click puts the card up and the
+          // login card away, so the second tap lands on the game under it, where Boy or Girl is drawn: on the lower part of
+          // Play, or on either card, right away or up to 450 ms later. Still asking, nothing chosen, saved or pushed.
+          { title.toTitle(); stripCloud(); const puts0 = world.puts, socks1 = socks.length, me = L.mode === 'me' && L.showing;
+            let rect = null;
+            try { const pb = [...document.querySelectorAll('#fl-login button')].find(e => e.textContent === 'Play' && e.offsetParent !== null); if (pb) { const q = pb.getBoundingClientRect(); if (q.width && q.height) rect = q; } } catch (err) { }
+            const e = { me, rect: !!rect, play: L.playAs(), asking: !!ask, hits: 0, taps: 0 };
+            for (const gap of [0, 120, 250, 450]) {
+              if (!ask) break;
+              ask.at = nowMs() - gap; render();
+              const spots = cardRects().map(c => [c.x + c.w / 2, c.y + c.h / 2]);
+              if (rect) spots.push([rect.left + rect.width * 0.3, rect.top + rect.height * 0.85], [rect.left + rect.width * 0.7, rect.top + rect.height * 0.85]);
+              for (const [x, y] of spots) { if (!ask) break; e.taps++; if (cardRects().some(c => hitButton(c, x, y))) e.hits++; tapAt(x, y); render(); }
+            }
+            e.after = { asking: !!ask, title: title.active, playing: L.playing, cloud: cloudOf(), slot: savedOf(1), puts: world.puts - puts0, socks: socks.length - socks1 };
+            check(P + 'online, a double tap on Play never picks: second taps on the lower part of Play and on both cards, right away or up to 450 ms later, leave "Boy or girl?" up with nothing chosen, saved, pushed or connected', e.me && e.play && e.asking && e.taps >= 12 && e.hits >= 12 && e.after.asking && e.after.title && !e.after.playing && e.after.cloud === null && e.after.slot === null && e.after.puts === 0 && e.after.socks === 0, e); }
           // a knight from before this, on the "Playing as Mia" card: Play asks first; Boy puts him in and the cloud keeps it
           title.toTitle(); const me = L.mode === 'me' && L.showing; stripCloud(); const socks0 = socks.length;
           const b = { me, play: L.playAs(), asking: !!ask, fresh: ask && ask.fresh, title: title.active, playing: L.playing, showing: L.showing, socks: socks.length === socks0 };
-          render(); b.boy = F.clickButton('choose:boy'); if (window.CLOUD) CLOUD.flush();
+          armNow(); b.boy = F.clickButton('choose:boy'); if (window.CLOUD) CLOUD.flush();
           b.after = { playing: L.playing, title: title.active, gender: player.gender, cloud: cloudOf() };
           check(P + 'online, a knight who never chose: Play on the "Playing as" card asks on the title before he is in the world; Boy puts him in as a boy and the cloud save keeps it', b.me && b.play && b.asking && b.fresh === false && b.title && !b.playing && !b.showing && b.socks && b.boy && b.after.playing && !b.after.title && b.after.gender === 'boy' && b.after.cloud === 'boy', b);
           // a knight who has chosen goes straight in
@@ -40847,7 +40960,7 @@ const BOYGIRL = (() => {
           // saved; the next Play asks again; going to the title drops the card and brings the login card back
           title.toTitle(); stripCloud(); const old = world.saves.mia; L.offer = Object.assign({ save: old, at: 7 }, L.summarizeRaw(old)); L.mode = 'offer';
           L.bring(true); const d = { asking: !!ask, title: title.active, playing: L.playing };
-          render(); d.later = F.clickButton('boygirl:later'); if (window.CLOUD) CLOUD.flush();
+          armNow(); d.later = F.clickButton('boygirl:later'); if (window.CLOUD) CLOUD.flush();
           d.after = { playing: L.playing, gender: player.gender || null, cloud: cloudOf(), look: !playerLook().girl };
           title.toTitle(); L.playAs(); d.again = !!ask && title.active && !L.playing;
           title.open(); d.dropped = !ask && L.showing && title.active;
