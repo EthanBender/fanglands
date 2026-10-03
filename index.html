@@ -39987,13 +39987,15 @@ window.RETALIATE = RETALIATE;
 // `monsters`, so nothing can tap, target or fight it. It is found two ways: killMonster (wrapped here, outside
 // 75-coop's wrap, so the keeper's own kills and the helper's share pass through) and a scan each tick for a monster
 // that has just turned dead without a kill call (a keeper's 'mon' row turning dead on a puppet, a companion's blow).
-// So a puppet online plays the same death on every screen. Drops a friend's kill pays this knight through 75-coop's
-// payKill (not killMonster) are found by the same scan: a fresh drop next to a fresh corpse waits for it.
+// So a puppet online plays the same death on every screen. The keeper's 'kill' message pays this knight through
+// 75-coop's payKill (not killMonster), and it can come back long after his own blow started the body falling: its drops
+// and its banner are matched to the body by the monster's nid (two NET listeners, one each side of 75-coop's), not by age.
 // Setting: Screen shake (43-settings) off means no shake, no flash over the screen and no ground wave (64-impact
 // gates its own); the bodies still fall.
 // Cost: one symbol read per monster per tick; nothing at all while no corpse is up. Drawing a corpse is its sprite
 // once (four times while a machine breaks, twice while a golem splits) plus a few dozen plain shapes.
-// Feature file: HOOKS.update, HOOKS.draw, wrapped killMonster / drawCharacter / drawDrop / tickBanners / HK.drawBanners.
+// Feature file: HOOKS.update, HOOKS.draw, NET 'kill' (a listener each side of 75-coop's), wrapped killMonster /
+// drawCharacter / drawDrop / tickBanners / HK.drawBanners.
 // Test handle: window.DEATHS.
 // ============================================================================
 const DEATHS = (() => {
@@ -40303,11 +40305,6 @@ const DEATHS = (() => {
   }
 
   // ---------- each tick ----------
-  // only a corpse born this moment: an arrow that lands beside an older one is not its loot
-  function nearCorpse(d) {
-    for (const c of corpses) if (c.t < 0.2 && Math.abs(d.x - c.x) < c.r + 48 && Math.abs(d.y - c.y) < c.r + 48) return c;
-    return null;
-  }
   function tick(dt) {
     // a monster that has just turned dead without a kill call: a keeper's 'mon' row on a puppet, a companion's blow
     for (const m of monsters) {
@@ -40333,8 +40330,6 @@ const DEATHS = (() => {
       if (!API.freeze) d[PT] = (d[PT] || 0) + dt;
       if (d[PT] >= POP) { delete d[PIN]; delete d[PT]; delete d[PFX]; delete d[PFY]; delete d[POWN]; pending.splice(i, 1); }
     }
-    // a friend's kill pays this knight through 75-coop's own payKill: its fresh drops wait on the corpse beside them
-    if (corpses.length) for (const d of drops) if (d.t < 0.12 && d[PIN] === undefined) { const c = nearCorpse(d); if (c) hide(d, c); }
   }
   HOOKS.update.push(dt => tick(dt));
   HOOKS.newGame.push(() => { while (corpses.length) end(corpses[0]); pending.length = 0; });
@@ -40373,6 +40368,28 @@ const DEATHS = (() => {
     const s = k < 0.7 ? 0.5 + 0.7 * (k / 0.7) : 1.2 - 0.2 * ((k - 0.7) / 0.3);
     g.save(); g.translate(d.x + ox, d.y + oy); g.scale(s, s); g.translate(-d.x, -d.y); _drawDrop(g, d); g.restore();
   };
+  // ---------- online: the kill the keeper sends ----------
+  // 75-coop pays it through its own payKill, never through killMonster, and it arrives a whole round trip after this
+  // knight's own last blow (his 'hit' to the world, the keeper's next frame, the 'kill' back): often 0.2 s or more on home
+  // Wi-Fi, by which time the body has been falling for a while. A listener ahead of 75-coop's notes the drops and the
+  // banner as they were; one after it hands what that kill added to the body with the same nid (made now if the keeper's
+  // 'mon' row has not turned it dead yet). A drop that comes late waits only for what is left of the fall (hide), so it
+  // still pops out of the body; a boss banner is held until the flash just like one this knight's own kill set.
+  function paidKill(msg, was) {
+    if (!msg || typeof msg.type !== 'string' || !MONSTER_DEFS[msg.type]) return;
+    const nid = typeof msg.nid === 'string' ? msg.nid : null, inst = here();
+    let c = nid ? corpses.find(k => k.nid === nid && k.inst === inst) || null : null;
+    if (!c && nid && typeof COOP !== 'undefined' && COOP.find) { const p = COOP.find(nid); if (p && p.dead && !p.gone && !p.phantom) c = spawn(p); }
+    if (!c) { const x = Number(msg.x), y = Number(msg.y); for (const k of corpses) if (k.type === msg.type && k.inst === inst && Math.abs(x - k.x) < k.r + 48 && Math.abs(y - k.y) < k.r + 48) { c = k; break; } }
+    if (!c) return;
+    if (drops === was.arr) for (let i = was.n0; i < drops.length; i++) if (drops[i] && drops[i].t === 0) hide(drops[i], c);
+    if (c.boss && levelBanner && levelBanner !== was.b0 && c.t < FLASH + HOLD) c.banner = levelBanner;
+  }
+  if (typeof NET !== 'undefined' && typeof NET.on === 'function') {
+    let was = null;
+    (NET.listeners.kill = NET.listeners.kill || []).unshift(() => { was = { arr: drops, n0: drops.length, b0: levelBanner }; });
+    NET.on('kill', msg => { const w = was; was = null; if (w) paidKill(msg, w); });
+  }
   function holding() {
     if (!corpses.length) return false;
     const lb = levelBanner; if (!lb) return false;
@@ -40493,6 +40510,47 @@ const DEATHS = (() => {
           push({ t: 'mon', n: 'Ann', list: [row(true, 0)] }); F.sim(40, []);
           const gone = !!c && !corpses.includes(c), shown = paid.every(d => !API.hidden(d));
           check(P + 'online: a puppet whose row turns dead plays the same death, the drops a friend\'s kill pays wait for it, and it is gone after', alive && born && waits && !!mid && mid.fall === 1 && mid.drawn > 20 && (!mid.tap || mid.tap.kind !== 'monster') && gone && shown, { alive, born, paid: paid.length, waits, mid: mid && { t: mid.t, fall: mid.fall, drawn: mid.drawn, tap: mid.tap && mid.tap.kind }, gone, shown });
+          // the keeper's 'kill' comes back a round trip after Cohen's own last blow felled the puppet (0.25 s, 0.5 s, and 0.87 s,
+          // after the pop would have started): its drops wait for the body or pop out of it, never lie there plain while it falls
+          const late = [];
+          for (const lag of [15, 30, 52]) {
+            const nid = 'Ann:late' + lag, lx = x, ly = y + 2 * TILE;
+            const rw = dead => [nid, 'wolf', lx, ly, dead ? 0 : 22, 22, 'chase', -1, 0, 0, 0, dead ? 1 : 0, 0, 0];
+            push({ t: 'mon', n: 'Ann', list: [rw(false)] }); F.step([]);
+            const q = COOP.find(nid); if (!q) { late.push({ lag, puppet: false }); continue; }
+            q.hp = 0; killMonster(q); const qc = API.of(q);
+            for (let i = 0; i < lag; i++) { push({ t: 'mon', n: 'Ann', list: [rw(true)] }); F.step([]); }
+            const m0 = drops.length, at = qc && +qc.t.toFixed(2);
+            push({ t: 'kill', nid, type: 'wolf', x: lx, y: ly, to: 'Cohen' });
+            const got = drops.slice(m0), waitsOrPops = got.length > 0 && got.every(d => API.hidden(d) || API.popping(d));
+            let plain = 0, frames = 0;
+            while (qc && corpses.includes(qc) && frames < 90) { for (const d of got) if (drops.includes(d) && !API.hidden(d) && !API.popping(d)) plain++; push({ t: 'mon', n: 'Ann', list: [rw(true)] }); F.step([]); frames++; }
+            F.sim(30, []);
+            late.push({ lag, corpse: !!qc, at, paid: got.length, waitsOrPops, plain, gone: !!qc && !corpses.includes(qc), shown: got.every(d => !API.hidden(d) && !API.popping(d)) });
+          }
+          check(P + 'online: when the keeper\'s kill comes back late (0.25 s, 0.5 s, 0.87 s after Cohen\'s own last blow), its drops still wait for the falling body or pop out of it', late.length === 3 && late.every(o => o.corpse && o.paid > 0 && o.waitsOrPops && o.plain === 0 && o.gone && o.shown), late);
+          // a boss a friend's game kills: the banner the kill pays this knight waits for the flash here too, whether the
+          // keeper's dead row or the 'kill' reaches this knight first
+          const bossRuns = [];
+          for (const rowFirst of [true, false]) {
+            const nid = 'Ann:bm' + (rowFirst ? 'r' : 'k'), bx = x, by = y - 3 * TILE, bhp = MONSTER_DEFS.brood_mother.hp;
+            const rb = dead => [nid, 'brood_mother', bx, by, dead ? 0 : bhp, bhp, 'chase', -1, 0, 0, 0, dead ? 1 : 0, 0, 0];
+            push({ t: 'mon', n: 'Ann', list: [rb(false)] }); F.step([]);
+            const q = COOP.find(nid);
+            if (rowFirst) { push({ t: 'mon', n: 'Ann', list: [rb(true)] }); F.step([]); }
+            let made = null; const say = m => { if (m.type === 'brood_mother' && m.nid === nid) levelBanner = made = { text: 'DEATHS ONLINE BANNER', sub: 'test', t: 3 }; };
+            HOOKS.kill.push(say); levelBanner = null;
+            try { push({ t: 'kill', nid, type: 'brood_mother', x: bx, y: by, to: 'Cohen' }); } finally { HOOKS.kill.splice(HOOKS.kill.indexOf(say), 1); }
+            const qc = q && API.of(q), held0 = holding() && !!qc && !!made && qc.banner === made;
+            for (let i = 0; i < 58; i++) { push({ t: 'mon', n: 'Ann', list: [rb(true)] }); F.step([]); }
+            const at1 = { t: qc && +qc.t.toFixed(2), held: holding(), bt: made && made.t, ahead: bannerAhead('DEATHS ONLINE BANNER') };
+            for (let i = 0; i < 70; i++) { push({ t: 'mon', n: 'Ann', list: [rb(true)] }); F.step([]); }
+            const at22 = { t: qc && +qc.t.toFixed(2), held: holding(), bt: made && +made.t.toFixed(2), flashed: !!qc && qc.flashed };
+            for (let i = 0; i < 60; i++) { push({ t: 'mon', n: 'Ann', list: [rb(true)] }); F.step([]); }
+            bossRuns.push({ rowFirst, boss: !!qc && qc.boss, remote: !!qc && qc.remote, banner: !!made, held0, at1, at22, gone: !!qc && !corpses.includes(qc) });
+            levelBanner = null; if (typeof clearShake === 'function') clearShake();
+          }
+          check(P + 'online: a boss\'s banner paid by a friend\'s kill is held until the flash on this screen too (not drawn, its time not running), then shows', bossRuns.every(o => o.boss && o.remote && o.banner && o.held0 && o.at1.held && o.at1.bt === 3 && o.at1.ahead && o.at22.flashed && !o.at22.held && o.at22.bt < 3 && o.gone), bossRuns);
         } finally {
           NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
           COOP.reset(); monsters = real; COOP.state.idxLen = -1; player.kills = kills0;
