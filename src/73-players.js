@@ -59,6 +59,8 @@
       tool: l.tool || null, toolColor: l.toolColor || null, rod: !!l.rod, fists: !!l.fists,
       // a worn party hat (77-dropparty's playerLook wrapper sets the colour word), so everyone sees it
       hat: l.hat || null,
+      // a girl knight (79-boygirl): drawHuman draws her skirt, long hair, braid and ribbon from this one flag
+      girl: !!l.girl,
     };
   }
   function presence() {
@@ -70,7 +72,7 @@
     };
   }
   // a cheap signature of everything the contract counts as a change; the full message is only built when it differs
-  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.body || '') + '|' + (e.shield || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-'); };
+  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.body || '') + '|' + (e.shield || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || ''); };
   const sig = () => mapId() + '|' + Math.round(player.x) + ',' + Math.round(player.y) + '|' + player.facing.x.toFixed(2) + ',' + player.facing.y.toFixed(2) + '|' + (player.moving ? 1 : 0) + '|' + Math.ceil(player.hp) + '/' + player.maxHp + '|' + (player.dead ? 1 : 0) + '|' + lookKey();
   let lastSig = null, lastSentAt = -1e9;
 

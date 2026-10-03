@@ -110,6 +110,8 @@ window.FANGLANDS.title = title;
   // for Continue / Delete / Sound, and nothing tappable in the notch or home-indicator bands. 71-login draws the online
   // title with the same heading, sprites and bottom row (title.heading / title.sprites / title.chrome).
   const KNIGHT = { tunic: '#3b6fb6', hair: '#5a3a1e', helm: '#8f96a3', shoulder: '#9aa3b2', shield: '#8a6a3a', weapon: ITEMS.iron_sword || ITEMS.wooden_sword };
+  // 79-boygirl dresses it as the last knight played on this device (a boy or a girl)
+  title.KNIGHT = KNIGHT;
   // the frame every title screen shares: safe insets, the heading's place, the bottom row's place
   title.frame = () => {
     const t = touchMode(), fam = HK.family(VW, VH, t), S = HK.insets(VW, VH, fam, t), M = 12;

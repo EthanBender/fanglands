@@ -1243,12 +1243,14 @@
     const l = playerLook(), w = weaponDef(), o = STONE_LOOK({});
     if (l.helm) o.helm = '#cfc9bc'; if (l.body) o.body = '#c3bdb0'; if (l.shield) o.shield = '#bfb8a9';
     if (w && w.shape) o.weapon = { shape: w.shape, color: '#d8d2c6' };
+    // a girl knight's statue (79-boygirl): her braid and ribbon in stone
+    if (l.girl) { o.girl = true; o.woman = true; o.ribbon = '#cfc9bc'; }
     return o;
   }
   function drawPlinth(g) {
     const cx = tc(PL.x), foot = (PL.y + 1) * TILE - 2;
     if (!statueDone()) { blit(g, sprite('plinth-empty', 48, 40, 24, 36, cg => paintPlinth(cg, '#8f8a80')), cx, foot); return; }
-    const look = heroLook(), key = 'plinth-hero:' + [look.helm, look.body, look.shield, look.weapon && look.weapon.shape].join('|');
+    const look = heroLook(), key = 'plinth-hero:' + [look.helm, look.body, look.shield, look.weapon && look.weapon.shape, look.girl ? 'girl' : ''].join('|');
     const a = behindAlpha(cx - 22, foot - 86, cx + 22, foot, foot);
     if (a < 1) { g.save(); g.globalAlpha = a; }
     blit(g, sprite(key, 48, 96, 24, 90, cg => { paintPlinth(cg, GOLD); paintFigure(cg, look, false, 1.32); }), cx, foot);
