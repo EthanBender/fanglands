@@ -68,6 +68,9 @@ const HOOKS = {
   talkBefore: {},   // talkBefore[role] = fn(npc) → true if handled — runs at the top of talkTo, lets features extend core roles (e.g. the Duke)
   hit: [],          // fn(monster, dmg, source) — a monster was hit; source is 'player' or 'companion'
   kill: [],         // fn(monster) — monster died
+  monsterDeath: [], // fn(monster, info) — a monster's death was decided, info = { k, by, how, x, y }: offline (and on the keeper)
+                    // killMonster fires it; online 75-coop fires it on the keeper's word, never because hp reached 0 here.
+                    // The death animation (79-deaths) starts only from this. Fire it with monsterDied(m, how, by, k).
   hurt: [],         // fn(dmg, fromX, fromY) — player got hurt
   drawMonster: {},  // drawMonster[type] = fn(g, e, hurt) — sprite for a new monster type (already translated to e.x,e.y)
   questText: {},    // questText[id] = fn() → string for extra quest ids
@@ -75,6 +78,8 @@ const HOOKS = {
   mainQuest: {},    // mainQuest[stage] = { text, onEnter: fn() } for main-quest stages beyond the core
   selfTest: [],     // fn(check, F, helpers) — extra self-test checks
   newGame: [],      // fn() — reset feature state
+  leaveInstance: [], // fn(id) — the knight is about to leave instance id (any way out: LEAVE, L, the exit, a ride, a respawn, a load);
+                    // runs while it is still the active map, so a feature can settle what it owes him there (91-royalmine's golem fall)
   pathBlock: [],    // fn(tx, ty, who) → true: tap-to-move and the bot's walkTo must not route through this cell right now (e.g. a balance log above the knight's Agility)
 };
 // a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it

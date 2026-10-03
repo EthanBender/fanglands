@@ -15,3 +15,10 @@ sed -n '/^<script>$/,/^<\/script>$/p' index.html | sed '1d;$d' > .build-check.js
 if grep -nE '\(\?<[=!]' .build-check.js; then echo "build.sh: a regex lookbehind is in the game (iPadOS 16.3 and older cannot run it). Use a lookahead." >&2; rm -f .build-check.js; exit 1; fi
 node --check .build-check.js && echo "built index.html ($(wc -l < index.html) lines)"
 rm -f .build-check.js
+# The server's copy of the game (docs/ONLINE.md, "The shared world"): online/src/sim/game.mjs, git-ignored, rebuilt on
+# every build so the deploy gates always test this index.html. acorn and eslint-scope are online/'s devDependencies.
+if [ ! -d online/node_modules/acorn ] || [ ! -d online/node_modules/eslint-scope ]; then
+  (cd online && npm ci --no-audit --no-fund --silent) || echo "build-sim: could not install acorn and eslint-scope (cd online && npm ci); online/src/sim/game.mjs not rebuilt"
+fi
+[ -d online/node_modules/acorn ] && [ -d online/node_modules/eslint-scope ] && node tools/build-sim.mjs --strip --quiet
+true

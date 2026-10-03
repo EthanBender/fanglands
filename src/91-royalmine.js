@@ -385,10 +385,10 @@
     raw: 0, hot: 0, guest: false, throwCd: 0, stones: [], rocks: [], debris: [], rockT: 3, lastX: 0, lastY: 0, vx: 0, vy: 0,
     quota: {}, clangT: -99, hintT: -99, inChamber: false, lastRockDmg: 0, lastSlamDmg: 0, hitFlash: -99, mendFlash: -99, pendingBanner: null,
     // this life of the golem, as this client saw it
-    life: { landed: 0, smashed: 0, start: null, deadSince: null, paid: false, half: false, fallen: false, lastHp: null, lastState: null, lastDead: null, windupAt: null },
+    life: { landed: 0, smashed: 0, start: null, deadSince: null, paid: false, half: false, fallen: false, told: false, lastHp: null, lastState: null, lastDead: null, windupAt: null },
     ores: {},   // nid → the last state this client saw, for the stir / settle / wake edges
   };
-  const resetLife = () => Object.assign(run.life, { landed: 0, smashed: 0, start: null, deadSince: null, paid: false, half: false, fallen: false, windupAt: null });
+  const resetLife = () => Object.assign(run.life, { landed: 0, smashed: 0, start: null, deadSince: null, paid: false, half: false, fallen: false, told: false, windupAt: null });
   function crumble(quiet) {
     if (run.raw + run.hot > 0) {
       run.raw = 0; run.hot = 0;
@@ -1131,16 +1131,34 @@
       }
     } else if (gm.hp <= 0) {
       if (L.deadSince === null) L.deadSince = time;
-      if (!L.fallen && time - L.deadSince >= NUM.FALL_HOLD) { L.fallen = true; onFall(); }
+      // the boss order the owner asked for: the slow fall, the flash and shake, THEN the banner. While his death scene is up
+      // (79-deaths), his crash lands on its flash (one impact, not two) and the banner, the loot and the words come after
+      // the shake starts; without one, both come FALL_HOLD after the killing stone, as before.
+      const D = window.DEATHS, c = D && D.of ? D.of(gm) : null, age = c ? c.t : time - L.deadSince;
+      if (!L.fallen && age >= (c ? D.FLASH : NUM.FALL_HOLD)) { L.fallen = true; fallFx(!!c); }
+      if (L.fallen && !L.told && age >= (c ? D.FLASH + D.HOLD : NUM.FALL_HOLD)) { L.told = true; if (c && D.payOut) D.payOut(gm, onFall); else onFall(); }
     }
     L.lastHp = gm.hp; L.lastState = gm.dead ? 'dead' : gm.state; L.lastDead = !!gm.dead; L.lastMax = gm.maxHp;
   }
   let _rollDropsInner = null;
+  // his crash: the dust, the heart's sparks and the boss sound; the ground wave is the death scene's own when it is up
+  function fallFx(scene) {
+    burst(SEAT_C.x, SEAT_C.y - 40, '#8f887a', 40, 180); burst(SEAT_C.x, SEAT_C.y - 60, '#ff6a2a', 20, 120);
+    if (!scene && window.IMPACT) IMPACT.wave(SEAT_C.x, SEAT_C.y, 2.2);
+    sfx('boss');
+  }
+  // leaving while he falls (LEAVE, L, the exit, the ride down, a respawn): the knight is paid NOW, while this is still the
+  // mine, exactly as if he had stayed for the flash. The show waits for the flash; what he earned never does (owner's rule:
+  // a kid is never punished for tapping LEAVE). A load is not a leave: it brings back the saved game as it was.
+  HOOKS.leaveInstance.push(id => {
+    if (id !== RM || loading) return;
+    const gm = golemMon(), L = run.life;
+    if (!gm || !gm.dead || gm.hp > 0 || L.told) return;
+    if (L.deadSince === null) L.deadSince = time;
+    L.fallen = true; L.told = true; onFall();
+  });
   function onFall() {
     const q = R(), L = run.life;
-    burst(SEAT_C.x, SEAT_C.y - 40, '#8f887a', 40, 180); burst(SEAT_C.x, SEAT_C.y - 60, '#ff6a2a', 20, 120);
-    if (window.IMPACT) IMPACT.wave(SEAT_C.x, SEAT_C.y, 2.2);
-    sfx('boss');
     if (!inMine()) return;
     const secs = L.start !== null ? Math.max(0, L.deadSince - L.start) : null;
     const helped = L.landed >= NUM.HELP_STONES || L.smashed >= NUM.HELP_SMASH;
@@ -1269,7 +1287,8 @@
   };
   // load: a save never describes an instance, so the throne comes back from the loaded quest at once
   const _load = load;
-  load = function () { const r = _load(); resetRun(); seqClear(); syncDeepholm(); return r; };
+  let loading = false;
+  load = function () { loading = true; let r; try { r = _load(); } finally { loading = false; } resetRun(); seqClear(); syncDeepholm(); return r; };
 
   // =========================================================================
   // 17. USE (E, and a tap on a tile, which walks up and presses E)
@@ -2067,7 +2086,8 @@
       const pb = pebblePx(); if (pb) items.push({ y: pb.y + 13, draw: () => drawPebble(g, pb.x, pb.y, tileAt(22, 23) === GOLEM_GATE ? 'hold' : 'idle') });
       const gm = golemMon();
       if (gm && !gm.dead) items.push({ y: gm.y + gm.r + 0.01, rm: 'golem', draw: () => { g.save(); if (behindGolem(gm)) g.globalAlpha = NUM.SEE_THROUGH; g.translate(gm.x, gm.y); drawColossus(g, gm, gm.hurtT > 0 || time - run.hitFlash < 0.12); g.restore(); } });
-      else if (gm || run.life.fallen) items.push({ y: SEAT_C.y + 41, draw: () => drawFallen(g, SEAT_C.x, SEAT_C.y) });
+      // his rubble heap comes up as his falling body fades (79-deaths draws the fall), never on top of it
+      else if (gm || run.life.fallen) { const a = gm && window.DEATHS && DEATHS.remains ? DEATHS.remains(gm) : 1; if (a > 0) items.push({ y: SEAT_C.y + 41, rmFallen: true, draw: () => { g.save(); g.globalAlpha *= a; drawFallen(g, SEAT_C.x, SEAT_C.y); g.restore(); } }); }
       items.push({ y: player.y + player.r + 0.02, draw: () => drawCarry(g) });
       items.push({ y: 1e9 + 2, draw: () => { drawFalling(g); drawStones(g); } });
       items.push({ y: 1e9 + 3, draw: () => drawMarker(g) });
@@ -2116,7 +2136,9 @@
     let line1 = null, tone = null;
     if (inCh) {
       const gm = golemMon();
-      if (!gm || gm.dead) line1 = 'THE GOLEM IS DOWN. UP AGAIN SOON';
+      // while his fall is still being shown, the chip does not tell the end before the banner does
+      if (gm && gm.dead && !run.life.told && window.DEATHS && DEATHS.of && DEATHS.of(gm)) line1 = 'HE IS FALLING!';
+      else if (!gm || gm.dead) line1 = 'THE GOLEM IS DOWN. UP AGAIN SOON';
       else if (!isAwake(gm)) line1 = 'STEP INTO THE GOLD RING TO WAKE HIM';
       else if (gm.state === 'windup' && inSlam()) { line1 = 'GET BACK! HE IS GOING TO SLAM'; tone = HK.C.BAD; }
       else if (lings().some(m => dist(m.x, m.y, SEAT_C.x, SEAT_C.y) <= 4 * TILE)) { line1 = 'SMASH THE LITTLE GOLEM!'; tone = HK.C.BAD; }
@@ -2314,6 +2336,8 @@
     ID: RM, W, H, ENTRY, STAIR_UP, STAIR_DOWN, STAIR_STAND, LAYOUT, RECTS, WEST, EAST, VEINS, FORGES, HEAPS, SEAT, SEAT_C, GIANTS, GATE, SPAWNS, PEBBLE_MINE, PEBBLE_HOME, NUM, PATTERNS,
     tiles: { ROYAL_STAIR, ROYAL_PILLAR, ORE_BED, HEART_VEIN, HEART_FORGE, GOLEM_GATE, ROYAL_COAL, ROYAL_STORMSTONE },
     clock, setClock(fn) { clockFn = typeof fn === 'function' ? fn : null; }, litVeins,
+    // the golem's own picture, for the fall 79-deaths draws over his rubble
+    drawColossus,
     // overridable by tests: whether a rock that reaches its roll wakes, and what a hot stone hits for
     rollWake: type => Math.random() < (NUM.GIANT[type] ? NUM.GIANT[type].wakeChance : 0),
     heartDmg: () => heartDmgBase(),
@@ -2685,23 +2709,61 @@
         g.hp = 30; run.hot = 1; const d0 = drops.length; F.press('KeyT'); F.untilAction(90, () => g.dead);
         const noCore = g.dead && drops.length === d0;
         const coins0 = have('coins'), bars0 = have('mithril_bar'), xm = player.skills.mining.xp, xs = player.skills.smithing.xp, xl = player.skills.melee.xp;
-        F.sim(Math.ceil(1.2 * 60), []); F.step([]);
+        // the boss order (owner): the slow fall, the flash and a short shake, THEN the banner. At 1.2 s he is still falling: no
+        // banner, no loot, no words, no rubble heap drawn over him, no ground wave yet; then one big wave, on his flash.
+        const D = window.DEATHS, FALL_WAIT = Math.ceil(((D ? D.FLASH + D.HOLD : NUM.FALL_HOLD) + 0.2) * 60);
+        const nullG = new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient' || k === 'createPattern') ? () => ({ addColorStop() { } }) : () => { }, set: () => true });
+        const heapShown = () => { const it = []; for (const hk of HOOKS.draw) hk(nullG, it, cam); return it.some(e => e.rmFallen); };
+        const waves = [], w0 = window.IMPACT && IMPACT.wave; let early = null, late = null;
+        if (w0) IMPACT.wave = (x, y, k) => { waves.push(+k); return w0(x, y, k); };
+        try {
+          F.sim(Math.ceil(1.2 * 60), []);
+          const c = D && D.of(g);
+          early = { corpse: !!c, flashed: !!c && c.flashed, banner: levelBanner && levelBanner.text, chip: chipInfo().line1, coins: have('coins') - coins0, xp: player.skills.mining.xp - xm, stage: R().stage, heap: heapShown(), waves: waves.filter(k => k >= 1.5).length };
+          F.sim(FALL_WAIT - Math.ceil(1.2 * 60), []); F.step([]);
+          late = { flashed: !!c && c.flashed, waves: waves.filter(k => k >= 1.5), chip: chipInfo().line1 };
+        } finally { if (w0) IMPACT.wave = w0; }
+        F.sim(60, []); const heapAfter = heapShown();
+        const ordered = !!D && early.corpse && !early.flashed && early.banner !== 'PEBBLE IS FREE' && early.banner !== 'THE GOLEM IS DOWN' && early.coins === 0 && early.xp === 0 && early.stage === 5 && !early.heap && early.waves === 0 && !/DOWN/.test(early.chip || '')
+          && late.flashed && /DOWN/.test(late.chip || '') && late.waves.length === 1 && late.waves[0] === 2.2 && heapAfter;
+        check(P + 'the fall keeps the boss order: at 1.2 s he is still falling with no banner, no loot, no words (the chamber chip says he is falling) and no rubble heap over him; one ground wave lands on his flash; the heap comes up as he fades',
+          ordered, { early, late, heapAfter });
         const paid = have('coins') - coins0 >= 150 && have('mithril_bar') - bars0 >= 2 && player.skills.mining.xp - xm === 200 && player.skills.smithing.xp - xs === 200 && player.skills.melee.xp - xl === 200;
         const freed = R().stage === 6 && !!levelBanner && levelBanner.text === 'PEBBLE IS FREE';
         // a rare roll of 0: the pickaxe once, not twice, even with the pity count full
         newLife(g); ROYALMINE.debug.wake(); g.rm.lingT = 9999; run.life.landed = 1; R().dry = NUM.PITY; R().gotPick = false; const p0 = have('heartstone_pickaxe');
-        Math.random = () => 0; g.hp = 1; hitMonster(g, 55, 0, true, 'heartstone'); F.sim(Math.ceil(1.2 * 60), []); Math.random = S0.random;
+        Math.random = () => 0; g.hp = 1; hitMonster(g, 55, 0, true, 'heartstone'); F.sim(FALL_WAIT, []); Math.random = S0.random;
         const once = have('heartstone_pickaxe') - p0 === 1;
         // a knight who did not help gets nothing
         newLife(g); ROYALMINE.debug.wake(); g.rm.lingT = 9999; run.life.landed = 0; run.life.smashed = 0; const d1 = drops.length, c1 = have('coins');
-        notice = null; g.hp = 1; _hitMonster(g, 5, 0, true, 'heartstone'); F.sim(Math.ceil(1.2 * 60), []);
-        const noRoll = drops.length === d1 && have('coins') === c1 && !!notice && /did not help/.test(notice.text);
+        notice = null; g.hp = 1; _hitMonster(g, 5, 0, true, 'heartstone'); F.sim(Math.ceil(1.2 * 60), []); const midNotice = !!notice && /did not help/.test(notice.text); F.sim(FALL_WAIT - Math.ceil(1.2 * 60), []);
+        const noRoll = drops.length === d1 && have('coins') === c1 && !!notice && /did not help/.test(notice.text) && (!D || !midNotice);
         // twenty-four dry falls: the next one gives the pickaxe
         newLife(g); ROYALMINE.debug.wake(); g.rm.lingT = 9999; run.life.landed = 1; R().gotPick = false; R().dry = NUM.PITY; const p1 = have('heartstone_pickaxe');
-        Math.random = () => 0.99; g.hp = 1; hitMonster(g, 55, 0, true, 'heartstone'); F.sim(Math.ceil(1.2 * 60), []); Math.random = S0.random;
+        Math.random = () => 0.99; g.hp = 1; hitMonster(g, 55, 0, true, 'heartstone'); F.sim(FALL_WAIT, []); Math.random = S0.random;
         const pity = have('heartstone_pickaxe') - p1 === 1 && R().gotPick && R().dry === 0;
-        check(P + 'the fall: the killing stone adds no core drops; a second later a helper gets one roll of the golem\'s table (coins, mithril bars) and 200 Mining, Smithing and Melee; stage 5 → 6 with PEBBLE IS FREE; a rare roll gives the pickaxe once; a knight who did not help gets nothing; 24 dry falls make the next one give the pickaxe',
+        check(P + 'the fall: the killing stone adds no core drops; once he has fallen (after his flash) a helper gets one roll of the golem\'s table (coins, mithril bars) and 200 Mining, Smithing and Melee; stage 5 → 6 with PEBBLE IS FREE; a rare roll gives the pickaxe once; a knight who did not help gets nothing; 24 dry falls make the next one give the pickaxe',
           noCore && paid && freed && once && noRoll && pity, { noCore, paid, freed, once, noRoll, pity, stage: R().stage, banner: levelBanner && levelBanner.text });
+        out(); }
+
+      // ---- 26b. leaving while he falls ----
+      // a helper who taps LEAVE (or presses L) while the golem is still falling, before his flash, is paid once all the
+      // same: his loot comes out with him, the stage goes 5 -> 6 and PEBBLE IS FREE shows outside; coming back pays nothing more
+      { fresh({ stage: 5 }); out(); const ow = new Set(drops); intoMine(); drain(); emptyPack(); ROYALMINE.debug.wake(); const g = golemMon(); g.rm.lingT = 9999; F.tp(18, 30); F.sim(5, []); drain();
+        const D = window.DEATHS, FALL_WAIT = Math.ceil(((D ? D.FLASH + D.HOLD : NUM.FALL_HOLD) + 0.2) * 60);
+        const coinsOut = () => countItem('coins') + drops.filter(d => d.id === 'coins' && !ow.has(d)).reduce((a, d) => a + d.qty, 0);
+        const barsOut = () => countItem('mithril_bar') + drops.filter(d => d.id === 'mithril_bar' && !ow.has(d)).reduce((a, d) => a + d.qty, 0);
+        const c0 = coinsOut(), b0 = barsOut(), xm = player.skills.mining.xp;
+        run.life.landed = NUM.HELP_STONES; g.hp = 1; hitMonster(g, 55, 0, true, 'heartstone');
+        for (let i = 0; i < 78; i++) { F.step([]); drain(); }
+        const mid = { dead: g.dead, stage: R().stage, fights: R().fights, flashed: !!(D && D.of(g) && D.of(g).flashed) };
+        notice = null; F.press('KeyL'); const left = !inMine(); F.step([]); F.step([]);
+        const outside = { left, stage: R().stage, fights: R().fights, coins: coinsOut() - c0, bars: barsOut() - b0, xp: player.skills.mining.xp - xm, banner: levelBanner && levelBanner.text, pebble: pebbleSpot() };
+        drain(); intoMine(); F.sim(FALL_WAIT + 30, []); drain();
+        const back = { stage: R().stage, fights: R().fights, coins: countItem('coins') - c0, xp: player.skills.mining.xp - xm };
+        check(P + 'leaving while he falls (L at 1.3 s, before his flash): a helper is still paid once (his loot comes out with him, 200 Mining), stage 5 -> 6 with PEBBLE IS FREE; coming back pays nothing more',
+          mid.dead && mid.stage === 5 && mid.fights === 0 && !mid.flashed && outside.left && outside.stage === 6 && outside.fights === 1 && outside.coins >= 150 && outside.bars >= 2 && outside.xp === 200 && outside.banner === 'PEBBLE IS FREE'
+          && back.stage === 6 && back.fights === 1 && back.xp === 200, { mid, outside, back });
         out(); }
 
       // ---- 27. he pulls himself back together ----

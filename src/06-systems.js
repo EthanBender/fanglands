@@ -156,6 +156,16 @@ function rollDrops(def, x, y) {
   if (d.rare && Math.random() < 1 / d.rare.chance) { const total = d.rare.table.reduce((s, r) => s + r[3], 0); let roll = Math.random() * total; for (const [id, a, b, w] of d.rare.table) { roll -= w; if (roll <= 0) { out.push({ id, qty: rint(a, b), rare: true }); break; } } }
   for (const o of out) { drops.push({ x: x + rint(-14, 14), y: y + rint(-14, 14), id: o.id, qty: o.qty, t: 0, rare: !!o.rare }); if (o.rare) { levelBanner = { text: 'RARE DROP', sub: ITEMS[o.id].name, t: 3 }; burst(x, y, '#f5c542', 30, 160); } }
 }
+// a monster's death, once, for everything that shows it (HOOKS.monsterDeath). k names the death (the server's event id
+// online; a local count here), by is who it is credited to, how is where the word came from: 'blow' (this game's own
+// kill), 'friend' (the keeper applying a friend's last blow), 'kill' (the keeper's kill message), 'row' (the keeper's
+// snapshot row turning dead). A phantom (a paid kill with no body) and a puppet's local blow never fire it.
+let monsterDeathK = 0;
+function monsterDied(m, how, by, k) {
+  if (!m || m.phantom || !HOOKS.monsterDeath.length) return;
+  const info = { k: k != null ? k : 'L' + (++monsterDeathK), by: by == null ? null : by, how, x: m.x, y: m.y };
+  for (const h of HOOKS.monsterDeath) h(m, info);
+}
 function killMonster(m) {
   const d = MONSTER_DEFS[m.type];
   m.dead = true; m.deadT = 0; m.respawnT = (d.respawn || 25) + Math.random() * 10;
@@ -166,6 +176,7 @@ function killMonster(m) {
   if (isCampMonster(m)) { m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN); checkCampCleared(); } // machines keep their own longer respawn
   if (m.type === 'goblin' && quest.stage === 3) { quest.kills += 1; if (quest.kills >= 3) advanceQuest(4); else save(); }
   if (d.mech) { const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); if (PLACEABLE_ON.has(tileAt(tx, ty))) changeTile(tx, ty, T.WRECK); say('The walker falls in a heap of barrel and iron. A goblin scrambles out and runs. The wreck stays. Bring iron bars and scrap, and it could walk again.', 'The Voice'); if (quest.stage === 7) { quest.walkerKilled = true; save(); } }
+  if (!m.remote) monsterDied(m, 'blow', typeof NET !== 'undefined' && NET.me ? NET.me : 'me');
 }
 function hurtPlayer(dmg, fromX, fromY, sure = false) {
   if (player.dead) return;
