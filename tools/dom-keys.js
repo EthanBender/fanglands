@@ -94,7 +94,7 @@ async function scene(browser, touch) {
       '/api/admin/accounts': [acct({ name: 'MudGoll', role: 'admin', online: true, map: 'over', region: 'Thistledown' }), acct({ name: 'Cohen', online: true, map: 'over', region: 'Wolfwood' }),
         acct({ name: 'Sam', strikes: 3, strikeAt: now - H, wordsLockedUntil: now + 23 * H }), acct({ name: 'Pip', strikes: 1, strikeAt: now - 2 * H, mutedUntil: now + H }), acct({ name: 'Stupid Sam', badName: true })],
       '/api/admin/online': [], '/api/admin/chat': [], '/api/admin/trades': [], '/api/admin/invite': { invite: 'TEST-1234' },
-      '/api/admin/modlog': [{ at: now - H, by: 'word filter', act: 'strike', n: 'Sam', detail: '3, kept out 24 hours: you idiot' }, { at: now - 2 * H, by: 'word filter', act: 'strike', n: 'Pip', detail: '1' }],
+      '/api/admin/modlog': [{ at: now - H, by: 'word filter', act: 'strike', n: 'Sam', detail: '3, kept out 24 hours: what the shit' }, { at: now - 2 * H, by: 'word filter', act: 'strike', n: 'Pip', detail: '1' }],
     };
     await page.route('http://parent.test/**', r => { const u = new URL(r.request().url()); return u.pathname === '/admin' ? r.fulfill({ contentType: 'text/html', body: fs.readFileSync(admin, 'utf8') }) : r.fulfill({ contentType: 'application/json', body: JSON.stringify(data[u.pathname] || {}) }); });
     await page.goto('http://parent.test/admin'); await page.fill('#key', 'k'); await page.click('#usekey');
@@ -105,7 +105,7 @@ async function scene(browser, touch) {
       return { table: t.scrollWidth, box: t.parentElement.clientWidth, inView: last.length > 0 && last.every(r => r.right <= box.right + 0.5), log: Array.from(document.querySelectorAll('#modlog div'), d => d.textContent.replace(/^.*? — /, '')) };
     });
     check('parent page at 1280: the accounts table fits, every Logins / Reset secret word / Ban / Saves button in view', got.table <= got.box && got.inView, got);
-    check('parent page: a word strike says what was typed ("Sam got word strike 3 for typing "you idiot", kept out 24 hours"); an older row says the count', JSON.stringify(got.log) === JSON.stringify(['Sam got word strike 3 for typing "you idiot", kept out 24 hours', 'Pip got word strike 1']) && errors.length === 0, { log: got.log, errors });
+    check('parent page: a word strike says what was typed ("Sam got word strike 3 for typing "what the shit", kept out 24 hours"); an older row says the count', JSON.stringify(got.log) === JSON.stringify(['Sam got word strike 3 for typing "what the shit", kept out 24 hours', 'Pip got word strike 1']) && errors.length === 0, { log: got.log, errors });
     await page.close(); }
   await browser.close();
   const bad = results.filter(r => !r[1]).length;
