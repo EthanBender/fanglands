@@ -56559,7 +56559,7 @@ const TOWNSFOLK = (() => {
     // place's own people in real frames (Hollowford's square and the guild, the ferry, Deepholm, Sylvaris, Aerie and the
     // Cloud Kingdom with Lark, the walkers and the fliers, Goblin City, the fountain children, the statues, the followers
     // and Sera in her cage). The people the sample does not draw are exactly the eight with the new-style default.
-    { const seen = new Set(), calls = [], npcBad = [], q0 = JSON.stringify({ h: quest.hollowford, r: quest.rebuild, g: quest.guild }), c0 = player.companion ? JSON.parse(JSON.stringify(player.companion)) : null;
+    { const seen = new Set(), calls = [], npcBad = [], q0 = JSON.stringify({ h: quest.hollowford, r: quest.rebuild, g: quest.guild, t: quest.tinker }), c0 = player.companion ? JSON.parse(JSON.stringify(player.companion)) : null;
       const at0 = { x: player.x, y: player.y, facing: player.facing, mech: player.mech, r: player.r }, inst0 = window.INSTANCES ? INSTANCES.active() : null;
       const _dh = drawHuman;
       drawHuman = function (g, e, l) { if (l && typeof l.who === 'string') { seen.add(l.who); calls.push(l.who); } return _dh(g, e, l); };
@@ -56570,6 +56570,8 @@ const TOWNSFOLK = (() => {
         const look = (x, y) => { F.tp(Math.floor(x / TILE), Math.floor(y / TILE)); render(); };
         const taps = () => { const out = []; for (const f of TAP_PEOPLE) { try { for (const p of f() || []) if (p && typeof p.x === 'number') out.push(p); } catch (err) { } } return out; };
         h.peace(true);
+        // Tinkerton at the Grubmarket gate (where he stands before his lab opens)
+        if (quest.tinker) quest.tinker.stage = 0;
         // the overworld: the square, the kids, the statues; Hollowford's square and the guild; the ferry; Sylvaris; Goblin City
         quest.hollowford = Object.assign({}, quest.hollowford || {}, { freed: true }); quest.rebuild = quest.rebuild || {}; quest.rebuild.done = Object.assign({}, quest.rebuild.done || {}, { house: true });
         F.tp(112, 36); F.sim(2, []); render();
@@ -56599,7 +56601,7 @@ const TOWNSFOLK = (() => {
       } catch (err) { threw = err.message + ' ' + String(err.stack || '').split('\n')[1]; }
       finally {
         drawHuman = _dh;
-        const q = JSON.parse(q0); quest.hollowford = q.h; quest.rebuild = q.r; quest.guild = q.g; player.companion = c0;
+        const q = JSON.parse(q0); quest.hollowford = q.h; quest.rebuild = q.r; quest.guild = q.g; if (q.t === undefined) delete quest.tinker; else quest.tinker = q.t; player.companion = c0;
         if (window.INSTANCES && INSTANCES.active() && INSTANCES.active() !== inst0) INSTANCES.leave();
         Object.assign(player, at0); h.peace(false);
       }
