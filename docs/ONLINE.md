@@ -341,8 +341,19 @@ the page is an installed app it goes to `/handoff-stay?to=<path>`, which sets `f
 `SameSite=Lax`, readable by the game) and sends back to the path. From then on the Worker serves the game to that icon
 on gorkscape.ca as today, with no hops at all: same Worker, same World, same accounts. iOS keeps a home-screen app's
 cookies and storage apart from Safari's, so a Safari tab never gets the cookie. The game shows the icon a calm one-time
-note (`src/00-handoff.js`): *"Fanglands has a new home: fanglands.com. Add it to your Home Screen when you can. Your
-knight is saved in the cloud."* with OK (`fanglands.handoff.noted`). If the cookie ever reaches an ordinary tab (a
+note (`src/00-handoff.js`) with OK (`fanglands.handoff.noted`). Its words follow the facts, because a new icon keeps its
+own storage: it starts logged out and without the knights saved on this device, so the note never says the old icon
+can go.
+- Logged in, slot 1 the account's working copy (the cloud mark), and no other knight here that the server does not have
+  (the same test as `72-deviceknights`' `find`: a save that reads, not in `fanglands.brought`): *"Fanglands has a new
+  home: fanglands.com. Your knight is saved in the cloud. A new icon starts logged out: log in with your knight's name
+  and secret word."*
+- Anything else (logged out, or a knight held only on this device): *"Fanglands has a new home: fanglands.com. Keep this
+  icon: knights saved on this device live here. A new icon starts logged out: log in with your knight's name and
+  secret word."*
+
+That a new icon starts logged out is reasoned from WebKit's documented behaviour, not yet seen on a real iPad. If the
+cookie ever reaches an ordinary tab (a
 computer whose app windows share the browser's cookies), the game sees it is not an installed app, goes to
 `/handoff-leave` (which clears the cookie) and the hand-over runs as for any tab.
 
@@ -365,7 +376,8 @@ and a claim only works with the pull the offer was bound to.
    takes it off the address. `from` is checked against fanglands.com's own old addresses; a path that is not a plain
    path becomes `/`. If fanglands.com cannot keep anything (storage off), it goes straight into the game there.
 3. With a pull, the hand-over page packs the keys under 1.4 MB (the login and the small keys first, then the slots
-   newest first, the old single save last) and posts `{keys, pull}` to `/api/handoff/offer`. The World answers
+   newest first, the old single save last) and posts `{keys, pull}` to `/api/handoff/offer`, with the login (when
+   there is one) also as `authorization: Bearer <token>`, so the world picks the budget before it reads anything. The World answers
    `{code, expires, kind}`. The page goes to the **landing page**
    `https://fanglands.com/handoff#land=<code>&to=<path and query>&from=<this address>`.
 4. The landing page first takes the fragment off the address and the history (`history.replaceState`), then posts
@@ -395,10 +407,25 @@ What `handoff-merge.js` writes, never writing over anything the kid has here:
 it kept, so the trip is the hand-over page, the landing page, then the game.
 
 When something goes wrong on the way:
-- **The world refuses an anonymous offer** (429 or 503: too many at once, see the budgets below): the kid is told
-  plainly what waits, e.g. *"Your 2 knights saved on this device will come across next time. They are safe here."*,
-  with **OK**, which goes on to fanglands.com. With no knight in the offer (only settings) it just goes on. A tap on OK
-  is also a tap on gorkscape.ca, which Safari counts as the kid using the site (its 7-day rule for script storage).
+- **The world says "too busy" to an offer with a login** (429 or 503: the account's own limit, or Cloudflare itself
+  under load; the world being full never refuses a login): the page offers the login alone (the token and the last
+  name, a few hundred bytes), waiting what the world asked (`wait`, at most 10 s), and tries once more after that. A
+  kid with a login is never sent on to fanglands.com without it: after three refusals the card shows **Try again**.
+  When only the login came, the kid lands logged in and the card first says what waits, e.g. *"Your 2 knights saved
+  on this device will come across next time. They are safe here."* (OK, or on its own after 10 s), and the landing
+  page notes the knights wait (`&later=1`, below).
+- **The world refuses an anonymous offer** (no login; 429 or 503: too many at once, see the budgets below): with
+  knights in it, the page tries again every 20 to 30 s for about three minutes (an offer waits three minutes at most,
+  so by then there is room unless the flood goes on), the card saying *"Still working on it..."*. Then it says plainly
+  what waits, with **OK**. OK goes to `fanglands.com/handoff#later=1&to=<path>&from=<this address>`, which notes
+  `fanglands.handoff.later` (`{at, from}`) on fanglands.com and goes on to the path. With no knight in the offer (only
+  settings) it just goes on. A tap on OK is also a tap on gorkscape.ca, which Safari counts as the kid using the site
+  (its 7-day rule for script storage).
+- **Knights left waiting are fetched later.** On fanglands.com, a boot of the game five minutes or more after that note
+  (the title is all there is yet) removes the note and goes once through `https://<from><path>`: the old address
+  offers again and lands, bringing the knights. A landing that brought everything removes the note for that old
+  address. An installed web app never does this (it never leaves its address), and a note naming any other address
+  is dropped.
 - **The world cannot be reached** (no answer in 8 s, or a network error): the offer is tried once more after 1.5 s,
   then the card says *"Your knight is safe. It could not come across just now."* with **Try again** (this page, a
   plain path on this address) and a small *Go to the game*.
@@ -427,13 +454,23 @@ type it again on fanglands.com/admin.
   code and of the pull are stored; an anonymous offer's address is a SHA-256 salted with a value kept only in memory.
   Rows that ran out are swept after every hand-over call and by any other call at most a minute apart. The backup
   export (`/api/admin/export`) never carries them, like sessions.
-- **Two budgets.** An offer whose `fanglands.session` is a live login the world knows (read only: no `last_seen`, no
-  deletes; a banned or run-out login does not count) has its account's own: at most 3 waiting (a fourth replaces the
-  oldest) and 20 a minute; all logins together are capped at 2,000 offers or 256 MB, which only hundreds of real
-  accounts could reach. Anonymous offers never touch it. Anonymous offers (no live login: knights held only on a
-  device) get 10 a minute and 3 MB waiting per address (429 `wait`), and 200 offers or 32 MB all together (503
-  `busy`). An IPv6 address counts by its /48 (a home or a cloud machine often has a whole /48 to /56). A test fills
-  the anonymous cap from many /48s and proves logged-in offers, from the flooding address too, still land at once.
+- **Two budgets, chosen before the body is read.** The page sends the login as `authorization: Bearer <token>`; the
+  world looks it up first (read only: no `last_seen`, no deletes; a banned or run-out login does not count), and the
+  token in the keys must be the same one (400 `bad` otherwise).
+  - **A login** has its account's own budget: 20 offers a minute, and at most 2 waiting or 3 MB (the newest replaces
+    the oldest). All logins together hold at most 2,000 offers or 256 MB, but that is **never a reason to refuse
+    one**: when it is full, the oldest offer of the account holding the most gives way (a real claim comes within
+    about a second; one that lost its offer goes back and offers again). Anyone with the invite code can make
+    accounts, so this matters: about 90 accounts at 3 MB fill the whole, and signup now allows only 10 new accounts
+    an hour per address (`world.js`, `SIGNUPS_PER_HOUR`, an IPv6 address by its /48; 429 `wait`).
+  - **Anonymous offers** (no live login: knights held only on a device) get 10 a minute and 3 MB waiting per address
+    (429 `wait`), and 200 offers or 32 MB all together (503 `busy`), checked against the size the request says (or
+    1.5 MB when it says none) **before its body is read**, and again with the real size just before the write. A
+    refused one costs the World one small lookup, not the reading, hashing and sealing of up to 1.5 MB.
+  - An IPv6 address counts by its /48 (a home or a cloud machine often has a whole /48 to /56). Tests fill the
+    anonymous cap and prove a logged-in offer still lands, even with 150 big anonymous offers arriving at the same
+    moment; fill the login budget from 90 accounts at full rate and prove a fresh kid's login still lands; and prove a
+    refused anonymous offer's body is never read.
 - Claims that find nothing are limited to 20 a minute per address (429 `wait`); a real code with its pull always lands.
 - Nothing about a hand-over is ever logged. The code and the pull only ride after `#`, so they are in no request line,
   no log and no Referer. The landing page takes them off the address bar and the back/forward history before it
@@ -447,19 +484,28 @@ page goes back to gorkscape.ca, which offers the kid's own keys. A link to `gork
 makes the kid's own browser keep that pull and offer the kid's own keys bound to it, but the code goes only into the
 kid's own landing page, where the claim with fanglands.com's pull fails and the old page offers again with the right
 pull. Even a claim that did get through could only ever add: the merge never writes over a save slot, a login or a
-setting the kid has. A flood of requests still costs the World time (one Durable Object answers everything); the
-budgets keep a flood from refusing a real kid, not from slowing the World down. Someone with the kid's browser in
+setting the kid has. A flood of requests still costs the World a little time each (one Durable Object answers
+everything, and the runtime still streams each body in), but a refused offer is refused from its headers alone; a
+flood big enough to make Cloudflare itself answer 503 is met by the page's retries above, and a kid with a login still
+never lands without it. Someone with the kid's browser in
 their hands (or its storage) can of course do anything, as before.
 
 ### Shipping it, and the switch
 
-`HANDOVER` (a Worker variable, on unless it says `off`): with `./online/deploy.sh --var HANDOVER:off` the old addresses
-keep serving the game exactly as before while fanglands.com is attached and its certificate is made. Once
-`https://fanglands.com/api/status` answers (and has for the 30 minutes a cached "no such name" can last), a plain
-`./online/deploy.sh` turns the hand-over on. The same switch is the quick way back: deploy with `--var HANDOVER:off` and
-gorkscape.ca is the game again (nothing was deleted there; anything played on fanglands.com in between stays on
-fanglands.com and in the cloud). `/handoff-stay` and `/handoff-leave` answer either way, so a home-screen icon never
-loops. The live notes of the branch have the numbered steps, the rollback and its limits.
+`HANDOVER` is committed state: `[vars] HANDOVER = "off"` in `online/wrangler.toml`, above the routes, so every deploy
+from every tree carries it (and the test world keeps it; `--var HANDOVER:on` overrides it there for a proof). Off, the
+old addresses serve the game exactly as before while fanglands.com is attached and its certificate is made. Once
+`https://fanglands.com/api/status` answers (and has for the 30 minutes a cached "no such name" can last), **a commit on
+master** that sets `HANDOVER = "on"`, then a deploy, turns the hand-over on. The way back is the same: a commit on
+master setting it to `"off"`, then a deploy (nothing was deleted on gorkscape.ca; anything played on fanglands.com in
+between stays on fanglands.com and in the cloud). Never switch with `--var` alone on the live world: the next plain
+deploy from any session would undo it. `/handoff-stay` and `/handoff-leave` answer either way, so a home-screen icon
+never loops.
+
+`online/deploy.sh` refuses a tree whose `wrangler.toml` does not serve fanglands.com or has no `HANDOVER` line (a live
+deploy from an older tree would detach fanglands.com, and Cloudflare deletes its DNS records), and after every deploy
+checks that `https://fanglands.com/api/status` and `https://gorkscape.ca/api/status` answer (5 minutes, then a loud
+failure). The live notes of the branch have the numbered steps, the rollback and its limits.
 
 ### The test world
 
