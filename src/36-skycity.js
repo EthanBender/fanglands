@@ -350,8 +350,8 @@
       check('sky: the flute alone no longer opens Aerie — the wind carries you into the storm below it', !window.STORM || (inst === STORM.ST.id && inst !== AER.id && /storm/i.test(questText('sky'))), { inst, storm: !!window.STORM, text: questText('sky') });
       if (INSTANCES.active()) INSTANCES.leave();
       if (window.STORM) quest.storm.beaten = true; }
-    // up to Aerie, with the storm behind you
-    { drain(); F.tp(STEP_T.x, STEP_T.y); F.face(SHRINE_T.x, SHRINE_T.y); F.press('KeyE'); F.sim(3, []);
+    // up to Aerie, with the storm behind you (66-storm: the shrine then asks over the storm or into it; Up to Aerie)
+    { drain(); F.tp(STEP_T.x, STEP_T.y); F.face(SHRINE_T.x, SHRINE_T.y); F.press('KeyE'); F.sim(3, []); if (panel === 'windshrine') { render(); F.clickButton('Up to Aerie'); F.sim(3, []); }
       const sents = monsters.filter(m => m.type === 'sky_sentinel');
       let pave = 0, wall = 0, sky = 0, floor = 0, wisps = 0; for (let y = 0; y < AER.h; y++) for (let x = 0; x < AER.w; x++) { const t = tileAt(x, y); if (t === T.KING_PAVE) pave++; else if (t === T.KING_WALL) wall++; else if (t === SKY) sky++; else if (t === T.FLOOR) floor++; else if (t === WISP) wisps++; }
       // the Queen in her keep (stand one tile below her) and Halcyon in his forge (one tile above him)

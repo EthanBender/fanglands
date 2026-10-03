@@ -554,6 +554,8 @@
       // the Thunderbird has to come down before the updraft into the city opens. A death puts him back in his bed,
       // so the walk and the flute are done again; the storm keeps the wounds it already has.
       useAt(62, 6);
+      // with the storm already broken the shrine asks which way: over it, up to Aerie
+      if (panel === 'windshrine') { render(); F().clickButton('Up to Aerie'); sim(3); }
       if (window.STORM && window.INSTANCES && INSTANCES.active() === 'stormfront') {
         note('in the storm'); drain();
         const beaten = () => !!(quest.storm && quest.storm.beaten);
