@@ -27,14 +27,22 @@
   // ---------- drop chances ----------
   const FIXED = { green_dragon: 1 / 150, red_dragon: 1 / 60, ash_drake: 1 / 300, the_fang: 1 / 3 };
   const BOSSES = ['walker', 'bulldozer', 'barrelbeast', 'brood_mother', 'gnasher', 'count_ashvane'];
-  function chance(type) {
+  // the Echo of the Fang (28-thefang marks a repeat kill m.repeat) is a rematch, not the legend: 1 in 30, not 1 in 3
+  const ECHO = 1 / 30;
+  // a Gnasher rematch (33-goblincity marks every one after the first m.repeat) is a purse on a lever, not a hunt: 1 in 300
+  const GNASHER_AGAIN = 1 / 300;
+  // (a helper still resting from his own last paid kill, m.noPay from 75-coop, rolls nothing)
+  function chance(type, m) {
+    if (m && m.noPay) return 0;
+    if (type === 'the_fang' && m && m.repeat) return ECHO;
+    if (type === 'gnasher' && m && m.repeat) return GNASHER_AGAIN;
     if (type in FIXED) return FIXED[type];
     if (BOSSES.includes(type) && MONSTER_DEFS[type]) return Math.min(1 / 20, (MONSTER_DEFS[type].level || 0) / 1500);
     return 0;
   }
   const stats = { drops: 0, last: null };
   HOOKS.kill.push(m => {
-    const c = chance(m.type);
+    const c = chance(m.type, m);
     if (!c || Math.random() >= c) return;
     const id = DRAGON_ITEMS[Math.floor(Math.random() * DRAGON_ITEMS.length)];
     drops.push({ x: m.x + rint(-14, 14), y: m.y + rint(-14, 14), id, qty: 1, t: 0, rare: true });
@@ -116,12 +124,22 @@
       const names = [compName(), 'Sergeant Hale', compId() === 'garrick' ? null : 'Sir Garrick'].filter(Boolean);
       say("Sung? Then Thistledown rides. I name you the Dragon Killers: " + names.join(', ') + " and you, knight, at the head.", n.name);
       say("Hale and Garrick will meet you inside the lair. And take this: a dragon horn, from the last one that tried. The Fang sleeps under the lava. Sound the horn on the old circle in its lair and it will come up to answer.", n.name);
-      giveOrDrop('dragon_horn', 1, player.x, player.y);
+      giveOrDrop('dragon_horn', 1, player.x, player.y); q.horn = true;
       levelBanner = { text: 'THE DRAGON KILLERS', sub: names.join(' · ') + ' · you', t: 4.5 }; sfx('quest'); burst(player.x, player.y, '#f5c542', 40, 200);
       save(); return true;
     }
     say("The Dragon Killers are yours, knight. Hale and Garrick wait for you inside the lair. Sound the horn on the circle, and the Fang will come.", n.name);
     return true;
+  }
+
+  // a knight who slew the Fang beside a friend before the Duke formed his company (stage 14, before the Song) never had the
+  // horn: the Duke hands it over once, after the slaying, so the circle can raise the Echo for him too
+  function hornFor(n) {
+    const q = DK(), fq = fangQ();
+    if (!fq.slain || q.formed || q.horn || countItem('dragon_horn') > 0) return false;
+    q.horn = true; giveOrDrop('dragon_horn', 1, player.x, player.y); sfx('quest');
+    say('You went after the dragon without my horn? Then take it now. It is a dragon horn, from the last knight who tried. Sound it on the circle in the lair if you ever miss the dragon.', n.name);
+    save(); return true;
   }
 
   // ---------- allies ----------
@@ -166,7 +184,9 @@
     placeWarden();
     // the group appears inside the lair while the hunt is on, and goes home when it is over
     const present = allies();
-    const want = q.formed && inLair && !fq.slain && !player.dead;
+    // online they walk only on the game that runs the lair (offline, or the map's keeper): anywhere else they would be
+    // monsters a non-keeper is not allowed to hold
+    const want = q.formed && inLair && !fq.slain && !player.dead && (!window.NET || !NET.online() || !!(window.COOP && COOP.isKeeper()));
     if (want) wantedAllies().forEach((d, i) => { if (!present.some(m => m.ally === d.id)) spawnAlly(d, i); });
     else if (present.length) removeAllies(false);
     if (!want) return;
@@ -206,7 +226,7 @@
   };
 
   // ---------- debug handle (28-thefang's Duke talk calls .duke at stage 14) ----------
-  window.DRAGON_KILLERS = { chance, DK, duke, allies, ALLY_DEFS, WARDEN_GATE, GATE_T, openGate, closeGate, warden, stats, DRAGON_ITEMS };
+  window.DRAGON_KILLERS = { chance, DK, duke, hornFor, allies, ALLY_DEFS, WARDEN_GATE, GATE_T, openGate, closeGate, warden, stats, DRAGON_ITEMS };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {

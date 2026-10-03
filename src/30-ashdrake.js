@@ -78,7 +78,8 @@
 
   // ---------- kill bonus XP ----------
   HOOKS.kill.push(m => {
-    const def = MONSTER_DEFS[m.type]; if (!def || (def.level | 0) < AD_KILL_BONUS_MIN_LEVEL || window.__companionHit) return;
+    // (m.noPay: a named boss this knight helped with while still resting from his last paid kill of it; 75-coop)
+    const def = MONSTER_DEFS[m.type]; if (!def || (def.level | 0) < AD_KILL_BONUS_MIN_LEVEL || window.__companionHit || m.noPay) return;
     const xp = def.level * AD_KILL_BONUS_PER_LEVEL;
     const skill = weaponDef() && weaponDef().weapon && weaponDef().weapon.ranged && !player.mech ? 'range' : 'melee';
     // a boss kill's own banner (CHAPTER 4 COMPLETE, THE FANG IS SLAIN) was set by an earlier kill hook; a level-up

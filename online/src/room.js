@@ -81,6 +81,8 @@ export const CAPS = {
   trade_full: { rate: 2, burst: 4 },
   trade_close: { rate: 2, burst: 4 },
   trade_ack: { rate: 10, burst: 50 },
+  boss_call: { rate: 0.5, burst: 2 },
+  boss_wait: { rate: 1, burst: 3 },
 };
 for (const c of Object.values(CAPS)) if (!c.burst) c.burst = Math.max(2, Math.round(c.rate * 2));
 
@@ -294,6 +296,8 @@ export class Room {
       case 'trade_full': return this.onTradeFull(k, m);
       case 'trade_close': return this.onTradeClose(k, m);
       case 'trade_ack': return this.onTradeAck(k, m);
+      case 'boss_call': return this.onBossCall(k, m);
+      case 'boss_wait': return this.onToKnight(k, m, 'boss_wait', ['id', 'left']);
       case 'ping': return this.send(sock, { t: 'pong' });   // the real server answers this without waking; the sim lands here
       default: return;                                       // unknown t: ignored, as the contract says
     }
@@ -384,6 +388,20 @@ export class Room {
     const out = { t };
     for (const f of fields) out[f] = m[f];
     this.send(to.sock, out);
+  }
+
+  // a knight asks the keeper of its map to wake a named boss (docs/ONLINE.md, "Named bosses"). The world only checks the
+  // shape and who keeps the map; the keeper's game decides whether the boss may come (on its map, near, not up already,
+  // not resting there unless it is the asker's first fight: first is passed on only when it is exactly true). The keeper's
+  // answer for a resting boss, boss_wait, goes back to the asker alone through onToKnight, like kill and hurt.
+  onBossCall(k, m) {
+    if (!k.hello) return;
+    const g = this.maps.get(k.map);
+    if (!g || !g.keeper || g.keeper === k) return;
+    if (typeof m.id !== 'string' || !/^[a-z_]{1,24}$/.test(m.id)) return;
+    const out = { t: 'boss_call', n: k.name, id: m.id };
+    if (m.first === true) out.first = true;
+    this.send(g.keeper.sock, out);
   }
 
   onGift(k, m) {

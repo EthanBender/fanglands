@@ -57,8 +57,9 @@
   let blueprintsDropped = 0, pendingBanner = null;
   HOOKS.update.push(() => { if (pendingBanner && !levelBanner) { levelBanner = pendingBanner; pendingBanner = null; } });
   // Rolls a blueprint for a killed monster; returns the item id dropped, or null. Split from the hook so the self-test can force it.
+  // (m.noPay: a named boss this knight helped with while still resting from his last paid kill of it, 75-coop: no blueprint)
   function rollBlueprint(m) {
-    const d = BLUEPRINT_DROPS[m.type]; if (!d) return null;
+    const d = BLUEPRINT_DROPS[m.type]; if (!d || m.noPay) return null;
     if (d.chance > 1 && Math.random() >= 1 / d.chance) return null;
     const missing = d.pool.filter(id => !hasBlueprint(id));
     const from = missing.length ? missing : d.missingOnly ? [] : d.pool;

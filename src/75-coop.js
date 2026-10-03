@@ -23,9 +23,28 @@
   const REMOTE_STALE = 15;    // seconds without presence before a remote knight is forgotten
   const KNIGHT_R = 13;
 
-  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map() };
+  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false };
+  // Named bosses (docs/ONLINE.md, "Named bosses: boss_call and helper credit"). A boss file registers how its boss is woken in
+  // HOOKS.bossCall[id] = { map, near: [tx, ty, tiles] | null, alive: () => bool, wake: askerName|null => void, name, type,
+  //   rest: seconds | undefined, resting: m => bool, told: askerName => string, refused: secondsLeft => void };
+  // COOP.call(id, first) wakes it here when this knight runs the map, and otherwise asks the map's keeper. Every knight who
+  // landed CREDIT_HITS hits on one of these in the last CREDIT_FOR seconds gets the kill, not only the one who landed the last.
+  // The rest lives where the boss lives: the keeper remembers when each one fell (S.restAt) and answers a call inside `rest`
+  // with boss_wait, unless the caller says it is his own first fight. And the pay is each knight's own: `resting(m)` says this
+  // knight is still resting from his last paid kill, and then his kill pays nothing (no purse, no drops, no dragon item, no
+  // kill bonus): m.noPay, which the boss files, 30-ashdrake, 45-progression and 37-dragonkillers read.
+  HOOKS.bossCall = HOOKS.bossCall || {};
+  const CREDIT = new Set(['the_fang', 'barrelbeast', 'thunderbird', 'gnasher', 'brood_mother', 'count_ashvane']);
+  const CREDIT_HITS = 3, CREDIT_FOR = 60;
+  // CALL_GAP: the keeper wakes one boss at most this often, whoever asks. CALL_WAIT: a call nobody answered in this long
+  // says so. SEND_GAP: this game sends a boss_call at most this often (the world's cap is 0.5 a second, a burst of 2).
+  const CALL_GAP = 3, CALL_WAIT = 3, SEND_GAP = 2.5;
 
   const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+  const mmss = s => { const c = Math.max(0, Math.ceil(s)); return Math.floor(c / 60) + ':' + String(c % 60).padStart(2, '0'); };
+  // the named-boss entry for a monster type on this map (the square's Barrelbeast and the shed's share a type: the entry
+  // whose map is this one wins, else any with the type, for its pay rule)
+  const entryOf = type => { let any = null; for (const id of Object.keys(HOOKS.bossCall)) { const h = HOOKS.bossCall[id]; if (!h || h.type !== type) continue; if (h.map === S.map) return [id, h]; if (!any) any = [id, h]; } return any; };
   const r2 = v => Math.round(v * 100) / 100;
   const mapId = () => {
     const I = window.INSTANCES; if (!I) return 'over';
@@ -118,13 +137,34 @@
     return { type, nid, x, y, home: home ? { x: home.x, y: home.y } : { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: !!d.aggro, state: 'idle', wanderT: Math.random() * 2,
       wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0 };
   }
+  // the shape a kill message is granted on: a monster nobody else has, so the kill hooks, the drops and the quest counters
+  // all fire for this knight without touching anything in the world
+  function phantomOf(src) {
+    const d = MONSTER_DEFS[src.type], nid = typeof src.nid === 'string' ? src.nid : null;
+    const home = src.home ? { x: src.home.x, y: src.home.y } : nid ? homeFor(nid, src.x, src.y) : { x: src.x, y: src.y };
+    return { type: src.type, nid, x: src.x, y: src.y, home, r: d.r, hp: 0, maxHp: d.hp, speed: d.speed, phantom: true, dead: false, deadT: 0, respawnT: 0, state: 'chase', angry: true, facing: { x: 1, y: 0 }, moving: false, walkT: 0, attackT: 0, attackCd: 0, hurtT: 0, stunT: 0, wander: { x: 0, y: 0 }, wanderT: 0 };
+  }
+  // a knight arriving at an instance whose boss is down while the rest still stand: the boss alone stands up again at its own
+  // spawn tile (the keeper's instance is the one everyone fights in). Nobody's 'dungeon cleared' count changes.
+  function reviveBoss(inst) {
+    if (!inst || !inst.boss || inst.refill === false) return false;
+    const i = inst.spawns.findIndex(s => s && s[0] === inst.boss); if (i < 0) return false;
+    const m = monsters.find(o => o.nid === 'i' + i && !o.remote && !o.phantom); if (!m || !m.dead) return false;
+    const [, tx, ty] = inst.spawns[i];
+    m.dead = false; m.deadT = 0; m.hp = m.maxHp; m.x = tc(tx); m.y = tc(ty); m.respawnT = Infinity; m.hitters = {}; m.credited = false;
+    m.state = 'idle'; m.stunT = 0; m.hurtT = 0; m.lastHitBy = null;
+    S.snapAcc = SNAP_EVERY;
+    return true;
+  }
   // Alone, every walk into an instance builds it fresh. Shared, the keeper's instance is the one everyone sees, so once it was
   // cleared a friend walking in found it empty for as long as the keeper stayed. A knight arriving at a cleared instance now
   // has the keeper fill it again (the same spawns, fresh). Nobody's 'dungeon cleared' progress changes.
   function refillIfCleared() {
     if (!isKeeper() || S.map === 'over' || !window.INSTANCES || typeof INSTANCES.get !== 'function') return false;
     const inst = INSTANCES.get(S.map); if (!inst || !Array.isArray(inst.spawns) || !inst.spawns.length) return false;
-    if (monsters.some(m => !m.dead && !m.remote && !m.phantom)) return false;
+    // an instance that says refill: false (the storm) is never filled by an arrival: its boss comes back only by a call
+    if (inst.refill === false) return false;
+    if (monsters.some(m => !m.dead && !m.remote && !m.phantom)) { reviveBoss(inst); return false; }
     const fresh = inst.spawns.map(([type, tx, ty], i) => MONSTER_DEFS[type] ? makeReal(type, tc(tx), tc(ty), 'i' + i) : null).filter(Boolean);
     for (const m of fresh) monsters.push(m);
     for (const m of monsters.filter(m => m.dead && m.nid && fresh.some(f => f.nid === m.nid))) { const k = monsters.indexOf(m); if (k >= 0) monsters.splice(k, 1); }
@@ -190,6 +230,8 @@
       if (!m) { if (p.dead) continue; m = makeReal(p.type, p.x, p.y, p.nid, p.home); real.push(m); byNid.set(p.nid, m); }
       m.x = p.x; m.y = p.y; m.hp = p.hp; m.maxHp = p.maxHp; m.dead = p.dead; m.deadT = p.deadT; m.state = p.state; m.facing = { x: p.facing.x, y: p.facing.y };
       m.stunT = 0; m.lastHitBy = null; m.moving = false;
+      // a boss the old keeper had woken (an Echo of the Fang, a War Shed beast) stays awake here
+      if (!m.dead) m.awake = true;
       if (m.dead) { const d = MONSTER_DEFS[m.type]; m.respawnT = (d.respawn || 25) + Math.random() * 10; if (isCampMonster(m)) m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN); }
       else m.respawnT = 0;
     }
@@ -204,7 +246,54 @@
     S.idxLen = -1;
     tagInstance(id);
   }
-  function reset() { if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; }
+  function reset() { if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; S.restAt = {}; S.lootless = false; }
+
+  // ---------- named bosses: waking one, here or on the keeper ----------
+  const bossAlive = h => { try { return !!h.alive(); } catch (e) { return false; } };
+  // 'woke' (this game runs the map: offline, or the keeper), 'sent' (the keeper was asked), 'none' (no such boss)
+  // first: this is the caller's own story fight (his first Fang, his first Barrelbeast, his first storm), which the keeper's
+  // rest does not hold back
+  function call(id, first) {
+    const h = HOOKS.bossCall[id]; if (!h) return 'none';
+    if (!online() || isKeeper()) { S.calls[id] = time; h.wake(null); return 'woke'; }
+    // one ask on its way is enough: a second tap inside SEND_GAP is the same ask, not a new message
+    // (the game clock goes back on a load or a new game: a time from before that has passed)
+    if (time < S.sentAt || time - S.sentAt >= SEND_GAP) { S.sentAt = time; NET.send(first ? { t: 'boss_call', id, first: true } : { t: 'boss_call', id }); }
+    if (!S.pending || S.pending.id !== id) S.pending = { id, t: time };
+    return 'sent';
+  }
+  // the keeper's side: a friend on this map asks for a boss to be woken
+  function onBossCall(msg) {
+    if (!isKeeper() || !msg || typeof msg.id !== 'string' || typeof msg.n !== 'string' || msg.n === NET.me) return false;
+    if (!Object.prototype.hasOwnProperty.call(HOOKS.bossCall, msg.id)) return false;
+    const h = HOOKS.bossCall[msg.id]; if (!h || h.map !== S.map) return false;
+    const r = S.remotes[msg.n]; if (!r || r.map !== S.map || num(r.x) === null || num(r.y) === null) return false;
+    if (h.near && dist(r.x, r.y, tc(h.near[0]), tc(h.near[1])) > h.near[2] * TILE) return false;
+    if (bossAlive(h)) return false;
+    const last = S.calls[msg.id];
+    if (last !== undefined && time >= last && time - last < CALL_GAP) return false;
+    // the boss is resting on this map (it fell here lately): the asker is told how long, unless it is his first fight
+    const fell = S.restAt[msg.id], rest = num(h.rest) || 0;
+    if (rest > 0 && msg.first !== true && fell !== undefined && time >= fell && time - fell < rest) {
+      NET.send({ t: 'boss_wait', to: msg.n, id: msg.id, left: Math.ceil(rest - (time - fell)) });
+      return false;
+    }
+    S.calls[msg.id] = time;
+    h.wake(msg.n);
+    let line = null; try { line = typeof h.told === 'function' ? h.told(msg.n) : null; } catch (e) { line = null; }
+    notify(typeof line === 'string' && line ? line : `${msg.n} called ${h.name || msg.id}.`);
+    return true;
+  }
+  // the asker's side: the keeper says the boss is resting on that map
+  function onBossWait(msg) {
+    if (!online() || isKeeper() || !msg || typeof msg.id !== 'string' || !Object.prototype.hasOwnProperty.call(HOOKS.bossCall, msg.id)) return false;
+    const left = num(msg.left); if (left === null || left < 0 || left > 3600) return false;
+    const h = HOOKS.bossCall[msg.id]; if (!h) return false;
+    if (S.pending && S.pending.id === msg.id) S.pending = null;
+    if (typeof h.refused === 'function') { try { h.refused(left); } catch (e) { } }
+    else notify(`Not yet. Ready in ${mmss(left)}.`);
+    return true;
+  }
 
   // ---------- the keeper's copy of the chase, for a monster whose nearest knight is somewhere else ----------
   function stepRemote(m, t, dt) {
@@ -262,6 +351,15 @@
     return { kind: 'keeper', frozen };
   }
   function after(dt, pre) {
+    // an ask the keeper never answered (an older world, a keeper changing hands): say so once, plainly
+    // (an ask the keeper did answer is over the moment its boss stands up on this screen)
+    if (S.pending) { const h = HOOKS.bossCall[S.pending.id]; if (h && bossAlive(h)) S.pending = null; }
+    if (S.pending && (time < S.pending.t || time - S.pending.t >= CALL_WAIT)) {
+      const h = HOOKS.bossCall[S.pending.id]; S.pending = null;
+      if (online() && !isKeeper() && h && !bossAlive(h)) notify('Nobody answered. Try again in a moment.');
+    }
+    // a named boss standing up again is a new fight: nobody's hits from the last one count towards it
+    if (isKeeper()) for (const m of monsters) if (m.credited && !m.dead) { m.credited = false; m.hitters = {}; }
     if (pre && pre.kind === 'puppet') {
       const P = pre.P, saved = pre.saved;
       for (let i = 0; i < P.length; i++) { const p = P[i], a = p.stunT; p.stunT = a > FREEZE / 2 ? saved[i] : a; }
@@ -300,23 +398,64 @@
       if (source !== 'monster' && source !== 'remote' && online()) NET.send({ t: 'hit', nid: m.nid, dmg: Math.max(0, Math.min(MAX_DMG, Math.round(num(dmg) || 0))), knock: Math.round(num(knock) === null ? 14 : knock), bomb: !!fromBomb });
       return _hitMonster(m, dmg, knock, fromBomb, source);
     }
+    // a named boss keeps count of who is hitting it, so every knight who fought it gets the kill (CREDIT_HITS in CREDIT_FOR s)
+    if (!m.phantom && CREDIT.has(m.type) && (num(dmg) || 0) > 0 && online() && (source === undefined || source === 'player' || source === 'remote')) countHit(m, source === 'remote' ? m.lastHitBy : NET.me);
     if (source === undefined || source === 'player') m.lastHitBy = null;
     return _hitMonster(m, dmg, knock, fromBomb, source);
   };
+  function countHit(m, name) {
+    if (typeof name !== 'string' || !name) return;
+    const hs = m.hitters || (m.hitters = {}), e = hs[name];
+    if (!e || time - e.t > CREDIT_FOR) hs[name] = { n: 1, t: time }; else { e.n++; e.t = time; }
+  }
+  // everyone but the killer with enough hits on this boss, lately: the ones on this map get a kill message, and the keeper
+  // itself (when it is one of them) its own kill on a phantom
+  function sharers(m, killer) {
+    const out = { remote: [], me: false }, hs = m.hitters || {};
+    for (const n of Object.keys(hs)) {
+      const e = hs[n]; if (n === killer || !e || e.n < CREDIT_HITS || time - e.t > CREDIT_FOR) continue;
+      if (n === NET.me) out.me = true;
+      else { const r = S.remotes[n]; if (r && r.map === S.map) out.remote.push(n); }
+    }
+    return out;
+  }
   hitMonster.__inner = _hitMonster;
   const _killMonster = killMonster;
+  // one kill on this knight's game, through every kill hook, with the pay gate: a knight still resting from his last paid
+  // kill of a named boss is paid nothing for this one (the drops, the purse, the dragon item and the kill bonus all look at
+  // m.noPay; core rollDrops is held back below while S.lootless)
+  function payKill(m) {
+    let gate = false;
+    const e = CREDIT.has(m.type) ? entryOf(m.type) : null;
+    if (e && typeof e[1].resting === 'function') { try { gate = !!e[1].resting(m); } catch (err) { gate = false; } }
+    m.noPay = gate;
+    S.lootless = gate;
+    try { _killMonster(m); } finally { S.lootless = false; }
+  }
+  const _rollDrops = rollDrops;
+  rollDrops = function (def, x, y) { if (S.lootless) return; return _rollDrops(def, x, y); };
+  rollDrops.__inner = _rollDrops;
   killMonster = function (m) {
     if (m.remote) { m.dead = true; m.deadT = 0; m.respawnT = 1e9; m.localDeadUntil = time + 0.5; return; }   // the keeper decides drops, XP and credit
+    let share = null;
+    // the keeper remembers when a called boss fell on this map: its rest starts here, whoever landed the blow
+    if (!m.phantom && isKeeper()) for (const id of Object.keys(HOOKS.bossCall)) { const h = HOOKS.bossCall[id]; if (h && h.type === m.type && h.map === S.map) S.restAt[id] = time; }
+    if (!m.phantom && !m.credited && CREDIT.has(m.type) && isKeeper()) { m.credited = true; share = sharers(m, m.lastHitBy || NET.me); }
     if (m.lastHitBy && isKeeper()) {
       const d = MONSTER_DEFS[m.type], to = m.lastHitBy; m.lastHitBy = null;
       m.dead = true; m.deadT = 0; m.respawnT = (d.respawn || 25) + Math.random() * 10;
       burst(m.x, m.y, bloodColor(m.type), 16, 120);
       if (isCampMonster(m)) { m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN); checkCampCleared(); }
       if (d.mech) { const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE); if (PLACEABLE_ON.has(tileAt(tx, ty))) changeTile(tx, ty, T.WRECK); }
+      // an instance boss a friend brought down stays down for this visit, as it would for the keeper's own blow
+      const I = window.INSTANCES, inst = I && I.active && I.active() ? I.get(I.active()) : null;
+      if (inst && inst.boss === m.type) m.respawnT = Infinity;
       NET.send({ t: 'kill', nid: m.nid, type: m.type, x: Math.round(m.x), y: Math.round(m.y), to });
-      return;
+    } else payKill(m);
+    if (share) {
+      for (const n of share.remote) NET.send({ t: 'kill', nid: m.nid, type: m.type, x: Math.round(m.x), y: Math.round(m.y), to: n });
+      if (share.me) payKill(phantomOf(m));
     }
-    return _killMonster(m);
   };
   killMonster.__inner = _killMonster;
 
@@ -349,13 +488,13 @@
     NET.on('kill', msg => {
       if (!online() || typeof msg.type !== 'string' || !MONSTER_DEFS[msg.type]) return;
       const x = num(msg.x), y = num(msg.y); if (x === null || y === null) return;
-      const d = MONSTER_DEFS[msg.type], nid = typeof msg.nid === 'string' ? msg.nid : null;
+      const nid = typeof msg.nid === 'string' ? msg.nid : null;
       const p = nid ? find(nid) : null;
       if (p && p.remote) { p.dead = true; p.deadT = 0; p.respawnT = 1e9; p.localDeadUntil = time + 0.5; }
-      const home = nid ? homeFor(nid, x, y) : { x, y };
-      const phantom = { type: msg.type, nid, x, y, home, r: d.r, hp: 0, maxHp: d.hp, speed: d.speed, phantom: true, dead: false, deadT: 0, respawnT: 0, state: 'chase', angry: true, facing: { x: 1, y: 0 }, moving: false, walkT: 0, attackT: 0, attackCd: 0, hurtT: 0, stunT: 0, wander: { x: 0, y: 0 }, wanderT: 0 };
-      _killMonster(phantom);
+      payKill(phantomOf({ type: msg.type, nid, x, y }));
     });
+    NET.on('boss_call', onBossCall);
+    NET.on('boss_wait', onBossWait);
     NET.on('hurt', msg => {
       if (!online()) return;
       const dmg = num(msg.dmg); if (dmg === null || dmg < 0 || dmg > MAX_DMG) return;
@@ -364,7 +503,7 @@
     });
   }
 
-  window.COOP = { refill: refillIfCleared,
+  window.COOP = { refill: refillIfCleared, call, CREDIT, phantomOf, bossCall: onBossCall, bossWait: onBossWait, mmss,
     isKeeper, keeper: () => S.keeper, map: () => S.map, remotes: () => Object.values(S.remotes), knightsHere, puppets: () => S.puppets,
     get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), find, apply: applyMon, reset, state: S,
   };
@@ -510,6 +649,156 @@
       h.peace(was.peace); player.x = was.px; player.y = was.py; player.hp = Math.max(1, was.hp); player.kills = was.kills; drops = drops.slice(0, was.drops);
       quest.stage = was.qstage; quest.kills = was.qkills; quest.graves = was.graves;
       dialog.queue.length = 0;
+    }
+  });
+
+  // ---------- self-test: named bosses (C1-C7) ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    if (typeof NET === 'undefined') return;
+    const P = 'coop ';
+    if (typeof INSTANCES !== 'undefined' && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills;
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, peace: window.__peace, px: player.x, py: player.y, hp: player.hp, kills: player.kills, drops: drops.length, q: JSON.stringify(quest.instances || null) };
+    const real = monsters;
+    const sent = []; let sock = null;
+    const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+    const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); sent.push(m); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
+    const sentOf = t => sent.filter(m => m.t === t);
+    const tempTypes = new Set(); const hookRuns = [];
+    const listen = m => { if (m.phantom) hookRuns.push(m.type + ':phantom'); else hookRuns.push(m.type); };
+    HOOKS.kill.push(listen);
+    const remote = (n, map, x, y) => push({ t: 'p', n, map, x, y, def: 576, dead: false, hp: 50, lv: 40 });
+    const hit = (n, m, dmg) => push({ t: 'hit', n, nid: m.nid, dmg, knock: 0, bomb: false });
+    NET.enabled = true; NET.token = 'coop-boss-test'; NET.useFake(fake); NET.connect();
+    try {
+      h.peace(true);
+      const spot = h.openSpot(70, 60); F.tp(spot.x, spot.y);
+      const make = (type, nid) => { const m = makeReal(type, player.x + 3 * TILE, player.y, nid, null); m.stunT = 0; monsters.push(m); tempTypes.add(nid); S.idxLen = -1; return m; };
+      // (C1) a remote with 3 hits on a named boss gets a kill when the keeper lands the last one; one with 2 hits gets none
+      { remote('Ann', 'over', player.x + 2 * TILE, player.y); remote('Bo', 'over', player.x + 2 * TILE, player.y + TILE);
+        const m = make('brood_mother', 'Cohen:t1'); m.hp = 200;
+        for (let i = 0; i < 3; i++) hit('Ann', m, 1);
+        for (let i = 0; i < 2; i++) hit('Bo', m, 1);
+        sent.length = 0; hookRuns.length = 0;
+        hitMonster(m, 500, 0);
+        const kills = sentOf('kill');
+        check(P + 'credit: a remote with 3 hits in 60 s on a named boss gets a kill message when the keeper lands the last hit; one with 2 hits gets none',
+          m.dead && kills.length === 1 && kills[0].to === 'Ann' && kills[0].nid === 'Cohen:t1' && kills[0].type === 'brood_mother' && hookRuns.filter(t => t === 'brood_mother').length === 1 && !hookRuns.includes('brood_mother:phantom'),
+          { dead: m.dead, kills: kills.map(k => k.to), hookRuns }); }
+      // (C2) a remote lands the last hit: the killer once, each other 3-hit remote once, the keeper (3 hits) its own hook once
+      { const m = make('count_ashvane', 'Cohen:t2'); m.hp = 300;
+        for (let i = 0; i < 3; i++) { hit('Ann', m, 1); hit('Bo', m, 1); hitMonster(m, 1, 0); }
+        sent.length = 0; hookRuns.length = 0;
+        hit('Ann', m, 500);
+        hit('Bo', m, 1);
+        const kills = sentOf('kill'), to = kills.map(k => k.to).sort();
+        check(P + 'credit: when a remote lands the last hit, the killer gets one kill, each other 3-hit remote one kill, and the keeper with 3 hits runs its own kill hook once; nobody twice',
+          m.dead && to.join(',') === 'Ann,Bo' && hookRuns.filter(t => t === 'count_ashvane:phantom').length === 1 && !hookRuns.includes('count_ashvane') && m.respawnT > 0,
+          { dead: m.dead, to, hookRuns }); }
+      // (C3) every other monster keeps last-hit-only credit
+      { const m = make('cinderwight', 'Cohen:t3'); m.hp = 400;
+        for (let i = 0; i < 4; i++) { hit('Ann', m, 1); hit('Bo', m, 1); hitMonster(m, 1, 0); }
+        sent.length = 0; hookRuns.length = 0;
+        hit('Bo', m, 500);
+        const kills = sentOf('kill');
+        check(P + 'credit: a cinderwight still credits the last hit only', m.dead && kills.length === 1 && kills[0].to === 'Bo' && hookRuns.length === 0 && !m.hitters, { kills: kills.map(k => k.to), hookRuns, hitters: !!m.hitters }); }
+      for (let i = monsters.length - 1; i >= 0; i--) if (tempTypes.has(monsters[i].nid)) monsters.splice(i, 1);
+      S.idxLen = -1;
+      // (C4) on the keeper, an instance boss felled by a friend stays down for the visit
+      if (typeof INSTANCES !== 'undefined' && INSTANCES.get && INSTANCES.get('spider_den')) {
+        INSTANCES.enter('spider_den'); push({ t: 'keeper', map: 'spider_den', n: 'Cohen' });
+        const bm = monsters.find(m => m.type === 'brood_mother');
+        remote('Bo', 'spider_den', bm.x + TILE, bm.y);
+        sent.length = 0; hit('Bo', bm, 500);
+        const kills = sentOf('kill');
+        check(P + 'an instance boss felled by a friend gets respawnT Infinity on the keeper', bm.dead && bm.respawnT === Infinity && kills.length === 1 && kills[0].to === 'Bo', { dead: bm.dead, respawnT: bm.respawnT, kills: kills.length });
+        // (C5) a knight arriving while the boss is down and others still stand: the boss alone comes back at its spawn tile, i-nid
+        const q = quest.instances.cleared.spider_den || 0, inst = INSTANCES.get('spider_den');
+        const i = inst.spawns.findIndex(s => s[0] === 'brood_mother'), others = monsters.filter(m => m !== bm && !m.dead).length;
+        remote('Cy', 'spider_den', player.x + TILE, player.y);
+        const back = !bm.dead && bm.hp === bm.maxHp && bm.nid === 'i' + i && Math.floor(bm.x / TILE) === inst.spawns[i][1] && Math.floor(bm.y / TILE) === inst.spawns[i][2] && bm.respawnT === Infinity;
+        check(P + 'a knight arriving at an instance whose boss is dead while others live revives the boss alone at its spawn tile with its i-nid; cleared counts unchanged',
+          back && others > 0 && monsters.filter(m => !m.dead).length === others + 1 && (quest.instances.cleared.spider_den || 0) === q && monsters.filter(m => m.type === 'brood_mother').length === 1,
+          { back, others, alive: monsters.filter(m => !m.dead).length, cleared: [q, quest.instances.cleared.spider_den || 0], nid: bm.nid });
+        INSTANCES.leave(); push({ t: 'left', n: 'Bo', map: 'spider_den' }); push({ t: 'left', n: 'Cy', map: 'spider_den' });
+        push({ t: 'keeper', map: 'over', n: 'Cohen' });
+      }
+      // (C6) the keeper honours a boss_call only by the rules
+      { F.tp(spot.x, spot.y); push({ t: 'keeper', map: 'over', n: 'Cohen' });
+        const woke = []; let up = false;
+        HOOKS.bossCall.test_boss = { map: 'over', near: [spot.x, spot.y, 4], name: 'the test boss', alive: () => up, wake: n => { woke.push(n); } };
+        HOOKS.bossCall.test_lab = { map: 'tinker_lab', near: null, alive: () => false, wake: n => { woke.push('lab:' + n); } };
+        const ask = (n, id) => { woke.length = 0; push({ t: 'boss_call', n, id }); return woke.slice(); };
+        push({ t: 'left', n: 'Ann', map: 'over' }); delete S.remotes.Ann; S.calls = {};
+        const absent = ask('Ann', 'test_boss');
+        remote('Ann', 'over', tc(spot.x + 9), tc(spot.y));
+        const far = ask('Ann', 'test_boss');
+        remote('Ann', 'over', tc(spot.x + 3), tc(spot.y));
+        const near = ask('Ann', 'test_boss');
+        const cooling = ask('Ann', 'test_boss');
+        S.calls.test_boss = time - CALL_GAP - 0.1; up = true;
+        const alive = ask('Ann', 'test_boss');
+        up = false;
+        const again = ask('Ann', 'test_boss');
+        S.calls = {};
+        const wrongMap = ask('Ann', 'test_lab'), unknown = ask('Ann', 'no_such_boss'), proto = ask('Ann', 'toString');
+        remote('Ann', 'tinker_lab', tc(spot.x + 3), tc(spot.y));
+        const elsewhere = ask('Ann', 'test_boss');
+        const fang = HOOKS.bossCall.the_fang;
+        const fangRule = !!fang && fang.map === 'over' && JSON.stringify(fang.near) === '[18,117,4]';
+        delete HOOKS.bossCall.test_boss; delete HOOKS.bossCall.test_lab;
+        check(P + 'boss_call: the keeper honours a registered id only on its own map, from a knight on that map, in range (the Fang within 4 tiles of the circle), with no live boss and after the 3 s cooldown',
+          absent.length === 0 && far.length === 0 && near.join() === 'Ann' && cooling.length === 0 && alive.length === 0 && again.join() === 'Ann' && wrongMap.length === 0 && unknown.length === 0 && proto.length === 0 && elsewhere.length === 0 && fangRule,
+          { absent, far, near, cooling, alive, again, wrongMap, unknown, proto, elsewhere, fangRule }); }
+      // (C8) the pay gate: a kill message for a named boss this knight still rests from pays nothing (no drops, no kill bonus,
+      // no dragon item); the same message once he has rested pays the def drops
+      { const keepBC = HOOKS.bossCall.test_pay; let rests = true;
+        HOOKS.bossCall.test_pay = { map: 'spider_den', near: null, type: 'brood_mother', name: 'the test mother', alive: () => false, wake: () => { }, resting: () => rests };
+        const n0 = drops.length, mx0 = player.skills.melee.xp, dx0 = player.skills.defence.xp, seen = [];
+        const look = m => { if (m.type === 'brood_mother') seen.push(!!m.noPay); }; HOOKS.kill.push(look);
+        try {
+          push({ t: 'kill', nid: 'Ann:p1', type: 'brood_mother', x: player.x, y: player.y, to: 'Cohen' });
+          const resting = { drops: drops.length - n0, melee: player.skills.melee.xp - mx0, defence: player.skills.defence.xp - dx0 };
+          rests = false; push({ t: 'kill', nid: 'Ann:p2', type: 'brood_mother', x: player.x, y: player.y, to: 'Cohen' });
+          const rested = { drops: drops.length - n0 - resting.drops, defence: player.skills.defence.xp - dx0 - resting.defence };
+          check(P + 'pay gate: a kill message for a named boss this knight still rests from pays nothing (no drops, no kill bonus); rested, the same message pays its drops and bonus',
+            resting.drops === 0 && resting.melee === 0 && resting.defence === 0 && seen.join() === 'true,false' && rested.drops > 0 && rested.defence > 0 && !S.lootless, { resting, rested, seen });
+        } finally { HOOKS.kill.splice(HOOKS.kill.indexOf(look), 1); if (keepBC) HOOKS.bossCall.test_pay = keepBC; else delete HOOKS.bossCall.test_pay; drops = drops.slice(0, n0); }
+      }
+      // (C9) boss_wait: only a sane answer for a registered boss is read, and it ends the ask (no 'Nobody answered' after it)
+      { const told = []; HOOKS.bossCall.test_wait = { map: 'over', near: null, name: 'the test boss', alive: () => false, wake: () => { }, refused: left => told.push(left) };
+        S.keeper = 'Ann'; S.pending = { id: 'test_wait', t: time };
+        for (const msg of [{ id: 'test_wait', left: -1 }, { id: 'test_wait', left: 99999 }, { id: 'test_wait', left: 'x' }, { id: 'no_such', left: 5 }, { id: 'toString', left: 5 }]) push(Object.assign({ t: 'boss_wait' }, msg));
+        const ignored = told.length === 0 && !!S.pending;
+        push({ t: 'boss_wait', id: 'test_wait', left: 125 });
+        check(P + 'boss_wait: a bad left, an unknown id or a prototype name is ignored; a sane one for a registered boss reaches its refused(left) and ends the ask',
+          ignored && told.join() === '125' && S.pending === null && mmss(125) === '2:05' && mmss(600) === '10:00', { ignored, told, pending: S.pending });
+        delete HOOKS.bossCall.test_wait; S.keeper = 'Cohen'; }
+      // (C7) handoff: a live adopted monster is awake on the new keeper
+      { const s0 = real.find(m => /^s\d+$/.test(m.nid || '') && m.type === 'goblin' && !m.dead) || real.find(m => /^s\d+$/.test(m.nid || ''));
+        const s1 = real.find(m => m !== s0 && /^s\d+$/.test(m.nid || ''));
+        const k0 = { s0: { awake: s0.awake, dead: s0.dead, hp: s0.hp, x: s0.x, y: s0.y, respawnT: s0.respawnT }, s1: { awake: s1.awake, dead: s1.dead, hp: s1.hp, x: s1.x, y: s1.y, respawnT: s1.respawnT } };
+        delete s0.awake; delete s1.awake;
+        push({ t: 'keeper', map: 'over', n: 'Ann' });
+        const row = (m, dead) => [m.nid, m.type, Math.round(m.x), Math.round(m.y), m.maxHp, m.maxHp, 'idle', 1, 0, 0, 0, dead ? 1 : 0, 0, 0];
+        push({ t: 'mon', n: 'Ann', list: [row(s0, false), row(s1, true)] });
+        push({ t: 'keeper', map: 'over', n: 'Cohen' });
+        const ok = monsters === real && s0.awake === true && !s0.dead && s1.dead && s1.awake !== true;
+        check(P + 'handoff: a live adopted monster gets awake true', ok, { real: monsters === real, s0: [s0.awake, s0.dead], s1: [s1.awake, s1.dead] });
+        for (const [m, k] of [[s0, k0.s0], [s1, k0.s1]]) { if (k.awake === undefined) delete m.awake; else m.awake = k.awake; m.dead = k.dead; m.hp = k.hp; m.x = k.x; m.y = k.y; m.respawnT = k.respawnT; } }
+    } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
+      HOOKS.kill.splice(HOOKS.kill.indexOf(listen), 1);
+      if (typeof INSTANCES !== 'undefined' && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+      NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
+      reset();
+      monsters = real;
+      for (let i = monsters.length - 1; i >= 0; i--) if (tempTypes.has(monsters[i].nid)) monsters.splice(i, 1);
+      S.idxLen = -1;
+      h.peace(was.peace); player.x = was.px; player.y = was.py; player.hp = Math.max(1, was.hp); player.kills = was.kills; drops = drops.slice(0, was.drops);
+      if (was.q !== 'null') quest.instances = JSON.parse(was.q);
+      dialog.queue.length = 0; dialog.cur = null;
     }
   });
 }

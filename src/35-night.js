@@ -284,6 +284,7 @@
     name: AFTER.name, sub: AFTER.sub, w: AFTER.w, h: AFTER.h, dark: false, boss: 'count_ashvane',
     build: buildAfterlands, spawns: AF_SPAWNS, exit: null, entry: AF_ENTRY,
     voice: 'The Afterlands. Night never ends here. The dead are calm. The living things are not.',
+    again: 'Ash has gathered on the altar again. Night never ends here, and neither does the Count.',
     onClear: first => {
       say('Count Ashvane comes apart like old paper. The vampires scatter. The dead do not even look up.', 'The Voice');
       if (first) { giveOrDrop('shadow_cloak', 1, player.x, player.y); say('His cloak. It drinks the light. Wear it and the night will find you harder to see.', 'The Voice'); }
@@ -514,7 +515,10 @@
       const k1 = kill(); F.sim(3, []); const banner = bannerAhead('DUNGEON CLEARED'); const c1 = have('shadow_cloak') - c0, f1 = have('vampire_fang') - f0;
       check('night: killing the count shows DUNGEON CLEARED (now or next in the banner queue), drops a vampire fang and (first time) the shadow cloak (body, def 14, value 900)', k1 && banner && c1 === 1 && f1 >= 1 && q.cleared[AFTER.id] === 1 && ITEMS.shadow_cloak.armour.slot === 'body' && ITEMS.shadow_cloak.armour.def === 14 && ITEMS.shadow_cloak.value === 900 && ITEMS.vampire_fang.value === 400 && ITEMS.vampire_fang.shape === 'dagger', { k1, banner: levelBanner && levelBanner.text, cloak: c1, fang: f1, cleared: q.cleared[AFTER.id] });
       drops = drops.filter(d => !['shadow_cloak', 'vampire_fang', 'coins', 'grave_dust'].includes(d.id)); const c2b = have('shadow_cloak'), f2b = have('vampire_fang');
-      const back = enter(); const fresh = monsters.some(m => m.type === 'count_ashvane' && !m.dead); const k2 = kill(); F.sim(3, []);
+      const back = enter(); const heard = [dialog.cur, ...dialog.queue].some(l => l && /Ash has gathered on the altar again/.test(l.text));
+      const fresh = monsters.some(m => m.type === 'count_ashvane' && !m.dead); const k2 = kill(); F.sim(3, []);
+      { const firstVisit = q.cleared[AFTER.id] >= 1 && back;
+        check('night: the again line plays on the second visit to the Afterlands', firstVisit && heard && INSTANCES.get(AFTER.id).again === 'Ash has gathered on the altar again. Night never ends here, and neither does the Count.', { heard, back }); }
       check('night: a second visit brings the count back; a second kill gives another fang but no second cloak', back && fresh && k2 && have('shadow_cloak') === c2b && have('vampire_fang') === f2b + 1 && q.cleared[AFTER.id] === 2, { back, fresh, k2, cloak: have('shadow_cloak') - c2b, fang: have('vampire_fang') - f2b });
       drops = drops.filter(d => !['shadow_cloak', 'vampire_fang', 'coins', 'grave_dust'].includes(d.id)); }
     // E on the crypt door inside climbs back out; the overworld comes back exactly

@@ -113,7 +113,7 @@
 
   function define(id, def) {
     if (!def || !(def.w > 0) || !(def.h > 0) || def.w > MAP_W || def.h > MAP_H) throw new Error('defineInstance: bad size for ' + id);
-    const inst = { id, name: def.name || id, sub: def.sub || '', w: def.w, h: def.h, spawns: def.spawns || [], exit: def.exit || null, entry: def.entry || [1, 1], dark: !!def.dark, boss: def.boss || null, onClear: def.onClear || null, door: def.door || null, step: def.step || null, voice: def.voice || null, build: def.build, tiles: null, vars: null };
+    const inst = { id, name: def.name || id, sub: def.sub || '', w: def.w, h: def.h, spawns: def.spawns || [], exit: def.exit || null, entry: def.entry || [1, 1], dark: !!def.dark, boss: def.boss || null, onClear: def.onClear || null, door: def.door || null, step: def.step || null, voice: def.voice || null, again: def.again || null, lateDoor: !!def.lateDoor, refill: def.refill !== false, build: def.build, tiles: null, vars: null };
     inst.tiles = new Uint8Array(inst.w * inst.h).fill(T.WALL);
     inst.vars = new Uint8Array(inst.w * inst.h);
     const rnd = mulberry32(0x5eed ^ (id.length * 7919) ^ Math.imul(id.charCodeAt(0), 2654435761));
@@ -173,6 +173,8 @@
     miniDirty = true; window.__instance = id;
     burst(player.x, player.y, '#9aa6b8', 14, 80); sfx('open');
     const q = Q(); if (!q.visited[id]) { q.visited[id] = true; if (inst.voice) say(inst.voice, 'The Voice'); }
+    // a boss that comes back on every visit says so in plain words once it has been beaten (`again`)
+    if (inst.again && (q.cleared[id] || 0) >= 1) say(inst.again, 'The Voice');
     return true;
   }
   function leaveInstance() {
@@ -218,12 +220,21 @@
   // ---------- doors placed in the world ----------
   HOOKS.world.push((rnd, api) => {
     for (const id in INST) {
-      const inst = INST[id]; if (!inst.door) continue;
+      const inst = INST[id]; if (!inst.door || inst.lateDoor) continue;
       const [dx, dy] = inst.door, step = inst.step || [dx + 1, dy];
       api.setTile(dx, dy, T_DOOR); api.setTile(step[0], step[1], T.DIRT);
       DOORS[idx(dx, dy)] = { id, step };
     }
   });
+  // a door added to a world that is already built (`lateDoor: true`): placed by its own file once generateWorld has run,
+  // so every world hook after 16 still sees the ground it always saw and the rest of the world comes out tile for tile the same
+  function placeDoor(id) {
+    const inst = INST[id]; if (!inst || !inst.door) return false;
+    const [dx, dy] = inst.door, step = inst.step || [dx + 1, dy];
+    setTile(dx, dy, T_DOOR); setTile(step[0], step[1], T.DIRT);
+    DOORS[idx(dx, dy)] = { id, step };
+    return true;
+  }
 
   // ---------- eggs ----------
   const eggAt = (tx, ty) => active && active.eggs.find(e => e.tx === tx && e.ty === ty);
@@ -436,8 +447,9 @@
   HOOKS.hud.push((g, narrow) => {
     if (!active) return;
     if (panel || paused) return;
-    const inst = active.inst, alive = monsters.filter(m => !m.dead).length;
-    const sub = inst.boss && !active.cleared ? `${alive} left, the boss is awake` : active.cleared ? 'Cleared' : `${alive} left`;
+    // (a boss that is not standing, the War Shed's before the valve or a storm still gathering, is not called awake)
+    const inst = active.inst, alive = monsters.filter(m => !m.dead).length, bossUp = !!inst.boss && monsters.some(m => !m.dead && m.type === inst.boss);
+    const sub = inst.boss && !active.cleared ? `${alive} left, ${bossUp ? 'the boss is awake' : 'the boss is not up yet'}` : active.cleared ? 'Cleared' : `${alive} left`;
     HK.addPlaque(g, { id: 'dungeon', emblem: 'door', name: inst.name.toUpperCase(), sub, right: active.webT > 0 ? `webbed ${active.webT.toFixed(1)}s` : '', rightColor: HK.T.warn, edge: active.webT > 0 ? HK.T.warn : null });
   });
 
@@ -481,6 +493,7 @@
     name: 'The Spider Den', sub: 'Silk, and the thing that spins it', w: DEN.w, h: DEN.h, dark: true, boss: 'brood_mother',
     build: buildDen, spawns: DEN_SPAWNS, exit: DEN_EXIT, entry: DEN_ENTRY, door: [22, 3], step: [23, 3],
     voice: 'Silk. And the thing that spins it.',
+    again: 'A new mother has grown into the den. She is just as big, and just as hungry.',
     onClear: first => {
       say('The Brood Mother curls up and is still. The den is yours. Her chest at the back is webbed shut no longer.', 'The Voice');
       if (first) { giveOrDrop('silk_cloak', 1, player.x, player.y); say('A cloak of her silk. Light, and stronger than it looks.', 'The Voice'); }
@@ -495,7 +508,7 @@
     for (let y = 3; y <= 6; y++) if ([T.GRASS, T.DIRT].includes(api.tileAt(23, y))) api.setTile(23, y, T.DIRT);
   });
 
-  window.INSTANCES = { define, enter: enterInstance, leave: leaveInstance, list: () => Object.keys(INST), active: () => active && active.id, get: id => INST[id] };
+  window.INSTANCES = { define, enter: enterInstance, leave: leaveInstance, list: () => Object.keys(INST), active: () => active && active.id, get: id => INST[id], placeDoor };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -553,6 +566,13 @@
       enterByDoor(); F.tp(DEN_BOSS[0] + 3, DEN_BOSS[1]); const fresh = monsters.some(m => m.type === 'brood_mother' && !m.dead); const k2 = kill(); F.sim(3, []);
       check('instance: a second visit brings the Brood Mother back; a second kill gives no second cloak', fresh && k2 && cloak() === 1 && q.cleared[DEN.id] === 2, { fresh, k2, cloak: cloak(), cleared: q.cleared[DEN.id] });
       drops = drops.filter(d => d.id !== 'silk_cloak' && d.id !== 'spider_silk' && d.id !== 'coins'); }
+    // the den says why she is back: the `again` line plays on a visit after a clear, never on the first
+    { if (active) leaveInstance(); const q = Q(), c0 = q.cleared[DEN.id], v0 = q.visited[DEN.id];
+      const heard = () => [dialog.cur, ...dialog.queue].some(l => l && /new mother has grown/.test(l.text));
+      q.cleared[DEN.id] = 0; q.visited[DEN.id] = false; dialog.queue.length = 0; dialog.cur = null; enterInstance(DEN.id); const first = heard(); leaveInstance();
+      q.cleared[DEN.id] = 1; dialog.queue.length = 0; dialog.cur = null; enterInstance(DEN.id); const second = heard(); leaveInstance();
+      q.cleared[DEN.id] = c0; q.visited[DEN.id] = v0; dialog.queue.length = 0; dialog.cur = null;
+      check('instances: the again line plays on the second visit to the Spider Den, not the first', !first && second && den.again === 'A new mother has grown into the den. She is just as big, and just as hungry.', { first, second }); }
     // save inside → the save describes the overworld with the knight on the step; load lands outside
     { if (!active) enterByDoor(); F.tp(DEN_BOSS[0] + 3, DEN_BOSS[1]); save(); const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); const still = active && active.id === DEN.id && Math.floor(player.x / TILE) === DEN_BOSS[0] + 3;
       const ok = load(); F.sim(2, []);

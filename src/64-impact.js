@@ -197,9 +197,9 @@
   HOOKS.kill.push(onKill);
 
   // ---------- polled hits: the Barrelbeast ram, Full Steam and The Fang ----------
-  // Every poll sits behind a cheap gate (driving a beast, a steam run in the air, The Fang summoned and not yet
-  // slain), so an ordinary tick reads three properties and stops.
-  let ramsWas = -1, steamWas = null, fangRef = null, fangAlive = false, fangEl = null;
+  // Every poll sits behind a cheap gate (driving a beast, a steam run in the air, a Fang standing or just fallen),
+  // so an ordinary tick reads a few properties and stops.
+  let ramsWas = -1, steamWas = null, fangRef = null, fangAlive = false, fangEl = null, fangArr = null, fangLen = -1;
 
   const onUpdate = () => {
     if (waves.length) prune();
@@ -220,18 +220,19 @@
     }
 
     // The Fang: it rises out of the lava, it turns to a new element, it falls
-    const fq = quest.fang;
-    if (fq && fq.summoned && !fq.slain) {
-      if (!fangRef) fangRef = monsters.find(x => x.type === 'the_fang') || null;
+    // (any Fang standing in the monsters: the first one, an Echo after the slaying, or a friend's on a shared map; looked
+    // up again only when the monster list itself changes, so the ordinary tick stays a few property reads)
+    if (!fangRef || monsters !== fangArr || monsters.length !== fangLen) { fangArr = monsters; fangLen = monsters.length; fangRef = monsters.find(x => x.type === 'the_fang') || null; }
+    if (fangRef && (!fangRef.dead || fangAlive)) {
       const m = fangRef;
-      if (m) {
+      {
         const alive = !m.dead;
         if (alive && !fangAlive) wave(m.x, m.y, 2.6, 'fang-wake');
         else if (!alive && fangAlive) wave(m.x, m.y, 3, 'fang-fall');
         else if (alive && m.element && m.element !== fangEl) wave(m.x, m.y, 1.8, 'fang-element');
         fangAlive = alive; fangEl = alive ? (m.element || null) : null;
       }
-    } else { fangRef = null; fangAlive = false; fangEl = null; }
+    } else { fangAlive = false; fangEl = null; }
   };
   HOOKS.update.push(onUpdate);
 

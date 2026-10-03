@@ -30,10 +30,26 @@
     grave_zombie: ['Near graves, after dark'],
     ally_knight: ["Fights beside you in The Fang's Lair (the Duke's Dragon Killers)"],
     the_fang: ["The Fang's Lair — sound the dragon horn to wake it"],
+    barrelbeast: ['The War Shed, on the road below the Goblin Camp (the boiler valve, after Hollowford)'],
   };
-  // loot that is not in a drops table: 28-thefang (first kill), 33-goblincity (Gnash's treasury)
+  // loot that is not in a drops table: 28-thefang (first kill, then every Echo), 66-storm (first kill, then every rematch)
   const EXTRA_DROPS = {
-    the_fang: [['coins', 1000, 1000, 100, 'first kill only'], ['fang_of_the_fang', 1, 1, 100, 'first kill only'], ['mithril_bar', 4, 4, 100, 'first kill only'], ['dragon_scale', 10, 10, 100, 'first kill only']],
+    the_fang: [['coins', 1000, 1000, 100, 'first kill only'], ['fang_of_the_fang', 1, 1, 100, 'first kill only'], ['mithril_bar', 4, 4, 100, 'first kill only'], ['dragon_scale', 10, 10, 100, 'first kill only'],
+      ['coins', 300, 300, 100, 'every Echo'], ['dragon_scale', 3, 3, 100, 'every Echo'], ['mithril_bar', 1, 1, 100, 'every Echo']],
+    thunderbird: [['coins', 400, 400, 100, 'first kill only'], ['storm_feather', 1, 1, 100, 'first kill only'], ['cloud_essence', 3, 3, 100, 'first kill only'],
+      ['coins', 200, 200, 100, 'every rematch'], ['cloud_essence', 1, 1, 100, 'every rematch']],
+  };
+  // how a named boss is fought again (owner: "bosses shoould all be redefeatable"); shown on its page in place of a respawn time
+  const FIGHT_AGAIN = {
+    the_fang: 'Fight again: sound the dragon horn on the summoning circle. The Echo rises once a day (10 minutes of play).',
+    barrelbeast: 'Fight again: the War Shed on the road below the Goblin Camp, the boiler valve, every 5 minutes.',
+    thunderbird: 'Fight again: the wind shrine, Into the storm, every 5 minutes.',
+    gnasher: "Fight again: the Arena lever in Tinkerton's lab, every 3 minutes.",
+    brood_mother: 'Fight again: comes back every time you go in.',
+    count_ashvane: 'Fight again: comes back every time you go in.',
+    ginormous_golem: 'Fight again: he stands up again a little after he falls. Knock him down whenever you like.',
+    mithril_golem: 'Fight again: mine a giant mithril ore in the royal mine. One in three wakes a golem, and the ore grows back in about a minute.',
+    stormstone_golem: 'Fight again: mine a giant stormstone ore in the royal mine. One in two wakes a golem, and the ore grows back in about a minute and a half.',
   };
   // items given by people, chests and quests (id → [text]). 06-systems, 16-instances, 20, 25, 26, 29, 33, 35, 36, 37, 38, 41.
   const GIVEN = {
@@ -141,7 +157,10 @@
     if (bp) for (const id of bp.pool) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: 100 / bp.chance, kind: 'extra', note: bp.pool.length > 1 ? `1 in ${bp.chance}: one of ${bp.pool.length} blueprints, the ones you are missing first` : bp.chance === 1 ? 'every kill while you are missing it' : `1 in ${bp.chance}, while you are missing it` });
     // 37-dragonkillers: one of four dragon items
     const dk = window.DRAGON_KILLERS && typeof DRAGON_KILLERS.chance === 'function' ? DRAGON_KILLERS.chance(type) : 0;
-    if (dk > 0) for (const id of DRAGON_KILLERS.DRAGON_ITEMS) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: dk * 100 / DRAGON_KILLERS.DRAGON_ITEMS.length, kind: 'extra', note: `1 in ${Math.round(1 / dk)} for any dragon item, then one of four` });
+    // a boss that comes back (28-thefang's Echo, 33-goblincity's lever) rolls its dragon item at its own rematch odds
+    const echo = dk > 0 ? DRAGON_KILLERS.chance(type, { repeat: true }) : 0;
+    const again = type === 'the_fang' ? 'on every Echo' : type === 'gnasher' ? 'on every rematch' : 'after that';
+    if (dk > 0) for (const id of DRAGON_KILLERS.DRAGON_ITEMS) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: dk * 100 / DRAGON_KILLERS.DRAGON_ITEMS.length, kind: 'extra', note: `1 in ${Math.round(1 / dk)} for any dragon item${echo && echo !== dk ? ` (the first ${type === 'gnasher' ? 'fight' : 'kill'}; 1 in ${Math.round(1 / echo)} ${again})` : ''}, then one of four` });
     for (const [id, a, b, p, note] of EXTRA_DROPS[type] || []) if (ITEMS[id]) rows.push({ id, min: a, max: b, pct: p, kind: 'extra', note });
     return rows;
   }
@@ -171,7 +190,7 @@
         boss: BOSS_TYPES.has(type) || ((def.level | 0) >= 25 && def.hp >= 300), where: [...(where[type] || [])], drops: dropRows(type, def) };
       for (const x of EXTRA_WHERE[type] || []) { const place = x.split(/[,—(]/)[0].trim(); const i = e.where.indexOf(place); if (i >= 0) e.where[i] = x; else e.where.push(x); }
       e.tablePct = e.drops.filter(r => r.kind === 'table').reduce((s, r) => s + r.pct, 0);
-      e.blurb = monsterBlurb(def, e); out.monsters[type] = e;
+      e.blurb = monsterBlurb(def, e); e.again = FIGHT_AGAIN[type] || null; out.monsters[type] = e;
     }
     // ---- items ----
     const sources = {}; const src = (id, s) => { if (ITEMS[id]) (sources[id] = sources[id] || []).push(s); };
@@ -318,7 +337,8 @@
       const kinds = [['always', 'Every time'], ['table', 'One of these each kill'], ['rare', 'Rare'], ['extra', 'Special']];
       for (const [k, title] of kinds) { const rows = e.drops.filter(r => r.kind === k); if (!rows.length) continue; out.push(P(title + ':', '#8b949e'));
         for (const r of rows) { if (r.id === 'nothing') { out.push(P(`   Nothing · ${pct(r.pct)}%`, '#6e7681')); continue; } out.push(L(`${itemName(r.id)} × ${qtyText(r.min, r.max)} · ${pct(r.pct)}%${r.note ? ' · ' + r.note : ''}`, 'items', r.id, r.id)); } }
-      if (e.respawn) out.push(P(`Comes back after about ${e.respawn >= 1e8 ? 'never (once only)' : e.respawn >= 60 ? Math.round(e.respawn / 60) + ' min' : e.respawn + ' s'}.`, '#6e7681'));
+      if (e.again) out.push(P(e.again, '#8b949e'));
+      else if (e.respawn) out.push(P(`Comes back after about ${e.respawn >= 1e8 ? 'never (once only)' : e.respawn >= 60 ? Math.round(e.respawn / 60) + ' min' : e.respawn + ' s'}.`, '#6e7681'));
     }
     if (section === 'items') {
       const def = e.def || ITEMS[id] || {};
@@ -565,7 +585,7 @@
   // The Wiki plate under a chosen pack item is drawn by the pack itself (src/10-hud.js), in its one row of verbs.
 
   window.WIKI = {
-    sections: SECTIONS, state: wk,
+    sections: SECTIONS, state: wk, BOSS_TYPES, FIGHT_AGAIN,
     add(section, entry) { if (!SECTIONS.includes(section) || !entry || !entry.id) return false; custom[section][entry.id] = Object.assign({ name: entry.id }, entry); data = null; return true; },
     get(section, id) { const d = ensure(); return (d[section] && d[section][id]) || null; },
     open, rebuild() { data = null; return ensure(); }, lines: pageLines, list: listFor,
@@ -573,6 +593,24 @@
   HOOKS.newGame.push(() => { data = null; wk.search = ''; wk.letter = ''; wk.id = null; wk.view = 'list'; wk.history.length = 0; });
 
   // ---------- self-test ----------
+  // a boss that comes back shows both odds: the first kill's, and the rematch's (owner 2026-10-02: every boss can be beaten
+  // again, and the page must not show a rematch at the first kill's better odds)
+  HOOKS.selfTest.push((check) => {
+    const C = window.DRAGON_KILLERS && DRAGON_KILLERS.chance, log = {}; let ok = !!C;
+    for (const type of ['the_fang', 'gnasher']) {
+      const def = MONSTER_DEFS[type]; if (!def || !C) { ok = false; continue; }
+      const first = C(type), again = C(type, { repeat: true });
+      const note = (dropRows(type, def).find(r => r.note && /dragon item/.test(r.note)) || {}).note || '';
+      log[type] = { first: Math.round(1 / first), again: Math.round(1 / again), note };
+      if (!(again !== first && note.includes(`1 in ${Math.round(1 / first)} for any dragon item`) && note.includes(`1 in ${Math.round(1 / again)} on every`))) ok = false;
+    }
+    check('wiki: a boss that comes back shows its rematch dragon-item odds as well as the first kill\'s (the Fang\'s Echo, the Gnasher\'s lever)', ok, log);
+    // every boss that comes back says how, in minutes, and none says "never"; the iPad's USE lights up at each rematch control
+    const back = ['the_fang', 'barrelbeast', 'thunderbird', 'gnasher', 'brood_mother', 'count_ashvane', 'ginormous_golem', 'mithril_golem', 'stormstone_golem'];
+    const lines = back.map(t => [t, FIGHT_AGAIN[t] || '']), noLine = lines.filter(([, l]) => !/^Fight again: /.test(l) || /\bnever\b|\d+ s\b/.test(l)).map(([t]) => t);
+    const controls = ['SUMMON_CIRCLE', 'WIND_SHRINE', 'ARENA_LEVER'], dim = controls.filter(n => !(T[n] >= 0 && INTERESTING_TILES.has(T[n])));
+    check('wiki: every boss that comes back says how to fight it again in plain minutes, never "never"; USE lights up at the circle, the wind shrine and the Arena lever', !noLine.length && !dim.length, { noLine, dim });
+  });
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'wiki: ';
     const d = WIKI.rebuild();

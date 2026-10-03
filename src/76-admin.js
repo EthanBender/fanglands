@@ -337,9 +337,9 @@
   // ---------- C. Unlock everything ----------
   // What "everything" means, enumerated from the code (the report carries this table): each entry says what unlocked
   // means, sets it the way the game itself would have left it, and can say whether it holds. Tile changes go through
-  // changeTile so they live in the save. The one-time bosses the world shares (the Barrelbeast, The Fang) are left
-  // standing on purpose: through the keeper model a boss slain in MudGoll's save would stay down for every friend on
-  // his map, and the fights are the fun part. Their gates are open; the Fang comes when he sounds the horn.
+  // changeTile so they live in the save. The story bosses (the Barrelbeast, The Fang) are left unslain on purpose: the
+  // first fights are the fun part, and a square beast slain in MudGoll's save would stay down for every friend on his map
+  // while he keeps it (they would have to use the War Shed). Their gates are open; the Fang comes when he sounds the horn.
   const lastStage = () => Math.max(16, ...Object.keys(HOOKS.mainQuest).map(Number).filter(Number.isFinite));
   const qo = (key, fresh) => { const v = quest[key]; if (v && typeof v === 'object') return v; quest[key] = fresh(); return quest[key]; };
   const tileId = name => (name in T ? T[name] : undefined);
