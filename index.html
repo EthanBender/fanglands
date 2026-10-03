@@ -44184,6 +44184,146 @@ const MONSTER_LOOK = (() => {
     return { scale, ox: -(b[0] + b[2]) / 2 * scale, oy: -(b[1] + b[3]) / 2 * scale };
   }
 
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'monster look: ';
+    // a context that writes down every call and every colour it is given (the headless canvas is a stub)
+    const recorder = () => {
+      const log = []; let n = 0;
+      const grad = () => ({ addColorStop: () => { } });
+      const g = new Proxy({}, {
+        get: (t, k) => {
+          if (k === 'createLinearGradient' || k === 'createRadialGradient' || k === 'createPattern') return (...a) => { n++; log.push(k); return grad(); };
+          if (k === 'measureText') return () => ({ width: 10 });
+          if (k === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
+          if (k in t) return t[k];
+          if (typeof k !== 'string') return undefined;
+          return (...a) => { n++; log.push(k + ':' + a.map(x => typeof x === 'number' ? Math.round(x * 10) / 10 : typeof x).join(',')); };
+        },
+        set: (t, k, v) => { t[k] = v; if (typeof v === 'string' || typeof v === 'number') log.push('=' + String(k) + ':' + (typeof v === 'number' ? Math.round(v * 100) / 100 : v)); return true; },
+      });
+      return { g, log, get n() { return n; } };
+    };
+    const types = Object.keys(MONSTER_DEFS);
+    const T0 = time, peace0 = window.__peace, on0 = ON.on, pics0 = ON.pics;
+    const ent = (type, o) => Object.assign({ type, x: 0, y: 0, r: MONSTER_DEFS[type].r, home: { x: 0, y: 0 }, hp: MONSTER_DEFS[type].hp, maxHp: MONSTER_DEFS[type].hp, facing: { x: 0, y: 1 },
+      moving: false, walkT: 0, attackT: 0, hurtT: 0, stunT: 0, state: 'idle', dead: false }, o || {});
+    // the old sprites must never be reached for a monster: every drawMonster hook is a counter while the checks run
+    const hooks0 = Object.assign({}, HOOKS.drawMonster); let oldHits = 0;
+    for (const k of Object.keys(HOOKS.drawMonster)) HOOKS.drawMonster[k] = function () { oldHits++; };
+    try {
+      // 1. every monster type has an approved drawing and a size, and nothing else is drawn by the look
+      { const missing = types.filter(t => !NEW[t] || !BOX[t]), extra = Object.keys(NEW).filter(t => !MONSTER_DEFS[t]);
+        check(P + `every one of the ${types.length} monster types has its approved drawing and a measured size (and the look draws no type the game does not have)`, types.length === 47 && !missing.length && !extra.length, { n: types.length, missing, extra }); }
+      // 2. each type, at 8 facings, standing, walking, swinging and hurt, through drawCharacter: the new drawing, never the old
+      { const bad = []; const by0 = Object.assign({}, STATS.by), passed0 = STATS.passed; time = 3.1;
+        for (const t of types) for (let d = 0; d < 8; d++) for (const pose of ['stand', 'walk', 'swing', 'hurt']) {
+          const a = d * Math.PI / 4, e = ent(t, { facing: { x: Math.cos(a), y: Math.sin(a) }, moving: pose === 'walk', attackT: pose === 'swing' ? 0.2 : 0, hurtT: pose === 'hurt' ? 0.2 : 0 });
+          if (t === 'ginormous_golem') e.state = 'fight';
+          const r = recorder(), draw = lookType(t, e), before = STATS.by[draw] || 0;
+          try { drawCharacter(r.g, e, t); } catch (err) { bad.push(t + ' ' + pose + ' threw ' + err.message); continue; }
+          if ((STATS.by[draw] || 0) !== before + 1 || r.n < 20) bad.push(t + ' d' + d + ' ' + pose + ' calls ' + r.n);
+        }
+        check(P + 'every type draws through its new look at 8 facings, standing, walking, swinging and hurt, and never through its old sprite', !bad.length && oldHits === 0 && STATS.passed === passed0, { bad: bad.slice(0, 8), oldHits, passed: STATS.passed - passed0 }); }
+      // 3. the states: each one changes the picture (the same moment drawn twice, only the state differs)
+      { time = 5.37;
+        const fang0 = quest.fang ? quest.fang.slain : undefined;
+        const CASES = [
+          ['thunderbird high', 'thunderbird', { phase: 'hunt' }, { phase: 'high' }], ['thunderbird perch', 'thunderbird', { phase: 'hunt' }, { phase: 'perch' }],
+          ['fang ice', 'the_fang', { element: 'fire' }, { element: 'ice' }], ['fang storm', 'the_fang', { element: 'fire' }, { element: 'storm' }], ['fang stone', 'the_fang', { element: 'fire' }, { element: 'stone' }],
+          ['fang element from a row', 'the_fang', { phase: 'fire' }, { phase: 'stone' }],
+          ['brute wind-up', 'zombie_brute', { windT: 0, stagT: 0 }, { windT: 0.5, stagT: 0 }], ['brute stagger', 'zombie_brute', { windT: 0, stagT: 0 }, { windT: 0, stagT: 1 }],
+          ['brute wind-up from a row', 'zombie_brute', {}, { phase: 'wind' }], ['brute stagger from a row', 'zombie_brute', {}, { phase: 'stagger' }],
+          ['wight heart out', 'cinderwight', {}, { heart: { dead: false } }], ['wight cold', 'cinderwight', {}, { coldT: 2 }], ['wight cold from a row', 'cinderwight', {}, { phase: 'cold' }], ['wight feeding from a row', 'cinderwight', {}, { phase: 'feed' }],
+          ['heart burning down', 'cinder_heart', { emberT: 0 }, { emberT: 9 }],
+          ['Barrelbeast cracked', 'barrelbeast', {}, { hp: 160 }], ['Barrelbeast rod flaring', 'barrelbeast', { rodGlow: 0 }, { rodGlow: 1 }], ['Barrelbeast rod from a row', 'barrelbeast', {}, { phase: 'volley' }, 1],
+          ['Gnasher arm', 'gnasher', { armT: 0 }, { armT: 0.2 }], ['Gnasher arm from a row', 'gnasher', {}, { phase: 'arm' }, 0.2], ['Gnasher cracked', 'gnasher', {}, { hp: 150 }],
+          ['dozer charging', 'bulldozer', { chargeT: 0 }, { chargeT: 0.5 }], ['dozer charging from a row', 'yard_dozer', {}, { phase: 'charge' }],
+          ['mithril ore stirring', 'giant_mithril', { state: 'idle' }, { state: 'stir' }], ['mithril ore waking', 'giant_mithril', { state: 'idle' }, { state: 'waking' }],
+          ['stormstone ore cracked', 'giant_stormstone', {}, { hp: 5 }], ['stormstone ore split', 'giant_stormstone', {}, { hp: 2 }],
+          ['little golem climbing out', 'golemling', { state: 'walk' }, { state: 'emerge' }],
+          ['Ginormous Golem asleep', 'ginormous_golem', { state: 'fight' }, { state: 'sleep' }], ['Ginormous Golem wind-up', 'ginormous_golem', { state: 'fight' }, { state: 'windup' }],
+          ['Ginormous Golem slam', 'ginormous_golem', { state: 'fight' }, { state: 'slam' }], ['Ginormous Golem at half', 'ginormous_golem', { state: 'fight' }, { state: 'fight', hp: 200 }],
+          ['calm zombie roused', 'zombie_calm', { state: 'idle' }, { state: 'chase' }], ['calm grave zombie roused', 'grave_zombie_calm', { state: 'idle' }, { state: 'chase' }],
+          ['Dragon Killers', 'ally_knight', { ally: 'hale' }, { ally: 'garrick' }], ['a falling guard without his spear', 'guard_m', {}, { unarmed: true }], ['a falling goblin without his cleaver', 'goblin', {}, { unarmed: true }],
+        ];
+        const same = [];
+        for (const [name, t, a, b, later] of CASES) {
+          // a state that plays out from the moment it arrives (a row's wind-up) is drawn a little after it arrives
+          const ea = ent(t, a), eb = ent(t, b); const ra = recorder(), rb = recorder();
+          time = 5.37; drawCharacter(ra.g, ea, t); drawCharacter(rb.g, eb, t); time = 5.37 + (later || 0.4); const ra2 = recorder(), rb2 = recorder(); drawCharacter(ra2.g, ea, t); drawCharacter(rb2.g, eb, t);
+          if (ra2.log.join('|') === rb2.log.join('|')) same.push(name);
+        }
+        // the Echo of the Fang: see-through for a knight who slew the real one
+        quest.fang = quest.fang || {}; quest.fang.slain = false; const r1 = recorder(); drawCharacter(r1.g, ent('the_fang'), 'the_fang');
+        quest.fang.slain = true; const r2 = recorder(); drawCharacter(r2.g, ent('the_fang'), 'the_fang'); quest.fang.slain = fang0;
+        const echo = r2.log.some(l => l.startsWith('=globalAlpha')) && !r1.log.some(l => l.startsWith('=globalAlpha'));
+        const roused = lookType('zombie_calm', { state: 'chase' }) === 'zombie' && lookType('grave_zombie_calm', { state: 'chase' }) === 'grave_zombie' && lookType('zombie_calm', { state: 'idle' }) === 'zombie_calm';
+        check(P + `every state a monster shows changes its new picture (${CASES.length} states, the local field and a puppet row's phase both), and the Echo of the Fang is drawn see-through`, !same.length && echo && roused, { same, echo, roused }); }
+      // 4. online puppets: a puppet's walkT never moves and its attackT changes only when a row lands; the look still walks and swings
+      { time = 10; const pup = ent('goblin', { nid: 'Ann:51', remote: true, moving: true, walkT: 0, facing: { x: 1, y: 0 } }), steps = new Set(), swings = [];
+        for (let k = 0; k < 40; k++) {
+          time += 1 / 30;
+          if (k === 20) pup.attackT = 0.2;
+          if (k === 23) pup.attackT = 0.1;
+          if (k === 26) pup.attackT = 0;
+          drawCharacter(ctx, pup, 'goblin');
+          const v = viewOf(pup, 'goblin'), P2 = picPose(v, 'goblin', MEM.get(pup));
+          const m = /\|w(\d)\|/.exec(P2.key), a = /\|a(\d)/.exec(P2.key); if (m) steps.add(m[1]); if (a) swings.push(+a[1]);
+        }
+        const inOrder = swings.length >= 3 && swings.every((x, i) => i === 0 || x >= swings[i - 1]) && swings[0] === 0 && swings[swings.length - 1] === 3;
+        const brute = ent('zombie_brute', { nid: 'Ann:52', remote: true }); time = 20; viewOf(brute, 'zombie_brute'); brute.phase = 'wind'; const w0 = viewOf(brute, 'zombie_brute').windT; time = 20.5; const w1 = viewOf(brute, 'zombie_brute').windT;
+        const seedSame = viewOf(ent('wolf', { nid: 'Ann:53' }), 'wolf').seed === viewOf(ent('wolf', { nid: 'Ann:53', x: 999 }), 'wolf').seed;
+        check(P + 'an online puppet (walkT stuck at 0, attackT only as rows land) walks through the step pictures, swings once in order, plays a row\'s wind-up on the look\'s own clock, and has the same seed on every screen',
+          pup.walkT === 0 && steps.size >= 6 && inOrder && w0 > 1 && w1 > 0.5 && w1 < 0.7 && seedSame, { steps: [...steps], swings, w0, w1, seedSame }); }
+      // 5. a dying monster: 79-deaths' falling body is drawn in the new look, and a person's weapon flies as his own
+      if (window.DEATHS) {
+        h.peace(true); const bad = []; let weap = 0;
+        const drawW0 = MONSTER_LOOK.drawWeapon;
+        for (const t of ['goblin', 'wolf', 'zombie', 'walker', 'green_dragon', 'mithril_golem', 'guard_m']) {
+          const m = ent(t, { x: player.x + 200, y: player.y, nid: null, dead: true, hp: 0 }); monsters.push(m);
+          const c = DEATHS.spawn(m); if (!c) { bad.push(t + ' no corpse'); continue; }
+          const before = STATS.by[lookType(t, c.body)] || 0, r = recorder();
+          for (const age of [0.05, 0.3, 0.55]) { c.t = age * c.dur; DEATHS.draw(r.g, c); }
+          if ((STATS.by[lookType(t, c.body)] || 0) < before + 3) bad.push(t + ' drawn ' + ((STATS.by[t] || 0) - before));
+          if (c.kind === 'person' && !c.body.unarmed) bad.push(t + ' armed');
+          if (c.kind === 'person' && (c.ext < reach(t) || !r.log.length)) bad.push(t + ' ext ' + c.ext);
+          if (c.kind === 'undead' && !(c.top >= headroom(t))) bad.push(t + ' top ' + c.top);
+          monsters.splice(monsters.indexOf(m), 1); m.dead = false;
+        }
+        { const r = recorder(); weap = drawWeapon(r.g, 'guard_m', {}) && r.n > 10 ? 1 : 0; }
+        check(P + '79-deaths draws a falling body in the new look (every kind of death), clipped to the new size, and throws a person\'s own weapon clear', !bad.length && weap === 1 && oldHits === 0, { bad, weap, oldHits });
+      }
+      // 6. hit circles: each r is the table's, and every spawn of a grown one still stands on clear ground with room to move
+      { const wrong = types.filter(t => MONSTER_DEFS[t].r !== HIT_R[t]).map(t => t + ' ' + MONSTER_DEFS[t].r + '/' + HIT_R[t]);
+        const grown = new Set(Object.keys(HIT_R_WAS)), stuck = [];
+        const room = (x0, y0, r) => { if (collides(x0, y0, r, 'beast')) return 0; let n = 0; const S = 16; for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) if (!collides(x0 + dx * S, y0 + dy * S, r, 'beast')) n++; return n; };
+        if (!window.__instance) for (const sp of MONSTER_SPAWNS) if (grown.has(sp.type)) { const n = room(tc(sp.tx), tc(sp.ty), MONSTER_DEFS[sp.type].r); if (n < 12) stuck.push(sp.type + '@' + sp.tx + ',' + sp.ty + ' ' + n); }
+        const pc = window.PLAYTHROUGH ? PLAYTHROUGH.connectivity() : null, ic = window.PLAYTHROUGH ? PLAYTHROUGH.instanceConnectivity().filter(r => r.dist < 0) : [];
+        check(P + `hit circles fit the new looks: all ${types.length} radii as the table says (${Object.keys(HIT_R_WAS).length} grown), every grown one's spawn stands clear with room to move, and the world and every instance stay connected`,
+          !wrong.length && !stuck.length && (!pc || pc.unreachable.length === 0) && !ic.length, { wrong, stuck, unreachable: pc ? pc.unreachable.slice(0, 4) : null, inst: ic.slice(0, 4) }); }
+      // 7. a crowd: the common monsters are pictures, made once and then reused
+      { const crowd = [], kinds = [...PIC_TYPES]; time = 40; const made0 = STATS.made, live0 = STATS.live;
+        for (let i = 0; i < 40; i++) crowd.push(ent(kinds[i % kinds.length], { nid: 'crowd' + i, moving: i % 3 !== 0, facing: { x: Math.cos(i), y: Math.sin(i) } }));
+        // 2.5 s to warm (a whole walk and the whole 2 s standing loop), then a second more must make next to nothing
+        let warm = 0;
+        for (let k = 0; k < 210; k++) { time += 1 / 60; if (k === 150) warm = STATS.made; for (const e of crowd) drawCharacter(ctx, e, e.type); }
+        const later = STATS.made - warm;
+        check(P + 'a crowd of 40 common monsters walking and standing is drawn from pictures: none live, and once warm no new pictures are made (frame time against master is measured in headless Chromium, see the report)',
+          STATS.live === live0 && later <= 2 && STATS.made - made0 > 0 && PICS.size <= 1400, { live: STATS.live - live0, made: STATS.made - made0, later, pics: PICS.size }); }
+      // 8. labels over the heads, big ones drawn while they reach into the view, portraits fitted, the golem's own picture
+      { const tall = ent('guard_m'), big = ent('the_fang');
+        const labels = monsterTop(tall) >= headroom('guard_m') - 7 && monsterTop(tall) > tall.r && monsterPad(big) >= 190;
+        const fits = types.every(t => { const f = fit(t, 64, 1.8), b = BOX[t]; return f && Math.max(b[2] - b[0], b[3] - b[1]) * f.scale <= 64 * 0.87; });
+        installColossus(); const c0 = STATS.colossus; if (window.ROYALMINE) ROYALMINE.drawColossus(recorder().g, ent('ginormous_golem', { state: 'sleep' }), false);
+        const golem = !window.ROYALMINE || STATS.colossus === c0 + 1;
+        check(P + 'a name and health bar sit over the new head, a big monster is drawn while its body reaches into the view, every portrait fits its box, and the Ginormous Golem\'s own pass draws his new look', labels && fits && golem, { labels, fits, golem }); }
+    } finally {
+      for (const k of Object.keys(HOOKS.drawMonster)) HOOKS.drawMonster[k] = hooks0[k];
+      time = T0; window.__peace = peace0; ON.on = on0; ON.pics = pics0;
+    }
+  });
+
   return { ON, STATS, LOOK_FIELDS, HIT_R, HIT_R_WAS, ATTACK_T, BOX, PIC_TYPES, viewOf, lookType, isMonsterKind, drawLook, boxOf, reach, headroom, picPose, clearPics,
     PICS, MEM, fit, drawWeapon, drawColossusLook, colossusView, installColossus, paint, _drawCharacter };
 })();
