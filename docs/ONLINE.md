@@ -1420,6 +1420,42 @@ watching (it counts, it never moves anyone). Today: 1,234 steps checked, 0 too f
 so the page makes no new calls.
 
 
+**What it costs, measured** (3 Oct 2026, MacBook Pro, node 26, other builders' runs on the machine):
+
+| | |
+|---|---|
+| The Atlas | 35 places (21 regions, 10 instances, 3 areas, 1 reserved); 2,950 overworld tiles FIXED_SOLID; hash `ea36148040c3f60c` |
+| `online/src/atlas.json` | 29.1 KB (5.4 KB gzipped): 1,603 grid runs, 2,287 FIXED_SOLID runs, 9 instance masks |
+| Building it in the game | `ATLAS.build()` 4.0 ms median over 20 builds (3.8 to 8.1 ms), once per world build |
+| Reading it in the World | `JSON.parse` and `readAtlas` 0.58 ms, once per wake |
+| The movement check | `judge()` 0.72 microseconds per presence on foot, 0.89 on the mare (200,000 presences each) |
+| The drift gate | `node online/test/atlas-drift.mjs` about 3 s (two builds of the game). Proved: one rect in ATLAS_RULES moved and the game rebuilt without committing the new `atlas.json`, the gate exits 1 ("does not match the game ... Run ./build.sh and commit online/src/atlas.json") and a `set -e` deploy script stops there |
+| The Worker | 184.95 KiB uploaded, 47.06 KiB gzipped (`atlas.json` is 29.1 KB of it), startup 5 ms (the test deploy's own figures) |
+
+**The audit** (`node tools/move-audit.mjs [--play]`, logs in `~/.fanglands/work/phase1/sw-1/`): the whole headless suite,
+then the suite with the bot's playthrough of the main quest, with the knight's presence sampled as 73-players sends it and
+judged by `move.js` against the world's own Atlas. First run: 17,659 steps judged, 2 too fast, 1 into a wall. The two too
+fast were a machine's FULL STEAM run (55-riding, 430 px/s, faster than any mover SPEED_CAP had): SPEED_CAP gained `steam`,
+presence reports it while the run lasts, and a self-test now holds SPEED_CAP to the movers' own tables. The wall was a
+self-test (91-cloudkingdom K22) putting the knight on a tower in Aerie to check its ground cache: a teleport, not play.
+After the fix: 17,551 judged, 0 too fast, 0 wall (27 jump bursts logged, 537 jumps waived); with the playthrough 31,707
+judged, 0 too fast, 0 wall. The world never had a FIXED_SOLID tile change under it at boot: the only tiles the world adds
+after the Atlas pass are the War Shed's late door walls (more wall, never less).
+
+**The proof** (`~/.fanglands/work/phase1/sw-1/proof/`, 3 Oct 2026). Two real browsers, a laptop (1280 x 800) and an iPad
+(1024 x 1366, touch), on a local `wrangler dev` world running this branch (`stage1-proof.js local`, two fresh test
+knights): 10.0 minutes of play on the keys (walking and fighting goblins in the fields), the mare at 350 px/s, Harl's ferry
+to Gull Isle and back, the island portal, the palisade climb at Agility 25, a death and the respawn. Both games sent caps
+`[]` and the world's own Atlas in hello, and welcome named the same; no reload plaque. The movement check took all 2,933
+presences the two games sent: 2,856 judged, 77 not judged (first steps, deaths, the islands), 56 jumps waived, 0 too fast,
+0 into or through a wall. Both knights stood on their own islands at once: neither saw the other, each kept his own, and
+the roster said `house` for both. A page told of another Atlas shows the NEW WORLD plaque, 44 px tall on the iPad
+(`new-world-plaque-ipad-local.png`). On the test world (https://test.gorkscape.ca, deployed with
+`~/.fanglands/tools/deploy-test.sh` after the backup, every gate green; `test-world-check.js`): `GET /api/admin/sim`
+answers the Atlas `ea36148040c3f60c` and `observe`, the served game builds the same hash on a laptop and an iPad and says
+it in hello, and the parent page shows the check (`test-world-admin-*.png`). The same two-browser run with Probe Knight
+and Probe Two on the test world is `node stage1-proof.js probe`; it logs the probes in with their secret word.
+
 ## Safety rules (binding)
 
 - Invite-only signups. Names and chat pass `online/src/filter.js`. Chat is logged with the name and time.
