@@ -327,7 +327,11 @@ const RETALIATE = (() => {
       { stage(34, 0x5E84); const gd = goblin(player.x + 34, player.y, 'guard_m'); const boar = goblin(player.x + 40, player.y + 30, 'boar'); boar.angry = false; boar.state = 'idle'; boar.stunT = 99;
         monsters = [gd, boar]; const picked = new Set(); const watch = () => { if (R.target) picked.add(R.target); };
         hurtPlayer(1, gd.x, gd.y); watch(); for (let s = 0; s < 60; s++) { safe(); watch(); } const byGuard = !picked.has(gd) && !picked.has(boar);
-        const calm = goblin(player.x + 60, player.y); calm.angry = false; calm.state = 'idle'; calm.stunT = 99; monsters = [calm]; const tx = Math.floor(calm.x / TILE), ty = Math.floor(calm.y / TILE);
+        const calm = goblin(player.x + 60, player.y); calm.angry = false; calm.state = 'idle'; calm.stunT = 99; monsters = [calm];
+        // the guard's blow above knocks the knight back a few pixels, and now and then that left the goblin exactly on a tile
+        // centre, the very spot the slip below names, which IS how a monster's own attack is traced: so it stands 9 px off it
+        calm.x = tc(Math.floor(calm.x / TILE)) + 9; calm.home = { x: calm.x, y: calm.y };
+        const tx = Math.floor(calm.x / TILE), ty = Math.floor(calm.y / TILE);
         hurtPlayer(1, tc(tx), tc(ty), true); watch(); hurtPlayer(2, player.x, player.y + 20, true); watch(); for (let s = 0; s < 60; s++) { safe(); watch(); } const byHazard = !picked.has(calm);
         check(P + 'only the monster that attacked: not a boar beside a guard, not a goblin beside a slip or a prick', byGuard && byHazard, { byGuard, byHazard, picked: [...picked].map(m => m.type) }); }
       // a bow with no arrows: said once, not on every hit, and no swing is tried; with arrows he shoots back
