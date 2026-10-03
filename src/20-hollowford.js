@@ -19,14 +19,27 @@
   // won. wreckDue: a first kill made in the shed (a friend's fight), whose wreck is rolled out beside the door on leaving.
   // toldShed: online, a friend broke the square's beast already, and this knight was sent to the shed for his own fight.
   const HF = () => { const h = quest.hollowford || (quest.hollowford = { rewarded: false, beastKilled: false, wreck: null }); if (typeof h.freed !== 'boolean') h.freed = false; if (typeof h.barHits !== 'number') h.barHits = 0;
-    h.shedUp = h.shedUp ?? false; h.shedRestUntil = h.shedRestUntil ?? 0; h.shedKills = h.shedKills ?? 0; h.wreckDue = h.wreckDue ?? false; h.toldShed = h.toldShed ?? false; return h; };
-  HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null, freed: false, barHits: 0, shedUp: false, shedRestUntil: 0, shedKills: 0, wreckDue: false, toldShed: false }; });
+    h.shedUp = h.shedUp ?? false; h.shedRestUntil = h.shedRestUntil ?? 0; h.shedKills = h.shedKills ?? 0; h.wreckDue = h.wreckDue ?? false; h.toldShed = h.toldShed ?? false; h.shedVoice = h.shedVoice ?? null; return h; };
+  // a save from before the shed's line was fitted to the story: a knight who has been inside heard the story line already
+  // (the instance's own voice, on his first visit), so he is not told it again
+  { const _load = load;
+    load = function () {
+      const ok = _load(); const h = quest.hollowford;
+      if (ok && h && h.shedVoice === undefined) { const v = quest.instances && quest.instances.visited && quest.instances.visited.war_shed; h.shedVoice = v ? (quest.stage >= 9 ? 'story' : 'early') : null; }
+      return ok;
+    }; }
+  HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null, freed: false, barHits: 0, shedUp: false, shedRestUntil: 0, shedKills: 0, wreckDue: false, toldShed: false, shedVoice: null }; });
   // the valve stands on row 7, under the boiler (row 6), with the stocks three rows below it: on row 3 it sat under the top
   // HUD of a phone held upright (the crest, the quest scroll, two plaques: down to 323 px), where the camera cannot scroll
   // past the shed's top wall
   const SHED = { id: 'war_shed', w: 28, h: 20 }, SHED_DOOR = [147, 44], SHED_STEP = [148, 44], SHED_HOME = { x: 14, y: 11 }, VALVE_T = { x: 14, y: 7 };
   const BOILER_T = [[13, 6], [14, 6], [15, 6]];
   const SHED_ENTRY = [14, 18], SHED_EXIT = [14, 19], SHED_REST = 300;
+  // the shed's first-visit Voice: the story line once his story has reached the burning of Hollowford (stage 9), a plain
+  // one before that (the door is open from a new game, so a friend can follow a friend in), and the story line once more on
+  // his first visit after stage 9. hf.shedVoice: null, 'early' or 'story'.
+  const SHED_VOICE = 'The War Shed. The goblins kept the plans. Whatever they drag back from Hollowford, they bolt into the next Barrelbeast.';
+  const SHED_VOICE_EARLY = 'The War Shed. Goblins build their machines in here. The stocks are empty, and the crew is out.';
   const SHED_WALL = [[145, 43], [146, 43], [147, 43], [145, 44], [146, 44], [145, 45], [146, 45], [147, 45]];
   const WRECK_SPOTS = [[144, 47], [143, 47], [144, 48], [143, 48]];
   const restLeft = until => Math.max(0, (until || 0) - (player.dayTime || 0));
@@ -285,7 +298,8 @@
   if (window.INSTANCES) INSTANCES.define(SHED.id, {
     name: 'The War Shed', sub: 'Where the goblins build their beasts', w: SHED.w, h: SHED.h, dark: false, boss: 'barrelbeast', spawns: [],
     entry: SHED_ENTRY, exit: SHED_EXIT, door: SHED_DOOR, step: SHED_STEP, lateDoor: true,
-    voice: 'The War Shed. The goblins kept the plans. Whatever they drag back from Hollowford, they bolt into the next Barrelbeast.',
+    // no instance voice: the shed says its own first line on the first visit, fitted to the story (see SHED_VOICE)
+    voice: null,
     build: (set) => {
       for (let y = 0; y < SHED.h; y++) for (let x = 0; x < SHED.w; x++) set(x, y, (x === 0 || y === 0 || x === SHED.w - 1 || y === SHED.h - 1) ? T.HWALL : T.FLOOR);
       // the stocks: a 5×3 bed of timber the beast is bolted together on
@@ -337,7 +351,7 @@
     if (liveBeast()) { say('The beast is already up. Bring it down.', 'Boiler valve'); return; }
     if (!hf.beastKilled) {
       if (quest.stage === 9 && hf.toldShed) { say('The crew laughs, spins the valve, and a Barrelbeast stands up off the stocks.', 'The Voice'); hf.shedUp = true; save(); shedSeen = false; callShed(); return; }
-      say('The goblin crew laughs at you. Their beast is still walking in Hollowford.', 'Boiler valve'); return;
+      say(quest.stage >= 9 ? 'The goblin crew laughs at you. Their beast is still walking in Hollowford.' : 'The valve is cold. Nothing on the stocks is finished yet.', 'Boiler valve'); return;
     }
     const left = restLeft(hf.shedRestUntil);
     if (left > 0) { say(`The crew is still bolting it back together. Ready in ${mmss(left)}.`, 'Boiler valve'); return; }
@@ -358,7 +372,11 @@
     if (inShed()) {
       // a new visit: the first tick inside, or a leave and a walk back in between two ticks (16-instances stamps lastLeft)
       const key = INSTANCES.get(SHED.id).lastLeft;
-      if (!wasInShed || key !== shedVisit) { wasInShed = true; shedVisit = key; shedSeen = false; shedDownAt = null; }
+      if (!wasInShed || key !== shedVisit) {
+        wasInShed = true; shedVisit = key; shedSeen = false; shedDownAt = null;
+        if (quest.stage >= 9 && hf.shedVoice !== 'story') { hf.shedVoice = 'story'; say(SHED_VOICE, 'The Voice'); save(); }
+        else if (quest.stage < 9 && !hf.shedVoice) { hf.shedVoice = 'early'; say(SHED_VOICE_EARLY, 'The Voice'); save(); }
+      }
       const lb = liveBeast();
       if (lb && hf.shedUp) shedSeen = true;
       if (hf.shedUp && !lb && !shedSeen) {
@@ -896,6 +914,16 @@
         check(P + "a friend's first beast in Hollowford's square, helped by a knight who broke his own: BEAST DOWN, 'You helped a friend', the def drops; no REMATCH WON, no shed line, no shed rematch counted",
           r.ph && r.banner && !r.rematch && !r.shed && r.helped && r.kills === 0 && r.scrap >= 8, r);
         drops = drops.slice(0, n0); quest.stage = st; drain(); clearBanners(); }
+      // B17: the door is open from a new game, but nothing inside talks about Hollowford before the story burns it (stage 9):
+      // a plain first line and a cold valve; at stage 9 the story line once, and never again after it
+      { const hf9 = HF(), st = quest.stage, kb = hf9.beastKilled, v0 = hf9.shedVoice; Object.assign(hf9, { beastKilled: false, toldShed: false, shedUp: false, shedVoice: null }); quest.stage = 5;
+        const heard = () => [dialog.cur, ...dialog.queue].filter(l => l && l.who === 'The Voice' && /^The War Shed\./.test(l.text)).map(l => l.text);
+        drain(); enterShed(); F.sim(2, []); const early = heard(); drain(); valve(); const cold = said(/valve is cold/) && !said(/Hollowford/); INSTANCES.leave(); F.sim(2, []);
+        quest.stage = 9; drain(); enterShed(); F.sim(2, []); const story = heard(); INSTANCES.leave(); F.sim(2, []);
+        drain(); enterShed(); F.sim(2, []); const again = heard(); INSTANCES.leave(); F.sim(2, []);
+        check(P + "before stage 9 the War Shed's first line and its valve never mention Hollowford; at stage 9 the story line plays once, and not on the next visit",
+          early.length === 1 && !/Hollowford/.test(early[0]) && cold && story.length === 1 && /drag back from Hollowford/.test(story[0]) && again.length === 0 && hf9.shedVoice === 'story', { early, cold, story, again, v: hf9.shedVoice });
+        Object.assign(hf9, { beastKilled: kb, shedVoice: v0 }); quest.stage = st; drain(); }
       // B10: online and not the shed's keeper: the valve asks the keeper and makes nothing itself
       if (typeof NET !== 'undefined' && window.COOP) {
         const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
