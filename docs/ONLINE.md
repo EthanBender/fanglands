@@ -1578,7 +1578,7 @@ Every 5 s each copy's boss rests (75-coop's `restAt`) are written as `rest:<map>
 only when they changed. A copy built again (after a fallback, a drop or a nap) reads its map's row back into `restAt`, so a
 boss resting there keeps resting. The three Stage 2 maps have no named boss; the row is for the stages that do.
 
-**`welcome`** gains `sim: { maps: { deepholm, aerie, coalmine: 'keeper' | 'world' }, hz: 10, caps: [] }`: the mode of each map
+**`welcome`** (from a world that has its game copy) gains `sim: { maps: { deepholm, aerie, coalmine: 'keeper' | 'world' }, hz: 10, caps: [] }`: the mode of each map
 the world can run, its tick rate, and the capabilities it serves (none yet; Stage 3 adds `tick` and `die`).
 
 **The parent page.** `GET /api/admin/sim` adds:
