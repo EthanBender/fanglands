@@ -36,6 +36,12 @@ import { json, oops, failFrom, readJson, bearer } from './http.js';
 import { backupCall } from './backup.js';
 import { handoffCall, addressOf } from './handoff.js';
 import { Meter, isAdminPath } from './meter.js';
+import { readAtlas } from './atlas.js';
+import { MoveBook, MOVE_MODES } from './move.js';
+import ATLAS_JSON from './atlas.json' with { type: 'json' };
+
+// the Atlas the world judges by (docs/ONLINE.md, "The shared world", Stage 1): made by tools/atlas.mjs from the game it ships with
+const ATLAS = readAtlas(ATLAS_JSON);
 
 const SESSION_MS = 90 * 24 * 3600 * 1000;   // a token is good for 90 days
 const SAVE_MAX = 512 * 1024;                // bytes; a slot is well under 100 KB
@@ -60,6 +66,7 @@ export class World {
     // the place of a lockout that is over is not kept (docs/ONLINE.md, "Kept out")
     try { this.store.forgetPlaces(this.now()); } catch (e) { console.error('places', e); }
     this.meter = new Meter(this.sql, () => this.now());   // what the free plan counts, per UTC day (meter.js)
+    this.moveBook = new MoveBook(this.sql, () => this.now());   // the movement check's counts and violations (move.js)
     this.chatWrites = 0;
     this.wraps = new WeakMap();
     this.room = new Room({
@@ -68,7 +75,10 @@ export class World {
       wake: ms => this.ctx.storage.setAlarm(Date.now() + ms).catch(e => console.error('alarm', e)),
       store: this.store,
       random: cryptoRandom,
+      atlas: ATLAS,
+      moveBook: this.moveBook,
     });
+    this.room.setSim(this.simSettings());
     // pings are answered by the runtime without waking the world (the client sends exactly this text)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"t":"ping"}', '{"t":"pong"}'));
     // waking up: every socket that survived the nap carries its knight's state
@@ -98,10 +108,27 @@ export class World {
     return w;
   }
   webSocketMessage(ws, msg) { this.meter.ws(); if (typeof msg === 'string') this.room.message(this.wrap(ws), msg); }
-  webSocketClose(ws, code, reason) { this.room.leave(this.wrap(ws)); try { ws.close(1000, 'bye'); } catch (e) { } this.meter.flush(); }
-  webSocketError(ws) { this.room.leave(this.wrap(ws)); this.meter.flush(); }
+  webSocketClose(ws, code, reason) { this.room.leave(this.wrap(ws)); try { ws.close(1000, 'bye'); } catch (e) { } this.meter.flush(); this.moveBook.flush(); }
+  webSocketError(ws) { this.room.leave(this.wrap(ws)); this.meter.flush(); this.moveBook.flush(); }
   // Cloudflare bills every alarm invocation as a Durable Object request, so the meter counts it as one
-  alarm() { this.meter.http(false); try { this.room.tick(); } catch (e) { console.error('tick', e); } this.meter.flush(); }
+  alarm() { this.meter.http(false); try { this.room.tick(); } catch (e) { console.error('tick', e); } this.meter.flush(); this.moveBook.flush(); }
+
+  // ---------- the shared world's switches (settings key 'sim', JSON; docs/ONLINE.md "The shared world") ----------
+  simSettings() {
+    let s = {};
+    try { const r = this.row("SELECT value FROM settings WHERE key = 'sim'"); if (r) s = JSON.parse(r.value) || {}; } catch (e) { s = {}; }
+    if (!s || typeof s !== 'object' || Array.isArray(s)) s = {};
+    return Object.assign({}, s, { move: MOVE_MODES.includes(s.move) ? s.move : 'observe' });
+  }
+  simView() {
+    const ks = this.room.knightsView ? this.room.knightsView() : [];
+    return {
+      meter: this.meter.view(),
+      sim: { move: this.room.sim.move },
+      atlas: ATLAS ? { hash: ATLAS.hash, places: ATLAS.places.length, fixed: ATLAS.fixedCount } : null,
+      move: Object.assign({ mode: this.room.sim.move }, this.moveBook.view(), { knights: ks }),
+    };
+  }
 
   // ---------- HTTP ----------
   async fetch(req) {
@@ -444,7 +471,15 @@ export class World {
     const post = method === 'POST';
     { const r = await backupCall(this, req, url, call, method); if (r) return r; }
     if (call === 'accounts' && method === 'GET') return json(this.accountsView());
-    if (call === 'sim' && method === 'GET') return json({ meter: this.meter.view() });   // the shared world: only the meter so far
+    if (call === 'sim' && method === 'GET') return json(this.simView());   // the shared world: the meter, the Atlas, the movement check
+    if (call === 'sim' && post) {
+      const b = await readJson(req);
+      if (!b || typeof b !== 'object' || !Object.keys(b).length || Object.keys(b).some(k => k !== 'move') || !MOVE_MODES.includes(b.move)) throw oops(400, "send {move: 'observe'} or {move: 'off'}", 'bad');
+      const s = Object.assign(this.simSettings(), { move: b.move });
+      this.sql.exec("INSERT INTO settings (key, value) VALUES ('sim', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", JSON.stringify(s));
+      this.room.setSim(s);
+      return json(this.simView());
+    }
     if (call === 'online' && method === 'GET') return json(this.room.online());
     if (call === 'chat' && method === 'GET') {
       const limit = Math.max(1, Math.min(5000, parseInt(url.searchParams.get('limit'), 10) || 500));

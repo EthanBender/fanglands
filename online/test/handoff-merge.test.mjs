@@ -228,7 +228,7 @@ async function bootGame({ host = 'gorkscape.ca', cookie = '', standalone = false
 test('the game on the old address: a tab kept for a knight only on its device clears fl_here at once and shows the tab note once; an icon shows its own note; the new address shows none', async () => {
   let r = await bootGame({ cookie: 'a=1; fl_here=1', store: { 'fanglands.slot.2': K(10) } });
   assert.deepEqual(r.set, ['fl_here=; Max-Age=0; Path=/; Secure; SameSite=Lax']);
-  assert.ok(r.texts.includes('Fanglands has a new home: fanglands.com. Log in and bring your knight into your account first.'), r.texts.join('|'));
+  assert.ok(r.texts.includes('Fanglands has a new home: fanglands.com. This device has a knight saved on it that is not in an account yet, so you play here for now. It is safe. Ask Ethan to add it to your account.'), r.texts.join('|'));
   assert.ok(r.store['fanglands.handoff.tabnoted']);
   r = await bootGame({ cookie: 'fl_here=1', store: r.store });
   assert.ok(!r.texts.some(t => /new home/.test(t)), 'once');
@@ -245,7 +245,7 @@ test('the game on the old address: a tab kept for a knight only on its device cl
 });
 test('the game on the old address in a browser that keeps no cookie: the hop\'s marker (window.FL_HOP, left by page.html) shows the same notes', async () => {
   let r = await bootGame({ hop: 'here', store: { 'fanglands.slot.2': K(10) } });
-  assert.ok(r.texts.includes('Fanglands has a new home: fanglands.com. Log in and bring your knight into your account first.'), r.texts.join('|'));
+  assert.ok(r.texts.includes('Fanglands has a new home: fanglands.com. This device has a knight saved on it that is not in an account yet, so you play here for now. It is safe. Ask Ethan to add it to your account.'), r.texts.join('|'));
   assert.deepEqual(r.set, []);
   r = await bootGame({ hop: 'stay', standalone: true, store: after(), world: W });
   assert.ok(r.texts.some(t => t.startsWith('Fanglands has a new home: fanglands.com. Your knight is saved in the cloud.')), r.texts.join('|'));

@@ -499,3 +499,62 @@ test('boss_wait from the keeper reaches only the named knight on its map, with i
   assert.equal(b.of('boss_wait').length, 1);
   assert.equal(CAPS.boss_wait.rate, 1); assert.equal(CAPS.boss_wait.burst, 3);
 });
+
+// ---------- the shared world, Stage 1 (docs/ONLINE.md, "The shared world") ----------
+test('each knight\'s island is his own: two knights on their islands never see each other, each keeps his own, and every message names the map house', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'), b = w.knight('Jack', 'over'), c = w.knight('Zed', 'over');
+  w.settle(a, b, c);
+  w.say(a, { t: 'p', map: 'house', x: 100, y: 100, lv: 3 });
+  w.say(b, { t: 'p', map: 'house', x: 120, y: 100, lv: 3 });
+  // each heard he keeps his own island, named house
+  assert.deepEqual(a.last('keeper'), { t: 'keeper', map: 'house', n: 'Cohen' });
+  assert.deepEqual(b.last('keeper'), { t: 'keeper', map: 'house', n: 'Jack' });
+  // the knight left behind on the overworld hears each go, as house never
+  assert.deepEqual(c.of('left').map(m => [m.n, m.map]), [['Cohen', 'over'], ['Jack', 'over']]);
+  a.clear(); b.clear(); c.clear();
+  w.say(a, { t: 'p', map: 'house', x: 110, y: 100, lv: 3 });
+  w.say(b, { t: 'p', map: 'house', x: 130, y: 100, lv: 3 });
+  assert.equal(a.of('p').length, 0); assert.equal(b.of('p').length, 0); assert.equal(c.of('p').length, 0);
+  // a game naming another knight's island key still lands on its own
+  w.say(b, { t: 'p', map: 'house:cohen', x: 130, y: 100, lv: 3 });
+  assert.equal(a.of('p').length, 0);
+  assert.equal(w.room.keeperOf('house:cohen').name, 'Cohen');
+  assert.equal(w.room.keeperOf('house:jack').name, 'Jack');
+  // the roster and the parent page say house; the attachment keeps the key, so a nap puts him back on his own island
+  assert.deepEqual(w.room.online().map(k => [k.n, k.map]), [['Cohen', 'house'], ['Jack', 'house'], ['Zed', 'over']]);
+  assert.equal(a.state.map, 'house:cohen');
+  // a trade ask between the two islands is refused as another map
+  w.say(a, { t: 'trade_ask', to: 'Jack' });
+  assert.equal(a.last('trade_no').code, 'map');
+  // back to the overworld: seen again
+  w.say(a, { t: 'p', map: 'over', x: 5, y: 5, lv: 3 });
+  assert.deepEqual(c.last('p'), { t: 'p', n: 'Cohen', map: 'over', x: 5, y: 5, lv: 3, role: 'player' });
+});
+
+test('hello caps and atlas are kept with the knight (known caps only, in order), ride the attachment over a nap, and welcome names the world\'s Atlas', () => {
+  const atlas = { hash: 'ab12cd34ef56ab78', knows: () => false, speedMax: 350 };
+  let t = 1000;
+  const room = new Room({ now: () => t, wake: () => { }, atlas });
+  const s = { got: [], state: null, send(str) { s.got.push(JSON.parse(str)); }, close() { }, attach(st) { s.state = st; } };
+  room.join(s, 'Cohen');
+  room.message(s, JSON.stringify({ t: 'hello', v: 1, caps: ['zone', 'bogus', 'tick', 'tick', 7], atlas: 'ab12cd34ef56ab78' }));
+  assert.equal(s.got[0].t, 'welcome'); assert.equal(s.got[0].atlas, 'ab12cd34ef56ab78');
+  assert.deepEqual(s.state.caps, ['tick', 'zone']); assert.equal(s.state.atlas, 'ab12cd34ef56ab78');
+  assert.deepEqual(room.knightsView(), [{ n: 'Cohen', map: 'over', atlas: 'same', caps: ['tick', 'zone'] }]);
+  // a nap: a new Room rebuilt from the attachment keeps both
+  const again = new Room({ now: () => t, wake: () => { }, atlas });
+  const s2 = { got: [], send(str) { s2.got.push(JSON.parse(str)); }, close() { }, attach() { } };
+  again.restore(s2, s.state);
+  assert.deepEqual(again.knightsView(), [{ n: 'Cohen', map: 'over', atlas: 'same', caps: ['tick', 'zone'] }]);
+  // an old page: no caps, no atlas; junk is dropped
+  const o = { got: [], send(str) { o.got.push(JSON.parse(str)); }, close() { }, attach() { } };
+  room.join(o, 'Old'); room.message(o, JSON.stringify({ t: 'hello', v: 1, caps: 'tick', atlas: 'NOT A HASH!' }));
+  assert.deepEqual(room.knightsView().find(k => k.n === 'Old'), { n: 'Old', map: 'over', atlas: 'none', caps: [] });
+  const n = { got: [], send(str) { n.got.push(JSON.parse(str)); }, close() { }, attach() { } };
+  room.join(n, 'Newer'); room.message(n, JSON.stringify({ t: 'hello', v: 1, caps: [], atlas: '0000000000000000' }));
+  assert.equal(room.knightsView().find(k => k.n === 'Newer').atlas, 'old');
+  // a world with no Atlas says none in welcome
+  const w = world(); const a = w.knight('Cohen');
+  assert.equal('atlas' in a.last('welcome'), false);
+});

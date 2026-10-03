@@ -638,13 +638,19 @@ PEOPLE_UI.auditPrompt = function (p) {
     const e = { x: d.px, y: d.py, r: 11, facing: d.facing, hurtT: 0, attackT: 0, moving: false, walkT: 0 };
     const near = dist(player.x, player.y, e.x, e.y) < 110;
     if (near) e.facing = { x: Math.sign(player.x - e.x) || 0, y: Math.sign(player.y - e.y) || 1 };
-    g.save(); g.translate(e.x, e.y);
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 10, 11, 5, 0, 0, 7); g.fill();
-    g.scale(0.85, 0.85); g.translate(0, 2);
-    drawHuman(g, e, { tunic: d.tunic, hair: d.hair, apron: d.apron, helm: d.helm || null, crown: d.crown, woman: d.woman, beard: !d.woman, shoulder: d.shoulder || '#6a5a4a' });
-    if (!d.woman) dwBigBeard(g, d.hair);
-    g.restore();
-    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(d.name, e.x, e.y - 24); g.fillStyle = '#ffe9a8'; g.fillText(d.name, e.x, e.y - 24); }
+    const look = { who: d.id, tunic: d.tunic, hair: d.hair, apron: d.apron, helm: d.helm || null, crown: d.crown, woman: d.woman, beard: !d.woman, shoulder: d.shoulder || '#6a5a4a' };
+    // the new look (83-townsfolk) draws the dwarf whole, beard and shadow and all, at a dwarf's own size
+    const nl = !!(window.TOWNSFOLK && TOWNSFOLK.put(g, e.x, e.y, e, look));
+    if (!nl) {
+      g.save(); g.translate(e.x, e.y);
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 10, 11, 5, 0, 0, 7); g.fill();
+      g.scale(0.85, 0.85); g.translate(0, 2);
+      drawHuman(g, e, look);
+      if (!d.woman) dwBigBeard(g, d.hair);
+      g.restore();
+    }
+    const up = nl ? TOWNSFOLK.labelUp(d.id, 24) : 24;
+    if (near) { g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(d.name, e.x, e.y - up); g.fillStyle = '#ffe9a8'; g.fillText(d.name, e.x, e.y - up); }
   }
   // darkness: an offscreen layer, holes cut with destination-out (the core's cave technique).
   // Drawn as the last world item rather than in HOOKS.hud so the HUD (HP, minimap, hotbar) stays readable underground.

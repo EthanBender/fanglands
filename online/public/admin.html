@@ -12,6 +12,7 @@
   main { max-width: 1440px; margin: 0 auto; padding: 24px 16px 80px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   h2 { font-size: 17px; margin: 32px 0 10px; border-bottom: 1px solid #2c3038; padding-bottom: 6px; }
+  h3.sub { font-size: 15px; margin: 22px 0 6px; }
   p.note { color: #8a90a0; margin: 0 0 16px; }
   .scroll { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; }
@@ -107,6 +108,13 @@
     <p class="note">The world server will run the monsters itself, a step at a time; nothing is switched on yet. This counts what Cloudflare's free plan counts: each call to the world is one request, and every 20 messages from the knights' games are one more. The free plan allows 100,000 a day, and its day starts at midnight UTC (8 pm here in summer, 7 pm in winter). This page's own calls (and the backups') are counted on their own, so the game's share is what the cost gate reads. The meter is read when this page opens and when you press Refresh; while the page is hidden, nothing refreshes at all.</p>
     <p id="meter">…</p>
     <div class="scroll"><table id="meterdays"><thead><tr><th>Day (UTC)</th><th>Messages</th><th>Game calls</th><th>The game, about</th><th>Of the free plan</th><th>This page's calls</th><th>Everything, of the free plan</th></tr></thead><tbody></tbody></table></div>
+    <h3 class="sub">Movement check</h3>
+    <p class="note">The movement check watches where each knight's game says he is, against the world's map: too fast for what he rides, or into or through a wall nobody can cross. It only counts; it never moves or stops anyone. A knight whose page is older than the world is asked to reload, and is not checked until he does.</p>
+    <p id="movecheck">…</p>
+    <p id="atlasline"></p>
+    <div class="row"><button id="movetoggle" class="gold">Turn the movement check off</button></div>
+    <p id="movenone" class="note"></p>
+    <div class="scroll" id="moverecentbox"><table id="moverecent"><thead><tr><th>When</th><th>Knight</th><th>Map</th><th>What</th><th>From</th><th>To</th><th>Gap</th><th>His speed</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
   </div>
 </main>
 <script>
@@ -318,7 +326,41 @@
     $('meter').textContent = 'Today (UTC), read at ' + new Date().toLocaleTimeString() + ': the game sent ' + n(t.wsIn) + ' socket messages and made ' + n(gameCalls(t)) + ' calls, about ' + n(game(t)) + ' of the ' + n(m.freeLimit) + ' requests a day the free plan allows (' + pct(game(t), m.freeLimit) + '). This page and the backups made ' + n(admin(t)) + ' calls on top, so about ' + n(t.est) + ' in all (' + pct(t.est, m.freeLimit) + ').';
     const tb = $('meterdays').querySelector('tbody'); tb.innerHTML = '';
     for (const d of m.days.slice(0, 7)) { const tr = document.createElement('tr'); cell(tr, d.day).className = 'nowrap'; cell(tr, n(d.wsIn)); cell(tr, n(gameCalls(d))); cell(tr, n(game(d))); cell(tr, pct(game(d), m.freeLimit)); cell(tr, n(admin(d))); cell(tr, pct(d.est, m.freeLimit)); tb.appendChild(tr); }
+    showMove(r);
   }
+
+  // the movement check and the Atlas (docs/ONLINE.md, "The shared world", Stage 1): from the same GET /api/admin/sim, no calls of its own
+  let moveMode = null;
+  const WHAT = { speed: 'too fast', wall: 'a wall', jumps: 'many jumps' };
+  function showMove(r) {
+    const n = v => Number(v || 0).toLocaleString(), mv = r && r.move, at = r && r.atlas;
+    if (!mv) { $('movecheck').textContent = 'No movement check on this world yet.'; $('atlasline').textContent = ''; $('movetoggle').classList.add('hidden'); return; }
+    moveMode = mv.mode;
+    const t = mv.today || {};
+    $('movecheck').textContent = mv.mode === 'off' ? 'Movement check: off. Nothing is being checked or counted.'
+      : 'Movement check: watching (it counts, it never moves anyone). Today (UTC): ' + n(t.checked) + ' steps checked, ' + n(t.speed) + ' too fast, ' + n(t.wall) + ' into or through a wall, ' + n(t.jumps) + ' bursts of jumps. '
+        + n(t.skipped) + ' steps were not checked (a first step, a fall, the island' + (t.old ? ', and ' + n(t.old) + ' from a page older than the world' : '') + ').';
+    const ks = mv.knights || [], old = ks.filter(k => k.atlas !== 'same');
+    $('atlasline').textContent = !at ? 'This world has no map of places yet.'
+      : 'World map ' + at.hash + ' (' + at.places + ' places): ' + (ks.length ? ks.length + (ks.length === 1 ? ' knight on, ' : ' knights on, ') + (old.length ? old.length + ' on an older page (' + old.map(k => k.n).join(', ') + '), asked to reload.' : (ks.length === 1 ? 'on this map.' : 'all on this map.')) : 'nobody on.');
+    $('movetoggle').classList.remove('hidden');
+    $('movetoggle').textContent = mv.mode === 'off' ? 'Turn the movement check back on' : 'Turn the movement check off';
+    const tb = $('moverecent').querySelector('tbody'); tb.innerHTML = '';
+    const recent = mv.recent || [];
+    $('moverecentbox').classList.toggle('hidden', !recent.length);
+    $('movenone').textContent = recent.length ? 'The newest it found, newest first:' : 'Nothing found in the last 60 days.';
+    for (const v of recent) {
+      const tr = document.createElement('tr');
+      cell(tr, clock(v.at)).className = 'nowrap'; cell(tr, v.n); cell(tr, v.map); cell(tr, (WHAT[v.kind] || v.kind) + (v.kind === 'wall' ? (v.detail === 'in' ? ' (stood in one)' : ' (went through one)') : ''));
+      cell(tr, v.px != null ? n(v.px) + ', ' + n(v.py) : ''); cell(tr, n(v.x) + ', ' + n(v.y)); cell(tr, v.ms != null ? n(v.ms) + ' ms' : ''); cell(tr, v.spd != null ? n(v.spd) : ''); cell(tr, v.kind === 'wall' ? '' : v.detail || '');
+      tb.appendChild(tr);
+    }
+  }
+  $('movetoggle').onclick = async () => {
+    const to = moveMode === 'off' ? 'observe' : 'off';
+    if (!confirm(to === 'off' ? 'Turn the movement check off? Nothing is checked or counted until you turn it back on.' : 'Turn the movement check back on? It only counts; it never moves anyone.')) return;
+    try { const r = await api('POST', '/api/admin/sim', { move: to }); showMove(r); say(to === 'off' ? 'The movement check is off.' : 'The movement check is watching again.'); } catch (e) { say(e.message, true); }
+  };
 
   async function refresh(all) {
     try {

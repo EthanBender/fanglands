@@ -34,7 +34,7 @@
   const NOTE_CLOUD = 'Fanglands has a new home: fanglands.com. Your knight is saved in the cloud. ' + NEW_ICON;
   const NOTE_DEVICE = 'Fanglands has a new home: fanglands.com. Keep this icon: knights saved on this device live here. ' + NEW_ICON;
   // the one-time note in an ordinary tab kept on the old address for a knight saved only on this device
-  const NOTE_TAB = 'Fanglands has a new home: fanglands.com. Log in and bring your knight into your account first.';
+  const NOTE_TAB = 'Fanglands has a new home: fanglands.com. This device has a knight saved on it that is not in an account yet, so you play here for now. It is safe. Ask Ethan to add it to your account.';
   const TOKEN = 'fanglands.session', NAME = 'fanglands.lastname';
   // what a hand-over carries besides the login: the settings and the hint counters (handoff-merge.js, CARRY and HINT_RE;
   // a test holds them together)
@@ -205,7 +205,7 @@
     check(P + 'a home-screen icon on the old address shows its note once', plan({ host: 'gorkscape.ca', standalone: true, cookie: S }) === 'note' && plan({ host: 'www.gorkscape.ca', standalone: true, cookie: S }) === 'note' && plan({ host: 'gorkscape.ca', standalone: true, cookie: S, noted: true }) === null);
     check(P + 'an ordinary tab kept on the old address for a knight only on this device shows the tab note once', plan({ host: 'gorkscape.ca', standalone: false, cookie: H }) === 'tab' && plan({ host: 'test.gorkscape.ca', standalone: false, cookie: 'x=2; ' + H }) === 'tab' && plan({ host: 'gorkscape.ca', standalone: false, cookie: H, tabNoted: true }) === null && plan({ host: 'gorkscape.ca', standalone: false, cookie: S }) === null);
     check(P + 'a browser that keeps no cookie: the hop\'s one-load marker (?fl_hop) shows the same notes', plan({ host: 'gorkscape.ca', standalone: true, cookie: '', hop: 'stay' }) === 'note' && plan({ host: 'gorkscape.ca', standalone: false, cookie: '', hop: 'here' }) === 'tab' && plan({ host: 'gorkscape.ca', standalone: false, cookie: '', hop: 'stay' }) === null && plan({ host: 'fanglands.com', standalone: false, cookie: '', hop: 'here' }) === null && plan({ host: 'gorkscape.ca', standalone: false, cookie: '', hop: 'evil' }) === null);
-    check(P + 'the tab note says where the game lives now and what to do first', NOTE_TAB === 'Fanglands has a new home: fanglands.com. Log in and bring your knight into your account first.');
+    check(P + 'the tab note says where the game lives now, that the knight is safe, and who can move it', NOTE_TAB === 'Fanglands has a new home: fanglands.com. This device has a knight saved on it that is not in an account yet, so you play here for now. It is safe. Ask Ethan to add it to your account.');
     // 4. the icon note's words follow the facts: "saved in the cloud" only when the world holds every knight here
     const K = '{"player":{"playSeconds":300,"line":[["s1",0],["s2",200]]}}', BEHIND = '{"player":{"playSeconds":150,"line":[["s1",0]]}}', AHEAD = '{"player":{"playSeconds":320,"line":[["s1",0],["s2",200]],"kills":1}}', T2 = '{"player":{"playSeconds":900}}';
     const cloud = mem({ 'fanglands.session': 't', 'fanglands.lastname': 'Cohen', 'fanglands.slot.1': K, 'fanglands.slot.1.at': '50', 'fanglands.slot.1.online': 'cohen', 'fanglands.slot.4': BEHIND, 'fanglands.slot.3': 'not a save', 'fanglands.kept.cohen': T2 });

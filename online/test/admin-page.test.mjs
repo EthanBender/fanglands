@@ -23,7 +23,7 @@ function fakeEl() {
   return p;
 }
 
-function page({ hidden = false, search = '', hist = [] } = {}) {
+function page({ hidden = false, search = '', hist = [], sim = null, yes = false } = {}) {
   const els = new Map(), calls = [], intervals = new Map(), listeners = {};
   let seq = 0;
   const document = {
@@ -34,9 +34,11 @@ function page({ hidden = false, search = '', hist = [] } = {}) {
     addEventListener: (type, f) => { (listeners[type] = listeners[type] || []).push(f); },
   };
   const meter = { today: { day: '2026-10-04', wsIn: 40, http: 12, admin: 10, gameHttp: 2, est: 14, gameEst: 4 }, days: [], freeLimit: 100000, waiting: 0 };
+  const posts = [];
   const fetch = async (path, opt) => {
     calls.push(path.split('?')[0]);
-    const body = /\/sim$/.test(path) ? { meter } : /\/invite$/.test(path) ? { invite: 'TEST-1234' } : [];
+    if (opt && opt.method === 'POST') posts.push({ path, body: JSON.parse(opt.body) });
+    const body = /\/sim$/.test(path) ? Object.assign({ meter }, sim ? (typeof sim === 'function' ? sim(posts) : sim) : {}) : /\/invite$/.test(path) ? { invite: 'TEST-1234' } : [];
     return { ok: true, status: 200, json: async () => body };
   };
   const ctx = {
@@ -45,7 +47,7 @@ function page({ hidden = false, search = '', hist = [] } = {}) {
     setInterval: (f, ms) => { const id = ++seq; intervals.set(id, { f, ms }); return id; },
     clearInterval: id => { intervals.delete(id); },
     setTimeout: (f) => { Promise.resolve().then(f); return 0; }, clearTimeout() { },
-    confirm: () => false, alert() { }, location: { reload() { }, pathname: '/admin', search, hash: '' }, history: { state: null, replaceState: (st, t, u) => hist.push(u) }, navigator: {},
+    confirm: () => yes, alert() { }, location: { reload() { }, pathname: '/admin', search, hash: '' }, history: { state: null, replaceState: (st, t, u) => hist.push(u) }, navigator: {},
     Date, Math, JSON, Promise, Number, String, Object, Array, Set, Map, Error, encodeURIComponent, URLSearchParams,
   };
   ctx.window = ctx;
@@ -56,7 +58,7 @@ function page({ hidden = false, search = '', hist = [] } = {}) {
   const advance = async ms => { for (let t = 0; t < ms; t += 10000) { for (const { f } of [...intervals.values()]) f(); await settle(); } };
   const show = async on => { document.hidden = !on; for (const f of listeners.visibilitychange || []) f(); await settle(); };
   const take = () => { const c = calls.splice(0); const by = {}; for (const p of c) by[p] = (by[p] || 0) + 1; return { n: c.length, by }; };
-  return { settle, advance, show, take, intervals, els };
+  return { settle, advance, show, take, intervals, els, posts };
 }
 
 test('the admin page: the meter is read on opening and on Refresh, never by the 10 s refresh', async () => {
@@ -109,4 +111,28 @@ test('two addresses: the one-load marker of a hop that kept this tab on the old 
   assert.deepEqual(hist, ['/admin?x=1']);
   const none = []; const q = page({ search: '?x=1', hist: none }); await q.settle();
   assert.deepEqual(none, []);
+});
+
+// the shared world, Stage 1: the movement check and the Atlas come in the same read, and the switch is one POST
+test('the admin page: the movement check and the Atlas ride the meter\'s read (no new calls); its button posts the switch', async () => {
+  const today = { day: '2026-10-04', checked: 1234, speed: 0, wall: 1, jumps: 0, waived: 3, skipped: 12, old: 2 };
+  const sim = posts => {
+    const mode = posts.length ? posts[posts.length - 1].body.move : 'observe';
+    return { sim: { move: mode }, atlas: { hash: '1a2b3c4d5e6f7a8b', places: 35, fixed: 2950 },
+      move: { mode, today, days: [today], recent: [{ at: Date.now(), n: 'Ben', map: 'over', kind: 'wall', x: 10, y: 20, px: 10, py: 120, ms: 125, spd: 175, detail: 'through' }], knights: [{ n: 'Ann', map: 'over', atlas: 'same', caps: [] }, { n: 'Ben', map: 'over', atlas: 'old', caps: [] }] } };
+  };
+  const P = page({ sim, yes: true });
+  await P.settle();
+  const open = P.take();
+  assert.equal(open.by['/api/admin/sim'], 1, 'one read on opening, as before');
+  assert.match(String(P.els.get('movecheck').textContent), /watching .* 1,234 steps checked, 0 too fast, 1 into or through a wall, 0 bursts of jumps\. 12 steps were not checked .*2 from a page older than the world/);
+  assert.match(String(P.els.get('atlasline').textContent), /World map 1a2b3c4d5e6f7a8b \(35 places\): 2 knights on, 1 on an older page \(Ben\), asked to reload\./);
+  assert.equal(String(P.els.get('movetoggle').textContent), 'Turn the movement check off');
+  await P.els.get('movetoggle').onclick(); await P.settle();
+  assert.deepEqual(P.posts.map(p => p.body), [{ move: 'off' }]);
+  assert.match(String(P.els.get('movecheck').textContent), /^Movement check: off\./);
+  assert.equal(String(P.els.get('movetoggle').textContent), 'Turn the movement check back on');
+  assert.equal(P.take().by['/api/admin/sim'], 1, 'the switch is the one POST');
+  await P.advance(60000);
+  assert.equal(P.take().by['/api/admin/sim'], undefined, 'the 10 s refresh still never reads it');
 });

@@ -130,8 +130,8 @@ between knights on the same map; chat and the roster go to everyone.
 
 | `t` | Fields | Cap | Meaning |
 |---|---|---|---|
-| `hello` | `v: 1, map?` | once | first frame after open; the server answers `welcome`. Without `map` the knight is on `over` until its first `p` |
-| `p` | `map, region, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act` | 8/s | presence. `region` is the region or instance name the roster shows; `look` is the serialisable part of `playerLook()`, with the six worn item ids in `look.gear` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null |
+| `hello` | `v: 1, map?, caps?, atlas?` | once | first frame after open; the server answers `welcome`. Without `map` the knight is on `over` until its first `p`. `caps` and `atlas`: see *The shared world*, Stage 1 |
+| `p` | `map, region, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act, j, spd, s` | 8/s | presence. `region` is the region or instance name the roster shows; `look` is the serialisable part of `playerLook()`, with the six worn item ids in `look.gear` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null |
 | `chat` | `text` | 1 per 1.5 s, ≤ 120 chars | filtered and logged server-side, then sent to everyone |
 | `mon` | `list` | 8/s, keeper only | monster snapshot for the map (format below) |
 | `hit` | `nid, dmg, knock, bomb` | 20/s | a non-keeper hit a monster; routed to the keeper |
@@ -149,7 +149,7 @@ between knights on the same map; chat and the roster go to everyone.
 
 | `t` | Fields | Meaning |
 |---|---|---|
-| `welcome` | `me, at, keeper, role` | you are in; `keeper` is the keeper of your current map (may be you); `role` is `'player'` or `'admin'` |
+| `welcome` | `me, at, keeper, role, atlas?` | you are in; `keeper` is the keeper of your current map (may be you); `role` is `'player'` or `'admin'`; `atlas` is the world's Atlas hash (*The shared world*, Stage 1) |
 | `who` | `list: [{n, map, region, lv, role}]` | everyone online; sent on join/leave and at most every 2 s |
 | `p` | `n` + the presence fields + `role` | a knight on your map moved; `role` is the server's word, never the sender's |
 | `left` | `n, map` | that knight left your map (or the game) |
@@ -374,7 +374,7 @@ loaded:
    this same address asked: `Sec-Fetch-Site: same-origin`) and sends back to the path with `fl_hop=here`, where the
    Worker serves the game exactly as today. The game clears `fl_here` as it boots (`src/00-handoff.js`), so a reload or
    the next visit asks the hand-over page again, and shows a calm one-time note (OK; `fanglands.handoff.tabnoted`):
-   *"Fanglands has a new home: fanglands.com. Log in and bring your knight into your account first."* The kid logs in
+   *"Fanglands has a new home: fanglands.com. This device has a knight saved on it that is not in an account yet, so you play here for now. It is safe. Ask Ethan to add it to your account."* Such a browser keeps playing on the old address (same world) until the admin moves that knight; nothing is lost. The kid logs in
    there; the game settles the knight (feat/no-play-alone's `src/72-deviceknights.js`: its own copy goes up if the world
    is behind, a knight no account owns is offered to a new account). **Once nothing is left only on this device, the
    next visit is sent across.** With no login and no knight saved here: a plain redirect to the same path and query on
@@ -1556,6 +1556,212 @@ and the pages' 21 calls in the game's. One of three runs counted 2 game calls mo
 show where they came from (the test world was open to other builders, and Probe Two was on it minutes before). The page
 itself, on a local `wrangler dev` (`admin-traffic.js`, iPad size): opening made 9 calls with one meter read, a minute in
 view 24, a minute hidden 0, 20 s shown again 12, and the admin column grew by exactly those calls plus the final read.
+
+### Stage 1: the Atlas, the capabilities, the movement check (watching only), and each knight's own island
+
+Players see nothing new, with one exception: a page older than the world it talks to says so (below). Nothing a knight
+does is refused, moved or corrected. The new parts:
+
+**The Atlas: one table of every place.** `src/01-atlas.js` defines `window.ATLAS` and the hand table `ATLAS_RULES`;
+`src/96-atlas.js` registers the very last `HOOKS.world` pass, which builds the per-tile place grid and the FIXED_SOLID mask
+from the world just generated (before any save's changes are laid on it), and holds the drift self-tests.
+`tools/atlas.mjs` (run by `build.sh`) boots the built game headless and writes `online/src/atlas.json`; the Room has no
+game, so it reads that file through `online/src/atlas.js`. The game's own copies read `window.ATLAS`.
+
+- **A place** is `{ i, id, name, sub, kind, map, combat, pri, rects, spawn, call, pvp, safe, loose, of }`:
+  - `id` matches `^[a-z0-9_]{1,40}$`. A region's id is made from its name: lower case, a leading "The " and every "'s"
+    dropped, anything else that is not a letter or digit becomes `_` ("The Fang's Lair" is `fang_lair`, "Goblin Camp"
+    `goblin_camp`). An instance's id is its `INSTANCES.define` id.
+  - `name` and `sub` are never written in the Atlas: they come from the REGIONS entry or the `INSTANCES.define` the feature
+    already declares. An area (below) takes its parent's.
+  - `kind`: `region` (every REGIONS entry, Stage 1: 21), `instance` (every `INSTANCES.define`, 10), `area` (a hand-drawn
+    part of a region, with `of` naming the region: `hollowford_square`, `ashfields_dragons`, `iron_isle_wreck`) or
+    `reserved` (named now, on no tile yet: `deep_wilderlands`).
+  - `map`: `'over'` or the instance id. `combat`: `'single'` or `'multi'` (nothing reads it before Stage 7). `safe` and
+    `pvp`: booleans, all false in phase 1 (Thistledown's `safe` is the option the spec keeps off). `loose`: this place's
+    building walls change in play (Hollowford is rebuilt), so they are never FIXED_SOLID there.
+  - `pri`: when places overlap the higher one owns the tile. Regions keep REGIONS' own order (the first match wins, as
+    `regionAt` does): `pri = 1000 - its index`. Areas are 2000. A rule may set its own.
+  - `rects`: `[[x0, y0, x1, y1], ...]` in tiles, inclusive: a region's own rect, then any rects its rule adds. The Goblin
+    Camp's rule adds the camp spawns' rect, `[142, 18, 159, 42]`, because `generateWorld` marks camp spawns from x 142
+    while the region starts at x 145.
+  - `spawn`: `[tx, ty]` where a knight sent to this place lands (an instance's `entry`; Thistledown's square), or null.
+  - `call`: the `HOOKS.bossCall` id woken here, read from the boss files themselves (`the_fang` in `fang_lair`, `war_shed`,
+    `gnasher` in `tinker_lab`, `stormfront`), or null.
+- **ATLAS_RULES** holds only `{ id, kind, of, combat, pri, rects, spawn, call, pvp, safe, loose }` and only where a place
+  differs from the default (a region or instance with no rule is `single`, with its own rect or map). Moving a border is
+  one line. Multi in phase 1: `goblin_camp`, `fang_lair`, `hollowford_square`, `ashfields_dragons`, `iron_isle_wreck`,
+  every boss instance (`spider_den`, `war_shed`, `tinker_lab`, `stormfront`, `afterlands`, `royalmine`) and
+  `deep_wilderlands`. Single: everything else, `deepholm`, `aerie`, `coalmine` and `house` included.
+- **`window.ATLAS`**: `places` (the list), `get(id)` (one place), `place(map, tx, ty)` (the place on that tile of that map),
+  `at(tx, ty)` (the same on the overworld), `zoneAt(map, tx, ty)` (its id), `combatAt(map, tx, ty)` (`'single'`, `'multi'`,
+  or `'safe'` where a place's `safe` is on), `inside(id, k)` (a knight or monster `{x, y, map?}` in pixels is on that place),
+  `spawn(id)`, `solidAt(map, tx, ty)` (FIXED_SOLID), `hash()`, `export()` (what `tools/atlas.mjs` writes). An instance
+  map is one place all over (its own `w` x `h`); a tile outside it, or outside the overworld, is no place (null).
+- **FIXED_SOLID** is what no honest knight can ever stand in: the tiles named in `FIXED_TILES` (`WALL` (rock, cave and
+  every instance's walls), `CWALL` (castle), `HWALL` (building walls), `TOWN_WALL`, `KING_WALL`, `KING_TOWER`, `CLIFF`,
+  `REDCLIFF`, `AF_CRAG`) as the world generates them, minus any tile an NPC is placed on and any `HWALL` in a `loose`
+  place, plus everything off the map's edge. Left out on purpose: water and lava (hover armour, boats and the ferry
+  cross them), every tile a knight can chop, mine, burn, build, open or climb (trees, rocks, ores, planks, fences, gates,
+  doors, the agility shortcuts and the steps cut in a scarp), and anything `WALK_OVER` ever holds. A self-test holds
+  each of those: no item places a FIXED tile, no FIXED tile is ever in `WALK_OVER`, every FIXED tile is solid. The same
+  rules make each instance's mask from its built tiles; `house` has none (each knight's island is his own and never
+  checked).
+- **`online/src/atlas.json`** (generated, committed, never edited by hand):
+  `{ v: 1, hash, MAP_W, MAP_H, TILE, places, grid, fixed, spawns, doors, calls, speed, realm }`. `grid` is the overworld's
+  place index per tile, row by row, as runs `[index, count, index, count, ...]`; `fixed` is `{ over: runs, <instance>:
+  { w, h, runs } }`, runs of 0 and 1 starting with a run of 0s; `spawns` is `MONSTER_SPAWNS` (the index is the `s<i>` nid)
+  as `[type, tx, ty, camp]`; `doors` each instance's `{ door, step, entry, exit }`; `calls` each boss call's `{ map, near,
+  type, place, file }`; `speed` is SPEED_CAP, the fastest each mover goes (px/s: `foot` 175, `hover` 200, `horse` 350,
+  `dozer` 250, `walker` 115, `beast` 100, `steam` 430: a machine's FULL STEAM run) and `max`; `realm` the files that hold a boss rest (Stage 2's `realm_state`).
+- **`hash()`** is a 64-bit hash, as 16 hex digits, of what the world judges by: `v`, MAP_W, MAP_H, TILE, every place's
+  `id, kind, map, combat, pri, rects, pvp, safe` and the `grid` and `fixed` runs. Names and subs are not in it, so a
+  reworded sign never makes anyone reload. The game works it out once per world build; `atlas.json` carries the same
+  number because `tools/atlas.mjs` asks the game.
+- **Drift.** `online/test/atlas-drift.mjs` (a deploy gate in both deploy scripts, and part of `node --test online/test/`)
+  builds the Atlas again from `index.html` and fails unless it matches `online/src/atlas.json` byte for byte, so a stale
+  Atlas never ships. The self-tests in `96-atlas.js`: every REGIONS name and every instance id has a place; every place
+  but a reserved one covers at least one tile or is an instance; every overworld tile has exactly one place, and outside
+  the areas and the camp's extra rect it is `regionAt`'s; every boss instance (a `boss`, or a boss call on its map) is
+  multi; the camp rect covers every camp spawn; every `spawn` tile is walkable; every id matches the pattern; the dragons,
+  the wreck crew and the square's beast stand in their areas; the Atlas pass is the last world pass.
+
+**Capabilities and the Atlas on `hello`.** `hello` gains `caps` and `atlas`:
+
+```
+{ t: 'hello', v: 1, caps: [], atlas: '<ATLAS.hash()>' }
+```
+
+- `caps` lists what this game can do of the shared world's new messages: `tick`, `die`, `roll`, `loot`, `zone`, `fix`,
+  `day` (the spec's table). A Stage 1 game can do none of them yet, so it sends `[]`. The Room keeps, in order, only the
+  names it knows (at most those 7) and drops the rest; anything that is not an array is `[]`.
+- `atlas` is kept when it is 1 to 32 characters of `0-9a-z`, else null (an older page sends none).
+- Both ride the knight's attachment, so a nap keeps them. Nothing new goes to a knight whose `caps` lack the capability.
+- `welcome` gains `atlas`: the world's own hash (from `atlas.json`), when the world has one.
+- **A page older than the world.** When `welcome.atlas` is there and differs from the game's own `ATLAS.hash()`, the game
+  shows a plaque in the kit's column: gold edge, "NEW WORLD", and under it "A newer world is ready. Tap to reload." ("Click
+  to reload." on a computer); the whole plaque is the tap (44 px tall on touch) and reloads the page. It is said once as
+  a notice too. Until then that knight plays as before and the world does not check his movement (counted as `old`).
+
+**Presence gains `j`, `spd` and `s`.**
+
+| field | meaning |
+|---|---|
+| `j` | a jump counter: `src/73-players.js` adds 1 whenever the knight's own position moves more than 3 x speed x dt in one frame (speed at least 175). A teleport, a respawn, a portal or a door into an instance, a ferry's landing, an admin's jump, a knockback shove: each is a jump |
+| `spd` | the knight's own speed now, px/s (`player.speed`: 175 on foot, the mount's or machine's otherwise; 430 while a machine's FULL STEAM run lasts) |
+| `s` | this socket's presence count, 1, 2, 3, ... (what Stage 9's `fix` will answer to) |
+
+Old worlds relay them like any other field; the Room relays them too.
+
+**The movement check (`online/src/move.js`), watching only.** The world keeps, per knight, where he last said he was and
+judges each new presence against it. In Stage 1 it only counts. It never sends anything, never moves a knight and never
+changes what is relayed.
+
+- **Modes** (settings key `sim`, `move`): `'observe'` (the default: count) or `'off'` (nothing is judged). `soft` and
+  `correct` are Stage 9's. The switch is on the parent page; `off` takes effect on the next presence.
+- **Not judged** (counted as `skipped`): the mode is off (nothing is counted at all then); the knight's page has another
+  Atlas or none (also counted as `old`); his map is `house` or a map the Atlas does not know; he is dead, or was at his
+  last presence (a respawn lands anywhere); his first presence on a map (nothing to compare with). A world with no Atlas
+  judges nothing and counts nothing.
+- **Time.** Each presence is stamped when it arrives, but never closer than 125 ms after the one before (the game sends
+  at most one every 1/8 s of its own time, which never runs faster than real time). So a stalled line that hands over
+  a second of presences at once is spread back out instead of reading as one blink of great speed; and a hitch in the
+  game (its frame is cut at 50 ms) only ever slows the knight.
+- **A jump** (`j` went up) waives that one step: it is never too fast. The new spot must still not be in FIXED_SOLID.
+  More than 6 jumps in 10 s is logged as `jumps` (not a violation).
+- **Too fast** (`speed`): over the last second (by those stamps) the path he reports, step by step and jumps left out, is
+  longer than `1.25 x max(spd, 175) x seconds + 48 px`, with `spd` taken as the highest he reported in that second and no
+  more than SPEED_CAP's `max`. One violation is counted, that second starts again, and no other is counted for a
+  second after it (at most one a second).
+- **Through a wall** (`wall`): the new spot is in a FIXED_SOLID tile or off the map, or the straight line from the last spot
+  crosses the middle of one (a FIXED_SOLID tile shrunk by 12 px on each side: a knight's 13 px body keeps his centre that
+  far from any wall, and a step cut across a wall's corner cannot reach the middle unless it is over 70 px long; the fastest
+  honest step, a machine's FULL STEAM run, is 54 px).
+- **Kept** in two new tables (created only if missing; nothing else in the schema changes):
+
+```
+move_day (day TEXT PRIMARY KEY, checked INTEGER NOT NULL DEFAULT 0, speed INTEGER NOT NULL DEFAULT 0, wall INTEGER NOT NULL DEFAULT 0,
+          jumps INTEGER NOT NULL DEFAULT 0, waived INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0, old INTEGER NOT NULL DEFAULT 0)
+move_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, n TEXT NOT NULL, map TEXT NOT NULL, kind TEXT NOT NULL,
+          x INTEGER, y INTEGER, px INTEGER, py INTEGER, ms INTEGER, spd INTEGER, detail TEXT NOT NULL DEFAULT '')
+```
+
+  `move_day` counts wait in memory and go out like the meter's (one upsert per day touched, when 200 are waiting, 10 s after
+  the last write, and on every socket close and alarm); `old` is how many of the skipped came from a page with another
+  Atlas or none. Each violation is
+  one `move_log` row at once (where he was, `px, py`, and where he said he went, `x, y`, the stamped gap `ms`, his `spd`),
+  at most 200 a day; past that only the count grows. Rows older than 60 days go on the first write of a day. The admin
+  export includes both tables.
+
+**Each knight's own island: the house key.** The island (`house`, `src/63-house.js`) is an instance every knight has his
+own copy of, but every knight on his island used to share one map in the Room: they saw each other's knights standing on
+their own islands. The Room now keys it `house:<his name, lower case>`, so a knight on his island is alone there: no
+presence in or out, no keeper but himself, no trade, no party but his own. Every message out still names the map `house`
+(`keeper`, `left`, a relayed `p`, the roster, `crackers`), so a game never sees the key. A `map` a game sends that starts
+with `house` (`house`, or `house:anything`) is always the sender's own island. The `house` map is never simulated (Stage 2).
+So a game reads a roster row (or any message) naming another knight on `house` as HIS island, never its own: the Friends
+panel never marks him 'on your map' (no blue edge, Follow stays dark) and says 'On their own island', and so does the
+admin Knights tab (`src/73-players.js`, `src/76-admin.js`, each with a self-test).
+
+**The parent page and the switch.** `GET /api/admin/sim` adds, beside `meter`:
+
+```
+sim:   { move: 'observe' | 'off' }
+atlas: { hash, places, fixed }                       (fixed: how many overworld tiles are FIXED_SOLID)
+move:  { mode, today: {day, checked, speed, wall, jumps, waived, skipped, old}, days: [same, newest first, 14 days],
+         recent: [{at, n, map, kind, x, y, px, py, ms, spd, detail}, ... newest first, 30],
+         knights: [{n, map, atlas: 'same' | 'old' | 'none', caps}] }
+```
+
+`POST /api/admin/sim {move: 'observe' | 'off'}` (Bearer ADMIN_KEY) sets the switch, kept in `settings` as the JSON of
+`{move}` under the key `sim` (later stages add their keys beside it; unknown keys already there are kept), and answers the
+same as the GET. Anything else is 400 `bad`. The parent page's **Shared world** section gains a line for the check and the
+Atlas, the last violations (when there are any) and a button that turns the check off or back on: "Movement check:
+watching (it counts, it never moves anyone). Today: 1,234 steps checked, 0 too fast, 0 through a wall. World map
+1a2b3c4d5e6f7a8b: 2 knights on, both on this map." These come in the same `GET /api/admin/sim` the meter already makes,
+so the page makes no new calls.
+
+
+**What it costs, measured** (3 Oct 2026, MacBook Pro, node 26, other builders' runs on the machine):
+
+| | |
+|---|---|
+| The Atlas | 35 places (21 regions, 10 instances, 3 areas, 1 reserved); 2,950 overworld tiles FIXED_SOLID; hash `ea36148040c3f60c` |
+| `online/src/atlas.json` | 29.1 KB (5.4 KB gzipped): 1,603 grid runs, 2,287 FIXED_SOLID runs, 9 instance masks |
+| Building it in the game | `ATLAS.build()` 4.0 ms median over 20 builds (3.8 to 8.1 ms), once per world build |
+| Reading it in the World | `JSON.parse` and `readAtlas` 0.58 ms, once per wake |
+| The movement check | `judge()` 0.72 microseconds per presence on foot, 0.89 on the mare (200,000 presences each) |
+| The drift gate | `node online/test/atlas-drift.mjs` about 3 s (two builds of the game). Proved: one rect in ATLAS_RULES moved and the game rebuilt without committing the new `atlas.json`, the gate exits 1 ("does not match the game ... Run ./build.sh and commit online/src/atlas.json") and a `set -e` deploy script stops there |
+| The Worker | 184.95 KiB uploaded, 47.06 KiB gzipped (`atlas.json` is 29.1 KB of it), startup 5 ms (the test deploy's own figures) |
+
+**The audit** (`node tools/move-audit.mjs [--play]`, logs in `~/.fanglands/work/phase1/sw-1/`): the whole headless suite,
+then the suite with the bot's playthrough of the main quest, with the knight's presence sampled as 73-players sends it and
+judged by `move.js` against the world's own Atlas. First run: 17,659 steps judged, 2 too fast, 1 into a wall. The two too
+fast were a machine's FULL STEAM run (55-riding, 430 px/s, faster than any mover SPEED_CAP had): SPEED_CAP gained `steam`,
+presence reports it while the run lasts, and a self-test now holds SPEED_CAP to the movers' own tables. The wall was a
+self-test (91-cloudkingdom K22) putting the knight on a tower in Aerie to check its ground cache: a teleport, not play.
+After the fix: 17,551 judged, 0 too fast, 0 wall (27 jump bursts logged, 537 jumps waived); with the playthrough 31,707
+judged, 0 too fast, 0 wall. The world never had a FIXED_SOLID tile change under it at boot: the only tiles the world adds
+after the Atlas pass are the War Shed's late door walls (more wall, never less).
+
+**The proof** (`~/.fanglands/work/phase1/sw-1/proof/`, 3 Oct 2026). Two real browsers, a laptop (1280 x 800) and an iPad
+(1024 x 1366, touch), on a local `wrangler dev` world running this branch (`stage1-proof.js local`, two fresh test
+knights): 10.0 minutes of play on the keys (walking and fighting goblins in the fields), the mare at 350 px/s, Harl's ferry
+to Gull Isle and back, the island portal, the palisade climb at Agility 25, a death and the respawn. Both games sent caps
+`[]` and the world's own Atlas in hello, and welcome named the same; no reload plaque. The movement check took all 2,933
+presences the two games sent: 2,856 judged, 77 not judged (first steps, deaths, the islands), 56 jumps waived, 0 too fast,
+0 into or through a wall. Both knights stood on their own islands at once: neither saw the other, each kept his own, and
+the roster said `house` for both. A page told of another Atlas shows the NEW WORLD plaque, 44 px tall on the iPad
+(`new-world-plaque-ipad-local.png`). On the test world (https://test.gorkscape.ca, deployed with
+`~/.fanglands/tools/deploy-test.sh` after the backup, every gate green; `test-world-check.js`): `GET /api/admin/sim`
+answers the Atlas `ea36148040c3f60c` and `observe`, the served game builds the same hash on a laptop and an iPad and says
+it in hello, and the parent page shows the check (`test-world-admin-*.png`). The same two-browser run with Probe Knight
+and Probe Two on the test world is `node stage1-proof.js probe`; it logs the probes in with their secret word.
+After review round 1 (the Friends panel told two knights on their own islands they shared a map): the proof also opens
+Friends on each island (F on the laptop, a tap on the seal on the iPad) and checks the other knight reads 'On their own
+island', with no blue edge and Follow dark, and that a real tap on Follow does nothing
+(`friends-on-islands-{laptop,ipad}-local.png`). The re-run, 9.9 minutes: ALL PASS, 3,375 presences, 3,298 judged, 77 not
+judged, 44 jumps waived, 0 too fast, 0 into or through a wall, no page errors.
 
 ## Safety rules (binding)
 

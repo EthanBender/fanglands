@@ -511,8 +511,8 @@
     return { x: KP[0][0], y: KP[0][1], dx: 0, dy: 1 };
   }
   const KIDS = [
-    { id: 'tess', name: 'Tess', lag: 0, line: 'Catch me if you can!', look: { tunic: '#c94a6a', hair: '#e0c080', woman: true, shoulder: '#e9d8b8', skin: '#f2d6bf' } },
-    { id: 'robin', name: 'Robin', lag: PLAN.KIDS.lag, line: 'You are it! No, wait. Tess is it!', look: { tunic: '#3f7db8', hair: '#6a3a1a', shoulder: '#d9c9a0', skin: '#e8c0a0' } },
+    { id: 'tess', name: 'Tess', lag: 0, line: 'Catch me if you can!', look: { who: 'tess', tunic: '#c94a6a', hair: '#e0c080', woman: true, shoulder: '#e9d8b8', skin: '#f2d6bf' } },
+    { id: 'robin', name: 'Robin', lag: PLAN.KIDS.lag, line: 'You are it! No, wait. Tess is it!', look: { who: 'robin', tunic: '#3f7db8', hair: '#6a3a1a', shoulder: '#d9c9a0', skin: '#e8c0a0' } },
   ];
   function kidsNow() { const ms = wallMs(); for (const k of KIDS) { const p = kidAt(ms - k.lag * 1000); k.px = tc(0) + (p.x - 0.5) * TILE; k.py = (p.y) * TILE; k.dx = p.dx; k.dy = p.dy; } return KIDS; }
   const duchessHome = () => ({ x: tc(PLAN.DUCHESS.x), y: tc(PLAN.DUCHESS.y) + 8 });
@@ -1202,9 +1202,9 @@
   const STONE_LOOK = (o) => Object.assign({ tunic: '#c9c3b6', hair: '#b7b0a2', skin: '#d6d0c3', shoulder: '#bdb6a8' }, o);
   const STATUE_LOOK = {
     last_knight: STONE_LOOK({ helm: '#cfc9bc', shield: '#bfb8a9', weapon: { shape: 'sword', color: '#d8d2c6' } }),
-    thrain: STONE_LOOK({ beard: true, crown: true, tool: 'hammer', toolColor: '#cfc9bc' }),
-    aelith: STONE_LOOK({ woman: true, crown: true, weapon: { shape: 'bow', color: '#cfc9bc' } }),
-    seraphel: STONE_LOOK({ woman: true, crown: true }),
+    thrain: STONE_LOOK({ who: 'thrain', stone: true, beard: true, crown: true, tool: 'hammer', toolColor: '#cfc9bc' }),
+    aelith: STONE_LOOK({ who: 'aelith', stone: true, woman: true, crown: true, weapon: { shape: 'bow', color: '#cfc9bc' } }),
+    seraphel: STONE_LOOK({ who: 'seraphel', stone: true, woman: true, crown: true, wing: 1.35 }),
   };
   function stoneWings(g) {
     for (const s of [-1, 1]) { g.save(); g.scale(s, 1); g.fillStyle = '#d4cec1'; g.strokeStyle = 'rgba(110,100,85,0.6)'; g.lineWidth = 0.8;
@@ -1223,16 +1223,24 @@
       g.fillStyle = laurel; for (let k = 0; k < 5; k++) { for (const s of [-1, 1]) { const a = Math.PI * (0.5 + s * (0.25 + k * 0.13)); g.beginPath(); g.ellipse(Math.cos(a) * 7, -17 + Math.sin(a) * 7, 2.2, 1, a, 0, 7); g.fill(); } }
     } else { g.fillStyle = '#9a6a2a'; g.fillRect(-8, -21, 16, 9); g.fillStyle = '#c9934a'; g.fillRect(-7, -20, 14, 1.4); g.fillStyle = 'rgba(60,35,10,0.6)'; for (let k = 0; k < 3; k++) g.fillRect(-5, -17 + k * 2.4, 10, 0.9); }
   }
-  function paintFigure(g, look, wings, scale) {
-    g.save(); g.translate(0, -48); g.scale(scale, scale);
-    if (wings) { g.save(); g.translate(0, -2); stoneWings(g); g.restore(); }
+  // a statue of one of the townsfolk (83-townsfolk, look.who and stone) is the person in the new look, all in stone, its
+  // own wings and all, scaled to fit the sprite (never bigger than the old 1.32) with the feet on the plinth's top
+  function paintFigure(g, look, wings, scale, half) {
+    const fit = window.TOWNSFOLK && TOWNSFOLK.takes(look) ? TOWNSFOLK.statueFit(look.who, scale, 61, (half || 24) - 1) : null;
+    g.save();
+    if (fit) { g.translate(0, -28 - fit.foot); g.scale(fit.s, fit.s); }
+    else { g.translate(0, -48); g.scale(scale, scale); }
+    if (wings && !fit) { g.save(); g.translate(0, -2); stoneWings(g); g.restore(); }
     drawHuman(g, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, look);
     g.restore();
   }
+  const STATUE_HALF = { seraphel: 56 };
   function drawStatue(g, s) {
     const cx = tc(s.x), foot = (s.y + 1) * TILE - 2;
-    const spr = sprite('statue:' + s.id, 48, 96, 24, 90, cg => { paintPlinth(cg, null); paintFigure(cg, STATUE_LOOK[s.id], s.id === 'seraphel', 1.32); });
-    const a = behindAlpha(cx - 22, foot - 86, cx + 22, foot, foot);
+    // Queen Seraphel's statue spreads her wings: her sprite is wider (STATUE_HALF)
+    const half = STATUE_HALF[s.id] || 24;
+    const spr = sprite('statue:' + s.id, half * 2, 96, half, 90, cg => { paintPlinth(cg, null); paintFigure(cg, STATUE_LOOK[s.id], s.id === 'seraphel', 1.32, half); });
+    const a = behindAlpha(cx - half + 2, foot - 86, cx + half - 2, foot, foot);
     if (a < 1) { g.save(); g.globalAlpha = a; }
     blit(g, spr, cx, foot);
     if (a < 1) g.restore();
@@ -1834,6 +1842,8 @@
   }
   function drawKid(g, k) {
     const e = { x: 0, y: 0, r: 13, facing: { x: k.dx, y: k.dy }, hurtT: 0, attackT: 0, moving: true, walkT: time * 12 };
+    // the new look (83-townsfolk): a child's own build, step and shadow, so no scale, bob or shadow here
+    if (window.TOWNSFOLK && TOWNSFOLK.put(g, k.px, k.py, Object.assign(e, { x: k.px, y: k.py }), k.look)) return;
     const bob = Math.abs(Math.sin(time * 10 + (k.lag || 0))) * 2;
     g.save(); g.translate(k.px, k.py - 4 - bob); g.scale(0.72, 0.72);
     g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(0, 14 + bob, 11, 4.5, 0, 0, 7); g.fill();
@@ -2139,7 +2149,7 @@
       if (t !== want) continue;
       const px = x * TILE, py = y * TILE, by = (y + 1) * TILE;
       if (k === 'lamp') { put(items, by - 6, [tc(x) - 11, LAMP_TOP[x + ',' + y], tc(x) + 11, by], () => drawLamp(g, x, y)); if (lit()) put(items, 9e8 - 1, null, () => lampGlow(g, x, y)); }
-      else if (k === 'statue') { const s = statueAt(x, y); if (s) put(items, by - 2, [tc(x) - 22, by - 92, tc(x) + 22, by], () => drawStatue(g, s)); }
+      else if (k === 'statue') { const s = statueAt(x, y), hw = s ? (STATUE_HALF[s.id] || 24) - 2 : 22; if (s) put(items, by - 2, [tc(x) - hw, by - 92, tc(x) + hw, by], () => drawStatue(g, s)); }
       else if (k === 'plinth') put(items, by - 2, [tc(x) - 22, by - (statueDone() ? 92 : 36), tc(x) + 22, by], () => drawPlinth(g));
       else if (k === 'bench') put(items, by - 5, [tc(x) - 21, by - 37, tc(x) + 21, by], () => blit(g, sprite('bench', 48, 40, 24, 36, paintBench), tc(x), by - 5));
       else if (k === 'sign') { const s = signAt(x, y); if (s) put(items, by - 5, [tc(x) - 22, by - 72, tc(x) + 22, by], () => blit(g, sprite('sign-' + s.side, 48, 72, 24, 68, cg => paintSign(cg, s.side)), tc(x), by - 4)); }
@@ -2778,7 +2788,9 @@
         res.oldSave.kept && res.newCity.kept, res); }
 
     // ---- C18. determinism ----
-    check(P + 'C18 the painter is the very first world pass (HOOKS.world[0]) and the snapshot the last; C2 shows it draws no random number', HOOKS.world[0] === paint && HOOKS.world[HOOKS.world.length - 1] === snap, { first: HOOKS.world[0] === paint, last: HOOKS.world[HOOKS.world.length - 1] === snap });
+    // the snapshot is the last pass that can write a tile: only the Atlas's pass (src/96-atlas.js), which only reads, comes after it
+    const writers = HOOKS.world.filter(f => !(window.ATLAS && f === ATLAS.pass));
+    check(P + 'C18 the painter is the very first world pass (HOOKS.world[0]) and the snapshot the last that writes (only the Atlas reads after it); C2 shows it draws no random number', HOOKS.world[0] === paint && writers[writers.length - 1] === snap, { first: HOOKS.world[0] === paint, last: writers[writers.length - 1] === snap });
 
     // ---- C19. drawing ----
     { const keepSize = { k: Object.getOwnPropertyDescriptor(window, 'innerWidth'), l: Object.getOwnPropertyDescriptor(window, 'innerHeight') }; const setSize = (w, hh) => { Object.defineProperty(window, 'innerWidth', { value: w, configurable: true, writable: true }); Object.defineProperty(window, 'innerHeight', { value: hh, configurable: true, writable: true }); resize(); };

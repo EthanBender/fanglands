@@ -36,6 +36,10 @@
     for (const fn of (NET.listeners['*'] || []).slice()) { try { fn(msg); } catch (e) { console.error('NET *', e); } }
   };
   NET.setToken = tok => { NET.token = tok || null; lsSet(TOKEN_KEY, tok || null); };
+  // the shared world (docs/ONLINE.md, "The shared world", Stage 1): what this game can do of its new messages (none yet), and
+  // the hash of the Atlas this page was built with, so the world knows whether it judges this knight by the same map
+  NET.caps = [];
+  NET.hello = () => ({ t: 'hello', v: 1, caps: NET.caps.slice(), atlas: window.ATLAS && ATLAS.hash ? ATLAS.hash() : null });
 
   // ---------- HTTP: every /api call goes through here, so the token is never forgotten ----------
   NET.call = async (method, path, body) => {
@@ -59,7 +63,7 @@
     return proto + location.host + '/ws?token=' + encodeURIComponent(NET.token);
   };
   function wire(sock) {
-    sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send({ t: 'hello', v: 1 }, true); };
+    sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send(NET.hello(), true); };
     sock.onmessage = ev => {
       let msg = null; try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (!msg || typeof msg.t !== 'string') return;
