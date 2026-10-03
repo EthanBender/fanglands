@@ -122,7 +122,7 @@
     action: () => touch.taps.push('bomb'),
   });
   // the coach: "[B] Bomb" over the beast the first times the chute is loaded
-  HOOKS.hud.push(() => { if (driving() && bombCd <= 0 && !paused && !panel && monsters.some(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 260)) HK.teach('bomb', 'B', 'Bomb', { x: player.x, y: player.y, lift: 52 }, { emblem: 'bomb' }); });
+  HOOKS.hud.push(() => { if (driving() && bombCd <= 0 && !paused && !panel && monsters.some(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 260)) HK.teach('bomb', 'B', 'Bomb', { x: player.x, y: player.y, lift: window.MOUNT_LOOK ? MOUNT_LOOK.top('beast') - 30 : 52 }, { emblem: 'bomb' }); });
 
   // ---------- art ----------
   // The sprite lives in 20-hollowford.js (HOOKS.drawMonster.barrelbeast); its fourth argument is the pilot look and

@@ -3,12 +3,12 @@
 // (owner: "make sure that the mounts are the updated graphic too"). Cinder the mare draws herself in 51-mounts.
 // The walker, the bulldozer and the Barrelbeast are the same machines the goblins drive (78-monsterart's walker,
 // bulldozer and barrelbeast, through 78-monsterlook's paint: its size, its cracks), so a knight's walker looks just like
-// the camp's. 78-monsterlook.js is never changed: its drawings put a goblin in the seat (mch_pilot), so this file draws
-// them through a thin stand-in for the canvas (seatCtx) that knows that one move — a goblin is always drawn as save,
-// translate, scale(0.42) — and at that moment draws the knight there instead (82-knightgear, seated: no legs), in the
-// drawing's own order, so the tub, the deck and the boiler go over him exactly as they went over the goblin. The
-// goblin's green hands on the levers (mch_hand) are the knight's hands (his gauntlets, or bare hands), and a parked
-// machine has nobody in it and no hands on its levers. The Barrelbeast's two other goblins stay off a driven one.
+// the camp's. 78-monsterlook.js is never changed here: its MONSTER_LOOK.drawMachine takes a pilot for the goblin's seat,
+// and this file sits the knight there (82-knightgear, seated: no legs), in the drawing's own order, so the tub, the deck
+// and the boiler go over him exactly as they went over the goblin; the Barrelbeast's two other goblins stay off. The
+// goblin's green hands on the levers (mch_hand) are drawn through a thin stand-in for the canvas (handCtx) that turns
+// them into the knight's hands (his gauntlets, or bare hands); a parked machine has nobody in it and no hands on its
+// levers.
 // What it draws:
 //  - the knight's own machine (the player's draw item, after 22-bulldozer, 32-beast and the core put theirs there);
 //  - a parked machine (T.MECH, T.DOZER, T.BEAST) with an empty seat, and a wreck (T.WRECK, T.DOZER_WRECK,
@@ -25,19 +25,16 @@
 const MOUNT_LOOK = (() => {
   const LOOK = MONSTER_LOOK, ART = MONSTER_ART, SIZE = ART.MOB_SIZE;
   const ON = { on: true };
-  const STATS = { machines: 0, seats: 0, emptySeats: 0, hands: 0, handsHidden: 0, tinted: 0, riders: 0 };
+  const STATS = { machines: 0, seats: 0, hands: 0, handsHidden: 0, tinted: 0, riders: 0 };
   // the knight's machine kinds and the monster drawing each one wears
   const TYPE = { walker: 'walker', dozer: 'bulldozer', beast: 'barrelbeast' };
   const KINDS = Object.keys(TYPE);
   // a mech off the wire: { kind } with no kind (or 'walker') a walker, 'dozer', 'beast', 'horse'; anything else is no mount we draw
   const kindOf = mech => { if (!mech || typeof mech !== 'object') return null; const k = mech.kind; if (k === undefined || k === null || k === 'walker') return 'walker'; return k === 'horse' || (typeof k === 'string' && TYPE[k] && k !== 'walker') ? k : null; };
-  const GOB = '#74bd46', PILOT_S = 0.42, TAU = Math.PI * 2;
+  const GOB = '#74bd46', TAU = Math.PI * 2;
   // the knight in a seat: game pixels per unit of his own drawing, and how far his middle sits under the goblin's
   // (in the goblin's own units: the goblin's chest is a little lower than the knight's middle)
   const SEAT = { walker: { s: 0.82, dy: 1.2 }, dozer: { s: 0.82, dy: 1.2 }, beast: { s: 0.8, dy: 1.6 } };
-  // which goblin seat the knight takes: the walker and the bulldozer have one; the Barrelbeast's crew of three sits at
-  // -6, 0 and +6 across its deck, and the knight takes the middle one
-  const KNIGHT_SEAT = { walker: Infinity, dozer: Infinity, beast: 1.5 };
   // the knight's machines are drawn at the size of their own bodies: the goblins' walker (hit circle 24) carries the
   // knight's walker's 20, so his is drawn at 20/24 of it, and the same for the bulldozer (22 of 24) and the Barrelbeast
   // (26 of 36: the boss grew in the monster refit, the knight's did not). Every gate and wall he can ride past, his
@@ -69,20 +66,17 @@ const MOUNT_LOOK = (() => {
     return look && /^#[0-9a-f]{6}$/i.test(look.skin || '') ? look.skin : '#e8b790';
   }
 
-  // ---------- the seat: a stand-in for the canvas that puts the knight where the drawing puts its goblin ----------
-  // seat(gReal, x, y, i): called the moment a goblin would be drawn (gReal is the real canvas, already moved and scaled
-  // into the goblin's frame); null leaves every seat empty. hand: the colour the goblin's lever hands take, or null to
-  // leave them off (nobody aboard).
-  const PAINT = new Set(['fill', 'stroke', 'fillRect', 'strokeRect', 'fillText', 'strokeText', 'drawImage', 'clearRect']);
-  function seatCtx(real, seat, hand, seatR) {
-    let last1 = null, last2 = null, tx = 0, ty = 0, depth = 0, skip = -1, idx = 0, handPend = 0;
+  // ---------- the lever hands: a stand-in for the canvas that gives the goblin's green hands to the knight ----------
+  // hand: the colour the hands take, or null to leave them off (nobody aboard). The drawing paints a hand as a radial
+  // gradient of the goblin's skin (its middle stop exactly GOB) filled and then outlined; the gradient's stops wait until
+  // it is used, and then a hand's three greens become the knight's (or that fill and its outline are left out).
+  function handCtx(real, hand) {
+    let handPend = 0;
     const pend = new Map();
-    // a radial gradient's stops wait until it is used: then a goblin hand's three greens become the knight's hand
     const flush = v => {
       const p = v && typeof v === 'object' ? pend.get(v) : null; if (!p) return;
       pend.delete(v);
-      const isHand = p.stops.some(([o, c]) => o === 0.6 && c === GOB);
-      if (isHand && skip < 0) {
+      if (p.stops.some(([o, c]) => o === 0.6 && c === GOB)) {
         if (hand) { STATS.hands++; p.add(0, shade(hand, 0.35)); p.add(0.6, hand); p.add(1, shade(hand, -0.35)); }
         else { STATS.handsHidden++; for (const [o, c] of p.stops) p.add(o, c); handPend = 2; }
         return;
@@ -97,18 +91,9 @@ const MOUNT_LOOK = (() => {
         if (typeof v !== 'function') return v;
         let f = fns.get(k); if (f) return f;
         f = function () {
-          const a = arguments, p1 = last1, p2 = last2; last2 = last1; last1 = k;
-          if (k === 'save') { depth++; return real.save(); }
-          if (k === 'restore') { depth--; const r = real.restore(); if (skip >= 0 && depth < skip) skip = -1; return r; }
-          if (skip >= 0 && PAINT.has(k)) return undefined;
-          if (handPend && (k === 'fill' || k === 'stroke')) { if (k === 'fill' && handPend === 2) { handPend = 1; return undefined; } if (k === 'stroke' && handPend === 1) { handPend = 0; return undefined; } }
-          if (k === 'translate') { tx = a[0]; ty = a[1]; }
-          if (k === 'scale' && skip < 0 && a[0] === PILOT_S && a[1] === PILOT_S && p1 === 'translate' && p2 === 'save') {
-            real.scale(a[0], a[1]); skip = depth;
-            const i = idx++;
-            if (seat && Math.abs(tx) < (seatR === undefined ? Infinity : seatR) && seat(real, tx, ty, i)) STATS.seats++; else STATS.emptySeats++;
-            return undefined;
-          }
+          const a = arguments;
+          if (handPend && k === 'fill' && handPend === 2) { handPend = 1; return undefined; }
+          if (handPend && k === 'stroke' && handPend === 1) { handPend = 0; return undefined; }
           if (k === 'createRadialGradient') {
             const gr = real.createRadialGradient(a[0], a[1], a[2], a[3], a[4], a[5]);
             if (gr && typeof gr.addColorStop === 'function') { const add = gr.addColorStop.bind(gr), stops = []; gr.addColorStop = (o, c) => { stops.push([o, c]); }; pend.set(gr, { stops, add }); }
@@ -130,16 +115,18 @@ const MOUNT_LOOK = (() => {
     return { type, facing: { x: fx, y: fy }, moving: !!e.moving || !!o.charging, walkT: +e.walkT || 0, attackT: a > 0 ? Math.min(0.22, a) : 0, hurtT: 0, seed: o.seed || 0,
       state: 'idle', stunT: 0, hp: o.hp === undefined ? 1 : +o.hp, maxHp: o.maxHp === undefined ? 1 : +o.maxHp, unarmed: false, rodGlow: o.rodGlow || 0, chargeT: o.charging ? 1 : 0 };
   }
-  // the knight's seat: he faces the way the machine does (the drawing has already turned its own frame for left)
-  // k: the machine's own size (KOF); the knight shrinks with it only by its square root, so he still reads as himself
-  function seatFor(look, kind, v, k0) {
-    const f = face4(v.facing), S = SEAT[kind], type = TYPE[kind];
-    const facing = f === 'down' ? { x: 0, y: 1 } : f === 'up' ? { x: 0, y: -1 } : { x: 1, y: 0 };
-    return (g, x, y, i) => {
-      const k = S.s / ((SIZE[type] || 1) * PILOT_S * Math.sqrt(k0 || 1));
-      g.save(); g.translate(0, S.dy); g.scale(k, k);
-      try { drawHuman(g, { facing, hurtT: 0, attackT: 0, moving: false, walkT: 0, seated: true }, look); } finally { g.restore(); }
-      return true;
+  // the knight's seat, MONSTER_LOOK.drawMachine's pilot(g, x, y, s, back, fx): where the goblin sat at scale s. He faces the
+  // way the machine does (the drawing has already turned its own frame for left). k0: the machine's own size (KOF); the
+  // knight shrinks with it only by its square root, so he still reads as himself.
+  function seatFor(look, kind, k0) {
+    const S = SEAT[kind], type = TYPE[kind];
+    return (gp, x, y, s, back, fx) => {
+      // the knight is drawn on the real canvas (the hand stand-in has nothing to do for him)
+      // the side view seats its goblin with fx exactly 1 (its frame already turned for left); the front view with the facing's x
+      const g = gp.__real || gp, facing = back ? { x: 0, y: -1 } : fx === 1 ? { x: 1, y: 0 } : { x: 0, y: 1 };
+      const k = S.s / ((SIZE[type] || 1) * Math.sqrt(k0 || 1));
+      g.save(); g.translate(x, y); g.scale(s, s); g.translate(0, S.dy); g.scale(k / s, k / s);
+      try { drawHuman(g, { facing, hurtT: 0, attackT: 0, moving: false, walkT: 0, seated: true }, look); STATS.seats++; } finally { g.restore(); }
     };
   }
 
@@ -210,11 +197,11 @@ const MOUNT_LOOK = (() => {
   function paintMachine(g, kind, v, o) {
     const type = TYPE[kind];
     const seated = !!o.pilot || !!o.parked;
-    const cg = seated ? seatCtx(g, o.pilot ? seatFor(o.pilot, kind, v, o.k) : null, o.pilot ? handColour(o.pilot) : null, KNIGHT_SEAT[kind]) : g;
     const k = o.k || 1;
     g.save(); if (k !== 1) g.scale(k, k);
     try {
-      LOOK.paint(cg, v, type, null, null);
+      if (seated) LOOK.drawMachine(handCtx(g, o.pilot ? handColour(o.pilot) : null), v, type, o.pilot ? seatFor(o.pilot, kind, k) : null);
+      else LOOK.paint(g, v, type, null, null);
       if (kind === 'dozer' && o.up && (o.up.drill || o.up.ram || o.up.boiler)) dozerUpgrades(g, v, o.up);
     } finally { g.restore(); }
   }
@@ -267,8 +254,8 @@ const MOUNT_LOOK = (() => {
   function top(kind) {
     if (kind === 'horse') return 50;
     const b = TYPE[kind] && LOOK.boxOf(TYPE[kind], false);
-    // the box reaches up into the chimney smoke; a name sits over the machine itself
-    return b ? Math.round(-b[1] * 0.62 * KOF(kind)) : 46;
+    // the box reaches up into the chimney smoke; a name sits over the machine and its knight, under the smoke
+    return b ? Math.round(-b[1] * 0.8 * KOF(kind)) : 46;
   }
 
   // ---------- a friend online on a mount (73-players) ----------
@@ -360,8 +347,43 @@ const MOUNT_LOOK = (() => {
     };
   }
 
+  // ---------- a gate stands open while a rider is in it ----------
+  // A rider goes through a gate (00-core: 'rider' passes T.GATE), so a gate he is in or about to go through is drawn
+  // with its two leaves swung back against its posts, not shut across him. The town's own gates are 95-thistledown's
+  // gatehouses (it draws no wooden gate there at all); this is every other gate: the pens, the Grubmarket wall, the bone fence.
+  function riderAt(tx, ty) {
+    const cx = tc(tx), cy = tc(ty);
+    if (!player.dead && player.mech && dist(player.x, player.y, cx, cy) < player.r + 34) return true;
+    if (window.PLAYERS && PLAYERS.remote && typeof PLAYERS.mapId === 'function') {
+      const my = PLAYERS.mapId();
+      for (const n in PLAYERS.remote) { const e = PLAYERS.remote[n]; if (e && e.mech && !e.dead && e.map === my && e.shown && dist(e.shown.x, e.shown.y, cx, cy) < 54) return true; }
+    }
+    return false;
+  }
+  function drawOpenGate(g, tx, ty) {
+    const x = tx * TILE, y = ty * TILE, Hf = t => t === T.FENCE || t === T.GATE;
+    const h = Hf(tileAt(tx - 1, ty)) || Hf(tileAt(tx + 1, ty)), v = Hf(tileAt(tx, ty - 1)) || Hf(tileAt(tx, ty + 1));
+    const leaf = (lx, ly, w, hh) => { g.fillStyle = '#a58455'; g.fillRect(lx, ly, w, hh); g.fillStyle = 'rgba(60,40,20,0.35)'; if (w > hh) g.fillRect(lx, ly + hh - 1, w, 1); else g.fillRect(lx + w - 1, ly, 1, hh); };
+    if (h || !v) {
+      // across a fence that runs left and right: the way through is up and down, the leaves fold back along it
+      g.fillStyle = '#8a6a3a'; g.fillRect(x, y + 18, 5, 17); g.fillRect(x + TILE - 5, y + 18, 5, 17);
+      leaf(x + 2, y + 2, 4, 18); leaf(x + TILE - 6, y + 2, 4, 18);
+      g.fillStyle = '#6b4a2a'; g.fillRect(x, y + 14, 6, 6); g.fillRect(x + TILE - 6, y + 14, 6, 6);
+    } else {
+      // across a fence that runs up and down: the leaves fold back along the way through, left to right
+      g.fillStyle = '#8a6a3a'; g.fillRect(x + 21, y, 5, 5); g.fillRect(x + 21, y + TILE - 5, 5, 5);
+      leaf(x + 26, y + 3, 18, 4); leaf(x + 26, y + TILE - 7, 18, 4);
+      g.fillStyle = '#6b4a2a'; g.fillRect(x + 20, y, 7, 6); g.fillRect(x + 20, y + TILE - 6, 7, 6);
+    }
+  }
+  { const _drawFenceProp = drawFenceProp;
+    drawFenceProp = function (g, tx, ty, gate) {
+      if (gate && ON.on && !window.__instance && riderAt(tx, ty)) { drawOpenGate(g, tx, ty); return; }
+      return _drawFenceProp(g, tx, ty, gate);
+    }; }
+
   // ---------- 51's mare, 55's beacon and coach, a friend's name: what they read ----------
-  window.MOUNT_LOOK = { ON, STATS, TYPE, KINDS, SEAT, ROOF, kindOf, machine, rider, roof, top, seatCtx, viewOf, handColour, upsOf, dozerUpgrades };
+  window.MOUNT_LOOK = { ON, STATS, TYPE, KINDS, SEAT, ROOF, kindOf, machine, rider, roof, top, handCtx, viewOf, riderAt, drawOpenGate, handColour, upsOf, dozerUpgrades };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -392,15 +414,15 @@ const MOUNT_LOOK = (() => {
     { const bad = [], by0 = Object.assign({}, LOOK.STATS.by);
       const kg0 = window.KNIGHTGEAR ? KNIGHTGEAR.STATS.live : 0;
       for (const kind of KINDS) for (const fname in FACES) {
-        const s0 = STATS.seats, e0 = STATS.emptySeats, h0 = STATS.hands, hh0 = STATS.handsHidden;
+        const s0 = STATS.seats, h0 = STATS.hands, hh0 = STATS.handsHidden;
         const r = recorder(); machine(r.g, ent(FACES[fname], { moving: fname === 'left' }), kind, { pilot: look, hp: 10, maxHp: 10 });
-        const seats = STATS.seats - s0, empty = STATS.emptySeats - e0, hands = STATS.hands - h0, gob = greens(r.log);
+        const seats = STATS.seats - s0, hands = STATS.hands - h0, gob = greens(r.log);
         // facing away the drawings show no lever hands at all
-        if (seats !== 1 || gob || (kind === 'beast' ? empty !== 2 : empty !== 0) || (fname !== 'up' && hands < 1) || STATS.handsHidden !== hh0) bad.push({ kind, fname, seats, empty, hands, gob });
-        const p0 = STATS.seats, pe0 = STATS.emptySeats, ph0 = STATS.handsHidden;
+        if (seats !== 1 || gob || (fname !== 'up' && hands < 1) || STATS.handsHidden !== hh0) bad.push({ kind, fname, seats, hands, gob });
+        const p0 = STATS.seats, ph0 = STATS.handsHidden;
         const r2 = recorder(); machine(r2.g, ent(FACES[fname]), kind, { parked: true });
-        const pSeats = STATS.seats - p0, pEmpty = STATS.emptySeats - pe0, hid = STATS.handsHidden - ph0, gob2 = greens(r2.log);
-        if (pSeats !== 0 || pEmpty < 1 || (fname !== 'up' && hid < 1) || gob2) bad.push({ parked: kind, fname, pSeats, pEmpty, hid, gob2 });
+        const pSeats = STATS.seats - p0, hid = STATS.handsHidden - ph0, gob2 = greens(r2.log);
+        if (pSeats !== 0 || (fname !== 'up' && hid < 1) || gob2) bad.push({ parked: kind, fname, pSeats, hid, gob2 });
       }
       const drew = KINDS.every(k => (LOOK.STATS.by[TYPE[k]] || 0) >= (by0[TYPE[k]] || 0) + 8);
       const knight = !window.KNIGHTGEAR || KNIGHTGEAR.STATS.live >= kg0 + 12;
@@ -457,6 +479,50 @@ const MOUNT_LOOK = (() => {
       const tops = KINDS.every(k => top(k) > 40) && top('horse') > 40;
       check(P + 'MA4 a parked walker, bulldozer and Barrelbeast and their wrecks draw the new machine with nobody aboard; the special\'s beacon stands on each machine\'s boiler and a friend\'s name goes over the machine',
         !bad.length && STATS.seats === s0 && STATS.machines - m0 === 6 && roofs && tops, { bad, roofs, tops }); }
+
+    // MA5. friends see riders: a friend's presence on the mare, the walker, the bulldozer (with its drill) and the
+    // Barrelbeast, fed in as another knight online, is drawn on that mount with him aboard (not on foot), his name over
+    // it; a mech kind this page does not know is drawn as the walker, as it always was
+    if (window.PLAYERS && window.NET) {
+      const name = 'MountLookTest', at = { x: Math.round(player.x + 90), y: Math.round(player.y) }, log = {}; let ok = true;
+      const cases = [['horse', { kind: 'horse', hp: 60, maxHp: 60 }], ['walker', { kind: 'walker', hp: 90, maxHp: 130 }], ['dozer', { kind: 'dozer', hp: 110, maxHp: 110, up: 'drill,irondrill' }],
+        ['beast', { kind: 'beast', hp: 200, maxHp: 300 }], ['unknown', { kind: 'zeppelin', hp: 5, maxHp: 5 }]];
+      const horse0 = MOUNTS.drawHorse; let horses = 0;
+      MOUNTS.drawHorse = function () { horses++; return horse0.apply(this, arguments); };
+      try {
+        for (const [label, mech] of cases) {
+          NET.emit('p', { t: 'p', n: name, role: 'player', map: PLAYERS.mapId(), x: at.x, y: at.y, fx: 1, fy: 0, mv: true, wt: 2, hp: 20, mhp: 20, lv: 9, look: playerLook(), mech, dead: false, def: 100, act: null });
+          F.step([]);
+          const e = PLAYERS.remote[name];
+          render();
+          const r0 = STATS.riders, m0 = STATS.machines, s0 = STATS.seats, h0 = horses;
+          let drew = true;
+          try { const items = []; for (const hk of HOOKS.draw) hk(ctx, items, cam); for (const it of items) if (it.who === name) it.draw(); } catch (err) { drew = String(err && err.message); }
+          const rode = STATS.riders - r0 === 1, aboard = label === 'horse' ? horses - h0 === 1 : STATS.machines - m0 === 1 && STATS.seats - s0 === 1;
+          const tag = e && typeof e.tagTop === 'number' && e.tagTop < at.y - 40;
+          log[label] = { drew, rode, aboard, tag: e && e.tagTop };
+          if (!(drew === true && rode && aboard && tag)) ok = false;
+        }
+      } finally { MOUNTS.drawHorse = horse0; delete PLAYERS.remote[name]; }
+      check(P + 'MA5 friends see riders: a friend on the mare, the walker, the bulldozer (its drill too) and the Barrelbeast is drawn riding it with himself aboard and his name over it; an unknown machine is drawn as the walker', ok, log);
+    }
+
+    // MA6. a gate stands open while a rider is in it, and shut otherwise (a pen gate; the town's gates are gatehouses)
+    { let gate = null;
+      for (let y = 1; y < MAP_H - 1 && !gate; y++) for (let x = 1; x < MAP_W - 1 && !gate; x++) if (tileAt(x, y) === T.GATE && !(x >= 84 && x <= 141 && y >= 13 && y <= 57)) gate = [x, y];
+      let r = { gate };
+      if (gate) {
+        const keep = { x: player.x, y: player.y, mech: player.mech, r: player.r };
+        const ops = () => { const rc = recorder(); drawFenceProp(rc.g, gate[0], gate[1], true); return rc.log.filter(l => l.startsWith('fillRect:')).map(l => l.slice(9)).join(' '); };
+        player.mech = null; player.r = 13; player.x = tc(gate[0]); player.y = tc(gate[1]);
+        const onFoot = ops();
+        player.mech = { kind: 'horse', hp: 60, maxHp: 60 }; player.r = 16;
+        const riding = ops();
+        player.x = tc(gate[0] + 4); const away = ops();
+        player.x = keep.x; player.y = keep.y; player.mech = keep.mech; player.r = keep.r;
+        r = { gate, open: riding !== onFoot, shutAway: away === onFoot, onFoot: onFoot.slice(0, 40), riding: riding.slice(0, 40) };
+      }
+      check(P + 'MA6 a gate is drawn standing open while a rider is in it, and shut when he is on foot or gone', !!gate && r.open && r.shutAway, r); }
   });
 
   return window.MOUNT_LOOK;

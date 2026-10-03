@@ -221,22 +221,53 @@
 
   // ---------- getting off ----------
   // The core's exitMech parks a walker tile it knows nothing about, so the mare does her own dismount:
-  // she takes the ground ahead (or the tile you are on), and the knight takes the nearest free spot.
+  // she takes the ground ahead (or the tile you are on), and the knight takes the nearest free spot. When neither will
+  // take her (a gateway, facing along the gate: the gate tile under her and more gate or the wall ahead), she takes the
+  // nearest open ground round about, the street beside the gate first. Next to a gate she never stands where she would
+  // close it to a mount that could ride through it before (94-mountgates' routes: a mare in the middle lane of a
+  // three-tile town gate leaves two 48 px lanes, too narrow for the Barrelbeast).
   function aheadTile() { return { tx: Math.floor((player.x + player.facing.x * 44) / TILE), ty: Math.floor((player.y + player.facing.y * 44) / TILE) }; }
+  const nearGate = (tx, ty) => { for (let y = ty - 2; y <= ty + 2; y++) for (let x = tx - 2; x <= tx + 2; x++) if (inMap(x, y) && RIDE_THROUGH.has(tileAt(x, y))) return [x, y]; return null; };
+  // every way a mount could cross the gates near (tx, ty) right now (94-mountgates loads after this file)
+  const gateRoutes = at => window.MOUNTGATES && MOUNTGATES.routes ? MOUNTGATES.routes(at[0], at[1]) : [];
+  function dismountSpot() {
+    const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }, ft = aheadTile();
+    const usable = s => inMap(s.tx, s.ty) && PLACEABLE_ON.has(tileAt(s.tx, s.ty)) && !insideBuilding(s.tx, s.ty) && !NPCS.some(n => circleHitsTile(n.px, n.py, 14, s.tx, s.ty));
+    const cands = [];
+    if (ft.tx !== own.tx || ft.ty !== own.ty) cands.push(ft);
+    cands.push(own);
+    // round about: the four sides, then the corners, then two out, nearest first
+    const ring = [];
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dx || dy) ring.push({ tx: own.tx + dx, ty: own.ty + dy, d: Math.max(Math.abs(dx), Math.abs(dy)) * 10 + Math.abs(dx) + Math.abs(dy) + dist(player.x, player.y, tc(own.tx + dx), tc(own.ty + dy)) / 1000 });
+    ring.sort((a, b) => a.d - b.d);
+    for (const r of ring) if (!cands.some(c => c.tx === r.tx && c.ty === r.ty)) cands.push({ tx: r.tx, ty: r.ty });
+    let first = null;
+    for (const c of cands) {
+      if (!usable(c)) continue;
+      const onOwn = c.tx === own.tx && c.ty === own.ty;
+      // the knight steps back off her when she takes his own tile; otherwise he gets down where he is (or close by)
+      const want = onOwn ? { x: player.x - player.facing.x * TILE, y: player.y - player.facing.y * TILE } : { x: player.x, y: player.y };
+      const i = idx(c.tx, c.ty), was = map[i];
+      const g0 = nearGate(c.tx, c.ty), before = g0 ? gateRoutes(g0) : null;
+      map[i] = T_HORSE;
+      const free = safeSpot(want.x, want.y, BASE_R, 'player');
+      const keeps = !g0 || (() => { const after = gateRoutes(g0); return before.every(r => after.includes(r)); })();
+      map[i] = was;
+      if (!free || dist(free.x, free.y, player.x, player.y) > 2.5 * TILE) continue;
+      const pick = { tx: c.tx, ty: c.ty, free };
+      if (keeps) return pick;
+      if (!first) first = pick;
+    }
+    return first;
+  }
   function dismount(quiet) {
     if (!riding()) return false;
-    const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }, ft = aheadTile();
-    const usable = s => inMap(s.tx, s.ty) && PLACEABLE_ON.has(tileAt(s.tx, s.ty)) && !insideBuilding(s.tx, s.ty);
-    const spot = ((ft.tx !== own.tx || ft.ty !== own.ty) && usable(ft)) ? ft : usable(own) ? own : null;
+    const spot = dismountSpot();
     if (!spot) { notify('No room to get down here. Ride somewhere open.'); return false; }
-    const onOwn = spot.tx === own.tx && spot.ty === own.ty, prev = tileAt(spot.tx, spot.ty);
-    H().under = tileName(prev); changeTile(spot.tx, spot.ty, T_HORSE);
-    const want = onOwn ? { x: player.x - player.facing.x * TILE, y: player.y - player.facing.y * TILE } : { x: player.x, y: player.y };
-    const free = safeSpot(want.x, want.y, BASE_R, 'player');
-    if (!free) { changeTile(spot.tx, spot.ty, prev); H().under = null; notify('No room to get down here. Ride somewhere open.'); return false; }
+    H().under = tileName(tileAt(spot.tx, spot.ty)); changeTile(spot.tx, spot.ty, T_HORSE);
     H().at = [spot.tx, spot.ty]; H().hp = player.mech.hp;
     player.mech = null; player.r = BASE_R; player.speed = BASE_SPEED;
-    player.x = free.x; player.y = free.y;
+    player.x = spot.free.x; player.y = spot.free.y;
     handled = true;
     if (!quiet) notify(`You swing down. ${NAME} waits.`);
     save(); return true;
@@ -922,6 +953,35 @@
         H().owned = false; drawHitchTile(ctx, POST.x, POST.y); H().owned = true; // the rail before she is bought: she is tied to it
       } catch (e) { drew = false; }
       check(P + 'the mare and the rail draw at all four facings, ridden and parked', up && drew && !riding(), { up, why: rideWhy, drew }); }
+
+    // 15. she is no machine: on her, V and a held Space start no machine special (55-riding), and nothing stands on her back
+    { const up = ride(); let r = { up };
+      if (up && window.RIDING) {
+        RIDING.resetCool(); notice = null;
+        F.press('KeyV'); F.sim(3, []);
+        const afterV = RIDING.special;
+        F.sim(50, ['Space']); F.sim(3, []);
+        const afterHold = RIDING.special;
+        const items = []; for (const hk of HOOKS.draw) { try { hk(ctx, items, cam); } catch (err) { } }
+        const atBack = items.filter(it => it.y === player.y + player.r + 2).length;
+        r = { up, afterV: !!afterV, afterHold: !!afterHold, kind: RIDING.machineKind(), atBack, notice: notice && notice.text };
+        RIDING.resetCool();
+      }
+      check(P + 'on the mare, V and holding Space start no machine special, and no beacon is drawn on her back', !!r.up && r.afterV === false && r.afterHold === false && r.kind === null && r.atBack === 0, r);
+      F.press('KeyX'); F.sim(2, []); }
+
+    // 16. she draws in the new look at all four facings, ridden, standing alone and hurt (the knight in her saddle once
+    // each time, seated: his own drawing), on a canvas that writes nothing down (the headless one) without throwing
+    { let calls = 0, drew = true; const look = playerLook(), dh = drawHuman;
+      try {
+        drawHuman = function (g, e, lk) { if (lk === look && e.seated) calls++; return dh.apply(this, arguments); };
+        for (const f of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const mv of [false, true]) {
+          drawHorse(ctx, { facing: { x: f[0], y: f[1] }, moving: mv, walkT: 2.2, hurtT: 0 }, false, look);
+          drawHorse(ctx, { facing: { x: f[0], y: f[1] }, moving: mv, walkT: 2.2, hurtT: 0.2 }, true, look);
+          drawHorse(ctx, { facing: { x: f[0], y: f[1] }, moving: mv, walkT: 2.2, hurtT: 0 }, false, null);
+        }
+      } catch (err) { drew = String(err && err.message); } finally { drawHuman = dh; }
+      check(P + 'the mare draws in the new look at all four facings, walking and standing, ridden (the knight sat in her saddle), alone and hurt', drew === true && calls === 16, { drew, calls }); }
 
     // put the world back the way the rest of the suite expects it
     if (riding()) dismount(true);
