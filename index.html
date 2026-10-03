@@ -40097,7 +40097,8 @@ const BOYGIRL = (() => {
   HOOKS.update.push(() => {
     if (!pending || quiet || title.active) return;
     if (player.gender === 'girl' || player.gender === 'boy') { pending = false; return; }
-    if (panel) return;            // another page is open: ask when it closes
+    // another page is open, or a place's name is across the middle of the screen: ask when it has gone
+    if (panel || areaBanner) return;
     pending = false; openPanel('boygirl');
   });
   // the self-test drives startSlot and newGame for its own reasons: it never gets the page unless a check asks for it
@@ -40175,6 +40176,8 @@ const BOYGIRL = (() => {
     const q0 = quiet; quiet = 0;
     const SK = n => title.slotKey(n), AK = n => title.slotKey(n) + '.at';
     const keep3 = [lsGet(SK(3)), lsGet(AK(3))], dev0 = lsGet(DEVICE_KEY);
+    // the page waits for a place's name banner to go: step until it is up (or 5 s)
+    const untilAsked = () => { for (let i = 0; i < 300 && panel !== 'boygirl'; i++) F.step([]); };
     try {
       // 1. the look
       { player.gender = 'girl'; const gl = playerLook(); player.gender = 'boy'; const bl = playerLook(); delete player.gender; const nl = playerLook();
@@ -40197,7 +40200,7 @@ const BOYGIRL = (() => {
         check(P + 'in the walker, the dozer and the beast the rider is the girl knight (her ribbon is drawn)', Object.values(seats).every(v => v === true) && 'walker' in seats && 'dozer' in seats, seats); }
       // 4. a new game asks: the page comes up, a tap on the girl card chooses, saves and closes it
       { save(); localStorage.removeItem(SK(3)); localStorage.removeItem(AK(3));
-        title.open(); title.startSlot(3); dialog.cur = null; dialog.queue.length = 0; F.step([]);
+        title.open(); title.startSlot(3); dialog.cur = null; dialog.queue.length = 0; untilAsked();
         const asked = panel === 'boygirl'; render();
         const cards = ['choose:boy', 'choose:girl'].map(l => buttons.find(b => b.label === l)).filter(Boolean);
         const big = cards.length === 2 && cards.every(b => b.w >= 44 && b.h >= 44);
@@ -40209,12 +40212,16 @@ const BOYGIRL = (() => {
         check(P + 'a knight who has chosen is not asked again when the slot is loaded', panel !== 'boygirl' && player.gender === 'girl', { panel, gender: player.gender }); }
       // 5. an old save with no choice: asked once on this load; closed, it stays closed (and the knight looks like a boy)
       { const d = JSON.parse(lsGet(SK(3))); delete d.player.gender; lsSet(SK(3), JSON.stringify(d));
-        title.open(); title.startSlot(3); dialog.cur = null; dialog.queue.length = 0; F.step([]);
-        const asked = panel === 'boygirl'; closePanel(); F.step([]); F.step([]);
+        title.open(); title.startSlot(3); dialog.cur = null; dialog.queue.length = 0; untilAsked();
+        const asked = panel === 'boygirl'; closePanel(); F.sim(30, []);
         check(P + 'an existing knight who never chose is asked once on the next load; closing the page keeps the boy look and it does not pop back up', asked && panel === null && !player.gender && !playerLook().girl, { asked, panel, gender: player.gender }); }
       // 6. the pause menu's New game in the same visit asks again
-      { newGame(); F.step([]); const asked = panel === 'boygirl'; render(); F.clickButton('choose:boy');
+      { newGame(); untilAsked(); const asked = panel === 'boygirl'; render(); F.clickButton('choose:boy');
         check(P + 'the pause menu\'s New game asks too; tapping Boy makes a boy knight', asked && player.gender === 'boy' && panel === null && !playerLook().girl, { asked, gender: player.gender, panel }); }
+      // 6b. a place's name across the screen goes first; the page comes up after it
+      { newGame(); areaBanner = { name: 'Thistledown', sub: 'The city that still stands', t: 0.5 }; F.step([]); const waited = panel !== 'boygirl';
+        untilAsked(); const after = panel === 'boygirl' && !areaBanner; closePanel(); player.gender = 'boy';
+        check(P + 'the page waits for a place\'s name banner to go, then comes up', waited && after, { waited, after }); }
       // 7. Settings: the "Your knight" row shows the knight and changes it and the Settings page stays open; "put every setting back" leaves the knight alone
       { closePanel(); openPanel('settings'); let found = false;
         for (let p = 0; p < 12 && !found; p++) { render(); found = buttons.some(b => b.label === 'set:knight'); if (!found && !F.clickButton('Next')) break; }
@@ -40279,7 +40286,7 @@ const BOYGIRL = (() => {
     }
   });
 
-  return { choose, lookAs, dress, get pending() { return pending; }, GIRL_HAIR, RIBBON };
+  return { choose, lookAs, dress, remember, get device() { return device; }, get pending() { return pending; }, GIRL_HAIR, RIBBON };
 })();
 window.BOYGIRL = BOYGIRL;
 
