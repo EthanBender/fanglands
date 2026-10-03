@@ -113,7 +113,7 @@
 
   function define(id, def) {
     if (!def || !(def.w > 0) || !(def.h > 0) || def.w > MAP_W || def.h > MAP_H) throw new Error('defineInstance: bad size for ' + id);
-    const inst = { id, name: def.name || id, sub: def.sub || '', w: def.w, h: def.h, spawns: def.spawns || [], exit: def.exit || null, entry: def.entry || [1, 1], dark: !!def.dark, boss: def.boss || null, onClear: def.onClear || null, door: def.door || null, step: def.step || null, voice: def.voice || null, build: def.build, tiles: null, vars: null };
+    const inst = { id, name: def.name || id, sub: def.sub || '', w: def.w, h: def.h, spawns: def.spawns || [], exit: def.exit || null, entry: def.entry || [1, 1], dark: !!def.dark, boss: def.boss || null, onClear: def.onClear || null, door: def.door || null, step: def.step || null, voice: def.voice || null, lateDoor: !!def.lateDoor, build: def.build, tiles: null, vars: null };
     inst.tiles = new Uint8Array(inst.w * inst.h).fill(T.WALL);
     inst.vars = new Uint8Array(inst.w * inst.h);
     const rnd = mulberry32(0x5eed ^ (id.length * 7919) ^ Math.imul(id.charCodeAt(0), 2654435761));
@@ -218,12 +218,21 @@
   // ---------- doors placed in the world ----------
   HOOKS.world.push((rnd, api) => {
     for (const id in INST) {
-      const inst = INST[id]; if (!inst.door) continue;
+      const inst = INST[id]; if (!inst.door || inst.lateDoor) continue;
       const [dx, dy] = inst.door, step = inst.step || [dx + 1, dy];
       api.setTile(dx, dy, T_DOOR); api.setTile(step[0], step[1], T.DIRT);
       DOORS[idx(dx, dy)] = { id, step };
     }
   });
+  // a door added to a world that is already built (`lateDoor: true`): placed by its own file once generateWorld has run,
+  // so every world hook after 16 still sees the ground it always saw and the rest of the world comes out tile for tile the same
+  function placeDoor(id) {
+    const inst = INST[id]; if (!inst || !inst.door) return false;
+    const [dx, dy] = inst.door, step = inst.step || [dx + 1, dy];
+    setTile(dx, dy, T_DOOR); setTile(step[0], step[1], T.DIRT);
+    DOORS[idx(dx, dy)] = { id, step };
+    return true;
+  }
 
   // ---------- eggs ----------
   const eggAt = (tx, ty) => active && active.eggs.find(e => e.tx === tx && e.ty === ty);
@@ -495,7 +504,7 @@
     for (let y = 3; y <= 6; y++) if ([T.GRASS, T.DIRT].includes(api.tileAt(23, y))) api.setTile(23, y, T.DIRT);
   });
 
-  window.INSTANCES = { define, enter: enterInstance, leave: leaveInstance, list: () => Object.keys(INST), active: () => active && active.id, get: id => INST[id] };
+  window.INSTANCES = { define, enter: enterInstance, leave: leaveInstance, list: () => Object.keys(INST), active: () => active && active.id, get: id => INST[id], placeDoor };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
