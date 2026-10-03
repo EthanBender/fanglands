@@ -100,7 +100,7 @@
   const P = 'cloud: ';
   HOOKS.selfTest.push((check, F, h) => {
     const L = window.LOGIN;
-    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, status: NET.status, playing: L && L.playing, alone: L && L.alone, notice, titleActive: title.active, slot: title.slot };
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, status: NET.status, playing: L && L.playing, notice, titleActive: title.active, slot: title.slot };
     const puts = []; let down = false;
     const fake = {
       call(method, path, body) { if (method === 'PUT' && path === '/api/save') { if (down) throw Object.assign(new Error('down'), { status: 0 }); puts.push(body); return { at: 1 }; } return { ok: true }; },
@@ -108,7 +108,7 @@
     };
     try {
       if (title.active) title.startSlot(title.slot);
-      NET.enabled = true; NET.useFake(fake); NET.setToken('tok-test'); if (L) { L.playing = true; L.alone = false; } CLOUD.reset();
+      NET.enabled = true; NET.useFake(fake); NET.setToken('tok-test'); if (L) L.playing = true; CLOUD.reset();
       save(); const raw1 = lsGet(title.slotKey(title.slot));
       check(P + 'a save while online books a push and sends nothing yet (4 s hold)', active() && CLOUD.pending === raw1 && CLOUD.timer !== null && puts.length === 0, { pending: !!CLOUD.pending, puts: puts.length });
       CLOUD.flush();
@@ -127,12 +127,12 @@
       check(P + 'coming back online pushes the knight once when the cloud is behind, and not when it is not', same && puts.length === 3 && puts[2] === raw2 && CLOUD.known === raw2, { same, puts: puts.length });
       NET.disconnect();
       if (L) L.playing = false; CLOUD.reset(); save();
-      check(P + 'playing alone never touches the cloud', !active() && CLOUD.pending === null && CLOUD.timer === null && puts.length === 3, { pending: CLOUD.pending });
+      check(P + 'with no knight playing online, a save never touches the cloud', !active() && CLOUD.pending === null && CLOUD.timer === null && puts.length === 3, { pending: CLOUD.pending });
       NET.setToken(null); if (L) L.playing = true; save(); const noToken = CLOUD.pending === null && CLOUD.timer === null;
       check(P + 'without a session there is nothing to push to', noToken, { noToken });
     } finally {
       CLOUD.reset(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.setToken(was.token); NET.status = 'off'; NET.me = null;
-      if (L) { L.playing = was.playing; L.alone = was.alone; }
+      if (L) L.playing = was.playing;
       notice = was.notice;
       if (was.status === 'on' && NET.token) NET.connect();
     }

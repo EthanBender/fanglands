@@ -17,7 +17,8 @@ either side. `src/70-net.js` is the wire; the server lives in `online/`.
 - **Invite-only.** A new knight needs the invite code Ethan hands out. No email, no real names, nothing public.
   Names and chat are word-filtered; chat is kept so a parent can read it at `/admin`.
 - **One knight per account.** Online there are no save slots: the account is the knight, saved in the cloud, so
-  the same knight plays from the iPad, the laptop, or a friend's house.
+  the same knight plays from the iPad, the laptop, or a friend's house. There is no *Play alone* online: every knight
+  lives on the server, and knights a device saved before are kept and offered (*Every knight lives on the server*).
 - **The GitHub Pages address keeps working** exactly as before, offline and single-player. The title screen on
   fanglands.com can pull a knight across from it (see *The bridge*).
 
@@ -309,8 +310,8 @@ with `{fanglands: 'save', slots: {1: {save, at} | null, 2: ..., 3: ...}}` holdin
 their `.at` stamps (a browser from before the slots existed hands its legacy `fanglands.save.v2` over as slot 1
 with `at: 0`). The login flow waits up to 3 s, believes answers only from `https://ethanbender.github.io`, and
 offers the most recent slot when the account has no cloud save yet. Nothing is deleted on the old side. Online
-the knight lives in slot 1; a save that *Play alone* left there is moved to an empty slot
-first (`fanglands.slot.1.online` marks slot 1 as the cloud knight's).
+the knight lives in slot 1; a knight saved only on the device (from *Play alone*, before) is moved to an empty slot
+first (`fanglands.slot.1.online` marks slot 1 as the cloud knight's; see *Every knight lives on the server*).
 
 The copy GitHub Pages serves is the one on GitHub's `master`: the list of addresses it answers changes there only
 when `master` is pushed to GitHub. Until then it answers only gorkscape.ca, so a knight on fanglands.com asking it
@@ -1101,6 +1102,62 @@ Ann gave 5 bread; Ben gave 20 coins."), from `GET /api/admin/trades`; `GET /api/
   the buttons, exactly once (one row, both acks, nothing more on a repeat or a reconnect); 15, Ben changes his offer after
   Ann accepted and nothing moves until both accept again; 16, closing, walking away and disconnecting each end a trade with
   nothing moved. `tools/dom-keys.js`: a real right-click on a knight opens the card with no browser menu.
+## Every knight lives on the server
+
+Owner (2026-10-03): *"everything should be server side so that they can play on multiple devices"*, and yes to taking
+*Play alone* away, so every new player needs his invite. This is the small change; how saves sync between devices is a
+separate, later project and is exactly as before (below).
+
+- **Online, every knight lives on the server.** The login card (`src/71-login.js`) has no *Play alone*, not even while
+  the world is asleep ("The world is asleep right now." and it waits). Online the title never shows the local slot
+  cards, Continue or a *Play online* plate, and Enter starts nothing, even with the card put away (79-boygirl's
+  question). A new knight needs Ethan's invite code (*New knight*, "Ask Ethan for the invite code").
+- **Unchanged:** what loads at login for an account with a cloud save (the cloud knight, into slot 1 with the mark),
+  slot 1 as the account's working copy, `72-cloudsave`'s pushes and their timing, the old address's bridge. No new save
+  fields, no conflict rules, no backups.
+- **No knight is ever deleted, and no kid is ever stuck.** A *device knight* is a slot (`fanglands.slot.1` to
+  `LOGIN.PARK_MAX`, 9; 1 to 3 are the title's, the rest only ever hold a knight `park()` moved) holding a save that no
+  account owns: any slot with a save in it, except slot 1 while it carries the mark (an account's working copy). No start
+  path deletes or overwrites one: before a login, a sign-up, a pick (the slot 1 knight too), *Start fresh* or *Put my
+  knight back* (`LOGIN.reload`) writes slot 1, `park()` moves a device knight there to the first empty slot from 2 to 9
+  (if one already holds the same string it is safe as it is) and reads it back. So a kid who played alone in all three
+  slots still logs in, signs up, starts fresh or brings one in; the slot 1 knight is then in slot 4. Only when no slot
+  up to 9 is empty, or storage refuses the write, is nothing written, the game does not start, and the card says:
+  "This device has no room left to keep its saved knights safe, so the game did not start. They are all still here. Ask
+  Ethan for help." (`LOGIN.NO_ROOM`). `DEVKNIGHTS.PARK_MAX` is the same number (`src/00-handoff.js`'s self-test reads it;
+  the hand-over's rule counts every `fanglands.slot.N`, so a parked knight keeps its browser on the old address until
+  it is in an account).
+- **Named where the kid is** (`src/72-deviceknights.js`): under the login form and on the "Playing as" card, one line:
+  "This device has a knight saved on it: Slot 2 (level 7). It is safe here. Make a new knight with Ethan's invite code
+  to bring it with you." (with several: "This device has 2 knights saved on it: Slot 2 (level 7) and Slot 3 (level 2).
+  They are safe here. Make a new knight with Ethan's invite code to bring one with you.").
+- **Offered to a new account.** When a sign-up (or any login) finds the account's cloud empty, 71-login asks the old
+  address and so this file: device knights are offered. One: "This device has a knight saved on it: Slot 2 (level 7).
+  Bring it into your account?" with its chapter and time played, *Yes, bring it* / *Start fresh*. Several: a card each
+  (slot, level, chapter, time played; 56 px tall) and *Start fresh*. A knight on the old address joins them as one more
+  card; with no device knight the old address keeps its own offer as before. A picked knight comes in exactly the way
+  the old address's does (`LOGIN.bring`: slot 1, the mark, `PUT /api/save` at once). It stays in its own slot too, and
+  is still named and offered to everyone else (brother and sister on one iPad: the first to tap Yes never takes it from
+  the other). Once its first push went through, `fanglands.brought` keeps its fingerprint with the account's name
+  (`{fingerprint: [names]}`): that account's "Playing as" no longer names it, and another account's offer adds one line
+  to its card: "Ann brought this knight into an account already. You can bring it too."
+- **Start fresh asks first.** The first tap greys *Start fresh* out (nothing on the card moves, so a second tap there
+  does nothing) and shows "Start a new knight? These will not come into this account." with *Yes, start fresh* (under
+  everything) and *Go back*. *Yes, start fresh* takes a tap only after 0.8 s with no press on the offer: every press
+  before that starts the wait again, so a double tap or a burst of taps never starts fresh. Every device knight stays.
+- **Self-tests.** While `FANGLANDS.selfTest` runs, device knights are not seen (no line, no offer) unless the test sets
+  `DEVKNIGHTS.testView`, so another file's sign-up (79-boygirl's Mia, an empty cloud) is never offered a knight some
+  other test left in a slot. The rule that nothing is overwritten is never switched off.
+- **Offline is unchanged.** Without the wire (`file://`, the old address, the tests' own boot) the title keeps its three
+  slots exactly as before, and nothing is named or offered.
+- Tests: `deviceknights:` in `src/72-deviceknights.js` (named on the form and "Playing as"; offered to a new account and
+  pushed on Yes; a knight Ann brought in still offered to Bea, with who brought it, and not named on Ann's own card; a
+  pick from several with slot 1 moved first; Start fresh against double taps and bursts; three full slots and every
+  start path still starts, slot 1's knight in slot 4; no room only with every slot to 9 full or storage refusing; the
+  self-test gate; offline slots; on the card in a browser), `login:` *online there is no Play alone*, `handoff:` (its
+  real-login check parks a knight in slot `DEVKNIGHTS.PARK_MAX`), and `tools/dom-keys.js` runs the `deviceknights:`
+  checks in a real page at 768x1024 and 390x844.
+
 ## Accounts
 
 Owner (2026-09-25): *"can you add to the admin consol to see all the active accounts even if they are looged out with
