@@ -201,6 +201,12 @@ adds `mech: {kind, hp, maxHp}` and is drawn with `drawMech`. Mounts add `mount: 
   marked dead (the keeper decides). The knight who receives `kill` runs the original `killMonster` on a
   phantom `{type, x, y, home, r, phantom: true}` so XP-on-kill hooks, drops and quest counters all fire for
   the right person. Kill credit is the last hit.
+- **Deaths on screen.** A monster's death (the animation in 79-deaths) starts only from `HOOKS.monsterDeath(m, info)`,
+  `info = { k, by, how, x, y }`, once per death. On the keeper: `killMonster` fires it (`how` 'blow'), and the wrap fires it
+  for a remote knight's last blow ('friend'). On a non-keeper, 75-coop fires it on the keeper's word only: the `kill`
+  message ('kill') or a puppet's row turning dead ('row'), whichever comes first (`p.deathSeen`). A puppet whose first row
+  is already dead died before this knight saw it and fires nothing. The knight's own last blow on a puppet fires nothing:
+  the puppet holds still and hurt until the word comes (at most 0.6 s). Phase 1 Stage 3 moves the online firing to `die`.
 - **Handoff.** When the keeper leaves, the server names the next knight. The new keeper turns its puppets
   into real monsters (known nids: copy fields onto its own frozen array; unknown nids: `makeMonster(type,
   tx, ty)` then copy fields), unfreezes, and starts streaming.

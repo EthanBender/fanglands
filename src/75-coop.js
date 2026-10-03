@@ -130,7 +130,7 @@
   function makePuppet(nid, type, x, y) {
     const d = MONSTER_DEFS[type]; if (!d) return null;
     return { nid, type, remote: true, x, y, home: homeFor(nid, x, y), r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: !!d.aggro, state: 'idle', wanderT: 0, wander: { x: 0, y: 0 },
-      attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 1e9, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0, seen: time, gone: false, from: { x, y }, to: { x, y }, lerp: 1, localDeadUntil: -1 };
+      attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 1e9, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0, seen: time, gone: false, from: { x, y }, to: { x, y }, lerp: 1, localDeadUntil: -1, deathSeen: false };
   }
   function makeReal(type, x, y, nid, home) {
     const d = MONSTER_DEFS[type];
@@ -186,7 +186,8 @@
       if (x === null || y === null || hp === null || maxHp === null || fx === null || fy === null || moving === null || hurt === null || attackT === null || stunT === null) continue;
       let p = idx.get(nid);
       if (p && (!p.remote || p.type !== type)) { const k = monsters.indexOf(p); if (k >= 0) monsters.splice(k, 1); p = null; }
-      if (!p) { p = makePuppet(nid, type, x, y); if (!p) continue; monsters.push(p); idx.set(nid, p); added = true; }
+      let born = false;
+      if (!p) { p = makePuppet(nid, type, x, y); if (!p) continue; monsters.push(p); idx.set(nid, p); added = true; born = true; }
       else if (p.x !== x || p.y !== y) { p.from.x = p.x; p.from.y = p.y; p.to.x = x; p.to.y = y; p.lerp = 0; }
       const dead = !!e[11];
       if (!dead && p.dead && time < p.localDeadUntil) { p.seen = time; continue; }   // our own blow just felled it; give the keeper a moment to agree
@@ -194,6 +195,10 @@
       p.dead = dead; p.hp = hp; if (maxHp > 0) p.maxHp = maxHp; p.state = typeof state === 'string' ? state : 'idle';
       p.facing.x = fx; p.facing.y = fy; p.moving = !!moving; p.hurtT = hurt; p.attackT = attackT; p.stunT = stunT; p.respawnT = 1e9;
       p.seen = time; p.gone = false;
+      // the keeper's row turning dead is its word that this monster died: every screen shows the death on receipt, once
+      // (deathSeen). One first seen already dead died before this knight could see it, so it plays nothing.
+      if (!dead) p.deathSeen = false;
+      else if (!p.deathSeen) { p.deathSeen = true; if (!born) monsterDied(p, 'row', S.keeper); else p.deadT = 9; }   // 9: past the core's fade too
     }
     if (added) { S.idxArr = monsters; S.idxLen = monsters.length; }
     S.lastMonAt = time;
@@ -436,7 +441,8 @@
   rollDrops = function (def, x, y) { if (S.lootless) return; return _rollDrops(def, x, y); };
   rollDrops.__inner = _rollDrops;
   killMonster = function (m) {
-    if (m.remote) { m.dead = true; m.deadT = 0; m.respawnT = 1e9; m.localDeadUntil = time + 0.5; return; }   // the keeper decides drops, XP and credit
+    // the keeper decides drops, XP, credit and the death itself: no HOOKS.monsterDeath here (it fires on the keeper's word)
+    if (m.remote) { m.dead = true; m.deadT = 0; m.respawnT = 1e9; m.localDeadUntil = time + 0.5; return; }
     let share = null;
     // the keeper remembers when a called boss fell on this map: its rest starts here, whoever landed the blow
     if (!m.phantom && isKeeper()) for (const id of Object.keys(HOOKS.bossCall)) { const h = HOOKS.bossCall[id]; if (h && h.type === m.type && h.map === S.map) S.restAt[id] = time; }
@@ -451,6 +457,7 @@
       const I = window.INSTANCES, inst = I && I.active && I.active() ? I.get(I.active()) : null;
       if (inst && inst.boss === m.type) m.respawnT = Infinity;
       NET.send({ t: 'kill', nid: m.nid, type: m.type, x: Math.round(m.x), y: Math.round(m.y), to });
+      monsterDied(m, 'friend', to);
     } else payKill(m);
     if (share) {
       for (const n of share.remote) NET.send({ t: 'kill', nid: m.nid, type: m.type, x: Math.round(m.x), y: Math.round(m.y), to: n });
@@ -490,7 +497,10 @@
       const x = num(msg.x), y = num(msg.y); if (x === null || y === null) return;
       const nid = typeof msg.nid === 'string' ? msg.nid : null;
       const p = nid ? find(nid) : null;
-      if (p && p.remote) { p.dead = true; p.deadT = 0; p.respawnT = 1e9; p.localDeadUntil = time + 0.5; }
+      if (p && p.remote) {
+        p.dead = true; p.deadT = 0; p.respawnT = 1e9; p.localDeadUntil = time + 0.5;
+        if (!p.deathSeen) { p.deathSeen = true; monsterDied(p, 'kill', typeof msg.to === 'string' ? msg.to : NET.me, typeof msg.k === 'string' || typeof msg.k === 'number' ? msg.k : null); }
+      }
       payKill(phantomOf({ type: msg.type, nid, x, y }));
     });
     NET.on('boss_call', onBossCall);

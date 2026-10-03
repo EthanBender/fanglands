@@ -204,8 +204,16 @@ return { peek: __peek, poke: (n, v) => { try { __poke(n, v); } catch (e) { throw
 // to see every read with its line.
 // ============================================================================
 export const STRIP_READS = {
+  drawCharacter: {
+    files: ['79-deaths'],
+    why: '79-deaths wraps it at load to draw a falling body; the wrapper only runs when something draws, which a copy never does',
+  },
+  drawDrop: {
+    files: ['79-deaths'],
+    why: '79-deaths wraps it at load to draw loot popping out of a body; the wrapper only runs when something draws, which a copy never does',
+  },
   HK: {
-    files: ['05-input', '17-tap', '21-companion', '23-law', '24-dwarves', '29-quests', '43-settings', '47-outliers', '53-coalmine', '54-graves', '55-riding', '61-markers', '66-storm', '71-login', '73-players', '74-chat', '78-trade'],
+    files: ['05-input', '17-tap', '21-companion', '23-law', '24-dwarves', '29-quests', '43-settings', '47-outliers', '53-coalmine', '54-graves', '55-riding', '61-markers', '66-storm', '71-login', '73-players', '74-chat', '78-trade', '79-deaths'],
     why: 'the HUD kit (59-hudkit): fonts, colours, text widths, panel rows, plaques, seats and safe insets, read by panel, plaque, chat-wrap and tap code; the two update-time reads are a held BLOCK seat, used only for the copy\'s own knight on a machine (55-riding returns first: the parked stand-in has no machine) and a pointer release (05-input, a copy has no pointer)',
   },
   title: {
@@ -213,7 +221,7 @@ export const STRIP_READS = {
     why: 'title.active reads false in a copy (STUB_SEED and the stand-in\'s start(), as for a knight past the title); the rest are the title\'s save slots (slotKey, slot) for login, cloud saves and admin, which a copy never uses (save() does nothing, NET.call throws), the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
   },
   cam: {
-    files: ['17-tap', '24-dwarves', '78-trade', '88-aerie', '91-cloudkingdom', '91-royalmine', '95-thistledown'],
+    files: ['17-tap', '24-dwarves', '78-trade', '88-aerie', '91-cloudkingdom', '91-royalmine', '95-thistledown', '79-deaths'],
     why: 'the camera: screen-to-world for a tap, where a name tag, a sky or a bark is drawn, and the drawing passes\' default view',
   },
   playerLook: {
@@ -229,7 +237,7 @@ export const STRIP_READS = {
   drawCompass: { files: ['43-settings'], why: 'a wrapper that keeps the compass drawing to call it' },
   drawHud: { files: ['71-login'], why: 'a wrapper that keeps the HUD drawing to call it' },
   drawBossBars: { files: ['91-royalmine'], why: 'a wrapper that keeps the boss bars\' drawing to call it' },
-  drawHuman: { files: ['77-dropparty'], why: 'a wrapper that keeps the knight drawing to call it, then draws the party hat' },
+  drawHuman: { files: ['77-dropparty', '79-deaths'], why: 'wrappers that keep the drawing to call it: the party hat (77) and a falling person (79); they only run when something draws, which a copy never does' },
   drawItemIcon: { files: ['38-agility'], why: 'a wrapper that keeps the item icon drawing to call it' },
   drawFenceProp: { files: ['95-thistledown'], why: 'a wrapper that keeps the fence drawing to call it' },
   drawFireProp: { files: ['95-thistledown'], why: 'a wrapper that keeps the fire drawing to call it' },
