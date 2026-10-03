@@ -2,8 +2,8 @@
 // GET  /api/admin/export    everything needed to rebuild the world: accounts (with their hashes, roles and mutes), every
 //                           save version, the chat log, the settings, and the admins' tables: the moderation log, the
 //                           pinned backups, the drop parties and their crackers (who lit each, the prize, claimed or
-//                           not), the logins (when each knight's sockets opened and closed), every finished trade and the request
-//                           meter (one row per UTC day). Sessions are left
+//                           not), the logins (when each knight's sockets opened and closed), every finished trade, the request
+//                           meter (one row per UTC day) and the movement check's counts and violations (move_day, move_log). Sessions are left
 //                           out on purpose: they are short-lived tokens.
 // GET  /api/admin/bookmark  a Cloudflare point-in-time restore bookmark for this moment, also kept in settings with the
 //                           time it was taken. Taken before every deploy that changes the schema.
@@ -29,6 +29,8 @@ export async function backupCall(world, req, url, call, method) {
       logins: rows('SELECT * FROM logins ORDER BY id'),
       req_meter: rows('SELECT * FROM req_meter ORDER BY day'),
       req_meter_admin: rows('SELECT * FROM req_meter_admin ORDER BY day'),
+      move_day: rows('SELECT * FROM move_day ORDER BY day'),
+      move_log: rows('SELECT * FROM move_log ORDER BY id'),
     });
   }
   if (call === 'bookmark' && method === 'GET') {
