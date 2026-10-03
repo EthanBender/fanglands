@@ -86,7 +86,14 @@ export const GAME_TALK = [
     'dicky', 'dice', 'duck', 'luck', 'puck', 'stuck', 'truck', 'tuck', 'fudge', 'funk', 'fun', 'cut', 'cunning', 'hunt', 'count', 'cute', 'slot', 'smut', 'slug',
     'twatch', 'shitzu', 'cockatrice', 'dumbbell', 'Bobb', 'Bobbies', 'kk', 'xx', 'xxx', 'xxxx', 'assess', 'assesses', 'annals', 'Shiite', 'Shiites', 'looser',
     'asses', 'gook', 'go ok', 'go.ok', 'go,ok', 'go-ok', "who're you", 'whos there', 'who are you', 'retro', 'pack it', 'pa ki', 'as s', 'sh it', 'fu ck', 'di ck',
-    'cum on', 'cumming soon', 'hell yeah', 'what the heck', 'oh my gosh', 'frick', 'fricking', 'freaking', 'shoot', 'shucks', 'dang', 'darn', 'heck',
+    'cum on', 'cumming soon', 'hell yeah', 'what the heck', 'oh my gosh', 'frick', 'fricking', 'freaking', 'shoot', 'shucks', 'dang', 'darn', 'heck',    // round 6: a number joined to a word by a mark, and dice and scores after "a" (the digits were read as letters: 455 = ass)
+    'gold:455', 'gold:455 lol', 'hp:455', 'my hp:455 help', 'x:455 y:422', 'lvl:422', 'dmg:455!', 'coins:4555', 'room#455', 'item#455', '455:me', '455-pts',
+    "the 455's", "the 455's are gone", '455-ish', 'i got 455-ish', 'lvl-455', 'ok-455', '455.lol', '422-ish', "the 422's", 'lvl-422', 'x-455', '#455-ish', 'is-455',
+    'it was a 2 2 tie', "it's a 5 5 split", 'a 2 2 draw lol', 'a 4 2 2', 'i rolled a 5 5 on the dice game', 'i rolled a 5 5 and a 6', 'score was a 5 5',
+    'is it a 5 5?', 'i got a 5 5 5', 'its a 5 5 5 combo', 'lol a 5 5', 'a-5-5', 'a.2.2',
+    // round 6: names a kid knows that are also on the starred list (dick, kike): starred out, never a strike
+    'dick grayson', 'dick grayson is the best robin', 'nightwing is dick grayson', 'Dick Grayson is robin', 'moby dick', 'Moby-Dick', 'Philip K. Dick',
+    'kike hernandez', 'kike hernandez hit a homer',
 ];
 
 // Knights on line whose names are game words, everyday words or chat slang (review round 4, finding 1; round 5). Who is on

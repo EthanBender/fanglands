@@ -185,6 +185,49 @@ test('a number is never masked and never a strike: every count from 0 to 99,999,
     assert.deepEqual(checkChat(s), { text: s, masked: false, strike: false }, s);
 });
 
+// Review round 6: inside a token with a letter, the digits were read as letters BEFORE the token was split at its marks, so
+// "gold:455" was "gold:ass" and a strike; and a lone digit after "a" joined a spaced-out run ("a 5 5" = "ass"). A number is
+// never read, whatever it is joined to: every count from 0 to 99,999 next to a word by a colon, #, hyphen, dot or 's, and
+// spelled out after "a", is no strike, and (the spaced run aside, which is starred out as before) not even starred out.
+test('a number joined to a word, or after "a" in dice and scores, is never a strike: every count from 0 to 99,999', () => {
+  // word:N, N:word and word#N with a few game words, for every N; the other shapes for every N below 10,000 and every 7th above
+  const every = [n => 'gold:' + n, n => n + ':dragon', n => 'goblin#' + n, n => 'hp:' + n, n => n + ':me', n => 'room#' + n, n => 'the ' + n + "'s",
+    n => 'lvl-' + n, n => n + '-pts', n => 'a ' + String(n).split('').join(' ')];
+  const some = [n => 'lvl:' + n, n => 'coins:' + n, n => 'item#' + n, n => 'ok-' + n, n => n + '-ish', n => n + '.lol', n => 'x:' + n + ' y:' + n, n => 'dmg:' + n + '!',
+    n => 'sword-' + n, n => 'it was a ' + String(n).split('').join(' ') + ' tie', n => 'a-' + String(n).split('').join('-')];
+  const spaced = s => / \d /.test(s + ' ');   // "a 5 5": starred out as before, but never a strike
+  let n = 0;
+  for (let i = 0; i < 100000; i++) for (const f of i < 10000 || i % 7 === 0 ? every.concat(some) : every) {
+    const s = f(i), r = checkChat(s);
+    if (r.strike || (!spaced(s) && (r.masked || r.text !== s))) assert.fail(s + ' -> ' + JSON.stringify(r));
+    n++;
+  }
+  assert.ok(n > 1000000, String(n));
+  for (const s of ['gold:455 lol', 'my hp:455 help', 'x:455 y:422', 'lvl:422', 'coins:4555', 'room#455', '455:me', '455-pts', "the 455's are gone", 'i got 455-ish',
+    'lvl-455', 'ok-455', '422-ish', "the 422's", 'a 2 2 draw lol', 'it was a 2 2 tie', "it's a 5 5 split", 'a 4 2 2', 'i rolled a 5 5 on the dice game'])
+    assert.equal(checkChat(s).strike, false, s);
+  for (const s of ['gold:455', 'room#8008', "the 455's", '455-pts']) assert.equal(isStrikeWord(s), false, s);
+  // the disguises of the words themselves still count: a digit inside a word with letters, and letters split up by marks
+  for (const s of ['sh1t', 'a55', '5h1t', 'a$$', '@$$', 'f.u.c.k', 'f u c k', 'n i g g a', 'a $ $', 'fuck-you', "shit's", 'gold:shit', 'ok-a55', '455:fuck', 'sh1t-455'])
+    assert.equal(checkChat(s).strike, true, s);
+});
+
+// Review round 6: dick (Dick Grayson, Moby Dick) and kike (Kike Hernandez) are names a kid knows, so they are starred out
+// and never a strike; dickhead still is.
+test('dick and kike are starred out, never a strike; dickhead is a strike', () => {
+  for (const w of ['dick', 'dicks', 'kike', 'kikes']) {
+    assert.ok(!STRIKE_WORDS.includes(w), w);
+    assert.ok(BLOCKED.includes(w), w);
+  }
+  for (const s of ['dick grayson is the best robin', 'moby dick', 'nightwing is dick grayson', 'Philip K. Dick', 'kike hernandez hit a homer', 'dick', 'd1ck', 'kike']) {
+    const r = checkChat(s);
+    assert.equal(r.strike, false, s);
+  }
+  assert.equal(checkChat('moby dick').text, 'moby ****');
+  assert.equal(checkChat('kike hernandez').text, '**** hernandez');
+  for (const s of ['dickhead', 'd1ckhead', 'dickheads', 'you dickhead']) assert.equal(checkChat(s).strike, true, s);
+});
+
 // The disguises a strike word is caught in: every word of the list, every way.
 const LEET = { a: ['4', '@'], s: ['5', '$'], i: ['1', '!'], o: ['0'], e: ['3'], t: ['7', '+'], l: ['1', '|'], g: ['9'], b: ['8'] };
 function disguises(w) {
@@ -214,8 +257,8 @@ test('every word on the strike list is a strike, and so is each of its common di
   // by hand: the ones a kid really types
   for (const s of ['fuck', 'FUCK!', 'fuuuuck', 'fuckkk', 'fuckk', 'f u c k', 'f.u.c.k', 'f-u-c-k', 'fvck', 'phuck', 'fuk', 'xXfuckXx', 'fuckfuckfuck', 'motherfucker',
     'shit', 'sh1t', '$hit', 'sh!t', 'shiiit', 'shitt', 's h i t', 'bullshit', 'ass', 'a55', '@$$', '4ss', 'asss', 'a s s', 'asshole', 'a$$hole', 'b!tch', 'b1tch', 'biiitch',
-    'bitchh', 'dick', 'd1ck', 'dickk', 'cunt', 'c u n t', 'whore', 'wh0re', 'slut', 'twat', 'wanker', 'nigger', 'n1gger', 'nigga', 'n i g g a', 'faggot', 'f@ggot',
-    'retard', 'r3tard', 'retarded', 'kike', 'paki', 'p4ki', 'beaner', "shit's", 'ok,shit', 'fuck-you'])
+    'bitchh', 'dickhead', 'd1ckhead', 'dickheadd', 'cunt', 'c u n t', 'whore', 'wh0re', 'slut', 'twat', 'wanker', 'nigger', 'n1gger', 'nigga', 'n i g g a', 'faggot', 'f@ggot',
+    'retard', 'r3tard', 'retarded', 'wetback', 'paki', 'p4ki', 'beaner', "shit's", 'ok,shit', 'fuck-you'])
     assert.equal(checkChat(s).strike, true, s);
   assert.ok(isStrikeWord('sh1t') && isStrikeWord('fuuuck') && !isStrikeWord('455') && !isStrikeWord('class') && !isStrikeWord('idiot'));
 });

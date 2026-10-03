@@ -12,13 +12,15 @@
 // No Cloudflare APIs here: the tests and tools/mmo-sim.js load this file in plain Node.
 // ============================================================================
 
-// The words that are a strike. Only swear words and slurs that mean nothing else a kid would type. Each is matched as a
-// whole word, case does not matter, and in its common disguises: a letter held longer (fuuuck, shiiit), letters spaced or
-// split up (f u c k, f.u.c.k, s-h-i-t), and look-alike digits or symbols inside a word that has letters (sh1t, $hit, b!tch,
-// a55, @$$). Never in a plain number (455, 8008), and never as part of a longer word (class, Scunthorpe, Dickens, cockpit).
+// The words that are a strike: swear words and slurs a kid would not type for anything else. Each is matched as a whole
+// word, case does not matter, and in its common disguises: a letter held longer (fuuuck, shiiit), letters spaced or split
+// up (f u c k, f.u.c.k, s-h-i-t), and look-alike digits or symbols inside a word that has letters (sh1t, $hit, b!tch, a55,
+// @$$). Never a number, alone or joined to a word (455, 8008, gold:455, the 455's, a 5 5), and never as part of a longer
+// word (class, Scunthorpe, Dickens, cockpit).
 // Left off on purpose, because they mean something else or are mild: damn, crap, hell, piss, bastard (a bastard sword),
 // cock (a rooster), gook (gunk), prick (a thorn), tit (a bird), pussy (a cat), fag (a cigarette), dyke (a wall), spic (spic and span),
-// coon (a raccoon), chink (in armour), tranny, homo, wtf, stfu and the like. They are still starred out (BLOCKED).
+// coon (a raccoon), chink (in armour), dick (Dick Grayson, Moby Dick), kike (Kike Hernandez, a nickname for Enrique), tranny,
+// homo, wtf, stfu and the like. They are still starred out (BLOCKED).
 // Every one of these must be on BLOCKED too, so it is always starred out (the tests hold this).
 export const STRIKE_WORDS = [
   // swearing
@@ -28,15 +30,15 @@ export const STRIKE_WORDS = [
   'ass', 'asshole', 'assholes', 'arse', 'arsehole', 'arseholes', 'dumbass', 'fatass', 'smartass', 'azz',
   'bitch', 'bitches', 'bitchy', 'bitching', 'biatch',
   'cunt', 'cunts', 'kunt', 'cvnt',
-  'dick', 'dicks', 'dickhead', 'dickheads',
+  'dickhead', 'dickheads',
   'twat', 'twats', 'wanker', 'wankers', 'wank', 'wanking',
   'slut', 'sluts', 'slutty', 'whore', 'whores', 'skank', 'skanks',
   // slurs
   'nigger', 'niggers', 'nigga', 'niggas', 'nigg', 'faggot', 'faggots', 'fagot',
-  'retard', 'retards', 'retarded', 'kike', 'kikes', 'wetback', 'raghead', 'towelhead', 'paki', 'pakis', 'beaner', 'beaners',
+  'retard', 'retards', 'retarded', 'wetback', 'raghead', 'towelhead', 'paki', 'pakis', 'beaner', 'beaners',
 ];
 // Inside any word, for a strike: only "fuck", which is part of no ordinary word (fuckfuckfuck, xXfuckXx). Nothing else: shit
-// is in shitake, cunt in Scunthorpe, ass in class, dick in Dickens, nigg in niggle.
+// is in shitake, cunt in Scunthorpe, ass in class, nigg in niggle.
 export const STRIKE_INSIDE = ['fuck'];
 
 // Words nobody should see or type: STARRED OUT, never a strike unless they are on STRIKE_WORDS too. One per line so a
@@ -176,6 +178,10 @@ for (const w of [...WORDS, ...INSULT_WORDS]) { const q = squeeze(w); if (!SQUEEZ
 const INSIDE = BLOCKED_INSIDE.map(w => unleet(String(w), SWAP_I).trim()).filter(Boolean);
 const LAUGH_W = new Set(LAUGHS.map(prep));
 
+// A number joined to a word by a mark (gold:8008, room#455, 455-pts) is split off and never read as letters: it becomes a
+// plain mark, so "gold:8008" is never "gold:boob".
+const numbersOut = t => t.split(/([^a-z0-9@$!|+]+)/i).map(p => p && (/^[0-9]+$/.test(p) || isNumber(p)) ? '.' : p).join('');
+
 // Every reading of one token for starring out: as typed, with edge punctuation dropped (fuck! -> fuck), both digit
 // readings, apostrophes dropped (that's -> thats), and without a trailing s. All lower case. A number is read only as itself.
 function forms(tok) {
@@ -184,7 +190,7 @@ function forms(tok) {
   if (isNumber(tok)) { out.add(bare.toLowerCase()); return out; }
   const joined = bare.replace(/['’]/g, '');
   for (const t of [tok, bare, joined]) for (const sw of [SWAP_I, SWAP_L]) {
-    const n = unleet(t, sw);
+    const n = unleet(numbersOut(t), sw);
     if (!n) continue;
     out.add(n);
     if (n.length > 3 && n.endsWith('s')) out.add(n.slice(0, -1));
@@ -220,22 +226,28 @@ const heldOnce = (f, w) => {
   return true;
 };
 const insideList = w => STRIKE_INSIDE.some(s => squeeze(w).includes(squeeze(s)));
-// the letters of a token a strike may read: lower case, edge punctuation dropped (fuck!, (shit), "ass"), and then only when
-// the token has a letter in it or is made only of look-alike symbols (@$$): never a number or digits alone (455, 8008, #455)
+// The letters of a token a strike may read. Lower case, edge punctuation dropped (fuck!, (shit), "ass"). Then the token is
+// split at its marks (anything but letters, digits and the look-alike symbols @$!|+) BEFORE any digit is read as a letter,
+// and a piece that is a number (455, 455s, $455) is left out: "gold:455", "the 455's", "lvl-455" and "room#455" are never
+// "ass". Only a piece with a real letter in it, or one made only of look-alike symbols (@$$), is read, with its look-alike
+// digits and symbols put back to letters (sh1t, a55, $hit). A contraction or a possessive is two words: "who're" is never
+// "whore"; "shit's" is still "shit".
 const LOOKS = /^[@$!|+]+$/;
+const MARKS = /[^a-z0-9@$!|+]+/;
+const readable = p => /[a-z]/.test(p) ? !isNumber(p) : LOOKS.test(p);
 function strikeToken(tok) {
   const t = tok.toLowerCase().replace(/^[^a-z0-9@$]+|[^a-z0-9@$]+$/g, '');
-  if (!t || !(/[a-z]/.test(t) || LOOKS.test(t)) || isNumber(t)) return false;
+  if (!t || isNumber(t)) return false;
+  const pieces = t.split(MARKS).filter(Boolean);
+  const read = pieces.filter(readable);
+  if (!read.length) return false;
+  // the letters split up by marks read as one (f.u.c.k, s-h-i-t, a_s_s, @.$.$): only when every piece is one letter or one
+  // look-alike symbol, never a digit, so "go.ok" or "go-ok" is never "gook" and "a-5-5" is never "ass"
+  const spelled = pieces.length >= 3 && pieces.every(p => /^[a-z@$!|+]$/.test(p));
   for (const sw of [SWAP_I, SWAP_L]) {
-    const r = t.replace(/[@$!|+0-9]/g, c => sw[c] || c);
-    // a contraction or a possessive is two words: "who're" is never "whore"; "shit's" is still "shit"
-    for (const piece of r.split(/['’]/)) {
-      const parts = piece.split(/[^a-z]+/).filter(Boolean);
-      // each word between other marks ("ok,fuck", "fuck-you"), and the letters split up by marks read as one (f.u.c.k,
-      // s-h-i-t, a_s_s): only when every piece is one letter, so "go.ok" or "go-ok" is never "gook"
-      if (parts.some(p => onList(p) || insideList(p))) return true;
-      if (parts.length >= 3 && parts.every(p => p.length === 1) && onList(parts.join(''))) return true;
-    }
+    const parts = read.map(p => unleet(p, sw));
+    if (parts.some(p => onList(p) || insideList(p))) return true;
+    if (spelled && onList(parts.join(''))) return true;
   }
   return false;
 }
@@ -261,19 +273,21 @@ function markBad(s) {
   // f u c k: three or more one-letter tokens in a row read as one word (end punctuation aside: "f u c k!"; marks between them
   // too: "f . u . c . k")
   const core = t => t.text.length > 1 ? t.text.replace(/[.!?,;:"')\]]+$/, '') : t.text;
-  const one = t => /^[a-z0-9@$!|+]$/i.test(core(t));
   const mark0 = t => /^[^a-z0-9@$!|+]+$/i.test(t.text);
-  for (let i = 0; i < toks.length; i++) {
-    if (!one(toks[i])) continue;
-    let j = i, letters = [];
-    while (j < toks.length && (one(toks[j]) || (mark0(toks[j]) && j + 1 < toks.length && one(toks[j + 1])))) { if (one(toks[j])) letters.push(core(toks[j])); j++; }
-    if (letters.length >= 3) {
-      const word = letters.join('');
-      if (isBadWord(word)) mark(i, j);
-      if (strikeToken(word)) for (let k = i; k < j; k++) toks[k].bad = toks[k].sure = true;
+  const spacedRuns = (one, found) => {
+    for (let i = 0; i < toks.length; i++) {
+      if (!one(toks[i])) continue;
+      let j = i; const letters = [];
+      while (j < toks.length && (one(toks[j]) || (mark0(toks[j]) && j + 1 < toks.length && one(toks[j + 1])))) { if (one(toks[j])) letters.push(core(toks[j])); j++; }
+      if (letters.length >= 3) found(i, j, letters.join(''));
+      i = j - 1;
     }
-    i = j - 1;
-  }
+  };
+  // Starring out is generous: a lone digit may stand for a letter (s h 1 t).
+  spacedRuns(t => /^[a-z0-9@$!|+]$/i.test(core(t)), (i, j, word) => { if (isBadWord(word)) mark(i, j); });
+  // A strike reads only letters and look-alike symbols: a lone digit is a number and ends the run, so "a 5 5" (dice, a
+  // score) and "a 2 2 tie" are never "ass" or "azz", while "f u c k" and "n i g g a" still count.
+  spacedRuns(t => /^[a-z@$!|+]$/i.test(core(t)), (i, j, word) => { if (strikeToken(word)) for (let k = i; k < j; k++) toks[k].bad = toks[k].sure = true; });
   return toks;
 }
 

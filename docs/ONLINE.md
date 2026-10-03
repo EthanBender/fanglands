@@ -901,27 +901,32 @@ whether one of them is a word that strikes. Only `strike: true` is a strike; sta
 alone decides: who said it, who it was about and who is on line never change anything (the Room passes the text only).
 
 **A strike is one thing only: a word on `STRIKE_WORDS`** (`online/src/filter.js`), a fixed list of swear words and slurs
-that mean nothing else a kid would type (fuck, shit, ass, bitch, cunt, dick, twat, wanker, slut, whore, the n-word,
-faggot, retard, kike, paki and their plain forms: fucking, shitty, asshole, dickhead, bullshit, motherfucker, ...). It
+a kid would not type for anything else (fuck, shit, ass, bitch, cunt, twat, wanker, slut, whore, the n-word, faggot,
+retard, paki and their plain forms: fucking, shitty, asshole, dickhead, bullshit, motherfucker, ...). It
 matches as a **whole word**, case aside, and in the common disguises of those exact words:
 
 - a letter held longer: three or more of any letter (fuuuck, shiiit, asss), or the last letter doubled when the word has
-  no double letter (fuckk, shitt, dickk). Never a letter in the middle held twice ("Shiite" is not "shite"), never a word
+  no double letter (fuckk, shitt, bitchh). Never a letter in the middle held twice ("Shiite" is not "shite"), never a word
   with its own double letter held twice ("assess" is not "asses");
 - the letters split up: one letter a token (f u c k, n i g g a, "f . u . c . k"), or marks between them inside a word
-  (f.u.c.k, s-h-i-t, a_s_s, f*u*c*k), only when every piece is one letter, so "go.ok" or "go ok" is never a slur;
+  (f.u.c.k, s-h-i-t, a_s_s, f*u*c*k), only when every piece is one letter or one look-alike symbol, so "go.ok" or
+  "go ok" is never a slur. A lone digit is never one of those letters: it ends the run, so "a 5 5" (dice, a score),
+  "it was a 2 2 tie" and "a-5-5" are never "ass" or "azz" (a spaced "s h 1 t" is starred out but no strike);
 - look-alike digits and symbols inside a word that has letters (sh1t, $hit, b!tch, a55, 4ss, n1gger, f@ggot), or made of
   symbols alone (@$$). **Never a number**: a token of digits alone, with or without a unit or sign (455, 8008, 7175,
-  455k, #455, $455, 4:55, "4 5 5"), is never read as letters, never a strike and never even starred out;
+  455k, #455, $455, 4:55, "4 5 5", "the 455's"), is never read as letters, never a strike and never even starred out.
+  A number joined to a word by a mark is split off first and never read either: "gold:455", "hp:455", "x:455 y:422",
+  "room#455", "455-pts", "455:me", "lvl-455" and "455-ish" are no strike and are not starred out;
 - edge punctuation and joins: "fuck!", "(shit)", "shit's", "ok,fuck", "fuck-you". A contraction is two words ("who're" is
   never "whore");
 - `STRIKE_INSIDE`: "fuck" also strikes inside any word (xXfuckXx, fuckfuckfuck), because it is in no ordinary word.
-  Nothing else does: shit is in shitake, cunt in Scunthorpe, ass in class, dick in Dickens, nigg in niggle.
+  Nothing else does: shit is in shitake, cunt in Scunthorpe, ass in class, nigg in niggle.
 
 **Never part of a longer ordinary word**: class, assassin, assess, Scunthorpe, Dickens, cockpit, niggle, Niger,
 retardant, therapist, pakistan, shiitake are no strike. Left off the list on purpose, because they mean something else or
 are mild (starred out, never a strike): damn, crap, hell, piss, bastard, cock, prick, tit, boob, pussy, fag, dyke, spic,
-coon, chink, gook, tranny, homo, negro, jackass, badass, wtf, stfu, gtfo, lmfao, cum, kys, and the sex, drug and hate words.
+coon, chink, gook, dick (Dick Grayson is Robin and Nightwing; Moby Dick; dickhead still strikes), kike (Kike Hernandez
+the baseball player, a nickname for Enrique; **the owner may want it back as a strike**), tranny, homo, negro, jackass, badass, wtf, stfu, gtfo, lmfao, cum, kys, and the sex, drug and hate words.
 
 **Nothing else ever strikes.** There is no sentence analysis, no "you" / "ya" / "u" targeting, no names: the round-4
 machinery (`SAID_ABOUT_YOU`, `YOU_ARE`, `YOU_OR_YOUR`, `AT_SOMEONE`, `SAID_TO_SOMEONE`, `LINE_ALONE`, `NOT_A_NAME`,
@@ -940,7 +945,8 @@ Names: anything starred out in chat, insults included, is refused in a name, spa
 "Stu Pid", "Dumb Dog"); "Fat Cat", "Dumbo", "Big Dummy", "Lol" and "Omg" pass. `RESERVED_NAMES` include "Word Filter" and
 "Parent Page" (who mod_log says made a strike or a change), spaces not counting.
 
-The tests hold the rule (`online/test/filter.test.mjs`): every number from 0 to 99,999 (and with units); more than 550
+The tests hold the rule (`online/test/filter.test.mjs`): every number from 0 to 99,999 (and with units, and joined to
+a word: gold:N, N:me, room#N, N-pts, N's, lvl-N, N-ish, "a N N"); more than 550
 lines of ordinary kid chat in `online/test/game-talk.mjs` (game talk, "ya so dumb", "shut up lol", "SHUT UP LEO!! no
 way", "go die lol", insults said straight at a friend, chat slang, coin counts, words with a swear inside); every string in
 the game's source (every NPC, place, item, quest and line of talk, whole and word by word); and the system dictionary
