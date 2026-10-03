@@ -401,6 +401,137 @@ const DEATHS = (() => {
     HK.drawBanners = function (g, L) { if (holding()) { if (HK.FRAME) HK.FRAME.bannerOnNotice = false; return; } return _drawBanners(g, L); };
   }
 
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'deaths: ';
+    if (typeof INSTANCES !== 'undefined' && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+    const keep = { px: player.x, py: player.y, hp: player.hp, kills: player.kills, drops: drops.slice(), peace: window.__peace, banner: levelBanner, shake: typeof SETTINGS !== 'undefined' ? SETTINGS.get('shake') : true, mons: monsters, dc: dialog.cur, dq: dialog.queue.slice() };
+    const temp = [];
+    const mk = (type, dx, dy, fx = 1) => {
+      const d = MONSTER_DEFS[type], x = player.x + dx, y = player.y + dy;
+      const m = { type, x, y, home: { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: false, state: 'idle', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 1e9, facing: { x: fx, y: 0 }, walkT: 0, moving: false, stunT: 0 };
+      monsters.push(m); temp.push(m); return m;
+    };
+    const down = m => { m.dead = true; m.deadT = 0; m.hp = 0; m.respawnT = 1e9; };
+    // a recording canvas: counts every call, and fillRect on its own
+    const rec = () => { const st = { n: 0, rect: 0 }; const fn = () => { st.n++; }; return { st, g: new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop() { } }) : k === 'fillRect' ? () => { st.n++; st.rect++; } : typeof k === 'string' ? fn : undefined, set: () => true }) }; };
+    const calls = f => { const r = rec(); f(r.g); return r.st; };
+    const screenOf = m => ({ sx: m.x - cam.x, sy: m.y - cam.y });
+    const hk = HOOKS.kill.splice(0);
+    try {
+      h.peace(true); API.freeze = false; API.clear(); dialog.cur = null; dialog.queue.length = 0;
+      { const o = h.openSpot(60, 30); F.tp(o.x, o.y); }
+      for (const m of monsters) if (!m.dead && dist(m.x, m.y, player.x, player.y) < 12 * TILE) { m.x += 30 * TILE; m.home = { x: m.x, y: m.y }; }
+      // (1) each kind plays its own death and is gone after about a second
+      const KINDS = [['wolf', 'beast'], ['giant_spider', 'beast'], ['goblin', 'person'], ['guard_m', 'person'], ['grave_skeleton', 'undead'], ['zombie', 'undead'], ['walker', 'machine'], ['bulldozer', 'machine'], ['green_dragon', 'dragon'], ['ash_drake', 'dragon'], ['mithril_golem', 'golem'], ['giant_mithril', 'golem']];
+      const ms = KINDS.map(([type], i) => mk(type, ((i % 6) - 2.5) * 100, Math.floor(i / 6) * 150 - 80, i % 2 ? -1 : 1));
+      const legacy = ms.map(m => { m.dead = true; m.deadT = 0.1; const n = calls(g => drawCharacter(g, m, m.type)).n; m.dead = false; m.deadT = 0; return n; });
+      ms.forEach(down); F.step([]);
+      const born = ms.map(m => API.of(m));
+      F.sim(29, []);
+      const mid = ms.map(m => { const c = API.of(m); return c ? { c, t: c.t, p: pose(c), drawn: calls(g => drawCorpse(g, c)).n, old: calls(g => drawCharacter(g, m, m.type)).n } : null; });
+      F.sim(32, []);
+      const after = ms.map(m => !API.of(m) && !corpses.some(c => c.m === m));
+      const SHOWS = {
+        beast: p => p.fall === 1 && p.legs === 1 && p.sy < 0.7 && p.alpha > 0.5,
+        person: (p, c) => Math.abs(p.rot) > 1.4 && !!p.weapon && Math.hypot(p.weapon.x, p.weapon.y) > 20 && c.body.unarmed === true,
+        undead: (p, c) => p.crumble > 0.6 && p.pile > 0.6 && (!c.bones || p.bonesA > 0.9),
+        machine: p => p.split > 0.2 && p.smoke > 0,
+        dragon: p => p.crash === 1 && p.breath > 0,
+        golem: p => p.split > 0.3 && p.rubble > 0.5,
+      };
+      const WORDS = { beast: 'animals and spiders fall onto their side, kick once and fade', person: 'goblins and guards fall back and their weapon clatters away (the sprite drops it)', undead: 'the undead crumble into dust and bones', machine: 'machines spark, smoke and break apart', dragon: 'dragons and drakes crash down with a last breath of smoke', golem: 'golems and giant ores crack and split into rubble' };
+      for (const kind of Object.keys(SHOWS)) {
+        const idx = KINDS.map((k, i) => k[1] === kind ? i : -1).filter(i => i >= 0);
+        const info = idx.map(i => { const x = mid[i]; return { type: KINDS[i][0], born: !!born[i] && born[i].kind === kind && !born[i].boss, t: x && +x.t.toFixed(2), shows: !!x && SHOWS[kind](x.p, x.c), drawn: x && x.drawn, oldFade: x && x.old, legacy: legacy[i], gone: after[i] }; });
+        check(P + WORDS[kind] + '; about 1 s, then gone (the core\'s old tip-and-fade is not drawn as well)', info.every(o => o.born && Math.abs(o.t - 0.5) < 0.02 && o.shows && o.drawn > 20 && o.oldFade === 0 && o.legacy > 0 && o.gone), info);
+      }
+      // (2) a boss: a slow fall, the flash and a short shake at 1.8 s, gone at 3 s; with Screen shake off, no shake and no flash over the screen
+      for (const shake of [true, false]) {
+        if (typeof SETTINGS !== 'undefined') SETTINGS.set('shake', shake);
+        const b = mk('brood_mother', 0, 3 * TILE); down(b); F.step([]); const c = API.of(b);
+        F.sim(59, []); const at1 = c && { t: +c.t.toFixed(2), u: +pose(c).u.toFixed(2), flashed: c.flashed, on: corpses.includes(c) };
+        F.sim(54, []); render(); const o = SETTINGS.shakeOffset();
+        const at19 = c && { t: +c.t.toFixed(2), flashed: c.flashed, flash: +pose(c).flash.toFixed(2), shook: o.x !== 0 || o.y !== 0, transform: !!canvas.style.transform, screen: calls(g => drawFlash(g, c)).rect };
+        F.sim(70, []); const gone = !!c && !corpses.includes(c);
+        const ok = !!c && c.boss && c.dur === 3 && at1.on && at1.u < 0.6 && !at1.flashed && at19.flashed && at19.flash > 0 && gone && (shake ? at19.shook && at19.screen === 1 : !at19.shook && !at19.transform && at19.screen === 0);
+        check(P + (shake ? 'a boss falls slowly, flashes and shakes the screen at 1.8 s, and is gone after 3 s' : 'with Screen shake off a boss still falls and blooms, but nothing shakes and nothing flashes over the screen'), ok, { boss: !!c && c.boss, dur: c && c.dur, at1, at19, gone });
+        if (typeof SETTINGS !== 'undefined' && typeof clearShake === 'function') clearShake();
+      }
+      if (typeof SETTINGS !== 'undefined') SETTINGS.set('shake', keep.shake);
+      // (3) the loot is in the game's data at the moment of the kill; it is only drawn late, popping out as the death ends.
+      // Nothing of the dead monster can be tapped.
+      {
+        const cow = mk('cow', 3 * TILE, 0); F.step([]); render();
+        const s0 = screenOf(cow), before = tapPick(s0.sx, s0.sy);
+        cow.hp = 0; const n0 = drops.length; killMonster(cow);
+        const fresh = drops.slice(n0), at0 = { n: fresh.length, hidden: fresh.every(d => API.hidden(d)), drawn: calls(g => { for (const d of fresh) drawDrop(g, d); }).n };
+        const after0 = tapPick(s0.sx, s0.sy);
+        F.sim(50, []); const at08 = { hidden: fresh.some(d => API.hidden(d)), popping: fresh.every(d => API.popping(d)), drawn: calls(g => { for (const d of fresh) drawDrop(g, d); }).n, inData: fresh.every(d => drops.includes(d)) };
+        const after08 = tapPick(s0.sx, s0.sy);
+        F.sim(30, []); const at13 = { plain: fresh.every(d => !API.hidden(d) && !API.popping(d)), drawn: calls(g => { for (const d of fresh) drawDrop(g, d); }).n, inData: fresh.every(d => drops.includes(d)) };
+        check(P + 'drops are in the game the moment the monster dies, drawn only when its death ends, then pop out (pickup data untouched)', at0.n >= 1 && at0.hidden && at0.drawn === 0 && !at08.hidden && at08.popping && at08.drawn > 0 && at08.inData && at13.plain && at13.drawn > 0 && at13.inData, { at0, at08, at13 });
+        check(P + 'nothing of a dead monster can be tapped: a tap on the falling body is not a monster', !!before && before.kind === 'monster' && before.monster === cow && (!after0 || after0.kind !== 'monster') && (!after08 || after08.kind !== 'monster'), { before: before && before.kind, after0: after0 && after0.kind, after08: after08 && after08.kind });
+      }
+      // (4) the boss's own banner waits for the flash, and its time does not run while it waits
+      {
+        const bm = mk('brood_mother', -3 * TILE, 0); bm.hp = 0;
+        const say = m => { if (m === bm) levelBanner = { text: 'DEATHS TEST BANNER', sub: 'test', t: 3 }; };
+        HOOKS.kill.push(say); levelBanner = null;
+        try { killMonster(bm); } finally { HOOKS.kill.splice(HOOKS.kill.indexOf(say), 1); }
+        const c = API.of(bm), lb = levelBanner, held0 = holding();
+        F.sim(60, []); const at1 = { held: holding(), t: lb && lb.t, ahead: bannerAhead('DEATHS TEST BANNER'), drawn: true };
+        { const r = rec(); HK.drawBanners(r.g, HK.cur ? HK.cur() : {}); at1.drawn = r.st.n > 0; }
+        F.sim(70, []); const at22 = { held: holding(), t: lb && +lb.t.toFixed(2), ahead: bannerAhead('DEATHS TEST BANNER') };
+        check(P + 'a boss\'s own banner is held until its flash (not drawn, its time not running), then shows as before', !!c && c.banner === lb && held0 && at1.held && at1.t === 3 && at1.ahead && !at1.drawn && !at22.held && at22.t < 3 && at22.ahead, { banner: !!lb, held0, at1, at22 });
+        levelBanner = null;
+      }
+      // (5) online: a puppet whose 'mon' row turns dead plays the same death, and the drops a friend's kill pays wait for it
+      if (typeof NET !== 'undefined' && typeof COOP !== 'undefined') {
+        const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }, real = monsters;
+        let sock = null; const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+        const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
+        const kills0 = player.kills, n0 = drops.length;
+        try {
+          NET.enabled = true; NET.token = 'deaths-test'; NET.useFake(fake); NET.connect();
+          push({ t: 'keeper', map: 'over', n: 'Ann' });
+          const x = Math.round(player.x + 3 * TILE), y = Math.round(player.y);
+          const row = (dead, hp) => ['Ann:dd', 'wolf', x, y, hp, 22, 'chase', -1, 0, 0, 0, dead ? 1 : 0, 0, 0];
+          push({ t: 'mon', n: 'Ann', list: [row(false, 22)] }); F.step([]);
+          const p = COOP.find('Ann:dd'), alive = !!p && p.remote && !p.dead && !API.of(p);
+          push({ t: 'mon', n: 'Ann', list: [row(true, 0)] }); F.step([]);
+          const c = p && API.of(p), born = !!c && c.remote && c.kind === 'beast';
+          push({ t: 'kill', nid: 'Ann:dd', type: 'wolf', x, y }); F.step([]);
+          const paid = drops.slice(n0), waits = paid.length > 0 && paid.every(d => API.hidden(d));
+          push({ t: 'mon', n: 'Ann', list: [row(true, 0)] }); F.sim(25, []);
+          const mid = c && { t: +c.t.toFixed(2), fall: pose(c).fall, drawn: calls(g => drawCorpse(g, c)).n, tap: tapPick(p.x - cam.x, p.y - cam.y) };
+          push({ t: 'mon', n: 'Ann', list: [row(true, 0)] }); F.sim(40, []);
+          const gone = !!c && !corpses.includes(c), shown = paid.every(d => !API.hidden(d));
+          check(P + 'online: a puppet whose row turns dead plays the same death, the drops a friend\'s kill pays wait for it, and it is gone after', alive && born && waits && !!mid && mid.fall === 1 && mid.drawn > 20 && (!mid.tap || mid.tap.kind !== 'monster') && gone && shown, { alive, born, paid: paid.length, waits, mid: mid && { t: mid.t, fall: mid.fall, drawn: mid.drawn, tap: mid.tap && mid.tap.kind }, gone, shown });
+        } finally {
+          NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
+          COOP.reset(); monsters = real; COOP.state.idxLen = -1; player.kills = kills0;
+        }
+      }
+      // (6) ten deaths at once stay cheap: each is its sprite (four times at most) and a few dozen shapes
+      {
+        const ten = ['wolf', 'goblin', 'zombie', 'walker', 'green_dragon', 'mithril_golem', 'guard_f', 'grave_skeleton', 'bulldozer', 'boar'].map((t, i) => mk(t, (i % 5 - 2) * 110, Math.floor(i / 5) * 140 - 70));
+        ten.forEach(down); F.step([]); F.sim(30, []);
+        const cs = ten.map(m => API.of(m)).filter(Boolean), per = cs.map(c => calls(g => drawCorpse(g, c)).n), sprite = cs.map(c => calls(g => drawCharacter(g, c.body, c.type)).n);
+        const r = rec(), t0 = performance.now(); for (let k = 0; k < 60; k++) for (const c of cs) drawCorpse(r.g, c); const ms = (performance.now() - t0) / 60;
+        check(P + 'ten deaths at once: each costs at most its own sprite four times plus 300 canvas calls (the frame cost is measured in info)', cs.length === 10 && per.every((n, i) => n > 20 && n <= sprite[i] * 4 + 300), { n: cs.length, per, sprite, msPerFrameStub: +ms.toFixed(3) });
+        F.sim(40, []);
+      }
+    } finally {
+      HOOKS.kill.push(...hk);
+      for (const m of temp) { const i = monsters.indexOf(m); if (i >= 0) monsters.splice(i, 1); const j = keep.mons.indexOf(m); if (j >= 0) keep.mons.splice(j, 1); }
+      API.clear(); API.freeze = false;
+      drops = keep.drops; player.x = keep.px; player.y = keep.py; player.hp = keep.hp; player.kills = keep.kills; h.peace(keep.peace);
+      levelBanner = keep.banner; dialog.cur = keep.dc; dialog.queue.length = 0; dialog.queue.push(...keep.dq);
+      if (typeof SETTINGS !== 'undefined') SETTINGS.set('shake', keep.shake);
+    }
+  });
+
   Object.assign(API, {
     DUR, BOSS_DUR, FLASH, HOLD, POP, KIND, BOSS_TYPES,
     list: () => corpses.slice(), of: m => (m && m[DA] && corpses.includes(m[DA])) ? m[DA] : null,
