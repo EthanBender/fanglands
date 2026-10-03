@@ -59,7 +59,9 @@ const PEOPLE_UI = (() => {
   const corePrompts = () => { const ft = frontTile(player); return typeof INTERESTING === 'function' && INTERESTING(tileAt(ft.tx, ft.ty)); };
   function brackets(g, p) {
     if (!p || corePrompts()) return false;
-    HK.brackets(g, p.px - 18, p.py - 24, 36, 44);
+    // p.up: how far above the feet the person reaches (83-townsfolk sets it for the people in the new look, taller than 24)
+    const up = Math.max(24, +p.up || 0);
+    HK.brackets(g, p.px - 18, p.py - up, 36, up + 20);
     return true;
   }
   // HK.usePreview answers for NPCS and tiles only; taught about these people, the core's own tag (when it frames an

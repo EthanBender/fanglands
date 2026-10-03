@@ -24,10 +24,11 @@
 // same facing turn, then the person through drawHuman with its id, and the name over the new head). This file loads
 // after 82-knightgear, so its drawHuman is the outermost: a who look never reaches 77, 79 or 82.
 // COST: a busy town must not slow the frame. A person drawn onto the world canvas at the screen's own scale is a
-// picture, made once per person, facing (8), frame (8 steps of a walk, 4 of a swing, 12 of the standing clock at 6 a
-// second on a 2 s loop, staggered by the person's seed so a crowd does not breathe in step) and pixel ratio, kept in a
+// picture, made once per person, facing (8), frame (8 steps of a walk, 4 of a swing, the standing clock at 6 a second
+// on the person's own 2 to 6 s loop, staggered by the person's seed so a crowd does not breathe in step) and pixel ratio, kept in a
 // byte-budgeted cache (as 78-monsterlook and 82-knightgear do). Drawn live: a person talking, hurt off the world canvas,
-// seated, in stone, scaled or turned (a panel, a portrait, a statue's sprite, Lark in the air, a flier), and Death.
+// seated, in stone, scaled or turned (a panel, a portrait, a statue's sprite, Lark in the air, a flier), and Death,
+// Faelan and Pim (their clocks meet no loop: see LOOP).
 // window.TOWNSFOLK is the test handle.
 // ============================================================================
 const TOWNSFOLK = (() => {
@@ -38,8 +39,14 @@ const TOWNSFOLK = (() => {
   const DEFAULTS = { captain: 'thistledown', dunstan: 'thistledown', brann: 'thistledown', skillmaster: 'thistledown', marlow: 'thistledown', hux: 'thistledown', wing1: 'cloud', wing2: 'cloud' };
   // both Deaths (the cave and Thistledown) are the sample's one Death
   const ALIAS = { death1: 'death2' };
-  // drawn live always: Death's hourglass, blink and float run on clocks longer than a picture's 2 s loop
-  const LIVE = new Set(['death2']);
+  // drawn live always: Death's hourglass, blink and float run on clocks longer than a picture's loop; Faelan and Pim
+  // move on clocks no loop of 2 to 6 s meets (see LOOP)
+  const LIVE = new Set(['death2', 'faelan', 'pim']);
+  // A standing person's pictures loop: frame 0 comes again after the last. Where their slow motions (wings settling, a
+  // lantern's swing, a breath) do not come round in 2 s, the loop's end jumps back a little each time. LOOP is each
+  // person's own loop in seconds (2 when not named), the one of 2 to 6 s whose end meets its start best, measured from
+  // the drawings (check 12 measures it again, so a changed drawing that no longer meets its loop fails it).
+  const LOOP = { dagny: 3, aelith: 3, thessaly: 3, pipsqueak: 6, gnash: 5, halcyon: 3, quill: 5, fen: 6, v3: 5, tilly: 4, orla: 4, hale: 5, osric: 3, pete: 5, brisk: 3, wick: 3, moll: 3, thrain: 3, skyla: 3, hettie: 3, ratchet: 3, aubade: 3, tam: 3, sera: 5, mudge: 3, brakka: 3, snaggle: 3, tamsin: 3, lark: 3, brannoc: 3, rosalind: 3, greta: 3, nix: 3, dorran: 3, marta: 3, bellweather: 3, orik: 4, wren: 3, wenna: 6, pip: 3, wynn: 3, robin: 3, seraphel: 3, hob: 3, ferris: 3, tobin: 3, hilde: 3, mossbeard: 3 };
   const idOf = who => ALIAS[who] || who;
   const takes = look => ON.on && !!look && typeof look.who === 'string' && !look.gear;
 
@@ -81,6 +88,10 @@ const TOWNSFOLK = (() => {
     KEYS.set(s, k);
     return k;
   }
+  // Two people whose names share that word (two Harls side by side) would both talk: only one does, the one nearest the
+  // knight. A frame's people are drawn one after another, so the nearest is known only once all are drawn: each frame
+  // talks with the one found nearest in the frame before (the line's first frame: the first one drawn).
+  const TALK = { frame: -1, line: null, best: null, bestD: 0, first: null, won: null };
   function talkT(who, look, e) {
     const d = typeof dialog !== 'undefined' && dialog ? dialog.cur : null;
     if (!d || !d.who || typeof e.x !== 'number' || typeof e.y !== 'number' || typeof player === 'undefined') return -1;
@@ -88,13 +99,22 @@ const TOWNSFOLK = (() => {
     if (!name) return -1;
     const a = nameKey(d.who);
     if (!a || a !== nameKey(name)) return -1;
-    if (Math.hypot(player.x - e.x, player.y - e.y) > 4 * TILE) return -1;
+    const dd = Math.hypot(player.x - e.x, player.y - e.y);
+    if (dd > 4 * TILE) return -1;
+    const id = idOf(who), fr = STATS.frames || 0;
+    if (TALK.frame !== fr || TALK.line !== d) { TALK.won = TALK.line === d ? TALK.best : null; TALK.frame = fr; TALK.line = d; TALK.best = null; TALK.first = null; }
+    if (TALK.first === null) TALK.first = id;
+    if (TALK.best === null || dd < TALK.bestD) { TALK.best = id; TALK.bestD = dd; }
+    if ((TALK.won || TALK.first) !== id) return -1;
     return +dialog.t || 0;
   }
 
   // ---------- a context that turns every colour: hurt (a red flash) and stone (the statues) ----------
   // The knight's way (82-knightgear tintCtx): every fillStyle, strokeStyle and gradient stop goes through a palette.
   // hurt: 40% of the way to #ff6b6b. stone: the colour's lightness on pale warm stone.
+  // The soft dark outline (the drawings' OUT, rgba(22,14,8,0.62)) keeps its colour when hurt: lightened toward red it
+  // made a hurt follower look pale as well as red.
+  const OUTLINE = 'rgba(22,14,8,0.62)';
   const PALETTES = {
     hurt: (r, gg, b) => [r + (255 - r) * 0.4, gg + (107 - gg) * 0.4, b + (107 - b) * 0.4],
     stone: (r, gg, b) => { const v = 70 + (0.3 * r + 0.59 * gg + 0.11 * b) * 0.6; return [v + 5, v + 1, v - 7]; },
@@ -102,6 +122,7 @@ const TOWNSFOLK = (() => {
   const TINTED = new Map();
   function tinted(c, kind) {
     if (typeof c !== 'string') return c;
+    if (kind === 'hurt' && c === OUTLINE) return c;
     const k = kind + c;
     let o = TINTED.get(k);
     if (o !== undefined) return o;
@@ -204,7 +225,7 @@ const TOWNSFOLK = (() => {
   const labelUp = (who, old) => Math.max(old || 0, Math.ceil(-standOf(idOf(who)).t + 6));
 
   // ---------- pictures ----------
-  const WALK_N = 8, SWING_N = 4, IDLE_N = 12, IDLE_FPS = 6;
+  const WALK_N = 8, SWING_N = 4, IDLE_S = 2, IDLE_FPS = 6;
   const PIC_MAX = 2400, PIC_BYTES = 48 * 1024 * 1024;
   const PICS = new Map();
   let picBytes = 0;
@@ -250,7 +271,7 @@ const TOWNSFOLK = (() => {
     let frame, t;
     if (ai >= 0) { frame = 'a' + ai + (w8 >= 0 ? 'w' + w8 : ''); t = 0.3 + ai * 0.05 + Math.max(0, w8) * 0.25; }
     else if (w8 >= 0) { frame = 'w' + w8; t = 0.1 + w8 * 0.25; }
-    else { const i = ((Math.floor(time * IDLE_FPS + v.seed / TWO_PI * IDLE_N) % IDLE_N) + IDLE_N) % IDLE_N; frame = 'i' + i; t = i / IDLE_FPS; }
+    else { const n = (LOOP[id] || IDLE_S) * IDLE_FPS, i = ((Math.floor(time * IDLE_FPS + v.seed / TWO_PI * n) % n) + n) % n; frame = 'i' + i; t = i / IDLE_FPS; }
     const f = FACE8[dir];
     const pv = pose(f.x, f.y, { moving: w8 >= 0, walkT: w8 >= 0 ? (w8 + 0.5) / WALK_N * TWO_PI : 0, attackT: ai >= 0 ? 0.22 * (1 - (ai + 0.5) / SWING_N) : 0, unarmed: !!v.unarmed, flapK: v.flapK || 0 });
     return { key: id + '|' + dir + '|' + frame + '|' + (v.unarmed ? 'u' : '') + (v.flapK > 1 ? 'f' + v.flapK : '') + '|' + (v.hurtT > 0 ? 'h' : ''), pv, t };
@@ -263,8 +284,8 @@ const TOWNSFOLK = (() => {
       const cv = canvasOf(Math.ceil(w * ss), Math.ceil(h * ss));
       if (!cv) return false;
       cv.cg.setTransform(ss, 0, 0, ss, -b.l * ss, -b.t * ss);
-      at(P.t, () => d(cv.cg, P.pv));
-      if (v.hurtT > 0) { cv.cg.setTransform(1, 0, 0, 1, 0, 0); cv.cg.globalCompositeOperation = 'source-atop'; cv.cg.globalAlpha = 0.4; cv.cg.fillStyle = '#ff6b6b'; cv.cg.fillRect(0, 0, cv.c.width, cv.c.height); }
+      // hurt: the same palette as a live drawing (every colour toward red, the outline kept dark)
+      at(P.t, () => d(v.hurtT > 0 ? tintCtx(cv.cg, 'hurt') : cv.cg, P.pv));
       p = { c: cv.c, x0: b.l, y0: b.t, w, h, bytes: cv.c.width * cv.c.height * 4 };
       lruPut(key, p); STATS.made++;
     } else STATS.hits++;
@@ -375,6 +396,25 @@ const TOWNSFOLK = (() => {
       g.fillStyle = n.ghost ? '#b58cff' : '#ffe9a8'; g.fillText(n.name, e.x, y);
     }
   };
+
+  // the gold talk brackets round the person faced (24-dwarves' PEOPLE_UI) were sized for the old, shorter people: they
+  // reach over the new head (its hat, crown, hood or wings: standOf, 3 px more). The faced person is known by name, by
+  // its first proper word as the talking pose is (two of the sample's people with the same word: the taller of them).
+  let UPS = null;
+  function upOf(name) {
+    if (!UPS) {
+      UPS = new Map();
+      for (const id in ART.NPC_NAMES) { const k = nameKey(ART.NPC_NAMES[id]), u = Math.ceil(-standOf(id).t + 3); if (k && !(UPS.get(k) >= u)) UPS.set(k, u); }
+    }
+    return UPS.get(nameKey(name)) || 0;
+  }
+  if (typeof PEOPLE_UI !== 'undefined' && typeof PEOPLE_UI.brackets === 'function') {
+    const _br = PEOPLE_UI.brackets;
+    PEOPLE_UI.brackets = function (g, p) {
+      if (!ON.on || !p || typeof p.name !== 'string') return _br(g, p);
+      return _br(g, Object.assign({}, p, { up: upOf(p.name) }));
+    };
+  }
 
   // a frame begins: nothing is pushed (PEOPLE_UI's audit draws only items at 1e9 and above)
   HOOKS.draw.push((g, items) => { STATS.frames = (STATS.frames || 0) + 1; });
@@ -603,13 +643,15 @@ const TOWNSFOLK = (() => {
     { const at0 = { x: player.x, y: player.y }, t0 = time, d0 = dialog.cur; let r = null;
       try {
         F.tp(112, 33); dialog.cur = null; render();
-        const s1 = Object.assign({}, STATS), by1 = Object.values(STATS.by).reduce((a, b) => a + b, 0);
+        const s1 = Object.assign({}, STATS), b1 = Object.assign({}, STATS.by), by1 = Object.values(STATS.by).reduce((a, b) => a + b, 0);
         render();
         const by2 = Object.values(STATS.by).reduce((a, b) => a + b, 0);
-        r = { people: by2 - by1, made: STATS.made - s1.made, live: STATS.live - s1.live, blits: STATS.pics - s1.pics };
+        // the people always drawn live (LIVE: Death, Faelan, Pim) are not pictures
+        let always = 0; for (const w in STATS.by) if (LIVE.has(idOf(w))) always += STATS.by[w] - (b1[w] || 0);
+        r = { people: by2 - by1, made: STATS.made - s1.made, live: STATS.live - s1.live, always, blits: STATS.pics - s1.pics };
       } finally { player.x = at0.x; player.y = at0.y; time = t0; dialog.cur = d0; }
-      check(P + 'Thistledown\'s square, its people out: a frame drawn again makes no new picture and draws nobody live, one blit a person (' + (r ? r.people : 0) + ' people)',
-        r && r.people >= 8 && r.made === 0 && r.live === 0 && r.blits === r.people, r); }
+      check(P + 'Thistledown\'s square, its people out: a frame drawn again makes no new picture and draws nobody live but the ones always drawn live (Pim, whose clock meets no loop), one blit a person (' + (r ? r.people : 0) + ' people)',
+        r && r.people >= 8 && r.made === 0 && r.live === r.always && r.blits === r.people - r.always, r); }
 
     // 10. names sit over the new heads (hats, crowns, hoods and wings included), never lower than before; the talking pose:
     // the person whose line is up, near the knight, raises a hand and moves the mouth (drawn live)
@@ -624,6 +666,72 @@ const TOWNSFOLK = (() => {
         const l0 = STATS.live; drawHuman(ctx, { x: b.px, y: b.py, facing: { x: 0, y: 1 } }, { who: 'brakka' }); live = STATS.live === l0 + 1;
       } finally { ART.mark(null); dialog.cur = d0; player.x = p0.x; player.y = p0.y; }
       check(P + 'every name goes over the new head; the one whose line is up talks (a hand to the chest, the mouth moving), drawn live', !low.length && talk && live, { low, talk, live }); }
+
+    // 12. a standing person's pictures loop without a jump: for each person of the sample drawn from pictures, at their
+    // own LOOP, the moment the loop comes round (its end against its start) moves nothing further than one step of their
+    // standing clock does (a sixth of a second; 0.65 px at least); the two whose clocks meet no loop are drawn live
+    { const GEO = new Set(['moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo', 'arc', 'ellipse', 'arcTo', 'rect', 'fillRect', 'translate']);
+      class Num { constructor() { this.ops = []; this.fillStyle = '#000'; this.strokeStyle = '#000'; this.globalAlpha = 1; this.lineWidth = 1; } save() { } restore() { } createLinearGradient() { return { addColorStop() { } }; } createRadialGradient() { return { addColorStop() { } }; } createPattern() { return null; } measureText() { return { width: 10 }; } getTransform() { return undefined; } }
+      for (const k of REC_CALLS) Num.prototype[k] = function (...a) { this.ops.push(GEO.has(k) ? [k, a.filter(v => typeof v === 'number')] : [k, null]); };
+      const shot = (id, t) => { const r = new Num(); at(t, () => drawerOf(id)(r, pose(0, 1, { seed: seedOf(id) }))); return r.ops; };
+      // the furthest any point moved between two drawings of the same make (null: they are not the same make)
+      const moved = (a, b) => { if (a.length !== b.length) return null; let m = 0; for (let i = 0; i < a.length; i++) { if (a[i][0] !== b[i][0]) return null; const x = a[i][1], y = b[i][1]; if (!x) continue; const n = a[i][0] === 'arc' || a[i][0] === 'ellipse' ? 4 : x.length; for (let j = 0; j < n; j++) m = Math.max(m, Math.abs(x[j] - y[j])); } return m; };
+      const bad = []; let n = 0;
+      for (const id of ids) {
+        if (LIVE.has(id)) continue;
+        const L = LOOP[id] || IDLE_S, fr = [];
+        for (let i = 0; i <= L * IDLE_FPS; i++) fr.push(shot(id, i / IDLE_FPS));
+        let step = 0; for (let i = 0; i < fr.length - 1; i++) { const d = moved(fr[i], fr[i + 1]); if (d !== null) step = Math.max(step, d); }
+        const wrap = moved(fr[fr.length - 1], fr[0]); n++;
+        if (wrap === null || wrap > Math.max(0.65, 1.5 * step)) bad.push(id + ' ' + L + 's: ' + (wrap === null ? 'not the same drawing' : wrap.toFixed(2)) + ' (a step ' + step.toFixed(2) + ')');
+      }
+      const live = ['faelan', 'pim'].every(id => LIVE.has(id));
+      check(P + 'a standing person\'s pictures loop without a jump: for each of the ' + n + ' people drawn from pictures, the moment their own 2 to 6 s loop comes round moves nothing further than a step of their clock does; Faelan and Pim, whose clocks meet no loop, are drawn live', n >= 70 && !bad.length && live, { n, bad: bad.slice(0, 6), live }); }
+
+    // 13. two people whose names share the word a line is said under (two Harls), both near the knight: only one talks,
+    // the nearer one (from the next frame on; the line's first frame, the first one drawn)
+    { const d0 = dialog.cur, t0 = dialog.t, p0 = { x: player.x, y: player.y }, f0 = STATS.frames;
+      let r = null;
+      try {
+        player.x = 1000; player.y = 1000;
+        dialog.cur = { text: 'The sea is calm today.', who: 'Old Harl' }; dialog.t = 0.5;
+        const far = { x: 1120, y: 1000, facing: { x: 0, y: 1 } }, nearE = { x: 1040, y: 1000, facing: { x: 0, y: 1 } };
+        // one frame: the far one drawn first, then the near one; who talked
+        const frame = () => {
+          const out = []; let cur = null;
+          ART.mark((g, what, C) => { if (what === 'body' && C.talk && cur) out.push(cur); });
+          try { STATS.frames = (STATS.frames || 0) + 1; cur = 'far'; drawHuman(new Rec(), far, { who: 'pete', name: 'Harl the younger' }); cur = 'near'; drawHuman(new Rec(), nearE, { who: 'harl', name: 'Harl the ferryman' }); }
+          finally { ART.mark(null); }
+          return out;
+        };
+        const first = frame(), second = frame(), third = frame();
+        r = { first, second, third };
+      } finally { ART.mark(null); dialog.cur = d0; dialog.t = t0; player.x = p0.x; player.y = p0.y; STATS.frames = f0; }
+      check(P + 'two people whose names share the word a line is said under, both near the knight: only one talks at a time, and from the next frame on the nearer one', !!r && r.first.length === 1 && r.second.join() === 'near' && r.third.join() === 'near', r); }
+
+    // 14. hurt, a person flashes red but the soft dark outline stays dark (a hurt follower is red, not pale), drawn live
+    // and in a picture alike (a hurt picture is painted through the same palette)
+    { const r1 = new Rec(); drawHuman(r1, { facing: { x: 0, y: 1 }, hurtT: 0.2 }, { who: 'sera' });
+      const outline = r1.cols.filter(c => c === OUTLINE).length, lifted = r1.cols.filter(c => /^rgba\(115,51,48/.test(c)).length;
+      const on0 = ON.pics; let pic = null;
+      try { ON.pics = true; clearPics(); const t0 = STATS.tinted, m0 = STATS.made; drawHuman(ctx, { x: 0, y: 0, facing: { x: 0, y: 1 }, hurtT: 0.2, moving: false, walkT: 0, attackT: 0 }, { who: 'garrick' }); pic = { made: STATS.made - m0, tinted: STATS.tinted - t0 }; } finally { ON.pics = on0; clearPics(); }
+      check(P + 'hurt, a person flashes red with the soft dark outline kept dark (not lightened toward red), live and in a picture', outline >= 20 && lifted === 0 && !!pic && pic.made === 1 && pic.tinted === 1, { outline, lifted, pic }); }
+
+    // 15. Harl at the oars (seated, his hands on the oar the boat draws) holds no lantern; standing on his jetty he does
+    { const lit = o => { const r = new Rec(); drawHuman(r, Object.assign({ facing: { x: 1, y: 0 }, hurtT: 0 }, o), { who: 'harl' }); return r.cols.includes('#fffbe8'); };
+      const rowing = lit({ seated: true, unarmed: true }), standing = lit({}), seated = lit({ seated: true });
+      check(P + 'Harl rowing the ferry (seated, both hands on the oar) has set his lantern down; on his jetty he holds it', !rowing && standing && seated, { rowing, standing, seated }); }
+
+    // 16. the gold talk brackets round the person faced reach over the new head: for Old Harl (his sou\'wester) they start
+    // above the top of his drawing, not at the old 24 px
+    { let box = null; const _b = HK.brackets, p0 = { x: player.x, y: player.y, facing: player.facing };
+      try {
+        const o = h.openSpot(40, 20); F.tp(o.x, o.y); player.facing = { x: 0, y: 1 };
+        HK.brackets = (g, x, y, w, hh) => { box = { x, y, w, h: hh }; };
+        PEOPLE_UI.brackets(new Rec(), { px: 500, py: 500, name: 'Old Harl' });
+      } finally { HK.brackets = _b; Object.assign(player, p0); }
+      const top = 500 + standOf('harl').t;
+      check(P + 'the gold talk brackets round a person faced reach over the new head (Old Harl\'s hat): their top is above his drawing\'s', !!box && box.y <= top && box.y + box.h === 520 && box.w === 36, { box, top }); }
   });
 
   const API = { ON, STATS, ART, DEFAULTS, ALIAS, LIVE, takes, draw, put, portrait, statueFit, labelUp, boxOf, standOf, drawerOf, idOf, seedOf, nameKey, PICS, clearPics, tinted, Tracker, pose, headOf };
