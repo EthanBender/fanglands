@@ -4783,7 +4783,7 @@ const MUSIC = (() => {
 
   function define(id, def) {
     if (!def || !(def.w > 0) || !(def.h > 0) || def.w > MAP_W || def.h > MAP_H) throw new Error('defineInstance: bad size for ' + id);
-    const inst = { id, name: def.name || id, sub: def.sub || '', w: def.w, h: def.h, spawns: def.spawns || [], exit: def.exit || null, entry: def.entry || [1, 1], dark: !!def.dark, boss: def.boss || null, onClear: def.onClear || null, door: def.door || null, step: def.step || null, voice: def.voice || null, again: def.again || null, lateDoor: !!def.lateDoor, build: def.build, tiles: null, vars: null };
+    const inst = { id, name: def.name || id, sub: def.sub || '', w: def.w, h: def.h, spawns: def.spawns || [], exit: def.exit || null, entry: def.entry || [1, 1], dark: !!def.dark, boss: def.boss || null, onClear: def.onClear || null, door: def.door || null, step: def.step || null, voice: def.voice || null, again: def.again || null, lateDoor: !!def.lateDoor, refill: def.refill !== false, build: def.build, tiles: null, vars: null };
     inst.tiles = new Uint8Array(inst.w * inst.h).fill(T.WALL);
     inst.vars = new Uint8Array(inst.w * inst.h);
     const rnd = mulberry32(0x5eed ^ (id.length * 7919) ^ Math.imul(id.charCodeAt(0), 2654435761));
@@ -5117,8 +5117,9 @@ const MUSIC = (() => {
   HOOKS.hud.push((g, narrow) => {
     if (!active) return;
     if (panel || paused) return;
-    const inst = active.inst, alive = monsters.filter(m => !m.dead).length;
-    const sub = inst.boss && !active.cleared ? `${alive} left, the boss is awake` : active.cleared ? 'Cleared' : `${alive} left`;
+    // (a boss that is not standing, the War Shed's before the valve or a storm still gathering, is not called awake)
+    const inst = active.inst, alive = monsters.filter(m => !m.dead).length, bossUp = !!inst.boss && monsters.some(m => !m.dead && m.type === inst.boss);
+    const sub = inst.boss && !active.cleared ? `${alive} left, ${bossUp ? 'the boss is awake' : 'the boss is not up yet'}` : active.cleared ? 'Cleared' : `${alive} left`;
     HK.addPlaque(g, { id: 'dungeon', emblem: 'door', name: inst.name.toUpperCase(), sub, right: active.webT > 0 ? `webbed ${active.webT.toFixed(1)}s` : '', rightColor: HK.T.warn, edge: active.webT > 0 ? HK.T.warn : null });
   });
 
@@ -5953,6 +5954,9 @@ HOOKS.selfTest.push((check, F, h) => {
       if (m.type !== 'barrelbeast') continue;
       // the square's beast dies once: no new beast in a safe town, no second wreck. A friend's beast streamed from the keeper
       // (remote), the shed's own, and a live one adopted from a keeper who had not killed it yet (awake) are not this rule's.
+      // Adopted-awake lasts only while it stands: once the square's beast is down it is the square's again, and stays down
+      // (otherwise the core's 600 s timer stood it up in the rebuilt town for ever after a keeper handoff).
+      if (m.dead && !m.shed && !m.remote) m.awake = false;
       if (hf.beastKilled && !m.remote && !(window.INSTANCES && INSTANCES.active()) && !m.awake) { if (!m.dead) { m.dead = true; m.deadT = 5; } m.respawnT = Infinity; continue; }
       if (m.dead) continue;
       // enrage: the def's maxHit is what the core melee rolls, so it is rewritten every tick from this (one) beast's hp
@@ -6004,11 +6008,27 @@ HOOKS.selfTest.push((check, F, h) => {
   // death: its own wreck (BEAST_WRECK from 32-beast.js; the walker's wreck stands in if that file is missing), a banner, the story moves on
   // This knight's first Barrelbeast is the story (the wreck he can drive, Chapter 4, Old Tam). Every one after it is a War
   // Shed rematch: the def drops and nothing else, the story untouched.
+  // Only a knight whose story has reached the beast (stage 9 or later) has it as his first: a friend below that who helped
+  // gets the def drops of a spare, and the beast in his own Hollowford still walks for his own fight. A repeat inside this
+  // knight's own rest pays nothing (m.noPay, 75-coop: no drops, no purse).
   HOOKS.kill.push(m => {
     if (m.type !== 'barrelbeast') return;
-    const hf = HF(), first = !hf.beastKilled;
+    const hf = HF(), first = storyBeast();
     m.strikes = []; m.rodGlow = 0; m.enrage = 0; MONSTER_DEFS.barrelbeast.maxHit = BEAST_BASE.maxHit; m.speed = BEAST_BASE.speed;
     burst(m.x, m.y, '#ff8a1a', 40, 220); burst(m.x, m.y, '#3a3a3a', 24, 140);
+    if (!first && m.noPay) {
+      floatText(player.x, player.y - 44, 'You helped', '#c9d1d9', 14);
+      say(`You helped bring it down. Your own reward is ready in ${mmss(restLeft(hf.shedRestUntil))}.`, 'The Voice');
+      if (inShed()) bannerQueue = bannerQueue.filter(b => b.text !== 'DUNGEON CLEARED');
+      hf.shedUp = false; save(); return;
+    }
+    if (!first && !hf.beastKilled) {
+      // a friend's beast, before this knight's own story got to Hollowford
+      levelBanner = { text: 'BEAST DOWN', sub: "Your friend's fight", t: 3.5 };
+      if (inShed()) bannerQueue = bannerQueue.filter(b => b.text !== 'DUNGEON CLEARED');
+      say(inShed() ? "That was the goblins' spare. The beast in Hollowford still walks, and that one is yours." : "The Barrelbeast falls, but this was your friend's fight. Your own is still ahead of you, in Hollowford.", 'The Voice');
+      hf.shedUp = false; hf.shedRestUntil = (player.dayTime || 0) + SHED_REST; save(); return;
+    }
     if (first) {
       hf.beastKilled = true;
       // a first fight in the War Shed: the wreck is rolled out beside the door once the knight is outside
@@ -6071,35 +6091,59 @@ HOOKS.selfTest.push((check, F, h) => {
     floatText(m.x, m.y - m.r - 30, 'IT STANDS UP', '#ff8a1a', 16);
     return m;
   }
+  // this knight's own story beast: not yet broken, and his story has reached Hollowford (stage 9 or later)
+  const storyBeast = () => !HF().beastKilled && quest.stage >= 9;
   HOOKS.bossCall = HOOKS.bossCall || {};
-  HOOKS.bossCall.war_shed = { map: SHED.id, near: null, name: 'the Barrelbeast', type: 'barrelbeast', alive: () => !!liveBeast(), wake: () => { spawnShedBeast(); } };
-  const callShed = () => window.COOP && COOP.call ? COOP.call(SHED.id) : (spawnShedBeast(), 'woke');
+  HOOKS.bossCall.war_shed = { map: SHED.id, near: null, name: 'the Barrelbeast', type: 'barrelbeast', rest: SHED_REST, alive: () => !!liveBeast(), wake: () => { spawnShedBeast(); },
+    // 75-coop's pay gate: a repeat beast inside this knight's own rest pays nothing
+    resting: () => !storyBeast() && restLeft(HF().shedRestUntil) > 0,
+    // the shed's keeper says its beast fell lately: this knight's rematch call is over, and he is told how long
+    refused: left => { const hf = HF(); if (hf.beastKilled) { hf.shedUp = false; save(); } shedSeen = true; say(`The crew is still bolting it back together. Ready in ${mmss(left)}.`, 'Boiler valve'); } };
+  const callShed = () => window.COOP && COOP.call ? COOP.call(SHED.id, storyBeast()) : (spawnShedBeast(), 'woke');
   function useValve() {
     const hf = HF();
     if (liveBeast()) { say('The beast is already up. Bring it down.', 'Boiler valve'); return; }
     if (!hf.beastKilled) {
-      if (quest.stage === 9 && hf.toldShed) { say('The crew laughs, spins the valve, and a Barrelbeast stands up off the stocks.', 'The Voice'); hf.shedUp = true; save(); callShed(); return; }
+      if (quest.stage === 9 && hf.toldShed) { say('The crew laughs, spins the valve, and a Barrelbeast stands up off the stocks.', 'The Voice'); hf.shedUp = true; save(); shedSeen = false; callShed(); return; }
       say('The goblin crew laughs at you. Their beast is still walking in Hollowford.', 'Boiler valve'); return;
     }
     const left = restLeft(hf.shedRestUntil);
     if (left > 0) { say(`The crew is still bolting it back together. Ready in ${mmss(left)}.`, 'Boiler valve'); return; }
     say('You spin the boiler valve. The crew scatters, the boiler catches, and a new Barrelbeast stands up off the stocks.', 'The Voice');
-    hf.shedUp = true; save(); callShed();
+    hf.shedUp = true; save(); shedSeen = false; callShed();
   }
   HOOKS.use.push(t => { if (t === T_VALVE) { useValve(); return true; } return false; });
-  let shedWaitT = 0, shedCallAt = -1e9, squareQuietT = 0;
+  // shedSeen: on this visit, the beast this knight called has stood up on his screen. A beast missing after that is a fight
+  // that is over, not an ask that got lost: nothing stands it up again by itself until the valve is spun (or the next visit).
+  let shedWaitT = 0, shedCallAt = -1e9, squareQuietT = 0, shedSeen = false, wasInShed = false, shedVisit, shedDownAt = null;
+  // the beast this knight called is down, paid or not: a rematch call is spent and his valve rests (a kill that paid him did
+  // both already); a first fight stays owed (shedUp) for the valve or the next visit
+  const calledBeastDown = () => { const hf = HF(); if (hf.shedUp && hf.beastKilled) { hf.shedUp = false; if (restLeft(hf.shedRestUntil) === 0) hf.shedRestUntil = (player.dayTime || 0) + SHED_REST; save(); } };
   HOOKS.update.push(dt => {
     const hf = HF();
-    // in the shed: a beast called and not yet beaten stands up again on every visit (the keeper or a lone knight makes it;
-    // anyone else asks the keeper, once every 5 s); a beast's body is carried off to the back of the shed
+    // in the shed: a beast called and not yet beaten stands up again on the next visit (the keeper or a lone knight makes it;
+    // anyone else asks the keeper, once every 5 s until it stands); a beast's body is carried off to the back of the shed
     if (inShed()) {
-      if (hf.shedUp && !liveBeast()) {
-        if (runsHere()) spawnShedBeast();
+      // a new visit: the first tick inside, or a leave and a walk back in between two ticks (16-instances stamps lastLeft)
+      const key = INSTANCES.get(SHED.id).lastLeft;
+      if (!wasInShed || key !== shedVisit) { wasInShed = true; shedVisit = key; shedSeen = false; shedDownAt = null; }
+      const lb = liveBeast();
+      if (lb && hf.shedUp) shedSeen = true;
+      if (hf.shedUp && !lb && !shedSeen) {
+        if (runsHere()) { if (spawnShedBeast()) shedSeen = true; }
         else { shedWaitT += dt; if (shedWaitT >= 2 && (time < shedCallAt || time - shedCallAt >= 5)) { shedCallAt = time; callShed(); } }
       } else shedWaitT = 0;
-      if (monsters.some(m => m.type === 'barrelbeast' && m.dead && m.deadT > 1.2 && !m.remote)) monsters = monsters.filter(m => !(m.type === 'barrelbeast' && m.dead && m.deadT > 1.2 && !m.remote));
+      // seen fall on the keeper's game (dead in the stream, not just gone from it), and stayed down a while: this knight's
+      // own last blow lays the puppet down before the keeper's kill message lands, and a kill that paid him does it first
+      if (!runsHere() && shedSeen) {
+        if (liveBeast()) shedDownAt = null;
+        else if (shedDownAt === null && monsters.some(m => m.type === 'barrelbeast' && m.remote && m.dead && !m.gone)) shedDownAt = time;
+        if (shedDownAt !== null && (time < shedDownAt || time - shedDownAt >= 3)) { shedDownAt = null; if (!liveBeast()) calledBeastDown(); }
+      }
+      if (monsters.some(m => m.type === 'barrelbeast' && m.dead && m.deadT > 1.2 && !m.remote)) { calledBeastDown(); monsters = monsters.filter(m => !(m.type === 'barrelbeast' && m.dead && m.deadT > 1.2 && !m.remote)); }
       return;
     }
+    wasInShed = false;
     // a first kill made in the shed: the crew rolls the wreck out beside the door once the knight is back outside
     if (hf.wreckDue) {
       const WRECK_T = T.BEAST_WRECK ?? T.WRECK, spot = WRECK_SPOTS.find(([x, y]) => PLACEABLE_ON.has(tileAt(x, y)));
@@ -6503,13 +6547,49 @@ HOOKS.selfTest.push((check, F, h) => {
         check(P + '(stage 9, toldShed, online stub): the valve allows a first fight; the kill gives stage 10 and beastKilled, and one wreck is placed beside the shed on leaving (wreckDue)', allowed && story && placed && !!at,
           { allowed, story, placed, wreck: w, stage: quest.stage, wrecks: [w0, wrecks()] });
         if (w) changeTile(w[0], w[1], T.GRASS); hf2.wreck = oldWreck; hf2.toldShed = false; quest.stage = Math.max(11, keep.stage); }
-      // B9: a repeat kill of the square beast (a friend's, adopted alive) leaves no wreck
-      { const hf3 = HF(); hf3.beastKilled = true; const sq = monsters.find(m => m.type === 'barrelbeast');
+      // B9: a repeat kill of the square beast (a friend's, adopted alive in a keeper handoff) leaves no wreck, and the square's
+      // beast then stays down for good: adopted-awake ends with its death, so the core's 600 s timer never stands it up again
+      { const hf3 = HF(); hf3.beastKilled = true; hf3.shedRestUntil = 0; const sq = monsters.find(m => m.type === 'barrelbeast');
         F.tp(137, 86); const w0 = wrecks(); clearBanners();
         if (sq) { sq.dead = false; sq.awake = true; sq.hp = 1; sq.x = player.x + 60; sq.y = player.y; sq.stunT = 0; }
         F.sim(1, []); const alive = !!sq && !sq.dead; if (sq) hitMonster(sq, 5, 0); F.sim(2, []);
-        check(P + 'a repeat kill of the square beast places no wreck', alive && sq.dead && wrecks() === w0 && bannerAhead('REMATCH WON'), { alive, dead: sq && sq.dead, wrecks: [w0, wrecks()] });
-        drops = drops.filter(() => false); if (sq) { sq.awake = false; F.sim(1, []); } }
+        const rematch = bannerAhead('REMATCH WON'); F.sim(30, []);
+        const down = !!sq && sq.dead && sq.awake === false && sq.respawnT === Infinity;
+        const okLoad = (() => { save(); const ok = load(); const s2 = monsters.find(m => m.type === 'barrelbeast'); if (s2) { delete s2.awake; s2.dead = false; s2.hp = s2.maxHp; s2.respawnT = 0; } F.sim(3, []); return ok && !!s2 && s2.dead && s2.respawnT === Infinity; })();
+        check(P + 'a repeat kill of the square beast places no wreck; its adopted awake ends with it (dead, awake false, respawnT Infinity, and still down after a reload)', alive && sq.dead && wrecks() === w0 && rematch && down && okLoad,
+          { alive, dead: sq && sq.dead, awake: sq && sq.awake, respawnT: sq && sq.respawnT, wrecks: [w0, wrecks()], rematch, okLoad });
+        drops = drops.filter(() => false); }
+      // B11: a friend's beast before this knight's story reached Hollowford (stage 5): the spare's drops, nothing of the story
+      { const hf4 = HF(), st = quest.stage; Object.assign(hf4, { beastKilled: false, toldShed: false, shedUp: false, wreckDue: false, shedRestUntil: 0 }); quest.stage = 5;
+        enterShed(); const b = spawnShedBeast(); clearBanners(); drain();
+        const ph = window.COOP ? COOP.phantomOf({ type: 'barrelbeast', nid: 'Ann:9', x: b.x, y: b.y }) : null; monsters.splice(monsters.indexOf(b), 1);
+        const rnd0 = Math.random; try { Math.random = () => 0.9; if (ph) killMonster(ph); } finally { Math.random = rnd0; } F.sim(2, []);
+        const at = { x: b.x, y: b.y }, scrap = near('goblin_scrap', at);
+        const spare = { killed: hf4.beastKilled, due: hf4.wreckDue, stage: quest.stage, banner: bannerAhead('BEAST DOWN'), cleared: bannerAhead('DUNGEON CLEARED'), said: said(/goblins' spare/), scrap };
+        drops = drops.filter(() => false); INSTANCES.leave(); F.sim(2, []);
+        const w0 = wrecks(); quest.stage = 8; const sq = monsters.find(m => m.type === 'barrelbeast'); if (sq) { sq.dead = false; sq.hp = sq.maxHp; sq.respawnT = 0; }
+        F.tp(138, 80); F.sim(3, []);
+        const own = { stage: quest.stage, standing: !!sq && !sq.dead, wrecks: wrecks() - w0 };
+        check(P + "a credited shed kill at stage 5 (a friend's fight) gives the spare's def drops only: beastKilled false, no wreck due, stage 5; his Hollowford still runs 8 to 9 with its own beast standing",
+          !!ph && !spare.killed && !spare.due && spare.stage === 5 && spare.banner && !spare.cleared && spare.said && spare.scrap >= 8 && own.stage === 9 && own.standing && own.wrecks === 0, { spare, own });
+        if (sq) { sq.dead = true; sq.respawnT = Infinity; } hf4.beastKilled = true; quest.stage = Math.max(11, st); }
+      // B12: a shed kill inside this knight's own rest (a friend spun the valve) pays nothing at all
+      { const hf5 = HF(); Object.assign(hf5, { beastKilled: true, shedUp: false, shedRestUntil: (player.dayTime || 0) + 200 }); enterShed();
+        const b = spawnShedBeast(), k0 = hf5.shedKills, until = hf5.shedRestUntil, mx0 = player.skills.melee.xp, dx0 = player.skills.defence.xp, n0 = drops.length; drain(); clearBanners();
+        const rnd0 = Math.random; try { Math.random = () => 0; b.hp = 1; b.stunT = 0; hitMonster(b, 5, 0); } finally { Math.random = rnd0; } F.sim(2, []);
+        const got = drops.slice(n0).map(d => d.id);
+        // (the one 5-damage blow may teach its own 4 xp a point; the kill bonus would be 280 Melee and 112 Defence)
+        check(P + "a shed kill inside this knight's own rest pays nothing (no def drops, no dragon item, no kill bonus); shedKills and the rest unchanged; says Your own reward is ready in m:ss",
+          b.dead && got.length === 0 && hf5.shedKills === k0 && hf5.shedRestUntil === until && player.skills.melee.xp - mx0 <= 20 && player.skills.defence.xp === dx0 && said(/Your own reward is ready in \d+:\d\d\./) && !bannerAhead('REMATCH WON'),
+          { got, kills: hf5.shedKills - k0, rest: hf5.shedRestUntil - until, melee: player.skills.melee.xp - mx0 });
+        drops = drops.slice(0, n0); INSTANCES.leave(); }
+      // B13: this knight's own valve beast felled by a friend's blow (no kill hook here): the call is spent, the valve rests,
+      // and nothing stands it up again on this visit
+      { const hf6 = HF(); Object.assign(hf6, { beastKilled: true, shedUp: false, shedRestUntil: 0 }); player.dayTime = (player.dayTime || 0) + 1; enterShed(); valve();
+        const b = liveBeast(), up = !!b && hf6.shedUp; const day = player.dayTime || 0; if (b) { b.dead = true; b.deadT = 0; } F.sim(120, []);
+        check(P + "this knight's own valve beast felled by a friend's blow clears shedUp, starts his 300 s rest, and no beast stands up again on this visit",
+          up && !hf6.shedUp && Math.abs(hf6.shedRestUntil - day - 300) < 3 && !liveBeast(), { up, shedUp: hf6.shedUp, rest: hf6.shedRestUntil - day, again: !!liveBeast() });
+        INSTANCES.leave(); }
       // B10: online and not the shed's keeper: the valve asks the keeper and makes nothing itself
       if (typeof NET !== 'undefined' && window.COOP) {
         const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
@@ -6521,7 +6601,16 @@ HOOKS.selfTest.push((check, F, h) => {
           enterShed(); push({ t: 'keeper', map: SHED.id, n: 'Ann' }); F.sim(2, []);
           sent.length = 0; valve(); F.sim(30, []);
           const calls = sent.filter(mm => mm.t === 'boss_call');
-          check(P + '(fake NET non-keeper): the valve sends boss_call war_shed and spawns nothing', calls.length === 1 && calls[0].id === SHED.id && !monsters.some(m => m.type === 'barrelbeast') && HF().shedUp, { calls, n: monsters.filter(m => m.type === 'barrelbeast').length });
+          check(P + '(fake NET non-keeper): the valve sends boss_call war_shed and spawns nothing', calls.length === 1 && calls[0].id === SHED.id && calls[0].first === undefined && !monsters.some(m => m.type === 'barrelbeast') && HF().shedUp, { calls, n: monsters.filter(m => m.type === 'barrelbeast').length });
+          // B14: the shed's keeper answers that its beast fell lately (boss_wait): the rematch call is over, in m:ss
+          { drain(); push({ t: 'boss_wait', id: SHED.id, left: 100 }); F.sim(2, []); const waited = !HF().shedUp && said(/still bolting it back together\. Ready in 1:40\./);
+            sent.length = 0; F.sim(400, []); const recalls = sent.filter(mm => mm.t === 'boss_call').length;
+            // a first fight (stage 9, sent to the shed) asks with the first flag
+            const st = quest.stage; Object.assign(HF(), { beastKilled: false, toldShed: true, shedUp: false }); quest.stage = 9; sent.length = 0; F.sim(160, []); valve();
+            const first = sent.filter(mm => mm.t === 'boss_call');
+            Object.assign(HF(), { beastKilled: true, toldShed: false, shedUp: false }); quest.stage = st;
+            check(P + "(fake NET non-keeper): boss_wait ends the rematch call with Ready in 1:40 and nothing asks again by itself; a stage-9 first fight asks with the first flag",
+              waited && recalls === 0 && first.length === 1 && first[0].first === true, { waited, recalls, first }); }
           // a friend at stage 9 whose keeper broke the square's beast already: a quiet square for 4 s sends him to the shed
           INSTANCES.leave(); push({ t: 'keeper', map: 'over', n: 'Ann' }); const st9 = quest.stage, hf9 = HF();
           Object.assign(hf9, { beastKilled: false, toldShed: false, shedUp: false }); quest.stage = 9; F.tp(140, 82); drain(); F.sim(150, []);
@@ -10391,7 +10480,11 @@ PEOPLE_UI.auditPrompt = function (p) {
 
   // the summoning: the horn on the circle wakes The Fang at its home, roaring. What this knight reads depends on his own
   // story: the first time it is The Fang itself; once he has slain it, it is its Echo, climbing out of the lava.
+  // Only a knight in the lair sees and hears it: a friend's horn must not put THE FANG ANSWERS over a stage-5 knight
+  // chopping wood in Thistledown (75-coop's toast, worded by `told` below, is all he gets).
+  const nearLair = () => !(window.INSTANCES && INSTANCES.active()) && (player.region === LAIR_NAME || dist(player.x, player.y, tc(CIRCLE_T.x), tc(CIRCLE_T.y)) < 14 * TILE);
   function announce(m, voice) {
+    if (!nearLair()) return;
     const echo = FQ().slain;
     levelBanner = echo ? { text: 'THE ECHO RISES', sub: 'The lava remembers The Fang', t: 4.5 } : { text: 'THE FANG ANSWERS', sub: 'Only legends have heard of it', t: 4.5 }; sfx('boss');
     for (const [c, n, sp2] of [['#ff6a1a', 60, 280], ['#b58cff', 40, 220], ['#3a3a42', 30, 160]]) burst(m.x, m.y, c, n, sp2);
@@ -10411,12 +10504,24 @@ PEOPLE_UI.auditPrompt = function (p) {
     return true;
   }
   HOOKS.bossCall = HOOKS.bossCall || {};
-  HOOKS.bossCall.the_fang = { map: 'over', near: [CIRCLE_T.x, CIRCLE_T.y, 4], name: 'The Fang', type: 'the_fang', alive: () => !!liveFang(), wake: asker => { summonFang(asker); } };
+  // This knight's own story fight: the Fang he has not slain, at stage 14 or later (the Duke's hunt). Anything else he
+  // fights is a repeat: the Echo after his slaying, or a friend's fight before his own story gets there.
+  const storyFight = () => !FQ().slain && quest.stage >= 14;
+  HOOKS.bossCall.the_fang = { map: 'over', near: [CIRCLE_T.x, CIRCLE_T.y, 4], name: 'The Fang', type: 'the_fang', rest: ECHO_REST,
+    alive: () => !!liveFang(), wake: asker => { summonFang(asker); },
+    // 75-coop's pay gate: a repeat kill inside this knight's own rest pays nothing
+    resting: () => !storyFight() && restLeft(FQ()) > 0,
+    // what the keeper reads when a friend's horn wakes it: the name only for a knight whose story has reached the dragon
+    told: n => (FQ().slain || quest.stage >= 14) ? `${n} sounded the horn. The Fang rises in its lair.` : `${n} is fighting something far to the south.`,
+    // the keeper says the dragon fell there lately: this knight's Echo call is over, and he is told how long
+    refused: left => { const fq = FQ(); if (fq.slain) { fq.echoUp = false; save(); } askedAt = null; calledSeen = true; say(`The circle is still cooling. The lava needs a day to remember the dragon. Ready in ${mmss(left)}.`, 'Summoning circle'); } };
   // sound the horn: here when this knight runs the lair, otherwise the keeper is asked (and this knight reads its own words
-  // when the dragon comes up on its screen)
-  let askedAt = null, recallAt = -1e9, noFangT = 0;
+  // when the dragon comes up on its screen). calledSeen: the dragon this knight asked for has stood up on his screen, so a
+  // missing one later is a fight that is over, not an ask that got lost (and is never asked for again by itself).
+  let askedAt = null, recallAt = -1e9, noFangT = 0, calledSeen = false, fangDownAt = null;
+  const DOWN_FOR = 3;
   function callFang() {
-    const r = window.COOP && COOP.call ? COOP.call('the_fang') : (summonFang(null), 'woke');
+    const r = window.COOP && COOP.call ? COOP.call('the_fang', storyFight()) : (summonFang(null), 'woke');
     if (r === 'sent') askedAt = time;
     return r;
   }
@@ -10443,13 +10548,32 @@ PEOPLE_UI.auditPrompt = function (p) {
     const m = fang();
     if (m && !m.remote) {
       const story = (fq.summoned && !fq.slain) || !!fq.echoUp;
-      if (m.dead) { m.awake = false; m.respawnT = Infinity; }
+      if (m.dead) {
+        // an Echo this knight called fell without paying him (a friend took it down alone): his call is spent all the same,
+        // and his circle rests, so one horn is one Echo
+        if (m.awake && fq.echoUp) { fq.echoUp = false; if (restLeft(fq) === 0) fq.restUntil = (player.dayTime || 0) + ECHO_REST; save(); }
+        m.awake = false; m.respawnT = Infinity;
+      }
       else if (m.awake || story) m.awake = true;
       else { m.dead = true; m.deadT = 5; m.awake = false; m.respawnT = Infinity; }
     }
     // online, not keeping the lair: words for a horn the keeper answered, and a fight this knight is owed asked for again
     if (askedAt !== null) { if (m && m.remote && !m.dead) { askedAt = null; announce(m, true); } else if (time < askedAt || time - askedAt > 6) askedAt = null; }
-    if (!runsHere() && player.region === LAIR_NAME && !player.dead && (fq.echoUp || (fq.summoned && !fq.slain)) && !liveFang()) {
+    if (!runsHere()) {
+      const called = fq.echoUp || (fq.summoned && !fq.slain);
+      if (called && m && m.remote && !m.dead) calledSeen = true;
+      // the dragon this knight called fell on the keeper's game (seen dead, not just gone from view): an Echo call is spent,
+      // credited or not, and the circle rests (a kill that paid him already did both)
+      // (this knight's own last blow lays the puppet down at once, before the keeper's kill message lands: so the call is
+      // only called spent once the dragon has stayed down a while, and a kill that paid him has done it by then)
+      if (called && calledSeen && m && m.remote) { if (!m.dead) fangDownAt = null; else if (!m.gone && fangDownAt === null) fangDownAt = time; }
+      if (fangDownAt !== null && (time < fangDownAt || time - fangDownAt >= DOWN_FOR)) {
+        fangDownAt = null;
+        if (fq.echoUp && !liveFang()) { fq.echoUp = false; if (restLeft(fq) === 0) fq.restUntil = (player.dayTime || 0) + ECHO_REST; save(); }
+      }
+      if (player.region !== LAIR_NAME) calledSeen = false;
+    }
+    if (!runsHere() && !calledSeen && player.region === LAIR_NAME && !player.dead && (fq.echoUp || (fq.summoned && !fq.slain)) && !liveFang()) {
       noFangT += dt;
       if (noFangT >= 3 && (time < recallAt || time - recallAt >= 5)) { recallAt = time; callFang(); }
     } else noFangT = 0;
@@ -10496,28 +10620,42 @@ PEOPLE_UI.auditPrompt = function (p) {
     if (credits) { credits.t -= dt; if (credits.t <= 0) { const next = credits.lines.shift(); if (next) { levelBanner = { text: next[0], sub: next[1], t: 3 }; credits.t = 3; } else credits = null; } }
   });
   // death: an enormous burst, the banner, the loot, and the story moves on
-  // A first kill (this knight's own) is the story: the tooth, the gold, Chapter 5. Every kill after that is the Echo: a fair
-  // purse, a 1 in 30 dragon item (37-dragonkillers reads m.repeat), and the story untouched.
+  // This knight's own story kill (stage 14 or later, not yet slain) is the legend: the tooth, the gold, Chapter 5. Every other
+  // kill is a repeat: the Echo after his slaying, or a friend's fight that came before his story did (then the dragon is not
+  // his to have slain: he keeps his own first kill for stage 14). A repeat pays a fair purse and a 1 in 30 dragon item
+  // (37-dragonkillers reads m.repeat), and leaves the story alone. A repeat inside his own rest pays nothing (m.noPay, 75-coop).
   HOOKS.kill.push(m => {
     if (m.type !== 'the_fang') return;
-    const fq = FQ(); const first = !fq.slain; fq.slain = true;
+    const fq = FQ(); const first = storyFight();
     m.repeat = !first;
     for (const [c, n, s] of [['#ff6a1a', 60, 280], ['#8fd3ff', 40, 220], ['#d8c8ff', 40, 220], ['#b0a08a', 30, 160], ['#f5c542', 50, 320]]) burst(m.x, m.y, c, n, s);
-    if (first) {
+    if (!first && m.noPay) {
+      floatText(player.x, player.y - 44, 'You helped', '#c9d1d9', 14);
+      say(`You helped bring it down. Your own reward is ready in ${mmss(restLeft(fq))}.`, 'The Voice');
+      fq.echoUp = false;
+    } else if (first) {
+      fq.slain = true;
       levelBanner = { text: 'THE FANG IS SLAIN', sub: 'Chapter 5 complete', t: 5 };
       // the legendary loot drops once
       const loot = [['coins', 1000], ['fang_of_the_fang', 1], ['mithril_bar', 4]]; if (ITEMS.dragon_scale) loot.push(['dragon_scale', 10]);
       for (const [id, q] of loot) if (ITEMS[id]) drops.push({ x: m.x + rint(-30, 30), y: m.y + rint(-30, 30), id, qty: q, t: 0, rare: id === 'fang_of_the_fang' });
       say('The Fang falls. The mountain shakes with it. Its great tooth lies loose in the ash: take it. No blade in the Fanglands will bite like it.', 'The Voice');
     } else {
-      fq.echoes = (fq.echoes || 0) + 1;
-      levelBanner = { text: 'THE ECHO FADES', sub: `Echo of the Fang, ${fq.echoes} times`, t: 4 };
       for (const [id, q] of [['coins', 300], ['dragon_scale', 3], ['mithril_bar', 1]]) if (ITEMS[id]) drops.push({ x: m.x + rint(-30, 30), y: m.y + rint(-30, 30), id, qty: q, t: 0 });
-      say('The echo comes apart into ash and sparks. The Fang stays dead. The lava keeps its memory.', 'The Voice');
+      if (fq.slain) {
+        fq.echoes = (fq.echoes || 0) + 1;
+        levelBanner = { text: 'THE ECHO FADES', sub: `Echo of the Fang, ${fq.echoes} times`, t: 4 };
+        say('The echo comes apart into ash and sparks. The Fang stays dead. The lava keeps its memory.', 'The Voice');
+      } else {
+        levelBanner = { text: 'THE FANG SINKS', sub: "Your friend's fight", t: 4 };
+        say('The Fang sinks back into the lava. That was your friend\'s fight. Yours is still ahead of you, when the Duke calls for dragon killers.', 'The Voice');
+      }
     }
-    fq.echoUp = false; fq.restUntil = (player.dayTime || 0) + ECHO_REST;
+    if (!m.noPay || first) { fq.echoUp = false; fq.restUntil = (player.dayTime || 0) + ECHO_REST; }
     thawAll(); FIREBALLS.length = 0; STRIKES.length = 0; m.element = 'fire'; m.elemT = 0; MONSTER_DEFS.the_fang.maxHit = 32;
-    if (first && quest.stage === 14) advanceQuest(15); else save();
+    // stage 14 is the hunt: a dragon this knight has slain moves it on, whichever kill it was (a knight who slew it some other
+    // way before his story got here is never left stuck at 14)
+    if (quest.stage === 14 && fq.slain) advanceQuest(15); else save();
   });
 
   // the Duke learns of the kill from you, not from your footsteps: at stage 15 talking to him ends the story (the castle-entry trigger stays as a fallback)
@@ -10547,10 +10685,10 @@ PEOPLE_UI.auditPrompt = function (p) {
       const fq = FQ();
       if (liveFang()) { say('The runes burn. The Fang is already awake, and it is behind you.', 'Summoning circle'); return true; }
       if (!countItem('dragon_horn')) { say('A ring of runes worn into the stone. Something is meant to be sounded here. The Duke would know.', 'Summoning circle'); return true; }
-      if (!fq.slain) { fq.summoned = true; save(); callFang(); return true; }
+      if (!fq.slain) { fq.summoned = true; save(); calledSeen = false; callFang(); return true; }
       const left = restLeft(fq);
       if (left > 0) { say(`The circle is still cooling. The lava needs a day to remember the dragon. Ready in ${mmss(left)}.`, 'Summoning circle'); return true; }
-      fq.echoUp = true; save(); callFang(); return true;
+      fq.echoUp = true; save(); calledSeen = false; callFang(); return true;
     }
     if (t === HOARD) {
       const fq = FQ();
@@ -10913,11 +11051,43 @@ PEOPLE_UI.auditPrompt = function (p) {
       // F6: the dragon item odds
       { const C = window.DRAGON_KILLERS && DRAGON_KILLERS.chance;
         check(P + 'DRAGON_KILLERS.chance is 1/3 on a first kill and 1/30 on an Echo (m.repeat)', !!C && C('the_fang') === 1 / 3 && C('the_fang', { repeat: false }) === 1 / 3 && C('the_fang', { repeat: true }) === 1 / 30 && C('red_dragon', { repeat: true }) === 1 / 60, { first: C && C('the_fang'), echo: C && C('the_fang', { repeat: true }) }); }
-      // F7: a first kill below stage 14 (a friend's fight, say) pays the first kill and leaves the story where it is
-      { const q = FQ(); q.slain = false; q.summoned = true; quest.stage = 13; m.dead = false; m.awake = true; m.hp = m.maxHp; F.sim(1, []);
-        const at = killEcho(); const first = near('fang_of_the_fang', at.x, at.y) === 1;
-        check(P + 'a first kill at stage 13 does not move the story', quest.stage === 13 && FQ().slain && first, { stage: quest.stage, slain: FQ().slain, first });
-        drops = drops.filter(d => !['coins', 'dragon_scale', 'mithril_bar', 'fang_of_the_fang'].includes(d.id) || dist(d.x, d.y, at.x, at.y) > 80); quest.stage = 16; }
+      // F7: a kill below stage 14 (a friend's fight he helped with online) is not his slaying: the helper's purse, slain stays
+      // false, the story stays put. At stage 14 his own fight is his first kill and moves the story on; and a knight at 14 who
+      // had slain it some other way (an older save) is moved on by his next kill, never left stuck
+      { const q = FQ(); Object.assign(q, { slain: false, summoned: false, echoUp: false, restUntil: 0 }); quest.stage = 13; m.dead = false; m.awake = true; m.hp = m.maxHp; F.sim(1, []);
+        clearBanners(); const echoes0 = q.echoes;
+        const at = killEcho();
+        const helped = { tooth: near('fang_of_the_fang', at.x, at.y), coins: near('coins', at.x, at.y), scales: near('dragon_scale', at.x, at.y), bars: near('mithril_bar', at.x, at.y), stage: quest.stage, slain: FQ().slain, sinks: bannerAhead('THE FANG SINKS'), slainBanner: bannerAhead('THE FANG IS SLAIN'), echoes: FQ().echoes - echoes0 };
+        drops = drops.filter(d => dist(d.x, d.y, at.x, at.y) > 80); clearBanners();
+        quest.stage = 14; player.dayTime = FQ().restUntil + 1; m.dead = false; m.awake = true; m.hp = m.maxHp; F.sim(1, []);
+        const at2 = killEcho(); const own = { tooth: near('fang_of_the_fang', at2.x, at2.y), stage: quest.stage, slain: FQ().slain };
+        drops = drops.filter(d => dist(d.x, d.y, at2.x, at2.y) > 80); credits = null; clearBanners();
+        quest.stage = 14; Object.assign(FQ(), { slain: true, restUntil: 0 }); m.dead = false; m.awake = true; m.hp = m.maxHp; F.sim(1, []);
+        const at3 = killEcho(); const unstuck = { stage: quest.stage, tooth: near('fang_of_the_fang', at3.x, at3.y) };
+        drops = drops.filter(d => dist(d.x, d.y, at3.x, at3.y) > 80); credits = null; clearBanners();
+        check(P + "a kill at stage 13 (a friend's fight) pays 300 coins + 3 scales + 1 mithril, leaves slain false and the story at 13; at stage 14 his own fight is his first kill (the tooth, stage 15); a stage-14 knight who had slain it already reaches stage 15 on his next kill",
+          helped.tooth === 0 && helped.coins === 300 && helped.scales === 3 && helped.bars === 1 && helped.stage === 13 && !helped.slain && helped.sinks && !helped.slainBanner && helped.echoes === 0
+            && own.tooth === 1 && own.stage === 15 && own.slain && unstuck.stage === 15 && unstuck.tooth === 0,
+          { helped, own, unstuck });
+        quest.stage = 16; }
+      // F11: a repeat kill inside this knight's own rest (a friend's Echo he helped with) pays nothing at all
+      { const q = FQ(); Object.assign(q, { slain: true, echoUp: false }); quest.stage = 16; q.restUntil = (player.dayTime || 0) + 400; m.dead = false; m.awake = true; m.hp = m.maxHp; F.sim(1, []);
+        const mx0 = player.skills.melee.xp, dx0 = player.skills.defence.xp, e0 = q.echoes, until = q.restUntil, n0 = drops.length; drain(); clearBanners();
+        const rnd0 = Math.random; let at = null;
+        // with the dice at 0 every roll would pay: the dragon item and any table
+        try { Math.random = () => 0; m.stunT = 0; m.hp = 1; at = { x: m.x, y: m.y }; hitMonster(m, 5, 0); } finally { Math.random = rnd0; }
+        F.sim(2, []);
+        const got = drops.slice(n0).map(d => d.id);
+        // (the one 5-damage blow may teach its own 4 xp a point; the kill bonus would be 800 Melee and 320 Defence)
+        check(P + "an Echo kill inside this knight's own rest pays nothing (no coins, scales, mithril, dragon item or kill bonus); echoes and the rest unchanged; says Your own reward is ready in m:ss",
+          m.dead && got.length === 0 && player.skills.melee.xp - mx0 <= 20 && player.skills.defence.xp === dx0 && q.echoes === e0 && q.restUntil === until && m.noPay === true && said(/Your own reward is ready in \d+:\d\d\./) && !bannerAhead('THE ECHO FADES'),
+          { dead: m.dead, got, melee: player.skills.melee.xp - mx0, defence: player.skills.defence.xp - dx0, echoes: q.echoes - e0, rest: q.restUntil - until });
+        drops = drops.slice(0, n0); }
+      // F12: this knight's own Echo felled by a friend alone (no kill hook ran here): his call is spent and his circle rests
+      { const q = FQ(); Object.assign(q, { slain: true, echoUp: true, restUntil: 0 }); m.dead = false; m.awake = true; m.hp = m.maxHp; F.sim(1, []);
+        const up = !m.dead && m.awake; m.dead = true; m.deadT = 0; const day = player.dayTime || 0; F.sim(1, []);
+        check(P + "this knight's own Echo felled by a friend's blow clears echoUp and starts his 600 s rest; after a reload it stays asleep",
+          up && q.echoUp === false && Math.abs(q.restUntil - day - 600) < 1 && saveLoad() && m.dead && !FQ().echoUp, { up, echoUp: q.echoUp, rest: q.restUntil - day, dead: m.dead }); }
       // F8: the banner's name follows this knight's story
       { const q = FQ(); m.dead = false; m.awake = true; m.hp = m.maxHp; F.tp(CIRCLE_T.x, CIRCLE_T.y + 1); m.x = player.x + 2 * TILE; m.y = player.y;
         const nameNow = () => { HK.FRAME.bosses = hudBosses(); HK.layout(); const b = HK.FRAME.bosses.find(x => x.key === m); return b ? b.name : null; };
@@ -10947,8 +11117,64 @@ PEOPLE_UI.auditPrompt = function (p) {
           for (let k = 0; k < 20; k++) { push({ t: 'mon', n: 'Ann', list: [row] }); F.sim(3, []); }
           const pup = monsters.find(o => o.type === 'the_fang');
           check(P + '(fake NET, non-keeper): the horn sends {t:boss_call, id:the_fang}, spawns nothing, no ally_knight spawns, and a puppet Fang is never forced dead by local flags',
-            calls.length === 1 && calls[0].id === 'the_fang' && nothing && !!pup && pup.remote && !pup.dead && !monsters.some(o => o.type === 'ally_knight'),
+            calls.length === 1 && calls[0].id === 'the_fang' && calls[0].first === true && nothing && !!pup && pup.remote && !pup.dead && !monsters.some(o => o.type === 'ally_knight'),
             { calls, nothing, puppet: pup && [pup.remote, pup.dead] });
+          // F13: his Echo call (not a first fight: no `first` flag) stands up, then falls on the keeper's game without paying
+          // him: echoUp clears, his circle rests 600 s, and nothing calls for it again by itself
+          { for (let k = 0; k < 40; k++) { push({ t: 'mon', n: 'Ann', list: [] }); F.sim(3, []); }
+            Object.assign(q, { slain: true, summoned: true, echoUp: false, restUntil: 0 }); quest.stage = 16; sent.length = 0;
+            horn(); const call2 = sent.filter(mm => mm.t === 'boss_call');
+            for (let k = 0; k < 6; k++) { push({ t: 'mon', n: 'Ann', list: [row] }); F.sim(3, []); }
+            const seenUp = monsters.some(o => o.type === 'the_fang' && o.remote && !o.dead), day = player.dayTime || 0;
+            const deadRow = row.slice(); deadRow[11] = 1; deadRow[4] = 0;
+            for (let k = 0; k < 4; k++) { push({ t: 'mon', n: 'Ann', list: [deadRow] }); F.sim(3, []); }
+            const early = q.echoUp === true;
+            for (let k = 0; k < 40; k++) { push({ t: 'mon', n: 'Ann', list: [] }); F.sim(6, []); }
+            const left = q.restUntil - (player.dayTime || 0), spent = early && q.echoUp === false && left > 594 && left <= 600;
+            sent.length = 0; for (let k = 0; k < 60; k++) { push({ t: 'mon', n: 'Ann', list: [] }); F.sim(10, []); }
+            const recalls = sent.filter(mm => mm.t === 'boss_call').length;
+            check(P + "(fake NET, non-keeper): an Echo call goes without the first flag; when the Echo he called falls on the keeper's game without paying him (and stays down 3 s, so his own last blow's kill message lands first), echoUp clears, his circle rests 600 s, and no call goes out again by itself",
+              call2.length === 1 && call2[0].first === undefined && seenUp && spent && recalls === 0, { call2, seenUp, early, echoUp: q.echoUp, left, rest: q.restUntil - day, recalls }); }
+          // F14: the keeper says the dragon fell there lately (boss_wait): the Echo call is over and he is told how long, in m:ss
+          { Object.assign(q, { slain: true, echoUp: false, restUntil: 0 }); sent.length = 0; horn(); const asked = q.echoUp === true && sent.some(mm => mm.t === 'boss_call');
+            drain(); push({ t: 'boss_wait', id: 'the_fang', left: 125 }); F.sim(2, []);
+            check(P + "(fake NET, non-keeper): a boss_wait answer clears his Echo call and the circle says Ready in 2:05",
+              asked && q.echoUp === false && said(/still cooling.*Ready in 2:05\./), { asked, echoUp: q.echoUp, text: dialog.cur && dialog.cur.text }); }
+        } finally { NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
+      }
+      // F15: online, keeping the overworld: a friend's horn. A stage-5 keeper chopping wood far away reads a toast that does
+      // not name the dragon, and no banner; in the lair at stage 16 he sees THE ECHO RISES. Then the dragon is resting on his
+      // map: a friend's next Echo call is answered with boss_wait (600 s), and a friend's first fight is not held back
+      if (typeof NET !== 'undefined' && window.COOP) {
+        const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
+        const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+        NET.enabled = true; NET.token = 'fang-keeper-test';
+        NET.useFake({ call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const mm = JSON.parse(str); sent.push(mm); if (mm.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } });
+        try {
+          NET.connect(); push({ t: 'keeper', map: 'over', n: 'Cohen' });
+          const q = FQ(); Object.assign(q, { slain: false, summoned: false, echoUp: false, restUntil: 0 }); quest.stage = 5;
+          m.dead = true; m.awake = false; m.respawnT = Infinity;
+          F.tp(95, 52); F.sim(2, []); clearBanners(); notice = null;
+          push({ t: 'p', n: 'Ann', map: 'over', x: tc(CIRCLE_T.x + 1), y: tc(CIRCLE_T.y), def: 576, dead: false, hp: 90, lv: 90 });
+          COOP.state.calls = {}; COOP.state.restAt = {};
+          push({ t: 'boss_call', n: 'Ann', id: 'the_fang' }); F.sim(2, []);
+          const far = { up: !m.dead, banner: bannerAhead('THE FANG ANSWERS') || bannerAhead('THE ECHO RISES'), toast: notice && notice.text };
+          m.dead = true; m.awake = false; F.sim(1, []);
+          quest.stage = 16; q.slain = true; F.tp(CIRCLE_T.x, CIRCLE_T.y + 3); F.sim(2, []); clearBanners(); notice = null; COOP.state.calls = {};
+          push({ t: 'boss_call', n: 'Ann', id: 'the_fang' }); F.sim(2, []);
+          const near = { up: !m.dead, banner: bannerAhead('THE ECHO RISES'), toast: notice && notice.text };
+          // the keeper brings it down: the dragon rests on this map
+          const n0 = drops.length; m.stunT = 0; m.hp = 1; hitMonster(m, 5, 0); F.sim(2, []); drops = drops.slice(0, n0);
+          COOP.state.calls = {}; sent.length = 0;
+          push({ t: 'boss_call', n: 'Ann', id: 'the_fang' }); F.sim(2, []);
+          const wait = sent.find(mm => mm.t === 'boss_wait'), held = m.dead;
+          COOP.state.calls = {};
+          push({ t: 'boss_call', n: 'Ann', id: 'the_fang', first: true }); F.sim(2, []);
+          const firstUp = !m.dead;
+          check(P + "(fake NET keeper): a friend's horn answered by a stage-5 keeper far from the lair shows no banner and a toast without the dragon's name; in the lair at stage 16 he sees THE ECHO RISES; after it falls a friend's Echo call gets boss_wait (600 s) and a friend's first fight still wakes it",
+            far.up && !far.banner && far.toast === 'Ann is fighting something far to the south.' && near.up && near.banner && /sounded the horn/.test(near.toast || '')
+              && !!wait && wait.to === 'Ann' && wait.id === 'the_fang' && wait.left >= 598 && wait.left <= 600 && held && firstUp,
+            { far, near, wait, held, firstUp });
         } finally { NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
       }
     } finally {
@@ -11588,7 +11814,8 @@ window.PLACE_KIT = PLACE_KIT;
 
   // ---------- kill bonus XP ----------
   HOOKS.kill.push(m => {
-    const def = MONSTER_DEFS[m.type]; if (!def || (def.level | 0) < AD_KILL_BONUS_MIN_LEVEL || window.__companionHit) return;
+    // (m.noPay: a named boss this knight helped with while still resting from his last paid kill of it; 75-coop)
+    const def = MONSTER_DEFS[m.type]; if (!def || (def.level | 0) < AD_KILL_BONUS_MIN_LEVEL || window.__companionHit || m.noPay) return;
     const xp = def.level * AD_KILL_BONUS_PER_LEVEL;
     const skill = weaponDef() && weaponDef().weapon && weaponDef().weapon.ranged && !player.mech ? 'range' : 'melee';
     // a boss kill's own banner (CHAPTER 4 COMPLETE, THE FANG IS SLAIN) was set by an earlier kill hook; a level-up
@@ -12658,11 +12885,14 @@ window.PLACE_KIT = PLACE_KIT;
       say('The Gnasher stops. Its arms drop. The boiler sighs once and goes quiet.', 'The Voice');
       say('It worked! It WORKED. For a bit. Four hundred coins, knight, and my spare goggles. And the lever in the corner: when you miss it, pull it. I can always build it again.', 'Tinkerton');
       levelBanner = { text: 'QUEST COMPLETE', sub: 'A Tinker Gone Wrong', t: 3.5 }; sfx('quest');
+    } else if (tq.stage < 2) {
+      // a friend's Gnasher, before this knight has built his own with Tinkerton: no rematch to win, nothing to pay
+      say(tq.stage === 0 ? "Your friend's Gnasher folds. Tinkerton has not met you yet: find him at the gate of Grubmarket." : "Your friend's Gnasher folds. Tinkerton pays for his own Gnasher only: bring him the four parts first.", 'The Voice');
     } else {
       // every other Gnasher is a rematch: the lever's own, or one a friend woke that this knight helped bring down
       tq.rematch = false; tq.kills = (tq.kills || 0) + 1;
       giveOrDrop('coins', 150, player.x, player.y); giveOrDrop('goblin_scrap', 5, player.x, player.y);
-      levelBanner = { text: 'REMATCH WON', sub: `The Gnasher, ${tq.kills + (tq.stage >= 3 ? 1 : 0)} times`, t: 3 };
+      levelBanner = { text: 'REMATCH WON', sub: `The Gnasher, ${tq.kills + 1} times`, t: 3 };
       say(pick(['Down again. Tinkerton pays out of the boiler: 150 coins and a handful of scrap.', 'The Gnasher folds. Coins and scrap, as promised. The lever waits.']), 'The Voice');
     }
     save();
@@ -13131,6 +13361,16 @@ window.PLACE_KIT = PLACE_KIT;
         killMonster(ph); F.sim(2, []);
         check(P + 'a kill at stage 3 with rematch false (a helper phantom) pays 150 coins + 5 goblin scrap and no goggles', coins() === c0 + 150 && countItem('goblin_scrap') === s0 + 5 && countItem('tinker_goggles') === g0 && TQ().kills === 1 && TQ().stage === 3 && !TQ().rematch,
           { coins: coins() - c0, scrap: countItem('goblin_scrap') - s0, goggles: countItem('tinker_goggles') - g0, kills: TQ().kills });
+        window.INSTANCES.leave(); }
+      // G5 (offline): a kill at stage 0 (a friend's Gnasher, before this knight has met Tinkerton) pays no purse and counts nothing
+      { quest.tinker = Object.assign(freshT(), { stage: 0, rematch: false, kills: 0 }); makeRoom(3); enterLab(); F.sim(1, []); drain(); clearBanners();
+        const gn = spawnGnasher(), c0 = coins(), s0 = countItem('goblin_scrap'), g0 = countItem('tinker_goggles');
+        const ph = window.COOP.phantomOf({ type: 'gnasher', nid: 'Ann:8', x: gn.x, y: gn.y }); monsters.splice(monsters.indexOf(gn), 1);
+        killMonster(ph); F.sim(2, []);
+        const said = [dialog.cur, ...dialog.queue].some(l => l && /Tinkerton has not met you yet: find him at the gate of Grubmarket/.test(l.text));
+        check(P + "a kill at stage 0 (a friend's Gnasher before this knight met Tinkerton) pays no purse, counts no rematch, says where Tinkerton is",
+          coins() === c0 && countItem('goblin_scrap') === s0 && countItem('tinker_goggles') === g0 && TQ().kills === 0 && TQ().stage === 0 && !bannerAhead('REMATCH WON') && said,
+          { coins: coins() - c0, scrap: countItem('goblin_scrap') - s0, kills: TQ().kills, said });
         window.INSTANCES.leave(); }
       // G2: online, not the lab's keeper: the lever asks, sets the rematch, and makes nothing
       { me = 'Cohen'; keeper = 'Ann'; NET.enabled = true; NET.token = 'gnasher-test'; NET.useFake(fake); NET.connect();
@@ -14565,7 +14805,9 @@ window.PLACE_KIT = PLACE_KIT;
   const BOSSES = ['walker', 'bulldozer', 'barrelbeast', 'brood_mother', 'gnasher', 'count_ashvane'];
   // the Echo of the Fang (28-thefang marks a repeat kill m.repeat) is a rematch, not the legend: 1 in 30, not 1 in 3
   const ECHO = 1 / 30;
+  // (a helper still resting from his own last paid kill, m.noPay from 75-coop, rolls nothing)
   function chance(type, m) {
+    if (m && m.noPay) return 0;
     if (type === 'the_fang' && m && m.repeat) return ECHO;
     if (type in FIXED) return FIXED[type];
     if (BOSSES.includes(type) && MONSTER_DEFS[type]) return Math.min(1 / 20, (MONSTER_DEFS[type].level || 0) / 1500);
@@ -15737,8 +15979,9 @@ window.PLACE_KIT = PLACE_KIT;
   let blueprintsDropped = 0, pendingBanner = null;
   HOOKS.update.push(() => { if (pendingBanner && !levelBanner) { levelBanner = pendingBanner; pendingBanner = null; } });
   // Rolls a blueprint for a killed monster; returns the item id dropped, or null. Split from the hook so the self-test can force it.
+  // (m.noPay: a named boss this knight helped with while still resting from his last paid kill of it, 75-coop: no blueprint)
   function rollBlueprint(m) {
-    const d = BLUEPRINT_DROPS[m.type]; if (!d) return null;
+    const d = BLUEPRINT_DROPS[m.type]; if (!d || m.noPay) return null;
     if (d.chance > 1 && Math.random() >= 1 / d.chance) return null;
     const missing = d.pool.filter(id => !hasBlueprint(id));
     const from = missing.length ? missing : d.missingOnly ? [] : d.pool;
@@ -18516,7 +18759,8 @@ window.SETTINGS = SETTINGS;
   // 30-ashdrake pays melee/range a level x 10 bonus on a level-10+ kill. Defence had nothing but being hit.
   const DEF_KILL_MIN = 10, DEF_KILL_PER = 4;
   HOOKS.kill.push(m => {
-    const def = MONSTER_DEFS[m.type]; if (!def || (def.level | 0) < DEF_KILL_MIN || window.__companionHit) return;
+    // (m.noPay: a named boss this knight helped with while still resting from his last paid kill of it; 75-coop)
+    const def = MONSTER_DEFS[m.type]; if (!def || (def.level | 0) < DEF_KILL_MIN || window.__companionHit || m.noPay) return;
     const xp = def.level * DEF_KILL_PER;
     // same rule as 30-ashdrake's melee bonus: a boss kill's own banner (DUNGEON CLEARED, THE FANG IS SLAIN) was set
     // by an earlier kill hook, so a Defence level-up in the same tick is announced beside the knight instead
@@ -31086,6 +31330,9 @@ HOOKS.selfTest.push((check, F, h) => {
   }
   const stormInst = INSTANCES.define(ST.id, {
     name: ST.name, sub: ST.sub, w: ST.w, h: ST.h, dark: false, build: buildStorm, boss: 'thunderbird',
+    // a knight walking into a shared storm whose bird is down does not refill it (75-coop): the bird comes back only for a
+    // knight whose own rest is over, or who never broke it, by a call to the storm's keeper (HOOKS.bossCall.stormfront)
+    refill: false,
     spawns: [['thunderbird', BIRD_HOME[0], BIRD_HOME[1]]], entry: ENTRY,
     voice: 'The wind carries you into the black. This is not weather, knight — something lives in it, and it has been keeping the winged folk indoors. Watch the cloud under your boots.',
   });
@@ -31186,6 +31433,66 @@ HOOKS.selfTest.push((check, F, h) => {
     }
   }
 
+  // ---------- the bird online: the storm's keeper raises it, and the rest lives with the storm ----------
+  // Everyone in a shared storm fights the keeper's one bird. A knight who arrives finds it as the keeper left it (refill:
+  // false above); if it is down, a knight whose rest is over (or who never broke it) asks the keeper once, and the keeper
+  // answers boss_wait while the storm is still gathering from the last fall, unless it is that knight's first fight. A knight
+  // still resting who walks in can help a friend, never raise a bird of his own: the storm he builds alone has no bird in it.
+  function wakeBird() {
+    if (!inStorm() || bird()) return;
+    let m = monsters.find(o => o.type === 'thunderbird' && !o.remote && !o.phantom);
+    if (!m) {
+      const d = MONSTER_DEFS.thunderbird, x = tc(BIRD_HOME[0]), y = tc(BIRD_HOME[1]);
+      m = { type: 'thunderbird', nid: 'i0', x, y, home: { x, y }, r: d.r, hp: d.hp, maxHp: d.hp, speed: d.speed, angry: d.aggro, state: 'idle', wanderT: 1,
+        wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: Infinity, facing: { x: 1, y: 0 }, walkT: 0, moving: false, stunT: 0 };
+      monsters.push(m);
+    }
+    Object.assign(m, { dead: false, deadT: 0, hp: m.maxHp, x: tc(BIRD_HOME[0]), y: tc(BIRD_HOME[1]), respawnT: Infinity, stunT: 0, hurtT: 0, state: 'idle', perchAt: null, hitters: {}, credited: false, lastHitBy: null });
+    delete m.phase; m.wasUp = false;
+    burst(m.x, m.y, '#9ecbff', 30, 180); burst(m.x, m.y, '#3a3a5a', 20, 120); sfx('boom');
+    floatText(m.x, m.y - m.r - 34, 'THE STORM GATHERS', '#9ecbff', 16);
+  }
+  HOOKS.bossCall = HOOKS.bossCall || {};
+  HOOKS.bossCall.stormfront = { map: ST.id, near: null, name: 'the Thunderbird', type: 'thunderbird', rest: STORM_REST,
+    alive: () => !!bird(), wake: () => { wakeBird(); },
+    // 75-coop's pay gate: a repeat bird inside this knight's own rest pays nothing
+    resting: () => !!StQ().beaten && restLeft(StQ()) > 0,
+    refused: left => { birdAsked = true; notify(`The storm is gathering. Ready in ${mmss(left)}.`); } };
+  let wasInStorm = false, stormVisit, birdAsked = false, noBirdT = 0, birdCallAt = -1e9, birdDownAt = null;
+  HOOKS.update.push(dt => {
+    if (!inStorm()) { wasInStorm = false; return; }
+    const q = StQ(), key = stormInst.lastLeft;
+    if (!wasInStorm || key !== stormVisit) {
+      wasInStorm = true; stormVisit = key; birdAsked = false; noBirdT = 0; birdDownAt = null;
+      // a resting knight's own storm has no bird (online his real array waits parked while a friend keeps the storm: that
+      // one too, so a handoff never hands him a whole bird of his own)
+      if (q.beaten && restLeft(q) > 0) for (const arr of [monsters, window.COOP && COOP.parked]) if (Array.isArray(arr)) for (const o of arr) if (o.type === 'thunderbird' && !o.remote && !o.phantom) { o.dead = true; o.deadT = 99; o.respawnT = Infinity; }
+    }
+    // the bird seen to fall (dead, not just out of the stream): the storm breaks for every knight in it who has broken it
+    // before, paid or not, so a rest starts for him too (a kill that paid him started it already)
+    // (this knight's own last blow lays a puppet down at once, before the keeper's kill message lands: so the rest starts
+    // only once the bird has stayed down a while, and a kill that paid him started it first)
+    for (const o of monsters) if (o.type === 'thunderbird' && !o.phantom) {
+      if (!o.dead) { o.wasUp = true; birdDownAt = null; }
+      else if (o.wasUp && !o.gone) { o.wasUp = false; if (birdDownAt === null) birdDownAt = time; }
+    }
+    if (birdDownAt !== null && (time < birdDownAt || time - birdDownAt >= 3)) {
+      birdDownAt = null;
+      if (!bird() && q.beaten && restLeft(q) === 0) { q.restUntil = (player.dayTime || 0) + STORM_REST; notify(`The storm breaks. It gathers again in ${mmss(STORM_REST)}.`); save(); }
+    }
+    // not the storm's keeper, the bird down, and this knight may raise one: ask the keeper, every 5 s until it stands
+    if (!runsHere()) {
+      // (the keeper's bird, as this screen shows it: until the world names the keeper, the array here is still the one this
+      // game built on the way in, and its bird is nobody's)
+      const b = monsters.find(o => o.type === 'thunderbird' && o.remote && !o.dead), may = !q.beaten || restLeft(q) === 0;
+      if (b) birdAsked = true;
+      if (!b && !birdAsked && may && !player.dead) {
+        noBirdT += dt;
+        if (noBirdT >= 2 && (time < birdCallAt || time - birdCallAt >= 5)) { birdCallAt = time; if (window.COOP && COOP.call) COOP.call(ST.id, !q.beaten); }
+      } else noBirdT = 0;
+    }
+  });
+
   HOOKS.update.push(dt => {
     if (!inStorm()) { if (trail.length || strikes.length) { trail.length = 0; strikes.length = 0; flash = 0; } return; }
     flash = Math.max(0, flash - dt * 3.4);
@@ -31250,9 +31557,15 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.kill.push(m => {
     if (m.type !== 'thunderbird') return;
     const q = StQ(), first = !q.beaten;
-    q.beaten = true; q.kills = (q.kills || 0) + 1; q.birdHp = null; q.restUntil = (player.dayTime || 0) + STORM_REST;
     strikes.length = 0; flash = 1;
     for (const [c, n, s] of [['#fff7c0', 44, 250], ['#9ecbff', 30, 180], ['#3a3a5a', 24, 140]]) burst(m.x, m.y, c, n, s);
+    // a repeat inside this knight's own rest (he followed a friend in to help): nothing paid, nothing counted (75-coop m.noPay)
+    if (!first && m.noPay) {
+      floatText(player.x, player.y - 44, 'You helped', '#c9d1d9', 14);
+      say(`You helped bring it down. Your own reward is ready in ${mmss(restLeft(q))}.`, 'The Voice');
+      save(); return;
+    }
+    q.beaten = true; q.kills = (q.kills || 0) + 1; q.birdHp = null; q.restUntil = (player.dayTime || 0) + STORM_REST;
     // the loot lands on the deck a knight can walk to (a bird felled on its mast would drop it inside the iron)
     const at = (typeof safeSpot === 'function' && safeSpot(m.x, m.y, 14, 'player')) || { x: m.x, y: m.y };
     for (const [id, qty] of first ? FIRST_LOOT : AGAIN_LOOT) if (ITEMS[id]) drops.push({ x: at.x + rint(-6, 6), y: at.y + rint(-6, 6), id, qty, t: 0 });
@@ -31402,7 +31715,7 @@ HOOKS.selfTest.push((check, F, h) => {
 
   window.STORM = {
     ST, DECK, VOID, MAST, UPDRAFT, DOWNDRAFT, ENTRY, UP_T, DOWN_T, MASTS, BIRD_HOME, HUNT_FOR, HIGH_FOR, PERCH_FOR, MEM, WARN, BOLT_R, BOLT_DMG,
-    inStorm, bird, shrine, toAerie, intoStorm, tryIntoStorm, stormOpen, friendInStorm, FIRST_LOOT, AGAIN_LOOT, callBolt, setPhase, memoryPoint, state: StQ, boss: birdBoss,
+    inStorm, bird, shrine, toAerie, intoStorm, tryIntoStorm, stormOpen, friendInStorm, wakeBird, FIRST_LOOT, AGAIN_LOOT, callBolt, setPhase, memoryPoint, state: StQ, boss: birdBoss,
     get trail() { return trail; }, get strikes() { return strikes; },
   };
 
@@ -31772,6 +32085,61 @@ HOOKS.selfTest.push((check, F, h) => {
           R.Ann = { n: 'Ann', map: ST.id, x: 0, y: 0 }; render(); F.clickButton('Into the storm'); F.sim(3, []); opened = INSTANCES.active() === ST.id; delete R.Ann; }
         check(P + '(fake remotes): with a friend on stormfront, Into the storm is open during the rest', !!R && closedFirst && opened && restLeft(StQ()) > 0, { closedFirst, opened, left: restLeft(StQ()) });
         if (INSTANCES.active()) INSTANCES.leave(); }
+      // T8: a bird felled inside this knight's own rest (he followed a friend in to help) pays nothing; kills and rest unchanged
+      { if (INSTANCES.active()) INSTANCES.leave(); StQ().restUntil = 0; INSTANCES.enter(ST.id); F.sim(2, []); const up = !!bird();
+        const q = StQ(); q.restUntil = (player.dayTime || 0) + 150; const until = q.restUntil, k0 = q.kills, n0 = drops.length; drain(); clearBanners();
+        const at = slayBird(); const got = drops.slice(n0).map(d => d.id);
+        check(P + "a bird felled inside this knight's own rest pays nothing (no coins, essence or feather); kills and the rest unchanged; says Your own reward is ready in m:ss",
+          up && !!at && got.length === 0 && q.kills === k0 && q.restUntil === until && [dialog.cur, ...dialog.queue].some(l => l && /Your own reward is ready in \d+:\d\d\./.test(l.text)) && !bannerAhead('THE STORM BREAKS'),
+          { up, got, kills: q.kills - k0, rest: q.restUntil - until });
+        drops = drops.slice(0, n0); INSTANCES.leave(); }
+      // T9: the bird seen to fall without paying a knight who broke it before (a friend's blow): the storm breaks for him too
+      { const q = StQ(); q.restUntil = 0; INSTANCES.enter(ST.id); F.sim(2, []); const m = bird(), up = !!m; notice = null;
+        const day = player.dayTime || 0; if (m) { m.dead = true; m.deadT = 0; m.respawnT = Infinity; } F.sim(60, []); const early = q.restUntil === 0; F.sim(150, []);
+        const left = q.restUntil - (player.dayTime || 0);
+        check(P + "the bird seen to fall without paying a knight who broke it before (and staying down 3 s) starts his 300 s rest and says the storm gathers again",
+          up && early && left > 295 && left <= 300 && !!notice && /storm breaks\. It gathers again in 5:00/.test(notice.text), { up, early, left, rest: q.restUntil - day, notice: notice && notice.text });
+        INSTANCES.leave(); }
+      // T10: a knight still resting who builds the storm alone finds no bird in it; rested, he finds a whole one
+      { const q = StQ(); q.restUntil = (player.dayTime || 0) + 100; INSTANCES.enter(ST.id); F.sim(2, []);
+        const none = !bird() && monsters.some(o => o.type === 'thunderbird' && o.dead); INSTANCES.leave();
+        q.restUntil = 0; INSTANCES.enter(ST.id); F.sim(2, []); const m = bird();
+        check(P + 'a knight still resting who builds the storm alone finds no bird in it; rested, a 340 hp bird', none && !!m && m.hp === 340, { none, hp: m && m.hp });
+        INSTANCES.leave(); }
+      // T11/T12: online. As the storm's keeper: a friend walking in does not refill a fallen bird; his call inside the storm's
+      // rest gets boss_wait; a friend's first fight still raises it. Not the keeper: arriving rested asks once (no first flag),
+      // boss_wait stops it, a knight who never broke it asks with the first flag, and a resting one does not ask at all
+      if (typeof NET !== 'undefined' && window.COOP) {
+        const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null; let me = 'Cohen', keeper = 'Cohen';
+        const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+        const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const mm = JSON.parse(str); sent.push(mm); if (mm.t === 'hello') push({ t: 'welcome', me, at: 0, keeper }); }, close() { sock.readyState = 3; } }; return sock; } };
+        NET.enabled = true; NET.token = 'storm-test';
+        try {
+          { NET.useFake(fake); NET.connect(); const q = StQ(); q.restUntil = 0;
+            INSTANCES.enter(ST.id); push({ t: 'keeper', map: ST.id, n: 'Cohen' }); F.sim(2, []);
+            const m = bird(); const up = !!m; if (m) { setPhase(m, 'perch'); m.phaseT = -1e5; m.hp = 1; hitMonster(m, 5, 0); } F.sim(2, []);
+            drops = drops.filter(d => !['coins', 'cloud_essence', 'storm_feather'].includes(d.id));
+            push({ t: 'p', n: 'Bo', map: ST.id, x: tc(ENTRY[0]), y: tc(ENTRY[1]), def: 500, dead: false, hp: 50, lv: 40 }); F.sim(2, []);
+            const stillDown = !bird();
+            COOP.state.calls = {}; sent.length = 0; push({ t: 'boss_call', n: 'Bo', id: ST.id }); F.sim(2, []);
+            const wait = sent.find(mm => mm.t === 'boss_wait'), held = !bird();
+            COOP.state.calls = {}; push({ t: 'boss_call', n: 'Bo', id: ST.id, first: true }); F.sim(2, []); const b2 = bird();
+            check(P + "(fake NET keeper): a friend walking into the storm does not refill its fallen bird; his call inside the storm's 300 s rest gets boss_wait; a friend's first fight raises a 340 hp bird",
+              up && stillDown && !!wait && wait.to === 'Bo' && wait.left >= 298 && wait.left <= 300 && held && !!b2 && b2.hp === 340, { up, stillDown, wait, held, hp: b2 && b2.hp });
+            INSTANCES.leave(); NET.disconnect(); COOP.reset(); }
+          { me = 'Cohen'; keeper = 'Ann'; NET.useFake(fake); NET.connect(); const q = StQ();
+            const visit = (beaten, rest) => { if (INSTANCES.active()) INSTANCES.leave(); F.sim(1, []); q.beaten = beaten; q.restUntil = rest ? (player.dayTime || 0) + rest : 0; INSTANCES.enter(ST.id); push({ t: 'keeper', map: ST.id, n: 'Ann' }); sent.length = 0; };
+            visit(true, 0); F.sim(170, []); const rested = sent.filter(mm => mm.t === 'boss_call');
+            notice = null; push({ t: 'boss_wait', id: ST.id, left: 192 }); F.sim(2, []); const told = !!notice && /gathering\. Ready in 3:12\./.test(notice.text);
+            sent.length = 0; F.sim(400, []); const after = sent.filter(mm => mm.t === 'boss_call').length;
+            visit(false, 0); F.sim(170, []); const firstCall = sent.filter(mm => mm.t === 'boss_call');
+            visit(true, 100); F.sim(400, []); const resting = sent.filter(mm => mm.t === 'boss_call').length;
+            check(P + '(fake NET non-keeper): arriving rested asks the keeper once for the bird with no first flag; boss_wait says Ready in 3:12 and stops it; a knight who never broke it asks with the first flag; a resting one never asks',
+              rested.length === 1 && rested[0].id === ST.id && rested[0].first === undefined && told && after === 0 && firstCall.length === 1 && firstCall[0].first === true && resting === 0,
+              { rested, told, after, firstCall, resting });
+            q.beaten = true; INSTANCES.leave(); }
+        } finally { if (INSTANCES.active()) INSTANCES.leave(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
+      }
       // T7: the panel passes the panel audit at every size, touch and mouse, Normal and Large text (rested and resting)
       { const day = player.dayTime;
         const a = PEOPLE_UI.auditPanels([
@@ -34698,11 +35066,16 @@ window.RETALIATE = RETALIATE;
   const REMOTE_STALE = 15;    // seconds without presence before a remote knight is forgotten
   const KNIGHT_R = 13;
 
-  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9 };
+  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false };
   // Named bosses (docs/ONLINE.md, "Named bosses: boss_call and helper credit"). A boss file registers how its boss is woken in
-  // HOOKS.bossCall[id] = { map, near: [tx, ty, tiles] | null, alive: () => bool, wake: askerName|null => void, name, type };
-  // COOP.call(id) wakes it here when this knight runs the map, and otherwise asks the map's keeper. Every knight who landed
-  // CREDIT_HITS hits on one of these in the last CREDIT_FOR seconds gets the kill, not only the one who landed the last.
+  // HOOKS.bossCall[id] = { map, near: [tx, ty, tiles] | null, alive: () => bool, wake: askerName|null => void, name, type,
+  //   rest: seconds | undefined, resting: m => bool, told: askerName => string, refused: secondsLeft => void };
+  // COOP.call(id, first) wakes it here when this knight runs the map, and otherwise asks the map's keeper. Every knight who
+  // landed CREDIT_HITS hits on one of these in the last CREDIT_FOR seconds gets the kill, not only the one who landed the last.
+  // The rest lives where the boss lives: the keeper remembers when each one fell (S.restAt) and answers a call inside `rest`
+  // with boss_wait, unless the caller says it is his own first fight. And the pay is each knight's own: `resting(m)` says this
+  // knight is still resting from his last paid kill, and then his kill pays nothing (no purse, no drops, no dragon item, no
+  // kill bonus): m.noPay, which the boss files, 30-ashdrake, 45-progression and 37-dragonkillers read.
   HOOKS.bossCall = HOOKS.bossCall || {};
   const CREDIT = new Set(['the_fang', 'barrelbeast', 'thunderbird', 'gnasher', 'brood_mother', 'count_ashvane']);
   const CREDIT_HITS = 3, CREDIT_FOR = 60;
@@ -34711,6 +35084,10 @@ window.RETALIATE = RETALIATE;
   const CALL_GAP = 3, CALL_WAIT = 3, SEND_GAP = 2.5;
 
   const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+  const mmss = s => { const c = Math.max(0, Math.ceil(s)); return Math.floor(c / 60) + ':' + String(c % 60).padStart(2, '0'); };
+  // the named-boss entry for a monster type on this map (the square's Barrelbeast and the shed's share a type: the entry
+  // whose map is this one wins, else any with the type, for its pay rule)
+  const entryOf = type => { let any = null; for (const id of Object.keys(HOOKS.bossCall)) { const h = HOOKS.bossCall[id]; if (!h || h.type !== type) continue; if (h.map === S.map) return [id, h]; if (!any) any = [id, h]; } return any; };
   const r2 = v => Math.round(v * 100) / 100;
   const mapId = () => {
     const I = window.INSTANCES; if (!I) return 'over';
@@ -34813,7 +35190,7 @@ window.RETALIATE = RETALIATE;
   // a knight arriving at an instance whose boss is down while the rest still stand: the boss alone stands up again at its own
   // spawn tile (the keeper's instance is the one everyone fights in). Nobody's 'dungeon cleared' count changes.
   function reviveBoss(inst) {
-    if (!inst || !inst.boss) return false;
+    if (!inst || !inst.boss || inst.refill === false) return false;
     const i = inst.spawns.findIndex(s => s && s[0] === inst.boss); if (i < 0) return false;
     const m = monsters.find(o => o.nid === 'i' + i && !o.remote && !o.phantom); if (!m || !m.dead) return false;
     const [, tx, ty] = inst.spawns[i];
@@ -34828,6 +35205,8 @@ window.RETALIATE = RETALIATE;
   function refillIfCleared() {
     if (!isKeeper() || S.map === 'over' || !window.INSTANCES || typeof INSTANCES.get !== 'function') return false;
     const inst = INSTANCES.get(S.map); if (!inst || !Array.isArray(inst.spawns) || !inst.spawns.length) return false;
+    // an instance that says refill: false (the storm) is never filled by an arrival: its boss comes back only by a call
+    if (inst.refill === false) return false;
     if (monsters.some(m => !m.dead && !m.remote && !m.phantom)) { reviveBoss(inst); return false; }
     const fresh = inst.spawns.map(([type, tx, ty], i) => MONSTER_DEFS[type] ? makeReal(type, tc(tx), tc(ty), 'i' + i) : null).filter(Boolean);
     for (const m of fresh) monsters.push(m);
@@ -34910,17 +35289,19 @@ window.RETALIATE = RETALIATE;
     S.idxLen = -1;
     tagInstance(id);
   }
-  function reset() { if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; }
+  function reset() { if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; S.restAt = {}; S.lootless = false; }
 
   // ---------- named bosses: waking one, here or on the keeper ----------
   const bossAlive = h => { try { return !!h.alive(); } catch (e) { return false; } };
   // 'woke' (this game runs the map: offline, or the keeper), 'sent' (the keeper was asked), 'none' (no such boss)
-  function call(id) {
+  // first: this is the caller's own story fight (his first Fang, his first Barrelbeast, his first storm), which the keeper's
+  // rest does not hold back
+  function call(id, first) {
     const h = HOOKS.bossCall[id]; if (!h) return 'none';
     if (!online() || isKeeper()) { S.calls[id] = time; h.wake(null); return 'woke'; }
     // one ask on its way is enough: a second tap inside SEND_GAP is the same ask, not a new message
     // (the game clock goes back on a load or a new game: a time from before that has passed)
-    if (time < S.sentAt || time - S.sentAt >= SEND_GAP) { S.sentAt = time; NET.send({ t: 'boss_call', id }); }
+    if (time < S.sentAt || time - S.sentAt >= SEND_GAP) { S.sentAt = time; NET.send(first ? { t: 'boss_call', id, first: true } : { t: 'boss_call', id }); }
     if (!S.pending || S.pending.id !== id) S.pending = { id, t: time };
     return 'sent';
   }
@@ -34934,9 +35315,26 @@ window.RETALIATE = RETALIATE;
     if (bossAlive(h)) return false;
     const last = S.calls[msg.id];
     if (last !== undefined && time >= last && time - last < CALL_GAP) return false;
+    // the boss is resting on this map (it fell here lately): the asker is told how long, unless it is his first fight
+    const fell = S.restAt[msg.id], rest = num(h.rest) || 0;
+    if (rest > 0 && msg.first !== true && fell !== undefined && time >= fell && time - fell < rest) {
+      NET.send({ t: 'boss_wait', to: msg.n, id: msg.id, left: Math.ceil(rest - (time - fell)) });
+      return false;
+    }
     S.calls[msg.id] = time;
     h.wake(msg.n);
-    notify(`${msg.n} called ${h.name || msg.id}.`);
+    let line = null; try { line = typeof h.told === 'function' ? h.told(msg.n) : null; } catch (e) { line = null; }
+    notify(typeof line === 'string' && line ? line : `${msg.n} called ${h.name || msg.id}.`);
+    return true;
+  }
+  // the asker's side: the keeper says the boss is resting on that map
+  function onBossWait(msg) {
+    if (!online() || isKeeper() || !msg || typeof msg.id !== 'string' || !Object.prototype.hasOwnProperty.call(HOOKS.bossCall, msg.id)) return false;
+    const left = num(msg.left); if (left === null || left < 0 || left > 3600) return false;
+    const h = HOOKS.bossCall[msg.id]; if (!h) return false;
+    if (S.pending && S.pending.id === msg.id) S.pending = null;
+    if (typeof h.refused === 'function') { try { h.refused(left); } catch (e) { } }
+    else notify(`Not yet. Ready in ${mmss(left)}.`);
     return true;
   }
 
@@ -34997,6 +35395,8 @@ window.RETALIATE = RETALIATE;
   }
   function after(dt, pre) {
     // an ask the keeper never answered (an older world, a keeper changing hands): say so once, plainly
+    // (an ask the keeper did answer is over the moment its boss stands up on this screen)
+    if (S.pending) { const h = HOOKS.bossCall[S.pending.id]; if (h && bossAlive(h)) S.pending = null; }
     if (S.pending && (time < S.pending.t || time - S.pending.t >= CALL_WAIT)) {
       const h = HOOKS.bossCall[S.pending.id]; S.pending = null;
       if (online() && !isKeeper() && h && !bossAlive(h)) notify('Nobody answered. Try again in a moment.');
@@ -35064,9 +35464,25 @@ window.RETALIATE = RETALIATE;
   }
   hitMonster.__inner = _hitMonster;
   const _killMonster = killMonster;
+  // one kill on this knight's game, through every kill hook, with the pay gate: a knight still resting from his last paid
+  // kill of a named boss is paid nothing for this one (the drops, the purse, the dragon item and the kill bonus all look at
+  // m.noPay; core rollDrops is held back below while S.lootless)
+  function payKill(m) {
+    let gate = false;
+    const e = CREDIT.has(m.type) ? entryOf(m.type) : null;
+    if (e && typeof e[1].resting === 'function') { try { gate = !!e[1].resting(m); } catch (err) { gate = false; } }
+    m.noPay = gate;
+    S.lootless = gate;
+    try { _killMonster(m); } finally { S.lootless = false; }
+  }
+  const _rollDrops = rollDrops;
+  rollDrops = function (def, x, y) { if (S.lootless) return; return _rollDrops(def, x, y); };
+  rollDrops.__inner = _rollDrops;
   killMonster = function (m) {
     if (m.remote) { m.dead = true; m.deadT = 0; m.respawnT = 1e9; m.localDeadUntil = time + 0.5; return; }   // the keeper decides drops, XP and credit
     let share = null;
+    // the keeper remembers when a called boss fell on this map: its rest starts here, whoever landed the blow
+    if (!m.phantom && isKeeper()) for (const id of Object.keys(HOOKS.bossCall)) { const h = HOOKS.bossCall[id]; if (h && h.type === m.type && h.map === S.map) S.restAt[id] = time; }
     if (!m.phantom && !m.credited && CREDIT.has(m.type) && isKeeper()) { m.credited = true; share = sharers(m, m.lastHitBy || NET.me); }
     if (m.lastHitBy && isKeeper()) {
       const d = MONSTER_DEFS[m.type], to = m.lastHitBy; m.lastHitBy = null;
@@ -35078,10 +35494,10 @@ window.RETALIATE = RETALIATE;
       const I = window.INSTANCES, inst = I && I.active && I.active() ? I.get(I.active()) : null;
       if (inst && inst.boss === m.type) m.respawnT = Infinity;
       NET.send({ t: 'kill', nid: m.nid, type: m.type, x: Math.round(m.x), y: Math.round(m.y), to });
-    } else _killMonster(m);
+    } else payKill(m);
     if (share) {
       for (const n of share.remote) NET.send({ t: 'kill', nid: m.nid, type: m.type, x: Math.round(m.x), y: Math.round(m.y), to: n });
-      if (share.me) _killMonster(phantomOf(m));
+      if (share.me) payKill(phantomOf(m));
     }
   };
   killMonster.__inner = _killMonster;
@@ -35118,9 +35534,10 @@ window.RETALIATE = RETALIATE;
       const nid = typeof msg.nid === 'string' ? msg.nid : null;
       const p = nid ? find(nid) : null;
       if (p && p.remote) { p.dead = true; p.deadT = 0; p.respawnT = 1e9; p.localDeadUntil = time + 0.5; }
-      _killMonster(phantomOf({ type: msg.type, nid, x, y }));
+      payKill(phantomOf({ type: msg.type, nid, x, y }));
     });
     NET.on('boss_call', onBossCall);
+    NET.on('boss_wait', onBossWait);
     NET.on('hurt', msg => {
       if (!online()) return;
       const dmg = num(msg.dmg); if (dmg === null || dmg < 0 || dmg > MAX_DMG) return;
@@ -35129,7 +35546,7 @@ window.RETALIATE = RETALIATE;
     });
   }
 
-  window.COOP = { refill: refillIfCleared, call, CREDIT, phantomOf, bossCall: onBossCall,
+  window.COOP = { refill: refillIfCleared, call, CREDIT, phantomOf, bossCall: onBossCall, bossWait: onBossWait, mmss,
     isKeeper, keeper: () => S.keeper, map: () => S.map, remotes: () => Object.values(S.remotes), knightsHere, puppets: () => S.puppets,
     get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), find, apply: applyMon, reset, state: S,
   };
@@ -35377,6 +35794,30 @@ window.RETALIATE = RETALIATE;
         check(P + 'boss_call: the keeper honours a registered id only on its own map, from a knight on that map, in range (the Fang within 4 tiles of the circle), with no live boss and after the 3 s cooldown',
           absent.length === 0 && far.length === 0 && near.join() === 'Ann' && cooling.length === 0 && alive.length === 0 && again.join() === 'Ann' && wrongMap.length === 0 && unknown.length === 0 && proto.length === 0 && elsewhere.length === 0 && fangRule,
           { absent, far, near, cooling, alive, again, wrongMap, unknown, proto, elsewhere, fangRule }); }
+      // (C8) the pay gate: a kill message for a named boss this knight still rests from pays nothing (no drops, no kill bonus,
+      // no dragon item); the same message once he has rested pays the def drops
+      { const keepBC = HOOKS.bossCall.test_pay; let rests = true;
+        HOOKS.bossCall.test_pay = { map: 'spider_den', near: null, type: 'brood_mother', name: 'the test mother', alive: () => false, wake: () => { }, resting: () => rests };
+        const n0 = drops.length, mx0 = player.skills.melee.xp, dx0 = player.skills.defence.xp, seen = [];
+        const look = m => { if (m.type === 'brood_mother') seen.push(!!m.noPay); }; HOOKS.kill.push(look);
+        try {
+          push({ t: 'kill', nid: 'Ann:p1', type: 'brood_mother', x: player.x, y: player.y, to: 'Cohen' });
+          const resting = { drops: drops.length - n0, melee: player.skills.melee.xp - mx0, defence: player.skills.defence.xp - dx0 };
+          rests = false; push({ t: 'kill', nid: 'Ann:p2', type: 'brood_mother', x: player.x, y: player.y, to: 'Cohen' });
+          const rested = { drops: drops.length - n0 - resting.drops, defence: player.skills.defence.xp - dx0 - resting.defence };
+          check(P + 'pay gate: a kill message for a named boss this knight still rests from pays nothing (no drops, no kill bonus); rested, the same message pays its drops and bonus',
+            resting.drops === 0 && resting.melee === 0 && resting.defence === 0 && seen.join() === 'true,false' && rested.drops > 0 && rested.defence > 0 && !S.lootless, { resting, rested, seen });
+        } finally { HOOKS.kill.splice(HOOKS.kill.indexOf(look), 1); if (keepBC) HOOKS.bossCall.test_pay = keepBC; else delete HOOKS.bossCall.test_pay; drops = drops.slice(0, n0); }
+      }
+      // (C9) boss_wait: only a sane answer for a registered boss is read, and it ends the ask (no 'Nobody answered' after it)
+      { const told = []; HOOKS.bossCall.test_wait = { map: 'over', near: null, name: 'the test boss', alive: () => false, wake: () => { }, refused: left => told.push(left) };
+        S.keeper = 'Ann'; S.pending = { id: 'test_wait', t: time };
+        for (const msg of [{ id: 'test_wait', left: -1 }, { id: 'test_wait', left: 99999 }, { id: 'test_wait', left: 'x' }, { id: 'no_such', left: 5 }, { id: 'toString', left: 5 }]) push(Object.assign({ t: 'boss_wait' }, msg));
+        const ignored = told.length === 0 && !!S.pending;
+        push({ t: 'boss_wait', id: 'test_wait', left: 125 });
+        check(P + 'boss_wait: a bad left, an unknown id or a prototype name is ignored; a sane one for a registered boss reaches its refused(left) and ends the ask',
+          ignored && told.join() === '125' && S.pending === null && mmss(125) === '2:05' && mmss(600) === '10:00', { ignored, told, pending: S.pending });
+        delete HOOKS.bossCall.test_wait; S.keeper = 'Cohen'; }
       // (C7) handoff: a live adopted monster is awake on the new keeper
       { const s0 = real.find(m => /^s\d+$/.test(m.nid || '') && m.type === 'goblin' && !m.dead) || real.find(m => /^s\d+$/.test(m.nid || ''));
         const s1 = real.find(m => m !== s0 && /^s\d+$/.test(m.nid || ''));
