@@ -69,7 +69,8 @@
   const SPEED = 430;             // pixels a second while it runs (the machine drives at 130-170)
   const COOL = 18, COOL_BOILER = 12;
   const HIT_DMG = [14, 22], HIT_KNOCK = 90;
-  const machineKind = () => (player.mech ? (player.mech.kind || 'walker') : null);
+  // the mare is no machine: no special, no beacon on her back, no exhaust (51-mounts: she is transport, not a weapon)
+  const machineKind = () => (player.mech && player.mech.kind !== 'horse' ? (player.mech.kind || 'walker') : null);
   // every machine gets one, and each one is the machine's own trick rather than a reskin of the dozer's
   const SPECIALS = {
     dozer: { name: 'Full steam', hint: 'winds the boiler, then barrels forward', cool: COOL },
@@ -236,7 +237,9 @@
 
     // the beacon on the roof
     items.push({ y: player.y + player.r + 2, draw: () => {
-      const bx = player.x, by = player.y - player.r - 6;
+      // on the machine's boiler cap (84-mountlook knows where that is for each machine and facing), else over its middle
+      const rf = window.MOUNT_LOOK && MOUNT_LOOK.roof(machineKind(), player.facing);
+      const bx = player.x + (rf ? rf.x : 0), by = player.y + (rf ? rf.y : -player.r - 6);
       g.fillStyle = '#3a3a42'; g.fillRect(bx - 5, by + 4, 10, 4);            // the mount
       if (broken) {
         // burnt out: a dark stub with smoke curling off it, sputtering as it comes back
@@ -283,7 +286,7 @@
     cool: () => cool > 0 && !sp ? { frac: cool / (SPECIALS[machineKind()] || SPECIALS.walker).cool, text: `${Math.ceil(cool)}` } : null,
   });
   // the coach: "[V] Hold for the special" the first times a machine's special is ready
-  HOOKS.hud.push(() => { const k = machineKind(); if (k && k !== 'horse' && !sp && cool <= 0 && !paused && !panel) HK.teach('special', 'V', 'Hold for the special', { x: player.x, y: player.y, lift: 58 }, { emblem: 'bolt' }); });
+  HOOKS.hud.push(() => { const k = machineKind(); if (k && k !== 'horse' && !sp && cool <= 0 && !paused && !panel) HK.teach('special', 'V', 'Hold for the special', { x: player.x, y: player.y, lift: window.MOUNT_LOOK ? MOUNT_LOOK.top(k) + 10 : 58 }, { emblem: 'bolt' }); });
 
   // ---------- C. over the palisade, on the town side ----------
   const VAULT_LV = 15, VAULT_XP = 70;

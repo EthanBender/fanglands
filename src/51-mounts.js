@@ -147,9 +147,8 @@
     // the mare, grazing on her plate, and her price
     K.card(g, x0, y, Q.inner, 96);
     g.save(); g.beginPath(); g.rect(x0 + 3, y + 3, Q.inner - 6, 90); g.clip();
-    g.translate(x0 + 70, y + 60); g.scale(1.25, 1.25);
-    g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 20, 28, 7, 0, 0, 7); g.fill();
-    drawHorse(g, parkedMare(0, 0), false, null);
+    g.translate(x0 + 70, y + 64); g.scale(1.22, 1.22);
+    drawHorse(g, Object.assign(parkedMare(0, 0), { headUp: true }), false, null);
     g.restore();
     const tx = x0 + 150, tw0 = Q.inner - 150 - 12;
     K.say(g, NAME, tx, y + 34, tw0, { font: K.NAME(16), color: HK.T.goldHi, id: 'stable:name' });
@@ -325,67 +324,253 @@
   // the coach: "[G] Ride" at the knight the first times his mare is near
   HOOKS.hud.push(() => { if (!paused && !panel && !player.dead && !riding() && H().owned && !player.mech && horseNear()) HK.teach('ride', 'G', 'Ride', { x: player.x, y: player.y, lift: 46 }, { emblem: 'horseshoe' }); });
 
-  // ---------- art: a grey mare with the knight in the saddle, drawn right at all four facings ----------
-  // Two builds. Side-on when she faces left or right (mirrored by the sign of facing.x), and end-on when she
-  // faces up or down (the same drawing flipped in y: head away from you going up, head toward you coming down).
-  const COAT = '#9aa0a8', COAT_DK = '#7a8088', COAT_LT = '#b4b9c0', MANE = '#4a4a52', HOOF = '#2b2b33', TACK = '#5a3a1e', TACK_LT = '#8a6a3a';
-
-  function horseSide(g, e, hurt, graze) {
-    const s = e.facing.x >= 0 ? 1 : -1, sw = e.moving ? Math.sin(e.walkT) * 6 : 0, sw2 = e.moving ? Math.sin(e.walkT + 2.2) * 6 : 0;
-    const drop = graze ? 9 : 0; // a parked mare has her head down in the grass
-    g.save(); g.scale(s, 1);
-    g.strokeStyle = HOOF; g.lineWidth = 4.5; g.lineCap = 'round';
-    for (const [bx, ph] of [[-16, sw], [-11, -sw], [11, sw2], [16, -sw2]]) { g.beginPath(); g.moveTo(bx, 2); g.lineTo(bx + ph, 19); g.stroke(); }
-    g.strokeStyle = MANE; g.lineWidth = 5; g.beginPath(); g.moveTo(-22, -9); g.quadraticCurveTo(-33, -3, -29, 13); g.stroke();   // tail
-    g.fillStyle = hurt ? '#ffb0b0' : COAT; g.beginPath(); g.ellipse(0, -4, 23, 12, 0, 0, 7); g.fill();                           // barrel
-    g.fillStyle = hurt ? '#ffc0c0' : COAT_DK; g.beginPath(); g.ellipse(-16, -5, 9, 11, 0, 0, 7); g.fill();                       // rump
-    g.fillStyle = hurt ? '#ffb0b0' : COAT; g.beginPath(); g.moveTo(10, -12); g.lineTo(20, -28 + drop); g.lineTo(29, -24 + drop); g.lineTo(19, -6); g.closePath(); g.fill(); // neck
-    g.beginPath(); g.ellipse(29, -27 + drop, 9, 5.5, -0.4 + drop * 0.05, 0, 7); g.fill();                                        // head
-    g.fillStyle = hurt ? '#ffc0c0' : COAT_DK; g.beginPath(); g.ellipse(36, -30 + drop * 1.4, 4.2, 3.4, 0, 0, 7); g.fill();       // muzzle
-    g.fillStyle = MANE; g.beginPath(); g.moveTo(11, -13); g.quadraticCurveTo(18, -29 + drop, 25, -34 + drop); g.lineTo(19, -33 + drop); g.quadraticCurveTo(14, -25 + drop, 6, -13); g.closePath(); g.fill(); // mane
-    g.fillStyle = COAT_LT; g.beginPath(); g.moveTo(23, -33 + drop); g.lineTo(25, -41 + drop); g.lineTo(29, -32 + drop); g.closePath(); g.fill(); // ear
-    g.fillStyle = '#222'; g.beginPath(); g.arc(30, -29 + drop, 1.6, 0, 7); g.fill();                                             // eye
-    g.fillStyle = TACK; roundRect(g, -9, -17, 18, 7, 3); g.fill();                                                               // saddle
-    g.fillStyle = TACK_LT; g.fillRect(-11, -14, 22, 2);                                                                          // blanket edge
-    g.strokeStyle = TACK; g.lineWidth = 2; g.beginPath(); g.moveTo(-5, -13); g.lineTo(-4, 6); g.stroke();                        // girth
-    g.beginPath(); g.moveTo(32, -28 + drop); g.quadraticCurveTo(19, -20 + drop / 2, 4, -15); g.stroke();                         // rein into the rider's hand
+  // ---------- art: Cinder in the new look, the knight in the saddle, drawn right at all four facings ----------
+  // Drawn the way the monster refit draws its animals (78-monsterart: the wolf, the boar, the sheep, the cow): seen from
+  // the side facing left or right (mirrored for left), from the front facing down (her long face toward us) and from
+  // behind facing up (her rump and tail toward us); soft dark outline, light from the top left, legs that trot. The
+  // knight sits in the saddle in his own drawing (82-knightgear, seated: no legs, as every pilot sits). Her own helpers below are the sample's (shade, ellipse, outline, lit fills), so nothing is shared with a
+  // file the server copy strips. Units: the drawing is made at the sample's scale and grown by MARE_K to game pixels;
+  // her hooves stand on y 10 (21.5 px under her middle, where the old mare's stood).
+  const MARE_K = 2.15, M_OUT = 'rgba(22,14,8,0.62)', M_TAU = Math.PI * 2;
+  const MC = { coat: '#a2a8b1', dark: '#7d838c', light: '#c6cad0', dapple: '#bdc2c9', belly: '#b9bec5', mane: '#3f3f48', hoof: '#2b2b33',
+    muzzle: '#6f747d', leather: '#6b4423', leatherLt: '#8a5a32', cloth: '#7a2e2e', trim: '#e0b546', steel: '#c9ccd3', bridle: '#4a2f1a' };
+  const M_SH = new Map();
+  function mShade(c, f) {
+    const k = c + '|' + f; let s = M_SH.get(k); if (s) return s;
+    const n = parseInt(c.slice(1), 16); let r = n >> 16, gg = (n >> 8) & 255, b = n & 255;
+    if (f < 0) { r *= 1 + f; gg *= 1 + f; b *= 1 + f; } else { r += (255 - r) * f; gg += (255 - gg) * f; b += (255 - b) * f; }
+    s = `rgb(${r | 0},${gg | 0},${b | 0})`; if (M_SH.size > 400) M_SH.clear(); M_SH.set(k, s); return s;
+  }
+  const mEll = (g, x, y, rx, ry, rot) => { g.beginPath(); g.ellipse(x, y, rx, ry, rot || 0, 0, M_TAU); };
+  const mLine = (g, w) => { g.strokeStyle = M_OUT; g.lineWidth = w || 0.7; g.stroke(); };
+  function mV(g, c, y0, y1, hi, lo) { const gr = g.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, mShade(c, hi === undefined ? 0.28 : hi)); gr.addColorStop(0.55, c); gr.addColorStop(1, mShade(c, lo === undefined ? -0.28 : lo)); return gr; }
+  function mR(g, c, x, y, r) { const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r * 1.1); gr.addColorStop(0, mShade(c, 0.32)); gr.addColorStop(0.6, c); gr.addColorStop(1, mShade(c, -0.3)); return gr; }
+  function mRR(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  // where the stride is: a gallop on the knight's own step clock (she covers twice his ground, so her legs go quicker)
+  const strideOf = e => e.moving ? (+e.walkT || 0) * 1.55 : 0;
+  // one leg: hip at (x, y), a knee that bends as it swings, a dark hoof with a pale band over it
+  function mLeg(g, x, y, len, w, a, c, front, near) {
+    g.save(); g.translate(x, y); g.rotate(a);
+    const bend = front ? Math.max(0, -a) * 1.6 : Math.max(0, a) * 1.2;
+    g.beginPath(); g.moveTo(-w * 0.62, 0); g.lineTo(w * 0.62, 0); g.lineTo(w * 0.42 + bend * 0.6, len * 0.55); g.lineTo(w * 0.36, len - 1.4); g.lineTo(-w * 0.36, len - 1.4); g.lineTo(-w * 0.46 + bend * 0.6, len * 0.55); g.closePath();
+    g.fillStyle = near ? mV(g, c, 0, len, 0.12, -0.3) : mShade(c, -0.28); g.fill(); mLine(g, 0.5);
+    mEll(g, bend * 0.6 * (front ? 1 : 0.8), len * 0.55, w * 0.5, w * 0.42); g.fillStyle = near ? mShade(c, 0.12) : mShade(c, -0.22); g.fill();
+    mRR(g, -w * 0.5, len - 1.9, w, 1.9, 0.6); g.fillStyle = MC.hoof; g.fill(); mLine(g, 0.4);
+    g.fillStyle = near ? MC.light : mShade(MC.light, -0.25); g.fillRect(-w * 0.42, len - 2.4, w * 0.84, 0.55);
     g.restore();
   }
-  function horseEnd(g, e, hurt) {
-    const dir = e.facing.y >= 0 ? 1 : -1, sw = e.moving ? Math.sin(e.walkT) * 4 : 0;
-    g.save(); g.scale(1, dir); // drawn head-toward-you; flipped in y it becomes the view from behind
-    g.strokeStyle = HOOF; g.lineWidth = 4.5; g.lineCap = 'round';
-    for (const [lx, ly, p] of [[-10, -8, sw], [10, -8, -sw], [-9, 5, -sw], [9, 5, sw]]) { g.beginPath(); g.moveTo(lx, ly); g.lineTo(lx + p * 0.5, ly + 14); g.stroke(); }
-    g.strokeStyle = MANE; g.lineWidth = 5; g.beginPath(); g.moveTo(0, -22); g.quadraticCurveTo(5, -30, 1, -37); g.stroke();      // tail
-    g.fillStyle = hurt ? '#ffb0b0' : COAT; g.beginPath(); g.ellipse(0, -2, 13, 21, 0, 0, 7); g.fill();                           // barrel
-    g.fillStyle = hurt ? '#ffc0c0' : COAT_DK; g.beginPath(); g.ellipse(0, -17, 12, 10, 0, 0, 7); g.fill();                       // rump
-    g.fillStyle = hurt ? '#ffb0b0' : COAT; g.beginPath(); g.ellipse(0, 16, 8, 13, 0, 0, 7); g.fill();                            // neck
-    g.beginPath(); g.ellipse(0, 29, 7.5, 9, 0, 0, 7); g.fill();                                                                  // head
-    g.fillStyle = MANE; g.beginPath(); g.ellipse(0, 13, 5, 10, 0, 0, 7); g.fill();                                               // crest
-    g.fillStyle = COAT_LT; for (const ex of [-6, 6]) { g.beginPath(); g.moveTo(ex, 23); g.lineTo(ex * 1.7, 14); g.lineTo(ex * 0.4, 17); g.closePath(); g.fill(); } // ears
-    g.fillStyle = hurt ? '#ffc0c0' : COAT_DK; g.beginPath(); g.ellipse(0, 36, 5, 4.2, 0, 0, 7); g.fill();                        // muzzle
-    if (dir === 1) { g.fillStyle = '#222'; g.beginPath(); g.arc(-3.8, 28, 1.6, 0, 7); g.arc(3.8, 28, 1.6, 0, 7); g.fill(); }     // eyes, only when she looks at you
-    g.fillStyle = TACK; roundRect(g, -8, -8, 16, 9, 3); g.fill();                                                                // saddle
-    g.fillStyle = TACK_LT; g.fillRect(-10, -6, 20, 2);                                                                           // blanket edge
+  // the four legs from the side: the far pair darker, diagonal pairs swinging together
+  function mLegsSide(g, e, bob) {
+    const ph = strideOf(e), sw = p => e.moving ? Math.sin(ph + p) * 0.5 : 0;
+    mLeg(g, -7.4, 0.6 + bob, 9.6, 2.4, sw(Math.PI), MC.coat, false, false);
+    mLeg(g, 4.2, 0.4 + bob, 9.8, 2.2, sw(0), MC.coat, true, false);
+    mLeg(g, -6.2, 0.8 + bob, 9.4, 2.5, sw(0), MC.coat, false, true);
+    mLeg(g, 5.4, 0.6 + bob, 9.6, 2.3, sw(Math.PI), MC.coat, true, true);
+  }
+  // the tail: dark, full, swinging as she goes and swishing now and then when she stands
+  function mTailSide(g, e, bob) {
+    const swish = e.moving ? Math.sin(strideOf(e)) * 0.18 : Math.sin(time * 1.7 + (e.seed || 0)) * 0.12 + Math.max(0, Math.sin(time * 0.9) - 0.9) * 3;
+    g.save(); g.translate(-10.6, -4.6 + bob); g.rotate(0.15 + swish);
+    g.beginPath(); g.moveTo(0, -0.6); g.quadraticCurveTo(-3.6, 0.4, -3.4, 6); g.quadraticCurveTo(-3.6, 10, -1.6, 12.4); g.quadraticCurveTo(-0.6, 9, 0.6, 7.6); g.quadraticCurveTo(1.6, 3, 1.2, 0.4); g.closePath();
+    g.fillStyle = mV(g, MC.mane, -1, 12, 0.18, -0.2); g.fill(); mLine(g, 0.55);
+    g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 0.35; for (const k of [-1.6, -0.6]) { g.beginPath(); g.moveTo(k + 0.4, 1); g.quadraticCurveTo(k - 1.4, 5, k - 0.2, 10.4); g.stroke(); }
     g.restore();
   }
-  // rider = the look to put in the saddle (playerLook()), or null for a mare standing on her own
-  function drawHorse(g, e, hurt, rider) {
-    const vert = Math.abs(e.facing.y) > Math.abs(e.facing.x);
-    if (vert) horseEnd(g, e, hurt); else horseSide(g, e, hurt, !rider);
-    if (rider) {
-      g.save(); g.translate(0, vert ? -11 : -20); g.scale(0.85, 0.85);
-      // seated: the knight (82-knightgear) sits in the saddle, no legs
-      drawHuman(g, { facing: e.facing, hurtT: e.hurtT || 0, attackT: 0, seated: true }, rider);
-      g.restore();
+  // the barrel of her body, dappled grey, with the belly a shade lighter
+  function mBodySide(g) {
+    const body = () => { g.beginPath(); g.moveTo(-11.2, -3.4); g.quadraticCurveTo(-11, -7.2, -6, -6.8); g.quadraticCurveTo(-1.4, -5.2, 3.4, -6.6); g.quadraticCurveTo(7.6, -6.6, 8.2, -2.6); g.quadraticCurveTo(8.4, 1.2, 5.6, 2); g.quadraticCurveTo(-1, 3.2, -7.4, 2.2); g.quadraticCurveTo(-11.8, 1.2, -11.2, -3.4); g.closePath(); };
+    body(); g.fillStyle = mV(g, MC.coat, -7, 3, 0.2, -0.24); g.fill();
+    g.save(); body(); g.clip();
+    g.fillStyle = MC.belly; mEll(g, -1.6, 2.4, 7.4, 1.8); g.fill();
+    g.fillStyle = MC.dapple; for (const [x, y, r] of [[-8.6, -4.2, 1.1], [-6.6, -2.4, 0.9], [-8.2, -1, 0.7], [-4.4, -4.4, 0.8], [-5.6, -0.6, 0.6], [5.2, -3.6, 0.7], [3.4, -1.6, 0.6]]) { mEll(g, x, y, r, r * 0.8); g.fill(); }
+    g.fillStyle = 'rgba(0,0,0,0.12)'; mEll(g, -2, 3.6, 10, 2.2); g.fill();
+    g.restore();
+    body(); mLine(g, 0.8);
+    // the line of her hip and her shoulder
+    g.strokeStyle = 'rgba(40,40,50,0.28)'; g.lineWidth = 0.45; g.beginPath(); g.moveTo(-8.4, -5.6); g.quadraticCurveTo(-5.6, -2.6, -7.6, 1.4); g.stroke(); g.beginPath(); g.moveTo(4.4, -5.4); g.quadraticCurveTo(6.6, -2.2, 5.2, 1.6); g.stroke();
+  }
+  // the neck and head, from the side. down: 0 standing tall, 1 grazing (the whole neck swung down about its root)
+  function mHeadSide(g, e, bob, down) {
+    g.save(); g.translate(5.4, -4.4 + bob); g.rotate(down * 1.05 + (e.moving ? Math.sin(strideOf(e) * 2) * 0.05 : Math.sin(time * 1.3 + (e.seed || 0)) * 0.03));
+    // the neck, thick at the shoulder and fine at the throat
+    g.beginPath(); g.moveTo(-2.4, -1.6); g.quadraticCurveTo(-0.8, -8.2, 3.4, -10.6); g.lineTo(6.6, -9.2); g.quadraticCurveTo(4.6, -5.6, 3.6, 2.6); g.quadraticCurveTo(0, 3, -2.4, -1.6); g.closePath();
+    g.fillStyle = mV(g, MC.coat, -11, 3, 0.22, -0.2); g.fill(); mLine(g, 0.7);
+    g.strokeStyle = 'rgba(40,40,50,0.22)'; g.lineWidth = 0.4; g.beginPath(); g.moveTo(4.6, -6.6); g.quadraticCurveTo(3.4, -2.6, 2.2, 1.2); g.stroke();
+    // the head: long, a flat forehead, a soft dark muzzle
+    g.save(); g.translate(4.4, -10.4); g.rotate(0.95);
+    const head = () => { g.beginPath(); g.moveTo(-1.6, -2.4); g.quadraticCurveTo(2, -3.4, 6.4, -2.2); g.quadraticCurveTo(8.6, -1.6, 8.4, 0.6); g.quadraticCurveTo(8, 2.4, 6, 2.2); g.quadraticCurveTo(2.4, 2.4, -1.4, 2.6); g.quadraticCurveTo(-3, 0, -1.6, -2.4); g.closePath(); };
+    head(); g.fillStyle = mV(g, MC.coat, -3, 3, 0.25, -0.22); g.fill();
+    g.save(); head(); g.clip(); g.fillStyle = mV(g, MC.muzzle, -2, 3, 0.15, -0.25); mEll(g, 7.4, 0.2, 2.6, 2.6); g.fill(); g.restore();
+    head(); mLine(g, 0.7);
+    // a nostril, the mouth line, the eye with its lid and a glint
+    g.fillStyle = '#2a2a30'; mEll(g, 7.6, -0.4, 0.55, 0.4, 0.4); g.fill();
+    g.strokeStyle = 'rgba(30,30,36,0.6)'; g.lineWidth = 0.35; g.beginPath(); g.moveTo(8.2, 1.4); g.quadraticCurveTo(7.2, 1.8, 6.2, 1.6); g.stroke();
+    g.fillStyle = '#17161a'; mEll(g, 1.4, -0.9, 0.9, 0.72); g.fill(); g.fillStyle = '#ffffff'; mEll(g, 1.15, -1.15, 0.3, 0.3); g.fill();
+    g.strokeStyle = 'rgba(40,40,50,0.5)'; g.lineWidth = 0.35; g.beginPath(); g.arc(1.4, -0.9, 1.2, Math.PI * 1.1, Math.PI * 1.8); g.stroke();
+    // the bridle: a brow band, a nose band and the cheek strap, a bright bit ring at her mouth
+    g.strokeStyle = MC.bridle; g.lineWidth = 0.55; g.beginPath(); g.moveTo(-0.6, -2.6); g.lineTo(0.4, 2.4); g.moveTo(4.6, -2.6); g.lineTo(4.8, 2.3); g.moveTo(0, 0.4); g.lineTo(4.7, 0.2); g.stroke();
+    mEll(g, 6.4, 1.6, 0.6, 0.6); g.strokeStyle = MC.steel; g.lineWidth = 0.35; g.stroke();
+    // her ears, pricked forward, and the forelock between them
+    for (const [x, d] of [[-0.4, 0.75], [0.6, 1]]) { g.beginPath(); g.moveTo(x - 1.2, -2); g.quadraticCurveTo(x - 2.6, -5.2, x - 1.8, -5.8); g.quadraticCurveTo(x - 0.4, -4.4, x + 0.6, -2.2); g.closePath(); g.fillStyle = d < 1 ? MC.dark : MC.coat; g.fill(); mLine(g, 0.45); }
+    g.beginPath(); g.moveTo(-1.2, -2.6); g.quadraticCurveTo(0.6, -3.6, 1.6, -1.2); g.quadraticCurveTo(0.2, -2, -1.2, -1.6); g.closePath(); g.fillStyle = MC.mane; g.fill();
+    g.restore();
+    // the mane down the crest of her neck, falling to the far side in locks
+    g.beginPath(); g.moveTo(-2.6, -1.8); g.quadraticCurveTo(-1.2, -8.6, 3.4, -10.9);
+    for (let k = 0; k <= 5; k++) { const t = k / 5, x = 3.4 + (-3.6 - 3.4) * t, y = -10.9 + (-0.4 + 10.9) * t; g.lineTo(x + 1.2, y + 1.4 + (k % 2) * 0.8); }
+    g.closePath(); g.fillStyle = mV(g, MC.mane, -11, 0, 0.2, -0.2); g.fill(); mLine(g, 0.5);
+    g.restore();
+  }
+  // the head's bit, in her own units on the side view, for the reins: the same turns mHeadSide makes
+  function mBitSide(bob, down) {
+    const a = down * 1.05, c = Math.cos(a), s = Math.sin(a), b = 0.95, cb = Math.cos(b), sb = Math.sin(b);
+    const hx = 4.4 + 6.4 * cb - 1.6 * sb, hy = -10.4 + 6.4 * sb + 1.6 * cb;
+    return { x: 5.4 + hx * c - hy * s, y: -4.4 + bob + hx * s + hy * c };
+  }
+  // the saddle: the red cloth with its gold edge, the leather seat with a pommel and a cantle, the girth
+  function mSaddleSide(g, bob) {
+    g.save(); g.translate(0, bob);
+    mRR(g, -5.6, -6.6, 9.4, 4.6, 1.2); g.fillStyle = mV(g, MC.cloth, -6.6, -2, 0.2, -0.25); g.fill(); mLine(g, 0.5);
+    g.strokeStyle = MC.trim; g.lineWidth = 0.5; g.beginPath(); g.moveTo(-5.2, -2.5); g.lineTo(3.4, -2.5); g.stroke();
+    g.strokeStyle = MC.leather; g.lineWidth = 1.1; g.beginPath(); g.moveTo(-0.6, -4); g.lineTo(-0.2, 2.2); g.stroke(); g.strokeStyle = M_OUT; g.lineWidth = 0.3; g.stroke();
+    g.beginPath(); g.moveTo(-4.6, -8.4); g.quadraticCurveTo(-3.6, -6.4, -1, -6.6); g.quadraticCurveTo(1, -6.6, 2, -8); g.quadraticCurveTo(2.8, -8.6, 2.6, -6.2); g.quadraticCurveTo(-0.6, -4.8, -4.6, -5.4); g.quadraticCurveTo(-5.4, -7, -4.6, -8.4); g.closePath();
+    g.fillStyle = mV(g, MC.leather, -8.6, -5, 0.25, -0.3); g.fill(); mLine(g, 0.5);
+    g.fillStyle = MC.trim; mEll(g, 2.3, -7.9, 0.45, 0.45); g.fill();
+    g.restore();
+  }
+  // the stirrup on the near side: its leather from the saddle and the iron. A rider sits as every pilot does in the new
+  // look (82-knightgear: seated, no legs), so the stirrup hangs as it is
+  function mStirrupSide(g, bob) {
+    g.save(); g.translate(0, bob);
+    g.strokeStyle = MC.leather; g.lineWidth = 0.6; g.beginPath(); g.moveTo(-0.6, -5.6); g.lineTo(-0.4, -0.8); g.stroke();
+    g.strokeStyle = MC.steel; g.lineWidth = 0.45; g.beginPath(); g.moveTo(-1.4, -0.9); g.lineTo(-1.6, 0.9); g.lineTo(1.2, 0.9); g.lineTo(1, -0.9); g.stroke();
+    g.restore();
+  }
+  function mareSide(g, e, rider) {
+    const bob = e.moving ? -Math.abs(Math.sin(strideOf(e))) * 0.6 : Math.sin(time * 1.6 + (e.seed || 0)) * 0.15;
+    const down = rider || e.headUp ? 0 : 1;
+    mTailSide(g, e, bob);
+    mLegsSide(g, e, bob);
+    g.save(); g.translate(0, bob); mBodySide(g); g.restore();
+    mHeadSide(g, e, bob, down);
+    mSaddleSide(g, bob);
+    // the reins from the bit, over her neck, to the saddle's pommel
+    const bit = mBitSide(bob, down);
+    g.strokeStyle = MC.bridle; g.lineWidth = 0.5; g.beginPath(); g.moveTo(bit.x, bit.y); g.quadraticCurveTo((bit.x + 2) / 2, Math.max(bit.y, -6 + bob) + 0.6, 2.2, -6.4 + bob); g.stroke();
+    if (rider) rider(-0.6, -6.4 + bob);
+    mStirrupSide(g, bob);
+  }
+  // facing us: her long face in front of her chest, both front legs, the hind ones behind them; the knight sits behind her head
+  function mareFront(g, e, rider) {
+    const ph = strideOf(e), sw = p => e.moving ? Math.sin(ph + p) * 1.2 : 0, bob = e.moving ? -Math.abs(Math.sin(ph)) * 0.6 : Math.sin(time * 1.6 + (e.seed || 0)) * 0.15;
+    // hind legs, short and dark, then the front pair
+    for (const s of [-1, 1]) mLeg(g, s * 3.3, 0.6 + bob, 8.6 - Math.abs(sw(s > 0 ? 0 : Math.PI)) * 0.5, 2.1, 0, MC.coat, false, false);
+    for (const s of [-1, 1]) { g.save(); g.translate(0, -Math.max(0, sw(s > 0 ? Math.PI : 0)) * 0.9); mLeg(g, s * 2.7, 1.2 + bob, 9, 2.4, 0, MC.coat, true, true); g.restore(); }
+    g.save(); g.translate(0, bob);
+    // her chest and shoulders, the saddle cloth showing either side
+    mEll(g, 0, -2.2, 6.6, 5.4); g.fillStyle = mR(g, MC.coat, 0, -2.6, 6.4); g.fill(); mLine(g, 0.8);
+    for (const s of [-1, 1]) { mRR(g, s > 0 ? 4.4 : -6.6, -7.2, 2.2, 4.8, 0.8); g.fillStyle = mV(g, MC.cloth, -7.2, -2.4, 0.2, -0.25); g.fill(); mLine(g, 0.45); g.fillStyle = MC.trim; g.fillRect(s > 0 ? 4.6 : -6.4, -2.9, 1.8, 0.4); }
+    g.strokeStyle = MC.steel; g.lineWidth = 0.45; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 6.6, -3.6); g.lineTo(s * 6.8, -0.6); g.stroke(); }
+    // the saddle's front, its pommel up between her shoulders
+    g.beginPath(); g.moveTo(-3.6, -7.4); g.quadraticCurveTo(0, -9.4, 3.6, -7.4); g.lineTo(3, -6); g.quadraticCurveTo(0, -7.2, -3, -6); g.closePath(); g.fillStyle = mV(g, MC.leather, -9, -6); g.fill(); mLine(g, 0.45);
+    g.restore();
+    if (rider) rider(0, -7.4 + bob);
+    g.save(); g.translate(0, bob);
+    // her neck rising behind her face, the mane falling to one side, then the face itself
+    g.beginPath(); g.moveTo(-3, -4); g.quadraticCurveTo(-3.4, -9.6, -1.8, -11.6); g.lineTo(1.8, -11.6); g.quadraticCurveTo(3.4, -9.6, 3, -4); g.closePath(); g.fillStyle = mV(g, MC.coat, -12, -4, 0.2, -0.18); g.fill(); mLine(g, 0.6);
+    g.beginPath(); g.moveTo(1.6, -11.4); g.quadraticCurveTo(3.8, -8.6, 3.4, -4.6); g.lineTo(2.4, -5.6); g.quadraticCurveTo(2.6, -8.6, 0.8, -11); g.closePath(); g.fillStyle = MC.mane; g.fill();
+    const face = () => { g.beginPath(); g.moveTo(-3, -11.4); g.quadraticCurveTo(0, -12.8, 3, -11.4); g.quadraticCurveTo(3.4, -6.4, 2.5, -1.4); g.quadraticCurveTo(2.3, 1.6, 0, 1.8); g.quadraticCurveTo(-2.3, 1.6, -2.5, -1.4); g.quadraticCurveTo(-3.4, -6.4, -3, -11.4); g.closePath(); };
+    face(); g.fillStyle = mV(g, MC.coat, -11, 2, 0.28, -0.18); g.fill();
+    g.save(); face(); g.clip(); g.fillStyle = mV(g, MC.muzzle, -2, 2, 0.15, -0.25); mEll(g, 0, 0.4, 2.8, 2.4); g.fill(); g.fillStyle = 'rgba(255,255,255,0.5)'; mEll(g, 0, -6.4, 0.7, 2.4); g.fill(); g.restore();
+    face(); mLine(g, 0.7);
+    for (const s of [-1, 1]) {
+      g.fillStyle = '#2a2a30'; mEll(g, s * 1, 0.4, 0.45, 0.6, s * 0.3); g.fill();
+      g.fillStyle = '#17161a'; mEll(g, s * 2.3, -6.6, 0.75, 0.85); g.fill(); g.fillStyle = '#ffffff'; mEll(g, s * 2.1, -6.9, 0.25, 0.25); g.fill();
+      // ears up either side of her forelock
+      g.beginPath(); g.moveTo(s * 1.6, -11.6); g.quadraticCurveTo(s * 3.2, -15.8, s * 3.7, -15.6); g.quadraticCurveTo(s * 4, -13, s * 3.1, -10.8); g.closePath(); g.fillStyle = MC.coat; g.fill(); mLine(g, 0.45);
+      g.fillStyle = mShade(MC.dark, -0.2); g.beginPath(); g.moveTo(s * 2.1, -11.6); g.quadraticCurveTo(s * 3.1, -14.2, s * 3.4, -14); g.lineTo(s * 3, -11.4); g.closePath(); g.fill();
     }
+    // forelock, the bridle's brow and nose bands, the bit rings
+    g.beginPath(); g.moveTo(-1.6, -12.2); g.quadraticCurveTo(0, -13.4, 1.6, -12.2); g.quadraticCurveTo(0.9, -9.2, 0, -8.6); g.quadraticCurveTo(-0.9, -9.2, -1.6, -12.2); g.closePath(); g.fillStyle = MC.mane; g.fill();
+    g.strokeStyle = MC.bridle; g.lineWidth = 0.55; g.beginPath(); g.moveTo(-2.6, -9.2); g.quadraticCurveTo(0, -8.4, 2.6, -9.2); g.moveTo(-2.3, -2.4); g.quadraticCurveTo(0, -1.8, 2.3, -2.4); g.moveTo(-2.6, -9.2); g.lineTo(-2.3, -1); g.moveTo(2.6, -9.2); g.lineTo(2.3, -1); g.stroke();
+    g.strokeStyle = MC.steel; g.lineWidth = 0.35; for (const s of [-1, 1]) { mEll(g, s * 2.3, -0.8, 0.55, 0.55); g.stroke(); }
+    // the reins up to the saddle, where the knight's hands are
+    if (rider) { g.strokeStyle = MC.bridle; g.lineWidth = 0.45; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 2.4, -0.8); g.quadraticCurveTo(s * 3.6, -4, s * 2.2, -7.6); g.stroke(); } }
+    g.restore();
   }
-  const parkedMare = (x, y, fx) => ({ x, y, r: HORSE_R, facing: { x: fx === undefined ? 1 : fx, y: 0 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 });
+  // from behind: her neck and ears far off, then her back and the saddle, the knight, then her rump and tail nearest us
+  function mareRear(g, e, rider) {
+    const ph = strideOf(e), sw = p => e.moving ? Math.sin(ph + p) * 1.2 : 0, bob = e.moving ? -Math.abs(Math.sin(ph)) * 0.6 : Math.sin(time * 1.6 + (e.seed || 0)) * 0.15;
+    for (const s of [-1, 1]) { g.save(); g.translate(0, -Math.max(0, sw(s > 0 ? 0 : Math.PI)) * 0.6); mLeg(g, s * 2.4, -0.6 + bob, 8.4, 2, 0, MC.coat, true, false); g.restore(); }
+    g.save(); g.translate(0, bob);
+    // neck and head, going away from us
+    g.beginPath(); g.moveTo(-2.6, -6); g.quadraticCurveTo(-2.8, -11, -1.6, -13.4); g.lineTo(1.6, -13.4); g.quadraticCurveTo(2.8, -11, 2.6, -6); g.closePath(); g.fillStyle = mV(g, MC.coat, -14, -6, 0.15, -0.2); g.fill(); mLine(g, 0.6);
+    g.beginPath(); g.moveTo(-1.4, -13.6); g.quadraticCurveTo(0, -14.4, 1.4, -13.6); g.lineTo(1, -6.4); g.lineTo(-1, -6.4); g.closePath(); g.fillStyle = MC.mane; g.fill();
+    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 0.8, -13.4); g.quadraticCurveTo(s * 1.8, -17, s * 2.2, -16.8); g.quadraticCurveTo(s * 2.6, -14.6, s * 2, -12.8); g.closePath(); g.fillStyle = MC.coat; g.fill(); mLine(g, 0.45); }
+    // her back and flanks, the saddle cloth and the saddle's cantle
+    mEll(g, 0, -4.2, 6.4, 4.6); g.fillStyle = mR(g, MC.coat, 0, -5, 6.4); g.fill(); mLine(g, 0.7);
+    for (const s of [-1, 1]) { mRR(g, s > 0 ? 4 : -6.4, -6.8, 2.4, 4.6, 0.8); g.fillStyle = mV(g, MC.cloth, -6.8, -2.2, 0.2, -0.25); g.fill(); mLine(g, 0.45); g.fillStyle = MC.trim; g.fillRect(s > 0 ? 4.2 : -6.2, -2.7, 2, 0.4); }
+    g.beginPath(); g.moveTo(-3.8, -6.6); g.quadraticCurveTo(0, -9.6, 3.8, -6.6); g.lineTo(3.2, -5.4); g.quadraticCurveTo(0, -7.2, -3.2, -5.4); g.closePath(); g.fillStyle = mV(g, MC.leather, -9, -5.4); g.fill(); mLine(g, 0.45);
+    g.strokeStyle = MC.steel; g.lineWidth = 0.45; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 6.4, -3.6); g.lineTo(s * 6.6, -0.8); g.stroke(); }
+    g.restore();
+    if (rider) rider(0, -7 + bob);
+    // the hind legs nearest us, and her rump: two round quarters with the tail between them
+    for (const s of [-1, 1]) { g.save(); g.translate(0, -Math.max(0, sw(s > 0 ? Math.PI : 0)) * 0.9); mLeg(g, s * 3.4, 0.4 + bob, 9.2, 2.6, 0, MC.coat, false, true); g.restore(); }
+    g.save(); g.translate(0, bob);
+    for (const s of [-1, 1]) { mEll(g, s * 2.5, -1.4, 3.7, 4.3, -s * 0.12); g.fillStyle = mR(g, MC.coat, s * 2.5, -2.2, 4.2); g.fill(); mLine(g, 0.7); }
+    g.fillStyle = MC.dapple; for (const [x, y, r] of [[-3.6, -3.4, 0.8], [3.2, -2.4, 0.7], [-2.2, -0.4, 0.6], [4.4, -4.2, 0.6]]) { mEll(g, x, y, r, r * 0.8); g.fill(); }
+    const sx = e.moving ? Math.sin(ph) * 0.8 : Math.sin(time * 1.7 + (e.seed || 0)) * 0.6;
+    g.beginPath(); g.moveTo(-1.2, -5.4); g.quadraticCurveTo(-2.2 + sx, 0, -1.4 + sx * 1.4, 6); g.quadraticCurveTo(sx * 1.4, 7.6, 1.4 + sx * 1.4, 6); g.quadraticCurveTo(2.2 + sx, 0, 1.2, -5.4); g.closePath();
+    g.fillStyle = mV(g, MC.mane, -6, 7, 0.2, -0.2); g.fill(); mLine(g, 0.55);
+    g.restore();
+  }
+  // the knight's scale and where his middle sits over the saddle (in game pixels: his seat on the saddle's dip)
+  const RIDER_S = 0.88, RIDER_UP = 9.4;
+  // drawHorse(g, e, hurt, rider): Cinder at the origin of g (her middle; her hooves 21.5 px below it), facing e.facing.
+  // rider = the look in the saddle (playerLook(), or a friend's look online), or null for her standing alone (head down
+  // in the grass on the side view). hurt = the whole picture flashes red (the knight with her), the way the monsters and
+  // the knight flash: drawn on a picture of its own and coloured over, when there is a canvas for it.
+  function drawHorse(g, e, hurt, rider) {
+    if (hurt && g === ctx && mareTint(g, e, rider)) return;
+    paintMare(g, e, rider);
+  }
+  function paintMare(g, e, rider) {
+    const fx = e.facing ? +e.facing.x || 0 : 1, fy = e.facing ? +e.facing.y || 0 : 0;
+    const view = fy > 0.55 && Math.abs(fy) >= Math.abs(fx) ? 'front' : fy < -0.55 && Math.abs(fy) >= Math.abs(fx) ? 'rear' : 'side';
+    const left = view === 'side' && fx < 0;
+    // the knight, sat in the saddle at (sx, sy) in her units; his own facing, never hurt-tinted twice
+    const seat = rider ? (sx, sy) => {
+      g.save(); g.scale(1 / MARE_K, 1 / MARE_K); g.translate(sx * MARE_K, sy * MARE_K - RIDER_UP); g.scale(RIDER_S, RIDER_S);
+      if (left) g.scale(-1, 1);
+      drawHuman(g, { facing: { x: view === 'side' ? (left ? -1 : 1) : 0, y: view === 'front' ? 1 : view === 'rear' ? -1 : 0 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, seated: true }, rider);
+      g.restore();
+    } : null;
+    g.save();
+    // her shadow on the ground under her hooves
+    g.fillStyle = 'rgba(0,0,0,0.26)'; g.beginPath(); g.ellipse(0, 20.5, view === 'side' ? 29 : 15, view === 'side' ? 6.5 : 6, 0, 0, M_TAU); g.fill();
+    g.scale(MARE_K, MARE_K);
+    if (left) g.scale(-1, 1);
+    if (view === 'front') mareFront(g, e, seat);
+    else if (view === 'rear') mareRear(g, e, seat);
+    else mareSide(g, e, seat);
+    g.restore();
+  }
+  // the red flash: the mare and her rider drawn on a picture, coloured over, and put down
+  let mScratch = null;
+  function mareTint(g, e, rider) {
+    if (typeof document === 'undefined' || !document.createElement) return false;
+    const ss = Math.max(1, Math.min(2, typeof DPR === 'number' && DPR > 0 ? DPR : 1)), x0 = -48, y0 = -64, w = 96, h = 92, W = Math.ceil(w * ss), Hh = Math.ceil(h * ss);
+    if (!mScratch || mScratch.c.width < W || mScratch.c.height < Hh) { const c = document.createElement('canvas'); c.width = W; c.height = Hh; const cg = c.getContext && c.getContext('2d'); if (!cg) return false; mScratch = { c, cg }; }
+    const cg = mScratch.cg;
+    cg.setTransform(1, 0, 0, 1, 0, 0); cg.clearRect(0, 0, mScratch.c.width, mScratch.c.height);
+    cg.setTransform(ss, 0, 0, ss, -x0 * ss, -y0 * ss); paintMare(cg, e, rider);
+    cg.save(); cg.setTransform(1, 0, 0, 1, 0, 0); cg.globalCompositeOperation = 'source-atop'; cg.fillStyle = 'rgba(255,90,90,0.45)'; cg.fillRect(0, 0, W, Hh); cg.restore();
+    g.drawImage(mScratch.c, 0, 0, W, Hh, x0, y0, w, h);
+    return true;
+  }
+  const parkedMare = (x, y, fx) => ({ x, y, r: HORSE_R, facing: { x: fx === undefined ? 1 : fx, y: 0 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, seed: (x * 0.013 + y * 0.007) % 6.28 });
   function drawHorseTile(g, tx, ty) {
     const cx = tc(tx), cy = tc(ty);
-    g.save(); g.translate(cx, cy + 4);
-    g.fillStyle = 'rgba(0,0,0,0.26)'; g.beginPath(); g.ellipse(0, 20, 28, 9, 0, 0, 7); g.fill();
-    g.translate(0, Math.sin(time * 1.4 + tx) * 1.2);
+    g.save(); g.translate(cx, cy + 2);
     drawHorse(g, parkedMare(cx, cy), false, null);
     g.restore();
   }
@@ -394,17 +579,17 @@
     g.save(); g.translate(cx, cy);
     g.fillStyle = 'rgba(0,0,0,0.24)'; g.beginPath(); g.ellipse(0, 16, 22, 7, 0, 0, 7); g.fill();
     g.fillStyle = '#6b4f2a'; g.fillRect(-17, -18, 6, 34); g.fillRect(11, -18, 6, 34);   // two posts
-    g.fillStyle = TACK_LT; g.fillRect(-19, -14, 38, 6);                                  // the rail
+    g.fillStyle = '#8a6a3a'; g.fillRect(-19, -14, 38, 6);                                // the rail
     g.fillStyle = '#5a4020'; g.fillRect(-19, -9, 38, 2);
     g.fillStyle = '#c9b07a';                                                             // a bale of hay under it
     g.beginPath(); g.moveTo(-14, 16); g.lineTo(2, 16); g.lineTo(-1, 6); g.lineTo(-11, 6); g.closePath(); g.fill();
     g.strokeStyle = '#9c854f'; g.lineWidth = 1; g.beginPath(); g.moveTo(-12, 11); g.lineTo(0, 11); g.stroke();
     if (!H().owned) { // she is Fennick's until somebody buys her: standing at the rail, nose to the rope
       g.save(); g.translate(20, 13); g.scale(0.72, 0.72);
-      drawHorse(g, parkedMare(cx, cy, -1), false, null);
+      drawHorse(g, Object.assign(parkedMare(cx, cy, -1), { headUp: true }), false, null);
       g.restore();
       g.strokeStyle = 'rgba(210,190,150,0.9)'; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(4, -11); g.quadraticCurveTo(0, 0, -3, 5); g.stroke();      // the rope to her head
+      g.beginPath(); g.moveTo(4, -11); g.quadraticCurveTo(3.4, -5, 1.2, -0.6); g.stroke();  // the rope to her bit
     } else {
       g.strokeStyle = 'rgba(210,190,150,0.8)'; g.lineWidth = 2;
       g.beginPath(); g.moveTo(4, -11); g.quadraticCurveTo(8, -2, 14, -6); g.stroke();    // the empty rope, looped over the rail
@@ -424,7 +609,6 @@
       const draw = () => {
         const e = { x: player.x, y: player.y, r: player.r, facing: player.facing, moving: player.moving, walkT: player.walkT, hurtT: player.hurtT };
         g.save(); g.translate(player.x, player.y);
-        g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 20, 30, 10, 0, 0, 7); g.fill();
         drawHorse(g, e, player.hurtT > 0, playerLook());
         g.restore();
       };

@@ -146,7 +146,7 @@
   HOOKS.draw.unshift((g, items, cam) => {
     const x0 = Math.max(0, Math.floor(cam.x / TILE) - 2), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE) + 2);
     const y0 = Math.max(0, Math.floor(cam.y / TILE) - 2), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE) + 2);
-    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tileAt(tx, ty); if (t === T_BEAST || t === T_BEAST_WRECK) items.splice(Math.max(0, items.length - 1), 0, { y: ty * TILE + TILE - 4, draw: () => drawBeastTile(g, tx, ty, t) }); }
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tileAt(tx, ty); if (t === T_BEAST || t === T_BEAST_WRECK) items.splice(Math.max(0, items.length - 1), 0, { y: ty * TILE + TILE - 4, draw: () => window.BEAST.drawTile(g, tx, ty, t) }); }
     if (!player.dead && driving()) {
       const draw = () => {
         const e = { x: player.x, y: player.y, r: player.r, facing: player.facing, moving: player.moving, walkT: player.walkT, attackT: player.attackT, hurtT: player.hurtT, hp: player.mech.hp, maxHp: player.mech.maxHp, rodGlow: bombCd > 0 ? 0 : 0.35 };
@@ -167,6 +167,8 @@
   // ---------- re-supply API (Tinkerton, another feature file) ----------
   window.BEAST = {
     tiles: { BEAST: T_BEAST, BEAST_WRECK: T_BEAST_WRECK },
+    // a parked or wrecked Barrelbeast's tile; 84-mountlook puts the new look in its place
+    drawTile: drawBeastTile,
     // places a repaired BEAST tile at (tx, ty) if the ground allows it (or on a wreck); returns true when placed
     giveTile(tx, ty) {
       if (!inMap(tx, ty)) return false;
