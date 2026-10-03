@@ -718,6 +718,8 @@
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'gnasher ';
     if (!HAS_INST || typeof NET === 'undefined' || !window.COOP) return;
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills;
     if (window.INSTANCES.active()) window.INSTANCES.leave();
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
     const makeRoom = n => { for (let i = INV_SLOTS - 1; i >= 0 && player.inv.filter(x => !x).length < n; i--) { const it = player.inv[i]; if (it && it.id !== 'coins' && bankAdd(it.id, it.qty)) player.inv[i] = null; } };
@@ -757,6 +759,7 @@
         check(P + '(fake NET keeper): a boss_call from a remote in the lab spawns exactly one; a second call while it lives spawns none', one === 1 && still === 1 && !TQ().rematch, { one, still });
         window.INSTANCES.leave(); }
     } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       if (window.INSTANCES.active()) window.INSTANCES.leave();
       NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; window.COOP.reset();
       if (t0 !== 'null') quest.tinker = JSON.parse(t0);

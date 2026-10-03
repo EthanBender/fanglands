@@ -791,7 +791,9 @@
     const P = 'storm: ';
     if (INSTANCES.active()) INSTANCES.leave();
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
-    const S = window.SKYCITY; if (!S) { check(P + 'the wind shrine is there for the rematch checks', false, {}); return; }
+    const S = window.SKYCITY;
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills; if (!S) { check(P + 'the wind shrine is there for the rematch checks', false, {}); return; }
     const q0 = JSON.stringify(quest.storm || null), day0 = player.dayTime, hp0 = player.hp, maxHp0 = player.maxHp;
     const flute0 = countItem('wind_flute'); if (!flute0) h.give('wind_flute', 1);
     const shrineE = () => { if (INSTANCES.active()) INSTANCES.leave(); closePanel(); drain(); F.tp(S.STEP_T.x, S.STEP_T.y); F.face(S.SHRINE_T.x, S.SHRINE_T.y); F.press('KeyE'); F.sim(2, []); render(); };
@@ -841,6 +843,7 @@
         player.dayTime = day;
         check(P + 'the windshrine panel passes the panel audit (44 px, 8 px gaps, text fit) at 1280x800, 1024x768 touch, 768x1024 touch and 390x844 touch', a.frames === 64 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       if (INSTANCES.active()) INSTANCES.leave();
       closePanel(); drain(); quest.storm = q0 === 'null' ? freshStorm() : JSON.parse(q0); player.dayTime = day0;
       player.maxHp = maxHp0; player.hp = Math.min(hp0, maxHp0); player.hurtT = 0;

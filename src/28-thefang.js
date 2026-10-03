@@ -639,6 +639,8 @@
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'fang: ';
     const fq = FQ(), m = fang(); if (!m) { check(P + 'the rematch checks found the dragon', false, {}); return; }
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills;
     if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
     const said = re => [dialog.cur, ...dialog.queue].some(l => l && re.test(l.text));
@@ -733,6 +735,7 @@
         } finally { NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
       }
     } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       const back = JSON.parse(keep.fq); for (const k of Object.keys(fq)) delete fq[k]; Object.assign(FQ(), back);
       quest.stage = keep.stage; player.dayTime = keep.day; if (keep.dk !== 'null') quest.dk = JSON.parse(keep.dk); player.hp = Math.min(player.maxHp, Math.max(1, keep.hp));
       const mm = fang(); if (mm) { mm.dead = true; mm.awake = false; mm.respawnT = Infinity; }

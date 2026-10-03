@@ -6434,6 +6434,8 @@ HOOKS.selfTest.push((check, F, h) => {
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'beast: ';
     if (!window.INSTANCES || !INSTANCES.get(SHED.id)) { check(P + 'the War Shed is defined', false, {}); return; }
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills;
     if (INSTANCES.active()) INSTANCES.leave();
     const hf = HF(), keep = { hf: JSON.stringify(hf), stage: quest.stage, day: player.dayTime, hp: player.hp };
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
@@ -6530,6 +6532,7 @@ HOOKS.selfTest.push((check, F, h) => {
         } finally { if (INSTANCES.active()) INSTANCES.leave(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
       }
     } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       if (INSTANCES.active()) INSTANCES.leave();
       const back = JSON.parse(keep.hf), hfx = HF(); for (const k of Object.keys(hfx)) delete hfx[k]; Object.assign(HF(), back);
       quest.stage = keep.stage; player.dayTime = keep.day; player.hp = Math.min(player.maxHp, Math.max(1, keep.hp));
@@ -10853,6 +10856,8 @@ PEOPLE_UI.auditPrompt = function (p) {
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'fang: ';
     const fq = FQ(), m = fang(); if (!m) { check(P + 'the rematch checks found the dragon', false, {}); return; }
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills;
     if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
     const said = re => [dialog.cur, ...dialog.queue].some(l => l && re.test(l.text));
@@ -10947,6 +10952,7 @@ PEOPLE_UI.auditPrompt = function (p) {
         } finally { NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
       }
     } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       const back = JSON.parse(keep.fq); for (const k of Object.keys(fq)) delete fq[k]; Object.assign(FQ(), back);
       quest.stage = keep.stage; player.dayTime = keep.day; if (keep.dk !== 'null') quest.dk = JSON.parse(keep.dk); player.hp = Math.min(player.maxHp, Math.max(1, keep.hp));
       const mm = fang(); if (mm) { mm.dead = true; mm.awake = false; mm.respawnT = Infinity; }
@@ -13105,6 +13111,8 @@ window.PLACE_KIT = PLACE_KIT;
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'gnasher ';
     if (!HAS_INST || typeof NET === 'undefined' || !window.COOP) return;
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills;
     if (window.INSTANCES.active()) window.INSTANCES.leave();
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
     const makeRoom = n => { for (let i = INV_SLOTS - 1; i >= 0 && player.inv.filter(x => !x).length < n; i--) { const it = player.inv[i]; if (it && it.id !== 'coins' && bankAdd(it.id, it.qty)) player.inv[i] = null; } };
@@ -13144,6 +13152,7 @@ window.PLACE_KIT = PLACE_KIT;
         check(P + '(fake NET keeper): a boss_call from a remote in the lab spawns exactly one; a second call while it lives spawns none', one === 1 && still === 1 && !TQ().rematch, { one, still });
         window.INSTANCES.leave(); }
     } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       if (window.INSTANCES.active()) window.INSTANCES.leave();
       NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; window.COOP.reset();
       if (t0 !== 'null') quest.tinker = JSON.parse(t0);
@@ -31718,7 +31727,9 @@ HOOKS.selfTest.push((check, F, h) => {
     const P = 'storm: ';
     if (INSTANCES.active()) INSTANCES.leave();
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
-    const S = window.SKYCITY; if (!S) { check(P + 'the wind shrine is there for the rematch checks', false, {}); return; }
+    const S = window.SKYCITY;
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills; if (!S) { check(P + 'the wind shrine is there for the rematch checks', false, {}); return; }
     const q0 = JSON.stringify(quest.storm || null), day0 = player.dayTime, hp0 = player.hp, maxHp0 = player.maxHp;
     const flute0 = countItem('wind_flute'); if (!flute0) h.give('wind_flute', 1);
     const shrineE = () => { if (INSTANCES.active()) INSTANCES.leave(); closePanel(); drain(); F.tp(S.STEP_T.x, S.STEP_T.y); F.face(S.SHRINE_T.x, S.SHRINE_T.y); F.press('KeyE'); F.sim(2, []); render(); };
@@ -31768,6 +31779,7 @@ HOOKS.selfTest.push((check, F, h) => {
         player.dayTime = day;
         check(P + 'the windshrine panel passes the panel audit (44 px, 8 px gaps, text fit) at 1280x800, 1024x768 touch, 768x1024 touch and 390x844 touch', a.frames === 64 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       if (INSTANCES.active()) INSTANCES.leave();
       closePanel(); drain(); quest.storm = q0 === 'null' ? freshStorm() : JSON.parse(q0); player.dayTime = day0;
       player.maxHp = maxHp0; player.hp = Math.min(hp0, maxHp0); player.hurtT = 0;
@@ -35269,6 +35281,8 @@ window.RETALIATE = RETALIATE;
     if (typeof NET === 'undefined') return;
     const P = 'coop ';
     if (typeof INSTANCES !== 'undefined' && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills;
     const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, peace: window.__peace, px: player.x, py: player.y, hp: player.hp, kills: player.kills, drops: drops.length, q: JSON.stringify(quest.instances || null) };
     const real = monsters;
     const sent = []; let sock = null;
@@ -35374,6 +35388,7 @@ window.RETALIATE = RETALIATE;
         check(P + 'handoff: a live adopted monster gets awake true', ok, { real: monsters === real, s0: [s0.awake, s0.dead], s1: [s1.awake, s1.dead] });
         for (const [m, k] of [[s0, k0.s0], [s1, k0.s1]]) { if (k.awake === undefined) delete m.awake; else m.awake = k.awake; m.dead = k.dead; m.hp = k.hp; m.x = k.x; m.y = k.y; m.respawnT = k.respawnT; } }
     } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       HOOKS.kill.splice(HOOKS.kill.indexOf(listen), 1);
       if (typeof INSTANCES !== 'undefined' && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
       NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;

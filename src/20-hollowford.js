@@ -651,6 +651,8 @@
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'beast: ';
     if (!window.INSTANCES || !INSTANCES.get(SHED.id)) { check(P + 'the War Shed is defined', false, {}); return; }
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills;
     if (INSTANCES.active()) INSTANCES.leave();
     const hf = HF(), keep = { hf: JSON.stringify(hf), stage: quest.stage, day: player.dayTime, hp: player.hp };
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
@@ -747,6 +749,7 @@
         } finally { if (INSTANCES.active()) INSTANCES.leave(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
       }
     } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       if (INSTANCES.active()) INSTANCES.leave();
       const back = JSON.parse(keep.hf), hfx = HF(); for (const k of Object.keys(hfx)) delete hfx[k]; Object.assign(HF(), back);
       quest.stage = keep.stage; player.dayTime = keep.day; player.hp = Math.min(player.maxHp, Math.max(1, keep.hp));

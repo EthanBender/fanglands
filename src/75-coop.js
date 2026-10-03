@@ -608,6 +608,8 @@
     if (typeof NET === 'undefined') return;
     const P = 'coop ';
     if (typeof INSTANCES !== 'undefined' && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+    // these fights pay XP like any other: put the skills back afterwards, so the checks after these see the knight the suite had
+    const skills0 = JSON.stringify(player.skills), kills0 = player.kills;
     const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, peace: window.__peace, px: player.x, py: player.y, hp: player.hp, kills: player.kills, drops: drops.length, q: JSON.stringify(quest.instances || null) };
     const real = monsters;
     const sent = []; let sock = null;
@@ -713,6 +715,7 @@
         check(P + 'handoff: a live adopted monster gets awake true', ok, { real: monsters === real, s0: [s0.awake, s0.dead], s1: [s1.awake, s1.dead] });
         for (const [m, k] of [[s0, k0.s0], [s1, k0.s1]]) { if (k.awake === undefined) delete m.awake; else m.awake = k.awake; m.dead = k.dead; m.hp = k.hp; m.x = k.x; m.y = k.y; m.respawnT = k.respawnT; } }
     } finally {
+      player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       HOOKS.kill.splice(HOOKS.kill.indexOf(listen), 1);
       if (typeof INSTANCES !== 'undefined' && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
       NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
