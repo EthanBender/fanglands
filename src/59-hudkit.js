@@ -2982,8 +2982,10 @@ HOOKS.selfTest.push((check, F, h) => {
               else if ((want[1] && b.phase !== want[1]) || (b.sub || null) !== want[2] || (sc === 'wight' && !b.heart)) problems.push(`${where}: the banner says ${JSON.stringify([b.phase, b.sub, !!b.heart])}`);
             }
             if (sc === 'island') {
-              const ctxF = HK.FRAME.faces.ctx;
-              if (!ctxF || (ctxF.id !== 'build' && ctxF.id !== 'leave')) problems.push(`${where}: the ctx seat wears ${ctxF ? ctxF.id : 'nothing'} on the island`);
+              // BUILD on the ctx seat (the only way to build on touch) and LEAVE on the block seat (64-island): both on screen
+              const ctxF = HK.FRAME.faces.ctx, blkF = HK.FRAME.faces.block;
+              if (!ctxF || ctxF.id !== 'build') problems.push(`${where}: the ctx seat wears ${ctxF ? ctxF.id : 'nothing'} on the island, not build`);
+              if (!blkF || blkF.id !== 'island_leave') problems.push(`${where}: the block seat wears ${blkF ? blkF.id : 'nothing'} on the island, not leave`);
               // the island's plaque, or (one slot on an iPhone SE, and a landscape phone with the stick on the right) the +n badge it folds into
               if (!(HK.FRAME.plaqueIds || []).includes('island') && !(HK.FRAME.overflow > 0)) problems.push(`${where}: no island plaque (${(HK.FRAME.plaqueIds || []).join(', ')})`);
             }

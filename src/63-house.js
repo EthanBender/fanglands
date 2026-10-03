@@ -35,8 +35,8 @@
 //   placeAction  — saplings only plant on your own ground; a lodestone will not bind on floating rock
 //   finishGather — chopping a tree in the world sometimes drops a sapling for the island
 //
-// Keeping building in the overworld exactly as it was is deliberate (see the summary): this gives him
-// somewhere better, it does not take anything away.
+// Walls, floors and doors now go only on the island's own ground (owner, 3 Oct: 64-island); beds, workbenches,
+// goblin traps and the lodestone keep the core's rules in the world.
 // window.HOUSE exposes everything the self-test and any later feature needs.
 // ============================================================================
 {
@@ -499,8 +499,10 @@
 
   // ---------- HUD ----------
   // On your island: a plaque in the kit's column (src/59-hudkit.js) with the arch mark, "Your island", the arches
-  // standing and the things built; BUILD is the context seat's face (the arch; P on the keys), after LEAVE.
-  hudSeatFace('ctx', { id: 'build', prio: 20, when: () => inside && !player.mech && !player.dead, emblem: 'build', ribbon: 'BUILD', key: 'P', name: 'Build on your island', action: () => { touch.taps.push('housebuild'); } });
+  // standing and the things built; BUILD is the context seat's face (the arch; P on the keys). It outranks 16-instances'
+  // LEAVE (prio 30), because the island is an instance too and touch has no P key: with LEAVE first, the iPad had no way
+  // to build at all. LEAVE moves to the block seat on the island (64-island), and the arch by the porch still goes home.
+  hudSeatFace('ctx', { id: 'build', prio: 35, when: () => inside && !player.mech && !player.dead, emblem: 'build', ribbon: 'BUILD', key: 'P', name: 'Build on your island', action: () => { touch.taps.push('housebuild'); } });
   HOOKS.hud.push(() => { if (inside && !paused && !panel && !player.dead) HK.teach('build', 'P', 'Build', { x: player.x, y: player.y, lift: 46 }, { emblem: 'build' }); });
   HOOKS.hud.push((g, narrow) => {
     if (!inside || paused) return;
