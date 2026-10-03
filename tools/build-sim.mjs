@@ -29,7 +29,8 @@
 // Every copy tags each function in HOOKS with the file that registered it (fn.__file = '35-night'), so the stand-in
 // (src/79-worldkeeper.js) can switch off a file's hooks and the audit can say whose code did what.
 //
-// Usage: node tools/build-sim.mjs [--strip] [--keep-tests] [--html index.html] [--out online/src/sim/game.mjs]
+// Usage: node tools/build-sim.mjs [--strip] [--keep-tests] [--reads] [--html index.html] [--out online/src/sim/game.mjs]
+// (--reads, with --strip: list every read of a stripped name from a kept file against STRIP_READS; exit 1 on one not listed)
 // build.sh runs `node tools/build-sim.mjs --strip` after it builds index.html. acorn and eslint-scope are online/'s
 // devDependencies (build.sh installs them with npm ci when they are missing).
 // ============================================================================
@@ -101,6 +102,8 @@ function __simTag(next) {
   __simCur = next;
 }`;
 
+const PROBE_SRC = `function __simProbe() { return { now: Date.now(), date: new Date().getTime(), perf: performance.now(), dice: Math.random() }; }`;
+
 export function buildSim({ html, strip = false, keepTests = false } = {}) {
   let script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
   const report = { strippedFiles: [], removedHookStatements: 0 };
@@ -140,6 +143,9 @@ export function buildSim({ html, strip = false, keepTests = false } = {}) {
   }
   // 3. a hook tag at the start of every file (and one at the end for the last file)
   script = script.replace(/^(\/\/ ---- src\/([0-9]+-[a-z0-9-]+)\.js ----[^\n]*)$/gm, (all, line, id) => `${line}\n;__simTag(${JSON.stringify(id)});`) + '\n;__simTag(null);\n';
+  // the clock-and-dice probe goes through the same rewrite as the game (step 4), so it reads exactly what the game's
+  // own Date.now(), new Date(), performance.now() and Math.random() read in this copy (tools/sim-suite.mjs check 2)
+  script = PROBE_SRC + '\n' + script;
   if (strip) script = stubLines.join('\n') + '\n' + script;
 
   // 4. free names -> window.NAME
@@ -180,6 +186,131 @@ return { peek: __peek, poke: (n, v) => { try { __poke(n, v); } catch (e) { throw
   return { code, report: { strip, keepTests, rawBytes: Buffer.byteLength(code), freeNames: free.size, freeRefs: edits.length, topLevel: topNames.length, files: files.length, ...report } };
 }
 
+// ============================================================================
+// WHAT THE KEPT FILES READ FROM THE STRIPPED ONES (the stripped-reads gate, tools/sim-suite.mjs check 0)
+// A stripped name is a stand-in that reads as itself (a truthy proxy), 0 as a number and nothing when iterated. A game
+// rule that reads one gets that on the server and the real value in a browser, so the copies would quietly disagree.
+// The gate: in the stripped module, every place a kept src/ file READS the value of a stripped name (or of one of the
+// window.NAME stand-ins) must be on this list, by name and by file, with the reason it is safe. These never count:
+//   - typeof NAME;
+//   - a call whose result is thrown away (`sfx('hit');`, `HK.button(...);`): the stand-in does nothing, which is what a
+//     server wants of a sound or a drawing;
+//   - a write (`title.active = false`, `render = function () {...}`): the stand-in keeps what is written to it;
+//   - code nobody can reach once the drawing registrations are gone: a named function whose only callers were removed
+//     HOOKS.draw/hud/... entries (or other such functions), found by scope analysis, never by name.
+// A new read in a listed file is not caught by name alone, so each reason names what that file's reads are for; a
+// read from a file not listed for that name, or of a name not listed, fails the gate. Run
+//   node tools/build-sim.mjs --strip --reads
+// to see every read with its line.
+// ============================================================================
+export const STRIP_READS = {
+  HK: {
+    files: ['05-input', '17-tap', '21-companion', '23-law', '24-dwarves', '29-quests', '43-settings', '47-outliers', '53-coalmine', '54-graves', '55-riding', '61-markers', '66-storm', '71-login', '73-players', '74-chat', '78-trade'],
+    why: 'the HUD kit (59-hudkit): fonts, colours, text widths, panel rows, plaques, seats and safe insets, read by panel, plaque, chat-wrap and tap code; the two update-time reads are a held BLOCK seat, used only for the copy\'s own knight on a machine (55-riding returns first: the parked stand-in has no machine) and a pointer release (05-input, a copy has no pointer)',
+  },
+  title: {
+    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '75-coop', '76-admin', '77-dropparty', '78-trade', '91-royalmine', '99-boot'],
+    why: 'title.active reads false in a copy (STUB_SEED and the stand-in\'s start(), as for a knight past the title); the rest are the title\'s save slots (slotKey, slot) for login, cloud saves and admin, which a copy never uses (save() does nothing, NET.call throws), the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
+  },
+  cam: {
+    files: ['17-tap', '24-dwarves', '78-trade', '88-aerie', '91-cloudkingdom', '91-royalmine', '95-thistledown'],
+    why: 'the camera: screen-to-world for a tap, where a name tag, a sky or a bark is drawn, and the drawing passes\' default view',
+  },
+  playerLook: {
+    files: ['22-bulldozer', '32-beast', '73-players', '77-dropparty', '95-thistledown'],
+    why: 'the copy\'s own knight\'s look: drawn in a machine or a beast (22, 32), the party hat wrapper (77), the stone statue (95), and 73-players\' lookOf() for its own presence, which is the parked stand-in\'s and drawn by nobody',
+  },
+  render: {
+    files: ['43-settings', '61-markers', '88-aerie', '91-cloudkingdom'],
+    why: 'wrappers that keep the original to call it. What they add runs only when render() runs, which a copy never does: 43 syncs the sound flags into settings (save() does nothing), 61 records the dialog box for taps, 88 its sky, 91-cloudkingdom re-mounts its buildings, which INSTANCES.enter/leave, load() and respawnPoint() already do',
+  },
+  drawPanels: { files: ['61-markers', '73-players', '76-admin', '78-accounts'], why: 'wrappers that keep the panel drawing to call it, then draw their own panel' },
+  drawMinimap: { files: ['43-settings', '61-markers'], why: 'wrappers that keep the minimap drawing to call it' },
+  drawCompass: { files: ['43-settings'], why: 'a wrapper that keeps the compass drawing to call it' },
+  drawHud: { files: ['71-login'], why: 'a wrapper that keeps the HUD drawing to call it' },
+  drawBossBars: { files: ['91-royalmine'], why: 'a wrapper that keeps the boss bars\' drawing to call it' },
+  drawHuman: { files: ['77-dropparty'], why: 'a wrapper that keeps the knight drawing to call it, then draws the party hat' },
+  drawItemIcon: { files: ['38-agility'], why: 'a wrapper that keeps the item icon drawing to call it' },
+  drawFenceProp: { files: ['95-thistledown'], why: 'a wrapper that keeps the fence drawing to call it' },
+  drawFireProp: { files: ['95-thistledown'], why: 'a wrapper that keeps the fire drawing to call it' },
+  drawTower: { files: ['95-thistledown'], why: 'a wrapper that keeps the tower drawing to call it' },
+  drawBuilding: { files: ['91-cloudkingdom', '95-thistledown'], why: 'wrappers that keep the building drawing to call it, and 91-cloudkingdom\'s own drawing pass' },
+  panelBox: { files: ['24-dwarves', '38-agility'], why: 'the panel frame: where a panel\'s text goes (24) and a wrapper that keeps it (38)' },
+  PANEL_KIT: { files: ['60-bank', '69-retaliate'], why: 'panel sizes and button widths' },
+  itemBlurb: { files: ['26-boats', '90-canyon'], why: 'wrappers that keep the pack\'s item sentence to call it, for their own items\' sentences' },
+  darkLayer: { files: ['88-aerie'], why: 'the night canvas, cleared and borrowed by the Aerie\'s lighting' },
+  miniWindow: { files: ['61-markers'], why: 'where the minimap shows the markers' },
+  audioMuted: { files: ['43-settings'], why: 'the sound flag, read back into settings inside the render wrapper (see render)' },
+  MUSIC: { files: ['43-settings'], why: 'the music flag, read back into settings inside the render wrapper (see render)' },
+  SFX: { files: ['95-thistledown'], why: 'the sound bank: two sounds added if missing' },
+  noise: { files: ['95-thistledown'], why: 'a sound, inside the splash sound 95 adds' },
+  'window.WIKI': {
+    files: ['17-tap', '46-cinderwight', '46-scales', '47-outliers', '54-graves', '58-underground', '62-ores', '77-dropparty', '88-aerie', '90-canyon', '91-cloudkingdom', '91-royalmine', '95-thistledown'],
+    why: 'the book: pages added at load, and a tap that opens a monster\'s page',
+  },
+  'window.ICONS': { files: ['54-graves', '81-partyhats', '88-aerie', '90-canyon', '91-cloudkingdom', '91-royalmine'], why: 'item icons registered at load' },
+  'window.LIGHTS': { files: ['88-aerie', '91-royalmine'], why: 'the lighting: lights registered at load, and whether a lit scene owns the night canvas' },
+  'window.PLAYTHROUGH': { files: ['91-royalmine'], why: 'the playthrough audit\'s gather times, in an HOOKS.xpSource row only that audit reads' },
+};
+
+// Every read of a stripped name's value from a kept file: [{name, file, line, text}] (see STRIP_READS).
+export function strippedReads(code) {
+  const FILES = JSON.parse(code.slice(code.lastIndexOf('export const FILES = ') + 21).trim().replace(/;$/, ''));
+  const lines = code.split('\n');
+  const first = FILES.length ? FILES[0][0] : 0, end = lines.findIndex(l => l.startsWith(';__simTag(null);')) + 1;
+  const inScript = n => n.loc.start.line > first && n.loc.start.line < end;
+  const ast = acorn.parse(code, { ecmaVersion: 2023, sourceType: 'module', ranges: true, locations: true });
+  const parents = new Map();
+  (function link(n, p) { if (!n || typeof n.type !== 'string') return; parents.set(n, p); for (const k in n) { if (k === 'range' || k === 'loc') continue; const v = n[k]; if (Array.isArray(v)) v.forEach(c => link(c, n)); else if (v && typeof v.type === 'string') link(v, n); } })(ast, null);
+  const sm = es.analyze(ast, { ecmaVersion: 2022, sourceType: 'module' });
+  const factory = sm.scopes.find(s => s.type === 'function' && s.block.id && s.block.id.name === 'makeGame');
+  const isStub = d => d.node && d.node.init && d.node.init.type === 'CallExpression' && d.node.init.callee.type === 'Identifier' && d.node.init.callee.name === '__stubOf';
+  const stubVars = factory.variables.filter(v => v.defs.some(isStub));
+  const winStubs = new Set(lines.filter(l => /^window\.[A-Za-z_$][\w$]* = window\.[\w$]+ \|\| __stubOf\(null\);$/.test(l)).map(l => l.split(' ')[0].slice(7)));
+  // unreachable code: a named function (a declaration, or a const bound to a function) with no caller left in the
+  // script, other than itself or another unreachable function. A top-level one also counts the peek() switch, which a
+  // host may call it through.
+  const within = (n, o) => n.range[0] >= o.range[0] && n.range[1] <= o.range[1];
+  const fnOf = v => { for (const d of v.defs) { if (d.type === 'FunctionName') return d.node; if (d.type === 'Variable' && d.parent.kind === 'const' && d.node.init && /Function/.test(d.node.init.type)) return d.node.init; } return null; };
+  const cands = [];
+  for (const s of sm.scopes) { if (!within(s.block, factory.block)) continue; for (const v of s.variables) { const f = fnOf(v); if (f && inScript(f)) cands.push({ v, f, top: s === factory }); } }
+  const dead = [];
+  const insideDead = n => dead.some(f => within(n, f));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const c of cands) {
+      if (c.dead) continue;
+      const live = c.v.references.some(r => !r.init && !within(r.identifier, c.f) && !insideDead(r.identifier) && (inScript(r.identifier) || c.top));
+      if (!live) { c.dead = true; dead.push(c.f); changed = true; }
+    }
+  }
+  const isRead = node0 => {
+    let node = node0, p = parents.get(node);
+    if (p.type === 'UnaryExpression' && p.operator === 'typeof') return false;
+    while (p.type === 'MemberExpression' && p.object === node) { node = p; p = parents.get(p); }
+    if (p.type === 'CallExpression' && p.callee === node && parents.get(p).type === 'ExpressionStatement') return false;
+    if (p.type === 'AssignmentExpression' && p.operator === '=' && p.left === node) return false;
+    return true;
+  };
+  const reads = [];
+  const note = (name, n) => { if (inScript(n) && !insideDead(n) && isRead(n)) reads.push({ name, file: fileOfLine(FILES, n.loc.start.line), line: n.loc.start.line, text: lines[n.loc.start.line - 1].trim().slice(0, 160) }); };
+  for (const v of stubVars) for (const r of v.references) if (!r.init && r.isRead()) note(v.name, r.identifier);
+  (function scan(n) {
+    if (!n || typeof n.type !== 'string') return;
+    if (n.type === 'MemberExpression' && !n.computed && n.object.type === 'Identifier' && n.object.name === 'window' && winStubs.has(n.property.name)) note('window.' + n.property.name, n);
+    for (const k in n) { if (k === 'range' || k === 'loc') continue; const v = n[k]; if (Array.isArray(v)) v.forEach(scan); else if (v && typeof v.type === 'string') scan(v); }
+  })(ast);
+  return { reads, unreachable: dead.length, functions: cands.length };
+}
+// The gate: the reads that are not on STRIP_READS, and the listed name/file pairs that no longer read anything
+export function checkStrippedReads(code) {
+  const { reads, unreachable, functions } = strippedReads(code);
+  const unlisted = reads.filter(r => !(STRIP_READS[r.name] && STRIP_READS[r.name].files.includes(r.file)));
+  const seen = new Set(reads.map(r => r.name + ' ' + r.file));
+  const stale = Object.entries(STRIP_READS).flatMap(([n, e]) => e.files.filter(f => !seen.has(n + ' ' + f)).map(f => n + ' ' + f));
+  return { reads: reads.length, names: new Set(reads.map(r => r.name)).size, unlisted, stale, unreachable, functions, all: reads };
+}
+
 // which src/ file a line of the generated module belongs to
 export function fileOfLine(files, line) {
   let lo = 0, hi = files.length - 1, at = null;
@@ -200,4 +331,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const quiet = args.includes('--quiet');
   if (quiet) console.log(`built ${path.relative(process.cwd(), outFile)} (${(report.rawBytes / 1048576).toFixed(2)} MB, ${(gz / 1024).toFixed(0)} KB gzip, ${report.freeNames} free names${strip ? ', ' + report.strippedFiles.length + ' files stripped, ' + report.removedHookStatements + ' hook registrations removed' : ''})`);
   else console.log(JSON.stringify({ out: path.relative(process.cwd(), outFile), gzipBytes: gz, ...report }, null, 1));
+  if (strip && args.includes('--reads')) {
+    const r = checkStrippedReads(code);
+    for (const x of r.all) console.log(`${STRIP_READS[x.name] && STRIP_READS[x.name].files.includes(x.file) ? 'listed  ' : 'UNLISTED'} ${x.name.padEnd(18)} ${x.file.padEnd(16)} line ${x.line}: ${x.text}`);
+    for (const s of r.stale) console.log(`stale    ${s} (on the list, no read left)`);
+    console.log(`${r.reads} reads of ${r.names} stripped names from kept files, ${r.unlisted.length} not on the list; ${r.unreachable} of ${r.functions} named functions unreachable without the drawing`);
+    if (r.unlisted.length) process.exitCode = 1;
+  }
 }

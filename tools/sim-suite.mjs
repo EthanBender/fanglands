@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 // ============================================================================
 // SIM-SUITE — the deploy gate for the server's game copy (docs/ONLINE.md, "The shared world", Stage 0)
-//   node tools/sim-suite.mjs [index.html]
+//   node tools/sim-suite.mjs [index.html] [--only=reads,selftest,isolation,parity,instances]
+// 0. The stripped copy reads no stripped name's value from a kept file unless tools/build-sim.mjs STRIP_READS lists it
+//    with its reason (the self-tests below run through the full build only: most of them press panel buttons that only
+//    the stripped drawing makes, so this static gate and the parity runs are what stand for the stripped build).
 // 1. The whole HOOKS.selfTest suite through makeGame (the full build), with the same pass count as tools/headless.js
 //    (which this runs too, in the same way headless.js does, for the count). A run with a failure is run once more:
 //    the suite has a few known random flakes.
-// 2. Two copies share nothing: INSTANCES, COOP, NIGHT, monsters, dice, clocks.
+// 2. Two copies share nothing: INSTANCES, COOP, NIGHT, monsters; 2a. dice and clocks, read through the game's own code;
+//    2b. the generated modules name no clock, dice or timer of the machine (every free name is a plain built-in).
 // 3. Stripped equals full: the same seed gives the same map and, after 600 ticks, the same monster and knight state;
 //    alone, and through SimHost with 5 scripted knights fighting on the overworld.
 // 4. The stand-in: parked dead on a solid tile, never respawns, never leaves its instance, keeper of its map.
@@ -18,6 +22,18 @@ import vm from 'node:vm';
 import path from 'node:path';
 import { loadGame, takeSlot, plainCopy, mapHash, stateHash, Bots, ROOT, makeWindow, mulberry32 } from './sim-lib.mjs';
 import { SimHost } from '../online/src/sim/host.js';
+import { createRequire } from 'node:module';
+import { checkStrippedReads } from './build-sim.mjs';
+
+// every name a module reads or writes without declaring it, with how often (acorn + eslint-scope, as build-sim parses)
+function freeNames(code) {
+  const req = createRequire(path.join(ROOT, 'online', 'package.json'));
+  const ast = req('acorn').parse(code, { ecmaVersion: 2023, sourceType: 'module', ranges: true });
+  const sm = req('eslint-scope').analyze(ast, { ecmaVersion: 2022, sourceType: 'module' });
+  const out = {};
+  for (const s of [sm.globalScope, ...sm.globalScope.childScopes.filter(c => c.type === 'module')]) for (const r of s.through) out[r.identifier.name] = (out[r.identifier.name] || 0) + 1;
+  return out;
+}
 
 const htmlFile = process.argv.slice(2).find(a => !a.startsWith('--')) || path.join(ROOT, 'index.html');
 const only = (process.argv.find(a => a.startsWith('--only=')) || '').slice(7).split(',').filter(Boolean);
@@ -32,6 +48,17 @@ const full = await loadGame({ strip: false, html: htmlFile });
 const strip = await loadGame({ strip: true, html: htmlFile });
 const NOW = Date.parse('2026-10-03T12:00:00Z');
 const noTimer = { set: () => 0, clear: () => { } };
+
+// ---------------------------------------------------------------------------
+// 0. what the kept files read from the stripped ones (tools/build-sim.mjs STRIP_READS)
+// ---------------------------------------------------------------------------
+if (want('reads')) {
+  const r = checkStrippedReads(fs.readFileSync(strip.file, 'utf8'));
+  for (const x of r.unlisted.slice(0, 20)) console.log(`  not on the list: ${x.name} in ${x.file} (line ${x.line}): ${x.text}`);
+  if (r.stale.length) console.log(`  (on the list but no read left, can come off: ${r.stale.join(', ')})`);
+  check(`0. the stripped copy: every read of a stripped name from a kept file is on the list with its reason (${r.reads} reads of ${r.names} names; ${r.unreachable} of ${r.functions} named functions unreachable without the drawing)`,
+    !r.unlisted.length, { unlisted: r.unlisted.length, stale: r.stale.length });
+}
 
 // ---------------------------------------------------------------------------
 // 1. the self-tests through the factory, against the same suite run the way tools/headless.js runs it
@@ -81,14 +108,34 @@ if (want('isolation')) {
   const entered = A.w.INSTANCES.enter('spider_den');
   A.w.COOP.state.keeper = 'Somebody'; A.w.COOP.state.restAt.x = 1;
   A.w.NIGHT.resetTimer(); const nightA = A.w.NIGHT.timer(), nightB = B.w.NIGHT.timer();
-  for (let i = 0; i < 1000; i++) A.w.Math.random();
-  const C = plainCopy(strip.makeGame, 1);
-  const diceOwn = B.w.Math.random() === C.w.Math.random();
+  check('2. two copies share nothing: their own INSTANCES, COOP, NIGHT, monsters, map, HOOKS and knight; one entering the Spider Den and changing its keeper leaves the other as it was',
+    differ && entered && A.w.INSTANCES.active() === 'spider_den' && B.w.INSTANCES.active() === null && A.g('monsters').length === 13 && B.g('monsters').length === nB && mapHash(B.api) === mapB && B.w.COOP.state.keeper === null && !B.w.COOP.state.restAt.x,
+    { differ, entered, aInst: A.w.INSTANCES.active(), bInst: B.w.INSTANCES.active(), aMon: A.g('monsters').length, bMon: B.g('monsters').length, nightA, nightB });
+  // the dice and the clock, read through each copy's OWN code: the game's rint() (00-core), the game's nowMs()
+  // (13-ux: performance.now), the Royal Mine's vein clock (91: Date.now), and the build's probe (Date.now, new Date,
+  // performance.now, Math.random written as the game writes them). Reading the harness's window would prove nothing:
+  // if the build stopped giving a copy its own Date or Math, the window's would still look right.
+  for (let i = 0; i < 1000; i++) A.g('rint')(0, 9);
+  const C = plainCopy(strip.makeGame, 1), D = plainCopy(strip.makeGame, 2);
+  const roll = X => [X.g('rint')(0, 1e9), X.g('__simProbe')().dice];
+  const rB = roll(B), rC = roll(C), rD = roll(D);
+  const diceOwn = rB[0] === rC[0] && rB[1] === rC[1] && rD[0] !== rB[0] && rD[1] !== rB[1];
   A.w.__now += 3600e3;
-  const clockOwn = B.w.Date.now() === NOW && A.w.Date.now() === NOW + 3600e3 && new B.w.Date().getTime() === NOW;
-  check('2. two copies share nothing: their own INSTANCES, COOP, NIGHT, monsters, map, HOOKS and knight; one entering the Spider Den, changing its keeper and rolling 1,000 dice leaves the other as it was; each has its own dice and clock',
-    differ && entered && A.w.INSTANCES.active() === 'spider_den' && B.w.INSTANCES.active() === null && A.g('monsters').length === 13 && B.g('monsters').length === nB && mapHash(B.api) === mapB && B.w.COOP.state.keeper === null && !B.w.COOP.state.restAt.x && diceOwn && clockOwn,
-    { differ, entered, aInst: A.w.INSTANCES.active(), bInst: B.w.INSTANCES.active(), aMon: A.g('monsters').length, bMon: B.g('monsters').length, diceOwn, clockOwn, nightA, nightB });
+  const clockOf = X => { const p = X.g('__simProbe')(); return { now: p.now, date: p.date, perf: p.perf, ux: X.g('nowMs')(), vein: X.w.ROYALMINE.clock() }; };
+  const cA = clockOf(A), cB = clockOf(B);
+  const clockOwn = cA.now === NOW + 3600e3 && cA.date === NOW + 3600e3 && cA.vein === NOW + 3600e3 && cA.perf === 3600e3 && cA.ux === 3600e3
+    && cB.now === NOW && cB.date === NOW && cB.vein === NOW && cB.perf === 0 && cB.ux === 0;
+  check('2a. each copy has its own dice and clock, read through the game\'s own code: 1,000 rolls of rint() in one copy leave another copy with the same seed rolling what a fresh one rolls, another seed rolls differently; one copy an hour on reads that hour in Date.now, new Date, performance.now, nowMs() and the vein clock, the other does not',
+    diceOwn && clockOwn, { dice: { B: rB, C: rC, D: rD }, A: cA, B: cB });
+  // and statically: the module never reaches the real clock, dice or timers. Every name it does not declare must be a
+  // plain ECMAScript built-in from this list (not the build's own list, so a change there cannot pass itself).
+  const PURE = new Set(['Array', 'Boolean', 'Error', 'TypeError', 'RangeError', 'SyntaxError', 'Float32Array', 'Float64Array', 'Int32Array', 'Int16Array', 'Int8Array', 'Uint8Array', 'Uint16Array', 'Uint32Array', 'Uint8ClampedArray', 'Infinity', 'NaN', 'JSON', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Number', 'Object', 'Proxy', 'Reflect', 'RegExp', 'String', 'Symbol', 'Promise', 'undefined', 'parseFloat', 'parseInt', 'isFinite', 'isNaN', 'encodeURIComponent', 'decodeURIComponent', 'BigInt', 'ArrayBuffer', 'DataView']);
+  for (const [label, file] of [['stripped', strip.file], ['full', full.file]]) {
+    const free = freeNames(fs.readFileSync(file, 'utf8'));
+    const host = Object.keys(free).filter(n => !PURE.has(n));
+    check(`2b. the ${label} module reads no clock, dice, timer or global of the machine it runs on: every free name is a plain built-in`,
+      !host.length, { notPlain: Object.fromEntries(host.map(n => [n, free[n]])), free: Object.keys(free).length });
+  }
 }
 
 // ---------------------------------------------------------------------------
