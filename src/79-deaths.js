@@ -42,10 +42,12 @@ const DEATHS = (() => {
     mithril_golem: 'golem', stormstone_golem: 'golem', golemling: 'golem', ginormous_golem: 'golem', giant_mithril: 'golem', giant_stormstone: 'golem',
   };
   const BOSS_TYPES = new Set(['brood_mother', 'barrelbeast', 'gnasher', 'count_ashvane', 'thunderbird', 'the_fang', 'cinderwight', 'ginormous_golem', 'zombie_brute']);
-  const WEAPON = { goblin: 'sword', sapper: 'dagger', brute: 'club', castle_guard: 'spear', guard_m: 'spear', guard_f: 'spear', dwarf_guard: 'axe', elf_sentinel: 'spear', sky_sentinel: 'spear', ally_knight: 'sword' };
+  const WEAPON = { goblin: 'sword', sapper: 'sword', brute: 'club', castle_guard: 'spear', guard_m: 'spear', guard_f: 'spear', dwarf_guard: 'axe', elf_sentinel: 'bow', sky_sentinel: 'spear', ally_knight: 'sword' };
   // dust: grey grave dust, or black ash with embers for the burnt ones; no bones in a heart
   const ASH = new Set(['cinderwight', 'cinder_heart', 'vampire', 'count_ashvane']);
   const NO_BONES = new Set(['cinder_heart']);
+  // how far ahead of its middle a dragon's snout is, in pixels (27-dragons, 30-ashdrake, 28-thefang)
+  const MOUTH = { green_dragon: 46, red_dragon: 46, ash_drake: 38, the_fang: 88 };
   const corpses = [], pending = [];
   let made = 0;
   const API = { freeze: false };
@@ -88,6 +90,8 @@ const DEATHS = (() => {
     const fl = Math.hypot(fx0, fy0) || 1, fx = fl ? fx0 / fl : 1, fy = fl ? fy0 / fl : 0;
     const body = Object.assign({}, m);
     body.x = 0; body.y = 0; body.dead = false; body.hurtT = 0; body.moving = false; body.attackT = 0; body.stunT = 0; body.facing = { x: fx0, y: fy0 };
+    // a person's weapon leaves his hand at once: the sprite is drawn without it (08-draw, drawHuman below, 33's drawGob)
+    if (kindOf(m.type) === 'person') body.unarmed = true;
     const r = m.r || def.r || 12;
     const seed = (++made) * 7.31 + (m.x || 0) * 0.013 + (m.y || 0) * 0.007;
     const c = {
@@ -102,8 +106,10 @@ const DEATHS = (() => {
       const stone = /storm/.test(m.type) ? ['#6f6a86', '#8a84a6', '#4c4862'] : /mithril/.test(m.type) ? ['#7f8a99', '#a6b2c2', '#55606e'] : ['#7d756a', '#9a9286', '#57514a'];
       c.rocks = []; for (let i = 0; i < 10; i++) { const a = hash(seed, 10 + i) * Math.PI * 2, d = r * (0.5 + hash(seed, 30 + i) * 0.9), s = 2.5 + hash(seed, 50 + i) * r * 0.2;
         c.rocks.push({ x: Math.cos(a) * d, y: Math.sin(a) * d * 0.55 + r * 0.35, s, col: stone[i % 3], rot: hash(seed, 70 + i) * 6 }); }
-      c.cracks = []; for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + (i - 2) * 0.62 + (hash(seed, 90 + i) - 0.5) * 0.4, pts = [[0, -r * 0.1]]; let x = 0, y = -r * 0.1;
-        for (let k = 1; k <= 4; k++) { x += Math.cos(a) * r * 0.24 + (hash(seed, 100 + i * 5 + k) - 0.5) * r * 0.16; y += Math.sin(a) * r * 0.24 + (hash(seed, 130 + i * 5 + k) - 0.5) * r * 0.16; pts.push([x, y]); }
+      // cracks run out from the chest and stay inside the body (about 0.6 of its radius)
+      const cy0 = m.type === 'ginormous_golem' ? -60 : /^giant_/.test(m.type) ? -r * 0.15 : -r * 0.35, cs = m.type === 'ginormous_golem' ? 22 : r * 0.15;
+      c.cracks = []; for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + (hash(seed, 90 + i) - 0.5) * 0.6, pts = [[0, cy0]]; let x = 0, y = cy0;
+        for (let k = 1; k <= 4; k++) { x += Math.cos(a) * cs + (hash(seed, 100 + i * 5 + k) - 0.5) * cs * 0.8; y += Math.sin(a) * cs * 0.8 + (hash(seed, 130 + i * 5 + k) - 0.5) * cs * 0.8; pts.push([x, y]); }
         c.cracks.push(pts); }
     }
     if (kind === 'machine') {
@@ -131,9 +137,12 @@ const DEATHS = (() => {
     const u = uOf(c, t), r = c.r;
     const p = { u, kind: c.kind, alpha: 1, rot: 0, sx: 1, sy: 1, ox: 0, oy: 0, kick: 0, weapon: null, crumble: 0, pile: 0, bonesA: 0, split: 0, crack: 0, rattle: 0, smoke: 0, breath: 0, crash: 0, rubble: 0, flash: 0 };
     if (c.kind === 'beast') {
+      // seen from above, an animal falling over rolls onto its side: its body narrows across its back, it tips a little,
+      // and its legs come out on the side that is now up; the kick is those legs jerking once
       const f = easeIn(seg(u, 0, 0.3)), settle = u > 0.3 && u < 0.38 ? Math.sin(Math.PI * seg(u, 0.3, 0.38)) : 0;
       p.kick = u > 0.38 && u < 0.52 ? Math.sin(Math.PI * seg(u, 0.38, 0.52)) : 0;
-      p.rot = c.side * (1.45 * f - 0.08 * settle + 0.16 * p.kick); p.sx = 1 + 0.07 * p.kick; p.sy = 1 - 0.18 * f; p.oy = r * 0.18 * f;
+      p.fall = f; p.rot = c.side * (0.4 * f - 0.06 * settle + 0.1 * p.kick); p.sy = 1 - 0.38 * f + 0.06 * settle; p.oy = r * 0.12 * f;
+      p.legs = seg(u, 0.18, 0.3);
       p.alpha = 1 - seg(u, 0.62, 1);
     } else if (c.kind === 'person') {
       const f = easeIn(seg(u, 0, 0.32));
@@ -177,6 +186,7 @@ const DEATHS = (() => {
     g.lineCap = 'round';
     if (kind === 'spear') { g.strokeStyle = '#7a5a34'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(-14, 0); g.lineTo(12, 0); g.stroke(); g.fillStyle = '#c9ccd3'; g.beginPath(); g.moveTo(12, -3.5); g.lineTo(20, 0); g.lineTo(12, 3.5); g.closePath(); g.fill(); }
     else if (kind === 'club') { g.fillStyle = '#6b4a2a'; g.fillRect(-10, -2, 18, 4); g.fillStyle = '#5a5a62'; g.fillRect(6, -6, 8, 12); }
+    else if (kind === 'bow') { g.strokeStyle = '#7a5a2a'; g.lineWidth = 2.5; g.beginPath(); g.arc(-6, 0, 13, -1.1, 1.1); g.stroke(); g.strokeStyle = 'rgba(230,225,210,0.8)'; g.lineWidth = 1; g.beginPath(); g.moveTo(-6 + 13 * Math.cos(-1.1), 13 * Math.sin(-1.1)); g.lineTo(-6 + 13 * Math.cos(1.1), 13 * Math.sin(1.1)); g.stroke(); }
     else if (kind === 'axe') { g.strokeStyle = '#6b4a2a'; g.lineWidth = 3; g.beginPath(); g.moveTo(-10, 0); g.lineTo(10, 0); g.stroke(); g.fillStyle = '#b8bcc6'; g.beginPath(); g.moveTo(6, -1); g.lineTo(12, -8); g.lineTo(14, 2); g.closePath(); g.fill(); }
     else { const L = kind === 'dagger' ? 9 : 14; g.fillStyle = '#5a3a1e'; g.fillRect(-6, -2, 6, 4); g.fillStyle = '#8a6a3a'; g.fillRect(-1, -4.5, 2.5, 9); g.fillStyle = '#c9ccd3'; g.fillRect(1.5, -1.5, L, 3); g.fillStyle = '#eef1f5'; g.fillRect(1.5, -1.5, L, 1); }
   }
@@ -185,7 +195,21 @@ const DEATHS = (() => {
     const p = pose(c), r = c.r, ext = c.ext;
     if (p.alpha <= 0) return;
     g.save(); g.globalAlpha *= p.alpha;
-    if (c.kind === 'beast' || c.kind === 'person' || c.kind === 'dragon') {
+    if (c.kind === 'beast') {
+      const ang = Math.atan2(c.fy, c.fx);
+      g.save(); g.translate(c.x + p.ox, c.y + p.oy); g.rotate(p.rot);
+      // squash across the animal's own back (its facing), not across the screen
+      g.rotate(ang); g.scale(1, p.sy); g.rotate(-ang); drawBody(g, c);
+      if (p.legs > 0) {
+        g.rotate(ang); g.strokeStyle = 'rgba(38,30,26,0.9)'; g.lineWidth = Math.max(1.5, r * 0.13); g.lineCap = 'round';
+        const up = c.side, base = r * 0.42 * p.sy, L = r * (0.3 + 0.4 * p.legs);
+        for (const [lx, ph] of [[-r * 0.55, 0], [-r * 0.3, 1], [r * 0.3, 2], [r * 0.5, 3]]) {
+          const k = p.kick * Math.sin(ph * 1.7 + 1) * r * 0.3, kx = lx + k * 0.6;
+          g.beginPath(); g.moveTo(lx, up * base); g.lineTo(kx + up * k * 0.2, up * (base + L - Math.abs(k) * 0.3)); g.stroke();
+        }
+      }
+      g.restore();
+    } else if (c.kind === 'person' || c.kind === 'dragon') {
       g.save(); g.translate(c.x + p.ox, c.y + p.oy); g.rotate(p.rot); g.scale(p.sx, p.sy); drawBody(g, c); g.restore();
       if (p.weapon) {
         const w = p.weapon;
@@ -193,13 +217,17 @@ const DEATHS = (() => {
         g.save(); g.translate(c.x + w.x, c.y + w.y - w.h); g.rotate(w.rot); drawWeapon(g, c.weapon); g.restore();
       }
       if (c.kind === 'dragon' && p.breath > 0) {
-        const mx = c.x + c.fx * r * 0.95, my = c.y + c.fy * r * 0.95 + p.oy - 4;
-        if (p.breath < 0.3) { g.fillStyle = `rgba(255,140,40,${(0.6 * (1 - p.breath / 0.3)).toFixed(3)})`; g.beginPath(); g.arc(mx, my, 4 + r * 0.12, 0, 7); g.fill(); }
-        for (let i = 0; i < 8; i++) {
-          const a = (p.u - (0.36 + 0.4 * i / 8)) / 0.35; if (a <= 0 || a >= 1) continue;
-          const wob = Math.sin(a * 6 + i) * 4;
-          g.fillStyle = `rgba(70,66,72,${(0.5 * (1 - a)).toFixed(3)})`;
-          g.beginPath(); g.arc(mx + c.fx * a * r * 1.2 - c.fy * wob, my + c.fy * a * r * 1.2 + c.fx * wob - a * 16, 3 + a * r * 0.35, 0, 7); g.fill();
+        // the snout turns with the body as it crashes over
+        const M = (MOUTH[c.type] || r * 1.8) * p.sx, cr = Math.cos(p.rot), sr = Math.sin(p.rot), hx = c.fx * M, hy = c.fy * M * p.sy / p.sx;
+        const mx = c.x + p.ox + hx * cr - hy * sr, my = c.y + p.oy + hx * sr + hy * cr, dx = c.fx * cr - c.fy * sr, dy = c.fx * sr + c.fy * cr;
+        if (p.breath < 0.3) { g.fillStyle = `rgba(255,140,40,${(0.7 * (1 - p.breath / 0.3)).toFixed(3)})`; g.beginPath(); g.arc(mx, my, 5 + r * 0.14, 0, 7); g.fill(); }
+        for (let i = 0; i < 9; i++) {
+          const a = (p.u - (0.36 + 0.4 * i / 9)) / 0.4; if (a <= 0 || a >= 1) continue;
+          const wob = Math.sin(a * 6 + i) * 5, R = 4 + a * (10 + r * 0.5);
+          g.fillStyle = `rgba(150,144,150,${(0.7 * (1 - a)).toFixed(3)})`;
+          g.beginPath(); g.arc(mx + dx * a * (18 + r * 0.8) - dy * wob, my + dy * a * (18 + r * 0.8) + dx * wob - a * 22, R, 0, 7); g.fill();
+          g.fillStyle = `rgba(90,86,92,${(0.45 * (1 - a)).toFixed(3)})`;
+          g.beginPath(); g.arc(mx + dx * a * (18 + r * 0.8) - dy * wob + R * 0.3, my + dy * a * (18 + r * 0.8) + dx * wob - a * 22 + R * 0.25, R * 0.6, 0, 7); g.fill();
         }
       }
     } else if (c.kind === 'undead') {
@@ -245,7 +273,7 @@ const DEATHS = (() => {
     } else {
       if (p.split <= 0) {
         g.save(); g.translate(c.x + p.ox, c.y); drawBody(g, c);
-        g.strokeStyle = 'rgba(20,16,12,0.85)'; g.lineWidth = Math.max(1.5, r * 0.06); g.lineJoin = 'round';
+        g.strokeStyle = 'rgba(20,16,12,0.85)'; g.lineWidth = Math.max(1.5, Math.min(4, r * 0.07)); g.lineJoin = 'round';
         for (const pts of c.cracks) { const n = Math.max(1, Math.ceil(p.crack * (pts.length - 1))); g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (let k = 1; k <= n; k++) g.lineTo(pts[k][0], pts[k][1]); g.stroke(); }
         g.restore();
       } else {
@@ -348,6 +376,8 @@ const DEATHS = (() => {
   killMonster.__inner = _killMonster;
   const _drawCharacter = drawCharacter;
   drawCharacter = function (g, e, kind) { if (e.dead === true && e[DA]) return; return _drawCharacter(g, e, kind); };
+  const _drawHuman = drawHuman;
+  drawHuman = function (g, e, look) { if (e && e.unarmed && look) look = Object.assign({}, look, { weapon: null, spear: false, tool: null }); return _drawHuman(g, e, look); };
   const _drawDrop = drawDrop;
   drawDrop = function (g, d) {
     const pin = d[PIN];
