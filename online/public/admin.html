@@ -58,7 +58,7 @@
 <body>
 <main>
   <h1>Fanglands — the world</h1>
-  <p class="note">Who is playing, every knight's account, the invite code, the chat log, and what admins did.</p>
+  <p class="note">Who is playing, every knight's account, the invite code, the chat log, what admins did, and how much of the free plan the world uses.</p>
 
   <section id="keybox">
     <h2>Admin key</h2>
@@ -99,6 +99,11 @@
     <h2>Trades</h2>
     <p class="note">Newest at the top. Every trade two knights finished in the game: who, and exactly what each one gave. Refreshes with the chat log.</p>
     <div id="trades"></div>
+
+    <h2>Shared world</h2>
+    <p class="note">The world server will run the monsters itself, a step at a time; nothing is switched on yet. This counts what Cloudflare's free plan counts: each call to the world is one request, and every 20 messages from the knights' games are one more. The free plan allows 100,000 a day, and its day starts at midnight UTC (8 pm here in summer, 7 pm in winter). Refreshes with the chat log.</p>
+    <p id="meter">…</p>
+    <div class="scroll"><table id="meterdays"><thead><tr><th>Day (UTC)</th><th>Messages</th><th>Calls</th><th>About this many requests</th><th>Of the free plan</th></tr></thead><tbody></tbody></table></div>
   </div>
 </main>
 <script>
@@ -275,10 +280,22 @@
     for (const r of list) { const d = document.createElement('div'); const t = document.createElement('span'); t.className = 't'; t.textContent = clock(r.at) + ' — '; d.append(t, document.createTextNode(r.a + ' gave ' + things(r.aGave) + '; ' + r.b + ' gave ' + things(r.bGave) + '.')); box.appendChild(d); }
   }
 
+  // the meter (docs/ONLINE.md, "The shared world"): today in one sentence, the last 7 days under it
+  const pct = (n, of) => (100 * n / of).toFixed(1) + '%';
+  async function loadSim() {
+    let r;
+    try { r = await api('GET', '/api/admin/sim'); } catch (e) { $('meter').textContent = 'The meter could not be read: ' + e.message; return; }
+    const m = r && r.meter; if (!m) { $('meter').textContent = 'No meter on this world yet.'; return; }
+    const t = m.today, n = v => Number(v || 0).toLocaleString();
+    $('meter').textContent = 'Today (UTC): ' + n(t.wsIn) + ' socket messages and ' + n(t.http) + ' calls, about ' + n(t.est) + ' of the ' + n(m.freeLimit) + ' requests a day the free plan allows (' + pct(t.est, m.freeLimit) + ').';
+    const tb = $('meterdays').querySelector('tbody'); tb.innerHTML = '';
+    for (const d of m.days.slice(0, 7)) { const tr = document.createElement('tr'); cell(tr, d.day); cell(tr, n(d.wsIn)); cell(tr, n(d.http)); cell(tr, n(d.est)); cell(tr, pct(d.est, m.freeLimit)); tb.appendChild(tr); }
+  }
+
   async function refresh(all) {
     try {
       if (all) await loadAccounts();
-      await loadOnline(); await loadChat(); await loadModlog(); await loadTrades();
+      await loadOnline(); await loadChat(); await loadModlog(); await loadTrades(); await loadSim();
       if (all) await loadInvite();
       say('Updated ' + new Date().toLocaleTimeString() + '.');
     } catch (e) { say(e.message, true); if (/admin key/.test(e.message)) lock(); }
