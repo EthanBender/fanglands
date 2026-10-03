@@ -12,7 +12,8 @@ import worker from '../src/worker.js';
 import vm from 'node:vm';
 import {
   frontDoor, MOVES, HANDOFF_MS, HANDOFF_MAX, HANDOFF_KEYS_MAX, OFFERS_PER_MIN, CLAIM_FAILS_PER_MIN, REFUSED_PER_MIN, ADDRESS_BYTES_MAX,
-  ANON_ROWS_MAX, ACCT_ROWS_MAX, ACCT_PER_MIN, PULL_KEY, PULL_MS, ARRIVING_KEY, STAY_COOKIE, addressOf,
+  ANON_ROWS_MAX, ANON_BYTES_MAX, ACCT_ROWS_MAX, ACCT_BYTES_MAX, ACCT_PER_MIN, LOGGED_BYTES_MAX, LOGGED_ROWS_MAX, PULL_KEY, PULL_MS, ARRIVING_KEY, STAY_COOKIE,
+  LATER_KEY, LOGIN_RETRIES, ANON_TRY_MS, addressOf, handoffCall,
 } from '../src/handoff.js';
 
 // ---------------------------------------------------------------------------
@@ -90,6 +91,23 @@ test('front door: HANDOVER off keeps the old addresses serving the game as befor
   assert.deepEqual([leave.status, leave.headers.get('location')], [302, '/?online']);
   env.HANDOVER = 'on';
   assert.equal((await worker.fetch(nav('https://gorkscape.ca/'), env)).headers.get('cache-control'), 'no-store');
+});
+
+test('the switch is committed state: HANDOVER lives in wrangler.toml [vars] above the routes (so every deploy, and the test world, carries it); deploy.sh refuses a tree without fanglands.com and checks both addresses answer afterwards', async () => {
+  const { readFileSync } = await import('node:fs');
+  const toml = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  const routes = toml.indexOf('[[routes]]'), vars = toml.indexOf('\n[vars]\n'), sw = /\nHANDOVER = "(on|off)"\n/.exec(toml);
+  assert.ok(vars > 0 && sw && sw.index > vars && sw.index < routes, 'HANDOVER = "on" or "off" in [vars], above the first [[routes]]');
+  assert.ok(!/\n\[/.test(toml.slice(vars + 7, sw.index)), 'no other table between [vars] and the switch');
+  for (const host of ['gorkscape.ca', 'www.gorkscape.ca', 'fanglands.com', 'www.fanglands.com']) assert.match(toml, new RegExp('\npattern = "' + host.replace(/\./g, '\\.') + '"\ncustom_domain = true'), host);
+  const sh = readFileSync(new URL('../deploy.sh', import.meta.url), 'utf8');
+  assert.ok(sh.indexOf(`grep -q '^pattern = "fanglands.com"$' online/wrangler.toml ||`) < sh.indexOf('./build.sh'), 'the guard runs before anything else');
+  assert.match(sh, /curl -sf --max-time 10 "https:\/\/\$host\/api\/status"/);
+  assert.match(sh, /for host in fanglands\.com gorkscape\.ca; do/);
+  // the switch as the Worker sees it
+  const { env } = fakeEnv(); env.HANDOVER = sw[1];
+  const page = await worker.fetch(nav('https://gorkscape.ca/'), env);
+  assert.equal(/handoff\/offer/.test(await page.text()), sw[1] === 'on');
 });
 
 test('front door: a home-screen icon stays: /handoff-stay sets the cookie for a year, and with it the old address serves the game on every path, as today', async () => {
@@ -170,16 +188,22 @@ function account(w, name, { expires = T + 86400000, banned = 0 } = {}) {
   w.db.prepare('INSERT INTO sessions (token, name_lc, expires) VALUES (?, ?, ?)').run(token, lc, expires);
   return token;
 }
-async function post(w, url, body, { origin, ip = '203.0.113.7', raw } = {}) {
+// as a browser sends it: the size of the body in content-length, and a login (when there is one) as a Bearer token
+async function post(w, url, body, { origin, ip = '203.0.113.7', raw, auth } = {}) {
   const u = new URL(url);
   const headers = { 'content-type': 'application/json', 'cf-connecting-ip': ip };
   if (origin !== null) headers.origin = origin || ('https://' + u.hostname);
-  const res = await w.fetch(new Request(url, { method: 'POST', headers, body: raw !== undefined ? raw : JSON.stringify(body) }));
+  if (auth) headers.authorization = 'Bearer ' + auth;
+  const text = raw !== undefined ? raw : JSON.stringify(body);
+  if (typeof text === 'string') headers['content-length'] = String(Buffer.byteLength(text));
+  const res = await w.fetch(new Request(url, { method: 'POST', headers, body: text }));
   let data = null; try { data = await res.json(); } catch (e) { }
   return { status: res.status, data };
 }
 const PULL = '0123456789abcdef0123456789abcdef';   // the pull this browser's addresses keep
-const offer = (w, keys, opts, host = 'gorkscape.ca') => post(w, 'https://' + host + '/api/handoff/offer', { keys, pull: (opts && opts.pull) || PULL }, opts);
+// the hand-over page sends the login it carries as a Bearer token too (opts.auth: another token, or null for none)
+const offer = (w, keys, opts, host = 'gorkscape.ca') => post(w, 'https://' + host + '/api/handoff/offer', { keys, pull: (opts && opts.pull) || PULL },
+  Object.assign({}, opts, { auth: opts && opts.auth !== undefined ? opts.auth : (keys && typeof keys === 'object' && typeof keys['fanglands.session'] === 'string' ? keys['fanglands.session'] : undefined) }));
 const claim = (w, code, opts, host = 'fanglands.com') => post(w, 'https://' + host + '/api/handoff/claim', { code, pull: (opts && opts.pull) || PULL }, opts);
 const rowsOf = w => w.db.prepare('SELECT * FROM handoffs').all();
 const KEYS = {
@@ -415,6 +439,154 @@ test('hand-over: a login\'s own budget: at most ACCT_ROWS_MAX waiting (the newes
   assert.equal((await offer(w, KEYS)).status, 200, 'nor is an anonymous offer');
 });
 
+test('hand-over: the login budget being full never refuses a real kid: ~90 self-made accounts each holding all they may, at full rate, and a fresh kid\'s login offer still answers 200 and claims; the fullest account gives way', async () => {
+  const w = newWorld();
+  const big = 'x'.repeat(HANDOFF_MAX - 300);
+  const flooders = [];
+  for (let i = 0; i < 90; i++) flooders.push(account(w, 'Flood' + i));
+  let refused = 0;
+  for (let round = 0; round < ACCT_ROWS_MAX + 1; round++) {
+    for (const tok of flooders) {
+      const r = await offer(w, { 'fanglands.session': tok, 'fanglands.slot.2': big }, { ip: '203.0.113.9' });
+      if (r.status !== 200) refused++;
+    }
+  }
+  assert.equal(refused, 0, 'a login offer is never refused because the world is full');
+  const held = () => w.db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NOT NULL').get();
+  assert.ok(held().b <= LOGGED_BYTES_MAX && held().b > LOGGED_BYTES_MAX - 2 * HANDOFF_MAX, 'full to the brim and never over: ' + held().b);
+  const perAcct = w.db.prepare('SELECT acct, COUNT(*) AS n, SUM(bytes) AS b FROM handoffs GROUP BY acct').all();
+  assert.ok(perAcct.every(a => a.n <= ACCT_ROWS_MAX && a.b <= ACCT_BYTES_MAX), 'each account holds at most its own budget');
+  // the real kid, from another address: a small login offer, and a big one
+  const kid = account(w, 'Cohen');
+  for (const keys of [{ 'fanglands.session': kid, 'fanglands.lastname': 'Cohen' }, { 'fanglands.session': kid, 'fanglands.slot.2': big }]) {
+    const o = await offer(w, keys, { ip: '198.51.100.5' });
+    assert.deepEqual([o.status, o.data.kind], [200, 'login'], JSON.stringify(o.data));
+    const c = await claim(w, o.data.code, { ip: '198.51.100.5' });
+    assert.equal(c.status, 200);
+    assert.equal(c.data.keys['fanglands.session'], kid);
+    assert.ok(held().b <= LOGGED_BYTES_MAX);
+  }
+  assert.ok(w.db.prepare('SELECT COUNT(*) AS n FROM handoffs WHERE acct = ?').get('cohen').n === 0);
+});
+
+test('hand-over: the login budget full by row count (many tiny login offers) still takes a real kid\'s, and never holds more than LOGGED_ROWS_MAX', async () => {
+  const w = newWorld();
+  const n = Math.ceil(LOGGED_ROWS_MAX / ACCT_ROWS_MAX) + 5;
+  for (let i = 0; i < n; i++) {
+    const tok = account(w, 'Tiny' + i);
+    for (let k = 0; k < ACCT_ROWS_MAX; k++) assert.equal((await offer(w, { 'fanglands.session': tok }, { ip: '203.0.113.9' })).status, 200);
+  }
+  const rows = () => w.db.prepare('SELECT COUNT(*) AS n FROM handoffs WHERE acct IS NOT NULL').get().n;
+  assert.equal(rows(), LOGGED_ROWS_MAX);
+  const kid = account(w, 'Cohen');
+  const o = await offer(w, { 'fanglands.session': kid, 'fanglands.lastname': 'Cohen' }, { ip: '198.51.100.5' });
+  assert.equal(o.status, 200);
+  assert.equal(rows(), LOGGED_ROWS_MAX);
+  assert.equal((await claim(w, o.data.code, { ip: '198.51.100.5' })).status, 200);
+});
+
+test('hand-over: one address may make only SIGNUPS_PER_HOUR new accounts an hour (an IPv6 address by its /48); 70 tries from one place are mostly refused, another place is not held up', async () => {
+  const { SIGNUPS_PER_HOUR } = await import('../src/world.js');
+  const w = newWorld();
+  const signup = (name, ip) => post(w, 'https://gorkscape.ca/api/signup', { name, pass: 'word1', invite: 'TEST-1234' }, { ip });
+  const got = [];
+  for (let i = 0; i < 70; i++) got.push((await signup('Many' + i, i % 2 ? '2001:db8:5:' + i.toString(16) + '::1' : '2001:db8:5::' + i.toString(16))).status);
+  assert.equal(got.filter(s => s === 200).length, SIGNUPS_PER_HOUR);
+  assert.equal(got.filter(s => s === 429).length, 70 - SIGNUPS_PER_HOUR);
+  assert.ok(SIGNUPS_PER_HOUR <= 10);
+  const r = await signup('Many70', '2001:db8:5::99');
+  assert.deepEqual([r.status, r.data.code], [429, 'wait']);
+  assert.ok(r.data.wait > 0 && r.data.wait <= 3600);
+  assert.equal((await signup('Cohen', '198.51.100.5')).status, 200, 'another place signs up as ever');
+  // a wrong invite code, a taken name: not counted
+  const w2 = newWorld();
+  for (let i = 0; i < 20; i++) assert.equal((await post(w2, 'https://fanglands.com/api/signup', { name: 'Kid' + i, pass: 'word1', invite: 'nope' }, { ip: '198.51.100.8' })).status, 403);
+  assert.equal((await post(w2, 'https://fanglands.com/api/signup', { name: 'Kid', pass: 'word1', invite: 'test-1234' }, { ip: '198.51.100.8' })).status, 200);
+  T += 3600000;
+  assert.equal((await signup('Later', '2001:db8:5::7')).status, 200, 'an hour on, the place may again');
+});
+
+// a request whose body must never be read: the budget is decided from its headers
+function unread(url, { ip = '203.0.113.50', auth, length } = {}) {
+  const u = new URL(url);
+  const headers = new Headers({ 'content-type': 'application/json', 'cf-connecting-ip': ip, origin: 'https://' + u.hostname });
+  if (auth) headers.set('authorization', 'Bearer ' + auth);
+  if (length != null) headers.set('content-length', String(length));
+  const req = { method: 'POST', url, headers, reads: 0 };
+  req.text = async () => { req.reads++; throw new Error('the body was read'); };
+  req.json = req.text; req.arrayBuffer = req.text;
+  return req;
+}
+async function call(w, req) {
+  const url = new URL(req.url);
+  try { const r = await handoffCall(w, req, url, url.pathname, 'POST'); return r.status; } catch (e) { return e.status || ('threw: ' + e.message); }
+}
+
+test('hand-over: a refused anonymous offer never has its body read: past its address\'s limit, its address\'s bytes, or the world\'s cap, it costs the world almost nothing', async () => {
+  const w = newWorld();
+  // past the address's limit a minute
+  for (let i = 0; i < OFFERS_PER_MIN; i++) assert.equal((await offer(w, { 'fl_learn_bag': '1' }, { ip: '198.51.100.40' })).status, 200);
+  let req = unread('https://gorkscape.ca/api/handoff/offer', { ip: '198.51.100.40', length: HANDOFF_MAX });
+  assert.deepEqual([await call(w, req), req.reads], [429, 0]);
+  // past the address's bytes: the size it says counts; one that says none counts as the most an offer may be
+  const w2 = newWorld();
+  const big = { 'fanglands.slot.2': 'x'.repeat(HANDOFF_MAX - 300) };
+  assert.equal((await offer(w2, big, { ip: '198.51.100.41' })).status, 200);
+  assert.equal((await offer(w2, big, { ip: '198.51.100.41' })).status, 200);
+  req = unread('https://gorkscape.ca/api/handoff/offer', { ip: '198.51.100.41', length: HANDOFF_MAX });
+  assert.deepEqual([await call(w2, req), req.reads], [429, 0]);
+  req = unread('https://gorkscape.ca/api/handoff/offer', { ip: '198.51.100.41' });
+  assert.deepEqual([await call(w2, req), req.reads], [429, 0]);
+  // the world's anonymous cap is full
+  const w3 = newWorld(); w3.env = Object.assign({}, ENV, { HANDOFF_ANON_ROWS_MAX: '3' });
+  for (let i = 0; i < 3; i++) assert.equal((await offer(w3, { 'fl_learn_bag': '1' }, { ip: '10.8.0.' + i })).status, 200);
+  for (const length of [10, HANDOFF_MAX, undefined]) {
+    req = unread('https://gorkscape.ca/api/handoff/offer', { ip: '10.8.1.1', length });
+    assert.deepEqual([await call(w3, req), req.reads], [503, 0], String(length));
+  }
+  // a token that is no live login is anonymous, and refused the same way
+  req = unread('https://gorkscape.ca/api/handoff/offer', { ip: '10.8.1.2', auth: 'b'.repeat(64), length: 100 });
+  assert.deepEqual([await call(w3, req), req.reads], [503, 0]);
+  // a login's own limit a minute, also before its body
+  const tok = account(w3, 'Cohen');
+  for (let i = 0; i < ACCT_PER_MIN; i++) assert.equal((await offer(w3, { 'fanglands.session': tok }, { ip: '10.8.2.' + i })).status, 200);
+  req = unread('https://gorkscape.ca/api/handoff/offer', { ip: '10.8.2.99', auth: tok, length: 100 });
+  assert.deepEqual([await call(w3, req), req.reads], [429, 0]);
+});
+
+test('hand-over: the login in the keys must be the one sent as the Bearer token (the budget was chosen by it)', async () => {
+  const w = newWorld();
+  const tok = account(w, 'Cohen'), other = account(w, 'Sam');
+  const keys = { 'fanglands.session': tok, 'fanglands.slot.2': '{}' };
+  for (const auth of [null, other, 'b'.repeat(64)]) {
+    const r = await offer(w, keys, { auth });
+    assert.deepEqual([r.status, r.data.code], [400, 'bad'], String(auth).slice(0, 8));
+  }
+  assert.equal((await offer(w, { 'fanglands.slot.2': '{}' }, { auth: tok })).status, 400, 'a Bearer token with no login in the keys');
+  assert.equal((await offer(w, keys)).data.kind, 'login');
+  const dead = 'd'.repeat(64);
+  const r = await offer(w, { 'fanglands.session': dead, 'fanglands.slot.2': '{}' });
+  assert.deepEqual([r.status, r.data.kind], [200, 'device'], 'a token the world does not know, sent both ways, is an anonymous offer');
+  assert.equal(rowsOf(w).length, 2);
+});
+
+test('hand-over: a login offer sent while 150 big anonymous offers arrive at the same moment (the world full of them) still answers quickly', async () => {
+  const w = newWorld(); w.env = Object.assign({}, ENV, { HANDOFF_ANON_ROWS_MAX: '1' });
+  assert.equal((await offer(w, { 'fl_learn_bag': '1' }, { ip: '10.9.0.1' })).status, 200);
+  const tok = account(w, 'Cohen');
+  const body = JSON.stringify({ keys: { 'fanglands.slot.2': 'x'.repeat(HANDOFF_MAX - 300) }, pull: PULL });
+  const flood = [];
+  for (let i = 0; i < 150; i++) {
+    flood.push(w.fetch(new Request('https://gorkscape.ca/api/handoff/offer', { method: 'POST', body, headers: { origin: 'https://gorkscape.ca', 'content-type': 'application/json', 'content-length': String(body.length), 'cf-connecting-ip': '2001:db8:' + (i + 10).toString(16) + '::1' } })));
+  }
+  const t0 = performance.now();
+  const kid = offer(w, { 'fanglands.session': tok, 'fanglands.lastname': 'Cohen' }, { ip: '198.51.100.5' }).then(r => ({ r, ms: performance.now() - t0 }));
+  const [all, mine] = await Promise.all([Promise.all(flood), kid]);
+  assert.ok(all.every(r => r.status === 503));
+  assert.equal(mine.r.status, 200);
+  assert.ok(mine.ms < 400, 'answered in ' + Math.round(mine.ms) + ' ms');
+});
+
 test('hand-over: the backup export never carries a hand-over; the world writes nothing to its logs while handing over', async () => {
   const w = newWorld();
   await offer(w, KEYS);
@@ -495,9 +667,9 @@ async function runPage(res, { at, store = {}, session = {}, broken = false, stan
   const el = id => els[id] || (els[id] = { id, hidden: true, attrs: {}, textContent: '', setAttribute(k, v) { this.attrs[k] = v; } });
   const c = clock(), ls = storage(store, broken), ss = storage(session);
   const fetch = (url, opt) => {
-    const body = JSON.parse(opt.body); calls.push({ url, body, at: c.now() });
+    const body = JSON.parse(opt.body); calls.push({ url, body, at: c.now(), headers: Object.assign({}, opt.headers) });
     let a;
-    try { a = answer(url, body, calls.length); } catch (e) { return Promise.reject(e); }
+    try { a = answer(url, body, calls.length, opt.headers || {}); } catch (e) { return Promise.reject(e); }
     if (a === 'down') return Promise.reject(new TypeError('Load failed'));
     if (a === 'hang') return new Promise((_, no) => { if (opt.signal) opt.signal.addEventListener('abort', () => no(new Error('aborted'))); });
     return Promise.resolve(a).then(a => ({ ok: a.status === 200, status: a.status, json: async () => a.json }));
@@ -621,20 +793,62 @@ test('hand-over page: the card says "Still working on it..." after a few seconds
   assert.match(r.html, /<p>Your knight is safe\. It could not come across just now\.<\/p>/);
 });
 
-test('hand-over page: when the world refuses an anonymous offer (too many at once) the kid is told plainly what waits, and goes on with OK; with no knight waiting it just goes on', async () => {
+test('hand-over page: a login is never dropped: when the world says "too busy" (503, then 429) the login is offered again alone, as a Bearer token too, waiting what the world asked (at most 10 s), and the kid lands logged in, told what waits', async () => {
+  const store = Object.assign({ [PULL_KEY]: FRESH(), 'fanglands.slot.3': '{"x":3}' }, OLDSTORE);
+  const tok = OLDSTORE['fanglands.session'];
+  const said = [{ status: 503, json: { code: 'busy', wait: 30 } }, { status: 429, json: { code: 'wait', wait: 3 } }, OK];
+  const r = await runPage(await pageAt('https://gorkscape.ca/admin?x=1'), { at: 'https://gorkscape.ca/admin?x=1', store, answer: (u, b, n) => said[n - 1] });
+  assert.equal(r.calls.length, 3);
+  assert.ok(r.calls.every(c => c.headers.authorization === 'Bearer ' + tok), 'the login rides as a Bearer token on every try');
+  assert.ok('fanglands.slot.2' in r.calls[0].body.keys, 'the first try carries everything');
+  for (const c of r.calls.slice(1)) assert.deepEqual(c.body.keys, { 'fanglands.session': tok, 'fanglands.lastname': 'Cohen' }, 'then the login alone');
+  assert.deepEqual([r.calls[1].at - r.calls[0].at, r.calls[2].at - r.calls[1].at], [10000, 3000], 'waits what the world asked, at most 10 s');
+  const land = 'https://fanglands.com/handoff#land=' + CODE + '&to=' + encodeURIComponent('/admin?x=1') + '&from=gorkscape.ca&later=1';
+  assert.deepEqual(r.nav, [land], 'lands with the login; the new address comes back later for the knights');
+  assert.equal(r.els.waitText.textContent, 'Your 2 knights saved on this device will come across next time. They are safe here.');
+  assert.equal(r.els.ok.attrs.href, land);
+  assert.equal(r.navs[0].at - r.calls[2].at, 10000, 'OK, or on its own after 10 s');
+  // a login with no knight waiting: straight on once the login is through, no words
+  const lone = { [PULL_KEY]: FRESH(), 'fanglands.session': tok, 'fanglands.slot.1': '{"c":1}', 'fanglands.slot.1.online': '1', 'fanglands.settings': '{}' };
+  const r2 = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/', store: lone, answer: (u, b, n) => (n === 1 ? { status: 503, json: {} } : OK) });
+  assert.deepEqual(r2.nav, ['https://fanglands.com/handoff#land=' + CODE + '&to=%2F&from=gorkscape.ca']);
+  assert.ok(!r2.shown('waits'));
+});
+
+test('hand-over page: a login the world keeps refusing ends on the card (Try again), never on the game without the login', async () => {
   for (const status of [429, 503]) {
-    const r = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/', store: Object.assign({ [PULL_KEY]: FRESH(), 'fanglands.slot.3': '{"x":3}' }, OLDSTORE), answer: () => ({ status, json: { code: 'busy' } }) });
-    assert.equal(r.calls.length, 1, 'no hammering while the world is full');
+    const r = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/', store: Object.assign({ [PULL_KEY]: FRESH() }, OLDSTORE), answer: () => ({ status, json: { code: 'busy' } }), until: 120000 });
+    assert.equal(r.calls.length, 1 + LOGIN_RETRIES, status);
+    assert.deepEqual(r.nav, [], 'no jump to the new address without a claim');
+    assert.ok(r.shown('stuck') && !r.shown('waits'));
+    assert.equal(r.els.again.attrs.href, '/');
+  }
+});
+
+test('hand-over page: an offer with no login but knights on this device is tried again every 20 to 30 s for about three minutes ("Still working on it..."), then the kid is told plainly what waits, and OK has the new address come back for them', async () => {
+  const dev = { [PULL_KEY]: FRESH(), 'fanglands.slot.2': '{"player":{"level":7}}', 'fanglands.slot.3': '{"x":3}', 'fanglands.settings': '{}' };
+  for (const [status, wait, gap] of [[503, undefined, 20000], [429, 180, 30000], [429, 25, 25000]]) {
+    const r = await runPage(await pageAt('https://gorkscape.ca/x?y=1'), { at: 'https://gorkscape.ca/x?y=1', store: dev, answer: () => ({ status, json: { code: 'busy', wait } }), until: 600000 });
+    assert.equal(r.calls.length, 1 + Math.ceil(ANON_TRY_MS / gap), status + ' ' + wait);
+    assert.ok(r.calls.every(c => !c.headers.authorization), 'no login, no Bearer');
+    for (let i = 1; i < r.calls.length; i++) assert.equal(r.calls[i].at - r.calls[i - 1].at, gap);
+    const last = r.calls[r.calls.length - 1].at - r.calls[0].at;
+    assert.ok(last >= ANON_TRY_MS && last < ANON_TRY_MS + 30000, 'about three minutes: ' + last);
     assert.deepEqual(r.nav, []);
     assert.ok(r.shown('waits'));
     assert.equal(r.els.waitText.textContent, 'Your 2 knights saved on this device will come across next time. They are safe here.');
-    assert.equal(r.els.ok.attrs.href, 'https://fanglands.com/');
+    assert.equal(r.els.ok.attrs.href, 'https://fanglands.com/handoff#later=1&to=' + encodeURIComponent('/x?y=1') + '&from=gorkscape.ca');
   }
-  let r = await runPage(await pageAt('https://gorkscape.ca/x'), { at: 'https://gorkscape.ca/x', store: Object.assign({ [PULL_KEY]: FRESH() }, OLDSTORE), answer: () => ({ status: 503, json: {} }) });
-  assert.equal(r.els.waitText.textContent, 'Your knight saved on this device will come across next time. It is safe here.');
-  assert.equal(r.els.ok.attrs.href, 'https://fanglands.com/x');
+  // while it tries, the card says it is still working, and there is no OK yet
+  let r = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/', store: dev, answer: () => ({ status: 503, json: {} }), until: 60000 });
+  assert.ok(!r.els.work && r.shown('more') && !r.shown('waits'), 'the working card stays up (never hidden), saying it is still working');
+  // the world has room again on a later try: it lands with everything
+  r = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/', store: dev, answer: (u, b, n) => (n < 3 ? { status: 503, json: {} } : OK), until: 120000 });
+  assert.deepEqual(r.nav, ['https://fanglands.com/handoff#land=' + CODE + '&to=%2F&from=gorkscape.ca']);
+  assert.ok('fanglands.slot.2' in r.calls[2].body.keys);
+  // nothing but settings and hints: nothing worth holding the kid up for
   r = await runPage(await pageAt('https://gorkscape.ca/'), { at: 'https://gorkscape.ca/', store: { [PULL_KEY]: FRESH(), 'fanglands.settings': '{}' }, answer: () => ({ status: 503, json: {} }) });
-  assert.deepEqual(r.nav, ['https://fanglands.com/']);
+  assert.deepEqual([r.nav, r.calls.length], [['https://fanglands.com/'], 1]);
 });
 
 test('landing page (#back): keeps a pull here and goes back to the old address it came from with it; a plain path only; storage off goes straight to the game', async () => {
@@ -715,12 +929,36 @@ test('landing page (#land): a claim that finds nothing, or no answer, goes back 
   assert.deepEqual([b.nav, b.calls.length], [['/admin'], 0]);
 });
 
+test('landing page (#later, and #land with later=1): knights that wait on the old address are noted here so the game comes back for them; a landing that brought everything clears that address\'s note', async () => {
+  const html = await (await pageAt('https://fanglands.com/handoff')).text();
+  const again = () => new Response(html, { headers: { 'content-type': 'text/html' } });
+  let r = await runPage(again(), { at: 'https://fanglands.com/handoff#later=1&to=' + encodeURIComponent('/x?y=1') + '&from=www.gorkscape.ca' });
+  assert.deepEqual(r.nav, ['/x?y=1']);
+  assert.deepEqual(r.hist, ['/handoff']);
+  const note = JSON.parse(r.store[LATER_KEY]);
+  assert.equal(note.from, 'www.gorkscape.ca'); assert.ok(Math.abs(note.at - Date.now()) < 5000);
+  assert.equal(r.calls.length, 0);
+  r = await runPage(again(), { at: 'https://fanglands.com/handoff#later=1&to=%2F&from=evil.example' });
+  assert.equal(JSON.parse(r.store[LATER_KEY]).from, 'gorkscape.ca', 'only ever one of this address\'s own old addresses');
+  const login = { 'fanglands.session': 'a'.repeat(64), 'fanglands.lastname': 'Cohen' };
+  r = await runPage(again(), { at: 'https://fanglands.com/handoff#land=' + CODE + '&to=%2F&from=gorkscape.ca&later=1', store: { [PULL_KEY]: FRESH() }, answer: () => ({ status: 200, json: { keys: login, from: 'gorkscape.ca' } }) });
+  assert.deepEqual(r.nav, ['/']);
+  assert.equal(r.store['fanglands.session'], login['fanglands.session']);
+  assert.equal(JSON.parse(r.store[LATER_KEY]).from, 'gorkscape.ca');
+  const waiting = JSON.stringify({ at: 5, from: 'gorkscape.ca' });
+  r = await runPage(again(), { at: 'https://fanglands.com/handoff#land=' + CODE + '&to=%2F&from=gorkscape.ca', store: { [PULL_KEY]: FRESH(), [LATER_KEY]: waiting }, answer: () => ({ status: 200, json: { keys: login, from: 'gorkscape.ca' } }) });
+  assert.equal(r.store[LATER_KEY], undefined, 'everything came: the note goes');
+  r = await runPage(again(), { at: 'https://fanglands.com/handoff#land=' + CODE + '&to=%2F&from=www.gorkscape.ca', store: { [PULL_KEY]: FRESH(), [LATER_KEY]: waiting }, answer: () => ({ status: 200, json: { keys: login, from: 'www.gorkscape.ca' } }) });
+  assert.equal(r.store[LATER_KEY], waiting, 'a note for the other old address stays');
+});
+
 // The whole chain in one browser with two addresses' storage, against a real World: old page, the first-time pull,
 // the offer, the landing, the merge. Logged in, logged out with device knights, www, and a second visit.
 async function chain(w, { host = 'gorkscape.ca', path = '/', oldStore, newStore = {}, ip = '203.0.113.9' }) {
   const env = fakeEnv().env;
-  const call = (h) => async (url, body) => {
-    const r = await post(w, 'https://' + h + url, body, { ip });
+  const call = (h) => async (url, body, n, headers) => {
+    const auth = /^Bearer (.+)$/.exec((headers && headers.authorization) || '');
+    const r = await post(w, 'https://' + h + url, body, { ip, auth: auth ? auth[1] : undefined });
     return { status: r.status, json: r.data };
   };
   let url = 'https://' + host + path, hops = [], r;

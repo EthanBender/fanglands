@@ -20,12 +20,14 @@
 // The code and the pull only ever ride after # (never sent to any server, in no log). A code made by anyone else is
 // useless in this browser: it was bound to their pull. The keys wait in the World sealed with a key made from the code,
 // which is never stored, so a row at rest (or in a backup bookmark) is unreadable.
-// The world keeps two budgets: an offer carrying a login the world knows (a real kid) has its own per-account budget
-// that no anonymous offer can touch; anonymous offers (knights held only on a device) are capped hard globally and per
-// address (an IPv6 address counts by its /48). /api/* and /ws answer on every address exactly as before.
+// The world keeps two budgets, decided before the body of an offer is read: an offer carrying a login the world knows
+// (a real kid: the token rides as "authorization: Bearer") has its own per-account budget that no anonymous offer can
+// touch, and is never refused because the world is full; anonymous offers (knights held only on a device) are capped
+// hard globally and per address (an IPv6 address counts by its /48), and one past its cap costs the world almost
+// nothing (its body is never read). /api/* and /ws answer on every address exactly as before.
 // ============================================================================
 
-import { json, oops } from './http.js';
+import { json, oops, bearer } from './http.js';
 import { randomHex, sameString } from './auth.js';
 import { MERGE_SOURCE } from './handoff-merge.js';
 
@@ -47,10 +49,19 @@ export const HANDOFF_KEYS_MAX = 400;              // keys in one offer
 // anonymous offers (no login the world knows): per address (an IPv6 address by its /48) and all together
 export const OFFERS_PER_MIN = 10, ADDRESS_BYTES_MAX = 3 * 1024 * 1024;
 export const ANON_ROWS_MAX = 200, ANON_BYTES_MAX = 32 * 1024 * 1024;
-// offers with a login the world knows: per account, and all together (a flood here needs hundreds of real accounts)
-export const ACCT_PER_MIN = 20, ACCT_ROWS_MAX = 3;
+// offers with a login the world knows (sent as "authorization: Bearer <token>" and in the keys): per account (the
+// newest replaces the oldest past ACCT_ROWS_MAX or ACCT_BYTES_MAX), and all together. The whole is NEVER a reason to
+// refuse one: anyone with the invite code can make accounts (world.js signup allows SIGNUPS_PER_HOUR per address), so
+// about 90 accounts could fill LOGGED_BYTES_MAX. When it is full, the oldest offer of the account holding the most
+// gives way (a real claim comes within about a second; one that lost its offer goes back and offers again).
+export const ACCT_PER_MIN = 20, ACCT_ROWS_MAX = 2, ACCT_BYTES_MAX = 3 * 1024 * 1024;
 export const LOGGED_ROWS_MAX = 2000, LOGGED_BYTES_MAX = 256 * 1024 * 1024;
-export const CLAIM_FAILS_PER_MIN = 20, REFUSED_PER_MIN = 20;   // per address: claims that found nothing, calls from elsewhere
+export const CLAIM_FAILS_PER_MIN = 20, REFUSED_PER_MIN = 20;
+// the hand-over page, when the world says "too busy": a login is tried again alone (LOGIN_RETRIES times, at most 10 s
+// apart); an anonymous offer with knights is tried again every 20 to 30 s for ANON_TRY_MS (an offer waits three
+// minutes at most, so by then the world has room again unless the flood goes on)
+export const LOGIN_RETRIES = 2, ANON_TRY_MS = 3 * 60 * 1000;
+export const LATER_KEY = 'fanglands.handoff.later';   // on a new address: {at, from} knights wait on that old address   // per address: claims that found nothing, calls from elsewhere
 // the keys a browser may hand over: the game's own (fanglands.* and the fl_ hints), never the hand-over's own notes and
 // never anything to do with the parent page (its key lives in sessionStorage today; this keeps it that way if it moves)
 export const KEY_RE = /^(fanglands\.|fl_)[A-Za-z0-9_.:-]{1,160}$/;
@@ -157,13 +168,15 @@ ${script}
 // none it goes straight to the same path on the new address. With some, it shows the card and offers them bound to the
 // pull: the one that came after # (and is now kept here too), or the one kept here from before; with neither, it first
 // fetches one from the new address. A #handoff... fragment that arrived is never passed on: it may be someone else's.
-// The world refusing an anonymous offer (too many at once) is said plainly, with what waits, and the kid goes on; a
-// world that cannot be reached is tried twice, then the card says so with Try again. Nothing here is ever deleted.
+// When the world says "too busy" (429 or 503): an offer with a login is tried again with the login alone, and a kid is
+// never sent on without it (after two more refusals the card's Try again); an offer with no login but knights on this
+// device is tried again for about three minutes, then the card says plainly what waits, and OK has the new address
+// come back for them later. A world that cannot be reached is tried twice, then Try again. Nothing here is deleted.
 export function handoverPage(self, to, head) {
   const script = `(function () {
   var HOME = ${JSON.stringify('https://' + to)}, SELF = ${JSON.stringify(self)};
   var PULL_KEY = ${JSON.stringify(PULL_KEY)}, PULL_LIFE = ${PULL_MS}, CAP = 1400000;
-  var KEY_RE = ${KEY_RE.toString()}, SLOT_RE = /^fanglands\\.slot\\.(\\d+)$/, MARK = 'fanglands.slot.1.online';
+  var KEY_RE = ${KEY_RE.toString()}, SLOT_RE = /^fanglands\\.slot\\.(\\d+)$/, MARK = 'fanglands.slot.1.online', TOKEN = 'fanglands.session', NAME = 'fanglands.lastname';
   ${CARD_JS}
   var path = location.pathname || '/';
   if (!${PLAIN_PATH.toString()}.test(path)) path = '/';
@@ -225,35 +238,64 @@ export function handoverPage(self, to, head) {
     used += gs; for (key in groups[i]) { keys[key] = groups[i][key]; sent++; }
   }
   if (!sent) { go(HOME + here + frag); return; }
-  var land = function (code) { go(HOME + ${JSON.stringify(START_PATH)} + '#land=' + code + '&to=' + encodeURIComponent(here) + '&from=' + SELF + (pullIn && pullIn[1] ? '&n=2' : '')); };
-  var waits = function () {
-    if (!knights) { go(HOME + here + frag); return; }
-    var t = knights === 1 ? 'Your knight saved on this device will come across next time. It is safe here.' : 'Your ' + knights + ' knights saved on this device will come across next time. They are safe here.';
-    var w = $('waitText'); if (w) w.textContent = t;
-    var ok = $('ok'); if (ok) ok.setAttribute('href', HOME + here + frag);
-    hide('work'); show('waits');
+  // a login goes as "authorization: Bearer" too: the world picks the login's own budget before it reads anything
+  var token = typeof keys[TOKEN] === 'string' ? keys[TOKEN] : '';
+  var loginOnly = {}; if (token) { loginOnly[TOKEN] = token; if (typeof keys[NAME] === 'string') loginOnly[NAME] = keys[NAME]; }
+  var landAt = function (code, later) { return HOME + ${JSON.stringify(START_PATH)} + '#land=' + code + '&to=' + encodeURIComponent(here) + '&from=' + SELF + (pullIn && pullIn[1] ? '&n=2' : '') + (later ? '&later=1' : ''); };
+  var words = function (n) { return n === 1 ? 'Your knight saved on this device will come across next time. It is safe here.' : 'Your ' + n + ' knights saved on this device will come across next time. They are safe here.'; };
+  var tell = function (n, href) { var w = $('waitText'); if (w) w.textContent = words(n); var ok = $('ok'); if (ok) ok.setAttribute('href', href); hide('work'); show('waits'); show('card'); };
+  // the code is good; with only the login carried (the world was too busy for more), the kid is told what waits, and
+  // the new address comes back for it later (#later: src/00-handoff.js)
+  var land = function (code, alone) {
+    if (alone && knights) { var u = landAt(code, true); tell(knights, u); setTimeout(function () { go(u); }, 10000); return; }
+    go(landAt(code, false));
   };
-  var tries = 0;
-  function attempt() {
+  // OK after an anonymous offer could not come: the new address notes that knights wait here, and comes back for them
+  var later = function () { return HOME + ${JSON.stringify(START_PATH)} + '#later=1&to=' + encodeURIComponent(here) + '&from=' + SELF; };
+  var tries = 0, refusals = 0, waited = 0;
+  var gap = function (d, lo, hi) { d = +(d && d.wait) || 0; return Math.min(hi, Math.max(lo, d)) * 1000; };
+  // the world said "too busy" (429 or 503: its own budget, or Cloudflare itself under load)
+  var refused = function (d, body) {
+    refusals++;
+    if (token) {
+      // a login is never dropped: try again with the login alone (small, in the account's own budget), at most twice,
+      // waiting what the world asked (at most 10 s); then the card's Try again. Never on to the game without it.
+      if (refusals <= ${LOGIN_RETRIES}) { setTimeout(function () { attempt(loginOnly); }, gap(d, 1, 10)); return; }
+      stuck(here, HOME + here + frag); return;
+    }
+    // no login: with no knight waiting (settings, hints) there is nothing to hold the kid up for
+    if (!knights) { go(HOME + here + frag); return; }
+    // knights held only on this device: keep trying for about three minutes (waiting offers run out in three), the card
+    // saying "Still working on it...", then say plainly what waits, with OK
+    show('more');
+    if (waited < ${ANON_TRY_MS}) { var g = gap(d, 20, 30); waited += g; setTimeout(function () { attempt(body); }, g); return; }
+    tell(knights, later());
+  };
+  function attempt(body) {
     tries++;
     var over = false, ctl = null;
     try { ctl = new AbortController(); } catch (e) { }
-    var miss = function () { if (over || gone) return; over = true; clearTimeout(timer); if (tries < 2) setTimeout(attempt, 1500); else stuck(here, HOME + here + frag); };
+    var miss = function () { if (over || gone) return; over = true; clearTimeout(timer); if (tries < 2) setTimeout(function () { attempt(body); }, 1500); else stuck(here, HOME + here + frag); };
     var timer = setTimeout(function () { if (ctl) ctl.abort(); miss(); }, 8000);
-    fetch('/api/handoff/offer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ keys: keys, pull: pull }), cache: 'no-store', credentials: 'same-origin', signal: ctl ? ctl.signal : undefined })
+    var hd = { 'content-type': 'application/json' }; if (token) hd.authorization = 'Bearer ' + token;
+    fetch('/api/handoff/offer', { method: 'POST', headers: hd, body: JSON.stringify({ keys: body, pull: pull }), cache: 'no-store', credentials: 'same-origin', signal: ctl ? ctl.signal : undefined })
       .then(function (r) {
         if (over || gone) return;
-        if (r.status === 429 || r.status === 503) { over = true; clearTimeout(timer); waits(); return; }
+        if (r.status === 429 || r.status === 503) {
+          over = true; clearTimeout(timer); tries = 0;
+          var on = function (d) { if (!gone) refused(d, body); };
+          return r.json().then(on, function () { on(null); });
+        }
         if (!r.ok) { miss(); return; }
         return r.json().then(function (d) {
           if (over || gone) return;
-          if (d && typeof d.code === 'string' && /^[0-9a-f]{64}$/.test(d.code)) { over = true; clearTimeout(timer); land(d.code); }
+          if (d && typeof d.code === 'string' && /^[0-9a-f]{64}$/.test(d.code)) { over = true; clearTimeout(timer); land(d.code, body === loginOnly); }
           else miss();
         });
       })
       .catch(miss);
   }
-  attempt();
+  attempt(keys);
 })();`;
   return page(script, head);
 }
@@ -261,16 +303,19 @@ export function handoverPage(self, to, head) {
 // The start and landing page on a new address (/handoff). Two jobs, by what came after #:
 //   #back=<path>&from=<old>: the first visit. It keeps a pull here (reusing the one kept, while it is under 30 days old)
 //     and goes back to the old address it came from with it after #.
-//   #land=<code>&to=<path>&from=<old>[&n=2]: it takes the fragment off the address and history first, claims the code
-//     WITH the pull kept here, merges what is missing (handoff-merge.js) and goes on to the path: the game, /admin, any
-//     page. A claim that finds nothing (the pull here is not the one the old address used, or the code ran out) or gets
-//     no answer goes back to the old address once with this address's pull, so it offers again (it keeps everything
+//   #later=1&to=<path>&from=<old>: knights wait on the old address (it was too busy to take them): it notes that here
+//     (fanglands.handoff.later) and goes on to the path; src/00-handoff.js comes back for them on a later boot.
+//   #land=<code>&to=<path>&from=<old>[&n=2][&later=1]: it takes the fragment off the address and history first, claims
+//     the code WITH the pull kept here, merges what is missing (handoff-merge.js) and goes on to the path: the game,
+//     /admin, any page. With later=1 only the login came, and the note above is made; without it, a note for that old
+//     address goes (everything came). A claim that finds nothing (the pull here is not the one the old address used,
+//     or the code ran out) or gets no answer goes back to the old address once with this address's pull, so it offers again (it keeps everything
 //     there); a second miss shows the card's Try again. A path that is not a plain path here becomes /; an old address
 //     that is not one of this address's own becomes the first of them.
 export function landingPage(host, head) {
   const olds = OLDS[host] || [];
   const script = `(function () {
-  var OLDS = ${JSON.stringify(olds)}, PULL_KEY = ${JSON.stringify(PULL_KEY)}, PULL_LIFE = ${PULL_MS}, ARRIVING = ${JSON.stringify(ARRIVING_KEY)};
+  var OLDS = ${JSON.stringify(olds)}, PULL_KEY = ${JSON.stringify(PULL_KEY)}, PULL_LIFE = ${PULL_MS}, ARRIVING = ${JSON.stringify(ARRIVING_KEY)}, LATER = ${JSON.stringify(LATER_KEY)};
   var merge = ${MERGE_SOURCE};
   ${CARD_JS}
   var h = location.hash || '';
@@ -298,6 +343,10 @@ export function landingPage(host, head) {
     } catch (e) { return null; }
   };
   if (!from) { go(to); return; }
+  // knights wait on the old address (it was too busy to take them): noted here, so the game comes back for them on a
+  // later boot (src/00-handoff.js), once
+  var waitsThere = function () { LS.set(LATER, JSON.stringify({ at: Date.now(), from: from })); };
+  if (q.later === '1' && q.land == null) { waitsThere(); go(to); return; }
   if (q.back != null) { var p0 = keepPull(); if (p0) { card(); go(OLD + to + '#handoff-pull=' + p0); } else go(to); return; }
   if (!/^[0-9a-f]{64}$/.test(q.land || '')) { go(to); return; }
   card();
@@ -322,6 +371,8 @@ export function landingPage(host, head) {
         over = true; clearTimeout(timer);
         if (!d || !d.keys || typeof d.keys !== 'object') { again(); return; }
         try { merge(d.keys, LS, Date.now(), d.from); } catch (e) { }
+        if (q.later === '1') waitsThere();
+        else { try { var lt = JSON.parse(LS.get(LATER) || 'null'); if (lt && lt.from === from) LS.del(LATER); } catch (e) { } }
         if (!/^\\/admin/.test(to)) { try { sessionStorage.setItem(ARRIVING, '1'); } catch (e) { } }
         go(to);
       });
@@ -434,16 +485,34 @@ export function loginOf(world, token, now) {
 // {keys: {name: value}, pull} -> {code, expires, kind}. Every name must be one of the game's own keys and every value a
 // string; pull is the 128-bit value this browser's addresses keep. The code is 256 random bits; only its SHA-256 is
 // stored (with the pull's), and the keys are sealed with a key made from it. A save slot's .at stamp from the future is
-// brought back to now. Then the budget: an offer whose fanglands.session is a live login has its account's own (at
-// most ACCT_ROWS_MAX waiting: a fourth replaces the oldest; ACCT_PER_MIN a minute), which anonymous offers never
-// touch; any other offer is anonymous (OFFERS_PER_MIN and ADDRESS_BYTES_MAX per address, ANON_ROWS_MAX and
-// ANON_BYTES_MAX all together). Everything that waits is done first, so the checks and the write happen with nothing
-// else in between.
+// brought back to now.
+// The budget is decided FIRST, from the headers alone, so a refused offer never costs the world the reading, hashing and
+// sealing of up to 1.5 MB (the World runs every kid's game too):
+//   - "authorization: Bearer <token>" with a live login: that account's own budget (ACCT_PER_MIN a minute; at most
+//     ACCT_ROWS_MAX / ACCT_BYTES_MAX waiting, the newest replacing the oldest). The keys must carry the same token.
+//     The world being full never refuses it: the oldest offer of the account holding the most gives way (makeRoom).
+//   - anything else is anonymous: OFFERS_PER_MIN and ADDRESS_BYTES_MAX per address, ANON_ROWS_MAX and ANON_BYTES_MAX
+//     all together, checked against the size the request says (or the most an offer may be, when it says none) before
+//     the body is read, and again with the real size just before the write.
+// Everything that waits is done before the last checks, so the checks and the write happen with nothing in between.
 async function offer(world, h, req, now, who, host) {
+  const token = bearer(req);
+  const acct = loginOf(world, token, now);
+  const said = parseInt(req.headers.get('content-length') || '', 10);
+  const guess = said >= 0 && said <= HANDOFF_MAX ? said : HANDOFF_MAX;
+  let whoId = null;
+  if (acct) limit(h.rate, 'a:' + acct, ACCT_PER_MIN, now);
+  else {
+    limit(h.rate, 'o:' + who, OFFERS_PER_MIN, now);
+    whoId = await sha(h.salt + who);
+    anonRoom(world, whoId, guess, now);
+  }
   const b = await readCapped(req, HANDOFF_MAX + 200);
   const keys = b.keys;
   if (!keys || typeof keys !== 'object' || Array.isArray(keys)) throw oops(400, 'send the keys', 'bad');
   if (typeof b.pull !== 'string' || !PULL_RE.test(b.pull)) throw oops(400, 'send the pull', 'bad');
+  // the login the budget was chosen by is the one handed over (no token in either, or the same one in both)
+  if ((typeof keys['fanglands.session'] === 'string' ? keys['fanglands.session'] : '') !== token) throw oops(400, 'the login in the keys is not the one sent', 'bad');
   const names = Object.keys(keys);
   if (!names.length) throw oops(400, 'nothing to hand over', 'bad');
   if (names.length > HANDOFF_KEYS_MAX) throw oops(413, 'that is too much to hand over', 'full');
@@ -456,25 +525,45 @@ async function offer(world, h, req, now, who, host) {
   const bytes = enc.encode(text).length;
   if (bytes > HANDOFF_MAX) throw oops(413, 'that is too much to hand over', 'full');
   const code = randomHex(32);
-  const [id, bind, sealed, whoId] = [await sha(code), await sha('pull:' + b.pull), await seal(code, text), await sha(h.salt + who)];
+  const [id, bind, sealed] = [await sha(code), await sha('pull:' + b.pull), await seal(code, text)];
   // from here to the INSERT nothing waits
-  const acct = loginOf(world, keys['fanglands.session'], now);
   if (acct) {
-    limit(h.rate, 'a:' + acct, ACCT_PER_MIN, now);
-    const mine = world.sql.exec('SELECT id FROM handoffs WHERE acct = ? AND expires > ? ORDER BY expires ASC', acct, now).toArray();
-    for (let i = 0; i <= mine.length - ACCT_ROWS_MAX; i++) world.sql.exec('DELETE FROM handoffs WHERE id = ?', mine[i].id);
-    const held = world.sql.exec('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NOT NULL AND expires > ?', now).toArray()[0] || { n: 0, b: 0 };
-    if (held.n >= LOGGED_ROWS_MAX || held.b + bytes > LOGGED_BYTES_MAX) throw oops(503, 'too many hand-overs at once: try again soon', 'busy');
-  } else {
-    limit(h.rate, 'o:' + who, OFFERS_PER_MIN, now);
-    const mine = world.sql.exec('SELECT COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NULL AND who = ? AND expires > ?', whoId, now).toArray()[0] || { b: 0 };
-    if (mine.b + bytes > ADDRESS_BYTES_MAX) throw oops(429, 'too many at once: wait a minute', 'wait', { wait: Math.ceil(HANDOFF_MS / 1000) });
-    const held = world.sql.exec('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NULL AND expires > ?', now).toArray()[0] || { n: 0, b: 0 };
-    if (held.n >= anonRowsMax(world) || held.b + bytes > ANON_BYTES_MAX) throw oops(503, 'too many hand-overs at once: try again soon', 'busy');
-  }
+    const mine = world.sql.exec('SELECT id, bytes FROM handoffs WHERE acct = ? AND expires > ? ORDER BY expires ASC', acct, now).toArray();
+    let n = mine.length, sum = mine.reduce((a, r) => a + r.bytes, 0);
+    for (const r of mine) {
+      if (n < ACCT_ROWS_MAX && sum + bytes <= ACCT_BYTES_MAX) break;
+      world.sql.exec('DELETE FROM handoffs WHERE id = ?', r.id); n--; sum -= r.bytes;
+    }
+    makeRoom(world, acct, bytes, now);
+  } else anonRoom(world, whoId, bytes, now);
   const expires = now + HANDOFF_MS;
-  world.sql.exec('INSERT INTO handoffs (id, keys, bytes, expires, bind, who, acct, src) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, sealed, bytes, expires, bind, acct ? null : whoId, acct, host);
+  world.sql.exec('INSERT INTO handoffs (id, keys, bytes, expires, bind, who, acct, src) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, sealed, bytes, expires, bind, whoId, acct, host);
   return json({ code, expires, kind: acct ? 'login' : 'device' });
+}
+
+// an anonymous offer of about `bytes`: refused when its address or the world's anonymous budget is full
+function anonRoom(world, whoId, bytes, now) {
+  const mine = world.sql.exec('SELECT COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NULL AND who = ? AND expires > ?', whoId, now).toArray()[0] || { b: 0 };
+  if (mine.b + bytes > ADDRESS_BYTES_MAX) throw oops(429, 'too many at once: wait a minute', 'wait', { wait: Math.ceil(HANDOFF_MS / 1000) });
+  const held = world.sql.exec('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NULL AND expires > ?', now).toArray()[0] || { n: 0, b: 0 };
+  if (held.n >= anonRowsMax(world) || held.b + bytes > ANON_BYTES_MAX) throw oops(503, 'too many hand-overs at once: try again soon', 'busy');
+}
+
+// Room for a login offer of `bytes` in the logged-in budget, never a refusal: while the whole is full, the oldest offer
+// of the account holding the most bytes (then the most offers, then the oldest), other than this one, gives way.
+// This account alone always fits (ACCT_ROWS_MAX x HANDOFF_MAX is far under the whole).
+export function makeRoom(world, acct, bytes, now) {
+  const held = world.sql.exec('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NOT NULL AND expires > ?', now).toArray()[0] || { n: 0, b: 0 };
+  let n = held.n, sum = held.b, gave = 0;
+  while (n + 1 > LOGGED_ROWS_MAX || sum + bytes > LOGGED_BYTES_MAX) {
+    const big = world.sql.exec('SELECT acct FROM handoffs WHERE acct IS NOT NULL AND acct != ? AND expires > ? GROUP BY acct ORDER BY SUM(bytes) DESC, COUNT(*) DESC, MIN(expires) ASC LIMIT 1', acct, now).toArray()[0];
+    if (!big) break;
+    const old = world.sql.exec('SELECT id, bytes FROM handoffs WHERE acct = ? AND expires > ? ORDER BY expires ASC LIMIT 1', big.acct, now).toArray()[0];
+    if (!old) break;
+    world.sql.exec('DELETE FROM handoffs WHERE id = ?', old.id);
+    n--; sum -= old.bytes; gave++;
+  }
+  return gave;
 }
 
 // {code, pull} -> {keys, from}. One claim per code: the row is deleted before the answer goes back, whatever happens

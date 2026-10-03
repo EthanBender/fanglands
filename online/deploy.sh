@@ -5,6 +5,10 @@
 # fails a check.
 set -e
 cd "$(dirname "$0")/.."
+# The game's home must stay attached: a live deploy from a tree whose wrangler.toml lacks fanglands.com detaches it, and
+# Cloudflare deletes its DNS records (kids on fanglands.com get "server not found", cached for up to 30 minutes).
+grep -q '^pattern = "fanglands.com"$' online/wrangler.toml || { echo "refusing: online/wrangler.toml does not serve fanglands.com (merge master first)"; exit 1; }
+grep -q '^HANDOVER = "\(on\|off\)"$' online/wrangler.toml || { echo "refusing: online/wrangler.toml has no HANDOVER switch (merge master first)"; exit 1; }
 ./build.sh
 node tools/headless.js
 node --test online/test/
@@ -20,5 +24,17 @@ grep -q -- "'--sim'" tools/mmo-sim.js && node tools/mmo-sim.js --sim
 [ -f online/test/atlas-drift.mjs ] && node online/test/atlas-drift.mjs
 cp index.html online/public/index.html
 [ -f bridge.html ] && cp bridge.html online/public/bridge.html
-# extra arguments go to wrangler: ./online/deploy.sh --var HANDOVER:off (docs/ONLINE.md, "Two addresses")
+# extra arguments go to wrangler. The hand-over switch is HANDOVER in online/wrangler.toml (docs/ONLINE.md, "Two
+# addresses"): change it by a commit on master, never by a --var alone (the next plain deploy from anywhere undoes that).
 cd online && CI=1 wrangler deploy "$@"
+# afterwards both addresses must answer (a new certificate can take a few minutes); a silent miss here is loud instead
+for host in fanglands.com gorkscape.ca; do
+  n=0
+  until curl -sf --max-time 10 "https://$host/api/status" > /dev/null; do
+    n=$((n + 1))
+    if [ $n -ge 30 ]; then echo "!!! https://$host/api/status does not answer after the deploy. Look now: kids may not reach the game there."; exit 1; fi
+    sleep 10
+  done
+  echo "https://$host/api/status answers"
+done
+echo "HANDOVER is $(sed -n 's/^HANDOVER = "\(.*\)"$/\1/p' wrangler.toml) in wrangler.toml (a --var given above overrides it for this deploy only)"

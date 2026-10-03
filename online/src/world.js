@@ -29,7 +29,7 @@ import { cleanName } from './filter.js';
 import { makeHash, checkPassword, randomHex, sameString } from './auth.js';
 import { json, oops, failFrom, readJson, bearer } from './http.js';
 import { backupCall } from './backup.js';
-import { handoffCall } from './handoff.js';
+import { handoffCall, addressOf } from './handoff.js';
 import { Meter, isAdminPath } from './meter.js';
 
 const SESSION_MS = 90 * 24 * 3600 * 1000;   // a token is good for 90 days
@@ -38,6 +38,9 @@ const SAVES_KEPT = 3;                       // versions per knight, so a broken 
 const WRONG_TRIES = 5, LOCK_MS = 60000;     // five wrong secret words -> a minute's wait
 const CHAT_KEPT = 20000;                    // lines; older ones are dropped now and then
 const PASS_MIN = 4, PASS_MAX = 200;
+// new accounts from one address (an IPv6 address by its /48) in an hour: a family or a party is under it; anyone
+// with the invite code making dozens (to fill the hand-over's login budget, handoff.js) is not
+export const SIGNUPS_PER_HOUR = 10;
 const PARENT = 'parent page';               // mod_log's "by" for everything done from /admin
 
 export class World {
@@ -163,6 +166,16 @@ export class World {
 
   // ---------- accounts ----------
   async signup(req) {
+    // per address, counted only for accounts made, and only behind Cloudflare (which always says the address): a
+    // window of an hour kept in memory (a restart forgets it, which only ever lets more through)
+    const ip = req.headers.get('cf-connecting-ip');
+    const where = ip ? addressOf(ip) : null, now0 = this.now();
+    const made = this.signups || (this.signups = new Map());
+    if (where) {
+      if (made.size > 5000) for (const [k, v] of made) if (now0 - v.start >= 3600000) made.delete(k);
+      const r = made.get(where);
+      if (r && now0 - r.start < 3600000 && r.n >= SIGNUPS_PER_HOUR) throw oops(429, 'too many new knights from here: wait a while', 'wait', { wait: Math.ceil((r.start + 3600000 - now0) / 1000) });
+    }
     const b = await readJson(req);
     const name = cleanName(b.name);
     if (!name) throw oops(400, 'that name will not do: 2 to 16 letters, digits or spaces, and nothing rude', 'name');
@@ -174,6 +187,13 @@ export class World {
     if (String(b.invite || '').trim().toLowerCase() !== invite.toLowerCase()) throw oops(403, 'that invite code is wrong', 'invite');
     const lc = name.toLowerCase();
     if (this.row('SELECT 1 FROM accounts WHERE name_lc = ?', lc)) throw oops(409, 'that name is taken', 'taken');
+    if (where) {
+      // counted here, with nothing waiting since the check, so signups at the same moment cannot all slip past it
+      let r = made.get(where);
+      if (!r || now0 - r.start >= 3600000) { r = { start: now0, n: 0 }; made.set(where, r); }
+      if (r.n >= SIGNUPS_PER_HOUR) throw oops(429, 'too many new knights from here: wait a while', 'wait', { wait: Math.ceil((r.start + 3600000 - now0) / 1000) });
+      r.n++;
+    }
     const { salt, hash } = await makeHash(pass);
     const now = this.now();
     this.sql.exec('INSERT INTO accounts (name_lc, name, salt, hash, created, last_seen) VALUES (?, ?, ?, ?, ?, ?)', lc, name, salt, hash, now, now);
