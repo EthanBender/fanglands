@@ -1,7 +1,7 @@
 // The word filter: names and chat. node --test online/test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanName, cleanChat, BLOCKED, BLOCKED_INSIDE } from '../src/filter.js';
+import { cleanName, cleanChat, checkChat, nameRude, BLOCKED, BLOCKED_INSIDE, INSULTS, SAID_ABOUT_YOU, YOU_ARE, GAY_INSULTS } from '../src/filter.js';
 
 test('names: plain names pass, tidied', () => {
   assert.equal(cleanName('Cohen'), 'Cohen');
@@ -96,4 +96,52 @@ test('the lists are plain lower-case words a parent can edit', () => {
   assert.ok(BLOCKED.length > 100);
   for (const w of BLOCKED) assert.match(w, /^[a-z]+( [a-z]+)*$/, w);
   for (const w of BLOCKED_INSIDE) assert.match(w, /^[a-z]+$/, w);
+});
+
+// ---------------------------------------------------------------------------
+// Word strikes (docs/ONLINE.md, "Word strikes"): the filter says whether it had to star anything out
+// ---------------------------------------------------------------------------
+test('checkChat: the masked line and whether anything was masked; cleanChat is its text', () => {
+  assert.deepEqual(checkChat('hello there'), { text: 'hello there', masked: false });
+  assert.deepEqual(checkChat('what the fuck'), { text: 'what the ****', masked: true });
+  assert.deepEqual(checkChat('f u c k you'), { text: '* * * * you', masked: true });
+  assert.deepEqual(checkChat('kill yourself'), { text: '**** ********', masked: true });
+  assert.deepEqual(checkChat(''), { text: '', masked: false });
+  assert.deepEqual(checkChat(null), { text: '', masked: false });
+  assert.deepEqual(checkChat('   '), { text: '', masked: false });
+  for (const s of ['what the fuck', 'hello', 'you are gay', 'kill the goblin', 'x'.repeat(200)]) assert.equal(cleanChat(s), checkChat(s).text, s);
+});
+
+test('insults are masked and counted: plain insults, and words said about someone', () => {
+  assert.deepEqual(checkChat('you idiot'), { text: 'you *****', masked: true });
+  assert.deepEqual(checkChat('this stupid goblin'), { text: 'this ****** goblin', masked: true });
+  assert.deepEqual(checkChat('L0SER'), { text: '*****', masked: true });
+  assert.deepEqual(checkChat('shut up'), { text: '**** **', masked: true });
+  assert.deepEqual(checkChat('you dumb'), { text: '*** ****', masked: true });
+  assert.deepEqual(checkChat('ur so ugly'), { text: '** ** ****', masked: true });
+  assert.deepEqual(checkChat('u r dumb'), { text: '* * ****', masked: true });
+  assert.deepEqual(checkChat("you're fat"), { text: '****** ***', masked: true });
+});
+
+test('"gay" used as an insult is masked; other uses are not', () => {
+  for (const s of ['you are gay', 'ur gay', 'Ur Gay', 'u r gay', "you're gay", 'you’re gay', 'youre so gay', 'your gay', "that's gay", 'thats so gay', 'its gay', 'this is gay', 'so gay', 'gay boy', 'gay noob', 'gay', 'GAY!', 'gaaay', 'g4y', 'gaylord', 'Gayboy', 'u gaaay']) {
+    assert.equal(checkChat(s).masked, true, s);
+    assert.ok(!/gay/i.test(checkChat(s).text), s + ' -> ' + checkChat(s).text);
+  }
+  // said about nobody: left alone (and "is gay" on purpose, see filter.js)
+  for (const s of ['my uncle is gay', 'Sam is gay', "it's a gay old time", 'gay rights', 'the dumb goblin', 'fat dragon', 'hit the dummy', 'you win', 'you are cool', 'is that your sword']) assert.deepEqual(checkChat(s), { text: s, masked: false }, s);
+});
+
+test('the insult lists are plain lower-case words a parent can edit', () => {
+  for (const w of INSULTS.concat(SAID_ABOUT_YOU, YOU_ARE, GAY_INSULTS)) assert.match(w, /^[a-z]+( [a-z]+)*$/, w);
+  assert.ok(INSULTS.includes('idiot') && INSULTS.includes('stupid') && SAID_ABOUT_YOU.includes('gay'));
+});
+
+test('names: insults are refused at sign-up; nameRude flags an old name for what it says, not its shape', () => {
+  for (const n of ['Stupid Sam', 'Gaylord', 'Gay Knight', 'Idiot', 'Big Loser']) { assert.equal(cleanName(n), null, n); assert.equal(nameRude(n), true, n); }
+  for (const n of ['Cohen', 'MudGoll', 'Dumbledore', 'Big Dummy', 'Cassandra', 'Hancock']) { assert.equal(cleanName(n), n, n); assert.equal(nameRude(n), false, n); }
+  // shapes cleanName refuses that are not rude: an old name is never flagged for them
+  for (const n of ['admin', 'A', 'Name with seventeen', 'Co-hen']) assert.equal(nameRude(n), false, n);
+  for (const n of ['xXfuckerXx', 'fu ck', 'Sh1thead']) assert.equal(nameRude(n), true, n);
+  assert.equal(nameRude(null), false); assert.equal(nameRude(''), false);
 });

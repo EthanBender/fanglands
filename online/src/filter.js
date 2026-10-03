@@ -65,8 +65,26 @@ export const BLOCKED = [
   'suicide',
   'nazi', 'nazis', 'hitler', 'heil', 'kkk',
   'cocaine', 'heroin', 'meth',
-  // unkind words are not blocked by default; a parent who wants them gone adds them here, for example:
-  // 'idiot', 'stupid', 'loser', 'moron',
+];
+
+// Insults (owner, 2026-10-03: "insults count as well as swear words, including 'gay' used as an insult"). They are masked
+// and counted exactly like the words above. Words that are an insult on their own:
+export const INSULTS = [
+  'idiot', 'idiots', 'idiotic', 'moron', 'morons', 'moronic', 'loser', 'losers', 'stupid', 'stupidhead', 'imbecile',
+  'dumbo', 'dumbhead', 'dimwit', 'nitwit', 'halfwit', 'numbskull', 'bonehead', 'fatso', 'fatty',
+  'gaylord', 'gayboy', 'gaywad', 'gayass', 'ghey',
+  'shut up', 'shutup', 'go die', 'hate you',
+];
+// Words that are only an insult when they are said about someone ("you are gay", "ur so dumb"), never on their own:
+// "the dumb goblin", "the fat dragon" and "a gay old time" are left alone. Each is caught after any of YOU_ARE, and
+// 'gay' is caught in the ways it is used as an insult: "that's gay", "so gay", "gay boy", or a line that is only "gay".
+// "Sam is gay" and "my uncle is gay" read the same to a word list, so "is gay" is left off on purpose; a parent who
+// wants it caught adds 'is gay' to INSULTS.
+export const SAID_ABOUT_YOU = ['gay', 'dumb', 'ugly', 'fat'];
+export const YOU_ARE = ['you', 'u', 'ur', 'youre', 'your', 'ure', 'ya', 'you are', 'u are', 'u r', 'you r', 'yur'];
+export const GAY_INSULTS = [
+  'thats gay', 'that is gay', 'its gay', 'it is gay', 'this is gay', 'how gay', 'so gay', 'too gay', 'very gay', 'super gay',
+  'such a gay', 'gay boy', 'gay kid', 'gay guy', 'gay noob', 'gay knight', 'gay baby', 'gay person',
 ];
 
 // The worst of them are refused inside a name as well, even as part of a longer word (xXfuckerXx), and mask
@@ -92,7 +110,9 @@ const stretched = s => /(.)\1/.test(s);                      // has a doubled le
 // The list, prepared once. Whole words go in WORDS; their squeezed forms in SQUEEZED so a stretched word
 // matches only when it was stretched (plain "as" never matches "ass", but "asss" does). Phrases keep their words.
 const WORDS = new Set(), SQUEEZED = new Set(), PHRASES = [];
-for (const raw of BLOCKED) {
+const ABOUT = [];
+for (const w of SAID_ABOUT_YOU) for (const y of YOU_ARE) ABOUT.push(y + ' ' + w, y + ' so ' + w);
+for (const raw of BLOCKED.concat(INSULTS, GAY_INSULTS, ABOUT)) {
   const w = unleet(String(raw), SWAP_I).replace(/\s+/g, ' ').trim();
   if (!w) continue;
   if (w.includes(' ')) PHRASES.push(w.split(' '));
@@ -105,7 +125,9 @@ const INSIDE = BLOCKED_INSIDE.map(w => unleet(String(w), SWAP_I).trim()).filter(
 function forms(tok) {
   const out = new Set();
   const bare = tok.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '');
-  for (const t of [tok, bare]) for (const sw of [SWAP_I, SWAP_L]) {
+  // you're, that's, it's (straight or curly apostrophe) read as youre, thats, its
+  const joined = bare.replace(/['\u2019]/g, '');
+  for (const t of [tok, bare, joined]) for (const sw of [SWAP_I, SWAP_L]) {
     const n = unleet(t, sw);
     if (!n) continue;
     out.add(n);
@@ -124,6 +146,9 @@ export function isBadWord(tok) {
   return false;
 }
 
+// One token says this word of a phrase: as typed, or stretched (so gaaay, ur -> urrr)
+const saysWord = (t, w) => { if (t.forms.has(w)) return true; for (const f of t.forms) if (stretched(f) && squeeze(f) === squeeze(w)) return true; return false; };
+
 // Marks which whitespace-separated tokens of s are bad: on their own, as a phrase, or as letters spaced out.
 function markBad(s) {
   const toks = [];
@@ -133,10 +158,12 @@ function markBad(s) {
   for (const words of PHRASES) {
     for (let i = 0; i + words.length <= toks.length; i++) {
       let ok = true;
-      for (let j = 0; j < words.length && ok; j++) if (!toks[i + j].forms.has(words[j])) ok = false;
+      for (let j = 0; j < words.length && ok; j++) if (!saysWord(toks[i + j], words[j])) ok = false;
       if (ok) for (let j = 0; j < words.length; j++) toks[i + j].bad = true;
     }
   }
+  // a line that is only "gay" (gay! gaaay g4y) is said at someone
+  if (toks.length === 1 && saysWord(toks[0], 'gay')) toks[0].bad = true;
   // f u c k: three or more single letters in a row read as one word
   for (let i = 0; i < toks.length; i++) {
     let j = i; while (j < toks.length && /^[a-z0-9@$!|+]$/i.test(toks[j].text)) j++;
@@ -147,22 +174,26 @@ function markBad(s) {
 }
 
 // Chat: trimmed, whitespace collapsed, at most 120 characters, bad words replaced by asterisks of the same
-// length. Returns '' when nothing is left to say.
-export function cleanChat(s) {
-  if (typeof s !== 'string') return '';
+// length. Answers {text, masked}: text is '' when nothing is left to say, and masked says whether any word had to be
+// starred out (the world counts a word strike for that: docs/ONLINE.md, "Word strikes").
+export function checkChat(s) {
+  if (typeof s !== 'string') return { text: '', masked: false };
   s = s.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!s) return '';
+  if (!s) return { text: '', masked: false };
   if (s.length > 120) s = s.slice(0, 120).trim();
   const toks = markBad(s);
-  let out = '', pos = 0;
+  let out = '', pos = 0, masked = false;
   for (const t of toks) {
     if (!t.bad) continue;
+    masked = true;
     out += s.slice(pos, t.start) + '*'.repeat(t.end - t.start);
     pos = t.end;
   }
   out += s.slice(pos);
-  return out.trim();
+  return { text: out.trim(), masked };
 }
+// The masked line on its own (what the Room used to call; kept for anything that only wants the words).
+export function cleanChat(s) { return checkChat(s).text; }
 
 // Names: 2 to 16 characters of letters, digits and single spaces, trimmed, nothing rude anywhere in them.
 // Returns the tidied name, or null when it will not do.
@@ -175,4 +206,13 @@ export function cleanName(s) {
   if (markBad(s).some(t => t.bad)) return null;
   if (isBadWord(s.replace(/ /g, ''))) return null;   // "fu ck"
   return s;
+}
+
+// A name already in the world that the list refuses today (it was made before a word was added): true when anything rude
+// is in it. Only the words count here, not the length or the characters, so an old name is judged on what it says.
+export function nameRude(s) {
+  if (typeof s !== 'string') return false;
+  s = s.replace(/\s+/g, ' ').trim();
+  if (!s) return false;
+  return markBad(s).some(t => t.bad) || isBadWord(s.replace(/ /g, ''));
 }
