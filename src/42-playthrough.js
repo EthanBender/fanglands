@@ -208,7 +208,8 @@
   }
   const killXp = type => { const m = MONSTER_DEFS[type]; return m.hp * 4 + (m.level >= 10 ? m.level * 10 : 0); };
   // what a recipe's materials cost in seconds at the code's own gather rates (bronze tools, at the level each opens); a bar is its ore plus a smelt
-  const MATERIAL_SECS = { wood: 4, oak_log: 4, jungle_log: 2.2, stone: 4, iron_ore: 4, coal: 4, mithril_ore: 2, obsidian: 2.2, iron_bar: 5.5, steel_bar: 9.5, mithril_bar: 11.5, plank: 2, spider_silk: 10, wool: 8, blast_powder: 15, goblin_scrap: 10, potato: 40, wheat: 40, berries: 5, flour: 80, raw_beef: 10, raw_trout: 8, dragon_scale: 60, scale_plate: 180 };
+  // (62-ores' three metals: a lump at its 4.0 s swing, then 1 / 2 / 3 coal at 4 s each, then the 1.5 s smelt)
+  const MATERIAL_SECS = { wood: 4, oak_log: 4, jungle_log: 2.2, stone: 4, iron_ore: 4, coal: 4, mithril_ore: 2, obsidian: 2.2, iron_bar: 5.5, steel_bar: 9.5, mithril_bar: 11.5, blackiron_ore: 4, sunstone_ore: 4, stormstone_ore: 4, blackiron_bar: 9.5, sunstone_bar: 13.5, stormstone_bar: 17.5, plank: 2, spider_silk: 10, wool: 8, blast_powder: 15, goblin_scrap: 10, potato: 40, wheat: 40, berries: 5, flour: 80, raw_beef: 10, raw_trout: 8, dragon_scale: 60, scale_plate: 180 };
   const materialSecs = needs => needs.reduce((s, [id, q]) => s + q * (MATERIAL_SECS[id] || 10), 0);
   // how many of a monster the world offers per hour: spawns × respawn (the Goblin Camp's own refill every 1800 s)
   const supplyPerHour = type => { let n = 0; for (const s of MONSTER_SPAWNS) if (s.type === type) n += 3600 / (s.camp ? 1800 : (MONSTER_DEFS[type].respawn || 25)); return n; };
@@ -254,7 +255,7 @@
     for (const t in GATHER) { const g = GATHER[t]; if (g.lv > 1) add(g.skill, g.lv, `gather ${g.label}`); }
     if (Tn('JUNGLE') >= 0) add('woodcutting', 15, 'jungle trees (Queen Aelith wants 8 logs)'); if (Tn('MITHRIL') >= 0) add('mining', 20, 'mithril rock'); if (Tn('OBSIDIAN') >= 0) add('mining', 28, 'obsidian (Godly Plated needs one per piece)');
     add('fishing', 5, 'trout'); if (ITEMS.lobster_pot) add('fishing', 25, 'lobster pots');
-    for (const r of RECIPES) if (r.skill && r.lv > 1) add(r.skill, r.lv, r.label + (r.station === 'skyforge' ? ' [anvil recipe, dead: Halcyon forges it at 30]' : ''));
+    for (const r of RECIPES) if (r.skill && r.lv > 1) add(r.skill, r.lv, r.label + (r.station === 'skyforge' ? " (Halcyon's sky forge, Aerie)" : ''));
     for (const s of SMELT) if (s.lv > 1) add('smithing', s.lv, s.label);
     if (window.INSTANCES && INSTANCES.get('aerie')) add('smithing', 30, "Halcyon's sky forge (Godly Plated)");
     if (window.DOZERUP) for (const u of DOZERUP.UPGRADES) add('crafting', u.lv, `dozer upgrade: ${u.name}`);
@@ -594,7 +595,7 @@
     return PLAY;
   }
 
-  window.PLAYTHROUGH = { connectivity, instanceConnectivity, chain, chainStages, progression, sources, gates, play, PLAY, get pristine() { return pristine(); }, killSecs, killXp, gatherSecs, fishSecs };
+  window.PLAYTHROUGH = { connectivity, instanceConnectivity, chain, chainStages, progression, sources, gates, play, PLAY, get pristine() { return pristine(); }, killSecs, killXp, gatherSecs, fishSecs, MATERIAL_SECS };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {

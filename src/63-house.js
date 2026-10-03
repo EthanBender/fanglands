@@ -35,8 +35,8 @@
 //   placeAction  — saplings only plant on your own ground; a lodestone will not bind on floating rock
 //   finishGather — chopping a tree in the world sometimes drops a sapling for the island
 //
-// Keeping building in the overworld exactly as it was is deliberate (see the summary): this gives him
-// somewhere better, it does not take anything away.
+// Walls, floors and doors now go only on the island's own ground (owner, 3 Oct: 64-island); beds, workbenches,
+// goblin traps and the lodestone keep the core's rules in the world.
 // window.HOUSE exposes everything the self-test and any later feature needs.
 // ============================================================================
 {
@@ -152,6 +152,8 @@
   });
   // define() paints the entry tile CAVE (a cave floor on a grass island); the porch cobble belongs there
   inst.tiles[hidx(ENTRY[0], ENTRY[1])] = T.COBBLE;
+  // the island has its own plaque (YOUR ISLAND, arches and things built): no "0 left" dungeon plaque beside it
+  inst.plaque = false;
   const baseAt = i => inst.tiles[i];
 
   // ---------- the island's own save ----------
@@ -397,10 +399,14 @@
       for (const d of DESTS) if (!h.been[d.key] && d.region === player.region) { h.been[d.key] = true; found = d; }
       if (found) { if (h.seen) notify(`${found.name}. Your island can hold an arch to it now.`); save(); }
     }
-    // P only when nothing else owns the keyboard: the wiki and the settings panel type letters
-    if ((pressed.has('KeyP') && !dialog.cur && (!panel || panel === 'house_build')) || tapped('housebuild')) {
+    // P only when nothing else owns the keyboard: the wiki and the settings panel type letters. Neither P nor the BUILD
+    // button opens the panel while someone is talking (the talk page would sit on top of it); a tap then is dropped
+    const tapB = tapped('housebuild');
+    if (((pressed.has('KeyP') && (!panel || panel === 'house_build')) || tapB) && !dialog.cur) {
       pressed.delete('KeyP');
-      if (inside) { panel === 'house_build' ? closePanel() : openPanel('house_build'); }
+      // the area banner ("YOUR ISLAND") and the arrival line ("Tap BUILD to put something up") are drawn over panels
+      // (on a phone the line lands on the second card): both go when the build panel opens
+      if (inside) { if (panel === 'house_build') closePanel(); else { openPanel('house_build'); areaBanner = null; notice = null; } }
       else notify(`Your island is through the stone portal in Thistledown, inside the north wall at ${PORTAL.x}, ${PORTAL.y}.`);
     }
     if (!inside) return;
@@ -499,13 +505,17 @@
 
   // ---------- HUD ----------
   // On your island: a plaque in the kit's column (src/59-hudkit.js) with the arch mark, "Your island", the arches
-  // standing and the things built; BUILD is the context seat's face (the arch; P on the keys), after LEAVE.
-  hudSeatFace('ctx', { id: 'build', prio: 20, when: () => inside && !player.mech && !player.dead, emblem: 'build', ribbon: 'BUILD', key: 'P', name: 'Build on your island', action: () => { touch.taps.push('housebuild'); } });
+  // standing and the things built; BUILD is the context seat's face (the arch; P on the keys). It outranks 16-instances'
+  // LEAVE (prio 30), because the island is an instance too and touch has no P key: with LEAVE first, the iPad had no way
+  // to build at all. LEAVE moves to the block seat on the island (64-island), and the arch by the porch still goes home.
+  // (dimmed while someone talks: the panel does not open under the talk page)
+  hudSeatFace('ctx', { id: 'build', prio: 35, when: () => inside && !player.mech && !player.dead, disabled: () => !!dialog.cur, emblem: 'build', ribbon: 'BUILD', key: 'P', name: 'Build on your island', action: () => { touch.taps.push('housebuild'); } });
   HOOKS.hud.push(() => { if (inside && !paused && !panel && !player.dead) HK.teach('build', 'P', 'Build', { x: player.x, y: player.y, lift: 46 }, { emblem: 'build' }); });
   HOOKS.hud.push((g, narrow) => {
     if (!inside || paused) return;
     const h = H();
-    HK.addPlaque(g, { id: 'island', emblem: 'build', name: 'YOUR ISLAND', right: `${archCount()} of ${DESTS.length} arches`, sub: `${h.made} built` });
+    // (foldRight: on a landscape phone's narrow plaque the arch count moves under "YOUR ISLAND" instead of running into it)
+    HK.addPlaque(g, { id: 'island', emblem: 'build', name: 'YOUR ISLAND', right: `${archCount()} of ${DESTS.length} arches`, sub: `${h.made} built`, foldRight: true });
   });
 
   // ---------- drawing ----------
