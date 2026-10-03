@@ -52374,7 +52374,9 @@ window.RETALIATE = RETALIATE;
   // 1. tiles (four new ones: 240..243; the ceiling is 255)
   // =========================================================================
   // a mown lawn: walkable, but not GRASS, so a hoe cannot till it and nothing can be placed on it
-  const LAWN = addTile('TD_LAWN', { tex: 'grass', mini: '#7cc35a' });
+  // open ground like the grass it replaced (owner's game on master: get off the mare, park a machine, set a lodestone or a fire
+  // on any of it); still its own tile, so a hoe does not till the Duke's lawns
+  const LAWN = addTile('TD_LAWN', { tex: 'grass', mini: '#7cc35a', placeableOn: true });
   // clipped hedges, trees and rose bushes
   const HEDGE = addTile('TD_HEDGE', { solid: true, tex: 'grass', mini: '#2f6b2a' });
   // the city's things: lamps, statues, the plinth, benches, stalls, signposts, the bell, the sundial
@@ -53113,9 +53115,9 @@ window.RETALIATE = RETALIATE;
   const gcode = (x, y) => inPlan(x, y) ? GCODE[pi(x, y)] : G_NONE;
   // the cells the chunks paint edge to edge in opaque stone, lawn, planks or the core's own grass and dirt (water only gets
   // its coping): while one is as the world made it, the core skips its texture there (09-render reads GROUND_COVER), so
-  // the ground is not drawn twice. Only at a whole-number pixel ratio, where the chunks meet without a seam.
+  // the ground is not drawn twice. At any pixel ratio: the chunks are blitted on whole device pixels (snapPx), so they meet.
   const COVERS = new Uint8Array(W * H); for (let i = 0; i < W * H; i++) COVERS[i] = GCODE[i] !== G_NONE && GCODE[i] !== G_WATER ? 1 : 0;
-  window.GROUND_COVER = (x, y) => !window.__instance && snapped && x >= X0 && y >= Y0 && x < X0 + W && y < Y0 + H && COVERS[pi(x, y)] === 1 && Number.isInteger(DPR) && tileAt(x, y) === base[pi(x, y)];
+  window.GROUND_COVER = (x, y) => !window.__instance && snapped && x >= X0 && y >= Y0 && x < X0 + W && y < Y0 + H && COVERS[pi(x, y)] === 1 && tileAt(x, y) === base[pi(x, y)];
   const isStreet = (x, y) => { const k = gcode(x, y); return k === G_STREET || k === G_GATE || k === G_BRIDGE; };
   const isWaterG = (x, y) => glyph(x, y) === '~';
   // the patterns, 48 x 48 (cached at 2x)
@@ -53256,12 +53258,18 @@ window.RETALIATE = RETALIATE;
     } catch (e) { }
     STATS.painted++;
   }
+  // The pictures are made at the screen's real pixel ratio (1 to 2), not a rounded one: at 125% or 150% (most Windows
+  // laptops, or a zoomed browser) a picture made at 1x or 2x was rescaled on every blit, soft, and about twice the frame.
+  const picScale = () => Math.round(Math.max(1, Math.min(2, typeof DPR === 'number' && DPR > 0 ? DPR : 1)) * 100) / 100;
+  // where a chunk edge lands on the screen, snapped to a whole device pixel, so neighbouring chunks meet with no seam at any
+  // pixel ratio (09-render draws the world at scale DPR, offset by the rounded camera)
+  const snapPx = (v, o) => Math.round((v - o) * DPR) / DPR + o;
   function groundChunk(cx, cy) {
-    const ss = Math.max(1, Math.min(2, Math.round(typeof DPR === 'number' ? DPR : 1))), key = cx + ',' + cy + '@' + ss;
+    const ss = picScale(), key = cx + ',' + cy + '@' + ss;
     let ch = CHUNKS.get(key);
     const hsh = chunkHash(cx, cy);
     if (!ch) {
-      const c = document.createElement('canvas'); c.width = CH * TILE * ss; c.height = CH * TILE * ss;
+      const c = document.createElement('canvas'); c.width = Math.ceil(CH * TILE * ss); c.height = Math.ceil(CH * TILE * ss);
       ch = { c, used: 0, hash: hsh }; CHUNKS.set(key, ch); paintChunk(ch, cx, cy, ss);
       if (CHUNKS.size > chunkMax) {
         const old = [...CHUNKS.entries()].filter(([k]) => k !== key).sort((a, b) => a[1].used - b[1].used).slice(0, CHUNKS.size - chunkMax);
@@ -53280,7 +53288,9 @@ window.RETALIATE = RETALIATE;
     chunkMax = Math.min(40, Math.max(chunkMax, (cx1 - cx0 + 1) * (cy1 - cy0 + 1) + 4));
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
       const ch = groundChunk(cx, cy); if (!ch.c.width) continue;
-      g.drawImage(ch.c, (X0 + cx * CH) * TILE, (Y0 + cy * CH) * TILE, CH * TILE, CH * TILE); STATS.chunks++;
+      const ox = Math.round(c.x), oy = Math.round(c.y), wx = (X0 + cx * CH) * TILE, wy = (Y0 + cy * CH) * TILE;
+      const sx = snapPx(wx, ox), sy = snapPx(wy, oy), sw = snapPx(wx + CH * TILE, ox) - sx, sh = snapPx(wy + CH * TILE, oy) - sy;
+      g.drawImage(ch.c, sx, sy, sw, sh); STATS.chunks++;
     }
     for (const s of STEP_LIST()) if (gcode(s.sx, s.sy) && pristineAt(s.sx, s.sy) && vis(c, s.sx * TILE - 40, s.sy * TILE - 40, s.sx * TILE + 88, s.sy * TILE + 88)) drawDoorstep(g, s.sx, s.sy, s.up, s.coffin);
     for (const d of drops) { const tx = Math.floor(d.x / TILE), ty = Math.floor(d.y / TILE); if (gcode(tx, ty) && pristineAt(tx, ty) && vis(c, d.x - 30, d.y - 30, d.x + 30, d.y + 30)) drawDrop(g, d); }
@@ -54366,7 +54376,7 @@ window.RETALIATE = RETALIATE;
   const PICS = new Map(); let picUse = 0;
   const PIC_MAX = 10;
   function buildingPic(b, paint, x, y, w, h) {
-    const ss = Math.max(1, Math.min(2, Math.round(typeof DPR === 'number' ? DPR : 1))), key = b.id + (lit() ? '@n' : '@d') + ss;
+    const ss = picScale(), key = b.id + (lit() ? '@n' : '@d') + ss;
     let p = PICS.get(key);
     if (!p) {
       const x0 = x - TILE, y0 = y - riseOf(b) - 24, pw = w + 2 * TILE, ph = h + riseOf(b) + 24 + TILE;
@@ -54604,7 +54614,7 @@ window.RETALIATE = RETALIATE;
     { const rowsOk = PLAN.ROWS.length === 45 && PLAN.ROWS.every(r => r.length === 58) && W === 58 && H === 45 && X0 === 84 && Y0 === 13;
       const known = PLAN.ROWS.every(r => [...r].every(c => c in PLAN.GLYPHS));
       const ids = ['TD_LAWN', 'TD_HEDGE', 'TD_PROP', 'TD_FOUNTAIN'].map(n => T[n]), maxId = Math.max(...Object.values(T));
-      const tilesOk = ids.every(id => typeof id === 'number' && id <= 255) && SOLID.has(HEDGE) && SOLID.has(PROP) && SOLID.has(FOUNT) && !SOLID.has(LAWN) && !PLACEABLE_ON.has(LAWN) && LAWN !== T.GRASS;
+      const tilesOk = ids.every(id => typeof id === 'number' && id <= 255) && SOLID.has(HEDGE) && SOLID.has(PROP) && SOLID.has(FOUNT) && !SOLID.has(LAWN) && PLACEABLE_ON.has(LAWN) && LAWN !== T.GRASS;
       // round 1 of review: the Smithy Yard, the Bell Green, the inn's garden and the kitchen garden took 184 plain grass
       // cells ('.' 215 -> 31); one lamp moved from 121,29 to 117,30 (still 22)
       const COUNTS = { '-': 202, '#': 144, 'T': 80, 'G': 6, '@': 507, '=': 282, '+': 443, '"': 262, 'h': 82, 'd': 1, 'O': 1, 'P': 2, 'u': 2, 't': 26, '*': 19, 'l': 22, 's': 4, 'p': 1, 'n': 12, 'k': 8, 'i': 2, 'B': 4, 'N': 1, 'D': 1, 'f': 62, '.': 31, ',': 135, 'a': 20, 'Y': 34, '~': 87, 'b': 10, 'j': 1, 'F': 20, 'x': 1, 'S': 4, 'C': 56, 'g': 2,
@@ -55233,6 +55243,39 @@ window.RETALIATE = RETALIATE;
       check(P + 'C28 the frame stays cheap: by day and by night a second frame at the spawn makes no new building picture and no new night-light picture (the town buildings and the lamps still draw), the core skips its texture only under the city\'s own unchanged ground (a fire a knight lit is still drawn by it), and never in an instance',
         picsDay === 0 && picsNight === 0 && lightsNew === 0 && bDay > 0 && lit > 0 && covered > 100 && coveredOff === 0 && fireDrawn && !!inst && !inAerie,
         { picsDay, picsNight, lightsNew, buildings: bDay, lampsLit: lit, covered, coveredOff, fireDrawn, inst: !!inst, inAerie, pics: STATS.pics }); }
+
+    // ---- C29. a Windows laptop at 125% or 150% (or a zoomed browser) ----
+    // the ground chunks and the building pictures are made at the real pixel ratio, and the core still skips its texture
+    // under the city's own ground, so the frame costs what it does at 1x or 2x
+    { const dpr0 = DPR; leave(); onFoot(); drain(); closePanel();
+      let chunkW = 0, picW = 0, covered = 0, want = 0;
+      try {
+        DPR = 1.5; CHUNKS.clear(); PICS.clear(); F.tp(112, 33); player.dayTime = 100; render(); render();
+        want = Math.ceil(CH * TILE * 1.5);
+        for (const [k, ch] of CHUNKS) if (/@1\.5$/.test(k)) { chunkW = ch.c.width; break; }
+        for (const [k, p] of PICS) if (/1\.5$/.test(k)) { picW = p.c.width / p.w; break; }
+        const vx0 = Math.floor(cam.x / TILE), vx1 = Math.ceil((cam.x + VW) / TILE), vy0 = Math.floor(cam.y / TILE), vy1 = Math.ceil((cam.y + VH) / TILE);
+        for (let y = vy0; y <= vy1; y++) for (let x = vx0; x <= vx1; x++) if (window.GROUND_COVER(x, y)) covered++;
+      } finally { DPR = dpr0; CHUNKS.clear(); PICS.clear(); render(); }
+      check(P + 'C29 at a 1.5 pixel ratio the city\'s ground chunks and building pictures are made at 1.5 (not rescaled from 1x or 2x on every frame) and the core still skips its texture under the city\'s ground',
+        chunkW === want && picW >= 1.49 && picW <= 1.51 && covered > 100, { chunkW, want, picScale: picW, covered }); }
+
+    // ---- C30. the Duke's lawns are open ground, like the grass they replaced ----
+    // get off the mare on one, and a lodestone, a bed or a fire can stand on one; a hoe still does not till it
+    { leave(); onFoot(); drain(); closePanel(); let lawn = null;
+      for (let y = TOWN.y0 + 1; y < TOWN.y1 && !lawn; y++) for (let x = TOWN.x0 + 1; x < TOWN.x1 && !lawn; x++)
+        if (tileAt(x, y) === LAWN && tileAt(x + 1, y) === LAWN && tileAt(x - 1, y) === LAWN && tileAt(x, y + 1) === LAWN && tileAt(x, y - 1) === LAWN && !buildingAt(x, y)) lawn = [x, y];
+      const log = { lawn, placeable: PLACEABLE_ON.has(LAWN) }; let ok = !!lawn && PLACEABLE_ON.has(LAWN);
+      if (lawn && window.MOUNTS) {
+        const keepHorse = player.horse ? JSON.parse(JSON.stringify(player.horse)) : player.horse;
+        for (let y = lawn[1] - 2; y <= lawn[1] + 2; y++) for (let x = lawn[0] - 2; x <= lawn[0] + 2; x++) borrow(x, y);
+        changeTile(lawn[0] + 1, lawn[1], MOUNTS.tiles.HORSE); F.tp(lawn[0], lawn[1]); player.facing = { x: 1, y: 0 }; MOUNTS.mount(lawn[0] + 1, lawn[1]); drain();
+        const up = !!player.mech; F.tp(lawn[0], lawn[1]); player.facing = { x: 1, y: 0 }; notice = null; MOUNTS.dismount(); const said = notice ? notice.text : '';
+        log.up = up; log.down = !player.mech; log.said = said;
+        if (!(up && !player.mech && !/No room/.test(said))) ok = false;
+        onFoot(); giveBack(); drain(); if (keepHorse === undefined) delete player.horse; else player.horse = keepHorse;
+      }
+      check(P + 'C30 the Duke\'s lawns are open ground: the knight gets off the mare on one, and a lodestone, bed or fire may stand there (PLACEABLE_ON)', ok, log); }
 
     // ---- put everything back ----
     leave(); giveBack(); onFoot(); drain(); closePanel(); tapCancel('manual');
