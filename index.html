@@ -53311,8 +53311,8 @@ window.RETALIATE = RETALIATE;
     g.restore();
     // the banner pole in his left hand (the west side, clear of a knight standing at the spawn north-east of it), up to
     // 24 px over row 34, and the thistle banner on it
-    g.fillStyle = '#6a4a22'; g.fillRect(-11.2, by - 64, 2.2, 50);
-    g.fillStyle = '#c9a14a'; g.beginPath(); g.arc(-10.1, by - 65, 2.4, 0, 7); g.fill();
+    g.fillStyle = '#6a4a22'; g.fillRect(-11.2, by - 62, 2.2, 48);
+    g.fillStyle = '#c9a14a'; g.beginPath(); g.arc(-10.1, by - 62.5, 2, 0, 7); g.fill();
   }
   function drawGreatFountain(g) {
     const { cx, cy, rx, ry } = GF, t = time;
@@ -53334,11 +53334,11 @@ window.RETALIATE = RETALIATE;
       for (let j = 0; j < 3; j++) { const ph = fr(t * 1.4 + j / 3 + k * 0.17); g.strokeStyle = `rgba(220,242,255,${(0.8 - ph * 0.45).toFixed(3)})`; g.lineWidth = 2.6 - j * 0.6; g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + ex) / 2 + Math.cos(ang) * 6, Math.min(sy, ey) - 14, ex, ey); g.stroke(); }
       for (let j = 0; j < 2; j++) { const ph = fr(t * 1.8 + j * 0.5 + k * 0.3); g.strokeStyle = `rgba(255,255,255,${((1 - ph) * 0.6).toFixed(3)})`; g.lineWidth = 1.2; g.beginPath(); g.ellipse(ex, ey, 4 + ph * 9, (4 + ph * 9) * 0.45, 0, 0, 7); g.stroke(); }
     }
-    blit(g, sprite('gf-upper', 90, 110, 45, 100, paintUpper), cx, cy);
+    blit(g, sprite('gf-upper', 90, 106, 45, 96, paintUpper), cx, cy);
     // water falling off the upper bowl
     for (let k = 0; k < 9; k++) { const an = Math.PI * (0.08 + k * 0.105), x = cx + Math.cos(an) * GF.bowlRx, y0 = by + Math.sin(an) * GF.bowlRy, ph = fr(t * 1.6 + k * 0.37); g.strokeStyle = `rgba(215,238,255,${(0.35 + 0.3 * Math.sin((ph + k) * 6.28)).toFixed(3)})`; g.lineWidth = 1.8; g.beginPath(); g.moveTo(x, y0); g.quadraticCurveTo(x + Math.cos(an) * 4, y0 + 8, x + Math.cos(an) * 6, y0 + 16); g.stroke(); }
     // the thistle banner, fluttering at the top of the bronze knight's pole
-    { const px = cx - 10.1, py = by - 63, sw = Math.sin(t * 2.4) * 2;
+    { const px = cx - 10.1, py = by - 61, sw = Math.sin(t * 2.4) * 2;
       g.fillStyle = PURPLE; g.beginPath(); g.moveTo(px, py); g.lineTo(px - 22, py + 1 + sw * 0.4); g.lineTo(px - 19 - sw, py + 8); g.lineTo(px - 22, py + 15 + sw * 0.4); g.lineTo(px, py + 16); g.closePath(); g.fill();
       g.strokeStyle = GOLD; g.lineWidth = 1; g.stroke(); thistle(g, px - 9, py + 7, 7, GOLD); }
     // spray: placed by the clock
@@ -53901,7 +53901,7 @@ window.RETALIATE = RETALIATE;
     // little bartizans on the south face's corners, inside the footprint
     keepTurret(g, x + 18, face + 30, face - 20, face - 74, 16); keepTurret(g, x + w - 18, face + 30, face - 20, face - 74, 16);
     // the two front turrets at the north corners (their cones may rise 60 px over row 46)
-    keepTurret(g, x + 30, y + 66, y + 10, y - 52, 26); keepTurret(g, x + w - 30, y + 66, y + 10, y - 52, 26);
+    keepTurret(g, x + 30, y + 66, y + 10, y - 48, 26); keepTurret(g, x + w - 30, y + 66, y + 10, y - 48, 26);
   }
   function drawTownBuilding(g, b) {
     const x = b.x * TILE, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
@@ -54453,13 +54453,22 @@ window.RETALIATE = RETALIATE;
         // the spawn at 1280 x 800: few chunks, few items, and a still second frame repaints nothing
         F.tp(112, 33); render(); render(); const perf = { chunks: STATS.chunks, items: STATS.items, repaints: STATS.repaints, size: CHUNKS.size, max: chunkMax };
         r.perf = perf;
-        // the Great Fountain's top
+        // the Great Fountain's top: its recorded box, and the highest point any of its drawing calls reaches
         F.tp(112, 38); STATS.record = true; render(); STATS.record = false; const gf = STATS.boxes.find(b => b.x0 === GF.cx - GF.rx - 2); r.gfTop = gf ? gf.y0 : null;
+        { const { g: rg, log: rl } = recorder(); drawGreatFountain(rg); let top = Infinity;
+          // follow save / restore / translate / scale, so a piece drawn round a local origin (the thistle) is measured where it lands
+          const st = []; let M = { ty: 0, sy: 1 };
+          for (const [k, a] of rl) {
+            if (k === 'save') { st.push({ ...M }); continue; } if (k === 'restore') { M = st.pop() || { ty: 0, sy: 1 }; continue; }
+            if (k === 'translate') { M.ty += a[1] * M.sy; continue; } if (k === 'scale') { M.sy *= a[1]; continue; }
+            const y = k === 'fillRect' ? a[1] : k === 'drawImage' ? (a.length >= 9 ? a[6] : a[2]) : (k === 'moveTo' || k === 'lineTo') ? a[1] : k === 'quadraticCurveTo' ? Math.min(a[1], a[3]) : k === 'arc' ? a[1] - a[2] : k === 'ellipse' ? a[1] - a[3] : Infinity;
+            if (y === Infinity) continue; const wy = M.ty + y * M.sy; if (wy < top) top = wy; }
+          r.gfDrawnTop = top; }
       } catch (e) { threw = String(e && e.stack || e).slice(0, 300); }
       STATS.record = false; player.dayTime = d0; putSize();
       const v88 = r['88,32'], v38 = r['112,38'], p = r.perf || {};
       check(P + 'C19 every view renders (spawn, both gates, the square, the drawbridge, the market, the Green, the Rose Garden, the Orchard, outside the East Gate, and at night); towers and lamps at the West Gate; the Great Fountain, 4 statues and the keep from the square; at the spawn at most 20 chunk blits and 160 items, a still frame repaints nothing, and the chunk cache stays at or under 40; no drawn box covers another building; the Great Fountain stays under 24 px over row 34',
-        !threw && !!v88 && v88.towers > 0 && v88.lamps > 0 && !!v38 && v38.fountains >= 1 && v38.statues === 4 && v38.keep === 1 && p.chunks > 0 && p.chunks <= 20 && p.items <= 160 && p.repaints === 0 && p.size <= p.max && p.max <= 40 && !overlaps.length && r.gfTop !== null && r.gfTop >= 34 * TILE - 24 && r.night.lampsLit > 0,
+        !threw && !!v88 && v88.towers > 0 && v88.lamps > 0 && !!v38 && v38.fountains >= 1 && v38.statues === 4 && v38.keep === 1 && p.chunks > 0 && p.chunks <= 20 && p.items <= 160 && p.repaints === 0 && p.size <= p.max && p.max <= 40 && !overlaps.length && r.gfTop !== null && r.gfTop >= 34 * TILE - 24 && r.gfDrawnTop >= 34 * TILE - 24 && r.night.lampsLit > 0,
         { threw, views: r, overlaps: overlaps.slice(0, 6) }); }
 
     // ---- C20. ward banners ----
@@ -54489,6 +54498,49 @@ window.RETALIATE = RETALIATE;
       onFoot(); drain(); F.tp(111, 35); F.step([]); const t = tileAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)), outOf = !SOLID.has(t) && !collides(player.x, player.y, player.r, 'player');
       check(P + 'C22 after a visit to Aerie the buildings are back in the order the world was built in; a knight put down inside the Great Fountain steps out of it',
         ids0 === ids1 && outOf, { same: ids0 === ids1, outOf, at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)] }); }
+
+    // ---- C23. the small things: Osric's welcome, the children, Duchess, the after-story lines, the art wraps, the words elsewhere ----
+    { const r = {}, q = Q();
+      // Osric calls "Welcome to Thistledown!" once, the first time a knight comes within 3 tiles, as a tag (not a dialog)
+      onFoot(); drain(); q.barked = false; BARK.t = 0; F.tp(96, 32); F.step([]); const before = BARK.t;
+      F.tp(91, 32); F.step([]); const on = BARK.t > 3.9 && q.barked && !said().some(d => /Welcome to Thistledown!/.test(d.text));
+      const cap = { items: null }; const hook = (g, items) => { cap.items = items; }; HOOKS.draw.push(hook); try { render(); } finally { HOOKS.draw.splice(HOOKS.draw.indexOf(hook), 1); }
+      const tagItem = (cap.items || []).some(i => i.capital && i.y === 1e9 + 3);
+      BARK.t = 0; F.tp(96, 32); F.step([]); F.tp(91, 32); F.step([]); const once = BARK.t === 0;
+      r.bark = before === 0 && on && tagItem && once;
+      // Nell and Robin: a pure function of the wall clock (the same on every client), on the U path, Robin 1.2 s behind Nell
+      const a = kidAt(123456), b = kidAt(123456), path = PLAN.KIDS.path, onU = p => p.x >= path[0][0] + 0.5 - 1e-6 && p.x <= path[2][0] + 0.5 + 1e-6 && p.y >= path[0][1] + 0.5 - 1e-6 && p.y <= path[1][1] + 0.5 + 1e-6;
+      let allOn = true; for (let ms = 0; ms < 20000; ms += 137) if (!onU(kidAt(ms))) allOn = false;
+      CLOCK.fixed = 50000; const kids = smallFolk().filter(p => p.id === 'td_nell' || p.id === 'td_robin'); const lag = kidAt(50000 - PLAN.KIDS.lag * 1000);
+      r.kids = a.x === b.x && a.y === b.y && allOn && kids.length === 2 && Math.abs(kids[1].x - tc(0) - (lag.x - 0.5) * TILE) < 1e-6;
+      drain(); kids[0].talk(); r.nell = texts()[0] === 'Catch me if you can!'; drain(); kids[1].talk(); r.robin = texts()[0] === 'You are it! No, wait. Nell is it!'; drain();
+      // the swans swim by the clock too, each its own side of the footbridge
+      const sw = [0, 1].map(i => swanAt(i, 77777)); r.swans = sw[0].x < PLAN.POND.bridge[0] * TILE && sw[1].x > (PLAN.POND.bridge[1] + 1) * TILE && swanAt(1, 77777).x === sw[1].x;
+      // Duchess: only after the story, tappable, and her line
+      const keepBell = q.bell; q.bell = 4; const before2 = smallFolk().some(p => p.id === 'td_duchess');
+      q.bell = 'done'; CAT.t0 = -99; const duch = smallFolk().find(p => p.id === 'td_duchess'); drain(); if (duch) duch.talk();
+      r.duchess = !before2 && !!duch && texts()[0] === "Duchess, the Duke's cat. She is pretending she cannot see you." && duch.x === tc(PLAN.DUCHESS.x);
+      // after the story: Ambrose alternates the time with Duchess, and Wynn has a third line
+      drain(); q.ambroseMet = true; TALK.ambrose = 0; const al = []; for (let k = 0; k < 3; k++) { drain(); F.talk('ambrose'); al.push(texts()[0]); }
+      TALK.wynn = 2; drain(); F.talk('wynn'); const wy = texts()[0];
+      r.after = /^The sun is up|^Dusk|^Night/.test(al[0]) && al[1] === DUCHESS_LINE && /^The sun is up|^Dusk|^Night/.test(al[2]) && wy === 'The ghost was a cat? I knew it. I KNEW it.';
+      q.bell = keepBell; drain(); CLOCK.fixed = 0;
+      // the art wraps: no wooden gate on a town gate cell (but on a pen gate), the brazier instead of a campfire, the castle towers, the town buildings
+      const calls = f => { const { g, log } = recorder(); f(g); return log.length; };
+      r.gates = calls(g => drawFenceProp(g, 85, 32, true)) === 0 && calls(g => drawFenceProp(g, 140, 31, true)) === 0 && calls(g => drawFenceProp(g, 80, 43, true)) > 0;
+      r.brazier = (() => { const { g, log } = recorder(); drawFireProp(g, 119, 38); return log.filter(e => e[0] === 'ellipse').length >= 3; })() && calls(g => drawFireProp(g, 150, 30)) > 0;
+      { const t0 = STATS.towers; calls(g => drawTower(g, tc(104), tc(42))); r.tower = STATS.towers === t0 + 1; }
+      { const b0 = STATS.townBuildings; calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'bakery'))); calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'death2'))); r.buildings = STATS.townBuildings === b0 + 1 && BUILDINGS.filter(b => b.town).length === 16; }
+      // the words elsewhere: Ada, the region, the island arch, the sounds, the book
+      const ada = npc('v1'); r.ada = ada.lines[0] === 'Lost? Find the Great Fountain. Every street comes back to it.' && ada.lines.length === 3;
+      r.region = REGIONS.find(x => x.name === 'Thistledown').sub === 'The city that still stands';
+      r.island = !window.HOUSE || HOUSE.DESTS.find(d => d.key === 'thistledown').line === 'The square, by the Great Fountain.';
+      r.sounds = typeof SFX.bell === 'function' && typeof SFX.splash === 'function';
+      r.wiki = !window.WIKI || (!!WIKI.get('places', 'thistledown_landmarks') && !!WIKI.get('quests', 'td_bell'));
+      // the first visit: the Voice's line
+      { const v0 = player.visitedVillage; player.visitedVillage = false; drain(); F.tp(96, 32); F.step([]); r.voice = said().some(d => d.who === 'The Voice' && d.text === 'Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is just past it, over the moat.'); player.visitedVillage = v0; drain(); }
+      check(P + "C23 the small things: Osric's welcome shows once as a tag over his head; Nell and Robin and the swans move by the wall clock on their paths; Duchess comes after the story; Ambrose and Wynn have their after-story lines; the town gates draw no wooden gate, the square's fire is a brazier, the castle towers and the town buildings draw themselves (Death's House keeps its own); Ada, the region, the island arch, the sounds, the book and the Voice say the new words",
+        Object.values(r).every(Boolean), r); }
 
     // ---- put everything back ----
     leave(); giveBack(); onFoot(); drain(); closePanel(); tapCancel('manual');
