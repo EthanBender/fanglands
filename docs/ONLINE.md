@@ -1400,6 +1400,9 @@ their own islands. The Room now keys it `house:<his name, lower case>`, so a kni
 presence in or out, no keeper but himself, no trade, no party but his own. Every message out still names the map `house`
 (`keeper`, `left`, a relayed `p`, the roster, `crackers`), so a game never sees the key. A `map` a game sends that starts
 with `house` (`house`, or `house:anything`) is always the sender's own island. The `house` map is never simulated (Stage 2).
+So a game reads a roster row (or any message) naming another knight on `house` as HIS island, never its own: the Friends
+panel never marks him 'on your map' (no blue edge, Follow stays dark) and says 'On their own island', and so does the
+admin Knights tab (`src/73-players.js`, `src/76-admin.js`, each with a self-test).
 
 **The parent page and the switch.** `GET /api/admin/sim` adds, beside `meter`:
 
@@ -1455,6 +1458,11 @@ the roster said `house` for both. A page told of another Atlas shows the NEW WOR
 answers the Atlas `ea36148040c3f60c` and `observe`, the served game builds the same hash on a laptop and an iPad and says
 it in hello, and the parent page shows the check (`test-world-admin-*.png`). The same two-browser run with Probe Knight
 and Probe Two on the test world is `node stage1-proof.js probe`; it logs the probes in with their secret word.
+After review round 1 (the Friends panel told two knights on their own islands they shared a map): the proof also opens
+Friends on each island (F on the laptop, a tap on the seal on the iPad) and checks the other knight reads 'On their own
+island', with no blue edge and Follow dark, and that a real tap on Follow does nothing
+(`friends-on-islands-{laptop,ipad}-local.png`). The re-run, 9.9 minutes: ALL PASS, 3,375 presences, 3,298 judged, 77 not
+judged, 44 jumps waived, 0 too fast, 0 into or through a wall, no page errors.
 
 ## Safety rules (binding)
 
