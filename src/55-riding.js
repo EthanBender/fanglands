@@ -170,7 +170,8 @@
     // FULL STEAM: shove the machine along its line, flatten what the blade flattens, throw anything alive aside
     const step = SPEED * dt;
     const before = { x: player.x, y: player.y };
-    moveEntity(player, sp.dir.x * step, sp.dir.y * step, 'player');
+    // a rider's collision (00-core solidFor): through a gate, never through a door, never over water
+    moveEntity(player, sp.dir.x * step, sp.dir.y * step, playerWho());
     sp.moved += Math.hypot(player.x - before.x, player.y - before.y);
     if (typeof dozerPlow === 'function') dozerPlow(player, sp.dir, true); // the blade clears its own path, upgrades and all
     for (const m of monsters) {

@@ -43,8 +43,11 @@ const SOLID = new Set([T.WALL, T.WATER, T.TREE, T.OAK, T.STUMP, T.ROCK, T.IRON, 
 const PUSH_THROUGH = new Set([T.DOOR, T.GATE, T.PORTCULLIS, T.COFFINDOOR]); // people push through these; animals and goblins cannot
 const PLACEABLE_ON = new Set([T.GRASS, T.DIRT, T.SAND, T.CAVE, T.COBBLE, T.FLOOR, T.SOIL, T.ASHES]);
 const WALK_OVER = new Set(); // tiles the player can currently cross (e.g. water while hover armour is worn); features add/remove
-// who: 'player' (the knight on foot: pushes through doors, honours WALK_OVER), 'person' (companions, guards, villagers: doors yes, WALK_OVER no), 'beast' (monsters and machines)
-const solidFor = (t, who) => (who === 'player' && WALK_OVER.has(t)) ? false : SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person' && who !== 'player');
+// who: 'player' (the knight on foot: pushes through doors, honours WALK_OVER), 'person' (companions, guards, villagers: doors yes, WALK_OVER no), 'beast' (monsters and machines),
+// 'rider' (the knight on anything he rides: the mare, the walker, the bulldozer, the Barrelbeast). A rider is a beast in every way but one:
+// a GATE or a PORTCULLIS is a way through a wall, made for riders, so he rides through it. A DOOR or a COFFINDOOR leads into a building and still stops him.
+const RIDE_THROUGH = new Set([T.GATE, T.PORTCULLIS]);
+const solidFor = (t, who) => (who === 'player' && WALK_OVER.has(t)) ? false : SOLID.has(t) || (PUSH_THROUGH.has(t) && who !== 'person' && who !== 'player' && !(who === 'rider' && RIDE_THROUGH.has(t)));
 // Shared left-HUD cursor. drawHud sets it to the bottom of the status plate every frame and HUD hooks claim
 // their row through HK.slot() (src/59-hudkit.js), which advances it. leftCol is the column that cursor is in:
 // the stack wraps into a second column rather than running into the joystick or off the bottom of the screen.

@@ -13,8 +13,8 @@
 // that keeps the mech combat bonuses the core hands every rider out of a fight she should not be in.
 //
 // Where she will not go: indoors, in any dungeon, while you are in another machine, and on water —
-// riding her uses the core's 'beast' collision, so doors, water and walls are solid for her even when
-// hover armour would float the knight over them. She can never reach ground the knight cannot.
+// riding her uses the core's 'rider' collision (a beast's, except that gates let her through), so doors, water and
+// walls are solid for her even when hover armour would float the knight over them. She can never reach ground the knight cannot.
 // ============================================================================
 {
   // ---------- tiles ----------
@@ -187,13 +187,13 @@
     const t = tileAt(tx, ty);
     if (WALK_OVER.has(t)) return `Hover armour floats you, not ${NAME}. Ride from dry land.`;
     if (SOLID.has(t)) return `${NAME} cannot stand there. Ride her from open ground.`;
-    if (!safeSpot(player.x, player.y, HORSE_R, 'beast')) return 'No room here. Ride her from open ground.';
+    if (!safeSpot(player.x, player.y, HORSE_R, 'rider')) return 'No room here. Ride her from open ground.';
     return null;
   }
   function mount(tx, ty) {
     const why = mountRefusal();
     if (why) { notify(why); return false; }
-    const spot = safeSpot(player.x, player.y, HORSE_R, 'beast');
+    const spot = safeSpot(player.x, player.y, HORSE_R, 'rider');
     if (tx !== undefined && inMap(tx, ty) && tileAt(tx, ty) === T_HORSE) changeTile(tx, ty, groundUnder());
     H().at = null; H().under = null;
     player.mech = { hp: Math.max(1, Math.round(H().hp)), maxHp: HORSE_HP, kind: 'horse' };
@@ -303,6 +303,8 @@
       if (player.speed !== HORSE_SPEED) player.speed = HORSE_SPEED; // hover armour / agility / webs all reset speed for the knight on foot
       player.mech.maxHp = HORSE_HP;
       // the core owns several "walker" strings; while a horse is under you they should read as a horse
+      // (the core's "Press X to climb out of the walker" names a machine's key: on her it is G, or GET DOWN on a touch screen)
+      if (notice && /climb out of the walker/i.test(notice.text)) notice.text = touchMode() ? `Tap GET DOWN to get off ${NAME} first.` : `Press G to get off ${NAME} first.`;
       if (notice && /walker/i.test(notice.text)) notice.text = notice.text.replace(/\bthe walker\b/gi, NAME).replace(/\bwalker\b/gi, 'mare');
       for (const f of floaters) if (f.text.indexOf('(walker)') >= 0) f.text = f.text.replace('(walker)', `(${NAME})`);
     } else if (H().owned && H().hp < HORSE_HP) {
@@ -656,7 +658,7 @@
       changeTile(wx, wy, wasW); changeTile(dx2, dy2, wasD);
       F.tp(o.x, o.y); F.sim(2, []);
       check(P + 'mounted, she is stopped by water and by a door even while hover armour would float the knight through',
-        up && stoppedAtWater && stoppedAtDoor && who === 'beast', { up, why: rideWhy, stoppedAtWater, stoppedAtDoor, who }); }
+        up && stoppedAtWater && stoppedAtDoor && who === 'rider', { up, why: rideWhy, stoppedAtWater, stoppedAtDoor, who }); }
 
     // 9. no swinging from the saddle; on foot the swing is back
     { const up = ride();

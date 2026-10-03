@@ -248,7 +248,7 @@ function load() {
     recomputeMaxHp();
     // a save taken during the death animation (or a corrupted one) must not wake the knight dead, at 0 hp, or inside a wall
     if (!(player.hp > 0) || d.player.dead) { player.hp = player.maxHp; const sp = respawnPoint(); player.x = sp.x; player.y = sp.y; player.mech = null; player.r = 13; player.speed = 175; }
-    else if (collides(player.x, player.y, player.r, player.mech ? 'beast' : 'player')) { const sp = safeSpot(player.x, player.y, player.r, player.mech ? 'beast' : 'player') || respawnPoint(); player.x = sp.x; player.y = sp.y; }
+    else if (collides(player.x, player.y, player.r, playerWho())) { const sp = safeSpot(player.x, player.y, player.r, playerWho()) || respawnPoint(); player.x = sp.x; player.y = sp.y; }
     miniDirty = true;
     return true;
   } catch (e) { return false; }
