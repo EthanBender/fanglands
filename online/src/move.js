@@ -36,6 +36,7 @@ export const SLACK = 48;             // px on top: rounding, a step's worth of j
 export const FOOT = 175;             // px/s: no speed is ever judged as slower than walking
 export const CORE = 12;              // px: a FIXED_SOLID tile's middle is the tile shrunk by this on each side
 export const STEP = 4;               // px: how finely a line is walked for the crossing check
+export const CROSS_MAX = 40 * 48;    // px: a longer line is never walked (the speed check catches it): one message can never cost the World more than ~480 steps
 export const JUMP_WINDOW = 10000, JUMPS_MAX = 6;
 export const LOG_PER_DAY = 200;      // violation rows kept a day; past that only the counts grow
 export const KEEP_DAYS = 60;         // rows older than this go on the first write of a day
@@ -61,6 +62,8 @@ export class MoveCheck {
     // not judged: another Atlas or none, the island, a map the Atlas does not know, no position, a death, a first step
     if (k.atlas !== A.hash) { restart(); return this.skip(st, k, true); }
     if (isHouse(map) || !A.knows(map) || !num(m.x) || !num(m.y)) { restart(); return this.skip(st, k); }
+    // off the map (or absurdly far off it): never judged and never remembered, so the next presence starts afresh
+    if (!this.onMap(m.x, m.y)) { restart(); st.x = null; st.y = null; return this.skip(st, k); }
     if (dead || st.dead || st.map !== map || st.x === null) { restart(); return this.skip(st, k); }
     const t = Math.max(now, st.t + MIN_GAP);
     const x = m.x, y = m.y, px = st.x, py = st.y, ms = t - st.t;
@@ -98,8 +101,13 @@ export class MoveCheck {
   // his reported speed, never under walking and never over the fastest mover the Atlas knows
   spdOf(m) { return Math.min(num(m.spd) ? Math.max(m.spd, FOOT) : FOOT, this.atlas ? this.atlas.speedMax : 350); }
   // the straight line from (x0, y0) to (x1, y1) passes through the middle of a FIXED_SOLID tile
+  // on the overworld's area, give or take two tiles (every instance fits inside it; a step just past the edge is still
+  // judged, as walking into a wall): anything further out is a forged or broken position
+  onMap(x, y) { const A = this.atlas, M = 2 * A.TILE; return x >= -M && y >= -M && x < A.MAP_W * A.TILE + M && y < A.MAP_H * A.TILE + M; }
   crosses(map, x0, y0, x1, y1) {
-    const A = this.atlas, W = A.TILE, len = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.ceil(len / STEP));
+    const A = this.atlas, W = A.TILE, len = Math.hypot(x1 - x0, y1 - y0);
+    if (!(len <= CROSS_MAX)) return false;
+    const n = Math.max(1, Math.ceil(len / STEP));
     for (let i = 1; i < n; i++) {
       const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n;
       const tx = Math.floor(x / W), ty = Math.floor(y / W);

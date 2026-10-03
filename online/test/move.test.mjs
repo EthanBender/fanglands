@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { readAtlas } from '../src/atlas.js';
-import { MoveCheck, MoveBook, MIN_GAP, LOG_PER_DAY, MOVE_DAY_SCHEMA, MOVE_LOG_SCHEMA } from '../src/move.js';
+import { MoveCheck, MoveBook, MIN_GAP, LOG_PER_DAY, MOVE_DAY_SCHEMA, MOVE_LOG_SCHEMA, CROSS_MAX } from '../src/move.js';
 import { Room } from '../src/room.js';
 import { ATLAS_FILE } from '../../tools/atlas.mjs';
 
@@ -181,4 +181,31 @@ test('in the Room: the check only watches. A presence through a wall is relayed 
   assert.equal(room.move.book.view().today.wall, 1);
   assert.equal(room.sim.move, 'off');
   room.setSim({ move: 'nonsense' }); assert.equal(room.sim.move, 'observe');
+});
+
+test('a forged position far off the map is never judged or remembered, and two messages can never make the World walk a long line', () => {
+  const [tx, ty] = openTile(40, 20, 4);
+  // count every tile the check looks at
+  let calls = 0; const spy = Object.create(atlas); spy.solidAt = (...a) => { calls++; return atlas.solidAt(...a); };
+  const book = new MoveBook(null, () => Date.parse('2026-10-03T15:00:00Z'));
+  const check = new MoveCheck({ atlas: spy, book, mode: 'observe' });
+  const k = { name: 'Eve', lc: 'eve', map: 'over', atlas: atlas.hash };
+  let t = Date.parse('2026-10-03T15:00:00Z');
+  const send = (x, y, extra = {}) => { t += 125; return check.judge(k, Object.assign({ x, y, j: 0, spd: 175, dead: false }, extra), t); };
+  send(mid(tx), mid(ty));
+  for (const far of [[1e12, 1e12], [-1e12, mid(ty)], [mid(tx), 9e15], [1e9, -1e9]]) {
+    const off = send(far[0], far[1]);
+    assert.ok(off.skip, 'far off the map is not judged: ' + far);
+    calls = 0; const t0 = Date.now();
+    const back = send(mid(tx), mid(ty));
+    assert.ok(back.skip, 'the step back is a fresh start, not a line from the forged spot');
+    assert.ok(calls < 10 && Date.now() - t0 < 50, `looked at ${calls} tiles in ${Date.now() - t0} ms`);
+  }
+  // a real but huge step on the map (not a jump): the line is never walked past CROSS_MAX; the speed check catches it
+  const [fx, fy] = openTile(200, 140, 4);
+  assert.ok(Math.hypot(mid(fx) - mid(tx), mid(fy) - mid(ty)) > CROSS_MAX);
+  send(mid(tx), mid(ty)); calls = 0;
+  const leap = send(mid(fx), mid(fy));
+  assert.ok(calls < 10, 'looked at ' + calls + ' tiles');
+  assert.equal(leap.kind, 'speed');
 });
