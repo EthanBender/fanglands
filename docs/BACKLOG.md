@@ -84,8 +84,10 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
 (28 scenarios each) and 86 server tests passed before each deploy.
 
 ## NEXT WEEK — improvements held back so the work could ship
+- Mount gates leftovers (2026-10-02, small): on the mare, GET DOWN in a gateway sometimes says "No room to get down here" with the street right there; the town gates are drawn as a shut fence-gate even while a rider stands in them (draw the leaves open when someone is near); check 0 in 94-mountgates uses fixed radii (20/22/26) instead of each mount's real one; the monster-at-gate check quietly skips a monster type that no longer exists.
+- Playthrough-only flakes ON MASTER (seen 2026-10-02): "fight back: only the monster that attacked ..." failed 2 of 3 --play runs on master (a calm, stunned goblin gets picked; pinning the clock to morning did not fix it); "admin: layout ..." fails under --play on master too. The plain suite (what deploy runs) passes.
 - PICK UP TUESDAY 2026-10-06 (paused by the owner 2026-09-30 evening). His three asks, in this order:
-  1. "mounts should be able to pass through the gats at the main city": branch fix/mount-gates (~/fanglands-wt/mountgates), WIP 2f618e5 NOT yet tested (src/94-mountgates.js + small edits to 00-core, 06-systems, 51-mounts, 55-riding, 32-beast, 04-state). Finish, test, review, ship.
+  1. "mounts should be able to pass through the gats at the main city": SHIPPED 2026-10-02.
   2. "bosses shoould all be redefeatable": not started (the run was still finding bosses). The Gnasher's Arena lever is the pattern. Use a NEW worktree path (~/fanglands-wt/bossrematch): ~/fanglands-wt/bosses is an older boss-dungeons draft on feat/bosses (3db206f, src/75-bossdungeons.js, untested) worth reading first.
   3. "do the same process on the main city" (the Cloud Kingdom process for Thistledown): not started (the run was still designing).
 - Flaky checks seen once each on 2026-09-30 (passed 3 runs straight after): goblincity "killing the Gnasher completes the quest" (and the three checks after it that depend on it), and boats "Ironclad Isle costs 25 coins; first landing gets a Voice line".

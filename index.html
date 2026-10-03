@@ -20202,6 +20202,8 @@ window.SETTINGS = SETTINGS;
       if (player.speed !== HORSE_SPEED) player.speed = HORSE_SPEED; // hover armour / agility / webs all reset speed for the knight on foot
       player.mech.maxHp = HORSE_HP;
       // the core owns several "walker" strings; while a horse is under you they should read as a horse
+      // (the core's "Press X to climb out of the walker" names a machine's key: on her it is G, or GET DOWN on a touch screen)
+      if (notice && /climb out of the walker/i.test(notice.text)) notice.text = touchMode() ? `Tap GET DOWN to get off ${NAME} first.` : `Press G to get off ${NAME} first.`;
       if (notice && /walker/i.test(notice.text)) notice.text = notice.text.replace(/\bthe walker\b/gi, NAME).replace(/\bwalker\b/gi, 'mare');
       for (const f of floaters) if (f.text.indexOf('(walker)') >= 0) f.text = f.text.replace('(walker)', `(${NAME})`);
     } else if (H().owned && H().hp < HORSE_HP) {
@@ -51648,18 +51650,79 @@ window.RETALIATE = RETALIATE;
   // steps him back one tile, which is the gate itself (open to a knight on foot), so the wreck is right in front of
   // him: exactly where 32-beast looks to swap in the Barrelbeast's own wreck. The gate stays a gate.
   // The mare never wrecks (51-mounts: she bolts), so she is passed straight through.
+  // ... but never where the wreck would close the gate (owner's ask: every mount fits through the city gates). A wreck
+  // in the lane right in front of a 3-tile town gate left two 48 px lanes, and the Barrelbeast (52 px) could not get
+  // through that gate either way until the wreck was repaired. So every candidate is tried as a wreck first, and only
+  // one that leaves every mount that could cross the opening before still able to cross it is taken (the tiles beside
+  // the wall, diagonally out from the opening, usually). Only if no tile keeps it open does the nearest one take it.
+  // the mounts' radii, widest first: the Barrelbeast (32-beast BEAST_R), the bulldozer, the walker
+  const RADII = [26, 22, 20];
+  const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  // the gate tiles joined to (gx, gy): one opening
+  function opening(gx, gy) {
+    const seen = new Set(), out = [], q = [[gx, gy]];
+    while (q.length) {
+      const [x, y] = q.pop();
+      if (!inMap(x, y) || seen.has(idx(x, y)) || !RIDE_THROUGH.has(tileAt(x, y))) continue;
+      seen.add(idx(x, y)); out.push([x, y]);
+      for (const [dx, dy] of DIRS4) q.push([x + dx, y + dy]);
+    }
+    return out;
+  }
+  // can a body of radius r get from one side of the opening to the other, crossing along 'x' or along 'y'? A flood over
+  // free spots 8 px apart, in a box three tiles out on each side, so a way that bends round a corner or a wreck counts.
+  function crosses(cells, r, axis) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of cells) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const ax = axis === 'x', S = 8;
+    const L = (ax ? x0 - 3 : x0 - 1) * TILE, Tp = (ax ? y0 - 1 : y0 - 3) * TILE;
+    const W = Math.floor(((ax ? x1 + 4 : x1 + 2) * TILE - L) / S) + 1, H = Math.floor(((ax ? y1 + 2 : y1 + 4) * TILE - Tp) / S) + 1;
+    const free = (i, j) => !collides(L + i * S, Tp + j * S, r, 'rider');
+    const seen = new Uint8Array(W * H), q = [];
+    for (let k = 0; k < (ax ? H : W); k++) { const i = ax ? 0 : k, j = ax ? k : 0; seen[j * W + i] = 1; if (free(i, j)) q.push(j * W + i); }
+    for (let h = 0; h < q.length; h++) {
+      const c = q[h], i = c % W, j = (c / W) | 0;
+      if (ax ? i === W - 1 : j === H - 1) return true;
+      for (const [di, dj] of DIRS4) {
+        const ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= W || nj >= H) continue;
+        const n = nj * W + ni; if (seen[n]) continue; seen[n] = 1; if (free(ni, nj)) q.push(n);
+      }
+    }
+    return false;
+  }
+  // every [axis, radius] that can cross the opening at (gx, gy) right now
+  function routes(gx, gy) {
+    const cells = opening(gx, gy), out = [];
+    if (!cells.length) return out;
+    for (const axis of ['x', 'y']) for (const r of RADII) if (crosses(cells, r, axis)) out.push(axis + r);
+    return out;
+  }
   function wreckSpot() {
     const gx = Math.floor(player.x / TILE), gy = Math.floor(player.y / TILE);
     const fx = player.facing.x, fy = player.facing.y;
     const out = [];
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
+    // the eight tiles round the gate tile, then the four two out in a straight line: the core steps the knight back one
+    // tile from his wreck along his facing, and 32-beast looks one tile ahead of him for it, so both stay exact
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
       const tx = gx + dx, ty = gy + dy;
       if (!inMap(tx, ty) || !PLACEABLE_ON.has(tileAt(tx, ty)) || insideBuilding(tx, ty)) continue;
-      const far = Math.abs(dx) + Math.abs(dy) > 1 ? 1 : 0, behind = -(Math.sign(dx) * fx + Math.sign(dy) * fy);
-      out.push({ tx, ty, ux: Math.sign(dx), uy: Math.sign(dy), far, behind, d: dist(player.x, player.y, tc(tx), tc(ty)) });
+      const far = Math.max(Math.abs(dx), Math.abs(dy)) > 1 ? 1 : 0, len = Math.hypot(Math.sign(dx), Math.sign(dy));
+      const behind = -(Math.sign(dx) * fx + Math.sign(dy) * fy) / len;
+      out.push({ tx, ty, ux: Math.sign(dx) / len, uy: Math.sign(dy) / len, far, behind, d: dist(player.x, player.y, tc(tx), tc(ty)) });
     }
     out.sort((a, b) => a.far - b.far || b.behind - a.behind || a.d - b.d);
-    return out[0] || null;
+    if (!out.length) return null;
+    const cells = opening(gx, gy);
+    const need = [];
+    if (cells.length) for (const axis of ['x', 'y']) for (const r of RADII) if (crosses(cells, r, axis)) need.push([axis, r]);
+    for (const c of out) {
+      const i = idx(c.tx, c.ty), was = map[i];
+      map[i] = T.WRECK;
+      const keeps = need.every(([axis, r]) => crosses(cells, r, axis));
+      map[i] = was;
+      if (keeps) return { ...c, keeps: true };
+    }
+    return { ...out[0], keeps: false };
   }
   const wreck0 = wreckMech;
   wreckMech = function () {
@@ -51679,7 +51742,25 @@ window.RETALIATE = RETALIATE;
     }
     return out;
   }
-  window.MOUNTGATES = { EASE, cityGates, ride: RIDE_THROUGH, wreckSpot };
+  // Tap-to-ride: a gate only takes a body narrower than its opening. The Barrelbeast (52 px across) cannot fit a one-tile
+  // (48 px) pen gate, so the path finder does not plan him through one, and the tap says "You can't get there." as it did
+  // before riders could use gates, instead of grinding against the gate without a word.
+  function tooNarrow(tx, ty) {
+    let h = 1, v = 1;
+    for (let x = tx - 1; RIDE_THROUGH.has(tileAt(x, ty)); x--) h++;
+    for (let x = tx + 1; RIDE_THROUGH.has(tileAt(x, ty)); x++) h++;
+    for (let y = ty - 1; RIDE_THROUGH.has(tileAt(tx, y)); y--) v++;
+    for (let y = ty + 1; RIDE_THROUGH.has(tileAt(tx, y)); y++) v++;
+    return player.r * 2 >= Math.max(h, v) * TILE;
+  }
+  HOOKS.pathBlock.push((tx, ty, who) => who === 'rider' && RIDE_THROUGH.has(tileAt(tx, ty)) && tooNarrow(tx, ty));
+
+  // The bone arch (54-graves) is "a gate of bone. You can walk under it.": a gate in the knight's own bone fence, so a
+  // rider goes under it like any other gate; the dead (beasts) still cannot. The Cloud Kingdom's King Gate is left as it
+  // is: 16-instances does not let a mount into an instance at all.
+  if (T.BONE_ARCH != null) RIDE_THROUGH.add(T.BONE_ARCH);
+
+  window.MOUNTGATES = { EASE, cityGates, ride: RIDE_THROUGH, wreckSpot, routes, tooNarrow };
 
   // ---------- self-test ----------
   const P = 'mountgates: ';
@@ -51946,6 +52027,8 @@ window.RETALIATE = RETALIATE;
         for (let y = sp.ty - 4; y <= sp.ty + 4; y++) for (let x = sp.tx - 4; x <= sp.tx + 4; x++) borrow(x, y);
         if (up) ride(sp.key, () => Math.floor(player.x / TILE) === sp.tx && Math.floor(player.y / TILE) === sp.ty);
         const inGate = tileAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)) === sp.t;
+        // every mount that could cross this opening before the wreck must still cross it after
+        const before = routes(sp.tx, sp.ty);
         drain();
         // a monster on the outside lands the last blow, inside a tick as a real one does
         const blow = () => { HOOKS.update.splice(HOOKS.update.indexOf(blow), 1); if (player.mech) { player.mech.hp = 1; hurtPlayer(30, player.x + sp.hitFrom[0] * 30, player.y + sp.hitFrom[1] * 30); } };
@@ -51959,8 +52042,9 @@ window.RETALIATE = RETALIATE;
         const whole = sp.cells.every(([x, y]) => tileAt(x, y) === sp.t);
         const clear = !player.mech && !player.dead && !collides(player.x, player.y, player.r, 'player');
         const named = M.line.test(said) && !(M.K.kind === 'beast' && /walker/.test(said));
-        log[M.K.kind + ' in ' + sp.name] = { up, inGate, found, whole, clear, at: at(), said: said.slice(0, 90) };
-        if (!(up && inGate && own && whole && clear && named)) ok = false;
+        const after = routes(sp.tx, sp.ty), open = before.every(r => after.includes(r));
+        log[M.K.kind + ' in ' + sp.name] = { up, inGate, found, whole, clear, open, before, after, at: at(), said: said.slice(0, 90) };
+        if (!(up && inGate && own && whole && clear && named && open)) ok = false;
         onFoot(); giveBack(); drain();
       }
       // and every gate and portcullis tile anywhere in the world has plain ground beside it for a wreck to land on
@@ -51970,7 +52054,37 @@ window.RETALIATE = RETALIATE;
         player.x = sx; player.y = sy; }
       log.world = { gateTiles, noSpot };
       if (noSpot.length || gateTiles < 9) ok = false;
-      check(P + 'a walker, bulldozer or Barrelbeast wrecked in a town gate or under the portcullis leaves its own wreck beside the gate, the gate stays whole, and the Voice names the right machine; every gate tile in the world has ground beside it for a wreck', ok, log); }
+      check(P + 'a walker, bulldozer or Barrelbeast wrecked in a town gate or under the portcullis leaves its own wreck beside the gate, the gate stays whole and still takes the Barrelbeast and every mount that fitted it before, and the Voice names the right machine; every gate tile in the world has ground beside it for a wreck', ok, log); }
+
+    // 11. tap-to-ride and the width of a gate: on the Barrelbeast (52 px) a one-tile pen gate is not a way (the tap says
+    // "You can't get there." instead of grinding against it); the town's three-tile gates still are; on the mare and the
+    // walker a one-tile gate is a way.
+    { let pen = null;
+      for (let y = 1; y < MAP_H - 1 && !pen; y++) for (let x = 1; x < MAP_W - 1 && !pen; x++) if (tileAt(x, y) === T.GATE && MOUNTGATES.ride.has(tileAt(x, y)) && !RIDE_THROUGH.has(tileAt(x - 1, y)) && !RIDE_THROUGH.has(tileAt(x + 1, y)) && !RIDE_THROUGH.has(tileAt(x, y - 1)) && !RIDE_THROUGH.has(tileAt(x, y + 1))) pen = [x, y];
+      const log = { pen }; let ok = !!pen && gates.length === 2;
+      const o = h.openSpot(60, 30);
+      for (const K of [KINDS[2], KINDS[0], KINDS[3]]) {
+        const up = board(K, o.x, o.y), w = playerWho();
+        const penBlocked = !!pen && pathBlocked(pen[0], pen[1], w), townOpen = gates.every(g => !pathBlocked(g.x, g.mid, w));
+        log[K.kind] = { up, who: w, r: player.r, penBlocked, townOpen };
+        if (!(up && w === 'rider' && townOpen && penBlocked === (K.kind === 'beast'))) ok = false;
+        onFoot(); giveBack(); drain();
+      }
+      check(P + 'tap-to-ride knows a gate\'s width: the Barrelbeast is not routed through a one-tile pen gate, the walker and the mare are, and every mount is routed through the town gates', ok, log); }
+
+    // 12. on the mare, the hint for pressing USE names her own button: GET DOWN on a touch screen, G on a keyboard
+    { const o = h.openSpot(62, 30), log = {}; let ok = true;
+      for (const touch of [true, false]) {
+        window.__forceTouch = touch;
+        const up = board(KINDS[3], o.x, o.y); notice = null;
+        if (up) { F.press('KeyE'); F.step([]); }
+        const said = notice ? notice.text : '';
+        log[touch ? 'touch' : 'keys'] = { up, said };
+        if (!(up && (touch ? /^Tap GET DOWN to get off /.test(said) : /^Press G to get off /.test(said)) && !/EXIT|walker|Press X/.test(said))) ok = false;
+        onFoot(); giveBack(); drain();
+      }
+      window.__forceTouch = false;
+      check(P + 'on the mare, USE says how to get off her with her own button (GET DOWN on touch, G on keys), never EXIT or X', ok, log); }
 
     // put everything back
     giveBack(); onFoot(); if (typeof tapCancel === 'function') tapCancel('manual');
