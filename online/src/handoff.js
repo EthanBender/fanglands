@@ -417,6 +417,13 @@ async function unseal(code, blob) {
   try { return dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12) }, await sealKey(code), b.slice(12))); } catch (e) { return null; }
 }
 
+// the cap on anonymous offers waiting at once. The test world may set it LOWER (never higher) with
+// `--var HANDOFF_ANON_ROWS_MAX:5`, so a flood at the cap can be proved there from one computer.
+export function anonRowsMax(world) {
+  const v = Math.floor(+(world && world.env && world.env.HANDOFF_ANON_ROWS_MAX));
+  return v >= 1 ? Math.min(v, ANON_ROWS_MAX) : ANON_ROWS_MAX;
+}
+
 // the account a token belongs to, when the world knows it and it is live: read only (no last_seen, no deletes)
 export function loginOf(world, token, now) {
   if (typeof token !== 'string' || !token || token.length > 200) return null;
@@ -463,7 +470,7 @@ async function offer(world, h, req, now, who, host) {
     const mine = world.sql.exec('SELECT COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NULL AND who = ? AND expires > ?', whoId, now).toArray()[0] || { b: 0 };
     if (mine.b + bytes > ADDRESS_BYTES_MAX) throw oops(429, 'too many at once: wait a minute', 'wait', { wait: Math.ceil(HANDOFF_MS / 1000) });
     const held = world.sql.exec('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM handoffs WHERE acct IS NULL AND expires > ?', now).toArray()[0] || { n: 0, b: 0 };
-    if (held.n >= ANON_ROWS_MAX || held.b + bytes > ANON_BYTES_MAX) throw oops(503, 'too many hand-overs at once: try again soon', 'busy');
+    if (held.n >= anonRowsMax(world) || held.b + bytes > ANON_BYTES_MAX) throw oops(503, 'too many hand-overs at once: try again soon', 'busy');
   }
   const expires = now + HANDOFF_MS;
   world.sql.exec('INSERT INTO handoffs (id, keys, bytes, expires, bind, who, acct, src) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, sealed, bytes, expires, bind, acct ? null : whoId, acct, host);

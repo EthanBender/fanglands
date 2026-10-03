@@ -387,6 +387,18 @@ test('hand-over: an anonymous flood at the global cap never refuses or holds up 
   assert.equal(w.db.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 5);
 });
 
+test('hand-over: the test world may set the anonymous cap lower, never higher', async () => {
+  const { anonRowsMax } = await import('../src/handoff.js');
+  assert.equal(anonRowsMax({ env: {} }), ANON_ROWS_MAX);
+  assert.equal(anonRowsMax({ env: { HANDOFF_ANON_ROWS_MAX: '3' } }), 3);
+  for (const v of ['99999', '0', '-1', 'x', '']) assert.equal(anonRowsMax({ env: { HANDOFF_ANON_ROWS_MAX: v } }), ANON_ROWS_MAX, v);
+  const w = newWorld(); w.env = Object.assign({}, ENV, { HANDOFF_ANON_ROWS_MAX: '2' });
+  assert.equal((await offer(w, KEYS, { ip: '10.7.0.1' })).status, 200);
+  assert.equal((await offer(w, KEYS, { ip: '10.7.0.2' })).status, 200);
+  assert.equal((await offer(w, KEYS, { ip: '10.7.0.3' })).status, 503);
+  assert.equal((await offer(w, Object.assign({}, KEYS, { 'fanglands.session': account(w, 'Cohen') }), { ip: '10.7.0.3' })).status, 200);
+});
+
 test('hand-over: a login\'s own budget: at most ACCT_ROWS_MAX waiting (the newest replaces the oldest), ACCT_PER_MIN a minute, apart from every other account', async () => {
   const w = newWorld();
   const tok = account(w, 'Cohen'), other = account(w, 'Sam');
