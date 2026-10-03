@@ -34984,7 +34984,10 @@ window.RETALIATE = RETALIATE;
   const me = () => NET.me;
   const mapId = () => (window.INSTANCES && INSTANCES.active && INSTANCES.active()) || 'over';
   const instName = id => { const i = window.INSTANCES && INSTANCES.get ? INSTANCES.get(id) : null; return i && i.name ? i.name : String(id); };
-  const whereOf = o => o.map === 'over' || !o.map ? (o.region || 'The Fanglands') : instName(o.map);
+  // every knight's island is his own (the world keys it by his name and still calls it 'house' on the wire): a friend whose
+  // map is 'house' is on HIS island, never ours, even while we stand on our own
+  const ownIsland = o => !!o && o.map === 'house';
+  const whereOf = o => ownIsland(o) ? 'On their own island' : o.map === 'over' || !o.map ? (o.region || 'The Fanglands') : instName(o.map);
   // where we are, in words, for the roster and the admin page: the instance's name inside one, else the region under our feet
   const regionName = () => { const id = mapId(); if (id !== 'over') return instName(id); if (player.region) return String(player.region); const r = regionAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); return r && r.name ? r.name : 'The Fanglands'; };
   const forget = n => { delete REMOTE[n]; if (following === n) following = null; };
@@ -35227,7 +35230,7 @@ window.RETALIATE = RETALIATE;
     const twoTier = iw - 24 - btnW - 12 < 170;
     const textW = twoTier ? iw - 24 : iw - 24 - btnW - 12, wf = HK.FS(600, 12), lh = Math.round(15 * HK.k() * 10) / 10;
     return list.map(o => {
-      const here = o.map === mapId();
+      const here = o.map === mapId() && !ownIsland(o);
       const where = HK.wrap(g, (here ? 'On your map: ' : '') + whereOf(o), textW, 2, wf).lines;
       const textH = 12 + 16 + where.length * lh + 8;
       const h = twoTier ? textH + bh + 12 : Math.max(bh + 16, textH);
@@ -35381,6 +35384,20 @@ window.RETALIATE = RETALIATE;
       if (follow) follow.action(); const followed = PLAYERS.following === 'Ava'; render(); const stop = buttons.find(b => /Stop following|Following/.test(b.label)); const target = mapTargets().find(t => t.id === 'friend'); if (stop) stop.action();
       closePanel(); F.press('KeyF'); const byKey = panel === 'friends'; F.press('KeyF'); const closed = panel === null;
       check(P + 'the FRIENDS seal (its badge counting the 3 knights online) is a button that opens Friends (F does too): Give is live within two tiles, Follow marks a friend on the map', !!chip && opened && giveOn && !!follow && !follow.disabled && !!benFollow && benFollow.disabled && followed && !!stop && !!target && target.label === 'Ava' && PLAYERS.following === null && byKey && closed, { chip: !!chip, opened, giveOn, follow: follow && follow.label, ben: benFollow && benFollow.label, followed, stop: !!stop, target, byKey, closed }); }
+    // every knight's island is his own: a friend the roster puts on 'house' is on HIS island. Standing on ours he is not
+    // 'here' (no blue edge, Follow stays dark) and the row says 'On their own island', never 'Your Island'; off it, the same
+    { const fol0 = following, hs = window.HOUSE ? HOUSE.state() : null, seen0 = hs ? hs.seen : null;
+      feed({ t: 'who', list: [{ n: 'Cohen', map: 'house', region: 'Your Island', lv: 5 }, { n: 'Ava', map: 'house', region: 'Your Island', lv: 7 }] });
+      const went = window.HOUSE ? HOUSE.enter() : INSTANCES.enter('house'); F.sim(4, []); const onIt = mapId() === 'house';
+      closePanel(); openPanel('friends'); render();
+      const row = friendRows(ctx, ONLINE.filter(k => k.n !== 'Cohen'), 400, false).find(r => r.o.n === 'Ava'), words = row ? row.where.join(' ') : '';
+      const fb = buttons.find(b => /Follow/.test(b.label)), dark = !!fb && !!fb.disabled; if (fb) fb.action(); const stillNone = following === fol0;
+      closePanel(); const left = window.HOUSE ? HOUSE.leave() : INSTANCES.leave(); F.sim(4, []); if (hs) hs.seen = seen0; dialog.cur = null; dialog.queue.length = 0;
+      const offRow = friendRows(ctx, ONLINE.filter(k => k.n !== 'Cohen'), 400, false).find(r => r.o.n === 'Ava'), offWords = offRow ? offRow.where.join(' ') : '';
+      F.tp(o.x, o.y); F.step([]);
+      check(P + "a friend on his own island (the roster's map 'house') is never on your map, even on your island: no blue edge, Follow dark, and the row says 'On their own island'",
+        !!went && onIt && !!row && row.here === false && /^On their own island$/.test(words) && !/Your Island|On your map/.test(words) && dark && stillNone && !!left && mapId() === 'over' && !!offRow && offRow.here === false && offWords === 'On their own island',
+        { went: !!went, onIt, here: row && row.here, words, dark, follow: fb && fb.label, stillNone, left: !!left, offHere: offRow && offRow.here, offWords }); }
     // gifts: out of the pack and onto the wire; back into the pack when the world sends it back; a friend's gift lands
     { const inv0 = player.inv.map(s => s ? { ...s } : null);
       feed({ t: 'p', n: 'Ava', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 7, look: null, mech: null, dead: false, def: 100, act: null }); F.step([]);
@@ -37423,7 +37440,8 @@ window.RETALIATE = RETALIATE;
     btn(g, x + w - 90, y, 90, T, 'Next', () => { S.page[which] = Math.min(pages - 1, p + 1); }, '#21262d', p < pages - 1, 'admin:' + which + ':next');
   }
   const adminPill = (g, x, y, size) => window.PLAYERS && PLAYERS.adminPill ? PLAYERS.adminPill(g, x, y, size) : 0;
-  const whereOf = o => (!o.map || o.map === 'over') ? (o.region || 'The Fanglands') : (((window.INSTANCES && INSTANCES.get && INSTANCES.get(o.map)) || {}).name || o.region || String(o.map));
+  // another knight on 'house' is on HIS own island (the world keys each island by its owner), never 'Your Island'
+  const whereOf = o => o.map === 'house' ? 'On their own island' : (!o.map || o.map === 'over') ? (o.region || 'The Fanglands') : (((window.INSTANCES && INSTANCES.get && INSTANCES.get(o.map)) || {}).name || o.region || String(o.map));
 
   // ---------- A. the chip ----------
   // A plaque in the kit's reserved column (src/59-hudkit.js HK.addPlaque): a star roundel, ADMIN in gold with a gold edge,
@@ -37785,6 +37803,13 @@ window.RETALIATE = RETALIATE;
           say({ ok: false, act: 'mute', n: 'Ada', code: 'admin' }), say({ ok: false, act: 'kick', n: 'Nobody', code: 'unknown' }), say({ ok: false, act: 'kick', n: 'Sam', code: 'offline' }), say({ ok: false, act: 'ban', n: 'MudGoll', code: 'self' }), say({ ok: false, act: 'mute', n: 'Sam', code: 'bad' })];
         const want = ['Sam is muted for 5 minutes.', 'Sam is muted for 1 hour.', 'Sam is muted for 1 day.', 'Sam is muted until you unmute.', 'Sam can chat again.', 'Sam was sent out of the world.', 'Sam is banned.', 'Sam is unbanned.', "You can't do that to an admin.", 'No knight by that name.', 'Sam is not online.', 'That is you.', 'That did not work. Try again.'];
         check(P + "the world's mod answers become the contract's sentences", same(words, want), { words }); }
+
+      // ---- Knights: a knight on his own island reads 'On their own island', never 'Your Island' ----
+      { feed({ t: 'who', list: [{ n: 'MudGoll', map: 'over', region: 'Thistledown', lv: 99, role: 'admin' }, { n: 'Kai', map: 'house', region: 'Your Island', lv: 4, role: 'player' }] });
+        feed({ t: 'modlist', muted: [], banned: [] }); refill(); closePanel(); render(); F.clickButton('ADMIN'); F.clickButton('admin:tab:knights'); render();
+        rec.length = 0; HOOKS.panel.admin(g2, false); const drawn = rec.splice(0); closePanel(); render();
+        const own = drawn.includes('On their own island'), notMine = !drawn.some(t => /Your Island/.test(t)), kai = drawn.some(t => /^Kai/.test(t));
+        check(P + "Knights: a knight on his own island (the roster's map 'house') reads 'On their own island', never 'Your Island'", kai && own && notMine, { kai, own, notMine, drawn: drawn.filter(t => /Island|island|Kai/.test(t)) }); }
 
       // ---- Can't be hurt: hurtPlayer, die and a keeper's hurt message do nothing; hp topped up; off again, it hurts ----
       { refill(); closePanel(); player.dead = false; player.mech = null; player.r = 13; player.hp = player.maxHp; player.skills.defence.xp = xpForLevel(skillLv('defence'));

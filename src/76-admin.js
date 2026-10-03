@@ -621,7 +621,8 @@
     btn(g, x + w - 90, y, 90, T, 'Next', () => { S.page[which] = Math.min(pages - 1, p + 1); }, '#21262d', p < pages - 1, 'admin:' + which + ':next');
   }
   const adminPill = (g, x, y, size) => window.PLAYERS && PLAYERS.adminPill ? PLAYERS.adminPill(g, x, y, size) : 0;
-  const whereOf = o => (!o.map || o.map === 'over') ? (o.region || 'The Fanglands') : (((window.INSTANCES && INSTANCES.get && INSTANCES.get(o.map)) || {}).name || o.region || String(o.map));
+  // another knight on 'house' is on HIS own island (the world keys each island by its owner), never 'Your Island'
+  const whereOf = o => o.map === 'house' ? 'On their own island' : (!o.map || o.map === 'over') ? (o.region || 'The Fanglands') : (((window.INSTANCES && INSTANCES.get && INSTANCES.get(o.map)) || {}).name || o.region || String(o.map));
 
   // ---------- A. the chip ----------
   // A plaque in the kit's reserved column (src/59-hudkit.js HK.addPlaque): a star roundel, ADMIN in gold with a gold edge,
@@ -983,6 +984,13 @@
           say({ ok: false, act: 'mute', n: 'Ada', code: 'admin' }), say({ ok: false, act: 'kick', n: 'Nobody', code: 'unknown' }), say({ ok: false, act: 'kick', n: 'Sam', code: 'offline' }), say({ ok: false, act: 'ban', n: 'MudGoll', code: 'self' }), say({ ok: false, act: 'mute', n: 'Sam', code: 'bad' })];
         const want = ['Sam is muted for 5 minutes.', 'Sam is muted for 1 hour.', 'Sam is muted for 1 day.', 'Sam is muted until you unmute.', 'Sam can chat again.', 'Sam was sent out of the world.', 'Sam is banned.', 'Sam is unbanned.', "You can't do that to an admin.", 'No knight by that name.', 'Sam is not online.', 'That is you.', 'That did not work. Try again.'];
         check(P + "the world's mod answers become the contract's sentences", same(words, want), { words }); }
+
+      // ---- Knights: a knight on his own island reads 'On their own island', never 'Your Island' ----
+      { feed({ t: 'who', list: [{ n: 'MudGoll', map: 'over', region: 'Thistledown', lv: 99, role: 'admin' }, { n: 'Kai', map: 'house', region: 'Your Island', lv: 4, role: 'player' }] });
+        feed({ t: 'modlist', muted: [], banned: [] }); refill(); closePanel(); render(); F.clickButton('ADMIN'); F.clickButton('admin:tab:knights'); render();
+        rec.length = 0; HOOKS.panel.admin(g2, false); const drawn = rec.splice(0); closePanel(); render();
+        const own = drawn.includes('On their own island'), notMine = !drawn.some(t => /Your Island/.test(t)), kai = drawn.some(t => /^Kai/.test(t));
+        check(P + "Knights: a knight on his own island (the roster's map 'house') reads 'On their own island', never 'Your Island'", kai && own && notMine, { kai, own, notMine, drawn: drawn.filter(t => /Island|island|Kai/.test(t)) }); }
 
       // ---- Can't be hurt: hurtPlayer, die and a keeper's hurt message do nothing; hp topped up; off again, it hurts ----
       { refill(); closePanel(); player.dead = false; player.mech = null; player.r = 13; player.hp = player.maxHp; player.skills.defence.xp = xpForLevel(skillLv('defence'));

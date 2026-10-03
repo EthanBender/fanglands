@@ -42,7 +42,10 @@
   const me = () => NET.me;
   const mapId = () => (window.INSTANCES && INSTANCES.active && INSTANCES.active()) || 'over';
   const instName = id => { const i = window.INSTANCES && INSTANCES.get ? INSTANCES.get(id) : null; return i && i.name ? i.name : String(id); };
-  const whereOf = o => o.map === 'over' || !o.map ? (o.region || 'The Fanglands') : instName(o.map);
+  // every knight's island is his own (the world keys it by his name and still calls it 'house' on the wire): a friend whose
+  // map is 'house' is on HIS island, never ours, even while we stand on our own
+  const ownIsland = o => !!o && o.map === 'house';
+  const whereOf = o => ownIsland(o) ? 'On their own island' : o.map === 'over' || !o.map ? (o.region || 'The Fanglands') : instName(o.map);
   // where we are, in words, for the roster and the admin page: the instance's name inside one, else the region under our feet
   const regionName = () => { const id = mapId(); if (id !== 'over') return instName(id); if (player.region) return String(player.region); const r = regionAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); return r && r.name ? r.name : 'The Fanglands'; };
   const forget = n => { delete REMOTE[n]; if (following === n) following = null; };
@@ -285,7 +288,7 @@
     const twoTier = iw - 24 - btnW - 12 < 170;
     const textW = twoTier ? iw - 24 : iw - 24 - btnW - 12, wf = HK.FS(600, 12), lh = Math.round(15 * HK.k() * 10) / 10;
     return list.map(o => {
-      const here = o.map === mapId();
+      const here = o.map === mapId() && !ownIsland(o);
       const where = HK.wrap(g, (here ? 'On your map: ' : '') + whereOf(o), textW, 2, wf).lines;
       const textH = 12 + 16 + where.length * lh + 8;
       const h = twoTier ? textH + bh + 12 : Math.max(bh + 16, textH);
@@ -439,6 +442,20 @@
       if (follow) follow.action(); const followed = PLAYERS.following === 'Ava'; render(); const stop = buttons.find(b => /Stop following|Following/.test(b.label)); const target = mapTargets().find(t => t.id === 'friend'); if (stop) stop.action();
       closePanel(); F.press('KeyF'); const byKey = panel === 'friends'; F.press('KeyF'); const closed = panel === null;
       check(P + 'the FRIENDS seal (its badge counting the 3 knights online) is a button that opens Friends (F does too): Give is live within two tiles, Follow marks a friend on the map', !!chip && opened && giveOn && !!follow && !follow.disabled && !!benFollow && benFollow.disabled && followed && !!stop && !!target && target.label === 'Ava' && PLAYERS.following === null && byKey && closed, { chip: !!chip, opened, giveOn, follow: follow && follow.label, ben: benFollow && benFollow.label, followed, stop: !!stop, target, byKey, closed }); }
+    // every knight's island is his own: a friend the roster puts on 'house' is on HIS island. Standing on ours he is not
+    // 'here' (no blue edge, Follow stays dark) and the row says 'On their own island', never 'Your Island'; off it, the same
+    { const fol0 = following, hs = window.HOUSE ? HOUSE.state() : null, seen0 = hs ? hs.seen : null;
+      feed({ t: 'who', list: [{ n: 'Cohen', map: 'house', region: 'Your Island', lv: 5 }, { n: 'Ava', map: 'house', region: 'Your Island', lv: 7 }] });
+      const went = window.HOUSE ? HOUSE.enter() : INSTANCES.enter('house'); F.sim(4, []); const onIt = mapId() === 'house';
+      closePanel(); openPanel('friends'); render();
+      const row = friendRows(ctx, ONLINE.filter(k => k.n !== 'Cohen'), 400, false).find(r => r.o.n === 'Ava'), words = row ? row.where.join(' ') : '';
+      const fb = buttons.find(b => /Follow/.test(b.label)), dark = !!fb && !!fb.disabled; if (fb) fb.action(); const stillNone = following === fol0;
+      closePanel(); const left = window.HOUSE ? HOUSE.leave() : INSTANCES.leave(); F.sim(4, []); if (hs) hs.seen = seen0; dialog.cur = null; dialog.queue.length = 0;
+      const offRow = friendRows(ctx, ONLINE.filter(k => k.n !== 'Cohen'), 400, false).find(r => r.o.n === 'Ava'), offWords = offRow ? offRow.where.join(' ') : '';
+      F.tp(o.x, o.y); F.step([]);
+      check(P + "a friend on his own island (the roster's map 'house') is never on your map, even on your island: no blue edge, Follow dark, and the row says 'On their own island'",
+        !!went && onIt && !!row && row.here === false && /^On their own island$/.test(words) && !/Your Island|On your map/.test(words) && dark && stillNone && !!left && mapId() === 'over' && !!offRow && offRow.here === false && offWords === 'On their own island',
+        { went: !!went, onIt, here: row && row.here, words, dark, follow: fb && fb.label, stillNone, left: !!left, offHere: offRow && offRow.here, offWords }); }
     // gifts: out of the pack and onto the wire; back into the pack when the world sends it back; a friend's gift lands
     { const inv0 = player.inv.map(s => s ? { ...s } : null);
       feed({ t: 'p', n: 'Ava', map: 'over', x: player.x + 40, y: player.y, fx: -1, fy: 0, mv: false, wt: 0, hp: 25, mhp: 25, lv: 7, look: null, mech: null, dead: false, def: 100, act: null }); F.step([]);
