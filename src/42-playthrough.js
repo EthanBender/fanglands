@@ -87,7 +87,7 @@
     const seen = new Set();
     for (let s = 0; s <= 16; s++) { const t = MAP_TARGETS[s]; if (!t) continue; const k = t.x + ',' + t.y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `MAP_TARGETS[${s}] ${t.label}`, t.x, t.y); }
     for (const t of mapTargets()) { const k = t.x + ',' + t.y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `mapTarget ${t.label} (${t.id})`, t.x, t.y); }
-    for (const [name, x, y, id] of [["Tinkerton's lab (tinker)", 247, 42], ['King Gnash (gnash)', 224, 67], ['The wind shrine (sky)', 62, 6], ['Notice board (board)', 105, 27], ['Captain of the Watch (law)', 110, 41], ['Dunstan (dragons)', 66, 100], ['Old Wren (wren)', 30, 78], ['Tobin (bread)', 110, 33]]) { const k = x + ',' + y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `mapTarget ${name}`, x, y); }
+    for (const [name, x, y, id] of [["Tinkerton's lab (tinker)", 247, 42], ['King Gnash (gnash)', 224, 67], ['The wind shrine (sky)', 62, 6], ['Notice board (board)', 105, 27], ['Captain of the Watch (law)', 110, 40], ['Dunstan (dragons)', 66, 100], ['Old Wren (wren)', 30, 78], ['Tobin (bread)', 110, 33]]) { const k = x + ',' + y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `mapTarget ${name}`, x, y); }
     const tiles = pristine(), counts = {};
     // decoration is skipped: the bank's chests behind the counter; the second row of a lobster buoy and the middle stones of the pond crossing (only tiles that touch walkable ground are places to stand)
     const touchesGround = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && !SOLID.has(tiles[idx(x + dx, y + dy)]));

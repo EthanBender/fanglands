@@ -6,7 +6,7 @@
 {
   const CAGE = addTile('CAGE', { solid: true, tex: 'dirt', mini: '#8f96a3' });
   const CAGE_POS = { x: 148, y: 34 };
-  const INN_WAIT = { sera: { x: 123, y: 48 }, garrick: { x: 127, y: 47 } }; // where a dismissed hero waits (inside the inn; interior is x 123–128, y 45–48)
+  const INN_WAIT = { sera: { x: 124, y: 48 }, garrick: { x: 128, y: 47 } }; // where a dismissed hero waits (inside the inn; interior is x 124–129, y 45–48)
   const GOBLIN_TYPES = ['goblin', 'sapper', 'brute', 'walker', 'bulldozer'];
   const FOLLOW_SPEED = 180, STOP_DIST = 60, SNAP_DIST = 12 * TILE, DOWN_TIME = 30;
   // Companions scale with the knight: a hired hero fights at combat level +4, never below 12 (a fixed 12 did under 1 dps to a dragon).

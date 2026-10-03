@@ -172,7 +172,7 @@
   const obst = (course, t, lv, cells) => { for (const [x, y] of cells) OBST.set(key(x, y), { t, lv, course }); };
   for (const c in COURSES) COURSES[c].marks.forEach(([x, y], i) => MARKS.set(key(x, y), { course: c, i }));
   const isCliff = (tx, ty) => tx >= 46 && tx <= 62 && ty >= 1 && ty <= 4;
-  // yard: a fenced one-tile track (gate at 93,54) south of the houses under Hale's yard
+  // yard: a fenced one-tile track (its one gate at 87,50, beside the start flag) south of the houses under Hale's yard
   obst('yard', AG_LOG, 1, [[88, 51], [89, 51], [90, 51], [91, 51], [89, 53], [88, 53]]);
   obst('yard', AG_NET, 1, [[95, 51], [96, 51]]);
   obst('yard', AG_GAP, 1, [[101, 52], [96, 53]]);
@@ -187,12 +187,12 @@
   HOOKS.world.push((rnd, api) => {
     const set = api.setTile;
     // yard
-    for (let y = 50; y <= 55; y++) for (let x = 86; x <= 102; x++) set(x, y, T.GRASS);
+    for (let y = 50; y <= 54; y++) for (let x = 86; x <= 102; x++) set(x, y, T.GRASS);
     for (let x = 86; x <= 102; x++) { set(x, 50, T.FENCE); set(x, 54, T.FENCE); }
     for (let y = 50; y <= 54; y++) set(102, y, T.FENCE);
     for (let x = 87; x <= 100; x++) set(x, 52, T.FENCE);
     for (let x = 86; x <= 101; x++) { set(x, 51, T.DIRT); set(x, 53, T.DIRT); }
-    set(86, 52, T.DIRT); set(101, 52, T.DIRT); set(93, 54, T.GATE);
+    set(86, 52, T.DIRT); set(101, 52, T.DIRT); set(87, 50, T.GATE);
     // cliff
     for (let y = 1; y <= 4; y++) for (let x = 46; x <= 62; x++) set(x, y, T.WALL);
     for (let x = 47; x <= 61; x++) { set(x, 1, T.CAVE); set(x, 3, T.CAVE); }
@@ -393,7 +393,7 @@
       check('agility: hitpoints skill exists, melee xp feeds it at 1/3, max hp = 24 + level (25 at 1, 100 at 76, 123 at 99)', SKILL_DEFS.some(s => s.key === 'hitpoints') && got === Math.floor(m1 / 3) && lv1 >= 10 && follows && at76 === 100 && at99 === 123, { got, want: Math.floor(m1 / 3), lv0, lv1, m0, m1: player.maxHp, at76, at99 });
       player.skills.hitpoints = hp0; recomputeMaxHp(); }
     // yard course: a lap in order gives 60 xp, out of order does not
-    { const a = AG(); const yard = COURSES.yard.marks.every(([x, y]) => tileAt(x, y) === AG_MARK) && tileAt(88, 51) === AG_LOG && tileAt(95, 51) === AG_NET && tileAt(101, 52) === AG_GAP && tileAt(93, 54) === T.GATE;
+    { const a = AG(); const yard = COURSES.yard.marks.every(([x, y]) => tileAt(x, y) === AG_MARK) && tileAt(88, 51) === AG_LOG && tileAt(95, 51) === AG_NET && tileAt(101, 52) === AG_GAP && tileAt(87, 50) === T.GATE;
       const xp0 = player.skills.agility.xp; a.next.yard = 0; const laps0 = a.laps.yard; lastTile = null;
       const go = i => { const [x, y] = COURSES.yard.marks[i]; F.tp(x, y); F.step([]); };
       go(0); go(1); go(2); go(3); go(4); go(0); const lapXp = player.skills.agility.xp - xp0, laps1 = a.laps.yard;

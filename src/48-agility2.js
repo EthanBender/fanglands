@@ -64,7 +64,7 @@
 
   // ---------- the wall round each loop ----------
   // Every shipped course is walled in. The Thistledown yard is fenced with one gate (38-agility, T.FENCE round
-  // x 86-102 / y 50-54, T.GATE at 93,54) and the Grey Quarry ledge is cut into solid rock (T.WALL round x 46-62 /
+  // x 86-102 / y 50-54, T.GATE at 87,50) and the Grey Quarry ledge is cut into solid rock (T.WALL round x 46-62 /
   // y 1-4). That wall is not decoration: it is what stops a knight wandering onto a balance log by accident and
   // slipping over and over until it kills him. These two courses get the same wall — a rail right round the loop,
   // from x0-1 to x1+1 and from north-1 to south+1, with exactly one way in, put beside the start flag so the first

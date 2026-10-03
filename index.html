@@ -309,7 +309,7 @@ const CASTLE = { x: 104, y: 42, w: 18, h: 13 };
 const REGIONS = [
   { name: 'The Cave', sub: 'Where you woke', x0: 0, y0: 0, x1: 20, y1: 15 },
   { name: 'Castle Thistledown', sub: "Seat of Duke Ferrin", x0: CASTLE.x, y0: CASTLE.y, x1: CASTLE.x + CASTLE.w - 1, y1: CASTLE.y + CASTLE.h - 1 },
-  { name: 'Thistledown', sub: 'A village that still stands', x0: 85, y0: 14, x1: 140, y1: 56 },
+  { name: 'Thistledown', sub: 'The city that still stands', x0: 85, y0: 14, x1: 140, y1: 56 },
   { name: 'Grey Quarry', sub: 'Iron and coal in the rock', x0: 46, y0: 1, x1: 62, y1: 14 },
   { name: "Miller's Pond", sub: 'Shrimp, and trout for the patient', x0: 36, y0: 30, x1: 50, y1: 44 },
   { name: 'Goblin Camp', sub: 'Their machines are here', x0: 145, y0: 18, x1: 159, y1: 42 },
@@ -325,21 +325,21 @@ const BUILDINGS = [
   { id: 'bank', x: 99, y: 20, w: 8, h: 6, name: 'Bank of Thistledown', roof: '#3b4a7a', sign: 'BANK', door: 3, f: [[T.COUNTER, 1, 2], [T.COUNTER, 2, 2], [T.COUNTER, 3, 2], [T.COUNTER, 4, 2], [T.COUNTER, 5, 2], [T.CHEST, 1, 1], [T.CHEST, 6, 1], [T.RUG, 3, 3], [T.RUG, 4, 3]] },
   { id: 'bakery', x: 122, y: 20, w: 6, h: 6, name: 'Bakery', roof: '#8a6a2e', sign: 'BAKERY', door: 2, f: [[T.OVEN, 1, 1], [T.OVEN, 2, 1], [T.COUNTER, 1, 3], [T.COUNTER, 2, 3], [T.TABLE, 4, 2]] },
   { id: 'smithy', x: 90, y: 36, w: 7, h: 6, name: 'Smithy', roof: '#4a4a52', sign: 'SMITHY', door: 3, f: [[T.FORGE, 1, 1], [T.FORGE, 2, 1], [T.ANVIL, 4, 2], [T.COUNTER, 5, 3], [T.SHELF, 5, 1]] },
-  { id: 'workshop', x: 99, y: 36, w: 7, h: 6, name: "Tinker's Workshop", roof: '#5a4a3a', sign: 'TINKER', door: 3, f: [[T.WORKBENCH, 1, 1], [T.WORKSHOP, 3, 1], [T.ALCHEMY, 5, 1], [T.SHELF, 5, 3], [T.TABLE, 1, 3]] },
-  { id: 'inn', x: 122, y: 44, w: 8, h: 6, name: 'The Barrel & Boar', roof: '#6a3a2a', sign: 'INN', door: 3, f: [[T.COUNTER, 1, 1], [T.COUNTER, 2, 1], [T.TABLE, 4, 2], [T.TABLE, 6, 2], [T.TABLE, 4, 4], [T.BED, 6, 4], [T.RUG, 3, 3]] },
+  { id: 'workshop', x: 99, y: 36, w: 7, h: 5, name: "Tinker's Workshop", roof: '#5a4a3a', sign: 'TINKER', door: 3, f: [[T.WORKBENCH, 1, 1], [T.WORKSHOP, 3, 1], [T.ALCHEMY, 5, 1], [T.SHELF, 5, 3], [T.TABLE, 1, 3]] },
+  { id: 'inn', x: 123, y: 44, w: 8, h: 6, name: 'The Barrel & Boar', roof: '#6a3a2a', sign: 'INN', doorTop: 3, f: [[T.COUNTER, 1, 1], [T.COUNTER, 2, 1], [T.TABLE, 4, 2], [T.TABLE, 6, 2], [T.TABLE, 4, 4], [T.BED, 6, 4], [T.RUG, 3, 3]] },
   { id: 'keep', x: 108, y: 46, w: 10, h: 7, name: 'The Keep', roof: '#5a2e7a', sign: 'KEEP', doorTop: 4, stone: true, f: [[T.THRONE, 4, 4], [T.RUG, 4, 2], [T.RUG, 4, 3], [T.TABLE, 1, 4], [T.TABLE, 8, 4], [T.SHELF, 1, 1], [T.SHELF, 8, 1]] },
   { id: 'death1', x: 25, y: 10, w: 6, h: 5, name: "Death's House", roof: '#2a2a33', sign: 'REST', door: 2, stone: true, coffin: true, f: [[T.GOLDPILE, 1, 1], [T.GOLDPILE, 4, 1], [T.GOLDPILE, 4, 2], [T.CHEST, 1, 2]] },
   { id: 'death2', x: 133, y: 48, w: 6, h: 5, name: "Death's House", roof: '#2a2a33', sign: 'REST', door: 2, stone: true, coffin: true, f: [[T.GOLDPILE, 1, 1], [T.GOLDPILE, 4, 1], [T.GOLDPILE, 4, 2], [T.CHEST, 1, 2]] },
   { id: 'hermit', x: 28, y: 76, w: 5, h: 5, name: "Wren's Hut", roof: '#4a5a3a', door: 2, f: [[T.BED, 1, 1], [T.TABLE, 3, 1], [T.SHELF, 3, 2]] },
-  { id: 'h1', x: 130, y: 20, w: 5, h: 5, name: 'House', roof: '#6a4a3a', door: 2, f: [[T.BED, 1, 1], [T.TABLE, 3, 2]] },
-  { id: 'h2', x: 88, y: 28, w: 4, h: 4, name: 'House', roof: '#4a5a3a', door: 1, f: [[T.BED, 1, 1]] },
-  { id: 'h3', x: 94, y: 28, w: 4, h: 4, name: 'House', roof: '#6a4a3a', door: 1, f: [[T.TABLE, 1, 1]] },
+  { id: 'h1', x: 121, y: 36, w: 5, h: 4, name: 'House', roof: '#6a4a3a', door: 2, f: [[T.BED, 1, 1], [T.TABLE, 3, 2]] },
+  { id: 'h2', x: 88, y: 26, w: 4, h: 4, name: 'House', roof: '#4a5a3a', door: 1, f: [[T.BED, 1, 1]] },
+  { id: 'h3', x: 93, y: 27, w: 4, h: 4, name: 'House', roof: '#6a4a3a', door: 1, f: [[T.TABLE, 1, 1]] },
   { id: 'h4', x: 124, y: 27, w: 4, h: 4, name: 'House', roof: '#5a4a5a', door: 1, f: [[T.BED, 1, 1]] },
-  { id: 'h5', x: 130, y: 27, w: 5, h: 4, name: 'House', roof: '#6a4a3a', door: 2, f: [[T.BED, 1, 1], [T.SHELF, 3, 1]] },
-  { id: 'h6', x: 92, y: 46, w: 4, h: 4, name: 'House', roof: '#4a5a3a', door: 1, f: [[T.TABLE, 1, 1]] },
-  { id: 'h7', x: 98, y: 46, w: 4, h: 4, name: 'House', roof: '#6a4a3a', door: 1, f: [[T.BED, 1, 1]] },
+  { id: 'h5', x: 99, y: 27, w: 5, h: 4, name: 'House', roof: '#6a4a3a', door: 2, f: [[T.BED, 1, 1], [T.SHELF, 3, 1]] },
+  { id: 'h6', x: 92, y: 46, w: 4, h: 4, name: 'House', roof: '#4a5a3a', doorTop: 1, f: [[T.TABLE, 2, 2]] },
+  { id: 'h7', x: 98, y: 46, w: 4, h: 4, name: 'House', roof: '#6a4a3a', doorTop: 1, f: [[T.BED, 2, 2]] },
   { id: 'h8', x: 134, y: 36, w: 5, h: 4, name: 'House', roof: '#5a4a5a', door: 2, f: [[T.BED, 1, 1], [T.TABLE, 3, 1]] },
-  { id: 'h9', x: 126, y: 36, w: 4, h: 4, name: 'House', roof: '#4a5a3a', door: 1, f: [[T.SHELF, 1, 1]] },
+  { id: 'h9', x: 128, y: 36, w: 4, h: 4, name: 'House', roof: '#4a5a3a', door: 1, f: [[T.SHELF, 1, 1]] },
 ];
 const buildingAt = (tx, ty) => BUILDINGS.find(b => tx >= b.x && tx < b.x + b.w && ty >= b.y && ty < b.y + b.h);
 const insideBuilding = (tx, ty) => { const b = buildingAt(tx, ty); return b && tx > b.x && tx < b.x + b.w - 1 && ty > b.y && ty < b.y + b.h - 1 ? b : null; };
@@ -353,7 +353,7 @@ const NPCS = [
   { id: 'rosalind', name: 'Rosalind', x: 125, y: 22, tunic: '#c89a4a', hair: '#7a3a1a', apron: true, role: 'shop', shop: 'bakery', woman: true },
   { id: 'brakka', name: 'Brakka the smith', x: 93, y: 39, tunic: '#5a4a3a', hair: '#2a1a0a', apron: true, role: 'shop', shop: 'smith', beard: true },
   { id: 'pim', name: 'Pim the tinker', x: 103, y: 39, tunic: '#6a5a8a', hair: '#c9843a', role: 'tinker', woman: true },
-  { id: 'dorran', name: 'Dorran the innkeeper', x: 124, y: 46, tunic: '#6a3a2a', hair: '#3a2a1a', apron: true, role: 'inn', beard: true },
+  { id: 'dorran', name: 'Dorran the innkeeper', x: 125, y: 46, tunic: '#6a3a2a', hair: '#3a2a1a', apron: true, role: 'inn', beard: true },
   { id: 'duke', name: 'Duke Ferrin', x: 112, y: 49, tunic: '#5a2e7a', hair: '#8a7a6a', crown: true, role: 'duke' },
   { id: 'hale', name: 'Sergeant Hale', x: 86, y: 43, tunic: '#4a4f5a', hair: '#2a1a0a', helmet: true, role: 'trainer' },
   { id: 'tobin', name: 'Tobin', x: 110, y: 33, tunic: '#6a6a4a', hair: '#5a3a1a', role: 'bread' },
@@ -447,7 +447,7 @@ function generateWorld() {
   for (let y = 27; y <= 31; y++) for (let x = 97; x <= 99; x++) setTile(x, y, T.DIRT); // lane to smithy row
   for (let y = 27; y <= 31; y++) setTile(126, y, T.DIRT); for (let y = 33; y <= 44; y++) setTile(126, y, T.DIRT); // east lane
   for (let x = 88; x <= 104; x++) setTile(x, 44, T.DIRT); // south lane
-  setTile(116, 35, T.FIRE);
+  setTile(119, 38, T.FIRE);
   for (let y = 50; y <= 53; y++) for (let x = 126; x <= 132; x++) setTile(x, y, T.SOIL); // allotments
   // village fence + gates
   for (let x = VILLAGE.x0; x <= VILLAGE.x1; x++) { setTile(x, VILLAGE.y0, T.FENCE); setTile(x, VILLAGE.y1, T.FENCE); }
@@ -488,7 +488,7 @@ function generateWorld() {
   spawnList('boar', [[30, 24], [34, 30], [26, 36], [40, 46], [60, 44], [90, 60], [70, 56]]);
   spawnList('sheep', [[74, 42], [77, 44], [76, 41], [79, 43]]);
   spawnList('cow', [[74, 16], [77, 19], [79, 16]]);
-  spawnList('guard_m', [[86, 30], [118, 36], [113, 43]]); spawnList('guard_f', [[104, 23], [126, 33], [110, 43]]);
+  spawnList('guard_m', [[87, 30], [118, 36], [113, 43]]); spawnList('guard_f', [[104, 23], [126, 33], [110, 43]]);
   spawnList('wolf', [[20, 70], [40, 68], [50, 80], [75, 74], [90, 70], [110, 82], [130, 72], [145, 80], [70, 88], [25, 88]]);
   spawnList('sapper', [[146, 26], [154, 34], [150, 38]]); spawnList('brute', [[148, 30], [153, 24], [155, 30]]);
   spawnList('goblin', [[144, 24], [144, 36], [156, 38], [151, 22]]);
@@ -1647,7 +1647,7 @@ function update(dt) {
       floatText(player.x, player.y - 30, 'Wooden sword!', '#fff2a8', 18); advanceQuest(2);
     }
     if (quest.stage === 2 && player.x > (CAVE_EXIT_X + 1.5) * TILE) advanceQuest(3);
-    if (!player.visitedVillage && inVillageBounds(player.x, player.y)) { player.visitedVillage = true; say("Thistledown. You will wake here now if you fall. The castle is at the south end of the street.", 'The Voice'); save(); }
+    if (!player.visitedVillage && inVillageBounds(player.x, player.y)) { player.visitedVillage = true; say("Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is just past it, over the moat.", 'The Voice'); save(); }
     for (const d of drops) {
       d.t += dt;
       if (dist(d.x, d.y, player.x, player.y) < player.r + 12) {
@@ -4033,7 +4033,7 @@ HOOKS.mapTarget.push(mainTarget);
 HOOKS.mapTarget.push(() => quest.bread === 'active' ? { x: 110, y: 33, label: 'Tobin', id: 'bread' } : null);
 HOOKS.mapTarget.push(() => quest.wren === 'active' ? { x: 30, y: 78, label: 'Old Wren', id: 'wren' } : null);
 HOOKS.mapTarget.push(() => { const a = activeQuests(); return a.includes('board') ? { x: 105, y: 27, label: 'Notice board', id: 'board' } : null; });
-HOOKS.mapTarget.push(() => activeQuests().includes('law') ? { x: 110, y: 41, label: 'Captain of the Watch', id: 'law' } : null);
+HOOKS.mapTarget.push(() => activeQuests().includes('law') ? { x: 110, y: 40, label: 'Captain of the Watch', id: 'law' } : null);
 HOOKS.mapTarget.push(() => activeQuests().includes('dragons') ? { x: 67, y: 104, label: 'Dunstan', id: 'dragons' } : null);
 // A target is on the world map unless it says otherwise: { map: '<instance id>' } puts it on that instance's map instead.
 // Inside an instance only that instance's own targets are listed, so no overworld ring, label or compass arrow lands on the
@@ -6242,7 +6242,7 @@ HOOKS.selfTest.push((check, F, h) => {
 {
   const CAGE = addTile('CAGE', { solid: true, tex: 'dirt', mini: '#8f96a3' });
   const CAGE_POS = { x: 148, y: 34 };
-  const INN_WAIT = { sera: { x: 123, y: 48 }, garrick: { x: 127, y: 47 } }; // where a dismissed hero waits (inside the inn; interior is x 123–128, y 45–48)
+  const INN_WAIT = { sera: { x: 124, y: 48 }, garrick: { x: 128, y: 47 } }; // where a dismissed hero waits (inside the inn; interior is x 124–129, y 45–48)
   const GOBLIN_TYPES = ['goblin', 'sapper', 'brute', 'walker', 'bulldozer'];
   const FOLLOW_SPEED = 180, STOP_DIST = 60, SNAP_DIST = 12 * TILE, DOWN_TIME = 30;
   // Companions scale with the knight: a hired hero fights at combat level +4, never below 12 (a fixed 12 did under 1 dps to a dragon).
@@ -7115,7 +7115,7 @@ const LAW_LEVEL_FINE = 25;     // coins per wanted star when settling with the c
 const LAW_SCRAP_PAY = 5;       // coins per goblin scrap handed in
 const LAW_ARM_RANGE = 8 * TILE; // guards within this range of the player are set hostile every tick while wanted
 const LAW_TEMP_POSTS = [[86, 32], [139, 32]]; // reinforcement posts: just inside the west and east gates
-const LAW_CAPTAIN = { id: 'captain', name: 'Captain Roderick', x: 110, y: 41, tunic: '#a8302a', hair: '#4a2a14', helmet: true, beard: true, role: 'captain' };
+const LAW_CAPTAIN = { id: 'captain', name: 'Captain Roderick', x: 110, y: 40, tunic: '#a8302a', hair: '#4a2a14', helmet: true, beard: true, role: 'captain' };
 let lawArmed = false; // true while guards have been told to fight; stand them down when wanted returns to 0
 
 const lawIsGuard = m => LAW_GUARD_TYPES.includes(m.type);
@@ -13108,6 +13108,8 @@ window.PLACE_KIT = PLACE_KIT;
     if (!inAfter && (OWN_DARK_REGIONS.includes(player.region) || isCaveTile(tx, ty))) return 0;
     return a;
   }
+  // lights a feature keeps by coordinate rather than by tile (Thistledown's lamps, torches and fountain: src/95-thistledown.js)
+  HOOKS.nightLights = HOOKS.nightLights || [];
   function drawNight(g) {
     const a = overlayAlpha(); if (a <= 0) return;
     const inAfter = window.__instance === AFTER.id;
@@ -13137,6 +13139,7 @@ window.PLACE_KIT = PLACE_KIT;
       else if (t === T.LODESTONE) lights.push({ x: tc(tx), y: tc(ty), r: 60 });
       else if (t === T.DOOR || t === T.COFFINDOOR) { const b = buildingAt(tx, ty); const up = !!b && ty === b.y && b.doorTop !== undefined && tx === b.x + b.doorTop; lights.push({ x: tc(tx), y: up ? ty * TILE : (ty + 1) * TILE, r: 70 }); }
     }
+    for (const f of HOOKS.nightLights) f(lights, x0, y0, x1, y1);
     for (const L of lights) {
       const sx = L.x - cam.x, sy = L.y - cam.y; if (sx < -L.r || sy < -L.r || sx > VW + L.r || sy > VH + L.r) continue;
       const gr = dg.createRadialGradient(sx, sy, 10, sx, sy, L.r); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
@@ -14449,7 +14452,7 @@ window.PLACE_KIT = PLACE_KIT;
   const obst = (course, t, lv, cells) => { for (const [x, y] of cells) OBST.set(key(x, y), { t, lv, course }); };
   for (const c in COURSES) COURSES[c].marks.forEach(([x, y], i) => MARKS.set(key(x, y), { course: c, i }));
   const isCliff = (tx, ty) => tx >= 46 && tx <= 62 && ty >= 1 && ty <= 4;
-  // yard: a fenced one-tile track (gate at 93,54) south of the houses under Hale's yard
+  // yard: a fenced one-tile track (its one gate at 87,50, beside the start flag) south of the houses under Hale's yard
   obst('yard', AG_LOG, 1, [[88, 51], [89, 51], [90, 51], [91, 51], [89, 53], [88, 53]]);
   obst('yard', AG_NET, 1, [[95, 51], [96, 51]]);
   obst('yard', AG_GAP, 1, [[101, 52], [96, 53]]);
@@ -14464,12 +14467,12 @@ window.PLACE_KIT = PLACE_KIT;
   HOOKS.world.push((rnd, api) => {
     const set = api.setTile;
     // yard
-    for (let y = 50; y <= 55; y++) for (let x = 86; x <= 102; x++) set(x, y, T.GRASS);
+    for (let y = 50; y <= 54; y++) for (let x = 86; x <= 102; x++) set(x, y, T.GRASS);
     for (let x = 86; x <= 102; x++) { set(x, 50, T.FENCE); set(x, 54, T.FENCE); }
     for (let y = 50; y <= 54; y++) set(102, y, T.FENCE);
     for (let x = 87; x <= 100; x++) set(x, 52, T.FENCE);
     for (let x = 86; x <= 101; x++) { set(x, 51, T.DIRT); set(x, 53, T.DIRT); }
-    set(86, 52, T.DIRT); set(101, 52, T.DIRT); set(93, 54, T.GATE);
+    set(86, 52, T.DIRT); set(101, 52, T.DIRT); set(87, 50, T.GATE);
     // cliff
     for (let y = 1; y <= 4; y++) for (let x = 46; x <= 62; x++) set(x, y, T.WALL);
     for (let x = 47; x <= 61; x++) { set(x, 1, T.CAVE); set(x, 3, T.CAVE); }
@@ -14670,7 +14673,7 @@ window.PLACE_KIT = PLACE_KIT;
       check('agility: hitpoints skill exists, melee xp feeds it at 1/3, max hp = 24 + level (25 at 1, 100 at 76, 123 at 99)', SKILL_DEFS.some(s => s.key === 'hitpoints') && got === Math.floor(m1 / 3) && lv1 >= 10 && follows && at76 === 100 && at99 === 123, { got, want: Math.floor(m1 / 3), lv0, lv1, m0, m1: player.maxHp, at76, at99 });
       player.skills.hitpoints = hp0; recomputeMaxHp(); }
     // yard course: a lap in order gives 60 xp, out of order does not
-    { const a = AG(); const yard = COURSES.yard.marks.every(([x, y]) => tileAt(x, y) === AG_MARK) && tileAt(88, 51) === AG_LOG && tileAt(95, 51) === AG_NET && tileAt(101, 52) === AG_GAP && tileAt(93, 54) === T.GATE;
+    { const a = AG(); const yard = COURSES.yard.marks.every(([x, y]) => tileAt(x, y) === AG_MARK) && tileAt(88, 51) === AG_LOG && tileAt(95, 51) === AG_NET && tileAt(101, 52) === AG_GAP && tileAt(87, 50) === T.GATE;
       const xp0 = player.skills.agility.xp; a.next.yard = 0; const laps0 = a.laps.yard; lastTile = null;
       const go = i => { const [x, y] = COURSES.yard.marks[i]; F.tp(x, y); F.step([]); };
       go(0); go(1); go(2); go(3); go(4); go(0); const lapXp = player.skills.agility.xp - xp0, laps1 = a.laps.yard;
@@ -16039,7 +16042,7 @@ window.PLACE_KIT = PLACE_KIT;
     const seen = new Set();
     for (let s = 0; s <= 16; s++) { const t = MAP_TARGETS[s]; if (!t) continue; const k = t.x + ',' + t.y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `MAP_TARGETS[${s}] ${t.label}`, t.x, t.y); }
     for (const t of mapTargets()) { const k = t.x + ',' + t.y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `mapTarget ${t.label} (${t.id})`, t.x, t.y); }
-    for (const [name, x, y, id] of [["Tinkerton's lab (tinker)", 247, 42], ['King Gnash (gnash)', 224, 67], ['The wind shrine (sky)', 62, 6], ['Notice board (board)', 105, 27], ['Captain of the Watch (law)', 110, 41], ['Dunstan (dragons)', 66, 100], ['Old Wren (wren)', 30, 78], ['Tobin (bread)', 110, 33]]) { const k = x + ',' + y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `mapTarget ${name}`, x, y); }
+    for (const [name, x, y, id] of [["Tinkerton's lab (tinker)", 247, 42], ['King Gnash (gnash)', 224, 67], ['The wind shrine (sky)', 62, 6], ['Notice board (board)', 105, 27], ['Captain of the Watch (law)', 110, 40], ['Dunstan (dragons)', 66, 100], ['Old Wren (wren)', 30, 78], ['Tobin (bread)', 110, 33]]) { const k = x + ',' + y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `mapTarget ${name}`, x, y); }
     const tiles = pristine(), counts = {};
     // decoration is skipped: the bank's chests behind the counter; the second row of a lobster buoy and the middle stones of the pond crossing (only tiles that touch walkable ground are places to stand)
     const touchesGround = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && !SOLID.has(tiles[idx(x + dx, y + dy)]));
@@ -19223,7 +19226,7 @@ window.SETTINGS = SETTINGS;
 
   // ---------- the wall round each loop ----------
   // Every shipped course is walled in. The Thistledown yard is fenced with one gate (38-agility, T.FENCE round
-  // x 86-102 / y 50-54, T.GATE at 93,54) and the Grey Quarry ledge is cut into solid rock (T.WALL round x 46-62 /
+  // x 86-102 / y 50-54, T.GATE at 87,50) and the Grey Quarry ledge is cut into solid rock (T.WALL round x 46-62 /
   // y 1-4). That wall is not decoration: it is what stops a knight wandering onto a balance log by accident and
   // slipping over and over until it kills him. These two courses get the same wall — a rail right round the loop,
   // from x0-1 to x1+1 and from north-1 to south+1, with exactly one way in, put beside the start flag so the first
@@ -28700,7 +28703,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // ---------- where an arch can take you ----------
   // Each one is a place with a region of its own; standing in that region is what unlocks the arch.
   const DESTS = [
-    { key: 'thistledown', name: 'Thistledown', region: 'Thistledown', x: 112, y: 33, colour: '#d8a95e', line: 'The square, by the well.' },
+    { key: 'thistledown', name: 'Thistledown', region: 'Thistledown', x: 112, y: 33, colour: '#d8a95e', line: 'The square, by the Great Fountain.' },
     { key: 'quarry', name: 'Grey Quarry', region: 'Grey Quarry', x: 54, y: 8, colour: '#9aa0a8', line: 'Iron and coal in the rock.' },
     { key: 'pond', name: "Miller's Pond", region: "Miller's Pond", x: 41, y: 39, colour: '#3d86c6', line: 'Shrimp, and trout for the patient.' },
     { key: 'wolfwood', name: 'Wolfwood', region: 'Wolfwood', x: 80, y: 78, colour: '#4a6a3a', line: 'The deep road south. Keep to the paths.' },
@@ -51980,6 +51983,459 @@ window.RETALIATE = RETALIATE;
     { const sp = safeSpot(keep.x, keep.y, player.r, playerWho()) || { x: keep.x, y: keep.y }; player.x = sp.x; player.y = sp.y; }
     dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); window.__forceTouch = wasTouch; h.peace(false); notice = null; save();
   });
+}
+
+// ---- src/94-thistleplan.js ----
+// ============================================================================
+// THISTLEDOWN, THE CAPITAL: the plan. src/94-thistleplan.js (data only)
+//
+// The owner, 2026-10-02: "personally the design you did for the sky city was phenomenal I would sujest doing the
+// same process on the main city". This is the main city's plan, drawn the way Aerie's was (src/36-aerieplan.js):
+// one character a tile over the town and one tile of the outside round it, x 84..141 and y 13..57 (58 x 45).
+// src/95-thistledown.js paints it into the world (the first HOOKS.world pass, no random numbers) and draws it.
+//
+// A town change is a row change. Every building cell, door included, is '@' (02-world carves the buildings; the
+// painter leaves them alone). The legend is GLYPHS (the tile the painter writes, or null to leave the cell as it is)
+// and KIND_OF (what a solid prop or a piece of greenery is). Lamps, benches, trees and every count are scanned from
+// ROWS at load, never typed by hand.
+//
+//   columns: x = 84 + the index in the row; rows: y = 13 + the index in ROWS
+//   -  outside the town (left alone)        #  the wall line (the core lays FENCE, 57-townwall turns it to stone)
+//   G  the core's gate (T.GATE)             @  a building cell (02-world)
+//   =  a street (setts)   +  flagstones     "  mown lawn      .  grass     ,  dirt     a  allotment soil
+//   ~  water   b  a bridge   j  the jetty   T  a wall tower   F  a fountain
+//   h  hedge   t  tree   *  roses           l lamp  s statue  p plinth  n bench  k stall  i sign  B the bell  d sundial
+//   N  the notice board's cell   O  the island portal's cell   D  the dozer bay's cell   Y  the agility track
+//   x  the square's brazier   S  Greta's and Fennick's stalls   C  the castle wall   P  the portcullis
+//   f  fence   g  a yard gate   u  a training dummy
+// ============================================================================
+{
+  const X0 = 84, Y0 = 13, W = 58, H = 45;
+  const ROWS = [
+    '----------------------------------------------------------',
+    '-TT#####TT########TT################TT###TT############TT-',
+    '-TT"""""TT""""""""TT*""""++BB++.....TT...TT.=hhhhhhhhhhTT-',
+    '-#."t""t""t""t""t""t""t"n++BB++.===.........=h""""h"""hh#-',
+    '-#.""""""""""""""""""""""++======O=.........=h"hh"h"h"hh#-',
+    '-#.""t""t""t""t""t""t""tl++========.........=h"hd"""h"hh#-',
+    '-#l==========================++++++++l......=h"hhhhhh"hh#-',
+    '-#.+++@@@@@@@==@@@@@@@@""""==+kk+++kk+@@@@@@=h"""h""""hh#-',
+    '-TT+++@@@@@@@==@@@@@@@@"t""==+++FF++++@@@@@@=hhh"h"hhhhTT-',
+    '-TT+l+@@@@@@@==@@@@@@@@"""n==+++FF++++@@@@@@=h""""""""hTT-',
+    '-#.+++@@@@@@@==@@@@@@@@""""==+++++++++@@@@@@=hhhh"hhhhh.#-',
+    '-#.+++@@@@@@@==@@@@@@@@"t""==+kk+++kk+@@@@@@=++++++++++.#-',
+    '-#.+++@@@@@@@==@@@@@@@@""""==+++++++++@@@@@@=t~~~bb~~~t.#-',
+    '-#.+@@@@+++++++++++++++n++l==ln+++++++++++++="j~~bb~~~".#-',
+    '-#.+@@@@.@@@@==@@@@@+N+++++==++++++,,l++@@@@="~~~bb~~~".#-',
+    '-TT+@@@@.@@@@==@@@@@++++SS+==+++SS+,,+++@@@@=t~~~bb~~~tTT-',
+    '-TT+@@@@.@@@@==@@@@@+++++++==++++++,,l++@@@@=""n"++"n**TT-',
+    '-TT+l++++@@@@++@@@@@l++++++==++++++++l++@@@@=hhhh++hhhhTT-',
+    '-G======================================================G-',
+    '-G======================================================G-',
+    '-G======================================================G-',
+    '-TTi++l++++l++++l++l++++++FFFF+++++++l++l+==++l+++++l+iTT-',
+    '-TT.................++s+++FFFF+++s++++++++==...."".....TT-',
+    '-TT...@@@@@@@..@@@@@@@++++FFFF+++++++@@@@@==@@@@t"@@@@@TT-',
+    '-#....@@@@@@@..@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
+    '-#....@@@@@@@..@@@@@@@s++++++++++s+x+@@@@@==@@@@"*@@@@@.#-',
+    '-#....@@@@@@@..@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
+    '-#ffff@@@@@@@..@@@@@@@++l++++p+l++++++++++==+++l+++++++.#-',
+    '-#,,,,@@@@@@@......~~~~~~~~bb~~~~~~~~~~+++==+++++++++++.#-',
+    '-#,,u,f............~CCCCCCCPPCCCCCCCCC~+++==+++,,**""t"TT-',
+    '-#,,,,g.....D......~C++++++++++++++++C~+++==+++,,""""""TT-',
+    '-#,,u,f,,,,,,,,,,,,~C++++++++++++++++C~@@@@@@@@,,""FF"n.#-',
+    '-#,,,,f,,,,,,,,,,,,~C++++++++++++++++C~@@@@@@@@,,""FF"".#-',
+    '-#fffff.@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,"""""".#-',
+    '-#......@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,n""""*.#-',
+    '-TT.....@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,@@@@@@TT-',
+    '-TT.....@@@@..@@@@.~C+++@@@@@@@@@@+++C~@@@@@@@@,,@@@@@@TT-',
+    '-#fgfffffffffffffff~C**+@@@@@@@@@@+**C~...aaaaa,,@@@@@@.#-',
+    '-#YYYYYYYYYYYYYYYYf~C**+@@@@@@@@@@+**C~...aaaaa,,@@@@@@.#-',
+    '-#YffffffffffffffYf~C**+@@@@@@@@@@+**C~...aaaaa,,@@@@@@.#-',
+    '-#YYYYYYYYYYYYYYYYf~C++++++++++++++++C~...aaaaa,,,,,,,,.#-',
+    '-#fffffffffffffffff~CCCCCCCCCCCCCCCCCC~........,,,,,,,,.#-',
+    '-TThhhhhhhhhhhhhhhh~~~~~~~~~~~~~~~~~~~~.....TT.,,......TT-',
+    '-TT#########################################TT#########TT-',
+    '----------------------------------------------------------',
+  ];
+  // the tile each glyph is painted as (a tile NAME, resolved when the world is generated), or null: leave it alone
+  const GLYPHS = {
+    '-': null, '#': null, 'G': null, '@': null,
+    '=': 'COBBLE', '+': 'COBBLE', 'N': 'COBBLE', 'O': 'COBBLE',
+    '"': 'TD_LAWN', '.': 'GRASS', 'D': 'GRASS', ',': 'DIRT', 'a': 'SOIL', 'Y': 'DIRT',
+    '~': 'WATER', 'b': 'BRIDGE', 'j': 'BRIDGE',
+    'T': 'TOWN_WALL', 'F': 'TD_FOUNTAIN',
+    'h': 'TD_HEDGE', 't': 'TD_HEDGE', '*': 'TD_HEDGE',
+    'l': 'TD_PROP', 's': 'TD_PROP', 'p': 'TD_PROP', 'n': 'TD_PROP', 'k': 'TD_PROP', 'i': 'TD_PROP', 'B': 'TD_PROP', 'd': 'TD_PROP',
+    'x': 'FIRE', 'S': 'STALL', 'C': 'CWALL', 'P': 'PORTCULLIS', 'f': 'FENCE', 'g': 'GATE', 'u': 'DUMMY',
+  };
+  // what a prop, a piece of greenery or a fountain cell is ('t' is a fruit tree or a cherry, 'F' one of three fountains: see kindAt)
+  const KIND_OF = { l: 'lamp', s: 'statue', p: 'plinth', n: 'bench', k: 'stall', i: 'sign', B: 'bell', d: 'sundial', h: 'hedge', t: 'tree', '*': 'roses', F: 'fountain' };
+
+  // ---------- named places (world tiles) ----------
+  // the eighteen wall towers: top-left, 2 wide, 2 tall unless h is 3 (the four gate towers)
+  const TOWERS = [
+    { x: 85, y: 14, at: 'corner' }, { x: 139, y: 14, at: 'corner' }, { x: 85, y: 55, at: 'corner' }, { x: 139, y: 55, at: 'corner' },
+    { x: 85, y: 28, h: 3, at: 'gate' }, { x: 85, y: 34, h: 3, at: 'gate' }, { x: 139, y: 28, h: 3, at: 'gate' }, { x: 139, y: 34, h: 3, at: 'gate' },
+    { x: 92, y: 14, at: 'north' }, { x: 102, y: 14, at: 'north' }, { x: 120, y: 14, at: 'north' }, { x: 125, y: 14, at: 'north' },
+    { x: 85, y: 21, at: 'west' }, { x: 85, y: 48, at: 'west' },
+    { x: 139, y: 21, at: 'east' }, { x: 139, y: 42, at: 'east' }, { x: 139, y: 48, at: 'east' },
+    { x: 128, y: 55, at: 'south' },
+  ].map(t => Object.assign({ h: 2, w: 2 }, t));
+  // the two gates in the wall: three tiles of T.GATE each, a gate tower above and below
+  const GATES = [
+    { id: 'west', name: 'The West Gate', x: 85, rows: [31, 32, 33], towers: [[85, 28], [85, 34]], dir: 1 },
+    { id: 'east', name: 'The East Gate', x: 140, rows: [31, 32, 33], towers: [[139, 28], [139, 34]], dir: -1 },
+  ];
+  const FOUNTAINS = [
+    { id: 'great', x: 110, y: 34, w: 4, h: 3 },
+    { id: 'market', x: 116, y: 21, w: 2, h: 2 },
+    { id: 'rose', x: 135, y: 44, w: 2, h: 2 },
+  ];
+  const STATUES = [
+    { x: 106, y: 35, id: 'last_knight', who: 'The Last Knight of Hollowford' },
+    { x: 117, y: 35, id: 'thrain', who: 'King Thrain of the Dwarves' },
+    { x: 106, y: 38, id: 'aelith', who: 'Queen Aelith of the Elves' },
+    { x: 117, y: 38, id: 'seraphel', who: 'Queen Seraphel of Aerie' },
+  ];
+  const PLINTH = { x: 113, y: 40 };
+  // the market's four stalls, two tiles wide each (the left tile is x)
+  const STALLS = [
+    { x: 114, y: 20, goods: 'apples', awning: '#b8352b', seller: 'hettie' },
+    { x: 119, y: 20, goods: 'candles', awning: '#2e5a9a', seller: 'mabel' },
+    { x: 114, y: 24, goods: 'flowers', awning: '#3f7d33', seller: 'moll' },
+    { x: 119, y: 24, goods: 'cloth', awning: '#c9a14a', seller: null },
+  ];
+  const SIGNS = [{ x: 87, y: 34, side: 'west' }, { x: 138, y: 34, side: 'east' }];
+  const BELL = { x: 111, y: 15, w: 2, h: 2, stand: [[111, 17], [112, 17]], plaza: [[109, 15, 110, 18], [113, 15, 114, 16]] };
+  const SUNDIAL = { x: 132, y: 18, stand: [133, 18], mazeGate: [133, 23] };
+  const POND = { x0: 130, y0: 25, x1: 137, y1: 28, bridge: [133, 134], jetty: [130, 26], boat: [130, 27], swans: [{ x0: 131, x1: 132, y0: 25, y1: 28 }, { x0: 135, x1: 137, y0: 25, y1: 28, ducklings: 4 }] };
+  // bunting strung between two lamp heads
+  const BUNTING = [[[88, 30], [90, 34]], [[104, 30], [103, 34]], [[121, 30], [121, 34]], [[110, 26], [113, 26]]];
+  // Nell and Robin play tag round the fountain: a U path, ping-pong, by the wall clock
+  const KIDS = { path: [[109, 34], [109, 37], [114, 37], [114, 34]], speed: 1.6, lag: 1.2, names: ['Nell', 'Robin'] };
+  const DUCHESS = { x: 113, y: 16 };
+  // the wards: a banner on the way into each (see 95's wardsTick)
+  const WARDS = [
+    { id: 'square', name: 'Fountain Square', sub: 'Every street comes back here', x0: 104, y0: 26, x1: 120, y1: 40 },
+    { id: 'market', name: 'The Market Court', sub: 'Apples, candles, flowers and cloth', x0: 113, y0: 19, x1: 121, y1: 25 },
+    { id: 'orchard', name: "The Duke's Orchard", sub: null, x0: 87, y0: 15, x1: 108, y1: 18 },
+    { id: 'green', name: "The Duke's Green", sub: 'The maze and Swan Pond', x0: 129, y0: 15, x1: 138, y1: 30 },
+    { id: 'roses', name: 'The Rose Garden', sub: "The Duke's roses", x0: 133, y0: 42, x1: 138, y1: 47 },
+  ];
+  // cells later world passes lay on top of the plan (95's snapshot holds what they laid)
+  const OWNED = { BOARD: [105, 27], HOUSE_PORTAL: [117, 17], HITCH: [119, 27], DOZER_BAY: [96, 43], AGILITY_GATE: [87, 50] };
+  // the six new people (95 pushes them into NPCS at load); none of them wanders
+  const PEOPLE = [
+    { id: 'osric', name: 'Gatewarden Osric', x: 91, y: 30, role: 'td_warden', tunic: '#5a2e7a', hair: '#6a6a6a', helmet: true, beard: true },
+    { id: 'ambrose', name: 'Ambrose the bell-ringer', x: 110, y: 17, role: 'td_bell', tunic: '#4a4f5a', hair: '#d9d0c0', beard: true },
+    { id: 'hettie', name: 'Hettie the apple seller', x: 114, y: 19, role: 'villager', woman: true, apron: true, tunic: '#b8352b', hair: '#3a2a1a' },
+    { id: 'mabel', name: 'Mabel the candle maker', x: 119, y: 19, role: 'villager', woman: true, tunic: '#2e5a9a', hair: '#c9843a' },
+    { id: 'moll', name: 'Moll the flower seller', x: 114, y: 25, role: 'villager', woman: true, apron: true, tunic: '#3f7d33', hair: '#e0c080' },
+    { id: 'wynn', name: 'Wynn', x: 131, y: 24, role: 'td_wynn', woman: true, tunic: '#8a5a7a', hair: '#7a3a1a' },
+  ];
+  // the streets, for the book and the signs (rectangles x0, y0, x1, y1)
+  const STREETS = [
+    { id: 'high', name: 'The High Street', rects: [[85, 31, 140, 33]], note: 'gate to gate, with a pavement on each side (y 30 and y 34)' },
+    { id: 'crown', name: 'Crown Street', rects: [[111, 17, 112, 30]] },
+    { id: 'north', name: 'North Lane', rects: [[87, 19, 110, 19]] },
+    { id: 'bank', name: 'Bank Alley', rects: [[97, 20, 98, 29]] },
+    { id: 'store', name: 'Store Row', rects: [[87, 26, 127, 26]] },
+    { id: 'kings', name: 'The Kings Walk', rects: [[111, 37, 112, 40]], note: 'from the fountain to the drawbridge' },
+    { id: 'green', name: 'Green Walk', rects: [[128, 15, 128, 30]] },
+    { id: 'pond', name: 'Pond Walk', rects: [[129, 24, 138, 24]] },
+    { id: 'rose', name: 'Rose Lane', rects: [[126, 34, 127, 43]] },
+    { id: 'cross', name: 'Cross Lane', rects: [[128, 40, 138, 41]] },
+    { id: 'coffin', name: 'Coffin Lane', rects: [[131, 42, 132, 55]] },
+    { id: 'smithy', name: 'Smithy Lane', rects: [[91, 44, 102, 45]] },
+  ];
+
+  // ---------- reading the plan ----------
+  const inPlan = (x, y) => x >= X0 && y >= Y0 && x < X0 + W && y < Y0 + H;
+  const at = (x, y) => inPlan(x, y) ? ROWS[y - Y0][x - X0] : '-';
+  const fountainAt = (x, y) => FOUNTAINS.find(f => x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h) || null;
+  // the Duke's Orchard is the two rows of trees along the north wall; every other tree is a cherry
+  const treeKind = (x, y) => (y === 16 || y === 18) && x >= 87 && x <= 108 ? 'fruit' : 'cherry';
+  function kindAt(x, y) {
+    const c = at(x, y), k = KIND_OF[c];
+    if (!k) return null;
+    if (k === 'tree') return treeKind(x, y);
+    if (k === 'fountain') { const f = fountainAt(x, y); return f ? f.id : null; }
+    return k;
+  }
+  const towerAt = (x, y) => TOWERS.find(t => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h) || null;
+  const wardAt = (x, y) => WARDS.find(w => x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1) || null;
+  const streetAt = (x, y) => STREETS.find(s => s.rects.some(([a, b, c, d]) => x >= a && x <= c && y >= b && y <= d)) || null;
+
+  // ---------- scanned from ROWS (never typed by hand) ----------
+  const COUNTS = {}, LAMPS = [], BENCHES = [], TREES = [];
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const c = ROWS[j][i], x = X0 + i, y = Y0 + j;
+    COUNTS[c] = (COUNTS[c] || 0) + 1;
+    if (c === 'l') LAMPS.push([x, y]);
+    else if (c === 'n') BENCHES.push([x, y]);
+    else if (c === 't') TREES.push({ x, y, kind: treeKind(x, y) });
+  }
+  const fruitTrees = TREES.filter(t => t.kind === 'fruit').length;
+  WARDS.find(w => w.id === 'orchard').sub = `${fruitTrees} fruit trees, and nobody may climb them`;
+
+  window.THISTLE_PLAN = {
+    X0, Y0, W, H, ROWS, GLYPHS, KIND_OF, TOWERS, GATES, FOUNTAINS, STATUES, PLINTH, STALLS, SIGNS, BELL, SUNDIAL, POND, BUNTING, KIDS, DUCHESS,
+    WARDS, OWNED, PEOPLE, STREETS, COUNTS, LAMPS, BENCHES, TREES, fruitTrees,
+    inPlan, at, kindAt, fountainAt, towerAt, wardAt, streetAt, treeKind,
+  };
+}
+
+// ---- src/95-thistledown.js ----
+// ============================================================================
+// THISTLEDOWN, THE CAPITAL. src/95-thistledown.js
+//
+// The owner, 2026-10-02, verbatim: "personally the design you did for the sky city was phenomenal I would sujest doing
+// the same process on the main city". Thistledown is where every new knight wakes, where a fallen knight comes back,
+// and the first place Cohen's friends see online. It was a village of roofs round a cobbled square. This file makes it
+// a capital, in the overworld's own look: a curtain wall of grey coursed stone with eighteen towers and two gatehouses,
+// the High Street from gate to gate under twenty-two iron lamps and bunting, the Great Fountain with four hero statues,
+// Castle Thistledown in a moat with an oak drawbridge and a keep with a spire, the Bell Tower with its day-and-night
+// dial, the Market Court, the Duke's Orchard, the Duke's Green with a hedge maze and Swan Pond, the Rose Garden, and
+// buildings that read as what they are. People live there, and Ambrose the bell-ringer has one small story.
+//
+// THE PLAN is src/94-thistleplan.js (58 x 45 characters over x 84..141, y 13..57). HOW IT IS BUILT:
+//   paint   the first HOOKS.world pass (unshift): every plan cell whose glyph names a tile is set to it, except
+//           building cells. It draws no random numbers and writes nothing outside x 85..140, y 14..56, so the rest of the
+//           world is exactly what it was, and every knight online builds the same city.
+//   snap    the last HOOKS.world pass: CAPITAL.base is the plan window as generated, with what later passes laid on
+//           top (the notice board, the island portal, the hitching rail, the dozer bay, the agility yard).
+//   ground  drawn from cached 8x8-tile chunks, and only on cells whose live tile still equals CAPITAL.base: a fire, a
+//           plank or a tilled cell shows the core's own art at once.
+//   old saves  migrate() runs after every load: a saved change inside stone or water is undone (what was placed is
+//           given back), the knight is moved out of anything solid, and the Voice says the city was rebuilt, once.
+//
+// WRAPPED BY REASSIGNMENT (explicit arguments): drawBuilding (the seventeen town buildings, b.town), drawTower (the
+//   castle's corner towers), drawFenceProp (no wooden gate art on the six town gate cells), drawFireProp (the square's
+//   brazier), tapLabelFor, tapPick, load. Every one of them hands an instance straight to what it wrapped.
+// Every fixed-coordinate draw starts with `if (window.__instance) return;` (Aerie's map overlaps x 85..99 of the town).
+//
+// ONLINE (docs/ONLINE.md): the plan is a literal and the painter uses no random numbers. MONSTER_SPAWNS keeps its
+// length and order. Nell, Robin and the swans move by the wall clock (CLOCK.fixed ?? Date.now()), so friends see the
+// same thing with no message. Talk, the coin toss, the story, the plinth and the bell are per knight, saved in
+// quest.capital and player.cityV. No new net message and no server change. Everyone still arrives at 112,33.
+//
+// State: quest.capital = { bell: 0..6 | 'done', tossed, barked, osricN, ambroseMet, heroName, plinthTold, tossArmed }
+// (saved with the quest; reset in HOOKS.newGame) and player.cityV (1 once the rebuilt-city line has been said).
+// Handle: window.CAPITAL (the end of the file).
+// ============================================================================
+{
+  const PLAN = window.THISTLE_PLAN;
+  const { X0, Y0, W, H } = PLAN;
+  const TOWN = { x0: 85, y0: 14, x1: 140, y1: 56 };
+  const inTown = (x, y) => x >= TOWN.x0 && x <= TOWN.x1 && y >= TOWN.y0 && y <= TOWN.y1;
+  const inPlan = PLAN.inPlan;
+  const pi = (x, y) => (y - Y0) * W + (x - X0);
+  const glyph = PLAN.at;
+  const away = () => !!window.__instance;
+
+  // =========================================================================
+  // 1. tiles (four new ones: 240..243; the ceiling is 255)
+  // =========================================================================
+  // a mown lawn: walkable, but not GRASS, so a hoe cannot till it and nothing can be placed on it
+  const LAWN = addTile('TD_LAWN', { tex: 'grass', mini: '#7cc35a' });
+  // clipped hedges, trees and rose bushes
+  const HEDGE = addTile('TD_HEDGE', { solid: true, tex: 'grass', mini: '#2f6b2a' });
+  // the city's things: lamps, statues, the plinth, benches, stalls, signposts, the bell, the sundial
+  const PROP = addTile('TD_PROP', { solid: true, tex: 'cobble', mini: '#c9a14a' });
+  const FOUNT = addTile('TD_FOUNTAIN', { solid: true, tex: 'water', mini: '#4aa3df' });
+  const TILES = { LAWN, HEDGE, PROP, FOUNTAIN: FOUNT };
+  const MAX_TILE = Math.max(...Object.values(T));
+  if (MAX_TILE > 255) console.error('95-thistledown: tile id ' + MAX_TILE + ' does not fit the map (Uint8Array)');
+  // a tap on a lamp, a statue, a stall or a fountain walks up to it and uses it (17-tap)
+  if (typeof INTERESTING_TILES !== 'undefined') { INTERESTING_TILES.add(PROP); INTERESTING_TILES.add(FOUNT); }
+  const WALL_T = () => (window.TOWNWALL ? TOWNWALL.tile : T.TOWN_WALL);
+
+  // what each prop, piece of greenery or fountain cell is (0 = nothing)
+  const KIND_NAMES = ['', 'lamp', 'statue', 'plinth', 'bench', 'stall', 'sign', 'bell', 'sundial', 'hedge', 'fruit', 'cherry', 'roses', 'great', 'market', 'rose'];
+  const KIND_CODE = {}; KIND_NAMES.forEach((n, i) => { if (n) KIND_CODE[n] = i; });
+  const KIND = new Uint8Array(W * H);
+  for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) { const k = PLAN.kindAt(x, y); if (k) KIND[pi(x, y)] = KIND_CODE[k]; }
+  const kindAt = (x, y) => inPlan(x, y) ? KIND_NAMES[KIND[pi(x, y)]] || null : null;
+  const FOUNTAINS = PLAN.FOUNTAINS;
+  const fountainAt = PLAN.fountainAt;
+  const statueAt = (x, y) => PLAN.STATUES.find(s => s.x === x && s.y === y) || null;
+  const stallAt = (x, y) => PLAN.STALLS.find(s => (x === s.x || x === s.x + 1) && y === s.y) || null;
+  const signAt = (x, y) => PLAN.SIGNS.find(s => s.x === x && s.y === y) || null;
+  const towerAt = PLAN.towerAt;
+  const isTowerCell = (x, y) => !!towerAt(x, y);
+  const LAMPS = PLAN.LAMPS, BENCHES = PLAN.BENCHES;
+  const LAMPS_N = LAMPS.length;
+
+  // =========================================================================
+  // 2. the buildings and the people
+  // =========================================================================
+  // the seventeen buildings of the town draw themselves here (drawBuilding is wrapped below); Death's House keeps the core's art
+  const TOWN_IDS = new Set(['store', 'bank', 'bakery', 'smithy', 'workshop', 'inn', 'keep', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9']);
+  BUILDINGS.forEach(b => { if (TOWN_IDS.has(b.id)) b.town = true; });
+  const TOWN_BUILDINGS = () => BUILDINGS.filter(b => b.town);
+  const doorOf = b => b.door !== undefined ? [b.x + b.door, b.y + b.h - 1] : [b.x + b.doorTop, b.y];
+  const stepOf = b => b.door !== undefined ? [b.x + b.door, b.y + b.h] : [b.x + b.doorTop, b.y - 1];
+
+  // the six new people. Mabel counts the lamps: the number is the plan's own
+  const LINES = {
+    hettie: ["Apples from the Duke's Orchard by the north wall. He lets me pick the ones that fall.", 'Red ones and green ones. The green ones bite back.'],
+    mabel: [`Every street lamp in Thistledown burns one of my candles. All ${LAMPS_N} of them. I count.`, 'I light them at dusk, when Ambrose rings the bell.'],
+    moll: ['Flowers from beside the Rose Garden. The Duke says I may sell any that lean over the path.', "The roses by the castle are the Duke's own. Nobody touches those."],
+  };
+  for (const p of PLAN.PEOPLE) {
+    if (NPCS.some(n => n.id === p.id)) continue;
+    const n = Object.assign({}, p);
+    if (LINES[p.id]) n.lines = LINES[p.id].slice();
+    NPCS.push(initNpc(n));
+  }
+  const npc = id => NPCS.find(n => n.id === id) || null;
+  // Ada's first line points new knights at the fountain
+  { const ada = npc('v1'); if (ada && Array.isArray(ada.lines)) ada.lines[0] = 'Lost? Find the Great Fountain. Every street comes back to it.'; }
+
+  // =========================================================================
+  // 3. state
+  // =========================================================================
+  QUEST_DEFS.td_bell = { name: 'The Bell at Midnight' };
+  const fresh = () => ({ bell: 0, tossed: 0, barked: false, osricN: 0, ambroseMet: false, heroName: null, plinthTold: false, tossArmed: 0 });
+  const Q = () => {
+    let q = quest.capital; if (!q || typeof q !== 'object') q = quest.capital = fresh();
+    const f = fresh(); for (const k in f) if (q[k] === undefined) q[k] = f[k];
+    return q;
+  };
+  const storyOpen = () => { const s = Q().bell; return typeof s === 'number' && s >= 1 && s <= 6; };
+  const storyDone = () => Q().bell === 'done';
+
+  // =========================================================================
+  // 4. the paint: the first world pass (no random numbers, nothing outside the town)
+  // =========================================================================
+  const RECT = { x0: 85, y0: 14, x1: 140, y1: 56 };
+  function paint(rnd, api) {
+    for (let j = 0; j < H; j++) {
+      const row = PLAN.ROWS[j];
+      for (let i = 0; i < W; i++) {
+        const name = PLAN.GLYPHS[row[i]];
+        if (!name) continue;
+        const x = X0 + i, y = Y0 + j;
+        if (buildingAt(x, y)) continue;
+        const id = name === 'TOWN_WALL' ? WALL_T() : T[name];
+        if (typeof id !== 'number') continue;
+        api.setTile(x, y, id);
+      }
+    }
+  }
+  HOOKS.world.unshift(paint);
+  // CAPITAL.base: the plan window as the world generates it (the snapshot pass is pushed at the very end of this file)
+  const base = new Uint8Array(W * H);
+  let snapped = false;
+  const SNAP = { spawns: -1 };
+  function snap() {
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) base[j * W + i] = tileAt(X0 + i, Y0 + j);
+    snapped = true; SNAP.spawns = MONSTER_SPAWNS.length;
+    for (const k of CHUNKS.keys()) CHUNKS.delete(k);
+  }
+  const baseAt = (x, y) => inPlan(x, y) ? base[pi(x, y)] : -1;
+  // the ground layer paints a cell only while it is still what the world made it
+  const pristineAt = (x, y) => snapped && inPlan(x, y) && tileAt(x, y) === base[pi(x, y)];
+
+  // =========================================================================
+  // 5. old saves: migrate() after every load
+  // =========================================================================
+  // Saves keep tile changes and positions. A save from before the city was rebuilt can hold a bed in what is now the
+  // fountain, a lodestone in a hedge, the mare in a flower stall, or the knight in the moat. Every rule here is
+  // idempotent: a second load changes nothing.
+  const OPEN = () => new Set([T.GRASS, T.DIRT, T.COBBLE, T.SOIL, T.FLOOR, LAWN]);
+  let KEEP_CLEAR = null;
+  function keepClear() {
+    if (KEEP_CLEAR) return KEEP_CLEAR;
+    const s = new Set(), add = (x, y) => { if (inMap(x, y)) s.add(idx(x, y)); };
+    for (const n of NPCS) if (inTown(n.x, n.y)) add(n.x, n.y);
+    for (const b of BUILDINGS) if (inTown(b.x, b.y)) { const [dx, dy] = doorOf(b), [sx, sy] = stepOf(b); add(dx, dy); add(sx, sy); }
+    for (let y = 32; y <= 33; y++) for (let x = 111; x <= 113; x++) add(x, y);
+    for (let y = 31; y <= 33; y++) { add(86, y); add(139, y); }
+    const post = window.MOUNTS && MOUNTS.post;
+    if (post) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) add(post.x + dx, post.y + dy);
+    return (KEEP_CLEAR = s);
+  }
+  const MIG = { reverted: 0, kept: 0, refunds: [], log: [] };
+  function placedItemFor(t) {
+    const name = tileName(t);
+    for (const id in ITEMS) if (ITEMS[id] && ITEMS[id].place === name) return id;
+    return null;
+  }
+  function migrate() {
+    if (away() || !snapped) return null;
+    const open = OPEN(), clear = keepClear(), H0 = window.MOUNTS ? MOUNTS.tiles.HORSE : -1;
+    const refund = { pack: {}, bank: {} };
+    let horse = null, changed = 0;
+    for (const [i, t] of [...mapDiffs.entries()]) {
+      const x = i % MAP_W, y = Math.floor(i / MAP_W);
+      if (x < RECT.x0 || x > RECT.x1 || y < RECT.y0 || y > RECT.y1) continue;
+      const b = base[pi(x, y)];
+      if (t === b) continue;
+      if (open.has(b) && !clear.has(i)) { MIG.kept++; continue; }
+      // undo it: the ground the city has there, with no crop, fire or regrowth left behind
+      setTile(x, y, b); mapDiffs.delete(i); miniDirtyTiles.add(i); changed++; MIG.reverted++;
+      crops = crops.filter(c => c.i !== i); fires = fires.filter(f => f.i !== i); regrow = regrow.filter(r => r.i !== i);
+      MIG.log.push([x, y, tileName(t)]);
+      if (t === H0) { horse = { x, y }; continue; }
+      const id = placedItemFor(t);
+      if (id) {
+        const left = addItem(id, 1);
+        if (left) { if (bankAdd(id, 1)) refund.bank[id] = (refund.bank[id] || 0) + 1; }
+        else refund.pack[id] = (refund.pack[id] || 0) + 1;
+      }
+    }
+    // the mare: back beside the rail, on open ground
+    if (horse && player.horse && player.horse.owned) {
+      const post = MOUNTS.post || { x: 119, y: 27 };
+      let spot = null;
+      for (let r = 1; r <= 3 && !spot; r++) {
+        let best = null;
+        for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const x = post.x + dx, y = post.y + dy;
+          if (!inMap(x, y) || !PLACEABLE_ON.has(tileAt(x, y)) || insideBuilding(x, y) || buildingAt(x, y) || clear.has(idx(x, y))) continue;
+          if (NPCS.some(n => circleHitsTile(n.px, n.py, 14, x, y))) continue;
+          const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d };
+        }
+        spot = best;
+      }
+      if (spot) {
+        const prev = tileAt(spot.x, spot.y);
+        changeTile(spot.x, spot.y, H0);
+        player.horse.at = [spot.x, spot.y]; player.horse.under = tileName(prev);
+      } else { player.horse.at = null; player.horse.under = null; }
+    } else if (horse && player.horse) { player.horse.at = null; player.horse.under = null; }
+    // where he wakes and where his lodestone takes him: only while the bed and the lodestone are still there
+    const tileOfPx = p => [Math.floor(p.x / TILE), Math.floor(p.y / TILE)];
+    if (player.bedSpawn) { const [x, y] = tileOfPx(player.bedSpawn); if (inTown(x, y) && tileAt(x, y) !== T.BED) player.bedSpawn = null; }
+    if (player.home) { const [x, y] = tileOfPx(player.home); if (inTown(x, y - 1) && tileAt(x, y - 1) !== T.LODESTONE) player.home = null; }
+    // and the knight himself, out of anything solid
+    if (collides(player.x, player.y, player.r, playerWho())) { const sp = safeSpot(player.x, player.y, player.r, playerWho()) || respawnPoint(); player.x = sp.x; player.y = sp.y; }
+    miniDirty = true;
+    // one line per knight, the first time he loads into the new city
+    const lines = [];
+    if (player.cityV !== 1 && player.visitedVillage) {
+      lines.push('Thistledown has been rebuilt while you were away. Go and see the Great Fountain.');
+      const words = (o, where) => { const parts = Object.keys(o).map(id => `${o[id]} ${(ITEMS[id].name || id).toLowerCase()}`); return parts.length ? `Back in your ${where}: ${parts.join(', ')}.` : null; };
+      const a = words(refund.pack, 'pack'), b2 = words(refund.bank, 'bank');
+      if (a) lines.push(a); if (b2) lines.push(b2);
+      for (const l of lines) say(l, 'The Voice');
+    }
+    if (Object.keys(refund.pack).length || Object.keys(refund.bank).length) MIG.refunds.push(refund);
+    if (player.cityV !== 1) { player.cityV = 1; save(); }
+    else if (changed) save();
+    return { changed, lines, refund };
+  }
+  { const _load = load; load = function () { const ok = _load(); if (ok) migrate(); return ok; }; }
+
+  const CHUNKS = new Map();
+  // @@PART2@@
+
+  // the snapshot: the very last world pass (only 99-boot loads after this file, and it adds none)
+  HOOKS.world.push(snap);
+  window.CAPITAL = { PLAN, TILES, KIND, KIND_NAMES, base, migrate, paint, snap, Q, MIG, kindAt, baseAt, pristineAt };
 }
 
 // ---- src/99-boot.js ----

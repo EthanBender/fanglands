@@ -12,7 +12,7 @@ const LAW_LEVEL_FINE = 25;     // coins per wanted star when settling with the c
 const LAW_SCRAP_PAY = 5;       // coins per goblin scrap handed in
 const LAW_ARM_RANGE = 8 * TILE; // guards within this range of the player are set hostile every tick while wanted
 const LAW_TEMP_POSTS = [[86, 32], [139, 32]]; // reinforcement posts: just inside the west and east gates
-const LAW_CAPTAIN = { id: 'captain', name: 'Captain Roderick', x: 110, y: 41, tunic: '#a8302a', hair: '#4a2a14', helmet: true, beard: true, role: 'captain' };
+const LAW_CAPTAIN = { id: 'captain', name: 'Captain Roderick', x: 110, y: 40, tunic: '#a8302a', hair: '#4a2a14', helmet: true, beard: true, role: 'captain' };
 let lawArmed = false; // true while guards have been told to fight; stand them down when wanted returns to 0
 
 const lawIsGuard = m => LAW_GUARD_TYPES.includes(m.type);

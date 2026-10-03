@@ -18,7 +18,7 @@ const CASTLE = { x: 104, y: 42, w: 18, h: 13 };
 const REGIONS = [
   { name: 'The Cave', sub: 'Where you woke', x0: 0, y0: 0, x1: 20, y1: 15 },
   { name: 'Castle Thistledown', sub: "Seat of Duke Ferrin", x0: CASTLE.x, y0: CASTLE.y, x1: CASTLE.x + CASTLE.w - 1, y1: CASTLE.y + CASTLE.h - 1 },
-  { name: 'Thistledown', sub: 'A village that still stands', x0: 85, y0: 14, x1: 140, y1: 56 },
+  { name: 'Thistledown', sub: 'The city that still stands', x0: 85, y0: 14, x1: 140, y1: 56 },
   { name: 'Grey Quarry', sub: 'Iron and coal in the rock', x0: 46, y0: 1, x1: 62, y1: 14 },
   { name: "Miller's Pond", sub: 'Shrimp, and trout for the patient', x0: 36, y0: 30, x1: 50, y1: 44 },
   { name: 'Goblin Camp', sub: 'Their machines are here', x0: 145, y0: 18, x1: 159, y1: 42 },
@@ -34,21 +34,21 @@ const BUILDINGS = [
   { id: 'bank', x: 99, y: 20, w: 8, h: 6, name: 'Bank of Thistledown', roof: '#3b4a7a', sign: 'BANK', door: 3, f: [[T.COUNTER, 1, 2], [T.COUNTER, 2, 2], [T.COUNTER, 3, 2], [T.COUNTER, 4, 2], [T.COUNTER, 5, 2], [T.CHEST, 1, 1], [T.CHEST, 6, 1], [T.RUG, 3, 3], [T.RUG, 4, 3]] },
   { id: 'bakery', x: 122, y: 20, w: 6, h: 6, name: 'Bakery', roof: '#8a6a2e', sign: 'BAKERY', door: 2, f: [[T.OVEN, 1, 1], [T.OVEN, 2, 1], [T.COUNTER, 1, 3], [T.COUNTER, 2, 3], [T.TABLE, 4, 2]] },
   { id: 'smithy', x: 90, y: 36, w: 7, h: 6, name: 'Smithy', roof: '#4a4a52', sign: 'SMITHY', door: 3, f: [[T.FORGE, 1, 1], [T.FORGE, 2, 1], [T.ANVIL, 4, 2], [T.COUNTER, 5, 3], [T.SHELF, 5, 1]] },
-  { id: 'workshop', x: 99, y: 36, w: 7, h: 6, name: "Tinker's Workshop", roof: '#5a4a3a', sign: 'TINKER', door: 3, f: [[T.WORKBENCH, 1, 1], [T.WORKSHOP, 3, 1], [T.ALCHEMY, 5, 1], [T.SHELF, 5, 3], [T.TABLE, 1, 3]] },
-  { id: 'inn', x: 122, y: 44, w: 8, h: 6, name: 'The Barrel & Boar', roof: '#6a3a2a', sign: 'INN', door: 3, f: [[T.COUNTER, 1, 1], [T.COUNTER, 2, 1], [T.TABLE, 4, 2], [T.TABLE, 6, 2], [T.TABLE, 4, 4], [T.BED, 6, 4], [T.RUG, 3, 3]] },
+  { id: 'workshop', x: 99, y: 36, w: 7, h: 5, name: "Tinker's Workshop", roof: '#5a4a3a', sign: 'TINKER', door: 3, f: [[T.WORKBENCH, 1, 1], [T.WORKSHOP, 3, 1], [T.ALCHEMY, 5, 1], [T.SHELF, 5, 3], [T.TABLE, 1, 3]] },
+  { id: 'inn', x: 123, y: 44, w: 8, h: 6, name: 'The Barrel & Boar', roof: '#6a3a2a', sign: 'INN', doorTop: 3, f: [[T.COUNTER, 1, 1], [T.COUNTER, 2, 1], [T.TABLE, 4, 2], [T.TABLE, 6, 2], [T.TABLE, 4, 4], [T.BED, 6, 4], [T.RUG, 3, 3]] },
   { id: 'keep', x: 108, y: 46, w: 10, h: 7, name: 'The Keep', roof: '#5a2e7a', sign: 'KEEP', doorTop: 4, stone: true, f: [[T.THRONE, 4, 4], [T.RUG, 4, 2], [T.RUG, 4, 3], [T.TABLE, 1, 4], [T.TABLE, 8, 4], [T.SHELF, 1, 1], [T.SHELF, 8, 1]] },
   { id: 'death1', x: 25, y: 10, w: 6, h: 5, name: "Death's House", roof: '#2a2a33', sign: 'REST', door: 2, stone: true, coffin: true, f: [[T.GOLDPILE, 1, 1], [T.GOLDPILE, 4, 1], [T.GOLDPILE, 4, 2], [T.CHEST, 1, 2]] },
   { id: 'death2', x: 133, y: 48, w: 6, h: 5, name: "Death's House", roof: '#2a2a33', sign: 'REST', door: 2, stone: true, coffin: true, f: [[T.GOLDPILE, 1, 1], [T.GOLDPILE, 4, 1], [T.GOLDPILE, 4, 2], [T.CHEST, 1, 2]] },
   { id: 'hermit', x: 28, y: 76, w: 5, h: 5, name: "Wren's Hut", roof: '#4a5a3a', door: 2, f: [[T.BED, 1, 1], [T.TABLE, 3, 1], [T.SHELF, 3, 2]] },
-  { id: 'h1', x: 130, y: 20, w: 5, h: 5, name: 'House', roof: '#6a4a3a', door: 2, f: [[T.BED, 1, 1], [T.TABLE, 3, 2]] },
-  { id: 'h2', x: 88, y: 28, w: 4, h: 4, name: 'House', roof: '#4a5a3a', door: 1, f: [[T.BED, 1, 1]] },
-  { id: 'h3', x: 94, y: 28, w: 4, h: 4, name: 'House', roof: '#6a4a3a', door: 1, f: [[T.TABLE, 1, 1]] },
+  { id: 'h1', x: 121, y: 36, w: 5, h: 4, name: 'House', roof: '#6a4a3a', door: 2, f: [[T.BED, 1, 1], [T.TABLE, 3, 2]] },
+  { id: 'h2', x: 88, y: 26, w: 4, h: 4, name: 'House', roof: '#4a5a3a', door: 1, f: [[T.BED, 1, 1]] },
+  { id: 'h3', x: 93, y: 27, w: 4, h: 4, name: 'House', roof: '#6a4a3a', door: 1, f: [[T.TABLE, 1, 1]] },
   { id: 'h4', x: 124, y: 27, w: 4, h: 4, name: 'House', roof: '#5a4a5a', door: 1, f: [[T.BED, 1, 1]] },
-  { id: 'h5', x: 130, y: 27, w: 5, h: 4, name: 'House', roof: '#6a4a3a', door: 2, f: [[T.BED, 1, 1], [T.SHELF, 3, 1]] },
-  { id: 'h6', x: 92, y: 46, w: 4, h: 4, name: 'House', roof: '#4a5a3a', door: 1, f: [[T.TABLE, 1, 1]] },
-  { id: 'h7', x: 98, y: 46, w: 4, h: 4, name: 'House', roof: '#6a4a3a', door: 1, f: [[T.BED, 1, 1]] },
+  { id: 'h5', x: 99, y: 27, w: 5, h: 4, name: 'House', roof: '#6a4a3a', door: 2, f: [[T.BED, 1, 1], [T.SHELF, 3, 1]] },
+  { id: 'h6', x: 92, y: 46, w: 4, h: 4, name: 'House', roof: '#4a5a3a', doorTop: 1, f: [[T.TABLE, 2, 2]] },
+  { id: 'h7', x: 98, y: 46, w: 4, h: 4, name: 'House', roof: '#6a4a3a', doorTop: 1, f: [[T.BED, 2, 2]] },
   { id: 'h8', x: 134, y: 36, w: 5, h: 4, name: 'House', roof: '#5a4a5a', door: 2, f: [[T.BED, 1, 1], [T.TABLE, 3, 1]] },
-  { id: 'h9', x: 126, y: 36, w: 4, h: 4, name: 'House', roof: '#4a5a3a', door: 1, f: [[T.SHELF, 1, 1]] },
+  { id: 'h9', x: 128, y: 36, w: 4, h: 4, name: 'House', roof: '#4a5a3a', door: 1, f: [[T.SHELF, 1, 1]] },
 ];
 const buildingAt = (tx, ty) => BUILDINGS.find(b => tx >= b.x && tx < b.x + b.w && ty >= b.y && ty < b.y + b.h);
 const insideBuilding = (tx, ty) => { const b = buildingAt(tx, ty); return b && tx > b.x && tx < b.x + b.w - 1 && ty > b.y && ty < b.y + b.h - 1 ? b : null; };
@@ -62,7 +62,7 @@ const NPCS = [
   { id: 'rosalind', name: 'Rosalind', x: 125, y: 22, tunic: '#c89a4a', hair: '#7a3a1a', apron: true, role: 'shop', shop: 'bakery', woman: true },
   { id: 'brakka', name: 'Brakka the smith', x: 93, y: 39, tunic: '#5a4a3a', hair: '#2a1a0a', apron: true, role: 'shop', shop: 'smith', beard: true },
   { id: 'pim', name: 'Pim the tinker', x: 103, y: 39, tunic: '#6a5a8a', hair: '#c9843a', role: 'tinker', woman: true },
-  { id: 'dorran', name: 'Dorran the innkeeper', x: 124, y: 46, tunic: '#6a3a2a', hair: '#3a2a1a', apron: true, role: 'inn', beard: true },
+  { id: 'dorran', name: 'Dorran the innkeeper', x: 125, y: 46, tunic: '#6a3a2a', hair: '#3a2a1a', apron: true, role: 'inn', beard: true },
   { id: 'duke', name: 'Duke Ferrin', x: 112, y: 49, tunic: '#5a2e7a', hair: '#8a7a6a', crown: true, role: 'duke' },
   { id: 'hale', name: 'Sergeant Hale', x: 86, y: 43, tunic: '#4a4f5a', hair: '#2a1a0a', helmet: true, role: 'trainer' },
   { id: 'tobin', name: 'Tobin', x: 110, y: 33, tunic: '#6a6a4a', hair: '#5a3a1a', role: 'bread' },
@@ -156,7 +156,7 @@ function generateWorld() {
   for (let y = 27; y <= 31; y++) for (let x = 97; x <= 99; x++) setTile(x, y, T.DIRT); // lane to smithy row
   for (let y = 27; y <= 31; y++) setTile(126, y, T.DIRT); for (let y = 33; y <= 44; y++) setTile(126, y, T.DIRT); // east lane
   for (let x = 88; x <= 104; x++) setTile(x, 44, T.DIRT); // south lane
-  setTile(116, 35, T.FIRE);
+  setTile(119, 38, T.FIRE);
   for (let y = 50; y <= 53; y++) for (let x = 126; x <= 132; x++) setTile(x, y, T.SOIL); // allotments
   // village fence + gates
   for (let x = VILLAGE.x0; x <= VILLAGE.x1; x++) { setTile(x, VILLAGE.y0, T.FENCE); setTile(x, VILLAGE.y1, T.FENCE); }
@@ -197,7 +197,7 @@ function generateWorld() {
   spawnList('boar', [[30, 24], [34, 30], [26, 36], [40, 46], [60, 44], [90, 60], [70, 56]]);
   spawnList('sheep', [[74, 42], [77, 44], [76, 41], [79, 43]]);
   spawnList('cow', [[74, 16], [77, 19], [79, 16]]);
-  spawnList('guard_m', [[86, 30], [118, 36], [113, 43]]); spawnList('guard_f', [[104, 23], [126, 33], [110, 43]]);
+  spawnList('guard_m', [[87, 30], [118, 36], [113, 43]]); spawnList('guard_f', [[104, 23], [126, 33], [110, 43]]);
   spawnList('wolf', [[20, 70], [40, 68], [50, 80], [75, 74], [90, 70], [110, 82], [130, 72], [145, 80], [70, 88], [25, 88]]);
   spawnList('sapper', [[146, 26], [154, 34], [150, 38]]); spawnList('brute', [[148, 30], [153, 24], [155, 30]]);
   spawnList('goblin', [[144, 24], [144, 36], [156, 38], [151, 22]]);

@@ -75,7 +75,7 @@
   // ---------- where an arch can take you ----------
   // Each one is a place with a region of its own; standing in that region is what unlocks the arch.
   const DESTS = [
-    { key: 'thistledown', name: 'Thistledown', region: 'Thistledown', x: 112, y: 33, colour: '#d8a95e', line: 'The square, by the well.' },
+    { key: 'thistledown', name: 'Thistledown', region: 'Thistledown', x: 112, y: 33, colour: '#d8a95e', line: 'The square, by the Great Fountain.' },
     { key: 'quarry', name: 'Grey Quarry', region: 'Grey Quarry', x: 54, y: 8, colour: '#9aa0a8', line: 'Iron and coal in the rock.' },
     { key: 'pond', name: "Miller's Pond", region: "Miller's Pond", x: 41, y: 39, colour: '#3d86c6', line: 'Shrimp, and trout for the patient.' },
     { key: 'wolfwood', name: 'Wolfwood', region: 'Wolfwood', x: 80, y: 78, colour: '#4a6a3a', line: 'The deep road south. Keep to the paths.' },

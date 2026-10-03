@@ -136,7 +136,7 @@ HOOKS.mapTarget.push(mainTarget);
 HOOKS.mapTarget.push(() => quest.bread === 'active' ? { x: 110, y: 33, label: 'Tobin', id: 'bread' } : null);
 HOOKS.mapTarget.push(() => quest.wren === 'active' ? { x: 30, y: 78, label: 'Old Wren', id: 'wren' } : null);
 HOOKS.mapTarget.push(() => { const a = activeQuests(); return a.includes('board') ? { x: 105, y: 27, label: 'Notice board', id: 'board' } : null; });
-HOOKS.mapTarget.push(() => activeQuests().includes('law') ? { x: 110, y: 41, label: 'Captain of the Watch', id: 'law' } : null);
+HOOKS.mapTarget.push(() => activeQuests().includes('law') ? { x: 110, y: 40, label: 'Captain of the Watch', id: 'law' } : null);
 HOOKS.mapTarget.push(() => activeQuests().includes('dragons') ? { x: 67, y: 104, label: 'Dunstan', id: 'dragons' } : null);
 // A target is on the world map unless it says otherwise: { map: '<instance id>' } puts it on that instance's map instead.
 // Inside an instance only that instance's own targets are listed, so no overworld ring, label or compass arrow lands on the

@@ -328,6 +328,8 @@
     if (!inAfter && (OWN_DARK_REGIONS.includes(player.region) || isCaveTile(tx, ty))) return 0;
     return a;
   }
+  // lights a feature keeps by coordinate rather than by tile (Thistledown's lamps, torches and fountain: src/95-thistledown.js)
+  HOOKS.nightLights = HOOKS.nightLights || [];
   function drawNight(g) {
     const a = overlayAlpha(); if (a <= 0) return;
     const inAfter = window.__instance === AFTER.id;
@@ -357,6 +359,7 @@
       else if (t === T.LODESTONE) lights.push({ x: tc(tx), y: tc(ty), r: 60 });
       else if (t === T.DOOR || t === T.COFFINDOOR) { const b = buildingAt(tx, ty); const up = !!b && ty === b.y && b.doorTop !== undefined && tx === b.x + b.doorTop; lights.push({ x: tc(tx), y: up ? ty * TILE : (ty + 1) * TILE, r: 70 }); }
     }
+    for (const f of HOOKS.nightLights) f(lights, x0, y0, x1, y1);
     for (const L of lights) {
       const sx = L.x - cam.x, sy = L.y - cam.y; if (sx < -L.r || sy < -L.r || sx > VW + L.r || sy > VH + L.r) continue;
       const gr = dg.createRadialGradient(sx, sy, 10, sx, sy, L.r); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');

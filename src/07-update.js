@@ -92,7 +92,7 @@ function update(dt) {
       floatText(player.x, player.y - 30, 'Wooden sword!', '#fff2a8', 18); advanceQuest(2);
     }
     if (quest.stage === 2 && player.x > (CAVE_EXIT_X + 1.5) * TILE) advanceQuest(3);
-    if (!player.visitedVillage && inVillageBounds(player.x, player.y)) { player.visitedVillage = true; say("Thistledown. You will wake here now if you fall. The castle is at the south end of the street.", 'The Voice'); save(); }
+    if (!player.visitedVillage && inVillageBounds(player.x, player.y)) { player.visitedVillage = true; say("Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is just past it, over the moat.", 'The Voice'); save(); }
     for (const d of drops) {
       d.t += dt;
       if (dist(d.x, d.y, player.x, player.y) < player.r + 12) {
