@@ -542,9 +542,11 @@
       if (m.x < x0 || m.x > x1 || m.y < y0 || m.y > y1) continue;
       const grade = gradeOf(m);
       const soon = dark && m.rise != null ? clamp((6 - (m.rise - t)) / 6, 0, 1) : 0;   // the ground heaves before it opens
-      items.push({ y: m.y * TILE + TILE - 6, draw: () => {
+      // a marker laid by a kill comes up as the body fades (79-deaths), never stuck through the falling body
+      const up = window.DEATHS && DEATHS.markerAlpha ? DEATHS.markerAlpha(m) : 1; if (up <= 0) continue;
+      items.push({ y: m.y * TILE + TILE - 6, grave: m, draw: () => {
         const x = tc(m.x), y = tc(m.y);
-        g.save();
+        g.save(); if (up < 1) { g.globalAlpha *= up; g.translate(0, (1 - up) * 5); }
         g.save(); if (soon > 0) g.translate(0, -Math.sin(time * 9 + m.x) * soon * 1.6);
         (MARKER_ART[grade.key] || drawCross)(g, x, y);
         g.restore();

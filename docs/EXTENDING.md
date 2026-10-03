@@ -18,6 +18,18 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   warhammer pickaxe hoe hammer bow arrow bomb helm body legs shield. Unknown shapes draw a disc.
 - `MONSTER_DEFS.my_monster = { name, level, r, hp, att, maxHit, def, speed, aggro, sight, respawn, drops, human?, harmless?, thrower?, mech? }`
   and a sprite via `HOOKS.drawMonster.my_monster = (g, e, hurt) => {...}` (g is already translated to the monster's position; draw around 0,0; `e.facing`, `e.walkT`, `e.moving`, `e.attackT`).
+  Its death is drawn by `src/79-deaths.js` from the same sprite: one of six kinds, `beast` (falls onto its side, kicks, fades),
+  `person` (falls back, the weapon clatters away), `undead` (crumbles into dust and bones), `machine` (sparks, smokes, breaks apart),
+  `dragon` (crashes down, a last breath of smoke) or `golem` (cracks and splits into rubble). Name it in the def with
+  `death: 'undead'` (otherwise `mech` gives a machine, `human` a person, anything else a beast) and add `boss: true` for the
+  three second boss scene (level 25+ with 300+ hp, an instance boss and a `HOOKS.bossCall` type already get it). A person's sprite
+  must skip the weapon in its hand when `e.unarmed` is set (`drawHuman` does it for you), because the death draws it flying off.
+  Drops are still rolled at the kill; the death only delays drawing them. Anything else a feature draws for a monster must
+  stop when `m.dead` is set, or it will show on top of the corpse; something a kill lays on the ground should come up as the
+  body fades (`DEATHS.remains(m)`, 0 to 1, as 54-graves' markers and the golem's rubble heap do).
+  A death starts only from `HOOKS.monsterDeath(m, info)`, `info = { k, by, how, x, y }`: `killMonster` fires it (offline and
+  on the keeper), and online 75-coop fires it on the keeper's word, once. Setting `m.dead` or reaching 0 hp plays nothing; a
+  feature that kills a monster some other way calls `monsterDied(m, 'blow', by)` after setting it dead.
 - `RECIPES.push({ out, qty, needs: [[id, n]], station: 'workbench'|'anvil'|'workshop'|'alchemy'|null, skill, lv, xp, label })`,
   `SMELT.push(...)`, `SHOPS.my_shop = { name, stock: [[id, price]] }`.
 - Tiles: `const MY = addTile('MY', { solid, push, placeableOn, tex: 'cobble'|'dirt'|..., mini: '#hex' })`.
@@ -38,6 +50,8 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
 - More hooks: `HOOKS.talkBefore.my_role = npc => handled` runs before the core dialogue; `HOOKS.mapTarget.push(() => ({ x, y, label }))`
   puts a marker on the world map (add `map: '<instance id>'` for a target inside an instance: inside an instance only that instance's targets are listed, and
   anything drawn on the maps reads `mapView()`, `miniWindow(size)` and `mapLayout` instead of assuming the whole world); `HOOKS.hurt.push((e, dmg, source) => ...)` sees every hit the player takes.
+  `HOOKS.leaveInstance.push(id => ...)` runs as the knight is about to leave instance `id` (every way out: LEAVE, L, the exit, a ride, a respawn, a load),
+  while it is still the active map: settle there anything you owe him that a timer was still holding back (91-royalmine pays the golem's fall this way).
 - Named bosses come back (owner: *"bosses shoould all be redefeatable"*). A boss a control or a visit wakes registers it once:
   `HOOKS.bossCall = HOOKS.bossCall || {}; HOOKS.bossCall.my_boss = { map: 'over' | '<instance id>', near: [tx, ty, tiles] | null, name, type, alive: () => bool, wake: askerName => {...} }`,
   and the on-screen control calls `window.COOP && COOP.call ? COOP.call('my_boss') : HOOKS.bossCall.my_boss.wake(null)`. Offline or on the

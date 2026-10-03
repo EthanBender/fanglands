@@ -86,9 +86,12 @@ function drawCharacter(g, e, kind) {
   else if (kind === 'goblin' || kind === 'sapper' || kind === 'brute') {
     const s = kind === 'brute' ? 1.35 : 1; g.scale(s, s);
     if (kind === 'sapper') { g.fillStyle = '#4a3a2a'; g.beginPath(); g.ellipse(-11, 4, 6, 7, 0, 0, 7); g.fill(); g.fillStyle = '#2f2f35'; g.beginPath(); g.arc(-11, 2, 3.5, 0, 7); g.fill(); }
-    g.save(); g.rotate(ang + (e.attackT > 0 ? -0.6 + (1 - e.attackT / 0.2) * 1.4 : 0.7));
-    if (kind === 'brute') { g.fillStyle = '#6b4a2a'; g.fillRect(2, -2, 22, 4); g.fillStyle = '#5a5a62'; g.fillRect(20, -7, 9, 14); } else { g.fillStyle = '#c9ccd3'; g.fillRect(6, -1.5, 14, 3); g.fillStyle = '#5a3a1e'; g.fillRect(2, -2, 5, 4); }
-    g.restore();
+    // a falling goblin has already dropped his weapon: 79-deaths draws it flying off (e.unarmed on the corpse's body)
+    if (!e.unarmed) {
+      g.save(); g.rotate(ang + (e.attackT > 0 ? -0.6 + (1 - e.attackT / 0.2) * 1.4 : 0.7));
+      if (kind === 'brute') { g.fillStyle = '#6b4a2a'; g.fillRect(2, -2, 22, 4); g.fillStyle = '#5a5a62'; g.fillRect(20, -7, 9, 14); } else { g.fillStyle = '#c9ccd3'; g.fillRect(6, -1.5, 14, 3); g.fillStyle = '#5a3a1e'; g.fillRect(2, -2, 5, 4); }
+      g.restore();
+    }
     g.fillStyle = hurt ? '#ffb0b0' : kind === 'brute' ? '#5a9a33' : '#6fbf3f'; g.beginPath(); g.ellipse(0, 3, 11, 10, 0, 0, 7); g.fill();
     g.fillStyle = hurt ? '#ffc0c0' : kind === 'brute' ? '#74b048' : '#8ad35a'; g.beginPath(); g.arc(0, -7, 8, 0, 7); g.fill();
     g.beginPath(); g.moveTo(-7, -9); g.lineTo(-16, -14); g.lineTo(-6, -4); g.closePath(); g.fill();
