@@ -1250,9 +1250,16 @@ async function main() {
     const nA2 = ev(A, "monsters.filter(m => m.type === 'gnasher' && !m.dead).length"), nB2 = ev(B, "monsters.filter(m => m.type === 'gnasher' && !m.dead).length");
     line('M2. In the lab Ann keeps the map; Ben pulls the Arena lever: his call wakes one Gnasher on Ann\'s game, Ben sees it as a puppet, and two seconds later there is still exactly one on each side',
       keeperA && nA === 1 && nB === 1 && localB === 0 && nA2 === 1 && nB2 === 1 && ev(B, 'quest.tinker.rematch') === true, { keeperA, nA, nB, localB, nA2, nB2 });
-    // Ann brings it down for both: Ben's rematch purse goes nowhere without three hits; tidy
-    ev(A, "(() => { const m = monsters.find(o => o.type === 'gnasher' && !o.dead); if (m) { m.hp = 1; hitMonster(m, 5, 0); } })()"); tick(60);
-    for (const g of both) ev(g, "if (INSTANCES.active()) INSTANCES.leave(); quest.tinker.rematch = false;"); tick(30);
+    // R4. Ann brings it down alone (Ben's rematch purse goes nowhere without three hits): Ben's call is spent once he has
+    // seen it fall, and nothing stands a new Gnasher up by itself. Ten seconds later neither game has one, and Ben's
+    // rematch is false, though nobody touched the lever
+    { const annKills0 = ev(A, 'quest.tinker.kills'), calls = []; const offCall = A.NET.on('boss_call', m => calls.push(m));
+      ev(A, "(() => { const m = monsters.find(o => o.type === 'gnasher' && !o.dead); if (m) { m.hp = 1; hitMonster(m, 5, 0); } })()"); tick(600);
+      A.NET.off('boss_call', offCall);
+      const after = { upA: ev(A, "monsters.filter(m => m.type === 'gnasher' && !m.dead).length"), upB: ev(B, "monsters.filter(m => m.type === 'gnasher' && !m.dead).length"), benRematch: ev(B, 'quest.tinker.rematch'), annKills: ev(A, 'quest.tinker.kills') - annKills0, calls: calls.length };
+      line('R4. Ann (keeper) brings Ben\'s lever Gnasher down alone: ten seconds later there is no Gnasher on either game, Ben\'s rematch is spent (false), no new call went out, and Ann was paid once',
+        after.upA === 0 && after.upB === 0 && after.benRematch === false && after.calls === 0 && after.annKills === 1, after); }
+    for (const g of both) ev(g, "if (INSTANCES.active()) INSTANCES.leave();"); tick(30);
   }
   // ---- M4. the storm: Ann has broken it and is resting; Ben has not. Ben goes in; Ann may follow; both fight ----
   {
@@ -1293,8 +1300,9 @@ async function main() {
       ev(B, "COOP.state.restAt.stormfront -= 301"); ev(A, "INSTANCES.leave()"); tick(60); ev(A, "STORM.tryIntoStorm()"); tick(240);
       const up = { a: ev(A, "!!STORM.bird()"), b: ev(B, "!!STORM.bird()") };
       ev(B, "(() => { const m = STORM.bird(); if (m) { STORM.setPhase(m, 'hunt'); m.phaseT = -1e5; m.boltCd = 1e5; m.hp = 40; } })()"); tick(10);
-      // (a bird left alone a moment heals a point: Ann swings until it is down)
-      for (let i = 0; i < 8 && ev(A, "!!STORM.bird()"); i++) { hitBoss(A, 'thunderbird', 10); tick(6); }
+      // (a bird left alone a moment heals a point, and Ann's own last blow lays her puppet down for a moment before Ben's
+      // game agrees: so she swings until the keeper's bird, not her puppet, is down)
+      for (let i = 0; i < 60 && ev(B, "!!STORM.bird()"); i++) { hitBoss(A, 'thunderbird', 10); tick(6); }
       tick(30);
       const annPaid = { coins: sumNear(A, 'coins', 200), essence: sumNear(A, 'cloud_essence', 1), kills: ev(A, 'quest.storm.kills') };
       line('M4b. Ann, rested, walks into the storm Ben keeps while it still gathers from its last fall: no bird, and she reads Ready in m:ss; once it has gathered, walking in raises one bird on both games and her kill pays 200 coins + 1 essence',

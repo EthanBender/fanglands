@@ -6013,7 +6013,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // knight's own rest pays nothing (m.noPay, 75-coop: no drops, no purse).
   HOOKS.kill.push(m => {
     if (m.type !== 'barrelbeast') return;
-    const hf = HF(), first = storyBeast();
+    const hf = HF(), first = firstFor(m);
     m.strikes = []; m.rodGlow = 0; m.enrage = 0; MONSTER_DEFS.barrelbeast.maxHit = BEAST_BASE.maxHit; m.speed = BEAST_BASE.speed;
     burst(m.x, m.y, '#ff8a1a', 40, 220); burst(m.x, m.y, '#3a3a3a', 24, 140);
     if (!first && m.noPay) {
@@ -6093,10 +6093,14 @@ HOOKS.selfTest.push((check, F, h) => {
   }
   // this knight's own story beast: not yet broken, and his story has reached Hollowford (stage 9 or later)
   const storyBeast = () => !HF().beastKilled && quest.stage >= 9;
+  // a kill that is this knight's first Barrelbeast: his story beast, or (at any stage, as it always was) the square's beast
+  // killed on his own game, offline or as the map's keeper. Only a friend's beast (a coop phantom) or a goblin spare in the
+  // shed waits for his story to reach Hollowford.
+  const firstFor = m => storyBeast() || (!HF().beastKilled && !!m && !m.phantom && !m.shed);
   HOOKS.bossCall = HOOKS.bossCall || {};
   HOOKS.bossCall.war_shed = { map: SHED.id, near: null, name: 'the Barrelbeast', type: 'barrelbeast', rest: SHED_REST, alive: () => !!liveBeast(), wake: () => { spawnShedBeast(); },
     // 75-coop's pay gate: a repeat beast inside this knight's own rest pays nothing
-    resting: () => !storyBeast() && restLeft(HF().shedRestUntil) > 0,
+    resting: m => !firstFor(m) && restLeft(HF().shedRestUntil) > 0,
     // the shed's keeper says its beast fell lately: this knight's rematch call is over, and he is told how long
     refused: left => { const hf = HF(); if (hf.beastKilled) { hf.shedUp = false; save(); } shedSeen = true; say(`The crew is still bolting it back together. Ready in ${mmss(left)}.`, 'Boiler valve'); } };
   const callShed = () => window.COOP && COOP.call ? COOP.call(SHED.id, storyBeast()) : (spawnShedBeast(), 'woke');
@@ -6590,6 +6594,19 @@ HOOKS.selfTest.push((check, F, h) => {
         check(P + "this knight's own valve beast felled by a friend's blow clears shedUp, starts his 300 s rest, and no beast stands up again on this visit",
           up && !hf6.shedUp && Math.abs(hf6.shedRestUntil - day - 300) < 3 && !liveBeast(), { up, shedUp: hf6.shedUp, rest: hf6.shedRestUntil - day, again: !!liveBeast() });
         INSTANCES.leave(); }
+      // B15: offline, a knight whose story has not reached Hollowford (stage 5) who walks in and kills the square's beast has
+      // made his first kill, as it always was (beastKilled, one wreck, the stage left alone), and nobody calls it a friend's fight
+      { const hf7 = HF(), st = quest.stage, keep = { wreck: hf7.wreck, map: map.slice(), stats: JSON.stringify(player.skills) };
+        Object.assign(hf7, { beastKilled: false, wreckDue: false, shedUp: false, shedRestUntil: 0, wreck: null }); quest.stage = 5;
+        const sq = monsters.find(m => m.type === 'barrelbeast' && !m.shed); F.tp(137, 86); const w0 = wrecks(); clearBanners(); drain();
+        if (sq) { sq.dead = false; delete sq.awake; sq.hp = 1; sq.x = player.x + 60; sq.y = player.y; sq.stunT = 0; }
+        F.sim(1, []); const offline = typeof NET === 'undefined' || !NET.online(); if (sq) hitMonster(sq, 5, 0); F.sim(2, []);
+        const r = { offline, dead: !!sq && sq.dead, killed: hf7.beastKilled, stage: quest.stage, wrecks: wrecks() - w0, friend: said(/friend/), banner: bannerAhead('BEAST DOWN'), tips: said(/tips, groans, and comes apart/) };
+        check(P + "offline at stage 5, the square's beast killed is his first kill as it always was: beastKilled, one wreck, stage stays 5, and no word of a friend",
+          r.offline && r.dead && r.killed && r.stage === 5 && r.wrecks === 1 && !r.friend && !r.banner && r.tips, r);
+        for (let i = 0; i < map.length; i++) if (map[i] !== keep.map[i]) changeTile(i % MAP_W, Math.floor(i / MAP_W), keep.map[i]);
+        hf7.wreck = keep.wreck; hf7.beastKilled = true; quest.stage = st; player.skills = JSON.parse(keep.stats); recomputeMaxHp();
+        if (sq) { sq.dead = true; sq.respawnT = Infinity; } drops = drops.filter(() => false); drain(); clearBanners(); }
       // B10: online and not the shed's keeper: the valve asks the keeper and makes nothing itself
       if (typeof NET !== 'undefined' && window.COOP) {
         const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
@@ -10661,8 +10678,10 @@ PEOPLE_UI.auditPrompt = function (p) {
   // the Duke learns of the kill from you, not from your footsteps: at stage 15 talking to him ends the story (the castle-entry trigger stays as a fallback)
   HOOKS.talkBefore.duke = n => {
     if (quest.stage === 14 && window.DRAGON_KILLERS) return window.DRAGON_KILLERS.duke(n); // 37-dragonkillers: the Song, the group, the horn
-    if (quest.stage === 15) { say('The Fang? Slain? Then the old songs were waiting for you, knight. Thistledown owes you more than a keep can hold. The Dragon Killers will be sung about for a hundred years.', n.name); say('Sit. Eat. Tomorrow the whole town hears it from my mouth. Tonight, hear it from me: thank you.', n.name); advanceQuest(16); return true; }
-    if (quest.stage >= 16) { say('The knight of legend, in my hall. Rest, friend. The Fanglands are at peace because of you.', n.name); say('They say the lava in that lair still remembers the dragon. Sound the horn on the circle if you miss it.', n.name); return true; }
+    // (37-dragonkillers' hornFor: a knight who slew it beside a friend before the Duke gave him a horn is handed one now, once)
+    const horn = () => { if (window.DRAGON_KILLERS && DRAGON_KILLERS.hornFor) DRAGON_KILLERS.hornFor(n); };
+    if (quest.stage === 15) { say('The Fang? Slain? Then the old songs were waiting for you, knight. Thistledown owes you more than a keep can hold. The Dragon Killers will be sung about for a hundred years.', n.name); say('Sit. Eat. Tomorrow the whole town hears it from my mouth. Tonight, hear it from me: thank you.', n.name); horn(); advanceQuest(16); return true; }
+    if (quest.stage >= 16) { say('The knight of legend, in my hall. Rest, friend. The Fanglands are at peace because of you.', n.name); say('They say the lava in that lair still remembers the dragon. Sound the horn on the circle if you miss it.', n.name); horn(); return true; }
     return false;
   };
   // ---------- main quest, stages 14–16 ----------
@@ -11000,6 +11019,7 @@ PEOPLE_UI.auditPrompt = function (p) {
     const drain = () => { dialog.queue.length = 0; dialog.cur = null; };
     const said = re => [dialog.cur, ...dialog.queue].some(l => l && re.test(l.text));
     const keep = { fq: JSON.stringify(fq), stage: quest.stage, day: player.dayTime, dk: JSON.stringify(quest.dk || null), hp: player.hp };
+    const DK_formed = () => !!(quest.dk && quest.dk.formed);
     const hornHad = countItem('dragon_horn'); if (!hornHad) h.give('dragon_horn', 1);
     h.peace(true); closePanel();
     // a reload makes the dragon afresh at its home, standing, knowing nothing (spawnMonsters); then the tick decides
@@ -11097,6 +11117,23 @@ PEOPLE_UI.auditPrompt = function (p) {
       { const q = FQ(); Object.assign(q, { slain: true, echoUp: false }); m.dead = false; m.awake = true; m.hp = m.maxHp; F.sim(3, []); const stays = !m.dead;
         m.awake = false; F.sim(1, []); const down = m.dead;
         check(P + 'a live Fang with awake true (adopted in a handoff) is not forced dead by a keeper whose fq.slain is set', stays && down, { stays, down }); }
+      // F16: a friend's helper slew it at stage 14 before the Duke formed the Dragon Killers (no Song yet), so he never had the
+      // horn: the Duke hands him exactly one after the slaying, and the circle then raises the Echo for him
+      if (window.COOP && COOP.phantomOf && window.DRAGON_KILLERS) {
+        const keepSky = JSON.stringify(quest.sky || null), horns0 = countItem('dragon_horn');
+        removeItem('dragon_horn', horns0); quest.dk = { formed: false, gate: true, slainWith: false }; quest.sky = Object.assign({}, quest.sky || {}, { stage: 1 });
+        Object.assign(FQ(), { slain: false, summoned: false, echoUp: false, restUntil: 0 }); quest.stage = 14; m.dead = true; m.awake = false; F.sim(1, []); credits = null;
+        const ph = COOP.phantomOf({ type: 'the_fang', nid: 'Ann:5', x: m.x, y: m.y }); killMonster(ph); F.sim(2, []);
+        const after = { stage: quest.stage, slain: FQ().slain, horn: countItem('dragon_horn'), formed: DK_formed() };
+        drops = drops.filter(d => dist(d.x, d.y, ph.x, ph.y) > 80); credits = null; clearBanners(); drain();
+        F.tp(111, 48); F.talk('duke'); F.sim(2, []); const given = countItem('dragon_horn'), stage1 = quest.stage, told = said(/without my horn/);
+        drain(); F.talk('duke'); F.sim(2, []); const again = countItem('dragon_horn'); credits = null; clearBanners();
+        player.dayTime = FQ().restUntil + 1; m.dead = true; m.awake = false; horn();
+        const echo = !m.dead && m.awake === true && FQ().echoUp === true;
+        check(P + "a helper's first kill at stage 14 with no Song (no horn) moves him to 15; the Duke then hands over exactly one horn, and the circle raises the Echo with it",
+          after.stage === 15 && after.slain && after.horn === 0 && !after.formed && given === 1 && told && stage1 === 16 && again === 1 && echo, { after, given, told, stage1, again, echo });
+        removeItem('dragon_horn', countItem('dragon_horn')); if (horns0) addItem('dragon_horn', horns0); quest.sky = JSON.parse(keepSky);
+        m.dead = true; m.awake = false; Object.assign(FQ(), { echoUp: false }); quest.stage = 16; drain(); }
       // F10: online and not the keeper: the horn asks the keeper, makes nothing, no Dragon Killers walk here, and a
       // dragon the keeper streams is never put down by this knight's flags
       if (typeof NET !== 'undefined' && window.COOP) {
@@ -12723,6 +12760,11 @@ window.PLACE_KIT = PLACE_KIT;
   MONSTER_DEFS.gnasher = { name: 'The Gnasher', level: 22, r: 30, hp: 320, att: 22, maxHit: 14, def: 18, speed: 75, aggro: true, sight: 7 * TILE, respawn: 1e9,
     drops: { always: [['iron_ore', 1, 2]], table: [['nothing', 0, 0, 6], ['goblin_scrap', 1, 3, 6], ['blast_powder', 1, 2, 4]] } };
   const GN_ARM_EVERY = 2, GN_ARM_REACH = 1.5 * TILE, GN_BOMB_EVERY = 5;
+  // a rematch rests the lever this long on the knight's own day clock (player.dayTime, saved with him): a fair purse, not a
+  // farm. The first fight (stage 2) never waits, and Tinkerton's "pull it when you miss it" holds for the first rematch.
+  const GN_REST = 180;
+  const restLeft = q => Math.max(0, (q.restUntil || 0) - (player.dayTime || 0));
+  const mmss = s => { const c = Math.ceil(s); return Math.floor(c / 60) + ':' + String(c % 60).padStart(2, '0'); };
 
   // ---------- state ----------
   const freshT = () => ({ stage: 0, parts: {}, visited: false, rematch: false, kills: 0, friends: 0, bundle: false });
@@ -12735,7 +12777,7 @@ window.PLACE_KIT = PLACE_KIT;
   const partsHeld = () => PART_IDS.filter(id => countItem(id) > 0).length;
   HOOKS.questText.tinker = () => {
     const q = TQ();
-    if (q.stage >= 3) return "Done. The lever in Tinkerton's lab (the Arena now) wakes the Gnasher again: 150 coins a rematch.";
+    if (q.stage >= 3) return "Done. The lever in Tinkerton's lab (the Arena now) wakes the Gnasher again: 150 coins a rematch, one every 3 minutes.";
     if (q.stage === 2) return "The Gnasher is loose inside Tinkerton's lab, east of Grubmarket. Bring it down.";
     if (q.stage === 1) { const got = PART_IDS.filter(id => q.parts[id]).length; return `Make friends in Grubmarket (${got}/4 parts): Grubb (5 cooked beef), Nix (10 goblin scrap), Old Snaggle (3 spider silk), Pip-squeak (bread). Carry them (${partsHeld()}/4) to Tinkerton's lab, east of the market.`; }
     return "Tinkerton tends the lamp at the corner of Grubmarket's gate, over the water. The gate is shut to knights and he is the way in: talk to him.";
@@ -12795,7 +12837,8 @@ window.PLACE_KIT = PLACE_KIT;
   // online, only the game that runs the lab (a knight alone, or the lab's keeper) makes the Gnasher; anyone else asks it
   // (docs/ONLINE.md, "Named bosses"), and is told nothing more than the lever's own words
   const runsHere = () => !window.NET || !NET.online() || !!(window.COOP && COOP.isKeeper());
-  const callGnasher = () => window.COOP && COOP.call ? COOP.call('gnasher') : (spawnGnasher(), 'woke');
+  // (first: the knight's own story fight at stage 2, which the keeper's rest never holds back)
+  const callGnasher = () => window.COOP && COOP.call ? COOP.call('gnasher', TQ().stage === 2) : (spawnGnasher(), 'woke');
   const guards = () => monsters.filter(m => m.type === 'castle_guard');
   const calmGuards = () => { for (const m of guards()) if (!m.dead) { m.angry = false; if (m.state === 'chase') m.state = 'return'; } };
   function gcTalk(n) {
@@ -12878,8 +12921,15 @@ window.PLACE_KIT = PLACE_KIT;
   HOOKS.kill.push(m => {
     if (m.type !== 'gnasher') return;
     const tq = TQ();
+    // every Gnasher but the first is a rematch: 37-dragonkillers rolls its dragon item at the rematch odds (m.repeat)
+    m.repeat = tq.stage !== 2;
     burst(m.x, m.y, '#ff8a1a', 40, 220); burst(m.x, m.y, '#3a3a3a', 24, 140);
-    if (tq.stage === 2) {
+    if (tq.stage >= 3 && m.noPay) {
+      // a friend's Gnasher this knight helped with while his own lever still rests (75-coop m.noPay): nothing paid
+      floatText(player.x, player.y - 44, 'You helped', '#c9d1d9', 14);
+      say(`You helped bring it down. Your own reward is ready in ${mmss(restLeft(tq))}.`, 'The Voice');
+      tq.rematch = false;
+    } else if (tq.stage === 2) {
       tq.stage = 3; giveOrDrop('coins', 400, player.x, player.y); giveOrDrop('tinker_goggles', 1, player.x, player.y);
       if (!HAS_INST && tileAt(LEVER_T.x, LEVER_T.y) !== GC_LEVER) changeTile(LEVER_T.x, LEVER_T.y, GC_LEVER);
       say('The Gnasher stops. Its arms drop. The boiler sighs once and goes quiet.', 'The Voice');
@@ -12890,7 +12940,7 @@ window.PLACE_KIT = PLACE_KIT;
       say(tq.stage === 0 ? "Your friend's Gnasher folds. Tinkerton has not met you yet: find him at the gate of Grubmarket." : "Your friend's Gnasher folds. Tinkerton pays for his own Gnasher only: bring him the four parts first.", 'The Voice');
     } else {
       // every other Gnasher is a rematch: the lever's own, or one a friend woke that this knight helped bring down
-      tq.rematch = false; tq.kills = (tq.kills || 0) + 1;
+      tq.rematch = false; tq.kills = (tq.kills || 0) + 1; tq.restUntil = (player.dayTime || 0) + GN_REST;
       giveOrDrop('coins', 150, player.x, player.y); giveOrDrop('goblin_scrap', 5, player.x, player.y);
       levelBanner = { text: 'REMATCH WON', sub: `The Gnasher, ${tq.kills + 1} times`, t: 3 };
       say(pick(['Down again. Tinkerton pays out of the boiler: 150 coins and a handful of scrap.', 'The Gnasher folds. Coins and scrap, as promised. The lever waits.']), 'The Voice');
@@ -12901,13 +12951,24 @@ window.PLACE_KIT = PLACE_KIT;
     const tq = TQ();
     if (tq.stage < 3) { notify(tq.stage === 2 ? 'The lever is already down. The Gnasher is awake.' : 'A lever, not yet connected to anything. Tinkerton is still building.'); return; }
     if (liveGnasher()) { notify('The Gnasher is already awake. Deal with that one first.'); return; }
-    tq.rematch = true; callGnasher(); const m = liveGnasher(); if (m) floatText(m.x, m.y - m.r - 30, 'REMATCH', '#ff8a1a', 16);
+    const left = restLeft(tq);
+    if (left > 0) { say(`Tinkerton is still patching it up. Ready in ${mmss(left)}.`, 'Arena lever'); return; }
+    tq.rematch = true; gnSeen = false; gnDownAt = null; callGnasher(); const m = liveGnasher(); if (m) floatText(m.x, m.y - m.r - 30, 'REMATCH', '#ff8a1a', 16);
     say('The lever clanks down. The boiler catches, the lamps come on, and the Gnasher sits up.', 'The Voice'); save();
   }
 
   HOOKS.bossCall = HOOKS.bossCall || {};
-  HOOKS.bossCall.gnasher = { map: INST_ID, near: null, name: 'the Gnasher', type: 'gnasher', alive: () => !!liveGnasher(), wake: () => { if (inLab() && !liveGnasher()) spawnGnasher(); } };
-  let gnWaitT = 0, gnCallAt = -1e9;
+  HOOKS.bossCall.gnasher = { map: INST_ID, near: null, name: 'the Gnasher', type: 'gnasher', rest: GN_REST, alive: () => !!liveGnasher(), wake: () => { if (inLab() && !liveGnasher()) spawnGnasher(); },
+    // 75-coop's pay gate: a rematch inside this knight's own rest pays nothing (the first fight, stage 2, always pays)
+    resting: () => TQ().stage >= 3 && restLeft(TQ()) > 0,
+    // the lab's keeper says the Gnasher fell there lately: this knight's lever call is over, and he is told how long
+    refused: left => { const tq = TQ(); tq.rematch = false; save(); gnSeen = true; say(`Tinkerton is still patching it up. Ready in ${mmss(left)}.`, 'Arena lever'); } };
+  // Online, not running the lab: gnSeen says the Gnasher this knight called has stood up on his screen on this visit. Once it
+  // has been down a while (dead or gone from the keeper's stream, DOWN_FOR s: his own last blow lays the puppet down for a
+  // moment before the keeper's word lands), his rematch call is spent, paid or not, and nothing asks for another by itself
+  // until the lever is pulled again. Only his own first fight (stage 2) is asked for again while it is owed.
+  let gnWaitT = 0, gnCallAt = -1e9, gnSeen = false, gnDownAt = null, gnVisit, wasInLab = false;
+  const GN_DOWN_FOR = 3;
 
   // ---------- the lab interior (an instance behind the hut door) ----------
   if (HAS_INST) {
@@ -13007,10 +13068,25 @@ window.PLACE_KIT = PLACE_KIT;
       if (gq.tribute && guards().some(m => m.angry && m.hurtT <= 0 && !m.dead && m.state !== 'chase')) calmGuards();
     }
     // the Gnasher: spawn on demand in the lab (a loaded save mid-fight, a rematch, a second visit), arms every 2 s within 1.5 tiles, a bomb every 5 s, and its corpse leaves the list
-    if ((tq.stage === 2 || tq.rematch) && inLab() && !liveGnasher()) {
-      if (runsHere()) spawnGnasher();
-      else { gnWaitT += dt; if (gnWaitT >= 2 && (time < gnCallAt || time - gnCallAt >= 5)) { gnCallAt = time; callGnasher(); } }
-    } else gnWaitT = 0;
+    if (inLab()) {
+      // a new visit: the first tick inside, or a leave and a walk back in between two ticks (16-instances stamps lastLeft)
+      const inst = HAS_INST ? window.INSTANCES.get(INST_ID) : null, key = inst ? inst.lastLeft : 0;
+      if (!wasInLab || key !== gnVisit) { wasInLab = true; gnVisit = key; gnSeen = false; gnDownAt = null; }
+      const lg = liveGnasher();
+      if (!runsHere()) {
+        if (lg && lg.remote && (tq.rematch || tq.stage === 2)) { gnSeen = true; gnDownAt = null; }
+        else if (gnSeen && !lg && gnDownAt === null) gnDownAt = time;
+        if (gnDownAt !== null && (time < gnDownAt || time - gnDownAt >= GN_DOWN_FOR)) {
+          gnDownAt = null;
+          if (!liveGnasher() && tq.rematch) { tq.rematch = false; save(); }
+        }
+      }
+      const want = tq.stage === 2 || (tq.rematch && (runsHere() || !gnSeen));
+      if (want && !lg) {
+        if (runsHere()) spawnGnasher();
+        else { gnWaitT += dt; if (gnWaitT >= 2 && (time < gnCallAt || time - gnCallAt >= 5)) { gnCallAt = time; callGnasher(); } }
+      } else gnWaitT = 0;
+    } else { wasInLab = false; gnWaitT = 0; }
     let gone = false;
     for (const m of monsters) {
       if (m.type !== 'gnasher') continue;
@@ -13033,6 +13109,9 @@ window.PLACE_KIT = PLACE_KIT;
     }
     if (gone) monsters = monsters.filter(m => !m.gone);
   });
+
+  // the progression audit (42-playthrough reads HOOKS.xpSource): a lever rematch, at most once every GN_REST s of the day clock
+  if (HOOKS.xpSource) HOOKS.xpSource.push(add => { const D = MONSTER_DEFS.gnasher; add('melee', `the Gnasher (one per ${GN_REST} s)`, D.level, D.hp * 4 + D.level * 10, GN_REST, '33-goblincity: the Arena lever'); });
 
   // ---------- panel: Tinkerton's shop, and the Barrelbeast re-supply when another feature provides window.BEAST ----------
   const beastLost = () => { try { return !!(window.BEAST && typeof window.BEAST.lost === 'function' && window.BEAST.lost()); } catch (e) { return false; } };
@@ -13372,6 +13451,33 @@ window.PLACE_KIT = PLACE_KIT;
           coins() === c0 && countItem('goblin_scrap') === s0 && countItem('tinker_goggles') === g0 && TQ().kills === 0 && TQ().stage === 0 && !bannerAhead('REMATCH WON') && said,
           { coins: coins() - c0, scrap: countItem('goblin_scrap') - s0, kills: TQ().kills, said });
         window.INSTANCES.leave(); }
+      // G7 (offline): a rematch kill rests the lever 180 s of the knight's own day clock, said in m:ss; the rest is saved; when
+      // it is over the lever wakes the Gnasher again. The first fight's kill never started a rest (the lever check above)
+      { quest.tinker = Object.assign(freshT(), { stage: 3, rematch: false, kills: 1, restUntil: 0 }); makeRoom(3); enterLab(); F.sim(1, []);
+        lever(); const gn = liveGnasher(), up = !!gn && TQ().rematch, c0 = coins(), day = player.dayTime || 0;
+        if (gn) { gn.hp = 1; gn.stunT = 0; hitMonster(gn, 5, 0); } F.sim(2, []);
+        const paid = coins() === c0 + 150 && !TQ().rematch && TQ().kills === 2, until = TQ().restUntil;
+        F.sim(90, []); lever(); const refused = !liveGnasher() && !TQ().rematch && !!dialog.cur && dialog.cur.who === 'Arena lever' && /Tinkerton is still patching it up\. Ready in \d+:\d\d\./.test(dialog.cur.text);
+        save(); const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'), kept = !!(raw.quest && raw.quest.tinker && raw.quest.tinker.restUntil === until);
+        player.dayTime = until; lever(); const again = !!liveGnasher() && TQ().rematch;
+        check(P + 'a rematch kill rests the lever 180 s of the day clock: the lever refuses with Ready in m:ss and wakes nothing; the rest is saved; after it the lever wakes the Gnasher again',
+          up && paid && Math.abs(until - day - 180) < 1 && refused && kept && again, { up, paid, rest: until - day, refused, text: dialog.cur && dialog.cur.text, kept, again });
+        for (const m of monsters) if (m.type === 'gnasher') { m.dead = true; m.deadT = 9; } TQ().rematch = false; F.sim(2, []);
+        drops = drops.filter(() => false); window.INSTANCES.leave(); }
+      // G8 (offline): a friend's Gnasher this knight helped with inside his own rest pays nothing (no purse, no drops, no kill count)
+      { quest.tinker = Object.assign(freshT(), { stage: 3, rematch: false, kills: 2, restUntil: (player.dayTime || 0) + 100 }); makeRoom(3); enterLab(); F.sim(1, []); drain();
+        const gn = spawnGnasher(), c0 = coins(), s0 = countItem('goblin_scrap'), n0 = drops.length, until = TQ().restUntil;
+        const ph = window.COOP.phantomOf({ type: 'gnasher', nid: 'Ann:9', x: gn.x, y: gn.y }); monsters.splice(monsters.indexOf(gn), 1);
+        const rnd0 = Math.random; try { Math.random = () => 0; killMonster(ph); } finally { Math.random = rnd0; } F.sim(2, []);
+        const said = [dialog.cur, ...dialog.queue].some(l => l && /Your own reward is ready in \d+:\d\d\./.test(l.text));
+        check(P + "a friend's Gnasher this knight helped with inside his own rest pays nothing (no coins, no scrap, no drops); kills and the rest unchanged; says Your own reward is ready in m:ss",
+          ph.noPay === true && coins() === c0 && countItem('goblin_scrap') === s0 && drops.length === n0 && TQ().kills === 2 && TQ().restUntil === until && said,
+          { noPay: ph.noPay, coins: coins() - c0, scrap: countItem('goblin_scrap') - s0, drops: drops.length - n0, kills: TQ().kills, said });
+        window.INSTANCES.leave(); }
+      // G9: the dragon item is 1 in 300 on a rematch Gnasher (m.repeat), and the first fight keeps the boss odds
+      { const C = window.DRAGON_KILLERS && DRAGON_KILLERS.chance;
+        check(P + 'DRAGON_KILLERS.chance is min(1/20, level/1500) on the first Gnasher and 1/300 on a rematch (m.repeat)', !!C && C('gnasher') === Math.min(1 / 20, MONSTER_DEFS.gnasher.level / 1500) && C('gnasher', { repeat: true }) === 1 / 300,
+          { first: C && C('gnasher'), again: C && C('gnasher', { repeat: true }) }); }
       // G2: online, not the lab's keeper: the lever asks, sets the rematch, and makes nothing
       { me = 'Cohen'; keeper = 'Ann'; NET.enabled = true; NET.token = 'gnasher-test'; NET.useFake(fake); NET.connect();
         quest.tinker = Object.assign(freshT(), { stage: 3, rematch: false, kills: 1 });
@@ -13380,6 +13486,26 @@ window.PLACE_KIT = PLACE_KIT;
         const calls = sent.filter(m => m.t === 'boss_call');
         check(P + '(fake NET non-keeper): the lever sends boss_call gnasher, sets tq.rematch, and spawns nothing; 60 ticks later the monsters array is unchanged',
           calls.length === 1 && calls[0].id === 'gnasher' && TQ().rematch && gn0 === 0 && monsters.length === n0 && !monsters.some(m => m.type === 'gnasher'), { calls, rematch: TQ().rematch, n: [n0, monsters.length] });
+        window.INSTANCES.leave(); NET.disconnect(); window.COOP.reset(); }
+      // G6: online, not the lab's keeper: his lever Gnasher stands up on the keeper's game, then falls there without paying
+      // him (the keeper brought it down alone). Once it has been down 3 s his rematch is spent, and no call goes out again by
+      // itself: nothing stands a new Gnasher up until the lever is pulled again
+      { me = 'Cohen'; keeper = 'Ann'; NET.useFake(fake); NET.token = 'gnasher-test'; NET.connect();
+        quest.tinker = Object.assign(freshT(), { stage: 3, rematch: false, kills: 1, restUntil: 0 });
+        enterLab(); push({ t: 'keeper', map: INST_ID, n: 'Ann' }); F.sim(2, []);
+        sent.length = 0; lever(); const asked = sent.filter(m => m.t === 'boss_call').length === 1 && TQ().rematch;
+        const row = ['s7', 'gnasher', Math.round(tc(GN_HOME.x)), Math.round(tc(GN_HOME.y)), 320, 320, 'idle', 1, 0, 0, 0, 0, 0, 0];
+        for (let k = 0; k < 6; k++) { push({ t: 'mon', n: 'Ann', list: [row] }); F.sim(3, []); }
+        const seenUp = monsters.some(o => o.type === 'gnasher' && o.remote && !o.dead);
+        const deadRow = row.slice(); deadRow[11] = 1; deadRow[4] = 0;
+        for (let k = 0; k < 4; k++) { push({ t: 'mon', n: 'Ann', list: [deadRow] }); F.sim(3, []); }
+        const early = TQ().rematch === true;
+        for (let k = 0; k < 40; k++) { push({ t: 'mon', n: 'Ann', list: [] }); F.sim(6, []); }
+        const spent = early && TQ().rematch === false;
+        sent.length = 0; for (let k = 0; k < 60; k++) { push({ t: 'mon', n: 'Ann', list: [] }); F.sim(10, []); }
+        const recalls = sent.filter(m => m.t === 'boss_call').length;
+        check(P + "(fake NET non-keeper): his lever Gnasher stands up and then falls on the keeper's game without paying him: after 3 s down his rematch is spent, and no call goes out again by itself",
+          asked && seenUp && spent && recalls === 0, { asked, seenUp, early, rematch: TQ().rematch, recalls });
         window.INSTANCES.leave(); NET.disconnect(); window.COOP.reset(); }
       // G4: online, the lab's keeper: a friend's call makes exactly one; a second while it stands makes none
       { me = 'Cohen'; keeper = 'Cohen'; NET.useFake(fake); NET.token = 'gnasher-test'; NET.connect();
@@ -14805,10 +14931,13 @@ window.PLACE_KIT = PLACE_KIT;
   const BOSSES = ['walker', 'bulldozer', 'barrelbeast', 'brood_mother', 'gnasher', 'count_ashvane'];
   // the Echo of the Fang (28-thefang marks a repeat kill m.repeat) is a rematch, not the legend: 1 in 30, not 1 in 3
   const ECHO = 1 / 30;
+  // a Gnasher rematch (33-goblincity marks every one after the first m.repeat) is a purse on a lever, not a hunt: 1 in 300
+  const GNASHER_AGAIN = 1 / 300;
   // (a helper still resting from his own last paid kill, m.noPay from 75-coop, rolls nothing)
   function chance(type, m) {
     if (m && m.noPay) return 0;
     if (type === 'the_fang' && m && m.repeat) return ECHO;
+    if (type === 'gnasher' && m && m.repeat) return GNASHER_AGAIN;
     if (type in FIXED) return FIXED[type];
     if (BOSSES.includes(type) && MONSTER_DEFS[type]) return Math.min(1 / 20, (MONSTER_DEFS[type].level || 0) / 1500);
     return 0;
@@ -14897,12 +15026,22 @@ window.PLACE_KIT = PLACE_KIT;
       const names = [compName(), 'Sergeant Hale', compId() === 'garrick' ? null : 'Sir Garrick'].filter(Boolean);
       say("Sung? Then Thistledown rides. I name you the Dragon Killers: " + names.join(', ') + " and you, knight, at the head.", n.name);
       say("Hale and Garrick will meet you inside the lair. And take this: a dragon horn, from the last one that tried. The Fang sleeps under the lava. Sound the horn on the old circle in its lair and it will come up to answer.", n.name);
-      giveOrDrop('dragon_horn', 1, player.x, player.y);
+      giveOrDrop('dragon_horn', 1, player.x, player.y); q.horn = true;
       levelBanner = { text: 'THE DRAGON KILLERS', sub: names.join(' · ') + ' · you', t: 4.5 }; sfx('quest'); burst(player.x, player.y, '#f5c542', 40, 200);
       save(); return true;
     }
     say("The Dragon Killers are yours, knight. Hale and Garrick wait for you inside the lair. Sound the horn on the circle, and the Fang will come.", n.name);
     return true;
+  }
+
+  // a knight who slew the Fang beside a friend before the Duke formed his company (stage 14, before the Song) never had the
+  // horn: the Duke hands it over once, after the slaying, so the circle can raise the Echo for him too
+  function hornFor(n) {
+    const q = DK(), fq = fangQ();
+    if (!fq.slain || q.formed || q.horn || countItem('dragon_horn') > 0) return false;
+    q.horn = true; giveOrDrop('dragon_horn', 1, player.x, player.y); sfx('quest');
+    say('You went after the dragon without my horn? Then take it now. It is a dragon horn, from the last knight who tried. Sound it on the circle in the lair if you ever miss the dragon.', n.name);
+    save(); return true;
   }
 
   // ---------- allies ----------
@@ -14989,7 +15128,7 @@ window.PLACE_KIT = PLACE_KIT;
   };
 
   // ---------- debug handle (28-thefang's Duke talk calls .duke at stage 14) ----------
-  window.DRAGON_KILLERS = { chance, DK, duke, allies, ALLY_DEFS, WARDEN_GATE, GATE_T, openGate, closeGate, warden, stats, DRAGON_ITEMS };
+  window.DRAGON_KILLERS = { chance, DK, duke, hornFor, allies, ALLY_DEFS, WARDEN_GATE, GATE_T, openGate, closeGate, warden, stats, DRAGON_ITEMS };
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -17355,7 +17494,31 @@ window.PLACE_KIT = PLACE_KIT;
       const melee = p.sources.melee || [], rate = name => { const r = melee.find(x => x.name === name); return r ? r.rate : null; };
       const wight = melee.filter(x => /cinderwight/.test(x.name)).reduce((m, x) => Math.max(m, x.rate || 0), 0);
       const rows = ['the War Shed Barrelbeast (one per 300 s)', 'Echo of the Fang (one per 600 s)', 'the Thunderbird (one per 300 s)'].map(n => [n, rate(n)]);
-      check('progression: the War Shed, Echo and Thunderbird rows are present, and none outpaces the cinderwight melee rate', wight > 0 && rows.every(([, r]) => r > 0 && r < wight), { wight, rows }); }
+      check('progression: the War Shed, Echo and Thunderbird rows are present, and none outpaces the cinderwight melee rate', wight > 0 && rows.every(([, r]) => r > 0 && r < wight), { wight, rows });
+      const gn = HOOKS.bossCall && HOOKS.bossCall.gnasher, gRow = gn ? [`the Gnasher (one per ${gn.rest} s)`, rate(`the Gnasher (one per ${gn.rest} s)`)] : ['the Gnasher', null];
+      check('progression: the Gnasher lever rematch rests (120 s to 300 s), has its row, and does not outpace the cinderwight melee rate', !!gn && gn.rest >= 120 && gn.rest <= 300 && gRow[1] > 0 && gRow[1] < wight, { rest: gn && gn.rest, row: gRow, wight }); }
+    // the rematch purses are a fair purse, not a farm: at most one per rest, each pays less value an hour (coins, items at
+    // their shop value, the dragon item at its odds) than the cinderwights pay in coins alone in the open world
+    { const V = id => id === 'coins' ? 1 : (ITEMS[id] && ITEMS[id].value) || 0;
+      const avg = (a, b) => (a + b) / 2;
+      const defValue = def => { const d = (def && def.drops) || {}; let v = 0;
+        for (const [id, a, b] of d.always || []) v += avg(a, b) * V(id);
+        if (d.table) { const tot = d.table.reduce((s, r) => s + r[3], 0); for (const [id, a, b, w] of d.table) if (id !== 'nothing') v += w / tot * avg(a, b) * V(id); }
+        if (d.rare) { const tot = d.rare.table.reduce((s, r) => s + r[3], 0); for (const [id, a, b, w] of d.rare.table) v += (1 / d.rare.chance) * (w / tot) * avg(a, b) * V(id); }
+        return v; };
+      const DK = window.DRAGON_KILLERS, dragonAvg = DK ? DK.DRAGON_ITEMS.reduce((s, id) => s + V(id), 0) / DK.DRAGON_ITEMS.length : 0;
+      const roll = (type, m) => DK ? DK.chance(type, m) * dragonAvg : 0;
+      const W = MONSTER_DEFS.cinderwight, wCoins = W ? supplyPerHour('cinderwight') * (W.drops.always || []).filter(r => r[0] === 'coins').reduce((s, [, a, b]) => s + avg(a, b), 0) : 0;
+      const BC = HOOKS.bossCall || {}, per = id => BC[id] && BC[id].rest > 0 ? 3600 / BC[id].rest : null;
+      const purse = {
+        gnasher: 150 + 5 * V('goblin_scrap') + defValue(MONSTER_DEFS.gnasher) + roll('gnasher', { repeat: true }),
+        the_fang: 300 + 3 * V('dragon_scale') + V('mithril_bar') + defValue(MONSTER_DEFS.the_fang) + roll('the_fang', { repeat: true }),
+        war_shed: defValue(MONSTER_DEFS.barrelbeast) + roll('barrelbeast', { repeat: true }),
+        stormfront: 200 + V('cloud_essence') + defValue(MONSTER_DEFS.thunderbird) + roll('thunderbird', { repeat: true }),
+      };
+      const rows = Object.keys(purse).map(id => [id, Math.round(purse[id]), per(id), per(id) === null ? null : Math.round(purse[id] * per(id))]);
+      check('progression: every rematch purse (the Gnasher, the Echo, the War Shed, the storm) pays less value an hour than the cinderwights pay in coins',
+        wCoins > 0 && rows.every(([, , n, h]) => n !== null && h > 0 && h < wCoins), { wCoins: Math.round(wCoins), rows }); }
     // every boss in the game has a way back after its first defeat (owner: "bosses shoould all be redefeatable")
     { const types = new Set([...BOSS_TYPES, ...(window.WIKI && WIKI.BOSS_TYPES ? WIKI.BOSS_TYPES : []), ...(window.COOP && COOP.CREDIT ? COOP.CREDIT : []),
         ...Object.keys(MONSTER_DEFS).filter(t => MONSTER_DEFS[t].level >= 25 && MONSTER_DEFS[t].hp >= 300 && !MONSTER_DEFS[t].harmless),
@@ -18048,7 +18211,7 @@ window.SETTINGS = SETTINGS;
     the_fang: 'Fight again: sound the dragon horn on the summoning circle. The Echo rises once a day (600 s).',
     barrelbeast: 'Fight again: the War Shed on the road below the Goblin Camp, the boiler valve, every 300 s.',
     thunderbird: 'Fight again: the wind shrine, Into the storm, every 300 s.',
-    gnasher: "Fight again: the Arena lever in Tinkerton's lab.",
+    gnasher: "Fight again: the Arena lever in Tinkerton's lab, every 180 s.",
     brood_mother: 'Fight again: comes back every time you go in.',
     count_ashvane: 'Fight again: comes back every time you go in.',
   };
