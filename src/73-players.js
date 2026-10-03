@@ -19,7 +19,8 @@
   const NEAR = 2 * TILE;        // px: close enough to hand something over
   const GIFT_EVERY = 1;         // s: the contract's cap on gifts
   const MINE = { friends: 1, gift: 1, chatlog: 1 };   // the online files' own panels: the chip stays tappable under them
-  const DEFAULT_LOOK = { tunic: '#3b6fb6', hair: '#5a3a1e', shoulder: '#9aa3b2', fists: true };
+  // a knight we have no look for yet (the tools send look: null): a knight in his tunic, drawn in the new style (82-knightgear)
+  const DEFAULT_LOOK = { tunic: '#3b6fb6', hair: '#5a3a1e', shoulder: '#9aa3b2', fists: true, gear: {} };
   // friend blue: the kit's one colour for friends (their seal, dots, names); nothing else is this blue
   const BLUE = HK.T.friend;
   const GOLD = '#f5c542';       // an admin's name, wherever it is written (docs/ONLINE.md, "Roles")
@@ -61,6 +62,8 @@
       hat: l.hat || null,
       // a girl knight (79-boygirl): drawHuman draws her skirt, long hair, braid and ribbon from this one flag
       girl: !!l.girl,
+      // the six worn items' ids (82-knightgear draws each one in its own way); old clients ignore it
+      gear: l.gear ? { helm: l.gear.helm || null, body: l.gear.body || null, legs: l.gear.legs || null, shield: l.gear.shield || null, cape: l.gear.cape || null, weapon: l.gear.weapon || null } : null,
     };
   }
   function presence() {
@@ -72,7 +75,7 @@
     };
   }
   // a cheap signature of everything the contract counts as a change; the full message is only built when it differs
-  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.body || '') + '|' + (e.shield || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || ''); };
+  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || ''); };
   const sig = () => mapId() + '|' + Math.round(player.x) + ',' + Math.round(player.y) + '|' + player.facing.x.toFixed(2) + ',' + player.facing.y.toFixed(2) + '|' + (player.moving ? 1 : 0) + '|' + Math.ceil(player.hp) + '/' + player.maxHp + '|' + (player.dead ? 1 : 0) + '|' + lookKey();
   let lastSig = null, lastSentAt = -1e9;
 
@@ -114,7 +117,12 @@
     if (typeof m.hp === 'number') { if (m.hp < e.hp && e.lastAt) e.hurtT = 0.25; e.hp = m.hp; }
     if (typeof m.mhp === 'number' && m.mhp > 0) e.mhp = m.mhp;
     if (typeof m.lv === 'number') e.lv = m.lv;
-    if (m.look && typeof m.look === 'object') { e.look = m.look; if (e.look.tool) e.look.toolSwing = true; }
+    if (m.look && typeof m.look === 'object') {
+      e.look = m.look; if (e.look.tool) e.look.toolSwing = true;
+      // the gear: only real item ids in the right slot are kept; an old client's look (no gear) gets an empty one and
+      // is drawn from its colours (82-knightgear reads them back as items)
+      if (window.KNIGHTGEAR) e.look.gear = KNIGHTGEAR.cleanGear(e.look.gear);
+    }
     e.mech = m.mech && typeof m.mech === 'object' ? m.mech : null; e.r = e.mech ? 20 : 13;
     e.dead = !!m.dead; e.act = typeof m.act === 'string' ? m.act : null; e.lastAt = nowMs();
   });
@@ -126,6 +134,8 @@
     if (e.dead) { g.globalAlpha = 0.3; g.rotate(1.4); drawHuman(g, e, look); g.restore(); return; }   // fallen: lying down and faint, as the knight himself is
     g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, onMech ? 14 : 11, onMech ? 22 : 12, onMech ? 9 : 6, 0, 0, 7); g.fill();
     if (onMech) drawMech(g, e, e.hurtT > 0, look);
+    // a knight look (with gear) bobs only his body, from a picture (82-knightgear: the crowd stays cheap)
+    else if (look.gear && window.KNIGHTGEAR) KNIGHTGEAR.draw(g, e, look, { cache: true });
     else { g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
     g.restore();
     // the name, the level in smaller grey after it, an hp bar when hurt, a ring when close enough to hand things over.
@@ -451,6 +461,39 @@
       try { playerLook = function () { const l = _look(); l.hat = 'purple'; return l; }; worn = [PLAYERS.lookOf().hat, PLAYERS.presence().look.hat]; } finally { playerLook = _look; }
       const bare = PLAYERS.lookOf().hat;
       check(P + "presence carries look.hat, the colour word, when a party hat is worn, and null when it is not", worn && worn[0] === 'purple' && worn[1] === 'purple' && bare === null, { worn, bare }); }
+    // the knight's gear (82-knightgear): presence carries the six item ids, a change of leg armour or cape goes out at
+    // once, a knight off the wire is drawn wearing exactly what the sender wears, and an old client's look (no gear,
+    // only colours) still draws, read back from its colours
+    if (window.KNIGHTGEAR) {
+      const q0 = Object.assign({}, player.equip);
+      const wear = { helm: 'mithril_helm', body: 'mithril_body', legs: 'mithril_legs', shield: 'mithril_shield', cape: 'cape_melee', weapon: 'mithril_sword' };
+      Object.assign(player.equip, wear); player.hp = player.maxHp;
+      // wait for the idle send, then change the legs: the next p must come well before the next idle send
+      F.sim(20, []); const c0 = ps().length; for (let i = 0; i < 90 && ps().length === c0; i++) F.step([]);
+      const n0 = ps().length; player.equip.legs = 'iron_legs'; F.sim(12, []);
+      const after = ps().slice(n0), p = after[after.length - 1];
+      const sent = !!p && !!p.look.gear && p.look.gear.legs === 'iron_legs' && p.look.gear.cape === 'cape_melee' && p.look.gear.helm === 'mithril_helm' && p.look.gear.weapon === 'mithril_sword';
+      // back in as another knight: the parts drawn are the sender's items
+      const mine = KNIGHTGEAR.partsOf(playerLook());
+      if (p) feed(Object.assign({}, p, { n: 'Kit', x: player.x + 30, y: player.y }));
+      F.step([]);
+      const kit = REMOTE.Kit, theirs = kit ? KNIGHTGEAR.partsOf(kit.look) : null;
+      const same = !!theirs && KNIGHTGEAR.SLOTS.every(s => (mine[s] && mine[s].id) === (theirs[s] && theirs[s].id));
+      // an old client's look: no gear, colours only (the iron helm and the steel sword), and one with an id this game does not know
+      feed({ t: 'p', n: 'Old', map: 'over', x: player.x - 30, y: player.y, fx: 0, fy: 1, mv: true, wt: 2, hp: 20, mhp: 20, lv: 3, look: { tunic: '#3b6fb6', hair: '#222', shoulder: '#9aa3b2', helm: ITEMS.iron_helm.color, body: null, shield: null, weapon: { shape: 'sword', color: ITEMS.steel_sword.color }, tool: null, toolColor: null, rod: false, fists: false, hat: null, girl: false }, mech: null, dead: false, def: 100, act: null });
+      feed({ t: 'p', n: 'New', map: 'over', x: player.x, y: player.y - 30, fx: 0, fy: 1, mv: false, wt: 0, hp: 20, mhp: 20, lv: 3, look: { tunic: '#3b6fb6', hair: '#222', shoulder: '#9aa3b2', helm: ITEMS.bronze_helm.color, gear: { helm: 'helm_from_next_year', body: 42, legs: 'iron_sword', cape: 'cape_melee' } }, mech: null, dead: false, def: 100, act: null });
+      F.step([]);
+      const old = KNIGHTGEAR.partsOf(REMOTE.Old.look), nw = KNIGHTGEAR.partsOf(REMOTE.New.look);
+      const read = old.helm && old.helm.id === 'iron_helm' && old.weapon && old.weapon.id === 'steel_sword' && nw.helm && nw.helm.id === 'bronze_helm' && !nw.body && !nw.legs && nw.cape && nw.cape.id === 'cape_melee';
+      // drawn: the new style (its dark outline), into a recording context and into the real one
+      const OUTL = 'rgba(22,14,8,0.62)', strokes = []; const st = {};
+      const gr = new Proxy(st, { get: (t, k) => k === 'measureText' ? (() => ({ width: 10 })) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : (k in st ? st[k] : () => { }), set: (t, k, v) => { if (k === 'strokeStyle') strokes.push(v); st[k] = v; return true; } });
+      let drew = true; const styled = {};
+      try { for (const n of ['Kit', 'Old', 'New']) { const items = []; for (const hk of HOOKS.draw) hk(gr, items, cam); const it = items.find(i => i.who === n); strokes.length = 0; if (it) it.draw(); styled[n] = strokes.includes(OUTL); const real = []; for (const hk of HOOKS.draw) hk(ctx, real, cam); const r2 = real.find(i => i.who === n); if (r2) r2.draw(); } } catch (e) { drew = String(e && e.message); }
+      for (const k in player.equip) if (!(k in q0)) delete player.equip[k];
+      Object.assign(player.equip, q0);
+      ['Kit', 'Old', 'New'].forEach(forget);
+      check(P + 'the knight\'s gear goes online: presence carries the six item ids, a change of leg armour goes out at once, a knight off the wire is drawn in exactly the sender\'s items, and an old client\'s look (colours only) or an unknown id reads back from the colours and draws in the new style', sent && same && read && drew === true && styled.Kit && styled.Old && styled.New, { sent, gear: p && p.look.gear, same, read, drew, styled }); }
     // layout: the chip overlaps no other button at four screen sizes, in the touch layout and the desktop one. It reads
     // touchMode() (forced both ways here), not the device's isTouch, which is always false headless — so the touch
     // layout, the one the iPad and the phones use, is really tested. On touch it is also a full 44 px control and

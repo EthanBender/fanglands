@@ -19,7 +19,8 @@
 // How she looks: playerLook() gains `girl: true` (and drawHuman's own `woman: true`: the skirt and the long hair) and her
 // own hair colour. drawHuman draws, for any look with `girl`, a braid over the shoulder with a ribbon (it hangs out of
 // any helm, so she still reads as a girl in full armour), locks of hair under a helm's rim, a bow in the hair when the
-// head is bare, and rosy cheeks. Everything that draws the knight goes through playerLook + drawHuman (on foot, the
+// head is bare, and rosy cheeks. That is the old look (a look with no gear). A KNIGHT look (with gear) is drawn by
+// 82-knightgear, which draws her skirt, long hair, locks, braid, ribbon, bow, cheeks and lashes in the new style. Everything that draws the knight goes through playerLook + drawHuman (on foot, the
 // mare, the walker / dozer / beast seats, the bank, the boat, Thistledown's statue), so all of it follows.
 //
 // Online: 73-players' lookOf sends `girl` (a boolean) in presence; a remote knight's look with `girl` is drawn the same
@@ -53,8 +54,13 @@ const BOYGIRL = (() => {
     if (isGirl()) dress(l);
     return l;
   };
-  // a look for the choice page: the knight as she or he would be, in the armour worn right now
-  const lookAs = gnd => { const l = _playerLook(); return gnd === 'girl' ? dress(l) : l; };
+  // a look for the choice page: the knight as she or he would be, in the armour worn right now. It goes through the
+  // whole playerLook chain (77's party hat, this file's dress, 82-knightgear's gear), with the gender set for the moment.
+  const lookAs = gnd => {
+    const g0 = player.gender; player.gender = gnd === 'girl' ? 'girl' : 'boy';
+    try { const l = playerLook(); if (gnd !== 'girl') { delete l.girl; delete l.woman; } return l; }
+    finally { if (g0 === undefined) delete player.gender; else player.gender = g0; }
+  };
 
   // ---------- drawing her ----------
   // The head is the circle at (0,-8) r 8, the body the ellipse at (0,3) 12x11, a helm the half disc at (0,-9) r 9 and
