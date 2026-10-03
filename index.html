@@ -31253,7 +31253,9 @@ HOOKS.selfTest.push((check, F, h) => {
     q.beaten = true; q.kills = (q.kills || 0) + 1; q.birdHp = null; q.restUntil = (player.dayTime || 0) + STORM_REST;
     strikes.length = 0; flash = 1;
     for (const [c, n, s] of [['#fff7c0', 44, 250], ['#9ecbff', 30, 180], ['#3a3a5a', 24, 140]]) burst(m.x, m.y, c, n, s);
-    for (const [id, qty] of first ? FIRST_LOOT : AGAIN_LOOT) if (ITEMS[id]) drops.push({ x: m.x + rint(-14, 14), y: m.y + rint(-14, 14), id, qty, t: 0 });
+    // the loot lands on the deck a knight can walk to (a bird felled on its mast would drop it inside the iron)
+    const at = (typeof safeSpot === 'function' && safeSpot(m.x, m.y, 14, 'player')) || { x: m.x, y: m.y };
+    for (const [id, qty] of first ? FIRST_LOOT : AGAIN_LOOT) if (ITEMS[id]) drops.push({ x: at.x + rint(-6, 6), y: at.y + rint(-6, 6), id, qty, t: 0 });
     levelBanner = { text: 'THE STORM BREAKS', sub: first ? 'The way up to Aerie is open' : 'The Thunderbird falls again', t: 4.5 }; sfx('quest');
     say('The Thunderbird folds and falls out of its own storm. The black thins, the thunder walks away east, and at the north end of the cloud a column of clean air opens straight up.', 'The Voice');
     if (first) say('That is the storm the winged folk would not fly through. Take the updraft, knight. Aerie is above you.', 'The Voice');
