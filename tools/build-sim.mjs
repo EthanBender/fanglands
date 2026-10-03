@@ -49,6 +49,8 @@ const es = req('eslint-scope');
 export const STRIP_FILES = [
   '08-draw', '09-render', '10-hud', '12-audio', '14-title', '15-music', '44-wiki', '59-hudkit',
   '80-icons', '81-icons-art', '42-playthrough', '89-lighting',
+  // the monsters' look (the approved art and the file that draws every monster with it): pictures only, no rules
+  '78-monsterart', '78-monsterlook',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };
@@ -262,6 +264,8 @@ export const STRIP_READS = {
   },
   'window.ICONS': { files: ['54-graves', '81-partyhats', '88-aerie', '90-canyon', '91-cloudkingdom', '91-royalmine'], why: 'item icons registered at load' },
   'window.LIGHTS': { files: ['88-aerie', '91-royalmine'], why: 'the lighting: lights registered at load, and whether a lit scene owns the night canvas' },
+  MONSTER_LOOK: { files: ['79-deaths'], why: '79-deaths asks the monsters\' new looks (78-monsterlook, stripped) how far a falling body reaches and how tall it stands, for the clips that split or crumble it, and for a person\'s own weapon to throw clear; all of it drawing, which a copy never does' },
+  'window.MONSTER_LOOK': { files: ['79-deaths'], why: 'the same reads as MONSTER_LOOK, guarded by whether the look is loaded' },
   'window.PLAYTHROUGH': { files: ['91-royalmine'], why: 'the playthrough audit\'s gather times, in an HOOKS.xpSource row only that audit reads' },
 };
 

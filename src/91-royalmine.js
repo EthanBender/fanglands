@@ -2086,7 +2086,8 @@
       if (tileAt(22, 23) === GOLEM_GATE && v.y0 <= 24 && v.y1 >= 22) items.push({ y: 24 * TILE - 4, draw: () => drawGate(g) });
       const pb = pebblePx(); if (pb) items.push({ y: pb.y + 13, draw: () => drawPebble(g, pb.x, pb.y, tileAt(22, 23) === GOLEM_GATE ? 'hold' : 'idle') });
       const gm = golemMon();
-      if (gm && !gm.dead) items.push({ y: gm.y + gm.r + 0.01, rm: 'golem', draw: () => { g.save(); if (behindGolem(gm)) g.globalAlpha = NUM.SEE_THROUGH; g.translate(gm.x, gm.y); drawColossus(g, gm, gm.hurtT > 0 || time - run.hitFlash < 0.12); g.restore(); } });
+      // drawn through ROYALMINE.drawColossus (his picture as 79-deaths' fall draws it too), which 78-monsterlook replaces with his new look
+      if (gm && !gm.dead) items.push({ y: gm.y + gm.r + 0.01, rm: 'golem', draw: () => { g.save(); if (behindGolem(gm)) g.globalAlpha = NUM.SEE_THROUGH; g.translate(gm.x, gm.y); ROYALMINE.drawColossus(g, gm, gm.hurtT > 0 || time - run.hitFlash < 0.12); g.restore(); } });
       // his rubble heap comes up as his falling body fades (79-deaths draws the fall), never on top of it
       else if (gm || run.life.fallen) { const a = gm && window.DEATHS && DEATHS.remains ? DEATHS.remains(gm) : 1; if (a > 0) items.push({ y: SEAT_C.y + 41, rmFallen: true, draw: () => { g.save(); g.globalAlpha *= a; drawFallen(g, SEAT_C.x, SEAT_C.y); g.restore(); } }); }
       items.push({ y: player.y + player.r + 0.02, draw: () => drawCarry(g) });

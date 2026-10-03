@@ -117,7 +117,9 @@ const DEATHS = (() => {
     const c = {
       m, nid: m.nid || null, type: m.type, kind, boss, x: m.x, y: m.y, r, fx, fy, side: fx < -0.2 ? 1 : fx > 0.2 ? -1 : (hash(seed, 1) < 0.5 ? -1 : 1),
       body, t: 0, dur: boss ? BOSS_DUR : DUR, inst: here(), seed, remote: !!m.remote, banner: null, flashed: false,
-      ext: m.type === 'ginormous_golem' ? 150 : Math.max(36, r * 2.6),
+      // how far the sprite reaches, for the clips that split or crumble it: the new looks (78-monsterlook) say their own
+      ext: m.type === 'ginormous_golem' ? 150 : Math.max(36, r * 2.6, window.MONSTER_LOOK ? MONSTER_LOOK.reach(m.type) : 0),
+      top: window.MONSTER_LOOK ? MONSTER_LOOK.headroom(m.type) + 2 : 0,
       weapon: kind === 'person' ? (WEAPON[m.type] || 'sword') : null,
       ash: ASH.has(m.type), bones: kind === 'undead' && !NO_BONES.has(m.type),
       rocks: null, cracks: null, plates: null,
@@ -240,7 +242,8 @@ const DEATHS = (() => {
       if (p.weapon) {
         const w = p.weapon;
         g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(c.x + w.x, c.y + w.y + 4, 9, 3, 0, 0, 7); g.fill();
-        g.save(); g.translate(c.x + w.x, c.y + w.y - w.h); g.rotate(w.rot); drawWeapon(g, c.weapon); g.restore();
+        // the person's own weapon when its look has one (78-monsterlook), else the plain one
+        g.save(); g.translate(c.x + w.x, c.y + w.y - w.h); g.rotate(w.rot); if (!(window.MONSTER_LOOK && MONSTER_LOOK.drawWeapon(g, c.type, c.body))) drawWeapon(g, c.weapon); g.restore();
       }
       if (c.kind === 'dragon' && p.breath > 0) {
         // the snout turns with the body as it crashes over
@@ -257,7 +260,7 @@ const DEATHS = (() => {
         }
       }
     } else if (c.kind === 'undead') {
-      const [d0, d1, d2] = dust(c), top = -r * 1.9, bot = r * 1.2, cut = top + (bot - top) * p.crumble;
+      const [d0, d1, d2] = dust(c), top = -Math.max(r * 1.9, c.top || 0), bot = r * 1.2, cut = top + (bot - top) * p.crumble;
       if (p.pile > 0) {
         g.fillStyle = d0; g.beginPath(); g.ellipse(c.x, c.y + r * 0.75, r * 0.95 * p.pile, r * 0.38 * p.pile, 0, 0, 7); g.fill();
         g.fillStyle = d1; g.beginPath(); g.ellipse(c.x - r * 0.15, c.y + r * 0.66, r * 0.55 * p.pile, r * 0.2 * p.pile, 0, 0, 7); g.fill();

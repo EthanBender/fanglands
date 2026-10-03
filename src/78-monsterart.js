@@ -4084,5 +4084,12 @@ const MONSTER_ART = (() => {
   Object.assign(MOB_SIZE, { brood_mother: 2.1, thunderbird: 2.2, red_dragon: 1.85, dustjaw: 1.9, the_fang: 1.75 });
 
   const H = { lerp, ease, OUT, shade, rr, ell, outline, vfill, rfill, sparkle, shadow, face4, swingOf, stepOf, bobOf, swoosh };
-  return { NEW_DRAW, MOB_SIZE, drawNewMob, H };
+  // each person's own weapon, at rest and pointing along +x from the hand, for the one 79-deaths throws clear of a falling body
+  const W0 = { sw: -1, push: 0, a: 0, hx: 0, hy: 0, ang: 0 }, C0 = { e: { seed: 0 } };
+  const WEAPONS = {
+    goblin: g => drawCleaver(g, -1), sapper: g => drawBomb(g, -1), brute: g => drawMaul(g, -1),
+    guard_m: g => ppl_guardSpear(g, W0, C0), guard_f: g => ppl_guardSpear(g, W0, C0), dwarf_guard: g => ppl_dwarfAxe(g, W0), castle_guard: g => ppl_castleSpear(g, W0),
+    elf_sentinel: g => ppl_elfBow(g, W0), sky_sentinel: g => ppl_skySpear(g, W0), hale: g => ppl_haleSpear(g, W0), garrick: g => ppl_dkSword(g, W0),
+  };
+  return { NEW_DRAW, MOB_SIZE, drawNewMob, H, WEAPONS };
 })();

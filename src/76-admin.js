@@ -814,8 +814,10 @@
     const def = MONSTER_DEFS[type]; if (!def) return;
     g.save(); g.beginPath(); g.rect(x, y, size, size); g.clip();
     try {
-      const r = def.r || 13, scale = Math.min(1.4, (size * 0.8) / (2.2 * Math.max(9, r)));
-      g.translate(x + size / 2, y + size / 2 + r * scale * 0.2); g.scale(scale, scale);
+      // the new looks (78-monsterlook) are fitted by their own drawn size
+      const fit = window.MONSTER_LOOK ? MONSTER_LOOK.fit(type, size, 1.4) : null;
+      const r = def.r || 13, scale = fit ? fit.scale : Math.min(1.4, (size * 0.8) / (2.2 * Math.max(9, r)));
+      g.translate(x + size / 2 + (fit ? fit.ox : 0), y + size / 2 + (fit ? fit.oy : r * scale * 0.2)); g.scale(scale, scale);
       drawCharacter(g, { x: 0, y: 0, r, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, hp: def.hp, maxHp: def.hp, type, stunT: 0 }, type);
     } catch (e) { /* a sprite that wants state a portrait does not have: the box stays empty */ }
     g.restore();
