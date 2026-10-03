@@ -173,7 +173,7 @@
     { id: 'plume', name: 'Old Plume the feather seller', at: SP.marketFolk[2], dx: 24, wing: 1.15, line: 'Every feather here fell off somebody. I asked first. Mostly.', look: { tunic: '#e8b84a', hair: '#f4f1ea', beard: true, shoulder: '#ffffff', skin: '#e8c8a8' } },
     { id: 'crockett', name: 'Crockett the potter', at: SP.marketFolk[3], dx: 24, wing: 0.9, line: 'Tap a pot. Hear it ring? Fired on cloud-fire. It will ring until Tuesday.', look: { tunic: '#5aa86a', hair: '#3a2a1a', apron: true, shoulder: '#c9a36a', skin: '#e0b894' } },
     { id: 'hazel', name: 'Hazel', at: SP.marketFolk[4], wing: 0.9, line: 'I came for one apple. Now I have eleven things, and no apple.', look: { tunic: '#b07ad9', hair: '#f0c060', woman: true, shoulder: '#ffffff', skin: '#f5dcc8' } },
-    { id: 'tobin', name: 'Tobin', at: SP.marketFolk[5], wing: 0.85, line: 'My wings are moulting, so I am buying feathers to put back in. Do not tell anyone.', look: { tunic: '#7a8a9a', hair: '#8a5a2a', shoulder: '#f5c542', skin: '#f2d0b5' } },
+    { id: 'wim', name: 'Wim', at: SP.marketFolk[5], wing: 0.85, line: 'My wings are moulting, so I am buying feathers to put back in. Do not tell anyone.', look: { tunic: '#7a8a9a', hair: '#8a5a2a', shoulder: '#f5c542', skin: '#f2d0b5' } },
   ];
   for (const p of PEOPLE) { p.x = p.at[0]; p.y = p.at[1]; p.px = tc(p.x) + (p.dx || 0); p.py = tc(p.y); p.facing = { x: 0, y: 1 }; p.b = PLAN.inBuilding(p.x, p.y); p.look.who = p.id; p.look.wing = p.wing; }
   // Lark: where she stands depends on her story (the maze, then at the knight's heel, then the plaza). She is this
@@ -1266,12 +1266,16 @@
     const joints = v ? [7, 19, 33, 44] : [3, 15, 27, 40];
     joints.forEach((jy, k) => g.fillRect(t0 + 10 + (k % 2 ? 8 : 0), jy, 10, 1));
     g.fillRect(t0 + 19, 0, 1, 48);
-    // the city side: a low plain parapet, a gold line along its top
+    // a gold string course along the foot of the merlons (as on the north wall)
+    g.fillStyle = '#e8c25a'; g.fillRect(t0 + 9, 0, 1.5, 48);
+    // the city side: a low plain parapet, lit along its top, its inner edge in shade (no gold here: gold rails on both
+    // sides of the merlons read as a ladder)
     g.fillStyle = '#e6decd'; g.fillRect(t1 - 7, 0, 7, 48);
     g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillRect(t1 - 7, 0, 2, 48);
-    g.fillStyle = '#e8c25a'; g.fillRect(t1 - 2, 0, 2, 48);
-    // the sky side: merlons, every other 12 px, raised, with a gold cap; each throws a short shadow on the walk
-    g.fillStyle = '#ddd4c2'; g.fillRect(t0, 0, 9, 48);
+    g.fillStyle = 'rgba(90,80,60,0.28)'; g.fillRect(t1 - 8, 0, 1, 48);
+    // the sky side: the crenels (the low gaps, in shade) and the merlons, every other 12 px, raised, with a gold cap;
+    // each merlon throws a short shadow on the walk
+    g.fillStyle = '#c9bea8'; g.fillRect(t0, 0, 9, 48);
     for (const my of [0, 24]) {
       g.fillStyle = 'rgba(60,70,100,0.22)'; g.fillRect(t0 + 9, my + 2, 6, WV.merlon);
       g.fillStyle = '#f4efe5'; g.fillRect(t0 - 1, my - 3, 11, WV.merlon);
@@ -2886,9 +2890,9 @@
 
     // ---- K11. the people ----
     { const E_AT = { aldric: [48, 58], tamsin: [66, 53], mossbeard: [28, 20], aubade: [69, 27], corvin: [56, 18], merriweather: [22, 42], orla: [46, 32], brisk: [50, 32],
-        pippa: [65, 38], maudie: [68, 38], plume: [71, 38], crockett: [74, 38], hazel: [64, 43], tobin: [72, 43] };
+        pippa: [65, 38], maudie: [68, 38], plume: [71, 38], crockett: [74, 38], hazel: [64, 43], wim: [72, 43] };
       const TAP_AT = { aldric: [48, 60], tamsin: [67, 55], mossbeard: [30, 21], aubade: [69, 29], corvin: [54, 18], merriweather: [24, 43], orla: [46, 34], brisk: [50, 34],
-        pippa: [66, 37], maudie: [69, 37], plume: [72, 37], crockett: [75, 37], hazel: [65, 45], tobin: [73, 45] };
+        pippa: [66, 37], maudie: [69, 37], plume: [72, 37], crockett: [75, 37], hazel: [65, 45], wim: [73, 45] };
       const k0 = JSON.stringify(Q()), diff = [];
       for (const p of PEOPLE) {
         quest.kingdom = JSON.parse(k0); closePanel(); drain(); F.tp(E_AT[p.id][0], E_AT[p.id][1]); F.step([]); F.face(p.x, p.y); F.press('KeyE'); F.sim(1, []); const e = firstLine();
@@ -3148,7 +3152,7 @@
       const stalls = SP.stalls.map(([sx, sy], i) => ({ owns: KINGDOM.ownsStall(sx, sy) && KINGDOM.ownsStall(sx + 1, sy), east: kindAt(sx + 1, sy) === 'stall', seller: SP.marketFolk[i][0] === sx && SP.marketFolk[i][1] === sy - 1 }));
       const goods = new Set(STALL_INFO.map(s => s.goods)).size, canopies = new Set(STALL_INFO.map(s => s.canopy)).size;
       const { g } = recorder(), a0 = STATS.awnings; for (const [sx, sy] of SP.stalls) drawAwning(g, sx, sy);
-      const people = ['pippa', 'maudie', 'plume', 'crockett', 'hazel', 'tobin'].every(id => PEOPLE.some(p => p.id === id && p.line));
+      const people = ['pippa', 'maudie', 'plume', 'crockett', 'hazel', 'wim'].every(id => PEOPLE.some(p => p.id === id && p.line));
       check(K + 'K24 furnished: the Sky Forge has its hearth, bellows and cloud-anvil, the Cloud Oven its great oven and two bread racks; the market has four two-cell stalls (fruit, cloth, feathers, pots) each with a seller behind it, two shoppers, crates and barrels; E on every one of them says its own line (by the anvil, Master Halcyon answers: he forges on it)',
         bad.length === 0 && rooms.hearth === 2 && rooms.bellows === 1 && rooms.anvil === 1 && rooms.oven === 2 && rooms.racks === 2 && stalls.every(s => s.owns && s.east && s.seller) && goods === 4 && canopies === 4 && STATS.awnings - a0 === 4 && people,
         { bad: bad.slice(0, 4), rooms, stalls, goods, canopies, people }); }
@@ -3176,7 +3180,7 @@
       const caps = rects.filter(([, , fs]) => fs === '#f5c542'), O = WV.over, F = WV.face;
       const wall = {
         merlons: caps.length, skySide: caps.every(([, a]) => a[0] + a[2] <= 24),
-        cityParapet: rects.some(([, a, fs]) => fs === '#e8c25a' && a[0] >= 24 && a[3] === 48),
+        cityParapet: rects.some(([, a, fs]) => fs === '#e6decd' && a[0] >= 24 && a[2] === 7 && a[3] === 48) && !rects.some(([, a, fs]) => (fs === '#e8c25a' || fs === '#f5c542') && a[0] >= 24),
         faces: rects.some(([, a]) => a[0] === -O && a[2] === F && a[3] === 48) && rects.some(([, a]) => a[0] === 48 + O - F && a[2] === F && a[3] === 48),
       };
       const east = track(); paintWallV(east.g, false, false, 0);
@@ -3189,7 +3193,7 @@
         head: st.log.some(([k, a]) => k === 'arc' && a[1] === -73), hands: st.log.filter(([k, a]) => k === 'ellipse' && a[1] === -94).length,
         letter: st.log.some(([k]) => k === 'strokeRect'),
       };
-      check(K + 'K26 the west and east walls stand as walls: a tan brick face down each side, 2 merlons a tile on the sky side only (nothing lined up across the run like rungs), a low parapet with a gold line on the city side, the east run the mirror of the west, a shadow on the ground beside it; the market statue is a winged person (two wings, a head, two floating hands holding the letter up, no arms)',
+      check(K + 'K26 the west and east walls stand as walls: a tan brick face down each side, 2 merlons a tile on the sky side only (nothing lined up across the run like rungs), a low plain parapet on the city side (no gold rail there), the east run the mirror of the west, a shadow on the ground beside it; the market statue is a winged person (two wings, a head, two floating hands holding the letter up, no arms)',
         wall.merlons === 2 && wall.skySide && wall.cityParapet && wall.faces && wall.eastMirrored && wall.shadow && statue.wings === 2 && statue.feathers >= 20 && statue.head && statue.hands === 2 && statue.letter,
         { wall, statue }); }
 
