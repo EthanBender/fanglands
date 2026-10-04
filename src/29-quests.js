@@ -246,7 +246,7 @@ window.PLACE_KIT = PLACE_KIT;
 
 {
   const BOARD = addTile('BOARD', { solid: true, tex: 'cobble', mini: '#8a6a3a' });
-  const BOARD_TILES = [[105, 27], [24, 6]]; // the square in Thistledown; the road outside the cave
+  const BOARD_TILES = [ATLAS.port('thistledown.board'), ATLAS.port('cave.board')]; // the square in Thistledown; the road outside the cave
   const GOBLIN_TYPES = ['goblin', 'sapper', 'brute'];
 
   // ---------- the jobs ----------
@@ -495,8 +495,9 @@ window.PLACE_KIT = PLACE_KIT;
     quest.board = freshBoard(); lastFish = null; lastFireSet = null;
     ensureRoom(4); removeItem('potato', countItem('potato')); F.sim(2, []);
     // the board stands in the square and answers E
-    { F.tp(112, 33); const w = F.walkTo(105, 28, 6000); F.face(105, 27); F.press('KeyE'); F.sim(2, []);
-      check('board: notice board tile in the square (105,27) and by the cave road (24,6); E opens the panel', tileAt(105, 27) === BOARD && tileAt(24, 6) === BOARD && SOLID.has(BOARD) && typeof w === 'number' && panel === 'board', { w, panel, tile: tileAt(105, 27) }); }
+    { const [sx, sy] = ATLAS.port('thistledown.square'), [bx, by] = BOARD_TILES[0], [cx, cy] = BOARD_TILES[1];
+      F.tp(sx, sy); const w = F.walkTo(bx, by + 1, 6000); F.face(bx, by); F.press('KeyE'); F.sim(2, []);
+      check('board: notice board tile in the square (105,27) and by the cave road (24,6); E opens the panel', tileAt(bx, by) === BOARD && tileAt(cx, cy) === BOARD && SOLID.has(BOARD) && typeof w === 'number' && panel === 'board', { w, panel, tile: tileAt(bx, by) }); }
     // take Greta's job
     { const greta = byId.greta; bq().page = pageOf(greta); render(); const took = F.clickButton('Take: Greta');
       check("board: 'Take: Greta' marks the job taken, the Notice board quest goes active with a progress line", took && isTaken(greta) && activeQuests().includes('board') && QUEST_DEFS.board.name === 'Notice board' && questText('board') === 'Greta: potatoes 0/10', { took, taken: !!bq().taken.greta, text: questText('board') }); }
@@ -515,7 +516,7 @@ window.PLACE_KIT = PLACE_KIT;
       check('board: Goblin bounty counts goblin kills (1/10 after one goblin)', took && gob.dead && bq().goblins === 1 && progress(q) === 1 && /Captain: goblins 1\/10/.test(questText('board')), { took, dead: gob.dead, goblins: bq().goblins, text: questText('board') }); }
     // fire counter: light a fire on grass
     { const q = byId.wren; bq().page = pageOf(q); open(); const took = F.clickButton('Take: Wren'); closePanel();
-      const o = h.openSpot(60, 24); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; const tx = o.x + 1, ty = o.y; if (tileAt(tx, ty) !== T.GRASS) changeTile(tx, ty, T.GRASS); h.give('wood', 1);
+      const o = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(24)); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; const tx = o.x + 1, ty = o.y; if (tileAt(tx, ty) !== T.GRASS) changeTile(tx, ty, T.GRASS); h.give('wood', 1);
       F.sim(1, []); const f0 = bq().fires; player.action = { type: 'light', t: 99, need: 1.5, tx, ty, log: 'wood', under: T.GRASS }; F.sim(2, []);
       check('board: Fires in the dark counts a fire the knight lights (1/5)', took && tileAt(tx, ty) === T.FIRE && bq().fires === f0 + 1 && progress(q) === 1, { took, tile: tileAt(tx, ty), fires: bq().fires }); }
     // best-hit job
@@ -524,7 +525,7 @@ window.PLACE_KIT = PLACE_KIT;
       check("board: Hale's job needs a best hit of 8, then pays 200 Melee xp", took && early && clicked && bq().done.hale && player.skills.melee.xp === mx0 + 200, { took, early, clicked, xp: player.skills.melee.xp - mx0 }); closePanel(); }
     // fish counter: raw fish rising while fishing
     { const q = byId.cass; bq().page = pageOf(q); open(); const took = F.clickButton('Take: Cass'); closePanel(); ensureRoom(2);
-      const w = F.nearestTile([T.WATER]) || { x: 43, y: 36 }; player.action = { type: 'fish', t: 0, need: 1.8, tx: w.x, ty: w.y }; const f0 = bq().fish;
+      const w = F.nearestTile([T.WATER]) || ATLAS.frame('pond').pt({ x: 43, y: 36 }); player.action = { type: 'fish', t: 0, need: 1.8, tx: w.x, ty: w.y }; const f0 = bq().fish;
       const steps = F.untilAction(2400, () => bq().fish > f0); player.action = null;
       check('board: Fish for the street counts fish caught with the rod', took && typeof steps === 'number' && bq().fish === f0 + 1 && progress(q) >= 1, { took, steps, fish: bq().fish }); }
     // paging

@@ -102,7 +102,7 @@ function tapPick(sx, sy) {
 }
 function tapLabelFor(p) {
   if (!p) return null;
-  if (p.kind === 'monster') { const def = MONSTER_DEFS[p.monster.type]; return `${def.name} · lv ${def.level}`; }
+  if (p.kind === 'monster') { const def = MONSTER_DEFS[p.monster.type]; return `${p.monster.tag || def.name} · lv ${def.level}`; }
   if (p.kind === 'npc') return p.npc.name;
   if (p.kind === 'person') return p.person.name;
   if (p.kind === 'item') { const def = ITEMS[p.drop.id]; return def ? (p.drop.qty > 1 ? `${def.name} × ${p.drop.qty}` : def.name) : 'Something'; }

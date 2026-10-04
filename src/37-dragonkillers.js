@@ -158,8 +158,10 @@
     for (let r = 1; r < 8; r++) for (let a = 0; a < 12; a++) { const ang = a / 12 * Math.PI * 2; const nx = x + Math.cos(ang) * r * 18, ny = y + Math.sin(ang) * r * 18; if (!collides(nx, ny, 13, 'person')) return { x: nx, y: ny }; }
     return { x, y };
   }
-  function spawnAlly(def, i) {
-    const side = i % 2 ? 1 : -1, p = freeSpotNear(player.x - player.facing.x * 44 + player.facing.y * 34 * side, player.y - player.facing.y * 44 - player.facing.x * 34 * side);
+  // (near: a dragon to stand beside instead of this knight, for a friend's fight when this keeper is not in the lair)
+  function spawnAlly(def, i, near) {
+    const side = i % 2 ? 1 : -1;
+    const p = near ? freeSpotNear(near.x + side * (near.r + 40), near.y + near.r + 30) : freeSpotNear(player.x - player.facing.x * 44 + player.facing.y * 34 * side, player.y - player.facing.y * 44 - player.facing.x * 34 * side);
     const m = { type: 'ally_knight', x: p.x, y: p.y, home: { x: p.x, y: p.y }, r: 13, hp: 999, maxHp: 999, speed: 170, angry: false, state: 'idle', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 0, y: 1 }, walkT: 0, moving: false, stunT: 0,
       ally: def.id, allyName: def.name, allyCd: 0.6 + i * 0.4, allySwings: 0, stuckT: 0 };
     monsters.push(m); burst(m.x, m.y, '#9fe0b0', 16, 90); floatText(m.x, m.y - 30, def.name, '#9fe0b0', 13);
@@ -188,8 +190,13 @@
     const present = allies();
     // online they walk only on the game that runs the lair (offline, or the map's keeper): anywhere else they would be
     // monsters a non-keeper is not allowed to hold
-    const want = q.formed && inLair && !fq.slain && !player.dead && (!window.NET || !NET.online() || !!(window.COOP && COOP.isKeeper()));
-    if (want) wantedAllies().forEach((d, i) => { if (!present.some(m => m.ally === d.id)) spawnAlly(d, i); });
+    // ... and for a friend's own story fight that this game runs (the keeper slew the Fang already, or never formed his
+    // company): the friend's horn stood the dragon up with friendStory set (28-thefang), wherever the keeper is, and even
+    // while the keeper himself is down
+    const runs = !window.NET || !NET.online() || !!(window.COOP && COOP.isKeeper());
+    const friendFang = runs ? monsters.find(o => o.type === 'the_fang' && !o.dead && !o.remote && o.friendStory) : null;
+    const want = runs && (!!friendFang || (q.formed && inLair && !fq.slain && !player.dead));
+    if (want) wantedAllies().forEach((d, i) => { if (!present.some(m => m.ally === d.id)) spawnAlly(d, i, friendFang && !inLair ? friendFang : null); });
     else if (present.length) removeAllies(false);
     if (!want) return;
     const fang = monsters.find(o => o.type === 'the_fang' && !o.dead);
@@ -217,6 +224,8 @@
   });
   HOOKS.kill.push(m => {
     if (m.type !== 'the_fang') return;
+    // a friend's story fight on this game: the company goes home, and nothing of this knight's own story moves
+    if (m.friendStory) { m.friendStory = false; if (allies().length) { say("Hale wipes his blade. 'Dragon dead. Thistledown will sing about your friend for a hundred years.' The Dragon Killers turn for home.", 'Sergeant Hale'); removeAllies(true); } return; }
     const q = DK(); if (!q.formed) return;
     q.slainWith = true;
     if (allies().length) { say("Hale wipes his blade. 'Sergeant Hale reporting: dragon dead. Thistledown will not believe a word of it.' The Dragon Killers turn for home.", 'Sergeant Hale'); removeAllies(true); }
@@ -296,6 +305,21 @@
       F.sim(3, []);
       check('dk: killing the summoned Fang with the group → stage 15, the Dragon Killers go home, the log reads for it', fang.dead && fq.slain && quest.stage === 15 && allies().length === 0 && DK().slainWith && /Dragon Killers/.test(questText('main')) && /Duke Ferrin/.test(questText('main')), { dead: fang.dead, stage: quest.stage, allies: allies().length, text: questText('main') });
       drops = drops.filter(d => !(['coins', 'fang_of_the_fang', 'mithril_bar', 'dragon_scale'].includes(d.id) && dist(d.x, d.y, fang.x, fang.y) < 120)); }
+    // online, a friend at stage 14 sounds the horn for his own first fight on a keeper who slew the Fang long ago (and is
+    // nowhere near the lair): the keeper's game brings the Dragon Killers for him, beside the dragon; they go home when it
+    // falls, and nothing of the keeper's own story moves. An Echo a friend calls brings nobody.
+    { const keepFq = JSON.stringify(fq), keepDk = JSON.stringify(DK()), st = quest.stage, n0 = drops.length; removeAllies(false);
+      fq.slain = true; fq.summoned = true; quest.stage = Math.max(16, st); F.tp(111, 48); fang.dead = true; fang.awake = false; F.sim(2, []);
+      HOOKS.bossCall.the_fang.wake('Ann', true); F.sim(3, []);
+      const list = allies(), near = list.length > 0 && list.every(m => dist(m.x, m.y, fang.x, fang.y) < fang.r + 4 * TILE);
+      const r = { up: !fang.dead && !!fang.friendStory, allies: list.length, want: wantedAllies().length, near };
+      fang.hp = 1; fang.stunT = 0; hitMonster(fang, 5, 0); F.sim(2, []);
+      r.after = allies().length; r.slainWith = DK().slainWith === JSON.parse(keepDk).slainWith; r.stage = quest.stage === Math.max(16, st);
+      fang.dead = true; fang.awake = false; F.sim(1, []); HOOKS.bossCall.the_fang.wake('Ann', false); F.sim(3, []); r.echo = allies().length;
+      fang.dead = true; fang.awake = false; fang.respawnT = Infinity; fang.friendStory = false; removeAllies(false);
+      check("dk: online, a friend's own first Fang on a keeper who slew it already brings the Dragon Killers beside the dragon; they go home when it falls; the keeper's story is untouched; a friend's Echo brings nobody",
+        r.up && r.allies === r.want && r.want >= 1 && r.near && r.after === 0 && r.slainWith && r.stage && r.echo === 0, r);
+      Object.assign(fq, JSON.parse(keepFq)); quest.dk = JSON.parse(keepDk); quest.stage = st; drops = drops.slice(0, n0); }
     // tidy: the Fang stays slain as the lair's own test left it; the group is formed and done
     fq.slain = slain0 || fq.slain; quest.stage = st0; while (countItem('dragon_horn') > 0) removeItem('dragon_horn', 1); removeAllies(false); F.tp(111, 48); F.sim(2, []); drain(); closePanel(); h.peace(false); save();
     void dk0;

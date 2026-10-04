@@ -93,5 +93,59 @@
       }
       check(P + 'the playthrough audit times blackiron, sunstone and stormstone bars at 9.5, 13.5 and 17.5 s (a 4 s lump, 1 / 2 / 3 coal at 4 s, a 1.5 s smelt), and each lump at 4 s',
         !!MS && !!O && O.TIERS.length === 3 && wrong.length === 0 && MS.blackiron_bar === 9.5 && MS.sunstone_bar === 13.5 && MS.stormstone_bar === 17.5, { wrong }); }
+
+    // --- 7. a place's name banner (THISTLEDOWN) never draws over an open page: on a phone it sat on the quest page (59-hudkit) ---
+    { const w0 = window.innerWidth, h0 = window.innerHeight, t0 = window.__forceTouch, ab0 = areaBanner;
+      const names = () => { const log = []; HK.drawBanners(HK.audit.fitCtx(log), HK.layout()); return log.some(e => /THISTLEDOWN/.test(String(e.s))); };
+      let over = null, shown = null;
+      try {
+        window.innerWidth = 390; window.innerHeight = 844; window.__forceTouch = true; resize(); closePanel();
+        areaBanner = { name: 'Thistledown', sub: 'The city that still stands', t: 2.5 }; openPanel('quests'); render(); over = names();
+        closePanel(); render(); shown = names();
+      } finally { closePanel(); areaBanner = ab0; window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); render(); }
+      check(P + "a place's name banner is not drawn while a page is open (a phone's quest page), and shows again once it is closed", over === false && shown === true, { over, shown }); }
+
+    // --- 8. the bank on the narrowest phone (320 x 568): a phone's shape, inside the screen, Back and Next apart (60-bank) ---
+    { const w0 = window.innerWidth, h0 = window.innerHeight, t0 = window.__forceTouch, bank0 = player.bank.map(s => ({ ...s })), text0 = SETTINGS.get('text'), r = {};
+      const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      try {
+        window.innerWidth = 320; window.innerHeight = 568; window.__forceTouch = true; resize();
+        player.bank = []; for (let i = 0; i < 40; i++) player.bank.push({ id: i % 2 ? 'stone' : 'wood', qty: 1 + i });
+        for (const text of ['normal', 'large']) {
+          SETTINGS.set('text', text); closePanel(); openPanel('bank'); render();
+          const L = BANK.layout(), pr = panelRect, ci = buttons.findIndex(b => b.label === '×');
+          const own = ci < 0 ? [] : buttons.slice(ci).filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+          const out = own.filter(b => b.x < pr.x || b.y < pr.y || b.x + b.w > pr.x + pr.w || b.y + b.h > pr.y + pr.h || b.x + b.w > VW || b.y + b.h > VH).map(b => b.label);
+          const over = []; for (let i = 0; i < own.length; i++) for (let j = i + 1; j < own.length; j++) if (hit(own[i], own[j])) over.push(own[i].label + ' x ' + own[j].label);
+          const prev = own.find(b => /Prev$/.test(b.label)), next = own.find(b => /Next$/.test(b.label));
+          r[text] = { kind: L.kind, w: L.w, out, over, pager: !!prev && !!next && !hit(prev, next) && prev.w >= 44 && next.h >= 44 };
+        }
+      } finally { closePanel(); player.bank = bank0; SETTINGS.set('text', text0); window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); render(); }
+      check(P + 'the bank at 320 x 568 takes a phone shape (stack or split, never the computer\'s wide one): every control inside the panel and the screen, none on another, Back and Next 44 px and apart, at both text sizes',
+        ['normal', 'large'].every(k => r[k] && r[k].kind !== 'wide' && r[k].w <= 320 && !r[k].out.length && !r[k].over.length && r[k].pager), r); }
+
+    // --- 9. an old save's plank and stump inside the new rock (92-worldshape): the rock comes back, the plank is given back ---
+    { const WS = window.WORLDSHAPE, r = {};
+      if (!WS || !WS.rock || !WS.rock.size) check(P + 'an old save\'s things inside the new rock are undone on load', false, { rock: WS && WS.rock && WS.rock.size });
+      else {
+        const sk = typeof title !== 'undefined' && title.slotKey ? title.slotKey(title.slot) : SAVE_KEY;
+        if (INSTANCES && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+        save(); const raw0 = localStorage.getItem(sk), mirror0 = localStorage.getItem(SAVE_KEY);
+        const cells = [...WS.rock.keys()].filter(i => WS.rock.get(i) === WS.CLIFF).slice(0, 2), [a, b] = cells;
+        const d = JSON.parse(raw0);
+        d.mapDiffs = (d.mapDiffs || []).filter(([i]) => i !== a && i !== b).concat([[a, 'PLANK'], [b, 'STUMP']]);
+        d.regrow = (d.regrow || []).concat([{ i: b, t: 'TREE', timer: 50 }]);
+        const planks0 = (d.player.inv || []).filter(s => s && s.id === 'plank').reduce((n, s) => n + s.qty, 0) + (d.player.bank || []).filter(s => s && s.id === 'plank').reduce((n, s) => n + s.qty, 0);
+        localStorage.setItem(sk, JSON.stringify(d)); localStorage.setItem(SAVE_KEY, JSON.stringify(d));
+        try {
+          const ok = load(); dialog.queue.length = 0; dialog.cur = null;
+          const planks = countItem('plank') + player.bank.filter(s => s.id === 'plank').reduce((n, s) => n + s.qty, 0) + drops.filter(dd => dd.id === 'plank').reduce((n, dd) => n + dd.qty, 0);
+          r.ok = ok; r.rock = map[a] === WS.CLIFF && map[b] === WS.CLIFF && !mapDiffs.has(a) && !mapDiffs.has(b);
+          r.regrow = !regrow.some(g => g.i === b); r.plank = planks === planks0 + 1;
+          save(); const n0 = WS.unrocked.cells; load(); r.again = WS.unrocked.cells === n0;
+        } finally { if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0); load(); dialog.queue.length = 0; dialog.cur = null; }
+        check(P + "an old save's plank and stump inside the new rock (92-worldshape) are undone on load: the cliff comes back, the stump's regrowth goes, the plank is given back, and a second load changes nothing",
+          r.ok && r.rock && r.regrow && r.plank && r.again, r);
+      } }
   });
 }

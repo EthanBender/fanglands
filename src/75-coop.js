@@ -315,7 +315,8 @@
       return false;
     }
     S.calls[msg.id] = time;
-    h.wake(msg.n);
+    // (first: the asker's own story fight, which a boss file may stage differently, as 37 brings the Dragon Killers)
+    h.wake(msg.n, msg.first === true);
     let line = null; try { line = typeof h.told === 'function' ? h.told(msg.n) : null; } catch (e) { line = null; }
     notify(typeof line === 'string' && line ? line : `${msg.n} called ${h.name || msg.id}.`);
     return true;

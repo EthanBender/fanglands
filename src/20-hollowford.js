@@ -19,10 +19,27 @@
   // won. wreckDue: a first kill made in the shed (a friend's fight), whose wreck is rolled out beside the door on leaving.
   // toldShed: online, a friend broke the square's beast already, and this knight was sent to the shed for his own fight.
   const HF = () => { const h = quest.hollowford || (quest.hollowford = { rewarded: false, beastKilled: false, wreck: null }); if (typeof h.freed !== 'boolean') h.freed = false; if (typeof h.barHits !== 'number') h.barHits = 0;
-    h.shedUp = h.shedUp ?? false; h.shedRestUntil = h.shedRestUntil ?? 0; h.shedKills = h.shedKills ?? 0; h.wreckDue = h.wreckDue ?? false; h.toldShed = h.toldShed ?? false; return h; };
-  HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null, freed: false, barHits: 0, shedUp: false, shedRestUntil: 0, shedKills: 0, wreckDue: false, toldShed: false }; });
-  const SHED = { id: 'war_shed', w: 28, h: 20 }, SHED_DOOR = [147, 44], SHED_STEP = [148, 44], SHED_HOME = { x: 14, y: 9 }, VALVE_T = { x: 14, y: 3 };
+    h.shedUp = h.shedUp ?? false; h.shedRestUntil = h.shedRestUntil ?? 0; h.shedKills = h.shedKills ?? 0; h.wreckDue = h.wreckDue ?? false; h.toldShed = h.toldShed ?? false; h.shedVoice = h.shedVoice ?? null; return h; };
+  // a save from before the shed's line was fitted to the story: a knight who has been inside heard the story line already
+  // (the instance's own voice, on his first visit), so he is not told it again
+  { const _load = load;
+    load = function () {
+      const ok = _load(); const h = quest.hollowford;
+      if (ok && h && h.shedVoice === undefined) { const v = quest.instances && quest.instances.visited && quest.instances.visited.war_shed; h.shedVoice = v ? (quest.stage >= 9 ? 'story' : 'early') : null; }
+      return ok;
+    }; }
+  HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null, freed: false, barHits: 0, shedUp: false, shedRestUntil: 0, shedKills: 0, wreckDue: false, toldShed: false, shedVoice: null }; });
+  // the valve stands on row 7, under the boiler (row 6), with the stocks three rows below it: on row 3 it sat under the top
+  // HUD of a phone held upright (the crest, the quest scroll, two plaques: down to 323 px), where the camera cannot scroll
+  // past the shed's top wall
+  const SHED = { id: 'war_shed', w: 28, h: 20 }, SHED_DOOR = [147, 44], SHED_STEP = [148, 44], SHED_HOME = { x: 14, y: 11 }, VALVE_T = { x: 14, y: 7 };
+  const BOILER_T = [[13, 6], [14, 6], [15, 6]];
   const SHED_ENTRY = [14, 18], SHED_EXIT = [14, 19], SHED_REST = 300;
+  // the shed's first-visit Voice: the story line once his story has reached the burning of Hollowford (stage 9), a plain
+  // one before that (the door is open from a new game, so a friend can follow a friend in), and the story line once more on
+  // his first visit after stage 9. hf.shedVoice: null, 'early' or 'story'.
+  const SHED_VOICE = 'The War Shed. The goblins kept the plans. Whatever they drag back from Hollowford, they bolt into the next Barrelbeast.';
+  const SHED_VOICE_EARLY = 'The War Shed. Goblins build their machines in here. The stocks are empty, and the crew is out.';
   const SHED_WALL = [[145, 43], [146, 43], [147, 43], [145, 44], [146, 44], [145, 45], [146, 45], [147, 45]];
   const WRECK_SPOTS = [[144, 47], [143, 47], [144, 48], [143, 48]];
   const restLeft = until => Math.max(0, (until || 0) - (player.dayTime || 0));
@@ -260,6 +277,11 @@
       }
       say('The Barrelbeast tips, groans, and comes apart. Boiler, barrel, four iron legs. The goblin crew runs for the trees. They will build another. They always do.', 'The Voice');
       say('The wreck stays. Six iron bars, ten goblin scrap and two blast powder would set it walking again, with you at the lever. Hollowford is quiet now. Go to the chapel and tell them.', 'The Voice');
+    } else if (!inShed()) {
+      // a friend's own first fight in Hollowford's square, after this knight broke his own beast: a helping hand, not a
+      // shed rematch (no REMATCH WON, no word of the shed); the def drops are his and his valve rests as for a rematch
+      levelBanner = { text: 'BEAST DOWN', sub: 'You helped a friend', t: 3.5 };
+      say("You helped a friend bring down the Barrelbeast in Hollowford's square. The square is quiet again.", 'The Voice');
     } else {
       hf.shedKills = (hf.shedKills || 0) + 1;
       levelBanner = { text: 'REMATCH WON', sub: hf.shedKills + 1 === 1 ? 'The Barrelbeast, beaten once' : `The Barrelbeast, beaten ${hf.shedKills + 1} times`, t: 3.5 }; sfx('quest');
@@ -276,7 +298,8 @@
   if (window.INSTANCES) INSTANCES.define(SHED.id, {
     name: 'The War Shed', sub: 'Where the goblins build their beasts', w: SHED.w, h: SHED.h, dark: false, boss: 'barrelbeast', spawns: [],
     entry: SHED_ENTRY, exit: SHED_EXIT, door: SHED_DOOR, step: SHED_STEP, lateDoor: true,
-    voice: 'The War Shed. The goblins kept the plans. Whatever they drag back from Hollowford, they bolt into the next Barrelbeast.',
+    // no instance voice: the shed says its own first line on the first visit, fitted to the story (see SHED_VOICE)
+    voice: null,
     build: (set) => {
       for (let y = 0; y < SHED.h; y++) for (let x = 0; x < SHED.w; x++) set(x, y, (x === 0 || y === 0 || x === SHED.w - 1 || y === SHED.h - 1) ? T.HWALL : T.FLOOR);
       // the stocks: a 5×3 bed of timber the beast is bolted together on
@@ -286,6 +309,8 @@
         [1, 5, T.SHELF], [1, 6, T.SHELF], [1, 12, T.TABLE], [26, 5, T.SHELF], [26, 6, T.SHELF], [26, 12, T.TABLE], [26, 13, T.TABLE],
         [3, 4, T.RUBBLE], [23, 4, T.RUBBLE], [4, 15, T.RUBBLE], [22, 16, T.RUBBLE], [6, 10, T.PLANK], [21, 9, T.PLANK], [8, 16, T.PLANK], [19, 14, T.RUBBLE]]) set(x, y, t);
       set(VALVE_T.x, VALVE_T.y, T_VALVE);
+      // the boiler the valve feeds: three cells of the same solid, so E or a tap on the boiler spins the valve too
+      for (const [x, y] of BOILER_T) set(x, y, T_VALVE);
     },
   });
   // the shed on the camp road: plank walls with the door on the east face, facing the road. Built once the rest of the
@@ -326,7 +351,7 @@
     if (liveBeast()) { say('The beast is already up. Bring it down.', 'Boiler valve'); return; }
     if (!hf.beastKilled) {
       if (quest.stage === 9 && hf.toldShed) { say('The crew laughs, spins the valve, and a Barrelbeast stands up off the stocks.', 'The Voice'); hf.shedUp = true; save(); shedSeen = false; callShed(); return; }
-      say('The goblin crew laughs at you. Their beast is still walking in Hollowford.', 'Boiler valve'); return;
+      say(quest.stage >= 9 ? 'The goblin crew laughs at you. Their beast is still walking in Hollowford.' : 'The valve is cold. Nothing on the stocks is finished yet.', 'Boiler valve'); return;
     }
     const left = restLeft(hf.shedRestUntil);
     if (left > 0) { say(`The crew is still bolting it back together. Ready in ${mmss(left)}.`, 'Boiler valve'); return; }
@@ -347,7 +372,11 @@
     if (inShed()) {
       // a new visit: the first tick inside, or a leave and a walk back in between two ticks (16-instances stamps lastLeft)
       const key = INSTANCES.get(SHED.id).lastLeft;
-      if (!wasInShed || key !== shedVisit) { wasInShed = true; shedVisit = key; shedSeen = false; shedDownAt = null; }
+      if (!wasInShed || key !== shedVisit) {
+        wasInShed = true; shedVisit = key; shedSeen = false; shedDownAt = null;
+        if (quest.stage >= 9 && hf.shedVoice !== 'story') { hf.shedVoice = 'story'; say(SHED_VOICE, 'The Voice'); save(); }
+        else if (quest.stage < 9 && !hf.shedVoice) { hf.shedVoice = 'early'; say(SHED_VOICE_EARLY, 'The Voice'); save(); }
+      }
       const lb = liveBeast();
       if (lb && hf.shedUp) shedSeen = true;
       if (hf.shedUp && !lb && !shedSeen) {
@@ -388,15 +417,46 @@
   function drawValve(g, tx, ty) {
     const cx = tc(tx), cy = tc(ty), up = !!liveBeast(), spin = up ? time * 6 : 0;
     g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 16, 16, 5, 0, 0, 7); g.fill();
-    g.fillStyle = '#4a4a52'; g.fillRect(cx - 5, cy - 44, 10, 46); g.fillStyle = '#5a5a62'; g.fillRect(cx - 5, cy - 44, 3, 46);
-    g.fillStyle = '#3a3a42'; g.fillRect(cx - 9, cy - 46, 18, 6); g.fillRect(cx - 9, cy + 2, 18, 8);
+    // a short pipe down out of the boiler's belly, and the wheel on it
+    g.fillStyle = '#4a4a52'; g.fillRect(cx - 5, cy - 34, 10, 36); g.fillStyle = '#5a5a62'; g.fillRect(cx - 5, cy - 34, 3, 36);
+    g.fillStyle = '#3a3a42'; g.fillRect(cx - 9, cy + 2, 18, 8);
     g.save(); g.translate(cx, cy - 12); g.rotate(spin);
     g.strokeStyle = '#7a1f1f'; g.lineWidth = 5; g.beginPath(); g.arc(0, 0, 14, 0, 7); g.stroke();
     g.strokeStyle = '#c0504d'; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 14, 0, 7); g.stroke();
     for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * 14, Math.sin(a) * 14); g.stroke(); }
     g.fillStyle = '#e0d070'; g.beginPath(); g.arc(0, 0, 3.5, 0, 7); g.fill();
     g.restore();
-    if (up) for (let k = 0; k < 3; k++) { const ph = (time * 0.8 + k * 0.33) % 1; g.fillStyle = `rgba(220,220,230,${0.4 * (1 - ph)})`; g.beginPath(); g.arc(cx + 8 + Math.sin(time * 3 + k) * 3, cy - 46 - ph * 22, 3 + ph * 5, 0, 7); g.fill(); }
+  }
+  // the boiler: a riveted iron tank across three cells, a firebox that glows (brighter while a beast stands), a gauge, and
+  // a chimney pipe up through the shed's top wall that steams while the beast is up
+  function drawBoiler(g) {
+    const x0 = BOILER_T[0][0] * TILE + 2, x1 = (BOILER_T[2][0] + 1) * TILE - 2, row = BOILER_T[0][1] * TILE, top = row - 30, bot = row + 42, up = !!liveBeast();
+    const chx = x1 - 30;
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse((x0 + x1) / 2, bot + 2, (x1 - x0) / 2, 7, 0, 0, 7); g.fill();
+    // the chimney pipe, up to the wall
+    g.fillStyle = '#3a3a42'; g.fillRect(chx - 6, TILE - 6, 12, top - TILE + 12); g.fillStyle = '#4a4a52'; g.fillRect(chx - 6, TILE - 6, 4, top - TILE + 12);
+    g.fillStyle = '#2e2e36'; for (const yy of [TILE + 10, top - 14]) g.fillRect(chx - 8, yy, 16, 5);
+    // the tank
+    g.fillStyle = '#4a4a52'; roundRect(g, x0, top, x1 - x0, bot - top, 16); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.08)'; roundRect(g, x0 + 6, top + 4, x1 - x0 - 12, 12, 6); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.22)'; roundRect(g, x0 + 4, bot - 16, x1 - x0 - 8, 12, 6); g.fill();
+    g.strokeStyle = '#2e2e36'; g.lineWidth = 4; for (const ox of [0.25, 0.5, 0.75]) { const x = lerp(x0, x1, ox); g.beginPath(); g.moveTo(x, top + 2); g.lineTo(x, bot - 2); g.stroke(); }
+    g.fillStyle = '#8f96a3'; for (const ox of [0.25, 0.5, 0.75]) for (const yy of [top + 10, (top + bot) / 2, bot - 10]) { g.beginPath(); g.arc(lerp(x0, x1, ox), yy, 2, 0, 7); g.fill(); }
+    g.strokeStyle = '#25252b'; g.lineWidth = 2; roundRect(g, x0, top, x1 - x0, bot - top, 16); g.stroke();
+    // the firebox door, left of the valve
+    const fx = x0 + 22, fy = (top + bot) / 2 - 2, glow = up ? 0.75 + Math.sin(time * 10) * 0.2 : 0.35 + Math.sin(time * 3) * 0.08;
+    g.fillStyle = '#2a2a30'; roundRect(g, fx - 13, fy - 11, 26, 22, 4); g.fill();
+    g.fillStyle = `rgba(255,${up ? 110 : 150},40,${glow.toFixed(3)})`; for (let k = 0; k < 3; k++) g.fillRect(fx - 9, fy - 7 + k * 6, 18, 3);
+    // the pressure gauge, right of the valve: the needle climbs while the beast is up
+    const gx = x1 - 24, gy = top + 18;
+    g.fillStyle = '#c9a02a'; g.beginPath(); g.arc(gx, gy, 9, 0, 7); g.fill(); g.fillStyle = '#efe6cc'; g.beginPath(); g.arc(gx, gy, 7, 0, 7); g.fill();
+    const a = up ? -0.3 + Math.sin(time * 4) * 0.15 : -2.4; g.strokeStyle = '#7a1f1f'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(gx, gy); g.lineTo(gx + Math.cos(a) * 6, gy + Math.sin(a) * 6); g.stroke();
+    if (up) for (let k = 0; k < 4; k++) { const ph = (time * 0.8 + k * 0.25) % 1; g.fillStyle = `rgba(220,220,230,${(0.45 * (1 - ph)).toFixed(3)})`; g.beginPath(); g.arc(chx + Math.sin(time * 3 + k) * 4, TILE + 4 - ph * 30, 4 + ph * 7, 0, 7); g.fill(); }
+  }
+  function drawShedScrap(g, tx, ty) {
+    const floor = tex[TEX_NAME[T.FLOOR] + (variant[idx(tx, ty)] || 0)] || tex[TEX_NAME[T.FLOOR] + 0];
+    if (floor) g.drawImage(floor, tx * TILE, ty * TILE, TILE, TILE);
+    drawRubbleProp(g, tx, ty);
   }
   function drawStocks(g) {
     const x0 = (SHED_HOME.x - 2) * TILE, x1 = (SHED_HOME.x + 3) * TILE, y0 = (SHED_HOME.y - 1) * TILE, y1 = (SHED_HOME.y + 2) * TILE;
@@ -432,7 +492,10 @@
   }
   HOOKS.draw.push((g, items, cam) => {
     if (inShed()) {
+      // the scrap heaps (RUBBLE) lie on the shed's plank floor: the core paints a rubble cell on grass
+      for (let y = 1; y < SHED.h - 1; y++) for (let x = 1; x < SHED.w - 1; x++) if (tileAt(x, y) === T.RUBBLE) items.push({ y: -1e9 + 3, scrap: true, draw: () => drawShedScrap(g, x, y) });
       items.push({ y: -1e8 + SHED_HOME.y * TILE + 2, draw: () => drawStocks(g) });
+      items.push({ y: BOILER_T[0][1] * TILE + TILE - 6, draw: () => drawBoiler(g) });
       items.push({ y: VALVE_T.y * TILE + TILE - 6, draw: () => drawValve(g, VALVE_T.x, VALVE_T.y) });
       if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => { const { tx, ty } = frontTile(player); if (tileAt(tx, ty) === T_VALVE) HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); } });
       return;
@@ -725,6 +788,22 @@
         check(P + 'the War Shed door at (147,44) with step (148,44) is reachable from the road and enters war_shed; PLAYTHROUGH.instanceConnectivity passes',
           !!road && doorTile && walls && entered && region === 'The War Shed' && rows.length >= 2 && rows.every(r => r.dist >= 0) && tileAt(VALVE_T.x, VALVE_T.y) === T_VALVE && SOLID.has(T_VALVE) && INTERESTING_TILES.has(T_VALVE),
           { road: road && road.length, doorTile, walls, entered, region, rows: rows.map(r => [r.name, r.dist]) }); }
+      // B1b: the scrap heaps lie on the plank floor (the core paints a RUBBLE cell on grass), and on a phone held upright the
+      // valve's wheel is in sight: clear of the crest, the quest scroll and both plaque slots, with the camera at the top wall
+      { const items = []; for (const d of HOOKS.draw) { try { d(ctx, items, cam); } catch (e) { } }
+        let rubble = 0; for (let y = 1; y < SHED.h - 1; y++) for (let x = 1; x < SHED.w - 1; x++) if (tileAt(x, y) === T.RUBBLE) rubble++;
+        const scrap = items.filter(i => i.scrap).length;
+        const w0 = window.innerWidth, h0 = window.innerHeight, t0 = window.__forceTouch, p0 = { x: player.x, y: player.y };
+        let wheel = null, hits = [], camY = null;
+        try {
+          window.innerWidth = 390; window.innerHeight = 844; window.__forceTouch = true; resize(); F.tp(VALVE_T.x, VALVE_T.y + 1); render();
+          const L = HK.FRAME.L; camY = cam.y;
+          wheel = { x: tc(VALVE_T.x) - 16 - cam.x, y: tc(VALVE_T.y) - 28 - cam.y, w: 32, h: 32 };
+          const over = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          hits = L ? [L.crest, L.scroll].concat(L.plaques || []).filter(r => r && over(wheel, r)) : ['no layout'];
+        } finally { window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); player.x = p0.x; player.y = p0.y; render(); }
+        check(P + "the War Shed's scrap heaps lie on its plank floor (a floor patch under every RUBBLE cell), and at 390x844 the valve's wheel is clear of the crest, the scroll and both plaque slots",
+          rubble >= 5 && scrap === rubble && camY === 0 && !!wheel && hits.length === 0, { rubble, scrap, camY, wheel, hits }); }
       // B2: before this knight's own beast is down the crew only laughs
       { hf.beastKilled = false; quest.stage = 11; valve();
         check(P + 'offline, the valve refuses before the first kill (still walking in Hollowford)', beasts().length === 0 && said(/still walking in Hollowford/) && !hf.shedUp, { said: dialog.cur && dialog.cur.text, beasts: beasts().length });
@@ -774,7 +853,8 @@
         F.tp(137, 86); const w0 = wrecks(); clearBanners();
         if (sq) { sq.dead = false; sq.awake = true; sq.hp = 1; sq.x = player.x + 60; sq.y = player.y; sq.stunT = 0; }
         F.sim(1, []); const alive = !!sq && !sq.dead; if (sq) hitMonster(sq, 5, 0); F.sim(2, []);
-        const rematch = bannerAhead('REMATCH WON'); F.sim(30, []);
+        // (a friend's beast in the square: BEAST DOWN for the helping hand, never REMATCH WON, which is the shed's)
+        const rematch = bannerAhead('BEAST DOWN') && !bannerAhead('REMATCH WON'); F.sim(30, []);
         const down = !!sq && sq.dead && sq.awake === false && sq.respawnT === Infinity;
         const okLoad = (() => { save(); const ok = load(); const s2 = monsters.find(m => m.type === 'barrelbeast'); if (s2) { delete s2.awake; s2.dead = false; s2.hp = s2.maxHp; s2.respawnT = 0; } F.sim(3, []); return ok && !!s2 && s2.dead && s2.respawnT === Infinity; })();
         check(P + 'a repeat kill of the square beast places no wreck; its adopted awake ends with it (dead, awake false, respawnT Infinity, and still down after a reload)', alive && sq.dead && wrecks() === w0 && rematch && down && okLoad,
@@ -824,6 +904,26 @@
         for (let i = 0; i < map.length; i++) if (map[i] !== keep.map[i]) changeTile(i % MAP_W, Math.floor(i / MAP_W), keep.map[i]);
         hf7.wreck = keep.wreck; hf7.beastKilled = true; quest.stage = st; player.skills = JSON.parse(keep.stats); recomputeMaxHp();
         if (sq) { sq.dead = true; sq.respawnT = Infinity; } drops = drops.filter(() => false); drain(); clearBanners(); }
+      // B16: a friend's own first beast in Hollowford's square (a phantom), helped by a knight who broke his own long ago:
+      // BEAST DOWN, 'You helped a friend', the def drops; never REMATCH WON or the line about the back of the shed
+      { const hf8 = HF(), st = quest.stage; Object.assign(hf8, { beastKilled: true, shedUp: false, shedRestUntil: 0 }); quest.stage = Math.max(11, st);
+        if (INSTANCES.active()) INSTANCES.leave(); F.tp(137, 86); clearBanners(); drain(); const k0 = hf8.shedKills, n0 = drops.length;
+        const ph = window.COOP ? COOP.phantomOf({ type: 'barrelbeast', nid: 'Ann:9', x: player.x + 60, y: player.y }) : null;
+        const rnd0 = Math.random; try { Math.random = () => 0.9; if (ph) killMonster(ph); } finally { Math.random = rnd0; } F.sim(2, []);
+        const r = { ph: !!ph, banner: bannerAhead('BEAST DOWN'), sub: levelBanner && levelBanner.sub, rematch: bannerAhead('REMATCH WON'), shed: said(/back of the shed/), helped: said(/You helped a friend bring down the Barrelbeast/), kills: hf8.shedKills - k0, scrap: drops.slice(n0).filter(d => d.id === 'goblin_scrap').reduce((n, d) => n + d.qty, 0) };
+        check(P + "a friend's first beast in Hollowford's square, helped by a knight who broke his own: BEAST DOWN, 'You helped a friend', the def drops; no REMATCH WON, no shed line, no shed rematch counted",
+          r.ph && r.banner && !r.rematch && !r.shed && r.helped && r.kills === 0 && r.scrap >= 8, r);
+        drops = drops.slice(0, n0); quest.stage = st; drain(); clearBanners(); }
+      // B17: the door is open from a new game, but nothing inside talks about Hollowford before the story burns it (stage 9):
+      // a plain first line and a cold valve; at stage 9 the story line once, and never again after it
+      { const hf9 = HF(), st = quest.stage, kb = hf9.beastKilled, v0 = hf9.shedVoice; Object.assign(hf9, { beastKilled: false, toldShed: false, shedUp: false, shedVoice: null }); quest.stage = 5;
+        const heard = () => [dialog.cur, ...dialog.queue].filter(l => l && l.who === 'The Voice' && /^The War Shed\./.test(l.text)).map(l => l.text);
+        drain(); enterShed(); F.sim(2, []); const early = heard(); drain(); valve(); const cold = said(/valve is cold/) && !said(/Hollowford/); INSTANCES.leave(); F.sim(2, []);
+        quest.stage = 9; drain(); enterShed(); F.sim(2, []); const story = heard(); INSTANCES.leave(); F.sim(2, []);
+        drain(); enterShed(); F.sim(2, []); const again = heard(); INSTANCES.leave(); F.sim(2, []);
+        check(P + "before stage 9 the War Shed's first line and its valve never mention Hollowford; at stage 9 the story line plays once, and not on the next visit",
+          early.length === 1 && !/Hollowford/.test(early[0]) && cold && story.length === 1 && /drag back from Hollowford/.test(story[0]) && again.length === 0 && hf9.shedVoice === 'story', { early, cold, story, again, v: hf9.shedVoice });
+        Object.assign(hf9, { beastKilled: kb, shedVoice: v0 }); quest.stage = st; drain(); }
       // B10: online and not the shed's keeper: the valve asks the keeper and makes nothing itself
       if (typeof NET !== 'undefined' && window.COOP) {
         const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
@@ -852,6 +952,33 @@
           const told = hf9.toldShed && [dialog.cur, ...dialog.queue].some(l => l && /building another in their War Shed/.test(l.text)) && mapTargets().some(t => t.label === 'The War Shed') && /War Shed/.test(questText('main'));
           check(P + '(fake NET non-keeper, stage 9): a quiet square for 4 s tells the knight about the War Shed (toldShed, the map target, the quest line), not before', !early && told, { early, told: hf9.toldShed, text: questText('main') });
           hf9.beastKilled = true; hf9.toldShed = false; quest.stage = st9;
+        } finally { if (INSTANCES.active()) INSTANCES.leave(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
+      }
+      // B18: online, the shed's keeper: a friend's valve call stands one beast up; once the keeper brings it down the shed rests
+      // 300 s on his game, so the friend's next call gets boss_wait (to him alone) and stands nothing up, while a friend's own
+      // first fight (the first flag) is not held back
+      if (typeof NET !== 'undefined' && window.COOP) {
+        const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
+        const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+        NET.enabled = true; NET.token = 'shed-keeper-test';
+        NET.useFake({ call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const mm = JSON.parse(str); sent.push(mm); if (mm.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } });
+        try {
+          NET.connect(); Object.assign(HF(), { beastKilled: true, shedUp: false, shedRestUntil: 0 });
+          enterShed(); push({ t: 'keeper', map: SHED.id, n: 'Cohen' }); F.sim(2, []);
+          push({ t: 'p', n: 'Bo', map: SHED.id, x: tc(VALVE_T.x), y: tc(VALVE_T.y + 2), def: 500, dead: false, hp: 90, lv: 40 });
+          COOP.state.calls = {}; COOP.state.restAt = {};
+          push({ t: 'boss_call', n: 'Bo', id: SHED.id }); F.sim(2, []);
+          const up = beasts().length === 1;
+          slay(); drops = drops.filter(() => false); F.sim(3, []);
+          COOP.state.calls = {}; sent.length = 0;
+          push({ t: 'boss_call', n: 'Bo', id: SHED.id }); F.sim(2, []);
+          const wait = sent.find(mm => mm.t === 'boss_wait'), held = beasts().length === 0;
+          COOP.state.calls = {};
+          push({ t: 'boss_call', n: 'Bo', id: SHED.id, first: true }); F.sim(2, []);
+          const firstUp = beasts().length === 1;
+          check(P + "(fake NET keeper): a friend's valve call stands one beast up; after the keeper brings it down, the friend's next call gets boss_wait (to him alone, 298 to 300 s) and stands nothing up; a friend's first fight still does",
+            up && !!wait && wait.to === 'Bo' && wait.id === SHED.id && wait.left >= 298 && wait.left <= 300 && held && firstUp, { up, wait, held, firstUp });
+          for (const b of beasts()) { b.dead = true; b.deadT = 5; } F.sim(2, []);
         } finally { if (INSTANCES.active()) INSTANCES.leave(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
       }
     } finally {

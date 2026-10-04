@@ -47,8 +47,11 @@ function render() {
   const g = ctx;
   g.setTransform(DPR, 0, 0, DPR, 0, 0);
   g.imageSmoothingEnabled = true;
-  cam.x = clamp(player.x - VW / 2, 0, MAP_W * TILE - VW);
-  cam.y = clamp(player.y - VH / 2, 0, MAP_H * TILE - VH);
+  // HOOKS.camera (optional, made by the feature that first needs it): each fn() may return { x, y } in pixels to nudge the view
+  let camDX = 0, camDY = 0;
+  if (HOOKS.camera) for (const f of HOOKS.camera) { const o = f(); if (o) { camDX += o.x || 0; camDY += o.y || 0; } }
+  cam.x = clamp(player.x - VW / 2 + camDX, 0, MAP_W * TILE - VW);
+  cam.y = clamp(player.y - VH / 2 + camDY, 0, MAP_H * TILE - VH);
   if (MAP_W * TILE < VW) cam.x = (MAP_W * TILE - VW) / 2;
   if (MAP_H * TILE < VH) cam.y = (MAP_H * TILE - VH) / 2;
   g.fillStyle = '#0b0f14'; g.fillRect(0, 0, VW, VH);
@@ -101,7 +104,7 @@ function render() {
   for (const m of monsters) {
     const pad = monsterPad(m); if (m.x < cam.x - pad || m.x > cam.x + VW + pad || m.y < cam.y - pad || m.y > cam.y + VH + pad) continue;
     if (m.dead) { if (m.deadT < 0.8) items.push({ y: m.y, draw: () => { g.save(); g.globalAlpha = 1 - m.deadT / 0.8; g.translate(m.x, m.y); g.rotate(1.3); g.translate(-m.x, -m.y); drawCharacter(g, m, m.type); g.restore(); } }); continue; }
-    items.push({ y: m.y + m.r, draw: () => { drawCharacter(g, m, m.type); const top = monsterTop(m), def = MONSTER_DEFS[m.type]; if (m.hp < m.maxHp || dist(m.x, m.y, player.x, player.y) < 140) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(m.x - 14, m.y - top - 16, 28, 5); g.fillStyle = '#e63946'; g.fillRect(m.x - 14, m.y - top - 16, 28 * (m.hp / m.maxHp), 5); g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillStyle = def.level > combatLevel() + 3 ? '#ff6b6b' : '#e6edf3'; g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(`${def.name} · lv ${def.level}`, m.x, m.y - top - 20); g.fillText(`${def.name} · lv ${def.level}`, m.x, m.y - top - 20); } if (m.stunT > 0) { g.fillStyle = '#ffe066'; for (let k = 0; k < 3; k++) { const a = time * 6 + k * 2.1; g.beginPath(); g.arc(m.x + Math.cos(a) * 12, m.y - top - 6 + Math.sin(a) * 4, 2, 0, 7); g.fill(); } } } });
+    items.push({ y: m.y + m.r, draw: () => { drawCharacter(g, m, m.type); const top = monsterTop(m), def = MONSTER_DEFS[m.type]; if (m.hp < m.maxHp || dist(m.x, m.y, player.x, player.y) < 140) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(m.x - 14, m.y - top - 16, 28, 5); g.fillStyle = '#e63946'; g.fillRect(m.x - 14, m.y - top - 16, 28 * (m.hp / m.maxHp), 5); g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillStyle = def.level > combatLevel() + 3 ? '#ff6b6b' : '#e6edf3'; g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,0.7)'; const nm = m.tag || def.name; g.strokeText(`${nm} · lv ${def.level}`, m.x, m.y - top - 20); g.fillText(`${nm} · lv ${def.level}`, m.x, m.y - top - 20); } if (m.stunT > 0) { g.fillStyle = '#ffe066'; for (let k = 0; k < 3; k++) { const a = time * 6 + k * 2.1; g.beginPath(); g.arc(m.x + Math.cos(a) * 12, m.y - top - 6 + Math.sin(a) * 4, 2, 0, 7); g.fill(); } } } });
   }
   if (!player.dead) items.push({ y: player.y + player.r, draw: () => drawCharacter(g, player, player.mech ? 'playermech' : 'player') });
   else items.push({ y: player.y + player.r, draw: () => { g.save(); g.globalAlpha = Math.max(0.15, 1 - player.deadT / 1.5); g.translate(player.x, player.y); g.rotate(1.4); g.translate(-player.x, -player.y); drawCharacter(g, player, 'player'); g.restore(); } });

@@ -298,7 +298,9 @@
       }
       // stack and split share the knight's row: the knight, the worn pouches in two rows, Take and Wear stacked
       const inner = Math.min(maxW - 36, 340);
-      const wornCols = Math.ceil(nEq / 2), ww = grid(wornCols), pw0 = 60;
+      // the knight's picture gives up a little width (60 px, down to 44) so Take / Wear keep a 44 px column on the narrowest
+      // phone (320 px wide): without it no shape fitted and the bank fell back to the computer's wide shape, off the screen
+      const wornCols = Math.ceil(nEq / 2), ww = grid(wornCols), pw0 = Math.max(44, Math.min(60, inner - 12 - ww - 12 - R));
       const modeX = pw0 + 12 + ww + 12, modeW = inner - modeX;
       if (modeW < R) return null;
       const cols = Math.min(10, Math.floor((inner + G) / (S + G)));

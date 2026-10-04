@@ -53,14 +53,16 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   `HOOKS.leaveInstance.push(id => ...)` runs as the knight is about to leave instance `id` (every way out: LEAVE, L, the exit, a ride, a respawn, a load),
   while it is still the active map: settle there anything you owe him that a timer was still holding back (91-royalmine pays the golem's fall this way).
 - Named bosses come back (owner: *"bosses shoould all be redefeatable"*). A boss a control or a visit wakes registers it once:
-  `HOOKS.bossCall = HOOKS.bossCall || {}; HOOKS.bossCall.my_boss = { map: 'over' | '<instance id>', near: [tx, ty, tiles] | null, name, type, alive: () => bool, wake: askerName => {...} }`,
+  `HOOKS.bossCall = HOOKS.bossCall || {}; HOOKS.bossCall.my_boss = { map: 'over' | '<instance id>', near: [tx, ty, tiles] | null, name, type, alive: () => bool, wake: (askerName, first) => {...} }`
+  (`first`: the asker said it is his own story fight; 28-thefang marks such a Fang `friendStory` and 37 brings the Dragon Killers for it),
   and the on-screen control calls `window.COOP && COOP.call ? COOP.call('my_boss') : HOOKS.bossCall.my_boss.wake(null)`. Offline or on the
   map's keeper that wakes it at once (`'woke'`); on anyone else it asks the keeper (`'sent'`), who checks the map, the range and
   that none is up (docs/ONLINE.md, *Named bosses*). `wake(null)` is this knight's own call; `wake('Ben')` must never set the
   keeper's own quest flags. Decide first-kill or repeat in the kill hook from this knight's own flags, so a friend's kill
   (a phantom, through the helper credit) pays each knight his own reward. Anything the boss spawns or moves runs only where
   `!window.NET || !NET.online() || (window.COOP && COOP.isKeeper())`. A rematch's rest is timed on `player.dayTime` (saved,
-  always counts up, in instances too), never on `time`. Give the entry `rest` (seconds; the keeper then answers calls with
+  always counts up, in instances too), never on `time`; list its field in `src/96-rests.js` (`RESTS`), which takes the real
+  time a knight was away (its own stamp beside the slot, `fanglands.rests.N`) off every rest still running when he loads. Give the entry `rest` (seconds; the keeper then answers calls with
   `boss_wait` for that long after the boss falls on its map), `resting: m => bool` (this knight's own rest: a repeat kill then
   pays nothing, `m.noPay`; read it in the kill hook and say "You helped..."), `refused: left => {...}` (the keeper's boss_wait:
   end this knight's call and say how long in m:ss) and, when the boss's name would spoil a story, `told: n => 'line'` for the
@@ -106,6 +108,10 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   list in pixels (empty when out of reach) and the same talk call your E handler makes; a tap then walks adjacent and talks.
 - Touch: every keyboard action needs an on-screen control. Do not place buttons by hand: use the HUD kit (next section) — a seat
   face, a book tile, or a plaque — and write key hints with `keyName('KeyE')` so touch players read "E" or "USE" as appropriate.
+- Camera: `HOOKS.camera` is not in the core's table; the first feature that needs it makes it (`HOOKS.camera = HOOKS.camera || []`)
+  and pushes `() => ({ x, y })` (pixels, or null). `render` adds every nudge to the centred view before it clamps to the map.
+  Keep a nudge a smooth function of where the knight stands (91-cloudkingdom's keep plaza fades over five tiles), so walking never
+  makes the view jump.
 - `HOOKS.draw` is called as `(g, items, cam)`, and each item you push has its `draw()` called with **no arguments** — so write
   `HOOKS.draw.push((g, items) => { items.push({ y, draw: () => { ...use g... } }) })`. A handler that takes one parameter gets
   the canvas context where it expects the list, and nothing renders, silently.
@@ -126,7 +132,8 @@ or above -1e9. Old saves: on the FIRST load of a save made before the rebuild (`
 reverts its diffs inside stone, water or a hedge (what was placed is given back) and MOVES a machine, a beast, a wreck or
 the mare to the nearest open ground (never deletes one); a cell in `OPEN` ground keeps its diff. After that a knight's
 changes in the city are his and no load touches them (a home beside its lodestone included).
-The seventeen town buildings (`b.town`) draw through the `drawBuilding` wrap; Death's House keeps the core's art. What
+The sixteen town buildings (`b.town`) and Death's House (`death2`, its own painter `drawDeathHouse`) draw through the
+`drawBuilding` wrap; a door on a north wall (h6, h7, the inn) is a porch drawn as its own item over the step (`drawPorch`). What
 never moves on a building is a cached picture (one per building, per day or night, the 10 drawn least lately dropped);
 only smoke, lanterns, signs, the awning and banners are drawn each frame, so a new moving part must be drawn in the
 `BPASS` 2 pass. The core skips its own ground texture under the cells the city's chunks cover (`window.GROUND_COVER`,
@@ -345,6 +352,8 @@ look, opts)`; a townsperson's look (`who`) is 83-townsfolk's, and every other lo
   (every colour, drawn live), so the flash shows through a closed helm and plate.
 - To draw the knight somewhere new: `drawHuman(g, e, playerLook())`, translated to his feet's centre (draw your own
   shadow). `e.seated` (or `opts.seated`, or being inside `drawMech` / `drawDozer` / the barrel beast) leaves his legs off.
+  Sitting IN something (the ferry's bow), `e.seatLine` (a y in his own frame) cuts off everything of him below it: a stave,
+  a robe's hem stay inside the boat.
   A panel that shows him big fits him with `KNIGHTGEAR.fit(look, w, h, foot, maxScale)`: he is taller than the old
   knight (an upright spear, a party hat).
 - His pose (weapon angle, hand) lives in a WeakMap keyed by the entity, never on it (the player is saved whole).
@@ -353,10 +362,24 @@ look, opts)`; a townsperson's look (`who`) is 83-townsfolk's, and every other lo
 - Do not draw things onto the player from a draw hook (a loose tool, a second cape, wings, a raised shield): the knight
   draws what he wears and holds himself, in its place in front of or behind him. A new action that holds a tool maps
   its type in 82's `TOOL_ACTS` (the knight then holds that tool in his hand); the block's shield comes from
-  `look.block`. 82's self-test fails if anything else paints at the player's place in the draw list.
+  `look.block`. 82's self-test fails if anything else paints at the player's place in the draw list. A thing held still
+  (no swing) is a `STILL_TOOLS` tool: `stone` (the royal mine's warming stone, `look.toolHeat` its heat) and `rope` (the
+  lobster pot's). Something drawn from his hand (the pot's rope) starts at `KNIGHTGEAR.handAt(e)`: where his weapon hand
+  was last drawn, from his feet's centre, in world pixels.
 - A NEW WEARABLE ITEM draws as its family's plain piece (a plain helm, plate, heater shield, sword) until it gets a
   branch: `helmFam` / `bodyFam` / `shieldFam` / `weaponFam`, or its metal in `tierOf` and the tier switches. The
   self-test draws every wearable in the game and names any two of a slot that draw the same shape.
+
+### The mounts (`src/51-mounts.js`, `src/84-mountlook.js`)
+
+Cinder draws herself in 51-mounts (`MOUNTS.drawHorse(g, e, hurt, riderLook)`, her middle at the origin, hooves 21.5 px
+below: side-on, front, behind, the knight seated in her saddle; her own shadow). The knight's walker, bulldozer and
+Barrelbeast are the monster refit's machines (`MONSTER_LOOK.drawMachine` with the knight as its pilot), drawn by
+84-mountlook at the size of the knight's own machine bodies: `MOUNT_LOOK.machine(g, e, kind, { pilot, parked, wreck, hurt,
+hp, maxHp, up })`. It also draws parked machines and wrecks, a friend's mount online (`MOUNT_LOOK.rider`), and a gate
+standing open while a rider is in it. `MOUNT_LOOK.roof(kind, facing)` is where something stands on a machine (55-riding's
+beacon), `MOUNT_LOOK.top(kind)` how far above its middle a name or a coach tag goes. 84 is pictures only (stripped from the
+server copy): a kept file reads it only from drawing code.
 
 ### The townsfolk (`src/83-townsart.js`, `src/83-townsfolk.js`)
 
@@ -369,7 +392,8 @@ never edit it by hand. `83-townsfolk.js` is the glue.
 - A call site builds its look with `who`, and when `TOWNSFOLK.takes(look)` is true it translates to the feet's centre
   and leaves out its own shadow, bob, extra scale and overlays (wings, hats, beards, ears): the drawing has them all.
   `TOWNSFOLK.put(g, x, y, e, look)` does the translate and returns whether the new look took it.
-  `TOWNSFOLK.labelUp(who, old)` is how far above the feet the name goes.
+  `TOWNSFOLK.labelUp(who, old)` is how far above the feet the name goes. The gold talk brackets (24's
+  `PEOPLE_UI.brackets`) reach over the new head by itself: 83 sets `p.up` from the person's name.
 - What it reads from `e`: facing, moving, walkT, attackT, hurtT, and `seated` (no legs, no shadow), `air` (no ground
   shadow), `unarmed` (an empty main hand), `flapK` (wings beat faster). The person whose line is up (`dialog.cur.who`)
   and within 4 tiles of the knight talks.
@@ -377,9 +401,61 @@ never edit it by hand. `83-townsfolk.js` is the glue.
   apron, helm, crown, wing): a villager in the new style. A NEW PERSON goes into the sample (a family file in
   `groups/`), then the generator is run again.
 - On the world canvas `ctx` at the screen's own scale a person is a picture (per person, facing, frame and pixel
-  ratio). Talking, seated, stone, scaled or turned, a person is drawn live.
+  ratio). Talking, seated, stone, scaled or turned, a person is drawn live. Standing, a person's pictures loop on
+  their own clock (`LOOP`, 2 to 6 s, measured so the loop's end meets its start; 83's check 12 measures it again): a
+  NEW PERSON whose slow motions jump at the loop's end gets a `LOOP` entry, or goes into `LIVE` (drawn live) when no
+  loop meets it. Only one person talks at a time: the nearest whose name matches the line's.
 - Stone (`look.stone`, the statues) draws every colour in stone with the clock stopped. `HK.portrait` with `o.who`
   draws the person's head and shoulders.
+
+## Coordinates: frames, ports and the world
+
+The overworld is going to grow from 260x180 to 400x280 (the Great Spread; spec in `~/.fanglands/work/spread/spec.md`,
+artefacts and tools in `docs/spread/`). Places move rigidly to new spots and the land between them stretches, so a bare
+map number like `112` will be wrong after the move. Every overworld position is written as a read of the Atlas
+(`src/01-atlas.js`), never as a bare literal:
+
+- **A place's own point** goes through its frame: `const TD = ATLAS.frame('thistledown'); TD.p(112, 33)` gives `[x, y]`,
+  `TD.x(112)` / `TD.y(33)` one axis, `TD.pt({ x, y, ... })`, `TD.pts(list)`, `TD.rect({ x0, y0, x1, y1 })`,
+  `TD.box([x0, y0, x1, y1])` keep their other fields. The numbers you write are TODAY's coordinates (the old map); the
+  frame adds the place's offset. Pixels: `TD.x(112) * TILE`. Loops and comparisons are wrapped by hand:
+  `for (let y = F.y(20); y <= F.y(40); y++)`, `x >= F.x(142)`.
+- **A named point** (a door, a gate, a road end, an NPC's spot) is a port: `ATLAS.port('thistledown.square')`. If the
+  point you need has no port, add one to `PORTS` in `src/01-atlas.js` rather than copying its numbers.
+- **A place's whole box** is `ATLAS.box('deepholm_rock')`. Copies of another file's table (VILLAGE, REGIONS, a rect
+  declared elsewhere) are read from that table, never retyped.
+- **Open land** (the fields, the sea, a scan window, a seam row) is the stretched world: `const W = ATLAS.world;`
+  `W.tx(150)` / `W.ty(40)` give whole tiles, `W.x` / `W.y` reals, `W.ix` / `W.iy` the inverse. World noise and curves
+  are evaluated in OLD coordinates through the inverse (`noise(W.ix(x), W.iy(y))`), so their shapes stretch and stay
+  bit-identical until the spread. A seam that must meet a place's gate goes through its pin:
+  `W.pin('rim', W.y(95), x)` (see `ATLAS.PINS`: rim, gw_steps, giants, jungle_west, river, strait, sea).
+- **A road or path is a track**: read it with `ATLAS.track('road_cave')` (a list of `[x, y]`, each point a port, a
+  place's own point or a world point), never as a literal polyline. A new road goes into `TRACKS` in `src/01-atlas.js`,
+  written the same way (`['port', 'thistledown.west_gate']`, `['thistledown', 84, 32]`, `['w', 60, 70]`). A guard or
+  verge round a road is built from the track itself (every tile within N of it), not from two corners in two frames.
+- **The Ashfields / Jungle wall** (the old x 100 line) is `ATLAS.world.line('jungle_west', y)`: the region split, the
+  Ashfields' east edge, the rim's last column and the burnt band all read it, so they move with the wall's pin.
+- **Which place owns a literal**: the one whose old box holds it. `node tools/anchor-of.mjs 140 80` answers (smallest box
+  wins; an undecided overlap is refused). Something relative to a place belongs to that place even outside its box
+  (the warden's notch, the giants' gap, a guard rect round a building, a road end at a gate). Anything a test asserts
+  by position, a door, an NPC or a named spawn is never "world": give it a port or a frame.
+- **Never wrapped**: sizes, radii, counts, durations, screen pixels, and an instance's own map (any map other than
+  `'over'`). Those go in `docs/spread/literals-allow.json` with a one-line reason when the counter mistakes them for
+  positions.
+- **The gate**: `build.sh` runs `node tools/literals.mjs --gate` over every file listed in `docs/spread/converted.json`.
+  A bare coordinate in a converted file fails the build with "wrap it: ATLAS.frame('<place>') or ATLAS.world". It counts
+  pairs, points, rects, tile calls, `tc(N)`, `N * TILE`, comparisons, a centre after a coordinate pair
+  (`near(x, y, 66, 57, ...)`, `dist(x, y, 140, 76)`) and a distance to a place (`Math.hypot(x - 140, y - 76)`). Run
+  `node tools/literals.mjs src/NN-file.js` to see what it counts. An allow entry with a `literal` must be pinned to its
+  declaration (`"decl": "LAW_ARM_RANGE"`) or its `line`, so it never covers a new position elsewhere in the file.
+- **A new feature file is written in frames from the start** and is added to `docs/spread/converted.json` in the same
+  commit. The gate only reads the files that list names: a new file left off it is not checked at all (until Stage 3's
+  repo-wide gate), so its bare numbers would sit there unseen until the spread moves the land under them. A frame point far outside its own place (past the
+  box + guard + 12) is logged by the strict report (`ATLAS.strict()`), which `tools/headless.js` and
+  `tools/fingerprint.mjs` fail on unless `docs/spread/strict-allow.json` lists it.
+- **Proving nothing moved** (until the spread every frame, the world and every pin are the identity):
+  `./build.sh && node tools/fingerprint.mjs index.html --diff docs/spread/baseline-fingerprint.json` must say
+  identical, and `git diff --exit-code online/src/atlas.json` must be clean.
 
 ## Self-test
 
