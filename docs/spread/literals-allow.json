@@ -111,5 +111,18 @@
   {"file": "27-dragons.js", "literal": "5 * TILE", "line": 316, "reason": "the fire breath's reach: a range (5 tiles), not a position"},
   {"file": "27-dragons.js", "literal": "[8, 16]", "decl": "dmg", "reason": "the fire breath's damage range, not a position"},
   {"file": "27-dragons.js", "literal": "cx - 14", "decl": "drDrawBones", "reason": "drawing: the bones' ribs, pixels left of the tile centre"},
-  {"file": "27-dragons.js", "literal": "3 * TILE", "decl": "arm", "reason": "the self-test sets the dragon 3 tiles from the knight: an offset, not a position"}
+  {"file": "27-dragons.js", "literal": "3 * TILE", "decl": "arm", "reason": "the self-test sets the dragon 3 tiles from the knight: an offset, not a position"},
+  {"file": "28-thefang.js", "literal": "9 * TILE", "decl": "sight", "reason": "The Fang's sight: a range (9 tiles), not a position"},
+  {"file": "28-thefang.js", "literal": "9 * TILE", "line": 655, "reason": "the self-test checks The Fang's sight (9 tiles): a range, not a position"},
+  {"file": "28-thefang.js", "literal": "68", "decl": "hx", "reason": "drawing: The Fang's head, pixels ahead of its body"},
+  {"file": "28-thefang.js", "literal": "14 * TILE", "decl": "nearLair", "reason": "how near the summoning circle counts as at the lair: a radius (14 tiles), not a position"},
+  {"file": "28-thefang.js", "decl": "cracks", "reason": "drawing: the magma tile's crack polylines, pixels inside the tile"},
+  {"file": "28-thefang.js", "literal": "3 * TILE", "decl": "w", "reason": "drawing: the lair gate's width in pixels (3 tiles)"},
+  {"file": "28-thefang.js", "literal": "[12, 30]", "line": 511, "reason": "drawing: the gate's iron bands, pixels down the gate"},
+  {"file": "28-thefang.js", "literal": "[14, 32]", "line": 512, "reason": "drawing: the gate's rivets, pixels down the gate"},
+  {"file": "28-thefang.js", "literal": "[6, 5]", "line": 528, "reason": "drawing: the summoning circle's dash pattern, in pixels"},
+  {"file": "28-thefang.js", "literal": "12 * TILE", "line": 610, "reason": "The Fang's health bar shows within 12 tiles: a range, not a position"},
+  {"file": "28-thefang.js", "literal": "[15, 16]", "decl": "texts", "reason": "the self-test reads the main quest's text at story stages 15 and 16, not a position"},
+  {"file": "28-thefang.js", "literal": "2 * TILE", "line": 735, "reason": "the self-test: the Echo stands within 2 tiles of its home, a distance"},
+  {"file": "28-thefang.js", "literal": "2 * TILE", "line": 809, "reason": "the self-test sets The Fang 2 tiles from the knight: an offset, not a position"}
 ]
