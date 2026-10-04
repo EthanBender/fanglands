@@ -242,7 +242,9 @@ async function main() {
     room2.worlds.useHost(host);
     const bSeen = [];
     const w = watch(180, ids0, i => {
-      bSeen.push(ev(B, 'monsters.filter(m => m.remote && !m.gone && !m.dead).map(m => m.nid)'));
+      // shown: on his screen, standing or lying felled (a goblin he fells with his own blow in these frames, which the world
+      // has not agreed to yet, has not vanished; one that went from the stream has)
+      bSeen.push(ev(B, 'monsters.filter(m => m.remote && !m.gone).map(m => m.nid)'));
       if (toldAt < 0 && ev(D, 'COOP.isKeeper()')) {
         toldAt = i;
         // his own swing while his game keeps the map lands in his game (it is not sent to a Room that would drop it)
@@ -251,7 +253,7 @@ async function main() {
     });
     tick(30); heal();
     const dead = deadNearIn(aerieOf(), D);
-    const bIds = ev(B, 'monsters.filter(m => m.remote && !m.gone && !m.dead).map(m => m.nid)');
+    const bIds = ev(B, 'monsters.filter(m => m.remote && !m.gone).map(m => m.nid)');
     // on Ben's screen: every monster he showed before that is still standing in the new copy is there in every frame
     // (the copy's monsters standing within Ben's view: the world sends a knight the ones within 24 tiles; a goblin that wandered
     // further off goes from his screen as the contract says)
