@@ -186,5 +186,22 @@
   {"file": "46-cinderwight.js", "literal": "16 * TILE", "line": 394, "reason": "the self-test clears monsters within 16 tiles of its lane: a radius, not a position"},
   {"file": "46-cinderwight.js", "literal": "3 * TILE", "line": 407, "reason": "the self-test: the heart lies within 3 tiles of the wight, a distance"},
   {"file": "46-cinderwight.js", "literal": "12 * TILE", "line": 423, "reason": "the self-test skips embers more than 12 tiles away: a distance, not a position"},
-  {"file": "46-cinderwight.js", "literal": "2 * TILE", "line": 457, "reason": "the self-test: the wight is pulled at least 2 tiles off its heart, a distance"}
+  {"file": "46-cinderwight.js", "literal": "2 * TILE", "line": 457, "reason": "the self-test: the wight is pulled at least 2 tiles off its heart, a distance"},
+  {"file": "48-agility2.js", "literal": "40", "decl": "CANOPY_LV", "reason": "the canopy run needs Agility 40: a level, not a tile"},
+  {"file": "48-agility2.js", "literal": "45", "decl": "VINE_LV", "reason": "the vine ladder needs Agility 45: a level, not a tile"},
+  {"file": "48-agility2.js", "literal": "60", "decl": "ROOF_LV", "reason": "the rooftop run needs Agility 60: a level, not a tile"},
+  {"file": "48-agility2.js", "literal": "70", "decl": "SCAF_LV", "reason": "the goblins scaffold needs Agility 70: a level, not a tile"},
+  {"file": "48-agility2.js", "literal": "[12, 18]", "decl": "drawCanopyRail", "reason": "drawing: leaf offsets inside a tile, in pixels"},
+  {"file": "48-agility2.js", "literal": "[30, 30]", "decl": "drawCanopyRail", "reason": "drawing: leaf offsets inside a tile, in pixels"},
+  {"file": "48-agility2.js", "literal": "[20, 40]", "decl": "drawCanopyRail", "reason": "drawing: leaf offsets inside a tile, in pixels"},
+  {"file": "48-agility2.js", "literal": "[6, 12]", "decl": "drawRoofDeck", "reason": "drawing: rivet offsets inside a tile, in pixels"},
+  {"file": "48-agility2.js", "literal": "[26, 12]", "decl": "drawRoofDeck", "reason": "drawing: rivet offsets inside a tile, in pixels"},
+  {"file": "48-agility2.js", "literal": "[14, 36]", "decl": "drawRoofDeck", "reason": "drawing: rivet offsets inside a tile, in pixels"},
+  {"file": "48-agility2.js", "literal": "[38, 36]", "decl": "drawRoofDeck", "reason": "drawing: rivet offsets inside a tile, in pixels"},
+  {"file": "48-agility2.js", "literal": "2 * TILE", "decl": "lapSecs", "reason": "the lap-time estimate: two tiles of slowed walking, a length, not a position"},
+  {"file": "48-agility2.js", "literal": "5 * TILE", "decl": "clearFront", "reason": "the self-test moves villagers within 5 tiles of the knight: a radius, not a position"},
+  {"file": "48-agility2.js", "literal": "10 * TILE", "decl": "clearFront", "reason": "the self-test moves a villager 10 tiles aside: an offset, not a position"},
+  {"file": "48-agility2.js", "literal": "12 * TILE", "decl": "clearFront", "reason": "the self-test parks the companion 12 tiles off: an offset, not a position"},
+  {"file": "48-agility2.js", "literal": "3 * TILE", "line": 385, "reason": "the self-test: back within 3 tiles of the canopy start flag, a distance"},
+  {"file": "48-agility2.js", "literal": "3 * TILE", "line": 453, "reason": "the self-test: back within 3 tiles of the rooftop start flag, a distance"}
 ]

@@ -43,24 +43,28 @@
   // a start flag and four numbered flags. marks[0] is the start/finish.
   // Sylvaris canopy run: strung between the giant trees beside the path down from Hollowford, north-west of the
   // elf city. It stops at x 134 — the path itself comes through x 136-141 and must stay clear of the level-40 gap.
-  const CAN = { x0: 121, x1: 134, north: 102, mid: 103, south: 104 };
-  const CAN_MARKS = [[121, 102], [128, 102], [133, 102], [133, 104], [127, 104]];
-  const CAN_LOGS = [[123, 102], [124, 102], [125, 102], [124, 104], [123, 104]];
-  const CAN_NETS = [[130, 102], [131, 102]];
-  const CAN_GAP1 = [[131, 104]];        // Agility 36
-  const CAN_GAP2 = [[134, 103]];        // Agility 40 — the east turn, the leap that makes a lap
+  // Every overworld position reads the Atlas (the spread spec, section 9.1): the canopy run is the canopy's frame (its
+  // door the port canopy.door), the vine ladder on the ring wall Sylvaris's, and the rooftop run and the scaffold the
+  // Far Shore's.
+  const CN = ATLAS.frame('canopy'), SY = ATLAS.frame('sylvaris'), FS = ATLAS.frame('far_shore');
+  const CAN = { x0: CN.x(121), x1: CN.x(134), north: CN.y(102), mid: CN.y(103), south: CN.y(104) };
+  const CAN_MARKS = CN.pts([[121, 102], [128, 102], [133, 102], [133, 104], [127, 104]]);
+  const CAN_LOGS = CN.pts([[123, 102], [124, 102], [125, 102], [124, 104], [123, 104]]);
+  const CAN_NETS = CN.pts([[130, 102], [131, 102]]);
+  const CAN_GAP1 = CN.pts([[131, 104]]);        // Agility 36
+  const CAN_GAP2 = CN.pts([[134, 103]]);        // Agility 40 — the east turn, the leap that makes a lap
   // the vine ladder hangs on Sylvaris' wall of trees (25-elves' ring: x 126-166 at y 114). Over it is (128,115),
   // inside the city; round it is the totem gap at (137,114) and back again.
-  const VINE = { x: 128, y: 114 };
+  const VINE = SY.pt({ x: 128, y: 114 });
   // Grubmarket rooftop run: the north roof line of the market, over Nix's Scrap and the hut beside it.
-  const ROOF = { x0: 226, x1: 240, north: 19, mid: 20, south: 21 };
-  const ROOF_MARKS = [[226, 19], [232, 19], [238, 19], [239, 21], [232, 21]];
-  const ROOF_LOGS = [[228, 19], [229, 19], [230, 19], [229, 21], [228, 21]];
-  const ROOF_NETS = [[234, 19], [235, 19]];
-  const ROOF_GAP1 = [[235, 21]];        // Agility 52
-  const ROOF_GAP2 = [[240, 20]];        // Agility 60 — the east turn, the jump over the alley
+  const ROOF = { x0: FS.x(226), x1: FS.x(240), north: FS.y(19), mid: FS.y(20), south: FS.y(21) };
+  const ROOF_MARKS = FS.pts([[226, 19], [232, 19], [238, 19], [239, 21], [232, 21]]);
+  const ROOF_LOGS = FS.pts([[228, 19], [229, 19], [230, 19], [229, 21], [228, 21]]);
+  const ROOF_NETS = FS.pts([[234, 19], [235, 19]]);
+  const ROOF_GAP1 = FS.pts([[235, 21]]);        // Agility 52
+  const ROOF_GAP2 = FS.pts([[240, 20]]);        // Agility 60 — the east turn, the jump over the alley
   // the goblins' scaffold: over the scrap yard's north fence, its south fence, and Tinkerton's compound wall
-  const SCAFFOLD = [[245, 20], [250, 32], [254, 36]];
+  const SCAFFOLD = FS.pts([[245, 20], [250, 32], [254, 36]]);
 
   // ---------- the wall round each loop ----------
   // Every shipped course is walled in. The Thistledown yard is fenced with one gate (38-agility, T.FENCE round
@@ -69,8 +73,8 @@
   // slipping over and over until it kills him. These two courses get the same wall — a rail right round the loop,
   // from x0-1 to x1+1 and from north-1 to south+1, with exactly one way in, put beside the start flag so the first
   // thing you meet is the flag and its message, never an obstacle.
-  const CAN_DOOR = [121, 101], CAN_APPROACH = [121, 100];   // in off the jungle, straight down onto the canopy start flag
-  const ROOF_DOOR = [225, 19], ROOF_APPROACH = [224, 19];   // in off the market cobbles, straight onto the roof start flag
+  const CAN_DOOR = ATLAS.port('canopy.door'), CAN_APPROACH = CN.p(121, 100);   // in off the jungle, straight down onto the canopy start flag
+  const ROOF_DOOR = FS.p(225, 19), ROOF_APPROACH = FS.p(224, 19);   // in off the market cobbles, straight onto the roof start flag
   const ringOf = R => {
     const out = [];
     for (let x = R.x0 - 1; x <= R.x1 + 1; x++) { out.push([x, R.north - 1]); out.push([x, R.south + 1]); }
@@ -354,9 +358,9 @@
       const holes = CAN_RING.filter(hole);
       const doorOpen = !SOLID.has(tileAt(CAN_DOOR[0], CAN_DOOR[1])) && !SOLID.has(tileAt(CAN_APPROACH[0], CAN_APPROACH[1]));
       const sneak = walkLen(CAN_APPROACH[0], CAN_APPROACH[1], CAN_MARKS[1][0], CAN_MARKS[1][1], [], [AG_LOG, AG_GAP]);
-      const north = holdFrom(124, 100, 'KeyS');          // straight at the balance logs from the jungle floor
-      const south = holdFrom(127, 106, 'KeyW');
-      const east = holdFrom(136, 102, 'KeyA');
+      const north = holdFrom(...CN.p(124, 100), 'KeyS');          // straight at the balance logs from the jungle floor
+      const south = holdFrom(...CN.p(127, 106), 'KeyW');   // the jungle floor just south and east of the loop: the canopy's frame
+      const east = holdFrom(...CN.p(136, 102), 'KeyA');
       const inDoor = holdFrom(CAN_APPROACH[0], CAN_APPROACH[1], 'KeyS');
       check(P + 'the canopy loop is walled the whole way round with one way in: holding a key on the jungle floor never puts you on a balance log, and flag 1 cannot be reached without an obstacle',
         holes.length === 0 && doorOpen && sneak === -1 && stayedOut(CAN, north) && stayedOut(CAN, south) && stayedOut(CAN, east) && onTrack(CAN, inDoor) && inDoor.lost === 0,
@@ -366,9 +370,9 @@
     { const deck = CAN_TRACK.filter(([x, y]) => [CAN_DECK, AG_LOG, AG_NET, AG_GAP, AG_MARK].includes(tileAt(x, y))).length;
       let rail = 0; for (let x = CAN.x0 + 1; x <= CAN.x1 - 1; x++) if (tileAt(x, CAN.mid) === CAN_RAIL) rail++;
       const pieces = CAN_MARKS.every(([x, y]) => tileAt(x, y) === AG_MARK) && CAN_LOGS.every(([x, y]) => tileAt(x, y) === AG_LOG)
-        && CAN_NETS.every(([x, y]) => tileAt(x, y) === AG_NET) && tileAt(131, 104) === AG_GAP && tileAt(134, 103) === AG_GAP;
-      const reach = F.bfs(141, 96, CAN_MARKS[0][0], CAN_MARKS[0][1]);           // from the jungle path down to the start flag
-      setLv(CANOPY_LV); F.tp(140, 102); const walked = F.walkTo(CAN_MARKS[0][0], CAN_MARKS[0][1], 4000);
+        && CAN_NETS.every(([x, y]) => tileAt(x, y) === AG_NET) && tileAt(...CAN_GAP1[0]) === AG_GAP && tileAt(...CAN_GAP2[0]) === AG_GAP;
+      const reach = F.bfs(...ATLAS.port('hollowford.south'), CAN_MARKS[0][0], CAN_MARKS[0][1]);           // from the jungle path down to the start flag
+      setLv(CANOPY_LV); F.tp(ATLAS.world.tx(140), ATLAS.world.ty(102)); const walked = F.walkTo(CAN_MARKS[0][0], CAN_MARKS[0][1], 4000);
       check(P + 'the Sylvaris canopy run is carved in the treetops (deck, vine rail, logs, nets, two gaps, five flags) and you can walk to it from the jungle path',
         deck === CAN_TRACK.length && rail === CAN.x1 - CAN.x0 - 1 && pieces && !!reach && typeof walked === 'number' && tileOf().tx === CAN_MARKS[0][0],
         { deck, track: CAN_TRACK.length, rail, pieces, reach: reach && reach.length, walked, at: tileOf() }); }
@@ -420,9 +424,9 @@
       const holes = ROOF_RING.filter(hole);
       const doorOpen = !SOLID.has(tileAt(ROOF_DOOR[0], ROOF_DOOR[1])) && !SOLID.has(tileAt(ROOF_APPROACH[0], ROOF_APPROACH[1]));
       const sneak = walkLen(ROOF_APPROACH[0], ROOF_APPROACH[1], ROOF_MARKS[1][0], ROOF_MARKS[1][1], [], [AG_LOG, AG_GAP]);
-      const north = holdFrom(229, 17, 'KeyS');           // straight at the balance logs off the market grass
-      const south = holdFrom(233, 23, 'KeyW');
-      const east = holdFrom(242, 19, 'KeyA');
+      const north = holdFrom(...FS.p(229, 17), 'KeyS');           // straight at the balance logs off the market grass
+      const south = holdFrom(...FS.p(233, 23), 'KeyW');
+      const east = holdFrom(...FS.p(242, 19), 'KeyA');
       const inDoor = holdFrom(ROOF_APPROACH[0], ROOF_APPROACH[1], 'KeyD', 40);
       check(P + 'the rooftop loop is walled the whole way round with one way in: holding a key in the market never puts you on a balance log, and flag 1 cannot be reached without an obstacle',
         holes.length === 0 && doorOpen && sneak === -1 && stayedOut(ROOF, north) && stayedOut(ROOF, south) && stayedOut(ROOF, east) && onTrack(ROOF, inDoor) && inDoor.lost === 0,
@@ -432,8 +436,8 @@
     { const deck = ROOF_TRACK.filter(([x, y]) => [ROOF_DECK, AG_LOG, AG_NET, AG_GAP, AG_MARK].includes(tileAt(x, y))).length;
       let ridge = 0; for (let x = ROOF.x0 + 1; x <= ROOF.x1 - 1; x++) if (tileAt(x, ROOF.mid) === ROOF_RIDGE) ridge++;
       const pieces = ROOF_MARKS.every(([x, y]) => tileAt(x, y) === AG_MARK) && ROOF_LOGS.every(([x, y]) => tileAt(x, y) === AG_LOG)
-        && ROOF_NETS.every(([x, y]) => tileAt(x, y) === AG_NET) && tileAt(235, 21) === AG_GAP && tileAt(240, 20) === AG_GAP;
-      const reach = F.bfs(206, 30, ROOF_MARKS[0][0], ROOF_MARKS[0][1]);        // from Harl's far landing into the market and up
+        && ROOF_NETS.every(([x, y]) => tileAt(x, y) === AG_NET) && tileAt(...ROOF_GAP1[0]) === AG_GAP && tileAt(...ROOF_GAP2[0]) === AG_GAP;
+      const reach = F.bfs(...ATLAS.port('far_shore.landing'), ROOF_MARKS[0][0], ROOF_MARKS[0][1]);        // from Harl's far landing into the market and up
       setLv(ROOF_LV); F.tp(ROOF_APPROACH[0], ROOF_APPROACH[1]);
       const walkedIn = F.walkTo(ROOF_MARKS[0][0], ROOF_MARKS[0][1], 3000);     // in off the cobbles, through the one door
       const walked = F.walkTo(ROOF_MARKS[2][0], ROOF_MARKS[2][1], 3000);
@@ -468,18 +472,19 @@
 
     // ---- the goblins' scaffold: shut below 70, and a real short cut from the scrap yard to Tinkerton's compound ----
     { const rungs = SCAFFOLD.every(([x, y]) => tileAt(x, y) === GC_SCAFFOLD);
-      setLv(SCAF_LV - 1); F.tp(250, 33); F.sim(60, ['KeyW']); const blockedY = tileOf().ty;
-      const shut = blockedY >= 33 && !WALK_OVER.has(GC_SCAFFOLD);
+      const [YARD_X, YARD_Y] = FS.p(250, 30), BELOW = FS.p(250, 33), LAB_STEP = ATLAS.port('far_shore.lab_step');
+      setLv(SCAF_LV - 1); F.tp(...BELOW); F.sim(60, ['KeyW']); const blockedY = tileOf().ty;
+      const shut = blockedY >= BELOW[1] && !WALK_OVER.has(GC_SCAFFOLD);
       setLv(SCAF_LV); F.step([]); F.sim(90, ['KeyW']); const overY = tileOf().ty;
-      const over = overY <= 31 && WALK_OVER.has(GC_SCAFFOLD);
-      const roundabout = walkLen(250, 30, 247, 42);                             // the scrap yard to the lab door, both gates
-      const shortcut = walkLen(250, 30, 247, 42, [GC_SCAFFOLD]);
+      const over = overY <= FS.y(31) && WALK_OVER.has(GC_SCAFFOLD);
+      const roundabout = walkLen(YARD_X, YARD_Y, ...LAB_STEP);                             // the scrap yard to the lab door, both gates
+      const shortcut = walkLen(YARD_X, YARD_Y, ...LAB_STEP, [GC_SCAFFOLD]);
       // every rung has to come down on ground you can stand on, on both sides, or the climb goes nowhere
       const landings = SCAFFOLD.every(([x, y]) => !SOLID.has(tileAt(x, y - 1)) && !SOLID.has(tileAt(x, y + 1)));
-      setLv(SCAF_LV - 1); F.tp(250, 33); clearFront(); F.face(250, 32); F.press('KeyE'); F.sim(2, []);
-      const eRefused = tileOf().ty === 33 && notice && new RegExp('Agility ' + SCAF_LV).test(notice.text);
-      setLv(SCAF_LV); F.tp(250, 33); clearFront(); F.face(250, 32); F.press('KeyE'); F.sim(2, []);
-      const eClimbed = tileOf().tx === 250 && tileOf().ty === 31;
+      setLv(SCAF_LV - 1); F.tp(...BELOW); clearFront(); F.face(...SCAFFOLD[1]); F.press('KeyE'); F.sim(2, []);
+      const eRefused = tileOf().ty === BELOW[1] && notice && new RegExp('Agility ' + SCAF_LV).test(notice.text);
+      setLv(SCAF_LV); F.tp(...BELOW); clearFront(); F.face(...SCAFFOLD[1]); F.press('KeyE'); F.sim(2, []);
+      const eClimbed = tileOf().tx === BELOW[0] && tileOf().ty === FS.y(31);
       check(P + `the goblins' scaffold (three rungs) is solid below Agility ${SCAF_LV}, goes over at ${SCAF_LV} (walk into it or press E), and cuts the walk from the scrap yard to Tinkerton's lab door`,
         rungs && SOLID.has(GC_SCAFFOLD) && landings && shut && over && eRefused && eClimbed && shortcut > 0 && roundabout > shortcut + 15,
         { rungs, landings, blockedY, overY, shut, over, eRefused, eClimbed, stepsRound: roundabout, stepsOver: shortcut, saved: roundabout - shortcut }); }
