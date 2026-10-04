@@ -22512,7 +22512,7 @@ window.SETTINGS = SETTINGS;
   // One tile, found rather than hard-coded: the map is being worked on by other hands, so the rail takes the
   // nearest open ground to Fennick's stall that has room on three sides for a knight and a horse to stand.
   let POST = null;
-  const STALL = { x: 116, y: 28 };
+  const STALL = (([x, y]) => ({ x, y }))(ATLAS.port('thistledown.stall'));   // Fennick's stall: a port of the Atlas (the spread spec, section 9.1)
   HOOKS.world.push((rnd, api) => {
     POST = null;
     const roomy = (x, y, strict) => {
@@ -23149,7 +23149,7 @@ window.SETTINGS = SETTINGS;
       for (let y = 3; y < MAP_H - 3; y++) for (let x = 2; x < MAP_W - 17; x++) if (clear(x, y)) return { x, y };
       return null;
     }
-    const o = findLane() || h.openSpot(62, 24);
+    const o = findLane() || h.openSpot(...ATLAS.frame('signpost').p(62, 24));
     // she goes beside the knight on the lane and he gets up: everything below rides through this.
     // The suite can arrive here with the knight hurt, dead, in a machine or with a villager parked on the
     // lane (a --play world has been running for a hundred thousand steps), so it clears all of that first.
