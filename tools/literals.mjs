@@ -255,13 +255,20 @@ export function allowed(file, hit, src, allow, declRanges) {
 export function scanFile(file, allow = allowList(), T = null) {
   const src = fs.readFileSync(path.join(SRC, file), 'utf8');
   const hits = scanSource(src);
-  let ast = null;
-  // a `decl` pin: a declaration by name (const NAME = ..., function NAME () {...}, or a property NAME: ... / NAME () {...})
-  const declRanges = name => { ast = ast || parse(src); const out = []; walk(ast, n => {
-    if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.id.name === name && n.init) out.push([n.init.start, n.init.end]);
-    else if (n.type === 'FunctionDeclaration' && n.id && n.id.name === name) out.push([n.start, n.end]);
-    else if ((n.type === 'Property' || n.type === 'MethodDefinition') && propName(n) === name && n.value) out.push([n.value.start, n.value.end]);
-  }); return out; };
+  // a `decl` pin: a declaration by name (const NAME = ..., function NAME () {...}, or a property NAME: ... / NAME () {...}).
+  // Every named declaration's ranges are gathered in one walk, the first time a pin asks (one walk per file, not per pin).
+  let byName = null;
+  const declRanges = name => {
+    if (!byName) {
+      byName = new Map(); const put = (k, r) => { if (!byName.has(k)) byName.set(k, []); byName.get(k).push(r); };
+      walk(parse(src), n => {
+        if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.init) put(n.id.name, [n.init.start, n.init.end]);
+        else if (n.type === 'FunctionDeclaration' && n.id) put(n.id.name, [n.start, n.end]);
+        else if ((n.type === 'Property' || n.type === 'MethodDefinition') && n.value) { const k = propName(n); if (k !== null && k !== undefined) put(k, [n.value.start, n.value.end]); }
+      });
+    }
+    return byName.get(name) || [];
+  };
   const bare = [], ok = [];
   for (const h of hits) { const a = allowed(file, h, src, allow, declRanges); (a ? ok : bare).push(a ? Object.assign({}, h, { allowedBy: a.reason }) : h); }
   if (T) for (const h of bare) h.guess = h.x !== null && h.x !== undefined && h.y !== null && h.y !== undefined ? anchorOf(T, h.x, h.y).id : null;
