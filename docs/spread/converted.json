@@ -66,5 +66,6 @@
 "07-update.js",
 "08-draw.js",
 "10-hud.js",
-"09-render.js"
+"09-render.js",
+"43-settings.js"
 ]
