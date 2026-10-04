@@ -263,5 +263,10 @@
   {"file": "66-storm.js", "literal": "16 * TILE", "line": 583, "reason": "the gate opening is shown within 16 tiles of the leaves: a radius, not a position"},
   {"file": "66-storm.js", "literal": "tc(6)", "line": 702, "reason": "instance-local (stormfront): the self-test parks the Thunderbird in the deck's corner"},
   {"file": "66-storm.js", "literal": "F.tp(20, 20)", "line": 705, "reason": "instance-local (stormfront): the self-test stands on the storm deck"},
-  {"file": "66-storm.js", "literal": "F.tp(12, 12)", "line": 712, "reason": "instance-local (stormfront): the self-test walks the storm deck's crossbar"}
+  {"file": "66-storm.js", "literal": "F.tp(12, 12)", "line": 712, "reason": "instance-local (stormfront): the self-test walks the storm deck's crossbar"},
+  {"file": "69-axestump.js", "decl": "drawAxeStump", "reason": "drawing: the stump, the cut and the axe in pixels round the tile centre (tc(tx), tc(ty)); no map coordinate inside"},
+  {"file": "69-axestump.js", "literal": "3 * TILE", "line": 78, "reason": "the take-the-axe plate shows within 3 tiles of the stump: a radius, not a position"},
+  {"file": "69-axestump.js", "literal": "cx - 34", "line": 152, "reason": "a tap on the drawn axe: pixels left of the stump's centre, not a map coordinate"},
+  {"file": "69-axestump.js", "literal": "cy - 76", "line": 152, "reason": "a tap on the drawn axe: pixels above the stump's centre, not a map coordinate"},
+  {"file": "69-axestump.js", "literal": "cy - 100", "line": 85, "reason": "drawing: the take-the-axe plate sits 100 px above the stump, not a map coordinate"}
 ]
