@@ -392,7 +392,10 @@
       const tr = document.createElement('tr'), c = copies[m], held = sw.held && sw.held[m], st = w.modes && w.modes[m];
       cell(tr, PLACE[m] || m);
       cell(tr, held ? 'a knight\'s game: handed back ' + clock(held.at) + ' because ' + (WHY[held.reason] || held.reason) : sw.maps[m] !== 'world' ? 'a knight\'s game' : sw.master === 'off' ? 'a knight\'s game (all switched off)' : st === 'joining' ? 'the world (taking it over now)' : 'the world');
-      cell(tr, c ? String(c.knights) : sw.maps[m] === 'world' && st === 'world' && w.running ? '' : '0');   // a place being taken over has no count yet cell(tr, c && c.monsters != null ? String(c.monsters) : ''); cell(tr, c ? c.bootMs + ' ms' : (w.boot && w.boot[m] != null ? w.boot[m] + ' ms (last time)' : ''));
+      // a place being taken over has no count yet
+      cell(tr, c ? String(c.knights) : sw.maps[m] === 'world' && st === 'world' && w.running ? '' : '0');
+      cell(tr, c && c.monsters != null ? String(c.monsters) : '');
+      cell(tr, c ? c.bootMs + ' ms' : (w.boot && w.boot[m] != null ? w.boot[m] + ' ms (last time)' : ''));
       const td = document.createElement('td'), on = sw.maps[m] === 'world' && !held;
       td.appendChild(button(on ? 'Give it back to a knight\'s game' : 'Let the world run it', () => flipMap(m, on ? 'keeper' : 'world')));
       tr.appendChild(td); tb.appendChild(tr);

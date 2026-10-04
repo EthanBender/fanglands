@@ -13,11 +13,13 @@ const script = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</
 // an element that is anything it is asked to be: unknown properties are more such elements, calls return one, and what
 // is written to it reads back (textContent, value, onclick ...)
 function fakeEl() {
+  // children: what appendChild put in (innerHTML = '' empties it), so a test can count a table row's cells
   const own = { classList: (() => { const s = new Set(); return { add: (...c) => c.forEach(x => s.add(x)), remove: (...c) => c.forEach(x => s.delete(x)), contains: c => s.has(c), toggle: (c, on) => (on ?? !s.has(c)) ? s.add(c) : s.delete(c) }; })(), style: {}, value: '', textContent: '', children: [], dataset: {} };
+  own.appendChild = c => { own.children.push(c); return c; };
   const f = function () { return p; };
   const p = new Proxy(f, {
     get: (t, k) => k in own ? own[k] : k === Symbol.toPrimitive ? (() => '') : k === Symbol.iterator ? function* () { } : k === 'then' ? undefined : k === 'length' ? 0 : p,
-    set: (t, k, v) => { own[k] = v; return true; },
+    set: (t, k, v) => { if (k === 'innerHTML') own.children = []; own[k] = v; return true; },
     apply: () => p,
   });
   return p;
@@ -157,6 +159,13 @@ test('the admin page: the places the world runs, from the same read; a place\'s 
   await runIt[0].onclick(); await P.settle();
   assert.deepEqual(P.posts.map(p => p.body), [{ maps: { deepholm: 'world' } }]);
   assert.match(String(P.els.get('worldline').textContent), /Running now: 1 place, 10 ticks a second, half under 0\.31 ms, 99 in 100 under 0\.90 ms\./);
+  // every row has its six cells under the six headers; the running place shows its knights, its monsters and how long it took to build
+  { const rows = P.els.get('worldmaps').children, texts = rows.map(tr => tr.children.map(td => String(td.textContent)));
+    assert.equal(rows.length, 3, 'one row per place');
+    for (const tr of rows) assert.equal(tr.children.length, 6, 'six cells in every row: ' + JSON.stringify(texts));
+    assert.deepEqual(texts[0].slice(0, 5), ['Deepholm (the dwarves)', 'the world', '2', '2', '1210 ms'], 'Deepholm: its knights, its monsters and its build time under their headers');
+    assert.equal(String(rows[0].children[5].children[0].textContent), 'Give it back to a knight\'s game', 'the button sits in the last column');
+    assert.deepEqual(texts[1].slice(2, 5), ['0', '', ''], 'a place nobody is in: 0 knights, no monsters, never built'); }
   await P.els.get('mastertoggle').onclick(); await P.settle();
   assert.deepEqual(P.posts.map(p => p.body)[1], { master: 'off' });
   assert.match(String(P.els.get('worldline').textContent), /^Switched off: /);
