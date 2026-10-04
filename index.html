@@ -33352,7 +33352,7 @@ HOOKS.selfTest.push((check, F, h) => {
       for (let y = ring.y0; y <= ring.y1; y++) if (!SOLID.has(tileAt(ring.x0, y))) gate++;
       // 55-riding's vaultable split and 38-agility's climb are still their own tiles, not stakes
       const vault = window.RIDING && RIDING.vault.ok ? tileAt(RIDING.vault.x, RIDING.vault.y) === RIDING.tile : false;
-      const climb = tileAt(158, 30) !== T_PAL && SOLID.has(tileAt(158, 30));
+      const climb = tileAt(...ATLAS.port('camp.climb')) !== T_PAL && SOLID.has(tileAt(...ATLAS.port('camp.climb')));
       // and the camp is not sealed: you can still walk from the field outside to the middle of it
       let out = null, inside = null;
       for (let x = ring.x0 - 1; x >= ring.x0 - 6 && !out; x--) if (!SOLID.has(tileAt(x, Math.round(ring.cy)))) out = [x, Math.round(ring.cy)];
@@ -33407,7 +33407,7 @@ HOOKS.selfTest.push((check, F, h) => {
     }
     // 4. the bulldozer smashes through, drops the log and leaves splinters you can drive over
     {
-      const o = h.openSpot(56, 40), e = { x: tc(o.x), y: tc(o.y), r: 22 }, dir = { x: 1, y: 0 };
+      const o = h.openSpot(...ATLAS.frame('drill_field').p(56, 40)), e = { x: tc(o.x), y: tc(o.y), r: 22 }, dir = { x: 1, y: 0 };
       const tx = o.x + 1, ty = o.y, was = tileAt(tx, ty), d0 = drops.length;
       changeTile(tx, ty, T_PAL);
       dozerPlow(e, dir, false);
@@ -33441,7 +33441,7 @@ HOOKS.selfTest.push((check, F, h) => {
       check(P + "Thistledown's wall is untouched stone, no stake stands outside the goblin camp, and every other fence in the world is still a fence",
         townStakes === 0 && stone > 100 && stray === 0 && fenceElsewhere > 150 && different, { townStakes, townStone: stone, strayStakes: stray, fenceElsewhere, different });
     }
-    { const o = h.openSpot(60, 30); F.tp(o.x, o.y); }   // do not leave the knight leaning on the camp wall for whatever runs next
+    { const o = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(30)); F.tp(o.x, o.y); }   // do not leave the knight leaning on the camp wall for whatever runs next
   });
 }
 
