@@ -13,6 +13,9 @@ sed -n '/^<script>$/,/^<\/script>$/p' index.html | sed '1d;$d' > .build-check.js
 if grep -nE '\(\?<[=!]' .build-check.js; then echo "build.sh: a regex lookbehind is in the game (iPadOS 16.3 and older cannot run it). Use a lookahead." >&2; rm -f .build-check.js; exit 1; fi
 node --check .build-check.js && echo "built index.html ($(wc -l < index.html) lines)"
 rm -f .build-check.js
+# The Great Spread's literals gate (docs/spread/README.md): a file listed in docs/spread/converted.json may hold no bare map
+# coordinate ("wrap it: ATLAS.frame('<place>') or ATLAS.world"). Files not yet converted are not checked.
+node tools/literals.mjs --gate || { echo "build.sh: a converted file has a bare map coordinate (tools/literals.mjs --gate)" >&2; exit 1; }
 # The Atlas (docs/ONLINE.md, "The shared world", Stage 1): online/src/atlas.json, made from this index.html, committed with it.
 # online/test/atlas-drift.mjs fails a deploy whose atlas.json does not match the game it ships with.
 node tools/atlas.mjs --quiet || { echo "build.sh: the Atlas could not be made from index.html (tools/atlas.mjs)" >&2; exit 1; }

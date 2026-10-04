@@ -11,8 +11,9 @@ const LAW_KILL_FINE = 150;     // coins added to the fine for killing a guard
 const LAW_LEVEL_FINE = 25;     // coins per wanted star when settling with the captain
 const LAW_SCRAP_PAY = 5;       // coins per goblin scrap handed in
 const LAW_ARM_RANGE = 8 * TILE; // guards within this range of the player are set hostile every tick while wanted
-const LAW_TEMP_POSTS = [[86, 32], [139, 32]]; // reinforcement posts: just inside the west and east gates
-const LAW_CAPTAIN = { id: 'captain', name: 'Captain Roderick', x: 110, y: 40, tunic: '#a8302a', hair: '#4a2a14', helmet: true, beard: true, role: 'captain' };
+const LAW_TD = ATLAS.frame('thistledown');   // every position here is the capital's (the spread spec, §9.1)
+const LAW_TEMP_POSTS = LAW_TD.pts([[86, 32], [139, 32]]); // reinforcement posts: just inside the west and east gates
+const LAW_CAPTAIN = LAW_TD.pt({ id: 'captain', name: 'Captain Roderick', x: 110, y: 40, tunic: '#a8302a', hair: '#4a2a14', helmet: true, beard: true, role: 'captain' });
 let lawArmed = false; // true while guards have been told to fight; stand them down when wanted returns to 0
 
 const lawIsGuard = m => LAW_GUARD_TYPES.includes(m.type);
@@ -223,17 +224,17 @@ HOOKS.selfTest.push((check, F, h) => {
   const reset = () => { const L = law(); L.wanted = 0; L.timer = 0; L.fines = 0; };
   const guardOf = (tx, ty) => monsters.filter(m => lawIsGuard(m) && !m.temp).sort((a, b) => dist(a.home.x, a.home.y, tc(tx), tc(ty)) - dist(b.home.x, b.home.y, tc(tx), tc(ty)))[0];
   h.peace(false); closePanel(); reset(); F.sim(2, []);
-  { const c = NPCS.find(n => n.id === 'captain'); check('law: Captain of the Watch stands by the castle portcullis', !!c && c.role === 'captain' && c.helmet && c.beard && Math.abs(c.x - 110) <= 1 && Math.abs(c.y - 41) <= 1 && !SOLID.has(tileAt(c.x, c.y)), c && { x: c.x, y: c.y, tile: tileAt(c.x, c.y) }); }
+  { const c = NPCS.find(n => n.id === 'captain'); check('law: Captain of the Watch stands by the castle portcullis', !!c && c.role === 'captain' && c.helmet && c.beard && Math.abs(c.x - LAW_TD.x(110)) <= 1 && Math.abs(c.y - LAW_TD.y(41)) <= 1 && !SOLID.has(tileAt(c.x, c.y)), c && { x: c.x, y: c.y, tile: tileAt(c.x, c.y) }); }
   // hit a guard in town → wanted 1, guard hostile
-  F.tp(112, 30); player.hp = player.maxHp;
-  const guard = guardOf(112, 30); guard.dead = false; guard.hp = guard.maxHp; guard.x = tc(113); guard.y = tc(30); guard.state = 'idle'; guard.angry = false; guard.stunT = 0;
+  F.tp(LAW_TD.x(112), LAW_TD.y(30)); player.hp = player.maxHp;
+  const guard = guardOf(LAW_TD.x(112), LAW_TD.y(30)); guard.dead = false; guard.hp = guard.maxHp; guard.x = tc(LAW_TD.x(113)); guard.y = tc(LAW_TD.y(30)); guard.state = 'idle'; guard.angry = false; guard.stunT = 0;
   hitMonster(guard, 1, 0);
   const w1 = law().wanted, t1 = law().timer;
   let hostile = false, steps = 0; for (; steps < 60 && !hostile; steps++) { F.step([]); hostile = guard.angry && guard.state === 'chase'; }
   check('law: hitting a town guard raises wanted to 1 and the guard turns hostile', w1 === 1 && t1 > 100 && hostile, { wanted: w1, timer: +t1.toFixed(1), hostile, steps });
   check('law: The Watch quest shows while wanted', activeQuests().includes('law') && QUEST_DEFS.law && /Captain of the Watch/.test(questText('law')), { text: questText('law') });
   // kill a guard → wanted 3, fine 150, reinforcements at the gates
-  guard.x = tc(113); guard.y = tc(30); guard.hp = 1; hitMonster(guard, 5, 0);
+  guard.x = tc(LAW_TD.x(113)); guard.y = tc(LAW_TD.y(30)); guard.hp = 1; hitMonster(guard, 5, 0);
   F.sim(2, []);
   { const temps = monsters.filter(m => m.temp); const atGates = temps.length === 2 && temps.every(m => m.type === 'guard_m' && LAW_TEMP_POSTS.some(([x, y]) => Math.abs(m.home.x - tc(x)) < 1 && Math.abs(m.home.y - tc(y)) < 1));
     check('law: killing a guard sets wanted 3, a 150 coin fine, and two extra guards at the gates', guard.dead && law().wanted === 3 && law().fines === 150 && atGates, { wanted: law().wanted, fines: law().fines, temps: temps.length }); }

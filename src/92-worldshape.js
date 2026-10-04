@@ -39,6 +39,22 @@
   const STEPS_LV = 18;
   const WS = window.WORLDSHAPE = { shapes: {}, stats: {}, STAIRS: [], CLIFF, STEPS, STEPS_LV };
 
+  // ---------- where things are (the spread spec, §9.1): every position is a read of the Atlas ----------
+  // A place's own rectangle, lobe or tile moves with its frame; open land (the grounds, the seams, the scan windows) is the
+  // stretched world W. Seams, lobes and outline noise are evaluated in OLD coordinates through W.ix / W.iy (a place's own
+  // through its frame's ix / iy), so the shapes stretch with the land, or move with the place, and are bit-identical before
+  // the spread. Seam rows follow the seam pins (ATLAS.PINS: gw_steps, rim, giants), offset 0 until Stage 4a.
+  const W = ATLAS.world, FR = id => ATLAS.frame(id), port = id => ATLAS.port(id);
+  const CAVE = FR('cave'), QF = FR('quarry'), PONDF = FR('pond'), TD = FR('thistledown'), CAMP = FR('camp'), DOCKF = FR('dock'), GULL = FR('gull_isle'), IRON = FR('ironclad_isle');
+  const FS = FR('far_shore'), HFF = FR('hollowford'), WARD = FR('warden'), LAIRF = FR('fang_lair'), SHRINE = FR('ash_shrine'), GRAVE = FR('graveyard'), CIRCLE = FR('stone_circle');
+  const TOWER = FR('watchtower'), SYLV = FR('sylvaris'), DHF = FR('deepholm_rock'), CANOPY = FR('canopy'), DRILL = FR('drill_field');
+  // the Ashfields' rim row (old 95) at new column x, on the rim pin
+  const rimRow = x => Math.round(W.pin('rim', W.y(95), x));
+  // the Ashfields / Jungle wall (old x 100) at new row y, on the jungle_west pin: the Ashfields lie west of it, the Jungle
+  // from it east, and the rim's last column is the one west of its first row (W.line: the one read 39 and 93 make too)
+  const wallX = y => W.line('jungle_west', y);
+  const rimX1 = () => wallX(W.ty(96)) - 1;
+
   // ---------- smooth value noise: two octaves on a lattice, 0..1 (the same shape 39-worldblend uses) ----------
   const makeNoise = (seed, cell = 8) => {
     const r = mulberry32(seed), N = 64, lat = new Float32Array(N * N); for (let i = 0; i < lat.length; i++) lat[i] = r();
@@ -53,11 +69,12 @@
   // ---------- the boundary curves shared by two neighbours ----------
   // One curve per seam, read by BOTH sides, so the masks meet with no overlap and no gap of "The Wilds".
   const cGW = line(SEED + 1, 13), cWA = line(SEED + 8, 11), cWJ = line(SEED + 3, 11);
-  const sGW = x => 61.5 + cGW(x) * 6.5;                                     // Goblin Fields above, Wolfwood below
+  // (each curve in OLD world coordinates, mapped through W and its seam pin; the giants' gap is Hollowford's own geometry)
+  const sGW = x => W.pin('gw_steps', W.y(61.5 + cGW(W.ix(x)) * 6.5), x);   // Goblin Fields above, Wolfwood below
   // the Ashfields' rim: the last row of rock, 95 to 99, so the face and the name end on the same line
-  const footWA = x => 95 + Math.round((cWA(x) * 0.5 + 0.5) * 4);
+  const footWA = x => Math.round(W.pin('rim', W.y(95 + Math.round((cWA(W.ix(x)) * 0.5 + 0.5) * 4)), x));
   const sWA = x => footWA(x) + 0.5;                                        // Wolfwood above, the Ashfields below (never north of the warden's line at y 95)
-  const sWJ = x => (x >= 136 && x <= 146) ? 95.5 : 95.8 + cWJ(x) * 3.8;     // Wolfwood above, the Jungle below; pinned flat over the road in
+  const sWJ = x => (x >= HFF.x(136) && x <= HFF.x(146)) ? HFF.y(95.5) : W.pin('giants', W.y(95.8 + cWJ(W.ix(x)) * 3.8), x);     // Wolfwood above, the Jungle below; pinned flat over the road in
   WS.seams = { sGW, sWA, sWJ, footWA };
 
   // ---------- the outlines ----------
@@ -68,15 +85,18 @@
   const edgeIn = (b, x, y) => Math.min(x - b.x0, b.x1 - x, y - b.y0, b.y1 - y);  // inward distance to the box border, negative outside
 
   // a blob: the box border wanders in and out by `amp`; `grow` only ever lets it wander out
-  const blob = (name, amp, seed, cell, grow) => { const w = wob(seed, cell || 7); const b = BOX[name];
-    return (x, y) => { const d = edgeIn(b, x, y), n = w(x, y); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
+  // (F: the frame the outline's noise is read in: W for the grounds, the place's own frame for an enclave)
+  const blob = (name, amp, seed, cell, grow, F = W) => { const w = wob(seed, cell || 7); const b = BOX[name];
+    return (x, y) => { const d = edgeIn(b, x, y), n = w(F.ix(x), F.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
   // the same, but for one pair of sides only: the seam curves own the other pair
   const bandX = (name, amp, seed, cell, grow) => { const w = wob(seed, cell || 9); const b = BOX[name];
-    return (x, y) => { const d = Math.min(x - b.x0, b.x1 - x), n = w(x, y); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
+    return (x, y) => { const d = Math.min(x - b.x0, b.x1 - x), n = w(W.ix(x), W.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
   const bandS = (name, amp, seed, cell, grow) => { const w = wob(seed, cell || 9); const b = BOX[name];   // the south side alone
-    return (x, y) => { const d = b.y1 - y, n = w(x, y); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
-  // a lobe (a headland the region throws out) and a bite (a bay something else cuts into it), both ellipses
+    return (x, y) => { const d = b.y1 - y, n = w(W.ix(x), W.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
+  // a lobe (a headland the region throws out) and a bite (a bay something else cuts into it), both ellipses; the centre
+  // and radii are OLD coordinates of the frame F, and (x, y) the new tile asked about
   const near = (x, y, cx, cy, rx, ry) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
+  const lobe = (F, x, y, cx, cy, rx, ry) => near(F.ix(x), F.iy(y), cx, cy, rx, ry);
 
   // name -> fn(x, y) -> is this tile inside the region's outline. A region with no entry here keeps its box.
   const SHAPE = {}, FREE = {};
@@ -85,52 +105,55 @@
   // the four big grounds, cut by the shared seams. Their north/south edges belong to the seams, their east
   // and west to a band of noise, and each throws out a headland or takes a bay from its neighbour.
   { const gf = bandX('Goblin Fields', 7, SEED + 11, 11, true);
-    put('Goblin Fields', (x, y) => y >= 0 && y < sGW(x) && (gf(x, y) || near(x, y, 24, 34, 9, 13) || near(x, y, 150, 52, 10, 8)) && !near(x, y, 66, 57, 13, 7), 'ews'); }
+    put('Goblin Fields', (x, y) => y >= 0 && y < sGW(x) && (gf(x, y) || lobe(W, x, y, 24, 34, 9, 13) || lobe(W, x, y, 150, 52, 10, 8)) && !lobe(W, x, y, 66, 57, 13, 7), 'ews'); }
   { const ww = bandX('Wolfwood', 7, SEED + 12, 11, true);
-    put('Wolfwood', (x, y) => y > sGW(x) && y < (x < 100 ? sWA(x) : sWJ(x)) && (ww(x, y) || near(x, y, 66, 57, 13, 7) || near(x, y, 166, 78, 9, 12)), 'ewns'); }
+    put('Wolfwood', (x, y) => y > sGW(x) && y < (x < wallX(y) ? sWA(x) : sWJ(x)) && (ww(x, y) || lobe(W, x, y, 66, 57, 13, 7) || lobe(W, x, y, 166, 78, 9, 12)), 'ewns'); }
   { const af = bandS('The Ashfields', 9, SEED + 13, 12, true);
-    put('The Ashfields', (x, y) => x <= 99 && y > sWA(x) && (af(x, y) || near(x, y, 62, 148, 26, 12) || near(x, y, 16, 146, 14, 10)), 'ns'); }
+    put('The Ashfields', (x, y) => x <= wallX(y) - 1 && y > sWA(x) && (af(x, y) || lobe(W, x, y, 62, 148, 26, 12) || lobe(W, x, y, 16, 146, 14, 10)), 'ns'); }
   // The Jungle's east edge wanders in as well as out. It used to grow only, out over the bottom-right dead
   // space; the Redcut (90-canyon) stands there now and red rock is not jungle, so the eastern edge frays
   // into the jungle's own box instead. Only the east: the west band is masked off (a tile deeper than the
   // band's reach from the east edge is jungle whenever the south band says so, exactly as before).
   { const jg = bandS('The Jungle', 6, SEED + 14, 12, true); const je = bandX('The Jungle', 20, SEED + 15, 9, false); const jb = BOX['The Jungle'];
-    put('The Jungle', (x, y) => x >= 100 && (x > 161 ? y >= jb.y0 : y > sWJ(x)) && (((x <= jb.x1 - 21 || je(x, y)) && jg(x, y) && !near(x, y, jb.x1 + 1, 150, 13, 16)) || near(x, y, 108, 90, 7, 8) || near(x, y, 156, 90, 8, 7)), 'ne'); }   // and a bay bitten out of the east side, where the red rock country begins
+    put('The Jungle', (x, y) => x >= wallX(y) && (x > W.x(161) ? y >= jb.y0 : y > sWJ(x)) && (((x <= jb.x1 - 21 || je(x, y)) && jg(x, y) && !lobe(W, x, y, W.ix(jb.x1 + 1), 150, 13, 16)) || lobe(W, x, y, 108, 90, 7, 8) || lobe(HFF, x, y, 156, 90, 8, 7)), 'ne'); }   // and a bay bitten out of the east side, where the red rock country begins
 
   // the enclaves: a blob each, inside the ground that carries them
-  { const gq = blob('Grey Quarry', 7, SEED + 21, 5, true);
-    put('Grey Quarry', (x, y) => gq(x, y) || near(x, y, 54, 16, 4, 4), 'nesw'); }
-  put("Miller's Pond", blob("Miller's Pond", 4.2, SEED + 22, 6), 'nesw');
-  put('Goblin Camp', blob('Goblin Camp', 4.5, SEED + 23, 6, true), 'nesw');
-  put('Hollowford', blob('Hollowford', 4.4, SEED + 24, 7), 'nesw');
-  put('Sylvaris', blob('Sylvaris', 3.6, SEED + 25, 6, true), 'nesw');
-  put('Grubmarket', blob('Grubmarket', 4.4, SEED + 26, 7), 'nesw');
-  put('Castle Gnash', blob('Castle Gnash', 3.6, SEED + 27, 6, true), 'nesw');
-  put('The Far Shore', blob('The Far Shore', 5.5, SEED + 28, 9), 'nesw');
+  { const gq = blob('Grey Quarry', 7, SEED + 21, 5, true, QF);
+    put('Grey Quarry', (x, y) => gq(x, y) || lobe(QF, x, y, 54, 16, 4, 4), 'nesw'); }
+  put("Miller's Pond", blob("Miller's Pond", 4.2, SEED + 22, 6, false, PONDF), 'nesw');
+  put('Goblin Camp', blob('Goblin Camp', 4.5, SEED + 23, 6, true, CAMP), 'nesw');
+  put('Hollowford', blob('Hollowford', 4.4, SEED + 24, 7, false, HFF), 'nesw');
+  put('Sylvaris', blob('Sylvaris', 3.6, SEED + 25, 6, true, SYLV), 'nesw');
+  put('Grubmarket', blob('Grubmarket', 4.4, SEED + 26, 7, false, FS), 'nesw');
+  put('Castle Gnash', blob('Castle Gnash', 3.6, SEED + 27, 6, true, FS), 'nesw');
+  put('The Far Shore', blob('The Far Shore', 5.5, SEED + 28, 9, false, FS), 'nesw');
   // Thistledown only ever grows: the walled town keeps every tile it has and takes in the commons outside the
   // wall - the two paddocks and the ground round them - so its edge is the town's land, not its masonry.
-  { const th = blob('Thistledown', 7, SEED + 29, 8, true); const b = BOX['Thistledown'];
-    put('Thistledown', (x, y) => inBox(b, x, y) || th(x, y) || near(x, y, 76, 18, 8, 7) || near(x, y, 76, 43, 8, 7), 'nesw'); }
+  { const th = blob('Thistledown', 7, SEED + 29, 8, true, TD); const b = BOX['Thistledown'];
+    put('Thistledown', (x, y) => inBox(b, x, y) || th(x, y) || lobe(TD, x, y, 76, 18, 8, 7) || lobe(TD, x, y, 76, 43, 8, 7), 'nesw'); }
 
   // ---------- what every outline must still contain ----------
   // Everything the boxes hold today: every NPC, every tile of every building, every monster spawn, and the
   // exact coordinates other files assert. A tile that comes out in the wrong region is pushed back with a
   // small disc of its own region.
+  // (each tile in the frame of the place that holds it, or its port; a probe of open ground - the Ashfields, the jungle,
+  // the sea, the fields - is a world tile)
+  const ft = (F, x, y, name) => [...F.p(x, y), name], pt = (id, name) => [...port(id), name];
   const ASSERT = [
-    [60, 110, 'The Ashfields'], [60, 94, 'Wolfwood'], [150, 100, 'The Jungle'], [133, 120, 'Sylvaris'],
-    [150, 160, 'The Jungle'], [250, 80, 'The Far Shore'], [216, 30, 'Grubmarket'], [224, 66, 'Castle Gnash'],
-    [206, 30, 'The Far Shore'], [190, 30, 'The Grey Sea'], [178, 13, 'Gull Isle'], [187, 50, 'Ironclad Isle'],
-    [140, 80, 'Hollowford'], [14, 80, 'Wolfwood'], [12, 70, 'Wolfwood'], [14, 83, 'Wolfwood'],
-    [62, 6, 'Grey Quarry'], [18, 120, "The Fang's Lair"], [117, 17, 'Thistledown'], [21, 7, 'Goblin Fields'],
-    [148, 34, 'Goblin Camp'], [158, 30, 'Goblin Camp'], [43, 36, "Miller's Pond"], [56, 6, 'Grey Quarry'],
-    [112, 49, 'Castle Thistledown'], [152, 68, 'Hollowford'], [155, 68, 'Hollowford'], [153, 70, 'Hollowford'],
-    [137, 81, 'Hollowford'], [140, 77, 'Hollowford'], [142, 81, 'Hollowford'], [226, 52, 'Castle Gnash'],
-    [216, 23, 'Grubmarket'], [230, 23, 'Grubmarket'], [234, 32, 'Grubmarket'], [224, 67, 'Castle Gnash'],
-    [165, 14, 'The Grey Sea'], [181, 14, 'Gull Isle'], [30, 78, 'Wolfwood'], [66, 100, 'The Ashfields'],
-    [140, 68, 'Hollowford'], [140, 76, 'Hollowford'], [52, 8, 'Grey Quarry'], [48, 6, 'Grey Quarry'],
-    [90, 30, 'Thistledown'], [54, 13, 'Grey Quarry'], [141, 96, 'The Jungle'], [12, 27, 'Goblin Fields'],
+    [W.tx(60), W.ty(110), 'The Ashfields'], ft(WARD, 60, 94, 'Wolfwood'), [W.tx(150), W.ty(100), 'The Jungle'], ft(SYLV, 133, 120, 'Sylvaris'),
+    [W.tx(150), W.ty(160), 'The Jungle'], ft(FS, 250, 80, 'The Far Shore'), ft(FS, 216, 30, 'Grubmarket'), ft(FS, 224, 66, 'Castle Gnash'),
+    pt('far_shore.landing', 'The Far Shore'), [W.tx(190), W.ty(30), 'The Grey Sea'], ft(GULL, 178, 13, 'Gull Isle'), ft(IRON, 187, 50, 'Ironclad Isle'),
+    pt('hollowford.square', 'Hollowford'), ft(DHF, 14, 80, 'Wolfwood'), pt('graveyard.grave', 'Wolfwood'), ft(DHF, 14, 83, 'Wolfwood'),
+    pt('quarry.shrine', 'Grey Quarry'), ft(LAIRF, 18, 120, "The Fang's Lair"), pt('thistledown.house_portal', 'Thistledown'), pt('cave.mouth', 'Goblin Fields'),
+    pt('camp.cage', 'Goblin Camp'), pt('camp.climb', 'Goblin Camp'), pt('pond.centre', "Miller's Pond"), pt('quarry.shaft', 'Grey Quarry'),
+    pt('thistledown.duke', 'Castle Thistledown'), ft(HFF, 152, 68, 'Hollowford'), ft(HFF, 155, 68, 'Hollowford'), ft(HFF, 153, 70, 'Hollowford'),
+    ft(HFF, 137, 81, 'Hollowford'), ft(HFF, 140, 77, 'Hollowford'), ft(HFF, 142, 81, 'Hollowford'), ft(FS, 226, 52, 'Castle Gnash'),
+    ft(FS, 216, 23, 'Grubmarket'), ft(FS, 230, 23, 'Grubmarket'), ft(FS, 234, 32, 'Grubmarket'), ft(FS, 224, 67, 'Castle Gnash'),
+    ft(DOCKF, 165, 14, 'The Grey Sea'), pt('gull_isle.pete', 'Gull Isle'), pt('wren.wren', 'Wolfwood'), pt('warden.node', 'The Ashfields'),
+    pt('hollowford.north', 'Hollowford'), pt('hollowford.heart', 'Hollowford'), ft(QF, 52, 8, 'Grey Quarry'), ft(QF, 48, 6, 'Grey Quarry'),
+    ft(TD, 90, 30, 'Thistledown'), pt('quarry.cart', 'Grey Quarry'), pt('hollowford.south', 'The Jungle'), [W.tx(12), W.ty(27), 'Goblin Fields'],
   ];
-  const NOT = [[141, 92, 'The Jungle']]; // 25-elves: the road down to Sylvaris is still Wolfwood where it leaves the wood
+  const NOT = [ft(HFF, 141, 92, 'The Jungle')]; // 25-elves: the road down to Sylvaris is still Wolfwood where it leaves the wood
 
   // ---------- the masks ----------
   const KEEP_TILES = new Set([Tn('BERRY_BUSH')].filter(v => v >= 0)); // tiles an earlier pass put down because of the region it read
@@ -223,20 +246,14 @@
   // region (34-food's berry bushes, 62-ores' seams, 39-worldblend's copses) generates the world it has
   // always generated, and this file only ever changes what came after it.
   const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], N8 = [...N4, [1, 1], [-1, 1], [1, -1], [-1, -1]];
-  const ROADS = [
-    [[CAVE_EXIT_X + 1, 7], [SIGN_TILE.x, SIGN_TILE.y], [84, 32]], [[SIGN_TILE.x, SIGN_TILE.y], [54, 14]],
-    [[84, 32], [84, 60], [60, 70], [31, 76]], [[141, 32], [150, 30]], [[141, 14], [141, 32]], [[141, 14], [161, 14]],
-    [[150, 39], [150, 50], [146, 58], [141, 64], [140, 68]],
-    [[60, 94], [60, 100], [56, 104], [48, 105], [36, 105]], [[60, 100], [63, 103], [69, 103]],
-    [[141, 96], [141, 101], [136, 105], [132, 109], [133, 112]],
-    [[54, 13], [54, 8], [55, 8], [55, 5], [57, 5]],
-  ];
+  // the roads every feature laid, as polylines: ATLAS.TRACKS (the same eleven 39-worldblend reads)
+  const ROADS = ['road_cave', 'road_quarry_spur', 'road_wolfwood', 'road_camp', 'road_east_lane', 'road_dock_lane', 'road_hollowford', 'path_ash', 'path_farm', 'path_jungle', 'shaft_lane'].map(id => ATLAS.track(id));
   const segDist = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1; const t = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1); return Math.hypot(px - (ax + dx * t), py - (ay + dy * t)); };
   // the ground a region wears. Only tiles that changed owner are rewritten, and only from this list.
   const PLAIN = new Set([T.GRASS, T.DIRT, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, ASH, SCORCH, FERN, JUNGLE, DEADTREE].filter(v => v >= 0));
   const TREES = new Set([T.TREE, T.OAK]);
   const SOFT = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN].filter(v => v >= 0));
-  const NODES = [[21, 7], [65, 27], [85, 32], [164, 14], [140, 76], [66, 100], [36, 105], [141, 96], [56, 6], [30, 78], [12, 70], [38, 36], [152, 30], [133, 112], [112, 33]];
+  const NODES = ATLAS.track('nodes');   // ATLAS.TRACKS: the fifteen places that must stay mutually reachable, in chain order
   const NODE_NAMES = ['cave exit', 'signpost', 'Thistledown gate', 'dock', 'Hollowford', 'Dunstan', 'lair approach', 'jungle path', 'quarry shaft', "Wren's hut", "the knight's grave", "Miller's Pond", 'goblin camp', 'Sylvaris gap', 'Thistledown square'];
 
   // every generation starts with the outlines OFF, so a second new game reads the same regions the first did
@@ -280,6 +297,7 @@
   WS.clearRock = clearRock;
   { const _load = load; load = function () { const ok = _load.apply(this, arguments); if (ok) clearRock(); return ok; }; }
 
+  let dockLaneGuard = 0;   // the points of the dock lane this file's guard covered (each with its 2-tile verge), for the check below
   HOOKS.world.push((rnd0, api) => {
     const rnd = mulberry32(SEED);                  // its own stream: what drew before this must not move the result
     const set = api.setTile, at = api.tileAt;
@@ -292,27 +310,35 @@
     const hard = new Uint8Array(MAP_W * MAP_H);
     const mark = (x0, y0, x1, y1) => { for (let y = Math.max(0, y0); y <= Math.min(MAP_H - 1, y1); y++) for (let x = Math.max(0, x0); x <= Math.min(MAP_W - 1, x1); x++) hard[y * MAP_W + x] = 1; };
     mark(0, 0, MAP_W - 1, 0); mark(0, MAP_H - 1, MAP_W - 1, MAP_H - 1); mark(0, 0, 0, MAP_H - 1); mark(MAP_W - 1, 0, MAP_W - 1, MAP_H - 1);  // the tree border
-    mark(0, 0, 27, 17);                                    // the cave, its mouth, the axe stump, the den door
+    const markB = b => mark(b[0], b[1], b[2], b[3]);
+    markB(CAVE.box([0, 0, 27, 17]));                       // the cave, its mouth, the axe stump, the den door
     mark(VILLAGE.x0 - 1, VILLAGE.y0 - 1, VILLAGE.x1 + 1, VILLAGE.y1 + 1);
     for (const b of BUILDINGS) mark(b.x - 2, b.y - 2, b.x + b.w + 1, b.y + b.h + 1);
     for (const n of NPCS) mark(n.x - 2, n.y - 2, n.x + 2, n.y + 2);
     mark(SIGN_TILE.x - 3, SIGN_TILE.y - 3, SIGN_TILE.x + 3, SIGN_TILE.y + 3);
-    mark(70, 12, 82, 23); mark(70, 38, 82, 48);            // the cow and sheep pens
-    mark(36, 29, 43, 44);                                  // Miller's Pond west of the stepping stones, both their landings
-    mark(45, 0, 63, 4); mark(59, 4, 65, 9); mark(52, 4, 58, 15); // the cliff course, the wind shrine, the shaft lane, the miners' cart
-    mark(139, 12, 163, 16); mark(140, 13, 143, 33);        // the road to the dock and the lane down the village fence
-    mark(158, 9, 170, 19);                                 // the dock, Harl, his boat
-    mark(141, 19, 159, 41); mark(138, 28, 142, 32); mark(159, 29, 161, 31); // the palisade, its west gap, the climb's landing
-    mark(168, 4, 187, 22); mark(175, 38, 198, 62);         // Gull Isle, Ironclad Isle
-    mark(125, 69, 153, 89); mark(138, 62, 143, 96);        // Hollowford's ruins and streets, the road in from the north and out to the jungle
-    mark(150, 66, 158, 73);                                // the guild hall and its board
-    mark(53, 90, 68, 106);                                 // the warden, his gate, the road through and the fork below it
-    mark(1, 103, 40, 107); mark(84, 100, 90, 106);         // the approach to the lair, the ruined shrine
-    mark(2, 72, 26, 94); mark(2, 108, 34, 138);            // the reclaimed Deepholm ground, The Fang's lair
-    mark(8, 65, 17, 72); mark(55, 83, 65, 91); mark(91, 77, 99, 85); // the graveyard, the stone circle, the watchtower
-    mark(125, 113, 167, 136); mark(126, 111, 147, 114);    // Sylvaris' ring wall and the ground before its gap
-    mark(51, 41, 62, 50);                                  // the flat lane the machines are driven on, south of the pens
-    mark(200, 26, 211, 34);                                // Harl's far dock, his boat and the landing step
+    markB(TD.box([70, 12, 82, 23])); markB(TD.box([70, 38, 82, 48]));   // the cow and sheep pens
+    markB(PONDF.box([36, 29, 43, 44]));                    // Miller's Pond west of the stepping stones, both their landings
+    markB(QF.box([45, 0, 63, 4])); markB(QF.box([59, 4, 65, 9])); markB(QF.box([52, 4, 58, 15])); // the cliff course, the wind shrine, the shaft lane, the miners' cart
+    // the road to the dock and the lane down the village fence
+    // (the dock lane is the lane itself, ATLAS.track('road_dock_lane'), and every tile within 2 of it: a corridor, never a
+    // rect built from two frames' corners that the spread could turn inside out; Stage 4a replaces this lane)
+    dockLaneGuard = 0;
+    { const pl = ATLAS.track('road_dock_lane'), V = 2;
+      for (let s = 1; s < pl.length; s++) { const [ax, ay] = pl[s - 1], [bx, by] = pl[s], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+        for (let k = 0; k <= n; k++) { const x = Math.round(ax + (bx - ax) * k / n), y = Math.round(ay + (by - ay) * k / n); mark(x - V, y - V, x + V, y + V); dockLaneGuard++; } } }
+    markB(TD.box([140, 13, 143, 33]));
+    markB(DOCKF.box([158, 9, 170, 19]));                   // the dock, Harl, his boat
+    markB(CAMP.box([141, 19, 159, 41])); markB(CAMP.box([138, 28, 142, 32])); markB(CAMP.box([159, 29, 161, 31])); // the palisade, its west gap, the climb's landing
+    markB(GULL.box([168, 4, 187, 22])); markB(IRON.box([175, 38, 198, 62]));    // Gull Isle, Ironclad Isle
+    markB(HFF.box([125, 69, 153, 89])); markB(HFF.box([138, 62, 143, 96]));     // Hollowford's ruins and streets, the road in from the north and out to the jungle
+    markB(HFF.box([150, 66, 158, 73]));                    // the guild hall and its board
+    markB(WARD.box([53, 90, 68, 106]));                    // the warden, his gate, the road through and the fork below it
+    markB(LAIRF.box([1, 103, 40, 107])); markB(SHRINE.box([84, 100, 90, 106]));   // the approach to the lair, the ruined shrine
+    markB(ATLAS.box('deepholm_rock')); markB(LAIRF.box([2, 108, 34, 138]));       // the reclaimed Deepholm ground, The Fang's lair
+    markB(GRAVE.box([8, 65, 17, 72])); markB(CIRCLE.box([55, 83, 65, 91])); markB(TOWER.box([91, 77, 99, 85]));   // the graveyard, the stone circle, the watchtower
+    markB(SYLV.box([125, 113, 167, 136])); markB(SYLV.box([126, 111, 147, 114]));   // Sylvaris' ring wall and the ground before its gap
+    markB(DRILL.box([51, 41, 62, 50]));                    // the flat lane the machines are driven on, south of the pens
+    markB(FS.box([200, 26, 211, 34]));                     // Harl's far dock, his boat and the landing step
     for (const s of MONSTER_SPAWNS) mark(s.tx - 1, s.ty - 1, s.tx + 1, s.ty + 1);
     if (window.PROGRESSION) for (const c of PROGRESSION.CROSSINGS) { mark(c.a.x - 2, c.a.y - 2, c.a.x + 2, c.a.y + 2); mark(c.b.x - 2, c.b.y - 2, c.b.x + 2, c.b.y + 2); }
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const t = at(x, y); if (t === T.WATER || t === BRIDGE || t === DOCK || t === T.COBBLE || t === WARDEN_GATE || t === T.SOIL || t === T.CROP) hard[y * MAP_W + x] = 1; }
@@ -391,20 +417,20 @@
     // 37-dragonkillers grows Wolfwood's last row (y 95, x 1-99) solid so the warden's gate is the only way
     // south. Those tiles become rock, and the face is carried down to the foot of the new outline, so the
     // burnt country reads as the plateau it is. Solid for solid on row 95: not one step of the walk changes.
-    for (let x = 1; x <= 99; x++) {
-      if (x >= 58 && x <= 62) continue;                              // the warden's road through the rim
-      const foot = footWA(x);
-      for (let y = 95; y <= foot; y++) {
+    for (let x = W.tx(1); x <= rimX1(); x++) {
+      if (x >= WARD.x(58) && x <= WARD.x(62)) continue;              // the warden's road through the rim (the warden's notch)
+      const foot = footWA(x), row = rimRow(x);
+      for (let y = row; y <= foot; y++) {
         const t = at(x, y);
-        if (y === 95 && SOLID.has(t) && (TREES.has(t) || t === T.ROCK)) { put(x, 95, CLIFF); S.cliff++; S.rim++; continue; }
+        if (y === row && SOLID.has(t) && (TREES.has(t) || t === T.ROCK)) { put(x, row, CLIFF); S.cliff++; S.rim++; continue; }
         if (!plain(x, y) || !addOk(x, y) || strands(x, y)) continue;
         put(x, y, CLIFF); S.cliff++; S.rim++;
       }
     }
 
     // ---- 3. the jungle's edge: a wall of giants along the new line, the old road its one gap ----
-    if (JUNGLE >= 0) for (let x = 100; x <= 161; x++) {
-      if (x >= 134 && x <= 148) continue;                            // the road down to Sylvaris
+    if (JUNGLE >= 0) for (let x = wallX(W.ty(96)); x <= W.tx(161); x++) {   // from the wall's top (the jungle_west pin)
+      if (x >= HFF.x(134) && x <= HFF.x(148)) continue;              // the road down to Sylvaris (the giants' gap, Hollowford's)
       const y = Math.round(sWJ(x));
       if (!plain(x, y) || !addOk(x, y) || strands(x, y)) continue;
       if (!SOLID.has(at(x, y)) && roadD[y * MAP_W + x] <= 2.6) continue;
@@ -433,7 +459,7 @@
       };
       let prev = null;
       const lay = (x, y) => { if (!canLay(x, y)) return; put(x, y, CLIFF); S.cliff++; S.line++; };
-      for (let x = 1; x <= 161; x++) {
+      for (let x = W.tx(1); x <= W.tx(161); x++) {
         const y = rowAt(x);
         if (y === null) { prev = null; continue; }
         if (prev !== null && Math.abs(y - prev) > 1) { const a2 = Math.min(prev, y), b2 = Math.max(prev, y); for (let k = a2; k <= b2; k++) lay(x, k); }
@@ -448,7 +474,7 @@
     // (48-agility2 puts its approach at 121,100 and says the run is "beside the path down from Hollowford").
     { const CARVE = new Set([T.TREE, T.OAK, T.ROCK, JUNGLE, FERN, T.GRASS, T.FLOWERS, T.MUSHROOM, DEADTREE].filter(v => v >= 0));
       S.track = 0;
-      for (let x = 122; x <= 140; x++) { const y = 100; if (!free(x, y) || !CARVE.has(at(x, y))) continue; set(x, y, T.DIRT); S.track++; } }
+      for (let x = CANOPY.x(122); x <= HFF.x(140); x++) { const y = CANOPY.y(100); if (!free(x, y) || !CARVE.has(at(x, y))) continue; set(x, y, T.DIRT); S.track++; } }
 
     // ---- 6. the seal, proved rather than guessed ----
     // Flood the knight out from the cave road with the water and the plank bridges shut. Every column he
@@ -459,17 +485,17 @@
       const seen = new Uint8Array(MAP_W * MAP_H), q = [];
       const ok = t => (!SOLID.has(t) || PUSH_THROUGH.has(t)) && t !== BRIDGE && t !== DOCK && t !== T.WATER;
       const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !ok(at(x, y))) return; seen[i] = 1; q.push(i); };
-      push(CAVE_EXIT_X + 1, 7);
+      push(...port('cave.mouth'));
       for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
       return seen;
     };
-    const SOUTH = [[30, 78, "Wren's hut"], [12, 70, "the knight's grave"], [140, 76, 'Hollowford'], [60, 94, 'the warden']];
+    const SOUTH = [pt('wren.wren', "Wren's hut"), pt('graveyard.grave', "the knight's grave"), pt('hollowford.heart', 'Hollowford'), ft(WARD, 60, 94, 'the warden')];
     const leaking = seen => SOUTH.filter(([nx, ny]) => seen[ny * MAP_W + nx]).map(t => t[2]);
     for (let pass = 0; pass < 6; pass++) {
       const seen = north(); let laid = 0;
       S.passes = pass; S.leaks = leaking(seen);
       if (!S.leaks.length) break;
-      for (let x = 1; x <= 161; x++) {
+      for (let x = W.tx(1); x <= W.tx(161); x++) {
         const sy = Math.round(sGW(x));
         for (const off of [0, 1, -1, 2, -2, 3, -3, 4]) { const y = sy + off;
           if (!inMap(x, y) || !seen[y * MAP_W + x] || !canLay(x, y)) continue;
@@ -487,7 +513,7 @@
         const seen = new Uint8Array(MAP_W * MAP_H), q = [];
         const ok = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === WARDEN_GATE;
         const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !ok(at(x, y))) return; seen[i] = 1; q.push(i); };
-        push(CAVE_EXIT_X + 1, 7);
+        push(...port('cave.mouth'));
         for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
         return seen; };
       const ground = (x, y) => { const r = resolve(x, y); return r && r.name === 'The Ashfields' && ASH >= 0 ? ASH : r && r.name === 'The Jungle' && FERN >= 0 ? FERN : T.GRASS; };
@@ -548,7 +574,7 @@
     { const passT = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === WARDEN_GATE;
       const flood = get => { const seen = new Uint8Array(MAP_W * MAP_H), q = [];
         const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !passT(get(i))) return; seen[i] = 1; q.push(i); };
-        push(CAVE_EXIT_X + 1, 7);
+        push(...port('cave.mouth'));
         for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
         return seen; };
       const was = flood(i => before[i]); let seen = flood(i => map[i]);
@@ -602,14 +628,15 @@
         const seen = new Uint8Array(MAP_W * MAP_H), q = [];
         const ok = t => (!SOLID.has(t) || PUSH_THROUGH.has(t)) && !block.has(t);
         const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !ok(at(x, y))) return; seen[i] = 1; q.push(i); };
-        push(CAVE_EXIT_X + 1, 7);
+        push(...port('cave.mouth'));
         for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
         return seen; };
       const road = walk(new Set([BRIDGE, DOCK].filter(v => v >= 0))), everywhere = walk(new Set());
       const joins = (x, y) => { const a = (y - 1) * MAP_W + x, b = (y + 1) * MAP_W + x;
         return (road[a] && everywhere[b] && !road[b]) || (road[b] && everywhere[a] && !road[a]); };
       const cand = [];
-      for (let x = 1; x <= 161; x++) for (let y = 48; y <= 76; y++) {
+      // (the window round the scarp: OLD world rows 48..76, on the gw_steps pin)
+      for (let x = W.tx(1); x <= W.tx(161); x++) for (let off = W.pin('gw_steps', 0, x), y = Math.round(W.y(48) + off); y <= Math.round(W.y(76) + off); y++) {
         if (at(x, y) !== CLIFF || !free(x, y) || roadD[y * MAP_W + x] <= 4) continue;
         if (SOLID.has(at(x, y - 1)) || SOLID.has(at(x, y + 1)) || !joins(x, y)) continue;
         cand.push([x, y]); break;
@@ -726,7 +753,9 @@
     KIND.set(fn, ok); return ok;
   };
   const INF = Infinity;
-  const bisect = (pred, vertical) => { let lo = -64, hi = 400;
+  // the search window runs 64 past the map's longer side, so it holds every tile however the map grows (the spread: 400x280)
+  const BISECT_HI = () => Math.max(MAP_W, MAP_H) + 64;
+  const bisect = (pred, vertical) => { let lo = -64, hi = BISECT_HI();
     while (lo < hi) { const mid = Math.floor((lo + hi) / 2);
       const ok = vertical ? pred({ x0: -INF, x1: INF, y0: lo, y1: mid }) : pred({ x0: lo, x1: mid, y0: -INF, y1: INF });
       if (ok) hi = mid; else lo = mid + 1; }
@@ -750,9 +779,21 @@
     }, writable: true, configurable: true, enumerable: false,
   });
 
+  WS.bisect = bisect; WS.bisectHi = BISECT_HI;
+
   // ---------- self-test ----------
   const P = 'worldshape: ';
   HOOKS.selfTest.push((check, F, h) => {
+    check('worldshape: the road to the dock keeps its hard guard: the lane (ATLAS.track) point by point, each with its 2-tile verge, never an empty rect', dockLaneGuard >= 2, { dockLaneGuard });
+    // the far corner (and the other three) resolve through the bisect: it finds the exact tile, and regionAt answers what the outlines say
+    { const corners = [[0, 0], [MAP_W - 1, 0], [0, MAP_H - 1], [MAP_W - 1, MAP_H - 1]], bad = [];
+      for (const [cx, cy] of corners) {
+        const pred = r => cx >= r.x0 && cx <= r.x1 && cy >= r.y0 && cy <= r.y1;
+        const bx = bisect(pred, false), by = bisect(pred, true), got = regionAt(cx, cy), want = WS.regionAt(cx, cy);
+        if (bx !== cx || by !== cy || !got || !want || got.name !== want.name) bad.push({ at: [cx, cy], bisect: [bx, by], regionAt: got && got.name, outline: want && want.name });
+      }
+      check(P + `the map's far corner (${MAP_W - 1},${MAP_H - 1}) and the other three resolve through regionAt's bisect, whose window (to ${BISECT_HI()}) holds the whole map`,
+        bad.length === 0 && BISECT_HI() > Math.max(MAP_W, MAP_H) && WS.on(), { bad, hi: BISECT_HI(), on: WS.on() }); }
     const S = WS.pass || {}, tiles = window.PLAYTHROUGH ? PLAYTHROUGH.pristine : map;
     const TREES2 = new Set([T.TREE, T.OAK]);
     const flood = (block, from) => {
@@ -775,7 +816,7 @@
 
     // ---- 2. regionAt on both sides of a curved border ----
     { const rows = new Set(); let cols = 0, swapped = 0;
-      for (let x = 1; x <= 159; x++) {
+      for (let x = W.tx(1); x <= W.tx(159); x++) {
         const yb = Math.floor(WS.seams.sGW(x)); if (yb < 3 || yb > MAP_H - 4) continue;
         const above = regionAt(x, yb).name, below = regionAt(x, yb + 1).name;
         if (above === 'Wolfwood' && below === 'Goblin Fields') swapped++;   // the wood is never north of the fields
@@ -783,26 +824,26 @@
         cols++; rows.add(yb);
       }
 
-      const mixed = y => { const n = new Set(); for (let x = 1; x <= 159; x++) n.add(regionAt(x, y).name); return n; };
-      const row62 = mixed(62), row96 = mixed(96);
+      const mixed = y => { const n = new Set(); for (let x = W.tx(1); x <= W.tx(159); x++) n.add(regionAt(x, y).name); return n; };
+      const row62 = mixed(W.ty(62)), row96 = mixed(W.ty(96));
       check(P + 'regionAt answers on both sides of a curved border: the Goblin Fields / Wolfwood line bends through eight or more different rows, and one row of the map holds both names at once',
         cols >= 60 && rows.size >= 8 && swapped === 0 && row62.has('Goblin Fields') && row62.has('Wolfwood') && row96.has('Wolfwood') && row96.has('The Ashfields'),
         { columnsOnTheLine: cols, distinctRows: rows.size, rows: [...rows].sort((a, b) => a - b), sidesSwapped: swapped, row62: [...row62], row96: [...row96] }); }
 
     // ---- 3. the ground changes where the name changes ----
     { let fieldT = 0, fieldN = 0, woodT = 0, woodN = 0;
-      for (let x = 1; x <= 159; x++) {
+      for (let x = W.tx(1); x <= W.tx(159); x++) {
         const yb = Math.floor(WS.seams.sGW(x)); if (yb < 8 || yb > MAP_H - 9) continue;
         if (regionAt(x, yb).name !== 'Goblin Fields' || regionAt(x, yb + 1).name !== 'Wolfwood') continue;
         for (let d = 1; d <= 5; d++) { const t = tiles[idx(x, yb - d)]; if (!SOLID.has(t) || TREES2.has(t)) { fieldN++; if (TREES2.has(t)) fieldT++; } }
         for (let d = 1; d <= 5; d++) { const t = tiles[idx(x, yb + d)]; if (!SOLID.has(t) || TREES2.has(t)) { woodN++; if (TREES2.has(t)) woodT++; } }
       }
       let ashIn = 0, inN = 0, ashOut = 0, outN = 0;
-      for (let x = 1; x <= 99; x++) {
+      for (let x = W.tx(1); x <= rimX1(); x++) {
         const f = Math.floor(WS.seams.sWA(x));
         if (regionAt(x, f).name !== 'Wolfwood' || regionAt(x, f + 1).name !== 'The Ashfields') continue;
         for (let d = 1; d <= 3; d++) { inN++; if (tiles[idx(x, f + d)] === ASH) ashIn++; }
-        for (let d = 3; d <= 6; d++) { outN++; if (tiles[idx(x, 95 - d)] === ASH) ashOut++; }
+        for (let d = 3; d <= 6; d++) { outN++; if (tiles[idx(x, rimRow(x) - d)] === ASH) ashOut++; }
       }
       const wood = woodT / Math.max(1, woodN), field = fieldT / Math.max(1, fieldN), ash = ashIn / Math.max(1, inN), green = ashOut / Math.max(1, outN);
       check(P + 'the ground changes where the name changes: wood on the Wolfwood side of the line and open field on the other, ash below the Ashfields rim and none of it six rows above',
@@ -821,16 +862,19 @@
     { const seen = flood(new Set(), START);
       let ash = 0, lair = 0;
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { if (!seen[idx(x, y)]) continue; const n = regionAt(x, y).name; if (n === 'The Ashfields') ash++; else if (n === "The Fang's Lair") lair++; }
-      const early = [['the signpost', 65, 27], ['Duke Ferrin', 112, 49], ["Hale's dummy", 88, 42], ['the goblin walker', 152, 30], ['the edge of Hollowford', 140, 68], ['the Barrelbeast yard', 140, 86], ['Old Wren', 30, 78], ["Harl's dock", 164, 14], ['the Deepholm shaft', 56, 6], ["Miller's Pond", 38, 36], ["Sylvaris' gap", 137, 114]];
+      const np = (name, q) => [name, q[0], q[1]];
+      const early = [np('the signpost', port('signpost.sign')), np('Duke Ferrin', port('thistledown.duke')), np("Hale's dummy", TD.p(88, 42)), np('the goblin walker', port('camp.walker')), np('the edge of Hollowford', port('hollowford.north')),
+        np('the Barrelbeast yard', port('hollowford.barrelbeast')), np('Old Wren', port('wren.wren')), np("Harl's dock", port('dock.planks')), np('the Deepholm shaft', port('quarry.shaft')), np("Miller's Pond", PONDF.p(38, 36)), np("Sylvaris' gap", port('sylvaris.gap'))];
       const missed = early.filter(([n, x, y]) => !at(seen, x, y)).map(e => e[0]);
       check(P + 'a level-1 knight on foot reaches nothing of the Ashfields or The Fang\'s lair, and reaches everything the story asks of him before the warden opens his gate',
         ash === 0 && lair === 0 && missed.length === 0,
-        { ashfieldTilesReached: ash, lairTilesReached: lair, cannotReach: missed, dunstan: at(seen, 67, 104), lairGate: at(seen, 18, 108) }); }
+        { ashfieldTilesReached: ash, lairTilesReached: lair, cannotReach: missed, dunstan: at(seen, ...port('warden.dunstan')), lairGate: at(seen, ...port('fang_lair.gate')) }); }
 
     // ---- 6. the wood is a step down, and the ways over it are counted ----
     { const BR = Tn('BRIDGE'), DK = Tn('DOCK');
       const open = flood(new Set(), START), shut = flood(new Set([BR, DK].filter(v => v >= 0)), START);
-      const south = [['Old Wren', 30, 78], ["the knight's grave", 12, 70], ['Hollowford', 140, 86], ["Warden Brann's gate", 60, 94], ["Sylvaris' gap", 137, 114]];
+      const np = (name, q) => [name, q[0], q[1]];
+      const south = [np('Old Wren', port('wren.wren')), np("the knight's grave", port('graveyard.grave')), np('Hollowford', port('hollowford.barrelbeast')), np("Warden Brann's gate", WARD.p(60, 94)), np("Sylvaris' gap", port('sylvaris.gap'))];
       const stillOpen = south.filter(([n, x, y]) => at(shut, x, y)).map(e => e[0]);
       const cutOff = south.filter(([n, x, y]) => !at(open, x, y)).map(e => e[0]);
       const posts = (window.PROGRESSION ? PROGRESSION.CROSSINGS : []).map(c => `${c.a.x},${c.a.y} Agility ${c.lv}`);
@@ -862,13 +906,23 @@
         rows.length === 1 && rows.every(r => r.standing && r.shut && r.refused && r.opens && r.over), { climbs: rows }); }
 
     // ---- 8. the rim and the jungle's edge ----
-    { let rim = 0, line = 0; for (let x = 1; x <= 99; x++) { if (x >= 59 && x <= 61) continue; if (tiles[idx(x, 95)] === CLIFF) rim++; if (SOLID.has(tiles[idx(x, 95)])) line++; }
-      let band = 0; for (let x = 1; x <= 99; x++) for (let y = 96; y <= WS.seams.footWA(x); y++) if (tiles[idx(x, y)] === CLIFF) band++;
+    { let rim = 0, line = 0; for (let x = W.tx(1); x <= rimX1(); x++) { if (x >= WARD.x(59) && x <= WARD.x(61)) continue; if (tiles[idx(x, rimRow(x))] === CLIFF) rim++; if (SOLID.has(tiles[idx(x, rimRow(x))])) line++; }
+      const rimCols = rimX1() - W.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1);   // every rim column but the gate's three
+      let band = 0; for (let x = W.tx(1); x <= rimX1(); x++) for (let y = rimRow(x) + 1; y <= WS.seams.footWA(x); y++) if (tiles[idx(x, y)] === CLIFF) band++;
       let wall = 0, gap = 0;
-      for (let x = 100; x <= 161; x++) { const y = Math.round(WS.seams.sWJ(x)); if (SOLID.has(tiles[idx(x, y)])) wall++; else if (x >= 134 && x <= 148) gap++; }
+      for (let x = wallX(W.ty(96)); x <= W.tx(161); x++) { const y = Math.round(WS.seams.sWJ(x)); if (SOLID.has(tiles[idx(x, y)])) wall++; else if (x >= HFF.x(134) && x <= HFF.x(148)) gap++; }
       const gateShut = DRAGON_KILLERS ? DRAGON_KILLERS.GATE_T.every(([x, y]) => tiles[idx(x, y)] === Tn('WARDEN_GATE')) : false;
       check(P + "the Ashfields' rim is a wavy rock face where a ruled line of trees stood, the warden's gate is still the one notch through it, and the jungle's edge is a wall of giants with the old road its one gap",
-        rim >= 70 && line === 96 && band >= 40 && gateShut && wall >= 30, { rimRockOnRow95: rim, solidOnRow95: line, rockBelowTheRow: band, gateShut, wallOnTheJungleLine: wall, roadGapColumns: gap }); }
+        rim >= 70 && line === rimCols && band >= 40 && gateShut && wall >= 30, { rimRockOnRow95: rim, solidOnRow95: line, rockBelowTheRow: band, gateShut, wallOnTheJungleLine: wall, roadGapColumns: gap }); }
+
+    // ---- 8b. the wall splits the names: every wall row has the Ashfields (once below the rim) just west of the wall
+    // and the Jungle (once below its north edge) on it, so the wall, the burnt band and the names move together on the pin
+    { const bad = [];
+      for (let y = W.ty(96); y <= W.ty(138); y++) {
+        const x = wallX(y), west = regionAt(x - 1, y).name, on = regionAt(x, y).name;
+        if (west === 'The Jungle' || on === 'The Ashfields' || (y > sWA(x - 1) && west !== 'The Ashfields') || (y > sWJ(x) && on !== 'The Jungle')) bad.push([x, y, west, on]);
+      }
+      check(P + "the Ashfields / Jungle wall is where the names change: the Ashfields just west of it and the Jungle on it, every wall row (one pinned read, W.line('jungle_west'))", bad.length === 0, { bad: bad.slice(0, 8) }); }
 
     // ---- 9. the gates open ----
     { const st0 = quest.stage, dk = window.DRAGON_KILLERS;
@@ -881,7 +935,7 @@
         const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); if (seen[i] || !ok(tileAt(x, y))) return; seen[i] = 1; q.push(i); };
         push(START[0], START[1]);
         for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
-        for (let y = 96; y < MAP_H; y++) for (let x = 0; x <= 99; x++) if (seen[idx(x, y)] && regionAt(x, y).name === 'The Ashfields') ashReached++;
+        for (let y = W.ty(96); y < MAP_H; y++) for (let x = 0; x < wallX(y); x++) if (seen[idx(x, y)] && regionAt(x, y).name === 'The Ashfields') ashReached++;
         quest.stage = st0; dk.closeGate(); F.sim(1, []);
       }
       check(P + "every gate on the way south opens: Warden Brann's at stage 11, and the burnt country is walkable the moment it does",
@@ -890,7 +944,7 @@
     { const was = S.wasReach, pass = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === WARDEN_GATE || t === STEPS;
       const now = new Uint8Array(MAP_W * MAP_H), q = [];
       const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); if (now[i] || !pass(tiles[i])) return; now[i] = 1; q.push(i); };
-      push(CAVE_EXIT_X + 1, 7);
+      push(...port('cave.mouth'));
       for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
       const near = (seen, x, y) => !!seen && (!!(inMap(x, y) && seen[idx(x, y)]) || N4.some(([dx, dy]) => inMap(x + dx, y + dy) && seen[idx(x + dx, y + dy)]));
       let lost = 0, before = 0; const lostAt = [];

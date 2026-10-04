@@ -93,7 +93,8 @@
     const nearBuilding = (x, y) => BUILDINGS.some(b => x >= b.x - 3 && x <= b.x + b.w + 2 && y >= b.y - 3 && y <= b.y + b.h + 2);
     const nearPath = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = api.tileAt(x + dx, y + dy); if (t === T.DIRT || t === T.COBBLE || t === T.SAND || t === T.WATER) return true; } return false; };
     const cands = [];
-    for (let y = 2; y <= 137; y++) for (let x = CAVE_EXIT_X + 4; x <= 197; x++) {
+    const W = ATLAS.world;   // the scan window is open land: a world rect (the spread spec, §9.1)
+    for (let y = W.ty(2); y <= W.ty(137); y++) for (let x = CAVE_EXIT_X + 4; x <= W.tx(197); x++) {
       if (api.tileAt(x, y) !== T.GRASS || near.has(idx(x, y)) || NO_REGION.has(regionAt(x, y).name)) continue;
       if (Math.abs(x - SIGN_TILE.x) < 4 && Math.abs(y - SIGN_TILE.y) < 4) continue;
       if (nearBuilding(x, y) || nearPath(x, y)) continue;

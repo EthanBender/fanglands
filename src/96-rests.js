@@ -33,7 +33,8 @@
     save = function () {
       const r = _save.apply(this, arguments);
       const k = stampKey();
-      if (k && !(typeof title !== 'undefined' && title.active)) { try { localStorage.setItem(k, JSON.stringify({ t: Date.now(), day: player.dayTime || 0 })); } catch (e) { } }
+      // (a save refused by the save lock, a newer world's knight in this slot, writes no stamp either: 72-savelock)
+      if (k && !(typeof title !== 'undefined' && title.active) && !(typeof SAVE_LOCK !== 'undefined' && SAVE_LOCK)) { try { localStorage.setItem(k, JSON.stringify({ t: Date.now(), day: player.dayTime || 0 })); } catch (e) { } }
       return r;
     }; }
   { const _load = load;

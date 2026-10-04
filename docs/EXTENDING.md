@@ -408,6 +408,55 @@ never edit it by hand. `83-townsfolk.js` is the glue.
 - Stone (`look.stone`, the statues) draws every colour in stone with the clock stopped. `HK.portrait` with `o.who`
   draws the person's head and shoulders.
 
+## Coordinates: frames, ports and the world
+
+The overworld is going to grow from 260x180 to 400x280 (the Great Spread; spec in `~/.fanglands/work/spread/spec.md`,
+artefacts and tools in `docs/spread/`). Places move rigidly to new spots and the land between them stretches, so a bare
+map number like `112` will be wrong after the move. Every overworld position is written as a read of the Atlas
+(`src/01-atlas.js`), never as a bare literal:
+
+- **A place's own point** goes through its frame: `const TD = ATLAS.frame('thistledown'); TD.p(112, 33)` gives `[x, y]`,
+  `TD.x(112)` / `TD.y(33)` one axis, `TD.pt({ x, y, ... })`, `TD.pts(list)`, `TD.rect({ x0, y0, x1, y1 })`,
+  `TD.box([x0, y0, x1, y1])` keep their other fields. The numbers you write are TODAY's coordinates (the old map); the
+  frame adds the place's offset. Pixels: `TD.x(112) * TILE`. Loops and comparisons are wrapped by hand:
+  `for (let y = F.y(20); y <= F.y(40); y++)`, `x >= F.x(142)`.
+- **A named point** (a door, a gate, a road end, an NPC's spot) is a port: `ATLAS.port('thistledown.square')`. If the
+  point you need has no port, add one to `PORTS` in `src/01-atlas.js` rather than copying its numbers.
+- **A place's whole box** is `ATLAS.box('deepholm_rock')`. Copies of another file's table (VILLAGE, REGIONS, a rect
+  declared elsewhere) are read from that table, never retyped.
+- **Open land** (the fields, the sea, a scan window, a seam row) is the stretched world: `const W = ATLAS.world;`
+  `W.tx(150)` / `W.ty(40)` give whole tiles, `W.x` / `W.y` reals, `W.ix` / `W.iy` the inverse. World noise and curves
+  are evaluated in OLD coordinates through the inverse (`noise(W.ix(x), W.iy(y))`), so their shapes stretch and stay
+  bit-identical until the spread. A seam that must meet a place's gate goes through its pin:
+  `W.pin('rim', W.y(95), x)` (see `ATLAS.PINS`: rim, gw_steps, giants, jungle_west, river, strait, sea).
+- **A road or path is a track**: read it with `ATLAS.track('road_cave')` (a list of `[x, y]`, each point a port, a
+  place's own point or a world point), never as a literal polyline. A new road goes into `TRACKS` in `src/01-atlas.js`,
+  written the same way (`['port', 'thistledown.west_gate']`, `['thistledown', 84, 32]`, `['w', 60, 70]`). A guard or
+  verge round a road is built from the track itself (every tile within N of it), not from two corners in two frames.
+- **The Ashfields / Jungle wall** (the old x 100 line) is `ATLAS.world.line('jungle_west', y)`: the region split, the
+  Ashfields' east edge, the rim's last column and the burnt band all read it, so they move with the wall's pin.
+- **Which place owns a literal**: the one whose old box holds it. `node tools/anchor-of.mjs 140 80` answers (smallest box
+  wins; an undecided overlap is refused). Something relative to a place belongs to that place even outside its box
+  (the warden's notch, the giants' gap, a guard rect round a building, a road end at a gate). Anything a test asserts
+  by position, a door, an NPC or a named spawn is never "world": give it a port or a frame.
+- **Never wrapped**: sizes, radii, counts, durations, screen pixels, and an instance's own map (any map other than
+  `'over'`). Those go in `docs/spread/literals-allow.json` with a one-line reason when the counter mistakes them for
+  positions.
+- **The gate**: `build.sh` runs `node tools/literals.mjs --gate` over every file listed in `docs/spread/converted.json`.
+  A bare coordinate in a converted file fails the build with "wrap it: ATLAS.frame('<place>') or ATLAS.world". It counts
+  pairs, points, rects, tile calls, `tc(N)`, `N * TILE`, comparisons, a centre after a coordinate pair
+  (`near(x, y, 66, 57, ...)`, `dist(x, y, 140, 76)`) and a distance to a place (`Math.hypot(x - 140, y - 76)`). Run
+  `node tools/literals.mjs src/NN-file.js` to see what it counts. An allow entry with a `literal` must be pinned to its
+  declaration (`"decl": "LAW_ARM_RANGE"`) or its `line`, so it never covers a new position elsewhere in the file.
+- **A new feature file is written in frames from the start** and is added to `docs/spread/converted.json` in the same
+  commit. The gate only reads the files that list names: a new file left off it is not checked at all (until Stage 3's
+  repo-wide gate), so its bare numbers would sit there unseen until the spread moves the land under them. A frame point far outside its own place (past the
+  box + guard + 12) is logged by the strict report (`ATLAS.strict()`), which `tools/headless.js` and
+  `tools/fingerprint.mjs` fail on unless `docs/spread/strict-allow.json` lists it.
+- **Proving nothing moved** (until the spread every frame, the world and every pin are the identity):
+  `./build.sh && node tools/fingerprint.mjs index.html --diff docs/spread/baseline-fingerprint.json` must say
+  identical, and `git diff --exit-code online/src/atlas.json` must be clean.
+
 ## Self-test
 
 Register checks: `HOOKS.selfTest.push((check, F, h) => { ... check('name', boolean, infoObject); ... })`.
