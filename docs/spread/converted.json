@@ -69,5 +69,6 @@
 "09-render.js",
 "43-settings.js",
 "44-wiki.js",
-"72-deviceknights.js"
+"72-deviceknights.js",
+"72-savelock.js"
 ]
