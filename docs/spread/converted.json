@@ -63,5 +63,6 @@
 "91-cloudkingdom.js",
 "91-royalmine.js",
 "01-items.js",
-"07-update.js"
+"07-update.js",
+"08-draw.js"
 ]
