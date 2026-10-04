@@ -15905,7 +15905,9 @@ window.PLACE_KIT = PLACE_KIT;
   // Its size, the arrival, the sentinels, the wisps and where the Queen and Halcyon stand all come from the plan.
   const PLAN = window.AERIE_PLAN, SP = PLAN.SPOTS;
   const AER = { id: 'aerie', name: 'Aerie', sub: 'The city above the clouds', w: PLAN.W, h: PLAN.H };
-  const SHRINE_T = { x: 62, y: 6 }, STEP_T = { x: 62, y: 7 }; // east of the Agility cliff course (x 46–62), which carves the quarry's north edge
+  // east of the Agility cliff course (x 46–62), which carves the quarry's north edge: the ports quarry.shrine and its step
+  const portPt = id => { const [x, y] = ATLAS.port(id); return { x, y }; };
+  const SHRINE_T = portPt('quarry.shrine'), STEP_T = portPt('quarry.shrine_step');
   const ENTRY = SP.entry.slice(), LEAP_T = SP.leap.slice();
   // the old great hall and Halcyon's platform are buildings in the city now: the keep and the sky forge. Their rects are kept
   // under the old names for anything that reads them; nothing here paints them any more.
@@ -16232,7 +16234,7 @@ window.PLACE_KIT = PLACE_KIT;
     drain(); F.tp(STEP_T.x, STEP_T.y); F.face(SHRINE_T.x, SHRINE_T.y); F.press('KeyE'); F.sim(2, []);
     check('sky: E on the shrine without the flute — the wind is silent', !INSTANCES.active() && !!dialog.cur && /wind is silent/.test(dialog.cur.text), { text: dialog.cur && dialog.cur.text, inst: INSTANCES.active() });
     // Old Wren gives the flute once the silk quest is done
-    { quest.wren = 'done'; makeRoom(3); drain(); F.tp(30, 81); const r = F.talk('wren'); F.sim(2, []);
+    { quest.wren = 'done'; makeRoom(3); drain(); F.tp(...ATLAS.frame('wren').p(30, 81)); const r = F.talk('wren'); F.sim(2, []);
       check('sky: Old Wren (silk done) tells of the Song of Above and gives the wind flute; quest active, map target on the shrine', typeof r === 'number' && q.stage === 1 && countItem('wind_flute') === 1 && activeQuests().includes('sky') && /flute/.test(questText('sky')) && mapTargets().some(t => t.id === 'sky'), { r, stage: q.stage, flute: countItem('wind_flute'), who: dialog.cur && dialog.cur.who }); }
     // the storm under Aerie (66-storm) is the way up now: the flute alone lifts you into it, not over it
     { drain(); if (window.STORM) quest.storm = { beaten: false, taught: true, bolts: 0, dodged: 0, hits: 0, kills: 0 };

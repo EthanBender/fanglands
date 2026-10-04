@@ -354,5 +354,7 @@
   {"file": "36-aerieplan.js", "decl": "WALKERS", "reason": "instance-local (aerie): the walkers' routes in the city"},
   {"file": "36-aerieplan.js", "decl": "FLIERS", "reason": "instance-local (aerie): the fliers' routes over the city"},
   {"file": "36-aerieplan.js", "decl": "RUN_OFFSET", "reason": "instance-local (aerie): the Spire Run's offset inside the city map"},
-  {"file": "36-aerieplan.js", "literal": "[11, 61]", "line": 211, "reason": "instance-local (aerie): the city's north and south curtain-wall rows, where the banners hang"}
+  {"file": "36-aerieplan.js", "literal": "[11, 61]", "line": 211, "reason": "instance-local (aerie): the city's north and south curtain-wall rows, where the banners hang"},
+  {"file": "36-skycity.js", "literal": "6 * TILE", "decl": "sight", "reason": "the sky sentinel sees 6 tiles: a distance, not a position"},
+  {"file": "36-skycity.js", "literal": "TILE * 3", "decl": "drawSky", "reason": "drawing: a cloud puff drifts across 3 tiles of pixels, not a map coordinate"}
 ]
