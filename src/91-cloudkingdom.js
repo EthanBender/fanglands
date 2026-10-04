@@ -80,7 +80,7 @@
   // =========================================================================
   // 2. paint: ROWS -> tile ids, cell for cell (no rnd, no Math.random), and what each garden or prop cell is
   // =========================================================================
-  const KIND_NAMES = ['', 'hedge', 'tree', 'planter', 'bench', 'pew', 'lamp', 'throne', 'well'];
+  const KIND_NAMES = ['', 'hedge', 'tree', 'planter', 'bench', 'pew', 'lamp', 'throne', 'well', 'hearth', 'bellows', 'anvil', 'oven', 'rack', 'stall', 'crate', 'barrel'];
   const KIND_CODE = {}; KIND_NAMES.forEach((n, i) => { if (n) KIND_CODE[n] = i; });
   const KIND = new Uint8Array(W * H);
   const TID = {};
@@ -167,8 +167,15 @@
     { id: 'merriweather', name: 'Merriweather', at: SP.merriweather, wing: 0.95, look: { tunic: '#9a5a3a', hair: '#c9783a', apron: true, shoulder: '#d9b36a', skin: '#f2d0b5' } },
     { id: 'orla', name: 'Warden Orla', at: SP.orla, wing: 1.05, look: { tunic: '#c9d6ea', hair: '#e8d9a0', woman: true, helm: '#dfe6f0', spear: true, shoulder: '#9ab0d0', skin: '#f0d8c0' } },
     { id: 'brisk', name: 'Warden Brisk', at: SP.brisk, wing: 1.05, look: { tunic: '#c9d6ea', hair: '#5a3a1e', helm: '#dfe6f0', spear: true, shoulder: '#9ab0d0', skin: '#e8c0a0' } },
+    // the Windward Market (the polish): a seller behind each stall, under the middle of its canopy (dx), and two shoppers
+    { id: 'pippa', name: 'Pippa the fruit seller', at: SP.marketFolk[0], dx: 24, wing: 0.95, line: 'Sky-apples and cloudberries! Hauled up on the rope this morning. Smell them. Go on.', look: { tunic: '#d9534f', hair: '#6a3a1e', woman: true, apron: true, shoulder: '#f5c542', skin: '#f2d6bf' } },
+    { id: 'maudie', name: 'Maudie the weaver', at: SP.marketFolk[1], dx: 24, wing: 1.0, line: 'Wing-cloth. So light that if you drop it, it falls up. Hold on tight.', look: { tunic: '#5b9be0', hair: '#c9c9c9', woman: true, shoulder: '#f5e6a8', skin: '#f0d8c0' } },
+    { id: 'plume', name: 'Old Plume the feather seller', at: SP.marketFolk[2], dx: 24, wing: 1.15, line: 'Every feather here fell off somebody. I asked first. Mostly.', look: { tunic: '#e8b84a', hair: '#f4f1ea', beard: true, shoulder: '#ffffff', skin: '#e8c8a8' } },
+    { id: 'crockett', name: 'Crockett the potter', at: SP.marketFolk[3], dx: 24, wing: 0.9, line: 'Tap a pot. Hear it ring? Fired on cloud-fire. It will ring until Tuesday.', look: { tunic: '#5aa86a', hair: '#3a2a1a', apron: true, shoulder: '#c9a36a', skin: '#e0b894' } },
+    { id: 'hazel', name: 'Hazel', at: SP.marketFolk[4], wing: 0.9, line: 'I came for one apple. Now I have eleven things, and no apple.', look: { tunic: '#b07ad9', hair: '#f0c060', woman: true, shoulder: '#ffffff', skin: '#f5dcc8' } },
+    { id: 'wim', name: 'Wim', at: SP.marketFolk[5], wing: 0.85, line: 'My wings are moulting, so I am buying feathers to put back in. Do not tell anyone.', look: { tunic: '#7a8a9a', hair: '#8a5a2a', shoulder: '#f5c542', skin: '#f2d0b5' } },
   ];
-  for (const p of PEOPLE) { p.x = p.at[0]; p.y = p.at[1]; p.px = tc(p.x); p.py = tc(p.y); p.facing = { x: 0, y: 1 }; p.b = PLAN.inBuilding(p.x, p.y); p.look.who = p.id; p.look.wing = p.wing; }
+  for (const p of PEOPLE) { p.x = p.at[0]; p.y = p.at[1]; p.px = tc(p.x) + (p.dx || 0); p.py = tc(p.y); p.facing = { x: 0, y: 1 }; p.b = PLAN.inBuilding(p.x, p.y); p.look.who = p.id; p.look.wing = p.wing; }
   // Lark: where she stands depends on her story (the maze, then at the knight's heel, then the plaza). She is this
   // knight's own: online, every knight has their own Lark, in their own place in the story.
   const LARK = { id: 'lark', name: 'Lark', px: tc(SP.larkMaze[0]), py: tc(SP.larkMaze[1]), facing: { x: 0, y: 1 }, mode: 'maze', trail: [], bubble: null,
@@ -342,6 +349,7 @@
       case 'orla': say('The Queen will see you. Walk up the red carpet, and do not touch the throne.', who); return;
       case 'brisk': say('I have stood at this door for twenty years. Nobody has ever tried to touch the throne. Please do not be the first.', who); return;
       case 'lark': return talkLark();
+      default: if (p.line) say(p.line, who); return;
     }
   }
   const onBalcony = () => { const a = ptile(), b = SP.balcony; return a.tx >= b.x0 && a.tx <= b.x1 && a.ty >= b.y0 && a.ty <= b.y1; };
@@ -481,8 +489,24 @@
     lamp: ['A sky lamp', `A sky lamp: cloud-fire in glass. Bellweather lights all ${LAMPS_N} of them every evening.`],
     throne: ['The Sky Throne', 'The Sky Throne. The Queen stands in front of it to talk to people. She says a throne is for feasts.'],
     well: ['The Wishing Well', 'The Wishing Well. It goes all the way down through the cloud. Nobody has ever heard a coin land.'],
+    hearth: ['The forge hearth', 'The forge hearth. Halcyon burns real fire in it, carried up from below: dragon scale only laughs at cloud-fire.'],
+    bellows: ['The bellows', 'A great leather bellows. One push and the forge fire roars.'],
+    anvil: ['The cloud-anvil', 'The cloud-anvil: white sky-stone that rings like a bell. Talk to Master Halcyon to forge on it.'],
+    oven: ['The great oven', 'The great oven, glowing with cloud-fire. Tamsin says nothing in it has ever burnt.'],
+    rack: ['A bread rack', 'A rack of loaves, still warm. The honey buns are on the top shelf, out of reach of small hands.'],
+    crate: ['A crate', 'A crate of goods, hauled up from the Fanglands on a rope.'],
+    barrel: ['A barrel', 'A barrel of rainwater, caught fresh this morning from a passing cloud.'],
   };
-  const TAP_KIND = { hedge: 'Hedge', tree: 'Tree', planter: 'Planter', bench: 'Bench', pew: 'Pew', lamp: 'Lamp', throne: 'Throne', well: 'Well' };
+  const TAP_KIND = { hedge: 'Hedge', tree: 'Tree', planter: 'Planter', bench: 'Bench', pew: 'Pew', lamp: 'Lamp', throne: 'Throne', well: 'Well',
+    hearth: 'Hearth', bellows: 'Bellows', anvil: 'Anvil', oven: 'Oven', rack: 'Bread rack', stall: 'Stall', crate: 'Crate', barrel: 'Barrel' };
+  // the four market stalls, each two cells wide (88's reed-stall cell 'k' and the 'm' cell east of it): what each one sells
+  const STALL_INFO = [
+    { goods: 'fruit', name: 'The fruit stall', canopy: '#e0645a', line: 'Sky-apples, cloudberries and pears, hauled up from the orchards below on a rope.' },
+    { goods: 'cloth', name: 'The cloth stall', canopy: '#4f86d0', line: 'Bolts of wing-cloth in sky blue, gold and rose, woven so light it floats.' },
+    { goods: 'feathers', name: 'The feather stall', canopy: '#e0a93a', line: 'Feathers in jars: white, gold and grey, and one blue one that is not for sale.' },
+    { goods: 'pots', name: 'The pot stall', canopy: '#4f9a62', line: 'Pots, jugs and bowls of white clay, fired on cloud-fire. They ring when you tap them.' },
+  ];
+  const stallAt = (x, y) => { const i = SP.stalls.findIndex(([sx, sy]) => sy === y && (x === sx || x === sx + 1)); return i >= 0 ? Object.assign({ i }, STALL_INFO[i]) : null; };
   const FOUNTAINS = SP.fountains.map(f => Object.assign({}, f, f.id === 'royal'
     ? { name: 'The Royal Fountain', line: 'The Royal Fountain. The water falls up as much as it falls down.' }
     : { name: 'The Market Fountain', line: 'The Market Fountain. The statue is the first wingwright, holding the first letter.' }));
@@ -543,7 +567,8 @@
   function lineFor(t, x, y) {
     if (t === FOUNTAIN) { const f = fountainAt(x, y); return f ? [f.name, f.line, f] : null; }
     if (t === POND) return ['The Mirror Pond', POND_LINE];
-    if (t === GARDEN || t === PROP) { const k = kindAt(x, y); return k && KIND_LINE[k] ? [KIND_LINE[k][0], KIND_LINE[k][1]] : null; }
+    if (t === GARDEN || t === PROP) { const k = kindAt(x, y); if (k === 'stall') { const s = stallAt(x, y); return s ? [s.name, s.line] : null; } return k && KIND_LINE[k] ? [KIND_LINE[k][0], KIND_LINE[k][1]] : null; }
+    if (t === T.WIND_STALL) { const s = stallAt(x, y); return s ? [s.name, s.line] : null; }
     if (t === SPIRE) { const s = spireAt(x, y); return s ? [s.name, s.line] : null; }
     if (t === TOWER) return ['A wall tower', TOWER_LINE];
     if (t === WALL) return ['The city wall', WALL_LINE];
@@ -552,7 +577,12 @@
     return null;
   }
   // E: a standing person or Lark first (unshifted, ahead of every other feature's E; false unless one of ours is in front) ...
-  HOOKS.use.unshift(() => { const p = inFront(); if (!p) return false; talk(p); return true; });
+  // (a market stall's west cell is 88's reed-stall tile: its line is the stall's, said here before 88's own)
+  HOOKS.use.unshift((t, tx, ty) => {
+    const p = inFront(); if (p) { talk(p); return true; }
+    if (inside() && t === T.WIND_STALL) { const l = lineFor(t, tx, ty); if (l) { say(l[1], l[0]); return true; } }
+    return false;
+  });
   // ... then the kingdom's own tiles and the gold updraft stones (pushed: 36 and 88 have had their turn, and 88's
   // rideDraft answers false for a stone that is not one of its six) ...
   HOOKS.use.push((t, tx, ty) => {
@@ -572,6 +602,7 @@
       if (p && inside() && (p.kind === 'use' || p.kind === 'walk' || p.kind === 'wall')) {
         const t = p.t;
         if (t === GARDEN || t === PROP) { const k = kindAt(p.tx, p.ty); if (k) return TAP_KIND[k]; }
+        if (t === T.WIND_STALL && stallAt(p.tx, p.ty)) return 'Stall';
         if (t === FOUNTAIN) { const f = fountainAt(p.tx, p.ty); if (f) return f.name.replace(/^The /, ''); }
         if (t === SPIRE) { const s = spireAt(p.tx, p.ty); if (s) return s.name.replace(/^The /, ''); }
         if (t === GATE) { const g = gateAt(p.tx, p.ty); if (g) return g.name.replace(/^The /, ''); }
@@ -755,7 +786,7 @@
   // =========================================================================
   const SS = 2;                                   // patterns and sprites are drawn at 2x, like the core's textures
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const STATS = { frames: 0, curtain: 0, drawn: {}, kerbs: 0, parapets: 0, gates: 0, fountains: 0, awnings: 0, banners: 0, pennants: 0, spires: 0, towers: 0, items: 0, chunks: 0, chunksPainted: 0 };
+  const STATS = { frames: 0, curtain: 0, drawn: {}, kerbs: 0, parapets: 0, gates: 0, fountains: 0, awnings: 0, banners: 0, pennants: 0, spires: 0, towers: 0, items: 0, chunks: 0, chunksPainted: 0, roomClips: 0 };
   const CACHE = {};
   function sprite(key, w, h, ax, ay, fn) {
     let s = CACHE[key];
@@ -800,7 +831,7 @@
   const codeFor = (c, x, y) => (c === '=' || c === 'G') ? (PLAN.roadAt(x, y) ? G_ROAD : inPlaza(x, y) ? G_PLAZA : G_PAVE) : c === '"' ? G_LAWN : c === '*' ? G_BLOOM
     : (c === '_' || c === 'a' || c === 'q' || c === 'c') ? G_MARBLE : c === 'C' ? G_CWALL : c === 'H' ? G_HWALL : c === 'R' ? G_RUG : c === 'D' ? G_DOOR
     : c === '+' ? G_BRIDGE : c === ',' ? G_CLOUD : c === 'u' ? G_UNDER : G_NONE;
-  const OUR_GROUND = '="*G_aqcCHRD+', OUR_PROPS = '#TSFohtpblYw', THEIR_PROPS = 'sknxr^UPOzfLNg';
+  const OUR_GROUND = '="*G_aqcCHRD+', OUR_PROPS = '#TSFohtpblYwevAVKmXB', THEIR_PROPS = 'sknxr^UPOzfLNg';
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const c = PLAN.ROWS[y][x], i = y * W + x; let code = G_NONE;
     VAR[i] = Math.floor(hash(x, y) * 3);
@@ -1016,6 +1047,8 @@
       if (code === G_BRIDGE) drawBridgeRails(g, tx, ty, x, y);
       if (code === G_DOOR) { drawDoorProp(g, tx, ty, false); g.strokeStyle = '#e8c25a'; g.lineWidth = 2; g.strokeRect(x + 7, y + 1, 34, 46); }
       const st = STEPS[tx + ',' + ty]; if (st !== undefined) drawDoorstep(g, tx, ty, st, false);
+      // the shadow a west or east wall throws on the ground east of it (the light comes from the west)
+      if (glyph(tx - 1, ty) === '#' && ty !== 11 && ty !== 61) { const sh = g.createLinearGradient(x + 6, 0, x + 34, 0); sh.addColorStop(0, 'rgba(40,60,100,0.34)'); sh.addColorStop(1, 'rgba(40,60,100,0)'); g.fillStyle = sh; g.fillRect(x + 6, y, 28, 48); }
     }
   }
   // a street's edge, on every side where the next cell is not street (nor a gate or a bridge the street runs on to):
@@ -1199,20 +1232,67 @@
     blit(g, sprite('wallH' + (tx % 2), 48, 68, 0, 10, cg => paintWallH(cg, tx % 2)), tx * TILE, ty * TILE);
     if (BANNERS.has(tx + ',' + ty)) drawBanner(g, tx * TILE + 24, ty * TILE + 16, 38, 16);
   }
-  function paintWallV(g, cap) {
-    g.fillStyle = 'rgba(40,60,100,0.14)'; g.fillRect(44, 0, 9, 48);
-    g.fillStyle = '#d8cebb'; g.fillRect(4, 0, 40, 48);
-    g.fillStyle = '#e9e2d4'; g.fillRect(11, 0, 26, 48);
-    g.fillStyle = 'rgba(145,130,105,0.22)'; for (let r = 0; r < 4; r++) g.fillRect(11, r * 12 + 11, 26, 1);
-    for (let k = 0; k < 4; k += 2) {
-      const my = k * 12;
-      for (const ex of [4, 36]) { g.fillStyle = '#e1d8c6'; g.fillRect(ex, my - 6, 8, 12); g.fillStyle = '#f5c542'; g.fillRect(ex, my - 7, 8, 2); g.fillStyle = '#d8d0c0'; g.fillRect(ex, my + 6, 8, 4); }
+  // The west and east runs (the polish, 2026-10-03: they were a pale strip with merlons lined up on both edges, rung for
+  // rung, and read as a ladder or a walkway). Now a run is drawn as a wall seen from above, in the north wall's own
+  // colours: a brick face down each side in the tan of the north wall's face (lit on the west, in shade on the east, darker
+  // towards the foot, so the run stands up off the ground), and on top a narrow paved wall-walk between a crenellated
+  // parapet on the sky side (raised merlons with gold caps every 24 px, lined up with the world, each throwing a shadow on
+  // the walk) and a low plain parapet on the city side. Nothing repeats straight across the run (the flagstone joints are
+  // staggered and the merlons stand on one side only), and the ground east
+  // of the wall lies in its shadow (drawGroundRow). Where a run ends over open ground its south face shows.
+  const WV = { face: 13, over: 6, merlon: 12, every: 24 };
+  function paintWallV(g, cap, outerLeft, v) {
+    const mirror = !outerLeft;
+    if (mirror) { g.translate(48, 0); g.scale(-1, 1); }
+    // the light comes from the west: on the west run the sky side is lit, on the east run (mirrored) the city side is
+    const litOuter = outerLeft, F = WV.face;
+    const brick = (x, w, lit) => {
+      const gr = g.createLinearGradient(x, 0, x + w, 0);
+      const a = lit ? '#e2d7c1' : '#bfb196', b = lit ? '#cfc2a8' : '#9d8f74';
+      if (x < 24) { gr.addColorStop(0, b); gr.addColorStop(1, a); } else { gr.addColorStop(0, a); gr.addColorStop(1, b); }
+      g.fillStyle = gr; g.fillRect(x, 0, w, 48);
+      g.fillStyle = 'rgba(120,105,80,0.35)';
+      for (let r = 0; r < 4; r++) { const yy = r * 12; g.fillRect(x, yy + 11, w, 1); g.fillRect(x + ((r + v) % 2 ? 2 : w - 3), yy, 1, 11); }
+    };
+    // the two faces
+    const O = WV.over;
+    brick(-O, F, litOuter); brick(48 + O - F, F, !litOuter);
+    g.fillStyle = 'rgba(60,50,40,0.45)'; g.fillRect(-O - 1, 0, 1, 48); g.fillRect(48 + O, 0, 1, 48);
+    // the top: the wall-walk in pale flags, joints staggered by the variant
+    const t0 = F - O, t1 = 48 + O - F;
+    g.fillStyle = 'rgba(60,50,40,0.3)'; g.fillRect(t0 - 1, 0, 1, 48); g.fillRect(t1, 0, 1, 48);
+    g.fillStyle = '#efe8da'; g.fillRect(t0, 0, t1 - t0, 48);
+    g.fillStyle = 'rgba(150,135,110,0.32)';
+    const joints = v ? [7, 19, 33, 44] : [3, 15, 27, 40];
+    joints.forEach((jy, k) => g.fillRect(t0 + 10 + (k % 2 ? 8 : 0), jy, 10, 1));
+    g.fillRect(t0 + 19, 0, 1, 48);
+    // a gold string course along the foot of the merlons (as on the north wall)
+    g.fillStyle = '#e8c25a'; g.fillRect(t0 + 9, 0, 1.5, 48);
+    // the city side: a low plain parapet, lit along its top, its inner edge in shade (no gold here: gold rails on both
+    // sides of the merlons read as a ladder)
+    g.fillStyle = '#e6decd'; g.fillRect(t1 - 7, 0, 7, 48);
+    g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillRect(t1 - 7, 0, 2, 48);
+    g.fillStyle = 'rgba(90,80,60,0.28)'; g.fillRect(t1 - 8, 0, 1, 48);
+    // the sky side: the crenels (the low gaps, in shade) and the merlons, every other 12 px, raised, with a gold cap;
+    // each merlon throws a short shadow on the walk
+    g.fillStyle = '#c9bea8'; g.fillRect(t0, 0, 9, 48);
+    for (const my of [0, 24]) {
+      g.fillStyle = 'rgba(60,70,100,0.22)'; g.fillRect(t0 + 9, my + 2, 6, WV.merlon);
+      g.fillStyle = '#f4efe5'; g.fillRect(t0 - 1, my - 3, 11, WV.merlon);
+      g.fillStyle = '#d6cbb6'; g.fillRect(t0 - 1, my + WV.merlon - 3, 11, 3);
+      g.fillStyle = '#f5c542'; g.fillRect(t0 - 1, my - 4, 11, 2);
     }
-    if (cap) { g.fillStyle = '#e2dbcd'; g.fillRect(4, 34, 40, 14); g.fillStyle = '#e8c25a'; g.fillRect(4, 33, 40, 2); g.fillStyle = 'rgba(40,60,100,0.15)'; g.fillRect(4, 48, 40, 8); }
+    if (cap) {
+      // the run's south face where it ends over open ground: brick courses and a gold string course, and its shadow
+      g.fillStyle = 'rgba(40,60,100,0.16)'; g.fillRect(-O, 48, 48 + 2 * O, 8);
+      g.fillStyle = '#dad0bd'; g.fillRect(-O, 26, 48 + 2 * O, 22);
+      g.fillStyle = 'rgba(145,130,105,0.32)'; for (let r = 0; r < 2; r++) { const yy = 27 + r * 11; g.fillRect(-O, yy + 10, 48 + 2 * O, 1); for (let c = 0; c < 3; c++) g.fillRect(-O + (r % 2 ? 12 : 0) + c * 24, yy, 1, 10); }
+      g.fillStyle = '#e8c25a'; g.fillRect(-O, 24, 48 + 2 * O, 3);
+    }
   }
   function drawWallV(g, tx, ty) {
-    const cap = !wallish(tx, ty + 1);
-    blit(g, sprite('wallV' + (cap ? 1 : 0), 56, 64, 0, 8, cg => paintWallV(cg, cap)), tx * TILE, ty * TILE);
+    const cap = !wallish(tx, ty + 1), outerLeft = tx < W / 2, v = ty % 2;
+    blit(g, sprite('wallV' + (cap ? 1 : 0) + (outerLeft ? 'w' : 'e') + v, 64, 64, 8, 8, cg => paintWallV(cg, cap, outerLeft, v)), tx * TILE, ty * TILE);
   }
 
   // ---------- the towers: nineteen, each with a pennant ----------
@@ -1558,8 +1638,17 @@
     pew: () => sprite('pew', 48, 28, 24, 22, paintPew),
     throne: () => sprite('throne', 100, 100, 50, 88, paintThrone),
     well: () => sprite('well', 64, 80, 32, 72, paintWell),
+    bellows: () => sprite('bellows', 64, 56, 32, 46, paintBellows),
+    anvil: () => sprite('anvil', 72, 70, 36, 60, paintAnvil),
+    rack: () => sprite('rack', 48, 80, 24, 74, paintRack),
+    crate: () => sprite('crate', 48, 44, 22, 38, paintCrate),
+    barrel: () => sprite('barrel', 44, 50, 20, 44, paintBarrel),
   };
   function drawKind(g, k, tx, ty) {
+    // the hearth and the oven are two cells wide: drawn once, from the west cell; a stall's east cell is drawn with its stall
+    if (k === 'hearth') { if (kindAt(tx - 1, ty) !== 'hearth') drawHearth(g, tx, ty); return; }
+    if (k === 'oven') { if (kindAt(tx - 1, ty) !== 'oven') drawOven(g, tx, ty); return; }
+    if (k === 'stall') return;
     if (k === 'hedge') return drawHedge(g, tx, ty);
     if (k === 'tree') return drawTree(g, tx, ty);
     if (k === 'lamp') return drawLamp(g, tx, ty);
@@ -1607,12 +1696,53 @@
     bowl(g, 0, -70, 12, 4.5);
     g.fillStyle = '#f5c542'; g.beginPath(); g.arc(0, -78, 4.5, 0, 7); g.fill(); goldWing(g, 2, -84, 9); g.save(); g.translate(0, -84); g.scale(-1, 1); goldWing(g, 2, 0, 9); g.restore();
   }
+  // the first wingwright, holding the first letter up to the wind (the polish, 2026-10-03: it was a white box with hair-line
+  // wings and read as nothing; now a winged figure in pale blue-grey stone with a soft outline, so it stands out against the
+  // white basin: a round gold-banded plinth, a slim open robe, wings spread wide and up feather by feather, hair bound up,
+  // and, in the game's own way of drawing people, no arms: two hands float up beside the head and hold the letter high)
   function paintWingwright(g) {
-    // the first wingwright, holding the first letter
-    g.fillStyle = '#e6dfd1'; g.fillRect(-12, -30, 24, 30); g.fillStyle = '#e8c25a'; g.fillRect(-13, -31, 26, 3);
-    for (const s of [-1, 1]) { g.save(); g.translate(0, -58); g.scale(s, 1); g.fillStyle = '#f7f4ee'; g.beginPath(); g.moveTo(4, 0); g.quadraticCurveTo(22, -16, 28, -34); g.quadraticCurveTo(16, -18, 6, 10); g.closePath(); g.fill(); g.strokeStyle = 'rgba(160,150,130,0.5)'; g.lineWidth = 1; g.stroke(); g.restore(); }
-    g.fillStyle = '#f2eee6'; g.beginPath(); g.ellipse(0, -44, 8, 14, 0, 0, 7); g.fill(); g.beginPath(); g.arc(0, -64, 6, 0, 7); g.fill();
-    g.fillStyle = '#fffaf0'; g.fillRect(5, -58, 10, 7); g.strokeStyle = '#c9a23a'; g.lineWidth = 1; g.strokeRect(5, -58, 10, 7); g.beginPath(); g.moveTo(5, -58); g.lineTo(10, -54); g.lineTo(15, -58); g.stroke();
+    const STONE = '#d9dfe9', LIT = '#f1f4f8', SHADE = '#aab4c5', LINE = '#5f6a80';
+    const ol = (w) => { g.strokeStyle = LINE; g.lineWidth = w || 1.2; g.stroke(); };
+    // the plinth, standing in the water
+    g.fillStyle = 'rgba(40,60,100,0.25)'; g.beginPath(); g.ellipse(5, -1, 22, 6, 0, 0, 7); g.fill();
+    g.fillStyle = '#ccd3de'; g.beginPath(); g.moveTo(-16, -22); g.lineTo(16, -22); g.lineTo(16, -2); g.quadraticCurveTo(0, 4, -16, -2); g.closePath(); g.fill(); ol();
+    g.fillStyle = SHADE; g.beginPath(); g.moveTo(5, -22); g.lineTo(16, -22); g.lineTo(16, -2); g.quadraticCurveTo(10, 1, 5, 1.5); g.closePath(); g.fill();
+    g.fillStyle = '#e8c25a'; g.fillRect(-16, -13, 32, 3);
+    g.fillStyle = STONE; g.beginPath(); g.ellipse(0, -22, 16, 5, 0, 0, 7); g.fill(); ol();
+    // the wings, behind the body: spread wide and lifted, a rounded leading edge, a scalloped trailing edge of long
+    // feathers, and three rows of feather lines
+    for (const sd of [-1, 1]) {
+      g.save(); g.translate(sd * 5, -62); g.scale(sd, 1);
+      g.beginPath(); g.moveTo(0, -2);
+      g.quadraticCurveTo(14, -30, 40, -34);
+      const tips = [[42, -26], [41, -16], [37, -7], [31, 1], [23, 7], [14, 11], [6, 13]];
+      let px = 40, py = -34;
+      for (const [tx, ty] of tips) { g.quadraticCurveTo((px + tx) / 2 + 4, (py + ty) / 2 + 3, tx, ty); px = tx; py = ty; }
+      g.lineTo(0, 8); g.closePath();
+      g.fillStyle = STONE; g.fill(); ol(1.3);
+      // the covert feathers near the shoulder, lighter, and the feather lines
+      g.fillStyle = LIT; g.beginPath(); g.moveTo(0, -2); g.quadraticCurveTo(12, -24, 30, -28); g.quadraticCurveTo(20, -14, 6, 4); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(111,122,144,0.7)'; g.lineWidth = 0.9;
+      for (const [tx, ty] of tips.slice(0, 6)) { g.beginPath(); g.moveTo(tx * 0.45, ty * 0.35 - 6); g.lineTo(tx - 2, ty - 1); g.stroke(); }
+      g.restore();
+    }
+    // the slim open robe: an outer robe open down the front over a plain under-robe, falling to the plinth
+    g.fillStyle = STONE; g.beginPath(); g.moveTo(-7, -66); g.lineTo(7, -66); g.quadraticCurveTo(10, -45, 13, -24); g.lineTo(-13, -24); g.quadraticCurveTo(-10, -45, -7, -66); g.closePath(); g.fill(); ol();
+    g.fillStyle = SHADE; g.beginPath(); g.moveTo(-2.5, -60); g.lineTo(2.5, -60); g.lineTo(4.5, -24); g.lineTo(-4.5, -24); g.closePath(); g.fill(); ol(0.8);
+    g.strokeStyle = 'rgba(111,122,144,0.55)'; g.lineWidth = 0.9; for (const fx of [-9, 8]) { g.beginPath(); g.moveTo(fx * 0.55, -56); g.quadraticCurveTo(fx * 0.9, -40, fx * 1.25, -26); g.stroke(); }
+    g.fillStyle = '#e8c25a'; g.fillRect(-7, -54, 14, 2.2);
+    // the head, looking up at the letter, hair bound up in a knot
+    g.fillStyle = STONE; g.beginPath(); g.arc(0, -73, 7.5, 0, 7); g.fill(); ol();
+    g.fillStyle = SHADE; g.beginPath(); g.arc(0, -75, 7.5, Math.PI * 1.05, Math.PI * 1.95); g.closePath(); g.fill();
+    g.fillStyle = STONE; g.beginPath(); g.arc(0, -83, 4, 0, 7); g.fill(); ol(1);
+    g.fillStyle = LINE; g.beginPath(); g.arc(-2.6, -72.5, 0.9, 0, 7); g.arc(2.6, -72.5, 0.9, 0, 7); g.fill();
+    // the two floating hands, and the letter they hold up: white, sealed in gold
+    for (const hx of [-10, 10]) { g.fillStyle = LIT; g.beginPath(); g.ellipse(hx, -94, 4.2, 5, hx < 0 ? 0.4 : -0.4, 0, 7); g.fill(); ol(1.1); }
+    g.save(); g.translate(0, -101); g.rotate(-0.06);
+    g.fillStyle = '#fffdf6'; g.fillRect(-11, -7, 22, 14); g.strokeStyle = '#a58a3a'; g.lineWidth = 1.2; g.strokeRect(-11, -7, 22, 14);
+    g.beginPath(); g.moveTo(-11, -7); g.lineTo(0, 1.5); g.lineTo(11, -7); g.stroke();
+    g.fillStyle = '#e8c25a'; g.beginPath(); g.arc(0, 1.5, 3, 0, 7); g.fill(); g.strokeStyle = '#a58a3a'; g.lineWidth = 0.8; g.stroke();
+    g.restore();
   }
   function drawFountain(g, f) {
     const cx = (f.x0 + 1.5) * TILE, cy = (f.y0 + 1.5) * TILE, t = time, R = FR, K = FK, royal = f.id === 'royal';
@@ -1627,7 +1757,7 @@
       // the jet, and it arcs up and back
       for (let k = 0; k < 4; k++) { const ph = (t * 1.3 + k / 4) % 1; g.strokeStyle = `rgba(230,246,255,${(0.7 * (1 - ph)).toFixed(3)})`; g.lineWidth = 2.2; g.beginPath(); g.moveTo(cx, cy - 86); g.quadraticCurveTo(cx + (k - 1.5) * 10, cy - 116 - ph * 8, cx + (k - 1.5) * 18, cy - 90 + ph * 12); g.stroke(); }
     } else {
-      blit(g, sprite('wingwright', 70, 104, 35, 100, paintWingwright), cx, cy);
+      blit(g, sprite('wingwright2', 130, 140, 65, 124, paintWingwright), cx, cy);
       // four spouts
       for (let k = 0; k < 4; k++) { const a = Math.PI / 4 + k * Math.PI / 2, sx = cx + Math.cos(a) * 12, sy = cy - 22 + Math.sin(a) * 5, ex = cx + Math.cos(a) * 42, ey = cy + Math.sin(a) * 24; for (let j = 0; j < 2; j++) { const ph = (t * 1.5 + j * 0.5 + k * 0.2) % 1; g.strokeStyle = `rgba(225,244,255,${(0.75 - ph * 0.4).toFixed(3)})`; g.lineWidth = 2.2; g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + ex) / 2, sy - 18 - ph * 4, ex, ey); g.stroke(); } }
     }
@@ -1660,15 +1790,271 @@
     // lily pads, two in flower
     for (let k = 0; k < 7; k++) { const lx = x + 28 + hash(k, 21) * (w - 56), ly = y + 26 + hash(k, 43) * (h - 52), bob = Math.sin(t * 1.2 + k) * 1.2; g.fillStyle = '#4f9a45'; g.beginPath(); g.moveTo(lx, ly + bob); g.arc(lx, ly + bob, 9, 0.35, Math.PI * 2 - 0.1); g.closePath(); g.fill(); g.fillStyle = 'rgba(160,220,120,0.5)'; g.beginPath(); g.arc(lx - 2, ly + bob - 2, 4, 0, 7); g.fill(); if (k % 3 === 0) { g.fillStyle = '#ffb3cf'; for (let q = 0; q < 5; q++) { const a = q / 5 * Math.PI * 2; g.beginPath(); g.ellipse(lx + Math.cos(a) * 3, ly + bob - 3 + Math.sin(a) * 2, 3, 1.8, a, 0, 7); g.fill(); } g.fillStyle = '#ffe066'; g.beginPath(); g.arc(lx, ly + bob - 3, 1.6, 0, 7); g.fill(); } }
   }
-  // ---------- the market: striped awnings over the four stalls, and bunting over the square ----------
+  // ---------- the market: four stalls with their goods, crates and barrels, and bunting over the square ----------
+  // Polish (2026-10-03): the square was blank flagstone with four empty awnings. Each stall is now two cells wide: a counter
+  // draped in its own colour, its goods on top (fruit, cloth, feathers, pots), posts and a striped canopy high enough
+  // that its seller stands under it, and a sign on the valance. Each is painted once (cached) and blitted.
+  function paintGoods(g, goods) {
+    const r = mulberry32(0x6a11 + goods.length * 17);
+    if (goods === 'fruit') {
+      // three baskets: red sky-apples, green pears, white-and-blue cloudberries
+      [[20, '#d9433f', '#ff8a7a'], [48, '#8fbf3f', '#c8e878'], [76, '#e8f2ff', '#7fb2e8']].forEach(([bx, c1, c2], k) => {
+        g.fillStyle = '#8a5e36'; g.beginPath(); g.ellipse(bx, 4, 14, 7, 0, 0, 7); g.fill();
+        g.fillStyle = '#6b4526'; g.beginPath(); g.ellipse(bx, 2, 12, 5, 0, 0, 7); g.fill();
+        const n = k === 2 ? 14 : 7, rr = k === 2 ? 2.6 : 4.2;
+        for (let i = 0; i < n; i++) { const a = r() * Math.PI * 2, d = r() * 8, fx = bx + Math.cos(a) * d, fy = 0 + Math.sin(a) * d * 0.45 - (i > n / 2 ? 3 : 0);
+          g.fillStyle = c1; g.beginPath(); g.arc(fx, fy, rr, 0, 7); g.fill(); g.fillStyle = c2; g.beginPath(); g.arc(fx - rr * 0.35, fy - rr * 0.35, rr * 0.4, 0, 7); g.fill(); }
+        g.strokeStyle = '#b08a55'; g.lineWidth = 1.2; g.beginPath(); g.ellipse(bx, 4, 14, 7, 0, 0, Math.PI); g.stroke();
+      });
+      g.fillStyle = '#4f8a2e'; for (const [lx, ly] of [[14, -4], [44, -5], [70, -4]]) { g.beginPath(); g.ellipse(lx, ly, 3, 1.6, -0.6, 0, 7); g.fill(); }
+    } else if (goods === 'cloth') {
+      // bolts of wing-cloth lying on the counter, and one length hanging over the front
+      const cols = ['#5b9be0', '#f5c542', '#f29bb8', '#fbf8f0', '#b99be8'];
+      cols.forEach((c, k) => { const bx = 8 + k * 16, by = -6 + (k % 2) * 3;
+        g.fillStyle = shade(c, -0.25); roundRect(g, bx, by, 14, 18, 5); g.fill();
+        g.fillStyle = c; roundRect(g, bx, by, 14, 15, 5); g.fill();
+        g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(bx + 3, by + 2, 3, 11);
+        g.fillStyle = shade(c, -0.35); g.beginPath(); g.ellipse(bx + 7, by + 15, 6, 2.6, 0, 0, 7); g.fill(); });
+      g.fillStyle = '#5b9be0'; g.beginPath(); g.moveTo(58, 10); g.lineTo(74, 10); g.lineTo(76, 34); g.quadraticCurveTo(66, 30, 58, 34); g.closePath(); g.fill();
+      g.fillStyle = '#f5c542'; g.fillRect(58, 26, 18, 2);
+    } else if (goods === 'feathers') {
+      // three glass jars of feathers, and a fan of loose ones
+      [[18, ['#ffffff', '#f4f1ea', '#e8e3d8']], [46, ['#f5c542', '#e8b84a', '#fff0b0']], [74, ['#b9c0cc', '#8f9aad', '#5b9be0']]].forEach(([jx, fc]) => {
+        fc.forEach((c, k) => { const a = -Math.PI / 2 + (k - 1) * 0.42; g.save(); g.translate(jx, -2); g.rotate(a + Math.PI / 2);
+          g.fillStyle = c; g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(-5, -12, 0, -24); g.quadraticCurveTo(5, -12, 0, 0); g.closePath(); g.fill();
+          g.strokeStyle = 'rgba(90,100,120,0.55)'; g.lineWidth = 0.8; g.stroke(); g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -22); g.stroke(); g.restore(); });
+        g.fillStyle = 'rgba(190,225,250,0.85)'; roundRect(g, jx - 8, -4, 16, 16, 4); g.fill();
+        g.strokeStyle = '#7fa6d6'; g.lineWidth = 1.2; roundRect(g, jx - 8, -4, 16, 16, 4); g.stroke();
+        g.fillStyle = 'rgba(255,255,255,0.7)'; g.fillRect(jx - 5, -1, 2, 10);
+      });
+      g.fillStyle = '#fffaf0'; for (let k = 0; k < 4; k++) { g.save(); g.translate(30 + k * 5, 8); g.rotate(-0.3 + k * 0.2); g.beginPath(); g.ellipse(0, 0, 7, 2.2, 0, 0, 7); g.fill(); g.restore(); }
+    } else {
+      // white clay with blue bands: a big pot, a jug, stacked bowls, a small pot
+      const clay = (cx, by, w, h) => { g.fillStyle = '#f4f0e8'; g.beginPath(); g.ellipse(cx, by - h * 0.45, w / 2, h / 2, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(90,110,150,0.18)'; g.beginPath(); g.ellipse(cx + w * 0.12, by - h * 0.4, w * 0.36, h * 0.44, 0, 0, 7); g.fill(); g.strokeStyle = '#8f9aad'; g.lineWidth = 1; g.beginPath(); g.ellipse(cx, by - h * 0.45, w / 2, h / 2, 0, 0, 7); g.stroke(); g.fillStyle = '#3b6fc0'; g.fillRect(cx - w * 0.46, by - h * 0.55, w * 0.92, 2.5); g.fillStyle = '#e6dfd0'; g.beginPath(); g.ellipse(cx, by - h * 0.92, w * 0.28, 2.6, 0, 0, 7); g.fill(); g.fillStyle = '#6b6258'; g.beginPath(); g.ellipse(cx, by - h * 0.92, w * 0.2, 1.6, 0, 0, 7); g.fill(); };
+      clay(18, 12, 24, 26); clay(48, 12, 16, 20);
+      g.strokeStyle = '#f4f0e8'; g.lineWidth = 3; g.beginPath(); g.arc(57, 2, 5, -1.2, 1.4); g.stroke();
+      for (let k = 0; k < 3; k++) { const by = 10 - k * 4; g.fillStyle = k % 2 ? '#e6dfd0' : '#f4f0e8'; g.beginPath(); g.ellipse(76, by, 13 - k, 4, 0, 0, Math.PI); g.lineTo(63 + k, by); g.fill(); g.fillStyle = '#3b6fc0'; g.fillRect(64 + k, by - 1, 24 - 2 * k, 1.5); }
+      clay(88, 12, 10, 12);
+    }
+  }
+  function goodsIcon(g, goods) {
+    if (goods === 'fruit') { g.fillStyle = '#d9433f'; g.beginPath(); g.arc(0, 1, 5, 0, 7); g.fill(); g.fillStyle = '#4f8a2e'; g.beginPath(); g.ellipse(2.5, -4.5, 3, 1.4, -0.6, 0, 7); g.fill(); }
+    else if (goods === 'cloth') { g.fillStyle = '#5b9be0'; roundRect(g, -5, -5, 10, 10, 3); g.fill(); g.fillStyle = '#f5c542'; g.fillRect(-5, -1, 10, 2); }
+    else if (goods === 'feathers') { g.fillStyle = '#e0a93a'; g.beginPath(); g.moveTo(-4, 5); g.quadraticCurveTo(-4, -4, 5, -6); g.quadraticCurveTo(3, 2, -4, 5); g.closePath(); g.fill(); }
+    else { g.fillStyle = '#4f9a62'; g.beginPath(); g.ellipse(0, 1, 5, 5, 0, 0, 7); g.fill(); g.fillRect(-2.5, -6, 5, 3); }
+  }
+  function paintStall(g, info) {
+    const W2 = 96, stripe = info.canopy;
+    g.fillStyle = 'rgba(40,60,100,0.2)'; g.fillRect(4, 40, W2 - 2, 8);
+    // the posts at the back
+    g.fillStyle = '#6b4526'; g.fillRect(6, -74, 4, 70); g.fillRect(W2 - 10, -74, 4, 70);
+    // the counter: its top, then its front, draped in the stall's colour
+    g.fillStyle = '#c9a06a'; g.fillRect(0, -6, W2, 18);
+    g.fillStyle = 'rgba(255,240,210,0.35)'; g.fillRect(0, -6, W2, 2);
+    g.fillStyle = '#8f5f36'; g.fillRect(0, 12, W2, 30);
+    g.fillStyle = 'rgba(40,24,12,0.35)'; for (let k = 1; k < 6; k++) g.fillRect(k * 16, 12, 1.5, 30);
+    g.fillStyle = '#5e3c20'; g.fillRect(0, 40, W2, 3);
+    g.fillStyle = stripe; g.fillRect(0, 10, W2, 9);
+    g.fillStyle = shade(stripe, 0.35); for (let k = 0; k < 8; k++) { g.beginPath(); g.arc(6 + k * 12, 19, 6, 0, Math.PI); g.fill(); }
+    g.fillStyle = stripe; for (let k = 0; k < 8; k++) { g.beginPath(); g.arc(6 + k * 12, 18, 5, 0, Math.PI); g.fill(); }
+    g.fillStyle = '#f5c542'; g.fillRect(0, 9, W2, 2);
+    // the goods
+    g.save(); g.translate(0, -4); paintGoods(g, info.goods); g.restore();
+    // the front posts, and the canopy: stripes, a gold rail, a scalloped valance with the stall's sign in the middle
+    g.fillStyle = '#7a5236'; g.fillRect(1, -62, 5, 104); g.fillRect(W2 - 6, -62, 5, 104);
+    g.fillStyle = '#9a6a3e'; g.fillRect(2, -62, 2, 104); g.fillRect(W2 - 5, -62, 2, 104);
+    g.fillStyle = 'rgba(40,60,100,0.16)'; g.fillRect(-2, -56, W2 + 4, 6);
+    for (let k = 0; k < 8; k++) { g.fillStyle = k % 2 ? '#ffffff' : stripe; g.beginPath(); g.moveTo(-4 + k * 13, -92); g.lineTo(9 + k * 13, -92); g.lineTo(9 + k * 13 + 1, -66); g.lineTo(-4 + k * 13 + 1, -66); g.closePath(); g.fill(); }
+    for (let k = 0; k < 8; k++) { g.fillStyle = k % 2 ? '#ffffff' : stripe; g.beginPath(); g.arc(2.5 + k * 13 + 1, -66, 6.5, 0, Math.PI); g.fill(); }
+    g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(-4, -72, W2 + 8, 6);
+    g.fillStyle = '#e8c25a'; g.fillRect(-5, -94, W2 + 10, 3);
+    g.fillStyle = '#fbf8f0'; g.beginPath(); g.arc(W2 / 2, -79, 10, 0, 7); g.fill(); g.strokeStyle = '#e8c25a'; g.lineWidth = 2; g.stroke();
+    g.save(); g.translate(W2 / 2, -79); goodsIcon(g, info.goods); g.restore();
+  }
   function drawAwning(g, tx, ty) {
-    const x = tx * TILE, y = ty * TILE, fl = Math.sin(time * 2.2 + tx) * 1.2;
-    g.fillStyle = 'rgba(40,60,100,0.18)'; g.fillRect(x - 3, y + 26, 54, 5);
-    for (let k = 0; k < 6; k++) { g.fillStyle = k % 2 ? '#ffffff' : '#5b9be0'; g.beginPath(); g.moveTo(x - 3 + k * 9, y + 2); g.lineTo(x + 6 + k * 9, y + 2); g.lineTo(x + 6 + k * 9 + fl * 0.3, y + 22 + fl); g.lineTo(x - 3 + k * 9 + fl * 0.3, y + 22 + fl); g.closePath(); g.fill(); }
-    for (let k = 0; k < 6; k++) { g.fillStyle = k % 2 ? '#ffffff' : '#5b9be0'; g.beginPath(); g.arc(x + 1.5 + k * 9 + fl * 0.3, y + 22 + fl, 4.5, 0, Math.PI); g.fill(); }
-    g.fillStyle = '#e8c25a'; g.fillRect(x - 4, y, 56, 3);
+    const i = Math.max(0, SP.stalls.findIndex(([sx, sy]) => sx === tx && sy === ty)), info = STALL_INFO[i];
+    const x = tx * TILE, y = ty * TILE, a = behindAlpha(x - 6, y - 96, x + 102, y + 44, (ty + 1) * TILE - 3);
+    if (a < 1) { g.save(); g.globalAlpha = a; }
+    blit(g, sprite('stall' + i, 112, 150, 8, 100, cg => paintStall(cg, info)), x, y);
+    if (a < 1) g.restore();
     STATS.awnings++;
   }
+  function paintCrate(g) {
+    g.fillStyle = 'rgba(40,60,100,0.2)'; g.fillRect(-18, -2, 40, 6);
+    g.fillStyle = '#b0844e'; g.fillRect(-18, -30, 36, 12);
+    g.fillStyle = 'rgba(60,36,16,0.35)'; for (const yy of [-26, -22]) g.fillRect(-18, yy, 36, 1);
+    g.fillStyle = '#946a3a'; g.fillRect(-18, -18, 36, 18);
+    g.fillStyle = 'rgba(60,36,16,0.35)'; for (const yy of [-12, -6]) g.fillRect(-18, yy, 36, 1);
+    g.fillStyle = '#6b4a2a'; g.fillRect(-18, -18, 4, 18); g.fillRect(14, -18, 4, 18); g.fillRect(-18, -30, 36, 2);
+    g.strokeStyle = '#6b4a2a'; g.lineWidth = 2; g.beginPath(); g.moveTo(-14, -2); g.lineTo(14, -16); g.stroke();
+    g.fillStyle = '#d9d0bf'; for (const [nx, ny] of [[-16, -16], [16, -16], [-16, -3], [16, -3]]) { g.beginPath(); g.arc(nx, ny, 1, 0, 7); g.fill(); }
+    goldWing(g, 2, -26, 8, '#f5e6a8');
+  }
+  function paintBarrel(g) {
+    g.fillStyle = 'rgba(40,60,100,0.2)'; g.beginPath(); g.ellipse(3, 0, 18, 6, 0, 0, 7); g.fill();
+    const body = g.createLinearGradient(-15, 0, 15, 0); body.addColorStop(0, '#7a5230'); body.addColorStop(0.4, '#b58450'); body.addColorStop(1, '#6a4526');
+    g.fillStyle = body; g.beginPath(); g.moveTo(-13, -34); g.quadraticCurveTo(-17, -17, -13, 0); g.lineTo(13, 0); g.quadraticCurveTo(17, -17, 13, -34); g.closePath(); g.fill();
+    g.fillStyle = '#5b6474'; for (const yy of [-29, -6]) { g.fillRect(-15, yy, 30, 3); }
+    g.fillStyle = '#c99a62'; g.beginPath(); g.ellipse(0, -34, 13, 5, 0, 0, 7); g.fill();
+    g.fillStyle = '#6fbde9'; g.beginPath(); g.ellipse(0, -34, 10, 3.6, 0, 0, 7); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.6)'; g.beginPath(); g.ellipse(-3, -35, 4, 1.2, 0, 0, 7); g.fill();
+  }
+
+  // ---------- inside the sky forge: the hearth, the bellows, the cloud-anvil, the tools on the wall ----------
+  // Polish (2026-10-03): the forge had two pale braziers and a shelf. The hearth stands on the north wall (two cells), with a
+  // hood and a chimney into the wall, a fire of real flame (drawn each frame) and its glow on the floor.
+  function paintHearthBody(g) {
+    // the hood and chimney, in dark sky-stone banded in gold
+    g.fillStyle = '#6f7a8f'; g.fillRect(34, -70, 28, 40);
+    g.fillStyle = '#58627a'; g.beginPath(); g.moveTo(8, -6); g.lineTo(26, -44); g.lineTo(70, -44); g.lineTo(88, -6); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.12)'; g.beginPath(); g.moveTo(8, -6); g.lineTo(26, -44); g.lineTo(34, -44); g.lineTo(20, -6); g.closePath(); g.fill();
+    g.fillStyle = '#e8c25a'; g.fillRect(6, -8, 84, 4); g.fillRect(24, -46, 48, 3); g.fillRect(32, -72, 32, 3);
+    // the firebed: stone blocks round a black mouth
+    g.fillStyle = 'rgba(40,40,60,0.25)'; g.fillRect(4, 42, 90, 6);
+    g.fillStyle = '#7d879b'; g.fillRect(2, -4, 92, 46);
+    g.fillStyle = 'rgba(30,34,48,0.35)'; for (let r = 0; r < 4; r++) { g.fillRect(2, -4 + r * 12 + 11, 92, 1); for (let c = 0; c < 5; c++) g.fillRect(2 + ((r % 2) ? 10 : 0) + c * 20, -4 + r * 12, 1, 11); }
+    g.fillStyle = '#9aa3b5'; g.fillRect(2, -4, 92, 4);
+    g.fillStyle = '#1c1512'; g.beginPath(); g.moveTo(18, 42); g.lineTo(18, 16); g.arc(48, 16, 30, Math.PI, 0); g.lineTo(78, 42); g.closePath(); g.fill();
+    g.strokeStyle = '#e8c25a'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(18, 42); g.lineTo(18, 16); g.arc(48, 16, 30, Math.PI, 0); g.lineTo(78, 42); g.stroke();
+  }
+  function drawHearth(g, tx, ty) {
+    const x = tx * TILE, y = ty * TILE, t = time;
+    blit(g, sprite('hearth', 100, 130, 2, 76, paintHearthBody), x, y);
+    // the coals and the flames
+    g.save(); g.beginPath(); g.moveTo(x + 19, y + 41); g.lineTo(x + 19, y + 16); g.arc(x + 48, y + 16, 29, Math.PI, 0); g.lineTo(x + 77, y + 41); g.closePath(); g.clip();
+    const glow = g.createRadialGradient(x + 48, y + 38, 4, x + 48, y + 30, 36); glow.addColorStop(0, 'rgba(255,190,90,0.95)'); glow.addColorStop(1, 'rgba(160,40,10,0.2)');
+    g.fillStyle = glow; g.fillRect(x + 18, y - 14, 60, 56);
+    for (let k = 0; k < 7; k++) { const ph = (t * 1.7 + k * 0.37) % 1, fx = x + 26 + k * 7.5 + Math.sin(t * 6 + k) * 2, h = 18 + Math.sin(t * 9 + k * 1.9) * 6 + (k % 3) * 4;
+      g.fillStyle = k % 2 ? 'rgba(255,120,40,0.9)' : 'rgba(255,170,60,0.95)'; g.beginPath(); g.moveTo(fx - 6, y + 40); g.quadraticCurveTo(fx - 5, y + 40 - h * 0.6, fx + Math.sin(t * 7 + k) * 3, y + 40 - h); g.quadraticCurveTo(fx + 5, y + 40 - h * 0.6, fx + 6, y + 40); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(255,240,180,0.9)'; g.beginPath(); g.moveTo(fx - 3, y + 40); g.quadraticCurveTo(fx, y + 40 - h * 0.55, fx + 3, y + 40); g.closePath(); g.fill(); }
+    g.fillStyle = '#ff9a3a'; for (let k = 0; k < 9; k++) { g.beginPath(); g.arc(x + 24 + k * 6, y + 40 - (k % 2) * 2, 3, 0, 7); g.fill(); }
+    g.restore();
+    // sparks up the chimney, and the glow on the floor in front
+    for (let k = 0; k < 5; k++) { const ph = (t * 0.9 + k / 5) % 1; g.fillStyle = `rgba(255,${200 - Math.floor(ph * 80)},90,${(1 - ph).toFixed(3)})`; g.beginPath(); g.arc(x + 40 + k * 4 + Math.sin(t * 3 + k) * 5, y + 10 - ph * 60, 1.6, 0, 7); g.fill(); }
+    const f = 0.8 + Math.sin(t * 8) * 0.08 + Math.sin(t * 13) * 0.05;
+    const fl = g.createRadialGradient(x + 48, y + 50, 6, x + 48, y + 56, 70); fl.addColorStop(0, `rgba(255,170,70,${(0.32 * f).toFixed(3)})`); fl.addColorStop(1, 'rgba(255,150,60,0)');
+    g.fillStyle = fl; g.beginPath(); g.ellipse(x + 48, y + 60, 72, 30, 0, 0, 7); g.fill();
+  }
+  // the bellows: two oak boards and a pleated leather body between them, on a low frame, the brass nozzle aimed at the fire
+  function paintBellows(g) {
+    const LINE = '#3d2814';
+    g.fillStyle = 'rgba(40,40,60,0.22)'; g.beginPath(); g.ellipse(2, 0, 22, 6, 0, 0, 7); g.fill();
+    // the frame's two legs
+    g.fillStyle = '#5e3c20'; g.fillRect(-15, -10, 4, 10); g.fillRect(10, -10, 4, 10);
+    g.save(); g.translate(-2, -18); g.rotate(-0.42);
+    // the leather body, pleated
+    g.fillStyle = '#7a4a26'; g.beginPath(); g.moveTo(-18, -9); g.quadraticCurveTo(-4, -13, 12, -5); g.lineTo(12, 5); g.quadraticCurveTo(-4, 13, -18, 9); g.closePath(); g.fill();
+    g.strokeStyle = LINE; g.lineWidth = 1; g.stroke();
+    g.strokeStyle = 'rgba(30,18,8,0.6)'; for (let k = 0; k < 4; k++) { const x = -12 + k * 6; g.beginPath(); g.moveTo(x, -9 + k * 0.8); g.quadraticCurveTo(x + 2.5, 0, x, 9 - k * 0.8); g.stroke(); }
+    // the top board, lit, and its handle
+    g.fillStyle = '#b07a44'; g.beginPath(); g.moveTo(-20, -11); g.lineTo(12, -6); g.lineTo(12, -3); g.lineTo(-20, -7); g.closePath(); g.fill(); g.strokeStyle = LINE; g.stroke();
+    g.fillStyle = '#c99a62'; g.fillRect(-28, -10, 9, 4); g.strokeRect(-28, -10, 9, 4);
+    // the brass nozzle
+    g.fillStyle = '#e8c25a'; g.beginPath(); g.moveTo(12, -4); g.lineTo(26, -1.5); g.lineTo(26, 1.5); g.lineTo(12, 4); g.closePath(); g.fill(); g.strokeStyle = '#8a6a1e'; g.stroke();
+    g.restore();
+  }
+  // the cloud-anvil: sky-stone the colour of a storm cloud, a horn and a heel, on an oak block banded in iron, a little
+  // cloud curled round its foot and Halcyon's hammer on its face
+  function paintAnvil(g) {
+    const LINE = '#3b4458';
+    g.fillStyle = 'rgba(40,40,60,0.25)'; g.beginPath(); g.ellipse(3, 0, 26, 7, 0, 0, 7); g.fill();
+    // the block
+    g.fillStyle = '#6b4526'; g.fillRect(-13, -20, 26, 20); g.fillStyle = '#8a5e36'; g.fillRect(-13, -20, 26, 4);
+    g.fillStyle = '#4a5162'; g.fillRect(-13, -12, 26, 2.5); g.strokeStyle = '#2e1c0c'; g.lineWidth = 1; g.strokeRect(-13, -20, 26, 20);
+    // the body: waist, then the face with the horn to the west and the heel to the east
+    const st = g.createLinearGradient(0, -44, 0, -20); st.addColorStop(0, '#b9c6da'); st.addColorStop(1, '#6f7f9a');
+    g.fillStyle = st; g.beginPath();
+    g.moveTo(-30, -40); g.quadraticCurveTo(-22, -46, -12, -45); g.lineTo(20, -45); g.lineTo(22, -36);
+    g.lineTo(12, -34); g.lineTo(9, -24); g.lineTo(13, -20); g.lineTo(-13, -20); g.lineTo(-9, -24); g.lineTo(-12, -34); g.quadraticCurveTo(-22, -35, -30, -40); g.closePath(); g.fill();
+    g.strokeStyle = LINE; g.lineWidth = 1.4; g.stroke();
+    // the face, polished, catching the light
+    g.fillStyle = '#e6edf7'; g.beginPath(); g.moveTo(-26, -41); g.quadraticCurveTo(-20, -45, -12, -44); g.lineTo(19, -44); g.lineTo(20, -41); g.lineTo(-12, -40); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillRect(-6, -44, 18, 1.5);
+    g.fillStyle = '#e8c25a'; g.fillRect(-8, -28, 16, 2);
+    // the hammer, lying on the face
+    g.save(); g.translate(6, -47); g.rotate(-0.2); g.fillStyle = '#8a5e36'; g.fillRect(-2, -1.5, 22, 3); g.strokeStyle = '#3d2814'; g.lineWidth = 0.8; g.strokeRect(-2, -1.5, 22, 3);
+    g.fillStyle = '#4a5162'; g.fillRect(-9, -5, 9, 10); g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(-9, -5, 9, 2); g.restore();
+    // a little cloud round the foot
+    g.fillStyle = 'rgba(255,255,255,0.9)'; for (const [cx, cy, rr] of [[-17, -2, 6], [-9, 1, 7], [8, 1, 6], [17, -2, 5]]) { g.beginPath(); g.arc(cx, cy, rr, 0, 7); g.fill(); }
+  }
+  // the tools on the forge's north wall, east of the door: a rack with hammers, tongs and a file
+  const FORGE_TOOLS = { x: 57, y: 52, w: 3 };
+  const BAKERY_COUNTERS = PLAN.scan('c').filter(([x, y]) => { const b = PLAN.inBuilding(x, y); return !!b && b.id === 'aer_bakery'; });
+  function drawForgeTools(g) {
+    const x = FORGE_TOOLS.x * TILE + 6, y = FORGE_TOOLS.y * TILE + 8, w = FORGE_TOOLS.w * TILE - 12;
+    g.fillStyle = 'rgba(40,40,60,0.2)'; g.fillRect(x + 3, y + 30, w, 5);
+    g.fillStyle = '#8a5e36'; g.fillRect(x, y, w, 8); g.fillStyle = '#6b4526'; g.fillRect(x, y + 6, w, 2);
+    g.fillStyle = '#e8c25a'; for (let k = 0; k < 7; k++) g.fillRect(x + 8 + k * 20, y + 3, 2.5, 2.5);
+    const tool = (tx0, kind) => {
+      g.save(); g.translate(x + tx0, y + 6);
+      if (kind === 'hammer') { g.fillStyle = '#8a5e36'; g.fillRect(-1.5, 0, 3, 22); g.fillStyle = '#5b6474'; g.fillRect(-7, 20, 14, 8); g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(-7, 20, 14, 2); }
+      else if (kind === 'tongs') { g.strokeStyle = '#4a5162'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(-3, 0); g.lineTo(-1, 26); g.lineTo(-5, 32); g.moveTo(3, 0); g.lineTo(1, 26); g.lineTo(5, 32); g.stroke(); }
+      else if (kind === 'file') { g.fillStyle = '#8a5e36'; g.fillRect(-2, 0, 4, 9); g.fillStyle = '#7d879b'; g.fillRect(-2.5, 9, 5, 18); }
+      else { g.fillStyle = '#8a5e36'; g.fillRect(-1.5, 0, 3, 18); g.fillStyle = '#5b6474'; g.beginPath(); g.moveTo(-9, 18); g.lineTo(9, 18); g.lineTo(5, 26); g.lineTo(-5, 26); g.closePath(); g.fill(); }
+      g.restore();
+    };
+    tool(14, 'hammer'); tool(38, 'tongs'); tool(60, 'file'); tool(82, 'hammer2'); tool(104, 'tongs'); tool(122, 'hammer');
+  }
+
+  // ---------- inside the Cloud Oven: the great oven, the bread racks, loaves on the counter ----------
+  function paintOvenBody(g) {
+    g.fillStyle = 'rgba(40,40,60,0.22)'; g.fillRect(4, 40, 90, 7);
+    // the chimney pipe out through the wall
+    g.fillStyle = '#9a8f80'; g.fillRect(60, -64, 14, 40); g.fillStyle = '#e8c25a'; g.fillRect(58, -66, 18, 3);
+    // the dome of warm brick on a stone base
+    g.fillStyle = '#d9d0bf'; g.fillRect(0, 22, 96, 20); g.fillStyle = 'rgba(145,130,105,0.35)'; for (let c = 1; c < 6; c++) g.fillRect(c * 16, 22, 1, 20); g.fillRect(0, 31, 96, 1);
+    g.fillStyle = '#e8c25a'; g.fillRect(0, 21, 96, 2);
+    const dome = g.createLinearGradient(0, -34, 0, 22); dome.addColorStop(0, '#e79a62'); dome.addColorStop(1, '#b25a30');
+    g.fillStyle = dome; g.beginPath(); g.moveTo(4, 22); g.bezierCurveTo(4, -40, 92, -40, 92, 22); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(110,50,24,0.45)'; g.lineWidth = 1;
+    for (let r = 0; r < 4; r++) { const yy = 14 - r * 11, half = 44 - r * r * 3.2; g.beginPath(); g.moveTo(48 - half, yy); g.lineTo(48 + half, yy); g.stroke(); for (let c = -2; c <= 2; c++) { const bx = 48 + c * 16 + (r % 2) * 8; if (Math.abs(bx - 48) < half - 4) { g.beginPath(); g.moveTo(bx, yy); g.lineTo(bx, yy - 11); g.stroke(); } } }
+    g.fillStyle = 'rgba(255,230,190,0.35)'; g.beginPath(); g.ellipse(30, -6, 14, 8, -0.4, 0, 7); g.fill();
+    // the mouth, arched and gold-edged
+    g.fillStyle = '#2a1812'; g.beginPath(); g.moveTo(28, 22); g.lineTo(28, 10); g.arc(48, 10, 20, Math.PI, 0); g.lineTo(68, 22); g.closePath(); g.fill();
+    g.strokeStyle = '#e8c25a'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(28, 22); g.lineTo(28, 10); g.arc(48, 10, 20, Math.PI, 0); g.lineTo(68, 22); g.stroke();
+    // a peel leaning on it
+    g.save(); g.translate(88, 36); g.rotate(-0.35); g.fillStyle = '#b58450'; g.fillRect(-2, -46, 4, 40); g.beginPath(); g.ellipse(0, -52, 7, 9, 0, 0, 7); g.fill(); g.restore();
+  }
+  function drawOven(g, tx, ty) {
+    const x = tx * TILE, y = ty * TILE, t = time;
+    blit(g, sprite('oven', 100, 120, 2, 70, paintOvenBody), x, y);
+    // the glow inside the mouth, a loaf baking, the glow on the floor
+    const f = 0.85 + Math.sin(t * 3.1) * 0.1;
+    g.save(); g.beginPath(); g.moveTo(x + 29, y + 22); g.lineTo(x + 29, y + 10); g.arc(x + 48, y + 10, 19, Math.PI, 0); g.lineTo(x + 67, y + 22); g.closePath(); g.clip();
+    const gl = g.createRadialGradient(x + 48, y + 18, 2, x + 48, y + 12, 26); gl.addColorStop(0, `rgba(255,236,160,${f.toFixed(3)})`); gl.addColorStop(0.6, `rgba(255,150,60,${(0.8 * f).toFixed(3)})`); gl.addColorStop(1, 'rgba(160,50,20,0.5)');
+    g.fillStyle = gl; g.fillRect(x + 28, y - 10, 40, 34);
+    g.fillStyle = '#c9803a'; g.beginPath(); g.ellipse(x + 48, y + 18, 10, 4.5, 0, 0, 7); g.fill(); g.fillStyle = '#e8a860'; g.beginPath(); g.ellipse(x + 46, y + 16.5, 5, 2, 0, 0, 7); g.fill();
+    g.restore();
+    const fl = g.createRadialGradient(x + 48, y + 44, 4, x + 48, y + 52, 60); fl.addColorStop(0, `rgba(255,190,100,${(0.3 * f).toFixed(3)})`); fl.addColorStop(1, 'rgba(255,170,80,0)');
+    g.fillStyle = fl; g.beginPath(); g.ellipse(x + 48, y + 56, 62, 24, 0, 0, 7); g.fill();
+    // steam from the loaf
+    for (let k = 0; k < 3; k++) { const ph = (t * 0.5 + k / 3) % 1; g.fillStyle = `rgba(255,255,255,${(0.5 * (1 - ph)).toFixed(3)})`; g.beginPath(); g.arc(x + 44 + k * 5 + Math.sin(ph * 5 + k) * 3, y - 12 - ph * 26, 3 + ph * 6, 0, 7); g.fill(); }
+  }
+  function loaf(g, x, y, s, kind) {
+    if (kind === 'bun') { g.fillStyle = '#c98a40'; g.beginPath(); g.arc(x, y, 4.6 * s, 0, 7); g.fill(); g.fillStyle = '#f0c070'; g.beginPath(); g.arc(x - 1.2 * s, y - 1.4 * s, 2 * s, 0, 7); g.fill(); g.fillStyle = '#fff4d0'; g.fillRect(x - 2 * s, y - 0.4 * s, 4 * s, 0.9 * s); return; }
+    if (kind === 'long') { g.fillStyle = '#c68b45'; g.beginPath(); g.ellipse(x, y, 13 * s, 3.8 * s, 0, 0, 7); g.fill(); g.strokeStyle = '#f0c880'; g.lineWidth = 1.2; for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(x + k * 6 * s - 2, y + 1.5); g.lineTo(x + k * 6 * s + 2, y - 1.5); g.stroke(); } return; }
+    g.fillStyle = '#b87838'; g.beginPath(); g.ellipse(x, y, 8 * s, 5.5 * s, 0, 0, 7); g.fill();
+    g.fillStyle = '#e0a860'; g.beginPath(); g.ellipse(x - 1, y - 1.5 * s, 6 * s, 3.4 * s, 0, 0, 7); g.fill();
+    g.strokeStyle = '#8a5424'; g.lineWidth = 1; for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(x + k * 3.4 * s - 1.5, y + 1); g.lineTo(x + k * 3.4 * s + 1.5, y - 3); g.stroke(); }
+  }
+  function paintRack(g) {
+    g.fillStyle = 'rgba(40,40,60,0.22)'; g.fillRect(-18, -2, 40, 6);
+    g.fillStyle = '#7a5236'; g.fillRect(-19, -62, 4, 62); g.fillRect(15, -62, 4, 62);
+    g.fillStyle = '#9a6a3e'; for (const sy of [-60, -40, -20, -4]) g.fillRect(-19, sy, 38, 4);
+    g.fillStyle = '#e8c25a'; g.fillRect(-19, -62, 38, 2);
+    // honey buns on top, round loaves, long loaves at the bottom
+    for (let k = 0; k < 4; k++) loaf(g, -12 + k * 8, -64, 0.8, 'bun');
+    for (let k = 0; k < 3; k++) loaf(g, -10 + k * 10, -45, 0.62, 'round');
+    loaf(g, -2, -25, 0.95, 'long'); loaf(g, 1, -29, 0.85, 'long');
+    for (let k = 0; k < 3; k++) loaf(g, -10 + k * 10, -9, 0.62, 'round');
+  }
+  function drawCounterLoaves(g, tx, ty) {
+    const x = tc(tx), y = ty * TILE + 18;
+    g.fillStyle = '#8a5e36'; g.beginPath(); g.ellipse(x - 6, y + 2, 11, 5, 0, 0, 7); g.fill(); g.fillStyle = '#6b4526'; g.beginPath(); g.ellipse(x - 6, y + 1, 9, 3.6, 0, 0, 7); g.fill();
+    for (let k = 0; k < 4; k++) loaf(g, x - 11 + (k % 2) * 8, y - 1 - Math.floor(k / 2) * 3, 0.6, 'bun');
+    loaf(g, x + 10, y, 0.7, 'round');
+  }
+
   function drawBunting(g) {
     const [a, b] = SP.bunting, x0 = tc(a[0]), x1 = tc(b[0]), y = a[1] * TILE + 6, top = y - 58;
     for (const px of [x0, x1]) { g.fillStyle = '#f3efe6'; g.fillRect(px - 2, top, 4, 58); g.fillStyle = '#f5c542'; g.beginPath(); g.arc(px, top - 2, 3.5, 0, 7); g.fill(); }
@@ -1834,8 +2220,11 @@
     g.fillStyle = '#f5c542'; g.beginPath(); g.arc(cx, ct - 3, 4, 0, 7); g.fill(); g.fillRect(cx - 1, ct - 16, 2, 13);
     return ct - 16;
   }
+  // how tall the keep's parts stand (px): the front face, the donjon's foot over the face, the donjon, and its cone, ball
+  // and pennant staff together (KEEP_VIEW reads them to know where the pennant's top is)
+  const KEEP_ART = { face: 100, lift: 40, donjon: 170, spire: 158 };
   function drawKeep(g, b, x, y, w, h) {
-    const FH = 100, faceY = y + h - FH, terr = y - 24;
+    const FH = KEEP_ART.face, faceY = y + h - FH, terr = y - 24;
     g.fillStyle = 'rgba(40,60,100,0.2)'; g.fillRect(x + 10, y + h - 2, w, 12);
     // the two back turrets
     turret(g, x + 30, terr + 40, terr - 60, 30); turret(g, x + w - 30, terr + 40, terr - 60, 30);
@@ -1846,7 +2235,7 @@
     for (let k = 0; k < Math.floor(w / 12); k++) if (!(k % 2)) { g.fillStyle = '#ede7da'; g.fillRect(x + k * 12, terr - 12, 12, 12); g.fillStyle = '#f5c542'; g.fillRect(x + k * 12, terr - 14, 12, 2.5); }
     for (let k = 0; k < Math.floor((faceY - terr) / 12); k++) if (!(k % 2)) { g.fillStyle = '#ede7da'; g.fillRect(x, terr + k * 12, 9, 10); g.fillRect(x + w - 9, terr + k * 12, 9, 10); }
     // the donjon: a square tower in the middle of the keep, five tiles over the roof, the royal pennant on top
-    const dw = 150, dx = x + w / 2 - dw / 2, dBase = faceY - 40, dTop = dBase - 200;
+    const dw = 150, dx = x + w / 2 - dw / 2, dBase = faceY - KEEP_ART.lift, dTop = dBase - KEEP_ART.donjon;
     g.fillStyle = 'rgba(40,60,100,0.18)'; g.fillRect(dx + 8, dBase - 4, dw, 12);
     stoneFace(g, dx, dTop, dw, dBase - dTop);
     g.fillStyle = 'rgba(40,60,100,0.14)'; g.fillRect(dx + dw - 22, dTop, 22, dBase - dTop);
@@ -1880,12 +2269,38 @@
     const x = b.x * TILE, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
     const a = behindAlpha(x, y - riseOf(b), x + w, y + h, (b.y + b.h) * TILE - 1);
     g.save(); if (a < 1) g.globalAlpha = a;
+    // the knight is in another building with its roof off: nothing of this one is drawn over that room
+    const room = roomOf();
+    if (room && room !== b && b.y + b.h > room.y) { g.beginPath(); g.rect(x - 6 * TILE, y - 14 * TILE, w + 12 * TILE, h + 20 * TILE); roomRect(g, room); g.clip('evenodd'); STATS.roomClips++; }
     if (b.id === 'aer_keep') drawKeep(g, b, x, y, w, h);
     else if (b.id === 'aer_chapel') drawChapel(g, b, x, y, w, h);
     else drawHall(g, b, x, y, w, h);
     g.restore();
   }
   { const _drawBuilding = drawBuilding; drawBuilding = function (g, b) { return (b && b.kingdom) ? drawKingBuilding(g, b) : _drawBuilding(g, b); }; }
+
+  // ---------- the room the knight stands in ----------
+  // Polish (2026-10-03): the Great Gate's two towers were drawn over the inside of Halcyon's Sky Forge and the house
+  // aer_h4 once their roofs lifted, because a tall thing south of a room is drawn after the room's floor and reaches up
+  // over it. While the knight stands in a kingdom building, every tall thing of this file whose foot is outside that
+  // building (walls, towers, spires, gates, fountains, stalls, trees, lamps, the other buildings) is drawn with the
+  // room's rectangle cut out of it, so the room reads whole. People are never cut (a head just south of a wall is fine).
+  function roomOf() { if (!inside() || player.dead) return null; const a = ptile(), b = buildingAt(a.tx, a.ty); return b && b.kingdom ? b : null; }
+  const roomRect = (g, b) => g.rect(b.x * TILE, b.y * TILE, b.w * TILE, b.h * TILE);
+  const inRoom = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+  function clipRooms(g, items, n0, c) {
+    const room = roomOf(); if (!room) return 0;
+    let n = 0;
+    for (let i = n0; i < items.length; i++) {
+      const it = items[i];
+      if (!it.tall || inRoom(room, it.tall[0], it.tall[1]) || it.y < room.y * TILE) continue;
+      const d = it.draw;
+      it.draw = () => { g.save(); g.beginPath(); g.rect(c.x - 6 * TILE, c.y - 14 * TILE, VW + 12 * TILE, VH + 28 * TILE); roomRect(g, room); g.clip('evenodd'); try { d(); } finally { g.restore(); } };
+      it.roomClip = room.id; n++;
+    }
+    STATS.roomClips += n;
+    return n;
+  }
 
   // ---------- people: wings, a person, the name when you are close ----------
   function wings(g, scale, flap, tone) {
@@ -2008,9 +2423,9 @@
       const row = PLAN.ROWS[ty];
       for (let tx = x0; tx <= x1; tx++) {
         const ch = row[tx];
-        if (ch === '#') { if (ARCH_STUBS.has(tx + ',' + ty)) continue; const horiz = ty === 11 || ty === 61; items.push({ y: (ty + 1) * TILE - 2, draw: () => horiz ? drawWallH(g, tx, ty) : drawWallV(g, tx, ty) }); continue; }
+        if (ch === '#') { if (ARCH_STUBS.has(tx + ',' + ty)) continue; const horiz = ty === 11 || ty === 61; items.push({ y: (ty + 1) * TILE - 2, tall: [tx, ty], draw: () => horiz ? drawWallH(g, tx, ty) : drawWallV(g, tx, ty) }); continue; }
         const k = KIND_NAMES[KIND[ty * W + tx]];
-        if (k) { items.push({ y: (ty + 1) * TILE - (k === 'hedge' ? 3 : 6), draw: () => drawKind(g, k, tx, ty) }); continue; }
+        if (k) { if (k !== 'stall') items.push({ y: (ty + 1) * TILE - (k === 'hedge' ? 3 : 6), tall: [tx, ty], kind: k, draw: () => drawKind(g, k, tx, ty) }); continue; }
         if (ch === 'C') { const b = PLAN.inBuilding(tx, ty); if (b && b.id === 'aer_keep' && tx > b.x && tx < b.x + b.w - 1 && ty > b.y && ty < b.y + b.h - 1) items.push({ y: (ty + 1) * TILE - 8, draw: () => blit(g, sprite('pillar', 40, 90, 20, 80, paintPillar), tc(tx), (ty + 1) * TILE - 8) }); }
         // a wisp is white on white cloud, and an updraft stone pale: a ring of sky-blue on the ground under each, so they read
         else if ((ch === 'W' && window.SKYCITY && tileAt(tx, ty) === SKYCITY.WISP) || (ch === 'U' && royalAt(tx, ty) < 0)) items.push({ y: -1e8 + ty * TILE + 0.8, draw: () => groundRing(g, tx, ty, ch === 'W') });
@@ -2018,21 +2433,24 @@
     }
     // the towers, the spires, the fountains, the pond, the gates
     for (const t of TOWERS) {
-      if (t.kind !== 'gate') { const cx = tc(t.x), cy = tc(t.y); if (vis(c, cx - 80, cy - 215, cx + 80, cy + 60)) items.push({ y: (t.y + 2) * TILE - 2, draw: () => drawRoundTower(g, t) }); }
-      else { const x = t.x0 * TILE, y = t.y0 * TILE; if (vis(c, x, y - 170, x + 150, (t.y1 + 1) * TILE + 12)) items.push({ y: (t.y1 + 1) * TILE - 2, draw: () => drawGateTower(g, t) }); }
+      if (t.kind !== 'gate') { const cx = tc(t.x), cy = tc(t.y); if (vis(c, cx - 80, cy - 215, cx + 80, cy + 60)) items.push({ y: (t.y + 2) * TILE - 2, tall: [t.x, t.y], tower: t.kind, draw: () => drawRoundTower(g, t) }); }
+      else { const x = t.x0 * TILE, y = t.y0 * TILE; if (vis(c, x, y - 170, x + 150, (t.y1 + 1) * TILE + 12)) items.push({ y: (t.y1 + 1) * TILE - 2, tall: [t.x, t.y1], tower: 'gate', draw: () => drawGateTower(g, t) }); }
     }
-    for (const s of SPIRES) { const cx = tc(s.x), by = (s.y + 1) * TILE; if (vis(c, cx - 40, by - 260, cx + 40, by + 12)) items.push({ y: by - 6, spire: s.name, draw: () => drawSpire(g, s) }); }
-    for (const f of FOUNTAINS) { const x = f.x0 * TILE, y = f.y0 * TILE; if (vis(c, x - 10, y - 140, x + 154, y + 160)) items.push({ y: (f.y1 + 1) * TILE - 4, draw: () => drawFountain(g, f) }); }
+    for (const s of SPIRES) { const cx = tc(s.x), by = (s.y + 1) * TILE; if (vis(c, cx - 40, by - 260, cx + 40, by + 12)) items.push({ y: by - 6, spire: s.name, tall: [s.x, s.y], draw: () => drawSpire(g, s) }); }
+    for (const f of FOUNTAINS) { const x = f.x0 * TILE, y = f.y0 * TILE; if (vis(c, x - 10, y - 140, x + 154, y + 160)) items.push({ y: (f.y1 + 1) * TILE - 4, tall: [f.x0, f.y1], draw: () => drawFountain(g, f) }); }
     { const p = SP.pond; if (vis(c, p.x0 * TILE, p.y0 * TILE, (p.x1 + 1) * TILE, (p.y1 + 1) * TILE)) items.push({ y: (p.y1 + 1) * TILE - 40, draw: () => drawPond(g) }); }
     for (const gt of GATES) {
       const xs = gt.cells.map(q => q[0]), ys = gt.cells.map(q => q[1]), gx0 = (Math.min(...xs) - 1) * TILE, gx1 = (Math.max(...xs) + 2) * TILE, gy0 = (Math.min(...ys) - 3) * TILE, gy1 = (Math.max(...ys) + 1) * TILE;
       if (!vis(c, gx0, gy0, gx1, gy1)) continue;
       const f = GATE_DRAW[gt.id], by = gateSortY(gt), topRow = Math.min(...ys);
-      items.push({ y: topRow * TILE + 2, draw: () => f(g, gt, 'back') });
-      items.push({ y: by, draw: () => f(g, gt, 'front') });
+      items.push({ y: topRow * TILE + 2, tall: gt.cells[0], draw: () => f(g, gt, 'back') });
+      items.push({ y: by, tall: gt.cells[0], draw: () => f(g, gt, 'front') });
     }
     // the market's awnings and bunting, the royal updrafts' gold
-    for (const [sx, sy] of SP.stalls) if (vis(c, sx * TILE - 8, sy * TILE - 8, (sx + 1) * TILE + 8, (sy + 1) * TILE)) items.push({ y: (sy + 1) * TILE - 3, draw: () => drawAwning(g, sx, sy) });
+    for (const [sx, sy] of SP.stalls) if (vis(c, sx * TILE - 10, sy * TILE - 100, (sx + 2) * TILE + 10, (sy + 1) * TILE + 4)) items.push({ y: (sy + 1) * TILE - 3, tall: [sx, sy], stall: sx, draw: () => drawAwning(g, sx, sy) });
+    // the forge's tools on its north wall, and the loaves on the Cloud Oven's counter (both under the roof until it lifts)
+    if (vis(c, FORGE_TOOLS.x * TILE, FORGE_TOOLS.y * TILE, (FORGE_TOOLS.x + FORGE_TOOLS.w) * TILE, (FORGE_TOOLS.y + 2) * TILE)) items.push({ y: (FORGE_TOOLS.y + 1) * TILE + 1, tools: true, draw: () => drawForgeTools(g) });
+    for (const [bx, by] of BAKERY_COUNTERS) if (vis(c, bx * TILE, by * TILE, (bx + 1) * TILE, (by + 1) * TILE)) items.push({ y: (by + 1) * TILE - 5, loaves: true, draw: () => drawCounterLoaves(g, bx, by) });
     { const [a, b] = SP.bunting; if (vis(c, a[0] * TILE, a[1] * TILE - 70, (b[0] + 1) * TILE, (a[1] + 1) * TILE)) items.push({ y: 4.8e7, draw: () => drawBunting(g) }); }
     for (const r of ROYAL) if (vis(c, r.t[0] * TILE - 20, r.t[1] * TILE - 40, (r.t[0] + 1) * TILE + 20, (r.t[1] + 1) * TILE)) items.push({ y: (r.t[1] + 1) * TILE - 3, draw: () => drawRoyalRim(g, r) });
     // a kingdom building whose footprint is off the screen while its towers are not: the core culls by footprint
@@ -2040,7 +2458,7 @@
       const bx = b.x * TILE, by = b.y * TILE, bw = b.w * TILE, bh = b.h * TILE;
       const coreSees = (b.x + b.w) * TILE > c.x && b.x * TILE < c.x + VW && (b.y + b.h) * TILE > c.y && b.y * TILE < c.y + VH;
       const pt = ptile();
-      if (!coreSees && vis(c, bx - 20, by - riseOf(b), bx + bw + 20, by + bh) && buildingAt(pt.tx, pt.ty) !== b && BUILDINGS.includes(b)) items.push({ y: (b.y + b.h) * TILE - 1, draw: () => drawBuilding(g, b) });
+      if (!coreSees && vis(c, bx - 20, by - riseOf(b), bx + bw + 20, by + bh) && buildingAt(pt.tx, pt.ty) !== b && BUILDINGS.includes(b)) items.push({ y: (b.y + b.h) * TILE - 1, tall: [b.x, b.y + b.h - 1], draw: () => drawBuilding(g, b) });
     }
     // people: the residents, Lark on the ground, the walkers; the fliers and Lark flying in the air
     for (const p of PEOPLE) if (vis(c, p.px - 60, p.py - 70, p.px + 60, p.py + 30)) items.push({ y: p.py + 13, draw: () => drawPerson(g, p, p.look, p.wing, 1, p.name) });
@@ -2059,9 +2477,32 @@
       const p = inFront() || walkerInFront(); if (!p) return;
       g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.arc(p.px, p.py, 22, 0, 7); g.stroke(); g.setLineDash([]);
     } });
+    clipRooms(g, items, n0, c);
     STATS.items = items.length - n0;
   };
   HOOKS.draw.push(drawHook);
+
+  // ---------- the keep, seen whole from its plaza ----------
+  // The polish (2026-10-03): on a laptop (1280x800), standing on the plaza in front of the keep's door, the donjon's cone
+  // and the royal pennant were above the top of the screen. On the plaza the view is nudged up (the knight stands lower
+  // on the screen) just far enough to show the pennant with KEEP_VIEW.margin px to spare, never so far that he stands
+  // below KEEP_VIEW.low of the screen's height. The nudge is a smooth function of where he stands: nothing in the hall
+  // (the pennant is in view already), growing as he walks south, full in front of the keep (x 41-55, down to the fountain's
+  // star), and fading to nothing over five tiles towards the plaza's west, east and south edges, so walking never makes the
+  // view jump (a quarter tile's step moves it at most 13 px more than the knight). (HOOKS.camera: see docs/EXTENDING.md.)
+  const KEEP_VIEW = { top: 0, margin: 16, low: 0.82, x0: 36, x1: 60, y1: 46, fade: 5 };
+  { const b = PLAN.BUILDINGS.find(o => o.id === 'aer_keep'); KEEP_VIEW.top = (b.y + b.h) * TILE - KEEP_ART.face - KEEP_ART.lift - KEEP_ART.donjon - KEEP_ART.spire; }
+  function keepNudge() {
+    if (!inside() || player.dead) return null;
+    const px = player.x / TILE, py = player.y / TILE, V = KEEP_VIEW;
+    const wx = clamp((px - V.x0) / V.fade, 0, 1) * clamp((V.x1 + 1 - px) / V.fade, 0, 1), wy = clamp((V.y1 + 1 - py) / V.fade, 0, 1);
+    const w = wx * wy; if (w <= 0) return null;
+    const need = (V.top - V.margin) - (player.y - VH / 2);
+    const dy = Math.max(-VH * (V.low - 0.5), Math.min(0, need));
+    return dy < 0 ? { x: 0, y: dy * w } : null;
+  }
+  HOOKS.camera = HOOKS.camera || [];
+  HOOKS.camera.push(keepNudge);
 
   // =========================================================================
   // 10. registers: Lark's feather, the Cloud Oven, the marker, the book, the Voice
@@ -2140,7 +2581,8 @@
     GATES, FOUNTAINS, SPIRES, TOWERS, BANNERS: SP.banners, LIFT, lift: id => LIFT[id], kindAt, paintsGround, paint, painted: () => PAINTED, glyphsOk: () => glyphsOk, maxTile: MAX_TILE,
     queenFirst, Q, talk, talkWalker, inFront, walkerInFront, lineFor, standing, flyTo, useRoyal, WALK_LINES, REFUSE_LINE,
     scene: { start: sceneStart, get t() { return sceneT(); }, get active() { return SCENE.active; }, finish: sceneFinish },
-    stats: STATS, drawHook, drawBuilding: drawKingBuilding, drawCurtain, art: { tower: drawTowerAny, fountain: drawFountain, spire: drawSpire, awning: drawAwning },
+    stats: STATS, drawHook, drawBuilding: drawKingBuilding, drawCurtain, art: { tower: drawTowerAny, fountain: drawFountain, spire: drawSpire, awning: drawAwning, wingwright: paintWingwright },
+    STALL_INFO, stallAt, ownsStall: (x, y) => !!stallAt(x, y), roomOf, clipRooms, BAKERY_COUNTERS, FORGE_TOOLS,
     arrived, larkFromStage, follow: startFollow, OVEN_MARK: () => OVEN_MARK,
   };
 
@@ -2211,9 +2653,12 @@
       for (const s of PLAN.SPIRE_NAMES) if (PLAN.at(s.x, s.y) !== 'S') bad.push('spire@' + s.x + ',' + s.y);
       // the glyph counts, measured on the plan: first the judge's plan-check.js on plan-rows.txt (sha1 a0fd9636...), then
       // re-measured 2026-09-25 after review round 1 made the Crown a garden and a yard and turned leftover paving to lawn
-      // ('=' 1582 -> 1592, '"' 469 -> 666, '*' 17 -> 38, 'l' 26 -> 34, 't' 24 -> 34, 'p' 10 -> 11, 'b' 9 -> 11, ',' 1226 -> 977)
-      const COUNTS = { '=': 1592, '#': 160, 'T': 189, 'G': 9, '+': 73, '"': 666, '*': 38, 'h': 71, 't': 34, 'o': 18, 'F': 18, 'S': 5, 'l': 34, 'p': 11, 'b': 11, 'w': 1, 'Y': 1, 's': 4,
-        'k': 7, 'n': 7, 'x': 6, 'r': 21, '^': 8, 'U': 8, 'P': 3, 'O': 1, 'z': 6, 'f': 6, 'L': 9, 'N': 3, 'g': 4, 'W': 3, 'J': 1, 'C': 136, 'H': 118, '_': 279, 'D': 12, 'R': 7, 'a': 13, 'q': 6, 'c': 4, 'u': 270, ',': 977, '~': 3150 };
+      // ('=' 1582 -> 1592, '"' 469 -> 666, '*' 17 -> 38, 'l' 26 -> 34, 't' 24 -> 34, 'p' 10 -> 11, 'b' 9 -> 11, ',' 1226 -> 977),
+      // and again 2026-10-03 after the polish (the forge's hearth, bellows and anvil, the oven and racks, the stalls' east cells,
+      // crates and barrels, the garden path by the Wishing Well): '=' 1592 -> 1589, '"' 666 -> 658, '_' 279 -> 272, 'c' 4 -> 3
+      const COUNTS = { '=': 1589, '#': 160, 'T': 189, 'G': 9, '+': 73, '"': 658, '*': 38, 'h': 71, 't': 34, 'o': 18, 'F': 18, 'S': 5, 'l': 34, 'p': 11, 'b': 11, 'w': 1, 'Y': 1, 's': 4,
+        'k': 7, 'n': 7, 'x': 6, 'r': 21, '^': 8, 'U': 8, 'P': 3, 'O': 1, 'z': 6, 'f': 6, 'L': 9, 'N': 3, 'g': 4, 'W': 3, 'J': 1, 'C': 136, 'H': 118, '_': 272, 'D': 12, 'R': 7, 'a': 13, 'q': 6, 'c': 3, 'u': 270, ',': 977, '~': 3150,
+        'e': 2, 'v': 1, 'A': 1, 'V': 2, 'K': 2, 'm': 4, 'X': 4, 'B': 3 };
       const off = Object.keys(COUNTS).filter(c => glyphCount(c) !== COUNTS[c]).map(c => c + ' ' + glyphCount(c) + ' want ' + COUNTS[c]);
       const total = Object.values(COUNTS).reduce((a, b) => a + b, 0);
       check(K + 'K1 the plan: 100x80, every row 100 wide, every glyph known and named, every spot on its glyph, tile ids fit a byte (max <= 255), and every glyph count is the measured one',
@@ -2246,17 +2691,17 @@
       A.gates = GATES.length === 5 && count(tl, GATE) === 9;
       A.fountains = FOUNTAINS.length === 2 && count(tl, FOUNTAIN) === 18;
       A.buildings = mounted() === 12;
-      // ROADS: 1,592 paving stones, and from the Great Gate the streets (with gates, bridges, doors, floors, carpet, lawn and flower beds) reach every door and every gate
+      // ROADS: 1,589 paving stones, and from the Great Gate the streets (with gates, bridges, doors, floors, carpet, lawn and flower beds) reach every door and every gate
       { const road = new Set([PAVE, GATE, BRIDGE, T.DOOR, T.FLOOR, T.RUG, LAWN, BLOOM]); const d = flood(tl, 48, 61, t => road.has(t));
         const doors = AER_BUILDINGS.map(b => PLAN.doorOf(b)).filter(([x, y]) => d[y * W + x] >= 0).length;
         const gates = SP.gateCells.filter(([x, y]) => d[y * W + x] >= 0).length;
-        A.roads = count(tl, PAVE) === 1592 && doors === 12 && gates === 9; A.roadInfo = { pave: count(tl, PAVE), doors, gates }; }
+        A.roads = count(tl, PAVE) === 1589 && doors === 12 && gates === 9; A.roadInfo = { pave: count(tl, PAVE), doors, gates }; }
       A.bridges = PLAN.BRIDGES.length === 8 && count(tl, BRIDGE) === 73;
       // PARKS: the lawns, trees, hedges, pond, flower beds, benches and the well; the maze's middle only through its gate
       { let trees = 0, hedges = 0, benches = 0, wells = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = kindAt(x, y); if (k === 'tree') trees++; else if (k === 'hedge') hedges++; else if (k === 'bench' || k === 'pew') benches++; else if (k === 'well') wells++; }
         const open = flood(tl, SP.entry[0], SP.entry[1], walkable), shut = flood(tl, SP.entry[0], SP.entry[1], (t, x, y) => walkable(t) && !(x === SP.mazeGate[0] && y === SP.mazeGate[1]));
         const mid = SP.larkMaze[1] * W + SP.larkMaze[0];
-        A.parks = count(tl, LAWN) === 666 && trees === 34 && hedges === 71 && count(tl, POND) === 18 && count(tl, BLOOM) === 38 && benches === 11 && wells === 1 && open[mid] > 0 && shut[mid] === -1;
+        A.parks = count(tl, LAWN) === 658 && trees === 34 && hedges === 71 && count(tl, POND) === 18 && count(tl, BLOOM) === 38 && benches === 11 && wells === 1 && open[mid] > 0 && shut[mid] === -1;
         A.parkInfo = { lawn: count(tl, LAWN), trees, hedges, pond: count(tl, POND), bloom: count(tl, BLOOM), benches, wells, maze: open[mid], mazeShut: shut[mid] }; }
       // DECORATIONS: lamps, planters, statues, the awninged stalls, banners on the wall, pennants on the towers
       { let lamps = 0, planters = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = kindAt(x, y); if (k === 'lamp') lamps++; else if (k === 'planter') planters++; }
@@ -2264,7 +2709,7 @@
         const banners = SP.banners.filter(([x, y]) => tl[y * W + x] === WALL).length;
         A.decor = lamps === 34 && planters === 11 && count(tl, T.WIND_STATUE) === 4 && awnings === 4 && SP.stalls.length === 4 && banners === 12 && SP.banners.length === 12 && A.towerInfo.pennants === 19;
         A.decorInfo = { lamps, planters, statues: count(tl, T.WIND_STATUE), awnings, banners }; }
-      check(K + "K3 Cohen's list: walls (160, a closed ring), towers (19, 189 tiles, a pennant each), the keep (15x12, throne, carpet, 4 pillars), spires (5), gates (5 over 9 tiles), fountains (2), buildings (12), roads (1,592 paving reaching every door and gate), bridges (8, 73 tiles), parks and decorations",
+      check(K + "K3 Cohen's list: walls (160, a closed ring), towers (19, 189 tiles, a pennant each), the keep (15x12, throne, carpet, 4 pillars), spires (5), gates (5 over 9 tiles), fountains (2), buildings (12), roads (1,589 paving reaching every door and gate), bridges (8, 73 tiles), parks and decorations",
         A.walls && A.towers && A.keep && A.spires && A.gates && A.fountains && A.buildings && A.roads && A.bridges && A.parks && A.decor, A); }
 
     // a canvas that records what is set on it too (fillStyle is a property set, which recorder() cannot see)
@@ -2350,14 +2795,14 @@
       for (const s of PLAN.DRAFTS.concat(PLAN.ROYAL)) need('updraft', s.t[0], s.t[1]);
       // one side of every prop there is something to use on: garden, props, fountains, the pond, spires, statues, stalls, braziers, nests
       const usable = new Set([GARDEN, PROP, FOUNTAIN, POND, SPIRE, TOWER, WALL, T.WIND_STATUE, T.WIND_STALL, T.SKY_BRAZIER, T.NEST_HOUSE, T.HAWK_PERCH, T.SONGSTONE, T.CLOUD_SNAG]);
-      const groups = {}; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = tl[y * W + x]; if (!usable.has(t)) continue; const f = t === FOUNTAIN ? fountainAt(x, y) : null; const key = f ? 'fountain ' + f.id : t === POND ? 'pond' : t === TOWER ? 'tower ' + (TOWERS.find(o => o.kind === 'gate' ? x >= o.x0 && x <= o.x1 && y >= o.y0 && y <= o.y1 : Math.abs(o.x - x) <= 1 && Math.abs(o.y - y) <= 1) || {}).x + ',' + y : x + ',' + y; (groups[key] = groups[key] || []).push([x, y]); }
-      // a tower is one prop however many tiles it covers; a hedge in the middle of a hedge row is part of the row
+      const groups = {}; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = tl[y * W + x]; if (!usable.has(t)) continue; const f = t === FOUNTAIN ? fountainAt(x, y) : null; const st = (t === PROP || t === T.WIND_STALL) ? stallAt(x, y) : null, two = t === PROP && (kindAt(x, y) === 'hearth' || kindAt(x, y) === 'oven') ? kindAt(x, y) : null; const key = f ? 'fountain ' + f.id : st ? 'stall ' + st.i : two ? two + ' ' + (kindAt(x - 1, y) === two ? x - 1 : x) + ',' + y : t === POND ? 'pond' : t === TOWER ? 'tower ' + (TOWERS.find(o => o.kind === 'gate' ? x >= o.x0 && x <= o.x1 && y >= o.y0 && y <= o.y1 : Math.abs(o.x - x) <= 1 && Math.abs(o.y - y) <= 1) || {}).x + ',' + y : x + ',' + y; (groups[key] = groups[key] || []).push([x, y]); }
+      // a tower is one prop however many tiles it covers (and so is a market stall, the hearth and the oven, two cells each); a hedge in the middle of a hedge row is part of the row
       const lone = []; for (const key in groups) if (!groups[key].some(([x, y]) => reachAt(d, x, y) > 0)) lone.push(key);
       const loneOk = lone.every(key => { const [x, y] = groups[key][0]; return kindAt(x, y) === 'hedge' || tl[y * W + x] === TOWER || tl[y * W + x] === WALL; });
       const sera = d[SP.seraphel[1] * W + SP.seraphel[0]], pell = d[SP.pell[1] * W + SP.pell[0]];
       let total = 0; for (let i = 0; i < W * H; i++) if (d[i] >= 0) total++;
-      check(K + 'K4 on foot from the Wind Landing with no updraft: every resident, all 12 doors, the Long Rail, the Songstone, the perches, snags, wisps, updraft stones and a side of every prop; the Queen is 46 tiles away and Pell 107',
-        miss.length === 0 && loneOk && sera === 46 && pell === 107 && total === 3937, { miss: miss.slice(0, 6), lone: lone.filter((k, i) => i < 6), loneOk, sera, pell, total }); }
+      check(K + 'K4 on foot from the Wind Landing with no updraft: every resident, all 12 doors, the Long Rail, the Songstone, the perches, snags, wisps, updraft stones and a side of every prop (a stall, the hearth and the oven one prop each); the Queen is 46 tiles away and Pell 107, 3,919 tiles in reach',
+        miss.length === 0 && loneOk && sera === 46 && pell === 107 && total === 3919, { miss: miss.slice(0, 6), lone: lone.filter((k, i) => i < 6), loneOk, sera, pell, total }); }
 
     // ---- K5. the buildings never leak out of Aerie ----
     { leave(); render();
@@ -2444,8 +2889,10 @@
         bad.length === 0 && tapKind === 'use' && !!eLine && tLine === eLine, { bad, tapKind, eLine, tLine }); }
 
     // ---- K11. the people ----
-    { const E_AT = { aldric: [48, 58], tamsin: [66, 53], mossbeard: [28, 20], aubade: [69, 27], corvin: [56, 18], merriweather: [22, 42], orla: [46, 32], brisk: [50, 32] };
-      const TAP_AT = { aldric: [48, 60], tamsin: [65, 55], mossbeard: [30, 21], aubade: [69, 29], corvin: [54, 18], merriweather: [24, 43], orla: [46, 34], brisk: [50, 34] };
+    { const E_AT = { aldric: [48, 58], tamsin: [66, 53], mossbeard: [28, 20], aubade: [69, 27], corvin: [56, 18], merriweather: [22, 42], orla: [46, 32], brisk: [50, 32],
+        pippa: [65, 38], maudie: [68, 38], plume: [71, 38], crockett: [74, 38], hazel: [64, 43], wim: [72, 43] };
+      const TAP_AT = { aldric: [48, 60], tamsin: [67, 55], mossbeard: [30, 21], aubade: [69, 29], corvin: [54, 18], merriweather: [24, 43], orla: [46, 34], brisk: [50, 34],
+        pippa: [66, 37], maudie: [69, 37], plume: [72, 37], crockett: [75, 37], hazel: [65, 45], wim: [73, 45] };
       const k0 = JSON.stringify(Q()), diff = [];
       for (const p of PEOPLE) {
         quest.kingdom = JSON.parse(k0); closePanel(); drain(); F.tp(E_AT[p.id][0], E_AT[p.id][1]); F.step([]); F.face(p.x, p.y); F.press('KeyE'); F.sim(1, []); const e = firstLine();
@@ -2662,6 +3109,109 @@
       quest.graves = graves0; if (graves0 === undefined) delete quest.graves;
       check(K + "K21b the overworld's things drawn by coordinate stay out of Aerie: a grave marker at (48,40) draws on the overworld and not on the Royal Plaza, and so do the river crossing posts inside the city's rectangle",
         !!graveHook && !!crossHook && outside.grave >= 1 && inside.grave === 0 && outside.posts.every(n => n >= 1) && inside.posts.every(n => n === 0), { outside, inside, posts: posts.length }); }
+
+    // ---- K23. the room the knight stands in reads whole: nothing tall from outside it is drawn over it ----
+    { const roomCase = (tx, ty, id) => {
+        enter(); F.tp(tx, ty); render();
+        const room = BY_ID[id], { g, log } = recorder(), items = [];
+        drawHook(g, items, cam);
+        const gate = items.filter(it => it.tower === 'gate');
+        const over = gate.filter(it => it.roomClip === id);
+        // the clip really cuts the room's own rectangle out (even-odd), around the tower's drawing
+        let cut = false;
+        if (over.length) { log.length = 0; over[0].draw(); const r = log.find(([k, a]) => k === 'rect' && a[0] === room.x * TILE && a[1] === room.y * TILE && a[2] === room.w * TILE && a[3] === room.h * TILE); cut = !!r && log.some(([k, a]) => k === 'clip' && a[0] === 'evenodd'); }
+        // and nothing whose foot is inside the room is cut
+        const ownCut = items.filter(it => it.tall && it.roomClip && it.tall[0] >= room.x && it.tall[0] < room.x + room.w && it.tall[1] >= room.y && it.tall[1] < room.y + room.h).length;
+        return { inRoom: buildingAt(tx, ty) === room, gates: gate.length, clipped: over.length, cut, ownCut };
+      };
+      const forge = roomCase(55, 54, 'aer_forge'), h4 = roomCase(43, 55, 'aer_h4');
+      enter(); F.tp(56, 50); render();
+      const street = (() => { const { g } = recorder(), items = []; drawHook(g, items, cam); return { gates: items.filter(it => it.tower === 'gate').length, clipped: items.filter(it => it.roomClip).length }; })();
+      check(K + "K23 a room reads whole: standing in Halcyon's Sky Forge and in the house by the Great Gate, the Great Gate's towers are drawn with the room cut out of them (nothing inside the room is cut); out on Forge Street they are drawn whole",
+        [forge, h4].every(r => r.inRoom && r.gates >= 1 && r.clipped === r.gates && r.cut && r.ownCut === 0) && street.gates >= 1 && street.clipped === 0, { forge, h4, street }); }
+
+    // ---- K24. the forge, the bakery and the market are furnished, and every new thing says its own line ----
+    { enter(); const bad = [];
+      const PROBES = [['The forge hearth', 55, 54, 55, 53], ['The forge hearth', 54, 54, 54, 53], ['The bellows', 53, 54, 54, 54],
+        ['The great oven', 67, 54, 67, 53], ['A bread rack', 66, 55, 65, 55], ['A crate', 63, 41, 63, 40], ['A barrel', 75, 42, 76, 42], ['A crate', 72, 51, 72, 50]];
+      SP.stalls.forEach(([sx, sy], i) => { PROBES.push([STALL_INFO[i].name, sx, sy + 1, sx, sy]); PROBES.push([STALL_INFO[i].name, sx + 1, sy + 1, sx + 1, sy]); });
+      for (const [who, sx, sy, fx, fy] of PROBES) {
+        closePanel(); drain(); F.tp(sx, sy); F.step([]); F.face(fx, fy); F.press('KeyE'); F.sim(1, []);
+        const l = lineFor(tileAt(fx, fy), fx, fy), d = said()[0];
+        if (!l || !d || d.who !== who || d.text !== l[1]) bad.push(who + ' @' + fx + ',' + fy + ': ' + (d ? d.who + ' | ' + d.text.slice(0, 40) : 'nothing'));
+      }
+      // by the cloud-anvil Master Halcyon answers E (he forges on it); the anvil's own line is what a tap names and the book reads
+      closePanel(); drain(); F.tp(55, 56); F.step([]); F.face(55, 55); F.press('KeyE'); F.sim(1, []);
+      const anvil = { e: (said()[0] || {}).who || null, line: (lineFor(PROP, 55, 55) || [])[0] || null, tap: TAP_KIND[kindAt(55, 55)] };
+      if (anvil.e !== 'Master Halcyon' || anvil.line !== 'The cloud-anvil' || anvil.tap !== 'Anvil') bad.push('anvil ' + JSON.stringify(anvil));
+      closePanel(); drain();
+      // in the rooms: the hearth and the oven (two cells each, drawn once), the bellows, the anvil and two bread racks
+      const inRoom = (id, k) => { const b = BY_ID[id]; let n = 0; for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) if (kindAt(x, y) === k) n++; return n; };
+      const rooms = { hearth: inRoom('aer_forge', 'hearth'), bellows: inRoom('aer_forge', 'bellows'), anvil: inRoom('aer_forge', 'anvil'), oven: inRoom('aer_bakery', 'oven'), racks: inRoom('aer_bakery', 'rack') };
+      // the market: four stalls of two cells, each with its own goods and canopy, a seller behind each, 88's reed stall no longer drawn there
+      const stalls = SP.stalls.map(([sx, sy], i) => ({ owns: KINGDOM.ownsStall(sx, sy) && KINGDOM.ownsStall(sx + 1, sy), east: kindAt(sx + 1, sy) === 'stall', seller: SP.marketFolk[i][0] === sx && SP.marketFolk[i][1] === sy - 1 }));
+      const goods = new Set(STALL_INFO.map(s => s.goods)).size, canopies = new Set(STALL_INFO.map(s => s.canopy)).size;
+      const { g } = recorder(), a0 = STATS.awnings; for (const [sx, sy] of SP.stalls) drawAwning(g, sx, sy);
+      const people = ['pippa', 'maudie', 'plume', 'crockett', 'hazel', 'wim'].every(id => PEOPLE.some(p => p.id === id && p.line));
+      check(K + 'K24 furnished: the Sky Forge has its hearth, bellows and cloud-anvil, the Cloud Oven its great oven and two bread racks; the market has four two-cell stalls (fruit, cloth, feathers, pots) each with a seller behind it, two shoppers, crates and barrels; E on every one of them says its own line (by the anvil, Master Halcyon answers: he forges on it)',
+        bad.length === 0 && rooms.hearth === 2 && rooms.bellows === 1 && rooms.anvil === 1 && rooms.oven === 2 && rooms.racks === 2 && stalls.every(s => s.owns && s.east && s.seller) && goods === 4 && canopies === 4 && STATS.awnings - a0 === 4 && people,
+        { bad: bad.slice(0, 4), rooms, stalls, goods, canopies, people }); }
+
+    // ---- K25. no paving joins nothing: every stretch of flagstone touches a street, a gate, a bridge, a door or the cloud ----
+    { const pave = (x, y) => PLAN.at(x, y) === '=', seen = new Int32Array(W * H).fill(-1), stray = []; let parts = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (!pave(x, y) || seen[y * W + x] >= 0) continue;
+        const q = [[x, y]], cells = []; seen[y * W + x] = parts++;
+        while (q.length) { const [cx, cy] = q.pop(); cells.push([cx, cy]); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= W || ny >= H || !pave(nx, ny) || seen[ny * W + nx] >= 0) continue; seen[ny * W + nx] = seen[y * W + x]; q.push([nx, ny]); } }
+        if (!cells.some(([cx, cy]) => PLAN.roadAt(cx, cy) || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => 'G+D,'.includes(PLAN.at(cx + dx, cy + dy))))) stray.push(cells.length + ' at ' + cells[0]);
+      }
+      // the garden path south of the Wishing Well runs from the Ring Road to the lane at x 35, and steps up to the well
+      const [wx, wy] = SP.well, path = PLAN.at(wx, wy + 1) === '=' && [...Array(17).keys()].every(i => PLAN.at(18 + i, wy + 2) === '=') && !!PLAN.roadAt(18, wy + 2);
+      check(K + 'K25 no paving joins nothing: every stretch of flagstone in the city touches a street, a gate, a bridge, a door or the cloud; the path by the Wishing Well runs from the Ring Road to the lane at x 35 and up to the well',
+        stray.length === 0 && path && parts >= 6, { stray, path, parts }); }
+
+    // ---- K26. the west and east walls stand as walls; the market statue is a winged person ----
+    { // a recording canvas that also keeps the fill colour each call was made with
+      const track = () => { const log = []; let fs = null; const g = new Proxy({}, {
+        get: (t, k) => (k === 'createLinearGradient' || k === 'createRadialGradient') ? ((...a) => { log.push([k, a, fs]); return { addColorStop: () => { } }; }) : k === 'measureText' ? (s => ({ width: String(s).length * 6 })) : typeof k === 'string' ? ((...a) => { log.push([k, a, fs]); }) : undefined,
+        set: (t, k, v) => { if (k === 'fillStyle') fs = v; return true; } }); return { g, log }; };
+      const west = track(); paintWallV(west.g, false, true, 0);
+      const rects = west.log.filter(([k]) => k === 'fillRect');
+      const caps = rects.filter(([, , fs]) => fs === '#f5c542'), O = WV.over, F = WV.face;
+      const wall = {
+        merlons: caps.length, skySide: caps.every(([, a]) => a[0] + a[2] <= 24),
+        cityParapet: rects.some(([, a, fs]) => fs === '#e6decd' && a[0] >= 24 && a[2] === 7 && a[3] === 48) && !rects.some(([, a, fs]) => (fs === '#e8c25a' || fs === '#f5c542') && a[0] >= 24),
+        faces: rects.some(([, a]) => a[0] === -O && a[2] === F && a[3] === 48) && rects.some(([, a]) => a[0] === 48 + O - F && a[2] === F && a[3] === 48),
+      };
+      const east = track(); paintWallV(east.g, false, false, 0);
+      wall.eastMirrored = east.log.some(([k, a]) => k === 'scale' && a[0] === -1 && a[1] === 1);
+      const ground = track(); drawGroundRow(ground.g, 30, 17, 17);
+      wall.shadow = ground.log.some(([k, a]) => k === 'createLinearGradient' && a[0] === 17 * TILE + 6 && a[2] === 17 * TILE + 34);
+      const st = track(); paintWingwright(st.g);
+      const statue = {
+        wings: st.log.filter(([k, a]) => k === 'scale' && a[1] === 1 && Math.abs(a[0]) === 1).length, feathers: st.log.filter(([k]) => k === 'quadraticCurveTo').length,
+        head: st.log.some(([k, a]) => k === 'arc' && a[1] === -73), hands: st.log.filter(([k, a]) => k === 'ellipse' && a[1] === -94).length,
+        letter: st.log.some(([k]) => k === 'strokeRect'),
+      };
+      check(K + 'K26 the west and east walls stand as walls: a tan brick face down each side, 2 merlons a tile on the sky side only (nothing lined up across the run like rungs), a low plain parapet on the city side (no gold rail there), the east run the mirror of the west, a shadow on the ground beside it; the market statue is a winged person (two wings, a head, two floating hands holding the letter up, no arms)',
+        wall.merlons === 2 && wall.skySide && wall.cityParapet && wall.faces && wall.eastMirrored && wall.shadow && statue.wings === 2 && statue.feathers >= 20 && statue.head && statue.hands === 2 && statue.letter,
+        { wall, statue }); }
+
+    // ---- K27. the keep is seen whole from its plaza on a laptop, and the view never jumps ----
+    { enter(); const iw = window.innerWidth, ih = window.innerHeight;
+      window.innerWidth = 1280; window.innerHeight = 800;
+      const at = (x, y) => { player.x = x * TILE; player.y = y * TILE; render(); return { cam: cam.y, knight: player.y - cam.y, pennant: KEEP_VIEW.top - cam.y }; };
+      const front = [38, 39, 40, 41].map(y => at(48.5, y + 0.5));
+      const whole = front.every(v => v.pennant >= 0 && v.knight <= KEEP_VIEW.low * VH + 1);
+      // walking every way across the plaza (a quarter tile a step), the view moves no more than the knight does, plus 12 px
+      let jump = 0;
+      const walk = pts => { let last = null; for (const [x, y] of pts) { const v = at(x, y); if (last) jump = Math.max(jump, Math.abs((v.cam - last.cam) - (y - last.y) * TILE)); last = { cam: v.cam, y }; } };
+      walk(Array.from({ length: 49 }, (_, i) => [48.5, 33 + i / 4]));
+      for (const y of [39.5, 41.5, 44.5]) walk(Array.from({ length: 121 }, (_, i) => [33 + i / 4, y]));
+      const hall = at(48.5, 30.5), street = at(48.5, 20.5), noNudge = Math.abs(hall.knight - VH / 2) < 1 && Math.abs(street.knight - VH / 2) < 1;
+      window.innerWidth = iw; window.innerHeight = ih; F.tp(48, 40); render();
+      check(K + "K27 the keep from its plaza on a 1280x800 screen: standing anywhere from its door to the fountain's star (48, 38-41) the cone and the royal pennant are on screen and the knight stands no lower than 82% of the screen; walking the plaza every way the view never jumps (13 px past the knight at most, a quarter tile a step); in the hall and on the Kingsway the view is centred",
+        whole && jump <= 13 && noNudge, { front, jump: Math.round(jump * 10) / 10, hall: hall.knight, street: street.knight }); }
 
     // ---- put everything back ----
     leave(); closePanel(); drain(); tapCancel('manual');

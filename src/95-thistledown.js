@@ -1329,7 +1329,9 @@
   // ---------- statues and the waiting plinth ----------
   const STONE_LOOK = (o) => Object.assign({ tunic: '#c9c3b6', hair: '#b7b0a2', skin: '#d6d0c3', shoulder: '#bdb6a8' }, o);
   const STATUE_LOOK = {
-    last_knight: STONE_LOOK({ helm: '#cfc9bc', shield: '#bfb8a9', weapon: { shape: 'sword', color: '#d8d2c6' } }),
+    // the Last Knight of Hollowford: with 82-knightgear a knight look in stone (an iron helm, kite shield and sword, as
+    // the old statue held), so he is drawn as every knight in the game is
+    last_knight: STONE_LOOK({ helm: '#cfc9bc', shield: '#bfb8a9', weapon: { shape: 'sword', color: '#d8d2c6' }, gear: { helm: 'iron_helm', body: null, legs: null, shield: 'iron_shield', cape: null, weapon: 'iron_sword' }, stone: true }),
     thrain: STONE_LOOK({ who: 'thrain', stone: true, beard: true, crown: true, tool: 'hammer', toolColor: '#cfc9bc' }),
     aelith: STONE_LOOK({ who: 'aelith', stone: true, woman: true, crown: true, weapon: { shape: 'bow', color: '#cfc9bc' } }),
     seraphel: STONE_LOOK({ who: 'seraphel', stone: true, woman: true, crown: true, wing: 1.35 }),
@@ -1353,16 +1355,21 @@
   }
   // a statue of one of the townsfolk (83-townsfolk, look.who and stone) is the person in the new look, all in stone, its
   // own wings and all, scaled to fit the sprite (never bigger than the old 1.32) with the feet on the plinth's top
+  // A knight look (the Last Knight, with 82-knightgear) is fitted as the knight's own statue is (heroFit): his feet on
+  // the plinth's top, inside the sprite, and nothing of him below the plinth's top (his cape's hem, a bow's tip)
   function paintFigure(g, look, wings, scale, half) {
     const fit = window.TOWNSFOLK && TOWNSFOLK.takes(look) ? TOWNSFOLK.statueFit(look.who, scale, 61, (half || 24) - 1) : null;
+    const kf = !fit && look.gear && KG() ? heroFit(look, (half || 24) - 1) : null;
     g.save();
     if (fit) { g.translate(0, -28 - fit.foot); g.scale(fit.s, fit.s); }
+    else if (kf) { g.beginPath(); g.rect(-(half || 24), -96, 2 * (half || 24), 96 + HERO_FEET + 1); g.clip(); g.translate(0, kf.y0); g.scale(kf.s, kf.s); }
     else { g.translate(0, -48); g.scale(scale, scale); }
     if (wings && !fit) { g.save(); g.translate(0, -2); stoneWings(g); g.restore(); }
     drawHuman(g, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, look);
     g.restore();
   }
-  const STATUE_HALF = { seraphel: 56 };
+  // the new Last Knight holds his sword upright at his side: his sprite is a little wider than the old one's 48 px
+  const STATUE_HALF = { seraphel: 56, last_knight: 32 };
   function drawStatue(g, s) {
     const cx = tc(s.x), foot = (s.y + 1) * TILE - 2;
     // Queen Seraphel's statue spreads her wings: her sprite is wider (STATUE_HALF)
@@ -1391,11 +1398,12 @@
   // he is fitted: his feet on the plinth's top (y -31 from the foot), his top under the sprite's (-89), his sides inside
   // its 96 px, never bigger than the old statue (1.32). y0 is where his own feet's centre goes.
   const HERO_FEET = -31, HERO_TOP = -89, HERO_HALF = 46, HERO_S = 1.32;
-  function heroFit(look) {
+  function heroFit(look, half) {
     const x = KG().extent(look), fb = KG().extent({ gear: {}, fists: true }).b;
-    const s = Math.min(HERO_S, HERO_HALF / Math.max(1, -x.l, x.r), (HERO_FEET - HERO_TOP) / Math.max(1, fb - x.t));
+    const s = Math.min(HERO_S, (half || HERO_HALF) / Math.max(1, -x.l, x.r), (HERO_FEET - HERO_TOP) / Math.max(1, fb - x.t));
     return { s, y0: HERO_FEET - fb * s };
   }
+  const heroParty = look => !!look.gear && !!look.gear.helm && !!ITEMS[look.gear.helm] && !!ITEMS[look.gear.helm].partyHat;
   // the statue's sprite: one per look (and, for the new knight, per what he wears)
   const heroKey = look => 'plinth-hero:' + [look.helm, look.body, look.shield, look.weapon && look.weapon.shape, look.girl ? 'girl' : '', look.gear ? KG().SLOTS.map(k => look.gear[k] || '').join(',') : ''].join('|');
   function drawPlinth(g) {
@@ -1408,12 +1416,17 @@
       const f = heroFit(look);
       blit(g, sprite(key, 96, 96, 48, 90, cg => {
         paintPlinth(cg, GOLD);
-        cg.save(); cg.translate(0, f.y0); cg.scale(f.s, f.s);
+        // nothing of him below the plinth's top: a bow at his side, a cape's hem would hang down over its front and laurel
+        cg.save(); cg.beginPath(); cg.rect(-48, -96, 96, 96 + HERO_FEET + 1); cg.clip(); cg.translate(0, f.y0); cg.scale(f.s, f.s);
         drawHuman(cg, { x: 0, y: 0, r: 13, facing: { x: 0, y: 1 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 }, look);
         cg.restore();
       }), cx, foot);
-      // the gold laurel round the top of his head (the new knight's head is at (0, -11) r 8 in his own frame)
-      g.strokeStyle = GOLD; g.lineWidth = 2; g.beginPath(); g.arc(cx, foot + f.y0 - 15 * f.s, 8.5 * f.s, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
+      // the gold laurel round the top of his head (the new knight's head is at (0, -11) r 8 in his own frame); in a party
+      // hat it rings the hat's brim (the cone's foot, (0.9, -17.7) turned 0.22), not across the middle of the cone
+      g.strokeStyle = GOLD; g.lineWidth = 2; g.beginPath();
+      if (heroParty(look)) g.ellipse(cx + 0.9 * f.s, foot + f.y0 - 17.7 * f.s, 6.8 * f.s, 1.9 * f.s, 0.22, 0, Math.PI);
+      else g.arc(cx, foot + f.y0 - 15 * f.s, 8.5 * f.s, Math.PI * 1.05, Math.PI * 1.95);
+      g.stroke();
     } else {
       blit(g, sprite(key, 48, 96, 24, 90, cg => { paintPlinth(cg, GOLD); paintFigure(cg, look, false, 1.32); }), cx, foot);
       // the gold laurel on his head
@@ -2908,9 +2921,36 @@
         const parsed = cols.map(rgb).filter(Boolean);
         r.stone = parsed.length >= 40 && parsed.every(([a, b, c]) => Math.max(a, b, c) - Math.min(a, b, c) <= 14);
         r.colours = parsed.length;
-      } finally { for (const k in player.equip) if (!(k in eq0)) delete player.equip[k]; Object.assign(player.equip, eq0); quest.stage = st0; }
-      check(P + 'C14b the statue on the plinth is the knight as he is drawn everywhere (82-knightgear) in what he wears, all of him in stone: the Dragon slayer\'s kit with its upright spear fits the sprite with his feet on the plinth, the drawing runs once to make the sprite, again only when his gear changes',
-        r.look && r.fits && r.made[0] >= 1 && r.made[1] >= 1 && r.again === 0 && r.changed >= 1 && r.keys && r.stone, r); }
+        // in a party hat with a bow: the laurel rings the hat's brim (a flat ring, not an arc over the cone's middle), and
+        // the sprite is cut at the plinth's top (the bow at his side reached down over its front and its laurel)
+        Object.assign(player.equip, { helm: 'party_hat_red', body: 'silk_cloak', legs: null, cape: 'cape_hitpoints', weapon: 'yew_bow' });
+        const pl = heroLook(); delete CACHE[heroKey(pl)];
+        const ops = []; const og = new Proxy({}, { get: (o, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : (k in o ? o[k] : (...a) => ops.push(k + ' ' + a.filter(v => typeof v === 'number').map(v => v.toFixed(1)).join(' '))), set: (o, k, v) => { if (k === 'strokeStyle' && v === GOLD) ops.push('GOLD'); o[k] = v; return true; } });
+        drawPlinth(og);
+        const g0 = ops.lastIndexOf('GOLD'), after = ops.slice(g0);
+        r.brim = heroParty(pl) && after.some(o => o.startsWith('ellipse ')) && !after.some(o => o.startsWith('arc '));
+        // the sprite's own painting: a clip at the plinth's top before the knight
+        const sp = []; const sg = new Proxy({}, { get: (o, k) => k === 'measureText' ? () => ({ width: 10 }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : (k in o ? o[k] : (...a) => sp.push(k + ' ' + a.filter(v => typeof v === 'number').map(v => v.toFixed(1)).join(' '))), set: (o, k, v) => { o[k] = v; return true; } });
+        const _sprite = sprite; let painted = false;
+        try { sprite = (key, w, h, ax, ay, paint) => { if (key === heroKey(pl) && !painted) { painted = true; paint(sg); } return _sprite(key, w, h, ax, ay, paint); }; delete CACHE[heroKey(pl)]; drawPlinth(ctx); } finally { sprite = _sprite; }
+        r.cut = sp.includes('rect -48.0 -96.0 96.0 66.0') && sp.indexOf('clip ') > sp.indexOf('rect -48.0 -96.0 96.0 66.0');
+      } catch (err) { r.threw = String(err && err.message); }
+      finally { for (const k in player.equip) if (!(k in eq0)) delete player.equip[k]; Object.assign(player.equip, eq0); quest.stage = st0; }
+      check(P + 'C14b the statue on the plinth is the knight as he is drawn everywhere (82-knightgear) in what he wears, all of him in stone: the Dragon slayer\'s kit with its upright spear fits the sprite with his feet on the plinth, the drawing runs once to make the sprite, again only when his gear changes; in a party hat the laurel rings its brim, and nothing of him hangs below the plinth\'s top',
+        !r.threw && r.look && r.fits && r.made[0] >= 1 && r.made[1] >= 1 && r.again === 0 && r.changed >= 1 && r.keys && r.stone && r.brim && r.cut, r); }
+
+    // ---- C14c. the Last Knight of Hollowford at the Great Fountain is a knight drawn as every knight is (82-knightgear), in
+    // stone, inside his sprite with his feet on the plinth ----
+    if (window.KNIGHTGEAR) {
+      const look = STATUE_LOOK.last_knight, K = KNIGHTGEAR, r = {};
+      try {
+        r.knight = !!look.gear && !!look.stone && look.gear.weapon === 'iron_sword';
+        const f = heroFit(look, (STATUE_HALF.last_knight || 24) - 1), x = K.extent(look), fb = K.extent({ gear: {}, fists: true }).b;
+        r.fits = f.y0 + x.t * f.s >= -90 && Math.max(-x.l, x.r) * f.s <= (STATUE_HALF.last_knight || 24) && Math.abs(f.y0 + fb * f.s - HERO_FEET) < 0.01 && f.s >= 1;
+        const s0 = STATS.statues; delete CACHE['statue:last_knight']; const l0 = K.STATS.live; drawStatue(ctx, PLAN.STATUES.find(s => s.id === 'last_knight'));
+        r.drawn = K.STATS.live - l0 === 1 && STATS.statues === s0 + 1;
+      } catch (err) { r.threw = String(err && err.message); }
+      check(P + 'C14c the Last Knight of Hollowford at the Great Fountain is a knight in the new look (82-knightgear), in stone, his sword upright at his side, inside his sprite with his feet on the plinth', !r.threw && r.knight && r.fits && r.drawn, r); }
 
     // ---- C15. night ----
     { const N = window.NIGHT, d0 = player.dayTime;

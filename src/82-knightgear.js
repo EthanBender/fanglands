@@ -42,7 +42,7 @@
 // are drawn from pictures: one per (gear, girl, 8 facings, step, animation phase, screen pixel ratio). At rest the
 // weapon and its hand are in that picture (one blit a knight); while he swings or eases back the weapon has its own
 // picture per (weapon, phase, ratio), cut to the weapon's own size, turned to its angle. Both are LRU maps; the body
-// pictures' one is sized to the crowd (28 a knight, 300 to 1600, under 64 MB of pixels) and a facing to his left shares
+// pictures' one is sized to the crowd (34 a knight, 300 to 1700, under 64 MB of pixels) and a facing to his left shares
 // the picture of its mirror to his right (WPIC_MAX for the weapons). A hurt knight (the red flash) and everything else
 // (your own knight, the seats, the bank, the title, the choice cards, the statue's sprite) is drawn live, so it is
 // never soft at a panel's scale. Pictures are only made for the world canvas (`ctx`).
@@ -50,7 +50,7 @@
 // POSE. Where the weapon points and where the hand is ease from frame to frame. It lives in a WeakMap keyed by the
 // entity, never on it: the player object is saved whole into every save.
 //
-// window.KNIGHTGEAR = { draw, partsOf, gearKey, cleanGear, poseOf, STATS, PICS, WPICS }
+// window.KNIGHTGEAR = { draw, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf, STATS, PICS, WPICS, ... }
 // ============================================================================
 const KNIGHTGEAR = (() => {
   // ---------- the clock and the colours of the knight being drawn ----------
@@ -833,8 +833,23 @@ const KNIGHTGEAR = (() => {
     }
   }
   // NOT IN THE SAMPLE (ported minimally, flagged to the owner): the work tools and the fishing rod, in the same outline style
-  function drawTool(g, tool, col) {
+  // heat (0 to 1): how hot a held stone is (its glow)
+  function drawTool(g, tool, col, heat) {
     const c = hex(col, '#b8863a');
+    if (tool === 'stone') {
+      // the royal mine's stone, held in the hand into the heat (91's rm_heat and rm_warm), reddening as it warms: no haft
+      const h = clamp(+heat || 0, 0, 1), gl = g.createRadialGradient(4.2, 0, 1, 4.2, 0, 11);
+      gl.addColorStop(0, `rgba(255,190,110,${(0.3 + 0.6 * h).toFixed(3)})`); gl.addColorStop(1, 'rgba(255,120,60,0)'); g.fillStyle = gl; ell(g, 4.2, 0, 11, 11); g.fill();
+      g.beginPath(); g.moveTo(0.6, 1.8); g.lineTo(1.4, -2.6); g.lineTo(5, -4); g.lineTo(8.4, -1.2); g.lineTo(7.4, 3.2); g.lineTo(3.4, 4.2); g.closePath(); g.fillStyle = c; g.fill(); outline(g, 0.6);
+      g.fillStyle = 'rgba(255,255,255,0.3)'; ell(g, 4, -1.6, 1.4, 0.8, -0.3); g.fill();
+      return;
+    }
+    if (tool === 'rope') {
+      // the lobster pot's rope (26-boats): its end coiled in the hand; 26 draws the rope from the hand to the pot
+      g.strokeStyle = '#8a7a4a'; g.lineWidth = 1.6; ell(g, 2.6, 0, 3.2, 2.4); g.stroke();
+      g.strokeStyle = '#c9b676'; g.lineWidth = 1.1; ell(g, 2.6, 0, 3.2, 2.4); g.stroke(); ell(g, 3.4, 0.2, 2.4, 1.7); g.stroke();
+      return;
+    }
     rr(g, -4, -1.25, 26, 2.5, 1.1); g.fillStyle = '#8a6a3a'; g.fill(); outline(g, 0.5);
     if (tool === 'axe') {
       g.beginPath(); g.moveTo(17, -1.3); g.lineTo(18, -5.4); g.quadraticCurveTo(24, -9.4, 26.5, -4); g.quadraticCurveTo(24, -1.6, 22, -1.3); g.closePath(); g.fillStyle = metalFill(g, c, -9, 0); g.fill(); outline(g, 0.6);
@@ -901,6 +916,10 @@ const KNIGHTGEAR = (() => {
     return r;
   }
 
+  // where his weapon hand was last drawn, from his feet's centre, in the world's pixels (his frame is scaled 1.08 and
+  // mirrored facing left): 26-boats' pot rope starts there. null before he is drawn.
+  function handAt(e) { const r = e && POSE.get(e); return r ? { x: (r.mirror ? -r.hx : r.hx) * 1.08, y: r.hy * 1.08 } : null; }
+
   function drawTrail(g, ang, swing) {
     const a0 = ang - 1.4, a1 = ang + lerp(-1.4, 1.2, kEase(swing));
     g.save(); g.translate(SHOULDER.x, SHOULDER.y); g.strokeStyle = `rgba(255,255,255,${(0.42 * (1 - swing)).toFixed(3)})`; g.lineWidth = 5; g.lineCap = 'round';
@@ -935,8 +954,9 @@ const KNIGHTGEAR = (() => {
   // too, so behind his body from where we look (its inner face, the top showing over his shoulder).
   function raisedShield(g, S, P) {
     const k = clamp(S.fxm, 0, 1);
-    // facing away it is held out on his shield side, its top over his shoulder beside his head
-    const at = S.back ? { x: lerp(-9, -5, k), y: -4.2, rot: -0.1, sx: lerp(1.05, 0.85, k) } : { x: lerp(-2.6, 3.6, k), y: lerp(2.4, 1.6, k), rot: lerp(0, 0.06, k), sx: lerp(1.08, 0.86, k) };
+    // facing away it is held out on his shield side and up, so a small or round one still shows past his shoulder and over
+    // it beside his head (held at -9, -4.2 it was hidden behind his back: only the tall kite peeked out)
+    const at = S.back ? { x: lerp(-12.8, -9, k), y: -7, rot: -0.22, sx: lerp(1.05, 0.85, k) } : { x: lerp(-2.6, 3.6, k), y: lerp(2.4, 1.6, k), rot: lerp(0, 0.06, k), sx: lerp(1.08, 0.86, k) };
     g.save(); g.translate(0, S.bob);
     ell(g, at.x - 5.4 * at.sx, at.y + 1.2, 2, 2); g.fillStyle = handOf(P.body); g.fill(); outline(g, 0.5);
     drawShield(g, P.shield, S.back, at);
@@ -979,7 +999,7 @@ const KNIGHTGEAR = (() => {
     const W = P.weapon;
     if (hold) {
       g.save(); g.translate(hold.hx, hold.hy + S.bob); g.rotate(hold.wa);
-      if (look.rod) drawRod(g); else drawTool(g, look.tool, look.toolColor);
+      if (look.rod) drawRod(g); else drawTool(g, look.tool, look.toolColor, look.toolHeat);
       g.restore();
       g.save(); g.translate(0, S.bob); drawWeaponArm(g, P.body, hold.hx, hold.hy); g.restore();
       return;
@@ -1008,6 +1028,9 @@ const KNIGHTGEAR = (() => {
     S.block = !!look.block;
     g.save();
     g.scale(S.mirror ? -1.08 : 1.08, 1.08);
+    // e.seatLine: sitting IN something (the ferry's bow), nothing of him below that line in his own frame is drawn (an
+    // upright stave or spear, a robe's hem, a cape: they are down inside the boat, not over its planks)
+    if (seated && typeof e.seatLine === 'number') { g.beginPath(); g.rect(-60, -80, 120, 80 + e.seatLine); g.clip(); }
     if (S.back) {
       // facing away: the shield (or lantern) and its hand, the weapon and its hand, the swoosh, all behind his back
       paintBody(g, S, P, seated, 'behind');
@@ -1023,9 +1046,10 @@ const KNIGHTGEAR = (() => {
   // ---------- pictures, for the crowd of other knights ----------
   // The body pictures' LRU is sized to the crowd. A knight who walks and turns needs 5 facings (the left ones are
   // mirrors) x 4 poses of the walk = 20 pictures, and a standing one more; 16 a knight was too few (a turning crowd
-  // made pictures for ever), so the cap is 28 for every knight drawn in the busiest recent frame (300 at least, 1600 at
-  // most), and the pictures' pixels are held under PIC_BYTES.
-  const PIC_MIN = 300, PIC_TOP = 1600, PIC_EACH = 28, PIC_BYTES = 64 * 1024 * 1024, WPIC_MAX = 80;
+  // made pictures for ever), and friends online swing (73 plays each swing a presence carries): a swing's body has no
+  // weapon in it, one more picture a facing standing and up to four walking. So the cap is 34 for every knight drawn in
+  // the busiest recent frame (300 at least, 1700 at most), and the pictures' pixels are held under PIC_BYTES.
+  const PIC_MIN = 300, PIC_TOP = 1700, PIC_EACH = 34, PIC_BYTES = 64 * 1024 * 1024, WPIC_MAX = 80;
   let picCap = PIC_MIN, picBytes = 0, crowdN = 0, crowdHi = 0;
   // once a frame (the first HOOKS.draw handler call of a render): the crowd of the last frame sets the cap; it falls
   // back slowly (one knight every 20 frames) when the crowd thins
@@ -1263,10 +1287,15 @@ const KNIGHTGEAR = (() => {
   // knight holds that tool in his hand too, coloured by the action's tier as 08-draw does. Those files used to draw a
   // loose pick or axe over the old knight; they leave it to the knight now (see 24-dwarves, 25-elves, 27-dragons,
   // 91-royalmine).
-  // 53-coalmine's coal face ('coalface') is a pickaxe swing too. The other work actions draw their own things and hold no
-  // tool: the lobster pot on its rope (26-boats), the stone held into the heat (91's rm_heat, rm_warm), standing still
-  // (rm_watch), cooking (the core: no tool, as before).
-  const TOOL_ACTS = { mine_obsidian: 'pickaxe', mine_mithril: 'pickaxe', chop_jungle: 'axe', rm_giant: 'pickaxe', rm_vein: 'pickaxe', coalface: 'pickaxe' };
+  // 53-coalmine's coal face ('coalface') is a pickaxe swing too. Two hold something still, in his hand (owner's decision
+  // 1: hands on what he holds): the royal mine's stone held into the heat (91's rm_heat, rm_warm: 'stone', reddening as
+  // it warms; 91 no longer draws it loose in front of him) and the lobster pot's rope (26-boats: 'rope', its end in his
+  // hand; 26 draws the rope from that hand, handAt). Standing still (rm_watch) and cooking (the core) hold nothing.
+  const TOOL_ACTS = { mine_obsidian: 'pickaxe', mine_mithril: 'pickaxe', chop_jungle: 'axe', rm_giant: 'pickaxe', rm_vein: 'pickaxe', coalface: 'pickaxe', rm_heat: 'stone', rm_warm: 'stone', lobster: 'rope' };
+  const STILL_TOOLS = { stone: true, rope: true };
+  // the warming stone's colour: dull red to orange as it warms (the colours 91 drew it in)
+  const stoneHeat = a => clamp((+a.t || 0) / (+a.need || 1), 0, 1);
+  const stoneTint = k => '#' + [122 + 133 * k, 42 + 110 * k, 28 + 30 * k].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
   const heartPick = () => (typeof countItem === 'function' && countItem('heartstone_pickaxe') > 0) || player.equip.weapon === 'heartstone_pickaxe';
   const toolTint = a => /^rm_/.test(a.type) && heartPick() ? '#e0583c' : a.tier >= 3 ? '#7aa0d0' : a.tier === 2 ? '#a9adb5' : '#b8863a';
   const _playerLook = playerLook;
@@ -1276,7 +1305,12 @@ const KNIGHTGEAR = (() => {
     l.gear = { helm: q.helm || q.head || null, body: q.body || null, legs: q.legs || null, shield: q.shield || null, cape: q.cape || null, weapon: q.weapon || null };
     const a = player && player.action;
     // an action with no tier of its own (the coal face) is tinted by the best tool of that kind he has, as the core's mine
-    if (a && TOOL_ACTS[a.type] && !l.tool && !l.rod) { const tool = TOOL_ACTS[a.type], tier = typeof a.tier === 'number' ? a.tier : (typeof hasTool === 'function' ? hasTool(tool) : 1); l.tool = tool; l.toolSwing = true; l.toolColor = toolTint({ type: a.type, tier }); delete l.weapon; delete l.fists; }
+    if (a && TOOL_ACTS[a.type] && !l.tool && !l.rod) {
+      const tool = TOOL_ACTS[a.type];
+      if (STILL_TOOLS[tool]) { l.tool = tool; l.toolSwing = false; if (tool === 'stone') { l.toolHeat = stoneHeat(a); l.toolColor = stoneTint(l.toolHeat); } else l.toolColor = '#c9b676'; }
+      else { const tier = typeof a.tier === 'number' ? a.tier : (typeof hasTool === 'function' ? hasTool(tool) : 1); l.tool = tool; l.toolSwing = true; l.toolColor = toolTint({ type: a.type, tier }); }
+      delete l.weapon; delete l.fists;
+    }
     // the shield raised (47-outliers' block): your own knight only (it is not in the presence look)
     const O = window.OUTLIERS;
     if (O && O.BLOCK && O.BLOCK.t > 0 && !player.mech && !player.dead && q.shield && ITEMS[q.shield]) l.block = true;
@@ -1687,7 +1721,7 @@ const KNIGHTGEAR = (() => {
       // 15. the crowd's pictures keep up with a crowd that turns: 50 knights in 50 different outfits walk a whole step
       // cycle (42 frames) at each of the 8 facings and then stand for a second; then, for 60 frames more, they turn
       // through all 8 facings again (a new one every 5 frames) and stand. Those 60 frames make (close to) no new picture:
-      // the cache holds every knight's 20 walking pictures and his standing ones (28 a knight, 1400 for the 50)
+      // the cache holds every knight's 20 walking pictures and his standing ones (34 a knight, 1700 for the 50)
       { clearPics(); crowdN = 0; crowdHi = 0; picCap = PIC_MIN;
         const by = {}; for (const id in ITEMS) { const s = slotOf(ITEMS[id]); if (s) (by[s] = by[s] || []).push(id); }
         const D8 = [...Array(8)].map((_, k) => ({ x: Math.cos(k * Math.PI / 4), y: Math.sin(k * Math.PI / 4) }));
@@ -1876,9 +1910,76 @@ const KNIGHTGEAR = (() => {
         }
         const ownOk = Object.keys(r.own).length === 5 && Object.values(r.own).every(n => n === 2) && r.twice === 1;
         check(P0 + 'every other knight online is drawn from a picture, and the picture is the live knight: 4 outfits (boy and girl, two tunics, a skill cape, a shield and the lantern, a sword, a spear, the bow and a dagger) at all 8 facings, standing and walking, the pictures kept as in a crowd (' + r.rest + ' at rest), paint exactly what the live knight paints, colours and legs and all, at the screen\'s ratio, put down where they were painted; facing left the picture is flipped; he holds one weapon, in his picture at rest; facing away his weapon, hands and shield or lantern are behind his body, mid-swing too; a different tunic, skin, hair, ribbon or boy or girl gets its own picture', r.cases === 240 && r.rest === 208 && r.same === 208 && !r.bad.length && !r.flips.length && !r.order.length && ownOk, { cases: r.cases, rest: r.rest, same: r.same, bad: r.bad.slice(0, 3), flips: r.flips.slice(0, 4), order: r.order.slice(0, 3), own: r.own, twice: r.twice }); }
+
+      // 20. blocking facing away, every shield shows: held out on his shield side and up, its outer edge reaches past his
+      // shoulder plate (x -13.6) by 4 px or more and its top over the shoulders (y -6.2), so a small or round shield is
+      // not hidden behind his back; the lantern is held out too
+      { const bad = [];
+        for (const id in ITEMS) {
+          if (slotOf(ITEMS[id]) !== 'shield') continue;
+          const P = partsOf(lookWith({ shield: id, body: 'iron_body' })), S = stance(ent(FACES[2]), false); S.bob = 0;
+          const tr = tracker(); measuring(() => raisedShield(tr.g, S, P)); const b = tr.b;
+          const ok = P.shield.fam === 'lantern' ? b.l <= -17.5 : b.l <= -17.5 && b.t <= -11;
+          if (!ok) bad.push({ id, l: +b.l.toFixed(1), t: +b.t.toFixed(1) });
+        }
+        check(P0 + 'blocking facing away, every shield (and the lantern) is held out past his shoulder and up over it, so it shows: none is hidden behind his back', !bad.length, { bad: bad.slice(0, 6) }); }
+
+      // 21. sitting IN the ferry (26-boats gives him a seatLine), nothing of him is drawn below the gunwale: a stave or a
+      // spear, a robe's hem stay down in the boat, not over its planks. On the mare (no seatLine) nothing is cut.
+      { const r = {}, q = quest.boats || (quest.boats = {}), s0 = q.sailing, w0 = q.where, _dh = drawHuman, lines = [];
+        try {
+          q.sailing = { to: 'gull', t: 0.5, from: 'dock', fx: player.x, fy: player.y }; q.where = 'dock';
+          drawHuman = function (g, e, l) { if (l && l.gear) lines.push(e && e.seated ? e.seatLine : 'not seated'); return _dh(g, e, l); };
+          if (HOOKS.panel.sailing) HOOKS.panel.sailing(recorder().g, false);
+          r.ferry = lines.slice();
+        } finally { drawHuman = _dh; q.sailing = s0; q.where = w0; }
+        const look = lookWith({ body: 'necro_robe', weapon: 'bone_stave' });
+        const cut = recorder(); draw(cut.g, ent(FACES[1], { seated: true, seatLine: 7.6 }), look, { t: 0.5 });
+        const free = recorder(); draw(free.g, ent(FACES[1], { seated: true }), look, { t: 0.5 });
+        const clipAt = rec => { const i = rec.ops.findIndex(o => o === 'clip '); return i > 0 ? rec.ops[i - 1] : null; };
+        r.cut = clipAt(cut); r.free = free.ops.some(o => o.startsWith('rect -60.0 -80.0'));
+        check(P0 + 'sitting in the ferry he is cut at the gunwale (nothing of him below it over the hull: a stave, a robe\'s hem); on the mare nothing is cut', r.ferry.length === 1 && r.ferry[0] === 7.6 && r.cut === 'rect -60.0 -80.0 120.0 87.6' && r.free === false, r); }
+
+      // 22. what he holds still is in his hand (owner's decision 1): warming a stone in the royal mine he holds it (tinted
+      // as it warms, nothing else drawn at his place: 91 no longer draws it loose); at the lobster pot he holds the
+      // rope's end, and handAt is where his hand is drawn (26-boats starts the rope there)
+      { const back = keep(), r = {};
+        try {
+          const o = h.openSpot(40, 20); F.tp(o.x, o.y); player.y += 0.37; player.mech = null; player.dead = false; player.facing = { x: 1, y: 0 }; player.attackT = 0;
+          Object.assign(player.equip, { body: 'iron_body', shield: 'iron_shield', weapon: 'iron_sword', helm: null, cape: null });
+          const hand = shade(ITEMS.iron_body.color, -0.15);
+          for (const [type, tool] of [['rm_warm', 'stone'], ['rm_heat', 'stone'], ['lobster', 'rope']]) {
+            player.action = { type, t: 1, need: 2, tx: o.x + 1, ty: o.y };
+            const lk = playerLook(), at = atPlayer(), n = c => at.ops.filter(x => x === '@fill ' + c).length;
+            r[type] = { tool: lk.tool, still: lk.toolSwing === false, weapon: !!lk.weapon, painting: at.painting, hands: n(hand), hafts: n('#8a6a3a'), stone: tool === 'stone' ? n(lk.toolColor) : null };
+          }
+          player.action = null;
+          // the hand: at rest facing right and left, drawn where handAt says
+          const hands = [];
+          for (const f of [{ x: 1, y: 0 }, { x: -1, y: 0 }]) {
+            player.facing = f; const e = ent(f), rec = recorder(); draw(rec.g, e, lookWith({ weapon: 'iron_sword' }), { t: 0 });
+            const hp = handAt(e); hands.push(hp && [+hp.x.toFixed(1), +hp.y.toFixed(1)]);
+          }
+          r.hands = hands;
+          r.handOk = !!hands[0] && !!hands[1] && Math.abs(hands[0][0] - REST_HAND.up.x * 1.08) < 0.3 && Math.abs(hands[0][1] - REST_HAND.up.y * 1.08) < 0.3 && Math.abs(hands[1][0] + hands[0][0]) < 0.01;
+        } finally { back(); }
+        const held = k => r[k] && r[k].still && !r[k].weapon && r[k].painting === 1 && r[k].hands === 2 && r[k].hafts === 0;
+        check(P0 + 'what he holds still is in his hand: warming a stone in the royal mine (both ways in) he holds it, coloured as it warms, and nothing loose is drawn at his place; at the lobster pot he holds the rope\'s end; handAt is where his hand is drawn', held('rm_warm') && held('rm_heat') && held('lobster') && r.rm_warm.tool === 'stone' && r.rm_warm.stone >= 1 && r.lobster.tool === 'rope' && r.handOk, r); }
+
+      // 23. the bank's knight card (60-bank) fits the taller knight: in a party hat with a dragon spear (taller than the
+      // old knight) the card asks fit() for what he wears, and all of him, his shadow too, is inside the card
+      { const back = keep(), K = window.KNIGHTGEAR, calls = [], _fit = K.fit; let r = null;
+        try {
+          Object.assign(player.equip, { helm: 'party_hat_red', body: 'dragon_body', weapon: 'dragon_spear', shield: null, cape: null });
+          K.fit = function (look, w, hh, foot, maxS) { const f = _fit(look, w, hh, foot, maxS); calls.push({ look, w, h: hh, foot, f }); return f; };
+          openPanel('bank'); render();
+          const c = calls.find(q => q.look && q.look.gear && q.look.gear.weapon === 'dragon_spear' && q.look.gear.helm === 'party_hat_red');
+          if (c) { const x = extent(c.look), f = c.f; r = { top: +(f.y + x.t * f.s).toFixed(1), bottom: +(f.y + Math.max(x.b, c.foot) * f.s).toFixed(1), left: +(f.x + Math.min(x.l, -12) * f.s).toFixed(1), right: +(f.x + Math.max(x.r, 12) * f.s).toFixed(1), w: c.w, h: c.h, tall: x.t }; }
+        } finally { K.fit = _fit; closePanel(); back(); }
+        check(P0 + 'the bank\'s knight card fits the taller knight (a party hat and an upright dragon spear): all of him and his shadow are inside the card', !!r && r.tall < -36 && r.top >= -0.01 && r.left >= -0.01 && r.bottom <= r.h + 0.01 && r.right <= r.w + 0.01, r); }
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 
-  return { draw, partsOf, gearKey, cleanGear, extent, fit, poseOf: e => POSE.get(e), STATS, PICS, WPICS, clearPics, picCap: () => picCap, KG, SLOTS, REST_HAND, SHOULDER, REACH };
+  return { draw, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf: e => POSE.get(e), STATS, PICS, WPICS, clearPics, picCap: () => picCap, KG, SLOTS, REST_HAND, SHOULDER, REACH };
 })();
 window.KNIGHTGEAR = KNIGHTGEAR;

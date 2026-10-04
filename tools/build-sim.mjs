@@ -53,6 +53,8 @@ export const STRIP_FILES = [
   '78-monsterart', '78-monsterlook',
   // the townsfolk's look (the approved art and the file that draws every follower and townsperson with it): pictures only, no rules
   '83-townsart', '83-townsfolk',
+  // the mounts' look (the knight's machines in the monster refit's art, a friend's mount online): pictures only, no rules
+  '84-mountlook',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };
@@ -225,8 +227,8 @@ export const STRIP_READS = {
     why: 'the HUD kit (59-hudkit): fonts, colours, text widths, panel rows, plaques, seats and safe insets, read by panel, plaque, chat-wrap and tap code (79-boygirl: its "Boy or girl?" card on the title, drawn only while the title is up); the two update-time reads are a held BLOCK seat, used only for the copy\'s own knight on a machine (55-riding returns first: the parked stand-in has no machine) and a pointer release (05-input, a copy has no pointer)',
   },
   title: {
-    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '75-coop', '76-admin', '77-dropparty', '78-trade', '79-boygirl', '82-knightgear', '91-royalmine', '99-boot'],
-    why: 'title.active reads false in a copy (STUB_SEED and the stand-in\'s start(), as for a knight past the title); 79-boygirl wraps the title\'s door, slot start, open and knight sprite at load and reads a slot\'s save before it is loaded, none of which a copy ever calls (it starts with newGame(), never from the title); 82-knightgear gives the title\'s knight figure (title.KNIGHT) its gear at load, which only the title\'s drawing reads; the rest are the title\'s save slots (slotKey, slot) for login, cloud saves and admin, which a copy never uses (save() does nothing, NET.call throws), the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
+    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '72-deviceknights', '75-coop', '76-admin', '77-dropparty', '78-trade', '79-boygirl', '82-knightgear', '91-royalmine', '99-boot'],
+    why: 'title.active reads false in a copy (STUB_SEED and the stand-in\'s start(), as for a knight past the title); 79-boygirl wraps the title\'s door, slot start, open and knight sprite at load and reads a slot\'s save before it is loaded, none of which a copy ever calls (it starts with newGame(), never from the title); 82-knightgear gives the title\'s knight figure (title.KNIGHT) its gear at load, which only the title\'s drawing reads; the rest are the title\'s save slots (slotKey, slot) for login, cloud saves, device knights (72-deviceknights names and offers them on the login card) and admin, which a copy never uses (save() does nothing, NET.call throws), the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
   },
   cam: {
     files: ['17-tap', '24-dwarves', '78-trade', '88-aerie', '91-cloudkingdom', '91-royalmine', '95-thistledown', '79-deaths'],

@@ -108,6 +108,10 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   list in pixels (empty when out of reach) and the same talk call your E handler makes; a tap then walks adjacent and talks.
 - Touch: every keyboard action needs an on-screen control. Do not place buttons by hand: use the HUD kit (next section) — a seat
   face, a book tile, or a plaque — and write key hints with `keyName('KeyE')` so touch players read "E" or "USE" as appropriate.
+- Camera: `HOOKS.camera` is not in the core's table; the first feature that needs it makes it (`HOOKS.camera = HOOKS.camera || []`)
+  and pushes `() => ({ x, y })` (pixels, or null). `render` adds every nudge to the centred view before it clamps to the map.
+  Keep a nudge a smooth function of where the knight stands (91-cloudkingdom's keep plaza fades over five tiles), so walking never
+  makes the view jump.
 - `HOOKS.draw` is called as `(g, items, cam)`, and each item you push has its `draw()` called with **no arguments** — so write
   `HOOKS.draw.push((g, items) => { items.push({ y, draw: () => { ...use g... } }) })`. A handler that takes one parameter gets
   the canvas context where it expects the list, and nothing renders, silently.
@@ -348,6 +352,8 @@ look, opts)`; a townsperson's look (`who`) is 83-townsfolk's, and every other lo
   (every colour, drawn live), so the flash shows through a closed helm and plate.
 - To draw the knight somewhere new: `drawHuman(g, e, playerLook())`, translated to his feet's centre (draw your own
   shadow). `e.seated` (or `opts.seated`, or being inside `drawMech` / `drawDozer` / the barrel beast) leaves his legs off.
+  Sitting IN something (the ferry's bow), `e.seatLine` (a y in his own frame) cuts off everything of him below it: a stave,
+  a robe's hem stay inside the boat.
   A panel that shows him big fits him with `KNIGHTGEAR.fit(look, w, h, foot, maxScale)`: he is taller than the old
   knight (an upright spear, a party hat).
 - His pose (weapon angle, hand) lives in a WeakMap keyed by the entity, never on it (the player is saved whole).
@@ -356,10 +362,24 @@ look, opts)`; a townsperson's look (`who`) is 83-townsfolk's, and every other lo
 - Do not draw things onto the player from a draw hook (a loose tool, a second cape, wings, a raised shield): the knight
   draws what he wears and holds himself, in its place in front of or behind him. A new action that holds a tool maps
   its type in 82's `TOOL_ACTS` (the knight then holds that tool in his hand); the block's shield comes from
-  `look.block`. 82's self-test fails if anything else paints at the player's place in the draw list.
+  `look.block`. 82's self-test fails if anything else paints at the player's place in the draw list. A thing held still
+  (no swing) is a `STILL_TOOLS` tool: `stone` (the royal mine's warming stone, `look.toolHeat` its heat) and `rope` (the
+  lobster pot's). Something drawn from his hand (the pot's rope) starts at `KNIGHTGEAR.handAt(e)`: where his weapon hand
+  was last drawn, from his feet's centre, in world pixels.
 - A NEW WEARABLE ITEM draws as its family's plain piece (a plain helm, plate, heater shield, sword) until it gets a
   branch: `helmFam` / `bodyFam` / `shieldFam` / `weaponFam`, or its metal in `tierOf` and the tier switches. The
   self-test draws every wearable in the game and names any two of a slot that draw the same shape.
+
+### The mounts (`src/51-mounts.js`, `src/84-mountlook.js`)
+
+Cinder draws herself in 51-mounts (`MOUNTS.drawHorse(g, e, hurt, riderLook)`, her middle at the origin, hooves 21.5 px
+below: side-on, front, behind, the knight seated in her saddle; her own shadow). The knight's walker, bulldozer and
+Barrelbeast are the monster refit's machines (`MONSTER_LOOK.drawMachine` with the knight as its pilot), drawn by
+84-mountlook at the size of the knight's own machine bodies: `MOUNT_LOOK.machine(g, e, kind, { pilot, parked, wreck, hurt,
+hp, maxHp, up })`. It also draws parked machines and wrecks, a friend's mount online (`MOUNT_LOOK.rider`), and a gate
+standing open while a rider is in it. `MOUNT_LOOK.roof(kind, facing)` is where something stands on a machine (55-riding's
+beacon), `MOUNT_LOOK.top(kind)` how far above its middle a name or a coach tag goes. 84 is pictures only (stripped from the
+server copy): a kept file reads it only from drawing code.
 
 ### The townsfolk (`src/83-townsart.js`, `src/83-townsfolk.js`)
 
@@ -372,7 +392,8 @@ never edit it by hand. `83-townsfolk.js` is the glue.
 - A call site builds its look with `who`, and when `TOWNSFOLK.takes(look)` is true it translates to the feet's centre
   and leaves out its own shadow, bob, extra scale and overlays (wings, hats, beards, ears): the drawing has them all.
   `TOWNSFOLK.put(g, x, y, e, look)` does the translate and returns whether the new look took it.
-  `TOWNSFOLK.labelUp(who, old)` is how far above the feet the name goes.
+  `TOWNSFOLK.labelUp(who, old)` is how far above the feet the name goes. The gold talk brackets (24's
+  `PEOPLE_UI.brackets`) reach over the new head by itself: 83 sets `p.up` from the person's name.
 - What it reads from `e`: facing, moving, walkT, attackT, hurtT, and `seated` (no legs, no shadow), `air` (no ground
   shadow), `unarmed` (an empty main hand), `flapK` (wings beat faster). The person whose line is up (`dialog.cur.who`)
   and within 4 tiles of the knight talks.
@@ -380,7 +401,10 @@ never edit it by hand. `83-townsfolk.js` is the glue.
   apron, helm, crown, wing): a villager in the new style. A NEW PERSON goes into the sample (a family file in
   `groups/`), then the generator is run again.
 - On the world canvas `ctx` at the screen's own scale a person is a picture (per person, facing, frame and pixel
-  ratio). Talking, seated, stone, scaled or turned, a person is drawn live.
+  ratio). Talking, seated, stone, scaled or turned, a person is drawn live. Standing, a person's pictures loop on
+  their own clock (`LOOP`, 2 to 6 s, measured so the loop's end meets its start; 83's check 12 measures it again): a
+  NEW PERSON whose slow motions jump at the loop's end gets a `LOOP` entry, or goes into `LIVE` (drawn live) when no
+  loop meets it. Only one person talks at a time: the nearest whose name matches the line's.
 - Stone (`look.stone`, the statues) draws every colour in stone with the clock stopped. `HK.portrait` with `o.who`
   draws the person's head and shoulders.
 
