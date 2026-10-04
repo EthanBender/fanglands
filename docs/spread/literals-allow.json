@@ -17,6 +17,7 @@
   { "file": "29-quests.js", "literal": "12", "reason": "the board card's reward font size (let rp = 12, passed to K.NAME), not a tile" },
   { "file": "58-underground.js", "literal": "tileAt(13, 21)", "reason": "Deepholm instance-local: the throne rug inside the undercity's own map, not the overworld" },
   { "file": "92-worldshape.js", "literal": "{ x0: 1, x1: -1, y0: 1, y1: -1 }", "reason": "the bisect's empty-box probe (x0 > x1): asks whether the predicate is a plain box test, not a map position" },
+  { "file": "93-ashedge.js", "literal": "[6, 19]", "reason": "TONGUE_END: the draw-time tongue's end depths in tile pixels, not a map position" },
   { "file": "15-music.js", "reason": "MIDI note numbers and beats, no map coordinates" },
   { "file": "03-textures.js", "reason": "pixel positions inside a 48 px tile texture" },
   { "file": "59-hudkit.js", "reason": "HUD kit: screen pixels and emblem drawing, no map coordinates" },
