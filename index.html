@@ -478,7 +478,7 @@ resize();
     { id: 'fang_lair', combat: 'multi' },
     { id: 'hollowford_square', kind: 'area', of: 'hollowford', combat: 'multi', get rects() { return [FR('hollowford').box([130, 70, 150, 90])]; } },   // the cracked well and the Barrelbeast's ground
     // where the green and red dragons sleep: open Ashfields ground, a world rect (whole tiles)
-    { id: 'ashfields_dragons', kind: 'area', of: 'ashfields', combat: 'multi', get rects() { const W = WR(); return [[W.tx(40), W.ty(110), W.tx(99), W.ty(139)]]; } },
+    { id: 'ashfields_dragons', kind: 'area', of: 'ashfields', combat: 'multi', get rects() { const W = WR(); return [[W.tx(40), W.ty(110), W.line('jungle_west', window.ATLAS.port('warden.gate')[1]) - 1, W.ty(139)]]; } },   // east to the Ashfields / Jungle wall (its pin), as 27-dragons' box
     { id: 'iron_isle_wreck', kind: 'area', of: 'ironclad_isle', combat: 'multi', get rects() { return [FR('ironclad_isle').box([182, 43, 194, 56])]; } },  // the goblin wreck and its crew
     { id: 'deep_wilderlands', kind: 'reserved', combat: 'multi', pvp: true },                                   // named now, on no tile yet
     // Hollowford is rebuilt in play (31-rebuild, 41-guild): its building walls come and go, so they never count as fixed
