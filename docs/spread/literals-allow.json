@@ -87,7 +87,7 @@
   {"file": "22-bulldozer.js", "literal": "wx - 10", "line": 214, "reason": "drawing: the tread bands' pixel offsets round the wheel"},
   {"file": "22-bulldozer.js", "literal": "px - 44", "line": 256, "reason": "drawing: the blade's ridges in sprite pixels"},
   {"file": "22-bulldozer.js", "literal": "5 * TILE", "line": 313, "reason": "the self-test's check of the dozers' sight range (5 tiles)"},
-  {"file": "22-bulldozer.js", "literal": "2 * TILE", "line": 335, "reason": "a distance (2 tiles), not a position"},
+  {"file": "22-bulldozer.js", "literal": "2 * TILE", "line": 337, "reason": "a distance (2 tiles), not a position"},
   {"file": "24-dwarves.js", "decl": "DH", "reason": "instance-local (deepholm)"},
   {"file": "24-dwarves.js", "decl": "LADDER_T", "reason": "instance-local (deepholm)"},
   {"file": "24-dwarves.js", "decl": "THRONE_T", "reason": "instance-local (deepholm)"},
