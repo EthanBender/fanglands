@@ -20,7 +20,7 @@ window.FANGLANDS.title = title;
   const SLOT_KEY = n => 'fanglands.slot.' + n;
   const AT_KEY = n => 'fanglands.slot.' + n + '.at';
   const CUR_KEY = 'fanglands.slot.current';
-  const SQUARE = { x: 112, y: 32 }; // Thistledown's cobbled square, the title backdrop
+  const SQUARE = ATLAS.frame('thistledown').pt({ x: 112, y: 32 }); // Thistledown's cobbled square, the title backdrop
   const CHAPTERS = ['The Cave', 'Thistledown', 'Goblin Tech', 'Hollowford', 'The Fang'];
   const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) { } };
