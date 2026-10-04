@@ -244,7 +244,7 @@ const RETALIATE = (() => {
     // the ground these checks fight on goes back as it was: a bulldozer that walks to a goblin plows what it drives over,
     // and a later check that looks for clean grass there (the drop party's crackers) must still find it
     // and so do the graves the kills here lay (54-graves: a cross in front of the knight answers USE before anything else)
-    const o0 = h.openSpot(40, 24), ground = [], regrow0 = new Set(regrow), fires0 = new Set(fires);
+    const o0 = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(24)), ground = [], regrow0 = new Set(regrow), fires0 = new Set(fires);
     const graves0 = Array.isArray(quest.graves) ? quest.graves.slice() : null, laid0 = quest.graveNight ? quest.graveNight.laid : null;
     for (let y = o0.y - 16; y <= o0.y + 16; y++) for (let x = o0.x - 16; x <= o0.x + 16; x++) if (inMap(x, y)) { const i = idx(x, y); ground.push([x, y, map[i], mapDiffs.has(i), mapDiffs.get(i)]); }
     const r0 = Math.random, notify0 = notify, proj0 = new Set(projectiles), block0 = window.OUTLIERS ? OUTLIERS.BLOCK.t : 0;
@@ -257,7 +257,7 @@ const RETALIATE = (() => {
       // nothing in the air: a bomb or an arrow from the check before (or from a check before these) would land in this one
       projectiles = [];
       Math.random = mulberry32(seed); closePanel(); dialog.cur = null; dialog.queue.length = 0; if (typeof tapCancel === 'function') tapCancel('manual');
-      const o = h.openSpot(40, 24); F.tp(o.x, o.y); player.hp = player.maxHp; player.facing = { x: -1, y: 0 }; player.attackCd = 0; player.attackT = 0; player.action = null; stop('test'); R.hold = 0;
+      const o = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(24)); F.tp(o.x, o.y); player.hp = player.maxHp; player.facing = { x: -1, y: 0 }; player.attackCd = 0; player.attackT = 0; player.action = null; stop('test'); R.hold = 0;
       const g = goblin(player.x + dx, player.y); if (tough) { g.hp = g.maxHp = 999; } monsters = [g]; return g;
     };
     try {
@@ -401,7 +401,7 @@ const RETALIATE = (() => {
         monsters = real;
         try {
           Math.random = mulberry32(0x5E81); set(true, true); h.peace(true); R.hold = 0;
-          const o = h.openSpot(40, 24); F.tp(o.x, o.y); player.hp = player.maxHp; player.attackCd = 0;
+          const o = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(24)); F.tp(o.x, o.y); player.hp = player.maxHp; player.attackCd = 0;
           NET.enabled = true; NET.token = 'retaliate-test'; NET.useFake(fake); NET.connect();
           push({ t: 'keeper', map: 'over', n: 'Ann' });
           const row = x => ['Ann:7', 'goblin', x, player.y, 12, 12, 'chase', -1, 0, 0, 0, 0, 0, 0];

@@ -268,5 +268,12 @@
   {"file": "69-axestump.js", "literal": "3 * TILE", "line": 78, "reason": "the take-the-axe plate shows within 3 tiles of the stump: a radius, not a position"},
   {"file": "69-axestump.js", "literal": "cx - 34", "line": 152, "reason": "a tap on the drawn axe: pixels left of the stump's centre, not a map coordinate"},
   {"file": "69-axestump.js", "literal": "cy - 76", "line": 152, "reason": "a tap on the drawn axe: pixels above the stump's centre, not a map coordinate"},
-  {"file": "69-axestump.js", "literal": "cy - 100", "line": 85, "reason": "drawing: the take-the-axe plate sits 100 px above the stump, not a map coordinate"}
+  {"file": "69-axestump.js", "literal": "cy - 100", "line": 85, "reason": "drawing: the take-the-axe plate sits 100 px above the stump, not a map coordinate"},
+  {"file": "69-retaliate.js", "literal": "4 * TILE", "decl": "LEASH", "reason": "the knight chases a struck foe at most 4 tiles: a distance, not a position"},
+  {"file": "69-retaliate.js", "literal": "5 * TILE", "decl": "ANCHOR", "reason": "the knight strays at most 5 tiles from where he stood: a distance, not a position"},
+  {"file": "69-retaliate.js", "literal": "o0.y - 16", "line": 249, "reason": "the self-test snapshots the ground 16 tiles round its open spot: an offset, not a position"},
+  {"file": "69-retaliate.js", "literal": "o0.x - 16", "line": 249, "reason": "the self-test snapshots the ground 16 tiles round its open spot: an offset, not a position"},
+  {"file": "69-retaliate.js", "literal": "3 * TILE", "line": 298, "reason": "the self-test sets a goblin 3 tiles from the knight: an offset, not a position"},
+  {"file": "69-retaliate.js", "literal": "12 * TILE", "line": 303, "reason": "the self-test sets a goblin 12 tiles from the knight: an offset, not a position"},
+  {"file": "69-retaliate.js", "literal": "3.5 * TILE", "line": 320, "reason": "the self-test stages a sapper 3.5 tiles off: an offset, not a position"}
 ]
