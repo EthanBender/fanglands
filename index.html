@@ -39343,7 +39343,7 @@ window.RETALIATE = RETALIATE;
   const eachTile = (t, fn) => { if (t === undefined) return 0; let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === t) { fn(x, y); n++; } return n; };
   const anyTile = t => { if (t === undefined) return false; for (let i = 0; i < map.length; i++) if (map[i] === t) return true; return false; };
   // 35-night: the crypt door east of the last knight's grave (12,70, laid by 02-world)
-  const NIGHT_CRYPT = { x: 13, y: 70 };
+  const NIGHT_CRYPT = { x: ATLAS.port('graveyard.crypt')[0], y: ATLAS.port('graveyard.crypt')[1] };   // 35-night's crypt door
   const PART_IDS = ['boiler', 'gear_wheel', 'bomb_chute', 'lightning_coil'];
   const REBUILD_STOCK = [['plank', 200], ['stone', 100], ['iron_bar', 50], ['mithril_bar', 10]];
   const rebuilt = () => !!(QUEST_DEFS.rebuild && quest.stage >= 10 && !activeQuests().includes('rebuild'));
@@ -39947,7 +39947,7 @@ window.RETALIATE = RETALIATE;
     const _reset = window.CLOUD ? CLOUD.reset : null;
     try {
       NET.enabled = true; NET.useFake(world); dialog.cur = null; dialog.queue.length = 0; closePanel(); paused = false; h.peace(true); refill();
-      { const o = h.openSpot(58, 32); F.tp(o.x, o.y); }
+      { const o = h.openSpot(ATLAS.world.tx(58), ATLAS.world.ty(32)); F.tp(o.x, o.y); }
 
       // ---- the chip and the panel are an admin's only; a demotion or a lost line takes them away ----
       { connect('player'); closePanel(); render();
@@ -40021,7 +40021,7 @@ window.RETALIATE = RETALIATE;
         check(P + 'Give me an item: 250 iron bars with one pack slot free go 50 to the pack and 200 to the bank; with the bank full the rest is refused with the exact number; the panel searches, picks, sets 100 and gives', split && refused && listed && viaPanel && words === 'iron bars|wolves|coins|fangs of the Fang|goblin soldier|cave spiders|raw shrimp', { split, t1, refused, t2, listed, viaPanel, words }); }
 
       // ---- Teleport: the map's own button over the picture takes the tap; the knight lands on that tile; overworld only ----
-      { refill(); closePanel(); const target = h.openSpot(60, 30);
+      { refill(); closePanel(); const target = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(30));
         player.dead = false; open('powers'); render(); F.clickButton('admin:teleport'); render();
         const mapOpen = panel === 'map' && S.teleport && buttons.some(b => b.label === 'admin:teleport:map') && !!S.mapImg;
         const sc = S.mapImg ? S.mapImg.w / MAP_W : 1, px = S.mapImg ? S.mapImg.x + (target.x + 0.5) * sc : 0, py = S.mapImg ? S.mapImg.y + (target.y + 0.5) * sc : 0;
@@ -40033,7 +40033,7 @@ window.RETALIATE = RETALIATE;
         check(P + 'Teleport: the world map opens with a button over the picture; a tap there lands the knight on that tile, on free ground, and closes the map; refused inside an instance', mapOpen && landed && refusedIn, { mapOpen, target: [target.x, target.y], at: [Math.floor(player.x / TILE), Math.floor(player.y / TILE)], landed, refusedIn }); }
 
       // ---- the keeper's side of spawning ----
-      { refill(); closePanel(); const o = h.openSpot(58, 34); F.tp(o.x, o.y);
+      { refill(); closePanel(); const o = h.openSpot(ATLAS.world.tx(58), ATLAS.world.ty(34)); F.tp(o.x, o.y);
         const x = Math.round(player.x), y = Math.round(player.y);
         const spawns = () => monsters.filter(isSpawn), living = () => monsters.filter(m => isSpawn(m) && !m.dead).length, withSid = sid => monsters.filter(m => m.nid && m.nid.startsWith('!' + sid + '.'));
         const keeperNow = COOP.isKeeper();
@@ -40077,7 +40077,7 @@ window.RETALIATE = RETALIATE;
       let pinnedRaw = null;
       { refill(); closePanel(); dialog.cur = null; dialog.queue.length = 0;
         // stand where 31-rebuild puts the first house's west wall: whatever the unlock builds, the knight is never left inside it
-        F.tp(126, 70); render(); save(); const before = slot();
+        F.tp(...ATLAS.frame('hollowford').p(126, 70)); render(); save(); const before = slot();
         open('powers'); render(); sent.length = 0;
         F.clickButton('admin:unlock'); F.clickButton('admin:unlock');
         pinnedRaw = world.pinned;

@@ -629,5 +629,7 @@
   {"file": "72-savelock.js", "literal": "knight(200, 1, 4)", "line": 107, "reason": "knight(kills, stage, seconds): a saved knight's kills, story stage and play time, not a position"},
   {"file": "72-savelock.js", "literal": "knight(41, 1, 4)", "line": 130, "reason": "knight(kills, stage, seconds): a saved knight's kills, story stage and play time, not a position"},
   {"file": "73-players.js", "literal": "2 * TILE", "decl": "NEAR", "reason": "close enough to hand something over: 2 tiles, a distance, not a position"},
-  {"file": "73-players.js", "literal": "[4, 4]", "decl": "drawKnight", "reason": "drawing: a canvas line-dash pattern of 4 px"}
+  {"file": "73-players.js", "literal": "[4, 4]", "decl": "drawKnight", "reason": "drawing: a canvas line-dash pattern of 4 px"},
+  {"file": "76-admin.js", "literal": "3 * TILE", "decl": "SPAWN_SPREAD", "reason": "how far from the admin a spawned monster may stand: 3 tiles, a distance, not a position"},
+  {"file": "76-admin.js", "decl": "CAPS", "reason": "each command's [min, max] argument counts, not positions"}
 ]

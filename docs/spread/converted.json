@@ -71,5 +71,6 @@
 "44-wiki.js",
 "72-deviceknights.js",
 "72-savelock.js",
-"73-players.js"
+"73-players.js",
+"76-admin.js"
 ]
