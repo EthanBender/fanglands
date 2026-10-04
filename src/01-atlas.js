@@ -30,7 +30,9 @@
   const FR = id => window.ATLAS.frame(id), WR = () => window.ATLAS.world;
   const ATLAS_RULES = [
     // multi on the overworld: the gang fights
-    { id: 'goblin_camp', combat: 'multi', get rects() { return [FR('camp').box([142, 18, 159, 42])]; } },     // + the camp spawns' rect (generateWorld marks camp spawns from x 142; the region starts at 145)
+    // + the camp's ground with the region's box round it: the one rect generateWorld marks camp spawns in (CAMP_GROUND, from
+    // x 142) and the Goblin Camp's REGIONS box (from x 145), both 02-world's, read not copied
+    { id: 'goblin_camp', combat: 'multi', get rects() { const g = CAMP_GROUND, r = REGIONS.find(q => q.name === 'Goblin Camp'); return [[Math.min(g.x0, r.x0), Math.min(g.y0, r.y0), Math.max(g.x1, r.x1), Math.max(g.y1, r.y1)]]; } },
     { id: 'fang_lair', combat: 'multi' },
     { id: 'hollowford_square', kind: 'area', of: 'hollowford', combat: 'multi', get rects() { return [FR('hollowford').box([130, 70, 150, 90])]; } },   // the cracked well and the Barrelbeast's ground
     // where the green and red dragons sleep: open Ashfields ground, a world rect (whole tiles)

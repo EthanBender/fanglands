@@ -26,8 +26,8 @@
   const rectOf = b => ({ x0: b[0], y0: b[1], x1: b[2], y1: b[3] });
   const SEA = { x0: W.tx(162), y0: W.ty(0), x1: W.tx(199), y1: W.ty(95) };   // the Grey Sea: open water, a world rect
   const VILL = { x0: VILLAGE.x0, y0: VILLAGE.y0, x1: VILLAGE.x1, y1: VILLAGE.y1 };   // 02-world's Thistledown, read not copied
-  const PAL = CAMP.rect({ x0: 142, y0: 20, x1: 158, y1: 40 });                   // the goblin palisade
-  const QUARRY = QF.rect({ x0: 48, y0: 5, x1: 60, y1: 12 });                   // the rock rectangle the core scatters (rows 3–4 are the cliff course)
+  const PAL = CAMP_GROUND;                                                       // the goblin palisade and its field: 02-world's camp ground, read not copied
+  const QUARRY = Object.assign({}, QUARRY_ROCK, { y0: QUARRY_ROCK.y0 + 2 });   // 02-world's rock rectangle, less its top two rows (rows 3–4 are the cliff course)
   const HF = HFF.rect({ x0: 122, y0: 66, x1: 156, y1: 92 });                    // Hollowford: the goblins' fire cleared a rectangle of Wolfwood
   const DH = rectOf(ATLAS.box('deepholm_rock'));                     // Deepholm's walls, seen from Wolfwood as a block of rock (the anchor's own box)
   const LAIR = LAIRF.rect({ x0: 2, y0: 108, x1: 34, y1: 138 });                   // The Fang's lair, a block of wall in the ash
