@@ -123,5 +123,29 @@
       } finally { closePanel(); player.bank = bank0; SETTINGS.set('text', text0); window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); render(); }
       check(P + 'the bank at 320 x 568 takes a phone shape (stack or split, never the computer\'s wide one): every control inside the panel and the screen, none on another, Back and Next 44 px and apart, at both text sizes',
         ['normal', 'large'].every(k => r[k] && r[k].kind !== 'wide' && r[k].w <= 320 && !r[k].out.length && !r[k].over.length && r[k].pager), r); }
+
+    // --- 9. an old save's plank and stump inside the new rock (92-worldshape): the rock comes back, the plank is given back ---
+    { const WS = window.WORLDSHAPE, r = {};
+      if (!WS || !WS.rock || !WS.rock.size) check(P + 'an old save\'s things inside the new rock are undone on load', false, { rock: WS && WS.rock && WS.rock.size });
+      else {
+        const sk = typeof title !== 'undefined' && title.slotKey ? title.slotKey(title.slot) : SAVE_KEY;
+        if (INSTANCES && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+        save(); const raw0 = localStorage.getItem(sk), mirror0 = localStorage.getItem(SAVE_KEY);
+        const cells = [...WS.rock.keys()].filter(i => WS.rock.get(i) === WS.CLIFF).slice(0, 2), [a, b] = cells;
+        const d = JSON.parse(raw0);
+        d.mapDiffs = (d.mapDiffs || []).filter(([i]) => i !== a && i !== b).concat([[a, 'PLANK'], [b, 'STUMP']]);
+        d.regrow = (d.regrow || []).concat([{ i: b, t: 'TREE', timer: 50 }]);
+        const planks0 = (d.player.inv || []).filter(s => s && s.id === 'plank').reduce((n, s) => n + s.qty, 0) + (d.player.bank || []).filter(s => s && s.id === 'plank').reduce((n, s) => n + s.qty, 0);
+        localStorage.setItem(sk, JSON.stringify(d)); localStorage.setItem(SAVE_KEY, JSON.stringify(d));
+        try {
+          const ok = load(); dialog.queue.length = 0; dialog.cur = null;
+          const planks = countItem('plank') + player.bank.filter(s => s.id === 'plank').reduce((n, s) => n + s.qty, 0) + drops.filter(dd => dd.id === 'plank').reduce((n, dd) => n + dd.qty, 0);
+          r.ok = ok; r.rock = map[a] === WS.CLIFF && map[b] === WS.CLIFF && !mapDiffs.has(a) && !mapDiffs.has(b);
+          r.regrow = !regrow.some(g => g.i === b); r.plank = planks === planks0 + 1;
+          save(); const n0 = WS.unrocked.cells; load(); r.again = WS.unrocked.cells === n0;
+        } finally { if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0); load(); dialog.queue.length = 0; dialog.cur = null; }
+        check(P + "an old save's plank and stump inside the new rock (92-worldshape) are undone on load: the cliff comes back, the stump's regrowth goes, the plank is given back, and a second load changes nothing",
+          r.ok && r.rock && r.regrow && r.plank && r.again, r);
+      } }
   });
 }
