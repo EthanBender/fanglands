@@ -725,6 +725,14 @@ resize();
   }
   // places that may lie inside another (§4 spacing): [inner, outer]
   const NESTED = [['watchtower', 'old_bridge'], ['sylvaris', 'sylvaris_growth']];
+  // Old boxes overlap in seven places (quarry/thistledown, dock/gull_isle, dock/camp, thistledown/hollowford,
+  // graveyard/deepholm_rock, wren/deepholm_rock, warden/stone_circle). "Smallest box wins" can split one thing between two
+  // places that move apart at the spread, so a point inside more than one box has an owner only when one is DECIDED:
+  // a rect here (each with the reason), or a port at that exact point. Every other overlap point is refused by
+  // tools/anchor-of.mjs and tools/frame-codemod.mjs until a human decides (docs/spread/README.md lists the open ones).
+  const OWNERS = [
+    { box: [72, 14, 80, 21], id: 'thistledown', why: 'the cow pen 72..80 x 14..21: section 2 lists it under thistledown, not quarry' },
+  ];
 
   // ---------- the ports (~100): doors, gates, road ends and named spots ----------
   const PORTS = {
@@ -896,15 +904,24 @@ resize();
   }
   const box = id => live(id) ? FRAMES[id].newBox : null;
   const area = b => (b[2] - b[0] + 1) * (b[3] - b[1] + 1);
-  // the smallest place box (OLD map) holding the point; ties are listed for a human
+  // the place box (OLD map) holding the point. One box: that place. More than one: the OWNERS rect or the port at that
+  // exact point that decides it (decided: 'owner' | 'port'); otherwise the smallest box, flagged overlap: true (a human
+  // decides; the tools refuse it). ties: other boxes of the same smallest area.
+  const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3];
   function anchorOf(x, y) {
     let best = null, ties = [];
-    for (const id in ANCHORS) {
-      const a = ANCHORS[id]; if (a.kind !== 'place') continue;
-      const b = a.box; if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue;
+    const holders = Object.keys(ANCHORS).filter(id => ANCHORS[id].kind === 'place' && inB(ANCHORS[id].box, x, y));
+    for (const id of holders) {
+      const b = ANCHORS[id].box;
       if (!best || area(b) < area(ANCHORS[best].box)) { best = id; ties = []; } else if (area(b) === area(ANCHORS[best].box)) ties.push(id);
     }
-    return best ? { id: best, ties, holders: Object.keys(ANCHORS).filter(id => ANCHORS[id].kind === 'place' && FRAMES[id].inOld(x, y)) } : null;
+    if (!best) return null;
+    if (holders.length < 2) return { id: best, ties, holders, overlap: false, decided: null };
+    const own = OWNERS.find(o => inB(o.box, x, y) && holders.includes(o.id));
+    if (own) return { id: own.id, ties: [], holders, overlap: false, decided: 'owner' };
+    const pid = Object.keys(PORTS).find(k => PORTS[k][0] !== 'new' && PORTS[k][1] === x && PORTS[k][2] === y && holders.includes(PORTS[k][0]));
+    if (pid) return { id: PORTS[pid][0], ties: [], holders, overlap: false, decided: 'port' };
+    return { id: best, ties, holders, overlap: true, decided: null };
   }
   // the migration's and the tools' mappings, never game code's
   function oldToNew(x, y) { const h = anchorOf(x, y); return h ? [FRAMES[h.id].x(x), FRAMES[h.id].y(y)] : null; }
@@ -947,6 +964,15 @@ resize();
       if (!FRAMES[aid].inOld(x, y) && !PORT_REL[pid]) problems.push('port ' + pid + ' lies outside ' + aid + "'s box");
     }
     for (const pid in PORT_REL) if (!PORTS[pid]) problems.push('PORT_REL names no port ' + pid);
+    // each owner decision names a place and covers some overlap that place is part of (otherwise it decides nothing)
+    for (const o of OWNERS) {
+      if (!live(o.id)) { problems.push('OWNERS names no place anchor ' + o.id); continue; }
+      let used = false;
+      for (let x = o.box[0]; x <= o.box[2] && !used; x++) for (let y = o.box[1]; y <= o.box[3] && !used; y++) {
+        const hs = Object.keys(ANCHORS).filter(id => live(id) && inB(ANCHORS[id].box, x, y)); used = hs.length > 1 && hs.includes(o.id);
+      }
+      if (!used || !o.why) problems.push('OWNERS rect ' + JSON.stringify(o.box) + ' (' + o.id + ') decides no overlap of ' + o.id + ', or gives no reason');
+    }
     // the world is monotone; every pin names real ports; every track point resolves
     if (!monotone(WORLD.xs) || !monotone(WORLD.ys)) problems.push('WORLD is not monotone');
     for (const pin of PINS) for (const pid of pin.ports) if (!PORTS[pid]) problems.push('pin ' + pin.id + ' names no port ' + pid);
@@ -958,7 +984,7 @@ resize();
   }
 
   Object.assign(A, {
-    ANCHORS, PORTS, PORT_REL, TRACKS, WORLD, PINS, NESTED, PLAN: { W: PLAN_W, H: PLAN_H },
+    ANCHORS, PORTS, PORT_REL, TRACKS, WORLD, PINS, NESTED, OWNERS, PLAN: { W: PLAN_W, H: PLAN_H },
     frame, world: W, port, box, track, guards, anchorOf, oldToNew, oldToNewWorld,
     frameProblems: () => problems.slice(), strict: () => [...STRICT.values()].map(e => e.slice()),
   });
@@ -985,6 +1011,11 @@ resize();
       JSON.stringify(sp) === '[112,33]' && reserved === null && box('old_bridge') === null && JSON.stringify(hfBox) === '[120,59,160,96]' && g && g.x0 === 117 && g.y1 === 99 &&
       smallest && smallest.id === 'hollowford' && smallest.holders.includes('thistledown') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(oldToNewWorld(60, 70)) === '[60,70]' && trackOk,
       { sp, reserved, hfBox, g, smallest, ow, none, trackOk });
+    // an overlap point is flagged until a human decides it; an OWNERS rect or a port at that exact point decides it
+    const pen = anchorOf(72, 14), gate = anchorOf(13, 72), open = anchorOf(134, 60), alone = anchorOf(140, 80);
+    check(PF + 'a point inside two old boxes is an overlap a human decides (134,60), unless an OWNERS rect (the cow pen 72,14: thistledown, not the smaller quarry) or a port at that point (graveyard.gate 13,72) decides it',
+      open.overlap === true && pen.id === 'thistledown' && pen.decided === 'owner' && !pen.overlap && gate.id === 'graveyard' && gate.decided === 'port' && !gate.overlap && alone.overlap === false && alone.decided === null,
+      { open, pen, gate, alone });
     // TRACKS hold today's values: the cave road ends where 02-world lays it, and the river is 39's 18 points
     const cave = track('road_cave'), riv = track('river');
     check(PF + "TRACKS hold today's values (the cave road from the cave mouth by the signpost to the lane outside the west gate; 18 river points from the pond to the sea)",

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // ============================================================================
 // ANCHOR-OF — which place a map literal belongs to (the spread spec, §2 and §9.1)
-//   node tools/anchor-of.mjs X Y [X Y ...]     the place whose OLD box holds the tile (the smallest box wins; equal
-//                                              smallest boxes are ties, listed for a human), every box that holds it,
-//                                              and where it goes at the spread; "world" when no place box holds it
+//   node tools/anchor-of.mjs X Y [X Y ...]     the place whose OLD box holds the tile, every box that holds it, and where
+//                                              it goes at the spread; "world" when no place box holds it. A tile inside
+//                                              two or more boxes is an OVERLAP: it has a place only when 01-atlas's OWNERS
+//                                              or a port at that exact tile decides it; otherwise a human decides (exit 1)
 //   node tools/anchor-of.mjs --port ID         a port's anchor and its old and spread positions
 //   node tools/anchor-of.mjs --json ...        the same as JSON
 // Reads ANCHORS and PORTS straight from src/01-atlas.js (no build needed), with the rule ATLAS.anchorOf uses.
@@ -26,12 +27,14 @@ if (argv.includes('--port')) {
   if (nums.length < 2 || nums.length % 2 || nums.some(n => !Number.isFinite(n))) { console.error('usage: node tools/anchor-of.mjs X Y [X Y ...] | --port ID  [--json]'); process.exit(2); }
   for (let i = 0; i < nums.length; i += 2) {
     const [x, y] = [nums[i], nums[i + 1]], h = anchorOf(T, x, y);
-    out.push({ at: [x, y], anchor: h.id, ties: h.ties, holders: h.holders, spread: h.id === 'world' ? null : spreadOf(h.id, x, y) });
+    out.push({ at: [x, y], anchor: h.overlap ? null : h.id, smallest: h.id, overlap: h.overlap, decided: h.decided, by: h.why || h.port || undefined, ties: h.ties, holders: h.holders, spread: h.id === 'world' || h.overlap ? null : spreadOf(h.id, x, y) });
   }
 }
 if (json) console.log(JSON.stringify(out, null, 1));
 else for (const r of out) {
   if (r.port) { console.log(r.old ? `${r.port}: ${r.anchor} ${r.old.join(',')} -> ${r.spread.join(',')} at the spread${r.rel ? ' (outside its box on purpose: ' + r.rel + ')' : ''}` : `${r.port}: ${r.anchor}, ${r.at.join(',')} in ${r.frame}`); continue; }
+  if (r.overlap) { console.log(`${r.at.join(',')}: OVERLAP of ${r.holders.join(', ')}: a human decides (an OWNERS rect in src/01-atlas.js, or a port at this tile); the smallest box would say ${r.smallest}, which can split one thing between two places`); continue; }
   const also = r.holders.filter(id => id !== r.anchor);
-  console.log(`${r.at.join(',')}: ${r.anchor}${r.spread ? ` (-> ${r.spread.join(',')} at the spread)` : ' (stretched land)'}${r.ties.length ? `  TIE with ${r.ties.join(', ')}: a human decides` : ''}${also.length ? `  also inside ${also.join(', ')}` : ''}`);
+  console.log(`${r.at.join(',')}: ${r.anchor}${r.spread ? ` (-> ${r.spread.join(',')} at the spread)` : ' (stretched land)'}${r.decided ? `  decided by ${r.decided === 'owner' ? 'OWNERS: ' + r.by : 'the port ' + r.by}` : ''}${r.ties.length ? `  TIE with ${r.ties.join(', ')}: a human decides` : ''}${also.length ? `  also inside ${also.join(', ')}` : ''}`);
 }
+if (out.some(r => r.overlap || (r.ties && r.ties.length))) process.exitCode = 1;

@@ -43,24 +43,33 @@ export const parse = src => parser().parse(src, { ecmaVersion: 'latest', sourceT
 // ANCHORS and PORTS are plain data literals: each is evaluated alone, in an empty context.
 export function atlasTables(srcFile = path.join(SRC, '01-atlas.js')) {
   const src = fs.readFileSync(srcFile, 'utf8'), ast = parse(src), found = {};
-  walk(ast, n => { if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && ['ANCHORS', 'PORTS', 'NESTED', 'PORT_REL'].includes(n.id.name) && n.init && !found[n.id.name]) found[n.id.name] = src.slice(n.init.start, n.init.end); });
+  walk(ast, n => { if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && ['ANCHORS', 'PORTS', 'NESTED', 'PORT_REL', 'OWNERS'].includes(n.id.name) && n.init && !found[n.id.name]) found[n.id.name] = src.slice(n.init.start, n.init.end); });
   const ev = t => t ? vm.runInNewContext('(' + t + ')', Object.create(null)) : null;
   const ANCHORS = ev(found.ANCHORS) || {}, PORTS = ev(found.PORTS) || {};
   for (const id in ANCHORS) { const a = ANCHORS[id]; a.kind = a.box ? 'place' : 'reserved'; if (a.box) a.at = a.at || [a.box[0], a.box[1]]; }
-  return { ANCHORS, PORTS, NESTED: ev(found.NESTED) || [], PORT_REL: ev(found.PORT_REL) || {} };
+  return { ANCHORS, PORTS, NESTED: ev(found.NESTED) || [], PORT_REL: ev(found.PORT_REL) || {}, OWNERS: ev(found.OWNERS) || [] };
 }
 const area = b => (b[2] - b[0] + 1) * (b[3] - b[1] + 1);
-// the same rule as ATLAS.anchorOf: the smallest place box (old map) holding the point; equal smallest boxes are ties
+const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3];
+// the same rule as ATLAS.anchorOf: one place box holding the point names its place; inside more than one, an OWNERS rect
+// or a port at that exact point decides (decided: 'owner' | 'port'), and otherwise it is an overlap a human decides
+// (overlap: true; id is the smallest box, for display only). ties: other boxes of the same smallest area.
 export function anchorOf(T, x, y) {
   let best = null, ties = [];
   const holders = [];
   for (const id in T.ANCHORS) {
     const a = T.ANCHORS[id]; if (a.kind !== 'place') continue;
-    const b = a.box; if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue;
+    const b = a.box; if (!inB(b, x, y)) continue;
     holders.push(id);
     if (!best || area(b) < area(T.ANCHORS[best].box)) { best = id; ties = []; } else if (area(b) === area(T.ANCHORS[best].box)) ties.push(id);
   }
-  return best ? { id: best, ties, holders } : { id: 'world', ties: [], holders };
+  if (!best) return { id: 'world', ties: [], holders, overlap: false, decided: null };
+  if (holders.length < 2) return { id: best, ties, holders, overlap: false, decided: null };
+  const own = (T.OWNERS || []).find(o => inB(o.box, x, y) && holders.includes(o.id));
+  if (own) return { id: own.id, ties: [], holders, overlap: false, decided: 'owner', why: own.why };
+  const pid = Object.keys(T.PORTS).find(k => T.PORTS[k][0] !== 'new' && T.PORTS[k][1] === x && T.PORTS[k][2] === y && holders.includes(T.PORTS[k][0]));
+  if (pid) return { id: T.PORTS[pid][0], ties: [], holders, overlap: false, decided: 'port', port: pid };
+  return { id: best, ties, holders, overlap: true, decided: null };
 }
 
 // ---------- the walk ----------

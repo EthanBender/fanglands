@@ -10,7 +10,8 @@
 //   call   setTile(N, N, ...) etc.   -> the two numbers through .x / .y
 //   compare  x >= 142                -> x >= ATLAS.frame('a').x(142), ONLY with --as <anchor> (one axis names no place)
 // The place is tools/anchor-of.mjs's answer for the point (the smallest old box; "world" when none holds it).
-// It REFUSES, and changes nothing there, every literal it cannot classify: a tie between two boxes, a call with one number,
+// It REFUSES, and changes nothing there, every literal it cannot classify: a tie between two boxes, a point inside two
+// boxes that no OWNERS rect or port decides (an overlap), a line whose literals name two places, a call with one number,
 // tc(N) and N * TILE (one axis, no place: convert by hand), a comparison without --as, a rect whose corners disagree.
 // Each refusal is listed with its line; the exit code is 1 when anything was refused.
 // --write writes the converted file (refused literals are left as they were, for the hand pass). Without it nothing is written.
@@ -36,7 +37,9 @@ if (as && !(T.ANCHORS[as] && T.ANCHORS[as].kind === 'place') && as !== 'world') 
 const F = id => id === 'world' ? 'ATLAS.world' : `ATLAS.frame('${id}')`;
 const ax = (id, axis) => id === 'world' ? (axis === 'x' ? 'tx' : 'ty') : axis;   // world tiles are rounded
 const wrap = (id, axis, node) => `${F(id)}.${ax(id, axis)}(${src.slice(node.start, node.end)})`;
-const place = (x, y) => { const h = anchorOf(T, x, y); return h.ties.length ? { tie: [h.id, ...h.ties] } : { id: h.id }; };
+// a point inside two or more old boxes with no OWNERS rect or port deciding it is refused (an overlap), like a tie
+const place = (x, y) => { const h = anchorOf(T, x, y); return h.overlap ? { tie: h.holders, overlap: true } : h.ties.length ? { tie: [h.id, ...h.ties] } : { id: h.id }; };
+const tieWhy = p => p.overlap ? 'an overlap of ' + p.tie.join(' and ') + ' (no OWNERS rect or port decides it)' : 'a tie between ' + p.tie.join(' and ');
 
 // the literals, minus the allowed ones
 const allow = allowList();
@@ -49,12 +52,12 @@ const refuse = (h, why) => refused.push({ line: h.line, col: h.col, kind: h.kind
 for (const h of hits) {
   const lit = h.nodes;
   if (h.kind === 'pair') {
-    const p = place(h.x, h.y); if (p.tie) { refuse(h, 'a tie between ' + p.tie.join(' and ')); continue; }
+    const p = place(h.x, h.y); if (p.tie) { refuse(h, tieWhy(p)); continue; }
     const [a, b] = lit;
     edits.push({ s: h.start, e: h.end, text: p.id === 'world' ? `[${wrap('world', 'x', a)}, ${wrap('world', 'y', b)}]` : `${F(p.id)}.p(${src.slice(a.start, a.end)}, ${src.slice(b.start, b.end)})`, h, id: p.id });
   } else if (h.kind === 'point' || h.kind === 'call') {
     if (lit.length !== 2) { refuse(h, 'only one of the two numbers is a literal: convert by hand'); continue; }
-    const p = place(h.x, h.y); if (p.tie) { refuse(h, 'a tie between ' + p.tie.join(' and ')); continue; }
+    const p = place(h.x, h.y); if (p.tie) { refuse(h, tieWhy(p)); continue; }
     edits.push({ s: lit[0].start, e: lit[0].end, text: wrap(p.id, 'x', lit[0]), h, id: p.id }, { s: lit[1].start, e: lit[1].end, text: wrap(p.id, 'y', lit[1]), h, id: p.id, second: true });
   } else if (h.kind === 'rect') {
     // the rect's numbers, by key: both corners must name one place
@@ -63,7 +66,7 @@ for (const h of hits) {
     const [x0, y0, x1, y1] = ['x0', 'y0', 'x1', 'y1'].map(val);
     const corners = [[x0, y0], [x1, y1]].filter(([a, b]) => a && b).map(([a, b]) => place(a.value, b.value));
     if (!corners.length) { refuse(h, 'no corner of the rect is two literals: one axis names no place'); continue; }
-    if (corners.some(c => c.tie)) { refuse(h, 'a corner is a tie between ' + corners.find(c => c.tie).tie.join(' and ')); continue; }
+    if (corners.some(c => c.tie)) { refuse(h, 'a corner is ' + tieWhy(corners.find(c => c.tie))); continue; }
     if (corners.length === 2 && corners[0].id !== corners[1].id) { refuse(h, `its corners name two places (${corners[0].id}, ${corners[1].id}): decide by hand`); continue; }
     const id = corners[0].id;
     for (const [k, node] of [['x', x0], ['y', y0], ['x', x1], ['y', y1]]) if (node) edits.push({ s: node.start, e: node.end, text: wrap(id, k, node), h, id });
@@ -79,6 +82,12 @@ for (const h of hits) {
     refuse(h, h.kind === 'tc' ? 'tc(N) is one axis and names no place: convert by hand' : 'N * TILE is one axis and names no place: convert by hand');
   }
 }
+// one line naming two places (Gull Isle's mooring: a boat in dock's box, its keeper in gull_isle's) is one thing split
+// between frames that move apart at the spread: refuse the whole line for the hand pass (--as does not count: it is one place)
+{ const byLine = new Map(); for (const e of edits) { const l = e.h.line; if (!byLine.has(l)) byLine.set(l, new Set()); byLine.get(l).add(e.id); }
+  for (const [l, ids] of byLine) if (ids.size > 1) {
+    for (let i = edits.length - 1; i >= 0; i--) if (edits[i].h.line === l) { if (!edits[i].second) refuse(edits[i].h, `its line names two places (${[...ids].join(', ')}): decide by hand whether they move together`); edits.splice(i, 1); }
+  } }
 // overlapping edits (a pair inside a call already wrapped): keep the outer, refuse the inner
 edits.sort((a, b) => a.s - b.s || b.e - a.e);
 const kept = [];

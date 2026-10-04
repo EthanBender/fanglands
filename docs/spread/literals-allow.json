@@ -4,6 +4,7 @@
   { "file": "01-atlas.js", "decl": "TRACKS", "reason": "the track table itself: points already tagged port, world or anchor" },
   { "file": "01-atlas.js", "decl": "WORLD", "reason": "the stretch's breakpoints" },
   { "file": "01-atlas.js", "decl": "PINS", "reason": "the seam pin table" },
+  { "file": "01-atlas.js", "decl": "OWNERS", "reason": "the overlap decisions: which place owns a rect where two old boxes overlap" },
   { "file": "15-music.js", "reason": "MIDI note numbers and beats, no map coordinates" },
   { "file": "03-textures.js", "reason": "pixel positions inside a 48 px tile texture" },
   { "file": "59-hudkit.js", "reason": "HUD kit: screen pixels and emblem drawing, no map coordinates" },
