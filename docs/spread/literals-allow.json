@@ -98,5 +98,6 @@
   {"file": "24-dwarves.js", "literal": "6 * TILE", "decl": "sight", "reason": "the dwarf guard's sight: a range (6 tiles), not a position"},
   {"file": "24-dwarves.js", "literal": "p.px - 18", "line": 329, "reason": "the self-test's tap brackets round a dwarf: pixel offsets"},
   {"file": "24-dwarves.js", "literal": "p.py - 24", "line": 329, "reason": "the self-test's tap brackets round a dwarf: pixel offsets"},
-  {"file": "24-dwarves.js", "literal": "[7, 7]", "decl": "dwDrawShaft", "reason": "drawing: rivet offsets on the shaft's frame, in pixels"}
+  {"file": "24-dwarves.js", "literal": "[7, 7]", "decl": "dwDrawShaft", "reason": "drawing: rivet offsets on the shaft's frame, in pixels"},
+  {"file": "25-elves.js", "literal": "6 * TILE", "decl": "sight", "reason": "the elf sentinel's sight: a range (6 tiles), not a position"}
 ]

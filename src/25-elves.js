@@ -18,27 +18,35 @@
 
   // ---------- geometry ----------
   // Territory: the south-east, x 100–199, y 96–139. Nothing here carves outside it.
-  const JR = { x0: 100, y0: 96, x1: 199, y1: 139 };            // The Jungle (the original carve; its rnd stream lays out the city, so this rect never changes)
-  const JS = { x0: 100, y0: 139, x1: 198, y1: 178 };            // the jungle's southern reach: the same trees and ferns down to the map's tree border (own rnd stream)
-  const CR = { x0: 127, y0: 115, x1: 165, y1: 134 };            // Sylvaris (inside the ring wall)
-  const RING = { x0: 126, y0: 114, x1: 166, y1: 135 };          // the wall of jungle around the city
-  const GAP = { x: 137, y: 114 };                               // the one way in
-  const TOTEM_T = { x: 136, y: 114 };                           // the face in the trees, beside the gap
-  const PATH = [[141, 96], [141, 101], [136, 105], [132, 109], [133, 112]]; // the dirt path down from Hollowford's south edge
-  const RIVER_N = [[177, 97], [170, 101], [163, 106], [157, 110], [152, 113]];
-  const RIVER_S = [[141, 136], [130, 137], [116, 137], [103, 136]];
-  const riverX0 = ty => 151 - Math.floor((ty - CR.y0) / 2);     // the river inside the city: two tiles wide, drifting west as it goes south
-  const QUEEN_HALL = { x0: 129, y0: 117, x1: 136, y1: 122, door: [133, 122] };
-  const WEAVER_HUT = { x0: 129, y0: 127, x1: 134, y1: 131, door: [131, 127] };
-  const LIRA_LODGE = { x0: 156, y0: 117, x1: 161, y1: 121, door: [158, 121] };
-  const ROOST = { x0: 148, y0: 131, x1: 152, y1: 133 };         // sentinels' lookout platform
-  const LOOM_T = { x: 130, y: 128 };
-  const WALK_Y = 124;                                            // the long boardwalk across the city
-  const RANGE = { x0: 154, y0: 126, x1: 162, y1: 130, tx: 163 }; // shooting lane, targets on its east end
-  const TARGETS = [[163, 126], [163, 127], [163, 128], [163, 129], [163, 130]];
-  const LANTERNS = [[128, 123], [136, 123], [128, 132], [135, 132], [155, 122], [162, 122], [147, 130], [153, 130], [135, 115], [139, 115], [154, 125], [154, 131]];
-  const SENTINELS = [[135, 116], [139, 116]];
-  const BOARS = [[112, 104], [172, 118], [110, 128]];
+  // Every position reads the Atlas (the spread spec, §9.1): the jungle's ground is the stretched world (JR, JS, the
+  // rivers' outer reaches); the city, its ring wall, gap, huts, range, lanterns, sentinels and boars are Sylvaris's frame
+  // (§2 lists the boars with it); the path down from Hollowford is TRACKS.path_jungle.
+  const SYL = ATLAS.frame('sylvaris'), EW = ATLAS.world, EL_HF = ATLAS.frame('hollowford');   // the tests stand on Hollowford's south edge
+  const JR = { x0: EW.tx(100), y0: EW.ty(96), x1: EW.tx(199), y1: EW.ty(139) };   // The Jungle (the original carve; its rnd stream lays out the city, so this rect never changes)
+  // the jungle's southern reach: the same trees and ferns down to the map's tree border (own rnd stream). Its south edge
+  // was MAP_H - 2 (178) on today's map; it is a world row now (§12: edge-relative code is anchored), so at the spread it
+  // stretches with the land and does not follow the new map's edge
+  const JS = { x0: EW.tx(100), y0: EW.ty(139), x1: EW.tx(198), y1: EW.ty(178) };
+  const CR = SYL.rect({ x0: 127, y0: 115, x1: 165, y1: 134 });  // Sylvaris (inside the ring wall)
+  const RING = SYL.rect({ x0: 126, y0: 114, x1: 166, y1: 135 }); // the wall of jungle around the city
+  const GAP = (([x, y]) => ({ x, y }))(ATLAS.port('sylvaris.gap'));   // the one way in
+  const TOTEM_T = SYL.pt({ x: 136, y: 114 });                   // the face in the trees, beside the gap
+  const PATH = ATLAS.track('path_jungle');                      // the dirt path down from Hollowford's south edge (141,96 -> 133,112)
+  // the river: its outer reaches are the jungle's (world), the last bends before the ring wall are the city's
+  const RIVER_N = [...EW.pts([[177, 97], [170, 101], [163, 106]]), ...SYL.pts([[157, 110], [152, 113]])];
+  const RIVER_S = [...SYL.pts([[141, 136], [130, 137]]), ...EW.pts([[116, 137], [103, 136]])];
+  const riverX0 = ty => SYL.x(151) - Math.floor((ty - CR.y0) / 2);   // the river inside the city: two tiles wide, drifting west as it goes south
+  const QUEEN_HALL = SYL.rect({ x0: 129, y0: 117, x1: 136, y1: 122, door: SYL.p(133, 122) });
+  const WEAVER_HUT = SYL.rect({ x0: 129, y0: 127, x1: 134, y1: 131, door: SYL.p(131, 127) });
+  const LIRA_LODGE = SYL.rect({ x0: 156, y0: 117, x1: 161, y1: 121, door: SYL.p(158, 121) });
+  const ROOST = SYL.rect({ x0: 148, y0: 131, x1: 152, y1: 133 }); // sentinels' lookout platform
+  const LOOM_T = SYL.pt({ x: 130, y: 128 });
+  const WALK_Y = SYL.y(124);                                     // the long boardwalk across the city
+  const RANGE = SYL.rect({ x0: 154, y0: 126, x1: 162, y1: 130, tx: SYL.x(163) }); // shooting lane, targets on its east end
+  const TARGETS = SYL.pts([[163, 126], [163, 127], [163, 128], [163, 129], [163, 130]]);
+  const LANTERNS = SYL.pts([[128, 123], [136, 123], [128, 132], [135, 132], [155, 122], [162, 122], [147, 130], [153, 130], [135, 115], [139, 115], [154, 125], [154, 131]]);
+  const SENTINELS = SYL.pts([[135, 116], [139, 116]]);
+  const BOARS = SYL.pts([[112, 104], [172, 118], [110, 128]]);
 
   const inRect = (r, tx, ty) => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1;
   const inJungle = (tx, ty) => inRect(JR, tx, ty) || inRect(JS, tx, ty);
@@ -88,12 +96,12 @@
   HOOKS.activeQuests.push(() => { const q = eq(), out = []; if (q.stage === 1) out.push('elf_queen'); if (q.liraAsked && !q.liraDone) out.push('elf_range'); return out; });
 
   // ---------- the elves (own list: drawn slender, never wander, talked to through HOOKS.use) ----------
-  const ELVES = [
+  const ELVES = SYL.pts([
     { id: 'aelith', name: 'Queen Aelith', x: 133, y: 119, tunic: '#2f6a3a', hair: '#f2e6b8', crown: true, role: 'elf_queen', sortY: 6 },
     { id: 'lira', name: 'Lira the archery master', x: 158, y: 119, tunic: '#4a6a2a', hair: '#b04a2a', role: 'elf_range', bow: true },
     { id: 'thessaly', name: 'Thessaly the weaver', x: 133, y: 129, tunic: '#6a5a3a', hair: '#3a2a1a', apron: true, woman: true, role: 'elf_weaver' },
     { id: 'faelan', name: 'Faelan', x: 150, y: 132, tunic: '#3a5a2a', hair: '#d9c88a', role: 'elf_villager', lines: ['The river is the second door. Only the light-footed use it.', 'Lira can teach any pair of hands to hold a bow straight. Twenty hits and she owes you.', "Thessaly's loom weaves silk into cloth that forgets it has weight. The Queen decides who wears it."] },
-  ];
+  ]);
   for (const e of ELVES) { e.px = tc(e.x); e.py = tc(e.y); e.facing = { x: 0, y: 1 }; }
   if (typeof TAP_PEOPLE !== 'undefined') TAP_PEOPLE.push(() => ELVES.map(e => ({ x: e.px, y: e.py, r: 13, id: e.id, name: e.name, talk: () => elTalk(e) }))); // 17-tap: a tap on an elf walks up and talks
   function elInFront() {
@@ -154,7 +162,7 @@
     line(RIVER_S, 0, (x, y) => { if (inJungle(x, y) && soft(x, y)) { set(x, y, T.WATER); if (inJungle(x, y + 1) && soft(x, y + 1) && y + 1 < JR.y1) set(x, y + 1, T.WATER); } });
     // 3. the path from Hollowford: it ends at the wall of jungle, and the ground along the wall is open enough to wander
     line(PATH, 1, (x, y) => { if (inJungle(x, y) && soft(x, y)) set(x, y, T.DIRT); });
-    for (let y = 112; y <= 113; y++) for (let x = 128; x <= 146; x++) if (soft(x, y)) set(x, y, rnd() < 0.3 ? EL_FERN : rnd() < 0.5 ? T.DIRT : T.GRASS);
+    for (let y = SYL.y(112); y <= SYL.y(113); y++) for (let x = SYL.x(128); x <= SYL.x(146); x++) if (soft(x, y)) set(x, y, rnd() < 0.3 ? EL_FERN : rnd() < 0.5 ? T.DIRT : T.GRASS);
     // 4. the ring wall, the gap and the totem
     for (let y = RING.y0; y <= RING.y1; y++) for (let x = RING.x0; x <= RING.x1; x++) { const edge = x === RING.x0 || x === RING.x1 || y === RING.y0 || y === RING.y1; if (edge) set(x, y, EL_JUNGLE); }
     set(GAP.x, GAP.y, T.DIRT); set(TOTEM_T.x, TOTEM_T.y, EL_TOTEM);
@@ -170,13 +178,13 @@
     fill(ROOST.x0, ROOST.y0, ROOST.x1, ROOST.y1, EL_PLATFORM);
     // 7. bridges and boardwalks: the long walk across the city, over the river, and up to every door
     const bridge = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, EL_BRIDGE); };
-    bridge(131, WALK_Y, 158, WALK_Y);                                     // the boardwalk, crossing the river at (147–148, 124)
+    bridge(SYL.x(131), WALK_Y, SYL.x(158), WALK_Y);                                     // the boardwalk, crossing the river at (147–148, 124)
     bridge(GAP.x, CR.y0, GAP.x, WALK_Y - 1); set(GAP.x, CR.y0, T.DIRT); set(GAP.x, CR.y0 + 1, T.DIRT); // in from the gap
     bridge(QUEEN_HALL.door[0], QUEEN_HALL.y1 + 1, QUEEN_HALL.door[0], WALK_Y - 1);   // queen's hall step
     bridge(WEAVER_HUT.door[0], WALK_Y + 1, WEAVER_HUT.door[0], WEAVER_HUT.y0 - 1);   // down to the weaver
     bridge(LIRA_LODGE.door[0], LIRA_LODGE.y1 + 1, LIRA_LODGE.door[0], WALK_Y - 1);   // up to Lira
-    bridge(158, WALK_Y + 1, 158, RANGE.y0 - 1);                                      // down to the range
-    bridge(140, WALK_Y + 1, 140, 130); bridge(140, 131, ROOST.x0 - 1, 131);           // south from the boardwalk, over the river again, to the roost
+    bridge(SYL.x(158), WALK_Y + 1, SYL.x(158), RANGE.y0 - 1);                                      // down to the range
+    bridge(SYL.x(140), WALK_Y + 1, ...SYL.p(140, 130)); bridge(...SYL.p(140, 131), ROOST.x0 - 1, SYL.y(131));           // south from the boardwalk, over the river again, to the roost
     // 8. the archery range: a dirt lane with straw targets at its east end
     fill(RANGE.x0, RANGE.y0, RANGE.x1, RANGE.y1, T.DIRT);
     for (const [x, y] of TARGETS) set(x, y, EL_TARGET);
@@ -465,9 +473,9 @@
     const freeSlots = n => { for (let i = 0; i < INV_SLOTS && player.inv.filter(s => !s).length < n; i++) { const s = player.inv[i]; if (s && !KEEP.includes(s.id)) player.inv[i] = null; } };
     const need = (id, n) => { freeSlots(2); if (countItem(id) < n) h.give(id, n - countItem(id)); };
     // regions
-    check('elves: The Jungle fills the south-east and Sylvaris sits inside it', regionAt(150, 100).name === 'The Jungle' && regionAt(133, 120).name === 'Sylvaris' && regionAt(141, 92).name !== 'The Jungle' && REGIONS.some(r => r.name === 'The Jungle' && r.sub === 'Vast, green, watching'), { at150_100: regionAt(150, 100).name, at133_120: regionAt(133, 120).name });
+    check('elves: The Jungle fills the south-east and Sylvaris sits inside it', regionAt(EW.tx(150), EW.ty(100)).name === 'The Jungle' && regionAt(...SYL.p(133, 120)).name === 'Sylvaris' && regionAt(...EL_HF.p(141, 92)).name !== 'The Jungle' && REGIONS.some(r => r.name === 'The Jungle' && r.sub === 'Vast, green, watching'), { at150_100: regionAt(EW.tx(150), EW.ty(100)).name, at133_120: regionAt(...SYL.p(133, 120)).name });
     // the path in, the hidden gap, and every door reachable through it
-    { const toGap = F.bfs(140, 92, GAP.x, GAP.y); const inside = F.bfs(140, 92, GAP.x, CR.y0 + 1);
+    { const toGap = F.bfs(...EL_HF.p(140, 92), GAP.x, GAP.y); const inside = F.bfs(...EL_HF.p(140, 92), GAP.x, CR.y0 + 1);
       let gaps = 0; for (let y = RING.y0; y <= RING.y1; y++) for (let x = RING.x0; x <= RING.x1; x++) { const edge = x === RING.x0 || x === RING.x1 || y === RING.y0 || y === RING.y1; if (edge && !SOLID.has(tileAt(x, y))) gaps++; }
       check('elves: the path from Hollowford reaches the totem gap, the only way through the wall of jungle', !!toGap && !!inside && gaps === 1 && tileAt(TOTEM_T.x, TOTEM_T.y) === EL_TOTEM && tileAt(GAP.x, GAP.y) === T.DIRT, { toGap: toGap && toGap.length, inside: inside && inside.length, gaps });
       const from = [GAP.x, CR.y0 + 1];
@@ -475,10 +483,10 @@
       let bridges = 0, platforms = 0, walls = 0, overWater = 0; for (let y = CR.y0; y <= CR.y1; y++) for (let x = CR.x0; x <= CR.x1; x++) { const t = tileAt(x, y); if (t === EL_BRIDGE) { bridges++; if (tileAt(x, y + 1) === T.WATER || tileAt(x, y - 1) === T.WATER) overWater++; } else if (t === EL_PLATFORM) platforms++; else if (t === EL_LEAFWALL) walls++; }
       check("elves: Sylvaris is walkable: gap → Queen's hall, Lira's lodge, the loom, the range and the roost (huts, bridges over the river)", !!queen && !!lira && !!loom && !!range && !!roost && bridges >= 40 && platforms >= 40 && walls >= 40 && overWater >= 2, { queen: !!queen, lira: !!lira, loom: !!loom, range: !!range, roost: !!roost, bridges, platforms, walls, overWater }); }
     // the Voice hints once
-    { eq().hinted = false; drain(); F.tp(141, 97); F.sim(3, []); const first = eq().hinted && dialog.cur && /face in the trees/.test(dialog.cur.text); drain(); F.tp(141, 98); F.sim(3, []);
+    { eq().hinted = false; drain(); F.tp(...EL_HF.p(141, 97)); F.sim(3, []); const first = eq().hinted && dialog.cur && /face in the trees/.test(dialog.cur.text); drain(); F.tp(...EL_HF.p(141, 98)); F.sim(3, []);
       check('elves: the Voice hints once on entering the jungle', first && !dialog.cur, { first, hinted: eq().hinted, region: player.region }); }
     // jungle trees: axe, then Woodcutting 15, then logs
-    { const tree = { x: 135, y: 114 }; F.tp(135, 113); F.face(tree.x, tree.y); const ok = tileAt(tree.x, tree.y) === EL_JUNGLE;
+    { const tree = SYL.pt({ x: 135, y: 114 }); F.tp(...SYL.p(135, 113)); F.face(tree.x, tree.y); const ok = tileAt(tree.x, tree.y) === EL_JUNGLE;
       const stash = []; for (let i = 0; i < INV_SLOTS; i++) { const s = player.inv[i]; if (s && ITEMS[s.id].tool === 'axe') { stash.push([i, s]); player.inv[i] = null; } } const eqw = player.equip.weapon; if (eqw && ITEMS[eqw].tool === 'axe') player.equip.weapon = null;
       F.press('KeyE'); F.sim(2, []); const noAxe = !player.action && notice && /axe/.test(notice.text);
       for (const [i, s] of stash) player.inv[i] = s; if (eqw && ITEMS[eqw].tool === 'axe') player.equip.weapon = eqw; if (!hasTool('axe')) h.give('bronze_axe', 1);
@@ -491,23 +499,23 @@
       player.skills.woodcutting.xp = Math.max(wc0, player.skills.woodcutting.xp); }
     // the totem speaks; the Queen's quest before and after; Thessaly refuses before
     { drain(); F.tp(TOTEM_T.x, TOTEM_T.y - 1); F.face(TOTEM_T.x, TOTEM_T.y); F.press('KeyE'); F.sim(2, []); const totem = dialog.cur && dialog.cur.who === 'The totem';
-      eq().stage = 0; drain(); F.tp(133, 120); F.face(133, 119); F.press('KeyE'); F.sim(3, []);
+      eq().stage = 0; drain(); F.tp(...SYL.p(133, 120)); F.face(...SYL.p(133, 119)); F.press('KeyE'); F.sim(3, []);
       const asked = eq().stage === 1 && dialog.cur && dialog.cur.who === 'Queen Aelith' && activeQuests().includes('elf_queen') && /jungle logs/.test(questText('elf_queen'));
-      drain(); closePanel(); F.tp(132, 129); F.face(133, 129); F.press('KeyE'); F.sim(3, []); const refused = panel !== 'shop' && dialog.cur && /Queen/.test(dialog.cur.text);
-      drain(); F.tp(131, 128); F.face(LOOM_T.x, LOOM_T.y); F.press('KeyE'); F.sim(2, []); const loomShut = panel !== 'loom' && notice && /loom/.test(notice.text);
+      drain(); closePanel(); F.tp(...SYL.p(132, 129)); F.face(...SYL.p(133, 129)); F.press('KeyE'); F.sim(3, []); const refused = panel !== 'shop' && dialog.cur && /Queen/.test(dialog.cur.text);
+      drain(); F.tp(...SYL.p(131, 128)); F.face(LOOM_T.x, LOOM_T.y); F.press('KeyE'); F.sim(2, []); const loomShut = panel !== 'loom' && notice && /loom/.test(notice.text);
       check('elves: the totem speaks; Queen Aelith asks for 8 jungle logs + 10 spider silk; Thessaly and the loom refuse before', totem && asked && refused && loomShut, { totem, asked, refused, loomShut, stage: eq().stage });
       need('jungle_log', 8); need('spider_silk', 10); const l0 = countItem('jungle_log'), s0 = countItem('spider_silk'), c0 = coins();
-      drain(); F.tp(133, 120); F.face(133, 119); F.press('KeyE'); F.sim(3, []);
+      drain(); F.tp(...SYL.p(133, 120)); F.face(...SYL.p(133, 119)); F.press('KeyE'); F.sim(3, []);
       check('elves: the Queen takes the logs and silk, pays 300 coins and opens the loom', eq().stage === 2 && coins() === c0 + 300 && countItem('jungle_log') === l0 - 8 && countItem('spider_silk') === s0 - 10 && !activeQuests().includes('elf_queen') && questText('elf_queen') === 'Done.', { stage: eq().stage, coins: coins() - c0 }); }
     // the loom weaves hover armour
     { need('spider_silk', 10); need('wool', 5); need('mithril_bar', 1); freeSlots(2);
       if (player.skills.crafting.xp < XP_TABLE[25]) player.skills.crafting.xp = XP_TABLE[25]; const cx0 = player.skills.crafting.xp, ha0 = countItem('hover_armour');
-      drain(); F.tp(131, 128); F.face(LOOM_T.x, LOOM_T.y); F.press('KeyE'); F.sim(1, []); const open = panel === 'loom';
+      drain(); F.tp(...SYL.p(131, 128)); F.face(LOOM_T.x, LOOM_T.y); F.press('KeyE'); F.sim(1, []); const open = panel === 'loom';
       const c = F.clickButton('10 Silk + 5 Wool + Mithril bar → Hover armour'); closePanel();
       check('elves: the loom weaves 10 silk + 5 wool + a mithril bar into hover armour (Crafting 25, 400 xp)', open && c && countItem('hover_armour') === ha0 + 1 && player.skills.crafting.xp === cx0 + 400 && ITEMS.hover_armour.armour.def === 18 && ITEMS.hover_armour.armour.slot === 'body', { open, c, armour: countItem('hover_armour'), xp: player.skills.crafting.xp - cx0 }); }
     // hover armour: walk on water, faster; take it off and you are put back on the bank
     { closePanel(); freeSlots(3); const prevBody = player.equip.body; const slot = player.inv.findIndex(s => s && s.id === 'hover_armour'); equipItem(slot);
-      const y = 118, bank = riverX0(y) - 1; F.tp(bank, y); F.sim(2, []); const fast = player.speed === 200 && WALK_OVER.has(T.WATER);
+      const y = SYL.y(118), bank = riverX0(y) - 1; F.tp(bank, y); F.sim(2, []); const fast = player.speed === 200 && WALK_OVER.has(T.WATER);
       let onWater = false, steps = 0; for (; steps < 60 && !onWater; steps++) { F.step(['KeyD']); if (tileOf() === T.WATER) onWater = true; }
       check('elves: hover armour floats you over the river (speed 200)', fast && onWater, { fast, onWater, steps, tile: tileOf(), speed: player.speed });
       freeSlots(2); unequip('body'); F.sim(2, []);
@@ -515,20 +523,20 @@
       check('elves: taking the armour off nudges you to the bank and the water is solid again', off, { off, tile: tileOf(), speed: player.speed, walkOver: WALK_OVER.has(T.WATER) });
       if (prevBody) { const s = player.inv.findIndex(x => x && x.id === prevBody); if (s >= 0) equipItem(s); } }
     // Lira: the shop, the targets, the quest
-    { drain(); closePanel(); eq().liraAsked = false; eq().liraDone = false; eq().targets = 0; need('coins', 20); F.tp(158, 120); F.face(158, 119); F.press('KeyE'); F.sim(2, []);
+    { drain(); closePanel(); eq().liraAsked = false; eq().liraDone = false; eq().targets = 0; need('coins', 20); F.tp(...SYL.p(158, 120)); F.face(...SYL.p(158, 119)); F.press('KeyE'); F.sim(2, []);
       const open = panel === 'shop' && panelArg === 'elf_range' && eq().liraAsked && activeQuests().includes('elf_range'); const ea0 = countItem('elven_arrow'); const bought = F.clickButton('Buy 8'); closePanel();
       check("elves: Lira's range shop opens (shortbow, yew bow 400, arrows) and sells elven arrows at 8", open && bought && countItem('elven_arrow') === ea0 + 1 && ITEMS.elven_arrow.arrow.str === 14 && SHOPS.elf_range.stock.some(([id, p]) => id === 'yew_bow' && p === 400) && ITEMS.yew_bow.weapon.ranged, { open, bought, arrows: countItem('elven_arrow') });
       const prevW = player.equip.weapon; need('shortbow', 1); equipItem(player.inv.findIndex(s => s && s.id === 'shortbow')); need('stone_arrow', 60);
-      F.tp(159, 128); player.facing = { x: 1, y: 0 }; const rx0 = player.skills.range.xp; let strikes = 0, shots = 0;
+      F.tp(...SYL.p(159, 128)); player.facing = { x: 1, y: 0 }; const rx0 = player.skills.range.xp; let strikes = 0, shots = 0;
       for (; shots < 30 && (strikes < 3 || player.skills.range.xp === rx0); shots++) { player.attackCd = 0; F.press('Space'); F.sim(40, []); strikes = eq().targets; }
-      check('elves: arrows into the straw targets count as strikes and give (half) Range xp', strikes >= 3 && player.skills.range.xp > rx0 && tileAt(163, 128) === EL_TARGET, { strikes, shots, rxp: player.skills.range.xp - rx0 });
+      check('elves: arrows into the straw targets count as strikes and give (half) Range xp', strikes >= 3 && player.skills.range.xp > rx0 && tileAt(...SYL.p(163, 128)) === EL_TARGET, { strikes, shots, rxp: player.skills.range.xp - rx0 });
       eq().targets = 19; player.attackCd = 0; F.press('Space'); F.sim(40, []); const twenty = eq().targets === 20;
-      drain(); const ea1 = countItem('elven_arrow'), rx1 = player.skills.range.xp; F.tp(158, 120); F.face(158, 119); F.press('KeyE'); F.sim(2, []); closePanel();
+      drain(); const ea1 = countItem('elven_arrow'), rx1 = player.skills.range.xp; F.tp(...SYL.p(158, 120)); F.face(...SYL.p(158, 119)); F.press('KeyE'); F.sim(2, []); closePanel();
       check("elves: twenty strikes complete Lira's Twenty: 500 Range xp + 30 elven arrows", twenty && eq().liraDone && countItem('elven_arrow') === ea1 + 30 && player.skills.range.xp === rx1 + 500 && !activeQuests().includes('elf_range'), { twenty, done: eq().liraDone, arrows: countItem('elven_arrow') - ea1, xp: player.skills.range.xp - rx1 });
       if (prevW) { const s = player.inv.findIndex(x => x && x.id === prevW); if (s >= 0) equipItem(s); } }
     { const s = monsters.filter(m => m.type === 'elf_sentinel'); check('elves: two neutral elf sentinels watch the gap', s.length === 2 && s.every(m => !m.angry && inCity(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))) && MONSTER_DEFS.elf_sentinel.level === 25 && MONSTER_DEFS.elf_sentinel.human, { sentinels: s.length }); }
     // the world prompt on Thessaly, and her loom at every size (with the level note showing, and without)
-    { drain(); closePanel(); F.tp(132, 129); F.face(133, 129); render();
+    { drain(); closePanel(); F.tp(...SYL.p(132, 129)); F.face(...SYL.p(133, 129)); render();
       const th = ELVES.find(e => e.id === 'thessaly'), r = PEOPLE_UI.auditPrompt(th), face = HK.face('use');
       check('elves: facing Thessaly draws the gold corners on her and a Talk tag beside her (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
       const cx0 = player.skills.crafting.xp;
