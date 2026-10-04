@@ -125,5 +125,9 @@
   {"file": "28-thefang.js", "literal": "[15, 16]", "decl": "texts", "reason": "the self-test reads the main quest's text at story stages 15 and 16, not a position"},
   {"file": "28-thefang.js", "literal": "2 * TILE", "line": 735, "reason": "the self-test: the Echo stands within 2 tiles of its home, a distance"},
   {"file": "28-thefang.js", "literal": "2 * TILE", "line": 809, "reason": "the self-test sets The Fang 2 tiles from the knight: an offset, not a position"},
-  {"file": "30-ashdrake.js", "literal": "5 * TILE", "decl": "sight", "reason": "an ash drake's sight: a range (5 tiles), not a position"}
+  {"file": "30-ashdrake.js", "literal": "5 * TILE", "decl": "sight", "reason": "an ash drake's sight: a range (5 tiles), not a position"},
+  {"file": "31-rebuild.js", "literal": "7 * TILE", "line": 196, "reason": "the board's nudge fires within 7 tiles of it: a radius, not a position"},
+  {"file": "31-rebuild.js", "literal": "4 * TILE", "line": 199, "reason": "a villager wanders at most 4 tiles from home: a radius, not a position"},
+  {"file": "31-rebuild.js", "literal": "9 * TILE", "line": 427, "reason": "the self-test sends the villagers 9 tiles from Nell: an offset, not a position"},
+  {"file": "31-rebuild.js", "literal": "9 * TILE", "line": 450, "reason": "the self-test sends the villagers 9 tiles from Nell: an offset, not a position"}
 ]

@@ -13250,14 +13250,18 @@ window.PLACE_KIT = PLACE_KIT;
 // ============================================================================
 {
   // ---------- places ----------
-  const SQ = { x0: 135, y0: 75, x1: 145, y1: 83 };      // the square (20-hollowford fills it with dirt)
-  const BOARD_POS = { x: 139, y: 78 };
-  const SAWMILL_POS = { x: 143, y: 78 };
-  const WELL_POS = { x: 140, y: 80 };                   // 20-hollowford's cracked well
-  const BELL_POS = { x: 133, y: 84 };                   // the chapel's north-east corner
-  const CHAPEL = { x0: 124, y0: 84, x1: 133, y1: 91 };
-  const RUBBLE_SPOTS = [[137, 77], [143, 76], [136, 81], [143, 82], [138, 83], [144, 79]]; // what the beast's stamping left in the square
-  const HF_RECT = { x0: 122, y0: 66, x1: 156, y1: 92 };
+  // Every overworld position reads the Atlas (the spread spec, section 9.1): the whole rebuild is Hollowford's frame, the
+  // board and the well are its ports (hollowford.board, hollowford.square), and the town's extent is the anchor's box.
+  const HFF = ATLAS.frame('hollowford');
+  const XY = ([x, y]) => ({ x, y });
+  const SQ = HFF.rect({ x0: 135, y0: 75, x1: 145, y1: 83 });      // the square (20-hollowford fills it with dirt)
+  const BOARD_POS = XY(ATLAS.port('hollowford.board'));
+  const SAWMILL_POS = HFF.pt({ x: 143, y: 78 });
+  const WELL_POS = XY(ATLAS.port('hollowford.square'));                // 20-hollowford's cracked well
+  const BELL_POS = HFF.pt({ x: 133, y: 84 });                  // the chapel's north-east corner
+  const CHAPEL = HFF.rect({ x0: 124, y0: 84, x1: 133, y1: 91 });
+  const RUBBLE_SPOTS = HFF.pts([[137, 77], [143, 76], [136, 81], [143, 82], [138, 83], [144, 79]]); // what the beast's stamping left in the square
+  const HF_RECT = (b => ({ x0: b[0], y0: b[1], x1: b[2], y1: b[3] }))(ATLAS.box('hollowford'));   // the town's place (the anchor's box): the draw window and the self-test's snapshot
   const sqIn = (tx, ty) => tx >= SQ.x0 && tx <= SQ.x1 && ty >= SQ.y0 && ty <= SQ.y1;
 
   // ---------- tiles ----------
@@ -13268,9 +13272,9 @@ window.PLACE_KIT = PLACE_KIT;
 
   // ---------- rebuilt buildings (own list; drawn with drawBuilding only once built) ----------
   const RB_BUILDINGS = [
-    { id: 'rb_house', x: 126, y: 68, w: 6, h: 6, name: 'First House', roof: '#6a4a3a', door: 2, f: [[T.BED, 1, 1], [T.TABLE, 4, 2], [T.SHELF, 4, 1]] },
-    { id: 'rb_smithy', x: 133, y: 69, w: 5, h: 4, name: 'Hollowford Smithy', roof: '#4a4a52', sign: 'SMITHY', door: 2, f: [[T.FORGE, 1, 1], [T.ANVIL, 2, 1]] },
-    { id: 'rb_knight', x: 151, y: 73, w: 5, h: 4, name: "The Knight's House", roof: '#5a2e7a', sign: 'KNIGHT', door: 2, f: [[T.BED, 1, 1], [T.LODESTONE, 3, 1]] },
+    HFF.pt({ id: 'rb_house', x: 126, y: 68, w: 6, h: 6, name: 'First House', roof: '#6a4a3a', door: 2, f: [[T.BED, 1, 1], [T.TABLE, 4, 2], [T.SHELF, 4, 1]] }),
+    HFF.pt({ id: 'rb_smithy', x: 133, y: 69, w: 5, h: 4, name: 'Hollowford Smithy', roof: '#4a4a52', sign: 'SMITHY', door: 2, f: [[T.FORGE, 1, 1], [T.ANVIL, 2, 1]] }),
+    HFF.pt({ id: 'rb_knight', x: 151, y: 73, w: 5, h: 4, name: "The Knight's House", roof: '#5a2e7a', sign: 'KNIGHT', door: 2, f: [[T.BED, 1, 1], [T.LODESTONE, 3, 1]] }),
   ];
   const buildingById = id => RB_BUILDINGS.find(b => b.id === id);
   const inRect = (b, tx, ty) => tx >= b.x && tx < b.x + b.w && ty >= b.y && ty < b.y + b.h;
@@ -13360,7 +13364,7 @@ window.PLACE_KIT = PLACE_KIT;
     },
     chapel() {
       for (let y = CHAPEL.y0 + 1; y < CHAPEL.y1; y++) for (let x = CHAPEL.x0 + 1; x < CHAPEL.x1; x++) { const t = tileAt(x, y); if (t === T.RUBBLE || t === T.ASHES || t === T.BEAM || t === T.SCORCH) changeTile(x, y, T.FLOOR); }
-      for (const y of [86, 87, 88]) changeTile(CHAPEL.x1, y, T.CWALL);
+      for (const y of [86, 87, 88].map(HFF.y)) changeTile(CHAPEL.x1, y, T.CWALL);
       changeTile(BELL_POS.x, BELL_POS.y, T_BELL);
       burst(tc(BELL_POS.x), tc(BELL_POS.y) - 40, '#f5c542', 30, 140); sfx('quest');
       say('Hear that? The bell. The goblins took the old one for their machine. This one rings for us.', 'Nell');
@@ -13386,9 +13390,9 @@ window.PLACE_KIT = PLACE_KIT;
 
   // ---------- people in the square (own lists) ----------
   const SURVIVOR_LOOKS = {
-    tam: { id: 'tam', name: 'Old Tam', x: 137, y: 81, tunic: '#5a5048', hair: '#d9d0c0', beard: true, lines: ['Out of the crypt at last. Sun on my face.', 'A chair with your name on it, knight. I said it and I meant it.', "Nell drew the plan. Don't tell her, but the roof is upside down."], after: ['Sir, Dame, whichever you like. Hollowford has a knight again, that is the truth of it.', 'Sit in your chair. You earned the chair.'] },
-    nell: { id: 'nell', name: 'Nell', x: 140, y: 77, tunic: '#6a4a4a', hair: '#3a2a1a', woman: true, lines: ["Planks. Bring me planks and I'll bring you a town.", "The board has the plan. I drew it. Don't laugh at the roof.", 'Stone from the quarry, planks from the mill. The rest is sweat.'], after: ['Look at it. Look at it! I could cry, so I will.', 'The bell rang this morning. I stood in the square and listened.'] },
-    pip: { id: 'pip', name: 'Pip', x: 142, y: 81, tunic: '#4a5a6a', hair: '#c9843a', lines: ["I'm helping! I carried a plank. A whole one.", 'Can the smithy make me a sword? A small one?', 'When I am big I am going to be a knight. Like you. But taller.'], after: ['Your house has a LODESTONE in it. Can I touch it? I touched it.', 'The new house has a cellar too. I checked.'] },
+    tam: HFF.pt({ id: 'tam', name: 'Old Tam', x: 137, y: 81, tunic: '#5a5048', hair: '#d9d0c0', beard: true, lines: ['Out of the crypt at last. Sun on my face.', 'A chair with your name on it, knight. I said it and I meant it.', "Nell drew the plan. Don't tell her, but the roof is upside down."], after: ['Sir, Dame, whichever you like. Hollowford has a knight again, that is the truth of it.', 'Sit in your chair. You earned the chair.'] }),
+    nell: HFF.pt({ id: 'nell', name: 'Nell', x: 140, y: 77, tunic: '#6a4a4a', hair: '#3a2a1a', woman: true, lines: ["Planks. Bring me planks and I'll bring you a town.", "The board has the plan. I drew it. Don't laugh at the roof.", 'Stone from the quarry, planks from the mill. The rest is sweat.'], after: ['Look at it. Look at it! I could cry, so I will.', 'The bell rang this morning. I stood in the square and listened.'] }),
+    pip: HFF.pt({ id: 'pip', name: 'Pip', x: 142, y: 81, tunic: '#4a5a6a', hair: '#c9843a', lines: ["I'm helping! I carried a plank. A whole one.", 'Can the smithy make me a sword? A small one?', 'When I am big I am going to be a knight. Like you. But taller.'], after: ['Your house has a LODESTONE in it. Can I touch it? I touched it.', 'The new house has a cellar too. I checked.'] }),
   };
   const VILLAGER_DEFS = [
     { id: 'hob', name: 'Hob', tunic: '#7a5a3a', hair: '#3a2a1a', lines: ["Heard a knight was paying for planks. Wait. You are the knight? You are paying planks?", 'My cousin had the house by the smithy. Had. Will again, Nell says.', 'Cobbles! Real cobbles. Mind, I said I would not cry.'] },
@@ -13401,7 +13405,7 @@ window.PLACE_KIT = PLACE_KIT;
     const r = RB();
     if (!r.done.house && !freed()) { resetPeople(); return; }
     if (atGuild()) survivors = []; else if (!survivors.length) survivors = Object.values(SURVIVOR_LOOKS).map(d => mkPerson(d, d.x, d.y));
-    if (!r.done.house) villagers = []; else if (!villagers.length) villagers = [mkPerson(VILLAGER_DEFS[0], 137, 79), mkPerson(VILLAGER_DEFS[1], 142, 79)];
+    if (!r.done.house) villagers = []; else if (!villagers.length) villagers = [mkPerson(VILLAGER_DEFS[0], ...HFF.p(137, 79)), mkPerson(VILLAGER_DEFS[1], ...HFF.p(142, 79))];
   };
   const people = () => survivors.concat(villagers);
   const personInFront = () => {
@@ -13635,7 +13639,7 @@ window.PLACE_KIT = PLACE_KIT;
     // project 1: half now, half later
     { h.give('stone', 10); open(); const c1 = F.clickButton('Build: Square'); const half = have(byId.square, 'stone'), txt = costText(byId.square), left = countItem('stone'), stillOpen = !RB().done.square && available(byId.square);
       h.give('stone', 10); render(); const c2 = F.clickButton('Build: Square'); F.sim(2, []);
-      const paved = RUBBLE_SPOTS.every(([x, y]) => tileAt(x, y) === T.COBBLE) && tileAt(137, 79) === T.COBBLE && tileAt(WELL_POS.x, WELL_POS.y) === T.WELL;
+      const paved = RUBBLE_SPOTS.every(([x, y]) => tileAt(x, y) === T.COBBLE) && tileAt(...HFF.p(137, 79)) === T.COBBLE && tileAt(WELL_POS.x, WELL_POS.y) === T.WELL;
       check('rebuild: Clear the square takes 10 stone (10/20, still open), then 10 more finishes it: rubble and dirt in the square are cobble', c1 && half === 10 && txt === 'Stone 10/20' && left === 0 && stillOpen && c2 && RB().done.square && paved, { c1, half, txt, stillOpen, c2, done: !!RB().done.square, paved, banner: levelBanner && levelBanner.text }); }
     // project 2: the well heals once a minute
     { h.give('stone', 10); h.give('plank', 4); open(); const c = F.clickButton('Build: Well'); const wellTile = tileAt(WELL_POS.x, WELL_POS.y);
@@ -13644,8 +13648,8 @@ window.PLACE_KIT = PLACE_KIT;
       check('rebuild: The well (10 stone + 4 planks) becomes a working well; E heals a hurt knight, not twice within a minute', c && RB().done.well && wellTile === T_GOODWELL && h1 && Math.abs(again - healed) < 0.5 && player.hp >= 1, { c, wellTile, healed, again, maxHp: player.maxHp }); player.hp = Math.min(hp0, player.maxHp); }
     // project 3: the first house, survivors and villagers come up
     { h.give('plank', 30); h.give('stone', 10); open(); const c = F.clickButton('Build: House'); F.sim(3, []); const b = buildingById('rb_house');
-      const walls = tileAt(b.x, b.y) === T.HWALL && tileAt(b.x + b.w - 1, b.y + b.h - 1) === T.HWALL && tileAt(127, 70) === T.FLOOR && tileAt(128, 70) === T.FLOOR;
-      const door = tileAt(b.x + b.door, b.y + b.h - 1) === T.DOOR, bed = tileAt(127, 69) === T.BED;
+      const walls = tileAt(b.x, b.y) === T.HWALL && tileAt(b.x + b.w - 1, b.y + b.h - 1) === T.HWALL && tileAt(...HFF.p(127, 70)) === T.FLOOR && tileAt(...HFF.p(128, 70)) === T.FLOOR;
+      const door = tileAt(b.x + b.door, b.y + b.h - 1) === T.DOOR, bed = tileAt(...HFF.p(127, 69)) === T.BED;
       const named = survivors.map(p => p.name).sort().join(','), inSq = people().every(p => sqIn(Math.floor(p.px / TILE), Math.floor(p.py / TILE)));
       check('rebuild: The first house (30 planks + 10 stone) turns the ruin into HWALL walls, FLOOR, a door and a bed; Tam, Nell and Pip stand in the square with two villagers', c && RB().done.house && walls && door && bed && named === 'Nell,Old Tam,Pip' && villagers.length === 2 && inSq, { c, walls, door, bed, named, villagers: villagers.length, inSq }); }
     // the wander is dice (update hook above: a 2-6 s hold per roll, 3 in 10 holds idle, a walk home from 4 tiles out), so one
@@ -13653,7 +13657,7 @@ window.PLACE_KIT = PLACE_KIT;
     // Watch every frame instead: EACH villager must get more than 12 px from home, and NEITHER may stand outside the square
     // on any frame. At least 600 frames as before, then on until both have wandered, capped at 4800 (80 s). An idle villager
     // re-rolls within 6 s, so 80 s is at least 13 rolls: a false failure is at most 2 x 0.3^13 = 3.2e-7.
-    { F.tp(150, 60); const went = villagers.map(() => false); let stayed = true, f = 0;
+    { F.tp(...HFF.p(150, 60)); const went = villagers.map(() => false); let stayed = true, f = 0;
       for (; f < 4800 && (f < 600 || !went.every(Boolean)); f++) { F.step([]); villagers.forEach((w, k) => { if (dist(w.px, w.py, w.home.x, w.home.y) > 12) went[k] = true; if (!sqIn(Math.floor(w.px / TILE), Math.floor(w.py / TILE))) stayed = false; }); }
       render(); const moved = villagers.length > 0 && went.every(Boolean);
       const p = survivors.find(s => s.name === 'Nell'); closePanel(); for (const w of villagers) { w.px = p.px + 9 * TILE; w.py = p.py + 9 * TILE; } F.tp(Math.floor(p.px / TILE), Math.floor(p.py / TILE) + 1); F.face(Math.floor(p.px / TILE), Math.floor(p.py / TILE)); drain(); F.press('KeyE'); F.sim(2, []); const spoke = !!dialog.cur && dialog.cur.who === 'Nell';
@@ -13664,19 +13668,19 @@ window.PLACE_KIT = PLACE_KIT;
       check('rebuild: The sawmill (10 planks + 5 stone) stands in the square; E with a log gives 3 planks and 10 Crafting xp', c && RB().done.sawmill && mill && countItem('wood') === 0 && countItem('plank') === 3 && player.skills.crafting.xp === cx0 + 10, { c, mill, planks: countItem('plank'), xp: player.skills.crafting.xp - cx0 }); }
     // project 4: the chapel roof and bell
     { h.give('plank', 20); h.give('iron_bar', 5); open(); const c = F.clickButton('Build: Chapel');
-      check('rebuild: The chapel roof (20 planks + 5 iron bars) closes the east wall, floors the nave and raises a bell tower on the corner', c && RB().done.chapel && [86, 87, 88].every(y => tileAt(133, y) === T.CWALL) && tileAt(131, 86) === T.FLOOR && tileAt(132, 88) === T.FLOOR && tileAt(BELL_POS.x, BELL_POS.y) === T_BELL && tileAt(126, 90) === T.TABLE, { c, wall: [86, 87, 88].map(y => tileAt(133, y)), bell: tileAt(BELL_POS.x, BELL_POS.y) }); }
+      check('rebuild: The chapel roof (20 planks + 5 iron bars) closes the east wall, floors the nave and raises a bell tower on the corner', c && RB().done.chapel && [86, 87, 88].every(y => tileAt(CHAPEL.x1, HFF.y(y)) === T.CWALL) && tileAt(...HFF.p(131, 86)) === T.FLOOR && tileAt(...HFF.p(132, 88)) === T.FLOOR && tileAt(BELL_POS.x, BELL_POS.y) === T_BELL && tileAt(...HFF.p(126, 90)) === T.TABLE, { c, wall: [86, 87, 88].map(y => tileAt(CHAPEL.x1, HFF.y(y))), bell: tileAt(BELL_POS.x, BELL_POS.y) }); }
     // project 5: the smithy
     { h.give('plank', 20); h.give('iron_bar', 8); open(); const c = F.clickButton('Build: Smithy');
-      check('rebuild: The smithy (20 planks + 8 iron bars) puts a forge beside the surviving anvil under a roof', c && RB().done.smithy && tileAt(134, 70) === T.FORGE && tileAt(135, 70) === T.ANVIL && tileAt(133, 69) === T.HWALL && tileAt(135, 72) === T.DOOR, { c, forge: tileAt(134, 70), anvil: tileAt(135, 70) }); }
+      check('rebuild: The smithy (20 planks + 8 iron bars) puts a forge beside the surviving anvil under a roof', c && RB().done.smithy && tileAt(...HFF.p(134, 70)) === T.FORGE && tileAt(...HFF.p(135, 70)) === T.ANVIL && tileAt(...HFF.p(133, 69)) === T.HWALL && tileAt(...HFF.p(135, 72)) === T.DOOR, { c, forge: tileAt(...HFF.p(134, 70)), anvil: tileAt(...HFF.p(135, 70)) }); }
     // project 6: the knight's house, the title and the coins
     { h.give('plank', 40); h.give('stone', 10); h.give('mithril_bar', 2); drops.length = 0; const c0 = coins(); open(); const early = F.clickButton('Build: Knight'); F.sim(2, []);
       const paid = coins() === c0 + 500 || drops.some(d => d.id === 'coins' && d.qty === 500);
-      check("rebuild: The knight's house (40 planks + 10 stone + 2 mithril bars): bed + lodestone inside, 'HOLLOWFORD REBUILT' banner, 500 coins, a title of Hollowford", early && RB().done.knight && tileAt(152, 74) === T.BED && tileAt(154, 74) === T.LODESTONE && tileAt(151, 73) === T.HWALL && /of Hollowford$/.test(RB().title) && paid && !!levelBanner && levelBanner.text === 'HOLLOWFORD REBUILT' && allDone() && !activeQuests().includes('rebuild'), { early, title: RB().title, coins: coins() - c0, banner: levelBanner && levelBanner.text });
+      check("rebuild: The knight's house (40 planks + 10 stone + 2 mithril bars): bed + lodestone inside, 'HOLLOWFORD REBUILT' banner, 500 coins, a title of Hollowford", early && RB().done.knight && tileAt(...HFF.p(152, 74)) === T.BED && tileAt(...HFF.p(154, 74)) === T.LODESTONE && tileAt(...HFF.p(151, 73)) === T.HWALL && /of Hollowford$/.test(RB().title) && paid && !!levelBanner && levelBanner.text === 'HOLLOWFORD REBUILT' && allDone() && !activeQuests().includes('rebuild'), { early, title: RB().title, coins: coins() - c0, banner: levelBanner && levelBanner.text });
       render(); const flip = F.clickButton('Called: Sir'); check('rebuild: the title can be flipped between Sir and Dame of Hollowford', flip && RB().title === 'Dame of Hollowford', { flip, title: RB().title }); closePanel(); }
     // state survives save/load
     { save(); const doneSnap = JSON.stringify(RB().done); const title = RB().title; const diffs = mapDiffs.size;
       quest = { stage: 0, kills: 0, bread: 'none', wren: 'none', walkerKilled: false, tracked: null }; resetPeople(); const ok = load(); F.sim(2, []);
-      check('rebuild: save()/load() keeps the done flags, the title, and the rebuilt tiles (well, house, bell)', ok && JSON.stringify(RB().done) === doneSnap && RB().title === title && mapDiffs.size === diffs && tileAt(WELL_POS.x, WELL_POS.y) === T_GOODWELL && tileAt(BELL_POS.x, BELL_POS.y) === T_BELL && tileAt(127, 69) === T.BED && survivors.length === 3, { ok, done: RB().done, title: RB().title, survivors: survivors.length }); }
+      check('rebuild: save()/load() keeps the done flags, the title, and the rebuilt tiles (well, house, bell)', ok && JSON.stringify(RB().done) === doneSnap && RB().title === title && mapDiffs.size === diffs && tileAt(WELL_POS.x, WELL_POS.y) === T_GOODWELL && tileAt(BELL_POS.x, BELL_POS.y) === T_BELL && tileAt(...HFF.p(127, 69)) === T.BED && survivors.length === 3, { ok, done: RB().done, title: RB().title, survivors: survivors.length }); }
     // the world prompt on Nell in the square, and Nell's plan at every size: all built, a fresh plan, and before the beast falls
     { closePanel(); drain(); const nell = survivors.find(s => s.name === 'Nell');
       for (const w of villagers) { w.px = nell.px + 9 * TILE; w.py = nell.py + 9 * TILE; w.dir = null; w.wanderT = 99; }
