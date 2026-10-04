@@ -11,7 +11,12 @@
 //   tc         tc(N)
 //   tile       N * TILE, TILE * N
 //   decl       const X = 112 where X is later a tile argument (setTile(X, Y), tc(X), X * TILE, any call's first two)
-//   compare    x >= 142, ty <= 40 ... a number of 10 or more in the map, against a coordinate-named side
+//   compare    x >= 142, ty <= 40 ... a number of 10 or more in the map, against a coordinate-named side; also against a
+//              pixel turned to tiles (m.x / TILE > 143, Math.floor(p.y / TILE) <= 40)
+//   rel        a centre after a coordinate pair: near(x, y, 66, 57, 13, 7), dist(x, y, 140, 76), segDist(px, py, 61, 70 ...)
+//              — a number of 10 or more in the 3rd or 4th argument of a call whose first two are coordinate names
+//   minus      x - 140, px - 142 ... a number of 10 or more in the map taken from a coordinate name (Math.hypot's
+//              arguments included: Math helpers are excepted only from gcall)
 // A literal inside a frame call (F.x(112), F.p(..), ATLAS.world.tx(..), ATLAS.port(..)) is wrapped, so it is not counted.
 //
 //   node tools/literals.mjs [files...]       counts per file (all of src/ when no file is named)
@@ -19,8 +24,10 @@
 //   node tools/literals.mjs --gate           the build's gate: every file in docs/spread/converted.json must have 0
 //                                            literals outside docs/spread/literals-allow.json; exit 1 otherwise
 // literals-allow.json: [{ file, literal?, line?, decl?, reason }] — no literal/line/decl allows the whole file (an
-// instance's own map); `literal` matches the source text (spaces ignored), `line` pins it, `decl` allows everything
-// inside that named declaration (01-atlas's own ANCHORS table).
+// instance's own map); `decl` alone allows everything inside that named declaration (01-atlas's own ANCHORS table);
+// `literal` matches the source text (spaces ignored) and MUST be pinned by `decl` (the declaration it sits in: the
+// sturdy pin, it survives edits above it) or `line`, so one exemption never covers a new position written elsewhere in
+// the same file. An unpinned `literal` entry matches nothing, and the gate names it.
 // ============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -96,11 +103,23 @@ const NOT_MAP = new Set(['fillRect', 'strokeRect', 'clearRect', 'arc', 'arcTo', 
 // array and string methods: never a tile as a method (a.fill(0, 4)), but a bare helper of the same name may be (fill(139, 66, ...))
 const NOT_MAP_METHOD = new Set(['slice', 'substr', 'substring', 'splice', 'padStart', 'padEnd', 'toFixed', 'repeat', 'fill', 'includes', 'indexOf', 'at', 'set', 'get']);
 const CANVAS_OBJ = /^(g|ctx|dg|sg|c|cx|gg|g2|pg|mg|tg|octx|mctx|tctx|nctx|ctx2|ctx2d)$/;
+// pixels, not tiles: the knight, the camera, the pointer
+const PIXEL_OBJ = /^(player|cam|camera|mouse|pointer|ptr|touch|view|screen)$/;
+// a drawing call (canvas or HUD): numbers inside are pixels (Math.hypot and the other Math helpers are NOT drawing)
+const DRAW_NAMES = new Set(['fillRect', 'strokeRect', 'clearRect', 'arc', 'arcTo', 'moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo', 'ellipse',
+  'fillText', 'strokeText', 'drawImage', 'translate', 'scale', 'rotate', 'setTransform', 'transform', 'createLinearGradient', 'createRadialGradient',
+  'createConicGradient', 'getImageData', 'putImageData', 'rect', 'roundRect', 'floatText', 'burst', 'particles']);
+function drawCall(a) {
+  if (!a || a.type !== 'CallExpression') return false;
+  const c = a.callee, name = c.type === 'Identifier' ? c.name : c.type === 'MemberExpression' && !c.computed ? c.property.name : null;
+  if (c.type === 'MemberExpression' && c.object.type === 'Identifier' && (CANVAS_OBJ.test(c.object.name) || c.object.name === 'HK')) return true;
+  return !!name && DRAW_NAMES.has(name) && !(c.type === 'Identifier' && name === 'rect');   // a bare rect(x0, y0 ...) helper may be a map rect
+}
 const num = n => n && n.type === 'Literal' && typeof n.value === 'number';
 const neg = n => n && n.type === 'UnaryExpression' && n.operator === '-' && num(n.argument);
 const nameOf = n => n.type === 'Identifier' ? n.name : n.type === 'MemberExpression' && !n.computed ? n.property.name : null;
 const COORD_NAME = /^(t|p|c|s|n|o|a|b|g|d|m|k|q|w|h|e|f|i|j|r|z|u|v)?[xy][0-9]?$|^[xy](0|1|a|b)$|^t[xy][0-9]?$/;
-const propName = p => p && p.type === 'Property' && !p.computed ? (p.key.type === 'Identifier' ? p.key.name : p.key.value) : null;
+const propName = p => p && (p.type === 'Property' || p.type === 'MethodDefinition') && !p.computed ? (p.key.type === 'Identifier' ? p.key.name : p.key.value) : null;
 
 // is this node inside a frame call (F.x(...), W.tx(...), ATLAS.port(...), ATLAS.frame('a').p(...))?
 function wrapped(anc) {
@@ -161,6 +180,27 @@ export function scanSource(src, opts = {}) {
         const nm = nameOf(other); if (!nm || !COORD_NAME.test(nm)) continue;
         add(n, 'compare', null, null, [lit]);
       }
+      // a pixel turned to tiles on the other side (m.x / TILE > 143, Math.floor(p.y / TILE) <= 40)
+      const perTile = e => e && ((e.type === 'BinaryExpression' && e.operator === '/' && e.right.type === 'Identifier' && e.right.name === 'TILE') ||
+        (e.type === 'CallExpression' && e.callee.type === 'MemberExpression' && e.callee.object.type === 'Identifier' && e.callee.object.name === 'Math' && ['floor', 'round', 'ceil', 'trunc'].includes(nameOf(e.callee)) && perTile(e.arguments[0])));
+      for (const [lit, other] of [[n.right, n.left], [n.left, n.right]]) {
+        if (!num(lit) || lit.value < 10 || lit.value > W - 1 || !Number.isInteger(lit.value) || !perTile(other)) continue;
+        add(n, 'compare', null, null, [lit]);
+      }
+    }
+    // a coordinate name less a map number: x - 140 (Math.hypot(x - 140, y - 76), dx = px - 142): a distance to a place.
+    // Not: an OLD coordinate (ox, oy: already read back through W.ix / F.ix, so old numbers are what it means), a box
+    // edge less a size (b.x1 - 21), a pixel (player.y - 30, cam.x - 80) or anything inside a drawing call (g.moveTo(cx - 9 ..)).
+    if (n.type === 'BinaryExpression' && n.operator === '-' && num(n.right) && Number.isInteger(n.right.value) && n.right.value >= 10 && n.right.value <= W - 1) {
+      const nm = nameOf(n.left), obj = n.left.type === 'MemberExpression' && n.left.object.type === 'Identifier' ? n.left.object.name : null;
+      if (nm && COORD_NAME.test(nm) && !/^o[xy]/.test(nm) && !/^[xy][01]$/.test(nm) && !PIXEL_OBJ.test(obj || '') && !anc.some(drawCall)) add(n, 'minus', null, null, [n.right]);
+    }
+    // a centre after a coordinate pair: near(x, y, 66, 57, ...), dist(x, y, 140, 76), segDist(px, py, 61, 70, ...)
+    // (both the 3rd and 4th a map number, one of them 10 or more: burst(player.x, player.y, '#fff', 16) is not a centre)
+    if (n.type === 'CallExpression' && n.arguments.length >= 4 && !drawCall(n)) {
+      const [a0, a1, a2, a3] = n.arguments, cn = e => { const nm = e && nameOf(e); return !!nm && COORD_NAME.test(nm); };
+      if (cn(a0) && cn(a1) && num(a2) && num(a3) && inMapX(a2.value) && inMapY(a3.value) && Math.max(a2.value, a3.value) >= 10)
+        for (const a of [a2, a3]) if (a.value >= 10) add(a, 'rel', null, null, [a]);
     }
   });
   // A named coordinate: `const X = 112, Y = 49; setTile(X, Y)`. A declaration of a whole map number (10 or more) whose name
@@ -200,11 +240,12 @@ export function allowList() {
   return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : [];
 }
 const squash = s => String(s).replace(/\s+/g, '');
+// an entry with a `literal` but neither `decl` nor `line` is unpinned: it matches nothing (the gate names it)
+export const unpinned = a => a.literal !== undefined && a.decl === undefined && a.line === undefined;
 export function allowed(file, hit, src, allow, declRanges) {
   for (const a of allow) {
-    if (a.file !== file) continue;
-    if (a.decl) { const r = declRanges(a.decl); if (r.some(([s, e]) => hit.start >= s && hit.end <= e)) return a; continue; }
-    if (a.literal === undefined && a.line === undefined) return a;
+    if (a.file !== file || unpinned(a)) continue;
+    if (a.decl !== undefined) { const r = declRanges(a.decl); if (!r.some(([s, e]) => hit.start >= s && hit.end <= e)) continue; }
     if (a.line !== undefined && a.line !== hit.line) continue;
     if (a.literal !== undefined && squash(a.literal) !== squash(hit.literal)) continue;
     return a;
@@ -215,7 +256,12 @@ export function scanFile(file, allow = allowList(), T = null) {
   const src = fs.readFileSync(path.join(SRC, file), 'utf8');
   const hits = scanSource(src);
   let ast = null;
-  const declRanges = name => { ast = ast || parse(src); const out = []; walk(ast, n => { if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.id.name === name && n.init) out.push([n.init.start, n.init.end]); }); return out; };
+  // a `decl` pin: a declaration by name (const NAME = ..., function NAME () {...}, or a property NAME: ... / NAME () {...})
+  const declRanges = name => { ast = ast || parse(src); const out = []; walk(ast, n => {
+    if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.id.name === name && n.init) out.push([n.init.start, n.init.end]);
+    else if (n.type === 'FunctionDeclaration' && n.id && n.id.name === name) out.push([n.start, n.end]);
+    else if ((n.type === 'Property' || n.type === 'MethodDefinition') && propName(n) === name && n.value) out.push([n.value.start, n.value.end]);
+  }); return out; };
   const bare = [], ok = [];
   for (const h of hits) { const a = allowed(file, h, src, allow, declRanges); (a ? ok : bare).push(a ? Object.assign({}, h, { allowedBy: a.reason }) : h); }
   if (T) for (const h of bare) h.guess = h.x !== null && h.x !== undefined && h.y !== null && h.y !== undefined ? anchorOf(T, h.x, h.y).id : null;
@@ -231,6 +277,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const list = (Array.isArray(converted) ? converted : converted.files || []).map(f => path.basename(f));
     if (!list.length) process.exit(0);   // nothing converted yet: the gate has nothing to hold
     const allow = allowList(), T = atlasTables(); let bad = 0;
+    for (const a of allow) if (unpinned(a)) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for ${JSON.stringify(a.literal)} has no decl or line: pin it to the declaration (or line) it allows`); }
     for (const f of list) {
       if (!fs.existsSync(path.join(SRC, f))) { console.error(`literals gate: docs/spread/converted.json names ${f}, which is not in src/`); bad++; continue; }
       const r = scanFile(f, allow, T);
