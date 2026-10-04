@@ -66720,8 +66720,11 @@ const MOUNT_LOOK = (() => {
   HOOKS.questText.royalmine = () => { const s = R().stage; return s <= 6 ? QTEXT[s] : 'Done.'; };
   HOOKS.activeQuests.push(() => dwarfStage() >= 2 && R().stage <= 6 ? ['royalmine'] : []);
   // on the overworld only: the Deepholm shaft at Grey Quarry
-  HOOKS.mapTarget.push(() => (window.INSTANCES && INSTANCES.active()) || dwarfStage() < 2 || R().stage > 6 ? null
-    : { x: DH ? DH.SHAFT.x : 56, y: DH ? DH.SHAFT.y : 6, label: 'Deepholm: King Thrain', id: 'royalmine' });
+  HOOKS.mapTarget.push(() => {
+    if ((window.INSTANCES && INSTANCES.active()) || dwarfStage() < 2 || R().stage > 6) return null;
+    const [x, y] = DH ? [DH.SHAFT.x, DH.SHAFT.y] : ATLAS.port('quarry.shaft');   // without 24-dwarves: the shaft's port
+    return { x, y, label: 'Deepholm: King Thrain', id: 'royalmine' };
+  });
   function setStage(s) {
     const q = R(); if (s <= q.stage) return;
     q.stage = s;
