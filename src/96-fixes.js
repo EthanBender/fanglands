@@ -104,5 +104,24 @@
         closePanel(); render(); shown = names();
       } finally { closePanel(); areaBanner = ab0; window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); render(); }
       check(P + "a place's name banner is not drawn while a page is open (a phone's quest page), and shows again once it is closed", over === false && shown === true, { over, shown }); }
+
+    // --- 8. the bank on the narrowest phone (320 x 568): a phone's shape, inside the screen, Back and Next apart (60-bank) ---
+    { const w0 = window.innerWidth, h0 = window.innerHeight, t0 = window.__forceTouch, bank0 = player.bank.map(s => ({ ...s })), text0 = SETTINGS.get('text'), r = {};
+      const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      try {
+        window.innerWidth = 320; window.innerHeight = 568; window.__forceTouch = true; resize();
+        player.bank = []; for (let i = 0; i < 40; i++) player.bank.push({ id: i % 2 ? 'stone' : 'wood', qty: 1 + i });
+        for (const text of ['normal', 'large']) {
+          SETTINGS.set('text', text); closePanel(); openPanel('bank'); render();
+          const L = BANK.layout(), pr = panelRect, ci = buttons.findIndex(b => b.label === '×');
+          const own = ci < 0 ? [] : buttons.slice(ci).filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+          const out = own.filter(b => b.x < pr.x || b.y < pr.y || b.x + b.w > pr.x + pr.w || b.y + b.h > pr.y + pr.h || b.x + b.w > VW || b.y + b.h > VH).map(b => b.label);
+          const over = []; for (let i = 0; i < own.length; i++) for (let j = i + 1; j < own.length; j++) if (hit(own[i], own[j])) over.push(own[i].label + ' x ' + own[j].label);
+          const prev = own.find(b => /Prev$/.test(b.label)), next = own.find(b => /Next$/.test(b.label));
+          r[text] = { kind: L.kind, w: L.w, out, over, pager: !!prev && !!next && !hit(prev, next) && prev.w >= 44 && next.h >= 44 };
+        }
+      } finally { closePanel(); player.bank = bank0; SETTINGS.set('text', text0); window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); render(); }
+      check(P + 'the bank at 320 x 568 takes a phone shape (stack or split, never the computer\'s wide one): every control inside the panel and the screen, none on another, Back and Next 44 px and apart, at both text sizes',
+        ['normal', 'large'].every(k => r[k] && r[k].kind !== 'wide' && r[k].w <= 320 && !r[k].out.length && !r[k].over.length && r[k].pager), r); }
   });
 }
