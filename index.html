@@ -63633,7 +63633,8 @@ const MOUNT_LOOK = (() => {
     const s = Q().stage;
     // map: 'aerie' marks the target as being on the instance's own map, so the instance map shows it (13-ux mapTargets)
     if (inside()) { const [p, label] = TARGETS[s]; return { x: p[0], y: p[1], label, id: 'lark', map: 'aerie' }; }
-    return { x: 62, y: 6, label: "Aerie: Lark's First Flight", id: 'lark' };
+    const [sx, sy] = ATLAS.port('quarry.shrine');   // outside: the wind shrine on the Grey Quarry heights
+    return { x: sx, y: sy, label: "Aerie: Lark's First Flight", id: 'lark' };
   });
 
   // =========================================================================
@@ -65692,7 +65693,7 @@ const MOUNT_LOOK = (() => {
   // 61-markers hangs every shop on a mark. The Cloud Oven is inside Aerie, which has no door in the world: its mark goes
   // beside the Windward Market's, by the wind shrine's step
   let OVEN_MARK = null;
-  if (window.MARKERS && MARKERS.add) for (const [mx, my] of [[63, 7], [61, 7], [63, 8]]) { OVEN_MARK = MARKERS.add({ x: mx, y: my, kind: 'shop', label: 'The Cloud Oven' }); if (OVEN_MARK) break; }
+  if (window.MARKERS && MARKERS.add) for (const [mx, my] of ATLAS.frame('quarry').pts([[63, 7], [61, 7], [63, 8]])) { OVEN_MARK = MARKERS.add({ x: mx, y: my, kind: 'shop', label: 'The Cloud Oven' }); if (OVEN_MARK) break; }
   if (AER) AER.voice = 'Above the clouds: Aerie, the walled city of the winged folk. They have watched the Fanglands for a thousand years. Listen: they sing.';
   if (window.WIKI && WIKI.add) {
     const who = PEOPLE.map(p => p.name).concat(['Lark, the Queen\'s daughter'], WALKERS.map(w => w.name + ' (walks the streets)'));
@@ -65979,7 +65980,7 @@ const MOUNT_LOOK = (() => {
       // a new game from inside Aerie; newGame deletes the save, so the slot is copied first and put back to load it again
       enter(); { const sk = 'fanglands.slot.' + title.slot, raw = localStorage.getItem(sk), at = localStorage.getItem(sk + '.at');
         F.newGame(); F.sim(2, []); r.newGame = mounted() + (INSTANCES.active() ? 100 : 0); r.kingdomReset = !!quest.kingdom && quest.kingdom.stage === 0 && quest.kingdom.wishes === 0;
-        r.store = BUILDINGS.some(b => b.x === 90 && b.y === 20);
+        r.store = BUILDINGS.some(b => b.x === ATLAS.frame('thistledown').x(90) && b.y === ATLAS.frame('thistledown').y(20));   // the General Store, back on the overworld
         if (raw != null) { localStorage.setItem(sk, raw); if (at != null) localStorage.setItem(sk + '.at', at); localStorage.setItem('fanglands.slot.current', String(title.slot)); }
         r.reloaded = raw != null && load(); F.sim(2, []); h.peace(true); if (player.companion && typeof player.companion === 'object') player.companion.downT = 999; }
       r.same = idsOf() === ids0 && BUILDINGS.length === n0 && (MARKERS.all ? MARKERS.all() : []).map(m => m.key).sort().join('|') === marks0;
@@ -66083,8 +66084,8 @@ const MOUNT_LOOK = (() => {
       talkTo(48, 30, 48, 29);
       r.opened = Q().stage === 1 && activeQuests().includes('lark') && levelBanner && levelBanner.sub === "Lark's First Flight";
       { const t = mapTargets().find(o => o.id === 'lark'); r.targetIn = !!t && t.x === SP.aldric[0] && t.y === SP.aldric[1]; }
-      leave(); { const t = mapTargets().find(o => o.id === 'lark'); r.targetOut = !!t && t.x === 62 && t.y === 6;
-        const c = PLAYTHROUGH.connectivity(), rows = c.rows.filter(o => o.x === 62 && o.y === 6); r.audit = rows.length > 0 && rows.every(o => o.open >= 0) && c.unreachable.length === 0; }
+      leave(); { const t = mapTargets().find(o => o.id === 'lark'), SH = ATLAS.port('quarry.shrine'); r.targetOut = !!t && t.x === SH[0] && t.y === SH[1];
+        const c = PLAYTHROUGH.connectivity(), rows = c.rows.filter(o => o.x === SH[0] && o.y === SH[1]); r.audit = rows.length > 0 && rows.every(o => o.open >= 0) && c.unreachable.length === 0; }
       enter();
       talkTo(48, 58, 48, 57); r.aldric = Q().stage === 2;
       talkTo(66, 53, 66, 54); r.tamsin = Q().stage === 3 && panel !== 'shop'; closePanel();
@@ -66221,7 +66222,7 @@ const MOUNT_LOOK = (() => {
       const above = S && S.stock.every(([id, p]) => ITEMS[id] && p > ITEMS[id].value);
       const onMap = !!m && (MARKERS.all ? MARKERS.all() : []).some(o => o.label === 'The Cloud Oven' && o.kind === 'shop' && o.x === m.x && o.y === m.y) && !SOLID.has(tileAt(m.x, m.y));
       check(K + "K18 the Cloud Oven sells bread 12, berry pie 40 and fish pie 46 (every price above what the item is worth), and its shop mark stands on walkable ground by the wind shrine",
-        S && S.name === 'The Cloud Oven' && stock && above && onMap && m.x === 63 && m.y === 7, { stock, above, onMap, mark: m && [m.x, m.y] }); }
+        S && S.name === 'The Cloud Oven' && stock && above && onMap && m.x === ATLAS.frame('quarry').x(63) && m.y === ATLAS.frame('quarry').y(7), { stock, above, onMap, mark: m && [m.x, m.y] }); }
 
     // ---- K19. the feather's icon ----
     { const a = ICONS.audit();
