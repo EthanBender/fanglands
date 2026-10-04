@@ -13,23 +13,25 @@ const script = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</
 // an element that is anything it is asked to be: unknown properties are more such elements, calls return one, and what
 // is written to it reads back (textContent, value, onclick ...)
 function fakeEl() {
+  // children: what appendChild put in (innerHTML = '' empties it), so a test can count a table row's cells
   const own = { classList: (() => { const s = new Set(); return { add: (...c) => c.forEach(x => s.add(x)), remove: (...c) => c.forEach(x => s.delete(x)), contains: c => s.has(c), toggle: (c, on) => (on ?? !s.has(c)) ? s.add(c) : s.delete(c) }; })(), style: {}, value: '', textContent: '', children: [], dataset: {} };
+  own.appendChild = c => { own.children.push(c); return c; };
   const f = function () { return p; };
   const p = new Proxy(f, {
     get: (t, k) => k in own ? own[k] : k === Symbol.toPrimitive ? (() => '') : k === Symbol.iterator ? function* () { } : k === 'then' ? undefined : k === 'length' ? 0 : p,
-    set: (t, k, v) => { own[k] = v; return true; },
+    set: (t, k, v) => { if (k === 'innerHTML') own.children = []; own[k] = v; return true; },
     apply: () => p,
   });
   return p;
 }
 
 function page({ hidden = false, search = '', hist = [], sim = null, yes = false } = {}) {
-  const els = new Map(), calls = [], intervals = new Map(), listeners = {};
+  const els = new Map(), calls = [], intervals = new Map(), listeners = {}, made = [];
   let seq = 0;
   const document = {
     hidden,
     getElementById: id => { if (!els.has(id)) els.set(id, fakeEl()); return els.get(id); },
-    createElement: () => fakeEl(),
+    createElement: () => { const e = fakeEl(); made.push(e); return e; },
     createTextNode: () => fakeEl(),
     addEventListener: (type, f) => { (listeners[type] = listeners[type] || []).push(f); },
   };
@@ -58,7 +60,7 @@ function page({ hidden = false, search = '', hist = [], sim = null, yes = false 
   const advance = async ms => { for (let t = 0; t < ms; t += 10000) { for (const { f } of [...intervals.values()]) f(); await settle(); } };
   const show = async on => { document.hidden = !on; for (const f of listeners.visibilitychange || []) f(); await settle(); };
   const take = () => { const c = calls.splice(0); const by = {}; for (const p of c) by[p] = (by[p] || 0) + 1; return { n: c.length, by }; };
-  return { settle, advance, show, take, intervals, els, posts };
+  return { settle, advance, show, take, intervals, els, posts, made };
 }
 
 test('the admin page: the meter is read on opening and on Refresh, never by the 10 s refresh', async () => {
@@ -135,4 +137,63 @@ test('the admin page: the movement check and the Atlas ride the meter\'s read (n
   assert.equal(P.take().by['/api/admin/sim'], 1, 'the switch is the one POST');
   await P.advance(60000);
   assert.equal(P.take().by['/api/admin/sim'], undefined, 'the 10 s refresh still never reads it');
+});
+
+// the shared world, Stage 2: the maps the world runs itself ride the same read; each button asks, then posts one switch
+test('the admin page: the places the world runs, from the same read; a place\'s button and the master switch each post one switch', async () => {
+  const world = (maps, master = 'on', held = {}) => ({ sim: { move: 'observe', master, maps, held }, world: { modes: { deepholm: maps.deepholm === 'world' && !held.deepholm ? 'world' : 'keeper', aerie: 'keeper', coalmine: 'keeper' }, knights: { deepholm: 2, aerie: 0, coalmine: 1 }, empty: ['coalmine'], loaded: true, running: maps.deepholm === 'world', ticks: 900, tick: { n: 900, p50: 0.31, p99: 0.9, max: 2 }, boot: { deepholm: 1210 }, heap: null, copies: maps.deepholm === 'world' ? [{ map: 'deepholm', bootMs: 1210, knights: 2, monsters: 2, ticks: 900, errors: 0, parked: false }] : [], cap: 4, skipped: 0, log: [{ at: Date.now(), map: 'deepholm', from: 'world', to: 'keeper', reason: 'throws', tickP99: 1 }] } });
+  const sim = posts => {
+    const last = posts.length ? posts[posts.length - 1].body : {};
+    if (last.master) return world({ deepholm: 'world', aerie: 'keeper' }, last.master);
+    if (last.maps) return world({ deepholm: last.maps.deepholm || 'keeper', aerie: 'keeper' });
+    return world({ deepholm: 'keeper', aerie: 'keeper' }, 'on', { deepholm: { reason: 'throws', at: Date.now() } });
+  };
+  const P = page({ sim, yes: true });
+  await P.settle();
+  assert.equal(P.take().by['/api/admin/sim'], 1, 'still the one read on opening');
+  assert.match(String(P.els.get('worldline').textContent), /^Switched on: .*Not running now/);
+  const held = P.made.find(e => /handed back .* because it hit an error 3 times/.test(String(e.textContent)));
+  assert.ok(held, 'a held place says why');
+  const runIt = P.made.filter(e => String(e.textContent) === 'Let the world run it');
+  assert.equal(runIt.length, 2, 'one button per place the world can run (the coal mine has none)');
+  // the knights there are the world's own count on the keeper path too (2 in Deepholm while a knight's game runs it)
+  { const texts = P.els.get('worldmaps').children.map(tr => tr.children.map(td => String(td.textContent)));
+    assert.deepEqual(texts[0].slice(0, 3).map((t, i) => i === 1 ? t.split(':')[0] : t), ['Deepholm (the dwarves)', 'a knight\'s game', '2'], 'Knights there on the keeper path: ' + JSON.stringify(texts[0])); }
+  await runIt[0].onclick(); await P.settle();
+  assert.deepEqual(P.posts.map(p => p.body), [{ maps: { deepholm: 'world' } }]);
+  assert.match(String(P.els.get('worldline').textContent), /Running now: 1 place, 10 ticks a second, half under 0\.31 ms, 99 in 100 under 0\.90 ms\./);
+  // every row has its six cells under the six headers; the running place shows its knights, its monsters and how long it took to build
+  { const rows = P.els.get('worldmaps').children, texts = rows.map(tr => tr.children.map(td => String(td.textContent)));
+    assert.equal(rows.length, 3, 'one row per place');
+    for (const tr of rows) assert.equal(tr.children.length, 6, 'six cells in every row: ' + JSON.stringify(texts));
+    assert.deepEqual(texts[0].slice(0, 5), ['Deepholm (the dwarves)', 'the world', '2', '2', '1210 ms'], 'Deepholm: its knights, its monsters and its build time under their headers');
+    assert.equal(String(rows[0].children[5].children[0].textContent), 'Give it back to a knight\'s game', 'the button sits in the last column');
+    assert.deepEqual(texts[1].slice(2, 5), ['0', '', ''], 'a place nobody is in: 0 knights, no monsters, never built');
+    // the coal mine: listed, greyed, with the reason, its knights, and no button
+    assert.equal(rows[2].className, 'dim');
+    assert.deepEqual(texts[2], ['The coal mine', 'a knight\'s game (no monsters live there)', '1', '0', '', 'Nothing to share there.']);
+    assert.ok(!rows[2].children[5].children.length, 'no button for the coal mine'); }
+  await P.els.get('mastertoggle').onclick(); await P.settle();
+  assert.deepEqual(P.posts.map(p => p.body)[1], { master: 'off' });
+  assert.match(String(P.els.get('worldline').textContent), /^Switched off: /);
+  assert.equal(P.take().by['/api/admin/sim'], 2, 'two POSTs, nothing else');
+  await P.advance(60000);
+  assert.equal(P.take().by['/api/admin/sim'], undefined, 'the 10 s refresh never reads it');
+  // a page that says no posts nothing
+  const Q = page({ sim, yes: false }); await Q.settle();
+  for (const b of Q.made.filter(e => String(e.textContent) === 'Let the world run it')) await b.onclick();
+  await Q.els.get('mastertoggle').onclick(); await Q.settle();
+  assert.equal(Q.posts.length, 0);
+  // a place being taken over (its copy not built yet) says so
+  const R = page({ sim: () => { const v = world({ deepholm: 'world', aerie: 'keeper' }); v.world.copies = []; v.world.modes.deepholm = 'joining'; return v; } }); await R.settle();
+  assert.match(String(R.els.get('worldline').textContent), /Starting a place now\./);
+  assert.ok(!/Running now: 0 places/.test(String(R.els.get('worldline').textContent)));
+  // just after a hand-back (an older world's loop still idling, no copy, every place on a knight's game): never 'starting'
+  const B = page({ sim: () => { const v = world({ deepholm: 'keeper', aerie: 'keeper' }); v.world.running = true; v.world.copies = []; return v; } }); await B.settle();
+  assert.ok(!/Starting/.test(String(B.els.get('worldline').textContent)), String(B.els.get('worldline').textContent));
+  assert.match(String(B.els.get('worldline').textContent), /Not running now/);
+  // a place whose knights have all stopped playing rests (its copy parked): said on the line and in its row
+  const Z = page({ sim: () => { const v = world({ deepholm: 'world', aerie: 'keeper' }); v.world.running = false; v.world.copies[0].parked = true; return v; } }); await Z.settle();
+  assert.match(String(Z.els.get('worldline').textContent), /Not running now .*Deepholm \(the dwarves\) is resting: nobody there is playing/);
+  assert.equal(String(Z.els.get('worldmaps').children[0].children[1].textContent), 'the world (resting: nobody there is playing)');
 });

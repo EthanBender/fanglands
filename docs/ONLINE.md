@@ -134,7 +134,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `hello` | `v: 1, map?, caps?, atlas?` | once | first frame after open; the server answers `welcome`. Without `map` the knight is on `over` until its first `p`. `caps` and `atlas`: see *The shared world*, Stage 1 |
 | `p` | `map, region, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act, sw, j, spd, s` | 8/s | presence. `region` is the region or instance name the roster shows; `look` is the serialisable part of `playerLook()`, with the six worn item ids in `look.gear` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null; `sw` counts the swings the knight has started (one more each time `player.attackT` goes up): a friend's game plays the 0.22 s swing when it goes up, and a change of it sends presence at once |
 | `chat` | `text` | 1 per 1.5 s, ≤ 120 chars | filtered and logged server-side, then sent to everyone |
-| `mon` | `list` | 8/s, keeper only | monster snapshot for the map (format below) |
+| `mon` | `list, full?` | 8/s, keeper only | monster snapshot for the map (format below); `full: true` only in the one answer to the world's `snap` (Stage 2): every monster the game runs, not only those near a knight |
 | `hit` | `nid, dmg, knock, bomb` | 20/s | a non-keeper hit a monster; routed to the keeper |
 | `kill` | `nid, type, x, y, to` | — | keeper: this knight landed the killing blow; routed to `to` |
 | `hurt` | `to, dmg, x, y` | — | keeper: a monster hit this knight for `dmg` (already rolled against their `def`) |
@@ -150,13 +150,15 @@ between knights on the same map; chat and the roster go to everyone.
 
 | `t` | Fields | Meaning |
 |---|---|---|
-| `welcome` | `me, at, keeper, role, atlas?` | you are in; `keeper` is the keeper of your current map (may be you); `role` is `'player'` or `'admin'`; `atlas` is the world's Atlas hash (*The shared world*, Stage 1) |
+| `welcome` | `me, at, keeper, role, atlas?, sim?` | you are in; `keeper` is the keeper of your current map (may be you); `role` is `'player'` or `'admin'`; `atlas` is the world's Atlas hash (*The shared world*, Stage 1); `sim` says which maps the world runs itself (Stage 2) |
 | `who` | `list: [{n, map, region, lv, role}]` | everyone online; sent on join/leave and at most every 2 s |
 | `p` | `n` + the presence fields + `role` | a knight on your map moved; `role` is the server's word, never the sender's |
 | `left` | `n, map` | that knight left your map (or the game) |
 | `chat` | `n, text, at, role` | already filtered |
-| `keeper` | `map, n` | the keeper of your map changed (you may have become it) |
-| `mon` | `n, list` | the keeper's snapshot (you are not the keeper) |
+| `keeper` | `map, n, server?` | the keeper of your map changed (you may have become it); `server: true` when the keeper is the world itself (`n` is `'@world:<map>'`, Stage 2) |
+| `mon` | `n, list, k?, at?` | the keeper's snapshot (you are not the keeper); from the world itself also its tick `k` and the world's clock `at` in ms (Stage 2) |
+| `snap` | `map` | (to the keeper, and only to a game whose `caps` has `snap`) the world is taking your map over: answer once with `mon` `full: true` listing every monster you run (Stage 2) |
+| `sim` | `maps, hz, caps` | the places' modes changed while you are connected (the parent page, the watchdog): the same `sim` as `welcome`'s, anew (Stage 2) |
 | `hit` | `n, nid, dmg, knock, bomb` | (to the keeper) apply this hit for knight `n` |
 | `kill` | `nid, type, x, y` | you got the kill: grant XP, drops and quest credit locally |
 | `hurt` | `dmg, x, y` | a monster hit you: `hurtPlayer(dmg, x, y)` |
@@ -1531,8 +1533,9 @@ script against a stand-in DOM and holds it to exactly that. Left open and in vie
   collects what the copy sent. At most 3 catch-up ticks; beyond that the time is skipped and counted. The loop stops 60 s
   after the last knight leaves; a copy is dropped 60 s after its map empties. The cap is the overworld plus 3 instance copies.
   The **watchdog** hands a map back to the keeper path (`onFallback(map, reason)`, reasons `boot`, `throws`, `slow`, `heap`,
-  `cap`) on a boot throw, 3 tick throws within 10 s, 3 ticks in a row over 25 ms, the heap over budget, or more copies
-  than the cap. Inside workerd the clock only moves on I/O, so there a tick's cost is read as the lateness of the next timer.
+  `cap`) on a boot throw, 3 tick throws within 10 s, 3 ticks in a row over 25 ms, the heap over budget (only with a heap
+  probe; workerd has none, see Stage 2), or more copies than the cap. Inside workerd the clock only moves on I/O, so there a
+  tick's cost is read from two zero-delay timers after it (Stage 2, "How `slow` is measured in workerd").
 - `tools/sim-suite.mjs` (a deploy gate):
   - 0, **what the stripped copy reads from the stripped files.** A stripped name is a stand-in that reads as a truthy
     proxy, `0` as a number and nothing when iterated, so a game rule that reads one would quietly differ on the server.
@@ -1697,8 +1700,9 @@ game, so it reads that file through `online/src/atlas.js`. The game's own copies
 ```
 
 - `caps` lists what this game can do of the shared world's new messages: `tick`, `die`, `roll`, `loot`, `zone`, `fix`,
-  `day` (the spec's table). A Stage 1 game can do none of them yet, so it sends `[]`. The Room keeps, in order, only the
-  names it knows (at most those 7) and drops the rest; anything that is not an array is `[]`.
+  `day` (the spec's table), and `snap` (Stage 2: it answers the world's `snap`). A Stage 1 game can do none of them, so it
+  sends `[]`; a game of Stage 2 sends `['snap']`. The Room keeps, in order, only the names it knows (at most those 8) and
+  drops the rest; anything that is not an array is `[]`.
 - `atlas` is kept when it is 1 to 32 characters of `0-9a-z`, else null (an older page sends none).
 - Both ride the knight's attachment, so a nap keeps them. Nothing new goes to a knight whose `caps` lack the capability.
 - `welcome` gains `atlas`: the world's own hash (from `atlas.json`), when the world has one.
@@ -1826,6 +1830,444 @@ Friends on each island (F on the laptop, a tap on the seal on the iPad) and chec
 island', with no blue edge and Follow dark, and that a real tap on Follow does nothing
 (`friends-on-islands-{laptop,ipad}-local.png`). The re-run, 9.9 minutes: ALL PASS, 3,375 presences, 3,298 judged, 77 not
 judged, 44 jumps waived, 0 too fast, 0 into or through a wall, no page errors.
+
+### Stage 2: the world keeps the plain instances (deepholm and aerie), switched off
+
+The world itself can now be the keeper of a map: it runs the monsters in its own copy of the game (the harness of Stage 0)
+and every knight on that map shows the copy's monsters, exactly as a non-keeper shows a keeper's today. Only two maps
+can be switched over in this stage, the plain instances with monsters and no boss of their own: **deepholm** and
+**aerie**. The third plain instance, the coal mine (**coalmine**), has no monsters at all, so the world has nothing to run
+there: the parent page lists it greyed with that reason and no button, and `POST` refuses it (`WORLD_EMPTY` in
+`sim/worlds.js`; `tools/mmo-sim-world.js` check 0b fails if a copy of it ever has a monster, or a copy of either of the two
+has none). Every map ships on `keeper`. A game needs nothing new to play on a world-run map: the world speaks the same
+`keeper`, `mon`, `hit`, `kill`, `hurt` and `boss_wait` it always did (the v1 wire); the few new fields are ignored by
+older games. A game of this build also answers the world's `snap` (below); an older one is never asked.
+
+**The switches** (settings key `sim`, beside `move`; unknown keys already there are kept):
+
+```
+{ move, master: 'on' | 'off', maps: { deepholm, aerie: 'keeper' | 'world' }, held: { <map>: {reason, at} } }
+```
+
+- A map is run by the world (`room.modeOf(map)` is `'world'`) only when `master` is `'on'` (the default), its `maps` entry is
+  `'world'` (the default is `'keeper'`), it is not `held`, and the World has its game copy. Anything else is `'keeper'`:
+  today's path, unchanged.
+- `held`: a map the watchdog handed back (below) stays on the keeper path until the parent page flips it again. The
+  hold is kept in settings, so a nap or a deploy never retries a map that just failed.
+- `POST /api/admin/sim` (Bearer ADMIN_KEY) takes any of `{move, master, maps}`: `master` `'on'` or `'off'`, `maps` an object
+  of map to `'keeper'` or `'world'`. `'world'` is refused for the coal mine (400 `empty`: no monsters live there) and for
+  any other map but the two (400 `later`: its monsters move in a later stage); a map not in the spec's list is 400 `bad`. A flip clears that map's hold. `master: 'off'` sends every map
+  back to the keeper path at once and leaves `maps` as it was. It answers the same as `GET`.
+- Every change of a map's mode, by the parent page or by the watchdog, is one row in a new table (created only if missing):
+
+```
+sim_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, map TEXT NOT NULL, from_mode TEXT NOT NULL,
+         to_mode TEXT NOT NULL, reason TEXT NOT NULL, tick_p99 REAL)
+```
+
+  `reason` is `'parent page'`, `'master'`, or the watchdog's `'boot'`, `'throws'`, `'slow'`, `'cap'`, `'stale'` (the copy
+  stopped ticking for `KEEPER_STALE`, 3 s, while knights were playing there; a parked copy, below, is still on purpose and
+  never stale) or `'nocopy'` (the World could not load the game copy). The newest 1,000 rows are kept. SimHost also knows
+  `'heap'`, but only a host given a heap probe can trip it (node's sims): workerd has none (no `process`, no
+  `performance.memory`: `performance` has only `timeOrigin` and `now`, checked 3 Oct 2026 on wrangler 4.92 local), so the
+  World passes none, its `GET /api/admin/sim` says `heapProbe: false`, and on the World it is the copy cap (the overworld plus
+  3 instances, 59.4 MB of the 128 MB isolate when measured) that holds memory, never a heap reading.
+- **How `slow` is measured in workerd.** A Worker's clock only moves between events, so a tick cannot time itself. Right after
+  each batch of ticks SimHost sets a zero-delay timer, and when it lands, a second one: the first gap is the ticks' own work
+  plus however late the machine (or the object, busy with other messages) landed a timer; the second gap, with no work
+  before it, is that lateness alone. A tick's cost is the first gap less the second, so a busy machine never reads as a slow
+  copy; and a reading taken while the machine alone was over 25 ms late is set aside (it neither counts toward three slow
+  ticks nor ends a run of them). In node (the sims) each copy is timed directly.
+
+**The virtual knight.** `room.joinVirtual(sock, '@world:<map>', map)` puts the world's own knight on a map: its `sock` is
+the way into that map's copy (what is sent to it is queued for the copy's next tick). It is never in `who`, never relayed
+as presence, has no login row, and can never be gifted, traded with, asked, partied or moderated: it is not one of the
+Room's knights at all, only the map's keeper. While a map is world-run the virtual knight is always its keeper and is never
+taken for a silent one; a real knight is never elected there. `keeper` names it with `server: true`:
+
+```
+{ t: 'keeper', map: 'deepholm', n: '@world:deepholm', server: true }
+```
+
+What reaches the copy, as the keeper always got it: `hit`, `boss_call`, `spawn`, `spawn_clear`, and every knight on the map
+as his accepted presence (`{n, x, y, fx, fy, dead, def, lv, hp, mhp, spd}` from his last `p`, and `left` when he goes) once a
+tick. What the copy sends goes out as if a keeper sent it: `kill`, `hurt` and `boss_wait` to one knight on that map, and its
+monsters as `mon` (below). Anything else a copy sends (its stand-in's own presence, its own snapshots) goes nowhere. A knight
+whose place the world does not know yet (a Room just rebuilt from its sockets keeps no position) is sent no `mon` until his
+first presence: a list filtered by no position would be empty, and an empty list from the keeper tells his game that every
+monster it holds up has gone.
+
+**`mon` from the world**, once a tick (10 a second) to each knight on the map:
+
+```
+{ t: 'mon', n: '@world:deepholm', list: [row, ...], k: 1234, at: 1759500000000, standing: 3 }
+```
+
+- `k` is the copy's tick count and `at` the world's clock in ms. Older games read neither.
+- `standing` is how many monsters stand in the whole place (not fallen), however far from this knight. A knight's list holds
+  only the ones near him, so the place's plaque ("AERIE  3 left", 16-instances) reads `standing` while the world runs the
+  place (`COOP.placeStanding()`), and counts its own monsters as always on a knight's game. An older game ignores it.
+- **Interest, per knight**: his list holds the monsters within 24 tiles of his accepted position; one he was sent stays in it
+  until it is past 27 tiles (so a monster on the edge does not blink in and out), and one whose target is him is always
+  in it. A knight with nothing near still gets an empty list each tick: the world's stream never stops while he is there.
+- A row keeps the 14 contract columns and may go on with `[tgt, lock, phase, vx, vy, look]`: `tgt` the knight it is
+  chasing (or null), `lock` null until Stage 7, `phase` the one extra state its look reads (below), `vx, vy` its speed in
+  px/s, `look` an object of the other look fields (`{ally}` for a Dragon Killer, `{emberT}` for a cinder heart). A row ends
+  at its last column that is not null, so a plain monster's row is the 14 columns it always was.
+- **The look fields** (the monster-look addendum): the copy carries every field of `MONSTER_LOOK.LOOK_FIELDS` (read from
+  `src/78-monsterlook.js` when the copy is built, so a new look field is never dropped): `phase` is the thunderbird's
+  `hunt / high / perch`, the Fang's element, the zombie brute's `wind / stagger`, the cinderwight's `feed / cold`, the
+  barrelbeast's `volley`, the gnasher's `arm`, a dozer's `charge`, and the Ginormous Golem's `mend` (for 0.9 s after he
+  mends); `look.ally` (`hale` or `garrick`) and `look.emberT` ride in `look`. A game (75-coop) copies `phase`, `ally` and
+  `emberT` onto the puppet, where the monster look reads them. An older game ignores them and draws the resting pose.
+
+**Inside the copy** (src/79-worldkeeper.js and 75-coop; nothing changes in a browser):
+
+- **The kill goes to the top damager**: the copy keeps, per monster, the damage each knight's hits did (`dmgBy`, counted
+  only up to the hp the monster had), and on its death the knight with the most gets `kill` (a tie: the one who hit it
+  first). The ledger starts again when the monster stands up again or is back at full health. Named bosses keep their helper
+  credit (*Named bosses*).
+- **Throwers** (the goblin sapper) aim at the knights too: the copy's sapper keeps its distance and throws its sticky bomb at
+  the nearest knight, and a bomb that goes off hurts every knight in its blast (`hurt`, rolled as `explode` rolls it) as
+  well as the monsters near it. In a browser a thrower still aims only at its own keeper's knight.
+- `save()` does nothing; the copy's own `rollDrops` makes nothing (the credited knight's game rolls his drops, as today).
+- The copy's own `mon` and presence are dropped; the world sends its own `mon` each tick from `WORLDKEEPER.rows()`.
+- **A fallen monster stands up again only while no knight is near its home**, as in a knight's own game (07-update: 4 tiles
+  from its home, 40 for a Goblin Camp monster). In a browser that rule reads the player; in a copy the player is the stand-in
+  parked at tile (0, 0), so `WORLDKEEPER.holdRespawns` keeps it against the real knights there (`COOP.knightsHere()`): a
+  monster whose time is up waits until every knight is that far off. Before 4 Oct a kid standing on a felled sentinel's home
+  saw it stand up beside him after its 25 to 35 s (`tools/mmo-sim-world.js` check 14 fails on that copy).
+
+**Taking a map over (keeper to world), and the cold copy.** Nobody ever waits for a copy to build:
+
+1. The first knight into a world-run map keeps it in his own game, as today. Right after (the Room's alarm, 0 ms) the world
+   builds the copy and names the virtual knight to the copy only. **The build stops the whole World**: chat, every other
+   knight anywhere, the other world-run places. Measured on this MacBook Pro (Apple M4, wrangler 4.92 local,
+   `node tools/sim-freeze.mjs`, 4 Oct 2026, 6 cold Deepholm builds each): the World relayed nothing for 732 to 862 ms (median
+   780 ms) on a quiet machine, and 815 to 1,305 ms (median 1,076 ms) with two headless suites and the sim-suite running beside
+   it; each freeze matched the World's own build time within 40 ms. The review of 3 Oct saw 1.7 to 2.6 s with other
+   builders' suites running on the same machine. Cloudflare's machines are not this one; nothing here measures them. It
+   happens on every build: the first knight into an emptied place after its copy went (60 s, below), a parent-page flip, a
+   wake. Nothing cheap cuts it: a `worldGen: false` copy builds in about 50 ms, but for these two maps it does not come out the
+   same as the full build (`tools/sim-suite.mjs` check 5), and the spec's pre-warmed spare copy only moves the same freeze to
+   another moment.
+2. The copy starts as a non-keeper: it is told the real keeper's name and reads his `mon` stream (the Room hands the copy
+   every `mon` the keeper sends meanwhile), so it holds his monsters as puppets.
+3. The keeper's game is asked for its full snapshot when it has the `snap` capability (below). The virtual knight becomes
+   the keeper at that answer; for an older page, at the first `mon` with monsters in it; and for either, after 1.5 s
+   (`JOIN_WAIT`) with neither. An empty `mon` from an older page is a lone keeper's heartbeat (it lists nothing because
+   nobody else is near him, not because his monsters are gone) and is never read as his monsters. Then the copy's own
+   `handoff()` turns the puppets into its real monsters, with the same nids, hp and positions, and every knight on the map
+   hears `keeper` naming `'@world:<map>'`. The old keeper's game turns into a non-keeper, as for any keeper change.
+   Its screen never blinks empty meanwhile (75-coop `setKeeper`, a game of this build): a game that kept the map and hears
+   another keeper named keeps the monsters on its own screen (within 24 tiles of its knight, alive, with nids) standing as
+   puppets where they were, with their hp, until the new keeper's first `mon`; that list is the word, and a held-up puppet
+   it does not name goes. A game arriving on a map holds nothing up (it knows nothing yet). This is true of every keeper
+   change, a knight's or the world's. An older game blinks empty for one round trip (about 100 ms) at the change, as it
+   always did when its keeper changed.
+
+**The full snapshot (`snap`, a game of this build).** When the copy starts reading a keeper whose `hello` named the `snap`
+capability, the world sends him `{ t: 'snap', map }` once. His game (75-coop) answers at once with one
+`{ t: 'mon', full: true, list }` listing every monster it runs on that map, standing or fallen, near anyone or not (at most
+400 rows, the usual columns; a fallen one has row column 11 at 1). That answer, not his ordinary stream, hands the copy the
+map: so when a knight alone walks into a world-run place, or the parent page switches on the place he is fighting in, a
+monster he chased, hurt or felled while the copy was being built carries on in the copy exactly as it stands on his screen,
+and never jumps home at full health. An older page is never asked: its lone keeper's take-over is as before (after 1.5 s the
+copy keeps its own monsters, standing where it has them, at their own hp: on his screen a monster he had hurt goes back to
+full health and one he had moved jumps to where the copy has it; nothing vanishes). A `full` list from a game that was not
+asked is an ordinary snapshot. `tools/mmo-sim-world.js` check 11 proves the first and fails with the capability taken away
+(`MMO_SIM_NO_SNAP=1`: the guard goes back to 90 hp on her screen).
+
+The parent page flipping a busy map to `world` takes it over the same way. A copy whose map empties runs on for 60 s
+(SimHost's `DROP_EMPTY_MS`); a knight back inside that time finds the same monsters, and the virtual knight is keeper at
+once. The loop stops 60 s after the last knight on any world-run map leaves; with no copy left at all (after a hand-back) or
+only parked ones (below) it stops at once. Either way no timer stays armed, so the World naps as it does today.
+
+**A knight whose game stops** (a locked iPad, a paused game, a tab left in the background with its socket open). Every
+playing game sends its presence at least once a second; the client sends no pings of its own, and the runtime answers the
+socket's `ping` without waking the object.
+- After `SILENT` (3 s) with no presence from him, the copy is told he has fallen (his `p` goes to it with `dead: true`), so no
+  monster fights him while he cannot play. His next presence brings him back. (The blows of those first 3 s still land when
+  his page wakes, as they would had he stood still those 3 s.)
+- When **every** knight on a world-run map has gone silent, its copy is **parked** (`SimHost.park`): its monsters stand
+  exactly where the knights last saw them, it is not ticked, and it counts as no knight for the loop. With nothing else
+  running the loop stops at once, so no timer stays armed and the Durable Object hibernates exactly as it does today (on
+  the keeper path a lone keeper's own game stops its monsters the same way). The virtual knight stays the map's keeper; the
+  stale net (`KEEPER_STALE`) never counts a parked copy's silence. Parking is not a hand-back: no `sim_log` row.
+- The first presence from any of them, or a knight arriving, ticks the same copy again from where it stood: the same nids,
+  hp and places, no `keeper` message, nothing rebuilt, so on no screen does a monster vanish or show twice.
+- If the object did hibernate meanwhile, the copy went with it: the wake is any wake (the Room rebuilt from its sockets
+  names his game keeper out loud, the copy is built again and takes the map over, with his full snapshot when his page has
+  `snap`). **No copy is built for a place while nobody there is playing**: a Room rebuilt from its sockets knows no knight's
+  place, and something other than his own game can wake the object (a login, the parent page, another knight's socket)
+  while his game is still stopped. The copy waits for a knight on the map whose place the Room knows and whose game is not
+  silent: his first presence asks for it (`Worlds.playing`, `wanted`), so his page is awake to answer `snap` and the place
+  carries on as his screen last showed it. A copy that was told no knight at all (every knight on the map known only from
+  his socket) is resting, not stale: `staleCheck` skips it, and counts from the moment it is told a knight again. If the
+  host drops such a copy (60 s with no knight told), the map goes back to a knight's game quietly (no hold, no `sim_log`
+  row) and his playing asks for a new copy. Before 4 Oct a wake by anything else built the copy at once, and his return
+  handed the place back as `'stale'` and held it until the parent page let the world run it again
+  (`sim-host.test.mjs`: "a place left resting is not handed back as stale after a nap ..."). A parked copy whose map has emptied goes 60 s after, as any emptied copy does (looked at whenever the host is next
+  called, as no timer runs for it).
+- **A resting place costs no alarm** (`Worlds.resting`: a place switched to the world, with no copy and nobody there
+  playing). The Room keeps that place's keeper as it is (`Worlds.holds`: the first knight the wake restored there) and
+  watches nothing on it (`Room.due`): with two knights resting there the keeper-stale rule of a knight's map would hand it
+  between them every 3 s for ever, so the object never napped again (about 1,180 alarms an hour), or, restored in the
+  other order, asked for an alarm at the same past moment again and again until workerd dropped one and no alarm was ever
+  set again on that wake (no copy built when a knight then played, gifts never returned). The Room itself is also guarded,
+  on every map: a stale keeper that is still the best one (everyone else there silent too) starts a new grace, and a tick's
+  own re-arm is never at or before the moment it handled (`REARM_MIN`, 1 s). Two knights paused on a knight's map are
+  handed back and forth every 3 s exactly as on master (`online/test/room.test.mjs`: "two silent knights restored after a
+  nap ...", `sim-host.test.mjs`: "two knights resting in a world-run place ...").
+- **The copy takes the place over from a knight who is playing.** The wake names whoever its restore elected, and that can
+  be a friend whose iPad is still locked. When the copy is built (or the copy's code loads, `announce`) and the keeper's
+  game is silent or the Room does not know his place while another knight there is playing, that knight (one with `snap`
+  first, then the longest on the map) is made keeper out loud first, and it is his page that is asked for its full snapshot
+  (`Worlds.source`). Before 4 Oct the copy asked the locked friend, heard nothing, and after `JOIN_WAIT` kept its own
+  fresh monsters: the kid came back to the sentinel he had felled standing at full health.
+- **A game keeps what the world last showed through a friend's keeper message** (75-coop `WORLD.kept`, a game of this
+  build). A game showing the world's puppets that hears another knight named keeper (the wake's word above) keeps the
+  world's last rows until it keeps the map itself (then `keepWorld`, as at a dropped socket) or leaves the map. Before
+  4 Oct it dropped them, and when the map then came to it, a felled monster whose puppet had gone came back from the array
+  made when the knight walked in, standing. `tools/mmo-sim-world.js` check 13 (two knights locked, the world napped, woken
+  by the parent page or by the kid's own unlock, the Room rebuilt in either order) fails with either half of this taken
+  back.
+- Proved in `sim-host.test.mjs` (one knight silent with his socket open: 0 timers armed and 0 ticks for 10 minutes, then he
+  moves and the same copy ticks again with every monster once) and `tools/mmo-sim-world.js` check 10 (every game stopped:
+  both real copies park, nothing armed, nothing ticked or moved in 10 minutes, then every screen keeps the same monsters).
+
+**A dropped socket** (iOS drops a sleeping tab's socket; a lock of a minute is enough). The game goes offline and runs its
+map itself until the world answers again. On a place the world ran, it carries on from **what the world last showed**
+(75-coop `keepWorld`, a game of this build): while the world keeps the map the game remembers the last row the world sent of
+each monster (by nid, kept after a monster leaves its 24 tiles and after a fallen one's row stops coming), and at the drop
+its puppets turn real, then each remembered monster no longer on screen is put as the world last showed it: a hurt one at its
+hp and place, a fallen one down. It never goes back to the array the game made when the knight walked in. When the socket
+comes back the world takes the place over from that (the copy, if it is still there, carries on; if it went, the new one
+asks the page of a knight who is playing there for its full snapshot, which is now that state; see the take-over above). The same holds when the world hands a map to his game.
+Before 4 Oct a lone kid locked 90 s came back to the hurt sentinel at full health at home and the felled one standing, and
+the new copy adopted them so (`tools/mmo-sim-world.js` check 12 proves the fix and fails on the old game).
+
+**A deploy keeps only what the first knight back had seen.** A deploy (or an eviction) drops the copy, and the copy held
+the place's truth. The new copy takes the place over from one knight's full snapshot, and a knight's game holds only what
+the world showed him: the monsters within his 24 tiles. With two knights far apart in a world-run place (the Aerie's
+sentinels are up to 55 tiles apart), what the other one did out of the first one's view is undone: a sentinel he felled
+stands again, one he hurt is back at full health (review round 3, `real-deploy.js`: Ben's felled i2 and hurt i3 back at
+160). On the keeper path the old keeper's game holds everything, so there it depends only on who reconnects first. Nothing
+in this stage merges two snapshots. So: **no deploy while two knights are in a world-run place** (the parent page's
+"Monsters run by the world" rows count the knights in each place); with every place switched off nothing changes. The
+spec's rule for the later stages ("Deploy only when nobody is online") covers this from Stage 2 on.
+
+**Handing a map back (world to keeper)**, by the parent page or the watchdog: the copy is dropped, the virtual knight leaves,
+the Room elects a real knight on the map, and his game's own `handoff()` turns its puppets into real monsters with the same
+nids, hp and positions. Nothing vanishes or doubles: the puppets are the copy's monsters as they last stood. The watchdog's
+reasons (Stage 0's `boot`, `throws`, `slow`, `cap`, and `stale`; `heap` only where there is a heap probe) each hold the map
+and write a `sim_log` row. The
+parent page's flip is `'parent page'`; turning `master` off is `'master'` for every world-run map.
+
+**Bosses' rests outlive the copy.** A new table (created only if missing):
+
+```
+realm_state (key TEXT PRIMARY KEY, json TEXT NOT NULL, at INTEGER NOT NULL)
+```
+
+Every 5 s each copy's boss rests (75-coop's `restAt`) are written as `rest:<map>` = `{ <boss id>: <ms when the rest is over> }`,
+only when they changed. A copy built again (after a fallback, a drop or a nap) reads its map's row back into `restAt`, so a
+boss resting there keeps resting. The three Stage 2 maps have no named boss; the row is for the stages that do.
+
+**`welcome`** (from a world that has its game copy) gains `sim: { maps: { deepholm, aerie: 'keeper' | 'world' }, hz: 10, caps: ['snap'] }`: the mode
+of each map the world can run, its tick rate, and the capabilities it serves (`snap`; Stage 3 adds `tick` and `die`).
+
+**The parent page.** `GET /api/admin/sim` adds:
+
+```
+sim:   { move, master, maps: {deepholm, aerie}, held: {map: {reason, at}} }
+world: { modes: {deepholm, aerie, coalmine: 'keeper' | 'joining' | 'world'}, knights: {deepholm, aerie, coalmine: n},
+         empty: ['coalmine'], running, ticks, tick: {n, p50, p99, max}, boot: {map: ms}, heap, heapProbe,
+         copies: [{map, bootMs, knights, monsters, ticks, errors, parked}], cap, skipped, loaded: true | false | null,
+         log: [{at, map, from, to, reason, tickP99}, ... newest first, 30] }
+```
+
+`knights` is the Room's own count of knights on each place, whoever runs it (the copy's list exists only while the world
+runs it). The **Shared world** section gains "Monsters run by the world": one line for the master switch with its button,
+one row per map (its mode, how many knights are there, its copy's monsters and boot time) with a button that flips it ("Let
+the world run it" / "Give it back to a knight's game"), the coal mine's row greyed ("a knight's game (no monsters live
+there)", "Nothing to share there.", no button), the tick line, and the newest changes from `sim_log`. The tick line is read
+from the places themselves: "Starting a place now." only while a place is being taken over; "Running now: 2 places, 10 ticks
+a second, half under 1.0 ms, 99 in 100 under 9.3 ms." while a copy ticks; "Not running now (nobody is playing in a place it
+runs)." otherwise; and a parked place adds "Deepholm (the dwarves) is resting: nobody there is playing, so it waits, still,
+until someone moves." (its row says "the world (resting: nobody there is playing)"). Every button asks first. It reads
+nothing new: the same one `GET /api/admin/sim`.
+
+**A slow world says so.** A game that said hello and has had no `welcome` for 1.5 s says "Waking the world..." once (a
+notice), **only when its last `welcome` said the world runs a place itself** (`welcome.sim.maps` has a `'world'`, kept in
+`localStorage` `fanglands.worldRuns`; a welcome with no `sim` leaves it as it was). A change of the switches while a page is
+connected (the parent page, the watchdog's hold, a World that could not load its copy) reaches every connected page at once
+as `{ t: 'sim', maps, hz, caps }` (the same `sim` as `welcome`'s; `Worlds.tellSim`), which sets the same word: before
+4 Oct a page connected while a place was on stayed sure of it until its next welcome, and said "Waking the world..." on its
+next slow one even with every place switched off. With every place on a knight's game, a slow line or a reconnect says
+nothing, as before Stage 2. In Stage 2 a slow `welcome` is the World busy building a copy
+(the build stops the whole World, above) or the World itself waking; Stage 6's overworld copy is built on the first `hello`
+after a nap, and this is what the knight reads meanwhile.
+
+**What changes in a game with every switch off.** The spec says Stage 2 needs no client change; it has three, all inert
+until a place is switched on: `hello` names `caps: ['snap']` (master sends `[]`), the game listens for `snap` (answered only
+by a keeper the world is taking a map from, which never happens with every place on a knight's game), and the
+"Waking the world..." notice (said only after a welcome that named a world-run place). The `sim` message is read in the
+wire itself (70-net, no listener) and is only ever sent when a switch changes. The Great Spread fingerprint
+(`node tools/fingerprint.mjs index.html --diff docs/spread/baseline-fingerprint.json`) therefore differs from master's in
+one table, `exports`, and there only in `NET.caps` (`[]` to `['snap']`) and `NET.listeners.snap` (none to 1); every world,
+map, place and spawn table is the same, and `COOP.state` is as master's (the debug box's counters, the world's remembered
+rows and the wake wait are kept out of the exported state). The merge into master regenerates the baseline
+(`--out docs/spread/baseline-fingerprint.json --from "master <merge sha>"`, as docs/spread/README.md asks after a peer
+merge), and spread/s2 hears of it before it next merges master.
+
+**`?debug=tick`.** A page opened with `?debug=tick` shows a small box: the keeper of its map (and whether it is the world),
+the `mon` messages a second, the last `k`, the rows in the last `mon` and its puppets. It is for the two-browser proofs; nobody
+else sees it. It never covers the hearts and hit points or any other piece of the HUD that stays (the minimap, the quest
+scroll, the belt, the stick, the seats, the seals) or the knight: it takes the bottom-left corner when that is free (a
+computer), else the first free spot down the left edge (an iPad, a phone held upright: under the quest scroll), else down the
+middle (a phone on its side: above the belt). A phone under 420 px wide gets it in 10 px type. A self-test holds this at
+ten screen sizes, touch and mouse (`coop: the ?debug=tick box never covers the hearts ...`).
+
+**The self-tests through the stripped copy** (decided 2026-10-03: before any copy runs monsters for players).
+`tools/sim-suite.mjs` check 1b runs the whole `HOOKS.selfTest` suite through the stripped build with the self-tests kept and
+the pieces the checks press given back (`tools/build-sim.mjs --test-ui`): the drawing that lays a panel's buttons out
+(08-draw, 09-render, 10-hud, 59-hudkit), the title (14-title) and the playthrough bot (42-playthrough), with every drawing
+registration kept so a panel has its buttons. Every other stripped file (the sounds, the music, the book, the icons, the
+monster art and look, the lighting) stays the server's stand-in. The run must pass with the same count as the full build,
+less exactly the stripped files' own checks, the checks of a listed chapter that cannot run without the drawing, and the
+listed UI-only checks (on 3 Oct: 1,262 less 61, 3 and 14 is 1,184 of 1,199, nothing stray); the kept six are covered by check 0 (every rule that reads one of their names is
+listed with its reason) and the parity checks (3a, 3b, 4b). Check 6 holds the look fields: every `LOOK_FIELDS` type, set up
+in a copy in the state its field shows, reaches a puppet in a real game with that field.
+
+**Tests and sims.** `online/test/sim-host.test.mjs` (a stub game, the real Room): the virtual knight is always keeper and
+never stale; a flip sends `keeper` both ways; a throw, three slow ticks, a boot failure and the cap each fall back with a
+`sim_log` row; catch-up stops at 3; the loop stops 60 s after the last knight; a copy is dropped 60 s after its map empties;
+`realm_state` survives a rebuilt SimHost; a busy machine (every timer 20 or 40 ms late) never trips `slow` while a slow copy
+on a mildly busy one still does; a silent knight with his socket open parks the copy (0 timers, 0 ticks for 10 minutes)
+and his next presence ticks the same copy on; a hand-back stops the loop at once; a `snap` page's full answer hands the
+map over at once while an older page is never asked; a place left resting is not built again on a wake nobody plays
+through, and is never handed back as stale when its knight returns, whoever woke the object; a copy told no knight is
+resting, not stale; two knights resting in a world-run place, the Room rebuilt in either order, arm no alarm for 60 s, and
+the one who plays again keeps it first and is the one asked for `snap`; a change of the switches tells every page (`sim`).
+`online/test/room.test.mjs`: two silent knights restored in either order never ask for an alarm at a moment already
+handled. `online/test/interest.test.mjs`: the 24 / 27 tiles, a target always sent.
+`node tools/mmo-sim.js --sim` runs the whole two-game scenario against the real Room with the world's copy wired in and
+every map on `keeper` (nothing changes), then deepholm on `world`. `node tools/mmo-sim-world.js`: both games see the same
+rows at the same tick; the kill goes to the top damager; an injected throw falls back to a knight's game keeping every nid,
+hp and position; a keeper-to-world flip mid-fight; a game with no caps plays as before; an admin `spawn` reaches the copy;
+a knight alone on an older page switched over mid-fight (7); a world rebuilt with no copy loaded (8); a knight whose game
+stops is not beaten (9); every game stopped, both copies park and nothing ticks for 10 minutes (10); the lone keeper's full
+snapshot on a solo entry and a mid-fight switch (11); a kid alone whose iPad lock drops the socket for 90 s keeps the hurt
+sentinel hurt and the felled one down, on his screen and in the new copy, and his plaque counts the whole place (12); two
+knights locked in the Aerie, the world napped and woken by the parent page or the kid's own unlock, the Room rebuilt in
+either order: the felled sentinel stays down and the hurt one hurt (13); a felled sentinel stays down while a knight stands
+on its home, and stands up when he walks off (14); the coal mine's copy has no monster and the two others have some (0b).
+`node tools/sim-freeze.mjs`: how long the World stands still for a cold build (local `wrangler dev`).
+`node tools/sim-load.mjs`: 20 bot knights against a local `wrangler dev` for 30 minutes. Check 4 of `mmo-sim-world.js` also
+watches the old keeper's own screen through the take-over; with the hold-up above switched off it fails (5 blank frames).
+
+**What it costs, measured** (3 Oct 2026, after the review's fixes; MacBook Pro, node 26, wrangler 4.92 local).
+`node tools/sim-load.mjs --minutes 30` and `--bots 1 --minutes 10`, in `~/.fanglands/work/phase1/sw-2/fix1/`
+(`sim-load.{txt,json}`, `sim-load-1.{txt,json}`). Both sides of the requests bar now count every billed request: socket
+messages at 20 to 1 and the World's own metered game calls (above all its alarms; the parent page's reads are not the
+game's), against the same knights on the keeper path with its keeper stream and its stale alarm.
+
+| | 20 knights (8 Deepholm, 8 Aerie, 4 coal mine), 30 min, 10.0 knight-hours | 1 knight alone in Deepholm, 10 min |
+|---|---|---|
+| Copy boot | Deepholm 843 ms, the Aerie 976 ms, the coal mine 685 ms | Deepholm 1,320 ms |
+| Tick | p50 1 ms, p99 4 ms over the last 3,000; worst 30 s window p99 6 ms; max 38 ms; 12 skipped (the boots) | p50 1 ms, p99 2 ms; worst window 4 ms; max 19 ms |
+| Fallbacks | none; every keeper `@world:<map>` throughout; 0 copy errors in 17,978 ticks each | none |
+| `mon` to each knight | 9.98 a second; gap p50 100 ms, p99 103 ms, max 185 ms | 9.94 a second; gap p50 100, p99 102, max 121 ms |
+| Heap (read last) | 20.1 MB used | 15.6 MB used |
+| The World's own game calls | 27 in 30 minutes (the review's run: 684, an alarm every 3 s) | 4 in 10 minutes |
+| Requests a knight-hour | 897.2 world-run, against 1,169.5 on the keeper path | 828.3 world-run, against 984.3 on the keeper path |
+
+Pass bar: tick p99 under 10 ms, no fallback, heap under 64 MB, requests not above the keeper path, for each knight count:
+all met for both. An earlier 30-minute run (`sw-2/sim-load-run2-aerie-slow.*`, before the review) handed the Aerie back once
+at 24.4 minutes, reason `slow`, while the whole machine stood still about 2 s; the tool now writes its own stalls
+(`driverStalls`) beside each fallback (none in either run above).
+
+**The proof** (`~/.fanglands/work/phase1/sw-2/proof/`, 3 Oct 2026 after the review; `node stage2-proof.js`). Real headless
+Chromium pages, a laptop (1280 x 800) and an iPad (1024 x 1366, touch), both opened with `?debug=tick`, on a local
+`wrangler dev` world running this branch with freshly made test knights (an agent may not sign knights in on the test world),
+the parent page in a third. 1: both screens said `keeper @world:deepholm (the world)`, 10 `mon` a second, the same two
+guards at the same places with the same hp. 2: they fought one guard on the keys (Space); it died and the kill went to the
+laptop (91 of its damage), and only to him. 3: mid-fight the parent page gave Deepholm to a knight's game and back: 226
+samples over both screens, nothing vanished, nothing twice; read again, the parent page's Deepholm row showed 2 knights,
+2 monsters and its build time ("1867 ms") in their own columns (`admin-world-running.png`). 4: the iPad's tab closed
+mid-fight; the laptop played on (46 samples, nothing vanished) and the iPad came back to the same monsters. 5: the iPad
+locked 30 s while the laptop fought on. **The lock is a real JavaScript pause** (CDP `Debugger.pause`, the socket left
+open; a 100 ms timer on the page moved 0 times in the 30 s): 273 laptop samples, nothing vanished, no keeper message to
+either, and the iPad woke to the same standing monsters as the laptop. The first runs "locked" with
+`Page.setWebLifecycleState 'frozen'`, which does not stop this headless Chromium (its frames and timers ran on), so they
+locked nothing; that claim is withdrawn. 6: a third knight alone in Deepholm, with nothing keeping him standing, struck a
+guard (it chased him and hit him twice) and was locked 30 s the same way: 3 blows (19 damage) reached him, all from the
+world's first 3 s, and he woke alive in Deepholm with no new fall. The same run with the 3 s rule switched off
+(`fix1/proof-negative-no-silence-rule.txt`): 26 blows, 153 damage, he woke dead. 7: the same knight alone in the Aerie, a
+knight's game keeping it, mid-fight the parent page let the world run it: none of the 2 sentinels near him vanished or
+doubled in 95 samples over 6 s, and the world kept it. No page errors. Checks 2 to 5 run with a harness that keeps the
+laptop and iPad from falling (`safe()`); check 6 does not. Screenshots: `deepholm-{laptop,ipad}.png`, `fight-*.png`,
+`admin-world-{before,keeper,running,after}.png`, `unlocked-ipad.png`, `locked-laptop.png`, `alone-unlocked.png`.
+
+**The proof, review round 2** (4 Oct 2026, the same harness on this branch merged with master 1b35299, a fresh local
+`wrangler dev`; `~/.fanglands/work/phase1/sw-2/fix2/proof-run.txt`): ALL PASS, checks 1 to 7 again plus three new ones. 3b: the
+parent page's coal mine row is greyed, "a knight's game (no monsters live there)", "Nothing to share there.", no button. 6:
+the lone knight locked 30 s took 3 blows (19 damage, all from the first 3 s), woke alive, his own game kept Deepholm for 348 ms (alone,
+the copy had parked and the object napped, so his wake was a wake) and the world took it over again. 7: the Aerie switched on
+mid-fight asked his page for its full snapshot once and took it: the sentinel he had hurt (158 of 160 hp) never healed back
+in 97 samples. 8 (new): alone in the world-run Aerie with his page paused 22 s and its socket open, the parent page read the
+Aerie parked and nothing running 6 s and 9 s in (the copy's ticks 607 and 607, the World's 626 and 626); then, with nothing
+reaching it and no timer armed, **the object hibernated** (its own tick count started again at the wake); on his wake the
+world took the Aerie over again and none of the monsters within 18 tiles of him vanished or showed twice (an earlier run of
+this check, which watched every monster in his list, saw two others leave it for a moment; their distance was not recorded,
+so the check now watches the 18 tiles around him, more than an iPad shows); 8b: meanwhile the parent page said "The Aerie (above the clouds) is
+resting: nobody there is playing ...", its row "the world (resting: nobody there is playing)", Knights there 1
+(`admin-world-resting.png`). 9 (new): he walked alone into the world-run Deepholm and, before the world had its copy, hurt
+the first guard to 60 of 90 hp and moved it; the world asked his page for its full snapshot, his page sent it (the guard at
+60 hp) and in 7 s on his screen (119 samples) the guard never jumped home, never healed back and never vanished
+(`alone-entry-snap.png`). The first runs of this round failed check 6 and then 8 because they still expected the same copy
+after the pause; the object had in fact hibernated, which the checks now read and say.
+
+**The proof, review round 2b** (4 Oct 2026, a fresh local `wrangler dev` of this branch; `~/.fanglands/work/phase1/sw-2/fix2b/`):
+`stage2-proof.js` checks 1 to 9 ALL PASS again (`proof-run.txt`; the harness reads the debug numbers through
+`COOP.tickStats()` now that they are out of `COOP.state`). The reviewer's iPad lock with the socket dropped (`real-lock.js`,
+an iPad-sized page alone in the world-run Aerie, one sentinel hurt to 130 of 160 hp and one felled, then a real JavaScript
+pause with the socket closed): locked 90 s, the parent page showed no copy and 0 knights there (the copy went); at the unlock
+his screen kept the hurt one at 130 and the felled one down, his game kept the Aerie for under a second, and the world took it
+back from his snapshot with the sentinel still at 130 (`real-world-90.txt`). Locked 20 s, the copy was still there and the
+world carried on with it, the sentinel at 131 (`real-world-20.txt`). With the place off, his own game kept both, as before
+(`real-keeper-90.txt`). His plaque said "3 left" (the 3 standing sentinels), not the 1 near him, throughout. The reviewer's
+real-game wake scenario (`t7-out.txt`): woken by another while his game was stopped, the world built nothing; on his return
+the world took Deepholm over, nothing held, `sim_log` empty.
+
+**Old code on the new store** (`~/.fanglands/work/phase1/sw-2/migrate-proof.{sh,txt}`, local `wrangler dev --persist-to` on
+one directory): this branch made `sim_log` and `realm_state` and wrote two `sim_log` rows and the new `sim` keys; master's
+`online/` then ran on it (status, `GET /api/admin/sim`, a `move` switch and the export all answered), and this branch again
+read back every key (master's `move: 'off'` kept beside `master`, `maps` and `held`) and both rows.
+
+**On the test world** (https://test.gorkscape.ca, 3 Oct 2026 after the review, deployed with
+`~/.fanglands/tools/deploy-test.sh` after the backup `~/.fanglands/backups/20261003-211724-pre-shared-2-test`, every gate
+green): the World loaded its game copy (`GET /api/admin/sim`: `world.loaded` true, cap 4), every place on `keeper`, master
+`on`, nothing held, `sim_log` empty, nobody online. The Worker is 2,907.64 KiB (753.64 KiB gzipped; the game copy is most of
+it). Nobody switched a place on there: an agent may not sign the probe knights in on a world that is not on this machine,
+so the two-browser run on the test world is the owner's.
+
+**On the test world, review round 2** (4 Oct 2026, deployed with `~/.fanglands/tools/deploy-test.sh` after the backup
+`~/.fanglands/backups/20261004-011103-pre-shared-2-fix2-test` (3 accounts, 9 saves, a bookmark); the script ran every gate
+first, the admin and party sims included, all green; `fix2/deploy-test.log`). Other builders had deployed over it since the
+round before (its export had no `sim_log` table). `GET /api/admin/sim` afterwards: `world.loaded` true, cap 4, `heapProbe`
+false, every place on `keeper` (`deepholm`, `aerie`; `coalmine` listed in `empty`), master `on`, nothing held, nothing
+running, `sim_log` empty, nobody online. The Worker is 3,047.79 KiB (789.31 KiB gzipped), startup 5 ms.
+
+**On the test world, review round 3** (4 Oct 2026, code `f84bdb9`, deployed with `~/.fanglands/tools/deploy-test.sh` after the
+backup `~/.fanglands/backups/20261004-050040-pre-shared-2-r3-test` (3 accounts, 9 saves, a bookmark), nobody online; the script
+ran every gate first, all green; `fix3/deploy-test.log`; version `bd03988e`). `GET /api/admin/sim` afterwards: `world.loaded`
+true, cap 4, every place on `keeper`, master `on`, nothing held, nothing running, `sim_log` empty, nobody online. The Worker is
+3,056.60 KiB (791.59 KiB gzipped), startup 5 ms. On a local `wrangler dev` of the same tree the two-browser proof passed again
+(`fix3/proof/proof-run.txt`, all 9 steps), and the review's real-page wake (two knights' pages paused 60 s with the sockets
+open, the object napped and rebuilt, the kid unlocked) left the felled sentinel down and the hurt one hurt with the kid in
+first or second (`fix3/proof-wake/real-wake-world-{ann,ben}.txt`; on `a7a6a78` the first stood again at 160).
 
 ## Safety rules (binding)
 

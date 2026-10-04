@@ -38,6 +38,9 @@ import { handoffCall, addressOf } from './handoff.js';
 import { Meter, isAdminPath } from './meter.js';
 import { readAtlas } from './atlas.js';
 import { MoveBook, MOVE_MODES } from './move.js';
+import { SimBook } from './sim/book.js';
+import { SimHost, WORLDGEN_FREE } from './sim/host.js';
+import { cleanSwitches, WORLD_MAPS, WORLD_READY, WORLD_EMPTY, MODES } from './sim/worlds.js';
 import ATLAS_JSON from './atlas.json' with { type: 'json' };
 
 // the Atlas the world judges by (docs/ONLINE.md, "The shared world", Stage 1): made by tools/atlas.mjs from the game it ships with
@@ -67,6 +70,7 @@ export class World {
     try { this.store.forgetPlaces(this.now()); } catch (e) { console.error('places', e); }
     this.meter = new Meter(this.sql, () => this.now());   // what the free plan counts, per UTC day (meter.js)
     this.moveBook = new MoveBook(this.sql, () => this.now());   // the movement check's counts and violations (move.js)
+    this.simBook = new SimBook(this.sql, () => this.now());     // the shared world's map changes and boss rests (sim/book.js)
     this.chatWrites = 0;
     this.wraps = new WeakMap();
     this.room = new Room({
@@ -77,8 +81,11 @@ export class World {
       random: cryptoRandom,
       atlas: ATLAS,
       moveBook: this.moveBook,
+      simBook: this.simBook,
+      simSave: sw => this.saveSim({ held: sw.held }),   // a map the watchdog handed back is held there (sim/worlds.js)
     });
     this.room.setSim(this.simSettings());
+    this.loadCopy();
     // pings are answered by the runtime without waking the world (the client sends exactly this text)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"t":"ping"}', '{"t":"pong"}'));
     // waking up: every socket that survived the nap carries its knight's state
@@ -113,7 +120,35 @@ export class World {
   // Cloudflare bills every alarm invocation as a Durable Object request, so the meter counts it as one
   alarm() { this.meter.http(false); try { this.room.tick(); } catch (e) { console.error('tick', e); } this.meter.flush(); this.moveBook.flush(); }
 
+  // ---------- the shared world's game copy (docs/ONLINE.md "The shared world", Stage 2) ----------
+  // online/src/sim/game.mjs (built by build.sh, bundled by wrangler) is loaded on every wake; until it is there, or if it cannot
+  // be, every map stays on the keeper path. The SimHost ticks with setTimeout (never alarms), timed by the lag of the next timer.
+  // It gets no heap probe: workerd has none (no process, no performance.memory; checked 3 Oct 2026 on wrangler 4.92 local), so
+  // the copy cap (the overworld plus 3 instances, measured at 59.4 MB of the 128 MB isolate) is what holds memory there.
+  loadCopy() {
+    import('./sim/game.mjs').then(mod => {
+      if (!mod || typeof mod.makeGame !== 'function') throw new Error('the game copy has no makeGame');
+      const host = new SimHost({
+        makeGame: mod.makeGame, now: () => Date.now(), clock: () => Date.now(), timing: 'lag', worldGenFree: WORLDGEN_FREE,
+        timer: { set: (f, ms) => setTimeout(f, ms), clear: h => clearTimeout(h) }, seed: (Math.random() * 4294967295) >>> 0,
+        onFallback: (map, reason, row) => this.room.worlds.fell(map, reason, row),
+        onSend: (map, list) => this.room.worlds.fromCopy(map, list),
+        log: (name, info) => { if (name !== 'start' && name !== 'stop') console.log('sim ' + name + ' ' + JSON.stringify(info).slice(0, 400)); },
+      });
+      this.room.worlds.useHost(host);
+    }).catch(e => {
+      console.error('sim copy', e);
+      this.room.worlds.noCopy();   // every map stays with a knight's game, and a keeper the wake picked silently is told
+      for (const m of WORLD_READY) if (this.room.worlds.sw.maps[m] === 'world') this.simBook.log({ at: this.now(), map: m, from: 'world', to: 'keeper', reason: 'nocopy', tickP99: null });
+    });
+  }
+
   // ---------- the shared world's switches (settings key 'sim', JSON; docs/ONLINE.md "The shared world") ----------
+  saveSim(part) {
+    const s = Object.assign(this.simSettings(), part);
+    this.sql.exec("INSERT INTO settings (key, value) VALUES ('sim', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", JSON.stringify(s));
+    return s;
+  }
   simSettings() {
     let s = {};
     try { const r = this.row("SELECT value FROM settings WHERE key = 'sim'"); if (r) s = JSON.parse(r.value) || {}; } catch (e) { s = {}; }
@@ -122,9 +157,11 @@ export class World {
   }
   simView() {
     const ks = this.room.knightsView ? this.room.knightsView() : [];
+    const sw = this.room.worlds.sw;
     return {
       meter: this.meter.view(),
-      sim: { move: this.room.sim.move },
+      sim: { move: this.room.sim.move, master: sw.master, maps: Object.fromEntries(WORLD_READY.map(m => [m, sw.maps[m]])), held: sw.held },
+      world: this.room.worlds.view(),
       atlas: ATLAS ? { hash: ATLAS.hash, places: ATLAS.places.length, fixed: ATLAS.fixedCount } : null,
       move: Object.assign({ mode: this.room.sim.move }, this.moveBook.view(), { knights: ks }),
     };
@@ -473,11 +510,27 @@ export class World {
     if (call === 'accounts' && method === 'GET') return json(this.accountsView());
     if (call === 'sim' && method === 'GET') return json(this.simView());   // the shared world: the meter, the Atlas, the movement check
     if (call === 'sim' && post) {
+      // any of {move, master, maps}: the movement check (Stage 1), and which maps the world runs itself (Stage 2)
       const b = await readJson(req);
-      if (!b || typeof b !== 'object' || !Object.keys(b).length || Object.keys(b).some(k => k !== 'move') || !MOVE_MODES.includes(b.move)) throw oops(400, "send {move: 'observe'} or {move: 'off'}", 'bad');
-      const s = Object.assign(this.simSettings(), { move: b.move });
-      this.sql.exec("INSERT INTO settings (key, value) VALUES ('sim', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", JSON.stringify(s));
-      this.room.setSim(s);
+      const bad = () => oops(400, "send any of {move: 'observe' | 'off', master: 'on' | 'off', maps: {deepholm | aerie: 'keeper' | 'world'}}", 'bad');
+      if (!b || typeof b !== 'object' || Array.isArray(b) || !Object.keys(b).length || Object.keys(b).some(k => !['move', 'master', 'maps'].includes(k))) throw bad();
+      if ('move' in b && !MOVE_MODES.includes(b.move)) throw bad();
+      if ('master' in b && b.master !== 'on' && b.master !== 'off') throw bad();
+      if ('maps' in b) {
+        if (!b.maps || typeof b.maps !== 'object' || Array.isArray(b.maps) || !Object.keys(b.maps).length) throw bad();
+        for (const [m, v] of Object.entries(b.maps)) {
+          if (!WORLD_MAPS.includes(m) || !MODES.includes(v)) throw bad();
+          if (v === 'world' && WORLD_EMPTY.includes(m)) throw oops(400, 'no monsters live in ' + m + ', so the world has nothing to run there', 'empty');
+          if (v === 'world' && !WORLD_READY.includes(m)) throw oops(400, "the world runs only deepholm and aerie in this stage; that map's monsters move later", 'later');
+        }
+      }
+      const s = this.simSettings(), sw = cleanSwitches(s);
+      const maps = Object.fromEntries(WORLD_READY.map(m => [m, (b.maps && b.maps[m]) || sw.maps[m]]));
+      const next = Object.assign({}, s, { master: 'master' in b ? b.master : sw.master, maps, held: Object.assign({}, sw.held) });
+      if ('move' in b) next.move = b.move;
+      for (const m of Object.keys(b.maps || {})) delete next.held[m];   // a flip clears that map's hold
+      this.sql.exec("INSERT INTO settings (key, value) VALUES ('sim', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", JSON.stringify(next));
+      this.room.setSim(next, 'parent page');
       return json(this.simView());
     }
     if (call === 'online' && method === 'GET') return json(this.room.online());

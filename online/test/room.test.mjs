@@ -558,3 +558,26 @@ test('hello caps and atlas are kept with the knight (known caps only, in order),
   const w = world(); const a = w.knight('Cohen');
   assert.equal('atlas' in a.last('welcome'), false);
 });
+
+// Review round 3 (4 Oct 2026): two knights whose games have stopped (sockets open) on one map, the Room rebuilt from their
+// sockets after a nap in either order. Before the fix, when the knight restored first had also come first, his stale moment
+// stayed in the past and every alarm asked for the next one at that same moment (thousands in one instant; in workerd the loop
+// ends with no alarm ever set again on that wake). Now a stale keeper still the best starts a new grace, and a tick's own
+// re-arm is never at or before the moment it handled.
+test('two silent knights restored after a nap, in either order: the alarm never asks again for a moment already handled', () => {
+  for (const first of ['Ann', 'Ben']) for (const arrived of ['Ann', 'Ben']) {
+    let now = 1_000_000, at = null, asked = 0;
+    const mk = name => { const s = { name, got: [], att: null, send(str) { s.got.push(JSON.parse(str)); }, close() { }, attach(a) { s.att = a; } }; return s; };
+    const R1 = new Room({ now: () => now, wake: () => { } });
+    const a = mk('Ann'), b = mk('Ben');
+    for (const s of arrived === 'Ann' ? [a, b] : [b, a]) { R1.join(s, s.name); R1.message(s, JSON.stringify({ t: 'hello', v: 1, caps: [] })); R1.message(s, JSON.stringify({ t: 'p', map: 'deepholm', x: 600, y: 1032 })); now += 1000; }
+    now += 60000;
+    const R2 = new Room({ now: () => now, wake: ms => { asked++; at = now + ms; } });
+    for (const s of first === 'Ann' ? [a, b] : [b, a]) R2.restore(s, s.att);
+    const end = now + 60000, handled = [];
+    let alarms = 0;
+    while (at != null && at <= end && alarms < 200) { const t = at; at = null; now = t; alarms++; handled.push(t); R2.tick(); if (at != null) assert.ok(at > t, `restored ${first} first, ${arrived} came first: alarm ${alarms} at ${t - 1_000_000} asks for ${at - 1_000_000}`); }
+    assert.ok(alarms <= 60000 / KEEPER_STALE + 1, `restored ${first} first, ${arrived} came first: ${alarms} alarms in 60 s`);
+    assert.equal(new Set(handled).size, handled.length, 'never the same moment twice');
+  }
+});
