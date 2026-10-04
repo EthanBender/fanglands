@@ -93,5 +93,16 @@
       }
       check(P + 'the playthrough audit times blackiron, sunstone and stormstone bars at 9.5, 13.5 and 17.5 s (a 4 s lump, 1 / 2 / 3 coal at 4 s, a 1.5 s smelt), and each lump at 4 s',
         !!MS && !!O && O.TIERS.length === 3 && wrong.length === 0 && MS.blackiron_bar === 9.5 && MS.sunstone_bar === 13.5 && MS.stormstone_bar === 17.5, { wrong }); }
+
+    // --- 7. a place's name banner (THISTLEDOWN) never draws over an open page: on a phone it sat on the quest page (59-hudkit) ---
+    { const w0 = window.innerWidth, h0 = window.innerHeight, t0 = window.__forceTouch, ab0 = areaBanner;
+      const names = () => { const log = []; HK.drawBanners(HK.audit.fitCtx(log), HK.layout()); return log.some(e => /THISTLEDOWN/.test(String(e.s))); };
+      let over = null, shown = null;
+      try {
+        window.innerWidth = 390; window.innerHeight = 844; window.__forceTouch = true; resize(); closePanel();
+        areaBanner = { name: 'Thistledown', sub: 'The city that still stands', t: 2.5 }; openPanel('quests'); render(); over = names();
+        closePanel(); render(); shown = names();
+      } finally { closePanel(); areaBanner = ab0; window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); render(); }
+      check(P + "a place's name banner is not drawn while a page is open (a phone's quest page), and shows again once it is closed", over === false && shown === true, { over, shown }); }
   });
 }

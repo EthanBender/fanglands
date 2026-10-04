@@ -2314,7 +2314,8 @@ const HK = (() => {
     const phone = L.fam === 'phoneP' || L.fam === 'phoneL';
     const list = [];
     if (typeof levelBanner !== 'undefined' && levelBanner) list.push({ kind: 'level', title: levelBanner.text, sub: levelBanner.sub, t: levelBanner.t });
-    if (typeof areaBanner !== 'undefined' && areaBanner) list.push({ kind: 'area', title: String(areaBanner.name).toUpperCase(), sub: areaBanner.sub, t: areaBanner.t });
+    // (a place's name waits while a page is open: on a phone it was drawn over the quest page; it runs down as before)
+    if (typeof areaBanner !== 'undefined' && areaBanner && !(typeof panel !== 'undefined' && panel)) list.push({ kind: 'area', title: String(areaBanner.name).toUpperCase(), sub: areaBanner.sub, t: areaBanner.t });
     // the banners waiting in bannerQueue (04-state) are not drawn here: they come up one at a time after the live one
     FRAME.bannerOnNotice = false;
     if (!list.length) return;
