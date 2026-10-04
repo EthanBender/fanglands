@@ -55,6 +55,7 @@
   td.nowrap { white-space: nowrap; }
   td .day, td .clock { display: block; white-space: nowrap; }
   td .clock { color: #8a90a0; font-size: 13px; }
+  tr.dim td { color: #8a90a0; }   /* a place the world has no reason to run (no monsters there) */
   /* fingers on an iPad or a phone: every button and box at least 44 px tall */
   @media (pointer: coarse) { button, select, input { min-height: 44px; } }
 </style>
@@ -374,6 +375,16 @@
   const PLACE = { deepholm: 'Deepholm (the dwarves)', aerie: 'The Aerie (above the clouds)', coalmine: 'The coal mine' };
   const WHY = { 'parent page': 'turned here', master: 'the switch for all of them', boot: 'it could not be built', throws: 'it hit an error 3 times', slow: 'it ran too slowly', heap: 'it used too much memory', cap: 'too many places at once', stale: 'it stopped answering', nocopy: 'the world could not load it' };
   let worldSw = null;
+  // the tick line: what the world's loop is doing now, read from the places themselves (never 'starting' while none is)
+  function worldNow(w, ms, t) {
+    const copies = w.copies || [], modes = w.modes || {};
+    const ticking = copies.filter(c => !c.parked), resting = copies.filter(c => c.parked);
+    const starting = Object.keys(modes).some(m => modes[m] === 'joining');
+    const rest = resting.length ? ' ' + resting.map(c => PLACE[c.map] || c.map).join(' and ') + (resting.length === 1 ? ' is' : ' are') + ' resting: nobody there is playing, so it waits, still, until someone moves.' : '';
+    if (starting && !ticking.length) return 'Starting a place now.' + rest;
+    if (w.running && ticking.length) return 'Running now: ' + ticking.length + ' place' + (ticking.length === 1 ? '' : 's') + ', 10 ticks a second, half under ' + ms(t.p50) + ', 99 in 100 under ' + ms(t.p99) + (w.skipped ? ', ' + w.skipped + ' skipped' : '') + '.' + rest;
+    return 'Not running now (nobody is playing in a place it runs).' + rest;
+  }
   function showWorld(r) {
     const sw = r && r.sim, w = r && r.world;
     const tb = $('worldmaps').querySelector('tbody'); tb.innerHTML = '';
@@ -383,17 +394,25 @@
     const lines = [];
     if (w.loaded === false) lines.push('The world could not load its copy of the game, so a knight\'s game runs every place.');
     lines.push(sw.master === 'off' ? 'Switched off: a knight\'s game runs every place, whatever the rows below say.' : 'Switched on: the places turned on below are run by the world.');
-    lines.push(w.running && !(w.copies || []).length ? 'Starting a place now.' : w.running ? 'Running now: ' + (w.copies || []).length + ' place' + ((w.copies || []).length === 1 ? '' : 's') + ', 10 ticks a second, half under ' + ms(t.p50) + ', 99 in 100 under ' + ms(t.p99) + (w.skipped ? ', ' + w.skipped + ' skipped' : '') + '.' : 'Not running now (nobody is in a place it runs).');
+    lines.push(worldNow(w, ms, t));
     $('worldline').textContent = lines.join(' ');
     $('mastertoggle').classList.remove('hidden');
     $('mastertoggle').textContent = sw.master === 'off' ? 'Let the world run the places turned on below' : 'Stop the world running any monsters';
     const copies = {}; for (const c of w.copies || []) copies[c.map] = c;
-    for (const m of Object.keys(sw.maps)) {
+    const empty = w.empty || [], rows = Object.keys(sw.maps).concat(empty.filter(m => !(m in sw.maps)));
+    for (const m of rows) {
       const tr = document.createElement('tr'), c = copies[m], held = sw.held && sw.held[m], st = w.modes && w.modes[m];
+      // the knights there are the world's own count, whoever runs the place (an older world sends none: its copy's count)
+      const knights = w.knights && w.knights[m] != null ? String(w.knights[m]) : c ? String(c.knights) : '';
       cell(tr, PLACE[m] || m);
-      cell(tr, held ? 'a knight\'s game: handed back ' + clock(held.at) + ' because ' + (WHY[held.reason] || held.reason) : sw.maps[m] !== 'world' ? 'a knight\'s game' : sw.master === 'off' ? 'a knight\'s game (all switched off)' : st === 'joining' ? 'the world (taking it over now)' : 'the world');
-      // a place being taken over has no count yet
-      cell(tr, c ? String(c.knights) : sw.maps[m] === 'world' && st === 'world' && w.running ? '' : '0');
+      if (empty.includes(m)) {
+        // a place with no monsters: nothing for the world to run, so it has no button (the world refuses it too)
+        tr.className = 'dim';
+        cell(tr, 'a knight\'s game (no monsters live there)'); cell(tr, knights); cell(tr, '0'); cell(tr, '');
+        cell(tr, 'Nothing to share there.'); tb.appendChild(tr); continue;
+      }
+      cell(tr, held ? 'a knight\'s game: handed back ' + clock(held.at) + ' because ' + (WHY[held.reason] || held.reason) : sw.maps[m] !== 'world' ? 'a knight\'s game' : sw.master === 'off' ? 'a knight\'s game (all switched off)' : st === 'joining' ? 'the world (taking it over now)' : c && c.parked ? 'the world (resting: nobody there is playing)' : 'the world');
+      cell(tr, knights);
       cell(tr, c && c.monsters != null ? String(c.monsters) : '');
       cell(tr, c ? c.bootMs + ' ms' : (w.boot && w.boot[m] != null ? w.boot[m] + ' ms (last time)' : ''));
       const td = document.createElement('td'), on = sw.maps[m] === 'world' && !held;
