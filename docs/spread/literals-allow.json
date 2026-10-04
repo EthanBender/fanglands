@@ -640,5 +640,19 @@
   {"file": "77-dropparty.js", "literal": "pickSpots(80, 10)", "decl": "many", "reason": "pickSpots(count, radius): 80 spots within 10 tiles, not a position"},
   {"file": "77-dropparty.js", "decl": "sea", "reason": "pickSpots(count, radius, centre): 10 spots within 3 tiles; the centre is already Ironclad Isle's frame"},
   {"file": "78-accounts.js", "literal": "cy - 60", "line": 604, "reason": "HUD: the self-test drags the account list 60 screen pixels"},
-  {"file": "78-accounts.js", "literal": "cy - 150", "line": 604, "reason": "HUD: the self-test drags the account list 150 screen pixels"}
+  {"file": "78-accounts.js", "literal": "cy - 150", "line": 604, "reason": "HUD: the self-test drags the account list 150 screen pixels"},
+  {"file": "78-trade.js", "decl": "placeCard", "reason": "HUD: a card's screen-pixel offsets from the knight it belongs to"},
+  {"file": "78-trade.js", "literal": "4 * TILE", "decl": "ASK_NEAR", "reason": "close enough to ask: 4 tiles, a distance, not a position"},
+  {"file": "78-trade.js", "literal": "2 * TILE", "decl": "GO", "reason": "a follower walks again past 2 tiles: a distance, not a position"},
+  {"file": "78-trade.js", "literal": "[4, 3]", "decl": "tradePlan", "reason": "items per row in the trade window (4, then 3): counts, not a position"},
+  {"file": "78-trade.js", "literal": "fy - 12", "decl": "sy", "reason": "HUD: the status line 12 screen pixels above the footer"},
+  {"file": "78-trade.js", "line": 198, "reason": "HUD: the card's shapes (drawCard's last argument: one row of three), not a position"},
+  {"file": "78-trade.js", "line": 209, "reason": "HUD: the card's shapes (drawCard's last argument: two rows of one), not a position"},
+  {"file": "78-trade.js", "line": 738, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
+  {"file": "78-trade.js", "line": 768, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
+  {"file": "78-trade.js", "line": 769, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
+  {"file": "78-trade.js", "line": 780, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
+  {"file": "78-trade.js", "line": 782, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
+  {"file": "78-trade.js", "line": 786, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
+  {"file": "78-trade.js", "line": 789, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"}
 ]

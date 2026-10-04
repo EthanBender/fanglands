@@ -47548,7 +47548,7 @@ window.MONSTER_LOOK = MONSTER_LOOK;
     const dc = dialog.cur, dq = dialog.queue.slice(); dialog.cur = null; dialog.queue.length = 0;
     const mech0 = player.mech, inv0 = player.inv.map(s => s ? { ...s } : null), bank0 = player.bank.slice(), trades0 = player.trades, t0 = window.__forceTouch;
     player.mech = null; closePanel(); h.peace(true); player.hp = player.maxHp; window.__forceTouch = false;
-    const o = h.openSpot(40, 24); F.tp(o.x, o.y); F.step([]);
+    const o = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(24)); F.tp(o.x, o.y); F.step([]);
     const knight = (n, dx, dy, extra) => feed(Object.assign({ t: 'p', n, map: 'over', x: Math.round(player.x + dx), y: Math.round(player.y + dy), fx: -1, fy: 0, mv: false, wt: 0, hp: 20, mhp: 20, lv: 7, look: null, mech: null, dead: false, def: 100, act: null, role: 'player' }, extra || {}));
     const screen = (wx, wy) => { render(); return [wx - cam.x, wy - cam.y]; };
     const click = (sx, sy, id) => { pointerDown(sx, sy, id); pointerUp(id, sx, sy); render(); };
