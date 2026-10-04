@@ -16703,7 +16703,11 @@ window.PLACE_KIT = PLACE_KIT;
     levelBanner = { text: `${def.name.toUpperCase()} CAPE`, sub: CAPE_ABILITY[key] || 'Worn with pride', t: 3.5 }; sfx('levelup'); burst(player.x, player.y, CAPE_COLOR[key] || '#f5c542', 30, 160); save();
     return true;
   }
-  NPCS.push(initNpc({ id: 'skillmaster', name: 'Master of Skills', x: 108, y: 44, tunic: '#2b2b40', hair: '#d9d0c0', beard: true, role: 'skillmaster' }));
+  // Every overworld position reads the Atlas (the spread spec, section 9.1): the Master and the yard course are Thistledown's
+  // frame, the cliff course the quarry's, the stepping stones run between the pond's stones ports and the climb is camp.climb.
+  const TD = ATLAS.frame('thistledown'), QY = ATLAS.frame('quarry'), PD = ATLAS.frame('pond');
+  const SKILLMASTER = TD.pt({ id: 'skillmaster', name: 'Master of Skills', x: 108, y: 44, tunic: '#2b2b40', hair: '#d9d0c0', beard: true, role: 'skillmaster' });
+  NPCS.push(initNpc(Object.assign({}, SKILLMASTER)));
   HOOKS.talk.skillmaster = n => {
     const ready = SKILL_DEFS.filter(s => skillLv(s.key) >= 99).length;
     say(ready ? `A master. I can see it in how you stand. ${CAPE_PRICE} coins for the cape, and every one of them earned.` : `Ninety-nine in a skill, and I will sell you its cape. Not before. Every cape has a trick to it. Agility is trained on the yard course south of Hale's yard, and the cliff ledge at Grey Quarry.`, n.name);
@@ -16795,8 +16799,8 @@ window.PLACE_KIT = PLACE_KIT;
   // ---------- courses ----------
   // marks[0] is the start/finish; a lap = marks 1..N in order, then the start again
   const COURSES = {
-    yard: { name: 'Thistledown yard course', xp: 60, marks: [[86, 51], [93, 51], [98, 51], [99, 53], [92, 53]] },
-    cliff: { name: 'Grey Quarry cliff course', xp: 200, marks: [[47, 1], [53, 1], [57, 1], [60, 3], [52, 3]] },
+    yard: { name: 'Thistledown yard course', xp: 60, marks: TD.pts([[86, 51], [93, 51], [98, 51], [99, 53], [92, 53]]) },
+    cliff: { name: 'Grey Quarry cliff course', xp: 200, marks: QY.pts([[47, 1], [53, 1], [57, 1], [60, 3], [52, 3]]) },
   };
   const LAP_BONUS_EVERY = 5, LAP_BONUS = 10;
   const OBST = new Map(); // "tx,ty" → { t, lv, course }
@@ -16804,33 +16808,34 @@ window.PLACE_KIT = PLACE_KIT;
   const key = (x, y) => x + ',' + y;
   const obst = (course, t, lv, cells) => { for (const [x, y] of cells) OBST.set(key(x, y), { t, lv, course }); };
   for (const c in COURSES) COURSES[c].marks.forEach(([x, y], i) => MARKS.set(key(x, y), { course: c, i }));
-  const isCliff = (tx, ty) => tx >= 46 && tx <= 62 && ty >= 1 && ty <= 4;
+  const isCliff = (tx, ty) => tx >= QY.x(46) && tx <= QY.x(62) && ty >= QY.y(1) && ty <= QY.y(4);
   // yard: a fenced one-tile track (its one gate at 87,50, beside the start flag) south of the houses under Hale's yard
-  obst('yard', AG_LOG, 1, [[88, 51], [89, 51], [90, 51], [91, 51], [89, 53], [88, 53]]);
-  obst('yard', AG_NET, 1, [[95, 51], [96, 51]]);
-  obst('yard', AG_GAP, 1, [[101, 52], [96, 53]]);
+  obst('yard', AG_LOG, 1, TD.pts([[88, 51], [89, 51], [90, 51], [91, 51], [89, 53], [88, 53]]));
+  obst('yard', AG_NET, 1, TD.pts([[95, 51], [96, 51]]));
+  obst('yard', AG_GAP, 1, TD.pts([[101, 52], [96, 53]]));
   // cliff: a ledge loop cut into the rock along the quarry's north edge (exit west at 46,2; entrance south at 54,4)
-  obst('cliff', AG_LOG, 20, [[49, 1], [50, 1], [51, 1], [52, 1], [50, 3], [49, 3]]);
-  obst('cliff', AG_GAP, 20, [[55, 1]]);
-  obst('cliff', AG_NET, 1, [[59, 1], [60, 1]]);
-  obst('cliff', AG_GAP, 30, [[57, 3]]);
-  const STONES = []; for (let y = 31; y <= 40; y++) STONES.push([43, y]); // Miller's Pond, north shore (43,30) to south shore (43,41)
-  const CLIMB_AT = [158, 30]; // Goblin Camp palisade, east side
+  obst('cliff', AG_LOG, 20, QY.pts([[49, 1], [50, 1], [51, 1], [52, 1], [50, 3], [49, 3]]));
+  obst('cliff', AG_GAP, 20, QY.pts([[55, 1]]));
+  obst('cliff', AG_NET, 1, QY.pts([[59, 1], [60, 1]]));
+  obst('cliff', AG_GAP, 30, QY.pts([[57, 3]]));
+  const [STONE_X, STONE_Y0] = ATLAS.port('pond.stones_n'), STONE_Y1 = ATLAS.port('pond.stones_s')[1];
+  const STONES = []; for (let y = STONE_Y0; y <= STONE_Y1; y++) STONES.push([STONE_X, y]); // Miller's Pond, north shore (43,30) to south shore (43,41)
+  const CLIMB_AT = ATLAS.port('camp.climb'); // Goblin Camp palisade, east side
 
   HOOKS.world.push((rnd, api) => {
     const set = api.setTile;
     // yard
-    for (let y = 50; y <= 54; y++) for (let x = 86; x <= 102; x++) set(x, y, T.GRASS);
-    for (let x = 86; x <= 102; x++) { set(x, 50, T.FENCE); set(x, 54, T.FENCE); }
-    for (let y = 50; y <= 54; y++) set(102, y, T.FENCE);
-    for (let x = 87; x <= 100; x++) set(x, 52, T.FENCE);
-    for (let x = 86; x <= 101; x++) { set(x, 51, T.DIRT); set(x, 53, T.DIRT); }
-    set(86, 52, T.DIRT); set(101, 52, T.DIRT); set(87, 50, T.GATE);
+    for (let y = TD.y(50); y <= TD.y(54); y++) for (let x = TD.x(86); x <= TD.x(102); x++) set(x, y, T.GRASS);
+    for (let x = TD.x(86); x <= TD.x(102); x++) { set(x, TD.y(50), T.FENCE); set(x, TD.y(54), T.FENCE); }
+    for (let y = TD.y(50); y <= TD.y(54); y++) set(TD.x(102), y, T.FENCE);
+    for (let x = TD.x(87); x <= TD.x(100); x++) set(x, TD.y(52), T.FENCE);
+    for (let x = TD.x(86); x <= TD.x(101); x++) { set(x, TD.y(51), T.DIRT); set(x, TD.y(53), T.DIRT); }
+    set(...TD.p(86, 52), T.DIRT); set(...TD.p(101, 52), T.DIRT); set(...TD.p(87, 50), T.GATE);
     // cliff
-    for (let y = 1; y <= 4; y++) for (let x = 46; x <= 62; x++) set(x, y, T.WALL);
-    for (let x = 47; x <= 61; x++) { set(x, 1, T.CAVE); set(x, 3, T.CAVE); }
-    set(47, 2, T.CAVE); set(61, 2, T.CAVE); set(46, 2, T.DIRT); set(54, 4, T.DIRT);
-    if (SOLID.has(api.tileAt(54, 5))) set(54, 5, T.DIRT); if (SOLID.has(api.tileAt(45, 2))) set(45, 2, T.DIRT);
+    for (let y = QY.y(1); y <= QY.y(4); y++) for (let x = QY.x(46); x <= QY.x(62); x++) set(x, y, T.WALL);
+    for (let x = QY.x(47); x <= QY.x(61); x++) { set(x, QY.y(1), T.CAVE); set(x, QY.y(3), T.CAVE); }
+    set(...QY.p(47, 2), T.CAVE); set(...QY.p(61, 2), T.CAVE); set(...QY.p(46, 2), T.DIRT); set(...QY.p(54, 4), T.DIRT);
+    if (SOLID.has(api.tileAt(...QY.p(54, 5)))) set(...QY.p(54, 5), T.DIRT); if (SOLID.has(api.tileAt(...QY.p(45, 2)))) set(...QY.p(45, 2), T.DIRT);
     // obstacles and flags
     for (const [k, o] of OBST) { const [x, y] = k.split(',').map(Number); set(x, y, o.t); }
     for (const [k] of MARKS) { const [x, y] = k.split(',').map(Number); set(x, y, AG_MARK); }
@@ -17027,34 +17032,34 @@ window.PLACE_KIT = PLACE_KIT;
       check('agility: hitpoints skill exists, melee xp feeds it at 1/3, max hp = 24 + level (25 at 1, 100 at 76, 123 at 99)', SKILL_DEFS.some(s => s.key === 'hitpoints') && got === Math.floor(m1 / 3) && lv1 >= 10 && follows && at76 === 100 && at99 === 123, { got, want: Math.floor(m1 / 3), lv0, lv1, m0, m1: player.maxHp, at76, at99 });
       player.skills.hitpoints = hp0; recomputeMaxHp(); }
     // yard course: a lap in order gives 60 xp, out of order does not
-    { const a = AG(); const yard = COURSES.yard.marks.every(([x, y]) => tileAt(x, y) === AG_MARK) && tileAt(88, 51) === AG_LOG && tileAt(95, 51) === AG_NET && tileAt(101, 52) === AG_GAP && tileAt(87, 50) === T.GATE;
+    { const a = AG(); const yard = COURSES.yard.marks.every(([x, y]) => tileAt(x, y) === AG_MARK) && tileAt(...TD.p(88, 51)) === AG_LOG && tileAt(...TD.p(95, 51)) === AG_NET && tileAt(...TD.p(101, 52)) === AG_GAP && tileAt(...TD.p(87, 50)) === T.GATE;
       const xp0 = player.skills.agility.xp; a.next.yard = 0; const laps0 = a.laps.yard; lastTile = null;
       const go = i => { const [x, y] = COURSES.yard.marks[i]; F.tp(x, y); F.step([]); };
       go(0); go(1); go(2); go(3); go(4); go(0); const lapXp = player.skills.agility.xp - xp0, laps1 = a.laps.yard;
       const xp1 = player.skills.agility.xp; go(0); go(2); go(1); go(3); go(4); go(0); const badXp = player.skills.agility.xp - xp1;
       check('agility: yard course exists (logs, net, gaps, flags, gate); flags in order + start = 60 xp and a lap; out of order = nothing', yard && lapXp === 60 && laps1 === laps0 + 1 && badXp === 0 && a.laps.yard === laps0 + 1, { yard, lapXp, badXp, laps: a.laps.yard }); }
     // cliff log slips at Agility 1
-    { const xp0 = player.skills.agility.xp; player.skills.agility.xp = 0; player.equip.cape = null; const cliff = tileAt(49, 1) === AG_LOG && tileAt(47, 1) === AG_MARK && tileAt(55, 1) === AG_GAP && tileAt(57, 3) === AG_GAP && tileAt(48, 2) === T.WALL && tileAt(46, 2) === T.DIRT;
-      F.tp(48, 1); player.hp = player.maxHp; F.step([]); const hp0 = player.hp; for (let i = 0; i < 60 && player.hp === hp0; i++) F.step(['KeyD']); const hp1 = player.hp; const { tx } = tileOf();
-      check('agility: cliff course carved; stepping onto its log at Agility 1 slips you (1 damage, pushed back off the log)', cliff && hp1 === hp0 - 1 && tx <= 48 && player.x < tc(49) - 12, { cliff, hp0, hp1, tx, x: +(player.x / TILE).toFixed(2) });
+    { const xp0 = player.skills.agility.xp; player.skills.agility.xp = 0; player.equip.cape = null; const cliff = tileAt(...QY.p(49, 1)) === AG_LOG && tileAt(...QY.p(47, 1)) === AG_MARK && tileAt(...QY.p(55, 1)) === AG_GAP && tileAt(...QY.p(57, 3)) === AG_GAP && tileAt(...QY.p(48, 2)) === T.WALL && tileAt(...QY.p(46, 2)) === T.DIRT;
+      F.tp(...QY.p(48, 1)); player.hp = player.maxHp; F.step([]); const hp0 = player.hp; for (let i = 0; i < 60 && player.hp === hp0; i++) F.step(['KeyD']); const hp1 = player.hp; const { tx } = tileOf();
+      check('agility: cliff course carved; stepping onto its log at Agility 1 slips you (1 damage, pushed back off the log)', cliff && hp1 === hp0 - 1 && tx <= QY.x(48) && player.x < tc(QY.x(49)) - 12, { cliff, hp0, hp1, tx, x: +(player.x / TILE).toFixed(2) });
       player.skills.agility.xp = xp0; }
     // pond stepping stones: solid below 10, a bridge at 10
-    { const xp0 = player.skills.agility.xp; player.skills.agility.xp = 0; F.tp(43, 30); F.step([]); const stones = STONES.every(([x, y]) => tileAt(x, y) === AG_STONE);
-      F.sim(90, ['KeyS']); const blockedY = tileOf().ty; const blocked = blockedY <= 30 && !WALK_OVER.has(AG_STONE);
-      player.skills.agility.xp = XP_TABLE[10]; F.step([]); const open = WALK_OVER.has(AG_STONE); F.sim(320, ['KeyS']); const acrossY = tileOf().ty; const across = acrossY >= 41;
-      F.tp(43, 42); player.skills.agility.xp = xp0; F.step([]);
+    { const xp0 = player.skills.agility.xp; player.skills.agility.xp = 0; F.tp(...PD.p(43, 30)); F.step([]); const stones = STONES.every(([x, y]) => tileAt(x, y) === AG_STONE);
+      F.sim(90, ['KeyS']); const blockedY = tileOf().ty; const blocked = blockedY <= PD.y(30) && !WALK_OVER.has(AG_STONE);
+      player.skills.agility.xp = XP_TABLE[10]; F.step([]); const open = WALK_OVER.has(AG_STONE); F.sim(320, ['KeyS']); const acrossY = tileOf().ty; const across = acrossY >= PD.y(41);
+      F.tp(...PD.p(43, 42)); player.skills.agility.xp = xp0; F.step([]);
       check('agility: Miller\'s Pond stepping stones block below Agility 10 and carry you across at 10', stones && blocked && open && across, { stones, blockedY, open, acrossY }); }
     // palisade climb: solid below 25
-    { const xp0 = player.skills.agility.xp; player.skills.agility.xp = 0; F.tp(159, 30); F.step([]); const climb = tileAt(158, 30) === AG_CLIMB;
-      F.sim(60, ['KeyA']); const blockedX = tileOf().tx; const blocked = blockedX >= 159;
-      player.skills.agility.xp = XP_TABLE[25]; F.step([]); F.sim(60, ['KeyA']); const inX = tileOf().tx; const inside = inX <= 158 && WALK_OVER.has(AG_CLIMB); // 158 = the palisade tile itself: the centre is inside what was a wall
-      F.tp(160, 30); player.skills.agility.xp = xp0; F.step([]);
+    { const xp0 = player.skills.agility.xp; player.skills.agility.xp = 0; F.tp(CLIMB_AT[0] + 1, CLIMB_AT[1]); F.step([]); const climb = tileAt(...CLIMB_AT) === AG_CLIMB;
+      F.sim(60, ['KeyA']); const blockedX = tileOf().tx; const blocked = blockedX >= CLIMB_AT[0] + 1;
+      player.skills.agility.xp = XP_TABLE[25]; F.step([]); F.sim(60, ['KeyA']); const inX = tileOf().tx; const inside = inX <= CLIMB_AT[0] && WALK_OVER.has(AG_CLIMB); // 158 = the palisade tile itself: the centre is inside what was a wall
+      F.tp(CLIMB_AT[0] + 2, CLIMB_AT[1]); player.skills.agility.xp = xp0; F.step([]);
       check('agility: the crumbling palisade at the Goblin Camp is solid below Agility 25 and climbable at 25', climb && blocked && inside, { climb, blockedX, inX }); }
     // capes: refused below 99, sold at 99, worn in the cape slot
     { const inv0 = player.inv.map(s => s ? { ...s } : null); player.inv = player.inv.map(s => s && s.id !== 'coins' ? null : s); h.give('coins', 2000); const c0 = coins();
       const wc = { ...player.skills.woodcutting }; player.skills.woodcutting.xp = XP_TABLE[50]; const refused = !buyCape('woodcutting') && coins() === c0 && countItem('cape_woodcutting') === 0;
-      for (const m of monsters) if (!m.dead && dist(m.x, m.y, tc(108), tc(44)) < 4 * TILE) { m.x = tc(119); m.y = tc(53); m.wanderT = 9; m.wander = { x: 0, y: 0 }; } // a wandering guard must not stand between the bot and the Master
-      F.tp(107, 45); F.talk('skillmaster'); const opened = panel === 'capes'; render(); const noButton = !F.clickButton('Buy 999'); closePanel();
+      for (const m of monsters) if (!m.dead && dist(m.x, m.y, tc(SKILLMASTER.x), tc(SKILLMASTER.y)) < 4 * TILE) { m.x = tc(TD.x(119)); m.y = tc(TD.y(53)); m.wanderT = 9; m.wander = { x: 0, y: 0 }; } // a wandering guard must not stand between the bot and the Master
+      F.tp(...TD.p(107, 45)); F.talk('skillmaster'); const opened = panel === 'capes'; render(); const noButton = !F.clickButton('Buy 999'); closePanel();
       player.skills.woodcutting.xp = XP_TABLE[99]; F.talk('skillmaster'); render(); const clicked = F.clickButton('Buy 999'); closePanel(); const bought = clicked && countItem('cape_woodcutting') === 1 && coins() === c0 - 999;
       const slot = player.inv.findIndex(s => s && s.id === 'cape_woodcutting'); equipItem(slot); const worn = player.equip.cape === 'cape_woodcutting' && EQUIP_SLOTS.includes('cape') && countItem('cape_woodcutting') === 0 && gearBonus('def') >= 5;
       check('agility: Master of Skills refuses a cape below 99, sells it at 99 for 999 coins, and it equips to the cape slot', refused && opened && noButton && bought && worn, { refused, opened, noButton, clicked, bought, worn, coins: coins(), c0 });

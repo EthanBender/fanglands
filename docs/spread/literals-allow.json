@@ -162,5 +162,6 @@
   {"file": "37-dragonkillers.js", "literal": "12 * TILE", "line": 228, "reason": "an ally more than 12 tiles behind is brought up: a distance, not a position"},
   {"file": "37-dragonkillers.js", "literal": "4 * TILE", "line": 228, "reason": "a stuck ally more than 4 tiles behind is brought up: a distance, not a position"},
   {"file": "37-dragonkillers.js", "literal": "4 * TILE", "line": 294, "reason": "the self-test: the allies appear within 4 tiles of the knight, a distance"},
-  {"file": "37-dragonkillers.js", "literal": "4 * TILE", "decl": "near", "reason": "the self-test: the allies fight within 4 tiles of The Fang, a distance"}
+  {"file": "37-dragonkillers.js", "literal": "4 * TILE", "decl": "near", "reason": "the self-test: the allies fight within 4 tiles of The Fang, a distance"},
+  {"file": "38-agility.js", "literal": "4 * TILE", "line": 428, "reason": "the self-test moves a guard standing within 4 tiles of the Master of Skills: a radius, not a position"}
 ]
