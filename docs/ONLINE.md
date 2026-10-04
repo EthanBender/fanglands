@@ -2151,6 +2151,13 @@ green): the World loaded its game copy (`GET /api/admin/sim`: `world.loaded` tru
 it). Nobody switched a place on there: an agent may not sign the probe knights in on a world that is not on this machine,
 so the two-browser run on the test world is the owner's.
 
+**On the test world, review round 2** (4 Oct 2026, deployed with `~/.fanglands/tools/deploy-test.sh` after the backup
+`~/.fanglands/backups/20261004-011103-pre-shared-2-fix2-test` (3 accounts, 9 saves, a bookmark); the script ran every gate
+first, the admin and party sims included, all green; `fix2/deploy-test.log`). Other builders had deployed over it since the
+round before (its export had no `sim_log` table). `GET /api/admin/sim` afterwards: `world.loaded` true, cap 4, `heapProbe`
+false, every place on `keeper` (`deepholm`, `aerie`; `coalmine` listed in `empty`), master `on`, nothing held, nothing
+running, `sim_log` empty, nobody online. The Worker is 3,047.79 KiB (789.31 KiB gzipped), startup 5 ms.
+
 ## Safety rules (binding)
 
 - Invite-only signups. Names and chat pass `online/src/filter.js`. Chat is logged with the name and time.
