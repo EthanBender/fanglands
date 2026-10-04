@@ -34310,7 +34310,8 @@ HOOKS.selfTest.push((check, F, h) => {
     { const q = quest.tinker; q.parts = {}; q.friends = 0; q.bundle = false;
       drops = drops.filter(() => false);
       // [what they want, how many, the part, where you stand, where the goblin is]
-      const need = [['cooked_beef', 5, 'boiler', 216, 24, 216, 23], ['goblin_scrap', 10, 'gear_wheel', 230, 24, 230, 23], ['spider_silk', 3, 'bomb_chute', 216, 36, 216, 37], ['bread', 1, 'lightning_coil', 222, 34, 222, 33]];
+      // (where you stand and where the goblin is are Grubmarket's, in the Far Shore's frame)
+      const need = [['cooked_beef', 5, 'boiler', ...FS.p(216, 24), ...FS.p(216, 23)], ['goblin_scrap', 10, 'gear_wheel', ...FS.p(230, 24), ...FS.p(230, 23)], ['spider_silk', 3, 'bomb_chute', ...FS.p(216, 36), ...FS.p(216, 37)], ['bread', 1, 'lightning_coil', ...FS.p(222, 34), ...FS.p(222, 33)]];
       const held = id => countItem(id) + drops.filter(d => d.id === id).reduce((n, d) => n + d.qty, 0);
       const counted = [];
       let made = 0, beefBefore = 0, scrapBefore = 0;
