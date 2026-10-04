@@ -7832,8 +7832,10 @@ HOOKS.selfTest.push((check, F, h) => {
 // ============================================================================
 {
   const CAGE = addTile('CAGE', { solid: true, tex: 'dirt', mini: '#8f96a3' });
-  const CAGE_POS = { x: 148, y: 34 };
-  const INN_WAIT = { sera: { x: 124, y: 48 }, garrick: { x: 128, y: 47 } }; // where a dismissed hero waits (inside the inn; interior is x 124–129, y 45–48)
+  // the cage is the camp's (its port); the inn's waiting spots are Thistledown's (its frame): the spread spec, §9.1
+  const CO_TD = ATLAS.frame('thistledown'), CO_W = ATLAS.world;
+  const CAGE_POS = (([x, y]) => ({ x, y }))(ATLAS.port('camp.cage'));
+  const INN_WAIT = { sera: CO_TD.pt({ x: 124, y: 48 }), garrick: CO_TD.pt({ x: 128, y: 47 }) }; // where a dismissed hero waits (inside the inn; interior is x 124–129, y 45–48)
   const GOBLIN_TYPES = ['goblin', 'sapper', 'brute', 'walker', 'bulldozer'];
   const FOLLOW_SPEED = 180, STOP_DIST = 60, SNAP_DIST = 12 * TILE, DOWN_TIME = 30;
   // Companions scale with the knight: a hired hero fights at combat level +4, never below 12 (a fixed 12 did under 1 dps to a dragon).
@@ -8284,19 +8286,19 @@ HOOKS.selfTest.push((check, F, h) => {
       F.tp(CAGE_POS.x, CAGE_POS.y + 1); F.face(CAGE_POS.x, CAGE_POS.y); F.press('KeyE'); F.sim(2, []);
       check('companion: E on the cage frees Sera, she joins', c.id === 'sera' && c.freed.sera && c.hp === 60 && c.mode === 'follow' && killed.length > 0, { id: c.id, hp: c.hp, cleared: killed.length, notice: notice && notice.text }); }
     // follows: snaps when far, walks when near
-    { const s = openStrip(40, 20, 5); F.tp(s.x - 3, s.y); F.sim(3, []); const snapped = dist(c.x, c.y, player.x, player.y) < 3 * TILE;
+    { const s = openStrip(CO_W.tx(40), CO_W.ty(20), 5); F.tp(s.x - 3, s.y); F.sim(3, []); const snapped = dist(c.x, c.y, player.x, player.y) < 3 * TILE;
       F.tp(s.x + 3, s.y); F.sim(120, []); const d = dist(c.x, c.y, player.x, player.y);
       check('companion: Sera teleports when far, walks up when near', snapped && d < 3 * TILE && d >= 20, { snapped, tiles: +(d / TILE).toFixed(2), strip: s }); }
     // fights: a goblin on the knight, Sera shoots it
     { h.peace(false); player.hp = player.maxHp; player.facing = { x: 1, y: 0 };
-      const gob = monsters.find(m => m.type === 'goblin' && m.home.x < 100 * TILE) || monsters.find(m => m.type === 'goblin');
+      const gob = monsters.find(m => m.type === 'goblin' && m.home.x < CO_W.x(100) * TILE) || monsters.find(m => m.type === 'goblin');
       const gh = { ...gob.home }; gob.dead = false; gob.hp = gob.maxHp; gob.stunT = 0; gob.attackCd = 0; gob.x = player.x + 70; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'chase'; gob.angry = true; gob.wanderT = 99;
       c.x = player.x - 50; c.y = player.y; c.hp = 60; live.attackCd = 0;
       const r = F.untilAction(600, () => gob.hp < gob.maxHp || gob.dead);
       check('companion: Sera shoots a goblin that attacks you', typeof r === 'number' && (gob.hp < gob.maxHp || gob.dead), { steps: r, hp: gob.hp, dead: gob.dead, arrows: projectiles.filter(p => p.kind === 'arrow').length });
       gob.home = gh; gob.x = gh.x; gob.y = gh.y; gob.state = 'idle'; gob.hp = gob.maxHp; gob.dead = false; h.peace(true); }
     // Garrick: refuses below combat level 6, hires for 150 coins, replaces Sera
-    { F.tp(125, 48); F.sim(3, []);
+    { F.tp(...CO_TD.p(125, 48)); F.sim(3, []);
       player.skills.melee.xp = XP_TABLE[3]; player.skills.defence.xp = XP_TABLE[3]; recomputeMaxHp();
       const w1 = F.talk('garrick'); const cbLow = combatLevel();
       const refused = panel !== 'companion' && c.id === 'sera' && cbLow < 6;
@@ -8306,8 +8308,8 @@ HOOKS.selfTest.push((check, F, h) => {
       const hired = F.clickButton('Hire');
       check('companion: Garrick hires for 150 coins at combat level 6 and replaces Sera', opened && hired && c.id === 'garrick' && c.hp === 90 && coins() === c0 - 150 && NPCS.some(n => n.id === 'sera') && !NPCS.some(n => n.id === 'garrick'), { w2, cb: combatLevel(), opened, hired, id: c.id, coins: coins(), c0 }); }
     // Garrick fights up close
-    { closePanel(); const s = openStrip(40, 24, 5); F.tp(s.x, s.y); F.sim(3, []); h.peace(false); player.hp = player.maxHp; player.facing = { x: 1, y: 0 };
-      const gob = monsters.find(m => m.type === 'goblin' && m.home.x < 100 * TILE) || monsters.find(m => m.type === 'goblin');
+    { closePanel(); const s = openStrip(CO_W.tx(40), CO_W.ty(24), 5); F.tp(s.x, s.y); F.sim(3, []); h.peace(false); player.hp = player.maxHp; player.facing = { x: 1, y: 0 };
+      const gob = monsters.find(m => m.type === 'goblin' && m.home.x < CO_W.x(100) * TILE) || monsters.find(m => m.type === 'goblin');
       const gh = { ...gob.home }; gob.dead = false; gob.hp = gob.maxHp; gob.stunT = 0; gob.attackCd = 0; gob.x = player.x + 60; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'chase'; gob.angry = true; gob.wanderT = 99;
       c.x = player.x - 40; c.y = player.y; live.attackCd = 0;
       const r = F.untilAction(600, () => gob.hp < gob.maxHp || gob.dead);
@@ -8317,7 +8319,7 @@ HOOKS.selfTest.push((check, F, h) => {
     { c.hp = 1; hurtCompanion(c, HEROES.garrick, 5, c.x + 10, c.y); const down = c.downT > 0 && levelBanner && /falls back/.test(levelBanner.text);
       c.downT = 0.05; F.sim(6, []); check('companion: a downed hero falls back and returns at half hp', down && c.downT === 0 && c.hp === 45 && c.id === 'garrick', { down, hp: c.hp, downT: c.downT }); }
     // panel: stay / follow / dismiss
-    { const s = openStrip(40, 24, 5); F.tp(s.x, s.y); F.sim(3, []); player.facing = { x: 1, y: 0 }; c.x = player.x + 40; c.y = player.y;
+    { const s = openStrip(CO_W.tx(40), CO_W.ty(24), 5); F.tp(s.x, s.y); F.sim(3, []); player.facing = { x: 1, y: 0 }; c.x = player.x + 40; c.y = player.y;
       F.press('KeyE'); const opened = panel === 'companion' && !panelArg; const stay = F.clickButton('Stay here'); const stayed = c.mode === 'stay';
       c.x = player.x + 40; c.y = player.y; F.press('KeyE'); const follow = F.clickButton('Follow me'); const following = c.mode === 'follow';
       c.x = player.x + 40; c.y = player.y; F.press('KeyE'); const dismissed = F.clickButton('Dismiss');

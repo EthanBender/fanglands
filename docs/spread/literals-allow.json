@@ -63,5 +63,19 @@
   {"file": "20-hollowford.js", "literal": "2 * TILE", "line": 715, "reason": "drawing: the soot's sort depth (two tiles of pixels), not a position"},
   {"file": "20-hollowford.js", "literal": "7 * TILE", "line": 729, "reason": "the self-test checks the Barrelbeast's sight range (7 tiles)"},
   {"file": "20-hollowford.js", "literal": "4 * TILE", "line": 738, "reason": "the self-test stands the beast 4 tiles from the knight: an offset, not a position"},
-  {"file": "20-hollowford.js", "literal": "2 * TILE", "line": 818, "reason": "the self-test's tolerance (2 tiles) round the shed home, inside the War Shed"}
+  {"file": "20-hollowford.js", "literal": "2 * TILE", "line": 818, "reason": "the self-test's tolerance (2 tiles) round the shed home, inside the War Shed"},
+  {"file": "21-companion.js", "literal": "12 * TILE", "line": 13, "reason": "SNAP_DIST: a distance (12 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "6 * TILE", "line": 95, "reason": "a distance (6 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "5 * TILE", "line": 207, "reason": "a distance (5 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "4 * TILE", "line": 267, "reason": "a distance (4 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "8 * TILE", "line": 271, "reason": "a distance (8 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "4 * TILE", "line": 276, "reason": "a distance (4 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "5 * TILE", "line": 276, "reason": "a distance (5 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "5.5 * TILE", "line": 278, "reason": "a distance (5.5 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "6 * TILE", "line": 452, "reason": "a distance (6 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "5 * TILE", "line": 454, "reason": "a distance (5 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "3 * TILE", "line": 454, "reason": "the self-test stands the brute 3 tiles from the cage: an offset, not a position"},
+  {"file": "21-companion.js", "literal": "8 * TILE", "line": 458, "reason": "a distance (8 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "3 * TILE", "line": 462, "reason": "a distance (3 tiles), not a position"},
+  {"file": "21-companion.js", "literal": "3 * TILE", "line": 464, "reason": "a distance (3 tiles), not a position"}
 ]
