@@ -63,9 +63,11 @@
     let best = null;
     for (const n in R) {
       const e = R[n]; if (e.map !== my) continue;
-      const x = e.shown.x, y = e.shown.y, onMech = !!e.mech && e.mech.kind !== 'horse';
-      // the body (a circle a little above the feet) or the name tag over the head
-      const body = dist(wx, wy, x, y - (onMech ? 12 : 8)), tagHit = Math.abs(wx - x) <= 40 && wy >= y - (onMech ? 56 : 44) && wy <= y - (onMech ? 36 : 24);
+      const x = e.shown.x, y = e.shown.y, onMech = !!e.mech;
+      // the body (a circle a little above the feet) or the name tag over the head (73-players notes where it drew the
+      // tag: a tall machine's is high over it)
+      const tag = typeof e.tagTop === 'number' && Number.isFinite(e.tagTop) ? e.tagTop - y : (onMech ? -46 : -33);
+      const body = dist(wx, wy, x, y - (onMech ? 12 : 8)), tagHit = Math.abs(wx - x) <= 40 && wy >= y + tag - 10 && wy <= y + tag + 10;
       const d = body <= (onMech ? 30 : PICK_R) ? body : tagHit ? PICK_R : Infinity;
       if (d < Infinity && (!best || d < best.d)) best = { d, n, e, wx, wy };
     }

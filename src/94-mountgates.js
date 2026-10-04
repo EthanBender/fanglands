@@ -180,7 +180,7 @@
   // is: 16-instances does not let a mount into an instance at all.
   if (T.BONE_ARCH != null) RIDE_THROUGH.add(T.BONE_ARCH);
 
-  window.MOUNTGATES = { EASE, cityGates, ride: RIDE_THROUGH, wreckSpot, routes, tooNarrow };
+  window.MOUNTGATES = { EASE, cityGates, ride: RIDE_THROUGH, wreckSpot, routes, tooNarrow, RADII };
 
   // ---------- self-test ----------
   const P = 'mountgates: ';
@@ -227,10 +227,18 @@
       }
       const port = []; for (let x = CASTLE.x; x < CASTLE.x + CASTLE.w; x++) if (tileAt(x, CASTLE.y) === T.PORTCULLIS) port.push(x);
       rows.push({ gate: 'castle portcullis', cols: port, widthPx: port.length * TILE });
-      const radii = { walker: 20, dozer: 22, beast: 26, horse: MOUNTS.R };
-      for (const k in radii) for (const r of rows) if (2 * radii[k] >= r.widthPx) fits = false;
-      check(P + 'every mount fits every Thistledown gate: the two town gates are 3 tiles (144 px) between stone, the castle portcullis 2 tiles (96 px); the widest mount is 52 px',
-        gates.length === 2 && gates.every(g => g.rows.length === 3) && port.length === 2 && fits, { rows, radii }); }
+      // each mount's real body: boarded the real way and measured (player.r), never a number copied here
+      const radii = {};
+      const o0 = h.openSpot(62, 30);
+      for (const K of KINDS) { radii[K.kind] = board(K, o0.x, o0.y) ? player.r : null; onFoot(); giveBack(); drain(); }
+      const real = Object.values(radii).every(r => typeof r === 'number' && r > 0);
+      for (const k in radii) for (const r of rows) if (!(2 * radii[k] < r.widthPx)) fits = false;
+      // the radii this file keeps open round a wreck (RADII) are exactly the machines' own, widest first
+      const machines = ['beast', 'dozer', 'walker'].map(k => radii[k]);
+      const radiiKept = real && RADII.length === 3 && RADII.every((r, i) => r === machines[i]);
+      const widest = real ? 2 * Math.max(...Object.values(radii)) : null;
+      check(P + `every mount fits every Thistledown gate: the two town gates are 3 tiles (144 px) between stone, the castle portcullis 2 tiles (96 px); each mount boarded and measured, the widest is ${widest} px, and the wreck rule keeps the machines' own radii open`,
+        gates.length === 2 && gates.every(g => g.rows.length === 3) && port.length === 2 && fits && real && radiiKept, { rows, radii, RADII, radiiKept }); }
 
     // 1. each mount, with keys: in through each town gate to the far side of the wall, and back out
     for (const K of KINDS) {
@@ -299,6 +307,9 @@
 
     // 4. a monster is still stopped by the same gate, and so is a knight-sized one pretending (no mount = no ride)
     { const log = {}; let ok = gates.length === 2;
+      // a type that no longer exists fails this check by name (it is never quietly skipped)
+      const missing = ['goblin', 'boar', 'wolf'].filter(t => !MONSTER_DEFS[t]);
+      if (missing.length) { ok = false; log.missing = missing; }
       for (const g of gates) for (const type of ['goblin', 'boar', 'wolf']) {
         const def = MONSTER_DEFS[type]; if (!def) continue;
         const e = { x: tc(g.x - g.dir * 3), y: tc(g.mid), r: def.r };
@@ -394,10 +405,12 @@
         const whole2 = gateTiles();
         giveBack(); drain();
         log[K.kind] = { up, inGate, stayed, said, whole, out, whole2 };
-        if (!(up && inGate && stayed && said && whole && out && whole2)) ok = false;
+        // the mare never parks on the gate (she takes open ground beside it, check 13), so in a gateway she simply gets down
+        const fine = K.kind === 'horse' ? up && inGate && !stayed && whole && whole2 : up && inGate && stayed && said && whole && out && whole2;
+        if (!fine) ok = false;
         onFoot();
       }
-      check(P + 'X in the middle of a town gate keeps the knight on every mount and the gate stays a gate; one tile into the town, X gets him down', ok, log); }
+      check(P + 'X in the middle of a town gate keeps the knight on every machine and the gate stays a gate; one tile into the town, X gets him down; on the mare X there gets him down beside the gate and the gate stays a gate', ok, log); }
 
     // 9. a gate is a gate: every gate in the world (pens, the Grubmarket wall, the town) lets a rider through and stops a monster.
     // The mare (r 16), the walker (r 20) and the bulldozer (r 22) fit a one-tile gate (48 px); the Barrelbeast (r 26, 52 px
@@ -505,6 +518,28 @@
       }
       window.__forceTouch = false;
       check(P + 'on the mare, USE says how to get off her with her own button (GET DOWN on touch, G on keys), never EXIT or X', ok, log); }
+
+    // 13. GET DOWN in a town gateway: on the mare, in every row of both town gates and facing every way (along the gate
+    // too, where the old dismount found only gate and wall and said "No room"), she gets down onto open ground beside
+    // the gate, the knight on his feet clear of everything, the gate whole and still open to every mount it took before
+    { const log = {}; let ok = gates.length === 2;
+      for (const g of gates) for (const y of g.rows) for (const [fx, fy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const up = board(KINDS[3], g.x - g.dir * 3, g.mid);
+        for (let yy = g.mid - 4; yy <= g.mid + 4; yy++) for (let xx = g.x - 4; xx <= g.x + 4; xx++) borrow(xx, yy);
+        const before = routes(g.x, g.mid);
+        player.x = tc(g.x); player.y = tc(y); player.facing = { x: fx, y: fy }; notice = null;
+        const down = up && MOUNTS.dismount();
+        const at = MOUNTS.state.at, said = notice && notice.text;
+        const onGround = !!at && tileAt(at[0], at[1]) === MOUNTS.tiles.HORSE && Math.max(Math.abs(at[0] - g.x), Math.abs(at[1] - y)) <= 2;
+        const clear = !player.mech && !collides(player.x, player.y, player.r, 'player');
+        const whole = g.rows.every(r => tileAt(g.x, r) === T.GATE);
+        const after = routes(g.x, g.mid), open = before.every(r => after.includes(r));
+        log[g.side + ' ' + y + ' ' + fx + ',' + fy] = { up, down, at, said, open };
+        if (!(up && down && onGround && clear && whole && open)) ok = false;
+        if (at) MOUNTS.state.at = null;
+        onFoot(); giveBack(); drain();
+      }
+      check(P + 'GET DOWN in a town gateway, in every row of both gates and facing every way, puts the mare down on open ground beside the gate (never "No room"), the knight clear, the gate whole and still open to every mount', ok, log); }
 
     // put everything back
     giveBack(); onFoot(); if (typeof tapCancel === 'function') tapCancel('manual');

@@ -471,7 +471,9 @@ const BOYGIRL = (() => {
           res = { sent, bw, drawn: !!mia, hair: rec.fills.filter(f => f === '#654321').length, ribbon: rec.fills.includes(RIBBON), tunic: rec.fills.filter(f => f === '#a33').length, plain, skirted, knight, skirt: sk1 - sk0, boySkirt: sk() - sk1 };
         } finally { NET.disconnect(); NET.enabled = was.enabled; NET.token = was.token; NET.useFake(was.fake); if (PLAYERS.remote.Mia) delete PLAYERS.remote.Mia; }
         const skirtOk = res.skirted > res.plain && (res.knight ? res.skirt === 1 && res.boySkirt === 0 : res.tunic >= res.skirted);
-        check(P + 'online: presence carries look.girl (false for a boy), a change goes out at once, and a remote girl knight in a helm is drawn with her braid, ribbon and skirt', res.sent === true && res.bw === false && res.drawn && res.hair >= 3 && res.ribbon && skirtOk, res); }
+        // with 82-knightgear she must be drawn as a knight look in the new style (82's own skirt, counted): hair and a
+        // ribbon alone would pass in the old drawing too
+        check(P + 'online: presence carries look.girl (false for a boy), a change goes out at once, and a remote girl knight in a helm is drawn with her braid, ribbon and skirt (with the knight gear: in the new style)', res.sent === true && res.bw === false && res.drawn && res.hair >= 3 && res.ribbon && skirtOk && (!window.KNIGHTGEAR || res.knight), res); }
       // 10b. the title screen's knight is the last knight played here
       { remember('girl'); const K = title.KNIGHT; title.sprites(recorder().g, 0, 0, 1, 0, 0, 1); const girl = !!(K && K.girl);
         remember('boy'); title.sprites(recorder().g, 0, 0, 1, 0, 0, 1); const boy = !!(K && !K.girl && K.hair === '#5a3a1e');

@@ -59,7 +59,9 @@ const PEOPLE_UI = (() => {
   const corePrompts = () => { const ft = frontTile(player); return typeof INTERESTING === 'function' && INTERESTING(tileAt(ft.tx, ft.ty)); };
   function brackets(g, p) {
     if (!p || corePrompts()) return false;
-    HK.brackets(g, p.px - 18, p.py - 24, 36, 44);
+    // p.up: how far above the feet the person reaches (83-townsfolk sets it for the people in the new look, taller than 24)
+    const up = Math.max(24, +p.up || 0);
+    HK.brackets(g, p.px - 18, p.py - up, 36, up + 20);
     return true;
   }
   // HK.usePreview answers for NPCS and tiles only; taught about these people, the core's own tag (when it frames an
@@ -322,7 +324,9 @@ PEOPLE_UI.auditPrompt = function (p) {
     for (const hh of HOOKS.hud) { try { hh(rec, VW < 640); } catch (e) { } }
     face = HK.face('use');
   } finally { HK.brackets = b0; HK.tag = t0; HK.teach = c0; }
-  const onPerson = got.brackets.some(b => Math.abs(b.x - (p.px - 18)) < 0.5 && Math.abs(b.y - (p.py - 24)) < 0.5 && b.w === 36 && b.h === 44);
+  // the corners from 18 px either side of the feet, 20 px below them, and at least 24 px above (higher for a taller person:
+  // 83-townsfolk sets p.up from the new drawing)
+  const onPerson = got.brackets.some(b => Math.abs(b.x - (p.px - 18)) < 0.5 && b.y <= p.py - 24 + 0.5 && Math.abs(b.y + b.h - (p.py + 20)) < 0.5 && b.w === 36);
   const sx = Math.round(p.px + 20 - cam.x), sy = Math.round(p.py - 6 - cam.y);
   const tagged = got.tags.some(q => q.label === 'Talk' && q.x === sx && q.y === sy && q.o.side === 'right') || got.coach.some(q => q.verb === 'Talk to ' + p.name && q.at && q.at.sx === sx && q.at.sy === sy);
   const faced = PEOPLE_UI.faced();

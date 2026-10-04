@@ -1991,8 +1991,9 @@
       g.fillStyle = hasHeartPick() ? '#e0583c' : (a.tier >= 3 ? '#7aa0d0' : a.tier === 2 ? '#a9adb5' : '#b8863a');
       g.beginPath(); g.moveTo(24, -2); g.quadraticCurveTo(30, -8, 34, -6); g.lineTo(30, 0); g.lineTo(34, 6); g.quadraticCurveTo(30, 8, 24, 2); g.closePath(); g.fill(); g.restore();
     }
-    if (a && (a.type === 'rm_heat' || a.type === 'rm_warm')) {
-      // the stone held into the heat, reddening as it warms
+    // the stone held into the heat, reddening as it warms; the knight drawn by 82-knightgear holds it in his own hand
+    // (its TOOL_ACTS 'stone'), so it is not drawn here loose in front of him then
+    if (a && (a.type === 'rm_heat' || a.type === 'rm_warm') && !window.KNIGHTGEAR) {
       const k = clamp(a.t / (a.need || 1), 0, 1), hx = player.x + Math.cos(ang) * 22, hy = player.y + Math.sin(ang) * 22 - 6;
       const gr = g.createRadialGradient(hx, hy, 1, hx, hy, 16); gr.addColorStop(0, `rgba(255,190,110,${(0.3 + 0.6 * k).toFixed(3)})`); gr.addColorStop(1, 'rgba(255,120,60,0)'); g.fillStyle = gr; g.beginPath(); g.arc(hx, hy, 16, 0, 7); g.fill();
       g.fillStyle = `rgb(${Math.round(122 + 133 * k)},${Math.round(42 + 110 * k)},${Math.round(28 + 30 * k)})`; g.beginPath(); g.arc(hx, hy, 5.5, 0, 7); g.fill();

@@ -20,13 +20,18 @@
   // her and she vanished underneath). Side-mounted, with a small downward bias, she is beside the hull at every
   // facing and always painted just after it — clinging to the rail, leaning out, rather than sitting on it.
   const RIDE_SIDE = 21, RIDE_BACK = 5, RIDE_DEPTH = 6;
+  // Seen from the front or behind, a machine in the new look (84-mountlook) is wide across: she holds on at its edge,
+  // not hidden under it. Half its width that way, in pixels, as drawn (the mare is narrow: the old 21 still clears her).
+  const END_HALF = { walker: 34, dozer: 46, beast: 38 };
   const riderOffset = () => {
     const f = player.facing || { x: 1, y: 0 };
     const d = Math.hypot(f.x, f.y) || 1;
     const fx = f.x / d, fy = f.y / d;
+    const kind = player.mech ? (player.mech.kind || 'walker') : null;
+    const side = Math.abs(fy) > 0.55 && END_HALF[kind] ? END_HALF[kind] + 8 : RIDE_SIDE;
     const sx = -fy, sy = fx;                                  // ninety degrees off the line of travel
     const bob = player.moving ? Math.sin(time * 11) * 1.6 : 0; // she swings a little while it rolls
-    return { x: player.x + sx * RIDE_SIDE - fx * RIDE_BACK, y: player.y + sy * RIDE_SIDE - fy * RIDE_BACK + RIDE_DEPTH + bob };
+    return { x: player.x + sx * side - fx * RIDE_BACK, y: player.y + sy * side - fy * RIDE_BACK + RIDE_DEPTH + bob };
   };
   // 21-companion moves the hero in its own update; this file loads later, so its hook runs after and has the
   // last word on where she ends up. Nothing about her bow, her rolls or her hurt changes — she just holds on.
@@ -42,6 +47,8 @@
   HOOKS.draw.push((g, items) => {
     const c = comp();
     if (!c || !c.id || !c.riding || !onMachine()) return;
+    // on the mare she just holds on at her side: no running board, no rail
+    if (player.mech.kind === 'horse') return;
     const p = riderOffset();
     // a running board under her boots and a grab rail from the hull to her hands, so she reads as hanging on
     items.push({ y: p.y - 2, draw: () => {
@@ -69,7 +76,8 @@
   const SPEED = 430;             // pixels a second while it runs (the machine drives at 130-170)
   const COOL = 18, COOL_BOILER = 12;
   const HIT_DMG = [14, 22], HIT_KNOCK = 90;
-  const machineKind = () => (player.mech ? (player.mech.kind || 'walker') : null);
+  // the mare is no machine: no special, no beacon on her back, no exhaust (51-mounts: she is transport, not a weapon)
+  const machineKind = () => (player.mech && player.mech.kind !== 'horse' ? (player.mech.kind || 'walker') : null);
   // every machine gets one, and each one is the machine's own trick rather than a reskin of the dozer's
   const SPECIALS = {
     dozer: { name: 'Full steam', hint: 'winds the boiler, then barrels forward', cool: COOL },
@@ -236,7 +244,9 @@
 
     // the beacon on the roof
     items.push({ y: player.y + player.r + 2, draw: () => {
-      const bx = player.x, by = player.y - player.r - 6;
+      // on the machine's boiler cap (84-mountlook knows where that is for each machine and facing), else over its middle
+      const rf = window.MOUNT_LOOK && MOUNT_LOOK.roof(machineKind(), player.facing);
+      const bx = player.x + (rf ? rf.x : 0), by = player.y + (rf ? rf.y : -player.r - 6);
       g.fillStyle = '#3a3a42'; g.fillRect(bx - 5, by + 4, 10, 4);            // the mount
       if (broken) {
         // burnt out: a dark stub with smoke curling off it, sputtering as it comes back
@@ -283,7 +293,7 @@
     cool: () => cool > 0 && !sp ? { frac: cool / (SPECIALS[machineKind()] || SPECIALS.walker).cool, text: `${Math.ceil(cool)}` } : null,
   });
   // the coach: "[V] Hold for the special" the first times a machine's special is ready
-  HOOKS.hud.push(() => { const k = machineKind(); if (k && k !== 'horse' && !sp && cool <= 0 && !paused && !panel) HK.teach('special', 'V', 'Hold for the special', { x: player.x, y: player.y, lift: 58 }, { emblem: 'bolt' }); });
+  HOOKS.hud.push(() => { const k = machineKind(); if (k && k !== 'horse' && !sp && cool <= 0 && !paused && !panel) HK.teach('special', 'V', 'Hold for the special', { x: player.x, y: player.y, lift: window.MOUNT_LOOK ? MOUNT_LOOK.top(k) + 10 : 58 }, { emblem: 'bolt' }); });
 
   // ---------- C. over the palisade, on the town side ----------
   const VAULT_LV = 15, VAULT_XP = 70;

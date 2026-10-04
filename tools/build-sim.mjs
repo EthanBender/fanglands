@@ -53,6 +53,8 @@ export const STRIP_FILES = [
   '78-monsterart', '78-monsterlook',
   // the townsfolk's look (the approved art and the file that draws every follower and townsperson with it): pictures only, no rules
   '83-townsart', '83-townsfolk',
+  // the mounts' look (the knight's machines in the monster refit's art, a friend's mount online): pictures only, no rules
+  '84-mountlook',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };
