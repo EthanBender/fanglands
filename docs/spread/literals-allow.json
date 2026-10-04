@@ -621,5 +621,8 @@
   {"file": "43-settings.js", "literal": "2 * TILE", "line": 455, "reason": "the self-test taps 2 tiles from the knight: a distance, not a position"},
   {"file": "43-settings.js", "literal": "2 * TILE", "line": 456, "reason": "the self-test taps 2 tiles from the knight: a distance, not a position"},
   {"file": "44-wiki.js", "literal": "13", "decl": "fs", "reason": "HUD: a 13 px font size"},
-  {"file": "44-wiki.js", "literal": "2 * TILE", "decl": "facingMonster", "reason": "a monster within 2 tiles in front of the knight: a distance, not a position"}
+  {"file": "44-wiki.js", "literal": "2 * TILE", "decl": "facingMonster", "reason": "a monster within 2 tiles in front of the knight: a distance, not a position"},
+  {"file": "72-deviceknights.js", "literal": "knight(42, 9, 7200)", "decl": "cloudKnight", "reason": "knight(kills, stage, seconds): a saved knight's kills, story stage and play time, not a position"},
+  {"file": "72-deviceknights.js", "literal": "knight(21, 6, 3840)", "decl": "A", "reason": "knight(kills, stage, seconds): a saved knight's kills, story stage and play time, not a position"},
+  {"file": "72-deviceknights.js", "literal": "knight(2, 3, 600)", "decl": "C", "reason": "knight(kills, stage, seconds): a saved knight's kills, story stage and play time, not a position"}
 ]
