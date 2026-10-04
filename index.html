@@ -25734,7 +25734,9 @@ window.SETTINGS = SETTINGS;
 // ============================================================================
 {
   // the rectangle Deepholm used to occupy on the overworld, and the band 39-worldblend rocked up round it
-  const OLD = { x0: 2, y0: 72, x1: 26, y1: 94 };
+  // (the spread spec, §9.1: a read of the deepholm_rock anchor's box, not a copy; the ash rows below are open land, world rows)
+  const OLD = (b => ({ x0: b[0], y0: b[1], x1: b[2], y1: b[3] }))(ATLAS.box('deepholm_rock'));
+  const W = ATLAS.world;
   const RING = 3;
   const rectDist = (x, y) => Math.max(OLD.x0 - x, 0, x - OLD.x1, OLD.y0 - y, y - OLD.y1);
   const STATS = { softened: 0, ring: 0, ash: 0 };
@@ -25763,9 +25765,9 @@ window.SETTINGS = SETTINGS;
     const ASH = ('ASH' in T) ? T.ASH : -1;
     const GRASSY = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM]);
     STATS.ash = 0;
-    if (ASH >= 0) for (let y = 92; y <= 94; y++) {
+    if (ASH >= 0) for (let y = W.ty(92); y <= W.ty(94); y++) {
       let ash = 0, open = 0;
-      for (let x = OLD.x1 + 1; x <= 99; x++) { const t = api.tileAt(x, y); if (t === ASH) ash++; else if (GRASSY.has(t)) open++; }
+      for (let x = OLD.x1 + 1; x <= W.tx(99); x++) { const t = api.tileAt(x, y); if (t === ASH) ash++; else if (GRASSY.has(t)) open++; }
       const p = (ash + open) ? ash / (ash + open) : 0;
       for (let x = OLD.x0; x <= OLD.x1; x++) if (GRASSY.has(api.tileAt(x, y)) && !buildingAt(x, y) && rnd() < p) { api.setTile(x, y, ASH); STATS.ash++; }
     }
@@ -25836,7 +25838,7 @@ window.SETTINGS = SETTINGS;
     const sum0 = sum(), n0 = monsters.length;
 
     // ---- the shaft is the door, and the way out puts you back on its step ----
-    { F.tp(54, 14); const w = F.goAdjacent(D.SHAFT.x, D.SHAFT.y, 1500); F.face(D.SHAFT.x, D.SHAFT.y); F.press('KeyE'); F.sim(2, []);
+    { F.tp(...ATLAS.port('quarry.spur')); const w = F.goAdjacent(D.SHAFT.x, D.SHAFT.y, 1500); F.face(D.SHAFT.x, D.SHAFT.y); F.press('KeyE'); F.sim(2, []);
       const inside = INSTANCES.active() === D.ID, at = tileOf(), banner = !!areaBanner && areaBanner.name === 'Deepholm';
       const swapped = tileAt(D.LADDER.x, D.LADDER.y) === D.tiles.ladder && tileAt(D.THRONE.x, D.THRONE.y) === D.tiles.throne && tileAt(0, 0) === T.WALL;
       const guards = monsters.filter(m => m.type === 'dwarf_guard').length;
@@ -25901,17 +25903,18 @@ window.SETTINGS = SETTINGS;
       // (roads, paths and drifted ash are left out of the count: the forest pass only ever planted on grass)
       const PLANTED = new Set([T.GRASS, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, T.ROCK, T.IRON, T.COAL]);
       const dens = (x0, y0, x1, y1) => { let t = 0, n = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const v = map[idx(x, y)]; if (!PLANTED.has(v) || buildingAt(x, y)) continue; n++; if (v === T.TREE || v === T.OAK) t++; } return n ? t / n : -1; };
-      const westIn = dens(2, 72, 20, 94), westOut = dens(2, 62, 20, 71);       // the open western meadow, inside the old rectangle and just north of it
-      const eastIn = dens(21, 72, 26, 94), eastOut = dens(27, 72, 45, 94);     // the thick eastern wood, inside the old rectangle and just east of it
+      // (the meadow/wood line is the forest pass's first column, CAVE_EXIT_X + 1; the bands beside are measured off the rectangle's own edges)
+      const westIn = dens(O.x0, O.y0, CAVE_EXIT_X, O.y1), westOut = dens(O.x0, O.y0 - 10, CAVE_EXIT_X, O.y0 - 1);       // the open western meadow, inside the old rectangle and just north of it
+      const eastIn = dens(CAVE_EXIT_X + 1, O.y0, O.x1, O.y1), eastOut = dens(O.x1 + 1, O.y0, O.x1 + 19, O.y1);     // the thick eastern wood, inside the old rectangle and just east of it
       const matches = Math.abs(westIn - westOut) <= 0.08 && Math.abs(eastIn - eastOut) <= 0.15 && eastOut > 0.1;
       // and the Ashfields' drift crosses the old rectangle instead of stopping at its wall
       let ashIn = 0, ashOut = 0;
-      for (let y = 92; y <= 94; y++) { for (let x = 2; x <= 26; x++) if (map[idx(x, y)] === T.ASH) ashIn++; for (let x = 27; x <= 60; x++) if (map[idx(x, y)] === T.ASH) ashOut++; }
+      for (let y = W.ty(92); y <= W.ty(94); y++) { for (let x = O.x0; x <= O.x1; x++) if (map[idx(x, y)] === T.ASH) ashIn++; for (let x = O.x1 + 1; x <= W.tx(60); x++) if (map[idx(x, y)] === T.ASH) ashOut++; }
       // a flood over the whole map from the cave road: every open tile in the rectangle must be in it
       const seen = new Uint8Array(MAP_W * MAP_H), q = [];
       const pass = t => !SOLID.has(t) || PUSH_THROUGH.has(t);
       const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); if (seen[i] || !pass(map[i])) return; seen[i] = 1; q.push(i); };
-      push(21, 7);
+      push(...ATLAS.port('cave.mouth'));
       for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; push(x + 1, y); push(x - 1, y); push(x, y + 1); push(x, y - 1); }
       let stranded = 0; for (let y = O.y0; y <= O.y1; y++) for (let x = O.x0; x <= O.x1; x++) if (pass(map[idx(x, y)]) && !seen[idx(x, y)]) stranded++;
       // the ghost of the massif: 39-worldblend's outcrops at the foot of walls that are not there any more
@@ -25920,8 +25923,8 @@ window.SETTINGS = SETTINGS;
         const d = Math.max(O.x0 - x, 0, x - O.x1, O.y0 - y, y - O.y1);
         if (inMap(x, y) && d >= 1 && d <= U.RING && map[idx(x, y)] === T.ROCK) ringRock++;
       }
-      for (let y = 70; y <= 94; y++) for (let x = 34; x <= 110; x++) if (map[idx(x, y)] === T.ROCK) woodRock++;  // the same wood, well clear of the old rectangle
-      const region = regionAt(14, 83).name, spawns = MONSTER_SPAWNS.filter(s => s.tx >= O.x0 && s.tx <= O.x1 && s.ty >= O.y0 && s.ty <= O.y1).length;
+      for (let y = W.ty(70); y <= W.ty(94); y++) for (let x = W.tx(34); x <= W.tx(110); x++) if (map[idx(x, y)] === T.ROCK) woodRock++;  // the same wood, well clear of the old rectangle
+      const region = regionAt(...ATLAS.frame('deepholm_rock').p(14, 83)).name, spawns = MONSTER_SPAWNS.filter(s => s.tx >= O.x0 && s.tx <= O.x1 && s.ty >= O.y0 && s.ty <= O.y1).length;
       check(P + '575 tiles of Wolfwood come back at x 2–26, y 72–94: no wall, nothing stranded, the wood as thick inside the old rectangle as it is on each side of it, the ash still drifting through its last rows, and no ring of outcrops round a rectangle of nothing',
         alien === 0 && (mix[T.WALL] || 0) === 0 && stranded === 0 && floor + solid === 575 && floor >= 500 && matches && region === 'Wolfwood' && ringRock === 0 && woodRock > 10 && spawns >= 1 && ashIn > 0 && ashOut > 0,
         { open: floor, solid, alien, walls: mix[T.WALL] || 0, stranded, region, spawnsBack: spawns, ringRock, ringChecked: U.stats().ring, ringSoftened: U.stats().softened, woodRock,
