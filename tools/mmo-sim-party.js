@@ -87,7 +87,7 @@ async function main() {
   await login(A, 'MudGoll');
   await login(B, 'Sam');
   tick(4);
-  const spot = openSpot(40, 24);
+  const spot = openSpot(A.ATLAS.world.tx(40), A.ATLAS.world.ty(24));   // open ground in the Goblin Fields (the stretched world)
   A.FANGLANDS.tp(spot.x, spot.y); B.FANGLANDS.tp(spot.x + 2, spot.y + 2);
   tick(20);   // presence reaches the Room: it measures the party's ground from the admin's last p
   line('MudGoll (an admin) and Sam (a player) are in the world, and the Room says who is the admin', A.NET.online() && B.NET.online() && A.PARTY.isAdmin() && !B.PARTY.isAdmin(), { a: A.NET.me, b: B.NET.me, aAdmin: A.PARTY.isAdmin(), bAdmin: B.PARTY.isAdmin() });
