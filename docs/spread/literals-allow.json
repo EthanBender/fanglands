@@ -246,5 +246,22 @@
   {"file": "64-impact.js", "literal": "64", "line": 433, "reason": "the self-test's bomb: a 64 px blast radius, not a position"},
   {"file": "64-island.js", "literal": "y < 29", "line": 150, "reason": "instance-local (spider_den): the self-test scans the den's own grid for open cave floor"},
   {"file": "64-island.js", "literal": "x < 39", "line": 150, "reason": "instance-local (spider_den): the self-test scans the den's own grid for open cave floor"},
-  {"file": "65-palisade.js", "literal": "{ laid: 0, x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0 }", "decl": "ring", "reason": "the ring's empty starting state, filled at world-gen from the Goblin Camp region: zeros, not a position"}
+  {"file": "65-palisade.js", "literal": "{ laid: 0, x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0 }", "decl": "ring", "reason": "the ring's empty starting state, filled at world-gen from the Goblin Camp region: zeros, not a position"},
+  {"file": "66-storm.js", "literal": "[20, 22]", "decl": "ENTRY", "reason": "instance-local (stormfront): where the knight comes in on the storm deck"},
+  {"file": "66-storm.js", "literal": "[20, 24]", "decl": "DOWN_T", "reason": "instance-local (stormfront): the downdraft back to the shrine"},
+  {"file": "66-storm.js", "literal": "[20, 2]", "decl": "UP_T", "reason": "instance-local (stormfront): the updraft to the Aerie"},
+  {"file": "66-storm.js", "literal": "[10, 9]", "decl": "MASTS", "reason": "instance-local (stormfront): a mast on the storm deck"},
+  {"file": "66-storm.js", "literal": "[30, 9]", "decl": "MASTS", "reason": "instance-local (stormfront): a mast on the storm deck"},
+  {"file": "66-storm.js", "literal": "[20, 17]", "decl": "MASTS", "reason": "instance-local (stormfront): a mast on the storm deck"},
+  {"file": "66-storm.js", "literal": "[20, 11]", "decl": "BIRD_HOME", "reason": "instance-local (stormfront): the Thunderbird's home in the middle of the deck"},
+  {"file": "66-storm.js", "decl": "HOLES", "reason": "instance-local (stormfront): the 2x2 tears in the storm deck"},
+  {"file": "66-storm.js", "literal": "[8, 14]", "decl": "BOLT_DMG", "reason": "a bolt hits for 8..14: a damage range, not a position"},
+  {"file": "66-storm.js", "literal": "11 * TILE", "decl": "sight", "reason": "the Thunderbird sees 11 tiles: a range, not a position"},
+  {"file": "66-storm.js", "decl": "inDeck", "reason": "instance-local (stormfront): the deck's ellipse on the storm's own 40x26 grid"},
+  {"file": "66-storm.js", "decl": "buildStorm", "reason": "instance-local (stormfront): the storm's own map, built on its 40x26 grid"},
+  {"file": "66-storm.js", "literal": "[6, 5]", "decl": "drawWarning", "reason": "drawing: the warning ring's dash pattern in pixels"},
+  {"file": "66-storm.js", "literal": "16 * TILE", "line": 583, "reason": "the gate opening is shown within 16 tiles of the leaves: a radius, not a position"},
+  {"file": "66-storm.js", "literal": "tc(6)", "line": 702, "reason": "instance-local (stormfront): the self-test parks the Thunderbird in the deck's corner"},
+  {"file": "66-storm.js", "literal": "F.tp(20, 20)", "line": 705, "reason": "instance-local (stormfront): the self-test stands on the storm deck"},
+  {"file": "66-storm.js", "literal": "F.tp(12, 12)", "line": 712, "reason": "instance-local (stormfront): the self-test walks the storm deck's crossbar"}
 ]

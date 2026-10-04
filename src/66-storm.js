@@ -548,10 +548,13 @@
   // still turned back at the gate until Tinkerton speaks for him.
   const CITY_GATE = addTile('CITY_GATE', { tex: 'dirt', mini: '#8a6a3a' });
   INTERESTING_TILES.add(CITY_GATE);   // shut, a tap on the leaves asks about them; open, it drops out of the set below and a tap walks straight through
-  const WALL = { x0: 212, y0: 13, x1: 258, y1: 79 };   // the wall round Grubmarket, Castle Gnash, the scrap yard and the lab
-  const GATE_T = [[212, 30], [212, 31]];               // the leaves, on the road up from Harl's landing
-  const TINK_CORNER = { x: 211, y: 32 };               // 33-goblincity's TINK_GATE: the tinker's corner, OUTSIDE the wall
-  const BENCH_T = { x: 210, y: 33 };                   // his workbench in the corner (a real station, before you are ever let in)
+  // Every overworld position reads the Atlas (the spread spec, section 2: 66-storm's WALL, gate and bench are the Far
+  // Shore's one rigid frame); the leaves' top tile is the port far_shore.city_gate.
+  const FS = ATLAS.frame('far_shore');
+  const WALL = FS.rect({ x0: 212, y0: 13, x1: 258, y1: 79 });   // the wall round Grubmarket, Castle Gnash, the scrap yard and the lab
+  const GATE_T = [ATLAS.port('far_shore.city_gate'), FS.p(212, 31)];   // the leaves, on the road up from Harl's landing
+  const TINK_CORNER = FS.pt({ x: 211, y: 32 });               // 33-goblincity's TINK_GATE (the same frame): the tinker's corner, OUTSIDE the wall
+  const BENCH_T = FS.pt({ x: 210, y: 33 });                   // his workbench in the corner (a real station, before you are ever let in)
   const tinkQ = () => (quest.tinker && typeof quest.tinker === 'object') ? quest.tinker : null;
   const gateOpen = () => { const q = tinkQ(); return !!q && (q.stage || 0) >= 1; };
   let bumpT = 0, told = false, wasOpen = null;
@@ -562,11 +565,11 @@
     const set = (x, y, t) => { if (buildingAt(x, y)) return; api.setTile(x, y, t); };
     for (let x = WALL.x0; x <= WALL.x1; x++) { set(x, WALL.y0, T.CWALL); set(x, WALL.y1, T.CWALL); }
     for (let y = WALL.y0; y <= WALL.y1; y++) { set(WALL.x0, y, T.CWALL); set(WALL.x1, y, T.CWALL); }
-    for (const [x, y] of [[211, 28], [211, 33], [212, 28], [212, 33]]) set(x, y, T.CWALL);   // the gatehouse: a stub tower either side
+    for (const [x, y] of FS.pts([[211, 28], [211, 33], [212, 28], [212, 33]])) set(x, y, T.CWALL);   // the gatehouse: a stub tower either side
     for (const [x, y] of GATE_T) api.setTile(x, y, CITY_GATE);
-    for (const [x, y] of [[211, 29], [211, 30], [211, 31], [211, 32], [213, 29], [213, 30], [213, 31]]) if (!SOLID.has(api.tileAt(x, y))) api.setTile(x, y, T.DIRT);
+    for (const [x, y] of FS.pts([[211, 29], [211, 30], [211, 31], [211, 32], [213, 29], [213, 30], [213, 31]])) if (!SOLID.has(api.tileAt(x, y))) api.setTile(x, y, T.DIRT);
     api.setTile(BENCH_T.x, BENCH_T.y, T.WORKBENCH);
-    for (const [x, y] of [[209, 35], [210, 26]]) if (api.tileAt(x, y) === T.GRASS) api.setTile(x, y, T.RUBBLE);
+    for (const [x, y] of FS.pts([[209, 35], [210, 26]])) if (api.tileAt(x, y) === T.GRASS) api.setTile(x, y, T.RUBBLE);
   });
 
   // the leaves: shut until the tinker speaks for you, and never in your way again after
@@ -790,14 +793,14 @@
     player.maxHp = maxHp0; player.hp = Math.min(hp0, maxHp0); player.hurtT = 0;
 
     // ---------- B. the city gate ----------
-    const LAND = { x: 206, y: 30 };
+    const LAND = (([x, y]) => ({ x, y }))(ATLAS.port('far_shore.landing'));
     { let wall = 0; for (let x = WALL.x0; x <= WALL.x1; x++) { if (tileAt(x, WALL.y0) === T.CWALL) wall++; if (tileAt(x, WALL.y1) === T.CWALL) wall++; }
       for (let y = WALL.y0; y <= WALL.y1; y++) { if (tileAt(WALL.x0, y) === T.CWALL) wall++; if (tileAt(WALL.x1, y) === T.CWALL) wall++; }
       const gates = GATE_T.filter(([x, y]) => tileAt(x, y) === CITY_GATE).length;
-      const through = F.bfs(LAND.x, LAND.y, 220, 30);
+      const through = F.bfs(LAND.x, LAND.y, ...FS.p(220, 30));
       const was = GATE_T.map(([x, y]) => tileAt(x, y));
       for (const [x, y] of GATE_T) setTile(x, y, T.CWALL);
-      const sealed = F.bfs(LAND.x, LAND.y, 220, 30), sealedKeep = F.bfs(LAND.x, LAND.y, 224, 61), sealedLab = F.bfs(LAND.x, LAND.y, 247, 42);
+      const sealed = F.bfs(LAND.x, LAND.y, ...FS.p(220, 30)), sealedKeep = F.bfs(LAND.x, LAND.y, ...FS.p(224, 61)), sealedLab = F.bfs(LAND.x, LAND.y, ...ATLAS.port('far_shore.lab_step'));
       GATE_T.forEach(([x, y], i) => setTile(x, y, was[i]));
       check(G + 'Grubmarket is walled, and the two-leaf gate on the road up from the landing is the only way into the city',
         wall > 200 && gates === 2 && !!through && !sealed && !sealedKeep && !sealedLab && tileAt(BENCH_T.x, BENCH_T.y) === T.WORKBENCH,
@@ -818,7 +821,7 @@
       const started = !!quest.tinker && quest.tinker.stage === 1;
       const who = dialog.cur && dialog.cur.who;
       const outside = TINK_CORNER.x < WALL.x0 && !SOLID.has(tileAt(TINK_CORNER.x, TINK_CORNER.y));
-      const corner = tileAt(212, 33) === T.CWALL && tileAt(211, 33) === T.CWALL;   // the south tower he sits against
+      const corner = tileAt(...FS.p(212, 33)) === T.CWALL && tileAt(...FS.p(211, 33)) === T.CWALL;   // the south tower he sits against
       F.sim(3, []);
       const nowOpen = CITYGATE.open();
       F.tp(GATE_T[0][0] - 1, GATE_T[0][1]); F.sim(150, ['KeyD']);
