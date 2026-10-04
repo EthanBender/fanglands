@@ -149,7 +149,7 @@
   function snap() {
     for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) base[j * W + i] = tileAt(X0 + i, Y0 + j);
     snapped = true; SNAP.spawns = MONSTER_SPAWNS.length;
-    for (const k of CHUNKS.keys()) CHUNKS.delete(k);
+    for (const [k, o] of [...CHUNKS]) dropChunk(k, o);
   }
   const baseAt = (x, y) => inPlan(x, y) ? base[pi(x, y)] : -1;
   // the ground layer paints a cell only while it is still what the world made it
@@ -858,7 +858,8 @@
   // its coping): while one is as the world made it, the core skips its texture there (09-render reads GROUND_COVER), so
   // the ground is not drawn twice. At any pixel ratio: the chunks are blitted on whole device pixels (snapPx), so they meet.
   const COVERS = new Uint8Array(W * H); for (let i = 0; i < W * H; i++) COVERS[i] = GCODE[i] !== G_NONE && GCODE[i] !== G_WATER ? 1 : 0;
-  window.GROUND_COVER = (x, y) => !window.__instance && snapped && x >= X0 && y >= Y0 && x < X0 + W && y < Y0 + H && COVERS[pi(x, y)] === 1 && tileAt(x, y) === base[pi(x, y)];
+  window.GROUND_COVER = (x, y) => !window.__instance && snapped && x >= X0 && y >= Y0 && x < X0 + W && y < Y0 + H && COVERS[pi(x, y)] === 1 && tileAt(x, y) === base[pi(x, y)]
+    && CHUNK_SS[Math.floor((y - Y0) / CH) * CW + Math.floor((x - X0) / CH)] > 0;
   const isStreet = (x, y) => { const k = gcode(x, y); return k === G_STREET || k === G_GATE || k === G_BRIDGE; };
   const isWaterG = (x, y) => glyph(x, y) === '~';
   // the patterns, 48 x 48 (cached at 2x)
@@ -988,14 +989,23 @@
   // the chunks: 8 x 8 cells, painted at the screen's pixel ratio, the least recently used dropped past chunkMax
   const CH = 8, CW = Math.ceil(W / CH), CHH = Math.ceil(H / CH);
   let chunkMax = 20, chunkUse = 0;
+  // CHUNK_SS[chunk]: the pixel ratio a chunk was last painted at, 0 while it has no painted picture (not made yet, dropped,
+  // or its canvas gave no context, as an iPad short of canvas memory can). GROUND_COVER lets the core skip its own texture
+  // only under a chunk that really holds a picture, so a chunk that could not be painted shows the core's ground, never
+  // the black behind the map.
+  const CHUNK_SS = new Float32Array(CW * CHH);
+  const chunkKeyCell = k => { const m = /^(\d+),(\d+)@/.exec(k); return m ? +m[2] * CW + +m[1] : -1; };
+  function dropChunk(k, o) { CHUNKS.delete(k); const i = chunkKeyCell(k); if (i >= 0) CHUNK_SS[i] = 0; try { o.c.width = 0; o.c.height = 0; } catch (e) { } }
   function chunkHash(cx, cy) { let s = 7; for (let y = Y0 + cy * CH; y < Math.min(Y0 + H, Y0 + cy * CH + CH); y++) for (let x = X0 + cx * CH; x < Math.min(X0 + W, X0 + cx * CH + CH); x++) s = (Math.imul(s, 31) + tileAt(x, y)) | 0; return s; }
   function paintChunk(ch, cx, cy, ss) {
     const c = ch.c, cg = c.getContext ? c.getContext('2d') : null;
+    CHUNK_SS[cy * CW + cx] = 0;
     if (!cg) return;
     try {
       cg.setTransform(1, 0, 0, 1, 0, 0); cg.clearRect(0, 0, c.width, c.height);
       cg.scale(ss, ss); cg.translate(-(X0 + cx * CH) * TILE, -(Y0 + cy * CH) * TILE);
       for (let y = Y0 + cy * CH; y < Math.min(Y0 + H, Y0 + cy * CH + CH); y++) for (let x = X0 + cx * CH; x < Math.min(X0 + W, X0 + cx * CH + CH); x++) if (pristineAt(x, y)) drawCell(cg, x, y);
+      CHUNK_SS[cy * CW + cx] = ss;
     } catch (e) { }
     STATS.painted++;
   }
@@ -1014,19 +1024,37 @@
       ch = { c, used: 0, hash: hsh }; CHUNKS.set(key, ch); paintChunk(ch, cx, cy, ss);
       if (CHUNKS.size > chunkMax) {
         const old = [...CHUNKS.entries()].filter(([k]) => k !== key).sort((a, b) => a[1].used - b[1].used).slice(0, CHUNKS.size - chunkMax);
-        for (const [k, o] of old) { CHUNKS.delete(k); try { o.c.width = 0; o.c.height = 0; } catch (e) { } }
+        for (const [k, o] of old) dropChunk(k, o);
       }
     } else if (ch.hash !== hsh) { ch.hash = hsh; paintChunk(ch, cx, cy, ss); STATS.repaints++; }
     ch.used = ++chunkUse;
     return ch;
   }
+  // A knight away from the city (inside an instance, or 40 tiles past its walls) for 10 s gives its pictures back: the
+  // ground chunks (up to 47 MB of canvas at a pixel ratio of 2) and the buildings' cached pictures. Nothing kept them while
+  // he was in Aerie or the far east, on top of the Cloud Kingdom's own, under Safari's total canvas memory on an iPad.
+  // They are made again, a few a frame, when he comes back.
+  const FREE = { t: 0, freed: 0 };
+  function freePictures() {
+    for (const [k, o] of [...CHUNKS]) dropChunk(k, o);
+    for (const p of PICS.values()) { try { p.c.width = 0; p.c.height = 0; } catch (e) { } }
+    PICS.clear(); FREE.freed++;
+  }
+  HOOKS.update.push(dt => {
+    const far = !!window.__instance || player.x < (X0 - 40) * TILE || player.x > (X0 + W + 40) * TILE || player.y < (Y0 - 40) * TILE || player.y > (Y0 + H + 40) * TILE;
+    if (!far) { FREE.t = 0; return; }
+    FREE.t += dt;
+    if (FREE.t >= 10 && (CHUNKS.size || PICS.size)) freePictures();
+  });
   // the town's door steps and the things lying on its paving: the chunks cover the core's, so they are drawn again on top
   const STEP_LIST = () => BUILDINGS.filter(b => inTown(b.x, b.y)).map(b => { const [sx, sy] = stepOf(b); return { sx, sy, up: b.door === undefined, coffin: !!b.coffin }; });
   function drawGround(g, c) {
     const cx0 = Math.max(0, Math.floor((c.x / TILE - X0) / CH)), cx1 = Math.min(CW - 1, Math.floor(((c.x + VW) / TILE - X0) / CH));
     const cy0 = Math.max(0, Math.floor((c.y / TILE - Y0) / CH)), cy1 = Math.min(CHH - 1, Math.floor(((c.y + VH) / TILE - Y0) / CH));
     if (cx1 < cx0 || cy1 < cy0) return;
-    chunkMax = Math.min(40, Math.max(chunkMax, (cx1 - cx0 + 1) * (cy1 - cy0 + 1) + 4));
+    // room for every chunk in view and a few more; a view of more than 40 (a 4K screen at 100%, a browser zoomed far out)
+    // may keep all 48 of the plan, or it would drop and repaint every chunk in view on every frame
+    chunkMax = Math.min(CW * CHH, Math.max(chunkMax, (cx1 - cx0 + 1) * (cy1 - cy0 + 1) + 4));
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
       const ch = groundChunk(cx, cy); if (!ch.c.width) continue;
       const ox = Math.round(c.x), oy = Math.round(c.y), wx = (X0 + cx * CH) * TILE, wy = (Y0 + cy * CH) * TILE;
@@ -2929,6 +2957,22 @@
       }
       check(P + 'C19b the inn, h6 and h7 each draw one porch over the step behind the house (their door on the north wall), sorted before a knight standing on that step',
         Object.values(r).every(v => v.porches === 1 && v.before), r); }
+
+    // ---- C19c. the city's pictures: given back after 10 s away and made again on return; a ground chunk whose canvas gave
+    // no context (an iPad short of canvas memory) lets the core's own ground show under it, never the black behind the map ----
+    { leave(); onFoot(); drain(); F.tp(112, 33); F.step([]); render(); const r = { had: CHUNKS.size > 0 && PICS.size > 0 };
+      const inst = window.INSTANCES && INSTANCES.enter('war_shed'); F.sim(9 * 60, []); r.kept = CHUNKS.size > 0; F.sim(90, []);
+      r.freed = !!inst && CHUNKS.size === 0 && PICS.size === 0 && FREE.freed >= 1; leave();
+      F.tp(112, 33); F.step([]); render(); render(); r.back = CHUNKS.size > 0 && window.GROUND_COVER(112, 32) === true;
+      const ci = Math.floor((32 - Y0) / CH) * CW + Math.floor((112 - X0) / CH), key = [...CHUNKS.keys()].find(k => chunkKeyCell(k) === ci);
+      if (key) dropChunk(key, CHUNKS.get(key));
+      const ce = document.createElement;
+      document.createElement = function (t) { const c = ce.apply(document, arguments); if (String(t).toLowerCase() === 'canvas') c.getContext = () => null; return c; };
+      try { render(); r.blankCovered = window.GROUND_COVER(112, 32); } finally { document.createElement = ce; }
+      const key2 = [...CHUNKS.keys()].find(k => chunkKeyCell(k) === ci); if (key2) dropChunk(key2, CHUNKS.get(key2));
+      render(); render(); r.again = window.GROUND_COVER(112, 32) === true;
+      check(P + "C19c the city's ground chunks and building pictures are given back after 10 s in an instance (not after 9) and made again on return; a chunk whose canvas gives no context does not hide the core's ground (GROUND_COVER false there), and once painted it covers again",
+        r.had && r.kept && r.freed && r.back && r.blankCovered === false && r.again, r); }
 
     // ---- C24. a knight's machines and wrecks in the new city are his: never moved or deleted by a load ----
     { leave(); onFoot(); drain(); save();
