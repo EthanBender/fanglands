@@ -53,7 +53,28 @@ One literal changed at a time in a scratch copy of src/ (never committed), built
 | 29-quests (a quest position) | the cave notice board `BOARD_TILES[1]` 24,6 -> 24,5 | `map` (tile 24,5 0 -> 106; tile 24,6 106 -> 6) |
 | 92-worldshape (an outline point) | the Goblin Fields' bay `!near(x, y, 66, 57, 13, 7)` -> 67 | `map`, `worldshape`, `atlas` (tiles 32,59 ...) |
 
-Notes on the proof:
+Second round (the Stage 0 review, 3 Oct 2026; baseline master 4a374f0). The review found tables the fingerprint could
+not see. The tool now also hashes the primed map hooks, every night light, every `window.*` handle, and two render
+sweeps (every canvas call over the whole overworld at night, on the new game and on a later world). Each of the
+review's mutation builds, which the first tool called identical, now differs:
+
+| Mutation (review build) | `--diff` names |
+|---|---|
+| 95-thistledown lamp light `tc(x)` -> `tc(x + 1)` | `night_lights`, `render`, `render_late` |
+| 28-thefang summoning-circle light `tc(CIRCLE_T.x)` -> `+ 1` | `render`, `render_late` |
+| 50-economy Fennick target 116,27 -> 117,27 | `map_hooks` (orders.taken primed) |
+| 95-thistledown sundial target 133,18 -> 134,18 | `map_hooks` (capital.bell 3 primed) |
+| 31-rebuild rebuilt Tam 137,81 -> 138,81 | `render_late` (the view centred on tile 135,80) |
+| 20-hollowford WRECK_SPOTS 144,47 -> 145,47 | `render_late`, `late_diffs` |
+| 63-house return STEP 117,18 -> 117,19 | `exports` (HOUSE.STEP) |
+| the four together (combo4) | `map_hooks`, `night_lights`, `render`, `render_late` |
+
+The unmutated review build and this branch are identical to the baseline; two runs of one build give the same hashes
+(clocks and dice are fixed for the new game and the sweeps). Only HOOKS.mapTarget 73-players (a friend you follow) and
+77-dropparty (a live party's crackers) answer nothing in every primed state; both are positions sent by the server, not
+the map's. `--diff` prints them as notes, with the handles that differ between two boots (CAPITAL, KINGDOM: by name only).
+
+Notes on the first proof:
 - 29-quests places no NPC of its own (its people are 02-world's, by id); the notice board's tile is the position it
   owns, so that is the literal moved.
 - A first try at 92 moved the Goblin Fields' east headland `near(x, y, 150, 52, 10, 8)` by one tile and the fingerprint
