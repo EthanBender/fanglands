@@ -719,5 +719,7 @@
   {"file": "42-playthrough.js", "literal": "6 * TILE", "decl": "play", "reason": "the play bot's reach round the cage and its loot radius (6 tiles): a distance"},
   {"file": "42-playthrough.js", "literal": "9 * TILE", "decl": "play", "reason": "the play bot's brawl radius at the Barrelbeast (9 tiles): a distance"},
   {"file": "42-playthrough.js", "literal": "40 * TILE", "decl": "play", "reason": "the play bot's brawl radius for the Thunderbird (40 tiles): a distance"},
-  {"file": "42-playthrough.js", "literal": "useAt(20, 2)", "decl": "play", "reason": "instance-local (stormfront): the updraft up into Aerie in the storm's own coordinates"}
+  {"file": "42-playthrough.js", "literal": "useAt(20, 2)", "decl": "play", "reason": "instance-local (stormfront): the updraft up into Aerie in the storm's own coordinates"},
+  {"file": "tools/golem-sim.js", "literal": "FANGLANDS.tp(24, 37)", "decl": "main", "reason": "instance-local (royalmine): the golem's chamber in the Royal Mine's own coordinates"},
+  {"file": "tools/golem-sim.js", "literal": "FANGLANDS.tp(30, 36)", "decl": "main", "reason": "instance-local (royalmine): the golem's chamber in the Royal Mine's own coordinates"}
 ]
