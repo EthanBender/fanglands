@@ -149,12 +149,12 @@
     const seaMade = new Set(), seaX0 = W.ix(SEA.x0);
     for (let y = W.ty(1); y <= W.ty(94); y++) for (let x = W.tx(150); x <= W.tx(175); x++) {
       if (!free(x, y)) continue;
-      const ox = W.ix(x - W.pin('sea', 0, y)), oy = W.iy(y);
+      const pinX = W.pin('sea', 0, y), sx = SEA.x0 + Math.round(pinX), ox = W.ix(x - pinX), oy = W.iy(y);   // sx: the sea's straight start on this row (26-boats', pinned the same way)
       let v = (ox - seaX0) + (cn(ox, oy) * 2 - 1) * 8;
       for (const [cx, cy, r, sg] of COVES) { const d = dist(ox, oy, cx, cy); if (d < r + 1.5) v += sg * (r + 1.5 - d) * 2.5; }
       const t = at(x, y);
-      if (v > 0) { if (LANDY.has(t) || (t === T.SAND && x >= SEA.x0)) { set(x, y, T.WATER); seaMade.add(idx(x, y)); S.coast.toWater++; } }
-      else if (t === T.WATER || (t === T.SAND && x <= SEA.x0 + 1)) { set(x, y, T.GRASS); S.coast.toLand++; }
+      if (v > 0) { if (LANDY.has(t) || (t === T.SAND && x >= sx)) { set(x, y, T.WATER); seaMade.add(idx(x, y)); S.coast.toWater++; } }
+      else if (t === T.WATER || (t === T.SAND && x <= sx + 1)) { set(x, y, T.GRASS); S.coast.toLand++; }
     }
     // the sea's south end against the jungle was a ruler line too
     for (let y = W.ty(91); y <= W.ty(99); y++) for (let x = W.tx(164); x <= W.tx(198); x++) {
@@ -237,9 +237,10 @@
     const rn = makeNoise(SEED + 5, 5);
     const ring1 = [];
     for (let y = W.ty(0); y <= W.ty(99); y++) for (let x = W.tx(148); x <= W.tx(199); x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y]);
-    if (FAR) for (let y = FS.y(4); y <= FS.y(95); y++) for (let x = FS.x(200); x <= FS.x(211); x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y]); // the strait's new edge
+    if (FAR) for (let y = FS.y(4); y <= FS.y(95); y++) for (let x = FS.x(200); x <= FS.x(211); x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y, FS]); // the strait's new edge (the Far Shore's own)
     for (const [x, y] of ring1) { set(x, y, T.SAND); S.rim++; }
-    for (const [x, y] of ring1) for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (free(nx, ny) && RIMMABLE.has(at(nx, ny)) && rn(W.ix(nx), W.iy(ny)) > 0.5) { set(nx, ny, T.SAND); S.rim++; } }
+    // the second sand tile's noise is read in the OLD coordinates of whoever owns the edge: the strait's in the Far Shore's frame, so its beach keeps its shape
+    for (const [x, y, F = W] of ring1) for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (free(nx, ny) && RIMMABLE.has(at(nx, ny)) && rn(F.ix(nx), F.iy(ny)) > 0.5) { set(nx, ny, T.SAND); S.rim++; } }
     set(SHORE[0], SHORE[1], T.SAND); // the boats' shore check (also guarded, belt and braces)
 
     // ---- 4. biome edges: swap tiles across each straight seam by noise so the boundary wanders ----
