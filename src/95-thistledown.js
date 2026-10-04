@@ -654,10 +654,13 @@
   // 8. every tick: the wards, Osric's welcome, the plinth, the bell
   // =========================================================================
   const WARD = { name: null, shown: null, since: -1e9, region: null, log: [] };
-  const BARK = { t: 0, pending: false, log: [] };
+  const BARK = { t: 0, pending: false, quiet: 0, log: [] };
   // a banner across the top of the screen that the welcome tag would sit under, or a talk box (on a phone the Voice's box
   // is at the top of the screen, right where the tag is)
-  const bannerUp = () => !!(dialog.cur || (areaBanner && areaBanner.t > 0.3) || (typeof levelBanner !== 'undefined' && levelBanner && levelBanner.t > 0.3));
+  // (while it fades too: at 0.3 s left a phone's THISTLEDOWN plate still showed, right over the tag)
+  const bannerUp = () => !!(dialog.cur || (areaBanner && areaBanner.t > 0) || (typeof levelBanner !== 'undefined' && levelBanner && levelBanner.t > 0));
+  // and a short breath after the banner has gone, so the two never arrive together
+  const BARK_QUIET = 0.4;
   const PL = PLAN.PLINTH;
   HOOKS.update.push(dt => {
     const q = Q();
@@ -678,7 +681,8 @@
       const d = dist(player.x, player.y, os.px, os.py);
       if (d <= 3 * TILE) BARK.pending = true;
       else if (d > 9 * TILE) BARK.pending = false;
-      if (BARK.pending && !bannerUp()) { BARK.pending = false; q.barked = true; BARK.t = 4; BARK.log.push({ t: time, area: !!areaBanner, level: !!levelBanner }); save(); }
+      if (BARK.pending && !bannerUp()) BARK.quiet += dt; else BARK.quiet = 0;
+      if (BARK.pending && BARK.quiet >= BARK_QUIET) { BARK.pending = false; BARK.quiet = 0; q.barked = true; BARK.t = 4; BARK.log.push({ t: time, area: !!areaBanner, level: !!levelBanner }); save(); }
     }
     // the waiting plinth, once it holds the knight who slew the Fang
     if (statueDone() && !q.plinthTold && !dialog.cur && !dialog.queue.length && dist(player.x, player.y, tc(PL.x), tc(PL.y)) <= 8 * TILE) {
@@ -704,7 +708,7 @@
   function resetCapital() {
     quest.capital = fresh(); player.cityV = 1;
     WARD.name = null; WARD.shown = null; WARD.since = -1e9; WARD.region = null; WARD.log.length = 0;
-    BARK.t = 0; BARK.pending = false; TALK.ambrose = 0; TALK.wynn = 0; CAT.t0 = -99; BELLST.prev = null; BELLST.swingT0 = -99;
+    BARK.t = 0; BARK.pending = false; BARK.quiet = 0; TALK.ambrose = 0; TALK.wynn = 0; CAT.t0 = -99; BELLST.prev = null; BELLST.swingT0 = -99;
     KEEP_CLEAR = null;
   }
   HOOKS.newGame.push(resetCapital);
@@ -3057,21 +3061,24 @@
     { const r = {}, q = Q();
       // Osric calls "Welcome to Thistledown!" once, the first time a knight comes within 3 tiles, as a tag (not a dialog)
       onFoot(); drain(); areaBanner = null; levelBanner = null; q.barked = false; BARK.t = 0; BARK.pending = false; F.tp(96, 32); F.step([]); const before = BARK.t;
-      F.tp(91, 32); F.step([]); const on = BARK.t > 3.9 && q.barked && !said().some(d => /Welcome to Thistledown!/.test(d.text));
+      F.tp(91, 32); F.sim(30, []); const on = BARK.t > 3.4 && q.barked && !said().some(d => /Welcome to Thistledown!/.test(d.text));
       const cap = { items: null }; const hook = (g, items) => { cap.items = items; }; HOOKS.draw.push(hook); try { render(); } finally { HOOKS.draw.splice(HOOKS.draw.indexOf(hook), 1); }
       const tagItem = (cap.items || []).some(i => i.capital && i.y === 1e9 + 3);
-      BARK.t = 0; F.tp(96, 32); F.step([]); F.tp(91, 32); F.step([]); const once = BARK.t === 0;
+      BARK.t = 0; F.tp(96, 32); F.step([]); F.tp(91, 32); F.sim(30, []); const once = BARK.t === 0;
       r.bark = before === 0 && on && tagItem && once;
       // ... but never under a banner: with THISTLEDOWN still up he waits, and calls out once it has gone
       q.barked = false; BARK.t = 0; BARK.pending = false; F.tp(96, 32); F.step([]);
       areaBanner = { name: 'Thistledown', sub: 'The city that still stands', t: 2.5 }; F.tp(91, 32); F.step([]);
       for (let k = 0; k < 30; k++) F.step([]);
-      const held = BARK.t === 0 && BARK.pending && !q.barked && !!areaBanner;
+      const held0 = BARK.t === 0 && BARK.pending && !q.barked && !!areaBanner;
+      // still waiting while the banner fades (0.25 s left), and for a breath after it has gone
+      areaBanner.t = 0.25; F.step([]); const heldFade = BARK.t === 0 && !q.barked; areaBanner = null; F.sim(12, []); const heldBreath = BARK.t === 0 && !q.barked;
+      const held = held0 && heldFade && heldBreath;
       // the banner goes, but the Voice is talking (its box is at the top of a phone's screen): he waits for that too
       say('A line from the Voice.', 'The Voice'); areaBanner = null; F.step([]); const heldTalk = BARK.t === 0 && BARK.pending && !q.barked;
-      drain(); F.step([]); const after = BARK.t > 3.5 && q.barked && !areaBanner;
+      drain(); F.sim(30, []); const after = BARK.t > 3.4 && q.barked && !areaBanner;
       r.barkHeld = held && heldTalk && after;
-      if (!r.barkHeld) r.barkWhy = { held, heldTalk, after };
+      if (!r.barkHeld) r.barkWhy = { held0, heldFade, heldBreath, heldTalk, after };
       // the town's new people have names no one else in the Fanglands has (a second Nell muddled Hollowford's Nell)
       const ours = new Set(PLAN.PEOPLE.map(p => p.name).concat(KIDS.map(k => k.name), ['Duchess']));
       const clash = NPCS.filter(n => !PLAN.PEOPLE.some(p => p.id === n.id)).map(n => n.name).filter(nm => ours.has(nm) || [...ours].some(o => o.split(' ')[0] === String(nm).split(' ')[0]));
