@@ -235,12 +235,13 @@
     if (n && n !== me) {
       if (!S.puppets) {
         S.parked[S.map] = monsters;
-        // a game that kept this map hands it on (to the world's copy taking it over, docs/ONLINE.md Stage 2, or to another
-        // knight): the monsters on its own screen (within NEAR) stay standing as puppets, where they were, until the new
-        // keeper's first mon (applyMon), so the screen never blinks empty for a round trip. Only the old keeper does this: a
-        // game arriving on a map knows nothing yet.
+        // a game that kept this map hands it to the world's copy taking it over (docs/ONLINE.md Stage 2): the monsters on its
+        // own screen (within NEAR) stay standing as puppets, where they were, until the world's first mon (applyMon), so the
+        // screen never blinks empty for a round trip. Only the old keeper does this (a game arriving on a map knows nothing
+        // yet), and only for the world: a knight-to-knight change is exactly as it always was, so with every switch off
+        // nothing here differs from before Stage 2.
         const seed = [];
-        if (S.keeper && S.keeper === me) for (const m of monsters) {
+        if (S.keeper && S.keeper === me && typeof n === 'string' && n.indexOf('@world:') === 0) for (const m of monsters) {
           if (!m.nid || m.dead || m.remote || m.phantom || dist(m.x, m.y, player.x, player.y) > NEAR) continue;
           const p = makePuppet(m.nid, m.type, m.x, m.y); if (!p) continue;
           p.seed = true;
@@ -610,15 +611,23 @@
         push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 }); }
       // (b) a non-keeper shows puppets that hold still while the stream is silent
       const nearReal = real.filter(m => m.nid && !m.dead && !m.remote && dist(m.x, m.y, player.x, player.y) <= NEAR).map(m => m.nid).sort();
+      // (b-) handing the map to another knight is exactly as before Stage 2: no monster is held up on this screen; and the map
+      // coming back to this game hands back the very array it ran
       push({ t: 'keeper', map: 'over', n: 'Ann' });
+      const toKnight = (COOP.puppets() || []).length;
+      push({ t: 'keeper', map: 'over', n: 'Cohen' });
+      check(P + 'a keeper handing its map to another knight holds nothing up on its screen (as before the shared world), and gets its own monsters back', toKnight === 0 && COOP.isKeeper() && monsters === real, { toKnight, keeper: COOP.keeper(), same: monsters === real });
+      // (b0) handing the map to the world's copy: until the first mon from whoever keeps it next, this screen keeps showing the
+      // monsters it ran, where they stood
+      push({ t: 'keeper', map: 'over', n: '@world:over' });
       const parked = COOP.parked;
-      // (b0) handing the map on: until Ann's first mon this screen keeps showing the monsters it ran, where they stood
       const seeded = (COOP.puppets() || []).filter(p => p.seed), gs = seeded.find(p => p.nid === gob.nid);
+      push({ t: 'keeper', map: 'over', n: 'Ann' });
       const ax = gob.home.x, ay = gob.home.y;
       const row = (nid, type, x, y, hp, mhp, state) => [nid, type, x, y, hp, mhp, state, 1, 0, 0, 0, 0, 0, 0];
       push({ t: 'mon', n: 'Ann', list: [row('Ann:1', 'goblin', ax, ay, 12, 12, 'idle'), row(s0.nid, s0.type, ax + 40, ay + 40, 5, s0.maxHp, 'chase')] });
       { const left = monsters.filter(m => m.seed).length, listed = !!COOP.find(s0.nid) && !COOP.find(s0.nid).seed;
-        check(P + 'a keeper handing its map on keeps showing the monsters on its screen (same nids, places and hp) until the new keeper\'s first mon, which then decides', seeded.length === nearReal.length && seeded.length > 0 && seeded.map(p => p.nid).sort().join() === nearReal.join() && !!gs && gs.x === gob.x && gs.y === gob.y && gs.hp === gob.hp && gs.remote && left === 0 && listed, { seeded: seeded.length, near: nearReal.length, gob: gs && [gs.x - gob.x, gs.y - gob.y, gs.hp], left, listed }); }
+        check(P + 'a keeper handing its map to the world keeps showing the monsters on its screen (same nids, places and hp) until the next keeper\'s first mon, which then decides', seeded.length === nearReal.length && seeded.length > 0 && seeded.map(p => p.nid).sort().join() === nearReal.join() && !!gs && gs.x === gob.x && gs.y === gob.y && gs.hp === gob.hp && gs.remote && left === 0 && listed, { seeded: seeded.length, near: nearReal.length, gob: gs && [gs.x - gob.x, gs.y - gob.y, gs.hp], left, listed }); }
       const p1 = COOP.find('Ann:1'), p2 = COOP.find(s0.nid);
       // (b2) moving (row 9) and hurt (row 10) land in the right fields: a walking monster walks and is not pink, a hurt one flashes
       { push({ t: 'mon', n: 'Ann', list: [['Ann:w', 'goblin', ax + 80, ay, 12, 12, 'chase', 1, 0, 1, 0, 0, 0, 0], ['Ann:h', 'goblin', ax + 120, ay, 9, 12, 'idle', 1, 0, 0, 0.18, 0, 0, 0]] });

@@ -15,9 +15,14 @@
 //   worlds.fell(map, reason, row)   SimHost's onFallback: the watchdog handed the map back
 //
 // Taking a map over: the first knight in keeps it in his own game; the Room's alarm builds the copy right after, the copy reads
-// the keeper's stream as a non-keeper (it is told his name), and at the first mon it read (or JOIN_WAIT with none) the virtual
-// knight becomes keeper: the copy's handoff() makes the puppets real (same nids, hp, positions). Handing it back: the copy is
-// dropped and the Room elects a real knight, whose game's handoff() makes its puppets real. Pure JavaScript.
+// the keeper's stream as a non-keeper (it is told his name), and at the first mon with monsters in it (or JOIN_WAIT with none)
+// the virtual knight becomes keeper: the copy's handoff() makes the puppets real (same nids, hp, positions). A keeper alone on
+// his map sends only an empty heartbeat, which says nothing about his monsters: the copy then keeps its own standing. Handing
+// it back: the copy is dropped and the Room elects a real knight, whose game's handoff() makes its puppets real.
+// The Room's alarm is armed only for a copy to build and a take-over to finish: a world-run map that has gone quiet is noticed
+// on its knights' own presence (each playing game sends one at least once a second), so a knight alone costs no alarms.
+// A knight whose game has sent no presence for SILENT ms (a locked iPad, a paused game) is told to the copy as fallen, so no
+// monster fights him while he cannot play (in his own game as a lone keeper his monsters stop with him). Pure JavaScript.
 // ============================================================================
 import { Interest } from './interest.js';
 import { SimBook } from './book.js';
@@ -29,6 +34,7 @@ export const WORLD_READY = ['deepholm', 'aerie', 'coalmine'];
 export const MODES = ['keeper', 'world'];
 export const JOIN_WAIT = 1500;       // ms a new copy waits for the keeper's first mon before it takes the map with its own monsters
 export const STALE = 3000;           // ms: a world-run map whose copy has not ticked this long goes back to a knight (KEEPER_STALE)
+export const SILENT = 3000;          // ms without a knight's presence before the copy takes him for fallen (73-players sends one a second)
 export const REALM_EVERY = 50;       // ticks between realm_state checks (5 s)
 export const virtualName = map => '@world:' + map;
 const wireOf = map => typeof map === 'string' && map.startsWith('house') ? 'house' : map;
@@ -57,13 +63,31 @@ export class Worlds {
     this.bootDue = new Map();      // map -> when to build its copy
     this.views = new WeakMap();    // knight -> Interest
     this.mons = new Map();         // map -> world mons relayed (for realm_state)
+    this.quiet = new Map();        // map -> the names of its knights the copy was last told are silent (joined by ',')
   }
   now() { return this.room.now(); }
   useHost(host) {
     this.host = host || null; this.loaded = !!host;
+    this.announce();
     // a map waiting for a copy is built now
     if (host) for (const [map, g] of this.room.maps) if (this.modeOf(map) === 'world' && g.members.size && !this.v.has(map)) this.bootDue.set(map, this.now());
     this.room.arm();
+  }
+  // the World could not load the copy: every map stays with a knight's game (announced, as below)
+  noCopy() { this.loaded = false; this.announce(); }
+  // A wake, a deploy or an eviction rebuilds the Room from its sockets before the copy has loaded: on a map switched to the world
+  // the Room then picks a real knight as keeper without a word (restore is silent: everyone was told before the nap, but what they
+  // were told was '@world:<map>'). His game would go on showing puppets of a copy that is gone, and the Room would drop his hits
+  // as a keeper's. So each such keeper is named to everyone on his map now: his game's handoff() makes its puppets real (the
+  // copy's last nids, hp and positions) and it streams as any keeper does, which the new copy reads to take the map back over.
+  announce() {
+    for (const [map, g] of this.room.maps) {
+      if (this.wants(this.sw, map) !== 'world' || this.v.has(map)) continue;
+      const k = g.keeper;
+      if (!k || k.virtual || !g.members.has(k)) continue;
+      const out = this.keeperMsg(map, k);
+      for (const o of g.members) if (o.hello) this.room.send(o.sock, out);
+    }
   }
   modeOf(map) {
     return !!this.host && this.sw.master === 'on' && this.sw.maps[map] === 'world' && !this.sw.held[map] && WORLD_READY.includes(map) && !NEVER.has(map) ? 'world' : 'keeper';
@@ -115,7 +139,7 @@ export class Worlds {
     const vk = this.joinVirtual(this.sockFor(map), virtualName(map), map);
     if (!live) this.readRealm(map, c);
     const real = g.keeper && !g.keeper.virtual && g.members.has(g.keeper) ? g.keeper : null;
-    this.host.setKnights(map, this.knightsOf(map));
+    this.tell(map);
     if (live || !real) { this.finish(map); return true; }
     // the copy starts as a non-keeper fed by the knight who keeps the map now
     this.host.deliver(map, { t: 'keeper', map, n: real.name });
@@ -163,15 +187,15 @@ export class Worlds {
   }
   entered(k, map) {
     if (this.modeOf(map) !== 'world') return;
-    if (this.v.has(map)) this.host.setKnights(map, this.knightsOf(map));
+    if (this.v.has(map)) this.tell(map);
     else this.wanted(map);
   }
   // a knight left the map (already out of its members)
   leaving(k, map, g) {
     const vk = this.v.get(map);
     if (!vk) return;
-    if (!g.members.size) { this.v.delete(map); this.mons.delete(map); if (this.host) this.host.setKnights(map, []); return; }
-    this.host.setKnights(map, this.knightsOf(map));
+    if (!g.members.size) { this.v.delete(map); this.mons.delete(map); this.quiet.delete(map); if (this.host) this.host.setKnights(map, []); return; }
+    this.tell(map);
   }
   // the election, for a world-run map: the virtual knight keeps it (and a join whose keeper left finishes now)
   holds(map, g) {
@@ -184,23 +208,51 @@ export class Worlds {
   presence(k, m) {
     const p = k.pres || (k.pres = {});
     for (const f of PRES) { const v = num(m[f]); if (v !== null) p[f] = v; }
-    if (this.v.has(k.map)) this.host.setKnights(k.map, this.knightsOf(k.map));
+    // a copy that has stopped ticking is noticed here, on a presence the Room is handling anyway (no alarm of its own)
+    this.staleCheck(k.map);
+    if (this.v.has(k.map)) this.tell(k.map);
   }
-  // the keeper's own snapshot, while a copy is reading it to take the map over
+  // the keeper's own snapshot, while a copy is reading it to take the map over. An empty one is a lone keeper's heartbeat: it
+  // lists nothing because nobody else is near him, not because his monsters are gone, so it is not read (JOIN_WAIT finishes)
   keeperMon(k, m) {
     const vk = this.v.get(k.map), g = this.room.maps.get(k.map);
-    if (!vk || vk.state !== 'joining' || !g || g.keeper !== k || !Array.isArray(m.list)) return;
+    if (!vk || vk.state !== 'joining' || !g || g.keeper !== k || !Array.isArray(m.list) || !m.list.length) return;
     this.host.deliver(k.map, { t: 'mon', n: k.name, list: m.list });
     this.finish(k.map);
   }
+  // a knight the copy should not fight: fallen, or his game silent for SILENT ms (it is then told he has fallen; he comes back
+  // with his next presence)
+  silentOf(k, now) { return now - Math.max(k.pAt || 0, k.mapAt || 0) > SILENT; }
   knightsOf(map) {
-    const g = this.room.maps.get(map), out = [];
+    const g = this.room.maps.get(map), out = [], now = this.now();
     if (!g) return out;
     for (const k of g.members) {
       if (!k.hello || k.virtual || k.x == null || k.y == null) continue;
-      out.push(Object.assign({ n: k.name, x: k.x, y: k.y, dead: !!k.dead }, k.pres || {}));
+      out.push(Object.assign({ n: k.name, x: k.x, y: k.y }, k.pres || {}, { dead: !!k.dead || this.silentOf(k, now) }));
     }
     return out;
+  }
+  // hand the copy its knights, and remember which of them it was told are silent
+  tell(map) {
+    const list = this.knightsOf(map), g = this.room.maps.get(map), now = this.now(), q = [];
+    if (g) for (const k of g.members) if (!k.virtual && k.hello && this.silentOf(k, now)) q.push(k.lc);
+    this.quiet.set(map, q.join(','));
+    this.host.setKnights(map, list);
+  }
+  // every tick (fromCopy): a knight who has just gone silent is told to the copy as fallen
+  quietCheck(map) {
+    const g = this.room.maps.get(map); if (!g) return;
+    const now = this.now(), q = [];
+    for (const k of g.members) if (!k.virtual && k.hello && this.silentOf(k, now)) q.push(k.lc);
+    if (q.join(',') !== (this.quiet.get(map) || '')) this.tell(map);
+  }
+  staleCheck(map) {
+    const vk = this.v.get(map);
+    if (!vk || vk.state !== 'world') return false;
+    const g = this.room.maps.get(map);
+    if (!g || !g.members.size || this.now() - vk.monAt <= STALE) return false;
+    this.handBack(map, 'stale', true);
+    return true;
   }
   viewOf(k) { let v = this.views.get(k); if (!v) { v = new Interest(); this.views.set(k, v); } return v; }
   keeperMsg(map, keeper) {
@@ -219,6 +271,7 @@ export class Worlds {
       if (m.t === 'mon' && m.world) {
         if (vk.state !== 'world') continue;
         vk.monAt = this.now(); vk.ticks++;
+        this.quietCheck(map);
         const rows = Array.isArray(m.list) ? m.list : [];
         for (const k of g.members) {
           if (!k.hello) continue;
@@ -255,14 +308,14 @@ export class Worlds {
   }
 
   // ---------- the Room's clock ----------
+  // Only a copy to build and a take-over to finish arm the alarm (each alarm is a billed request). A world-run map's copy ticks
+  // on SimHost's own setTimeout loop, and one gone quiet is caught by staleCheck on its knights' presence and on any tick the
+  // Room runs anyway: never by an alarm of its own, so a knight alone on a world-run map costs no more requests than today.
   due() {
     let d = null;
     const min = t => { if (t != null && (d == null || t < d)) d = t; };
     for (const t of this.bootDue.values()) min(t);
-    for (const [map, vk] of this.v) {
-      if (vk.state === 'joining') min(vk.joinDue);
-      else { const g = this.room.maps.get(map); if (g && g.members.size) min(vk.monAt + STALE + 50); }
-    }
+    for (const vk of this.v.values()) if (vk.state === 'joining') min(vk.joinDue);
     return d;
   }
   tick() {
@@ -270,7 +323,7 @@ export class Worlds {
     for (const [map, at] of Array.from(this.bootDue)) if (at <= now) { if (this.host) this.boot(map); else this.bootDue.delete(map); }
     for (const [map, vk] of Array.from(this.v)) {
       if (vk.state === 'joining' && vk.joinDue != null && vk.joinDue <= now) this.finish(map);
-      else if (vk.state === 'world') { const g = this.room.maps.get(map); if (g && g.members.size && now - vk.monAt > STALE) this.handBack(map, 'stale', true); }
+      else this.staleCheck(map);
     }
   }
 

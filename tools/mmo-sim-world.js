@@ -15,6 +15,16 @@
 //   5. a game with no caps (an older page: hello is only {t, v}) plays as before: it is told the world keeps the map and
 //      shows its monsters
 //   6. an admin's spawn reaches the copy: Ann (an admin) spawns 2 goblins; the copy makes them, both games show them
+//   7. a knight ALONE on a map that is switched to 'world' mid-fight (Dee in the Aerie, a sentinel chasing her): her game sends
+//      only its empty heartbeat, so the copy keeps its own monsters standing: nothing vanishes on her screen, nothing near her
+//      is laid down in the copy, and the world keeps the Aerie
+//   8. a world-run map rebuilt with no stream (a wake, a deploy or an eviction: the Room comes back from its sockets before the
+//      game copy has loaded): the knight the Room picks is TOLD he keeps the map, so his game runs it (his own hits land) until
+//      the new copy takes over; nothing vanishes on his screen, nothing near him lies down in the copy; Deepholm (two knights)
+//      comes back to the world from its keeper's stream
+//   9. a knight whose game stops (an iPad locked, a game paused) with a sentinel after her: after SILENT (3 s) the copy takes her
+//      for fallen, so no blow lands on her socket while she cannot play (30 s); when her game sends presence again the copy
+//      fights her again
 // Exit 0 only when every line passes. The plumbing is tools/mmo-sim.js's (the fake wire, the game contexts, the Room loader).
 'use strict';
 const vm = require('vm');
@@ -35,10 +45,10 @@ async function main() {
   const timer = { set: (f, ms) => { const id = ++seq; timers.push({ id, at: vnow + Math.max(0, ms), f }); return id; }, clear: id => { const i = timers.findIndex(t => t.id === id); if (i >= 0) timers.splice(i, 1); } };
   const pump = () => { for (let guard = 0; guard < 100; guard++) { timers.sort((a, b) => a.at - b.at || a.id - b.id); if (!timers.length || timers[0].at > vnow) break; timers.shift().f(); } };
   const book = new SimBook(null, now);
-  const room = await loadRoom(now, { simBook: book });
+  let room = await loadRoom(now, { simBook: book });
   room.store.addAccount('Ann', 'admin'); room.store.addAccount('Ben'); room.store.addAccount('Cy');
   let inject = null;
-  const host = new SimHost({ makeGame: strip.makeGame, now, clock: () => performance.now(), timer, seed: 77,
+  let host = new SimHost({ makeGame: strip.makeGame, now, clock: () => performance.now(), timer, seed: 77,
     onFallback: (m, r, row) => room.worlds.fell(m, r, row), onSend: (m, l) => room.worlds.fromCopy(m, l) });
   room.setSim({ move: 'observe', maps: { deepholm: 'world' } });
   room.worlds.useHost(host);
@@ -166,6 +176,93 @@ async function main() {
     const inCopy = copyOf().api.peek('monsters').filter(m => typeof m.nid === 'string' && m.nid.startsWith('!')).map(m => m.nid);
     const onA = ev(A, "monsters.filter(m => m.remote && typeof m.nid === 'string' && m.nid[0] === '!').map(m => m.nid).sort().join(',')"), onB = ev(B, "monsters.filter(m => m.remote && typeof m.nid === 'string' && m.nid[0] === '!').map(m => m.nid).sort().join(',')");
     line('6. Ann (an admin) spawns 2 goblins in Deepholm: the copy makes them (nids !<sid>.0 and .1) and both games show them as the world\'s', inCopy.length === 2 && onA === inCopy.slice().sort().join(',') && onB === onA, { inCopy, onA, onB });
+  }
+
+  // ---- 7. a knight alone, switched to the world mid-fight ----
+  ev(A, 'window.__peace = true'); ev(B, 'window.__peace = true');   // Deepholm's goblins leave Ann and Ben be from here
+  const D = makeContext(wire); D.FANGLANDS.newGame();
+  room.store.addAccount('Dee');
+  both = [A, B, D];
+  await login(D, 'Dee'); tick(10);
+  const aerieOf = () => host.copies.get('aerie');
+  // what Dee's screen shows near her: every monster standing within 18 tiles (nid list), counted every frame
+  const nearD = () => ev(D, 'monsters.filter(m => !m.gone && !m.dead && Math.hypot(m.x - player.x, m.y - player.y) <= 18 * TILE).map(m => m.nid)');
+  const watch = (frames, ids0, each) => { let vanished = 0, doubled = 0; const gone = new Set(); for (let i = 0; i < frames; i++) { tick(1); heal(); const ids = ev(D, 'monsters.filter(m => !m.gone && !m.dead).map(m => m.nid)'); if (new Set(ids).size !== ids.length) doubled++; for (const n of ids0) if (!ids.includes(n)) { vanished++; gone.add(n); } if (each) each(i); } return { vanished, doubled, gone: [...gone] }; };
+  const deadNearIn = (c, g) => { if (!c) return null; const p = ev(g, '({ x: player.x, y: player.y })'); return c.api.peek('monsters').filter(m => m.dead && Math.hypot(m.x - p.x, m.y - p.y) <= 24 * 48).map(m => m.nid + ' respawnT ' + Math.round(m.respawnT)); };
+  {
+    ev(D, "(() => { INSTANCES.enter('aerie'); const m = monsters.find(o => o.nid === 'i0'); player.x = m.home.x + 60; player.y = m.home.y; window.__peace = false; })()");
+    tick(40); heal();
+    const keeps = ev(D, 'COOP.isKeeper()') && room.keeperOf('aerie') && room.keeperOf('aerie').name === 'Dee';
+    // mid-fight: the sentinel is after her and she has hurt it
+    ev(D, "(() => { const m = monsters.find(o => o.nid === 'i0'); m.angry = true; m.state = 'chase'; hitMonster(m, 2, 0); })()");
+    tick(10); heal();
+    // switched just after her game's heartbeat, so the next one lands while the copy is waiting (the copy has ticked by then)
+    for (let i = 0; i < 90 && !(ev(D, 'COOP.state.beatAcc || 0') < 0.05); i++) { tick(1); heal(); }
+    const ids0 = nearD(), hurt = ev(D, "(() => { const m = monsters.find(o => o.nid === 'i0'); return m.hp < m.maxHp; })()");
+    room.setMode('aerie', 'world', 'parent page');
+    const w = watch(300, ids0);
+    const dead = deadNearIn(aerieOf(), D);
+    line('7. Dee alone in the Aerie, a sentinel after her, is switched to the world mid-fight: her game sends only its heartbeat, so the copy keeps its own monsters standing; none of the ' + ids0.length + ' near her vanish or double on her screen in the 5 s after (the take-over waits 1.5 s for a stream that never comes), none near her lies down in the copy, and her game says @world:aerie',
+      keeps && hurt && ids0.length >= 2 && !w.vanished && !w.doubled && !!aerieOf() && Array.isArray(dead) && dead.length === 0 && ev(D, 'COOP.keeper()') === '@world:aerie' && room.keeperOf('aerie').name === '@world:aerie',
+      { keeps, hurt, near: ids0, vanished: w.vanished, gone: w.gone, doubled: w.doubled, copy: !!aerieOf(), deadInCopy: dead, keeper: ev(D, 'COOP.keeper()') });
+  }
+
+  // ---- 8. a world-run map rebuilt with no stream (the Room comes back from its sockets before the copy has loaded) ----
+  {
+    tick(20); heal();
+    const ids0 = nearD(), bIds0 = ev(B, 'monsters.filter(m => m.remote && !m.gone && !m.dead).map(m => m.nid)');
+    // the old object is gone: its loop stops, and a new Room is rebuilt from what each socket carried (silently, as a wake does)
+    host.stop(); for (const m of [...host.copies.keys()]) host.drop(m);
+    const room2 = await loadRoom(now, { simBook: book, store: room.store });
+    room2.setSim({ move: 'observe', master: room.worlds.sw.master, maps: room.worlds.sw.maps, held: room.worlds.sw.held });
+    for (const [sock, k] of room.knights) room2.restore(sock, { name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, caps: k.caps, atlas: k.atlas });
+    room = room2; wire.room = room2;
+    const picked = room2.keeperOf('aerie') && room2.keeperOf('aerie').name;
+    tick(2); heal();   // the copy's code is still loading
+    let toldAt = -1, hitLanded = null;
+    host = new SimHost({ makeGame: strip.makeGame, now, clock: () => performance.now(), timer, seed: 78,
+      onFallback: (m, r, row) => room2.worlds.fell(m, r, row), onSend: (m, l) => room2.worlds.fromCopy(m, l) });
+    room2.worlds.useHost(host);
+    const bSeen = [];
+    const w = watch(180, ids0, i => {
+      bSeen.push(ev(B, 'monsters.filter(m => m.remote && !m.gone && !m.dead).map(m => m.nid)'));
+      if (toldAt < 0 && ev(D, 'COOP.isKeeper()')) {
+        toldAt = i;
+        // his own swing while his game keeps the map lands in his game (it is not sent to a Room that would drop it)
+        hitLanded = ev(D, "(() => { const m = monsters.find(o => !o.dead && !o.remote && o.nid === 'i0'); if (!m) return null; const hp = m.hp; hitMonster(m, 1, 0); return m.hp < hp; })()");
+      }
+    });
+    tick(30); heal();
+    const dead = deadNearIn(aerieOf(), D);
+    const bIds = ev(B, 'monsters.filter(m => m.remote && !m.gone && !m.dead).map(m => m.nid)');
+    // on Ben's screen: every monster he showed before that is still standing in the new copy is there in every frame
+    const dc = copyOf(), standing = dc ? dc.api.peek('monsters').filter(m => !m.dead).map(m => m.nid) : [];
+    const bLost = bIds0.filter(n => standing.includes(n) && bSeen.some(f => !f.includes(n)));
+    line('8. the Room rebuilt with Dee in the world-run Aerie and no copy loaded: she (picked: ' + picked + ') is told she keeps it and her own hit lands; the new copy then takes it over with nothing vanishing on her screen and nothing near her laid down in it; Deepholm comes back to the world from Ann and Ben\'s stream',
+      picked === 'Dee' && toldAt >= 0 && hitLanded === true && !w.vanished && !w.doubled && Array.isArray(dead) && dead.length === 0 && ev(D, 'COOP.keeper()') === '@world:aerie' && room2.keeperOf('aerie').name === '@world:aerie'
+        && ev(A, 'COOP.keeper()') === '@world:deepholm' && ev(B, 'COOP.keeper()') === '@world:deepholm' && bIds0.length >= 1 && !bLost.length && standing.every(n => bIds.includes(n)),
+      { picked, toldAt, hitLanded, vanished: w.vanished, gone: w.gone, doubled: w.doubled, deadInCopy: dead, keeper: ev(D, 'COOP.keeper()'), deepholm: [ev(A, 'COOP.keeper()'), ev(B, 'COOP.keeper()')], bIds0, bIds, standing, bLost });
+  }
+
+  // ---- 9. a knight whose game stops is not beaten while it is stopped ----
+  {
+    const { SILENT } = await import(pathToFileURL(path.join(ROOT, 'online', 'src', 'sim', 'worlds.js')).href);
+    const hurts = []; D.NET.on('hurt', m => hurts.push({ at: vnow, dmg: m.dmg }));
+    const angry = () => { const c = aerieOf(), p = ev(D, '({ x: player.x, y: player.y })'); const m = c.api.peek('monsters').find(o => o.nid === 'i0'); m.dead = false; m.hp = m.maxHp; m.angry = true; m.state = 'chase'; m.x = p.x + 50; m.y = p.y; return m; };
+    angry(); tick(60); heal();
+    const fought = hurts.length;
+    // her game stops: no step, no presence, the socket left open
+    both = [A, B]; const stopAt = vnow; hurts.length = 0;
+    tick(30 * 60);
+    const late = hurts.filter(h => h.at - stopAt > SILENT + 500), early = hurts.length;
+    const copyKnows = aerieOf().w.COOP.knightsHere().find(k => k.n === 'Dee');
+    // her game goes on: its presence brings her back, and the sentinel comes for her again
+    both = [A, B, D]; hurts.length = 0;
+    for (let i = 0; i < 20; i++) { tick(1); heal(); } angry(); for (let i = 0; i < 120; i++) { tick(1); heal(); }
+    const back = aerieOf().w.COOP.knightsHere().find(k => k.n === 'Dee');
+    line('9. Dee\'s game stops for 30 s with a sentinel after her (socket open): after ' + SILENT + ' ms the copy takes her for fallen, so no blow reaches her while she cannot play; when her game goes on the copy fights her again',
+      fought >= 1 && late.length === 0 && !!copyKnows && copyKnows.dead === true && !!back && back.dead === false && hurts.length >= 1,
+      { foughtBefore: fought, inFirst: early - late.length, late: late.length, copyKnows, back, hurtsAfter: hurts.length });
   }
 
   const errors = copyOf() ? copyOf().w.__errors.slice(0, 3) : [];

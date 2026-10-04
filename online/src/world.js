@@ -136,7 +136,7 @@ export class World {
       this.room.worlds.useHost(host);
     }).catch(e => {
       console.error('sim copy', e);
-      this.room.worlds.loaded = false;
+      this.room.worlds.noCopy();   // every map stays with a knight's game, and a keeper the wake picked silently is told
       for (const m of WORLD_READY) if (this.room.worlds.sw.maps[m] === 'world') this.simBook.log({ at: this.now(), map: m, from: 'world', to: 'keeper', reason: 'nocopy', tickP99: null });
     });
   }

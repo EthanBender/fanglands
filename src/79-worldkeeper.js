@@ -77,19 +77,27 @@
         return sock;
       },
     };
+    // heard: since the copy was told a knight keeps its map, it has read a snapshot from him with monsters in it
+    let heard = false;
     function deliver(msg) {
       if (!sock || !sock.onmessage) return false;
       // taking a map over from a knight's game (docs/ONLINE.md, Stage 2): his stream lists every monster within 24 tiles of a
       // knight that is alive or fell under 2 s ago. One of this copy's own monsters standing that near a knight but missing
       // from his stream is down in his game: it lies down here too (and stands up on its own respawn timer) instead of
-      // coming back to life in the hand-over
+      // coming back to life in the hand-over. Only when such a snapshot was read: a keeper alone sends an empty heartbeat, and a
+      // keeper the copy never heard from (the wait ran out) says nothing either way, so the copy's own monsters stand
       const m0 = typeof msg === 'string' ? (() => { try { return JSON.parse(msg); } catch (e) { return null; } })() : msg;
-      if (m0 && m0.t === 'keeper' && m0.n === me && window.COOP && COOP.puppets() && COOP.parked) settleUnseen();
+      if (m0 && m0.t === 'keeper') {
+        if (m0.n === me && heard && window.COOP && COOP.puppets() && COOP.parked) settleUnseen();
+        heard = false;
+      }
+      if (m0 && m0.t === 'mon' && Array.isArray(m0.list) && m0.list.length && window.COOP && m0.n === COOP.keeper() && m0.n !== me) heard = true;
       sock.onmessage({ data: typeof msg === 'string' ? msg : JSON.stringify(msg) });
       return true;
     }
     function settleUnseen() {
-      const seen = new Set(COOP.puppets().filter(p => !p.gone).map(p => p.nid)), ks = COOP.knightsHere();
+      // the knights whose surroundings a keeper's snapshot covers: the living ones (75-coop's snapshot skips a fallen knight)
+      const seen = new Set(COOP.puppets().filter(p => !p.gone).map(p => p.nid)), ks = COOP.knightsHere().filter(k => !k.dead);
       for (const m of COOP.parked) {
         if (m.dead || !m.nid || seen.has(m.nid)) continue;
         if (!ks.some(k => dist(m.x, m.y, k.x, k.y) <= 24 * TILE)) continue;

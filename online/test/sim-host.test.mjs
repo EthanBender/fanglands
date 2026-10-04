@@ -211,7 +211,7 @@ test('quantiles', () => {
 // ============================================================================
 import { Room } from '../src/room.js';
 import { SimBook } from '../src/sim/book.js';
-import { WORLD_READY, JOIN_WAIT, STALE, REALM_EVERY } from '../src/sim/worlds.js';
+import { WORLD_READY, JOIN_WAIT, STALE, SILENT, REALM_EVERY } from '../src/sim/worlds.js';
 
 function stubCopies() {
   const W = { made: [], cfg: { bootThrow: new Set(), stepThrow: new Set(), stepMs: {} }, clockNow: 0 };
@@ -236,7 +236,9 @@ function stubCopies() {
 function shared({ book = null, cap, maps = { deepholm: 'world' } } = {}) {
   const W = stubCopies(), T = fakeTime(), S = { W, T, socks: [] };
   S.book = book || new SimBook(null, () => T.now);
-  S.room = new Room({ now: () => T.now, wake: ms => T.set(() => S.room.tick(), ms), simBook: S.book, simSave: sw => { S.saved = sw; } });
+  // S.alarms: how many times the Room's alarm went off (each is a billed Durable Object request)
+  S.alarms = 0;
+  S.room = new Room({ now: () => T.now, wake: ms => T.set(() => { S.alarms++; S.room.tick(); }, ms), simBook: S.book, simSave: sw => { S.saved = sw; } });
   S.host = new SimHost({ makeGame: W.makeGame, now: () => T.now, clock: () => W.clockNow, timer: T, cap, onFallback: (m, r, row) => S.room.worlds.fell(m, r, row), onSend: (m, l) => S.room.worlds.fromCopy(m, l) });
   S.room.setSim({ move: 'observe', maps });
   S.room.worlds.useHost(S.host);
@@ -312,6 +314,8 @@ test('Stage 2: flips send keeper both ways; nothing is built for an empty map; a
   S.room.setSim({ move: 'observe', maps: { deepholm: 'world' } }, 'parent page');
   S.T.advance(0);
   S.say(ann, { t: 'mon', list: [] });
+  assert.equal(S.room.keeperOf('deepholm').name, 'Ann', 'her empty heartbeat is not read as her monsters');
+  S.T.advance(JOIN_WAIT + 50);
   assert.deepEqual(ben.last('keeper'), { t: 'keeper', map: 'deepholm', n: '@world:deepholm', server: true });
   assert.deepEqual(ann.last('keeper'), { t: 'keeper', map: 'deepholm', n: '@world:deepholm', server: true });
   S.T.advance(500);
@@ -322,7 +326,7 @@ test('Stage 2: flips send keeper both ways; nothing is built for an empty map; a
   assert.deepEqual(S.book.recent(5).map(r => [r.map, r.from, r.to, r.reason]), [['deepholm', 'world', 'keeper', 'parent page'], ['deepholm', 'keeper', 'world', 'parent page']]);
   // the master switch sends every world map back at once and keeps maps as they were
   S.room.setSim({ move: 'observe', maps: { deepholm: 'world', aerie: 'world' } }, 'parent page');
-  S.T.advance(0); S.say(ann, { t: 'mon', list: [] });
+  S.T.advance(0); S.T.advance(JOIN_WAIT + 50);
   assert.equal(S.room.keeperOf('deepholm').name, '@world:deepholm');
   S.room.setSim({ move: 'observe', master: 'off', maps: { deepholm: 'world', aerie: 'world' } }, 'parent page');
   assert.equal(S.room.keeperOf('deepholm').name, 'Ann');
@@ -353,14 +357,18 @@ test('Stage 2: the watchdog hands the map back to a knight (a throw, three slow 
   { const S = shared({ cap: 1, maps: { deepholm: 'world', aerie: 'world' } }); const ann = S.knight('Ann', 'deepholm'); S.takeOver(ann);
     const ben = S.knight('Ben', 'aerie'); S.T.advance(0);
     assert.equal(S.room.keeperOf('aerie').name, 'Ben'); assert.equal(S.book.recent(1)[0].reason, 'cap'); assert.equal(S.room.keeperOf('deepholm').name, '@world:deepholm'); }
-  // the copy stops ticking (the loop died): KEEPER_STALE later the map goes back to a knight
+  // the copy stops ticking (the loop died: its timers never fire again): KEEPER_STALE later the map goes back to a knight,
+  // noticed on her next presence (no alarm of its own)
+  const dead = S => { S.host.stop(); S.host.timer = { set: () => 0, clear() { } }; };
   { const S = shared(); const ann = S.knight('Ann', 'deepholm'); S.takeOver(ann);
-    S.host.stop(); S.T.advance(STALE + 200);
+    dead(S); S.T.advance(STALE - 200); S.p(ann, 'deepholm');
+    assert.equal(S.room.keeperOf('deepholm').name, '@world:deepholm', 'not yet');
+    S.T.advance(400); S.p(ann, 'deepholm');
     assert.equal(S.room.keeperOf('deepholm').name, 'Ann'); assert.equal(S.book.recent(1)[0].reason, 'stale'); }
   // the parent page flipping it again clears the hold and it is taken over again
   { const S = shared(); const ann = S.knight('Ann', 'deepholm'); S.takeOver(ann); S.W.cfg.stepThrow.add('deepholm'); S.T.advance(400);
     S.W.cfg.stepThrow.delete('deepholm');
-    S.room.setMode('deepholm', 'world', 'parent page'); S.T.advance(0); S.say(ann, { t: 'mon', list: [] });
+    S.room.setMode('deepholm', 'world', 'parent page'); S.T.advance(0); S.T.advance(JOIN_WAIT + 50);
     assert.equal(S.room.keeperOf('deepholm').name, '@world:deepholm'); assert.ok(!S.room.worlds.sw.held.deepholm); }
 });
 
@@ -392,4 +400,100 @@ test('Stage 2: realm_state, the boss rests, survives a rebuilt SimHost (a new Ro
   const left = S2.W.made[0].restsSet;
   assert.ok(left && Math.abs(left.war_shed - (row.war_shed - S2.T.now) / 1000) < 1e-6 && left.war_shed > 130 && left.war_shed < 150, JSON.stringify(left));
   void ann2;
+});
+
+// ---- the review fixes (round 1) ----
+test('Stage 2: a keeper alone sends only an empty heartbeat: it is never handed to the copy as his monsters; the take-over waits JOIN_WAIT and the copy keeps its own', () => {
+  const S = shared();
+  const ann = S.knight('Ann', 'deepholm'); S.T.advance(0);
+  const c = S.W.made[0];
+  for (let i = 0; i < 3; i++) { S.say(ann, { t: 'mon', list: [] }); S.T.advance(400); }
+  assert.equal(S.room.keeperOf('deepholm').name, 'Ann', 'three heartbeats in 1.2 s: still joining');
+  S.T.advance(JOIN_WAIT);
+  assert.equal(S.room.keeperOf('deepholm').name, '@world:deepholm', 'JOIN_WAIT finished it');
+  assert.ok(!c.got.some(m => m.t === 'mon'), 'the copy was never handed an empty list: ' + JSON.stringify(c.got.filter(m => m.t === 'mon')));
+  assert.deepEqual(c.got.filter(m => m.t === 'keeper').map(m => m.n), ['Ann', '@world:deepholm']);
+  // a snapshot with monsters in it still hands the map over at once
+  const S2 = shared(); const bea = S2.knight('Bea', 'deepholm'); S2.takeOver(bea); S2.T.advance(100);
+  assert.equal(S2.room.keeperOf('deepholm').name, '@world:deepholm');
+  assert.deepEqual(S2.W.made[0].got.filter(m => m.t === 'mon').map(m => m.list.length), [1]);
+});
+
+test('Stage 2: one knight on a world-run map for 10 minutes arms no alarm after the take-over (the keeper path arms none either); a copy gone quiet is still caught on his presence', () => {
+  const run = maps => {
+    const S = shared({ maps });
+    const ann = S.knight('Ann', 'deepholm');
+    if (maps.deepholm === 'world') S.takeOver(ann); else S.T.advance(0);
+    // past the take-over and the roster's first send (2 s after a knight arrives, on both paths)
+    for (let i = 0; i < 3; i++) { S.p(ann, 'deepholm'); S.T.advance(1000); }
+    const keeper = S.room.keeperOf('deepholm').name, at = S.alarms;
+    for (let i = 0; i < 600; i++) { S.p(ann, 'deepholm', 600 + (i % 2), 1032); if (maps.deepholm !== 'world') S.say(ann, { t: 'mon', list: [] }); S.T.advance(1000); }
+    return { S, ann, keeper, alarms: S.alarms - at, ticks: S.host.ticks };
+  };
+  const kp = run({}), w = run({ deepholm: 'world' });
+  assert.equal(kp.keeper, 'Ann'); assert.equal(w.keeper, '@world:deepholm');
+  assert.ok(w.ticks >= 5900, 'the copy ticked all along (its own setTimeout loop): ' + w.ticks);
+  assert.equal(kp.alarms, 0, 'the keeper path: no alarm for a knight alone');
+  assert.equal(w.alarms, 0, 'world-run: no alarm either, in 10 minutes');
+  // and the copy dying is still noticed, on his next presence, with no alarm
+  w.S.host.stop(); w.S.host.timer = { set: () => 0, clear() { } }; w.S.T.advance(STALE + 100); w.S.p(w.ann, 'deepholm');
+  assert.equal(w.S.room.keeperOf('deepholm').name, 'Ann'); assert.equal(w.S.book.recent(1)[0].reason, 'stale');
+});
+
+test('Stage 2: a knight whose game has gone silent for SILENT ms is told to the copy as fallen (no monster fights him); his next presence brings him back', () => {
+  const S = shared();
+  const ann = S.knight('Ann', 'deepholm'), ben = S.knight('Ben', 'deepholm', 640, 1032); S.takeOver(ann);
+  const c = S.W.made[0];
+  const lastP = n => { const l = c.got.filter(m => m.t === 'p' && m.n === n); return l[l.length - 1]; };
+  for (let i = 0; i < 6; i++) { S.p(ann, 'deepholm'); S.p(ben, 'deepholm', 640, 1032); S.T.advance(500); }
+  assert.equal(lastP('Ann').dead, false); assert.equal(lastP('Ben').dead, false);
+  // Ann's iPad locks: Ben goes on playing
+  for (let i = 0; i < 4; i++) { S.p(ben, 'deepholm', 640, 1032); S.T.advance(500); }
+  assert.equal(lastP('Ann').dead, false, '2 s quiet: still fought');
+  for (let i = 0; i < 4; i++) { S.p(ben, 'deepholm', 640, 1032); S.T.advance(500); }
+  assert.equal(lastP('Ann').dead, true, 'past ' + SILENT + ' ms quiet: the copy takes her for fallen');
+  assert.equal(lastP('Ben').dead, false, 'Ben, still playing, is fought as before');
+  // with nobody else sending anything at all, her silence is still noticed (every tick checks)
+  const S2 = shared(); const cy = S2.knight('Cy', 'deepholm'); S2.takeOver(cy);
+  S2.T.advance(SILENT + 500);
+  const c2 = S2.W.made[0], l2 = c2.got.filter(m => m.t === 'p' && m.n === 'Cy');
+  assert.equal(l2[l2.length - 1].dead, true, 'a knight alone who locks his iPad is not fought either');
+  // she unlocks: her first presence brings her back
+  S.p(ann, 'deepholm'); S.T.advance(100);
+  assert.equal(lastP('Ann').dead, false);
+});
+
+test('Stage 2: a world-run map rebuilt with no copy loaded (a wake, a deploy, an eviction): the knight the Room picks is told he keeps it; then the copy reads his stream and takes it back', () => {
+  const S = shared();
+  const ann = S.knight('Ann', 'deepholm'), ben = S.knight('Ben', 'deepholm', 640, 1032); S.takeOver(ann);
+  assert.equal(S.room.keeperOf('deepholm').name, '@world:deepholm');
+  // the object goes: a new Room comes back from what each socket carried, before the game copy has loaded
+  const T = S.T, W = stubCopies(), book = S.book;
+  const room = new Room({ now: () => T.now, wake: ms => T.set(() => room.tick(), ms), simBook: book });
+  room.setSim({ move: 'observe', maps: { deepholm: 'world' } });
+  for (const s of [ann, ben]) { s.got.length = 0; room.restore(s, { name: s.name, since: 1, hello: true, map: 'deepholm', mapAt: s.name === 'Ann' ? 10 : 20 }); }
+  assert.equal(room.keeperOf('deepholm').name, 'Ann', 'the Room picks Ann (longest on the map)');
+  assert.equal(ann.of('keeper').length, 0, 'a restore says nothing');
+  // a hit from her game now would be dropped (the Room thinks she keeps it): so the copy loading names her keeper out loud
+  const host = new SimHost({ makeGame: W.makeGame, now: () => T.now, clock: () => W.clockNow, timer: T, onFallback: (m, r, row) => room.worlds.fell(m, r, row), onSend: (m, l) => room.worlds.fromCopy(m, l) });
+  room.worlds.useHost(host);
+  assert.deepEqual(ann.last('keeper'), { t: 'keeper', map: 'deepholm', n: 'Ann' }, 'Ann is told she keeps it');
+  assert.deepEqual(ben.last('keeper'), { t: 'keeper', map: 'deepholm', n: 'Ann' }, 'and Ben');
+  // their games go on: each sends its presence (a restore keeps no position)
+  room.message(ann, JSON.stringify({ t: 'p', map: 'deepholm', x: 600, y: 1032, lv: 30, def: 576 })); room.message(ben, JSON.stringify({ t: 'p', map: 'deepholm', x: 640, y: 1032, lv: 30, def: 576 }));
+  T.advance(0);
+  const c = W.made[0];
+  assert.ok(c, 'the copy is built at the next alarm');
+  room.message(ann, JSON.stringify({ t: 'mon', list: [['i0', 'dwarf_guard', 600, 1032, 70, 90, 'idle', 1, 0, 0, 0, 0, 0, 0]] }));
+  assert.equal(room.keeperOf('deepholm').name, '@world:deepholm', 'her stream hands it to the copy');
+  T.advance(100);
+  assert.deepEqual(c.got.filter(m => m.t === 'mon').map(m => m.n), ['Ann']);
+  assert.deepEqual(ben.last('keeper'), { t: 'keeper', map: 'deepholm', n: '@world:deepholm', server: true });
+  // a world that cannot load the copy says so the same way: the knight it picked keeps the map, and knows it
+  const room2 = new Room({ now: () => T.now, wake: () => { }, simBook: book });
+  room2.setSim({ move: 'observe', maps: { deepholm: 'world' } });
+  for (const s of [ann, ben]) { s.got.length = 0; room2.restore(s, { name: s.name, since: 1, hello: true, map: 'deepholm', mapAt: s.name === 'Ann' ? 10 : 20 }); }
+  room2.worlds.noCopy();
+  assert.deepEqual(ann.last('keeper'), { t: 'keeper', map: 'deepholm', n: 'Ann' });
+  assert.equal(room2.worlds.loaded, false);
 });
