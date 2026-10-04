@@ -18,8 +18,12 @@
 //   minus      x - 140, px - 142 ... a number of 10 or more in the map taken from a coordinate name (Math.hypot's
 //              arguments included: Math helpers are excepted only from gcall)
 // A literal inside a frame call (F.x(112), F.p(..), ATLAS.world.tx(..), ATLAS.port(..)) is wrapped, so it is not counted.
+// The tools (tools/*.js, tools/*.mjs, named 'tools/<file>'; ADDENDUM A.2) are read the same way, plus three things only
+// they do: game code handed to a game as text (R(A, `FANGLANDS.tp(24, 37)`), scanned where it sits), a tile call on a
+// game handle (openSpot(A, 60, 30)), and a named spot (['dock landing', 164, 14]). In src/ the last two are drop tables
+// and recipe rows far more often than places, so the game's files are not read for them.
 //
-//   node tools/literals.mjs [files...]       counts per file (all of src/ when no file is named)
+//   node tools/literals.mjs [files...]       counts per file (all of src/ and tools/ when no file is named)
 //   node tools/literals.mjs --inventory      writes docs/spread/inventory.json: { file, line, col, literal, kind, guess }
 //   node tools/literals.mjs --gate           the build's gate: every file in docs/spread/converted.json must have 0
 //                                            literals outside docs/spread/literals-allow.json; exit 1 otherwise
@@ -38,6 +42,7 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const SPREAD = path.join(ROOT, 'docs', 'spread');
 const SRC = path.join(ROOT, 'src');
+const TOOLS = path.join(ROOT, 'tools');   // ADDENDUM A.2: the tools stand knights and read tiles on the overworld too
 const MAP_W = 260, MAP_H = 180;   // the map the literals were written for (read from 00-core below when it parses)
 
 let acorn = null;
@@ -47,7 +52,12 @@ export function parser() {
   catch (e) { throw new Error('literals: acorn is missing: run (cd online && npm ci)'); }
   return acorn;
 }
-export const parse = src => parser().parse(src, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true, locations: true, ranges: true });
+export const parse = (src, sourceType = 'script') => parser().parse(src, { ecmaVersion: 'latest', sourceType, allowReturnOutsideFunction: true, allowHashBang: true, locations: true, ranges: true });
+// a file of the repo: 'NN-name.js' is src/'s (as converted.json and the allow list name it), 'tools/name.js' a tool's
+export const isTool = f => /^tools\//.test(f);
+export const fileOf = f => isTool(f) ? path.join(ROOT, f) : path.join(SRC, f);
+// a tool may be a module (.mjs, or a .js with import/export); the game's files are scripts
+export const parseFile = (f, src) => { if (/\.mjs$/.test(f)) return parse(src, 'module'); try { return parse(src); } catch (e) { return parse(src, 'module'); } };
 
 // ---------- the Atlas tables, read from src/01-atlas.js without running the game ----------
 // ANCHORS and PORTS are plain data literals: each is evaluated alone, in an empty context.
@@ -134,9 +144,10 @@ function wrapped(anc) {
 // every coordinate-shaped literal of one file: [{ line, col, literal, kind, x, y, start, end, nodes }]
 export function scanSource(src, opts = {}) {
   const W = opts.W || MAP_W, H = opts.H || MAP_H, out = [], seen = new Set();
-  const ast = parse(src);
+  const ast = opts.ast || parse(src, opts.sourceType);
   // a tile is a whole number (a centre may be a half: the fountain's 35.5); 6.4 is a drawing's, not a map's
   const tileish = v => Number.isInteger(v * 2);
+  const lineCol = off => { let line = 1, last = -1; for (let i = src.indexOf('\n'); i >= 0 && i < off; i = src.indexOf('\n', i + 1)) { line++; last = i; } return { line, col: off - last }; };
   const inMapX = v => tileish(v) && v >= 0 && v <= W - 1, inMapY = v => tileish(v) && v >= 0 && v <= H - 1;
   const add = (node, kind, x, y, nodes) => {
     const key = node.start + ':' + kind; if (seen.has(key)) return; seen.add(key);
@@ -150,6 +161,11 @@ export function scanSource(src, opts = {}) {
       if (parent && parent.type === 'ArrayExpression' && parent.elements.some(e => e && e !== n && e.type === 'ArrayExpression' && e.elements.length === 2 && e.elements.every(v => num(v) || neg(v)) && e.elements.some(v => neg(v) || !Number.isInteger(v.value * 2)))) return;
       if (inMapX(a) && inMapY(b) && Math.max(a, b) >= 2) add(n, 'pair', a, b, [n.elements[0], n.elements[1]]);
     }
+    // a named spot: ['Grubb', 216, 23] / ["Tinkerton's lab", 247, 42, id] (a string, then a map tile)
+    if (opts.tools && n.type === 'ArrayExpression' && n.elements.length >= 3 && n.elements[0] && (n.elements[0].type === 'Literal' && typeof n.elements[0].value === 'string' || n.elements[0].type === 'TemplateLiteral') && num(n.elements[1]) && num(n.elements[2])) {
+      const a = n.elements[1].value, b = n.elements[2].value;
+      if (inMapX(a) && inMapY(b) && Math.max(a, b) >= 2) add(n, 'named', a, b, [n.elements[1], n.elements[2]]);
+    }
     if (n.type === 'ObjectExpression') {
       const props = {}; for (const p of n.properties) { const k = propName(p); if (k) props[k] = p.value; }
       for (const [kx, ky] of [['x', 'y'], ['tx', 'ty']]) if (num(props[kx]) && num(props[ky]) && inMapX(props[kx].value) && inMapY(props[ky].value) && Math.max(props[kx].value, props[ky].value) >= 2) add(n, 'point', props[kx].value, props[ky].value, [props[kx], props[ky]]);
@@ -158,6 +174,11 @@ export function scanSource(src, opts = {}) {
     }
     if (n.type === 'CallExpression') {
       const c = n.callee, name = c.type === 'Identifier' ? c.name : c.type === 'MemberExpression' && !c.computed ? c.property.name : null;
+      // a tile call on a game handle: openSpot(A, 60, 30), tp(g, 140, 80) (the tools drive two games at once)
+      if (opts.tools && name && CALLS.has(name) && n.arguments.length >= 3 && !num(n.arguments[0]) && !(nameOf(n.arguments[0]) && COORD_NAME.test(nameOf(n.arguments[0]))) && n.arguments[0].type !== 'SpreadElement' && num(n.arguments[1]) && num(n.arguments[2])) {
+        const a = n.arguments[1], b = n.arguments[2];
+        if (inMapX(a.value) && inMapY(b.value) && Math.max(a.value, b.value) >= 2) add(n, 'call', a.value, b.value, [a, b]);
+      }
       if (name && CALLS.has(name) && n.arguments.length >= 2 && (num(n.arguments[0]) || num(n.arguments[1]))) {
         const a = n.arguments[0], b = n.arguments[1];
         if ((!num(a) || inMapX(a.value)) && (!num(b) || inMapY(b.value)) && (num(a) ? a.value : 0) + (num(b) ? b.value : 0) >= 2) add(n, 'call', num(a) ? a.value : null, num(b) ? b.value : null, [a, b].filter(num));
@@ -203,6 +224,27 @@ export function scanSource(src, opts = {}) {
         for (const a of [a2, a3]) if (a.value >= 10) add(a, 'rel', null, null, [a]);
     }
   });
+  // Game code inside a string (tools only): a tool hands a game handle its code as text (R(A, `FANGLANDS.tp(24, 37)`),
+  // ev(g, '...'), page.evaluate(`...`)). A string or template argument that parses as JavaScript is scanned like code;
+  // each `${...}` stands as a name, and every hit is reported at its place in the tool's own source.
+  if (opts.tools && !opts.inner) walk(ast, n => {
+    if (n.type !== 'CallExpression') return;
+    for (const a of n.arguments) {
+      if (!a || !((a.type === 'Literal' && typeof a.value === 'string') || a.type === 'TemplateLiteral')) continue;
+      const segs = [];   // [innerStart, outerStart, length]: the raw text of each piece, at its outer offset
+      let code = '';
+      if (a.type === 'Literal') { segs.push([0, a.start + 1, a.end - a.start - 2]); code = src.slice(a.start + 1, a.end - 1); }
+      else a.quasis.forEach((q, i) => { segs.push([code.length, q.start, q.end - q.start]); code += src.slice(q.start, q.end); if (i < a.expressions.length) { segs.push([code.length, a.expressions[i].start, 0]); code += '__e' + i; } });
+      if (code.length < 6 || !/\(/.test(code)) continue;
+      let inner; try { inner = scanSource(code, Object.assign({}, opts, { inner: true, ast: undefined, sourceType: 'script' })); } catch (e) { continue; }
+      const outer = off => { let s = segs[0]; for (const g of segs) if (g[0] <= off) s = g; return s[1] + Math.min(off - s[0], s[2]); };
+      for (const h of inner) {
+        const start = outer(h.start), end = Math.max(start + 1, outer(h.end)), pos = lineCol(start);
+        const key = start + ':' + h.kind; if (seen.has(key)) continue; seen.add(key);
+        out.push(Object.assign({}, h, { line: pos.line, col: pos.col, start, end, inString: true }));
+      }
+    }
+  });
   // A named coordinate: `const X = 112, Y = 49; setTile(X, Y)`. A declaration of a whole map number (10 or more) whose name
   // is then a tile argument (setTile and the other CALLS, any call's first two arguments, tc(NAME), NAME * TILE) is counted
   // as kind 'decl' at the declaration, for the hand pass (names are matched without scopes: an over-count, never a miss).
@@ -228,10 +270,13 @@ export function scanSource(src, opts = {}) {
   return out.sort((a, b) => a.start - b.start);
 }
 
+export const srcFiles = () => fs.readdirSync(SRC).filter(f => /^[0-9].*\.js$/.test(f)).sort();
+export const toolFiles = () => fs.readdirSync(TOOLS).filter(f => /\.m?js$/.test(f) && fs.statSync(path.join(TOOLS, f)).isFile()).sort().map(f => 'tools/' + f);
+// the files named on the command line (src/NN.js, NN.js or tools/x.js), or every one of src/ and tools/
 export function sourceFiles(names) {
-  const all = fs.readdirSync(SRC).filter(f => /^[0-9].*\.js$/.test(f)).sort();
+  const all = srcFiles().concat(toolFiles());
   if (!names || !names.length) return all;
-  return names.map(n => path.basename(n)).filter(n => all.includes(n));
+  return names.map(n => n.replace(/^\.\//, '')).map(n => /^tools\//.test(n) ? n : path.basename(n)).filter(n => all.includes(n));
 }
 
 // ---------- the allow list ----------
@@ -253,15 +298,16 @@ export function allowed(file, hit, src, allow, declRanges) {
   return null;
 }
 export function scanFile(file, allow = allowList(), T = null) {
-  const src = fs.readFileSync(path.join(SRC, file), 'utf8');
-  const hits = scanSource(src);
+  const src = fs.readFileSync(fileOf(file), 'utf8');
+  const tool = isTool(file), ast = parseFile(file, src);
+  const hits = scanSource(src, { ast, tools: tool });
   // a `decl` pin: a declaration by name (const NAME = ..., function NAME () {...}, or a property NAME: ... / NAME () {...}).
   // Every named declaration's ranges are gathered in one walk, the first time a pin asks (one walk per file, not per pin).
   let byName = null;
   const declRanges = name => {
     if (!byName) {
       byName = new Map(); const put = (k, r) => { if (!byName.has(k)) byName.set(k, []); byName.get(k).push(r); };
-      walk(parse(src), n => {
+      walk(ast, n => {
         if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.init) put(n.id.name, [n.init.start, n.init.end]);
         else if (n.type === 'FunctionDeclaration' && n.id) put(n.id.name, [n.start, n.end]);
         else if ((n.type === 'Property' || n.type === 'MethodDefinition') && n.value) { const k = propName(n); if (k !== null && k !== undefined) put(k, [n.value.start, n.value.end]); }
@@ -281,14 +327,14 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (argv.includes('--gate')) {
     const cf = path.join(SPREAD, 'converted.json');
     const converted = fs.existsSync(cf) ? JSON.parse(fs.readFileSync(cf, 'utf8')) : [];
-    const list = (Array.isArray(converted) ? converted : converted.files || []).map(f => path.basename(f));
+    const list = (Array.isArray(converted) ? converted : converted.files || []).map(f => /^tools\//.test(f) ? f : path.basename(f));
     if (!list.length) process.exit(0);   // nothing converted yet: the gate has nothing to hold
     const allow = allowList(), T = atlasTables(); let bad = 0;
     for (const a of allow) if (unpinned(a)) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for ${JSON.stringify(a.literal)} has no decl or line: pin it to the declaration (or line) it allows`); }
     for (const f of list) {
-      if (!fs.existsSync(path.join(SRC, f))) { console.error(`literals gate: docs/spread/converted.json names ${f}, which is not in src/`); bad++; continue; }
+      if (!fs.existsSync(fileOf(f))) { console.error(`literals gate: docs/spread/converted.json names ${f}, which is not in ${isTool(f) ? 'tools/' : 'src/'}`); bad++; continue; }
       const r = scanFile(f, allow, T);
-      for (const h of r.bare) { bad++; console.error(`src/${f}:${h.line}:${h.col}: bare ${h.kind} ${h.literal} — wrap it: ATLAS.frame('${h.guess && h.guess !== 'world' ? h.guess : '<place>'}') or ATLAS.world`); }
+      for (const h of r.bare) { bad++; console.error(`${isTool(f) ? f : 'src/' + f}:${h.line}:${h.col}: bare ${h.kind} ${h.literal} — wrap it: ATLAS.frame('${h.guess && h.guess !== 'world' ? h.guess : '<place>'}') or ATLAS.world`); }
     }
     if (bad) { console.error(`literals gate: ${bad} bare map coordinate${bad > 1 ? 's' : ''} in converted files (docs/spread/converted.json). Wrap each in its place's frame, or add it to docs/spread/literals-allow.json with a reason.`); process.exit(1); }
     console.log(`literals gate: ${list.length} converted file${list.length > 1 ? 's' : ''}, 0 bare coordinates`);
@@ -305,7 +351,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     for (const r of rows) for (const h of r.bare) inv.push({ file: r.file, line: h.line, col: h.col, literal: h.literal, kind: h.kind, guess: h.guess });
     fs.mkdirSync(SPREAD, { recursive: true });
     const byKind = {}; for (const h of inv) byKind[h.kind] = (byKind[h.kind] || 0) + 1;
-    fs.writeFileSync(path.join(SPREAD, 'inventory.json'), JSON.stringify({ about: 'bare coordinate-shaped literals in src/ (tools/literals.mjs --inventory); guess = the anchor tools/anchor-of.mjs names for a pair or point, world when no place box holds it, null for one axis alone', total: inv.length, byKind, files: rows.filter(r => r.bare.length).length, literals: inv }, null, 0).replace(/\},\{"file"/g, '},\n{"file"') + '\n');
+    fs.writeFileSync(path.join(SPREAD, 'inventory.json'), JSON.stringify({ about: 'bare coordinate-shaped literals in src/ and tools/ (tools/literals.mjs --inventory; a tool file is named tools/<name>); guess = the anchor tools/anchor-of.mjs names for a pair or point, world when no place box holds it, null for one axis alone', total: inv.length, byKind, files: rows.filter(r => r.bare.length).length, literals: inv }, null, 0).replace(/\},\{"file"/g, '},\n{"file"') + '\n');
     console.log(`inventory: ${inv.length} literals in ${rows.filter(r => r.bare.length).length} files written to docs/spread/inventory.json (${Object.entries(byKind).map(([k, v]) => k + ' ' + v).join(', ')})`);
   } else {
     for (const r of rows) if (r.bare.length || files.length) console.log(`${String(r.bare.length).padStart(5)}  ${r.file}${r.allowed ? `  (+${r.allowed} allowed)` : ''}`);
