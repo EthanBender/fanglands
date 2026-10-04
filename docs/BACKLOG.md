@@ -105,6 +105,17 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
 - Two test flakes seen 2026-10-03 (one failure each in 4 plain headless runs on e3229b3 plus the hit-circle fix; neither is something a player sees):
   - "the bot's hunt waits for a respawn at a safe base ... (the stage 13 dung)" (42-playthrough): the bot killed the drake but came back with dragon_dung 0/1 ({"dung":0,"at":[55,102],"log":["hunt ash_drake #1: walk true, brawl 69, dragon_dung 0/1, kills +1"]}).
   - "storm: (fake NET non-keeper): arriving rested asks the keeper once" (66-storm): on the first visit nothing asked for the bird (rested: []), while the later visits behaved. The suspect is the fake socket not being online yet on that first visit, so the call wakes the bird at home instead of asking.
+- Two more seen 2026-10-03/04 (feat/shared-2 review rounds; neither file is touched by that branch):
+  - "night: zombies rise 8-12 tiles off every 20 s outdoors after dark (1-2 at a time, max 4) ..." (35-night) failed with
+    {"alive":3,"capped":false} in 2 of 9 runs of feat/shared-2 at 13c07a4 in round 1. Round 2 ran it 12 times on the branch
+    (merged with master 1b35299) and 12 on master 1b35299, side by side: 0 failures in either
+    (`~/.fanglands/work/phase1/sw-2/fix2/night/`). Why those two runs held 3 zombies and not 4 was not traced (the runs did
+    not keep the spawn log); the counts do not point at the branch.
+  - "boy or girl: a double tap never picks ..." (79-boygirl) failed once in those 24 (branch run 4, load average 8,
+    `768x1024 new 0.7,0.5 +450ms ... gender girl saved true`): the check backdates the card by 450 ms of the REAL clock
+    (`nowMs`, performance.now) and the card arms at 500 ms, so 50 ms of real time between that line and the second tap (a
+    loaded machine) arms it and the tap picks. A test timing flake; the game's own guard is fine. Fix: backdate by less
+    (or stub nowMs) in the check.
 - Knight gear refit leftovers (reviewers' minor findings, 2026-10-03; the refit is live in 9c625b6). Swept 2026-10-03
   (fix/leftovers-looks): friends online on their mare, bulldozer or Barrelbeast, their swings, raised shields and still
   tools; the stone and the pot's rope in his hand; the shield raised facing away shows; nothing over the ferry's hull;
