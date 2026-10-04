@@ -233,10 +233,8 @@
     const my = mapId(), meN = me();
     for (const n in bubbles) {
       const b = bubbles[n]; let x, y;
-      // over a machine in the new art (82-knightgear) the bubble sits over the drawing, not over the rider's face
-      const mTop = m => m && window.KNIGHTGEAR && KNIGHTGEAR.machineTop ? KNIGHTGEAR.machineTop(m.kind || 'walker') : 0;
-      if (n === meN) { const t = mTop(player.mech); x = player.x; y = player.y - (t ? t + 4 : player.mech ? 50 : 36); }
-      else { const e = remote(n); if (!e || e.map !== my) continue; const t = mTop(e.mech); x = e.shown.x; y = e.shown.y - (t ? t + 16 : e.mech ? 62 : 48); }
+      if (n === meN) { x = player.x; y = player.y - (player.mech ? 50 : 36); }
+      else { const e = remote(n); if (!e || e.map !== my) continue; x = e.shown.x; y = e.shown.y - (e.mech ? 62 : 48); }
       if (x < cam.x - 120 || x > cam.x + VW + 120 || y < cam.y - 80 || y > cam.y + VH + 80) continue;
       items.push({ y: 1e9, bubble: n, draw: () => drawBubble(g, b, x, y) });
     }
