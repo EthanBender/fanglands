@@ -9371,8 +9371,11 @@ PEOPLE_UI.auditPrompt = function (p) {
   // Death and his house (25–30, 10–14) while you are down here instead of standing them in the forge hall.
   const DH_W = 29, DH_H = 27;
   const DH = { x0: 2, y0: 2, x1: 26, y1: 24 };     // the undercity's walls, in instance tiles
-  const SHAFT_T = { x: 56, y: 6 };                 // Grey Quarry mine shaft, on the overworld map
-  const SHAFT_STEP = [SHAFT_T.x, SHAFT_T.y + 1];   // you stand here to use it, and land back here on the way out
+  // the shaft, its step and the lane up to it are on the overworld (the quarry's ports and frame, the spread spec §9.1);
+  // everything else in this block is the undercity's own map (instance tiles), never wrapped
+  const DW_Q = ATLAS.frame('quarry');
+  const SHAFT_T = (([x, y]) => ({ x, y }))(ATLAS.port('quarry.shaft'));   // Grey Quarry mine shaft, on the overworld map
+  const SHAFT_STEP = ATLAS.port('quarry.shaft_step');   // you stand here to use it (one below the shaft), and land back here on the way out
   const LADDER_T = { x: 14, y: 4 };                // Deepholm entrance hall; you arrive on (14, 5)
   const THRONE_T = { x: 14, y: 23 };
   const FORGES = [[10, 10], [18, 10]], ANVILS = [[11, 12], [17, 12]];
@@ -9449,6 +9452,7 @@ PEOPLE_UI.auditPrompt = function (p) {
     { id: 'orik', name: 'Orik', x: 16, y: 15, tunic: '#6a3a2a', hair: '#7a3a1a', role: 'dwarf_villager', lines: ['Mithril bars need two coal each. Two. Not one.', "Brunhild won't trade while the great forge is cold. Talk to the king, south past the guards.", 'Steel bends. Mithril does not.'] },
     { id: 'hilde', name: 'Hilde', x: 10, y: 20, tunic: '#7a4a3a', hair: '#e0c080', woman: true, role: 'dwarf_villager', lines: ['King Thrain has sat that throne since before the goblins came.', 'The guards are for show. Mostly.', 'A mithril platebody takes three bars and a Smithing of thirty. Then nothing in the Fanglands touches you.'] },
   ];
+  const BRUNHILD = DWARVES.find(d => d.id === 'brunhild');   // the smith (her shop is tested at her counter)
   for (const d of DWARVES) { d.px = tc(d.x); d.py = tc(d.y); d.facing = { x: 0, y: 1 }; }
   // 17-tap: a tap on a dwarf walks up and talks. The list is empty on the surface — the dwarves only exist
   // while the instance is open, and their tiles are the overworld's own cave and Death's House otherwise.
@@ -9534,9 +9538,9 @@ PEOPLE_UI.auditPrompt = function (p) {
     }
     // a clear lane up from the miners' cart so the shaft can always be reached
     const clearable = [T.ROCK, T.IRON, T.COAL, T.GRASS, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM];
-    const lane = [[53, 13], [55, 13]];
-    for (let y = 8; y <= 12; y++) lane.push([54, y], [55, y]);
-    for (let y = 5; y <= 7; y++) for (let x = 55; x <= 57; x++) lane.push([x, y]);
+    const lane = DW_Q.pts([[53, 13], [55, 13]]);
+    for (let y = DW_Q.y(8); y <= DW_Q.y(12); y++) lane.push([DW_Q.x(54), y], [DW_Q.x(55), y]);
+    for (let y = DW_Q.y(5); y <= DW_Q.y(7); y++) for (let x = DW_Q.x(55); x <= DW_Q.x(57); x++) lane.push([x, y]);
     for (const [x, y] of lane) if (clearable.includes(api.tileAt(x, y))) api.setTile(x, y, T.DIRT);
     api.setTile(SHAFT_T.x, SHAFT_T.y, DW_SHAFT);
   });
@@ -9745,11 +9749,11 @@ PEOPLE_UI.auditPrompt = function (p) {
     if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
     // Deepholm is an instance now, so it is a place you are IN rather than a rectangle of the surface: the
     // region only exists while you are down there, and the ground it used to sit on is Wolfwood again.
-    { const surface = regionAt(14, 80).name, grave = regionAt(12, 70).name, listed = REGIONS.some(r => r.name === 'Deepholm');
+    { const surface = regionAt(...ATLAS.frame('deepholm_rock').p(14, 80)).name, grave = regionAt(...ATLAS.port('graveyard.grave')).name, listed = REGIONS.some(r => r.name === 'Deepholm');
       DEEPHOLM.enter(); const down = regionAt(LADDER_T.x, LADDER_T.y + 1).name, first = REGIONS[0].name; INSTANCES.leave();
       check('dwarves: Deepholm is its own region while you are in it, and no part of the surface answers to the name', !listed && surface === 'Wolfwood' && grave === 'Wolfwood' && down === 'Deepholm' && first === 'Deepholm' && !REGIONS.some(r => r.name === 'Deepholm'), { listedOnSurface: listed, at1480: surface, at1270: grave, inside: down, firstWhileIn: first }); }
     // shaft down, ladder up
-    { F.tp(54, 14); const w = F.goAdjacent(SHAFT_T.x, SHAFT_T.y, 1500); F.face(SHAFT_T.x, SHAFT_T.y); F.press('KeyE'); F.sim(3, []);
+    { F.tp(...ATLAS.port('quarry.spur')); const w = F.goAdjacent(SHAFT_T.x, SHAFT_T.y, 1500); F.face(SHAFT_T.x, SHAFT_T.y); F.press('KeyE'); F.sim(3, []);
       check('dwarves: mine shaft at Grey Quarry drops you into Deepholm', typeof w === 'number' && player.region === 'Deepholm' && INSTANCES.active() === DH_ID && Math.floor(player.x / TILE) === LADDER_T.x && Math.floor(player.y / TILE) === LADDER_T.y + 1, { w, region: player.region, inst: INSTANCES.active(), tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) });
       F.face(LADDER_T.x, LADDER_T.y); F.press('KeyE'); F.sim(3, []);
       check('dwarves: ladder climbs back up beside the shaft', player.region === 'Grey Quarry' && INSTANCES.active() === null && tileAt(SHAFT_T.x, SHAFT_T.y) === DW_SHAFT && Math.floor(player.x / TILE) === SHAFT_T.x && Math.floor(player.y / TILE) === SHAFT_T.y + 1, { region: player.region, inst: INSTANCES.active(), tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }); }
@@ -9795,13 +9799,13 @@ PEOPLE_UI.auditPrompt = function (p) {
     { const drain = () => { dialog.queue.length = 0; dialog.cur = null; }; // earlier lines (the Voice on the way down) would otherwise sit in front
       dq().stage = 0; drain(); F.tp(THRONE_T.x, THRONE_T.y - 1); F.face(THRONE_T.x, THRONE_T.y); F.press('KeyE'); F.sim(3, []);
       const asked = dq().stage === 1 && dialog.cur && dialog.cur.who === 'King Thrain' && activeQuests().includes('dwarf') && /coal/.test(questText('dwarf'));
-      drain(); F.tp(13, 11); F.face(12, 11); closePanel(); F.press('KeyE'); F.sim(3, []); const refused = panel !== 'shop' && dialog.cur && /cold/.test(dialog.cur.text);
+      drain(); F.tp(BRUNHILD.x + 1, BRUNHILD.y); F.face(BRUNHILD.x, BRUNHILD.y); closePanel(); F.press('KeyE'); F.sim(3, []); const refused = panel !== 'shop' && dialog.cur && /cold/.test(dialog.cur.text);
       check('dwarves: King Thrain asks for 5 coal + 3 iron bars; Brunhild refuses to trade before', asked, { stage: dq().stage, who: dialog.cur && dialog.cur.who, refused });
       check('dwarves: Brunhild will not trade by a cold forge', refused, { panel, refused });
       while (countItem('coal') < 5) h.give('coal', 1); while (countItem('iron_bar') < 3) h.give('iron_bar', 1); const coal0 = countItem('coal'), bars0 = countItem('iron_bar'), c0 = coins(), sx0 = player.skills.smithing.xp;
       F.tp(THRONE_T.x, THRONE_T.y - 1); F.face(THRONE_T.x, THRONE_T.y); F.press('KeyE'); F.sim(3, []);
       check('dwarves: the king takes the coal and iron, pays 300 coins and 200 Smithing xp', dq().stage === 2 && coins() === c0 + 300 && player.skills.smithing.xp === sx0 + 200 && countItem('coal') === coal0 - 5 && countItem('iron_bar') === bars0 - 3 && !activeQuests().includes('dwarf'), { stage: dq().stage, coins: coins() - c0, xp: player.skills.smithing.xp - sx0 });
-      F.tp(13, 11); F.face(12, 11); F.press('KeyE'); F.sim(2, []); const open = panel === 'shop' && panelArg === 'dwarf'; const coalB = countItem('coal'); const bought = F.clickButton('Buy 25'); closePanel();
+      F.tp(BRUNHILD.x + 1, BRUNHILD.y); F.face(BRUNHILD.x, BRUNHILD.y); F.press('KeyE'); F.sim(2, []); const open = panel === 'shop' && panelArg === 'dwarf'; const coalB = countItem('coal'); const bought = F.clickButton('Buy 25'); closePanel();
       check("dwarves: Brunhild's shop opens after the quest and sells coal (and a mithril pickaxe at 900)", open && bought && countItem('coal') === coalB + 1 && SHOPS.dwarf.stock.some(([id, p]) => id === 'mithril_pickaxe' && p === 900), { open, bought, coal: countItem('coal') }); }
     // the guards come with the instance now, so they stand in the throne hall while you are down there and nowhere at all when you are not
     { const g = monsters.filter(m => m.type === 'dwarf_guard');

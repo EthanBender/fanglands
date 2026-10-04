@@ -82,5 +82,21 @@
   {"file": "22-bulldozer.js", "literal": "wx - 10", "line": 214, "reason": "drawing: the tread bands' pixel offsets round the wheel"},
   {"file": "22-bulldozer.js", "literal": "px - 44", "line": 256, "reason": "drawing: the blade's ridges in sprite pixels"},
   {"file": "22-bulldozer.js", "literal": "5 * TILE", "line": 313, "reason": "the self-test's check of the dozers' sight range (5 tiles)"},
-  {"file": "22-bulldozer.js", "literal": "2 * TILE", "line": 335, "reason": "a distance (2 tiles), not a position"}
+  {"file": "22-bulldozer.js", "literal": "2 * TILE", "line": 335, "reason": "a distance (2 tiles), not a position"},
+  {"file": "24-dwarves.js", "decl": "DH", "reason": "instance-local (deepholm)"},
+  {"file": "24-dwarves.js", "decl": "LADDER_T", "reason": "instance-local (deepholm)"},
+  {"file": "24-dwarves.js", "decl": "THRONE_T", "reason": "instance-local (deepholm)"},
+  {"file": "24-dwarves.js", "decl": "FORGES", "reason": "instance-local (deepholm)"},
+  {"file": "24-dwarves.js", "decl": "ANVILS", "reason": "instance-local (deepholm)"},
+  {"file": "24-dwarves.js", "decl": "PILLARS", "reason": "instance-local (deepholm)"},
+  {"file": "24-dwarves.js", "decl": "LAMPS", "reason": "instance-local (deepholm)"},
+  {"file": "24-dwarves.js", "decl": "MITHRIL_ROCKS", "reason": "instance-local (deepholm)"},
+  {"file": "24-dwarves.js", "decl": "CHESTS", "reason": "instance-local (deepholm)"},
+  {"file": "24-dwarves.js", "decl": "GUARDS", "reason": "instance-local (deepholm)"},
+  {"file": "24-dwarves.js", "decl": "DWARVES", "reason": "instance-local (deepholm): the dwarves stand in the undercity's own tiles"},
+  {"file": "24-dwarves.js", "decl": "buildDeepholm", "reason": "instance-local (deepholm): the undercity carved in its own tiles"},
+  {"file": "24-dwarves.js", "literal": "6 * TILE", "decl": "sight", "reason": "the dwarf guard's sight: a range (6 tiles), not a position"},
+  {"file": "24-dwarves.js", "literal": "p.px - 18", "line": 329, "reason": "the self-test's tap brackets round a dwarf: pixel offsets"},
+  {"file": "24-dwarves.js", "literal": "p.py - 24", "line": 329, "reason": "the self-test's tap brackets round a dwarf: pixel offsets"},
+  {"file": "24-dwarves.js", "literal": "[7, 7]", "decl": "dwDrawShaft", "reason": "drawing: rivet offsets on the shaft's frame, in pixels"}
 ]
