@@ -2260,6 +2260,15 @@ round before (its export had no `sim_log` table). `GET /api/admin/sim` afterward
 false, every place on `keeper` (`deepholm`, `aerie`; `coalmine` listed in `empty`), master `on`, nothing held, nothing
 running, `sim_log` empty, nobody online. The Worker is 3,047.79 KiB (789.31 KiB gzipped), startup 5 ms.
 
+**On the test world, review round 3** (4 Oct 2026, code `f84bdb9`, deployed with `~/.fanglands/tools/deploy-test.sh` after the
+backup `~/.fanglands/backups/20261004-050040-pre-shared-2-r3-test` (3 accounts, 9 saves, a bookmark), nobody online; the script
+ran every gate first, all green; `fix3/deploy-test.log`; version `bd03988e`). `GET /api/admin/sim` afterwards: `world.loaded`
+true, cap 4, every place on `keeper`, master `on`, nothing held, nothing running, `sim_log` empty, nobody online. The Worker is
+3,056.60 KiB (791.59 KiB gzipped), startup 5 ms. On a local `wrangler dev` of the same tree the two-browser proof passed again
+(`fix3/proof/proof-run.txt`, all 9 steps), and the review's real-page wake (two knights' pages paused 60 s with the sockets
+open, the object napped and rebuilt, the kid unlocked) left the felled sentinel down and the hurt one hurt with the kid in
+first or second (`fix3/proof-wake/real-wake-world-{ann,ben}.txt`; on `a7a6a78` the first stood again at 160).
+
 ## Safety rules (binding)
 
 - Invite-only signups. Names and chat pass `online/src/filter.js`. Chat is logged with the name and time.
