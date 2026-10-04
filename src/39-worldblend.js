@@ -71,6 +71,7 @@
   const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], N8 = [...N4, [1, 1], [-1, 1], [1, -1], [-1, -1]];
 
   // ---------- the pass ----------
+  let dockLaneGuard = 0;   // the points of the dock lane this file's guard covered (each with its 2-tile verge), for the check below
   HOOKS.world.push((rnd0, api) => {
     const rnd = mulberry32(SEED);   // own stream: the result does not depend on how many draws the features before this made
     const set = api.setTile, at = api.tileAt;
@@ -94,8 +95,14 @@
     markB(TD.box([70, 12, 82, 23])); markB(TD.box([70, 38, 82, 48]));   // the cow and sheep pens
     markB(PONDF.box([36, 29, 43, 44]));                    // Miller's Pond west of the stepping stones (x 43), both their landings included; the river leaves from the east shore
     markB(QF.box([45, 0, 63, 4])); markB(QF.box([59, 4, 65, 9])); markB(QF.box([52, 4, 58, 15])); // the cliff course, the wind shrine's clearing, the shaft lane and the miners' cart
-    // the road to the dock and its verge (each corner in the frame of the place it touches: Stage 4a replaces this lane), the lane down the village fence
-    mark(TD.x(139), TD.y(12), DOCKF.x(163), DOCKF.y(16)); markB(TD.box([140, 13, 143, 33]));
+    // the road to the dock and its verge, the lane down the village fence
+    // (the dock lane is the lane itself, ATLAS.track('road_dock_lane'), and every tile within 2 of it: a corridor, never a
+    // rect built from two frames' corners that the spread could turn inside out; Stage 4a replaces this lane)
+    dockLaneGuard = 0;
+    { const pl = ATLAS.track('road_dock_lane'), V = 2;
+      for (let s = 1; s < pl.length; s++) { const [ax, ay] = pl[s - 1], [bx, by] = pl[s], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+        for (let k = 0; k <= n; k++) { const x = Math.round(ax + (bx - ax) * k / n), y = Math.round(ay + (by - ay) * k / n); mark(x - V, y - V, x + V, y + V); dockLaneGuard++; } } }
+    markB(TD.box([140, 13, 143, 33]));
     markB(DOCKF.box([158, 9, 170, 19]));                   // the dock, Harl, his boat, the lantern: 4 tiles all round
     mark(PAL.x0 - 1, PAL.y0 - 1, PAL.x1 + 1, PAL.y1 + 1);  // the palisade and one ring of grass
     markB(CAMP.box([138, 28, 142, 32])); markB(CAMP.box([159, 29, 161, 31]));   // the camp's west gap, the climb's landing east of the palisade
@@ -411,6 +418,7 @@
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
+    check('blend: the road to the dock keeps its hard guard: the lane (ATLAS.track) point by point, each with its 2-tile verge, never an empty rect', dockLaneGuard >= 2, { dockLaneGuard });
     const S = BL.stats;
     { const xs = new Set(); for (let y = W.ty(5); y <= W.ty(90); y++) for (let x = W.tx(150); x <= W.tx(199); x++) if (tileAt(x, y) === T.WATER) { xs.add(x); break; }
       check('blend: the Grey Sea shore wanders (6+ distinct westmost-water columns over y 5–90), with coves and headlands', xs.size >= 6, { distinct: xs.size, coast: S.coast }); }

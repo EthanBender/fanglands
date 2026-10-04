@@ -297,6 +297,7 @@
   WS.clearRock = clearRock;
   { const _load = load; load = function () { const ok = _load.apply(this, arguments); if (ok) clearRock(); return ok; }; }
 
+  let dockLaneGuard = 0;   // the points of the dock lane this file's guard covered (each with its 2-tile verge), for the check below
   HOOKS.world.push((rnd0, api) => {
     const rnd = mulberry32(SEED);                  // its own stream: what drew before this must not move the result
     const set = api.setTile, at = api.tileAt;
@@ -318,8 +319,14 @@
     markB(TD.box([70, 12, 82, 23])); markB(TD.box([70, 38, 82, 48]));   // the cow and sheep pens
     markB(PONDF.box([36, 29, 43, 44]));                    // Miller's Pond west of the stepping stones, both their landings
     markB(QF.box([45, 0, 63, 4])); markB(QF.box([59, 4, 65, 9])); markB(QF.box([52, 4, 58, 15])); // the cliff course, the wind shrine, the shaft lane, the miners' cart
-    // the road to the dock (each corner in the frame of the place it touches: Stage 4a replaces this lane) and the lane down the village fence
-    mark(TD.x(139), TD.y(12), DOCKF.x(163), DOCKF.y(16)); markB(TD.box([140, 13, 143, 33]));
+    // the road to the dock and the lane down the village fence
+    // (the dock lane is the lane itself, ATLAS.track('road_dock_lane'), and every tile within 2 of it: a corridor, never a
+    // rect built from two frames' corners that the spread could turn inside out; Stage 4a replaces this lane)
+    dockLaneGuard = 0;
+    { const pl = ATLAS.track('road_dock_lane'), V = 2;
+      for (let s = 1; s < pl.length; s++) { const [ax, ay] = pl[s - 1], [bx, by] = pl[s], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+        for (let k = 0; k <= n; k++) { const x = Math.round(ax + (bx - ax) * k / n), y = Math.round(ay + (by - ay) * k / n); mark(x - V, y - V, x + V, y + V); dockLaneGuard++; } } }
+    markB(TD.box([140, 13, 143, 33]));
     markB(DOCKF.box([158, 9, 170, 19]));                   // the dock, Harl, his boat
     markB(CAMP.box([141, 19, 159, 41])); markB(CAMP.box([138, 28, 142, 32])); markB(CAMP.box([159, 29, 161, 31])); // the palisade, its west gap, the climb's landing
     markB(GULL.box([168, 4, 187, 22])); markB(IRON.box([175, 38, 198, 62]));    // Gull Isle, Ironclad Isle
@@ -777,6 +784,7 @@
   // ---------- self-test ----------
   const P = 'worldshape: ';
   HOOKS.selfTest.push((check, F, h) => {
+    check('worldshape: the road to the dock keeps its hard guard: the lane (ATLAS.track) point by point, each with its 2-tile verge, never an empty rect', dockLaneGuard >= 2, { dockLaneGuard });
     // the far corner (and the other three) resolve through the bisect: it finds the exact tile, and regionAt answers what the outlines say
     { const corners = [[0, 0], [MAP_W - 1, 0], [0, MAP_H - 1], [MAP_W - 1, MAP_H - 1]], bad = [];
       for (const [cx, cy] of corners) {
