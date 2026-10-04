@@ -733,7 +733,8 @@
   //   Layers (y): the ground, blitted from cached chunks at -1e9 - 10, under every other file's ground marks (the tap ring,
   //   the fight-back ring), then the doorsteps and the drops on it, redrawn;
   //   the lily pads at -1e8 - 1; walls, towers, lamps, statues, fountains, greenery, stalls, the Bell Tower, the castle
-  //   and the people y-sorted at the foot of their footprint; the lamp glow and the bunting at 9e8, over every head;
+  //   and the people y-sorted at the foot of their footprint; the bunting at 9e8, over every head; the lamp heads' glow at
+  //   1e9 + 1, over the night;
   //   Osric's welcome at 1e9 + 3, over the night. Every item's draw takes no arguments, and every static body is a cached
   //   sprite (only water, flags, flames, smoke and creatures move).
   // =========================================================================
@@ -1238,7 +1239,7 @@
   }
   // the warm glow round a lit lantern: one sprite painted once, drawn with the lamp's flicker as its alpha (no gradient is
   // made per lamp per frame)
-  const paintLampGlow = cg => { const gl = cg.createRadialGradient(0, 0, 2, 0, 0, 46); gl.addColorStop(0, 'rgba(255,214,130,0.42)'); gl.addColorStop(1, 'rgba(255,200,110,0)'); cg.fillStyle = gl; cg.beginPath(); cg.arc(0, 0, 46, 0, 7); cg.fill(); };
+  const paintLampGlow = cg => { const gl = cg.createRadialGradient(0, 0, 2, 0, 0, 46); gl.addColorStop(0, 'rgba(255,220,140,0.55)'); gl.addColorStop(0.35, 'rgba(255,205,120,0.25)'); gl.addColorStop(1, 'rgba(255,200,110,0)'); cg.fillStyle = gl; cg.beginPath(); cg.arc(0, 0, 46, 0, 7); cg.fill(); };
   function lampGlow(g, tx, ty) {
     const cx = tc(tx), foot = (ty + 1) * TILE - 6, cy = foot - lampH(tx, ty) + 16;
     const f = 0.85 + Math.sin(time * 5 + tx * 1.3) * 0.08, a0 = g.globalAlpha;
@@ -2256,7 +2257,7 @@
       const want = k === 'great' || k === 'market' || k === 'rose' ? FOUNT : GREEN_KINDS.has(k) ? HEDGE : PROP;
       if (t !== want) continue;
       const px = x * TILE, py = y * TILE, by = (y + 1) * TILE;
-      if (k === 'lamp') { put(items, by - 6, [tc(x) - 11, LAMP_TOP[x + ',' + y], tc(x) + 11, by], () => drawLamp(g, x, y)); if (lit()) put(items, 9e8 - 1, null, () => lampGlow(g, x, y)); }
+      if (k === 'lamp') { put(items, by - 6, [tc(x) - 11, LAMP_TOP[x + ',' + y], tc(x) + 11, by], () => drawLamp(g, x, y)); if (lit()) put(items, 1e9 + 1, null, () => lampGlow(g, x, y)); }
       else if (k === 'statue') { const s = statueAt(x, y), hw = s ? (STATUE_HALF[s.id] || 24) - 2 : 22; if (s) put(items, by - 2, [tc(x) - hw, by - 92, tc(x) + hw, by], () => drawStatue(g, s)); }
       else if (k === 'plinth') put(items, by - 2, [tc(x) - 22, by - (statueDone() ? 92 : 36), tc(x) + 22, by], () => drawPlinth(g));
       else if (k === 'bench') put(items, by - 5, [tc(x) - 21, by - 37, tc(x) + 21, by], () => blit(g, sprite('bench', 48, 40, 24, 36, paintBench), tc(x), by - 5));
@@ -2314,15 +2315,19 @@
   HOOKS.draw.push(drawHook);
 
   // ---------- night: the lamps, the torches, the fountain and the dial light the street ----------
-  if (HOOKS.nightLights) HOOKS.nightLights.push((out, x0, y0, x1, y1) => {
+  // The pools are small (a lamp 72, the fountain 64, the dial 64): at 110 and 90 the 22 lamps' pools ran into each other and
+  // Fountain Square at night was almost as bright as day. Each lamp's head glows over the dark instead (lampGlow, 1e9 + 1).
+  const LAMP_R = 72, FOUNTAIN_R = 64, DIAL_R = 64;
+  function townLights(out, x0, y0, x1, y1) {
     if (window.__instance) return;
     const on = lit(), inside = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
-    if (on) for (const [x, y] of LAMPS) if (inside(x, y)) out.push({ x: tc(x), y: y * TILE - 16, r: 110, kind: 'lamp' });
+    if (on) for (const [x, y] of LAMPS) if (inside(x, y)) out.push({ x: tc(x), y: y * TILE - 16, r: LAMP_R, kind: 'lamp' });
     if (on) for (const key of TORCHES) { const [x, y] = key.split(',').map(Number); if (inside(x, y)) out.push({ x: tc(x), y: tc(y) - 14, r: 70, kind: 'torch' }); }
     if (on) for (const gt of PLAN.GATES) if (inside(gt.x, 32)) { const b = gateBox(gt); for (const ty of [b.top + 14, b.bot - 2]) out.push({ x: b.outer + b.out * 5, y: ty - 14, r: 80, kind: 'gate torch' }); }
-    if (inside(great.x + 1, great.y + 1)) out.push({ x: greatC.x, y: greatC.y, r: 90, kind: 'fountain' });
-    if (inside(PLAN.BELL.x, PLAN.BELL.y)) out.push({ x: BT.x + BT.w / 2, y: BT.foot + BT.FACE + 40, r: 80, kind: 'dial' });
-  });
+    if (inside(great.x + 1, great.y + 1)) out.push({ x: greatC.x, y: greatC.y, r: FOUNTAIN_R, kind: 'fountain' });
+    if (inside(PLAN.BELL.x, PLAN.BELL.y)) out.push({ x: BT.x + BT.w / 2, y: BT.foot + BT.FACE + 40, r: DIAL_R, kind: 'dial' });
+  }
+  if (HOOKS.nightLights) HOOKS.nightLights.push(townLights);
 
   // =========================================================================
   // 10. the book
@@ -2790,14 +2795,19 @@
       const all = []; for (const f of HOOKS.nightLights) f(all, 0, 0, MAP_W - 1, MAP_H - 1);
       const lamps = all.filter(l => l.kind === 'lamp').length, torches = all.filter(l => l.kind === 'torch').length;
       const ov = N.overlay();
-      render(); const litN = STATS.lampsLit;
+      // the night painter (35-night's drawNight, inside render) asks this file for its lights: a spy in townLights' place sees
+      // the call and the lamps it is handed back (so a build where the night never reads the hook fails here)
+      const at = HOOKS.nightLights.indexOf(townLights); let asked = 0, handed = 0;
+      if (at >= 0) HOOKS.nightLights[at] = (out, ...a) => { asked++; const n0 = out.length; townLights(out, ...a); handed += out.slice(n0).filter(l => l.kind === 'lamp' && l.r === LAMP_R).length; };
+      try { render(); } finally { if (at >= 0) HOOKS.nightLights[at] = townLights; }
+      const litN = STATS.lampsLit;
       player.dayTime = 100; const day = []; for (const f of HOOKS.nightLights) f(day, 0, 0, MAP_W - 1, MAP_H - 1);
       player.dayTime = N.LIGHT + N.DUSK + 30;
       const inst = window.INSTANCES && INSTANCES.enter('aerie', [SKYCITY.STEP_T.x, SKYCITY.STEP_T.y]); const inside = []; for (const f of HOOKS.nightLights) f(inside, 0, 0, MAP_W - 1, MAP_H - 1); leave();
       player.dayTime = d0;
-      check(P + 'C15 at night every lamp is a light (22 over the whole town), the wall torches light up, the night overlay is on, the lamps in view are drawn lit; by day no lamp is lit; in an instance the town lights nothing',
-        lamps === 22 && torches === TORCHES.size && torches > 10 && ov > 0 && litN > 0 && day.filter(l => l.kind === 'lamp').length === 0 && !!inst && inside.length === 0,
-        { lamps, torches, ov, litN, day: day.length, inst: !!inst, inside: inside.length }); }
+      check(P + 'C15 at night every lamp is a light (22 over the whole town, each a pool of 72 px), the wall torches light up, the night overlay is on, the night painter asks this file for its lights while rendering and gets the lamps in view, the lamps in view are drawn lit; by day no lamp is lit; in an instance the town lights nothing',
+        lamps === 22 && all.filter(l => l.kind === 'lamp').every(l => l.r === LAMP_R) && LAMP_R <= 80 && torches === TORCHES.size && torches > 10 && ov > 0 && at >= 0 && asked >= 1 && handed >= 4 && litN > 0 && day.filter(l => l.kind === 'lamp').length === 0 && !!inst && inside.length === 0,
+        { lamps, torches, ov, asked, handed, litN, day: day.length, inst: !!inst, inside: inside.length }); }
 
     // ---- C16. instances ----
     { leave(); const ok = INSTANCES.enter('aerie', [SKYCITY.STEP_T.x, SKYCITY.STEP_T.y]); F.sim(2, []); drain(); F.tp(92, 40);
@@ -3016,9 +3026,14 @@
       const regionT = (shown.find(s => s.name === 'Thistledown') || {}).t;
       const fsT = (shown.find(s => s.name === 'Fountain Square') || {}).t;
       const twice = wards.some((n, i) => i && wards[i - 1] === n);
-      check(P + 'C20 walking in at the West Gate, along the High Street to Crown Street and on to the Duke\'s Green shows Fountain Square and The Duke\'s Green once each, never within 3.2 s of the Thistledown banner, never the same twice running',
-        ok && wards.filter(n => n === 'Fountain Square').length === 1 && wards.filter(n => n === "The Duke's Green").length === 1 && !twice && regionT !== undefined && fsT - regionT >= 3.2,
-        { ok, shown: names2, gap: fsT - regionT }); }
+      // and arriving in Fountain Square at once (a ride home, a fall, a teleport): the square's banner waits out the
+      // Thistledown banner's 3.2 s, then shows (the walk above takes about 5 s, so it never tests the wait)
+      onFoot(); F.tp(82, 32); F.sim(5, []); areaBanner = null; WARD.shown = null; const quick = [];
+      F.tp(112, 33); let early = false, later = false; const t0 = time;
+      for (let k = 0; k < 270; k++) { F.step([]); const a = areaBanner && areaBanner.name; if (a === 'Fountain Square') { if (time - t0 < 3.0) early = true; else later = true; } if (a && quick[quick.length - 1] !== a) quick.push(a); }
+      check(P + 'C20 walking in at the West Gate, along the High Street to Crown Street and on to the Duke\'s Green shows Fountain Square and The Duke\'s Green once each, never within 3.2 s of the Thistledown banner, never the same twice running; arriving in the square at once, its banner waits the 3.2 s and then shows',
+        ok && wards.filter(n => n === 'Fountain Square').length === 1 && wards.filter(n => n === "The Duke's Green").length === 1 && !twice && regionT !== undefined && fsT - regionT >= 3.2 && !early && later && quick[0] === 'Thistledown',
+        { ok, shown: names2, gap: fsT - regionT, early, later, quick }); }
 
     // ---- C21. regions ----
     { onFoot(); F.tp(82, 32); F.step([]); F.sim(60, ['KeyD']); const inRegion = player.region;
