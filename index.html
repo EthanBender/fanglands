@@ -467,18 +467,22 @@ resize();
 
   // ---------- the hand table (only where a place differs from the default) ----------
   // { id, kind, of, combat, pri, rects, spawn, call, pvp, safe, loose }
+  // Positions are frame reads (the spread spec, §9.1): the frames are defined in the block below, and a rule's rects and
+  // spawn are only read when build() runs (the last world pass), so each is a getter.
+  const FR = id => window.ATLAS.frame(id), WR = () => window.ATLAS.world;
   const ATLAS_RULES = [
     // multi on the overworld: the gang fights
-    { id: 'goblin_camp', combat: 'multi', rects: [[142, 18, 159, 42]] },     // + the camp spawns' rect (generateWorld marks camp spawns from x 142; the region starts at 145)
+    { id: 'goblin_camp', combat: 'multi', get rects() { return [FR('camp').box([142, 18, 159, 42])]; } },     // + the camp spawns' rect (generateWorld marks camp spawns from x 142; the region starts at 145)
     { id: 'fang_lair', combat: 'multi' },
-    { id: 'hollowford_square', kind: 'area', of: 'hollowford', combat: 'multi', rects: [[130, 70, 150, 90]] },   // the cracked well and the Barrelbeast's ground
-    { id: 'ashfields_dragons', kind: 'area', of: 'ashfields', combat: 'multi', rects: [[40, 110, 99, 139]] },    // where the green and red dragons sleep
-    { id: 'iron_isle_wreck', kind: 'area', of: 'ironclad_isle', combat: 'multi', rects: [[182, 43, 194, 56]] },  // the goblin wreck and its crew
+    { id: 'hollowford_square', kind: 'area', of: 'hollowford', combat: 'multi', get rects() { return [FR('hollowford').box([130, 70, 150, 90])]; } },   // the cracked well and the Barrelbeast's ground
+    // where the green and red dragons sleep: open Ashfields ground, a world rect (whole tiles)
+    { id: 'ashfields_dragons', kind: 'area', of: 'ashfields', combat: 'multi', get rects() { const W = WR(); return [[W.tx(40), W.ty(110), W.tx(99), W.ty(139)]]; } },
+    { id: 'iron_isle_wreck', kind: 'area', of: 'ironclad_isle', combat: 'multi', get rects() { return [FR('ironclad_isle').box([182, 43, 194, 56])]; } },  // the goblin wreck and its crew
     { id: 'deep_wilderlands', kind: 'reserved', combat: 'multi', pvp: true },                                   // named now, on no tile yet
     // Hollowford is rebuilt in play (31-rebuild, 41-guild): its building walls come and go, so they never count as fixed
     { id: 'hollowford', loose: true },
     // the square by the Great Fountain; safe stays the option the spec keeps off
-    { id: 'thistledown', safe: false, spawn: [112, 33] },
+    { id: 'thistledown', safe: false, get spawn() { return window.ATLAS.port('thistledown.square'); } },
     // every boss instance is multi (the Royal Mine's golem is its boss though the define names none)
     { id: 'spider_den', combat: 'multi' }, { id: 'war_shed', combat: 'multi' }, { id: 'tinker_lab', combat: 'multi' },
     { id: 'stormfront', combat: 'multi' }, { id: 'afterlands', combat: 'multi' }, { id: 'royalmine', combat: 'multi' },
@@ -1000,7 +1004,7 @@ resize();
     check(PF + 'Stage 0: every frame, the world and every seam pin are the identity (frame.x = x, W.x = x, pin offset 0)', notId.length === 0 && wId && pinsZero, { notId, wId, pinsZero });
     // the API's shapes
     const Fh = frame('hollowford'), r = Fh.rect({ x0: 122, y0: 66, x1: 156, y1: 92, name: 'HF' }), pt = Fh.pt({ x: 140, y: 80, label: 'well' });
-    const shapes = JSON.stringify(Fh.p(140, 80)) === '[140,80]' && r.name === 'HF' && r.x1 === 156 && pt.label === 'well' && pt.x === 140 &&
+    const shapes = JSON.stringify(Fh.p(140, 80)) === '[140,80]' && r.name === 'HF' && r.x1 === Fh.x(156) && pt.label === 'well' && pt.x === Fh.x(140) &&
       JSON.stringify(Fh.pts([[1, 2], { x: 3, y: 4 }]).map(q => Array.isArray(q) ? q : [q.x, q.y])) === '[[1,2],[3,4]]' && JSON.stringify(Fh.box([1, 2, 3, 4])) === '[1,2,3,4]' && Fh.inOld(120, 59) && !Fh.inOld(119, 59);
     let threw = false; try { frame('nowhere'); } catch (e) { threw = true; }
     check(PF + "a frame answers in every shape the conversions use (p, pt, pts, rect, box, inOld) and keeps a rect's other fields; an unknown place throws", shapes && threw, { shapes, threw });
@@ -1008,7 +1012,7 @@ resize();
     const sp = port('thistledown.square'), reserved = port('old_bridge.span'), hfBox = box('hollowford'), g = guards().find(q => q.id === 'hollowford');
     const smallest = anchorOf(134, 60), ow = oldToNew(140, 80), none = oldToNew(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
     check(PF + 'port, box, guards, anchorOf (the smallest box wins), oldToNew (null on open land) and every track resolve; a reserved place has no box or port before 4a',
-      JSON.stringify(sp) === '[112,33]' && reserved === null && box('old_bridge') === null && JSON.stringify(hfBox) === '[120,59,160,96]' && g && g.x0 === 117 && g.y1 === 99 &&
+      JSON.stringify(sp) === '[112,33]' && reserved === null && box('old_bridge') === null && JSON.stringify(hfBox) === '[120,59,160,96]' && g && g.x0 === hfBox[0] - ANCHORS.hollowford.guard && g.y1 === hfBox[3] + ANCHORS.hollowford.guard &&
       smallest && smallest.id === 'hollowford' && smallest.holders.includes('thistledown') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(oldToNewWorld(60, 70)) === '[60,70]' && trackOk,
       { sp, reserved, hfBox, g, smallest, ow, none, trackOk });
     // an overlap point is flagged until a human decides it; an OWNERS rect or a port at that exact point decides it
@@ -1019,7 +1023,7 @@ resize();
     // TRACKS hold today's values: the cave road ends where 02-world lays it, and the river is 39's 18 points
     const cave = track('road_cave'), riv = track('river');
     check(PF + "TRACKS hold today's values (the cave road from the cave mouth by the signpost to the lane outside the west gate; 18 river points from the pond to the sea)",
-      JSON.stringify(cave) === JSON.stringify([[CAVE_EXIT_X + 1, 7], [SIGN_TILE.x, SIGN_TILE.y], [84, 32]]) && riv.length === 18 && riv[0][0] === 44 && riv[17][0] === 178, { cave, rivN: riv.length });
+      JSON.stringify(cave) === JSON.stringify([[CAVE_EXIT_X + 1, 7], [SIGN_TILE.x, SIGN_TILE.y], frame('thistledown').p(84, 32)]) && riv.length === 18 && riv[0][0] === 44 && riv[17][0] === 178, { cave, rivN: riv.length });
     // the strict report: a point far outside its own place is logged with where it was written, once per line (a hit count
     // for the rest). Whether the game's own entries are allowed is the runner's question (tools/headless.js and
     // tools/fingerprint.mjs read docs/spread/strict-allow.json), so this check does not ask that the game logged none.
