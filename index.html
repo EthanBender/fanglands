@@ -1270,7 +1270,8 @@ const REGIONS = [
   AT_QUARRY.rect({ name: 'Grey Quarry', sub: 'Iron and coal in the rock', x0: 46, y0: 1, x1: 62, y1: 14 }),
   AT_POND.rect({ name: "Miller's Pond", sub: 'Shrimp, and trout for the patient', x0: 36, y0: 30, x1: 50, y1: 44 }),
   AT_CAMP.rect({ name: 'Goblin Camp', sub: 'Their machines are here', x0: 145, y0: 18, x1: 159, y1: 42 }),
-  AT_WHOLE(AT_W.rect({ name: 'Wolfwood', sub: 'Keep to the paths', x0: 0, y0: 62, x1: 159, y1: 95 })),
+  // (Wolfwood's last row is the warden's line, the rim, on its pin through the warden's gate: 27-dragons' Ashfields box starts the row below)
+  Object.assign(AT_WHOLE(AT_W.rect({ name: 'Wolfwood', sub: 'Keep to the paths', x0: 0, y0: 62, x1: 159, y1: 95 })), { y1: Math.round(AT_W.pin('rim', AT_W.y(95), ATLAS.port('warden.gate')[0])) }),
   AT_WHOLE(AT_W.rect({ name: 'Goblin Fields', sub: 'The road east', x0: 21, y0: 0, x1: 159, y1: 61 })),
   { name: 'The Wilds', sub: 'Uncharted', x0: AT_W.tx(0), y0: AT_W.ty(0), x1: MAP_W - 1, y1: MAP_H - 1 },
 ];
