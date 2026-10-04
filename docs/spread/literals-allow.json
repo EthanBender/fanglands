@@ -157,5 +157,10 @@
   {"file": "35-night.js", "literal": "30 * TILE", "line": 471, "reason": "the self-test clears drops within 30 tiles of Grubmarket's road: a radius, not a position"},
   {"file": "35-night.js", "literal": "F.tp(30, 12)", "line": 510, "reason": "instance-local (afterlands): the self-test stands in the Afterlands before the Count"},
   {"file": "35-night.js", "literal": "5 * TILE", "line": 510, "reason": "the self-test sets the Count 5 tiles from the knight: an offset, not a position"},
-  {"file": "35-night.js", "literal": "3 * TILE", "line": 511, "reason": "the self-test: the Count lands 3 tiles behind the knight, an offset"}
+  {"file": "35-night.js", "literal": "3 * TILE", "line": 511, "reason": "the self-test: the Count lands 3 tiles behind the knight, an offset"},
+  {"file": "37-dragonkillers.js", "literal": "2 * TILE", "decl": "inRange", "reason": "an ally hits The Fang within 2 tiles of its body: a range, not a position"},
+  {"file": "37-dragonkillers.js", "literal": "12 * TILE", "line": 228, "reason": "an ally more than 12 tiles behind is brought up: a distance, not a position"},
+  {"file": "37-dragonkillers.js", "literal": "4 * TILE", "line": 228, "reason": "a stuck ally more than 4 tiles behind is brought up: a distance, not a position"},
+  {"file": "37-dragonkillers.js", "literal": "4 * TILE", "line": 294, "reason": "the self-test: the allies appear within 4 tiles of the knight, a distance"},
+  {"file": "37-dragonkillers.js", "literal": "4 * TILE", "decl": "near", "reason": "the self-test: the allies fight within 4 tiles of The Fang, a distance"}
 ]

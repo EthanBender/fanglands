@@ -16356,8 +16356,18 @@ window.PLACE_KIT = PLACE_KIT;
 
   // ---------- the warden's gate on the road into the Ashfields ----------
   const WARDEN_GATE = addTile('WARDEN_GATE', { solid: true, tex: 'dirt', mini: '#8a6a3a' });
-  const GATE_T = [[59, 96], [60, 96], [61, 96]];
-  const WARDEN_POST = { x: 60, y: 95 }, WARDEN_ASIDE = { x: 62, y: 97 }; // he stands on the road before his gate (the core clears the tile under an NPC, so not on the gate itself)
+  // Every overworld position reads the Atlas (the spread spec, section 9.1). The gate, its post and the road through the
+  // tree line are the warden's frame (warden.gate, warden.post are its ports). The tree line is the rim seam: row 95
+  // pinned through the gate (W.pin('rim')), from column 1 to the rim's end, the column before the jungle wall's top
+  // (W.line('jungle_west', W.ty(96)) - 1, the same read as 39, 92 and 93); the wall itself is that line, row by row.
+  const DK_W = ATLAS.world, DK_WD = ATLAS.frame('warden'), DK_FL = ATLAS.frame('fang_lair'), DK_TD = ATLAS.frame('thistledown');
+  const XY = ([x, y]) => ({ x, y });
+  const rimRow = x => Math.round(DK_W.pin('rim', DK_W.y(95), x));     // the tree line's row at new column x
+  const rimX1 = () => DK_W.line('jungle_west', DK_W.ty(96)) - 1;       // its last column: the one west of the jungle wall's top
+  const wallX = y => DK_W.line('jungle_west', y);                     // the jungle's west wall at new row y
+  const ROAD_X0 = DK_WD.x(59), ROAD_X1 = DK_WD.x(61);                 // the road's three columns through the line, at the gate
+  const GATE_T = DK_WD.pts([[59, 96], [60, 96], [61, 96]]);
+  const WARDEN_POST = XY(ATLAS.port('warden.post')), WARDEN_ASIDE = DK_WD.pt({ x: 62, y: 97 }); // he stands on the road before his gate (the core clears the tile under an NPC, so not on the gate itself)
   const warden = initNpc({ id: 'brann', name: 'Warden Brann', x: WARDEN_POST.x, y: WARDEN_POST.y, tunic: '#4a4f5a', hair: '#3a2a1a', helmet: true, beard: true, role: 'warden' });
   NPCS.push(warden);
   const gateClosed = () => GATE_T.some(([x, y]) => tileAt(x, y) === WARDEN_GATE);
@@ -16365,14 +16375,14 @@ window.PLACE_KIT = PLACE_KIT;
     // Wolfwood's southern edge grows thick: y 95 is trees except the road, so the warden's gate is the only way south
     // (and the jungle's western edge, x 100, closes the way round from the east)
     const open = t => !SOLID.has(t) && !PUSH_THROUGH.has(t);
-    for (let x = 1; x <= 99; x++) { if (x >= 59 && x <= 61) continue; if (open(api.tileAt(x, 95))) api.setTile(x, 95, T.TREE); }
-    for (let y = 96; y <= 138; y++) if (open(api.tileAt(100, y))) api.setTile(100, y, T.TREE);
-    for (let x = 59; x <= 61; x++) if (open(api.tileAt(x, 95))) api.setTile(x, 95, T.DIRT);
+    for (let x = DK_W.tx(1); x <= rimX1(); x++) { if (x >= ROAD_X0 && x <= ROAD_X1) continue; const y = rimRow(x); if (open(api.tileAt(x, y))) api.setTile(x, y, T.TREE); }
+    for (let y = DK_W.ty(96); y <= DK_W.ty(138); y++) { const x = wallX(y); if (open(api.tileAt(x, y))) api.setTile(x, y, T.TREE); }
+    for (let x = ROAD_X0; x <= ROAD_X1; x++) { const y = DK_WD.y(95); if (open(api.tileAt(x, y))) api.setTile(x, y, T.DIRT); }
     for (const [x, y] of GATE_T) api.setTile(x, y, WARDEN_GATE);
   });
   function openGate(quiet) {
     for (const [x, y] of GATE_T) if (tileAt(x, y) === WARDEN_GATE) changeTile(x, y, T.DIRT);
-    if (!quiet) { burst(tc(60), tc(96), '#8a6a3a', 24, 120); sfx('open'); }
+    if (!quiet) { burst(tc(DK_WD.x(60)), tc(DK_WD.y(96)), '#8a6a3a', 24, 120); sfx('open'); }
     const q = DK(); if (!q.gate) { q.gate = true; if (!quiet) say("Hollowford avenged? Then the Duke's order is lifted. The road south is yours, knight. It goes to Dunstan's farm, and past that, to the dragons.", warden.name); save(); }
   }
   function closeGate() { for (const [x, y] of GATE_T) if (tileAt(x, y) !== WARDEN_GATE) changeTile(x, y, WARDEN_GATE); }
@@ -16395,13 +16405,13 @@ window.PLACE_KIT = PLACE_KIT;
     if (fangQ().summoned) return 'The Fang answers the horn. Kill it, with the Dragon Killers at your side!';
     return "Ride with the Dragon Killers to The Fang's lair in the far south-west and sound the dragon horn on the summoning circle.";
   } };
-  { const base14 = MAP_TARGETS[14] || { x: 18, y: 108, label: "The Fang's lair" };
+  { const base14 = MAP_TARGETS[14] || Object.assign(XY(ATLAS.port('fang_lair.gate')), { label: "The Fang's lair" });
     Object.defineProperty(MAP_TARGETS, 14, { configurable: true, enumerable: true, get() {
       const s = quest.sky ? quest.sky.stage : 0;
       // the wind shrine is where 36-skycity puts it (SKYCITY.SHRINE_T, (62,6) on the Grey Quarry heights)
-      const shrine = window.SKYCITY && SKYCITY.SHRINE_T ? SKYCITY.SHRINE_T : { x: 62, y: 6 };
-      if (s !== 'done') return s === 1 || s === 2 ? { x: shrine.x, y: shrine.y, label: 'The wind shrine' } : { x: 30, y: 78, label: 'Old Wren' };
-      if (!DK().formed) return { x: 112, y: 49, label: 'Duke Ferrin' };
+      const shrine = window.SKYCITY && SKYCITY.SHRINE_T ? SKYCITY.SHRINE_T : XY(ATLAS.port('quarry.shrine'));
+      if (s !== 'done') return s === 1 || s === 2 ? { x: shrine.x, y: shrine.y, label: 'The wind shrine' } : Object.assign(XY(ATLAS.port('wren.wren')), { label: 'Old Wren' });
+      if (!DK().formed) return Object.assign(XY(ATLAS.port('thistledown.duke')), { label: 'Duke Ferrin' });
       return base14;
     } }); }
 
@@ -16553,17 +16563,17 @@ window.PLACE_KIT = PLACE_KIT;
       check('dk: a red dragon killed with Math.random stubbed to 0 drops a dragon spear (rare, RARE DROP banner)', !!m && dropped && rare && stats.drops === drops0 + 1 && stats.last === 'dragon_spear' && /^RARE DROP \/ Dragon spear$/.test(banner || ''), { found: !!m, dropped, rare, banner }); }
     // the warden's gate: closed below stage 11, opens at 11
     { closeGate(); quest.stage = 7; F.sim(2, []); // 7: below 11 and nothing auto-advances it (Hollowford's file walks 8→11 on its own once the beast is dead)
-      const closed = GATE_T.every(([x, y]) => tileAt(x, y) === WARDEN_GATE) && SOLID.has(WARDEN_GATE) && collides(tc(60), tc(96), 13, 'player') && Math.floor(warden.px / TILE) === WARDEN_POST.x && Math.floor(warden.py / TILE) === WARDEN_POST.y;
-      let treeLine = 0; for (let x = 1; x <= 99; x++) if (x < 59 || x > 61) { const t = tileAt(x, 95); if (SOLID.has(t)) treeLine++; } for (let y = 96; y <= 138; y++) if (SOLID.has(tileAt(100, y))) treeLine++;
-      drain(); F.tp(60, 93); F.face(60, 94); F.press('KeyE'); F.sim(2, []); const spoke = dialog.cur && dialog.cur.who === 'Warden Brann' && /Turn back/.test(dialog.cur.text);
-      const blocked = !F.bfs(60, 94, 60, 98);
+      const closed = GATE_T.every(([x, y]) => tileAt(x, y) === WARDEN_GATE) && SOLID.has(WARDEN_GATE) && collides(tc(DK_WD.x(60)), tc(DK_WD.y(96)), 13, 'player') && Math.floor(warden.px / TILE) === WARDEN_POST.x && Math.floor(warden.py / TILE) === WARDEN_POST.y;
+      let treeLine = 0, lineLen = 0; for (let x = DK_W.tx(1); x <= rimX1(); x++) if (x < ROAD_X0 || x > ROAD_X1) { lineLen++; const t = tileAt(x, rimRow(x)); if (SOLID.has(t)) treeLine++; } for (let y = DK_W.ty(96); y <= DK_W.ty(138); y++) { lineLen++; if (SOLID.has(tileAt(wallX(y), y))) treeLine++; }
+      drain(); F.tp(...DK_WD.p(60, 93)); F.face(...DK_WD.p(60, 94)); F.press('KeyE'); F.sim(2, []); const spoke = dialog.cur && dialog.cur.who === 'Warden Brann' && /Turn back/.test(dialog.cur.text);
+      const blocked = !F.bfs(...DK_WD.p(60, 94), ...DK_WD.p(60, 98));
       quest.stage = 11; DK().gate = false; drain(); F.sim(2, []);
-      const opened = GATE_T.every(([x, y]) => tileAt(x, y) === T.DIRT) && !collides(tc(60), tc(96), 13, 'player') && !!F.bfs(60, 94, 60, 98) && Math.floor(warden.px / TILE) === WARDEN_ASIDE.x && DK().gate === true && said(/road south is yours/);
-      check('dk: Warden Brann bars the road into the Ashfields (59..61,96) below stage 11 — trees close Wolfwood\'s edge — and the gate opens at stage 11', closed && treeLine === 96 + 43 && spoke && blocked && opened, { closed, treeLine, spoke, blocked, opened, gate: GATE_T.map(([x, y]) => tileAt(x, y)) });
+      const opened = GATE_T.every(([x, y]) => tileAt(x, y) === T.DIRT) && !collides(tc(DK_WD.x(60)), tc(DK_WD.y(96)), 13, 'player') && !!F.bfs(...DK_WD.p(60, 94), ...DK_WD.p(60, 98)) && Math.floor(warden.px / TILE) === WARDEN_ASIDE.x && DK().gate === true && said(/road south is yours/);
+      check('dk: Warden Brann bars the road into the Ashfields (59..61,96) below stage 11 — trees close Wolfwood\'s edge — and the gate opens at stage 11', closed && treeLine === lineLen && spoke && blocked && opened, { closed, treeLine, lineLen, spoke, blocked, opened, gate: GATE_T.map(([x, y]) => tileAt(x, y)) });
       quest.stage = st0; F.sim(1, []); }
     // the Duke forms the group at stage 14 once the Song is sung
     { quest.stage = 14; quest.sky = Object.assign(quest.sky || {}, { stage: 2 }); quest.dk = freshDK(); if (quest.fang) quest.fang.summoned = false; while (countItem('dragon_horn') > 0) removeItem('dragon_horn', countItem('dragon_horn')); makeRoom(2);
-      drain(); F.tp(111, 48); const r1 = F.talk('duke'); const early = !DK().formed && dialog.cur && dialog.cur.who === 'Duke Ferrin' && said(/Song of Above/) && /Song of Above|wind shrine|Seraphel/.test(questText('main')) && MAP_TARGETS[14].label === 'The wind shrine';
+      drain(); F.tp(...DK_TD.p(111, 48)); const r1 = F.talk('duke'); const early = !DK().formed && dialog.cur && dialog.cur.who === 'Duke Ferrin' && said(/Song of Above/) && /Song of Above|wind shrine|Seraphel/.test(questText('main')) && MAP_TARGETS[14].label === 'The wind shrine';
       quest.sky.stage = 'done'; const dukeTarget = /Dragon Killers/.test(questText('main')) && MAP_TARGETS[14].label === 'Duke Ferrin';
       drain(); const r2 = F.talk('duke'); F.sim(2, []);
       const horn = countItem('dragon_horn') === 1 || drops.some(d => d.id === 'dragon_horn');
@@ -16573,12 +16583,12 @@ window.PLACE_KIT = PLACE_KIT;
     const fq = quest.fang; const fang = monsters.find(m => m.type === 'the_fang');
     if (!fq || !fang || !window.INSTANCES) { check('dk: The Fang and its lair are present for the group tests', false, { fq: !!fq, fang: !!fang }); quest.stage = st0; h.peace(false); return; }
     const slain0 = fq.slain;
-    { fq.slain = false; fq.summoned = false; removeAllies(false); F.tp(18, 112); F.sim(3, []);
+    { fq.slain = false; fq.summoned = false; removeAllies(false); F.tp(...DK_FL.p(18, 112)); F.sim(3, []);
       const list = allies(), want = wantedAllies();
       const spawned = list.length === want.length && want.every(d => list.some(m => m.ally === d.id && m.allyName === d.name)) && list.every(m => !m.angry && !m.dead && dist(m.x, m.y, player.x, player.y) < 4 * TILE) && MONSTER_DEFS.ally_knight.level === 30 && MONSTER_DEFS.ally_knight.human && !MONSTER_DEFS.ally_knight.aggro && MONSTER_DEFS.ally_knight.harmless;
       const absent = fang.dead && fang.respawnT === Infinity;
       check('dk: entering the lair with the group formed spawns Hale and Garrick beside you (lv 30, neutral, human); The Fang is absent until summoned', spawned && absent, { allies: list.map(m => m.allyName), want: want.map(d => d.name), fangDead: fang.dead, region: player.region }); }
-    { const circle = F.nearestTile([T.SUMMON_CIRCLE], { x: tc(18), y: tc(118) }); let noHorn = false, answered = false, banner = null;
+    { const circle = F.nearestTile([T.SUMMON_CIRCLE], { x: tc(DK_FL.x(18)), y: tc(DK_FL.y(118)) }); let noHorn = false, answered = false, banner = null;
       // the horn is an unlock, so it lives on the keyring rather than in a pack slot (68-questitems) — take it
       // off both to test the refusal, and put it back exactly where it was
       if (circle) { const hornSlot = player.inv.findIndex(s => s && s.id === 'dragon_horn'); const hornStack = hornSlot >= 0 ? player.inv[hornSlot] : null; if (hornSlot >= 0) player.inv[hornSlot] = null;
@@ -16588,13 +16598,13 @@ window.PLACE_KIT = PLACE_KIT;
         drain(); F.face(circle.x, circle.y); F.press('KeyE'); F.sim(2, []); answered = !fang.dead && fq.summoned === true && fang.hp === fang.maxHp; banner = levelBanner && levelBanner.text; }
       check('dk: the summoning circle needs the dragon horn; sounding it brings The Fang up (THE FANG ANSWERS)', !!circle && noHorn && answered && banner === 'THE FANG ANSWERS', { circle, noHorn, answered, banner }); }
     // the allies hit the Fang while within two tiles of it
-    { fang.dead = false; fang.hp = fang.maxHp; fang.element = 'fire'; fang.elemT = 0; fang.state = 'idle'; fang.stunT = 0; fang.x = tc(18); fang.y = tc(121); F.tp(18, 116);
+    { fang.dead = false; fang.hp = fang.maxHp; fang.element = 'fire'; fang.elemT = 0; fang.state = 'idle'; fang.stunT = 0; fang.x = tc(DK_FL.x(18)); fang.y = tc(DK_FL.y(121)); F.tp(...DK_FL.p(18, 116));
       for (const m of allies()) { m.x = fang.x + rint(-30, 30); m.y = fang.y - fang.r - 20; m.allyCd = 0; m.allySwings = 0; }
       const rnd0 = Math.random; try { Math.random = () => 0.1; F.sim(150, []); } finally { Math.random = rnd0; }
       const swings = allies().reduce((s, m) => s + (m.allySwings || 0), 0);
       check('dk: allies within two tiles of The Fang swing at it every 1.2 s and it takes the hits; they take none', swings >= 2 && fang.hp < fang.maxHp && allies().every(m => m.hp === m.maxHp && !m.dead), { swings, hp: fang.hp, allies: allies().length }); }
     // the kill: stage 15, the allies go home, the quest log names the Dragon Killers
-    { quest.stage = 14; F.tp(18, 114); player.facing = { x: 0, y: 1 }; fang.hp = 1; fang.element = 'fire'; fang.elemT = 0; fang.state = 'idle'; fang.stunT = 0; drops = drops.filter(d => d.id !== 'fang_of_the_fang');
+    { quest.stage = 14; F.tp(...DK_FL.p(18, 114)); player.facing = { x: 0, y: 1 }; fang.hp = 1; fang.element = 'fire'; fang.elemT = 0; fang.state = 'idle'; fang.stunT = 0; drops = drops.filter(d => d.id !== 'fang_of_the_fang');
       for (let i = 0; i < 150 && !fang.dead; i++) { fang.x = player.x; fang.y = player.y + 70; fang.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); }
       F.sim(3, []);
       check('dk: killing the summoned Fang with the group → stage 15, the Dragon Killers go home, the log reads for it', fang.dead && fq.slain && quest.stage === 15 && allies().length === 0 && DK().slainWith && /Dragon Killers/.test(questText('main')) && /Duke Ferrin/.test(questText('main')), { dead: fang.dead, stage: quest.stage, allies: allies().length, text: questText('main') });
@@ -16603,7 +16613,7 @@ window.PLACE_KIT = PLACE_KIT;
     // nowhere near the lair): the keeper's game brings the Dragon Killers for him, beside the dragon; they go home when it
     // falls, and nothing of the keeper's own story moves. An Echo a friend calls brings nobody.
     { const keepFq = JSON.stringify(fq), keepDk = JSON.stringify(DK()), st = quest.stage, n0 = drops.length; removeAllies(false);
-      fq.slain = true; fq.summoned = true; quest.stage = Math.max(16, st); F.tp(111, 48); fang.dead = true; fang.awake = false; F.sim(2, []);
+      fq.slain = true; fq.summoned = true; quest.stage = Math.max(16, st); F.tp(...DK_TD.p(111, 48)); fang.dead = true; fang.awake = false; F.sim(2, []);
       HOOKS.bossCall.the_fang.wake('Ann', true); F.sim(3, []);
       const list = allies(), near = list.length > 0 && list.every(m => dist(m.x, m.y, fang.x, fang.y) < fang.r + 4 * TILE);
       const r = { up: !fang.dead && !!fang.friendStory, allies: list.length, want: wantedAllies().length, near };
@@ -16615,7 +16625,7 @@ window.PLACE_KIT = PLACE_KIT;
         r.up && r.allies === r.want && r.want >= 1 && r.near && r.after === 0 && r.slainWith && r.stage && r.echo === 0, r);
       Object.assign(fq, JSON.parse(keepFq)); quest.dk = JSON.parse(keepDk); quest.stage = st; drops = drops.slice(0, n0); }
     // tidy: the Fang stays slain as the lair's own test left it; the group is formed and done
-    fq.slain = slain0 || fq.slain; quest.stage = st0; while (countItem('dragon_horn') > 0) removeItem('dragon_horn', 1); removeAllies(false); F.tp(111, 48); F.sim(2, []); drain(); closePanel(); h.peace(false); save();
+    fq.slain = slain0 || fq.slain; quest.stage = st0; while (countItem('dragon_horn') > 0) removeItem('dragon_horn', 1); removeAllies(false); F.tp(...DK_TD.p(111, 48)); F.sim(2, []); drain(); closePanel(); h.peace(false); save();
     void dk0;
   });
 }
