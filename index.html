@@ -74673,7 +74673,9 @@ const MOUNT_LOOK = (() => {
 
     // ---- C3. painted ----
     { const AG_NAMES = new Set(['DIRT', 'COURSE_MARK', 'LOG_BALANCE', 'NET', 'JUMP_GAP']);
-      const owned = { '105,27': 'BOARD', '117,17': 'HOUSE_PORTAL', '119,27': 'HITCH', '96,43': 'DOZER_BAY', '87,50': 'GATE' };
+      // the cells later passes own: 94's OWNED (ports), read, not a copy of their numbers
+      const OWNED_TILE = { BOARD: 'BOARD', HOUSE_PORTAL: 'HOUSE_PORTAL', HITCH: 'HITCH', DOZER_BAY: 'DOZER_BAY', AGILITY_GATE: 'GATE' };
+      const owned = {}; for (const k in PLAN.OWNED) owned[PLAN.OWNED[k].join(',')] = OWNED_TILE[k];
       const bad = [], live = [];
       for (let y = Y0; y < Y0 + H; y++) for (let x = X0; x < X0 + W; x++) {
         const c = glyph(x, y), name = PLAN.GLYPHS[c]; if (!name) continue;
