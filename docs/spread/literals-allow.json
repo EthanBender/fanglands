@@ -27,5 +27,20 @@
   {"file": "03-textures.js", "reason": "pixel positions inside a 48 px tile texture"},
   {"file": "59-hudkit.js", "reason": "HUD kit: screen pixels and emblem drawing, no map coordinates"},
   {"file": "78-monsterart.js", "reason": "monster sprite drawing in sprite units, no map coordinates"},
-  {"file": "83-townsart.js", "reason": "townsfolk sprite drawing in sprite units, no map coordinates"}
+  {"file": "83-townsart.js", "reason": "townsfolk sprite drawing in sprite units, no map coordinates"},
+  {"file": "16-instances.js", "literal": "5 * TILE", "decl": "sight", "reason": "the giant spider's sight: a range (5 tiles), not a position"},
+  {"file": "16-instances.js", "literal": "8 * TILE", "decl": "sight", "reason": "the Brood Mother's sight: a range (8 tiles), not a position"},
+  {"file": "16-instances.js", "literal": "[3, 4]", "line": 60, "reason": "setLineDash: the spider's leg stripes, a dash pattern in pixels"},
+  {"file": "16-instances.js", "literal": "{ name: inst.name, sub: inst.sub, x0: 0, y0: 0, x1: inst.w - 1, y1: inst.h - 1 }", "decl": "enterInstance", "reason": "instance-local (every instance): the instance's own region rect, its whole map from 0,0"},
+  {"file": "16-instances.js", "literal": "10 * TILE", "line": 299, "reason": "the Brood Mother's egg-laying range (10 tiles), not a position"},
+  {"file": "16-instances.js", "decl": "drawDoor", "reason": "drawing: pixel offsets inside the door's tile"},
+  {"file": "16-instances.js", "literal": "2 * TILE", "line": 435, "reason": "drawing: the cave mushroom's sort depth (two tiles of pixels), not a position"},
+  {"file": "16-instances.js", "decl": "denAllowed", "reason": "instance-local (spider_den): the den's own carvable area"},
+  {"file": "16-instances.js", "decl": "DEN_ENTRY", "reason": "instance-local (spider_den)"},
+  {"file": "16-instances.js", "decl": "DEN_EXIT", "reason": "instance-local (spider_den)"},
+  {"file": "16-instances.js", "decl": "DEN_BOSS", "reason": "instance-local (spider_den)"},
+  {"file": "16-instances.js", "decl": "DEN_CHEST_T", "reason": "instance-local (spider_den)"},
+  {"file": "16-instances.js", "decl": "DEN_CORNER_ROCK", "reason": "instance-local (spider_den): the den's tiles over the core cave's corner, kept rock"},
+  {"file": "16-instances.js", "decl": "DEN_PATH", "reason": "instance-local (spider_den)"},
+  {"file": "16-instances.js", "decl": "buildDen", "reason": "instance-local (spider_den): the den's own map, carved in its own coordinates"}
 ]

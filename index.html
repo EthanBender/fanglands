@@ -6169,11 +6169,14 @@ const MUSIC = (() => {
   // THE SPIDER DEN — the first dungeon (Chapter 1–2): a winding dark cave behind a door on the cave cliff
   // ============================================================================
   const DEN = { id: 'spider_den', w: 40, h: 30 };
+  // the door and its step are on the overworld (the cave cliff: spider_den's ports, the cave frame); everything else below is the den's own map
+  const DEN_DOOR = ATLAS.port('spider_den.door'), DEN_STEP = ATLAS.port('spider_den.step'), DEN_CV = ATLAS.frame('cave');
   // the top-left 21×16 of the core map is the core's own cave: its darkness overlay is drawn there whenever the camera is
   // near the origin, so the den keeps that corner solid rock and winds through the L-shaped rest
   const denAllowed = (x, y) => x >= 1 && x <= DEN.w - 2 && y >= 1 && y <= DEN.h - 2 && !(x <= 21 && y <= 16);
   const DEN_ENTRY = [34, 3], DEN_EXIT = [34, 2], DEN_BOSS = [12, 22], DEN_CHEST_T = [3, 26];
   const DEN_CHAMBERS = [[34, 5, 3.2], [27, 11, 3.6], [33, 18, 3.6], [24, 24, 3.6], [12, 22, 4.6], [5, 26, 2.2]];
+  const DEN_CORNER_ROCK = [[10, 10], [21, 7]];   // inside the den: tiles of the core cave's corner that it keeps solid rock
   const DEN_PATH = [[34, 5], [31, 9], [27, 11], [29, 15], [33, 18], [30, 22], [24, 24], [19, 23], [12, 22], [8, 25], [5, 26]];
   const DEN_SPAWNS = [
     ['spider', 26, 10], ['spider', 28, 12], ['spider', 25, 12],
@@ -6203,7 +6206,7 @@ const MUSIC = (() => {
   }
   const den = define(DEN.id, {
     name: 'The Spider Den', sub: 'Silk, and the thing that spins it', w: DEN.w, h: DEN.h, dark: true, boss: 'brood_mother',
-    build: buildDen, spawns: DEN_SPAWNS, exit: DEN_EXIT, entry: DEN_ENTRY, door: [22, 3], step: [23, 3],
+    build: buildDen, spawns: DEN_SPAWNS, exit: DEN_EXIT, entry: DEN_ENTRY, door: DEN_DOOR, step: DEN_STEP,
     voice: 'Silk. And the thing that spins it.',
     again: 'A new mother has grown into the den. She is just as big, and just as hungry.',
     onClear: first => {
@@ -6214,10 +6217,10 @@ const MUSIC = (() => {
   den.chestLoot = [['stone_arrow', 30]];
   // the door sits in a little cliff face east of the cave, with a clear patch and a path down to the road
   HOOKS.world.push((rnd, api) => {
-    for (const [x, y] of [[21, 2], [21, 3], [21, 4], [22, 2], [22, 4]]) api.setTile(x, y, T.WALL);
+    for (const [x, y] of DEN_CV.pts([[21, 2], [21, 3], [21, 4], [22, 2], [22, 4]])) api.setTile(x, y, T.WALL);
     const soft = [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.STUMP];
-    for (let y = 2; y <= 5; y++) for (let x = 23; x <= 25; x++) if (soft.includes(api.tileAt(x, y))) api.setTile(x, y, T.GRASS);
-    for (let y = 3; y <= 6; y++) if ([T.GRASS, T.DIRT].includes(api.tileAt(23, y))) api.setTile(23, y, T.DIRT);
+    for (let y = DEN_CV.y(2); y <= DEN_CV.y(5); y++) for (let x = DEN_CV.x(23); x <= DEN_CV.x(25); x++) if (soft.includes(api.tileAt(x, y))) api.setTile(x, y, T.GRASS);
+    for (let y = DEN_CV.y(3); y <= DEN_CV.y(6); y++) if ([T.GRASS, T.DIRT].includes(api.tileAt(DEN_CV.x(23), y))) api.setTile(DEN_CV.x(23), y, T.DIRT);
   });
 
   window.INSTANCES = { define, enter: enterInstance, leave: leaveInstance, list: () => Object.keys(INST), active: () => active && active.id, get: id => INST[id], placeDoor };
@@ -6226,20 +6229,20 @@ const MUSIC = (() => {
   HOOKS.selfTest.push((check, F, h) => {
     const sum = () => { let s = 0; for (let i = 0; i < map.length; i++) s = (Math.imul(s, 31) + map[i]) | 0; return s; };
     const tileOf = () => [Math.floor(player.x / TILE), Math.floor(player.y / TILE)];
-    const onStep = () => { const [x, y] = tileOf(); return x === 23 && y === 3; };
-    const enterByDoor = () => { if (active) leaveInstance(); closePanel(); F.tp(23, 3); F.face(22, 3); F.press('KeyE'); F.sim(2, []); return active && active.id === DEN.id; };
+    const onStep = () => { const [x, y] = tileOf(); return x === DEN_STEP[0] && y === DEN_STEP[1]; };
+    const enterByDoor = () => { if (active) leaveInstance(); closePanel(); F.tp(...DEN_STEP); F.face(...DEN_DOOR); F.press('KeyE'); F.sim(2, []); return active && active.id === DEN.id; };
     h.peace(true); if (active) leaveInstance();
     // the overworld must hold still while its checksum is compared: no stump regrows, no fire burns out; fists or a blade, not a bow
     const rg0 = regrow, fr0 = fires; regrow = []; fires = [];
     const w0 = player.equip.weapon; if (w0 && ITEMS[w0].weapon && ITEMS[w0].weapon.ranged) player.equip.weapon = null;
     const beside = (tx, ty) => { for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) { const nx = tx + dx, ny = ty + dy; if (!SOLID.has(tileAt(nx, ny)) && !collides(tc(nx), tc(ny), 13, 'player')) return { x: tc(nx), y: tc(ny) }; } return safeSpot(tc(tx), tc(ty), 13, 'player'); };
-    check('instance: entrance door on the cave cliff at (22,3) with a dirt step at (23,3)', tileAt(22, 3) === T_DOOR && tileAt(23, 3) === T.DIRT && !SOLID.has(tileAt(23, 3)) && DOORS[idx(22, 3)] && DOORS[idx(22, 3)].id === DEN.id, { door: tileAt(22, 3), step: tileAt(23, 3) });
+    check(`instance: entrance door on the cave cliff at (${DEN_DOOR}) with a dirt step at (${DEN_STEP})`, tileAt(...DEN_DOOR) === T_DOOR && tileAt(...DEN_STEP) === T.DIRT && !SOLID.has(tileAt(...DEN_STEP)) && DOORS[idx(...DEN_DOOR)] && DOORS[idx(...DEN_DOOR)].id === DEN.id, { door: tileAt(...DEN_DOOR), step: tileAt(...DEN_STEP) });
     const sum0 = sum(), n0 = monsters.length, diffs0 = mapDiffs.size;
     { const ok = enterByDoor(); const [px, py] = tileOf();
       const path = F.bfs(DEN_ENTRY[0], DEN_ENTRY[1], DEN_BOSS[0], DEN_BOSS[1]), chestPath = F.bfs(DEN_ENTRY[0], DEN_ENTRY[1], DEN_CHEST_T[0] + 1, DEN_CHEST_T[1]);
       check('instance: E on the door swaps the map in (WALL at 0,0; the brood chamber is CAVE), knight at the entry, region + banner set, 13 monsters', ok && window.__instance === DEN.id && tileAt(0, 0) === T.WALL && tileAt(DEN_BOSS[0], DEN_BOSS[1]) === T.CAVE && px === DEN_ENTRY[0] && py === DEN_ENTRY[1] && player.region === 'The Spider Den' && !!areaBanner && areaBanner.name === 'The Spider Den' && monsters.length === 13 && monsters.filter(m => m.type === 'spider').length === 8 && monsters.filter(m => m.type === 'giant_spider').length === 4 && monsters.some(m => m.type === 'brood_mother') && tileAt(DEN_EXIT[0], DEN_EXIT[1]) === T_EXIT, { ok, at: [px, py], region: player.region, monsters: monsters.length, inst: window.__instance });
       let torches = 0, shrooms = 0; for (let y = 0; y < DEN.h; y++) for (let x = 0; x < DEN.w; x++) { const t = tileAt(x, y); if (t === T_TORCH) torches++; else if (t === T_SHROOM) shrooms++; }
-      check('instance: the den winds from the ladder to the brood chamber and the chest; torches on the walls, mushrooms on the floor; the core cave corner stays rock', !!path && !!chestPath && path.length > 30 && torches >= 8 && shrooms >= 10 && tileAt(10, 10) === T.WALL && tileAt(21, 7) === T.WALL, { path: path && path.length, chest: chestPath && chestPath.length, torches, shrooms }); }
+      check('instance: the den winds from the ladder to the brood chamber and the chest; torches on the walls, mushrooms on the floor; the core cave corner stays rock', !!path && !!chestPath && path.length > 30 && torches >= 8 && shrooms >= 10 && DEN_CORNER_ROCK.every(([x, y]) => tileAt(x, y) === T.WALL), { path: path && path.length, chest: chestPath && chestPath.length, torches, shrooms }); }
     { const tx = DEN_ENTRY[0], ty = DEN_ENTRY[1] + 1; const t0 = tileAt(tx, ty); changeTile(tx, ty, T_SHROOM); const same = mapDiffs.size === diffs0 && tileAt(tx, ty) === T_SHROOM; changeTile(tx, ty, t0);
       check('instance: changeTile inside edits the dungeon but never mapDiffs', same && mapDiffs.size === diffs0, { diffs: mapDiffs.size, diffs0 }); }
     { const left = leaveInstance(); F.sim(2, []);
@@ -6288,10 +6291,10 @@ const MUSIC = (() => {
     // save inside → the save describes the overworld with the knight on the step; load lands outside
     { if (!active) enterByDoor(); F.tp(DEN_BOSS[0] + 3, DEN_BOSS[1]); save(); const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); const still = active && active.id === DEN.id && Math.floor(player.x / TILE) === DEN_BOSS[0] + 3;
       const ok = load(); F.sim(2, []);
-      check('instance: save() inside stores the knight on the step outside; load() lands outside the den', still && raw.player.x === tc(23) && raw.player.y === tc(3) && raw.player.region !== 'The Spider Den' && ok && window.__instance === null && player.region !== 'The Spider Den' && onStep() && tileAt(22, 3) === T_DOOR && sum() === sum0, { still, saved: [raw.player.x / TILE - 0.5, raw.player.y / TILE - 0.5], region: player.region, at: tileOf() }); }
+      check('instance: save() inside stores the knight on the step outside; load() lands outside the den', still && raw.player.x === tc(DEN_STEP[0]) && raw.player.y === tc(DEN_STEP[1]) && raw.player.region !== 'The Spider Den' && ok && window.__instance === null && player.region !== 'The Spider Den' && onStep() && tileAt(...DEN_DOOR) === T_DOOR && sum() === sum0, { still, saved: [raw.player.x / TILE - 0.5, raw.player.y / TILE - 0.5], region: player.region, at: tileOf() }); }
     { enterByDoor(); const inside = window.__instance === DEN.id; F.press('KeyL'); F.sim(2, []);
       check('instance: L leaves the dungeon', inside && window.__instance === null && onStep() && sum() === sum0, { inside, at: tileOf() }); }
-    { F.tp(23, 3); F.face(22, 3); F.press('KeyE'); F.sim(2, []); const inside = window.__instance === DEN.id; F.tp(DEN_EXIT[0], DEN_EXIT[1] + 1); F.face(DEN_EXIT[0], DEN_EXIT[1]); F.press('KeyE'); F.sim(2, []);
+    { F.tp(...DEN_STEP); F.face(...DEN_DOOR); F.press('KeyE'); F.sim(2, []); const inside = window.__instance === DEN.id; F.tp(DEN_EXIT[0], DEN_EXIT[1] + 1); F.face(DEN_EXIT[0], DEN_EXIT[1]); F.press('KeyE'); F.sim(2, []);
       check('instance: E on the exit ladder leaves too; INSTANCES API lists the den', inside && window.__instance === null && onStep() && INSTANCES.list().includes(DEN.id) && INSTANCES.active() === null, { inside, at: tileOf(), list: INSTANCES.list() }); }
     if (active) leaveInstance(); regrow = rg0; fires = fr0; if (w0 && !player.equip.weapon) player.equip.weapon = w0; save(); h.peace(false);
   });
@@ -6319,7 +6322,7 @@ const MUSIC = (() => {
     quest.wren = 'active'; quest.bread = 'active'; quest.tracked = 'wren'; quest.untrackedByPlayer = false;
     if (M) { M.refresh(); for (const m of M.all()) M.state().seen[m.key] = 1; }
     // the overworld first: the recorder must hear the world's names and quest labels, or the checks below prove nothing
-    F.tp(22, 12); const world = drawMap(); closePanel();
+    F.tp(...DEN_CV.p(22, 12)); const world = drawMap(); closePanel();
     const worldWords = new Set(REGIONS.map(r => r.name.toUpperCase()).concat(mapTargets().map(t => t.label), M ? M.known().map(m => m.label) : []));
     const heard = ['Old Wren', 'Tobin', 'THISTLEDOWN'].filter(w => world.texts.includes(w));
     check('instance maps: out in the world the map names the regions and the quest targets (the recorder hears them)', heard.length === 3 && !!mapLayout && mapLayout.view.id === null, { heard, view: mapLayout && mapLayout.view.id });
