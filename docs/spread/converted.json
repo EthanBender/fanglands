@@ -86,5 +86,6 @@
 "17-tap.js",
 "42-playthrough.js",
 "tools/golem-sim.js",
-"tools/dom-keys.js"
+"tools/dom-keys.js",
+"tools/mmo-sim-admin.js"
 ]

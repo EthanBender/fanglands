@@ -723,5 +723,6 @@
   {"file": "tools/golem-sim.js", "literal": "FANGLANDS.tp(24, 37)", "decl": "main", "reason": "instance-local (royalmine): the golem's chamber in the Royal Mine's own coordinates"},
   {"file": "tools/golem-sim.js", "literal": "FANGLANDS.tp(30, 36)", "decl": "main", "reason": "instance-local (royalmine): the golem's chamber in the Royal Mine's own coordinates"},
   {"file": "tools/dom-keys.js", "literal": "FANGLANDS.tp(14, 8)", "line": 73, "reason": "instance-local (war_shed): the knight stands before the boiler valve at 14,7 in the War Shed's own coordinates"},
-  {"file": "tools/dom-keys.js", "literal": "FANGLANDS.face(14, 7)", "line": 73, "reason": "instance-local (war_shed): the knight stands before the boiler valve at 14,7 in the War Shed's own coordinates"}
+  {"file": "tools/dom-keys.js", "literal": "FANGLANDS.face(14, 7)", "line": 73, "reason": "instance-local (war_shed): the knight stands before the boiler valve at 14,7 in the War Shed's own coordinates"},
+  {"file": "tools/mmo-sim-admin.js", "literal": "p.x - 40", "decl": "standBy", "reason": "pixels: Sam stands 40 px west of the goblin's puppet (a distance)"}
 ]

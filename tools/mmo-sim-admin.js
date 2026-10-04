@@ -155,7 +155,7 @@ async function main() {
   // ---- 6. spawn while MudGoll keeps the map ----
   {
     A.__peace = true; B.__peace = true; tick(120);
-    const spot = openSpot(A, 60, 30);
+    const spot = openSpot(A, A.ATLAS.world.tx(60), A.ATLAS.world.ty(30));   // open ground in the Goblin Fields (the stretched world)
     A.FANGLANDS.tp(spot.x, spot.y); B.FANGLANDS.tp(spot.x + 2, spot.y); A.FANGLANDS.face(spot.x + 2, spot.y); tick(12);
     const keeper = A.COOP.isKeeper() && B.COOP.keeper() === 'MudGoll';
     const kA0 = A.FANGLANDS.player.kills, kB0 = B.FANGLANDS.player.kills;
@@ -192,7 +192,7 @@ async function main() {
   {
     const into = A.INSTANCES.enter('spider_den'); tick(20);
     const out = A.INSTANCES.leave(); tick(20);
-    const spot = openSpot(A, 64, 30); A.FANGLANDS.tp(spot.x, spot.y); B.FANGLANDS.tp(spot.x + 3, spot.y); tick(20);
+    const spot = openSpot(A, ...A.ATLAS.frame('signpost').p(64, 30));   // by the signpost A.FANGLANDS.tp(spot.x, spot.y); B.FANGLANDS.tp(spot.x + 3, spot.y); tick(20);
     const samKeeps = B.COOP.isKeeper() && A.COOP.keeper() === 'Sam' && !A.COOP.isKeeper();
     const asked = A.ADMIN.spawn('wolf', 2); tick(12);
     const inSam = B.FANGLANDS.monsters.filter(m => isSpawn(m) && m.type === 'wolf' && !m.remote && !m.dead);
