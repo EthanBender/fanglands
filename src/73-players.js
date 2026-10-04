@@ -590,18 +590,17 @@
         feed(Object.assign({ t: 'p', n: 'Swi', x: player.x + 30, y: player.y, look: Object.assign(PLAYERS.lookOf(), { tool: 'pickaxe', toolSwing: undefined }) }, at)); r.oldTool = REMOTE.Swi.look.toolSwing === true;
         feed(Object.assign({ t: 'p', n: 'Swi', x: player.x + 30, y: player.y, look: Object.assign(PLAYERS.lookOf(), { tool: 'stone', toolSwing: false }) }, at)); r.stillIn = REMOTE.Swi.look.toolSwing === false;
         forget('Swi');
-        // the mounts: each friend's machine is drawn by its own drawer, with his look in the seat
-        if (window.MOUNTS) MOUNTS.drawHorse = function (g, e, hurt, rider) { drawn.push(['horse', e.n, !!rider && !!rider.gear]); return saved.horse(g, e, hurt, rider); };
-        if (saved.dozer) drawDozer = function (g, e, hurt, pilot, up) { drawn.push(['dozer', e.n, !!pilot && !!pilot.gear]); return saved.dozer(g, e, hurt, pilot, up); };
-        HOOKS.drawMonster.barrelbeast = function (g, e, hurt, pilot) { drawn.push(['beast', e.n, !!pilot && !!pilot.gear]); return saved.beast(g, e, hurt, pilot); };
-        drawMech = function (g, e, hurt, pilot) { drawn.push(['walker', e.n, !!pilot && !!pilot.gear]); return saved.walker(g, e, hurt, pilot); };
+        // the mounts: each friend is drawn on his own mount by 84-mountlook (MOUNT_LOOK.rider: the mare, or his machine in
+        // the monster refit's art), with his own look in the saddle or the seat
+        const ML = window.MOUNT_LOOK; saved.rider = ML ? ML.rider : null;
+        if (ML) ML.rider = function (g, e, look, as) { drawn.push([as || ML.kindOf(e.mech), e.n, !!look && !!look.gear]); return saved.rider(g, e, look, as); };
         const kinds = { Ria: 'horse', Doz: 'dozer', Bea: 'beast', Wal: 'walker' };
         let i = 0;
         for (const n in kinds) feed(Object.assign({ t: 'p', n, x: player.x - 60 + 40 * i++, y: player.y + 40, look: PLAYERS.lookOf() }, at, { mech: { kind: kinds[n], hp: 50, maxHp: 100 } }));
         F.step([]);
         const items = []; for (const hk of HOOKS.draw) hk(recG(), items, cam);
         for (const n in kinds) { const it = items.find(x => x.who === n); if (it) it.draw(); }
-        r.mounts = Object.keys(kinds).every(n => drawn.some(d => d[1] === n && d[0] === kinds[n] && d[2])) && drawn.length === 4;
+        r.mounts = !!ML && Object.keys(kinds).every(n => drawn.some(d => d[1] === n && d[0] === ML.kindOf({ kind: kinds[n] }) && d[2])) && drawn.length === 4;
         r.drawn = drawn.map(d => d.join(' '));
         // on foot, a friend in gear goes through 82's picture cache (one blit), and his name sits over his tallest gear
         // (a dragon spear upright): its baseline above the top of what he wears
@@ -617,6 +616,7 @@
       } catch (e) { r.threw = String(e && e.message); }
       finally {
         if (window.MOUNTS) MOUNTS.drawHorse = saved.horse; if (saved.dozer) drawDozer = saved.dozer; HOOKS.drawMonster.barrelbeast = saved.beast; drawMech = saved.walker;
+        if (window.MOUNT_LOOK && saved.rider) MOUNT_LOOK.rider = saved.rider;
         for (const k in player.equip) if (!(k in q0)) delete player.equip[k];
         Object.assign(player.equip, q0); player.action = a0; if (O && O.BLOCK) O.BLOCK.t = bt0; ['Swi', 'Ria', 'Doz', 'Bea', 'Wal', 'Tal'].forEach(forget);
       }

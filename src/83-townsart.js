@@ -3025,7 +3025,8 @@ const TOWNSFOLK_ART = (() => {
   // a bolt of wing-cloth, sky blue banded in gold, the loose end lifting in the wind (Maudie the weaver)
   PROPS.sky_cloth = (g, C, o) => {
     g.save(); g.translate(0.4, 0.2); g.rotate(-0.25);
-    const c = o.c || '#5b9be0', lift = Math.sin(time * 2.2 + C.seed) * 0.8;
+    // (once every 2 s: a standing loop comes round without a jump, 83-townsfolk check 12)
+    const c = o.c || '#5b9be0', lift = Math.sin(time * Math.PI + C.seed) * 0.8;
     g.beginPath(); g.moveTo(2.6, -2.6); g.quadraticCurveTo(5.6, -5 + lift, 8.2, -4 + lift * 1.4); g.lineTo(8, -1.6 + lift); g.quadraticCurveTo(5.4, -2.4 + lift * 0.6, 2.6, 0.4); g.closePath(); g.fillStyle = vfill(g, c, -5, 0, 0.35, -0.1); g.fill(); outline(g, 0.35);
     rr(g, -3, -3, 6, 6.4, 2.4); g.fillStyle = vfill(g, c, -3, 3.4, 0.3, -0.3); g.fill(); outline(g, 0.5);
     g.fillStyle = '#f5c542'; g.fillRect(-3, -0.6, 6, 1);
