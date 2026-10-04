@@ -678,5 +678,14 @@
   {"file": "82-knightgear.js", "literal": "27", "decl": "x", "reason": "drawing: the blade's waves start 27 sprite pixels out (let x = 27)"},
   {"file": "82-knightgear.js", "literal": "x < 13", "decl": "hands", "reason": "the self-test finds the hands within 7..13 sprite pixels of a recorded drawing"},
   {"file": "83-townsfolk.js", "literal": "4 * TILE", "decl": "talkT", "reason": "a townsperson turns to talk within 4 tiles: a distance, not a position"},
-  {"file": "84-mountlook.js", "literal": "at.y - 40", "decl": "tag", "reason": "pixels: the rider's name tag sits more than 40 px above his feet"}
+  {"file": "84-mountlook.js", "literal": "at.y - 40", "decl": "tag", "reason": "pixels: the rider's name tag sits more than 40 px above his feet"},
+  {"file": "89-lighting.js", "literal": "TILE * 6", "decl": "t", "reason": "a light's reach of at least 6 tiles: a distance, not a position"},
+  {"file": "89-lighting.js", "decl": "rooms", "reason": "instance-local (deepholm): 24-dwarves' carved rooms, lit as a scene"},
+  {"file": "89-lighting.js", "literal": "{ x0: 0, y0: 0, x1: MAP_W - 1, y1: MAP_H - 1 }", "decl": "lights", "reason": "the whole map of the active scene (an instance): not a place"},
+  {"file": "89-lighting.js", "literal": "tc(12)", "decl": "beside", "reason": "instance-local (deepholm): the floor beside the entrance-hall lamp at 11,3"},
+  {"file": "89-lighting.js", "literal": "tc(3)", "decl": "beside", "reason": "instance-local (deepholm): the floor beside the entrance-hall lamp at 11,3"},
+  {"file": "89-lighting.js", "literal": "x0 < 10", "decl": "room", "reason": "instance-local (deepholm): the west gallery lies west of column 10"},
+  {"file": "89-lighting.js", "literal": "tc(12)", "decl": "lamp", "reason": "instance-local (deepholm): the floor beside the entrance-hall lamp at 11,3"},
+  {"file": "89-lighting.js", "literal": "tc(3)", "decl": "lamp", "reason": "instance-local (deepholm): the floor beside the entrance-hall lamp at 11,3"},
+  {"file": "89-lighting.js", "literal": "17 * TILE", "decl": "throneLeak", "reason": "the cave scrim stays (spec section 12): the core scrim's rect over the starting cave, pinned at 0,0"}
 ]
