@@ -356,7 +356,7 @@ window.FANGLANDS = {
       check('crafting: planks give Crafting xp (2 logs → 4 planks, +6 xp, from the pack)', ok && rec.station === null && rec.skill === 'crafting' && rec.xp === 6 && countItem('plank') === 4 && player.skills.crafting.xp === cx0 + 6, { ok, planks: countItem('plank'), gained: player.skills.crafting.xp - cx0 });
       player.inv = inv0; }
     { // berry bushes: about 60 on the grass, E picks 1–3 berries, the bush goes bare, and it is ripe again after the regrow timer
-      const B = T.BERRY_BUSH; let n = 0, bad = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === B) { n++; if (inVillageBounds(tc(x), tc(y)) || (x >= CAMP_GROUND.x0 && x <= CAMP_GROUND.x1 && y >= CAMP_GROUND.y0 && y <= CAMP_GROUND.y1) || buildingAt(x, y)) bad++; }
+      const B = T.BERRY_BUSH; let n = 0, bad = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === B) { n++; if (['Thistledown', 'Castle Thistledown', 'Goblin Camp'].includes(regionAt(x, y).name) || buildingAt(x, y)) bad++; }   // 34-food's own rule: the town's and the camp's regions (their outlines), and every building
       const inv0 = invSnap(); player.inv = player.inv.map(s => s && s.id === 'berries' ? null : s);
       const bush = F.nearestTile([B], { x: tc(AW.tx(60)), y: tc(AW.ty(30)) }); let side = null;
       if (bush) for (const [dx, dy] of [[0, 1], [0, -1], [-1, 0], [1, 0]]) if (!side && inMap(bush.x + dx, bush.y + dy) && !SOLID.has(tileAt(bush.x + dx, bush.y + dy))) side = { x: bush.x + dx, y: bush.y + dy };
