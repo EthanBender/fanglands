@@ -1333,7 +1333,7 @@ async function main() {
     const wrecksA0 = ev(A, "(() => { let n = 0; for (let i = 0; i < map.length; i++) if (map[i] === T.BEAST_WRECK) n++; return n; })()");
     ev(A, "INSTANCES.enter('war_shed')"); tick(30); ev(B, "INSTANCES.enter('war_shed')"); tick(30);
     const keeperA = A.COOP.isKeeper() && A.COOP.map() === 'war_shed';
-    B.FANGLANDS.tp(14, 4); B.FANGLANDS.face(14, 3); B.FANGLANDS.press('KeyE'); tick(40);
+    B.FANGLANDS.tp(14, 8); B.FANGLANDS.face(14, 7); B.FANGLANDS.press('KeyE'); tick(40);
     const upA = ev(A, "monsters.filter(m => m.type === 'barrelbeast' && !m.dead).length"), upB = ev(B, "monsters.filter(m => m.type === 'barrelbeast' && !m.dead && m.remote).length");
     ev(A, "(() => { const m = monsters.find(o => o.type === 'barrelbeast' && !o.dead); if (m) m.hp = 100; })()"); tick(10);
     for (let i = 0; i < 3; i++) { hitBoss(B, 'barrelbeast', 10); tick(6); hitBoss(A, 'barrelbeast', 10); tick(3); }
@@ -1359,7 +1359,7 @@ async function main() {
     const loops = []; let risen = 0;
     const watch = () => { const n = ev(A, "monsters.filter(m => m.type === 'barrelbeast' && !m.dead).length"); if (n && !watch.up) risen++; watch.up = n > 0; };
     for (let k = 0; k < 3; k++) {
-      B.FANGLANDS.tp(14, 4); B.FANGLANDS.face(14, 3); ev(B, "dialog.queue.length = 0; dialog.cur = null;"); B.FANGLANDS.press('KeyE'); tick(60, watch);
+      B.FANGLANDS.tp(14, 8); B.FANGLANDS.face(14, 7); ev(B, "dialog.queue.length = 0; dialog.cur = null;"); B.FANGLANDS.press('KeyE'); tick(60, watch);
       const upA = ev(A, "monsters.filter(m => m.type === 'barrelbeast' && !m.dead).length"), valve = ev(B, "[dialog.cur, ...dialog.queue].filter(Boolean).map(l => l.text).join(' | ')");
       for (let i = 0; i < 4; i++) { hitBoss(A, 'barrelbeast', 120); tick(6, watch); }
       tick(240, watch);

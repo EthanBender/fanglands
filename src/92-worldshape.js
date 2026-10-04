@@ -255,6 +255,44 @@
   // every generation starts with the outlines OFF, so a second new game reads the same regions the first did
   { const _generateWorld = generateWorld; generateWorld = () => { ON = false; _generateWorld(); }; }
 
+  // ---------- old saves: nothing of a knight's left inside the new rock ----------
+  // A save from before the land was cut into steps can hold a change on a cell that is rock now: a stump (a tree he
+  // chopped there, waiting to grow back), a plank, a door. It was drawn in the cliff, and a plank picked up there left
+  // grass: a gap through the scarp. Every load undoes such a change (the rock comes back, its regrowth and any fire or crop
+  // there go, and a thing he placed is given back: the pack, else the bank, else the ground at his feet). A machine, a
+  // wreck or the mare is left where it is. New changes on rock cannot be made (rock is solid and cannot be chopped), so
+  // this only ever touches old saves, and a second load changes nothing. WS.rock: the rock cells as the world is made.
+  const ROCK_KEEP = () => new Set(['MECH', 'WRECK', 'DOZER', 'DOZER_WRECK', 'BEAST', 'BEAST_WRECK', 'HORSE'].map(n => T[n]).filter(t => typeof t === 'number'));
+  { const _generateWorld = generateWorld;
+    generateWorld = function () {
+      const r = _generateWorld.apply(this, arguments);
+      WS.rock = new Map(); for (let i = 0; i < map.length; i++) if (map[i] === CLIFF || map[i] === STEPS) WS.rock.set(i, map[i]);
+      return r;
+    }; }
+  WS.unrocked = { cells: 0, refunds: {} };
+  function clearRock() {
+    if (!WS.rock || !WS.rock.size) return 0;
+    const keep = ROCK_KEEP(), back = { pack: {}, bank: {}, ground: {} }; let n = 0;
+    for (const [i, t] of [...mapDiffs.entries()]) {
+      const rock = WS.rock.get(i); if (rock === undefined || t === rock || keep.has(t)) continue;
+      const x = i % MAP_W, y = Math.floor(i / MAP_W);
+      setTile(x, y, rock); mapDiffs.delete(i); miniDirtyTiles.add(i); n++;
+      regrow = regrow.filter(r => r.i !== i); crops = crops.filter(c => c.i !== i); fires = fires.filter(f => f.i !== i);
+      const name = tileName(t), id = Object.keys(ITEMS).find(k => ITEMS[k] && ITEMS[k].place === name);
+      if (id) { if (!addItem(id, 1)) back.pack[id] = (back.pack[id] || 0) + 1; else if (bankAdd(id, 1)) back.bank[id] = (back.bank[id] || 0) + 1; else { back.ground[id] = (back.ground[id] || 0) + 1; drops.push({ x: player.x, y: player.y, id, qty: 1, t: 0 }); } }
+    }
+    if (!n) return 0;
+    if (collides(player.x, player.y, player.r, playerWho())) { const sp = safeSpot(player.x, player.y, player.r, playerWho()) || respawnPoint(); player.x = sp.x; player.y = sp.y; }
+    WS.unrocked.cells += n; for (const w of ['pack', 'bank', 'ground']) for (const id in back[w]) WS.unrocked.refunds[id] = (WS.unrocked.refunds[id] || 0) + back[w][id];
+    const words = (o, where) => { const ids = Object.keys(o); if (!ids.length) return null; const part = id => `${o[id]} ${(ITEMS[id].name || id).toLowerCase()}${o[id] === 1 || /s$/i.test(ITEMS[id].name || id) ? '' : 's'}`; const list = ids.length === 1 ? part(ids[0]) : ids.slice(0, -1).map(part).join(', ') + ' and ' + part(ids[ids.length - 1]); return where === 'ground' ? `On the ground by you: ${list}.` : `Back in your ${where}: ${list}.`; };
+    const lines = ['pack', 'bank', 'ground'].map(w => words(back[w], w)).filter(Boolean);
+    if (lines.length) { say('The land has changed since you were last here: what you left where the rock now stands is yours again.', 'The Voice'); for (const l of lines) say(l, 'The Voice'); }
+    miniDirty = true; save();
+    return n;
+  }
+  WS.clearRock = clearRock;
+  { const _load = load; load = function () { const ok = _load.apply(this, arguments); if (ok) clearRock(); return ok; }; }
+
   HOOKS.world.push((rnd0, api) => {
     const rnd = mulberry32(SEED);                  // its own stream: what drew before this must not move the result
     const set = api.setTile, at = api.tileAt;

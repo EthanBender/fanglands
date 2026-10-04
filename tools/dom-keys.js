@@ -70,7 +70,7 @@ async function scene(browser, touch) {
   // the rematches by real key presses: E on the War Shed's valve stands a Barrelbeast up; E on the wind shrine (the storm
   // broken) opens its two choices and a real click on Into the storm goes in
   { const { page, errors } = await scene(browser, false);
-    await page.evaluate(() => { const hf = quest.hollowford || (quest.hollowford = {}); Object.assign(hf, { beastKilled: true, rewarded: true, freed: true, shedUp: false, shedRestUntil: 0 }); INSTANCES.enter('war_shed'); __sock.onmessage({ data: JSON.stringify({ t: 'keeper', map: 'war_shed', n: 'Tester' }) }); FANGLANDS.tp(14, 4); FANGLANDS.face(14, 3); dialog.cur = null; dialog.queue.length = 0; });
+    await page.evaluate(() => { const hf = quest.hollowford || (quest.hollowford = {}); Object.assign(hf, { beastKilled: true, rewarded: true, freed: true, shedUp: false, shedRestUntil: 0 }); INSTANCES.enter('war_shed'); __sock.onmessage({ data: JSON.stringify({ t: 'keeper', map: 'war_shed', n: 'Tester' }) }); FANGLANDS.tp(14, 8); FANGLANDS.face(14, 7); dialog.cur = null; dialog.queue.length = 0; });
     await page.waitForTimeout(150); await page.keyboard.press('e');
     await page.waitForFunction(() => monsters.some(m => m.type === 'barrelbeast' && !m.dead), null, { timeout: 4000 }).catch(() => { });
     const shed = await page.evaluate(() => ({ inst: INSTANCES.active(), up: monsters.filter(m => m.type === 'barrelbeast' && !m.dead).length, shedUp: quest.hollowford.shedUp }));

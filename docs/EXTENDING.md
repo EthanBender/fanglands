@@ -53,14 +53,16 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   `HOOKS.leaveInstance.push(id => ...)` runs as the knight is about to leave instance `id` (every way out: LEAVE, L, the exit, a ride, a respawn, a load),
   while it is still the active map: settle there anything you owe him that a timer was still holding back (91-royalmine pays the golem's fall this way).
 - Named bosses come back (owner: *"bosses shoould all be redefeatable"*). A boss a control or a visit wakes registers it once:
-  `HOOKS.bossCall = HOOKS.bossCall || {}; HOOKS.bossCall.my_boss = { map: 'over' | '<instance id>', near: [tx, ty, tiles] | null, name, type, alive: () => bool, wake: askerName => {...} }`,
+  `HOOKS.bossCall = HOOKS.bossCall || {}; HOOKS.bossCall.my_boss = { map: 'over' | '<instance id>', near: [tx, ty, tiles] | null, name, type, alive: () => bool, wake: (askerName, first) => {...} }`
+  (`first`: the asker said it is his own story fight; 28-thefang marks such a Fang `friendStory` and 37 brings the Dragon Killers for it),
   and the on-screen control calls `window.COOP && COOP.call ? COOP.call('my_boss') : HOOKS.bossCall.my_boss.wake(null)`. Offline or on the
   map's keeper that wakes it at once (`'woke'`); on anyone else it asks the keeper (`'sent'`), who checks the map, the range and
   that none is up (docs/ONLINE.md, *Named bosses*). `wake(null)` is this knight's own call; `wake('Ben')` must never set the
   keeper's own quest flags. Decide first-kill or repeat in the kill hook from this knight's own flags, so a friend's kill
   (a phantom, through the helper credit) pays each knight his own reward. Anything the boss spawns or moves runs only where
   `!window.NET || !NET.online() || (window.COOP && COOP.isKeeper())`. A rematch's rest is timed on `player.dayTime` (saved,
-  always counts up, in instances too), never on `time`. Give the entry `rest` (seconds; the keeper then answers calls with
+  always counts up, in instances too), never on `time`; list its field in `src/96-rests.js` (`RESTS`), which takes the real
+  time a knight was away (its own stamp beside the slot, `fanglands.rests.N`) off every rest still running when he loads. Give the entry `rest` (seconds; the keeper then answers calls with
   `boss_wait` for that long after the boss falls on its map), `resting: m => bool` (this knight's own rest: a repeat kill then
   pays nothing, `m.noPay`; read it in the kill hook and say "You helped..."), `refused: left => {...}` (the keeper's boss_wait:
   end this knight's call and say how long in m:ss) and, when the boss's name would spoil a story, `told: n => 'line'` for the
@@ -130,7 +132,8 @@ or above -1e9. Old saves: on the FIRST load of a save made before the rebuild (`
 reverts its diffs inside stone, water or a hedge (what was placed is given back) and MOVES a machine, a beast, a wreck or
 the mare to the nearest open ground (never deletes one); a cell in `OPEN` ground keeps its diff. After that a knight's
 changes in the city are his and no load touches them (a home beside its lodestone included).
-The seventeen town buildings (`b.town`) draw through the `drawBuilding` wrap; Death's House keeps the core's art. What
+The sixteen town buildings (`b.town`) and Death's House (`death2`, its own painter `drawDeathHouse`) draw through the
+`drawBuilding` wrap; a door on a north wall (h6, h7, the inn) is a porch drawn as its own item over the step (`drawPorch`). What
 never moves on a building is a cached picture (one per building, per day or night, the 10 drawn least lately dropped);
 only smoke, lanterns, signs, the awning and banners are drawn each frame, so a new moving part must be drawn in the
 `BPASS` 2 pass. The core skips its own ground texture under the cells the city's chunks cover (`window.GROUND_COVER`,

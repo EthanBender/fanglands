@@ -190,9 +190,12 @@
   }
   // HOOKS.bossCall.the_fang.wake: run by this knight alone, or by the map's keeper (asker = the friend who sounded the horn).
   // It never sets the keeper's own story flags for somebody else's horn.
-  function summonFang(asker) {
+  // first: a friend's own story fight (75-coop passes the caller's first flag); m.friendStory tells 37-dragonkillers to bring
+  // the Dragon Killers for him even when this keeper slew the Fang long ago
+  function summonFang(asker, first) {
     const fq = FQ(), m = fang(); if (!m || m.remote || !m.dead && m.awake) return false;
     if (asker == null && !fq.slain) fq.summoned = true;
+    m.friendStory = asker != null && !!first;
     const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast') || m.home;
     m.dead = false; m.deadT = 0; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.state = 'idle'; m.angry = true; m.stunT = 0; m.element = 'fire'; m.elemT = 0; m.fireCd = 1.5;
     m.awake = true; m.respawnT = Infinity; m.hitters = {}; m.credited = false; m.repeat = false;
@@ -205,7 +208,7 @@
   // fights is a repeat: the Echo after his slaying, or a friend's fight before his own story gets there.
   const storyFight = () => !FQ().slain && quest.stage >= 14;
   HOOKS.bossCall.the_fang = { map: 'over', near: [CIRCLE_T.x, CIRCLE_T.y, 4], name: 'The Fang', type: 'the_fang', rest: ECHO_REST,
-    alive: () => !!liveFang(), wake: asker => { summonFang(asker); },
+    alive: () => !!liveFang(), wake: (asker, first) => { summonFang(asker, first); },
     // 75-coop's pay gate: a repeat kill inside this knight's own rest pays nothing
     resting: () => !storyFight() && restLeft(FQ()) > 0,
     // what the keeper reads when a friend's horn wakes it: the name only for a knight whose story has reached the dragon
@@ -608,6 +611,9 @@
   // the Echo is drawn a little see-through, for a knight who knows the real one is dead
   { const draw0 = HOOKS.drawMonster.the_fang;
     HOOKS.drawMonster.the_fang = (g, e, hurt) => { if (!FQ().slain) return draw0(g, e, hurt); g.save(); g.globalAlpha = 0.75; try { draw0(g, e, hurt); } finally { g.restore(); } }; }
+  // and its name: the tag over its head (09-render) and the long-press name (17-tap) read m.tag before the type's name,
+  // so a knight who slew the dragon reads 'Echo of the Fang', as the boss banner does
+  HOOKS.update.push(() => { const m = fang(); if (m) m.tag = FQ().slain ? 'Echo of the Fang' : undefined; });
   // the progression audit (42-playthrough reads HOOKS.xpSource): the Echo, once a day of the knight's clock
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => { const D = MONSTER_DEFS.the_fang; add('melee', 'Echo of the Fang (one per 600 s)', 80, D.hp * 4 + D.level * 10, ECHO_REST, '28-thefang: the horn on the circle'); });
 
@@ -723,6 +729,12 @@
         check(P + 'after the slaying, the horn on the circle (18,117) raises the Echo at home with 900 hp and the banner THE ECHO RISES; fq.echoUp saved',
           !m.dead && m.hp === 900 && m.awake && dist(m.x, m.y, m.home.x, m.home.y) < 2 * TILE && bannerAhead('THE ECHO RISES') && q.echoUp === true && saved && said(/lava remembers its shape/),
           { dead: m.dead, hp: m.hp, awake: m.awake, banner: levelBanner && levelBanner.text, echoUp: q.echoUp, saved }); }
+      // F2b: its name over its head and on a long press is the Echo's, never the dead dragon's (09-render and 17-tap
+      // both read m.tag before the type's name)
+      { F.sim(1, []);
+        const tap = typeof tapLabelFor === 'function' ? tapLabelFor({ kind: 'monster', monster: m }) : null;
+        check(P + "the Echo's name tag over its head and its long-press name read 'Echo of the Fang · lv 80', never 'The Fang · lv 80'",
+          m.tag === 'Echo of the Fang' && tap === 'Echo of the Fang · lv 80', { tag: m.tag, tap }); }
       // F3: the Echo's purse, and nothing of the story
       { const q = FQ(); const fang0 = held('fang_of_the_fang'), looted0 = JSON.stringify(q.looted), chest0 = q.chest, echoes0 = q.echoes, st0 = quest.stage;
         drops = drops.filter(d => !['coins', 'dragon_scale', 'mithril_bar'].includes(d.id)); clearBanners(); credits = null;
@@ -879,7 +891,7 @@
           m.dead = true; m.awake = false; F.sim(1, []);
           quest.stage = 16; q.slain = true; F.tp(CIRCLE_T.x, CIRCLE_T.y + 3); F.sim(2, []); clearBanners(); notice = null; COOP.state.calls = {};
           push({ t: 'boss_call', n: 'Ann', id: 'the_fang' }); F.sim(2, []);
-          const near = { up: !m.dead, banner: bannerAhead('THE ECHO RISES'), toast: notice && notice.text };
+          const near = { up: !m.dead, banner: bannerAhead('THE ECHO RISES'), toast: notice && notice.text, story: m.friendStory };
           // the keeper brings it down: the dragon rests on this map
           const n0 = drops.length; m.stunT = 0; m.hp = 1; hitMonster(m, 5, 0); F.sim(2, []); drops = drops.slice(0, n0);
           COOP.state.calls = {}; sent.length = 0;
@@ -887,11 +899,13 @@
           const wait = sent.find(mm => mm.t === 'boss_wait'), held = m.dead;
           COOP.state.calls = {};
           push({ t: 'boss_call', n: 'Ann', id: 'the_fang', first: true }); F.sim(2, []);
-          const firstUp = !m.dead;
-          check(P + "(fake NET keeper): a friend's horn answered by a stage-5 keeper far from the lair shows no banner and a toast without the dragon's name; in the lair at stage 16 he sees THE ECHO RISES; after it falls a friend's Echo call gets boss_wait (600 s) and a friend's first fight still wakes it",
-            far.up && !far.banner && far.toast === 'Ann is fighting something far to the south.' && near.up && near.banner && /sounded the horn/.test(near.toast || '')
-              && !!wait && wait.to === 'Ann' && wait.id === 'the_fang' && wait.left >= 598 && wait.left <= 600 && held && firstUp,
-            { far, near, wait, held, firstUp });
+          // (her first fight is staged as hers: friendStory, and 37 brings the Dragon Killers for it on this keeper's game)
+          F.sim(2, []); const firstUp = !m.dead && m.friendStory === true, dkUp = monsters.filter(o => o.type === 'ally_knight').length;
+          check(P + "(fake NET keeper): a friend's horn answered by a stage-5 keeper far from the lair shows no banner and a toast without the dragon's name; in the lair at stage 16 he sees THE ECHO RISES; after it falls a friend's Echo call gets boss_wait (600 s) and a friend's first fight still wakes it, as her story fight with the Dragon Killers",
+            far.up && !far.banner && far.toast === 'Ann is fighting something far to the south.' && near.up && near.banner && /sounded the horn/.test(near.toast || '') && !near.story
+              && !!wait && wait.to === 'Ann' && wait.id === 'the_fang' && wait.left >= 598 && wait.left <= 600 && held && firstUp && dkUp >= 1,
+            { far, near, wait, held, firstUp, dkUp });
+          m.dead = true; m.awake = false; m.friendStory = false; monsters = monsters.filter(o => o.type !== 'ally_knight');
         } finally { NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
       }
     } finally {

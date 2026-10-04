@@ -125,7 +125,7 @@
     // Aerie (36-skycity, the walled kingdom of 91-cloudkingdom): the Queen, Halcyon and the leap from SKYCITY, then every
     // resident, all twelve doors, the maze's middle, the Long Rail and both royal updraft stones from KINGDOM.KNOWN
     const SKYK = window.SKYCITY ? [[SKYCITY.SKY_NPCS[0].name, SKYCITY.SKY_NPCS[0].x, SKYCITY.SKY_NPCS[0].y], [SKYCITY.SKY_NPCS[1].name, SKYCITY.SKY_NPCS[1].x, SKYCITY.SKY_NPCS[1].y], ['the leap down', SKYCITY.LEAP_T[0], SKYCITY.LEAP_T[1]]] : [];
-    const KNOWN = { aerie: SKYK.concat(window.KINGDOM && Array.isArray(KINGDOM.KNOWN) ? KINGDOM.KNOWN : []), tinker_lab: [['Tinkerton (lab)', 4, 3], ['the Gnasher rug', 12, 9], ['the arena lever', 21, 15]], afterlands: [['the fire', 30, 8], ['Count Ashvane', 46, 18], ['the crypt door out', 30, 2]], spider_den: [['the chest', 3, 26], ['the Brood Mother', 12, 22]], war_shed: [['the boiler valve', 14, 3], ['the stocks', 14, 9]] };
+    const KNOWN = { aerie: SKYK.concat(window.KINGDOM && Array.isArray(KINGDOM.KNOWN) ? KINGDOM.KNOWN : []), tinker_lab: [['Tinkerton (lab)', 4, 3], ['the Gnasher rug', 12, 9], ['the arena lever', 21, 15]], afterlands: [['the fire', 30, 8], ['Count Ashvane', 46, 18], ['the crypt door out', 30, 2]], spider_den: [['the chest', 3, 26], ['the Brood Mother', 12, 22]], war_shed: [['the boiler valve', 14, 7], ['the stocks', 14, 11]] };
     // Deepholm's people and its way out (24-dwarves): they used to be overworld targets at 2–26, 72–94, and
     // the same walk is proved here instead — from the foot of the ladder to every dwarf and back to the ladder.
     if (window.DEEPHOLM) KNOWN.deepholm = [...DEEPHOLM.DWARVES.map(d => [d.name, d.x, d.y]), ['the ladder out', DEEPHOLM.LADDER.x, DEEPHOLM.LADDER.y],

@@ -197,7 +197,8 @@ function generateWorld() {
   spawnList('boar', [[30, 24], [34, 30], [26, 36], [40, 46], [60, 44], [90, 60], [70, 56]]);
   spawnList('sheep', [[74, 42], [77, 44], [76, 41], [79, 43]]);
   spawnList('cow', [[74, 16], [77, 19], [79, 16]]);
-  spawnList('guard_m', [[87, 30], [118, 36], [113, 43]]); spawnList('guard_f', [[104, 23], [126, 33], [110, 43]]);
+  // (the West Gate's guard stands at 89,30, clear of the gate tower's cone: at 87,30 the cone hid his name)
+  spawnList('guard_m', [[89, 30], [118, 36], [113, 43]]); spawnList('guard_f', [[104, 23], [126, 33], [110, 43]]);
   spawnList('wolf', [[20, 70], [40, 68], [50, 80], [75, 74], [90, 70], [110, 82], [130, 72], [145, 80], [70, 88], [25, 88]]);
   spawnList('sapper', [[146, 26], [154, 34], [150, 38]]); spawnList('brute', [[148, 30], [153, 24], [155, 30]]);
   spawnList('goblin', [[144, 24], [144, 36], [156, 38], [151, 22]]);
