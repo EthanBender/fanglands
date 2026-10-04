@@ -63,7 +63,7 @@
     }
     check(P + 'the town is ringed in stone, not paddock fencing, and both gates are still open', wall > 100 && fence === 0 && gate >= 4 && SOLID.has(TOWNWALL.tile), { wall, fence, gate });
     // the wall must not seal the town: the square is still reachable from outside
-    { const outside = [VILLAGE.x0 - 4, 32], inside = [112, 33];
+    { const outside = [VILLAGE.x0 - 4, ATLAS.frame('thistledown').y(32)], inside = ATLAS.port('thistledown.square');
       const path = F.bfs(outside[0], outside[1], inside[0], inside[1]);
       check(P + 'the wall does not seal the town: you can still walk in from outside through a gate', !!path && path.length > 0, { steps: path ? path.length : 'nopath', from: outside, to: inside }); }
   });
