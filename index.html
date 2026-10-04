@@ -74793,10 +74793,13 @@ const MOUNT_LOOK = (() => {
     const dragons = kinds(['green_dragon', 'red_dragon']), crew = kinds(['brute', 'sapper'], 'iron_isle_wreck'), beast = MONSTER_SPAWNS.filter(s => s.type === 'barrelbeast');
     const inArea = (list, id) => list.length > 0 && list.every(s => A.zoneAt('over', s.tx, s.ty) === id);
     const fang = (HOOKS.bossCall || {}).the_fang, circle = fang && fang.near;
+    const TDF = ATLAS.frame('thistledown'), SQ = ATLAS.port('thistledown.square');
     const look = {
       circle: circle ? A.combatAt('over', circle[0], circle[1]) : null, circlePlace: circle ? A.zoneAt('over', circle[0], circle[1]) : null,
-      fields: A.combatAt('over', 70, 40), fieldsPlace: A.zoneAt('over', 70, 40), square: A.zoneAt('over', 112, 33), squareCombat: A.combatAt('over', 112, 33),
-      campCentre: A.combatAt('over', 150, 30), wilds: A.zoneAt('over', 259, 179), off: A.place('over', -1, 5), offFar: A.place('over', MAP_W, 0),
+      // (the spread spec, §9.1: the fields probe is the old 70,40 in Thistledown's frame, the square its port, the camp's
+      // centre the camp frame's 150,30, and the far corner the map's own)
+      fields: A.combatAt('over', ...TDF.p(70, 40)), fieldsPlace: A.zoneAt('over', ...TDF.p(70, 40)), square: A.zoneAt('over', ...SQ), squareCombat: A.combatAt('over', ...SQ),
+      campCentre: A.combatAt('over', ...ATLAS.frame('camp').p(150, 30)), wilds: A.zoneAt('over', MAP_W - 1, MAP_H - 1), off: A.place('over', -1, 5), offFar: A.place('over', MAP_W, 0),
       den: A.combatAt('spider_den', 5, 5), denOut: A.place('spider_den', I.get('spider_den').w, 0), deep: A.combatAt('deepholm', 3, 3), house: A.zoneAt('house:ben', 3, 3),
     };
     check(P + 'zone lookups: the Fang\'s circle is multi in fang_lair, the fields by Thistledown and Thistledown\'s square are single, the camp is multi; the dragons, the wreck crew and the square\'s beast stand in their areas; off the map is no place',
