@@ -77,5 +77,10 @@
   {"file": "21-companion.js", "literal": "3 * TILE", "line": 454, "reason": "the self-test stands the brute 3 tiles from the cage: an offset, not a position"},
   {"file": "21-companion.js", "literal": "8 * TILE", "line": 458, "reason": "a distance (8 tiles), not a position"},
   {"file": "21-companion.js", "literal": "3 * TILE", "line": 462, "reason": "a distance (3 tiles), not a position"},
-  {"file": "21-companion.js", "literal": "3 * TILE", "line": 464, "reason": "a distance (3 tiles), not a position"}
+  {"file": "21-companion.js", "literal": "3 * TILE", "line": 464, "reason": "a distance (3 tiles), not a position"},
+  {"file": "22-bulldozer.js", "literal": "5 * TILE", "reason": "the bulldozer's sight: a range (5 tiles), not a position", "decl": "sight"},
+  {"file": "22-bulldozer.js", "literal": "wx - 10", "line": 214, "reason": "drawing: the tread bands' pixel offsets round the wheel"},
+  {"file": "22-bulldozer.js", "literal": "px - 44", "line": 256, "reason": "drawing: the blade's ridges in sprite pixels"},
+  {"file": "22-bulldozer.js", "literal": "5 * TILE", "line": 313, "reason": "the self-test's check of the dozers' sight range (5 tiles)"},
+  {"file": "22-bulldozer.js", "literal": "2 * TILE", "line": 335, "reason": "a distance (2 tiles), not a position"}
 ]
