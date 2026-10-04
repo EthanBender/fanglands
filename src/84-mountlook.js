@@ -517,7 +517,7 @@ const MOUNT_LOOK = (() => {
 
     // MA6. a gate stands open while a rider is in it, and shut otherwise (a pen gate; the town's gates are gatehouses)
     { let gate = null;
-      for (let y = 1; y < MAP_H - 1 && !gate; y++) for (let x = 1; x < MAP_W - 1 && !gate; x++) if (tileAt(x, y) === T.GATE && !(x >= 84 && x <= 141 && y >= 13 && y <= 57)) gate = [x, y];
+      for (let y = 1; y < MAP_H - 1 && !gate; y++) for (let x = 1; x < MAP_W - 1 && !gate; x++) if (tileAt(x, y) === T.GATE && !(x >= VILLAGE.x0 - 1 && x <= VILLAGE.x1 + 1 && y >= VILLAGE.y0 - 1 && y <= VILLAGE.y1 + 1)) gate = [x, y];
       let r = { gate };
       if (gate) {
         const keep = { x: player.x, y: player.y, mech: player.mech, r: player.r };
