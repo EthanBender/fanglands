@@ -429,6 +429,12 @@ map number like `112` will be wrong after the move. Every overworld position is 
   are evaluated in OLD coordinates through the inverse (`noise(W.ix(x), W.iy(y))`), so their shapes stretch and stay
   bit-identical until the spread. A seam that must meet a place's gate goes through its pin:
   `W.pin('rim', W.y(95), x)` (see `ATLAS.PINS`: rim, gw_steps, giants, jungle_west, river, strait, sea).
+- **A road or path is a track**: read it with `ATLAS.track('road_cave')` (a list of `[x, y]`, each point a port, a
+  place's own point or a world point), never as a literal polyline. A new road goes into `TRACKS` in `src/01-atlas.js`,
+  written the same way (`['port', 'thistledown.west_gate']`, `['thistledown', 84, 32]`, `['w', 60, 70]`). A guard or
+  verge round a road is built from the track itself (every tile within N of it), not from two corners in two frames.
+- **The Ashfields / Jungle wall** (the old x 100 line) is `ATLAS.world.line('jungle_west', y)`: the region split, the
+  Ashfields' east edge, the rim's last column and the burnt band all read it, so they move with the wall's pin.
 - **Which place owns a literal**: the one whose old box holds it. `node tools/anchor-of.mjs 140 80` answers (smallest box
   wins; an undecided overlap is refused). Something relative to a place belongs to that place even outside its box
   (the warden's notch, the giants' gap, a guard rect round a building, a road end at a gate). Anything a test asserts
@@ -437,8 +443,14 @@ map number like `112` will be wrong after the move. Every overworld position is 
   `'over'`). Those go in `docs/spread/literals-allow.json` with a one-line reason when the counter mistakes them for
   positions.
 - **The gate**: `build.sh` runs `node tools/literals.mjs --gate` over every file listed in `docs/spread/converted.json`.
-  A bare coordinate in a converted file fails the build with "wrap it: ATLAS.frame('<place>') or ATLAS.world". Run
-  `node tools/literals.mjs src/NN-file.js` to see what it counts. A frame point far outside its own place (past the
+  A bare coordinate in a converted file fails the build with "wrap it: ATLAS.frame('<place>') or ATLAS.world". It counts
+  pairs, points, rects, tile calls, `tc(N)`, `N * TILE`, comparisons, a centre after a coordinate pair
+  (`near(x, y, 66, 57, ...)`, `dist(x, y, 140, 76)`) and a distance to a place (`Math.hypot(x - 140, y - 76)`). Run
+  `node tools/literals.mjs src/NN-file.js` to see what it counts. An allow entry with a `literal` must be pinned to its
+  declaration (`"decl": "LAW_ARM_RANGE"`) or its `line`, so it never covers a new position elsewhere in the file.
+- **A new feature file is written in frames from the start** and is added to `docs/spread/converted.json` in the same
+  commit. The gate only reads the files that list names: a new file left off it is not checked at all (until Stage 3's
+  repo-wide gate), so its bare numbers would sit there unseen until the spread moves the land under them. A frame point far outside its own place (past the
   box + guard + 12) is logged by the strict report (`ATLAS.strict()`), which `tools/headless.js` and
   `tools/fingerprint.mjs` fail on unless `docs/spread/strict-allow.json` lists it.
 - **Proving nothing moved** (until the spread every frame, the world and every pin are the identity):
