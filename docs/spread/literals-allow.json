@@ -343,5 +343,16 @@
   {"file": "95-thistledown.js", "literal": "5 * TILE", "decl": "parked", "reason": "the self-test finds villagers within 5 tiles of a gate: a distance, not a position"},
   {"file": "95-thistledown.js", "literal": "window.GROUND_COVER(92, 40)", "decl": "inAerie", "reason": "instance-local (aerie): the self-test asks for ground cover at an Aerie tile while inside Aerie"},
   {"file": "96-fixes.js", "literal": "[1, 2]", "line": 49, "reason": "the Song of Above's quest stages 1 and 2, not a map coordinate"},
-  {"file": "96-fixes.js", "literal": "[1, 2]", "line": 51, "reason": "the Song of Above's quest stages 1 and 2, not a map coordinate"}
+  {"file": "96-fixes.js", "literal": "[1, 2]", "line": 51, "reason": "the Song of Above's quest stages 1 and 2, not a map coordinate"},
+  {"file": "36-aerieplan.js", "decl": "BUILDINGS", "reason": "instance-local (aerie): the city plan's buildings, mounted into BUILDINGS only inside Aerie"},
+  {"file": "36-aerieplan.js", "decl": "SPOTS", "reason": "instance-local (aerie): the city plan's named spots"},
+  {"file": "36-aerieplan.js", "decl": "GATES", "reason": "instance-local (aerie): the city's gate cells"},
+  {"file": "36-aerieplan.js", "decl": "SPIRE_NAMES", "reason": "instance-local (aerie): the spires' cells"},
+  {"file": "36-aerieplan.js", "decl": "DRAFTS", "reason": "instance-local (aerie): the updraft stones and their landings"},
+  {"file": "36-aerieplan.js", "decl": "ROYAL", "reason": "instance-local (aerie): the royal updraft stones and their landings"},
+  {"file": "36-aerieplan.js", "decl": "WARDS", "reason": "instance-local (aerie): the wards' arrival rects"},
+  {"file": "36-aerieplan.js", "decl": "WALKERS", "reason": "instance-local (aerie): the walkers' routes in the city"},
+  {"file": "36-aerieplan.js", "decl": "FLIERS", "reason": "instance-local (aerie): the fliers' routes over the city"},
+  {"file": "36-aerieplan.js", "decl": "RUN_OFFSET", "reason": "instance-local (aerie): the Spire Run's offset inside the city map"},
+  {"file": "36-aerieplan.js", "literal": "[11, 61]", "line": 211, "reason": "instance-local (aerie): the city's north and south curtain-wall rows, where the banners hang"}
 ]
