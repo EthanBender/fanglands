@@ -22373,7 +22373,7 @@ window.SETTINGS = SETTINGS;
   HOOKS.questText.orders = () => { const o = currentOrder(), s = orderState(); return `Fennick's order: ${o.n} ${ITEMS[o.item] ? ITEMS[o.item].name : o.item} for ${orderPay(o)} coins. You have ${countItem(o.item)}. Orders filled: ${s.done}.`; };
   HOOKS.activeQuests.push(() => (quest.orders && quest.orders.taken ? ['orders'] : []));
   QUEST_DEFS.orders = { name: "Fennick's order" };
-  HOOKS.mapTarget.push(() => (quest.orders && quest.orders.taken ? { x: 116, y: 27, label: 'Fennick', id: 'orders' } : null));
+  HOOKS.mapTarget.push(() => (quest.orders && quest.orders.taken ? MAP_TARGET_NPC('fennick', 'Fennick', 'orders') : null));   // where Fennick stands (02-world's NPCS), read, never a second copy
 
   window.ECONOMY = { feeShare, feeCap, FEE_BANDS, ORDERS, currentOrder, orderPay, orderState, wreckIds };
 
@@ -22381,7 +22381,7 @@ window.SETTINGS = SETTINGS;
   const P = 'economy: ';
   HOOKS.selfTest.push((check, F, h) => {
     // wrecks never pin the knight
-    { const o = h.openSpot(60, 24); F.tp(o.x, o.y);
+    { const o = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(24)); F.tp(o.x, o.y);
       const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE);
       const ring = [[tx + 1, ty], [tx - 1, ty], [tx, ty + 1], [tx, ty - 1]];
       const was = ring.map(([x, y]) => tileAt(x, y));
@@ -22392,7 +22392,7 @@ window.SETTINGS = SETTINGS;
       ring.forEach(([x, y], i) => changeTile(x, y, was[i]));
       check(P + 'a ring of wrecks never pins the knight (walk-over for the player, still solid for monsters)', !boxedIn && canLeave && monsterBlocked, { boxedIn, canLeave, monsterBlocked }); }
     // standing on a wreck, E repairs it
-    { const o = h.openSpot(62, 26); F.tp(o.x, o.y);
+    { const o = h.openSpot(...ATLAS.frame('signpost').p(62, 26)); F.tp(o.x, o.y);
       const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE), was = tileAt(tx, ty);
       changeTile(tx, ty, T.WRECK); h.give('iron_bar', 3); h.give('goblin_scrap', 4);
       player.facing = { x: 0, y: -1 }; const n0 = notice && notice.text;
