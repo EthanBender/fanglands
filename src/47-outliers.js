@@ -258,7 +258,7 @@
 
 
     // ---- the shield block ----
-    { const o = h.openSpot(70, 34); F.tp(o.x, o.y); F.sim(2, []);
+    { const o = h.openSpot(...ATLAS.frame('thistledown').p(70, 34)); F.tp(o.x, o.y); F.sim(2, []);
       BLOCK.t = 0; BLOCK.cd = 0; BLOCK.paid = false;
       player.equip.shield = null; notice = null;
       F.press('KeyR');
@@ -311,7 +311,7 @@
     player.equip = eq0; recomputeMaxHp(); player.hp = player.maxHp;
 
     // ---- the fourth crop ----
-    { const o = h.openSpot(74, 30); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y };
+    { const o = h.openSpot(...ATLAS.frame('thistledown').p(74, 30)); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y };
       const bag = player.inv.slice(); player.inv = player.inv.map(() => null); // an empty pack: under --play the bot arrives with 20 full slots and the seed never lands
       changeTile(gt.x, gt.y, T.SOIL); crops = crops.filter(c => c.i !== idx(gt.x, gt.y));
       h.give('cloudberry_seed', 2); player.skills.farming.xp = 0; notice = null;
@@ -336,7 +336,7 @@
       const got = countItem('rich_compost'), xpGot = player.skills.crafting.xp - x0;
       const dungLeft = countItem('dragon_dung');
       // spread one on a crop that is still growing
-      const o = h.openSpot(78, 30); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y };
+      const o = h.openSpot(...ATLAS.frame('thistledown').p(78, 30)); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y };
       crops = crops.filter(c => c.i !== idx(gt.x, gt.y)); changeTile(gt.x, gt.y, T.CROP);
       crops.push({ i: idx(gt.x, gt.y), stage: 1, t: 12, crop: 'potato' });
       F.face(gt.x, gt.y); F.press('KeyE'); F.sim(2, []);
