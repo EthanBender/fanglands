@@ -124,5 +124,6 @@
   {"file": "28-thefang.js", "literal": "12 * TILE", "line": 610, "reason": "The Fang's health bar shows within 12 tiles: a range, not a position"},
   {"file": "28-thefang.js", "literal": "[15, 16]", "decl": "texts", "reason": "the self-test reads the main quest's text at story stages 15 and 16, not a position"},
   {"file": "28-thefang.js", "literal": "2 * TILE", "line": 735, "reason": "the self-test: the Echo stands within 2 tiles of its home, a distance"},
-  {"file": "28-thefang.js", "literal": "2 * TILE", "line": 809, "reason": "the self-test sets The Fang 2 tiles from the knight: an offset, not a position"}
+  {"file": "28-thefang.js", "literal": "2 * TILE", "line": 809, "reason": "the self-test sets The Fang 2 tiles from the knight: an offset, not a position"},
+  {"file": "30-ashdrake.js", "literal": "5 * TILE", "decl": "sight", "reason": "an ash drake's sight: a range (5 tiles), not a position"}
 ]
