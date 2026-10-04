@@ -126,8 +126,13 @@ const SC = {
     per.push({ k: K.name, state: states[i], http: byP, ws: byT, opens: K.opens - c0[i].o });
   });
   const kept = await Promise.all(ks.map(K => set(K, '({keeper: window.COOP && COOP.state ? COOP.state.keeper : null, map: PLAYERS.mapId(), net: NET.status})').catch(e => 'frozen')));
-  const alarms = gameHttp - pageHttp;
-  const out = { scn, secs: +dt.toFixed(1), restart: restartAt, server: { gameHttp, wsIn, alarms_est: alarms }, pages: { http: pageHttp, ws: pageWs }, perHour: { alarms: Math.round(alarms * 3600 / dt), http_page: Math.round(pageHttp * 3600 / dt), wsIn: Math.round(wsIn * 3600 / dt), billed: Math.round((gameHttp + wsIn / 20) * 3600 / dt) }, per, kept };
+  // the alarms: counted apart by a meter that has the column (req_meter_alarm), else the World's game calls minus the pages'
+  // own (a meter from before 4 Oct 2026 also lost requests while the World napped, so that can read low, never below 0 here)
+  const counted = m1.alarms != null && m0.alarms != null;
+  const alarms = counted ? m1.alarms - m0.alarms : Math.max(0, gameHttp - pageHttp);
+  // billed: every call the pages made (counted at the page, so a nap cannot hide one), every alarm, a request per 20 messages
+  const billed = pageHttp + alarms + wsIn / 20;
+  const out = { scn, secs: +dt.toFixed(1), restart: restartAt, server: { gameHttp, wsIn, alarms, alarmsCounted: counted }, pages: { http: pageHttp, ws: pageWs }, perHour: { alarms: Math.round(alarms * 3600 / dt), http_page: Math.round(pageHttp * 3600 / dt), wsIn: Math.round(wsIn * 3600 / dt), billed: Math.round(billed * 3600 / dt) }, per, kept };
   log(JSON.stringify(out));
   fs.appendFileSync(require('os').tmpdir() + '/idle-pages.jsonl', JSON.stringify(out) + '\n');
   await browser.close();

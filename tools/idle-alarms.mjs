@@ -4,8 +4,13 @@
 // scenario's knight sends, so an hour runs in a moment. A "restart" builds a new Room and restores every socket from
 // its attachment, as a deploy or an eviction does (online/src/world.js constructor).
 //   node tools/idle-alarms.mjs            prints one line per scenario: alarms an hour before and after a restart
-import { Room } from '../online/src/room.js';
-import { MemoryStore } from '../online/src/store.js';
+//   node tools/idle-alarms.mjs --src <dir>  the same against another tree's online/src (e.g. master, for the numbers before)
+//   --beat                                  a playing keeper also sends the empty mon heartbeat each second (pages before
+//                                           4 Oct 2026; this tree's pages send only their presence)
+const ai = process.argv.indexOf('--src'), SRC = ai > 0 ? new URL('file://' + process.argv[ai + 1].replace(/\/?$/, '/')) : new URL('../online/src/', import.meta.url);
+const BEAT = process.argv.includes('--beat');
+const { Room } = await import(new URL('room.js', SRC));
+const { MemoryStore } = await import(new URL('store.js', SRC));
 
 const HOUR = 3600000;
 function run(sc) {
@@ -33,7 +38,7 @@ function run(sc) {
       for (const [i, kn] of sc.knights.entries()) if (kn === 'playing' && nextSend[i] <= now) {
         nextSend[i] = now + 1000;
         room.message(socks[i], JSON.stringify({ t: 'p', map: sc.map, region: 'Somewhere', x: 100 + 40 * i, y: 100, lv: 3 }));
-        if (room.keeperOf(sc.map) && room.keeperOf(sc.map).sock === socks[i]) room.message(socks[i], JSON.stringify({ t: 'mon', list: [] }));
+        if (BEAT && room.keeperOf(sc.map) && room.keeperOf(sc.map).sock === socks[i]) room.message(socks[i], JSON.stringify({ t: 'mon', list: [] }));
       }
     }
   };
@@ -54,6 +59,7 @@ const SC = [
   { name: 'two knights, in an instance, both paused', map: 'goblin_cave', knights: ['paused', 'paused'] },
   { name: 'two knights, overworld, keeper playing, other paused', map: 'over', knights: ['playing', 'paused'] },
   { name: 'two knights, overworld, both playing', map: 'over', knights: ['playing', 'playing'] },
+  { name: 'two knights, overworld, keeper paused, other playing (one hand-over)', map: 'over', knights: ['paused', 'playing'] },
   { name: 'three knights, overworld, all paused', map: 'over', knights: ['paused', 'paused', 'paused'] },
 ];
 for (const sc of SC) console.log(JSON.stringify(run(sc)));

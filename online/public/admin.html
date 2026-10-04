@@ -106,9 +106,9 @@
     <div id="trades"></div>
 
     <h2>Shared world</h2>
-    <p class="note">The world server will run the monsters itself, a step at a time (below: three small places so far, each off until you turn it on). This counts what Cloudflare's free plan counts: each call to the world is one request, and every 20 messages from the knights' games are one more. The free plan allows 100,000 a day, and its day starts at midnight UTC (8 pm here in summer, 7 pm in winter). This page's own calls (and the backups') are counted on their own, so the game's share is what the cost gate reads. The meter is read when this page opens and when you press Refresh; while the page is hidden, nothing refreshes at all.</p>
+    <p class="note">The world server will run the monsters itself, a step at a time (below: three small places so far, each off until you turn it on). This counts what Cloudflare's free plan counts: each call to the world is one request, and every 20 messages from the knights' games are one more. The free plan allows 100,000 a day, and its day starts at midnight UTC (8 pm here in summer, 7 pm in winter). This page's own calls (and the backups') are counted on their own, so the game's share is what the cost gate reads. The game's share is in two parts: the calls its pages make (saving the knight about every 15 seconds of play, logging in, connecting) and the world's alarms, its own timers (a list of who is on to send, a party running out, a gift coming back), each billed like a call. Two knights left on one map used to cost about 1,200 alarms an hour; a quiet night should now show only a few. The meter is read when this page opens and when you press Refresh; while the page is hidden, nothing refreshes at all.</p>
     <p id="meter">…</p>
-    <div class="scroll"><table id="meterdays"><thead><tr><th>Day (UTC)</th><th>Messages</th><th>Game calls</th><th>The game, about</th><th>Of the free plan</th><th>This page's calls</th><th>Everything, of the free plan</th></tr></thead><tbody></tbody></table></div>
+    <div class="scroll"><table id="meterdays"><thead><tr><th>Day (UTC)</th><th>Messages</th><th>Pages' calls</th><th>Alarms</th><th>The game, about</th><th>Of the free plan</th><th>This page's calls</th><th>Everything, of the free plan</th></tr></thead><tbody></tbody></table></div>
     <h3 class="sub">Movement check</h3>
     <p class="note">The movement check watches where each knight's game says he is, against the world's map: too fast for what he rides, or into or through a wall nobody can cross. It only counts; it never moves or stops anyone. A knight whose page is older than the world is asked to reload, and is not checked until he does.</p>
     <p id="movecheck">…</p>
@@ -331,9 +331,20 @@
     const t = m.today, n = v => Number(v || 0).toLocaleString();
     // a meter from before the admin column has no game share: then every call is shown as the game's
     const game = d => d.gameEst != null ? d.gameEst : d.est, gameCalls = d => d.gameHttp != null ? d.gameHttp : d.http, admin = d => Number(d.admin || 0);
-    $('meter').textContent = 'Today (UTC), read at ' + new Date().toLocaleTimeString() + ': the game sent ' + n(t.wsIn) + ' socket messages and made ' + n(gameCalls(t)) + ' calls, about ' + n(game(t)) + ' of the ' + n(m.freeLimit) + ' requests a day the free plan allows (' + pct(game(t), m.freeLimit) + '). This page and the backups made ' + n(admin(t)) + ' calls on top, so about ' + n(t.est) + ' in all (' + pct(t.est, m.freeLimit) + ').';
+    // a day with its alarms counted apart (a meter from before the alarm column, or a day before it, has none: alarms null)
+    const apart = d => d.alarms != null && d.pageHttp != null;
+    const times = v => n(v) + (Number(v) === 1 ? ' time' : ' times');
+    const head = 'Today (UTC), read at ' + new Date().toLocaleTimeString() + ': ';
+    const share = 'about ' + n(game(t)) + ' of the ' + n(m.freeLimit) + ' requests a day the free plan allows (' + pct(game(t), m.freeLimit) + ').';
+    const rest = ' This page and the backups made ' + n(admin(t)) + ' calls on top, so about ' + n(t.est) + ' in all (' + pct(t.est, m.freeLimit) + ').';
+    // the first day alarms were counted apart: the ones before that moment are inside the pages' calls
+    const from = m.alarmsFrom != null ? new Date(m.alarmsFrom) : null;
+    const since = from && from.toISOString().slice(0, 10) === t.day ? ' Alarms are counted on their own only since ' + from.toISOString().slice(11, 16) + ' UTC today; any before that are inside the pages\' calls.' : '';
+    $('meter').textContent = apart(t)
+      ? head + 'the game\'s pages made ' + n(t.pageHttp) + ' calls and sent ' + n(t.wsIn) + ' socket messages, and the world woke itself ' + times(t.alarms) + ' on its own timers (alarms). Together that is ' + share + rest + since
+      : head + 'the game sent ' + n(t.wsIn) + ' socket messages and made ' + n(gameCalls(t)) + ' calls, ' + share + rest + ' (The world\'s alarms are not counted apart on this day: they are inside the calls.)';
     const tb = $('meterdays').querySelector('tbody'); tb.innerHTML = '';
-    for (const d of m.days.slice(0, 7)) { const tr = document.createElement('tr'); cell(tr, d.day).className = 'nowrap'; cell(tr, n(d.wsIn)); cell(tr, n(gameCalls(d))); cell(tr, n(game(d))); cell(tr, pct(game(d), m.freeLimit)); cell(tr, n(admin(d))); cell(tr, pct(d.est, m.freeLimit)); tb.appendChild(tr); }
+    for (const d of m.days.slice(0, 7)) { const tr = document.createElement('tr'); cell(tr, d.day).className = 'nowrap'; cell(tr, n(d.wsIn)); cell(tr, apart(d) ? n(d.pageHttp) : n(gameCalls(d)) + ' (alarms inside)'); cell(tr, apart(d) ? n(d.alarms) : 'not counted apart'); cell(tr, n(game(d))); cell(tr, pct(game(d), m.freeLimit)); cell(tr, n(admin(d))); cell(tr, pct(d.est, m.freeLimit)); tb.appendChild(tr); }
     showMove(r);
     showWorld(r);
   }

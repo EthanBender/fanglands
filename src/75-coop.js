@@ -16,7 +16,6 @@
   const GONE_AFTER = 1;       // a puppet missing from the stream this long is hidden
   const DROP_AFTER = 2;       // ...and dropped from the array this long after that
   const STALL_AFTER = 6;      // when the WHOLE stream has stopped, everything stays standing this long (longer than a handoff takes)
-  const BEAT_EVERY = 1;       // a keeper with nobody near still sends an empty snapshot this often: the world's sign it is alive
   const NEAR = 24 * TILE;     // snapshot radius around every knight on the map
   const FREEZE = 1e6;         // the stunT value that makes the core loop skip a monster for one frame
   const MAX_DMG = 500;
@@ -480,20 +479,17 @@
       }
       return;
     }
-    // a keeper whose game is running keeps talking even with nobody near: an empty snapshot is a heartbeat, so the world never
-    // takes a working keeper for a frozen one and hands the map to a knight whose phone is locked (the monsters then vanished).
-    // A paused keeper or one on the title screen stays quiet on purpose, so the world hands the map to someone who is playing.
-    if (isKeeper() && online() && !paused && !(title && title.active)) {
-      S.beatAcc = (S.beatAcc || 0) + dt;
-      if (S.beatAcc >= BEAT_EVERY && !(pre && pre.kind === 'keeper' && S.here.length)) { S.beatAcc = 0; NET.send({ t: 'mon', list: [] }); }
-    }
+    // A keeper with nobody near sends nothing here: its presence (73-players, at least once a second while its game runs) is
+    // what tells the world it is alive (room.js KEEPER_STALE reads presence as well as monsters since 4 Oct 2026). It used to
+    // send an empty snapshot once a second as well, which doubled a lone open page's messages (measured: 7,186 an hour, half of
+    // them these). A paused keeper or one on the title screen sends no presence, so the world hands the map to someone playing.
     if (!pre || pre.kind !== 'keeper') return;
     if (!paused) for (const f of pre.frozen) { const m = f.m; if (!m.dead && m.stunT <= 0 && monsters.includes(m)) stepRemote(m, f.target, dt); }
     S.snapAcc += dt;
     // a paused keeper (or one on the title screen) sends no snapshots either: it would otherwise stream 8 a second to a friend
     // standing by (measured 4 Oct 2026: 461 in a minute from a paused page, billed as 1,560 requests an hour), and the world,
     // hearing it, would never hand the map to the friend who is playing
-    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length && !paused && !(title && title.active)) { S.snapAcc = 0; S.beatAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
+    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length && !paused && !(title && title.active)) { S.snapAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
   }
   const _update = update;
   update = function (dt) { const pre = before(dt); _update(dt); after(dt, pre); };
@@ -715,12 +711,13 @@
       const farExists = real.some(m => !m.dead && !near(m.x, m.y)), farListed = list.some(e => !sentNear(e[2], e[3]));
       check(P + 'the keeper streams snapshots in the contract shape, only for monsters near a knight', NET.online() && COOP.isKeeper() && COOP.map() === 'over' && mons.length >= 1 && shapeOk && farExists && !farListed && list.some(e => e[0] === gob.nid), { online: NET.online(), keeper: COOP.keeper(), map: COOP.map(), snapshots: mons.length, listed: list.length, shapeOk, farExists, farListed });
 
-      // (a2) a keeper with nobody near still sends a heartbeat (an empty snapshot) about once a second, so the world never
-      // takes it for frozen; a paused keeper stays quiet on purpose so the world hands the map to someone playing
-      { push({ t: 'left', n: 'Ann', map: 'over' }); sent.length = 0; F.sim(90);
-        const beats = sentOf('mon').filter(m => Array.isArray(m.list) && m.list.length === 0).length;
-        const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length; paused = p0;
-        check(P + 'a keeper with nobody near sends a heartbeat about once a second, and none while paused', beats >= 1 && beats <= 3 && whilePaused === 0, { beats, whilePaused });
+      // (a2) a keeper with nobody near sends no snapshot at all, not even an empty one: its presence, about once a second, is
+      // what tells the world it is alive (an empty snapshot each second doubled a lone open page's messages); paused, it sends
+      // neither, so the world hands the map to someone playing
+      { push({ t: 'left', n: 'Ann', map: 'over' }); sent.length = 0; F.sim(150);
+        const mons = sentOf('mon').length, pres = sentOf('p').length;
+        const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length + sentOf('p').length; paused = p0;
+        check(P + 'a keeper with nobody near sends no empty snapshot, only its presence (about once a second), and nothing while paused', mons === 0 && pres >= 2 && whilePaused === 0, { mons, pres, whilePaused });
         push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 }); }
       // (a2b) paused with a knight near, the keeper sends no snapshots either (8 a second from an idle page, and the world would
       // never hand the map to the knight who is playing); unpaused, the stream comes straight back

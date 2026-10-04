@@ -111,10 +111,13 @@ export const mapKey = (k, map) => isHouse(map) ? 'house:' + k.lc : map;
 export const ROSTER_EVERY = 2000;      // a changed roster goes out at most this often (join/leave go at once)
 // A keeper whose game has sent neither monsters nor presence for this long while others share its map (paused, on the
 // title screen, a sleeping tab) hands the map to the next knight that is playing; it is eligible again once that knight
-// leaves. Nothing watches the clock for it (an alarm is a billed request, and two idle knights on one map cost about 1,200
-// an hour that way): the hand-over happens when a knight who is playing there next says where he is (onPresence), and a map
-// where nobody is playing has nobody to hand it to.
+// leaves. Nothing watches the clock for it while nobody plays (an alarm is a billed request, and two idle knights on one map
+// cost about 1,200 an hour when one watched every keeper): the hand-over happens when a knight who is playing there says where
+// he is (onPresence, keeperCheck), and a map where nobody is playing has nobody to hand it to. So that it comes as soon as it
+// always did (3.05 s after the keeper's last word) even when the one playing stands still (one presence a second), a presence
+// that finds the keeper quiet for more than KEEPER_STALE - KEEPER_WATCH asks for one alarm at that moment, for that map only.
 export const KEEPER_STALE = 3000;
+export const KEEPER_WATCH = 1000;      // ms before KEEPER_STALE that a playing knight's presence books the hand-over's alarm
 // A knight whose game sends no presence for this long (a locked phone, a tab in the background: a playing game sends at
 // least one a second) is never chosen to keep a map while someone who is playing is there.
 export const PRESENCE_STALE = 3500;
@@ -1038,11 +1041,14 @@ export class Room {
 
   // A knight who is playing (his presence just came in) on a map whose keeper has gone quiet: elect again, so the map comes to
   // him. Cheap: one subtraction unless the keeper really is quiet.
+  // A keeper quiet for nearly that long books one alarm for the moment it will be (KEEPER_WATCH), so a knight playing but
+  // standing still (one presence a second) gets the map as soon as the old alarm gave it; only while someone plays there.
   keeperCheck(k) {
     const g = k.map && this.maps.get(k.map);
     if (!g || !g.keeper || g.keeper === k || g.keeper.virtual || g.members.size < 2) return;
-    const o = g.keeper;
-    if (this.now() - Math.max(o.monAt || 0, o.pAt || 0, o.keeperAt || 0) > KEEPER_STALE) this.elect(k.map, null);
+    const o = g.keeper, now = this.now(), heard = Math.max(o.monAt || 0, o.pAt || 0, o.keeperAt || 0);
+    if (now - heard > KEEPER_STALE) { g.watch = null; this.elect(k.map, null); return; }
+    if (now - heard > KEEPER_STALE - KEEPER_WATCH && !(g.watch > now)) { g.watch = heard + KEEPER_STALE + 50; this.arm(); }
   }
 
   // ---------- logins (the store keeps them; a store without them, as an older simulation's, is simply not asked) ----------
@@ -1121,7 +1127,8 @@ export class Room {
   due() {
     let d = this.rosterDirty ? this.rosterAt + ROSTER_EVERY : null;
     for (const g of this.gifts.values()) if (d == null || g.due < d) d = g.due;
-    // (a quiet keeper is never an alarm: onPresence hands his map on, see KEEPER_STALE)
+    // (a quiet keeper is an alarm only once a knight playing there has found him nearly stale: keeperCheck, KEEPER_WATCH)
+    for (const g of this.maps.values()) if (g.watch != null && (d == null || g.watch < d)) d = g.watch;
     { const w = this.worlds.due(); if (w != null && (d == null || w < d)) d = w; }
     for (const p of this.parties.values()) if (d == null || p.expires < d) d = p.expires;
     for (const k of this.knights.values()) if (k.ask && (d == null || k.ask.due < d)) d = k.ask.due;
@@ -1145,6 +1152,7 @@ export class Room {
     for (const g of Array.from(this.gifts.values())) if (g.due <= now) this.settleGift(g, 'gift_back');
     for (const k of Array.from(this.knights.values())) if (k.ask && k.ask.due <= now) this.dropAsk(k, 'timeout');
     if (this.rosterDirty && now - this.rosterAt >= ROSTER_EVERY) this.sendRoster(now);
+    for (const g of this.maps.values()) if (g.watch != null && g.watch <= now) g.watch = null;   // a booked hand-over: one alarm
     for (const map of Array.from(this.maps.keys())) this.elect(map, null);   // a quiet keeper steps down
     this.worlds.tick();   // world-run maps: copies to build, take-overs to finish, a copy gone silent
     this.arm(now);

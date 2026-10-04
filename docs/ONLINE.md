@@ -28,7 +28,7 @@ The game is a client-side simulation (2 MB of it, 626 tests). It is not being re
 world. Online Fanglands is a **listen server per map**:
 
 1. Everyone on the same map sees each other, chats, and can hand items over.
-2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves — or when it goes quiet: a keeper whose game has sent neither monsters nor presence for 3 s (`KEEPER_STALE`) while someone who is playing shares its map (paused, on the title screen, a sleeping tab) hands the map to that knight the moment his next presence arrives, and goes to the back of the line until that knight leaves. No alarm watches for it (each alarm is a billed request: on 3b6d6b4 two idle knights on one map cost 1,198 alarms an hour, measured under wrangler dev on 4 Oct 2026); a map where nobody is playing has nobody to hand it to, so nothing happens there. The
+2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves — or when it goes quiet: a keeper whose game has sent neither monsters nor presence for 3 s (`KEEPER_STALE`) while someone who is playing shares its map (paused, on the title screen, a sleeping tab) hands the map to that knight the moment his next presence arrives, and goes to the back of the line until that knight leaves. No alarm watches for it while nobody plays (each alarm is a billed request: on 3b6d6b4 two idle knights on one map cost 1,198 alarms an hour, measured under wrangler dev on 4 Oct 2026); a map where nobody is playing has nobody to hand it to, so nothing happens there. So that the hand-over still comes 3.05 s after the keeper's last word, as it did, when the one playing stands still (one presence a second), a presence that finds the keeper quiet for more than 2 s (`KEEPER_STALE - KEEPER_WATCH`) books one alarm for that moment, on that map only; a keeper who leaves or closes the tab hands over at once, with no alarm (`online/test/room.test.mjs`: "a hand-over is as fast as before"). A keeper's game sends no empty `mon` heartbeat any more: its presence (at least once a second while it plays) says it is alive. The
    keeper's client runs the monsters exactly as it always has and streams their state; everyone else on that
    map stops simulating monsters and shows the keeper's. Hits from the others are routed to the keeper; the
    keeper's monsters target the nearest knight, whoever it is.
@@ -1447,11 +1447,12 @@ works, and the keeper code in `src/75-coop.js` stays as the fallback through all
 Players see nothing. The only server change that reaches the live world is the **meter**: it counts what the free plan
 counts, so the cost gates before later stages read real numbers instead of guesses.
 
-**The meter.** One row per UTC day in two new tables (each created only if missing, nothing else in the schema changes):
+**The meter.** One row per UTC day in three new tables (each created only if missing, nothing else in the schema changes):
 
 ```
 req_meter       (day TEXT PRIMARY KEY, ws_in INTEGER NOT NULL DEFAULT 0, http INTEGER NOT NULL DEFAULT 0, est_requests INTEGER NOT NULL DEFAULT 0)
 req_meter_admin (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0)
+req_meter_alarm (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0, since INTEGER NOT NULL DEFAULT 0)
 ```
 
 - `day` is the UTC date, `'2026-10-03'`. The free plan's day also starts at 00:00 UTC (8 pm in Ontario in summer, 7 pm in winter).
@@ -1465,6 +1466,11 @@ req_meter_admin (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0)
   too): the parent page and the backups. The game's share is `http - admin` and `ceil(ws_in / 20) + http - admin`, and
   that is what the cost gate reads. A second table rather than a new column, because phase 1 only ever adds
   `CREATE TABLE IF NOT EXISTS`.
+- `req_meter_alarm.http` counts, of the game's calls, the World's own alarms (since 4 Oct 2026; the third table, the same
+  way). The night of 3-4 Oct read 17,266 game calls and nothing could say how many were alarms; measured afterwards under
+  wrangler dev, two idle knights on one map cost 1,198 alarms an hour on 3b6d6b4. `since` is when a row was first written
+  (each wake writes today's empty row if it is missing, so at most one row a day); the earliest `since` is when alarms began
+  to be counted apart, and a day before it has no alarm count (`null`, "not counted apart"), never a false 0.
 - Socket messages are kept in memory and written with one upsert per day touched: when 200 are waiting, when the last write
   was 10 s or more ago (checked on every message and request), on every socket close and on every alarm. Every request (each
   `/api` call, each `/ws` upgrade, each alarm) is written as it comes, and so is the first count after a wake. A World that
@@ -1474,22 +1480,40 @@ req_meter_admin (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0)
   socket messages of its last 10 s. Writes: one row per request plus at most 360 an hour for messages (the free plan allows
   100,000 rows written a day).
 - Rows older than 400 days are deleted on the first write of each day after a wake.
-- The admin export (`GET /api/admin/export`) includes `req_meter` and `req_meter_admin`.
+- The admin export (`GET /api/admin/export`) includes `req_meter`, `req_meter_admin` and `req_meter_alarm`.
 
 `GET /api/admin/sim` (Bearer ADMIN_KEY) answers, for now, only the meter:
 
 ```
-{ meter: { today: {day, wsIn, http, admin, gameHttp, est, gameEst}, days: [same, ... newest first, 14 days], freeLimit: 100000, waiting: n } }
+{ meter: { today: {day, wsIn, http, admin, gameHttp, alarms, pageHttp, est, gameEst}, days: [same, ... newest first, 14 days],
+           freeLimit: 100000, waiting: n, alarmsFrom: ms | null } }
 ```
+
+`gameHttp` = `http - admin` (alarms included, as before: what the cost gate reads); of it, `alarms` are the World's own and
+`pageHttp` = `gameHttp - alarms` the calls the game's pages made (saves, logins, status, the socket's opening). Both are `null`
+on a day before `alarmsFrom`.
 
 `today` includes the counts not yet written (`waiting` says how many). Later stages add `modes`, `tick`, `boot`, `heap`,
 `copies`, `fallbacks`, `move`, `combat` beside `meter`, and `POST /api/admin/sim` for the switches; nothing reads them yet.
 
 The parent page (`/admin`) has a **Shared world** section with one line for today and the last 7 days under it:
-"Today (UTC), read at 7:42:10 PM: the game sent 12,345 socket messages and made 678 calls, about 1,296 of the 100,000
-requests a day the free plan allows (1.3%). This page and the backups made 40 calls on top, so about 1,336 in all (1.3%)."
-The table's columns: day, messages, game calls, the game's requests, its share of the free plan, this page's calls, and
-everything's share.
+"Today (UTC), read at 7:42:10 PM: the game's pages made 210 calls and sent 12,345 socket messages, and the world woke itself
+6 times on its own timers (alarms). Together that is about 834 of the 100,000 requests a day the free plan allows (0.83%).
+This page and the backups made 40 calls on top, so about 874 in all (0.87%)." On the day alarms began to be counted apart
+it adds when ("only since 14:05 UTC today; any before that are inside the pages' calls"); a day before that reads as it
+did, with "(The world's alarms are not counted apart on this day: they are inside the calls.)". The note above it says in
+plain words what alarms are, and that two knights left on one map used to cost about 1,200 of them an hour. The table's
+columns: day, messages, the pages' calls, alarms ("not counted apart" before the column), the game's requests, its share of
+the free plan, this page's calls, and everything's share.
+
+**What an idle page costs** (4 Oct 2026). The game saves every 15 s whatever the knight is doing (`src/99-boot.js`), and
+72-cloudsave used to push every one of those saves: 210 to 240 calls an hour from each page in the game, paused or in the
+background (measured with real pages under wrangler dev). It now pushes a save only when it differs from what the cloud
+holds: the same string never again (a page in the background: nothing moves), a save that differs only in the world clock
+`time` (a paused page) at most every 10 minutes, and anything else as before (the 12 s hold). Leaving the page (hidden,
+`pagehide`) still pushes whatever differs, the clock included. A keeper's game no longer sends an empty `mon` once a second
+when nobody is near it (its presence says it is alive), which halves a lone open page's socket messages, and a paused keeper
+sends no snapshots (`75-coop`). The numbers before and after, per hour, are in the commit that made this change (`tools/idle-pages.cjs`, `tools/idle-alarms.mjs`).
 
 **The parent page's own traffic.** Its 10 s refresh reads who is online, the chat, the moderation log and the trades:
 24 calls a minute while the page is in view. It reads the meter only when it opens and when Refresh is pressed, never
@@ -2021,7 +2045,8 @@ socket's `ping` without waking the object.
   other order, asked for an alarm at the same past moment again and again until workerd dropped one and no alarm was ever
   set again on that wake (no copy built when a knight then played, gifts never returned). The Room itself is also guarded,
   on every map: a stale keeper that is still the best one (everyone else there silent too) starts a new grace, and a tick's
-  own re-arm is never at or before the moment it handled (`REARM_MIN`, 1 s). Since 4 Oct 2026 no map is watched by an alarm at all (the keeper rule, above): two knights
+  own re-arm is never at or before the moment it handled (`REARM_MIN`, 1 s). Since 4 Oct 2026 no map is watched by an alarm while nobody plays there (the keeper rule, above:
+  only a playing knight's presence that finds the keeper nearly stale books one): two knights
   paused on a knight's map keep the keeper they have and ask for no alarm (`online/test/room.test.mjs`: "two silent knights restored after a
   nap ...", `sim-host.test.mjs`: "two knights resting in a world-run place ...").
 - **The copy takes the place over from a knight who is playing.** The wake names whoever its restore elected, and that can

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { Meter, METER_SCHEMA, METER_ADMIN_SCHEMA, WRITE_AT, WRITE_EVERY, KEEP_DAYS, FREE_REQUESTS, dayOf, estimate, isAdminPath } from '../src/meter.js';
+import { Meter, METER_SCHEMA, METER_ADMIN_SCHEMA, METER_ALARM_SCHEMA, WRITE_AT, WRITE_EVERY, KEEP_DAYS, FREE_REQUESTS, dayOf, estimate, isAdminPath } from '../src/meter.js';
 import { SCHEMA, migrate } from '../src/store.js';
 
 // node's SQLite with the Durable Object SQL API's shape (as in store.test.mjs)
@@ -146,7 +146,9 @@ test('rows older than 400 days go on the first write of a day; the view shows 14
   const v = m.view();
   assert.equal(v.days.length, 14);
   assert.equal(v.days[0].day, '2026-10-03');
-  assert.deepEqual(v.days[1], { day: '2026-10-02', wsIn: 20, http: 0, admin: 0, gameHttp: 0, est: 1, gameEst: 1 });
+  // the day before alarms were counted apart (this Meter's first wake is 3 Oct): its alarms and page calls are not known
+  assert.deepEqual(v.days[1], { day: '2026-10-02', wsIn: 20, http: 0, admin: 0, gameHttp: 0, alarms: null, pageHttp: null, est: 1, gameEst: 1 });
+  assert.deepEqual([v.days[0].alarms, v.days[0].pageHttp, v.alarmsFrom], [0, 1, at('2026-10-03T09:00:00Z')]);
   assert.equal(v.freeLimit, 100000);
 });
 
@@ -195,7 +197,7 @@ test('the World counts every request and socket message, writes on close and ala
   assert.equal(r.status, 200);
   // 5 World requests so far: the refused sim call, signup, status, the /ws upgrade, and this sim call; 25 messages.
   // The two sim calls are the admin's (refused or not, Cloudflare bills them): the game made 3, about 2 + 3 = 5 requests
-  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 5, admin: 2, gameHttp: 3, est: 7, gameEst: 5 });
+  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 5, admin: 2, gameHttp: 3, alarms: 0, pageHttp: 3, est: 7, gameEst: 5 });
   assert.equal(r.data.meter.freeLimit, 100000);
   assert.equal(r.data.meter.waiting, 0, 'this request wrote everything that waited');
   assert.deepEqual(Object.keys(r.data), ['meter', 'sim', 'world', 'atlas', 'move'], 'the meter, and from Stage 1 the switch, the Atlas and the movement check, and from Stage 2 the world-run maps');
@@ -209,10 +211,11 @@ test('the World counts every request and socket message, writes on close and ala
   r = await call(w, 'GET', '/api/admin/export', undefined, ENV.ADMIN_KEY);
   assert.deepEqual(r.data.req_meter, [{ day: '2026-10-03', ws_in: 25, http: 8, est_requests: 10 }]);
   assert.deepEqual(r.data.req_meter_admin, [{ day: '2026-10-03', http: 3 }]);
+  assert.deepEqual(r.data.req_meter_alarm, [{ day: '2026-10-03', http: 1, since: at('2026-10-03T15:00:00Z') }], 'and the alarm column');
   // the export call itself was written as it came: a nap right now loses nothing
   const w2 = new TestWorld(ctx, ENV);
   r = await call(w2, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
-  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 9, admin: 4, gameHttp: 5, est: 11, gameEst: 7 });
+  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 9, admin: 4, gameHttp: 5, alarms: 1, pageHttp: 4, est: 11, gameEst: 7 });
 });
 
 test('admin calls land in their own column: every /api/admin/* call, refused or not; nothing else', async () => {
@@ -225,7 +228,7 @@ test('admin calls land in their own column: every /api/admin/* call, refused or 
   await call(w, 'GET', '/api/admin/sim');   // no key: refused, still billed, still the admin page's
   await call(w, 'GET', '/api/status'); await call(w, 'GET', '/api/status');
   let r = await call(w, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
-  assert.deepEqual(r.data.meter.today, { day: '2026-10-04', wsIn: 0, http: 34, admin: 32, gameHttp: 2, est: 34, gameEst: 2 });
+  assert.deepEqual(r.data.meter.today, { day: '2026-10-04', wsIn: 0, http: 34, admin: 32, gameHttp: 2, alarms: 0, pageHttp: 2, est: 34, gameEst: 2 });
   w.alarm();
   assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-04', ws_in: 0, http: 35, est_requests: 35 }], 'req_meter still counts every call (what is billed), and the alarm is one more');
   assert.deepEqual(adminOf(ctx.storage.sql), [{ day: '2026-10-04', http: 32 }]);
@@ -233,7 +236,7 @@ test('admin calls land in their own column: every /api/admin/* call, refused or 
   const sql = sqlOf(new DatabaseSync(':memory:')), m = new Meter(sql, () => at('2026-10-04T10:00:00Z'));
   m.http(true); m.http(); m.ws(); m.flush();
   assert.deepEqual(adminOf(sql), [{ day: '2026-10-04', http: 1 }]);
-  assert.deepEqual(m.view().today, { day: '2026-10-04', wsIn: 1, http: 2, admin: 1, gameHttp: 1, est: 3, gameEst: 2 });
+  assert.deepEqual(m.view().today, { day: '2026-10-04', wsIn: 1, http: 2, admin: 1, gameHttp: 1, alarms: 0, pageHttp: 1, est: 3, gameEst: 2 });
 });
 
 test('a failed admin write keeps the admin counts for the next try; old admin rows go with the old days', () => {
@@ -254,10 +257,10 @@ test('a failed admin write keeps the admin counts for the next try; old admin ro
   fail = false;
   m.http(true); m.flush();
   assert.deepEqual(adminOf(sql), [{ day: '2026-10-04', http: 3 }], 'none lost, the 401-day-old admin row is gone');
-  assert.deepEqual(m.view().today, { day: '2026-10-04', wsIn: 0, http: 3, admin: 3, gameHttp: 0, est: 3, gameEst: 0 });
+  assert.deepEqual(m.view().today, { day: '2026-10-04', wsIn: 0, http: 3, admin: 3, gameHttp: 0, alarms: 0, pageHttp: 0, est: 3, gameEst: 0 });
 });
 
-test('the meter on a world made by the live schema: two new tables, nothing else touched', () => {
+test('the meter on a world made by the live schema: three new tables, nothing else touched', () => {
   const db = new DatabaseSync(':memory:'), sql = sqlOf(db);
   for (const s of SCHEMA.split(';')) if (s.trim()) sql.exec(s);
   migrate(sql);
@@ -270,14 +273,14 @@ test('the meter on a world made by the live schema: two new tables, nothing else
   new Meter(sql, () => at('2026-10-03T12:00:00Z'));
   new Meter(sql, () => at('2026-10-03T12:00:00Z'));
   const after = objects();
-  const ours = ['req_meter', 'req_meter_admin'];
+  const ours = ['req_meter', 'req_meter_admin', 'req_meter_alarm'];
   assert.deepEqual(after.filter(o => !ours.includes(o.name)), before, 'every other table and index exactly as it was');
-  assert.deepEqual(after.filter(o => ours.includes(o.name) && o.type === 'table').map(o => o.sql), [METER_SCHEMA, METER_ADMIN_SCHEMA].map(q => q.replace('CREATE TABLE IF NOT EXISTS', 'CREATE TABLE')));
-  // the test world already has the first table from before the admin column: the Meter adds only the second
+  assert.deepEqual(after.filter(o => ours.includes(o.name) && o.type === 'table').map(o => o.sql), [METER_SCHEMA, METER_ADMIN_SCHEMA, METER_ALARM_SCHEMA].map(q => q.replace('CREATE TABLE IF NOT EXISTS', 'CREATE TABLE')));
+  // the test world already has the first table from before the admin column: the Meter adds only the others
   const db2 = new DatabaseSync(':memory:'), sql2 = sqlOf(db2);
   sql2.exec(METER_SCHEMA); sql2.exec("INSERT INTO req_meter (day, ws_in, http, est_requests) VALUES ('2026-10-03', 40, 10, 12)");
   const m2 = new Meter(sql2, () => at('2026-10-03T12:00:00Z'));
-  assert.deepEqual(m2.view().today, { day: '2026-10-03', wsIn: 40, http: 10, admin: 0, gameHttp: 10, est: 12, gameEst: 12 });
+  assert.deepEqual(m2.view().today, { day: '2026-10-03', wsIn: 40, http: 10, admin: 0, gameHttp: 10, alarms: 0, pageHttp: 10, est: 12, gameEst: 12 });
   assert.equal(rows(), rowsBefore);
 });
 
@@ -292,6 +295,49 @@ test('every alarm is counted as a billed request, and an alarm that throws still
   try { w.alarm(); } finally { console.error = err; w.room.tick = tick; }
   assert.equal(rowsOf(ctx.storage.sql)[0].http, 4);
   assert.deepEqual(adminOf(ctx.storage.sql), [], 'an alarm is the game\'s, not the admin page\'s');
+  assert.deepEqual(alarmOf(ctx.storage.sql), [{ day: '2026-10-05', http: 4 }], 'and every one is counted apart in req_meter_alarm');
+});
+
+// The night of 3-4 Oct 2026 read 17,266 game calls and the meter could not say how many were the World's own alarms
+// (measured afterwards: two idle knights on one map, 1,198 an hour). Alarms now have their own column.
+const alarmOf = sql => sql.exec('SELECT day, http FROM req_meter_alarm ORDER BY day').toArray();
+test('alarms in their own column: the pages\' calls and the World\'s alarms apart, a day before the column says so, a failed write waits', async () => {
+  const db = new DatabaseSync(':memory:'), ctx = makeCtx(db);
+  // a world from before the alarm column: yesterday's row has only the old columns
+  ctx.storage.sql.exec(METER_SCHEMA); ctx.storage.sql.exec(METER_ADMIN_SCHEMA);
+  ctx.storage.sql.exec("INSERT INTO req_meter (day, ws_in, http, est_requests) VALUES ('2026-10-04', 29118, 17270, 18726)");
+  ctx.storage.sql.exec("INSERT INTO req_meter_admin (day, http) VALUES ('2026-10-04', 4)");
+  T = at('2026-10-05T14:05:00Z');
+  const w = new TestWorld(ctx, ENV);
+  await call(w, 'GET', '/api/status'); await call(w, 'GET', '/api/status');
+  for (let i = 0; i < 5; i++) w.alarm();
+  await call(w, 'GET', '/api/admin/online', undefined, ENV.ADMIN_KEY);
+  T += 3600000;
+  const w2 = new TestWorld(ctx, ENV);   // a nap: a second wake the same day does not move when the counting began
+  w2.alarm();
+  const r = await call(w2, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
+  const m = r.data.meter;
+  assert.deepEqual(m.today, { day: '2026-10-05', wsIn: 0, http: 10, admin: 2, gameHttp: 8, alarms: 6, pageHttp: 2, est: 10, gameEst: 8 });
+  assert.equal(m.alarmsFrom, at('2026-10-05T14:05:00Z'), 'counted apart from the first wake of this code');
+  assert.deepEqual(m.days[1], { day: '2026-10-04', wsIn: 29118, http: 17270, admin: 4, gameHttp: 17266, alarms: null, pageHttp: null, est: 18726, gameEst: 18722 }, 'the night before: alarms not counted apart, never a false 0');
+  // req_meter is unchanged in meaning: every call, alarms included (what Cloudflare bills)
+  assert.deepEqual(rowsOf(ctx.storage.sql).find(x => x.day === '2026-10-05'), { day: '2026-10-05', ws_in: 0, http: 10, est_requests: 10 });
+  // a failed alarm write keeps the alarm count for the next try; the call itself is written
+  const base = sqlOf(new DatabaseSync(':memory:'));
+  let fail = true;
+  const sql = { exec(q, ...a) { if (fail && /INSERT INTO req_meter_alarm \(day, http, since\) VALUES \(\?, \?, \?\)/.test(q)) throw new Error('disk full'); return base.exec(q, ...a); } };
+  const mm = new Meter(sql, () => at('2026-10-06T01:00:00Z'));
+  const err = console.error; console.error = () => { };
+  try { mm.alarm(); mm.alarm(); } finally { console.error = err; }
+  assert.equal(rowsOf(base)[0].http, 2);
+  assert.equal(mm.view().today.alarms, 2, 'still waiting');
+  fail = false; mm.alarm();
+  assert.deepEqual(alarmOf(base), [{ day: '2026-10-06', http: 3 }]);
+  assert.deepEqual(mm.view().today, { day: '2026-10-06', wsIn: 0, http: 3, admin: 0, gameHttp: 3, alarms: 3, pageHttp: 0, est: 3, gameEst: 3 });
+  // old alarm rows go with the old days
+  base.exec("INSERT INTO req_meter_alarm (day, http, since) VALUES (?, 7, 1)", dayOf(at('2026-10-06T00:00:00Z') - (KEEP_DAYS + 1) * 86400000));
+  const m3 = new Meter(base, () => at('2026-10-07T01:00:00Z')); m3.alarm();
+  assert.deepEqual(alarmOf(base).map(x => x.day), ['2026-10-06', '2026-10-07']);
 });
 
 // the shared world, Stage 1: the switch, the Atlas in welcome, the movement check's tables, all through the World

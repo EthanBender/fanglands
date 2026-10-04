@@ -117,8 +117,8 @@ export class World {
   webSocketMessage(ws, msg) { this.meter.ws(); if (typeof msg === 'string') this.room.message(this.wrap(ws), msg); }
   webSocketClose(ws, code, reason) { this.room.leave(this.wrap(ws)); try { ws.close(1000, 'bye'); } catch (e) { } this.meter.flush(); this.moveBook.flush(); }
   webSocketError(ws) { this.room.leave(this.wrap(ws)); this.meter.flush(); this.moveBook.flush(); }
-  // Cloudflare bills every alarm invocation as a Durable Object request, so the meter counts it as one
-  alarm() { this.meter.http(false); try { this.room.tick(); } catch (e) { console.error('tick', e); } this.meter.flush(); this.moveBook.flush(); }
+  // Cloudflare bills every alarm invocation as a Durable Object request, so the meter counts it as one (and apart, as an alarm)
+  alarm() { this.meter.alarm(); try { this.room.tick(); } catch (e) { console.error('tick', e); } this.meter.flush(); this.moveBook.flush(); }
 
   // ---------- the shared world's game copy (docs/ONLINE.md "The shared world", Stage 2) ----------
   // online/src/sim/game.mjs (built by build.sh, bundled by wrangler) is loaded on every wake; until it is there, or if it cannot

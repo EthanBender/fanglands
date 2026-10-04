@@ -83,6 +83,32 @@ test('the admin page: the meter is read on opening and on Refresh, never by the 
   assert.match(line, /This page and the backups made 10 calls on top, so about 14 in all/);
 });
 
+// The night of 3-4 Oct 2026 read 17,266 game calls with no way to tell the World's alarms from the pages' saves: the line and
+// the table now name the pages' calls, the alarms and this page's calls apart, and a day from before the alarm column says so
+test('the admin page: the pages\' calls, the world\'s alarms and this page\'s calls apart, in plain words', async () => {
+  const from = Date.parse('2026-10-05T14:05:00Z');
+  const meter = { today: { day: '2026-10-05', wsIn: 7186, http: 600, admin: 30, gameHttp: 570, alarms: 360, pageHttp: 210, est: 960, gameEst: 930 },
+    days: [{ day: '2026-10-05', wsIn: 7186, http: 600, admin: 30, gameHttp: 570, alarms: 360, pageHttp: 210, est: 960, gameEst: 930 },
+      { day: '2026-10-04', wsIn: 29118, http: 17270, admin: 4, gameHttp: 17266, alarms: null, pageHttp: null, est: 18726, gameEst: 18722 }],
+    freeLimit: 100000, waiting: 0, alarmsFrom: from };
+  const P = page({ sim: { meter } });
+  await P.settle();
+  const line = String(P.els.get('meter').textContent);
+  assert.match(line, /the game's pages made 210 calls and sent 7,186 socket messages, and the world woke itself 360 times on its own timers \(alarms\)\. Together that is about 930 of the 100,000 requests/);
+  assert.match(line, /This page and the backups made 30 calls on top, so about 960 in all/);
+  assert.match(line, /Alarms are counted on their own only since 14:05 UTC today; any before that are inside the pages' calls\./);
+  const rows = P.els.get('meterdays').children.map(tr => tr.children.map(td => String(td.textContent)));
+  assert.deepEqual(rows, [['2026-10-05', '7,186', '210', '360', '930', '0.93%', '30', '0.96%'], ['2026-10-04', '29,118', '17,266 (alarms inside)', 'not counted apart', '18,722', '18.7%', '4', '18.7%']]);
+  // the next day the line has no "only since" note
+  const P2 = page({ sim: { meter: Object.assign({}, meter, { alarmsFrom: from - 86400000 }) } });
+  await P2.settle();
+  assert.doesNotMatch(String(P2.els.get('meter').textContent), /only since/);
+  // a world from before the alarm column: the old sentence, and it says the alarms are inside
+  const P3 = page({ sim: { meter: { today: meter.days[1], days: [meter.days[1]], freeLimit: 100000, waiting: 0 } } });
+  await P3.settle();
+  assert.match(String(P3.els.get('meter').textContent), /made 17,266 calls, about 18,722 .* alarms are not counted apart on this day/);
+});
+
 test('the admin page: hidden, it makes no calls at all; shown again, it refreshes once and the timer resumes', async () => {
   const P = page();
   await P.settle(); P.take();
