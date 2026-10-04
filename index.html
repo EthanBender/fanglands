@@ -8665,7 +8665,7 @@ HOOKS.selfTest.push((check, F, h) => {
   { let scrap = 0, ore = 0; for (let i = 0; i < 40; i++) { const b = drops.length; rollDrops(MONSTER_DEFS.bulldozer, -999, -999); const got = drops.slice(b); if (got.some(d => d.id === 'goblin_scrap' && d.qty >= 3 && d.qty <= 6)) scrap++; if (got.some(d => d.id === 'iron_ore')) ore++; } drops = drops.filter(d => d.x > 0); check('bulldozer: always drops 3-6 scrap + iron ore', scrap === 40 && ore === 40, { scrap, ore }); }
   // a flat grass lane (o.x-1 .. o.x+9, o.y-1 .. o.y+1) in the open fields south of the road, west of the animal pens
   const o = h.openSpot(...ATLAS.frame('drill_field').p(56, 46));   // the drill field: the flat test lane
-  const natural = [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.DIRT, T.STUMP, T.RUBBLE, T.SAND, T.SOIL];
+  const natural = [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.DIRT, T.STUMP, T.RUBBLE, T.SAND, T.SOIL, T.BERRY_BUSH].filter(t => t !== undefined);   // (34-food's bushes stand on open grass too)
   for (let yy = o.y - 1; yy <= o.y + 1; yy++) for (let xx = o.x - 1; xx <= o.x + 9; xx++) if (natural.includes(tileAt(xx, yy))) changeTile(xx, yy, T.GRASS);
   const laneClear = (() => { for (let yy = o.y - 1; yy <= o.y + 1; yy++) for (let xx = o.x - 1; xx <= o.x + 9; xx++) if (tileAt(xx, yy) !== T.GRASS) return false; return true; })();
   check('bulldozer: test lane is clear grass', laneClear, { o });
