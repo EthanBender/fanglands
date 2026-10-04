@@ -39,6 +39,7 @@
   // the shared world (docs/ONLINE.md, "The shared world", Stage 1): what this game can do of its new messages (none yet), and
   // the hash of the Atlas this page was built with, so the world knows whether it judges this knight by the same map
   NET.caps = [];
+  const WAKE = { wait: -1, said: false };   // seconds since hello with no welcome (-1: not waiting), and whether it was said
   NET.hello = () => ({ t: 'hello', v: 1, caps: NET.caps.slice(), atlas: window.ATLAS && ATLAS.hash ? ATLAS.hash() : null });
 
   // ---------- HTTP: every /api call goes through here, so the token is never forgotten ----------
@@ -63,12 +64,12 @@
     return proto + location.host + '/ws?token=' + encodeURIComponent(NET.token);
   };
   function wire(sock) {
-    sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send(NET.hello(), true); NET.helloWait = 0; NET.wakeSaid = false; };
+    sock.onopen = () => { NET.stats.opens++; NET.tries = 0; NET.send(NET.hello(), true); WAKE.wait = 0; WAKE.said = false; };
     sock.onmessage = ev => {
       let msg = null; try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (!msg || typeof msg.t !== 'string') return;
       NET.stats.got++;
-      if (msg.t === 'welcome') { NET.status = 'on'; NET.me = msg.me; NET.helloWait = -1; }
+      if (msg.t === 'welcome') { NET.status = 'on'; NET.me = msg.me; WAKE.wait = -1; worldRuns(msg.sim); }
       // the role is the world's word, set before anyone hears the message; a missing one (an older server) is 'player'
       if (msg.t === 'welcome' || msg.t === 'role') NET.role = msg.role === 'admin' ? 'admin' : 'player';
       if (msg.t === 'error' && msg.code === 'auth') { NET.setToken(null); NET.closedByUs = true; }
@@ -119,31 +120,48 @@
 
   window.NET = NET;
 
-  // A world slow to answer hello is waking up (docs/ONLINE.md, "The shared world", Stage 2: a copy of the game being built, or
-  // the World itself starting): after WAKE_SAY seconds with no welcome the knight reads it, once per socket.
-  const WAKE_SAY = 1.5;
-  NET.helloWait = -1; NET.wakeSaid = false;
+  // A world slow to answer hello may be building a copy of a place it runs (docs/ONLINE.md, "The shared world", Stage 2): after
+  // WAKE_SAY seconds with no welcome the knight reads "Waking the world...", once per socket. Only a page whose last welcome
+  // said the world runs a place itself (welcome.sim.maps, kept in WORLD_KEY) says it: with every place on a knight's game
+  // nothing is ever built, so a slow line says nothing, as before Stage 2. The wait is kept here, not on NET.
+  const WAKE_SAY = 1.5, WORLD_KEY = 'fanglands.worldRuns';
+  function worldRuns(sim) {
+    if (!sim || typeof sim !== 'object' || !sim.maps || typeof sim.maps !== 'object') return;   // a world that has not said (yet)
+    lsSet(WORLD_KEY, Object.keys(sim.maps).some(m => sim.maps[m] === 'world') ? '1' : null);
+  }
   HOOKS.update.push(dt => {
-    if (NET.helloWait < 0) return;
-    if (!NET.sock || NET.status === 'on') { NET.helloWait = -1; return; }
-    NET.helloWait += dt;
-    if (!NET.wakeSaid && NET.helloWait >= WAKE_SAY) { NET.wakeSaid = true; if (typeof notify === 'function') notify('Waking the world...'); }
+    if (WAKE.wait < 0) return;
+    if (!NET.sock || NET.status === 'on') { WAKE.wait = -1; return; }
+    WAKE.wait += dt;
+    if (!WAKE.said && WAKE.wait >= WAKE_SAY) { WAKE.said = true; if (lsGet(WORLD_KEY) === '1' && typeof notify === 'function') notify('Waking the world...'); }
   });
   HOOKS.selfTest.push((check, F) => {
-    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake };
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, runs: lsGet(WORLD_KEY) };
     let sock = null;
-    const fake = { call: async () => ({}), open: () => (sock = { readyState: 1, sent: [], send(str) { sock.sent.push(JSON.parse(str)); }, close() { sock.readyState = 3; } }) };
+    const fake = { call: async () => ({}), open: () => (sock = { readyState: 1, sent: [], send(str) { sock.sent.push(JSON.parse(str)); }, close() { sock.readyState = 3; if (sock.onclose) sock.onclose(); } }) };
+    const welcome = sim => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(Object.assign({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }, sim ? { sim } : {})) }); };
+    const said = () => notice && notice.text === 'Waking the world...';
+    // a page whose last welcome said a place is world-run: a slow welcome says it once, after 1.5 s; the welcome ends the wait
+    lsSet(WORLD_KEY, null);
     NET.enabled = true; NET.token = 'wake-test'; NET.useFake(fake); NET.connect();
-    notify('');
-    F.sim(60, []);
-    const early = notice && notice.text;
+    welcome({ maps: { deepholm: 'world', aerie: 'keeper' }, hz: 10, caps: ['snap'] });
+    const kept = lsGet(WORLD_KEY) === '1';
+    NET.disconnect(); NET.connect();
+    notify(''); F.sim(60, []);
+    const early = said();
     F.sim(40, []);
-    const said = notice && notice.text, hello = sock && sock.sent.some(m => m.t === 'hello');
+    const once1 = said(), hello = !!sock && sock.sent.some(m => m.t === 'hello');
     notify(''); F.sim(200, []);
-    const once = !(notice && notice.text === 'Waking the world...');
-    if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }) });
-    const on = NET.status === 'on' && NET.helloWait === -1;
-    check('net: a world that has not answered hello after 1.5 s says "Waking the world..." once; its welcome ends the wait', hello && early !== 'Waking the world...' && said === 'Waking the world...' && once && on, { hello, early, said, once, on });
+    const once = !said();
+    welcome(null);   // a welcome with no sim (a World whose copy has not loaded) leaves the page's word as it was
+    const on = NET.status === 'on' && lsGet(WORLD_KEY) === '1';
+    // every place on a knight's game (the switches all off): the same slow welcome says nothing at all
+    welcome({ maps: { deepholm: 'keeper', aerie: 'keeper' }, hz: 10, caps: ['snap'] });
+    const cleared = lsGet(WORLD_KEY) === null;
+    NET.disconnect(); NET.connect(); notify(''); F.sim(300, []);
+    const quiet = !said() && NET.status !== 'on';
+    check('net: "Waking the world..." is said once, after 1.5 s with no welcome, only by a page whose last welcome said a place is world-run; with every place on a knight\'s game a slow welcome says nothing; a welcome ends the wait', kept && hello && !early && once1 && once && on && cleared && quiet, { kept, hello, early, said: once1, once, on, cleared, quiet });
+    NET.disconnect(); lsSet(WORLD_KEY, was.runs);
     NET.useFake(was.fake); NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; NET.role = 'player';
   });
 

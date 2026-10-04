@@ -235,7 +235,10 @@
       const R = COOP.state.restAt;
       for (const id of Object.keys(left || {})) { const h = HOOKS.bossCall[id], rest = h ? Number(h.rest) || 0 : 0, l = Number(left[id]); if (rest > 0 && l > 0) R[id] = time - (rest - Math.min(rest, l)); }
     }
-    window.WORLDKEEPER = { map: mapName, me, start, step, deliver, park, off, SERVER_OFF, PARK, rows, carries, rests, setRests, LOOK_FIELDS: LF, get started() { return started; } };
+    // how many monsters stand in the whole place (the plaque's "N left" on every screen: a knight's puppets are only the ones
+    // within 24 tiles of him)
+    const standing = () => { let n = 0; for (const m of monsters) if (!m.dead && !m.remote && !m.phantom) n++; return n; };
+    window.WORLDKEEPER = { map: mapName, me, start, step, deliver, park, off, SERVER_OFF, PARK, rows, standing, carries, rests, setRests, LOOK_FIELDS: LF, get started() { return started; } };
   }
 
   HOOKS.selfTest.push(check => {

@@ -195,7 +195,8 @@ export class SimHost {
         for (let s = 0; s < SUBSTEPS; s++) c.wk.step(1 / 30);
         c.ticks++;
         // Stage 2: the copy's monsters as the world sends them, once a tick (the Room filters them for each knight)
-        if (typeof c.wk.rows === 'function') c.out.push({ t: 'mon', list: c.wk.rows(), k: c.ticks, at, world: true });
+        // with how many stand in the whole place (the plaque's count: each knight is sent only the rows near him)
+        if (typeof c.wk.rows === 'function') { const m = { t: 'mon', list: c.wk.rows(), k: c.ticks, at, world: true }; if (typeof c.wk.standing === 'function') m.standing = c.wk.standing(); c.out.push(m); }
       } catch (e) {
         c.errors++;
         c.throws = c.throws.filter(t => at - t < this.watch.throwWindowMs); c.throws.push(at);

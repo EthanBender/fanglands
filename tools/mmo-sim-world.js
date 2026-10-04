@@ -33,6 +33,11 @@
 //      guard while the copy is being built; the copy asks her game for every monster and takes the map over with the guard at
 //      her hp and place (it never jumps home at full health on her screen); then the same mid-fight, the parent page giving
 //      Deepholm to her game and back. MMO_SIM_NO_SNAP=1 runs it with her page's capability taken away: it then fails
+//  12. a kid ALONE in the world-run Aerie (Fin) hurts one sentinel and fells another, then his iPad locks and iOS drops the
+//      socket (the server sees it close); he is back 90 s later, when the copy is long gone: from the moment the socket
+//      drops his screen keeps what the world last showed (the hurt one at its hp, the felled one down), and the new copy
+//      takes the place over from that, never from how the place stood when he walked in. While the world ran it, his plaque
+//      counted the sentinels standing in the whole place, not only the ones near him
 //  0b. the places the world refuses because no monster lives there (WORLD_EMPTY: the coal mine) have no monster in their copy,
 //      and each place it can run (WORLD_READY) has some
 // Exit 0 only when every line passes. The plumbing is tools/mmo-sim.js's (the fake wire, the game contexts, the Room loader).
@@ -362,6 +367,46 @@ async function main() {
     const okB = kb0 && hp1 < hp0 && kb === '@world:deepholm' && !!cb && !cb.dead && cb.hp <= hp1 + 3 && !jb.jumps && !jb.healed && !jb.vanished;
     line('11. the lone keeper\'s full snapshot' + (noSnap ? ' (MMO_SIM_NO_SNAP: her page without the capability)' : '') + ': Eve walks alone into the world-run Deepholm and hurts a guard (' + Math.round(hp0) + ' hp) while the copy is built; the world asks her game for every monster and takes over with the guard at her hp and place (it never jumps home or heals on her screen); the same when the parent page gives the place to her game mid-fight and back (' + Math.round(hp1) + ' hp)',
       okA && okB, { maxHp: MAXHP, gone, a: { full: fullA, keeper: ka, copy: ca, hp0, ...ja }, b: { keeperFirst: kb0, full: fullB, keeper: kb, copy: cb, hp1, at: pos1, ...jb } });
+  }
+
+  // ---- 12. a kid alone in a world-run place whose iPad lock drops the socket ----
+  {
+    const F = makeContext(wire); F.FANGLANDS.newGame();
+    room.store.addAccount('Fin');
+    await login(F, 'Fin');
+    // everyone else leaves the Aerie, and a minute later its copy is gone: Fin walks in alone (the world builds a copy for him)
+    if (ev(D, 'COOP.map()') === 'aerie') ev(D, 'INSTANCES.leave()');
+    both = [A, B, D, F]; tick(10); both = []; tick(61 * 60); both = [F];
+    ev(F, "(() => { INSTANCES.enter('aerie'); const m = monsters.find(o => o.nid === 'i0'); player.x = m.home.x + 300; player.y = m.home.y + 200; window.__peace = true; })()");
+    tick(150);
+    const keeperIn = ev(F, 'COOP.keeper()'), c0 = host.copies.get('aerie');
+    const look = () => ev(F, "(() => { const f = n => { const m = monsters.find(o => o.nid === n && !o.gone); return m ? { hp: Math.round(m.hp), x: Math.round(m.remote ? m.to.x : m.x), y: Math.round(m.remote ? m.to.y : m.y), dead: !!m.dead } : null; }; return { i0: f('i0'), i1: f('i1') }; })()");
+    // he hurts i0 by 30 and fells i1, as his swings would (a 'hit' to the world)
+    const hit = (nid, dmg) => { F.NET.send({ t: 'hit', nid, dmg, knock: 0, bomb: false }); wire.flush(); tick(10); };
+    hit('i0', 30); for (let k = 0; k < 6; k++) hit('i1', 60);
+    tick(30);
+    const copyRow = c => n => { const m = c && c.api.peek('monsters').find(o => o.nid === n); return m ? { hp: Math.round(m.hp), dead: !!m.dead } : null; };
+    const before = { i0: copyRow(c0)('i0'), i1: copyRow(c0)('i1') };
+    const standing = c0 ? c0.api.peek('monsters').filter(m => !m.dead && !m.remote && !m.phantom).length : null;
+    const plaque = ev(F, "typeof COOP.placeStanding === 'function' ? COOP.placeStanding() : null"), near = ev(F, 'monsters.filter(m => m.remote && !m.gone && !m.dead).length');
+    // the lock: his game stops; iOS drops the socket 10 s in (the server sees it close)
+    both = []; tick(10 * 60);
+    const sock = F.NET.sock, srv = wire.srvOf.get(sock); wire.srvOf.delete(sock); room.leave(srv); sock.readyState = 3; wire.flush();
+    tick(80 * 60);
+    // the unlock: the page finds its socket closed, then reconnects
+    both = [F];
+    if (sock.onclose) sock.onclose({ code: 1006 });
+    const atUnlock = look();
+    F.NET.connect();
+    for (let i = 0; i < 240; i++) { tick(1); heal(); }
+    const after = look(), keeperAfter = ev(F, 'COOP.keeper()'), c1 = host.copies.get('aerie'), newCopy = !!c1 && c1 !== c0, world = c1 ? { i0: copyRow(c1)('i0'), i1: copyRow(c1)('i1') } : null;
+    const hurtKept = r => !!r && !r.dead && !!before.i0 && Math.abs(r.hp - before.i0.hp) <= 3;
+    const felled = r => !r || r.dead;
+    const ok = keeperIn === '@world:aerie' && !!before.i0 && !before.i0.dead && before.i0.hp < 160 && !!before.i1 && before.i1.dead
+      && newCopy && hurtKept(atUnlock.i0) && felled(atUnlock.i1) && keeperAfter === '@world:aerie' && !!world && hurtKept(world.i0) && felled(world.i1) && hurtKept(after.i0) && felled(after.i1)
+      && plaque === standing && standing >= 2;
+    line('12. a kid alone in the world-run Aerie hurts one sentinel and fells another, then his iPad lock drops the socket for 90 s (the parked copy goes): his screen and the new copy keep the hurt one at its hp and the felled one down (never the place as he walked in); his plaque counted the sentinels standing in the whole place (' + plaque + ', ' + near + ' near him)',
+      ok, { keeperIn, before, standing, plaque, near, newCopy, atUnlock, keeperAfter, after, world });
   }
 
   // ---- 0b. the places the world refuses for want of monsters really have none ----
