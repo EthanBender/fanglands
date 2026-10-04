@@ -21,7 +21,7 @@
 //   old saves  migrate() runs after every load: a saved change inside stone or water is undone (what was placed is
 //           given back), the knight is moved out of anything solid, and the Voice says the city was rebuilt, once.
 //
-// WRAPPED BY REASSIGNMENT (explicit arguments): drawBuilding (the seventeen town buildings, b.town), drawTower (the
+// WRAPPED BY REASSIGNMENT (explicit arguments): drawBuilding (the sixteen town buildings, b.town, and Death's House), drawTower (the
 //   castle's corner towers), drawFenceProp (no wooden gate art on the six town gate cells), drawFireProp (the square's
 //   brazier), tapLabelFor, tapPick, load. Every one of them hands an instance straight to what it wrapped.
 // Every fixed-coordinate draw starts with `if (window.__instance) return;` (Aerie's map overlaps x 85..99 of the town).
