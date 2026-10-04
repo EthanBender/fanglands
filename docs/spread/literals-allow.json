@@ -619,5 +619,7 @@
   {"file": "09-render.js", "literal": "7.5 * TILE", "decl": "lights", "reason": "the cave scrim stays (spec section 12): the cave mouth's light at row 7.5 of the cave pinned at 0,0"},
   {"file": "43-settings.js", "literal": "x < 230", "line": 212, "reason": "HUD: the joystick zone's 230 screen pixels"},
   {"file": "43-settings.js", "literal": "2 * TILE", "line": 455, "reason": "the self-test taps 2 tiles from the knight: a distance, not a position"},
-  {"file": "43-settings.js", "literal": "2 * TILE", "line": 456, "reason": "the self-test taps 2 tiles from the knight: a distance, not a position"}
+  {"file": "43-settings.js", "literal": "2 * TILE", "line": 456, "reason": "the self-test taps 2 tiles from the knight: a distance, not a position"},
+  {"file": "44-wiki.js", "literal": "13", "decl": "fs", "reason": "HUD: a 13 px font size"},
+  {"file": "44-wiki.js", "literal": "2 * TILE", "decl": "facingMonster", "reason": "a monster within 2 tiles in front of the knight: a distance, not a position"}
 ]
