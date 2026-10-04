@@ -631,5 +631,12 @@
   {"file": "73-players.js", "literal": "2 * TILE", "decl": "NEAR", "reason": "close enough to hand something over: 2 tiles, a distance, not a position"},
   {"file": "73-players.js", "literal": "[4, 4]", "decl": "drawKnight", "reason": "drawing: a canvas line-dash pattern of 4 px"},
   {"file": "76-admin.js", "literal": "3 * TILE", "decl": "SPAWN_SPREAD", "reason": "how far from the admin a spawned monster may stand: 3 tiles, a distance, not a position"},
-  {"file": "76-admin.js", "decl": "CAPS", "reason": "each command's [min, max] argument counts, not positions"}
+  {"file": "76-admin.js", "decl": "CAPS", "reason": "each command's [min, max] argument counts, not positions"},
+  {"file": "77-dropparty.js", "literal": "[4, 4]", "decl": "drawHint", "reason": "drawing: a canvas line-dash pattern of 4 px"},
+  {"file": "77-dropparty.js", "literal": "f.y - 14", "decl": "drawPop", "reason": "drawing: a popped cracker floats 14 px above its spot"},
+  {"file": "77-dropparty.js", "decl": "bannerRect", "reason": "HUD: the banner's screen-pixel box and slide (14, 46, 250, 62 px)"},
+  {"file": "77-dropparty.js", "literal": "pickSpots(20, 5)", "decl": "s", "reason": "pickSpots(count, radius): 20 spots within 5 tiles, not a position"},
+  {"file": "77-dropparty.js", "literal": "pickSpots(3, 4)", "decl": "few", "reason": "pickSpots(count, radius): 3 spots within 4 tiles, not a position"},
+  {"file": "77-dropparty.js", "literal": "pickSpots(80, 10)", "decl": "many", "reason": "pickSpots(count, radius): 80 spots within 10 tiles, not a position"},
+  {"file": "77-dropparty.js", "decl": "sea", "reason": "pickSpots(count, radius, centre): 10 spots within 3 tiles; the centre is already Ironclad Isle's frame"}
 ]
