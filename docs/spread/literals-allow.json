@@ -627,5 +627,7 @@
   {"file": "72-deviceknights.js", "literal": "knight(2, 3, 600)", "decl": "C", "reason": "knight(kills, stage, seconds): a saved knight's kills, story stage and play time, not a position"},
   {"file": "72-savelock.js", "literal": "tc(3)", "line": 58, "reason": "a save written by a newer world (worldV 3), which this game refuses and never loads: its stand is not a place on this map"},
   {"file": "72-savelock.js", "literal": "knight(200, 1, 4)", "line": 107, "reason": "knight(kills, stage, seconds): a saved knight's kills, story stage and play time, not a position"},
-  {"file": "72-savelock.js", "literal": "knight(41, 1, 4)", "line": 130, "reason": "knight(kills, stage, seconds): a saved knight's kills, story stage and play time, not a position"}
+  {"file": "72-savelock.js", "literal": "knight(41, 1, 4)", "line": 130, "reason": "knight(kills, stage, seconds): a saved knight's kills, story stage and play time, not a position"},
+  {"file": "73-players.js", "literal": "2 * TILE", "decl": "NEAR", "reason": "close enough to hand something over: 2 tiles, a distance, not a position"},
+  {"file": "73-players.js", "literal": "[4, 4]", "decl": "drawKnight", "reason": "drawing: a canvas line-dash pattern of 4 px"}
 ]

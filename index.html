@@ -37467,7 +37467,7 @@ window.RETALIATE = RETALIATE;
     const ps = () => sock.sent.filter(m => m.t === 'p'), lastP = () => { const l = ps(); return l[l.length - 1]; };
     const dc = dialog.cur, dq = dialog.queue.slice(); dialog.cur = null; dialog.queue.length = 0;
     const mech0 = player.mech, r0 = player.r; player.mech = null; player.r = 13;
-    closePanel(); h.peace(true); player.hp = player.maxHp; const o = h.openSpot(40, 24); F.tp(o.x, o.y); F.step([]);
+    closePanel(); h.peace(true); player.hp = player.maxHp; const o = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(24)); F.tp(o.x, o.y); F.step([]);
     // presence out, with the contract's fields, at most 8 a second while moving and about once a second when still
     { F.sim(12, ['KeyD']); const p = lastP();
       const fields = p && ['map', 'region', 'x', 'y', 'fx', 'fy', 'mv', 'wt', 'hp', 'mhp', 'lv', 'look', 'mech', 'dead', 'def', 'act'].every(k => k in p);
