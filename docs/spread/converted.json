@@ -38,5 +38,6 @@
 "50-economy.js",
 "51-mounts.js",
 "52-salvage.js",
-"53-coalmine.js"
+"53-coalmine.js",
+"54-graves.js"
 ]

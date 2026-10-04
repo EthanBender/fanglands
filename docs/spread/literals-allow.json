@@ -213,5 +213,16 @@
   {"file": "53-coalmine.js", "literal": "[3, 18]", "decl": "ENTRY", "reason": "instance-local (coalmine): where the knight comes in on the seam map"},
   {"file": "53-coalmine.js", "literal": "[2, 18]", "decl": "EXIT", "reason": "instance-local (coalmine): the way out of the seam map"},
   {"file": "53-coalmine.js", "literal": "[2, 16]", "decl": "HAUL", "reason": "instance-local (coalmine): the haul cart beside the way out"},
-  {"file": "53-coalmine.js", "literal": "{ x: 24, y: 80 }", "decl": "CART_T", "reason": "instance-local (deepholm): the coal cart's berth in the undercity's own map (re-found at world-gen through window.DEEPHOLM)"}
+  {"file": "53-coalmine.js", "literal": "{ x: 24, y: 80 }", "decl": "CART_T", "reason": "instance-local (deepholm): the coal cart's berth in the undercity's own map (re-found at world-gen through window.DEEPHOLM)"},
+  {"file": "54-graves.js", "literal": "2 * TILE", "decl": "BRUTE_SPRITE", "reason": "the zombie brute is drawn two tiles across: a size, not a position"},
+  {"file": "54-graves.js", "literal": "3 * TILE", "line": 177, "reason": "a grave never rises within 3 tiles of the knight: a distance, not a position"},
+  {"file": "54-graves.js", "literal": "6 * TILE", "decl": "sight", "reason": "a skeleton or risen zombie sees 6 tiles: a range, not a position"},
+  {"file": "54-graves.js", "literal": "7 * TILE", "decl": "sight", "reason": "a zombie brute sees 7 tiles: a range, not a position"},
+  {"file": "54-graves.js", "literal": "y < 16", "decl": "drawBrute", "reason": "drawing: the brute's stitched seam, pixels from its centre"},
+  {"file": "54-graves.js", "decl": "drawBoneTile", "reason": "drawing: the bone pieces, torch and glow in pixels round a tile centre (tc(tx), tc(ty)); no map coordinate inside"},
+  {"file": "54-graves.js", "literal": "cut(1, 7)", "decl": "crossKin", "reason": "the self-test's level band 1..7 (crosses): levels, not a position"},
+  {"file": "54-graves.js", "literal": "cut(8, 19)", "decl": "graveKin", "reason": "the self-test's level band 8..19 (grave boards): levels, not a position"},
+  {"file": "54-graves.js", "literal": "2 * TILE", "decl": "big", "reason": "the self-test: the brute's sprite and hit circle are about two tiles across, a size"},
+  {"file": "54-graves.js", "literal": "12 * TILE", "line": 1005, "reason": "the self-test parks monsters within 12 tiles of the knight: a radius, not a position"},
+  {"file": "54-graves.js", "literal": "12 * TILE", "line": 1226, "reason": "the self-test parks monsters within 12 tiles of the knight: a radius, not a position"}
 ]
