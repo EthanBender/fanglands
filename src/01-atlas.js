@@ -385,7 +385,7 @@
   const pw = (pts, v) => {   // pts: [[from, to], ...] increasing; beyond the ends, the end segment's slope carries on
     let k = 0; while (k < pts.length - 2 && v > pts[k + 1][0]) k++;
     const [a0, b0] = pts[k], [a1, b1] = pts[k + 1];
-    return b0 + (v - a0) * (b1 - b0) / (a1 - a0);
+    return b0 + (v - a0) * ((b1 - b0) / (a1 - a0));   // the slope first: an identity segment is exactly v for every real v (noise read through W.ix stays bit-identical)
   };
   const inv = pts => pts.map(([a, b]) => [b, a]);
   const monotone = pts => Array.isArray(pts) && pts.length >= 2 && pts.every((q, k) => k === 0 || (q[0] > pts[k - 1][0] && q[1] > pts[k - 1][1]));
@@ -557,7 +557,7 @@
     check(PF + 'the anchor table is whole: boxes in the map and apart (old boxes may overlap where they still stand), the 400x280 plan apart, every port in its own box, WORLD monotone, every pin and track point naming something real', problems.length === 0, { problems: problems.slice(0, 8) });
     // Stage 0: every frame, the world and every pin are the identity, so nothing on screen can have moved
     const notId = Object.keys(FRAMES).filter(id => { const f = FRAMES[id], a = ANCHORS[id]; return f.dx !== 0 || f.dy !== 0 || f.x(a.box[0] + 0.5) !== a.box[0] + 0.5 || f.iy(f.y(a.box[3])) !== a.box[3]; });
-    const wId = [0, 7.25, MAP_W - 1].every(v => W.x(v) === v && W.ix(v) === v) && [0, 3.5, MAP_H - 1].every(v => W.y(v) === v && W.iy(v) === v) && W.tx(12.4) === 12 && W.ty(12.6) === 13;
+    const wId = [0, 7.25, 0.1, 37.3, 61.5 + 0.7 * 6.5, MAP_W - 1].every(v => W.x(v) === v && W.ix(v) === v) && [0, 3.5, MAP_H - 1].every(v => W.y(v) === v && W.iy(v) === v) && W.tx(12.4) === 12 && W.ty(12.6) === 13;
     const pinsZero = PINS.every(pin => [0, 50, 96, 140].every(al => W.pin(pin.id, 42.5, al) === 42.5));
     check(PF + 'Stage 0: every frame, the world and every seam pin are the identity (frame.x = x, W.x = x, pin offset 0)', notId.length === 0 && wId && pinsZero, { notId, wId, pinsZero });
     // the API's shapes
