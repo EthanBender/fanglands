@@ -10531,8 +10531,10 @@ PEOPLE_UI.auditPrompt = function (p) {
   // ---------- world ----------
   HOOKS.world.push((rnd, api) => {
     const isHut = (x, y) => buildingAt(x, y) === HUT;
-    // the sea, with a sandy shore against the mainland
-    for (let y = SEA.y0; y <= SEA.y1; y++) for (let x = SEA.x0; x <= SEA.x1; x++) { if (isHut(x, y)) continue; api.setTile(x, y, x <= SEA.x0 + 1 ? T.SAND : T.WATER); }
+    // the sea, with a sandy shore against the mainland. The shore's straight start is the Grey Sea's west coast, pinned
+    // through the dock's planks (ATLAS.PINS 'sea', §3): wherever the dock goes, the coast meets it (no offset until 4a)
+    for (let y = SEA.y0; y <= SEA.y1; y++) { const sx = SEA.x0 + Math.round(BW.pin('sea', 0, y));
+      for (let x = sx; x <= SEA.x1; x++) { if (isHut(x, y)) continue; api.setTile(x, y, x <= sx + 1 ? T.SAND : T.WATER); } }
     // the islands: an ellipse with a wobbly edge; Ironclad has a dirt heart
     const isle = (I, x, y) => { const dx = (x - I.cx) / I.rx, dy = (y - I.cy) / I.ry; return dx * dx + dy * dy + Math.sin(I.F.ix(x) * 1.7 + I.F.iy(y) * 0.9) * 0.12; };
     for (const I of [GULL, IRON]) for (let y = I.region.y0; y <= I.region.y1; y++) for (let x = I.region.x0; x <= I.region.x1; x++) {
