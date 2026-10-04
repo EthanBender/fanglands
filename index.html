@@ -16857,6 +16857,8 @@ window.PLACE_KIT = PLACE_KIT;
     // shortcuts
     for (const [x, y] of STONES) set(x, y, AG_STONE);
     set(CLIMB_AT[0], CLIMB_AT[1], AG_CLIMB);
+    // the climb's landing outside the palisade stays open ground: the core's scatter may stand a rock or a tree there
+    if (SOLID.has(api.tileAt(CLIMB_AT[0] + 1, CLIMB_AT[1]))) set(CLIMB_AT[0] + 1, CLIMB_AT[1], T.GRASS);
   });
 
   // ---------- state ----------

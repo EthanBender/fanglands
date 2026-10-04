@@ -163,7 +163,7 @@
   {"file": "37-dragonkillers.js", "literal": "4 * TILE", "line": 228, "reason": "a stuck ally more than 4 tiles behind is brought up: a distance, not a position"},
   {"file": "37-dragonkillers.js", "literal": "4 * TILE", "line": 294, "reason": "the self-test: the allies appear within 4 tiles of the knight, a distance"},
   {"file": "37-dragonkillers.js", "literal": "4 * TILE", "decl": "near", "reason": "the self-test: the allies fight within 4 tiles of The Fang, a distance"},
-  {"file": "38-agility.js", "literal": "4 * TILE", "line": 428, "reason": "the self-test moves a guard standing within 4 tiles of the Master of Skills: a radius, not a position"},
+  {"file": "38-agility.js", "literal": "4 * TILE", "line": 430, "reason": "the self-test moves a guard standing within 4 tiles of the Master of Skills: a radius, not a position"},
   {"file": "40-dozerup.js", "literal": "9 * TILE", "line": 307, "reason": "the self-test clears monsters within 9 tiles of its drive lane: a half-width, not a position"},
   {"file": "40-dozerup.js", "literal": "3 * TILE", "line": 307, "reason": "the self-test clears monsters within 3 tiles of its drive lane: a half-height, not a position"},
   {"file": "40-dozerup.js", "literal": "o.x - 30", "line": 307, "reason": "the self-test parks a monster 30 tiles off its open spot: an offset, not a position"},
