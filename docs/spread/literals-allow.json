@@ -608,5 +608,10 @@
   {"file": "07-update.js", "literal": "56", "decl": "update", "reason": "a sticky bomb's 56 px blast radius (explode(x, y, r, ...)): not a position"},
   {"file": "07-update.js", "literal": "64", "decl": "update", "reason": "a bomb's 64 px blast radius (explode(x, y, r, ...)): not a position"},
   {"file": "08-draw.js", "literal": "cx - 16", "decl": "drawCropProp", "reason": "drawing: pixel offsets of the wheat stalks in a crop tile"},
-  {"file": "08-draw.js", "literal": "cx - 12", "decl": "drawCropProp", "reason": "drawing: pixel offsets of the stalks in a crop tile"}
+  {"file": "08-draw.js", "literal": "cx - 12", "decl": "drawCropProp", "reason": "drawing: pixel offsets of the stalks in a crop tile"},
+  {"file": "10-hud.js", "literal": "cx - 12", "decl": "room", "reason": "HUD: screen pixels of the panel's room"},
+  {"file": "10-hud.js", "literal": "12", "decl": "s", "reason": "HUD: a 12 px font size"},
+  {"file": "10-hud.js", "literal": "12 * TILE", "decl": "bossBarList", "reason": "a boss bar shows within 12 tiles: a distance, not a position"},
+  {"file": "10-hud.js", "literal": "44", "decl": "s", "reason": "HUD: a 44 px key slot"},
+  {"file": "10-hud.js", "literal": "13", "decl": "size", "reason": "HUD: a 13 px font size"}
 ]

@@ -64,5 +64,6 @@
 "91-royalmine.js",
 "01-items.js",
 "07-update.js",
-"08-draw.js"
+"08-draw.js",
+"10-hud.js"
 ]
