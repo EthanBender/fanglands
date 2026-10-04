@@ -764,10 +764,24 @@
   const lit = () => !!(window.NIGHT && NIGHT.phase() !== 'day');
   const vis = (c, x0, y0, x1, y1) => x1 > c.x && x0 < c.x + VW && y1 > c.y && y0 < c.y + VH;
   // the knight behind something tall: it is drawn see-through, so he never vanishes behind it
+  // A tall thing (a tower, a tree, a statue, the Bell Tower, the keep's turrets) goes see-through while a knight is behind
+  // it: this knight, and the friends online on this map (73-players' REMOTE, where they are drawn), so a friend on the
+  // grass behind the Bell Tower is not hidden from everyone else. The list is made once a frame.
+  const KN = { t: NaN, px: NaN, py: NaN, dead: false, list: [] };
+  function knightsNow() {
+    if (KN.t === time && KN.px === player.x && KN.py === player.y && KN.dead === player.dead) return KN.list;
+    const out = []; KN.t = time; KN.px = player.x; KN.py = player.y; KN.dead = player.dead; KN.list = out;
+    if (!player.dead) out.push({ x: player.x, y: player.y, sort: player.y + player.r });
+    const P = window.PLAYERS;
+    if (P && P.remote && typeof P.mapId === 'function') { const my = P.mapId(); for (const n in P.remote) { const e = P.remote[n]; if (e && !e.dead && e.map === my && e.shown) out.push({ x: e.shown.x, y: e.shown.y, sort: e.shown.y + 13 }); } }
+    return out;
+  }
   function behindAlpha(x0, y0, x1, y1, sortY) {
-    if (player.dead || player.y + player.r >= sortY) return 1;
-    const k = { x0: player.x - 14, y0: player.y - 34, x1: player.x + 14, y1: player.y + 14 };
-    return (k.x1 > x0 && k.x0 < x1 && k.y1 > y0 && k.y0 < y1) ? 0.45 : 1;
+    for (const k of knightsNow()) {
+      if (k.sort >= sortY) continue;
+      if (k.x + 14 > x0 && k.x - 14 < x1 && k.y + 14 > y0 && k.y - 34 < y1) return 0.45;
+    }
+    return 1;
   }
   // one item: drawn at y, and its box recorded for the self-test (C19) while STATS.record is on
   function put(items, y, box, draw, own) {
@@ -3135,9 +3149,16 @@
       clearMonsters(112, 12, 6); F.tp(112, 12); F.step([]); const open = !SOLID.has(tileAt(112, 12)) && Math.floor(player.y / TILE) === 12;
       STATS.record = true; render(); STATS.record = false; const bellA = STATS.bellAlpha;
       F.tp(112, 33); F.step([]); render(); const bellFront = STATS.bellAlpha;
-      check(P + 'C25 the city\'s ground sorts under every other ground mark: a tap to walk on the paving shows its ring and dots (nothing sorts under the ground); a knight on the grass behind the Bell Tower, outside the north wall, sees it drawn see-through (and from the fountain it is solid)',
-        !!ground && ringShown && under === 0 && marks.every(i => i.y > ground.y) && open && bellA < 1 && bellFront === 1,
-        { ground: !!ground, ringShown, marks: marks.length, under, open, bellA, bellFront }); }
+      // a friend online on that grass is seen through it by a knight standing in front of the tower (73-players' REMOTE)
+      let friendA = null, alone = null;
+      if (window.PLAYERS && PLAYERS.remote) {
+        F.tp(112, 19); F.step([]); render(); alone = STATS.bellAlpha;
+        PLAYERS.remote.__bellTest = { n: '__bellTest', map: PLAYERS.mapId(), x: tc(112), y: tc(12), shown: { x: tc(112), y: tc(12) }, dead: false, r: 13 };
+        try { KN.t = NaN; render(); friendA = STATS.bellAlpha; } finally { delete PLAYERS.remote.__bellTest; KN.t = NaN; }
+      }
+      check(P + 'C25 the city\'s ground sorts under every other ground mark: a tap to walk on the paving shows its ring and dots (nothing sorts under the ground); a knight on the grass behind the Bell Tower, outside the north wall, sees it drawn see-through (and from the fountain it is solid); a friend online on that grass makes it see-through for a knight in front of it',
+        !!ground && ringShown && under === 0 && marks.every(i => i.y > ground.y) && open && bellA < 1 && bellFront === 1 && alone === 1 && friendA !== null && friendA < 1,
+        { ground: !!ground, ringShown, marks: marks.length, under, open, bellA, bellFront, alone, friendA }); }
 
     // ---- C27. nobody vanishes under a gatehouse ----
     // The roof over each town gate is drawn faint (25%) while anybody is in the passage: the knight, a friend online, a
