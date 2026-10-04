@@ -61922,35 +61922,40 @@ const MOUNT_LOOK = (() => {
   };
 
   // ---------- the two people ----------
-  const MARLOW = { x: 222, y: 152 }, HUX = { x: 233, y: 156 };
+  // The Redcut moves as one rigid place (ATLAS.frame('redcut')): every point below is written in the old map's numbers
+  // and read through the frame; its noise and per-tile jitter are read in the OLD coordinates (R.ix, R.iy), so the
+  // whole table, the band round it and every climb arrive at the spread exactly as they are today.
+  const R = ATLAS.frame('redcut');
+  const portPt = id => { const [x, y] = ATLAS.port(id); return { x, y }; };
+  const MARLOW = portPt('redcut.marlow'), HUX = portPt('redcut.hux');
   NPCS.push(initNpc({ id: 'marlow', name: 'Marlow the prospector', x: MARLOW.x, y: MARLOW.y, tunic: '#7a5a3a', hair: '#d9d0c0', beard: true, role: 'redcut_rim' }));
   NPCS.push(initNpc({ id: 'hux', name: 'Hux', x: HUX.x, y: HUX.y, tunic: '#5a6a5a', hair: '#3a2a1a', beard: true, role: 'redcut_deep' }));
 
   // ---------- geometry ----------
-  const RC = { x0: 204, y0: 100, x1: 257, y1: 177 };            // the region, and the only ground this file writes to
-  const CX = 231, CY = 140, RX = 25.5, RY = 36;                  // the table: an oval, x 206–256, y 104–176
-  const ARC = [[214, 108], [216, 120], [221, 130], [229, 136], [238, 135], [244, 127], [247, 116], [246, 102]]; // the ring canyon, out at both ends
-  const SPUR = [[230, 136], [231, 146], [232, 158]];             // the dead-end arm south, and the box head at its foot
-  const MOUTH = { x: 215, y: 103 }, SLOT = { x: 246, y: 101 };   // where the canyon meets the scrub
-  const RISE = { x0: 205, x1: 207, y0: 137, y1: 142 };           // the ramp cut through the west escarpment
-  const STAIR = [[220, 115], [220, 116], [221, 116], [221, 117], [220, 118], [221, 118], [220, 119]]; // out of the canyon onto the mesa
-  const SWITCHBACK = [                                            // three legs, each dropping at the end of the last
+  const RC = R.rect({ x0: 204, y0: 100, x1: 257, y1: 177 });            // the region, and the only ground this file writes to
+  const CX = R.x(231), CY = R.y(140), RX = 25.5, RY = 36;                  // the table: an oval, x 206–256, y 104–176
+  const ARC = R.pts([[214, 108], [216, 120], [221, 130], [229, 136], [238, 135], [244, 127], [247, 116], [246, 102]]); // the ring canyon, out at both ends
+  const SPUR = R.pts([[230, 136], [231, 146], [232, 158]]);             // the dead-end arm south, and the box head at its foot
+  const MOUTH = R.pt({ x: 215, y: 103 }), SLOT = R.pt({ x: 246, y: 101 });   // where the canyon meets the scrub
+  const RISE = R.rect({ x0: 205, x1: 207, y0: 137, y1: 142 });           // the ramp cut through the west escarpment
+  const STAIR = R.pts([[220, 115], [220, 116], [221, 116], [221, 117], [220, 118], [221, 118], [220, 119]]); // out of the canyon onto the mesa
+  const SWITCHBACK = R.pts([                                            // three legs, each dropping at the end of the last
     [223, 147], [224, 147], [225, 147], [226, 147],
     [226, 148],
     [223, 149], [224, 149], [225, 149], [226, 149],
     [223, 150],
     [223, 151], [224, 151], [225, 151], [226, 151], [227, 151],
-  ];
-  const FALL = { x0: 226, x1: 236, y0: 143, y1: 144 };           // the slab across the spur
-  const WINCH_T = { x: 226, y: 153 }, BASKET_T = { x: 230, y: 153 };
-  const LAMP_T = { x: 224, y: 149 }, COIL_T = { x: 231, y: 158 };
-  const BENCH_T = { x: 234, y: 157 }, FIRE_T = { x: 221, y: 153 };
-  const CRACK_T = { x: 232, y: 162 }, CACHE_T = { x: 232, y: 164 };
-  const CACHE_POCKET = { x0: 231, y0: 163, x1: 233, y1: 164 };
-  const NESTS = [[229, 116], [235, 113], [237, 122]];
-  const BOARDS = [[213, 102], [204, 135]];
-  const HAWKS = [[226, 116], [232, 110], [238, 114], [238, 118], [230, 126]];
-  const JAWS = [[216, 114], [233, 138], [244, 122], [231, 148]];
+  ]);
+  const FALL = R.rect({ x0: 226, x1: 236, y0: 143, y1: 144 });           // the slab across the spur
+  const WINCH_T = R.pt({ x: 226, y: 153 }), BASKET_T = R.pt({ x: 230, y: 153 });
+  const LAMP_T = R.pt({ x: 224, y: 149 }), COIL_T = R.pt({ x: 231, y: 158 });
+  const BENCH_T = R.pt({ x: 234, y: 157 }), FIRE_T = R.pt({ x: 221, y: 153 });
+  const CRACK_T = R.pt({ x: 232, y: 162 }), CACHE_T = R.pt({ x: 232, y: 164 });
+  const CACHE_POCKET = R.rect({ x0: 231, y0: 163, x1: 233, y1: 164 });
+  const NESTS = R.pts([[229, 116], [235, 113], [237, 122]]);
+  const BOARDS = R.pts([[213, 102], [204, 135]]);
+  const HAWKS = R.pts([[226, 116], [232, 110], [238, 114], [238, 118], [230, 126]]);
+  const JAWS = R.pts([[216, 114], [233, 138], [244, 122], [231, 148]]);
   const SEED = 9017;
 
   const segD = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1; const t = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1); return Math.hypot(px - (ax + dx * t), py - (ay + dy * t)); };
@@ -61977,10 +61982,10 @@ const MOUNT_LOOK = (() => {
   // never cut off by the box edge and there is room for the band all the way round.
   const rimN0 = makeNoise(SEED + 11, 6), rimN1 = makeNoise(SEED + 12, 3);
   // a slow swell and a quick fret on top of it, so no stretch of the rim runs dead straight
-  const rimN = (x, y) => rimN0(x, y) * 0.7 + rimN1(x, y) * 0.3;
+  const rimN = (x, y) => { const ox = R.ix(x), oy = R.iy(y); return rimN0(ox, oy) * 0.7 + rimN1(ox, oy) * 0.3; };   // read in old coordinates
   const RISE_C = [(RISE.x0 + RISE.x1) / 2, (RISE.y0 + RISE.y1) / 2];
   const rimFree = (x, y) => Math.min(sm01((Math.hypot(x - RISE_C[0], y - RISE_C[1]) - 6) / 5), sm01((canD(x, y) - 6) / 3));
-  const rimPull = (x, y) => 0.07 * sm01((x - 249) / 6) + 0.06 * sm01((y - 168) / 6) + 0.08 * sm01((212 - x) / 6);
+  const rimPull = (x, y) => 0.07 * sm01((x - R.x(249)) / 6) + 0.06 * sm01((y - R.y(168)) / 6) + 0.08 * sm01((R.x(212) - x) / 6);
   // the wander is set in tiles (about two either way), not as a share of the radius, so the long flat top and
   // bottom of the oval move no further than its sides
   const rimOf = (x, y) => { const f = rimFree(x, y); if (f <= 0) return 1; const r = Math.max(8, Math.hypot(x - CX, y - CY)); return 1 + ((rimN(x, y) * 2 - 1) * 2.6 / r - rimPull(x, y)) * f; };
@@ -62023,7 +62028,9 @@ const MOUNT_LOOK = (() => {
   // The map is drawn from the tiles, so the world map shows the same fade. In the world the band is washed by
   // one soft colour field, red at the rock through tan and straw to nothing, painted from a one-pixel-a-tile
   // picture scaled up smooth, so the ground changes colour with no line anywhere.
-  const EXT = { x0: RC.x0 - 14, y0: RC.y0 - 14, x1: MAP_W - 2, y1: MAP_H - 2 };   // the band's reach: x 190-258, y 86-178
+  const EXT = { x0: RC.x0 - 14, y0: RC.y0 - 14, x1: R.x(258), y1: R.y(178) };   // the band's reach: x 190-258, y 86-178; its east and south ends
+  // are the Redcut's own (today one tile in from the edge of the world), not MAP_W/MAP_H, so the band does not stretch to the
+  // new edge at the spread (spec §12)
   const EW = EXT.x1 - EXT.x0 + 1, EH = EXT.y1 - EXT.y0 + 1;
   const inExt = (x, y) => x >= EXT.x0 && x <= EXT.x1 && y >= EXT.y0 && y <= EXT.y1;
   const ei = (x, y) => (y - EXT.y0) * EW + (x - EXT.x0);
@@ -62033,10 +62040,10 @@ const MOUNT_LOOK = (() => {
   const edgeState = { gen: 0 };
   const bandN = makeNoise(SEED + 23, 6);
   // a fixed per-tile number in 0..1 (k picks an independent one): the jitter that frays each step
-  const hash = (x, y, k) => { const s = Math.sin(x * 127.1 + y * 311.7 + k * 74.7 + SEED * 0.013) * 43758.5453; return s - Math.floor(s); };
+  const hash = (x, y, k) => { const s = Math.sin(R.ix(x) * 127.1 + R.iy(y) * 311.7 + k * 74.7 + SEED * 0.013) * 43758.5453; return s - Math.floor(s); };
   // the smooth field: a tile or so of wander at the foot of the rim, close to three tiles out in the grass
   // (it reaches out further than it bites in, so the band is never squeezed thinner than about four tiles)
-  const edgeField = (x, y, d) => { const n = bandN(x, y) * 2 - 1; return d + n * (n > 0 ? 0.5 : 1) * (0.6 + 0.35 * Math.min(d, 6)); };
+  const edgeField = (x, y, d) => { const n = bandN(R.ix(x), R.iy(y)) * 2 - 1; return d + n * (n > 0 ? 0.5 : 1) * (0.6 + 0.35 * Math.min(d, 6)); };
   // where each ground starts, in field tiles from the rock
   const TIERS = { dust: 1.3, scrub: 3.1, dry: 5.4, patchy: 8.0 };
   // what ground a tile gets (null: stays green), from the field plus the jitter
@@ -62084,7 +62091,7 @@ const MOUNT_LOOK = (() => {
       const c = CLASS[idx(x, y)];
       // the wall edges wander a little so the canyon is not two smooth curves; the floor itself is untouched,
       // so nothing the connectivity of this place depends on moves
-      const w = noise(x, y);
+      const w = noise(R.ix(x), R.iy(y));   // old coordinates: the wobble moves with the place
       // the wobble only ever turns a ledge into cliff, never a cliff into a ledge: a two-tile wall with two
       // ledges punched through it is a hole, and a hole in the wrong wall joins the mesa to the table
       const t = c === 0 ? RC_FLOOR
@@ -62181,7 +62188,7 @@ const MOUNT_LOOK = (() => {
       const t = at(x, y);
       // the scrub outside the table is dressed by the edge (6c), with its own bushes, blocks and dead trees
       if (t !== RC_TOP && t !== RC_FLOOR) continue;
-      const n = noise(x * 3 + 7, y * 3 + 11);
+      const n = noise(R.ix(x) * 3 + 7, R.iy(y) * 3 + 11);
       if (n > 0.94) {
         let open = true;
         for (let dy = -1; dy <= 1 && open; dy++) for (let dx = -1; dx <= 1 && open; dx++) { if (!dx && !dy) continue; const q = at(x + dx, y + dy); if (SOLID.has(q) || PUSH_THROUGH.has(q)) open = false; }
@@ -62870,7 +62877,7 @@ const MOUNT_LOOK = (() => {
   HOOKS.selfTest.push((check, F, h) => {
     if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
     h.peace(true); closePanel(); player.action = null;
-    const LAND = [206, 30];   // where Harl's ferry puts you down on the Far Shore: the root the audit uses for x ≥ 200
+    const LAND = ATLAS.port('far_shore.landing');   // where Harl's ferry puts you down on the Far Shore: the root the audit uses for x ≥ 200
     const walk = (x, y) => !!F.bfs(LAND[0], LAND[1], x, y);
     const beside = (x, y) => { for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) if (!SOLID.has(tileAt(x + dx, y + dy)) && walk(x + dx, y + dy)) return true; return false; };
 
@@ -62880,7 +62887,7 @@ const MOUNT_LOOK = (() => {
       const foot = (c.REDDUST || 0) + (c.REDSCREE || 0) + (c.DRYSCRUB || 0) + (c.DRYGRASS || 0) + (c.DRYBUSH || 0) + (c.REDSCRUB || 0);
       const reg = REGIONS.find(r => r.name === 'The Redcut');
       check(P + 'The Redcut is a region in the bottom-right, and the table is cut into four heights: canyon floor, ledge, cliff and table top',
-        !!reg && regionAt(230, 140).name === 'The Redcut' && regionAt(215, 110).name === 'The Redcut' && regionAt(150, 120).name !== 'The Redcut'
+        !!reg && regionAt(...R.p(230, 140)).name === 'The Redcut' && regionAt(...R.p(215, 110)).name === 'The Redcut' && regionAt(...ATLAS.frame('sylvaris').p(150, 120)).name !== 'The Redcut'
         && (c.CANYONFLOOR || 0) > 350 && (c.REDLEDGE || 0) > 120 && (c.REDCLIFF || 0) > 500 && (c.REDROCK || 0) > 900 && foot > 700,
         { region: reg && [reg.x0, reg.y0, reg.x1, reg.y1], floor: c.CANYONFLOOR || 0, ledge: c.REDLEDGE || 0, cliff: c.REDCLIFF || 0, top: c.REDROCK || 0, footOfTheTable: foot, tally }); }
 
@@ -62901,7 +62908,7 @@ const MOUNT_LOOK = (() => {
       const inFromScrub = !!F.bfs(LAND[0], LAND[1], MOUTH.x, MOUTH.y - 2) && !SOLID.has(tileAt(MOUTH.x, MOUTH.y - 2));
       const outToScrub = !!F.bfs(LAND[0], LAND[1], SLOT.x, SLOT.y - 2) && !SOLID.has(tileAt(SLOT.x, SLOT.y - 2));
       // and the far end is somewhere worth coming out at: the road up to Castle Gnash
-      const useful = !!F.bfs(SLOT.x, SLOT.y - 2, 224, 55);
+      const useful = !!F.bfs(SLOT.x, SLOT.y - 2, ...ATLAS.frame('far_shore').p(224, 55));
       check(P + 'the way in and the way through: in at the mouth, round the canyon floor without ever leaving it, out of the slot, and on to the Castle Gnash road', through && inFromScrub && outToScrub && useful, { through, inFromScrub, outToScrub, toCastleGnashGate: useful }); }
 
     // 4. the levels are really separate: each climb is the only way to what it opens
@@ -62931,7 +62938,7 @@ const MOUNT_LOOK = (() => {
 
     // 5. the height is actually drawn: cliff faces, the lit rim along their tops, and the shadow they throw
     { const p0 = { ...paint }; const px = player.x, py = player.y;
-      F.tp(230, 141); render();
+      F.tp(...R.p(230, 141)); render();
       const faces = paint.faces - p0.faces, rims = paint.rims - p0.rims, shad = paint.shadows - p0.shadows, ground = paint.grounds - p0.grounds;
       // and out on the open scrub there is little cliff to draw. Measured from the north-west corner of the
       // Redcut: the old spot, 210,101 just above the mouth, now looks straight at the wall of the west arm.
@@ -63115,7 +63122,8 @@ const MOUNT_LOOK = (() => {
       const E = REDCUT.edge, green = t => t === T.GRASS || t === T.FLOWERS || t === T.MUSHROOM || ('FERN' in T && t === T.FERN) || t === T.TREE || t === T.OAK || ('JUNGLE' in T && t === T.JUNGLE);
       const rank = t => (t === E.dust || t === E.scree || t === RC_BOULDER) ? 0 : (t === E.scrub || t === E.bush) ? 1 : (t === E.dry || t === E.snag) ? 2 : green(t) ? 3 : -1;
       // each ray starts on the rock and walks out until it leaves it
-      const rays = [['west', -1, 0, 215, 120], ['west', -1, 0, 215, 160], ['north-west', -1, -1, 222, 112], ['north', 0, -1, 231, 112], ['north', 0, -1, 226, 112], ['south-west', -1, 1, 218, 158]];
+      const rays = [['west', -1, 0, 215, 120], ['west', -1, 0, 215, 160], ['north-west', -1, -1, 222, 112], ['north', 0, -1, 231, 112], ['north', 0, -1, 226, 112], ['south-west', -1, 1, 218, 158]]
+        .map(([name, dx, dy, x, y]) => [name, dx, dy, ...R.p(x, y)]);   // each start in the Redcut's frame
       const out = rays.map(([name, dx, dy, sx, sy]) => {
         let x = sx, y = sy; while (rock(x, y) && inMap(x + dx, y + dy)) { x += dx; y += dy; }
         const seen = []; let width = 0, max = -1, back = 0;
@@ -63132,7 +63140,7 @@ const MOUNT_LOOK = (() => {
     // (c) the band opened nothing and shut nothing: every open tile of it inside the box can be walked to from
     //     where the ferry lands, and outside the box it only turned grass into grass-coloured ground and trees
     //     into dead trees, so the rest of the map is exactly as walkable as it was
-    { const seen = new Uint8Array(MAP_W * MAP_H), q = [idx(206, 30)]; seen[q[0]] = 1;
+    { const seen = new Uint8Array(MAP_W * MAP_H), q = [idx(...ATLAS.port('far_shore.landing'))]; seen[q[0]] = 1;
       for (let i = 0; i < q.length; i++) { const c = q[i], x = c % MAP_W, y = (c / MAP_W) | 0;
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = idx(nx, ny); if (seen[n] || SOLID.has(tileAt(nx, ny))) continue; seen[n] = 1; q.push(n); } }
       const E = REDCUT.edge, BAND = new Set([E.dust, E.scree, E.scrub, E.dry, E.bush]);

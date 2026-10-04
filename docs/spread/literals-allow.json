@@ -275,5 +275,12 @@
   {"file": "69-retaliate.js", "literal": "o0.x - 16", "line": 249, "reason": "the self-test snapshots the ground 16 tiles round its open spot: an offset, not a position"},
   {"file": "69-retaliate.js", "literal": "3 * TILE", "line": 298, "reason": "the self-test sets a goblin 3 tiles from the knight: an offset, not a position"},
   {"file": "69-retaliate.js", "literal": "12 * TILE", "line": 303, "reason": "the self-test sets a goblin 12 tiles from the knight: an offset, not a position"},
-  {"file": "69-retaliate.js", "literal": "3.5 * TILE", "line": 320, "reason": "the self-test stages a sapper 3.5 tiles off: an offset, not a position"}
+  {"file": "69-retaliate.js", "literal": "3.5 * TILE", "line": 320, "reason": "the self-test stages a sapper 3.5 tiles off: an offset, not a position"},
+  {"file": "90-canyon.js", "literal": "7 * TILE", "decl": "sight", "reason": "the rimhawk's sight: a radius, not a position"},
+  {"file": "90-canyon.js", "literal": "3.5 * TILE", "decl": "sight", "reason": "the dustjaw's sight: a radius, not a position"},
+  {"file": "90-canyon.js", "decl": "drawCliff", "reason": "drawing: the cliff face rises 12 px above its tile; pixels, not a map coordinate"},
+  {"file": "90-canyon.js", "literal": "2 * TILE", "decl": "wentDown", "reason": "the self-test's winch ride lands within 2 tiles of the basket: a distance, not a position"},
+  {"file": "90-canyon.js", "literal": "3 * TILE", "decl": "wentDown", "reason": "the self-test's winch ride lands within 3 tiles of the basket: a distance, not a position"},
+  {"file": "90-canyon.js", "literal": "2 * TILE", "decl": "cameUp", "reason": "the self-test's winch ride back lands within 2 tiles of the winch: a distance, not a position"},
+  {"file": "90-canyon.js", "literal": "3 * TILE", "decl": "cameUp", "reason": "the self-test's winch ride back lands within 3 tiles of the winch: a distance, not a position"}
 ]
