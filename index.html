@@ -75677,7 +75677,7 @@ const MOUNT_LOOK = (() => {
       if (had) quest.sky = sky0; else delete quest.sky;
       const on = !!S && [1, 2].every(st => at[st] && at[st][0] === S.x && at[st][1] === S.y) && tileAt(S.x, S.y) === SKYCITY.WIND_SHRINE;
       check(P + 'the Song of Above\'s map marker (stages 1 and 2) stands on the wind shrine itself, at (62,6) on the Grey Quarry heights',
-        on && S.x === 62 && S.y === 6, { at, shrine: S && [S.x, S.y], tile: S && tileName(tileAt(S.x, S.y)) }); }
+        on && S.x === ATLAS.port('quarry.shrine')[0] && S.y === ATLAS.port('quarry.shrine')[1], { at, shrine: S && [S.x, S.y], tile: S && tileName(tileAt(S.x, S.y)) }); }
 
     // --- 4. the four Godly rows are Halcyon's table: his costs, his level, his xp, and none on the anvil ---
     { const rows = RECIPES.filter(r => /^godly_/.test(r.out)), F2 = window.SKYCITY ? SKYCITY.FORGE : [];
