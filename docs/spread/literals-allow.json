@@ -693,5 +693,16 @@
   {"file": "11-main.js", "literal": "3 * TILE", "decl": "clutterFree", "reason": "a build check's ground is clear of drops and villagers within 3 tiles: a distance"},
   {"file": "11-main.js", "literal": "4 * TILE", "decl": "clutterFree", "reason": "a build check's ground is clear of monsters within 4 tiles: a distance"},
   {"file": "11-main.js", "literal": "3 * TILE", "decl": "selfTest", "reason": "the self-tests sweep up drops within 3 tiles of a fight: a distance, not a position"},
-  {"file": "11-main.js", "literal": "o.x - 12", "decl": "selfTest", "reason": "the bulldozer checks stand the knight 12 tiles west of the open spot: an offset from a frame point"}
+  {"file": "11-main.js", "literal": "o.x - 12", "decl": "selfTest", "reason": "the bulldozer checks stand the knight 12 tiles west of the open spot: an offset from a frame point"},
+  {"file": "17-tap.js", "literal": "30", "decl": "R", "reason": "tapBfs searches 30 tiles round the knight: a radius, not a position"},
+  {"file": "17-tap.js", "literal": "3 * TILE", "decl": "tapReach", "reason": "a ranged weapon's tap reach of 3 tiles: a distance"},
+  {"file": "17-tap.js", "literal": "8 * TILE", "decl": "clearArea", "reason": "the tap checks park monsters and drops within 8 tiles of a test spot: a distance"},
+  {"file": "17-tap.js", "literal": "20 * TILE", "decl": "clearArea", "reason": "the tap checks park monsters and drops 20 tiles east of where they were: an offset"},
+  {"file": "17-tap.js", "literal": "5 * TILE", "line": 375, "reason": "the Tobin tap check moves wandering villagers within 5 tiles of him aside: a distance"},
+  {"file": "17-tap.js", "literal": "6 * TILE", "line": 375, "reason": "the Tobin tap check sets a wandering villager 6 tiles east of his home: an offset"},
+  {"file": "17-tap.js", "literal": "{ x: 12, y: 13 }", "line": 450, "reason": "instance-local (deepholm): Brunhild's forge hall in the undercity's own coordinates"},
+  {"file": "17-tap.js", "literal": "viaE(12, 12, 12, 11)", "line": 451, "reason": "instance-local (deepholm): Brunhild's forge hall in the undercity's own coordinates"},
+  {"file": "17-tap.js", "literal": "viaTap(12, 15, tc(12), tc(11))", "line": 451, "reason": "instance-local (deepholm): Brunhild's forge hall in the undercity's own coordinates"},
+  {"file": "17-tap.js", "literal": "tc(12)", "line": 451, "reason": "instance-local (deepholm): Brunhild's forge hall in the undercity's own coordinates"},
+  {"file": "17-tap.js", "literal": "tc(11)", "line": 451, "reason": "instance-local (deepholm): Brunhild's forge hall in the undercity's own coordinates"}
 ]

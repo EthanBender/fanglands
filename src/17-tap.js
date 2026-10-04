@@ -331,6 +331,8 @@ HOOKS.hud.push(g => {
 // ---------- self-test ----------
 HOOKS.selfTest.push((check, F, h) => {
   const prevTouch = window.__forceTouch; window.__forceTouch = false;
+  // the Atlas (the spread spec, section 9.1): open ground in the Goblin Fields is the stretched world; a person's stand is his place's frame
+  const AW = ATLAS.world, SY = ATLAS.frame('sylvaris'), FS = ATLAS.frame('far_shore'), HF = ATLAS.frame('hollowford');
   const dc = dialog.cur, dq = dialog.queue.slice(); dialog.cur = null; dialog.queue.length = 0; closePanel(); paused = false; touch.press = null; touch.stickId = null; touch.active = false; tap.lastTap = null;
   h.peace(true); h.clearJunk(); if (!hasTool('axe')) h.give('bronze_axe', 1);
   const screen = (wx, wy) => { render(); return [wx - cam.x, wy - cam.y]; };
@@ -340,7 +342,7 @@ HOOKS.selfTest.push((check, F, h) => {
   const parked = []; const clearArea = o => { for (const m of monsters) { if (!m.dead && dist(m.x, m.y, tc(o.x), tc(o.y)) < 8 * TILE) { parked.push({ m, x: m.x, y: m.y, state: m.state }); m.x += 20 * TILE; m.state = 'idle'; } } for (const d of drops) if (dist(d.x, d.y, tc(o.x), tc(o.y)) < 8 * TILE) { parked.push({ d, x: d.x }); d.x += 20 * TILE; } };
   const unpark = () => { for (const p of parked) { if (p.m) { p.m.x = p.x; p.m.y = p.y; p.m.state = p.state; } else { p.d.x = p.x; } } parked.length = 0; };
   // 1. tap open ground 4 tiles east → walk there
-  { const o = h.openSpot(40, 24); clearArea(o); F.tp(o.x, o.y); F.step([]); const gx = o.x + 4, gy = o.y; const t3 = tileAt(o.x + 3, gy), t4 = tileAt(gx, gy); changeTile(gx, gy, T.GRASS); changeTile(o.x + 3, gy, T.GRASS);
+  { const o = h.openSpot(AW.tx(40), AW.ty(24)); clearArea(o); F.tp(o.x, o.y); F.step([]); const gx = o.x + 4, gy = o.y; const t3 = tileAt(o.x + 3, gy), t4 = tileAt(gx, gy); changeTile(gx, gy, T.GRASS); changeTile(o.x + 3, gy, T.GRASS);
     tapWorld(tc(gx), tc(gy)); const started = !!player.walkPath && player.walkPath.length >= 3 && tap.kind === 'walk';
     const s = untilPath(200); F.step([]);
     const arrived = dist(player.x, player.y, tc(gx), tc(gy)) <= 8, cleared = !player.walkPath && tap.kind === null;
@@ -349,7 +351,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // 2. tap your own tile → nothing
   { tapWorld(player.x, player.y); F.step([]); check('tap: your own tile does nothing', !player.walkPath && !tap.kind, { kind: tap.kind }); }
   // 3. tap a tree 3 tiles east → walk beside it, chop starts, and the log arrives without another tap
-  { const o = h.openSpot(44, 26); clearArea(o); F.tp(o.x, o.y); F.step([]); const tx = o.x + 3, ty = o.y; const t0 = tileAt(tx, ty); changeTile(tx, ty, T.TREE);
+  { const o = h.openSpot(AW.tx(44), AW.ty(26)); clearArea(o); F.tp(o.x, o.y); F.step([]); const tx = o.x + 3, ty = o.y; const t0 = tileAt(tx, ty); changeTile(tx, ty, T.TREE);
     if (!canFit('wood', 1)) { const i = player.inv.findIndex(s => s && !ITEMS[s.id].tool && !ITEMS[s.id].weapon && !ITEMS[s.id].armour && s.id !== 'coins'); if (i >= 0) player.inv[i] = null; }
     const w0 = countItem('wood'); tapWorld(tc(tx), tc(ty)); const started = tap.kind === 'use' && !!player.walkPath;
     const s = untilPath(200); F.sim(2, []);
@@ -362,7 +364,7 @@ HOOKS.selfTest.push((check, F, h) => {
     check('tap: a tree 3 tiles away → stand beside it, chop starts, the log comes with no second tap', started && s < 200 && adjacent && chopping && typeof r === 'number' && countItem('wood') > w0, { started, s, adjacent, chopping, r, wood: countItem('wood') - w0, notice: notice && notice.text });
     F.sim(3, []); tap.gather = null; player.action = null; regrow = regrow.filter(x => x.i !== idx(tx, ty)); changeTile(tx, ty, t0); }
   // 4. tap a goblin 5 tiles east (hp 1) → chase and kill it
-  { const o = h.openSpot(40, 20); clearArea(o); F.tp(o.x, o.y); for (let k = 1; k <= 5; k++) changeTile(o.x + k, o.y, T.GRASS); F.step([]);
+  { const o = h.openSpot(AW.tx(40), AW.ty(20)); clearArea(o); F.tp(o.x, o.y); for (let k = 1; k <= 5; k++) changeTile(o.x + k, o.y, T.GRASS); F.step([]);
     const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home }, hp: gob.hp, respawnT: gob.respawnT };
     gob.dead = false; gob.hp = 1; gob.x = tc(o.x + 5); gob.y = tc(o.y); gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; gob.attackCd = 99;
     const k0 = player.kills; tapWorld(gob.x, gob.y); const targeted = tap.kind === 'monster' && tap.target === gob && player.tapTarget === monsters.indexOf(gob);
@@ -378,17 +380,17 @@ HOOKS.selfTest.push((check, F, h) => {
     check('tap: an NPC (Tobin) → walk beside him and he speaks', started && s < 300 && said, { started, s, who: dialog.cur && dialog.cur.who, qn: dialog.queue.length });
     quest.bread = bread0; dialog.cur = null; dialog.queue.length = 0; }
   // 6. manual input cancels the path
-  { const o = h.openSpot(40, 24); clearArea(o); F.tp(o.x, o.y); F.step([]); const gx = o.x + 4, gy = o.y; changeTile(gx, gy, T.GRASS); tapWorld(tc(gx), tc(gy)); const had = !!player.walkPath && player.walkPath.length > 0; F.sim(5, []); F.sim(5, ['KeyA']);
+  { const o = h.openSpot(AW.tx(40), AW.ty(24)); clearArea(o); F.tp(o.x, o.y); F.step([]); const gx = o.x + 4, gy = o.y; changeTile(gx, gy, T.GRASS); tapWorld(tc(gx), tc(gy)); const had = !!player.walkPath && player.walkPath.length > 0; F.sim(5, []); F.sim(5, ['KeyA']);
     check('tap: a key press cancels the walk', had && !player.walkPath && tap.kind === null && dist(player.x, player.y, tc(gx), tc(gy)) > 40, { had, kind: tap.kind }); }
   // 7. a drag on the joystick zone is a joystick move, never a path; a tap there still walks
-  { window.__forceTouch = true; const o = h.openSpot(40, 24); clearArea(o); F.tp(o.x, o.y); F.step([]); const x0 = player.x;
+  { window.__forceTouch = true; const o = h.openSpot(AW.tx(40), AW.ty(24)); clearArea(o); F.tp(o.x, o.y); F.step([]); const x0 = player.x;
     const zx = VW / 2 - 100, zy = VH / 2 + 70; // left half (where a touch starts the stick), over the open ground beside the knight
     pointerDown(zx, zy, 7); const stick = touch.stickId === 7 && touch.active; pointerMove(zx + 50, zy, 7); F.sim(10, []); const moved = player.x > x0 + 5; pointerUp(7); F.step([]);
     const noPath = !player.walkPath && tap.kind === null && !touch.active;
     F.tp(o.x, o.y); F.step([]); pointerDown(zx, zy, 8); pointerUp(8); const tapWalks = !!player.walkPath && tap.kind === 'walk'; tapCancel('manual');
     check('tap: a drag on the joystick zone moves the stick and makes no path; a still tap there walks', stick && moved && noPath && tapWalks, { stick, moved, noPath, tapWalks }); }
   // 8. long-press on a monster shows its name, release targets it
-  { const o = h.openSpot(40, 20); clearArea(o); F.tp(o.x, o.y); F.step([]); const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home } };
+  { const o = h.openSpot(AW.tx(40), AW.ty(20)); clearArea(o); F.tp(o.x, o.y); F.step([]); const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home } };
     gob.dead = false; gob.x = tc(o.x + 2); gob.y = tc(o.y); gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; gob.attackCd = 99;
     const [sx, sy] = screen(gob.x, gob.y); pointerDown(sx, sy, 9); F.sim(30, []); const label = tap.label && tap.label.text; const named = !!label && label.includes(MONSTER_DEFS.goblin.name);
     pointerUp(9); const targeted = tap.kind === 'monster' && tap.target === gob && !tap.label; tapCancel('manual');
@@ -401,7 +403,7 @@ HOOKS.selfTest.push((check, F, h) => {
   //     finger lifts (the lift still fights the monster, exactly as before), and a tap on it opens that monster's wiki page,
   //     the page K opens; with a mouse it is 26 px or more and names itself 'Wiki page' with K; it goes by itself about
   //     2 s after the finger lifts
-  { const o = h.openSpot(40, 20); clearArea(o); F.tp(o.x, o.y); F.step([]); const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home } };
+  { const o = h.openSpot(AW.tx(40), AW.ty(20)); clearArea(o); F.tp(o.x, o.y); F.step([]); const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home } };
     gob.dead = false; gob.x = tc(o.x + 2); gob.y = tc(o.y); gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; gob.attackCd = 99;
     const out = {}; let pid = 40;
     for (const t of [true, false]) {
@@ -432,7 +434,7 @@ HOOKS.selfTest.push((check, F, h) => {
     window.__forceTouch = false; tap.wiki = null; closePanel();
     gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.home = gs.home; gob.state = 'idle'; gob.attackCd = 0; }
   // 9. double-tap = swing
-  { const o = h.openSpot(40, 24); clearArea(o); F.tp(o.x, o.y); F.step([]); player.attackCd = 0; player.attackT = 0; const [sx, sy] = screen(tc(o.x + 2), tc(o.y)); pointerDown(sx, sy, 12); pointerUp(12); F.step([]); pointerDown(sx, sy, 13); pointerUp(13);
+  { const o = h.openSpot(AW.tx(40), AW.ty(24)); clearArea(o); F.tp(o.x, o.y); F.step([]); player.attackCd = 0; player.attackT = 0; const [sx, sy] = screen(tc(o.x + 2), tc(o.y)); pointerDown(sx, sy, 12); pointerUp(12); F.step([]); pointerDown(sx, sy, 13); pointerUp(13);
     check('tap: a double-tap swings', player.attackT > 0, { attackT: player.attackT }); tapCancel('manual'); F.sim(40, []); }
   // 10. feature people (TAP_PEOPLE): a tap on a dwarf, an elf, a goblin townsgoblin, the winged queen or the guild staff walks up and opens the very line E opens
   { const drainD = () => { dialog.cur = null; dialog.queue.length = 0; };
@@ -450,23 +452,23 @@ HOOKS.selfTest.push((check, F, h) => {
       same('Brunhild (24-dwarves, inside Deepholm)', e, t, { entered, inst: inst() });
       if (inst()) INSTANCES.leave(); drainD(); quest.dwarf = JSON.parse(snap); if (quest.dwarf === null) delete quest.dwarf; }
     // elves (25): Thessaly the weaver in Sylvaris, before the Queen's task is done
-    if (REGIONS.some(r => r.name === 'Sylvaris')) { const snap = JSON.stringify(quest.elves === undefined ? null : quest.elves); if (!quest.elves) { F.tp(133, 128); F.step([]); } if (quest.elves) quest.elves.stage = 0; clearArea({ x: 133, y: 129 });
-      const e = viaE(132, 129, 133, 129); const t = viaTap(130, 129, tc(133), tc(129)); same('Thessaly (25-elves)', e, t); quest.elves = JSON.parse(snap); if (quest.elves === null) delete quest.elves; }
+    if (REGIONS.some(r => r.name === 'Sylvaris')) { const snap = JSON.stringify(quest.elves === undefined ? null : quest.elves); if (!quest.elves) { F.tp(...SY.p(133, 128)); F.step([]); } if (quest.elves) quest.elves.stage = 0; clearArea(SY.pt({ x: 133, y: 129 }));
+      const e = viaE(...SY.p(132, 129), ...SY.p(133, 129)); const t = viaTap(...SY.p(130, 129), tc(SY.x(133)), tc(SY.y(129))); same('Thessaly (25-elves)', e, t); quest.elves = JSON.parse(snap); if (quest.elves === null) delete quest.elves; }
     // the goblin townsfolk (33): Grubb the cook inside his cookhouse, mid-quest without the beef
-    if (REGIONS.some(r => r.name === 'Grubmarket')) { const snap = JSON.stringify(quest.tinker === undefined ? null : quest.tinker); quest.tinker = { stage: 1, parts: {}, visited: true, rematch: false, kills: 0 }; clearArea({ x: 216, y: 24 });
-      const e = viaE(216, 24, 216, 23); const t = viaTap(215, 24, tc(216), tc(23)); same('Grubb the cook (33-goblincity)', e, t); quest.tinker = JSON.parse(snap); if (quest.tinker === null) delete quest.tinker; }
+    if (REGIONS.some(r => r.name === 'Grubmarket')) { const snap = JSON.stringify(quest.tinker === undefined ? null : quest.tinker); quest.tinker = { stage: 1, parts: {}, visited: true, rematch: false, kills: 0 }; clearArea(FS.pt({ x: 216, y: 24 }));
+      const e = viaE(...FS.p(216, 24), ...FS.p(216, 23)); const t = viaTap(...FS.p(215, 24), tc(FS.x(216)), tc(FS.y(23))); same('Grubb the cook (33-goblincity)', e, t); quest.tinker = JSON.parse(snap); if (quest.tinker === null) delete quest.tinker; }
     // the winged folk (36): Queen Seraphel in her keep in Aerie, asked and not yet paid. E from the carpet below her; the tap
     // starts three tiles south of her, still inside the keep (no talking through walls). Her daughter's story (91) opens only
     // once the Song is sung, so both ways reach the Song's own reminder line.
     if (window.SKYCITY && window.INSTANCES && INSTANCES.get && INSTANCES.get('aerie')) { const snap = JSON.stringify(quest.sky === undefined ? null : quest.sky);
-      const ok = INSTANCES.enter('aerie', [62, 7]); F.sim(2, []); const q = SKYCITY.SQ(); q.stage = 2;
+      const ok = INSTANCES.enter('aerie', ATLAS.port('quarry.shrine_step')); F.sim(2, []); const q = SKYCITY.SQ(); q.stage = 2;
       const Q0 = SKYCITY.SKY_NPCS[0];
       const e = ok ? viaE(Q0.x, Q0.y + 1, Q0.x, Q0.y) : null; const t = ok ? viaTap(Q0.x, Q0.y + 3, tc(Q0.x), tc(Q0.y)) : { kind: null }; same('Queen Seraphel (36-skycity, inside her keep in Aerie)', e, t, { entered: ok, inst: inst() }); if (inst()) INSTANCES.leave(); drainD();
       quest.sky = JSON.parse(snap); if (quest.sky === null) delete quest.sky; }
     // the guild staff (41): Pip inside the hall door at rank 4 (pick() pinned so both probes draw the same line)
     if (typeof quest.rebuild !== 'undefined' || BUILDINGS.some(b => b.id === 'guild_hall') || REGIONS.some(r => r.name === 'Hollowford')) { const snap = JSON.stringify(quest.guild === undefined ? null : quest.guild); const R = Math.random; Math.random = () => 0;
-      quest.guild = Object.assign({}, quest.guild || {}, { founded: true, rank: 4, jobsDone: 12, cooldowns: {}, active: null }); F.tp(153, 71); F.sim(2, []); clearArea({ x: 153, y: 70 });
-      const e = viaE(153, 71, 153, 70); const t = viaTap(153, 71, tc(153), tc(70)); Math.random = R; same('Pip of the guild staff (41-guild)', e, t); quest.guild = JSON.parse(snap); if (quest.guild === null) delete quest.guild; F.sim(2, []); }
+      quest.guild = Object.assign({}, quest.guild || {}, { founded: true, rank: 4, jobsDone: 12, cooldowns: {}, active: null }); F.tp(...HF.p(153, 71)); F.sim(2, []); clearArea(HF.pt({ x: 153, y: 70 }));
+      const e = viaE(...HF.p(153, 71), ...HF.p(153, 70)); const t = viaTap(...HF.p(153, 71), tc(HF.x(153)), tc(HF.y(70))); Math.random = R; same('Pip of the guild staff (41-guild)', e, t); quest.guild = JSON.parse(snap); if (quest.guild === null) delete quest.guild; F.sim(2, []); }
     // a long-press on one of them names them
     { window.__forceTouch = true; const people = tapPeople(); window.__forceTouch = false; check('tap: TAP_PEOPLE is a registry of functions returning live people (x, y, id, name, talk)', Array.isArray(TAP_PEOPLE) && TAP_PEOPLE.length >= 1 && people.every(p => typeof p.x === 'number' && typeof p.talk === 'function' && typeof p.name === 'string'), { lists: TAP_PEOPLE.length, live: people.length }); }
   }
