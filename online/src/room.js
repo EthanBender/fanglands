@@ -101,8 +101,9 @@ export const CAPS = {
 };
 for (const c of Object.values(CAPS)) if (!c.burst) c.burst = Math.max(2, Math.round(c.rate * 2));
 
-// The shared world (docs/ONLINE.md, "The shared world"): the capabilities a game may name in hello, in this order
-export const KNOWN_CAPS = ['tick', 'die', 'roll', 'loot', 'zone', 'fix', 'day'];
+// The shared world (docs/ONLINE.md, "The shared world"): the capabilities a game may name in hello, in this order. 'snap'
+// (Stage 2): asked by the world taking over a map it keeps, the game answers once with every monster (sim/worlds.js snap)
+export const KNOWN_CAPS = ['tick', 'die', 'roll', 'loot', 'zone', 'fix', 'day', 'snap'];
 export const capsOf = c => Array.isArray(c) ? KNOWN_CAPS.filter(n => c.includes(n)) : [];
 export const atlasOf = a => typeof a === 'string' && /^[0-9a-z]{1,32}$/.test(a) ? a : null;
 // a knight's own island is his alone: the Room keys it by his name, and every message out names it 'house' again

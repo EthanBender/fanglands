@@ -13,14 +13,22 @@
 //   Then drop the copies whose map has been empty DROP_EMPTY_MS.
 // The loop catches up at most MAX_CATCHUP ticks; beyond that the time is skipped and counted. It stops IDLE_STOP_MS after
 // the last knight leaves, so the Durable Object naps exactly as it does today.
+// A copy can be parked (park(map), Stage 2 review round 2): the Room parks a map whose knights' games have all gone silent (a
+// paused game, a tab left in the background, an iPad that keeps its socket). A parked copy keeps its monsters exactly as they
+// stand but is not ticked, counts as no knight for the loop, and with only parked copies left the loop stops at once: no timer
+// stays armed, so the object hibernates exactly as it does today. unpark(map) ticks it again from where it stood.
 //
 // The watchdog hands a map back to the keeper path (onFallback(map, reason, info); the map is then refused until
 // allow(map)) on: a boot throw ('boot'), WATCH.throws tick throws inside WATCH.throwWindowMs ('throws'), WATCH.slowRun ticks
 // in a row over WATCH.slowMs ('slow'), the heap over WATCH.heapBytes ('heap': the newest instance copy goes first), or one
-// copy more than the cap ('cap': the overworld plus 3 instances). Inside workerd the clock only moves on I/O, so with
-// timing: 'lag' a tick's cost is read by a zero-delay timer set right after it: the clock has moved by then (the whole
-// tick, every copy together; a slow trip then falls back the copy with the most monsters near knights). With
-// timing: 'inline' (node) each copy is timed directly.
+// copy more than the cap ('cap': the overworld plus 3 instances). The heap reason needs a heap probe: node has one (the sims),
+// workerd has none (no process, no performance.memory), so on the World the cap is what holds memory and 'heap' never fires.
+// Inside workerd the clock only moves on I/O, so with timing: 'lag' a tick's cost is read by two zero-delay timers set one
+// after the other right after it: the first lands after the ticks' own work plus however long the machine took to get to
+// a timer; the second, with no work before it, lands after only the machine's own delay. The ticks' own cost is the
+// first gap less the second, so a busy machine (or a busy object) never reads as a slow copy; a reading taken while the
+// machine itself is over WATCH.slowMs late is not counted either way. A slow trip then falls back the copy with the most
+// monsters near knights. With timing: 'inline' (node) each copy is timed directly.
 // Pure JavaScript: no Cloudflare APIs, so node runs it in the tests and the sims.
 // ============================================================================
 import { makeWindow, mulberry32 } from './window.js';
@@ -36,6 +44,7 @@ export const NEVER = new Set(['house']);   // never simulated (each knight's own
 // the instances that build the same without the overworld (tools/sim-suite.mjs check 5, 3 Oct 2026): Stage 2 passes these
 // as worldGenFree, and each boots in about 25 ms instead of about 900 ms in workerd
 export const WORLDGEN_FREE = ['war_shed', 'tinker_lab', 'stormfront'];
+export const NO_HEAP = () => null;   // the heap probe of a host that has none
 const KEPT_TICKS = 3000;              // tick times kept for p50 / p99 (5 minutes)
 
 const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
@@ -54,7 +63,7 @@ export function presenceOf(k, map) {
 }
 
 export class SimHost {
-  constructor({ makeGame, now = () => Date.now(), clock = null, timer = null, heap = () => null, seed = 1, cap = CAP, watch = {},
+  constructor({ makeGame, now = () => Date.now(), clock = null, timer = null, heap = NO_HEAP, seed = 1, cap = CAP, watch = {},
     worldGenFree = [], serverOff = true, timing = 'inline', onFallback = () => { }, onSend = () => { }, log = () => { } } = {}) {
     if (typeof makeGame !== 'function') throw new Error('SimHost needs makeGame');
     this.makeGame = makeGame;
@@ -79,6 +88,7 @@ export class SimHost {
     this.running = false; this.handle = null; this.nextAt = 0; this.simNow = 0; this.idleSince = null;
     this.lastBatch = 1;
     this.heapNow = null;
+    this.heapProbe = heap !== NO_HEAP;   // false: this host has no way to read the heap (workerd), so 'heap' never fires
   }
 
   // ---------- copies ----------
@@ -105,7 +115,7 @@ export class SimHost {
       return null;
     }
     const bootMs = this.clock() - c0;
-    const copy = { map, w, api, wk: w.WORLDKEEPER, out, knights: new Map(), queue: [], bootMs, bootedAt: at, emptySince: at, ticks: 0, throws: [], slow: 0, lastMs: 0, errors: 0 };
+    const copy = { map, w, api, wk: w.WORLDKEEPER, out, knights: new Map(), queue: [], bootMs, bootedAt: at, emptySince: at, ticks: 0, throws: [], slow: 0, lastMs: 0, errors: 0, parked: false };
     this.copies.set(map, copy);
     this.bootTimes[map] = Math.round(bootMs);
     this.log('boot', { map, ms: Math.round(bootMs) });
@@ -139,19 +149,42 @@ export class SimHost {
     for (const n of c.knights.keys()) if (!next.has(n)) c.queue.push({ t: 'left', n, map });
     c.knights = next;
     c.emptySince = next.size ? null : (c.emptySince == null ? this.now() : c.emptySince);
+    if (c.parked) { this.sweep(); return true; }   // a parked copy waits, untouched, for unpark (its knights are kept for then)
     if (next.size) this.idleSince = null;   // a knight back on any copy: the 60 s before the loop stops start again when he goes
     if (next.size && !this.running) this.start();
     return true;
   }
+  // ---------- parking (every knight on the map has gone silent: see the head of this file) ----------
+  park(map) {
+    const c = this.copies.get(map); if (!c || c.parked) return false;
+    c.parked = true; c.parkedAt = this.now();
+    this.log('park', { map });
+    // nothing left to tick: stop now (no timer stays armed); a loop already inside a tick stops itself when the tick ends
+    if (!this.live().length && this.running && this.handle != null) this.stop();
+    return true;
+  }
+  unpark(map) {
+    const c = this.copies.get(map); if (!c || !c.parked) return false;
+    c.parked = false; c.parkedAt = null;
+    this.log('unpark', { map });
+    if (c.knights.size) { this.idleSince = null; if (!this.running) this.start(); }
+    return true;
+  }
+  isParked(map) { const c = this.copies.get(map); return !!(c && c.parked); }
+  live() { return [...this.copies.values()].filter(c => !c.parked); }
+  // a parked copy whose map emptied is dropped DROP_EMPTY_MS later like any other (looked at whenever the host is called, as no
+  // timer runs for it)
+  sweep(at = this.now()) { for (const c of [...this.copies.values()]) if (c.parked && !c.knights.size && c.emptySince != null && at - c.emptySince >= DROP_EMPTY_MS) this.drop(c.map); }
   // a message for the copy (an intent, a boss call, an admin spawn), run at the start of the next tick
   deliver(map, msg) { const c = this.copies.get(map); if (!c || !msg) return false; c.queue.push(msg); return true; }
-  knightCount() { let n = 0; for (const c of this.copies.values()) n += c.knights.size; return n; }
+  knightCount() { let n = 0; for (const c of this.copies.values()) if (!c.parked) n += c.knights.size; return n; }
 
   // ---------- the tick ----------
   tick(at = this.now()) {
     this.simNow = at; this.ticks++;
     let whole = 0;
     for (const c of [...this.copies.values()]) {
+      if (c.parked) continue;
       const w = c.w, c0 = this.clock();
       try {
         w.__now = at;
@@ -182,17 +215,23 @@ export class SimHost {
     return whole;
   }
   record(ms) { this.tickTimes.push(ms); if (this.tickTimes.length > KEPT_TICKS) this.tickTimes.splice(0, this.tickTimes.length - KEPT_TICKS); }
-  // 'lag' timing: the cost of the last batch of ticks, read by the zero-delay timer that follows it
-  lagged(cost) {
-    const per = Math.max(0, cost) / Math.max(1, this.lastBatch);
+  // 'lag' timing: the cost of the last batch of ticks. gap: from the end of the ticks to the first zero-delay timer after
+  // them; idle: from that timer to a second one, with no work between (the machine's own delay). Answers the cost per tick.
+  lagged(gap, idle = 0) {
+    const noise = Math.max(0, idle);
+    const per = Math.max(0, gap - noise) / Math.max(1, this.lastBatch);
     for (let i = 0; i < this.lastBatch; i++) this.record(per);
+    // the machine itself was late by more than the bar: this reading says nothing about the copy, so it neither counts
+    // toward a slow run nor ends one
+    if (noise > this.watch.slowMs) { this.noisy = (this.noisy || 0) + 1; return per; }
     this.slowWhole = per > this.watch.slowMs ? (this.slowWhole || 0) + 1 : 0;
     if (this.slowWhole >= this.watch.slowRun && this.copies.size) {
       this.slowWhole = 0;
       let worst = null, load = -1;
-      for (const c of this.copies.values()) { let l = 0; try { l = c.api.peek('monsters').length * (1 + c.knights.size); } catch (e) { } if (l > load) { load = l; worst = c; } }
-      if (worst) this.fallback(worst.map, 'slow', { ms: Math.round(per * 10) / 10, timing: 'lag' });
+      for (const c of this.live()) { let l = 0; try { l = c.api.peek('monsters').length * (1 + c.knights.size); } catch (e) { } if (l > load) { load = l; worst = c; } }
+      if (worst) this.fallback(worst.map, 'slow', { ms: Math.round(per * 10) / 10, timing: 'lag', idle: Math.round(noise * 10) / 10 });
     }
+    return per;
   }
   checkHeap() {
     let h = null; try { h = this.heap(); } catch (e) { h = null; }
@@ -231,19 +270,29 @@ export class SimHost {
       this.log('skipped', { ticks: behind });
     }
     this.lastBatch = Math.max(1, n);
-    // workerd: the clock stood still while the ticks ran; a zero-delay timer reads it again once they are done
-    if (this.timing === 'lag') { this.handle = this.timer.set(() => this.after(t), 0); return; }
+    // workerd: the clock stood still while the ticks ran; a zero-delay timer reads it again once they are done, and a second
+    // one right after it reads how late the machine alone makes a timer (see lagged)
+    if (this.timing === 'lag') { this.handle = this.timer.set(() => this.measured(t), 0); return; }
     this.after(null);
   }
-  after(t0) {
+  measured(t0) {
+    this.handle = null;
+    if (!this.running) return;
+    const t1 = this.now();
+    this.handle = this.timer.set(() => { this.handle = null; if (!this.running) return; this.lagged(t1 - t0, this.now() - t1); this.after(null); }, 0);
+  }
+  after() {
     this.handle = null;
     if (!this.running) return;
     const t = this.now();
-    if (t0 !== null) this.lagged(t - t0);
+    this.sweep(t);
+    const live = this.live();
+    // only parked copies (or none at all, after a hand-back): nothing to tick, so the loop stops now and no timer stays armed
+    if (!live.length) { this.stop(); return; }
     if (!this.knightCount()) {
       if (this.idleSince === null) this.idleSince = t;
       // every copy has been empty at least this long (none had a knight since idleSince), so each goes with the loop
-      if (t - this.idleSince >= IDLE_STOP_MS) { for (const c of [...this.copies.values()]) if (!c.knights.size) this.drop(c.map); this.stop(); return; }
+      if (t - this.idleSince >= IDLE_STOP_MS) { for (const c of live) if (!c.knights.size) this.drop(c.map); this.stop(); return; }
     } else this.idleSince = null;
     this.schedule(this.nextAt - t);
   }
@@ -252,9 +301,9 @@ export class SimHost {
   stats() {
     const copies = [...this.copies.values()].map(c => {
       let monsters = null; try { monsters = c.api.peek('monsters').length; } catch (e) { }
-      return { map: c.map, bootMs: Math.round(c.bootMs), knights: c.knights.size, monsters, ticks: c.ticks, errors: c.errors };
+      return { map: c.map, bootMs: Math.round(c.bootMs), knights: c.knights.size, monsters, ticks: c.ticks, errors: c.errors, parked: c.parked };
     });
     const refused = {}; for (const [m, r] of this.refused) refused[m] = r;
-    return { running: this.running, ticks: this.ticks, tick: quantiles(this.tickTimes), boot: { ...this.bootTimes }, heap: this.heapNow, copies, cap: this.cap, skipped: this.skipped, refused, fallbacks: this.fallbacks.slice() };
+    return { running: this.running, ticks: this.ticks, tick: quantiles(this.tickTimes), boot: { ...this.bootTimes }, heap: this.heapNow, heapProbe: this.heapProbe, copies, cap: this.cap, skipped: this.skipped, refused, fallbacks: this.fallbacks.slice() };
   }
 }

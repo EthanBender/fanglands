@@ -288,7 +288,7 @@ test('the World: welcome names the Atlas, the movement check counts into move_da
   const hash = r.data.atlas.hash;
   assert.match(hash, /^[0-9a-f]{16}$/);
   assert.ok(r.data.atlas.places > 30 && r.data.atlas.fixed > 1000);
-  const KEEPERS = { deepholm: 'keeper', aerie: 'keeper', coalmine: 'keeper' };
+  const KEEPERS = { deepholm: 'keeper', aerie: 'keeper' };
   assert.deepEqual(r.data.sim, { move: 'observe', master: 'on', maps: KEEPERS, held: {} });
   w.webSocketMessage(sock, JSON.stringify({ t: 'hello', v: 1, caps: [], atlas: hash }));
   assert.equal(sock.got.find(m => m.t === 'welcome').atlas, hash);
@@ -318,11 +318,15 @@ test('the World: welcome names the Atlas, the movement check counts into move_da
   assert.deepEqual(JSON.parse(ctx.storage.sql.exec("SELECT value FROM settings WHERE key = 'sim'").toArray()[0].value), { move: 'observe', later: 1, master: 'on', maps: KEEPERS, held: {} });
   r = await call(w2, 'GET', '/api/admin/export', undefined, ENV.ADMIN_KEY);
   assert.equal(r.data.move_day.length, 1); assert.equal(r.data.move_log.length, 1);
-  // Stage 2: which maps the world runs itself. Only the three plain instances may be 'world'; a flip is a sim_log row
+  // Stage 2: which maps the world runs itself. Only the plain instances with monsters (deepholm, aerie) may be 'world'; a flip is a sim_log row
   for (const bad of [{ maps: { nowhere: 'world' } }, { maps: { deepholm: 'yes' } }, { master: 'maybe' }, { maps: [] }]) assert.equal((await call(w2, 'POST', '/api/admin/sim', bad, ENV.ADMIN_KEY)).status, 400, JSON.stringify(bad));
   for (const later of ['over', 'spider_den', 'royalmine']) { const x = await call(w2, 'POST', '/api/admin/sim', { maps: { [later]: 'world' } }, ENV.ADMIN_KEY); assert.equal(x.status, 400); assert.equal(x.data.code, 'later'); }
+  // the coal mine has no monsters: it cannot be switched to the world (the parent page lists it greyed, with the reason)
+  { const x = await call(w2, 'POST', '/api/admin/sim', { maps: { coalmine: 'world' } }, ENV.ADMIN_KEY); assert.equal(x.status, 400); assert.equal(x.data.code, 'empty'); }
   r = await call(w2, 'POST', '/api/admin/sim', { maps: { deepholm: 'world' } }, ENV.ADMIN_KEY);
-  assert.equal(r.status, 200); assert.deepEqual(r.data.sim.maps, { deepholm: 'world', aerie: 'keeper', coalmine: 'keeper' });
+  assert.equal(r.status, 200); assert.deepEqual(r.data.sim.maps, { deepholm: 'world', aerie: 'keeper' });
+  assert.deepEqual(r.data.world.empty, ['coalmine']); assert.equal(r.data.world.modes.coalmine, 'keeper');
+  assert.equal(r.data.world.heapProbe, false, 'the World has no heap probe (workerd has none)');
   assert.equal(r.data.sim.move, 'observe', 'the movement check is left as it was');
   r = await call(w2, 'POST', '/api/admin/sim', { master: 'off' }, ENV.ADMIN_KEY);
   assert.equal(r.data.sim.master, 'off'); assert.equal(r.data.sim.maps.deepholm, 'world', 'master off keeps the maps as they were');

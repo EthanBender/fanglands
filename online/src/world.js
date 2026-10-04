@@ -40,7 +40,7 @@ import { readAtlas } from './atlas.js';
 import { MoveBook, MOVE_MODES } from './move.js';
 import { SimBook } from './sim/book.js';
 import { SimHost, WORLDGEN_FREE } from './sim/host.js';
-import { cleanSwitches, WORLD_MAPS, WORLD_READY, MODES } from './sim/worlds.js';
+import { cleanSwitches, WORLD_MAPS, WORLD_READY, WORLD_EMPTY, MODES } from './sim/worlds.js';
 import ATLAS_JSON from './atlas.json' with { type: 'json' };
 
 // the Atlas the world judges by (docs/ONLINE.md, "The shared world", Stage 1): made by tools/atlas.mjs from the game it ships with
@@ -123,6 +123,8 @@ export class World {
   // ---------- the shared world's game copy (docs/ONLINE.md "The shared world", Stage 2) ----------
   // online/src/sim/game.mjs (built by build.sh, bundled by wrangler) is loaded on every wake; until it is there, or if it cannot
   // be, every map stays on the keeper path. The SimHost ticks with setTimeout (never alarms), timed by the lag of the next timer.
+  // It gets no heap probe: workerd has none (no process, no performance.memory; checked 3 Oct 2026 on wrangler 4.92 local), so
+  // the copy cap (the overworld plus 3 instances, measured at 59.4 MB of the 128 MB isolate) is what holds memory there.
   loadCopy() {
     import('./sim/game.mjs').then(mod => {
       if (!mod || typeof mod.makeGame !== 'function') throw new Error('the game copy has no makeGame');
@@ -510,7 +512,7 @@ export class World {
     if (call === 'sim' && post) {
       // any of {move, master, maps}: the movement check (Stage 1), and which maps the world runs itself (Stage 2)
       const b = await readJson(req);
-      const bad = () => oops(400, "send any of {move: 'observe' | 'off', master: 'on' | 'off', maps: {deepholm | aerie | coalmine: 'keeper' | 'world'}}", 'bad');
+      const bad = () => oops(400, "send any of {move: 'observe' | 'off', master: 'on' | 'off', maps: {deepholm | aerie: 'keeper' | 'world'}}", 'bad');
       if (!b || typeof b !== 'object' || Array.isArray(b) || !Object.keys(b).length || Object.keys(b).some(k => !['move', 'master', 'maps'].includes(k))) throw bad();
       if ('move' in b && !MOVE_MODES.includes(b.move)) throw bad();
       if ('master' in b && b.master !== 'on' && b.master !== 'off') throw bad();
@@ -518,7 +520,8 @@ export class World {
         if (!b.maps || typeof b.maps !== 'object' || Array.isArray(b.maps) || !Object.keys(b.maps).length) throw bad();
         for (const [m, v] of Object.entries(b.maps)) {
           if (!WORLD_MAPS.includes(m) || !MODES.includes(v)) throw bad();
-          if (v === 'world' && !WORLD_READY.includes(m)) throw oops(400, "the world runs only deepholm, aerie and coalmine in this stage; that map's monsters move later", 'later');
+          if (v === 'world' && WORLD_EMPTY.includes(m)) throw oops(400, 'no monsters live in ' + m + ', so the world has nothing to run there', 'empty');
+          if (v === 'world' && !WORLD_READY.includes(m)) throw oops(400, "the world runs only deepholm and aerie in this stage; that map's monsters move later", 'later');
         }
       }
       const s = this.simSettings(), sw = cleanSwitches(s);

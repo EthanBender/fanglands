@@ -22,7 +22,14 @@
 // The Room's alarm is armed only for a copy to build and a take-over to finish: a world-run map that has gone quiet is noticed
 // on its knights' own presence (each playing game sends one at least once a second), so a knight alone costs no alarms.
 // A knight whose game has sent no presence for SILENT ms (a locked iPad, a paused game) is told to the copy as fallen, so no
-// monster fights him while he cannot play (in his own game as a lone keeper his monsters stop with him). Pure JavaScript.
+// monster fights him while he cannot play (in his own game as a lone keeper his monsters stop with him). When every knight
+// on a world-run map has gone silent, the map's copy is parked (SimHost.park): its monsters stand exactly where the knights
+// last saw them and it is not ticked, so with no other place running no timer stays armed and the Durable Object hibernates
+// as it does today. The first presence from any of them (or a knight arriving) ticks it again from where it stood; if the
+// object hibernated meanwhile, the copy is gone and the wake takes the map over again as after any nap (announce, below).
+// A lone keeper's game whose page has the 'snap' capability is asked for one full snapshot when a copy starts reading it
+// (snap below), so a take-over from a knight alone keeps the monsters he chased, hurt or felled as they are on his screen.
+// Pure JavaScript.
 // ============================================================================
 import { Interest } from './interest.js';
 import { SimBook } from './book.js';
@@ -30,7 +37,11 @@ import { NEVER, quantiles } from './host.js';
 
 // the spec's maps, and the ones this stage lets the world run (the plain instances: no boss of their own)
 export const WORLD_MAPS = ['over', 'deepholm', 'aerie', 'coalmine', 'spider_den', 'war_shed', 'tinker_lab', 'stormfront', 'afterlands', 'royalmine'];
-export const WORLD_READY = ['deepholm', 'aerie', 'coalmine'];
+export const WORLD_READY = ['deepholm', 'aerie'];
+// places of this stage the world could run but has no reason to: no monster lives in the coal mine (tools/mmo-sim-world.js
+// check 0 holds this list to the game: each listed place's copy has no monster, each ready one has some)
+export const WORLD_EMPTY = ['coalmine'];
+export const WORLD_SHOWN = [...WORLD_READY, ...WORLD_EMPTY];   // the parent page's rows
 export const MODES = ['keeper', 'world'];
 export const JOIN_WAIT = 1500;       // ms a new copy waits for the keeper's first mon before it takes the map with its own monsters
 export const STALE = 3000;           // ms: a world-run map whose copy has not ticked this long goes back to a knight (KEEPER_STALE)
@@ -144,7 +155,18 @@ export class Worlds {
     // the copy starts as a non-keeper fed by the knight who keeps the map now
     this.host.deliver(map, { t: 'keeper', map, n: real.name });
     vk.joinDue = this.now() + JOIN_WAIT;
+    this.snap(map, real);
     this.room.arm();
+    return true;
+  }
+  // a keeper whose game has the 'snap' capability is asked for one full snapshot of his monsters (every one, standing or
+  // fallen, near anyone or not): his answer, not his ordinary stream, is what the copy takes the map over with. An older page
+  // is never asked and the take-over is as before (his ordinary snapshots, or JOIN_WAIT).
+  snap(map, k) {
+    const vk = this.v.get(map);
+    if (!vk || vk.state !== 'joining' || !k || !Array.isArray(k.caps) || !k.caps.includes('snap')) return false;
+    vk.snapFrom = k.lc;
+    this.room.send(k.sock, { t: 'snap', map: wireOf(map) });
     return true;
   }
   // the virtual knight becomes the keeper: the copy's handoff() makes its puppets real, and everyone on the map hears it
@@ -183,6 +205,7 @@ export class Worlds {
   entering(k, map, g) {
     if (this.modeOf(map) !== 'world') return;
     this.viewOf(k).reset();
+    if (this.host) this.host.sweep();   // a parked copy whose map has been empty 60 s is not taken up again (it goes)
     if (!this.v.has(map) && this.host && this.host.copies.has(map)) { this.joinVirtual(this.sockFor(map), virtualName(map), map); const vk = this.v.get(map); vk.state = 'world'; vk.keeperAt = this.now(); g.keeper = vk; }
   }
   entered(k, map) {
@@ -214,11 +237,15 @@ export class Worlds {
   }
   // the keeper's own snapshot, while a copy is reading it to take the map over. An empty one is a lone keeper's heartbeat: it
   // lists nothing because nobody else is near him, not because his monsters are gone, so it is not read (JOIN_WAIT finishes)
+  // A keeper asked for his full snapshot (snap) hands the map over with that one only: it says every monster as it stands on
+  // his screen (an empty full one: he has none), where his ordinary stream says only the ones near other knights.
   keeperMon(k, m) {
     const vk = this.v.get(k.map), g = this.room.maps.get(k.map);
-    if (!vk || vk.state !== 'joining' || !g || g.keeper !== k || !Array.isArray(m.list) || !m.list.length) return;
+    if (!vk || vk.state !== 'joining' || !g || g.keeper !== k || !Array.isArray(m.list)) return;
+    const full = m.full === true && vk.snapFrom === k.lc;
+    if (!full && !m.list.length) return;
     this.host.deliver(k.map, { t: 'mon', n: k.name, list: m.list });
-    this.finish(k.map);
+    if (full || vk.snapFrom !== k.lc) this.finish(k.map);
   }
   // a knight the copy should not fight: fallen, or his game silent for SILENT ms (it is then told he has fallen; he comes back
   // with his next presence)
@@ -237,18 +264,41 @@ export class Worlds {
     const list = this.knightsOf(map), g = this.room.maps.get(map), now = this.now(), q = [];
     if (g) for (const k of g.members) if (!k.virtual && k.hello && this.silentOf(k, now)) q.push(k.lc);
     this.quiet.set(map, q.join(','));
+    // a parked copy whose map has a knight playing again (his presence, or a knight arriving) ticks again from where it stood
+    if (this.host.isParked(map) && !this.allQuiet(map)) this.unpark(map);
     this.host.setKnights(map, list);
   }
-  // every tick (fromCopy): a knight who has just gone silent is told to the copy as fallen
+  // every real knight on the map has gone silent (none at all is not 'all quiet': an emptied map goes as it always did)
+  allQuiet(map) {
+    const g = this.room.maps.get(map); if (!g) return false;
+    const now = this.now(); let n = 0;
+    for (const k of g.members) { if (k.virtual || !k.hello) continue; n++; if (!this.silentOf(k, now)) return false; }
+    return n > 0;
+  }
+  // every tick (fromCopy): a knight who has just gone silent is told to the copy as fallen; when all of them have, the copy parks
   quietCheck(map) {
     const g = this.room.maps.get(map); if (!g) return;
     const now = this.now(), q = [];
     for (const k of g.members) if (!k.virtual && k.hello && this.silentOf(k, now)) q.push(k.lc);
     if (q.join(',') !== (this.quiet.get(map) || '')) this.tell(map);
+    if (this.allQuiet(map)) this.park(map);
+  }
+  park(map) {
+    const vk = this.v.get(map);
+    if (!vk || vk.state !== 'world' || !this.host.park(map)) return false;
+    vk.parkedAt = this.now();
+    return true;
+  }
+  unpark(map) {
+    const vk = this.v.get(map);
+    if (!this.host.unpark(map)) return false;
+    // the copy was still on purpose: its silence is not a copy gone quiet (staleCheck counts from here)
+    if (vk) { vk.monAt = this.now(); vk.parkedAt = null; }
+    return true;
   }
   staleCheck(map) {
     const vk = this.v.get(map);
-    if (!vk || vk.state !== 'world') return false;
+    if (!vk || vk.state !== 'world' || this.host.isParked(map)) return false;
     const g = this.room.maps.get(map);
     if (!g || !g.members.size || this.now() - vk.monAt <= STALE) return false;
     this.handBack(map, 'stale', true);
@@ -260,7 +310,7 @@ export class Worlds {
     if (keeper && keeper.virtual) out.server = true;
     return out;
   }
-  welcomeSim() { const maps = {}; for (const m of WORLD_READY) maps[m] = this.modeOf(m); return { maps, hz: 10, caps: [] }; }
+  welcomeSim() { const maps = {}; for (const m of WORLD_READY) maps[m] = this.modeOf(m); return { maps, hz: 10, caps: ['snap'] }; }
 
   // ---------- what the copy said (SimHost onSend) ----------
   fromCopy(map, list) {
@@ -274,7 +324,10 @@ export class Worlds {
         this.quietCheck(map);
         const rows = Array.isArray(m.list) ? m.list : [];
         for (const k of g.members) {
-          if (!k.hello) continue;
+          // a knight whose place the world does not know yet (a Room just rebuilt from its sockets keeps no position) is sent
+          // nothing until his first presence: a list filtered by no position would be empty, and an empty list from his
+          // keeper tells his game that every monster it is holding up has gone
+          if (!k.hello || k.x == null || k.y == null) continue;
           this.room.send(k.sock, { t: 'mon', n: vk.name, list: this.viewOf(k).filter(k.name, k.x, k.y, rows), k: m.k, at: m.at });
         }
         if (vk.ticks % REALM_EVERY === 0) this.writeRealm(map);
@@ -329,9 +382,15 @@ export class Worlds {
 
   // ---------- the parent page ----------
   view() {
-    const modes = {};
-    for (const m of WORLD_READY) modes[m] = this.stateOf(m);
+    const modes = {}, knights = {};
+    for (const m of WORLD_SHOWN) {
+      modes[m] = WORLD_READY.includes(m) ? this.stateOf(m) : 'keeper';
+      // the knights on each place, whoever runs it (the Room's own count: the copy's list is only there while the world runs it)
+      const g = this.room.maps.get(m); let n = 0;
+      if (g) for (const k of g.members) if (!k.virtual && k.hello) n++;
+      knights[m] = n;
+    }
     const st = this.host ? this.host.stats() : null;
-    return Object.assign({ modes, loaded: this.loaded, log: this.book.recent(30) }, st || { running: false, ticks: 0, tick: quantiles([]), boot: {}, heap: null, copies: [], cap: null, skipped: 0 });
+    return Object.assign({ modes, knights, empty: WORLD_EMPTY.slice(), loaded: this.loaded, log: this.book.recent(30) }, st || { running: false, ticks: 0, tick: quantiles([]), boot: {}, heap: null, heapProbe: false, copies: [], cap: null, skipped: 0 });
   }
 }
