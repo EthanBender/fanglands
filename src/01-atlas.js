@@ -301,13 +301,14 @@
   ];
 
   // ---------- the ports (~100): doors, gates, road ends and named spots ----------
+  // (the *.arch ports are 63-house's arch landings, where an island arch sets the knight down)
   const PORTS = {
     'cave.spawn': ['cave', 4, 7], 'cave.sword': ['cave', 11, 7], 'cave.mouth': ['cave', 21, 7], 'cave.axe_stump': ['cave', 23, 9],
     'cave.death_house': ['cave', 25, 10], 'cave.board': ['cave', 24, 6], 'spider_den.door': ['cave', 22, 3], 'spider_den.step': ['cave', 23, 3],
     'quarry.shaft': ['quarry', 56, 6], 'quarry.shaft_step': ['quarry', 56, 7], 'quarry.shrine': ['quarry', 62, 6], 'quarry.shrine_step': ['quarry', 62, 7],
-    'quarry.cart': ['quarry', 54, 13], 'quarry.spur': ['quarry', 54, 14], 'quarry.dozer_spawn': ['quarry', 70, 8],
+    'quarry.cart': ['quarry', 54, 13], 'quarry.spur': ['quarry', 54, 14], 'quarry.dozer_spawn': ['quarry', 70, 8], 'quarry.arch': ['quarry', 54, 8],
     'signpost.sign': ['signpost', 65, 27],
-    'pond.centre': ['pond', 43, 36], 'pond.stones_n': ['pond', 43, 31], 'pond.stones_s': ['pond', 43, 40], 'pond.outflow': ['pond', 50, 37], 'pond.landing': ['pond', 45, 29],
+    'pond.centre': ['pond', 43, 36], 'pond.stones_n': ['pond', 43, 31], 'pond.stones_s': ['pond', 43, 40], 'pond.outflow': ['pond', 50, 37], 'pond.landing': ['pond', 45, 29], 'pond.arch': ['pond', 41, 39],
     'thistledown.origin': ['thistledown', 84, 13], 'thistledown.square': ['thistledown', 112, 33], 'thistledown.fountain': ['thistledown', 112, 35],
     'thistledown.duke': ['thistledown', 112, 49], 'thistledown.castle': ['thistledown', 104, 42], 'thistledown.west_gate': ['thistledown', 85, 32],
     'thistledown.east_gate': ['thistledown', 140, 32], 'thistledown.board': ['thistledown', 105, 27], 'thistledown.house_portal': ['thistledown', 117, 17],
@@ -329,7 +330,7 @@
     'hollowford.square': ['hollowford', 140, 80], 'hollowford.heart': ['hollowford', 140, 76], 'hollowford.hatch': ['hollowford', 147, 70],
     'hollowford.barrelbeast': ['hollowford', 140, 86], 'hollowford.board': ['hollowford', 139, 78], 'hollowford.tam': ['hollowford', 126, 88],
     'hollowford.guild_hall': ['hollowford', 150, 66], 'hollowford.north': ['hollowford', 140, 68], 'hollowford.south': ['hollowford', 141, 96],
-    'hollowford.west': ['hollowford', 120, 77], 'hollowford.east': ['hollowford', 158, 82], 'hollowford.blood_portal': ['hollowford', 154, 88],
+    'hollowford.west': ['hollowford', 120, 77], 'hollowford.east': ['hollowford', 158, 82], 'hollowford.blood_portal': ['hollowford', 154, 88], 'hollowford.arch': ['hollowford', 139, 79],
     'warden.gate': ['warden', 60, 96], 'warden.post': ['warden', 60, 95], 'warden.dunstan_hut': ['warden', 64, 98], 'warden.dunstan': ['warden', 67, 104],
     'warden.node': ['warden', 66, 100], 'warden.turn': ['warden', 64, 103], 'warden.east_wall': ['warden', 100, 96],
     'ash_shrine.shrine': ['ash_shrine', 87, 103],

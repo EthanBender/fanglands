@@ -232,5 +232,11 @@
   {"file": "61-markers.js", "literal": "m.y > 30", "line": 704, "reason": "the self-test picks markers at least 30 tiles in from the map's edges: a margin, not a position"},
   {"file": "62-ores.js", "literal": "[13, 60]", "decl": "WANT_MINE", "reason": "the self-test's double entry: blackiron's Mining level and xp a lump, not a position"},
   {"file": "62-ores.js", "literal": "[17, 70]", "decl": "WANT_MINE", "reason": "the self-test's double entry: sunstone's Mining level and xp a lump, not a position"},
-  {"file": "62-ores.js", "literal": "[24, 95]", "decl": "WANT_MINE", "reason": "the self-test's double entry: stormstone's Mining level and xp a lump, not a position"}
+  {"file": "62-ores.js", "literal": "[24, 95]", "decl": "WANT_MINE", "reason": "the self-test's double entry: stormstone's Mining level and xp a lump, not a position"},
+  {"file": "63-house.js", "literal": "17", "decl": "CX", "reason": "instance-local (house): the island's centre column on its own 34x24 grid"},
+  {"file": "63-house.js", "literal": "12", "decl": "CY", "reason": "instance-local (house): the island's centre row on its own 34x24 grid"},
+  {"file": "63-house.js", "literal": "[17, 19]", "decl": "ENTRY", "reason": "instance-local (house): where the knight lands on the island"},
+  {"file": "63-house.js", "literal": "[17, 20]", "decl": "GATE", "reason": "instance-local (house): the arch home, one step south of the landing"},
+  {"file": "63-house.js", "literal": "bx - 12", "line": 478, "reason": "the build panel's cost row: pixels left of a button's edge, not a map coordinate"},
+  {"file": "63-house.js", "literal": "TILE * 3", "decl": "drift", "reason": "drawing: the sky's cloud drift wraps every 3 tiles of pixels, a length"}
 ]

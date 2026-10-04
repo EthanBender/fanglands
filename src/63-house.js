@@ -45,7 +45,8 @@
   const HW = 34, HH = 24;                 // the instance grid: the island sits in the middle of it with sky all round
   const CX = 17, CY = 12, RX = 13, RY = 9; // the land: an ellipse of grass
   const ENTRY = [17, 19], GATE = [17, 20]; // where you land, and the arch home one step south of it
-  const PORTAL = { x: 117, y: 17 }, STEP = { x: 117, y: 18 }; // the world portal, inside Thistledown's north wall
+  const XY = ([x, y]) => ({ x, y });
+  const PORTAL = XY(ATLAS.port('thistledown.house_portal')), STEP = XY(ATLAS.port('thistledown.house_portal_step')); // the world portal, inside Thistledown's north wall (Atlas ports)
   const SAPLING_SECS = 90;                // a sapling becomes a tree
   const SAPLING_CHANCE = 0.2;             // a felled world tree hands one over this often
   const CROP_STAGE = 40;                  // the core's seconds per crop stage (07-update)
@@ -74,13 +75,16 @@
 
   // ---------- where an arch can take you ----------
   // Each one is a place with a region of its own; standing in that region is what unlocks the arch.
+  // Each landing is an Atlas port (the spread spec, section 9.1: the portal-nexus table reads ports); the Wolfwood's is
+  // open forest, a stretched-world point.
+  const portXY = id => XY(ATLAS.port(id));
   const DESTS = [
-    { key: 'thistledown', name: 'Thistledown', region: 'Thistledown', x: 112, y: 33, colour: '#d8a95e', line: 'The square, by the Great Fountain.' },
-    { key: 'quarry', name: 'Grey Quarry', region: 'Grey Quarry', x: 54, y: 8, colour: '#9aa0a8', line: 'Iron and coal in the rock.' },
-    { key: 'pond', name: "Miller's Pond", region: "Miller's Pond", x: 41, y: 39, colour: '#3d86c6', line: 'Shrimp, and trout for the patient.' },
-    { key: 'wolfwood', name: 'Wolfwood', region: 'Wolfwood', x: 80, y: 78, colour: '#4a6a3a', line: 'The deep road south. Keep to the paths.' },
-    { key: 'camp', name: 'Goblin Camp', region: 'Goblin Camp', x: 152, y: 30, colour: '#8b2e2e', line: 'Their machines are here.' },
-    { key: 'hollowford', name: 'Hollowford', region: 'Hollowford', x: 139, y: 79, colour: '#c9a36a', line: 'The town the beast walked through.' },
+    { key: 'thistledown', name: 'Thistledown', region: 'Thistledown', ...portXY('thistledown.square'), colour: '#d8a95e', line: 'The square, by the Great Fountain.' },
+    { key: 'quarry', name: 'Grey Quarry', region: 'Grey Quarry', ...portXY('quarry.arch'), colour: '#9aa0a8', line: 'Iron and coal in the rock.' },
+    { key: 'pond', name: "Miller's Pond", region: "Miller's Pond", ...portXY('pond.arch'), colour: '#3d86c6', line: 'Shrimp, and trout for the patient.' },
+    { key: 'wolfwood', name: 'Wolfwood', region: 'Wolfwood', x: ATLAS.world.tx(80), y: ATLAS.world.ty(78), colour: '#4a6a3a', line: 'The deep road south. Keep to the paths.' },
+    { key: 'camp', name: 'Goblin Camp', region: 'Goblin Camp', ...portXY('camp.walker'), colour: '#8b2e2e', line: 'Their machines are here.' },
+    { key: 'hollowford', name: 'Hollowford', region: 'Hollowford', ...portXY('hollowford.arch'), colour: '#c9a36a', line: 'The town the beast walked through.' },
   ];
   const destOf = key => DESTS.find(d => d.key === key) || null;
 
@@ -725,7 +729,7 @@
       const grew = tileAt(sx, sy) === T.TREE && H().tiles[hidx(sx, sy)] === 'TREE' && !H().grow.some(gr => gr.x === sx && gr.y === sy);
       // and the world will not take one
       leaveHouse(); F.sim(2, []); notice = null;
-      const o = h.openSpot(60, 30); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 };
+      const o = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(30)); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 };
       const wf = frontTile(player, 40); placeAction('tree_sapling');
       const refused = tileAt(wf.tx, wf.ty) !== T_SAPLING && countItem('tree_sapling') === 1 && !!notice && /ground of your own/i.test(notice.text);
       check(P + 'a sapling planted on the island grows into a tree on the island’s own clock, and the world will not take one',
