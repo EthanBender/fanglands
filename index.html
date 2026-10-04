@@ -16780,25 +16780,31 @@ window.PLACE_KIT = PLACE_KIT;
   const ASH = Tn('ASH'), JUNGLE = Tn('JUNGLE'), FERN = Tn('FERN'), BRIDGE = Tn('BRIDGE'), DOCK = Tn('DOCK'), WARDEN_GATE = Tn('WARDEN_GATE'), BERRY = Tn('BERRY_BUSH'), DEADTREE = Tn('DEADTREE'), SCORCH = Tn('SCORCH'), OBSIDIAN = Tn('OBSIDIAN');
   const PLANKS = BRIDGE >= 0 ? BRIDGE : DOCK >= 0 ? DOCK : T.DIRT;   // what carries a road over the river
   const KEEPT = new Set([DOCK, Tn('BOAT'), Tn('SEAROCK'), Tn('DUNGEON_DOOR')].filter(v => v >= 0)); // placed by 26-boats / 16-instances: never rewritten
-  const SEA = { x0: 162, y0: 0, x1: 199, y1: 95 };
-  const VILL = { x0: 85, y0: 14, x1: 140, y1: 56 };
-  const PAL = { x0: 142, y0: 20, x1: 158, y1: 40 };                   // the goblin palisade
-  const QUARRY = { x0: 48, y0: 5, x1: 60, y1: 12 };                   // the rock rectangle the core scatters (rows 3–4 are the cliff course)
-  const HF = { x0: 122, y0: 66, x1: 156, y1: 92 };                    // Hollowford: the goblins' fire cleared a rectangle of Wolfwood
-  const DH = { x0: 2, y0: 72, x1: 26, y1: 94 };                       // Deepholm's walls, seen from Wolfwood as a block of rock
-  const LAIR = { x0: 2, y0: 108, x1: 34, y1: 138 };                   // The Fang's lair, a block of wall in the ash
-  const POND = { x: 43, y: 36 };
-  // the roads every feature laid, as polylines: the river bridges them, and nothing solid is added within 2.5 tiles of them
-  const ROADS = [
-    [[CAVE_EXIT_X + 1, 7], [SIGN_TILE.x, SIGN_TILE.y], [84, 32]], [[SIGN_TILE.x, SIGN_TILE.y], [54, 14]],
-    [[84, 32], [84, 60], [60, 70], [31, 76]], [[141, 32], [150, 30]], [[141, 14], [141, 32]], [[141, 14], [161, 14]],
-    [[150, 39], [150, 50], [146, 58], [141, 64], [140, 68]],
-    [[60, 94], [60, 100], [56, 104], [48, 105], [36, 105]], [[60, 100], [63, 103], [69, 103]],
-    [[141, 96], [141, 101], [136, 105], [132, 109], [133, 112]],
-    [[54, 13], [54, 8], [55, 8], [55, 5], [57, 5]],
-  ];
-  // the places that must stay mutually reachable, in chain order (the repair carves along the chain)
-  const NODES = [[21, 7], [65, 27], [85, 32], [164, 14], [140, 76], [66, 100], [36, 105], [141, 96], [56, 6]];
+  // ---- where things are (the spread spec, §9.1): every position is a read of the Atlas ----
+  // A place's own rectangle moves with its frame; open land (the sea, the scan windows, the seams) is the stretched world W.
+  // World noise and seam curves are evaluated in OLD coordinates through W.ix / W.iy (and a rigid place's own noise through
+  // its frame's ix / iy), so their shapes stretch with the land, or move with the place, and are bit-identical before the spread.
+  // Seam rows and columns follow the seam pins (ATLAS.PINS: rim, giants, gw_steps, jungle_west), offset 0 until Stage 4a.
+  const W = ATLAS.world, FR = id => ATLAS.frame(id);
+  const CAVE = FR('cave'), QF = FR('quarry'), PONDF = FR('pond'), TD = FR('thistledown'), CAMP = FR('camp'), DOCKF = FR('dock'), GULL = FR('gull_isle'), IRON = FR('ironclad_isle');
+  const FS = FR('far_shore'), HFF = FR('hollowford'), WARD = FR('warden'), LAIRF = FR('fang_lair'), SHRINE = FR('ash_shrine'), GRAVE = FR('graveyard'), CIRCLE = FR('stone_circle');
+  const TOWER = FR('watchtower'), SYLV = FR('sylvaris'), DHF = FR('deepholm_rock');
+  const rectOf = b => ({ x0: b[0], y0: b[1], x1: b[2], y1: b[3] });
+  const SEA = { x0: W.tx(162), y0: W.ty(0), x1: W.tx(199), y1: W.ty(95) };   // the Grey Sea: open water, a world rect
+  const VILL = { x0: VILLAGE.x0, y0: VILLAGE.y0, x1: VILLAGE.x1, y1: VILLAGE.y1 };   // 02-world's Thistledown, read not copied
+  const PAL = CAMP.rect({ x0: 142, y0: 20, x1: 158, y1: 40 });                   // the goblin palisade
+  const QUARRY = QF.rect({ x0: 48, y0: 5, x1: 60, y1: 12 });                   // the rock rectangle the core scatters (rows 3–4 are the cliff course)
+  const HF = HFF.rect({ x0: 122, y0: 66, x1: 156, y1: 92 });                    // Hollowford: the goblins' fire cleared a rectangle of Wolfwood
+  const DH = rectOf(ATLAS.box('deepholm_rock'));                     // Deepholm's walls, seen from Wolfwood as a block of rock (the anchor's own box)
+  const LAIR = LAIRF.rect({ x0: 2, y0: 108, x1: 34, y1: 138 });                   // The Fang's lair, a block of wall in the ash
+  const POND = (q => ({ x: q[0], y: q[1] }))(ATLAS.port('pond.centre'));
+  // the boats' shore check (26-boats asserts this tile is sand): the Grey Sea's west edge, a world row
+  const SHORE = [SEA.x0, W.ty(40)];
+  // the roads every feature laid, as polylines (ATLAS.TRACKS): the river bridges them, and nothing solid is added within 2.5 tiles of them
+  const ROAD_TRACKS = ['road_cave', 'road_quarry_spur', 'road_wolfwood', 'road_camp', 'road_east_lane', 'road_dock_lane', 'road_hollowford', 'path_ash', 'path_farm', 'path_jungle', 'shaft_lane'];
+  const ROADS = ROAD_TRACKS.map(id => ATLAS.track(id));
+  // the places that must stay mutually reachable, in chain order (the repair carves along the chain): the first nine track nodes
+  const NODES = ATLAS.track('nodes').slice(0, 9);
   const NODE_NAMES = ['cave exit', 'signpost', 'Thistledown gate', 'dock', 'Hollowford', 'Dunstan', 'lair approach', 'jungle path', 'quarry shaft'];
   const GRASSY = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM]);
   const TREES = new Set([T.TREE, T.OAK]);
@@ -16810,6 +16816,9 @@ window.PLACE_KIT = PLACE_KIT;
   const RIMMABLE = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN]);
   const REPAIRABLE = new Set([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.STUMP, BERRY, JUNGLE, FERN, DEADTREE]);
   const BL = window.BLEND = { stats: {} };
+  // a band of OLD world rows [lo, hi] about a pinned seam, at new column x: [[y, oy], ...] (y new, oy old); colsOf the same on x
+  const rowsOf = (pin, lo, hi, x) => { const off = W.pin(pin, 0, x), out = []; for (let y = Math.round(W.y(lo) + off); y <= Math.round(W.y(hi) + off); y++) out.push([y, W.iy(y - off)]); return out; };
+  const colsOf = (pin, lo, hi, y) => { const off = W.pin(pin, 0, y), out = []; for (let x = Math.round(W.x(lo) + off); x <= Math.round(W.x(hi) + off); x++) out.push([x, W.ix(x - off)]); return out; };
 
   // ---------- smooth value noise: two octaves, bilinear on a lattice (6 tiles by default), 0..1 ----------
   const makeNoise = (seed, cell = 6) => {
@@ -16840,33 +16849,37 @@ window.PLACE_KIT = PLACE_KIT;
     const hard = new Uint8Array(MAP_W * MAP_H);
     const mark = (x0, y0, x1, y1) => { for (let y = Math.max(0, y0); y <= Math.min(MAP_H - 1, y1); y++) for (let x = Math.max(0, x0); x <= Math.min(MAP_W - 1, x1); x++) hard[idx(x, y)] = 1; };
     mark(0, 0, MAP_W - 1, 0); mark(0, MAP_H - 1, MAP_W - 1, MAP_H - 1); mark(0, 0, 0, MAP_H - 1); mark(MAP_W - 1, 0, MAP_W - 1, MAP_H - 1); // the tree border
-    mark(0, 0, 27, 16);                                    // the cave, its mouth, the axe stump, the den door and the notice board by the road
+    const markB = b => mark(b[0], b[1], b[2], b[3]);
+    markB(CAVE.box([0, 0, 27, 16]));                       // the cave, its mouth, the axe stump, the den door and the notice board by the road
     mark(VILL.x0 - 1, VILL.y0 - 1, VILL.x1 + 1, VILL.y1 + 1); // Thistledown, fence, gates and both road ends
     for (const b of BUILDINGS) mark(b.x - 2, b.y - 2, b.x + b.w + 1, b.y + b.h + 1);
     for (const n of NPCS) mark(n.x - 2, n.y - 2, n.x + 2, n.y + 2);
     mark(SIGN_TILE.x - 3, SIGN_TILE.y - 3, SIGN_TILE.x + 3, SIGN_TILE.y + 3);
-    mark(70, 12, 82, 23); mark(70, 38, 82, 48);            // the cow and sheep pens
-    mark(36, 29, 43, 44);                                  // Miller's Pond west of the stepping stones (x 43), both their landings included; the river leaves from the east shore
-    mark(45, 0, 63, 4); mark(59, 4, 65, 9); mark(52, 4, 58, 15); // the cliff course, the wind shrine's clearing, the shaft lane and the miners' cart
-    mark(139, 12, 163, 16); mark(140, 13, 143, 33);        // the road to the dock and its verge, the lane down the village fence
-    mark(158, 9, 170, 19);                                 // the dock, Harl, his boat, the lantern: 4 tiles all round
+    markB(TD.box([70, 12, 82, 23])); markB(TD.box([70, 38, 82, 48]));   // the cow and sheep pens
+    markB(PONDF.box([36, 29, 43, 44]));                    // Miller's Pond west of the stepping stones (x 43), both their landings included; the river leaves from the east shore
+    markB(QF.box([45, 0, 63, 4])); markB(QF.box([59, 4, 65, 9])); markB(QF.box([52, 4, 58, 15])); // the cliff course, the wind shrine's clearing, the shaft lane and the miners' cart
+    // the road to the dock and its verge (each corner in the frame of the place it touches: Stage 4a replaces this lane), the lane down the village fence
+    mark(TD.x(139), TD.y(12), DOCKF.x(163), DOCKF.y(16)); markB(TD.box([140, 13, 143, 33]));
+    markB(DOCKF.box([158, 9, 170, 19]));                   // the dock, Harl, his boat, the lantern: 4 tiles all round
     mark(PAL.x0 - 1, PAL.y0 - 1, PAL.x1 + 1, PAL.y1 + 1);  // the palisade and one ring of grass
-    mark(138, 28, 142, 32); mark(159, 29, 161, 31);        // the camp's west gap, the climb's landing east of the palisade
-    mark(168, 4, 187, 22); mark(175, 38, 198, 62);         // Gull Isle, Ironclad Isle
+    markB(CAMP.box([138, 28, 142, 32])); markB(CAMP.box([159, 29, 161, 31]));   // the camp's west gap, the climb's landing east of the palisade
+    markB(GULL.box([168, 4, 187, 22])); markB(IRON.box([175, 38, 198, 62]));    // Gull Isle, Ironclad Isle
     mark(HF.x0 + 3, HF.y0 + 3, HF.x1 - 3, HF.y1 - 3);      // Hollowford's ruins, streets and square (its three-tile margin is blended below)
-    mark(138, 62, 143, 96);                                // the road into Hollowford from the north (below the river's crossing) and the path out to the jungle
-    mark(1, 95, 99, 95); mark(100, 96, 100, 138);          // the warden's tree line and the jungle's western wall: exact solid counts
-    mark(56, 92, 64, 99);                                  // the warden, his gate, the road through
-    mark(1, 103, 40, 107); mark(84, 100, 90, 106);         // the approach to the lair, the ruined shrine
-    mark(2, 72, 26, 94); mark(2, 108, 34, 138);            // Deepholm, The Fang's lair
-    mark(8, 65, 17, 72); mark(55, 83, 65, 91); mark(91, 77, 99, 85); // the graveyard, the stone circle, the watchtower
-    mark(125, 113, 167, 136); mark(126, 111, 147, 114);    // Sylvaris' ring wall, the open ground before the gap
-    mark(162, 40, 163, 40);                                // the boats' shore check
-    mark(51, 41, 62, 50);                                  // the bulldozer's test lane south of the pens, as the core scattered it
+    markB(HFF.box([138, 62, 143, 96]));                    // the road into Hollowford from the north (below the river's crossing) and the path out to the jungle
+    // the warden's tree line and the jungle's western wall: exact solid counts (world seams, each on its pin)
+    for (let x = W.tx(1); x <= W.tx(99); x++) for (const [y] of rowsOf('rim', 95, 95, x)) mark(x, y, x, y);
+    for (let y = W.ty(96); y <= W.ty(138); y++) for (const [x] of colsOf('jungle_west', 100, 100, y)) mark(x, y, x, y);
+    markB(WARD.box([56, 92, 64, 99]));                     // the warden, his gate, the road through
+    markB(LAIRF.box([1, 103, 40, 107])); markB(SHRINE.box([84, 100, 90, 106]));   // the approach to the lair, the ruined shrine
+    mark(DH.x0, DH.y0, DH.x1, DH.y1); mark(LAIR.x0, LAIR.y0, LAIR.x1, LAIR.y1);   // Deepholm, The Fang's lair
+    markB(GRAVE.box([8, 65, 17, 72])); markB(CIRCLE.box([55, 83, 65, 91])); markB(TOWER.box([91, 77, 99, 85]));   // the graveyard, the stone circle, the watchtower
+    markB(SYLV.box([125, 113, 167, 136])); markB(SYLV.box([126, 111, 147, 114]));   // Sylvaris' ring wall, the open ground before the gap
+    mark(SHORE[0], SHORE[1], SHORE[0] + 1, SHORE[1]);      // the boats' shore check
+    markB(FR('drill_field').box([51, 41, 62, 50]));        // the bulldozer's test lane south of the pens, as the core scattered it
     // the Far Shore (33-goblincity, reached by 26-boats): Harl's far dock, boat and lantern, the landing step and the road off it, four tiles all round;
     // every hut there is a BUILDINGS entry (guarded above) and every townsgoblin stands east of x 214, beyond the strait pass's reach (x ≤ 210)
     const FAR = REGIONS.find(r => r.name === 'The Far Shore') || null;
-    if (FAR) mark(200, 26, 211, 34);
+    if (FAR) markB(FS.box([200, 26, 211, 34]));
     const spawnG = new Uint8Array(MAP_W * MAP_H);
     const markSpawns = () => { spawnG.fill(0); for (const s of MONSTER_SPAWNS) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inMap(s.tx + dx, s.ty + dy)) spawnG[idx(s.tx + dx, s.ty + dy)] = 1; };
     markSpawns();
@@ -16879,20 +16892,23 @@ window.PLACE_KIT = PLACE_KIT;
 
     // ---- 1. the coastline: land against water by (x − 162) + noise×8, coves and headlands on top, the old straight shore forgotten ----
     const cn = makeNoise(SEED + 1, 7);
-    const COVES = [[160, 24, 3, 1], [159, 46, 3.5, 1], [158, 58, 3, 1], [160, 72, 4, 1], [159, 86, 3, 1], [166, 38, 3.5, -1], [167, 64, 4, -1], [165, 80, 3.5, -1]]; // [x, y, r, +1 cove / −1 headland]
-    const seaMade = new Set();
-    for (let y = 1; y <= 94; y++) for (let x = 150; x <= 175; x++) {
+    // [x, y, r, +1 cove / −1 headland], in OLD world coordinates: the coast curve is evaluated through W.ix / W.iy (and the sea pin)
+    const COVES = [[160, 24, 3, 1], [159, 46, 3.5, 1], [158, 58, 3, 1], [160, 72, 4, 1], [159, 86, 3, 1], [166, 38, 3.5, -1], [167, 64, 4, -1], [165, 80, 3.5, -1]];
+    const seaMade = new Set(), seaX0 = W.ix(SEA.x0);
+    for (let y = W.ty(1); y <= W.ty(94); y++) for (let x = W.tx(150); x <= W.tx(175); x++) {
       if (!free(x, y)) continue;
-      let v = (x - SEA.x0) + (cn(x, y) * 2 - 1) * 8;
-      for (const [cx, cy, r, sg] of COVES) { const d = dist(x, y, cx, cy); if (d < r + 1.5) v += sg * (r + 1.5 - d) * 2.5; }
+      const ox = W.ix(x - W.pin('sea', 0, y)), oy = W.iy(y);
+      let v = (ox - seaX0) + (cn(ox, oy) * 2 - 1) * 8;
+      for (const [cx, cy, r, sg] of COVES) { const d = dist(ox, oy, cx, cy); if (d < r + 1.5) v += sg * (r + 1.5 - d) * 2.5; }
       const t = at(x, y);
       if (v > 0) { if (LANDY.has(t) || (t === T.SAND && x >= SEA.x0)) { set(x, y, T.WATER); seaMade.add(idx(x, y)); S.coast.toWater++; } }
       else if (t === T.WATER || (t === T.SAND && x <= SEA.x0 + 1)) { set(x, y, T.GRASS); S.coast.toLand++; }
     }
     // the sea's south end against the jungle was a ruler line too
-    for (let y = 91; y <= 99; y++) for (let x = 164; x <= 198; x++) {
+    for (let y = W.ty(91); y <= W.ty(99); y++) for (let x = W.tx(164); x <= W.tx(198); x++) {
       if (!free(x, y)) continue;
-      const v = (SEA.y1 + 0.5 - y) + (cn(x + 200, y) * 2 - 1) * 5, t = at(x, y);
+      const ox = W.ix(x), oy = W.iy(y);
+      const v = (W.iy(SEA.y1) + 0.5 - oy) + (cn(ox + 200, oy) * 2 - 1) * 5, t = at(x, y);
       if (v > 0) { if (y > SEA.y1 && JUNGLY.has(t)) { set(x, y, T.WATER); seaMade.add(idx(x, y)); S.coast.south++; } }
       else if (y <= SEA.y1 && t === T.WATER) { set(x, y, T.SAND); S.coast.south++; }
     }
@@ -16900,13 +16916,15 @@ window.PLACE_KIT = PLACE_KIT;
     // beach is forgotten (grass; the shore rocks stay), then the water's edge wanders about x 205 by the same noise, with coves and headlands.
     // The strait must stay mostly water (33's own check counts it), so the edge is biased east and the headlands kept small.
     if (FAR) {
+      // the strait is the Far Shore's own: its edge, coves and noise are in the far_shore frame's OLD coordinates (FS.ix / FS.iy)
       const FEDGE = 205, FCOVES = [[206, 12, 3, 1], [206, 46, 3, 1], [206, 66, 3.5, 1], [206, 90, 3, 1], [202, 40, 2.5, -1], [201, 60, 3, -1], [202, 80, 2.5, -1]]; // [x, y, r, +1 cove / −1 headland]
       const FAR_LAND = new Set([T.GRASS, T.SAND, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, T.ROCK]);
-      for (let y = 4; y <= 95; y++) for (let x = 200; x <= 203; x++) if (at(x, y) === T.WATER) seaMade.add(idx(x, y)); // the strait counts as sea for the rim
-      for (let y = 4; y <= 95; y++) for (let x = 200; x <= 210; x++) {
+      for (let y = FS.y(4); y <= FS.y(95); y++) for (let x = FS.x(200); x <= FS.x(203); x++) if (at(x, y) === T.WATER) seaMade.add(idx(x, y)); // the strait counts as sea for the rim
+      for (let y = FS.y(4); y <= FS.y(95); y++) for (let x = FS.x(200); x <= FS.x(210); x++) {
         if (!free(x, y) || KEEPT.has(at(x, y))) continue;
-        let v = (FEDGE - x) + (cn(x + 300, y) * 2 - 1) * 3;   // > 0: water
-        for (const [cx, cy, r, sg] of FCOVES) { const d = dist(x, y, cx, cy); if (d < r + 1.5) v += sg * (r + 1.5 - d) * 2.5; }
+        const ox = FS.ix(x), oy = FS.iy(y);
+        let v = (FEDGE - ox) + (cn(ox + 300, oy) * 2 - 1) * 3;   // > 0: water
+        for (const [cx, cy, r, sg] of FCOVES) { const d = dist(ox, oy, cx, cy); if (d < r + 1.5) v += sg * (r + 1.5 - d) * 2.5; }
         const t = at(x, y);
         if (v > 0) { if (FAR_LAND.has(t)) { set(x, y, T.WATER); seaMade.add(idx(x, y)); S.coast.far++; } }
         else if (t === T.WATER) { set(x, y, T.GRASS); seaMade.delete(idx(x, y)); S.coast.far++; }
@@ -16918,15 +16936,15 @@ window.PLACE_KIT = PLACE_KIT;
     // ---- 2. the river: Miller's Pond east-south-east to the sea, a noise-perturbed polyline one or two tiles wide ----
     // south off the pond's east shore first (the open fields west of the pens stay open: tests and goblins drill there), then east along
     // Wolfwood's edge, through the small pond south of Thistledown, and out to the sea by Hollowford's road
-    const RIVER = [[44, 38], [47, 44], [48, 50], [52, 56], [62, 58], [72, 60], [84, 60], [94, 61], [102, 59], [110, 62], [118, 60], [124, 62], [128, 61], [134, 60], [140, 59], [146, 57], [154, 53], [178, 47]];
+    const RIVER = ATLAS.track('river');   // ATLAS.TRACKS: world points (its noise below is read in OLD coordinates)
     const wn = makeNoise(SEED + 2, 6), ww = makeNoise(SEED + 3, 4);
     const centres = []; let acc = 0; // distance along the route: the wobble fades in over the first tiles so the channel leaves from inside the pond
     for (let s = 0; s < RIVER.length - 1; s++) {
       const [ax, ay] = RIVER[s], [bx, by] = RIVER[s + 1], len = Math.hypot(bx - ax, by - ay), tx = (bx - ax) / len, ty = (by - ay) / len;
       for (let k = 0; k <= len * 4; k++) {
-        const t = Math.min(1, k / (len * 4)), px = ax + (bx - ax) * t, py = ay + (by - ay) * t, off = (wn(px, py) * 2 - 1) * 1.6 * Math.min(1, (acc + len * t) / 5);
+        const t = Math.min(1, k / (len * 4)), px = ax + (bx - ax) * t, py = ay + (by - ay) * t, off = (wn(W.ix(px), W.iy(py)) * 2 - 1) * 1.6 * Math.min(1, (acc + len * t) / 5);
         let x = Math.round(px - ty * off), y = Math.round(py + tx * off);
-        if (x >= 118 && x <= 160 && y > 62) y = 62;         // Hollowford's guard starts at y 64: keep the second tile of the channel above it
+        if (x >= HFF.x(118) && x <= HFF.x(160) && y > HFF.y(62)) y = HFF.y(62);         // Hollowford's guard starts at y 64: keep the second tile of the channel above it
         const last = centres[centres.length - 1];
         if (!last || last[0] !== x || last[1] !== y) centres.push([x, y]);
       }
@@ -16942,8 +16960,8 @@ window.PLACE_KIT = PLACE_KIT;
       if (RIVER_CARVE.has(t)) { set(x, y, T.WATER); riverSet.add(idx(x, y)); S.river.tiles++; }
     };
     for (const [x, y] of chain) {
-      if (x >= 150 && isSea(x, y)) break;                     // the sea: the river has arrived
-      carve(x, y); if (ww(x, y) > 0.35) carve(x, y + 1);
+      if (x >= W.tx(150) && isSea(x, y)) break;                     // the sea: the river has arrived
+      carve(x, y); if (ww(W.ix(x), W.iy(y)) > 0.35) carve(x, y + 1);
     }
     // a spawn the river ran under moves to the nearest dry open ground (as the core does for doorsteps); nothing wakes in the water
     const dry = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (at(x + dx, y + dy) === T.WATER) return false; return true; };
@@ -16961,16 +16979,16 @@ window.PLACE_KIT = PLACE_KIT;
     markSpawns();
     // sandy banks: about half the grass beside the river
     const bn = makeNoise(SEED + 4, 3);
-    for (const i of riverSet) { const x = i % MAP_W, y = (i / MAP_W) | 0; if (at(x, y) !== T.WATER) continue; for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (free(nx, ny) && RIMMABLE.has(at(nx, ny)) && bn(nx, ny) > 0.5) { set(nx, ny, T.SAND); S.river.banks++; } } }
+    for (const i of riverSet) { const x = i % MAP_W, y = (i / MAP_W) | 0; if (at(x, y) !== T.WATER) continue; for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (free(nx, ny) && RIMMABLE.has(at(nx, ny)) && bn(W.ix(nx), W.iy(ny)) > 0.5) { set(nx, ny, T.SAND); S.river.banks++; } } }
 
     // ---- 3. the sand rim: one tile wherever land meets the sea, a second where the noise says so ----
     const rn = makeNoise(SEED + 5, 5);
     const ring1 = [];
-    for (let y = 0; y <= 99; y++) for (let x = 148; x <= 199; x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y]);
-    if (FAR) for (let y = 4; y <= 95; y++) for (let x = 200; x <= 211; x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y]); // the strait's new edge
+    for (let y = W.ty(0); y <= W.ty(99); y++) for (let x = W.tx(148); x <= W.tx(199); x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y]);
+    if (FAR) for (let y = FS.y(4); y <= FS.y(95); y++) for (let x = FS.x(200); x <= FS.x(211); x++) if (free(x, y) && RIMMABLE.has(at(x, y)) && N4.some(([dx, dy]) => isSea(x + dx, y + dy))) ring1.push([x, y]); // the strait's new edge
     for (const [x, y] of ring1) { set(x, y, T.SAND); S.rim++; }
-    for (const [x, y] of ring1) for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (free(nx, ny) && RIMMABLE.has(at(nx, ny)) && rn(nx, ny) > 0.5) { set(nx, ny, T.SAND); S.rim++; } }
-    set(162, 40, T.SAND); // the boats' shore check (also guarded, belt and braces)
+    for (const [x, y] of ring1) for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (free(nx, ny) && RIMMABLE.has(at(nx, ny)) && rn(W.ix(nx), W.iy(ny)) > 0.5) { set(nx, ny, T.SAND); S.rim++; } }
+    set(SHORE[0], SHORE[1], T.SAND); // the boats' shore check (also guarded, belt and braces)
 
     // ---- 4. biome edges: swap tiles across each straight seam by noise so the boundary wanders ----
     const dn = makeNoise(SEED + 6, 6);
@@ -16979,49 +16997,56 @@ window.PLACE_KIT = PLACE_KIT;
     const tree = () => (rnd() < 0.25 ? T.OAK : T.TREE);
     const ASHS = new Set([ASH]), JUNGLES = new Set([JUNGLE]);
     // the Ashfields' north edge (y 96): ash drifts up into Wolfwood's last rows, scorched grass shows through the first ash rows
-    for (let x = 1; x <= 99; x++) {
-      for (let y = 92; y <= 94; y++) swap(x, y, GRASSY, ASH, dn(x, y) > 0.5 + (94 - y) * 0.15, 'ash');
-      for (let y = 96; y <= 99; y++) swap(x, y, ASHS, T.GRASS, dn(x, y) < 0.45 - (y - 96) * 0.1, 'ash');
+    // (rows and the noise in OLD world coordinates, on the rim pin)
+    for (let x = W.tx(1); x <= W.tx(99); x++) {
+      const ox = W.ix(x);
+      for (const [y, oy] of rowsOf('rim', 92, 94, x)) swap(x, y, GRASSY, ASH, dn(ox, oy) > 0.5 + (94 - oy) * 0.15, 'ash');
+      for (const [y, oy] of rowsOf('rim', 96, 99, x)) swap(x, y, ASHS, T.GRASS, dn(ox, oy) < 0.45 - (oy - 96) * 0.1, 'ash');
     }
     // the jungle's west wall (x 100) stays; the ground either side of it mixes
-    for (let y = 96; y <= 138; y++) {
-      for (let x = 96; x <= 99; x++) swap(x, y, ASHS, T.GRASS, dn(x, y) < 0.45 - (99 - x) * 0.1, 'column');
-      for (let x = 101; x <= 104; x++) swap(x, y, GRASSY, ASH, dn(x, y) > 0.5 + (x - 101) * 0.12, 'column');
+    for (let y = W.ty(96); y <= W.ty(138); y++) {
+      const oy = W.iy(y);
+      for (const [x, ox] of colsOf('jungle_west', 96, 99, y)) swap(x, y, ASHS, T.GRASS, dn(ox, oy) < 0.45 - (99 - ox) * 0.1, 'column');
+      for (const [x, ox] of colsOf('jungle_west', 101, 104, y)) swap(x, y, GRASSY, ASH, dn(ox, oy) > 0.5 + (ox - 101) * 0.12, 'column');
     }
     // the jungle's north edge (y 96, x 101–161): jungle giants stand among Wolfwood's oaks, oaks among the giants — solid for solid, so no path changes
-    for (let x = 101; x <= 161; x++) {
-      for (let y = 92; y <= 95; y++) {
-        swap(x, y, TREES, JUNGLE, dn(x, y) > 0.45 + (95 - y) * 0.15, 'jungle'); swap(x, y, GRASSY, FERN, dn(x + 7, y) > 0.6 + (95 - y) * 0.12, 'jungle');
-        if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(x + 13, y) > 0.7 + (95 - y) * 0.07) { set(x, y, JUNGLE); S.dither.jungle++; } // the jungle thickens northward
+    // (rows and the noise in OLD world coordinates, on the giants pin: the Wolfwood / Jungle wall)
+    for (let x = W.tx(101); x <= W.tx(161); x++) {
+      const ox = W.ix(x);
+      for (const [y, oy] of rowsOf('giants', 92, 95, x)) {
+        swap(x, y, TREES, JUNGLE, dn(ox, oy) > 0.45 + (95 - oy) * 0.15, 'jungle'); swap(x, y, GRASSY, FERN, dn(ox + 7, oy) > 0.6 + (95 - oy) * 0.12, 'jungle');
+        if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(ox + 13, oy) > 0.7 + (95 - oy) * 0.07) { set(x, y, JUNGLE); S.dither.jungle++; } // the jungle thickens northward
       }
-      for (let y = 96; y <= 99; y++) {
-        if (ok(x, y) && at(x, y) === JUNGLE && dn(x, y) < 0.55 - (y - 96) * 0.12) { set(x, y, tree()); S.dither.jungle++; }
-        swap(x, y, JUNGLES, T.GRASS, dn(x + 29, y) < 0.32 - (y - 96) * 0.07, 'jungle'); // and thins southward into Wolfwood's density
+      for (const [y, oy] of rowsOf('giants', 96, 99, x)) {
+        if (ok(x, y) && at(x, y) === JUNGLE && dn(ox, oy) < 0.55 - (oy - 96) * 0.12) { set(x, y, tree()); S.dither.jungle++; }
+        swap(x, y, JUNGLES, T.GRASS, dn(ox + 29, oy) < 0.32 - (oy - 96) * 0.07, 'jungle'); // and thins southward into Wolfwood's density
       }
     }
     // Wolfwood's north edge (y 62): the wood reaches north in tongues, clearings reach south
-    for (let x = 1; x <= 159; x++) {
-      for (let y = 58; y <= 61; y++) if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(x, y) > 0.5 + (61 - y) * 0.12) { set(x, y, tree()); S.dither.wolfwood++; }
-      for (let y = 62; y <= 66; y++) swap(x, y, TREES, T.GRASS, dn(x, y) < 0.45 - (y - 62) * 0.1, 'wolfwood');
+    // (rows and the noise in OLD world coordinates, on the gw_steps pin: the Goblin Fields / Wolfwood scarp)
+    for (let x = W.tx(1); x <= W.tx(159); x++) {
+      const ox = W.ix(x);
+      for (const [y, oy] of rowsOf('gw_steps', 58, 61, x)) if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(ox, oy) > 0.5 + (61 - oy) * 0.12) { set(x, y, tree()); S.dither.wolfwood++; }
+      for (const [y, oy] of rowsOf('gw_steps', 62, 66, x)) swap(x, y, TREES, T.GRASS, dn(ox, oy) < 0.45 - (oy - 62) * 0.1, 'wolfwood');
     }
     // the Goblin Camp's ring of bare grass: the thicket creeps in, trodden ground creeps out
-    for (let y = 15; y <= 45; y++) for (let x = 136; x <= 164; x++) {
+    for (let y = CAMP.y(15); y <= CAMP.y(45); y++) for (let x = CAMP.x(136); x <= CAMP.x(164); x++) {
       const d = rectDist(PAL, x, y); if (d < 1 || d > 6 || !ok(x, y) || !GRASSY.has(at(x, y))) continue;
-      const n = dn(x + 50, y);
+      const n = dn(CAMP.ix(x) + 50, CAMP.iy(y));
       if (n > 0.42 + (6 - d) * 0.05 && addOk(x, y)) { set(x, y, tree()); S.dither.camp++; }
       else if (n < 0.14 + (6 - d) * 0.05) { set(x, y, T.DIRT); S.dither.camp++; }
     }
     // Grey Quarry: rock spills past the rectangle, grass eats into its edge
-    for (let y = 5; y <= 18; y++) for (let x = 42; x <= 66; x++) {
+    for (let y = QF.y(5); y <= QF.y(18); y++) for (let x = QF.x(42); x <= QF.x(66); x++) {
       if (!ok(x, y)) continue;
-      const d = rectDist(QUARRY, x, y), t = at(x, y);
-      if (d >= 1 && d <= 5 && GRASSY.has(t) && addOk(x, y) && dn(x + 90, y) > 0.4 + d * 0.08) { set(x, y, rnd() < 0.2 ? T.IRON : T.ROCK); S.dither.quarry++; }
-      else if (d === 0) { const depth = Math.min(x - QUARRY.x0, QUARRY.x1 - x, y - QUARRY.y0, QUARRY.y1 - y); if (depth <= 2 && ROCKY.has(t) && dn(x + 90, y) < 0.45 - depth * 0.12) { set(x, y, T.GRASS); S.dither.quarry++; } }
+      const d = rectDist(QUARRY, x, y), t = at(x, y), qn = dn(QF.ix(x) + 90, QF.iy(y));
+      if (d >= 1 && d <= 5 && GRASSY.has(t) && addOk(x, y) && qn > 0.4 + d * 0.08) { set(x, y, rnd() < 0.2 ? T.IRON : T.ROCK); S.dither.quarry++; }
+      else if (d === 0) { const depth = Math.min(x - QUARRY.x0, QUARRY.x1 - x, y - QUARRY.y0, QUARRY.y1 - y); if (depth <= 2 && ROCKY.has(t) && qn < 0.45 - depth * 0.12) { set(x, y, T.GRASS); S.dither.quarry++; } }
     }
     // Hollowford: the fire's edge was a rectangle; the wood reaches back into its margin, and scorched ground reaches out
     for (let y = HF.y0 - 3; y <= HF.y1 + 3; y++) for (let x = HF.x0 - 3; x <= HF.x1 + 3; x++) {
       if (!ok(x, y)) continue;
-      const d = rectDist(HF, x, y), t = at(x, y), n = dn(x + 33, y + 17);
+      const d = rectDist(HF, x, y), t = at(x, y), n = dn(HFF.ix(x) + 33, HFF.iy(y) + 17);
       if (d === 0) { const depth = Math.min(x - HF.x0, HF.x1 - x, y - HF.y0, HF.y1 - y); if (depth <= 3 && t === T.GRASS && addOk(x, y) && n > 0.5 + depth * 0.1) { set(x, y, tree()); S.dither.hollowford++; } }
       else if (d <= 3) {
         if (TREES.has(t) && n < 0.4 - (d - 1) * 0.1) { set(x, y, T.GRASS); S.dither.hollowford++; }
@@ -17031,11 +17056,11 @@ window.PLACE_KIT = PLACE_KIT;
     // rock outcrops at the foot of Deepholm's walls, obsidian at the foot of the lair's: the blocks become massifs
     for (let y = DH.y0 - 3; y <= DH.y1 + 3; y++) for (let x = DH.x0; x <= DH.x1 + 3; x++) {
       const d = rectDist(DH, x, y); if (d < 1 || d > 3 || !ok(x, y) || !GRASSY.has(at(x, y)) || !addOk(x, y)) continue;
-      if (dn(x + 120, y) > 0.5 + d * 0.1) { set(x, y, T.ROCK); S.dither.deepholm++; }
+      if (dn(DHF.ix(x) + 120, DHF.iy(y)) > 0.5 + d * 0.1) { set(x, y, T.ROCK); S.dither.deepholm++; }
     }
     if (OBSIDIAN >= 0) for (let y = LAIR.y0; y <= LAIR.y1; y++) for (let x = LAIR.x1 + 1; x <= LAIR.x1 + 3; x++) {
       const d = x - LAIR.x1; if (!ok(x, y) || at(x, y) !== ASH || !addOk(x, y)) continue;
-      if (dn(x + 140, y) > 0.5 + d * 0.1) { set(x, y, OBSIDIAN); S.dither.lair++; }
+      if (dn(LAIRF.ix(x) + 140, LAIRF.iy(y)) > 0.5 + d * 0.1) { set(x, y, OBSIDIAN); S.dither.lair++; }
     }
 
     // ---- 5. the open fields: the even scatter of trees becomes copses and clearings ----
@@ -17043,7 +17068,7 @@ window.PLACE_KIT = PLACE_KIT;
     for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
       if (!ok(x, y)) continue;
       const r = regionAt(x, y).name; if (r !== 'Goblin Fields' && r !== 'The Wilds') continue;
-      const t = at(x, y), n = fn(x, y);
+      const t = at(x, y), n = fn(W.ix(x), W.iy(y));
       if (TREES.has(t) && n < 0.4) { set(x, y, T.GRASS); S.clump.cleared++; }
       else if (t === T.GRASS && n > 0.75 && rnd() < 0.8 && addOk(x, y)) { set(x, y, rnd() < 0.15 ? T.OAK : T.TREE); S.clump.added++; }
     }
@@ -17088,7 +17113,7 @@ window.PLACE_KIT = PLACE_KIT;
     }
     S.reach = r;
     S.buildingsSame = sumBuildings() === b0; S.villageSame = sumVillage() === v0;
-    { const xs = new Set(); for (let y = 5; y <= 90; y++) for (let x = 150; x <= 199; x++) if (at(x, y) === T.WATER) { xs.add(x); break; } S.shoreX = xs.size; }
+    { const xs = new Set(); for (let y = W.ty(5); y <= W.ty(90); y++) for (let x = W.tx(150); x <= W.tx(199); x++) if (at(x, y) === T.WATER) { xs.add(x); break; } S.shoreX = xs.size; }
   });
 
   // BFS over walkable ground from the cave road (doors, gates and the warden's gate count as ways through)
@@ -17142,35 +17167,35 @@ window.PLACE_KIT = PLACE_KIT;
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
     const S = BL.stats;
-    { const xs = new Set(); for (let y = 5; y <= 90; y++) for (let x = 150; x <= 199; x++) if (tileAt(x, y) === T.WATER) { xs.add(x); break; }
+    { const xs = new Set(); for (let y = W.ty(5); y <= W.ty(90); y++) for (let x = W.tx(150); x <= W.tx(199); x++) if (tileAt(x, y) === T.WATER) { xs.add(x); break; }
       check('blend: the Grey Sea shore wanders (6+ distinct westmost-water columns over y 5–90), with coves and headlands', xs.size >= 6, { distinct: xs.size, coast: S.coast }); }
-    { let rim = 0; for (let y = 2; y <= 93; y++) for (let x = 150; x <= 178; x++) if (tileAt(x, y) === T.SAND && N4.some(([dx, dy]) => tileAt(x + dx, y + dy) === T.WATER)) rim++;
+    { let rim = 0; for (let y = W.ty(2); y <= W.ty(93); y++) for (let x = W.tx(150); x <= W.tx(178); x++) if (tileAt(x, y) === T.SAND && N4.some(([dx, dy]) => tileAt(x + dx, y + dy) === T.WATER)) rim++;
       check('blend: a sand rim runs along the coast where the land meets the water', rim >= 60, { rim, laid: S.rim }); }
     { const seen = new Uint8Array(MAP_W * MAP_H), q = []; let sea = false;
       const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); const t = tileAt(x, y); if (seen[i] || (t !== T.WATER && t !== BRIDGE && t !== DOCK)) return; seen[i] = 1; q.push(i); };
       for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) push(POND.x + dx, POND.y + dy); // the pond's water (its centre column is the agility course's stepping stones)
       for (let qi = 0; qi < q.length && !sea; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; if (inRect(SEA, x, y) && tileAt(x, y) === T.WATER) { sea = true; break; } for (const [dx, dy] of N4) push(x + dx, y + dy); }
       check("blend: the river runs from Miller's Pond to the Grey Sea (one channel of water and bridges)", sea, { river: S.river, relocated: S.relocated }); }
-    { let bridges = 0; for (let y = 30; y <= 70; y++) for (let x = 40; x <= 165; x++) if (tileAt(x, y) === PLANKS) bridges++;
+    { let bridges = 0; for (let y = W.ty(30); y <= W.ty(70); y++) for (let x = W.tx(40); x <= W.tx(165); x++) if (tileAt(x, y) === PLANKS) bridges++;
       check('blend: plank bridges carry the Wolfwood path and the Hollowford road over the river', bridges >= 2, { bridges }); }
     { const r = reach(); const bad = NODE_NAMES.filter((n, i) => !r[i]);
       check('blend: cave exit, signpost, Thistledown gate, dock, Hollowford, Dunstan, the lair approach, the jungle path and the quarry shaft still connect', r.every(Boolean), { unreachable: bad, atGeneration: S.reach, repairs: S.repairs, pocketsOpened: S.pockets.length }); }
     { const bad = NPCS.filter(n => SOLID.has(tileAt(n.x, n.y))).map(n => n.id); check('blend: no NPC stands on a solid tile', bad.length === 0, { bad }); }
     check('blend: Thistledown and every building are untouched by the pass (checksums before and after)', S.buildingsSame === true && S.villageSame === true, { buildings: S.buildingsSame, village: S.villageSame });
-    { let ash = 0, grass = 0; for (let y = 93; y <= 99; y++) for (let x = 10; x <= 90; x++) { const t = tileAt(x, y); if (t === ASH) ash++; else if (GRASSY.has(t)) grass++; }
+    { let ash = 0, grass = 0; for (let y = W.ty(93); y <= W.ty(99); y++) for (let x = W.tx(10); x <= W.tx(90); x++) { const t = tileAt(x, y); if (t === ASH) ash++; else if (GRASSY.has(t)) grass++; }
       check('blend: the Ashfields edge is dithered (ash and grass both stand in rows 93–99, x 10–90)', ash > 20 && grass > 20, { ash, grass, dither: S.dither }); }
     if (REGIONS.some(r => r.name === 'The Far Shore')) {
       // the strait: 33-goblincity's water at x 200–203 met its sand at 204 along a ruler line; now the water's east edge wanders
-      { const xs = new Set(); let rim = 0, water = 0; for (let y = 6; y <= 94; y++) for (let x = 210; x >= 198; x--) if (tileAt(x, y) === T.WATER) { xs.add(x); break; }
-        for (let y = 4; y <= 95; y++) for (let x = 200; x <= 211; x++) { const t = tileAt(x, y); if (t === T.SAND && N4.some(([dx, dy]) => tileAt(x + dx, y + dy) === T.WATER)) rim++; }
-        for (let y = 1; y <= 96; y++) for (let x = 200; x <= 203; x++) if (tileAt(x, y) === T.WATER) water++;
+      { const xs = new Set(); let rim = 0, water = 0; for (let y = FS.y(6); y <= FS.y(94); y++) for (let x = FS.x(210); x >= FS.x(198); x--) if (tileAt(x, y) === T.WATER) { xs.add(x); break; }
+        for (let y = FS.y(4); y <= FS.y(95); y++) for (let x = FS.x(200); x <= FS.x(211); x++) { const t = tileAt(x, y); if (t === T.SAND && N4.some(([dx, dy]) => tileAt(x + dx, y + dy) === T.WATER)) rim++; }
+        for (let y = FS.y(1); y <= FS.y(96); y++) for (let x = FS.x(200); x <= FS.x(203); x++) if (tileAt(x, y) === T.WATER) water++;
         check("blend: the Far Shore's strait wanders too (8+ distinct shoreline columns over y 6–94: coves and headlands) with a sand rim along it, and stays mostly water", xs.size >= 8 && rim >= 40 && water > 300, { distinct: xs.size, cols: [...xs].sort((a, b) => a - b), rim, water, far: S.coast.far }); }
       // the ferry's far dock (26-boats: dock 204–205 × 29–31, boat 203,30, landing step 206,30) is untouched and the landing still walks into town
-      { const L = { x: 206, y: 30 }; const a = F.bfs(L.x, L.y, 219, 33), b = F.bfs(L.x, L.y, 216, 26);
-        const dock = tileAt(204, 30) === DOCK && tileAt(205, 30) === DOCK && tileAt(203, 30) === Tn('BOAT') && tileAt(L.x, L.y) === T.SAND && tileAt(L.x + 1, L.y) === T.DIRT;
+      { const L = (q => ({ x: q[0], y: q[1] }))(ATLAS.port('far_shore.landing')); const a = F.bfs(L.x, L.y, ...FS.p(219, 33)), b = F.bfs(L.x, L.y, ...FS.p(216, 26));
+        const dock = tileAt(...FS.p(204, 30)) === DOCK && tileAt(...FS.p(205, 30)) === DOCK && tileAt(...FS.p(203, 30)) === Tn('BOAT') && tileAt(L.x, L.y) === T.SAND && tileAt(L.x + 1, L.y) === T.DIRT;
         check("blend: Harl's far dock, boat and landing step are untouched, and the landing still reaches Grubmarket's square and Grubb's doorstep on foot", dock && !!a && !!b, { dock, square: a && a.length, doorstep: b && b.length }); }
     }
-    { let trees = 0, clumped = 0; for (let y = 1; y <= 61; y++) for (let x = 21; x <= 159; x++) { if (!TREES.has(tileAt(x, y)) || regionAt(x, y).name !== 'Goblin Fields') continue; trees++; if (N8.filter(([dx, dy]) => TREES.has(tileAt(x + dx, y + dy))).length >= 2) clumped++; }
+    { let trees = 0, clumped = 0; for (let y = W.ty(1); y <= W.ty(61); y++) for (let x = W.tx(21); x <= W.tx(159); x++) { if (!TREES.has(tileAt(x, y)) || regionAt(x, y).name !== 'Goblin Fields') continue; trees++; if (N8.filter(([dx, dy]) => TREES.has(tileAt(x + dx, y + dy))).length >= 2) clumped++; }
       check('blend: the trees of Goblin Fields stand in copses, not an even scatter (half or more have two tree neighbours)', trees > 200 && clumped / trees >= 0.5, { trees, clumped: +(clumped / trees).toFixed(2), clump: S.clump }); }
   });
 }
