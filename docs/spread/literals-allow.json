@@ -130,5 +130,18 @@
   {"file": "31-rebuild.js", "literal": "4 * TILE", "line": 199, "reason": "a villager wanders at most 4 tiles from home: a radius, not a position"},
   {"file": "31-rebuild.js", "literal": "9 * TILE", "line": 427, "reason": "the self-test sends the villagers 9 tiles from Nell: an offset, not a position"},
   {"file": "31-rebuild.js", "literal": "9 * TILE", "line": 450, "reason": "the self-test sends the villagers 9 tiles from Nell: an offset, not a position"},
-  {"file": "32-beast.js", "literal": "8 * TILE", "line": 218, "reason": "the self-test clears loot within 8 tiles of the wreck: a radius, not a position"}
+  {"file": "32-beast.js", "literal": "8 * TILE", "line": 218, "reason": "the self-test clears loot within 8 tiles of the wreck: a radius, not a position"},
+  {"file": "33-goblincity.js", "literal": "[12, 16]", "decl": "LAB_ENTRY", "reason": "instance-local (tinker_lab): where the knight stands inside the lab"},
+  {"file": "33-goblincity.js", "literal": "[12, 17]", "decl": "LAB_EXIT", "reason": "instance-local (tinker_lab): the lab's way out, on its own map"},
+  {"file": "33-goblincity.js", "literal": "{ x: 4, y: 3 }", "decl": "TINK_LAB", "reason": "instance-local (tinker_lab): Tinkerton inside the lab (the overworld fallback is wrapped)"},
+  {"file": "33-goblincity.js", "literal": "{ x: 12, y: 9 }", "decl": "GN_HOME", "reason": "instance-local (tinker_lab): the Gnasher's home on the lab floor (the overworld fallback is wrapped)"},
+  {"file": "33-goblincity.js", "literal": "{ x: 21, y: 15 }", "decl": "LEVER_T", "reason": "instance-local (tinker_lab): the arena lever inside the lab (the overworld fallback is wrapped)"},
+  {"file": "33-goblincity.js", "literal": "6 * TILE", "decl": "sight", "reason": "a castle guard's sight: a range (6 tiles), not a position"},
+  {"file": "33-goblincity.js", "literal": "5 * TILE", "decl": "sight", "reason": "a yard machine's sight: a range (5 tiles), not a position"},
+  {"file": "33-goblincity.js", "literal": "7 * TILE", "decl": "sight", "reason": "the Gnasher's sight: a range (7 tiles), not a position"},
+  {"file": "33-goblincity.js", "literal": "6 * TILE", "line": 456, "reason": "the Gnasher lobs a sticky bomb within 6 tiles: a range, not a position"},
+  {"file": "33-goblincity.js", "literal": "m.y - 22", "line": 458, "reason": "the sticky bomb leaves the Gnasher's arm, pixels above its centre"},
+  {"file": "33-goblincity.js", "literal": "[12, 12]", "line": 611, "reason": "drawing: rivet offsets inside a tile, in pixels"},
+  {"file": "33-goblincity.js", "literal": "3 * TILE", "line": 724, "reason": "the self-test: the Gnasher stands within 3 tiles of its home, a distance"},
+  {"file": "33-goblincity.js", "literal": "2 * TILE", "line": 726, "reason": "the self-test sets the Gnasher 2 tiles from the knight: an offset, not a position"}
 ]
