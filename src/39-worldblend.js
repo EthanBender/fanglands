@@ -189,12 +189,17 @@
     // south off the pond's east shore first (the open fields west of the pens stay open: tests and goblins drill there), then east along
     // Wolfwood's edge, through the small pond south of Thistledown, and out to the sea by Hollowford's road
     const RIVER = ATLAS.track('river');   // ATLAS.TRACKS: world points (its noise below is read in OLD coordinates)
+    // the frame each point is read in (a place's for its head in Miller's Pond and its course through the small pond and past
+    // the town's corner, the world's elsewhere): a stretch between two points of one place wobbles in that place's OLD
+    // coordinates, so it keeps its shape wherever the place goes, as the rest keeps the world's
+    const RIVER_F = ATLAS.TRACKS.river.map(q => q[0] === 'w' ? W : FR(q[0] === 'port' ? ATLAS.PORTS[q[1]][0] : q[0]));
     const wn = makeNoise(SEED + 2, 6), ww = makeNoise(SEED + 3, 4);
     const centres = []; let acc = 0; // distance along the route: the wobble fades in over the first tiles so the channel leaves from inside the pond
     for (let s = 0; s < RIVER.length - 1; s++) {
       const [ax, ay] = RIVER[s], [bx, by] = RIVER[s + 1], len = Math.hypot(bx - ax, by - ay), tx = (bx - ax) / len, ty = (by - ay) / len;
+      const RF = RIVER_F[s] === RIVER_F[s + 1] ? RIVER_F[s] : W;
       for (let k = 0; k <= len * 4; k++) {
-        const t = Math.min(1, k / (len * 4)), px = ax + (bx - ax) * t, py = ay + (by - ay) * t, off = (wn(W.ix(px), W.iy(py)) * 2 - 1) * 1.6 * Math.min(1, (acc + len * t) / 5);
+        const t = Math.min(1, k / (len * 4)), px = ax + (bx - ax) * t, py = ay + (by - ay) * t, off = (wn(RF.ix(px), RF.iy(py)) * 2 - 1) * 1.6 * Math.min(1, (acc + len * t) / 5);
         let x = Math.round(px - ty * off), y = Math.round(py + tx * off);
         if (x >= HFF.x(118) && x <= HFF.x(160) && y > HFF.y(62)) y = HFF.y(62);         // Hollowford's guard starts at y 64: keep the second tile of the channel above it
         const last = centres[centres.length - 1];
