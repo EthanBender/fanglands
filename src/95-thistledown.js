@@ -633,10 +633,26 @@
   // Great Fountain, the villager by the waiting plinth): the core talks to the person in front first. A person standing on
   // the faced cell itself still answers, and so does one standing between the knight and the thing (nearer along the way
   // the knight faces, and not off to one side), and so do the sellers over their stall counters.
+  // A TAP on a town thing (a stall, a bench, a hedge, a lamp, a statue) is aimed at the thing, not at whoever stands near it:
+  // it answers as the thing from every side, the sellers' stalls too (E still talks to a seller over the counter, and a tap
+  // on the seller talks to her). Only a person standing on the tapped cell itself answers instead. TAPPED is set while
+  // 17-tap's tapUseNow uses the cell the knight tapped.
+  let TAPPED = null;
+  { const _tapUseNow = tapUseNow;
+    tapUseNow = function () {
+      const u = tap.useTile;
+      if (!u || away() || !inTown(u.tx, u.ty)) return _tapUseNow();
+      const t = tileAt(u.tx, u.ty);
+      if (!((t === PROP || t === FOUNT || t === HEDGE) && kindAt(u.tx, u.ty))) return _tapUseNow();
+      TAPPED = { tx: u.tx, ty: u.ty };
+      try { return _tapUseNow(); } finally { TAPPED = null; }
+    };
+  }
   { const _npcInFront = npcInFront;
     npcInFront = function () {
       const n = _npcInFront();
       if (!n || away()) return n;
+      if (TAPPED) return Math.floor(n.px / TILE) === TAPPED.tx && Math.floor(n.py / TILE) === TAPPED.ty ? n : null;
       const ft = frontTile(player), tx = ft.tx, ty = ft.ty;
       if (!inTown(tx, ty)) return n;
       const t = tileAt(tx, ty);
@@ -2704,6 +2720,26 @@
       check(P + 'C10 every prop, fountain and hedge cell has a kind, a tap name and a use line; every prop and fountain has open ground beside it (hedge rows may be scenery); a tap on the middle of the Great Fountain walks to its rim and gives its first line, from the West Gate road and from beside Tobin too, and E on its west rim is the fountain (Tobin still talks when faced); a tap on each statue reads its plaque; Osric, Ambrose, Hettie, Mabel, Moll and Wynn each give their first line; Mabel counts the 22 lamps',
         !bad.length && !loneProps.length && walked && tapOk && westOk && Object.values(plaques).every(Boolean) && Object.values(first).every(Boolean) && mabel22,
         { bad: bad.slice(0, 6), groups: groups.length, loneProps: loneProps.map(g => g.key), loneHedges, walked, tapLine, west, plaques, first, lampsLive }); }
+
+    // ---- C10b. a tap on a town thing near one of the town's people answers as the thing, from every side it can be reached ----
+    { leave(); onFoot(); drain(); const wrong = []; let tried = 0;
+      const stay = STAYERS();
+      for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) {
+        const t = tileAt(x, y), k = kindAt(x, y);
+        if (!k || !(t === PROP || t === HEDGE) || ['bell', 'sundial', 'great'].includes(k)) continue;
+        if (!stay.some(n => Math.abs(n.x - x) <= 2 && Math.abs(n.y - y) <= 2)) continue;
+        const want = lineFor(x, y); if (!want) continue;
+        for (const [dx, dy] of N4) {
+          const sx = x + dx, sy = y + dy;
+          if (SOLID.has(tileAt(sx, sy)) || stay.some(n => n.x === sx && n.y === sy)) continue;
+          drain(); F.tp(sx, sy); tap.useTile = { tx: x, ty: y }; tap.kind = 'use'; tap.goal = { tx: x, ty: y }; tapUseNow(); tried++;
+          const d0 = said()[0];
+          if (!d0 || d0.who !== want[0]) wrong.push([x, y, k, sx, sy, d0 ? d0.who : null]);
+        }
+      }
+      drain(); tapCancel('manual');
+      check(P + 'C10b a tap on a stall, a bench, a hedge, a lamp or a statue beside one of the town\'s people answers as the thing from every side it can be reached (the sellers too: E still talks over a counter)',
+        tried >= 20 && !wrong.length, { tried, wrong: wrong.slice(0, 8) }); }
 
     // ---- C11. the coin toss ----
     { drain(); clearFolk(111, 33, 8); clearMonsters(111, 33, 6); onFoot(); F.tp(111, 33); F.face(111, 34); setCoins(5); const q = Q(); q.tossArmed = 0; const t0 = q.tossed;
