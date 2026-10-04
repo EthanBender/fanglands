@@ -901,7 +901,7 @@
     const fakeKill = (type, tx, ty) => { for (const hk of HOOKS.kill) hk({ type, dead: true, x: tc(tx), y: tc(ty), r: 12 }); };
     // a brute is two tiles wide, so a headstone needs room round it: clear a patch and hand back how to put it right
     const clearPatch = (cx, cy, r = 1) => { const kept = []; for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) if (inMap(x, y) && !buildingAt(x, y)) { kept.push([x, y, tileAt(x, y)]); changeTile(x, y, T.GRASS); } return kept; };
-    const putBack = kept => { for (const [x, y, t] of kept) changeTile(x, y, t); };
+    const putBack = kept => { for (let i = kept.length - 1; i >= 0; i--) { const [x, y, t] = kept[i]; changeTile(x, y, t); } };   // newest first: two patches that overlap give back the first one's tile
     h.peace(true);
 
     // ---- 1. the three grades, chosen by what fell ----
@@ -957,7 +957,9 @@
       const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(34)); F.tp(o.x, o.y);
       const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
       const was = [];
-      const put = (x, y, grade) => { if (!inMap(x, y) || buildingAt(x, y)) return false; for (const k of clearPatch(x, y, 1)) was.push(k); return GRAVES.layMarker(x, y, grade); };
+      // (never on a gate, a fence or a wall: the patch round a grave is cleared to grass for the test and put back after)
+      const built = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = tileAt(x + dx, y + dy); if (t === T.GATE || t === T.FENCE || t === T.WALL || t === T.CWALL || t === T.HWALL || ('TOWN_WALL' in T && t === T.TOWN_WALL)) return true; } return false; };
+      const put = (x, y, grade) => { if (!inMap(x, y) || buildingAt(x, y) || built(x, y)) return false; for (const k of clearPatch(x, y, 1)) was.push(k); return GRAVES.layMarker(x, y, grade); };
       // five within reach of the knight (one of them a headstone: a brute counts for two of the cap of six)
       const near = [[px + 5, py, 'cross'], [px + 7, py, 'grave'], [px + 5, py + 3, 'headstone'], [px + 8, py - 3, 'cross'], [px + 9, py + 2, 'grave']];
       // three he will never get near
