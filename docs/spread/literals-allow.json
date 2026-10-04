@@ -669,5 +669,12 @@
   {"file": "79-deaths.js", "line": 691, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
   {"file": "79-deaths.js", "line": 692, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
   {"file": "79-deaths.js", "line": 701, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
-  {"file": "79-deaths.js", "line": 723, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"}
+  {"file": "79-deaths.js", "line": 723, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "82-knightgear.js", "literal": "hy - 12", "decl": "drawHead", "reason": "drawing: a sparkle 12 px above the helm, in sprite pixels"},
+  {"file": "82-knightgear.js", "literal": "hy - 13", "decl": "drawHead", "reason": "drawing: a sparkle 13 px above the helm, in sprite pixels"},
+  {"file": "82-knightgear.js", "literal": "hy - 17", "decl": "drawHead", "reason": "drawing: a sparkle 17 px above the helm, in sprite pixels"},
+  {"file": "82-knightgear.js", "literal": "x <= 26", "decl": "drawWeapon", "reason": "drawing: the blade's serrations along its length, in sprite pixels"},
+  {"file": "82-knightgear.js", "literal": "x <= 27", "decl": "drawWeapon", "reason": "drawing: the blade's waves along its length, in sprite pixels"},
+  {"file": "82-knightgear.js", "literal": "27", "decl": "x", "reason": "drawing: the blade's waves start 27 sprite pixels out (let x = 27)"},
+  {"file": "82-knightgear.js", "literal": "x < 13", "decl": "hands", "reason": "the self-test finds the hands within 7..13 sprite pixels of a recorded drawing"}
 ]
