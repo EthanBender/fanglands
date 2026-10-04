@@ -958,13 +958,14 @@ resize();
     const inside = (b, W2, H2) => b[0] >= 0 && b[1] >= 0 && b[2] <= W2 - 1 && b[3] <= H2 - 1 && b[0] <= b[2] && b[1] <= b[3];
     const meet = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
     const nested = (i, o) => NESTED.some(([p, q]) => (p === i && q === o) || (p === o && q === i));
-    // now: every live box inside the map; two boxes may overlap only while both still sit where the old map put them
-    // (§2: old boxes may overlap) or where NESTED allows it
+    // now: every live box inside the map; two boxes may overlap only while both keep the old map's relative placement
+    // (the same shift: §2's old boxes may overlap, and OWNERS decides each overlap tile; at Stage 0-3 every shift is 0,
+    // and the jiggle moves an overlapping pair as one) or where NESTED allows it
     const now = Object.keys(ANCHORS).filter(live);
     for (const id of now) if (!inside(box(id), MAP_W, MAP_H)) problems.push(id + "'s box lies outside the map");
-    const atHome = id => ANCHORS[id].at[0] === ANCHORS[id].box[0] && ANCHORS[id].at[1] === ANCHORS[id].box[1];
+    const shift = id => (ANCHORS[id].at[0] - ANCHORS[id].box[0]) + ',' + (ANCHORS[id].at[1] - ANCHORS[id].box[1]);
     for (let i = 0; i < now.length; i++) for (let j = i + 1; j < now.length; j++)
-      if (!(atHome(now[i]) && atHome(now[j])) && !nested(now[i], now[j]) && meet(box(now[i]), box(now[j]))) problems.push(now[i] + ' and ' + now[j] + ' overlap');
+      if (shift(now[i]) !== shift(now[j]) && !nested(now[i], now[j]) && meet(box(now[i]), box(now[j]))) problems.push(now[i] + ' and ' + now[j] + ' overlap');
     // the plan: every §2 box at its `to` and every §4 box inside 400x280, pairwise disjoint (bar NESTED)
     const plan = {};
     for (const id in ANCHORS) { const a = ANCHORS[id]; plan[id] = a.kind === 'place' ? [a.to[0], a.to[1], a.to[0] + a.box[2] - a.box[0], a.to[1] + a.box[3] - a.box[1]] : a.newBox; }
