@@ -721,5 +721,7 @@
   {"file": "42-playthrough.js", "literal": "40 * TILE", "decl": "play", "reason": "the play bot's brawl radius for the Thunderbird (40 tiles): a distance"},
   {"file": "42-playthrough.js", "literal": "useAt(20, 2)", "decl": "play", "reason": "instance-local (stormfront): the updraft up into Aerie in the storm's own coordinates"},
   {"file": "tools/golem-sim.js", "literal": "FANGLANDS.tp(24, 37)", "decl": "main", "reason": "instance-local (royalmine): the golem's chamber in the Royal Mine's own coordinates"},
-  {"file": "tools/golem-sim.js", "literal": "FANGLANDS.tp(30, 36)", "decl": "main", "reason": "instance-local (royalmine): the golem's chamber in the Royal Mine's own coordinates"}
+  {"file": "tools/golem-sim.js", "literal": "FANGLANDS.tp(30, 36)", "decl": "main", "reason": "instance-local (royalmine): the golem's chamber in the Royal Mine's own coordinates"},
+  {"file": "tools/dom-keys.js", "literal": "FANGLANDS.tp(14, 8)", "line": 73, "reason": "instance-local (war_shed): the knight stands before the boiler valve at 14,7 in the War Shed's own coordinates"},
+  {"file": "tools/dom-keys.js", "literal": "FANGLANDS.face(14, 7)", "line": 73, "reason": "instance-local (war_shed): the knight stands before the boiler valve at 14,7 in the War Shed's own coordinates"}
 ]

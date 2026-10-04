@@ -85,5 +85,6 @@
 "11-main.js",
 "17-tap.js",
 "42-playthrough.js",
-"tools/golem-sim.js"
+"tools/golem-sim.js",
+"tools/dom-keys.js"
 ]
