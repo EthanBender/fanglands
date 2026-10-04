@@ -31049,21 +31049,21 @@ HOOKS.selfTest.push((check, F, h) => {
       key: 'blackiron', tile: OR_BLACKIRON, metal: 'Blackiron', label: 'blackiron rock',
       ore: 'blackiron_ore', bar: 'blackiron_bar', mineLv: 13, mineXp: 60, regrow: 55,
       barLv: 15, barXp: 26, coal: 1, oreColor: '#3c3f47', barColor: '#5b606b',
-      rock: ['#4a4d55', '#42454d', '#53565e'], vein: '#20222a', anchor: [21, 7],
+      rock: ['#4a4d55', '#42454d', '#53565e'], vein: '#20222a', anchor: ATLAS.port('cave.mouth'),
       voice: 'Blackiron. Heavier than it looks, and it takes an edge steel cannot hold. Coal and a forge will make a bar of it.',
     },
     {
       key: 'sunstone', tile: OR_SUNSTONE, metal: 'Sunstone', label: 'sunstone rock',
       ore: 'sunstone_ore', bar: 'sunstone_bar', mineLv: 17, mineXp: 70, regrow: 75,
       barLv: 24, barXp: 48, coal: 2, oreColor: '#c8802a', barColor: '#e8a640',
-      rock: ['#8a6a3e', '#7f6038', '#957446'], vein: '#e8a640', glow: 'rgba(255,180,70,', anchor: [21, 7],
+      rock: ['#8a6a3e', '#7f6038', '#957446'], vein: '#e8a640', glow: 'rgba(255,180,70,', anchor: ATLAS.port('cave.mouth'),
       voice: 'Sunstone. It holds the warm of the day in it. Two coals to a lump, and the forge has to be hotter than you can make it yet.',
     },
     {
       key: 'stormstone', tile: OR_STORMSTONE, metal: 'Stormstone', label: 'stormstone rock',
       ore: 'stormstone_ore', bar: 'stormstone_bar', mineLv: 24, mineXp: 95, regrow: 100,
       barLv: 33, barXp: 78, coal: 3, oreColor: '#6a5aa8', barColor: '#9a86e0',
-      rock: ['#4e4670', '#463f66', '#584f7c'], vein: '#9a86e0', glow: 'rgba(150,130,240,', anchor: [206, 30],
+      rock: ['#4e4670', '#463f66', '#584f7c'], vein: '#9a86e0', glow: 'rgba(150,130,240,', anchor: ATLAS.port('far_shore.landing'),
       voice: 'Stormstone. It ticks under the pick like a sky about to break. Three coals to a lump, and a smith of thirty-three to hold it.',
     },
   ];
@@ -31158,12 +31158,15 @@ HOOKS.selfTest.push((check, F, h) => {
   // north of Thistledown:   blackiron in the open hills above the town wall
   // Wolfwood:               sunstone in the clearings between the oaks
   // The Far Shore:          stormstone on the scrub south of Castle Gnash
+  // Every overworld position reads the Atlas (the spread spec, section 9.1): the quarry's seams are its frame, the hills and
+  // the Wolfwood are open land (the stretched world, whole tiles), the Far Shore's scrub is its frame.
+  const QY = ATLAS.frame('quarry'), FS = ATLAS.frame('far_shore'), W = ATLAS.world;
   const SEAM = {
-    quarry: { x0: 46, y0: 5, x1: 61, y1: 13, want: 12 },        // grey rock recut as blackiron (solid → solid: no path changes)
-    quarryFloor: { x0: 46, y0: 5, x1: 61, y1: 13, want: 6 },    // fresh faces opened on the quarry floor itself
-    hills: { x0: 86, y0: 3, x1: 139, y1: 12, want: 10 },
-    wolfwood: { x0: 34, y0: 63, x1: 117, y1: 92, want: 16 },
-    farshore: { x0: 212, y0: 78, x1: 252, y1: 94, want: 12 },
+    quarry: QY.rect({ x0: 46, y0: 5, x1: 61, y1: 13, want: 12 }),        // grey rock recut as blackiron (solid → solid: no path changes)
+    quarryFloor: QY.rect({ x0: 46, y0: 5, x1: 61, y1: 13, want: 6 }),    // fresh faces opened on the quarry floor itself
+    hills: { x0: W.tx(86), y0: W.ty(3), x1: W.tx(139), y1: W.ty(12), want: 10 },
+    wolfwood: { x0: W.tx(34), y0: W.ty(63), x1: W.tx(117), y1: W.ty(92), want: 16 },
+    farshore: FS.rect({ x0: 212, y0: 78, x1: 252, y1: 94, want: 12 }),
   };
   const SPOTS = { blackiron: [], sunstone: [], stormstone: [] };
 
@@ -31198,7 +31201,7 @@ HOOKS.selfTest.push((check, F, h) => {
     };
     // Grey Quarry: a grey rock becomes a blackiron rock. Clear of the shaft lane (x 53–58), the miners' cart
     // and the wind shrine, and never on a spawn's doorstep.
-    const clearOfShaft = (x, y) => !(x >= 53 && x <= 58 && y <= 14); // the mine shaft, the lane up from the miners' cart, and the cart itself
+    const clearOfShaft = (x, y) => !(x >= QY.x(53) && x <= QY.x(58) && y <= QY.y(14)); // the mine shaft, the lane up from the miners' cart, and the cart itself
     lay(SEAM.quarry, 1, (x, y) => api.tileAt(x, y) === T.ROCK && clearOfShaft(x, y) && !nearSpawn(x, y), OR_BLACKIRON, 'blackiron');
     const open = (x, y) => ringOpen(x, y) && !nearSpawn(x, y) && !nearNpc(x, y) && !nearBuilding(x, y) && !inVillageBounds(tc(x), tc(y));
     const fresh = (x, y) => api.tileAt(x, y) === T.GRASS && open(x, y);
@@ -31362,11 +31365,11 @@ HOOKS.selfTest.push((check, F, h) => {
         { wait: MINE_WAIT, rows }); }
 
     // ---- the forge: one smelt per metal ----
-    const FORGE = [92, 37], ANV = [94, 38];
+    const TD = ATLAS.frame('thistledown'), FORGE = ATLAS.port('thistledown.forge'), ANV = ATLAS.port('thistledown.anvil');
     for (const t of TIERS) {
       emptyPack(); h.give('hammer', 1); h.give(t.ore, 1); h.give('coal', t.coal);
       player.skills.smithing.xp = XP_TABLE[t.barLv - 1];
-      F.tp(92, 39); const walked = F.walkTo(FORGE[0], FORGE[1] + 1, 600); F.tp(FORGE[0], FORGE[1] + 1); F.face(FORGE[0], FORGE[1]);
+      F.tp(...TD.p(92, 39)); const walked = F.walkTo(FORGE[0], FORGE[1] + 1, 600); F.tp(FORGE[0], FORGE[1] + 1); F.face(FORGE[0], FORGE[1]);
       closePanel(); F.press('KeyE'); render();
       const open = panel === 'station' && panelArg === 'forge';
       const rec = SMELT.find(s => s.out === t.bar);
@@ -31389,7 +31392,7 @@ HOOKS.selfTest.push((check, F, h) => {
       player.skills.smithing.xp = XP_TABLE[lv];
       // square on the tile before the press: stopped 13 px short of the centre, Brakka is inside the knight's
       // cone and E talks to the smith instead of using his anvil
-      F.tp(94, 40); const walked = F.walkTo(ANV[0], ANV[1] + 1, 600); F.tp(ANV[0], ANV[1] + 1); F.face(ANV[0], ANV[1]);
+      F.tp(...TD.p(94, 40)); const walked = F.walkTo(ANV[0], ANV[1] + 1, 600); F.tp(ANV[0], ANV[1] + 1); F.face(ANV[0], ANV[1]);
       closePanel(); F.press('KeyE'); render();
       const open = panel === 'station' && panelArg === 'anvil';
       const rec = RECIPES.find(r => r.out === out);
