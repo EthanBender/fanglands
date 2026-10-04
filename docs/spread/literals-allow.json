@@ -243,5 +243,7 @@
   {"file": "64-impact.js", "literal": "at(6, 0)", "decl": "far", "reason": "the self-test reads the wave's lift 6 tiles out from its centre: an offset, not a position"},
   {"file": "64-impact.js", "literal": "at(8, 0)", "decl": "rim", "reason": "the self-test reads the wave's lift 8 tiles out from its centre: an offset, not a position"},
   {"file": "64-impact.js", "literal": "at(9, 0)", "decl": "out", "reason": "the self-test reads the wave's lift 9 tiles out from its centre: an offset, not a position"},
-  {"file": "64-impact.js", "literal": "64", "line": 433, "reason": "the self-test's bomb: a 64 px blast radius, not a position"}
+  {"file": "64-impact.js", "literal": "64", "line": 433, "reason": "the self-test's bomb: a 64 px blast radius, not a position"},
+  {"file": "64-island.js", "literal": "y < 29", "line": 150, "reason": "instance-local (spider_den): the self-test scans the den's own grid for open cave floor"},
+  {"file": "64-island.js", "literal": "x < 39", "line": 150, "reason": "instance-local (spider_den): the self-test scans the den's own grid for open cave floor"}
 ]

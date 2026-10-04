@@ -33032,7 +33032,7 @@ HOOKS.selfTest.push((check, F, h) => {
 
       // --- B. walls and doors are refused in the shared world, with a plain line; Q puts the bed down instead ---
       { out(); empty();
-        const o = h.openSpot(58, 30); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 };
+        const o = h.openSpot(ATLAS.world.tx(58), ATLAS.world.ty(30)); F.tp(o.x, o.y);   // the shared world's open Goblin Fields: a stretched-world point player.facing = { x: 1, y: 0 };
         const f = frontTile(player, 40), was = tileAt(f.tx, f.ty);
         drops = drops.filter(d => !circleHitsTile(d.x, d.y, 8, f.tx, f.ty));
         const said = {};
