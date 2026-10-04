@@ -10,12 +10,18 @@
 // 2. Two copies share nothing: INSTANCES, COOP, NIGHT, monsters; 2a. dice and clocks, read through the game's own code;
 //    2b. the generated modules name no clock, dice or timer of the machine (every free name is a plain built-in).
 // 3. Stripped equals full: the same seed gives the same map and, after 600 ticks, the same monster and knight state;
-//    alone, and through SimHost with 5 scripted knights fighting on the overworld.
+//    alone, and through SimHost with 5 scripted knights fighting on the overworld; 3c (Stage 2) the same through SimHost
+//    in each map Stage 2 lets the world run (deepholm, aerie, coalmine), 2 knights each; 3d (Stage 2) the full build
+//    drawing its whole frame after every tick ends where the stripped copy (no drawing) ends, there and on the overworld.
 // 4. The stand-in: parked dead on a solid tile, never respawns, never leaves its instance, keeper of its map.
 // 5. Each instance's worldGen:false copy matches its full build (tiles, monsters, 300 ticks with two knights); the
 //    ones that match are printed as the list SimHost may build without the overworld.
-// 1b (Stage 2). The same self-test suite through the STRIPPED build, with the pieces the checks press given back
-//    (build-sim --test-ui): the full build's count, less the stripped files' own checks and the listed UI-only ones.
+// 1b (Stage 2). The same self-test suite through a --test-ui build: the server's strip with the drawing given back (six
+//    files and every drawing registration, build-sim TEST_UI_FILES): the full build's count, less the stripped files' own
+//    checks and the listed UI-only ones. NOT the shipped copy: that is 1c.
+// 1c (Stage 2). The same suite through the copy exactly as shipped (--strip --keep-tests): every check that fails there must
+//    pass in 1b (it fails only because it presses the drawing); --list-ui prints each one. With 0, 3c and 3d (the drawing
+//    holds no rule the copy needs), this closes the stripped-suite gap of the 3 Oct addendum.
 // 6 (Stage 2). The monsters' look fields: read from 78-monsterlook when the copy is built, carried by the rows, and each one
 //    reaches a puppet in a real game.
 // Exit 1 on any FAIL. Takes one of the machine's test slots, like tools/headless.js.
@@ -174,6 +180,37 @@ if (want('selftest') || want('strippedtests')) {
   for (const o of odd) console.log('  count differs: ' + o);
   check(`1b. the self-test suite through the STRIPPED build (the buttons' drawing given back: ${TEST_UI_FILES.join(', ')}): ${st.pass} of ${st.total} pass; the full build's ${fullRun.pass}, less the ${own} checks of the stripped files themselves${lost ? ', the ' + lost + ' a listed chapter could not run' : ''} and the ${listedChecks.length} listed UI-only checks, is ${expected}`,
     !stray.length && !odd.length && st.pass === expected, { strip: { pass: st.pass, total: st.total, ms: st.ms }, full: { pass: fullRun.pass, total: fullRun.total }, ownChecksOfStrippedFiles: own, lostInListedThrow: lost, uiOnlyFailed: listedChecks.length, stray: stray.length, countsDiffer: odd.length });
+
+  // 1c. the same suite through the copy exactly as the server ships it (--strip --keep-tests: every presentation file a
+  // stand-in, every drawing registration gone). Many checks fail there, because a check opens a panel, presses E at a person
+  // or a rock, or reads what the frame drew, and none of that exists in the shipped copy. Each such check is UI-only by one
+  // mechanical reason the gate checks for every one of them: it passes in 1b, where the drawing is given back and nothing
+  // else differs. That the drawing itself holds no rule the copy needs is checks 0 (what kept files read from stripped
+  // ones), 3c (stripped equals full on the Stage 2 maps) and 3d (the full build drawing every frame changes nothing).
+  // A check failing here that 1b does not pass (or list) fails the gate. --list-ui prints every one of them by name.
+  const ship = await loadGame({ strip: true, keepTests: true, html: htmlFile });
+  const a2 = Date.now();
+  const sh = runSuite('factory', ship.makeGame);
+  sh.ms = Date.now() - a2;
+  const norm = n => n.replace(/-?\d+(\.\d+)?/g, '#');
+  const uPass = new Set(st.names.filter(n => !st.failNames.includes(n) || listedFail(n)).map(norm));
+  const uFiles = new Set(Object.values(st.fileOf));
+  const unexplained = [], byFile = {};
+  for (const n of sh.failNames) {
+    const f = sh.fileOf[n] || 'core';
+    // a chapter that stopped (the harness's THREW, or the chapter's own "ran to the end without throwing" check, which it
+    // only makes when it stopped): explained when that chapter runs to the end in 1b with nothing unlisted failing
+    const stopped = n.startsWith('THREW ') || / ran to the end without (throwing|an exception)/.test(n);
+    const ok = stopped ? uFiles.has(f) && !st.failNames.some(x => (st.fileOf[x] || 'core') === f && !listedFail(x)) : uPass.has(norm(n));
+    if (!ok) unexplained.push(n); else (byFile[f] = byFile[f] || []).push(n);
+  }
+  const notRun = st.names.length - sh.names.length;
+  const uiOnly = Object.values(byFile).reduce((x, l) => x + l.length, 0);
+  console.log(`  1c, the shipped copy: ${sh.pass} of ${sh.total} pass; ${uiOnly} fail only because they press the drawing (each passes in 1b), by chapter: ` + Object.entries(byFile).sort((x, y) => y[1].length - x[1].length).map(([f, l]) => f + ' ' + l.length).join(', ') + (notRun > 0 ? `; and ${notRun} checks of chapters that stopped at a pressed button did not run (they all pass in 1b)` : ''));
+  if (process.argv.includes('--list-ui')) for (const [f, l] of Object.entries(byFile)) for (const n of l) console.log(`  UI-only in the shipped copy (${f}): ${n.slice(0, 200)}   (passes in 1b, with the drawing given back)`);
+  for (const n of unexplained.slice(0, 20)) console.log('  shipped copy, NOT explained by the drawing: ' + n.slice(0, 220) + '   ' + String(sh.report[n]).slice(0, 200));
+  check(`1c. the self-test suite through the copy exactly as shipped (no drawing at all): ${sh.pass} of ${sh.total} pass, and every one of the ${sh.failNames.length} that fail passes in 1b, where only the drawing is given back (its six files and its registrations)`,
+    !unexplained.length && sh.pass > 0, { ship: { pass: sh.pass, total: sh.total, ms: sh.ms }, uiOnly, notRun, unexplained: unexplained.length });
 }
 
 // ---------------------------------------------------------------------------
@@ -227,23 +264,44 @@ function plainRun(makeGame) {
   for (let i = 0; i < 600; i++) { C.w.__now += 100; C.w.__runTimers(); for (let s = 0; s < 3; s++) { try { update()(1 / 30); } catch (e) { thrown++; first = first || String(e.stack).split('\n').slice(0, 2).join(' | '); } } }
   return { map: before, monsters: C.g('monsters').length, state: stateHash(C.api), alive: C.g('monsters').filter(m => !m.dead).length, thrown, first, errors: C.w.__errors.length };
 }
-function hostRun(makeGame, map = 'over', knights = 5, ticks = 600) {
+// the maps Stage 2 lets the world run (online/src/sim/worlds.js WORLD_READY), read from the server's own list
+const { WORLD_READY: STAGE2_MAPS } = await import('../online/src/sim/worlds.js');
+// drawn: after every tick the full build's whole frame is drawn (render(): the world, every HOOKS.draw, each monster's
+// drawMonster, the night's lights and every HOOKS.hud), once centred on each knight so the monsters near him are on screen,
+// with dice of its own (the drawing's sparkle must not move the game's dice). The stand-in is put back where it was parked.
+function hostRun(makeGame, map = 'over', knights = 5, ticks = 600, { drawn = false } = {}) {
   const sent = { hurt: 0, kill: 0, mon: 0, other: 0 };
   const host = new SimHost({ makeGame, now: () => NOW, clock: () => performance.now(), timer: noTimer, seed: 9, onSend: (m, list) => { for (const x of list) sent[x.t in sent ? x.t : 'other']++; } });
   const c = host.boot(map);
   if (!c) return { error: JSON.stringify(host.fallbacks) };
   const bots = new Bots(host, map, { seed: 4 }).postOnHomes(knights);
   const g = c.api.peek, w = c.w, T = g('TILE');
-  let at = NOW, standIn = { dead: true, parked: true, inst: true };
+  let at = NOW, standIn = { dead: true, parked: true, inst: true }, frames = 0, drawThrew = null, drawCalls = 0, monsterDraws = 0;
+  const drawDice = mulberry32(0xd4a3);
+  // each drawing registration counts its calls, so the check can say the drawing really ran
+  if (drawn) {
+    const H = g('HOOKS'), counted = f => { const w2 = function () { drawCalls++; return f.apply(this, arguments); }; w2.__file = f.__file; return w2; };
+    for (const k of ['draw', 'hud', 'nightLights']) if (Array.isArray(H[k])) H[k] = H[k].map(counted);
+    for (const k of Object.keys(H.drawMonster || {})) if (typeof H.drawMonster[k] === 'function') H.drawMonster[k] = counted(H.drawMonster[k]);
+    // and every monster the frame draws (drawCharacter, which 78-monsterlook's look and drawMonster both go through)
+    const dc = g('drawCharacter');
+    c.api.poke('drawCharacter', function (gg, m, kind) { if (kind !== 'player' && kind !== 'playermech') monsterDraws++; return dc.apply(this, arguments); });
+  }
   for (let i = 0; i < ticks; i++) {
     bots.step(0.1); at += 100; host.tick(at);
+    if (drawn) {
+      const p = g('player'), px = p.x, py = p.y, rnd = w.Math.random, render = g('render');
+      w.Math.random = drawDice;
+      try { for (const k of bots.list) { p.x = k.x; p.y = k.y; render(); frames++; } } catch (e) { drawThrew = drawThrew || String(e && e.stack || e).split('\n').slice(0, 3).join(' | '); }
+      finally { p.x = px; p.y = py; w.Math.random = rnd; }
+    }
     const p = g('player');
     if (!p.dead) standIn.dead = false;
     if (p.x !== T / 2 || p.y !== T / 2) standIn.parked = false;
     if (map !== 'over' && w.INSTANCES.active() !== map) standIn.inst = false;
   }
   const mons = g('monsters');
-  return { map: mapHash(c.api), state: stateHash(c.api, [sent.hurt, sent.kill, bots.hits]), sent, hits: bots.hits, monsters: mons.length, dead: mons.filter(m => m.dead).length, chasing: mons.filter(m => !m.dead && m.state === 'chase').length,
+  return { frames, drawThrew, drawCalls, monsterDraws, map: mapHash(c.api), state: stateHash(c.api, [sent.hurt, sent.kill, bots.hits]), sent, hits: bots.hits, monsters: mons.length, dead: mons.filter(m => m.dead).length, chasing: mons.filter(m => !m.dead && m.state === 'chase').length,
     keeper: w.COOP.isKeeper(), me: w.NET.me, standIn, solid: g('SOLID').has(g('tileAt')(0, 0)), errors: w.__errors.slice(0, 3), fallbacks: host.fallbacks.map(f => f.reason), host };
 }
 if (want('parity')) {
@@ -258,6 +316,27 @@ if (want('parity')) {
     fb.keeper && fb.me === '@world:over' && fb.standIn.dead && fb.standIn.parked && fb.solid, { keeper: fb.keeper, me: fb.me, standIn: fb.standIn, solid: fb.solid });
   const st = fb.host.stats();
   console.log(`  (node, stripped: boot ${st.boot.over} ms, tick p50 ${st.tick.p50} ms, p99 ${st.tick.p99} ms with 5 knights)`);
+  // 3c (Stage 2): the maps the world runs in this stage, the same way. These are the copies players will meet first, so the
+  // stripped build that ships must run each exactly as the full build does: the same monsters, the same blows and kills.
+  for (const map of STAGE2_MAPS) {
+    const ra = hostRun(full.makeGame, map, 2, 600), rb = hostRun(strip.makeGame, map, 2, 600);
+    if (ra.error || rb.error) { check(`3c. stripped equals full through SimHost in ${map}`, false, { full: ra.error, strip: rb.error }); continue; }
+    const fights = ra.monsters > 0;
+    check(`3c. stripped equals full through SimHost in ${map} (a Stage 2 map): 2 scripted knights for 600 ticks give the same monsters, the same hurts and kills${fights ? '' : ' (it has no monsters: the same empty map)'}`,
+      ra.state === rb.state && ra.map === rb.map && ra.sent.hurt === rb.sent.hurt && ra.sent.kill === rb.sent.kill && ra.hits === rb.hits && (!fights || (ra.hits > 0 && ra.sent.hurt + ra.sent.kill > 0)) && !ra.fallbacks.length && !rb.fallbacks.length && ra.standIn.inst && rb.standIn.inst,
+      { full: brief(ra), strip: brief(rb), monsters: ra.monsters });
+  }
+  // 3d (Stage 2, the review of 3 Oct): the shipped copy strips every drawing registration (HOOKS.draw, hud, nightLights,
+  // drawMonster, panel, keyHelp, pauseMenu), so a game rule hidden in one would be lost on the server without any check
+  // failing. Here the FULL build draws its whole frame after every tick, on the overworld and on each Stage 2 map, and must
+  // still end exactly where the stripped copy (which draws nothing) ends: the drawing changes no monster and no knight.
+  for (const [map, n, ticks] of [['over', 5, 300], ...STAGE2_MAPS.map(m => [m, 2, 300])]) {
+    const ra = hostRun(full.makeGame, map, n, ticks, { drawn: true }), rb = hostRun(strip.makeGame, map, n, ticks);
+    if (ra.error || rb.error) { check(`3d. drawing changes nothing in ${map}`, false, { full: ra.error, strip: rb.error }); continue; }
+    check(`3d. the full build drawing its whole frame after every tick (${ra.frames} frames: ${ra.drawCalls} calls of its drawing registrations, ${ra.monsterDraws} monsters drawn) in ${map} ends exactly where the stripped copy ends: the same monsters, hurts and kills`,
+      ra.state === rb.state && ra.sent.hurt === rb.sent.hurt && ra.sent.kill === rb.sent.kill && !ra.drawThrew && ra.frames === n * ticks && ra.drawCalls > 0 && (ra.monsters === 0 || ra.monsterDraws > 0),
+      { drawn: brief(ra), strip: brief(rb), frames: ra.frames, drawCalls: ra.drawCalls, monsterDraws: ra.monsterDraws, threw: ra.drawThrew });
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 // SIM-LOAD — the Stage 2 load hour (docs/ONLINE.md, "The shared world", Stage 2): bot knights against a LOCAL `wrangler dev`
 // of this tree's Worker (the real World, the real Room, the real SimHost and game copies), never a deployed world.
 //   ./build.sh && node tools/sim-load.mjs [--minutes 30] [--bots 20] [--port 8795] [--out <dir>]
+//   node tools/sim-load.mjs --bots 1 --minutes 10      the one-knight case: one bot alone in Deepholm (Cohen playing alone)
 // online/.dev.vars must hold the local ADMIN_KEY and INVITE_CODE (git-ignored). The local runtime (wrangler 4.92's workerd) knows
 // compatibility dates up to 2026-05-22, so the local run says that date; the deployed Worker keeps its own. The bots sign up on a fresh local store, the
 // three plain instances are switched to 'world', and the bots split across them (8 Deepholm, 8 Aerie, 4 the coal mine). Each
@@ -11,8 +12,12 @@
 // parent page's GET /api/admin/sim is read for the tick times, the copies and sim_log. The isolate heap is read last,
 // through the inspector, as Stage 0 did.
 // The pass bar (the spec): tick p99 under 10 ms; no fallback; heap under 64 MB; the requests a knight-hour costs not above
-// the keeper path's (the same knights, plus the keeper's own mon stream at 8 a second on each map with two or more on it).
-// Writes <out>/sim-load.json. Exit 1 on a miss.
+// the keeper path's, judged for the run's own knight count (run it for 20 and for 1). Both sides count every billed request:
+// incoming socket messages at 20 to 1, and the World's own game calls as metered (gameHttp: its alarms above all; the
+// parent page's reads are not the game's). The keeper path is the same knights' messages, plus each map's keeper stream
+// (8 mon a second on a map with two or more knights, its 1 a second heartbeat on a map with one), plus the keeper path's
+// alarm, which re-arms about every KEEPER_STALE + 50 ms while any map has two or more knights and never for knights alone.
+// Writes <out>/sim-load.json (sim-load-1.json for one bot). Exit 1 on a miss.
 // ============================================================================
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -34,7 +39,8 @@ if (!KEY || !INVITE) { console.error('online/.dev.vars needs ADMIN_KEY and INVIT
 if (!fs.existsSync(path.join(ROOT, 'online', 'src', 'sim', 'game.mjs'))) { console.error('run ./build.sh first'); process.exit(1); }
 const ATLAS = JSON.parse(fs.readFileSync(path.join(ROOT, 'online', 'src', 'atlas.json'), 'utf8'));
 const TILE = 48;
-const MAPS = [['deepholm', 8], ['aerie', 8], ['coalmine', 4]];
+const MAPS = BOTS === 1 ? [['deepholm', 1]] : [['deepholm', 8], ['aerie', 8], ['coalmine', 4]];
+const KEEPER_STALE = 3000;   // room.js: the keeper path's alarm deadline after the keeper's last mon, plus 50 ms
 
 async function startWrangler() {
   const log = path.join(OUT, 'sim-load-wrangler.log');
@@ -152,12 +158,14 @@ try {
   // what the same knights cost on the keeper path: everything they sent, plus the keeper's own mon at 8 a second on each map
   // with two or more knights (its heartbeat once a second otherwise), all incoming socket messages at 20 to 1
   const keeperMon = MAPS.reduce((a, [, n]) => a + (n >= 2 ? 8 : 1), 0) * secs;
+  const keeperAlarms = MAPS.some(([, n]) => n >= 2) ? secs / ((KEEPER_STALE + 50) / 1000) : 0;
+  const m1 = v.meter.today, gameHttp = (m1.gameHttp != null ? m1.gameHttp : m1.http - (m1.admin || 0)) - (m0.gameHttp != null ? m0.gameHttp : m0.http - (m0.admin || 0));
   out.result = {
     seconds: Math.round(secs), knightHours: +hours.toFixed(2), sentByBots: sent, hits: bots.reduce((a, b) => a + b.hits, 0), hurts: bots.reduce((a, b) => a + b.hurts, 0), kills: bots.reduce((a, b) => a + b.kills, 0),
     monPerBotPerSecond: +(bots.reduce((a, b) => a + b.mons, 0) / bots.length / secs).toFixed(2), monGap: { p50: q(gaps, 0.5), p99: q(gaps, 0.99), max: q(gaps, 1) },
     keepers: [...new Set(bots.map(b => b.keeper))],
-    meterWsIn: v.meter.today.wsIn - m0.wsIn, meterHttp: v.meter.today.http - m0.http,
-    requestsPerKnightHour: { world: +((sent / 20) / hours).toFixed(1), keeperPath: +(((sent + keeperMon) / 20) / hours).toFixed(1) },
+    meterWsIn: v.meter.today.wsIn - m0.wsIn, meterHttp: v.meter.today.http - m0.http, meterGameHttp: gameHttp, keeperAlarmsEstimated: Math.round(keeperAlarms),
+    requestsPerKnightHour: { world: +((sent / 20 + gameHttp) / hours).toFixed(1), keeperPath: +(((sent + keeperMon) / 20 + keeperAlarms) / hours).toFixed(1) },
     tick: v.world.tick, skipped: v.world.skipped, log: v.world.log, held: v.sim.held, copies: v.world.copies, boot: v.world.boot,
   };
   for (const b of bots) try { b.ws.close(); } catch (e) { }
@@ -178,5 +186,5 @@ try {
   console.log(Object.entries(out.pass).map(([k, ok]) => (ok ? 'PASS  ' : 'FAIL  ') + k).join('\n'));
   if (Object.values(out.pass).some(x => !x)) code = 1;
 } catch (e) { console.error(e); out.error = String(e.stack || e); code = 1; }
-finally { fs.writeFileSync(path.join(OUT, 'sim-load.json'), JSON.stringify(out, null, 1)); await W.stop(); }
+finally { fs.writeFileSync(path.join(OUT, BOTS === 1 ? 'sim-load-1.json' : 'sim-load.json'), JSON.stringify(out, null, 1)); await W.stop(); }
 process.exit(code);
