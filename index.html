@@ -18428,33 +18428,44 @@ window.PLACE_KIT = PLACE_KIT;
   const openPass = t => !SOLID.has(t) || Object.values(gateId).includes(t);
   const passWithGates = names => { const ids = names.map(n => gateId[n]); return t => !SOLID.has(t) || ids.includes(t); };
 
+  // ---------- the Atlas (the spread spec, section 9.1) ----------
+  // every overworld spot below is a read: a place's own spot in its frame, a named spot as its port, a person where his
+  // table stands him, and open ground (the grind spots in the fields) as whole tiles of the stretched world (OPEN.pts)
+  const AW = ATLAS.world, PT = id => ATLAS.port(id), CV = ATLAS.frame('cave'), TD = ATLAS.frame('thistledown'), QY = ATLAS.frame('quarry');
+  const HF = ATLAS.frame('hollowford'), WD = ATLAS.frame('warden'), FL = ATLAS.frame('fang_lair'), CP = ATLAS.frame('camp'), FS = ATLAS.frame('far_shore');
+  const SY = ATLAS.frame('sylvaris'), DK = ATLAS.frame('dock'), GI = ATLAS.frame('gull_isle'), IC = ATLAS.frame('ironclad_isle');
+  const OPEN = { pts: list => list.map(([x, y]) => [AW.tx(x), AW.ty(y)]) };
+  const npcAt = id => { const n = NPCS.find(q => q.id === id); return n ? [n.x, n.y] : null; };
+  const REG = name => REGIONS.find(r => r.name === name), inReg = (r, x, y) => !!r && x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
+
   // ---------- where the game puts you down without walking: the roots ----------
   // Deepholm used to be a root of its own (the shaft dropped you into a block of the overworld at 2–26, 72–94).
   // It is an instance now (24-dwarves), so what it holds is audited by instanceConnectivity below and the only
   // thing the overworld still owes it is the shaft itself — which the `shaft` root check keeps honest.
   const ROOTS = {
     cave: { at: [Math.floor(SPAWN.x / TILE), Math.floor(SPAWN.y / TILE)], via: 'the cave start' },
-    gull: { at: [173, 13], via: "Harl's ferry (10 coins)" },
-    ironclad: { at: [180, 50], via: "Harl's ferry (25 coins, combat 8)" },
-    farshore: { at: [206, 30], via: "Harl's ferry (40 coins, combat 10)" },
+    gull: { at: GI.p(173, 13), via: "Harl's ferry (10 coins)" },
+    ironclad: { at: IC.p(180, 50), via: "Harl's ferry (25 coins, combat 8)" },
+    farshore: { at: PT('far_shore.landing'), via: "Harl's ferry (40 coins, combat 10)" },
   };
-  const rootFor = (x, y) => x >= 200 ? 'farshore' : (x >= 169 && x <= 186 && y >= 5 && y <= 21) ? 'gull' : (x >= 176 && x <= 197 && y >= 39 && y <= 61) ? 'ironclad' : 'cave';
+  // east of the strait is the Far Shore; the isles are 26-boats' own regions (read, not copied)
+  const rootFor = (x, y) => x >= FS.x(200) ? 'farshore' : inReg(REG('Gull Isle'), x, y) ? 'gull' : inReg(REG('Ironclad Isle'), x, y) ? 'ironclad' : 'cave';
 
   // ---------- the targets ----------
   // feature NPCs that live in their own lists (25-elves, 24-dwarves, 26-boats, 33-goblincity, 31-rebuild, 41-guild): known tiles from those files
   const CLOSURE_NPCS = [
-    ['Queen Aelith', 133, 119], ['Lira', 158, 119], ['Thessaly', 133, 129], ['Faelan', 150, 132],
+    ['Queen Aelith', ...SY.p(133, 119)], ['Lira', ...SY.p(158, 119)], ['Thessaly', ...SY.p(133, 129)], ['Faelan', ...SY.p(150, 132)],
     // the dwarves moved into the Deepholm instance with the undercity: they are walked to in instanceConnectivity
-    ['Old Harl (dock)', 165, 14], ['Salt Pete', 181, 14],
-    ['Tinkerton (castle gate)', 226, 52], ['Grubb', 216, 23], ['Nix', 230, 23], ['Old Snaggle', 216, 37], ['Pip-squeak', 222, 33], ['King Gnash', 224, 67], ['Mudge', 234, 32], ['Skritch', 219, 27], ['Ratchet', 230, 27],
-    ['Old Tam (rebuilt square)', 137, 81], ['Nell (rebuilt square)', 140, 77], ['Pip (rebuilt square)', 142, 81],
-    ['Guild staff (board)', 152, 68], ['Guild staff (chest)', 155, 68], ['Guild staff (door)', 153, 70],
+    ['Old Harl (dock)', ...DK.p(165, 14)], ['Salt Pete', ...PT('gull_isle.pete')],
+    ['Tinkerton (castle gate)', ...FS.p(226, 52)], ['Grubb', ...FS.p(216, 23)], ['Nix', ...FS.p(230, 23)], ['Old Snaggle', ...FS.p(216, 37)], ['Pip-squeak', ...FS.p(222, 33)], ['King Gnash', ...FS.p(224, 67)], ['Mudge', ...FS.p(234, 32)], ['Skritch', ...FS.p(219, 27)], ['Ratchet', ...FS.p(230, 27)],
+    ['Old Tam (rebuilt square)', ...HF.p(137, 81)], ['Nell (rebuilt square)', ...HF.p(140, 77)], ['Pip (rebuilt square)', ...HF.p(142, 81)],
+    ['Guild staff (board)', ...HF.p(152, 68)], ['Guild staff (chest)', ...HF.p(155, 68)], ['Guild staff (door)', ...HF.p(153, 70)],
   ];
   const LANDMARK_TILES = ['SIGN', 'AXESTUMP', 'CART', 'GRAVE', 'STONECIRCLE', 'CHEST', 'BOARD', 'REBUILD_BOARD', 'GUILD_BOARD', 'GUILD_CHEST', 'BOAT', 'SHRINE', 'WIND_SHRINE', 'SUMMON_CIRCLE', 'FANG_CHEST', 'FANG_HOARD',
     'SHAFT', 'LADDER_UP', 'DWARF_CHEST', 'DWARF_THRONE', 'STRONGBOX', 'BOTTLE', 'HULL', 'DOZER_BAY', 'LOOM', 'TOTEM', 'CAGE', 'WELL', 'HATCH', 'CRYPT_BARS', 'GATE', 'PORTCULLIS', 'WARDEN_GATE', 'LAIR_GATE', 'DUNGEON_DOOR',
     'DUMMY', 'SAWMILL', 'GOODWELL', 'BELLTOWER', 'GNASH_THRONE', 'GNASH_CHEST', 'ARENA_LEVER', 'MITHRIL', 'OBSIDIAN', 'LOBSTER_WATER', 'TARGET', 'THRONE', 'ANVIL', 'FORGE', 'OVEN', 'STEPPING_STONE', 'CLIMB'];
   const LANDMARK_CAP = 8; // tiles listed per type (gates, dummies, chests: all of them; mithril rocks, targets, stones: the first eight)
-  const LANDINGS = [['dock landing', 164, 14], ['Gull Isle landing', 173, 13], ['Ironclad Isle landing', 180, 50], ['Far Shore landing', 206, 30]];
+  const LANDINGS = [['dock landing', ...PT('dock.planks')], ['Gull Isle landing', ...GI.p(173, 13)], ['Ironclad Isle landing', ...IC.p(180, 50)], ['Far Shore landing', ...PT('far_shore.landing')]];
   const BOSS_TYPES = new Set(['walker', 'bulldozer', 'barrelbeast', 'ash_drake', 'green_dragon', 'red_dragon', 'the_fang', 'yard_walker', 'yard_dozer', 'castle_guard', 'dwarf_guard', 'elf_sentinel']);
 
   function targets() {
@@ -18463,11 +18474,11 @@ window.PLACE_KIT = PLACE_KIT;
     for (const [name, x, y] of CLOSURE_NPCS) push('npc', name, x, y);
     for (const b of BUILDINGS) { if (b.door !== undefined) push('door', `${b.name} [${b.id}] door step`, b.x + b.door, b.y + b.h); if (b.doorTop !== undefined) push('door', `${b.name} [${b.id}] door step`, b.x + b.doorTop, b.y - 1); }
     if (window.INSTANCES) for (const id of INSTANCES.list()) { const i = INSTANCES.get(id); if (i.door) push('instance', `${i.name} door`, i.door[0], i.door[1]); if (i.step) push('instance', `${i.name} step`, i.step[0], i.step[1]); }
-    push('instance', 'Aerie: the wind shrine (36-skycity)', 62, 6); push('instance', 'The Afterlands: the last knight\'s grave (35-night)', 12, 70);
+    push('instance', 'Aerie: the wind shrine (36-skycity)', ...PT('quarry.shrine')); push('instance', 'The Afterlands: the last knight\'s grave (35-night)', ...PT('graveyard.grave'));
     const seen = new Set();
     for (let s = 0; s <= 16; s++) { const t = MAP_TARGETS[s]; if (!t) continue; const k = t.x + ',' + t.y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `MAP_TARGETS[${s}] ${t.label}`, t.x, t.y); }
     for (const t of mapTargets()) { const k = t.x + ',' + t.y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `mapTarget ${t.label} (${t.id})`, t.x, t.y); }
-    for (const [name, x, y, id] of [["Tinkerton's lab (tinker)", 247, 42], ['King Gnash (gnash)', 224, 67], ['The wind shrine (sky)', 62, 6], ['Notice board (board)', 105, 27], ['Captain of the Watch (law)', 110, 40], ['Dunstan (dragons)', 66, 100], ['Old Wren (wren)', 30, 78], ['Tobin (bread)', 110, 33]]) { const k = x + ',' + y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `mapTarget ${name}`, x, y); }
+    for (const [name, x, y, id] of [["Tinkerton's lab (tinker)", ...PT('far_shore.lab_step')], ['King Gnash (gnash)', ...FS.p(224, 67)], ['The wind shrine (sky)', ...PT('quarry.shrine')], ['Notice board (board)', ...PT('thistledown.board')], ['Captain of the Watch (law)', ...npcAt('captain')], ['Dunstan (dragons)', ...PT('warden.node')], ['Old Wren (wren)', ...PT('wren.wren')], ['Tobin (bread)', ...npcAt('tobin')]]) { const k = x + ',' + y; if (seen.has(k)) continue; seen.add(k); push('maptarget', `mapTarget ${name}`, x, y); }
     const tiles = pristine(), counts = {};
     // decoration is skipped: the bank's chests behind the counter; the second row of a lobster buoy and the middle stones of the pond crossing (only tiles that touch walkable ground are places to stand)
     const touchesGround = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && !SOLID.has(tiles[idx(x + dx, y + dy)]));
@@ -18491,7 +18502,7 @@ window.PLACE_KIT = PLACE_KIT;
     });
     // the roots themselves: the shaft and Harl must be reachable from the cave, or the root is a fiction
     // (`shaft` is not a root any more — Deepholm is an instance — but the walk to its door is still the thing to prove)
-    const rootOk = { cave: true, shaft: reachOf(dists.cave, 56, 6) >= 0, gull: reachOf(dists.cave, 165, 14) >= 0, ironclad: reachOf(dists.cave, 165, 14) >= 0, farshore: reachOf(dists.cave, 165, 14) >= 0 };
+    const rootOk = { cave: true, shaft: reachOf(dists.cave, ...PT('quarry.shaft')) >= 0, gull: reachOf(dists.cave, ...DK.p(165, 14)) >= 0, ironclad: reachOf(dists.cave, ...DK.p(165, 14)) >= 0, farshore: reachOf(dists.cave, ...DK.p(165, 14)) >= 0 };   // Harl on the dock
     for (const r of rows) if (!rootOk[r.root]) { r.strict = -1; r.open = -1; r.gate = null; }
     const unreachable = rows.filter(r => r.open < 0).map(r => `${r.name} @${r.x},${r.y} [${r.group}, from ${r.root}]`);
     const gated = rows.filter(r => r.strict < 0 && r.open >= 0).map(r => `${r.name} @${r.x},${r.y} behind ${r.gate || 'a story gate'}`);
@@ -18529,28 +18540,28 @@ window.PLACE_KIT = PLACE_KIT;
   }
 
   // ---------- the main quest chain ----------
-  const nearestGoblins = n => { const ex = CAVE_EXIT_X + 1; return MONSTER_SPAWNS.filter(s => s.type === 'goblin').map(s => ({ s, d: Math.hypot(s.tx - ex, s.ty - 7) })).sort((a, b) => a.d - b.d).slice(0, n).map(o => [o.s.tx, o.s.ty]); };
+  const nearestGoblins = n => { const ex = CAVE_EXIT_X + 1; return MONSTER_SPAWNS.filter(s => s.type === 'goblin').map(s => ({ s, d: Math.hypot(s.tx - ex, s.ty - CV.y(7)) })).sort((a, b) => a.d - b.d).slice(0, n).map(o => [o.s.tx, o.s.ty]); };
   const nearestTileTo = (tiles, types, fx, fy) => { let best = null; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (types.includes(tiles[idx(x, y)])) { const d = Math.hypot(x - fx, y - fy); if (!best || d < best.d) best = { x, y, d }; } return best; };
   function chainStages() {
-    const tiles = pristine(), tree = nearestTileTo(tiles, [T.TREE], 85, 32) || { x: 84, y: 30 };
+    const tiles = pristine(), tree = nearestTileTo(tiles, [T.TREE], ...PT('thistledown.west_gate')) || TD.pt({ x: 84, y: 30 });
     return [
       { stage: 0, what: 'wake in the cave', at: [ROOTS.cave.at] },
       { stage: 1, what: 'the wooden sword in the light', at: [[Math.floor(SWORD_POS.x / TILE), Math.floor(SWORD_POS.y / TILE)]] },
-      { stage: 2, what: 'the cave mouth (x > 21.5)', at: [[CAVE_EXIT_X + 2, 7]] },
+      { stage: 2, what: 'the cave mouth (x > 21.5)', at: [[CAVE_EXIT_X + 2, CV.y(7)]] },
       { stage: 3, what: 'three goblins (the nearest spawns to the cave)', at: nearestGoblins(3) },
       { stage: 4, what: 'the signpost (E)', at: [[SIGN_TILE.x, SIGN_TILE.y]] },
-      { stage: 5, what: 'Duke Ferrin in the keep', at: [[112, 49]] },
-      { stage: 6, what: "Hale's dummy, a tree by the village, then the Duke", at: [[88, 42], [tree.x, tree.y], [112, 49]] },
-      { stage: 7, what: 'the goblin walker in the camp, then the Duke', at: [[152, 30], [112, 49]] },
-      { stage: 8, what: 'the edge of Hollowford (region entry)', at: [[140, 66]] },
-      { stage: 9, what: 'the Barrelbeast in the yard', at: [[140, 86]] },
-      { stage: 10, what: 'Old Tam in the chapel crypt (crypt bars: hammer, beast dead)', at: [[126, 88]], gate: 'CRYPT_BARS' },
-      { stage: 11, what: "into the Ashfields past Warden Brann's gate", at: [[60, 97]], gate: 'WARDEN_GATE' },
-      { stage: 12, what: 'Dunstan the dung farmer', at: [[67, 104]] },
-      { stage: 13, what: 'the four ash drakes, then Dunstan', at: [[52, 100], [56, 110], [74, 110], [80, 100], [67, 104]] },
-      { stage: 14, what: 'Old Wren, the wind shrine (Aerie), the Duke, the lair gate, the summoning circle, The Fang', at: [[30, 78], [62, 6], [112, 49], [18, 108], [18, 117], [18, 121]], gate: 'LAIR_GATE' },
-      { stage: 15, what: 'home to Duke Ferrin', at: [[112, 49]] },
-      { stage: 16, what: 'the knight of legend (credits)', at: [[112, 49]] },
+      { stage: 5, what: 'Duke Ferrin in the keep', at: [PT('thistledown.duke')] },
+      { stage: 6, what: "Hale's dummy, a tree by the village, then the Duke", at: [DUMMIES[0], [tree.x, tree.y], PT('thistledown.duke')] },
+      { stage: 7, what: 'the goblin walker in the camp, then the Duke', at: [PT('camp.walker'), PT('thistledown.duke')] },
+      { stage: 8, what: 'the edge of Hollowford (region entry)', at: [HF.p(140, 66)] },
+      { stage: 9, what: 'the Barrelbeast in the yard', at: [PT('hollowford.barrelbeast')] },
+      { stage: 10, what: 'Old Tam in the chapel crypt (crypt bars: hammer, beast dead)', at: [PT('hollowford.tam')], gate: 'CRYPT_BARS' },
+      { stage: 11, what: "into the Ashfields past Warden Brann's gate", at: [WD.p(60, 97)], gate: 'WARDEN_GATE' },
+      { stage: 12, what: 'Dunstan the dung farmer', at: [PT('warden.dunstan')] },
+      { stage: 13, what: 'the four ash drakes, then Dunstan', at: [...MONSTER_SPAWNS.filter(s => s.type === 'ash_drake').map(s => [s.tx, s.ty]), PT('warden.dunstan')] },   // 30-ashdrake's four spawns
+      { stage: 14, what: 'Old Wren, the wind shrine (Aerie), the Duke, the lair gate, the summoning circle, The Fang', at: [PT('wren.wren'), PT('quarry.shrine'), PT('thistledown.duke'), PT('fang_lair.gate'), PT('fang_lair.circle'), FL.p(18, 121)], gate: 'LAIR_GATE' },
+      { stage: 15, what: 'home to Duke Ferrin', at: [PT('thistledown.duke')] },
+      { stage: 16, what: 'the knight of legend (credits)', at: [PT('thistledown.duke')] },
     ];
   }
   function chain() {
@@ -18623,8 +18634,8 @@ window.PLACE_KIT = PLACE_KIT;
     if (MONSTER_DEFS.ash_drake) kill('ash_drake', 'ash drake', 30); if (MONSTER_DEFS.green_dragon) kill('green_dragon', 'green dragon', 45); if (MONSTER_DEFS.red_dragon) kill('red_dragon', 'red dragon', 60);
     add('defence', 'being hit (1.5 xp per damage)', 1, 1.5 * 2, 1.1, 'a goblin, avg hit 2');
     add('hitpoints', 'a third of Melee and Range xp', 1, 0, 0, 'passive (38-agility)');
-    add('agility', 'Thistledown yard course (lap)', 1, 60, lapSecs([[86, 51], [93, 51], [98, 51], [99, 53], [92, 53]]), 'all obstacles level 1');
-    add('agility', 'Grey Quarry cliff course (lap)', 30, 200, lapSecs([[47, 1], [53, 1], [57, 1], [60, 3], [52, 3]]), 'the gap at (57,3) needs Agility 30; the logs 20');
+    add('agility', 'Thistledown yard course (lap)', 1, 60, lapSecs(AGILITY.COURSES.yard.marks), 'all obstacles level 1');
+    add('agility', 'Grey Quarry cliff course (lap)', 30, 200, lapSecs(AGILITY.COURSES.cliff.marks), 'the gap at (57,3) needs Agility 30; the logs 20');
     for (const k in S) S[k].sort((a, b) => a.req - b.req || b.xp - a.xp);
     return S;
   }
@@ -18853,50 +18864,50 @@ window.PLACE_KIT = PLACE_KIT;
     // 1 → 2: the sword
     untilStage(2, () => { walk(Math.floor(SWORD_POS.x / TILE), Math.floor(SWORD_POS.y / TILE)); sim(5); }, () => { swordTaken = true; player.equip.weapon = 'wooden_sword'; advanceQuest(2); });
     // 2 → 3: out of the cave; the axe in the stump
-    untilStage(3, () => { walk(CAVE_EXIT_X + 3, 7); sim(5); }, () => { tp(CAVE_EXIT_X + 3, 7, 'forced out of the cave'); advanceQuest(3); });
-    useAt(23, 9); drain();
+    untilStage(3, () => { walk(CAVE_EXIT_X + 3, CV.y(7)); sim(5); }, () => { tp(CAVE_EXIT_X + 3, CV.y(7), 'forced out of the cave'); advanceQuest(3); });
+    useAt(...PT('cave.axe_stump')); drain();
     // 3 → 4: first blood
-    untilStage(4, () => { grindTo('melee', 99, ['goblin'], [[30, 8], [34, 12], [40, 10]], 40000, () => quest.stage >= 4); }, () => { quest.kills = 3; advanceQuest(4); });
+    untilStage(4, () => { grindTo('melee', 99, ['goblin'], [CV.p(30, 8), ...OPEN.pts([[34, 12], [40, 10]])], 40000, () => quest.stage >= 4); }, () => { quest.kills = 3; advanceQuest(4); });
     // the goblin fields: melee 5 for the Duke, coins for a hammer, and a first look at gear from the drops
-    untilStage(5, () => { grindTo('melee', 5, ['goblin'], [[40, 8], [47, 20], [52, 28], [58, 22], [62, 30], [66, 18]], 60000); note(`melee ${skillLv('melee')}, coins ${coins()}, kills ${player.kills}`); walk(SIGN_TILE.x - 1, SIGN_TILE.y); F().face(SIGN_TILE.x, SIGN_TILE.y); F().press('KeyE'); PLAY.steps++; sim(3); drain(); }, () => advanceQuest(5));
+    untilStage(5, () => { grindTo('melee', 5, ['goblin'], [...OPEN.pts([[40, 8], [47, 20], [52, 28], [58, 22]]), ATLAS.frame('signpost').p(62, 30), ...OPEN.pts([[66, 18]])], 60000); note(`melee ${skillLv('melee')}, coins ${coins()}, kills ${player.kills}`); walk(SIGN_TILE.x - 1, SIGN_TILE.y); F().face(SIGN_TILE.x, SIGN_TILE.y); F().press('KeyE'); PLAY.steps++; sim(3); drain(); }, () => advanceQuest(5));
     // 5 → 6: the Duke
     untilStage(6, () => { talk('duke'); drain(); }, () => advanceQuest(6));
     // 6 → 7: Woodcutting 3 (seven trees), Melee 5, back to the Duke
     untilStage(7, () => {
       if (!hasTool('axe')) { note('no axe: buying one from Marta'); buy('marta', 'Buy 25'); drain(); }
-      { const tried = new Set(); while (skillLv('woodcutting') < 3 && !over()) { const tree = nearestReachable([T.TREE], { x: tc(84), y: tc(30) }, tried); if (!tree) break; if (!harvest(tree.x, tree.y, 'wood')) tried.add(idx(tree.x, tree.y)); if (tried.size > 12) break; } }
+      { const tried = new Set(); while (skillLv('woodcutting') < 3 && !over()) { const tree = nearestReachable([T.TREE], { x: tc(TD.x(84)), y: tc(TD.y(30)) }, tried); if (!tree) break; if (!harvest(tree.x, tree.y, 'wood')) tried.add(idx(tree.x, tree.y)); if (tried.size > 12) break; } }
       note(`woodcutting ${skillLv('woodcutting')}, melee ${skillLv('melee')}`);
-      if (skillLv('melee') < 5) grindTo('melee', 5, ['goblin'], [[47, 20], [52, 28], [58, 22], [62, 30], [66, 18], [72, 26]], 60000);
+      if (skillLv('melee') < 5) grindTo('melee', 5, ['goblin'], [...OPEN.pts([[47, 20], [52, 28], [58, 22]]), ATLAS.frame('signpost').p(62, 30), ...OPEN.pts([[66, 18]]), TD.p(72, 26)], 60000);
       talk('duke'); drain();
     }, () => { player.skills.melee.xp = Math.max(player.skills.melee.xp, XP_TABLE[5]); player.skills.woodcutting.xp = Math.max(player.skills.woodcutting.xp, XP_TABLE[3]); advanceQuest(7); });
     // 7 → 8: gear up (hammer, iron dagger + helm, bronze body/legs/shield), melee 15 on goblins, wolves and the camp, then the walker
     untilStage(8, () => {
       equipBest();
       // a pickaxe from the miners' cart, Mining 5 on the quarry's rocks, iron ore for two bars
-      if (!player.tookPick) useAt(54, 13);
-      if (hasTool('pickaxe')) { const tried = new Set(); while (skillLv('mining') < 5 && !over()) { const r = nearestReachable([T.ROCK], { x: tc(54), y: tc(8) }, tried); if (!r) break; if (!harvest(r.x, r.y, 'stone')) tried.add(idx(r.x, r.y)); if (tried.size > 12) break; } gather([T.IRON], 'iron_ore', 2, { x: tc(54), y: tc(8) }); }
+      if (!player.tookPick) useAt(...PT('quarry.cart'));
+      if (hasTool('pickaxe')) { const tried = new Set(); while (skillLv('mining') < 5 && !over()) { const r = nearestReachable([T.ROCK], { x: tc(QY.x(54)), y: tc(QY.y(8)) }, tried); if (!r) break; if (!harvest(r.x, r.y, 'stone')) tried.add(idx(r.x, r.y)); if (tried.size > 12) break; } gather([T.IRON], 'iron_ore', 2, { x: tc(QY.x(54)), y: tc(QY.y(8)) }); }
       note(`mining ${skillLv('mining')}, iron ore ${countItem('iron_ore')}, coins ${coins()}`);
-      if (coins() < 5) grindTo('melee', 99, ['goblin'], [[47, 20], [52, 28], [58, 22]], 8000);
+      if (coins() < 5) grindTo('melee', 99, ['goblin'], OPEN.pts([[47, 20], [52, 28], [58, 22]]), 8000);
       if (!hasTool('hammer')) buy('brakka', 'Buy 5'); drain();
-      if (hasTool('hammer') && countItem('iron_ore') >= 1) { station(92, 38, 92, 37, 'station', 'Iron ore → Iron bar', 'iron_bar', Math.min(2, countItem('iron_ore'))); if (countItem('iron_bar') >= 1) station(94, 39, 94, 38, 'station', '1 bar → Iron dagger', 'iron_dagger'); if (countItem('iron_bar') >= 1 && skillLv('smithing') >= 3) station(94, 39, 94, 38, 'station', '1 bar → Iron helm', 'iron_helm'); }
+      if (hasTool('hammer') && countItem('iron_ore') >= 1) { station(...TD.p(92, 38), ...PT('thistledown.forge'), 'station', 'Iron ore → Iron bar', 'iron_bar', Math.min(2, countItem('iron_ore'))); if (countItem('iron_bar') >= 1) station(...TD.p(94, 39), ...PT('thistledown.anvil'), 'station', '1 bar → Iron dagger', 'iron_dagger'); if (countItem('iron_bar') >= 1 && skillLv('smithing') >= 3) station(...TD.p(94, 39), ...PT('thistledown.anvil'), 'station', '1 bar → Iron helm', 'iron_helm'); }
       equipBest(); drain();
       // melee 12 on the fields and Wolfwood's edge, then the camp (sappers, brutes, goblins) to 15
-      grindTo('melee', 12, ['goblin', 'wolf', 'boar'], [[60, 52], [70, 50], [80, 8], [100, 60], [116, 60], [90, 60], [70, 56]], 120000);
+      grindTo('melee', 12, ['goblin', 'wolf', 'boar'], [...OPEN.pts([[60, 52]]), TD.p(70, 50), ...OPEN.pts([[80, 8]]), ...TD.pts([[100, 60], [116, 60], [90, 60], [70, 56]])], 120000);
       if (coins() >= 105) { buy('brakka', 'Buy 60'); buy('brakka', 'Buy 45'); } if (coins() >= 40) buy('marta', 'Buy 40'); equipBest(); drain();
-      grindTo('melee', 15, ['goblin', 'sapper', 'brute'], [[144, 24], [146, 26], [148, 30], [153, 24], [155, 30], [147, 36], [154, 34], [150, 38]], 120000);
+      grindTo('melee', 15, ['goblin', 'sapper', 'brute'], CP.pts([[144, 24], [146, 26], [148, 30], [153, 24], [155, 30], [147, 36], [154, 34], [150, 38]]), 120000);
       note(`melee ${skillLv('melee')}, defence ${skillLv('defence')}, hp ${player.maxHp}, weapon ${player.equip.weapon}, coins ${coins()}`);
       const wk = monsters.find(m => m.type === 'walker'); let tries = 0;
       while (wk && !wk.dead && tries++ < 6 && !over()) { walk(Math.floor(wk.x / TILE), Math.floor(wk.y / TILE), true, 3000); brawl(['walker', 'goblin', 'sapper', 'brute'], 20000, 8 * TILE); }
       note(`walker dead: ${wk && wk.dead}, quest.walkerKilled ${quest.walkerKilled}`);
       // Sera: the cage opens once the camp is clear
-      brawl(['goblin', 'sapper', 'brute', 'bulldozer'], 30000, 12 * TILE); if (!monsters.some(m => !m.dead && ['goblin', 'sapper', 'brute', 'walker', 'bulldozer'].includes(m.type) && dist(m.x, m.y, tc(148), tc(34)) <= 6 * TILE)) { useAt(148, 34); drain(); note(`companion: ${player.companion && player.companion.id}`); }
+      brawl(['goblin', 'sapper', 'brute', 'bulldozer'], 30000, 12 * TILE); if (!monsters.some(m => !m.dead && ['goblin', 'sapper', 'brute', 'walker', 'bulldozer'].includes(m.type) && dist(m.x, m.y, ...PT('camp.cage').map(tc)) <= 6 * TILE)) { useAt(...PT('camp.cage')); drain(); note(`companion: ${player.companion && player.companion.id}`); }
       talk('duke'); drain();
     }, () => { quest.walkerKilled = true; advanceQuest(8); });
     // 8 → 9: the road south to Hollowford
-    untilStage(9, () => { walk(150, 41); walk(141, 64); walk(140, 67); waitStage(9, 60); }, () => { tp(140, 68, 'forced to Hollowford'); advanceQuest(9); });
+    untilStage(9, () => { walk(...CP.p(150, 41)); walk(...HF.p(141, 64)); walk(...HF.p(140, 67)); waitStage(9, 60); }, () => { tp(...PT('hollowford.north'), 'forced to Hollowford'); advanceQuest(9); });
     // 9 → 10: the Barrelbeast. Melee 20 first, on the camp's leftovers and the Hollowford patrols
     untilStage(10, () => {
-      grindTo('melee', 20, ['goblin', 'sapper', 'brute', 'wolf'], [[140, 70], [133, 78], [148, 78], [130, 80], [150, 74], [128, 75], [143, 66], [130, 72], [110, 82], [145, 80]], 150000);
+      grindTo('melee', 20, ['goblin', 'sapper', 'brute', 'wolf'], [...HF.pts([[140, 70], [133, 78], [148, 78], [130, 80], [150, 74], [128, 75], [143, 66], [130, 72]]), ...OPEN.pts([[110, 82]]), HF.p(145, 80)], 150000);
       equipBest(); note(`melee ${skillLv('melee')}, defence ${skillLv('defence')}, hp ${player.maxHp}, ${player.equip.weapon}/${player.equip.body}`);
       const bb = monsters.find(m => m.type === 'barrelbeast'); let tries = 0;
       while (bb && !bb.dead && tries++ < 8 && !over()) { walk(Math.floor(bb.x / TILE), Math.floor(bb.y / TILE), true, 3000); brawl(['barrelbeast', 'goblin', 'sapper', 'brute'], 30000, 9 * TILE); }
@@ -18906,12 +18917,13 @@ window.PLACE_KIT = PLACE_KIT;
     untilStage(11, () => {
       if (!hasTool('hammer')) buy('brakka', 'Buy 5');
       brawl(['brute', 'goblin', 'sapper'], 20000, 8 * TILE);
-      for (let k = 0; k < 4 && tileAt(128, 85) === T.CRYPT_BARS && !over(); k++) { closePanel(); useAt(128, 85); sim(3); }
-      note(`bars at 128,85: ${tileAt(128, 85) === T.CRYPT_BARS ? 'standing' : 'broken'}; hammer ${hasTool('hammer')}, at ${ptx()},${pty()}, notice ${notice && notice.text}, said ${dialog.cur && dialog.cur.text}`);
+      const BARS = HF.p(128, 85);   // the chapel crypt's bars
+      for (let k = 0; k < 4 && tileAt(...BARS) === T.CRYPT_BARS && !over(); k++) { closePanel(); useAt(...BARS); sim(3); }
+      note(`bars at ${BARS}: ${tileAt(...BARS) === T.CRYPT_BARS ? 'standing' : 'broken'}; hammer ${hasTool('hammer')}, at ${ptx()},${pty()}, notice ${notice && notice.text}, said ${dialog.cur && dialog.cur.text}`);
       talk('tam'); drain(); waitStage(11, 60);
     }, () => { const hf = quest.hollowford || (quest.hollowford = {}); hf.rewarded = true; advanceQuest(11); });
     // 11 → 12: the warden's road (the gate opens itself at stage 11)
-    untilStage(12, () => { walk(60, 94); sim(5); walk(60, 98); waitStage(12, 60); }, () => { tp(60, 98, 'forced past the warden'); advanceQuest(12); });
+    untilStage(12, () => { walk(...WD.p(60, 94)); sim(5); walk(...WD.p(60, 98)); waitStage(12, 60); }, () => { tp(...WD.p(60, 98), 'forced past the warden'); advanceQuest(12); });
     // 12 → 13: Dunstan
     untilStage(13, () => { talk('dunstan'); drain(); }, () => advanceQuest(13));
     // 13 → 14: five dragon dung from the ash drakes
@@ -18935,14 +18947,14 @@ window.PLACE_KIT = PLACE_KIT;
       // up to Aerie — by way of the storm (66-storm): the flute now sets the knight down on the thunderhead and
       // the Thunderbird has to come down before the updraft into the city opens. A death puts him back in his bed,
       // so the walk and the flute are done again; the storm keeps the wounds it already has.
-      useAt(62, 6);
+      useAt(...PT('quarry.shrine'));
       // with the storm already broken the shrine asks which way: over it, up to Aerie
       if (panel === 'windshrine') { render(); F().clickButton('Up to Aerie'); sim(3); }
       if (window.STORM && window.INSTANCES && INSTANCES.active() === 'stormfront') {
         note('in the storm'); drain();
         const beaten = () => !!(quest.storm && quest.storm.beaten);
         for (let k = 0; k < 16 && !beaten() && !over(); k++) {
-          if (INSTANCES.active() !== 'stormfront') { drain(); if (!useAt(62, 6) || INSTANCES.active() !== 'stormfront') break; note('back up into the storm'); }
+          if (INSTANCES.active() !== 'stormfront') { drain(); if (!useAt(...PT('quarry.shrine')) || INSTANCES.active() !== 'stormfront') break; note('back up into the storm'); }
           const b = monsters.find(m => m.type === 'thunderbird' && !m.dead); if (!b) break;
           if (b.phase === 'high') { for (let w = 0; w < 60; w++) { heal(); tick(); } continue; }   // in the cloud no sword reaches it: eat and wait it out (the bolts keep falling)
           brawl(['thunderbird'], 2500, 40 * TILE);
@@ -18963,13 +18975,13 @@ window.PLACE_KIT = PLACE_KIT;
       if (window.INSTANCES && INSTANCES.active()) { INSTANCES.leave(); note('left the sky by the API (the leap tile was not reached)'); }
       note(`back on the ground: ${player.region} at ${ptx()},${pty()}`);
       talk('duke'); drain(); note(`dragon killers formed: ${quest.dk && quest.dk.formed}, horn ${countItem('dragon_horn')}`);
-      walk(18, 107); useAt(18, 108); drain(); walk(18, 116); F().face(18, 117); F().press('KeyE'); PLAY.steps++; sim(3); drain();
+      walk(...FL.p(18, 107)); useAt(...PT('fang_lair.gate')); drain(); walk(...FL.p(18, 116)); F().face(...PT('fang_lair.circle')); F().press('KeyE'); PLAY.steps++; sim(3); drain();
       const fang = monsters.find(m => m.type === 'the_fang'); let t2 = 0;
       while (fang && !fang.dead && t2++ < 12 && !over()) { walk(Math.floor(fang.x / TILE), Math.floor(fang.y / TILE), true, 3000); brawl(['the_fang'], 40000, 12 * TILE); }
       note(`the Fang dead: ${fang && fang.dead}`); waitStage(15, 60);
     }, () => { const m = monsters.find(m => m.type === 'the_fang'); if (m && !m.dead) { m.hp = 1; killMonster(m); } else advanceQuest(15); });
     // 15 → 16: home
-    untilStage(16, () => { walk(112, 48); talk('duke'); drain(); waitStage(16, 60); }, () => advanceQuest(16));
+    untilStage(16, () => { walk(...TD.p(112, 48)); talk('duke'); drain(); waitStage(16, 60); }, () => advanceQuest(16));
     stageStart(quest.stage);
     PLAY.stage = quest.stage; PLAY.seconds = +((Date.now() - PLAY.started) / 1000).toFixed(1); PLAY.gameMinutes = +(PLAY.steps / 3600).toFixed(1);
     return PLAY;

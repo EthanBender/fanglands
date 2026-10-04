@@ -704,5 +704,20 @@
   {"file": "17-tap.js", "literal": "viaE(12, 12, 12, 11)", "line": 451, "reason": "instance-local (deepholm): Brunhild's forge hall in the undercity's own coordinates"},
   {"file": "17-tap.js", "literal": "viaTap(12, 15, tc(12), tc(11))", "line": 451, "reason": "instance-local (deepholm): Brunhild's forge hall in the undercity's own coordinates"},
   {"file": "17-tap.js", "literal": "tc(12)", "line": 451, "reason": "instance-local (deepholm): Brunhild's forge hall in the undercity's own coordinates"},
-  {"file": "17-tap.js", "literal": "tc(11)", "line": 451, "reason": "instance-local (deepholm): Brunhild's forge hall in the undercity's own coordinates"}
+  {"file": "17-tap.js", "literal": "tc(11)", "line": 451, "reason": "instance-local (deepholm): Brunhild's forge hall in the undercity's own coordinates"},
+  {"file": "42-playthrough.js", "literal": "2 * TILE", "decl": "lapSecs", "reason": "a lap's two net tiles at walking speed: a distance in the timing sum, not a position"},
+  {"file": "42-playthrough.js", "literal": "6 * TILE", "decl": "heal", "reason": "the bot eats when a chaser is within 6 tiles: a distance"},
+  {"file": "42-playthrough.js", "literal": "4 * TILE", "decl": "loot", "reason": "the bot's loot sweep radius (4 tiles): a distance"},
+  {"file": "42-playthrough.js", "literal": "6 * TILE", "decl": "brawl", "reason": "the bot's default brawl radius (6 tiles): a distance"},
+  {"file": "42-playthrough.js", "literal": "4 * TILE", "decl": "harvest", "reason": "the bot fights a chaser within 4 tiles before harvesting: a distance"},
+  {"file": "42-playthrough.js", "literal": "14 * TILE", "decl": "gs", "reason": "grindTo looks for prey within 14 tiles: a distance"},
+  {"file": "42-playthrough.js", "literal": "6 * TILE", "decl": "grindTo", "reason": "grindTo walks to prey further than 6 tiles: a distance"},
+  {"file": "42-playthrough.js", "literal": "8 * TILE", "decl": "r", "reason": "a brawl radius of 8 tiles: a distance"},
+  {"file": "42-playthrough.js", "literal": "4 * TILE", "decl": "hunt", "reason": "hunt breaks off for a chaser within 4 tiles: a distance"},
+  {"file": "42-playthrough.js", "literal": "8 * TILE", "decl": "play", "reason": "the play bot's brawl radius (8 tiles): a distance"},
+  {"file": "42-playthrough.js", "literal": "12 * TILE", "decl": "play", "reason": "the play bot's brawl radius at the camp and the lair (12 tiles): a distance"},
+  {"file": "42-playthrough.js", "literal": "6 * TILE", "decl": "play", "reason": "the play bot's reach round the cage and its loot radius (6 tiles): a distance"},
+  {"file": "42-playthrough.js", "literal": "9 * TILE", "decl": "play", "reason": "the play bot's brawl radius at the Barrelbeast (9 tiles): a distance"},
+  {"file": "42-playthrough.js", "literal": "40 * TILE", "decl": "play", "reason": "the play bot's brawl radius for the Thunderbird (40 tiles): a distance"},
+  {"file": "42-playthrough.js", "literal": "useAt(20, 2)", "decl": "play", "reason": "instance-local (stormfront): the updraft up into Aerie in the storm's own coordinates"}
 ]
