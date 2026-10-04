@@ -5003,14 +5003,17 @@ function recipeTier(r) { const id = r.out || ''; for (const [name, re] of RECIPE
 
 // ---------- map targets ----------
 // Tile coordinates. MAP_TARGETS[stage] is the main-story default; HOOKS.mapTarget fns return {x, y, label, id} or null.
+// Every position is a read (the spread spec, §9.1): the story signpost is 02-world's SIGN_TILE, the rest are Atlas ports.
+const MAP_TARGET_AT = (id, label) => { const q = ATLAS.port(id); return { x: q[0], y: q[1], label }; };
 const MAP_TARGETS = {
-  0: { x: 65, y: 27, label: 'The signpost' }, 1: { x: 65, y: 27, label: 'The signpost' }, 2: { x: 65, y: 27, label: 'The signpost' }, 3: { x: 65, y: 27, label: 'The signpost' }, 4: { x: 65, y: 27, label: 'The signpost' },
-  5: { x: 112, y: 49, label: 'Duke Ferrin' }, 6: { x: 112, y: 49, label: 'Duke Ferrin' },
-  7: { x: 152, y: 30, label: 'The goblin walker' },
-  8: { x: 140, y: 76, label: 'Hollowford' }, 9: { x: 140, y: 76, label: 'Hollowford' }, 10: { x: 140, y: 76, label: 'Hollowford' },
-  11: { x: 67, y: 104, label: 'Dunstan, the Ashfields' }, 12: { x: 67, y: 104, label: 'Dunstan, the Ashfields' }, 13: { x: 67, y: 104, label: 'Dunstan, the Ashfields' },
-  14: { x: 18, y: 108, label: "The Fang's lair" },
-  15: { x: 112, y: 49, label: 'Duke Ferrin' }, 16: { x: 112, y: 49, label: 'Castle Thistledown' },
+  0: { x: SIGN_TILE.x, y: SIGN_TILE.y, label: 'The signpost' }, 1: { x: SIGN_TILE.x, y: SIGN_TILE.y, label: 'The signpost' }, 2: { x: SIGN_TILE.x, y: SIGN_TILE.y, label: 'The signpost' },
+  3: { x: SIGN_TILE.x, y: SIGN_TILE.y, label: 'The signpost' }, 4: { x: SIGN_TILE.x, y: SIGN_TILE.y, label: 'The signpost' },
+  5: MAP_TARGET_AT('thistledown.duke', 'Duke Ferrin'), 6: MAP_TARGET_AT('thistledown.duke', 'Duke Ferrin'),
+  7: MAP_TARGET_AT('camp.walker', 'The goblin walker'),
+  8: MAP_TARGET_AT('hollowford.heart', 'Hollowford'), 9: MAP_TARGET_AT('hollowford.heart', 'Hollowford'), 10: MAP_TARGET_AT('hollowford.heart', 'Hollowford'),
+  11: MAP_TARGET_AT('warden.dunstan', 'Dunstan, the Ashfields'), 12: MAP_TARGET_AT('warden.dunstan', 'Dunstan, the Ashfields'), 13: MAP_TARGET_AT('warden.dunstan', 'Dunstan, the Ashfields'),
+  14: MAP_TARGET_AT('fang_lair.gate', "The Fang's lair"),
+  15: MAP_TARGET_AT('thistledown.duke', 'Duke Ferrin'), 16: MAP_TARGET_AT('thistledown.duke', 'Castle Thistledown'),
 };
 HOOKS.mapTarget = [];
 function mainTarget() {
@@ -5019,11 +5022,11 @@ function mainTarget() {
   const t = MAP_TARGETS[s] || MAP_TARGETS[16]; return t ? { ...t, id: 'main' } : null;
 }
 HOOKS.mapTarget.push(mainTarget);
-HOOKS.mapTarget.push(() => quest.bread === 'active' ? { x: 110, y: 33, label: 'Tobin', id: 'bread' } : null);
-HOOKS.mapTarget.push(() => quest.wren === 'active' ? { x: 30, y: 78, label: 'Old Wren', id: 'wren' } : null);
-HOOKS.mapTarget.push(() => { const a = activeQuests(); return a.includes('board') ? { x: 105, y: 27, label: 'Notice board', id: 'board' } : null; });
-HOOKS.mapTarget.push(() => activeQuests().includes('law') ? { x: 110, y: 40, label: 'Captain of the Watch', id: 'law' } : null);
-HOOKS.mapTarget.push(() => activeQuests().includes('dragons') ? { x: 67, y: 104, label: 'Dunstan', id: 'dragons' } : null);
+HOOKS.mapTarget.push(() => quest.bread === 'active' ? Object.assign(ATLAS.frame('thistledown').pt({ x: 110, y: 33 }), { label: 'Tobin', id: 'bread' }) : null);
+HOOKS.mapTarget.push(() => quest.wren === 'active' ? Object.assign(MAP_TARGET_AT('wren.wren', 'Old Wren'), { id: 'wren' }) : null);
+HOOKS.mapTarget.push(() => { const a = activeQuests(); return a.includes('board') ? Object.assign(MAP_TARGET_AT('thistledown.board', 'Notice board'), { id: 'board' }) : null; });
+HOOKS.mapTarget.push(() => activeQuests().includes('law') ? Object.assign(ATLAS.frame('thistledown').pt({ x: 110, y: 40 }), { label: 'Captain of the Watch', id: 'law' }) : null);
+HOOKS.mapTarget.push(() => activeQuests().includes('dragons') ? Object.assign(MAP_TARGET_AT('warden.dunstan', 'Dunstan'), { id: 'dragons' }) : null);
 // A target is on the world map unless it says otherwise: { map: '<instance id>' } puts it on that instance's map instead.
 // Inside an instance only that instance's own targets are listed, so no overworld ring, label or compass arrow lands on the
 // dungeon drawn in the same top-left tiles (the quest box's "Head for ..." line and the minimap compass read this too).

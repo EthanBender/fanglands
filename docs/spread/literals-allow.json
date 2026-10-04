@@ -12,6 +12,7 @@
   { "file": "01-atlas.js", "literal": "anchorOf(72, 14)", "reason": "the frame API's own self-test: anchorOf, oldToNew and oldToNewWorld take OLD-map coordinates by design (the save migration's and the tools' API, never game code)" },
   { "file": "01-atlas.js", "literal": "anchorOf(13, 72)", "reason": "the frame API's own self-test: anchorOf, oldToNew and oldToNewWorld take OLD-map coordinates by design (the save migration's and the tools' API, never game code)" },
   { "file": "01-atlas.js", "literal": "anchorOf(140, 80)", "reason": "the frame API's own self-test: anchorOf, oldToNew and oldToNewWorld take OLD-map coordinates by design (the save migration's and the tools' API, never game code)" },
+  { "file": "13-ux.js", "literal": "x < 230", "reason": "joystickZone: screen pixels (the idle stick circle), not a map tile" },
   { "file": "15-music.js", "reason": "MIDI note numbers and beats, no map coordinates" },
   { "file": "03-textures.js", "reason": "pixel positions inside a 48 px tile texture" },
   { "file": "59-hudkit.js", "reason": "HUD kit: screen pixels and emblem drawing, no map coordinates" },
