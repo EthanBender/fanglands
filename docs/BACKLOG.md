@@ -116,6 +116,10 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
     (`nowMs`, performance.now) and the card arms at 500 ms, so 50 ms of real time between that line and the second tap (a
     loaded machine) arms it and the tap picks. A test timing flake; the game's own guard is fine. Fix: backdate by less
     (or stub nowMs) in the check.
+  - Under --play only (the bot's playthrough first), "capital: C10b a tap on a stall, a bench ..." and "capital: C11 the coin
+    toss ..." failed in 2 of 2 runs of feat/shared-2 (merged with 1b35299) and 1 of 2 runs of master 1b35299 itself (that run
+    also failed "fight back: a bow with no arrows ..." and two aerie2 checks); the plain suite the deploys run passes
+    (`~/.fanglands/work/phase1/sw-2/fix2/play/`). Not traced.
 - Knight gear refit leftovers (reviewers' minor findings, 2026-10-03; the refit is live in 9c625b6). Swept 2026-10-03
   (fix/leftovers-looks): friends online on their mare, bulldozer or Barrelbeast, their swings, raised shields and still
   tools; the stone and the pot's rope in his hand; the shield raised facing away shows; nothing over the ferry's hull;

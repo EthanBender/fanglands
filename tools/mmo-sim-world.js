@@ -253,10 +253,12 @@ async function main() {
     const bAt = ev(B, '({ x: player.x, y: player.y })');
     const dc = copyOf(), standing = dc ? dc.api.peek('monsters').filter(m => !m.dead && Math.hypot(m.x - bAt.x, m.y - bAt.y) <= 24 * 48).map(m => m.nid) : [];
     const bLost = bIds0.filter(n => standing.includes(n) && bSeen.some(f => !f.includes(n)));
+    // (what each side holds of any monster standing near Ben in the copy that his screen does not show)
+    const missing = standing.filter(n => !bIds.includes(n)).map(n => { const m = dc.api.peek('monsters').find(o => o.nid === n), kb = room.byName.get('ben'); return { nid: n, copy: m && { x: Math.round(m.x), y: Math.round(m.y), hp: m.hp, born: m.respawnT }, ben: ev(B, `(() => { const p = monsters.find(o => o.nid === '${n}'); return p ? { x: Math.round(p.x), y: Math.round(p.y), dead: !!p.dead, gone: !!p.gone, deadT: p.deadT } : null; })()`), roomAt: kb && [Math.round(kb.x), Math.round(kb.y)] }; });
     line('8. the Room rebuilt with Dee in the world-run Aerie and no copy loaded: she (picked: ' + picked + ') is told she keeps it and her own hit lands; the new copy then takes it over with nothing vanishing on her screen and nothing near her laid down in it; Deepholm comes back to the world from Ann and Ben\'s stream',
       picked === 'Dee' && toldAt >= 0 && hitLanded === true && !w.vanished && !w.doubled && Array.isArray(dead) && dead.length === 0 && ev(D, 'COOP.keeper()') === '@world:aerie' && room2.keeperOf('aerie').name === '@world:aerie'
         && ev(A, 'COOP.keeper()') === '@world:deepholm' && ev(B, 'COOP.keeper()') === '@world:deepholm' && bIds0.length >= 1 && !bLost.length && standing.every(n => bIds.includes(n)),
-      { picked, toldAt, hitLanded, vanished: w.vanished, gone: w.gone, doubled: w.doubled, deadInCopy: dead, keeper: ev(D, 'COOP.keeper()'), deepholm: [ev(A, 'COOP.keeper()'), ev(B, 'COOP.keeper()')], bIds0, bIds, standing, bLost });
+      { picked, toldAt, hitLanded, vanished: w.vanished, gone: w.gone, doubled: w.doubled, deadInCopy: dead, keeper: ev(D, 'COOP.keeper()'), deepholm: [ev(A, 'COOP.keeper()'), ev(B, 'COOP.keeper()')], bIds0, bIds, standing, bLost, missing, benAt: bAt });
   }
 
   // ---- 9. a knight whose game stops is not beaten while it is stopped ----
