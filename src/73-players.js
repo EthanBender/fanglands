@@ -69,12 +69,21 @@
       gear: l.gear ? { helm: l.gear.helm || null, body: l.gear.body || null, legs: l.gear.legs || null, shield: l.gear.shield || null, cape: l.gear.cape || null, weapon: l.gear.weapon || null } : null,
     };
   }
+  // the machine or mount he is on: its kind and hp, and a bulldozer's fitted upgrades (40-dozerup) so a friend sees the
+  // drill and the ram plate on it (84-mountlook draws them; old clients ignore `up`)
+  const DOZER_UPS = ['drill', 'irondrill', 'ram', 'boiler'];
+  const dozerUps = () => { const u = player.dozerUp; return u && typeof u === 'object' ? DOZER_UPS.filter(k => u[k]).join(',') : ''; };
+  function mechOf(m) {
+    const o = { kind: m.kind || 'walker', hp: Math.ceil(m.hp), maxHp: m.maxHp };
+    if (o.kind === 'dozer') { const up = dozerUps(); if (up) o.up = up; }
+    return o;
+  }
   function presence() {
     const a = player.action, m = player.mech;
     return {
       t: 'p', map: mapId(), region: regionName(), x: Math.round(player.x), y: Math.round(player.y), fx: +player.facing.x.toFixed(2), fy: +player.facing.y.toFixed(2),
       mv: !!player.moving, wt: +(player.walkT % 100).toFixed(1), hp: Math.ceil(player.hp), mhp: player.maxHp, lv: combatLevel(), look: lookOf(),
-      mech: m ? { kind: m.kind || 'walker', hp: Math.ceil(m.hp), maxHp: m.maxHp } : null, dead: !!player.dead, def: playerDefRoll(), act: a ? a.type : null,
+      mech: m ? mechOf(m) : null, dead: !!player.dead, def: playerDefRoll(), act: a ? a.type : null,
       // the shared world's movement check (docs/ONLINE.md, "The shared world", Stage 1): the jump counter and his own speed
       j: JUMP.n, spd: speedNow(),
     };
@@ -91,7 +100,7 @@
     JUMP.x = x; JUMP.y = y;
   });
   // a cheap signature of everything the contract counts as a change; the full message is only built when it differs
-  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || ''); };
+  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? (m.kind || 'walker') + ':' + Math.ceil(m.hp) + (m.kind === 'dozer' ? ':' + dozerUps() : '') : '-') + '|' + (player.gender || ''); };
   const sig = () => mapId() + '|' + Math.round(player.x) + ',' + Math.round(player.y) + '|' + player.facing.x.toFixed(2) + ',' + player.facing.y.toFixed(2) + '|' + (player.moving ? 1 : 0) + '|' + Math.ceil(player.hp) + '/' + player.maxHp + '|' + (player.dead ? 1 : 0) + '|' + lookKey();
   let lastSig = null, lastSentAt = -1e9, sent = 0, sentSock = null;
 
@@ -146,20 +155,25 @@
 
   // ---------- drawing: among the y-sorted world items, like a monster or the knight himself ----------
   function drawKnight(g, e) {
-    const look = e.look || DEFAULT_LOOK, x = e.shown.x, y = e.shown.y, onMech = !!e.mech && e.mech.kind !== 'horse';
+    const look = e.look || DEFAULT_LOOK, x = e.shown.x, y = e.shown.y;
+    // on a mount: the mare, the walker, the bulldozer or the Barrelbeast, in the new look with him in the saddle or the
+    // seat (84-mountlook; a kind this page does not know is drawn as the walker, as it always was)
+    const ML = window.MOUNT_LOOK, kind = e.mech && ML ? (ML.kindOf(e.mech) || 'walker') : null, onMech = !!e.mech;
     g.save(); g.translate(x, y);
     if (e.dead) { g.globalAlpha = 0.3; g.rotate(1.4); drawHuman(g, e, look); g.restore(); return; }   // fallen: lying down and faint, as the knight himself is
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, onMech ? 14 : 11, onMech ? 22 : 12, onMech ? 9 : 6, 0, 0, 7); g.fill();
-    if (onMech) drawMech(g, e, e.hurtT > 0, look);
+    if (kind && ML.rider(g, e, look, kind)) { }
+    else if (onMech) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 14, 22, 9, 0, 0, 7); g.fill(); drawMech(g, e, e.hurtT > 0, look); }
     // a knight look (with gear) bobs only his body, from a picture (82-knightgear: the crowd stays cheap)
-    else if (look.gear && window.KNIGHTGEAR) KNIGHTGEAR.draw(g, e, look, { cache: true });
-    else { g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
+    else if (look.gear && window.KNIGHTGEAR) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill(); KNIGHTGEAR.draw(g, e, look, { cache: true }); }
+    else { g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill(); g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
     g.restore();
     // the name, the level in smaller grey after it, an hp bar when hurt, a ring when close enough to hand things over.
     // An admin's tag row starts with the gold ADMIN pill and the name is gold; the level stays.
     // a knight in gear can stand taller (a party hat, an upright spear): the name goes above whatever he wears
     const tall = !onMech && !e.dead && look.gear && window.KNIGHTGEAR ? Math.min(0, Math.round(KNIGHTGEAR.extent(look).t) + 29) : 0;
-    const top = Math.round(y) - (onMech ? 46 : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
+    const top = Math.round(y) - (kind ? ML.top(kind) : onMech ? 46 : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
+    // where his name is, for a tap on it (78-trade)
+    e.tagTop = top;
     g.font = 'bold 8px sans-serif'; const pw = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 + 4 : 0;
     g.font = 'bold 11px sans-serif'; const nw = g.measureText(e.n).width;
     g.font = '9px sans-serif'; const lw = g.measureText(lv).width;

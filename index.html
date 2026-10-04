@@ -13140,7 +13140,7 @@ window.PLACE_KIT = PLACE_KIT;
     action: () => touch.taps.push('bomb'),
   });
   // the coach: "[B] Bomb" over the beast the first times the chute is loaded
-  HOOKS.hud.push(() => { if (driving() && bombCd <= 0 && !paused && !panel && monsters.some(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 260)) HK.teach('bomb', 'B', 'Bomb', { x: player.x, y: player.y, lift: 52 }, { emblem: 'bomb' }); });
+  HOOKS.hud.push(() => { if (driving() && bombCd <= 0 && !paused && !panel && monsters.some(m => !m.dead && dist(m.x, m.y, player.x, player.y) < 260)) HK.teach('bomb', 'B', 'Bomb', { x: player.x, y: player.y, lift: window.MOUNT_LOOK ? MOUNT_LOOK.top('beast') + 54 : 52 }, { emblem: 'bomb' }); });
 
   // ---------- art ----------
   // The sprite lives in 20-hollowford.js (HOOKS.drawMonster.barrelbeast); its fourth argument is the pilot look and
@@ -13164,7 +13164,7 @@ window.PLACE_KIT = PLACE_KIT;
   HOOKS.draw.unshift((g, items, cam) => {
     const x0 = Math.max(0, Math.floor(cam.x / TILE) - 2), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE) + 2);
     const y0 = Math.max(0, Math.floor(cam.y / TILE) - 2), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE) + 2);
-    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tileAt(tx, ty); if (t === T_BEAST || t === T_BEAST_WRECK) items.splice(Math.max(0, items.length - 1), 0, { y: ty * TILE + TILE - 4, draw: () => drawBeastTile(g, tx, ty, t) }); }
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tileAt(tx, ty); if (t === T_BEAST || t === T_BEAST_WRECK) items.splice(Math.max(0, items.length - 1), 0, { y: ty * TILE + TILE - 4, draw: () => window.BEAST.drawTile(g, tx, ty, t) }); }
     if (!player.dead && driving()) {
       const draw = () => {
         const e = { x: player.x, y: player.y, r: player.r, facing: player.facing, moving: player.moving, walkT: player.walkT, attackT: player.attackT, hurtT: player.hurtT, hp: player.mech.hp, maxHp: player.mech.maxHp, rodGlow: bombCd > 0 ? 0 : 0.35 };
@@ -13185,6 +13185,8 @@ window.PLACE_KIT = PLACE_KIT;
   // ---------- re-supply API (Tinkerton, another feature file) ----------
   window.BEAST = {
     tiles: { BEAST: T_BEAST, BEAST_WRECK: T_BEAST_WRECK },
+    // a parked or wrecked Barrelbeast's tile; 84-mountlook puts the new look in its place
+    drawTile: drawBeastTile,
     // places a repaired BEAST tile at (tx, ty) if the ground allows it (or on a wreck); returns true when placed
     giveTile(tx, ty) {
       if (!inMap(tx, ty)) return false;
@@ -21788,9 +21790,8 @@ window.SETTINGS = SETTINGS;
     // the mare, grazing on her plate, and her price
     K.card(g, x0, y, Q.inner, 96);
     g.save(); g.beginPath(); g.rect(x0 + 3, y + 3, Q.inner - 6, 90); g.clip();
-    g.translate(x0 + 70, y + 60); g.scale(1.25, 1.25);
-    g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(0, 20, 28, 7, 0, 0, 7); g.fill();
-    drawHorse(g, parkedMare(0, 0), false, null);
+    g.translate(x0 + 70, y + 64); g.scale(1.22, 1.22);
+    drawHorse(g, Object.assign(parkedMare(0, 0), { headUp: true }), false, null);
     g.restore();
     const tx = x0 + 150, tw0 = Q.inner - 150 - 12;
     K.say(g, NAME, tx, y + 34, tw0, { font: K.NAME(16), color: HK.T.goldHi, id: 'stable:name' });
@@ -21863,22 +21864,53 @@ window.SETTINGS = SETTINGS;
 
   // ---------- getting off ----------
   // The core's exitMech parks a walker tile it knows nothing about, so the mare does her own dismount:
-  // she takes the ground ahead (or the tile you are on), and the knight takes the nearest free spot.
+  // she takes the ground ahead (or the tile you are on), and the knight takes the nearest free spot. When neither will
+  // take her (a gateway, facing along the gate: the gate tile under her and more gate or the wall ahead), she takes the
+  // nearest open ground round about, the street beside the gate first. Next to a gate she never stands where she would
+  // close it to a mount that could ride through it before (94-mountgates' routes: a mare in the middle lane of a
+  // three-tile town gate leaves two 48 px lanes, too narrow for the Barrelbeast).
   function aheadTile() { return { tx: Math.floor((player.x + player.facing.x * 44) / TILE), ty: Math.floor((player.y + player.facing.y * 44) / TILE) }; }
+  const nearGate = (tx, ty) => { for (let y = ty - 2; y <= ty + 2; y++) for (let x = tx - 2; x <= tx + 2; x++) if (inMap(x, y) && RIDE_THROUGH.has(tileAt(x, y))) return [x, y]; return null; };
+  // every way a mount could cross the gates near (tx, ty) right now (94-mountgates loads after this file)
+  const gateRoutes = at => window.MOUNTGATES && MOUNTGATES.routes ? MOUNTGATES.routes(at[0], at[1]) : [];
+  function dismountSpot() {
+    const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }, ft = aheadTile();
+    const usable = s => inMap(s.tx, s.ty) && PLACEABLE_ON.has(tileAt(s.tx, s.ty)) && !insideBuilding(s.tx, s.ty) && !NPCS.some(n => circleHitsTile(n.px, n.py, 14, s.tx, s.ty));
+    const cands = [];
+    if (ft.tx !== own.tx || ft.ty !== own.ty) cands.push(ft);
+    cands.push(own);
+    // round about: the four sides, then the corners, then two out, nearest first
+    const ring = [];
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dx || dy) ring.push({ tx: own.tx + dx, ty: own.ty + dy, d: Math.max(Math.abs(dx), Math.abs(dy)) * 10 + Math.abs(dx) + Math.abs(dy) + dist(player.x, player.y, tc(own.tx + dx), tc(own.ty + dy)) / 1000 });
+    ring.sort((a, b) => a.d - b.d);
+    for (const r of ring) if (!cands.some(c => c.tx === r.tx && c.ty === r.ty)) cands.push({ tx: r.tx, ty: r.ty });
+    let first = null;
+    for (const c of cands) {
+      if (!usable(c)) continue;
+      const onOwn = c.tx === own.tx && c.ty === own.ty;
+      // the knight steps back off her when she takes his own tile; otherwise he gets down where he is (or close by)
+      const want = onOwn ? { x: player.x - player.facing.x * TILE, y: player.y - player.facing.y * TILE } : { x: player.x, y: player.y };
+      const i = idx(c.tx, c.ty), was = map[i];
+      const g0 = nearGate(c.tx, c.ty), before = g0 ? gateRoutes(g0) : null;
+      map[i] = T_HORSE;
+      const free = safeSpot(want.x, want.y, BASE_R, 'player');
+      const keeps = !g0 || (() => { const after = gateRoutes(g0); return before.every(r => after.includes(r)); })();
+      map[i] = was;
+      if (!free || dist(free.x, free.y, player.x, player.y) > 2.5 * TILE) continue;
+      const pick = { tx: c.tx, ty: c.ty, free };
+      if (keeps) return pick;
+      if (!first) first = pick;
+    }
+    return first;
+  }
   function dismount(quiet) {
     if (!riding()) return false;
-    const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }, ft = aheadTile();
-    const usable = s => inMap(s.tx, s.ty) && PLACEABLE_ON.has(tileAt(s.tx, s.ty)) && !insideBuilding(s.tx, s.ty);
-    const spot = ((ft.tx !== own.tx || ft.ty !== own.ty) && usable(ft)) ? ft : usable(own) ? own : null;
+    const spot = dismountSpot();
     if (!spot) { notify('No room to get down here. Ride somewhere open.'); return false; }
-    const onOwn = spot.tx === own.tx && spot.ty === own.ty, prev = tileAt(spot.tx, spot.ty);
-    H().under = tileName(prev); changeTile(spot.tx, spot.ty, T_HORSE);
-    const want = onOwn ? { x: player.x - player.facing.x * TILE, y: player.y - player.facing.y * TILE } : { x: player.x, y: player.y };
-    const free = safeSpot(want.x, want.y, BASE_R, 'player');
-    if (!free) { changeTile(spot.tx, spot.ty, prev); H().under = null; notify('No room to get down here. Ride somewhere open.'); return false; }
+    H().under = tileName(tileAt(spot.tx, spot.ty)); changeTile(spot.tx, spot.ty, T_HORSE);
     H().at = [spot.tx, spot.ty]; H().hp = player.mech.hp;
     player.mech = null; player.r = BASE_R; player.speed = BASE_SPEED;
-    player.x = free.x; player.y = free.y;
+    player.x = spot.free.x; player.y = spot.free.y;
     handled = true;
     if (!quiet) notify(`You swing down. ${NAME} waits.`);
     save(); return true;
@@ -21966,67 +21998,253 @@ window.SETTINGS = SETTINGS;
   // the coach: "[G] Ride" at the knight the first times his mare is near
   HOOKS.hud.push(() => { if (!paused && !panel && !player.dead && !riding() && H().owned && !player.mech && horseNear()) HK.teach('ride', 'G', 'Ride', { x: player.x, y: player.y, lift: 46 }, { emblem: 'horseshoe' }); });
 
-  // ---------- art: a grey mare with the knight in the saddle, drawn right at all four facings ----------
-  // Two builds. Side-on when she faces left or right (mirrored by the sign of facing.x), and end-on when she
-  // faces up or down (the same drawing flipped in y: head away from you going up, head toward you coming down).
-  const COAT = '#9aa0a8', COAT_DK = '#7a8088', COAT_LT = '#b4b9c0', MANE = '#4a4a52', HOOF = '#2b2b33', TACK = '#5a3a1e', TACK_LT = '#8a6a3a';
-
-  function horseSide(g, e, hurt, graze) {
-    const s = e.facing.x >= 0 ? 1 : -1, sw = e.moving ? Math.sin(e.walkT) * 6 : 0, sw2 = e.moving ? Math.sin(e.walkT + 2.2) * 6 : 0;
-    const drop = graze ? 9 : 0; // a parked mare has her head down in the grass
-    g.save(); g.scale(s, 1);
-    g.strokeStyle = HOOF; g.lineWidth = 4.5; g.lineCap = 'round';
-    for (const [bx, ph] of [[-16, sw], [-11, -sw], [11, sw2], [16, -sw2]]) { g.beginPath(); g.moveTo(bx, 2); g.lineTo(bx + ph, 19); g.stroke(); }
-    g.strokeStyle = MANE; g.lineWidth = 5; g.beginPath(); g.moveTo(-22, -9); g.quadraticCurveTo(-33, -3, -29, 13); g.stroke();   // tail
-    g.fillStyle = hurt ? '#ffb0b0' : COAT; g.beginPath(); g.ellipse(0, -4, 23, 12, 0, 0, 7); g.fill();                           // barrel
-    g.fillStyle = hurt ? '#ffc0c0' : COAT_DK; g.beginPath(); g.ellipse(-16, -5, 9, 11, 0, 0, 7); g.fill();                       // rump
-    g.fillStyle = hurt ? '#ffb0b0' : COAT; g.beginPath(); g.moveTo(10, -12); g.lineTo(20, -28 + drop); g.lineTo(29, -24 + drop); g.lineTo(19, -6); g.closePath(); g.fill(); // neck
-    g.beginPath(); g.ellipse(29, -27 + drop, 9, 5.5, -0.4 + drop * 0.05, 0, 7); g.fill();                                        // head
-    g.fillStyle = hurt ? '#ffc0c0' : COAT_DK; g.beginPath(); g.ellipse(36, -30 + drop * 1.4, 4.2, 3.4, 0, 0, 7); g.fill();       // muzzle
-    g.fillStyle = MANE; g.beginPath(); g.moveTo(11, -13); g.quadraticCurveTo(18, -29 + drop, 25, -34 + drop); g.lineTo(19, -33 + drop); g.quadraticCurveTo(14, -25 + drop, 6, -13); g.closePath(); g.fill(); // mane
-    g.fillStyle = COAT_LT; g.beginPath(); g.moveTo(23, -33 + drop); g.lineTo(25, -41 + drop); g.lineTo(29, -32 + drop); g.closePath(); g.fill(); // ear
-    g.fillStyle = '#222'; g.beginPath(); g.arc(30, -29 + drop, 1.6, 0, 7); g.fill();                                             // eye
-    g.fillStyle = TACK; roundRect(g, -9, -17, 18, 7, 3); g.fill();                                                               // saddle
-    g.fillStyle = TACK_LT; g.fillRect(-11, -14, 22, 2);                                                                          // blanket edge
-    g.strokeStyle = TACK; g.lineWidth = 2; g.beginPath(); g.moveTo(-5, -13); g.lineTo(-4, 6); g.stroke();                        // girth
-    g.beginPath(); g.moveTo(32, -28 + drop); g.quadraticCurveTo(19, -20 + drop / 2, 4, -15); g.stroke();                         // rein into the rider's hand
+  // ---------- art: Cinder in the new look, the knight in the saddle, drawn right at all four facings ----------
+  // Drawn the way the monster refit draws its animals (78-monsterart: the wolf, the boar, the sheep, the cow): seen from
+  // the side facing left or right (mirrored for left), from the front facing down (her long face toward us) and from
+  // behind facing up (her rump and tail toward us); soft dark outline, light from the top left, legs that trot. The
+  // knight sits in the saddle in his own drawing (82-knightgear, seated: no legs, as every pilot sits). Her own helpers below are the sample's (shade, ellipse, outline, lit fills), so nothing is shared with a
+  // file the server copy strips. Units: the drawing is made at the sample's scale and grown by MARE_K to game pixels;
+  // her hooves stand on y 10 (21.5 px under her middle, where the old mare's stood).
+  const MARE_K = 2.15, M_OUT = 'rgba(22,14,8,0.62)', M_TAU = Math.PI * 2;
+  const MC = { coat: '#a2a8b1', dark: '#7d838c', light: '#c6cad0', dapple: '#bdc2c9', belly: '#b9bec5', mane: '#3f3f48', hoof: '#2b2b33',
+    muzzle: '#6f747d', leather: '#6b4423', leatherLt: '#8a5a32', cloth: '#7a2e2e', trim: '#e0b546', steel: '#c9ccd3', bridle: '#4a2f1a' };
+  const M_SH = new Map();
+  function mShade(c, f) {
+    const k = c + '|' + f; let s = M_SH.get(k); if (s) return s;
+    const n = parseInt(c.slice(1), 16); let r = n >> 16, gg = (n >> 8) & 255, b = n & 255;
+    if (f < 0) { r *= 1 + f; gg *= 1 + f; b *= 1 + f; } else { r += (255 - r) * f; gg += (255 - gg) * f; b += (255 - b) * f; }
+    s = `rgb(${r | 0},${gg | 0},${b | 0})`; if (M_SH.size > 400) M_SH.clear(); M_SH.set(k, s); return s;
+  }
+  const mEll = (g, x, y, rx, ry, rot) => { g.beginPath(); g.ellipse(x, y, rx, ry, rot || 0, 0, M_TAU); };
+  const mLine = (g, w) => { g.strokeStyle = M_OUT; g.lineWidth = w || 0.7; g.stroke(); };
+  function mV(g, c, y0, y1, hi, lo) { const gr = g.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, mShade(c, hi === undefined ? 0.28 : hi)); gr.addColorStop(0.55, c); gr.addColorStop(1, mShade(c, lo === undefined ? -0.28 : lo)); return gr; }
+  function mR(g, c, x, y, r) { const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r * 1.1); gr.addColorStop(0, mShade(c, 0.32)); gr.addColorStop(0.6, c); gr.addColorStop(1, mShade(c, -0.3)); return gr; }
+  function mRR(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  // where the stride is: a gallop on the knight's own step clock (she covers twice his ground, so her legs go quicker)
+  const strideOf = e => e.moving ? (+e.walkT || 0) * 1.55 : 0;
+  // one leg: hip at (x, y), a knee that bends as it swings, a dark hoof with a pale band over it
+  function mLeg(g, x, y, len, w, a, c, front, near) {
+    g.save(); g.translate(x, y); g.rotate(a);
+    const bend = front ? Math.max(0, -a) * 1.6 : Math.max(0, a) * 1.2;
+    g.beginPath(); g.moveTo(-w * 0.62, 0); g.lineTo(w * 0.62, 0); g.lineTo(w * 0.42 + bend * 0.6, len * 0.55); g.lineTo(w * 0.36, len - 1.4); g.lineTo(-w * 0.36, len - 1.4); g.lineTo(-w * 0.46 + bend * 0.6, len * 0.55); g.closePath();
+    g.fillStyle = near ? mV(g, c, 0, len, 0.12, -0.3) : mShade(c, -0.28); g.fill(); mLine(g, 0.5);
+    mEll(g, bend * 0.6 * (front ? 1 : 0.8), len * 0.55, w * 0.5, w * 0.42); g.fillStyle = near ? mShade(c, 0.12) : mShade(c, -0.22); g.fill();
+    mRR(g, -w * 0.5, len - 1.9, w, 1.9, 0.6); g.fillStyle = MC.hoof; g.fill(); mLine(g, 0.4);
+    g.fillStyle = near ? MC.light : mShade(MC.light, -0.25); g.fillRect(-w * 0.42, len - 2.4, w * 0.84, 0.55);
     g.restore();
   }
-  function horseEnd(g, e, hurt) {
-    const dir = e.facing.y >= 0 ? 1 : -1, sw = e.moving ? Math.sin(e.walkT) * 4 : 0;
-    g.save(); g.scale(1, dir); // drawn head-toward-you; flipped in y it becomes the view from behind
-    g.strokeStyle = HOOF; g.lineWidth = 4.5; g.lineCap = 'round';
-    for (const [lx, ly, p] of [[-10, -8, sw], [10, -8, -sw], [-9, 5, -sw], [9, 5, sw]]) { g.beginPath(); g.moveTo(lx, ly); g.lineTo(lx + p * 0.5, ly + 14); g.stroke(); }
-    g.strokeStyle = MANE; g.lineWidth = 5; g.beginPath(); g.moveTo(0, -22); g.quadraticCurveTo(5, -30, 1, -37); g.stroke();      // tail
-    g.fillStyle = hurt ? '#ffb0b0' : COAT; g.beginPath(); g.ellipse(0, -2, 13, 21, 0, 0, 7); g.fill();                           // barrel
-    g.fillStyle = hurt ? '#ffc0c0' : COAT_DK; g.beginPath(); g.ellipse(0, -17, 12, 10, 0, 0, 7); g.fill();                       // rump
-    g.fillStyle = hurt ? '#ffb0b0' : COAT; g.beginPath(); g.ellipse(0, 16, 8, 13, 0, 0, 7); g.fill();                            // neck
-    g.beginPath(); g.ellipse(0, 29, 7.5, 9, 0, 0, 7); g.fill();                                                                  // head
-    g.fillStyle = MANE; g.beginPath(); g.ellipse(0, 13, 5, 10, 0, 0, 7); g.fill();                                               // crest
-    g.fillStyle = COAT_LT; for (const ex of [-6, 6]) { g.beginPath(); g.moveTo(ex, 23); g.lineTo(ex * 1.7, 14); g.lineTo(ex * 0.4, 17); g.closePath(); g.fill(); } // ears
-    g.fillStyle = hurt ? '#ffc0c0' : COAT_DK; g.beginPath(); g.ellipse(0, 36, 5, 4.2, 0, 0, 7); g.fill();                        // muzzle
-    if (dir === 1) { g.fillStyle = '#222'; g.beginPath(); g.arc(-3.8, 28, 1.6, 0, 7); g.arc(3.8, 28, 1.6, 0, 7); g.fill(); }     // eyes, only when she looks at you
-    g.fillStyle = TACK; roundRect(g, -8, -8, 16, 9, 3); g.fill();                                                                // saddle
-    g.fillStyle = TACK_LT; g.fillRect(-10, -6, 20, 2);                                                                           // blanket edge
+  // the four legs from the side: the far pair darker, diagonal pairs swinging together
+  function mLegsSide(g, e, bob) {
+    const ph = strideOf(e), sw = p => e.moving ? Math.sin(ph + p) * 0.5 : 0;
+    mLeg(g, -7.4, 0.6 + bob, 9.6, 2.4, sw(Math.PI), MC.coat, false, false);
+    mLeg(g, 4.2, 0.4 + bob, 9.8, 2.2, sw(0), MC.coat, true, false);
+    mLeg(g, -6.2, 0.8 + bob, 9.4, 2.5, sw(0), MC.coat, false, true);
+    mLeg(g, 5.4, 0.6 + bob, 9.6, 2.3, sw(Math.PI), MC.coat, true, true);
+  }
+  // the tail: dark, full, swinging as she goes and swishing now and then when she stands
+  function mTailSide(g, e, bob) {
+    const swish = e.moving ? Math.sin(strideOf(e)) * 0.18 : Math.sin(time * 1.7 + (e.seed || 0)) * 0.12 + Math.max(0, Math.sin(time * 0.9) - 0.9) * 3;
+    g.save(); g.translate(-10.6, -4.6 + bob); g.rotate(0.15 + swish);
+    g.beginPath(); g.moveTo(0, -0.6); g.quadraticCurveTo(-3.6, 0.4, -3.4, 6); g.quadraticCurveTo(-3.6, 10, -1.6, 12.4); g.quadraticCurveTo(-0.6, 9, 0.6, 7.6); g.quadraticCurveTo(1.6, 3, 1.2, 0.4); g.closePath();
+    g.fillStyle = mV(g, MC.mane, -1, 12, 0.18, -0.2); g.fill(); mLine(g, 0.55);
+    g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 0.35; for (const k of [-1.6, -0.6]) { g.beginPath(); g.moveTo(k + 0.4, 1); g.quadraticCurveTo(k - 1.4, 5, k - 0.2, 10.4); g.stroke(); }
     g.restore();
   }
-  // rider = the look to put in the saddle (playerLook()), or null for a mare standing on her own
-  function drawHorse(g, e, hurt, rider) {
-    const vert = Math.abs(e.facing.y) > Math.abs(e.facing.x);
-    if (vert) horseEnd(g, e, hurt); else horseSide(g, e, hurt, !rider);
-    if (rider) {
-      g.save(); g.translate(0, vert ? -11 : -20); g.scale(0.85, 0.85);
-      // seated: the knight (82-knightgear) sits in the saddle, no legs
-      drawHuman(g, { facing: e.facing, hurtT: e.hurtT || 0, attackT: 0, seated: true }, rider);
-      g.restore();
+  // the barrel of her body, dappled grey, with the belly a shade lighter
+  function mBodySide(g) {
+    const body = () => { g.beginPath(); g.moveTo(-11.2, -3.4); g.quadraticCurveTo(-11, -7.2, -6, -6.8); g.quadraticCurveTo(-1.4, -5.2, 3.4, -6.6); g.quadraticCurveTo(7.6, -6.6, 8.2, -2.6); g.quadraticCurveTo(8.4, 1.2, 5.6, 2); g.quadraticCurveTo(-1, 3.2, -7.4, 2.2); g.quadraticCurveTo(-11.8, 1.2, -11.2, -3.4); g.closePath(); };
+    body(); g.fillStyle = mV(g, MC.coat, -7, 3, 0.2, -0.24); g.fill();
+    g.save(); body(); g.clip();
+    g.fillStyle = MC.belly; mEll(g, -1.6, 2.4, 7.4, 1.8); g.fill();
+    g.fillStyle = MC.dapple; for (const [x, y, r] of [[-8.6, -4.2, 1.1], [-6.6, -2.4, 0.9], [-8.2, -1, 0.7], [-4.4, -4.4, 0.8], [-5.6, -0.6, 0.6], [5.2, -3.6, 0.7], [3.4, -1.6, 0.6]]) { mEll(g, x, y, r, r * 0.8); g.fill(); }
+    g.fillStyle = 'rgba(0,0,0,0.12)'; mEll(g, -2, 3.6, 10, 2.2); g.fill();
+    g.restore();
+    body(); mLine(g, 0.8);
+    // the line of her hip and her shoulder
+    g.strokeStyle = 'rgba(40,40,50,0.28)'; g.lineWidth = 0.45; g.beginPath(); g.moveTo(-8.4, -5.6); g.quadraticCurveTo(-5.6, -2.6, -7.6, 1.4); g.stroke(); g.beginPath(); g.moveTo(4.4, -5.4); g.quadraticCurveTo(6.6, -2.2, 5.2, 1.6); g.stroke();
+  }
+  // the neck and head, from the side. down: 0 standing tall, 1 grazing (the whole neck swung down about its root)
+  function mHeadSide(g, e, bob, down) {
+    g.save(); g.translate(5.4, -4.4 + bob); g.rotate(down * 1.05 + (e.moving ? Math.sin(strideOf(e) * 2) * 0.05 : Math.sin(time * 1.3 + (e.seed || 0)) * 0.03));
+    // the neck, thick at the shoulder and fine at the throat
+    g.beginPath(); g.moveTo(-2.4, -1.6); g.quadraticCurveTo(-0.8, -8.2, 3.4, -10.6); g.lineTo(6.6, -9.2); g.quadraticCurveTo(4.6, -5.6, 3.6, 2.6); g.quadraticCurveTo(0, 3, -2.4, -1.6); g.closePath();
+    g.fillStyle = mV(g, MC.coat, -11, 3, 0.22, -0.2); g.fill(); mLine(g, 0.7);
+    g.strokeStyle = 'rgba(40,40,50,0.22)'; g.lineWidth = 0.4; g.beginPath(); g.moveTo(4.6, -6.6); g.quadraticCurveTo(3.4, -2.6, 2.2, 1.2); g.stroke();
+    // the head: long, a flat forehead, a soft dark muzzle
+    g.save(); g.translate(4.4, -10.4); g.rotate(0.95);
+    const head = () => { g.beginPath(); g.moveTo(-1.6, -2.4); g.quadraticCurveTo(2, -3.4, 6.4, -2.2); g.quadraticCurveTo(8.6, -1.6, 8.4, 0.6); g.quadraticCurveTo(8, 2.4, 6, 2.2); g.quadraticCurveTo(2.4, 2.4, -1.4, 2.6); g.quadraticCurveTo(-3, 0, -1.6, -2.4); g.closePath(); };
+    head(); g.fillStyle = mV(g, MC.coat, -3, 3, 0.25, -0.22); g.fill();
+    g.save(); head(); g.clip(); g.fillStyle = mV(g, MC.muzzle, -2, 3, 0.15, -0.25); mEll(g, 7.4, 0.2, 2.6, 2.6); g.fill(); g.restore();
+    head(); mLine(g, 0.7);
+    // a nostril, the mouth line, the eye with its lid and a glint
+    g.fillStyle = '#2a2a30'; mEll(g, 7.6, -0.4, 0.55, 0.4, 0.4); g.fill();
+    g.strokeStyle = 'rgba(30,30,36,0.6)'; g.lineWidth = 0.35; g.beginPath(); g.moveTo(8.2, 1.4); g.quadraticCurveTo(7.2, 1.8, 6.2, 1.6); g.stroke();
+    g.fillStyle = '#17161a'; mEll(g, 1.4, -0.9, 0.9, 0.72); g.fill(); g.fillStyle = '#ffffff'; mEll(g, 1.15, -1.15, 0.3, 0.3); g.fill();
+    g.strokeStyle = 'rgba(40,40,50,0.5)'; g.lineWidth = 0.35; g.beginPath(); g.arc(1.4, -0.9, 1.2, Math.PI * 1.1, Math.PI * 1.8); g.stroke();
+    // the bridle: a brow band, a nose band and the cheek strap, a bright bit ring at her mouth
+    g.strokeStyle = MC.bridle; g.lineWidth = 0.55; g.beginPath(); g.moveTo(-0.6, -2.6); g.lineTo(0.4, 2.4); g.moveTo(4.6, -2.6); g.lineTo(4.8, 2.3); g.moveTo(0, 0.4); g.lineTo(4.7, 0.2); g.stroke();
+    mEll(g, 6.4, 1.6, 0.6, 0.6); g.strokeStyle = MC.steel; g.lineWidth = 0.35; g.stroke();
+    // her ears, pricked forward, and the forelock between them
+    for (const [x, d] of [[-0.4, 0.75], [0.6, 1]]) { g.beginPath(); g.moveTo(x - 1.2, -2); g.quadraticCurveTo(x - 2.6, -5.2, x - 1.8, -5.8); g.quadraticCurveTo(x - 0.4, -4.4, x + 0.6, -2.2); g.closePath(); g.fillStyle = d < 1 ? MC.dark : MC.coat; g.fill(); mLine(g, 0.45); }
+    g.beginPath(); g.moveTo(-1.2, -2.6); g.quadraticCurveTo(0.6, -3.6, 1.6, -1.2); g.quadraticCurveTo(0.2, -2, -1.2, -1.6); g.closePath(); g.fillStyle = MC.mane; g.fill();
+    g.restore();
+    // the mane down the crest of her neck, falling to the far side in locks
+    g.beginPath(); g.moveTo(-2.6, -1.8); g.quadraticCurveTo(-1.2, -8.6, 3.4, -10.9);
+    for (let k = 0; k <= 5; k++) { const t = k / 5, x = 3.4 + (-3.6 - 3.4) * t, y = -10.9 + (-0.4 + 10.9) * t; g.lineTo(x + 1.2, y + 1.4 + (k % 2) * 0.8); }
+    g.closePath(); g.fillStyle = mV(g, MC.mane, -11, 0, 0.2, -0.2); g.fill(); mLine(g, 0.5);
+    g.restore();
+  }
+  // the head's bit, in her own units on the side view, for the reins: the same turns mHeadSide makes
+  function mBitSide(bob, down) {
+    const a = down * 1.05, c = Math.cos(a), s = Math.sin(a), b = 0.95, cb = Math.cos(b), sb = Math.sin(b);
+    const hx = 4.4 + 6.4 * cb - 1.6 * sb, hy = -10.4 + 6.4 * sb + 1.6 * cb;
+    return { x: 5.4 + hx * c - hy * s, y: -4.4 + bob + hx * s + hy * c };
+  }
+  // the saddle: the red cloth with its gold edge, the leather seat with a pommel and a cantle, the girth
+  function mSaddleSide(g, bob) {
+    g.save(); g.translate(0, bob);
+    mRR(g, -5.6, -6.6, 9.4, 4.6, 1.2); g.fillStyle = mV(g, MC.cloth, -6.6, -2, 0.2, -0.25); g.fill(); mLine(g, 0.5);
+    g.strokeStyle = MC.trim; g.lineWidth = 0.5; g.beginPath(); g.moveTo(-5.2, -2.5); g.lineTo(3.4, -2.5); g.stroke();
+    g.strokeStyle = MC.leather; g.lineWidth = 1.1; g.beginPath(); g.moveTo(-0.6, -4); g.lineTo(-0.2, 2.2); g.stroke(); g.strokeStyle = M_OUT; g.lineWidth = 0.3; g.stroke();
+    g.beginPath(); g.moveTo(-4.6, -8.4); g.quadraticCurveTo(-3.6, -6.4, -1, -6.6); g.quadraticCurveTo(1, -6.6, 2, -8); g.quadraticCurveTo(2.8, -8.6, 2.6, -6.2); g.quadraticCurveTo(-0.6, -4.8, -4.6, -5.4); g.quadraticCurveTo(-5.4, -7, -4.6, -8.4); g.closePath();
+    g.fillStyle = mV(g, MC.leather, -8.6, -5, 0.25, -0.3); g.fill(); mLine(g, 0.5);
+    g.fillStyle = MC.trim; mEll(g, 2.3, -7.9, 0.45, 0.45); g.fill();
+    g.restore();
+  }
+  // the stirrup on the near side: its leather from the saddle and the iron. A rider sits as every pilot does in the new
+  // look (82-knightgear: seated, no legs), so the stirrup hangs as it is
+  function mStirrupSide(g, bob) {
+    g.save(); g.translate(0, bob);
+    g.strokeStyle = MC.leather; g.lineWidth = 0.6; g.beginPath(); g.moveTo(-0.6, -5.6); g.lineTo(-0.4, -0.8); g.stroke();
+    g.strokeStyle = MC.steel; g.lineWidth = 0.45; g.beginPath(); g.moveTo(-1.4, -0.9); g.lineTo(-1.6, 0.9); g.lineTo(1.2, 0.9); g.lineTo(1, -0.9); g.stroke();
+    g.restore();
+  }
+  function mareSide(g, e, rider) {
+    const bob = e.moving ? -Math.abs(Math.sin(strideOf(e))) * 0.6 : Math.sin(time * 1.6 + (e.seed || 0)) * 0.15;
+    const down = rider || e.headUp ? 0 : 1;
+    mTailSide(g, e, bob);
+    mLegsSide(g, e, bob);
+    g.save(); g.translate(0, bob); mBodySide(g); g.restore();
+    mHeadSide(g, e, bob, down);
+    mSaddleSide(g, bob);
+    // the reins from the bit, over her neck, to the saddle's pommel
+    const bit = mBitSide(bob, down);
+    g.strokeStyle = MC.bridle; g.lineWidth = 0.5; g.beginPath(); g.moveTo(bit.x, bit.y); g.quadraticCurveTo((bit.x + 2) / 2, Math.max(bit.y, -6 + bob) + 0.6, 2.2, -6.4 + bob); g.stroke();
+    if (rider) rider(-0.6, -6.4 + bob);
+    mStirrupSide(g, bob);
+  }
+  // facing us: her long face in front of her chest, both front legs, the hind ones behind them; the knight sits behind her head
+  function mareFront(g, e, rider) {
+    const ph = strideOf(e), sw = p => e.moving ? Math.sin(ph + p) * 1.2 : 0, bob = e.moving ? -Math.abs(Math.sin(ph)) * 0.6 : Math.sin(time * 1.6 + (e.seed || 0)) * 0.15;
+    // hind legs, short and dark, then the front pair
+    for (const s of [-1, 1]) mLeg(g, s * 3.3, 0.6 + bob, 8.6 - Math.abs(sw(s > 0 ? 0 : Math.PI)) * 0.5, 2.1, 0, MC.coat, false, false);
+    for (const s of [-1, 1]) { g.save(); g.translate(0, -Math.max(0, sw(s > 0 ? Math.PI : 0)) * 0.9); mLeg(g, s * 2.7, 1.2 + bob, 9, 2.4, 0, MC.coat, true, true); g.restore(); }
+    g.save(); g.translate(0, bob);
+    // her chest and shoulders, the saddle cloth showing either side
+    mEll(g, 0, -2.2, 6.6, 5.4); g.fillStyle = mR(g, MC.coat, 0, -2.6, 6.4); g.fill(); mLine(g, 0.8);
+    for (const s of [-1, 1]) { mRR(g, s > 0 ? 4.4 : -6.6, -7.2, 2.2, 4.8, 0.8); g.fillStyle = mV(g, MC.cloth, -7.2, -2.4, 0.2, -0.25); g.fill(); mLine(g, 0.45); g.fillStyle = MC.trim; g.fillRect(s > 0 ? 4.6 : -6.4, -2.9, 1.8, 0.4); }
+    g.strokeStyle = MC.steel; g.lineWidth = 0.45; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 6.6, -3.6); g.lineTo(s * 6.8, -0.6); g.stroke(); }
+    // the saddle's front, its pommel up between her shoulders
+    g.beginPath(); g.moveTo(-3.6, -7.4); g.quadraticCurveTo(0, -9.4, 3.6, -7.4); g.lineTo(3, -6); g.quadraticCurveTo(0, -7.2, -3, -6); g.closePath(); g.fillStyle = mV(g, MC.leather, -9, -6); g.fill(); mLine(g, 0.45);
+    g.restore();
+    if (rider) rider(0, -7.4 + bob);
+    g.save(); g.translate(0, bob);
+    // her neck rising behind her face, the mane falling to one side, then the face itself
+    g.beginPath(); g.moveTo(-3, -4); g.quadraticCurveTo(-3.4, -9.6, -1.8, -11.6); g.lineTo(1.8, -11.6); g.quadraticCurveTo(3.4, -9.6, 3, -4); g.closePath(); g.fillStyle = mV(g, MC.coat, -12, -4, 0.2, -0.18); g.fill(); mLine(g, 0.6);
+    g.beginPath(); g.moveTo(1.6, -11.4); g.quadraticCurveTo(3.8, -8.6, 3.4, -4.6); g.lineTo(2.4, -5.6); g.quadraticCurveTo(2.6, -8.6, 0.8, -11); g.closePath(); g.fillStyle = MC.mane; g.fill();
+    const face = () => { g.beginPath(); g.moveTo(-3, -11.4); g.quadraticCurveTo(0, -12.8, 3, -11.4); g.quadraticCurveTo(3.4, -6.4, 2.5, -1.4); g.quadraticCurveTo(2.3, 1.6, 0, 1.8); g.quadraticCurveTo(-2.3, 1.6, -2.5, -1.4); g.quadraticCurveTo(-3.4, -6.4, -3, -11.4); g.closePath(); };
+    face(); g.fillStyle = mV(g, MC.coat, -11, 2, 0.28, -0.18); g.fill();
+    g.save(); face(); g.clip(); g.fillStyle = mV(g, MC.muzzle, -2, 2, 0.15, -0.25); mEll(g, 0, 0.4, 2.8, 2.4); g.fill(); g.fillStyle = 'rgba(255,255,255,0.5)'; mEll(g, 0, -6.4, 0.7, 2.4); g.fill(); g.restore();
+    face(); mLine(g, 0.7);
+    for (const s of [-1, 1]) {
+      g.fillStyle = '#2a2a30'; mEll(g, s * 1, 0.4, 0.45, 0.6, s * 0.3); g.fill();
+      g.fillStyle = '#17161a'; mEll(g, s * 2.3, -6.6, 0.75, 0.85); g.fill(); g.fillStyle = '#ffffff'; mEll(g, s * 2.1, -6.9, 0.25, 0.25); g.fill();
+      // ears up either side of her forelock
+      g.beginPath(); g.moveTo(s * 1.6, -11.6); g.quadraticCurveTo(s * 3.2, -15.8, s * 3.7, -15.6); g.quadraticCurveTo(s * 4, -13, s * 3.1, -10.8); g.closePath(); g.fillStyle = MC.coat; g.fill(); mLine(g, 0.45);
+      g.fillStyle = mShade(MC.dark, -0.2); g.beginPath(); g.moveTo(s * 2.1, -11.6); g.quadraticCurveTo(s * 3.1, -14.2, s * 3.4, -14); g.lineTo(s * 3, -11.4); g.closePath(); g.fill();
     }
+    // forelock, the bridle's brow and nose bands, the bit rings
+    g.beginPath(); g.moveTo(-1.6, -12.2); g.quadraticCurveTo(0, -13.4, 1.6, -12.2); g.quadraticCurveTo(0.9, -9.2, 0, -8.6); g.quadraticCurveTo(-0.9, -9.2, -1.6, -12.2); g.closePath(); g.fillStyle = MC.mane; g.fill();
+    g.strokeStyle = MC.bridle; g.lineWidth = 0.55; g.beginPath(); g.moveTo(-2.6, -9.2); g.quadraticCurveTo(0, -8.4, 2.6, -9.2); g.moveTo(-2.3, -2.4); g.quadraticCurveTo(0, -1.8, 2.3, -2.4); g.moveTo(-2.6, -9.2); g.lineTo(-2.3, -1); g.moveTo(2.6, -9.2); g.lineTo(2.3, -1); g.stroke();
+    g.strokeStyle = MC.steel; g.lineWidth = 0.35; for (const s of [-1, 1]) { mEll(g, s * 2.3, -0.8, 0.55, 0.55); g.stroke(); }
+    // the reins up to the saddle, where the knight's hands are
+    if (rider) { g.strokeStyle = MC.bridle; g.lineWidth = 0.45; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 2.4, -0.8); g.quadraticCurveTo(s * 3.6, -4, s * 2.2, -7.6); g.stroke(); } }
+    g.restore();
   }
-  const parkedMare = (x, y, fx) => ({ x, y, r: HORSE_R, facing: { x: fx === undefined ? 1 : fx, y: 0 }, hurtT: 0, attackT: 0, moving: false, walkT: 0 });
+  // from behind: her neck and ears far off, then her back and the saddle, the knight, then her rump and tail nearest us
+  function mareRear(g, e, rider) {
+    const ph = strideOf(e), sw = p => e.moving ? Math.sin(ph + p) * 1.2 : 0, bob = e.moving ? -Math.abs(Math.sin(ph)) * 0.6 : Math.sin(time * 1.6 + (e.seed || 0)) * 0.15;
+    for (const s of [-1, 1]) { g.save(); g.translate(0, -Math.max(0, sw(s > 0 ? 0 : Math.PI)) * 0.6); mLeg(g, s * 2.4, -0.6 + bob, 8.4, 2, 0, MC.coat, true, false); g.restore(); }
+    g.save(); g.translate(0, bob);
+    // neck and head, going away from us
+    g.beginPath(); g.moveTo(-2.6, -6); g.quadraticCurveTo(-2.8, -11, -1.6, -13.4); g.lineTo(1.6, -13.4); g.quadraticCurveTo(2.8, -11, 2.6, -6); g.closePath(); g.fillStyle = mV(g, MC.coat, -14, -6, 0.15, -0.2); g.fill(); mLine(g, 0.6);
+    g.beginPath(); g.moveTo(-1.4, -13.6); g.quadraticCurveTo(0, -14.4, 1.4, -13.6); g.lineTo(1, -6.4); g.lineTo(-1, -6.4); g.closePath(); g.fillStyle = MC.mane; g.fill();
+    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 0.8, -13.4); g.quadraticCurveTo(s * 1.8, -17, s * 2.2, -16.8); g.quadraticCurveTo(s * 2.6, -14.6, s * 2, -12.8); g.closePath(); g.fillStyle = MC.coat; g.fill(); mLine(g, 0.45); }
+    // her back and flanks, the saddle cloth and the saddle's cantle
+    mEll(g, 0, -4.2, 6.4, 4.6); g.fillStyle = mR(g, MC.coat, 0, -5, 6.4); g.fill(); mLine(g, 0.7);
+    for (const s of [-1, 1]) { mRR(g, s > 0 ? 4 : -6.4, -6.8, 2.4, 4.6, 0.8); g.fillStyle = mV(g, MC.cloth, -6.8, -2.2, 0.2, -0.25); g.fill(); mLine(g, 0.45); g.fillStyle = MC.trim; g.fillRect(s > 0 ? 4.2 : -6.2, -2.7, 2, 0.4); }
+    g.beginPath(); g.moveTo(-3.8, -6.6); g.quadraticCurveTo(0, -9.6, 3.8, -6.6); g.lineTo(3.2, -5.4); g.quadraticCurveTo(0, -7.2, -3.2, -5.4); g.closePath(); g.fillStyle = mV(g, MC.leather, -9, -5.4); g.fill(); mLine(g, 0.45);
+    g.strokeStyle = MC.steel; g.lineWidth = 0.45; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 6.4, -3.6); g.lineTo(s * 6.6, -0.8); g.stroke(); }
+    g.restore();
+    if (rider) rider(0, -7 + bob);
+    // the hind legs nearest us, and her rump: two round quarters with the tail between them
+    for (const s of [-1, 1]) { g.save(); g.translate(0, -Math.max(0, sw(s > 0 ? Math.PI : 0)) * 0.9); mLeg(g, s * 3.4, 0.4 + bob, 9.2, 2.6, 0, MC.coat, false, true); g.restore(); }
+    g.save(); g.translate(0, bob);
+    for (const s of [-1, 1]) { mEll(g, s * 2.5, -1.4, 3.7, 4.3, -s * 0.12); g.fillStyle = mR(g, MC.coat, s * 2.5, -2.2, 4.2); g.fill(); mLine(g, 0.7); }
+    g.fillStyle = MC.dapple; for (const [x, y, r] of [[-3.6, -3.4, 0.8], [3.2, -2.4, 0.7], [-2.2, -0.4, 0.6], [4.4, -4.2, 0.6]]) { mEll(g, x, y, r, r * 0.8); g.fill(); }
+    const sx = e.moving ? Math.sin(ph) * 0.8 : Math.sin(time * 1.7 + (e.seed || 0)) * 0.6;
+    g.beginPath(); g.moveTo(-1.2, -5.4); g.quadraticCurveTo(-2.2 + sx, 0, -1.4 + sx * 1.4, 6); g.quadraticCurveTo(sx * 1.4, 7.6, 1.4 + sx * 1.4, 6); g.quadraticCurveTo(2.2 + sx, 0, 1.2, -5.4); g.closePath();
+    g.fillStyle = mV(g, MC.mane, -6, 7, 0.2, -0.2); g.fill(); mLine(g, 0.55);
+    g.restore();
+  }
+  // the knight's scale and where his middle sits over the saddle (in game pixels: his seat on the saddle's dip)
+  const RIDER_S = 0.88, RIDER_UP = 9.4;
+  // drawHorse(g, e, hurt, rider): Cinder at the origin of g (her middle; her hooves 21.5 px below it), facing e.facing.
+  // rider = the look in the saddle (playerLook(), or a friend's look online), or null for her standing alone (head down
+  // in the grass on the side view). hurt = the whole picture flashes red (the knight with her), the way the monsters and
+  // the knight flash: drawn on a picture of its own and coloured over, when there is a canvas for it.
+  function drawHorse(g, e, hurt, rider) {
+    if (hurt && g === ctx && mareTint(g, e, rider)) return;
+    paintMare(g, e, rider);
+  }
+  function paintMare(g, e, rider) {
+    const fx = e.facing ? +e.facing.x || 0 : 1, fy = e.facing ? +e.facing.y || 0 : 0;
+    const view = fy > 0.55 && Math.abs(fy) >= Math.abs(fx) ? 'front' : fy < -0.55 && Math.abs(fy) >= Math.abs(fx) ? 'rear' : 'side';
+    const left = view === 'side' && fx < 0;
+    // the knight, sat in the saddle at (sx, sy) in her units; his own facing, never hurt-tinted twice
+    const seat = rider ? (sx, sy) => {
+      g.save(); g.scale(1 / MARE_K, 1 / MARE_K); g.translate(sx * MARE_K, sy * MARE_K - RIDER_UP); g.scale(RIDER_S, RIDER_S);
+      if (left) g.scale(-1, 1);
+      drawHuman(g, { facing: { x: view === 'side' ? (left ? -1 : 1) : 0, y: view === 'front' ? 1 : view === 'rear' ? -1 : 0 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, seated: true }, rider);
+      g.restore();
+    } : null;
+    g.save();
+    // her shadow on the ground under her hooves
+    g.fillStyle = 'rgba(0,0,0,0.26)'; g.beginPath(); g.ellipse(0, 20.5, view === 'side' ? 29 : 15, view === 'side' ? 6.5 : 6, 0, 0, M_TAU); g.fill();
+    g.scale(MARE_K, MARE_K);
+    if (left) g.scale(-1, 1);
+    if (view === 'front') mareFront(g, e, seat);
+    else if (view === 'rear') mareRear(g, e, seat);
+    else mareSide(g, e, seat);
+    g.restore();
+  }
+  // the red flash: the mare and her rider drawn on a picture, coloured over, and put down
+  let mScratch = null;
+  function mareTint(g, e, rider) {
+    if (typeof document === 'undefined' || !document.createElement) return false;
+    const ss = Math.max(1, Math.min(2, typeof DPR === 'number' && DPR > 0 ? DPR : 1)), x0 = -48, y0 = -64, w = 96, h = 92, W = Math.ceil(w * ss), Hh = Math.ceil(h * ss);
+    if (!mScratch || mScratch.c.width < W || mScratch.c.height < Hh) { const c = document.createElement('canvas'); c.width = W; c.height = Hh; const cg = c.getContext && c.getContext('2d'); if (!cg) return false; mScratch = { c, cg }; }
+    const cg = mScratch.cg;
+    cg.setTransform(1, 0, 0, 1, 0, 0); cg.clearRect(0, 0, mScratch.c.width, mScratch.c.height);
+    cg.setTransform(ss, 0, 0, ss, -x0 * ss, -y0 * ss); paintMare(cg, e, rider);
+    cg.save(); cg.setTransform(1, 0, 0, 1, 0, 0); cg.globalCompositeOperation = 'source-atop'; cg.fillStyle = 'rgba(255,90,90,0.45)'; cg.fillRect(0, 0, W, Hh); cg.restore();
+    g.drawImage(mScratch.c, 0, 0, W, Hh, x0, y0, w, h);
+    return true;
+  }
+  const parkedMare = (x, y, fx) => ({ x, y, r: HORSE_R, facing: { x: fx === undefined ? 1 : fx, y: 0 }, hurtT: 0, attackT: 0, moving: false, walkT: 0, seed: (x * 0.013 + y * 0.007) % 6.28 });
   function drawHorseTile(g, tx, ty) {
     const cx = tc(tx), cy = tc(ty);
-    g.save(); g.translate(cx, cy + 4);
-    g.fillStyle = 'rgba(0,0,0,0.26)'; g.beginPath(); g.ellipse(0, 20, 28, 9, 0, 0, 7); g.fill();
-    g.translate(0, Math.sin(time * 1.4 + tx) * 1.2);
+    g.save(); g.translate(cx, cy + 2);
     drawHorse(g, parkedMare(cx, cy), false, null);
     g.restore();
   }
@@ -22035,17 +22253,17 @@ window.SETTINGS = SETTINGS;
     g.save(); g.translate(cx, cy);
     g.fillStyle = 'rgba(0,0,0,0.24)'; g.beginPath(); g.ellipse(0, 16, 22, 7, 0, 0, 7); g.fill();
     g.fillStyle = '#6b4f2a'; g.fillRect(-17, -18, 6, 34); g.fillRect(11, -18, 6, 34);   // two posts
-    g.fillStyle = TACK_LT; g.fillRect(-19, -14, 38, 6);                                  // the rail
+    g.fillStyle = '#8a6a3a'; g.fillRect(-19, -14, 38, 6);                                // the rail
     g.fillStyle = '#5a4020'; g.fillRect(-19, -9, 38, 2);
     g.fillStyle = '#c9b07a';                                                             // a bale of hay under it
     g.beginPath(); g.moveTo(-14, 16); g.lineTo(2, 16); g.lineTo(-1, 6); g.lineTo(-11, 6); g.closePath(); g.fill();
     g.strokeStyle = '#9c854f'; g.lineWidth = 1; g.beginPath(); g.moveTo(-12, 11); g.lineTo(0, 11); g.stroke();
     if (!H().owned) { // she is Fennick's until somebody buys her: standing at the rail, nose to the rope
       g.save(); g.translate(20, 13); g.scale(0.72, 0.72);
-      drawHorse(g, parkedMare(cx, cy, -1), false, null);
+      drawHorse(g, Object.assign(parkedMare(cx, cy, -1), { headUp: true }), false, null);
       g.restore();
       g.strokeStyle = 'rgba(210,190,150,0.9)'; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(4, -11); g.quadraticCurveTo(0, 0, -3, 5); g.stroke();      // the rope to her head
+      g.beginPath(); g.moveTo(4, -11); g.quadraticCurveTo(3.4, -5, 1.2, -0.6); g.stroke();  // the rope to her bit
     } else {
       g.strokeStyle = 'rgba(210,190,150,0.8)'; g.lineWidth = 2;
       g.beginPath(); g.moveTo(4, -11); g.quadraticCurveTo(8, -2, 14, -6); g.stroke();    // the empty rope, looped over the rail
@@ -22065,7 +22283,6 @@ window.SETTINGS = SETTINGS;
       const draw = () => {
         const e = { x: player.x, y: player.y, r: player.r, facing: player.facing, moving: player.moving, walkT: player.walkT, hurtT: player.hurtT };
         g.save(); g.translate(player.x, player.y);
-        g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 20, 30, 10, 0, 0, 7); g.fill();
         drawHorse(g, e, player.hurtT > 0, playerLook());
         g.restore();
       };
@@ -22379,6 +22596,35 @@ window.SETTINGS = SETTINGS;
         H().owned = false; drawHitchTile(ctx, POST.x, POST.y); H().owned = true; // the rail before she is bought: she is tied to it
       } catch (e) { drew = false; }
       check(P + 'the mare and the rail draw at all four facings, ridden and parked', up && drew && !riding(), { up, why: rideWhy, drew }); }
+
+    // 15. she is no machine: on her, V and a held Space start no machine special (55-riding), and nothing stands on her back
+    { const up = ride(); let r = { up };
+      if (up && window.RIDING) {
+        RIDING.resetCool(); notice = null;
+        F.press('KeyV'); F.sim(3, []);
+        const afterV = RIDING.special;
+        F.sim(50, ['Space']); F.sim(3, []);
+        const afterHold = RIDING.special;
+        const items = []; for (const hk of HOOKS.draw) { try { hk(ctx, items, cam); } catch (err) { } }
+        const atBack = items.filter(it => it.y === player.y + player.r + 2).length;
+        r = { up, afterV: !!afterV, afterHold: !!afterHold, kind: RIDING.machineKind(), atBack, notice: notice && notice.text };
+        RIDING.resetCool();
+      }
+      check(P + 'on the mare, V and holding Space start no machine special, and no beacon is drawn on her back', !!r.up && r.afterV === false && r.afterHold === false && r.kind === null && r.atBack === 0, r);
+      F.press('KeyX'); F.sim(2, []); }
+
+    // 16. she draws in the new look at all four facings, ridden, standing alone and hurt (the knight in her saddle once
+    // each time, seated: his own drawing), on a canvas that writes nothing down (the headless one) without throwing
+    { let calls = 0, drew = true; const look = playerLook(), dh = drawHuman;
+      try {
+        drawHuman = function (g, e, lk) { if (lk === look && e.seated) calls++; return dh.apply(this, arguments); };
+        for (const f of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const mv of [false, true]) {
+          drawHorse(ctx, { facing: { x: f[0], y: f[1] }, moving: mv, walkT: 2.2, hurtT: 0 }, false, look);
+          drawHorse(ctx, { facing: { x: f[0], y: f[1] }, moving: mv, walkT: 2.2, hurtT: 0.2 }, true, look);
+          drawHorse(ctx, { facing: { x: f[0], y: f[1] }, moving: mv, walkT: 2.2, hurtT: 0 }, false, null);
+        }
+      } catch (err) { drew = String(err && err.message); } finally { drawHuman = dh; }
+      check(P + 'the mare draws in the new look at all four facings, walking and standing, ridden (the knight sat in her saddle), alone and hurt', drew === true && calls === 16, { drew, calls }); }
 
     // put the world back the way the rest of the suite expects it
     if (riding()) dismount(true);
@@ -24485,13 +24731,18 @@ window.SETTINGS = SETTINGS;
   // her and she vanished underneath). Side-mounted, with a small downward bias, she is beside the hull at every
   // facing and always painted just after it — clinging to the rail, leaning out, rather than sitting on it.
   const RIDE_SIDE = 21, RIDE_BACK = 5, RIDE_DEPTH = 6;
+  // Seen from the front or behind, a machine in the new look (84-mountlook) is wide across: she holds on at its edge,
+  // not hidden under it. Half its width that way, in pixels, as drawn (the mare is narrow: the old 21 still clears her).
+  const END_HALF = { walker: 34, dozer: 46, beast: 38 };
   const riderOffset = () => {
     const f = player.facing || { x: 1, y: 0 };
     const d = Math.hypot(f.x, f.y) || 1;
     const fx = f.x / d, fy = f.y / d;
+    const kind = player.mech ? (player.mech.kind || 'walker') : null;
+    const side = Math.abs(fy) > 0.55 && END_HALF[kind] ? END_HALF[kind] + 8 : RIDE_SIDE;
     const sx = -fy, sy = fx;                                  // ninety degrees off the line of travel
     const bob = player.moving ? Math.sin(time * 11) * 1.6 : 0; // she swings a little while it rolls
-    return { x: player.x + sx * RIDE_SIDE - fx * RIDE_BACK, y: player.y + sy * RIDE_SIDE - fy * RIDE_BACK + RIDE_DEPTH + bob };
+    return { x: player.x + sx * side - fx * RIDE_BACK, y: player.y + sy * side - fy * RIDE_BACK + RIDE_DEPTH + bob };
   };
   // 21-companion moves the hero in its own update; this file loads later, so its hook runs after and has the
   // last word on where she ends up. Nothing about her bow, her rolls or her hurt changes — she just holds on.
@@ -24507,6 +24758,8 @@ window.SETTINGS = SETTINGS;
   HOOKS.draw.push((g, items) => {
     const c = comp();
     if (!c || !c.id || !c.riding || !onMachine()) return;
+    // on the mare she just holds on at her side: no running board, no rail
+    if (player.mech.kind === 'horse') return;
     const p = riderOffset();
     // a running board under her boots and a grab rail from the hull to her hands, so she reads as hanging on
     items.push({ y: p.y - 2, draw: () => {
@@ -24534,7 +24787,8 @@ window.SETTINGS = SETTINGS;
   const SPEED = 430;             // pixels a second while it runs (the machine drives at 130-170)
   const COOL = 18, COOL_BOILER = 12;
   const HIT_DMG = [14, 22], HIT_KNOCK = 90;
-  const machineKind = () => (player.mech ? (player.mech.kind || 'walker') : null);
+  // the mare is no machine: no special, no beacon on her back, no exhaust (51-mounts: she is transport, not a weapon)
+  const machineKind = () => (player.mech && player.mech.kind !== 'horse' ? (player.mech.kind || 'walker') : null);
   // every machine gets one, and each one is the machine's own trick rather than a reskin of the dozer's
   const SPECIALS = {
     dozer: { name: 'Full steam', hint: 'winds the boiler, then barrels forward', cool: COOL },
@@ -24701,7 +24955,9 @@ window.SETTINGS = SETTINGS;
 
     // the beacon on the roof
     items.push({ y: player.y + player.r + 2, draw: () => {
-      const bx = player.x, by = player.y - player.r - 6;
+      // on the machine's boiler cap (84-mountlook knows where that is for each machine and facing), else over its middle
+      const rf = window.MOUNT_LOOK && MOUNT_LOOK.roof(machineKind(), player.facing);
+      const bx = player.x + (rf ? rf.x : 0), by = player.y + (rf ? rf.y : -player.r - 6);
       g.fillStyle = '#3a3a42'; g.fillRect(bx - 5, by + 4, 10, 4);            // the mount
       if (broken) {
         // burnt out: a dark stub with smoke curling off it, sputtering as it comes back
@@ -24748,7 +25004,7 @@ window.SETTINGS = SETTINGS;
     cool: () => cool > 0 && !sp ? { frac: cool / (SPECIALS[machineKind()] || SPECIALS.walker).cool, text: `${Math.ceil(cool)}` } : null,
   });
   // the coach: "[V] Hold for the special" the first times a machine's special is ready
-  HOOKS.hud.push(() => { const k = machineKind(); if (k && k !== 'horse' && !sp && cool <= 0 && !paused && !panel) HK.teach('special', 'V', 'Hold for the special', { x: player.x, y: player.y, lift: 58 }, { emblem: 'bolt' }); });
+  HOOKS.hud.push(() => { const k = machineKind(); if (k && k !== 'horse' && !sp && cool <= 0 && !paused && !panel) HK.teach('special', 'V', 'Hold for the special', { x: player.x, y: player.y, lift: window.MOUNT_LOOK ? MOUNT_LOOK.top(k) + 10 : 58 }, { emblem: 'bolt' }); });
 
   // ---------- C. over the palisade, on the town side ----------
   const VAULT_LV = 15, VAULT_XP = 70;
@@ -35855,12 +36111,21 @@ window.RETALIATE = RETALIATE;
       gear: l.gear ? { helm: l.gear.helm || null, body: l.gear.body || null, legs: l.gear.legs || null, shield: l.gear.shield || null, cape: l.gear.cape || null, weapon: l.gear.weapon || null } : null,
     };
   }
+  // the machine or mount he is on: its kind and hp, and a bulldozer's fitted upgrades (40-dozerup) so a friend sees the
+  // drill and the ram plate on it (84-mountlook draws them; old clients ignore `up`)
+  const DOZER_UPS = ['drill', 'irondrill', 'ram', 'boiler'];
+  const dozerUps = () => { const u = player.dozerUp; return u && typeof u === 'object' ? DOZER_UPS.filter(k => u[k]).join(',') : ''; };
+  function mechOf(m) {
+    const o = { kind: m.kind || 'walker', hp: Math.ceil(m.hp), maxHp: m.maxHp };
+    if (o.kind === 'dozer') { const up = dozerUps(); if (up) o.up = up; }
+    return o;
+  }
   function presence() {
     const a = player.action, m = player.mech;
     return {
       t: 'p', map: mapId(), region: regionName(), x: Math.round(player.x), y: Math.round(player.y), fx: +player.facing.x.toFixed(2), fy: +player.facing.y.toFixed(2),
       mv: !!player.moving, wt: +(player.walkT % 100).toFixed(1), hp: Math.ceil(player.hp), mhp: player.maxHp, lv: combatLevel(), look: lookOf(),
-      mech: m ? { kind: m.kind || 'walker', hp: Math.ceil(m.hp), maxHp: m.maxHp } : null, dead: !!player.dead, def: playerDefRoll(), act: a ? a.type : null,
+      mech: m ? mechOf(m) : null, dead: !!player.dead, def: playerDefRoll(), act: a ? a.type : null,
       // the shared world's movement check (docs/ONLINE.md, "The shared world", Stage 1): the jump counter and his own speed
       j: JUMP.n, spd: speedNow(),
     };
@@ -35877,7 +36142,7 @@ window.RETALIATE = RETALIATE;
     JUMP.x = x; JUMP.y = y;
   });
   // a cheap signature of everything the contract counts as a change; the full message is only built when it differs
-  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? Math.ceil(m.hp) : '-') + '|' + (player.gender || ''); };
+  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? (m.kind || 'walker') + ':' + Math.ceil(m.hp) + (m.kind === 'dozer' ? ':' + dozerUps() : '') : '-') + '|' + (player.gender || ''); };
   const sig = () => mapId() + '|' + Math.round(player.x) + ',' + Math.round(player.y) + '|' + player.facing.x.toFixed(2) + ',' + player.facing.y.toFixed(2) + '|' + (player.moving ? 1 : 0) + '|' + Math.ceil(player.hp) + '/' + player.maxHp + '|' + (player.dead ? 1 : 0) + '|' + lookKey();
   let lastSig = null, lastSentAt = -1e9, sent = 0, sentSock = null;
 
@@ -35932,20 +36197,25 @@ window.RETALIATE = RETALIATE;
 
   // ---------- drawing: among the y-sorted world items, like a monster or the knight himself ----------
   function drawKnight(g, e) {
-    const look = e.look || DEFAULT_LOOK, x = e.shown.x, y = e.shown.y, onMech = !!e.mech && e.mech.kind !== 'horse';
+    const look = e.look || DEFAULT_LOOK, x = e.shown.x, y = e.shown.y;
+    // on a mount: the mare, the walker, the bulldozer or the Barrelbeast, in the new look with him in the saddle or the
+    // seat (84-mountlook; a kind this page does not know is drawn as the walker, as it always was)
+    const ML = window.MOUNT_LOOK, kind = e.mech && ML ? (ML.kindOf(e.mech) || 'walker') : null, onMech = !!e.mech;
     g.save(); g.translate(x, y);
     if (e.dead) { g.globalAlpha = 0.3; g.rotate(1.4); drawHuman(g, e, look); g.restore(); return; }   // fallen: lying down and faint, as the knight himself is
-    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, onMech ? 14 : 11, onMech ? 22 : 12, onMech ? 9 : 6, 0, 0, 7); g.fill();
-    if (onMech) drawMech(g, e, e.hurtT > 0, look);
+    if (kind && ML.rider(g, e, look, kind)) { }
+    else if (onMech) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 14, 22, 9, 0, 0, 7); g.fill(); drawMech(g, e, e.hurtT > 0, look); }
     // a knight look (with gear) bobs only his body, from a picture (82-knightgear: the crowd stays cheap)
-    else if (look.gear && window.KNIGHTGEAR) KNIGHTGEAR.draw(g, e, look, { cache: true });
-    else { g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
+    else if (look.gear && window.KNIGHTGEAR) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill(); KNIGHTGEAR.draw(g, e, look, { cache: true }); }
+    else { g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(0, 11, 12, 6, 0, 0, 7); g.fill(); g.translate(0, e.moving ? Math.sin(e.walkT) * 2 : 0); drawHuman(g, e, look); }
     g.restore();
     // the name, the level in smaller grey after it, an hp bar when hurt, a ring when close enough to hand things over.
     // An admin's tag row starts with the gold ADMIN pill and the name is gold; the level stays.
     // a knight in gear can stand taller (a party hat, an upright spear): the name goes above whatever he wears
     const tall = !onMech && !e.dead && look.gear && window.KNIGHTGEAR ? Math.min(0, Math.round(KNIGHTGEAR.extent(look).t) + 29) : 0;
-    const top = Math.round(y) - (onMech ? 46 : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
+    const top = Math.round(y) - (kind ? ML.top(kind) : onMech ? 46 : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
+    // where his name is, for a tap on it (78-trade)
+    e.tagTop = top;
     g.font = 'bold 8px sans-serif'; const pw = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 + 4 : 0;
     g.font = 'bold 11px sans-serif'; const nw = g.measureText(e.n).width;
     g.font = '9px sans-serif'; const lw = g.measureText(lv).width;
@@ -45559,9 +45829,11 @@ window.MONSTER_LOOK = MONSTER_LOOK;
     let best = null;
     for (const n in R) {
       const e = R[n]; if (e.map !== my) continue;
-      const x = e.shown.x, y = e.shown.y, onMech = !!e.mech && e.mech.kind !== 'horse';
-      // the body (a circle a little above the feet) or the name tag over the head
-      const body = dist(wx, wy, x, y - (onMech ? 12 : 8)), tagHit = Math.abs(wx - x) <= 40 && wy >= y - (onMech ? 56 : 44) && wy <= y - (onMech ? 36 : 24);
+      const x = e.shown.x, y = e.shown.y, onMech = !!e.mech;
+      // the body (a circle a little above the feet) or the name tag over the head (73-players notes where it drew the
+      // tag: a tall machine's is high over it)
+      const tag = typeof e.tagTop === 'number' && Number.isFinite(e.tagTop) ? e.tagTop - y : (onMech ? -46 : -33);
+      const body = dist(wx, wy, x, y - (onMech ? 12 : 8)), tagHit = Math.abs(wx - x) <= 40 && wy >= y + tag - 10 && wy <= y + tag + 10;
       const d = body <= (onMech ? 30 : PICK_R) ? body : tagHit ? PICK_R : Infinity;
       if (d < Infinity && (!best || d < best.d)) best = { d, n, e, wx, wy };
     }
@@ -57929,6 +58201,545 @@ const TOWNSFOLK = (() => {
 })();
 window.TOWNSFOLK = TOWNSFOLK;
 
+// ---- src/84-mountlook.js ----
+// ============================================================================
+// THE MOUNTS IN THE NEW LOOK — the machines the knight drives, drawn with the monster refit's own machine art
+// (owner: "make sure that the mounts are the updated graphic too"). Cinder the mare draws herself in 51-mounts.
+// The walker, the bulldozer and the Barrelbeast are the same machines the goblins drive (78-monsterart's walker,
+// bulldozer and barrelbeast, through 78-monsterlook's paint: its size, its cracks), so a knight's walker looks just like
+// the camp's. 78-monsterlook.js is never changed here: its MONSTER_LOOK.drawMachine takes a pilot for the goblin's seat,
+// and this file sits the knight there (82-knightgear, seated: no legs), in the drawing's own order, so the tub, the deck
+// and the boiler go over him exactly as they went over the goblin; the Barrelbeast's two other goblins stay off. The
+// goblin's green hands on the levers (mch_hand) are drawn through a thin stand-in for the canvas (handCtx) that turns
+// them into the knight's hands (his gauntlets, or bare hands); a parked machine has nobody in it and no hands on its
+// levers.
+// What it draws:
+//  - the knight's own machine (the player's draw item, after 22-bulldozer, 32-beast and the core put theirs there);
+//  - a parked machine (T.MECH, T.DOZER, T.BEAST) with an empty seat, and a wreck (T.WRECK, T.DOZER_WRECK,
+//    T.BEAST_WRECK) tipped over, dark and smoking;
+//  - drawMech / drawDozer / the barrelbeast hook when called with a pilot or for a parked machine (the title screen's
+//    goblin walker too: no pilot, not parked, the plain monster drawing);
+//  - a friend online on a machine or on the mare (73-players calls MOUNT_LOOK.rider).
+// The bulldozer's fitted upgrades (40-dozerup: the drill, the iron drill, the ram plate, the big boiler) are drawn on
+// it in the same hand; a friend's are sent in presence (mech.up). A hit flashes the whole machine and the knight red,
+// as a monster flashes: drawn on a picture of its own and coloured over.
+// Pictures only, no rules: tools/build-sim.mjs strips this file from the server's copy.
+// window.MOUNT_LOOK is the handle (and the test handle).
+// ============================================================================
+const MOUNT_LOOK = (() => {
+  const LOOK = MONSTER_LOOK, ART = MONSTER_ART, SIZE = ART.MOB_SIZE;
+  const ON = { on: true };
+  const STATS = { machines: 0, seats: 0, hands: 0, handsHidden: 0, tinted: 0, riders: 0 };
+  // the knight's machine kinds and the monster drawing each one wears
+  const TYPE = { walker: 'walker', dozer: 'bulldozer', beast: 'barrelbeast' };
+  const KINDS = Object.keys(TYPE);
+  // a mech off the wire: { kind } with no kind (or 'walker') a walker, 'dozer', 'beast', 'horse'; anything else is no mount we draw
+  const kindOf = mech => { if (!mech || typeof mech !== 'object') return null; const k = mech.kind; if (k === undefined || k === null || k === 'walker') return 'walker'; return k === 'horse' || (typeof k === 'string' && TYPE[k] && k !== 'walker') ? k : null; };
+  const GOB = '#74bd46', TAU = Math.PI * 2;
+  // the knight in a seat: game pixels per unit of his own drawing, and how far his middle sits under the goblin's
+  // (in the goblin's own units: the goblin's chest is a little lower than the knight's middle)
+  const SEAT = { walker: { s: 0.82, dy: 1.2 }, dozer: { s: 0.82, dy: 1.2 }, beast: { s: 0.8, dy: 1.6 } };
+  // the knight's machines are drawn at the size of their own bodies: the goblins' walker (hit circle 24) carries the
+  // knight's walker's 20, so his is drawn at 20/24 of it, and the same for the bulldozer (22 of 24) and the Barrelbeast
+  // (26 of 36: the boss grew in the monster refit, the knight's did not). Every gate and wall he can ride past, his
+  // machine is drawn the size that fits it.
+  const OWN_R = { walker: 20, dozer: 22, beast: 26 };
+  const KOF = kind => Math.min(1, OWN_R[kind] / ((LOOK.HIT_R && LOOK.HIT_R[TYPE[kind]]) || OWN_R[kind]));
+
+  // ---------- small helpers, the sample's ----------
+  const SH = new Map();
+  function shade(c, f) {
+    const k = c + '|' + f; let s = SH.get(k); if (s) return s;
+    let h = /^#[0-9a-f]{6}$/i.test(c) ? c.slice(1) : '808080';
+    const n = parseInt(h, 16); let r = n >> 16, gg = (n >> 8) & 255, b = n & 255;
+    if (f < 0) { r *= 1 + f; gg *= 1 + f; b *= 1 + f; } else { r += (255 - r) * f; gg += (255 - gg) * f; b += (255 - b) * f; }
+    s = `rgb(${r | 0},${gg | 0},${b | 0})`; if (SH.size > 400) SH.clear(); SH.set(k, s); return s;
+  }
+  const OUT = 'rgba(22,14,8,0.62)';
+  const ell = (g, x, y, rx, ry, rot) => { g.beginPath(); g.ellipse(x, y, rx, ry, rot || 0, 0, TAU); };
+  const outline = (g, w) => { g.strokeStyle = OUT; g.lineWidth = w || 0.6; g.stroke(); };
+  function vfill(g, c, y0, y1, hi, lo) { const gr = g.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, shade(c, hi === undefined ? 0.3 : hi)); gr.addColorStop(0.55, c); gr.addColorStop(1, shade(c, lo === undefined ? -0.3 : lo)); return gr; }
+  function rivets(g, pts, r) { for (const [x, y] of pts) { ell(g, x, y, r, r); g.fillStyle = '#c9ccd3'; g.fill(); ell(g, x - r * 0.3, y - r * 0.3, r * 0.4, r * 0.4); g.fillStyle = 'rgba(255,255,255,0.85)'; g.fill(); } }
+  const face4 = f => { const fx = f.x, fy = f.y; if (fy < -0.55) return 'up'; if (fy > 0.55) return 'down'; return fx < 0 ? 'left' : 'right'; };
+
+  // ---------- the knight's hands: 82-knightgear's own rule (a gauntlet in plate, mail-brown in chain, else his skin) ----------
+  function handColour(look) {
+    const B = window.KNIGHTGEAR && look ? KNIGHTGEAR.partsOf(look).body : null, fam = B && B.fam;
+    if ((fam === 'plate' || fam === 'hover') && /^#[0-9a-f]{6}$/i.test(B.color)) return shade(B.color, -0.15);
+    if (fam === 'chain') return '#6b4a2e';
+    return look && /^#[0-9a-f]{6}$/i.test(look.skin || '') ? look.skin : '#e8b790';
+  }
+
+  // ---------- the lever hands: a stand-in for the canvas that gives the goblin's green hands to the knight ----------
+  // hand: the colour the hands take, or null to leave them off (nobody aboard). The drawing paints a hand as a radial
+  // gradient of the goblin's skin (its middle stop exactly GOB) filled and then outlined; the gradient's stops wait until
+  // it is used, and then a hand's three greens become the knight's (or that fill and its outline are left out).
+  function handCtx(real, hand) {
+    let handPend = 0;
+    const pend = new Map();
+    const flush = v => {
+      const p = v && typeof v === 'object' ? pend.get(v) : null; if (!p) return;
+      pend.delete(v);
+      if (p.stops.some(([o, c]) => o === 0.6 && c === GOB)) {
+        if (hand) { STATS.hands++; p.add(0, shade(hand, 0.35)); p.add(0.6, hand); p.add(1, shade(hand, -0.35)); }
+        else { STATS.handsHidden++; for (const [o, c] of p.stops) p.add(o, c); handPend = 2; }
+        return;
+      }
+      for (const [o, c] of p.stops) p.add(o, c);
+    };
+    const fns = new Map();
+    return new Proxy({}, {
+      get(t, k) {
+        if (k === '__real') return real;
+        const v = real[k];
+        if (typeof v !== 'function') return v;
+        let f = fns.get(k); if (f) return f;
+        f = function () {
+          const a = arguments;
+          if (handPend && k === 'fill' && handPend === 2) { handPend = 1; return undefined; }
+          if (handPend && k === 'stroke' && handPend === 1) { handPend = 0; return undefined; }
+          if (k === 'createRadialGradient') {
+            const gr = real.createRadialGradient(a[0], a[1], a[2], a[3], a[4], a[5]);
+            if (gr && typeof gr.addColorStop === 'function') { const add = gr.addColorStop.bind(gr), stops = []; gr.addColorStop = (o, c) => { stops.push([o, c]); }; pend.set(gr, { stops, add }); }
+            return gr;
+          }
+          return v.apply(real, a);
+        };
+        fns.set(k, f); return f;
+      },
+      set(t, k, v) { if (k === 'fillStyle' || k === 'strokeStyle') flush(v); real[k] = v; return true; },
+    });
+  }
+
+  // ---------- the view the monster drawing reads (78-monsterart's `e`) ----------
+  function viewOf(e, type, o) {
+    let fx = e.facing ? +e.facing.x || 0 : 0, fy = e.facing ? +e.facing.y || 0 : 1;
+    const L = Math.hypot(fx, fy); if (L < 1e-6) { fx = 0; fy = 1; } else { fx /= L; fy /= L; }
+    const a = +e.attackT || 0;
+    return { type, facing: { x: fx, y: fy }, moving: !!e.moving || !!o.charging, walkT: +e.walkT || 0, attackT: a > 0 ? Math.min(0.22, a) : 0, hurtT: 0, seed: o.seed || 0,
+      state: 'idle', stunT: 0, hp: o.hp === undefined ? 1 : +o.hp, maxHp: o.maxHp === undefined ? 1 : +o.maxHp, unarmed: false, rodGlow: o.rodGlow || 0, chargeT: o.charging ? 1 : 0 };
+  }
+  // the knight's seat, MONSTER_LOOK.drawMachine's pilot(g, x, y, s, back, fx): where the goblin sat at scale s. He faces the
+  // way the machine does (the drawing has already turned its own frame for left). k0: the machine's own size (KOF); the
+  // knight shrinks with it only by its square root, so he still reads as himself.
+  function seatFor(look, kind, k0) {
+    const S = SEAT[kind], type = TYPE[kind];
+    return (gp, x, y, s, back, fx) => {
+      // the knight is drawn on the real canvas (the hand stand-in has nothing to do for him)
+      // the side view seats its goblin with fx exactly 1 (its frame already turned for left); the front view with the facing's x
+      const g = gp.__real || gp, facing = back ? { x: 0, y: -1 } : fx === 1 ? { x: 1, y: 0 } : { x: 0, y: 1 };
+      const k = S.s / ((SIZE[type] || 1) * Math.sqrt(k0 || 1));
+      g.save(); g.translate(x, y); g.scale(s, s); g.translate(0, S.dy); g.scale(k / s, k / s);
+      try { drawHuman(g, { facing, hurtT: 0, attackT: 0, moving: false, walkT: 0, seated: true }, look); STATS.seats++; } finally { g.restore(); }
+    };
+  }
+
+  // ---------- the bulldozer's upgrades, in the drawing's own units and frame ----------
+  function dozerUpgrades(g, v, up) {
+    const f = face4(v.facing), sw = v.attackT > 0 ? 1 - v.attackT / 0.22 : -1, hit = sw >= 0 ? Math.sin(sw * Math.PI) : 0;
+    const spin = v.moving ? (v.walkT * 3) % 1 : 0;
+    g.save(); g.scale(SIZE.bulldozer, SIZE.bulldozer); if (f === 'left') g.scale(-1, 1);
+    if (f === 'left' || f === 'right') {
+      const L = hit * 4.5 + hit * 1.6;
+      if (up.boiler) {
+        // the big boiler: a fatter drum over the old one, three brass bands and a pressure dial
+        g.beginPath(); g.moveTo(-15, -13); g.arcTo(-5.2, -15, -5.2, -1, 2.6); g.arcTo(-5.2, -0.4, -15, -0.4, 2.2); g.arcTo(-15.6, -0.4, -15.6, -13, 2.2); g.arcTo(-15.6, -15, -5.2, -15, 2.6); g.closePath();
+        const gr = g.createLinearGradient(-15.6, 0, -5.2, 0); gr.addColorStop(0, '#3e3e46'); gr.addColorStop(0.3, '#7d7d88'); gr.addColorStop(0.62, '#4e4e58'); gr.addColorStop(1, '#2a2a30'); g.fillStyle = gr; g.fill(); outline(g, 0.55);
+        for (const y of [-12, -7.6, -3.2]) { g.fillStyle = '#c9a02a'; g.fillRect(-15.6, y, 10.4, 1); }
+        rivets(g, [[-14.4, -13.8], [-6.4, -13.8], [-14.4, -1.6], [-6.4, -1.6]], 0.3);
+        ell(g, -10.4, -9.8, 1.6, 1.6); g.fillStyle = '#efe8d0'; g.fill(); outline(g, 0.35);
+        g.strokeStyle = '#c0392b'; g.lineWidth = 0.35; g.beginPath(); g.moveTo(-10.4, -9.8); g.lineTo(-10.4 + Math.cos(time * 3) * 1.2, -9.8 + Math.sin(time * 3) * 1.2); g.stroke();
+      }
+      g.translate(L, 0);
+      if (up.ram) {
+        // the ram plate: a thick riveted slab bolted over the blade's face, a spike top and bottom
+        g.beginPath(); g.moveTo(15.4, -10.6); g.quadraticCurveTo(13.6, 0.6, 15.8, 10.2); g.lineTo(18.8, 10.4); g.quadraticCurveTo(16.6, 0.8, 18.4, -10.8); g.closePath();
+        g.fillStyle = vfill(g, '#3a3a44', -11, 11, 0.25, -0.3); g.fill(); outline(g, 0.5);
+        rivets(g, [[16.2, -7.4], [15.6, -1], [16.1, 5.6]], 0.34);
+        for (const [y, d] of [[-9.6, -1], [9.2, 1]]) { g.beginPath(); g.moveTo(17.6, y - 1.2); g.lineTo(22.4, y + d * 1.8); g.lineTo(17.8, y + 1.2); g.closePath(); g.fillStyle = vfill(g, '#c9ccd3', y - 1.2, y + 1.8, 0.35, -0.2); g.fill(); outline(g, 0.35); }
+      }
+      if (up.drill) {
+        // the drill: a cone on the blade's nose, its turns running as it rolls; the iron one bright, with teeth
+        const iron = !!up.irondrill, x0 = up.ram ? 18.6 : 17, c = iron ? '#d5d9e0' : '#7a7d86';
+        g.beginPath(); g.moveTo(x0, -3.4); g.lineTo(x0 + 8.6, 0); g.lineTo(x0, 3.4); g.closePath(); g.fillStyle = vfill(g, c, -3.4, 3.4, 0.4, -0.35); g.fill(); outline(g, 0.5);
+        g.save(); g.beginPath(); g.moveTo(x0, -3.4); g.lineTo(x0 + 8.6, 0); g.lineTo(x0, 3.4); g.closePath(); g.clip();
+        g.strokeStyle = iron ? '#5a5a62' : '#2e2e36'; g.lineWidth = 0.5;
+        for (let k = 0; k < 4; k++) { const px = x0 + ((k + spin) / 4) * 8.6; g.beginPath(); g.moveTo(px, -3.6); g.lineTo(px + 1.8, 3.6); g.stroke(); }
+        g.restore();
+        if (iron) rivets(g, [[x0 + 2.4, -1.6], [x0 + 2.4, 1.6], [x0 + 5, 0]], 0.32);
+        g.fillStyle = '#3a3a42'; g.fillRect(x0 - 1.2, -2, 1.4, 4);
+      }
+    } else if (f === 'down') {
+      g.translate(0, hit * 2.4);
+      if (up.ram) {
+        g.fillStyle = vfill(g, '#3a3a44', -1, 4, 0.25, -0.3); g.fillRect(-14.4, -0.2, 28.8, 3.6); g.strokeStyle = OUT; g.lineWidth = 0.4; g.strokeRect(-14.4, -0.2, 28.8, 3.6);
+        rivets(g, [[-11, 1.6], [-4, 1.6], [4, 1.6], [11, 1.6]], 0.34);
+        for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 13, -0.2); g.lineTo(s * 16.4, 1.6); g.lineTo(s * 13, 3.4); g.closePath(); g.fillStyle = '#c9ccd3'; g.fill(); outline(g, 0.35); }
+      }
+      if (up.drill) {
+        const iron = !!up.irondrill, c = iron ? '#d5d9e0' : '#7a7d86', y = 3.4;
+        ell(g, 0, y, 4.2, 4.2); g.fillStyle = vfill(g, c, y - 4, y + 4, 0.4, -0.35); g.fill(); outline(g, 0.5);
+        g.strokeStyle = iron ? '#5a5a62' : '#2e2e36'; g.lineWidth = 0.5; g.beginPath(); for (let k = 0; k <= 24; k++) { const a = k / 24 * TAU * 2 + spin * TAU, r = 4 * (1 - k / 24); if (k) g.lineTo(Math.cos(a) * r, y + Math.sin(a) * r); else g.moveTo(Math.cos(a) * r, y + Math.sin(a) * r); } g.stroke();
+        ell(g, 0, y, 0.8, 0.8); g.fillStyle = iron ? '#ffffff' : '#c9ccd3'; g.fill();
+      }
+    } else if (up.boiler) {
+      // from behind: the big boiler's drum stands taller over the old one
+      g.beginPath(); g.moveTo(0.6, -14.6); g.lineTo(10.6, -14.6); g.lineTo(10.6, 2.2); g.lineTo(0.6, 2.2); g.closePath();
+      const gr = g.createLinearGradient(0.6, 0, 10.6, 0); gr.addColorStop(0, '#3e3e46'); gr.addColorStop(0.3, '#7d7d88'); gr.addColorStop(0.62, '#4e4e58'); gr.addColorStop(1, '#2a2a30'); g.fillStyle = gr; g.fill(); outline(g, 0.55);
+      for (const y of [-11.8, -6, -0.4]) { g.fillStyle = '#c9a02a'; g.fillRect(0.6, y, 10, 1); }
+      ell(g, 5.6, -2.6, 2.6, 2.4); g.fillStyle = '#2a2420'; g.fill(); outline(g, 0.45);
+      const fl = 0.6 + Math.sin(time * 8) * 0.25; g.fillStyle = `rgba(255,${150 + fl * 60 | 0},60,${fl.toFixed(3)})`; ell(g, 5.6, -2.4, 1.8, 1.6); g.fill();
+    }
+    g.restore();
+  }
+
+  // ---------- one machine ----------
+  // machine(g, e, kind, o): kind 'walker' | 'dozer' | 'beast', drawn at the origin of g (the machine's middle).
+  // o: { pilot: a knight's look or null, parked: nobody aboard, hurt, wreck, hp, maxHp, rodGlow, charging, up, seed }
+  // No pilot and not parked: the goblins' own drawing, untouched (the title screen's walker).
+  const HURT = 'rgba(255,90,90,0.45)', WRECK = 'rgba(34,26,20,0.5)';
+  function paintMachine(g, kind, v, o) {
+    const type = TYPE[kind];
+    const seated = !!o.pilot || !!o.parked;
+    const k = o.k || 1;
+    g.save(); if (k !== 1) g.scale(k, k);
+    try {
+      if (seated) LOOK.drawMachine(handCtx(g, o.pilot ? handColour(o.pilot) : null), v, type, o.pilot ? seatFor(o.pilot, kind, k) : null);
+      else LOOK.paint(g, v, type, null, null);
+      if (kind === 'dozer' && o.up && (o.up.drill || o.up.ram || o.up.boiler)) dozerUpgrades(g, v, o.up);
+    } finally { g.restore(); }
+  }
+  let scratch = null;
+  function tinted(g, kind, v, o, col) {
+    if (typeof document === 'undefined' || !document.createElement) return false;
+    const kk = o.k || 1, b = LOOK.boxOf(TYPE[kind], true).map(x => x * kk), ss = Math.max(1, Math.min(2, typeof DPR === 'number' && DPR > 0 ? DPR : 1));
+    const x0 = b[0] - 12, y0 = b[1] - 12, w = b[2] - b[0] + 24 + (kind === 'dozer' ? 30 : 0), h = b[3] - b[1] + 24;
+    const W = Math.ceil(w * ss), Hh = Math.ceil(h * ss);
+    if (!scratch || scratch.c.width < W || scratch.c.height < Hh) { const c = document.createElement('canvas'); c.width = Math.max(W, scratch ? scratch.c.width : 0); c.height = Math.max(Hh, scratch ? scratch.c.height : 0); const cg = c.getContext && c.getContext('2d'); if (!cg) return false; scratch = { c, cg }; }
+    const cg = scratch.cg;
+    cg.setTransform(1, 0, 0, 1, 0, 0); cg.clearRect(0, 0, scratch.c.width, scratch.c.height);
+    // a dozer facing left carries its drill on its left: the picture reaches as far that way
+    const ox = kind === 'dozer' && face4(v.facing) === 'left' ? -30 : 0;
+    cg.setTransform(ss, 0, 0, ss, (-x0 - ox) * ss, -y0 * ss); paintMachine(cg, kind, v, o);
+    cg.save(); cg.setTransform(1, 0, 0, 1, 0, 0); cg.globalCompositeOperation = 'source-atop'; cg.fillStyle = col; cg.fillRect(0, 0, W, Hh); cg.restore();
+    g.drawImage(scratch.c, 0, 0, W, Hh, x0 + ox, y0, w, h);
+    STATS.tinted++;
+    return true;
+  }
+  function machine(g, e, kind, o) {
+    o = Object.assign({ k: KOF(kind) }, o || {});
+    if (!TYPE[kind]) return false;
+    STATS.machines++;
+    const v = viewOf(e, TYPE[kind], o);
+    if (o.wreck) {
+      // tipped over on its side about where it stands, dark, smoke still coming off it
+      const foot = 11.4 * (SIZE[TYPE[kind]] || 1) * o.k;
+      g.save(); g.translate(0, foot); g.rotate(0.32); g.translate(0, -foot);
+      if (!(g === ctx && tinted(g, kind, v, o, WRECK))) { g.globalAlpha *= 0.8; paintMachine(g, kind, v, o); }
+      g.restore();
+      for (let k = 0; k < 3; k++) { const ph = (time * 0.5 + k / 3 + (o.seed || 0)) % 1; g.fillStyle = `rgba(70,70,78,${(0.5 * (1 - ph)).toFixed(3)})`; ell(g, -8 + Math.sin(time * 1.6 + k * 2) * 4, -24 - ph * 30, 5 + ph * 7, 5 + ph * 7); g.fill(); }
+      return true;
+    }
+    if (o.hurt && g === ctx && tinted(g, kind, v, o, HURT)) return true;
+    paintMachine(g, kind, v, o);
+    return true;
+  }
+
+  // ---------- where things sit on a machine ----------
+  // the top of a machine's drawing over its middle (for a name over a friend), and its roof: where 55-riding's special
+  // beacon stands (on the boiler's cap), in game pixels from the middle, for the way it faces
+  const ROOF = { walker: { side: [-7.4, -17.4], down: [-6.6, -20.2], up: [6.4, -18.2] }, dozer: { side: [-9.6, -14.2], down: [-5.4, -16.2], up: [5.6, -14] },
+    beast: { side: [-6, -24], down: [-8, -25], up: [8, -25] } };
+  function roof(kind, facing) {
+    const r = ROOF[kind]; if (!r) return null;
+    const f = face4(facing || { x: 1, y: 0 }), k = (SIZE[TYPE[kind]] || 1) * KOF(kind), p = f === 'down' ? r.down : f === 'up' ? r.up : r.side;
+    return { x: (f === 'left' ? -p[0] : p[0]) * k, y: p[1] * k };
+  }
+  function top(kind) {
+    if (kind === 'horse') return 50;
+    const b = TYPE[kind] && LOOK.boxOf(TYPE[kind], false);
+    // the box reaches up into the chimney smoke; a name sits over the machine and its knight, under the smoke
+    return b ? Math.round(-b[1] * 0.8 * KOF(kind)) : 46;
+  }
+
+  // ---------- a friend online on a mount (73-players) ----------
+  // e: the remote knight (shown.x / shown.y are where he is drawn; g is already moved there), look: his look, as: the
+  // kind to draw (73 passes 'walker' for a kind this page does not know)
+  const UPS = ['drill', 'irondrill', 'ram', 'boiler'];
+  function upsOf(s) { const o = {}; if (typeof s === 'string') for (const k of s.split(',')) if (UPS.includes(k)) o[k] = true; return o; }
+  function rider(g, e, look, as) {
+    const kind = as || kindOf(e.mech);
+    if (!kind) return false;
+    STATS.riders++;
+    const ent = { facing: e.facing, moving: e.moving, walkT: e.walkT, attackT: e.attackT || 0, hurtT: e.hurtT || 0 };
+    if (kind === 'horse') { if (!window.MOUNTS || !MOUNTS.drawHorse) return false; MOUNTS.drawHorse(g, ent, e.hurtT > 0, look); return true; }
+    const m = e.mech, hp = Number.isFinite(m.hp) ? m.hp : 1, mx = Number.isFinite(m.maxHp) && m.maxHp > 0 ? m.maxHp : Math.max(1, hp);
+    return machine(g, ent, kind, { pilot: look, hurt: e.hurtT > 0, hp, maxHp: mx, up: kind === 'dozer' ? upsOf(m.up) : null, seed: (e.n ? e.n.length : 0) * 0.7 });
+  }
+
+  // ---------- the knight's own machine: the player's draw item becomes the new machine ----------
+  const myKind = () => player.mech && player.mech.kind !== 'horse' ? (player.mech.kind || 'walker') : null;
+  function drawMine(g) {
+    const kind = myKind(); if (!kind) return;
+    const m = player.mech, charging = !!(window.RIDING && RIDING.special);
+    g.save(); g.translate(player.x, player.y);
+    try {
+      machine(g, player, kind, { pilot: playerLook(), hurt: player.hurtT > 0, hp: m.hp, maxHp: m.maxHp, charging, up: kind === 'dozer' ? player.dozerUp : null, seed: 0.4 });
+    } finally { g.restore(); }
+  }
+  HOOKS.draw.push((g, items) => {
+    if (!ON.on || player.dead || !myKind()) return;
+    // the core's item (y + r) and the one 22 / 32 push when they could not find it (y + r + 1): the first is the machine
+    let first = true;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.who !== undefined || (it.y !== player.y + player.r && it.y !== player.y + player.r + 1)) continue;
+      if (first) { it.draw = () => drawMine(g); first = false; } else it.draw = () => { };
+    }
+    if (first) items.push({ y: player.y + player.r, draw: () => drawMine(g) });
+  });
+
+  // ---------- the old entry points, for every other caller ----------
+  const TITLE_K = 0.6;
+  // drawMech(g, e, hurt, pilot): the walker (the title screen's, a parked one, a knight in it)
+  { const _drawMech = drawMech;
+    drawMech = function (g, e, hurt, pilot) {
+      if (!ON.on || !e) return _drawMech(g, e, hurt, pilot);
+      // no pilot and nobody parked it: the title screen's goblin walker (monsters are drawn by 78-monsterlook, never here).
+      // The title has room for the old walker, so the new one stands there at that size, its feet on the title's shadow
+      if (!pilot && !e.parked) {
+        const v = viewOf(e, 'walker', {});
+        g.save(); g.translate(0, 22); g.scale(TITLE_K, TITLE_K); g.translate(0, -22);
+        try { if (!(hurt && g === ctx && tinted(g, 'walker', v, { k: 1 }, HURT))) LOOK.paint(g, v, 'walker', null, null); } finally { g.restore(); }
+        return;
+      }
+      machine(g, e, 'walker', { pilot: pilot || null, parked: !pilot, hurt });
+    }; }
+  if (typeof drawDozer === 'function') {
+    const _drawDozer = drawDozer;
+    drawDozer = function (g, e, hurt, pilot, up) {
+      if (!ON.on || !e || (!pilot && !e.parked)) return _drawDozer(g, e, hurt, pilot, up);
+      machine(g, e, 'dozer', { pilot: pilot || null, parked: !pilot, hurt, up: pilot ? up : null });
+    };
+  }
+  if (HOOKS.drawMonster.barrelbeast) {
+    const _beast = HOOKS.drawMonster.barrelbeast;
+    HOOKS.drawMonster.barrelbeast = function (g, e, hurt, pilot) {
+      if (!ON.on || !e || (!pilot && !e.parked)) return _beast(g, e, hurt, pilot);
+      machine(g, e, 'beast', { pilot: pilot || null, parked: !pilot, hurt, hp: e.hp, maxHp: e.maxHp, rodGlow: e.rodGlow });
+    };
+  }
+
+  // ---------- parked machines and wrecks on the map ----------
+  // a parked walker faces us, a parked bulldozer and Barrelbeast face away (as the old drawings stood them)
+  const parkedOf = (cx, cy, fx, fy) => ({ x: cx, y: cy, facing: { x: fx, y: fy }, moving: false, walkT: 0, attackT: 0, hurtT: 0, parked: true });
+  function drawParked(g, tx, ty, kind, wreck, fy, hp, maxHp) {
+    const cx = tc(tx), cy = tc(ty);
+    g.save(); g.translate(cx, cy);
+    try { machine(g, parkedOf(cx, cy, 0, fy), kind, { parked: true, wreck, hp, maxHp, seed: (tx * 7 + ty * 13) % 10 / 10 }); } finally { g.restore(); }
+  }
+  { const _drawFurniture = drawFurniture;
+    drawFurniture = function (g, tx, ty, t) {
+      if (ON.on && (t === T.MECH || t === T.WRECK)) { drawParked(g, tx, ty, 'walker', t === T.WRECK, 1); return; }
+      return _drawFurniture(g, tx, ty, t);
+    }; }
+  if (typeof drawDozerTile === 'function') {
+    const _tile = drawDozerTile;
+    drawDozerTile = function (g, tx, ty, t) {
+      if (!ON.on) return _tile(g, tx, ty, t);
+      drawParked(g, tx, ty, 'dozer', t === T.DOZER_WRECK, -1);
+    };
+  }
+  if (window.BEAST) {
+    const _tile = BEAST.drawTile;
+    BEAST.drawTile = function (g, tx, ty, t) {
+      if (!ON.on && _tile) return _tile(g, tx, ty, t);
+      const wreck = t === BEAST.tiles.BEAST_WRECK;
+      drawParked(g, tx, ty, 'beast', wreck, -1, wreck ? 0 : 1, 1);
+    };
+  }
+
+  // ---------- a gate stands open while a rider is in it ----------
+  // A rider goes through a gate (00-core: 'rider' passes T.GATE), so a gate he is in or about to go through is drawn
+  // with its two leaves swung back against its posts, not shut across him. The town's own gates are 95-thistledown's
+  // gatehouses (it draws no wooden gate there at all); this is every other gate: the pens, the Grubmarket wall, the bone fence.
+  function riderAt(tx, ty) {
+    const cx = tc(tx), cy = tc(ty);
+    if (!player.dead && player.mech && dist(player.x, player.y, cx, cy) < player.r + 34) return true;
+    if (window.PLAYERS && PLAYERS.remote && typeof PLAYERS.mapId === 'function') {
+      const my = PLAYERS.mapId();
+      for (const n in PLAYERS.remote) { const e = PLAYERS.remote[n]; if (e && e.mech && !e.dead && e.map === my && e.shown && dist(e.shown.x, e.shown.y, cx, cy) < 54) return true; }
+    }
+    return false;
+  }
+  function drawOpenGate(g, tx, ty) {
+    const x = tx * TILE, y = ty * TILE, Hf = t => t === T.FENCE || t === T.GATE;
+    const h = Hf(tileAt(tx - 1, ty)) || Hf(tileAt(tx + 1, ty)), v = Hf(tileAt(tx, ty - 1)) || Hf(tileAt(tx, ty + 1));
+    const leaf = (lx, ly, w, hh) => { g.fillStyle = '#a58455'; g.fillRect(lx, ly, w, hh); g.fillStyle = 'rgba(60,40,20,0.35)'; if (w > hh) g.fillRect(lx, ly + hh - 1, w, 1); else g.fillRect(lx + w - 1, ly, 1, hh); };
+    if (h || !v) {
+      // across a fence that runs left and right: the way through is up and down, the leaves fold back along it
+      g.fillStyle = '#8a6a3a'; g.fillRect(x, y + 18, 5, 17); g.fillRect(x + TILE - 5, y + 18, 5, 17);
+      leaf(x + 2, y + 2, 4, 18); leaf(x + TILE - 6, y + 2, 4, 18);
+      g.fillStyle = '#6b4a2a'; g.fillRect(x, y + 14, 6, 6); g.fillRect(x + TILE - 6, y + 14, 6, 6);
+    } else {
+      // across a fence that runs up and down: the leaves fold back along the way through, left to right
+      g.fillStyle = '#8a6a3a'; g.fillRect(x + 21, y, 5, 5); g.fillRect(x + 21, y + TILE - 5, 5, 5);
+      leaf(x + 26, y + 3, 18, 4); leaf(x + 26, y + TILE - 7, 18, 4);
+      g.fillStyle = '#6b4a2a'; g.fillRect(x + 20, y, 7, 6); g.fillRect(x + 20, y + TILE - 6, 7, 6);
+    }
+  }
+  { const _drawFenceProp = drawFenceProp;
+    drawFenceProp = function (g, tx, ty, gate) {
+      if (gate && ON.on && !window.__instance && riderAt(tx, ty)) { drawOpenGate(g, tx, ty); return; }
+      return _drawFenceProp(g, tx, ty, gate);
+    }; }
+
+  // ---------- 51's mare, 55's beacon and coach, a friend's name: what they read ----------
+  window.MOUNT_LOOK = { ON, STATS, TYPE, KINDS, SEAT, ROOF, kindOf, machine, rider, roof, top, handCtx, viewOf, riderAt, drawOpenGate, handColour, upsOf, dozerUpgrades };
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'mount look: ';
+    // a context that writes down every call (the headless canvas is a stub), as 78-monsterlook's own checks do
+    const recorder = () => {
+      const log = []; let n = 0;
+      const g = new Proxy({}, {
+        get: (t, k) => {
+          if (k === 'createLinearGradient' || k === 'createRadialGradient' || k === 'createPattern') return () => { n++; const stops = []; log.push(k); return { stops, addColorStop: (o, c) => { stops.push([o, c]); log.push('stop:' + o + ':' + c); } }; };
+          if (k === 'measureText') return () => ({ width: 10 });
+          if (k in t) return t[k];
+          if (typeof k !== 'string') return undefined;
+          return (...a) => { n++; log.push(k + ':' + a.map(x => typeof x === 'number' ? Math.round(x * 10) / 10 : typeof x).join(',')); };
+        },
+        set: (t, k, v) => { t[k] = v; log.push('=' + String(k) + ':' + (typeof v === 'object' && v && v.stops ? 'grad(' + v.stops.map(s => s[1]).join(',') + ')' : v)); return true; },
+      });
+      return { g, log, get n() { return n; } };
+    };
+    const look = Object.assign({}, playerLook(), { skin: '#e8b790' });
+    const FACES = { right: { x: 1, y: 0 }, left: { x: -1, y: 0 }, down: { x: 0, y: 1 }, up: { x: 0, y: -1 } };
+    const ent = (f, o) => Object.assign({ x: 0, y: 0, facing: f, moving: false, walkT: 0, attackT: 0, hurtT: 0 }, o || {});
+    // goblin green actually painted: a fill made while the fill colour (or its gradient) is the goblin's skin
+    const greens = log => { let n = 0, armed = false; for (const l of log) { if (l.startsWith('=fillStyle:')) armed = l.includes(GOB); else if (armed && l.startsWith('fill:')) { n++; armed = false; } } return n; };
+
+    // MA1. every machine at all four facings: the new drawing (78-monsterlook's paint, counted by its STATS), the knight in
+    // the seat (one seat taken, through drawHuman, no goblin green anywhere), the hands his colour; parked: nobody, no hands
+    { const bad = [], by0 = Object.assign({}, LOOK.STATS.by);
+      const kg0 = window.KNIGHTGEAR ? KNIGHTGEAR.STATS.live : 0;
+      for (const kind of KINDS) for (const fname in FACES) {
+        const s0 = STATS.seats, h0 = STATS.hands, hh0 = STATS.handsHidden;
+        const r = recorder(); machine(r.g, ent(FACES[fname], { moving: fname === 'left' }), kind, { pilot: look, hp: 10, maxHp: 10 });
+        const seats = STATS.seats - s0, hands = STATS.hands - h0, gob = greens(r.log);
+        // facing away the drawings show no lever hands at all
+        if (seats !== 1 || gob || (fname !== 'up' && hands < 1) || STATS.handsHidden !== hh0) bad.push({ kind, fname, seats, hands, gob });
+        const p0 = STATS.seats, ph0 = STATS.handsHidden;
+        const r2 = recorder(); machine(r2.g, ent(FACES[fname]), kind, { parked: true });
+        const pSeats = STATS.seats - p0, hid = STATS.handsHidden - ph0, gob2 = greens(r2.log);
+        if (pSeats !== 0 || (fname !== 'up' && hid < 1) || gob2) bad.push({ parked: kind, fname, pSeats, hid, gob2 });
+      }
+      const drew = KINDS.every(k => (LOOK.STATS.by[TYPE[k]] || 0) >= (by0[TYPE[k]] || 0) + 8);
+      const knight = !window.KNIGHTGEAR || KNIGHTGEAR.STATS.live >= kg0 + 12;
+      check(P + 'MA1 the walker, the bulldozer and the Barrelbeast draw in the monster refit\'s machine art at all four facings: driven, the knight takes the one seat (the Barrelbeast\'s two other goblins stay off) with his own hands on the levers and no goblin green; parked, every seat and lever is empty',
+        !bad.length && drew && knight, { bad: bad.slice(0, 6), drew, knight }); }
+
+    // MA2. the old entry points and the knight's own draw item: drawMech / drawDozer / the barrelbeast hook with a pilot,
+    // and the player's machine in the world's draw list, all draw the new machine; the title's goblin walker stays a goblin's
+    { const m0 = STATS.machines, by0 = LOOK.STATS.by.walker || 0;
+      const r1 = recorder(); drawMech(r1.g, ent(FACES.down), false, look);
+      const r2 = recorder(); drawDozer(r2.g, ent(FACES.right), false, look, { drill: true, ram: true, boiler: true });
+      const r3 = recorder(); HOOKS.drawMonster.barrelbeast(r3.g, ent(FACES.up, { hp: 300, maxHp: 300 }), false, look);
+      const viaEntry = STATS.machines - m0 === 3;
+      const s0 = STATS.seats; const r4 = recorder(); drawMech(r4.g, ent(FACES.left), false, null);
+      const goblin = STATS.seats === s0 && (LOOK.STATS.by.walker || 0) >= by0 + 2 && greens(r4.log) > 0;
+      // the knight's own walker in the world's draw list
+      const mech0 = player.mech, r0 = player.r;
+      player.mech = { hp: 100, maxHp: 130 }; player.r = 20; player.dead = false;
+      const items = []; items.push({ y: player.y + player.r, draw: () => { } });
+      for (const hk of HOOKS.draw) { try { hk(ctx, items, cam); } catch (err) { } }
+      const mine = items.filter(it => it.y === player.y + player.r || it.y === player.y + player.r + 1);
+      const m1 = STATS.machines; for (const it of mine) it.draw(); const once = STATS.machines - m1 === 1;
+      player.mech = { kind: 'dozer', hp: 100, maxHp: 110 }; player.r = 22;
+      const items2 = [{ y: player.y + player.r, draw: () => { } }]; for (const hk of HOOKS.draw) { try { hk(ctx, items2, cam); } catch (err) { } }
+      const m2 = STATS.machines; for (const it of items2) if (it.y === player.y + player.r || it.y === player.y + player.r + 1) it.draw(); const dozerOnce = STATS.machines - m2 === 1;
+      player.mech = mech0; player.r = r0;
+      check(P + 'MA2 drawMech, drawDozer and the barrelbeast hook with the knight aboard draw the new machines, the knight\'s own walker and bulldozer in the world are drawn once each as the new machine, and the title\'s goblin walker keeps its goblin',
+        viaEntry && goblin && once && dozerOnce, { viaEntry, goblin, once, dozerOnce, mine: mine.length }); }
+
+    // MA3. the bulldozer's upgrades show on it at every facing that can see them (the drill and ram from the side and the
+    // front, the big boiler from the side and behind), mirrored with it facing left
+    { const bad = [];
+      for (const fname in FACES) {
+        const plain = recorder(), all = recorder();
+        machine(plain.g, ent(FACES[fname]), 'dozer', { pilot: look });
+        machine(all.g, ent(FACES[fname]), 'dozer', { pilot: look, up: { drill: true, irondrill: true, ram: true, boiler: true } });
+        if (all.n <= plain.n + 20) bad.push({ fname, plain: plain.n, all: all.n });
+      }
+      const up = upsOf('drill,ram,boiler,nonsense'), none = upsOf(42);
+      check(P + 'MA3 a bulldozer\'s fitted drill, ram plate and big boiler are drawn on the new bulldozer at all four facings, and a friend\'s list of them is read safely (unknown words and junk ignored)',
+        !bad.length && up.drill && up.ram && up.boiler && !up.nonsense && !Object.keys(none).length, { bad, up, none }); }
+
+    // MA4. parked machines and wrecks on the map: T.MECH, T.WRECK, T.DOZER, T.DOZER_WRECK, T.BEAST, T.BEAST_WRECK each draw
+    // the new machine, empty; and the beacon's roof and a friend's name height come from the new drawings
+    { const m0 = STATS.machines, s0 = STATS.seats, bad = [];
+      const tiles = [[T.MECH, 'MECH'], [T.WRECK, 'WRECK'], [T.DOZER, 'DOZER'], [T.DOZER_WRECK, 'DOZER_WRECK'], [window.BEAST && BEAST.tiles.BEAST, 'BEAST'], [window.BEAST && BEAST.tiles.BEAST_WRECK, 'BEAST_WRECK']];
+      for (const [t, name] of tiles) {
+        if (t === undefined) { bad.push(name + ' missing'); continue; }
+        const before = STATS.machines; const r = recorder();
+        try { if (t === T.MECH || t === T.WRECK) drawFurniture(r.g, 10, 10, t); else if (t === T.DOZER || t === T.DOZER_WRECK) drawDozerTile(r.g, 10, 10, t); else BEAST.drawTile(r.g, 10, 10, t); } catch (err) { bad.push(name + ' threw ' + err.message); continue; }
+        if (STATS.machines !== before + 1 || greens(r.log) > 0) bad.push(name);
+      }
+      const roofs = KINDS.every(k => Object.keys(FACES).every(f => { const p = roof(k, FACES[f]); return p && p.y < -30 && Math.abs(p.x) < 40; }));
+      const tops = KINDS.every(k => top(k) > 40) && top('horse') > 40;
+      check(P + 'MA4 a parked walker, bulldozer and Barrelbeast and their wrecks draw the new machine with nobody aboard; the special\'s beacon stands on each machine\'s boiler and a friend\'s name goes over the machine',
+        !bad.length && STATS.seats === s0 && STATS.machines - m0 === 6 && roofs && tops, { bad, roofs, tops }); }
+
+    // MA5. friends see riders: a friend's presence on the mare, the walker, the bulldozer (with its drill) and the
+    // Barrelbeast, fed in as another knight online, is drawn on that mount with him aboard (not on foot), his name over
+    // it; a mech kind this page does not know is drawn as the walker, as it always was
+    if (window.PLAYERS && window.NET) {
+      const name = 'MountLookTest', at = { x: Math.round(player.x + 90), y: Math.round(player.y) }, log = {}; let ok = true;
+      const cases = [['horse', { kind: 'horse', hp: 60, maxHp: 60 }], ['walker', { kind: 'walker', hp: 90, maxHp: 130 }], ['dozer', { kind: 'dozer', hp: 110, maxHp: 110, up: 'drill,irondrill' }],
+        ['beast', { kind: 'beast', hp: 200, maxHp: 300 }], ['unknown', { kind: 'zeppelin', hp: 5, maxHp: 5 }]];
+      const horse0 = MOUNTS.drawHorse; let horses = 0;
+      MOUNTS.drawHorse = function () { horses++; return horse0.apply(this, arguments); };
+      try {
+        for (const [label, mech] of cases) {
+          NET.emit('p', { t: 'p', n: name, role: 'player', map: PLAYERS.mapId(), x: at.x, y: at.y, fx: 1, fy: 0, mv: true, wt: 2, hp: 20, mhp: 20, lv: 9, look: playerLook(), mech, dead: false, def: 100, act: null });
+          F.step([]);
+          const e = PLAYERS.remote[name];
+          render();
+          const r0 = STATS.riders, m0 = STATS.machines, s0 = STATS.seats, h0 = horses;
+          let drew = true;
+          try { const items = []; for (const hk of HOOKS.draw) hk(ctx, items, cam); for (const it of items) if (it.who === name) it.draw(); } catch (err) { drew = String(err && err.message); }
+          const rode = STATS.riders - r0 === 1, aboard = label === 'horse' ? horses - h0 === 1 : STATS.machines - m0 === 1 && STATS.seats - s0 === 1;
+          const tag = e && typeof e.tagTop === 'number' && e.tagTop < at.y - 40;
+          log[label] = { drew, rode, aboard, tag: e && e.tagTop };
+          if (!(drew === true && rode && aboard && tag)) ok = false;
+        }
+      } finally { MOUNTS.drawHorse = horse0; delete PLAYERS.remote[name]; }
+      check(P + 'MA5 friends see riders: a friend on the mare, the walker, the bulldozer (its drill too) and the Barrelbeast is drawn riding it with himself aboard and his name over it; an unknown machine is drawn as the walker', ok, log);
+    }
+
+    // MA6. a gate stands open while a rider is in it, and shut otherwise (a pen gate; the town's gates are gatehouses)
+    { let gate = null;
+      for (let y = 1; y < MAP_H - 1 && !gate; y++) for (let x = 1; x < MAP_W - 1 && !gate; x++) if (tileAt(x, y) === T.GATE && !(x >= 84 && x <= 141 && y >= 13 && y <= 57)) gate = [x, y];
+      let r = { gate };
+      if (gate) {
+        const keep = { x: player.x, y: player.y, mech: player.mech, r: player.r };
+        const ops = () => { const rc = recorder(); drawFenceProp(rc.g, gate[0], gate[1], true); return rc.log.filter(l => l.startsWith('fillRect:')).map(l => l.slice(9)).join(' '); };
+        player.mech = null; player.r = 13; player.x = tc(gate[0]); player.y = tc(gate[1]);
+        const onFoot = ops();
+        player.mech = { kind: 'horse', hp: 60, maxHp: 60 }; player.r = 16;
+        const riding = ops();
+        player.x = tc(gate[0] + 4); const away = ops();
+        player.x = keep.x; player.y = keep.y; player.mech = keep.mech; player.r = keep.r;
+        r = { gate, open: riding !== onFoot, shutAway: away === onFoot, onFoot: onFoot.slice(0, 40), riding: riding.slice(0, 40) };
+      }
+      check(P + 'MA6 a gate is drawn standing open while a rider is in it, and shut when he is on foot or gone', !!gate && r.open && r.shutAway, r); }
+  });
+
+  return window.MOUNT_LOOK;
+})();
+
 // ---- src/88-aerie.js ----
 // ============================================================================
 // AERIE, PART TWO — the light, the city, the Spire Run and what only the sky has. src/88-aerie.js
@@ -69261,7 +70072,7 @@ window.TOWNSFOLK = TOWNSFOLK;
   // is: 16-instances does not let a mount into an instance at all.
   if (T.BONE_ARCH != null) RIDE_THROUGH.add(T.BONE_ARCH);
 
-  window.MOUNTGATES = { EASE, cityGates, ride: RIDE_THROUGH, wreckSpot, routes, tooNarrow };
+  window.MOUNTGATES = { EASE, cityGates, ride: RIDE_THROUGH, wreckSpot, routes, tooNarrow, RADII };
 
   // ---------- self-test ----------
   const P = 'mountgates: ';
@@ -69308,10 +70119,18 @@ window.TOWNSFOLK = TOWNSFOLK;
       }
       const port = []; for (let x = CASTLE.x; x < CASTLE.x + CASTLE.w; x++) if (tileAt(x, CASTLE.y) === T.PORTCULLIS) port.push(x);
       rows.push({ gate: 'castle portcullis', cols: port, widthPx: port.length * TILE });
-      const radii = { walker: 20, dozer: 22, beast: 26, horse: MOUNTS.R };
-      for (const k in radii) for (const r of rows) if (2 * radii[k] >= r.widthPx) fits = false;
-      check(P + 'every mount fits every Thistledown gate: the two town gates are 3 tiles (144 px) between stone, the castle portcullis 2 tiles (96 px); the widest mount is 52 px',
-        gates.length === 2 && gates.every(g => g.rows.length === 3) && port.length === 2 && fits, { rows, radii }); }
+      // each mount's real body: boarded the real way and measured (player.r), never a number copied here
+      const radii = {};
+      const o0 = h.openSpot(62, 30);
+      for (const K of KINDS) { radii[K.kind] = board(K, o0.x, o0.y) ? player.r : null; onFoot(); giveBack(); drain(); }
+      const real = Object.values(radii).every(r => typeof r === 'number' && r > 0);
+      for (const k in radii) for (const r of rows) if (!(2 * radii[k] < r.widthPx)) fits = false;
+      // the radii this file keeps open round a wreck (RADII) are exactly the machines' own, widest first
+      const machines = ['beast', 'dozer', 'walker'].map(k => radii[k]);
+      const radiiKept = real && RADII.length === 3 && RADII.every((r, i) => r === machines[i]);
+      const widest = real ? 2 * Math.max(...Object.values(radii)) : null;
+      check(P + `every mount fits every Thistledown gate: the two town gates are 3 tiles (144 px) between stone, the castle portcullis 2 tiles (96 px); each mount boarded and measured, the widest is ${widest} px, and the wreck rule keeps the machines' own radii open`,
+        gates.length === 2 && gates.every(g => g.rows.length === 3) && port.length === 2 && fits && real && radiiKept, { rows, radii, RADII, radiiKept }); }
 
     // 1. each mount, with keys: in through each town gate to the far side of the wall, and back out
     for (const K of KINDS) {
@@ -69380,6 +70199,9 @@ window.TOWNSFOLK = TOWNSFOLK;
 
     // 4. a monster is still stopped by the same gate, and so is a knight-sized one pretending (no mount = no ride)
     { const log = {}; let ok = gates.length === 2;
+      // a type that no longer exists fails this check by name (it is never quietly skipped)
+      const missing = ['goblin', 'boar', 'wolf'].filter(t => !MONSTER_DEFS[t]);
+      if (missing.length) { ok = false; log.missing = missing; }
       for (const g of gates) for (const type of ['goblin', 'boar', 'wolf']) {
         const def = MONSTER_DEFS[type]; if (!def) continue;
         const e = { x: tc(g.x - g.dir * 3), y: tc(g.mid), r: def.r };
@@ -69475,10 +70297,12 @@ window.TOWNSFOLK = TOWNSFOLK;
         const whole2 = gateTiles();
         giveBack(); drain();
         log[K.kind] = { up, inGate, stayed, said, whole, out, whole2 };
-        if (!(up && inGate && stayed && said && whole && out && whole2)) ok = false;
+        // the mare never parks on the gate (she takes open ground beside it, check 13), so in a gateway she simply gets down
+        const fine = K.kind === 'horse' ? up && inGate && !stayed && whole && whole2 : up && inGate && stayed && said && whole && out && whole2;
+        if (!fine) ok = false;
         onFoot();
       }
-      check(P + 'X in the middle of a town gate keeps the knight on every mount and the gate stays a gate; one tile into the town, X gets him down', ok, log); }
+      check(P + 'X in the middle of a town gate keeps the knight on every machine and the gate stays a gate; one tile into the town, X gets him down; on the mare X there gets him down beside the gate and the gate stays a gate', ok, log); }
 
     // 9. a gate is a gate: every gate in the world (pens, the Grubmarket wall, the town) lets a rider through and stops a monster.
     // The mare (r 16), the walker (r 20) and the bulldozer (r 22) fit a one-tile gate (48 px); the Barrelbeast (r 26, 52 px
@@ -69586,6 +70410,28 @@ window.TOWNSFOLK = TOWNSFOLK;
       }
       window.__forceTouch = false;
       check(P + 'on the mare, USE says how to get off her with her own button (GET DOWN on touch, G on keys), never EXIT or X', ok, log); }
+
+    // 13. GET DOWN in a town gateway: on the mare, in every row of both town gates and facing every way (along the gate
+    // too, where the old dismount found only gate and wall and said "No room"), she gets down onto open ground beside
+    // the gate, the knight on his feet clear of everything, the gate whole and still open to every mount it took before
+    { const log = {}; let ok = gates.length === 2;
+      for (const g of gates) for (const y of g.rows) for (const [fx, fy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const up = board(KINDS[3], g.x - g.dir * 3, g.mid);
+        for (let yy = g.mid - 4; yy <= g.mid + 4; yy++) for (let xx = g.x - 4; xx <= g.x + 4; xx++) borrow(xx, yy);
+        const before = routes(g.x, g.mid);
+        player.x = tc(g.x); player.y = tc(y); player.facing = { x: fx, y: fy }; notice = null;
+        const down = up && MOUNTS.dismount();
+        const at = MOUNTS.state.at, said = notice && notice.text;
+        const onGround = !!at && tileAt(at[0], at[1]) === MOUNTS.tiles.HORSE && Math.max(Math.abs(at[0] - g.x), Math.abs(at[1] - y)) <= 2;
+        const clear = !player.mech && !collides(player.x, player.y, player.r, 'player');
+        const whole = g.rows.every(r => tileAt(g.x, r) === T.GATE);
+        const after = routes(g.x, g.mid), open = before.every(r => after.includes(r));
+        log[g.side + ' ' + y + ' ' + fx + ',' + fy] = { up, down, at, said, open };
+        if (!(up && down && onGround && clear && whole && open)) ok = false;
+        if (at) MOUNTS.state.at = null;
+        onFoot(); giveBack(); drain();
+      }
+      check(P + 'GET DOWN in a town gateway, in every row of both gates and facing every way, puts the mare down on open ground beside the gate (never "No room"), the knight clear, the gate whole and still open to every mount', ok, log); }
 
     // put everything back
     giveBack(); onFoot(); if (typeof tapCancel === 'function') tapCancel('manual');

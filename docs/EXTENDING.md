@@ -362,6 +362,17 @@ look, opts)`; a townsperson's look (`who`) is 83-townsfolk's, and every other lo
   branch: `helmFam` / `bodyFam` / `shieldFam` / `weaponFam`, or its metal in `tierOf` and the tier switches. The
   self-test draws every wearable in the game and names any two of a slot that draw the same shape.
 
+### The mounts (`src/51-mounts.js`, `src/84-mountlook.js`)
+
+Cinder draws herself in 51-mounts (`MOUNTS.drawHorse(g, e, hurt, riderLook)`, her middle at the origin, hooves 21.5 px
+below: side-on, front, behind, the knight seated in her saddle; her own shadow). The knight's walker, bulldozer and
+Barrelbeast are the monster refit's machines (`MONSTER_LOOK.drawMachine` with the knight as its pilot), drawn by
+84-mountlook at the size of the knight's own machine bodies: `MOUNT_LOOK.machine(g, e, kind, { pilot, parked, wreck, hurt,
+hp, maxHp, up })`. It also draws parked machines and wrecks, a friend's mount online (`MOUNT_LOOK.rider`), and a gate
+standing open while a rider is in it. `MOUNT_LOOK.roof(kind, facing)` is where something stands on a machine (55-riding's
+beacon), `MOUNT_LOOK.top(kind)` how far above its middle a name or a coach tag goes. 84 is pictures only (stripped from the
+server copy): a kept file reads it only from drawing code.
+
 ### The townsfolk (`src/83-townsart.js`, `src/83-townsfolk.js`)
 
 Every follower and non-fighting townsperson is drawn in the owner-approved townsfolk look. `83-townsart.js` is the
