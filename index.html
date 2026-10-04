@@ -757,7 +757,7 @@ resize();
     'thistledown.house_portal_step': ['thistledown', 117, 18], 'thistledown.rail': ['thistledown', 119, 27], 'thistledown.stall': ['thistledown', 116, 28],
     'thistledown.dozer_bay': ['thistledown', 96, 43], 'thistledown.agility_gate': ['thistledown', 87, 50], 'thistledown.forge': ['thistledown', 92, 37],
     'thistledown.anvil': ['thistledown', 94, 38], 'thistledown.brazier': ['thistledown', 119, 38], 'thistledown.death_house': ['thistledown', 133, 48],
-    'thistledown.west_lane_n': ['thistledown', 84, 33], 'thistledown.west_lane_s': ['thistledown', 84, 60], 'thistledown.blood_portal': ['thistledown', 129, 21],
+    'thistledown.river_se': ['thistledown', 146, 57], 'thistledown.west_lane_n': ['thistledown', 84, 33], 'thistledown.west_lane_s': ['thistledown', 84, 60], 'thistledown.blood_portal': ['thistledown', 129, 21],
     'camp.west_gap': ['camp', 147, 30], 'camp.walker': ['camp', 152, 30], 'camp.cage': ['camp', 148, 34], 'camp.climb': ['camp', 158, 30],
     'camp.shed_door': ['camp', 147, 44], 'camp.shed_step': ['camp', 148, 44], 'camp.dozer_spawn': ['camp', 146, 38], 'camp.south': ['camp', 153, 40],
     'dock.planks': ['dock', 164, 14], 'dock.land': ['dock', 163, 14], 'dock.boat': ['dock', 167, 14], 'gull_isle.boat': ['gull_isle', 170, 13],
@@ -788,6 +788,7 @@ resize();
   // ports that lie outside their own box on purpose: relative geometry that moves with the place (one line of reason each)
   const PORT_REL = {
     'warden.east_wall': 'the Ashfields/Jungle wall is the old x 100 line; it moves with the warden frame (the jungle_west pin)',
+    'thistledown.river_se': "the river's turn past the town's south-east corner, a row below the wall: it moves with the town (TRACKS.river)",
   };
 
   // ---------- the tracks: today's values (no readers yet); each point a port, a world point or an anchor point ----------
@@ -795,8 +796,10 @@ resize();
   // 27-dragons' PATH and FARM_PATH, 25-elves' PATH, 24-dwarves' shaft lane and 26-boats' dock lanes. Points are tagged by
   // the smallest old box that holds them (tools/anchor-of.mjs); the river is the stretched world's (§2), bar where it runs
   // through a pond: its head (the first two points, inside Miller's Pond, which it leaves by the east shore) and its three
-  // points through the small pond south of Thistledown (inside OWNERS' south-pond strip, thistledown's), which move with
-  // their ponds. The jiggle found both cut when the pond, or Thistledown, moved alone. (Stage 4a lays the river anew.)
+  // points through the small pond south of Thistledown (inside OWNERS' south-pond strip, thistledown's) and the next one,
+  // the port thistledown.river_se (146,57, the turn past the town's south-east corner a row below the wall: PORT_REL), which
+  // move with their ponds and the town. The jiggle found the channel cut each time the pond, or Thistledown, moved alone.
+  // (Stage 4a lays the river anew.)
   const P = id => ['port', id], w = (x, y) => ['w', x, y];
   const TRACKS = {
     road_cave: [P('cave.mouth'), P('signpost.sign'), ['thistledown', 84, 32]],
@@ -813,7 +816,7 @@ resize();
     nodes: [P('cave.mouth'), P('signpost.sign'), P('thistledown.west_gate'), P('dock.planks'), P('hollowford.heart'), P('warden.node'), P('fang_lair.node'),
       P('hollowford.south'), P('quarry.shaft'), P('wren.wren'), P('graveyard.grave'), ['pond', 38, 36], P('camp.walker'), P('sylvaris.node'), P('thistledown.square')],
     river: [['pond', 44, 38], ['pond', 47, 44], w(48, 50), w(52, 56), w(62, 58), w(72, 60), w(84, 60), w(94, 61), w(102, 59), w(110, 62), w(118, 60), w(124, 62),
-      ['thistledown', 128, 61], ['thistledown', 134, 60], ['thistledown', 140, 59], w(146, 57), w(154, 53), w(178, 47)],
+      ['thistledown', 128, 61], ['thistledown', 134, 60], ['thistledown', 140, 59], P('thistledown.river_se'), w(154, 53), w(178, 47)],
   };
 
   // ---------- the stretched world, and the seam pins (§3) ----------
