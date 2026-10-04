@@ -687,5 +687,11 @@
   {"file": "89-lighting.js", "literal": "x0 < 10", "decl": "room", "reason": "instance-local (deepholm): the west gallery lies west of column 10"},
   {"file": "89-lighting.js", "literal": "tc(12)", "decl": "lamp", "reason": "instance-local (deepholm): the floor beside the entrance-hall lamp at 11,3"},
   {"file": "89-lighting.js", "literal": "tc(3)", "decl": "lamp", "reason": "instance-local (deepholm): the floor beside the entrance-hall lamp at 11,3"},
-  {"file": "89-lighting.js", "literal": "17 * TILE", "decl": "throneLeak", "reason": "the cave scrim stays (spec section 12): the core scrim's rect over the starting cave, pinned at 0,0"}
+  {"file": "89-lighting.js", "literal": "17 * TILE", "decl": "throneLeak", "reason": "the cave scrim stays (spec section 12): the core scrim's rect over the starting cave, pinned at 0,0"},
+  {"file": "11-main.js", "literal": "4 * TILE", "decl": "talk", "reason": "the talk bot moves a wandering villager within 4 tiles aside: a distance, not a position"},
+  {"file": "11-main.js", "literal": "6 * TILE", "decl": "talk", "reason": "the talk bot sets a wandering villager 6 tiles east of his home: an offset, not a position"},
+  {"file": "11-main.js", "literal": "3 * TILE", "decl": "clutterFree", "reason": "a build check's ground is clear of drops and villagers within 3 tiles: a distance"},
+  {"file": "11-main.js", "literal": "4 * TILE", "decl": "clutterFree", "reason": "a build check's ground is clear of monsters within 4 tiles: a distance"},
+  {"file": "11-main.js", "literal": "3 * TILE", "decl": "selfTest", "reason": "the self-tests sweep up drops within 3 tiles of a fight: a distance, not a position"},
+  {"file": "11-main.js", "literal": "o.x - 12", "decl": "selfTest", "reason": "the bulldozer checks stand the knight 12 tiles west of the open spot: an offset from a frame point"}
 ]
