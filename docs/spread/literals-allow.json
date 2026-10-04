@@ -593,5 +593,10 @@
   {"file": "91-royalmine.js", "line": 2927, "reason": "instance-local (royalmine / deepholm): the self-test stands, faces and reads tiles inside the Royal Mine or Deepholm (intoMine / intoDeep / DH.enter)"},
   {"file": "91-royalmine.js", "line": 2928, "reason": "instance-local (royalmine / deepholm): the self-test stands, faces and reads tiles inside the Royal Mine or Deepholm (intoMine / intoDeep / DH.enter)"},
   {"file": "91-royalmine.js", "line": 2949, "reason": "instance-local (royalmine / deepholm): the self-test stands, faces and reads tiles inside the Royal Mine or Deepholm (intoMine / intoDeep / DH.enter)"},
-  {"file": "91-royalmine.js", "line": 3001, "reason": "instance-local (royalmine / deepholm): the self-test stands, faces and reads tiles inside the Royal Mine or Deepholm (intoMine / intoDeep / DH.enter)"}
+  {"file": "91-royalmine.js", "line": 3001, "reason": "instance-local (royalmine / deepholm): the self-test stands, faces and reads tiles inside the Royal Mine or Deepholm (intoMine / intoDeep / DH.enter)"},
+  {"file": "01-items.js", "literal": "4.5 * TILE", "decl": "sight", "reason": "a monster's sight in tiles: a distance, not a position"},
+  {"file": "01-items.js", "literal": "6 * TILE", "decl": "sight", "reason": "a monster's sight in tiles: a distance, not a position"},
+  {"file": "01-items.js", "literal": "5 * TILE", "decl": "sight", "reason": "a monster's sight in tiles: a distance, not a position"},
+  {"file": "01-items.js", "literal": "4 * TILE", "decl": "sight", "reason": "a monster's sight in tiles: a distance, not a position"},
+  {"file": "01-items.js", "literal": "3 * TILE", "decl": "sight", "reason": "a monster's sight in tiles: a distance, not a position"}
 ]
