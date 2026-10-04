@@ -714,3 +714,70 @@ test('Stage 2: a world-run copy told no knight (every knight there known only fr
     assert.equal(S.room.keeperOf('deepholm').name, '@world:deepholm', 'taken over again');
     assert.deepEqual(S.room.worlds.sw.held, {}); assert.equal(S.book.recent(50).length, rows, 'no sim_log row'); }
 });
+
+// ---- the review fixes (round 3, 4 Oct 2026) ----
+// Two knights resting together in a world-run place: the copy parks and the object naps. Anything waking it (the owner's
+// /admin, a login) rebuilds the Room from both sockets in some order, and no copy is built while nobody plays. Before the fix the
+// rebuilt Room watched the place's keeper going stale: an alarm every 3 s for ever, or (restored in the other order) the same
+// past moment asked for again and again. And when one of them played again, the copy took the place over from whoever the
+// restore had elected, perhaps the one still locked: his page could not answer 'snap' and the copy kept its own monsters.
+test('Stage 2: two knights resting in a world-run place, woken by something else (either restore order): no alarm and nothing armed for 60 s; the one who plays again keeps it first and his page is asked for its snapshot', () => {
+  for (const order of [['Ann', 'Ben'], ['Ben', 'Ann']]) for (const player of ['Ann', 'Ben']) {
+    const S = shared();
+    const join = name => { const s = S.sock(name); S.room.join(s, name); S.say(s, { t: 'hello', v: 1, caps: ['snap'] }); return s; };
+    const ann = join('Ann'); S.p(ann, 'deepholm'); S.T.advance(0);
+    S.say(ann, { t: 'mon', full: true, list: [['i0', 'dwarf_guard', 600, 1032, 80, 90, 'idle', 1, 0, 0, 0, 0, 0, 0]] });
+    const ben = join('Ben'); S.p(ben, 'deepholm', 640, 1032);
+    for (let i = 0; i < 5; i++) { S.p(ann, 'deepholm'); S.p(ben, 'deepholm', 640, 1032); S.T.advance(1000); }
+    assert.equal(S.room.keeperOf('deepholm').name, '@world:deepholm');
+    S.T.advance(SILENT + 300);   // both games stop, sockets open
+    assert.ok(S.host.isParked('deepholm') && S.T.timers.length === 0, 'parked, nothing armed: the object naps');
+    S.T.advance(60000);
+    // the wake: a new Room from the two sockets (no positions), then the copy's code loads (its alarm, as setAlarm, replaces
+    // the one already set)
+    const T = S.T, W = stubCopies(), R = { alarms: 0, asked: 0, tid: null }, socks = { Ann: ann, Ben: ben }, mapAt = { Ann: 1_000_000, Ben: 1_001_000 };
+    const room = new Room({ now: () => T.now, wake: ms => { if (++R.asked > 500) throw new Error('the alarm runs away'); if (R.tid) T.clear(R.tid); R.tid = T.set(() => { R.tid = null; R.alarms++; room.tick(); }, ms); }, simBook: S.book });
+    room.setSim({ move: 'observe', maps: { deepholm: 'world' } });
+    for (const n of order) { socks[n].got.length = 0; room.restore(socks[n], { name: n, since: mapAt[n], hello: true, map: 'deepholm', mapAt: mapAt[n], caps: ['snap'] }); }
+    room.worlds.useHost(new SimHost({ makeGame: W.makeGame, now: () => T.now, clock: () => W.clockNow, timer: T, onFallback: (m, r, row) => room.worlds.fell(m, r, row), onSend: (m, l) => room.worlds.fromCopy(m, l) }));
+    const why = `restored ${order.join(' then ')}, ${player} plays`;
+    T.advance(60000);
+    assert.equal(R.alarms, 0, why + ': no alarm while both rest');
+    assert.equal(T.timers.length, 0, why + ': nothing armed');
+    assert.equal(W.made.length, 0, why + ': no copy built');
+    // one of them plays again: the copy is built at the next alarm, from him
+    const me = socks[player], other = socks[player === 'Ann' ? 'Ben' : 'Ann'];
+    room.message(me, JSON.stringify({ t: 'p', map: 'deepholm', x: 620, y: 1032, lv: 30, def: 576, hp: 99, mhp: 99, spd: 175 }));
+    T.advance(0);
+    assert.equal(R.alarms, 1, why + ': one alarm builds the copy');
+    assert.equal(W.made.length, 1, why);
+    assert.ok(me.last('snap'), why + ': his page is asked for its snapshot');
+    assert.equal(other.of('snap').length, 0, why + ': the resting one is never asked');
+    assert.equal(room.keeperOf('deepholm').name, player, why + ': he keeps it first');
+    assert.deepEqual(other.last('keeper'), { t: 'keeper', map: 'deepholm', n: player }, why + ': and both are told');
+    room.message(me, JSON.stringify({ t: 'mon', full: true, list: [['i0', 'dwarf_guard', 620, 1032, 80, 90, 'idle', 1, 0, 0, 0, 0, 0, 0]] }));
+    assert.equal(room.keeperOf('deepholm').name, '@world:deepholm', why + ': his answer hands it to the copy');
+  }
+});
+
+// A page whose last welcome named a world-run place says "Waking the world..." on a slow welcome. The switches turned off on the
+// parent page (or a place held by the watchdog) reach every page already connected, so it does not go on saying it.
+test('Stage 2: a change of the switches tells every connected page the places\' modes ({t: sim}); nothing is sent when nothing changes', () => {
+  const S = shared({ maps: {} });
+  const ann = S.knight('Ann', 'deepholm'), cy = S.knight('Cy', 'over', 100, 100);
+  S.T.advance(1000);
+  const sims = s => s.of('sim').map(m => m.maps);
+  S.room.setSim({ move: 'observe', maps: { deepholm: 'world' } }, 'parent page');
+  assert.deepEqual(sims(cy), [{ deepholm: 'world', aerie: 'keeper' }], 'a page on another map hears it too');
+  assert.deepEqual(sims(ann), [{ deepholm: 'world', aerie: 'keeper' }]);
+  assert.deepEqual(cy.last('sim'), { t: 'sim', maps: { deepholm: 'world', aerie: 'keeper' }, hz: 10, caps: ['snap'] }, 'the same shape as welcome.sim');
+  S.room.setSim({ move: 'off', maps: { deepholm: 'world' } }, 'parent page');
+  assert.equal(cy.of('sim').length, 1, 'the movement switch alone says nothing');
+  S.room.setSim({ move: 'observe', maps: { deepholm: 'keeper' } }, 'parent page');
+  assert.deepEqual(cy.last('sim').maps, { deepholm: 'keeper', aerie: 'keeper' }, 'switched off: every page hears it');
+  // the watchdog holding a place says it too
+  S.room.setSim({ move: 'observe', maps: { deepholm: 'world' } }, 'parent page'); S.T.advance(0); S.T.advance(JOIN_WAIT + 50);
+  S.W.cfg.stepThrow.add('deepholm'); S.T.advance(400);
+  assert.equal(S.book.recent(1)[0].reason, 'throws');
+  assert.deepEqual(cy.last('sim').maps, { deepholm: 'keeper', aerie: 'keeper' }, 'a hold reaches every page');
+});

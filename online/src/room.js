@@ -115,6 +115,8 @@ export const KEEPER_STALE = 3000;
 // A knight whose game sends no presence for this long (a locked phone, a tab in the background: a playing game sends at
 // least one a second) is never chosen to keep a map while someone who is playing is there.
 export const PRESENCE_STALE = 3500;
+// The soonest the Room asks for its next alarm after a tick, when something it could not move on is still due (arm)
+export const REARM_MIN = 1000;
 export const GIFT_WAIT = 10000;        // no answer to a gift within this: it comes back to the sender
 // How long each mute lasts; 'always' means until an admin (or the parent page) turns chat back on.
 export const MUTE_SPANS = { '5m': 5 * 60 * 1000, '1h': 3600 * 1000, '1d': 24 * 3600 * 1000, always: ALWAYS };
@@ -1017,7 +1019,9 @@ export class Room {
     const before = (a, b) => { const sa = back(a), sb = back(b); if (sa !== sb) return !sa; return a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc); };
     let best = null;
     for (const o of g.members) if (!best || before(o, best)) best = o;
-    if (g.keeper === best) return;
+    // a stale keeper still the best (everyone else there is silent too) keeps the map and starts a new grace: otherwise its
+    // stale moment stays in the past and due() asks for an alarm at that same moment again and again
+    if (g.keeper === best) { if (stale(best)) best.keeperAt = now; return; }
     // a quiet keeper goes to the back of the line for good, not just this once: otherwise it would win the very
     // next election (it is still the longest on the map) and the map would thrash between the two
     const old = g.keeper;
@@ -1104,15 +1108,20 @@ export class Room {
   due() {
     let d = this.rosterDirty ? this.rosterAt + ROSTER_EVERY : null;
     for (const g of this.gifts.values()) if (d == null || g.due < d) d = g.due;
-    for (const g of this.maps.values()) if (g.keeper && !g.keeper.virtual && g.members.size > 1) { const t = Math.max(g.keeper.monAt || 0, g.keeper.keeperAt || 0) + KEEPER_STALE + 50; if (d == null || t < d) d = t; }
+    // (a resting world-run place is not watched: sim/worlds.js resting)
+    for (const [map, g] of this.maps) if (g.keeper && !g.keeper.virtual && g.members.size > 1 && !this.worlds.resting(map)) { const t = Math.max(g.keeper.monAt || 0, g.keeper.keeperAt || 0) + KEEPER_STALE + 50; if (d == null || t < d) d = t; }
     { const w = this.worlds.due(); if (w != null && (d == null || w < d)) d = w; }
     for (const p of this.parties.values()) if (d == null || p.expires < d) d = p.expires;
     for (const k of this.knights.values()) if (k.ask && (d == null || k.ask.due < d)) d = k.ask.due;
     return d;
   }
-  arm() {
-    const d = this.due();
+  arm(after) {
+    let d = this.due();
     if (d == null) { this.wakeAt = null; return; }
+    // a tick's own re-arm is never at or before the moment it handled: a due that tick could not move on would otherwise ask
+    // for wake(0) again and again (and in workerd a re-arm onto the running alarm's own time is dropped, leaving wakeAt stuck
+    // in the past, so no alarm would ever be set again on this wake)
+    if (after != null && d <= after) d = after + REARM_MIN;
     if (this.wakeAt != null && d >= this.wakeAt) return;
     this.wakeAt = d;
     this.wake(Math.max(0, d - this.now()));
@@ -1126,7 +1135,7 @@ export class Room {
     if (this.rosterDirty && now - this.rosterAt >= ROSTER_EVERY) this.sendRoster(now);
     for (const map of Array.from(this.maps.keys())) this.elect(map, null);   // a quiet keeper steps down
     this.worlds.tick();   // world-run maps: copies to build, take-overs to finish, a copy gone silent
-    this.arm();
+    this.arm(now);
   }
 
   // ---------- plumbing ----------

@@ -90,7 +90,12 @@ export class Worlds {
     this.room.arm();
   }
   // the World could not load the copy: every map stays with a knight's game (announced, as below)
-  noCopy() { this.loaded = false; this.announce(); }
+  noCopy() {
+    this.loaded = false; this.announce();
+    // a page whose last welcome named a world-run place hears that none is (a welcome with no copy says nothing either way)
+    if (WORLD_READY.some(m => this.wants(this.sw, m) === 'world')) this.tellSim();
+    this.room.arm();   // a resting place (below) is resting no more: every map is on the keeper path, its stale watch included
+  }
   // A wake, a deploy or an eviction rebuilds the Room from its sockets before the copy has loaded: on a map switched to the world
   // the Room then picks a real knight as keeper without a word (restore is silent: everyone was told before the nap, but what they
   // were told was '@world:<map>'). His game would go on showing puppets of a copy that is gone, and the Room would drop his hits
@@ -99,8 +104,8 @@ export class Worlds {
   announce() {
     for (const [map, g] of this.room.maps) {
       if (this.wants(this.sw, map) !== 'world' || this.v.has(map)) continue;
-      const k = g.keeper;
-      if (!k || k.virtual || !g.members.has(k)) continue;
+      if (!g.keeper || g.keeper.virtual || !g.members.has(g.keeper)) continue;
+      const k = this.source(map, g);   // a knight who is playing, over one whose game is silent (source)
       const out = this.keeperMsg(map, k);
       for (const o of g.members) if (o.hello) this.room.send(o.sock, out);
     }
@@ -118,14 +123,17 @@ export class Worlds {
     const was = this.sw, next = cleanSwitches(sim);
     this.sw = next;
     if (!why) return this.sw;
+    let changed = false;
     for (const m of WORLD_MAPS) {
       const from = this.wants(was, m), to = this.wants(next, m);
       if (to === from) continue;
+      changed = true;
       const reason = was.master !== next.master ? 'master' : why;
       this.book.log({ at: this.now(), map: m, from, to, reason, tickP99: this.p99() });
       if (to === 'keeper') this.handBack(m, reason, false);
       else { if (this.host) this.host.allow(m); this.wanted(m); }
     }
+    if (changed) this.tellSim();
     return this.sw;
   }
   p99() { return this.host ? quantiles(this.host.tickTimes.slice(-100)).p99 : null; }
@@ -153,6 +161,31 @@ export class Worlds {
     for (const k of g.members) if (!k.virtual && k.hello && k.x != null && k.y != null && !this.silentOf(k, now)) return true;
     return false;
   }
+  // A place the world should run with no copy and nobody there playing (every knight on it resting, or known only from his
+  // socket after a wake). The Room keeps its keeper as it is (holds) and watches nothing on it (Room.due): two knights resting
+  // there would otherwise hand it back and forth every 3 s and the object would never nap, or, restored in one order, ask for
+  // an alarm at the same past moment again and again. The first presence from a knight playing there asks for its copy.
+  resting(map) {
+    return this.loaded !== false && this.wants(this.sw, map) === 'world' && !this.v.has(map) && !this.playing(map);
+  }
+  // The knight the copy takes the map over from: its keeper, unless his game is silent (or the Room does not know his place)
+  // while another knight there is playing. A wake names whoever its restore elected, perhaps a friend whose iPad is still
+  // locked: his page cannot answer 'snap', and the copy would keep its own fresh monsters. Then the one playing (with 'snap'
+  // first, then longest on the map) is made keeper, and it is his page that is asked. The caller tells the knights.
+  source(map, g) {
+    const now = this.now(), k = g.keeper && !g.keeper.virtual && g.members.has(g.keeper) ? g.keeper : null;
+    const plays = o => !o.virtual && o.hello && o.x != null && o.y != null && !this.silentOf(o, now);
+    if (k && plays(k)) return k;
+    const snaps = o => Array.isArray(o.caps) && o.caps.includes('snap');
+    let best = null;
+    for (const o of g.members) {
+      if (!plays(o)) continue;
+      if (!best || (snaps(o) !== snaps(best) ? snaps(o) : o.mapAt !== best.mapAt ? o.mapAt < best.mapAt : o.lc < best.lc)) best = o;
+    }
+    if (!best) return k;
+    g.keeper = best; best.keeperAt = now;
+    return best;
+  }
   boot(map) {
     this.bootDue.delete(map);
     const g = this.room.maps.get(map);
@@ -162,7 +195,8 @@ export class Worlds {
     if (!c) { if (!this.sw.held[map] && this.modeOf(map) === 'world') this.handBack(map, this.host.refusedReason(map) || 'boot', true); return false; }
     const vk = this.joinVirtual(this.sockFor(map), virtualName(map), map);
     if (!live) this.readRealm(map, c);
-    const real = g.keeper && !g.keeper.virtual && g.members.has(g.keeper) ? g.keeper : null;
+    const was = g.keeper, real = g.keeper && !g.keeper.virtual && g.members.has(g.keeper) ? this.source(map, g) : null;
+    if (real && real !== was) { const out = this.keeperMsg(map, real); for (const o of g.members) if (o.hello && !o.virtual) this.room.send(o.sock, out); }
     this.tell(map);
     if (live || !real) { this.finish(map); return true; }
     // the copy starts as a non-keeper fed by the knight who keeps the map now
@@ -203,6 +237,7 @@ export class Worlds {
       this.sw.held[map] = { reason, at: this.now() };
       this.book.log({ at: this.now(), map, from: 'world', to: 'keeper', reason, tickP99: row && row.tickP99 != null ? row.tickP99 : this.p99() });
       try { this.save(this.sw); } catch (e) { }
+      this.tellSim();
     }
     const g = this.room.maps.get(map);
     if (g) {
@@ -236,7 +271,8 @@ export class Worlds {
   // the election, for a world-run map: the virtual knight keeps it (and a join whose keeper left finishes now)
   holds(map, g) {
     const vk = this.v.get(map);
-    if (!vk) return false;
+    // a resting place keeps the keeper it has (the first knight a wake restored there, or the one it had): see resting
+    if (!vk) return !!(g.keeper && !g.keeper.virtual && g.members.has(g.keeper) && this.resting(map));
     if (vk.state === 'world') { g.keeper = vk; return true; }
     if (!g.keeper || !g.members.has(g.keeper)) { this.finish(map); return true; }
     return false;
@@ -336,6 +372,13 @@ export class Worlds {
     return out;
   }
   welcomeSim() { const maps = {}; for (const m of WORLD_READY) maps[m] = this.modeOf(m); return { maps, hz: 10, caps: ['snap'] }; }
+  // Every page already connected hears the places' modes when they change (a flip on the parent page, a hand-back by the
+  // watchdog, a World that could not load its copy): its welcome said them, and a page that still thought a place world-run
+  // would say "Waking the world..." on its next slow welcome. Flips are rare and the owner's own: one small message a socket.
+  tellSim() {
+    const out = JSON.stringify(Object.assign({ t: 'sim' }, this.welcomeSim()));
+    for (const k of this.room.knights.values()) if (k.hello) this.room.raw(k.sock, out);
+  }
 
   // ---------- what the copy said (SimHost onSend) ----------
   fromCopy(map, list) {

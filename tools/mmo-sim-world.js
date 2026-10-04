@@ -38,6 +38,14 @@
 //      drops his screen keeps what the world last showed (the hurt one at its hp, the felled one down), and the new copy
 //      takes the place over from that, never from how the place stood when he walked in. While the world ran it, his plaque
 //      counted the sentinels standing in the whole place, not only the ones near him
+//  13. two knights in the world-run Aerie, both iPads locked with the sockets open (a JS pause: no step, every message held);
+//      the copy parks and the world naps; the owner's /admin or the kid's own unlock wakes it and the Room is rebuilt from the
+//      sockets in either order, perhaps naming the friend who is still locked: the sentinel the kid felled stays down and the
+//      one he hurt stays hurt, on his screen and in the new copy (review round 3: his game used to drop what the world last
+//      showed at the friend's keeper message, and the copy used to take the place from the locked friend)
+//  14. a felled monster stands up again only while no knight is near its home: Ben stands a tile from a felled sentinel's
+//      home for 3 minutes and it stays down, as in his own game; 10 tiles off it stands up (the copy's player is the parked
+//      stand-in, so the rule is kept against the real knights)
 //  0b. the places the world refuses because no monster lives there (WORLD_EMPTY: the coal mine) have no monster in their copy,
 //      and each place it can run (WORLD_READY) has some
 // Exit 0 only when every line passes. The plumbing is tools/mmo-sim.js's (the fake wire, the game contexts, the Room loader).
@@ -409,6 +417,119 @@ async function main() {
       && plaque === standing && standing >= 2;
     line('12. a kid alone in the world-run Aerie hurts one sentinel and fells another, then his iPad lock drops the socket for 90 s (the parked copy goes): his screen and the new copy keep the hurt one at its hp and the felled one down (never the place as he walked in); his plaque counted the sentinels standing in the whole place (' + plaque + ', ' + near + ' near him)',
       ok, { keeperIn, before, standing, plaque, near, newCopy, atUnlock, keeperAfter, after, world });
+  }
+
+  // ---- 13 and 14: their own Room, copy and games on the same clock (review round 3). A LOCKED page is a real JS pause: its
+  // game does not step and every message to its socket is held until the unlock (then handed over in order), so it answers
+  // nothing meanwhile ----
+  const env = async (maps) => {
+    const q = []; let qs = 0;
+    const tmr = { set: (f, ms) => { const id = ++qs; q.push({ id, at: vnow + Math.max(0, ms), f }); return id; }, clear: id => { const i = q.findIndex(t => t.id === id); if (i >= 0) q.splice(i, 1); } };
+    const pmp = () => { for (let g = 0; g < 100; g++) { q.sort((a, b) => a.at - b.at || a.id - b.id); if (!q.length || q[0].at > vnow) break; q.shift().f(); } };
+    const E = { book: new SimBook(null, now), q, locked: new Set(), held: new Map(), ctxOf: new Map(), SW: { move: 'observe', maps } };
+    E.room = await loadRoom(now, { simBook: E.book });
+    E.room.store.addAccount('Ann'); E.room.store.addAccount('Ben');
+    E.mkHost = (r, seed) => new SimHost({ makeGame: strip.makeGame, now, clock: () => performance.now(), timer: tmr, seed, onFallback: (m, why, row) => r.worlds.fell(m, why, row), onSend: (m, l) => r.worlds.fromCopy(m, l) });
+    E.host = E.mkHost(E.room, 77);
+    E.room.setSim(E.SW); E.room.worlds.useHost(E.host);
+    const w = E.wire = new Wire(E.room);
+    w.flush = function () {
+      let guard = 0;
+      while ((this.opening.length || this.inbound.length || this.outbound.length || this.closing.length) && guard++ < 10000) {
+        for (const c of this.opening.splice(0)) {
+          const token = decodeURIComponent((c.url.split('token=')[1] || '').split('&')[0]), name = this.accounts.get(token);
+          if (!name) { c.readyState = 3; c.closeCode = 4001; if (c.onclose) c.onclose({ code: 4001 }); continue; }
+          const srv = { send: str => this.outbound.push({ client: c, str: String(str) }), close: code => this.outbound.push({ client: c, close: typeof code === 'number' ? code : 1000 }) };
+          this.srvOf.set(c, srv); c.readyState = 1; this.room.join(srv, name);
+          if (c.onopen && c.readyState === 1) c.onopen();
+        }
+        for (const { client, str } of this.inbound.splice(0)) { const srv = this.srvOf.get(client); if (srv) this.room.message(srv, str); }
+        for (const o of this.outbound.splice(0)) {
+          const c = o.client;
+          if (o.close !== undefined) { if (c.readyState !== 3) { c.readyState = 3; c.closeCode = o.close; this.closing.push(c); } continue; }
+          const G = E.ctxOf.get(c);
+          if (G && E.locked.has(G)) { E.held.get(G).push(o.str); continue; }
+          if (c.readyState === 1 && c.onmessage) c.onmessage({ data: o.str });
+        }
+        for (const c of this.closing.splice(0)) { const srv = this.srvOf.get(c); if (srv) { this.srvOf.delete(c); this.room.leave(srv); } if (c.onclose) c.onclose({ code: c.closeCode }); }
+      }
+    };
+    E.A = makeContext(w); E.B = makeContext(w);
+    E.tick = n => { for (let i = 0; i < n; i++) { for (const g of [E.A, E.B]) if (!E.locked.has(g)) g.FANGLANDS.step([]); vnow += FRAME_MS; E.room.tick(); pmp(); w.flush(); } };
+    E.heal = () => { for (const g of [E.A, E.B]) if (!E.locked.has(g)) ev(g, 'player.hp = player.maxHp; player.dead = false;'); };
+    E.play = n => { for (let i = 0; i < n; i++) { E.tick(1); E.heal(); } };
+    E.lock = G => { E.locked.add(G); E.held.set(G, []); };
+    E.unlock = G => { E.locked.delete(G); const l = E.held.get(G) || []; E.held.set(G, []); const sk = G.NET.sock; for (const str of l) if (sk && sk.onmessage) sk.onmessage({ data: str }); w.flush(); };
+    for (const [g, n] of [[E.A, 'Ann'], [E.B, 'Ben']]) { g.FANGLANDS.newGame(); const r = await g.NET.post('/api/login', { name: n, pass: 'secret' }); g.NET.setToken(r.token); g.NET.connect(); E.ctxOf.set(g.NET.sock, g); w.flush(); }
+    E.tick(10);
+    E.home = ev(E.A, "INSTANCES.get('aerie').spawns.map(([t, tx, ty]) => [tc(tx), tc(ty)])");
+    E.go = (G, i, dx, dy) => ev(G, `(() => { if (COOP.map() !== 'aerie') INSTANCES.enter('aerie'); window.__peace = true; player.x = ${E.home[i][0] + dx}; player.y = ${E.home[i][1] + dy}; })()`);
+    E.copyRow = n => { const c = E.host.copies.get('aerie'); const m = c && c.api.peek('monsters').find(o => o.nid === n); return m ? { hp: Math.round(m.hp), dead: !!m.dead, x: Math.round(m.x), y: Math.round(m.y) } : null; };
+    E.screen = (G, n) => ev(G, `(() => { const m = monsters.find(o => o.nid === '${n}' && !o.gone); return m ? { hp: Math.round(m.hp), dead: !!m.dead } : null; })()`);
+    E.hit = (G, nid, dmg) => { G.NET.send({ t: 'hit', nid, dmg, knock: 0, bomb: false }); w.flush(); E.play(10); };
+    // the object naps (nothing armed) and something wakes it: a new Room from the sockets in the given order, a new copy host
+    E.nap = async rev => {
+      E.host.stop(); for (const m of [...E.host.copies.keys()]) E.host.drop(m);
+      const r2 = await loadRoom(now, { simBook: E.book, store: E.room.store });
+      r2.setSim(E.SW);
+      const order = [...E.room.knights]; if (rev) order.reverse();
+      for (const [sk, k] of order) r2.restore(sk, { name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, caps: k.caps, atlas: k.atlas });
+      E.room = r2; w.room = r2; E.host = E.mkHost(r2, 78);
+      return r2.keeperOf('aerie') && r2.keeperOf('aerie').name;
+    };
+    return E;
+  };
+
+  // ---- 13. two knights in a world-run place, both iPads locked with the sockets open, the world naps; one comes back ----
+  {
+    const runs = [];
+    for (const [kidName, rev, wake] of [['Ann', true, 'admin'], ['Ann', false, 'admin'], ['Ben', false, 'self'], ['Ben', true, 'self']]) {
+      const E = await env({ aerie: 'world' });
+      const KID = kidName === 'Ann' ? E.A : E.B, PAL = KID === E.A ? E.B : E.A;
+      // Ann walks in first, then Ben; the kid hurts i0 (beside them both) and fells i1
+      E.go(E.A, 0, 0, 150); E.play(6); E.go(E.B, 1, 0, 150); E.play(150);
+      if (KID === E.A) { E.go(E.A, 1, 0, 150); E.play(60); }
+      E.hit(KID, 'i0', 30); for (let k = 0; k < 6; k++) E.hit(KID, 'i1', 60);
+      // 5 s on: the felled one's row has stopped coming and its puppet has gone from both screens (as on a real page)
+      E.play(60 * 5);
+      const goneBefore = ev(KID, "!monsters.some(m => m.nid === 'i1' && !m.gone)");
+      const before = { i0: E.copyRow('i0'), i1: E.copyRow('i1') }, keeperIn = ev(KID, 'COOP.keeper()');
+      // the friend's iPad locks, then the kid's; 8 s on the copy is parked and nothing is armed: the object naps
+      E.lock(PAL); E.play(30); E.lock(KID); E.tick(60 * 8);
+      const napped = E.host.isParked('aerie') && !E.host.running && E.q.length === 0;
+      const restored = await E.nap(rev);
+      if (wake === 'admin') { E.room.worlds.useHost(E.host); E.tick(60 * 20); E.unlock(KID); }   // the owner's /admin wakes it; 20 s later the kid unlocks
+      else { E.unlock(KID); E.play(30); E.room.worlds.useHost(E.host); }                         // his own unlock wakes it; the copy loads after
+      let undoneOnScreen = 0;
+      for (let i = 0; i < 300; i++) { E.tick(1); E.heal(); const a = E.screen(KID, 'i0'), b = E.screen(KID, 'i1'); if ((b && !b.dead) || (a && !a.dead && before.i0 && a.hp > before.i0.hp + 3)) undoneOnScreen++; }
+      const after = { i0: E.copyRow('i0'), i1: E.copyRow('i1') }, keeper = ev(KID, 'COOP.keeper()');
+      const ok = keeperIn === '@world:aerie' && napped && goneBefore && !!before.i0 && !before.i0.dead && before.i0.hp < 160 && !!before.i1 && before.i1.dead
+        && keeper === '@world:aerie' && !!after.i0 && !after.i0.dead && Math.abs(after.i0.hp - before.i0.hp) <= 3 && (!after.i1 || after.i1.dead) && undoneOnScreen === 0;
+      runs.push({ kid: kidName, restored, wake, ok, goneBefore, before, after, keeper, undoneOnScreen });
+      E.host.stop(); for (const m of [...E.host.copies.keys()]) E.host.drop(m);
+    }
+    line('13. two knights in the world-run Aerie, both iPads locked with the sockets open; the copy parks and the world naps; the owner\'s /admin (or the kid\'s own unlock) wakes it, the Room rebuilt in either order (perhaps naming the friend still locked): when the kid comes back the sentinel he felled stays down and the one he hurt stays hurt, on his screen and in the new copy',
+      runs.every(r => r.ok), runs.map(r => ({ kid: r.kid, restored: r.restored, wake: r.wake, ok: r.ok, goneBefore: r.goneBefore, before: r.before, after: r.after, keeper: r.keeper, undoneOnScreen: r.undoneOnScreen })));
+  }
+
+  // ---- 14. a felled monster stands up again only when every knight is off its home (07-update's rule, against the knights) ----
+  {
+    const E = await env({ aerie: 'world' });
+    E.go(E.B, 0, 48, 0); E.play(150);
+    const keeper = ev(E.B, 'COOP.keeper()');
+    for (let k = 0; k < 6; k++) E.hit(E.B, 'i0', 60);
+    const felled = E.copyRow('i0');
+    // he stands a tile from its home for 3 minutes (its respawn is 25 to 35 s)
+    let stood = null;
+    for (let i = 0; i < 60 * 180; i++) { E.tick(1); E.heal(); if (i % 600 === 0) E.go(E.B, 0, 48, 0); if (i % 60 === 0 && !stood) { const r = E.copyRow('i0'); if (r && !r.dead) stood = { at: Math.round(i / 60) + ' s', ...r }; } }
+    const down = E.copyRow('i0'), shown = E.screen(E.B, 'i0');
+    // he walks 10 tiles off: it stands up again (the rule holds it, never more)
+    E.go(E.B, 0, 10 * 48, 0); E.play(120);
+    const up = E.copyRow('i0');
+    line('14. Ben alone in the world-run Aerie fells a sentinel and stands a tile from its home for 3 minutes: it stays down (in the copy and on his screen), as in his own game; when he walks 10 tiles off it stands up again',
+      keeper === '@world:aerie' && !!felled && felled.dead && !stood && !!down && down.dead && (!shown || shown.dead) && !!up && !up.dead,
+      { keeper, felled, stood, down, shown, up });
+    E.host.stop(); for (const m of [...E.host.copies.keys()]) E.host.drop(m);
   }
 
   // ---- 0b. the places the world refuses for want of monsters really have none ----

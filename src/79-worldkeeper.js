@@ -139,7 +139,20 @@
       return WORLDKEEPER;
     }
     // one substep of the game: the stand-in stays parked dead, then the game's own update (every wrapper included)
-    function step(dt) { park(); update(dt); }
+    function step(dt) { park(); holdRespawns(dt); update(dt); }
+    // A fallen monster stands up again only while no knight is near its home (07-update's rule: 4 tiles, 40 for a Goblin Camp
+    // monster). In a browser that rule reads the player; here the player is the parked stand-in, so the rule is kept against
+    // the real knights: a monster whose time is up waits, as it would in his own game, until every knight is that far off.
+    function holdRespawns(dt) {
+      let ks = null;
+      for (const m of monsters) {
+        if (!m.dead || m.remote || m.phantom || !m.home || !(m.respawnT - dt <= 0)) continue;
+        if (!ks) ks = COOP.knightsHere();
+        if (!ks.length) return;
+        const r = (isCampMonster(m) ? 40 : 4) * TILE;
+        if (ks.some(k => dist(k.x, k.y, m.home.x, m.home.y) <= r)) m.respawnT = dt + 1e-6;
+      }
+    }
     // ---------- Stage 2: what the world sends of this copy's monsters ----------
     const LF = window.__LOOK_FIELDS && typeof window.__LOOK_FIELDS === 'object' ? window.__LOOK_FIELDS : {};
     const r2 = v => Math.round(v * 100) / 100;
@@ -238,7 +251,7 @@
     // how many monsters stand in the whole place (the plaque's "N left" on every screen: a knight's puppets are only the ones
     // within 24 tiles of him)
     const standing = () => { let n = 0; for (const m of monsters) if (!m.dead && !m.remote && !m.phantom) n++; return n; };
-    window.WORLDKEEPER = { map: mapName, me, start, step, deliver, park, off, SERVER_OFF, PARK, rows, standing, carries, rests, setRests, LOOK_FIELDS: LF, get started() { return started; } };
+    window.WORLDKEEPER = { map: mapName, me, start, step, deliver, park, holdRespawns, off, SERVER_OFF, PARK, rows, standing, carries, rests, setRests, LOOK_FIELDS: LF, get started() { return started; } };
   }
 
   HOOKS.selfTest.push(check => {

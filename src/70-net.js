@@ -70,6 +70,8 @@
       if (!msg || typeof msg.t !== 'string') return;
       NET.stats.got++;
       if (msg.t === 'welcome') { NET.status = 'on'; NET.me = msg.me; WAKE.wait = -1; worldRuns(msg.sim); }
+      // the places' modes changed while this page is connected (a flip on the parent page, the watchdog): the same word anew
+      if (msg.t === 'sim') worldRuns(msg);
       // the role is the world's word, set before anyone hears the message; a missing one (an older server) is 'player'
       if (msg.t === 'welcome' || msg.t === 'role') NET.role = msg.role === 'admin' ? 'admin' : 'player';
       if (msg.t === 'error' && msg.code === 'auth') { NET.setToken(null); NET.closedByUs = true; }
@@ -158,9 +160,21 @@
     // every place on a knight's game (the switches all off): the same slow welcome says nothing at all
     welcome({ maps: { deepholm: 'keeper', aerie: 'keeper' }, hz: 10, caps: ['snap'] });
     const cleared = lsGet(WORLD_KEY) === null;
-    NET.disconnect(); NET.connect(); notify(''); F.sim(300, []);
+    NET.disconnect(); NET.connect(); notify(''); F.sim(120, []);   // 2 s: past WAKE_SAY, inside the notice's own time on screen
     const quiet = !said() && NET.status !== 'on';
+    // a page connected while a place was world-run hears the switches go off ({t: 'sim'}, no new welcome): its next slow
+    // welcome says nothing, as with every switch off from the start; and switched on again, it says it again
+    welcome({ maps: { deepholm: 'world', aerie: 'keeper' }, hz: 10, caps: ['snap'] });
+    const runs = lsGet(WORLD_KEY) === '1';
+    if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify({ t: 'sim', maps: { deepholm: 'keeper', aerie: 'keeper' }, hz: 10, caps: ['snap'] }) });
+    const off = lsGet(WORLD_KEY) === null;
+    NET.disconnect(); NET.connect(); notify(''); F.sim(120, []);
+    const offQuiet = !said();
+    welcome({ maps: { deepholm: 'keeper', aerie: 'keeper' }, hz: 10, caps: ['snap'] });
+    if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify({ t: 'sim', maps: { deepholm: 'keeper', aerie: 'world' }, hz: 10, caps: ['snap'] }) });
+    const onAgain = lsGet(WORLD_KEY) === '1';
     check('net: "Waking the world..." is said once, after 1.5 s with no welcome, only by a page whose last welcome said a place is world-run; with every place on a knight\'s game a slow welcome says nothing; a welcome ends the wait', kept && hello && !early && once1 && once && on && cleared && quiet, { kept, hello, early, said: once1, once, on, cleared, quiet });
+    check('net: the switches turned off while a page is connected ({t: \'sim\'}) reach it: its next slow welcome says nothing; turned on again, the word is back', runs && off && offQuiet && onAgain, { runs, off, offQuiet, onAgain });
     NET.disconnect(); lsSet(WORLD_KEY, was.runs);
     NET.useFake(was.fake); NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; NET.role = 'player';
   });
