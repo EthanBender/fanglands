@@ -314,7 +314,8 @@
     g.strokeStyle = '#8a6a3a'; g.lineWidth = 3; g.beginPath(); g.moveTo(-10, -6); g.lineTo(-30 - Math.sin(time * 3) * 6, 18); g.stroke();
     // the knight, sitting in the bow
     // seated: the knight (82-knightgear) sits in the bow, no legs
-    g.save(); g.translate(20, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0, seated: true }, playerLook()); g.restore();
+    // seatLine: he sits in the boat, so nothing of him below the gunwale is drawn over the hull (a stave, a robe's hem)
+    g.save(); g.translate(20, -12); g.scale(0.9, 0.9); drawHuman(g, { facing: { x: dir, y: 0 }, hurtT: 0, attackT: 0, seated: true, seatLine: 7.6 }, playerLook()); g.restore();
     g.restore();
   }
   function drawBoatProp(g, tx, ty, L) { // moored at a dock: seen from above, bobbing
@@ -454,7 +455,10 @@
     const a = player.action;
     if (a && a.type === 'lobster' && !player.dead) items.push({ y: player.y + player.r + 0.01, draw: () => {
       const ex = tc(a.tx), ey = tc(a.ty), bob = Math.sin(time * 3) * 2;
-      g.strokeStyle = '#c9b676'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(player.x + player.facing.x * 10, player.y - 4); g.quadraticCurveTo((player.x + ex) / 2, (player.y + ey) / 2 + 8, ex, ey + 6 + bob); g.stroke();
+      // from his hand: the knight drawn by 82-knightgear holds the rope's end (its 'rope'), so it leaves where his hand is
+      const hd = window.KNIGHTGEAR && KNIGHTGEAR.handAt ? KNIGHTGEAR.handAt(player) : null;
+      const sx = hd ? player.x + hd.x : player.x + player.facing.x * 10, sy = hd ? player.y + hd.y : player.y - 4;
+      g.strokeStyle = '#c9b676'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + ex) / 2, (sy + ey) / 2 + 8, ex, ey + 6 + bob); g.stroke();
       g.strokeStyle = '#8a6a3a'; g.lineWidth = 2; g.beginPath(); g.ellipse(ex, ey + 8 + bob, 8, 4, 0, 0, 7); g.stroke(); g.beginPath(); g.moveTo(ex - 8, ey + 8 + bob); g.lineTo(ex - 6, ey + 14 + bob); g.lineTo(ex + 6, ey + 14 + bob); g.lineTo(ex + 8, ey + 8 + bob); g.stroke();
     } });
     // gulls over the grey water
@@ -549,7 +553,11 @@
       const a = talkHarl(); const open = panel === 'ferry'; const cbLow = combatLevel(); const c1 = F.clickButton('Ironclad'); F.sim(3, []); const refused = q.where === 'gull' && !q.sailing && notice && /combat level 8/.test(notice.text);
       check('boats: Harl refuses Ironclad Isle below combat level 8', typeof a === 'number' && open && cbLow < 8 && c1 && refused, { a, open, cbLow, c1, notice: notice && notice.text });
       player.skills.melee.xp = XP_TABLE[8]; player.skills.defence.xp = XP_TABLE[8]; recomputeMaxHp(); h.give('coins', 50); const c0 = coins();
+      // the landing's Voice line is checked, so the day clock is set to morning first: past 7 minutes the night's own line
+      // would come first (a flake that hung on how long the checks before this one took)
+      const day0 = player.dayTime; player.dayTime = 0;
       if (panel !== 'ferry') talkHarl(); render(); const c2 = F.clickButton('Ironclad'); const s = !!q.sailing && q.sailing.to === 'ironclad'; F.sim(150, []);
+      player.dayTime = day0 + 150 / 60;
       check('boats: at combat level 8 Ironclad Isle costs 25 coins; first landing gets a Voice line', combatLevel() >= 8 && c2 && s && coins() === c0 - 25 && q.where === 'ironclad' && player.region === 'Ironclad Isle' && q.visited.ironclad && dialog.cur && dialog.cur.who === 'The Voice' && /Ironclad/.test(dialog.cur.text), { cb: combatLevel(), c2, s, paid: c0 - coins(), where: q.where, region: player.region, who: dialog.cur && dialog.cur.who }); }
     // the strongbox and the five wreck goblins
     { const wreck = wreckGoblins(); const alive0 = wreck.filter(m => !m.dead).length; q.strongbox = false; makeRoom(4);

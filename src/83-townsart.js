@@ -19,6 +19,8 @@
 //   6. e.flapK beats the wings faster (the larger of it and a person's own rate): Lark and the fliers in the air;
 //   7. addPeople keeps each person's spec (NPC_SPEC, for the portraits), and two marks (NPC_MARK) let the self-test
 //      see where the body and the held thing are drawn. Neither changes a single pixel.
+//   8. seated and unarmed together (Harl at the oars, his hands on the oar the boat draws) also leave the other hand
+//      empty: his lantern is set down while he rows.
 // The owner's standing decisions are in the drawings: no arms, a hand floats beside the shoulder; held things rest
 // upright with the hand at the waist (a staff or spear stands beside them, a bow hangs at the side, a basket or tool at
 // the waist); facing us or side-on what they hold is in front, facing away it is behind; robes and cloaks slim and open
@@ -170,9 +172,10 @@ const TOWNSFOLK_ART = (() => {
     const P = C.P, B = C.B, k = C.talk ? Math.min(1, C.tt * 3) : 0;
     const wave = C.talk ? Math.sin(C.tt * 6.3) : 0;
     const x = lerp(-B.hand.x, -B.hand.x + 2.6, k) + wave * 0.9 * k, y = lerp(B.hand.y - 1.4 - C.step * 1.4, B.sh + 3.4, k) + Math.abs(wave) * -0.8 * k + C.bob;
-    if (P.off) { g.save(); g.translate(x, y); npc_prop(g, C, P.off, 'off'); g.restore(); }
+    const offHeld = P.off && !(C.e.seated && C.e.unarmed);
+    if (offHeld) { g.save(); g.translate(x, y); npc_prop(g, C, P.off, 'off'); g.restore(); }
     floatHand(g, x, y, handCol(C));
-    if (P.off && PROP_OVER[P.off.kind]) { g.save(); g.translate(x, y); PROP_OVER[P.off.kind](g, C, P.off); g.restore(); }
+    if (offHeld && PROP_OVER[P.off.kind]) { g.save(); g.translate(x, y); PROP_OVER[P.off.kind](g, C, P.off); g.restore(); }
   }
 
   // ---------- legs: trousers or stockings, boots that step; a long skirt hides all but the boots ----------
