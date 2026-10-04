@@ -30356,7 +30356,7 @@ HOOKS.selfTest.push((check, F, h) => {
   };
   // Salt Pete keeps to himself: 26-boats exports no handle for his shack, so his tile is written down here.
   // The self-test checks the tile is still on Gull Isle and still sells what SHOPS.saltpete sells.
-  const PETE = { x: 181, y: 14, shop: 'saltpete' };
+  const PETE = (([x, y]) => ({ x, y, shop: 'saltpete' }))(ATLAS.port('gull_isle.pete'));   // the Atlas port (the spread spec, section 2)
   // tiles that are a place in their own right. Looked up by NAME: a feature file's tile id depends on load order.
   const TILE_MARKS = {
     BOARD: { kind: 'quest', label: 'Notice board' },
@@ -30776,7 +30776,7 @@ HOOKS.selfTest.push((check, F, h) => {
         check(P + 'both notice boards and the folk who hand out work (the Duke, Tobin, Wren, the Captain, the Warden, Old Tam) are quest markers; a huddle of survivors is one marker',
           boardsMarked && bad.length === 0 && onlyLeader, { boards, bad, onlyLeader }); }
       // ---- a marker stays hidden until the knight has been near it ----
-      { const s = st(); const spot = h.openSpot(40, 24);
+      { const s = st(); const spot = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(24));
         const m = all().find(x => x.kind === 'bank') || all()[0];
         if (!m) throw new Error('no markers to hide');
         delete s.seen[m.key];
@@ -30795,7 +30795,7 @@ HOOKS.selfTest.push((check, F, h) => {
           !!m && hiddenFar && stillHidden && foundNear && notOnMini && onMini,
           { marker: m && m.label, hiddenFar, stillHidden, foundNear, notOnMini, onMini, mini: lastMini.length }); }
       // ---- discovery survives save and load ----
-      { const s = st(); const far = h.openSpot(40, 24); F.tp(far.x, far.y); F.step([]);
+      { const s = st(); const far = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(24)); F.tp(far.x, far.y); F.step([]);
         const list = all().filter(m => Math.hypot(m.x - far.x, m.y - far.y) > DISCOVER + 4);
         const m = list[0], m2 = list[list.length - 1];
         if (!m || !m2 || m === m2) throw new Error('not enough markers away from ' + far.x + ',' + far.y);
@@ -30822,7 +30822,7 @@ HOOKS.selfTest.push((check, F, h) => {
         const want = ['bank', 'dock'];
         // a new world has no lodestone, and the --play bot's newGame() wipes the one the core suite put down,
         // so the check puts down its own to have all seven kinds on the map
-        const own = h.openSpot(40, 28), ownWas = tileAt(own.x, own.y); changeTile(own.x, own.y, T.LODESTONE); MARKERS.refresh();
+        const own = h.openSpot(...ATLAS.frame('pond').p(40, 28)), ownWas = tileAt(own.x, own.y); changeTile(own.x, own.y, T.LODESTONE); MARKERS.refresh();
         s.seen = {}; for (const m of all()) if (want.includes(m.kind)) s.seen[m.key] = 1;
         openPanel('map'); render();
         const few = (lastMap ? lastMap.cells : []).map(c => c.kind).sort();
@@ -30834,7 +30834,7 @@ HOOKS.selfTest.push((check, F, h) => {
         changeTile(own.x, own.y, ownWas); MARKERS.refresh();
         // one lodestone of the knight's own, put down at play, is a marker too
         const lodeBefore = all().filter(m => m.kind === 'lodestone').length;
-        const o = h.openSpot(44, 26); changeTile(o.x, o.y, T.LODESTONE); MARKERS.refresh(); const lode = at(o.x, o.y);
+        const o = h.openSpot(ATLAS.world.tx(44), ATLAS.world.ty(26)); changeTile(o.x, o.y, T.LODESTONE); MARKERS.refresh(); const lode = at(o.x, o.y);
         changeTile(o.x, o.y, T.GRASS); MARKERS.refresh();
         const gone = !at(o.x, o.y) && all().filter(m => m.kind === 'lodestone').length === lodeBefore;
         check(P + 'the legend lists exactly the kinds the knight has found — two when he has found two, all seven when he has found them all; a lodestone put down at play becomes a marker and goes when it goes',
@@ -30878,7 +30878,7 @@ HOOKS.selfTest.push((check, F, h) => {
           { named: named && named.label, stillOpen, untapped, hovered: hovered && hovered.label, unhovered, keyKept, closed }); }
       // ---- MARKERS.add is a registry another feature can use ----
       { const before = all().length, extra0 = extra.length;   // a feature may have registered at load (88-aerie's market): keep it
-        const spot = h.openSpot(48, 30);
+        const spot = h.openSpot(...ATLAS.frame('pond').p(48, 30));
         const m = MARKERS.add({ x: spot.x, y: spot.y, kind: 'quest', label: 'Test post' });
         const dup = MARKERS.add({ x: spot.x, y: spot.y, kind: 'bank', label: 'Second' });
         const bad = MARKERS.add({ x: spot.x + 4, y: spot.y, kind: 'nonsense', label: 'No' });
@@ -30953,7 +30953,7 @@ HOOKS.selfTest.push((check, F, h) => {
           bad.length === 0, { bad: bad.slice(0, 6), deepest: +widest.toFixed(2) }); }
       // ---- nothing of the overworld leaks into a dungeon ----
       { seeAll(); closePanel(); const before = all().length;
-        F.tp(23, 3); F.face(22, 3); F.press('KeyE'); F.sim(2, []);
+        F.tp(...ATLAS.port('spider_den.step')); F.face(...ATLAS.port('spider_den.door')); F.press('KeyE'); F.sim(2, []);
         const inside = INSTANCES.active() === 'spider_den';
         render(); const miniInside = lastMini.length;
         const n0 = Object.keys(st().seen).length; discover(); const noNewFinds = Object.keys(st().seen).length === n0;
