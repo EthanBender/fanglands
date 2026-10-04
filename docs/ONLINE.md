@@ -1513,7 +1513,28 @@ holds: the same string never again (a page in the background: nothing moves), a 
 `time` (a paused page) at most every 10 minutes, and anything else as before (the 12 s hold). Leaving the page (hidden,
 `pagehide`) still pushes whatever differs, the clock included. A keeper's game no longer sends an empty `mon` once a second
 when nobody is near it (its presence says it is alive), which halves a lone open page's socket messages, and a paused keeper
-sends no snapshots (`75-coop`). The numbers before and after, per hour, are in the commit that made this change (`tools/idle-pages.cjs`, `tools/idle-alarms.mjs`).
+sends no snapshots (`75-coop`).
+
+Measured 4 Oct 2026 with real headless pages against two local `wrangler dev` worlds side by side, master 3b6d6b4 and this
+change (`tools/idle-pages.cjs`, 120 s a situation unless said; billed = the pages' calls counted at the page + alarms + socket
+messages / 20, per hour; "hidden" is an emulated background tab whose timers are not throttled):
+
+| Situation (per hour) | before: alarms, page calls, messages, billed | after: alarms, page calls, messages, billed |
+|---|---|---|
+| two knights on one map, both paused | 1,198, 449, 0, **1,647** | 0, 0, 0, **0** (12 min: 1 save each, the 10-minute clock push) |
+| the same in an instance | 1,167, 449, 0, **1,616** | 0, 0, 0, **0** |
+| one paused, one in the background | 1,198, 479, 0, **1,677** | 0, 30, 0, **30** (1 save in the window) |
+| both playing, standing still | 1,228, 449, 35,184, **3,436** | 0, 449, 35,224, **2,210** |
+| keeper paused, the other playing | 1,228, 449, 30,852, **3,220** (the paused keeper kept the map) | 0, 210, 3,593, **389** (the one playing keeps it) |
+| one knight paused | 0, 210, 0, **210** | 0, 0, 0, **0** |
+| one knight in the background | 0, 240, 0, **240** | 0, 30, 0, **30** (5 min: still that 1 save) |
+| one knight playing, standing still | 0, 210, 7,157, **567** | 0, 210, 3,593, **389** |
+| an iPad put down and picked up, 5 times in 120 s | 449 (by subtraction, old meter), 270, 4,885, **963** | 150 (counted: 1 a cycle), 300, 2,548, **577** |
+
+The fake clock agrees (`node tools/idle-alarms.mjs`, and `--src <master>/online/src --beat` for before): two or three idle
+knights on one map 1,180 to 1,200 alarms an hour before, 0 after (only the roster's one after the first presence); a paused
+keeper beside a knight who plays, one alarm for the hand-over. Not changed: a page left unpaused saves (and so pushes) every
+15 s, because its play time moves (210 an hour), and two unpaused knights side by side still stream 8 snapshots a second.
 
 **The parent page's own traffic.** Its 10 s refresh reads who is online, the chat, the moderation log and the trades:
 24 calls a minute while the page is in view. It reads the meter only when it opens and when Refresh is pressed, never
