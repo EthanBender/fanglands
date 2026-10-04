@@ -1899,10 +1899,13 @@ monster it holds up has gone.
 **`mon` from the world**, once a tick (10 a second) to each knight on the map:
 
 ```
-{ t: 'mon', n: '@world:deepholm', list: [row, ...], k: 1234, at: 1759500000000 }
+{ t: 'mon', n: '@world:deepholm', list: [row, ...], k: 1234, at: 1759500000000, standing: 3 }
 ```
 
 - `k` is the copy's tick count and `at` the world's clock in ms. Older games read neither.
+- `standing` is how many monsters stand in the whole place (not fallen), however far from this knight. A knight's list holds
+  only the ones near him, so the place's plaque ("AERIE  3 left", 16-instances) reads `standing` while the world runs the
+  place (`COOP.placeStanding()`), and counts its own monsters as always on a knight's game. An older game ignores it.
 - **Interest, per knight**: his list holds the monsters within 24 tiles of his accepted position; one he was sent stays in it
   until it is past 27 tiles (so a monster on the edge does not blink in and out), and one whose target is him is always
   in it. A knight with nothing near still gets an empty list each tick: the world's stream never stops while he is there.
@@ -1989,11 +1992,31 @@ socket's `ping` without waking the object.
   hp and places, no `keeper` message, nothing rebuilt, so on no screen does a monster vanish or show twice.
 - If the object did hibernate meanwhile, the copy went with it: the wake is any wake (the Room rebuilt from its sockets
   names his game keeper out loud, the copy is built again and takes the map over, with his full snapshot when his page has
-  `snap`). A parked copy whose map has emptied goes 60 s after, as any emptied copy does (looked at whenever the host is next
+  `snap`). **No copy is built for a place while nobody there is playing**: a Room rebuilt from its sockets knows no knight's
+  place, and something other than his own game can wake the object (a login, the parent page, another knight's socket)
+  while his game is still stopped. The copy waits for a knight on the map whose place the Room knows and whose game is not
+  silent: his first presence asks for it (`Worlds.playing`, `wanted`), so his page is awake to answer `snap` and the place
+  carries on as his screen last showed it. A copy that was told no knight at all (every knight on the map known only from
+  his socket) is resting, not stale: `staleCheck` skips it, and counts from the moment it is told a knight again. If the
+  host drops such a copy (60 s with no knight told), the map goes back to a knight's game quietly (no hold, no `sim_log`
+  row) and his playing asks for a new copy. Before 4 Oct a wake by anything else built the copy at once, and his return
+  handed the place back as `'stale'` and held it until the parent page let the world run it again
+  (`sim-host.test.mjs`: "a place left resting is not handed back as stale after a nap ..."). A parked copy whose map has emptied goes 60 s after, as any emptied copy does (looked at whenever the host is next
   called, as no timer runs for it).
 - Proved in `sim-host.test.mjs` (one knight silent with his socket open: 0 timers armed and 0 ticks for 10 minutes, then he
   moves and the same copy ticks again with every monster once) and `tools/mmo-sim-world.js` check 10 (every game stopped:
   both real copies park, nothing armed, nothing ticked or moved in 10 minutes, then every screen keeps the same monsters).
+
+**A dropped socket** (iOS drops a sleeping tab's socket; a lock of a minute is enough). The game goes offline and runs its
+map itself until the world answers again. On a place the world ran, it carries on from **what the world last showed**
+(75-coop `keepWorld`, a game of this build): while the world keeps the map the game remembers the last row the world sent of
+each monster (by nid, kept after a monster leaves its 24 tiles and after a fallen one's row stops coming), and at the drop
+its puppets turn real, then each remembered monster no longer on screen is put as the world last showed it: a hurt one at its
+hp and place, a fallen one down. It never goes back to the array the game made when the knight walked in. When the socket
+comes back the world takes the place over from that (the copy, if it is still there, carries on; if it went, the new one
+asks his page for its full snapshot, which is now that state). The same holds when the world hands a map to his game.
+Before 4 Oct a lone kid locked 90 s came back to the hurt sentinel at full health at home and the felled one standing, and
+the new copy adopted them so (`tools/mmo-sim-world.js` check 12 proves the fix and fails on the old game).
 
 **Handing a map back (world to keeper)**, by the parent page or the watchdog: the copy is dropped, the virtual knight leaves,
 the Room elects a real knight on the map, and his game's own `handoff()` turns its puppets into real monsters with the same
@@ -2037,8 +2060,22 @@ until someone moves." (its row says "the world (resting: nobody there is playing
 nothing new: the same one `GET /api/admin/sim`.
 
 **A slow world says so.** A game that said hello and has had no `welcome` for 1.5 s says "Waking the world..." once (a
-notice). In Stage 2 no copy is ever built while a knight waits for `welcome`, so it shows only when the World itself is slow
-to wake; Stage 6's overworld copy is built on the first `hello` after a nap, and this is what the knight reads meanwhile.
+notice), **only when its last `welcome` said the world runs a place itself** (`welcome.sim.maps` has a `'world'`, kept in
+`localStorage` `fanglands.worldRuns`; a welcome with no `sim` leaves it as it was). With every place on a knight's game, a
+slow line or a reconnect says nothing, as before Stage 2. In Stage 2 a slow `welcome` is the World busy building a copy
+(the build stops the whole World, above) or the World itself waking; Stage 6's overworld copy is built on the first `hello`
+after a nap, and this is what the knight reads meanwhile.
+
+**What changes in a game with every switch off.** The spec says Stage 2 needs no client change; it has three, all inert
+until a place is switched on: `hello` names `caps: ['snap']` (master sends `[]`), the game listens for `snap` (answered only
+by a keeper the world is taking a map from, which never happens with every place on a knight's game), and the
+"Waking the world..." notice (said only after a welcome that named a world-run place). The Great Spread fingerprint
+(`node tools/fingerprint.mjs index.html --diff docs/spread/baseline-fingerprint.json`) therefore differs from master's in
+one table, `exports`, and there only in `NET.caps` (`[]` to `['snap']`) and `NET.listeners.snap` (none to 1); every world,
+map, place and spawn table is the same, and `COOP.state` is as master's (the debug box's counters, the world's remembered
+rows and the wake wait are kept out of the exported state). The merge into master regenerates the baseline
+(`--out docs/spread/baseline-fingerprint.json --from "master <merge sha>"`, as docs/spread/README.md asks after a peer
+merge), and spread/s2 hears of it before it next merges master.
 
 **`?debug=tick`.** A page opened with `?debug=tick` shows a small box: the keeper of its map (and whether it is the world),
 the `mon` messages a second, the last `k`, the rows in the last `mon` and its puppets. It is for the two-browser proofs; nobody
@@ -2065,14 +2102,18 @@ never stale; a flip sends `keeper` both ways; a throw, three slow ticks, a boot 
 `realm_state` survives a rebuilt SimHost; a busy machine (every timer 20 or 40 ms late) never trips `slow` while a slow copy
 on a mildly busy one still does; a silent knight with his socket open parks the copy (0 timers, 0 ticks for 10 minutes)
 and his next presence ticks the same copy on; a hand-back stops the loop at once; a `snap` page's full answer hands the
-map over at once while an older page is never asked. `online/test/interest.test.mjs`: the 24 / 27 tiles, a target always sent.
+map over at once while an older page is never asked; a place left resting is not built again on a wake nobody plays
+through, and is never handed back as stale when its knight returns, whoever woke the object; a copy told no knight is
+resting, not stale. `online/test/interest.test.mjs`: the 24 / 27 tiles, a target always sent.
 `node tools/mmo-sim.js --sim` runs the whole two-game scenario against the real Room with the world's copy wired in and
 every map on `keeper` (nothing changes), then deepholm on `world`. `node tools/mmo-sim-world.js`: both games see the same
 rows at the same tick; the kill goes to the top damager; an injected throw falls back to a knight's game keeping every nid,
 hp and position; a keeper-to-world flip mid-fight; a game with no caps plays as before; an admin `spawn` reaches the copy;
 a knight alone on an older page switched over mid-fight (7); a world rebuilt with no copy loaded (8); a knight whose game
 stops is not beaten (9); every game stopped, both copies park and nothing ticks for 10 minutes (10); the lone keeper's full
-snapshot on a solo entry and a mid-fight switch (11); the coal mine's copy has no monster and the two others have some (0b).
+snapshot on a solo entry and a mid-fight switch (11); a kid alone whose iPad lock drops the socket for 90 s keeps the hurt
+sentinel hurt and the felled one down, on his screen and in the new copy, and his plaque counts the whole place (12); the coal
+mine's copy has no monster and the two others have some (0b).
 `node tools/sim-freeze.mjs`: how long the World stands still for a cold build (local `wrangler dev`).
 `node tools/sim-load.mjs`: 20 bot knights against a local `wrangler dev` for 30 minutes. Check 4 of `mmo-sim-world.js` also
 watches the old keeper's own screen through the take-over; with the hold-up above switched off it fails (5 blank frames).
