@@ -1012,7 +1012,8 @@ function generateWorld() {
   spawnList('boar', [[30, 24], [34, 30], [26, 36], [40, 46], [60, 44], [90, 60], [70, 56]]);
   spawnList('sheep', [[74, 42], [77, 44], [76, 41], [79, 43]]);
   spawnList('cow', [[74, 16], [77, 19], [79, 16]]);
-  spawnList('guard_m', [[87, 30], [118, 36], [113, 43]]); spawnList('guard_f', [[104, 23], [126, 33], [110, 43]]);
+  // (the West Gate's guard stands at 89,30, clear of the gate tower's cone: at 87,30 the cone hid his name)
+  spawnList('guard_m', [[89, 30], [118, 36], [113, 43]]); spawnList('guard_f', [[104, 23], [126, 33], [110, 43]]);
   spawnList('wolf', [[20, 70], [40, 68], [50, 80], [75, 74], [90, 70], [110, 82], [130, 72], [145, 80], [70, 88], [25, 88]]);
   spawnList('sapper', [[146, 26], [154, 34], [150, 38]]); spawnList('brute', [[148, 30], [153, 24], [155, 30]]);
   spawnList('goblin', [[144, 24], [144, 36], [156, 38], [151, 22]]);
@@ -2182,7 +2183,7 @@ function update(dt) {
       floatText(player.x, player.y - 30, 'Wooden sword!', '#fff2a8', 18); advanceQuest(2);
     }
     if (quest.stage === 2 && player.x > (CAVE_EXIT_X + 1.5) * TILE) advanceQuest(3);
-    if (!player.visitedVillage && inVillageBounds(player.x, player.y)) { player.visitedVillage = true; say("Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is just past it, over the moat.", 'The Voice'); save(); }
+    if (!player.visitedVillage && inVillageBounds(player.x, player.y)) { player.visitedVillage = true; say("Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is south of it, across the moat.", 'The Voice'); save(); }
     for (const d of drops) {
       d.t += dt;
       if (dist(d.x, d.y, player.x, player.y) < player.r + 12) {
@@ -2808,7 +2809,7 @@ function render() {
   for (const m of monsters) {
     const pad = monsterPad(m); if (m.x < cam.x - pad || m.x > cam.x + VW + pad || m.y < cam.y - pad || m.y > cam.y + VH + pad) continue;
     if (m.dead) { if (m.deadT < 0.8) items.push({ y: m.y, draw: () => { g.save(); g.globalAlpha = 1 - m.deadT / 0.8; g.translate(m.x, m.y); g.rotate(1.3); g.translate(-m.x, -m.y); drawCharacter(g, m, m.type); g.restore(); } }); continue; }
-    items.push({ y: m.y + m.r, draw: () => { drawCharacter(g, m, m.type); const top = monsterTop(m), def = MONSTER_DEFS[m.type]; if (m.hp < m.maxHp || dist(m.x, m.y, player.x, player.y) < 140) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(m.x - 14, m.y - top - 16, 28, 5); g.fillStyle = '#e63946'; g.fillRect(m.x - 14, m.y - top - 16, 28 * (m.hp / m.maxHp), 5); g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillStyle = def.level > combatLevel() + 3 ? '#ff6b6b' : '#e6edf3'; g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(`${def.name} · lv ${def.level}`, m.x, m.y - top - 20); g.fillText(`${def.name} · lv ${def.level}`, m.x, m.y - top - 20); } if (m.stunT > 0) { g.fillStyle = '#ffe066'; for (let k = 0; k < 3; k++) { const a = time * 6 + k * 2.1; g.beginPath(); g.arc(m.x + Math.cos(a) * 12, m.y - top - 6 + Math.sin(a) * 4, 2, 0, 7); g.fill(); } } } });
+    items.push({ y: m.y + m.r, draw: () => { drawCharacter(g, m, m.type); const top = monsterTop(m), def = MONSTER_DEFS[m.type]; if (m.hp < m.maxHp || dist(m.x, m.y, player.x, player.y) < 140) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(m.x - 14, m.y - top - 16, 28, 5); g.fillStyle = '#e63946'; g.fillRect(m.x - 14, m.y - top - 16, 28 * (m.hp / m.maxHp), 5); g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillStyle = def.level > combatLevel() + 3 ? '#ff6b6b' : '#e6edf3'; g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,0.7)'; const nm = m.tag || def.name; g.strokeText(`${nm} · lv ${def.level}`, m.x, m.y - top - 20); g.fillText(`${nm} · lv ${def.level}`, m.x, m.y - top - 20); } if (m.stunT > 0) { g.fillStyle = '#ffe066'; for (let k = 0; k < 3; k++) { const a = time * 6 + k * 2.1; g.beginPath(); g.arc(m.x + Math.cos(a) * 12, m.y - top - 6 + Math.sin(a) * 4, 2, 0, 7); g.fill(); } } } });
   }
   if (!player.dead) items.push({ y: player.y + player.r, draw: () => drawCharacter(g, player, player.mech ? 'playermech' : 'player') });
   else items.push({ y: player.y + player.r, draw: () => { g.save(); g.globalAlpha = Math.max(0.15, 1 - player.deadT / 1.5); g.translate(player.x, player.y); g.rotate(1.4); g.translate(-player.x, -player.y); drawCharacter(g, player, 'player'); g.restore(); } });
@@ -5987,7 +5988,7 @@ function tapPick(sx, sy) {
 }
 function tapLabelFor(p) {
   if (!p) return null;
-  if (p.kind === 'monster') { const def = MONSTER_DEFS[p.monster.type]; return `${def.name} · lv ${def.level}`; }
+  if (p.kind === 'monster') { const def = MONSTER_DEFS[p.monster.type]; return `${p.monster.tag || def.name} · lv ${def.level}`; }
   if (p.kind === 'npc') return p.npc.name;
   if (p.kind === 'person') return p.person.name;
   if (p.kind === 'item') { const def = ITEMS[p.drop.id]; return def ? (p.drop.qty > 1 ? `${def.name} × ${p.drop.qty}` : def.name) : 'Something'; }
@@ -6380,10 +6381,27 @@ HOOKS.selfTest.push((check, F, h) => {
   // won. wreckDue: a first kill made in the shed (a friend's fight), whose wreck is rolled out beside the door on leaving.
   // toldShed: online, a friend broke the square's beast already, and this knight was sent to the shed for his own fight.
   const HF = () => { const h = quest.hollowford || (quest.hollowford = { rewarded: false, beastKilled: false, wreck: null }); if (typeof h.freed !== 'boolean') h.freed = false; if (typeof h.barHits !== 'number') h.barHits = 0;
-    h.shedUp = h.shedUp ?? false; h.shedRestUntil = h.shedRestUntil ?? 0; h.shedKills = h.shedKills ?? 0; h.wreckDue = h.wreckDue ?? false; h.toldShed = h.toldShed ?? false; return h; };
-  HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null, freed: false, barHits: 0, shedUp: false, shedRestUntil: 0, shedKills: 0, wreckDue: false, toldShed: false }; });
-  const SHED = { id: 'war_shed', w: 28, h: 20 }, SHED_DOOR = [147, 44], SHED_STEP = [148, 44], SHED_HOME = { x: 14, y: 9 }, VALVE_T = { x: 14, y: 3 };
+    h.shedUp = h.shedUp ?? false; h.shedRestUntil = h.shedRestUntil ?? 0; h.shedKills = h.shedKills ?? 0; h.wreckDue = h.wreckDue ?? false; h.toldShed = h.toldShed ?? false; h.shedVoice = h.shedVoice ?? null; return h; };
+  // a save from before the shed's line was fitted to the story: a knight who has been inside heard the story line already
+  // (the instance's own voice, on his first visit), so he is not told it again
+  { const _load = load;
+    load = function () {
+      const ok = _load(); const h = quest.hollowford;
+      if (ok && h && h.shedVoice === undefined) { const v = quest.instances && quest.instances.visited && quest.instances.visited.war_shed; h.shedVoice = v ? (quest.stage >= 9 ? 'story' : 'early') : null; }
+      return ok;
+    }; }
+  HOOKS.newGame.push(() => { quest.hollowford = { rewarded: false, beastKilled: false, wreck: null, freed: false, barHits: 0, shedUp: false, shedRestUntil: 0, shedKills: 0, wreckDue: false, toldShed: false, shedVoice: null }; });
+  // the valve stands on row 7, under the boiler (row 6), with the stocks three rows below it: on row 3 it sat under the top
+  // HUD of a phone held upright (the crest, the quest scroll, two plaques: down to 323 px), where the camera cannot scroll
+  // past the shed's top wall
+  const SHED = { id: 'war_shed', w: 28, h: 20 }, SHED_DOOR = [147, 44], SHED_STEP = [148, 44], SHED_HOME = { x: 14, y: 11 }, VALVE_T = { x: 14, y: 7 };
+  const BOILER_T = [[13, 6], [14, 6], [15, 6]];
   const SHED_ENTRY = [14, 18], SHED_EXIT = [14, 19], SHED_REST = 300;
+  // the shed's first-visit Voice: the story line once his story has reached the burning of Hollowford (stage 9), a plain
+  // one before that (the door is open from a new game, so a friend can follow a friend in), and the story line once more on
+  // his first visit after stage 9. hf.shedVoice: null, 'early' or 'story'.
+  const SHED_VOICE = 'The War Shed. The goblins kept the plans. Whatever they drag back from Hollowford, they bolt into the next Barrelbeast.';
+  const SHED_VOICE_EARLY = 'The War Shed. Goblins build their machines in here. The stocks are empty, and the crew is out.';
   const SHED_WALL = [[145, 43], [146, 43], [147, 43], [145, 44], [146, 44], [145, 45], [146, 45], [147, 45]];
   const WRECK_SPOTS = [[144, 47], [143, 47], [144, 48], [143, 48]];
   const restLeft = until => Math.max(0, (until || 0) - (player.dayTime || 0));
@@ -6621,6 +6639,11 @@ HOOKS.selfTest.push((check, F, h) => {
       }
       say('The Barrelbeast tips, groans, and comes apart. Boiler, barrel, four iron legs. The goblin crew runs for the trees. They will build another. They always do.', 'The Voice');
       say('The wreck stays. Six iron bars, ten goblin scrap and two blast powder would set it walking again, with you at the lever. Hollowford is quiet now. Go to the chapel and tell them.', 'The Voice');
+    } else if (!inShed()) {
+      // a friend's own first fight in Hollowford's square, after this knight broke his own beast: a helping hand, not a
+      // shed rematch (no REMATCH WON, no word of the shed); the def drops are his and his valve rests as for a rematch
+      levelBanner = { text: 'BEAST DOWN', sub: 'You helped a friend', t: 3.5 };
+      say("You helped a friend bring down the Barrelbeast in Hollowford's square. The square is quiet again.", 'The Voice');
     } else {
       hf.shedKills = (hf.shedKills || 0) + 1;
       levelBanner = { text: 'REMATCH WON', sub: hf.shedKills + 1 === 1 ? 'The Barrelbeast, beaten once' : `The Barrelbeast, beaten ${hf.shedKills + 1} times`, t: 3.5 }; sfx('quest');
@@ -6637,7 +6660,8 @@ HOOKS.selfTest.push((check, F, h) => {
   if (window.INSTANCES) INSTANCES.define(SHED.id, {
     name: 'The War Shed', sub: 'Where the goblins build their beasts', w: SHED.w, h: SHED.h, dark: false, boss: 'barrelbeast', spawns: [],
     entry: SHED_ENTRY, exit: SHED_EXIT, door: SHED_DOOR, step: SHED_STEP, lateDoor: true,
-    voice: 'The War Shed. The goblins kept the plans. Whatever they drag back from Hollowford, they bolt into the next Barrelbeast.',
+    // no instance voice: the shed says its own first line on the first visit, fitted to the story (see SHED_VOICE)
+    voice: null,
     build: (set) => {
       for (let y = 0; y < SHED.h; y++) for (let x = 0; x < SHED.w; x++) set(x, y, (x === 0 || y === 0 || x === SHED.w - 1 || y === SHED.h - 1) ? T.HWALL : T.FLOOR);
       // the stocks: a 5×3 bed of timber the beast is bolted together on
@@ -6647,6 +6671,8 @@ HOOKS.selfTest.push((check, F, h) => {
         [1, 5, T.SHELF], [1, 6, T.SHELF], [1, 12, T.TABLE], [26, 5, T.SHELF], [26, 6, T.SHELF], [26, 12, T.TABLE], [26, 13, T.TABLE],
         [3, 4, T.RUBBLE], [23, 4, T.RUBBLE], [4, 15, T.RUBBLE], [22, 16, T.RUBBLE], [6, 10, T.PLANK], [21, 9, T.PLANK], [8, 16, T.PLANK], [19, 14, T.RUBBLE]]) set(x, y, t);
       set(VALVE_T.x, VALVE_T.y, T_VALVE);
+      // the boiler the valve feeds: three cells of the same solid, so E or a tap on the boiler spins the valve too
+      for (const [x, y] of BOILER_T) set(x, y, T_VALVE);
     },
   });
   // the shed on the camp road: plank walls with the door on the east face, facing the road. Built once the rest of the
@@ -6687,7 +6713,7 @@ HOOKS.selfTest.push((check, F, h) => {
     if (liveBeast()) { say('The beast is already up. Bring it down.', 'Boiler valve'); return; }
     if (!hf.beastKilled) {
       if (quest.stage === 9 && hf.toldShed) { say('The crew laughs, spins the valve, and a Barrelbeast stands up off the stocks.', 'The Voice'); hf.shedUp = true; save(); shedSeen = false; callShed(); return; }
-      say('The goblin crew laughs at you. Their beast is still walking in Hollowford.', 'Boiler valve'); return;
+      say(quest.stage >= 9 ? 'The goblin crew laughs at you. Their beast is still walking in Hollowford.' : 'The valve is cold. Nothing on the stocks is finished yet.', 'Boiler valve'); return;
     }
     const left = restLeft(hf.shedRestUntil);
     if (left > 0) { say(`The crew is still bolting it back together. Ready in ${mmss(left)}.`, 'Boiler valve'); return; }
@@ -6708,7 +6734,11 @@ HOOKS.selfTest.push((check, F, h) => {
     if (inShed()) {
       // a new visit: the first tick inside, or a leave and a walk back in between two ticks (16-instances stamps lastLeft)
       const key = INSTANCES.get(SHED.id).lastLeft;
-      if (!wasInShed || key !== shedVisit) { wasInShed = true; shedVisit = key; shedSeen = false; shedDownAt = null; }
+      if (!wasInShed || key !== shedVisit) {
+        wasInShed = true; shedVisit = key; shedSeen = false; shedDownAt = null;
+        if (quest.stage >= 9 && hf.shedVoice !== 'story') { hf.shedVoice = 'story'; say(SHED_VOICE, 'The Voice'); save(); }
+        else if (quest.stage < 9 && !hf.shedVoice) { hf.shedVoice = 'early'; say(SHED_VOICE_EARLY, 'The Voice'); save(); }
+      }
       const lb = liveBeast();
       if (lb && hf.shedUp) shedSeen = true;
       if (hf.shedUp && !lb && !shedSeen) {
@@ -6749,15 +6779,46 @@ HOOKS.selfTest.push((check, F, h) => {
   function drawValve(g, tx, ty) {
     const cx = tc(tx), cy = tc(ty), up = !!liveBeast(), spin = up ? time * 6 : 0;
     g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 16, 16, 5, 0, 0, 7); g.fill();
-    g.fillStyle = '#4a4a52'; g.fillRect(cx - 5, cy - 44, 10, 46); g.fillStyle = '#5a5a62'; g.fillRect(cx - 5, cy - 44, 3, 46);
-    g.fillStyle = '#3a3a42'; g.fillRect(cx - 9, cy - 46, 18, 6); g.fillRect(cx - 9, cy + 2, 18, 8);
+    // a short pipe down out of the boiler's belly, and the wheel on it
+    g.fillStyle = '#4a4a52'; g.fillRect(cx - 5, cy - 34, 10, 36); g.fillStyle = '#5a5a62'; g.fillRect(cx - 5, cy - 34, 3, 36);
+    g.fillStyle = '#3a3a42'; g.fillRect(cx - 9, cy + 2, 18, 8);
     g.save(); g.translate(cx, cy - 12); g.rotate(spin);
     g.strokeStyle = '#7a1f1f'; g.lineWidth = 5; g.beginPath(); g.arc(0, 0, 14, 0, 7); g.stroke();
     g.strokeStyle = '#c0504d'; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 14, 0, 7); g.stroke();
     for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * 14, Math.sin(a) * 14); g.stroke(); }
     g.fillStyle = '#e0d070'; g.beginPath(); g.arc(0, 0, 3.5, 0, 7); g.fill();
     g.restore();
-    if (up) for (let k = 0; k < 3; k++) { const ph = (time * 0.8 + k * 0.33) % 1; g.fillStyle = `rgba(220,220,230,${0.4 * (1 - ph)})`; g.beginPath(); g.arc(cx + 8 + Math.sin(time * 3 + k) * 3, cy - 46 - ph * 22, 3 + ph * 5, 0, 7); g.fill(); }
+  }
+  // the boiler: a riveted iron tank across three cells, a firebox that glows (brighter while a beast stands), a gauge, and
+  // a chimney pipe up through the shed's top wall that steams while the beast is up
+  function drawBoiler(g) {
+    const x0 = BOILER_T[0][0] * TILE + 2, x1 = (BOILER_T[2][0] + 1) * TILE - 2, row = BOILER_T[0][1] * TILE, top = row - 30, bot = row + 42, up = !!liveBeast();
+    const chx = x1 - 30;
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse((x0 + x1) / 2, bot + 2, (x1 - x0) / 2, 7, 0, 0, 7); g.fill();
+    // the chimney pipe, up to the wall
+    g.fillStyle = '#3a3a42'; g.fillRect(chx - 6, TILE - 6, 12, top - TILE + 12); g.fillStyle = '#4a4a52'; g.fillRect(chx - 6, TILE - 6, 4, top - TILE + 12);
+    g.fillStyle = '#2e2e36'; for (const yy of [TILE + 10, top - 14]) g.fillRect(chx - 8, yy, 16, 5);
+    // the tank
+    g.fillStyle = '#4a4a52'; roundRect(g, x0, top, x1 - x0, bot - top, 16); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.08)'; roundRect(g, x0 + 6, top + 4, x1 - x0 - 12, 12, 6); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.22)'; roundRect(g, x0 + 4, bot - 16, x1 - x0 - 8, 12, 6); g.fill();
+    g.strokeStyle = '#2e2e36'; g.lineWidth = 4; for (const ox of [0.25, 0.5, 0.75]) { const x = lerp(x0, x1, ox); g.beginPath(); g.moveTo(x, top + 2); g.lineTo(x, bot - 2); g.stroke(); }
+    g.fillStyle = '#8f96a3'; for (const ox of [0.25, 0.5, 0.75]) for (const yy of [top + 10, (top + bot) / 2, bot - 10]) { g.beginPath(); g.arc(lerp(x0, x1, ox), yy, 2, 0, 7); g.fill(); }
+    g.strokeStyle = '#25252b'; g.lineWidth = 2; roundRect(g, x0, top, x1 - x0, bot - top, 16); g.stroke();
+    // the firebox door, left of the valve
+    const fx = x0 + 22, fy = (top + bot) / 2 - 2, glow = up ? 0.75 + Math.sin(time * 10) * 0.2 : 0.35 + Math.sin(time * 3) * 0.08;
+    g.fillStyle = '#2a2a30'; roundRect(g, fx - 13, fy - 11, 26, 22, 4); g.fill();
+    g.fillStyle = `rgba(255,${up ? 110 : 150},40,${glow.toFixed(3)})`; for (let k = 0; k < 3; k++) g.fillRect(fx - 9, fy - 7 + k * 6, 18, 3);
+    // the pressure gauge, right of the valve: the needle climbs while the beast is up
+    const gx = x1 - 24, gy = top + 18;
+    g.fillStyle = '#c9a02a'; g.beginPath(); g.arc(gx, gy, 9, 0, 7); g.fill(); g.fillStyle = '#efe6cc'; g.beginPath(); g.arc(gx, gy, 7, 0, 7); g.fill();
+    const a = up ? -0.3 + Math.sin(time * 4) * 0.15 : -2.4; g.strokeStyle = '#7a1f1f'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(gx, gy); g.lineTo(gx + Math.cos(a) * 6, gy + Math.sin(a) * 6); g.stroke();
+    if (up) for (let k = 0; k < 4; k++) { const ph = (time * 0.8 + k * 0.25) % 1; g.fillStyle = `rgba(220,220,230,${(0.45 * (1 - ph)).toFixed(3)})`; g.beginPath(); g.arc(chx + Math.sin(time * 3 + k) * 4, TILE + 4 - ph * 30, 4 + ph * 7, 0, 7); g.fill(); }
+  }
+  function drawShedScrap(g, tx, ty) {
+    const floor = tex[TEX_NAME[T.FLOOR] + (variant[idx(tx, ty)] || 0)] || tex[TEX_NAME[T.FLOOR] + 0];
+    if (floor) g.drawImage(floor, tx * TILE, ty * TILE, TILE, TILE);
+    drawRubbleProp(g, tx, ty);
   }
   function drawStocks(g) {
     const x0 = (SHED_HOME.x - 2) * TILE, x1 = (SHED_HOME.x + 3) * TILE, y0 = (SHED_HOME.y - 1) * TILE, y1 = (SHED_HOME.y + 2) * TILE;
@@ -6793,7 +6854,10 @@ HOOKS.selfTest.push((check, F, h) => {
   }
   HOOKS.draw.push((g, items, cam) => {
     if (inShed()) {
+      // the scrap heaps (RUBBLE) lie on the shed's plank floor: the core paints a rubble cell on grass
+      for (let y = 1; y < SHED.h - 1; y++) for (let x = 1; x < SHED.w - 1; x++) if (tileAt(x, y) === T.RUBBLE) items.push({ y: -1e9 + 3, scrap: true, draw: () => drawShedScrap(g, x, y) });
       items.push({ y: -1e8 + SHED_HOME.y * TILE + 2, draw: () => drawStocks(g) });
+      items.push({ y: BOILER_T[0][1] * TILE + TILE - 6, draw: () => drawBoiler(g) });
       items.push({ y: VALVE_T.y * TILE + TILE - 6, draw: () => drawValve(g, VALVE_T.x, VALVE_T.y) });
       if (!player.dead && !player.mech) items.push({ y: 1e9 + 1, draw: () => { const { tx, ty } = frontTile(player); if (tileAt(tx, ty) === T_VALVE) HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); } });
       return;
@@ -7086,6 +7150,22 @@ HOOKS.selfTest.push((check, F, h) => {
         check(P + 'the War Shed door at (147,44) with step (148,44) is reachable from the road and enters war_shed; PLAYTHROUGH.instanceConnectivity passes',
           !!road && doorTile && walls && entered && region === 'The War Shed' && rows.length >= 2 && rows.every(r => r.dist >= 0) && tileAt(VALVE_T.x, VALVE_T.y) === T_VALVE && SOLID.has(T_VALVE) && INTERESTING_TILES.has(T_VALVE),
           { road: road && road.length, doorTile, walls, entered, region, rows: rows.map(r => [r.name, r.dist]) }); }
+      // B1b: the scrap heaps lie on the plank floor (the core paints a RUBBLE cell on grass), and on a phone held upright the
+      // valve's wheel is in sight: clear of the crest, the quest scroll and both plaque slots, with the camera at the top wall
+      { const items = []; for (const d of HOOKS.draw) { try { d(ctx, items, cam); } catch (e) { } }
+        let rubble = 0; for (let y = 1; y < SHED.h - 1; y++) for (let x = 1; x < SHED.w - 1; x++) if (tileAt(x, y) === T.RUBBLE) rubble++;
+        const scrap = items.filter(i => i.scrap).length;
+        const w0 = window.innerWidth, h0 = window.innerHeight, t0 = window.__forceTouch, p0 = { x: player.x, y: player.y };
+        let wheel = null, hits = [], camY = null;
+        try {
+          window.innerWidth = 390; window.innerHeight = 844; window.__forceTouch = true; resize(); F.tp(VALVE_T.x, VALVE_T.y + 1); render();
+          const L = HK.FRAME.L; camY = cam.y;
+          wheel = { x: tc(VALVE_T.x) - 16 - cam.x, y: tc(VALVE_T.y) - 28 - cam.y, w: 32, h: 32 };
+          const over = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          hits = L ? [L.crest, L.scroll].concat(L.plaques || []).filter(r => r && over(wheel, r)) : ['no layout'];
+        } finally { window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); player.x = p0.x; player.y = p0.y; render(); }
+        check(P + "the War Shed's scrap heaps lie on its plank floor (a floor patch under every RUBBLE cell), and at 390x844 the valve's wheel is clear of the crest, the scroll and both plaque slots",
+          rubble >= 5 && scrap === rubble && camY === 0 && !!wheel && hits.length === 0, { rubble, scrap, camY, wheel, hits }); }
       // B2: before this knight's own beast is down the crew only laughs
       { hf.beastKilled = false; quest.stage = 11; valve();
         check(P + 'offline, the valve refuses before the first kill (still walking in Hollowford)', beasts().length === 0 && said(/still walking in Hollowford/) && !hf.shedUp, { said: dialog.cur && dialog.cur.text, beasts: beasts().length });
@@ -7135,7 +7215,8 @@ HOOKS.selfTest.push((check, F, h) => {
         F.tp(137, 86); const w0 = wrecks(); clearBanners();
         if (sq) { sq.dead = false; sq.awake = true; sq.hp = 1; sq.x = player.x + 60; sq.y = player.y; sq.stunT = 0; }
         F.sim(1, []); const alive = !!sq && !sq.dead; if (sq) hitMonster(sq, 5, 0); F.sim(2, []);
-        const rematch = bannerAhead('REMATCH WON'); F.sim(30, []);
+        // (a friend's beast in the square: BEAST DOWN for the helping hand, never REMATCH WON, which is the shed's)
+        const rematch = bannerAhead('BEAST DOWN') && !bannerAhead('REMATCH WON'); F.sim(30, []);
         const down = !!sq && sq.dead && sq.awake === false && sq.respawnT === Infinity;
         const okLoad = (() => { save(); const ok = load(); const s2 = monsters.find(m => m.type === 'barrelbeast'); if (s2) { delete s2.awake; s2.dead = false; s2.hp = s2.maxHp; s2.respawnT = 0; } F.sim(3, []); return ok && !!s2 && s2.dead && s2.respawnT === Infinity; })();
         check(P + 'a repeat kill of the square beast places no wreck; its adopted awake ends with it (dead, awake false, respawnT Infinity, and still down after a reload)', alive && sq.dead && wrecks() === w0 && rematch && down && okLoad,
@@ -7185,6 +7266,26 @@ HOOKS.selfTest.push((check, F, h) => {
         for (let i = 0; i < map.length; i++) if (map[i] !== keep.map[i]) changeTile(i % MAP_W, Math.floor(i / MAP_W), keep.map[i]);
         hf7.wreck = keep.wreck; hf7.beastKilled = true; quest.stage = st; player.skills = JSON.parse(keep.stats); recomputeMaxHp();
         if (sq) { sq.dead = true; sq.respawnT = Infinity; } drops = drops.filter(() => false); drain(); clearBanners(); }
+      // B16: a friend's own first beast in Hollowford's square (a phantom), helped by a knight who broke his own long ago:
+      // BEAST DOWN, 'You helped a friend', the def drops; never REMATCH WON or the line about the back of the shed
+      { const hf8 = HF(), st = quest.stage; Object.assign(hf8, { beastKilled: true, shedUp: false, shedRestUntil: 0 }); quest.stage = Math.max(11, st);
+        if (INSTANCES.active()) INSTANCES.leave(); F.tp(137, 86); clearBanners(); drain(); const k0 = hf8.shedKills, n0 = drops.length;
+        const ph = window.COOP ? COOP.phantomOf({ type: 'barrelbeast', nid: 'Ann:9', x: player.x + 60, y: player.y }) : null;
+        const rnd0 = Math.random; try { Math.random = () => 0.9; if (ph) killMonster(ph); } finally { Math.random = rnd0; } F.sim(2, []);
+        const r = { ph: !!ph, banner: bannerAhead('BEAST DOWN'), sub: levelBanner && levelBanner.sub, rematch: bannerAhead('REMATCH WON'), shed: said(/back of the shed/), helped: said(/You helped a friend bring down the Barrelbeast/), kills: hf8.shedKills - k0, scrap: drops.slice(n0).filter(d => d.id === 'goblin_scrap').reduce((n, d) => n + d.qty, 0) };
+        check(P + "a friend's first beast in Hollowford's square, helped by a knight who broke his own: BEAST DOWN, 'You helped a friend', the def drops; no REMATCH WON, no shed line, no shed rematch counted",
+          r.ph && r.banner && !r.rematch && !r.shed && r.helped && r.kills === 0 && r.scrap >= 8, r);
+        drops = drops.slice(0, n0); quest.stage = st; drain(); clearBanners(); }
+      // B17: the door is open from a new game, but nothing inside talks about Hollowford before the story burns it (stage 9):
+      // a plain first line and a cold valve; at stage 9 the story line once, and never again after it
+      { const hf9 = HF(), st = quest.stage, kb = hf9.beastKilled, v0 = hf9.shedVoice; Object.assign(hf9, { beastKilled: false, toldShed: false, shedUp: false, shedVoice: null }); quest.stage = 5;
+        const heard = () => [dialog.cur, ...dialog.queue].filter(l => l && l.who === 'The Voice' && /^The War Shed\./.test(l.text)).map(l => l.text);
+        drain(); enterShed(); F.sim(2, []); const early = heard(); drain(); valve(); const cold = said(/valve is cold/) && !said(/Hollowford/); INSTANCES.leave(); F.sim(2, []);
+        quest.stage = 9; drain(); enterShed(); F.sim(2, []); const story = heard(); INSTANCES.leave(); F.sim(2, []);
+        drain(); enterShed(); F.sim(2, []); const again = heard(); INSTANCES.leave(); F.sim(2, []);
+        check(P + "before stage 9 the War Shed's first line and its valve never mention Hollowford; at stage 9 the story line plays once, and not on the next visit",
+          early.length === 1 && !/Hollowford/.test(early[0]) && cold && story.length === 1 && /drag back from Hollowford/.test(story[0]) && again.length === 0 && hf9.shedVoice === 'story', { early, cold, story, again, v: hf9.shedVoice });
+        Object.assign(hf9, { beastKilled: kb, shedVoice: v0 }); quest.stage = st; drain(); }
       // B10: online and not the shed's keeper: the valve asks the keeper and makes nothing itself
       if (typeof NET !== 'undefined' && window.COOP) {
         const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
@@ -7213,6 +7314,33 @@ HOOKS.selfTest.push((check, F, h) => {
           const told = hf9.toldShed && [dialog.cur, ...dialog.queue].some(l => l && /building another in their War Shed/.test(l.text)) && mapTargets().some(t => t.label === 'The War Shed') && /War Shed/.test(questText('main'));
           check(P + '(fake NET non-keeper, stage 9): a quiet square for 4 s tells the knight about the War Shed (toldShed, the map target, the quest line), not before', !early && told, { early, told: hf9.toldShed, text: questText('main') });
           hf9.beastKilled = true; hf9.toldShed = false; quest.stage = st9;
+        } finally { if (INSTANCES.active()) INSTANCES.leave(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
+      }
+      // B18: online, the shed's keeper: a friend's valve call stands one beast up; once the keeper brings it down the shed rests
+      // 300 s on his game, so the friend's next call gets boss_wait (to him alone) and stands nothing up, while a friend's own
+      // first fight (the first flag) is not held back
+      if (typeof NET !== 'undefined' && window.COOP) {
+        const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake }; const sent = []; let sock = null;
+        const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+        NET.enabled = true; NET.token = 'shed-keeper-test';
+        NET.useFake({ call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const mm = JSON.parse(str); sent.push(mm); if (mm.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } });
+        try {
+          NET.connect(); Object.assign(HF(), { beastKilled: true, shedUp: false, shedRestUntil: 0 });
+          enterShed(); push({ t: 'keeper', map: SHED.id, n: 'Cohen' }); F.sim(2, []);
+          push({ t: 'p', n: 'Bo', map: SHED.id, x: tc(VALVE_T.x), y: tc(VALVE_T.y + 2), def: 500, dead: false, hp: 90, lv: 40 });
+          COOP.state.calls = {}; COOP.state.restAt = {};
+          push({ t: 'boss_call', n: 'Bo', id: SHED.id }); F.sim(2, []);
+          const up = beasts().length === 1;
+          slay(); drops = drops.filter(() => false); F.sim(3, []);
+          COOP.state.calls = {}; sent.length = 0;
+          push({ t: 'boss_call', n: 'Bo', id: SHED.id }); F.sim(2, []);
+          const wait = sent.find(mm => mm.t === 'boss_wait'), held = beasts().length === 0;
+          COOP.state.calls = {};
+          push({ t: 'boss_call', n: 'Bo', id: SHED.id, first: true }); F.sim(2, []);
+          const firstUp = beasts().length === 1;
+          check(P + "(fake NET keeper): a friend's valve call stands one beast up; after the keeper brings it down, the friend's next call gets boss_wait (to him alone, 298 to 300 s) and stands nothing up; a friend's first fight still does",
+            up && !!wait && wait.to === 'Bo' && wait.id === SHED.id && wait.left >= 298 && wait.left <= 300 && held && firstUp, { up, wait, held, firstUp });
+          for (const b of beasts()) { b.dead = true; b.deadT = 5; } F.sim(2, []);
         } finally { if (INSTANCES.active()) INSTANCES.leave(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
       }
     } finally {
@@ -11132,9 +11260,12 @@ PEOPLE_UI.auditPrompt = function (p) {
   }
   // HOOKS.bossCall.the_fang.wake: run by this knight alone, or by the map's keeper (asker = the friend who sounded the horn).
   // It never sets the keeper's own story flags for somebody else's horn.
-  function summonFang(asker) {
+  // first: a friend's own story fight (75-coop passes the caller's first flag); m.friendStory tells 37-dragonkillers to bring
+  // the Dragon Killers for him even when this keeper slew the Fang long ago
+  function summonFang(asker, first) {
     const fq = FQ(), m = fang(); if (!m || m.remote || !m.dead && m.awake) return false;
     if (asker == null && !fq.slain) fq.summoned = true;
+    m.friendStory = asker != null && !!first;
     const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast') || m.home;
     m.dead = false; m.deadT = 0; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.state = 'idle'; m.angry = true; m.stunT = 0; m.element = 'fire'; m.elemT = 0; m.fireCd = 1.5;
     m.awake = true; m.respawnT = Infinity; m.hitters = {}; m.credited = false; m.repeat = false;
@@ -11147,7 +11278,7 @@ PEOPLE_UI.auditPrompt = function (p) {
   // fights is a repeat: the Echo after his slaying, or a friend's fight before his own story gets there.
   const storyFight = () => !FQ().slain && quest.stage >= 14;
   HOOKS.bossCall.the_fang = { map: 'over', near: [CIRCLE_T.x, CIRCLE_T.y, 4], name: 'The Fang', type: 'the_fang', rest: ECHO_REST,
-    alive: () => !!liveFang(), wake: asker => { summonFang(asker); },
+    alive: () => !!liveFang(), wake: (asker, first) => { summonFang(asker, first); },
     // 75-coop's pay gate: a repeat kill inside this knight's own rest pays nothing
     resting: () => !storyFight() && restLeft(FQ()) > 0,
     // what the keeper reads when a friend's horn wakes it: the name only for a knight whose story has reached the dragon
@@ -11550,6 +11681,9 @@ PEOPLE_UI.auditPrompt = function (p) {
   // the Echo is drawn a little see-through, for a knight who knows the real one is dead
   { const draw0 = HOOKS.drawMonster.the_fang;
     HOOKS.drawMonster.the_fang = (g, e, hurt) => { if (!FQ().slain) return draw0(g, e, hurt); g.save(); g.globalAlpha = 0.75; try { draw0(g, e, hurt); } finally { g.restore(); } }; }
+  // and its name: the tag over its head (09-render) and the long-press name (17-tap) read m.tag before the type's name,
+  // so a knight who slew the dragon reads 'Echo of the Fang', as the boss banner does
+  HOOKS.update.push(() => { const m = fang(); if (m) m.tag = FQ().slain ? 'Echo of the Fang' : undefined; });
   // the progression audit (42-playthrough reads HOOKS.xpSource): the Echo, once a day of the knight's clock
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => { const D = MONSTER_DEFS.the_fang; add('melee', 'Echo of the Fang (one per 600 s)', 80, D.hp * 4 + D.level * 10, ECHO_REST, '28-thefang: the horn on the circle'); });
 
@@ -11665,6 +11799,12 @@ PEOPLE_UI.auditPrompt = function (p) {
         check(P + 'after the slaying, the horn on the circle (18,117) raises the Echo at home with 900 hp and the banner THE ECHO RISES; fq.echoUp saved',
           !m.dead && m.hp === 900 && m.awake && dist(m.x, m.y, m.home.x, m.home.y) < 2 * TILE && bannerAhead('THE ECHO RISES') && q.echoUp === true && saved && said(/lava remembers its shape/),
           { dead: m.dead, hp: m.hp, awake: m.awake, banner: levelBanner && levelBanner.text, echoUp: q.echoUp, saved }); }
+      // F2b: its name over its head and on a long press is the Echo's, never the dead dragon's (09-render and 17-tap
+      // both read m.tag before the type's name)
+      { F.sim(1, []);
+        const tap = typeof tapLabelFor === 'function' ? tapLabelFor({ kind: 'monster', monster: m }) : null;
+        check(P + "the Echo's name tag over its head and its long-press name read 'Echo of the Fang · lv 80', never 'The Fang · lv 80'",
+          m.tag === 'Echo of the Fang' && tap === 'Echo of the Fang · lv 80', { tag: m.tag, tap }); }
       // F3: the Echo's purse, and nothing of the story
       { const q = FQ(); const fang0 = held('fang_of_the_fang'), looted0 = JSON.stringify(q.looted), chest0 = q.chest, echoes0 = q.echoes, st0 = quest.stage;
         drops = drops.filter(d => !['coins', 'dragon_scale', 'mithril_bar'].includes(d.id)); clearBanners(); credits = null;
@@ -11821,7 +11961,7 @@ PEOPLE_UI.auditPrompt = function (p) {
           m.dead = true; m.awake = false; F.sim(1, []);
           quest.stage = 16; q.slain = true; F.tp(CIRCLE_T.x, CIRCLE_T.y + 3); F.sim(2, []); clearBanners(); notice = null; COOP.state.calls = {};
           push({ t: 'boss_call', n: 'Ann', id: 'the_fang' }); F.sim(2, []);
-          const near = { up: !m.dead, banner: bannerAhead('THE ECHO RISES'), toast: notice && notice.text };
+          const near = { up: !m.dead, banner: bannerAhead('THE ECHO RISES'), toast: notice && notice.text, story: m.friendStory };
           // the keeper brings it down: the dragon rests on this map
           const n0 = drops.length; m.stunT = 0; m.hp = 1; hitMonster(m, 5, 0); F.sim(2, []); drops = drops.slice(0, n0);
           COOP.state.calls = {}; sent.length = 0;
@@ -11829,11 +11969,13 @@ PEOPLE_UI.auditPrompt = function (p) {
           const wait = sent.find(mm => mm.t === 'boss_wait'), held = m.dead;
           COOP.state.calls = {};
           push({ t: 'boss_call', n: 'Ann', id: 'the_fang', first: true }); F.sim(2, []);
-          const firstUp = !m.dead;
-          check(P + "(fake NET keeper): a friend's horn answered by a stage-5 keeper far from the lair shows no banner and a toast without the dragon's name; in the lair at stage 16 he sees THE ECHO RISES; after it falls a friend's Echo call gets boss_wait (600 s) and a friend's first fight still wakes it",
-            far.up && !far.banner && far.toast === 'Ann is fighting something far to the south.' && near.up && near.banner && /sounded the horn/.test(near.toast || '')
-              && !!wait && wait.to === 'Ann' && wait.id === 'the_fang' && wait.left >= 598 && wait.left <= 600 && held && firstUp,
-            { far, near, wait, held, firstUp });
+          // (her first fight is staged as hers: friendStory, and 37 brings the Dragon Killers for it on this keeper's game)
+          F.sim(2, []); const firstUp = !m.dead && m.friendStory === true, dkUp = monsters.filter(o => o.type === 'ally_knight').length;
+          check(P + "(fake NET keeper): a friend's horn answered by a stage-5 keeper far from the lair shows no banner and a toast without the dragon's name; in the lair at stage 16 he sees THE ECHO RISES; after it falls a friend's Echo call gets boss_wait (600 s) and a friend's first fight still wakes it, as her story fight with the Dragon Killers",
+            far.up && !far.banner && far.toast === 'Ann is fighting something far to the south.' && near.up && near.banner && /sounded the horn/.test(near.toast || '') && !near.story
+              && !!wait && wait.to === 'Ann' && wait.id === 'the_fang' && wait.left >= 598 && wait.left <= 600 && held && firstUp && dkUp >= 1,
+            { far, near, wait, held, firstUp, dkUp });
+          m.dead = true; m.awake = false; m.friendStory = false; monsters = monsters.filter(o => o.type !== 'ally_knight');
         } finally { NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; COOP.reset(); }
       }
     } finally {
@@ -14152,6 +14294,19 @@ window.PLACE_KIT = PLACE_KIT;
         check(P + "(fake NET non-keeper): his lever Gnasher stands up and then falls on the keeper's game without paying him: after 3 s down his rematch is spent, and no call goes out again by itself",
           asked && seenUp && spent && recalls === 0, { asked, seenUp, early, rematch: TQ().rematch, recalls });
         window.INSTANCES.leave(); NET.disconnect(); window.COOP.reset(); }
+      // G8: online, not the lab's keeper: the keeper answers his lever call with boss_wait (the Gnasher fell there lately): his
+      // rematch call is over, Tinkerton says how long in m:ss, and nothing asks again by itself
+      { me = 'Cohen'; keeper = 'Ann'; NET.useFake(fake); NET.token = 'gnasher-test'; NET.connect();
+        quest.tinker = Object.assign(freshT(), { stage: 3, rematch: false, kills: 1, restUntil: 0 });
+        enterLab(); push({ t: 'keeper', map: INST_ID, n: 'Ann' }); F.sim(2, []);
+        sent.length = 0; lever(); const asked = sent.filter(m => m.t === 'boss_call').length === 1 && TQ().rematch;
+        drain(); push({ t: 'boss_wait', id: 'gnasher', left: 120 }); F.sim(2, []);
+        const told = [dialog.cur, ...dialog.queue].some(l => l && /still patching it up\. Ready in 2:00\./.test(l.text)), over = TQ().rematch === false;
+        sent.length = 0; for (let k = 0; k < 40; k++) { push({ t: 'mon', n: 'Ann', list: [] }); F.sim(10, []); }
+        const recalls = sent.filter(m => m.t === 'boss_call').length;
+        check(P + "(fake NET non-keeper): boss_wait for his lever call ends it (rematch false), Tinkerton says Ready in 2:00, and no call goes out again by itself",
+          asked && told && over && recalls === 0, { asked, told, over, recalls });
+        window.INSTANCES.leave(); NET.disconnect(); window.COOP.reset(); }
       // G4: online, the lab's keeper: a friend's call makes exactly one; a second while it stands makes none
       { me = 'Cohen'; keeper = 'Cohen'; NET.useFake(fake); NET.token = 'gnasher-test'; NET.connect();
         quest.tinker = Object.assign(freshT(), { stage: 3, rematch: false, kills: 1 });
@@ -14161,6 +14316,18 @@ window.PLACE_KIT = PLACE_KIT;
         window.COOP.state.calls.gnasher = time - 10;
         push({ t: 'boss_call', n: 'Bo', id: 'gnasher' }); F.sim(2, []); const still = monsters.filter(m => m.type === 'gnasher' && !m.dead).length;
         check(P + '(fake NET keeper): a boss_call from a remote in the lab spawns exactly one; a second call while it lives spawns none', one === 1 && still === 1 && !TQ().rematch, { one, still });
+        // G7: the keeper brings it down: the lab's Gnasher rests 180 s on his game. Bo's next call gets boss_wait, to Bo alone,
+        // and spawns nothing; Bo's own first fight (stage 2, the first flag) is not held back
+        { const g = monsters.find(m => m.type === 'gnasher' && !m.dead), n0 = drops.length;
+          if (g) { g.stunT = 0; g.hp = 1; hitMonster(g, 5, 0); } F.sim(3, []); drops = drops.slice(0, n0);
+          window.COOP.state.calls = {}; sent.length = 0;
+          push({ t: 'boss_call', n: 'Bo', id: 'gnasher' }); F.sim(2, []);
+          const wait = sent.find(m => m.t === 'boss_wait'), held = !monsters.some(m => m.type === 'gnasher' && !m.dead);
+          window.COOP.state.calls = {};
+          push({ t: 'boss_call', n: 'Bo', id: 'gnasher', first: true }); F.sim(2, []);
+          const firstUp = monsters.filter(m => m.type === 'gnasher' && !m.dead).length === 1;
+          check(P + "(fake NET keeper): after the keeper brings the lab's Gnasher down, a friend's lever call gets boss_wait (to him alone, 178 to 180 s) and spawns nothing; a friend's first fight still wakes it",
+            !!g && !!wait && wait.to === 'Bo' && wait.id === 'gnasher' && wait.left >= 178 && wait.left <= 180 && held && firstUp, { killed: !!g, wait, held, firstUp }); }
         window.INSTANCES.leave(); }
     } finally {
       player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
@@ -15741,8 +15908,10 @@ window.PLACE_KIT = PLACE_KIT;
     for (let r = 1; r < 8; r++) for (let a = 0; a < 12; a++) { const ang = a / 12 * Math.PI * 2; const nx = x + Math.cos(ang) * r * 18, ny = y + Math.sin(ang) * r * 18; if (!collides(nx, ny, 13, 'person')) return { x: nx, y: ny }; }
     return { x, y };
   }
-  function spawnAlly(def, i) {
-    const side = i % 2 ? 1 : -1, p = freeSpotNear(player.x - player.facing.x * 44 + player.facing.y * 34 * side, player.y - player.facing.y * 44 - player.facing.x * 34 * side);
+  // (near: a dragon to stand beside instead of this knight, for a friend's fight when this keeper is not in the lair)
+  function spawnAlly(def, i, near) {
+    const side = i % 2 ? 1 : -1;
+    const p = near ? freeSpotNear(near.x + side * (near.r + 40), near.y + near.r + 30) : freeSpotNear(player.x - player.facing.x * 44 + player.facing.y * 34 * side, player.y - player.facing.y * 44 - player.facing.x * 34 * side);
     const m = { type: 'ally_knight', x: p.x, y: p.y, home: { x: p.x, y: p.y }, r: 13, hp: 999, maxHp: 999, speed: 170, angry: false, state: 'idle', wanderT: 99, wander: { x: 0, y: 0 }, attackCd: 0, hurtT: 0, dead: false, deadT: 0, respawnT: 0, facing: { x: 0, y: 1 }, walkT: 0, moving: false, stunT: 0,
       ally: def.id, allyName: def.name, allyCd: 0.6 + i * 0.4, allySwings: 0, stuckT: 0 };
     monsters.push(m); burst(m.x, m.y, '#9fe0b0', 16, 90); floatText(m.x, m.y - 30, def.name, '#9fe0b0', 13);
@@ -15771,8 +15940,13 @@ window.PLACE_KIT = PLACE_KIT;
     const present = allies();
     // online they walk only on the game that runs the lair (offline, or the map's keeper): anywhere else they would be
     // monsters a non-keeper is not allowed to hold
-    const want = q.formed && inLair && !fq.slain && !player.dead && (!window.NET || !NET.online() || !!(window.COOP && COOP.isKeeper()));
-    if (want) wantedAllies().forEach((d, i) => { if (!present.some(m => m.ally === d.id)) spawnAlly(d, i); });
+    // ... and for a friend's own story fight that this game runs (the keeper slew the Fang already, or never formed his
+    // company): the friend's horn stood the dragon up with friendStory set (28-thefang), wherever the keeper is, and even
+    // while the keeper himself is down
+    const runs = !window.NET || !NET.online() || !!(window.COOP && COOP.isKeeper());
+    const friendFang = runs ? monsters.find(o => o.type === 'the_fang' && !o.dead && !o.remote && o.friendStory) : null;
+    const want = runs && (!!friendFang || (q.formed && inLair && !fq.slain && !player.dead));
+    if (want) wantedAllies().forEach((d, i) => { if (!present.some(m => m.ally === d.id)) spawnAlly(d, i, friendFang && !inLair ? friendFang : null); });
     else if (present.length) removeAllies(false);
     if (!want) return;
     const fang = monsters.find(o => o.type === 'the_fang' && !o.dead);
@@ -15800,6 +15974,8 @@ window.PLACE_KIT = PLACE_KIT;
   });
   HOOKS.kill.push(m => {
     if (m.type !== 'the_fang') return;
+    // a friend's story fight on this game: the company goes home, and nothing of this knight's own story moves
+    if (m.friendStory) { m.friendStory = false; if (allies().length) { say("Hale wipes his blade. 'Dragon dead. Thistledown will sing about your friend for a hundred years.' The Dragon Killers turn for home.", 'Sergeant Hale'); removeAllies(true); } return; }
     const q = DK(); if (!q.formed) return;
     q.slainWith = true;
     if (allies().length) { say("Hale wipes his blade. 'Sergeant Hale reporting: dragon dead. Thistledown will not believe a word of it.' The Dragon Killers turn for home.", 'Sergeant Hale'); removeAllies(true); }
@@ -15879,6 +16055,21 @@ window.PLACE_KIT = PLACE_KIT;
       F.sim(3, []);
       check('dk: killing the summoned Fang with the group → stage 15, the Dragon Killers go home, the log reads for it', fang.dead && fq.slain && quest.stage === 15 && allies().length === 0 && DK().slainWith && /Dragon Killers/.test(questText('main')) && /Duke Ferrin/.test(questText('main')), { dead: fang.dead, stage: quest.stage, allies: allies().length, text: questText('main') });
       drops = drops.filter(d => !(['coins', 'fang_of_the_fang', 'mithril_bar', 'dragon_scale'].includes(d.id) && dist(d.x, d.y, fang.x, fang.y) < 120)); }
+    // online, a friend at stage 14 sounds the horn for his own first fight on a keeper who slew the Fang long ago (and is
+    // nowhere near the lair): the keeper's game brings the Dragon Killers for him, beside the dragon; they go home when it
+    // falls, and nothing of the keeper's own story moves. An Echo a friend calls brings nobody.
+    { const keepFq = JSON.stringify(fq), keepDk = JSON.stringify(DK()), st = quest.stage, n0 = drops.length; removeAllies(false);
+      fq.slain = true; fq.summoned = true; quest.stage = Math.max(16, st); F.tp(111, 48); fang.dead = true; fang.awake = false; F.sim(2, []);
+      HOOKS.bossCall.the_fang.wake('Ann', true); F.sim(3, []);
+      const list = allies(), near = list.length > 0 && list.every(m => dist(m.x, m.y, fang.x, fang.y) < fang.r + 4 * TILE);
+      const r = { up: !fang.dead && !!fang.friendStory, allies: list.length, want: wantedAllies().length, near };
+      fang.hp = 1; fang.stunT = 0; hitMonster(fang, 5, 0); F.sim(2, []);
+      r.after = allies().length; r.slainWith = DK().slainWith === JSON.parse(keepDk).slainWith; r.stage = quest.stage === Math.max(16, st);
+      fang.dead = true; fang.awake = false; F.sim(1, []); HOOKS.bossCall.the_fang.wake('Ann', false); F.sim(3, []); r.echo = allies().length;
+      fang.dead = true; fang.awake = false; fang.respawnT = Infinity; fang.friendStory = false; removeAllies(false);
+      check("dk: online, a friend's own first Fang on a keeper who slew it already brings the Dragon Killers beside the dragon; they go home when it falls; the keeper's story is untouched; a friend's Echo brings nobody",
+        r.up && r.allies === r.want && r.want >= 1 && r.near && r.after === 0 && r.slainWith && r.stage && r.echo === 0, r);
+      Object.assign(fq, JSON.parse(keepFq)); quest.dk = JSON.parse(keepDk); quest.stage = st; drops = drops.slice(0, n0); }
     // tidy: the Fang stays slain as the lair's own test left it; the group is formed and done
     fq.slain = slain0 || fq.slain; quest.stage = st0; while (countItem('dragon_horn') > 0) removeItem('dragon_horn', 1); removeAllies(false); F.tp(111, 48); F.sim(2, []); drain(); closePanel(); h.peace(false); save();
     void dk0;
@@ -17696,7 +17887,7 @@ window.PLACE_KIT = PLACE_KIT;
     // Aerie (36-skycity, the walled kingdom of 91-cloudkingdom): the Queen, Halcyon and the leap from SKYCITY, then every
     // resident, all twelve doors, the maze's middle, the Long Rail and both royal updraft stones from KINGDOM.KNOWN
     const SKYK = window.SKYCITY ? [[SKYCITY.SKY_NPCS[0].name, SKYCITY.SKY_NPCS[0].x, SKYCITY.SKY_NPCS[0].y], [SKYCITY.SKY_NPCS[1].name, SKYCITY.SKY_NPCS[1].x, SKYCITY.SKY_NPCS[1].y], ['the leap down', SKYCITY.LEAP_T[0], SKYCITY.LEAP_T[1]]] : [];
-    const KNOWN = { aerie: SKYK.concat(window.KINGDOM && Array.isArray(KINGDOM.KNOWN) ? KINGDOM.KNOWN : []), tinker_lab: [['Tinkerton (lab)', 4, 3], ['the Gnasher rug', 12, 9], ['the arena lever', 21, 15]], afterlands: [['the fire', 30, 8], ['Count Ashvane', 46, 18], ['the crypt door out', 30, 2]], spider_den: [['the chest', 3, 26], ['the Brood Mother', 12, 22]], war_shed: [['the boiler valve', 14, 3], ['the stocks', 14, 9]] };
+    const KNOWN = { aerie: SKYK.concat(window.KINGDOM && Array.isArray(KINGDOM.KNOWN) ? KINGDOM.KNOWN : []), tinker_lab: [['Tinkerton (lab)', 4, 3], ['the Gnasher rug', 12, 9], ['the arena lever', 21, 15]], afterlands: [['the fire', 30, 8], ['Count Ashvane', 46, 18], ['the crypt door out', 30, 2]], spider_den: [['the chest', 3, 26], ['the Brood Mother', 12, 22]], war_shed: [['the boiler valve', 14, 7], ['the stocks', 14, 11]] };
     // Deepholm's people and its way out (24-dwarves): they used to be overworld targets at 2–26, 72–94, and
     // the same walk is proved here instead — from the foot of the ladder to every dwarf and back to the ladder.
     if (window.DEEPHOLM) KNOWN.deepholm = [...DEEPHOLM.DWARVES.map(d => [d.name, d.x, d.y]), ['the ladder out', DEEPHOLM.LADDER.x, DEEPHOLM.LADDER.y],
@@ -27847,7 +28038,8 @@ const HK = (() => {
     const phone = L.fam === 'phoneP' || L.fam === 'phoneL';
     const list = [];
     if (typeof levelBanner !== 'undefined' && levelBanner) list.push({ kind: 'level', title: levelBanner.text, sub: levelBanner.sub, t: levelBanner.t });
-    if (typeof areaBanner !== 'undefined' && areaBanner) list.push({ kind: 'area', title: String(areaBanner.name).toUpperCase(), sub: areaBanner.sub, t: areaBanner.t });
+    // (a place's name waits while a page is open: on a phone it was drawn over the quest page; it runs down as before)
+    if (typeof areaBanner !== 'undefined' && areaBanner && !(typeof panel !== 'undefined' && panel)) list.push({ kind: 'area', title: String(areaBanner.name).toUpperCase(), sub: areaBanner.sub, t: areaBanner.t });
     // the banners waiting in bannerQueue (04-state) are not drawn here: they come up one at a time after the live one
     FRAME.bannerOnNotice = false;
     if (!list.length) return;
@@ -29036,7 +29228,9 @@ HOOKS.selfTest.push((check, F, h) => {
       }
       // stack and split share the knight's row: the knight, the worn pouches in two rows, Take and Wear stacked
       const inner = Math.min(maxW - 36, 340);
-      const wornCols = Math.ceil(nEq / 2), ww = grid(wornCols), pw0 = 60;
+      // the knight's picture gives up a little width (60 px, down to 44) so Take / Wear keep a 44 px column on the narrowest
+      // phone (320 px wide): without it no shape fitted and the bank fell back to the computer's wide shape, off the screen
+      const wornCols = Math.ceil(nEq / 2), ww = grid(wornCols), pw0 = Math.max(44, Math.min(60, inner - 12 - ww - 12 - R));
       const modeX = pw0 + 12 + ww + 12, modeW = inner - modeX;
       if (modeW < R) return null;
       const cols = Math.min(10, Math.floor((inner + G) / (S + G)));
@@ -29530,7 +29724,7 @@ HOOKS.selfTest.push((check, F, h) => {
   // ---------- what the world already holds ----------
   const SHOP_BY_ID = { dunstan: 'dung' };                 // his NPC record carries the role, not the shop key
   const SHOP_BY_ROLE = { trader: 'trader' };              // 06-systems opens Fennick's stall as shop 'trader'
-  const QUEST_ROLES = { duke: 1, bread: 1, hermit: 1, captain: 1, warden: 1, survivor: 1, dungfarmer: 1 };
+  const QUEST_ROLES = { duke: 1, bread: 1, hermit: 1, captain: 1, warden: 1, survivor: 1, dungfarmer: 1, td_bell: 1 };
   // people who live on a feature's own list rather than in NPCS (dwarves, elves): found live through TAP_PEOPLE
   const PEOPLE = {
     brunhild: { kind: 'shop', shop: 'dwarf' },
@@ -37488,7 +37682,8 @@ window.RETALIATE = RETALIATE;
       return false;
     }
     S.calls[msg.id] = time;
-    h.wake(msg.n);
+    // (first: the asker's own story fight, which a boss file may stage differently, as 37 brings the Dragon Killers)
+    h.wake(msg.n, msg.first === true);
     let line = null; try { line = typeof h.told === 'function' ? h.told(msg.n) : null; } catch (e) { line = null; }
     notify(typeof line === 'string' && line ? line : `${msg.n} called ${h.name || msg.id}.`);
     return true;
@@ -68647,6 +68842,44 @@ const MOUNT_LOOK = (() => {
   // every generation starts with the outlines OFF, so a second new game reads the same regions the first did
   { const _generateWorld = generateWorld; generateWorld = () => { ON = false; _generateWorld(); }; }
 
+  // ---------- old saves: nothing of a knight's left inside the new rock ----------
+  // A save from before the land was cut into steps can hold a change on a cell that is rock now: a stump (a tree he
+  // chopped there, waiting to grow back), a plank, a door. It was drawn in the cliff, and a plank picked up there left
+  // grass: a gap through the scarp. Every load undoes such a change (the rock comes back, its regrowth and any fire or crop
+  // there go, and a thing he placed is given back: the pack, else the bank, else the ground at his feet). A machine, a
+  // wreck or the mare is left where it is. New changes on rock cannot be made (rock is solid and cannot be chopped), so
+  // this only ever touches old saves, and a second load changes nothing. WS.rock: the rock cells as the world is made.
+  const ROCK_KEEP = () => new Set(['MECH', 'WRECK', 'DOZER', 'DOZER_WRECK', 'BEAST', 'BEAST_WRECK', 'HORSE'].map(n => T[n]).filter(t => typeof t === 'number'));
+  { const _generateWorld = generateWorld;
+    generateWorld = function () {
+      const r = _generateWorld.apply(this, arguments);
+      WS.rock = new Map(); for (let i = 0; i < map.length; i++) if (map[i] === CLIFF || map[i] === STEPS) WS.rock.set(i, map[i]);
+      return r;
+    }; }
+  WS.unrocked = { cells: 0, refunds: {} };
+  function clearRock() {
+    if (!WS.rock || !WS.rock.size) return 0;
+    const keep = ROCK_KEEP(), back = { pack: {}, bank: {}, ground: {} }; let n = 0;
+    for (const [i, t] of [...mapDiffs.entries()]) {
+      const rock = WS.rock.get(i); if (rock === undefined || t === rock || keep.has(t)) continue;
+      const x = i % MAP_W, y = Math.floor(i / MAP_W);
+      setTile(x, y, rock); mapDiffs.delete(i); miniDirtyTiles.add(i); n++;
+      regrow = regrow.filter(r => r.i !== i); crops = crops.filter(c => c.i !== i); fires = fires.filter(f => f.i !== i);
+      const name = tileName(t), id = Object.keys(ITEMS).find(k => ITEMS[k] && ITEMS[k].place === name);
+      if (id) { if (!addItem(id, 1)) back.pack[id] = (back.pack[id] || 0) + 1; else if (bankAdd(id, 1)) back.bank[id] = (back.bank[id] || 0) + 1; else { back.ground[id] = (back.ground[id] || 0) + 1; drops.push({ x: player.x, y: player.y, id, qty: 1, t: 0 }); } }
+    }
+    if (!n) return 0;
+    if (collides(player.x, player.y, player.r, playerWho())) { const sp = safeSpot(player.x, player.y, player.r, playerWho()) || respawnPoint(); player.x = sp.x; player.y = sp.y; }
+    WS.unrocked.cells += n; for (const w of ['pack', 'bank', 'ground']) for (const id in back[w]) WS.unrocked.refunds[id] = (WS.unrocked.refunds[id] || 0) + back[w][id];
+    const words = (o, where) => { const ids = Object.keys(o); if (!ids.length) return null; const part = id => `${o[id]} ${(ITEMS[id].name || id).toLowerCase()}${o[id] === 1 || /s$/i.test(ITEMS[id].name || id) ? '' : 's'}`; const list = ids.length === 1 ? part(ids[0]) : ids.slice(0, -1).map(part).join(', ') + ' and ' + part(ids[ids.length - 1]); return where === 'ground' ? `On the ground by you: ${list}.` : `Back in your ${where}: ${list}.`; };
+    const lines = ['pack', 'bank', 'ground'].map(w => words(back[w], w)).filter(Boolean);
+    if (lines.length) { say('The land has changed since you were last here: what you left where the rock now stands is yours again.', 'The Voice'); for (const l of lines) say(l, 'The Voice'); }
+    miniDirty = true; save();
+    return n;
+  }
+  WS.clearRock = clearRock;
+  { const _load = load; load = function () { const ok = _load.apply(this, arguments); if (ok) clearRock(); return ok; }; }
+
   HOOKS.world.push((rnd0, api) => {
     const rnd = mulberry32(SEED);                  // its own stream: what drew before this must not move the result
     const set = api.setTile, at = api.tileAt;
@@ -70795,7 +71028,7 @@ const MOUNT_LOOK = (() => {
     '-#.+@@@@+++++++++++++++n++l==ln+++++++++++++="j~~bb~~~".#-',
     '-#.+@@@@.@@@@==@@@@@+N+++++==++++++,,l++@@@@="~~~bb~~~".#-',
     '-TT+@@@@.@@@@==@@@@@++++SS+==+++SS+,,+++@@@@=t~~~bb~~~tTT-',
-    '-TT+@@@@.@@@@==@@@@@+++++++==++++++,,+++@@@@=""n"++"n**TT-',
+    '-TT+@@@@.@@@@==@@@@@+++++++==++++++,,+++@@@@=""n"++""**TT-',
     '-TT+l++++@@@@++@@@@@l++++++==++++l+++l++@@@@=hhhh++hhhhTT-',
     '-G======================================================G-',
     '-G======================================================G-',
@@ -70808,8 +71041,8 @@ const MOUNT_LOOK = (() => {
     '-#,,cc@@@@@@@,,@@@@@@@+++++++++++++++@@@@@==@@@@""@@@@@.#-',
     '-#ffff@@@@@@@,,@@@@@@@++l++++p+l++++++++++==+++l+++++++.#-',
     '-#,,,,@@@@@@@,,ww,,~~~~~~~~bb~~~~~~~~~~+++==+++++++++++.#-',
-    '-#,,u,f,,,,A,,,,,,,~CCCCCCCPPCCCCCCCCC~+++==+++,,**""t"TT-',
-    '-#,,,,g,,,,,D,q,,,,~C++++++++++++++++C~+++==+++,,""""""TT-',
+    '-#,,u,fw+++A,,,+++w~CCCCCCCPPCCCCCCCCC~+++==+++,,**""t"TT-',
+    '-#,,,,g++++,D,q++++~C++++++++++++++++C~+++==+++,,""""""TT-',
     '-#,,u,f,,,,,,,,,,,,~C++++++++++++++++C~@@@@@@@@,,""FF"n.#-',
     '-#,,,,f,,,,,,,,,,,,~C++++++++++++++++C~@@@@@@@@,,""FF"".#-',
     '-#fffff"@@@@""@@@@"~C+++@@@@@@@@@@+++C~@@@@@@@@,,"""""".#-',
@@ -70879,8 +71112,9 @@ const MOUNT_LOOK = (() => {
   const BELL = { x: 111, y: 15, w: 2, h: 2, stand: [[111, 17], [112, 17]], plaza: [[109, 15, 110, 18], [113, 15, 114, 16]] };
   const SUNDIAL = { x: 132, y: 18, stand: [133, 18], mazeGate: [133, 23] };
   const POND = { x0: 130, y0: 25, x1: 137, y1: 28, bridge: [133, 134], jetty: [130, 26], boat: [130, 27], swans: [{ x0: 131, x1: 132, y0: 25, y1: 28 }, { x0: 135, x1: 137, y0: 25, y1: 28, ducklings: 4 }] };
-  // bunting strung between two lamp heads
-  const BUNTING = [[[88, 30], [90, 34]], [[104, 30], [103, 34]], [[121, 30], [124, 34]], [[110, 26], [113, 26]]];
+  // bunting strung between two lamp heads (the first runs along the south pavement: strung from 88,30 to 90,34 it crossed
+  // the High Street in the West Gate's mouth, over the face of every knight walking in)
+  const BUNTING = [[[90, 34], [95, 34]], [[104, 30], [103, 34]], [[121, 30], [124, 34]], [[110, 26], [113, 26]]];
   // Tess and Robin play tag round the fountain: a U path, ping-pong, by the wall clock (not Nell: Nell is the Hollowford
   // survivor who runs the rebuild, and a second Nell would muddle her story)
   const KIDS = { path: [[109, 34], [109, 37], [114, 37], [114, 34]], speed: 1.6, lag: 1.2, names: ['Tess', 'Robin'] };
@@ -71045,7 +71279,8 @@ const MOUNT_LOOK = (() => {
   // =========================================================================
   // 2. the buildings and the people
   // =========================================================================
-  // the seventeen buildings of the town draw themselves here (drawBuilding is wrapped below); Death's House keeps the core's art
+  // the sixteen buildings of the town draw themselves here (drawBuilding is wrapped below), and Death's House with its own
+  // painter (drawDeathHouse)
   const TOWN_IDS = new Set(['store', 'bank', 'bakery', 'smithy', 'workshop', 'inn', 'keep', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9']);
   BUILDINGS.forEach(b => { if (TOWN_IDS.has(b.id)) b.town = true; });
   const TOWN_BUILDINGS = () => BUILDINGS.filter(b => b.town);
@@ -71107,7 +71342,7 @@ const MOUNT_LOOK = (() => {
   function snap() {
     for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) base[j * W + i] = tileAt(X0 + i, Y0 + j);
     snapped = true; SNAP.spawns = MONSTER_SPAWNS.length;
-    for (const k of CHUNKS.keys()) CHUNKS.delete(k);
+    for (const [k, o] of [...CHUNKS]) dropChunk(k, o);
   }
   const baseAt = (x, y) => inPlan(x, y) ? base[pi(x, y)] : -1;
   // the ground layer paints a cell only while it is still what the world made it
@@ -71140,6 +71375,26 @@ const MOUNT_LOOK = (() => {
   const VEHICLE_NAMES = ['MECH', 'WRECK', 'DOZER', 'DOZER_WRECK', 'BEAST', 'BEAST_WRECK', 'HORSE'];
   const vehicleTiles = () => new Set(VEHICLE_NAMES.map(n => T[n]).concat(window.MOUNTS && MOUNTS.tiles ? [MOUNTS.tiles.HORSE] : []).filter(t => typeof t === 'number'));
   const MIG = { reverted: 0, kept: 0, moved: 0, refunds: [], log: [] };
+  // The town's buildings as they stood before the rebuild (x, y, w, h, from master's 02-world before 50dbe74). A knight's
+  // change on what was outdoor ground then and is a new house's floor now is undone like one in a hedge: a plank, a bed or
+  // the mare is not left in somebody's house. A change inside a building that stood there before is still his.
+  const OLD_RECTS = [[90, 20, 7, 6], [99, 20, 8, 6], [122, 20, 6, 6], [90, 36, 7, 6], [99, 36, 7, 6], [122, 44, 8, 6], [108, 46, 10, 7], [133, 48, 6, 5],
+    [130, 20, 5, 5], [88, 28, 4, 4], [94, 28, 4, 4], [124, 27, 4, 4], [130, 27, 5, 4], [92, 46, 4, 4], [98, 46, 4, 4], [134, 36, 5, 4], [126, 36, 4, 4]];
+  const wasIndoors = (x, y) => OLD_RECTS.some(([bx, by, bw, bh]) => x >= bx && x < bx + bw && y >= by && y < by + bh);
+  const newIndoors = (x, y) => { const b = buildingAt(x, y); return !!b && inTown(x, y) && !wasIndoors(x, y); };
+  // the High Street, gate to gate (rows 31..33): an old save's solid thing there (a plank, a fence, a door, a walker wreck)
+  // is taken off it, so the road is clear for riders from gate to gate
+  const onHighStreet = (x, y) => y >= 31 && y <= 33 && x >= 86 && x <= 139;
+  // the inn moved one tile east: its bed was at 128,48 and is at 129,48
+  const OLD_INN_BED = [128, 48], INN_BED = [129, 48];
+  // "17 planks, 1 bed and 1 lodestone"
+  const many = (n, w) => n === 1 || /s$/.test(w) ? w : w + 's';
+  function refundWords(o, where) {
+    const parts = Object.keys(o).map(id => `${o[id]} ${many(o[id], (ITEMS[id].name || id).toLowerCase())}`);
+    if (!parts.length) return null;
+    const list = parts.length === 1 ? parts[0] : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+    return where === 'ground' ? `On the ground by you: ${list}.` : `Back in your ${where}: ${list}.`;
+  }
   function placedItemFor(t) {
     const name = tileName(t);
     for (const id in ITEMS) if (ITEMS[id] && ITEMS[id].place === name) return id;
@@ -71168,14 +71423,16 @@ const MOUNT_LOOK = (() => {
     if (away() || !snapped) return null;
     const pre = player.cityV !== 1;
     const open = OPEN(), clear = keepClear(), H0 = window.MOUNTS ? MOUNTS.tiles.HORSE : -1, VEH = vehicleTiles();
-    const refund = { pack: {}, bank: {} };
+    const refund = { pack: {}, bank: {}, ground: {} };
     let changed = 0;
     if (pre) for (const [i, t] of [...mapDiffs.entries()]) {
       const x = i % MAP_W, y = Math.floor(i / MAP_W);
       if (x < RECT.x0 || x > RECT.x1 || y < RECT.y0 || y > RECT.y1) continue;
       const b = base[pi(x, y)];
       if (t === b) continue;
-      if (open.has(b) && !clear.has(i)) { MIG.kept++; continue; }
+      // (a fire burns down to ashes by itself: it stays, as a fire anywhere else on a street does)
+      const blocks = (SOLID.has(t) || PUSH_THROUGH.has(t) || VEH.has(t)) && t !== T.FIRE;
+      if (open.has(b) && !clear.has(i) && !newIndoors(x, y) && !(onHighStreet(x, y) && blocks)) { MIG.kept++; continue; }
       // undo it: the ground the city has there, with no crop, fire or regrowth left behind
       setTile(x, y, b); mapDiffs.delete(i); miniDirtyTiles.add(i); changed++;
       crops = crops.filter(c => c.i !== i); fires = fires.filter(f => f.i !== i); regrow = regrow.filter(r => r.i !== i);
@@ -71197,7 +71454,8 @@ const MOUNT_LOOK = (() => {
       const id = placedItemFor(t);
       if (id) {
         const left = addItem(id, 1);
-        if (left) { if (bankAdd(id, 1)) refund.bank[id] = (refund.bank[id] || 0) + 1; }
+        // a full pack and a full bank: it waits on the ground by the knight, and he is told (never lost without a word)
+        if (left) { if (bankAdd(id, 1)) refund.bank[id] = (refund.bank[id] || 0) + 1; else refund.ground[id] = (refund.ground[id] || 0) + 1; }
         else refund.pack[id] = (refund.pack[id] || 0) + 1;
       }
     }
@@ -71206,21 +71464,29 @@ const MOUNT_LOOK = (() => {
     // a tile or two to the side of the stone when something solid stands just south of it, so a home is kept while any
     // lodestone is within 3 tiles of it (a home made in the new city is never touched: the pass runs once per knight)
     const tileOfPx = p => [Math.floor(p.x / TILE), Math.floor(p.y / TILE)];
-    if (pre && player.bedSpawn) { const [x, y] = tileOfPx(player.bedSpawn); if (inTown(x, y) && tileAt(x, y) !== T.BED) player.bedSpawn = null; }
+    // a knight who paid Dorran and slept at the inn wakes at the inn's bed, one tile east of where it stood; any other bed the
+    // pass took away is gone, and he is told where he will wake
+    let bedLost = false;
+    if (pre && player.bedSpawn) {
+      const [x, y] = tileOfPx(player.bedSpawn);
+      if (x === OLD_INN_BED[0] && y === OLD_INN_BED[1] && tileAt(...INN_BED) === T.BED) player.bedSpawn = { x: tc(INN_BED[0]), y: tc(INN_BED[1]) };
+      else if (inTown(x, y) && tileAt(x, y) !== T.BED) { player.bedSpawn = null; bedLost = true; }
+    }
     if (pre && player.home) { const [x, y] = tileOfPx(player.home); if (inTown(x, y) && !nearestTileOfType(x, y, T.LODESTONE, 3)) player.home = null; }
     // and the knight himself, out of anything solid
-    if (collides(player.x, player.y, player.r, playerWho())) { const sp = safeSpot(player.x, player.y, player.r, playerWho()) || respawnPoint(); player.x = sp.x; player.y = sp.y; }
+    if (collides(player.x, player.y, player.r, playerWho())) { const sp = safeSpot(player.x, player.y, player.r, playerWho()) || respawnPoint(); player.x = sp.x; player.y = sp.y; MIG.unstuck = (MIG.unstuck || 0) + 1; }
+    // what neither the pack nor the bank could take lies by him, where he now stands
+    for (const id of Object.keys(refund.ground)) drops.push({ x: player.x + rint(-10, 10), y: player.y + rint(-10, 10), id, qty: refund.ground[id], t: 0 });
     miniDirty = true;
     // one line per knight, the first time he loads into the new city
     const lines = [];
     if (pre && player.visitedVillage) {
       lines.push('Thistledown has been rebuilt while you were away. Go and see the Great Fountain.');
-      const words = (o, where) => { const parts = Object.keys(o).map(id => `${o[id]} ${(ITEMS[id].name || id).toLowerCase()}`); return parts.length ? `Back in your ${where}: ${parts.join(', ')}.` : null; };
-      const a = words(refund.pack, 'pack'), b2 = words(refund.bank, 'bank');
-      if (a) lines.push(a); if (b2) lines.push(b2);
+      for (const w of ['pack', 'bank', 'ground']) { const l = refundWords(refund[w], w); if (l) lines.push(l); }
+      if (bedLost) lines.push('The bed you slept in is gone. Until you sleep somewhere new, you will wake by the Great Fountain.');
       for (const l of lines) say(l, 'The Voice');
     }
-    if (Object.keys(refund.pack).length || Object.keys(refund.bank).length) MIG.refunds.push(refund);
+    if (Object.keys(refund.pack).length || Object.keys(refund.bank).length || Object.keys(refund.ground).length) MIG.refunds.push(refund);
     if (pre) { player.cityV = 1; save(); }
     return { changed, lines, refund };
   }
@@ -71250,9 +71516,12 @@ const MOUNT_LOOK = (() => {
   // counters that only change which line comes next (not saved)
   const TALK = { ambrose: 0, wynn: 0 };
   const DUCHESS_LINE = 'Duchess came back for her cream last night. The bell rang once. Nobody minded.';
+  const AMBROSE_HELLO = 'I ring the bell at dawn and at dusk. When you hear it at dusk, get indoors or get your sword out.';
   HOOKS.talk.td_bell = n => {
     const q = Q(), s = q.bell, who = n.name;
     if (s === 0 && quest.stage >= 6) {
+      // a knight meeting him for the first time hears who he is before the story (after the Duke, the first talk is both)
+      if (!q.ambroseMet) say(AMBROSE_HELLO, who);
       q.bell = 1; q.ambroseMet = true;
       say('Knight, may I ask you something? It will sound silly.', who);
       say('Every night at midnight, my bell rings once. Bong. Just once. Nobody is in the tower, and I have the only key.', who);
@@ -71267,10 +71536,10 @@ const MOUNT_LOOK = (() => {
     if (s === 4) {
       q.bell = 5;
       say('Grey fur and a gold thistle? Then it is no ghost.', who);
-      say('Here, take the key. Climb up the Bell Tower and look at the bell. Quietly.', who);
+      say('I will unlock the tower door for you. Climb up the Bell Tower and look at the bell. Quietly.', who);
       save(); return;
     }
-    if (s === 5) { say('The key is yours. Climb the Bell Tower and look at the bell. Quietly.', who); return; }
+    if (s === 5) { say('The tower door is open. Climb the Bell Tower and look at the bell. Quietly.', who); return; }
     if (s === 6) {
       q.bell = 'done';
       say('A grey cat with a purple collar? That is Duchess, the Duke\'s own cat. He has been looking for her all week.', who);
@@ -71280,12 +71549,12 @@ const MOUNT_LOOK = (() => {
       banner('NO GHOST', 'The Bell at Midnight'); save();
       return;
     }
-    if (!q.ambroseMet) { q.ambroseMet = true; say('I ring the bell at dawn and at dusk. When you hear it at dusk, get indoors or get your sword out.', who); save(); return; }
+    if (!q.ambroseMet) { q.ambroseMet = true; say(AMBROSE_HELLO, who); save(); return; }
     if (storyDone() && TALK.ambrose++ % 2 === 1) { say(DUCHESS_LINE, who); return; }
     say(timeLine(), who);
   };
   const OSRIC = q => [
-    'Welcome to Thistledown, knight. The High Street runs gate to gate. The Great Fountain is in the middle, and the castle is just past it.',
+    'Welcome to Thistledown, knight. The High Street runs gate to gate. The Great Fountain is in the middle, and the castle is south of it, across the moat.',
     quest.walkerKilled ? 'They say you brought down the goblin walker. The watch has never slept so well.' : 'The gates stay open day and night. Horses ride through. Goblins do not.',
     'The smithy and the tinker are on your right as you come in. Sergeant Hale drills in the yard behind them.',
   ];
@@ -71399,13 +71668,19 @@ const MOUNT_LOOK = (() => {
   const great = FOUNTAINS.find(f => f.id === 'great');
   const greatC = { x: (great.x + great.w / 2) * TILE, y: (great.y + great.h / 2) * TILE };
   function splash() { burst(greatC.x + (Math.random() - 0.5) * 50, greatC.y - 6, '#bfe6ff', 12, 70); sfx('splash'); }
+  // the fountain's line takes the place of the one it is showing, so E pressed again and again (a keyboard: E does not turn
+  // the page) shows each toss at once instead of stacking them behind the first
+  function fountainSays(text, who) {
+    if (dialog.cur && dialog.cur.who === who) { dialog.cur = { text, who }; dialog.shown = 0; dialog.t = 0; dialog.queue = dialog.queue.filter(l => l.who !== who); }
+    else say(text, who);
+  }
   function useGreat() {
     const q = Q(), who = 'The Great Fountain', now = time + 1;
     const armed = q.tossArmed > 0 && now >= q.tossArmed && now - q.tossArmed <= 6;
-    if (!armed) { q.tossArmed = now; say(lineFor(great.x, great.y)[1], who); return; }
-    if (coins() < 1) { say('You have no coins to toss.', who); return; }
+    if (!armed) { q.tossArmed = now; fountainSays(lineFor(great.x, great.y)[1], who); return; }
+    if (coins() < 1) { fountainSays('You have no coins to toss.', who); return; }
     payCoins(1); const line = TOSS[q.tossed % TOSS.length]; q.tossed++; q.tossArmed = now;
-    splash(); say(line, who); save();
+    splash(); fountainSays(line, who); save();
   }
   // the story's two places: the sundial in the maze, and the Bell Tower
   function useSundial() {
@@ -71419,19 +71694,19 @@ const MOUNT_LOOK = (() => {
     }
     say(SUNDIAL_LINE, 'Sundial');
   }
-  const BELLST = { prev: null, swingT0: -99, rings: 0 };
+  const BELLST = { prev: null, swingT0: -99, rings: 0, midnights: 0 };
   const CAT = { t0: -99 };
   const BELL_TOP = { x: (PLAN.BELL.x + 1) * TILE, y: (PLAN.BELL.y + PLAN.BELL.h) * TILE - 210 };
-  function ringBell() {
+  function ringBell(word) {
     BELLST.swingT0 = time; BELLST.rings++;
     sfx('bell');
-    if (!away()) floatText(BELL_TOP.x, BELL_TOP.y, 'DONG', '#f5c542', 20);
+    if (!away()) floatText(BELL_TOP.x, BELL_TOP.y, word || 'DONG', '#f5c542', 20);
   }
   function useBell() {
     const q = Q();
     if (q.bell === 5) {
       q.bell = 6;
-      say('You climb the steps to the belfry. Two green eyes look back at you from the dark.', 'The Voice');
+      say('You climb the steps to the top of the tower, where the bell hangs. Two green eyes look back at you from the dark.', 'The Voice');
       say('A big grey cat is curled up on the bell, where the sun has warmed it all day. She yawns.', 'The Voice');
       say('She jumps down past you, and her tail catches the rope. The bell rings. BONG.', 'The Voice');
       say('Round her neck is a purple collar. The little gold charm is missing from it.', 'The Voice');
@@ -71535,10 +71810,28 @@ const MOUNT_LOOK = (() => {
     }
     return null;
   }
+  // A tap on greenery or water that no one can stand beside (the middle of a hedge bed, Swan Pond where the swans swim, the
+  // castle moat's far sides) walks to the nearest cell of the same bed, or of the same water, that can be reached, instead of
+  // the core's "You can't get there." (fishing works from that shore). Nearest first, 10 cells round at most, 4 tries.
+  const TWIN_R = 10;
+  function reachableTwin(p) {
+    const water = p.t === T.WATER, k = water ? null : kindAt(p.tx, p.ty);
+    const same = (x, y) => water ? tileAt(x, y) === T.WATER : tileAt(x, y) === HEDGE && kindAt(x, y) === k;
+    const cands = [];
+    for (let r = 1; r <= TWIN_R; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const x = p.tx + dx, y = p.ty + dy;
+      if (inTown(x, y) && same(x, y) && N4.some(([a, b]) => !SOLID.has(tileAt(x + a, y + b)))) cands.push([x, y, dx * dx + dy * dy]);
+    }
+    cands.sort((a, b) => a[2] - b[2]);
+    for (const [x, y] of cands.slice(0, 4)) if (tapPathTo(x, y, true)) return [x, y];
+    return null;
+  }
   { const _tapPick = tapPick;
     tapPick = function (sx, sy) {
       const p = _tapPick(sx, sy);
       if (!p || away() || p.kind !== 'use' || !inTown(p.tx, p.ty)) return p;
+      if ((p.t === HEDGE || p.t === T.WATER) && !tapPathTo(p.tx, p.ty, true)) { const r = reachableTwin(p); return r ? Object.assign({}, p, { tx: r[0], ty: r[1] }) : p; }
       const k = kindAt(p.tx, p.ty);
       if (!(p.t === FOUNT || k === 'bell')) return p;
       const middle = p.t === FOUNT && fountainAt(p.tx, p.ty) === great && p.ty === 35 && (p.tx === 111 || p.tx === 112);
@@ -71551,10 +71844,26 @@ const MOUNT_LOOK = (() => {
   // Great Fountain, the villager by the waiting plinth): the core talks to the person in front first. A person standing on
   // the faced cell itself still answers, and so does one standing between the knight and the thing (nearer along the way
   // the knight faces, and not off to one side), and so do the sellers over their stall counters.
+  // A TAP on a town thing (a stall, a bench, a hedge, a lamp, a statue) is aimed at the thing, not at whoever stands near it:
+  // it answers as the thing from every side, the sellers' stalls too (E still talks to a seller over the counter, and a tap
+  // on the seller talks to her). Only a person standing on the tapped cell itself answers instead. TAPPED is set while
+  // 17-tap's tapUseNow uses the cell the knight tapped.
+  let TAPPED = null;
+  { const _tapUseNow = tapUseNow;
+    tapUseNow = function () {
+      const u = tap.useTile;
+      if (!u || away() || !inTown(u.tx, u.ty)) return _tapUseNow();
+      const t = tileAt(u.tx, u.ty);
+      if (!((t === PROP || t === FOUNT || t === HEDGE) && kindAt(u.tx, u.ty))) return _tapUseNow();
+      TAPPED = { tx: u.tx, ty: u.ty };
+      try { return _tapUseNow(); } finally { TAPPED = null; }
+    };
+  }
   { const _npcInFront = npcInFront;
     npcInFront = function () {
       const n = _npcInFront();
       if (!n || away()) return n;
+      if (TAPPED) return Math.floor(n.px / TILE) === TAPPED.tx && Math.floor(n.py / TILE) === TAPPED.ty ? n : null;
       const ft = frontTile(player), tx = ft.tx, ty = ft.ty;
       if (!inTown(tx, ty)) return n;
       const t = tileAt(tx, ty);
@@ -71572,10 +71881,13 @@ const MOUNT_LOOK = (() => {
   // 8. every tick: the wards, Osric's welcome, the plinth, the bell
   // =========================================================================
   const WARD = { name: null, shown: null, since: -1e9, region: null, log: [] };
-  const BARK = { t: 0, pending: false, log: [] };
+  const BARK = { t: 0, pending: false, quiet: 0, log: [] };
   // a banner across the top of the screen that the welcome tag would sit under, or a talk box (on a phone the Voice's box
   // is at the top of the screen, right where the tag is)
-  const bannerUp = () => !!(dialog.cur || (areaBanner && areaBanner.t > 0.3) || (typeof levelBanner !== 'undefined' && levelBanner && levelBanner.t > 0.3));
+  // (while it fades too: at 0.3 s left a phone's THISTLEDOWN plate still showed, right over the tag)
+  const bannerUp = () => !!(dialog.cur || (areaBanner && areaBanner.t > 0) || (typeof levelBanner !== 'undefined' && levelBanner && levelBanner.t > 0));
+  // and a short breath after the banner has gone, so the two never arrive together
+  const BARK_QUIET = 0.4;
   const PL = PLAN.PLINTH;
   HOOKS.update.push(dt => {
     const q = Q();
@@ -71596,28 +71908,34 @@ const MOUNT_LOOK = (() => {
       const d = dist(player.x, player.y, os.px, os.py);
       if (d <= 3 * TILE) BARK.pending = true;
       else if (d > 9 * TILE) BARK.pending = false;
-      if (BARK.pending && !bannerUp()) { BARK.pending = false; q.barked = true; BARK.t = 4; BARK.log.push({ t: time, area: !!areaBanner, level: !!levelBanner }); save(); }
+      if (BARK.pending && !bannerUp()) BARK.quiet += dt; else BARK.quiet = 0;
+      if (BARK.pending && BARK.quiet >= BARK_QUIET) { BARK.pending = false; BARK.quiet = 0; q.barked = true; BARK.t = 4; BARK.log.push({ t: time, area: !!areaBanner, level: !!levelBanner }); save(); }
     }
     // the waiting plinth, once it holds the knight who slew the Fang
     if (statueDone() && !q.plinthTold && !dialog.cur && !dialog.queue.length && dist(player.x, player.y, tc(PL.x), tc(PL.y)) <= 8 * TILE) {
       q.plinthTold = true; say('The empty plinth by the castle gate is empty no longer.', 'The Voice'); save();
     }
   });
-  // the bell rings at dawn and at dusk, for a knight in the town or the castle
+  // the bell rings at dawn and at dusk, for a knight in the town or the castle; and once at midnight, BONG, as the story
+  // says (Duchess jumping down off it: the ghost of The Bell at Midnight), the middle of the night on the day clock
+  const MIDNIGHT = N0 => N0.LIGHT + N0.DUSK + (N0.DAY - N0.LIGHT - N0.DUSK) / 2;
   HOOKS.update.push(() => {
     const N = window.NIGHT; if (!N) return;
     const t = N.dayT();
     if (BELLST.prev !== null && !away()) {
       const dawn = t < BELLST.prev && BELLST.prev - t > N.DAY / 2;
       const dusk = BELLST.prev < N.LIGHT && t >= N.LIGHT && t - BELLST.prev < N.DAY / 2;
-      if ((dawn || dusk) && (player.region === 'Thistledown' || player.region === 'Castle Thistledown')) ringBell();
+      const mid = MIDNIGHT(N), midnight = BELLST.prev < mid && t >= mid && t - BELLST.prev < N.DAY / 2;
+      const here = player.region === 'Thistledown' || player.region === 'Castle Thistledown';
+      if ((dawn || dusk) && here) ringBell();
+      else if (midnight && here) { ringBell('BONG'); BELLST.midnights++; }
     }
     BELLST.prev = t;
   });
   function resetCapital() {
     quest.capital = fresh(); player.cityV = 1;
     WARD.name = null; WARD.shown = null; WARD.since = -1e9; WARD.region = null; WARD.log.length = 0;
-    BARK.t = 0; BARK.pending = false; TALK.ambrose = 0; TALK.wynn = 0; CAT.t0 = -99; BELLST.prev = null; BELLST.swingT0 = -99;
+    BARK.t = 0; BARK.pending = false; BARK.quiet = 0; TALK.ambrose = 0; TALK.wynn = 0; CAT.t0 = -99; BELLST.prev = null; BELLST.swingT0 = -99;
     KEEP_CLEAR = null;
   }
   HOOKS.newGame.push(resetCapital);
@@ -71631,11 +71949,12 @@ const MOUNT_LOOK = (() => {
     2: 'Osric heard a jug fall at the bakery at midnight. Ask Rosalind at the bakery, north of the High Street.',
     3: "Small footprints with a tail went from the bakery towards the Duke's maze. Look in the middle of the maze, at the sundial.",
     4: 'You found grey fur and a gold thistle charm on the sundial. Tell Ambrose at the Bell Tower.',
-    5: 'Ambrose gave you the key. Climb the Bell Tower: walk up to it and press E or tap it.',
+    // (the keys a child reads are the ones in his hands: USE on a touch screen, E on a keyboard)
+    5: () => `Ambrose unlocked the Bell Tower. Climb it: walk up to the tower and ${touchMode() ? 'tap USE, or tap the tower' : 'press E'}.`,
     6: 'The ghost was a cat. Tell Ambrose.',
     done: "Done. The ghost of Thistledown is Duchess, the Duke's cat.",
   };
-  HOOKS.questText.td_bell = () => QTEXT[Q().bell] || QTEXT[0];
+  HOOKS.questText.td_bell = () => { const v = QTEXT[Q().bell] || QTEXT[0]; return typeof v === 'function' ? v() : v; };
   HOOKS.activeQuests.push(() => storyOpen() ? ['td_bell'] : []);
   const TARGETS = { 1: [91, 30, 'Gatewarden Osric'], 2: [125, 22, 'Rosalind, the bakery'], 3: [133, 18, 'The sundial'], 4: [110, 17, 'Ambrose'], 5: [111, 17, 'The Bell Tower'], 6: [110, 17, 'Ambrose'] };
   HOOKS.mapTarget.push(() => { if (!storyOpen()) return null; const [x, y, label] = TARGETS[Q().bell]; return { x, y, label, id: 'td_bell' }; });
@@ -71645,7 +71964,8 @@ const MOUNT_LOOK = (() => {
   //   Layers (y): the ground, blitted from cached chunks at -1e9 - 10, under every other file's ground marks (the tap ring,
   //   the fight-back ring), then the doorsteps and the drops on it, redrawn;
   //   the lily pads at -1e8 - 1; walls, towers, lamps, statues, fountains, greenery, stalls, the Bell Tower, the castle
-  //   and the people y-sorted at the foot of their footprint; the lamp glow and the bunting at 9e8, over every head;
+  //   and the people y-sorted at the foot of their footprint; the bunting at 9e8, over every head; the lamp heads' glow at
+  //   1e9 + 1, over the night;
   //   Osric's welcome at 1e9 + 3, over the night. Every item's draw takes no arguments, and every static body is a cached
   //   sprite (only water, flags, flames, smoke and creatures move).
   // =========================================================================
@@ -71655,7 +71975,7 @@ const MOUNT_LOOK = (() => {
   // the fractional part, always 0..1 (a % 1 of a negative clock is negative)
   const fr = v => v - Math.floor(v);
   const hash = (x, y) => ((Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0) / 4294967296;
-  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, bellAlpha: 1, gateAlpha: {}, gateWho: {}, pics: 0, record: false, boxes: [] };
+  const STATS = { frames: 0, chunks: 0, repaints: 0, painted: 0, items: 0, towers: 0, lampsLit: 0, fountains: 0, statues: 0, keep: 0, townBuildings: 0, deathHouse: 0, porches: 0, bellAlpha: 1, gateAlpha: {}, gateWho: {}, pics: 0, record: false, boxes: [] };
   const CACHE = {};
   function sprite(key, w, h, ax, ay, fn) {
     let s = CACHE[key];
@@ -71671,10 +71991,24 @@ const MOUNT_LOOK = (() => {
   const lit = () => !!(window.NIGHT && NIGHT.phase() !== 'day');
   const vis = (c, x0, y0, x1, y1) => x1 > c.x && x0 < c.x + VW && y1 > c.y && y0 < c.y + VH;
   // the knight behind something tall: it is drawn see-through, so he never vanishes behind it
+  // A tall thing (a tower, a tree, a statue, the Bell Tower, the keep's turrets) goes see-through while a knight is behind
+  // it: this knight, and the friends online on this map (73-players' REMOTE, where they are drawn), so a friend on the
+  // grass behind the Bell Tower is not hidden from everyone else. The list is made once a frame.
+  const KN = { t: NaN, px: NaN, py: NaN, dead: false, list: [] };
+  function knightsNow() {
+    if (KN.t === time && KN.px === player.x && KN.py === player.y && KN.dead === player.dead) return KN.list;
+    const out = []; KN.t = time; KN.px = player.x; KN.py = player.y; KN.dead = player.dead; KN.list = out;
+    if (!player.dead) out.push({ x: player.x, y: player.y, sort: player.y + player.r });
+    const P = window.PLAYERS;
+    if (P && P.remote && typeof P.mapId === 'function') { const my = P.mapId(); for (const n in P.remote) { const e = P.remote[n]; if (e && !e.dead && e.map === my && e.shown) out.push({ x: e.shown.x, y: e.shown.y, sort: e.shown.y + 13 }); } }
+    return out;
+  }
   function behindAlpha(x0, y0, x1, y1, sortY) {
-    if (player.dead || player.y + player.r >= sortY) return 1;
-    const k = { x0: player.x - 14, y0: player.y - 34, x1: player.x + 14, y1: player.y + 14 };
-    return (k.x1 > x0 && k.x0 < x1 && k.y1 > y0 && k.y0 < y1) ? 0.45 : 1;
+    for (const k of knightsNow()) {
+      if (k.sort >= sortY) continue;
+      if (k.x + 14 > x0 && k.x - 14 < x1 && k.y + 14 > y0 && k.y - 34 < y1) return 0.45;
+    }
+    return 1;
   }
   // one item: drawn at y, and its box recorded for the self-test (C19) while STATS.record is on
   function put(items, y, box, draw, own) {
@@ -71751,7 +72085,8 @@ const MOUNT_LOOK = (() => {
   // its coping): while one is as the world made it, the core skips its texture there (09-render reads GROUND_COVER), so
   // the ground is not drawn twice. At any pixel ratio: the chunks are blitted on whole device pixels (snapPx), so they meet.
   const COVERS = new Uint8Array(W * H); for (let i = 0; i < W * H; i++) COVERS[i] = GCODE[i] !== G_NONE && GCODE[i] !== G_WATER ? 1 : 0;
-  window.GROUND_COVER = (x, y) => !window.__instance && snapped && x >= X0 && y >= Y0 && x < X0 + W && y < Y0 + H && COVERS[pi(x, y)] === 1 && tileAt(x, y) === base[pi(x, y)];
+  window.GROUND_COVER = (x, y) => !window.__instance && snapped && x >= X0 && y >= Y0 && x < X0 + W && y < Y0 + H && COVERS[pi(x, y)] === 1 && tileAt(x, y) === base[pi(x, y)]
+    && CHUNK_SS[Math.floor((y - Y0) / CH) * CW + Math.floor((x - X0) / CH)] > 0;
   const isStreet = (x, y) => { const k = gcode(x, y); return k === G_STREET || k === G_GATE || k === G_BRIDGE; };
   const isWaterG = (x, y) => glyph(x, y) === '~';
   // the patterns, 48 x 48 (cached at 2x)
@@ -71881,14 +72216,23 @@ const MOUNT_LOOK = (() => {
   // the chunks: 8 x 8 cells, painted at the screen's pixel ratio, the least recently used dropped past chunkMax
   const CH = 8, CW = Math.ceil(W / CH), CHH = Math.ceil(H / CH);
   let chunkMax = 20, chunkUse = 0;
+  // CHUNK_SS[chunk]: the pixel ratio a chunk was last painted at, 0 while it has no painted picture (not made yet, dropped,
+  // or its canvas gave no context, as an iPad short of canvas memory can). GROUND_COVER lets the core skip its own texture
+  // only under a chunk that really holds a picture, so a chunk that could not be painted shows the core's ground, never
+  // the black behind the map.
+  const CHUNK_SS = new Float32Array(CW * CHH);
+  const chunkKeyCell = k => { const m = /^(\d+),(\d+)@/.exec(k); return m ? +m[2] * CW + +m[1] : -1; };
+  function dropChunk(k, o) { CHUNKS.delete(k); const i = chunkKeyCell(k); if (i >= 0) CHUNK_SS[i] = 0; try { o.c.width = 0; o.c.height = 0; } catch (e) { } }
   function chunkHash(cx, cy) { let s = 7; for (let y = Y0 + cy * CH; y < Math.min(Y0 + H, Y0 + cy * CH + CH); y++) for (let x = X0 + cx * CH; x < Math.min(X0 + W, X0 + cx * CH + CH); x++) s = (Math.imul(s, 31) + tileAt(x, y)) | 0; return s; }
   function paintChunk(ch, cx, cy, ss) {
     const c = ch.c, cg = c.getContext ? c.getContext('2d') : null;
+    CHUNK_SS[cy * CW + cx] = 0;
     if (!cg) return;
     try {
       cg.setTransform(1, 0, 0, 1, 0, 0); cg.clearRect(0, 0, c.width, c.height);
       cg.scale(ss, ss); cg.translate(-(X0 + cx * CH) * TILE, -(Y0 + cy * CH) * TILE);
       for (let y = Y0 + cy * CH; y < Math.min(Y0 + H, Y0 + cy * CH + CH); y++) for (let x = X0 + cx * CH; x < Math.min(X0 + W, X0 + cx * CH + CH); x++) if (pristineAt(x, y)) drawCell(cg, x, y);
+      CHUNK_SS[cy * CW + cx] = ss;
     } catch (e) { }
     STATS.painted++;
   }
@@ -71907,19 +72251,37 @@ const MOUNT_LOOK = (() => {
       ch = { c, used: 0, hash: hsh }; CHUNKS.set(key, ch); paintChunk(ch, cx, cy, ss);
       if (CHUNKS.size > chunkMax) {
         const old = [...CHUNKS.entries()].filter(([k]) => k !== key).sort((a, b) => a[1].used - b[1].used).slice(0, CHUNKS.size - chunkMax);
-        for (const [k, o] of old) { CHUNKS.delete(k); try { o.c.width = 0; o.c.height = 0; } catch (e) { } }
+        for (const [k, o] of old) dropChunk(k, o);
       }
     } else if (ch.hash !== hsh) { ch.hash = hsh; paintChunk(ch, cx, cy, ss); STATS.repaints++; }
     ch.used = ++chunkUse;
     return ch;
   }
+  // A knight away from the city (inside an instance, or 40 tiles past its walls) for 10 s gives its pictures back: the
+  // ground chunks (up to 47 MB of canvas at a pixel ratio of 2) and the buildings' cached pictures. Nothing kept them while
+  // he was in Aerie or the far east, on top of the Cloud Kingdom's own, under Safari's total canvas memory on an iPad.
+  // They are made again, a few a frame, when he comes back.
+  const FREE = { t: 0, freed: 0 };
+  function freePictures() {
+    for (const [k, o] of [...CHUNKS]) dropChunk(k, o);
+    for (const p of PICS.values()) { try { p.c.width = 0; p.c.height = 0; } catch (e) { } }
+    PICS.clear(); FREE.freed++;
+  }
+  HOOKS.update.push(dt => {
+    const far = !!window.__instance || player.x < (X0 - 40) * TILE || player.x > (X0 + W + 40) * TILE || player.y < (Y0 - 40) * TILE || player.y > (Y0 + H + 40) * TILE;
+    if (!far) { FREE.t = 0; return; }
+    FREE.t += dt;
+    if (FREE.t >= 10 && (CHUNKS.size || PICS.size)) freePictures();
+  });
   // the town's door steps and the things lying on its paving: the chunks cover the core's, so they are drawn again on top
   const STEP_LIST = () => BUILDINGS.filter(b => inTown(b.x, b.y)).map(b => { const [sx, sy] = stepOf(b); return { sx, sy, up: b.door === undefined, coffin: !!b.coffin }; });
   function drawGround(g, c) {
     const cx0 = Math.max(0, Math.floor((c.x / TILE - X0) / CH)), cx1 = Math.min(CW - 1, Math.floor(((c.x + VW) / TILE - X0) / CH));
     const cy0 = Math.max(0, Math.floor((c.y / TILE - Y0) / CH)), cy1 = Math.min(CHH - 1, Math.floor(((c.y + VH) / TILE - Y0) / CH));
     if (cx1 < cx0 || cy1 < cy0) return;
-    chunkMax = Math.min(40, Math.max(chunkMax, (cx1 - cx0 + 1) * (cy1 - cy0 + 1) + 4));
+    // room for every chunk in view and a few more; a view of more than 40 (a 4K screen at 100%, a browser zoomed far out)
+    // may keep all 48 of the plan, or it would drop and repaint every chunk in view on every frame
+    chunkMax = Math.min(CW * CHH, Math.max(chunkMax, (cx1 - cx0 + 1) * (cy1 - cy0 + 1) + 4));
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
       const ch = groundChunk(cx, cy); if (!ch.c.width) continue;
       const ox = Math.round(c.x), oy = Math.round(c.y), wx = (X0 + cx * CH) * TILE, wy = (Y0 + cy * CH) * TILE;
@@ -72150,7 +72512,7 @@ const MOUNT_LOOK = (() => {
   }
   // the warm glow round a lit lantern: one sprite painted once, drawn with the lamp's flicker as its alpha (no gradient is
   // made per lamp per frame)
-  const paintLampGlow = cg => { const gl = cg.createRadialGradient(0, 0, 2, 0, 0, 46); gl.addColorStop(0, 'rgba(255,214,130,0.42)'); gl.addColorStop(1, 'rgba(255,200,110,0)'); cg.fillStyle = gl; cg.beginPath(); cg.arc(0, 0, 46, 0, 7); cg.fill(); };
+  const paintLampGlow = cg => { const gl = cg.createRadialGradient(0, 0, 2, 0, 0, 46); gl.addColorStop(0, 'rgba(255,220,140,0.55)'); gl.addColorStop(0.35, 'rgba(255,205,120,0.25)'); gl.addColorStop(1, 'rgba(255,200,110,0)'); cg.fillStyle = gl; cg.beginPath(); cg.arc(0, 0, 46, 0, 7); cg.fill(); };
   function lampGlow(g, tx, ty) {
     const cx = tc(tx), foot = (ty + 1) * TILE - 6, cy = foot - lampH(tx, ty) + 16;
     const f = 0.85 + Math.sin(time * 5 + tx * 1.3) * 0.08, a0 = g.globalAlpha;
@@ -72925,8 +73287,8 @@ const MOUNT_LOOK = (() => {
     g.fillStyle = '#efe2c4'; g.fillRect(cx - w / 2, y, w, 14); g.strokeStyle = '#5a3c22'; g.lineWidth = 1; g.strokeRect(cx - w / 2, y, w, 14);
     g.fillStyle = '#3a2a1a'; g.textAlign = 'center'; g.fillText(word, cx, y + 10.5);
   }
+  // the keep's door on its north wall: its frame on the roof's back edge, a lantern either side (as the core does for the keep)
   function topDoor(g, b, x, y) {
-    // a door on the north wall: its frame on the roof's back edge, a lantern either side (as the core does for the keep)
     const dx = x + b.doorTop * TILE;
     if (still()) {
       g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(dx + 6, y, 36, 26);
@@ -72936,6 +73298,30 @@ const MOUNT_LOOK = (() => {
       g.fillStyle = GOLD; g.beginPath(); g.arc(dx + 30, y + 9, 2, 0, 7); g.fill();
     }
     if (moving()) { drawLantern(g, dx + 4, y + 12); drawLantern(g, dx + 44, y + 12); }
+  }
+  // A house's or the inn's door on its north wall (h6, h7, the inn): a little porch that stands out over the step behind
+  // the house (as Aerie's do), with its own gabled hood in the roof's colour, a door, a sill, a lantern either side and the
+  // inn's sign. On the roof's back edge, where the door was, it read as a door on top of the roof from the street. The
+  // porch is its own item, sorted at the step's middle (drawHook), so a knight standing on the step is drawn in front of it
+  // and one behind it is hidden by it; it is not part of the building's cached picture.
+  const PORCH_FOR = b => b.town && b.doorTop !== undefined && b.id !== 'keep';
+  function drawPorch(g, b) {
+    const cx = (b.x + b.doorTop) * TILE + 24, y = b.y * TILE, top = y - 20, roof = b.roof;
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(cx - 20, y + 2, 40, 6);
+    // the porch's front wall and its door, standing on the house's back edge
+    g.fillStyle = b.stone ? '#8a8d94' : '#efe4cc'; g.fillRect(cx - 19, top, 38, 28);
+    g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(cx + 11, top, 8, 28);
+    g.fillStyle = '#5a3a1e'; g.fillRect(cx - 11, top + 6, 22, 22); g.fillStyle = '#6e4826'; g.fillRect(cx - 11, top + 6, 22, 3);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(cx - 1, top + 9, 2, 19);
+    g.fillStyle = GOLD; g.beginPath(); g.arc(cx + 6, top + 18, 1.8, 0, 7); g.fill();
+    g.fillStyle = b.stone ? '#a4a8ae' : '#c9b48a'; g.fillRect(cx - 20, top + 27, 40, 3);
+    // the hood: a little gable in the roof's colour, its eaves past the walls
+    g.fillStyle = shade(roof, -0.18); g.beginPath(); g.moveTo(cx - 25, top + 4); g.lineTo(cx, top - 14); g.lineTo(cx + 25, top + 4); g.closePath(); g.fill();
+    g.fillStyle = roof; g.beginPath(); g.moveTo(cx - 25, top + 4); g.lineTo(cx, top - 14); g.lineTo(cx, top - 8); g.lineTo(cx - 19, top + 5); g.closePath(); g.fill();
+    g.fillStyle = shade(roof, -0.45); g.fillRect(cx - 25, top + 4, 50, 3);
+    drawLantern(g, cx - 26, top + 16); drawLantern(g, cx + 26, top + 16);
+    if (ICON[b.id]) bracketSign(g, cx + 30, top - 4, ICON[b.id], 1);
+    STATS.porches++;
   }
   // BPASS: 0 draws a building whole; 1 only what never moves (cached once per building and per day or night, see
   // drawTownBuilding); 2 only what moves or flickers (smoke, sparks, lanterns, the swinging signs, the awning, banners)
@@ -72974,11 +73360,48 @@ const MOUNT_LOOK = (() => {
         g.fillStyle = '#5a3c22'; g.fillRect(dcx - 31, top - 2, 62, 3);
       }
       if (ICON[b.id] && moving()) bracketSign(g, dcx + 26, eave + 6, ICON[b.id], 1);
-    } else if (b.doorTop !== undefined) {
-      topDoor(g, b, x, y);
-      if (ICON[b.id] && moving()) bracketSign(g, x + b.doorTop * TILE + 46, y + 4, ICON[b.id], 1);
     }
+    // (a door on the north wall is its porch, drawn on its own: drawPorch)
     if (b.sign && still()) wordPlate(g, x + w / 2 + (b.door !== undefined && Math.abs(b.door * TILE + 24 - w / 2) < 30 ? 60 : 0), eave - 18, b.sign);
+  }
+  // Death's House at the east end (death2): dark coursed stone, narrow arched windows with a violet glow, a steep slate
+  // roof with a crow on the ridge, the coffin door between two violet lanterns, and the REST plate. It kept the core's flat
+  // dark box beside the new roofed fronts and was the one building that looked unfinished.
+  const DEATH_ID = 'death2';
+  function deathStone(g, x, y, w, h) {
+    g.fillStyle = '#34323b'; g.fillRect(x, y, w, h);
+    for (let r = 0; r * 12 < h; r++) { const yy = y + r * 12, off = r % 2 ? 12 : 0; for (let c = -1; c * 24 < w + 24; c++) { const xx = x + off + c * 24; const x0 = Math.max(x, xx + 1), x1 = Math.min(x + w, xx + 23); if (x1 > x0) { g.fillStyle = ['#46434f', '#4d4a57', '#423f4a'][(r + c + 9) % 3]; g.fillRect(x0, yy + 1, x1 - x0, Math.min(10, y + h - yy - 1)); } } }
+    const sh = g.createLinearGradient(0, y, 0, y + h); sh.addColorStop(0, 'rgba(255,255,255,0.06)'); sh.addColorStop(1, 'rgba(0,0,0,0.3)'); g.fillStyle = sh; g.fillRect(x, y, w, h);
+  }
+  function drawDeathHouse(g, b, x, y, w, h) {
+    const FH = 60, eave = y + h - FH, bottom = y + h, dcx = x + b.door * TILE + 24, glow = lit() ? 0.85 : 0.55;
+    if (still()) {
+      g.fillStyle = 'rgba(0,0,0,0.32)'; g.fillRect(x + 6, bottom - 4, w, 8);
+      deathStone(g, x, eave, w, FH);
+      // narrow arched windows, one each side of the door, a faint violet light inside
+      for (const c of [0, 1, 4, 5]) {
+        const cx = x + c * TILE + 24, top = eave + 12, ww = 12, hh = 26;
+        g.fillStyle = '#25232b'; g.beginPath(); g.moveTo(cx - ww / 2 - 3, top + hh + 2); g.lineTo(cx - ww / 2 - 3, top + 4); g.arc(cx, top + 4, ww / 2 + 3, Math.PI, 0); g.lineTo(cx + ww / 2 + 3, top + hh + 2); g.closePath(); g.fill();
+        g.fillStyle = `rgba(181,140,255,${glow.toFixed(2)})`; g.beginPath(); g.moveTo(cx - ww / 2, top + hh); g.lineTo(cx - ww / 2, top + 4); g.arc(cx, top + 4, ww / 2, Math.PI, 0); g.lineTo(cx + ww / 2, top + hh); g.closePath(); g.fill();
+        g.fillStyle = '#25232b'; g.fillRect(cx - 1, top - 2, 2, hh + 2); g.fillRect(cx - ww / 2, top + 13, ww, 2);
+        g.fillStyle = '#6a6774'; g.fillRect(cx - ww / 2 - 4, top + hh + 2, ww + 8, 3);
+      }
+      hipRoof(g, x, y + 2, w, eave, '#3a3644');
+      // a crow on the ridge
+      const rx = x + w * 0.62, ry = y + 2 + (eave - y - 2) * 0.38 - 2;
+      g.fillStyle = '#141318'; g.beginPath(); g.ellipse(rx, ry - 6, 7, 5, -0.2, 0, 7); g.fill(); g.beginPath(); g.arc(rx + 6, ry - 11, 3.6, 0, 7); g.fill();
+      g.beginPath(); g.moveTo(rx - 6, ry - 6); g.lineTo(rx - 13, ry - 2); g.lineTo(rx - 6, ry - 3); g.closePath(); g.fill();
+      g.fillStyle = '#5a5560'; g.beginPath(); g.moveTo(rx + 9, ry - 11); g.lineTo(rx + 13, ry - 10); g.lineTo(rx + 9, ry - 9.5); g.closePath(); g.fill();
+      g.fillStyle = '#c9b8ff'; g.fillRect(rx + 6.5, ry - 12.5, 1.4, 1.4);
+      // the coffin door, silver-edged, and the step's dark stone
+      g.fillStyle = '#2a2a33'; g.beginPath(); g.moveTo(dcx - 10, bottom - 40); g.lineTo(dcx + 10, bottom - 40); g.lineTo(dcx + 17, bottom - 28); g.lineTo(dcx + 12, bottom); g.lineTo(dcx - 12, bottom); g.lineTo(dcx - 17, bottom - 28); g.closePath(); g.fill();
+      g.strokeStyle = '#8b8b9a'; g.lineWidth = 2; g.stroke();
+      g.strokeStyle = '#6a6a7a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(dcx, bottom - 34); g.lineTo(dcx, bottom - 6); g.moveTo(dcx - 9, bottom - 26); g.lineTo(dcx + 9, bottom - 26); g.stroke();
+      // the REST plate over the door: dark, with the violet word
+      g.font = `700 10px ${DISPLAY}`; g.fillStyle = '#2a2a33'; g.fillRect(dcx - 34, eave - 20, 68, 16); g.strokeStyle = '#8b8b9a'; g.lineWidth = 1; g.strokeRect(dcx - 34, eave - 20, 68, 16);
+      g.fillStyle = '#b58cff'; g.textAlign = 'center'; g.fillText(b.sign || 'REST', dcx, eave - 8);
+    }
+    if (moving()) { drawLantern(g, dcx - 24, bottom - 22, true); drawLantern(g, dcx + 24, bottom - 22, true); }
   }
   // the keep: a crenellated parapet, a slate great-hall roof, the Duke's arms over the north door, two front turrets at
   // the north corners, and a square tower with a spire in its south half. Only the turrets' cones rise over row 46.
@@ -73045,12 +73468,12 @@ const MOUNT_LOOK = (() => {
   }
   function drawTownBuilding(g, b) {
     const x = b.x * TILE, y = b.y * TILE, w = b.w * TILE, h = b.h * TILE;
-    STATS.townBuildings++; if (b.id === 'keep') STATS.keep++;
+    if (b.town) STATS.townBuildings++; if (b.id === 'keep') STATS.keep++; if (b.id === DEATH_ID) STATS.deathHouse++;
     if (STATS.record) STATS.boxes.push({ x0: x, y0: y - riseOf(b), x1: x + w, y1: y + h, own: b.id, building: true });
     g.save();
     // the keep fades only where its two front turrets rise over row 46 and the knight is behind them
     if (b.id === 'keep') { const sy = (b.y + b.h) * TILE - 1, a = Math.min(behindAlpha(x, y - 60, x + 60, y + 70, sy), behindAlpha(x + w - 60, y - 60, x + w, y + 70, sy)); if (a < 1) g.globalAlpha = a; }
-    const paint = b.id === 'keep' ? drawKeep : drawHall;
+    const paint = b.id === 'keep' ? drawKeep : b.id === DEATH_ID ? drawDeathHouse : drawHall;
     // what never moves comes from a picture made once (per day or night); smoke, lanterns, signs and banners go on top
     const pic = buildingPic(b, paint, x, y, w, h);
     if (pic) { g.drawImage(pic.c, pic.x0, pic.y0, pic.w, pic.h); BPASS = 2; try { paint(g, b, x, y, w, h); } finally { BPASS = 0; } }
@@ -73076,7 +73499,7 @@ const MOUNT_LOOK = (() => {
     p.used = ++picUse;
     return p;
   }
-  { const _drawBuilding = drawBuilding; drawBuilding = function (g, b) { return (b && b.town && !window.__instance) ? drawTownBuilding(g, b) : _drawBuilding(g, b); }; }
+  { const _drawBuilding = drawBuilding; drawBuilding = function (g, b) { return (b && (b.town || b.id === DEATH_ID) && !window.__instance) ? drawTownBuilding(g, b) : _drawBuilding(g, b); }; }
   // the six town gate cells draw no wooden gate (the gatehouse is drawn instead)
   const TOWN_GATE_CELLS = new Set(PLAN.GATES.flatMap(gt => gt.rows.map(y => gt.x + ',' + y)));
   { const _drawFenceProp = drawFenceProp; drawFenceProp = function (g, tx, ty, gate) { if (!window.__instance && TOWN_GATE_CELLS.has(tx + ',' + ty)) return; return _drawFenceProp(g, tx, ty, gate); }; }
@@ -73097,7 +73520,7 @@ const MOUNT_LOOK = (() => {
   // ---------- the hook ----------
   const GATE_TOWERS = TOWERS.filter(t => t.gate);
   const drawHook = (g, items, c0) => {
-    STATS.chunks = 0; STATS.repaints = 0; STATS.items = 0; STATS.towers = 0; STATS.lampsLit = 0; STATS.fountains = 0; STATS.statues = 0; STATS.keep = 0; STATS.townBuildings = 0; STATS.bellAlpha = 1; STATS.gateAlpha = {}; STATS.gateWho = {};
+    STATS.chunks = 0; STATS.repaints = 0; STATS.items = 0; STATS.towers = 0; STATS.porches = 0; STATS.lampsLit = 0; STATS.fountains = 0; STATS.statues = 0; STATS.keep = 0; STATS.townBuildings = 0; STATS.bellAlpha = 1; STATS.gateAlpha = {}; STATS.gateWho = {};
     if (STATS.record) STATS.boxes.length = 0;
     // every instance is written into the map's top-left corner: nothing of the town is drawn inside one
     if (window.__instance) return;
@@ -73120,7 +73543,7 @@ const MOUNT_LOOK = (() => {
       const want = k === 'great' || k === 'market' || k === 'rose' ? FOUNT : GREEN_KINDS.has(k) ? HEDGE : PROP;
       if (t !== want) continue;
       const px = x * TILE, py = y * TILE, by = (y + 1) * TILE;
-      if (k === 'lamp') { put(items, by - 6, [tc(x) - 11, LAMP_TOP[x + ',' + y], tc(x) + 11, by], () => drawLamp(g, x, y)); if (lit()) put(items, 9e8 - 1, null, () => lampGlow(g, x, y)); }
+      if (k === 'lamp') { put(items, by - 6, [tc(x) - 11, LAMP_TOP[x + ',' + y], tc(x) + 11, by], () => drawLamp(g, x, y)); if (lit()) put(items, 1e9 + 1, null, () => lampGlow(g, x, y)); }
       else if (k === 'statue') { const s = statueAt(x, y), hw = s ? (STATUE_HALF[s.id] || 24) - 2 : 22; if (s) put(items, by - 2, [tc(x) - hw, by - 92, tc(x) + hw, by], () => drawStatue(g, s)); }
       else if (k === 'plinth') put(items, by - 2, [tc(x) - 22, by - (statueDone() ? 92 : 36), tc(x) + 22, by], () => drawPlinth(g));
       else if (k === 'bench') put(items, by - 5, [tc(x) - 21, by - 37, tc(x) + 21, by], () => blit(g, sprite('bench', 48, 40, 24, 36, paintBench), tc(x), by - 5));
@@ -73141,6 +73564,8 @@ const MOUNT_LOOK = (() => {
       else if (k === 'great') { if (x === great.x && y === great.y) put(items, (great.y + great.h) * TILE - 4, [GF.cx - GF.rx - 2, 34 * TILE - 24, GF.cx + GF.rx + 2, (great.y + great.h) * TILE], () => drawGreatFountain(g)); }
       else if (k === 'market' || k === 'rose') { const f = fountainAt(x, y); if (f && x === f.x && y === f.y) put(items, (f.y + f.h) * TILE - 4, [f.x * TILE, f.y * TILE - 30, (f.x + f.w) * TILE, (f.y + f.h) * TILE], () => drawSmallFountain(g, f)); }
     }
+    // the back doors' porches, over the step behind the house, sorted at the step's middle
+    for (const b of TOWN_BUILDINGS()) if (PORCH_FOR(b) && vis(c, (b.x + b.doorTop) * TILE - 40, b.y * TILE - 50, (b.x + b.doorTop) * TILE + 90, b.y * TILE + 12)) put(items, b.y * TILE - TILE / 2, [(b.x + b.doorTop) * TILE - 4, b.y * TILE - 34, (b.x + b.doorTop) * TILE + 52, b.y * TILE + 8], () => drawPorch(g, b), b.id);
     // the towers and the two gatehouses
     for (const t of TOWERS) {
       const d = t.gate ? TOWER_DEF.gate : TOWER_DEF.wall;
@@ -73176,15 +73601,19 @@ const MOUNT_LOOK = (() => {
   HOOKS.draw.push(drawHook);
 
   // ---------- night: the lamps, the torches, the fountain and the dial light the street ----------
-  if (HOOKS.nightLights) HOOKS.nightLights.push((out, x0, y0, x1, y1) => {
+  // The pools are small (a lamp 72, the fountain 64, the dial 64): at 110 and 90 the 22 lamps' pools ran into each other and
+  // Fountain Square at night was almost as bright as day. Each lamp's head glows over the dark instead (lampGlow, 1e9 + 1).
+  const LAMP_R = 72, FOUNTAIN_R = 64, DIAL_R = 64;
+  function townLights(out, x0, y0, x1, y1) {
     if (window.__instance) return;
     const on = lit(), inside = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
-    if (on) for (const [x, y] of LAMPS) if (inside(x, y)) out.push({ x: tc(x), y: y * TILE - 16, r: 110, kind: 'lamp' });
+    if (on) for (const [x, y] of LAMPS) if (inside(x, y)) out.push({ x: tc(x), y: y * TILE - 16, r: LAMP_R, kind: 'lamp' });
     if (on) for (const key of TORCHES) { const [x, y] = key.split(',').map(Number); if (inside(x, y)) out.push({ x: tc(x), y: tc(y) - 14, r: 70, kind: 'torch' }); }
     if (on) for (const gt of PLAN.GATES) if (inside(gt.x, 32)) { const b = gateBox(gt); for (const ty of [b.top + 14, b.bot - 2]) out.push({ x: b.outer + b.out * 5, y: ty - 14, r: 80, kind: 'gate torch' }); }
-    if (inside(great.x + 1, great.y + 1)) out.push({ x: greatC.x, y: greatC.y, r: 90, kind: 'fountain' });
-    if (inside(PLAN.BELL.x, PLAN.BELL.y)) out.push({ x: BT.x + BT.w / 2, y: BT.foot + BT.FACE + 40, r: 80, kind: 'dial' });
-  });
+    if (inside(great.x + 1, great.y + 1)) out.push({ x: greatC.x, y: greatC.y, r: FOUNTAIN_R, kind: 'fountain' });
+    if (inside(PLAN.BELL.x, PLAN.BELL.y)) out.push({ x: BT.x + BT.w / 2, y: BT.foot + BT.FACE + 40, r: DIAL_R, kind: 'dial' });
+  }
+  if (HOOKS.nightLights) HOOKS.nightLights.push(townLights);
 
   // =========================================================================
   // 10. the book
@@ -73194,7 +73623,7 @@ const MOUNT_LOOK = (() => {
     const lines = [
       'Thistledown, the city that still stands: the capital of the Fanglands, where every knight wakes and where a fallen knight comes back.',
       { t: 'THE GATES AND THE WALL', c: '#8b949e' },
-      `A curtain wall of grey stone with ${PLAN.TOWERS.length} towers. The West Gate and the East Gate are stone gatehouses, open day and night; horses ride through, goblins do not.`,
+      `A high wall of grey stone with ${PLAN.TOWERS.length} towers goes all the way round the city. The West Gate and the East Gate are stone gate towers, open day and night; horses ride through, goblins do not.`,
       { t: 'THE STREETS', c: '#8b949e' },
       `${st('high')} runs straight from gate to gate under ${LAMPS_N} iron lamps, with bunting across it. ${st('crown')} runs north from the fountain to the Bell Tower.`,
       `${PLAN.STREETS.filter(s => s.id !== 'high' && s.id !== 'crown').map(s => s.name).join(', ')}.`,
@@ -73202,7 +73631,7 @@ const MOUNT_LOOK = (() => {
       'The Great Fountain is in the middle of the city: toss a coin in for luck. Four hero statues stand round it: the Last Knight of Hollowford, King Thrain of the Dwarves, Queen Aelith of the Elves and Queen Seraphel of Aerie.',
       'An empty plinth by the castle gate is kept for the knight who ends the dragon.',
       { t: 'CASTLE THISTLEDOWN', c: '#8b949e' },
-      'The castle stands in a moat. Cross the oak drawbridge, under the portcullis, to the keep, where Duke Ferrin sits. The Duke grows roses in the courtyard.',
+      'The castle stands in a moat. Cross the oak drawbridge, under the iron gate that is always pulled up, to the keep, where Duke Ferrin sits. The Duke grows roses in the courtyard.',
       { t: 'THE MARKET COURT', c: '#8b949e' },
       'Four stalls round the market fountain: Hettie\'s apples, Mabel\'s candles, Moll\'s flowers, and a cloth stall that is always BACK SOON.',
       { t: 'THE BELL TOWER', c: '#8b949e' },
@@ -73212,7 +73641,7 @@ const MOUNT_LOOK = (() => {
       { t: 'THE SMITHY YARD', c: '#8b949e' },
       'Behind the smithy and the Tinker\'s Workshop: the woodpiles, Brakka\'s handcart of charcoal, an old anvil on a stump, a water trough, and the pit where the bulldozer is mended.',
       { t: 'WHO STANDS WHERE', c: '#8b949e' },
-      'Gatewarden Osric, inside the West Gate. Ambrose the bell-ringer, at the Bell Tower. Hettie, Mabel and Moll, at their stalls. Wynn, by Swan Pond.',
+      'Gatewarden Osric, inside the West Gate. Ambrose the bell-ringer, at the Bell Tower. Hettie, Mabel and Moll, at their stalls. Wynn, by Swan Pond. Captain Roderick of the guard, at the castle gate. The Master of Skills, in the castle yard.',
       'Marta at the General Store, Aldous at the bank, Rosalind at the bakery, Brakka at the smithy, Pim at the Tinker\'s Workshop, Dorran at The Barrel & Boar, Greta and Fennick on the square, Tobin by the fountain, Sergeant Hale in his yard, Death in his stone house, and Duke Ferrin in the keep.',
       'Tess and Robin play tag round the fountain.',
     ];
@@ -73303,8 +73732,8 @@ const MOUNT_LOOK = (() => {
       const tilesOk = ids.every(id => typeof id === 'number' && id <= 255) && SOLID.has(HEDGE) && SOLID.has(PROP) && SOLID.has(FOUNT) && !SOLID.has(LAWN) && PLACEABLE_ON.has(LAWN) && LAWN !== T.GRASS;
       // round 1 of review: the Smithy Yard, the Bell Green, the inn's garden and the kitchen garden took 184 plain grass
       // cells ('.' 215 -> 31); one lamp moved from 121,29 to 117,30 (still 22)
-      const COUNTS = { '-': 202, '#': 144, 'T': 80, 'G': 6, '@': 507, '=': 282, '+': 443, '"': 262, 'h': 82, 'd': 1, 'O': 1, 'P': 2, 'u': 2, 't': 26, '*': 19, 'l': 22, 's': 4, 'p': 1, 'n': 12, 'k': 8, 'i': 2, 'B': 4, 'N': 1, 'D': 1, 'f': 62, '.': 31, ',': 135, 'a': 20, 'Y': 34, '~': 87, 'b': 10, 'j': 1, 'F': 20, 'x': 1, 'S': 4, 'C': 56, 'g': 2,
-        'v': 21, 'w': 5, 'c': 2, 'A': 1, 'q': 1, 'V': 1, 'U': 2 };
+      const COUNTS = { '-': 202, '#': 144, 'T': 80, 'G': 6, '@': 507, '=': 282, '+': 457, '"': 263, 'h': 82, 'd': 1, 'O': 1, 'P': 2, 'u': 2, 't': 26, '*': 19, 'l': 22, 's': 4, 'p': 1, 'n': 11, 'k': 8, 'i': 2, 'B': 4, 'N': 1, 'D': 1, 'f': 62, '.': 31, ',': 119, 'a': 20, 'Y': 34, '~': 87, 'b': 10, 'j': 1, 'F': 20, 'x': 1, 'S': 4, 'C': 56, 'g': 2,
+        'v': 21, 'w': 7, 'c': 2, 'A': 1, 'q': 1, 'V': 1, 'U': 2 };
       const off = Object.keys(COUNTS).filter(c => (PLAN.COUNTS[c] || 0) !== COUNTS[c]).map(c => `${c} ${PLAN.COUNTS[c]} want ${COUNTS[c]}`);
       const extra = Object.keys(PLAN.COUNTS).filter(c => !(c in COUNTS));
       const total = Object.values(COUNTS).reduce((a, b) => a + b, 0);
@@ -73317,8 +73746,8 @@ const MOUNT_LOOK = (() => {
       // the biggest patch of plain overworld grass ('.' and the dozer bay's 'D') left inside the walls
       let bigGrass = 0; { const seen = new Set(); for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) { const g0 = c => c === '.' || c === 'D'; if (!g0(glyph(x, y)) || seen.has(x + ',' + y)) continue; let n = 0; const st = [[x, y]]; seen.add(x + ',' + y); while (st.length) { const [cx, cy] = st.pop(); n++; for (const [dx, dy] of N4c) { const k = (cx + dx) + ',' + (cy + dy); if (!seen.has(k) && g0(glyph(cx + dx, cy + dy))) { seen.add(k); st.push([cx + dx, cy + dy]); } } } bigGrass = Math.max(bigGrass, n); } }
       const sha = (() => { let hsh = 0; for (const r of PLAN.ROWS) for (let i = 0; i < r.length; i++) hsh = (Math.imul(hsh, 31) + r.charCodeAt(i)) | 0; return hsh; })();
-      check(P + 'C1 the plan: 45 rows of 58, every glyph known; TD_LAWN, TD_HEDGE, TD_PROP and TD_FOUNTAIN exist (ids <= 255); every glyph count is the plan\'s (2610 cells); 66 prop, 148 hedge and 20 fountain cells all have a kind; 18 towers (14 of 2x2, 4 of 2x3), 64 moat + 23 pond, 12 + 4 + 4 fountain cells, 14 fruit + 12 cherry trees, 22 lamps, and no plain grass patch inside the walls bigger than 6 cells',
-        rowsOk && known && tilesOk && !off.length && !extra.length && total === 2610 && kProp === 66 && nProp === 66 && kHedge === 148 && nHedge === 148 && kFount === 20 && nFount === 20
+      check(P + 'C1 the plan: 45 rows of 58, every glyph known; TD_LAWN, TD_HEDGE, TD_PROP and TD_FOUNTAIN exist (ids <= 255); every glyph count is the plan\'s (2610 cells); 67 prop, 148 hedge and 20 fountain cells all have a kind; 18 towers (14 of 2x2, 4 of 2x3), 64 moat + 23 pond, 12 + 4 + 4 fountain cells, 14 fruit + 12 cherry trees, 22 lamps, and no plain grass patch inside the walls bigger than 6 cells',
+        rowsOk && known && tilesOk && !off.length && !extra.length && total === 2610 && kProp === 67 && nProp === 67 && kHedge === 148 && nHedge === 148 && kFount === 20 && nFount === 20
         && towers.length === 18 && t22 === 14 && t23 === 4 && moat === 64 && pond === 23 && fr2.great === 12 && fr2.market === 4 && fr2.rose === 4 && trees.fruit === 14 && trees.cherry === 12 && LAMPS_N === 22 && bigGrass <= 6,
         { rowsOk, known, ids, maxId, tilesOk, off, extra, total, kProp, kHedge, kFount, towers: [towers.length, t22, t23], moat, pond, fountains: fr2, trees, lamps: LAMPS_N, bigGrass, sha }); }
 
@@ -73444,7 +73873,7 @@ const MOUNT_LOOK = (() => {
         v1: [100, 32], v2: [118, 32], v3: [112, 24], v4: [96, 33], v5: [128, 34], v6: [114, 40], skillmaster: [108, 44], captain: [110, 40],
         osric: [91, 30], ambrose: [110, 17], hettie: [114, 19], mabel: [119, 19], moll: [114, 25], wynn: [131, 24] };
       const bad = Object.keys(HOMES).filter(id => { const n = npc(id); return !n || n.x !== HOMES[id][0] || n.y !== HOMES[id][1]; }).map(id => { const n = npc(id); return id + (n ? '@' + n.x + ',' + n.y : ' missing'); });
-      const GUARDS = ['guard_m@87,30', 'guard_m@118,36', 'guard_m@113,43', 'guard_f@104,23', 'guard_f@126,33', 'guard_f@110,43'];
+      const GUARDS = ['guard_m@89,30', 'guard_m@118,36', 'guard_m@113,43', 'guard_f@104,23', 'guard_f@126,33', 'guard_f@110,43'];
       const inT = MONSTER_SPAWNS.filter(s => inTown(s.tx, s.ty)).map(s => s.type + '@' + s.tx + ',' + s.ty).sort();
       const guardsOk = JSON.stringify(inT) === JSON.stringify(GUARDS.slice().sort());
       const roles = ['osric', 'ambrose', 'wynn'].every(id => HOOKS.talk[npc(id).role]) && ['hettie', 'mabel', 'moll'].every(id => npc(id).role === 'villager' && npc(id).lines.length === 2) && PLAN.PEOPLE.every(p => !npc(p.id).wander);
@@ -73516,6 +73945,50 @@ const MOUNT_LOOK = (() => {
         !bad.length && !loneProps.length && walked && tapOk && westOk && Object.values(plaques).every(Boolean) && Object.values(first).every(Boolean) && mabel22,
         { bad: bad.slice(0, 6), groups: groups.length, loneProps: loneProps.map(g => g.key), loneHedges, walked, tapLine, west, plaques, first, lampsLive }); }
 
+    // ---- C10b. a tap on a town thing near one of the town's people answers as the thing, from every side it can be reached ----
+    { leave(); onFoot(); drain(); const wrong = []; let tried = 0;
+      const stay = STAYERS();
+      for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) {
+        const t = tileAt(x, y), k = kindAt(x, y);
+        if (!k || !(t === PROP || t === HEDGE) || ['bell', 'sundial', 'great'].includes(k)) continue;
+        if (!stay.some(n => Math.abs(n.x - x) <= 2 && Math.abs(n.y - y) <= 2)) continue;
+        const want = lineFor(x, y); if (!want) continue;
+        for (const [dx, dy] of N4) {
+          const sx = x + dx, sy = y + dy;
+          if (SOLID.has(tileAt(sx, sy)) || stay.some(n => n.x === sx && n.y === sy)) continue;
+          drain(); F.tp(sx, sy); tap.useTile = { tx: x, ty: y }; tap.kind = 'use'; tap.goal = { tx: x, ty: y }; tapUseNow(); tried++;
+          const d0 = said()[0];
+          if (!d0 || d0.who !== want[0]) wrong.push([x, y, k, sx, sy, d0 ? d0.who : null]);
+        }
+      }
+      drain(); tapCancel('manual');
+      check(P + 'C10b a tap on a stall, a bench, a hedge, a lamp or a statue beside one of the town\'s people answers as the thing from every side it can be reached (the sellers too: E still talks over a counter)',
+        tried >= 20 && !wrong.length, { tried, wrong: wrong.slice(0, 8) }); }
+
+    // ---- C10c. greenery and water no one can stand beside: a tap walks to the nearest reachable cell of the same bed or water ----
+    { leave(); onFoot(); drain(); F.tp(112, 33); F.step([]);
+      // what a knight on foot can reach from the fountain (4 ways, through anything not solid)
+      const reach = new Uint8Array(MAP_W * MAP_H), q = [idx(112, 33)]; reach[q[0]] = 1;
+      for (let i = 0; i < q.length; i++) { const c = q[i], cx = c % MAP_W, cy = Math.floor(c / MAP_W); for (const [dx, dy] of N4) { const x = cx + dx, y = cy + dy; if (!inMap(x, y) || x < TOWN.x0 - 8 || x > TOWN.x1 + 8 || y < TOWN.y0 - 8 || y > TOWN.y1 + 8) continue; const j = idx(x, y); if (reach[j] || SOLID.has(map[j])) continue; reach[j] = 1; q.push(j); } }
+      const usable = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && reach[idx(x + dx, y + dy)]);
+      let lone = 0, sent = 0, hedgeMid = null; const stuck = [];
+      for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) {
+        const t = tileAt(x, y); if (!(t === HEDGE || t === T.WATER) || usable(x, y)) continue;
+        lone++; const r = reachableTwin({ kind: 'use', tx: x, ty: y, t });
+        if (r && usable(r[0], r[1])) { sent++; if (!hedgeMid && t === HEDGE) hedgeMid = [x, y]; } else stuck.push(x + ',' + y);
+      }
+      // the one bed no one can reach: the hedge between the agility track's fence and the south wall (scenery)
+      const scenery = stuck.every(c => { const [x, y] = c.split(',').map(Number); return y === 55 && x >= 87 && x <= 102; });
+      // and through a real tap (tapPick): the swans' water in the middle of Swan Pond, the south moat, a hedge's middle
+      const viaTap = {};
+      for (const [x, y] of [[136, 26], [112, 55]].concat(hedgeMid ? [hedgeMid] : [])) {
+        const t = tileAt(x, y); F.tp(x, Math.max(TOWN.y0 + 2, y - 3)); F.step([]); render();
+        const p = tapPick(tc(x) - cam.x, tc(y) - cam.y);
+        viaTap[x + ',' + y] = !!p && p.kind === 'use' && tileAt(p.tx, p.ty) === t && usable(p.tx, p.ty) && !usable(x, y);
+      }
+      check(P + 'C10c a tap on greenery or water no one can stand beside (the middle of a bed, Swan Pond where the swans swim, the far sides of the moat) walks to the nearest reachable cell of the same bed or water; only the hedge row behind the agility fence (scenery) has none',
+        lone >= 20 && sent >= 20 && scenery && !!hedgeMid && Object.values(viaTap).length === 3 && Object.values(viaTap).every(Boolean), { lone, sent, stuck, viaTap }); }
+
     // ---- C11. the coin toss ----
     { drain(); clearFolk(111, 33, 8); clearMonsters(111, 33, 6); onFoot(); F.tp(111, 33); F.face(111, 34); setCoins(5); const q = Q(); q.tossArmed = 0; const t0 = q.tossed;
       F.press('KeyE'); const l1 = texts()[0], c1 = coins(); drain();
@@ -73523,9 +73996,12 @@ const MOUNT_LOOK = (() => {
       setCoins(0); F.sim(10, []); F.press('KeyE'); const l3 = texts()[0], c3 = coins(), t3 = q.tossed; drain();
       // and after 6 s the toss is not armed any more: E gives the first line again
       setCoins(2); F.sim(400, []); F.press('KeyE'); const l4 = texts()[0], c4 = coins(); drain();
-      check(P + 'C11 the coin toss: one E gives the line and spends nothing; a second E within 6 s costs exactly 1 coin and counts the toss; with no coins it says so and nothing changes; after 6 s E gives the first line again',
-        /^The Great Fountain\. People toss a coin/.test(l1 || '') && c1 === 5 && l2 === TOSS[t0 % 6] && c2 === 4 && t2 === t0 + 1 && l3 === 'You have no coins to toss.' && c3 === 0 && t3 === t2 && /^The Great Fountain\. People toss/.test(l4 || '') && c4 === 2,
-        { l1, c1, l2, c2, tossed: [t0, t2, t3], l3, c3, l4, c4 }); }
+      // E five times running on a keyboard (it does not turn the page): one line on the page at a time, the newest toss
+      setCoins(5); q.tossArmed = 0; const t5 = q.tossed; for (let k = 0; k < 5; k++) { F.press('KeyE'); F.sim(6, []); }
+      const page = texts(), c5 = coins(), quick = page.length === 1 && page[0] === TOSS[(q.tossed - 1) % 6] && q.tossed === t5 + 4 && c5 === 1; drain();
+      check(P + 'C11 the coin toss: one E gives the line and spends nothing; a second E within 6 s costs exactly 1 coin and counts the toss; with no coins it says so and nothing changes; after 6 s E gives the first line again; E pressed five times running shows one line, the newest toss, never a stack',
+        /^The Great Fountain\. People toss a coin/.test(l1 || '') && c1 === 5 && l2 === TOSS[t0 % 6] && c2 === 4 && t2 === t0 + 1 && l3 === 'You have no coins to toss.' && c3 === 0 && t3 === t2 && /^The Great Fountain\. People toss/.test(l4 || '') && c4 === 2 && quick,
+        { l1, c1, l2, c2, tossed: [t0, t2, t3], l3, c3, l4, c4, page, c5 }); }
 
     // ---- C12. the clock and the bell ----
     { const N = window.NIGHT, d0 = player.dayTime;
@@ -73534,16 +74010,18 @@ const MOUNT_LOOK = (() => {
       onFoot(); F.tp(112, 33); F.step([]); const region = player.region;
       player.dayTime = N.LIGHT - 0.5; BELLST.prev = null; F.step([]); const r0 = BELLST.rings; F.sim(90, []); const rang = BELLST.rings - r0;
       F.sim(60, []); const again = BELLST.rings - r0;
+      // and once at midnight: BONG, the ghost of the story
+      player.dayTime = MIDNIGHT(N) - 0.5; BELLST.prev = null; F.step([]); const m0 = BELLST.midnights, mr0 = BELLST.rings; F.sim(90, []); const midnight = BELLST.midnights - m0, midRings = BELLST.rings - mr0;
       player.dayTime = 100; const ang = Math.abs(dialAngle() - N.dayT() / N.DAY * Math.PI * 2) < 1e-9;
       player.dayTime = d0; BELLST.prev = null;
-      check(P + 'C12 Ambrose reads the clock ("The sun is up. Dusk comes in 4 minutes 10 seconds.", "Dusk. It will be dark in 35 seconds.", "Night. The sun comes up in 1 minute 1 second."); with the knight at the fountain the bell rings exactly once as dusk comes; the dial\'s hand is dayT / DAY x 2 pi',
-        a === 'The sun is up. Dusk comes in 4 minutes 10 seconds.' && b === 'Dusk. It will be dark in 35 seconds.' && c === 'Night. The sun comes up in 1 minute 1 second.' && words.join('|') === '4 minutes 10 seconds|35 seconds|1 minute 1 second|1 minute|1 second|1 second|2 minutes 1 second' && region === 'Thistledown' && rang === 1 && again === 1 && ang,
-        { a, b, c, words, region, rang, again, ang }); }
+      check(P + 'C12 Ambrose reads the clock ("The sun is up. Dusk comes in 4 minutes 10 seconds.", "Dusk. It will be dark in 35 seconds.", "Night. The sun comes up in 1 minute 1 second."); with the knight at the fountain the bell rings exactly once as dusk comes, and exactly once at midnight (BONG); the dial\'s hand is dayT / DAY x 2 pi',
+        a === 'The sun is up. Dusk comes in 4 minutes 10 seconds.' && b === 'Dusk. It will be dark in 35 seconds.' && c === 'Night. The sun comes up in 1 minute 1 second.' && words.join('|') === '4 minutes 10 seconds|35 seconds|1 minute 1 second|1 minute|1 second|1 second|2 minutes 1 second' && region === 'Thistledown' && rang === 1 && again === 1 && midnight === 1 && midRings === 1 && ang,
+        { a, b, c, words, region, rang, again, midnight, midRings, ang }); }
 
     // ---- C13. the story ----
     { const st0 = quest.stage, c0 = coins(), q = Q(), log = [];
       const tq = () => HOOKS.questText.td_bell(), mt = () => mapTargets().find(m => m.id === 'td_bell') || null;
-      const step = (label) => { const m = mt(), b = Q().bell; log.push({ label, bell: b, text: tq() === QTEXT[b], target: b === 'done' ? !m : !!m && TARGETS[b] && m.x === TARGETS[b][0] && m.y === TARGETS[b][1], active: activeQuests().includes('td_bell') === storyOpen() }); };
+      const step = (label) => { const m = mt(), b = Q().bell; log.push({ label, bell: b, text: tq() === (typeof QTEXT[b] === 'function' ? QTEXT[b]() : QTEXT[b]), target: b === 'done' ? !m : !!m && TARGETS[b] && m.x === TARGETS[b][0] && m.y === TARGETS[b][1], active: activeQuests().includes('td_bell') === storyOpen() }); };
       Object.assign(q, fresh()); drain(); quest.stage = 5;
       F.talk('ambrose'); const before = q.bell === 0 && !texts().some(t => /silly/.test(t)); drain();
       quest.stage = 6; clearBanners();
@@ -73566,6 +74044,18 @@ const MOUNT_LOOK = (() => {
       check(P + 'C13 The Bell at Midnight: at stage 5 Ambrose has only his own line; at stage 6 the story goes Ambrose, Osric, Rosalind (no shop that time), the sundial, Ambrose, the Bell Tower, Ambrose: 1,2,3,4,5,6,done, with NEW QUEST and NO GHOST and exactly 75 coins; the quest log and the map ring are right at every step; Rosalind\'s next talk opens her shop; the Duke\'s talk is not touched; a save and load keeps the step; a new game resets it',
         before && newQ && order === '1,2,3,4,5,6,done' && log.every(l => l.text && l.target && l.active) && noShop && kept && noGhost && shop && duke && reset && rang >= 1,
         { before, newQ, order, log, noShop, kept, noGhost, shop, duke, reset }); }
+
+    // ---- C13b. the words of the story: no key that never comes, the keys the child has in his hands, Ambrose's hello ----
+    { const st0 = quest.stage, q = Q(), keep = JSON.stringify(q), t0 = window.__forceTouch; drain();
+      Object.assign(q, fresh()); quest.stage = 6; F.talk('ambrose'); const hello = said().map(d => d.text), first = hello[0] === AMBROSE_HELLO && hello.some(t => /silly/.test(t)) && q.ambroseMet; drain();
+      q.bell = 4; F.talk('ambrose'); const keyless = !said().some(d => /\bkey\b/i.test(d.text)) && said().some(d => /unlock the tower door/.test(d.text)); drain();
+      window.__forceTouch = false; const desk = HOOKS.questText.td_bell(); window.__forceTouch = true; const touch = HOOKS.questText.td_bell(); window.__forceTouch = t0;
+      const log = /press E\./.test(desk) && /tap USE/.test(touch) && !/press E/.test(touch) && !/\bkey\b/i.test(desk + touch);
+      Object.assign(q, JSON.parse(keep)); quest.stage = st0; drain();
+      // and he is a quest giver on the maps, as every other one in town is (61-markers' QUEST_ROLES)
+      let marked = null; if (window.MARKERS && MARKERS.refresh && MARKERS.all) { MARKERS.refresh(); marked = MARKERS.all().some(m => m.kind === 'quest' && /Ambrose/.test(m.label || '')); }
+      check(P + "C13b at stage 6 Ambrose's first talk opens with his own hello, then the story; no 'key' is promised (he unlocks the door); the quest log says press E on a keyboard and tap USE on a touch screen; Ambrose has a Quest marker on the maps",
+        first && keyless && log && marked === true, { hello, keyless, desk, touch, marked }); }
 
     // ---- C14. the plinth ----
     { const st0 = quest.stage, q = Q(); drain();
@@ -73662,14 +74152,19 @@ const MOUNT_LOOK = (() => {
       const all = []; for (const f of HOOKS.nightLights) f(all, 0, 0, MAP_W - 1, MAP_H - 1);
       const lamps = all.filter(l => l.kind === 'lamp').length, torches = all.filter(l => l.kind === 'torch').length;
       const ov = N.overlay();
-      render(); const litN = STATS.lampsLit;
+      // the night painter (35-night's drawNight, inside render) asks this file for its lights: a spy in townLights' place sees
+      // the call and the lamps it is handed back (so a build where the night never reads the hook fails here)
+      const at = HOOKS.nightLights.indexOf(townLights); let asked = 0, handed = 0;
+      if (at >= 0) HOOKS.nightLights[at] = (out, ...a) => { asked++; const n0 = out.length; townLights(out, ...a); handed += out.slice(n0).filter(l => l.kind === 'lamp' && l.r === LAMP_R).length; };
+      try { render(); } finally { if (at >= 0) HOOKS.nightLights[at] = townLights; }
+      const litN = STATS.lampsLit;
       player.dayTime = 100; const day = []; for (const f of HOOKS.nightLights) f(day, 0, 0, MAP_W - 1, MAP_H - 1);
       player.dayTime = N.LIGHT + N.DUSK + 30;
       const inst = window.INSTANCES && INSTANCES.enter('aerie', [SKYCITY.STEP_T.x, SKYCITY.STEP_T.y]); const inside = []; for (const f of HOOKS.nightLights) f(inside, 0, 0, MAP_W - 1, MAP_H - 1); leave();
       player.dayTime = d0;
-      check(P + 'C15 at night every lamp is a light (22 over the whole town), the wall torches light up, the night overlay is on, the lamps in view are drawn lit; by day no lamp is lit; in an instance the town lights nothing',
-        lamps === 22 && torches === TORCHES.size && torches > 10 && ov > 0 && litN > 0 && day.filter(l => l.kind === 'lamp').length === 0 && !!inst && inside.length === 0,
-        { lamps, torches, ov, litN, day: day.length, inst: !!inst, inside: inside.length }); }
+      check(P + 'C15 at night every lamp is a light (22 over the whole town, each a pool of 72 px), the wall torches light up, the night overlay is on, the night painter asks this file for its lights while rendering and gets the lamps in view, the lamps in view are drawn lit; by day no lamp is lit; in an instance the town lights nothing',
+        lamps === 22 && all.filter(l => l.kind === 'lamp').every(l => l.r === LAMP_R) && LAMP_R <= 80 && torches === TORCHES.size && torches > 10 && ov > 0 && at >= 0 && asked >= 1 && handed >= 4 && litN > 0 && day.filter(l => l.kind === 'lamp').length === 0 && !!inst && inside.length === 0,
+        { lamps, torches, ov, asked, handed, litN, day: day.length, inst: !!inst, inside: inside.length }); }
 
     // ---- C16. instances ----
     { leave(); const ok = INSTANCES.enter('aerie', [SKYCITY.STEP_T.x, SKYCITY.STEP_T.y]); F.sim(2, []); drain(); F.tp(92, 40);
@@ -73713,7 +74208,7 @@ const MOUNT_LOOK = (() => {
         horseAt: player.horse && player.horse.at, horseOk: !!(player.horse && player.horse.at && tileAt(player.horse.at[0], player.horse.at[1]) === MOUNTS.tiles.HORSE && Math.max(Math.abs(player.horse.at[0] - MOUNTS.post.x), Math.abs(player.horse.at[1] - MOUNTS.post.y)) <= 3 && !keepClear().has(idx(player.horse.at[0], player.horse.at[1]))),
         oldHorse: tileAt(...cells.horse) === base[pi(...cells.horse)],
         free: !collides(player.x, player.y, player.r, playerWho()),
-        voice: lines.filter(l => l === 'Thistledown has been rebuilt while you were away. Go and see the Great Fountain.').length, back: lines.filter(l => l === 'Back in your pack: 1 bed, 1 lodestone.').length,
+        voice: lines.filter(l => l === 'Thistledown has been rebuilt while you were away. Go and see the Great Fountain.').length, back: lines.filter(l => l === 'Back in your pack: 1 bed and 1 lodestone.').length, bedTold: lines.filter(l => /bed you slept in is gone/.test(l)).length,
         cityV: player.cityV,
         mech: movedTo(cells.mech, 'MECH'), wreck: movedTo(cells.wreck, 'WRECK'),
       };
@@ -73725,8 +74220,70 @@ const MOUNT_LOOK = (() => {
       for (const c of touched.concat(horseCell ? [horseCell] : [], movedCells)) setTile(c[0], c[1], base[pi(c[0], c[1])]);
       if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0);
       load(); F.step([]); drain();
-      check(P + 'C17 an old save loads into the new city: the bed in the fountain and the lodestone in the hedge are taken back and refunded (bedSpawn and home cleared), the fire on the street and the crop in the allotment stay, the mare in the flower stall is re-parked beside the rail on open ground, the knight saved in the moat stands clear, the Voice says the city was rebuilt and "Back in your pack: 1 bed, 1 lodestone." once each; a second load changes nothing',
-        r.ok && r.bed && r.lode && r.refunded && r.spawnCleared && r.fire && r.crop && r.horseOk && r.oldHorse && r.free && r.voice === 1 && r.back === 1 && r.cityV === 1 && r.second && !!r.mech && !!r.wreck, r); }
+      check(P + 'C17 an old save loads into the new city: the bed in the fountain and the lodestone in the hedge are taken back and refunded (bedSpawn and home cleared), the fire on the street and the crop in the allotment stay, the mare in the flower stall is re-parked beside the rail on open ground, the knight saved in the moat stands clear, the Voice says the city was rebuilt, "Back in your pack: 1 bed and 1 lodestone." and that his bed is gone, once each; a second load changes nothing',
+        r.ok && r.bed && r.lode && r.refunded && r.spawnCleared && r.fire && r.crop && r.horseOk && r.oldHorse && r.free && r.voice === 1 && r.back === 1 && r.bedTold === 1 && r.cityV === 1 && r.second && !!r.mech && !!r.wreck, r); }
+
+    // ---- C17b. an old save's things where new houses stand and on the High Street, a full pack and bank, the inn's bed, and a
+    // knight saved on his own door where a hedge now grows ----
+    { leave(); onFoot(); drain(); save();
+      const sk = 'fanglands.slot.' + title.slot, raw0 = localStorage.getItem(sk), mirror0 = localStorage.getItem(SAVE_KEY);
+      const d = JSON.parse(raw0 || mirror0);
+      const cells = { plank: [101, 28], mech: [123, 37], door: [95, 32], wreck: [120, 31], hedgeDoor: [132, 15] };
+      const ix = ([x, y]) => idx(x, y);
+      d.player.visitedVillage = true; delete d.player.cityV; d.player.mech = null; d.player.r = 13; d.player.speed = 175; d.player.dead = false; d.player.hp = Math.max(1, d.player.hp || 10);
+      d.player.x = tc(cells.hedgeDoor[0]); d.player.y = tc(cells.hedgeDoor[1]); d.player.bedSpawn = { x: tc(128), y: tc(48) }; d.player.home = null; d.player.horse = null;
+      d.player.inv = new Array(INV_SLOTS).fill(null).map(() => ({ id: 'stone', qty: 50 }));
+      d.player.bank = Object.keys(ITEMS).filter(id => !['plank', 'door', 'coins', 'stone'].includes(id)).slice(0, BANK_SLOTS).map(id => ({ id, qty: 1 }));
+      d.mapDiffs = (d.mapDiffs || []).filter(([i]) => { const x = i % MAP_W, y = Math.floor(i / MAP_W); return !inTown(x, y); })
+        .concat([[ix(cells.plank), 'PLANK'], [ix(cells.mech), 'MECH'], [ix(cells.door), 'DOOR'], [ix(cells.wreck), 'WRECK'], [ix(cells.hedgeDoor), 'DOOR']]);
+      const crafted = JSON.stringify(d);
+      localStorage.setItem(sk, crafted); localStorage.setItem(SAVE_KEY, crafted);
+      const log0 = MIG.log.length, un0 = MIG.unstuck || 0, n0 = drops.length;
+      const ok = load(); F.step([]);
+      const lines = texts(), moved = cell => MIG.log.slice(log0).find(e => e[0] === cell[0] && e[1] === cell[1] && e[3] === 'moved');
+      const ground = drops.slice(n0).filter(dd => dist(dd.x, dd.y, player.x, player.y) < 40).map(dd => dd.id + ':' + dd.qty).sort().join(',');
+      const r = { ok,
+        plank: tileAt(...cells.plank) === base[pi(...cells.plank)] && !mapDiffs.has(ix(cells.plank)), door: tileAt(...cells.door) === base[pi(...cells.door)] && !mapDiffs.has(ix(cells.door)),
+        mech: !!moved(cells.mech) && !insideBuilding(moved(cells.mech)[4], moved(cells.mech)[5]), wreck: !!moved(cells.wreck) && !onHighStreet(moved(cells.wreck)[4], moved(cells.wreck)[5]),
+        ground, groundLine: lines.filter(l => l === 'On the ground by you: 1 plank and 2 doors.').length,
+        bed: !!player.bedSpawn && Math.floor(player.bedSpawn.x / TILE) === 129 && Math.floor(player.bedSpawn.y / TILE) === 48 && tileAt(129, 48) === T.BED && !lines.some(l => /bed you slept in is gone/.test(l)),
+        free: !collides(player.x, player.y, player.r, playerWho()) && tileAt(...cells.hedgeDoor) === HEDGE, unstuck: (MIG.unstuck || 0) - un0,
+        words: refundWords({ plank: 17, bed: 1, lodestone: 1 }, 'pack') };
+      // put the save, the map and the knight back as they were
+      for (const c of Object.values(cells).concat(MIG.log.slice(log0).filter(e => e[3] === 'moved').map(e => [e[4], e[5]]))) setTile(c[0], c[1], base[pi(c[0], c[1])]);
+      drops = drops.slice(0, n0);
+      if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0);
+      load(); F.step([]); drain();
+      check(P + "C17b an old save: a plank on what is now h5's floor and a door and a walker wreck on the High Street are taken off (the walker moved into the open, out of h1 and off the street); with the pack and the bank full the refunds lie by the knight ('On the ground by you: 1 plank and 2 doors.'); the inn's bed moves with the inn (129,48); a knight saved on his door where a hedge now grows is moved out by the pass itself; refunds read '17 planks, 1 bed and 1 lodestone'",
+        r.ok && r.plank && r.door && r.mech && r.wreck && r.ground === 'door:2,plank:1' && r.groundLine === 1 && r.bed && r.free && r.unstuck === 1 && r.words === 'Back in your pack: 17 planks, 1 bed and 1 lodestone.', r); }
+
+    // ---- C19b. a back door is a porch over the step behind the house, drawn in front of nothing but the step ----
+    { leave(); onFoot(); drain(); const r = {};
+      for (const id of ['inn', 'h6', 'h7']) {
+        const b = BUILDINGS.find(o => o.id === id); F.tp(b.x + b.doorTop, b.y - 1); F.step([]);
+        STATS.record = true; const items = []; try { drawHook(ctx, items, cam); } finally { STATS.record = false; }
+        const porch = STATS.boxes.filter(bx => bx.own === id && !bx.building && bx.y1 <= b.y * TILE + 8 && bx.y0 < b.y * TILE - 20);
+        // the knight standing on the step sorts after the porch (09-render sorts him at player.y + player.r): in front of it
+        r[id] = { porches: porch.length, before: porch.length === 1 && porch[0].y < player.y + player.r, n: STATS.porches };
+      }
+      check(P + 'C19b the inn, h6 and h7 each draw one porch over the step behind the house (their door on the north wall), sorted before a knight standing on that step',
+        Object.values(r).every(v => v.porches === 1 && v.before), r); }
+
+    // ---- C19c. the city's pictures: given back after 10 s away and made again on return; a ground chunk whose canvas gave
+    // no context (an iPad short of canvas memory) lets the core's own ground show under it, never the black behind the map ----
+    { leave(); onFoot(); drain(); F.tp(112, 33); F.step([]); render(); const r = { had: CHUNKS.size > 0 && PICS.size > 0 };
+      const inst = window.INSTANCES && INSTANCES.enter('war_shed'); F.sim(9 * 60, []); r.kept = CHUNKS.size > 0; F.sim(90, []);
+      r.freed = !!inst && CHUNKS.size === 0 && PICS.size === 0 && FREE.freed >= 1; leave();
+      F.tp(112, 33); F.step([]); render(); render(); r.back = CHUNKS.size > 0 && window.GROUND_COVER(112, 32) === true;
+      const ci = Math.floor((32 - Y0) / CH) * CW + Math.floor((112 - X0) / CH), key = [...CHUNKS.keys()].find(k => chunkKeyCell(k) === ci);
+      if (key) dropChunk(key, CHUNKS.get(key));
+      const ce = document.createElement;
+      document.createElement = function (t) { const c = ce.apply(document, arguments); if (String(t).toLowerCase() === 'canvas') c.getContext = () => null; return c; };
+      try { render(); r.blankCovered = window.GROUND_COVER(112, 32); } finally { document.createElement = ce; }
+      const key2 = [...CHUNKS.keys()].find(k => chunkKeyCell(k) === ci); if (key2) dropChunk(key2, CHUNKS.get(key2));
+      render(); render(); r.again = window.GROUND_COVER(112, 32) === true;
+      check(P + "C19c the city's ground chunks and building pictures are given back after 10 s in an instance (not after 9) and made again on return; a chunk whose canvas gives no context does not hide the core's ground (GROUND_COVER false there), and once painted it covers again",
+        r.had && r.kept && r.freed && r.back && r.blankCovered === false && r.again, r); }
 
     // ---- C24. a knight's machines and wrecks in the new city are his: never moved or deleted by a load ----
     { leave(); onFoot(); drain(); save();
@@ -73842,9 +74399,14 @@ const MOUNT_LOOK = (() => {
       const regionT = (shown.find(s => s.name === 'Thistledown') || {}).t;
       const fsT = (shown.find(s => s.name === 'Fountain Square') || {}).t;
       const twice = wards.some((n, i) => i && wards[i - 1] === n);
-      check(P + 'C20 walking in at the West Gate, along the High Street to Crown Street and on to the Duke\'s Green shows Fountain Square and The Duke\'s Green once each, never within 3.2 s of the Thistledown banner, never the same twice running',
-        ok && wards.filter(n => n === 'Fountain Square').length === 1 && wards.filter(n => n === "The Duke's Green").length === 1 && !twice && regionT !== undefined && fsT - regionT >= 3.2,
-        { ok, shown: names2, gap: fsT - regionT }); }
+      // and arriving in Fountain Square at once (a ride home, a fall, a teleport): the square's banner waits out the
+      // Thistledown banner's 3.2 s, then shows (the walk above takes about 5 s, so it never tests the wait)
+      onFoot(); F.tp(82, 32); F.sim(5, []); areaBanner = null; WARD.shown = null; const quick = [];
+      F.tp(112, 33); let early = false, later = false; const t0 = time;
+      for (let k = 0; k < 270; k++) { F.step([]); const a = areaBanner && areaBanner.name; if (a === 'Fountain Square') { if (time - t0 < 3.0) early = true; else later = true; } if (a && quick[quick.length - 1] !== a) quick.push(a); }
+      check(P + 'C20 walking in at the West Gate, along the High Street to Crown Street and on to the Duke\'s Green shows Fountain Square and The Duke\'s Green once each, never within 3.2 s of the Thistledown banner, never the same twice running; arriving in the square at once, its banner waits the 3.2 s and then shows',
+        ok && wards.filter(n => n === 'Fountain Square').length === 1 && wards.filter(n => n === "The Duke's Green").length === 1 && !twice && regionT !== undefined && fsT - regionT >= 3.2 && !early && later && quick[0] === 'Thistledown',
+        { ok, shown: names2, gap: fsT - regionT, early, later, quick }); }
 
     // ---- C21. regions ----
     { onFoot(); F.tp(82, 32); F.step([]); F.sim(60, ['KeyD']); const inRegion = player.region;
@@ -73868,21 +74430,24 @@ const MOUNT_LOOK = (() => {
     { const r = {}, q = Q();
       // Osric calls "Welcome to Thistledown!" once, the first time a knight comes within 3 tiles, as a tag (not a dialog)
       onFoot(); drain(); areaBanner = null; levelBanner = null; q.barked = false; BARK.t = 0; BARK.pending = false; F.tp(96, 32); F.step([]); const before = BARK.t;
-      F.tp(91, 32); F.step([]); const on = BARK.t > 3.9 && q.barked && !said().some(d => /Welcome to Thistledown!/.test(d.text));
+      F.tp(91, 32); F.sim(30, []); const on = BARK.t > 3.4 && q.barked && !said().some(d => /Welcome to Thistledown!/.test(d.text));
       const cap = { items: null }; const hook = (g, items) => { cap.items = items; }; HOOKS.draw.push(hook); try { render(); } finally { HOOKS.draw.splice(HOOKS.draw.indexOf(hook), 1); }
       const tagItem = (cap.items || []).some(i => i.capital && i.y === 1e9 + 3);
-      BARK.t = 0; F.tp(96, 32); F.step([]); F.tp(91, 32); F.step([]); const once = BARK.t === 0;
+      BARK.t = 0; F.tp(96, 32); F.step([]); F.tp(91, 32); F.sim(30, []); const once = BARK.t === 0;
       r.bark = before === 0 && on && tagItem && once;
       // ... but never under a banner: with THISTLEDOWN still up he waits, and calls out once it has gone
       q.barked = false; BARK.t = 0; BARK.pending = false; F.tp(96, 32); F.step([]);
       areaBanner = { name: 'Thistledown', sub: 'The city that still stands', t: 2.5 }; F.tp(91, 32); F.step([]);
       for (let k = 0; k < 30; k++) F.step([]);
-      const held = BARK.t === 0 && BARK.pending && !q.barked && !!areaBanner;
+      const held0 = BARK.t === 0 && BARK.pending && !q.barked && !!areaBanner;
+      // still waiting while the banner fades (0.25 s left), and for a breath after it has gone
+      areaBanner.t = 0.25; F.step([]); const heldFade = BARK.t === 0 && !q.barked; areaBanner = null; F.sim(12, []); const heldBreath = BARK.t === 0 && !q.barked;
+      const held = held0 && heldFade && heldBreath;
       // the banner goes, but the Voice is talking (its box is at the top of a phone's screen): he waits for that too
       say('A line from the Voice.', 'The Voice'); areaBanner = null; F.step([]); const heldTalk = BARK.t === 0 && BARK.pending && !q.barked;
-      drain(); F.step([]); const after = BARK.t > 3.5 && q.barked && !areaBanner;
+      drain(); F.sim(30, []); const after = BARK.t > 3.4 && q.barked && !areaBanner;
       r.barkHeld = held && heldTalk && after;
-      if (!r.barkHeld) r.barkWhy = { held, heldTalk, after };
+      if (!r.barkHeld) r.barkWhy = { held0, heldFade, heldBreath, heldTalk, after };
       // the town's new people have names no one else in the Fanglands has (a second Nell muddled Hollowford's Nell)
       const ours = new Set(PLAN.PEOPLE.map(p => p.name).concat(KIDS.map(k => k.name), ['Duchess']));
       const clash = NPCS.filter(n => !PLAN.PEOPLE.some(p => p.id === n.id)).map(n => n.name).filter(nm => ours.has(nm) || [...ours].some(o => o.split(' ')[0] === String(nm).split(' ')[0]));
@@ -73910,7 +74475,9 @@ const MOUNT_LOOK = (() => {
       r.gates = calls(g => drawFenceProp(g, 85, 32, true)) === 0 && calls(g => drawFenceProp(g, 140, 31, true)) === 0 && calls(g => drawFenceProp(g, 80, 43, true)) > 0;
       r.brazier = (() => { const { g, log } = recorder(); drawFireProp(g, 119, 38); return log.filter(e => e[0] === 'ellipse').length >= 3; })() && calls(g => drawFireProp(g, 150, 30)) > 0;
       { const t0 = STATS.towers; calls(g => drawTower(g, tc(104), tc(42))); r.tower = STATS.towers === t0 + 1; }
-      { const b0 = STATS.townBuildings; calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'bakery'))); calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'death2'))); r.buildings = STATS.townBuildings === b0 + 1 && BUILDINGS.filter(b => b.town).length === 16; }
+      // (Death's House draws through the capital's own painter too, and is not one of the sixteen town buildings)
+      { const b0 = STATS.townBuildings, d0 = STATS.deathHouse; calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'bakery'))); calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'death2'))); calls(g => drawBuilding(g, BUILDINGS.find(b => b.id === 'death1')));
+        r.buildings = STATS.townBuildings === b0 + 1 && STATS.deathHouse === d0 + 1 && BUILDINGS.filter(b => b.town).length === 16; }
       // the words elsewhere: Ada, the region, the island arch, the sounds, the book
       const ada = npc('v1'); r.ada = ada.lines[0] === 'Lost? Find the Great Fountain. Every street comes back to it.' && ada.lines.length === 3;
       r.region = REGIONS.find(x => x.name === 'Thistledown').sub === 'The city that still stands';
@@ -73918,7 +74485,7 @@ const MOUNT_LOOK = (() => {
       r.sounds = typeof SFX.bell === 'function' && typeof SFX.splash === 'function';
       r.wiki = !window.WIKI || (!!WIKI.get('places', 'thistledown_landmarks') && !!WIKI.get('quests', 'td_bell'));
       // the first visit: the Voice's line
-      { const v0 = player.visitedVillage; player.visitedVillage = false; drain(); F.tp(96, 32); F.step([]); r.voice = said().some(d => d.who === 'The Voice' && d.text === 'Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is just past it, over the moat.'); player.visitedVillage = v0; drain(); }
+      { const v0 = player.visitedVillage; player.visitedVillage = false; drain(); F.tp(96, 32); F.step([]); r.voice = said().some(d => d.who === 'The Voice' && d.text === 'Thistledown. You will wake here now if you fall. Follow the street to the Great Fountain. The castle is south of it, across the moat.'); player.visitedVillage = v0; drain(); }
       check(P + "C23 the small things: Osric's welcome shows once as a tag over his head, never under a banner or a talk box (he waits for THISTLEDOWN, and the Voice, to go); the town's new people have names nobody else has; Tess and Robin and the swans move by the wall clock on their paths; Duchess comes after the story; Ambrose and Wynn have their after-story lines; the town gates draw no wooden gate, the square's fire is a brazier, the castle towers and the town buildings draw themselves (Death's House keeps its own); Ada, the region, the island arch, the sounds, the book and the Voice say the new words",
         Object.values(r).every(Boolean), r); }
 
@@ -73937,9 +74504,16 @@ const MOUNT_LOOK = (() => {
       clearMonsters(112, 12, 6); F.tp(112, 12); F.step([]); const open = !SOLID.has(tileAt(112, 12)) && Math.floor(player.y / TILE) === 12;
       STATS.record = true; render(); STATS.record = false; const bellA = STATS.bellAlpha;
       F.tp(112, 33); F.step([]); render(); const bellFront = STATS.bellAlpha;
-      check(P + 'C25 the city\'s ground sorts under every other ground mark: a tap to walk on the paving shows its ring and dots (nothing sorts under the ground); a knight on the grass behind the Bell Tower, outside the north wall, sees it drawn see-through (and from the fountain it is solid)',
-        !!ground && ringShown && under === 0 && marks.every(i => i.y > ground.y) && open && bellA < 1 && bellFront === 1,
-        { ground: !!ground, ringShown, marks: marks.length, under, open, bellA, bellFront }); }
+      // a friend online on that grass is seen through it by a knight standing in front of the tower (73-players' REMOTE)
+      let friendA = null, alone = null;
+      if (window.PLAYERS && PLAYERS.remote) {
+        F.tp(112, 19); F.step([]); render(); alone = STATS.bellAlpha;
+        PLAYERS.remote.__bellTest = { n: '__bellTest', map: PLAYERS.mapId(), x: tc(112), y: tc(12), shown: { x: tc(112), y: tc(12) }, dead: false, r: 13 };
+        try { KN.t = NaN; render(); friendA = STATS.bellAlpha; } finally { delete PLAYERS.remote.__bellTest; KN.t = NaN; }
+      }
+      check(P + 'C25 the city\'s ground sorts under every other ground mark: a tap to walk on the paving shows its ring and dots (nothing sorts under the ground); a knight on the grass behind the Bell Tower, outside the north wall, sees it drawn see-through (and from the fountain it is solid); a friend online on that grass makes it see-through for a knight in front of it',
+        !!ground && ringShown && under === 0 && marks.every(i => i.y > ground.y) && open && bellA < 1 && bellFront === 1 && alone === 1 && friendA !== null && friendA < 1,
+        { ground: !!ground, ringShown, marks: marks.length, under, open, bellA, bellFront, alone, friendA }); }
 
     // ---- C27. nobody vanishes under a gatehouse ----
     // The roof over each town gate is drawn faint (25%) while anybody is in the passage: the knight, a friend online, a
@@ -74270,6 +74844,124 @@ const MOUNT_LOOK = (() => {
       }
       check(P + 'the playthrough audit times blackiron, sunstone and stormstone bars at 9.5, 13.5 and 17.5 s (a 4 s lump, 1 / 2 / 3 coal at 4 s, a 1.5 s smelt), and each lump at 4 s',
         !!MS && !!O && O.TIERS.length === 3 && wrong.length === 0 && MS.blackiron_bar === 9.5 && MS.sunstone_bar === 13.5 && MS.stormstone_bar === 17.5, { wrong }); }
+
+    // --- 7. a place's name banner (THISTLEDOWN) never draws over an open page: on a phone it sat on the quest page (59-hudkit) ---
+    { const w0 = window.innerWidth, h0 = window.innerHeight, t0 = window.__forceTouch, ab0 = areaBanner;
+      const names = () => { const log = []; HK.drawBanners(HK.audit.fitCtx(log), HK.layout()); return log.some(e => /THISTLEDOWN/.test(String(e.s))); };
+      let over = null, shown = null;
+      try {
+        window.innerWidth = 390; window.innerHeight = 844; window.__forceTouch = true; resize(); closePanel();
+        areaBanner = { name: 'Thistledown', sub: 'The city that still stands', t: 2.5 }; openPanel('quests'); render(); over = names();
+        closePanel(); render(); shown = names();
+      } finally { closePanel(); areaBanner = ab0; window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); render(); }
+      check(P + "a place's name banner is not drawn while a page is open (a phone's quest page), and shows again once it is closed", over === false && shown === true, { over, shown }); }
+
+    // --- 8. the bank on the narrowest phone (320 x 568): a phone's shape, inside the screen, Back and Next apart (60-bank) ---
+    { const w0 = window.innerWidth, h0 = window.innerHeight, t0 = window.__forceTouch, bank0 = player.bank.map(s => ({ ...s })), text0 = SETTINGS.get('text'), r = {};
+      const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      try {
+        window.innerWidth = 320; window.innerHeight = 568; window.__forceTouch = true; resize();
+        player.bank = []; for (let i = 0; i < 40; i++) player.bank.push({ id: i % 2 ? 'stone' : 'wood', qty: 1 + i });
+        for (const text of ['normal', 'large']) {
+          SETTINGS.set('text', text); closePanel(); openPanel('bank'); render();
+          const L = BANK.layout(), pr = panelRect, ci = buttons.findIndex(b => b.label === '×');
+          const own = ci < 0 ? [] : buttons.slice(ci).filter(b => !b.offscreen && b.w > 0 && b.h > 0);
+          const out = own.filter(b => b.x < pr.x || b.y < pr.y || b.x + b.w > pr.x + pr.w || b.y + b.h > pr.y + pr.h || b.x + b.w > VW || b.y + b.h > VH).map(b => b.label);
+          const over = []; for (let i = 0; i < own.length; i++) for (let j = i + 1; j < own.length; j++) if (hit(own[i], own[j])) over.push(own[i].label + ' x ' + own[j].label);
+          const prev = own.find(b => /Prev$/.test(b.label)), next = own.find(b => /Next$/.test(b.label));
+          r[text] = { kind: L.kind, w: L.w, out, over, pager: !!prev && !!next && !hit(prev, next) && prev.w >= 44 && next.h >= 44 };
+        }
+      } finally { closePanel(); player.bank = bank0; SETTINGS.set('text', text0); window.innerWidth = w0; window.innerHeight = h0; window.__forceTouch = t0; resize(); render(); }
+      check(P + 'the bank at 320 x 568 takes a phone shape (stack or split, never the computer\'s wide one): every control inside the panel and the screen, none on another, Back and Next 44 px and apart, at both text sizes',
+        ['normal', 'large'].every(k => r[k] && r[k].kind !== 'wide' && r[k].w <= 320 && !r[k].out.length && !r[k].over.length && r[k].pager), r); }
+
+    // --- 9. an old save's plank and stump inside the new rock (92-worldshape): the rock comes back, the plank is given back ---
+    { const WS = window.WORLDSHAPE, r = {};
+      if (!WS || !WS.rock || !WS.rock.size) check(P + 'an old save\'s things inside the new rock are undone on load', false, { rock: WS && WS.rock && WS.rock.size });
+      else {
+        const sk = typeof title !== 'undefined' && title.slotKey ? title.slotKey(title.slot) : SAVE_KEY;
+        if (INSTANCES && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+        save(); const raw0 = localStorage.getItem(sk), mirror0 = localStorage.getItem(SAVE_KEY);
+        const cells = [...WS.rock.keys()].filter(i => WS.rock.get(i) === WS.CLIFF).slice(0, 2), [a, b] = cells;
+        const d = JSON.parse(raw0);
+        d.mapDiffs = (d.mapDiffs || []).filter(([i]) => i !== a && i !== b).concat([[a, 'PLANK'], [b, 'STUMP']]);
+        d.regrow = (d.regrow || []).concat([{ i: b, t: 'TREE', timer: 50 }]);
+        const planks0 = (d.player.inv || []).filter(s => s && s.id === 'plank').reduce((n, s) => n + s.qty, 0) + (d.player.bank || []).filter(s => s && s.id === 'plank').reduce((n, s) => n + s.qty, 0);
+        localStorage.setItem(sk, JSON.stringify(d)); localStorage.setItem(SAVE_KEY, JSON.stringify(d));
+        try {
+          const ok = load(); dialog.queue.length = 0; dialog.cur = null;
+          const planks = countItem('plank') + player.bank.filter(s => s.id === 'plank').reduce((n, s) => n + s.qty, 0) + drops.filter(dd => dd.id === 'plank').reduce((n, dd) => n + dd.qty, 0);
+          r.ok = ok; r.rock = map[a] === WS.CLIFF && map[b] === WS.CLIFF && !mapDiffs.has(a) && !mapDiffs.has(b);
+          r.regrow = !regrow.some(g => g.i === b); r.plank = planks === planks0 + 1;
+          save(); const n0 = WS.unrocked.cells; load(); r.again = WS.unrocked.cells === n0;
+        } finally { if (raw0 !== null) localStorage.setItem(sk, raw0); if (mirror0 !== null) localStorage.setItem(SAVE_KEY, mirror0); load(); dialog.queue.length = 0; dialog.cur = null; }
+        check(P + "an old save's plank and stump inside the new rock (92-worldshape) are undone on load: the cliff comes back, the stump's regrowth goes, the plank is given back, and a second load changes nothing",
+          r.ok && r.rock && r.regrow && r.plank && r.again, r);
+      } }
+  });
+}
+
+// ---- src/96-rests.js ----
+// ============================================================================
+// THE REMATCH RESTS COUNT THE TIME A KNIGHT IS AWAY
+// The four rematch bosses rest on the knight's own day clock (player.dayTime, saved with him): the Echo of the Fang
+// (28, 600 s), the War Shed's Barrelbeast (20, 300 s), the Thunderbird (66, 300 s) and the Gnasher (33, 180 s). The day
+// clock only runs while the game does, so a knight who closed the game with "Ready in 10:00" came back the next day to
+// the same 10:00. Now every save stamps the wall clock (player.wallAt), and a load takes the whole seconds since then off
+// each rest still running (never below "ready"). The day clock itself is not moved: night and day stay where he left them.
+// A new rematch rest is listed in RESTS.
+// ============================================================================
+{
+  // [the quest key, the field that holds the day-clock second the rest ends]
+  const RESTS = [['fang', 'restUntil'], ['hollowford', 'shedRestUntil'], ['storm', 'restUntil'], ['tinker', 'restUntil']];
+  const AWAY_MAX = 7 * 24 * 3600;
+  // what the last load credited (for the check below)
+  const LAST = { away: 0, credited: [] };
+  function credit(away) {
+    LAST.away = away; LAST.credited = [];
+    if (!(away >= 1)) return;
+    const now = player.dayTime || 0;
+    for (const [k, f] of RESTS) {
+      const q = quest[k];
+      if (!q || typeof q !== 'object' || !(q[f] > now)) continue;
+      const was = q[f]; q[f] = Math.max(now, was - away); LAST.credited.push([k, was - q[f]]);
+    }
+  }
+  // (a save made inside a load, as 95's old-save pass makes, keeps the stamp the save came with)
+  let loading = false;
+  { const _save = save; save = function () { if (!loading) player.wallAt = Date.now(); return _save.apply(this, arguments); }; }
+  { const _load = load;
+    load = function () {
+      let ok; loading = true; try { ok = _load.apply(this, arguments); } finally { loading = false; }
+      if (ok) {
+        const at = player.wallAt, away = typeof at === 'number' && at > 0 ? Math.floor((Date.now() - at) / 1000) : 0;
+        credit(Math.min(AWAY_MAX, Math.max(0, away)));
+      }
+      return ok;
+    }; }
+  window.RESTS_AWAY = { RESTS, LAST };
+
+  HOOKS.selfTest.push((check, F) => {
+    const P = 'rests: ';
+    const keep = { fang: quest.fang && quest.fang.restUntil, shed: quest.hollowford && quest.hollowford.shedRestUntil, day: player.dayTime };
+    try {
+      const day = player.dayTime || 0;
+      if (!quest.fang) quest.fang = {}; if (!quest.hollowford) quest.hollowford = {};
+      quest.fang.restUntil = day + 600; quest.hollowford.shedRestUntil = day + 100;
+      save();
+      // the same save, as if it were written 250 s ago
+      // (14-title's load reads the slot, and mirrors it into SAVE_KEY)
+      const key = typeof title !== 'undefined' && title.slotKey ? title.slotKey(title.slot) : SAVE_KEY;
+      const raw = JSON.parse(localStorage.getItem(key)); raw.player.wallAt = Date.now() - 250 * 1000; localStorage.setItem(key, JSON.stringify(raw));
+      const ok = load(); const d2 = player.dayTime || 0;
+      const fangLeft = quest.fang.restUntil - d2, shedLeft = quest.hollowford.shedRestUntil - d2;
+      // and a save loaded straight away keeps its rests to the second
+      quest.fang.restUntil = d2 + 600; save(); load(); const same = Math.abs(quest.fang.restUntil - (player.dayTime || 0) - 600) < 1e-6;
+      check(P + 'a load takes the real time since the save off every rematch rest still running: 600 s with 250 s away is 350 s left, 100 s is ready (0), a quick reload keeps 600 s; the day clock is not moved',
+        ok && Math.abs(fangLeft - 350) < 1.5 && shedLeft === 0 && same && Math.abs(d2 - day) < 1e-6, { fangLeft, shedLeft, same, day: [day, d2], last: LAST });
+    } finally {
+      if (quest.fang) quest.fang.restUntil = keep.fang || 0; if (quest.hollowford) quest.hollowford.shedRestUntil = keep.shed || 0; player.dayTime = keep.day; save();
+    }
   });
 }
 
