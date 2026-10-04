@@ -654,5 +654,6 @@
   {"file": "78-trade.js", "line": 780, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
   {"file": "78-trade.js", "line": 782, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
   {"file": "78-trade.js", "line": 786, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
-  {"file": "78-trade.js", "line": 789, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"}
+  {"file": "78-trade.js", "line": 789, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
+  {"file": "79-boygirl.js", "literal": "[6, 6]", "decl": "spots", "reason": "HUD: the self-test taps 6 screen pixels in from each corner"}
 ]
