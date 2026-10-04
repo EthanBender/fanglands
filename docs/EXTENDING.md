@@ -62,7 +62,7 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   (a phantom, through the helper credit) pays each knight his own reward. Anything the boss spawns or moves runs only where
   `!window.NET || !NET.online() || (window.COOP && COOP.isKeeper())`. A rematch's rest is timed on `player.dayTime` (saved,
   always counts up, in instances too), never on `time`; list its field in `src/96-rests.js` (`RESTS`), which takes the real
-  time a knight was away (14-title's stamp beside the slot) off every rest still running when he loads. Give the entry `rest` (seconds; the keeper then answers calls with
+  time a knight was away (its own stamp beside the slot, `fanglands.rests.N`) off every rest still running when he loads. Give the entry `rest` (seconds; the keeper then answers calls with
   `boss_wait` for that long after the boss falls on its map), `resting: m => bool` (this knight's own rest: a repeat kill then
   pays nothing, `m.noPay`; read it in the kill hook and say "You helped..."), `refused: left => {...}` (the keeper's boss_wait:
   end this knight's call and say how long in m:ss) and, when the boss's name would spoil a story, `told: n => 'line'` for the
