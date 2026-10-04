@@ -655,5 +655,19 @@
   {"file": "78-trade.js", "line": 782, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
   {"file": "78-trade.js", "line": 786, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
   {"file": "78-trade.js", "line": 789, "reason": "the self-test puts a friend, a tap or a walk a few tiles from the knight: distances, not positions"},
-  {"file": "79-boygirl.js", "literal": "[6, 6]", "decl": "spots", "reason": "HUD: the self-test taps 6 screen pixels in from each corner"}
+  {"file": "79-boygirl.js", "literal": "[6, 6]", "decl": "spots", "reason": "HUD: the self-test taps 6 screen pixels in from each corner"},
+  {"file": "79-deaths.js", "line": 507, "reason": "the self-test moves every monster within 12 tiles of the knight 30 tiles off: distances, not positions"},
+  {"file": "79-deaths.js", "line": 536, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 548, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 562, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 584, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 598, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 600, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 604, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 656, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 672, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 691, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 692, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 701, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"},
+  {"file": "79-deaths.js", "line": 723, "reason": "the self-test puts each monster a few tiles from the knight: offsets from the knight, not positions"}
 ]

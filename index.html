@@ -48865,7 +48865,7 @@ const DEATHS = (() => {
     const hk = HOOKS.kill.splice(0);
     try {
       h.peace(true); API.freeze = false; API.clear(); dialog.cur = null; dialog.queue.length = 0;
-      { const o = h.openSpot(60, 30); F.tp(o.x, o.y); }
+      { const o = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(30)); F.tp(o.x, o.y); }
       for (const m of monsters) if (!m.dead && dist(m.x, m.y, player.x, player.y) < 12 * TILE) { m.x += 30 * TILE; m.home = { x: m.x, y: m.y }; }
       // (1) each kind plays its own death and is gone after about a second
       const KINDS = [['wolf', 'beast'], ['giant_spider', 'beast'], ['goblin', 'person'], ['guard_m', 'person'], ['grave_skeleton', 'undead'], ['zombie', 'undead'], ['walker', 'machine'], ['bulldozer', 'machine'], ['green_dragon', 'dragon'], ['ash_drake', 'dragon'], ['mithril_golem', 'golem'], ['giant_mithril', 'golem']];
