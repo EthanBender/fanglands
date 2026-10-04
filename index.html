@@ -25106,7 +25106,10 @@ window.SETTINGS = SETTINGS;
       const byBand = crossKin.every(k => census[k] === 'cross') && graveKin.every(k => census[k] === 'grave') && stoneKin.every(k => census[k] === 'headstone');
       const nobody = ['sheep', 'cow', 'boar', 'spider', 'walker', 'yard_walker', 'bulldozer', 'zombie', 'grave_zombie', 'vampire', 'ally_knight'].every(k => !census[k]);
       // and the hook that lays them: a goblin (2), a goblin brute (9), an elf sentinel (25)
-      const o = h.openSpot(ATLAS.world.tx(58), ATLAS.world.ty(30)); F.tp(o.x, o.y);   // open Goblin Fields: stretched-world points (the spread spec, section 2)
+      // the six graves go 5 to 15 tiles east of the stand: that row must be open ground, never a wall, a gate or a house
+      // (the jiggle moved Thistledown 3 tiles west and the row reached its west gate, which the test then dug out)
+      const rowOpen = (x, y) => { for (let k = 5; k <= 15; k++) { const t = tileAt(x + k, y); if (SOLID.has(t) || t === T.GATE || buildingAt(x + k, y)) return false; } return true; };
+      const o = h.openSpot(ATLAS.world.tx(58), ATLAS.world.ty(30), rowOpen); F.tp(o.x, o.y);   // open Goblin Fields: stretched-world points (the spread spec, section 2)
       const bx = Math.floor(player.x / TILE), by = Math.floor(player.y / TILE);
       const spots = { goblin: [bx + 5, by], brute: [bx + 7, by], elf_sentinel: [bx + 9, by], sheep: [bx + 11, by], walker: [bx + 13, by], zombie: [bx + 15, by] };
       const was = {}; for (const k in spots) { was[k] = tileAt(spots[k][0], spots[k][1]); changeTile(spots[k][0], spots[k][1], T.GRASS); }
