@@ -638,5 +638,7 @@
   {"file": "77-dropparty.js", "literal": "pickSpots(20, 5)", "decl": "s", "reason": "pickSpots(count, radius): 20 spots within 5 tiles, not a position"},
   {"file": "77-dropparty.js", "literal": "pickSpots(3, 4)", "decl": "few", "reason": "pickSpots(count, radius): 3 spots within 4 tiles, not a position"},
   {"file": "77-dropparty.js", "literal": "pickSpots(80, 10)", "decl": "many", "reason": "pickSpots(count, radius): 80 spots within 10 tiles, not a position"},
-  {"file": "77-dropparty.js", "decl": "sea", "reason": "pickSpots(count, radius, centre): 10 spots within 3 tiles; the centre is already Ironclad Isle's frame"}
+  {"file": "77-dropparty.js", "decl": "sea", "reason": "pickSpots(count, radius, centre): 10 spots within 3 tiles; the centre is already Ironclad Isle's frame"},
+  {"file": "78-accounts.js", "literal": "cy - 60", "line": 604, "reason": "HUD: the self-test drags the account list 60 screen pixels"},
+  {"file": "78-accounts.js", "literal": "cy - 150", "line": 604, "reason": "HUD: the self-test drags the account list 150 screen pixels"}
 ]

@@ -73,5 +73,6 @@
 "72-savelock.js",
 "73-players.js",
 "76-admin.js",
-"77-dropparty.js"
+"77-dropparty.js",
+"78-accounts.js"
 ]
