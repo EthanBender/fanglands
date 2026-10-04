@@ -38215,6 +38215,21 @@ window.RETALIATE = RETALIATE;
     return list;
   }
 
+  // The full snapshot (the 'snap' capability, docs/ONLINE.md "The shared world", Stage 2): when the world starts taking over
+  // a map this game keeps, it asks once for every monster as it stands here, standing or fallen, near anyone or not, so the
+  // world's copy carries on from this screen (a monster this knight chased, hurt or felled stays so). Same rows as snapshot().
+  function snapshotAll() {
+    const list = [];
+    for (const m of monsters) {
+      if (m.remote || m.phantom || !MONSTER_DEFS[m.type]) continue;
+      if (!m.nid) { m.nid = NET.me + ':' + (++S.counter); S.idxLen = -1; }
+      const f = m.facing || { x: 1, y: 0 };
+      list.push([m.nid, m.type, Math.round(m.x), Math.round(m.y), r2(m.hp || 0), r2(m.maxHp || 0), typeof m.state === 'string' ? m.state : 'idle', r2(f.x || 0), r2(f.y || 0), m.moving ? 1 : 0, r2(m.hurtT || 0), m.dead ? 1 : 0, r2(m.attackT || 0), r2(m.stunT || 0)]);
+      if (list.length >= 400) break;
+    }
+    return list;
+  }
+
   // ---------- puppets: what a non-keeper shows ----------
   function makePuppet(nid, type, x, y) {
     const d = MONSTER_DEFS[type]; if (!d) return null;
@@ -38599,6 +38614,10 @@ window.RETALIATE = RETALIATE;
     NET.on('keeper', msg => { if (!online() || typeof msg.map !== 'string' || msg.map !== S.map) return; setKeeper(typeof msg.n === 'string' ? msg.n : null); });
     NET.on('offline', () => reset());
     NET.on('mon', applyMon);
+    // the world taking over the map this game keeps asks once for every monster here (snapshotAll); a game that does not keep
+    // this map (any more) has nothing to say
+    if (Array.isArray(NET.caps) && !NET.caps.includes('snap')) NET.caps.push('snap');
+    NET.on('snap', msg => { if (!online() || typeof msg.map !== 'string' || msg.map !== S.map || !isKeeper()) return; NET.send({ t: 'mon', list: snapshotAll(), full: true }); });
     NET.on('p', msg => {
       if (typeof msg.n !== 'string' || msg.n === NET.me || typeof msg.map !== 'string') return;
       const x = num(msg.x), y = num(msg.y); if (x === null || y === null) return;
@@ -38642,20 +38661,57 @@ window.RETALIATE = RETALIATE;
 
   window.COOP = { refill: refillIfCleared, call, CREDIT, phantomOf, bossCall: onBossCall, bossWait: onBossWait, mmss,
     isKeeper, keeper: () => S.keeper, map: () => S.map, remotes: () => Object.values(S.remotes), knightsHere, puppets: () => S.puppets,
-    get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), find, apply: applyMon, reset, state: S, debugTick: () => DEBUG_TICK,
+    get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), snapshotAll, find, apply: applyMon, reset, state: S, debugTick: () => DEBUG_TICK, debugBox: (L, w, h) => debugBox(L, w, h),
   };
 
   // ?debug=tick (the two-browser proofs, docs/ONLINE.md "The shared world", Stage 2): who keeps this map, how often its stream
   // lands, the world's tick, the rows in the last mon and the puppets. Nobody sees it without the address saying so.
   const DEBUG_TICK = typeof location !== 'undefined' && !!location && /[?&]debug=tick\b/.test(String(location.search || ''));
+  // Where the box goes: never over the hearts and hit points (the crest), the minimap, the quest scroll, the belt, the stick,
+  // a seat, any other piece of the HUD or the knight. The bottom-left corner when it is free (a computer), else the first free
+  // spot down the left edge (an iPad, a phone held upright), else down the middle (a phone on its side). L is a HUD layout
+  // (59-hudkit HK.layoutFor or the live one), vw x vh the screen.
+  // (a narrow phone gets the small box: 10 px type instead of 12)
+  const DBG_GAP = 6, dbgSize = vw => vw < 420 ? { w: 222, h: 42, font: 10, line: 12 } : { w: 264, h: 54, font: 12, line: 15 };
+  function debugBox(L, vw, vh) {
+    const Z = dbgSize(vw), DBG_W = Z.w, DBG_H = Z.h;
+    const S0 = L.S || { t: 0, r: 0, b: 0, l: 0 };
+    const box = a => !a ? null : (a.k === 'c' || (a.w == null && a.r != null)) ? { x: a.x - (a.R || a.r), y: a.y - (a.R || a.r), w: 2 * (a.R || a.r), h: 2 * (a.R || a.r) } : a;
+    const avoid = [];
+    // (the notice lane is not kept clear: a notice is a line that comes and goes; every piece that stays is)
+    for (const it of L.items || []) if (it.id !== 'notice') avoid.push(box(it.stick && it.keep ? { k: 'c', x: it.x, y: it.y, r: it.keep } : it));
+    for (const a of [L.crest, L.scroll, L.belt, L.mm, L.stick && { k: 'c', x: L.stick.x, y: L.stick.y, r: L.stick.keep || L.stick.r }]) if (a) avoid.push(box(a));
+    const free = r => r.x >= S0.l && r.y >= S0.t && r.x + r.w <= vw - S0.r && r.y + r.h <= vh - S0.b &&
+      avoid.every(a => !a || r.x + r.w + DBG_GAP <= a.x || a.x + a.w + DBG_GAP <= r.x || r.y + r.h + DBG_GAP <= a.y || a.y + a.h + DBG_GAP <= r.y);
+    if (L.knight) avoid.push(L.knight);   // and never over the knight himself
+    const at = (x, y) => ({ x: Math.round(x), y: Math.round(y), w: DBG_W, h: DBG_H });
+    // the bottom-left corner, then down the left edge from the top, then down the middle from the top (4 px steps)
+    const tries = [at(S0.l + DBG_GAP, vh - S0.b - DBG_H - DBG_GAP)];
+    for (const x of [S0.l + DBG_GAP, vw / 2 - DBG_W / 2]) for (let y = S0.t + DBG_GAP; y + DBG_H <= vh - S0.b; y += 4) tries.push(at(x, y));
+    const f = tries.find(free);
+    return f ? Object.assign(f, { free: true }) : Object.assign(at(S0.l + DBG_GAP, vh - S0.b - DBG_H - DBG_GAP), { free: false });
+  }
   if (DEBUG_TICK) HOOKS.hud.push(g => {
     while (S.dbg.times.length && S.dbg.times[0] < time - 1) S.dbg.times.shift();   // a stream that stopped reads 0 a second
     const k = S.keeper, world = typeof k === 'string' && k.indexOf('@world:') === 0;
     const lines = ['keeper ' + (k || '-') + (world ? ' (the world)' : (k && typeof NET !== 'undefined' && k === NET.me ? ' (you)' : '')),
       'mon ' + S.dbg.times.length + '/s   k ' + (S.dbg.k === null ? '-' : S.dbg.k) + '   rows ' + S.dbg.rows, 'puppets ' + (S.puppets ? S.puppets.length : 0) + '   map ' + S.map];
-    g.save(); g.font = '12px monospace'; g.fillStyle = 'rgba(0,0,0,0.65)'; g.fillRect(6, 6, 300, 54); g.fillStyle = '#e6edf3';
-    for (let i = 0; i < lines.length; i++) g.fillText(lines[i], 12, 22 + i * 15);
+    const Z = dbgSize(VW);
+    let r = { x: 6, y: 6, w: Z.w, h: Z.h }; try { if (typeof HK !== 'undefined' && HK.cur) r = debugBox(HK.cur(), VW, VH); } catch (e) { }
+    g.save(); g.font = Z.font + 'px monospace'; g.fillStyle = 'rgba(0,0,0,0.65)'; g.fillRect(r.x, r.y, r.w, r.h); g.fillStyle = '#e6edf3';
+    for (let i = 0; i < lines.length; i++) g.fillText(lines[i], r.x + 6, r.y + Z.font + 4 + i * Z.line);
     g.restore();
+  });
+  // the box never covers the hearts and hit points, or any other piece of the HUD, at any of the HUD audit's screens
+  HOOKS.selfTest.push(check => {
+    if (typeof HK === 'undefined' || !HK.layoutFor) return;
+    const sizes = [[375, 667], [390, 844], [844, 390], [430, 932], [932, 430], [768, 1024], [1024, 768], [1024, 1366], [1366, 1024], [1280, 800]], bad = [];
+    for (const [w, h] of sizes) for (const touch of [true, false]) {
+      const L = HK.layoutFor(w, h, { touch, online: true, minimap: true }), r = debugBox(L, w, h), c = L.crest;
+      const onCrest = !(r.x + r.w <= c.x || c.x + c.w <= r.x || r.y + r.h <= c.y || c.y + c.h <= r.y), off = r.x < 0 || r.y < 0 || r.x + r.w > w || r.y + r.h > h;
+      if (onCrest || off || !r.free) bad.push(w + 'x' + h + (touch ? ' touch' : '') + ': ' + JSON.stringify(r));
+    }
+    check('coop: the ?debug=tick box never covers the hearts and hit points (the crest) or any other piece of the HUD, and stays on screen, on iPads, phones and computers', bad.length === 0, bad.slice(0, 6));
   });
 
   // ---------- self-test ----------
@@ -38699,6 +38755,18 @@ window.RETALIATE = RETALIATE;
         const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length; paused = p0;
         check(P + 'a keeper with nobody near sends a heartbeat about once a second, and none while paused', beats >= 1 && beats <= 3 && whilePaused === 0, { beats, whilePaused });
         push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 }); }
+      // (a3) the world taking the map over asks for the full snapshot ('snap'): the keeper answers once with every monster it
+      // runs (far ones and fallen ones too), marked full; a snap for another map, or to a game that does not keep it, gets nothing
+      { const fell = real.find(m => !m.dead && m !== gob && !m.remote && m.nid), was = fell ? { dead: fell.dead, deadT: fell.deadT } : null;
+        if (fell) { fell.dead = true; fell.deadT = 30; }
+        sent.length = 0; push({ t: 'snap', map: 'over' });
+        const fulls = sentOf('mon').filter(m => m.full === true), l = fulls.length ? fulls[0].list : [];
+        if (fell) { fell.dead = was.dead; fell.deadT = was.deadT; }
+        const want = real.filter(m => !m.remote && !m.phantom && MONSTER_DEFS[m.type]).slice(0, 400), ids = new Set(l.map(e => e[0]));
+        const all = want.length === l.length && want.every(m => ids.has(m.nid)), far = want.some(m => !near(m.x, m.y) && ids.has(m.nid));
+        const fellRow = fell ? l.find(e => e[0] === fell.nid) : null;
+        sent.length = 0; push({ t: 'snap', map: 'deepholm' }); const other = sentOf('mon').length;
+        check(P + 'the world\'s snap: the keeper answers with one full snapshot of every monster it runs (far and fallen ones too); a snap for another map gets nothing; hello says snap', fulls.length === 1 && all && far && !!fellRow && fellRow[11] === 1 && other === 0 && NET.hello().caps.includes('snap'), { fulls: fulls.length, rows: l.length, want: want.length, far, fell: fellRow && fellRow[11], other, caps: NET.hello().caps }); }
       // (b) a non-keeper shows puppets that hold still while the stream is silent
       const nearReal = real.filter(m => m.nid && !m.dead && !m.remote && dist(m.x, m.y, player.x, player.y) <= NEAR).map(m => m.nid).sort();
       // (b-) handing the map to another knight is exactly as before Stage 2: no monster is held up on this screen; and the map
@@ -38715,10 +38783,16 @@ window.RETALIATE = RETALIATE;
       push({ t: 'keeper', map: 'over', n: 'Ann' });
       const ax = gob.home.x, ay = gob.home.y;
       const row = (nid, type, x, y, hp, mhp, state) => [nid, type, x, y, hp, mhp, state, 1, 0, 0, 0, 0, 0, 0];
+      // the next keeper's first mon decides: it names only the goblin, so the goblin stays (now its puppet) and the rest go
+      push({ t: 'mon', n: 'Ann', list: [row(gob.nid, gob.type, gob.x, gob.y, gob.hp, gob.maxHp, 'idle')] });
+      { const left = monsters.filter(m => m.seed).length, kept = COOP.find(gob.nid), listed = !!kept && !kept.seed && kept.remote;
+        check(P + 'a keeper handing its map to the world keeps showing the monsters on its screen (same nids, places and hp) until the next keeper\'s first mon, which then decides', seeded.length === nearReal.length && seeded.length > 0 && seeded.map(p => p.nid).sort().join() === nearReal.join() && !!gs && gs.x === gob.x && gs.y === gob.y && gs.hp === gob.hp && gs.remote && left === 0 && listed && monsters.length === 1, { seeded: seeded.length, near: nearReal.length, gob: gs && [gs.x - gob.x, gs.y - gob.y, gs.hp], left, listed, puppets: monsters.length });
+        const k = kept ? monsters.indexOf(kept) : -1; if (k >= 0) monsters.splice(k, 1); S.idxLen = -1; }
+      // (b) as it always read: puppets newly made from the keeper's first mon (nothing of the hand-over above is left on screen)
+      const fresh = !COOP.find('Ann:1') && !COOP.find(s0.nid) && monsters.length === 0;
       push({ t: 'mon', n: 'Ann', list: [row('Ann:1', 'goblin', ax, ay, 12, 12, 'idle'), row(s0.nid, s0.type, ax + 40, ay + 40, 5, s0.maxHp, 'chase')] });
-      { const left = monsters.filter(m => m.seed).length, listed = !!COOP.find(s0.nid) && !COOP.find(s0.nid).seed;
-        check(P + 'a keeper handing its map to the world keeps showing the monsters on its screen (same nids, places and hp) until the next keeper\'s first mon, which then decides', seeded.length === nearReal.length && seeded.length > 0 && seeded.map(p => p.nid).sort().join() === nearReal.join() && !!gs && gs.x === gob.x && gs.y === gob.y && gs.hp === gob.hp && gs.remote && left === 0 && listed, { seeded: seeded.length, near: nearReal.length, gob: gs && [gs.x - gob.x, gs.y - gob.y, gs.hp], left, listed }); }
       const p1 = COOP.find('Ann:1'), p2 = COOP.find(s0.nid);
+      const made = !!p1 && !!p2 && p1.seen === time && p2.seen === time && !p1.seed && !p2.seed && p2.hp === 5 && p2.state === 'chase';
       // (b2) moving (row 9) and hurt (row 10) land in the right fields: a walking monster walks and is not pink, a hurt one flashes
       { push({ t: 'mon', n: 'Ann', list: [['Ann:w', 'goblin', ax + 80, ay, 12, 12, 'chase', 1, 0, 1, 0, 0, 0, 0], ['Ann:h', 'goblin', ax + 120, ay, 9, 12, 'idle', 1, 0, 0, 0.18, 0, 0, 0]] });
         const pw = COOP.find('Ann:w'), ph = COOP.find('Ann:h');
@@ -38728,8 +38802,10 @@ window.RETALIATE = RETALIATE;
       let drew = true; try { render(); } catch (e) { drew = false; }
       monsters.push(makeReal('goblin', ax, ay + 200, null, null));   // a boss file spawning locally on a non-keeper: dropped after the next update
       F.sim(60);
-      check(P + 'a non-keeper parks its monsters, shows puppets that render and hold still while the stream is silent, and keeps nothing else', parked === real && monsters !== real && !!p1 && !!p2 && p1.remote && p2.remote && drew && p1.x === ax && p1.y === ay && p2.x === ax + 40 && p2.y === ay + 40 && p2.hp === 5 && p1.stunT === 0 && p2.stunT === 0 && monsters.length === 2 && monsters.every(m => m.remote), { parked: parked === real, puppets: monsters.length, allRemote: monsters.every(m => m.remote), drew, p1: p1 && [p1.x - ax, p1.y - ay, p1.stunT], p2: p2 && [p2.x - ax - 40, p2.hp] });
+      check(P + 'a non-keeper parks its monsters, shows puppets that render and hold still while the stream is silent, and keeps nothing else', fresh && made && parked === real && monsters !== real && !!p1 && !!p2 && p1.remote && p2.remote && drew && p1.x === ax && p1.y === ay && p2.x === ax + 40 && p2.y === ay + 40 && p2.hp === 5 && p1.stunT === 0 && p2.stunT === 0 && monsters.length === 2 && monsters.every(m => m.remote), { fresh, made, parked: parked === real, puppets: monsters.length, allRemote: monsters.every(m => m.remote), drew, p1: p1 && [p1.x - ax, p1.y - ay, p1.stunT], p2: p2 && [p2.x - ax - 40, p2.hp] });
 
+      { sent.length = 0; push({ t: 'snap', map: 'over' });
+        check(P + 'a game that does not keep its map answers no snap', sentOf('mon').length === 0, { sent: sentOf('mon').length }); }
       // an instance excursion while someone else keeps the overworld: inside, the fresh spawns are ours and tagged;
       // back out, the real overworld array returns (the instance code hands back the puppet array it was given)
       const ids = typeof INSTANCES !== 'undefined' && INSTANCES.list ? INSTANCES.list() : [];
