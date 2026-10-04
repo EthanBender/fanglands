@@ -75323,7 +75323,7 @@ const MOUNT_LOOK = (() => {
           r.gfDrawnTop = top; }
       } catch (e) { threw = String(e && e.stack || e).slice(0, 300); }
       STATS.record = false; player.dayTime = d0; putSize();
-      const v88 = r['88,32'], v38 = r['112,38'], p = r.perf || {};
+      const v88 = r[TD.p(88, 32).join(',')], v38 = r[TD.p(112, 38).join(',')], p = r.perf || {};   // the views are TD points: their keys are read the same way
       check(P + 'C19 every view renders (spawn, both gates, the square, the drawbridge, the market, the Green, the Rose Garden, the Orchard, outside the East Gate, the castle\'s corner by the Tinker\'s Workshop, the Smithy Yard, the Bell Green, the inn\'s garden, and at night); towers and lamps at the West Gate; the Great Fountain, 4 statues and the keep from the square; at the spawn at most 20 chunk blits and 160 items, a still frame repaints nothing, and the chunk cache stays at or under 40; no drawn box covers another building (the castle\'s corner towers and the gatehouses record theirs too); the Great Fountain stays under 24 px over row 34',
         castleBoxes > 0 && gateBoxes > 0 && !threw && !!v88 && v88.towers > 0 && v88.lamps > 0 && !!v38 && v38.fountains >= 1 && v38.statues === 4 && v38.keep === 1 && p.chunks > 0 && p.chunks <= 20 && p.items <= 160 && p.repaints === 0 && p.size <= p.max && p.max <= 40 && !overlaps.length && r.gfTop !== null && r.gfTop >= TD.y(34) * TILE - 24 && r.gfDrawnTop >= TD.y(34) * TILE - 24 && r.night.lampsLit > 0,
         { threw, views: r, overlaps: overlaps.slice(0, 6), castleBoxes, gateBoxes }); }
