@@ -613,5 +613,8 @@
   {"file": "10-hud.js", "literal": "12", "decl": "s", "reason": "HUD: a 12 px font size"},
   {"file": "10-hud.js", "literal": "12 * TILE", "decl": "bossBarList", "reason": "a boss bar shows within 12 tiles: a distance, not a position"},
   {"file": "10-hud.js", "literal": "44", "decl": "s", "reason": "HUD: a 44 px key slot"},
-  {"file": "10-hud.js", "literal": "13", "decl": "size", "reason": "HUD: a 13 px font size"}
+  {"file": "10-hud.js", "literal": "13", "decl": "size", "reason": "HUD: a 13 px font size"},
+  {"file": "09-render.js", "literal": "17 * TILE", "decl": "render", "reason": "the cave scrim stays (spec section 12): the starting cave is pinned at 0,0, so its 17 rows never move"},
+  {"file": "09-render.js", "literal": "16 * TILE", "decl": "render", "reason": "the cave scrim stays (spec section 12): the starting cave is pinned at 0,0, so the scrim's 16 rows never move"},
+  {"file": "09-render.js", "literal": "7.5 * TILE", "decl": "lights", "reason": "the cave scrim stays (spec section 12): the cave mouth's light at row 7.5 of the cave pinned at 0,0"}
 ]

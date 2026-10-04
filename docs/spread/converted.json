@@ -65,5 +65,6 @@
 "01-items.js",
 "07-update.js",
 "08-draw.js",
-"10-hud.js"
+"10-hud.js",
+"09-render.js"
 ]
