@@ -5,12 +5,16 @@
 // ============================================================================
 {
   // ---------- region ----------
-  const HF_REGION = { name: 'Hollowford', sub: 'What the goblins left', x0: 122, y0: 66, x1: 156, y1: 92 };
+  // every overworld position here is Hollowford's (its frame and ports) or the goblin camp's (the War Shed's door, walls and
+  // wreck spots, the palisade gap): the spread spec, §9.1. The shed's own map (SHED_HOME, the valve, the boiler) is not wrapped.
+  const HFF = ATLAS.frame('hollowford'), CMP = ATLAS.frame('camp');
+  const HF_P = id => { const [x, y] = ATLAS.port(id); return { x, y }; };
+  const HF_REGION = HFF.rect({ name: 'Hollowford', sub: 'What the goblins left', x0: 122, y0: 66, x1: 156, y1: 92 });
   REGIONS.unshift(HF_REGION);
   const hfIn = (tx, ty) => tx >= HF_REGION.x0 && tx <= HF_REGION.x1 && ty >= HF_REGION.y0 && ty <= HF_REGION.y1;
-  const HF_SQUARE = { x: 140, y: 80 }; // the cracked well
-  const HF_HATCH = { x: 147, y: 70 };  // Pip's cellar
-  const HF_BEAST_HOME = { x: 140, y: 86 };
+  const HF_SQUARE = HF_P('hollowford.square'); // the cracked well
+  const HF_HATCH = HF_P('hollowford.hatch');   // Pip's cellar
+  const HF_BEAST_HOME = HF_P('hollowford.barrelbeast');
   // feature state lives in quest.hollowford (saved with the quest); created lazily for old saves.
   // freed / barHits: Cohen's "Under the Chapel" — the survivors are barred into the crypt by goblin iron until the knight breaks it (3 hammer hits).
   // The War Shed (owner: "bosses shoould all be redefeatable"): the square's beast dies once, for good, and Hollowford stays
@@ -32,7 +36,7 @@
   // the valve stands on row 7, under the boiler (row 6), with the stocks three rows below it: on row 3 it sat under the top
   // HUD of a phone held upright (the crest, the quest scroll, two plaques: down to 323 px), where the camera cannot scroll
   // past the shed's top wall
-  const SHED = { id: 'war_shed', w: 28, h: 20 }, SHED_DOOR = [147, 44], SHED_STEP = [148, 44], SHED_HOME = { x: 14, y: 11 }, VALVE_T = { x: 14, y: 7 };
+  const SHED = { id: 'war_shed', w: 28, h: 20 }, SHED_DOOR = ATLAS.port('camp.shed_door'), SHED_STEP = ATLAS.port('camp.shed_step'), SHED_HOME = { x: 14, y: 11 }, VALVE_T = { x: 14, y: 7 };
   const BOILER_T = [[13, 6], [14, 6], [15, 6]];
   const SHED_ENTRY = [14, 18], SHED_EXIT = [14, 19], SHED_REST = 300;
   // the shed's first-visit Voice: the story line once his story has reached the burning of Hollowford (stage 9), a plain
@@ -40,8 +44,8 @@
   // his first visit after stage 9. hf.shedVoice: null, 'early' or 'story'.
   const SHED_VOICE = 'The War Shed. The goblins kept the plans. Whatever they drag back from Hollowford, they bolt into the next Barrelbeast.';
   const SHED_VOICE_EARLY = 'The War Shed. Goblins build their machines in here. The stocks are empty, and the crew is out.';
-  const SHED_WALL = [[145, 43], [146, 43], [147, 43], [145, 44], [146, 44], [145, 45], [146, 45], [147, 45]];
-  const WRECK_SPOTS = [[144, 47], [143, 47], [144, 48], [143, 48]];
+  const SHED_WALL = CMP.pts([[145, 43], [146, 43], [147, 43], [145, 44], [146, 44], [145, 45], [146, 45], [147, 45]]);
+  const WRECK_SPOTS = CMP.pts([[144, 47], [143, 47], [144, 48], [143, 48]]);
   const restLeft = until => Math.max(0, (until || 0) - (player.dayTime || 0));
   const mmss = s => { const c = Math.ceil(s); return Math.floor(c / 60) + ':' + String(c % 60).padStart(2, '0'); };
   const inShed = () => !!(window.INSTANCES && INSTANCES.active() === SHED.id);
@@ -60,8 +64,8 @@
   const T_VALVE = addTile('SHED_VALVE', { solid: true, tex: 'floor', mini: '#c0504d' });
   INTERESTING_TILES.add(T_VALVE);
   // the crypt is the west (FLOOR) end of the chapel, x 125–128, y 85–90. The bars close it off from the doorway step (128,85) and along the nave side (x 129).
-  const BAR_TILES = [[128, 85], [129, 85], [129, 86], [129, 87], [129, 88], [129, 89], [129, 90]];
-  const JAILERS = [[126, 83], [130, 83]]; // two goblin brutes posted outside the chapel door
+  const BAR_TILES = HFF.pts([[128, 85], [129, 85], [129, 86], [129, 87], [129, 88], [129, 89], [129, 90]]);
+  const JAILERS = HFF.pts([[126, 83], [130, 83]]); // two goblin brutes posted outside the chapel door
   const BAR_HITS = 3;
   const barsStand = () => BAR_TILES.some(([x, y]) => tileAt(x, y) === T_BARS);
   const isJailer = m => m.type === 'brute' && JAILERS.some(([x, y]) => Math.abs(m.home.x - tc(x)) < 1 && Math.abs(m.home.y - tc(y)) < 1);
@@ -470,7 +474,7 @@
   }
   // the shed from outside: a scrap-iron roof over the two west columns, and goblin planking either side of the door
   function drawShedRoof(g) {
-    const x = 145 * TILE - 4, y = 43 * TILE - 22, w = 2 * TILE + 6, h = 3 * TILE + 22;
+    const x = CMP.x(145) * TILE - 4, y = CMP.y(43) * TILE - 22, w = 2 * TILE + 6, h = 3 * TILE + 22;
     g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(x + 6, y + h - 2, w, 8);
     for (let k = 0; k < 8; k++) { g.fillStyle = k % 2 ? '#5a5a62' : '#45454d'; g.fillRect(x, y + k * (h / 8), w, h / 8 - 1.5); }
     g.fillStyle = '#7a3f24'; g.fillRect(x + 8, y + 12, 24, 18); g.fillStyle = '#6e6e78'; g.fillRect(x + 56, y + 70, 30, 16); g.fillStyle = '#8a5a2b'; g.fillRect(x + 14, y + 104, 20, 14);
@@ -502,9 +506,9 @@
     }
     if (window.__instance) return;
     const x0 = Math.floor(cam.x / TILE), x1 = Math.ceil((cam.x + VW) / TILE), y0 = Math.floor(cam.y / TILE), y1 = Math.ceil((cam.y + VH) / TILE) + 2;
-    if (x1 < 144 || x0 > 148 || y1 < 42 || y0 > 46) return;
-    for (const [tx, ty] of [[147, 43], [147, 45]]) if (tileAt(tx, ty) === T.HWALL) items.push({ y: -1e8 + ty * TILE + 5, draw: () => drawShedPlanks(g, tx, ty) });
-    items.push({ y: 45 * TILE + TILE - 2, draw: () => drawShedRoof(g) });
+    if (x1 < CMP.x(144) || x0 > CMP.x(148) || y1 < CMP.y(42) || y0 > CMP.y(46)) return;
+    for (const [tx, ty] of CMP.pts([[147, 43], [147, 45]])) if (tileAt(tx, ty) === T.HWALL) items.push({ y: -1e8 + ty * TILE + 5, draw: () => drawShedPlanks(g, tx, ty) });
+    items.push({ y: CMP.y(45) * TILE + TILE - 2, draw: () => drawShedRoof(g) });
   });
 
   // ---------- main quest, stages 8–11 ----------
@@ -525,15 +529,15 @@
   } };
 
   // ---------- survivors ----------
-  NPCS.push(initNpc({ id: 'tam', name: 'Old Tam', x: 126, y: 88, tunic: '#5a5048', hair: '#d9d0c0', beard: true, role: 'survivor', leader: true }));
-  NPCS.push(initNpc({ id: 'nell', name: 'Nell', x: 128, y: 89, tunic: '#6a4a4a', hair: '#3a2a1a', woman: true, role: 'survivor',
+  NPCS.push(initNpc(HFF.pt({ id: 'tam', name: 'Old Tam', x: 126, y: 88, tunic: '#5a5048', hair: '#d9d0c0', beard: true, role: 'survivor', leader: true })));
+  NPCS.push(initNpc(HFF.pt({ id: 'nell', name: 'Nell', x: 128, y: 89, tunic: '#6a4a4a', hair: '#3a2a1a', woman: true, role: 'survivor',
     lines: ["Don't go near the square. It stands in the square.", 'We had a well. It stood on the well.', 'Tam knows what to do. Tam always knows.', 'The goblins barred us in. Scrap iron, bolted through the stone. We can hear it hum when the beast walks past.'],
     after: ["It's really gone? Pip, it's gone!", 'I can hear birds again.', "We'll need planks. So many planks.", 'The bars. Knight, the bars. A hammer would have them off, if you have one.'],
-    freed: ['Out. We are OUT. I keep saying it.', 'I am fetching what we saved from the altar. Then the square, and sun.', 'Tam has ideas. Tam always has ideas. Something about a guild.'] }));
-  NPCS.push(initNpc({ id: 'pip', name: 'Pip', x: 126, y: 86, tunic: '#4a5a6a', hair: '#c9843a', role: 'survivor',
+    freed: ['Out. We are OUT. I keep saying it.', 'I am fetching what we saved from the altar. Then the square, and sun.', 'Tam has ideas. Tam always has ideas. Something about a guild.'] })));
+  NPCS.push(initNpc(HFF.pt({ id: 'pip', name: 'Pip', x: 126, y: 86, tunic: '#4a5a6a', hair: '#c9843a', role: 'survivor',
     lines: ['I saw it. It has goblins ON it. On TOP of it.', "I'm not scared. Nell is scared.", 'My house had a cellar. I hid under the hatch for two days.', 'The big goblins put bars on the stairs. I tried to squeeze through. My head fits. My shoulders don\'t.'],
     after: ['You broke it! Can I see the wreck? Can I?', "When I'm big I'm going to be a knight.", 'Nell says we can go outside now.', 'Hit the bars! Hit them with a hammer! Three good ones, Tam says.', 'The goblins are building ANOTHER one. In a shed, on the road under their camp. I heard the hammers. You could break that one too!'],
-    freed: ['You SMASHED them. Clang, clang, CLANG. I counted.', 'I am allowed in the square now. Nell said. I am going as soon as I find my other shoe.', 'Tam says I can be in the guild. A real one. With a board.', 'The goblins are building ANOTHER one. In a shed, on the road under their camp. I heard the hammers. You could break that one too!'] }));
+    freed: ['You SMASHED them. Clang, clang, CLANG. I counted.', 'I am allowed in the square now. Nell said. I am going as soon as I find my other shoe.', 'Tam says I can be in the guild. A real one. With a board.', 'The goblins are building ANOTHER one. In a shed, on the road under their camp. I heard the hammers. You could break that one too!'] })));
   HOOKS.talk.survivor = n => {
     const hf = HF();
     if (!n.leader) { say(pick(hf.freed && n.freed ? n.freed : hf.beastKilled ? n.after : n.lines), n.name); return; }
@@ -553,7 +557,7 @@
     const hf = HF();
     for (const [x, y] of BAR_TILES) if (tileAt(x, y) === T_BARS) changeTile(x, y, T.FLOOR);
     hf.freed = true; hf.barHits = BAR_HITS;
-    burst(tc(129), tc(87), '#8f96a3', 30, 160); burst(tc(128), tc(85), '#8f96a3', 16, 120); sfx('quest');
+    burst(tc(HFF.x(129)), tc(HFF.y(87)), '#8f96a3', 30, 160); burst(tc(HFF.x(128)), tc(HFF.y(85)), '#8f96a3', 16, 120); sfx('quest');
     levelBanner = { text: 'UNDER THE CHAPEL', sub: 'The survivors are free', t: 3.5 };
     say('The last bolt shears. The bars fold over like a dropped gate. Behind them, three faces, blinking at the light.', 'The Voice');
     say("Knight. KNIGHT. It's open. Nell, Pip, up the steps, go on, go on. Sun. Get some sun.", 'Old Tam');
@@ -583,8 +587,8 @@
     const carve = (pts, w, tile) => { for (let s = 0; s < pts.length - 1; s++) { const [ax, ay] = pts[s], [bx, by] = pts[s + 1], steps = Math.max(Math.abs(bx - ax), Math.abs(by - ay)); for (let k = 0; k <= steps; k++) { const x = Math.round(ax + (bx - ax) * k / steps), y = Math.round(ay + (by - ay) * k / steps); for (let dy = -w; dy <= w; dy++) for (let dx = -w; dx <= w; dx++) if (Math.abs(dx) + Math.abs(dy) <= w && SOFT.includes(at(x + dx, y + dy))) set(x + dx, y + dy, tile); } } };
     const fill = (x0, y0, x1, y1, tile) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, tile); };
     // the goblins dragged the Barrelbeast out through the south palisade; the gap is still there
-    for (let x = 149; x <= 151; x++) set(x, 40, T.DIRT);
-    const ROAD = [[150, 39], [150, 50], [146, 58], [141, 64], [140, 68]];
+    for (let x = CMP.x(149); x <= CMP.x(151); x++) set(x, CMP.y(40), T.DIRT);
+    const ROAD = ATLAS.track('road_hollowford');   // camp gap 150,39 -> 150,50 -> 146,58 -> 141,64 -> Hollowford's north entry
     carve(ROAD, 1, T.DIRT); api.road(ROAD, T.DIRT, 2, 0.25);
     // clear the town footprint, then scorch it (worst at the centre)
     for (let y = R.y0; y <= R.y1; y++) for (let x = R.x0; x <= R.x1; x++) {
@@ -594,8 +598,8 @@
       if (r < 0.8 - d * 0.5) set(x, y, T_SCORCH); else if (r < 0.86 - d * 0.45) set(x, y, T.ASHES);
     }
     // streets and the square
-    fill(139, 66, 141, 90, T.DIRT); fill(124, 77, 155, 79, T.DIRT); fill(135, 75, 145, 83, T.DIRT); fill(128, 80, 128, 83, T.DIRT);
-    fill(135, 84, 143, 90, T_SCORCH); // the yard where the beast stamps
+    fill(...HFF.box([139, 66, 141, 90]), T.DIRT); fill(...HFF.box([124, 77, 155, 79]), T.DIRT); fill(...HFF.box([135, 75, 145, 83]), T.DIRT); fill(...HFF.box([128, 80, 128, 83]), T.DIRT);
+    fill(...HFF.box([135, 84, 143, 90]), T_SCORCH); // the yard where the beast stamps
     // burned houses: broken wall fragments, rubble, ash inside
     const ruin = (x0, y0, x1, y1, door) => {
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
@@ -605,21 +609,21 @@
       }
       set(door[0], door[1], T.ASHES); set(door[0], door[1] + (door[1] === y0 ? 1 : -1), T.ASHES); // doorway and the step inside
     };
-    ruin(126, 68, 131, 73, [128, 73]); ruin(133, 69, 137, 72, [135, 72]); ruin(144, 68, 149, 72, [146, 72]);
-    ruin(151, 73, 155, 76, [153, 76]); ruin(144, 84, 149, 88, [146, 84]); ruin(151, 82, 155, 86, [153, 82]);
-    set(135, 70, T.ANVIL); set(135, 71, T.ASHES);                                 // the smith's anvil survived the fire
-    set(HF_HATCH.x, HF_HATCH.y, T_HATCH); set(146, 71, T.ASHES); set(147, 71, T.ASHES); // Pip's cellar
-    set(127, 70, T_BEAM); set(148, 86, T_BEAM); set(153, 84, T_BEAM);
+    ruin(...HFF.box([126, 68, 131, 73]), HFF.p(128, 73)); ruin(...HFF.box([133, 69, 137, 72]), HFF.p(135, 72)); ruin(...HFF.box([144, 68, 149, 72]), HFF.p(146, 72));
+    ruin(...HFF.box([151, 73, 155, 76]), HFF.p(153, 76)); ruin(...HFF.box([144, 84, 149, 88]), HFF.p(146, 84)); ruin(...HFF.box([151, 82, 155, 86]), HFF.p(153, 82));
+    set(...HFF.p(135, 70), T.ANVIL); set(...HFF.p(135, 71), T.ASHES);                                 // the smith's anvil survived the fire
+    set(HF_HATCH.x, HF_HATCH.y, T_HATCH); set(...HFF.p(146, 71), T.ASHES); set(...HFF.p(147, 71), T.ASHES); // Pip's cellar
+    set(...HFF.p(127, 70), T_BEAM); set(...HFF.p(148, 86), T_BEAM); set(...HFF.p(153, 84), T_BEAM);
     // the chapel: stone walls, the east end collapsed, the crypt at the west end still whole
-    for (let y = 84; y <= 91; y++) for (let x = 124; x <= 133; x++) { const edge = x === 124 || x === 133 || y === 84 || y === 91; set(x, y, edge ? T.CWALL : x <= 128 ? T.FLOOR : T.ASHES); }
-    set(128, 84, T.DIRT); set(129, 84, T.DIRT);                          // the doorway, doors long gone
-    set(133, 86, T.RUBBLE); set(133, 87, T_SCORCH); set(133, 88, T.RUBBLE); // where the beast walked through the wall
-    set(131, 86, T.RUBBLE); set(130, 89, T.RUBBLE); set(132, 88, T_BEAM); set(131, 85, T_BEAM);
-    set(126, 90, T.TABLE); set(125, 85, T.SHELF);                         // the altar and what they saved
+    for (let y = HFF.y(84); y <= HFF.y(91); y++) for (let x = HFF.x(124); x <= HFF.x(133); x++) { const edge = x === HFF.x(124) || x === HFF.x(133) || y === HFF.y(84) || y === HFF.y(91); set(x, y, edge ? T.CWALL : x <= HFF.x(128) ? T.FLOOR : T.ASHES); }
+    set(...HFF.p(128, 84), T.DIRT); set(...HFF.p(129, 84), T.DIRT);                          // the doorway, doors long gone
+    set(...HFF.p(133, 86), T.RUBBLE); set(...HFF.p(133, 87), T_SCORCH); set(...HFF.p(133, 88), T.RUBBLE); // where the beast walked through the wall
+    set(...HFF.p(131, 86), T.RUBBLE); set(...HFF.p(130, 89), T.RUBBLE); set(...HFF.p(132, 88), T_BEAM); set(...HFF.p(131, 85), T_BEAM);
+    set(...HFF.p(126, 90), T.TABLE); set(...HFF.p(125, 85), T.SHELF);                         // the altar and what they saved
     for (const [x, y] of BAR_TILES) set(x, y, T_BARS);                    // goblin iron across the crypt steps (Under the Chapel)
     for (const [x, y] of JAILERS) set(x, y, T_SCORCH);                    // the jailers' posts stay clear of stumps
     // the square: cracked well, fallen beams
-    set(HF_SQUARE.x, HF_SQUARE.y, T_WELL); set(136, 76, T_BEAM); set(144, 82, T_BEAM);
+    set(HF_SQUARE.x, HF_SQUARE.y, T_WELL); set(...HFF.p(136, 76), T_BEAM); set(...HFF.p(144, 82), T_BEAM);
     // burned trees on the outskirts (never beside a street or a doorway)
     for (let i = 0; i < 40; i++) {
       const x = R.x0 + Math.floor(rnd() * (R.x1 - R.x0 + 1)), y = R.y0 + Math.floor(rnd() * (R.y1 - R.y0 + 1));
@@ -627,11 +631,11 @@
       const ok = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => [T.GRASS, T_SCORCH, T.ASHES].includes(at(x + dx, y + dy)));
       if (ok) set(x, y, T.STUMP);
     }
-    for (const [x, y] of [[128, 74], [135, 73], [146, 73], [153, 77], [146, 83], [153, 81]]) set(x, y, T_SCORCH); // doorsteps stay clear
+    for (const [x, y] of HFF.pts([[128, 74], [135, 73], [146, 73], [153, 77], [146, 83], [153, 81]])) set(x, y, T_SCORCH); // doorsteps stay clear
     // goblin patrols and the beast
-    api.spawnList('goblin', [[140, 70], [133, 78], [148, 78], [153, 89]]);
-    api.spawnList('sapper', [[143, 66], [130, 80]]);
-    api.spawnList('brute', [[150, 74], [128, 75]]);
+    api.spawnList('goblin', HFF.pts([[140, 70], [133, 78], [148, 78], [153, 89]]));
+    api.spawnList('sapper', HFF.pts([[143, 66], [130, 80]]));
+    api.spawnList('brute', HFF.pts([[150, 74], [128, 75]]));
     api.spawnList('brute', JAILERS); // the crypt's jailers
     api.spawnList('barrelbeast', [[HF_BEAST_HOME.x, HF_BEAST_HOME.y]]);
   });
@@ -716,36 +720,36 @@
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
     const hf = HF(); h.peace(true); projectiles = [];
-    { const r = REGIONS.find(r => r.name === 'Hollowford'); const path = F.bfs(150, 41, 140, 76), camp = F.bfs(150, 31, 150, 41);
-      check('Hollowford: region in the south-east, road from the camp gap reaches it', !!r && regionAt(140, 80).name === 'Hollowford' && !!path && !!camp && tileAt(150, 41) === T.DIRT, { path: path && path.length, camp: camp && camp.length }); }
+    { const r = REGIONS.find(r => r.name === 'Hollowford'); const path = F.bfs(...CMP.p(150, 41), ...ATLAS.port('hollowford.heart')), camp = F.bfs(...CMP.p(150, 31), ...CMP.p(150, 41));
+      check('Hollowford: region in the south-east, road from the camp gap reaches it', !!r && regionAt(HF_SQUARE.x, HF_SQUARE.y).name === 'Hollowford' && !!path && !!camp && tileAt(...CMP.p(150, 41)) === T.DIRT, { path: path && path.length, camp: camp && camp.length }); }
     { let hw = 0, cw = 0, sc = 0; for (let y = HF_REGION.y0; y <= HF_REGION.y1; y++) for (let x = HF_REGION.x0; x <= HF_REGION.x1; x++) { const t = tileAt(x, y); if (t === T.HWALL) hw++; else if (t === T.CWALL) cw++; else if (t === T_SCORCH) sc++; }
       const s = NPCS.filter(n => n.role === 'survivor');
       check('Hollowford: burned ruins, collapsed chapel, cracked well, cellar, three survivors in the crypt', hw >= 40 && cw >= 20 && sc >= 80 && s.length === 3 && s.every(n => regionAt(n.x, n.y).name === 'Hollowford' && tileAt(n.x, n.y) === T.FLOOR) && tileAt(HF_SQUARE.x, HF_SQUARE.y) === T_WELL && tileAt(HF_HATCH.x, HF_HATCH.y) === T_HATCH, { hw, cw, sc, survivors: s.length }); }
     { const d = MONSTER_DEFS.barrelbeast, bb = monsters.find(m => m.type === 'barrelbeast');
       check('Barrelbeast spawned in Hollowford: lv 28, 400 hp, max hit 16, def 24, speed 55, aggro, sight 7, respawn 600, boss drops', !!bb && d.level === 28 && d.hp === 400 && d.maxHit === 16 && d.def === 24 && d.speed === 55 && d.aggro && d.sight === 7 * TILE && d.respawn === 600 && d.drops.always.length === 4 && d.drops.rare.chance === 3 && regionAt(Math.floor(bb.home.x / TILE), Math.floor(bb.home.y / TILE)).name === 'Hollowford' && typeof HOOKS.drawMonster.barrelbeast === 'function', { found: !!bb, hp: bb && bb.maxHp }); }
-    { const before = quest.stage; if (quest.stage < 8) quest.stage = 8; hf.beastKilled = false; hf.rewarded = false; F.tp(140, 68); F.sim(3, []);
+    { const before = quest.stage; if (quest.stage < 8) quest.stage = 8; hf.beastKilled = false; hf.rewarded = false; F.tp(...ATLAS.port('hollowford.north')); F.sim(3, []);
       check('entering Hollowford after Chapter 3 opens Chapter 4 (stage 9, area banner)', quest.stage === 9 && player.region === 'Hollowford' && !!areaBanner && areaBanner.name === 'Hollowford', { before, stage: quest.stage, banner: areaBanner && areaBanner.name }); }
     // Under the Chapel: the crypt is barred and two brutes stand outside; before the beast is dead the bars refuse
     { for (const [x, y] of BAR_TILES) if (tileAt(x, y) !== T_BARS) changeTile(x, y, T_BARS); hf.freed = false; hf.barHits = 0;
-      const jailers = monsters.filter(isJailer); const noPath = F.bfs(128, 84, 126, 88) === null; const solid = SOLID.has(T_BARS) && BAR_TILES.every(([x, y]) => tileAt(x, y) === T_BARS);
+      const jailers = monsters.filter(isJailer); const noPath = F.bfs(...HFF.p(128, 84), ...HFF.p(126, 88)) === null; const solid = SOLID.has(T_BARS) && BAR_TILES.every(([x, y]) => tileAt(x, y) === T_BARS);
       if (!hasTool('hammer')) h.give('hammer', 1);
-      dialog.queue.length = 0; dialog.cur = null; closePanel(); F.tp(128, 84); F.face(128, 85); F.press('KeyE'); F.sim(2, []); const hum = !!dialog.cur && /goblin iron.*hum/.test(dialog.cur.text);
+      dialog.queue.length = 0; dialog.cur = null; closePanel(); F.tp(...HFF.p(128, 84)); F.face(...HFF.p(128, 85)); F.press('KeyE'); F.sim(2, []); const hum = !!dialog.cur && /goblin iron.*hum/.test(dialog.cur.text);
       check('crypt: goblin bars seal the crypt (7 solid CRYPT_BARS, no path from the door to Tam), two brute jailers outside; before the beast is dead E says they hum', solid && noPath && jailers.length === 2 && hum && barsStand() && !hf.freed && activeQuests().includes('crypt') && /Barrelbeast walks/.test(questText('crypt')), { solid, noPath, jailers: jailers.length, hum, text: dialog.cur && dialog.cur.text, quest: questText('crypt') }); dialog.queue.length = 0; dialog.cur = null; }
-    { const bb = monsters.find(m => m.type === 'barrelbeast'); F.tp(137, 86); bb.dead = false; bb.hp = 150; bb.phase2 = false; bb.stunT = 0; bb.x = player.x + 4 * TILE; bb.y = player.y; bb.home = { x: bb.x, y: bb.y }; bb.state = 'idle';
+    { const bb = monsters.find(m => m.type === 'barrelbeast'); F.tp(...HFF.p(137, 86)); bb.dead = false; bb.hp = 150; bb.phase2 = false; bb.stunT = 0; bb.x = player.x + 4 * TILE; bb.y = player.y; bb.home = { x: bb.x, y: bb.y }; bb.state = 'idle';
       const hp0 = player.hp; player.hp = 5000; h.peace(false); const n0 = bb.bombsFired || 0; F.sim(240, []); const fired = (bb.bombsFired || 0) - n0; const sticky = projectiles.some(p => p.kind === 'sticky' && p.owner === 'monster');
       h.peace(true); projectiles = []; player.hp = Math.min(hp0, player.maxHp); player.hurtT = 0;
       check('Barrelbeast phase 2: under half hp it spits sticky bombs at a knight within 6 tiles', fired >= 1 && bb.phase2 === true, { fired, sticky, state: bb.state, hp: bb.hp }); }
-    { const bb = monsters.find(m => m.type === 'barrelbeast'); F.tp(137, 87); player.facing = { x: 1, y: 0 }; bb.dead = false; bb.hp = 1; bb.stunT = 0; bb.state = 'idle';
+    { const bb = monsters.find(m => m.type === 'barrelbeast'); F.tp(...HFF.p(137, 87)); player.facing = { x: 1, y: 0 }; bb.dead = false; bb.hp = 1; bb.stunT = 0; bb.state = 'idle';
       for (let i = 0; i < 80 && !bb.dead; i++) { bb.x = player.x + 50; bb.y = player.y; bb.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); }
       const w = hf.wreck;
       check('Barrelbeast dies into its own wreck (BEAST_WRECK): CHAPTER 4 COMPLETE banner, stage 10', bb.dead && hf.beastKilled && !!w && tileAt(w[0], w[1]) === (T.BEAST_WRECK ?? T.WRECK) && quest.stage === 10 && !!levelBanner && levelBanner.text === 'CHAPTER 4 COMPLETE', { dead: bb.dead, wreck: w, stage: quest.stage, banner: levelBanner && levelBanner.text }); }
     // Under the Chapel: with the beast dead, three hammer blows on the bars free the survivors; they appear in the square at once (31-rebuild keys on freed)
     { const drain = () => { dialog.queue.length = 0; dialog.cur = null; }; if (!hasTool('hammer')) h.give('hammer', 1); hf.freed = false; hf.barHits = 0; for (const [x, y] of BAR_TILES) if (tileAt(x, y) !== T_BARS) changeTile(x, y, T_BARS);
-      closePanel(); F.tp(128, 84); F.face(128, 85); const hits = []; levelBanner = null;
+      closePanel(); F.tp(...HFF.p(128, 84)); F.face(...HFF.p(128, 85)); const hits = []; levelBanner = null;
       for (let k = 0; k < 3; k++) { drain(); F.press('KeyE'); F.sim(2, []); hits.push([hf.barHits, barsStand()]); }
-      const open = BAR_TILES.every(([x, y]) => tileAt(x, y) === T.FLOOR), path = F.bfs(128, 84, 126, 88), banner = levelBanner && levelBanner.text;
-      F.sim(3, []); F.tp(137, 82); F.face(137, 81); drain(); F.press('KeyE'); F.sim(2, []); const sq = dialog.cur && dialog.cur.who;
-      const crypt = NPCS.find(n => n.id === 'pip'); drain(); F.tp(127, 86); F.face(126, 86); F.press('KeyE'); F.sim(2, []); const freedLine = dialog.cur && crypt.freed.includes(dialog.cur.text);
+      const open = BAR_TILES.every(([x, y]) => tileAt(x, y) === T.FLOOR), path = F.bfs(...HFF.p(128, 84), ...HFF.p(126, 88)), banner = levelBanner && levelBanner.text;
+      F.sim(3, []); F.tp(...HFF.p(137, 82)); F.face(...HFF.p(137, 81)); drain(); F.press('KeyE'); F.sim(2, []); const sq = dialog.cur && dialog.cur.who;
+      const crypt = NPCS.find(n => n.id === 'pip'); drain(); F.tp(...HFF.p(127, 86)); F.face(...HFF.p(126, 86)); F.press('KeyE'); F.sim(2, []); const freedLine = dialog.cur && crypt.freed.includes(dialog.cur.text);
       check('crypt: after the kill, three E presses with a hammer break the bars (1/3, 2/3, then FLOOR), freed flag + UNDER THE CHAPEL banner, the quest clears, Tam stands in the square at once, the crypt Pip has new lines', hits[0][0] === 1 && hits[0][1] && hits[1][0] === 2 && hits[1][1] && hits[2][0] === 3 && open && hf.freed && !!path && banner === 'UNDER THE CHAPEL' && !activeQuests().includes('crypt') && sq === 'Old Tam' && !!freedLine, { hits, open, freed: hf.freed, path: path && path.length, banner, sq, freedLine, text: dialog.cur && dialog.cur.text }); drain(); }
     { let free = player.inv.filter(s => !s).length; for (let i = player.inv.length - 1; i >= 0 && free < 2; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour) { player.inv[i] = null; free++; } }
       const c0 = coins(); const r = F.talk('tam');
@@ -782,10 +786,10 @@
       // the wrecks standing on the overworld before any of this
       const wOut = wrecks();
       // B1: the door on the camp road
-      { const road = F.bfs(150, 50, SHED_STEP[0], SHED_STEP[1]), doorTile = tileAt(SHED_DOOR[0], SHED_DOOR[1]) === T.DUNGEON_DOOR, walls = SHED_WALL.every(([x, y]) => SOLID.has(tileAt(x, y)));
+      { const road = F.bfs(...ATLAS.track('road_hollowford')[1].map(Math.round), SHED_STEP[0], SHED_STEP[1]), doorTile = tileAt(SHED_DOOR[0], SHED_DOOR[1]) === T.DUNGEON_DOOR, walls = SHED_WALL.every(([x, y]) => SOLID.has(tileAt(x, y)));
         const rows = window.PLAYTHROUGH ? PLAYTHROUGH.instanceConnectivity().filter(r => r.instance === 'The War Shed') : [];
         const entered = enterShed(), region = player.region;
-        check(P + 'the War Shed door at (147,44) with step (148,44) is reachable from the road and enters war_shed; PLAYTHROUGH.instanceConnectivity passes',
+        check(P + `the War Shed door at (${SHED_DOOR}) with step (${SHED_STEP}) is reachable from the road and enters war_shed; PLAYTHROUGH.instanceConnectivity passes`,
           !!road && doorTile && walls && entered && region === 'The War Shed' && rows.length >= 2 && rows.every(r => r.dist >= 0) && tileAt(VALVE_T.x, VALVE_T.y) === T_VALVE && SOLID.has(T_VALVE) && INTERESTING_TILES.has(T_VALVE),
           { road: road && road.length, doorTile, walls, entered, region, rows: rows.map(r => [r.name, r.dist]) }); }
       // B1b: the scrap heaps lie on the plank floor (the core paints a RUBBLE cell on grass), and on a phone held upright the
@@ -850,7 +854,7 @@
       // B9: a repeat kill of the square beast (a friend's, adopted alive in a keeper handoff) leaves no wreck, and the square's
       // beast then stays down for good: adopted-awake ends with its death, so the core's 600 s timer never stands it up again
       { const hf3 = HF(); hf3.beastKilled = true; hf3.shedRestUntil = 0; const sq = monsters.find(m => m.type === 'barrelbeast');
-        F.tp(137, 86); const w0 = wrecks(); clearBanners();
+        F.tp(...HFF.p(137, 86)); const w0 = wrecks(); clearBanners();
         if (sq) { sq.dead = false; sq.awake = true; sq.hp = 1; sq.x = player.x + 60; sq.y = player.y; sq.stunT = 0; }
         F.sim(1, []); const alive = !!sq && !sq.dead; if (sq) hitMonster(sq, 5, 0); F.sim(2, []);
         // (a friend's beast in the square: BEAST DOWN for the helping hand, never REMATCH WON, which is the shed's)
@@ -869,7 +873,7 @@
         const spare = { killed: hf4.beastKilled, due: hf4.wreckDue, stage: quest.stage, banner: bannerAhead('BEAST DOWN'), cleared: bannerAhead('DUNGEON CLEARED'), said: said(/goblins' spare/), scrap };
         drops = drops.filter(() => false); INSTANCES.leave(); F.sim(2, []);
         const w0 = wrecks(); quest.stage = 8; const sq = monsters.find(m => m.type === 'barrelbeast'); if (sq) { sq.dead = false; sq.hp = sq.maxHp; sq.respawnT = 0; }
-        F.tp(138, 80); F.sim(3, []);
+        F.tp(...HFF.p(138, 80)); F.sim(3, []);
         const own = { stage: quest.stage, standing: !!sq && !sq.dead, wrecks: wrecks() - w0 };
         check(P + "a credited shed kill at stage 5 (a friend's fight) gives the spare's def drops only: beastKilled false, no wreck due, stage 5; his Hollowford still runs 8 to 9 with its own beast standing",
           !!ph && !spare.killed && !spare.due && spare.stage === 5 && spare.banner && !spare.cleared && spare.said && spare.scrap >= 8 && own.stage === 9 && own.standing && own.wrecks === 0, { spare, own });
@@ -895,7 +899,7 @@
       // made his first kill, as it always was (beastKilled, one wreck, the stage left alone), and nobody calls it a friend's fight
       { const hf7 = HF(), st = quest.stage, keep = { wreck: hf7.wreck, map: map.slice(), stats: JSON.stringify(player.skills) };
         Object.assign(hf7, { beastKilled: false, wreckDue: false, shedUp: false, shedRestUntil: 0, wreck: null }); quest.stage = 5;
-        const sq = monsters.find(m => m.type === 'barrelbeast' && !m.shed); F.tp(137, 86); const w0 = wrecks(); clearBanners(); drain();
+        const sq = monsters.find(m => m.type === 'barrelbeast' && !m.shed); F.tp(...HFF.p(137, 86)); const w0 = wrecks(); clearBanners(); drain();
         if (sq) { sq.dead = false; delete sq.awake; sq.hp = 1; sq.x = player.x + 60; sq.y = player.y; sq.stunT = 0; }
         F.sim(1, []); const offline = typeof NET === 'undefined' || !NET.online(); if (sq) hitMonster(sq, 5, 0); F.sim(2, []);
         const r = { offline, dead: !!sq && sq.dead, killed: hf7.beastKilled, stage: quest.stage, wrecks: wrecks() - w0, friend: said(/friend/), banner: bannerAhead('BEAST DOWN'), tips: said(/tips, groans, and comes apart/) };
@@ -907,7 +911,7 @@
       // B16: a friend's own first beast in Hollowford's square (a phantom), helped by a knight who broke his own long ago:
       // BEAST DOWN, 'You helped a friend', the def drops; never REMATCH WON or the line about the back of the shed
       { const hf8 = HF(), st = quest.stage; Object.assign(hf8, { beastKilled: true, shedUp: false, shedRestUntil: 0 }); quest.stage = Math.max(11, st);
-        if (INSTANCES.active()) INSTANCES.leave(); F.tp(137, 86); clearBanners(); drain(); const k0 = hf8.shedKills, n0 = drops.length;
+        if (INSTANCES.active()) INSTANCES.leave(); F.tp(...HFF.p(137, 86)); clearBanners(); drain(); const k0 = hf8.shedKills, n0 = drops.length;
         const ph = window.COOP ? COOP.phantomOf({ type: 'barrelbeast', nid: 'Ann:9', x: player.x + 60, y: player.y }) : null;
         const rnd0 = Math.random; try { Math.random = () => 0.9; if (ph) killMonster(ph); } finally { Math.random = rnd0; } F.sim(2, []);
         const r = { ph: !!ph, banner: bannerAhead('BEAST DOWN'), sub: levelBanner && levelBanner.sub, rematch: bannerAhead('REMATCH WON'), shed: said(/back of the shed/), helped: said(/You helped a friend bring down the Barrelbeast/), kills: hf8.shedKills - k0, scrap: drops.slice(n0).filter(d => d.id === 'goblin_scrap').reduce((n, d) => n + d.qty, 0) };
@@ -947,7 +951,7 @@
               waited && recalls === 0 && first.length === 1 && first[0].first === true, { waited, recalls, first }); }
           // a friend at stage 9 whose keeper broke the square's beast already: a quiet square for 4 s sends him to the shed
           INSTANCES.leave(); push({ t: 'keeper', map: 'over', n: 'Ann' }); const st9 = quest.stage, hf9 = HF();
-          Object.assign(hf9, { beastKilled: false, toldShed: false, shedUp: false }); quest.stage = 9; F.tp(140, 82); drain(); F.sim(150, []);
+          Object.assign(hf9, { beastKilled: false, toldShed: false, shedUp: false }); quest.stage = 9; F.tp(...HFF.p(140, 82)); drain(); F.sim(150, []);
           const early = hf9.toldShed; F.sim(120, []);
           const told = hf9.toldShed && [dialog.cur, ...dialog.queue].some(l => l && /building another in their War Shed/.test(l.text)) && mapTargets().some(t => t.label === 'The War Shed') && /War Shed/.test(questText('main'));
           check(P + '(fake NET non-keeper, stage 9): a quiet square for 4 s tells the knight about the War Shed (toldShed, the map target, the quest line), not before', !early && told, { early, told: hf9.toldShed, text: questText('main') });
