@@ -129,5 +129,6 @@
   {"file": "31-rebuild.js", "literal": "7 * TILE", "line": 196, "reason": "the board's nudge fires within 7 tiles of it: a radius, not a position"},
   {"file": "31-rebuild.js", "literal": "4 * TILE", "line": 199, "reason": "a villager wanders at most 4 tiles from home: a radius, not a position"},
   {"file": "31-rebuild.js", "literal": "9 * TILE", "line": 427, "reason": "the self-test sends the villagers 9 tiles from Nell: an offset, not a position"},
-  {"file": "31-rebuild.js", "literal": "9 * TILE", "line": 450, "reason": "the self-test sends the villagers 9 tiles from Nell: an offset, not a position"}
+  {"file": "31-rebuild.js", "literal": "9 * TILE", "line": 450, "reason": "the self-test sends the villagers 9 tiles from Nell: an offset, not a position"},
+  {"file": "32-beast.js", "literal": "8 * TILE", "line": 218, "reason": "the self-test clears loot within 8 tiles of the wreck: a radius, not a position"}
 ]
