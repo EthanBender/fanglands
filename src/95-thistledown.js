@@ -617,10 +617,28 @@
     }
     return null;
   }
+  // A tap on greenery or water that no one can stand beside (the middle of a hedge bed, Swan Pond where the swans swim, the
+  // castle moat's far sides) walks to the nearest cell of the same bed, or of the same water, that can be reached, instead of
+  // the core's "You can't get there." (fishing works from that shore). Nearest first, 10 cells round at most, 4 tries.
+  const TWIN_R = 10;
+  function reachableTwin(p) {
+    const water = p.t === T.WATER, k = water ? null : kindAt(p.tx, p.ty);
+    const same = (x, y) => water ? tileAt(x, y) === T.WATER : tileAt(x, y) === HEDGE && kindAt(x, y) === k;
+    const cands = [];
+    for (let r = 1; r <= TWIN_R; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const x = p.tx + dx, y = p.ty + dy;
+      if (inTown(x, y) && same(x, y) && N4.some(([a, b]) => !SOLID.has(tileAt(x + a, y + b)))) cands.push([x, y, dx * dx + dy * dy]);
+    }
+    cands.sort((a, b) => a[2] - b[2]);
+    for (const [x, y] of cands.slice(0, 4)) if (tapPathTo(x, y, true)) return [x, y];
+    return null;
+  }
   { const _tapPick = tapPick;
     tapPick = function (sx, sy) {
       const p = _tapPick(sx, sy);
       if (!p || away() || p.kind !== 'use' || !inTown(p.tx, p.ty)) return p;
+      if ((p.t === HEDGE || p.t === T.WATER) && !tapPathTo(p.tx, p.ty, true)) { const r = reachableTwin(p); return r ? Object.assign({}, p, { tx: r[0], ty: r[1] }) : p; }
       const k = kindAt(p.tx, p.ty);
       if (!(p.t === FOUNT || k === 'bell')) return p;
       const middle = p.t === FOUNT && fountainAt(p.tx, p.ty) === great && p.ty === 35 && (p.tx === 111 || p.tx === 112);
@@ -2508,7 +2526,7 @@
       const tilesOk = ids.every(id => typeof id === 'number' && id <= 255) && SOLID.has(HEDGE) && SOLID.has(PROP) && SOLID.has(FOUNT) && !SOLID.has(LAWN) && PLACEABLE_ON.has(LAWN) && LAWN !== T.GRASS;
       // round 1 of review: the Smithy Yard, the Bell Green, the inn's garden and the kitchen garden took 184 plain grass
       // cells ('.' 215 -> 31); one lamp moved from 121,29 to 117,30 (still 22)
-      const COUNTS = { '-': 202, '#': 144, 'T': 80, 'G': 6, '@': 507, '=': 282, '+': 457, '"': 262, 'h': 82, 'd': 1, 'O': 1, 'P': 2, 'u': 2, 't': 26, '*': 19, 'l': 22, 's': 4, 'p': 1, 'n': 12, 'k': 8, 'i': 2, 'B': 4, 'N': 1, 'D': 1, 'f': 62, '.': 31, ',': 119, 'a': 20, 'Y': 34, '~': 87, 'b': 10, 'j': 1, 'F': 20, 'x': 1, 'S': 4, 'C': 56, 'g': 2,
+      const COUNTS = { '-': 202, '#': 144, 'T': 80, 'G': 6, '@': 507, '=': 282, '+': 457, '"': 263, 'h': 82, 'd': 1, 'O': 1, 'P': 2, 'u': 2, 't': 26, '*': 19, 'l': 22, 's': 4, 'p': 1, 'n': 11, 'k': 8, 'i': 2, 'B': 4, 'N': 1, 'D': 1, 'f': 62, '.': 31, ',': 119, 'a': 20, 'Y': 34, '~': 87, 'b': 10, 'j': 1, 'F': 20, 'x': 1, 'S': 4, 'C': 56, 'g': 2,
         'v': 21, 'w': 7, 'c': 2, 'A': 1, 'q': 1, 'V': 1, 'U': 2 };
       const off = Object.keys(COUNTS).filter(c => (PLAN.COUNTS[c] || 0) !== COUNTS[c]).map(c => `${c} ${PLAN.COUNTS[c]} want ${COUNTS[c]}`);
       const extra = Object.keys(PLAN.COUNTS).filter(c => !(c in COUNTS));
@@ -2522,8 +2540,8 @@
       // the biggest patch of plain overworld grass ('.' and the dozer bay's 'D') left inside the walls
       let bigGrass = 0; { const seen = new Set(); for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) { const g0 = c => c === '.' || c === 'D'; if (!g0(glyph(x, y)) || seen.has(x + ',' + y)) continue; let n = 0; const st = [[x, y]]; seen.add(x + ',' + y); while (st.length) { const [cx, cy] = st.pop(); n++; for (const [dx, dy] of N4c) { const k = (cx + dx) + ',' + (cy + dy); if (!seen.has(k) && g0(glyph(cx + dx, cy + dy))) { seen.add(k); st.push([cx + dx, cy + dy]); } } } bigGrass = Math.max(bigGrass, n); } }
       const sha = (() => { let hsh = 0; for (const r of PLAN.ROWS) for (let i = 0; i < r.length; i++) hsh = (Math.imul(hsh, 31) + r.charCodeAt(i)) | 0; return hsh; })();
-      check(P + 'C1 the plan: 45 rows of 58, every glyph known; TD_LAWN, TD_HEDGE, TD_PROP and TD_FOUNTAIN exist (ids <= 255); every glyph count is the plan\'s (2610 cells); 68 prop, 148 hedge and 20 fountain cells all have a kind; 18 towers (14 of 2x2, 4 of 2x3), 64 moat + 23 pond, 12 + 4 + 4 fountain cells, 14 fruit + 12 cherry trees, 22 lamps, and no plain grass patch inside the walls bigger than 6 cells',
-        rowsOk && known && tilesOk && !off.length && !extra.length && total === 2610 && kProp === 68 && nProp === 68 && kHedge === 148 && nHedge === 148 && kFount === 20 && nFount === 20
+      check(P + 'C1 the plan: 45 rows of 58, every glyph known; TD_LAWN, TD_HEDGE, TD_PROP and TD_FOUNTAIN exist (ids <= 255); every glyph count is the plan\'s (2610 cells); 67 prop, 148 hedge and 20 fountain cells all have a kind; 18 towers (14 of 2x2, 4 of 2x3), 64 moat + 23 pond, 12 + 4 + 4 fountain cells, 14 fruit + 12 cherry trees, 22 lamps, and no plain grass patch inside the walls bigger than 6 cells',
+        rowsOk && known && tilesOk && !off.length && !extra.length && total === 2610 && kProp === 67 && nProp === 67 && kHedge === 148 && nHedge === 148 && kFount === 20 && nFount === 20
         && towers.length === 18 && t22 === 14 && t23 === 4 && moat === 64 && pond === 23 && fr2.great === 12 && fr2.market === 4 && fr2.rose === 4 && trees.fruit === 14 && trees.cherry === 12 && LAMPS_N === 22 && bigGrass <= 6,
         { rowsOk, known, ids, maxId, tilesOk, off, extra, total, kProp, kHedge, kFount, towers: [towers.length, t22, t23], moat, pond, fountains: fr2, trees, lamps: LAMPS_N, bigGrass, sha }); }
 
@@ -2740,6 +2758,30 @@
       drain(); tapCancel('manual');
       check(P + 'C10b a tap on a stall, a bench, a hedge, a lamp or a statue beside one of the town\'s people answers as the thing from every side it can be reached (the sellers too: E still talks over a counter)',
         tried >= 20 && !wrong.length, { tried, wrong: wrong.slice(0, 8) }); }
+
+    // ---- C10c. greenery and water no one can stand beside: a tap walks to the nearest reachable cell of the same bed or water ----
+    { leave(); onFoot(); drain(); F.tp(112, 33); F.step([]);
+      // what a knight on foot can reach from the fountain (4 ways, through anything not solid)
+      const reach = new Uint8Array(MAP_W * MAP_H), q = [idx(112, 33)]; reach[q[0]] = 1;
+      for (let i = 0; i < q.length; i++) { const c = q[i], cx = c % MAP_W, cy = Math.floor(c / MAP_W); for (const [dx, dy] of N4) { const x = cx + dx, y = cy + dy; if (!inMap(x, y) || x < TOWN.x0 - 8 || x > TOWN.x1 + 8 || y < TOWN.y0 - 8 || y > TOWN.y1 + 8) continue; const j = idx(x, y); if (reach[j] || SOLID.has(map[j])) continue; reach[j] = 1; q.push(j); } }
+      const usable = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && reach[idx(x + dx, y + dy)]);
+      let lone = 0, sent = 0, hedgeMid = null; const stuck = [];
+      for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) {
+        const t = tileAt(x, y); if (!(t === HEDGE || t === T.WATER) || usable(x, y)) continue;
+        lone++; const r = reachableTwin({ kind: 'use', tx: x, ty: y, t });
+        if (r && usable(r[0], r[1])) { sent++; if (!hedgeMid && t === HEDGE) hedgeMid = [x, y]; } else stuck.push(x + ',' + y);
+      }
+      // the one bed no one can reach: the hedge between the agility track's fence and the south wall (scenery)
+      const scenery = stuck.every(c => { const [x, y] = c.split(',').map(Number); return y === 55 && x >= 87 && x <= 102; });
+      // and through a real tap (tapPick): the swans' water in the middle of Swan Pond, the south moat, a hedge's middle
+      const viaTap = {};
+      for (const [x, y] of [[136, 26], [112, 55]].concat(hedgeMid ? [hedgeMid] : [])) {
+        const t = tileAt(x, y); F.tp(x, Math.max(TOWN.y0 + 2, y - 3)); F.step([]); render();
+        const p = tapPick(tc(x) - cam.x, tc(y) - cam.y);
+        viaTap[x + ',' + y] = !!p && p.kind === 'use' && tileAt(p.tx, p.ty) === t && usable(p.tx, p.ty) && !usable(x, y);
+      }
+      check(P + 'C10c a tap on greenery or water no one can stand beside (the middle of a bed, Swan Pond where the swans swim, the far sides of the moat) walks to the nearest reachable cell of the same bed or water; only the hedge row behind the agility fence (scenery) has none',
+        lone >= 20 && sent >= 20 && scenery && !!hedgeMid && Object.values(viaTap).length === 3 && Object.values(viaTap).every(Boolean), { lone, sent, stuck, viaTap }); }
 
     // ---- C11. the coin toss ----
     { drain(); clearFolk(111, 33, 8); clearMonsters(111, 33, 6); onFoot(); F.tp(111, 33); F.face(111, 34); setCoins(5); const q = Q(); q.tossArmed = 0; const t0 = q.tossed;
