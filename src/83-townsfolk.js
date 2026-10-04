@@ -426,7 +426,8 @@ const TOWNSFOLK = (() => {
       }
       const missed = ids.filter(id => !((STATS.by[id] || 0) > (by0[id] || 0)));
       check(P + 'every one of the ' + ids.length + ' people in the approved sample is drawn in the new look by id (the sample\'s own drawing, 150+ calls each), at 8 facings standing, walking, talking, seated and in the air, with nothing thrown and every save put back; no two of them draw the same',
-        ids.length === 74 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
+        // 74 in the approved sample, and 6 more since: the Windward Market's sellers and shoppers (the Cloud Kingdom polish, 2026-10-03)
+        ids.length === 80 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
 
     // 2. every person the game draws reaches the new look by id: each NPCS entry through the core's drawNpc, and every
     // place's own people in real frames (Hollowford's square and the guild, the ferry, Deepholm, Sylvaris, Aerie and the
@@ -555,8 +556,9 @@ const TOWNSFOLK = (() => {
       const gBad = gob.filter(id => { const S = SPEC[id] || (drawerOf(id), SPEC[id]); const r = new Rec(); at(0, () => drawerOf(id)(r, pose(0, 1))); return !S || S.ears !== 'goblin' || r.cols.includes('#8ad35a') || standOf(id).r - standOf(id).l < handsOf(id) + 1; });
       const wBad = sky.filter(id => standOf(id).r - standOf(id).l < handsOf(id) + 3);
       const kids = ['tess', 'robin', 'pip', 'fen', 'tilly', 'lark'].filter(id => (SPEC[id] || (drawerOf(id), SPEC[id]) || {}).build !== 'child');
+      // 20 sky folk in the approved sample, and the Windward Market's 6 since (the Cloud Kingdom polish, 2026-10-03)
       check(P + 'Goblin City\'s ' + gob.length + ' townsfolk are drawn on the new goblin (its ears and yellow eyes, never the old green circle), the ' + sky.length + ' sky folk spread their own wings, and the children are child size',
-        gob.every(id => ART.NEW_NPC[id]) && !gBad.length && sky.length === 20 && !wBad.length && !kids.length, { gBad: gBad.map(id => id + ':' + Math.round(standOf(id).r - standOf(id).l)), wBad: wBad.map(id => id + ':' + Math.round(standOf(id).r - standOf(id).l) + '/' + Math.round(handsOf(id))), kids }); }
+        gob.every(id => ART.NEW_NPC[id]) && !gBad.length && sky.length === 26 && !wBad.length && !kids.length, { gBad: gBad.map(id => id + ':' + Math.round(standOf(id).r - standOf(id).l)), wBad: wBad.map(id => id + ':' + Math.round(standOf(id).r - standOf(id).l) + '/' + Math.round(handsOf(id))), kids }); }
 
     // 7. a portrait (the companion panel, the plaque) is the person: HK.portrait draws Sera and Garrick in the new look, and
     // a face with no who is the kit's own

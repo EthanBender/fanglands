@@ -3018,6 +3018,43 @@ const TOWNSFOLK_ART = (() => {
   }
 
   // ---------- everyone ----------
+  // ---------- the Windward Market (the Cloud Kingdom polish, 2026-10-03): what its sellers and shoppers hold ----------
+  // a bolt of wing-cloth, sky blue banded in gold, the loose end lifting in the wind (Maudie the weaver)
+  PROPS.sky_cloth = (g, C, o) => {
+    g.save(); g.translate(0.4, 0.2); g.rotate(-0.25);
+    const c = o.c || '#5b9be0', lift = Math.sin(time * 2.2 + C.seed) * 0.8;
+    g.beginPath(); g.moveTo(2.6, -2.6); g.quadraticCurveTo(5.6, -5 + lift, 8.2, -4 + lift * 1.4); g.lineTo(8, -1.6 + lift); g.quadraticCurveTo(5.4, -2.4 + lift * 0.6, 2.6, 0.4); g.closePath(); g.fillStyle = vfill(g, c, -5, 0, 0.35, -0.1); g.fill(); outline(g, 0.35);
+    rr(g, -3, -3, 6, 6.4, 2.4); g.fillStyle = vfill(g, c, -3, 3.4, 0.3, -0.3); g.fill(); outline(g, 0.5);
+    g.fillStyle = '#f5c542'; g.fillRect(-3, -0.6, 6, 1);
+    ell(g, 0, -3, 3, 1.1); g.fillStyle = shade(c, -0.25); g.fill(); outline(g, 0.35);
+    g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 0.4; g.beginPath(); g.arc(0, -3, 1.6, 0, Math.PI * 2); g.stroke();
+    g.restore();
+  };
+  // a fan of feathers, white, gold and grey, the quills bound in blue (Old Plume)
+  PROPS.sky_featherFan = (g, C, o) => {
+    g.save(); g.rotate(Math.sin(time * 1.6 + C.seed) * 0.05);
+    [['#ffffff', -0.55], ['#f5c542', -0.2], ['#c9ccd6', 0.15], ['#ffffff', 0.5]].forEach(([c, a]) => sky_feather(g, 0, 0.6, -Math.PI / 2 + a, 9, 2.2, c, shade(c, -0.35)));
+    rr(g, -1.2, -0.4, 2.4, 2.4, 0.6); g.fillStyle = '#3b6fc0'; g.fill(); outline(g, 0.35);
+    g.restore();
+  };
+  // a white clay jug with a blue band, fired on cloud-fire (Crockett the potter)
+  PROPS.sky_pot = (g, C, o) => {
+    g.save(); g.translate(0.8, 0.6);
+    const jug = () => { g.beginPath(); g.moveTo(-1.6, -3.6); g.quadraticCurveTo(-1.2, -2, -2.8, -0.6); g.quadraticCurveTo(-4, 2.6, -2.2, 4.6); g.lineTo(2.2, 4.6); g.quadraticCurveTo(4, 2.6, 2.8, -0.6); g.quadraticCurveTo(1.2, -2, 1.6, -3.6); g.closePath(); };
+    g.strokeStyle = OUT; g.lineWidth = 1.4; g.beginPath(); g.arc(3, 0.6, 1.8, -1.2, 1.4); g.stroke(); g.strokeStyle = '#f4f0e8'; g.lineWidth = 0.8; g.stroke();
+    jug(); g.fillStyle = vfill(g, '#f4f0e8', -3.6, 4.6, 0.2, -0.25); g.fill(); outline(g, 0.5);
+    g.fillStyle = '#3b6fc0'; g.fillRect(-3.2, 0.6, 6.4, 1.1);
+    ell(g, 0, -3.6, 1.7, 0.6); g.fillStyle = '#6b6258'; g.fill(); outline(g, 0.3);
+    g.restore();
+  };
+  // a full basket: a loaf, a bolt of cloth, an apple and a feather sticking out (Hazel, who came for one apple)
+  const sky_marketFill = g => {
+    ell(g, -2.2, 3.2, 2.2, 1.3, -0.3); g.fillStyle = rfill(g, '#c98a3a', -2.2, 3.2, 2.2); g.fill(); outline(g, 0.35);
+    rr(g, 0.2, 1.4, 2.6, 2.6, 1); g.fillStyle = '#b07ad9'; g.fill(); outline(g, 0.35);
+    ell(g, 3.4, 3.4, 1.3, 1.2); g.fillStyle = rfill(g, '#d8402a', 3.4, 3.4, 1.3); g.fill(); outline(g, 0.3);
+    sky_feather(g, -0.6, 3, -Math.PI / 2 - 0.3, 7, 1.8, '#ffffff', '#c9ccd6');
+  };
+
   addPeople('sky', {
     // ---------- Queen Seraphel of Aerie: the greatest wings in the sky, a white gown, a mantle of feathers, a gold lyre ----------
     seraphel: sky_person({ scale: 1.35, tone: '#fbf8ee', edge: '#e0c070', sheen: '#f0c040' }, {
@@ -3371,6 +3408,76 @@ const TOWNSFOLK_ART = (() => {
       collar: (g, C) => sky_scarf(g, C, '#d0503a', '#f6e6c4'),
       torso: (g, C) => { sky_strap(g, C, '#5a3a20', 1); if (!C.back) { sky_satchel(g, C); sky_wingBadge(g, 3.6, C.B.sh + 2.4, '#d4dce8', 0.7); } },
       back: (g, C) => { g.strokeStyle = '#5a3a20'; g.lineWidth = 1; g.beginPath(); g.moveTo(C.B.w - 1.4, C.B.sh - 0.4); g.lineTo(-C.B.w + 2.2, C.B.waist - 0.2); g.stroke(); sky_satchel(g, C); },
+    }),
+
+    // ---------- the Windward Market (the Cloud Kingdom polish, 2026-10-03): a seller behind each stall, and two shoppers ----------
+    // Pippa the fruit seller: a red dress, a kerchief, an apron with an apple in the pocket, a basket of sky-apples
+    pippa: sky_person({ scale: 0.95, tone: '#fbf6ea', edge: '#e0a090' }, {
+      build: 'adult', skin: '#f2d6bf',
+      face: { eye: '#3a2414', lash: '#2a1a10', brow: '#5a2a10', eyes: 'happy', mouth: 'grin', lip: '#b0404a', blush: 'rgba(235,100,90,0.55)', freckles: true },
+      hair: { style: 'long', c: '#6a3a1e' },
+      hat: { kind: 'kerchief', c: '#f5c542', dots: '#d9534f' },
+      body: { kind: 'dress', c: '#d9534f', under: '#f2e8d4', rolled: '#f2e8d4', sleeve: '#c4463f', belt: '#7a2a20' },
+      over: [{ kind: 'apron', c: '#f6efe2', pocketItem: (g, x, y) => { ell(g, x + 0.6, y + 0.2, 1.1, 1); g.fillStyle = rfill(g, '#d8402a', x + 0.6, y + 0.2, 1.1); g.fill(); outline(g, 0.3); } }],
+      legs: { boot: '#5a3a22' },
+      held: { kind: 'basket', c: '#c9965a', fill: 'apples' },
+      off: { kind: 'apple', c: '#9ab83a' },
+    }),
+    // Maudie the weaver: grey hair in a bun, a blue dress, a shawl of her own wing-cloth, a bolt of it under her arm
+    maudie: sky_person({ scale: 1.0, tone: '#f8f6f0', edge: '#9ab8dc' }, {
+      build: 'adult', skin: '#f0d8c0',
+      face: { eye: '#3a5a8a', lash: '#5a5050', brow: '#a8a8a8', browW: 0.8, lines: true, mouth: 'smile', lip: '#b0606a', blush: 'rgba(230,130,130,0.4)' },
+      hair: { style: 'bun', c: '#c9c9c9', tie: '#5b9be0' },
+      body: { kind: 'dress', c: '#5b9be0', under: '#f6eedc', sleeve: '#4f86d0', belt: '#2e5a9a' },
+      over: [{ kind: 'shawl', c: '#f5e6a8' }],
+      legs: { boot: '#4a3a2a' },
+      held: { kind: 'sky_cloth', c: '#5b9be0' },
+      // a needle and thread pinned at her collar
+      torso: (g, C) => { if (C.back) return; const y = C.B.sh + 1.4; g.strokeStyle = '#a9adb5'; g.lineWidth = 0.35; g.beginPath(); g.moveTo(2.4, y - 1.6); g.lineTo(3.4, y + 1.6); g.stroke(); g.strokeStyle = '#d9534f'; g.lineWidth = 0.3; g.beginPath(); g.moveTo(2.5, y - 1.3); g.quadraticCurveTo(4.6, y, 3.2, y + 2.6); g.stroke(); },
+    }),
+    // Old Plume the feather seller: big wings, a long white beard, a hat with feathers in its band, a fan of feathers
+    plume: sky_person({ scale: 1.15, tone: '#fbf8ee', edge: '#e0c070', tip: '#f5c542' }, {
+      build: 'adult', skin: '#e8c8a8',
+      face: { eye: '#3a3a2a', eyes: 'happy', brow: '#f4f1ea', browW: 1.4, lines: true, nose: 'big', noseC: '#e0a888', mouth: 'smile', blush: 'rgba(220,110,90,0.4)' },
+      hair: { style: 'short', c: '#f4f1ea' },
+      beard: { style: 'long', c: '#f4f1ea' },
+      hat: { kind: 'straw', c: '#e8b84a', band: '#3b6fc0', flower: '#ffffff' },
+      body: { kind: 'robe', c: '#e8b84a', under: '#fbf8f0', edge: '#3b6fc0', belt: '#8a6a3a', sleeve: '#d9a838' },
+      legs: { boot: '#6a4a2a' },
+      held: { kind: 'sky_featherFan' },
+      // two long feathers stuck in his hat band
+      head: (g, C) => { const { hy, r } = sky_H(C), x = C.back ? -r * 0.6 : r * 0.7; sky_tuck(g, x, hy - r + 1, -1.1, 8, '#ffffff', '#3b6fc0'); sky_tuck(g, x - 0.8, hy - r + 1.4, -1.45, 7, '#f5c542', '#d9a838'); },
+    }),
+    // Crockett the potter: shirtsleeves rolled up, a clay-spattered apron, dried clay on his hands, a white jug
+    crockett: sky_person({ scale: 0.9, tone: '#f4efe4', edge: '#a8c8a0' }, {
+      build: 'adult', skin: '#e0b894',
+      face: { eye: '#3a2a1a', brow: '#2a1a0a', browW: 1.2, mouth: 'grin', nose: 'button', blush: 'rgba(210,100,80,0.4)' },
+      hair: { style: 'curly', c: '#3a2a1a' },
+      beard: { style: 'stubble', c: '#3a2a1a' },
+      body: { kind: 'tunic', c: '#5aa86a', under: '#efe4cc', rolled: '#efe4cc', belt: '#4a3020', buckle: '#c9a36a', pouch: false, sleeve: '#efe4cc' },
+      over: [{ kind: 'apron', c: '#d9cbb4', stain: 'rgba(160,120,80,0.45)' }],
+      legs: { c: '#4a4a3a', boot: '#3a2a1c' },
+      held: { kind: 'sky_pot' },
+    }),
+    // Hazel, who came for one apple: a purple dress, golden hair, and a basket full of everything except an apple
+    hazel: sky_person({ scale: 0.9, tone: '#fdfaf6', edge: '#c8a8e8' }, {
+      build: 'adult', skin: '#f5dcc8',
+      face: { eye: '#5a3a8a', lash: '#3a2414', brow: '#c9a050', mouth: 'o', lip: '#c05a6a', blush: 'rgba(235,120,140,0.5)' },
+      hair: { style: 'ponytail', c: '#f0c060', tie: '#b07ad9' },
+      body: { kind: 'dress', c: '#b07ad9', under: '#ffffff', puff: true, sleeve: '#ffffff', belt: '#7a4aa8' },
+      legs: { boot: '#7a4aa8' },
+      held: { kind: 'basket', c: '#c9965a', fill: sky_marketFill },
+    }),
+    // Wim, whose wings are moulting: small ragged wings, a grey coat, a single white feather he is buying to put back
+    wim: sky_person({ scale: 0.8, tone: '#e8e4dc', edge: '#a8a49c' }, {
+      build: 'adult', skin: '#f2d0b5',
+      face: { eye: '#3a2a1a', brow: '#6a4a2a', browW: 1, browTilt: 0.3, mouth: 'flat', nose: 'button', blush: 'rgba(220,110,100,0.5)' },
+      hair: { style: 'short', c: '#8a5a2a' },
+      body: { kind: 'coat', c: '#7a8a9a', under: '#efe8dc', button: '#f5c542', belt: '#3a3a44', buckle: '#f5c542', pouch: false, sleeve: '#6a7a8a' },
+      legs: { c: '#4a4a54', boot: '#3a2a1c' },
+      held: { kind: 'td_feather' },
+      // a loose feather drifting down behind him
+      behind: (g, C) => { const t = (time * 0.4 + C.seed) % 1; sky_feather(g, -9 + Math.sin(t * 9) * 1.4, -6 + t * 14, Math.PI / 2 + Math.sin(t * 7) * 0.6, 5, 1.6, '#e8e4dc', '#a8a49c'); },
     }),
   });
 
@@ -4205,7 +4312,7 @@ const TOWNSFOLK_ART = (() => {
 
   // every person's name as the sample's people list has it (today.json), for the talking pose; the game's own name for
   // a person wins where the call site hands it in
-  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet"};
+  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet"};
   const H = { lerp, ease, OUT, shade, hex, rr, ell, outline, vfill, rfill, metal, shadow, face4 };
   return { NEW_NPC, NPC_FAMILY, NPC_SPEC, NPC_NAMES, npc, drawPerson, npcFromToday, BUILDS, SKIN, HAIR, H, mark: f => { NPC_MARK = f || null; } };
 })();
