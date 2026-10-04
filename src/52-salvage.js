@@ -92,7 +92,7 @@
       id: 'salvage', panel: 'salvage', name: 'A wrecked machine (as it opens, and with Strip armed)',
       setup() {
         spot = wreckAt();
-        if (!spot) { spot = { tx: 60, ty: 26, made: true }; was = tileAt(60, 26); changeTile(60, 26, T.WRECK); }
+        if (!spot) { const [wx, wy] = [ATLAS.world.tx(60), ATLAS.world.ty(26)]; spot = { tx: wx, ty: wy, made: true }; was = tileAt(wx, wy); changeTile(wx, wy, T.WRECK); }   // open ground by the road: a stretched-world point
         return () => { if (spot && spot.made) changeTile(spot.tx, spot.ty, was); spot = null; uxConfirm = null; };
       },
       variants: [
@@ -196,7 +196,7 @@
   const P = 'salvage: ';
   HOOKS.selfTest.push((check, F, h) => {
     // E on a wreck offers the choice instead of repairing on the spot
-    { const o = h.openSpot(60, 26); F.tp(o.x, o.y);
+    { const o = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(26)); F.tp(o.x, o.y);
       const tx = Math.floor(player.x / TILE) + 1, ty = Math.floor(player.y / TILE), was = tileAt(tx, ty);
       changeTile(tx, ty, T.WRECK); F.face(tx, ty); closePanel();
       F.press('KeyE'); F.sim(2, []);
@@ -206,7 +206,7 @@
       closePanel(); changeTile(tx, ty, was);
       check(P + 'E on a wreck asks whether to repair it or strip it, and does neither until you choose', asked && strip && repair, { asked, strip, repair, panel }); }
     // stripping pays parts and Crafting xp and clears the tile
-    { const o = h.openSpot(62, 28); F.tp(o.x, o.y);
+    { const o = h.openSpot(...ATLAS.frame('signpost').p(62, 28)); F.tp(o.x, o.y);
       const tx = Math.floor(player.x / TILE) + 1, ty = Math.floor(player.y / TILE), was = tileAt(tx, ty);
       const bag = player.inv.slice(); player.inv = player.inv.map(() => null);
       changeTile(tx, ty, T.WRECK);
