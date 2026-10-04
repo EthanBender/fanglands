@@ -174,5 +174,17 @@
   {"file": "41-guild.js", "literal": "4 * TILE", "line": 211, "reason": "Pip must be within 4 tiles of the knight: a distance, not a position"},
   {"file": "41-guild.js", "literal": "8 * TILE", "line": 227, "reason": "the guild nudge fires within 8 tiles of the hall door: a radius, not a position"},
   {"file": "41-guild.js", "literal": "3 * TILE", "line": 460, "reason": "the self-test: Pip starts within 3 tiles of the knight, a distance"},
-  {"file": "41-guild.js", "literal": "5 * TILE", "line": 461, "reason": "the self-test: Pip follows within 5 tiles, a distance"}
+  {"file": "41-guild.js", "literal": "5 * TILE", "line": 461, "reason": "the self-test: Pip follows within 5 tiles, a distance"},
+  {"file": "46-cinderwight.js", "literal": "2 * TILE", "decl": "HEAT_R", "reason": "the ember heat reaches 2 tiles: a radius, not a position"},
+  {"file": "46-cinderwight.js", "literal": "3 * TILE", "decl": "TETHER", "reason": "a cinderwight leaves its heart by at most 3 tiles: a distance, not a position"},
+  {"file": "46-cinderwight.js", "literal": "[26, 36]", "decl": "AFTER_ANCHORS", "reason": "instance-local (afterlands): a wight south of the Afterlands graveyard"},
+  {"file": "46-cinderwight.js", "literal": "[52, 36]", "decl": "AFTER_ANCHORS", "reason": "instance-local (afterlands): a wight south of the Afterlands chapel"},
+  {"file": "46-cinderwight.js", "literal": "8 * TILE", "decl": "sight", "reason": "a cinderwight sees 8 tiles: a range, not a position"},
+  {"file": "46-cinderwight.js", "literal": "14 * TILE", "line": 284, "reason": "an ember only matters within 14 tiles of the knight: a distance, not a position"},
+  {"file": "46-cinderwight.js", "literal": "8 * TILE", "line": 354, "reason": "the self-test checks the sight of 8 tiles: a range, not a position"},
+  {"file": "46-cinderwight.js", "literal": "30 * TILE", "line": 392, "reason": "the self-test parks the hired hero 30 tiles west of its lane: an offset, not a position"},
+  {"file": "46-cinderwight.js", "literal": "16 * TILE", "line": 394, "reason": "the self-test clears monsters within 16 tiles of its lane: a radius, not a position"},
+  {"file": "46-cinderwight.js", "literal": "3 * TILE", "line": 407, "reason": "the self-test: the heart lies within 3 tiles of the wight, a distance"},
+  {"file": "46-cinderwight.js", "literal": "12 * TILE", "line": 423, "reason": "the self-test skips embers more than 12 tiles away: a distance, not a position"},
+  {"file": "46-cinderwight.js", "literal": "2 * TILE", "line": 457, "reason": "the self-test: the wight is pulled at least 2 tiles off its heart, a distance"}
 ]
