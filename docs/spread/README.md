@@ -20,6 +20,13 @@ make and read. Nothing here is loaded by the game.
 | `node tools/anchor-of.mjs X Y [X Y ...]` / `--port ID` | The place a literal belongs to: the smallest old box holding it (ties listed for a human), every box that holds it, and where it lands at the spread; "world" on open land. Reads `src/01-atlas.js` directly, same rule as `ATLAS.anchorOf`. |
 | `node tools/frame-codemod.mjs src/NN-file.js [--write] [--as anchor]` | Rewrites the mechanical patterns (pairs, points, rects, two-number calls; comparisons only with `--as`) as frame reads and prints the diff; refuses ties, one-axis literals (`tc(N)`, `N * TILE`), comparisons without `--as` and rects whose corners disagree. Read the diff: an instance's own coordinates come out as `cave` points and must be allow-listed, never wrapped. |
 
+**The strict report** (spec §8). `ATLAS.strict()` keeps one entry per call site + anchor + point, with a hit count (a line
+that runs every tick is one entry; the 200-entry cap counts distinct entries). `node tools/headless.js` (self-tests, and
+`--play` runs) prints it after the suite and fails on any entry `strict-allow.json` does not list, so a far point written
+in an update hook, a quest handler, draw code or a test is caught, not only one written while the game loads.
+`fingerprint.mjs --diff` reads the same report for load-time points. The in-game self-test checks only that logging
+works; whether an entry is allowed is the runners' question.
+
 `build.sh` runs `literals.mjs --gate` after the syntax check; with `converted.json` empty it does nothing (and needs no acorn).
 
 Stage 0 proof of the codemod: in a scratch copy, `frame-codemod --write` over 69-axestump, 57-townwall, 34-food, 24-dwarves

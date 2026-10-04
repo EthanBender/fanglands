@@ -821,14 +821,18 @@ resize();
   const monotone = pts => Array.isArray(pts) && pts.length >= 2 && pts.every((q, k) => k === 0 || (q[0] > pts[k - 1][0] && q[1] > pts[k - 1][1]));
 
   // ---------- the strict report: a frame point far outside its own place is logged with where it was written ----------
-  const STRICT = [], STRICT_MAX = 200;
+  // One entry per call site + anchor + point, with a hit count: a line that runs every tick is one entry, not the whole
+  // log, and the cap (STRICT_MAX) counts distinct entries. Read by tools/headless.js after every self-test and --play run
+  // and by tools/fingerprint.mjs; both fail on an entry docs/spread/strict-allow.json does not list.
+  const STRICT = new Map(), STRICT_MAX = 200;
   // the line that called the frame: the stack below where(), strictPoint() and the frame method itself
   const where = () => { const s = String(new Error().stack || '').split('\n').filter(l => /^\s*at /.test(l)).map(l => l.trim()); return s[3] || s[s.length - 1] || '?'; };
   const strictPoint = (id, a, x, y) => {
     if (!a.box) return;
     const m = a.guard + 12, b = a.box;
     if (x >= b[0] - m && x <= b[2] + m && y >= b[1] - m && y <= b[3] + m) return;
-    if (STRICT.length < STRICT_MAX) STRICT.push([where(), id, x, y]);
+    const at = where(), key = at + '|' + id + '|' + x + '|' + y, e = STRICT.get(key);
+    if (e) e[4]++; else if (STRICT.size < STRICT_MAX) STRICT.set(key, [at, id, x, y, 1]);
   };
 
   // ---------- frames ----------
@@ -956,12 +960,12 @@ resize();
   Object.assign(A, {
     ANCHORS, PORTS, PORT_REL, TRACKS, WORLD, PINS, NESTED, PLAN: { W: PLAN_W, H: PLAN_H },
     frame, world: W, port, box, track, guards, anchorOf, oldToNew, oldToNewWorld,
-    frameProblems: () => problems.slice(), strict: () => STRICT.slice(),
+    frameProblems: () => problems.slice(), strict: () => [...STRICT.values()].map(e => e.slice()),
   });
 
   // ---------- self-tests ----------
   HOOKS.selfTest.push((check, F, h) => {
-    const PF = 'atlas frames: ', strictBefore = STRICT.slice();   // what the game itself logged, before these checks add their own
+    const PF = 'atlas frames: ', strictBefore = new Map(STRICT);   // what the game logged so far: put back after these checks add their own
     check(PF + 'the anchor table is whole: boxes in the map and apart (old boxes may overlap where they still stand), the 400x280 plan apart, every port in its own box, WORLD monotone, every pin and track point naming something real', problems.length === 0, { problems: problems.slice(0, 8) });
     // Stage 0: every frame, the world and every pin are the identity, so nothing on screen can have moved
     const notId = Object.keys(FRAMES).filter(id => { const f = FRAMES[id], a = ANCHORS[id]; return f.dx !== 0 || f.dy !== 0 || f.x(a.box[0] + 0.5) !== a.box[0] + 0.5 || f.iy(f.y(a.box[3])) !== a.box[3]; });
@@ -985,11 +989,16 @@ resize();
     const cave = track('road_cave'), riv = track('river');
     check(PF + "TRACKS hold today's values (the cave road from the cave mouth by the signpost to the lane outside the west gate; 18 river points from the pond to the sea)",
       JSON.stringify(cave) === JSON.stringify([[CAVE_EXIT_X + 1, 7], [SIGN_TILE.x, SIGN_TILE.y], [84, 32]]) && riv.length === 18 && riv[0][0] === 44 && riv[17][0] === 178, { cave, rivN: riv.length });
-    // the strict report: a point far outside its own place is logged once with where it was written; the game itself logs none
-    STRICT.length = 0; frame('wren').p(30, 78); frame('wren').p(25 - 15, 83 + 15); const near = STRICT.length === 0;
-    frame('wren').p(200, 150); const logged = STRICT.length === 1 && STRICT[0][1] === 'wren' && STRICT[0][2] === 200 && /index\.html|game|:\d+/.test(STRICT[0][0]) && !/^at (where|strictPoint|p)\b/.test(STRICT[0][0]);
-    STRICT.length = 0; STRICT.push(...strictBefore);
-    check(PF + 'the strict report logs a frame point far outside its own place (past box + guard + 12) with the line that wrote it, not one within reach, and the game itself has logged none', near && logged && strictBefore.length === 0, { near, logged, at: STRICT[0], game: strictBefore.slice(0, 5) });
+    // the strict report: a point far outside its own place is logged with where it was written, once per line (a hit count
+    // for the rest). Whether the game's own entries are allowed is the runner's question (tools/headless.js and
+    // tools/fingerprint.mjs read docs/spread/strict-allow.json), so this check does not ask that the game logged none.
+    STRICT.clear(); frame('wren').p(30, 78); frame('wren').p(25 - 15, 83 + 15); const near = STRICT.size === 0;
+    const far = () => frame('wren').p(200, 150);
+    for (let k = 0; k < 30; k++) far();
+    const e = [...STRICT.values()];
+    const logged = e.length === 1 && e[0][1] === 'wren' && e[0][2] === 200 && e[0][4] === 30 && /index\.html|game|:\d+/.test(e[0][0]) && !/^at (where|strictPoint|p)\b/.test(e[0][0]);
+    STRICT.clear(); for (const [k, v] of strictBefore) STRICT.set(k, v);
+    check(PF + 'the strict report logs a frame point far outside its own place (past box + guard + 12) with the line that wrote it, once per line with a hit count (30 calls, one entry), and not a point within reach', near && logged, { near, logged, got: e.slice(0, 3) });
   });
 }
 

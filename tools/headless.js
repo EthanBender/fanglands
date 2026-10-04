@@ -69,4 +69,20 @@ for (let n = 0; n < runs; n++) {
   if (play) { const k = Object.keys(r).find(k => /full bot playthrough/.test(k)); if (k) console.log('  playthrough: ' + r[k]); const log = g.PLAYTHROUGH && g.PLAYTHROUGH.PLAY.log; if (log) console.log('  ' + log.join('\n  ')); }
   if (fails.length) bad++;
 }
+// The Great Spread's strict report (the spread spec, §8): every frame point the game, the self-tests and the --play bot
+// wrote far outside its own place (past box + guard + 12), one entry per line. Any entry docs/spread/strict-allow.json
+// does not list ({ file?, anchor, x, y, reason }) fails the run. Lines are named as src/file:line.
+{
+  const raw = g.ATLAS && typeof g.ATLAS.strict === 'function' ? g.ATLAS.strict() : [];
+  const lines = script.split('\n'), marks = [];
+  lines.forEach((l, i) => { const m = /^\/\/ ---- src\/(.+) ----$/.exec(l); if (m) marks.push([i + 1, m[1]]); });
+  const srcOf = at => { const m = /index\.html:(\d+)/.exec(at); if (!m) return at; const n = +m[1]; let f = null; for (const mk of marks) if (mk[0] < n) f = mk; else break; return f ? `src/${f[1]}:${n - f[0]}` : at; };
+  const allowFile = path.join(__dirname, '..', 'docs', 'spread', 'strict-allow.json');
+  let allow = []; try { if (fs.existsSync(allowFile)) allow = JSON.parse(fs.readFileSync(allowFile, 'utf8')); } catch (e) { console.log('strict report: docs/spread/strict-allow.json does not parse: ' + e.message); bad++; }
+  const all = raw.map(([at, anchor, x, y, hits]) => ({ at: srcOf(at), anchor, x, y, hits: hits || 1 }));
+  const fresh = all.filter(e => !allow.some(a => a.anchor === e.anchor && a.x === e.x && a.y === e.y && (!a.file || e.at.startsWith(a.file))));
+  console.log(`strict report: ${all.length} entr${all.length === 1 ? 'y' : 'ies'}, ${fresh.length} not in docs/spread/strict-allow.json`);
+  for (const e of fresh) console.log(`  strict: ${e.at}: ${e.anchor} point ${e.x},${e.y} lies past its box + guard + 12 (${e.hits} call${e.hits > 1 ? 's' : ''})`);
+  if (fresh.length) bad++;
+}
 process.exit(bad ? 1 : 0);

@@ -121,7 +121,7 @@ export function fingerprint(htmlFile) {
   const html = fs.readFileSync(htmlFile, 'utf8'), lines = html.slice(html.indexOf('<script>') + 8).split('\n'), marks = [];
   lines.forEach((l, i) => { const m = /^\/\/ ---- src\/(.+) ----$/.exec(l); if (m) marks.push([i + 1, m[1]]); });
   const srcOf = at => { const m = /index\.html:(\d+)/.exec(at); if (!m) return at; const n = +m[1]; let f = null; for (const mk of marks) if (mk[0] < n) f = mk; else break; return f ? `src/${f[1]}:${n - f[0]}` : at; };
-  const strict = raw.map(([at, anchor, x, y]) => ({ at: srcOf(at), anchor, x, y }));
+  const strict = raw.map(([at, anchor, x, y, hits]) => ({ at: srcOf(at), anchor, x, y, hits: hits || 1 }));
   return { hashes, tables, strict };
 }
 export function strictNew(strict, allowFile = path.join(ROOT, 'docs', 'spread', 'strict-allow.json')) {
