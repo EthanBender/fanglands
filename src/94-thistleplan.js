@@ -24,7 +24,11 @@
 //   V  the well on the Bell Green   U  a table in the inn's garden
 // ============================================================================
 {
-  const X0 = 84, Y0 = 13, W = 58, H = 45;
+  // The plan is Thistledown's: its top-left is the port thistledown.origin (old 84,13) and every named place below is
+  // written in the old map's numbers and read through the capital's frame (ATLAS.frame('thistledown')), so the whole
+  // town moves as one at the spread.
+  const TD = ATLAS.frame('thistledown');
+  const [X0, Y0] = ATLAS.port('thistledown.origin'), W = 58, H = 45;
   const ROWS = [
     '----------------------------------------------------------',
     '-TT#####TT########TT################TT###TT############TT-',
@@ -90,82 +94,82 @@
 
   // ---------- named places (world tiles) ----------
   // the eighteen wall towers: top-left, 2 wide, 2 tall unless h is 3 (the four gate towers)
-  const TOWERS = [
+  const TOWERS = TD.pts([
     { x: 85, y: 14, at: 'corner' }, { x: 139, y: 14, at: 'corner' }, { x: 85, y: 55, at: 'corner' }, { x: 139, y: 55, at: 'corner' },
     { x: 85, y: 28, h: 3, at: 'gate' }, { x: 85, y: 34, h: 3, at: 'gate' }, { x: 139, y: 28, h: 3, at: 'gate' }, { x: 139, y: 34, h: 3, at: 'gate' },
     { x: 92, y: 14, at: 'north' }, { x: 102, y: 14, at: 'north' }, { x: 120, y: 14, at: 'north' }, { x: 125, y: 14, at: 'north' },
     { x: 85, y: 21, at: 'west' }, { x: 85, y: 48, at: 'west' },
     { x: 139, y: 21, at: 'east' }, { x: 139, y: 42, at: 'east' }, { x: 139, y: 48, at: 'east' },
     { x: 128, y: 55, at: 'south' },
-  ].map(t => Object.assign({ h: 2, w: 2 }, t));
+  ]).map(t => Object.assign({ h: 2, w: 2 }, t));
   // the two gates in the wall: three tiles of T.GATE each, a gate tower above and below
   const GATES = [
-    { id: 'west', name: 'The West Gate', x: 85, rows: [31, 32, 33], towers: [[85, 28], [85, 34]], dir: 1 },
-    { id: 'east', name: 'The East Gate', x: 140, rows: [31, 32, 33], towers: [[139, 28], [139, 34]], dir: -1 },
+    { id: 'west', name: 'The West Gate', x: TD.x(85), rows: [TD.y(31), TD.y(32), TD.y(33)], towers: TD.pts([[85, 28], [85, 34]]), dir: 1 },
+    { id: 'east', name: 'The East Gate', x: TD.x(140), rows: [TD.y(31), TD.y(32), TD.y(33)], towers: TD.pts([[139, 28], [139, 34]]), dir: -1 },
   ];
-  const FOUNTAINS = [
+  const FOUNTAINS = TD.pts([
     { id: 'great', x: 110, y: 34, w: 4, h: 3 },
     { id: 'market', x: 116, y: 21, w: 2, h: 2 },
     { id: 'rose', x: 135, y: 44, w: 2, h: 2 },
-  ];
-  const STATUES = [
+  ]);
+  const STATUES = TD.pts([
     { x: 106, y: 35, id: 'last_knight', who: 'The Last Knight of Hollowford' },
     { x: 117, y: 35, id: 'thrain', who: 'King Thrain of the Dwarves' },
     { x: 106, y: 38, id: 'aelith', who: 'Queen Aelith of the Elves' },
     { x: 117, y: 38, id: 'seraphel', who: 'Queen Seraphel of Aerie' },
-  ];
-  const PLINTH = { x: 113, y: 40 };
+  ]);
+  const PLINTH = TD.pt({ x: 113, y: 40 });
   // the market's four stalls, two tiles wide each (the left tile is x)
-  const STALLS = [
+  const STALLS = TD.pts([
     { x: 114, y: 20, goods: 'apples', awning: '#b8352b', seller: 'hettie' },
     { x: 119, y: 20, goods: 'candles', awning: '#2e5a9a', seller: 'mabel' },
     { x: 114, y: 24, goods: 'flowers', awning: '#3f7d33', seller: 'moll' },
     { x: 119, y: 24, goods: 'cloth', awning: '#c9a14a', seller: null },
-  ];
-  const SIGNS = [{ x: 87, y: 34, side: 'west' }, { x: 138, y: 34, side: 'east' }];
-  const BELL = { x: 111, y: 15, w: 2, h: 2, stand: [[111, 17], [112, 17]], plaza: [[109, 15, 110, 18], [113, 15, 114, 16]] };
-  const SUNDIAL = { x: 132, y: 18, stand: [133, 18], mazeGate: [133, 23] };
-  const POND = { x0: 130, y0: 25, x1: 137, y1: 28, bridge: [133, 134], jetty: [130, 26], boat: [130, 27], swans: [{ x0: 131, x1: 132, y0: 25, y1: 28 }, { x0: 135, x1: 137, y0: 25, y1: 28, ducklings: 4 }] };
+  ]);
+  const SIGNS = TD.pts([{ x: 87, y: 34, side: 'west' }, { x: 138, y: 34, side: 'east' }]);
+  const BELL = TD.pt({ x: 111, y: 15, w: 2, h: 2, stand: TD.pts([[111, 17], [112, 17]]), plaza: [TD.box([109, 15, 110, 18]), TD.box([113, 15, 114, 16])] });
+  const SUNDIAL = TD.pt({ x: 132, y: 18, stand: TD.p(133, 18), mazeGate: TD.p(133, 23) });
+  const POND = TD.rect({ x0: 130, y0: 25, x1: 137, y1: 28, bridge: [TD.x(133), TD.x(134)], jetty: TD.p(130, 26), boat: TD.p(130, 27), swans: [TD.rect({ x0: 131, x1: 132, y0: 25, y1: 28 }), TD.rect({ x0: 135, x1: 137, y0: 25, y1: 28, ducklings: 4 })] });
   // bunting strung between two lamp heads (the first runs along the south pavement: strung from 88,30 to 90,34 it crossed
   // the High Street in the West Gate's mouth, over the face of every knight walking in)
-  const BUNTING = [[[90, 34], [95, 34]], [[104, 30], [103, 34]], [[121, 30], [124, 34]], [[110, 26], [113, 26]]];
+  const BUNTING = [TD.pts([[90, 34], [95, 34]]), TD.pts([[104, 30], [103, 34]]), TD.pts([[121, 30], [124, 34]]), TD.pts([[110, 26], [113, 26]])];
   // Tess and Robin play tag round the fountain: a U path, ping-pong, by the wall clock (not Nell: Nell is the Hollowford
   // survivor who runs the rebuild, and a second Nell would muddle her story)
-  const KIDS = { path: [[109, 34], [109, 37], [114, 37], [114, 34]], speed: 1.6, lag: 1.2, names: ['Tess', 'Robin'] };
-  const DUCHESS = { x: 113, y: 16 };
+  const KIDS = { path: TD.pts([[109, 34], [109, 37], [114, 37], [114, 34]]), speed: 1.6, lag: 1.2, names: ['Tess', 'Robin'] };
+  const DUCHESS = TD.pt({ x: 113, y: 16 });
   // the wards: a banner on the way into each (see 95's wardsTick)
   const WARDS = [
-    { id: 'square', name: 'Fountain Square', sub: 'Every street comes back here', x0: 104, y0: 26, x1: 120, y1: 40 },
-    { id: 'market', name: 'The Market Court', sub: 'Apples, candles, flowers and cloth', x0: 113, y0: 19, x1: 121, y1: 25 },
-    { id: 'orchard', name: "The Duke's Orchard", sub: null, x0: 87, y0: 15, x1: 108, y1: 18 },
-    { id: 'green', name: "The Duke's Green", sub: 'The maze and Swan Pond', x0: 129, y0: 15, x1: 138, y1: 30 },
-    { id: 'roses', name: 'The Rose Garden', sub: "The Duke's roses", x0: 133, y0: 42, x1: 138, y1: 47 },
+    TD.rect({ id: 'square', name: 'Fountain Square', sub: 'Every street comes back here', x0: 104, y0: 26, x1: 120, y1: 40 }),
+    TD.rect({ id: 'market', name: 'The Market Court', sub: 'Apples, candles, flowers and cloth', x0: 113, y0: 19, x1: 121, y1: 25 }),
+    TD.rect({ id: 'orchard', name: "The Duke's Orchard", sub: null, x0: 87, y0: 15, x1: 108, y1: 18 }),
+    TD.rect({ id: 'green', name: "The Duke's Green", sub: 'The maze and Swan Pond', x0: 129, y0: 15, x1: 138, y1: 30 }),
+    TD.rect({ id: 'roses', name: 'The Rose Garden', sub: "The Duke's roses", x0: 133, y0: 42, x1: 138, y1: 47 }),
   ];
   // cells later world passes lay on top of the plan (95's snapshot holds what they laid)
-  const OWNED = { BOARD: [105, 27], HOUSE_PORTAL: [117, 17], HITCH: [119, 27], DOZER_BAY: [96, 43], AGILITY_GATE: [87, 50] };
+  const OWNED = { BOARD: ATLAS.port('thistledown.board'), HOUSE_PORTAL: ATLAS.port('thistledown.house_portal'), HITCH: ATLAS.port('thistledown.rail'), DOZER_BAY: ATLAS.port('thistledown.dozer_bay'), AGILITY_GATE: ATLAS.port('thistledown.agility_gate') };
   // the six new people (95 pushes them into NPCS at load); none of them wanders
-  const PEOPLE = [
+  const PEOPLE = TD.pts([
     { id: 'osric', name: 'Gatewarden Osric', x: 91, y: 30, role: 'td_warden', tunic: '#5a2e7a', hair: '#6a6a6a', helmet: true, beard: true },
     { id: 'ambrose', name: 'Ambrose the bell-ringer', x: 110, y: 17, role: 'td_bell', tunic: '#4a4f5a', hair: '#d9d0c0', beard: true },
     { id: 'hettie', name: 'Hettie the apple seller', x: 114, y: 19, role: 'villager', woman: true, apron: true, tunic: '#b8352b', hair: '#3a2a1a' },
     { id: 'mabel', name: 'Mabel the candle maker', x: 119, y: 19, role: 'villager', woman: true, tunic: '#2e5a9a', hair: '#c9843a' },
     { id: 'moll', name: 'Moll the flower seller', x: 114, y: 25, role: 'villager', woman: true, apron: true, tunic: '#3f7d33', hair: '#e0c080' },
     { id: 'wynn', name: 'Wynn', x: 131, y: 24, role: 'td_wynn', woman: true, tunic: '#8a5a7a', hair: '#7a3a1a' },
-  ];
+  ]);
   // the streets, for the book and the signs (rectangles x0, y0, x1, y1)
   const STREETS = [
-    { id: 'high', name: 'The High Street', rects: [[85, 31, 140, 33]], note: 'gate to gate, with a pavement on each side (y 30 and y 34)' },
-    { id: 'crown', name: 'Crown Street', rects: [[111, 17, 112, 30]] },
-    { id: 'north', name: 'North Lane', rects: [[87, 19, 110, 19]] },
-    { id: 'bank', name: 'Bank Alley', rects: [[97, 20, 98, 29]] },
-    { id: 'store', name: 'Store Row', rects: [[87, 26, 127, 26]] },
-    { id: 'kings', name: 'The Kings Walk', rects: [[111, 37, 112, 40]], note: 'from the fountain to the drawbridge' },
-    { id: 'green', name: 'Green Walk', rects: [[128, 15, 128, 30]] },
-    { id: 'pond', name: 'Pond Walk', rects: [[129, 24, 138, 24]] },
-    { id: 'rose', name: 'Rose Lane', rects: [[126, 34, 127, 43]] },
-    { id: 'cross', name: 'Cross Lane', rects: [[128, 40, 138, 41]] },
-    { id: 'coffin', name: 'Coffin Lane', rects: [[131, 42, 132, 55]] },
-    { id: 'smithy', name: 'Smithy Lane', rects: [[91, 44, 102, 45]] },
+    { id: 'high', name: 'The High Street', rects: [TD.box([85, 31, 140, 33])], note: 'gate to gate, with a pavement on each side (y 30 and y 34)' },
+    { id: 'crown', name: 'Crown Street', rects: [TD.box([111, 17, 112, 30])] },
+    { id: 'north', name: 'North Lane', rects: [TD.box([87, 19, 110, 19])] },
+    { id: 'bank', name: 'Bank Alley', rects: [TD.box([97, 20, 98, 29])] },
+    { id: 'store', name: 'Store Row', rects: [TD.box([87, 26, 127, 26])] },
+    { id: 'kings', name: 'The Kings Walk', rects: [TD.box([111, 37, 112, 40])], note: 'from the fountain to the drawbridge' },
+    { id: 'green', name: 'Green Walk', rects: [TD.box([128, 15, 128, 30])] },
+    { id: 'pond', name: 'Pond Walk', rects: [TD.box([129, 24, 138, 24])] },
+    { id: 'rose', name: 'Rose Lane', rects: [TD.box([126, 34, 127, 43])] },
+    { id: 'cross', name: 'Cross Lane', rects: [TD.box([128, 40, 138, 41])] },
+    { id: 'coffin', name: 'Coffin Lane', rects: [TD.box([131, 42, 132, 55])] },
+    { id: 'smithy', name: 'Smithy Lane', rects: [TD.box([91, 44, 102, 45])] },
   ];
 
   // ---------- reading the plan ----------
@@ -173,7 +177,7 @@
   const at = (x, y) => inPlan(x, y) ? ROWS[y - Y0][x - X0] : '-';
   const fountainAt = (x, y) => FOUNTAINS.find(f => x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h) || null;
   // the Duke's Orchard is the two rows of trees along the north wall; every other tree is a cherry
-  const treeKind = (x, y) => (y === 16 || y === 18) && x >= 87 && x <= 108 ? 'fruit' : 'cherry';
+  const treeKind = (x, y) => (y === TD.y(16) || y === TD.y(18)) && x >= TD.x(87) && x <= TD.x(108) ? 'fruit' : 'cherry';
   function kindAt(x, y) {
     const c = at(x, y), k = KIND_OF[c];
     if (!k) return null;
