@@ -137,10 +137,12 @@ function mainTarget() {
   const t = MAP_TARGETS[s] || MAP_TARGETS[16]; return t ? { ...t, id: 'main' } : null;
 }
 HOOKS.mapTarget.push(mainTarget);
-HOOKS.mapTarget.push(() => quest.bread === 'active' ? Object.assign(ATLAS.frame('thistledown').pt({ x: 110, y: 33 }), { label: 'Tobin', id: 'bread' }) : null);
+// a person's target is where that person stands (NPCS: 02-world's Tobin, 23-law's Captain), read, never a second copy
+const MAP_TARGET_NPC = (npcId, label, id) => { const n = NPCS.find(q => q.id === npcId); return n ? { x: n.x, y: n.y, label, id } : null; };
+HOOKS.mapTarget.push(() => quest.bread === 'active' ? MAP_TARGET_NPC('tobin', 'Tobin', 'bread') : null);
 HOOKS.mapTarget.push(() => quest.wren === 'active' ? Object.assign(MAP_TARGET_AT('wren.wren', 'Old Wren'), { id: 'wren' }) : null);
 HOOKS.mapTarget.push(() => { const a = activeQuests(); return a.includes('board') ? Object.assign(MAP_TARGET_AT('thistledown.board', 'Notice board'), { id: 'board' }) : null; });
-HOOKS.mapTarget.push(() => activeQuests().includes('law') ? Object.assign(ATLAS.frame('thistledown').pt({ x: 110, y: 40 }), { label: 'Captain of the Watch', id: 'law' }) : null);
+HOOKS.mapTarget.push(() => activeQuests().includes('law') ? MAP_TARGET_NPC('captain', 'Captain of the Watch', 'law') : null);
 HOOKS.mapTarget.push(() => activeQuests().includes('dragons') ? Object.assign(MAP_TARGET_AT('warden.dunstan', 'Dunstan'), { id: 'dragons' }) : null);
 // A target is on the world map unless it says otherwise: { map: '<instance id>' } puts it on that instance's map instead.
 // Inside an instance only that instance's own targets are listed, so no overworld ring, label or compass arrow lands on the
