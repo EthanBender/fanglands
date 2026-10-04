@@ -598,5 +598,13 @@
   {"file": "01-items.js", "literal": "6 * TILE", "decl": "sight", "reason": "a monster's sight in tiles: a distance, not a position"},
   {"file": "01-items.js", "literal": "5 * TILE", "decl": "sight", "reason": "a monster's sight in tiles: a distance, not a position"},
   {"file": "01-items.js", "literal": "4 * TILE", "decl": "sight", "reason": "a monster's sight in tiles: a distance, not a position"},
-  {"file": "01-items.js", "literal": "3 * TILE", "decl": "sight", "reason": "a monster's sight in tiles: a distance, not a position"}
+  {"file": "01-items.js", "literal": "3 * TILE", "decl": "sight", "reason": "a monster's sight in tiles: a distance, not a position"},
+  {"file": "07-update.js", "literal": "2.5 * TILE", "decl": "update", "reason": "distances in tiles (a tree never grows within 2.5 of the knight; a thrower backs off inside 2.5): not a position"},
+  {"file": "07-update.js", "literal": "14 * TILE", "decl": "update", "reason": "a chasing monster gives up 14 tiles from home: a distance, not a position"},
+  {"file": "07-update.js", "literal": "5 * TILE", "decl": "update", "reason": "a thrower throws within 5 tiles: a distance, not a position"},
+  {"file": "07-update.js", "literal": "6 * TILE", "decl": "update", "reason": "a human monster roams 6 tiles: a distance, not a position"},
+  {"file": "07-update.js", "literal": "4 * TILE", "decl": "update", "reason": "a monster roams 4 tiles: a distance, not a position"},
+  {"file": "07-update.js", "literal": "9 * TILE", "decl": "update", "reason": "a villager heads home past 9 tiles: a distance, not a position"},
+  {"file": "07-update.js", "literal": "56", "decl": "update", "reason": "a sticky bomb's 56 px blast radius (explode(x, y, r, ...)): not a position"},
+  {"file": "07-update.js", "literal": "64", "decl": "update", "reason": "a bomb's 64 px blast radius (explode(x, y, r, ...)): not a position"}
 ]
