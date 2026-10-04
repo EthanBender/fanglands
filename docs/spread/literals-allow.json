@@ -209,5 +209,9 @@
   {"file": "51-mounts.js", "literal": "8 * TILE", "line": 705, "reason": "the self-test moves a villager 8 tiles off its home: an offset, not a position"},
   {"file": "51-mounts.js", "literal": "8 * TILE", "line": 712, "reason": "the self-test moves a villager 8 tiles off its home: an offset, not a position"},
   {"file": "51-mounts.js", "literal": "5 * TILE", "line": 824, "reason": "the self-test skips a spot within 5 tiles of a villager: a distance, not a position"},
-  {"file": "51-mounts.js", "literal": "4 * TILE", "line": 825, "reason": "the self-test skips a spot within 4 tiles of a monster: a distance, not a position"}
+  {"file": "51-mounts.js", "literal": "4 * TILE", "line": 825, "reason": "the self-test skips a spot within 4 tiles of a monster: a distance, not a position"},
+  {"file": "53-coalmine.js", "literal": "[3, 18]", "decl": "ENTRY", "reason": "instance-local (coalmine): where the knight comes in on the seam map"},
+  {"file": "53-coalmine.js", "literal": "[2, 18]", "decl": "EXIT", "reason": "instance-local (coalmine): the way out of the seam map"},
+  {"file": "53-coalmine.js", "literal": "[2, 16]", "decl": "HAUL", "reason": "instance-local (coalmine): the haul cart beside the way out"},
+  {"file": "53-coalmine.js", "literal": "{ x: 24, y: 80 }", "decl": "CART_T", "reason": "instance-local (deepholm): the coal cart's berth in the undercity's own map (re-found at world-gen through window.DEEPHOLM)"}
 ]
