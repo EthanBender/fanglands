@@ -28,7 +28,7 @@ The game is a client-side simulation (2 MB of it, 626 tests). It is not being re
 world. Online Fanglands is a **listen server per map**:
 
 1. Everyone on the same map sees each other, chats, and can hand items over.
-2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves — or when it goes quiet: a keeper that streams no monsters for 4 s while someone shares its map (paused, on the title screen, a sleeping tab) hands the map to the next knight and goes to the back of the line until that knight leaves. The
+2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves — or when it goes quiet: a keeper whose game has sent neither monsters nor presence for 3 s (`KEEPER_STALE`) while someone who is playing shares its map (paused, on the title screen, a sleeping tab) hands the map to that knight the moment his next presence arrives, and goes to the back of the line until that knight leaves. No alarm watches for it (each alarm is a billed request: on 3b6d6b4 two idle knights on one map cost 1,198 alarms an hour, measured under wrangler dev on 4 Oct 2026); a map where nobody is playing has nobody to hand it to, so nothing happens there. The
    keeper's client runs the monsters exactly as it always has and streams their state; everyone else on that
    map stops simulating monsters and shows the keeper's. Hits from the others are routed to the keeper; the
    keeper's monsters target the nearest knight, whoever it is.
@@ -1465,9 +1465,14 @@ req_meter_admin (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0)
   too): the parent page and the backups. The game's share is `http - admin` and `ceil(ws_in / 20) + http - admin`, and
   that is what the cost gate reads. A second table rather than a new column, because phase 1 only ever adds
   `CREATE TABLE IF NOT EXISTS`.
-- The counts are kept in memory and written with one upsert per day touched: when 200 are waiting, when the last write was
-  10 s or more ago (checked on every message and request), on every socket close and on every alarm. A nap can lose at most the
-  last 10 s of counts. That is at most 360 rows written an hour while knights play (the free plan allows 100,000 rows written a day).
+- Socket messages are kept in memory and written with one upsert per day touched: when 200 are waiting, when the last write
+  was 10 s or more ago (checked on every message and request), on every socket close and on every alarm. Every request (each
+  `/api` call, each `/ws` upgrade, each alarm) is written as it comes, and so is the first count after a wake. A World that
+  naps between sparse requests is a new object for each one: before 4 Oct 2026 a count left waiting there was lost with the
+  nap, and a paused page's saves (one every 15 s) and any status poll never reached the table at all (measured under wrangler
+  dev: 7 saves in 2 minutes, 0 counted). The meter read lower than the bill whenever the World napped. A nap can now lose only
+  socket messages of its last 10 s. Writes: one row per request plus at most 360 an hour for messages (the free plan allows
+  100,000 rows written a day).
 - Rows older than 400 days are deleted on the first write of each day after a wake.
 - The admin export (`GET /api/admin/export`) includes `req_meter` and `req_meter_admin`.
 
@@ -2011,13 +2016,13 @@ socket's `ping` without waking the object.
   called, as no timer runs for it).
 - **A resting place costs no alarm** (`Worlds.resting`: a place switched to the world, with no copy and nobody there
   playing). The Room keeps that place's keeper as it is (`Worlds.holds`: the first knight the wake restored there) and
-  watches nothing on it (`Room.due`): with two knights resting there the keeper-stale rule of a knight's map would hand it
+  watches nothing on it: with two knights resting there the keeper-stale rule of a knight's map would hand it
   between them every 3 s for ever, so the object never napped again (about 1,180 alarms an hour), or, restored in the
   other order, asked for an alarm at the same past moment again and again until workerd dropped one and no alarm was ever
   set again on that wake (no copy built when a knight then played, gifts never returned). The Room itself is also guarded,
   on every map: a stale keeper that is still the best one (everyone else there silent too) starts a new grace, and a tick's
-  own re-arm is never at or before the moment it handled (`REARM_MIN`, 1 s). Two knights paused on a knight's map are
-  handed back and forth every 3 s exactly as on master (`online/test/room.test.mjs`: "two silent knights restored after a
+  own re-arm is never at or before the moment it handled (`REARM_MIN`, 1 s). Since 4 Oct 2026 no map is watched by an alarm at all (the keeper rule, above): two knights
+  paused on a knight's map keep the keeper they have and ask for no alarm (`online/test/room.test.mjs`: "two silent knights restored after a
   nap ...", `sim-host.test.mjs`: "two knights resting in a world-run place ...").
 - **The copy takes the place over from a knight who is playing.** The wake names whoever its restore elected, and that can
   be a friend whose iPad is still locked. When the copy is built (or the copy's code loads, `announce`) and the keeper's

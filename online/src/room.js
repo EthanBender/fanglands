@@ -109,8 +109,11 @@ export const atlasOf = a => typeof a === 'string' && /^[0-9a-z]{1,32}$/.test(a) 
 // a knight's own island is his alone: the Room keys it by his name, and every message out names it 'house' again
 export const mapKey = (k, map) => isHouse(map) ? 'house:' + k.lc : map;
 export const ROSTER_EVERY = 2000;      // a changed roster goes out at most this often (join/leave go at once)
-// A keeper that streams no monsters for this long while others share its map (paused, on the title screen, a
-// sleeping tab) hands the map to the next knight; it is eligible again once that knight leaves.
+// A keeper whose game has sent neither monsters nor presence for this long while others share its map (paused, on the
+// title screen, a sleeping tab) hands the map to the next knight that is playing; it is eligible again once that knight
+// leaves. Nothing watches the clock for it (an alarm is a billed request, and two idle knights on one map cost about 1,200
+// an hour that way): the hand-over happens when a knight who is playing there next says where he is (onPresence), and a map
+// where nobody is playing has nobody to hand it to.
 export const KEEPER_STALE = 3000;
 // A knight whose game sends no presence for this long (a locked phone, a tab in the background: a playing game sends at
 // least one a second) is never chosen to keep a map while someone who is playing is there.
@@ -421,6 +424,7 @@ export class Room {
     // an open trade ends when either knight falls or walks away
     if (k.trade) { const o = this.otherOf(k.trade, k); if (k.dead) this.cancelTrade(k.trade, 'dead', k); else if (!this.within(k, o, TRADE_LEAVE, true)) this.cancelTrade(k.trade, 'far', k); }
     if (changed) { this.attach(k); this.rosterLater(); }
+    this.keeperCheck(k);   // a quiet keeper on his map hands it to this knight, who is playing (KEEPER_STALE)
     // the role on a relayed p is always the server's word: whatever the sender put there is overwritten
     const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: wireMap(k.map), role: k.role }));
     k.last = out;
@@ -1011,7 +1015,7 @@ export class Room {
     const now = this.now();
     if (g.keeper && g.keeper.keeperAt == null) g.keeper.keeperAt = now;   // a restored keeper starts its grace now
     // a keeper that has gone quiet while others are here goes to the back of the line (see KEEPER_STALE)
-    const stale = o => o === g.keeper && g.members.size > 1 && now - Math.max(o.monAt || 0, o.keeperAt || 0) > KEEPER_STALE;
+    const stale = o => o === g.keeper && g.members.size > 1 && now - Math.max(o.monAt || 0, o.pAt || 0, o.keeperAt || 0) > KEEPER_STALE;
     // and a knight whose game has gone silent (see PRESENCE_STALE) is never picked over one who is playing
     // (alive = its presence, its monster stream, or its arrival on the map is recent)
     const silentKnight = o => g.members.size > 1 && now - Math.max(o.pAt || 0, o.monAt || 0, o.keeperAt || 0, o.mapAt || 0) > PRESENCE_STALE;
@@ -1030,6 +1034,15 @@ export class Room {
     if (silent) return;
     const out = JSON.stringify(this.worlds.keeperMsg(map, best));
     for (const o of g.members) if (o !== except) this.raw(o.sock, out);
+  }
+
+  // A knight who is playing (his presence just came in) on a map whose keeper has gone quiet: elect again, so the map comes to
+  // him. Cheap: one subtraction unless the keeper really is quiet.
+  keeperCheck(k) {
+    const g = k.map && this.maps.get(k.map);
+    if (!g || !g.keeper || g.keeper === k || g.keeper.virtual || g.members.size < 2) return;
+    const o = g.keeper;
+    if (this.now() - Math.max(o.monAt || 0, o.pAt || 0, o.keeperAt || 0) > KEEPER_STALE) this.elect(k.map, null);
   }
 
   // ---------- logins (the store keeps them; a store without them, as an older simulation's, is simply not asked) ----------
@@ -1108,8 +1121,7 @@ export class Room {
   due() {
     let d = this.rosterDirty ? this.rosterAt + ROSTER_EVERY : null;
     for (const g of this.gifts.values()) if (d == null || g.due < d) d = g.due;
-    // (a resting world-run place is not watched: sim/worlds.js resting)
-    for (const [map, g] of this.maps) if (g.keeper && !g.keeper.virtual && g.members.size > 1 && !this.worlds.resting(map)) { const t = Math.max(g.keeper.monAt || 0, g.keeper.keeperAt || 0) + KEEPER_STALE + 50; if (d == null || t < d) d = t; }
+    // (a quiet keeper is never an alarm: onPresence hands his map on, see KEEPER_STALE)
     { const w = this.worlds.due(); if (w != null && (d == null || w < d)) d = w; }
     for (const p of this.parties.values()) if (d == null || p.expires < d) d = p.expires;
     for (const k of this.knights.values()) if (k.ask && (d == null || k.ask.due < d)) d = k.ask.due;

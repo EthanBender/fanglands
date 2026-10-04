@@ -364,12 +364,47 @@ test('a keeper that goes quiet while someone shares its map hands the map on, an
   // Sam keeps streaming, so the map stays his for as long as he likes
   for (let i = 0; i < 5; i++) { w.t += 2000; w.say(b, { t: 'mon', list: [] }); w.room.tick(); }
   assert.equal(w.room.keeperOf('over').name, 'Sam');
-  // the timer was booked for the silence check, not left to chance
-  assert.ok(w.woke.length > 0);
+  // and no alarm was ever asked for it (each one is a billed request): Sam's own presence brought the map to him
+  assert.equal(w.woke.length, 0);
   // Sam leaves: Cohen is longest on the map and no longer the quiet keeper, so it comes back to him
   a.clear(); w.room.leave(b);
   assert.equal(w.room.keeperOf('over').name, 'Cohen');
   assert.deepEqual(a.last('keeper'), { t: 'keeper', map: 'over', n: 'Cohen' });
+});
+
+test('knights idle together on one map ask for no alarm at all: an hour, paused or playing, before and after a nap', () => {
+  for (const play of [[false, false], [true, false], [true, true], [false, true]]) {
+    const w = world();
+    const a = w.knight('Cohen', 'over'), b = w.knight('Sam', 'over');
+    w.settle(a, b);
+    const socks = [a, b];
+    for (let s = 0; s < 3600; s++) {
+      w.t += 1000;
+      socks.forEach((x, i) => { if (play[i]) w.say(x, { t: 'p', map: 'over', x: 1 + i, y: 2, lv: 3 }); });
+    }
+    assert.equal(w.woke.length, 0, 'playing ' + play + ': ' + w.woke.length + ' alarms in an hour');
+    // a nap: a new Room from the sockets, the knights still idle
+    const w2 = world(); w2.t = w.t;
+    const a2 = w2.sock(), b2 = w2.sock();
+    w2.room.restore(a2, a.state); w2.room.restore(b2, b.state);
+    for (let s = 0; s < 600; s++) { w2.t += 1000; [a2, b2].forEach((x, i) => { if (play[i]) w2.say(x, { t: 'p', map: 'over', x: 1 + i, y: 2, lv: 3 }); }); }
+    assert.equal(w2.woke.length, 0, 'after the nap, playing ' + play);
+  }
+});
+
+test('a keeper who only sends presence (nobody near him, so no monsters) is playing, and keeps his map', () => {
+  const w = world();
+  const a = w.knight('Cohen', 'over'), b = w.knight('Sam', 'over');
+  w.settle(a, b);
+  for (let s = 0; s < 30; s++) { w.t += 1000; w.say(a, { t: 'p', map: 'over', x: 1, y: 2, lv: 3 }); w.say(b, { t: 'p', map: 'over', x: 9, y: 2, lv: 3 }); }
+  assert.equal(w.room.keeperOf('over').name, 'Cohen');
+  assert.equal(b.of('keeper').length, 0);
+  // Cohen pauses: Sam's next presence after the grace takes the map, with no tick at all
+  w.t += KEEPER_STALE - 1000; w.say(b, { t: 'p', map: 'over', x: 9, y: 2, lv: 3 });
+  assert.equal(w.room.keeperOf('over').name, 'Cohen');
+  w.t += 1001; w.say(b, { t: 'p', map: 'over', x: 9, y: 2, lv: 3 });
+  assert.equal(w.room.keeperOf('over').name, 'Sam');
+  assert.deepEqual(a.last('keeper'), { t: 'keeper', map: 'over', n: 'Sam' });
 });
 
 test('a keeper alone on its map is never stepped down for being quiet', () => {

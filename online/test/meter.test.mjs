@@ -35,27 +35,41 @@ test('estimate: 20 socket messages are one request, every World request is one',
   assert.equal(FREE_REQUESTS, 100000);
 });
 
-test('counts wait in memory and are written in one upsert: at 200 waiting, or 10 s after the last write', () => {
+test('socket messages wait in memory and go out in one upsert (at 200 waiting, or 10 s after the last write); a request, and the first count after a wake, are written at once', () => {
   const db = new DatabaseSync(':memory:'), sql = sqlOf(db);
   let T = at('2026-10-03T15:00:00Z');
   const m = new Meter(sql, () => T);
-  for (let i = 0; i < WRITE_AT - 2; i++) m.ws();
-  m.http();
-  assert.deepEqual(rowsOf(sql), [], 'nothing written below the batch size inside 10 s');
-  assert.equal(m.view().today.wsIn, WRITE_AT - 2, 'the view counts what is still waiting');
-  assert.equal(m.view().waiting, WRITE_AT - 1);
+  // a World that naps between requests is a new object each time: its first count is written before it can nap again
   m.ws();
-  assert.deepEqual(rowsOf(sql), [{ day: '2026-10-03', ws_in: WRITE_AT - 1, http: 1, est_requests: estimate(WRITE_AT - 1, 1) }]);
+  assert.deepEqual(rowsOf(sql), [{ day: '2026-10-03', ws_in: 1, http: 0, est_requests: 1 }], 'the first count after a wake');
+  for (let i = 0; i < WRITE_AT - 2; i++) m.ws();
+  assert.equal(rowsOf(sql)[0].ws_in, 1, 'nothing more written below the batch size inside 10 s');
+  assert.equal(m.view().today.wsIn, WRITE_AT - 1, 'the view counts what is still waiting');
+  assert.equal(m.view().waiting, WRITE_AT - 2);
+  m.http();
+  assert.deepEqual(rowsOf(sql), [{ day: '2026-10-03', ws_in: WRITE_AT - 1, http: 1, est_requests: estimate(WRITE_AT - 1, 1) }], 'a request writes at once, with everything waiting');
   assert.equal(m.view().waiting, 0);
-  // a quiet World: one message after 10 s goes straight out with everything before it
-  m.ws(); T += 3000; m.http();
-  assert.equal(rowsOf(sql)[0].ws_in, WRITE_AT - 1, 'held under 10 s');
+  for (let i = 0; i < WRITE_AT - 1; i++) m.ws();
+  assert.equal(rowsOf(sql)[0].ws_in, WRITE_AT - 1, 'held below the batch size');
+  m.ws();
+  assert.equal(rowsOf(sql)[0].ws_in, 2 * WRITE_AT - 1, 'written at the batch size');
+  // a quiet World: one message 10 s after the last write goes straight out with everything before it
+  m.ws(); T += 3000; m.ws();
+  assert.equal(rowsOf(sql)[0].ws_in, 2 * WRITE_AT - 1, 'held under 10 s');
   T += WRITE_EVERY; m.ws();
-  assert.deepEqual(rowsOf(sql), [{ day: '2026-10-03', ws_in: WRITE_AT + 1, http: 2, est_requests: estimate(WRITE_AT + 1, 2) }]);
+  assert.equal(rowsOf(sql)[0].ws_in, 2 * WRITE_AT + 2);
   // the estimate is the whole day's, never a sum of rounded batches
   for (let i = 0; i < 19; i++) m.ws();
   m.flush();
-  assert.equal(rowsOf(sql)[0].est_requests, estimate(WRITE_AT + 20, 2));
+  assert.equal(rowsOf(sql)[0].est_requests, estimate(2 * WRITE_AT + 21, 1));
+});
+
+test('a World that naps between sparse requests still counts every one (a paused page saving every 15 s)', () => {
+  const db = new DatabaseSync(':memory:'), sql = sqlOf(db);
+  let T = at('2026-10-04T01:00:00Z');
+  for (let i = 0; i < 240; i++) { const m = new Meter(sql, () => T); T += 1; m.http(); T += 15000; }
+  for (let i = 0; i < 30; i++) { const m = new Meter(sql, () => T); T += 1; m.ws(); T += 60000; }
+  assert.deepEqual(rowsOf(sql), [{ day: '2026-10-04', ws_in: 30, http: 240, est_requests: estimate(30, 240) }]);
 });
 
 test('flush (socket close, alarm) writes what waits; nothing waiting writes nothing', () => {
@@ -64,9 +78,13 @@ test('flush (socket close, alarm) writes what waits; nothing waiting writes noth
   const m = new Meter(sql, () => T);
   assert.equal(m.flush(), 0);
   assert.deepEqual(rowsOf(sql), []);
-  m.ws(); m.ws(); m.http();
+  m.ws();   // the first count after a wake: written at once
+  m.ws(); m.ws();
   assert.equal(m.flush(), 1);
-  assert.deepEqual(rowsOf(sql), [{ day: '2026-10-03', ws_in: 2, http: 1, est_requests: 2 }]);
+  assert.deepEqual(rowsOf(sql), [{ day: '2026-10-03', ws_in: 3, http: 0, est_requests: 1 }]);
+  assert.equal(m.flush(), 0);
+  m.http();
+  assert.deepEqual(rowsOf(sql), [{ day: '2026-10-03', ws_in: 3, http: 1, est_requests: 2 }]);
   assert.equal(m.flush(), 0);
 });
 
@@ -171,14 +189,15 @@ test('the World counts every request and socket message, writes on close and ala
   const sock = ctx.sockets[ctx.sockets.length - 1];
   w.webSocketMessage(sock, JSON.stringify({ t: 'hello', v: 1 }));
   for (let i = 0; i < 24; i++) w.webSocketMessage(sock, JSON.stringify({ t: 'p', map: 'over', region: 'Thistledown', x: 480 + i, y: 480, lv: 3 }));
-  assert.deepEqual(rowsOf(ctx.storage.sql), [], 'all of it still waiting');
+  // every request was written as it came (the first after a wake, and each one since); the messages wait
+  assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-03', ws_in: 0, http: 4, est_requests: 4 }], 'the requests written, the messages waiting');
   r = await call(w, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
   assert.equal(r.status, 200);
   // 5 World requests so far: the refused sim call, signup, status, the /ws upgrade, and this sim call; 25 messages.
   // The two sim calls are the admin's (refused or not, Cloudflare bills them): the game made 3, about 2 + 3 = 5 requests
   assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 5, admin: 2, gameHttp: 3, est: 7, gameEst: 5 });
   assert.equal(r.data.meter.freeLimit, 100000);
-  assert.equal(r.data.meter.waiting, 30);
+  assert.equal(r.data.meter.waiting, 0, 'this request wrote everything that waited');
   assert.deepEqual(Object.keys(r.data), ['meter', 'sim', 'world', 'atlas', 'move'], 'the meter, and from Stage 1 the switch, the Atlas and the movement check, and from Stage 2 the world-run maps');
   w.webSocketClose(sock, 1000, 'bye');
   assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-03', ws_in: 25, http: 5, est_requests: 7 }], 'a socket close writes');
@@ -188,12 +207,12 @@ test('the World counts every request and socket message, writes on close and ala
   assert.equal(rowsOf(ctx.storage.sql)[0].http, 7, 'an alarm writes, and is itself a billed request (the status call 6, the alarm 7)');
   // the export carries the table; a nap (a new World on the same storage) keeps counting the same day
   r = await call(w, 'GET', '/api/admin/export', undefined, ENV.ADMIN_KEY);
-  assert.deepEqual(r.data.req_meter, [{ day: '2026-10-03', ws_in: 25, http: 7, est_requests: 9 }]);
-  assert.deepEqual(r.data.req_meter_admin, [{ day: '2026-10-03', http: 2 }]);
-  // the export call itself still waits in this World's memory: a nap right now loses it (at most 10 s of counts)
+  assert.deepEqual(r.data.req_meter, [{ day: '2026-10-03', ws_in: 25, http: 8, est_requests: 10 }]);
+  assert.deepEqual(r.data.req_meter_admin, [{ day: '2026-10-03', http: 3 }]);
+  // the export call itself was written as it came: a nap right now loses nothing
   const w2 = new TestWorld(ctx, ENV);
   r = await call(w2, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
-  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 8, admin: 3, gameHttp: 5, est: 10, gameEst: 7 });
+  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 9, admin: 4, gameHttp: 5, est: 11, gameEst: 7 });
 });
 
 test('admin calls land in their own column: every /api/admin/* call, refused or not; nothing else', async () => {

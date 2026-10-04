@@ -490,7 +490,10 @@
     if (!pre || pre.kind !== 'keeper') return;
     if (!paused) for (const f of pre.frozen) { const m = f.m; if (!m.dead && m.stunT <= 0 && monsters.includes(m)) stepRemote(m, f.target, dt); }
     S.snapAcc += dt;
-    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; S.beatAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
+    // a paused keeper (or one on the title screen) sends no snapshots either: it would otherwise stream 8 a second to a friend
+    // standing by (measured 4 Oct 2026: 461 in a minute from a paused page, billed as 1,560 requests an hour), and the world,
+    // hearing it, would never hand the map to the friend who is playing
+    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length && !paused && !(title && title.active)) { S.snapAcc = 0; S.beatAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
   }
   const _update = update;
   update = function (dt) { const pre = before(dt); _update(dt); after(dt, pre); };
@@ -719,6 +722,11 @@
         const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length; paused = p0;
         check(P + 'a keeper with nobody near sends a heartbeat about once a second, and none while paused', beats >= 1 && beats <= 3 && whilePaused === 0, { beats, whilePaused });
         push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 }); }
+      // (a2b) paused with a knight near, the keeper sends no snapshots either (8 a second from an idle page, and the world would
+      // never hand the map to the knight who is playing); unpaused, the stream comes straight back
+      { const p0 = paused; paused = true; sent.length = 0; F.sim(30); const whilePaused = sentOf('mon').length; paused = p0;
+        sent.length = 0; F.sim(12); const again = sentOf('mon').length;
+        check(P + 'a paused keeper sends no snapshots even with a knight near, and streams again once unpaused', whilePaused === 0 && again >= 1, { whilePaused, again }); }
       // (a3) the world taking the map over asks for the full snapshot ('snap'): the keeper answers once with every monster it
       // runs (far ones and fallen ones too), marked full; a snap for another map, or to a game that does not keep it, gets nothing
       { const fell = real.find(m => !m.dead && m !== gob && !m.remote && m.nid), was = fell ? { dead: fell.dead, deadT: fell.deadT } : null;

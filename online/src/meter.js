@@ -8,7 +8,10 @@
 //
 // Writing a row per message would cost more than it measures, so the counts wait in memory and go out as one upsert
 // per day touched: when WRITE_AT counts are waiting, when the last write was WRITE_EVERY ms ago (checked on every count),
-// and whenever the World calls flush() (every socket close, every alarm). A nap can only lose the last few seconds.
+// and whenever the World calls flush() (every socket close, every alarm). An HTTP request is written at once, and so is the
+// first count after a wake: a World that naps between requests (a paused page's save every 15 s, a status poll) is a new
+// object for each one, and a count left waiting there is lost with the nap (measured 4 Oct 2026 under wrangler dev: a whole
+// idle page's saves and polls never reached the table). A nap can lose only socket messages of its last 10 seconds.
 // The admin page polls the World too, and it should not be read as the game's traffic: every /api/admin/* call is also
 // counted in req_meter_admin (a second table, so the schema only ever gains CREATE TABLE IF NOT EXISTS). req_meter.http
 // stays every call (what Cloudflare bills); the game's calls are http - admin, and the cost gate reads the game's share.
@@ -36,12 +39,12 @@ export class Meter {
     this.sql.exec(METER_ADMIN_SCHEMA);
     this.waiting = new Map();   // day -> {ws, http, admin} (admin: how many of http were /api/admin/* calls)
     this.count = 0;             // counts waiting (ws + http), every day together
-    this.lastWrite = now();
+    this.lastWrite = -Infinity;   // the first count after a wake is written at once (see above)
     this.lastDay = null;        // the last day this World wrote (the prune runs when it changes, so once a day per wake)
   }
   ws() { this.add('ws'); }
   // one HTTP request; admin: it was an /api/admin/* call (the admin page, a backup), counted in its own column as well
-  http(admin = false) { this.add('http', !!admin); }
+  http(admin = false) { this.add('http', !!admin); this.flush(); }
   add(kind, admin = false) {
     const now = this.now(), day = dayOf(now);
     let w = this.waiting.get(day);
