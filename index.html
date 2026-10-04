@@ -816,7 +816,7 @@ resize();
     { id: 'rim', seam: 'the Ashfields rim row (37 row 95, 92 footWA, 93 band)', axis: 'y', ports: ['warden.gate'] },
     { id: 'gw_steps', seam: 'the Goblin Fields / Wolfwood scarp (92 sGW)', axis: 'y', ports: ['graveyard.steps'] },
     { id: 'giants', seam: 'the Wolfwood / Jungle wall (92 sWJ)', axis: 'y', ports: ['hollowford.south'] },
-    { id: 'jungle_west', seam: 'the Ashfields / Jungle wall (37 x 100, 39 jungle column)', axis: 'x', ports: ['warden.east_wall'] },
+    { id: 'jungle_west', seam: 'the Ashfields / Jungle wall (37 x 100, 39 jungle column)', axis: 'x', ports: ['warden.east_wall'], old: 100 },   // old: a straight seam's old line (W.line)
     { id: 'river', seam: 'the river polyline (TRACKS.river)', axis: 'y', ports: ['old_bridge.span', 'goblin_road.bridge', 'pond.outflow'] },
     { id: 'strait', seam: 'the 39 strait and Far Shore coast loops', axis: 'x', ports: ['far_shore.strait'] },
     { id: 'sea', seam: "the Grey Sea's west coast (39 COVES)", axis: 'x', ports: ['dock.planks'] },   // + saltmere.jetty when Saltmere is drawn (Stage 5b)
@@ -896,6 +896,13 @@ resize();
         if (d < TAPER) off += delta * (1 - d / TAPER);
       }
       return v + off;
+    },
+    // a straight pinned seam (a PIN with `old`, its old line): the new tile column (or row) it stands on at `along`.
+    // The one read of that line: jungle_west is the Ashfields / Jungle wall, and every split, box edge and loop end on
+    // the old x 100 line (39, 92 and 93) reads W.line('jungle_west', y), so the wall and the regions move together.
+    line(seamId, along) {
+      const pin = PINS.find(q => q.id === seamId); if (!pin || typeof pin.old !== 'number') throw new Error('ATLAS.world.line: no straight seam ' + JSON.stringify(seamId));
+      return Math.round(W.pin(seamId, pin.axis === 'y' ? W.y(pin.old) : W.x(pin.old), along));
     },
   };
 
@@ -1010,10 +1017,10 @@ resize();
     check(PF + "a frame answers in every shape the conversions use (p, pt, pts, rect, box, inOld) and keeps a rect's other fields; an unknown place throws", shapes && threw, { shapes, threw });
     // helpers
     const sp = port('thistledown.square'), reserved = port('old_bridge.span'), hfBox = box('hollowford'), g = guards().find(q => q.id === 'hollowford');
-    const smallest = anchorOf(134, 60), ow = oldToNew(140, 80), none = oldToNew(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
+    const smallest = anchorOf(134, 60), ow = oldToNew(140, 80), none = oldToNew(60, 70), nw = oldToNewWorld(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
     check(PF + 'port, box, guards, anchorOf (the smallest box wins), oldToNew (null on open land) and every track resolve; a reserved place has no box or port before 4a',
       JSON.stringify(sp) === '[112,33]' && reserved === null && box('old_bridge') === null && JSON.stringify(hfBox) === '[120,59,160,96]' && g && g.x0 === hfBox[0] - ANCHORS.hollowford.guard && g.y1 === hfBox[3] + ANCHORS.hollowford.guard &&
-      smallest && smallest.id === 'hollowford' && smallest.holders.includes('thistledown') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(oldToNewWorld(60, 70)) === '[60,70]' && trackOk,
+      smallest && smallest.id === 'hollowford' && smallest.holders.includes('thistledown') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(nw) === '[60,70]' && trackOk,
       { sp, reserved, hfBox, g, smallest, ow, none, trackOk });
     // an overlap point is flagged until a human decides it; an OWNERS rect or a port at that exact point decides it
     const pen = anchorOf(72, 14), gate = anchorOf(13, 72), open = anchorOf(134, 60), alone = anchorOf(140, 80);
@@ -17009,6 +17016,8 @@ window.PLACE_KIT = PLACE_KIT;
   const BL = window.BLEND = { stats: {} };
   // a band of OLD world rows [lo, hi] about a pinned seam, at new column x: [[y, oy], ...] (y new, oy old); colsOf the same on x
   const rowsOf = (pin, lo, hi, x) => { const off = W.pin(pin, 0, x), out = []; for (let y = Math.round(W.y(lo) + off); y <= Math.round(W.y(hi) + off); y++) out.push([y, W.iy(y - off)]); return out; };
+  // the rim's last column: the one west of the jungle's wall at the wall's top row (W.line: the one read 92 and 93 make)
+  const rimX1 = () => W.line('jungle_west', W.ty(96)) - 1;
   const colsOf = (pin, lo, hi, y) => { const off = W.pin(pin, 0, y), out = []; for (let x = Math.round(W.x(lo) + off); x <= Math.round(W.x(hi) + off); x++) out.push([x, W.ix(x - off)]); return out; };
 
   // ---------- smooth value noise: two octaves, bilinear on a lattice (6 tiles by default), 0..1 ----------
@@ -17058,7 +17067,7 @@ window.PLACE_KIT = PLACE_KIT;
     mark(HF.x0 + 3, HF.y0 + 3, HF.x1 - 3, HF.y1 - 3);      // Hollowford's ruins, streets and square (its three-tile margin is blended below)
     markB(HFF.box([138, 62, 143, 96]));                    // the road into Hollowford from the north (below the river's crossing) and the path out to the jungle
     // the warden's tree line and the jungle's western wall: exact solid counts (world seams, each on its pin)
-    for (let x = W.tx(1); x <= W.tx(99); x++) for (const [y] of rowsOf('rim', 95, 95, x)) mark(x, y, x, y);
+    for (let x = W.tx(1); x <= rimX1(); x++) for (const [y] of rowsOf('rim', 95, 95, x)) mark(x, y, x, y);
     for (let y = W.ty(96); y <= W.ty(138); y++) for (const [x] of colsOf('jungle_west', 100, 100, y)) mark(x, y, x, y);
     markB(WARD.box([56, 92, 64, 99]));                     // the warden, his gate, the road through
     markB(LAIRF.box([1, 103, 40, 107])); markB(SHRINE.box([84, 100, 90, 106]));   // the approach to the lair, the ruined shrine
@@ -17198,7 +17207,7 @@ window.PLACE_KIT = PLACE_KIT;
     const ASHS = new Set([ASH]), JUNGLES = new Set([JUNGLE]);
     // the Ashfields' north edge (y 96): ash drifts up into Wolfwood's last rows, scorched grass shows through the first ash rows
     // (rows and the noise in OLD world coordinates, on the rim pin)
-    for (let x = W.tx(1); x <= W.tx(99); x++) {
+    for (let x = W.tx(1); x <= rimX1(); x++) {
       const ox = W.ix(x);
       for (const [y, oy] of rowsOf('rim', 92, 94, x)) swap(x, y, GRASSY, ASH, dn(ox, oy) > 0.5 + (94 - oy) * 0.15, 'ash');
       for (const [y, oy] of rowsOf('rim', 96, 99, x)) swap(x, y, ASHS, T.GRASS, dn(ox, oy) < 0.45 - (oy - 96) * 0.1, 'ash');
@@ -69269,6 +69278,10 @@ const MOUNT_LOOK = (() => {
   const TOWER = FR('watchtower'), SYLV = FR('sylvaris'), DHF = FR('deepholm_rock'), CANOPY = FR('canopy'), DRILL = FR('drill_field');
   // the Ashfields' rim row (old 95) at new column x, on the rim pin
   const rimRow = x => Math.round(W.pin('rim', W.y(95), x));
+  // the Ashfields / Jungle wall (old x 100) at new row y, on the jungle_west pin: the Ashfields lie west of it, the Jungle
+  // from it east, and the rim's last column is the one west of its first row (W.line: the one read 39 and 93 make too)
+  const wallX = y => W.line('jungle_west', y);
+  const rimX1 = () => wallX(W.ty(96)) - 1;
 
   // ---------- smooth value noise: two octaves on a lattice, 0..1 (the same shape 39-worldblend uses) ----------
   const makeNoise = (seed, cell = 8) => {
@@ -69322,15 +69335,15 @@ const MOUNT_LOOK = (() => {
   { const gf = bandX('Goblin Fields', 7, SEED + 11, 11, true);
     put('Goblin Fields', (x, y) => y >= 0 && y < sGW(x) && (gf(x, y) || lobe(W, x, y, 24, 34, 9, 13) || lobe(W, x, y, 150, 52, 10, 8)) && !lobe(W, x, y, 66, 57, 13, 7), 'ews'); }
   { const ww = bandX('Wolfwood', 7, SEED + 12, 11, true);
-    put('Wolfwood', (x, y) => y > sGW(x) && y < (x < W.x(100) ? sWA(x) : sWJ(x)) && (ww(x, y) || lobe(W, x, y, 66, 57, 13, 7) || lobe(W, x, y, 166, 78, 9, 12)), 'ewns'); }
+    put('Wolfwood', (x, y) => y > sGW(x) && y < (x < wallX(y) ? sWA(x) : sWJ(x)) && (ww(x, y) || lobe(W, x, y, 66, 57, 13, 7) || lobe(W, x, y, 166, 78, 9, 12)), 'ewns'); }
   { const af = bandS('The Ashfields', 9, SEED + 13, 12, true);
-    put('The Ashfields', (x, y) => x <= W.x(99) && y > sWA(x) && (af(x, y) || lobe(W, x, y, 62, 148, 26, 12) || lobe(W, x, y, 16, 146, 14, 10)), 'ns'); }
+    put('The Ashfields', (x, y) => x <= wallX(y) - 1 && y > sWA(x) && (af(x, y) || lobe(W, x, y, 62, 148, 26, 12) || lobe(W, x, y, 16, 146, 14, 10)), 'ns'); }
   // The Jungle's east edge wanders in as well as out. It used to grow only, out over the bottom-right dead
   // space; the Redcut (90-canyon) stands there now and red rock is not jungle, so the eastern edge frays
   // into the jungle's own box instead. Only the east: the west band is masked off (a tile deeper than the
   // band's reach from the east edge is jungle whenever the south band says so, exactly as before).
   { const jg = bandS('The Jungle', 6, SEED + 14, 12, true); const je = bandX('The Jungle', 20, SEED + 15, 9, false); const jb = BOX['The Jungle'];
-    put('The Jungle', (x, y) => x >= W.x(100) && (x > W.x(161) ? y >= jb.y0 : y > sWJ(x)) && (((x <= jb.x1 - 21 || je(x, y)) && jg(x, y) && !lobe(W, x, y, W.ix(jb.x1 + 1), 150, 13, 16)) || lobe(W, x, y, 108, 90, 7, 8) || lobe(HFF, x, y, 156, 90, 8, 7)), 'ne'); }   // and a bay bitten out of the east side, where the red rock country begins
+    put('The Jungle', (x, y) => x >= wallX(y) && (x > W.x(161) ? y >= jb.y0 : y > sWJ(x)) && (((x <= jb.x1 - 21 || je(x, y)) && jg(x, y) && !lobe(W, x, y, W.ix(jb.x1 + 1), 150, 13, 16)) || lobe(W, x, y, 108, 90, 7, 8) || lobe(HFF, x, y, 156, 90, 8, 7)), 'ne'); }   // and a bay bitten out of the east side, where the red rock country begins
 
   // the enclaves: a blob each, inside the ground that carries them
   { const gq = blob('Grey Quarry', 7, SEED + 21, 5, true, QF);
@@ -69625,7 +69638,7 @@ const MOUNT_LOOK = (() => {
     // 37-dragonkillers grows Wolfwood's last row (y 95, x 1-99) solid so the warden's gate is the only way
     // south. Those tiles become rock, and the face is carried down to the foot of the new outline, so the
     // burnt country reads as the plateau it is. Solid for solid on row 95: not one step of the walk changes.
-    for (let x = W.tx(1); x <= W.tx(99); x++) {
+    for (let x = W.tx(1); x <= rimX1(); x++) {
       if (x >= WARD.x(58) && x <= WARD.x(62)) continue;              // the warden's road through the rim (the warden's notch)
       const foot = footWA(x), row = rimRow(x);
       for (let y = row; y <= foot; y++) {
@@ -69637,7 +69650,7 @@ const MOUNT_LOOK = (() => {
     }
 
     // ---- 3. the jungle's edge: a wall of giants along the new line, the old road its one gap ----
-    if (JUNGLE >= 0) for (let x = W.tx(100); x <= W.tx(161); x++) {
+    if (JUNGLE >= 0) for (let x = wallX(W.ty(96)); x <= W.tx(161); x++) {   // from the wall's top (the jungle_west pin)
       if (x >= HFF.x(134) && x <= HFF.x(148)) continue;              // the road down to Sylvaris (the giants' gap, Hollowford's)
       const y = Math.round(sWJ(x));
       if (!plain(x, y) || !addOk(x, y) || strands(x, y)) continue;
@@ -70046,7 +70059,7 @@ const MOUNT_LOOK = (() => {
         for (let d = 1; d <= 5; d++) { const t = tiles[idx(x, yb + d)]; if (!SOLID.has(t) || TREES2.has(t)) { woodN++; if (TREES2.has(t)) woodT++; } }
       }
       let ashIn = 0, inN = 0, ashOut = 0, outN = 0;
-      for (let x = W.tx(1); x <= W.tx(99); x++) {
+      for (let x = W.tx(1); x <= rimX1(); x++) {
         const f = Math.floor(WS.seams.sWA(x));
         if (regionAt(x, f).name !== 'Wolfwood' || regionAt(x, f + 1).name !== 'The Ashfields') continue;
         for (let d = 1; d <= 3; d++) { inN++; if (tiles[idx(x, f + d)] === ASH) ashIn++; }
@@ -70113,14 +70126,23 @@ const MOUNT_LOOK = (() => {
         rows.length === 1 && rows.every(r => r.standing && r.shut && r.refused && r.opens && r.over), { climbs: rows }); }
 
     // ---- 8. the rim and the jungle's edge ----
-    { let rim = 0, line = 0; for (let x = W.tx(1); x <= W.tx(99); x++) { if (x >= WARD.x(59) && x <= WARD.x(61)) continue; if (tiles[idx(x, rimRow(x))] === CLIFF) rim++; if (SOLID.has(tiles[idx(x, rimRow(x))])) line++; }
-      const rimCols = W.tx(99) - W.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1);   // every rim column but the gate's three
-      let band = 0; for (let x = W.tx(1); x <= W.tx(99); x++) for (let y = rimRow(x) + 1; y <= WS.seams.footWA(x); y++) if (tiles[idx(x, y)] === CLIFF) band++;
+    { let rim = 0, line = 0; for (let x = W.tx(1); x <= rimX1(); x++) { if (x >= WARD.x(59) && x <= WARD.x(61)) continue; if (tiles[idx(x, rimRow(x))] === CLIFF) rim++; if (SOLID.has(tiles[idx(x, rimRow(x))])) line++; }
+      const rimCols = rimX1() - W.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1);   // every rim column but the gate's three
+      let band = 0; for (let x = W.tx(1); x <= rimX1(); x++) for (let y = rimRow(x) + 1; y <= WS.seams.footWA(x); y++) if (tiles[idx(x, y)] === CLIFF) band++;
       let wall = 0, gap = 0;
-      for (let x = W.tx(100); x <= W.tx(161); x++) { const y = Math.round(WS.seams.sWJ(x)); if (SOLID.has(tiles[idx(x, y)])) wall++; else if (x >= HFF.x(134) && x <= HFF.x(148)) gap++; }
+      for (let x = wallX(W.ty(96)); x <= W.tx(161); x++) { const y = Math.round(WS.seams.sWJ(x)); if (SOLID.has(tiles[idx(x, y)])) wall++; else if (x >= HFF.x(134) && x <= HFF.x(148)) gap++; }
       const gateShut = DRAGON_KILLERS ? DRAGON_KILLERS.GATE_T.every(([x, y]) => tiles[idx(x, y)] === Tn('WARDEN_GATE')) : false;
       check(P + "the Ashfields' rim is a wavy rock face where a ruled line of trees stood, the warden's gate is still the one notch through it, and the jungle's edge is a wall of giants with the old road its one gap",
         rim >= 70 && line === rimCols && band >= 40 && gateShut && wall >= 30, { rimRockOnRow95: rim, solidOnRow95: line, rockBelowTheRow: band, gateShut, wallOnTheJungleLine: wall, roadGapColumns: gap }); }
+
+    // ---- 8b. the wall splits the names: every wall row has the Ashfields (once below the rim) just west of the wall
+    // and the Jungle (once below its north edge) on it, so the wall, the burnt band and the names move together on the pin
+    { const bad = [];
+      for (let y = W.ty(96); y <= W.ty(138); y++) {
+        const x = wallX(y), west = regionAt(x - 1, y).name, on = regionAt(x, y).name;
+        if (west === 'The Jungle' || on === 'The Ashfields' || (y > sWA(x - 1) && west !== 'The Ashfields') || (y > sWJ(x) && on !== 'The Jungle')) bad.push([x, y, west, on]);
+      }
+      check(P + "the Ashfields / Jungle wall is where the names change: the Ashfields just west of it and the Jungle on it, every wall row (one pinned read, W.line('jungle_west'))", bad.length === 0, { bad: bad.slice(0, 8) }); }
 
     // ---- 9. the gates open ----
     { const st0 = quest.stage, dk = window.DRAGON_KILLERS;
@@ -70133,7 +70155,7 @@ const MOUNT_LOOK = (() => {
         const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); if (seen[i] || !ok(tileAt(x, y))) return; seen[i] = 1; q.push(i); };
         push(START[0], START[1]);
         for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
-        for (let y = W.ty(96); y < MAP_H; y++) for (let x = 0; x <= W.tx(99); x++) if (seen[idx(x, y)] && regionAt(x, y).name === 'The Ashfields') ashReached++;
+        for (let y = W.ty(96); y < MAP_H; y++) for (let x = 0; x < wallX(y); x++) if (seen[idx(x, y)] && regionAt(x, y).name === 'The Ashfields') ashReached++;
         quest.stage = st0; dk.closeGate(); F.sim(1, []);
       }
       check(P + "every gate on the way south opens: Warden Brann's at stage 11, and the burnt country is walkable the moment it does",
@@ -70282,11 +70304,14 @@ const MOUNT_LOOK = (() => {
   const AW = ATLAS.world, FR = id => ATLAS.frame(id);
   const LAIRF = FR('fang_lair'), WARD = FR('warden'), CIRCLE = FR('stone_circle'), SHRINE = FR('ash_shrine'), TOWER = FR('watchtower');
   const rimRow = x => Math.round(AW.pin('rim', AW.y(95), x));            // the rim row at new column x
-  const wallX = y => Math.round(AW.pin('jungle_west', AW.x(100), y));    // the jungle's west wall at new row y
+  const wallX = y => AW.line('jungle_west', y);                          // the jungle's west wall at new row y (one read: 39 and 92 make it too)
+  const rimX1 = () => wallX(AW.ty(96)) - 1;                              // the rim's last column: the one west of the wall's top
   const ow = (N, x, y) => N(AW.ix(x), AW.iy(y));                          // a world noise at a new tile, read in OLD coordinates
   const LAIR = LAIRF.rect({ x0: 2, y0: 108, x1: 34, y1: 138 });                  // 28-thefang's box: its walls are never touched
   const APPROACH = LAIRF.rect({ x0: 1, y0: 103, x1: 40, y1: 107 });              // 27-dragons keeps it open: nothing solid goes here
-  const AF_BOX = { x0: AW.tx(0), y0: AW.ty(96), x1: AW.tx(99), y1: AW.ty(139) };   // the Ashfields' box (a world rect): nothing green inside it (56-ashfields), so no dry grass either
+  // the Ashfields' box (world rows; its east edge is the jungle's wall, on its pin): nothing green inside it (56-ashfields), so no dry grass either
+  const AF_BOX = { x0: AW.tx(0), y0: AW.ty(96), y1: AW.ty(139) };
+  const inAF = (x, y) => y >= AF_BOX.y0 && y <= AF_BOX.y1 && x >= AF_BOX.x0 && x < wallX(y);
   const BAND_OUT = 9, BAND_IN = 5;                                   // how far the fade reaches out of the outline, and into it
   const inRect = (r, x, y) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
   const AE = window.ASHEDGE = { stats: {}, band: null, big: null, box: null, DRY, SINGED, CINDERS, CHAR, CRAG, BAND_OUT, BAND_IN };
@@ -70313,7 +70338,7 @@ const MOUNT_LOOK = (() => {
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = regionAt(x, y); if (r && (r.name === 'The Ashfields' || r.name === "The Fang's Lair")) own[I(x, y)] = 1; }
     // the burnt country as the eye sees it: the outline, and everything below the rim row inside the Ashfields' box
     const land = AE.land = new Uint8Array(W * H);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (own[I(x, y)] || inRect(AF_BOX, x, y)) land[I(x, y)] = 1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (own[I(x, y)] || inAF(x, y)) land[I(x, y)] = 1;
     // chamfer distance to the nearest seed tile (1 straight, 1.414 diagonal)
     const chamfer = seed => {
       const d = new Float32Array(W * H).fill(1e6);
@@ -70329,7 +70354,7 @@ const MOUNT_LOOK = (() => {
     // so the fade starts right above the rock rather than a few rows up in the wood
     const rim = new Uint8Array(W * H);
     const CLIFF = Tn('CLIFF'), foot = window.WORLDSHAPE && WORLDSHAPE.seams && WORLDSHAPE.seams.footWA;
-    if (CLIFF >= 0 && foot) for (let x = AW.tx(1); x <= AW.tx(99); x++) for (let y = rimRow(x); y <= foot(x); y++) if (at(x, y) === CLIFF || own[I(x, y)]) rim[I(x, y)] = 1;
+    if (CLIFF >= 0 && foot) for (let x = AW.tx(1); x <= rimX1(); x++) for (let y = rimRow(x); y <= foot(x); y++) if (at(x, y) === CLIFF || own[I(x, y)]) rim[I(x, y)] = 1;
     const dOut = chamfer(i => own[i] === 1 || rim[i] === 1), dIn = chamfer(i => own[i] === 0);
     // signed distance from the outline, wobbled: positive outside, negative inside
     const edge = (x, y) => { const i = I(x, y); const s = own[i] ? -(dIn[i] - 0.5) : dOut[i] - 0.5; return s + (ow(WOB, x, y) - 0.5) * 15 + (ow(FINE, x, y) - 0.5) * 2.4; };
@@ -70392,7 +70417,7 @@ const MOUNT_LOOK = (() => {
       if (own[i] ? dIn[i] > BAND_IN + 6 : dOut[i] > BAND_OUT + 6) continue;
       if (!free(x, y)) continue;
       // r picks between the kinds a zone mixes: mostly smooth noise, so the kinds lie in small patches rather than a checkerboard
-      const t = at(x, y), e = edge(x, y), r = clamp(ow(PICK, x, y) * 0.8 + rnd() * 0.2, 0, 0.999), p = ow(PATCH, x, y), inBox = inRect(AF_BOX, x, y);
+      const t = at(x, y), e = edge(x, y), r = clamp(ow(PICK, x, y) * 0.8 + rnd() * 0.2, 0, 0.999), p = ow(PATCH, x, y), inBox = inAF(x, y);
       if (!own[i]) {
         // outside the outline: green ground burns by how near the ash it lies, ash lying in patches that thin out
         if (GREEN.has(t)) {
@@ -70424,7 +70449,7 @@ const MOUNT_LOOK = (() => {
         if (e < -BAND_IN) continue;
         // (except the three rows under the rim: that is where the rock face stands, and 92-worldshape holds that the
         // ground below it is ash; the fade across the rim happens above it and further in)
-        if (foot && x <= AF_BOX.x1 && y <= foot(x) + 3) continue;
+        if (foot && x < wallX(y) && y <= foot(x) + 3) continue;
         if (t === ASH || t === SCORCH || (t === T.DIRT && !nearTrack(x, y))) {
           // in a bay (the wobble pulls the edge inward) the ground goes to singed straw and cinders outright;
           // along the edge it is cinders with ash between; a little deeper, a scatter of cinders in the ash
@@ -70491,7 +70516,7 @@ const MOUNT_LOOK = (() => {
     S.crest = 0; S.foot = 0; AE.crestTop = [];
     const FOOTABLE = new Set([ASH, SCORCH, CINDERS, SINGED].filter(v => v >= 0));
     const RIM_CLIFF = RIM;
-    if (RIM_CLIFF >= 0) for (let x = AW.tx(1); x <= AW.tx(99); x++) {
+    if (RIM_CLIFF >= 0) for (let x = AW.tx(1); x <= rimX1(); x++) {
       const row = rimRow(x), o = AW.ix(x);
       AE.crestTop[x] = row;
       if (x >= WARD.x(54) && x <= WARD.x(66)) continue;          // the warden's ground by his gate
@@ -70522,7 +70547,7 @@ const MOUNT_LOOK = (() => {
     // behind a tree, a rock or the wall rather than through it), so not one step of the walk changes.
     S.bed = 0;
     { let wx = 999, wy = -1;
-      for (let y = AW.ty(128); y <= AW.ty(146); y++) for (let x = AW.tx(100); x <= AW.tx(115); x++) if (at(x, y) === T.WATER && x < wx) { wx = x; wy = y; }
+      for (let y = AW.ty(128); y <= AW.ty(146); y++) for (let x = wallX(y); x <= AW.tx(115); x++) if (at(x, y) === T.WATER && x < wx) { wx = x; wy = y; }
       AE.riverEnd = wy >= 0 ? [wx, wy] : null;
       if (wy >= 0) {
         const BEDDABLE = new Set([ASH, SCORCH, CINDERS, SINGED, DRY, T.DIRT, ...GREEN].filter(v => v >= 0));
@@ -70550,12 +70575,12 @@ const MOUNT_LOOK = (() => {
     // (a row of them on its south lobe) is charred, solid for solid.
     S.seam = 0; S.deepTrees = 0;
     // (column by column below the rim row, which follows its pin; each tile is decided alone, so the order is free)
-    for (let x = AW.tx(1); x <= AW.tx(99); x++) for (let row = rimRow(x), y = row + 1; y <= AW.ty(160); y++) {
+    for (let x = AW.tx(1); x <= rimX1(); x++) for (let row = rimRow(x), y = row + 1; y <= AW.ty(160); y++) {
       const i = I(x, y); if (buildingAt(x, y)) continue;    // (south of the rim row is burnt country whatever the name says)
       const t = at(x, y);
       // (grass to straw is open ground to open ground, so it may go where the solid-placing guards say no: the
       // warden's road and Dunstan's farm had the brightest squares)
-      if (GREEN.has(t) && inRect(AF_BOX, x, y)) { set(x, y, ow(PICK, x, y) < 0.62 ? SINGED : CINDERS); band[i] = 1; S.seam++; }
+      if (GREEN.has(t) && inAF(x, y)) { set(x, y, ow(PICK, x, y) < 0.62 ? SINGED : CINDERS); band[i] = 1; S.seam++; }
       else if (TREES.has(t) && (own[i] || y <= row + 5) && free(x, y)) { set(x, y, CHAR); band[i] = 1; S.deepTrees++; }
     }
 
@@ -70589,7 +70614,7 @@ const MOUNT_LOOK = (() => {
     // quick one): cinders nearest the ash, then singed straw, then dry grass, and the trees in it charred. Open for open,
     // solid for solid; rows 93-94 are left as 39-worldblend and 58-underground want them (ash and grass both there).
     S.aboveRim = 0; AE.rimDepth = [];
-    for (let x = AW.tx(1); x <= AW.tx(99); x++) {
+    for (let x = AW.tx(1); x <= rimX1(); x++) {
       const o = AW.ix(x), top = rimRow(x) - 3;   // (old row 92: the drift rows 93-94 under it are left alone)
       const depth = clamp(1.2 + CREST(o, 21.5) * 4.6 + (JIT(o, 31.3) - 0.5) * 2.8, 1, 7);
       AE.rimDepth[x] = depth;
@@ -70905,7 +70930,7 @@ const MOUNT_LOOK = (() => {
     return tongues[k] = cv;
   };
   // grass kept beside the rim's rock (drawn as singed straw, and taking part in the fronts as straw)
-  const rimGrass = (tx, ty, t) => t === T.GRASS && tx <= AW.tx(100) && ty >= rimRow(tx) - 3 && ty < rimRow(tx) && N4.some(([dx, dy]) => map[idx(tx + dx, ty + dy)] === RIM);
+  const rimGrass = (tx, ty, t) => t === T.GRASS && tx <= wallX(ty) && ty >= rimRow(tx) - 3 && ty < rimRow(tx) && N4.some(([dx, dy]) => map[idx(tx + dx, ty + dy)] === RIM);
   const priAt = (tx, ty, t) => rimGrass(tx, ty, t) ? PRI[SINGED] : PRI[t];
   AE.tongueStats = () => ({ masks: Object.keys(tongueMasks).length, tongues: Object.keys(tongues).length });
   HOOKS.draw.push((g, items, cam) => {
@@ -71000,7 +71025,7 @@ const MOUNT_LOOK = (() => {
         items.push({ y: -1e9 + 2, draw: () => drawMudLip(g, tx, ty) });
         items.push({ y: ty * TILE + TILE - 8, draw: () => drawReeds(g, tx, ty) }); continue;
       }
-      if (t === RIM && tx <= AW.tx(100) && ty >= rimRow(tx) - 7 && ty <= rimRow(tx) + 6) {
+      if (t === RIM && tx <= wallX(ty) && ty >= rimRow(tx) - 7 && ty <= rimRow(tx) + 6) {
         const rock = (ax, ay) => inMap(ax, ay) && map[idx(ax, ay)] === RIM;
         const top = !rock(tx, ty - 1), bot = !rock(tx, ty + 1), left = !rock(tx - 1, ty), right = !rock(tx + 1, ty);
         // (just after 92-worldshape's own item for the tile, which sits at its centre)
@@ -71039,7 +71064,7 @@ const MOUNT_LOOK = (() => {
       }
       check(P + 'grey steps into green through dry grass, singed grass and cinders (each laid 150+ times; under 80 places where ash still touches green, from 184)', dry >= 150 && singed >= 150 && cinders >= 150 && touch < 80, { dry, singed, cinders, touch, out: S.out, inside: S.inside }); }
     // 3. nothing green inside the Ashfields' box (not even dry grass: the fringe inside is singed straw), and the edge trees are charred
-    { let bad = 0; for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) for (let x = AF_BOX.x0; x <= AF_BOX.x1; x++) { const t = tileAt(x, y); if (t === DRY) bad++; }
+    { let bad = 0; for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) for (let x = AF_BOX.x0; x < wallX(y); x++) { const t = tileAt(x, y); if (t === DRY) bad++; }
       let charred = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (tileAt(x, y) === CHAR) charred++;
       check(P + 'no dry green grass inside the Ashfields box; charred trees stand at the edge (40+)', bad === 0 && charred >= 40, { bad, charred, standing: S.standing, refused: S.refused }); }
     // 4. the lair is not a clean box: crags lean on its east and south walls at more than one depth, and its walls, gate and approach are as they were
@@ -71054,7 +71079,7 @@ const MOUNT_LOOK = (() => {
         { depths: [...reach].sort(), south, walls, approach, path: path && path.length, crags: S.crags }); }
     // 5. the rim is not one ruled line: its top climbs and falls, and no long stretch keeps both top and foot level
     { const tops = [], rows = new Set(); let run = 0, longest = 0, at = null, prev = null, solid95 = 0;
-      for (let x = AW.tx(1); x <= AW.tx(99); x++) {
+      for (let x = AW.tx(1); x <= rimX1(); x++) {
         const row = rimRow(x);
         if (!(x >= WARD.x(59) && x <= WARD.x(61)) && SOLID.has(tileAt(x, row))) solid95++;   // (59-61: the warden's gate, which the story opens)
         if (x >= WARD.x(54) && x <= WARD.x(66) || tileAt(x, row) !== RIM) { prev = null; continue; }
@@ -71063,7 +71088,7 @@ const MOUNT_LOOK = (() => {
         const k = top + ',' + foot; if (k === prev) { run++; if (run > longest) { longest = run; at = x; } } else run = 1; prev = k;
       }
       check(P + "the Ashfields' rim is a ridge, not a ruled line: its top stands on 3+ different rows and no stretch longer than 6 tiles keeps its top and its foot level; row 95 is still solid all along (the warden's gate the one way through)",
-        rows.size >= 3 && longest <= 6 && S.crest >= 40 && solid95 === AW.tx(99) - AW.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1), { topRows: [...rows].sort(), longestLevelStretch: longest, endingAtX: at, crestTiles: S.crest, solidOnRow95: solid95 }); }
+        rows.size >= 3 && longest <= 6 && S.crest >= 40 && solid95 === rimX1() - AW.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1), { topRows: [...rows].sort(), longestLevelStretch: longest, endingAtX: at, crestTiles: S.crest, solidOnRow95: solid95 }); }
     // 6. where the living jungle begins wanders from row to row along x 100
     { const GREENISH = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN, T.TREE, T.OAK, JUNGLE].filter(v => v >= 0));
       const first = []; for (let y = AW.ty(100); y <= AW.ty(156); y++) { const wx = wallX(y); let x = wx + 1; while (x < wx + 25 && !GREENISH.has(tileAt(x, y))) x++; first.push(x); }
@@ -71079,8 +71104,8 @@ const MOUNT_LOOK = (() => {
     // 8. nothing green below the rim, and no living tree inside the Ashfields
     { const GREENISH = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN, DRY].filter(v => v >= 0)), LIVE = new Set([T.TREE, T.OAK, JUNGLE].filter(v => v >= 0));
       const green = [], trees = [];
-      for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) for (let x = AW.tx(1); x <= AF_BOX.x1; x++) { if (buildingAt(x, y)) continue; const t = tileAt(x, y); if (GREENISH.has(t)) green.push(x + ',' + y); }
-      for (let y = AW.ty(96); y < MAP_H; y++) for (let x = AW.tx(1); x <= AW.tx(99); x++) { const r = regionAt(x, y); if (r && (r.name === 'The Ashfields' || r.name === "The Fang's Lair") && LIVE.has(tileAt(x, y))) trees.push(x + ',' + y); }
+      for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) for (let x = AW.tx(1); x < wallX(y); x++) { if (buildingAt(x, y)) continue; const t = tileAt(x, y); if (GREENISH.has(t)) green.push(x + ',' + y); }
+      for (let y = AW.ty(96); y < MAP_H; y++) for (let x = AW.tx(1); x < wallX(y); x++) { const r = regionAt(x, y); if (r && (r.name === 'The Ashfields' || r.name === "The Fang's Lair") && LIVE.has(tileAt(x, y))) trees.push(x + ',' + y); }
       check(P + 'no grass, fern or dry grass below the rim anywhere in the Ashfields box, and no living tree inside its outline', green.length === 0 && trees.length === 0,
         { green: green.slice(0, 10), greenCount: green.length, livingTrees: trees.slice(0, 10), livingTreeCount: trees.length, burntSeam: S.seam, charredInside: S.deepTrees }); }
     // 9. no living tree right against the grey anywhere round the burnt country (the warden's guarded ground at the gate
@@ -71089,7 +71114,7 @@ const MOUNT_LOOK = (() => {
     { const GREY = new Set([ASH, SCORCH, CRAG].filter(v => v >= 0)), LIVE = new Set([T.TREE, T.OAK, JUNGLE].filter(v => v >= 0)), BURNT = new Set([ASH, SCORCH, CRAG, CINDERS, CHAR, DEADTREE, SINGED, T.WALL].filter(v => v >= 0));
       const near = [], border = [];
       const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3], cb = CIRCLE.box([53, 83, 68, 89]), wb = WARD.box([53, 90, 68, 106]);   // the warden's guarded ground (as marked)
-      for (let y = AW.ty(84); y <= AW.ty(172); y++) for (let x = AW.tx(1); x <= AW.tx(100); x++) {
+      for (let y = AW.ty(84); y <= AW.ty(172); y++) for (let x = AW.tx(1); x <= wallX(y); x++) {
         if (inB(cb, x, y) || inB(wb, x, y) || !LIVE.has(tileAt(x, y))) continue;
         let n = 0; for (const [dx, dy] of N8) if (GREY.has(tileAt(x + dx, y + dy))) n++;
         if (n) near.push(x + ',' + y); }
@@ -75610,7 +75635,8 @@ const MOUNT_LOOK = (() => {
     save = function () {
       const r = _save.apply(this, arguments);
       const k = stampKey();
-      if (k && !(typeof title !== 'undefined' && title.active)) { try { localStorage.setItem(k, JSON.stringify({ t: Date.now(), day: player.dayTime || 0 })); } catch (e) { } }
+      // (a save refused by the save lock, a newer world's knight in this slot, writes no stamp either: 72-savelock)
+      if (k && !(typeof title !== 'undefined' && title.active) && !(typeof SAVE_LOCK !== 'undefined' && SAVE_LOCK)) { try { localStorage.setItem(k, JSON.stringify({ t: Date.now(), day: player.dayTime || 0 })); } catch (e) { } }
       return r;
     }; }
   { const _load = load;

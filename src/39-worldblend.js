@@ -52,6 +52,8 @@
   const BL = window.BLEND = { stats: {} };
   // a band of OLD world rows [lo, hi] about a pinned seam, at new column x: [[y, oy], ...] (y new, oy old); colsOf the same on x
   const rowsOf = (pin, lo, hi, x) => { const off = W.pin(pin, 0, x), out = []; for (let y = Math.round(W.y(lo) + off); y <= Math.round(W.y(hi) + off); y++) out.push([y, W.iy(y - off)]); return out; };
+  // the rim's last column: the one west of the jungle's wall at the wall's top row (W.line: the one read 92 and 93 make)
+  const rimX1 = () => W.line('jungle_west', W.ty(96)) - 1;
   const colsOf = (pin, lo, hi, y) => { const off = W.pin(pin, 0, y), out = []; for (let x = Math.round(W.x(lo) + off); x <= Math.round(W.x(hi) + off); x++) out.push([x, W.ix(x - off)]); return out; };
 
   // ---------- smooth value noise: two octaves, bilinear on a lattice (6 tiles by default), 0..1 ----------
@@ -101,7 +103,7 @@
     mark(HF.x0 + 3, HF.y0 + 3, HF.x1 - 3, HF.y1 - 3);      // Hollowford's ruins, streets and square (its three-tile margin is blended below)
     markB(HFF.box([138, 62, 143, 96]));                    // the road into Hollowford from the north (below the river's crossing) and the path out to the jungle
     // the warden's tree line and the jungle's western wall: exact solid counts (world seams, each on its pin)
-    for (let x = W.tx(1); x <= W.tx(99); x++) for (const [y] of rowsOf('rim', 95, 95, x)) mark(x, y, x, y);
+    for (let x = W.tx(1); x <= rimX1(); x++) for (const [y] of rowsOf('rim', 95, 95, x)) mark(x, y, x, y);
     for (let y = W.ty(96); y <= W.ty(138); y++) for (const [x] of colsOf('jungle_west', 100, 100, y)) mark(x, y, x, y);
     markB(WARD.box([56, 92, 64, 99]));                     // the warden, his gate, the road through
     markB(LAIRF.box([1, 103, 40, 107])); markB(SHRINE.box([84, 100, 90, 106]));   // the approach to the lair, the ruined shrine
@@ -241,7 +243,7 @@
     const ASHS = new Set([ASH]), JUNGLES = new Set([JUNGLE]);
     // the Ashfields' north edge (y 96): ash drifts up into Wolfwood's last rows, scorched grass shows through the first ash rows
     // (rows and the noise in OLD world coordinates, on the rim pin)
-    for (let x = W.tx(1); x <= W.tx(99); x++) {
+    for (let x = W.tx(1); x <= rimX1(); x++) {
       const ox = W.ix(x);
       for (const [y, oy] of rowsOf('rim', 92, 94, x)) swap(x, y, GRASSY, ASH, dn(ox, oy) > 0.5 + (94 - oy) * 0.15, 'ash');
       for (const [y, oy] of rowsOf('rim', 96, 99, x)) swap(x, y, ASHS, T.GRASS, dn(ox, oy) < 0.45 - (oy - 96) * 0.1, 'ash');

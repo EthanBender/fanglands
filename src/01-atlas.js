@@ -374,7 +374,7 @@
     { id: 'rim', seam: 'the Ashfields rim row (37 row 95, 92 footWA, 93 band)', axis: 'y', ports: ['warden.gate'] },
     { id: 'gw_steps', seam: 'the Goblin Fields / Wolfwood scarp (92 sGW)', axis: 'y', ports: ['graveyard.steps'] },
     { id: 'giants', seam: 'the Wolfwood / Jungle wall (92 sWJ)', axis: 'y', ports: ['hollowford.south'] },
-    { id: 'jungle_west', seam: 'the Ashfields / Jungle wall (37 x 100, 39 jungle column)', axis: 'x', ports: ['warden.east_wall'] },
+    { id: 'jungle_west', seam: 'the Ashfields / Jungle wall (37 x 100, 39 jungle column)', axis: 'x', ports: ['warden.east_wall'], old: 100 },   // old: a straight seam's old line (W.line)
     { id: 'river', seam: 'the river polyline (TRACKS.river)', axis: 'y', ports: ['old_bridge.span', 'goblin_road.bridge', 'pond.outflow'] },
     { id: 'strait', seam: 'the 39 strait and Far Shore coast loops', axis: 'x', ports: ['far_shore.strait'] },
     { id: 'sea', seam: "the Grey Sea's west coast (39 COVES)", axis: 'x', ports: ['dock.planks'] },   // + saltmere.jetty when Saltmere is drawn (Stage 5b)
@@ -454,6 +454,13 @@
         if (d < TAPER) off += delta * (1 - d / TAPER);
       }
       return v + off;
+    },
+    // a straight pinned seam (a PIN with `old`, its old line): the new tile column (or row) it stands on at `along`.
+    // The one read of that line: jungle_west is the Ashfields / Jungle wall, and every split, box edge and loop end on
+    // the old x 100 line (39, 92 and 93) reads W.line('jungle_west', y), so the wall and the regions move together.
+    line(seamId, along) {
+      const pin = PINS.find(q => q.id === seamId); if (!pin || typeof pin.old !== 'number') throw new Error('ATLAS.world.line: no straight seam ' + JSON.stringify(seamId));
+      return Math.round(W.pin(seamId, pin.axis === 'y' ? W.y(pin.old) : W.x(pin.old), along));
     },
   };
 
@@ -568,10 +575,10 @@
     check(PF + "a frame answers in every shape the conversions use (p, pt, pts, rect, box, inOld) and keeps a rect's other fields; an unknown place throws", shapes && threw, { shapes, threw });
     // helpers
     const sp = port('thistledown.square'), reserved = port('old_bridge.span'), hfBox = box('hollowford'), g = guards().find(q => q.id === 'hollowford');
-    const smallest = anchorOf(134, 60), ow = oldToNew(140, 80), none = oldToNew(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
+    const smallest = anchorOf(134, 60), ow = oldToNew(140, 80), none = oldToNew(60, 70), nw = oldToNewWorld(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
     check(PF + 'port, box, guards, anchorOf (the smallest box wins), oldToNew (null on open land) and every track resolve; a reserved place has no box or port before 4a',
       JSON.stringify(sp) === '[112,33]' && reserved === null && box('old_bridge') === null && JSON.stringify(hfBox) === '[120,59,160,96]' && g && g.x0 === hfBox[0] - ANCHORS.hollowford.guard && g.y1 === hfBox[3] + ANCHORS.hollowford.guard &&
-      smallest && smallest.id === 'hollowford' && smallest.holders.includes('thistledown') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(oldToNewWorld(60, 70)) === '[60,70]' && trackOk,
+      smallest && smallest.id === 'hollowford' && smallest.holders.includes('thistledown') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(nw) === '[60,70]' && trackOk,
       { sp, reserved, hfBox, g, smallest, ow, none, trackOk });
     // an overlap point is flagged until a human decides it; an OWNERS rect or a port at that exact point decides it
     const pen = anchorOf(72, 14), gate = anchorOf(13, 72), open = anchorOf(134, 60), alone = anchorOf(140, 80);

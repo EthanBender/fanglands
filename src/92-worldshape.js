@@ -50,6 +50,10 @@
   const TOWER = FR('watchtower'), SYLV = FR('sylvaris'), DHF = FR('deepholm_rock'), CANOPY = FR('canopy'), DRILL = FR('drill_field');
   // the Ashfields' rim row (old 95) at new column x, on the rim pin
   const rimRow = x => Math.round(W.pin('rim', W.y(95), x));
+  // the Ashfields / Jungle wall (old x 100) at new row y, on the jungle_west pin: the Ashfields lie west of it, the Jungle
+  // from it east, and the rim's last column is the one west of its first row (W.line: the one read 39 and 93 make too)
+  const wallX = y => W.line('jungle_west', y);
+  const rimX1 = () => wallX(W.ty(96)) - 1;
 
   // ---------- smooth value noise: two octaves on a lattice, 0..1 (the same shape 39-worldblend uses) ----------
   const makeNoise = (seed, cell = 8) => {
@@ -103,15 +107,15 @@
   { const gf = bandX('Goblin Fields', 7, SEED + 11, 11, true);
     put('Goblin Fields', (x, y) => y >= 0 && y < sGW(x) && (gf(x, y) || lobe(W, x, y, 24, 34, 9, 13) || lobe(W, x, y, 150, 52, 10, 8)) && !lobe(W, x, y, 66, 57, 13, 7), 'ews'); }
   { const ww = bandX('Wolfwood', 7, SEED + 12, 11, true);
-    put('Wolfwood', (x, y) => y > sGW(x) && y < (x < W.x(100) ? sWA(x) : sWJ(x)) && (ww(x, y) || lobe(W, x, y, 66, 57, 13, 7) || lobe(W, x, y, 166, 78, 9, 12)), 'ewns'); }
+    put('Wolfwood', (x, y) => y > sGW(x) && y < (x < wallX(y) ? sWA(x) : sWJ(x)) && (ww(x, y) || lobe(W, x, y, 66, 57, 13, 7) || lobe(W, x, y, 166, 78, 9, 12)), 'ewns'); }
   { const af = bandS('The Ashfields', 9, SEED + 13, 12, true);
-    put('The Ashfields', (x, y) => x <= W.x(99) && y > sWA(x) && (af(x, y) || lobe(W, x, y, 62, 148, 26, 12) || lobe(W, x, y, 16, 146, 14, 10)), 'ns'); }
+    put('The Ashfields', (x, y) => x <= wallX(y) - 1 && y > sWA(x) && (af(x, y) || lobe(W, x, y, 62, 148, 26, 12) || lobe(W, x, y, 16, 146, 14, 10)), 'ns'); }
   // The Jungle's east edge wanders in as well as out. It used to grow only, out over the bottom-right dead
   // space; the Redcut (90-canyon) stands there now and red rock is not jungle, so the eastern edge frays
   // into the jungle's own box instead. Only the east: the west band is masked off (a tile deeper than the
   // band's reach from the east edge is jungle whenever the south band says so, exactly as before).
   { const jg = bandS('The Jungle', 6, SEED + 14, 12, true); const je = bandX('The Jungle', 20, SEED + 15, 9, false); const jb = BOX['The Jungle'];
-    put('The Jungle', (x, y) => x >= W.x(100) && (x > W.x(161) ? y >= jb.y0 : y > sWJ(x)) && (((x <= jb.x1 - 21 || je(x, y)) && jg(x, y) && !lobe(W, x, y, W.ix(jb.x1 + 1), 150, 13, 16)) || lobe(W, x, y, 108, 90, 7, 8) || lobe(HFF, x, y, 156, 90, 8, 7)), 'ne'); }   // and a bay bitten out of the east side, where the red rock country begins
+    put('The Jungle', (x, y) => x >= wallX(y) && (x > W.x(161) ? y >= jb.y0 : y > sWJ(x)) && (((x <= jb.x1 - 21 || je(x, y)) && jg(x, y) && !lobe(W, x, y, W.ix(jb.x1 + 1), 150, 13, 16)) || lobe(W, x, y, 108, 90, 7, 8) || lobe(HFF, x, y, 156, 90, 8, 7)), 'ne'); }   // and a bay bitten out of the east side, where the red rock country begins
 
   // the enclaves: a blob each, inside the ground that carries them
   { const gq = blob('Grey Quarry', 7, SEED + 21, 5, true, QF);
@@ -406,7 +410,7 @@
     // 37-dragonkillers grows Wolfwood's last row (y 95, x 1-99) solid so the warden's gate is the only way
     // south. Those tiles become rock, and the face is carried down to the foot of the new outline, so the
     // burnt country reads as the plateau it is. Solid for solid on row 95: not one step of the walk changes.
-    for (let x = W.tx(1); x <= W.tx(99); x++) {
+    for (let x = W.tx(1); x <= rimX1(); x++) {
       if (x >= WARD.x(58) && x <= WARD.x(62)) continue;              // the warden's road through the rim (the warden's notch)
       const foot = footWA(x), row = rimRow(x);
       for (let y = row; y <= foot; y++) {
@@ -418,7 +422,7 @@
     }
 
     // ---- 3. the jungle's edge: a wall of giants along the new line, the old road its one gap ----
-    if (JUNGLE >= 0) for (let x = W.tx(100); x <= W.tx(161); x++) {
+    if (JUNGLE >= 0) for (let x = wallX(W.ty(96)); x <= W.tx(161); x++) {   // from the wall's top (the jungle_west pin)
       if (x >= HFF.x(134) && x <= HFF.x(148)) continue;              // the road down to Sylvaris (the giants' gap, Hollowford's)
       const y = Math.round(sWJ(x));
       if (!plain(x, y) || !addOk(x, y) || strands(x, y)) continue;
@@ -827,7 +831,7 @@
         for (let d = 1; d <= 5; d++) { const t = tiles[idx(x, yb + d)]; if (!SOLID.has(t) || TREES2.has(t)) { woodN++; if (TREES2.has(t)) woodT++; } }
       }
       let ashIn = 0, inN = 0, ashOut = 0, outN = 0;
-      for (let x = W.tx(1); x <= W.tx(99); x++) {
+      for (let x = W.tx(1); x <= rimX1(); x++) {
         const f = Math.floor(WS.seams.sWA(x));
         if (regionAt(x, f).name !== 'Wolfwood' || regionAt(x, f + 1).name !== 'The Ashfields') continue;
         for (let d = 1; d <= 3; d++) { inN++; if (tiles[idx(x, f + d)] === ASH) ashIn++; }
@@ -894,14 +898,23 @@
         rows.length === 1 && rows.every(r => r.standing && r.shut && r.refused && r.opens && r.over), { climbs: rows }); }
 
     // ---- 8. the rim and the jungle's edge ----
-    { let rim = 0, line = 0; for (let x = W.tx(1); x <= W.tx(99); x++) { if (x >= WARD.x(59) && x <= WARD.x(61)) continue; if (tiles[idx(x, rimRow(x))] === CLIFF) rim++; if (SOLID.has(tiles[idx(x, rimRow(x))])) line++; }
-      const rimCols = W.tx(99) - W.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1);   // every rim column but the gate's three
-      let band = 0; for (let x = W.tx(1); x <= W.tx(99); x++) for (let y = rimRow(x) + 1; y <= WS.seams.footWA(x); y++) if (tiles[idx(x, y)] === CLIFF) band++;
+    { let rim = 0, line = 0; for (let x = W.tx(1); x <= rimX1(); x++) { if (x >= WARD.x(59) && x <= WARD.x(61)) continue; if (tiles[idx(x, rimRow(x))] === CLIFF) rim++; if (SOLID.has(tiles[idx(x, rimRow(x))])) line++; }
+      const rimCols = rimX1() - W.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1);   // every rim column but the gate's three
+      let band = 0; for (let x = W.tx(1); x <= rimX1(); x++) for (let y = rimRow(x) + 1; y <= WS.seams.footWA(x); y++) if (tiles[idx(x, y)] === CLIFF) band++;
       let wall = 0, gap = 0;
-      for (let x = W.tx(100); x <= W.tx(161); x++) { const y = Math.round(WS.seams.sWJ(x)); if (SOLID.has(tiles[idx(x, y)])) wall++; else if (x >= HFF.x(134) && x <= HFF.x(148)) gap++; }
+      for (let x = wallX(W.ty(96)); x <= W.tx(161); x++) { const y = Math.round(WS.seams.sWJ(x)); if (SOLID.has(tiles[idx(x, y)])) wall++; else if (x >= HFF.x(134) && x <= HFF.x(148)) gap++; }
       const gateShut = DRAGON_KILLERS ? DRAGON_KILLERS.GATE_T.every(([x, y]) => tiles[idx(x, y)] === Tn('WARDEN_GATE')) : false;
       check(P + "the Ashfields' rim is a wavy rock face where a ruled line of trees stood, the warden's gate is still the one notch through it, and the jungle's edge is a wall of giants with the old road its one gap",
         rim >= 70 && line === rimCols && band >= 40 && gateShut && wall >= 30, { rimRockOnRow95: rim, solidOnRow95: line, rockBelowTheRow: band, gateShut, wallOnTheJungleLine: wall, roadGapColumns: gap }); }
+
+    // ---- 8b. the wall splits the names: every wall row has the Ashfields (once below the rim) just west of the wall
+    // and the Jungle (once below its north edge) on it, so the wall, the burnt band and the names move together on the pin
+    { const bad = [];
+      for (let y = W.ty(96); y <= W.ty(138); y++) {
+        const x = wallX(y), west = regionAt(x - 1, y).name, on = regionAt(x, y).name;
+        if (west === 'The Jungle' || on === 'The Ashfields' || (y > sWA(x - 1) && west !== 'The Ashfields') || (y > sWJ(x) && on !== 'The Jungle')) bad.push([x, y, west, on]);
+      }
+      check(P + "the Ashfields / Jungle wall is where the names change: the Ashfields just west of it and the Jungle on it, every wall row (one pinned read, W.line('jungle_west'))", bad.length === 0, { bad: bad.slice(0, 8) }); }
 
     // ---- 9. the gates open ----
     { const st0 = quest.stage, dk = window.DRAGON_KILLERS;
@@ -914,7 +927,7 @@
         const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); if (seen[i] || !ok(tileAt(x, y))) return; seen[i] = 1; q.push(i); };
         push(START[0], START[1]);
         for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
-        for (let y = W.ty(96); y < MAP_H; y++) for (let x = 0; x <= W.tx(99); x++) if (seen[idx(x, y)] && regionAt(x, y).name === 'The Ashfields') ashReached++;
+        for (let y = W.ty(96); y < MAP_H; y++) for (let x = 0; x < wallX(y); x++) if (seen[idx(x, y)] && regionAt(x, y).name === 'The Ashfields') ashReached++;
         quest.stage = st0; dk.closeGate(); F.sim(1, []);
       }
       check(P + "every gate on the way south opens: Warden Brann's at stage 11, and the burnt country is walkable the moment it does",
