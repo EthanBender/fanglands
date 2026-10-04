@@ -38724,6 +38724,8 @@ window.RETALIATE = RETALIATE;
     get parked() { return S.parked[S.map] || null; },
     // how many monsters stand in this whole place while the world runs it (its mon's 'standing'; null otherwise): a puppet
     // list holds only the ones within 24 tiles, so the place's plaque (16-instances) reads this instead
+    // ?debug=tick's numbers for the proofs (a function: the counters are not part of COOP.state): the last k, mon a second
+    tickStats: () => { while (DBG.times.length && DBG.times[0] < time - 1) DBG.times.shift(); return { k: DBG.k, rate: DBG.times.length, rows: DBG.rows }; },
     placeStanding: () => online() && isWorld(S.keeper) && WORLD.standing !== null ? WORLD.standing : null,
     snapshot: () => snapshot(knightsHere()), snapshotAll, find, apply: applyMon, reset, state: S, debugTick: () => DEBUG_TICK, debugBox: (L, w, h) => debugBox(L, w, h),
   };

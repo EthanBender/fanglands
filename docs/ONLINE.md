@@ -2180,6 +2180,18 @@ the first guard to 60 of 90 hp and moved it; the world asked his page for its fu
 (`alone-entry-snap.png`). The first runs of this round failed check 6 and then 8 because they still expected the same copy
 after the pause; the object had in fact hibernated, which the checks now read and say.
 
+**The proof, review round 2b** (4 Oct 2026, a fresh local `wrangler dev` of this branch; `~/.fanglands/work/phase1/sw-2/fix2b/`):
+`stage2-proof.js` checks 1 to 9 ALL PASS again (`proof-run.txt`; the harness reads the debug numbers through
+`COOP.tickStats()` now that they are out of `COOP.state`). The reviewer's iPad lock with the socket dropped (`real-lock.js`,
+an iPad-sized page alone in the world-run Aerie, one sentinel hurt to 130 of 160 hp and one felled, then a real JavaScript
+pause with the socket closed): locked 90 s, the parent page showed no copy and 0 knights there (the copy went); at the unlock
+his screen kept the hurt one at 130 and the felled one down, his game kept the Aerie for under a second, and the world took it
+back from his snapshot with the sentinel still at 130 (`real-world-90.txt`). Locked 20 s, the copy was still there and the
+world carried on with it, the sentinel at 131 (`real-world-20.txt`). With the place off, his own game kept both, as before
+(`real-keeper-90.txt`). His plaque said "3 left" (the 3 standing sentinels), not the 1 near him, throughout. The reviewer's
+real-game wake scenario (`t7-out.txt`): woken by another while his game was stopped, the world built nothing; on his return
+the world took Deepholm over, nothing held, `sim_log` empty.
+
 **Old code on the new store** (`~/.fanglands/work/phase1/sw-2/migrate-proof.{sh,txt}`, local `wrangler dev --persist-to` on
 one directory): this branch made `sim_log` and `realm_state` and wrote two `sim_log` rows and the new `sim` keys; master's
 `online/` then ran on it (status, `GET /api/admin/sim`, a `move` switch and the export all answered), and this branch again
