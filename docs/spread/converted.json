@@ -88,5 +88,6 @@
 "tools/golem-sim.js",
 "tools/dom-keys.js",
 "tools/mmo-sim-admin.js",
-"tools/mmo-sim-party.js"
+"tools/mmo-sim-party.js",
+"tools/balance.js"
 ]
