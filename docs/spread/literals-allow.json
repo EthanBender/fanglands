@@ -238,5 +238,10 @@
   {"file": "63-house.js", "literal": "[17, 19]", "decl": "ENTRY", "reason": "instance-local (house): where the knight lands on the island"},
   {"file": "63-house.js", "literal": "[17, 20]", "decl": "GATE", "reason": "instance-local (house): the arch home, one step south of the landing"},
   {"file": "63-house.js", "literal": "bx - 12", "line": 478, "reason": "the build panel's cost row: pixels left of a button's edge, not a map coordinate"},
-  {"file": "63-house.js", "literal": "TILE * 3", "decl": "drift", "reason": "drawing: the sky's cloud drift wraps every 3 tiles of pixels, a length"}
+  {"file": "63-house.js", "literal": "TILE * 3", "decl": "drift", "reason": "drawing: the sky's cloud drift wraps every 3 tiles of pixels, a length"},
+  {"file": "64-impact.js", "literal": "at(4, 0)", "decl": "mid", "reason": "the self-test reads the wave's lift 4 tiles out from its centre: an offset, not a position"},
+  {"file": "64-impact.js", "literal": "at(6, 0)", "decl": "far", "reason": "the self-test reads the wave's lift 6 tiles out from its centre: an offset, not a position"},
+  {"file": "64-impact.js", "literal": "at(8, 0)", "decl": "rim", "reason": "the self-test reads the wave's lift 8 tiles out from its centre: an offset, not a position"},
+  {"file": "64-impact.js", "literal": "at(9, 0)", "decl": "out", "reason": "the self-test reads the wave's lift 9 tiles out from its centre: an offset, not a position"},
+  {"file": "64-impact.js", "literal": "64", "line": 433, "reason": "the self-test's bomb: a 64 px blast radius, not a position"}
 ]

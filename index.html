@@ -32597,7 +32597,7 @@ HOOKS.selfTest.push((check, F, h) => {
     const mech0 = player.mech, up0 = player.dozerUp, r0 = player.r, sp0 = player.speed, comp0 = player.companion;
     h.peace(true); closePanel();
     if (typeof SETTINGS !== 'undefined') SETTINGS.set('shake', true);
-    const o = h.openSpot(58, 36); F.tp(o.x, o.y);
+    const o = h.openSpot(ATLAS.world.tx(58), ATLAS.world.ty(36)); F.tp(o.x, o.y);
     const box = (cx, cy, r, fn) => { for (let ty = cy - r - 1; ty <= cy + r + 1; ty++) for (let tx = cx - r - 1; tx <= cx + r + 1; tx++) fn(tx, ty); };
     const withTime = fn => { const t = time; try { return fn(); } finally { time = t; } };
     const setShake = v => { if (typeof SETTINGS !== 'undefined') SETTINGS.set('shake', v); };
@@ -32830,7 +32830,7 @@ HOOKS.selfTest.push((check, F, h) => {
         player.mech = null; player.dozerUp = up0; player.r = r0; player.speed = sp0; player.companion = comp0; clearWaves();
         let ramOk = false, ramInfo = { hasBeast: !!window.BEAST };
         if (window.BEAST) {
-          const t2 = h.openSpot(58, 36); F.tp(t2.x, t2.y);
+          const t2 = h.openSpot(ATLAS.world.tx(58), ATLAS.world.ty(36)); F.tp(t2.x, t2.y);
           const target = { type: 'goblin', dead: false, hp: 900, maxHp: 900, x: player.x + 44, y: player.y, r: 12, stunT: 0, state: 'idle', angry: false, hurtT: 0, home: { x: player.x + 44, y: player.y } };
           monsters.push(target);
           player.mech = { hp: 300, maxHp: 300, kind: 'beast' }; player.r = 26; player.speed = 100; player.facing = { x: 1, y: 0 }; player.attackCd = 0; player.attackT = 0;
@@ -32853,7 +32853,7 @@ HOOKS.selfTest.push((check, F, h) => {
       { clearWaves();
         let quakeOk = false, quakeInfo = { hasRiding: !!window.RIDING };
         if (window.RIDING) {
-          const q = h.openSpot(58, 36); F.tp(q.x, q.y);
+          const q = h.openSpot(ATLAS.world.tx(58), ATLAS.world.ty(36)); F.tp(q.x, q.y);
           player.companion = null;
           // a machine with no kind is the walker
           player.mech = { hp: 110, maxHp: 110 }; player.r = 22; player.facing = { x: 1, y: 0 };
