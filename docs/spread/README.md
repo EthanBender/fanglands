@@ -93,9 +93,9 @@ such tile and `frame-codemod` refuses it, and also refuses any line whose litera
 | Overlap | Old tiles | Decided | Open question |
 |---|---|---|---|
 | quarry / thistledown | 70..72 x 12..16 | the cow pen 72..80 x 14..21 is thistledown (OWNERS; spec section 2 lists the pens under thistledown) | the rest of the strip (70..72 x 12..13, 70..71 x 14..16) |
-| dock / gull_isle | 168..171 x 8..20 | 170,13 is dock (the port `dock.boat2`, from the spec's dock row) | Gull Isle's mooring in 26-boats `LOC.gull` (boat 170,13, lantern 171,12, planks 171..172 x 12..14, Harl 172,13, landing 173,13) must move as one: either all dock (gull_isle x0 = 173, or OWNERS) or all gull_isle (dock x1 = 169, and `dock.boat2` moved to gull_isle) |
+| dock / gull_isle | 168..171 x 8..20 | Gull Isle's mooring 170..171 x 12..14 is gull_isle (OWNERS; the spec author's decision, Stage 2): 26-boats `LOC.gull` (boat 170,13, lantern 171,12, planks 171..172 x 12..14, Harl 172,13, landing 173,13) moves as one with the isle; the port `dock.boat2` became `gull_isle.boat` | the rest of the strip |
 | dock / camp | 156..161 x 17..20 | none | which place owns this corner |
-| thistledown / hollowford | 120..141 x 59..61 | none | the south pond 134,60: spec section 2 lists it under BOTH thistledown (-> 191,79) and hollowford (-> 220,113) |
+| thistledown / hollowford | 120..141 x 59..61 | the south pond and its shore 128..140 x 59..61 is thistledown (OWNERS; the spec author's decision, Stage 2: 02-world draws it in Thistledown's frame) | the rest of the strip (120..127 x 59..61, 141 x 59..61) |
 | graveyard / deepholm_rock | 6..19 x 72..73 | the gate 13,72 is graveyard (the port `graveyard.gate`) | the rest of the strip |
 | wren / deepholm_rock | 25..26 x 73..83 | none | which place owns this strip |
 | warden / stone_circle | 54..66 x 90..92 | the gate 60,96 and post 60,95 lie outside it; nothing decided | which place owns this strip |

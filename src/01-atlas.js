@@ -296,6 +296,8 @@
   // tools/anchor-of.mjs and tools/frame-codemod.mjs until a human decides (docs/spread/README.md lists the open ones).
   const OWNERS = [
     { box: [72, 14, 80, 21], id: 'thistledown', why: 'the cow pen 72..80 x 14..21: section 2 lists it under thistledown, not quarry' },
+    { box: [128, 59, 140, 61], id: 'thistledown', why: "the south pond and its sandy shore (centre 134,60, 02-world's second pond, drawn in Thistledown's frame): the spec author's decision; section 2 had listed it under both" },
+    { box: [170, 12, 171, 14], id: 'gull_isle', why: "Gull Isle's mooring (26-boats LOC.gull: the boat 170,13, the lantern 171,12, the planks 171..172 x 12..14) moves as one with the isle: the spec author's decision" },
   ];
 
   // ---------- the ports (~100): doors, gates, road ends and named spots ----------
@@ -315,7 +317,7 @@
     'thistledown.west_lane_n': ['thistledown', 84, 33], 'thistledown.west_lane_s': ['thistledown', 84, 60], 'thistledown.blood_portal': ['thistledown', 129, 21],
     'camp.west_gap': ['camp', 147, 30], 'camp.walker': ['camp', 152, 30], 'camp.cage': ['camp', 148, 34], 'camp.climb': ['camp', 158, 30],
     'camp.shed_door': ['camp', 147, 44], 'camp.shed_step': ['camp', 148, 44], 'camp.dozer_spawn': ['camp', 146, 38], 'camp.south': ['camp', 153, 40],
-    'dock.planks': ['dock', 164, 14], 'dock.land': ['dock', 163, 14], 'dock.boat': ['dock', 167, 14], 'dock.boat2': ['dock', 170, 13],
+    'dock.planks': ['dock', 164, 14], 'dock.land': ['dock', 163, 14], 'dock.boat': ['dock', 167, 14], 'gull_isle.boat': ['gull_isle', 170, 13],
     'gull_isle.pete': ['gull_isle', 181, 14], 'ironclad_isle.hull': ['ironclad_isle', 188, 46],
     'far_shore.strait': ['far_shore', 200, 30], 'far_shore.landing': ['far_shore', 206, 30], 'far_shore.city_gate': ['far_shore', 212, 30],
     'far_shore.lab_door': ['far_shore', 247, 41], 'far_shore.lab_step': ['far_shore', 247, 42], 'far_shore.blood_portal': ['far_shore', 218, 43],
@@ -577,16 +579,16 @@
     check(PF + "a frame answers in every shape the conversions use (p, pt, pts, rect, box, inOld) and keeps a rect's other fields; an unknown place throws", shapes && threw, { shapes, threw });
     // helpers
     const sp = port('thistledown.square'), reserved = port('old_bridge.span'), hfBox = box('hollowford'), g = guards().find(q => q.id === 'hollowford');
-    const smallest = anchorOf(134, 60), ow = oldToNew(140, 80), none = oldToNew(60, 70), nw = oldToNewWorld(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
+    const smallest = anchorOf(158, 18), ow = oldToNew(140, 80), none = oldToNew(60, 70), nw = oldToNewWorld(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
     check(PF + 'port, box, guards, anchorOf (the smallest box wins), oldToNew (null on open land) and every track resolve; a reserved place has no box or port before 4a',
       JSON.stringify(sp) === '[112,33]' && reserved === null && box('old_bridge') === null && JSON.stringify(hfBox) === '[120,59,160,96]' && g && g.x0 === hfBox[0] - ANCHORS.hollowford.guard && g.y1 === hfBox[3] + ANCHORS.hollowford.guard &&
-      smallest && smallest.id === 'hollowford' && smallest.holders.includes('thistledown') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(nw) === '[60,70]' && trackOk,
+      smallest && smallest.id === 'dock' && smallest.holders.includes('camp') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(nw) === '[60,70]' && trackOk,
       { sp, reserved, hfBox, g, smallest, ow, none, trackOk });
     // an overlap point is flagged until a human decides it; an OWNERS rect or a port at that exact point decides it
-    const pen = anchorOf(72, 14), gate = anchorOf(13, 72), open = anchorOf(134, 60), alone = anchorOf(140, 80);
-    check(PF + 'a point inside two old boxes is an overlap a human decides (134,60), unless an OWNERS rect (the cow pen 72,14: thistledown, not the smaller quarry) or a port at that point (graveyard.gate 13,72) decides it',
-      open.overlap === true && pen.id === 'thistledown' && pen.decided === 'owner' && !pen.overlap && gate.id === 'graveyard' && gate.decided === 'port' && !gate.overlap && alone.overlap === false && alone.decided === null,
-      { open, pen, gate, alone });
+    const pen = anchorOf(72, 14), gate = anchorOf(13, 72), open = anchorOf(158, 18), alone = anchorOf(140, 80), pond = anchorOf(134, 60), moor = anchorOf(170, 13);
+    check(PF + 'a point inside two old boxes is an overlap a human decides (the dock / camp corner 158,18), unless an OWNERS rect (the cow pen 72,14 and the south pond 134,60: thistledown, not the smaller quarry or hollowford; the Gull Isle mooring 170,13: gull_isle, not the smaller dock) or a port at that point (graveyard.gate 13,72) decides it',
+      open.overlap === true && pen.id === 'thistledown' && pen.decided === 'owner' && !pen.overlap && pond.id === 'thistledown' && pond.decided === 'owner' && moor.id === 'gull_isle' && moor.decided === 'owner' && gate.id === 'graveyard' && gate.decided === 'port' && !gate.overlap && alone.overlap === false && alone.decided === null,
+      { open, pen, gate, alone, pond, moor });
     // TRACKS hold today's values: the cave road ends where 02-world lays it, and the river is 39's 18 points
     const cave = track('road_cave'), riv = track('river');
     check(PF + "TRACKS hold today's values (the cave road from the cave mouth by the signpost to the lane outside the west gate; 18 river points from the pond to the sea)",
