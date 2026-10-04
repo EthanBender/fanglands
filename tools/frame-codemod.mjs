@@ -9,6 +9,8 @@
 //   rect   { x0, y0, x1, y1 }        -> each number through .x / .y               (both corners must name the same place)
 //   call   setTile(N, N, ...) etc.   -> the two numbers through .x / .y
 //   compare  x >= 142                -> x >= ATLAS.frame('a').x(142), ONLY with --as <anchor> (one axis names no place)
+// Calls it does not know (pen(72, 14, ...), rect(171, 12, ...), regionAt(150, 160): literals.mjs's 'gcall') and named
+// coordinates (const X = 112 later used as a tile: 'decl') are always REFUSED and listed, never left bare silently.
 // The place is tools/anchor-of.mjs's answer for the point (the smallest old box; "world" when none holds it).
 // It REFUSES, and changes nothing there, every literal it cannot classify: a tie between two boxes, a point inside two
 // boxes that no OWNERS rect or port decides (an overlap), a line whose literals name two places, a call with one number,
@@ -78,6 +80,10 @@ for (const h of hits) {
     const axis = /x/.test(nm) && !/y/.test(nm) ? 'x' : /y/.test(nm) && !/x/.test(nm) ? 'y' : null;
     if (!axis) { refuse(h, 'cannot tell the axis of ' + nm); continue; }
     edits.push({ s: node.start, e: node.end, text: wrap(as, axis, node), h, id: as });
+  } else if (h.kind === 'gcall') {
+    refuse(h, 'a call tools/literals.mjs does not know (' + h.literal.split('(')[0] + '): its numbers may be a tile, a rect or a size; convert by hand');
+  } else if (h.kind === 'decl') {
+    refuse(h, 'a named coordinate (its name is a tile argument later): wrap the declaration by hand, in the place it names');
   } else {
     refuse(h, h.kind === 'tc' ? 'tc(N) is one axis and names no place: convert by hand' : 'N * TILE is one axis and names no place: convert by hand');
   }

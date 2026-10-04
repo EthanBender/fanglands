@@ -6,8 +6,11 @@
 //   point      { x: N, y: N } / { tx, ty }    an object whose x and y (or tx and ty) are numbers
 //   rect       { x0, y0, x1, y1 }             any of the four as a number
 //   call       setTile / tileAt / changeTile / tp / openSpot / bfs / walkTo / goAdjacent / face / idx / inMap (N, N, ...)
+//   gcall      any OTHER call whose first two arguments are map numbers (pen, rect, regionAt, useAt, near ...), bar canvas,
+//              Math, colour, sound, timer, dice and string helpers (NOT_MAP)
 //   tc         tc(N)
 //   tile       N * TILE, TILE * N
+//   decl       const X = 112 where X is later a tile argument (setTile(X, Y), tc(X), X * TILE, any call's first two)
 //   compare    x >= 142, ty <= 40 ... a number of 10 or more in the map, against a coordinate-named side
 // A literal inside a frame call (F.x(112), F.p(..), ATLAS.world.tx(..), ATLAS.port(..)) is wrapped, so it is not counted.
 //
@@ -81,6 +84,18 @@ export function walk(n, f, parent = null, anc = []) {
 }
 const FRAME_METHODS = new Set(['x', 'y', 'tx', 'ty', 'p', 'pt', 'pts', 'rect', 'box', 'ix', 'iy', 'pin', 'port', 'frame', 'track', 'inOld']);
 const CALLS = new Set(['setTile', 'tileAt', 'changeTile', 'tp', 'openSpot', 'bfs', 'walkTo', 'goAdjacent', 'face', 'idx', 'inMap', 'safeSpot']);
+// Any OTHER call whose first two arguments are both numbers in the map is counted too (kind 'gcall': pen(72, 14, ...),
+// rect(171, 12, 172, 14), regionAt(150, 160), useAt(62, 6), near(152, 30, 2) ...), except these, which never take a map
+// tile: canvas drawing, Math, colours, sound, timers, dice, strings and arrays.
+const NOT_MAP = new Set(['fillRect', 'strokeRect', 'clearRect', 'arc', 'arcTo', 'moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo', 'ellipse',
+  'fillText', 'strokeText', 'drawImage', 'translate', 'scale', 'rotate', 'setTransform', 'transform', 'createLinearGradient', 'createRadialGradient',
+  'createConicGradient', 'getImageData', 'putImageData', 'createImageData', 'isPointInPath', 'addColorStop', 'setLineDash',
+  'rgba', 'rgb', 'hsl', 'hsla', 'shade', 'mix', 'lerp', 'clamp', 'tone', 'noise', 'sfx', 'beep', 'setTimeout', 'setInterval',
+  'rnd', 'rand', 'randInt', 'rint', 'mulberry32', 'waitStage', 'fromCharCode',
+  'max', 'min', 'pow', 'atan2', 'hypot', 'round', 'floor', 'ceil', 'abs', 'sqrt', 'parseInt', 'Number', 'String', 'Array']);
+// array and string methods: never a tile as a method (a.fill(0, 4)), but a bare helper of the same name may be (fill(139, 66, ...))
+const NOT_MAP_METHOD = new Set(['slice', 'substr', 'substring', 'splice', 'padStart', 'padEnd', 'toFixed', 'repeat', 'fill', 'includes', 'indexOf', 'at', 'set', 'get']);
+const CANVAS_OBJ = /^(g|ctx|dg|sg|c|cx|gg|g2|pg|mg|tg|octx|mctx|tctx|nctx|ctx2|ctx2d)$/;
 const num = n => n && n.type === 'Literal' && typeof n.value === 'number';
 const neg = n => n && n.type === 'UnaryExpression' && n.operator === '-' && num(n.argument);
 const nameOf = n => n.type === 'Identifier' ? n.name : n.type === 'MemberExpression' && !n.computed ? n.property.name : null;
@@ -129,6 +144,12 @@ export function scanSource(src, opts = {}) {
         if ((!num(a) || inMapX(a.value)) && (!num(b) || inMapY(b.value)) && (num(a) ? a.value : 0) + (num(b) ? b.value : 0) >= 2) add(n, 'call', num(a) ? a.value : null, num(b) ? b.value : null, [a, b].filter(num));
       }
       if (name === 'tc' && c.type === 'Identifier' && n.arguments.length === 1 && num(n.arguments[0]) && inMapX(n.arguments[0].value)) add(n, 'tc', null, null, [n.arguments[0]]);
+      // any other call with a map tile as its first two arguments (a helper the list above does not know)
+      const canvas = c.type === 'MemberExpression' && ((c.object.type === 'Identifier' && (CANVAS_OBJ.test(c.object.name) || c.object.name === 'Math' || c.object.name === 'HK')) || NOT_MAP_METHOD.has(name));
+      if (name && !CALLS.has(name) && name !== 'tc' && !NOT_MAP.has(name) && !canvas && n.arguments.length >= 2 && num(n.arguments[0]) && num(n.arguments[1])) {
+        const a = n.arguments[0], b = n.arguments[1];
+        if (inMapX(a.value) && inMapY(b.value) && Math.max(a.value, b.value) >= 2 && a.value + b.value >= 4) add(n, 'gcall', a.value, b.value, [a, b]);
+      }
     }
     if (n.type === 'BinaryExpression' && n.operator === '*') {
       const isT = e => e.type === 'Identifier' && e.name === 'TILE';
@@ -142,6 +163,28 @@ export function scanSource(src, opts = {}) {
       }
     }
   });
+  // A named coordinate: `const X = 112, Y = 49; setTile(X, Y)`. A declaration of a whole map number (10 or more) whose name
+  // is then a tile argument (setTile and the other CALLS, any call's first two arguments, tc(NAME), NAME * TILE) is counted
+  // as kind 'decl' at the declaration, for the hand pass (names are matched without scopes: an over-count, never a miss).
+  { const decls = new Map();
+    walk(ast, n => { if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && num(n.init) && Number.isInteger(n.init.value * 2) && n.init.value >= 10 && n.init.value <= W - 1) { if (!decls.has(n.id.name)) decls.set(n.id.name, []); decls.get(n.id.name).push(n.init); } });
+    if (decls.size) {
+      const used = new Set();
+      const isT = e => e && e.type === 'Identifier' && e.name === 'TILE';
+      walk(ast, (n, parent, anc) => {
+        if (n.type === 'CallExpression' && wrapped([n])) return false;
+        if (n.type === 'CallExpression') {
+          const c = n.callee, name = c.type === 'Identifier' ? c.name : c.type === 'MemberExpression' && !c.computed ? c.property.name : null;
+          const canvas = c.type === 'MemberExpression' && ((c.object.type === 'Identifier' && (CANVAS_OBJ.test(c.object.name) || c.object.name === 'Math' || c.object.name === 'HK')) || NOT_MAP_METHOD.has(name));
+          if (!name || canvas || NOT_MAP.has(name)) return;
+          const args = name === 'tc' ? n.arguments.slice(0, 1) : n.arguments.slice(0, 2);
+          for (const a of args) if (a.type === 'Identifier' && decls.has(a.name)) used.add(a.name);
+        }
+        if (n.type === 'BinaryExpression' && n.operator === '*') for (const [a, b] of [[n.left, n.right], [n.right, n.left]]) if (isT(b) && a.type === 'Identifier' && decls.has(a.name)) used.add(a.name);
+      });
+      for (const nm of used) for (const init of decls.get(nm)) add(init, 'decl', null, null, [init]);
+    }
+  }
   return out.sort((a, b) => a.start - b.start);
 }
 
