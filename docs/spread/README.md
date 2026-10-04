@@ -6,8 +6,9 @@ make and read. Nothing here is loaded by the game.
 | File | Made by | What it is |
 |---|---|---|
 | `baseline-fingerprint.json` | `node tools/fingerprint.mjs index.html --out docs/spread/baseline-fingerprint.json --from "master <sha>"` | The fingerprint of master at the start of the stage: one hash per table in plain sight, and the tables themselves gzipped (for `--diff`'s entry lists). Regenerated after every peer merge, before any conversion goes on top of it. |
-| `inventory.json` | `node tools/literals.mjs --inventory` | Every bare coordinate-shaped literal in src/, with file, line, column, the literal and its guessed anchor. |
-| `converted.json` | by hand, one file per Stage 1-3 commit | The files the build's literals gate checks. Empty until Stage 1. |
+| `inventory.json` | `node tools/literals.mjs --inventory` | Every bare coordinate-shaped literal in src/ and tools/, with file, line, column, the literal and its guessed anchor; `held` names the peer branch of a held file, `outsideHeld` counts the rest (0 from Stage 3 on). |
+| `converted.json` | by hand, one file per Stage 1-3 commit | The files converted (or proved to hold no position), one per commit. Since Stage 3 the gate is repo-wide, so this is the record of what was done, not the list the gate reads. |
+| `held.json` | by hand (Stage 3 on) | Files an open peer branch is editing (`{ file, branch, reason }`): the repo-wide gate lets their bare literals wait until that branch merges, says so on every build, and names one that has none left. |
 | `literals-allow.json` | by hand | Literals the gate lets through (instance-local and UI numbers), each with a reason. An entry with a `literal` is pinned by `decl` (the const, function or property it sits in) or `line`; an unpinned one matches nothing and fails the gate. |
 | `strict-allow.json` | by hand (Stage 1 on) | Frame points the strict report may log (relative geometry, such as the rim notch), each with a reason. |
 
@@ -27,7 +28,15 @@ in an update hook, a quest handler, draw code or a test is caught, not only one 
 `fingerprint.mjs --diff` reads the same report for load-time points. The in-game self-test checks only that logging
 works; whether an entry is allowed is the runners' question.
 
-`build.sh` runs `literals.mjs --gate` after the syntax check; with `converted.json` empty it does nothing (and needs no acorn).
+`build.sh` runs `literals.mjs --gate` after the syntax check. Since Stage 3 the gate is REPO-WIDE: every file of src/ and
+tools/ (131 today) must hold 0 bare coordinates outside `literals-allow.json`, whether `converted.json` names it or not;
+only a file in `held.json` may wait for its peer branch.
+
+**The tools** (ADDENDUM A.2) are read like the game: a tool file is named `tools/<file>` in `converted.json` and the
+allow list. In a tool the counter also reads game code handed to a game as text (`R(A, \`FANGLANDS.tp(24, 37)\`)`,
+`ev(g, '...')`, `page.evaluate(\`...\`)`, reported at its place in the tool), a tile call on a game handle
+(`openSpot(A, 60, 30)`) and a named spot (`['dock landing', 164, 14]`). A tool reads the Atlas inside the game it drives:
+`A.ATLAS.world.tx(40)`, `A.ATLAS.frame('signpost').p(64, 30)`, or `ATLAS.port(...)` inside `page.evaluate`.
 
 Stage 0 proof of the codemod: in a scratch copy, `frame-codemod --write` over 69-axestump, 57-townwall, 34-food, 24-dwarves
 and 02-world (221 literals converted, 75 refused for the hand pass) built and gave a fingerprint identical to the baseline

@@ -1,0 +1,4 @@
+[
+  {"file": "75-coop.js", "branch": "feat/shared-2", "reason": "server-run instance monsters: six commits on feat/shared-2 edit 75-coop; converted after it merges (9 bare: one open spot by the capital, h.openSpot(70, 60), and eight tile distances to allow-list)"},
+  {"file": "tools/mmo-sim.js", "branch": "feat/shared-2", "reason": "feat/shared-2 edits tools/mmo-sim.js; converted after it merges (59 bare: the knights' stands at the lair gate and circle and in the fields, the War Shed valve (instance-local), and the contract's rate-limit pairs such as [1, 3], which are not places)"}
+]

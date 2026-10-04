@@ -25,8 +25,9 @@
 //
 //   node tools/literals.mjs [files...]       counts per file (all of src/ and tools/ when no file is named)
 //   node tools/literals.mjs --inventory      writes docs/spread/inventory.json: { file, line, col, literal, kind, guess }
-//   node tools/literals.mjs --gate           the build's gate: every file in docs/spread/converted.json must have 0
-//                                            literals outside docs/spread/literals-allow.json; exit 1 otherwise
+//   node tools/literals.mjs --gate           the build's gate, REPO-WIDE: every file of src/ and tools/ must have 0
+//                                            literals outside docs/spread/literals-allow.json, bar a file an open peer
+//                                            branch holds (docs/spread/held.json); exit 1 otherwise
 // literals-allow.json: [{ file, literal?, line?, decl?, reason }] — no literal/line/decl allows the whole file (an
 // instance's own map); `decl` alone allows everything inside that named declaration (01-atlas's own ANCHORS table);
 // `literal` matches the source text (spaces ignored) and MUST be pinned by `decl` (the declaration it sits in: the
@@ -325,19 +326,30 @@ export function scanFile(file, allow = allowList(), T = null) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2), files = argv.filter(a => !a.startsWith('--'));
   if (argv.includes('--gate')) {
-    const cf = path.join(SPREAD, 'converted.json');
-    const converted = fs.existsSync(cf) ? JSON.parse(fs.readFileSync(cf, 'utf8')) : [];
-    const list = (Array.isArray(converted) ? converted : converted.files || []).map(f => /^tools\//.test(f) ? f : path.basename(f));
-    if (!list.length) process.exit(0);   // nothing converted yet: the gate has nothing to hold
-    const allow = allowList(), T = atlasTables(); let bad = 0;
+    // REPO-WIDE (Stage 3): every file of src/ and tools/ is held to 0 bare coordinates outside the allow list, whether
+    // converted.json names it or not. The one way out is docs/spread/held.json: a file an open peer branch is editing
+    // ([{ file, branch, reason }]), converted after that branch merges; the gate lists each one it lets wait, and names
+    // a held file that has no bare literal left (it can leave the list) or that no longer exists.
+    const rd = f => { const p = path.join(SPREAD, f); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : []; };
+    const norm = f => /^tools\//.test(f) ? f : path.basename(f);
+    const converted = rd('converted.json'), list = (Array.isArray(converted) ? converted : converted.files || []).map(norm);
+    const held = new Map(rd('held.json').map(h => [norm(h.file), h]));
+    const allow = allowList(), T = atlasTables(); let bad = 0, waiting = 0;
     for (const a of allow) if (unpinned(a)) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for ${JSON.stringify(a.literal)} has no decl or line: pin it to the declaration (or line) it allows`); }
-    for (const f of list) {
-      if (!fs.existsSync(fileOf(f))) { console.error(`literals gate: docs/spread/converted.json names ${f}, which is not in ${isTool(f) ? 'tools/' : 'src/'}`); bad++; continue; }
-      const r = scanFile(f, allow, T);
-      for (const h of r.bare) { bad++; console.error(`${isTool(f) ? f : 'src/' + f}:${h.line}:${h.col}: bare ${h.kind} ${h.literal} — wrap it: ATLAS.frame('${h.guess && h.guess !== 'world' ? h.guess : '<place>'}') or ATLAS.world`); }
+    for (const f of list) if (!fs.existsSync(fileOf(f))) { console.error(`literals gate: docs/spread/converted.json names ${f}, which is not in ${isTool(f) ? 'tools/' : 'src/'}`); bad++; }
+    for (const [f, h] of held) {
+      if (!fs.existsSync(fileOf(f))) { console.error(`literals gate: docs/spread/held.json names ${f}, which does not exist`); bad++; }
+      else if (list.includes(f)) { console.error(`literals gate: ${f} is both converted (converted.json) and held (held.json): take it off held.json`); bad++; }
+      else if (!h.branch || !h.reason) { console.error(`literals gate: docs/spread/held.json's entry for ${f} needs its branch and a reason`); bad++; }
     }
-    if (bad) { console.error(`literals gate: ${bad} bare map coordinate${bad > 1 ? 's' : ''} in converted files (docs/spread/converted.json). Wrap each in its place's frame, or add it to docs/spread/literals-allow.json with a reason.`); process.exit(1); }
-    console.log(`literals gate: ${list.length} converted file${list.length > 1 ? 's' : ''}, 0 bare coordinates`);
+    const all = sourceFiles();
+    for (const f of all) {
+      const r = scanFile(f, allow, T), name = isTool(f) ? f : 'src/' + f;
+      if (held.has(f)) { if (r.bare.length) { waiting += r.bare.length; console.log(`literals gate: ${name} waits for ${held.get(f).branch} (${r.bare.length} bare, docs/spread/held.json)`); } else console.log(`literals gate: ${name} is held (docs/spread/held.json) but has no bare coordinate left: it can leave held.json`); continue; }
+      for (const h of r.bare) { bad++; console.error(`${name}:${h.line}:${h.col}: bare ${h.kind} ${h.literal} — wrap it: ATLAS.frame('${h.guess && h.guess !== 'world' ? h.guess : '<place>'}') or ATLAS.world`); }
+    }
+    if (bad) { console.error(`literals gate: ${bad} bare map coordinate${bad > 1 ? 's' : ''} or list fault${bad > 1 ? 's' : ''} in src/ and tools/. Wrap each in its place's frame, or add it to docs/spread/literals-allow.json with a reason.`); process.exit(1); }
+    console.log(`literals gate (repo-wide): ${all.length} files of src/ and tools/ (${list.length} in converted.json), 0 bare coordinates${held.size ? `; ${held.size} held for a peer branch (${waiting} bare, docs/spread/held.json)` : ''}`);
     process.exit(0);
   }
   const allow = allowList(), T = atlasTables(), rows = [];
@@ -347,12 +359,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     rows.push({ file: f, bare: r.bare, allowed: r.allowed.length });
   }
   if (argv.includes('--inventory')) {
-    const inv = [];
-    for (const r of rows) for (const h of r.bare) inv.push({ file: r.file, line: h.line, col: h.col, literal: h.literal, kind: h.kind, guess: h.guess });
+    const inv = [], hf = path.join(SPREAD, 'held.json'), held = new Map((fs.existsSync(hf) ? JSON.parse(fs.readFileSync(hf, 'utf8')) : []).map(h => [/^tools\//.test(h.file) ? h.file : path.basename(h.file), h.branch]));
+    for (const r of rows) for (const h of r.bare) inv.push(Object.assign({ file: r.file, line: h.line, col: h.col, literal: h.literal, kind: h.kind, guess: h.guess }, held.has(r.file) ? { held: held.get(r.file) } : {}));
     fs.mkdirSync(SPREAD, { recursive: true });
     const byKind = {}; for (const h of inv) byKind[h.kind] = (byKind[h.kind] || 0) + 1;
-    fs.writeFileSync(path.join(SPREAD, 'inventory.json'), JSON.stringify({ about: 'bare coordinate-shaped literals in src/ and tools/ (tools/literals.mjs --inventory; a tool file is named tools/<name>); guess = the anchor tools/anchor-of.mjs names for a pair or point, world when no place box holds it, null for one axis alone', total: inv.length, byKind, files: rows.filter(r => r.bare.length).length, literals: inv }, null, 0).replace(/\},\{"file"/g, '},\n{"file"') + '\n');
-    console.log(`inventory: ${inv.length} literals in ${rows.filter(r => r.bare.length).length} files written to docs/spread/inventory.json (${Object.entries(byKind).map(([k, v]) => k + ' ' + v).join(', ')})`);
+    fs.writeFileSync(path.join(SPREAD, 'inventory.json'), JSON.stringify({ about: 'bare coordinate-shaped literals in src/ and tools/ (tools/literals.mjs --inventory; a tool file is named tools/<name>); guess = the anchor tools/anchor-of.mjs names for a pair or point, world when no place box holds it, null for one axis alone', total: inv.length, outsideHeld: inv.filter(h => !h.held).length, byKind, files: rows.filter(r => r.bare.length).length, literals: inv }, null, 0).replace(/\},\{"file"/g, '},\n{"file"') + '\n');
+    console.log(`inventory: ${inv.length} literals in ${rows.filter(r => r.bare.length).length} files written to docs/spread/inventory.json (${Object.entries(byKind).map(([k, v]) => k + ' ' + v).join(', ')}); ${inv.filter(h => !h.held).length} outside the files held for a peer branch (docs/spread/held.json)`);
   } else {
     for (const r of rows) if (r.bare.length || files.length) console.log(`${String(r.bare.length).padStart(5)}  ${r.file}${r.allowed ? `  (+${r.allowed} allowed)` : ''}`);
     console.log(`${String(total).padStart(5)}  total`);

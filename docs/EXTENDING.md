@@ -442,15 +442,16 @@ map number like `112` will be wrong after the move. Every overworld position is 
 - **Never wrapped**: sizes, radii, counts, durations, screen pixels, and an instance's own map (any map other than
   `'over'`). Those go in `docs/spread/literals-allow.json` with a one-line reason when the counter mistakes them for
   positions.
-- **The gate**: `build.sh` runs `node tools/literals.mjs --gate` over every file listed in `docs/spread/converted.json`.
-  A bare coordinate in a converted file fails the build with "wrap it: ATLAS.frame('<place>') or ATLAS.world". It counts
+- **The gate**: `build.sh` runs `node tools/literals.mjs --gate` over every file of `src/` and `tools/` (repo-wide since
+  Stage 3). A bare coordinate fails the build with "wrap it: ATLAS.frame('<place>') or ATLAS.world". It counts
   pairs, points, rects, tile calls, `tc(N)`, `N * TILE`, comparisons, a centre after a coordinate pair
   (`near(x, y, 66, 57, ...)`, `dist(x, y, 140, 76)`) and a distance to a place (`Math.hypot(x - 140, y - 76)`). Run
   `node tools/literals.mjs src/NN-file.js` to see what it counts. An allow entry with a `literal` must be pinned to its
   declaration (`"decl": "LAW_ARM_RANGE"`) or its `line`, so it never covers a new position elsewhere in the file.
 - **A new feature file is written in frames from the start** and is added to `docs/spread/converted.json` in the same
-  commit. The gate only reads the files that list names: a new file left off it is not checked at all (until Stage 3's
-  repo-wide gate), so its bare numbers would sit there unseen until the spread moves the land under them. A frame point far outside its own place (past the
+  commit. The gate is repo-wide (Stage 3): it reads every file of `src/` and `tools/`, listed or not, so a bare number in
+  a new file or a new tool fails the build. Only a file an open peer branch is editing may wait, in
+  `docs/spread/held.json`. A tool reads the Atlas inside the game it drives (`A.ATLAS.world.tx(40)`). A frame point far outside its own place (past the
   box + guard + 12) is logged by the strict report (`ATLAS.strict()`), which `tools/headless.js` and
   `tools/fingerprint.mjs` fail on unless `docs/spread/strict-allow.json` lists it.
 - **Proving nothing moved** (until the spread every frame, the world and every pin are the identity):
