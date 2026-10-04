@@ -143,5 +143,19 @@
   {"file": "33-goblincity.js", "literal": "m.y - 22", "line": 458, "reason": "the sticky bomb leaves the Gnasher's arm, pixels above its centre"},
   {"file": "33-goblincity.js", "literal": "[12, 12]", "line": 611, "reason": "drawing: rivet offsets inside a tile, in pixels"},
   {"file": "33-goblincity.js", "literal": "3 * TILE", "line": 724, "reason": "the self-test: the Gnasher stands within 3 tiles of its home, a distance"},
-  {"file": "33-goblincity.js", "literal": "2 * TILE", "line": 726, "reason": "the self-test sets the Gnasher 2 tiles from the knight: an offset, not a position"}
+  {"file": "33-goblincity.js", "literal": "2 * TILE", "line": 726, "reason": "the self-test sets the Gnasher 2 tiles from the knight: an offset, not a position"},
+  {"file": "35-night.js", "decl": "buildAfterlands", "reason": "instance-local (afterlands): the Afterlands' own map, built on its 60x40 grid"},
+  {"file": "35-night.js", "literal": "[30, 3]", "decl": "AF_ENTRY", "reason": "instance-local (afterlands): where the knight comes in"},
+  {"file": "35-night.js", "literal": "[30, 2]", "decl": "AF_EXIT", "reason": "instance-local (afterlands): the crypt door back out"},
+  {"file": "35-night.js", "literal": "[30, 8]", "decl": "AF_FIRE", "reason": "instance-local (afterlands): the fire"},
+  {"file": "35-night.js", "literal": "[46, 18]", "decl": "AF_COUNT", "reason": "instance-local (afterlands): Count Ashvane's spawn in the chapel"},
+  {"file": "35-night.js", "literal": "6 * TILE", "decl": "sight", "reason": "a zombie's sight: a range (6 tiles), not a position"},
+  {"file": "35-night.js", "literal": "7 * TILE", "decl": "sight", "reason": "a vampire's sight: a range (7 tiles), not a position"},
+  {"file": "35-night.js", "literal": "8 * TILE", "decl": "sight", "reason": "Count Ashvane's sight: a range (8 tiles), not a position"},
+  {"file": "35-night.js", "literal": "cy - 10", "decl": "drawDeadTree", "reason": "drawing: the dead tree's branches, pixels above the tile centre"},
+  {"file": "35-night.js", "literal": "20 * TILE", "line": 439, "reason": "the self-test clears drops within 20 tiles of its spot: a radius, not a position"},
+  {"file": "35-night.js", "literal": "30 * TILE", "line": 471, "reason": "the self-test clears drops within 30 tiles of Grubmarket's road: a radius, not a position"},
+  {"file": "35-night.js", "literal": "F.tp(30, 12)", "line": 510, "reason": "instance-local (afterlands): the self-test stands in the Afterlands before the Count"},
+  {"file": "35-night.js", "literal": "5 * TILE", "line": 510, "reason": "the self-test sets the Count 5 tiles from the knight: an offset, not a position"},
+  {"file": "35-night.js", "literal": "3 * TILE", "line": 511, "reason": "the self-test: the Count lands 3 tiles behind the knight, an offset"}
 ]
