@@ -98,7 +98,6 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
   - Captain Roderick, Dunstan, Warden Brann, the Master of Skills, Marlow, Hux and the two unnamed fliers (the winged porter and guard) are not in the sample: they wear the sample's own new-style default villager, not a drawing of their own. A drawing of their own is new art: it goes into the approved sample first (the owner's call), then the generator adds them.
   - In a crowd made on purpose (26 townsfolk walking about in the square at once) a frame costs about 0.2 to 0.6 ms more than master while their pictures are first made; the normal square measures the same as master. That is the price of making each picture once, and no player sees it. Standing loops are now 2 to 6 s long (up to 36 pictures a facing for a standing person, 12 before), inside the same cache (2400 pictures, 48 MB).
 - Monster look leftovers (2026-10-03; all 47 monster types in the approved look, live in 0d0788a):
-  - The knight's own machines (walker, dozer, beast pilots' seats) and the wreck tiles they leave still draw in the old look.
   - Some hit circles grew with the bigger pictures but were capped at 24 (walker, bulldozer, the yard twins, dustjaw). In one-tile gaps a capped circle can sit over the wall edge.
   - The Fang fight costs about 1 ms more per frame than before (mean 9.2/9.7 ms went to 10.2/11.5 ms). Eight bosses on one screen went from 8.5 to 10.1 ms. Common crowds are slightly faster than before.
   - The boss banners in the HUD still use the old emblems, not the new pictures.
