@@ -6,7 +6,7 @@
 //   node tools/sim-load.mjs --bots 1 --minutes 10      the one-knight case: one bot alone in Deepholm (Cohen playing alone)
 // online/.dev.vars must hold the local ADMIN_KEY and INVITE_CODE (git-ignored). The local runtime (wrangler 4.92's workerd) knows
 // compatibility dates up to 2026-05-22, so the local run says that date; the deployed Worker keeps its own. The bots sign up on a fresh local store, the
-// three plain instances are switched to 'world', and the bots split across them (8 Deepholm, 8 Aerie, 4 the coal mine). Each
+// two plain instances with monsters are switched to 'world', and the bots split across them (10 Deepholm, 10 Aerie). Each
 // bot talks like a game: hello with the world's Atlas, presence 8 a second while it walks (about 60% of the time) and 1 a
 // second while it stands, a ping every 25 s, and now and then a hit on a monster the world's mon showed it. Every 30 s the
 // parent page's GET /api/admin/sim is read for the tick times, the copies and sim_log. The isolate heap is read last,
@@ -39,7 +39,7 @@ if (!KEY || !INVITE) { console.error('online/.dev.vars needs ADMIN_KEY and INVIT
 if (!fs.existsSync(path.join(ROOT, 'online', 'src', 'sim', 'game.mjs'))) { console.error('run ./build.sh first'); process.exit(1); }
 const ATLAS = JSON.parse(fs.readFileSync(path.join(ROOT, 'online', 'src', 'atlas.json'), 'utf8'));
 const TILE = 48;
-const MAPS = BOTS === 1 ? [['deepholm', 1]] : [['deepholm', 8], ['aerie', 8], ['coalmine', 4]];
+const MAPS = BOTS === 1 ? [['deepholm', 1]] : [['deepholm', 10], ['aerie', 10]];   // (the coal mine has no monsters: never world-run)
 const KEEPER_STALE = 3000;   // room.js: the keeper path's alarm deadline after the keeper's last mon, plus 50 ms
 
 async function startWrangler() {
@@ -121,7 +121,7 @@ let code = 0;
 try {
   out.wrangler = (fs.readFileSync(W.log, 'utf8').match(/wrangler ([0-9.]+)/) || [])[1] || null;
   const st = await api('GET', '/api/status'); if (st.status !== 200) throw new Error('the local world did not answer: ' + JSON.stringify(st));
-  let r = await api('POST', '/api/admin/sim', { maps: { deepholm: 'world', aerie: 'world', coalmine: 'world' } }, KEY);
+  let r = await api('POST', '/api/admin/sim', { maps: { deepholm: 'world', aerie: 'world' } }, KEY);
   if (r.status !== 200) throw new Error('the switch: ' + JSON.stringify(r.data));
   const bots = [];
   let k = 0;
