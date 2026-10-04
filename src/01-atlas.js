@@ -351,7 +351,9 @@
   // ---------- the tracks: today's values (no readers yet); each point a port, a world point or an anchor point ----------
   // 39-worldblend's and 92-worldshape's ROADS (11 polylines), the NODES (92's 15; 39 reads the first 9), 39's RIVER,
   // 27-dragons' PATH and FARM_PATH, 25-elves' PATH, 24-dwarves' shaft lane and 26-boats' dock lanes. Points are tagged by
-  // the smallest old box that holds them (tools/anchor-of.mjs); the river is the stretched world's (§2), all 'w'.
+  // the smallest old box that holds them (tools/anchor-of.mjs); the river is the stretched world's (§2), bar its head: the
+  // first two points lie inside Miller's Pond (it leaves the pond's east shore), so they move with the pond (the jiggle
+  // found the channel left behind at the old shore when the pond moved alone).
   const P = id => ['port', id], w = (x, y) => ['w', x, y];
   const TRACKS = {
     road_cave: [P('cave.mouth'), P('signpost.sign'), ['thistledown', 84, 32]],
@@ -367,7 +369,7 @@
     shaft_lane: [['quarry', 54, 13], ['quarry', 54, 8], ['quarry', 55, 8], ['quarry', 55, 5], ['quarry', 57, 5]],
     nodes: [P('cave.mouth'), P('signpost.sign'), P('thistledown.west_gate'), P('dock.planks'), P('hollowford.heart'), P('warden.node'), P('fang_lair.node'),
       P('hollowford.south'), P('quarry.shaft'), P('wren.wren'), P('graveyard.grave'), ['pond', 38, 36], P('camp.walker'), P('sylvaris.node'), P('thistledown.square')],
-    river: [w(44, 38), w(47, 44), w(48, 50), w(52, 56), w(62, 58), w(72, 60), w(84, 60), w(94, 61), w(102, 59), w(110, 62), w(118, 60), w(124, 62),
+    river: [['pond', 44, 38], ['pond', 47, 44], w(48, 50), w(52, 56), w(62, 58), w(72, 60), w(84, 60), w(94, 61), w(102, 59), w(110, 62), w(118, 60), w(124, 62),
       w(128, 61), w(134, 60), w(140, 59), w(146, 57), w(154, 53), w(178, 47)],
   };
 
