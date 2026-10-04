@@ -16883,12 +16883,21 @@ window.PLACE_KIT = PLACE_KIT;
     const spawnG = new Uint8Array(MAP_W * MAP_H);
     const markSpawns = () => { spawnG.fill(0); for (const s of MONSTER_SPAWNS) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inMap(s.tx + dx, s.ty + dy)) spawnG[idx(s.tx + dx, s.ty + dy)] = 1; };
     markSpawns();
+    // roadD: the distance to the nearest road, exact within ROAD_REACH (the farthest any reader looks: addOk's 2.5; the river's
+    // bridges look 1.2). Each segment fills only its bounding box plus ROAD_REACH, not the whole map: a tile it leaves out is
+    // 3.5+ tiles off that segment, so the 99 it keeps (or another segment's distance) compares the same in every reader.
+    const ROAD_REACH = 2.5;
     const roadD = new Float32Array(MAP_W * MAP_H).fill(99);
-    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { let d = 99; for (const pl of ROADS) for (let s = 0; s < pl.length - 1; s++) d = Math.min(d, segDist(x, y, pl[s][0], pl[s][1], pl[s + 1][0], pl[s + 1][1])); roadD[idx(x, y)] = d; }
+    for (const pl of ROADS) for (let s = 0; s < pl.length - 1; s++) {
+      const [ax, ay] = pl[s], [bx, by] = pl[s + 1];
+      const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - ROAD_REACH)), x1 = Math.min(MAP_W - 1, Math.ceil(Math.max(ax, bx) + ROAD_REACH));
+      const y0 = Math.max(0, Math.floor(Math.min(ay, by) - ROAD_REACH)), y1 = Math.min(MAP_H - 1, Math.ceil(Math.max(ay, by) + ROAD_REACH));
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const d = segDist(x, y, ax, ay, bx, by), i = idx(x, y); if (d < roadD[i]) roadD[i] = d; }
+    }
     const free = (x, y) => inMap(x, y) && !hard[idx(x, y)];
     const near8 = (x, y, f) => N8.some(([dx, dy]) => f(at(x + dx, y + dy)));
     const wet = t => t === T.WATER || t === T.SAND || t === BRIDGE || t === DOCK;
-    const addOk = (x, y) => roadD[idx(x, y)] > 2.5 && !near8(x, y, wet); // where something solid may be added
+    const addOk = (x, y) => roadD[idx(x, y)] > ROAD_REACH && !near8(x, y, wet); // where something solid may be added
 
     // ---- 1. the coastline: land against water by (x − 162) + noise×8, coves and headlands on top, the old straight shore forgotten ----
     const cn = makeNoise(SEED + 1, 7);
