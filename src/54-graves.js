@@ -954,11 +954,14 @@
 
     // ---- 3. the whole night empties every grave, spread out, and dawn finds none ----
     { reset();
-      const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(34)); F.tp(o.x, o.y);
+      // (never on a gate, a fence or a wall: the patch round a grave is cleared to grass for the test and put back after,
+      // so the stand is one from which every grave below, near and far, has open ground round it)
+      const built = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = tileAt(x + dx, y + dy); if (t === T.GATE || t === T.FENCE || t === T.WALL || t === T.CWALL || t === T.HWALL || ('TOWN_WALL' in T && t === T.TOWN_WALL)) return true; } return false; };
+      const GRAVE_AT = [[5, 0], [7, 0], [5, 3], [8, -3], [9, 2], [25, 0], [27, 2], [26, -3]];
+      const layOk = (x, y) => GRAVE_AT.every(([dx, dy]) => inMap(x + dx, y + dy) && !buildingAt(x + dx, y + dy) && !built(x + dx, y + dy));
+      const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(34), layOk); F.tp(o.x, o.y);
       const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
       const was = [];
-      // (never on a gate, a fence or a wall: the patch round a grave is cleared to grass for the test and put back after)
-      const built = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = tileAt(x + dx, y + dy); if (t === T.GATE || t === T.FENCE || t === T.WALL || t === T.CWALL || t === T.HWALL || ('TOWN_WALL' in T && t === T.TOWN_WALL)) return true; } return false; };
       const put = (x, y, grade) => { if (!inMap(x, y) || buildingAt(x, y) || built(x, y)) return false; for (const k of clearPatch(x, y, 1)) was.push(k); return GRAVES.layMarker(x, y, grade); };
       // five within reach of the knight (one of them a headstone: a brute counts for two of the cap of six)
       const near = [[px + 5, py, 'cross'], [px + 7, py, 'grave'], [px + 5, py + 3, 'headstone'], [px + 8, py - 3, 'cross'], [px + 9, py + 2, 'grave']];
