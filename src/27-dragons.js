@@ -22,8 +22,11 @@
   const DW = ATLAS.world, WD = ATLAS.frame('warden'), FL = ATLAS.frame('fang_lair');
   const XY = ([x, y]) => ({ x, y }), rt = ([x, y]) => [Math.round(x), Math.round(y)];   // a world point as a whole tile
   // the whole south-west: its top is the row under the rim at the warden's gate and its east edge the column before the
-  // Ashfields / Jungle wall, both pinned seams that move with the warden (ATLAS.PINS rim and jungle_west), not open land
-  const AF = { x0: DW.tx(0), y0: Math.round(DW.pin('rim', DW.y(96), ATLAS.port('warden.gate')[0])), x1: DW.line('jungle_west', ATLAS.port('warden.gate')[1]) - 1, y1: DW.ty(139) };
+  // Ashfields / Jungle wall, both pinned seams that move with the warden (ATLAS.PINS rim and jungle_west), not open land.
+  // The wall is one column on its pin's taper, so the box (a bounding box: 92's outline trims it to the wall, row by
+  // row) reaches the wall's furthest column over its rows.
+  const AF = { x0: DW.tx(0), y0: Math.round(DW.pin('rim', DW.y(96), ATLAS.port('warden.gate')[0])), y1: DW.ty(139) };
+  AF.x1 = Math.max(...Array.from({ length: AF.y1 - AF.y0 + 1 }, (_, k) => DW.line('jungle_west', AF.y0 + k))) - 1;
   const FANG = FL.rect({ x0: 2, y0: 108, x1: 34, y1: 138 });               // The Fang's lair: another feature carves this; never touched here
   const APPROACH = FL.rect({ x0: 1, y0: 103, x1: 40, y1: 107 });           // kept as clear ash so the lair can always be reached from the east
   const FARM = WD.rect({ x0: 58, y0: 96, x1: 79, y1: 107 });               // no lava, rocks or dead trees on Dunstan's land

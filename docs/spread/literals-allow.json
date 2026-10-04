@@ -111,7 +111,7 @@
   {"file": "26-boats.js", "literal": "cy - 36", "decl": "drawPalm", "reason": "drawing: the palm's crown, pixels above the tile centre"},
   {"file": "27-dragons.js", "literal": "7 * TILE", "decl": "sight", "reason": "a dragon's sight: a range (7 tiles), not a position"},
   {"file": "27-dragons.js", "literal": "dragonDrops(60, 140, 1, 3)", "decl": "drops", "reason": "a green dragon's drop table (coins 60..140, scales 1..3): amounts, not a position"},
-  {"file": "27-dragons.js", "literal": "5 * TILE", "line": 318, "reason": "the fire breath's reach: a range (5 tiles), not a position"},
+  {"file": "27-dragons.js", "literal": "5 * TILE", "line": 321, "reason": "the fire breath's reach: a range (5 tiles), not a position"},
   {"file": "27-dragons.js", "literal": "[8, 16]", "decl": "dmg", "reason": "the fire breath's damage range, not a position"},
   {"file": "27-dragons.js", "literal": "cx - 14", "decl": "drDrawBones", "reason": "drawing: the bones' ribs, pixels left of the tile centre"},
   {"file": "27-dragons.js", "literal": "3 * TILE", "decl": "arm", "reason": "the self-test sets the dragon 3 tiles from the knight: an offset, not a position"},
