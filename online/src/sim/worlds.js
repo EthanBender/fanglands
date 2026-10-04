@@ -27,6 +27,9 @@
 // last saw them and it is not ticked, so with no other place running no timer stays armed and the Durable Object hibernates
 // as it does today. The first presence from any of them (or a knight arriving) ticks it again from where it stood; if the
 // object hibernated meanwhile, the copy is gone and the wake takes the map over again as after any nap (announce, below).
+// No copy is built while nobody on the map is playing (playing: a knight whose place the Room knows and whose game is not
+// silent), so a wake by anything else (a login, the parent page, another knight) leaves a resting place alone until its
+// knight plays again; and a copy told no knight at all is resting, never 'stale' (staleCheck).
 // A lone keeper's game whose page has the 'snap' capability is asked for one full snapshot when a copy starts reading it
 // (snap below), so a take-over from a knight alone keeps the monsters he chased, hurt or felled as they are on his screen.
 // Pure JavaScript.
@@ -80,8 +83,10 @@ export class Worlds {
   useHost(host) {
     this.host = host || null; this.loaded = !!host;
     this.announce();
-    // a map waiting for a copy is built now
-    if (host) for (const [map, g] of this.room.maps) if (this.modeOf(map) === 'world' && g.members.size && !this.v.has(map)) this.bootDue.set(map, this.now());
+    // a map waiting for a copy is built now, if a knight there is playing: one the Room knows only from his socket (a wake
+    // rebuilds the Room with no positions) or whose game is silent is not, so a place left resting is not rebuilt while
+    // nobody plays it; his first presence asks for the copy (presence, wanted)
+    if (host) for (const [map, g] of this.room.maps) if (this.modeOf(map) === 'world' && this.playing(map) && !this.v.has(map)) this.bootDue.set(map, this.now());
     this.room.arm();
   }
   // the World could not load the copy: every map stays with a knight's game (announced, as below)
@@ -134,11 +139,19 @@ export class Worlds {
   }
   sockFor(map) { return { send: str => { if (!this.host) return; let m = null; try { m = JSON.parse(str); } catch (e) { return; } this.host.deliver(map, m); }, close() { } }; }
 
-  // a map that should be world-run and has knights on it: its copy is built at the Room's next tick (never while anyone waits)
+  // a map that should be world-run and has a knight playing on it: its copy is built at the Room's next tick (never while
+  // anyone waits). Knights who are all resting (no known place, or a silent game) get no copy until one of them plays again.
   wanted(map) {
     const g = this.room.maps.get(map);
-    if (!g || !g.members.size || this.v.has(map) || this.modeOf(map) !== 'world') return;
+    if (!g || !g.members.size || this.v.has(map) || this.modeOf(map) !== 'world' || !this.playing(map)) return;
     if (!this.bootDue.has(map)) { this.bootDue.set(map, this.now()); this.room.arm(); }
+  }
+  // a real knight on the map whose place the Room knows and whose game is not silent
+  playing(map) {
+    const g = this.room.maps.get(map); if (!g) return false;
+    const now = this.now();
+    for (const k of g.members) if (!k.virtual && k.hello && k.x != null && k.y != null && !this.silentOf(k, now)) return true;
+    return false;
   }
   boot(map) {
     this.bootDue.delete(map);
@@ -234,6 +247,7 @@ export class Worlds {
     // a copy that has stopped ticking is noticed here, on a presence the Room is handling anyway (no alarm of its own)
     this.staleCheck(k.map);
     if (this.v.has(k.map)) this.tell(k.map);
+    else this.wanted(k.map);   // a world-run map with no copy: a knight playing there again asks for one (a no-op when due)
   }
   // the keeper's own snapshot, while a copy is reading it to take the map over. An empty one is a lone keeper's heartbeat: it
   // lists nothing because nobody else is near him, not because his monsters are gone, so it is not read (JOIN_WAIT finishes)
@@ -266,6 +280,10 @@ export class Worlds {
     this.quiet.set(map, q.join(','));
     // a parked copy whose map has a knight playing again (his presence, or a knight arriving) ticks again from where it stood
     if (this.host.isParked(map) && !this.allQuiet(map)) this.unpark(map);
+    // a copy that was told no knight (nobody there with a known place: it is resting, not ticking) and is told one now starts
+    // from here: its stillness was on purpose, so staleCheck counts from now
+    const c = this.host.copies.get(map), vk = this.v.get(map);
+    if (c && vk && !c.knights.size && list.length) vk.monAt = now;
     this.host.setKnights(map, list);
   }
   // every real knight on the map has gone silent (none at all is not 'all quiet': an emptied map goes as it always did)
@@ -296,11 +314,18 @@ export class Worlds {
     if (vk) { vk.monAt = this.now(); vk.parkedAt = null; }
     return true;
   }
+  // A world-run copy that has not ticked for STALE ms goes back to a knight, held, with a sim_log row. A copy that is still on
+  // purpose is not stale: parked, or told no knight (every knight there is one the Room knows only from his socket, so its
+  // loop has nothing to tick). Such a copy can even be dropped by the host (60 s with no knight told): the map then goes back
+  // to a knight quietly (no hold, no row), and his playing asks for a new copy, which takes it over as after any nap.
   staleCheck(map) {
     const vk = this.v.get(map);
     if (!vk || vk.state !== 'world' || this.host.isParked(map)) return false;
     const g = this.room.maps.get(map);
-    if (!g || !g.members.size || this.now() - vk.monAt <= STALE) return false;
+    if (!g || !g.members.size) return false;
+    const c = this.host.copies.get(map);
+    if (!c) { this.handBack(map, 'rest', false); this.wanted(map); return false; }
+    if (!c.knights.size || this.now() - vk.monAt <= STALE) return false;
     this.handBack(map, 'stale', true);
     return true;
   }
@@ -328,7 +353,9 @@ export class Worlds {
           // nothing until his first presence: a list filtered by no position would be empty, and an empty list from his
           // keeper tells his game that every monster it is holding up has gone
           if (!k.hello || k.x == null || k.y == null) continue;
-          this.room.send(k.sock, { t: 'mon', n: vk.name, list: this.viewOf(k).filter(k.name, k.x, k.y, rows), k: m.k, at: m.at });
+          const out = { t: 'mon', n: vk.name, list: this.viewOf(k).filter(k.name, k.x, k.y, rows), k: m.k, at: m.at };
+          if (num(m.standing) !== null) out.standing = m.standing;   // how many stand in the whole place (the plaque)
+          this.room.send(k.sock, out);
         }
         if (vk.ticks % REALM_EVERY === 0) this.writeRealm(map);
         continue;
