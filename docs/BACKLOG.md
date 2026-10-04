@@ -116,44 +116,36 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
   - A friend's long weapon swung while he faces away reaches into his name for the 0.22 s of the swing. The name is drawn over the weapon, so it stays readable; lifting every name clear of a swing would set all names about 12 px higher.
   - Facing down, a girl's braid hangs on her weapon side and the floating hand covers part of one ribbon loop. That is where the approved sample hangs it; on the shield side the shield would cover more. The braid shows in every helm (screenshot girl-down.png in ~/.fanglands/work/leftoverslooks/after).
   - In the royal mine's chamber, the raw or hot stone he carries between the forge and the golem is still drawn in front of him (91's drawCarry), not in a hand: his hand holds his weapon there (a SWING throws the stone). It needs an off-hand held thing; not part of this sweep.
-- Thistledown capital leftovers (reviewers' minor findings, 2026-10-03; the city is live):
-  - On the first walk in, Osric's 'Welcome to Thistledown!' tag appears in the same moment as the THISTLEDOWN region banner and sits right under it. The two boxes touch, and the child gets two 'Thistledown' messages stacked in the middle of the screen.
-  - At night Fountain Square is almost as bright as day. The 22 lamp pools of r 110, the fountain's r 90 and the pale paving wash out the night overlay. The lamps themselves show no visible glow around their heads. The town loses its night feel, even though Ambrose says 'get indoors or get your sword out'.
-  - Doors on the top wall are drawn at the roof's back edge, so from the street the inn, h6 and h7 look as if they have a door on top of the roof. A child walking the Smithy Lane or Rose Lane side has to guess that the door is round the back.
-  - C15 does not prove the street lamps light the screen. It calls HOOKS.nightLights directly, so a build where drawNight never reads the hook still passes.
-  - C20 claims ward banners never show within 3.2 s of the Thistledown banner, but the check passes with that rule removed. The walk from 86,32 to Fountain Square already takes about 5 s, so the rule never comes into play.
-  - An old-save change on ground where a new house now stands is kept, because FLOOR counts as OPEN ground. A mare a knight parked on master at 101,28 or 123,37 stays parked inside the new h5 or h1, and a bed or plank there stays in someone's house. Picking up a plank or springing a trap writes GRASS (06-systems.js:391,...
-  - At night the city makes town frames noticeably slower. Most of the cost is the extra radial-gradient light punches. This was measured on a Mac; it is not measured on an iPad yet.
-  - On a keyboard, E does not advance the dialog. A child pressing E repeatedly at the fountain throws 1 coin per press and stacks the lines behind the prompt, which stays on screen.
-  - The spec's C10 rule, every group has a walkable 4-neighbour, is relaxed. The 16-cell hedge row at 87..102,55, between the agility fence and the south wall, can never be reached or used.
-  - Two refund edge cases are wrong. tree_sapling and oak_sapling both place HOUSE_SAPLING, so a reverted oak sapling comes back as a tree sapling. When the pack and bank are both full, bankAdd fails and the item is lost with nothing said.
-  - 'Here, take the key.' But no key is given and nothing appears in the bag. A child will look for it. The quest text then says 'Ambrose gave you the key.'
-  - A knight at stage 6 or later never hears Ambrose's spec'd first-ever line ('I ring the bell at dawn and at dusk...'), because the story opens on the very first talk and sets ambroseMet. Also, 'belfry' (step 5) is a hard word for a ten-year-old.
-  - The comment says 'the seventeen buildings', but TOWN_IDS holds 16 ids, and C9's '17 town buildings' wording inherits the mismatch.
-  - The west bunting string runs diagonally across the High Street right at the gate mouth. Every knight walking in through the West Gate has the pennants drawn across his face. This is the first city view on a new game.
-  - The town guard standing beside the West Gate has his name tag and health bar cut off by the gate tower's cone. It reads 'wn guard · lv 12'.
-  - Two empty dirt patches are left in the Smithy Yard. Rows 44..45 are Smithy Lane, but there is still a bare patch on each side of the old anvil.
-  - The Voice says the castle is 'just past' the fountain, but on a laptop the castle is not seen from the spawn. Only the tips of the purple gate-tower cones show, behind the hotbar. The keep is 13 rows south, which is off the screen.
-  - Death's House keeps the core flat dark roof. Beside the new timbered and roofed facades, it is the one building that looks unfinished.
-  - A friend standing on the grass behind the Bell Tower, outside the north wall, is hidden from other knights. Only the local knight gets the see-through tower.
-  - No check covers migrate's own 'knight out of solid' step. Removing it passes all 25 capital checks, because 04-state's load already moves him for most cases. The case that needs it: the knight saved standing on a DOOR diff (walkable) on a cell that is now hedge or fountain. The one-time pass reverts the door to soli...
-  - An old save's solid things on old village grass that is now the High Street are kept on the High Street: a knight's plank or fence, a walker wreck. For that knight the 'clear road from gate to gate' can stay part-blocked.
-  - Knights can almost no longer build in Thistledown: beds, lodestones, planks, workbenches. Nearly every outdoor cell is now cobble (refused by the core: 'The guards would not like that on the street') or lawn (not placeable). The spec chose this, but it is a gameplay change the owner should decide knowingly.
-  - At DPR 2 the chunk cache holds 20 canvases of 768x768 (about 47 MB of backing store). Nothing releases them when the knight leaves the town or enters an instance. On Cohen's iPad this adds to the Cloud Kingdom's own cache under Safari's total canvas-memory cap.
-  - A seller standing behind or beside a thing takes its use, so some of the new lines cannot be read by tap from those sides. The apple, candle and flower stall lines, two bench lines, a hedge and a lamp line answer as Hettie, Mabel, Moll, Greta, Wynn and Captain Roderick instead.
-  - 31 greenery cells have no walkable neighbour. Tapping them gives the core's 'You can't get there.' instead of walking to the nearest cell of the same bed.
-  - The iPad quest log tells Cohen to 'press E'. The rest of the game words keys through keyName or touchify, so the touch player reads USE.
-  - An old save of a knight who paid Dorran and slept at the inn loses its wake-up bed, and he is not told. The inn moved one tile east (x 122 → 123), so his saved bed cell 128,48 is now floor. migrate() clears bedSpawn, and he wakes at the fountain after his next fall.
-  - The chunk cache is capped at 40, but the plan window has 48 chunks (8 x 6). A view that shows more than 40 of them thrashes: every chunk in view is evicted and repainted on every frame. This happens on a 4K screen at 100%, or with the browser zoomed far out. At 2560x1440 the city also costs about 6.6 ms a frame more...
-  - On a phone, the first frame after a town building comes into view hitches for up to about 50 ms while its picture is made. That is roughly twice base's worst frame. A knight walking the High Street on a phone will see a stutter at each new building.
-  - C17 does not catch the loss of migrate's own 'move the knight out of anything solid' rule. The core load() already moves him before migrate runs, so the test passes either way. migrate's rule is the only guard for a knight whose cell turns solid only after a diff is reverted, for example an old open diff on a cell t...
-  - The refund line does not pluralise. A real old save from base got 'Back in your pack: 17 plank, 1 bed, 1 lodestone.', which is wrong English for a ten-year-old to read.
-  - GROUND_COVER tells the core to skip the texture whenever the cell is pristine. It does not check that the chunk was actually painted. If an iPad under canvas-memory pressure returns null from getContext('2d'), the chunk stays blank, the core draws nothing either, and those cells show the #0b0f14 background.
-  - The story says the bell rings once at midnight, but nothing in the game rings it at midnight. ringBell only fires at dawn and dusk. A child who waits up at night in Thistledown never hears the 'ghost'. Also, a knight who meets Ambrose after the Duke never hears his introduction line, because the story starts on the ...
-  - Ambrose, who gives the new side quest, gets no Quest marker on the minimap or the world map. Every other quest giver in town has one (Duke, Tobin, Captain, notice board). Ambrose's role is td_bell, which is not in QUEST_ROLES.
-  - Tapping water that is drawn on screen but has no standing spot next to it says "You can't get there." That covers the middle of Swan Pond (where the swans swim) and the south and east moat. A child tapping the swans or the pond gets a refusal instead of being walked to the shore to fish.
-  - There are a few words a ten-year-old may not know, all new text: "curtain wall", "gatehouses", "portcullis" (wiki) and "belfry" (the Voice in the story). The wiki's "who stands where" also leaves out Captain Roderick (110,40) and the Master of Skills (108,44), who both live in town.
-- Boss rematch leftovers (2026-10-02): the Echo's name tag still reads "The Fang · lv 80"; War Shed rubble draws as grass squares in the plank floor; on a phone the War Shed valve sits under the top HUD plaques; rests count only while the game runs ("Ready in 10:00" waits for play time, not real time); a knight who already broke his own beast and helps a friend's first square fight gets REMATCH WON and the shed line while standing in the square; online, a stage-14 friend whose keeper already slew the Fang fights without the Dragon Killers; the War Shed door is open from a new game and its first-visit voice talks about Hollowford early; two of the new online guards (Gnasher keeper guard, one more) have no check that catches their removal.
+- Thistledown capital leftovers (reviewers' minor findings, 2026-10-03): DONE 2026-10-03 on fix/leftovers-places, each with
+  a check (C1, C8, C10b, C10c, C11, C12, C13b, C15, C17, C17b, C19b, C19c, C20, C23, C25): Osric waits until the THISTLEDOWN
+  banner has fully gone; smaller night pools (72 px) and glowing lamp heads; the north-wall doors are porches over the step;
+  old saves (new houses' floors, the High Street, a full pack and bank, the inn's bed, the pass's own move out of solid,
+  '17 planks, 1 bed and 1 lodestone'); E at the fountain shows one line at a time; no key that never comes; Ambrose's hello;
+  the bunting off the West Gate; the gate guard's name; the Smithy Yard paved; the castle 'south of the fountain'; Death's
+  House roofed; friends seen through tall things; the city's pictures given back away from it, never a black chunk, no
+  thrash past 40 chunks; a tap answers as the tapped thing; a tap on unreachable water or greenery walks to the nearest
+  reachable cell; the quest log's keys per device; the midnight bell; Ambrose's marker; plain words in the book. Left, and why:
+  - At night the city costs more per frame (measured on a Mac). The pools are smaller now, but nobody has measured an iPad.
+    Left until an iPad can be measured.
+  - On a phone, the first frame a town building comes into view still makes its picture (up to about 50 ms). The pictures
+    are also given back after 10 s away from the city now (for the iPad's canvas memory), so the hitch comes back once on
+    return. Spreading the making over several frames is a bigger change; measure on a phone first.
+  - The hedge row at 87..102,55, between the agility track's fence and the south wall, cannot be reached (scenery); a tap on
+    it says "You can't get there." Reaching it would mean moving the track's fence.
+  - tree_sapling and oak_sapling both place HOUSE_SAPLING, so a refund could not tell them apart. It cannot happen in the
+    city: a sapling plants only on the knight's island. (The other refund case, a full pack and bank, is fixed.)
+  - Knights can almost no longer build in Thistledown (cobble refuses, lawn is not placeable). The spec chose it; it is a
+    gameplay change for the owner to decide.
+- Boss rematch leftovers (2026-10-02): DONE 2026-10-03 on fix/leftovers-places: the Echo's name tag and long-press name
+  (m.tag; fang F2b); the War Shed's scrap heaps on its plank floor and the valve on row 7 under a boiler, clear of a phone's
+  HUD (B1b); BEAST DOWN 'You helped a friend' for a friend's beast in the square (B16, B9); rests take the real time a knight
+  was away off on load (src/96-rests.js); a friend's own first Fang brings the Dragon Killers on a keeper who slew it long
+  ago (dk, fang); nothing in the shed talks about Hollowford before stage 9 (B17); the keeper's rests for the Gnasher and
+  the War Shed and the Gnasher's boss_wait answer now have checks (G7, G8, B18). Left, and why:
+  - The War Shed's door stays open from a new game, on purpose: online a friend at any stage can follow a friend in to help
+    (check B11 fights there at stage 5). Before stage 9 the shed now says only a plain line and the valve is cold.
+  - The review named 'two online guards (Gnasher keeper guard, one more)' without writing down which lines; the three rest
+    and refusal guards above were the ones a removal left green, and each new check fails with its guard taken out.
 - Flaky checks under machine load (2026-10-02, while the city build ran its own tests): "fight back: only the monster that attacked" (also on master under --play), storm "(fake NET non-keeper): arriving rested asks the keeper once" (1 in 7). The game is fine; the checks are timing-sensitive.
 - Mount gates leftovers (2026-10-02): DONE 2026-10-03 on feat/mounts-look. GET DOWN in a gateway now finds open ground round about and never closes the gate (94-mountgates check 13, every row and facing of both town gates); the town gates are 95-thistledown's gatehouses (no fence-gate is drawn there), and every other gate is drawn standing open while a rider is in it (84-mountlook MA6); check 0 boards and measures each mount; check 4 fails by name on a missing monster type.
 - Mounts look leftovers (2026-10-03): a wreck is the machine tipped over and darkened, not broken apart; parked machines still idle (chimney smoke, the Barrelbeast's rod sparking) as the monster drawings do; the companion still hangs at the mare's side without a seat of her own; the knight's machines are drawn at their own bodies' size (20/24 of the goblins' walker, 22/24 of the bulldozer, 26/36 of the boss Barrelbeast).
@@ -168,7 +160,6 @@ instance maps that show only the instance, and banners that queue. 903 checks, t
      - Old saves: on the first load of a save from before the rebuild, a saved change inside stone, water or a hedge of the new city is undone (what was placed is given back), and a machine, beast, wreck or the mare there is moved to open ground, never deleted; a fire on a street or a crop in the allotment stays. After that first load nothing in the city is ever undone by a load.
 - Flaky checks seen once each on 2026-09-30 (passed 3 runs straight after): goblincity "killing the Gnasher completes the quest" (and the three checks after it that depend on it), and boats "Ironclad Isle costs 25 coins; first landing gets a Voice line".
 - Ashfields at map scale: the rim rock and the ash are close in colour on the minimap and world map, so the new ridge reads faintly there (it is plain at ground level). The Fang's Lair still reads as a black box on the map (its walls are untouchable).
-- On a phone, the place-name banner (THISTLEDOWN) draws over an open page for its second or two. Seen 2026-09-30 on the quest page.
 
 Built but NOT through its adversarial review yet (it passed the suite and was deployed; review it properly next):
 | What | Where it is | What is left |
@@ -201,8 +192,6 @@ Smaller things found along the way:
 - HOOKS.pathBlock does not cover 92-worldshape's own agility obstacles.
 - Night spawns (35-night) on a non-keeper and after a keeper handoff behave like the old graves did online.
 - The blackiron dagger and sword look almost the same at small size; ores share one rock outline.
-- The bank panel's Prev/Next overlap at 320x568.
-- Old saves: player changes (stumps, planks) can land inside the new cliffs.
 
 ## BUILDING
 
