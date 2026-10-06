@@ -636,12 +636,18 @@
         return (road[a] && everywhere[b] && !road[b]) || (road[b] && everywhere[a] && !road[a]); };
       const cand = [];
       // (the window round the scarp: OLD world rows 48..76, on the gw_steps pin)
-      for (let x = W.tx(1); x <= W.tx(161); x++) for (let off = W.pin('gw_steps', 0, x), y = Math.round(W.y(48) + off); y <= Math.round(W.y(76) + off); y++) {
+      for (let x = W.tx(1); x <= W.tx(161); x++) for (let y = Math.round(W.pin('gw_steps', W.y(48), x)); y <= Math.round(W.pin('gw_steps', W.y(76), x)); y++) {
         if (at(x, y) !== CLIFF || !free(x, y) || roadD[y * MAP_W + x] <= 4) continue;
         if (SOLID.has(at(x, y - 1)) || SOLID.has(at(x, y + 1)) || !joins(x, y)) continue;
         cand.push([x, y]); break;
       }
-      if (cand.length) { const c = cand[Math.floor(cand.length / 2)];
+      // the steps are the graveyard's: cut at its port, on the scarp the gw_steps pin carries through it, with open ground
+      // above and below; only a scarp that misses the port falls back to the middle measured climb
+      const [px, py] = port('graveyard.steps'), solidAt = (x, y) => SOLID.has(at(x, y)) && !PUSH_THROUGH.has(at(x, y));
+      if (at(px, py) === CLIFF) {
+        for (const y of [py - 1, py + 1]) if (solidAt(px, y) && at(px, y) !== CLIFF) set(px, y, T.GRASS);
+        set(px, py, STEPS); S.stairs.push({ x: px, y: py, tile: tileName(STEPS), lv: STEPS_LV });
+      } else if (cand.length) { const c = cand[Math.floor(cand.length / 2)];
         set(c[0], c[1], STEPS); S.stairs.push({ x: c[0], y: c[1], tile: tileName(STEPS), lv: STEPS_LV }); }
       S.climbable = cand.length;
     }
@@ -903,7 +909,8 @@
       }
       player.skills.agility = a0; player.hp = hp0; F.sim(1, []);
       check(P + `the steps cut in the scarp are solid below Agility ${STEPS_LV}, refuse the climb and say so, and carry the knight over the step at that level`,
-        rows.length === 1 && rows.every(r => r.standing && r.shut && r.refused && r.opens && r.over), { climbs: rows }); }
+        rows.length === 1 && rows.every(r => r.standing && r.shut && r.refused && r.opens && r.over && r.at[0] === port('graveyard.steps')[0] && r.at[1] === port('graveyard.steps')[1]),
+        { climbs: rows, port: port('graveyard.steps') }); }
 
     // ---- 8. the rim and the jungle's edge ----
     { let rim = 0, line = 0; for (let x = W.tx(1); x <= rimX1(); x++) { if (x >= WARD.x(59) && x <= WARD.x(61)) continue; if (tiles[idx(x, rimRow(x))] === CLIFF) rim++; if (SOLID.has(tiles[idx(x, rimRow(x))])) line++; }
