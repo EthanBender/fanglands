@@ -1,6 +1,7 @@
-// The teacher view's door, sign-in, tickets and the owner's calls (docs/ONLINE.md, "The teacher view"). The whole World on
-// node's SQLite (teacher-kit.mjs). The first five tests are the NEGATIVE ones: a teacher's credentials reach nothing but the
-// teacher view, and a teacher socket is never a knight.
+// The teacher view's sign-in, tickets and the owner's calls (docs/ONLINE.md, "The teacher view"). The whole World on node's
+// SQLite (teacher-kit.mjs). Round 2: ONE sign-in. A teacher signs in at POST /api/login (the game's own card) with teacherOk: 1;
+// there is no teacher address and no door. The first five tests are the NEGATIVE ones: a teacher's credentials reach nothing
+// but the teacher view, and a teacher socket is never a knight.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,6 +13,8 @@ const { clock, call, parent } = K;
 const T0 = Date.UTC(2026, 9, 6, 14, 0, 0);
 const src = f => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8');
 const DOC = fs.readFileSync(new URL('../../docs/ONLINE.md', import.meta.url), 'utf8');
+// a sign-in on the game's card: the teacher half answers only for a card that sent teacherOk: 1
+const tlogin = (W, name, pass, ip, ok = true) => call(W.w, 'POST', '/api/login', ok ? { name, pass, teacherOk: 1 } : { name, pass }, { ip });
 
 async function world() {
   clock.t = T0;
@@ -58,10 +61,13 @@ test('1. every admin route refuses a teacher token, a teacher ticket and a token
 test('2. a teacher token is 401 on every knight route and on /ws; a teacher is no knight at /api/login; /api/status says only who is on', async () => {
   const W = await world();
   const before = K.snapshot(W.db);
-  const routes = [['GET', '/api/me'], ['GET', '/api/save'], ['PUT', '/api/save', '{"player":{}}'], ['GET', '/api/save/pin'], ['POST', '/api/save/pin', '{"player":{}}'], ['POST', '/api/save/restore'],
-    ['GET', '/api/accounts'], ['POST', '/api/accounts/reset', { name: 'Sam', pass: 'abcdef' }], ['POST', '/api/accounts/strikes', { name: 'Sam' }], ['POST', '/api/accounts/rename', { name: 'Sam', to: 'Sammy' }], ['POST', '/api/logout']];
+  // every knight route the World's route() answers (read from its source, so a new one is covered by itself), but the four
+  // that take no token (signup, login, logout, status)
+  const body0 = src('world.js'), rt = body0.slice(body0.indexOf('async route('), body0.indexOf('\n  now() {'));
+  const BODIES = { '/api/save': '{"player":{}}', '/api/save/pin': '{"player":{}}', '/api/accounts/reset': { name: 'Sam', pass: 'abcdef' }, '/api/accounts/strikes': { name: 'Sam' }, '/api/accounts/rename': { name: 'Sam', to: 'Sammy' } };
+  const routes = Array.from(rt.matchAll(/path === '(\/api\/[a-z/_-]+)' && method === '([A-Z]+)'/g), m => [m[2], m[1], m[2] === 'GET' ? undefined : BODIES[m[1]]]).filter(([, p]) => !['/api/signup', '/api/login', '/api/logout', '/api/status'].includes(p));
+  assert.ok(routes.length >= 10 && routes.some(r => r[1] === '/api/save/restore') && routes.some(r => r[1] === '/api/accounts/rename'), JSON.stringify(routes));
   for (const [m, p, b] of routes) {
-    if (p === '/api/logout') continue;
     const r = await call(W.w, m, p, b, { token: W.token });
     assert.deepEqual([r.status, r.data && r.data.code], [401, 'auth'], m + ' ' + p);
   }
@@ -79,54 +85,85 @@ test('2. a teacher token is 401 on every knight route and on /ws; a teacher is n
 test('3. knight tokens and ADMIN_KEY are refused by the teacher calls: no ticket, no teacher socket', async () => {
   const W = await world();
   for (const token of [W.tok.Sam, W.tok.MudGoll, K.ENV.ADMIN_KEY]) {
-    const r = await call(W.w, 'POST', '/api/teacher/ticket', undefined, { door: true, token });
+    const r = await call(W.w, 'POST', '/api/teacher/ticket', undefined, { token });
     assert.deepEqual([r.status, r.data.code], [401, 'auth']);
     const ws = await W.w.fetch(new Request('http://world/api/teacher/ws?ticket=' + token, { headers: Object.assign({ upgrade: 'websocket' }, K.DOOR) }));
     assert.equal(ws.status, 401);
   }
 });
 
-test('4. no door, no teacher view: 404 from the World; the Worker strips a door a browser sends, serves the teacher address, and sends /teacher there', async () => {
+test('4. one sign-in: /api/teacher/login is gone; the teacher calls answer on every address with no door (a door header changes nothing); the Worker sends /teacher and the old teacher hosts to the game, answers /teacher-map.json itself, and hands the teacher socket back untouched', async () => {
   const W = await world();
-  for (const p of ['/api/teacher/login', '/api/teacher/ticket', '/api/teacher/logout']) {
-    const r = await call(W.w, 'POST', p, { name: W.T.name, pass: W.T.pass }, { token: W.token });
-    assert.deepEqual([r.status, r.data.code], [404, 'nope'], p);
+  // NEGATIVE: the round-1 sign-in call is gone, with or without a door
+  for (const o of [{}, { door: true }]) {
+    const r = await call(W.w, 'POST', '/api/teacher/login', { name: W.T.name, pass: W.T.pass }, o);
+    assert.deepEqual([r.status, r.data.code], [404, 'nope']);
   }
+  // NEGATIVE: a door header, no token, a knight token: 401 on the teacher calls
+  for (const o of [{ door: true }, {}, { token: W.tok.Sam }, { token: W.tok.Sam, door: true }]) {
+    const r = await call(W.w, 'POST', '/api/teacher/ticket', undefined, o);
+    assert.deepEqual([r.status, r.data.code], [401, 'auth'], JSON.stringify(o));
+  }
+  const ws0 = await W.w.fetch(new Request('http://world/api/teacher/ws?ticket=', { headers: Object.assign({ upgrade: 'websocket' }, K.DOOR) }));
+  assert.equal(ws0.status, 401);
+  // the teacher's own token gets a ticket with no door at all
+  assert.equal((await call(W.w, 'POST', '/api/teacher/ticket', undefined, { token: W.token })).status, 200);
   const worker = (await import('../src/worker.js')).default;
-  const seen = [];
+  let reached = 0;
   const env = {
-    TEACHER_HOST: 'teacher.fanglands.com', HANDOVER: 'off',
-    WORLD: { idFromName: () => 'id', get: () => ({ fetch: async r => { seen.push(r.headers.get('x-fanglands-door')); return W.w.fetch(r); } }) },
+    HANDOVER: 'off',
+    WORLD: { idFromName: () => 'id', get: () => ({ fetch: async r => { reached++; if (new URL(r.url).pathname === '/api/teacher/ws') return { status: 101, webSocket: 'the client end', headers: new Headers() }; return W.w.fetch(r); } }) },
     ASSETS: { fetch: async r => new Response('<html>' + new URL(r.url).pathname, { headers: { 'content-type': 'text/html' } }) },
   };
   const go = (url, init) => worker.fetch(new Request(url, init), env);
-  // a door sent by a browser to fanglands.com never arrives
-  let r = await go('https://fanglands.com/api/teacher/login', { method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, K.DOOR), body: JSON.stringify({ name: W.T.name, pass: W.T.pass }) });
-  assert.equal(r.status, 404); assert.equal(seen.pop(), null);
-  // the teacher address adds it
-  r = await go('https://teacher.fanglands.com/api/teacher/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: W.T.name, pass: W.T.pass }) });
-  assert.equal(r.status, 200); assert.equal(seen.pop(), 'teacher');
-  // a knight call on the teacher address is nothing
-  r = await go('https://teacher.fanglands.com/api/me', { headers: { authorization: 'Bearer ' + W.tok.Sam } });
-  assert.equal(r.status, 404); assert.equal(seen.length, 0);
-  for (const p of ['/ws', '/admin', '/api/status', '/api/admin/accounts', '/index.html?x=1', '/teacher']) { const x = await go('https://teacher.fanglands.com' + p); assert.ok(x.status === 404 || p === '/index.html?x=1', p + ' ' + x.status); }
-  // the page, with its headers
-  r = await go('https://teacher.fanglands.com/');
-  assert.equal(r.status, 200); assert.equal(await r.text(), '<html>/teacher');
-  assert.match(r.headers.get('content-security-policy'), /frame-ancestors 'none'/);
-  assert.equal(r.headers.get('x-frame-options'), 'DENY'); assert.equal(r.headers.get('referrer-policy'), 'no-referrer');
-  assert.equal(r.headers.get('cache-control'), 'no-store'); assert.equal(r.headers.get('x-robots-tag'), 'noindex');
-  r = await go('https://teacher.fanglands.com/teacher-map.json');
-  assert.equal(r.status, 200); assert.equal(r.headers.get('cache-control'), 'public, max-age=300'); assert.ok((await r.json()).hash);
-  // /teacher anywhere else is a 302 there
-  for (const host of ['fanglands.com', 'www.fanglands.com', 'gorkscape.ca']) for (const p of ['/teacher', '/teacher.html']) {
+  // a teacher signs in on the game's own address: /api/login with teacherOk
+  let r = await go('https://fanglands.com/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: W.T.name, pass: W.T.pass, teacherOk: 1 }) });
+  assert.equal(r.status, 200); const j = await r.json(); assert.equal(j.teacher, true);
+  // /teacher and /teacher.html open the game, on every address; a local world keeps its scheme and port
+  for (const host of ['fanglands.com', 'www.fanglands.com', 'gorkscape.ca', 'test.fanglands.com']) for (const p of ['/teacher', '/teacher.html']) {
     r = await go('https://' + host + p, { redirect: 'manual' });
-    assert.equal(r.status, 302); assert.equal(r.headers.get('location'), 'https://teacher.fanglands.com/');
+    assert.equal(r.status, 302); assert.equal(r.headers.get('location'), '/', host + p);
   }
-  // a local world keeps its scheme and port
-  r = await go('http://127.0.0.1:8811/teacher', { redirect: 'manual' }).catch(() => null);
-  const local = await worker.fetch(new Request('http://127.0.0.1:8811/teacher'), Object.assign({}, env, { TEACHER_HOST: 'localhost' }));
-  assert.equal(local.headers.get('location'), 'http://localhost:8811/');
+  r = await go('http://127.0.0.1:8787/teacher'); assert.equal(r.headers.get('location'), 'http://127.0.0.1:8787/');
+  // the old teacher addresses forward to their world's game, whatever the path
+  for (const [host, to] of [['teacher.fanglands.com', 'https://fanglands.com/'], ['test-teacher.fanglands.com', 'https://test.fanglands.com/']]) for (const p of ['/', '/index.html', '/api/teacher/ticket', '/teacher-map.json']) {
+    r = await go('https://' + host + p, { method: 'GET', redirect: 'manual' });
+    assert.equal(r.status, 302, host + p); assert.equal(r.headers.get('location'), to);
+  }
+  // the map is the Worker's own answer on every game address: never a Durable Object request
+  const before = reached;
+  for (const host of ['fanglands.com', 'gorkscape.ca', 'test.fanglands.com', '127.0.0.1:8787']) {
+    r = await go((host.startsWith('127') ? 'http://' : 'https://') + host + '/teacher-map.json');
+    assert.equal(r.status, 200, host); assert.equal(r.headers.get('cache-control'), 'public, max-age=300'); const m = await r.json(); assert.ok(m.hash && Array.isArray(m.labels));
+  }
+  assert.equal(reached, before);
+  // the teacher socket's 101 goes back exactly as the World answered it (no CORS copy of a socket)
+  r = await go('https://fanglands.com/api/teacher/ws?ticket=x', { headers: { upgrade: 'websocket', origin: 'https://ethanbender.github.io' } });
+  assert.equal(r.status, 101); assert.equal(r.webSocket, 'the client end');
+  // nothing on the worker still knows an address or a door
+  assert.ok(!/TEACHER_HOST|x-fanglands-door/.test(src('worker.js') + src('world.js') + src('teachers.js')), 'a teacher address or a door is still in the code');
+});
+
+test('4b. the teacher half of /api/login: {teacher, token, name, expires} with teacherOk; NEGATIVE: without it the knight\'s 404 unknown and no session row; a knight\'s name always takes the knight path', async () => {
+  const W = await world();
+  clock.t += 60000;
+  const r = await tlogin(W, W.T.name, W.T.pass, '10.9.9.9');
+  assert.equal(r.status, 200);
+  assert.deepEqual(Object.keys(r.data).sort(), ['expires', 'name', 'teacher', 'token']);
+  assert.equal(r.data.teacher, true); assert.equal(r.data.name, 'Mrs Smith'); assert.match(r.data.token, /^[0-9a-f]{64}$/);
+  assert.equal(r.data.expires, Math.min(clock.t + SESSION_MAX_MS, dayEnd(clock.t)));
+  const rows = () => W.db.prepare('SELECT COUNT(*) AS n FROM teacher_sessions').get().n;
+  const n0 = rows();
+  // an old cached card (no teacherOk): the knight's answer, and no session written for anyone
+  const old = await tlogin(W, W.T.name, W.T.pass, '10.9.9.9', false);
+  assert.deepEqual([old.status, old.data.code], [404, 'unknown']);
+  assert.equal(rows(), n0);
+  // a knight's name is a knight's, teacherOk or not: his own answers (a wrong word is 'pass', never 'nomatch')
+  const k1 = await tlogin(W, 'Sam', 'not-his-word', '10.9.9.10');
+  assert.deepEqual([k1.status, k1.data.code], [401, 'pass']);
+  const k2 = await tlogin(W, 'Sam', 'sword', '10.9.9.10');
+  assert.equal(k2.status, 200); assert.ok(!('teacher' in k2.data)); assert.equal(k2.data.name, 'Sam');
+  assert.equal(rows(), n0);
 });
 
 test('5. a teacher socket sending every message the Room knows changes nothing anywhere, and no knight hears a thing', async () => {
@@ -148,7 +185,7 @@ test('5. a teacher socket sending every message the Room knows changes nothing a
 
 test('6-8. sign-in: an unknown name and a wrong password answer the same; 5 wrong from one place make THAT place wait 15 minutes on THAT name; 20 from one place make it wait on the names it got wrong; off is said only to the right password', async () => {
   const W = await world();
-  const login = (name, pass, ip) => call(W.w, 'POST', '/api/teacher/login', { name, pass }, { door: true, ip });
+  const login = (name, pass, ip) => tlogin(W, name, pass, ip);
   const a = await login('Nobody Here', 'whatever-it-is', '10.0.0.1');
   const b = await login(W.T.name, 'not-the-password', '10.0.0.1');
   assert.deepEqual([a.status, a.data], [b.status, b.data]);
@@ -181,7 +218,7 @@ test('6-8. sign-in: an unknown name and a wrong password answer the same; 5 wron
 
 test('6b. the 1st to 7th wrong try answer exactly the same for a real teacher and a name nobody has (no list of names to learn)', async () => {
   const W = await world();
-  const login = (name, pass, ip) => call(W.w, 'POST', '/api/teacher/login', { name, pass }, { door: true, ip });
+  const login = (name, pass, ip) => tlogin(W, name, pass, ip);
   const known = [], unknown = [];
   for (let i = 0; i < 7; i++) { known.push(await login(W.T.name, 'wrong-guess-' + i, '198.51.100.7')); unknown.push(await login('Mrs Nobody', 'wrong-guess-' + i, '198.51.100.8')); }
   assert.deepEqual(known.map(r => [r.status, r.data]), unknown.map(r => [r.status, r.data]));
@@ -190,7 +227,7 @@ test('6b. the 1st to 7th wrong try answer exactly the same for a real teacher an
 
 test('6c. a kid hammering a teacher\'s name: the owner sees the wrong tries today, and a new password lifts the wait at once', async () => {
   const W = await world();
-  const login = (name, pass, ip) => call(W.w, 'POST', '/api/teacher/login', { name, pass }, { door: true, ip });
+  const login = (name, pass, ip) => tlogin(W, name, pass, ip);
   for (let i = 0; i < 5; i++) await login(W.T.name, 'guess-' + i, '192.0.2.200');
   for (let i = 0; i < 2; i++) await login(W.T.name, 'guess-' + i, '192.0.2.201');
   let list = (await parent(W.w, 'GET', '/api/admin/teachers')).data.teachers;
@@ -224,7 +261,7 @@ test('6d. no knight may take a teacher\'s name (signup and rename, any case, spa
 test('9. a sign-in writes teacher_in to mod_log and no address anywhere', async () => {
   const W = await world();
   await K.teacherLogin(W.w, W.T.name, W.T.pass, '203.0.113.77');
-  await call(W.w, 'POST', '/api/teacher/login', { name: W.T.name, pass: 'wrong-wrong-wrong' }, { door: true, ip: '203.0.113.78' });
+  await tlogin(W, W.T.name, 'wrong-wrong-wrong', '203.0.113.78');
   const log = (await parent(W.w, 'GET', '/api/admin/modlog')).data;
   assert.equal(log[0].act, 'teacher_in'); assert.equal(log[0].by, 'Mrs Smith (teacher)');
   const all = K.snapshot(W.db, []);
@@ -263,20 +300,20 @@ test('10b. the login answer carries that expiry', async () => {
 
 test('11. tickets: one use, 30 seconds, dead after logout; no upgrade without one', async () => {
   const W = await world();
-  const up = t => W.w.fetch(new Request('http://world/api/teacher/ws?ticket=' + t, { headers: Object.assign({ upgrade: 'websocket' }, K.DOOR) }));
+  const up = t => W.w.fetch(new Request('http://world/api/teacher/ws?ticket=' + t, { headers: { upgrade: 'websocket' } }));
   let t = await K.ticket(W.w, W.token);
   assert.equal((await up(t)).status, 101);
   assert.equal((await up(t)).status, 401);       // used
   t = await K.ticket(W.w, W.token); clock.t += TICKET_MS + 1;
   assert.equal((await up(t)).status, 401);       // too old
   assert.equal((await up('')).status, 401);
-  assert.equal((await W.w.fetch(new Request('http://world/api/teacher/ws', { headers: Object.assign({ upgrade: 'websocket' }, K.DOOR) }))).status, 401);
+  assert.equal((await W.w.fetch(new Request('http://world/api/teacher/ws', { headers: { upgrade: 'websocket' } }))).status, 401);
   t = await K.ticket(W.w, W.token);
   const scr = W.ctx.sockets.find(s => s.att && s.att.w);
-  assert.equal((await call(W.w, 'POST', '/api/teacher/logout', { token: W.token }, { door: true })).status, 200);
+  assert.equal((await call(W.w, 'POST', '/api/teacher/logout', { token: W.token })).status, 200);
   assert.equal(scr.closed.code, 4010); assert.equal(scr.last('w_bye').code, 4010);
   assert.equal((await up(t)).status, 401);       // its session is gone
-  assert.equal((await call(W.w, 'POST', '/api/teacher/ticket', undefined, { door: true, token: W.token })).status, 401);
+  assert.equal((await call(W.w, 'POST', '/api/teacher/ticket', undefined, { token: W.token })).status, 401);
 });
 
 test('12. the owner makes teachers: the name and password rules, and taken', async () => {
@@ -304,16 +341,16 @@ test('13. New password closes that teacher\'s screens with 4013 and ends its ses
   let r = await parent(W.w, 'POST', '/api/admin/teachers/pass', { id: W.T.id, pass: 'new-password-here-1' });
   assert.equal(r.status, 200);
   assert.equal(a1.closed.code, 4013); assert.equal(a1.last('w_bye').code, 4013); assert.equal(b1.closed, null);
-  assert.equal((await call(W.w, 'POST', '/api/teacher/ticket', undefined, { door: true, token: W.token })).status, 401);
-  assert.equal((await call(W.w, 'POST', '/api/teacher/login', { name: W.T.name, pass: W.T.pass }, { door: true })).status, 401);
-  assert.equal((await call(W.w, 'POST', '/api/teacher/login', { name: W.T.name, pass: 'new-password-here-1' }, { door: true })).status, 200);
+  assert.equal((await call(W.w, 'POST', '/api/teacher/ticket', undefined, { token: W.token })).status, 401);
+  assert.equal((await tlogin(W, W.T.name, W.T.pass)).status, 401);
+  assert.equal((await tlogin(W, W.T.name, 'new-password-here-1')).status, 200);
   r = await parent(W.w, 'POST', '/api/admin/teachers/off', { id: B.id });
   assert.equal(b1.closed.code, 4012); assert.equal(b1.last('w_bye').code, 4012);
   assert.equal(W.db.prepare('SELECT COUNT(*) AS n FROM teacher_sessions WHERE teacher_id = ?').get(B.id).n, 0);
   assert.deepEqual([(await parent(W.w, 'POST', '/api/admin/teachers/on', { id: B.id })).status], [400]);
   assert.equal((await parent(W.w, 'POST', '/api/admin/teachers/on', { id: B.id, pass: 'fresh-start-word-9' })).status, 200);
-  assert.equal((await call(W.w, 'POST', '/api/teacher/login', { name: B.name, pass: B.pass }, { door: true })).status, 401);
-  assert.equal((await call(W.w, 'POST', '/api/teacher/login', { name: B.name, pass: 'fresh-start-word-9' }, { door: true })).status, 200);
+  assert.equal((await tlogin(W, B.name, B.pass)).status, 401);
+  assert.equal((await tlogin(W, B.name, 'fresh-start-word-9')).status, 200);
   const acts = (await parent(W.w, 'GET', '/api/admin/modlog')).data.filter(x => x.by === 'parent page').map(x => x.act + ' ' + x.n);
   assert.deepEqual(acts.slice(0, 4), ['teacher_on Mr Lee (teacher)', 'teacher_off Mr Lee (teacher)', 'teacher_pass Mrs Smith (teacher)', 'teacher_add Mr Lee (teacher)']);
   // the row stays forever

@@ -4,13 +4,15 @@
 // when they play it at school." docs/ONLINE.md, "The teacher view", is the contract.
 //
 // A teacher is NOT a knight: a row of `teachers`, never of `accounts`, so no knight route, no /ws and no /api/admin/* call
-// ever takes a teacher's token. A teacher signs in on the teacher address only (worker.js adds the door header there and
-// strips it everywhere else), gets a session token (only its SHA-256 is kept), trades it for a one-use ticket and opens one
-// socket: the watch screen (watch.js), which is never a knight in the Room.
+// ever takes a teacher's token. A teacher signs in on the game's own card at POST /api/login (round 2: one sign-in, no
+// separate address): the World tries the knight first and only when no knight has that name, and the card said it can take a
+// teacher's answer (teacherOk: 1), comes here (teacherLogin). She gets a session token (only its SHA-256 is kept), trades it
+// for a one-use ticket and opens one socket: the teacher screen (watch.js), which is never a knight in the Room.
 //
 //   migrateTeachers(sql)                 the three tables and the two accounts columns, only when missing (every wake)
 //   new TeacherBook(sql, now)            every read and write the teacher view makes, plus the tickets and the address window
-//   teacherCall(world, req, url, path)   /api/teacher/login | logout | ticket | ws (the World checks the door first)
+//   teacherLogin(world, {name, pass, addr})   the teacher half of POST /api/login (world.login falls through to it)
+//   teacherCall(world, req, url, path)   /api/teacher/logout | ticket | ws (on every game address; no door)
 //   teacherAdminCall(world, req, url, call, method)   /api/admin/teachers* and /api/admin/teacher-acts (ADMIN_KEY, checked
 //                                        by world.admin before it gets here); null for any other call
 //   dayStart(now, tz), dayEnd(now, tz)   the first and last millisecond of today in that zone (Intl.DateTimeFormat)
@@ -19,7 +21,6 @@
 
 import { json, oops, readJson, bearer } from './http.js';
 import { makeHash, checkPassword, hashPassword, randomHex } from './auth.js';
-import { addressOf } from './handoff.js';
 
 export const TEACHER_PASS_MIN = 10, TEACHER_PASS_MAX = 200;
 // The sign-in locks are kept per ADDRESS AND NAME, in World memory (a nap forgets them, which only lets more through), so a
@@ -42,7 +43,6 @@ export const CHAT_BACK_MS = 3600000, CHAT_BACK_LINES = 100;   // the chat a scre
 export const SCREENS_MAX = 6, SCREENS_PER_TEACHER = 2;
 export const ACTS_KEPT = 2000;
 export const NAME_RE = /^[A-Za-z][A-Za-z .'-]{1,39}$/;
-export const DOOR = 'x-fanglands-door';
 const PARENT = 'parent page';
 // an unknown name still costs one PBKDF2, against this salt, so a wrong name and a wrong password take the same time
 const DUMMY_SALT = '5f1e0c7d2b9a4e6f8a3c1d0b7e2f9a46';
@@ -108,6 +108,8 @@ export function dayEnd(now, tz = TEACHER_TZ) {
   const p = partsAt(now, tz), n = new Date(Date.UTC(p.y, p.m - 1, p.d + 1));
   return wallToUtc(n.getUTCFullYear(), n.getUTCMonth() + 1, n.getUTCDate(), 0, tz) - 1;
 }
+// "10:52 am", the wall clock in that zone (the Watch's plain words: "Cohen left the game at 10:52 am.")
+export function clockAt(ms, tz = TEACHER_TZ) { const p = partsAt(ms, tz); return (p.h % 12 || 12) + ':' + String(p.mi).padStart(2, '0') + ' ' + (p.h < 12 ? 'am' : 'pm'); }
 // when a send-off ends (D4): midnight, or SENDOFF_END o'clock today when that is still to come
 export function sendOffEnd(now, tz = TEACHER_TZ) {
   if (SENDOFF_END >= 24) return dayEnd(now, tz);
@@ -269,11 +271,11 @@ export class TeacherBook {
 }
 
 // ---------------------------------------------------------------------------
-// /api/teacher/* — the World calls this only with the door header (else 404 nope)
+// /api/teacher/* — on every game address (round 2: no teacher address, no door). The sign-in itself is POST /api/login
+// (teacherLogin, below); POST /api/teacher/login is gone (404 nope).
 // ---------------------------------------------------------------------------
 export async function teacherCall(world, req, url, path, method) {
   const book = world.teachers;
-  if (path === '/api/teacher/login' && method === 'POST') return await login(world, book, req);
   if (path === '/api/teacher/logout' && method === 'POST') {
     const b = await readJson(req).catch(() => ({}));
     const token = typeof b.token === 'string' ? b.token.slice(0, 200) : '';
@@ -305,12 +307,17 @@ export async function teacherCall(world, req, url, path, method) {
   throw oops(404, 'no such call', 'nope');
 }
 
-async function login(world, book, req) {
-  const now = world.now();
-  const where = addressOf(req.headers.get('cf-connecting-ip'));
-  const b = await readJson(req);
-  const name = typeof b.name === 'string' ? b.name : '', lc = nameLc(name);
-  const pass = typeof b.pass === 'string' ? b.pass.slice(0, TEACHER_PASS_MAX + 1) : '';
+// The teacher half of POST /api/login. world.login calls it only when no knight has the name (and none had it before a
+// rename) and the card sent teacherOk: 1, with the body it already read. Round 1's rules, unchanged: the same answer for an
+// unknown name and a wrong password (one PBKDF2 either way), the waits per address and name in memory, off checked only after
+// the right password, the wrong tries counted for the owner, last_login, one mod_log row, at most 3 sessions, and only the
+// SHA-256 of the token kept. Answers {teacher: true, token, name, expires}.
+export async function teacherLogin(world, { name, pass, addr }) {
+  const book = world.teachers, now = world.now();
+  const where = addr || 'unknown';
+  name = typeof name === 'string' ? name.slice(0, 80) : '';
+  const lc = nameLc(name);
+  pass = typeof pass === 'string' ? pass.slice(0, TEACHER_PASS_MAX + 1) : '';
   // the wait is this address's on this name, never the teacher's: a guess from anywhere else cannot refuse the right password
   const wait = book.signinWait(where, lc, now);
   if (wait) throw oops(429, 'too many tries: wait and try again', 'wait', { wait });
@@ -332,7 +339,7 @@ async function login(world, book, req) {
   world.sql.exec('UPDATE teachers SET last_login = ? WHERE id = ?', now, t.id);
   book.addSession(t.id, sh, now, expires);
   world.store.log({ at: now, by: teacherTag(t.name), act: 'teacher_in', target: 'teacher view', detail: '' });
-  return json({ token, name: t.name, expires });
+  return { teacher: true, token, name: t.name, expires };
 }
 
 // ---------------------------------------------------------------------------
@@ -358,6 +365,8 @@ export async function teacherAdminCall(world, req, url, call, method) {
     if (book.byName(name) || book.nameClash(name)) throw oops(409, 'there is already a teacher with that name', 'taken');
     // a knight already called that would read as the teacher in chat: the owner picks another name ("Mrs J Smith")
     if (book.knightClash(name)) throw oops(409, 'a knight already has that name: add a first letter or a first name', 'taken');
+    // a knight's name from before a rename logs in as that knight (world.login), so a teacher can never have it either
+    if (typeof world.store.renamedFrom === 'function' && world.store.renamedFrom(nameLc(name))) throw oops(409, 'a knight had that name: add a first letter or a first name', 'taken');
     const { salt, hash } = await makeHash(pass);
     const id = book.add(name, salt, hash, now);
     log('teacher_add', teacherTag(name));

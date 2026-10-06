@@ -27,52 +27,36 @@ function withCors(req, res) {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
-// The teacher view (docs/ONLINE.md, "The teacher view"): its own address, and a door header only this Worker sets
-const DOOR = 'x-fanglands-door';
+// The teacher view (docs/ONLINE.md, "The teacher view"), round 2: ONE sign-in. A teacher signs in on the game's own card
+// (POST /api/login, the World tells a teacher's answer apart), so there is no teacher address and no door. The old ones only
+// forward: /teacher and /teacher.html to the game, and a host teacher.* / test-teacher.* to that world's game address.
 const LOCAL = h => h === 'localhost' || h === '127.0.0.1' || h.endsWith('.localhost');
-function teacherHeaders(res, host) {
-  const h = new Headers(res.headers);
-  h.set('content-security-policy', "default-src 'self'; connect-src 'self' wss://" + host + "; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'");
-  h.set('x-frame-options', 'DENY'); h.set('referrer-policy', 'no-referrer'); h.set('cache-control', 'no-store'); h.set('x-robots-tag', 'noindex');
-  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
-}
-async function teacherHost(req, url, env) {
-  const path = url.pathname;
-  if ((path === '/' || path === '/index.html') && (req.method === 'GET' || req.method === 'HEAD')) {
-    // the assets service maps the bare /teacher to public/teacher.html (it would bounce /teacher.html back to /teacher)
-    return teacherHeaders(await env.ASSETS.fetch(new Request(new URL('/teacher', url), { method: req.method, headers: req.headers })), url.hostname);
-  }
-  if (path === '/teacher-map.json' && req.method === 'GET') return teacherMap();
-  if (path.startsWith('/api/teacher/')) {
-    if (!env.WORLD) return fail(503, 'the world is not bound', 'server');
-    const h = new Headers(req.headers); h.set(DOOR, 'teacher');
-    const world = env.WORLD.get(env.WORLD.idFromName('world'));
-    // the socket's 101 goes back untouched, like /ws
-    return world.fetch(new Request(req, { headers: h }));
-  }
-  return fail(404, 'nothing here', 'nope');
+const go = to => new Response(null, { status: 302, headers: { location: to, 'cache-control': 'no-store' } });
+// teacher.fanglands.com -> fanglands.com; test-teacher.fanglands.com -> test.fanglands.com (the test world's game address)
+export function teacherHostTarget(host) {
+  host = String(host || '').toLowerCase();
+  if (host.startsWith('test-teacher.')) return 'test.' + host.slice('test-teacher.'.length);
+  if (host.startsWith('teacher.')) return host.slice('teacher.'.length);
+  return null;
 }
 
 export default {
   async fetch(req, env) {
-    // a door header is only ever this Worker's own: whatever a browser sent is taken off, on every address
-    if (req.headers.has(DOOR)) { const h = new Headers(req.headers); h.delete(DOOR); req = new Request(req, { headers: h }); }
     const url = new URL(req.url);
     const path = url.pathname;
-    const th = env.TEACHER_HOST;
-    if (th && url.hostname === th) return teacherHost(req, url, env);
-    if (path === '/teacher' || path === '/teacher.html') {
-      if (!th) return fail(404, 'nothing here', 'nope');
-      const to = LOCAL(th) ? url.protocol + '//' + th + (url.port ? ':' + url.port : '') + '/' : 'https://' + th + '/';
-      return new Response(null, { status: 302, headers: { location: to, 'cache-control': 'no-store' } });
-    }
+    // an old teacher address (round 1) forwards to its world's game, whatever the path
+    const to = teacherHostTarget(url.hostname);
+    if (to && !LOCAL(url.hostname)) return go('https://' + to + '/');
+    if (path === '/teacher' || path === '/teacher.html') return go(LOCAL(url.hostname) ? url.protocol + '//' + url.host + '/' : '/');
+    // the teacher map is the Worker's own answer on every address: never a Durable Object request
+    if (path === '/teacher-map.json' && (req.method === 'GET' || req.method === 'HEAD')) return teacherMap();
     if (path === '/api' || path.startsWith('/api/') || path === '/ws') {
       if (req.method === 'OPTIONS') return withCors(req, new Response(null, { status: 204 }));
       if (!env.WORLD) return fail(503, 'the world is not bound', 'server');
       const world = env.WORLD.get(env.WORLD.idFromName('world'));
       const res = await world.fetch(req);
-      // a 101 with a WebSocket on it must go back untouched
-      return path === '/ws' ? res : withCors(req, res);
+      // a 101 with a WebSocket on it must go back untouched (a knight's /ws and a teacher's /api/teacher/ws)
+      return path === '/ws' || path === '/api/teacher/ws' ? res : withCors(req, res);
     }
     const moved = frontDoor(req, url, env);
     if (moved) return moved;

@@ -81,7 +81,15 @@
     if (o.kind === 'dozer') { const up = dozerUps(); if (up) o.up = up; }
     return o;
   }
+  // the time of day on this game's clock, for a teacher watching it (the Watch, round 2): only while the world says a teacher
+  // is watching this knight (75-coop's view), so other games see the field only then and ignore it; it adds no message
+  const DAY_S = () => (window.NIGHT && NIGHT.DAY) || 600;
   function presence() {
+    const p = presenceBody();
+    if (window.COOP && typeof COOP.viewed === 'function' && COOP.viewed()) p.tod = Math.round((((player.dayTime || 0) % DAY_S()) + DAY_S()) % DAY_S() * 10) / 10;
+    return p;
+  }
+  function presenceBody() {
     const a = player.action, m = player.mech;
     return {
       t: 'p', map: mapId(), region: regionName(), x: Math.round(player.x), y: Math.round(player.y), fx: +player.facing.x.toFixed(2), fy: +player.facing.y.toFixed(2),
@@ -121,7 +129,12 @@
       // s counts this socket's presences from 1 (a new socket starts again)
       if ((s !== lastSig && since >= SEND_EVERY) || since >= SEND_IDLE) { if (sentSock !== NET.sock) { sentSock = NET.sock; sent = 0; } const p = presence(); p.s = sent + 1; if (NET.send(p)) { sent++; lastSig = s; lastSentAt = time; } }
     } else lastSig = null;
-    // the knights we know: slide toward where they really are, tick the hurt flash, forget the silent
+    step(dt);
+    if (pressed.has('KeyF') && !player.dead) toggleFriends();
+  });
+  // the knights we know: slide toward where they really are, tick the hurt flash, forget the silent. PLAYERS.step: 79-view
+  // runs this alone while a teacher watches a kid (update() never runs there)
+  function step(dt) {
     const now = nowMs(), k = Math.min(1, dt / LERP_S);
     for (const n in REMOTE) {
       const e = REMOTE[n];
@@ -131,8 +144,7 @@
       if (e.hurtT > 0) e.hurtT -= dt;
       if (e.attackT > 0) e.attackT = Math.max(0, e.attackT - dt);
     }
-    if (pressed.has('KeyF') && !player.dead) toggleFriends();
-  });
+  }
   HOOKS.keyHelp.push({ action: 'Friends', codes: ['KeyF'] }); // 43-settings lists it on the Controls line
 
   // ---------- in: the wire ----------
@@ -201,7 +213,8 @@
     g.font = 'bold 11px sans-serif'; g.strokeText(e.n, nx, top); g.fillStyle = admin ? GOLD : '#ffffff'; g.fillText(e.n, nx, top);
     g.font = '9px sans-serif'; g.strokeText(lv, nx + nw + 4, top); g.fillStyle = '#9aa3b2'; g.fillText(lv, nx + nw + 4, top);
     if (e.hp < e.mhp) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(x - 14, top + 3, 28, 4); g.fillStyle = e.hp / e.mhp > 0.5 ? '#3fb950' : e.hp / e.mhp > 0.25 ? '#d29922' : '#f85149'; g.fillRect(x - 14, top + 3, 28 * clamp(e.hp / e.mhp, 0, 1), 4); }
-    if (dist(x, y, player.x, player.y) <= NEAR) { g.strokeStyle = 'rgba(111,177,255,0.5)'; g.lineWidth = 1.5; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y + 2, onMech ? 30 : 22, 0, 7); g.stroke(); g.setLineDash([]); }
+    // (a teacher watching this knight's view stands in his place: no ring around him on his own screen)
+    if (dist(x, y, player.x, player.y) <= NEAR && !(window.VIEW && VIEW.watching() === e.n)) { g.strokeStyle = 'rgba(111,177,255,0.5)'; g.lineWidth = 1.5; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y + 2, onMech ? 30 : 22, 0, 7); g.stroke(); g.setLineDash([]); }
   }
   HOOKS.draw.push((g, items) => {
     const my = mapId();
@@ -418,7 +431,7 @@
   const roleOf = n => { const e = REMOTE[n]; if (e) return isAdmin(e) ? 'admin' : 'player'; const o = ONLINE.find(k => k.n === n); return isAdmin(o) ? 'admin' : 'player'; };
 
   window.PLAYERS = {
-    lookOf, presence, mapId, remote: REMOTE, near, give, roleOf, adminPill, GOLD,
+    lookOf, presence, mapId, remote: REMOTE, near, give, roleOf, adminPill, GOLD, step,
     get online() { return ONLINE; }, get me() { return NET.me; },
     follow: n => { following = n && REMOTE[n] ? n : null; }, get following() { return following; },
   };

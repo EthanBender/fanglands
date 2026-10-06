@@ -49,7 +49,7 @@
     if (NET.token) headers.authorization = 'Bearer ' + NET.token;
     const r = await fetch(NET.base + path, { method, headers, body: body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)), keepalive: method === 'PUT' });
     let data = null; try { data = await r.json(); } catch (e) { }
-    if (!r.ok) { const err = new Error((data && data.error) || ('HTTP ' + r.status)); err.status = r.status; err.code = data && data.code; if (data && data.until != null) err.until = data.until; throw err; }
+    if (!r.ok) { const err = new Error((data && data.error) || ('HTTP ' + r.status)); err.status = r.status; err.code = data && data.code; if (data && data.until != null) err.until = data.until; if (data && data.wait != null) err.wait = data.wait; throw err; }
     return data;
   };
   NET.get = path => NET.call('GET', path);

@@ -27,6 +27,12 @@
   const MARK_KEY = 'fanglands.slot.1.online';
   const CHAPTERS = ['The Cave', 'Thistledown', 'Goblin Tech', 'Hollowford', 'The Fang'];
   const NAME_RE = /^[A-Za-z0-9 ]{2,16}$/;
+  // the teacher view, round 2 (docs/ONLINE.md, "The teacher view"): a teacher signs in on this card with the name and
+  // password Ethan made on /admin. In login mode (never New knight) the name may be a knight's or a teacher's.
+  const TEACHER_NAME_RE = /^[A-Za-z][A-Za-z .'-]{1,39}$/;
+  const BYE_KEY = 'fanglands.teacher.bye';
+  const ssGet = k => { try { return sessionStorage.getItem(k); } catch (e) { return null; } };
+  const ssDel = k => { try { sessionStorage.removeItem(k); } catch (e) { } };
   const SLOT = n => title.slotKey(n), AT = n => title.slotKey(n) + '.at';
   const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) { } };
@@ -102,6 +108,10 @@
     if (code === 'words') { LOGIN.noteKeptOut(err.until); return kind === 'signup' ? LOGIN.newKnightOff(err.until) : LOGIN.keptOut(err.until); }
     if (code === 'renamed') return `An admin changed your knight's name to ${err.name}.`;
     if (code === 'signups') return 'Too many new knights from here this hour. Try again later.';
+    // a teacher's sign-in (round 2): the same card, its own three answers
+    if (code === 'nomatch') return "That name and password don't match.";
+    if ((code === 'wait' || st === 429) && kind === 'login' && err && Number(err.wait) > 60) { const m = Math.max(1, Math.ceil(Number(err.wait) / 60)); return 'Too many tries. Wait ' + m + ' minute' + (m === 1 ? '' : 's') + ' and try again.'; }
+    if (code === 'off') return 'This sign-in was turned off. Ask Ethan.';
     if (code === 'wait' || st === 429) return 'Too many tries. Wait a minute.';
     if (code === 'kicked') return 'An admin sent you out of the world. You can come back in.';
     if (code === 'banned') return 'This knight is not allowed in. Ask Ethan.';
@@ -209,19 +219,33 @@
 
   // ---------- the flow ----------
   const oops = text => { LOGIN.busy = false; LOGIN.mode = 'form'; LOGIN.error = text; refresh(); return false; };
+  // why the last teacher screen on this tab ended (79-teacherscreen writes a reason code; read once, then deleted)
+  LOGIN.BYE = {
+    4010: 'You signed out.',
+    idle: 'You were signed out because nothing was pressed for an hour.',
+    4011: 'Your sign-in ran out for today. Sign in again to keep watching.',
+    4012: 'Ethan turned this sign-in off.',
+    4013: 'Your password was changed. Sign in with the new one.',
+    4014: 'Too many teacher screens are open. Close one and try again.',
+    4008: 'That was too many taps at once. Sign in again.',
+    fresh: 'Sign in once more to open the teacher view.',
+  };
+  LOGIN.byeOnce = () => { const r = ssGet(BYE_KEY); if (r == null) return ''; ssDel(BYE_KEY); return LOGIN.BYE[r] || ''; };
   LOGIN.submit = (name, pass, invite, isNew) => {
     name = String(name || '').trim(); pass = String(pass || ''); invite = String(invite || '').trim();
     if (LOGIN.busy) return false;
-    if (!NAME_RE.test(name)) return oops("A knight's name is 2 to 16 letters or numbers.");
+    if (!NAME_RE.test(name) && (isNew || !TEACHER_NAME_RE.test(name))) return oops("A knight's name is 2 to 16 letters or numbers.");
     if (pass.length < 4) return oops('The secret word needs at least 4 letters.');
     if (isNew && LOGIN.keptOutUntil()) { LOGIN.newKnight = false; return oops(LOGIN.newKnightOff(LOGIN.keptOutUntil())); }
     if (isNew && !invite) return oops('Type the invite code. Ask Ethan for it.');
     LOGIN.error = ''; LOGIN.busy = true; LOGIN.mode = 'busy'; refresh();
     const kind = isNew ? 'signup' : 'login';
-    when(api('POST', '/api/' + kind, isNew ? { name, pass, invite } : { name, pass }),
+    when(api('POST', '/api/' + kind, isNew ? { name, pass, invite } : { name, pass, teacherOk: 1 }),
       r => {
         LOGIN.busy = false;
         if (!r || typeof r.token !== 'string' || !r.token) return oops('The world gave a strange answer. Try again.');
+        // a teacher (round 2): never a knight's token, name or save on this device; the teacher screen instead of the game
+        if (r.teacher === true && !isNew) return teacherIn(r);
         NET.setToken(r.token); LOGIN.name = (typeof r.name === 'string' && r.name) || name; lsSet(NAME_KEY, LOGIN.name); LOGIN.stats[kind]++;
         // the world let a knight in, so it is not kept out (an admin may have cleared it early)
         lsDel(KEPT_KEY);
@@ -230,6 +254,19 @@
       e => { LOGIN.busy = false; LOGIN.mode = 'form'; LOGIN.error = LOGIN.sentence(e, kind); refresh(); });
     return true;
   };
+  // The world said this is a teacher. Nothing of a knight's is touched: no NET.setToken, no fanglands.lastname or
+  // fanglands.session, no /api/save, no bridge, no title.startSlot, no socket. The password box is emptied and the card put
+  // away. A page that already held a kid's world (a knight was loaded on it) is reloaded first (J1): the session ends at
+  // once, and the card says to sign in once more.
+  function teacherIn(r) {
+    if (ui) ui.pass.value = '';
+    const T = window.TEACHERSCREEN;
+    if (!T) return oops('The world gave a strange answer. Try again.');
+    if (!T.pristine) { (LOGIN.teacherFresh || T.fresh)(r.token); return false; }
+    LOGIN.error = ''; LOGIN.mode = 'form'; hide();
+    (LOGIN.teacherOpen || T.open)({ token: r.token, name: typeof r.name === 'string' ? r.name : '', expires: Number(r.expires) || 0 });
+    return true;
+  }
   function afterLogin() {
     LOGIN.mode = 'busy'; LOGIN.error = ''; refresh();
     when(api('GET', '/api/save'),
@@ -285,7 +322,7 @@
     e => { if (LOGIN.mode !== 'me' || !e || e.code !== 'words') return; LOGIN.error = LOGIN.sentence(e, 'login'); refresh(); });
   LOGIN.recheck = recheck;
   LOGIN.show = () => {
-    LOGIN.showing = true; LOGIN.playing = false; LOGIN.error = ''; LOGIN.offer = null; LOGIN.busy = false; LOGIN.asleep = false;
+    LOGIN.showing = true; LOGIN.playing = false; LOGIN.error = LOGIN.byeOnce(); LOGIN.offer = null; LOGIN.busy = false; LOGIN.asleep = false;
     LOGIN.status = 'Looking for the world...'; LOGIN.mode = NET.token ? 'checking' : 'form';
     build(); if (ui) { if (!ui.name.value) ui.name.value = lsGet(NAME_KEY) || ''; place(); } refresh();
     askStatus(); if (NET.token) checkMe();
@@ -463,6 +500,8 @@
     // kept out on "Playing as": Play is greyed until the time is up (it would only say the same sentence again)
     ui.play.disabled = !!kept && m === 'me';
     ui.inviteBox.hidden = !LOGIN.newKnight; ui.newBox.checked = LOGIN.newKnight;
+    // a teacher's name may be up to 40 letters (login only); a new knight's name 16
+    ui.name.setAttribute('maxlength', LOGIN.newKnight ? '16' : '40');
     ui.submit.textContent = LOGIN.newKnight ? 'Make my knight' : 'Play'; ui.submit.disabled = LOGIN.busy;
     ui.pass.setAttribute('autocomplete', LOGIN.newKnight ? 'new-password' : 'current-password');
     ui.err.textContent = m === 'form' ? LOGIN.shownError() : ''; ui.busyErr.textContent = m === 'me' || m === 'checking' ? LOGIN.shownError() : '';
@@ -671,6 +710,69 @@
       if (was.titleActive) { title.open(); if (was.showing) LOGIN.show(); } else title.startSlot(was.slot);
       paused = was.paused; notice = was.notice;
       if (was.status === 'on' && NET.token) NET.connect();
+    }
+  });
+
+  // ---------- self-test: a teacher on this card (the teacher view, round 2) ----------
+  HOOKS.selfTest.push(check => {
+    const P = 'login (teacher): ';
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, sess: lsGet('fanglands.session'), last: lsGet(NAME_KEY), name: LOGIN.name, showing: LOGIN.showing, mode: LOGIN.mode, error: LOGIN.error,
+      open: LOGIN.teacherOpen, fresh: LOGIN.teacherFresh, pristine: window.TEACHERSCREEN ? TEACHERSCREEN.pristine : true, start: title.startSlot, connect: NET.connect, title: title.active, slot: title.slot };
+    const calls = [], opened = [], freshed = []; let starts = 0, connects = 0;
+    const world = { call(method, path, body) {
+      calls.push([method, path, body]);
+      const fail = (code, status, extra) => { const e = new Error(code); e.code = code; e.status = status; Object.assign(e, extra || {}); throw e; };
+      if (path === '/api/status') return { ok: true, online: 0, names: [] };
+      if (path === '/api/login') {
+        if (body.name === 'Mrs. Smith-Jones' && body.pass === 'maple-river-lantern-42' && body.teacherOk === 1) return { teacher: true, token: 'tt'.repeat(32), name: 'Mrs. Smith-Jones', expires: 9e12 };
+        if (body.name === 'Mr Off') fail('off', 403); if (body.name === 'Mr Wait') fail('wait', 429, { wait: 900 });
+        fail('nomatch', 401);
+      }
+      fail('bad', 400);
+    }, open: () => { throw new Error('no socket'); } };
+    try {
+      NET.enabled = true; NET.useFake(world); NET.setToken(null); lsSet('fanglands.session', 'before'); lsSet(NAME_KEY, 'Leo');
+      LOGIN.teacherOpen = a => opened.push(a); LOGIN.teacherFresh = t => freshed.push(t);
+      title.startSlot = function () { starts++; return was.start.apply(this, arguments); };
+      NET.connect = function () { connects++; return was.connect.apply(this, arguments); };
+      if (window.TEACHERSCREEN) TEACHERSCREEN.pristine = true;
+      LOGIN.show(); if (ui) ui.pass.value = 'maple-river-lantern-42';
+      LOGIN.submit('Mrs. Smith-Jones', 'maple-river-lantern-42', '', false);
+      const body = (calls.find(c => c[1] === '/api/login') || [])[2] || {};
+      const ok = opened.length === 1 && opened[0].token === 'tt'.repeat(32) && opened[0].name === 'Mrs. Smith-Jones' && opened[0].expires === 9e12 && body.teacherOk === 1;
+      const untouched = NET.token === null && lsGet('fanglands.session') === 'before' && lsGet(NAME_KEY) === 'Leo' && !calls.some(c => c[1] === '/api/save') && starts === 0 && connects === 0 && (!ui || ui.pass.value === '') && !LOGIN.showing;
+      check(P + 'a teacher\'s answer opens the teacher screen and touches nothing of a knight\'s: NET.token stays null, fanglands.session and fanglands.lastname as they were, no /api/save, no socket, no slot started, the password box emptied, the card put away; the card sent teacherOk: 1', ok && untouched, { ok, untouched, opened, body, token: NET.token, starts, connects });
+      // the name: a teacher's for a login only; a new knight's stays 2 to 16 letters or numbers
+      const c0 = calls.length; LOGIN.submit('Mrs. Smith-Jones', 'sword', 'dragon', true);
+      const newRefused = calls.length === c0 && /2 to 16/.test(LOGIN.error);
+      LOGIN.submit("O'Brien", 'abcd', '', false); const apos = calls.length === c0 + 1;
+      check(P + '"Mrs. Smith-Jones" is a name for a login only (New knight refuses it before asking the world); the name box takes 40 letters for a login, 16 for New knight', newRefused && apos && (!ui || ui.name.getAttribute('maxlength') === '40'), { newRefused, apos, error: LOGIN.error });
+      // the exact sentences
+      const said = [];
+      for (const n of ['Nobody Here', 'Mr Off', 'Mr Wait']) { LOGIN.submit(n, 'abcdefghijk', '', false); said.push(LOGIN.error); }
+      const byes = [];
+      for (const r of ['4010', 'idle', '4011', '4012', '4013', '4014', '4008', 'fresh']) { try { sessionStorage.setItem(BYE_KEY, r); } catch (e) { } byes.push(LOGIN.byeOnce()); }
+      const once = LOGIN.byeOnce() === '';
+      const want = ["That name and password don't match.", 'This sign-in was turned off. Ask Ethan.', 'Too many tries. Wait 15 minutes and try again.'];
+      const wantBye = ['You signed out.', 'You were signed out because nothing was pressed for an hour.', 'Your sign-in ran out for today. Sign in again to keep watching.', 'Ethan turned this sign-in off.', 'Your password was changed. Sign in with the new one.', 'Too many teacher screens are open. Close one and try again.', 'That was too many taps at once. Sign in again.', 'Sign in once more to open the teacher view.'];
+      const store = typeof sessionStorage !== 'undefined';
+      check(P + 'the exact sentences: nomatch, off and the 15-minute wait, and each reason a teacher screen ended, read once from sessionStorage and then gone', said.join('|') === want.join('|') && (!store || (byes.join('|') === wantBye.join('|') && once)), { said, byes, once, store });
+      // NEGATIVE (J1): a page that already held a kid's world: the answer ends the session, notes 'fresh' and reloads; no screen opens
+      if (window.TEACHERSCREEN) TEACHERSCREEN.pristine = false;
+      opened.length = 0;
+      LOGIN.submit('Mrs. Smith-Jones', 'maple-river-lantern-42', '', false);
+      check(P + 'NEGATIVE: on a page that is not pristine (a knight was loaded on it) a teacher\'s answer opens no screen: the page is started again (logout beacon, bye fresh, reload)', opened.length === 0 && freshed.length === 1 && freshed[0] === 'tt'.repeat(32) && NET.token === null, { opened: opened.length, freshed });
+      // the page stops being pristine at the first knight it loads
+      if (window.TEACHERSCREEN) { TEACHERSCREEN.pristine = true; title.startSlot = was.start; title.startSlot(was.slot || 1); }
+      check(P + 'a knight loaded on the page (title.startSlot) makes it no longer pristine', !window.TEACHERSCREEN || TEACHERSCREEN.pristine === false, { pristine: window.TEACHERSCREEN && TEACHERSCREEN.pristine });
+    } finally {
+      LOGIN.teacherOpen = was.open; LOGIN.teacherFresh = was.fresh; title.startSlot = was.start; NET.connect = was.connect;
+      if (window.TEACHERSCREEN) TEACHERSCREEN.pristine = was.pristine;
+      hide(); NET.useFake(was.fake); NET.enabled = was.enabled; NET.setToken(was.token);
+      if (was.sess == null) lsDel('fanglands.session'); else lsSet('fanglands.session', was.sess);
+      if (was.last == null) lsDel(NAME_KEY); else lsSet(NAME_KEY, was.last);
+      LOGIN.name = was.name; LOGIN.error = ''; LOGIN.mode = 'form'; LOGIN.busy = false;
+      if (was.title) { title.open(); if (was.showing) LOGIN.show(); else hide(); } else title.startSlot(was.slot);
     }
   });
 }

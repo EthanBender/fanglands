@@ -42,7 +42,7 @@ import { SimBook } from './sim/book.js';
 import { SimHost, WORLDGEN_FREE } from './sim/host.js';
 import { cleanSwitches, WORLD_MAPS, WORLD_READY, WORLD_EMPTY, MODES } from './sim/worlds.js';
 import ATLAS_JSON from './atlas.json' with { type: 'json' };
-import { migrateTeachers, TeacherBook, teacherCall, teacherAdminCall, DOOR } from './teachers.js';
+import { migrateTeachers, TeacherBook, teacherCall, teacherAdminCall, teacherLogin } from './teachers.js';
 import { Watch } from './watch.js';
 
 // the Atlas the world judges by (docs/ONLINE.md, "The shared world", Stage 1): made by tools/atlas.mjs from the game it ships with
@@ -106,6 +106,9 @@ export class World {
     }
     // a login still open with no socket carrying it (the world was restarted under it) ends when it was last heard from
     try { this.room.settleLogins(); } catch (e) { console.error('logins', e); }
+    // a teacher screen that was watching a kid's view before the nap: tapped again by name now that the knights are back,
+    // or told the view ended (watch.js settle)
+    try { this.watch.settle(); } catch (e) { console.error('watch', e); }
     // when the logins began to be counted: written once, on the first wake of this code
     this.loginsSince = this.store.trackingSince(this.now());
   }
@@ -194,8 +197,8 @@ export class World {
   // Every /api call and the socket, by path and method.
   async route(req, url, path, method) {
     if (path === '/ws') return this.openSocket(req, url);
-    // the teacher view: only through the teacher address's door (worker.js strips a door a browser sends anywhere)
-    if (path.startsWith('/api/teacher/')) { if (req.headers.get(DOOR) !== 'teacher') throw oops(404, 'no such call', 'nope'); return await teacherCall(this, req, url, path, method); }
+    // the teacher view's socket calls (round 2: on every game address, no door; the sign-in is /api/login, teachers.js)
+    if (path.startsWith('/api/teacher/')) return await teacherCall(this, req, url, path, method);
     { const r = await handoffCall(this, req, url, path, method); if (r) return r; }   // two addresses: handoff.js
     if (path === '/api/status' && method === 'GET') return this.status();
     if (path.startsWith('/api/admin/')) return await this.admin(req, url, path.slice('/api/admin/'.length), method);
@@ -317,6 +320,10 @@ export class World {
     let a = lc && this.row('SELECT * FROM accounts WHERE name_lc = ?', lc);
     // a knight an admin renamed may still type the old name: it logs in as the new one (the answer carries the new name)
     if (!a && lc) { const moved = this.store.renamedFrom(lc); if (moved) { lc = norm(moved); a = this.row('SELECT * FROM accounts WHERE name_lc = ?', lc); } }
+    // no knight by that name (and none had it before a rename): a teacher's sign-in, but only for a card that can take a
+    // teacher's answer (teacherOk: 1). An older cached card never sends it, so it is never handed a teacher token to keep.
+    // Knight and teacher names never clash (nameClash / knightClash), so this order cannot be fooled.
+    if (!a && b && b.teacherOk === 1) return json(await teacherLogin(this, { name: b.name, pass: b.pass, addr: addressOf(req.headers.get('cf-connecting-ip')) }));
     if (!a) throw oops(404, 'no knight by that name', 'unknown');
     if (a.banned) throw oops(403, 'this knight is banned', 'banned');
     const now = this.now();

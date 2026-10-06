@@ -46,6 +46,7 @@ export function makeCtx(db, opts = {}) {
   };
 }
 export const ENV = { ADMIN_KEY: 'test-admin', INVITE_CODE: 'TEST-1234' };
+// round 1's door header: round 2 has no door, so a browser that sends one gets exactly what it would without it (tests use it)
 export const DOOR = { 'x-fanglands-door': 'teacher' };
 
 export async function call(w, method, path, body, o = {}) {
@@ -75,16 +76,17 @@ export async function addTeacher(w, name = 'Mrs Smith', pass = 'maple-river-lant
   assert.equal(r.status, 200, JSON.stringify(r.data));
   return { id: r.data.id, name, pass };
 }
+// round 2: a teacher signs in on the game's own card: POST /api/login with teacherOk: 1
 export async function teacherLogin(w, name, pass, ip) {
-  const r = await call(w, 'POST', '/api/teacher/login', { name, pass }, { door: true, ip });
+  const r = await call(w, 'POST', '/api/login', { name, pass, teacherOk: 1 }, { ip });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   return r.data;
 }
-export async function ticket(w, token) { const r = await call(w, 'POST', '/api/teacher/ticket', undefined, { door: true, token }); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.ticket; }
+export async function ticket(w, token) { const r = await call(w, 'POST', '/api/teacher/ticket', undefined, { token }); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.ticket; }
 // the watch screen: sign in (or a token), a ticket, the upgrade
 export async function screen(w, token) {
   const t = await ticket(w, token);
-  const r = await w.fetch(new Request('http://world/api/teacher/ws?ticket=' + t, { headers: Object.assign({ upgrade: 'websocket' }, DOOR) }));
+  const r = await w.fetch(new Request('http://world/api/teacher/ws?ticket=' + t, { headers: { upgrade: 'websocket' } }));
   assert.equal(r.status, 101, 'teacher ws ' + r.status);
   return w.ctx.sockets[w.ctx.sockets.length - 1];
 }

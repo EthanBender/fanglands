@@ -8,7 +8,17 @@
 //   watch.open(sock, att) / restore(sock, att) / has(sock) / message(sock, str) / leave(sock)
 //   watch.closeTeacher(id, code) / closeSession(sh, code) / countFor(id) / setNotice(on) / undo(actId, teacher|null) / actsView(now)
 //   watch.hooks                       what the Room calls (room.js opts.hooks): welcomed(k, acc), presence(k, m), left(k),
-//                                     chatGate(k, acc, now), chat(line), event(e), sentOff(lc), changed()
+//                                     chatGate(k, acc, now), chat(line), event(e), sentOff(lc), changed(), mon(k, out)
+//   watch.settle()                    after a wake's restores: a screen that was watching a kid is tapped again, or told it ended
+//
+// Watch (round 2, docs/ONLINE.md "The teacher view", Watch): a teacher may watch ONE kid's point of view per screen. The Room
+// tees every frame that kid's game gets (room.taps, filled here) and the Watch forwards to the screen only the frames on the
+// allowlist (VIEW_FORWARD, VIEW_STATUS), as {t:'w_v', v, m: <the frame, byte for byte>}; everything else is dropped. His own
+// presence and, while he keeps his map, his own monster stream (hooks.presence, hooks.mon) go along. The screen is still never
+// a knight: never in knights, byName, a map's members, a keeper election, who, online() or the 50 cap. The kid's game is told
+// {t:'view', on} so that, alone on a map he keeps, it sends its monsters about twice a second (75-coop) for the teacher to see;
+// that stream is capped (VIEW_STREAMS_MAX at once, VIEW_DAY_MSGS a day). Starting and stopping a view is a message each
+// (1/20 of a request); every frame out is free.
 //
 // Cost (the free plan): nothing here sets a timer or an alarm. A frame of who is where (w_k) is built only on the back of
 // something the World is already doing (a knight's presence, a join, a leave, a mute), at most once a second, from memory,
@@ -21,7 +31,7 @@ import { wireMap } from './move.js';
 import { ALWAYS, norm } from './store.js';
 import {
   TEACHER_TZ, ACTS_PER_WINDOW, ACT_WINDOW_MS, SENDOFF_PER_DAY, RECENT_LEFT_MS, CHAT_BACK_MS, CHAT_BACK_LINES,
-  SCREENS_MAX, SCREENS_PER_TEACHER, dayStart, dayEnd, sendOffEnd, teacherTag,
+  SCREENS_MAX, SCREENS_PER_TEACHER, dayStart, dayEnd, sendOffEnd, teacherTag, clockAt,
 } from './teachers.js';
 
 export const FRAME_EVERY = 1000;     // ms: at most one w_k a second
@@ -56,6 +66,38 @@ export const DOING_ACTS = [
 export const DOING_MOUNTS = { walker: 'In a walker', dozer: 'Driving a bulldozer', beast: 'Riding a beast', horse: 'Riding a horse' };
 export const ROW_KEYS = ['n', 'role', 'map', 'place', 'x', 'y', 'doing', 'since', 'away', 'muted', 'sentOff'];
 
+// ---------- Watch: one kid's point of view (round 2) ----------
+// The frames his game gets that a teacher's screen gets too, byte for byte: the world around him (knights, monsters, who keeps
+// the map), the chat, and the drop parties' crackers. VIEW_STATUS go to the screen's header only. Every other type a game can
+// be sent is dropped (VIEW_DROP lists them; watch.test.mjs fails on a type in none of the three).
+export const VIEW_FORWARD = new Set(['p', 'left', 'mon', 'keeper', 'chat', 'crackers', 'boom', 'party_end', 'announce']);
+export const VIEW_STATUS = new Set(['muted', 'unmuted', 'chat_pause', 'strike']);
+export const VIEW_DROP = new Set(['welcome', 'who', 'role', 'sim', 'snap', 'hit', 'kill', 'hurt', 'gift', 'gift_ok', 'gift_back', 'prize',
+  'trade_ask', 'trade_asked', 'trade_ask_off', 'trade_no', 'trade_open', 'trade_state', 'trade_note', 'trade_end', 'trade_done',
+  'mod', 'modlist', 'spawn', 'spawn_clear', 'light_no', 'party_no', 'boss_call', 'boss_wait', 'watching', 'error', 'pong', 'view']);
+// an error to the kid that ends his game's line: the view ends, in these words
+export const VIEW_END = {
+  left: (n, at) => n + ' left the game at ' + clockAt(at) + '.',
+  sentoff: n => n + ' was sent off until tomorrow.',
+  kicked: n => 'An admin sent ' + n + ' out of the world.',
+  banned: n => 'An admin sent ' + n + ' out of the world.',
+  words: n => 'The word filter sent ' + n + ' out for 24 hours.',
+  elsewhere: n => n + ' opened the game somewhere else. This view starts again when that game comes in.',
+  renamed: n => 'An admin gave ' + n + ' a new name, so this view ended.',
+};
+export const VIEWS_MAX = 6;               // kids being watched at once in the world (one per screen, SCREENS_MAX screens)
+export const VIEW_STREAMS_MAX = 3;        // kids told {view: on} at once: each may stream its monsters alone (R2-3)
+export const VIEW_DAY_MSGS = 40000;       // incoming alone-stream messages a Toronto day, counted in memory (2,000 requests)
+export const WATCH_LOG_MS = 600000;       // one mod_log 'watch' row per teacher per knight per 10 minutes (R2-4)
+export const WATCH_ADMINS = true;         // R2-1: a teacher may watch an admin's knight too (read-only)
+const TYPE_RE = /^\{"t":"([a-z_]+)"/;
+// the type of a frame as it went to the kid: read from its first bytes, else parsed (J2); null when it has none
+export function frameType(str) {
+  const m = TYPE_RE.exec(str);
+  if (m) return m[1];
+  try { const o = JSON.parse(str); return o && typeof o.t === 'string' ? o.t : null; } catch (e) { return null; }
+}
+
 const leftOf = (until, now) => until >= ALWAYS ? -1 : Math.max(0, Math.ceil((until - now) / 1000));
 const NO = (req, code, text) => ({ t: 'w_no', req, code, text });
 
@@ -73,6 +115,12 @@ export class Watch {
     this.pause = st.pause; this.notice = st.notice;
     this.lastKey = null; this.lastSentAt = -Infinity; this.lastBuildAt = -Infinity;
     this.frames = 0;            // w_k frames sent (the tests read it)
+    // Watch: lc -> {lc, n, viewers: Set<screen>, sock (the kid's tapped socket, or null while he is away), told, limit}
+    this.views = new Map();
+    this.vseq = 0;
+    this.watchLog = new Map();  // teacher id + '|' + lc -> when that teacher's last 'watch' row was written
+    this.day = { start: -1, msgs: 0, full: false };   // the alone streams' incoming messages today (memory; a nap forgets)
+    this.viewStats = { starts: 0, stops: 0, forwarded: 0 };
     this.hooks = {
       welcomed: (k, acc) => this.welcomed(k, acc),
       presence: (k, m) => this.presence(k, m),
@@ -82,6 +130,7 @@ export class Watch {
       event: e => this.event(e),
       sentOff: lc => this.sentOff(lc),
       changed: () => this.frame(true),
+      mon: (k, out) => this.monOut(k, out),
     };
   }
   get atlas() { return this.atlasGiven || (this.room && this.room.atlas) || null; }
@@ -114,7 +163,7 @@ export class Watch {
     if (!c.L) return this.bye(sock, c.code);
     if (this.screens.size >= SCREENS_MAX || this.countFor(c.L.id) >= SCREENS_PER_TEACHER) return this.bye(sock, 4014);
     const now = this.now();
-    this.screens.set(sock, { sock, w: c.L.id, sh: att.sh, since: att.since || now, name: c.L.name, exp: c.L.expires, b: { tokens: SOCK_BURST, at: now }, over: 0 });
+    this.screens.set(sock, { sock, w: c.L.id, sh: att.sh, since: att.since || now, name: c.L.name, exp: c.L.expires, b: { tokens: SOCK_BURST, at: now }, over: 0, view: null, pending: null });
     this.send(sock, { t: 'w_hello', me: c.L.name, expires: c.L.expires, now, tz: TEACHER_TZ, notice: this.notice });
     this.send(sock, this.allFrame(now));
     if (this.screens.size === 1 && this.notice) this.tellKnights({ t: 'watching', on: true });
@@ -125,9 +174,13 @@ export class Watch {
     const c = this.check(att.sh);
     if (!c.L || c.L.id !== att.w) return this.bye(sock, c.code || 4011);
     const now = this.now();
-    this.screens.set(sock, { sock, w: c.L.id, sh: att.sh, since: att.since || now, name: c.L.name, exp: c.L.expires, b: { tokens: SOCK_BURST, at: now }, over: 0 });
+    // a screen that was watching a kid: settle() taps him again once the knights are back (or says the view ended)
+    const pending = typeof att.view === 'string' && att.view ? att.view.slice(0, 40) : null;
+    this.screens.set(sock, { sock, w: c.L.id, sh: att.sh, since: att.since || now, name: c.L.name, exp: c.L.expires, b: { tokens: SOCK_BURST, at: now }, over: 0, view: null, pending });
   }
   leave(sock) {
+    const sc = this.screens.get(sock);
+    if (sc) this.unview(sc);
     if (!this.screens.delete(sock)) return;
     if (this.screens.size === 0 && this.notice) this.tellKnights({ t: 'watching', on: false });
   }
@@ -161,6 +214,9 @@ export class Watch {
     }
     s.b.tokens -= 1;
     const me = { id: c.L.id, name: c.L.name };
+    // Watch: not a knight action (no teacher_acts row, not in the 10-in-10-minutes count)
+    if (m.t === 'w_view') return this.doView(s, me, m, req, now);
+    if (m.t === 'w_unview') { this.unview(s); return this.send(sock, { t: 'w_ok', req, text: '' }); }
     let out = null;
     switch (m.t) {
       case 'w_mute': out = this.doMute(me, m, now); break;
@@ -397,10 +453,182 @@ export class Watch {
     this.toAll(Object.assign({ t: 'w_k', at: now }, body));
   }
 
+  // ---------- Watch: one kid's point of view ----------
+  // w_view {req, n}: checked after the lock and the socket's rate (message()): the knight is on and has said hello; one view
+  // per screen (a new one replaces the old); at most VIEWS_MAX in the world. One mod_log row, at most every WATCH_LOG_MS per
+  // teacher per knight. The answer is w_vstart (or w_no).
+  doView(s, me, m, req, now) {
+    const raw = typeof m.n === 'string' && m.n.length <= 40 ? m.n : '';
+    const k = raw && this.room ? this.room.byName.get(norm(raw)) : null;
+    if (!k || !k.hello || k.virtual) return this.send(s.sock, NO(req, 'gone', (k ? k.name : raw || 'That knight') + ' is not on now.'));
+    if (!WATCH_ADMINS && k.role === 'admin') return this.send(s.sock, NO(req, 'admin', k.name + ' is an admin. Only Ethan can do that.'));
+    // the same kid again: a fresh start on the same view; another kid: the old view ends first (one view per screen)
+    if (s.view && s.view.lc !== k.lc) this.unview(s);
+    let viewing = 0; for (const v of this.views.values()) if (v.viewers.size) viewing++;
+    if (!this.views.has(k.lc) && viewing >= VIEWS_MAX) return this.send(s.sock, NO(req, 'busy', 'Too many kids are being watched right now. Try again in a minute.'));
+    const key = me.id + '|' + k.lc, last = this.watchLog.get(key);
+    if (!(last != null && now - last < WATCH_LOG_MS && now >= last)) {
+      this.watchLog.set(key, now);
+      if (this.watchLog.size > 500) for (const [kk, t] of this.watchLog) if (now - t >= WATCH_LOG_MS) this.watchLog.delete(kk);
+      this.store.log({ at: now, by: teacherTag(me.name), act: 'watch', target: k.name, detail: '' });
+    }
+    let v = this.views.get(k.lc);
+    if (!v) { v = { lc: k.lc, n: k.name, viewers: new Set(), sock: null, told: false, limit: null, canStream: false }; this.views.set(k.lc, v); }
+    const again = v.viewers.has(s);
+    v.viewers.add(s);
+    s.view = { lc: k.lc, v: ++this.vseq };
+    s.pending = null;
+    this.attachScreen(s);
+    if (!again) this.viewStats.starts++;
+    this.tapOn(v, k);
+    this.send(s.sock, this.vstart(s, k, v, req));
+  }
+  // what the screen needs to draw his screen at once, from memory (no SQL): his map, who keeps it, his last presence and each
+  // friend's on his map, the live crackers there, whether his game is older than the world's Atlas and whether it streams
+  // its monsters while he is alone (the 'view' capability)
+  vstart(s, k, v, req) {
+    const room = this.room, map = k.map, g = room.maps.get(map);
+    const parse = str => { try { return JSON.parse(str); } catch (e) { return null; } };
+    const others = [];
+    if (g) for (const o of g.members) if (o !== k && o.last && !o.virtual) { const p = parse(o.last); if (p) others.push(p); }
+    const parties = [];
+    if (room.parties) for (const p of room.parties.values()) if (p.map === map) { const c = parse(room.crackersMsg(p)); if (c) parties.push(c); }
+    const wmap = wireMap(map) || 'over';
+    const keeper = room.worlds && typeof room.worlds.keeperMsg === 'function' ? room.worlds.keeperMsg(map, g ? g.keeper : null) : { t: 'keeper', map: wmap, n: g && g.keeper ? g.keeper.name : null };
+    const old = !!(room.atlas && k.atlas !== room.atlas.hash);
+    const live = (Array.isArray(k.caps) && k.caps.includes('view')) || !!(g && g.keeper && g.keeper.virtual);
+    const out = { t: 'w_vstart', v: s.view.v, n: k.name, role: k.role === 'admin' ? 'admin' : 'player', map: wmap, place: this.placeOf(k, wmap), keeper, me: k.last ? parse(k.last) : null, others, parties, old, monsters: live ? 'live' : 'friends', limit: v.limit };
+    if (req != null) out.req = req;
+    return out;
+  }
+  attachScreen(s) {
+    if (!s.sock.attach) return;
+    const att = { w: s.w, sh: s.sh, since: s.since };
+    if (s.view) att.view = s.view.lc;
+    try { s.sock.attach(att); } catch (e) { }
+  }
+  // the kid's socket is tapped (every frame to it reaches tap()) and, at his first viewer, he is told {view: on}
+  tapOn(v, k) {
+    if (v.sock && v.sock !== k.sock) this.room.taps.delete(v.sock);
+    v.sock = k.sock;
+    // only a game that can stream alone (the 'view' capability) is told; an older one shows monsters only near a friend
+    v.canStream = Array.isArray(k.caps) && k.caps.includes('view');
+    if (!this.room.taps.has(k.sock)) this.room.taps.set(k.sock, str => this.tap(v, str));
+    this.tellOn(v);
+  }
+  tellOn(v) {
+    if (v.told || !v.sock || !v.viewers.size || !v.canStream) return;
+    const now = this.now();
+    this.dayRoll(now);
+    let told = 0; for (const o of this.views.values()) if (o.told) told++;
+    const limit = this.day.full ? 'day' : told >= VIEW_STREAMS_MAX ? 'streams' : null;
+    if (limit !== v.limit) { v.limit = limit; this.vinfo(v); }
+    if (limit) return;
+    v.told = true;
+    this.room.raw(v.sock, '{"t":"view","on":true}');
+  }
+  tellOff(v) {
+    if (!v.told) return;
+    v.told = false;
+    if (v.sock && this.room.knights.has(v.sock)) this.room.raw(v.sock, '{"t":"view","on":false}');
+  }
+  // the screens watching him hear what a limit means for the monsters near him
+  vinfo(v) {
+    for (const s of v.viewers) if (s.view && s.view.lc === v.lc) this.send(s.sock, { t: 'w_vinfo', v: s.view.v, limit: v.limit });
+  }
+  dayRoll(now) {
+    const d = dayStart(now);
+    if (d !== this.day.start) { this.day = { start: d, msgs: 0, full: false }; for (const v of this.views.values()) if (v.limit === 'day') { v.limit = null; this.vinfo(v); } }
+  }
+  // a screen stops watching (w_unview, Back to the map, another kid, sign out, idle, the screen closed)
+  unview(s) {
+    const cur = s.view; s.view = null; s.pending = null;
+    if (!cur) return;
+    this.attachScreen(s);
+    this.viewStats.stops++;
+    const v = this.views.get(cur.lc);
+    if (!v) return;
+    v.viewers.delete(s);
+    if (v.viewers.size) return;
+    this.dropView(v);
+  }
+  dropView(v) {
+    this.tellOff(v);
+    if (v.sock) this.room.taps.delete(v.sock);
+    v.sock = null;
+    this.views.delete(v.lc);
+    // a kid waiting for a stream (VIEW_STREAMS_MAX) may have one now
+    for (const o of this.views.values()) if (!o.told && o.limit === 'streams' && o.sock) { this.tellOn(o); if (o.told) break; }
+  }
+  // his game's line ended (left, kicked, sent off, kept out, opened elsewhere, renamed): the screens hear it in words, the tap
+  // goes; the view stays open (pending) so a game that comes back in is watched again from its welcome (welcomed)
+  endView(v, why, at) {
+    const text = (VIEW_END[why] || VIEW_END.left)(v.n, at);
+    if (v.told) { v.told = false; }
+    if (v.sock) this.room.taps.delete(v.sock);
+    v.sock = null;
+    for (const s of v.viewers) if (s.view && s.view.lc === v.lc) this.send(s.sock, { t: 'w_vend', v: s.view.v, n: v.n, why, at, text });
+    for (const o of this.views.values()) if (!o.told && o.limit === 'streams' && o.sock) { this.tellOn(o); if (o.told) break; }
+  }
+  // every frame the kid's game gets passes here: the allowlist only, byte for byte, to each screen watching him
+  tap(v, str) {
+    if (typeof str !== 'string') return;
+    const t = frameType(str);
+    if (!t) return;
+    if (t === 'error') {
+      let e = null; try { e = JSON.parse(str); } catch (x) { return; }
+      const code = e && e.code;
+      const why = code === 'kicked' ? (e.why === 'sentoff' ? 'sentoff' : 'kicked') : (code === 'words' || code === 'elsewhere' || code === 'banned' || code === 'renamed') ? code : null;
+      if (why) this.endView(v, why, this.now());
+      return;
+    }
+    if (VIEW_FORWARD.has(t) || VIEW_STATUS.has(t)) this.forward(v, str);
+  }
+  forward(v, str) {
+    const now = this.now();
+    for (const s of Array.from(v.viewers)) {
+      if (!s.view || s.view.lc !== v.lc) continue;
+      if (s.exp <= now) { this.bye(s.sock, 4011); continue; }
+      try { s.sock.send('{"t":"w_v","v":' + s.view.v + ',"m":' + str + '}'); this.viewStats.forwarded++; } catch (e) { }
+    }
+  }
+  // the keeper's own snapshot (he never receives it): to his screens; an alone stream (nobody else on his map) is counted
+  monOut(k, out) {
+    const v = this.views.get(k.lc);
+    if (!v || v.sock !== k.sock) return;
+    const g = this.room.maps.get(k.map);
+    if (v.told && g && g.members.size === 1) {
+      const now = this.now();
+      this.dayRoll(now);
+      if (++this.day.msgs >= VIEW_DAY_MSGS && !this.day.full) {
+        this.day.full = true;
+        for (const o of this.views.values()) if (o.told) { this.tellOff(o); o.limit = 'day'; this.vinfo(o); }
+      }
+    }
+    this.forward(v, out);
+  }
+  // after a wake's restores: each screen that was watching a kid taps him again (a fresh w_vstart), or hears the view ended
+  settle() {
+    for (const s of this.screens.values()) {
+      if (!s.pending) continue;
+      const lc = s.pending; s.pending = null;
+      const k = this.room ? this.room.byName.get(lc) : null;
+      let v = this.views.get(lc);
+      if (!v) { v = { lc, n: k ? k.name : lc, viewers: new Set(), sock: null, told: false, limit: null, canStream: false }; this.views.set(lc, v); }
+      v.viewers.add(s);
+      s.view = { lc, v: ++this.vseq };
+      if (k && k.hello) { v.n = k.name; this.tapOn(v, k); this.send(s.sock, this.vstart(s, k, v, null)); }
+      else this.send(s.sock, { t: 'w_vend', v: s.view.v, n: v.n, why: 'left', at: this.now(), text: VIEW_END.left(v.n, this.now()) });
+    }
+  }
+
   // ---------- the Room's hooks ----------
   welcomed(k, acc) {
     const now = this.now();
     this.gone.delete(k.lc);
+    // a watched kid whose game came (back) in: tapped again, each screen gets a fresh start
+    { const v = this.views.get(k.lc);
+      if (v && v.viewers.size) { v.n = k.name; v.told = false; this.tapOn(v, k); for (const s of v.viewers) if (s.view && s.view.lc === k.lc) { s.view.v = ++this.vseq; this.send(s.sock, this.vstart(s, k, v, null)); } } }
     if (acc) this.mutes.set(k.lc, this.muteOf(k.lc, acc.mutedUntil));
     const p = this.pauseNow(now);
     if (p) this.room.send(k.sock, { t: 'chat_pause', left: leftOf(p.until, now) });
@@ -409,6 +637,8 @@ export class Watch {
   }
   presence(k, m) {
     if (!this.screens.size) return;
+    // his own presence (he never receives it): to the screens watching him
+    if (this.views.size && k.last) { const v = this.views.get(k.lc); if (v && v.sock === k.sock) this.forward(v, k.last); }
     const now = this.now();
     let s = this.seen.get(k.lc);
     if (!s) { s = {}; this.seen.set(k.lc, s); }
@@ -420,6 +650,7 @@ export class Watch {
   }
   left(k) {
     const now = this.now();
+    { const v = this.views.get(k.lc); if (v && v.sock === k.sock) this.endView(v, 'left', now); }
     this.gone.set(k.lc, { n: k.name, at: now });
     this.seen.delete(k.lc);
     this.frame(true);

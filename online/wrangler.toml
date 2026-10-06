@@ -12,9 +12,6 @@ compatibility_date = "2026-09-01"
 # there for a proof.
 [vars]
 HANDOVER = "off"
-# The teacher view (docs/ONLINE.md, "The teacher view"): the address the watch screen is served on. The test world gets
-# test-teacher.fanglands.com (~/.fanglands/tools/deploy-test.sh writes it); a local world: --var TEACHER_HOST:localhost.
-TEACHER_HOST = "teacher.fanglands.com"
 
 [assets]
 directory = "./public"
@@ -44,8 +41,4 @@ custom_domain = true
 
 [[routes]]
 pattern = "www.fanglands.com"
-custom_domain = true
-
-[[routes]]
-pattern = "teacher.fanglands.com"
 custom_domain = true

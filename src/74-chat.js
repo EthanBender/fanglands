@@ -198,9 +198,13 @@
   });
 
   // ---------- keys, timers ----------
-  HOOKS.update.push(dt => {
+  // the bubbles' and the strip's clocks. CHAT.step: 79-view runs this alone while a teacher watches a kid (no update() there)
+  function step(dt) {
     for (const n in bubbles) { const b = bubbles[n]; b.t -= dt; if (b.t <= 0) delete bubbles[n]; }
     for (const l of log) if (l.t > 0) l.t -= dt;
+  }
+  HOOKS.update.push(dt => {
+    step(dt);
     // Enter opens the box only when it would not be advancing a line of talk (the core handles that first, in the same tick, so remember whether a line was up last tick)
     if (NET.enabled && !paused && !player.dead && !panel && !isOpen && (pressed.has('KeyY') || (pressed.has('Enter') && !dialog.cur && !prevDialog))) open();
     prevDialog = !!dialog.cur;
@@ -256,10 +260,11 @@
   const LINE_H = 20;
   const liveLines = () => { const out = []; for (let i = log.length - 1; i >= 0 && out.length < STRIP_LINES; i--) if (log[i].t > 0) out.unshift(log[i]); return out; };
   // how many lines the strip wants this frame (the kit reserves the lane from it), capped by the lane's own maximum
-  const stripLines = () => { if (!NET.enabled || paused || panel || (dialog && dialog.cur)) return 0; const L = HK.cur(); return Math.min(liveLines().length, L && L.chatMax || STRIP_LINES); };
+  // (force: 79-view draws the strip for a teacher watching a kid, whose page is not online itself)
+  const stripLines = force => { if ((!NET.enabled && !force) || paused || panel || (dialog && dialog.cur)) return 0; const L = HK.cur(); return Math.min(liveLines().length, L && L.chatMax || STRIP_LINES); };
   // named so the self-test can draw the strip into a recording canvas; the HUD hook below calls it every frame
-  function drawStrip(g) {
-    const n = stripLines(); if (!n) return;
+  function drawStrip(g, force) {
+    const n = stripLines(force); if (!n) return;
     const lane = HK.lane('chat', n); if (!lane) return;
     const lines = liveLines().slice(-n);
     const top = lane.y + lane.h - n * LINE_H;
@@ -322,6 +327,8 @@
 
   window.CHAT = {
     open, close, send, system, isOpen: () => isOpen, bubbles, log, PHRASES, MAX, stripLines, CSS, drawBubble, bubbleLines,
+    // 79-view (a teacher watching a kid): the clocks alone, and the strip drawn on a page that is not online itself
+    step, drawStrip: g => drawStrip(g, true),
     // a different knight on this device (Not me, Log out): empty the log and bubbles; onForget(fn) runs fn then too.
     // sameKnight(name): the knight was renamed by an admin, so the welcome as the new name is still the same knight.
     forget, onForget: fn => { if (typeof fn === 'function') forgetters.push(fn); }, gate: fn => { if (typeof fn === 'function') gates.push(fn); }, teacherMuted, pausedSentence, sameKnight: name => { if (typeof name === 'string' && name) knight = name; }, knight: () => knight,

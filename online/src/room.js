@@ -103,7 +103,9 @@ for (const c of Object.values(CAPS)) if (!c.burst) c.burst = Math.max(2, Math.ro
 
 // The shared world (docs/ONLINE.md, "The shared world"): the capabilities a game may name in hello, in this order. 'snap'
 // (Stage 2): asked by the world taking over a map it keeps, the game answers once with every monster (sim/worlds.js snap)
-export const KNOWN_CAPS = ['tick', 'die', 'roll', 'loot', 'zone', 'fix', 'day', 'snap'];
+// 'view' (the teacher view, round 2): the game streams its monsters while a teacher watches it and it keeps its map alone
+// (docs/ONLINE.md "The teacher view", Watch), and puts the time of day on its presence (tod)
+export const KNOWN_CAPS = ['tick', 'die', 'roll', 'loot', 'zone', 'fix', 'day', 'snap', 'view'];
 export const capsOf = c => Array.isArray(c) ? KNOWN_CAPS.filter(n => c.includes(n)) : [];
 export const atlasOf = a => typeof a === 'string' && /^[0-9a-z]{1,32}$/.test(a) ? a : null;
 // a knight's own island is his alone: the Room keys it by his name, and every message out names it 'house' again
@@ -153,7 +155,8 @@ const MOD_ACTS = ['mute', 'unmute', 'kick', 'ban', 'unban'];
 const low = s => String(s).toLowerCase();
 // The teacher view's hooks (online/src/watch.js, docs/ONLINE.md "The teacher view"): the World passes its Watch's; without one
 // (the simulations, the unit tests) every hook does nothing, so nothing changes.
-export const NO_HOOKS = Object.freeze({ welcomed() { }, presence() { }, left() { }, chatGate() { return false; }, chat() { }, event() { }, sentOff() { return 0; }, changed() { } });
+// mon(k, out): the keeper's snapshot as relayed (round 2's Watch: a teacher watching that keeper sees it too).
+export const NO_HOOKS = Object.freeze({ welcomed() { }, presence() { }, left() { }, chatGate() { return false; }, chat() { }, event() { }, sentOff() { return 0; }, changed() { }, mon() { } });
 const inRange = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 // Whole seconds of mute left, rounded up, or -1 for "until an admin unmutes" (the contract's muted.left).
 export const leftOf = (until, now) => until >= ALWAYS ? -1 : Math.max(0, Math.ceil((until - now) / 1000));
@@ -169,6 +172,9 @@ export class Room {
     this.wake = opts.wake || (ms => { const t = setTimeout(() => this.tick(), ms); if (t && t.unref) t.unref(); });
     this.store = opts.store || new MemoryStore();
     this.hooks = opts.hooks || NO_HOOKS;
+    // the teacher view's Watch (round 2): a kid's socket -> fn(str), handed every frame that kid's game gets (raw). Empty
+    // unless a teacher is watching someone; nothing else reads it.
+    this.taps = new Map();
     this.random = typeof opts.random === 'function' ? opts.random : cryptoRandom;
     // the shared world: the Atlas (atlas.js, or null: then nothing is judged) and the watching movement check (move.js)
     this.atlas = opts.atlas || null;
@@ -501,6 +507,7 @@ export class Room {
     k.monAt = this.now();
     const out = JSON.stringify({ t: 'mon', n: k.name, list: m.list });
     for (const o of g.members) if (o !== k) this.raw(o.sock, out);
+    this.hooks.mon(k, out);   // a teacher watching this keeper sees his monsters too (watch.js; alone or with members)
   }
 
   onHit(k, m) {
@@ -1167,7 +1174,8 @@ export class Room {
 
   // ---------- plumbing ----------
   send(sock, obj) { this.raw(sock, JSON.stringify(obj)); }
-  raw(sock, str) { try { sock.send(str); } catch (e) { } }
+  // every frame to a knight comes through here (send, worlds.js, welcome, kick, refusals); a watched kid's go to his tap too
+  raw(sock, str) { try { sock.send(str); } catch (e) { } if (this.taps.size) { const f = this.taps.get(sock); if (f) f(str); } }
   attach(k) {
     if (!k.sock.attach) return;
     const gifts = [];

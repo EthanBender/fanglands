@@ -23,7 +23,16 @@
   const REMOTE_STALE = 15;    // seconds without presence before a remote knight is forgotten
   const KNIGHT_R = 13;
 
-  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false };
+  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false,
+    // the teacher view's Watch (round 2, docs/ONLINE.md "The teacher view"). On a kid's game: viewed (the world said
+    // {t: 'view', on: true}: a teacher is watching this knight), and the alone stream's clock. On the teacher's own page:
+    // view (79-view draws a kid's screen here: puppets only, from the frames the world forwards), the keeper of each map, and
+    // the gap between snapshots (the puppets glide over it).
+    viewed: false, alone: { acc: 0, last: null, at: -1e9, sent: 0 }, view: false, viewKeepers: {}, viewGap: 0.12, viewMonAt: -1e9, viewReal: null };
+  // the alone stream (a kid watched by a teacher, keeping his map with nobody near): at most every ALONE_EVERY s, an unchanged
+  // list skipped except one every ALONE_KEEP s; never while paused or on the title
+  const ALONE_EVERY = 0.5, ALONE_KEEP = 5, VIEW_GAP_MIN = 0.12, VIEW_GAP_MAX = 0.6;
+  const aloneReset = () => { S.alone.acc = 0; S.alone.last = null; S.alone.at = -1e9; };
   // ?debug=tick (docs/ONLINE.md, Stage 2): the world's tick and how often its stream lands (kept out of S, which is COOP.state)
   const DBG = { k: null, rows: 0, times: [] };
   // While the world keeps this map ('@world:<map>', Stage 2): the last row it sent of each monster by nid (kept after the
@@ -66,7 +75,7 @@
   };
   const online = () => typeof NET !== 'undefined' && NET.online();
   const isKeeper = () => online() && S.keeper !== null && S.keeper === NET.me;
-  const puppetMode = () => online() && S.puppets !== null && S.keeper !== null && S.keeper !== NET.me;
+  const puppetMode = () => (S.view && S.puppets !== null) || (online() && S.puppets !== null && S.keeper !== null && S.keeper !== NET.me);
 
   // ---------- nids: a stable name for every monster, the same on every client ----------
   function index() {
@@ -208,6 +217,8 @@
     DBG.k = num(msg.k); DBG.rows = n; DBG.times.push(time); while (DBG.times.length && DBG.times[0] < time - 1) DBG.times.shift();
     const world = isWorld(S.keeper);
     if (world) { const st = num(msg.standing); WORLD.standing = st !== null && st >= 0 ? Math.round(st) : null; }
+    // a teacher's view: the puppets glide over the time between two snapshots (an alone stream comes about twice a second)
+    if (S.view) { S.viewGap = clamp(time - S.viewMonAt, VIEW_GAP_MIN, VIEW_GAP_MAX); S.viewMonAt = time; }
     for (let i = 0; i < n; i++) {
       const e = msg.list[i];
       if (!Array.isArray(e) || e.length < 14) continue;
@@ -240,7 +251,8 @@
       // the keeper's row turning dead is its word that this monster died: every screen shows the death on receipt, once
       // (deathSeen). One first seen already dead died before this knight could see it, so it plays nothing.
       if (!dead) p.deathSeen = false;
-      else if (!p.deathSeen) { p.deathSeen = true; if (!born) monsterDied(p, 'row', S.keeper); else p.deadT = 9; }   // 9: past the core's fade too
+      // (a teacher's view plays the core's own tip and fade, counted by viewStep: no corpse, which needs update() to run)
+      else if (!p.deathSeen) { p.deathSeen = true; if (S.view) p.deadT = born ? 9 : 0; else if (!born) monsterDied(p, 'row', S.keeper); else p.deadT = 9; }   // 9: past the core's fade too
     }
     // the old keeper's own monsters held up over a keeper change (setKeeper): the new keeper's first list is the word now, so
     // one it does not list is out of this knight's view there and goes
@@ -334,6 +346,9 @@
   }
   function mapChanged(id) {
     clearWorld();
+    aloneReset();
+    // a teacher's view: the new map's own monsters go; only the stream's puppets show there (never parked, never kept)
+    if (S.view) { S.map = id; S.keeper = Object.prototype.hasOwnProperty.call(S.viewKeepers, id) ? S.viewKeepers[id] : null; S.puppets = []; monsters = S.puppets; S.parked = {}; S.idxLen = -1; S.viewMonAt = -1e9; return; }
     const old = S.map;
     S.map = id; S.keeper = null; S.puppets = null; S.snapAcc = 0; S.here = [];
     if (old !== 'over') delete S.parked[old];                 // an instance's monsters are rebuilt on every entry; nothing to keep
@@ -344,7 +359,7 @@
   }
   // the socket dropped (offline) or a new welcome: this game runs its map until told otherwise. A map the world kept goes on
   // as the world last showed it (keepWorld); a knight's map gives back this game's own array, as it always did.
-  function reset() { if (S.puppets && worldLast()) keepWorld(); else if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; clearWorld(); S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; S.restAt = {}; S.lootless = false; }
+  function reset() { if (S.view) { S.remotes = {}; return; } if (S.puppets && worldLast()) keepWorld(); else if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; clearWorld(); S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; S.restAt = {}; S.lootless = false; S.viewed = false; aloneReset(); }
 
   // ---------- named bosses: waking one, here or on the keeper ----------
   const bossAlive = h => { try { return !!h.alive(); } catch (e) { return false; } };
@@ -480,17 +495,60 @@
       }
       return;
     }
+    // A teacher is watching this knight (the world said view on) and he keeps his map with nobody near: his game sends its
+    // monsters at most twice a second while they change, so the teacher sees them too; never while paused or on the title.
+    const watchedAlone = S.viewed && isKeeper() && !S.here.length;
+    if (watchedAlone) aloneStream(dt);
     // a keeper whose game is running keeps talking even with nobody near: an empty snapshot is a heartbeat, so the world never
     // takes a working keeper for a frozen one and hands the map to a knight whose phone is locked (the monsters then vanished).
     // A paused keeper or one on the title screen stays quiet on purpose, so the world hands the map to someone who is playing.
+    // A watched lone keeper's heartbeat carries his monsters instead of nothing (an empty list would read on the teacher's
+    // screen as a stream that stopped listing them), and each list the alone stream sends counts as the heartbeat.
     if (isKeeper() && online() && !paused && !(title && title.active)) {
       S.beatAcc = (S.beatAcc || 0) + dt;
-      if (S.beatAcc >= BEAT_EVERY && !(pre && pre.kind === 'keeper' && S.here.length)) { S.beatAcc = 0; NET.send({ t: 'mon', list: [] }); }
+      if (S.beatAcc >= BEAT_EVERY && !(pre && pre.kind === 'keeper' && S.here.length)) { S.beatAcc = 0; if (watchedAlone) aloneSend(); else NET.send({ t: 'mon', list: [] }); }
     }
     if (!pre || pre.kind !== 'keeper') return;
     if (!paused) for (const f of pre.frozen) { const m = f.m; if (!m.dead && m.stunT <= 0 && monsters.includes(m)) stepRemote(m, f.target, dt); }
     S.snapAcc += dt;
     if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; S.beatAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
+  }
+  function aloneStream(dt) {
+    if (paused || (title && title.active)) { S.alone.acc = 0; return; }
+    S.alone.acc += dt;
+    if (S.alone.acc < ALONE_EVERY) return;
+    S.alone.acc = 0;
+    const list = snapshot([]), str = JSON.stringify(list);
+    if (str === S.alone.last && time >= S.alone.at && time - S.alone.at < ALONE_KEEP) return;
+    aloneSend(list, str);
+  }
+  function aloneSend(list, str) {
+    if (!list) { list = snapshot([]); str = JSON.stringify(list); }
+    if (NET.send({ t: 'mon', list })) { S.alone.last = str; S.alone.at = time; S.alone.sent++; S.beatAcc = 0; }
+  }
+  // the teacher's page (79-view): what update() does for puppets, alone (it never runs there): the map the drawn knight is
+  // on, the puppets gliding onto each snapshot over the gap between them, and the core's tip and fade of a fallen one
+  function viewStep(dt) {
+    if (!S.view) return;
+    const id = mapId(); if (id !== S.map) mapChanged(id);
+    policePuppets();
+    const lt = S.viewGap || LERP_T;
+    for (const p of S.puppets) {
+      if (p.lerp < 1) { p.lerp = Math.min(1, p.lerp + dt / lt); p.x = p.from.x + (p.to.x - p.from.x) * p.lerp; p.y = p.from.y + (p.to.y - p.from.y) * p.lerp; }
+      else { p.x = p.to.x; p.y = p.to.y; }
+      if (p.dead && p.deadT < 9) p.deadT += dt;
+      if (p.moving) p.walkT = (p.walkT || 0) + dt * 8;
+    }
+  }
+  // 79-view starts and stops drawing a kid's screen here: the monsters are puppets only, from his frames
+  function viewMode(on) {
+    if (on && !S.view) { S.viewReal = monsters; S.view = true; S.viewKeepers = {}; S.map = mapId(); S.keeper = null; S.puppets = []; monsters = S.puppets; S.parked = {}; S.idxLen = -1; S.viewMonAt = -1e9; S.viewGap = LERP_T; S.remotes = {}; clearWorld(); }
+    else if (!on && S.view) { S.view = false; S.puppets = null; S.keeper = null; S.viewKeepers = {}; S.parked = {}; if (S.viewReal) monsters = S.viewReal; S.viewReal = null; S.idxLen = -1; S.remotes = {}; clearWorld(); }
+  }
+  function viewKeeper(map, n) {
+    if (typeof map !== 'string') return;
+    S.viewKeepers[map] = typeof n === 'string' ? n : null;
+    if (S.view && map === S.map) S.keeper = S.viewKeepers[map];
   }
   const _update = update;
   update = function (dt) { const pre = before(dt); _update(dt); after(dt, pre); };
@@ -569,7 +627,10 @@
   // ---------- the wire ----------
   if (typeof NET !== 'undefined') {
     NET.on('welcome', msg => { reset(); S.map = mapId(); setKeeper(typeof msg.keeper === 'string' ? msg.keeper : null); });
-    NET.on('keeper', msg => { if (!online() || typeof msg.map !== 'string' || msg.map !== S.map) return; setKeeper(typeof msg.n === 'string' ? msg.n : null); });
+    NET.on('keeper', msg => { if (S.view) return viewKeeper(msg.map, msg.n); if (!online() || typeof msg.map !== 'string' || msg.map !== S.map) return; setKeeper(typeof msg.n === 'string' ? msg.n : null); });
+    // a teacher is watching this knight (or no longer): the alone stream (after) and the time of day on presence (73-players)
+    NET.on('view', msg => { S.viewed = !!(msg && msg.on === true); aloneReset(); });
+    if (Array.isArray(NET.caps) && !NET.caps.includes('view')) NET.caps.push('view');
     NET.on('offline', () => reset());
     NET.on('mon', applyMon);
     // the world taking over the map this game keeps asks once for every monster here (snapshotAll); a game that does not keep
@@ -626,6 +687,8 @@
     tickStats: () => { while (DBG.times.length && DBG.times[0] < time - 1) DBG.times.shift(); return { k: DBG.k, rate: DBG.times.length, rows: DBG.rows }; },
     placeStanding: () => online() && isWorld(S.keeper) && WORLD.standing !== null ? WORLD.standing : null,
     snapshot: () => snapshot(knightsHere()), snapshotAll, find, apply: applyMon, reset, state: S, debugTick: () => DEBUG_TICK, debugBox: (L, w, h) => debugBox(L, w, h),
+    // the teacher view's Watch: viewed() on a kid's game; viewMode / viewKeeper / viewStep on the teacher's page (79-view)
+    viewed: () => S.viewed, viewMode, viewKeeper, viewStep, ALONE_EVERY, ALONE_KEEP,
   };
 
   // ?debug=tick (the two-browser proofs, docs/ONLINE.md "The shared world", Stage 2): who keeps this map, how often its stream

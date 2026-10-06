@@ -102,7 +102,7 @@
     <div id="modlog"></div>
 
     <h2>Teachers</h2>
-    <p class="note">Each teacher gets their own name and password for the teacher view: they go to <code>fanglands.com/teacher</code> and sign in. A teacher sees who is on, where each knight is, what they are doing and the chat, and can mute a kid's chat, pause chat for everyone, and send a kid off until midnight. Nothing else: no accounts, no secret words, no saves, no invite code. Everything a teacher does is in "What admins did" with their name, and you can undo it here. A big number under Wrong tries today means someone is guessing that teacher's password: New password stops it. Loaded when this page opens and when you press Refresh.</p>
+    <p class="note">Each teacher gets their own name and password for the teacher view. They sign in on the game's own card at fanglands.com: their name in Knight's name, their password in Secret word, then Play; the teacher view opens instead of the game. A teacher sees who is on, where each knight is, what they are doing and the chat, can watch one kid's screen at a time (only watching: nothing they do reaches the kid's game), and can mute a kid's chat, pause chat for everyone, and send a kid off until midnight. Nothing else: no accounts, no secret words, no saves, no invite code. Everything a teacher does is in "What admins did" with their name, and you can undo it here. A big number under Wrong tries today means someone is guessing that teacher's password: New password stops it. Loaded when this page opens and when you press Refresh.</p>
     <div class="row">
       <input id="tname" placeholder="Name, like Mrs Smith" size="22" maxlength="40" autocomplete="off">
       <input id="tpass" placeholder="Password (10 or more letters)" size="28" maxlength="200" autocomplete="off">
@@ -303,6 +303,7 @@
     switch (r.act) {
       // the teacher view (docs/ONLINE.md, "The teacher view")
       case 'teacher_in': return r.by + ' signed in to the teacher view';
+      case 'watch': return r.by + ' watched ' + r.n;
       case 'sendoff': return r.by + ' sent ' + r.n + ' off for the rest of the day';
       case 'letback': return r.by + ' let ' + r.n + ' back in';
       case 'chat_pause': return r.by + ' paused chat for everyone ' + (SPANS[r.detail] || r.detail);
@@ -413,7 +414,7 @@
     try {
       await api('POST', '/api/admin/teachers', { name, pass });
       $('tname').value = ''; $('tpass').value = '';
-      tsay('Added ' + name + '. Give them: fanglands.com/teacher, name ' + name + ', password ' + pass + '. The password is not shown again.');
+      tsay('Added ' + name + '. The password is ' + pass + ' (it is not shown again). Tell ' + name + ': go to fanglands.com, type ' + name + " in Knight's name and this password in Secret word, and press Play.");
       await loadTeachers(); await loadModlog();
     } catch (e) { tsay(e.message, true); }
   };

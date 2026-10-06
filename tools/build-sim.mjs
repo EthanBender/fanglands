@@ -55,6 +55,8 @@ export const STRIP_FILES = [
   '83-townsart', '83-townsfolk',
   // the mounts' look (the knight's machines in the monster refit's art, a friend's mount online): pictures only, no rules
   '84-mountlook',
+  // the teacher view's screen and its drawing of a kid's point of view (round 2): a page's, never the world's
+  '79-teacherscreen', '79-view',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };
