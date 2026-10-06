@@ -642,10 +642,11 @@
         cand.push([x, y]); break;
       }
       // the steps are the graveyard's: cut at its port, on the scarp the gw_steps pin carries through it, with open ground
-      // above and below; only a scarp that misses the port falls back to the middle measured climb
-      const [px, py] = port('graveyard.steps'), solidAt = (x, y) => SOLID.has(at(x, y)) && !PUSH_THROUGH.has(at(x, y));
+      // above and below (where the face is two tiles thick there, or a tree stands against it, the cut goes through, up
+      // to two tiles each way); only a scarp that misses the port falls back to the middle measured climb
+      const [px, py] = port('graveyard.steps'), solidAt = (x, y) => inMap(x, y) && SOLID.has(at(x, y)) && !PUSH_THROUGH.has(at(x, y)) && !buildingAt(x, y);
       if (at(px, py) === CLIFF) {
-        for (const y of [py - 1, py + 1]) if (solidAt(px, y) && at(px, y) !== CLIFF) set(px, y, T.GRASS);
+        for (const dir of [-1, 1]) for (let k = 1; k <= 2 && solidAt(px, py + dir * k); k++) set(px, py + dir * k, T.GRASS);
         set(px, py, STEPS); S.stairs.push({ x: px, y: py, tile: tileName(STEPS), lv: STEPS_LV });
       } else if (cand.length) { const c = cand[Math.floor(cand.length / 2)];
         set(c[0], c[1], STEPS); S.stairs.push({ x: c[0], y: c[1], tile: tileName(STEPS), lv: STEPS_LV }); }
