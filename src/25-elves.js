@@ -197,9 +197,12 @@
     api.spawnList('elf_sentinel', SENTINELS); api.spawnList('boar', BOARS);
     for (const e of ELVES) if (SOLID.has(at(e.x, e.y))) set(e.x, e.y, EL_PLATFORM);
     // 10. the jungle runs on south (y 139–178) at the same density; a separate stream keeps everything above exactly as it was.
-    // The ring wall, the gap and the totem are all north of here, so the one-way-in rule is untouched.
-    { const rs = mulberry32(2610);
+    // The ring wall, the gap and the totem are Sylvaris': the south reach is the world's, so the city's own box is skipped
+    // (it ends north of the reach on the old map; after the spread the stretched reach starts inside it), and the
+    // one-way-in rule is untouched.
+    { const rs = mulberry32(2610), SB = ATLAS.box('sylvaris');
       for (let y = JS.y0; y <= JS.y1; y++) for (let x = JS.x0; x <= JS.x1; x++) {
+        if (x >= SB[0] && x <= SB[2] && y >= SB[1] && y <= SB[3]) continue;
         if (!soft(x, y)) continue;
         const r = rs();
         set(x, y, r < 0.40 ? EL_JUNGLE : r < 0.52 ? EL_FERN : r < 0.62 ? T.DIRT : T.GRASS);
