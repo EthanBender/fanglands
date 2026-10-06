@@ -753,5 +753,6 @@
   {"file": "tools/mmo-sim-world.js", "literal": "18 * TILE", "decl": "nearD", "reason": "a radius: what Dee's screen shows within 18 tiles of her (in Deepholm and the Aerie), not a position"},
   {"file": "79-worldkeeper.js", "literal": "24 * TILE", "decl": "settleUnseen", "reason": "a radius: a parked monster within 24 tiles of a living knight (75-coop's snapshot radius), not a position"},
   {"file": "79-worldkeeper.js", "literal": "27 * TILE", "decl": "rows", "reason": "a radius: the rows sent cover 27 tiles round each knight, not a position"},
-  {"file": "tools/sim-freeze.mjs", "literal": "30 * TILE", "line": 61, "reason": "not a place: the watcher bots stand together anywhere on the overworld; the World only relays their presence (room.js reads no tile or place of it), so the spot needs only to lie inside the map, at 260x180 and at 400x280"}
+  {"file": "tools/sim-freeze.mjs", "literal": "30 * TILE", "line": 61, "reason": "not a place: the watcher bots stand together anywhere on the overworld; the World only relays their presence (room.js reads no tile or place of it), so the spot needs only to lie inside the map, at 260x180 and at 400x280"},
+  {"file": "tools/sim-load.mjs", "literal": "8 * TILE", "decl": "step", "reason": "a radius: a load bot wanders no further than 8 tiles from its home (an instance's entry, read from atlas.json's doors), not a position"}
 ]

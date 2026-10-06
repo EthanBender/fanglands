@@ -94,5 +94,6 @@
 "tools/mmo-sim.js",
 "tools/mmo-sim-world.js",
 "79-worldkeeper.js",
-"tools/sim-freeze.mjs"
+"tools/sim-freeze.mjs",
+"tools/sim-load.mjs"
 ]
