@@ -499,3 +499,281 @@ test('a kid sent off while his socket was down: the real game wire opens /ws onc
   assert.equal(NET.timer, null); assert.equal(NET.closedByUs, true);
   assert.equal(W.w.room.knights.size, 0);
 });
+
+// ============================================================================
+// Watch (round 2): one kid's point of view (docs/ONLINE.md, "The teacher view", Watch)
+// ============================================================================
+import fs0 from 'node:fs';
+import { VIEW_FORWARD, VIEW_STATUS, VIEW_DROP, VIEW_STREAMS_MAX, VIEW_DAY_MSGS, WATCH_LOG_MS, frameType } from '../src/watch.js';
+const VIEW_CAPS = ['tick', 'die', 'roll', 'loot', 'zone', 'fix', 'day', 'snap', 'view'];
+const srcOf = f => fs0.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8');
+const DOC0 = fs0.readFileSync(new URL('../../docs/ONLINE.md', import.meta.url), 'utf8');
+const viewMsgs = s => s.all('view').map(m => m.on);
+
+test('W1. w_vstart is built from memory: 0 SQL beyond the lock (the second watch in 10 minutes, whose mod_log row is throttled)', async () => {
+  const counter = { writes: 0, all: 0 };
+  const W = await world(['Sam', 'Leo'], { counter });
+  const sam = await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS), leo = await K.online(W.w, W.tok.Leo, { x: 6100 }, VIEW_CAPS);
+  const scr = await K.screen(W.w, W.token);
+  const first = K.view(W.w, scr, 'Sam');
+  assert.equal(first.t, 'w_vstart'); assert.equal(first.n, 'Sam'); assert.equal(first.map, 'over'); assert.equal(first.keeper.n, 'Sam');
+  assert.equal(first.me.n, 'Sam'); assert.deepEqual(first.others.map(o => o.n), ['Leo']); assert.equal(first.monsters, 'live'); assert.equal(first.old, true);
+  const ws = W.w.wrap(scr), all0 = counter.all;
+  clock.t += 2000;
+  W.w.watch.message(ws, JSON.stringify({ t: 'w_view', req: 77, n: 'Sam' }));
+  const again = scr.last('w_vstart');
+  assert.equal(again.req, 77);
+  assert.equal(counter.all - all0, 1, 'SQL statements for a w_view beyond the lock: ' + (counter.all - all0 - 1));
+  assert.ok(sam && leo);
+});
+
+test('W2. the allowlist is complete: every type the world sends a game (the contract, room.js, sim/worlds.js) is forwarded, header-only or dropped, never two of those', () => {
+  const types = new Set();
+  // (watch.js's own w_* go to teachers only; what it sends the games, chat_pause, muted and watching, counts)
+  for (const f of ['room.js', 'sim/worlds.js', 'watch.js']) for (const m of srcOf(f).matchAll(/(?:^|[^A-Za-z_])t: '([a-z_]+)'/g)) if (!m[1].startsWith('w_')) types.add(m[1]);
+  // the contract's Server -> client tables (the game's, not the teacher's)
+  const parts = DOC0.split(/\n(?=#{2,3} )/), fromDoc = new Set();
+  for (const p of parts) if (/^#{2,3} Server → client/.test(p)) for (const line of p.split('\n')) { if (!line.startsWith('| `')) continue; const first = line.split('|')[1]; for (const m of first.matchAll(/`([a-z_]+)`/g)) if (m[1] !== 't') { types.add(m[1]); fromDoc.add(m[1]); } }
+  types.add('view');   // the Watch's own signal to a kid's game
+  assert.ok(fromDoc.size >= 40 && fromDoc.has('trade_done') && fromDoc.has('boss_wait') && fromDoc.has('spawn_clear'), JSON.stringify([...fromDoc]));
+  assert.ok(types.size >= 45 && types.has('sim') && types.has('chat_pause') && types.has('watching'), JSON.stringify([...types]));
+  const sets = [VIEW_FORWARD, VIEW_STATUS, VIEW_DROP];
+  const none = [...types].filter(t => !sets.some(s => s.has(t))), twice = [...types].filter(t => sets.filter(s => s.has(t)).length > 1);
+  assert.deepEqual(none, [], 'types in no list: ' + none.join(', '));
+  assert.deepEqual(twice, []);
+  // the forwarded ones are exactly the contract's
+  assert.deepEqual([...VIEW_FORWARD].sort(), ['announce', 'boom', 'chat', 'crackers', 'keeper', 'left', 'mon', 'p', 'party_end']);
+  assert.deepEqual([...VIEW_STATUS].sort(), ['chat_pause', 'muted', 'strike', 'unmuted']);
+});
+
+test('W3. NEGATIVE: gift, prize, trade_*, mod, modlist, role, welcome, who, hit, snap and the rest never reach a teacher; a p with t not first is still read (J2)', async () => {
+  const W = await world(['MudGoll', 'Sam', 'Leo']);
+  const sam = await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS), leo = await K.online(W.w, W.tok.Leo, { x: 6040 }, VIEW_CAPS);
+  const scr = await K.screen(W.w, W.token);
+  const st = K.view(W.w, scr, 'Sam'); assert.equal(st.t, 'w_vstart');
+  const room = W.w.room, ss = W.w.wrap(sam);
+  // the real flows: a gift, a trade, a role change, a hit routed to Sam (he keeps the map), a roster
+  K.say(W.w, leo, { t: 'gift', to: 'Sam', id: 'bread', qty: 1 });
+  K.say(W.w, leo, { t: 'trade_ask', to: 'Sam' }); K.say(W.w, sam, { t: 'trade_answer', from: 'Leo', yes: true });
+  K.say(W.w, leo, { t: 'hit', nid: 's1', dmg: 3 });
+  await parent(W.w, 'POST', '/api/admin/role', { name: 'Sam', role: 'admin' });
+  await K.online(W.w, W.tok.MudGoll, { x: 7000 });
+  // and every dropped type, as the world would send it
+  for (const t of VIEW_DROP) if (t !== 'error') room.raw(ss, JSON.stringify({ t, n: 'Leo', secret: 'x' }));
+  room.raw(ss, '{"x":1,"t":"gift","id":"sword"}');
+  const got = K.viewed(scr, st.v).map(m => m.t);
+  for (const t of ['gift', 'gift_ok', 'gift_back', 'prize', 'trade_ask', 'trade_open', 'trade_state', 'mod', 'modlist', 'role', 'welcome', 'who', 'hit', 'snap', 'sim', 'watching', 'view', 'pong', 'kill', 'hurt']) assert.ok(!got.includes(t), t + ' reached the teacher');
+  assert.ok(got.every(t => VIEW_FORWARD.has(t) || VIEW_STATUS.has(t)), JSON.stringify(got));
+  // J2: a p whose t is not first is classified by parsing it
+  const n0 = K.viewed(scr, st.v).length;
+  room.raw(ss, '{"n":"Leo","map":"over","x":5,"y":6,"t":"p"}');
+  const last = K.viewed(scr, st.v).slice(n0);
+  assert.equal(last.length, 1); assert.equal(last[0].t, 'p'); assert.equal(last[0].n, 'Leo');
+  assert.equal(frameType('{"t":"mon","n":"x"}'), 'mon'); assert.equal(frameType('{"n":"x","t":"chat"}'), 'chat'); assert.equal(frameType('junk'), null);
+  // the frame goes byte for byte
+  const raw = '{"t":"chat","n":"Leo","text":"hi \\"there\\"","at":1,"role":"player"}';
+  room.raw(ss, raw);
+  assert.ok(scr.raw.some(x => x === '{"t":"w_v","v":' + st.v + ',"m":' + raw + '}'));
+});
+
+test('W4. {view: on} goes to the kid once for two screens watching him, and {view: off} at the last; only to a game that can stream (the view capability)', async () => {
+  const W = await world(['Sam', 'Leo']);
+  const B = await K.addTeacher(W.w, 'Mr Lee', 'quiet-harbour-oak-17'); const bl = await K.teacherLogin(W.w, B.name, B.pass);
+  const sam = await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS), leo = await K.online(W.w, W.tok.Leo, { x: 6100 });
+  const a = await K.screen(W.w, W.token), b = await K.screen(W.w, bl.token);
+  K.view(W.w, a, 'Sam'); K.view(W.w, b, 'Sam');
+  assert.deepEqual(viewMsgs(sam), [true]);
+  K.unview(W.w, a); assert.deepEqual(viewMsgs(sam), [true]);
+  K.unview(W.w, b); assert.deepEqual(viewMsgs(sam), [true, false]);
+  assert.equal(W.w.room.taps.size, 0);
+  // Leo's game names no view capability: watched, it is never told (it would not stream), and the screen says so
+  const st = K.view(W.w, a, 'Leo');
+  assert.equal(st.monsters, 'friends'); assert.deepEqual(viewMsgs(leo), []);
+  // a welcome while still watched: told again (a new game never remembers it)
+  K.unview(W.w, a); K.view(W.w, a, 'Sam');
+  const sam2 = await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS);
+  assert.deepEqual(viewMsgs(sam2), [true]);
+  assert.equal(a.last('w_vstart').n, 'Sam');
+});
+
+test('W5. the view ends with the exact words: he left, was sent off, was sent out by an admin, by the word filter, or got a new name', async () => {
+  const end = async (how) => {
+    const W = await world(['MudGoll', 'Sam', 'Leo']);
+    const sam = await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS);
+    const scr = await K.screen(W.w, W.token);
+    const st = K.view(W.w, scr, 'Sam');
+    if (how === 'left') W.w.webSocketClose(sam, 1000, '');
+    if (how === 'sentoff') { const b2 = await K.teacherLogin(W.w, W.T.name, W.T.pass); const s2 = await K.screen(W.w, b2.token); K.act(W.w, s2, { t: 'w_off', n: 'Sam' }); }
+    if (how === 'kick') { const mud = await K.online(W.w, W.tok.MudGoll, { x: 7000 }); K.say(W.w, mud, { t: 'kick', n: 'Sam' }); }
+    if (how === 'words') for (let i = 0; i < 3; i++) { K.say(W.w, sam, { t: 'chat', text: 'what the fuck ' + i }); clock.t += 2000; }
+    if (how === 'renamed') await parent(W.w, 'POST', '/api/admin/rename', { name: 'Sam', to: 'Samuel' });
+    const e = scr.last('w_vend');
+    return { e, v: st.v, taps: W.w.room.taps.size };
+  };
+  const want = { left: 'Sam left the game at 10:00 am.', sentoff: 'Sam was sent off until tomorrow.', kick: 'An admin sent Sam out of the world.', words: 'The word filter sent Sam out for 24 hours.', renamed: 'An admin gave Sam a new name, so this view ended.' };
+  for (const how of Object.keys(want)) {
+    const r = await end(how);
+    assert.ok(r.e, how + ': no w_vend');
+    assert.equal(r.e.text, want[how], how); assert.equal(r.e.v, r.v); assert.equal(r.taps, 0, how + ': the tap stayed');
+  }
+});
+
+test('W6. room.taps is empty after the screen closes, after w_unview and after signing out; settle after a nap taps the kid again, or says he left', async () => {
+  const W = await world(['Sam', 'Leo']);
+  const sam = await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS);
+  let scr = await K.screen(W.w, W.token);
+  K.view(W.w, scr, 'Sam'); assert.equal(W.w.room.taps.size, 1);
+  K.unview(W.w, scr); assert.equal(W.w.room.taps.size, 0);
+  K.view(W.w, scr, 'Sam'); W.w.webSocketClose(scr, 1000, ''); assert.equal(W.w.room.taps.size, 0);
+  scr = await K.screen(W.w, W.token); K.view(W.w, scr, 'Sam');
+  assert.equal((await call(W.w, 'POST', '/api/teacher/logout', { token: W.token })).status, 200);
+  assert.equal(W.w.room.taps.size, 0); assert.equal(scr.closed.code, 4010);
+  // a nap with a screen watching Sam: the new World taps Sam again from the attachment and starts the view afresh
+  const lg = await K.teacherLogin(W.w, W.T.name, W.T.pass);
+  const s2 = await K.screen(W.w, lg.token); const st = K.view(W.w, s2, 'Sam');
+  assert.equal(s2.att.view, 'sam');
+  clock.t += 1000;
+  const W2 = new K.TestWorld(W.ctx, K.ENV);
+  assert.equal(W2.room.taps.size, 1);
+  const fresh = s2.last('w_vstart');
+  assert.ok(fresh.v !== undefined && fresh.n === 'Sam' && fresh !== st);
+  W2.webSocketMessage(sam, JSON.stringify({ t: 'p', map: 'over', x: 6020, y: 3700 }));
+  assert.equal(K.viewed(s2, fresh.v).pop().x, 6020);
+  // the same nap with Sam gone during it: the view says he left
+  const s3w = W2;
+  s3w.webSocketClose(sam, 1000, '');
+  clock.t += 1000;
+  const W3 = new K.TestWorld(W.ctx, K.ENV);
+  assert.equal(W3.room.taps.size, 0);
+  assert.match(s2.last('w_vend').text, /^Sam left the game at \d+:\d\d (am|pm)\.$/);
+});
+
+test('W7. NEGATIVE: a watching teacher is never a knight: knights, byName, members, who, online(), the keeper election and the 50 cap are the same', async () => {
+  const run = async watching => {
+    const W = await world(['Sam', 'Leo', 'Ada']);
+    const scr = await K.screen(W.w, W.token);
+    const s = await K.online(W.w, W.tok.Sam, {}, VIEW_CAPS); clock.t += 500;
+    const l = await K.online(W.w, W.tok.Leo, { x: 6100 }, VIEW_CAPS); clock.t += 500;
+    if (watching) K.view(W.w, scr, 'Sam');
+    K.say(W.w, l, { t: 'p', map: 'over', x: 6150, y: 3700 }); clock.t += 4000;
+    K.say(W.w, l, { t: 'p', map: 'over', x: 6160, y: 3700 });
+    const a = await K.online(W.w, W.tok.Ada, { map: 'spider_den', x: 300, y: 200 }, VIEW_CAPS);
+    const room = W.w.room;
+    return JSON.stringify({ knights: room.knights.size, byName: [...room.byName.keys()].sort(), maps: Array.from(room.maps, ([m, g]) => [m, g.keeper && g.keeper.name, Array.from(g.members, k => k.name)]), online: room.online(), who: [s, l, a].map(x => x.all('who').length) });
+  };
+  assert.equal(await run(true), await run(false));
+  // fifty knights and a teacher watching one of them: all fifty connect
+  clock.t = T0;
+  const W = K.newWorld(); const T = await K.addTeacher(W.w); const lg = await K.teacherLogin(W.w, T.name, T.pass);
+  const scr = await K.screen(W.w, lg.token);
+  const toks = []; for (let i = 0; i < 50; i++) toks.push(await K.signup(W.w, 'Knight ' + String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + i % 26)));
+  const socks = []; for (const t of toks) { socks.push(await K.online(W.w, t, {}, VIEW_CAPS)); if (socks.length === 1) K.view(W.w, scr, 'Knight AA'); }
+  assert.equal(W.w.room.online().length, 50); assert.ok(socks.every(s => !s.closed));
+});
+
+test('W8. NEGATIVE fuzz: every message a game may send, and junk, on a watching teacher\'s socket: no Room handler runs and the kid gets nothing new', async () => {
+  const W = await world(['Sam', 'Leo']);
+  const sam = await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS), leo = await K.online(W.w, W.tok.Leo, { x: 6040 }, VIEW_CAPS);
+  const scr = await K.screen(W.w, W.token); K.view(W.w, scr, 'Sam');
+  const types = Array.from(srcOf('room.js').slice(srcOf('room.js').indexOf('switch (m.t) {')).split('default:')[0].matchAll(/case '([a-z_]+)'/g), m => m[1]);
+  const room = W.w.room;
+  const state = () => JSON.stringify({ k: Array.from(room.knights.values()).map(k => [k.name, k.map, k.x, k.y, k.role]), maps: Array.from(room.maps, ([m, g]) => [m, g.keeper && g.keeper.name]), trades: room.trades.size, gifts: room.gifts.size, parties: room.parties.size });
+  const s0 = state(), sam0 = sam.got.length, leo0 = leo.got.length, db0 = K.snapshot(W.db);
+  const junk = { n: 'Sam', to: 'Sam', text: 'hi', span: '1h', map: 'over', x: 1, y: 1, list: [['s1', 'goblin', 1, 1, 1, 1, 'idle', 1, 0, 0, 0, 0, 0, 0]], nid: 's1', id: 'p1.0', type: 'goblin', count: 3, yes: true, role: 'admin', v: 1, req: 5 };
+  for (const t of types.concat(['bogus', 'w_bogus', 'w_v', 'w_vstart', 'view', 'welcome'])) { W.w.webSocketMessage(scr, JSON.stringify(Object.assign({ t }, junk))); clock.t += 1100; }
+  for (const j of ['', 'null', '[]', '{"t":5}', '{'.repeat(50), 'x'.repeat(5000)]) { W.w.webSocketMessage(scr, j); clock.t += 1100; }
+  assert.equal(state(), s0); assert.equal(sam.got.length, sam0); assert.equal(leo.got.length, leo0);
+  assert.equal(K.snapshot(W.db).replace(/"last_seen":\d+/g, ''), db0.replace(/"last_seen":\d+/g, ''));
+});
+
+test('W9 (J4). golden: over a scripted 60 s every kid gets byte for byte the same frames with and without a teacher watching (the view signal and the tod field set aside)', async () => {
+  const run = async watching => {
+    const W = await world(['Sam', 'Leo', 'Ada']);
+    const kids = {};
+    kids.Sam = await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS); clock.t += 100;
+    kids.Leo = await K.online(W.w, W.tok.Leo, { x: 6060 }, VIEW_CAPS); clock.t += 100;
+    kids.Ada = await K.online(W.w, W.tok.Ada, { map: 'deepholm', x: 900, y: 900 }, VIEW_CAPS); clock.t += 100;
+    const B = await K.addTeacher(W.w, 'Mr Lee', 'quiet-harbour-oak-17'); const bl = await K.teacherLogin(W.w, B.name, B.pass);
+    const a = await K.screen(W.w, W.token), b = await K.screen(W.w, bl.token);
+    let teacherSent = 0;
+    const tsay = (s, m) => { teacherSent++; W.w.webSocketMessage(s, JSON.stringify(m)); };
+    const viewed = n => (kids[n].all('view').pop() || {}).on === true;
+    for (let step = 0; step < 480; step++) {
+      clock.t += 125;
+      if (watching && step === 8) { tsay(a, { t: 'w_view', req: 1, n: 'Sam' }); tsay(b, { t: 'w_view', req: 2, n: 'Ada' }); }
+      if (watching && step === 400) { tsay(a, { t: 'w_unview', req: 3 }); tsay(b, { t: 'w_unview', req: 4 }); }
+      // each kid's game: its presence 8 a second (the time of day on it while watched), Sam keeps the overworld with Leo near
+      // (8 snapshots a second), Ada keeps Deepholm alone (snapshots only while watched: 2 a second)
+      for (const n of ['Sam', 'Leo', 'Ada']) { const p = { t: 'p', map: n === 'Ada' ? 'deepholm' : 'over', x: (n === 'Leo' ? 6060 : n === 'Ada' ? 900 : 6000) + (step % 40), y: 3700, mv: true, sw: Math.floor(step / 30) }; if (viewed(n)) p.tod = (step * 0.125) % 600; K.say(W.w, kids[n], p); }
+      K.say(W.w, kids.Sam, { t: 'mon', list: [['s1', 'goblin', 6100 + step % 9, 3700, 10, 10, 'chase', 1, 0, 1, 0, 0, 0, 0]] });
+      if (viewed('Ada') && step % 4 === 0) K.say(W.w, kids.Ada, { t: 'mon', list: [['i0', 'cave_bat', 950, 950, 5, 5, 'idle', 1, 0, 0, 0, 0, 0, 0]] });
+      if (step % 64 === 5) K.say(W.w, kids.Leo, { t: 'chat', text: 'line ' + step });
+    }
+    const norm = s => s.raw.map(x => JSON.parse(x)).filter(m => m.t !== 'view').map(m => { if (m.t === 'p') delete m.tod; return JSON.stringify(m); });
+    return { frames: Object.fromEntries(Object.entries(kids).map(([n, s]) => [n, norm(s)])), teacherSent, forwarded: K.viewed(a).length + K.viewed(b).length, taps: W.w.room.taps.size };
+  };
+  const yes = await run(true), no = await run(false);
+  for (const n of ['Sam', 'Leo', 'Ada']) assert.deepEqual(yes.frames[n], no.frames[n], n + ' got different frames with a watcher');
+  // the cost: two teacher messages a watch (w_view, w_unview), every frame out free
+  assert.equal(yes.teacherSent, 4); assert.ok(yes.forwarded > 1000, String(yes.forwarded)); assert.equal(yes.taps, 0);
+});
+
+test('W10. the alone streams: at most 3 kids told at once (the 4th when one stops), and 40,000 alone messages a Toronto day, then every one told off until the next day', async () => {
+  const W = await world(['Sam', 'Leo', 'Ada', 'Pip', 'Max']);
+  const T2 = await K.addTeacher(W.w, 'Mr Lee', 'quiet-harbour-oak-17'); const l2 = await K.teacherLogin(W.w, T2.name, T2.pass);
+  const T3 = await K.addTeacher(W.w, 'Ms Day', 'quiet-harbour-oak-18'); const l3 = await K.teacherLogin(W.w, T3.name, T3.pass);
+  const kids = {}; let x = 1000;
+  for (const n of ['Sam', 'Leo', 'Ada', 'Pip']) { kids[n] = await K.online(W.w, W.tok[n], { map: ['over', 'deepholm', 'aerie', 'spider_den'][Object.keys(kids).length], x: x += 500, y: 900 }, VIEW_CAPS); }
+  const scr = [await K.screen(W.w, W.token), await K.screen(W.w, W.token), await K.screen(W.w, l2.token), await K.screen(W.w, l2.token)];
+  const st = ['Sam', 'Leo', 'Ada', 'Pip'].map((n, i) => K.view(W.w, scr[i], n));
+  assert.deepEqual(['Sam', 'Leo', 'Ada', 'Pip'].map(n => viewMsgs(kids[n]).join()), ['true', 'true', 'true', '']);
+  assert.equal(st[3].limit, 'streams');
+  // Leo's view stops: Pip is told, and his screen hears the limit is gone
+  K.unview(W.w, scr[1]);
+  assert.deepEqual(viewMsgs(kids.Leo), [true, false]); assert.deepEqual(viewMsgs(kids.Pip), [true]);
+  assert.equal(scr[3].last('w_vinfo').limit, null);
+  // the day's alone messages: the 40,000th tells every streaming kid off; the screens hear why
+  W.w.watch.day.msgs = VIEW_DAY_MSGS - 2;
+  K.say(W.w, kids.Sam, { t: 'mon', list: [] }); K.say(W.w, kids.Sam, { t: 'mon', list: [] });
+  for (const n of ['Sam', 'Ada', 'Pip']) assert.equal(viewMsgs(kids[n]).pop(), false, n);
+  assert.equal(scr[0].last('w_vinfo').limit, 'day');
+  // a new screen on a new kid the same day is not told either
+  kids.Max = await K.online(W.w, W.tok.Max, { map: 'coalmine', x: 500, y: 500 }, VIEW_CAPS);
+  const s5 = await K.screen(W.w, l3.token);
+  assert.equal(K.view(W.w, s5, 'Max').limit, 'day'); assert.deepEqual(viewMsgs(kids.Max), []);
+  // the next Toronto day (every session ended at midnight: Ms Day signs in again): a new watch is told again
+  clock.t = dayEnd(clock.t) + 1;
+  const l4 = await K.teacherLogin(W.w, T3.name, T3.pass); const s6 = await K.screen(W.w, l4.token);
+  assert.equal(K.view(W.w, s6, 'Max').limit, null);
+  assert.deepEqual(viewMsgs(kids.Max), [true]);
+  assert.equal(VIEW_STREAMS_MAX, 3); assert.equal(VIEW_DAY_MSGS, 40000);
+});
+
+test('W11. one mod_log row per teacher per knight per 10 minutes ("Mrs Smith (teacher) watched Sam"), not one of the 10 knight actions', async () => {
+  const W = await world(['Sam', 'Leo']);
+  const B = await K.addTeacher(W.w, 'Mr Lee', 'quiet-harbour-oak-17'); const bl = await K.teacherLogin(W.w, B.name, B.pass);
+  await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS); await K.online(W.w, W.tok.Leo, { x: 6100 }, VIEW_CAPS);
+  const a = await K.screen(W.w, W.token), b = await K.screen(W.w, bl.token);
+  const rows = () => W.db.prepare("SELECT by, act, target FROM mod_log WHERE act = 'watch' ORDER BY id").all().map(r => r.by + ' ' + r.target);
+  for (let i = 0; i < 12; i++) { K.view(W.w, a, i % 2 ? 'Sam' : 'Leo'); clock.t += 30000; }
+  assert.deepEqual(rows(), ['Mrs Smith (teacher) Leo', 'Mrs Smith (teacher) Sam']);
+  K.view(W.w, b, 'Sam');
+  assert.deepEqual(rows().slice(-1), ['Mr Lee (teacher) Sam']);
+  clock.t += WATCH_LOG_MS;
+  K.view(W.w, a, 'Leo');
+  assert.equal(rows().length, 4);
+  // watching is not a knight action: ten mutes still go through after all that watching
+  for (let i = 0; i < 10; i++) { const r = K.act(W.w, a, { t: 'w_mute', n: i % 2 ? 'Sam' : 'Leo', span: i < 5 ? '10m' : '1h' }); assert.notEqual(r && r.code, 'slow', 'mute ' + i); clock.t += 1100; }
+});
+
+test('W12. an admin\'s knight may be watched (R2-1, read-only); NEGATIVE: a teacher\'s mute and send-off on him are still refused (D2)', async () => {
+  const W = await world(['MudGoll', 'Sam']);
+  await K.online(W.w, W.tok.MudGoll, { x: 6000 }, VIEW_CAPS);
+  const scr = await K.screen(W.w, W.token);
+  const st = K.view(W.w, scr, 'MudGoll');
+  assert.equal(st.t, 'w_vstart'); assert.equal(st.role, 'admin');
+  assert.deepEqual([K.act(W.w, scr, { t: 'w_mute', n: 'MudGoll', span: '10m' }).code, K.act(W.w, scr, { t: 'w_off', n: 'MudGoll' }).code], ['admin', 'admin']);
+  // a knight not on (or not there at all) cannot be watched
+  assert.deepEqual([K.view(W.w, scr, 'Sam').code, K.view(W.w, scr, 'Nobody').code], ['gone', 'gone']);
+  assert.equal(scr.last('w_no').text, 'Nobody is not on now.');
+});

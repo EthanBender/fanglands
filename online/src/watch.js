@@ -614,7 +614,10 @@ export class Watch {
       const lc = s.pending; s.pending = null;
       const k = this.room ? this.room.byName.get(lc) : null;
       let v = this.views.get(lc);
-      if (!v) { v = { lc, n: k ? k.name : lc, viewers: new Set(), sock: null, told: false, limit: null, canStream: false }; this.views.set(lc, v); }
+      // (his name as it is written: from the knight, else his account, read once on this wake)
+      let name = k ? k.name : null;
+      if (!name && this.store) { try { const acc = this.store.account(lc); if (acc) name = acc.name; } catch (e) { } }
+      if (!v) { v = { lc, n: name || lc, viewers: new Set(), sock: null, told: false, limit: null, canStream: false }; this.views.set(lc, v); }
       v.viewers.add(s);
       s.view = { lc, v: ++this.vseq };
       if (k && k.hello) { v.n = k.name; this.tapOn(v, k); this.send(s.sock, this.vstart(s, k, v, null)); }

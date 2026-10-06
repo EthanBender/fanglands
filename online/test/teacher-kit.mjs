@@ -61,11 +61,12 @@ export async function call(w, method, path, body, o = {}) {
 export const parent = (w, method, path, body) => call(w, method, path, body, { token: ENV.ADMIN_KEY });
 export async function signup(w, name, pass = 'sword') { const r = await call(w, 'POST', '/api/signup', { name, pass, invite: 'TEST-1234' }); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.token; }
 // a kid's game: the socket the way /ws opens it, then hello and one presence
-export async function online(w, token, p = {}) {
+// (caps: what the game says it can do in hello; a round-2 game names 'view')
+export async function online(w, token, p = {}, caps) {
   const r = await w.fetch(new Request('http://world/ws?token=' + token, { headers: { upgrade: 'websocket' } }));
   assert.equal(r.status, 101, 'ws ' + r.status);
   const server = w.ctx.sockets[w.ctx.sockets.length - 1];
-  w.webSocketMessage(server, JSON.stringify({ t: 'hello', v: 1 }));
+  w.webSocketMessage(server, JSON.stringify(caps ? { t: 'hello', v: 1, caps } : { t: 'hello', v: 1 }));
   if (p !== null) w.webSocketMessage(server, JSON.stringify(Object.assign({ t: 'p', map: 'over', region: 'Thistledown', x: 6000, y: 3700, lv: 12 }, p)));
   return server;
 }
@@ -105,3 +106,10 @@ export function newWorld(opts = {}) {
   const w = new TestWorld(ctx, opts.env || ENV);
   return { ctx, w, db: ctx.db };
 }
+
+// Watch (round 2): ask to watch a knight; the answer is w_vstart (or w_no) with that req
+let viewN = 1000;
+export const view = (w, s, n) => { const req = ++viewN; w.webSocketMessage(s, JSON.stringify({ t: 'w_view', req, n })); return s.got.filter(x => (x.t === 'w_vstart' || x.t === 'w_no') && x.req === req).pop() || null; };
+export const unview = (w, s) => w.webSocketMessage(s, JSON.stringify({ t: 'w_unview', req: ++viewN }));
+// the frames a screen got for its view v, unwrapped
+export const viewed = (s, v) => s.raw.filter(x => x.startsWith('{"t":"w_v",')).map(x => JSON.parse(x)).filter(x => v == null || x.v === v).map(x => x.m);

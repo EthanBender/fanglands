@@ -1,14 +1,22 @@
 // The Room: joins, relays, keepers, hits, gifts, caps, roster cadence. In-memory sockets, a fake clock.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Room, CAPS, GIFT_WAIT, ROSTER_EVERY, KEEPER_STALE, PRESENCE_STALE } from '../src/room.js';
+import { Room, CAPS, GIFT_WAIT, ROSTER_EVERY, KEEPER_STALE, PRESENCE_STALE, NO_HOOKS } from '../src/room.js';
+
+// The teacher view's Watch (round 2): room-watched.test.mjs runs this whole file again with a watcher on every map: every
+// knight's socket tapped (room.taps) and every keeper's own snapshot handed to hooks.mon, all into one sink. Every assertion
+// below is about what the knights get, so the same results with and without it prove a watcher changes nothing for them.
+const WATCHED = globalThis.__ROOM_WATCHED === true;
+export const SINK = [];
 
 // A pretend world with a clock we control and a log we can read.
 function world() {
   const w = { t: 1000, log: [], woke: [] };
-  w.room = new Room({ now: () => w.t, log: (n, text, at) => w.log.push({ n, text, at }), wake: ms => w.woke.push(ms) });
+  const hooks = WATCHED ? Object.assign({}, NO_HOOKS, { mon: (k, out) => SINK.push(out) }) : undefined;
+  w.room = new Room({ now: () => w.t, log: (n, text, at) => w.log.push({ n, text, at }), wake: ms => w.woke.push(ms), hooks });
   w.sock = () => {
     const s = { got: [], closed: null, state: null, send(str) { s.got.push(JSON.parse(str)); }, close(code, reason) { s.closed = { code, reason }; }, attach(st) { s.state = st; } };
+    if (WATCHED) w.room.taps.set(s, str => SINK.push(str));
     s.of = t => s.got.filter(m => m.t === t);
     s.last = t => { const l = s.of(t); return l[l.length - 1]; };
     s.clear = () => { s.got.length = 0; };
@@ -580,4 +588,35 @@ test('two silent knights restored after a nap, in either order: the alarm never 
     assert.ok(alarms <= 60000 / KEEPER_STALE + 1, `restored ${first} first, ${arrived} came first: ${alarms} alarms in 60 s`);
     assert.equal(new Set(handled).size, handled.length, 'never the same moment twice');
   }
+});
+
+// ---------- the teacher view's Watch (round 2): the taps and hooks.mon ----------
+test('raw tees a frame only to a tapped socket\'s tap, after the socket has it; an untapped socket costs nothing more', () => {
+  const w = world(), a = w.knight('Ann', 'over'), b = w.knight('Bob', 'over');
+  const seen = [];
+  w.settle(a, b);
+  w.room.taps.set(a, str => seen.push(['Ann', str]));
+  w.say(b, { t: 'p', map: 'over', x: 5, y: 6 });
+  w.say(a, { t: 'chat', text: 'hello' });
+  // Ann's tap saw exactly what Ann's socket got, in order; nothing of Bob's
+  assert.deepEqual(seen.map(x => JSON.parse(x[1])), a.got);
+  assert.ok(seen.length >= 2 && seen.every(x => x[0] === 'Ann'));
+  const n = seen.length; w.room.taps.delete(a);
+  w.say(b, { t: 'p', map: 'over', x: 7, y: 6 });
+  assert.equal(seen.length, n);
+});
+
+test('hooks.mon hands on the keeper\'s own snapshot, alone on his map and with others there; a non-keeper\'s never', () => {
+  const outs = [];
+  const room = new Room({ now: () => 1000, wake: () => { }, hooks: Object.assign({}, NO_HOOKS, { mon: (k, out) => outs.push([k.name, out]) }) });
+  const sock = () => ({ got: [], send(s) { this.got.push(JSON.parse(s)); }, close() { } });
+  const ann = sock(); room.join(ann, 'Ann'); room.message(ann, JSON.stringify({ t: 'hello', v: 1 }));
+  room.message(ann, JSON.stringify({ t: 'mon', list: [['s1', 'goblin', 1, 2, 3, 3, 'idle', 1, 0, 0, 0, 0, 0, 0]] }));
+  assert.equal(outs.length, 1); assert.equal(outs[0][0], 'Ann'); assert.equal(JSON.parse(outs[0][1]).list.length, 1);
+  const bob = sock(); room.join(bob, 'Bob'); room.message(bob, JSON.stringify({ t: 'hello', v: 1 }));
+  room.message(ann, JSON.stringify({ t: 'mon', list: [] }));
+  assert.equal(outs.length, 2);
+  assert.ok(bob.got.some(m => m.t === 'mon' && m.n === 'Ann'));
+  room.message(bob, JSON.stringify({ t: 'mon', list: [] }));   // Bob keeps nothing: dropped, and no hook
+  assert.equal(outs.length, 2);
 });

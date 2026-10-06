@@ -46,6 +46,7 @@
     render = function () {
       if (!tsOn()) return _render();
       if (!V.on || V.house || V.unknown || !V.box) return;
+      sizeToPane();   // every frame: render() asks resize() only when the window's size differs from VW, VH
       follow();
       const p0 = paused; paused = true;
       try { return _render(); } finally { paused = p0; }

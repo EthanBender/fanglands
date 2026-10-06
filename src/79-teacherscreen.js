@@ -96,6 +96,8 @@
   // dots [{n, x, y, sel, flag}] in pane px; measure(text, font) -> px; prev {name: [tx, ty]} where each name sat last time.
   // Answers {clusters: [{x, y, r, ks}], dots: [{x, y, r, k}], tags: [{n, x, y, w, h}], labels: [{name, x, y, w, h, cx, cy,
   // tx, ty, font}]}; a name that fits nowhere at this zoom is left out (its dot stays).
+  // (LABELS:BEGIN ... LABELS:END: online/test/teacher-labels.test.mjs runs this function as it is written here)
+  // LABELS:BEGIN
   function layoutLabels(view, places, dots, measure, prev) {
     const INSET = 6, PAD = 4, MERGE = 24, DOT_R = 7, CL_R = 13;
     const out = { clusters: [], dots: [], tags: [], labels: [] };
@@ -152,6 +154,7 @@
     }
     return out;
   }
+  // LABELS:END
 
   // ---------- the CSS (the palette above; html's font-size scales everything) ----------
   const CSS = `

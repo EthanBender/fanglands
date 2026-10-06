@@ -1108,4 +1108,58 @@
       dialog.queue.length = 0; dialog.cur = null;
     }
   });
+
+  // ---------- self-test: a kid's game while a teacher watches it (the teacher view, round 2) ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    if (typeof NET === 'undefined') return;
+    const P = 'coop (watched): ';
+    if (window.INSTANCES && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, px: player.x, py: player.y, paused, title: title.active };
+    const sent = []; let sock = null;
+    const push = m => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(m) }); };
+    const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); sent.push(m); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
+    const mons = () => sent.filter(m => m.t === 'mon').length;
+    // a list with monsters in it (master's keeper heartbeat, an empty list once a second, goes on watched or not)
+    const full = () => sent.filter(m => m.t === 'mon' && Array.isArray(m.list) && m.list.length).length;
+    const real = monsters, gob = real.find(m => m.type === 'goblin' && !m.dead && m.nid) || real.find(m => !m.dead && m.nid);
+    const keep = gob ? { x: gob.x, y: gob.y, stunT: gob.stunT, state: gob.state } : null;
+    try {
+      h.peace(true); title.active = false; paused = false;
+      NET.enabled = true; NET.token = 'view-test'; NET.useFake(fake); NET.connect();
+      const hello = sent.find(m => m.t === 'hello');
+      const caps = !!hello && Array.isArray(hello.caps) && hello.caps.includes('view');
+      // the knight beside a goblin that keeps moving (its row changes every frame), nobody else on the map
+      player.x = gob.x - 3 * TILE; player.y = gob.y;
+      const run = (secs, move) => { for (let i = 0; i < secs * 60; i++) { if (move) { gob.x += (i % 2 ? 1 : -1) * 0.75; gob.stunT = 1; } F.step([]); } };
+      sent.length = 0; run(10, true);
+      const notViewed = full(), notViewedBeats = mons();
+      const pNo = sent.filter(m => m.t === 'p'), noTod = pNo.length > 0 && pNo.every(m => !('tod' in m));
+      push({ t: 'view', on: true });
+      sent.length = 0; run(10, true);
+      const moving = mons();
+      const pYes = sent.filter(m => m.t === 'p'), tod = pYes.length > 0 && pYes.every(m => typeof m.tod === 'number' && m.tod >= 0 && m.tod < 600 && Math.round(m.tod * 10) === m.tod * 10);
+      // nothing near him changes (no monsters at all here for 12 s): the same list only as the heartbeat, once a second
+      monsters = []; sent.length = 0; run(12, false); monsters = real;
+      const still = mons();
+      paused = true; sent.length = 0; run(4, true); const whilePaused = mons(); paused = false;
+      // with a friend near: the stream it always was, 8 a second
+      push({ t: 'p', n: 'Ava', map: 'over', x: Math.round(player.x + 40), y: Math.round(player.y), def: 100, lv: 5, hp: 10, mhp: 10 });
+      sent.length = 0; for (let i = 0; i < 60; i++) { if (i % 30 === 0) push({ t: 'p', n: 'Ava', map: 'over', x: Math.round(player.x + 40), y: Math.round(player.y), def: 100, lv: 5, hp: 10, mhp: 10 }); gob.x += (i % 2 ? 1 : -1) * 0.75; F.step([]); }
+      const withFriend = mons();
+      push({ t: 'left', n: 'Ava', map: 'over' });
+      push({ t: 'view', on: false });
+      sent.length = 0; run(4, true); const after = full(), afterBeats = mons();
+      check(P + 'the hello names the \'view\' capability; not watched, alone: only master\'s heartbeat (' + notViewedBeats + ' empty lists in 10 s) and no tod (as before); watched and alone: at most 2 a second (' + moving + ' in 10 s), an unchanged list only as the heartbeat, once a second (' + still + ' in 12 s), none while paused, the time of day on its presence; with a friend near, 8 a second (' + withFriend + ' in 1 s); view off: the heartbeat alone again (' + afterBeats + ' empty lists in 4 s)',
+        caps && notViewed === 0 && notViewedBeats >= 9 && notViewedBeats <= 11 && noTod && moving >= 18 && moving <= 21 && still >= 11 && still <= 13 && whilePaused === 0 && tod && withFriend >= 7 && withFriend <= 9 && after === 0 && afterBeats >= 3 && afterBeats <= 5, { caps, notViewed, notViewedBeats, noTod, moving, still, whilePaused, tod, withFriend, after, afterBeats });
+      // on the title: nothing
+      push({ t: 'view', on: true }); title.active = true; sent.length = 0; run(2, true); const onTitle = mons(); title.active = false;
+      push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); const offAtWelcome = COOP.viewed() === false;
+      check(P + 'none on the title; a welcome turns the watched state off until the world says it again', onTitle === 0 && offAtWelcome, { onTitle, offAtWelcome });
+    } finally {
+      NET.disconnect(); NET.useFake(was.fake); NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
+      reset(); monsters = real; S.viewed = false; aloneReset();
+      if (keep) Object.assign(gob, keep);
+      player.x = was.px; player.y = was.py; paused = was.paused; title.active = was.title; h.peace(false);
+    }
+  });
 }
