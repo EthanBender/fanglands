@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Fanglands — Teacher view</title>
+<style>
+  :root { color-scheme: dark; --bg: #14161a; --panel: #1b1e24; --line: #2c3038; --text: #d7dae0; --dim: #8a90a0; --blue: #9bc1ff; --gold: #f5c542; --amber: #ffb86b; --red: #ff7b7b; --green: #3fb950; --btn: #262a33; --btnline: #3a3f4b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; -webkit-text-size-adjust: 100%; }
+  button { min-height: 44px; min-width: 44px; padding: 0 14px; font: inherit; font-size: 15px; color: var(--text); background: var(--btn); border: 1px solid var(--btnline); border-radius: 8px; cursor: pointer; touch-action: manipulation; }
+  button:hover { background: #30353f; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.red { border-color: var(--red); color: #ffd9d9; }
+  button.redfill { background: #6b2a2a; border-color: var(--red); color: #fff; }
+  button.amber { border-color: var(--amber); }
+  button.on { background: #34405a; border-color: var(--blue); }
+  button.link { background: none; border-color: transparent; color: var(--blue); padding: 0 8px; }
+  input { font: inherit; font-size: 16px; color: var(--text); background: #0f1114; border: 1px solid var(--btnline); border-radius: 8px; padding: 0 12px; min-height: 44px; width: 100%; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dim { color: var(--dim); }
+  .small { font-size: 13px; }
+  .pill { display: inline-block; background: var(--gold); color: #1b1604; font-weight: 700; font-size: 13px; line-height: 18px; padding: 0 7px; border-radius: 9px; margin-left: 6px; vertical-align: 1px; }
+  .tag { display: inline-block; font-size: 13px; line-height: 20px; padding: 0 7px; border-radius: 10px; border: 1px solid var(--amber); color: var(--amber); margin-left: 6px; }
+  .tag.red { border-color: var(--red); color: var(--red); }
+  [hidden] { display: none !important; }
+
+  /* the sign-in card */
+  #signin { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
+  #signin .card { width: 360px; max-width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+  #signin h1 { font-size: 20px; margin: 0 0 8px; }
+  #signin p { margin: 0 0 16px; }
+  #signin label { display: block; margin: 12px 0 4px; font-weight: 600; }
+  #signin button.go { width: 100%; margin-top: 16px; background: #2f4a73; border-color: #4f78b3; font-weight: 700; }
+  #signin .err { color: var(--red); min-height: 21px; margin-top: 12px; }
+  #signin .said { color: var(--amber); margin: 0 0 12px; }
+
+  /* the watch screen */
+  #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+  #bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 48px; padding: 2px 8px; border-bottom: 1px solid var(--line); background: #171a1f; }
+  #bar .title { font-weight: 700; font-size: 16px; white-space: nowrap; }
+  #bar .mid { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; justify-content: center; min-width: 0; }
+  #bar .right { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .live { color: var(--green); font-weight: 700; }
+  .live::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: 1px; }
+  .live.amber { color: var(--amber); }
+  .live.red { color: var(--red); }
+  .paused { color: var(--amber); font-weight: 600; }
+  #flagged.zero { color: var(--dim); }
+  #flagged.some { border-color: var(--red); color: #ffd9d9; }
+  #pausebtn { display: none; }
+  .banner { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 4px 12px; min-height: 52px; background: #3a2c14; border-bottom: 1px solid #6b5020; color: #ffe2b8; }
+  .banner.idle { background: #22324a; border-color: #35527a; color: #dbe8ff; }
+  #grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr 340px; grid-template-rows: auto 1fr; gap: 8px; padding: 8px; }
+  #banners { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 0; }
+  #banners:empty { display: none; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+  .panel > header { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); min-height: 52px; }
+  .panel > header h2 { font-size: 16px; margin: 0; flex: 1; min-width: 120px; }
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
+  /* chat */
+  #chatlist { padding: 4px 0; }
+  .ln { position: relative; padding: 10px 10px 10px 14px; min-height: 44px; border-left: 4px solid transparent; word-wrap: break-word; overflow-wrap: anywhere; }
+  .ln.say { cursor: pointer; }
+  .ln.say:hover { background: #20242b; }
+  .ln .t { color: var(--dim); margin-right: 8px; font-variant-numeric: tabular-nums; }
+  .ln .n { color: var(--blue); font-weight: 700; font-size: 16px; }
+  .ln .n.admin { color: var(--gold); }
+  .ln.say:hover .n { text-decoration: underline; }
+  .ln.masked { border-left-color: var(--amber); }
+  .ln .hid { display: inline-block; color: var(--amber); font-size: 13px; margin-left: 6px; }
+  .ln.ev { color: var(--dim); }
+  .ln.ev.filter { border-left-color: var(--red); }
+  .ln.div { color: var(--dim); font-size: 13px; text-align: center; padding: 8px; border-left: 0; }
+  #newlines { position: absolute; left: 50%; transform: translateX(-50%); bottom: 8px; background: #2f4a73; border-color: #4f78b3; }
+  .chatbox { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .controls { flex: none; border-top: 1px solid var(--line); padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; max-height: 50%; overflow-y: auto; }
+  .controls .lbl { font-weight: 600; }
+
+  /* the map */
+  #mapbox { position: relative; flex: 1; min-height: 0; background: #0d1a2b; touch-action: none; }
+  #map { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; cursor: grab; }
+  #zoom { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 8px; }
+  #zoom button { background: rgba(27, 30, 36, 0.92); }
+  #legend { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 250px); background: rgba(20, 22, 26, 0.85); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font-size: 13px; }
+  #pick { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 8px; max-height: 60%; overflow-y: auto; z-index: 3; min-width: 160px; }
+  #inside { flex: none; border-top: 1px solid var(--line); padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; max-height: 30%; overflow-y: auto; }
+  #inside .chip { background: #23272f; border-radius: 22px; }
+
+  /* who is on */
+  .row { padding: 6px 10px; min-height: 56px; border-bottom: 1px solid #23262d; cursor: pointer; display: block; width: 100%; text-align: left; background: none; border-left: 0; border-right: 0; border-top: 0; border-radius: 0; }
+  .row:hover { background: #20242b; }
+  .row.sel { background: #26303f; }
+  .row .nm { font-weight: 700; font-size: 16px; color: var(--blue); }
+  .row .nm.admin { color: var(--gold); }
+  .row .l2 { color: var(--dim); font-size: 14px; }
+  .actions { padding: 8px 10px 10px; border-bottom: 1px solid #23262d; background: #20252d; display: flex; flex-direction: column; gap: 8px; }
+  .fold { width: 100%; text-align: left; border-radius: 0; border-left: 0; border-right: 0; background: #1f232a; font-weight: 600; }
+  .act { padding: 8px 10px; border-bottom: 1px solid #23262d; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .act .txt { flex: 1; min-width: 160px; }
+  #toast { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line); background: #22324a; min-height: 56px; }
+  .warn { color: var(--red); }
+
+  /* under 900 px: the map first, then one panel at a time */
+  #tabs2 { display: none; }
+  #sheet { display: none; }
+  @media (max-width: 1099px) {
+    #grid { grid-template-columns: 270px 1fr 290px; gap: 0; padding: 0; }
+    .panel { border-radius: 0; }
+  }
+  @media (max-width: 899px) {
+    #bar .mid { order: 3; flex-basis: 100%; justify-content: flex-start; min-height: 44px; }
+    #pausebtn { display: inline-block; }
+    #grid { display: flex; flex-direction: column; gap: 0; padding: 0; }
+    #mid { order: 1; flex: none; height: 55vh; }
+    #tabs2 { order: 2; display: flex; flex: none; height: 56px; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+    #tabs2 button { flex: 1; height: 48px; }
+    #banners { order: 3; }
+    #chat, #who { order: 4; flex: 1; display: none; }
+    body.tab-chat #chat { display: flex; }
+    body.tab-who #who { display: flex; }
+    .controls .pausegroup { display: none; }
+    #legend { max-width: calc(100% - 210px); }
+    /* the bottom sheet takes its own room under the panel (it never covers a button) */
+    #sheet { flex: 1; min-height: 0; background: var(--panel); border-top: 2px solid var(--blue); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); flex-direction: column; gap: 8px; overflow-y: auto; }
+    #sheet.up { display: flex; }
+    /* while a knight's sheet is up it stands in for the tabs and the list under the map */
+    body.sheet #tabs2, body.sheet #banners, body.sheet #chat, body.sheet #who { display: none !important; }
+    body.sheet #grid { flex: none; }
+    #who .actions { display: none; }
+  }
+  #pausemenu { position: absolute; z-index: 6; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+</style>
+</head>
+<body>
+<noscript>The teacher view needs JavaScript.</noscript>
+<script>
+'use strict';
+// ============================================================================
+// FANGLANDS — TEACHER VIEW (docs/ONLINE.md, "The teacher view")
+// A teacher signs in with the name and password Ethan made on /admin and gets this full-screen watch screen: the chat on
+// the left with its controls, the world map in the middle, who is on with send-off and undo on the right. Never the game,
+// never a knight. Everything here is drawn with textContent (no HTML from anywhere), the token lives in sessionStorage only
+// (never a URL), and nothing calls the world on a timer but the 25 s ping, which the world's runtime answers without waking.
+// ============================================================================
+(() => {
+  const TOKEN_KEY = 'fl.teacher';
+  const PING_MS = 25000, IDLE_MS = 60 * 60000, IDLE_WARN_MS = 2 * 60000, BACKOFF_MAX = 300, TRIES_MAX = 30;
+  const AWAY_MS = 30000, STALE_MS = 10000, FLAG_MS = 10 * 60000, FLAG_RING_MS = 10 * 60000, CONFIRM_MS = 5000, TOAST_MS = 8000, CHAT_KEEP_MS = 60 * 60000;
+  const NO_RECONNECT = [4008, 4010, 4011, 4012, 4013, 4014];
+  const BYE = {
+    4010: 'You signed out.',
+    4011: 'Your sign-in ran out for today. Sign in again to keep watching.',
+    4012: 'Ethan turned this sign-in off.',
+    4013: 'Your password was changed. Sign in with the new one.',
+    4014: 'Too many teacher screens are open. Close one and try again.',
+    4008: 'That was too many taps at once. Sign in again.',
+  };
+  const W = window, D = document;
+  const now = () => Date.now();
+  const store = {
+    get() { try { return W.sessionStorage.getItem(TOKEN_KEY); } catch (e) { return null; } },
+    set(v) { try { W.sessionStorage.setItem(TOKEN_KEY, v); } catch (e) { } },
+    del() { try { W.sessionStorage.removeItem(TOKEN_KEY); } catch (e) { } },
+  };
+
+  // ---------- state ----------
+  const S = {
+    token: store.get(), me: null, expires: 0, notice: true,
+    knights: [], inside: [], gone: [], acts: [], sentOff: [], chatPause: null, frameAt: 0, lastArrive: 0,
+    lines: [], hidden: {}, flags: {}, flagLines: [], selected: null, filter: 'all', follow: true, newLines: 0,
+    ws: null, status: 'off', tries: 0, timer: null, bye: null, wantOnVisible: false, gaveUp: false,
+    lastInput: now(), confirm: null, toast: null, req: 0, pending: {}, msg: null, tab: 'chat', unread: 0,
+    foldGone: true, foldDone: false, pick: null, pauseMenu: false, view: null, signinSaid: '',
+  };
+  W.__teacher = S;   // the tests read it (same page, same origin: nothing a teacher could not already see)
+  // where the dots are on the canvas right now (tools/teacher-browser.mjs taps them)
+  S.dotsNow = () => { const box = boxSize(); return box && MAP.W ? dots(viewOf(box.w, box.h)).map(d => ({ x: d.x, y: d.y, names: d.ks.map(k => k.n) })) : []; };
+
+  // ---------- small DOM helpers (textContent only) ----------
+  function el(tag, cls, text) { const e = D.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; }
+  function btn(text, fn, cls) { const b = el('button', cls || '', text); b.type = 'button'; b.addEventListener('click', ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); fn(ev); }); return b; }
+  function clear(e) { while (e.firstChild) e.removeChild(e.firstChild); }
+  // "10:41"
+  const hm = ms => { const d = new Date(ms); return (d.getHours() % 12 || 12) + ':' + String(d.getMinutes()).padStart(2, '0'); };
+  // "10:44 am"
+  const clock = ms => { const d = new Date(ms); return hm(ms) + ' ' + (d.getHours() < 12 ? 'am' : 'pm'); };
+  const mins = ms => Math.max(1, Math.ceil(ms / 60000));
+  const mmss = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  const dayEndLocal = t => { const d = new Date(t); d.setHours(23, 59, 59, 999); return d.getTime(); };
+  const lc = s => String(s || '').toLowerCase();
+
+  // ---------- the sign-in card ----------
+  const ui = {};
+  function buildSignin() {
+    const root = el('div'); root.id = 'signin';
+    const card = el('form', 'card'); card.setAttribute('autocomplete', 'on');
+    card.append(el('h1', '', 'Fanglands — Teacher view'), el('p', 'dim', 'For teachers watching Fanglands at school. Kids play at fanglands.com.'));
+    ui.said = el('p', 'said'); card.appendChild(ui.said);
+    const l1 = el('label', '', 'Your name'); l1.setAttribute('for', 'tname');
+    ui.name = el('input'); ui.name.id = 'tname'; ui.name.type = 'text'; ui.name.setAttribute('autocomplete', 'username'); ui.name.setAttribute('autocapitalize', 'words'); ui.name.setAttribute('spellcheck', 'false'); ui.name.setAttribute('maxlength', '40');
+    const l2 = el('label', '', 'Password'); l2.setAttribute('for', 'tpass');
+    ui.pass = el('input'); ui.pass.id = 'tpass'; ui.pass.type = 'password'; ui.pass.setAttribute('autocomplete', 'current-password'); ui.pass.setAttribute('maxlength', '200');
+    ui.go = el('button', 'go', 'Sign in'); ui.go.type = 'submit';
+    ui.err = el('div', 'err');
+    card.append(l1, ui.name, l2, ui.pass, ui.go, ui.err, el('p', 'dim small', "Ethan gives each teacher their own name and password. On a shared computer, press Sign out when you're done."));
+    card.addEventListener('submit', ev => { if (ev && ev.preventDefault) ev.preventDefault(); signIn(); });
+    root.appendChild(card);
+    ui.signin = root;
+    D.body.appendChild(root);
+  }
+  const SIGNIN_ERR = {
+    nomatch: "That name and password don't match.",
+    off: 'This sign-in was turned off. Ask Ethan.',
+    asleep: 'The world is asleep right now. Try again in a minute.',
+  };
+  async function signIn() {
+    const name = String(ui.name.value || '').trim(), pass = String(ui.pass.value || '');
+    if (!name || !pass) { ui.err.textContent = "That name and password don't match."; return; }
+    ui.go.disabled = true; ui.err.textContent = '';
+    let r = null, data = null;
+    try { r = await W.fetch('/api/teacher/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, pass }), credentials: 'omit', cache: 'no-store' }); try { data = await r.json(); } catch (e) { } } catch (e) { r = null; }
+    ui.go.disabled = false;
+    if (!r || r.status >= 500) { ui.err.textContent = SIGNIN_ERR.asleep; return; }
+    if (!r.ok) {
+      const code = data && data.code;
+      if (code === 'wait' || r.status === 429) { const m = data && data.wait ? Math.max(1, Math.ceil(data.wait / 60)) : 15; ui.err.textContent = 'Too many tries. Wait ' + m + ' minute' + (m === 1 ? '' : 's') + ' and try again.'; }
+      else if (code === 'off') ui.err.textContent = SIGNIN_ERR.off;
+      else ui.err.textContent = SIGNIN_ERR.nomatch;
+      return;
+    }
+    if (!data || typeof data.token !== 'string') { ui.err.textContent = SIGNIN_ERR.asleep; return; }
+    ui.pass.value = '';
+    S.token = data.token; store.set(S.token); S.me = data.name; S.expires = data.expires || 0;
+    startWatching();
+  }
+  function showSignin(said) {
+    S.signinSaid = said || '';
+    if (ui.app) ui.app.hidden = true;
+    ui.signin.hidden = false;
+    ui.said.textContent = S.signinSaid; ui.said.hidden = !S.signinSaid;
+    ui.err.textContent = '';
+  }
+
+  // ---------- the watch screen ----------
+  function buildApp() {
+    const app = el('div'); app.id = 'app'; app.hidden = true; ui.app = app;
+    // the bar
+    const bar = el('header'); bar.id = 'bar';
+    const title = el('div', 'title', 'Fanglands — Teacher view');
+    const mid = el('div', 'mid');
+    ui.live = el('span', 'live', 'Live'); ui.retry = btn('Try again', () => { S.tries = 0; S.gaveUp = false; connect(); }); ui.retry.hidden = true;
+    ui.count = el('span', '', '0 on'); ui.chatState = el('span', '', 'Chat is on');
+    ui.pauseBtn = btn('Pause chat', () => { S.pauseMenu = !S.pauseMenu; renderPauseMenu(); }); ui.pauseBtn.id = 'pausebtn';
+    ui.flagged = btn('0 to look at', () => { S.filter = 'flagged'; S.tab = 'chat'; renderChat(true); renderTabs(); scrollChatEnd(); }); ui.flagged.id = 'flagged';
+    mid.append(ui.live, ui.retry, ui.count, ui.chatState, ui.pauseBtn, ui.flagged);
+    const right = el('div', 'right');
+    ui.meLine = el('span', 'dim', ''); ui.signout = btn('Sign out', () => signOut(4010));
+    right.append(ui.meLine, ui.signout);
+    bar.append(title, mid, right);
+    app.appendChild(bar);
+    ui.pauseMenu = el('div'); ui.pauseMenu.id = 'pausemenu'; ui.pauseMenu.hidden = true; app.appendChild(ui.pauseMenu);
+
+    const grid = el('main'); grid.id = 'grid';
+    ui.banners = el('div'); ui.banners.id = 'banners';
+    // chat
+    const chat = el('section', 'panel'); chat.id = 'chat';
+    const ch = el('header'); const h2 = el('h2', '', 'Chat'); h2.appendChild(el('span', 'dim small', '  the last hour'));
+    ui.fAll = btn('All lines', () => { S.filter = 'all'; renderChat(true); scrollChatEnd(); });
+    ui.fFlag = btn('Only flagged', () => { S.filter = 'flagged'; renderChat(true); scrollChatEnd(); });
+    const fb = el('div', 'btns'); fb.append(ui.fAll, ui.fFlag); ch.append(h2, fb);
+    const box = el('div', 'chatbox');
+    ui.chatScroll = el('div', 'scroll'); ui.chatList = el('div'); ui.chatList.id = 'chatlist'; ui.chatScroll.appendChild(ui.chatList);
+    ui.chatScroll.addEventListener('scroll', () => { const s = ui.chatScroll; const atEnd = s.scrollTop + s.clientHeight >= s.scrollHeight - 24; if (atEnd !== S.follow) { S.follow = atEnd; if (atEnd) { S.newLines = 0; renderNewLines(); } } });
+    ui.newLines = btn('0 new lines', () => { S.follow = true; S.newLines = 0; scrollChatEnd(); renderNewLines(); }); ui.newLines.id = 'newlines'; ui.newLines.hidden = true;
+    box.append(ui.chatScroll, ui.newLines);
+    ui.controls = el('div', 'controls');
+    chat.append(ch, box, ui.controls);
+    // the map
+    const midp = el('section', 'panel'); midp.id = 'mid';
+    const mh = el('header'); ui.mapHead = el('h2', '', 'World map'); mh.appendChild(ui.mapHead);
+    ui.mapBox = el('div'); ui.mapBox.id = 'mapbox';
+    ui.canvas = el('canvas'); ui.canvas.id = 'map'; ui.canvas.setAttribute('aria-label', 'The world map with a dot for every knight');
+    const zoom = el('div'); zoom.id = 'zoom';
+    zoom.append(btn('+', () => zoomBy(1.4)), btn('−', () => zoomBy(1 / 1.4)), btn('Whole map', () => { S.view = null; drawMap(); }));
+    ui.legend = el('div', '', 'Blue: playing. Grey: away. Amber ring: chat off. Gold ring: admin.'); ui.legend.id = 'legend';
+    ui.pick = el('div'); ui.pick.id = 'pick'; ui.pick.hidden = true;
+    ui.empty = el('div', 'dim', 'Nobody is on right now.'); ui.empty.style.cssText = 'position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(20,22,26,0.85);padding:8px 14px;border-radius:8px';
+    ui.mapBox.append(ui.canvas, ui.legend, zoom, ui.pick, ui.empty);
+    ui.inside = el('div'); ui.inside.id = 'inside';
+    midp.append(mh, ui.mapBox, ui.inside);
+    // who is on
+    const who = el('section', 'panel'); who.id = 'who';
+    const wh = el('header'); ui.whoHead = el('h2', '', 'Who is on (0)'); wh.appendChild(ui.whoHead);
+    ui.whoScroll = el('div', 'scroll'); ui.whoList = el('div'); ui.whoScroll.appendChild(ui.whoList);
+    ui.toast = el('div'); ui.toast.id = 'toast'; ui.toast.hidden = true;
+    who.append(wh, ui.whoScroll, ui.toast);
+    // the two tabs under 900 px
+    ui.tabs = el('nav'); ui.tabs.id = 'tabs2';
+    ui.tChat = btn('Chat', () => { S.tab = 'chat'; S.unread = 0; renderTabs(); scrollChatEnd(); }); ui.tWho = btn('Who is on (0)', () => { S.tab = 'who'; renderTabs(); });
+    ui.tabs.append(ui.tChat, ui.tWho);
+    grid.append(ui.banners, chat, midp, ui.tabs, who);
+    app.appendChild(grid);
+    ui.sheet = el('div'); ui.sheet.id = 'sheet'; app.appendChild(ui.sheet);
+    D.body.appendChild(app);
+    mapInput();
+  }
+
+  // ---------- calls and the socket ----------
+  async function ticket() {
+    let r = null, data = null;
+    try { r = await W.fetch('/api/teacher/ticket', { method: 'POST', headers: { authorization: 'Bearer ' + S.token }, credentials: 'omit', cache: 'no-store' }); try { data = await r.json(); } catch (e) { } } catch (e) { return { net: true }; }
+    if (r.status === 401) return { dead: true };
+    if (!r.ok || !data || typeof data.ticket !== 'string') return { net: true };
+    return { ticket: data.ticket };
+  }
+  function wsUrl(t) { const l = W.location; return (l.protocol === 'https:' ? 'wss://' : 'ws://') + l.host + '/api/teacher/ws?ticket=' + encodeURIComponent(t); }
+  async function connect() {
+    if (!S.token || S.bye) return;
+    if (D.hidden) { S.wantOnVisible = true; return; }
+    if (S.timer) { clearTimeout(S.timer); S.timer = null; }
+    if (S.ws) return;
+    setStatus('connecting');
+    const t = await ticket();
+    if (t.dead) return ended(4011);
+    if (!t.ticket) return retryLater();
+    let ws;
+    try { ws = new W.WebSocket(wsUrl(t.ticket)); } catch (e) { return retryLater(); }
+    S.ws = ws;
+    ws.onopen = () => { S.tries = 0; setStatus('live'); };
+    ws.onmessage = ev => { let m = null; try { m = JSON.parse(ev.data); } catch (e) { return; } onMessage(m); };
+    ws.onclose = ev => {
+      if (S.ws === ws) S.ws = null;
+      const code = (ev && ev.code) || 1006;
+      if (S.bye || NO_RECONNECT.includes(code)) return ended(S.bye || code);
+      if (!S.token) return;
+      retryLater();
+    };
+    ws.onerror = () => { };
+  }
+  function retryLater() {
+    S.ws = null;
+    S.tries++;
+    if (S.tries >= TRIES_MAX) { S.gaveUp = true; setStatus('off'); return; }
+    setStatus('connecting');
+    const secs = Math.min(BACKOFF_MAX, Math.pow(2, S.tries - 1));
+    S.timer = setTimeout(() => { S.timer = null; connect(); }, secs * 1000);
+  }
+  // the screen was closed from the world's side (or the page signed out): back to the card with the sentence
+  function ended(code) {
+    if (S.timer) { clearTimeout(S.timer); S.timer = null; }
+    const ws = S.ws; S.ws = null; if (ws) { try { ws.onclose = null; ws.close(1000); } catch (e) { } }
+    S.token = null; store.del(); S.bye = null; S.status = 'off';
+    showSignin(BYE[code] || BYE[4011]);
+  }
+  function setStatus(s) { S.status = s; renderBar(); }
+  function send(obj) {
+    if (!S.ws || S.ws.readyState !== 1) { say('Not connected. The line will come back by itself.', true); return null; }
+    const req = ++S.req; obj.req = req;
+    try { S.ws.send(JSON.stringify(obj)); } catch (e) { return null; }
+    S.pending[req] = obj;
+    return req;
+  }
+  function signOut(code) {
+    const token = S.token;
+    if (token) {
+      try { W.fetch('/api/teacher/logout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }), keepalive: true, credentials: 'omit' }).catch(() => { }); } catch (e) { }
+    }
+    S.bye = null;
+    ended(code || 4010);
+  }
+
+  // ---------- what the world says ----------
+  function onMessage(m) {
+    if (!m || typeof m.t !== 'string') return;
+    S.lastArrive = now();
+    switch (m.t) {
+      case 'w_hello': S.me = String(m.me || ''); S.expires = +m.expires || 0; S.notice = m.notice !== false; setStatus('live'); break;
+      case 'w_all': {
+        S.lines = [];
+        const back = Array.isArray(m.chat) ? m.chat : [];
+        if (back.length) S.lines.push({ kind: 'div', text: 'Earlier, before you opened this' });
+        for (const c of back) S.lines.push(lineOf(c));
+        takeKnights(m); takeActs(m);
+        renderChat(true); scrollChatEnd(); renderAll();
+        break;
+      }
+      case 'w_k': takeKnights(m); renderWho(); drawMap(); renderMapHead(); renderInside(); renderControls(); renderSheet(); renderBar(); break;
+      case 'w_chat': addLine(lineOf(m)); break;
+      case 'w_event': {
+        if ((m.kind === 'strike' || m.kind === 'words') && m.n) { S.flags[lc(m.n)] = now(); S.flagLines.push(now()); }
+        addLine({ kind: 'ev', at: m.at || now(), text: String(m.text || ''), filter: m.kind === 'strike' || m.kind === 'words', n: m.n || null });
+        if (m.kind === 'strike' || m.kind === 'words') drawMap();
+        break;
+      }
+      case 'w_acts': takeActs(m); renderWho(); renderControls(); renderBanners(); renderBar(); renderSheet(); break;
+      case 'w_ok': {
+        const asked = S.pending[m.req]; delete S.pending[m.req];
+        const mine = S.acts[0] && S.acts[0].teacher === S.me && !S.acts[0].undoneAt ? S.acts[0] : null;
+        if (asked && (asked.t === 'w_mute' || asked.t === 'w_off') && mine) toast(m.text, mine.id); else say(m.text);
+        break;
+      }
+      case 'w_no': { delete S.pending[m.req]; say(m.text || 'That did not go through.', true); break; }
+      case 'w_bye': S.bye = m.code; break;
+      default: break;
+    }
+  }
+  const lineOf = c => ({ kind: 'line', at: +c.at || now(), n: String(c.n || '?'), text: String(c.text || ''), role: c.role === 'admin' ? 'admin' : 'player', masked: !!c.masked });
+  function takeKnights(m) {
+    S.knights = Array.isArray(m.knights) ? m.knights : [];
+    S.inside = Array.isArray(m.inside) ? m.inside : [];
+    S.gone = Array.isArray(m.gone) ? m.gone : [];
+    S.frameAt = now();
+  }
+  function takeActs(m) {
+    if (Array.isArray(m.acts)) S.acts = m.acts;
+    if (Array.isArray(m.sentOff)) S.sentOff = m.sentOff;
+    S.chatPause = m.chatPause && m.chatPause.until ? { until: +m.chatPause.until, by: String(m.chatPause.by || ''), act: m.chatPause.act } : null;
+    // the page's clock counts the pause down; the world told us the end as its clock reads it
+  }
+  function addLine(l) {
+    const cut = now() - CHAT_KEEP_MS;
+    while (S.lines.length > 600 || (S.lines.length && S.lines[0].kind !== 'div' && S.lines[0].at < cut)) S.lines.shift();
+    S.lines.push(l);
+    if (l.kind === 'line' && l.masked) { S.hidden[lc(l.n)] = (S.hidden[lc(l.n)] || 0) + 1; S.flagLines.push(now()); }
+    if (S.filter === 'flagged' && !flaggedLine(l)) { renderBar(); return; }
+    ui.chatList.appendChild(lineEl(l));
+    if (S.tab !== 'chat' && narrow()) { S.unread++; renderTabs(); }
+    if (S.follow) scrollChatEnd(); else { S.newLines++; renderNewLines(); }
+    renderBar();
+    if (l.kind === 'line' && l.masked) renderWho();
+  }
+
+  // ---------- the bar and the banners ----------
+  const narrow = () => (W.innerWidth || 1200) < 900;
+  function flaggedCount() { const cut = now() - FLAG_MS; S.flagLines = S.flagLines.filter(t => t > cut); return S.flagLines.length; }
+  function pauseNow() { return S.chatPause && S.chatPause.until > now() ? S.chatPause : null; }
+  function renderBar() {
+    if (!ui.live) return;
+    const st = S.status, gave = S.gaveUp;
+    ui.live.textContent = st === 'live' ? 'Live' : gave ? 'Not connected' : 'Reconnecting…';
+    ui.live.className = 'live' + (st === 'live' ? '' : gave ? ' red' : ' amber');
+    ui.retry.hidden = !gave;
+    ui.count.textContent = S.knights.length + ' on';
+    const p = pauseNow();
+    ui.chatState.textContent = p ? 'Chat paused · ' + mmss(p.until - now()) + ' left' : 'Chat is on';
+    ui.chatState.className = p ? 'paused' : '';
+    ui.pauseBtn.textContent = p ? 'Turn chat back on' : 'Pause chat';
+    const n = flaggedCount();
+    ui.flagged.textContent = n + ' to look at';
+    ui.flagged.className = n ? 'some' : 'zero';
+    ui.meLine.textContent = (S.me || '') + (S.expires ? ' · signed in until ' + clock(S.expires) : '');
+  }
+  function renderPauseMenu() {
+    const m = ui.pauseMenu; clear(m);
+    if (!S.pauseMenu) { m.hidden = true; return; }
+    m.hidden = false;
+    const p = pauseNow();
+    if (p) { S.pauseMenu = false; m.hidden = true; chatOn(); return; }
+    m.appendChild(el('div', '', 'Pause chat for everyone:'));
+    for (const [span, label] of [['5m', '5 minutes'], ['15m', '15 minutes'], ['1h', '1 hour']]) m.appendChild(btn(label, () => { S.pauseMenu = false; m.hidden = true; send({ t: 'w_pause', span }); }));
+    m.appendChild(btn('Cancel', () => { S.pauseMenu = false; m.hidden = true; }));
+    m.style.top = '96px'; m.style.left = '8px';
+  }
+  function chatOn() { send({ t: 'w_chaton' }); }
+  function renderBanners() {
+    if (!ui.banners) return;
+    clear(ui.banners);
+    const p = pauseNow();
+    if (p) {
+      const b = el('div', 'banner');
+      b.append(el('span', '', 'Chat is paused for everyone until ' + clock(p.until) + ' (' + (p.by || 'a teacher') + ' paused it).'), btn('Turn chat back on', chatOn, 'amber'));
+      ui.banners.appendChild(b);
+    }
+    const idle = now() - S.lastInput;
+    if (idle >= IDLE_MS) {
+      const b = el('div', 'banner idle');
+      b.appendChild(el('span', '', 'Still watching? Tap anywhere to stay signed in. Signing out in ' + mmss(IDLE_MS + IDLE_WARN_MS - idle) + '.'));
+      ui.banners.appendChild(b);
+    }
+  }
+  function renderTabs() {
+    if (!ui.tChat) return;
+    D.body.classList.toggle('tab-chat', S.tab === 'chat'); D.body.classList.toggle('tab-who', S.tab === 'who');
+    ui.tChat.textContent = 'Chat' + (S.unread ? ' (' + S.unread + ' new)' : '');
+    ui.tWho.textContent = 'Who is on (' + S.knights.length + ')';
+    ui.tChat.className = S.tab === 'chat' ? 'on' : ''; ui.tWho.className = S.tab === 'who' ? 'on' : '';
+  }
+
+  // ---------- the chat ----------
+  const flaggedLine = l => (l.kind === 'line' && l.masked) || (l.kind === 'ev' && l.filter);
+  function lineEl(l) {
+    if (l.kind === 'div') return el('div', 'ln div', l.text);
+    const d = el('div', 'ln' + (l.kind === 'ev' ? ' ev' + (l.filter ? ' filter' : '') : '') + (l.kind === 'line' && l.masked ? ' masked' : ''));
+    d.appendChild(el('span', 't', hm(l.at)));
+    if (l.kind === 'ev') { d.appendChild(el('span', '', l.text)); return d; }
+    // the whole line is the target (44 px tall): a tap selects the knight who said it
+    d.className += ' say'; d.setAttribute('role', 'button'); d.tabIndex = 0;
+    d.addEventListener('click', () => select(l.n));
+    d.appendChild(el('span', 'n' + (l.role === 'admin' ? ' admin' : ''), l.n));
+    if (l.role === 'admin') d.appendChild(el('span', 'pill', 'ADMIN'));
+    d.appendChild(el('span', '', ': ' + l.text));
+    if (l.masked) d.appendChild(el('span', 'hid', 'Words hidden'));
+    return d;
+  }
+  function renderChat() {
+    if (!ui.chatList) return;
+    clear(ui.chatList);
+    for (const l of S.lines) if (S.filter === 'all' || flaggedLine(l)) ui.chatList.appendChild(lineEl(l));
+    if (S.filter === 'flagged' && !S.lines.some(flaggedLine)) ui.chatList.appendChild(el('div', 'ln div', 'Nothing flagged in the last hour.'));
+    ui.fAll.className = S.filter === 'all' ? 'on' : ''; ui.fFlag.className = S.filter === 'flagged' ? 'on' : '';
+    S.newLines = 0; renderNewLines();
+  }
+  function scrollChatEnd() { if (ui.chatScroll) { ui.chatScroll.scrollTop = ui.chatScroll.scrollHeight; S.follow = true; } }
+  function renderNewLines() { if (!ui.newLines) return; ui.newLines.hidden = !S.newLines; ui.newLines.textContent = S.newLines + ' new line' + (S.newLines === 1 ? '' : 's'); }
+  // the controls under the chat: pause for everyone, and the selected knight's mute
+  function renderControls() {
+    const c = ui.controls; if (!c) return;
+    clear(c);
+    const pg = el('div', 'pausegroup');
+    const p = pauseNow();
+    if (p) {
+      pg.appendChild(el('div', 'lbl', 'Chat is paused until ' + clock(p.until) + '.'));
+      const b = el('div', 'btns'); b.appendChild(btn('Turn chat back on', chatOn, 'amber')); pg.appendChild(b);
+    } else {
+      pg.appendChild(el('div', 'lbl', 'Pause chat for everyone:'));
+      const b = el('div', 'btns');
+      for (const [span, label] of [['5m', '5 minutes'], ['15m', '15 minutes'], ['1h', '1 hour']]) b.appendChild(btn(label, () => send({ t: 'w_pause', span })));
+      pg.appendChild(b);
+    }
+    pg.appendChild(el('div', 'dim small', 'Admins can still talk while chat is paused.'));
+    c.appendChild(pg);
+    const mg = el('div'); mg.appendChild(el('div', 'lbl', "Mute a knight's chat:"));
+    const k = S.selected ? knightOf(S.selected) : null;
+    if (!k) mg.appendChild(el('div', 'dim', 'Tap a name in the chat, on the map or in the list.'));
+    else mg.appendChild(muteLine(k, false));
+    c.appendChild(mg);
+  }
+  // the selected knight's mute state and buttons (short: the who-list's action bar wording)
+  function muteLine(k, short) {
+    const box = el('div', 'btns');
+    if (k.role === 'admin') { box.appendChild(el('div', '', k.n + ' is an admin. Only Ethan can do that.')); return box; }
+    const mu = mutedOf(k);
+    if (mu && mu.by === 'teacher') {
+      const a = S.acts.find(x => x.act === 'mute' && x.inForce && lc(x.target) === lc(k.n));
+      box.appendChild(el('div', '', k.n + ' is muted ' + (mu.today ? 'for the rest of today' : 'for ' + mins(mu.until - now()) + ' more minute' + (mins(mu.until - now()) === 1 ? '' : 's')) + (a ? ' (' + a.teacher + ').' : '.')));
+      if (a) box.appendChild(btn('Undo', () => send({ t: 'w_undo', act: a.id })));
+      return box;
+    }
+    if (mu) { box.appendChild(el('div', '', k.n + ' is muted by an admin.')); return box; }
+    if (!short) box.appendChild(el('span', '', k.n));
+    box.append(btn(short ? 'Mute 10 min' : '10 minutes', () => mute(k.n, '10m')), btn(short ? 'Mute 1 hour' : '1 hour', () => mute(k.n, '1h')), btn(short ? 'Mute rest of today' : 'Rest of today', () => mute(k.n, 'today')));
+    return box;
+  }
+  function mute(n, span) { send({ t: 'w_mute', n, span }); }
+
+  // ---------- who is on ----------
+  function knightOf(n) {
+    const l = lc(n);
+    const k = S.knights.find(x => lc(x.n) === l);
+    if (k) return k;
+    const g = S.gone.find(x => lc(x.n) === l);
+    return g ? { n: g.n, role: 'player', gone: g.at, map: null, place: null, doing: null, muted: null, sentOff: 0 } : null;
+  }
+  function mutedOf(k) {
+    if (!k || !k.muted) return null;
+    const until = k.muted.left === -1 ? Infinity : S.frameAt + k.muted.left * 1000;
+    if (until <= now()) return null;
+    return { until, by: k.muted.by, today: until !== Infinity && until >= dayEndLocal(now()) - 60000 };
+  }
+  function awayOf(k) { return !!k.away || (S.frameAt && now() - S.lastArrive > AWAY_MS); }
+  function rowEl(k) {
+    const r = el('div', 'row' + (S.selected && lc(S.selected) === lc(k.n) ? ' sel' : ''));
+    r.setAttribute('role', 'button'); r.tabIndex = 0;
+    r.addEventListener('click', () => select(k.n, true));
+    const l1 = el('div');
+    l1.appendChild(el('span', 'nm' + (k.role === 'admin' ? ' admin' : ''), k.n));
+    if (k.role === 'admin') l1.appendChild(el('span', 'pill', 'ADMIN'));
+    const mu = mutedOf(k);
+    if (mu) l1.appendChild(el('span', 'tag', mu.until === Infinity ? 'Muted' : mu.today ? 'Muted today' : 'Muted ' + mins(mu.until - now()) + ' min'));
+    const hid = S.hidden[lc(k.n)];
+    if (hid) l1.appendChild(el('span', 'tag', 'Words hidden ' + hid));
+    r.appendChild(l1);
+    if (k.gone) r.appendChild(el('div', 'l2', 'left ' + clock(k.gone)));
+    else r.appendChild(el('div', 'l2', (k.place || 'Somewhere in the world') + ' · ' + (awayOf(k) ? 'Away from the game' : k.doing || 'Standing still') + ' · on for ' + onFor(k.since)));
+    return r;
+  }
+  const onFor = since => { const m = Math.max(0, Math.floor((now() - (+since || now())) / 60000)); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; };
+  function actionsEl(k) {
+    const a = el('div', 'actions');
+    const top = el('div', 'btns'); if (!k.gone) top.appendChild(btn('Show on map', () => showOnMap(k.n)));
+    a.appendChild(top);
+    if (k.role === 'admin') { a.appendChild(el('div', '', k.n + ' is an admin. Only Ethan can do that.')); return a; }
+    a.appendChild(muteLine(k, true));
+    a.appendChild(offEl(k));
+    return a;
+  }
+  // Send off for today: two taps; the question goes back by itself after 5 s
+  function offEl(k) {
+    const box = el('div', 'btns');
+    if (k.sentOff) { box.appendChild(el('div', 'warn', k.n + ' is sent off for today.')); return box; }
+    if (S.confirm && lc(S.confirm.n) === lc(k.n) && S.confirm.until > now()) {
+      box.appendChild(el('div', '', 'Send ' + k.n + ' off Fanglands until midnight? ' + k.n + "'s knight is safe and saved."));
+      box.append(btn('Yes, send ' + k.n + ' off', () => { S.confirm = null; send({ t: 'w_off', n: k.n }); renderWho(); renderSheet(); }, 'redfill'), btn('Cancel', () => { S.confirm = null; renderWho(); renderSheet(); }));
+      return box;
+    }
+    box.appendChild(btn('Send off for today', () => { S.confirm = { n: k.n, until: now() + CONFIRM_MS }; renderWho(); renderSheet(); }, 'red'));
+    return box;
+  }
+  function renderWho() {
+    if (!ui.whoList) return;
+    const st = ui.whoScroll.scrollTop;
+    clear(ui.whoList);
+    ui.whoHead.textContent = 'Who is on (' + S.knights.length + ')';
+    const list = S.knights.slice().sort((a, b) => lc(a.n) < lc(b.n) ? -1 : 1);
+    if (!list.length) ui.whoList.appendChild(el('div', 'act dim', 'Nobody is on right now.'));
+    for (const k of list) {
+      ui.whoList.appendChild(rowEl(k));
+      if (S.selected && lc(S.selected) === lc(k.n)) ui.whoList.appendChild(actionsEl(k));
+    }
+    // left in the last 30 minutes
+    const on = new Set(list.map(k => lc(k.n)));
+    const gone = S.gone.filter(g => !on.has(lc(g.n)));
+    if (gone.length) {
+      ui.whoList.appendChild(btn((S.foldGone ? '▸ ' : '▾ ') + 'Left in the last 30 minutes (' + gone.length + ')', () => { S.foldGone = !S.foldGone; renderWho(); }, 'fold'));
+      if (!S.foldGone) for (const g of gone) { const k = knightOf(g.n); ui.whoList.appendChild(rowEl(k)); if (S.selected && lc(S.selected) === lc(g.n)) ui.whoList.appendChild(actionsEl(k)); }
+    }
+    // sent off for today
+    if (S.sentOff.length) {
+      ui.whoList.appendChild(el('div', 'act lbl', 'Sent off for today'));
+      for (const s of S.sentOff) {
+        const r = el('div', 'act');
+        const at = (S.acts.find(a => a.id === s.act) || {}).at;
+        r.appendChild(el('span', 'txt', s.n + ' — ' + (s.by || 'a teacher') + (at ? ', ' + clock(at) : '')));
+        if (s.act) r.appendChild(btn('Let ' + s.n + ' back in', () => send({ t: 'w_undo', act: s.act })));
+        ui.whoList.appendChild(r);
+      }
+    }
+    // done today, every teacher
+    ui.whoList.appendChild(btn((S.foldDone ? '▸ ' : '▾ ') + 'Done today (' + S.acts.length + ')', () => { S.foldDone = !S.foldDone; renderWho(); }, 'fold'));
+    if (!S.foldDone) {
+      if (!S.acts.length) ui.whoList.appendChild(el('div', 'act dim', 'Nothing yet today.'));
+      for (const a of S.acts) {
+        const r = el('div', 'act');
+        r.appendChild(el('span', 'txt', clock(a.at) + '  ' + actWords(a)));
+        if (a.inForce) r.appendChild(btn('Undo', () => send({ t: 'w_undo', act: a.id })));
+        else r.appendChild(el('span', 'dim', a.undoneAt ? '(undone by ' + (a.undoneBy || 'someone') + ')' : '(over)'));
+        ui.whoList.appendChild(r);
+      }
+    }
+    ui.whoScroll.scrollTop = st;
+    renderTabs();
+  }
+  function actWords(a) {
+    if (a.act === 'mute') { const d = a.until - a.at; return a.teacher + ' muted ' + a.target + (Math.abs(d - 600000) < 2000 ? ' for 10 minutes' : Math.abs(d - 3600000) < 2000 ? ' for 1 hour' : ' for the rest of today'); }
+    if (a.act === 'sendoff') return a.teacher + ' sent ' + a.target + ' off for the rest of the day';
+    if (a.act === 'pause') { const m = Math.round((a.until - a.at) / 60000); return a.teacher + ' paused chat for everyone for ' + (m === 60 ? '1 hour' : m + ' minutes'); }
+    return a.teacher + ' ' + a.act + ' ' + (a.target || '');
+  }
+  function toast(text, actId) {
+    if (S.toast && S.toast.timer) clearTimeout(S.toast.timer);
+    S.toast = { text, act: actId, timer: setTimeout(() => { S.toast = null; renderToast(); }, TOAST_MS) };
+    renderToast();
+  }
+  function say(text, bad) { toast(text, null); if (bad && ui.toast) ui.toast.style.background = '#4a2222'; }
+  function renderToast() {
+    const t = ui.toast; if (!t) return;
+    clear(t); t.style.background = '';
+    if (!S.toast) { t.hidden = true; return; }
+    t.hidden = false;
+    t.appendChild(el('span', 'txt', S.toast.text));
+    if (S.toast.act) { const id = S.toast.act; t.appendChild(btn('Undo', () => { send({ t: 'w_undo', act: id }); S.toast = null; renderToast(); })); }
+  }
+  function select(n, fromList) {
+    S.selected = S.selected && lc(S.selected) === lc(n) && fromList ? null : n;
+    S.confirm = null; S.pick = null; if (ui.pick) ui.pick.hidden = true;
+    renderWho(); renderControls(); renderSheet(); drawMap();
+  }
+  // the bottom sheet under 900 px
+  function renderSheet() {
+    const s = ui.sheet; if (!s) return;
+    clear(s);
+    const k = S.selected ? knightOf(S.selected) : null;
+    D.body.classList.toggle('sheet', !!(k && narrow()));
+    if (!k || !narrow()) { s.className = ''; return; }
+    s.className = 'up';
+    s.appendChild(el('div', 'lbl', [k.n, k.gone ? 'left ' + clock(k.gone) : k.place, k.gone ? null : (awayOf(k) ? 'Away from the game' : k.doing)].filter(Boolean).join(' · ')));
+    if (k.role === 'admin') s.appendChild(el('div', '', k.n + ' is an admin. Only Ethan can do that.'));
+    else {
+      const mu = mutedOf(k);
+      if (mu) s.appendChild(muteLine(k, true));
+      else { const b = el('div', 'btns'); b.append(btn('Mute 10 min', () => mute(k.n, '10m')), btn('Mute 1 hour', () => mute(k.n, '1h')), btn('Rest of today', () => mute(k.n, 'today'))); s.appendChild(b); }
+      s.appendChild(offEl(k));
+    }
+    const b2 = el('div', 'btns'); b2.appendChild(btn('Close', () => { S.selected = null; S.confirm = null; renderSheet(); renderWho(); renderControls(); drawMap(); })); s.appendChild(b2);
+  }
+
+  // ---------- the map ----------
+  const MAP = { data: null, img: null, names: [], W: 0, H: 0, TILE: 48 };
+  async function loadMap() {
+    try { const r = await W.fetch('/teacher-map.json', { credentials: 'omit' }); if (!r.ok) return; MAP.data = await r.json(); } catch (e) { return; }
+    const m = MAP.data; if (!m || !m.W || !Array.isArray(m.grid)) return;
+    MAP.W = m.W; MAP.H = m.H; MAP.TILE = m.TILE || 48;
+    const n = m.W * m.H, cells = new Uint8Array(n), solid = new Uint8Array(n);
+    let i = 0; for (let k = 0; k + 1 < m.grid.length; k += 2) { cells.fill(m.grid[k], i, Math.min(n, i + m.grid[k + 1])); i += m.grid[k + 1]; }
+    i = 0; let v = 0; for (const c of (m.fixed || [])) { if (v) solid.fill(1, i, Math.min(n, i + c)); i += c; v ^= 1; }
+    // a soft colour per region, blue for the sea and the unknown, solid tiles darker
+    const pal = ['#4f6b45', '#5a5f3e', '#6b5a43', '#4c6656', '#5d6a48', '#55644c', '#62584a', '#4a6a5e', '#676447', '#5b5f52', '#4f5f42', '#6a6150', '#58704f', '#61674a', '#4d5d4a', '#6c5e46'];
+    const SEA = [29, 58, 92];
+    const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+    const colourOf = idx => { const p = m.places[idx]; if (!p || /sea/.test(p.id)) return SEA; return hex(pal[idx % pal.length]); };
+    const cv = D.createElement('canvas'); cv.width = m.W; cv.height = m.H;
+    const g = cv.getContext && cv.getContext('2d');
+    if (g && g.createImageData) {
+      const img = g.createImageData(m.W, m.H);
+      const sums = {};
+      for (let k = 0; k < n; k++) {
+        const c = colourOf(cells[k]), f = solid[k] ? 0.62 : 1;
+        img.data[k * 4] = c[0] * f; img.data[k * 4 + 1] = c[1] * f; img.data[k * 4 + 2] = c[2] * f; img.data[k * 4 + 3] = 255;
+        const p = m.places[cells[k]]; if (p && p.kind === 'region') { const s = sums[cells[k]] || (sums[cells[k]] = { x: 0, y: 0, n: 0 }); s.x += k % m.W; s.y += Math.floor(k / m.W); s.n++; }
+      }
+      g.putImageData(img, 0, 0);
+      MAP.names = Object.entries(sums).map(([idx, s]) => ({ name: m.places[idx].name, x: s.x / s.n + 0.5, y: s.y / s.n + 0.5, n: s.n })).filter(r => r.n > 150);
+      MAP.img = cv;
+    }
+    drawMap();
+  }
+  // the view: tiles per screen pixel; null = the whole map fits
+  function fitView(w, h) { const s = Math.min(w / MAP.W, h / MAP.H); return { s, x: (w - MAP.W * s) / 2, y: (h - MAP.H * s) / 2 }; }
+  function viewOf(w, h) { return S.view || fitView(w, h); }
+  function zoomBy(f, cx, cy) {
+    const box = boxSize(); if (!box || !MAP.W) return;
+    const v = viewOf(box.w, box.h), fit = fitView(box.w, box.h);
+    const s = Math.max(fit.s, Math.min(fit.s * 24, v.s * f));
+    cx = cx == null ? box.w / 2 : cx; cy = cy == null ? box.h / 2 : cy;
+    const tx = (cx - v.x) / v.s, ty = (cy - v.y) / v.s;
+    S.view = { s, x: cx - tx * s, y: cy - ty * s };
+    if (Math.abs(s - fit.s) < 1e-6) S.view = null;
+    drawMap();
+  }
+  function boxSize() { const b = ui.mapBox && ui.mapBox.getBoundingClientRect ? ui.mapBox.getBoundingClientRect() : null; return b && b.width ? { w: b.width, h: b.height } : null; }
+  // where each knight's dot goes: one cluster per dot within 24 px of another
+  function dots(v) {
+    const pts = [];
+    for (const k of S.knights) if (k.map === 'over' && k.x != null && k.y != null) pts.push({ k, x: v.x + (k.x / MAP.TILE) * v.s, y: v.y + (k.y / MAP.TILE) * v.s });
+    const groups = [];
+    for (const p of pts) { const g = groups.find(q => Math.hypot(q.x - p.x, q.y - p.y) < 24); if (g) { g.ks.push(p.k); g.x = (g.x * (g.ks.length - 1) + p.x) / g.ks.length; g.y = (g.y * (g.ks.length - 1) + p.y) / g.ks.length; } else groups.push({ x: p.x, y: p.y, ks: [p.k] }); }
+    return groups;
+  }
+  let drawQueued = false;
+  function drawMap() {
+    if (drawQueued) return; drawQueued = true;
+    const go = () => { drawQueued = false; paint(); };
+    if (W.requestAnimationFrame) W.requestAnimationFrame(go); else setTimeout(go, 0);
+  }
+  function paint() {
+    renderMapHead();
+    if (ui.empty) ui.empty.hidden = S.knights.length > 0;
+    const box = boxSize(), cv = ui.canvas; if (!box || !cv || !cv.getContext) return;
+    const dpr = W.devicePixelRatio || 1;
+    if (cv.width !== Math.round(box.w * dpr) || cv.height !== Math.round(box.h * dpr)) { cv.width = Math.round(box.w * dpr); cv.height = Math.round(box.h * dpr); }
+    const g = cv.getContext('2d'); if (!g) return;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = '#0d1a2b'; g.fillRect(0, 0, box.w, box.h);
+    if (!MAP.W) return;
+    const v = viewOf(box.w, box.h);
+    if (MAP.img) { g.imageSmoothingEnabled = false; g.drawImage(MAP.img, v.x, v.y, MAP.W * v.s, MAP.H * v.s); }
+    // region names
+    g.font = '600 13px -apple-system, "Segoe UI", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const r of MAP.names) { const x = v.x + r.x * v.s, y = v.y + r.y * v.s; if (x < 0 || y < 0 || x > box.w || y > box.h) continue; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.65)'; g.strokeText(r.name, x, y); g.fillStyle = 'rgba(235,238,245,0.72)'; g.fillText(r.name, x, y); }
+    // the dots
+    const t = now(), stale = S.lastArrive && t - S.lastArrive > AWAY_MS;
+    for (const d of dots(v)) {
+      if (d.ks.length > 1) {
+        g.beginPath(); g.arc(d.x, d.y, 13, 0, Math.PI * 2); g.fillStyle = '#2f4a73'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#0b0d10'; g.stroke();
+        g.fillStyle = '#fff'; g.font = '700 14px -apple-system, sans-serif'; g.fillText(String(d.ks.length), d.x, d.y + 1);
+        if (d.ks.some(k => S.selected && lc(k.n) === lc(S.selected))) { g.beginPath(); g.arc(d.x, d.y, 17, 0, Math.PI * 2); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke(); }
+        continue;
+      }
+      const k = d.ks[0], away = k.away || stale;
+      g.beginPath(); g.arc(d.x, d.y, 7, 0, Math.PI * 2); g.fillStyle = away ? '#8a90a0' : '#6fa8ff'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#0b0d10'; g.stroke();
+      if (mutedOf(k)) { g.beginPath(); g.arc(d.x, d.y, 9.5, 0, Math.PI * 2); g.strokeStyle = '#ffb86b'; g.lineWidth = 2.5; g.stroke(); }
+      if (k.role === 'admin') { g.beginPath(); g.arc(d.x, d.y, mutedOf(k) ? 12 : 9.5, 0, Math.PI * 2); g.strokeStyle = '#f5c542'; g.lineWidth = 2.5; g.stroke(); }
+      const f = S.flags[lc(k.n)]; if (f && t - f < FLAG_RING_MS) { g.beginPath(); g.arc(d.x, d.y, 15, 0, Math.PI * 2); g.strokeStyle = '#ff7b7b'; g.lineWidth = 2.5; g.stroke(); }
+      if (S.selected && lc(S.selected) === lc(k.n)) { const r = 18 + 2 * Math.sin(t / 250); g.beginPath(); g.arc(d.x, d.y, r, 0, Math.PI * 2); g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.stroke(); }
+      g.font = '700 14px -apple-system, "Segoe UI", sans-serif'; g.textAlign = 'left'; g.lineWidth = 4; g.strokeStyle = '#0b0d10'; g.strokeText(k.n, d.x + 12, d.y); g.fillStyle = '#ffffff'; g.fillText(k.n, d.x + 12, d.y); g.textAlign = 'center';
+    }
+    if (S.selected && W.requestAnimationFrame) drawMap();   // the selected ring pulses while a knight is selected
+  }
+  function renderMapHead() {
+    if (!ui.mapHead) return;
+    const n = S.knights.length, out = S.knights.filter(k => k.map === 'over').length;
+    const stale = S.lastArrive && now() - S.lastArrive > STALE_MS;
+    ui.mapHead.textContent = stale ? 'World map — Last update ' + hm(S.lastArrive) : 'World map — ' + n + ' knight' + (n === 1 ? '' : 's') + ' on: ' + out + ' out in the world, ' + (n - out) + ' inside places.';
+  }
+  function renderInside() {
+    const box = ui.inside; if (!box) return;
+    clear(box);
+    if (!S.inside.length) { box.appendChild(el('span', 'dim', 'Inside places: nobody.')); return; }
+    box.appendChild(el('span', 'dim', 'Inside places:'));
+    for (const g of S.inside) {
+      const label = (g.place === 'Their own island' ? 'Their own islands' : g.place) + ': ' + g.names.join(', ');
+      box.appendChild(btn(label, () => select(g.names[0]), 'chip'));
+    }
+  }
+  function showOnMap(n) {
+    const k = S.knights.find(x => lc(x.n) === lc(n)); const box = boxSize();
+    S.selected = n;
+    if (k && k.map === 'over' && k.x != null && box && MAP.W) {
+      const fit = fitView(box.w, box.h), s = Math.max(fit.s * 4, (S.view || fit).s);
+      S.view = { s, x: box.w / 2 - (k.x / MAP.TILE) * s, y: box.h / 2 - (k.y / MAP.TILE) * s };
+    }
+    renderWho(); renderControls(); renderSheet(); drawMap();
+  }
+  function tapMap(px, py) {
+    const box = boxSize(); if (!box || !MAP.W) return;
+    const v = viewOf(box.w, box.h);
+    let best = null, bd = 22;   // a 44 px target
+    for (const d of dots(v)) { const dd = Math.hypot(d.x - px, d.y - py); if (dd <= bd) { bd = dd; best = d; } }
+    if (!best) { S.pick = null; ui.pick.hidden = true; return; }
+    if (best.ks.length === 1) return select(best.ks[0].n);
+    // a merged dot: the names in it, a 44 px row each
+    clear(ui.pick); ui.pick.hidden = false;
+    for (const k of best.ks.slice().sort((a, b) => lc(a.n) < lc(b.n) ? -1 : 1)) ui.pick.appendChild(btn(k.n, () => { ui.pick.hidden = true; select(k.n); }));
+    ui.pick.style.left = Math.max(8, Math.min(box.w - 180, best.x + 16)) + 'px'; ui.pick.style.top = Math.max(8, Math.min(box.h - 120, best.y - 20)) + 'px';
+  }
+  function mapInput() {
+    const c = ui.canvas, ptrs = new Map(); let drag = null, pinch = null, moved = 0;
+    const pos = ev => { const b = c.getBoundingClientRect(); return { x: ev.clientX - b.left, y: ev.clientY - b.top }; };
+    c.addEventListener('pointerdown', ev => { try { c.setPointerCapture(ev.pointerId); } catch (e) { } ptrs.set(ev.pointerId, pos(ev)); moved = 0; if (ptrs.size === 1) drag = pos(ev); if (ptrs.size === 2) { const [a, b] = Array.from(ptrs.values()); pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; } });
+    c.addEventListener('pointermove', ev => {
+      if (!ptrs.has(ev.pointerId)) return;
+      const p = pos(ev); ptrs.set(ev.pointerId, p);
+      const box = boxSize(); if (!box || !MAP.W) return;
+      if (ptrs.size === 2 && pinch) { const [a, b] = Array.from(ptrs.values()); const d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch.d > 0) zoomBy(d / pinch.d, (a.x + b.x) / 2, (a.y + b.y) / 2); pinch.d = d; moved += 10; return; }
+      if (drag) { const dx = p.x - drag.x, dy = p.y - drag.y; moved += Math.abs(dx) + Math.abs(dy); if (moved > 6) { const v = viewOf(box.w, box.h); S.view = { s: v.s, x: v.x + dx, y: v.y + dy }; drawMap(); } drag = p; }
+    });
+    const up = ev => { const p = ptrs.get(ev.pointerId); ptrs.delete(ev.pointerId); if (ptrs.size < 2) pinch = null; if (!ptrs.size) { if (moved <= 6 && p) tapMap(p.x, p.y); drag = null; } };
+    c.addEventListener('pointerup', up); c.addEventListener('pointercancel', ev => { ptrs.delete(ev.pointerId); drag = null; pinch = null; });
+    c.addEventListener('wheel', ev => { if (ev.preventDefault) ev.preventDefault(); const p = pos(ev); zoomBy(ev.deltaY < 0 ? 1.15 : 1 / 1.15, p.x, p.y); }, { passive: false });
+  }
+
+  // ---------- once a second: the counts on screen (no calls) ----------
+  function tick() {
+    if (!S.token || !ui.app || ui.app.hidden) return;
+    const idle = now() - S.lastInput;
+    if (idle >= IDLE_MS + IDLE_WARN_MS) return signOut(4010);
+    if (S.expires && now() >= S.expires) return ended(4011);
+    if (S.confirm && S.confirm.until <= now()) { S.confirm = null; renderWho(); renderSheet(); }
+    renderBar(); renderBanners(); renderMapHead();
+  }
+  function renderAll() { renderBar(); renderBanners(); renderControls(); renderWho(); renderInside(); renderTabs(); renderSheet(); renderToast(); drawMap(); }
+
+  function startWatching() {
+    S.bye = null; S.tries = 0; S.gaveUp = false; S.lastInput = now(); S.status = 'connecting';
+    ui.signin.hidden = true; ui.app.hidden = false;
+    S.tab = 'chat'; renderAll();
+    if (!MAP.data) loadMap();
+    connect();
+  }
+
+  // ---------- the page ----------
+  function boot() {
+    buildSignin(); buildApp();
+    // any touch, click or key: still watching
+    const touched = () => { const was = now() - S.lastInput >= IDLE_MS; S.lastInput = now(); if (was) renderBanners(); };
+    for (const t of ['pointerdown', 'keydown', 'touchstart', 'wheel', 'click']) D.addEventListener(t, touched, { passive: true, capture: true });
+    D.addEventListener('visibilitychange', () => { if (!D.hidden && S.token && !S.ws && (S.wantOnVisible || S.timer)) { S.wantOnVisible = false; if (S.timer) { clearTimeout(S.timer); S.timer = null; } connect(); } });
+    // leaving the page signs out (a shared computer is never left signed in)
+    W.addEventListener('pagehide', () => { if (!S.token) return; try { W.navigator.sendBeacon('/api/teacher/logout', JSON.stringify({ token: S.token })); } catch (e) { } S.token = null; store.del(); });
+    W.addEventListener('pageshow', ev => { if (ev && ev.persisted && !store.get()) showSignin(BYE[4010]); });
+    W.addEventListener('resize', () => { renderSheet(); renderTabs(); drawMap(); });
+    // the ping: the runtime answers it without waking the world (exactly this text)
+    setInterval(() => { if (S.ws && S.ws.readyState === 1) { try { S.ws.send('{"t":"ping"}'); } catch (e) { } } }, PING_MS);
+    setInterval(tick, 1000);
+    if (S.token) startWatching(); else showSignin('');
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

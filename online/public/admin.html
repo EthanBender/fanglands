@@ -101,6 +101,20 @@
     <p class="note">Newest at the top. Every mute, kick, ban, new admin, new secret word, drop party and party hat, from the game and from this page. Refreshes with the chat log.</p>
     <div id="modlog"></div>
 
+    <h2>Teachers</h2>
+    <p class="note">Each teacher gets their own name and password for the teacher view: they go to <code>fanglands.com/teacher</code> and sign in. A teacher sees who is on, where each knight is, what they are doing and the chat, and can mute a kid's chat, pause chat for everyone, and send a kid off until midnight. Nothing else: no accounts, no secret words, no saves, no invite code. Everything a teacher does is in "What admins did" with their name, and you can undo it here. Loaded when this page opens and when you press Refresh.</p>
+    <div class="row">
+      <input id="tname" placeholder="Name, like Mrs Smith" size="22" maxlength="40" autocomplete="off">
+      <input id="tpass" placeholder="Password (10 or more letters)" size="28" maxlength="200" autocomplete="off">
+      <button id="tmake">Make one up</button>
+      <button id="tadd" class="gold">Add teacher</button>
+    </div>
+    <p id="tsaid" class="note hidden"></p>
+    <div class="scroll"><table id="teachers"><thead><tr><th>Name</th><th>Added</th><th>Last signed in</th><th>Watching now</th><th>Actions today</th><th></th></tr></thead><tbody></tbody></table></div>
+    <h3 class="sub">In force now</h3>
+    <div id="tforce" class="note"></div>
+    <div class="row"><span id="tnotice"></span><button id="tnoticebtn" class="hidden"></button></div>
+
     <h2>Trades</h2>
     <p class="note">Newest at the top. Every trade two knights finished in the game: who, and exactly what each one gave. Refreshes with the chat log.</p>
     <div id="trades"></div>
@@ -133,7 +147,7 @@
   const COLS = 12;                   // the accounts table's columns
   const ALWAYS = 8640000000000000;   // muted "until unmuted"
   const $ = id => document.getElementById(id);
-  let key = null, timer = null, admins = new Set();
+  let key = null, timer = null, admins = new Set(), sentOffBy = new Map();
   try { key = sessionStorage.getItem(KEY); } catch (e) { }
 
   const say = (text, bad) => { for (const id of ['status', 'status2']) { const el = $(id); el.textContent = text || ''; el.className = bad ? 'bad' : (id === 'status' ? '' : 'note'); } };
@@ -188,6 +202,7 @@
     for (const a of list) {
       const tr = document.createElement('tr'); if (a.banned) tr.className = 'banned';
       const nameCell = cell(tr, ''); nameCell.className = 'nowrap'; const d = document.createElement('span'); d.className = a.online ? 'dot on' : 'dot'; d.title = a.online ? 'online now' : 'not online'; nameCell.append(d, document.createTextNode(a.name));
+      if (sentOffBy.has(a.name.toLowerCase())) { const so = document.createElement('div'); so.className = 'muted'; so.textContent = 'Sent off today (' + sentOffBy.get(a.name.toLowerCase()) + ')'; nameCell.appendChild(so); }
       // Role: the gold ADMIN tag, and the one button that changes it
       const role = cell(tr, '');
       if (a.role === 'admin') role.appendChild(pill()); else { const s = document.createElement('span'); s.className = 'quiet'; s.textContent = 'player'; role.appendChild(s); }
@@ -282,12 +297,24 @@
   }
 
   // One plain sentence per row of mod_log.
-  const SPANS = { '5m': 'for 5 minutes', '1h': 'for 1 hour', '1d': 'for 1 day', always: 'until unmuted' };
+  const SPANS = { '5m': 'for 5 minutes', '10m': 'for 10 minutes', '15m': 'for 15 minutes', '1h': 'for 1 hour', '1d': 'for 1 day', today: 'for the rest of today', always: 'until unmuted' };
+  const plainTeacher = n => String(n).replace(/ \(teacher\)$/, '');
   function sentence(r) {
     switch (r.act) {
+      // the teacher view (docs/ONLINE.md, "The teacher view")
+      case 'teacher_in': return r.by + ' signed in to the teacher view';
+      case 'sendoff': return r.by + ' sent ' + r.n + ' off for the rest of the day';
+      case 'letback': return r.by + ' let ' + r.n + ' back in';
+      case 'chat_pause': return r.by + ' paused chat for everyone ' + (SPANS[r.detail] || r.detail);
+      case 'chat_on': return r.by + ' turned chat back on';
+      case 'teacher_add': return r.by + ' added the teacher ' + plainTeacher(r.n);
+      case 'teacher_pass': return r.by + ' gave ' + r.n + ' a new password';
+      case 'teacher_off': return r.by + ' turned off ' + r.n;
+      case 'teacher_on': return r.by + ' turned on ' + r.n;
+      case 'teacher_notice': return r.by + ' turned ' + (r.detail === 'on' ? 'on' : 'off') + ' "A teacher is watching" for players';
       case 'role': return r.by + ' made ' + r.n + (r.detail === 'admin' ? ' an admin' : ' a player');
       case 'mute': return r.by + ' muted ' + r.n + ' ' + (SPANS[r.detail] || r.detail);
-      case 'unmute': return r.by + ' unmuted ' + r.n;
+      case 'unmute': return r.detail === 'undo' ? r.by + ' turned ' + r.n + "'s chat back on" : r.by + ' unmuted ' + r.n;
       case 'kick': return r.by + ' sent ' + r.n + ' out of the world';
       case 'ban': return r.by + ' banned ' + r.n;
       case 'unban': return r.by + ' unbanned ' + r.n;
@@ -320,6 +347,70 @@
     if (!list.length) box.textContent = 'Nothing yet.';
     for (const r of list) { const d = document.createElement('div'); const t = document.createElement('span'); t.className = 't'; t.textContent = clock(r.at) + ' — '; d.append(t, document.createTextNode(r.a + ' gave ' + things(r.aGave) + '; ' + r.b + ' gave ' + things(r.bGave) + '.')); box.appendChild(d); }
   }
+
+  // ---------- Teachers (docs/ONLINE.md, "The teacher view") ----------
+  // A password made here, in this browser: three plain words and two digits ("maple-river-lantern-42"). Shown once, never kept.
+  const WORDS = ('apple acorn amber anchor arrow aspen autumn badge bakery banjo barley basket beacon beaver berry birch biscuit blanket blossom bluebird boat bonnet border boulder bramble breeze brick bridge brook bucket buffalo bundle burrow butter button cabin cactus camel candle canoe canyon captain carrot castle cedar cello cherry chestnut cider circle clover cobble comet compass copper coral cotton cougar cradle crane cricket crystal cupcake daisy dawn delta desert dolphin donkey dragon drift drum eagle echo ember falcon feather fern fiddle field finch flannel forest fossil fountain fox garden garnet gecko ginger glacier globe gopher granite grove gull harbour harvest hazel heron hickory hill honey horizon icicle island ivory jacket jasper juniper kayak kettle kite koala ladder lagoon lantern lemon lichen lilac linen lizard lobster maple marble meadow mitten moose moss mountain muffin nectar nutmeg oak oasis ocean olive orbit orchard otter owl paddle panda pebble pepper pickle pigeon pine planet plum pocket pony prairie pumpkin quail quilt rabbit raccoon rainbow raven reef ribbon river robin rocket saddle salmon sapphire scarf shell shore sparrow spruce squirrel star stone summit sunrise swan teapot thistle thunder tiger timber tulip tunnel turtle valley velvet violet walnut walrus whistle willow window winter wren yarrow zebra').split(' ');
+  function makePassword() {
+    const r = new Uint32Array(4); crypto.getRandomValues(r);
+    const w = i => WORDS[r[i] % WORDS.length];
+    return w(0) + '-' + w(1) + '-' + w(2) + '-' + String(10 + r[3] % 90);
+  }
+  const tsay = (text, bad) => { const p = $('tsaid'); p.textContent = text; p.classList.remove('hidden'); p.style.color = bad ? '#ff9a9a' : '#ffe2b8'; };
+  let noticeOn = true;
+  async function loadTeachers() {
+    const [list, acts, notice] = await Promise.all([api('GET', '/api/admin/teachers'), api('GET', '/api/admin/teacher-acts?today=1'), api('GET', '/api/admin/teachers/notice')]);
+    const tb = $('teachers').querySelector('tbody'); tb.innerHTML = '';
+    if (!list.length) { const tr = document.createElement('tr'); cell(tr, 'No teachers yet. Add one above.').colSpan = 6; tb.appendChild(tr); }
+    for (const t of list) {
+      const tr = document.createElement('tr'); if (t.off) tr.className = 'banned';
+      cell(tr, t.name + (t.off ? ' (turned off)' : ''));
+      whenCell(tr, t.created); whenCell(tr, t.lastLogin, 'not yet');
+      cell(tr, t.watching ? t.watching + (t.watching === 1 ? ' screen' : ' screens') : 'no');
+      cell(tr, String(t.actsToday || 0));
+      const td = document.createElement('td');
+      td.appendChild(button('New password', async () => {
+        const pass = makePassword();
+        if (!confirm('Give ' + t.name + ' a new password? Their screens close now, and the old password stops working.')) return;
+        try { await api('POST', '/api/admin/teachers/pass', { id: t.id, pass }); tsay(t.name + "'s new password is " + pass + '. Give it to them. It is not shown again.'); await loadTeachers(); await loadModlog(); } catch (e) { tsay(e.message, true); }
+      }));
+      if (t.off) td.appendChild(button('Turn on', async () => {
+        const pass = makePassword();
+        try { await api('POST', '/api/admin/teachers/on', { id: t.id, pass }); tsay(t.name + ' is on again with a new password: ' + pass + '. Give it to them. It is not shown again.'); await loadTeachers(); await loadModlog(); } catch (e) { tsay(e.message, true); }
+      }, 'gold'));
+      else td.appendChild(button('Turn off', async () => {
+        if (!confirm('Turn off ' + t.name + '? Every screen of theirs closes now and they cannot sign in until you turn them on again.')) return;
+        try { await api('POST', '/api/admin/teachers/off', { id: t.id }); tsay(t.name + ' is turned off.'); await loadTeachers(); await loadModlog(); } catch (e) { tsay(e.message, true); }
+      }, 'danger'));
+      tr.appendChild(td); tb.appendChild(tr);
+    }
+    // what teachers did today that is still in force, each with Undo
+    const box = $('tforce'); box.innerHTML = '';
+    const live = acts.filter(a => a.inForce);
+    sentOffBy = new Map(live.filter(a => a.act === 'sendoff').map(a => [String(a.target).toLowerCase(), a.teacher]));
+    if (!live.length) box.textContent = 'Nothing a teacher did is in force right now.';
+    for (const a of live) {
+      const d = document.createElement('div');
+      const words = a.act === 'mute' ? a.teacher + ' muted ' + a.target + ' until ' + clock(a.until) : a.act === 'sendoff' ? a.teacher + ' sent ' + a.target + ' off until midnight' : a.teacher + ' paused chat for everyone until ' + clock(a.until);
+      d.append(document.createTextNode(clock(a.at) + ' — ' + words + ' '), button('Undo', async () => { try { await api('POST', '/api/admin/teachers/undo', { act: a.id }); tsay('Undone: ' + words + '.'); await loadTeachers(); await loadAccounts(); await loadModlog(); } catch (e) { tsay(e.message, true); } }));
+      box.appendChild(d);
+    }
+    noticeOn = !!(notice && notice.on);
+    $('tnotice').textContent = 'Tell players when a teacher is watching: ' + (noticeOn ? 'On' : 'Off');
+    const nb = $('tnoticebtn'); nb.textContent = noticeOn ? 'Turn off' : 'Turn on'; nb.classList.remove('hidden');
+  }
+  $('tmake').onclick = () => { $('tpass').value = makePassword(); };
+  $('tadd').onclick = async () => {
+    const name = $('tname').value.replace(/\s+/g, ' ').trim(), pass = $('tpass').value;
+    if (!name || !pass) { tsay('Type a name and a password (or press Make one up).', true); return; }
+    try {
+      await api('POST', '/api/admin/teachers', { name, pass });
+      $('tname').value = ''; $('tpass').value = '';
+      tsay('Added ' + name + '. Give them: fanglands.com/teacher, name ' + name + ', password ' + pass + '. The password is not shown again.');
+      await loadTeachers(); await loadModlog();
+    } catch (e) { tsay(e.message, true); }
+  };
+  $('tnoticebtn').onclick = async () => { try { await api('POST', '/api/admin/teachers/notice', { on: !noticeOn }); await loadTeachers(); await loadModlog(); } catch (e) { tsay(e.message, true); } };
 
   // the meter (docs/ONLINE.md, "The shared world"): today in one sentence, the last 7 days under it
   // a share of the free plan: one decimal from 1% up, two significant figures under it (0.012%), never a bare 0.0%
@@ -437,7 +528,7 @@
 
   async function refresh(all) {
     try {
-      if (all) await loadAccounts();
+      if (all) { await loadTeachers(); await loadAccounts(); }   // the teachers: on opening and on Refresh only, never every 10 s
       await loadOnline(); await loadChat(); await loadModlog(); await loadTrades();
       if (all) { await loadInvite(); await loadSim(); }   // the meter: on opening and on Refresh only, never every 10 s
       say('Updated ' + new Date().toLocaleTimeString() + '.');

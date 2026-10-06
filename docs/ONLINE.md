@@ -2357,6 +2357,7 @@ A teacher row is never deleted (Turn off keeps it, so the log's names always mat
 | `POST /api/admin/teachers/on` | `{id, pass}` | `{ok}` | turning a teacher back on always takes a new password (400 `pass`) |
 | `POST /api/admin/teachers/undo` | `{act}` | `{ok}` or 409 `changed` | the owner lifts any teacher action (404 `nope`; 409 `over` when it already ran out) |
 | `POST /api/admin/teachers/notice` | `{on}` | `{ok}` | "Tell players when a teacher is watching" |
+| `GET /api/admin/teachers/notice` | — | `{on}` | the switch as it stands |
 | `GET /api/admin/teacher-acts?today=1` | — | `[{id, at, teacher, act, target, until, prev, undoneAt, undoneBy, inForce}]` | today's (Toronto) teacher actions, newest first |
 
 Each owner call writes one `mod_log` row `by: 'parent page'`, act `teacher_add` / `teacher_pass` / `teacher_off` / `teacher_on` /
@@ -2527,7 +2528,7 @@ new password" / "turned off Mrs Smith (teacher)" / "turned on Mrs Smith (teacher
 |---|---|---|
 | `w_hello` | `me, expires, now, tz: 'America/Toronto', notice` | sent on open |
 | `w_all` | `at, knights, inside, gone, chatPause, acts, sentOff, chat` | once on open. `chat`: the last 60 minutes, at most 100 lines, `{at, n, text, role, masked: false}` (the log keeps no flag); the page draws "Earlier, before you opened this" over them. `gone`: `[{n, at}]`, logins ended in the last 30 minutes |
-| `w_k` | `at, knights, inside, gone` | built only on the back of what the World already handles (a knight's presence, join, leave, a map change, a mute change), at most once per 1,000 ms (a join or a leave at once), skipped when identical to the last one sent unless that went out 20 s ago (so a still world still reads as live); no timer, no alarm |
+| `w_k` | `at, knights, inside, gone` | built only on the back of what the World already handles (a knight's presence, join, leave, a map change, a mute change), at most once per 1,000 ms (a join or a leave at once), skipped when identical to the last one sent unless that went out 8 s ago (so a world where kids stand still still reads as live: the page says "Last update" after 10 s with nothing new, and greys every dot after 30 s); no timer, no alarm |
 | `w_chat` | `at, n, text, role, masked` | the same line the kids got, plus the filter's `masked` |
 | `w_event` | `at, kind, n, text` | `strike` ("The word filter warned Sam.", never the typed line, never a count), `words` ("The word filter sent Sam out for 24 hours."), `kick` / `ban` ("An admin sent Leo out of the world."), `mute_admin` ("Leo is muted by an admin."), `teacher` (a teacher's action, in words) |
 | `w_acts` | `acts, sentOff, chatPause` | after every teacher action |

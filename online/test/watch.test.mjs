@@ -169,7 +169,7 @@ test('21-24. the cost: 20 knights at 8 presences a second for 60 s give at most 
       const still = steps => { for (let step = 0; step < steps; step++) { clock.t += 125; socks.forEach(s => W.w.room.message(W.w.wrap(s), JSON.stringify({ t: 'p', map: 'over', x: 5000, y: 3700 }))); } };
       still(24);   // three seconds: the frames that say they stopped
       const n1 = frames(scr).length;
-      still(120);  // fifteen more: nothing new to say, nothing sent
+      still(48);   // six more: nothing new to say, nothing sent (an unchanged frame waits FRAME_AWAKE)
       out.still = frames(scr).length - n1;
       out.wk = W.w.watch.frames;
     }
@@ -178,7 +178,7 @@ test('21-24. the cost: 20 knights at 8 presences a second for 60 s give at most 
   const a = await run(true), b = await run(false);
   assert.ok(a.frames <= 61 && a.frames >= 55, JSON.stringify(a.frames));
   assert.ok(a.gaps.every(g => g >= FRAME_EVERY), JSON.stringify(a.gaps.filter(g => g < FRAME_EVERY)));
-  assert.equal(a.still, 0);                 // standing still for 15 s: the same frame is not sent again
+  assert.equal(a.still, 0);                 // standing still: the same frame is not sent again
   assert.equal(a.alarms, b.alarms);         // 22: no alarm is booked for a screen
   assert.equal(a.writes, b.writes);         // 24: not one SQL write for 60 frames
   // 23: eight hours with nobody on: no frames

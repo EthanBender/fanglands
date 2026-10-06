@@ -344,6 +344,7 @@ export async function teacherAdminCall(world, req, url, call, method) {
     if (!r.ok) throw r.code === 'unknown' ? oops(404, r.text, 'nope') : oops(409, r.text, r.code);
     return json({ ok: true });
   }
+  if (call === 'teachers/notice' && method === 'GET') return json({ on: world.watch.notice });
   if (call === 'teachers/notice' && post) {
     const b = await readJson(req);
     const on = b.on === true || b.on === 'on';

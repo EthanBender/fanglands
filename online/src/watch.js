@@ -12,7 +12,7 @@
 //
 // Cost (the free plan): nothing here sets a timer or an alarm. A frame of who is where (w_k) is built only on the back of
 // something the World is already doing (a knight's presence, a join, a leave, a mute), at most once a second, from memory,
-// and only while a screen is open; it is skipped when it says what the last one said (unless that went out 20 s ago).
+// and only while a screen is open; it is skipped when it says what the last one said (unless that went out 8 s ago).
 // Pure JavaScript, no Cloudflare APIs.
 // ============================================================================
 
@@ -25,7 +25,7 @@ import {
 } from './teachers.js';
 
 export const FRAME_EVERY = 1000;     // ms: at most one w_k a second
-export const FRAME_AWAKE = 20000;    // ms: an unchanged w_k still goes out after this (on the back of a presence), so a still world reads as live
+export const FRAME_AWAKE = 8000;     // ms: an unchanged w_k still goes out after this (on the back of a presence), so a still world reads as live
 export const AWAY_MS = 30000;        // no presence for this long: "Away from the game"
 export const FIGHT_MS = 3000;        // a swing this recent: "Fighting"
 export const SOCK_RATE = 1, SOCK_BURST = 5, SOCK_DROP = 30;   // a teacher socket's messages a second, its burst, and how many over before 4008
