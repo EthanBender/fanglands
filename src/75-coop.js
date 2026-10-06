@@ -22,7 +22,7 @@
   const REMOTE_STALE = 15;    // seconds without presence before a remote knight is forgotten
   const KNIGHT_R = 13;
 
-  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false };
+  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false, hand: null };
   // ?debug=tick (docs/ONLINE.md, Stage 2): the world's tick and how often its stream lands (kept out of S, which is COOP.state)
   const DBG = { k: null, rows: 0, times: [] };
   // While the world keeps this map ('@world:<map>', Stage 2): the last row it sent of each monster by nid (kept after the
@@ -48,6 +48,13 @@
   HOOKS.bossCall = HOOKS.bossCall || {};
   const CREDIT = new Set(['the_fang', 'barrelbeast', 'thunderbird', 'gnasher', 'brood_mother', 'count_ashvane']);
   const CREDIT_HITS = 3, CREDIT_FOR = 60;
+  // That count (m.hitters) lives on the keeper's game, so a hand-over carries it (docs/ONLINE.md, "Named bosses"): the keeper's
+  // row of a named boss ends with it (column 20, after the world's six optional columns), each puppet holds the last one it was
+  // sent, and handoff() gives it to the new keeper's boss. The game that kept the map until that moment, when it still runs (its
+  // knight opened the menu and a friend who plays took the map), sends 'hand': each named boss it ran, with its hp and its count
+  // as they stood at that moment, for the hits that landed on it after its last snapshot. The new keeper listens for it
+  // HAND_WAIT seconds, from the knight it took the map from only, and once. HITTERS_MAX names at most on the wire.
+  const HAND_WAIT = 10, HAND_MAX = 8, HITTERS_MAX = 8;
   // CALL_GAP: the keeper wakes one boss at most this often, whoever asks. CALL_WAIT: a call nobody answered in this long
   // says so. SEND_GAP: this game sends a boss_call at most this often (the world's cap is 0.5 a second, a burst of 2).
   const CALL_GAP = 3, CALL_WAIT = 3, SEND_GAP = 2.5;
@@ -58,6 +65,42 @@
   // whose map is this one wins, else any with the type, for its pay rule)
   const entryOf = type => { let any = null; for (const id of Object.keys(HOOKS.bossCall)) { const h = HOOKS.bossCall[id]; if (!h || h.type !== type) continue; if (h.map === S.map) return [id, h]; if (!any) any = [id, h]; } return any; };
   const r2 = v => Math.round(v * 100) / 100;
+  // a named boss's count on the wire: { name: [hits, seconds since the last one] }, only the knights of the last CREDIT_FOR s
+  // (null: nobody)
+  function hittersOut(m) {
+    const hs = m.hitters; if (!hs) return null;
+    let out = null, n = 0;
+    for (const k of Object.keys(hs)) {
+      const e = hs[k]; if (!e || !(e.n > 0) || time < e.t || time - e.t > CREDIT_FOR) continue;
+      (out || (out = {}))[k] = [e.n, Math.round((time - e.t) * 10) / 10];
+      if (++n >= HITTERS_MAX) break;
+    }
+    return out;
+  }
+  // and back, every field checked: { name: {n, t} } on this game's clock, or null
+  function hittersIn(o) {
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+    let out = null, n = 0;
+    for (const k of Object.keys(o)) {
+      if (n >= HITTERS_MAX) break;
+      if (!k || k.length > 24 || k in Object.prototype) continue;
+      const v = o[k]; if (!Array.isArray(v)) continue;
+      const c = num(v[0]), age = num(v[1]);
+      if (c === null || !Number.isInteger(c) || c < 1 || c > 10000 || age === null || age < 0 || age > CREDIT_FOR) continue;
+      (out || (out = {}))[k] = { n: c, t: time - age }; n++;
+    }
+    return out;
+  }
+  // the same count seen from two games (each keeper's count went on from the last): the larger count, the later hit
+  function mergeHitters(m, from) {
+    if (!from) return;
+    const hs = m.hitters || (m.hitters = {});
+    for (const k of Object.keys(from)) {
+      const s = from[k], e = hs[k];
+      if (!e || time < e.t || time - e.t > CREDIT_FOR) hs[k] = { n: s.n, t: s.t };
+      else { e.n = Math.max(e.n, s.n); e.t = Math.max(e.t, s.t); }
+    }
+  }
   const mapId = () => {
     const I = window.INSTANCES; if (!I) return 'over';
     const a = typeof I.active === 'function' ? I.active() : (I.active && I.active.id);
@@ -121,6 +164,13 @@
   }
 
   // ---------- the keeper's snapshot ----------
+  // one monster's row (docs/ONLINE.md, the monster snapshot); a named boss with a count ends with it in column 20
+  function rowOf(m) {
+    const f = m.facing || { x: 1, y: 0 };
+    const row = [m.nid, m.type, Math.round(m.x), Math.round(m.y), r2(m.hp || 0), r2(m.maxHp || 0), typeof m.state === 'string' ? m.state : 'idle', r2(f.x || 0), r2(f.y || 0), m.moving ? 1 : 0, r2(m.hurtT || 0), m.dead ? 1 : 0, r2(m.attackT || 0), r2(m.stunT || 0)];
+    if (!m.dead && CREDIT.has(m.type)) { const h = hittersOut(m); if (h) { while (row.length < 20) row.push(null); row.push(h); } }
+    return row;
+  }
   function snapshot(knights) {
     const list = [];
     const ks = knights || S.here;
@@ -131,8 +181,7 @@
       if (!near) for (const k of ks) { if (!k.dead && dist(m.x, m.y, k.x, k.y) <= NEAR) { near = true; break; } }
       if (!near) continue;
       if (!m.nid) { m.nid = NET.me + ':' + (++S.counter); S.idxLen = -1; }
-      const f = m.facing || { x: 1, y: 0 };
-      list.push([m.nid, m.type, Math.round(m.x), Math.round(m.y), r2(m.hp || 0), r2(m.maxHp || 0), typeof m.state === 'string' ? m.state : 'idle', r2(f.x || 0), r2(f.y || 0), m.moving ? 1 : 0, r2(m.hurtT || 0), m.dead ? 1 : 0, r2(m.attackT || 0), r2(m.stunT || 0)]);
+      list.push(rowOf(m));
       if (list.length >= 400) break;
     }
     return list;
@@ -146,8 +195,7 @@
     for (const m of monsters) {
       if (m.remote || m.phantom || !MONSTER_DEFS[m.type]) continue;
       if (!m.nid) { m.nid = NET.me + ':' + (++S.counter); S.idxLen = -1; }
-      const f = m.facing || { x: 1, y: 0 };
-      list.push([m.nid, m.type, Math.round(m.x), Math.round(m.y), r2(m.hp || 0), r2(m.maxHp || 0), typeof m.state === 'string' ? m.state : 'idle', r2(f.x || 0), r2(f.y || 0), m.moving ? 1 : 0, r2(m.hurtT || 0), m.dead ? 1 : 0, r2(m.attackT || 0), r2(m.stunT || 0)]);
+      list.push(rowOf(m));
       if (list.length >= 400) break;
     }
     return list;
@@ -236,6 +284,8 @@
         p.ally = lk && typeof lk.ally === 'string' && lk.ally.length <= 24 ? lk.ally : undefined;
         p.emberT = lk && num(lk.emberT) !== null ? lk.emberT : undefined;
       } else if (p.tgt || p.phase !== undefined || p.ally !== undefined || p.emberT !== undefined) { p.tgt = null; p.phase = undefined; p.ally = undefined; p.emberT = undefined; }
+      // a named boss's count (column 20): the puppet holds the keeper's last one, for a hand-over
+      if (CREDIT.has(type)) p.hitters = e.length > 20 ? hittersIn(e[20]) : null;
       // the keeper's row turning dead is its word that this monster died: every screen shows the death on receipt, once
       // (deathSeen). One first seen already dead died before this knight could see it, so it plays nothing.
       if (!dead) p.deathSeen = false;
@@ -265,6 +315,8 @@
     if (n && n !== me) {
       const fromWorld = !!S.puppets && worldLast();
       if (!S.puppets) {
+        // this game ran the map and a friend's takes it: what it knew of each named boss goes with it ('hand')
+        if (S.keeper === me && !isWorld(n)) sendHand();
         S.parked[S.map] = monsters;
         // a game that kept this map hands it to the world's copy taking it over (docs/ONLINE.md Stage 2): the monsters on its
         // own screen (within NEAR) stay standing as puppets, where they were, until the world's first mon (applyMon), so the
@@ -294,8 +346,43 @@
       S.keeper = n;
     }
   }
+  // the old keeper's side of a hand-over: each named boss it ran that was hurt or hit, with its hp and its count now
+  function sendHand() {
+    if (!online()) return;
+    const list = [];
+    for (const m of monsters) {
+      if (m.dead || m.remote || m.phantom || !m.nid || !CREDIT.has(m.type)) continue;
+      const h = hittersOut(m);
+      if (!h && !(m.hp < m.maxHp)) continue;
+      list.push([m.nid, r2(m.hp || 0), h || {}]);
+      if (list.length >= HAND_MAX) break;
+    }
+    if (list.length) NET.send({ t: 'hand', list });
+  }
+  // the new keeper's side: from the knight it took the map from, once, within HAND_WAIT. The count is merged; the hp the old
+  // keeper's boss had lost after its last snapshot (the puppet's hp at the hand-over, against the old keeper's last word) is
+  // taken off here too, leaving it at 1 at the least (the next blow fells it, and that blow is credited as every blow is)
+  function onHand(msg) {
+    const H = S.hand;
+    if (!isKeeper() || !H || !msg || msg.n !== H.from || time < H.at || time - H.at > HAND_WAIT || !Array.isArray(msg.list)) return false;
+    S.hand = null;
+    let used = 0;
+    for (const e of msg.list.slice(0, HAND_MAX)) {
+      if (!Array.isArray(e) || typeof e[0] !== 'string') continue;
+      const m = find(e[0]);
+      if (!m || m.remote || m.phantom || m.dead || !CREDIT.has(m.type) || m.handHp === undefined) continue;
+      mergeHitters(m, hittersIn(e[2]));
+      const hp = num(e[1]);
+      if (hp !== null && hp >= 0 && hp < m.handHp) m.hp = Math.max(1, m.hp - (m.handHp - hp));
+      delete m.handHp; used++;
+    }
+    return used > 0;
+  }
   function handoff() {
     const real = S.parked[S.map] || [];
+    // the knight this game takes the map from: its 'hand' is listened for a moment (a world handing a map back sends none)
+    S.hand = online() && S.keeper && S.keeper !== NET.me && !isWorld(S.keeper) ? { from: S.keeper, at: time } : null;
+    for (const m of real) if (m.handHp !== undefined) delete m.handHp;
     const byNid = new Map(); for (const m of real) if (m.nid) byNid.set(m.nid, m);
     for (const p of S.puppets) {
       if (p.gone) continue;
@@ -305,6 +392,8 @@
       m.stunT = 0; m.lastHitBy = null; m.moving = false;
       // a boss the old keeper had woken (an Echo of the Fang, a War Shed beast) stays awake here
       if (!m.dead) m.awake = true;
+      // and a named boss keeps its count: still standing, it is the same fight (a count this game already paid out is over)
+      if (!m.dead && CREDIT.has(m.type)) { if (m.credited) { m.credited = false; m.hitters = {}; } mergeHitters(m, p.hitters); if (S.hand) m.handHp = r2(m.hp || 0); }
       if (m.dead) { const d = MONSTER_DEFS[m.type]; m.respawnT = (d.respawn || 25) + Math.random() * 10; if (isCampMonster(m)) m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN); }
       else m.respawnT = 0;
     }
@@ -343,7 +432,7 @@
   }
   // the socket dropped (offline) or a new welcome: this game runs its map until told otherwise. A map the world kept goes on
   // as the world last showed it (keepWorld); a knight's map gives back this game's own array, as it always did.
-  function reset() { if (S.puppets && worldLast()) keepWorld(); else if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; clearWorld(); S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; S.restAt = {}; S.lootless = false; }
+  function reset() { if (S.puppets && worldLast()) keepWorld(); else if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; clearWorld(); S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; S.restAt = {}; S.lootless = false; S.hand = null; }
 
   // ---------- named bosses: waking one, here or on the keeper ----------
   const bossAlive = h => { try { return !!h.alive(); } catch (e) { return false; } };
@@ -607,6 +696,7 @@
       payKill(phantomOf({ type: msg.type, nid, x, y }));
     });
     NET.on('boss_call', onBossCall);
+    NET.on('hand', onHand);
     NET.on('boss_wait', onBossWait);
     NET.on('hurt', msg => {
       if (!online()) return;
@@ -616,7 +706,7 @@
     });
   }
 
-  window.COOP = { refill: refillIfCleared, call, CREDIT, phantomOf, bossCall: onBossCall, bossWait: onBossWait, mmss,
+  window.COOP = { refill: refillIfCleared, call, CREDIT, phantomOf, bossCall: onBossCall, bossWait: onBossWait, hand: onHand, mmss,
     isKeeper, keeper: () => S.keeper, map: () => S.map, remotes: () => Object.values(S.remotes), knightsHere, puppets: () => S.puppets,
     get parked() { return S.parked[S.map] || null; },
     // how many monsters stand in this whole place while the world runs it (its mon's 'standing'; null otherwise): a puppet
@@ -1035,6 +1125,43 @@
         const ok = monsters === real && s0.awake === true && !s0.dead && s1.dead && s1.awake !== true;
         check(P + 'handoff: a live adopted monster gets awake true', ok, { real: monsters === real, s0: [s0.awake, s0.dead], s1: [s1.awake, s1.dead] });
         for (const [m, k] of [[s0, k0.s0], [s1, k0.s1]]) { if (k.awake === undefined) delete m.awake; else m.awake = k.awake; m.dead = k.dead; m.hp = k.hp; m.x = k.x; m.y = k.y; m.respawnT = k.respawnT; } }
+      // (C10) a named boss's count goes with the map. The keeper's row of it ends with the count (column 20); the keeper losing
+      // the map to a friend sends 'hand' (its hp and count now); the friend's puppet holds the count, and when the map comes
+      // back the boss has it: a knight whose 3 hits were landed on another game is credited, and the blows the other game took
+      // after its last row are off the boss here. A hand from anyone else, a second one, a bad count or a prototype name is
+      // ignored. (On 5 Oct 2026 a keeper who opened the menu for 5 s in a Fang fight lost her kill: the new keeper's boss had
+      // no count at all, and its hp went back up by the blows her game took while she was in the menu.)
+      { push({ t: 'keeper', map: 'over', n: 'Cohen' });
+        remote('Ann', 'over', player.x + 2 * TILE, player.y);
+        const m = make('brood_mother', 'Cohen:t10'); m.hp = 300;
+        for (let i = 0; i < 3; i++) hitMonster(m, 1, 0);
+        hit('Ann', m, 1);
+        const r = COOP.snapshot().find(e => e[0] === 'Cohen:t10'), c = r && r[20];
+        const rowOk = !!r && r.length === 21 && r[14] === null && r[19] === null && !!c && !!c.Cohen && c.Cohen[0] === 3 && !!c.Ann && c.Ann[0] === 1 && c.Ann[1] >= 0;
+        const plain = COOP.snapshot().filter(e => e[0] !== 'Cohen:t10').every(e => e.length === 14);
+        sent.length = 0;
+        push({ t: 'keeper', map: 'over', n: 'Ann' });
+        const hands = sentOf('hand'), h0 = hands[0] && hands[0].list && hands[0].list[0];
+        const handOk = hands.length === 1 && !!h0 && h0[0] === 'Cohen:t10' && h0[1] === m.hp && h0[2].Cohen[0] === 3 && h0[2].Ann[0] === 1;
+        // Ann's game runs the fight now: her row says Ann 4, Cohen 3 (and a name that is no knight's)
+        const credit = JSON.parse('{"__proto__": [9, 1], "Ann": [4, 1.5], "Cohen": [3, 2], "Bo": [0, 1], "Cy": [3, 999]}');
+        push({ t: 'mon', n: 'Ann', list: [[m.nid, m.type, Math.round(m.x), Math.round(m.y), 280, m.maxHp, 'chase', 1, 0, 0, 0, 0, 0, 0, null, null, null, null, null, null, credit]] });
+        const p = COOP.find('Cohen:t10'), held = !!p && p.remote && !!p.hitters && p.hitters.Ann.n === 4 && p.hitters.Cohen.n === 3 && !p.hitters.Bo && !p.hitters.Cy && Object.getPrototypeOf(p.hitters) === Object.prototype && ({}).length === undefined;
+        // Ann opens the menu and the world gives this game the map back; her game's hand says her boss has 270 left and Ann 5
+        push({ t: 'keeper', map: 'over', n: 'Cohen' });
+        const back = COOP.isKeeper() && COOP.find('Cohen:t10') === m && m.hp === 280 && m.hitters.Ann.n === 4 && m.hitters.Cohen.n === 3;
+        const fromBo = COOP.hand({ t: 'hand', n: 'Bo', list: [[m.nid, 1, { Bo: [9, 1] }]] }), boLeft = m.hp === 280 && !m.hitters.Bo;
+        push({ t: 'hand', n: 'Ann', list: [[m.nid, 270, { Ann: [5, 0.5], Cohen: [3, 2.5] }], ['no_such', 1, {}], 'x'] });
+        const merged = m.hp === 270 && m.hitters.Ann.n === 5 && m.hitters.Cohen.n === 3;
+        const again = COOP.hand({ t: 'hand', n: 'Ann', list: [[m.nid, 100, { Ann: [9, 0] }]] }), once = m.hp === 270 && m.hitters.Ann.n === 5;
+        sent.length = 0; hookRuns.length = 0;
+        hitMonster(m, 500, 0);
+        const kills = sentOf('kill');
+        check(P + 'credit over a hand-over: the keeper\'s row of a named boss carries its count, its hand on losing the map carries hp and count, the friend\'s puppet holds the count, and the boss coming back has both: Ann (3+ hits) is credited; a hand from anyone else, a second hand, a bad count or a prototype name changes nothing',
+          rowOk && plain && handOk && held && back && fromBo === false && boLeft && merged && again === false && once && m.dead && kills.length === 1 && kills[0].to === 'Ann' && hookRuns.filter(t => t === 'brood_mother').length === 1,
+          { rowOk, row: r && r.slice(14), plain, handOk, hands, held, ph: p && p.hitters, back, hp: m.hp, boLeft, merged, once, kills: kills.map(k => k.to), hookRuns });
+        for (let i = monsters.length - 1; i >= 0; i--) if (tempTypes.has(monsters[i].nid)) monsters.splice(i, 1);
+        S.idxLen = -1; }
     } finally {
       player.skills = JSON.parse(skills0); player.kills = kills0; recomputeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
       HOOKS.kill.splice(HOOKS.kill.indexOf(listen), 1);

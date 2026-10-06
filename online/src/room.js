@@ -48,8 +48,9 @@
 // Trades (docs/ONLINE.md, "Trading"): the Room holds both offers and is the only truth about them. It opens a trade
 // only between two knights on one map within a few tiles, un-accepts both on any change, and moves nothing until both
 // knights accepted and then confirmed the very same offers. A finished trade is a row in the store, re-sent after every
-// welcome until each side's game says it is in its save, so nothing is lost or doubled. An open trade lives in memory
-// only: a disconnect, a map change, a walk away, a fall or a nap ends it, and then nothing moves.
+// welcome until each side's game says it is in its save, so nothing is lost or doubled. An open trade lives in memory and
+// rides both knights' attachments (when it fits, ATTACH_MAX): a disconnect, a map change, a walk away or a fall ends it, and
+// then nothing moves; a nap does not (restore puts it back once both knights are back, exactly as it stood).
 // ============================================================================
 
 import { checkChat } from './filter.js';
@@ -98,6 +99,7 @@ export const CAPS = {
   trade_ack: { rate: 10, burst: 50 },
   boss_call: { rate: 0.5, burst: 2 },
   boss_wait: { rate: 1, burst: 3 },
+  hand: { rate: 1, burst: 3 },
 };
 for (const c of Object.values(CAPS)) if (!c.burst) c.burst = Math.max(2, Math.round(c.rate * 2));
 
@@ -124,9 +126,11 @@ export const PRESENCE_STALE = 3500;
 // The soonest the Room asks for its next alarm after a tick, when something it could not move on is still due (arm)
 export const REARM_MIN = 1000;
 export const GIFT_WAIT = 10000;        // no answer to a gift within this: it comes back to the sender
+export const ATTACH_MAX = 1800;        // bytes of JSON a socket's attachment may take with an open trade in it (workerd's cap is 2,048)
 // How long each mute lasts; 'always' means until an admin (or the parent page) turns chat back on.
 export const MUTE_SPANS = { '5m': 5 * 60 * 1000, '1h': 3600 * 1000, '1d': 24 * 3600 * 1000, always: ALWAYS };
 export const SPAWN_MAX = 20;           // monsters in one spawn message
+export const HAND_MAX = 8, HAND_HITTERS = 8;   // named bosses in one hand, and knights in each one's count
 export const KICK_TEXT = 'An admin sent you out of the world. You can come back in.';
 // Word strikes: what the knight is told (the game says the lockout with the real time it ends, from `until`)
 export const WORD_WARN_1 = "That word isn't allowed here. This is your warning.";
@@ -184,6 +188,7 @@ export class Room {
     this.trades = new Map();    // id -> an open trade (see openTrade)
     this.nextGid = 1;
     this.nextTradeId = 1;
+    this.halfTrades = new Map(); // id -> { k, s }: one side of an open trade restored after a nap, waiting for the other
     this.spawnSeq = 0;
     this.rosterAt = -Infinity;
     this.rosterDirty = false;
@@ -280,7 +285,35 @@ export class Room {
       k.gifts.add(g.gid);
       if (typeof g.gid === 'number' && g.gid >= this.nextGid) this.nextGid = g.gid + 1;
     }
+    if (state.trade) this.restoreTrade(k, state.trade);
     this.arm();
+  }
+
+  // An open trade from a knight's attachment (tradeAttach): the first side back waits, the second puts it back as it stood,
+  // when both sides carried the very same trade and neither is in another. Anything else stays ended (each game's window
+  // hears trade_end gone on its next step, as before).
+  restoreTrade(k, s) {
+    if (!s || !Number.isInteger(s.id) || s.id < 1 || (s.a !== k.lc && s.b !== k.lc) || s.a === s.b) return;
+    if (s.id >= this.nextTradeId) this.nextTradeId = s.id + 1;
+    const half = this.halfTrades.get(s.id);
+    if (!half) { this.halfTrades.set(s.id, { k, s }); return; }
+    this.halfTrades.delete(s.id);
+    const o = half.k;
+    if (o === k || o.lc !== (s.a === k.lc ? s.b : s.a) || this.knights.get(o.sock) !== o || o.trade || k.trade) return;
+    if (JSON.stringify(half.s) !== JSON.stringify(s)) return;
+    const offer = { a: Room.cleanOffer(s.offer && s.offer.a), b: Room.cleanOffer(s.offer && s.offer.b) };
+    if (!offer.a || !offer.b || (s.stage !== 'offer' && s.stage !== 'confirm') || !Number.isInteger(s.ver)) return;
+    const flag = (f, side) => !!(f && f[side] === true);
+    const a = s.a === k.lc ? k : o, b = a === k ? o : k;
+    const t = { id: s.id, a, b, offer, acc: { a: flag(s.acc, 'a'), b: flag(s.acc, 'b') }, conf: { a: flag(s.conf, 'a'), b: flag(s.conf, 'b') }, stage: s.stage, ver: s.ver };
+    this.trades.set(t.id, t);
+    a.trade = t; b.trade = t;
+  }
+  // the open trade as an attachment carries it (both sides carry the same)
+  tradeAttach(k) {
+    const t = k.trade;
+    if (!t || this.trades.get(t.id) !== t) return null;
+    return { id: t.id, a: t.a.lc, b: t.b.lc, offer: { a: t.offer.a, b: t.offer.b }, acc: { a: t.acc.a, b: t.acc.b }, conf: { a: t.conf.a, b: t.conf.b }, stage: t.stage, ver: t.ver };
   }
 
   makeKnight(sock, s) {
@@ -379,6 +412,7 @@ export class Room {
       case 'trade_ack': return this.onTradeAck(k, m);
       case 'boss_call': return this.onBossCall(k, m);
       case 'boss_wait': return this.onToKnight(k, m, 'boss_wait', ['id', 'left']);
+      case 'hand': return this.onHand(k, m);
       case 'ping': return this.send(sock, { t: 'pong' });   // the real server answers this without waking; the sim lands here
       default: return;                                       // unknown t: ignored, as the contract says
     }
@@ -524,6 +558,30 @@ export class Room {
     const out = { t: 'boss_call', n: k.name, id: m.id };
     if (m.first === true) out.first = true;
     this.send(g.keeper.sock, out);
+  }
+
+  // hand: the game that kept this map until a moment ago (the map went to a knight who plays) hands the new keeper what it
+  // knew of each named boss it ran, for the hits that landed on it after its last snapshot (docs/ONLINE.md, "Named bosses":
+  // [nid, hp, {name: [hits, seconds ago]}]). The world only checks the shape and passes it to the keeper of the sender's map,
+  // stamped with the sender's name; the keeper's game believes it only from the knight it took the map from, once, at once.
+  onHand(k, m) {
+    if (!k.hello || !Array.isArray(m.list)) return;
+    const g = this.maps.get(k.map);
+    if (!g || !g.keeper || g.keeper === k || g.keeper.virtual) return;
+    const list = [];
+    for (const e of m.list.slice(0, HAND_MAX)) {
+      if (!Array.isArray(e) || typeof e[0] !== 'string' || !e[0] || e[0].length > 64 || !inRange(e[1], 0, 1e7)) continue;
+      const hs = {}, from = e[2] && typeof e[2] === 'object' && !Array.isArray(e[2]) ? e[2] : {};
+      let n = 0;
+      for (const name of Object.keys(from)) {
+        if (n >= HAND_HITTERS) break;
+        const v = from[name];
+        if (!name || name.length > 24 || name in Object.prototype || !Array.isArray(v) || !Number.isInteger(v[0]) || v[0] < 1 || v[0] > 10000 || !inRange(v[1], 0, 60)) continue;
+        hs[name] = [v[0], v[1]]; n++;
+      }
+      list.push([e[0], e[1], hs]);
+    }
+    if (list.length) this.send(g.keeper.sock, { t: 'hand', n: k.name, list });
   }
 
   onGift(k, m) {
@@ -884,6 +942,7 @@ export class Room {
   }
   sendTrade(t, only) {
     for (const k of only ? [only] : [t.a, t.b]) this.send(k.sock, this.tradeStateFor(t, k));
+    if (!only) { this.attach(t.a); this.attach(t.b); }   // a nap keeps it as it now stands
   }
   // Every trade message names its trade; one this knight is not in (a trade that ended, or one lost in a nap) is
   // answered trade_end gone, so its window closes and nothing moves.
@@ -954,7 +1013,7 @@ export class Room {
     if (t.a.trade === t) t.a.trade = null;
     if (t.b.trade === t) t.b.trade = null;
     const out = { t: 'trade_end', id: t.id, code, n: who ? who.name : '' };
-    for (const k of [t.a, t.b]) if (this.knights.get(k.sock) === k) this.send(k.sock, out);
+    for (const k of [t.a, t.b]) if (this.knights.get(k.sock) === k) { this.send(k.sock, out); this.attach(k); }
   }
 
   // Both confirmed the same offers. Checked once more (one map, in reach, neither fallen), written to the store, and
@@ -966,6 +1025,7 @@ export class Room {
     if (!this.within(a, b, TRADE_LEAVE, true)) return this.cancelTrade(t, 'far', b);
     this.trades.delete(t.id);
     a.trade = null; b.trade = null;
+    this.attach(a); this.attach(b);
     const tid = this.store.addTrade({ at: this.now(), a: a.name, b: b.name, aGave: t.offer.a, bGave: t.offer.b });
     this.send(a.sock, { t: 'trade_done', tid, id: t.id, with: b.name, gave: t.offer.a, got: t.offer.b });
     this.send(b.sock, { t: 'trade_done', tid, id: t.id, with: a.name, gave: t.offer.b, got: t.offer.a });
@@ -1200,6 +1260,11 @@ export class Room {
     if (!k.sock.attach) return;
     const gifts = [];
     for (const gid of k.gifts) { const g = this.gifts.get(gid); if (g) gifts.push({ gid: g.gid, to: g.to, id: g.id, qty: g.qty, due: g.due }); }
-    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId, ip: k.ip || '', caps: k.caps, atlas: k.atlas }); } catch (e) { }
+    const state = { name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId, ip: k.ip || '', caps: k.caps, atlas: k.atlas };
+    // an open trade goes with it when it fits (a socket's attachment is at most 2,048 bytes; one that does not fit is ended by a
+    // nap, as every open trade was before)
+    const trade = this.tradeAttach(k);
+    if (trade) { state.trade = trade; if (JSON.stringify(state).length > ATTACH_MAX) delete state.trade; }
+    try { k.sock.attach(state); } catch (e) { }
   }
 }

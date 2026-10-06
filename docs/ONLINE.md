@@ -142,6 +142,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `gift_ok` / `gift_no` | `gid` | — | the receiver took it / could not (full pack); `gift_no` makes the server send `gift_back` |
 | `boss_call` | `id, first?` | 0.5/s, burst 2 | ask the keeper of your map to wake a named boss (`id` matches `^[a-z_]{1,24}$`; `first: true` when it is your own first fight; see *Named bosses* below). Dropped when you are the keeper, nobody keeps the map, or the id is bad |
 | `boss_wait` | `to, id, left` | 1/s, burst 3 | keeper: the boss `to` asked for is resting on this map, `left` seconds more (relayed like `kill`: only from the keeper, only to a knight on its map) |
+| `hand` | `list: [[nid, hp, {name: [hits, age]}], ...]` | 1/s, burst 3 | the game that kept your map until a moment ago (the world gave it to a knight who plays): each named boss it ran, its hp and its helper count now (see *Named bosses*). Relayed to the keeper of your map; dropped from the keeper itself or a world-run map's. At most 8 bosses; `nid` a string of at most 64, `hp` 0 to 10,000,000; at most 8 names of at most 24 characters, `hits` a whole number 1 to 10,000, `age` 0 to 60 seconds; anything else is left out |
 | `ping` | — | — | keepalive every 25 s |
 | `mute` `unmute` `kick` `ban` `unban` `modlist` `spawn` `spawn_clear` `party` `party_end` `light` `claim` | | | see *Admins and drop parties* |
 | `trade_ask` `trade_answer` `trade_offer` `trade_accept` `trade_confirm` `trade_full` `trade_close` `trade_ack` | | | see *Trading* |
@@ -166,6 +167,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `gift_ok` / `gift_back` | `gid, id, qty` | the receiver took it / it comes back to you |
 | `boss_call` | `n, id, first?` | (to the keeper) knight `n` on your map asks you to wake the named boss `id`; `first` is passed on only when it was exactly `true`; your game decides (see *Named bosses*) |
 | `boss_wait` | `id, left` | the keeper says the boss you asked for rests there `left` more seconds: the boss file says so in m:ss and your ask is over |
+| `hand` | `n, list` | (to the keeper) `n` kept your map until a moment ago: its last word on each named boss it ran (see *Named bosses*) |
 | `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `elsewhere` (the same knight opened on another device: this socket is closed with code 4000 and must not reconnect), `wait`, `full`, `banned` (close 4003, no reconnect), `kicked` (close 4005, no reconnect), `words` (kept out for bad words, with `until` and `n`: close 4006, no reconnect, the session kept), `renamed` (an admin gave the knight a new name, with `name`: close 4007, the wire comes straight back as it), `admin` (that was an admin message), `bad` |
 | `strike` | `n, text` | a chat line of yours had a swear word or a slur in it: `n` 1 is the warning, 2 the last warning (the third is `error` `words`); see *Word strikes* |
 | `role` `mod` `modlist` `muted` `unmuted` `spawn` `spawn_clear` `crackers` `boom` `party_end` `light_no` `prize` `party_no` `announce` | | see *Admins and drop parties* |
@@ -182,6 +184,10 @@ An array of arrays, one per monster within 24 tiles of any knight on the map, in
 instance's own spawn list, `<keeperName>:<n>` for anything a feature file spawned on the keeper (zombies,
 hatched spiders, the Cinderwight's heart), and `!<sid>.<k>` for a monster an admin spawned (it never respawns; see
 *Spawning monsters*). The keeper tags monsters it finds without a `nid` on the fly.
+A knight's game adds one column to the row of a standing named boss that someone has hit in the last 60 s (*Named bosses*): six
+`null`s (the world's optional columns, *The shared world*) and then, as column 20, its helper count `{name: [hits, age]}`, at
+most 8 names, `age` the seconds since that knight's last hit (one decimal). Every other row is the 14 columns. An older game
+ignores it.
 Non-keepers create a puppet for every nid they do not know, from `MONSTER_DEFS[type]`. Positions are whole pixels: `x, y` are `Math.round` of the true position.
 The 24-tile test uses the true position, so a listed `x, y` can sit up to √½ px (about 0.71 px) past 24 tiles.
 
@@ -309,6 +315,19 @@ together. Two rules make that safe on a shared map; `src/75-coop.js` owns both.
   blow would leave it. A knight arriving at an instance whose boss is down while the rest still stand finds the boss alone
   stood up again at its own spawn tile; nobody's `cleared` count changes.
 - After a handoff, a live boss the old keeper had woken is `awake` on the new keeper too, so the Fang's Echo stays up.
+- **The count goes with the map.** It lives on the keeper's game, so a hand-over carries it: the keeper's row of a named boss
+  carries the count (column 20, *The monster snapshot*), every puppet holds the last one it was sent, and the new keeper's boss
+  starts from it (the larger count and the later hit of each knight, when its own game had one too; a count this game already
+  paid out is over, since a boss still standing is one fight). That covers a keeper whose phone locked or whose line dropped. A
+  keeper whose game still runs when the world hands its map to a knight who plays (it opened the menu: a quiet keeper's map
+  goes to a knight who plays after 3 s) also sends `{t: 'hand', list}` the moment it hears it: each named boss it ran that is
+  hurt or hit, `[nid, hp, count]` as they stand on its game, for the blows that landed there after its last snapshot (it
+  streams nothing while paused). The world relays it to the new keeper as `{t: 'hand', n, list}`; that game believes it only
+  from the knight it took the map from, within 10 s, once: the count is merged, and the boss loses the hp the old keeper's
+  boss lost after the hp its puppet showed at the hand-over (never below 1: the next blow fells it, credited as every blow
+  is). So a knight who landed her hits, opened the menu and came back to watch her friends finish it is credited, and the
+  boss never heals at a hand-over. (5 Oct 2026: before this the new keeper's boss had no count, so the knight who had kept
+  the map lost her kill and the boss went back up by the blows taken while she was in the menu.)
 
 ## The bridge (bringing a knight from the old address)
 
@@ -1062,8 +1081,14 @@ file `src/78-trade.js` (with one edit in `src/73-players.js`: the Friends panel'
    it."); the world sends it again after the reload.
 
 A trade ends with nothing moved (`trade_end`) when either knight closes the window or presses Decline (`trade_close`),
-disconnects (or logs in elsewhere), changes map, walks more than eight tiles away, or falls. An open trade lives in the
-Room's memory only: a nap of the world ends it too, and the next trade message is answered `trade_end gone`.
+disconnects (or logs in elsewhere), changes map, walks more than eight tiles away, or falls. A nap of the world does not end
+it: an open trade (both offers, who accepted and confirmed, its stage and version) rides both knights' socket attachments,
+written at every change, and the Room the wake builds puts it back as it stood once both sockets are restored (both must
+carry the very same trade; one side alone, or one in another trade, leaves it over). Two knights at "Are you sure?" who both
+put the game down for a while confirm when they come back and it is done (5 Oct 2026: the world naps when nobody plays, and
+the trade was lost). A trade that does not fit beside the rest of an attachment (a socket's is at most 2,048 bytes: twelve
+long item names on each side beside gifts on their way) is left out of it, and a nap ends it as before; its next message is
+answered `trade_end gone`.
 
 ### Client → server
 
@@ -1129,7 +1154,8 @@ Ann gave 5 bread; Ben gave 20 coins."), from `GET /api/admin/trades`; `GET /api/
 - **Server** (`node --test online/test/`, `trade.test.mjs`): the ask and its answers, every refusal code, asks that run out
   or are withdrawn, two asks to each other, the whole state machine (any change un-accepts both, accepting an old version,
   empty offers, confirming early), every bad offer, messages for a trade you are not in, a full pack, every way a trade
-  ends with nothing moved (closed, disconnected, a new map, walking away, falling, another device, a nap), `trade_done`
+  ends with nothing moved (closed, disconnected, a new map, walking away, falling, another device, a nap whose attachments
+  carry no trade, one side back alone), a nap that keeps it (restored in either order, then done once), `trade_done`
   re-sent after welcome until acked and only by the two knights, the caps. `store.test.mjs` runs the trade calls against
   both stores.
 - **Game** (78's self-test, a fake wire): the card opens on a knight and not on the ground, without a swing or a walk; the
