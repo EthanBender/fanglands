@@ -35,7 +35,7 @@ import { makeHash, checkPassword, randomHex, sameString } from './auth.js';
 import { json, oops, failFrom, readJson, bearer } from './http.js';
 import { backupCall } from './backup.js';
 import { handoffCall, addressOf } from './handoff.js';
-import { Meter, isAdminPath } from './meter.js';
+import { Meter, isAdminPath, countRows } from './meter.js';
 import { readAtlas } from './atlas.js';
 import { MoveBook, MOVE_MODES } from './move.js';
 import { SimBook } from './sim/book.js';
@@ -56,12 +56,18 @@ const PASS_MIN = 4, PASS_MAX = 200;
 // with the invite code making dozens (each account brings its own hand-over and save budgets) is not. 429 `signups`
 export const SIGNUPS_PER_HOUR = 10;
 const PARENT = 'parent page';               // mod_log's "by" for everything done from /admin
+// accounts.last_seen is written at most this often per knight (each write is a row written, a free-plan limit of its own);
+// /admin's "last on" reads the open socket first and the end of the last login, so it is never off by more than this
+export const SEEN_EVERY = 5 * 60 * 1000;
 
 export class World {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
-    this.sql = ctx.storage.sql;
+    // every statement's rows written go to the meter (meter.js countRows): rows are a free-plan limit of their own, and the one
+    // a playing game reaches first. The few before the meter exists (the schema, a migration) are handed to it once it does.
+    let early = 0;
+    this.sql = countRows(ctx.storage.sql, n => { if (this.meter) this.meter.rows(n); else early += n; });
     for (const stmt of SCHEMA.split(';')) if (stmt.trim()) this.sql.exec(stmt);
     const migrated = migrate(this.sql);
     if (migrated.added.length) console.log('accounts gained ' + migrated.added.join(', ') + ' (columns read with ' + migrated.via + ')');
@@ -69,6 +75,7 @@ export class World {
     // the place of a lockout that is over is not kept (docs/ONLINE.md, "Kept out")
     try { this.store.forgetPlaces(this.now()); } catch (e) { console.error('places', e); }
     this.meter = new Meter(this.sql, () => this.now());   // what the free plan counts, per UTC day (meter.js)
+    this.meter.rows(early);
     this.moveBook = new MoveBook(this.sql, () => this.now());   // the movement check's counts and violations (move.js)
     this.simBook = new SimBook(this.sql, () => this.now());     // the shared world's map changes and boss rests (sim/book.js)
     this.chatWrites = 0;
@@ -213,7 +220,7 @@ export class World {
   // push before the third strike's kick must land, or the next login would load an older save).
   session(token, opts) {
     if (!token) throw oops(401, 'please log in', 'auth');
-    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
+    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until, a.last_seen FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
     if (!s) throw oops(401, 'that login has run out, please log in again', 'auth');
     const now = this.now();
     if (s.expires < now) { this.sql.exec('DELETE FROM sessions WHERE token = ?', token); throw oops(401, 'that login has run out, please log in again', 'auth'); }
@@ -221,7 +228,8 @@ export class World {
     // kept out for bad words: the session is kept (it works again when the time is up), but nothing goes through until then
     // except a save. No address is written here: only the third strike notes one (Room.wordStrike, from the socket).
     if (!(opts && opts.saving)) this.refuseIfKeptOut(s.words_locked_until, now);
-    this.sql.exec('UPDATE accounts SET last_seen = ? WHERE name_lc = ?', now, s.name_lc);
+    // "last heard from", to SEEN_EVERY: a write on every call was about one row per save of a playing knight (6 Oct 2026)
+    if (!(now - (Number(s.last_seen) || 0) < SEEN_EVERY)) this.sql.exec('UPDATE accounts SET last_seen = ? WHERE name_lc = ?', now, s.name_lc);
     return s;
   }
   auth(req, opts) { return this.session(bearer(req), opts); }

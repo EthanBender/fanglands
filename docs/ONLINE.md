@@ -28,7 +28,7 @@ The game is a client-side simulation (2 MB of it, 626 tests). It is not being re
 world. Online Fanglands is a **listen server per map**:
 
 1. Everyone on the same map sees each other, chats, and can hand items over.
-2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves — or when it goes quiet: a keeper whose game has sent neither monsters nor presence for 3 s (`KEEPER_STALE`) while someone who is playing shares its map (paused, on the title screen, a sleeping tab) hands the map to that knight the moment his next presence arrives, and goes to the back of the line until that knight leaves. No alarm watches for it while nobody plays (each alarm is a billed request: on 3b6d6b4 two idle knights on one map cost 1,198 alarms an hour, measured under wrangler dev on 4 Oct 2026); a map where nobody is playing has nobody to hand it to, so nothing happens there. So that the hand-over still comes 3.05 s after the keeper's last word, as it did, when the one playing stands still (one presence a second), a presence that finds the keeper quiet for more than 2 s (`KEEPER_STALE - KEEPER_WATCH`) books one alarm for that moment, on that map only; a keeper who leaves or closes the tab hands over at once, with no alarm (`online/test/room.test.mjs`: "a hand-over is as fast as before"). A wake (a nap, a deploy, an eviction) rebuilds the Room from the sockets and names each map's keeper without a word: the first knight restored onto a map keeps it, and that need not be the knight the pages were told before the nap. Each page would go on as it was, one running the monsters (its stream dropped by the Room, no hits sent to it) and the other sending presence as a non-keeper and so never going quiet. So the first presence or snapshot from anyone on a map a wake rebuilt tells everyone there, once, who the Room says keeps it (`Room.retell`; `room.test.mjs`: "after a nap the world and both pages agree on the keeper ..."); a page that already holds that name changes nothing. A keeper's game sends no empty `mon` heartbeat any more: its presence (at least once a second while it plays) says it is alive. The
+2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves — or when it goes quiet: a keeper whose game has sent neither monsters nor presence for 3 s (`KEEPER_STALE`) while someone who is playing shares its map (paused, on the title screen, a sleeping tab) hands the map to that knight the moment his next presence arrives, and goes to the back of the line until that knight leaves. No alarm watches for it while nobody plays (each alarm is a billed request: on 3b6d6b4 two idle knights on one map cost 1,198 alarms an hour, measured under wrangler dev on 4 Oct 2026); a map where nobody is playing has nobody to hand it to, so nothing happens there. So that the hand-over still comes 3.05 s after the keeper's last word, as it did, when the one playing stands still (one presence a second), a presence that finds the keeper quiet for more than 2 s (`KEEPER_STALE - KEEPER_WATCH`) books one alarm for that moment, on that map only; a keeper who leaves or closes the tab hands over at once, with no alarm (`online/test/room.test.mjs`: "a hand-over is as fast as before"). A wake (a nap, a deploy, an eviction) rebuilds the Room from the sockets and names each map's keeper without a word: the knight longest on the map, whatever order the sockets come back in, and that need not be the knight the pages were told before the nap. His grace holds against a knight who arrives on the map after the wake (as it always did), but not against one who was there through the nap and plays: a nap means every socket has been quiet for at least 10 s (a playing game sends a presence a second), so a restored keeper who has said nothing since the wake is plainly not playing, and the first presence or snapshot from another knight restored there hands the map to that knight at once, and everyone there hears it; when the first word is the restored keeper's own, everyone there hears, once, that he keeps it (`Room.retell`); a page that already holds that name changes nothing. Nor is a map ever handed from one silent knight to another (that would only turn a paused page's monsters into puppets nobody streams). So the knight who plays first after a nap keeps the map from his first word, whichever socket the wake took first (`room.test.mjs`: "after a nap the knight who plays first keeps the map from his first word ..." and "after a nap the world and both pages agree on the keeper from the first word on the map ..."). A keeper's game sends no empty `mon` heartbeat any more: its presence (at least once a second while it plays) says it is alive. The
    keeper's client runs the monsters exactly as it always has and streams their state; everyone else on that
    map stops simulating monsters and shows the keeper's. Hits from the others are routed to the keeper; the
    keeper's monsters target the nearest knight, whoever it is.
@@ -560,15 +560,33 @@ The World is on the Workers free plan: **100,000 rows written a day** (a miss st
   offers, claims, refusals and an expired claim, and finds no write but the request meter's own (`meter.js`, below);
   another fills an account's hour and proves the 31st is
   refused before its body is read and before anything is kept or written.
+- **Rows written by a knight playing** (6 Oct 2026, local `wrangler dev`, every statement's `rowsWritten` logged, 300 s
+  each): the rows limit, not the requests limit, is the one a playing game reaches first. Before this change (review round
+  2 of the idle work, 7e908b0) a knight playing alone wrote about **1,680 rows an hour** against 419 billed requests: his
+  saves about 650 (a changed save every 15 to 20 s is about 3.8 rows: the new version and its index entry, and the oldest
+  of the 3 kept deleted), `accounts.last_seen` on every call about 230, the meter about 370 and the movement check's day
+  counts about 360. Now `last_seen` is written at most once per 5 minutes per knight (`SEEN_EVERY`; /admin's "last on"
+  reads the socket and the logins first), the meter's socket-message write waits 30 s instead of 10 s and the movement
+  check's a minute: a synthetic knight playing alone wrote **1,056 rows an hour** (saves 648, the meter 288, the logins 60,
+  the movement check 60) against 419 billed requests, and a real game page playing alone 1,138 against 407
+  (`tools/idle-pages.cjs solo-over-playing`, 2 /admin reads inside). The meter's own count of rows written matched the
+  logged sum exactly (178 of 178 over a fresh World's first 300 s). So **100,000 rows a day is about 95 knight-hours of
+  play** (100,000 / 1,056; it was about 60), while 100,000 requests are about 245 (100,000 / 407): rows run out about 2.5
+  times sooner, and the cost gate reads whichever share is larger (`/admin` shows both). Saves are now most of a playing
+  knight's rows (about 61%), and they grow with every knight; twenty kids playing at once write about 21,000 rows an hour,
+  the whole day's rows in under 5 hours.
 - **Rows written by the request meter** (`meter.js`, "The meter" under the shared world): at most one write per 5 s for
-  requests and alarms, 720 an hour, plus one per 200 counts and one per socket close, each an upsert of up to 3 rows
-  (`req_meter`, and `req_meter_admin` and `req_meter_alarm` when admin calls or alarms are waiting). `/admin` left open and
-  in view all day (34,560 calls, its 4-call refresh every 10 s): one write a refresh, 2 rows, 8,640 × 2 = **17,280 rows a
-  day, 17.3%** of 100,000 (master 3b6d6b4 wrote the same; the first version of the alarm column wrote 2 rows per call,
-  about 69,000). The busiest day measured, 3 Oct 2026 (3,301 calls, 83,499 messages): at most 3,301 writes for the
-  calls, 418 at 200 messages waiting and 8,640 for messages arriving all day (one per 10 s), so under 12,359 writes and
-  37,077 rows at the very most (a write is 1 row unless admin calls or alarms wait in it). The ceiling, a request or an alarm at least every 5 s all day
-  with admin calls and alarms in every write: 17,280 × 3 = 51,840 rows, plus 1 a socket close and 1 per 200 counts.
+  requests and alarms, 720 an hour, plus one per 2,000 counts, one per 30 s while socket messages keep coming and one per
+  socket close, each an upsert of up to 4 rows (`req_meter`, and `req_meter_admin`, `req_meter_alarm` and, once a minute,
+  `req_meter_rows` when admin calls, alarms or rows written are waiting), and the day's two marks. `/admin` left open and
+  in view all day (34,560 calls, its 4-call refresh every 10 s): one write a refresh, 2 rows, plus the rows-written line
+  once a minute: about 785 rows an hour, **18,840 rows a day, 18.8%** of 100,000 (master 3b6d6b4 wrote 17,280; the first
+  version of the alarm column wrote 2 rows per call, about 69,000). The busiest day measured, 3 Oct 2026 (3,301 calls, 83,499 messages): at most 3,301 writes for the
+  calls, 42 at 2,000 messages waiting and 2,880 for messages arriving all day (one per 30 s), so under 6,223 writes and
+  about 7,700 rows at the very most (a write is 1 row unless admin calls or alarms wait in it, plus the rows-written line
+  once a minute: 1,440; at the old 10 s and 200 it was 12,359 writes and 37,077 rows). The ceiling, a request or an alarm at least every 5 s all day
+  with admin calls and alarms in every write: 17,280 × 3 = 51,840 rows, plus 1,440 for the rows-written line, 1 a socket
+  close and 1 per 2,000 counts.
   `online/test/meter.test.mjs` "rows written ..." counts them as SQLite does, an hour of each case. On the real runtime
   (local `wrangler dev`, each meter write's `rowsWritten` logged, `/admin` open and in view for 120 s, 48 calls): master 20
   rows, this change 26 (6 Oct 2026); the per-call version wrote 116 in the review's run of the same script.
@@ -1459,12 +1477,13 @@ works, and the keeper code in `src/75-coop.js` stays as the fallback through all
 Players see nothing. The only server change that reaches the live world is the **meter**: it counts what the free plan
 counts, so the cost gates before later stages read real numbers instead of guesses.
 
-**The meter.** One row per UTC day in three new tables (each created only if missing, nothing else in the schema changes):
+**The meter.** One row per UTC day in four new tables (each created only if missing, nothing else in the schema changes):
 
 ```
 req_meter       (day TEXT PRIMARY KEY, ws_in INTEGER NOT NULL DEFAULT 0, http INTEGER NOT NULL DEFAULT 0, est_requests INTEGER NOT NULL DEFAULT 0)
 req_meter_admin (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0)
 req_meter_alarm (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0, since INTEGER NOT NULL DEFAULT 0)
+req_meter_rows  (day TEXT PRIMARY KEY, rows INTEGER NOT NULL DEFAULT 0, since INTEGER NOT NULL DEFAULT 0)
 ```
 
 - `day` is the UTC date, `'2026-10-03'`. The free plan's day also starts at 00:00 UTC (8 pm in Ontario in summer, 7 pm in winter).
@@ -1480,34 +1499,47 @@ req_meter_alarm (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0, since IN
   `CREATE TABLE IF NOT EXISTS`.
 - `req_meter_alarm.http` counts, of the game's calls, the World's own alarms (since 4 Oct 2026; the third table, the same
   way). The night of 3-4 Oct read 17,266 game calls and nothing could say how many were alarms; measured afterwards under
-  wrangler dev, two idle knights on one map cost 1,198 alarms an hour on 3b6d6b4. `since` is when a row was first written
-  (each wake writes today's empty row if it is missing, so at most one row a day); the earliest `since` is when alarms began
-  to be counted apart, and a day before it has no alarm count (`null`, "not counted apart"), never a false 0.
+  wrangler dev, two idle knights on one map cost 1,198 alarms an hour on 3b6d6b4.
+- `req_meter_rows.rows` counts the rows the World writes to its database, every statement's `rowsWritten` (the World wraps
+  its `sql.exec` with `countRows`; a `RETURNING` statement is read first, so its count is there), the meter's own included.
+  Rows written are the free plan's other daily limit, 100,000, and the one a playing game reaches first ("The free plan, with
+  arithmetic"). They wait in memory like the other counts and ride a meter write at most once a minute (`ROWS_EVERY`).
+- Each wake marks the days it counts: today's `req_meter_alarm` and `req_meter_rows` rows are made if missing (at most two
+  rows a day), and so is a new day's at its first write. `since` is the start of that day when nothing of it had been counted
+  before (this code counted all of it), else the moment of the mark: older code counted the day's start (the deploy day, or a
+  rollback, or a peer's deploy from a tree without these tables, and back), so the day is partial from `since` and its
+  alarms before then are inside the pages' calls. A day with no mark was counted only by older code: its alarms and rows are
+  `null` ("not counted"), never a false 0 (`meter.test.mjs`: "a day counted only by older code reads not counted ...").
 - Counts are kept in memory and written with one upsert per table and day touched: `req_meter`, plus `req_meter_admin`
-  when admin calls are waiting and `req_meter_alarm` when alarms are, so a write is up to 3 rows. The first count after a
+  when admin calls are waiting, `req_meter_alarm` when alarms are and `req_meter_rows` once a minute, so a write is up to 4
+  rows. The first count after a
   wake is written at once. A World that naps between sparse requests is a new object for each one: before 4 Oct 2026 a
   count left waiting there was lost with the nap, and a paused page's saves (one every 15 s) and any status poll never
   reached the table at all (measured under wrangler dev: 7 saves in 2 minutes, 0 counted), so the meter read lower than the
   bill whenever the World napped. After that first count, a request (each `/api` call, each `/ws` upgrade) or an alarm is
-  written at once unless the meter wrote in the last 5 s (`WRITE_SOON`), socket messages when 200 are waiting or when the
-  last write was 10 s or more ago (checked on every count), and everything on every socket close. So the meter writes at
-  most 720 times an hour (one per 5 s), plus once per 200 counts and once per socket close: at most 3 rows each. A nap can
-  lose the requests and alarms of its last 5 s and the socket messages of its last 10 s; the next count writes them if the
-  World is still awake. (A write per request, as this change first had it, cost the admin page's 4-call refresh 8 rows every
+  written at once unless the meter wrote in the last 5 s (`WRITE_SOON`), socket messages when 2,000 are waiting or when the
+  last write was 30 s or more ago (`WRITE_EVERY`, checked on every count; it was 10 s, 360 writes an hour for every hour
+  anyone played), and everything on every socket close. So the meter writes at most 720 times an hour (one per 5 s), plus
+  once per 2,000 counts and once per socket close: at most 4 rows each. A nap can lose the requests and alarms of its last
+  5 s, the socket messages of its last 30 s and the rows written of its last minute; the next count writes them if the
+  World is still awake. The movement check's day counts (`move_day`) are written the same way at most once a minute
+  (2,000 waiting at most; it was every 10 s). (A write per request, as this change first had it, cost the admin page's 4-call refresh 8 rows every
   10 s and an alarm 2 rows; arithmetic under "The free plan, with arithmetic".)
 - Rows older than 400 days are deleted on the first write of each day after a wake.
-- The admin export (`GET /api/admin/export`) includes `req_meter`, `req_meter_admin` and `req_meter_alarm`.
+- The admin export (`GET /api/admin/export`) includes `req_meter`, `req_meter_admin`, `req_meter_alarm` and `req_meter_rows`.
 
 `GET /api/admin/sim` (Bearer ADMIN_KEY) answers, for now, only the meter:
 
 ```
-{ meter: { today: {day, wsIn, http, admin, gameHttp, alarms, pageHttp, est, gameEst}, days: [same, ... newest first, 14 days],
-           freeLimit: 100000, waiting: n, alarmsFrom: ms | null } }
+{ meter: { today: {day, wsIn, http, admin, gameHttp, alarms, pageHttp, alarmsSince, est, gameEst, rows, rowsSince},
+           days: [same, ... newest first, 14 days], freeLimit: 100000, freeRows: 100000, waiting: n } }
 ```
 
-`gameHttp` = `http - admin` (alarms included, as before: what the cost gate reads); of it, `alarms` are the World's own and
-`pageHttp` = `gameHttp - alarms` the calls the game's pages made (saves, logins, status, the socket's opening). Both are `null`
-on a day before `alarmsFrom`.
+`gameHttp` = `http - admin` (alarms included, as before); of it, `alarms` are the World's own and `pageHttp` = `gameHttp -
+alarms` the calls the game's pages made (saves, logins, status, the socket's opening). `rows` is the rows written that day.
+`alarms`, `pageHttp` and `rows` are `null` on a day with no mark; `alarmsSince` and `rowsSince` are `null` on a day counted
+whole, else the moment the day began to be counted (its mark). **The cost gate reads the larger of the game's two shares:**
+`gameEst` of `freeLimit`, and `rows` of `freeRows`.
 
 `today` includes the counts not yet written (`waiting` says how many). Later stages add `modes`, `tick`, `boot`, `heap`,
 `copies`, `fallbacks`, `move`, `combat` beside `meter`, and `POST /api/admin/sim` for the switches; nothing reads them yet.
@@ -1517,12 +1549,16 @@ The parent page (`/admin`) has a **Shared world** section with one line for toda
 6 times on its own timers (alarms). Together that is about 834 of the 100,000 requests a day the free plan allows (0.83%).
 This page and the backups made 40 calls on top, so about 874 in all (0.87%)." On the day alarms began to be counted apart
 it adds when ("only since 14:05 UTC today; any before that are inside the pages' calls"), and that day's row in the table
-says so on every later day too ("1,005 (alarms before 15:00 UTC inside)", "10 (since 15:00 UTC)"), so a deploy day's alarms
-from before the deploy are never shown as the pages' calls beside an exact-looking alarm count; a day before that reads as
-it did, with "(The world's alarms are not counted apart on this day: they are inside the calls.)". The note above it says in
-plain words what alarms are, and that two knights left on one map used to cost about 1,200 of them an hour. The table's
-columns: day, messages, the pages' calls, alarms ("not counted apart" before the column), the game's requests, its share of
-the free plan, this page's calls, and everything's share.
+says so on every later day too ("1,005 (alarms before 15:00 UTC inside)", "10 (since 15:00 UTC)"), each day from its own
+mark, so a deploy day's (or a rollback's) alarms from before this code are never shown as the pages' calls beside an
+exact-looking alarm count; a day this code did not count reads as it did, with "(The world's alarms are not counted apart on
+this day: they are inside the calls.)". The line ends with the rows written: "The world wrote 4,100 rows to its database,
+4.1% of the 100,000 rows a day the free plan allows (a day over it stops every save until midnight UTC). The nearer limit
+today is rows written: that share is what the cost gate reads." The note above it says in plain words what alarms are, that
+two knights left on one map used to cost about 1,200 of them an hour, and that a knight playing writes about 1,100 rows an
+hour but makes only about 410 requests. The table's columns: day, messages, the pages' calls, alarms ("not counted apart"
+before the column), the game's requests, its share of the free plan, this page's calls, everything's share, rows written
+("not counted" before the column) and their share of the free plan's rows.
 
 **What an idle page costs** (4 Oct 2026). The game saves every 15 s whatever the knight is doing (`src/99-boot.js`), and
 72-cloudsave used to push every one of those saves: 210 to 240 calls an hour from each page in the game, paused or in the
@@ -1831,8 +1867,9 @@ move_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, n TEXT NOT 
           x INTEGER, y INTEGER, px INTEGER, py INTEGER, ms INTEGER, spd INTEGER, detail TEXT NOT NULL DEFAULT '')
 ```
 
-  `move_day` counts wait in memory and go out like the meter's (one upsert per day touched, when 200 are waiting, 10 s after
-  the last write, and on every socket close and alarm); `old` is how many of the skipped came from a page with another
+  `move_day` counts wait in memory and go out like the meter's (one upsert per day touched, when 2,000 are waiting, a
+  minute after the last write, and on every socket close and alarm; until 6 Oct 2026 200 and 10 s, 360 rows written an hour
+  while anyone played); `old` is how many of the skipped came from a page with another
   Atlas or none. Each violation is
   one `move_log` row at once (where he was, `px, py`, and where he said he went, `x, y`, the stamped gap `ms`, his `spd`),
   at most 200 a day; past that only the count grows. Rows older than 60 days go on the first write of a day. The admin

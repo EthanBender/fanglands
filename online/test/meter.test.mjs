@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { Meter, METER_SCHEMA, METER_ADMIN_SCHEMA, METER_ALARM_SCHEMA, WRITE_AT, WRITE_EVERY, WRITE_SOON, KEEP_DAYS, FREE_REQUESTS, dayOf, estimate, isAdminPath } from '../src/meter.js';
+import { Meter, METER_SCHEMA, METER_ADMIN_SCHEMA, METER_ALARM_SCHEMA, METER_ROWS_SCHEMA, WRITE_AT, WRITE_EVERY, WRITE_SOON, ROWS_EVERY, KEEP_DAYS, FREE_REQUESTS, FREE_ROWS, dayOf, estimate, isAdminPath, countRows } from '../src/meter.js';
 import { SCHEMA, migrate } from '../src/store.js';
 
 // node's SQLite with the Durable Object SQL API's shape (as in store.test.mjs)
@@ -21,6 +21,8 @@ function sqlOf(db, { failWrites = () => false } = {}) {
   };
 }
 const rowsOf = sql => sql.exec('SELECT day, ws_in, http, est_requests FROM req_meter ORDER BY day').toArray();
+// a view row without its rows-written count (in the World tests that is node's SQLite's own count: asserted on its own)
+const noRows = ({ rows, rowsSince, ...r }) => r;
 const adminOf = sql => sql.exec('SELECT day, http FROM req_meter_admin ORDER BY day').toArray();
 const at = iso => Date.parse(iso);
 
@@ -149,8 +151,9 @@ test('rows older than 400 days go on the first write of a day; the view shows 14
   assert.equal(v.days.length, 14);
   assert.equal(v.days[0].day, '2026-10-03');
   // the day before alarms were counted apart (this Meter's first wake is 3 Oct): its alarms and page calls are not known
-  assert.deepEqual(v.days[1], { day: '2026-10-02', wsIn: 20, http: 0, admin: 0, gameHttp: 0, alarms: null, pageHttp: null, est: 1, gameEst: 1 });
-  assert.deepEqual([v.days[0].alarms, v.days[0].pageHttp, v.alarmsFrom], [0, 1, at('2026-10-03T09:00:00Z')]);
+  assert.deepEqual(v.days[1], { day: '2026-10-02', wsIn: 20, http: 0, admin: 0, gameHttp: 0, alarms: null, pageHttp: null, alarmsSince: null, est: 1, gameEst: 1, rows: null, rowsSince: null });
+  // 3 Oct: nothing of it was counted before this Meter's first wake, so it counts the whole day apart (no "since")
+  assert.deepEqual([v.days[0].alarms, v.days[0].pageHttp, v.days[0].alarmsSince, v.days[0].rows, v.days[0].rowsSince], [0, 1, null, 0, null]);
   assert.equal(v.freeLimit, 100000);
 });
 
@@ -200,8 +203,10 @@ test('the World counts every request and socket message, writes on close and ala
   assert.equal(r.status, 200);
   // 5 World requests so far: the refused sim call, signup, status, the /ws upgrade, and this sim call; 25 messages.
   // The two sim calls are the admin's (refused or not, Cloudflare bills them): the game made 3, about 2 + 3 = 5 requests
-  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 5, admin: 2, gameHttp: 3, alarms: 0, pageHttp: 3, est: 7, gameEst: 5 });
+  assert.deepEqual(noRows(r.data.meter.today), { day: '2026-10-03', wsIn: 25, http: 5, admin: 2, gameHttp: 3, alarms: 0, pageHttp: 3, alarmsSince: null, est: 7, gameEst: 5 });
+  assert.ok(r.data.meter.today.rows > 0 && r.data.meter.today.rowsSince === null, 'the rows written, counted from the first wake: ' + r.data.meter.today.rows);
   assert.equal(r.data.meter.freeLimit, 100000);
+  assert.equal(r.data.meter.freeRows, 100000);
   assert.equal(r.data.meter.waiting, 0, 'this request wrote everything that waited');
   assert.deepEqual(Object.keys(r.data), ['meter', 'sim', 'world', 'atlas', 'move'], 'the meter, and from Stage 1 the switch, the Atlas and the movement check, and from Stage 2 the world-run maps');
   w.webSocketClose(sock, 1000, 'bye');
@@ -216,11 +221,12 @@ test('the World counts every request and socket message, writes on close and ala
   T += WRITE_SOON; r = await call(w, 'GET', '/api/admin/export', undefined, ENV.ADMIN_KEY);
   assert.deepEqual(r.data.req_meter, [{ day: '2026-10-03', ws_in: 25, http: 9, est_requests: 11 }]);
   assert.deepEqual(r.data.req_meter_admin, [{ day: '2026-10-03', http: 3 }]);
-  assert.deepEqual(r.data.req_meter_alarm, [{ day: '2026-10-03', http: 2, since: at('2026-10-03T15:00:00Z') }], 'and the alarm column');
+  assert.deepEqual(r.data.req_meter_alarm, [{ day: '2026-10-03', http: 2, since: at('2026-10-03T00:00:00Z') }], 'and the alarm column (the whole day: nothing of it was counted before)');
+  assert.deepEqual(r.data.req_meter_rows.map(x => [x.day, x.since, x.rows > 0]), [['2026-10-03', at('2026-10-03T00:00:00Z'), true]], 'and the rows written');
   // the export call itself was written as it came: a nap right now loses nothing
   const w2 = new TestWorld(ctx, ENV);
   r = await call(w2, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
-  assert.deepEqual(r.data.meter.today, { day: '2026-10-03', wsIn: 25, http: 10, admin: 4, gameHttp: 6, alarms: 2, pageHttp: 4, est: 12, gameEst: 8 });
+  assert.deepEqual(noRows(r.data.meter.today), { day: '2026-10-03', wsIn: 25, http: 10, admin: 4, gameHttp: 6, alarms: 2, pageHttp: 4, alarmsSince: null, est: 12, gameEst: 8 });
 });
 
 test('admin calls land in their own column: every /api/admin/* call, refused or not; nothing else', async () => {
@@ -233,7 +239,7 @@ test('admin calls land in their own column: every /api/admin/* call, refused or 
   await call(w, 'GET', '/api/admin/sim');   // no key: refused, still billed, still the admin page's
   await call(w, 'GET', '/api/status'); await call(w, 'GET', '/api/status');
   let r = await call(w, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
-  assert.deepEqual(r.data.meter.today, { day: '2026-10-04', wsIn: 0, http: 34, admin: 32, gameHttp: 2, alarms: 0, pageHttp: 2, est: 34, gameEst: 2 });
+  assert.deepEqual(noRows(r.data.meter.today), { day: '2026-10-04', wsIn: 0, http: 34, admin: 32, gameHttp: 2, alarms: 0, pageHttp: 2, alarmsSince: null, est: 34, gameEst: 2 });
   T += WRITE_SOON; w.alarm();
   assert.deepEqual(rowsOf(ctx.storage.sql), [{ day: '2026-10-04', ws_in: 0, http: 35, est_requests: 35 }], 'req_meter still counts every call (what is billed), and the alarm is one more');
   assert.deepEqual(adminOf(ctx.storage.sql), [{ day: '2026-10-04', http: 32 }]);
@@ -241,7 +247,7 @@ test('admin calls land in their own column: every /api/admin/* call, refused or 
   const sql = sqlOf(new DatabaseSync(':memory:')), m = new Meter(sql, () => at('2026-10-04T10:00:00Z'));
   m.http(true); m.http(); m.ws(); m.flush();
   assert.deepEqual(adminOf(sql), [{ day: '2026-10-04', http: 1 }]);
-  assert.deepEqual(m.view().today, { day: '2026-10-04', wsIn: 1, http: 2, admin: 1, gameHttp: 1, alarms: 0, pageHttp: 1, est: 3, gameEst: 2 });
+  assert.deepEqual(noRows(m.view().today), { day: '2026-10-04', wsIn: 1, http: 2, admin: 1, gameHttp: 1, alarms: 0, pageHttp: 1, alarmsSince: null, est: 3, gameEst: 2 });
 });
 
 test('a failed admin write keeps the admin counts for the next try; old admin rows go with the old days', () => {
@@ -262,10 +268,10 @@ test('a failed admin write keeps the admin counts for the next try; old admin ro
   fail = false;
   m.http(true); m.flush();
   assert.deepEqual(adminOf(sql), [{ day: '2026-10-04', http: 3 }], 'none lost, the 401-day-old admin row is gone');
-  assert.deepEqual(m.view().today, { day: '2026-10-04', wsIn: 0, http: 3, admin: 3, gameHttp: 0, alarms: 0, pageHttp: 0, est: 3, gameEst: 0 });
+  assert.deepEqual(noRows(m.view().today), { day: '2026-10-04', wsIn: 0, http: 3, admin: 3, gameHttp: 0, alarms: 0, pageHttp: 0, alarmsSince: null, est: 3, gameEst: 0 });
 });
 
-test('the meter on a world made by the live schema: three new tables, nothing else touched', () => {
+test('the meter on a world made by the live schema: four new tables, nothing else touched', () => {
   const db = new DatabaseSync(':memory:'), sql = sqlOf(db);
   for (const s of SCHEMA.split(';')) if (s.trim()) sql.exec(s);
   migrate(sql);
@@ -278,14 +284,15 @@ test('the meter on a world made by the live schema: three new tables, nothing el
   new Meter(sql, () => at('2026-10-03T12:00:00Z'));
   new Meter(sql, () => at('2026-10-03T12:00:00Z'));
   const after = objects();
-  const ours = ['req_meter', 'req_meter_admin', 'req_meter_alarm'];
+  const ours = ['req_meter', 'req_meter_admin', 'req_meter_alarm', 'req_meter_rows'];
   assert.deepEqual(after.filter(o => !ours.includes(o.name)), before, 'every other table and index exactly as it was');
-  assert.deepEqual(after.filter(o => ours.includes(o.name) && o.type === 'table').map(o => o.sql), [METER_SCHEMA, METER_ADMIN_SCHEMA, METER_ALARM_SCHEMA].map(q => q.replace('CREATE TABLE IF NOT EXISTS', 'CREATE TABLE')));
+  assert.deepEqual(after.filter(o => ours.includes(o.name) && o.type === 'table').map(o => o.sql), [METER_SCHEMA, METER_ADMIN_SCHEMA, METER_ALARM_SCHEMA, METER_ROWS_SCHEMA].map(q => q.replace('CREATE TABLE IF NOT EXISTS', 'CREATE TABLE')));
   // the test world already has the first table from before the admin column: the Meter adds only the others
   const db2 = new DatabaseSync(':memory:'), sql2 = sqlOf(db2);
   sql2.exec(METER_SCHEMA); sql2.exec("INSERT INTO req_meter (day, ws_in, http, est_requests) VALUES ('2026-10-03', 40, 10, 12)");
   const m2 = new Meter(sql2, () => at('2026-10-03T12:00:00Z'));
-  assert.deepEqual(m2.view().today, { day: '2026-10-03', wsIn: 40, http: 10, admin: 0, gameHttp: 10, alarms: 0, pageHttp: 10, est: 12, gameEst: 12 });
+  // older code had counted 3 Oct already: alarms and rows are counted apart only from this wake (12:00)
+  assert.deepEqual(m2.view().today, { day: '2026-10-03', wsIn: 40, http: 10, admin: 0, gameHttp: 10, alarms: 0, pageHttp: 10, alarmsSince: at('2026-10-03T12:00:00Z'), est: 12, gameEst: 12, rows: 0, rowsSince: at('2026-10-03T12:00:00Z') });
   assert.equal(rows(), rowsBefore);
 });
 
@@ -323,9 +330,9 @@ test('alarms in their own column: the pages\' calls and the World\'s alarms apar
   w2.alarm();
   T += WRITE_SOON; const r = await call(w2, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
   const m = r.data.meter;
-  assert.deepEqual(m.today, { day: '2026-10-05', wsIn: 0, http: 10, admin: 2, gameHttp: 8, alarms: 6, pageHttp: 2, est: 10, gameEst: 8 });
-  assert.equal(m.alarmsFrom, at('2026-10-05T14:05:00Z'), 'counted apart from the first wake of this code');
-  assert.deepEqual(m.days[1], { day: '2026-10-04', wsIn: 29118, http: 17270, admin: 4, gameHttp: 17266, alarms: null, pageHttp: null, est: 18726, gameEst: 18722 }, 'the night before: alarms not counted apart, never a false 0');
+  // nothing of 5 Oct was counted before this code's first wake (14:05), so all of 5 Oct is counted apart
+  assert.deepEqual(noRows(m.today), { day: '2026-10-05', wsIn: 0, http: 10, admin: 2, gameHttp: 8, alarms: 6, pageHttp: 2, alarmsSince: null, est: 10, gameEst: 8 });
+  assert.deepEqual(m.days[1], { day: '2026-10-04', wsIn: 29118, http: 17270, admin: 4, gameHttp: 17266, alarms: null, pageHttp: null, alarmsSince: null, est: 18726, gameEst: 18722, rows: null, rowsSince: null }, 'the night before: alarms and rows not counted, never a false 0');
   // req_meter is unchanged in meaning: every call, alarms included (what Cloudflare bills)
   assert.deepEqual(rowsOf(ctx.storage.sql).find(x => x.day === '2026-10-05'), { day: '2026-10-05', ws_in: 0, http: 10, est_requests: 10 });
   // a failed alarm write keeps the alarm count for the next try; the call itself is written
@@ -340,7 +347,7 @@ test('alarms in their own column: the pages\' calls and the World\'s alarms apar
   assert.equal(mm.view().today.alarms, 2, 'still waiting');
   fail = false; t6 += WRITE_SOON; mm.alarm();
   assert.deepEqual(alarmOf(base), [{ day: '2026-10-06', http: 3 }]);
-  assert.deepEqual(mm.view().today, { day: '2026-10-06', wsIn: 0, http: 3, admin: 0, gameHttp: 3, alarms: 3, pageHttp: 0, est: 3, gameEst: 3 });
+  assert.deepEqual(mm.view().today, { day: '2026-10-06', wsIn: 0, http: 3, admin: 0, gameHttp: 3, alarms: 3, pageHttp: 0, alarmsSince: null, est: 3, gameEst: 3, rows: 0, rowsSince: null });
   // old alarm rows go with the old days
   base.exec("INSERT INTO req_meter_alarm (day, http, since) VALUES (?, 7, 1)", dayOf(at('2026-10-06T00:00:00Z') - (KEEP_DAYS + 1) * 86400000));
   const m3 = new Meter(base, () => at('2026-10-07T01:00:00Z')); m3.alarm();
@@ -410,30 +417,107 @@ test('the World: welcome names the Atlas, the movement check counts into move_da
 // write is an upsert of up to three rows (req_meter, req_meter_admin, req_meter_alarm). Counted here as SQLite counts them
 // (changes on every INSERT, UPDATE and DELETE the Meter runs), for an hour of each case.
 test('rows written: the admin page in view, alarms twice a second, a call every 2 s, and everything at once, each an hour', () => {
+  // as the World runs it: every statement through countRows, the meter counting its own rows too
   const hour = (label, step, each) => {
     const db = new DatabaseSync(':memory:'), base = sqlOf(db);
-    let rows = 0;
-    const sql = { exec(q, ...a) { const r = base.exec(q, ...a); if (/^\s*(INSERT|UPDATE|DELETE)/i.test(q)) rows += r.rowsWritten; return r; } };
+    let rows = 0, m = null;
+    const sql = countRows({ exec(q, ...a) { const r = base.exec(q, ...a); if (/^\s*(INSERT|UPDATE|DELETE)/i.test(q)) rows += r.rowsWritten; return r; } }, n => m && m.rows(n));
     let T = at('2026-10-04T01:00:00Z');
-    const m = new Meter(sql, () => T);
+    m = new Meter(sql, () => T);
     for (let t = 0; t < 3600000; t += step) { T = at('2026-10-04T01:00:00Z') + t; each(m, t); }
     T += step; m.flush();
     return rows;
   };
+  const marks = 2, rowsLine = 2 + 3600000 / ROWS_EVERY;   // the day's two marks; the rows written, once a minute (and the last flush)
   // the admin page's 10 s refresh: online, chat, modlog, trades, one after the other (about 100 ms each): one write a refresh
   const admin = hour('admin', 100, (m, t) => { if (t % 10000 < 400) m.http(true); });
-  assert.ok(admin <= 1 + 2 * 361, 'the admin page in view: ' + admin + ' rows an hour (2 per refresh)');
+  assert.ok(admin <= marks + rowsLine + 2 * 361, 'the admin page in view: ' + admin + ' rows an hour (2 per refresh)');
   // an alarm every 500 ms (the 3-4 Oct worst case): one write per WRITE_SOON, two rows each
   const alarms = hour('alarms', 500, m => m.alarm());
-  assert.ok(alarms <= 3 + 2 * 3600000 / WRITE_SOON, 'alarms twice a second: ' + alarms + ' rows an hour');
+  assert.ok(alarms <= marks + rowsLine + 2 * (1 + 3600000 / WRITE_SOON), 'alarms twice a second: ' + alarms + ' rows an hour');
   // the night of 3-4 Oct: a game call every 2 s
   const night = hour('night', 2000, m => m.http());
-  assert.ok(night <= 2 + 3600000 / WRITE_SOON, 'a call every 2 s: ' + night + ' rows an hour');
+  assert.ok(night <= marks + rowsLine + 1 + 3600000 / WRITE_SOON, 'a call every 2 s: ' + night + ' rows an hour');
+  // a knight playing alone: 9 socket messages a second (a presence and 8 snapshots) and nothing else: one write per WRITE_EVERY
+  const play = hour('play', 1000, m => { for (let i = 0; i < 9; i++) m.ws(); });
+  assert.ok(play <= marks + rowsLine + 1 + 3600000 / WRITE_EVERY, 'one knight playing: ' + play + ' rows an hour');
   // the ceiling: a game call, an admin call and an alarm every 100 ms, and 5 socket messages: 3 rows a write at most
   const all = hour('all', 100, m => { m.http(); m.http(true); m.alarm(); for (let i = 0; i < 5; i++) m.ws(); });
-  assert.ok(all <= 1 + 3 * (3600000 / WRITE_SOON + 36000 * 8 / WRITE_AT), 'everything at once: ' + all + ' rows an hour');
-  // and the admin page open and in view all day (the contract's 34,560 calls): about 17,280 meter rows of the 100,000
-  assert.ok(admin * 24 <= 17400, 'the admin page all day: ' + admin * 24 + ' rows');
+  assert.ok(all <= marks + rowsLine + 3 * (1 + 3600000 / WRITE_SOON + 36000 * 8 / WRITE_AT), 'everything at once: ' + all + ' rows an hour');
+  // and the admin page open and in view all day (the contract's 34,560 calls): about 18,840 meter rows of the 100,000 (the rows-written line once a minute: 1,488 of them)
+  assert.ok(admin * 24 <= 18900, 'the admin page all day: ' + admin * 24 + ' rows');
+  if (process.env.METER_ROWS) console.log(JSON.stringify({ admin, alarms, night, play, all }));
+});
+
+// Rows written are the free-plan limit a playing game reaches first (100,000 a day; a miss stops every save): review round 2
+// of the idle work measured about 1,680 rows an hour for one knight playing against about 420 billed requests, and nothing
+// counted them. countRows hands every statement's rowsWritten to the meter, RETURNING ones included, and the view and the
+// export carry them per day.
+test('rows written: every statement the World runs is counted, its own meter writes included, and the view and the export carry them', async () => {
+  const db = new DatabaseSync(':memory:');
+  let truth = 0;
+  // node's SQLite: `changes` of each write is what this stand-in calls rowsWritten (workerd also counts index entries)
+  const base = sqlOf(db), ctx = makeCtx(db);
+  ctx.storage.sql = { exec(q, ...a) { const r = base.exec(q, ...a); truth += r.rowsWritten || 0; if (/RETURNING/i.test(q)) truth += r.toArray().length; return r; } };
+  T = at('2026-10-06T10:00:00Z');
+  const w = new TestWorld(ctx, ENV);
+  let r = await call(w, 'POST', '/api/signup', { name: 'Cohen', pass: 'sword', invite: 'TEST-1234' });
+  const tok = r.data.token;
+  for (let i = 0; i < 20; i++) { T += 15000; await call(w, 'PUT', '/api/save', { slot: { v: 2, n: i } }, tok); }
+  T += WRITE_SOON; const up = await w.fetch(new Request('http://world/ws?token=' + tok, { headers: { upgrade: 'websocket' } }));
+  const sock = ctx.sockets[ctx.sockets.length - 1];
+  w.webSocketMessage(sock, JSON.stringify({ t: 'hello', v: 1 }));
+  for (let i = 0; i < 100; i++) { T += 1000; w.webSocketMessage(sock, JSON.stringify({ t: 'p', map: 'over', region: 'Thistledown', x: 480 + i, y: 480, lv: 3 })); }
+  w.webSocketClose(sock, 1000, 'bye');
+  T += ROWS_EVERY; r = await call(w, 'GET', '/api/admin/sim', undefined, ENV.ADMIN_KEY);
+  const t = r.data.meter.today;
+  // the view: every row written so far but those of the meter's last write (they wait for the next), a few at most
+  assert.ok(t.rows <= truth && t.rows >= truth - 4, `rows counted ${t.rows}, written ${truth}`);
+  assert.equal(t.rowsSince, null, 'counted all day: nothing of 6 Oct was counted before');
+  assert.equal(r.data.meter.freeRows, FREE_ROWS);
+  // the export carries them (written once a minute at most, with a write)
+  T += ROWS_EVERY; r = await call(w, 'GET', '/api/admin/export', undefined, ENV.ADMIN_KEY);
+  const row = r.data.req_meter_rows.find(x => x.day === '2026-10-06');
+  assert.ok(row.rows >= t.rows, 'written: ' + row.rows);
+  // accounts.last_seen: at most once per SEEN_EVERY, not on every save (the 20 saves above were 15 s apart)
+  const seenWrites = [];
+  const ctx2 = makeCtx(new DatabaseSync(':memory:')), b2 = ctx2.storage.sql;
+  ctx2.storage.sql = { exec(q, ...a) { if (/UPDATE accounts SET last_seen/.test(q)) seenWrites.push(T); return b2.exec(q, ...a); } };
+  T = at('2026-10-06T12:00:00Z');
+  const w2 = new TestWorld(ctx2, ENV);
+  r = await call(w2, 'POST', '/api/signup', { name: 'Sam', pass: 'sword', invite: 'TEST-1234' });
+  for (let i = 0; i < 40; i++) { T += 15000; await call(w2, 'PUT', '/api/save', { slot: { v: 2, n: i } }, r.data.token); }
+  assert.ok(seenWrites.length <= 2, 'last_seen written ' + seenWrites.length + ' times in 10 minutes of saves');
+  const acc = (await call(w2, 'GET', '/api/me', undefined, r.data.token)).data;
+  assert.ok(acc, 'the session still works');
+});
+
+// A rollback, or a peer's deploy from a tree without the alarm and rows columns, then this code again: a day only older code
+// counted has no mark, so it reads "not counted" (null), never a false 0; the day this code comes back is partial from then.
+test('a day counted only by older code reads not counted, and the day this code comes back is partial from that moment', () => {
+  const db = new DatabaseSync(':memory:'), sql = sqlOf(db);
+  // older code counted the morning of 7 Oct (5 calls); this code from 15:00, its first wake ever
+  sql.exec(METER_SCHEMA); db.prepare("INSERT INTO req_meter (day, ws_in, http, est_requests) VALUES ('2026-10-07', 0, 5, 5)").run();
+  let T = at('2026-10-07T15:00:00Z');
+  const m1 = new Meter(sql, () => T);
+  for (let i = 0; i < 10; i++) { T += WRITE_SOON; m1.alarm(); }
+  m1.flush();
+  // older code all of 8 Oct and the morning of 9 Oct: req_meter only
+  db.prepare("INSERT INTO req_meter (day, ws_in, http, est_requests) VALUES ('2026-10-08', 0, 1050, 1050)").run();
+  db.prepare("INSERT INTO req_meter (day, ws_in, http, est_requests) VALUES ('2026-10-09', 0, 400, 400)").run();
+  // this code again from 12:00 on 9 Oct
+  T = at('2026-10-09T12:00:00Z');
+  const m2 = new Meter(sql, () => T);
+  for (let i = 0; i < 4; i++) { T += WRITE_SOON; m2.alarm(); }
+  T += WRITE_SOON; m2.http(); T += WRITE_SOON; m2.http(); m2.flush();
+  T = at('2026-10-10T08:00:00Z');
+  const v = new Meter(sql, () => T).view();
+  const d = day => v.days.find(x => x.day === day);
+  assert.deepEqual([d('2026-10-09').alarms, d('2026-10-09').pageHttp, d('2026-10-09').alarmsSince], [4, 402, at('2026-10-09T12:00:00Z')], '9 Oct: alarms only since 12:00');
+  assert.deepEqual([d('2026-10-08').alarms, d('2026-10-08').pageHttp, d('2026-10-08').alarmsSince, d('2026-10-08').rows], [null, null, null, null], '8 Oct: not counted, never a false 0');
+  assert.deepEqual([d('2026-10-07').alarms, d('2026-10-07').alarmsSince], [10, at('2026-10-07T15:00:00Z')], '7 Oct: partial from 15:00');
+  assert.deepEqual([v.today.day, v.today.alarms, v.today.alarmsSince, v.today.rows, v.today.rowsSince], ['2026-10-10', 0, null, 0, null], '10 Oct, before its first write: counted whole');
+  void m1;
 });
 
 test('a nap after a burst of requests loses only the ones inside WRITE_SOON of the last write; the next count takes the rest', () => {
