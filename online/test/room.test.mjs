@@ -668,3 +668,50 @@ test('two silent knights restored after a nap, in either order: the alarm never 
     assert.equal(new Set(handled).size, handled.length, 'never the same moment twice');
   }
 });
+
+// A nap rebuilds the Room from the sockets, and the restore names a keeper without a word: the first knight restored onto a map
+// starts its grace at once and keeps it. That may not be the knight both pages were last told. Each page here believes only what
+// its welcome and its keeper messages said (src/75-coop.js setKeeper), streams monsters while it believes itself keeper and
+// presence once a second; within KEEPER_STALE + 50 ms of both playing again the world and both pages must agree, and stay so,
+// with the monsters reaching the one who does not keep the map and his hits reaching the one who does. Both restore orders.
+test('after a nap the world and both pages agree on the keeper within KEEPER_STALE + 50 ms of play, whichever socket the restore takes first', () => {
+  for (const story of ['walks out', 'pauses']) for (const first of ['Cohen', 'Sam']) {
+    let w = world();
+    const C = [];
+    const page = (s, name) => { const c = { name, s, belief: null, map: null, playing: true, n: 0 }; C.push(c); return c; };
+    const hear = (c, from) => { for (; c.n < c.s.got.length; c.n++) { const m = c.s.got[c.n]; if (m.t === 'welcome') c.belief = m.keeper; if (m.t === 'keeper' && m.map === c.map) c.belief = m.n; } };
+    const go = (c, map) => { c.map = map; w.say(c.s, { t: 'p', map, x: 1, y: 2, lv: 3 }); };
+    const play = t => { for (const c of C) { hear(c); if (!c.playing) continue; if (t % 1000 === 0) w.say(c.s, { t: 'p', map: c.map, x: 1, y: 2, lv: 3 }); if (c.belief === c.name && t % 125 === 0) w.say(c.s, { t: 'mon', list: [] }); } };
+    // walks out: Cohen logs in first and plays in the cave; Sam logs in on the overworld; Cohen walks out, so Sam keeps it.
+    // pauses: both on the overworld, Cohen keeps it; he pauses, so it goes to Sam; he plays again.
+    const a = page(w.sock(), 'Cohen'); w.room.join(a.s, 'Cohen'); w.say(a.s, { t: 'hello', v: 1 }); go(a, story === 'walks out' ? 'cave1' : 'over');
+    w.run(5000, 25, play);
+    const b = page(w.sock(), 'Sam'); w.room.join(b.s, 'Sam'); w.say(b.s, { t: 'hello', v: 1 }); go(b, 'over');
+    w.run(5000, 25, play);
+    if (story === 'walks out') go(a, 'over'); else { a.playing = false; w.run(5000, 25, play); assert.equal(w.room.keeperOf('over').name, 'Sam'); a.playing = true; }
+    w.run(10000, 25, play);
+    // both go to the menu; then the World naps and a wake restores the sockets, `first` first
+    a.playing = b.playing = false; w.run(5000, 25, play);
+    const w2 = world(); w2.t = w.t;
+    for (const c of first === 'Cohen' ? [a, b] : [b, a]) { const s = w2.sock(); w2.room.restore(s, c.s.state); c.s = s; c.n = 0; }
+    w = w2;
+    // both play again
+    a.playing = b.playing = true;
+    const t0 = w.t, seen = [];
+    w.run(60000, 25, play, () => {
+      if (w.t - t0 < KEEPER_STALE + 50) return;
+      hear(a); hear(b);
+      const k = w.room.keeperOf('over');
+      const at = `${story}, restored ${first} first, ${w.t - t0} ms after play: server keeper=${k && k.name} Cohen believes=${a.belief} Sam believes=${b.belief}`;
+      if (!(k && a.belief === k.name && b.belief === k.name)) seen.push(at);
+    });
+    assert.deepEqual(seen.slice(0, 1), [], 'they disagree');
+    // the stream reaches the other page, and his swing reaches the page that runs the monsters
+    const keeper = w.room.keeperOf('over').name, other = keeper === 'Cohen' ? b : a, mine = keeper === 'Cohen' ? a : b;
+    other.s.clear(); mine.s.clear(); other.n = mine.n = 0;
+    w.run(2000, 25, play);
+    assert.ok(other.s.of('mon').length >= 10, `${story}, restored ${first} first: ${other.name} got ${other.s.of('mon').length} snapshots in 2 s`);
+    w.say(other.s, { t: 'hit', nid: 'm1', dmg: 3 });
+    assert.equal(mine.s.of('hit').length, 1, `${story}, restored ${first} first: the hit reaches ${mine.name}, whose game runs the monsters`);
+  }
+});

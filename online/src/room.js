@@ -428,6 +428,7 @@ export class Room {
     if (k.trade) { const o = this.otherOf(k.trade, k); if (k.dead) this.cancelTrade(k.trade, 'dead', k); else if (!this.within(k, o, TRADE_LEAVE, true)) this.cancelTrade(k.trade, 'far', k); }
     if (changed) { this.attach(k); this.rosterLater(); }
     this.keeperCheck(k);   // a quiet keeper on his map hands it to this knight, who is playing (KEEPER_STALE)
+    this.retell(k);        // a map a wake rebuilt: everyone on it hears who keeps it, once
     // the role on a relayed p is always the server's word: whatever the sender put there is overwritten
     const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: wireMap(k.map), role: k.role }));
     k.last = out;
@@ -479,6 +480,7 @@ export class Room {
   onMon(k, m) {
     if (!k.hello || !Array.isArray(m.list)) return;
     const g = this.maps.get(k.map);
+    if (g && g.keeper !== k) this.retell(k);   // a game that thinks it keeps a map a wake gave to another: the map hears who does
     if (!g || g.keeper !== k) return;   // only the keeper's monsters are real; a late snapshot after handoff is dropped
     this.worlds.keeperMon(k, m);        // a copy taking this map over reads the keeper's stream first
     if (g.keeper !== k) return;
@@ -1035,8 +1037,25 @@ export class Room {
     if (old && stale(old)) old.mapAt = now;
     g.keeper = best; best.keeperAt = now;
     if (silent) return;
+    g.told = best;
     const out = JSON.stringify(this.worlds.keeperMsg(map, best));
     for (const o of g.members) if (o !== except) this.raw(o.sock, out);
+  }
+
+  // g.told is the keeper everyone on the map was last told of (elect). A wake rebuilds each map from its sockets and names its
+  // keeper without a word (restore is silent): the first knight restored onto a map starts his grace at once and keeps it, and
+  // that need not be the knight the pages were told before the nap (the pages kept their own idea through it). Each page then
+  // goes on as it was: one runs the monsters and the Room drops its stream and sends it no hits, the other sends presence as a
+  // non-keeper and stays keeper because he is plainly playing (KEEPER_STALE reads presence too). So the first word from any knight
+  // on such a map (a presence or a snapshot) tells everyone there, once, who the Room says keeps it: his game takes the map
+  // (75-coop setKeeper hands its puppets over), the other's turns its monsters to puppets. A name a page already holds changes
+  // nothing on it. A world-run map's virtual keeper is told by the world (sim/worlds.js).
+  retell(k) {
+    const g = k.map && this.maps.get(k.map);
+    if (!g || !g.keeper || g.keeper.virtual || g.told === g.keeper) return;
+    g.told = g.keeper;
+    const out = JSON.stringify(this.worlds.keeperMsg(k.map, g.keeper));
+    for (const o of g.members) if (o.hello && !o.virtual) this.raw(o.sock, out);
   }
 
   // A knight who is playing (his presence just came in) on a map whose keeper has gone quiet: elect again, so the map comes to
