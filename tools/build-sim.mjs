@@ -285,7 +285,7 @@ export const STRIP_READS = {
   drawFireProp: { files: ['95-thistledown'], why: 'a wrapper that keeps the fire drawing to call it' },
   drawTower: { files: ['95-thistledown'], why: 'a wrapper that keeps the tower drawing to call it' },
   drawBuilding: { files: ['91-cloudkingdom', '95-thistledown'], why: 'wrappers that keep the building drawing to call it, and 91-cloudkingdom\'s own drawing pass' },
-  panelBox: { files: ['24-dwarves', '38-agility'], why: 'the panel frame: where a panel\'s text goes (24) and a wrapper that keeps it (38)' },
+  panelBox: { files: ['24-dwarves', '38-agility', '79-teacher'], why: 'the panel frame: where a panel\'s text goes (24) and wrappers that keep it (38; 79 puts "A teacher is watching." in the Friends header, which only runs when something draws)' },
   PANEL_KIT: { files: ['60-bank', '69-retaliate'], why: 'panel sizes and button widths' },
   itemBlurb: { files: ['26-boats', '90-canyon'], why: 'wrappers that keep the pack\'s item sentence to call it, for their own items\' sentences' },
   darkLayer: { files: ['88-aerie'], why: 'the night canvas, cleared and borrowed by the Aerie\'s lighting' },

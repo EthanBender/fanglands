@@ -42,6 +42,11 @@
     const [n, unit] = s < 60 ? [s, 'second'] : s < 3600 ? [Math.ceil(s / 60), 'minute'] : s < 86400 ? [Math.ceil(s / 3600), 'hour'] : [Math.ceil(s / 86400), 'day'];
     return { n, unit: unit + (n === 1 ? '' : 's') };
   };
+  // the teacher view (docs/ONLINE.md, "The teacher view"): a teacher's mute is said as a teacher's, never with a name
+  const teacherMuted = (left, span) => { if (span === 'today') return 'A teacher muted your chat for the rest of today. You can still play.'; const a = amount(left); return `A teacher muted your chat for ${a.n} ${a.unit}. You can still play.`; };
+  const pausedSentence = left => { const a = amount(left); return `Chat is paused by a teacher for ${a.n} more ${a.unit}.`; };
+  // other files may refuse a line before it goes out (79-teacher: a teacher's pause): each answers a sentence, or nothing
+  const gates = [];
   const mutedSentence = left => { if (left === -1) return 'An admin muted you. Your chat is off until an admin turns it back on.'; const a = amount(left); return `An admin muted you for ${a.n} ${a.unit}. You can still play; your chat is off until then.`; };
   const cantChatSentence = () => { if (mutedUntil === Infinity) return "You can't chat until an admin turns it back on."; const a = amount((mutedUntil - nowMs()) / 1000); return `You can't chat for ${a.n} more ${a.unit}.`; };
   // a line with no name, in its own colour, on the strip and in the log; no bubble (the party file says "Sam found a purple party hat!" with it)
@@ -136,6 +141,7 @@
     if (!NET.online()) { notify('You are not connected.'); return false; }
     // muted: nothing goes out at all (the quick phrases come through here too)
     if (isMuted()) { notify(cantChatSentence()); return false; }
+    for (const gate of gates) { let no = null; try { no = gate(); } catch (e) { } if (no) { notify(no); return false; } }
     if (time - lastSentAt < SEND_EVERY) { notify('Slow down a little.'); return false; }
     if (!NET.send({ t: 'chat', text: t })) { notify('That did not go through. Try again.'); return false; }
     lastSentAt = time; lastLineAt = nowMs();
@@ -161,13 +167,15 @@
   NET.on('muted', m => {
     if (!m || typeof m.left !== 'number' || !(m.left === -1 || m.left >= 0)) return;
     const reply = nowMs() - lastLineAt < REPLY_MS; lastLineAt = -1e9;
+    // a teacher's pause for everyone is not a mute: the line was refused, chat stays this knight's own (79-teacher counts it down)
+    if (m.by === 'pause') { if (window.TEACHER && TEACHER.paused) TEACHER.paused(m.left); notify(pausedSentence(m.left)); return; }
     mutedUntil = m.left === -1 ? Infinity : nowMs() + m.left * 1000;
-    const text = reply ? cantChatSentence() : mutedSentence(m.left);
+    const text = reply ? cantChatSentence() : m.by === 'teacher' ? teacherMuted(m.left, m.span) : mutedSentence(m.left);
     // the strip is one short line an entry: the news goes in as its two sentences, the notice carries it whole
     if (!reply) { const cut = text.indexOf('. '); for (const part of cut > 0 ? [text.slice(0, cut + 1), text.slice(cut + 2)] : [text]) system(part, MUTE_RED); }
     notify(text);
   });
-  NET.on('unmuted', () => { mutedUntil = 0; system('An admin turned your chat back on.', MUTE_RED); notify('An admin turned your chat back on.'); });
+  NET.on('unmuted', m => { mutedUntil = 0; const t = m && m.by === 'teacher' ? 'A teacher turned your chat back on.' : 'An admin turned your chat back on.'; system(t, MUTE_RED); notify(t); });
   // ---------- a different knight on this device: nothing of the last one's chat stays ----------
   // A brother or sister taps Not me (or Log out) and logs in on the same iPad: the first knight's lines, its warnings ("Last
   // warning.") and its mute must not show in the new knight's strip and log, where they read as said to them. Not me and Log
@@ -316,7 +324,7 @@
     open, close, send, system, isOpen: () => isOpen, bubbles, log, PHRASES, MAX, stripLines, CSS, drawBubble, bubbleLines,
     // a different knight on this device (Not me, Log out): empty the log and bubbles; onForget(fn) runs fn then too.
     // sameKnight(name): the knight was renamed by an admin, so the welcome as the new name is still the same knight.
-    forget, onForget: fn => { if (typeof fn === 'function') forgetters.push(fn); }, sameKnight: name => { if (typeof name === 'string' && name) knight = name; }, knight: () => knight,
+    forget, onForget: fn => { if (typeof fn === 'function') forgetters.push(fn); }, gate: fn => { if (typeof fn === 'function') gates.push(fn); }, teacherMuted, pausedSentence, sameKnight: name => { if (typeof name === 'string' && name) knight = name; }, knight: () => knight,
     // seconds of mute left: 0 when the chat is on, -1 until an admin turns it back on
     muted: () => mutedUntil === Infinity ? -1 : isMuted() ? Math.ceil((mutedUntil - nowMs()) / 1000) : 0,
   };

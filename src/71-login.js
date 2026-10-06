@@ -93,8 +93,12 @@
   // (a home-screen icon, or a tab with a knight only on this device: docs/ONLINE.md, "Two addresses") says gorkscape.ca
   LOGIN.siteOf = host => /(^|\.)gorkscape\.ca$/.test(String(host || '')) ? 'gorkscape.ca' : 'fanglands.com';
   LOGIN.site = LOGIN.siteOf(typeof location !== 'undefined' && location.hostname);
+  // a teacher sent the knight off for the rest of the day (docs/ONLINE.md, "The teacher view"): 423 sentoff from a call, or the
+  // socket's error kicked with why 'sentoff'. The session is kept (423, never 403) and Play stays; nothing asks again.
+  LOGIN.SENT_OFF = 'A teacher sent you off Fanglands for the rest of today. Your knight is safe. You can play again tomorrow.';
   LOGIN.sentence = (err, kind) => {
     const code = err && err.code, st = err && err.status;
+    if (code === 'sentoff' || st === 423 || (code === 'kicked' && err.why === 'sentoff')) return LOGIN.SENT_OFF;
     if (code === 'words') { LOGIN.noteKeptOut(err.until); return kind === 'signup' ? LOGIN.newKnightOff(err.until) : LOGIN.keptOut(err.until); }
     if (code === 'renamed') return `An admin changed your knight's name to ${err.name}.`;
     if (code === 'signups') return 'Too many new knights from here this hour. Try again later.';
@@ -268,6 +272,8 @@
       if (LOGIN.mode !== 'checking') return;
       // kept out for bad words: the session stays (Play works again when the time is up), the card says until when
       if (e && e.code === 'words') { LOGIN.name = LOGIN.name || lsGet(NAME_KEY) || 'knight'; LOGIN.mode = 'me'; LOGIN.error = LOGIN.sentence(e, 'login'); refresh(); return; }
+      // sent off for the day by a teacher: the same, the token kept
+      if (e && (e.code === 'sentoff' || e.status === 423)) { LOGIN.name = LOGIN.name || lsGet(NAME_KEY) || 'knight'; LOGIN.mode = 'me'; LOGIN.error = LOGIN.sentence(e, 'login'); refresh(); return; }
       if (e && (e.code === 'auth' || e.status === 401 || e.code === 'banned' || e.status === 403)) { NET.setToken(null); LOGIN.error = e.code === 'banned' ? LOGIN.sentence(e, 'login') : ''; }
       LOGIN.mode = 'form'; refresh();
     });
