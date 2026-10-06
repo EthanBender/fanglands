@@ -670,7 +670,7 @@ resize();
 //   const F = ATLAS.frame('hollowford')   F.x(v) F.y(v) (exact, reals allowed), F.p(x, y) -> [x, y], F.pt({x, y}),
 //                                          F.pts(list), F.rect({x0, y0, x1, y1}), F.box([x0, y0, x1, y1]),
 //                                          F.ix(v) F.iy(v) (new to old), F.dx, F.dy, F.inOld(x, y); pixels: F.x(112) * TILE
-//   const W = ATLAS.world                  the same, real-valued; W.tx/W.ty rounded; W.ix/W.iy the inverse; W.pin(seam, v, along)
+//   const W = ATLAS.world                  the same, real-valued; W.tx/W.ty rounded; W.ix/W.iy the inverse; W.pin(seam, v, along), W.unpin
 //   ATLAS.port(id) ATLAS.box(id) ATLAS.track(id) ATLAS.guards() ATLAS.anchorOf(x, y) ATLAS.oldToNew(x, y) ATLAS.oldToNewWorld(x, y)
 //   ATLAS.frameProblems() ATLAS.strict()
 // oldToNew and oldToNewWorld are for the save migration and the tools ONLY, never for game code: game code names its frame.
@@ -821,8 +821,9 @@ resize();
 
   // ---------- the stretched world, and the seam pins (§3) ----------
   const WORLD = { xs: [[0, 0], [MAP_W - 1, MAP_W - 1]], ys: [[0, 0], [MAP_H - 1, MAP_H - 1]] };   // identity until Stage 4a
-  // each pinned seam is offset by (port's new place - where the stretch puts its old place), tapered to 0 over 12 tiles
-  // either side; `axis` is the coordinate the seam is moved in, `along` the one it runs along
+  // near each of its ports a pinned seam moves with the port's place (its old value through the port's frame) instead of
+  // the stretch, tapered back to the stretch over 12 tiles either side (W.pin); `axis` is the coordinate the seam is
+  // moved in, `along` the one it runs along
   const PINS = [
     { id: 'rim', seam: 'the Ashfields rim row (37 row 95, 92 footWA, 93 band)', axis: 'y', ports: ['warden.gate'] },
     { id: 'gw_steps', seam: 'the Goblin Fields / Wolfwood scarp (92 sGW)', axis: 'y', ports: ['graveyard.steps'] },
@@ -894,19 +895,29 @@ resize();
     box: b => [W.x(b[0]), W.y(b[1]), W.x(b[2]), W.y(b[3])],
     get dx() { return 0; }, get dy() { return 0; },
     inOld: (x, y) => x >= 0 && y >= 0 && x <= WORLD.xs[WORLD.xs.length - 1][0] && y <= WORLD.ys[WORLD.ys.length - 1][0],
-    // a pinned seam's value v (new coordinates) at `along` (new coordinates): passes exactly through each of its ports
+    // a pinned seam's value v (new coordinates) at `along` (new coordinates). Near a port the seam is carried by the
+    // port's place: its OLD value (W.iy(v), or W.ix) goes through the port's frame, so it keeps the distance from the
+    // port it had on the old map (a seam 3 rows below the steps is 3 rows below them after the spread, not 3 rows
+    // stretched); the offset (frame - stretch) tapers to 0 over TAPER tiles of `along` either side of the port
     pin(seamId, v, along) {
       const pin = PINS.find(q => q.id === seamId); if (!pin) throw new Error('ATLAS.world.pin: no seam ' + JSON.stringify(seamId));
       let off = 0;
       for (const pid of pin.ports) {
         const o = PORTS[pid], n = port(pid); if (!o || !n) continue;
-        const ax = pin.axis === 'y' ? 1 : 0, al = 1 - ax;
-        const oldAt = o[0] === 'new' ? null : o[1 + ax];
-        if (oldAt === null) continue;   // a port of a new place has no old position: it pins from Stage 4a
-        const delta = n[ax] - (ax ? W.y(oldAt) : W.x(oldAt)), d = Math.abs(along - n[al]);
+        if (o[0] === 'new') continue;   // a port of a new place has no old position: it pins from Stage 4a
+        const ax = pin.axis === 'y' ? 1 : 0, al = 1 - ax, F = FRAMES[o[0]];
+        const delta = (ax ? F.y(W.iy(v)) : F.x(W.ix(v))) - v, d = Math.abs(along - n[al]);
         if (d < TAPER) off += delta * (1 - d / TAPER);
       }
       return v + off;
+    },
+    // the inverse along the seam's axis: the v whose pinned value is u (a band of rows about a seam, mapped back to old
+    // rows through W.iy(W.unpin(...))). Exactly u wherever the pin moves nothing (always, before the spread).
+    unpin(seamId, u, along) {
+      if (W.pin(seamId, u, along) === u) return u;
+      let lo = u - 256, hi = u + 256;   // pin is monotone in v (each port's frame and the stretch both are)
+      for (let k = 0; k < 60; k++) { const m = (lo + hi) / 2; if (W.pin(seamId, m, along) < u) lo = m; else hi = m; }
+      return (lo + hi) / 2;
     },
     // a straight pinned seam (a PIN with `old`, its old line): the new tile column (or row) it stands on at `along`.
     // The one read of that line: jungle_west is the Ashfields / Jungle wall, and every split, box edge and loop end on
@@ -1019,7 +1030,7 @@ resize();
     // Stage 0: every frame, the world and every pin are the identity, so nothing on screen can have moved
     const notId = Object.keys(FRAMES).filter(id => { const f = FRAMES[id], a = ANCHORS[id]; return f.dx !== 0 || f.dy !== 0 || f.x(a.box[0] + 0.5) !== a.box[0] + 0.5 || f.iy(f.y(a.box[3])) !== a.box[3]; });
     const wId = [0, 7.25, 0.1, 37.3, 61.5 + 0.7 * 6.5, MAP_W - 1].every(v => W.x(v) === v && W.ix(v) === v) && [0, 3.5, MAP_H - 1].every(v => W.y(v) === v && W.iy(v) === v) && W.tx(12.4) === 12 && W.ty(12.6) === 13;
-    const pinsZero = PINS.every(pin => [0, 50, 96, 140].every(al => W.pin(pin.id, 42.5, al) === 42.5));
+    const pinsZero = PINS.every(pin => [0, 50, 96, 140].every(al => W.pin(pin.id, 42.5, al) === 42.5 && W.unpin(pin.id, 42.5, al) === 42.5));
     check(PF + 'Stage 0: every frame, the world and every seam pin are the identity (frame.x = x, W.x = x, pin offset 0)', notId.length === 0 && wId && pinsZero, { notId, wId, pinsZero });
     // the API's shapes
     const Fh = frame('hollowford'), r = Fh.rect({ x0: 122, y0: 66, x1: 156, y1: 92, name: 'HF' }), pt = Fh.pt({ x: 140, y: 80, label: 'well' });
