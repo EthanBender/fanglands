@@ -51,6 +51,59 @@ node tools/fingerprint.mjs index.html --diff docs/spread/baseline-fingerprint.js
 git diff --exit-code online/src/atlas.json                                           # byte-identical
 ```
 
+## The jiggle (Stage 3, spec §9.5): the spread rehearsed
+
+`node tools/jiggle.mjs [--jobs=4] [--only=pond,camp] [--plan] [--anchors-only | --world-only]` makes scratch builds in
+`~/.fanglands/work/spread/jiggle/` (never committed) and writes `report.json` there. The tool's header says exactly what it
+checks; in short:
+
+- **The base** is the game at MAP 266x186 with the Atlas at identity, and beside it **eight controls** that move nothing and
+  only skip 1..8 of the world's shared dice. The bigger map re-rolls the core scatter, so the base and every control already
+  fail some checks on the luck of the scatter (12 of 1344 on the base, 6 to 16 on a control; e.g. three Grub Yard spawns
+  walled in, the Far Shore's stormstone rocks without a side to stand on, a tree against the ash). A check is red in a moved
+  build only when it fails there and passes on the base and on every control, and still fails in 2 of 3 re-rolls of that
+  move. Those luck-bound checks are blind in the jiggle; Stage 4b meets the same re-roll at 400x280 and has to make them
+  hold (NEXT WEEK list).
+- **Each anchor in turn** moves by (+-3, +-2) with signs that keep its box in the map and clear of every other box; a
+  neighbour it cannot clear moves with it (the overlapping old boxes: Thistledown, Hollowford, the quarry and the signpost
+  move as one; so do the camp, the dock and Gull Isle; and the stone circle with the warden). Per move: the whole headless
+  suite, mmo-sim and dom-keys; TRANSPORT (every positional fact of the moved place = old + offset, every other one stays
+  put); PLATE (every non-scatter tile inside the box, less its 3-tile dither rim, = the base tile shifted; counted apart:
+  the jungle's and the Ashfields' own ground, which section 2 calls world, tiles the controls re-roll, and tiles within 2 of
+  a world seam that crosses the box, of which the run reports how many match anyway).
+- **Every anchor together with WORLD x1.1** (MAP 286x198): the suite, mmo-sim and dom-keys, every place's facts moved by
+  its shift, and the seam pins: the rim gate open, the giants' gap open, the graveyard's steps cut in the scarp.
+
+Run of 6 Oct 2026 on spread/s2 (master 3b6d6b4 merged), 7198 s with 4 jobs: **all green**. The run before it found one
+literal the count could not see (75-coop's test held the summoning circle as the string `'[18,117,4]'`), red when The
+Fang's lair moved and in the x1.1 world; fixed in 6ea7332 and proved at identity before this run.
+
+| anchor | moved with | offset | transport (moved/kept/relative/red) | plate (equal/checked) | suite (fails not on base or a control) | mmo-sim | dom-keys |
+|---|---|---|---|---|---|---|---|
+| quarry | - | -3,+2 | 70/1275/0/0 | 34/34 | 0 | green | green |
+| signpost | - | -3,+2 | 74/1271/0/0 | 1/1 | 0 | green | green |
+| pond | - | -3,+2 | 11/1334/0/0 | 72/72 (42 of 43 river tiles match too) | 0 | green | green |
+| drill_field | - | +3,+2 | 1/1344/0/0 | 0/0 (open grass) | 0 | green | green |
+| thistledown, hollowford | each other, quarry, signpost | -3,+2 | 698/646/1/0 | 2208/2208 (134 of 151 scarp and river tiles match too) | 0 | green | green |
+| camp, dock, gull_isle | each other | +3,-2 | 36/1309/0/0 | 303/303 (40 of 42 shore tiles match too) | 0 | green | green |
+| ironclad_isle | - | -3,+2 | 8/1337/0/0 | 174/174 (141 of 141 seam tiles match too) | 0 | green | green |
+| far_shore | redcut | +3,+2 | 268/1077/0/0 | 4496/4496 (218 of 218) | 0 | green | green |
+| redcut | - | +3,+2 | 212/1133/0/0 | 3206/3206 (16 of 16) | 0 | green | green |
+| graveyard | - | +3,-2 | 5/1340/0/0 | 2/2 (3 of 3) | 0 | green | green |
+| deepholm_rock | wren | +3,+2 | 194/1151/0/0 | 25/25 | 0 | green | green |
+| wren | - | +3,+2 | 193/1152/0/0 | 25/25 | 0 | green | green |
+| stone_circle, warden | each other | -3,+2 | 38/1302/5/0 | 10/10 (66 of 83 rim and wall tiles match too) | 0 | green | green |
+| watchtower | - | +3,+2 | 1/1344/0/0 | 15/15 | 0 | green | green |
+| ash_shrine | - | +3,+2 | 1/1344/0/0 | 3/3 | 0 | green | green |
+| fang_lair | - | +3,+2 | 8/1337/0/0 | 892/892 | 0 | green | green |
+| canopy | - | -3,-2 | 1/1344/0/0 | 7/7 (4 of 4) | 0 | green | green |
+| sylvaris | - | +3,+2 | 6/1336/3/0 | 206/206 (37 of 37) | 0 | green | green |
+| every anchor + WORLD x1.1 | every place | x1.1 | 1276/23/0/0 | pins hold: rim gate open (3 steps), giants' gap open (7), steps meet the scarp | 0 (2 area-proportional, re-baselined in 4b) | green | green |
+
+The seam tiles that do not match lie where a world seam crosses a box and stays with the stretched land while the place
+moves (Hollowford's top rows under the scarp and the river, the warden's row 95 on the rim's taper, two shore tiles by the
+dock): section 2's world, not a place's literal.
+
 ## The fingerprint is sensitive (Stage 0 proof, 3 Oct 2026, baseline master e24001a)
 
 One literal changed at a time in a scratch copy of src/ (never committed), built, and diffed against the baseline:
