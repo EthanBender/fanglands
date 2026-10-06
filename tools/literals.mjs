@@ -28,8 +28,8 @@
 //   node tools/literals.mjs --gate           the build's gate, REPO-WIDE: every file of src/ and tools/ must have 0
 //                                            literals outside docs/spread/literals-allow.json, bar a file an open peer
 //                                            branch holds (docs/spread/held.json); exit 1 otherwise
-// literals-allow.json: [{ file, literal?, line?, decl?, reason }] — no literal/line/decl allows the whole file (an
-// instance's own map); `decl` alone allows everything inside that named declaration (01-atlas's own ANCHORS table);
+// literals-allow.json: [{ file, literal?, line?, decl?, reason }] — an entry with no literal, line or decl (the whole
+// file) is refused by the gate since Stage 3; `decl` alone allows everything inside that named declaration (01-atlas's own ANCHORS table);
 // `literal` matches the source text (spaces ignored) and MUST be pinned by `decl` (the declaration it sits in: the
 // sturdy pin, it survives edits above it) or `line`, so one exemption never covers a new position written elsewhere in
 // the same file. An unpinned `literal` entry matches nothing, and the gate names it.
@@ -335,6 +335,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const converted = rd('converted.json'), list = (Array.isArray(converted) ? converted : converted.files || []).map(norm);
     const held = new Map(rd('held.json').map(h => [norm(h.file), h]));
     const allow = allowList(), T = atlasTables(); let bad = 0, waiting = 0;
+    // every exemption is pinned (Stage 3): an entry with no literal, decl or line would let the whole file through, so a
+    // new position written anywhere in it would pass unseen; the gate refuses it
+    for (const a of allow) if (a.literal === undefined && a.decl === undefined && a.line === undefined) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry allows the whole file: pin each literal it means to its decl (or line)`); }
     for (const a of allow) if (unpinned(a)) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for ${JSON.stringify(a.literal)} has no decl or line: pin it to the declaration (or line) it allows`); }
     for (const f of list) if (!fs.existsSync(fileOf(f))) { console.error(`literals gate: docs/spread/converted.json names ${f}, which is not in ${isTool(f) ? 'tools/' : 'src/'}`); bad++; }
     for (const [f, h] of held) {
@@ -343,6 +346,14 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       else if (!h.branch || !h.reason) { console.error(`literals gate: docs/spread/held.json's entry for ${f} needs its branch and a reason`); bad++; }
     }
     const all = sourceFiles();
+    // and the record is whole: a file that reads an overworld position from the Atlas (a frame, a port, the world, a box
+    // or a track) holds one, so converted.json must name it (the Atlas's own counting and rewriting tools excepted: they
+    // write and count frame calls, they stand nothing anywhere)
+    const ATLAS_TOOLS = ['tools/literals.mjs', 'tools/frame-codemod.mjs'], READS = /\bATLAS\s*\.\s*(frame|port|world|box|track)\b/;
+    for (const f of all) {
+      if (list.includes(f) || held.has(f) || ATLAS_TOOLS.includes(f)) continue;
+      if (READS.test(fs.readFileSync(fileOf(f), 'utf8'))) { bad++; console.error(`literals gate: ${isTool(f) ? f : 'src/' + f} reads overworld positions from the Atlas but is not in docs/spread/converted.json: add it`); }
+    }
     for (const f of all) {
       const r = scanFile(f, allow, T), name = isTool(f) ? f : 'src/' + f;
       if (held.has(f)) { if (r.bare.length) { waiting += r.bare.length; console.log(`literals gate: ${name} waits for ${held.get(f).branch} (${r.bare.length} bare, docs/spread/held.json)`); } else console.log(`literals gate: ${name} is held (docs/spread/held.json) but has no bare coordinate left: it can leave held.json`); continue; }
