@@ -2331,17 +2331,21 @@ serves the new map by itself; nothing is committed twice.
 ```
 teachers          (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, name_lc TEXT NOT NULL UNIQUE, salt TEXT NOT NULL,
                    hash TEXT NOT NULL, created INTEGER NOT NULL, off INTEGER NOT NULL DEFAULT 0, tries INTEGER NOT NULL DEFAULT 0,
-                   locked_until INTEGER NOT NULL DEFAULT 0, last_login INTEGER NOT NULL DEFAULT 0)
+                   locked_until INTEGER NOT NULL DEFAULT 0, last_login INTEGER NOT NULL DEFAULT 0, tried_at INTEGER NOT NULL DEFAULT 0)
 teacher_sessions  (hash TEXT PRIMARY KEY, teacher_id INTEGER NOT NULL, created INTEGER NOT NULL, expires INTEGER NOT NULL)
 teacher_acts      (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, teacher_id INTEGER NOT NULL, teacher TEXT NOT NULL,
                    act TEXT NOT NULL, target TEXT, target_lc TEXT, until INTEGER NOT NULL DEFAULT 0, prev INTEGER NOT NULL DEFAULT 0,
                    undone_at INTEGER NOT NULL DEFAULT 0, undone_by TEXT)
+chat_masked       (id INTEGER PRIMARY KEY)      the id of each chat row the word filter starred something in (none for the rest)
 accounts          + sent_off_until INTEGER NOT NULL DEFAULT 0   + sent_off_by TEXT NOT NULL DEFAULT ''
 settings          'chat_pause' = {until, by, act}     'teacher_notice' = 'on' | 'off' (missing = on)
 ```
 
-`CREATE TABLE IF NOT EXISTS`; the two `accounts` columns are added only when missing (`PRAGMA table_info`, as `migrate()`);
-nothing is dropped or rewritten. A session row keeps the SHA-256 of the token, never the token. At most 3 sessions per teacher
+`CREATE TABLE IF NOT EXISTS`; the two `accounts` columns and `teachers.tried_at` are added only when missing (`PRAGMA
+table_info`, as `migrate()`); nothing is dropped or rewritten, and the `chat` table itself is never altered (`chat_masked` sits
+beside it: one more row only for a starred line, pruned with the chat). `teachers.tries` counts the wrong passwords typed for
+that name today (`tried_at`: the last one), shown to the owner; it is never a lock, and `locked_until` is no longer used (the
+waits are in memory, below). A session row keeps the SHA-256 of the token, never the token. At most 3 sessions per teacher
 (the oldest goes). `teacher_acts` keeps its newest 2,000 rows. `store.rename` carries the two new columns with the row.
 A teacher row is never deleted (Turn off keeps it, so the log's names always match). Hashing is `auth.js`'s `makeHash` /
 `checkPassword` (PBKDF2, 100,000 rounds) and `randomHex`.
@@ -2350,14 +2354,13 @@ A teacher row is never deleted (Turn off keeps it, so the log's names always mat
 
 | Call | Body | Answer | Notes |
 |---|---|---|---|
-| `GET /api/admin/teachers` | — | `[{id, name, created, lastLogin, off, watching, actsToday}]` | `watching`: that teacher's open screens |
-| `POST /api/admin/teachers` | `{name, pass}` | `{ok, id, name}` | name `^[A-Za-z][A-Za-z .'-]{1,39}$` (2 to 40), unique ignoring case: 400 `name`, 409 `taken`; pass 10 to 200 characters: 400 `pass` |
-| `POST /api/admin/teachers/pass` | `{id, pass}` | `{ok}` | a new salt and hash; every session of that teacher deleted; open screens get `w_bye` and close 4013; 404 `nope` |
+| `GET /api/admin/teachers` | — | `{teachers: [{id, name, created, lastLogin, off, watching, actsToday, wrongToday}], acts, notice}` | the whole Teachers section in one call (/admin opens with +1 request): `watching` that teacher's open screens; `wrongToday` wrong passwords typed for that name today, from anywhere (a big number: someone is guessing; New password ends it); `acts` as `teacher-acts?today=1`; `notice` the switch |
+| `POST /api/admin/teachers` | `{name, pass}` | `{ok, id, name}` | name `^[A-Za-z][A-Za-z .'-]{1,39}$` (2 to 40): 400 `name`; 409 `taken` when it matches another teacher's or a knight's name with case, spaces, dots, apostrophes and hyphens left out ("Mrs. Smith" = "mrs smith" = "MrsSmith"); pass 10 to 200 characters: 400 `pass` |
+| `POST /api/admin/teachers/pass` | `{id, pass}` | `{ok}` | a new salt and hash; every session of that teacher deleted; open screens get `w_bye` and close 4013; every sign-in wait on that name lifted; 404 `nope` |
 | `POST /api/admin/teachers/off` | `{id}` | `{ok}` | `off = 1`; sessions deleted; screens closed 4012 |
 | `POST /api/admin/teachers/on` | `{id, pass}` | `{ok}` | turning a teacher back on always takes a new password (400 `pass`) |
 | `POST /api/admin/teachers/undo` | `{act}` | `{ok}` or 409 `changed` | the owner lifts any teacher action (404 `nope`; 409 `over` when it already ran out) |
 | `POST /api/admin/teachers/notice` | `{on}` | `{ok}` | "Tell players when a teacher is watching" |
-| `GET /api/admin/teachers/notice` | — | `{on}` | the switch as it stands |
 | `GET /api/admin/teacher-acts?today=1` | — | `[{id, at, teacher, act, target, until, prev, undoneAt, undoneBy, inForce}]` | today's (Toronto) teacher actions, newest first |
 
 Each owner call writes one `mod_log` row `by: 'parent page'`, act `teacher_add` / `teacher_pass` / `teacher_off` / `teacher_on` /
@@ -2375,10 +2378,18 @@ words and two digits, like `maple-river-lantern-42`) and the page shows it once.
 | `GET /api/teacher/ws?ticket=` | — | 101 | a used, expired or unknown ticket, or one whose session is gone, is 401 `auth` before any upgrade |
 
 - An unknown name and a wrong password give the same answer, 401 `nomatch` (an unknown name still runs one PBKDF2 against a
-  fixed dummy salt). Five wrong in a row on one teacher: `locked_until` = now + 900,000 ms, 429 `wait` `{wait}` (seconds).
-  Twenty failures from one address in an hour (`addressOf`, an IPv6 address by its /48, kept in memory like signups): 429
-  `wait`. The right password on a turned-off teacher: 403 `off` (checked only after the password is right). Success: `tries
-  = 0`, `last_login = now`, one `mod_log` row (by "<name> (teacher)", act `teacher_in`). No address is written anywhere.
+  fixed dummy salt), and every try after them too: the waits below count a name nobody has exactly like a real one, so no
+  answer tells which names exist.
+- The waits are kept per **address and name**, in the World's memory like signups (`addressOf`, an IPv6 address by its /48; a
+  nap forgets them, which only lets more through). Five wrong in a row from one address on one name: that address waits
+  900,000 ms on that name, 429 `wait` `{wait}` (seconds). Twenty failures from one address in an hour: that address waits
+  out the hour, but only on the names it got wrong in it. So a guess never refuses the right password from anywhere else (a
+  kid at home cannot keep a teacher out at school), and a school full of guessing kids never keeps a teacher out of her own
+  name. *New password* on /admin lifts every wait on that name. Each wrong password on a real teacher adds one to its
+  `tries` today (the owner's *Wrong tries today*).
+- The right password on a turned-off teacher: 403 `off` (checked only after the password is right). Success: that address's
+  count on that name starts again, `last_login = now`, one `mod_log` row (by "<name> (teacher)", act `teacher_in`). No
+  address is written anywhere.
 - `expires` = the earlier of now + 36,000,000 ms (10 hours) and 23:59:59.999 today in `America/Toronto` (`dayEnd`, with
   `Intl.DateTimeFormat`; the zone is the constant `TEACHER_TZ`).
 - The token (32 random bytes, hex) lives in `sessionStorage` `fl.teacher` on the teacher address only: never `localStorage`,
@@ -2405,8 +2416,10 @@ knight's account and role again from the store. The page's buttons are never the
    `state.w` to `watch.restore` before it looks at `state.name`. A teacher frame never reaches the Room; only `w_*` types are
    read.
 5. No teacher message carries free text to anyone. Teachers never chat.
-6. A new knight name with "teacher" in it (any case, spaces aside) is refused by `cleanName`, so no kid can pose as a teacher;
-   knights already made are untouched. A knight name cannot hold "(", so "Mrs Smith (teacher)" in `mod_log` is never a knight.
+6. A new knight name with "teacher" in it (any case, spaces aside) is refused by `cleanName`, and a new or changed knight
+   name that matches a teacher's name with case, spaces, dots, apostrophes and hyphens left out ("Mrs Smith" for the teacher
+   "Mrs. Smith") is 409 `taken` at signup and rename, so no kid can pose as a teacher; the owner cannot make a teacher with a
+   knight's name either. Knights already made are untouched. A knight name cannot hold "(", so "Mrs Smith (teacher)" in `mod_log` is never a knight.
 
 **What a teacher never receives:** secret words, hashes, tokens, addresses; saves, pins, versions, items, coins, level, hp,
 look, gear, def, swings, facing; the game's own `region` text; who keeps a map; accounts not online (except names sent off
@@ -2456,17 +2469,25 @@ scrolls inside itself.
   Den: Sam, Leo", "Their own islands: Ben"). Nobody on: "Nobody is on right now."
 - **Right, Who is on (12)**: rows by name, at least 56 px: the name (ADMIN pill), tags "Muted 8 min" / "Muted today" / "Words
   hidden 2"; under it "Thistledown · Fighting · on for 42 min". A tap selects and opens **Show on map**, **Mute 10 min**, **Mute 1
-  hour**, **Mute rest of today**, **Send off for today** (red border; the first tap turns it into "Send Leo off Fanglands until
+  hour**, **Mute rest of today**, **Send off for today** (a pick in the chat, on the map or from a chip scrolls the list
+  to the knight's row and these buttons; red border; the first tap turns it into "Send Leo off Fanglands until
   midnight? Leo's knight is safe and saved." **Yes, send Leo off** **Cancel**, back by itself after 5 s). For an admin only
   **Show on map** and "Leo is an admin. Only Ethan can do that." Then *Left in the last 30 minutes (3)* (name, "left 10:31",
-  Mute and Send off), a toast for 8 s ("Leo was sent off until tomorrow." **Undo**), *Done today* (every teacher's actions today,
+  Mute and Send off; a knight there who was sent off shows "Sent off today", "Leo is sent off for today." and **Let Leo back
+  in** instead), a toast for 8 s ("Leo was sent off until tomorrow." **Undo**; every `w_no` shows there too), *Done today* (every teacher's actions today,
   newest first, **Undo** while in force, else "(over)" or "(undone by Mr Lee)") and *Sent off for today* ("Leo — Mrs Smith, 10:44
   am" **Let Leo back in**).
-- **Layouts**: 1100 px and wider `320px | 1fr | 340px`; 900 to 1099 px `270px | 1fr | 290px` (the map at least 460 px wide);
+- **Picking a knight** anywhere marks his lines in the chat (a tint and his name underlined), so the teacher finds what he
+  said. The word filter's lines that name a knight ("The word filter warned Nora.") are tappable too and pick him.
+- **Layouts**: 1100 px and wider `320px | 1fr | 340px`; 900 to 1099 px `270px | 1fr | 290px` (the map at least 460 px wide;
+  so the chat keeps its room, pausing is the bar's **Pause chat** button and its menu, and nothing sits under the chat until
+  a knight is picked);
   under 900 px (an iPad upright, a narrow Chromebook, a phone) the bar's middle wraps to a second 44 px row, the map is full
   width at 55% of the height directly under the bar, then a 48 px switch **Chat (3 new)** / **Who is on (12)**; selecting a
   knight slides up a sheet "Leo · Thistledown · Fighting" **Mute 10 min** **Mute 1 hour** **Rest of today** **Send off for today**
-  **Close**.
+  **Close** (a knight sent off: "Leo is sent off for today." **Let Leo back in** **Close**). The toast is a strip of its own
+  above the sheet (or at the bottom under the tabs), so the answer to every tap shows whichever tab is up. The **Pause chat**
+  menu (5 minutes, 15 minutes, 1 hour, Cancel) ends with "Admins can still talk while chat is paused."
 - **Idle and leaving**: 60 minutes with no touch, click or key shows the idle banner with a 2-minute count; at 0 the page signs
   out (logout, `sessionStorage` cleared). `pagehide` sends the logout beacon. A session ends at the latest after 10 hours or
   at midnight Toronto time (owner decision D5).
@@ -2499,8 +2520,10 @@ teacher screen.
 
 - **While sent off** (`sent_off_until > now`): `POST /api/login` with the right secret word answers **423** `sentoff` `{until}`
   and makes no session (a wrong word is still 401); `World.session` answers 423 `sentoff` `{until}` on every call but `PUT
-  /api/save` (the last push lands); `Room.join` and `Room.restore` send `{t:'error', code:'kicked', why:'sentoff', until,
-  text}` and close 4005. 423, not 403, so a game already open never drops the kid's token. The kid's card (a new game): "A
+  /api/save` (the last push lands) and the `/ws` upgrade; `Room.join` and `Room.restore` send `{t:'error', code:'kicked',
+  why:'sentoff', until, text}` and close 4005. The upgrade is let through on purpose: a refused upgrade reaches a game only
+  as close 1006, and a kid sent off while his line was down (D7) would have his open tab try again every 15 s until midnight
+  (one request each); through the Room it is one request, then 4005, which never reconnects. 423, not 403, so a game already open never drops the kid's token. The kid's card (a new game): "A
   teacher sent you off Fanglands for the rest of today. Your knight is safe. You can play again tomorrow." Play stays tappable;
   nothing polls.
 - **While chat is paused**: `Room.onChat`, before the mute check: a player's line is not relayed, not logged and never a
@@ -2531,7 +2554,7 @@ new password" / "turned off Mrs Smith (teacher)" / "turned on Mrs Smith (teacher
 | `t` | Fields | Meaning |
 |---|---|---|
 | `w_hello` | `me, expires, now, tz: 'America/Toronto', notice` | sent on open |
-| `w_all` | `at, knights, inside, gone, chatPause, acts, sentOff, chat` | once on open. `chat`: the last 60 minutes, at most 100 lines, `{at, n, text, role, masked: false}` (the log keeps no flag); the page draws "Earlier, before you opened this" over them. `gone`: `[{n, at}]`, logins ended in the last 30 minutes |
+| `w_all` | `at, knights, inside, gone, chatPause, acts, sentOff, chat` | once on open. `chat`: the last 60 minutes, at most 100 lines, `{at, n, text, role, masked}` (`masked` from `chat_masked`, so a line starred before the screen opened is still flagged); the page draws "Earlier, before you opened this" over them. `gone`: `[{n, at}]`, logins ended in the last 30 minutes |
 | `w_k` | `at, knights, inside, gone` | built only on the back of what the World already handles (a knight's presence, join, leave, a map change, a mute change), at most once per 1,000 ms (a join or a leave at once), skipped when identical to the last one sent unless that went out 8 s ago (so a world where kids stand still still reads as live: the page says "Last update" after 10 s with nothing new, and greys every dot after 30 s); no timer, no alarm |
 | `w_chat` | `at, n, text, role, masked` | the same line the kids got, plus the filter's `masked` |
 | `w_event` | `at, kind, n, text` | `strike` ("The word filter warned Sam.", never the typed line, never a count), `words` ("The word filter sent Sam out for 24 hours."), `kick` / `ban` ("An admin sent Leo out of the world."), `mute_admin` ("Leo is muted by an admin."), `teacher` (a teacher's action, in words) |
@@ -2568,7 +2591,7 @@ Page to server: `w_mute`, `w_off`, `w_pause`, `w_chaton`, `w_undo` and the ping 
 
 - Teacher sockets only: **4010** signed out, **4011** time up, **4012** turned off, **4013** new password, **4014** too many
   screens; 4008 too fast as for knights.
-- HTTP: **423** `sentoff` with `until` (a knight sent off for the day: login, every call but `PUT /api/save`); `nomatch`,
+- HTTP: **423** `sentoff` with `until` (a knight sent off for the day: login, every call but `PUT /api/save` and `/ws`); `nomatch`,
   `wait`, `off` (teacher sign-in); `auth` (a teacher ticket or token that will not do).
 - Socket: `error` `kicked` with `why: 'sentoff'` and `until`, then close 4005 (no reconnect; old and new games save and push
   first). `LOGIN.sentence` reads both as the send-off sentence; a 423 keeps the token.

@@ -22,9 +22,12 @@ import { makeHash, checkPassword, hashPassword, randomHex } from './auth.js';
 import { addressOf } from './handoff.js';
 
 export const TEACHER_PASS_MIN = 10, TEACHER_PASS_MAX = 200;
-export const TEACHER_TRIES = 5;                  // wrong passwords in a row on one teacher before the wait
-export const TEACHER_LOCK_MS = 900000;           // the wait: 15 minutes
-export const ADDRESS_FAILS = 20;                 // failed sign-ins from one address in an hour before it waits
+// The sign-in locks are kept per ADDRESS AND NAME, in World memory (a nap forgets them, which only lets more through), so a
+// guess from one place never refuses the right password from another (a kid at home cannot lock a teacher out at school),
+// and an unknown name is counted exactly like a real one (the answers never tell which names exist).
+export const TEACHER_TRIES = 5;                  // wrong passwords in a row from one address on one name before the wait
+export const TEACHER_LOCK_MS = 900000;           // the wait: 15 minutes (that address, that name)
+export const ADDRESS_FAILS = 20;                 // failed sign-ins from one address in an hour: then it waits, on the names it failed
 export const ADDRESS_WINDOW_MS = 3600000;
 export const SESSION_MAX_MS = 36000000;          // 10 hours, or midnight Toronto time if that comes first (D5)
 export const SESSIONS_PER_TEACHER = 3;
@@ -45,26 +48,39 @@ const PARENT = 'parent page';
 const DUMMY_SALT = '5f1e0c7d2b9a4e6f8a3c1d0b7e2f9a46';
 
 export const TEACHER_SCHEMA = `
-CREATE TABLE IF NOT EXISTS teachers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, name_lc TEXT NOT NULL UNIQUE, salt TEXT NOT NULL, hash TEXT NOT NULL, created INTEGER NOT NULL, off INTEGER NOT NULL DEFAULT 0, tries INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0, last_login INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS teachers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, name_lc TEXT NOT NULL UNIQUE, salt TEXT NOT NULL, hash TEXT NOT NULL, created INTEGER NOT NULL, off INTEGER NOT NULL DEFAULT 0, tries INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0, last_login INTEGER NOT NULL DEFAULT 0, tried_at INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS teacher_sessions (hash TEXT PRIMARY KEY, teacher_id INTEGER NOT NULL, created INTEGER NOT NULL, expires INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS teacher_sessions_by_teacher ON teacher_sessions (teacher_id);
 CREATE TABLE IF NOT EXISTS teacher_acts (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, teacher_id INTEGER NOT NULL, teacher TEXT NOT NULL, act TEXT NOT NULL, target TEXT, target_lc TEXT, until INTEGER NOT NULL DEFAULT 0, prev INTEGER NOT NULL DEFAULT 0, undone_at INTEGER NOT NULL DEFAULT 0, undone_by TEXT);
-CREATE INDEX IF NOT EXISTS teacher_acts_by_teacher ON teacher_acts (teacher_id, at)
+CREATE INDEX IF NOT EXISTS teacher_acts_by_teacher ON teacher_acts (teacher_id, at);
+CREATE TABLE IF NOT EXISTS chat_masked (id INTEGER PRIMARY KEY)
 `;
-const ACCOUNT_COLUMNS = [['sent_off_until', 'INTEGER NOT NULL DEFAULT 0'], ['sent_off_by', "TEXT NOT NULL DEFAULT ''"]];
+// chat_masked: the ids of chat rows the word filter starred something in (one row per such line, none for the rest), so a
+// screen opened later still flags them. A table of its own: the chat table itself is never altered.
+// Columns added to tables that already exist, only when missing:
+//   accounts: the send-off;  teachers: tried_at, when `tries` (wrong passwords today, for the owner's list; never a lock) was last counted.
+const ADDED_COLUMNS = [
+  ['accounts', 'sent_off_until', 'INTEGER NOT NULL DEFAULT 0'], ['accounts', 'sent_off_by', "TEXT NOT NULL DEFAULT ''"],
+  ['teachers', 'tried_at', 'INTEGER NOT NULL DEFAULT 0'],
+];
+function columnsOf(sql, table) {
+  let cols = [];
+  try { cols = sql.exec('PRAGMA table_info(' + table + ')').toArray().map(r => r.name); } catch (e) { cols = []; }
+  if (!cols.length) { try { cols = sql.exec('SELECT * FROM ' + table + ' LIMIT 0').columnNames || []; } catch (e) { cols = []; } }
+  return cols;
+}
 
-// The tables (CREATE TABLE IF NOT EXISTS) and the two accounts columns, added only when missing. Nothing is dropped or
-// rewritten; running it again changes nothing. Answers the columns it added.
+// The tables (CREATE TABLE IF NOT EXISTS) and the added columns, added only when missing. Nothing is dropped or
+// rewritten; running it again changes nothing. Answers the columns it added ("table.column").
 export function migrateTeachers(sql) {
   for (const stmt of TEACHER_SCHEMA.split(';')) if (stmt.trim()) sql.exec(stmt);
-  let cols = [];
-  try { cols = sql.exec('PRAGMA table_info(accounts)').toArray().map(r => r.name); } catch (e) { cols = []; }
-  if (!cols.length) cols = sql.exec('SELECT * FROM accounts LIMIT 0').columnNames;
-  const added = [];
-  for (const [name, type] of ACCOUNT_COLUMNS) {
-    if (cols.includes(name)) continue;
-    sql.exec('ALTER TABLE accounts ADD COLUMN ' + name + ' ' + type);
-    added.push(name);
+  const added = [], seen = {};
+  for (const [table, name, type] of ADDED_COLUMNS) {
+    const cols = seen[table] || (seen[table] = columnsOf(sql, table));
+    if (!cols.length || cols.includes(name)) continue;   // no such table here (a bare test schema): nothing to add to
+    sql.exec('ALTER TABLE ' + table + ' ADD COLUMN ' + name + ' ' + type);
+    cols.push(name);
+    added.push(table + '.' + name);
   }
   return added;
 }
@@ -105,6 +121,8 @@ export async function sha256(text) {
   return Array.from(new Uint8Array(d), b => b.toString(16).padStart(2, '0')).join('');
 }
 const nameLc = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 40);
+// a name with case, spaces, dots, apostrophes and hyphens taken out: "Mrs. Smith", "mrs smith" and "MrsSmith" are one name
+export const squash = s => String(s || '').toLowerCase().replace(/[\s.'-]+/g, '');
 export const teacherTag = name => String(name) + ' (teacher)';
 
 // ---------------------------------------------------------------------------
@@ -115,17 +133,32 @@ export class TeacherBook {
     this.sql = sql; this.now = now;
     this.tickets = new Map();   // ticket -> {sh, exp}: World memory only (a nap forgets them; a page asks again)
     this.fails = new Map();     // address -> {start, n}: failed sign-ins this hour (a nap forgets it, which only lets more through)
+    this.tries = new Map();     // address + name -> {n, until, last}: wrong passwords in a row there, and the wait
     this.actWrites = 0;
   }
   rows(q, ...a) { return this.sql.exec(q, ...a).toArray(); }
   row(q, ...a) { return this.rows(q, ...a)[0] || null; }
 
   // ---------- teachers ----------
-  list() { return this.rows('SELECT id, name, created, off, last_login FROM teachers ORDER BY name_lc'); }
+  list() { return this.rows('SELECT id, name, created, off, last_login, tries, tried_at FROM teachers ORDER BY name_lc'); }
   byId(id) { return Number.isInteger(id) ? this.row('SELECT * FROM teachers WHERE id = ?', id) : null; }
   byName(name) { const lc = nameLc(name); return lc ? this.row('SELECT * FROM teachers WHERE name_lc = ?', lc) : null; }
   add(name, salt, hash, at) { return this.row('INSERT INTO teachers (name, name_lc, salt, hash, created) VALUES (?, ?, ?, ?, ?) RETURNING id', name, nameLc(name), salt, hash, at).id; }
-  setSecret(id, salt, hash) { this.sql.exec('UPDATE teachers SET salt = ?, hash = ?, tries = 0, locked_until = 0 WHERE id = ?', salt, hash, id); this.dropSessions(id); }
+  // a new password also lifts every sign-in wait on that name (the remedy the owner has for a teacher a kid kept out)
+  setSecret(id, salt, hash) {
+    this.sql.exec('UPDATE teachers SET salt = ?, hash = ?, locked_until = 0 WHERE id = ?', salt, hash, id); this.dropSessions(id);
+    const t = this.byId(id); if (t) this.forgetTries(t.name_lc);
+  }
+  // wrong passwords on this teacher today, from anywhere (shown to the owner; never a lock): one write per wrong try
+  wrongTry(id, at) { this.sql.exec('UPDATE teachers SET tries = CASE WHEN tried_at >= ? THEN tries + 1 ELSE 1 END, tried_at = ? WHERE id = ?', dayStart(at), at, id); }
+  wrongToday(t, at) { return t && Number(t.tried_at) >= dayStart(at) ? Number(t.tries) || 0 : 0; }
+  // a knight's name that reads as a teacher's ("Mrs Smith" when the owner made the teacher "Mrs. Smith"), turned off ones too
+  nameClash(name) {
+    const sq = squash(name);
+    return !!sq && !!this.row("SELECT 1 AS y FROM teachers WHERE replace(replace(replace(replace(name_lc, ' ', ''), '.', ''), '''', ''), '-', '') = ? LIMIT 1", sq);
+  }
+  // a teacher's name that reads as a knight's already playing (knight names are letters, digits and spaces)
+  knightClash(name) { const sq = squash(name); return !!sq && !!this.row("SELECT 1 AS y FROM accounts WHERE replace(name_lc, ' ', '') = ? LIMIT 1", sq); }
   setOff(id, off) { this.sql.exec('UPDATE teachers SET off = ? WHERE id = ?', off ? 1 : 0, id); if (off) this.dropSessions(id); }
 
   // ---------- sessions: the SHA-256 of the token, never the token ----------
@@ -189,7 +222,7 @@ export class TeacherBook {
   // logins that ended since then, by knight (the newest end): [{n, at}]
   goneSince(since) { return this.rows('SELECT a.name AS n, MAX(l.ended) AS at FROM logins l JOIN accounts a ON a.name_lc = l.name_lc WHERE l.ended > ? GROUP BY l.name_lc', since).map(r => ({ n: r.n, at: Number(r.at) })); }
   admins() { return new Set(this.rows("SELECT name FROM accounts WHERE role = 'admin'").map(r => r.name)); }
-  chatSince(since, limit) { return this.rows('SELECT at, name, text FROM chat WHERE at > ? ORDER BY id DESC LIMIT ?', since, limit).reverse(); }
+  chatSince(since, limit) { return this.rows('SELECT c.at, c.name, c.text, (m.id IS NOT NULL) AS masked FROM chat c LEFT JOIN chat_masked m ON m.id = c.id WHERE c.at > ? ORDER BY c.id DESC LIMIT ?', since, limit).reverse(); }
 
   // ---------- settings: the pause and the notice (one read a wake) ----------
   settings() {
@@ -206,18 +239,33 @@ export class TeacherBook {
   }
   setNotice(on) { this.sql.exec("INSERT INTO settings (key, value) VALUES ('teacher_notice', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", on ? 'on' : 'off'); }
 
-  // ---------- the address window for sign-ins ----------
-  addressWait(where, at) {
+  // ---------- the sign-in waits: per address AND name, the same for a name that exists and one that does not ----------
+  // The seconds this address must wait before trying this name again, or 0. A wait on one address never touches another,
+  // and a busy address (a school full of guessing kids) waits only on the names it got wrong, never on a teacher's own.
+  signinWait(where, lc, at) {
+    const t = this.tries.get(where + '\n' + lc);
+    if (t && t.until > at) return Math.ceil((t.until - at) / 1000);
     const r = this.fails.get(where);
-    if (!r || at - r.start >= ADDRESS_WINDOW_MS || r.n < ADDRESS_FAILS) return 0;
-    return Math.ceil((r.start + ADDRESS_WINDOW_MS - at) / 1000);
+    if (t && r && at - r.start < ADDRESS_WINDOW_MS && r.n >= ADDRESS_FAILS && at - t.last < ADDRESS_WINDOW_MS) return Math.ceil((r.start + ADDRESS_WINDOW_MS - at) / 1000);
+    return 0;
   }
-  addressFailed(where, at) {
+  // a wrong password from this address on this name: answers the wait it starts (seconds), or 0
+  signinFailed(where, lc, at) {
     if (this.fails.size > 5000) for (const [k, v] of this.fails) if (at - v.start >= ADDRESS_WINDOW_MS) this.fails.delete(k);
+    if (this.tries.size > 5000) for (const [k, v] of this.tries) if (at - v.last >= ADDRESS_WINDOW_MS && v.until <= at) this.tries.delete(k);
     let r = this.fails.get(where);
     if (!r || at - r.start >= ADDRESS_WINDOW_MS) { r = { start: at, n: 0 }; this.fails.set(where, r); }
     r.n++;
+    const key = where + '\n' + lc;
+    let t = this.tries.get(key);
+    if (!t || (t.until && t.until <= at)) { t = { n: 0, until: 0, last: at }; this.tries.set(key, t); }
+    t.n++; t.last = at;
+    if (t.n >= TEACHER_TRIES) { t.n = 0; t.until = at + TEACHER_LOCK_MS; return TEACHER_LOCK_MS / 1000; }
+    return 0;
   }
+  // the right password from this address: its count on that name starts again
+  signinRight(where, lc) { this.tries.delete(where + '\n' + lc); }
+  forgetTries(lc) { for (const k of Array.from(this.tries.keys())) if (k.endsWith('\n' + lc)) this.tries.delete(k); }
 }
 
 // ---------------------------------------------------------------------------
@@ -260,32 +308,28 @@ export async function teacherCall(world, req, url, path, method) {
 async function login(world, book, req) {
   const now = world.now();
   const where = addressOf(req.headers.get('cf-connecting-ip'));
-  const wait = book.addressWait(where, now);
-  if (wait) throw oops(429, 'too many tries: wait and try again', 'wait', { wait });
   const b = await readJson(req);
+  const name = typeof b.name === 'string' ? b.name : '', lc = nameLc(name);
   const pass = typeof b.pass === 'string' ? b.pass.slice(0, TEACHER_PASS_MAX + 1) : '';
-  const t = book.byName(typeof b.name === 'string' ? b.name : '');
-  if (t && t.locked_until > now) throw oops(429, 'too many tries: wait and try again', 'wait', { wait: Math.ceil((t.locked_until - now) / 1000) });
+  // the wait is this address's on this name, never the teacher's: a guess from anywhere else cannot refuse the right password
+  const wait = book.signinWait(where, lc, now);
+  if (wait) throw oops(429, 'too many tries: wait and try again', 'wait', { wait });
+  const t = book.byName(name);
   let ok = false;
   if (t) ok = await checkPassword(pass, t.salt, t.hash);
   else await hashPassword(pass, DUMMY_SALT);
   if (!ok) {
-    book.addressFailed(where, now);
-    if (t) {
-      const tries = (t.locked_until > 0 ? 0 : t.tries) + 1;
-      if (tries >= TEACHER_TRIES) {
-        world.sql.exec('UPDATE teachers SET tries = 0, locked_until = ? WHERE id = ?', now + TEACHER_LOCK_MS, t.id);
-        throw oops(429, 'too many tries: wait and try again', 'wait', { wait: TEACHER_LOCK_MS / 1000 });
-      }
-      world.sql.exec('UPDATE teachers SET tries = ?, locked_until = 0 WHERE id = ?', tries, t.id);
-    }
+    const w = book.signinFailed(where, lc, now);   // an unknown name is counted the same way, so the answers match
+    if (t) book.wrongTry(t.id, now);
+    if (w) throw oops(429, 'too many tries: wait and try again', 'wait', { wait: w });
     throw oops(401, "that name and password don't match", 'nomatch');
   }
+  book.signinRight(where, lc);
   // only after the password is right, so a wrong guess learns nothing
   if (t.off) throw oops(403, 'this sign-in was turned off', 'off');
   const token = randomHex(32), sh = await sha256(token);
   const expires = Math.min(now + SESSION_MAX_MS, dayEnd(now));
-  world.sql.exec('UPDATE teachers SET tries = 0, locked_until = 0, last_login = ? WHERE id = ?', now, t.id);
+  world.sql.exec('UPDATE teachers SET last_login = ? WHERE id = ?', now, t.id);
   book.addSession(t.id, sh, now, expires);
   world.store.log({ at: now, by: teacherTag(t.name), act: 'teacher_in', target: 'teacher view', detail: '' });
   return json({ token, name: t.name, expires });
@@ -300,16 +344,20 @@ export async function teacherAdminCall(world, req, url, call, method) {
   const passOf = b => { const p = typeof b.pass === 'string' ? b.pass : ''; if (p.length < TEACHER_PASS_MIN || p.length > TEACHER_PASS_MAX) throw oops(400, 'the password needs 10 to 200 characters', 'pass'); return p; };
   const teacherOf = b => { const t = book.byId(b.id); if (!t) throw oops(404, 'no teacher with that id', 'nope'); return t; };
   const log = (act, target, detail) => world.store.log({ at: now, by: PARENT, act, target, detail: detail || '' });
+  // one call for the whole Teachers section (the list, today's actions, the notice switch): /admin opens with +1 request
   if (call === 'teachers' && method === 'GET') {
     const acts = book.actsTodayBy(dayStart(now));
-    return json(book.list().map(t => ({ id: t.id, name: t.name, created: t.created, lastLogin: t.last_login || null, off: !!t.off, watching: world.watch.countFor(t.id), actsToday: acts[t.id] || 0 })));
+    const teachers = book.list().map(t => ({ id: t.id, name: t.name, created: t.created, lastLogin: t.last_login || null, off: !!t.off, watching: world.watch.countFor(t.id), actsToday: acts[t.id] || 0, wrongToday: book.wrongToday(t, now) }));
+    return json({ teachers, acts: world.watch.actsView(now), notice: world.watch.notice });
   }
   if (call === 'teachers' && post) {
     const b = await readJson(req);
     const name = typeof b.name === 'string' ? b.name.replace(/\s+/g, ' ').trim() : '';
     if (!NAME_RE.test(name)) throw oops(400, "a teacher's name is 2 to 40 letters, spaces, dots, hyphens or apostrophes, starting with a letter", 'name');
     const pass = passOf(b);
-    if (book.byName(name)) throw oops(409, 'there is already a teacher with that name', 'taken');
+    if (book.byName(name) || book.nameClash(name)) throw oops(409, 'there is already a teacher with that name', 'taken');
+    // a knight already called that would read as the teacher in chat: the owner picks another name ("Mrs J Smith")
+    if (book.knightClash(name)) throw oops(409, 'a knight already has that name: add a first letter or a first name', 'taken');
     const { salt, hash } = await makeHash(pass);
     const id = book.add(name, salt, hash, now);
     log('teacher_add', teacherTag(name));
@@ -344,7 +392,6 @@ export async function teacherAdminCall(world, req, url, call, method) {
     if (!r.ok) throw r.code === 'unknown' ? oops(404, r.text, 'nope') : oops(409, r.text, r.code);
     return json({ ok: true });
   }
-  if (call === 'teachers/notice' && method === 'GET') return json({ on: world.watch.notice });
   if (call === 'teachers/notice' && post) {
     const b = await readJson(req);
     const on = b.on === true || b.on === 'on';

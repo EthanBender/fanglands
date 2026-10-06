@@ -329,7 +329,7 @@ export class Watch {
     const part = this.actsPart(now);
     for (const g of this.book.goneSince(now - RECENT_LEFT_MS)) { const lc = norm(g.n), had = this.gone.get(lc); if (!had || had.at < g.at) this.gone.set(lc, g); }
     const admins = this.book.admins();
-    const chat = this.book.chatSince(now - CHAT_BACK_MS, CHAT_BACK_LINES).map(r => ({ at: r.at, n: r.name, text: r.text, role: admins.has(r.name) ? 'admin' : 'player', masked: false }));
+    const chat = this.book.chatSince(now - CHAT_BACK_MS, CHAT_BACK_LINES).map(r => ({ at: r.at, n: r.name, text: r.text, role: admins.has(r.name) ? 'admin' : 'player', masked: !!r.masked }));
     const body = this.knightsBody(now);
     return Object.assign({ t: 'w_all', at: now }, body, part, { chat });
   }

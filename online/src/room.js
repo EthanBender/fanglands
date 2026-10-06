@@ -458,7 +458,7 @@ export class Room {
     const { text, strike, masked } = this.check(typeof m.text === 'string' ? m.text : '');
     if (!text) return;
     const at = now;
-    this.log(k.name, text, at);
+    this.log(k.name, text, at, !!masked);
     const out = JSON.stringify({ t: 'chat', n: k.name, text, at, role: k.role });
     for (const o of this.knights.values()) if (o.hello) this.raw(o.sock, out);
     this.hooks.chat({ at, n: k.name, text, role: k.role, masked: !!masked });

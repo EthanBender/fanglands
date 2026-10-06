@@ -82,7 +82,7 @@ export class World {
     this.room = new Room({
       hooks: this.watch.hooks,
       now: () => this.now(),
-      log: (name, text, at) => this.logChat(name, text, at),
+      log: (name, text, at, masked) => this.logChat(name, text, at, masked),
       wake: ms => this.ctx.storage.setAlarm(Date.now() + ms).catch(e => console.error('alarm', e)),
       store: this.store,
       random: cryptoRandom,
@@ -232,7 +232,9 @@ export class World {
     if (s.banned) { this.sql.exec('DELETE FROM sessions WHERE name_lc = ?', s.name_lc); throw oops(403, 'this knight is banned', 'banned'); }
     // kept out for bad words: the session is kept (it works again when the time is up), but nothing goes through until then
     // except a save. No address is written here: only the third strike notes one (Room.wordStrike, from the socket).
-    if (!(opts && opts.saving)) { this.refuseIfKeptOut(s.words_locked_until, now); this.refuseIfSentOff(s.sent_off_until, now); }
+    // opts.socket (/ws): a send-off is said by the Room after the upgrade (kicked, why sentoff, close 4005), because a refused
+    // upgrade reaches a game only as close 1006, and the game would try again every 15 s until midnight
+    if (!(opts && opts.saving)) { this.refuseIfKeptOut(s.words_locked_until, now); if (!(opts && opts.socket)) this.refuseIfSentOff(s.sent_off_until, now); }
     this.sql.exec('UPDATE accounts SET last_seen = ? WHERE name_lc = ?', now, s.name_lc);
     return s;
   }
@@ -279,6 +281,8 @@ export class World {
     const b = await readJson(req);
     const name = cleanName(b.name);
     if (!name) throw oops(400, 'that name will not do: 2 to 16 letters, digits or spaces, and nothing rude', 'name');
+    // a teacher's name (the teacher view): a knight called that would read as the teacher in chat
+    if (this.teachers.nameClash(name)) throw oops(409, 'that name is taken', 'taken');
     const pass = typeof b.pass === 'string' ? b.pass : '';
     if (pass.length < PASS_MIN || pass.length > PASS_MAX) throw oops(400, 'the secret word needs at least 4 letters', 'pass');
     const invite = this.invite();
@@ -473,6 +477,7 @@ export class World {
     if (!to) throw oops(400, 'that name will not do: 2 to 16 letters, digits or spaces, and nothing rude', 'name');
     const lc = to.toLowerCase();
     if (lc !== target.lc && this.row('SELECT 1 FROM accounts WHERE name_lc = ?', lc)) throw oops(409, 'that name is taken', 'taken');
+    if (this.teachers.nameClash(to)) throw oops(409, 'that name is taken', 'taken');   // a teacher's name (the teacher view)
     // another knight's old name is taken too (it logs in as that knight); a knight may go back to one of its own
     const was = lc !== target.lc && this.store.renamedFrom(lc);
     if (was && norm(was) !== target.lc) throw oops(409, 'that name is taken', 'taken');
@@ -499,15 +504,18 @@ export class World {
   }
 
   // ---------- the chat log ----------
-  logChat(name, text, at) {
+  // masked: the word filter starred something in it; its id goes in chat_masked (teachers.js) so the teacher view flags it
+  logChat(name, text, at, masked) {
     this.sql.exec('INSERT INTO chat (at, name, text) VALUES (?, ?, ?)', at, name, text);
-    if (++this.chatWrites % 500 === 0) this.sql.exec('DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT ?)', CHAT_KEPT);
+    if (masked) this.sql.exec('INSERT OR IGNORE INTO chat_masked (id) SELECT MAX(id) FROM chat');
+    if (++this.chatWrites % 500 === 0) { this.sql.exec('DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT ?)', CHAT_KEPT); this.sql.exec('DELETE FROM chat_masked WHERE id < (SELECT MIN(id) FROM chat)'); }
   }
 
   // ---------- the socket ----------
   openSocket(req, url) {
     if ((req.headers.get('upgrade') || '').toLowerCase() !== 'websocket') throw oops(426, 'this address is the game socket', 'ws');
-    const s = this.session(url.searchParams.get('token') || '');   // a bad token is a 401 before any upgrade
+    // a bad token is a 401 before any upgrade; a knight sent off for the day is let through to the Room, which says so and closes 4005
+    const s = this.session(url.searchParams.get('token') || '', { socket: true });
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);

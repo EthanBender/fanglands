@@ -143,6 +143,13 @@ test('20. the chat a screen opens with is the last hour, at most 100 lines; a li
   const ev = scr.last('w_event');
   assert.deepEqual(ev, { t: 'w_event', at: clock.t, kind: 'strike', n: 'Sam', text: 'The word filter warned Sam.' });
   assert.ok(!scr.raw.join().includes('fuck'));
+  // a screen opened afterwards still flags the starred lines (chat_masked), and only those
+  clock.t += 2000;
+  const scr2 = await K.screen(W.w, W.token);
+  const back = scr2.last('w_all').chat.slice(-2);
+  assert.deepEqual(back.map(c => [c.n, c.masked]), [['Sam', true], ['Sam', true]]);
+  assert.ok(back.every(c => !c.text.includes('dumb') && !c.text.includes('fuck')));
+  assert.ok(scr2.last('w_all').chat.slice(0, -2).every(c => c.masked === false));
 });
 
 test('21-24. the cost: 20 knights at 8 presences a second for 60 s give at most 61 frames, never two within a second; the same frame is not sent twice; no alarm, no timer, no write for it; no knights, no frames', async () => {
@@ -267,7 +274,13 @@ test('28-31. send off: kicked why sentoff then 4005; login, session, join and re
   x = await call(W.w, 'POST', '/api/login', { name: 'Sam', pass: 'wrong' }); assert.equal(x.status, 401);
   x = await call(W.w, 'GET', '/api/me', undefined, { token: W.tok.Sam }); assert.deepEqual([x.status, x.data.code, x.data.until], [423, 'sentoff', until]);
   x = await call(W.w, 'GET', '/api/save', undefined, { token: W.tok.Sam }); assert.equal(x.status, 423);
-  const ws = await W.w.fetch(new Request('http://world/ws?token=' + W.tok.Sam, { headers: { upgrade: 'websocket' } })); assert.equal(ws.status, 423);
+  // the socket is let through to the Room, which says the send-off and closes 4005 (a refused upgrade reaches a game only as
+  // 1006, and the game would try again every 15 s until midnight); no login is started, no knight joins
+  const logins0 = W.db.prepare('SELECT COUNT(*) AS n FROM logins').get().n, knights0 = W.w.room.knights.size;
+  const ws = await W.w.fetch(new Request('http://world/ws?token=' + W.tok.Sam, { headers: { upgrade: 'websocket' } })); assert.equal(ws.status, 101);
+  const s3 = W.w.ctx.sockets[W.w.ctx.sockets.length - 1];
+  assert.deepEqual([s3.got.length, s3.got[0].t, s3.got[0].code, s3.got[0].why, s3.got[0].until, s3.closed.code], [1, 'error', 'kicked', 'sentoff', until, 4005]);
+  assert.equal(W.db.prepare('SELECT COUNT(*) AS n FROM logins').get().n, logins0); assert.equal(W.w.room.knights.size, knights0);
   x = await call(W.w, 'PUT', '/api/save', JSON.stringify({ player: { playSeconds: 9 } }), { token: W.tok.Sam }); assert.equal(x.status, 200);
   // the Room's own lock: a join, and a socket a nap brings back
   const s2 = K.fakeWs(); W.w.room.join(W.w.wrap(s2), 'Sam');
@@ -442,3 +455,47 @@ test('a screen whose session ran out is closed 4011 the next time the world has 
 });
 
 test('a second db stays independent (the kit makes a fresh world each time)', () => { assert.ok(new DatabaseSync(':memory:')); });
+
+// A kid whose socket dropped (Wi-Fi, a closed lid) and who is then sent off (D7: left in the last 30 minutes): his game's tab
+// is still open. The REAL src/70-net.js, wired to this World, opens /ws once, hears kicked why sentoff and close 4005, and
+// never tries again: one request, not one every 15 s until midnight.
+test('a kid sent off while his socket was down: the real game wire opens /ws once, hears the send-off, and never tries again', async () => {
+  const fs = await import('node:fs'), vm = await import('node:vm');
+  const W = await world(['Sam', 'Ada']);
+  const sam = await K.online(W.w, W.tok.Sam);
+  W.w.webSocketClose(sam, 1006, ''); clock.t += 60000;   // the line dropped; Sam left a minute ago
+  const scr = await K.screen(W.w, W.token);
+  assert.equal(act(W.w, scr, { t: 'w_off', n: 'Sam' }).t, 'w_ok');
+  // the game's wire, with a transport that goes to this World exactly as a browser's WebSocket would
+  let opens = 0; const codes = [], heard = [], timers = [];
+  const fake = {
+    call: async () => ({}),
+    open(token) {
+      opens++;
+      const c = { readyState: 0, send() { }, close() { c.readyState = 3; } };
+      W.w.fetch(new Request('http://world/ws?token=' + encodeURIComponent(token), { headers: { upgrade: 'websocket' } })).then(r => {
+        if (r.status !== 101) { c.readyState = 3; codes.push(1006); return c.onclose && c.onclose({ code: 1006 }); }   // a refused upgrade: the browser sees 1006
+        const srv = W.w.ctx.sockets[W.w.ctx.sockets.length - 1];
+        c.readyState = 1; if (c.onopen) c.onopen();
+        for (const m of srv.got) { heard.push(m); if (c.onmessage) c.onmessage({ data: JSON.stringify(m) }); }
+        if (srv.closed) { c.readyState = 3; codes.push(srv.closed.code); if (c.onclose) c.onclose({ code: srv.closed.code }); }
+      });
+      return c;
+    },
+  };
+  const ctx = { window: { __online: true }, HOOKS: { update: [], selfTest: [] }, localStorage: { getItem: () => null, setItem() { }, removeItem() { } }, console, JSON, Math, Date, Error, Object, Array, String, Number, Promise,
+    setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; }, clearTimeout: () => { } };
+  ctx.window.window = ctx.window;
+  vm.createContext(ctx);
+  vm.runInContext('var window = this.window; ' + fs.readFileSync(new URL('../../src/70-net.js', import.meta.url), 'utf8'), ctx);
+  const NET = ctx.window.NET;
+  NET.useFake(fake); NET.setToken(W.tok.Sam); NET.connect();
+  // ten minutes of the wire's own timers, run as they come due
+  for (let i = 0; i < 200; i++) { await new Promise(r => setImmediate(r)); const t = timers.shift(); if (!t) break; clock.t += t.ms; t.f(); }
+  await new Promise(r => setImmediate(r));
+  assert.equal(opens, 1, 'the wire tried ' + opens + ' times');
+  assert.deepEqual(codes, [4005]);
+  assert.deepEqual(heard.map(m => [m.t, m.code, m.why]), [['error', 'kicked', 'sentoff']]);
+  assert.equal(NET.timer, null); assert.equal(NET.closedByUs, true);
+  assert.equal(W.w.room.knights.size, 0);
+});
