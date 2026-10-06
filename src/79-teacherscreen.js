@@ -128,7 +128,7 @@
     // 3. the places: depth first, then the bigger, then an area before a region; the first spot that fits wins
     const font = Math.max(13, view.font || 13) + (view.s >= view.fit * 4 ? 2 : view.s >= view.fit * 2 ? 1 : 0);
     const FONT = '600 ' + font + 'px sans-serif', LH = Math.round(font * 1.35);
-    const order = (places || []).filter(p => p && p.box && p.anchor).slice().sort((a, b) => (b.depth - a.depth) || (b.area - a.area) || ((a.kind === 'area' ? 0 : 1) - (b.kind === 'area' ? 0 : 1)) || (a.name < b.name ? -1 : 1));
+    const order = (places || []).filter(p => p && p.box && p.anchor && p.kind !== 'door').slice().sort((a, b) => (b.depth - a.depth) || (b.area - a.area) || ((a.kind === 'area' ? 0 : 1) - (b.kind === 'area' ? 0 : 1)) || (a.name < b.name ? -1 : 1));
     const seen = new Set();
     for (const p of order) {
       if (seen.has(p.name)) continue;
@@ -150,6 +150,22 @@
         boxes.push(b); seen.add(p.name);
         out.labels.push({ name: p.name, x: b.x, y: b.y, w, h, cx: b.x + w / 2, cy: b.y + h / 2, tx, ty, font });
         break;
+      }
+    }
+    // 4. the instance doors (kind 'door', anchor = the door tile): named only at twice the fit or more, under, over, right
+    // or left of the mark, by the same rules (never over a name or a knight, inside the pane), after every place
+    if (view.s >= view.fit * 2) {
+      const DFONT = '600 13px sans-serif', DH = 18;
+      for (const p of (places || []).filter(q => q && q.kind === 'door' && q.anchor)) {
+        if (seen.has(p.name)) continue;
+        const mx = view.x + (p.anchor[0] + 0.5) * view.s, my = view.y + (p.anchor[1] + 0.5) * view.s, w = Math.ceil(measure(p.name, DFONT)) + 6;
+        for (const [cx, cy] of [[mx, my + 6 + DH / 2], [mx, my - 6 - DH / 2], [mx + 6 + w / 2, my], [mx - 6 - w / 2, my]]) {
+          const b = { x: Math.round(cx - w / 2), y: Math.round(cy - DH / 2), w, h: DH };
+          if (!inside(b) || hitsBox(b) || hitsDot(b, null)) continue;
+          boxes.push(b); seen.add(p.name);
+          out.labels.push({ name: p.name, x: b.x, y: b.y, w, h: DH, cx: b.x + w / 2, cy: b.y + DH / 2, tx: (cx - view.x) / view.s, ty: (cy - view.y) / view.s, font: 13, door: true });
+          break;
+        }
       }
     }
     return out;
@@ -180,10 +196,11 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 #tv .pill{display:inline-block;background:${PAL.admin};color:#1b1604;font-weight:700;font-size:.87rem;line-height:1.3;padding:0 .45rem;border-radius:9px;margin-left:6px}
 #tv .tag{display:inline-block;font-size:.87rem;line-height:1.4;padding:0 .45rem;border-radius:10px;border:1px solid ${PAL.amber};color:${PAL.amber};margin-left:6px}
 #tv .tag.red{border-color:${PAL.red};color:${PAL.red}}
-#tv-bar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:48px;padding:2px 8px;border-bottom:1px solid ${PAL.line};background:#171a1f}
+#tv-bar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-height:48px;padding:2px 8px;border-bottom:1px solid ${PAL.line};background:#171a1f}
 #tv-bar .title{font-weight:700;white-space:nowrap}
-#tv-bar .mid{flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;justify-content:center;min-width:0}
+#tv-bar .mid{flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;justify-content:center;min-width:0}
 #tv-bar .right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+#tv-bar button{white-space:nowrap;flex:none}
 #tv.narrow #tv-bar .mid{order:3;flex-basis:100%;justify-content:flex-start;min-height:44px}
 #tv .live{color:${PAL.green};font-weight:700;white-space:nowrap}
 #tv .live::before{content:"";display:inline-block;width:.6rem;height:.6rem;border-radius:50%;background:currentColor;margin-right:6px}
@@ -197,7 +214,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 #tv .banner{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:4px 12px;min-height:52px;background:#3a2c14;border-bottom:1px solid #6b5020;color:#ffe2b8}
 #tv .banner.idle{background:#22324a;border-color:#35527a;color:#dbe8ff}
 #tv-panes{flex:1 1 0;min-height:0;display:flex;flex-direction:row;position:relative}
-#tv.narrow #tv-panes{flex-direction:column}
+#tv.narrow #tv-panes{flex-direction:column;overflow-y:auto;overscroll-behavior:contain}
 #tv .pane{display:flex;flex-direction:column;min-width:0;min-height:0;background:${PAL.panel};overflow:hidden;position:relative}
 #tv .pane>header{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:4px 10px;min-height:52px;border-bottom:1px solid ${PAL.line}}
 #tv .pane>header h2{font-size:1.05rem;margin:0;flex:1;min-width:7rem}
@@ -205,7 +222,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 #tv .foot{flex:none;border-top:1px solid ${PAL.line};padding:8px 10px;display:flex;flex-direction:column;gap:8px}
 #tv-chat,#tv-who{flex:none}
 #tv-mid{flex:1 1 0;min-width:${MID_MIN}px}
-#tv.narrow #tv-chat,#tv.narrow #tv-who{flex:1 1 0;width:auto!important}
+#tv.narrow #tv-chat,#tv.narrow #tv-who{flex:1 0 220px;width:auto!important}
 #tv.narrow #tv-mid{flex:none;min-width:0}
 #tv .div{flex:none;position:relative;background:${PAL.bg};touch-action:none;outline:none;z-index:2}
 #tv .div.v{width:12px;cursor:col-resize}
@@ -245,7 +262,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 #tv-map{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;cursor:grab}
 #tv-zoom{position:absolute;right:8px;bottom:8px;display:flex;gap:8px;z-index:2}
 #tv-zoom button{background:rgba(27,30,36,.94)}
-#tv-keybox{position:absolute;left:8px;bottom:8px;z-index:2;display:flex;flex-direction:column;align-items:flex-start;gap:6px;max-width:calc(100% - 16px - 15rem)}
+#tv-keybox{position:absolute;left:8px;top:8px;z-index:2;display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-width:calc(100% - 16px)}
 #tv-keybox button{background:rgba(27,30,36,.94)}
 #tv-key{background:rgba(20,22,26,.92);border:1px solid ${PAL.line};border-radius:8px;padding:6px 10px;font-size:.87rem}
 #tv-pick{position:absolute;background:${PAL.panel};border:1px solid ${PAL.line};border-radius:8px;padding:6px;display:flex;flex-direction:column;gap:8px;max-height:60%;overflow:auto;z-index:4;min-width:10rem}
@@ -277,7 +294,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 #tv .act .txt{flex:1;min-width:10rem}
 #tv-toast{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid ${PAL.line};background:#22324a;min-height:56px;z-index:4}
 #tv-toast.bad{background:#4a2222}
-#tv-sheet{flex:1 1 0;min-height:0;background:${PAL.panel};border-top:2px solid #4f78b3;overflow:auto;overscroll-behavior:contain}
+#tv-sheet{flex:1 0 220px;min-height:0;background:${PAL.panel};border-top:2px solid #4f78b3;overflow:auto;overscroll-behavior:contain}
 #tv-sheet #tv-card{max-height:none;border-bottom:0;background:${PAL.panel}}
 #tv-pausemenu{position:absolute;z-index:8;background:${PAL.panel};border:1px solid ${PAL.line};border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:8px;min-width:14rem}
 `;
@@ -360,7 +377,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       ui.keyBox = el('div'); ui.keyBox.id = 'tv-keybox';
       ui.key = el('div', '', 'Blue: playing. Grey: away. Amber ring: chat off. Gold ring: admin. Red ring: the word filter, the last 10 minutes.'); ui.key.id = 'tv-key'; ui.key.hidden = true;
       ui.keyBtn = btn('Key', () => { S.keyOpen = !S.keyOpen; ui.key.hidden = !S.keyOpen; ui.keyBtn.className = S.keyOpen ? 'on' : ''; });
-      ui.keyBox.append(ui.key, ui.keyBtn);
+      ui.keyBox.append(ui.keyBtn, ui.key);
       ui.pick = el('div'); ui.pick.id = 'tv-pick'; ui.pick.hidden = true;
       ui.empty = el('div', 'dim', 'Nobody is on right now.'); ui.empty.id = 'tv-empty';
       ui.mapBox.append(ui.canvas, ui.keyBox, zoom, ui.pick, ui.empty);
@@ -901,6 +918,8 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       MAP.cells = cells;
       MAP.places = (m.labels || []).map(p => { const own = new Set(p.idx); return Object.assign({}, p, { owns: (tx, ty) => tx >= 0 && ty >= 0 && tx < m.W && ty < m.H && own.has(cells[ty * m.W + tx]) }); });
       MAP.doors = Object.values(m.doors || {});
+      // the doors go through the same layout as the places' names (only named at twice the fit)
+      for (const d of MAP.doors) MAP.places.push({ name: d.name, kind: 'door', anchor: [d.x, d.y], box: [d.x, d.y, d.x, d.y], depth: -1, area: 0, owns: () => true });
       const pal = ['#4f6b45', '#5a5f3e', '#6b5a43', '#4c6656', '#5d6a48', '#55644c', '#62584a', '#4a6a5e', '#676447', '#5b5f52', '#4f5f42', '#6a6150', '#58704f', '#61674a', '#4d5d4a', '#6c5e46'];
       const SEA = [29, 58, 92];
       const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -995,14 +1014,13 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       g.textAlign = 'center'; g.textBaseline = 'middle';
       if (lay && same) for (const l of lay.res.labels) {
         g.font = '600 ' + l.font + 'px -apple-system, "Segoe UI", sans-serif';
-        g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(l.name, l.cx + dx, l.cy + dy); g.fillStyle = '#f0e6c8'; g.fillText(l.name, l.cx + dx, l.cy + dy);
+        g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(l.name, l.cx + dx, l.cy + dy); g.fillStyle = l.door ? '#d7dae0' : '#f0e6c8'; g.fillText(l.name, l.cx + dx, l.cy + dy);
       }
       // the instance doors: a mark, named only at 2x the fit or more
       for (const d of MAP.doors) {
         const x = v.x + (d.x + 0.5) * v.s, y = v.y + (d.y + 0.5) * v.s;
         if (x < -8 || y < -8 || x > box.w + 8 || y > box.h + 8) continue;
         g.fillStyle = '#0b0d10'; g.fillRect(x - 4, y - 4, 8, 8); g.strokeStyle = '#f0e6c8'; g.lineWidth = 1.5; g.strokeRect(x - 4, y - 4, 8, 8);
-        if (v.s >= v.fit * 2) { g.font = '600 13px -apple-system, sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(d.name, x, y + 14); g.fillStyle = '#d7dae0'; g.fillText(d.name, x, y + 14); }
       }
       // the knights: dots and count circles where they are now; the tags from the layout
       const res = layoutLabels(Object.assign({ font: 0 }, v), [], dotsOf(v), measure, null);
@@ -1247,7 +1265,8 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       setTimeout: (f, ms) => setTimeout(f, ms), clearTimeout: id => clearTimeout(id), setInterval: (f, ms) => setInterval(f, ms), clearInterval: id => clearInterval(id),
       ls: (() => { try { return window.localStorage; } catch (e) { return null; } })(), ss: (() => { try { return window.sessionStorage; } catch (e) { return null; } })(),
       beacon: (url, body) => { try { if (navigator.sendBeacon && navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }))) return; } catch (e) { } try { fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true, credentials: 'omit' }).catch(() => { }); } catch (e) { } },
-      replace: url => { try { location.replace(url); } catch (e) { } },
+      // (the card's own address: '/' on fanglands.com; a local world's '/?online' keeps its query)
+      replace: url => { try { location.replace(url + (location.search || '')); } catch (e) { } },
       raf: f => (window.requestAnimationFrame ? window.requestAnimationFrame(f) : setTimeout(f, 16)),
       RO: typeof ResizeObserver !== 'undefined' ? ResizeObserver : null,
       coarse: !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches),
@@ -1262,7 +1281,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
   TS.fresh = token => {
     try { const body = JSON.stringify({ token }); if (navigator.sendBeacon) navigator.sendBeacon('/api/teacher/logout', new Blob([body], { type: 'application/json' })); else fetch('/api/teacher/logout', { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true }).catch(() => { }); } catch (e) { }
     try { sessionStorage.setItem(BYE_KEY, 'fresh'); } catch (e) { }
-    try { location.replace('/'); } catch (e) { }
+    try { location.replace('/' + (location.search || '')); } catch (e) { }
   };
   Object.assign(TS, { make, layoutLabels, wideSizes, narrowSplit, readLayout, writeLayout, CSS, enterMode });
 

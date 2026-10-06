@@ -1,6 +1,6 @@
 // ============================================================================
-// THE TEACHER'S MAP — GET /teacher-map.json on the teacher address (docs/ONLINE.md, "The teacher view", "The map file")
-// The overworld as the watch screen draws it, built once per isolate from the same atlas.json the World bundles (so a deploy
+// THE TEACHER'S MAP — GET /teacher-map.json on every game address (docs/ONLINE.md, "The teacher view", "The map file")
+// The overworld as the teacher screen draws it (src/79-teacherscreen.js), built once per isolate from the same atlas.json the World bundles (so a deploy
 // with a new Atlas serves the new map by itself; nothing is committed twice). Answered by the Worker: it never reaches the
 // Durable Object, so it costs no Durable Object request.
 //   {hash, W, H, TILE, places: [{id, name, kind, rects}] (the overworld's), doors: {id: {name, x, y}}, grid, fixed, labels}

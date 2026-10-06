@@ -1,33 +1,42 @@
 #!/usr/bin/env node
-// tools/teacher-browser.mjs — the teacher view's watch screen in a REAL browser against a LOCAL world (docs/ONLINE.md,
-// "The teacher view"). It starts nothing itself: run, in online/,
-//   sed -e '/^\[\[routes\]\]$/,$d' wrangler.toml > wrangler.local.toml      (no routes: the page's own address reaches the worker)
-//   CI=1 wrangler dev -c wrangler.local.toml --port 8851 --ip 127.0.0.1 --compatibility-date 2026-05-22 --var TEACHER_HOST:localhost
-// with online/.dev.vars holding ADMIN_KEY=test-admin and INVITE_CODE=TEST-1234, then
-//   node tools/teacher-browser.mjs            the checks at eight sizes (PASS/FAIL lines; exit 1 on a FAIL)
-//   node tools/teacher-browser.mjs --proof    the owner's whole story, with screenshots (OUT=<dir>, default ~/.fanglands/work/teacher/proof)
-// The game is on 127.0.0.1, the teacher page on localhost (TEACHER_HOST). 25 knights are made (or logged in again) with
-// made-up addresses, so the local world's ten-new-knights-an-hour rule does not stop it. NEVER point it at a real world.
-// Needs playwright-core and a Chromium, found as tools/dom-keys.js finds them; without them it says so and exits 0.
+// tools/teacher-browser.mjs — the teacher view, round 2, in a REAL browser against a LOCAL world (docs/ONLINE.md, "The
+// teacher view"). It starts nothing itself: in online/, with online/.dev.vars holding ADMIN_KEY and INVITE_CODE, run
+//   cp ../index.html public/index.html
+//   CI=1 wrangler dev -c wrangler.local.toml --port 8787 --ip 127.0.0.1 --compatibility-date 2026-05-22
+// then, from the repo root:
+//   node tools/teacher-browser.mjs           every check (PASS/FAIL lines; exit 1 on a FAIL), screenshots in OUT
+// OUT defaults to ~/.fanglands/work/teacher/r2. BASE defaults to http://127.0.0.1:8787 and must be a local address.
+// What it proves, in order: the owner makes a teacher on /admin; the teacher signs in on the game's own card and gets the
+// teacher screen (never the game); the screen fills the window at 14 sizes x 5 browser zooms (and on a touch iPad), every
+// control in its pane, nothing clipped, every target 44 px, the map's canvas the size of its pane, no two map names over each
+// other; a divider dragged comes back after a reload; an iPad turned; Watch on a kid out in the world and inside the Spider
+// Den, live while he walks and fights, and back to the map; mute, pause, send-off and undo; a page that held a kid's game
+// starts again first; the teacher's token reaches no knight route and no admin call; Sign out, idle and midnight end the
+// session; what Watch costs. Real kids are real game pages; a crowd of 20 more are bare sockets with made-up addresses.
+// Needs playwright-core and a Chromium (found as tools/dom-keys.js finds them; WebKit too when it is installed): without them
+// it says so and exits 0. NEVER point it at a real world.
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 const PW = [process.env.PLAYWRIGHT_CORE, path.join(os.homedir(), '.npm/_npx/e41f203b7505f1fb/node_modules/playwright-core'), path.join(os.homedir(), 'Documents/Eden/node_modules/playwright-core')].filter(Boolean).find(p => fs.existsSync(p));
 const EXE = [process.env.CHROMIUM, path.join(os.homedir(), 'Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell')].filter(Boolean).find(p => fs.existsSync(p));
 if (!PW) { console.log('teacher-browser: SKIPPED (no playwright-core found)'); process.exit(0); }
-const PORT = process.env.PORT || '8851';
-const BASE = process.env.BASE || 'http://127.0.0.1:' + PORT, TBASE = process.env.TBASE || 'http://localhost:' + PORT;
-for (const b of [BASE, TBASE]) if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(b)) { console.error('teacher-browser: a local world only (' + b + ')'); process.exit(1); }
-const KEY = process.env.ADMIN_KEY || 'test-admin', INVITE = process.env.INVITE || 'TEST-1234';
-const PROOF = process.argv.includes('--proof');
-const OUT = process.env.OUT || path.join(os.homedir(), '.fanglands/work/teacher/proof');
-const { chromium } = require(PW);
+const BASE = process.env.BASE || 'http://127.0.0.1:8787';
+if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(BASE)) { console.error('teacher-browser: a local world only (' + BASE + ')'); process.exit(1); }
+const vars = (() => { try { return fs.readFileSync(path.join(ROOT, 'online/.dev.vars'), 'utf8'); } catch (e) { return ''; } })();
+const KEY = process.env.ADMIN_KEY || (/ADMIN_KEY=(.*)/.exec(vars) || [])[1] || 'test-admin', INVITE = process.env.INVITE || (/INVITE_CODE=(.*)/.exec(vars) || [])[1] || 'TEST-1234';
+const OUT = process.env.OUT || path.join(os.homedir(), '.fanglands/work/teacher/r2');
+fs.mkdirSync(OUT, { recursive: true });
+const { chromium, webkit } = require(PW);
 const wait = ms => new Promise(r => setTimeout(r, ms));
-const results = [];
-const line = (name, ok, info) => { results.push(!!ok); console.log((ok ? 'PASS  ' : 'FAIL  ') + name + (info !== undefined && !ok ? '   ' + JSON.stringify(info).slice(0, 900) : '')); };
+const results = [], shots = [];
+const line = (name, ok, info) => { results.push(!!ok); console.log((ok ? 'PASS  ' : 'FAIL  ') + name + (info !== undefined && !ok ? '   ' + JSON.stringify(info).slice(0, 1400) : '')); };
+const note = text => console.log('      ' + text);
+const shot = async (page, name) => { const p = path.join(OUT, name + '.png'); await page.screenshot({ path: p }); shots.push(p); note('screenshot ' + p); };
 
 // ---------- the world, from outside ----------
 async function api(method, p, body, headers = {}) {
@@ -37,17 +46,23 @@ async function api(method, p, body, headers = {}) {
 }
 const admin = (method, p, body) => api(method, p, body, { authorization: 'Bearer ' + KEY });
 let ipN = 0;
+const ipNext = () => { ipN++; return '10.79.' + Math.floor(ipN / 200) + '.' + (ipN % 200 + 1); };
 async function knight(name) {
-  const ip = '10.77.' + Math.floor(++ipN / 200) + '.' + (ipN % 200 + 1);
+  const ip = ipNext();
   let r = await api('POST', '/api/signup', { name, pass: 'sword', invite: INVITE }, { 'cf-connecting-ip': ip });
   if (r.status === 409) r = await api('POST', '/api/login', { name, pass: 'sword' }, { 'cf-connecting-ip': ip });
-  if (r.status !== 200) throw new Error('knight ' + name + ': ' + JSON.stringify(r.data));
-  // a knight sent off or muted by an earlier run starts clean
+  // sent off by an earlier run: the owner lets the knight back in (the teacher action's own Undo, from /admin's list)
+  if (r.status === 423) {
+    const acts = (await admin('GET', '/api/admin/teacher-acts?today=1')).data || [];
+    for (const a of acts) if (a.act === 'sendoff' && a.inForce && String(a.target).toLowerCase() === name.toLowerCase()) await admin('POST', '/api/admin/teachers/undo', { act: a.id });
+    r = await api('POST', '/api/login', { name, pass: 'sword' }, { 'cf-connecting-ip': ipNext() });
+  }
+  if (r.status !== 200) throw new Error('knight ' + name + ': ' + r.status + ' ' + JSON.stringify(r.data));
   await admin('POST', '/api/admin/mute', { name, span: 'off' });
   return { name, token: r.data.token };
 }
-// a kid's game, reduced to its socket: hello, presence, chat
-function kid(k, p) {
+// a crowd kid: a bare socket that says hello and where it stands, now and then
+function bare(k, p) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(BASE.replace(/^http/, 'ws') + '/ws?token=' + k.token);
     const K = { ws, name: k.name, got: [], p: Object.assign({ map: 'over', x: 6000, y: 3700 }, p), closed: null };
@@ -55,252 +70,357 @@ function kid(k, p) {
     ws.onclose = ev => { K.closed = ev.code; };
     ws.onerror = () => reject(new Error('socket ' + k.name));
     ws.onopen = () => { ws.send(JSON.stringify({ t: 'hello', v: 1 })); K.say(); resolve(K); };
-    K.say = (extra) => { if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ t: 'p', region: 'Somewhere', lv: 10, mv: false, sw: 0, act: null, mech: null, dead: false }, K.p, extra || {}))); };
+    K.say = extra => { if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ t: 'p', region: 'Somewhere', lv: 10, mv: false, sw: 0, act: null, mech: null, dead: false }, K.p, extra || {}))); };
     K.chat = text => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'chat', text })); };
   });
 }
-async function teacher(name, pass) {
+// a real kid: the game itself, logged in on its card
+async function realKid(browser, name, opts = {}) {
+  await knight(name);   // the knight exists (and is unmuted)
+  const ctx = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+  const p = await ctx.newPage();
+  p.errors = []; p.on('pageerror', e => p.errors.push(String(e)));
+  await p.goto(BASE + '/?online');
+  await p.waitForSelector('#fl-name', { state: 'visible', timeout: 20000 });
+  await p.fill('#fl-name', name); await p.fill('#fl-pass', 'sword');
+  await p.click('#fl-login button[type=submit]');
+  for (let i = 0; i < 80; i++) {
+    const ok = await p.evaluate(() => { if (window.BOYGIRL && BOYGIRL.asking) BOYGIRL.answer('boy'); if (window.LOGIN && LOGIN.mode === 'offer') LOGIN.bring(false); return !title.active && NET.status === 'on'; });
+    if (ok) break; await wait(250);
+  }
+  const st = await p.evaluate(() => ({ status: NET.status, me: NET.me }));
+  if (st.me !== name) throw new Error('real kid ' + name + ' did not come in: ' + JSON.stringify(st));
+  if (opts.at) await p.evaluate(([x, y]) => { player.x = x; player.y = y; }, opts.at);
+  return p;
+}
+async function teacherRow(name, pass) {
   const all = (await admin('GET', '/api/admin/teachers')).data || {};
-  const list = Array.isArray(all.teachers) ? all.teachers : [];
-  const t = list.find(x => x.name.toLowerCase() === name.toLowerCase());
-  if (!t) { const r = await admin('POST', '/api/admin/teachers', { name, pass }); if (r.status !== 200) throw new Error(JSON.stringify(r.data)); return r.data.id; }
+  const t = (all.teachers || []).find(x => x.name.toLowerCase() === name.toLowerCase());
+  if (!t) return (await admin('POST', '/api/admin/teachers', { name, pass })).data.id;
   await admin('POST', t.off ? '/api/admin/teachers/on' : '/api/admin/teachers/pass', { id: t.id, pass });
   return t.id;
 }
+// the teacher on the game's own card: her name in Knight's name, her password in Secret word, Play
+async function signInCard(page, name, pass, wantScreen = true) {
+  if (!/\/\?online$/.test(page.url())) await page.goto(BASE + '/?online');
+  await page.waitForSelector('#fl-name', { state: 'visible', timeout: 20000 });
+  await page.fill('#fl-name', name); await page.fill('#fl-pass', pass);
+  await page.click('#fl-login button[type=submit]');
+  if (wantScreen) await page.waitForFunction(() => window.TEACHERSCREEN && TEACHERSCREEN.screen && TEACHERSCREEN.screen.S.status === 'live', null, { timeout: 20000 });
+}
 
-// ---------- the page, measured ----------
+// ---------- the page, measured (in the browser) ----------
 const MEASURE = () => {
-  const out = { problems: [] };
-  const vis = e => { const r = e.getBoundingClientRect(), cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth; };
-  out.hscroll = document.documentElement.scrollWidth > innerWidth + 0.5 || document.body.scrollWidth > innerWidth + 0.5;
-  out.vscroll = document.documentElement.scrollHeight > innerHeight + 0.5;
-  // every target: buttons, inputs, rows; 44 x 44 at least
-  const targets = Array.from(document.querySelectorAll('button, input, [role=button]')).filter(vis);
-  // a target cut by its scrolling panel is measured where it shows (only whole ones count)
-  for (const e of targets) { const r = e.getBoundingClientRect(); if (r.width < 43.5 || r.height < 43.5) out.problems.push('small: ' + (e.textContent || e.id || e.className).trim().slice(0, 40) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height)); }
-  // buttons 8 px apart (rows and lines are stacked lists, a full row each)
-  const bs = targets.filter(e => e.tagName === 'BUTTON').map(e => ({ e, r: e.getBoundingClientRect() }));
+  const out = { problems: [] }, P = out.problems;
+  const vis = e => { if (!e) return false; const r = e.getBoundingClientRect(), cs = getComputedStyle(e); if (!(r.width > 0 && r.height > 0) || cs.visibility === 'hidden' || cs.display === 'none') return false; for (let x = e; x; x = x.parentElement) if (x.hidden) return false; return true; };
+  const R = e => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
+  const tv = document.getElementById('tv'); out.tv = R(tv); out.w = innerWidth; out.h = innerHeight;
+  if (Math.abs(out.tv.l) > 1 || Math.abs(out.tv.t) > 1 || Math.abs(out.tv.w - innerWidth) > 1 || Math.abs(out.tv.h - innerHeight) > 1) P.push('the screen is not the window: ' + JSON.stringify(out.tv));
+  if (document.documentElement.scrollWidth > innerWidth + 0.5 || document.body.scrollWidth > innerWidth + 0.5) P.push('horizontal page scroll');
+  const panes = Array.from(document.querySelectorAll('#tv .pane, #tv-bar, #tv-switch, #tv-sheet, #tv-toast, #tv-banners')).filter(vis);
+  const paneOf = e => { for (let x = e; x; x = x.parentElement) if (panes.includes(x)) return x; return null; };
+  const scrollOf = e => { for (let x = e.parentElement; x && x !== tv; x = x.parentElement) { const cs = getComputedStyle(x); if (/(auto|scroll)/.test(cs.overflowY) || /(auto|scroll)/.test(cs.overflowX)) return x; } return null; };
+  const targets = Array.from(tv.querySelectorAll('button, [role=button], [role=separator]')).filter(vis);
+  for (const e of targets) {
+    const r = R(e), name = (e.getAttribute('aria-label') || e.textContent || e.id || e.className).trim().slice(0, 40);
+    if (e.getAttribute('role') === 'separator') { const g = R(e.querySelector('.grab')); if (Math.min(g.w, g.h) < 43.5 && Math.max(g.w, g.h) < 43.5) P.push('small grab: ' + name); if ((e.classList.contains('v') ? g.w : g.h) < 43.5) P.push('divider grab under 44: ' + name + ' ' + Math.round(g.w) + 'x' + Math.round(g.h)); continue; }
+    if (r.w < 43.5 || r.h < 43.5) P.push('small: ' + name + ' ' + Math.round(r.w) + 'x' + Math.round(r.h));
+    if (e.tagName === 'BUTTON' && e.scrollWidth > e.clientWidth + 1) P.push('clipped: ' + name);
+    const pane = paneOf(e); if (!pane) { P.push('outside every pane: ' + name); continue; }
+    const pr = R(pane), sc = scrollOf(e);
+    if (r.l < pr.l - 1 || r.r > pr.r + 1) P.push('out of its pane sideways: ' + name);
+    if (sc) { const s = R(sc); if (sc.scrollWidth > sc.clientWidth + 1) P.push('a list scrolls sideways: ' + (sc.id || sc.className)); if (r.l < s.l - 1 || r.r > s.r + 1) P.push('out of its list sideways: ' + name); }
+    else if (r.t < pr.t - 1 || r.b > pr.b + 1) P.push('cut off in its pane: ' + name + ' ' + JSON.stringify([Math.round(r.t), Math.round(r.b), Math.round(pr.t), Math.round(pr.b)]));
+  }
+  // buttons 8 px apart (rows are full-width list entries)
+  const bs = targets.filter(e => e.tagName === 'BUTTON' && !scrollOf(e)).map(e => ({ e, r: e.getBoundingClientRect() }));
   for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
-    const a = bs[i].r, b = bs[j].r;
-    if (bs[i].e.contains(bs[j].e) || bs[j].e.contains(bs[i].e)) continue;
-    const dx = Math.max(b.left - a.right, a.left - b.right), dy = Math.max(b.top - a.bottom, a.top - b.bottom), gap = Math.max(dx, dy);
-    if (gap < 7.5) out.problems.push('close: "' + bs[i].e.textContent.trim().slice(0, 24) + '" / "' + bs[j].e.textContent.trim().slice(0, 24) + '" ' + Math.round(gap) + ' px');
+    const a = bs[i].r, b = bs[j].r; if (bs[i].e.contains(bs[j].e) || bs[j].e.contains(bs[i].e)) continue;
+    const gap = Math.max(b.left - a.right, a.left - b.right, b.top - a.bottom, a.top - b.bottom);
+    if (gap < 7.5) P.push('close: "' + bs[i].e.textContent.trim().slice(0, 20) + '" / "' + bs[j].e.textContent.trim().slice(0, 20) + '" ' + Math.round(gap) + ' px');
   }
-  // no text under 13 px
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    if (!n.textContent.trim() || !n.parentElement || !vis(n.parentElement)) continue;
-    const fs = parseFloat(getComputedStyle(n.parentElement).fontSize); if (fs < 12.9) out.problems.push('tiny text ' + fs + 'px: ' + n.textContent.trim().slice(0, 30));
+  // the words: none under 13 px, none cut off at a line's end in the bar or a header
+  const walker = document.createTreeWalker(tv, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) { if (!n.textContent.trim() || !vis(n.parentElement)) continue; const fs = parseFloat(getComputedStyle(n.parentElement).fontSize); if (fs < 12.9) P.push('tiny text ' + fs + 'px: ' + n.textContent.trim().slice(0, 30)); }
+  for (const e of Array.from(tv.querySelectorAll('#tv-bar span, #tv-bar .title, .pane > header h2, #tv-povhead .what')).filter(vis)) if (e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow !== 'visible') P.push('words cut: ' + e.textContent.slice(0, 30));
+  // the map: its canvas is its pane; no two names over each other
+  const S = window.TEACHERSCREEN && TEACHERSCREEN.screen ? TEACHERSCREEN.screen.S : null;
+  const mb = document.getElementById('tv-mapbox'), cv = document.getElementById('tv-map');
+  if (vis(mb)) {
+    const a = R(mb), c = R(cv), dpr = Math.min(devicePixelRatio || 1, 2);
+    if (Math.abs(a.w - c.w) > 1 || Math.abs(a.h - c.h) > 1) P.push('the map canvas is not its pane');
+    if (Math.abs(cv.width - Math.round(a.w * dpr)) > 1 || Math.abs(cv.height - Math.round(a.h * dpr)) > 1) P.push('the map canvas pixels are not the pane x dpr: ' + cv.width + 'x' + cv.height + ' for ' + Math.round(a.w) + 'x' + Math.round(a.h) + ' at ' + dpr);
+    out.mapPane = [Math.round(a.w), Math.round(a.h)];
+    const L = S && S.drawn ? S.drawn.labels : [];
+    out.labels = L.map(l => l.name);
+    for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const p = L[i], q = L[j]; if (p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h) P.push('names over each other: ' + p.name + ' / ' + q.name); }
+    for (const l of L) if (l.x < 0 || l.y < 0 || l.x + l.w > a.w || l.y + l.h > a.h) P.push('a name out of the map: ' + l.name);
   }
-  const rect = id => { const e = document.getElementById(id); if (!e || !vis(e)) return null; const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height }; };
-  out.bar = rect('bar'); out.mid = rect('mid'); out.chat = rect('chat'); out.who = rect('who'); out.mapbox = rect('mapbox');
-  out.w = innerWidth; out.h = innerHeight;
+  out.narrow = !!(S && S.narrow); out.sizes = S && S.sizes;
   return out;
 };
 
-const SIZES = [[1366, 768], [1280, 800], [1180, 820], [1024, 768], [834, 1194], [810, 1080], [768, 1024], [390, 844]];
+const SIZES = [[1280, 800], [1280, 720], [1280, 1024], [1366, 768], [1440, 900], [1536, 864], [1920, 1080], [2560, 1440], [1024, 768], [1180, 820], [768, 1024], [820, 1180], [834, 1194], [390, 844]];
+const ZOOMS = [0.8, 1, 1.25, 1.5, 1.75];
 
-async function signIn(page, name, pass) {
-  await page.goto(BASE + '/teacher');   // fanglands.com/teacher sends to the teacher address
-  await page.waitForSelector('#tname', { timeout: 15000 });
-  await page.fill('#tname', name); await page.fill('#tpass', pass);
-  await page.click('button.go');
-  await page.waitForFunction(() => window.__teacher && window.__teacher.status === 'live' && window.__teacher.lines !== undefined, null, { timeout: 15000 });
-}
-
-async function checks() {
+async function main() {
   const browser = await chromium.launch(EXE ? { executablePath: EXE } : {});
-  // a teacher of this run's own (a teacher has 10 knight actions in any 10 minutes; a run takes 4, so runs back to back need their own)
-  const tName = 'Mrs Smith ' + String.fromCharCode(65 + Math.floor(Math.random() * 26)) + String.fromCharCode(97 + Math.floor(Math.random() * 26)), tPass = 'maple-river-lantern-42';
-  await teacher(tName, tPass);
-  // 25 knights: nine on one tile, the rest about the world, two inside places
-  const names = []; for (let i = 0; i < 25; i++) names.push('Kid ' + String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + i % 26));
-  const ks = []; for (const n of names) ks.push(await knight(n));
-  const spots = [[150, 92], [120, 60], [60, 120], [200, 50], [30, 30], [100, 150], [220, 160], [170, 110], [80, 80], [40, 160], [240, 20], [140, 40], [110, 100], [190, 140]];
-  const zz = await knight('Kid ZZ');   // the one the 768 x 1024 run sends off and lets back in from the sheet
-  const kids = [];
-  for (let i = 0; i < ks.length; i++) {
-    const p = i < 9 ? { x: 125 * 48 + 20, y: 77 * 48 + 20 } : i === 23 ? { map: 'spider_den', x: 300, y: 200 } : i === 24 ? { map: 'house', x: 300, y: 300 } : { x: spots[i - 9][0] * 48, y: spots[i - 9][1] * 48 };
-    kids.push(await kid(ks[i], p));
-  }
-  kids.push(await kid(zz, { x: 30 * 48, y: 150 * 48 }));
-  const alive = setInterval(() => { for (const k of kids) k.say(); }, 1000);
-  kids[1].chat('anyone want to fight goblins'); await wait(1600); kids[2].chat('you are so dumb lol'); await wait(1600); kids[3].chat('lets go to the spider den');
-  await wait(1600); kids[22].chat('meet me at the dock'); await wait(1600); kids[kids.length - 1].chat('ok see you there');   // Kid AW: near the end of Who is on
+  const crowd = [];
+  let alive = null;
   try {
-    for (const [w, h] of SIZES) {
-      const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: w < 1100, isMobile: false });
-      const page = await ctx.newPage();
-      const errors = []; page.on('pageerror', e => errors.push(String(e)));
-      await signIn(page, tName, tPass);
-      await page.waitForFunction(n => window.__teacher.knights.length >= n, 25, { timeout: 15000 });
-      await wait(700);
-      const m = await page.evaluate(MEASURE);
-      const tag = w + 'x' + h;
-      line(tag + ': no horizontal scroll, no page scroll', !m.hscroll && !m.vscroll, m);
-      line(tag + ': every target 44 x 44 or more, buttons 8 px apart, no text under 13 px', m.problems.length === 0, m.problems.slice(0, 12));
-      if (w >= 900) line(tag + ': the map is the middle column' + (w <= 1024 ? ', at least 460 px wide' : ''), m.mid && m.chat && m.who && m.chat.r <= m.mid.l + 1 && m.mid.r <= m.who.l + 1 && (w > 1024 || m.mid.w >= 460) && m.mid.b <= h + 1, { mid: m.mid, chat: m.chat, who: m.who });
-      else line(tag + ': the map is full width, directly under the bar, on screen without scrolling', m.mid && Math.abs(m.mid.w - w) <= 1 && Math.abs(m.mid.t - m.bar.b) <= 1 && m.mid.b <= h, { mid: m.mid, bar: m.bar });
-      // nine knights on one tile: one "9"
-      const dots = await page.evaluate(() => window.__teacher.dotsNow());
-      line(tag + ': nine knights on one tile make one circle of 9', dots.some(d => d.names.length === 9), dots.map(d => d.names.length));
-      // a tap on a single dot opens that knight's bar (the bottom sheet under 900 px)
-      const one = dots.find(d => d.names.length === 1);
-      const cv = await page.$('#map'), box = await cv.boundingBox();
-      if (one) await page.mouse.click(box.x + one.x, box.y + one.y);
-      await wait(300);
-      const sel = await page.evaluate(() => ({ sel: window.__teacher.selected, sheet: !!document.querySelector('#sheet.up'), bar: !!document.querySelector('#who .actions') && getComputedStyle(document.querySelector('#who .actions')).display !== 'none' }));
-      line(tag + ': a tap on a dot selects that knight and opens ' + (w < 900 ? 'the bottom sheet' : 'his bar'), one && sel.sel === one.names[0] && (w < 900 ? sel.sheet : sel.bar), { one, sel });
-      if (w < 900) { const m2 = await page.evaluate(MEASURE); line(tag + ': with the sheet up, still every target 44 x 44 and 8 px apart', m2.problems.length === 0, m2.problems.slice(0, 8)); }
-      // a tap on a line in the chat by a knight far down the list: his row and its Send off are scrolled into view
-      if (w >= 900) {
-        await page.click('#chatlist .ln.say:has-text("Kid AW")'); await wait(300);
-        const r = await page.evaluate(() => {
-          const sc = document.querySelector('#who .scroll').getBoundingClientRect(), row = document.querySelector('#who .row.sel'), off = Array.from(document.querySelectorAll('#who .actions button')).find(b => b.textContent === 'Send off for today');
-          const inV = e => { if (!e) return false; const b = e.getBoundingClientRect(); return b.top >= sc.top - 1 && b.bottom <= sc.bottom + 1; };
-          return { sel: window.__teacher.selected, row: inV(row), off: inV(off), marked: Array.from(document.querySelectorAll('#chatlist .ln.sel')).map(e => e.textContent) };
-        });
-        line(tag + ': a tap on Kid AW\'s chat line scrolls Who is on to his row and its Send off, and marks his lines in the chat', r.sel === 'Kid AW' && r.row && r.off && r.marked.length >= 1 && r.marked.every(t => t.includes('Kid AW: meet me at the dock')), r);
-      }
-      // the chat's room on an iPad held sideways: with nobody picked, the pause and mute controls take no room (the bar's Pause chat does it)
-      if (w >= 900 && w < 1100) {
-        const ctx2 = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true });
-        const p2 = await ctx2.newPage(); await signIn(p2, tName, tPass); await wait(700);
-        const room = await p2.evaluate(() => { const chat = document.getElementById('chat').getBoundingClientRect(), head = document.querySelector('#chat > header').getBoundingClientRect(), sc = document.querySelector('#chat .scroll').getBoundingClientRect(), c = document.querySelector('#chat .controls'); return { chat: Math.round(chat.height), head: Math.round(head.height), scroll: Math.round(sc.height), lines44: Math.floor(sc.height / 44), controls: c ? Math.round(c.getBoundingClientRect().height) : 0, pauseBtn: getComputedStyle(document.getElementById('pausebtn')).display !== 'none' }; });
-        line(tag + ': with nobody picked the chat lines get the whole panel under its header (' + room.scroll + ' px, room for ' + room.lines44 + ' lines; controls ' + room.controls + ' px), and Pause chat is in the bar', room.controls === 0 && room.scroll + room.head >= room.chat - 3 && room.pauseBtn, room);
-        await ctx2.close();
-      }
-      // under 900 px the answers show above the sheet: a refused mute, a send-off with its Undo, and Let back in on the sheet
-      if (w === 768) {
-        await page.click('#sheet button:has-text("Close")');
-        await page.click('#tabs2 button:has-text("Chat")');
-        await page.click('#chatlist .ln.say:has-text("Kid AW")'); await wait(300);
-        await page.click('#sheet button:has-text("Mute 1 hour")'); await wait(900);
-        const toastNow = () => page.evaluate(() => { const t = document.getElementById('toast'); const r = t.getBoundingClientRect(); return { text: t.textContent, shown: !t.hidden && getComputedStyle(t).display !== 'none' && r.height > 0 && r.top >= 0 && r.bottom <= innerHeight }; });
-        const t1 = await toastNow();
-        line(tag + ': the answer to a tap in the sheet shows on screen, above the sheet ("' + t1.text + '")', t1.shown && /Kid AW/.test(t1.text) && /Undo/.test(t1.text), t1);
-        await page.click('#toast button:has-text("Undo")'); await wait(900);
-        const t1b = await toastNow();
-        line(tag + ': Undo from that toast gives Kid AW his chat back ("' + t1b.text + '")', t1b.shown && kids[22].got.some(m => m.t === 'unmuted' && m.by === 'teacher'), t1b);
-        await page.click('#sheet button:has-text("Close")');
-        // Kid ZZ: send off from the sheet, the Undo toast shows, and the sheet then offers Let back in
-        await page.click('#tabs2 button:has-text("Chat")');
-        await page.click('#chatlist .ln.say:has-text("Kid ZZ")'); await wait(300);
-        await page.click('#sheet button:has-text("Send off for today")'); await page.click('#sheet button:has-text("Yes, send Kid ZZ off")'); await wait(2500);
-        const t2 = await page.evaluate(() => { const t = document.getElementById('toast'), s = document.getElementById('sheet'); const r = t.getBoundingClientRect(); return { toast: t.textContent, shown: !t.hidden && r.height > 0 && r.bottom <= innerHeight, sheet: s.textContent }; });
-        line(tag + ': after Yes, send Kid ZZ off the toast with Undo shows, and the sheet says he is sent off with Let back in (no second send-off)', t2.shown && /Kid ZZ was sent off/.test(t2.toast) && /Undo/.test(t2.toast) && t2.sheet.includes('Kid ZZ is sent off for today.') && t2.sheet.includes('Let Kid ZZ back in') && !t2.sheet.includes('Send off for today'), t2);
-        await page.screenshot({ path: path.join(OUT, 'sheet-after-sendoff-768x1024.png') });
-        await page.click('#sheet button:has-text("Let Kid ZZ back in")'); await wait(1000);
-        line(tag + ': Let Kid ZZ back in from the sheet: he can log in again', (await api('POST', '/api/login', { name: 'Kid ZZ', pass: 'sword' }, { 'cf-connecting-ip': '10.78.0.1' })).status === 200);
-      }
-      line(tag + ': no page errors', errors.length === 0, errors);
-      if ([1280, 1024, 768].includes(w)) { fs.mkdirSync(OUT, { recursive: true }); await page.screenshot({ path: path.join(OUT, 'watch-' + tag + '.png') }); }
-      await ctx.close();
-    }
-  } finally {
-    clearInterval(alive);
-    for (const k of kids) try { k.ws.close(); } catch (e) { }
-    await browser.close();
-  }
-}
-
-// ---------- the owner's whole story, with screenshots ----------
-async function proof() {
-  fs.mkdirSync(OUT, { recursive: true });
-  const shot = async (page, name) => { const p = path.join(OUT, name + '.png'); await page.screenshot({ path: p }); console.log('      screenshot ' + p); };
-  const browser = await chromium.launch(EXE ? { executablePath: EXE } : {});
-  try {
-    // 1. the owner, on /admin, adds a teacher with Make one up
+    // ---- 1. the owner, on /admin, adds a teacher (Make one up) ----
     const owner = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
     owner.on('dialog', d => d.accept());
     await owner.goto(BASE + '/admin');
     await owner.fill('#key', KEY); await owner.click('#usekey');
-    await owner.waitForSelector('#teachers tbody tr', { timeout: 15000 });
-    const tName = 'Mr Lee ' + String.fromCharCode(65 + Math.floor(Math.random() * 26)) + String.fromCharCode(97 + Math.floor(Math.random() * 26));
+    await owner.waitForSelector('#tname', { timeout: 20000 });
+    const tName = 'Mrs Smith ' + String.fromCharCode(65 + Math.floor(Math.random() * 26)) + String.fromCharCode(97 + Math.floor(Math.random() * 26)) + String.fromCharCode(97 + Math.floor(Math.random() * 26));
     await owner.fill('#tname', tName); await owner.click('#tmake');
     const pass = await owner.inputValue('#tpass');
     await owner.click('#tadd');
-    await owner.waitForFunction(n => document.getElementById('tsaid').textContent.startsWith('Added ' + n), tName, { timeout: 15000 });
+    await owner.waitForFunction(n => document.getElementById('tsaid').textContent.startsWith('Added ' + n), tName, { timeout: 20000 });
     const said = await owner.textContent('#tsaid');
-    line('the owner adds a teacher on /admin with Make one up, and the page shows the password once: "' + said + '"', /^[a-z]+-[a-z]+-[a-z]+-\d\d$/.test(pass) && said.includes(pass) && said.includes('fanglands.com/teacher'), { said, pass });
-    await owner.evaluate(() => document.getElementById('tsaid').scrollIntoView());
-    await shot(owner, '1-admin-teacher-added');
-    // 2. two kids play: Sam and Ava, moving and chatting
-    const sam = await kid(await knight('Sam'), { x: 125 * 48, y: 77 * 48 }), ava = await kid(await knight('Ava'), { x: 127 * 48, y: 77 * 48 });
-    let step = 0;
-    const alive = setInterval(() => { step++; sam.p.x = 125 * 48 + (step % 20) * 6; sam.say({ mv: true }); ava.say(); }, 1000);
-    // 3. the teacher signs in at fanglands.com/teacher and gets the watch screen, never the game
+    line('the owner adds a teacher on /admin; the page says: "' + said + '"', said.includes('Tell ' + tName + ": go to fanglands.com, type " + tName + " in Knight's name and this password in Secret word, and press Play.") && said.includes(pass) && !/teacher\.fanglands|\/teacher/.test(said), { said });
+    await owner.evaluate(() => document.getElementById('tsaid').scrollIntoView({ block: 'center' }));
+    await shot(owner, '01-admin-teacher-added');
+
+    // ---- 2. kids: a crowd of bare sockets (nine on one tile, some by the place names, two inside places) and two real games ----
+    const spots = [[101, 28], [68, 29], [54, 7], [10, 7], [180, 78], [225, 64], [112, 48], [247, 85], [232, 33], [146, 124], [174, 155]];
+    for (let i = 0; i < 20; i++) {
+      const k = await knight('Kid ' + String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + i % 26));
+      // (inside: the Tinker Lab and an island, never the Spider Den: a bare socket there would keep it and stream nothing)
+      const p = i < 7 ? { x: 125 * 48 + 20, y: 77 * 48 + 20 } : i === 18 ? { map: 'tinker_lab', x: 300, y: 200 } : i === 19 ? { map: 'house', x: 300, y: 300 } : { x: spots[i - 7][0] * 48, y: spots[i - 7][1] * 48 };
+      crowd.push(await bare(k, p));
+    }
+    alive = setInterval(() => { for (const k of crowd) k.say(); }, 1000);
+    crowd[1].chat('anyone want to fight goblins'); await wait(1600); crowd[2].chat('meet me at the dock'); await wait(1600);
+    const sam = await realKid(browser, 'Sam', { at: [100 * 48, 30 * 48] });
+    const ava = await realKid(browser, 'Ava', { at: [102 * 48, 31 * 48] });
+    await wait(1500);
+
+    // ---- 3. the teacher signs in on the game's own card: the teacher screen, never the game ----
     const tctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const tp = await tctx.newPage();
-    await signIn(tp, tName, pass);
-    const isWatch = await tp.evaluate(() => ({ url: location.href, game: !!window.FANGLANDS, watch: !!document.getElementById('mapbox') }));
-    line('the teacher signs in at /teacher (sent to the teacher address) and gets the watch screen, never the game', isWatch.watch && !isWatch.game && isWatch.url.startsWith(TBASE), isWatch);
-    sam.chat('anyone want to fight goblins'); await wait(1700); ava.chat('ya lets go'); await wait(1700); sam.chat('you are so dumb lol'); await wait(2500);
-    const seen = await tp.evaluate(() => ({ lines: window.__teacher.lines.filter(l => l.kind === 'line').map(l => l.n + ': ' + l.text), knights: window.__teacher.knights.map(k => k.n + ' ' + k.place + ' ' + k.doing) }));
-    line('the teacher sees both kids on the map and their chat, starred as they saw it', seen.knights.length >= 2 && seen.lines.some(l => l === 'Sam: anyone want to fight goblins') && seen.lines.some(l => /Sam: you are so \*+ lol/.test(l)), seen);
-    await shot(tp, '2-watch-1280x800');
-    // 4. mute Sam for 10 minutes from his row
-    await tp.click('#who .row:has-text("Sam")');
-    await tp.click('#who .actions button:has-text("Mute 10 min")');
+    tp.errors = []; tp.on('pageerror', e => tp.errors.push(String(e)));
+    await tp.goto(BASE + '/?online');
+    await tp.waitForSelector('#fl-name', { state: 'visible' });
+    await shot(tp, '02-the-standard-card');
+    await signInCard(tp, tName, pass);
+    await tp.waitForFunction(n => TEACHERSCREEN.screen.S.knights.length >= n, 22, { timeout: 20000 }); await wait(800);
+    const mode = await tp.evaluate(() => ({ title: title.active, lock: SAVE_LOCK, net: NET.enabled, token: NET.token, sock: !!NET.sock, canvas: getComputedStyle(canvas).display, card: !document.getElementById('fl-login') || document.getElementById('fl-login').hidden, ls: Object.keys(localStorage).filter(k => /session|lastname|slot/.test(k)), ss: Object.keys(sessionStorage), url: location.href }));
+    line('the teacher signs in on the standard card (Knight\'s name, Secret word, Play) and gets the teacher screen: no knight, no socket of a knight\'s, nothing saved, the address unchanged', mode.title && mode.lock && !mode.net && mode.token === null && !mode.sock && mode.canvas === 'none' && mode.card && mode.ls.length === 0 && mode.ss.length === 0 && mode.url === BASE + '/?online', mode);
+    await shot(tp, '03-teacher-screen-1280x800');
+
+    // ---- 4. the screen at 14 sizes x 5 browser zooms (a zoom is a smaller CSS window at a higher pixel ratio) ----
+    let bad = 0, runs = 0;
+    for (const z of ZOOMS) {
+      const ctx = z === 1 ? tctx : await browser.newContext({ viewport: { width: Math.round(1280 / z), height: Math.round(800 / z) }, deviceScaleFactor: z });
+      const page = z === 1 ? tp : await ctx.newPage();
+      if (z !== 1) { await signInCard(page, tName, pass); await page.waitForFunction(() => TEACHERSCREEN.screen.S.knights.length >= 20, null, { timeout: 20000 }); }
+      for (const [w, h] of SIZES) {
+        await page.setViewportSize({ width: Math.round(w / z), height: Math.round(h / z) }); await wait(250);
+        const m = await page.evaluate(MEASURE); runs++;
+        const ok = m.problems.length === 0 && (w / z < 900 ? m.narrow : true);
+        if (!ok) bad++;
+        line(w + 'x' + h + ' at ' + Math.round(z * 100) + '% (' + Math.round(w / z) + 'x' + Math.round(h / z) + ' CSS px): fills the window, every control in its pane, nothing clipped, 44 px targets, the canvas is its pane, no two names over each other (' + (m.labels || []).length + ' names)', ok, { problems: m.problems.slice(0, 10), total: m.problems.length, narrow: m.narrow });
+        if (z === 1 && [1280, 1024, 768, 390, 1920].includes(w) && [800, 768, 1024, 844, 1080].includes(h)) await shot(page, '04-size-' + w + 'x' + h);
+      }
+      if (z !== 1) await ctx.close();
+      else await page.setViewportSize({ width: 1280, height: 800 });
+    }
+    line('the layout held at all ' + runs + ' sizes and zooms', bad === 0 && runs === SIZES.length * ZOOMS.length, { bad, runs });
+    // a touch iPad: coarse pointer (20 px dividers), upright and sideways
+    {
+      const ctx = await browser.newContext({ viewport: { width: 820, height: 1180 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+      const ip = await ctx.newPage(); await signInCard(ip, tName, pass); await wait(600);
+      const up = await ip.evaluate(MEASURE);
+      line('iPad upright (820x1180, touch): narrow, the map on top, every target 44 px', up.problems.length === 0 && up.narrow, up.problems.slice(0, 8));
+      await shot(ip, '05-ipad-upright');
+      await ip.setViewportSize({ width: 1180, height: 820 }); await wait(400);
+      const side = await ip.evaluate(MEASURE);
+      line('the iPad turned sideways (1180x820): three panes, the coarse dividers, nothing clipped', side.problems.length === 0 && !side.narrow && side.sizes && side.sizes.d === 20, { p: side.problems.slice(0, 8), sizes: side.sizes });
+      await shot(ip, '06-ipad-sideways');
+      await ctx.close();
+    }
+
+    // ---- 5. a divider dragged, remembered after a reload ----
+    {
+      const d = await tp.$('#tv-panes .div.v'); const b = await d.boundingBox();
+      await tp.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await tp.mouse.down(); await tp.mouse.move(b.x + b.width / 2 + 90, b.y + b.height / 2, { steps: 6 }); await tp.mouse.up();
+      await wait(500);
+      const w1 = await tp.evaluate(() => Math.round(document.getElementById('tv-chat').getBoundingClientRect().width));
+      const saved = await tp.evaluate(() => localStorage.getItem('fanglands.teacher.layout'));
+      await tp.reload(); await tp.waitForSelector('#fl-name', { state: 'visible' });
+      const card = await tp.evaluate(() => ({ err: document.querySelector('#fl-login .fl-err').textContent, tv: !!document.getElementById('tv') }));
+      await signInCard(tp, tName, pass); await wait(500);
+      const w2 = await tp.evaluate(() => Math.round(document.getElementById('tv-chat').getBoundingClientRect().width));
+      line('a divider dragged 90 px (chat ' + w1 + ' px) is saved as fractions and comes back after a reload (' + w2 + ' px); a reloaded tab shows the card, never the screen', Math.abs(w1 - 307 - 90) <= 2 && Math.abs(w2 - w1) <= 1 && /"wide":\{"l":0\.3/.test(saved) && !card.tv, { w1, w2, saved, card });
+      await tp.dblclick('#tv-panes .div.v'); await wait(300);
+    }
+
+    // ---- 6. Watch: Sam out in the world, walking; then in the Spider Den, fighting; then back to the map ----
+    await tp.waitForFunction(() => TEACHERSCREEN.screen.S.knights.some(k => k.n === 'Sam'), null, { timeout: 15000 });
+    const samRow = tp.locator('#tv-who .row', { hasText: 'Sam' }).first();
+    await samRow.locator('button:has-text("Watch")').click();
+    await tp.waitForFunction(() => window.VIEW && VIEW.state.on && VIEW.state.lastP, null, { timeout: 10000 });
+    await sam.bringToFront(); await sam.keyboard.down('ArrowRight'); await wait(1500); await sam.keyboard.up('ArrowRight'); await wait(700);
+    const centre = await tp.evaluate(() => { const e = PLAYERS.remote[VIEW.state.n], W = VIEW.state.paneW, H = VIEW.state.paneH, k = W / VW; return { dx: Math.round((e.shown.x - cam.x) * k - W / 2), dy: Math.round((e.shown.y - cam.y) * k - H / 2), what: document.querySelector('#tv-povhead .what').textContent, live: !document.querySelector('#tv-povhead .live').hidden, frames: VIEW.state.stats }; });
+    const samAt = await sam.evaluate(() => ({ x: Math.round(player.x), y: Math.round(player.y) }));
+    const shown = await tp.evaluate(() => ({ x: Math.round(PLAYERS.remote[VIEW.state.n].x), y: Math.round(PLAYERS.remote[VIEW.state.n].y) }));
+    line('Watch Sam: his screen is drawn in the middle pane, live: he is within 8 px of its centre (' + centre.dx + ', ' + centre.dy + '), where his own game has him, and the header says "' + centre.what + '"', Math.abs(centre.dx) <= 8 && Math.abs(centre.dy) <= 8 && Math.abs(samAt.x - shown.x) <= 48 && centre.live && /^Watching Sam/.test(centre.what), { centre, samAt, shown });
+    await shot(tp, '07-watch-sam-overworld');
+    // into the Spider Den, beside a spider, swinging
+    await sam.evaluate(() => { INSTANCES.enter('spider_den'); });
     await wait(800);
-    const muted = sam.got.filter(m => m.t === 'muted').pop();
-    line('the teacher mutes Sam for 10 minutes: his game hears "by teacher"', muted && muted.by === 'teacher' && muted.left === 600, muted);
-    sam.chat('can anyone hear me'); await wait(600);
-    line('Sam\'s next line is refused, and Ava never sees it', !ava.got.some(m => m.t === 'chat' && m.text === 'can anyone hear me'));
-    await shot(tp, '3-sam-muted');
-    // undo it from the toast
-    await tp.click('#toast button:has-text("Undo")'); await wait(800);
-    line('Undo gives Sam his chat back ("A teacher turned your chat back on.")', sam.got.filter(m => m.t === 'unmuted').pop() && sam.got.filter(m => m.t === 'unmuted').pop().by === 'teacher');
-    // 5. pause chat for everyone, then turn it back on
-    await tp.click('.controls button:has-text("5 minutes")'); await wait(800);
-    line('Pause chat for everyone: both games hear it, and the banner says who', sam.got.some(m => m.t === 'chat_pause' && m.left === 300) && ava.got.some(m => m.t === 'chat_pause' && m.left === 300) && (await tp.textContent('#banners')).includes('paused it'));
-    await shot(tp, '4-chat-paused');
-    await tp.click('#banners button:has-text("Turn chat back on")'); await wait(800);
-    line('Turn chat back on: both games hear left 0', sam.got.some(m => m.t === 'chat_pause' && m.left === 0));
-    // 6. send Ava off for the day: two taps
-    await tp.click('#who .row:has-text("Ava")');
-    await tp.click('#who .actions button:has-text("Send off for today")');
-    const ask = await tp.textContent('#who .actions');
-    await tp.click('#who .actions button:has-text("Yes, send Ava off")'); await wait(1000);
-    const err = ava.got.filter(m => m.t === 'error').pop();
-    line('Send off for today takes two taps ("' + ask.replace(/Yes.*$/, '').trim() + '"); Ava\'s game hears kicked why sentoff and closes 4005', /Send Ava off Fanglands until midnight\? Ava's knight is safe and saved\./.test(ask) && err && err.code === 'kicked' && err.why === 'sentoff' && ava.closed === 4005, { ask, err, closed: ava.closed });
-    const back = await api('POST', '/api/login', { name: 'Ava', pass: 'sword' });
-    line('Ava cannot log in again today: 423 sentoff', back.status === 423 && back.data.code === 'sentoff', back);
-    await shot(tp, '5-ava-sent-off');
-    // let her back in from "Sent off for today"
-    await tp.click('#who button:has-text("Let Ava back in")'); await wait(800);
-    line('Let Ava back in: she can log in again', (await api('POST', '/api/login', { name: 'Ava', pass: 'sword' })).status === 200);
-    // 7. what admins did, on /admin
-    await owner.click('#refresh'); await wait(1500);
-    const log = await owner.textContent('#modlog');
-    line('/admin "What admins did" names the teacher for every action', [tName + ' (teacher) signed in to the teacher view', tName + ' (teacher) muted Sam for 10 minutes', tName + " (teacher) turned Sam's chat back on", tName + ' (teacher) paused chat for everyone for 5 minutes', tName + ' (teacher) turned chat back on', tName + ' (teacher) sent Ava off for the rest of the day', tName + ' (teacher) let Ava back in'].every(s => log.includes(s)), log.slice(0, 1200));
-    // 8. other sizes of the same screen
-    for (const [w, h] of [[1024, 768], [768, 1024]]) { await tp.setViewportSize({ width: w, height: h }); await wait(500); await shot(tp, '6-watch-' + w + 'x' + h); }
-    await tp.setViewportSize({ width: 1280, height: 800 });
-    // 9. the owner gives a new password: the open screen is cut at once
-    const row = owner.locator('#teachers tbody tr', { hasText: tName });
-    await row.locator('button:has-text("New password")').click(); await wait(1500);
-    const cut = await tp.evaluate(() => ({ card: !document.getElementById('signin').hidden, said: document.querySelector('#signin .said').textContent }));
-    line('New password on /admin cuts the open watch screen at once: "' + cut.said + '"', cut.card && cut.said === 'Your password was changed. Sign in with the new one.', cut);
-    await shot(tp, '7-cut-new-password');
-    const newPass = (await owner.textContent('#tsaid')).match(/[a-z]+-[a-z]+-[a-z]+-\d\d/)[0];
-    await signIn(tp, tName, newPass);
-    await tp.waitForFunction(() => window.__teacher.knights.length >= 1, null, { timeout: 15000 }); await wait(500);
-    await row.locator('button:has-text("Turn off")').click(); await wait(2000);
-    const off = await tp.evaluate(() => document.querySelector('#signin .said').textContent);
-    if (off !== 'Ethan turned this sign-in off.') console.log('      page state: ' + JSON.stringify(await tp.evaluate(() => ({ st: window.__teacher.status, tok: !!window.__teacher.token, card: !document.getElementById('signin').hidden }))));
-    line('Turn off cuts it too: "' + off + '", and signing in says it was turned off', off === 'Ethan turned this sign-in off.');
-    await tp.fill('#tname', tName); await tp.fill('#tpass', newPass); await tp.click('button.go'); await wait(1500);
-    const offErr = await tp.textContent('#signin .err');
-    line('a turned-off teacher signing in reads "' + offErr + '"', offErr === 'This sign-in was turned off. Ask Ethan.');
-    await shot(tp, '8-turned-off');
-    await owner.evaluate(() => document.getElementById('teachers').scrollIntoView());
-    await shot(owner, '9-admin-teachers');
-    clearInterval(alive); sam.ws.close();
-  } finally { await browser.close(); }
+    await sam.evaluate(() => { const m = monsters.find(o => !o.dead); if (m) { player.x = m.x - 40; player.y = m.y; player.facing = { x: 1, y: 0 }; } });
+    for (let i = 0; i < 8; i++) { await sam.keyboard.press('Space'); await wait(250); }
+    await wait(1200);
+    const den = await tp.evaluate(() => ({ map: VIEW.state.map, inst: INSTANCES.active(), puppets: (COOP.puppets() || []).length, what: document.querySelector('#tv-povhead .what').textContent, house: VIEW.state.house }));
+    line('Sam goes into the Spider Den and fights: the view follows him in ("' + den.what + '"), the den is drawn as his game built it, his spiders show (' + den.puppets + ')', den.map === 'spider_den' && den.inst === 'spider_den' && den.puppets > 0 && /The Spider Den/.test(den.what), den);
+    await shot(tp, '08-watch-sam-spider-den');
+    // a tap on his screen does nothing in his game: it picks him
+    const before = await sam.evaluate(() => ({ x: player.x, y: player.y }));
+    const gb = await (await tp.$('#tv-glass')).boundingBox();
+    const at = await tp.evaluate(() => { const e = PLAYERS.remote[VIEW.state.n], k = VIEW.state.paneW / VW; return { x: (e.shown.x - cam.x) * k, y: (e.shown.y - 6 - cam.y) * k }; });
+    await tp.mouse.click(gb.x + at.x, gb.y + at.y); await wait(400);
+    const after = await sam.evaluate(() => ({ x: player.x, y: player.y }));
+    const picked = await tp.evaluate(() => TEACHERSCREEN.screen.S.selected);
+    line('a tap on his screen picks him (his Knight card) and changes nothing in his game', picked === 'Sam' && Math.abs(after.x - before.x) < 1 && Math.abs(after.y - before.y) < 1, { picked, before, after });
+    await tp.keyboard.press('Escape'); await wait(500);
+    const back = await tp.evaluate(() => ({ on: VIEW.state.on, map: !document.getElementById('tv-mappane').hidden, canvas: getComputedStyle(canvas).display }));
+    line('Esc (Back to the map) brings the map back and stops the view', !back.on && back.map && back.canvas === 'none', back);
+    await shot(tp, '09-back-to-the-map');
+    await sam.evaluate(() => { INSTANCES.leave(); });
+
+    // ---- 7. mute, undo; pause, chat back on; send off, let back in ----
+    // (Sam's card is open from the tap on his screen; a tap on his row would close it again)
+    if (!(await tp.evaluate(() => TEACHERSCREEN.screen.S.selected === 'Sam'))) await samRow.click();
+    await wait(300);
+    await tp.click('#tv-card button:has-text("Mute 10 min")'); await wait(1200);
+    const muted = await sam.evaluate(() => CHAT.muted());
+    const toast = await tp.textContent('#tv-toast');
+    line('Mute 10 min from Sam\'s Knight card: his game is muted (' + muted + ' s) and the toast says "' + toast.replace('Undo', '').trim() + '" with Undo', muted > 590 && /Sam is muted for 10 minutes/.test(toast) && /Undo/.test(toast), { muted, toast });
+    await shot(tp, '10-sam-muted');
+    await tp.click('#tv-toast button:has-text("Undo")'); await wait(1200);
+    line('Undo gives Sam his chat back', (await sam.evaluate(() => CHAT.muted())) === 0);
+    await tp.click('#tv-chatfoot button:has-text("5 minutes")'); await wait(1200);
+    const paused = await ava.evaluate(() => TEACHER.pausedLeft());
+    line('Pause chat for everyone, 5 minutes: Ava\'s game counts it down (' + paused + ' s) and the banner says who paused it', paused > 290 && (await tp.textContent('#tv-banners')).includes('paused it'), { paused });
+    await shot(tp, '11-chat-paused');
+    await tp.click('#tv-banners button:has-text("Turn chat back on")'); await wait(1200);
+    line('Turn chat back on: Ava\'s game says chat is on', (await ava.evaluate(() => TEACHER.pausedLeft())) === 0);
+    await tp.locator('#tv-who .row', { hasText: 'Ava' }).first().click(); await wait(300);
+    await tp.click('#tv-card button:has-text("Send off for today")');
+    const ask = await tp.textContent('#tv-card');
+    await shot(tp, '12-send-off-asks');
+    await tp.click('#tv-card button:has-text("Yes, send Ava off")'); await wait(2500);
+    const avaCard = await ava.evaluate(() => ({ playing: LOGIN.playing, err: LOGIN.error, showing: LOGIN.showing }));
+    line('Send off takes two taps ("Send Ava off Fanglands until midnight? Ava\'s knight is safe and saved."); Ava\'s game goes back to the card with the sentence', /Send Ava off Fanglands until midnight\? Ava's knight is safe and saved\./.test(ask) && !avaCard.playing && avaCard.err === 'A teacher sent you off Fanglands for the rest of today. Your knight is safe. You can play again tomorrow.', { ask, avaCard });
+    await shot(tp, '13-ava-sent-off');
+    const so = await api('POST', '/api/login', { name: 'Ava', pass: 'sword' }, { 'cf-connecting-ip': ipNext() });
+    line('Ava cannot log in again today (423 sentoff)', so.status === 423 && so.data.code === 'sentoff', so);
+    await tp.click('#tv-who button:has-text("Let Ava back in")'); await wait(1200);
+    line('Let Ava back in: she can log in again', (await api('POST', '/api/login', { name: 'Ava', pass: 'sword' }, { 'cf-connecting-ip': ipNext() })).status === 200);
+
+    // ---- 8. the teacher's token reaches nothing but the teacher view ----
+    {
+      const r = await tp.evaluate(async () => {
+        const tok = TEACHERSCREEN.screen.S.token, h = { authorization: 'Bearer ' + tok, 'content-type': 'application/json' };
+        const knight = [['GET', '/api/me'], ['GET', '/api/save'], ['PUT', '/api/save'], ['GET', '/api/save/pin'], ['POST', '/api/save/pin'], ['POST', '/api/save/restore'], ['GET', '/api/accounts'], ['POST', '/api/accounts/reset'], ['POST', '/api/accounts/strikes'], ['POST', '/api/accounts/rename']];
+        const adminCalls = ['online', 'accounts', 'chat', 'modlog', 'teachers', 'teacher-acts', 'invite', 'export', 'sim', 'trades', 'role', 'mute', 'ban', 'pin', 'restore'];
+        const out = {};
+        for (const [m, p] of knight) out[m + ' ' + p] = (await fetch(p, { method: m, headers: h, body: m === 'GET' ? undefined : '{"player":{}}' })).status;
+        for (const c of adminCalls) for (const m of ['GET', 'POST']) out[m + ' /api/admin/' + c] = (await fetch('/api/admin/' + c, { method: m, headers: h, body: m === 'GET' ? undefined : '{}' })).status;
+        out.ws = await new Promise(res => { const w = new WebSocket(location.origin.replace(/^http/, 'ws') + '/ws?token=' + tok); w.onopen = () => res('open'); w.onclose = e => res('closed ' + e.code); w.onerror = () => { }; });
+        return out;
+      });
+      const all401 = Object.entries(r).filter(([k]) => k !== 'ws').every(([, v]) => v === 401);
+      line('the teacher\'s token is 401 on every knight route and every admin call, and /ws never opens with it (' + (Object.keys(r).length - 1) + ' calls)', all401 && r.ws !== 'open', r);
+    }
+
+    // ---- 9. a page that held a kid's game: the teacher's answer starts it again first, then the screen ----
+    {
+      const kp = await realKid(browser, 'Leo');
+      await kp.evaluate(() => LOGIN.logout()); await wait(2500);
+      await kp.evaluate(() => LOGIN.notMe()); await wait(300);
+      await kp.fill('#fl-name', tName); await kp.fill('#fl-pass', pass); await kp.click('#fl-login button[type=submit]');
+      await kp.waitForFunction(() => document.querySelector('#fl-login .fl-err') && /Sign in once more/.test(document.querySelector('#fl-login .fl-err').textContent), null, { timeout: 15000 });
+      const fresh = await kp.evaluate(() => ({ err: document.querySelector('#fl-login .fl-err').textContent, tv: !!document.getElementById('tv') }));
+      await shot(kp, '14-fresh-page-sign-in-again');
+      await signInCard(kp, tName, pass);
+      const ok = await kp.evaluate(() => ({ tv: !!document.getElementById('tv'), pristine: TEACHERSCREEN.pristine }));
+      line('on a page where a kid played, the teacher\'s answer reloads it first: "' + fresh.err + '"; signed in again, the screen opens on a fresh page', fresh.err === 'Sign in once more to open the teacher view.' && !fresh.tv && ok.tv && ok.pristine, { fresh, ok });
+      await kp.context().close();
+    }
+
+    // ---- 10. Sign out, idle, midnight: back to the card, with why ----
+    {
+      await tp.click('#tv-signout'); await tp.waitForSelector('#fl-name', { state: 'visible' }); await wait(500);
+      const out = await tp.evaluate(() => ({ err: document.querySelector('#fl-login .fl-err').textContent, tv: !!document.getElementById('tv'), ss: Object.keys(sessionStorage) }));
+      line('Sign out: the card says "' + out.err + '"; no screen; nothing kept in sessionStorage', out.err === 'You signed out.' && !out.tv && out.ss.length === 0, out);
+      await shot(tp, '15-signed-out');
+      await signInCard(tp, tName, pass);
+      await tp.evaluate(() => { TEACHERSCREEN.screen.S.lastInput -= 62 * 60000; }); await wait(1500);
+      await tp.waitForSelector('#fl-name', { state: 'visible', timeout: 10000 }); await wait(500);
+      const idle = await tp.evaluate(() => document.querySelector('#fl-login .fl-err').textContent);
+      line('idle (nothing pressed for an hour, then two minutes): "' + idle + '"', idle === 'You were signed out because nothing was pressed for an hour.', idle);
+      await shot(tp, '16-idle-signed-out');
+      await signInCard(tp, tName, pass);
+      await tp.evaluate(() => { TEACHERSCREEN.screen.S.expires = Date.now() - 1; }); await wait(1500);
+      await tp.waitForSelector('#fl-name', { state: 'visible', timeout: 10000 }); await wait(500);
+      const mid = await tp.evaluate(() => document.querySelector('#fl-login .fl-err').textContent);
+      line('the session\'s end (10 hours, or midnight in Toronto): "' + mid + '"', mid === 'Your sign-in ran out for today. Sign in again to keep watching.', mid);
+    }
+
+    // ---- 11. what Watch costs: a minute with Sam alone in the Spider Den, not watched, then watched ----
+    {
+      await signInCard(tp, tName, pass);
+      for (const k of crowd) try { k.ws.close(); } catch (e) { }
+      clearInterval(alive); alive = null;
+      await ava.context().close();
+      await sam.evaluate(() => { INSTANCES.enter('spider_den'); }); await wait(1500);
+      const meter = async () => (await admin('GET', '/api/admin/sim')).data.meter.today;
+      const m0 = await meter(); await wait(60000); const m1 = await meter();
+      await tp.locator('#tv-who .row', { hasText: 'Sam' }).first().locator('button:has-text("Watch")').click();
+      await wait(1500); const m2 = await meter(); await wait(60000); const m3 = await meter();
+      const fr = await tp.evaluate(() => VIEW.state.stats);
+      const per = (a, b) => ({ wsIn: b.wsIn - a.wsIn, http: b.http - a.http, rows: (b.rows || 0) - (a.rows || 0) });
+      const not = per(m0, m1), yes = per(m2, m3);
+      const extra = { wsIn: yes.wsIn - not.wsIn, rows: yes.rows - not.rows };
+      const hour = { msgs: extra.wsIn * 60, requests: Math.round(extra.wsIn * 60 / 20 * 10) / 10, rows: extra.rows * 60 };
+      note('a minute not watched: ' + JSON.stringify(not) + '; a minute watched: ' + JSON.stringify(yes) + '; the teacher got ' + JSON.stringify(fr));
+      note('Watch, alone in a place he keeps: about ' + hour.msgs + ' incoming messages an hour = ' + hour.requests + ' requests an hour (of 100,000 a day), ' + hour.rows + ' rows written');
+      fs.writeFileSync(path.join(OUT, 'cost.json'), JSON.stringify({ notWatched: not, watched: yes, perHour: hour, frames: fr }, null, 2));
+      line('Watch costs at most 2 messages a second from his game (here ' + yes.wsIn + ' a minute watched, ' + not.wsIn + ' not), so at most 360 requests an hour, and no row written by it', extra.wsIn <= 121 && extra.rows <= 1 && fr.mon > 0, { not, yes, fr });
+      await shot(tp, '17-watch-alone-in-the-den');
+    }
+    line('no page errors (teacher, Sam, Ava)', tp.errors.length === 0 && sam.errors.length === 0, { t: tp.errors, s: sam.errors });
+  } finally {
+    if (alive) clearInterval(alive);
+    for (const k of crowd) try { k.ws.close(); } catch (e) { }
+    await browser.close();
+  }
+  // WebKit, when it is installed: the sign-in and the screen at two sizes
+  if (webkit) {
+    let wk = null;
+    try { wk = await webkit.launch(); } catch (e) { note('WebKit is not installed here (npx playwright install webkit): its run is skipped'); }
+    if (wk) {
+      try {
+        const name = 'Mr Lee Wk', pass2 = 'quiet-harbour-oak-17'; await teacherRow(name, pass2);
+        for (const [w, h] of [[1280, 800], [820, 1180]]) {
+          const p = await (await wk.newContext({ viewport: { width: w, height: h } })).newPage();
+          await signInCard(p, name, pass2); await wait(600);
+          const m = await p.evaluate(MEASURE);
+          line('WebKit ' + w + 'x' + h + ': the screen fills the window, nothing clipped, 44 px targets', m.problems.length === 0, m.problems.slice(0, 8));
+          await shot(p, '18-webkit-' + w + 'x' + h);
+        }
+      } finally { await wk.close(); }
+    }
+  }
 }
 
-try { if (PROOF) await proof(); else await checks(); } catch (e) { line('the run itself', false, String(e && e.stack || e)); }
+try { await main(); } catch (e) { line('the run itself', false, String(e && e.stack || e)); }
 const bad = results.filter(r => !r).length;
 console.log(bad ? `teacher-browser: ${bad} FAIL of ${results.length}` : `teacher-browser: all ${results.length} PASS`);
+console.log('screenshots: ' + OUT);
 process.exit(bad ? 1 : 0);

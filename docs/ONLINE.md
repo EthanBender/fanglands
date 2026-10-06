@@ -2276,55 +2276,108 @@ when they play it at school."* and *"I think you should just create an admin pas
 the game, it loads up like a heads up display where like the chats on one side with the chat controls maybe the map in the
 middle where they can see where the players are and like other controls may be on the other side."*
 
+Owner, round 2 (6 Oct, after trying round 1 on a 1280-wide laptop): *"proportions are off maybe they need to be scalable, being
+able to click a player and monitor their POV would be nice, also all of this should work through just the standard login. I
+don't wanna have to convey separate webpages and authentication pages in this and that."*
+
 The owner's decisions (6 Oct): teachers **watch** and have **light controls** only (who is on, where, what they are doing, the
 chat; mute a kid's chat, send a kid off for the rest of the day, pause chat); the scope is **everyone online** (no class, no
 roster, no class code); chat is the same for everyone. A teacher has **no** reach into accounts, secret words, saves, the
-invite code, backups, restores, switches or anything else on /admin. Server: `online/src/teachers.js` (the tables, the
-sign-in, the owner's calls), `online/src/watch.js` (the watch screens and the controls, pure JavaScript, no Cloudflare APIs),
-`online/src/teacher-map.js` (the map file). The page: `online/public/teacher.html`. The game: `src/79-teacher.js` plus small
-edits in 71 and 74.
+invite code, backups, restores, switches or anything else on /admin. Round 2: **one sign-in** (the game's own card), a screen
+that **fills the window at every size**, **Watch** (one kid's point of view, live, read-only), and **map names that never sit
+on each other**.
+
+Server: `online/src/teachers.js` (the tables, the teacher half of the sign-in, the owner's calls), `online/src/watch.js` (the
+screens, the controls and Watch; pure JavaScript, no Cloudflare APIs), `online/src/teacher-map.js` (the map file), small hooks
+in `online/src/room.js` (the taps, `hooks.mon`, the `view` capability) and `online/src/world.js` (the sign-in's fall-through,
+`watch.settle` on a wake). The game: `src/71-login.js` (the card), `src/79-teacherscreen.js` (the teacher screen),
+`src/79-view.js` (Watch's drawing), `src/79-teacher.js` (what a kid's game says), and small edits in 73, 74 and 75.
 
 ### In one screen
 
-- Ethan makes each teacher a **name and password** on /admin (*Teachers*). The teacher bookmarks **fanglands.com/teacher**,
-  which sends them to **https://teacher.fanglands.com**, signs in, and gets a full-screen **watch screen**, never the game
-  and never a knight: the chat on the left with its controls, the live world map in the middle, who is on with send-off
-  and undo on the right.
+- Ethan makes each teacher a **name and password** on /admin (*Teachers*). After *Add teacher* it says: "Tell Mrs Smith: go to
+  fanglands.com, type Mrs Smith in Knight's name and this password in Secret word, and press Play." (with the password, shown
+  once).
+- The teacher opens **fanglands.com** (gorkscape.ca forwards there as it always does), types her name in *Knight's name* and her
+  password in *Secret word*, and presses **Play**. Because the answer is a teacher's, the page opens the **teacher screen**
+  instead of the game: never a knight, never a save, never a knight's socket. If the card says "Playing as Leo", she taps **Not
+  me** first (today's path: Leo is signed out on this computer only, his knight unchanged).
+- The screen fills the window: the chat on the left, the live map (or the kid being watched) in the middle, who is on on the
+  right, with dividers she can drag (remembered on that device); under 900 px the map sits on top and the chat or the list
+  under it. A tap on a knight (in the list, on the map, on a chat line or in a watched screen) opens his **Knight card**:
+  **Watch**, Show on map, the mutes, Send off for today.
+- **Watch** draws that kid's screen with the game's own renderer, live: the world around him, the knights and monsters as his
+  screen shows them, his chat, inside places too. Read-only: nothing reaches his game.
 - A teacher can mute a kid's chat (10 minutes, 1 hour, the rest of today), pause chat for everyone (5, 15 or 60 minutes),
   send a kid off until midnight Toronto time, and undo any teacher action. Every action is checked fresh by the world and
-  written to *What admins did* as "<name> (teacher)".
+  written to *What admins did* as "<name> (teacher)"; so is each Watch (at most once per 10 minutes per teacher per knight).
 - Nothing a teacher can do touches an account, a secret word, a save, the invite code or any switch, and no kid's knight is
   ever changed.
-- The page holds one hibernating socket and costs about 4 to 15 Durable Object requests a day (*The free plan*, below).
 
-### The address and the door
+### One sign-in (no teacher address, no door)
 
-- Live: `https://teacher.fanglands.com`, a `custom_domain` route on the same Worker (`[[routes]] pattern =
-  "teacher.fanglands.com"`) and `[vars] TEACHER_HOST = "teacher.fanglands.com"`. The test world is
-  `test-teacher.fanglands.com` (one level under fanglands.com, so its certificate is the ordinary kind) with
-  `TEACHER_HOST = "test-teacher.fanglands.com"`: `~/.fanglands/tools/deploy-test.sh` writes both into `wrangler.test.toml`.
-  Local: `wrangler dev --var TEACHER_HOST:localhost` (the game on `127.0.0.1`, the teacher page on `localhost`).
-- `worker.js`, first thing in `fetch()`, before `/api` and before the front door:
-  1. every request, on every address, is copied without any `x-fanglands-door` header a browser sent;
-  2. on `TEACHER_HOST` only these answer, everything else is 404: `/` and `/index.html` (the file `public/teacher.html`),
-     `/teacher-map.json` (`teacherMap()`), and `/api/teacher/*` (the socket included), forwarded to the World with
-     `x-fanglands-door: teacher`; the socket's 101 goes back untouched;
-  3. on any other address `/teacher` and `/teacher.html` answer 302 to `https://<TEACHER_HOST>/` (on a local world, the same
-     scheme and port);
-  4. on any other address `/api/teacher/*` reaches the World without the door, so the World answers 404 `nope`.
-- `teacher.html` goes out with `Content-Security-Policy: default-src 'self'; connect-src 'self' wss://<TEACHER_HOST>;
-  img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'`
-  (the `wss:` source is named because an older iPad's Safari does not count a socket as `'self'`), `X-Frame-Options: DENY`,
-  `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex`.
-- The game's login card has **no** teacher link (owner decision D6).
+- `POST /api/login` reads the body once. The knight's path runs first, unchanged (the name, a name from before a rename,
+  banned, the waits, the secret word, kept out, sent off). Only when **no knight** has that name **and** the body says
+  `teacherOk: 1` does it call `teachers.teacherLogin(world, {name, pass, addr})`. Without `teacherOk` the answer is the knight's
+  own 404 `unknown`, so an older cached card is never handed a teacher token it might store.
+- Knight and teacher names never clash (case, spaces, dots, apostrophes and hyphens left out: `nameClash` at signup and rename,
+  `knightClash` and a name from before a rename when the owner adds a teacher), so the order cannot be fooled.
+- The card (`71-login`, login mode only, never New knight) accepts a knight's name `^[A-Za-z0-9 ]{2,16}$` or a teacher's
+  `^[A-Za-z][A-Za-z .'-]{1,39}$`; the name box takes 40 letters for a login, 16 while New knight is ticked. Its words do not
+  change and it has no teacher link.
+- A teacher's answer `{teacher: true, token, name, expires}` never calls `NET.setToken`, never writes `fanglands.lastname` or
+  `fanglands.session`, never calls `/api/save`, the bridge, `title.startSlot` or `NET.connect`; the card empties the password box,
+  hides and calls `TEACHERSCREEN.open({token, name, expires})`.
+- **The fresh-page rule (J1):** `79-teacherscreen` wraps `title.startSlot` to clear `TEACHERSCREEN.pristine`: a page is pristine
+  until a knight is loaded in it. A teacher's answer on a page that is not pristine (its memory holds a kid's world: his chopped
+  trees, his walls) sends the logout beacon, writes `sessionStorage['fanglands.teacher.bye'] = 'fresh'` and reloads the page; the
+  card then says "Sign in once more to open the teacher view."
+- `/teacher` and `/teacher.html` answer 302 to `/` on every address (a local world: its own scheme and port). A host `teacher.*`
+  or `test-teacher.*` answers 302 to that world's game address (`https://fanglands.com/`, `https://test.fanglands.com/`). There
+  is no `TEACHER_HOST`, no teacher route in any `wrangler*.toml`, no door header and no `teacher.html`.
+- `POST /api/teacher/login` is gone (404 `nope`). `/api/teacher/ticket`, `/api/teacher/ws` and `/api/teacher/logout` answer on
+  every game address; the socket's 101 goes back untouched.
+
+The card's sentences for a teacher (`LOGIN.sentence`, `LOGIN.BYE`):
+
+| When | Sentence |
+|---|---|
+| 401 `nomatch` | "That name and password don't match." |
+| 429 `wait` (`wait` in seconds) | "Too many tries. Wait 15 minutes and try again." (the minutes rounded up) |
+| 403 `off` | "This sign-in was turned off. Ask Ethan." |
+| bye `4010` | "You signed out." |
+| bye `idle` | "You were signed out because nothing was pressed for an hour." |
+| bye `4011` | "Your sign-in ran out for today. Sign in again to keep watching." |
+| bye `4012` | "Ethan turned this sign-in off." |
+| bye `4013` | "Your password was changed. Sign in with the new one." |
+| bye `4014` | "Too many teacher screens are open. Close one and try again." |
+| bye `4008` | "That was too many taps at once. Sign in again." |
+| bye `fresh` | "Sign in once more to open the teacher view." |
+
+The bye reason is read once from `sessionStorage['fanglands.teacher.bye']` when the card comes up, then deleted.
 
 ### The map file
 
-`GET /teacher-map.json` on the teacher address (`online/src/teacher-map.js`, built once per isolate from the same
-`atlas.json` the World bundles; it never reaches the Durable Object): `{hash, W, H, TILE, places: [{id, name, kind, rects}]
-(the overworld's only), doors: {id: {name, x, y}} (each instance's door tile on the overworld), grid, fixed}`, `grid` and
-`fixed` as `atlas.json` carries them (runs). `Cache-Control: public, max-age=300`. When the Atlas changes, the next deploy
-serves the new map by itself; nothing is committed twice.
+`GET /teacher-map.json` on every address (`online/src/teacher-map.js`, the Worker's own answer, built once per isolate from the
+same `atlas.json` the World bundles; it never reaches the Durable Object): `{hash, W, H, TILE, places: [{id, name, kind, rects}]
+(the overworld's only), doors: {id: {name, x, y}} (each instance's door tile on the overworld), grid, fixed, labels}`, `grid`
+and `fixed` as `atlas.json` carries them (runs). `labels` (round 2): one per place **name** (Hollowford, The Ashfields and
+Ironclad Isle are two Atlas places each, merged; `reserved` left out): `{name, kind, idx (the Atlas indexes), area (owned
+tiles), box: [x0, y0, x1, y1] (the owned tiles' bounding box), anchor: [x, y] (the owned tile furthest from any tile it does not
+own, by a 3-4 chamfer distance; ties to the tile nearest the owned tiles' centroid), depth (how many other places have a rect
+holding the anchor)}`. `Cache-Control: public, max-age=300`. Every place point comes from the Atlas: no game file holds a map
+coordinate for it.
+
+**The names on the map** (`layoutLabels(view, places, dots, measure, prev)` in `79-teacherscreen`, pure): (1) the knights' dots
+are fixed; within 24 px they merge into a count circle; (2) name tags, the selected or flagged knight first: right, left, above,
+then below the dot (4 px off), else hidden (the dot stays); (3) the places, depth first, then the bigger, then an area before a
+region, in 600 weight at 0.85rem (at least 13 px; 14 px at twice the fit, 15 px at four times), `#f0e6c8` with a 3 px dark halo.
+A place whose name is wider than 1.1 times its box on screen, or taller than it, is skipped. Its spots, in order: where it sat
+last time, the anchor, up and down by 0.6 and 1.2 box heights, left and right by a quarter of the box. A spot must be centred on
+one of the place's own tiles, lie inside the pane (6 px in) and touch no name (4 px), no dot (its radius and 4) and no count
+circle; the first that does wins, else the name is left out at this zoom. (4) The instance doors: a mark always, the name only
+at twice the fit or more, under, over, right or left of the mark, by the same rules. The layout runs again at the end of a
+zoom or a pan, on a resize and on a new frame (at most once a second); during a drag the last one only moves along.
 
 ### The tables (`online/src/teachers.js`, `migrateTeachers(sql)` right after `migrate()` on every wake)
 
@@ -2348,14 +2401,14 @@ that name today (`tried_at`: the last one), shown to the owner; it is never a lo
 waits are in memory, below). A session row keeps the SHA-256 of the token, never the token. At most 3 sessions per teacher
 (the oldest goes). `teacher_acts` keeps its newest 2,000 rows. `store.rename` carries the two new columns with the row.
 A teacher row is never deleted (Turn off keeps it, so the log's names always match). Hashing is `auth.js`'s `makeHash` /
-`checkPassword` (PBKDF2, 100,000 rounds) and `randomHex`.
+`checkPassword` (PBKDF2, 100,000 rounds) and `randomHex`. Round 2 adds no table and no column.
 
 ### The owner's calls (`Authorization: Bearer <ADMIN_KEY>`, `teacherAdminCall`)
 
 | Call | Body | Answer | Notes |
 |---|---|---|---|
 | `GET /api/admin/teachers` | — | `{teachers: [{id, name, created, lastLogin, off, watching, actsToday, wrongToday}], acts, notice}` | the whole Teachers section in one call (/admin opens with +1 request): `watching` that teacher's open screens; `wrongToday` wrong passwords typed for that name today, from anywhere (a big number: someone is guessing; New password ends it); `acts` as `teacher-acts?today=1`; `notice` the switch |
-| `POST /api/admin/teachers` | `{name, pass}` | `{ok, id, name}` | name `^[A-Za-z][A-Za-z .'-]{1,39}$` (2 to 40): 400 `name`; 409 `taken` when it matches another teacher's or a knight's name with case, spaces, dots, apostrophes and hyphens left out ("Mrs. Smith" = "mrs smith" = "MrsSmith"); pass 10 to 200 characters: 400 `pass` |
+| `POST /api/admin/teachers` | `{name, pass}` | `{ok, id, name}` | name `^[A-Za-z][A-Za-z .'-]{1,39}$` (2 to 40): 400 `name`; 409 `taken` when it matches another teacher's or a knight's name with case, spaces, dots, apostrophes and hyphens left out ("Mrs. Smith" = "mrs smith" = "MrsSmith"), or a knight's name from before a rename; pass 10 to 200 characters: 400 `pass` |
 | `POST /api/admin/teachers/pass` | `{id, pass}` | `{ok}` | a new salt and hash; every session of that teacher deleted; open screens get `w_bye` and close 4013; every sign-in wait on that name lifted; 404 `nope` |
 | `POST /api/admin/teachers/off` | `{id}` | `{ok}` | `off = 1`; sessions deleted; screens closed 4012 |
 | `POST /api/admin/teachers/on` | `{id, pass}` | `{ok}` | turning a teacher back on always takes a new password (400 `pass`) |
@@ -2368,18 +2421,17 @@ Each owner call writes one `mod_log` row `by: 'parent page'`, act `teacher_add` 
 logged, exported or kept as text: *Make one up* makes it in the browser (`crypto.getRandomValues`, three words from 200 plain
 words and two digits, like `maple-river-lantern-42`) and the page shows it once.
 
-### Signing in (the teacher address with the door only; anywhere else 404 `nope`)
+### Signing in, the ticket, the socket
 
 | Call | Body | Answer | Notes |
 |---|---|---|---|
-| `POST /api/teacher/login` | `{name, pass}` | `{token, name, expires}` | below |
+| `POST /api/login` | `{name, pass, teacherOk: 1}` | `{teacher: true, token, name, expires}` | the teacher half, below |
 | `POST /api/teacher/logout` | `{token}` | `{ok}` | the token in the body, so `navigator.sendBeacon` can send it on `pagehide`; closes that session's screens 4010 |
 | `POST /api/teacher/ticket` | — (`Authorization: Bearer <teacher token>`) | `{ticket}` | 24 random bytes as hex, single use, good for 30 s, kept in the World's memory only, tied to the session |
 | `GET /api/teacher/ws?ticket=` | — | 101 | a used, expired or unknown ticket, or one whose session is gone, is 401 `auth` before any upgrade |
 
 - An unknown name and a wrong password give the same answer, 401 `nomatch` (an unknown name still runs one PBKDF2 against a
-  fixed dummy salt), and every try after them too: the waits below count a name nobody has exactly like a real one, so no
-  answer tells which names exist.
+  fixed dummy salt), and every try after them too: the waits below count a name nobody has exactly like a real one.
 - The waits are kept per **address and name**, in the World's memory like signups (`addressOf`, an IPv6 address by its /48; a
   nap forgets them, which only lets more through). Five wrong in a row from one address on one name: that address waits
   900,000 ms on that name, 429 `wait` `{wait}` (seconds). Twenty failures from one address in an hour: that address waits
@@ -2392,111 +2444,189 @@ words and two digits, like `maple-river-lantern-42`) and the page shows it once.
   address is written anywhere.
 - `expires` = the earlier of now + 36,000,000 ms (10 hours) and 23:59:59.999 today in `America/Toronto` (`dayEnd`, with
   `Intl.DateTimeFormat`; the zone is the constant `TEACHER_TZ`).
-- The token (32 random bytes, hex) lives in `sessionStorage` `fl.teacher` on the teacher address only: never `localStorage`,
-  never a URL, never a log. The socket URL carries only the ticket.
-- The socket is accepted with the attachment `{w: teacherId, sh: sessionHash, since}` (no `name` key: the wake loop can never
-  take it for a knight). Caps: 6 teacher screens in the world, 2 per teacher; over either: `w_bye`, close 4014.
+- **The token lives only in a closure in `src/79-teacherscreen.js`**: never `localStorage`, `sessionStorage`, a cookie or a URL.
+  The socket URL carries only the single-use ticket. What the page keeps on the device: `localStorage['fanglands.teacher.layout']
+  = {v: 1, wide: {l, r}, narrow: {split}, zoom}` (fractions only, every read and write in `try`) and
+  `sessionStorage['fanglands.teacher.bye']` (a reason code, never a secret). Closing the tab or reloading it shows the card.
+- The socket is accepted with the attachment `{w: teacherId, sh: sessionHash, since, view?}` (`view`: the lower-case name of the
+  kid being watched; no `name` key: the wake loop can never take it for a knight). Caps: 6 teacher screens in the world, 2 per
+  teacher; over either: `w_bye`, close 4014.
+- A teacher token is 401 `auth` on every knight route, `/ws` and every `/api/admin/*` call (it is not in `sessions` and it is
+  not `ADMIN_KEY`). A knight token, no token, or a door header a browser sends is 401 on `/api/teacher/*`.
 
 **The lock, on every teacher call and every teacher socket message:** one read, `SELECT t.id, t.name, t.off, s.expires FROM
 teacher_sessions s JOIN teachers t ON t.id = s.teacher_id WHERE s.hash = ?`. The row must be there, `off = 0`, `expires > now`;
 otherwise the action is refused (`w_no` `auth`), `w_bye` goes out and the socket is closed 4011 (time up) or 4012 (turned off).
-Every wake runs the same check on each teacher socket (`Watch.restore`) and closes the dead ones. A screen whose session has run out
-(10 hours, or midnight) is closed 4011 the next time the world has anything to send it, with no read and no timer; the page
-also signs itself out at that moment. Each action then reads the
-knight's account and role again from the store. The page's buttons are never the lock.
+Every wake runs the same check on each teacher socket (`Watch.restore`) and closes the dead ones. A screen whose session has run
+out (10 hours, or midnight) is closed 4011 the next time the world has anything to send it, with no read and no timer; the page
+also signs itself out at that moment. Each action then reads the knight's account and role again from the store. The page's
+buttons are never the lock.
+
+**Teacher mode on the page** (`TEACHERSCREEN.open`): `NET.enabled = false`, `NET.disconnect()`, `NET.send` a no-op and
+`NET.token` cleared in memory (so 70-net's `visibilitychange` never opens a socket with a kid's token left on the device);
+`title.active` stays true for the whole session (the 15-second save and the `beforeunload` save write nothing); `SAVE_LOCK =
+true` (the cloud push refuses); the game canvas hidden; no audio context (the one a key on the card made is closed and the taps
+that would make another are taken away; the device's own sound setting is never touched). `newGame()` and `load()` are never
+called. Sign out: the logout beacon, bye `4010`, `location.replace('/')`. `pagehide`: the logout beacon. Idle 60 minutes: the
+banner "Still watching? Tap anywhere to stay signed in. Signing out in 1:59.", then sign-out with bye `idle`. The server ends
+the session at 10 hours or midnight Toronto (4011); turned off 4012; new password 4013; 6 screens in the world or 2 per teacher
+(4014); a socket flood (4008). Every one goes back to the card with its sentence. For the first 10 s after signing in, beside
+Sign out: "On a shared computer, press Sign out when you're done."
 
 **Why a teacher can never be a knight or reach an admin call** (each is a test in `teachers.test.mjs` / `watch.test.mjs`):
-1. A teacher is not a row of `accounts`: `/api/login`, `/api/signup` and `World.session` never find one, so a teacher token is
-   401 `auth` on every knight route and on `/ws`.
+1. A teacher is not a row of `accounts`: the knight half of `/api/login`, `/api/signup` and `World.session` never find one, so a
+   teacher token is 401 `auth` on every knight route (the list is read from `World.route()`'s own source) and on `/ws`.
 2. Every `/api/admin/*` call needs `ADMIN_KEY`; a teacher token or ticket is 401 there.
 3. A teacher socket is only ever in `Watch.screens`, never `room.join`: never in `room.knights` or `byName`, a map's members,
    a keeper election, `online()`, `who`, `/api/status`, `/api/admin/online`, `logins`, presence relays, trades, parties or the
-   50-knight cap.
+   50-knight cap, watching or not.
 4. `webSocketMessage` / `Close` / `Error` hand a socket `this.watch.has(ws)` knows to the Watch first, and the wake loop hands
    `state.w` to `watch.restore` before it looks at `state.name`. A teacher frame never reaches the Room; only `w_*` types are
    read.
 5. No teacher message carries free text to anyone. Teachers never chat.
 6. A new knight name with "teacher" in it (any case, spaces aside) is refused by `cleanName`, and a new or changed knight
-   name that matches a teacher's name with case, spaces, dots, apostrophes and hyphens left out ("Mrs Smith" for the teacher
-   "Mrs. Smith") is 409 `taken` at signup and rename, so no kid can pose as a teacher; the owner cannot make a teacher with a
-   knight's name either. Knights already made are untouched. A knight name cannot hold "(", so "Mrs Smith (teacher)" in `mod_log` is never a knight.
+   name that matches a teacher's name with case, spaces, dots, apostrophes and hyphens left out is 409 `taken` at signup and
+   rename, so no kid can pose as a teacher; the owner cannot make a teacher with a knight's name either. A knight name cannot
+   hold "(", so "Mrs Smith (teacher)" in `mod_log` is never a knight.
 
-**What a teacher never receives:** secret words, hashes, tokens, addresses; saves, pins, versions, items, coins, level, hp,
-look, gear, def, swings, facing; the game's own `region` text; who keeps a map; accounts not online (except names sent off
+**What a teacher never receives:** secret words, hashes, tokens, addresses; saves, pins, versions, items, packs, coins, trades,
+gifts, prizes; the game's own `region` text in the list; who keeps a map in the list; accounts not online (except names sent off
 today and names that left in the last 30 minutes); made dates, logins, play time; strike counts or history, or the unstarred
-words of any line; `mod_log` beyond today's teacher actions; trades, the meter, the shared world, the invite code, backups,
-switches; other teachers' sessions; which admin muted a kid (only "an admin").
+words of any line; `mod_log` beyond today's teacher actions; moderation lists; the meter, the shared world, the invite code,
+backups, switches; other teachers' sessions; which admin muted a kid (only "an admin"). In **Watch** she receives exactly the
+allowlisted frames the watched kid's game gets (below): so the knights near him as his screen shows them, with their look,
+gear, hp, level, facing, defence roll and speed, and his own presence (his `region` text and his time of day included); still
+never any of the rest of that list.
 
-### The watch screen (`online/public/teacher.html`)
+### The teacher screen (`src/79-teacherscreen.js`)
 
-One file, inline CSS and JS, no outside scripts, everything drawn with `textContent`. Dark (`#14161a`, panels `#1b1e24`
-with a 1 px `#2c3038` border, text `#d7dae0`, names `#9bc1ff`, admins gold `#f5c542`, amber `#ffb86b` for muted / paused /
-words hidden, red `#ff7b7b` for send-off and the word filter, green `#3fb950`). System font, body 15 px, names 16 px bold,
-nothing under 13 px, no emojis. Every button, chip, row and tab at least 44 x 44 px, 8 px apart. No page scroll: each panel
-scrolls inside itself.
+Built with `createElement` and `textContent` only (a self-test greps the file and `79-view` for `innerHTML`). Palette: background
+`#14161a`, panels `#1b1e24`, lines `#2c3038`, text `#d7dae0`, dim text `#a9b0bb` (the slate-300 floor), knight names `#9bc1ff`,
+admins `#f5c542`, amber `#ffb86b`, red `#ff7b7b`, green `#3fb950`. No emojis. Every button, chip, row, tab and divider grab
+area at least 44 x 44 px, 8 px apart. `html` font-size `clamp(15px, 0.35vw + 11px, 18px)` (15.5 px at 1280 wide, 17.7 at 1920,
+18 at most); nothing under 13 px.
 
-- **Sign-in card** (centred, 360 px): "Fanglands — Teacher view"; "For teachers watching Fanglands at school. Kids play at
-  fanglands.com."; *Your name* (`autocomplete=username`), *Password* (`current-password`), **Sign in**; "Ethan gives each
-  teacher their own name and password. On a shared computer, press Sign out when you're done." One red line for a refusal:
-  `nomatch` "That name and password don't match."; `wait` "Too many tries. Wait 15 minutes and try again." (the minutes from
-  `wait`); `off` "This sign-in was turned off. Ask Ethan."; no answer or a 5xx "The world is asleep right now. Try again in a
-  minute." After a screen closed: 4010 "You signed out." 4011 "Your sign-in ran out for today. Sign in again to keep
-  watching." 4012 "Ethan turned this sign-in off." 4013 "Your password was changed. Sign in with the new one." 4014 "Too
-  many teacher screens are open. Close one and try again." 4008 "That was too many taps at once. Sign in again."
-- **Top bar** (48 px): "Fanglands — Teacher view"; the line's state (green "Live", amber "Reconnecting…", red "Not connected"
-  with **Try again**); "12 on"; "Chat is on" or amber "Chat paused · 8:12 left" (counted down on the page); **2 to look at**
-  (lines with words hidden plus word-filter events in the last 10 minutes; a tap shows *Only flagged* and scrolls to the
-  newest; grey "0 to look at" when none); "Mrs Smith · signed in until 5:42 pm" and **Sign out**.
-- **Banners** when they apply: amber "Chat is paused for everyone until 10:52 am (Mrs Smith paused it)." with **Turn chat back
-  on**; "Still watching? Tap anywhere to stay signed in. Signing out in 1:59."
-- **Left, Chat** ("the last hour"; **All lines** / **Only flagged**): "10:41  Sam: anyone want to fight goblins", the time grey,
-  the name blue (gold with an ADMIN pill for an admin), the text exactly as the kids saw it; a starred line has an amber left
-  bar and "Words hidden". Events in grey ("The word filter warned Sam.", "The word filter sent Sam out for 24 hours.", "Mrs
-  Smith muted Leo for 10 minutes.", "Mr Lee paused chat for everyone for 15 minutes.", "An admin sent Leo out of the world.",
-  "Chat is back on."), the word filter's with a red bar. A tap on a name selects that knight. The list follows new lines unless
-  the teacher scrolled up ("12 new lines"). Under it: "Pause chat for everyone:" **5 minutes** **15 minutes** **1 hour** (while
-  paused "Chat is paused until 10:52 am." **Turn chat back on**), "Admins can still talk while chat is paused.", and "Mute a
-  knight's chat:" with the selected knight ("Tap a name in the chat, on the map or in the list." / "Leo" **10 minutes** **1
-  hour** **Rest of today** / "Leo is muted for 8 more minutes (Mrs Smith)." **Undo** / "Leo is muted by an admin." / "Leo is an
-  admin. Only Ethan can do that.").
-- **Middle, World map**: "World map — 12 knights on: 9 out in the world, 3 inside places." ("Last update 10:42" when nothing has
-  come for 10 s). Drawn from `/teacher-map.json`: one cell per tile, a soft colour per region, blue for the sea and the unknown,
-  solid tiles darker, region names at their centres, pixelated and sharp on a Retina screen. Dots 14 px with a dark rim and the
-  name beside them: blue playing, grey away (no presence for 30 s, or nothing heard for 30 s), an amber ring muted, a gold ring
-  an admin, a red outer ring for 10 minutes after a word-filter event, a white ring selected. Dots within 24 px merge into a
-  circle with the count; a tap lists them (44 px rows). Drag pans, pinch and the wheel zoom; **+** **−** **Whole map**. Legend:
-  "Blue: playing. Grey: away. Amber ring: chat off. Gold ring: admin." Under the map, *Inside places*: 44 px chips ("The Spider
-  Den: Sam, Leo", "Their own islands: Ben"). Nobody on: "Nobody is on right now."
-- **Right, Who is on (12)**: rows by name, at least 56 px: the name (ADMIN pill), tags "Muted 8 min" / "Muted today" / "Words
-  hidden 2"; under it "Thistledown · Fighting · on for 42 min". A tap selects and opens **Show on map**, **Mute 10 min**, **Mute 1
-  hour**, **Mute rest of today**, **Send off for today** (a pick in the chat, on the map or from a chip scrolls the list
-  to the knight's row and these buttons; red border; the first tap turns it into "Send Leo off Fanglands until
-  midnight? Leo's knight is safe and saved." **Yes, send Leo off** **Cancel**, back by itself after 5 s). For an admin only
-  **Show on map** and "Leo is an admin. Only Ethan can do that." Then *Left in the last 30 minutes (3)* (name, "left 10:31",
-  Mute and Send off; a knight there who was sent off shows "Sent off today", "Leo is sent off for today." and **Let Leo back
-  in** instead), a toast for 8 s ("Leo was sent off until tomorrow." **Undo**; every `w_no` shows there too), *Done today* (every teacher's actions today,
-  newest first, **Undo** while in force, else "(over)" or "(undone by Mr Lee)") and *Sent off for today* ("Leo — Mrs Smith, 10:44
-  am" **Let Leo back in**).
-- **Picking a knight** anywhere marks his lines in the chat (a tint and his name underlined), so the teacher finds what he
-  said. The word filter's lines that name a knight ("The word filter warned Nora.") are tappable too and pick him.
-- **Layouts**: 1100 px and wider `320px | 1fr | 340px`; 900 to 1099 px `270px | 1fr | 290px` (the map at least 460 px wide;
-  so the chat keeps its room, pausing is the bar's **Pause chat** button and its menu, and nothing sits under the chat until
-  a knight is picked);
-  under 900 px (an iPad upright, a narrow Chromebook, a phone) the bar's middle wraps to a second 44 px row, the map is full
-  width at 55% of the height directly under the bar, then a 48 px switch **Chat (3 new)** / **Who is on (12)**; selecting a
-  knight slides up a sheet "Leo · Thistledown · Fighting" **Mute 10 min** **Mute 1 hour** **Rest of today** **Send off for today**
-  **Close** (a knight sent off: "Leo is sent off for today." **Let Leo back in** **Close**). The toast is a strip of its own
-  above the sheet (or at the bottom under the tabs), so the answer to every tap shows whichever tab is up. The **Pause chat**
-  menu (5 minutes, 15 minutes, 1 hour, Cancel) ends with "Admins can still talk while chat is paused."
-- **Idle and leaving**: 60 minutes with no touch, click or key shows the idle banner with a 2-minute count; at 0 the page signs
-  out (logout, `sessionStorage` cleared). `pagehide` sends the logout beacon. A session ends at the latest after 10 hours or
-  at midnight Toronto time (owner decision D5).
-- **Reconnecting**: 1, 2, 4, 8 ... s, at most 300 s; nothing while `document.hidden`, one try on becoming visible; after 30
-  failed tries it stops and shows "Not connected" **Try again**; never after `w_bye` or a close 4010 to 4014 or 4008. A `w_bye` sends
-  the page back to the card at once, without waiting for the close that follows (under `wrangler dev` on 6 Oct 2026 the close
-  after Turn off did not reach the browser within 1.5 s; the screen was already out of `Watch.screens` and its session gone). Each
-  reconnect is a ticket (1 request) and an upgrade (1 request). The page sends exactly `{"t":"ping"}` every 25 s, which the
-  runtime answers without waking the World.
+**Round 1's fault, fixed:** its page put the panels in a grid row sized `auto` above an empty `1fr` row (the banners row,
+`display: none` when empty), so the screen sat in the top 45% of the window; the chat's controls had `max-height: 50%` and
+were cut ("Mute a knight's chat" half shown), and the side columns were a fixed 320 / 340 px, so the map was small. Round 2
+uses no grid rows, no `vh` and no fixed column widths:
+
+- `#tv`: `position: fixed; inset: 0`, a flex column. The bar (48 px at least; it wraps to a second 44 px row under 700 px), the
+  banners (0 px when empty), then `#tv-panes` (`flex: 1 1 0; min-height: 0`).
+- Every pane is a flex column: its header (`flex: none`), a scroller (`flex: 1 1 0; min-height: 0; overflow: auto;
+  overscroll-behavior: contain`) and a footer (`flex: none`).
+- **Wide (900 px and more):** Chat | divider | Map or Watch | divider | Who is on. Chat 24% (at least 260 px, at most 40%), Who is
+  on 26% (at least 280 px, at most 40%), the middle the rest (at least 380 px): 307 | 616 | 333 at 1280 wide, 260 | 460 | 280 at
+  1024 (an iPad sideways), 461 | 936 | 499 at 1920. A window that cannot hold 260 + 380 + 280 and the dividers is narrow.
+- **Dividers:** 12 px (20 px with a coarse pointer), a 6 x 44 grip, a 44 px grab area; the line turns blue on hover, focus or a
+  drag. `role=separator`, `aria-orientation`, `tabindex 0`; arrows move 24 px, Home / End go to the least and the most; a double
+  click or tap puts the default back. Pointer events with `setPointerCapture`, clamped to the minimums, saved 300 ms after letting
+  go as fractions (wide and narrow apart). A resize or a turned iPad keeps the fractions.
+- **Narrow (under 900 px: an iPad upright, a Chromebook, a phone):** the bar, the map (or Watch) at 55% of the panes (at least
+  240 px, at most 75%), a horizontal divider, a 48 px switch "Chat (3 new)" / "Who is on (12)", then the chosen list (at least 220
+  px; on a very short window the panes scroll). A picked knight's card slides up as a sheet with Close in place of the switch and
+  the list; pausing chat is the bar's **Pause chat** menu; the bottom keeps the safe-area inset.
+- **Chat:** "Chat · the last hour", All lines / Only flagged; the list; the footer "Pause chat for everyone:" 5 minutes / 15 minutes
+  / 1 hour (while paused "Chat is paused until 10:52 am." Turn chat back on) and "Admins can still talk while chat is paused."
+  Under 420 px of chat (a ResizeObserver), the footer folds into the bar's Pause chat menu. A starred line has an amber left bar
+  and "Words hidden"; the word filter's events a red bar; a tap on a line picks its knight.
+- **Map:** the canvas is the pane (a ResizeObserver sizes its pixels to the pane x the device pixel ratio, at most 2). The whole
+  map fits until she zooms, on every resize; zoomed, the middle and the zoom over the fit are kept. +, − and Whole map at the
+  bottom right; the key behind a Key chip at the top left; "Inside places" chips under the map. Dots 14 px: blue playing, grey
+  away, an amber ring muted, a gold ring an admin, a red ring for 10 minutes after a word-filter event, a white ring picked.
+- **Who is on:** rows at least 56 px: the name (an ADMIN pill for admins), tags ("Muted 8 min", "Muted today", "Words hidden 2",
+  "Sent off today"), "Thistledown · Fighting · on for 42 min", and a Watch button at the right. Then "Left in the last 30
+  minutes", "Done today" and "Sent off for today", as in round 1.
+- **The Knight card** (the one place for a kid's controls; from a row, a dot, a chat name or a knight in a watched screen; wide:
+  docked at the top of Who is on, scrolling on its own past half the pane; narrow: the sheet): the name, "Thistledown · Fighting ·
+  on for 42 min", the tags; **Watch** (blue; "Back to the map" while watching him), Show on map, Mute 10 min / Mute 1 hour / Mute
+  rest of today (or "Cohen is muted for 8 more minutes (Mrs Smith)." Undo), **Send off for today** (two taps: "Send Cohen off
+  Fanglands until midnight? Cohen's knight is safe and saved." **Yes, send Cohen off** / Cancel; back by itself after 5 s; a kid
+  sent off shows "Cohen is sent off for today." **Let Cohen back in**). For an admin: Watch, Show on map, "Cohen is an admin.
+  Only Ethan can do that." (D2). The answer to every tap is a strip at the bottom of Who is on (narrow: above the sheet).
+- **The bar:** "Fanglands — Teacher view"; Live / Reconnecting… / Not connected (Try again); "12 on"; "Chat is on" or "Chat paused
+  · 8:12 left"; "2 to look at"; "Mrs Smith · signed in until 5:42 pm"; Sign out.
+- **Reconnecting:** 1, 2, 4, 8 ... s, at most 300 s; nothing while `document.hidden`, one try on becoming visible; after 30
+  failed tries "Not connected" Try again; never after `w_bye` or a close 4010 to 4014 or 4008. The page sends exactly
+  `{"t":"ping"}` every 25 s, which the runtime answers without waking the World.
+
+### Watch: one kid's point of view
+
+**Teacher to World:** `{t: 'w_view', req, n}` and `{t: 'w_unview', req}`, each 1/20 of a request. `w_view` is checked in this
+order: the lock (one read); the socket's rate (1 a second, a burst of 5); the knight is online and has said hello (else `w_no`
+`gone` "Cohen is not on now."); one knight per screen (a new `w_view` replaces the screen's view); at most 6 views in the world
+(`w_no` `busy`). An admin's knight may be watched (R2-1). Watching is not one of the 10 knight actions. One `mod_log` row, by
+"Mrs Smith (teacher)", act `watch`, target the knight ("Mrs Smith (teacher) watched Cohen" on /admin), at most once per 600,000 ms
+per teacher per knight (a throttle in memory).
+
+**The tap:** `room.taps` is a `Map` of a kid's socket to a function, and `Room.raw` (which every frame to a knight goes through:
+`room.send`, the world's own maps in `sim/worlds.js`, welcome, kick, refusals) is
+`raw(sock, str) { try { sock.send(str); } catch (e) {} if (this.taps.size) { const f = this.taps.get(sock); if (f) f(str); } }`.
+The tap reads the frame's type from its first bytes (`/^\{"t":"([a-z_]+)"/`), else by `JSON.parse` inside `try` (J2), and sends a
+frame on the lists to each screen watching that kid as `'{"t":"w_v","v":' + v + ',"m":' + str + '}'` (the frame byte for byte).
+His own presence (he never receives it) goes by `hooks.presence` (`k.last`, with the server's role), and, while he keeps his map
+(alone or not), his own snapshot by `hooks.mon(k, out)` at the end of `onMon`.
+
+| List | Types |
+|---|---|
+| `VIEW_FORWARD` (his screen) | `p`, `left`, `mon`, `keeper`, `chat`, `crackers`, `boom`, `party_end`, `announce` |
+| `VIEW_STATUS` (the header only) | `muted`, `unmuted`, `chat_pause`, `strike` |
+| `VIEW_DROP` (never) | `welcome`, `who`, `role`, `sim`, `snap`, `hit`, `kill`, `hurt`, `gift`, `gift_ok`, `gift_back`, `prize`, `trade_ask`, `trade_asked`, `trade_ask_off`, `trade_no`, `trade_open`, `trade_state`, `trade_note`, `trade_end`, `trade_done`, `mod`, `modlist`, `spawn`, `spawn_clear`, `light_no`, `party_no`, `boss_call`, `boss_wait`, `watching`, `error`, `pong`, `view` |
+
+`watch.test.mjs` fails on any type the contract, `room.js`, `sim/worlds.js` or `watch.js` sends a game that is in none of the
+three lists, or in two. An `error` to the kid of `kicked`, `words`, `elsewhere`, `banned` or `renamed` ends the view (`w_vend`).
+
+**Server to teacher (Watch):**
+
+| `t` | Fields | Meaning |
+|---|---|---|
+| `w_vstart` | `req?, v, n, role, map, place, keeper, me, others, parties, old, monsters, limit` | the answer to `w_view` (and a fresh start after a nap or his game coming back in): `keeper` the keeper message for his map, `me` his last presence, `others` the last presence of each knight on his map, `parties` the live crackers there, `old` his game's Atlas differs from the world's, `monsters` `'live'` (his game streams alone, or the world runs the place) or `'friends'`, `limit` `null`, `'streams'` or `'day'`. Built from memory: no SQL beyond the lock |
+| `w_v` | `v, m` | one frame his game got (or his own presence or snapshot), `m` byte for byte; a page drops a `v` that is not its current view's |
+| `w_vend` | `v, n, why, at, text` | his game's line ended: "Cohen left the game at 10:52 am." (`left`), "Cohen was sent off until tomorrow." (`sentoff`), "An admin sent Cohen out of the world." (`kicked`, `banned`), "The word filter sent Cohen out for 24 hours." (`words`), "Cohen opened the game somewhere else. This view starts again when that game comes in." (`elsewhere`), "An admin gave Cohen a new name, so this view ended." (`renamed`). The view stays open: if his game comes back in, a fresh `w_vstart` follows his welcome |
+| `w_vinfo` | `v, limit` | a stream limit was reached or lifted |
+
+**The kid's game:** `{t: 'view', on: true}` goes to him at his first viewer (only a game whose hello named the `view`
+capability, which `KNOWN_CAPS` now lists), and again after a welcome while he is still watched; `{on: false}` at his last
+viewer, and when a limit is reached. While told (`COOP.viewed()`): his presence carries `tod` = his time of day (`player.dayTime`
+mod 600 s) rounded to 0.1 (J3; other games ignore it; no extra message), and when he keeps his map with nobody near (`S.here`
+empty) his game sends `snapshot([])` at most every 0.5 s, an unchanged list only once every 5 s, never while paused or on the
+title; it starts again on a map change and stops at view off or a welcome. With anyone near, the stream is the 8 a second it
+always was. Limits: **3** kids told at once (`VIEW_STREAMS_MAX`; the 4th is told when one stops), **40,000** alone messages a
+Toronto day (`VIEW_DAY_MSGS`, counted in memory; at the 40,000th every told kid is told off until the next day). The kid is told
+nothing new on screen: only D1's "A teacher is watching." (R2-2).
+
+**Stopping:** `w_unview`, Back to the map, Esc, Watch on someone else, Sign out, idle, the screen closing, the kid leaving. Each
+deletes the tap and tells him view off when he has no viewer left. A hidden teacher tab sends `w_unview` after 60 s and `w_view`
+again when it is seen. **A nap:** the attachment carries `view`; `Watch.restore` keeps it pending and `Watch.settle()`, after the
+wake has restored the knights, taps him again by name (a fresh `w_vstart`) or sends `w_vend`.
+
+**The drawing (`src/79-view.js`, in the teacher's own page: no iframe, one engine).** `VIEW.start(v, frame)`, `VIEW.feed(m)`,
+`VIEW.stop()`. Installed when the teacher screen opens (outermost wraps): `title.tick` runs only `time += dt`,
+`PLAYERS.step(dt)`, `CHAT.step(dt)` and `COOP.viewStep(dt)` (never `update()`); `render()` returns at once unless watching, and
+watching it sizes the canvas to the pane, puts the page's own knight where his drawn knight is (his facing, his time of day; never
+dead, never on a machine) and draws as if paused (no verb tag, whose coach writes to storage); `drawHud` draws only his chat
+strip (`CHAT.drawStrip`); `drawCharacter` never draws the page's own knight (he is drawn by 73-players as a knight among the
+others, from his own presence); `resize` makes the logical width `clamp(paneW, 760, 1024) / zoom`, scaled into the pane. Frames
+go to `NET.listeners` as a socket's would (`NET.me` is null, so he is a remote knight). COOP's view mode: puppets only (on start
+the monsters are cleared; nothing is parked or kept), the keeper of each map from the forwarded `keeper` frames, the puppets
+gliding over the gap between snapshots (0.12 to 0.6 s), a fallen one tipping and fading. A new map: `INSTANCES.leave()` then
+`INSTANCES.enter(id)` (`view-instances.test.mjs` proves every instance is built alike in two engines with different dice), then
+the instance's own monsters go. His island (`house`): no drawing, a card "Cohen is on his own island. What he built there stays
+on his game, so it is not shown here. His chat still shows here." An unknown place: "This view can't draw that place yet. Reload
+the page to update." A glass over the canvas takes every pointer (a tap on a knight opens his card); a capture-phase key
+listener keeps every key from the game (Esc = Back to the map).
+
+**The POV header (44 px):** Back to the map; "Watching Cohen · The Spider Den · Fighting" and a green Live dot; Closer / Wider / Fit
+(x1.25 / ÷1.25 between 0.6 and 2.0, remembered); "Only watching: taps here do nothing in Cohen's game." Then, as they apply:
+"Waiting for Cohen's game…" (no frame in 3 s); "Cohen's game is paused or in the background. This is the last thing it showed.
+Last seen 10:42." (no presence in 5 s); "Cohen's game is an older version. What you see may be a little off."; "Monsters near
+Cohen show when a friend is near him or his game is reloaded." (`monsters: 'friends'`); "Monsters near Cohen show only when a
+friend is near him (the daily limit for watching is used up)." (or "(three kids are already being watched this way)."); grey
+lines for his mute, unmute and a word-filter warning; and the `w_vend` words, the frame frozen. Narrow: under his screen a strip
+"Cohen · Mute · Send off · Back to the map". ("him" and "his" follow his knight: a girl knight's reads "her".)
+
+**Not shown in Watch:** his HUD, panels, inventory and dialogs; damage numbers, projectiles and drops; anything held only in his
+save (trees he chopped, walls he built, his island's builds): the drawing is the starting world (R2-5).
 
 ### The controls (socket messages; answered `w_ok {req, text}` or `w_no {req, code, text}`)
 
@@ -2517,15 +2647,16 @@ teacher screen.
 | `w_pause` | `req, span: '5m' \| '15m' \| '1h'` | `settings` `chat_pause` = `{until, by, act}` (also in the Watch's memory, read again on every wake). A pause replaces the running one only when it ends later (else `w_no` `longer`). Every knight gets `{t:'chat_pause', left}`. `mod_log` act `chat_pause`, target `everyone`, detail the span |
 | `w_chaton` | `req` | ends a running teacher pause: everyone gets `{t:'chat_pause', left: 0}`. `mod_log` act `chat_on` |
 | `w_undo` | `req, act` | any teacher's action, by any teacher (never an admin's or the parent page's). A mute: only if `muted_until` still equals the act's `until`; it goes back to `prev` if that is still in the future, else 0, and the kid gets `{t:'unmuted', by:'teacher'}` (or `muted` with the older mute's time left). A send-off: only if `sent_off_until` still equals `until`; then 0 ("Let Leo back in"). A pause: only if the running pause is this act. Otherwise `w_no` `changed` ("Someone else changed that since, so it was left as it is."); one already run out is `over`. After a rename the knight is found by `target_lc`, else by `store.renamedFrom`. `mod_log` act `unmute` / `letback` / `chat_on`, detail `undo` |
+| `w_view` / `w_unview` | `req, n` / `req` | Watch, above |
 
 - **While sent off** (`sent_off_until > now`): `POST /api/login` with the right secret word answers **423** `sentoff` `{until}`
   and makes no session (a wrong word is still 401); `World.session` answers 423 `sentoff` `{until}` on every call but `PUT
   /api/save` (the last push lands) and the `/ws` upgrade; `Room.join` and `Room.restore` send `{t:'error', code:'kicked',
   why:'sentoff', until, text}` and close 4005. The upgrade is let through on purpose: a refused upgrade reaches a game only
   as close 1006, and a kid sent off while his line was down (D7) would have his open tab try again every 15 s until midnight
-  (one request each); through the Room it is one request, then 4005, which never reconnects. 423, not 403, so a game already open never drops the kid's token. The kid's card (a new game): "A
-  teacher sent you off Fanglands for the rest of today. Your knight is safe. You can play again tomorrow." Play stays tappable;
-  nothing polls.
+  (one request each); through the Room it is one request, then 4005, which never reconnects. 423, not 403, so a game already
+  open never drops the kid's token. The kid's card (a new game): "A teacher sent you off Fanglands for the rest of today. Your
+  knight is safe. You can play again tomorrow." Play stays tappable; nothing polls.
 - **While chat is paused**: `Room.onChat`, before the mute check: a player's line is not relayed, not logged and never a
   strike; the sender gets `{t:'muted', left, by:'pause'}` ("Chat is paused by a teacher for 12 more minutes."). Admins' lines
   go through. At the start everyone gets `{t:'chat_pause', left}` ("A teacher paused chat for 15 minutes."), and a knight who
@@ -2538,16 +2669,16 @@ teacher screen.
   every knight gets `{t:'watching', on: true}` when the count goes from 0 to 1 and after each `welcome`, and `{on: false}` when
   it goes back to 0 (the switch turned off while screens are open sends `on: false` too). The game shows a grey "A teacher is
   watching." at the top of the Friends list while it is on, and one grey chat line "A teacher is watching Fanglands right
-  now." at most once every 30 minutes on a device. No names, no count.
+  now." at most once every 30 minutes on a device. No names, no count. Watch adds nothing to what a kid is told (R2-2).
 - **Never given to teachers**: kick, ban, reset, rename, strikes, roles, saves, rollback, gifts, spawn, parties, sending chat,
-  offline accounts, `mod_log`, trades, the invite code, backups, switches.
+  offline accounts, `mod_log`, trades, the invite code, backups, switches, any control in a watched game.
 
-What the owner reads in *What admins did*: "Mrs Smith (teacher) signed in to the teacher view"; "Mrs Smith (teacher) muted Leo
-for 10 minutes" / "for 1 hour" / "for the rest of today"; "Mrs Smith (teacher) sent Leo off for the rest of the day"; "Mr Lee
-(teacher) let Leo back in"; "Mr Lee (teacher) turned Leo's chat back on"; "Mrs Smith (teacher) paused chat for everyone for 15
-minutes"; "Mrs Smith (teacher) turned chat back on"; "parent page added the teacher Mrs Smith" / "gave Mrs Smith (teacher) a
-new password" / "turned off Mrs Smith (teacher)" / "turned on Mrs Smith (teacher)". The accounts table tags "Sent off today
-(Mrs Smith)".
+What the owner reads in *What admins did*: "Mrs Smith (teacher) signed in to the teacher view"; "Mrs Smith (teacher) watched
+Leo"; "Mrs Smith (teacher) muted Leo for 10 minutes" / "for 1 hour" / "for the rest of today"; "Mrs Smith (teacher) sent Leo off
+for the rest of the day"; "Mr Lee (teacher) let Leo back in"; "Mr Lee (teacher) turned Leo's chat back on"; "Mrs Smith (teacher)
+paused chat for everyone for 15 minutes"; "Mrs Smith (teacher) turned chat back on"; "parent page added the teacher Mrs Smith" /
+"gave Mrs Smith (teacher) a new password" / "turned off Mrs Smith (teacher)" / "turned on Mrs Smith (teacher)". The accounts
+table tags "Sent off today (Mrs Smith)".
 
 ### Server to teacher
 
@@ -2555,11 +2686,12 @@ new password" / "turned off Mrs Smith (teacher)" / "turned on Mrs Smith (teacher
 |---|---|---|
 | `w_hello` | `me, expires, now, tz: 'America/Toronto', notice` | sent on open |
 | `w_all` | `at, knights, inside, gone, chatPause, acts, sentOff, chat` | once on open. `chat`: the last 60 minutes, at most 100 lines, `{at, n, text, role, masked}` (`masked` from `chat_masked`, so a line starred before the screen opened is still flagged); the page draws "Earlier, before you opened this" over them. `gone`: `[{n, at}]`, logins ended in the last 30 minutes |
-| `w_k` | `at, knights, inside, gone` | built only on the back of what the World already handles (a knight's presence, join, leave, a map change, a mute change), at most once per 1,000 ms (a join or a leave at once), skipped when identical to the last one sent unless that went out 8 s ago (so a world where kids stand still still reads as live: the page says "Last update" after 10 s with nothing new, and greys every dot after 30 s); no timer, no alarm |
+| `w_k` | `at, knights, inside, gone` | built only on the back of what the World already handles (a knight's presence, join, leave, a map change, a mute change), at most once per 1,000 ms (a join or a leave at once), skipped when identical to the last one sent unless that went out 8 s ago; no timer, no alarm |
 | `w_chat` | `at, n, text, role, masked` | the same line the kids got, plus the filter's `masked` |
 | `w_event` | `at, kind, n, text` | `strike` ("The word filter warned Sam.", never the typed line, never a count), `words` ("The word filter sent Sam out for 24 hours."), `kick` / `ban` ("An admin sent Leo out of the world."), `mute_admin` ("Leo is muted by an admin."), `teacher` (a teacher's action, in words) |
 | `w_acts` | `acts, sentOff, chatPause` | after every teacher action |
 | `w_ok` / `w_no` | `req, text` / `req, code, text` | the answer to one control |
+| `w_vstart` / `w_v` / `w_vend` / `w_vinfo` | | Watch, above |
 | `w_bye` | `code, text` | then the close: 4010 signed out, 4011 time up, 4012 turned off, 4013 new password, 4014 too many screens, 4008 too fast |
 
 **A knight row has exactly these keys**: `{n, role, map, place, x, y, doing, since, away, muted, sentOff}`. `map`: `over`, an
@@ -2573,16 +2705,26 @@ the action (`chop*` "Chopping trees"; `mine*`, `coalface`, `rm_vein`, `rm_giant`
 horse"), "Walking", "Standing still". `since`: when the knight came on. `away`: no presence for 30 s. `muted`: `{left, by:
 'teacher' | 'admin'}` or `null`. `sentOff`: until, or 0. `inside`: `[{place, names}]`.
 
-Page to server: `w_mute`, `w_off`, `w_pause`, `w_chaton`, `w_undo` and the ping text. Anything else is ignored.
+Page to server: `w_mute`, `w_off`, `w_pause`, `w_chaton`, `w_undo`, `w_view`, `w_unview` and the ping text. Anything else is
+ignored.
 
 ### The free plan, with arithmetic
 
-100,000 Durable Object requests a day; WebSocket messages count 20 to 1; outgoing messages are free.
+100,000 Durable Object requests a day; incoming WebSocket messages count 20 to 1; outgoing messages are free; 100,000 rows
+written a day.
 
-- A page open all day: sign-in 1 + ticket 1 + upgrade 1 + logout 1 = **4**; a reconnect is 2 more; an action is 1/20; the
-  25 s pings 0 (the runtime answers them without the World); frames out 0. About **4 to 15 a day**; a broken page that gives
-  up after 30 tries about 60.
-- `teacher.html` and `teacher-map.json` are Worker requests, not Durable Object requests: about 2 per page load.
+- A screen open all day: the sign-in 1 + ticket 1 + upgrade 1 + logout 1 = **4**; a reconnect is 2 more; an action is 1/20; the
+  25 s pings 0 (the runtime answers them without the World); frames out 0. About **4 to 15 a day**.
+- `/teacher-map.json` is the Worker's own answer (0 Durable Object requests).
+- **Watch:** starting and stopping, 2 messages (0.1 requests). The frames it forwards are outgoing: free. His presence and his
+  friends' streams are already received: 0 extra. The alone stream (only while watched, only alone on a map he keeps): at most
+  2 a second = 7,200 messages an hour = **360 requests an hour**, about 36 an hour when nothing near him moves. Measured on a local
+  world on 6 Oct 2026 (`tools/teacher-browser.mjs`): a kid alone in the Spider Den, spiders moving, watched for a minute: 101
+  more incoming messages than the same minute unwatched, about 6,060 an hour = **303 requests an hour**, and no row written for it;
+  `tools/mmo-sim-teacher.js`: 20 snapshots in 10 s alone (7,200 an hour, 360 requests), and 0 extra with a friend near. The
+  daily ceiling: 40,000 messages = **2,000 requests (2% of the day)**, whatever happens. Rows: at most 1 per teacher per knight
+  per 10 minutes (the `watch` row). Alarms: 0. SQL per frame: 0. A teacher is never in `knights`, `byName`, `members`, the keeper
+  election, `who`, `online()` or the 50 cap.
 - Alarms added: **0**. SQL writes: 0 per frame, about 3 per action, 2 per sign-in. CPU: one frame of 50 rows or fewer, from
   memory, at most once a second, only while kids are already waking the World.
 - `backup.js` exports `teachers` (with salts and hashes, like `accounts`) and `teacher_acts`, never `teacher_sessions`.
@@ -2592,7 +2734,7 @@ Page to server: `w_mute`, `w_off`, `w_pause`, `w_chaton`, `w_undo` and the ping 
 - Teacher sockets only: **4010** signed out, **4011** time up, **4012** turned off, **4013** new password, **4014** too many
   screens; 4008 too fast as for knights.
 - HTTP: **423** `sentoff` with `until` (a knight sent off for the day: login, every call but `PUT /api/save` and `/ws`); `nomatch`,
-  `wait`, `off` (teacher sign-in); `auth` (a teacher ticket or token that will not do).
+  `wait`, `off` (a teacher's sign-in at `/api/login`); `auth` (a teacher ticket or token that will not do).
 - Socket: `error` `kicked` with `why: 'sentoff'` and `until`, then close 4005 (no reconnect; old and new games save and push
   first). `LOGIN.sentence` reads both as the send-off sentence; a 423 keeps the token.
 
@@ -2602,19 +2744,38 @@ Page to server: `w_mute`, `w_off`, `w_pause`, `w_chaton`, `w_undo` and the ping 
 - D2 Teachers cannot act on admin knights; only Ethan can.
 - D3 A pause leaves admins able to talk.
 - D4 "Rest of today" ends at midnight Toronto time (`SENDOFF_END`; the other choice is 4:00 pm).
-- D5 A session lasts at most 10 hours or until midnight; idle sign-out after 60 minutes (30 for stricter shared devices).
-- D6 No "Teacher sign-in" link on the game's card.
+- D5 A session lasts at most 10 hours or until midnight; idle sign-out after 60 minutes.
+- D6 No teacher link on the game's card (round 2: there is nothing to link to; the card itself is the sign-in).
 - D7 A teacher may act on a kid who left in the last 30 minutes.
+- R2-1 Watch works on admin knights too, read-only (`WATCH_ADMINS = true`).
+- R2-2 The kid is told nothing beyond D1's "A teacher is watching." (the other choice: "A teacher is watching your screen.").
+- R2-3 The alone-monster stream is on: 2 a second, 3 kids at once, 40,000 messages a day (`VIEW_STREAMS_MAX`, `VIEW_DAY_MSGS`).
+- R2-4 Each Watch start is in *What admins did*, at most once per 10 minutes per teacher per knight (`WATCH_LOG_MS`).
+- R2-5 The view draws the starting world, never the kid's save.
+
+**Accepted risks (round 2):** the token is in the page's memory (one origin with the game; every text is set with
+`textContent`); teacher names can be told from knight names (a teacher's name answers 401 `nomatch` with `teacherOk`, an unknown
+name 404 without it; the protection is the password and the per address and name waits); an old cached kid's game shows no
+monsters while he plays alone (the header says so); an old cached card says "No knight by that name yet" to a teacher (a reload
+fixes it); the view shows the starting ground, not his save's changes; the day's stream count is in memory, so a nap resets it
+(the worst case is still 3 streams at 2 a second).
 
 ### Testing
 
-`node --test online/test/` runs `teachers.test.mjs` (the door, sign-in, tickets, the owner's calls, and every admin route,
-knight route and `/ws` refused to teacher credentials, the list of admin routes read from this contract and from
-`world.admin()` so a new one is covered by itself), `watch.test.mjs` (never a knight, the data whitelist, the cost, mute,
-send-off, pause, limits, the notice), `teacher-page.test.mjs` (the page in a stand-in DOM: no timer but the ping, the
-reconnect rules, idle, the token never in a URL, text never HTML, the two-tap send-off, the exact sentences) and
-`teacher-map.test.mjs`. `tools/mmo-sim-teacher.js` plays two whole games and a teacher against the real Room;
-`tools/teacher-browser.mjs` checks the page in a real browser at eight sizes. `filter.test.mjs` holds the "teacher" name rule.
+`node --test online/test/` runs `teachers.test.mjs` (the one sign-in, `teacherOk`, the waits, tickets, the owner's calls, every
+admin route and every knight route (read from `World.route()`'s own source) and `/ws` refused to teacher credentials, the Worker's
+302s and map), `watch.test.mjs` (never a knight, the data whitelist, the cost, mute, send-off, pause, limits, the notice; Watch
+W1 to W12: `w_vstart` from memory, the allowlist complete, nothing off it reaching a teacher, J2, view on and off, the end words,
+the taps cleared, settle after a nap, the fuzz, the golden 60 s (J4: every kid's frames byte for byte the same with and without a
+watcher, the `view` frames and the `tod` field set aside), the stream caps, the `mod_log` throttle, admins), `room-watched.test.mjs`
+(the whole Room suite again with a watcher on every knight), `teacher-map.test.mjs`, `teacher-labels.test.mjs` (the layout over 8
+panes, 6 zooms, 0 to 50 knights and 3 pans each; the owner's screenshot case) and `view-instances.test.mjs`. The game's own
+self-tests cover 71 (a teacher's answer, J1, the sentences), 79-teacherscreen (the token, the dividers, the fold, the two-tap
+send-off, the toasts, idle, `pagehide`, `w_bye`, the grep gate), 79-view (a 60 s stream drawn with nothing written, sent, saved or
+heard) and 75 (the alone stream). `tools/mmo-sim-teacher.js` plays two whole games and a teacher against the real World;
+`tools/teacher-browser.mjs` checks the screen in a real browser against a local world at 14 sizes x 5 browser zooms and a touch
+iPad, Watch in the overworld and the Spider Den, the controls, the fresh page, the token, Sign out, idle and midnight, and the
+cost, with screenshots. `filter.test.mjs` holds the "teacher" name rule.
 
 ## Safety rules (binding)
 
@@ -2635,9 +2796,10 @@ reconnect rules, idle, the token never in a URL, text never HTML, the two-tap se
   on the parent page. Nobody can mute, kick or ban an admin from inside the game.
 - An admin's powers change only that admin's own knight; *Unlock everything* runs only after a pinned backup, which
   the parent page can restore too.
-- Teachers (*The teacher view*): each has a name and password only the parent page makes, resets and turns off; a teacher
-  watches and can only mute, pause chat and send a kid off for the day, never reach an account, a save or a switch; every
-  teacher action is checked by the world, written to `mod_log` with the teacher's name, and undoable.
+- Teachers (*The teacher view*): each has a name and password only the parent page makes, resets and turns off, and signs in on
+  the game's own card; a teacher watches (the map, the chat, one kid's screen at a time, read-only) and can only mute, pause chat
+  and send a kid off for the day, never reach an account, a save or a switch, and is never a knight; every teacher action (and
+  each Watch) is checked by the world and written to `mod_log` with the teacher's name, and every action is undoable.
 - Trades: only between two knights on one map who both said yes, both accepted and both confirmed the very same offers; the
   world holds the offers and moves nothing that does not add up. Every finished trade is kept and shown on the parent page.
 
@@ -2649,8 +2811,8 @@ reconnect rules, idle, the token never in a URL, text never HTML, the two-tap se
   who is an admin (Make admin / Make player), mutes, the moderation log, pinned backups, every trade. Needs the admin key.
 - Parents: https://fanglands.com/admin — accounts (last login, time online, knight play time, the last 10 logins), reset a forgotten secret word, ban, the invite code, the chat log, save rollback,
   who is an admin (Make admin / Make player), mutes, the moderation log, pinned backups. Needs the admin key.
-- Teachers: https://fanglands.com/teacher (it sends them to https://teacher.fanglands.com): the watch screen, with the name and
-  password Ethan made them on /admin (*Teachers*).
+- Teachers: https://fanglands.com, the game's own card: their name in Knight's name and the password Ethan made them on /admin
+  (*Teachers*) in Secret word, then Play; the teacher screen opens instead of the game (*The teacher view*).
 - The old address https://ethanbender.github.io/fanglands/ is the offline copy; its title screen has no login.
 
 ## Testing

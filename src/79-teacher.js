@@ -1,7 +1,7 @@
 // ============================================================================
 // A TEACHER IS WATCHING — what a kid's game says about the teacher view (docs/ONLINE.md, "The teacher view")
 // Owner (2026-10-06): an admin view for Cohen's teachers, to watch the kids when they play at school. The teachers' page is
-// online/public/teacher.html and the world does every check (online/src/watch.js); this file only says it, in the game:
+// src/79-teacherscreen.js (opened from the game's own card) and the world does every check (online/src/watch.js); this file only says it, in the game:
 //   - {t:'watching', on}: a grey "A teacher is watching." at the top of the Friends list while it is on, and one grey chat line
 //     "A teacher is watching Fanglands right now." at most once every 30 minutes on this device. No names, no count.
 //   - {t:'chat_pause', left}: "A teacher paused chat for 15 minutes." in the chat; the box refuses a line here while it runs

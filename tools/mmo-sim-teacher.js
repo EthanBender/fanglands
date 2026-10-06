@@ -1,49 +1,43 @@
 #!/usr/bin/env node
-// tools/mmo-sim-teacher.js — the teacher view against the REAL Room (docs/ONLINE.md, "The teacher view"): two whole games in
-// one Node process (Sam, a player; Ava, an admin) and a teacher's watch screen (online/src/watch.js) on the same world, which
-// keeps its accounts and the teacher tables in node's SQLite (online/src/store.js SqlStore, teachers.js TeacherBook).
+// tools/mmo-sim-teacher.js — the teacher view against the REAL World (docs/ONLINE.md, "The teacher view"): two whole games in
+// one Node process (Sam, a player; Ava, an admin) and a teacher's screen on the same World (online/src/world.js on node's
+// SQLite, as online/test/teacher-kit.mjs builds it), so the teacher signs in exactly as the card does: POST /api/login with
+// teacherOk: 1, a ticket, the socket.
 //
-//   MMO_ROOM=/path/to/online/src/room.js node tools/mmo-sim-teacher.js
+//   node tools/mmo-sim-teacher.js
 //
 // What it proves, one PASS/FAIL line each:
 //   1. the teacher's frame puts both knights at their real tiles and places
 //   2. Ava's game says "A teacher is watching Fanglands right now." once, and the Friends header says "A teacher is watching."
 //   3. a teacher mutes Sam: his game says the teacher's sentence and his next line is refused; Undo gives his chat back
 //   4. a pause blocks Sam's line and not Ava's (an admin); "Chat is back on." on both games when it is turned back on
-//   5. a teacher sends Sam off: his game goes back to the card with the sentence; his last push lands first (one more version,
-//      byte for byte his slot); an open trade with Ava ends with nothing moved; Play is refused until the world's midnight,
-//      then works
-// Exit 0 only when every line passes. The plumbing (the fake wire, the game contexts, the Room loader) is tools/mmo-sim.js's.
+//   5. Watch (round 2): Sam alone in the Spider Den, watched: at most 2 snapshots a second reach the teacher (his game's alone
+//      stream); Ava joins him: 8 a second, with no message from his game but the ones it always sends; the requests an hour
+//   6. a teacher sends Sam off: his game goes back to the card with the sentence; his last push lands first (one more version,
+//      byte for byte his slot); an open trade with Ava ends with nothing moved; the teacher's view of him ends in plain words;
+//      Play is refused until the world's midnight, then works
+// Exit 0 only when every line passes. The plumbing (the fake wire, the game contexts) is tools/mmo-sim.js's.
 'use strict';
 const vm = require('vm');
 const path = require('path');
 const fs = require('fs');
-const { Wire, makeContext, loadRoom, FRAME_MS, ROOT } = require('./mmo-sim.js');
+const { Wire, makeContext, FRAME_MS, ROOT } = require('./mmo-sim.js');
 
 async function main() {
   const t0 = Date.now();
-  const imp = f => import(require('url').pathToFileURL(path.join(ROOT, 'online', 'src', f)).href);
-  const { DatabaseSync } = require('node:sqlite');
-  const { SCHEMA, migrate, SqlStore } = await imp('store.js');
-  const { migrateTeachers, TeacherBook, dayEnd, sha256 } = await imp('teachers.js');
-  const { Watch } = await imp('watch.js');
-  const { readAtlas } = await imp('atlas.js');
+  const url = f => require('url').pathToFileURL(path.join(ROOT, f)).href;
+  const K = await import(url('online/test/teacher-kit.mjs'));
+  const { dayEnd } = await import(url('online/src/teachers.js'));
+  const { readAtlas } = await import(url('online/src/atlas.js'));
   const ATLAS = readAtlas(JSON.parse(fs.readFileSync(path.join(ROOT, 'online', 'src', 'atlas.json'), 'utf8')));
-
-  // the world's SQLite: the live schema, the migration, the teacher tables
-  const db = new DatabaseSync(':memory:');
-  const sql = { exec(q, ...a) { const st = db.prepare(q); const cols = st.columns().map(c => c.name); let rows = []; if (cols.length) rows = st.all(...a).map(r => Object.assign({}, r)); else st.run(...a); return { toArray: () => rows.slice(), columnNames: cols, [Symbol.iterator]: () => rows[Symbol.iterator]() }; } };
-  for (const s of SCHEMA.split(';')) if (s.trim()) sql.exec(s);
-  migrate(sql); migrateTeachers(sql);
-  // 10:00 am in Toronto (the world's clock; the games keep their own)
-  let vnow = Date.UTC(2026, 9, 6, 14, 0, 0); const now = () => Math.floor(vnow);
-  for (const [n, role] of [['Sam', 'player'], ['Ava', 'admin']]) sql.exec('INSERT INTO accounts (name_lc, name, salt, hash, created, last_seen, role) VALUES (?, ?, ?, ?, ?, ?, ?)', n.toLowerCase(), n, 's', 'h', vnow, vnow, role);
-  const store = new SqlStore(sql);
-  const book = new TeacherBook(sql, now);
-  const watch = new Watch({ book, store, sql, now, atlas: ATLAS });
-  const room = await loadRoom(now, { store, hooks: watch.hooks, atlas: ATLAS });
-  if (!room.hooks || room.hooks === undefined) { console.error('this room.js has no teacher hooks: point MMO_ROOM at the teacher view build'); process.exit(1); }
-  watch.room = room;
+  // the World, 10:00 am in Toronto (its clock is the kit's; the games keep their own)
+  K.clock.t = Date.UTC(2026, 9, 6, 14, 0, 0);
+  const now = () => Math.floor(K.clock.t);
+  const W = K.newWorld(), world = W.w, db = W.db;
+  await K.signup(world, 'Sam'); await K.signup(world, 'Ava');
+  await K.parent(world, 'POST', '/api/admin/role', { name: 'Ava', role: 'admin' });
+  const room = world.room, watch = world.watch, book = world.teachers;
+  const T = await K.addTeacher(world);
 
   // the wire: mmo-sim's, with the world's saves and its send-off answers (423 sentoff) behind it
   const saves = new Map();   // lc -> [{ver, json}]
@@ -74,17 +68,15 @@ async function main() {
   A.NET.on('*', m => heard.A.push(m)); B.NET.on('*', m => heard.B.push(m));
   const got = (who, t, since) => heard[who].slice(since || 0).filter(m => m.t === t);
   const sys = g => g.CHAT.log.filter(l => l.n === null).map(l => l.text);
-  const tick = n => { for (let i = 0; i < n; i++) { for (const g of both) g.FANGLANDS.step([]); vnow += FRAME_MS; wire.flush(); } };
+  const tick = n => { for (let i = 0; i < n; i++) { for (const g of both) g.FANGLANDS.step([]); K.clock.t += FRAME_MS; wire.flush(); } };
 
-  // ---- the teacher: a row, a session, a screen ----
-  const { salt, hash } = { salt: 'x', hash: 'y' };
-  const tid = book.add('Mrs Smith', salt, hash, now());
-  const sh = await sha256('a-teacher-token');
-  book.addSession(tid, sh, now(), dayEnd(now()));
-  const screen = { got: [], closed: null, send(s) { screen.got.push(JSON.parse(s)); }, close(code) { screen.closed = code; } };
+  // ---- the teacher signs in as the card does: /api/login with teacherOk, a ticket, the socket ----
+  const lg = await K.call(world, 'POST', '/api/login', { name: T.name, pass: T.pass, teacherOk: 1 });
+  if (lg.status !== 200 || lg.data.teacher !== true) { console.error('the teacher could not sign in: ' + JSON.stringify(lg)); process.exit(1); }
+  let screen = null;
+  const openScreen = async () => { screen = await K.screen(world, lg.data.token); };
   const last = t => screen.got.filter(m => m.t === t).pop();
-  let reqN = 0;
-  const act = m => { const req = ++reqN; watch.message(screen, JSON.stringify(Object.assign({ req }, m))); return screen.got.filter(x => (x.t === 'w_ok' || x.t === 'w_no') && x.req === req).pop(); };
+  const act = m => K.act(world, screen, m);
 
   // ---- the two games log in and play (Sam's knight near Ava's, on open grass in Thistledown) ----
   for (const g of both) g.FANGLANDS.newGame();
@@ -93,7 +85,7 @@ async function main() {
   await login(A, 'Sam'); await login(B, 'Ava');
   tick(20);
   ev(B, 'player.x = 0; player.y = 0'); ev(B, `player.x = ${ev(A, 'player.x')} + 40; player.y = ${ev(A, 'player.y')}`);
-  watch.open(screen, { w: tid, sh, since: now() });
+  await openScreen();
   tick(90);
 
   // ---- 1. the frame ----
@@ -114,7 +106,7 @@ async function main() {
     const rec = [], st = {};
     const g2 = new Proxy(st, { get: (t, k) => k === 'measureText' ? (s => ({ width: String(s).length * 6 })) : k === 'fillText' ? (s => { rec.push(String(s)); }) : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => ({ addColorStop: () => { } }) : (k in st ? st[k] : () => { }), set: (t, k, v) => { st[k] = v; return true; } });
     B.__g2 = g2; ev(B, 'openPanel("friends"); HOOKS.panel.friends(window.__g2, false); closePanel()');
-    watch.leave(screen); watch.open(screen, { w: tid, sh, since: now() }); tick(10);
+    world.webSocketClose(screen, 1000, ''); await openScreen(); tick(10);
     const again = sys(B).filter(t => t === 'A teacher is watching Fanglands right now.').length;
     line('Ava\'s game says "A teacher is watching Fanglands right now." once (not again when the screen comes back) and her Friends header says "A teacher is watching."', said === 1 && again === 1 && on && rec.join(' ').includes('A teacher is watching.'), { said, again, on, rec: rec.slice(0, 6) });
   }
@@ -153,7 +145,41 @@ async function main() {
     line('a pause: both games say it; Sam\'s line is refused (on his device and by the world), Ava\'s (an admin) goes through; "Chat is back on." on both when it is turned back on', r && r.t === 'w_ok' && said && samLocal && samRefused && avaSent && avaHeard && on && on.t === 'w_ok' && backOn, { r, said, samLocal, samRefused, avaSent, avaHeard, on, backOn, a: sys(A).slice(-4), b: sys(B).slice(-4) });
   }
 
-  // ---- 5. send Sam off ----
+  // ---- 5. Watch: Sam alone in the Spider Den, then Ava with him ----
+  let view = null;
+  {
+    tick(100);
+    ev(A, 'INSTANCES.enter("spider_den")'); tick(30);
+    const st = K.view(world, screen, 'Sam');
+    view = st;
+    tick(60);   // his game hears view on, and starts its alone stream
+    const fromSam = () => wire.made.length;   // (kept for the count below)
+    const monIn = { n: 0 };
+    const inbound = wire.inbound;
+    const origPush = inbound.push.bind(inbound);
+    inbound.push = (...xs) => { for (const x of xs) if (x.client === A.NET.sock && /"t":"mon"/.test(x.str)) monIn.n++; return origPush(...xs); };
+    const vFrames = () => K.viewed(screen, st && st.v).filter(m => m.t === 'mon').length;
+    const f0 = vFrames(); monIn.n = 0;
+    tick(60 * 10);
+    const alone = { toTeacher: vFrames() - f0, fromGame: monIn.n };
+    const told = got('A', 'view').some(m => m.on === true) && A.COOP.viewed();
+    const inDen = (K.viewed(screen, st && st.v).filter(m => m.t === 'p' && m.n === 'Sam').pop() || {}).map === 'spider_den';
+    line('Watch: the teacher watches Sam alone in the Spider Den; his game is told and streams its monsters about twice a second: ' + alone.toTeacher + ' snapshots reached the teacher in 10 s (' + alone.fromGame + ' messages from his game)', st && st.t === 'w_vstart' && told && inDen && alone.toTeacher >= 15 && alone.toTeacher <= 21 && alone.fromGame === alone.toTeacher, { st: st && st.t, told, inDen, alone });
+    // Ava comes in beside him: his game's own stream for her, 8 a second, and nothing more from it for the teacher
+    ev(B, 'INSTANCES.enter("spider_den")'); ev(B, `player.x = ${ev(A, 'player.x')} + 40; player.y = ${ev(A, 'player.y')}`); tick(60);
+    const f1 = vFrames(); monIn.n = 0;
+    tick(60 * 5);
+    const withAva = { toTeacher: vFrames() - f1, fromGame: monIn.n };
+    line('Ava joins him: the teacher gets his game\'s usual 8 a second (' + withAva.toTeacher + ' in 5 s) and his game sends nothing extra for it (' + withAva.fromGame + ' messages, all of them its stream for Ava)', withAva.toTeacher >= 36 && withAva.toTeacher <= 41 && withAva.fromGame === withAva.toTeacher, withAva);
+    const perHour = Math.round(alone.fromGame / 10 * 3600), req = Math.round(perHour / 20);
+    console.log('      Watch alone costs ' + perHour + ' incoming messages an hour = ' + req + ' Durable Object requests an hour (the cap is 7,200 = 360); with a friend near it costs 0 extra');
+    line('the alone stream is under its cap: ' + req + ' requests an hour of the 360 allowed', req <= 360 && fromSam() >= 0, { perHour, req });
+    inbound.push = origPush;
+    ev(B, 'INSTANCES.leave()'); ev(A, 'INSTANCES.leave()'); tick(30);
+    ev(B, `player.x = ${ev(A, 'player.x')} + 40; player.y = ${ev(A, 'player.y')}`); tick(30);
+  }
+
+  // ---- 6. send Sam off ----
   {
     const b0 = heard.B.length;
     // an open trade between them first
@@ -174,12 +200,14 @@ async function main() {
     const err = got('A', 'error').pop() || {};
     const closed = err.code === 'kicked' && err.why === 'sentoff' && !room.isOnline('Sam') && !A.NET.online() && A.NET.timer === null && !!A.NET.token;
     const tradeEnded = room.trades.size === 0 && got('B', 'trade_end', b0).some(m => m.id === tid2) && !got('B', 'trade_done', b0).length && db.prepare('SELECT COUNT(*) AS n FROM trades').get().n === 0;
-    line('a teacher sends Sam off: his game goes back to the card with the sentence, the world sends kicked why sentoff with no reconnect and the token kept, his last push landed first (one more version, his slot byte for byte), and the open trade with Ava ended with nothing moved', r && r.t === 'w_ok' && opened && pushed && card && closed && tradeEnded, { r, opened, pushed, versions: [before, l.length], card, error: A.LOGIN.error, mode: A.LOGIN.mode, closed, tradeEnded });
+    const vend = screen.got.filter(m => m.t === 'w_vend').pop();
+    const viewEnded = !!vend && vend.text === 'Sam was sent off until tomorrow.' && room.taps.size === 0;
+    line('a teacher sends Sam off: his game goes back to the card with the sentence, the world sends kicked why sentoff with no reconnect and the token kept, his last push landed first (one more version, his slot byte for byte), the open trade with Ava ended with nothing moved, and the teacher\'s view of him ends ("' + (vend && vend.text) + '")', r && r.t === 'w_ok' && opened && pushed && card && closed && tradeEnded && viewEnded, { r, opened, pushed, versions: [before, l.length], card, error: A.LOGIN.error, mode: A.LOGIN.mode, closed, tradeEnded, vend });
     // Play: refused until the world's midnight, then in
     A.LOGIN.playAs(); await new Promise(res => setTimeout(res, 20)); tick(2);
     const refused = !A.LOGIN.playing && A.LOGIN.error === 'A teacher sent you off Fanglands for the rest of today. Your knight is safe. You can play again tomorrow.' && !room.isOnline('Sam');
     const midnight = dayEnd(now()) + 1;
-    vnow = midnight;
+    K.clock.t = midnight;
     A.LOGIN.playAs(); for (let i = 0; i < 20 && !A.LOGIN.playing; i++) { await new Promise(res => setTimeout(res, 10)); tick(1); }
     if (A.BOYGIRL && A.BOYGIRL.asking) A.BOYGIRL.answer('boy');
     for (let i = 0; i < 20 && !room.isOnline('Sam'); i++) { await new Promise(res => setTimeout(res, 10)); tick(2); }

@@ -341,6 +341,14 @@ a beast that rides through a GATE or a PORTCULLIS but not a DOOR; `playerWho()` 
 Monsters: `monsters` array (each has `x y r hp maxHp state angry dead home facing`), `MONSTER_SPAWNS`, `spawnMonsters()`.
 Player: `player.x/y/hp/maxHp/facing/equip/inv/skills/mech/home`.
 
+**A feature that draws must not assume update() ran: 79-view calls render() with only PLAYERS, CHAT and COOP stepped.** The
+teacher view's Watch (docs/ONLINE.md, "The teacher view") draws a kid's screen on the teacher's own page with the game's own
+renderer, and that page never runs `update()`, never saves and never loads a knight: `title.active` stays true, `player` stands
+where the kid is (never dead, never on a machine, never drawn), `time` and `player.dayTime` move on, and only
+`PLAYERS.step(dt)`, `CHAT.step(dt)` and `COOP.viewStep(dt)` run each frame. A draw hook or a `HOOKS.draw` item must read what
+it draws from state it keeps current itself (or from what those three keep), never from something only an update hook
+advances, and must never write to storage while it draws (the teacher's page writes nothing).
+
 ### The knight (`src/82-knightgear.js`)
 
 The knight is drawn in his own style, wearing each item's own shape (the owner's approved "knight gear" look). A KNIGHT

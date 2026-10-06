@@ -14,6 +14,8 @@ const layoutLabels = new Function('cl', body + '\nreturn layoutLabels;')((v, a, 
 const ATLAS = JSON.parse(fs.readFileSync(new URL('../src/atlas.json', import.meta.url), 'utf8'));
 const M = buildTeacherMap(ATLAS), cells = cellsOf(ATLAS);
 const places = M.labels.map(p => { const own = new Set(p.idx); return Object.assign({}, p, { owns: (tx, ty) => tx >= 0 && ty >= 0 && tx < M.W && ty < M.H && own.has(cells[ty * M.W + tx]) }); });
+// the instance doors go through the same layout (named at twice the fit or more), as the page passes them
+const withDoors = places.concat(Object.values(M.doors).map(d => ({ name: d.name, kind: 'door', anchor: [d.x, d.y], box: [d.x, d.y, d.x, d.y], depth: -1, area: 0, owns: () => true })));
 // a sans-serif's widths, near enough (the browser's measureText is what the page uses)
 const measure = (text, font) => { const px = +(/(\d+(?:\.\d+)?)px/.exec(font) || [0, 14])[1], bold = /^7/.test(font) ? 0.6 : 0.56; return String(text).length * px * bold; };
 const fitOf = (w, h) => { const s = Math.min(w / M.W, h / M.H); return { s, x: (w - M.W * s) / 2, y: (h - M.H * s) / 2 }; };
@@ -36,7 +38,7 @@ function invariants(where, view, res, dots) {
   for (const b of all) assert.ok(b.x >= 6 && b.y >= 6 && b.x + b.w <= view.w - 6 && b.y + b.h <= view.h - 6, where + ': ' + b.n + ' leaves the pane');
   const names = res.labels.map(l => l.name);
   assert.equal(new Set(names).size, names.length, where + ': a name drawn twice');
-  for (const l of res.labels) { const p = places.find(q => q.name === l.name); assert.ok(p.owns(Math.floor((l.cx - view.x) / view.s), Math.floor((l.cy - view.y) / view.s)), where + ': ' + l.name + ' is not centred on its own ground'); }
+  for (const l of res.labels) { if (l.door) continue; const p = places.find(q => q.name === l.name); assert.ok(p.owns(Math.floor((l.cx - view.x) / view.s), Math.floor((l.cy - view.y) / view.s)), where + ': ' + l.name + ' is not centred on its own ground'); }
   // every knight is a dot or in a count circle
   assert.equal(res.dots.length + res.clusters.reduce((n, c) => n + c.ks.length, 0), dots.length, where + ': a knight lost');
 }
@@ -60,14 +62,14 @@ test('property: at 8 panes, 6 zooms, 0 to 50 knights and 3 pans each: no overlap
     const knights = []; for (let i = 0; i < n; i++) knights.push({ n: 'Kid ' + i, tx: rnd() * M.W, ty: rnd() * M.H, sel: i === 0, flag: i === 1 });
     const dotsOf = v => knights.map(k => ({ n: k.n, x: v.x + k.tx * v.s, y: v.y + k.ty * v.s, sel: k.sel, flag: k.flag })).filter(d => d.x > -40 && d.y > -40 && d.x < v.w + 40 && d.y < v.h + 40);
     const where = pane.name + ' zoom ' + rel + ' knights ' + n + ' trial ' + trial;
-    const d0 = dotsOf(view), r0 = layoutLabels(view, places, d0, measure, null);
+    const d0 = dotsOf(view), r0 = layoutLabels(view, withDoors, d0, measure, null);
     invariants(where, view, r0, d0);
     // a 1 px pan, from where the names sat (prev): the same names, each moved by exactly 1 px
     const prev = {}; for (const l of r0.labels) prev[l.name] = [l.tx, l.ty];
     const v1 = Object.assign({}, view, { x: view.x + 1 });
-    const r1 = layoutLabels(v1, places, dotsOf(v1), measure, prev);
+    const r1 = layoutLabels(v1, withDoors, dotsOf(v1), measure, prev);
     invariants(where + ' panned', v1, r1, dotsOf(v1));
-    const moved = r1.labels.map(l => l.name + '@' + (l.x - 1) + ',' + l.y).sort(), stay = r0.labels.map(l => l.name + '@' + l.x + ',' + l.y).sort();
+    const moved = r1.labels.filter(l => !l.door).map(l => l.name + '@' + (l.x - 1) + ',' + l.y).sort(), stay = r0.labels.filter(l => !l.door).map(l => l.name + '@' + l.x + ',' + l.y).sort();
     // (a name at the pane's very edge may step out of it with the pan; with 0 knights and the map away from the edges, none does)
     if (n === 0) assert.deepEqual(moved, stay, where + ': a 1 px pan changed the names');
     runs++;
@@ -86,4 +88,12 @@ test('at the whole map in a 586 x 405 pane (round 1\'s map at 1280 wide) Thistle
   // closer in, the small places come back (each one where it fits)
   const near = layoutLabels(viewAt(586, 405, 4, 30, 12), places, [], measure, null).labels.map(l => l.name);
   assert.ok(near.includes('The Cave') && near.includes('Grey Quarry'), near.join(', '));
+});
+
+test('the instance doors: named only at twice the fit or more, never over a place name or a knight', () => {
+  const fit = viewAt(600, 500, 1), close = viewAt(600, 500, 3, 147, 44);
+  assert.ok(!layoutLabels(fit, withDoors, [], measure, null).labels.some(l => l.door));
+  const r = layoutLabels(close, withDoors, [], measure, null);
+  assert.ok(r.labels.some(l => l.door), 'no door named at 3x');
+  invariants('doors at 3x', close, r, []);
 });
