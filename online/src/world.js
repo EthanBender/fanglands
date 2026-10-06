@@ -42,6 +42,8 @@ import { SimBook } from './sim/book.js';
 import { SimHost, WORLDGEN_FREE } from './sim/host.js';
 import { cleanSwitches, WORLD_MAPS, WORLD_READY, WORLD_EMPTY, MODES } from './sim/worlds.js';
 import ATLAS_JSON from './atlas.json' with { type: 'json' };
+import { migrateTeachers, TeacherBook, teacherCall, teacherAdminCall, DOOR } from './teachers.js';
+import { Watch } from './watch.js';
 
 // the Atlas the world judges by (docs/ONLINE.md, "The shared world", Stage 1): made by tools/atlas.mjs from the game it ships with
 const ATLAS = readAtlas(ATLAS_JSON);
@@ -73,7 +75,12 @@ export class World {
     this.simBook = new SimBook(this.sql, () => this.now());     // the shared world's map changes and boss rests (sim/book.js)
     this.chatWrites = 0;
     this.wraps = new WeakMap();
+    // the teacher view (docs/ONLINE.md, "The teacher view"): its tables, and the Watch that keeps the teachers' screens
+    migrateTeachers(this.sql);
+    this.teachers = new TeacherBook(this.sql, () => this.now());
+    this.watch = new Watch({ book: this.teachers, store: this.store, sql: this.sql, now: () => this.now(), atlas: ATLAS });
     this.room = new Room({
+      hooks: this.watch.hooks,
       now: () => this.now(),
       log: (name, text, at) => this.logChat(name, text, at),
       wake: ms => this.ctx.storage.setAlarm(Date.now() + ms).catch(e => console.error('alarm', e)),
@@ -84,6 +91,7 @@ export class World {
       simBook: this.simBook,
       simSave: sw => this.saveSim({ held: sw.held }),   // a map the watchdog handed back is held there (sim/worlds.js)
     });
+    this.watch.room = this.room;
     this.room.setSim(this.simSettings());
     this.loadCopy();
     // pings are answered by the runtime without waking the world (the client sends exactly this text)
@@ -92,7 +100,8 @@ export class World {
     for (const ws of ctx.getWebSockets()) {
       let state = null;
       try { state = ws.deserializeAttachment(); } catch (e) { }
-      if (state && state.name) this.room.restore(this.wrap(ws), state);
+      if (state && state.w) this.watch.restore(this.wrap(ws), state);   // a teacher's screen: never a knight
+      else if (state && state.name) this.room.restore(this.wrap(ws), state);
       else { try { ws.close(4001, 'lost'); } catch (e) { } }
     }
     // a login still open with no socket carrying it (the world was restarted under it) ends when it was last heard from
@@ -114,9 +123,10 @@ export class World {
     }
     return w;
   }
-  webSocketMessage(ws, msg) { this.meter.ws(); if (typeof msg === 'string') this.room.message(this.wrap(ws), msg); }
-  webSocketClose(ws, code, reason) { this.room.leave(this.wrap(ws)); try { ws.close(1000, 'bye'); } catch (e) { } this.meter.flush(); this.moveBook.flush(); }
-  webSocketError(ws) { this.room.leave(this.wrap(ws)); this.meter.flush(); this.moveBook.flush(); }
+  // a teacher's screen goes to the Watch first: its frames never reach the Room
+  webSocketMessage(ws, msg) { this.meter.ws(); const w = this.wrap(ws); if (this.watch.has(w)) return this.watch.message(w, msg); if (typeof msg === 'string') this.room.message(w, msg); }
+  webSocketClose(ws, code, reason) { const w = this.wrap(ws); if (this.watch.has(w)) this.watch.leave(w); else this.room.leave(w); try { ws.close(1000, 'bye'); } catch (e) { } this.meter.flush(); this.moveBook.flush(); }
+  webSocketError(ws) { const w = this.wrap(ws); if (this.watch.has(w)) this.watch.leave(w); else this.room.leave(w); this.meter.flush(); this.moveBook.flush(); }
   // Cloudflare bills every alarm invocation as a Durable Object request, so the meter counts it as one
   alarm() { this.meter.http(false); try { this.room.tick(); } catch (e) { console.error('tick', e); } this.meter.flush(); this.moveBook.flush(); }
 
@@ -184,6 +194,8 @@ export class World {
   // Every /api call and the socket, by path and method.
   async route(req, url, path, method) {
     if (path === '/ws') return this.openSocket(req, url);
+    // the teacher view: only through the teacher address's door (worker.js strips a door a browser sends anywhere)
+    if (path.startsWith('/api/teacher/')) { if (req.headers.get(DOOR) !== 'teacher') throw oops(404, 'no such call', 'nope'); return await teacherCall(this, req, url, path, method); }
     { const r = await handoffCall(this, req, url, path, method); if (r) return r; }   // two addresses: handoff.js
     if (path === '/api/status' && method === 'GET') return this.status();
     if (path.startsWith('/api/admin/')) return await this.admin(req, url, path.slice('/api/admin/'.length), method);
@@ -213,14 +225,14 @@ export class World {
   // push before the third strike's kick must land, or the next login would load an older save).
   session(token, opts) {
     if (!token) throw oops(401, 'please log in', 'auth');
-    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
+    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until, a.sent_off_until FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
     if (!s) throw oops(401, 'that login has run out, please log in again', 'auth');
     const now = this.now();
     if (s.expires < now) { this.sql.exec('DELETE FROM sessions WHERE token = ?', token); throw oops(401, 'that login has run out, please log in again', 'auth'); }
     if (s.banned) { this.sql.exec('DELETE FROM sessions WHERE name_lc = ?', s.name_lc); throw oops(403, 'this knight is banned', 'banned'); }
     // kept out for bad words: the session is kept (it works again when the time is up), but nothing goes through until then
     // except a save. No address is written here: only the third strike notes one (Room.wordStrike, from the socket).
-    if (!(opts && opts.saving)) this.refuseIfKeptOut(s.words_locked_until, now);
+    if (!(opts && opts.saving)) { this.refuseIfKeptOut(s.words_locked_until, now); this.refuseIfSentOff(s.sent_off_until, now); }
     this.sql.exec('UPDATE accounts SET last_seen = ? WHERE name_lc = ?', now, s.name_lc);
     return s;
   }
@@ -228,6 +240,11 @@ export class World {
   refuseIfKeptOut(until, now) {
     until = Number(until) || 0;
     if (until > now) throw oops(403, wordsText(until, now), 'words', { until });
+  }
+  // sent off for the rest of the day by a teacher: 423 (not 403, so a game already open keeps its token), saving still works
+  refuseIfSentOff(until, now) {
+    until = Number(until) || 0;
+    if (until > now) throw oops(423, 'a teacher sent this knight off for the rest of today', 'sentoff', { until });
   }
   newSession(lc) {
     const token = randomHex(32);
@@ -313,6 +330,7 @@ export class World {
     this.sql.exec('UPDATE accounts SET tries = 0, locked_until = 0, last_seen = ? WHERE name_lc = ?', now, lc);
     // the right secret word, but kept out for bad words: said with the time it ends, and no session is made
     this.refuseIfKeptOut(a.words_locked_until, now);
+    this.refuseIfSentOff(a.sent_off_until, now);
     return json({ token: this.newSession(lc), name: a.name });
   }
 
@@ -507,6 +525,7 @@ export class World {
     if (!sameString(bearer(req), key)) throw oops(401, 'wrong admin key', 'admin');
     const post = method === 'POST';
     { const r = await backupCall(this, req, url, call, method); if (r) return r; }
+    { const r = await teacherAdminCall(this, req, url, call, method); if (r) return r; }   // Teachers (teachers.js)
     if (call === 'accounts' && method === 'GET') return json(this.accountsView());
     if (call === 'sim' && method === 'GET') return json(this.simView());   // the shared world: the meter, the Atlas, the movement check
     if (call === 'sim' && post) {

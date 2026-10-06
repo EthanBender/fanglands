@@ -122,6 +122,8 @@ export const GIFT_WAIT = 10000;        // no answer to a gift within this: it co
 export const MUTE_SPANS = { '5m': 5 * 60 * 1000, '1h': 3600 * 1000, '1d': 24 * 3600 * 1000, always: ALWAYS };
 export const SPAWN_MAX = 20;           // monsters in one spawn message
 export const KICK_TEXT = 'An admin sent you out of the world. You can come back in.';
+// a teacher sent the knight off for the rest of the day (docs/ONLINE.md, "The teacher view"): kicked, why 'sentoff', close 4005
+export const SENDOFF_TEXT = 'A teacher sent you off Fanglands for the rest of today. Your knight is safe. You can play again tomorrow.';
 // Word strikes: what the knight is told (the game says the lockout with the real time it ends, from `until`)
 export const WORD_WARN_1 = "That word isn't allowed here. This is your warning.";
 export const WORD_WARN_2 = "Last warning. Do it again and you'll be kept out for 24 hours.";
@@ -149,6 +151,9 @@ const OVERWORLD = 'over';
 const MOD_ACTS = ['mute', 'unmute', 'kick', 'ban', 'unban'];
 
 const low = s => String(s).toLowerCase();
+// The teacher view's hooks (online/src/watch.js, docs/ONLINE.md "The teacher view"): the World passes its Watch's; without one
+// (the simulations, the unit tests) every hook does nothing, so nothing changes.
+export const NO_HOOKS = Object.freeze({ welcomed() { }, presence() { }, left() { }, chatGate() { return false; }, chat() { }, event() { }, sentOff() { return 0; }, changed() { } });
 const inRange = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 // Whole seconds of mute left, rounded up, or -1 for "until an admin unmutes" (the contract's muted.left).
 export const leftOf = (until, now) => until >= ALWAYS ? -1 : Math.max(0, Math.ceil((until - now) / 1000));
@@ -163,6 +168,7 @@ export class Room {
     this.max = opts.max || 50;
     this.wake = opts.wake || (ms => { const t = setTimeout(() => this.tick(), ms); if (t && t.unref) t.unref(); });
     this.store = opts.store || new MemoryStore();
+    this.hooks = opts.hooks || NO_HOOKS;
     this.random = typeof opts.random === 'function' ? opts.random : cryptoRandom;
     // the shared world: the Atlas (atlas.js, or null: then nothing is judged) and the watching movement check (move.js)
     this.atlas = opts.atlas || null;
@@ -220,6 +226,9 @@ export class Room {
     // kept out for bad words: the World refuses the socket first; this is the lock behind it
     const until = acc ? this.wordLock(acc.lc) : 0;
     if (until) return this.refuseWords(sock, until);
+    // sent off for the rest of the day by a teacher (the World refuses the socket first; this is the lock behind it)
+    const off = acc ? this.hooks.sentOff(acc.lc) : 0;
+    if (off) return this.refuseSentOff(sock, off);
     const lc = low(name);
     const old = this.byName.get(lc);
     // one socket per knight: the newest login wins, the old screen is told why (an error it can act on,
@@ -240,6 +249,10 @@ export class Room {
     this.send(sock, { t: 'error', code: 'banned', text: 'this knight is banned' });
     try { sock.close(4003, 'banned'); } catch (e) { }
   }
+  refuseSentOff(sock, until) {
+    this.send(sock, { t: 'error', code: 'kicked', why: 'sentoff', until, text: SENDOFF_TEXT });
+    try { sock.close(4005, 'sent off'); } catch (e) { }
+  }
   refuseWords(sock, until) {
     this.send(sock, { t: 'error', code: 'words', text: wordsText(until, this.now()), until });
     try { sock.close(WORDS_CODE, 'bad words'); } catch (e) { }
@@ -259,6 +272,8 @@ export class Room {
     if (acc && acc.banned) return this.refuseBanned(sock);
     const until = acc ? this.wordLock(acc.lc) : 0;
     if (until) return this.refuseWords(sock, until);
+    const off = acc ? this.hooks.sentOff(acc.lc) : 0;
+    if (off) return this.refuseSentOff(sock, off);
     const lc = low(state.name);
     const old = this.byName.get(lc);
     if (old) { if (old.since <= state.since) { try { sock.close(4000, 'logged in elsewhere'); } catch (e) { } return; } this.drop(old, 4000, 'logged in elsewhere'); }
@@ -303,6 +318,7 @@ export class Room {
     const k = this.byName.get(low(name));
     if (!k) return false;
     this.send(k.sock, Object.assign({ t: 'error', code, text }, extra || {}));
+    if ((code === 'kicked' && !(extra && extra.why === 'sentoff')) || code === 'banned') this.hooks.event({ kind: code === 'banned' ? 'ban' : 'kick', n: k.name, lc: k.lc });
     const close = code === 'kicked' ? 4005 : code === 'banned' ? 4003 : code === 'words' ? WORDS_CODE : code === 'renamed' ? RENAMED_CODE : 4000;
     this.drop(k, close, String(text || code).slice(0, 120));
     return true;
@@ -328,7 +344,7 @@ export class Room {
       if (g.to === k.lc) this.settleGift(g, 'gift_back');
       else if (g.from === k.lc) this.gifts.delete(g.gid);
     }
-    if (k.hello) this.rosterNow();
+    if (k.hello) { this.rosterNow(); this.hooks.left(k); }
     this.arm();
   }
 
@@ -401,6 +417,7 @@ export class Room {
     // and every finished trade this knight's game never said it has (id null: the window is long gone)
     for (const r of this.store.unackedTrades(k.lc, now - TRADE_KEEP)) this.send(k.sock, { t: 'trade_done', tid: r.tid, id: null, with: r.with, gave: r.gave, got: r.got });
     this.arm();
+    this.hooks.welcomed(k, acc);   // the teacher view: a running pause, "a teacher is watching", and the screens' frame
   }
 
   onPresence(k, m, str) {
@@ -425,6 +442,7 @@ export class Room {
     const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: wireMap(k.map), role: k.role }));
     k.last = out;
     for (const o of this.members(k.map)) if (o !== k) this.raw(o.sock, out);
+    this.hooks.presence(k, m);   // the teacher view's frame rides on this (at most once a second, only while a screen is open)
   }
 
   onChat(k, m) {
@@ -432,15 +450,18 @@ export class Room {
     // a muted knight's line goes nowhere and is not logged; the knight hears how long is left
     const acc = this.store.account(k.name);
     const now = this.now();
+    // a teacher paused chat for everyone: a player's line goes nowhere, is not logged and is never a strike (admins talk on)
+    if (this.hooks.chatGate(k, acc, now)) return;
     if (acc && acc.mutedUntil > now) return this.send(k.sock, { t: 'muted', left: leftOf(acc.mutedUntil, now) });
     if (acc) this.syncRole(k, acc.role);
     // the line alone: who is on line, who said it and who it was about never change what counts (filter.js, STRIKE_WORDS)
-    const { text, strike } = this.check(typeof m.text === 'string' ? m.text : '');
+    const { text, strike, masked } = this.check(typeof m.text === 'string' ? m.text : '');
     if (!text) return;
     const at = now;
     this.log(k.name, text, at);
     const out = JSON.stringify({ t: 'chat', n: k.name, text, at, role: k.role });
     for (const o of this.knights.values()) if (o.hello) this.raw(o.sock, out);
+    this.hooks.chat({ at, n: k.name, text, role: k.role, masked: !!masked });
     // a swear word or a slur: a strike (after the masked line went out, so the knight sees what was hidden). A line that was
     // only starred out (an insult, a mild word, a word hidden in another) counts nothing.
     if (strike === true && acc) this.wordStrike(k, acc, now, typeof m.text === 'string' ? m.text : '');
@@ -456,12 +477,14 @@ export class Room {
     if (!n) return;
     if (n < 3) {
       this.store.log({ at: now, by: 'word filter', act: 'strike', target: acc.name, detail: String(n) + typed });
+      this.hooks.event({ kind: 'strike', n: acc.name, lc: acc.lc });
       return this.send(k.sock, { t: 'strike', n, text: n === 1 ? WORD_WARN_1 : WORD_WARN_2 });
     }
     const until = now + WORD_LOCK_MS;
     // the place it was sent out from goes with the lockout (no new knight from there until it ends), and with it only
     this.store.setWordLock(acc.lc, until, k.ip || '');
     this.store.log({ at: now, by: 'word filter', act: 'strike', target: acc.name, detail: n + ', kept out 24 hours' + typed });
+    this.hooks.event({ kind: 'words', n: acc.name, lc: acc.lc });
     this.kick(k.name, 'words', wordsText(until, now), { until, n });
   }
 
@@ -577,14 +600,16 @@ export class Room {
     if (k.hello) { this.send(k.sock, { t: 'role', role: k.role }); this.rosterNow(); }
   }
 
-  // The parent page muted or unmuted a knight (the World has already written the store).
-  muteChanged(name) {
+  // The parent page (or a teacher: by 'teacher', extra {span}) muted or unmuted a knight (the store is already written).
+  muteChanged(name, by, extra) {
     const acc = this.store.account(name);
+    const now = this.now();
+    if (acc) this.hooks.event(acc.mutedUntil > now ? { kind: 'mute', n: acc.name, lc: acc.lc, until: acc.mutedUntil, by: by || 'admin' } : { kind: 'unmute', n: acc.name, lc: acc.lc });
     const k = acc && this.byName.get(acc.lc);
     if (!k || !k.hello) return;
-    const now = this.now();
-    if (acc.mutedUntil > now) this.send(k.sock, { t: 'muted', left: leftOf(acc.mutedUntil, now) });
-    else this.send(k.sock, { t: 'unmuted' });
+    const tag = by ? { by } : {};
+    if (acc.mutedUntil > now) this.send(k.sock, Object.assign({ t: 'muted', left: leftOf(acc.mutedUntil, now) }, tag, extra || {}));
+    else this.send(k.sock, Object.assign({ t: 'unmuted' }, tag));
   }
 
   // ---------- moderation from inside the game (admins only) ----------
@@ -614,9 +639,11 @@ export class Room {
       answer.left = leftOf(until, now);
       detail = m.span;
       if (there && there.hello) this.send(there.sock, { t: 'muted', left: answer.left });
+      this.hooks.event({ kind: 'mute', n: target.name, lc: target.lc, until, by: 'admin' });
     } else if (act === 'unmute') {
       this.store.setMute(target.lc, 0);
       if (there && there.hello) this.send(there.sock, { t: 'unmuted' });
+      this.hooks.event({ kind: 'unmute', n: target.name, lc: target.lc });
     } else if (act === 'kick') {
       this.kick(target.name, 'kicked', KICK_TEXT);
     } else if (act === 'ban') {
