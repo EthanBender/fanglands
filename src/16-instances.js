@@ -452,7 +452,10 @@
     if (!active || active.inst.plaque === false) return;
     if (panel || paused) return;
     // (a boss that is not standing, the War Shed's before the valve or a storm still gathering, is not called awake)
-    const inst = active.inst, alive = monsters.filter(m => !m.dead).length, bossUp = !!inst.boss && monsters.some(m => !m.dead && m.type === inst.boss);
+    // (online, while the world runs this place, the screen holds only the monsters within 24 tiles: the world says how many
+    // stand in the whole place, COOP.placeStanding)
+    const ws = typeof COOP !== 'undefined' && COOP && typeof COOP.placeStanding === 'function' ? COOP.placeStanding() : null;
+    const inst = active.inst, alive = ws !== null ? ws : monsters.filter(m => !m.dead).length, bossUp = !!inst.boss && monsters.some(m => !m.dead && m.type === inst.boss);
     const sub = inst.boss && !active.cleared ? `${alive} left, ${bossUp ? 'the boss is awake' : 'the boss is not up yet'}` : active.cleared ? 'Cleared' : `${alive} left`;
     HK.addPlaque(g, { id: 'dungeon', emblem: 'door', name: inst.name.toUpperCase(), sub, right: active.webT > 0 ? `webbed ${active.webT.toFixed(1)}s` : '', rightColor: HK.T.warn, edge: active.webT > 0 ? HK.T.warn : null });
   });

@@ -17,10 +17,10 @@ export const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..'
 export { makeWindow, mulberry32, hashBytes };
 
 let tmp = null;
-export async function loadGame({ strip = true, keepTests = false, html = path.join(ROOT, 'index.html') } = {}) {
+export async function loadGame({ strip = true, keepTests = false, testUi = false, html = path.join(ROOT, 'index.html') } = {}) {
   if (!tmp) { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fanglands-sim-')); process.on('exit', () => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) { } }); }
-  const { code, report } = buildSim({ html: fs.readFileSync(html, 'utf8'), strip, keepTests });
-  const file = path.join(tmp, `game.${strip ? 'strip' : 'full'}${keepTests ? '.tests' : ''}.mjs`);
+  const { code, report } = buildSim({ html: fs.readFileSync(html, 'utf8'), strip, keepTests, testUi });
+  const file = path.join(tmp, `game.${strip ? 'strip' : 'full'}${keepTests ? '.tests' : ''}${testUi ? '.ui' : ''}.mjs`);
   fs.writeFileSync(file, code);
   const mod = await import(pathToFileURL(file).href);
   return { makeGame: mod.makeGame, FILES: mod.FILES, file, report };

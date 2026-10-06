@@ -105,6 +105,11 @@ backup first, taken with the admin key: `GET /api/admin/export` (every table, th
 `GET /api/status` says nobody is online. To go back: `POST /api/admin/restore {bookmark}` rewinds the world, and the
 previous code can simply be deployed again (it runs on the new schema; see the proof above).
 
+With a place switched to the world (the parent page's "Monsters run by the world"), never deploy while two knights are in
+that place: the deploy drops the world's copy, and the new one keeps only what the first knight back had seen, so a monster
+the other one felled or hurt out of his view comes back standing at full health (docs/ONLINE.md, Stage 2, "A deploy keeps
+only what the first knight back had seen"). Deploying when `GET /api/status` says nobody is online covers it.
+
 ## Secrets
 
 Set once with `wrangler secret put <NAME>` inside `online/`; they are never in git.

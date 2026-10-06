@@ -1,4 +1,8 @@
 [
-  {"file": "75-coop.js", "branch": "feat/shared-2", "reason": "server-run instance monsters: six commits on feat/shared-2 edit 75-coop; converted after it merges (9 bare: one open spot by the capital, h.openSpot(70, 60), and eight tile distances to allow-list)"},
-  {"file": "tools/mmo-sim.js", "branch": "feat/shared-2", "reason": "feat/shared-2 edits tools/mmo-sim.js; converted after it merges (59 bare: the knights' stands at the lair gate and circle and in the fields, the War Shed valve (instance-local), and the contract's rate-limit pairs such as [1, 3], which are not places)"}
+  {"file": "75-coop.js", "branch": "master 3b6d6b4 (shared-world Stage 2, merged here)", "reason": "feat/shared-2 merged into master at 3b6d6b4 and master is merged into spread/s2 in this commit; 75-coop is converted in the next commits (13 bare: the open spot by the capital and tile distances)"},
+  {"file": "79-worldkeeper.js", "branch": "master 3b6d6b4 (shared-world Stage 2, merged here)", "reason": "changed by shared-world Stage 2 (3b6d6b4); converted in the next commits (2 bare)"},
+  {"file": "tools/mmo-sim.js", "branch": "master 3b6d6b4 (shared-world Stage 2, merged here)", "reason": "feat/shared-2 merged into master at 3b6d6b4; converted in the next commits (60 bare)"},
+  {"file": "tools/mmo-sim-world.js", "branch": "master 3b6d6b4 (shared-world Stage 2, merged here)", "reason": "new on master at 3b6d6b4; converted in the next commits (1 bare)"},
+  {"file": "tools/sim-freeze.mjs", "branch": "master 3b6d6b4 (shared-world Stage 2, merged here)", "reason": "new on master at 3b6d6b4; converted in the next commits (2 bare)"},
+  {"file": "tools/sim-load.mjs", "branch": "master 3b6d6b4 (shared-world Stage 2, merged here)", "reason": "new on master at 3b6d6b4; converted in the next commits (1 bare)"}
 ]

@@ -16,6 +16,16 @@
 //   - SERVER_OFF switches off the HOOKS entries (by file and hook name) that would act on the dead stand-in. A file
 //     leaves the list when it is ported. Each copy's HOOKS functions carry the file that registered them (fn.__file,
 //     tagged by tools/build-sim.mjs), which is how the list finds them.
+//   Stage 2 (the copy keeps a map for real):
+//   - WORLDKEEPER.rows() is what the world sends of its monsters each tick: 75-coop's row, then [tgt, lock, phase, vx, vy,
+//     look] (docs/ONLINE.md), the look fields read from window.__LOOK_FIELDS, which tools/build-sim.mjs writes from
+//     78-monsterlook's LOOK_FIELDS when it builds the copy (the look file itself is stripped);
+//   - the kill goes to the top damager: dmgBy per monster (each knight's hits, counted up to the hp the monster had), a tie
+//     to the first hitter; the ledger starts again at full health;
+//   - a monster's bomb (a thrower's sticky, which 75-coop's stepRemote throws at knights in a copy) hurts every knight in
+//     its blast; the copy's own rollDrops makes nothing (the credited knight's game rolls his);
+//   - rests() / setRests() hand the boss rests (75-coop's restAt) to the world's realm_state and back;
+//   - the copy's own snapshots and presence never leave it.
 // Feature file: registers through HOOKS only, edits no core file. window.WORLDKEEPER is the register (copies only).
 // ============================================================================
 {
@@ -58,6 +68,8 @@
             if (!m || typeof m.t !== 'string') return;
             // the virtual socket's own welcome: this copy is the keeper of its map
             if (m.t === 'hello') { deliver({ t: 'welcome', me, at: Date.now(), keeper: me, role: 'player', map: mapName }); return; }
+            // the copy's own snapshots (the world sends rows() each tick instead) and its stand-in's presence stay here
+            if (m.t === 'mon' || m.t === 'p') return;
             send(m);
           },
           close() { sock.readyState = 3; },
@@ -65,10 +77,36 @@
         return sock;
       },
     };
+    // heard: since the copy was told a knight keeps its map, it has read a snapshot from him with monsters in it
+    let heard = false;
     function deliver(msg) {
       if (!sock || !sock.onmessage) return false;
+      // taking a map over from a knight's game (docs/ONLINE.md, Stage 2): his stream lists every monster within 24 tiles of a
+      // knight that is alive or fell under 2 s ago. One of this copy's own monsters standing that near a knight but missing
+      // from his stream is down in his game: it lies down here too (and stands up on its own respawn timer) instead of
+      // coming back to life in the hand-over. Only when such a snapshot was read: a keeper alone sends an empty heartbeat, and a
+      // keeper the copy never heard from (the wait ran out) says nothing either way, so the copy's own monsters stand
+      const m0 = typeof msg === 'string' ? (() => { try { return JSON.parse(msg); } catch (e) { return null; } })() : msg;
+      if (m0 && m0.t === 'keeper') {
+        if (m0.n === me && heard && window.COOP && COOP.puppets() && COOP.parked) settleUnseen();
+        heard = false;
+      }
+      if (m0 && m0.t === 'mon' && Array.isArray(m0.list) && m0.list.length && window.COOP && m0.n === COOP.keeper() && m0.n !== me) heard = true;
       sock.onmessage({ data: typeof msg === 'string' ? msg : JSON.stringify(msg) });
       return true;
+    }
+    function settleUnseen() {
+      // the knights whose surroundings a keeper's snapshot covers: the living ones (75-coop's snapshot skips a fallen knight)
+      const seen = new Set(COOP.puppets().filter(p => !p.gone).map(p => p.nid)), ks = COOP.knightsHere().filter(k => !k.dead);
+      for (const m of COOP.parked) {
+        if (m.dead || !m.nid || seen.has(m.nid)) continue;
+        if (!ks.some(k => dist(m.x, m.y, k.x, k.y) <= 24 * TILE)) continue;
+        const d = MONSTER_DEFS[m.type] || {};
+        m.dead = true; m.deadT = 9; m.hp = 0; m.respawnT = (d.respawn || 25) + Math.random() * 10;
+        if (isCampMonster(m)) m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN);
+        const I = window.INSTANCES, inst = I && I.active && I.active() ? I.get(I.active()) : null;
+        if (inst && inst.boss === m.type) m.respawnT = Infinity;
+      }
     }
     function park() {
       player.dead = true; player.deadT = 0; player.hp = 0;
@@ -101,8 +139,119 @@
       return WORLDKEEPER;
     }
     // one substep of the game: the stand-in stays parked dead, then the game's own update (every wrapper included)
-    function step(dt) { park(); update(dt); }
-    window.WORLDKEEPER = { map: mapName, me, start, step, deliver, park, off, SERVER_OFF, PARK, get started() { return started; } };
+    function step(dt) { park(); holdRespawns(dt); update(dt); }
+    // A fallen monster stands up again only while no knight is near its home (07-update's rule: 4 tiles, 40 for a Goblin Camp
+    // monster). In a browser that rule reads the player; here the player is the parked stand-in, so the rule is kept against
+    // the real knights: a monster whose time is up waits, as it would in his own game, until every knight is that far off.
+    function holdRespawns(dt) {
+      let ks = null;
+      for (const m of monsters) {
+        if (!m.dead || m.remote || m.phantom || !m.home || !(m.respawnT - dt <= 0)) continue;
+        if (!ks) ks = COOP.knightsHere();
+        if (!ks.length) return;
+        const r = (isCampMonster(m) ? 40 : 4) * TILE;
+        if (ks.some(k => dist(k.x, k.y, m.home.x, m.home.y) <= r)) m.respawnT = dt + 1e-6;
+      }
+    }
+    // ---------- Stage 2: what the world sends of this copy's monsters ----------
+    const LF = window.__LOOK_FIELDS && typeof window.__LOOK_FIELDS === 'object' ? window.__LOOK_FIELDS : {};
+    const r2 = v => Math.round(v * 100) / 100;
+    // the one extra state each type's look reads (78-monsterlook's LOOK_FIELDS), from the fields the game sets on the monster
+    const PHASE_OF = {
+      thunderbird: m => (m.phase === 'hunt' || m.phase === 'high' || m.phase === 'perch') ? m.phase : null,
+      the_fang: m => typeof m.element === 'string' ? m.element : null,
+      zombie_brute: m => (m.windT || 0) > 0 ? 'wind' : (m.stagT || 0) > 0 ? 'stagger' : null,
+      cinderwight: m => (m.coldT || 0) > 0 ? 'cold' : (m.heart && !m.heart.dead) ? 'feed' : null,
+      barrelbeast: m => (m.rodGlow || 0) > 0 ? 'volley' : null,
+      gnasher: m => (m.armT || 0) > 0 ? 'arm' : null,
+      bulldozer: m => (m.chargeT || 0) > 0 ? 'charge' : null,
+      yard_dozer: m => (m.chargeT || 0) > 0 ? 'charge' : null,
+      // his mend ring (91-royalmine's mendFlash, 0.9 s): not in LOOK_FIELDS, sent as phase 'mend' (the monster-look addendum)
+      ginormous_golem: m => { const R = window.ROYALMINE && ROYALMINE.run; return R && typeof R.mendFlash === 'number' && time - R.mendFlash >= 0 && time - R.mendFlash < 0.9 ? 'mend' : null; },
+    };
+    const LOOK_OF = {
+      ally_knight: m => (m.ally === 'hale' || m.ally === 'garrick') ? { ally: m.ally } : null,
+      cinder_heart: m => (typeof m.emberT === 'number' && isFinite(m.emberT)) ? { emberT: r2(m.emberT) } : null,
+    };
+    const lastAt = new WeakMap();
+    function targetOf(m, ks) {
+      if (m.dead || m.state !== 'chase') return null;
+      let best = null, bd = Infinity;
+      for (const k of ks) { if (k.dead) continue; const d = dist(m.x, m.y, k.x, k.y); if (d < bd) { bd = d; best = k; } }
+      return best ? best.n : null;
+    }
+    function rows(radius) {
+      const R = typeof radius === 'number' ? radius : 27 * TILE;
+      const ks = COOP.knightsHere(), out = [];
+      if (!ks.length) return out;
+      for (const m of monsters) {
+        if (m.remote || m.phantom) continue;
+        if (m.dead && !(m.deadT < 2)) continue;
+        let near = false;
+        for (const k of ks) if (dist(m.x, m.y, k.x, k.y) <= R) { near = true; break; }
+        if (!near) continue;
+        if (!m.nid) { m.nid = me + ':' + (++COOP.state.counter); COOP.state.idxLen = -1; }
+        const f = m.facing || { x: 1, y: 0 };
+        const row = [m.nid, m.type, Math.round(m.x), Math.round(m.y), r2(m.hp || 0), r2(m.maxHp || 0), typeof m.state === 'string' ? m.state : 'idle', r2(f.x || 0), r2(f.y || 0), m.moving ? 1 : 0, r2(m.hurtT || 0), m.dead ? 1 : 0, r2(m.attackT || 0), r2(m.stunT || 0)];
+        let vx = null, vy = null;
+        const was = lastAt.get(m);
+        if (was && time > was.t) { const ax = (m.x - was.x) / (time - was.t), ay = (m.y - was.y) / (time - was.t), sp = Math.hypot(ax, ay); if (sp >= 1 && sp < 2000) { vx = Math.round(ax); vy = Math.round(ay); } }
+        lastAt.set(m, { x: m.x, y: m.y, t: time });
+        const extra = [targetOf(m, ks), null, PHASE_OF[m.type] ? PHASE_OF[m.type](m) : null, vx, vy, LOOK_OF[m.type] ? LOOK_OF[m.type](m) : null];
+        let n = extra.length; while (n > 0 && extra[n - 1] == null) n--;
+        for (let i = 0; i < n; i++) row.push(extra[i]);
+        out.push(row);
+        if (out.length >= 400) break;
+      }
+      return out;
+    }
+    // every look field the copy carries, by type (tools/sim-suite.mjs check 6 holds it against window.__LOOK_FIELDS)
+    const carries = () => { const out = {}; for (const t of Object.keys(PHASE_OF)) out[t] = 'phase'; for (const t of Object.keys(LOOK_OF)) out[t] = Object.keys(LOOK_OF[t]({ ally: 'hale', emberT: 1 }) || {})[0]; return out; };
+
+    // the kill goes to the top damager (a tie: whoever hit it first); named bosses keep their helper credit in 75-coop
+    let hitSeq = 0;
+    const _hitMonster = hitMonster;
+    hitMonster = function (m, dmg, knock, fromBomb, source) {
+      if (m && !m.remote && !m.phantom && !m.dead && source === 'remote' && typeof m.lastHitBy === 'string' && m.lastHitBy) {
+        if (!m.dmgBy || (m.hp || 0) >= (m.maxHp || 0)) m.dmgBy = {};   // a fresh fight
+        const e = m.dmgBy[m.lastHitBy] || (m.dmgBy[m.lastHitBy] = { d: 0, first: ++hitSeq });
+        e.d += Math.max(0, Math.min(Number(dmg) || 0, m.hp || 0));
+      }
+      return _hitMonster(m, dmg, knock, fromBomb, source);
+    };
+    hitMonster.__inner = _hitMonster;
+    const _killMonster = killMonster;
+    killMonster = function (m) {
+      if (m && !m.remote && !m.phantom && m.dmgBy) {
+        let top = null;
+        for (const n of Object.keys(m.dmgBy)) { const e = m.dmgBy[n]; if (!top || e.d > top.e.d || (e.d === top.e.d && e.first < top.e.first)) top = { n, e }; }
+        if (top) m.lastHitBy = top.n;
+        m.dmgBy = null;
+      }
+      return _killMonster(m);
+    };
+    killMonster.__inner = _killMonster;
+    // a monster's bomb hurts every knight in its blast (the parked stand-in is far away and dead)
+    const _explode = explode;
+    explode = function (x, y, radius, dmgMin, dmgMax, owner) {
+      if (owner !== 'player') for (const k of COOP.knightsHere()) if (!k.dead && dist(k.x, k.y, x, y) < radius + 13) NET.send({ t: 'hurt', to: k.n, dmg: rint(dmgMin, dmgMax), x: Math.round(x), y: Math.round(y) });
+      return _explode(x, y, radius, dmgMin, dmgMax, owner);
+    };
+    rollDrops = function () { };
+    // the boss rests, seconds left by boss id, out to the world's realm_state and back into a copy built again
+    function rests() {
+      const out = {}, R = COOP.state.restAt;
+      for (const id of Object.keys(R)) { const h = HOOKS.bossCall[id], rest = h ? Number(h.rest) || 0 : 0, left = rest - (time - R[id]); if (rest > 0 && time >= R[id] && left > 0) out[id] = left; }
+      return out;
+    }
+    function setRests(left) {
+      const R = COOP.state.restAt;
+      for (const id of Object.keys(left || {})) { const h = HOOKS.bossCall[id], rest = h ? Number(h.rest) || 0 : 0, l = Number(left[id]); if (rest > 0 && l > 0) R[id] = time - (rest - Math.min(rest, l)); }
+    }
+    // how many monsters stand in the whole place (the plaque's "N left" on every screen: a knight's puppets are only the ones
+    // within 24 tiles of him)
+    const standing = () => { let n = 0; for (const m of monsters) if (!m.dead && !m.remote && !m.phantom) n++; return n; };
+    window.WORLDKEEPER = { map: mapName, me, start, step, deliver, park, holdRespawns, off, SERVER_OFF, PARK, rows, standing, carries, rests, setRests, LOOK_FIELDS: LF, get started() { return started; } };
   }
 
   HOOKS.selfTest.push(check => {

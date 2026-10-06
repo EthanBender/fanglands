@@ -24,6 +24,19 @@
   const KNIGHT_R = 13;
 
   const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false };
+  // ?debug=tick (docs/ONLINE.md, Stage 2): the world's tick and how often its stream lands (kept out of S, which is COOP.state)
+  const DBG = { k: null, rows: 0, times: [] };
+  // While the world keeps this map ('@world:<map>', Stage 2): the last row it sent of each monster by nid (kept after the
+  // monster leaves this knight's 24 tiles, and after a fallen one's row stops coming), and how many monsters stand in the
+  // whole place (mon's 'standing'). When the socket drops (an iPad lock) or the world hands the map to this game, the
+  // monsters become real as the world last showed them (keepWorld), never as they stood when this knight walked in.
+  // kept: the world kept this map, and another knight has been named its keeper since while its monsters were on this screen
+  // as the world's puppets (a wake names a knight keeper out loud, and that may be a friend whose iPad is still locked). The
+  // rows are kept until this game keeps the map (keepWorld, not handoff) or leaves it: the friend's game may never answer.
+  const WORLD = { rows: new Map(), standing: null, kept: false };
+  const isWorld = n => typeof n === 'string' && n.indexOf('@world:') === 0;
+  const clearWorld = () => { WORLD.rows = new Map(); WORLD.standing = null; WORLD.kept = false; };
+  const worldLast = () => isWorld(S.keeper) || WORLD.kept;
   // Named bosses (docs/ONLINE.md, "Named bosses: boss_call and helper credit"). A boss file registers how its boss is woken in
   // HOOKS.bossCall[id] = { map, near: [tx, ty, tiles] | null, alive: () => bool, wake: askerName|null => void, name, type,
   //   rest: seconds | undefined, resting: m => bool, told: askerName => string, refused: secondsLeft => void };
@@ -126,6 +139,21 @@
     return list;
   }
 
+  // The full snapshot (the 'snap' capability, docs/ONLINE.md "The shared world", Stage 2): when the world starts taking over
+  // a map this game keeps, it asks once for every monster as it stands here, standing or fallen, near anyone or not, so the
+  // world's copy carries on from this screen (a monster this knight chased, hurt or felled stays so). Same rows as snapshot().
+  function snapshotAll() {
+    const list = [];
+    for (const m of monsters) {
+      if (m.remote || m.phantom || !MONSTER_DEFS[m.type]) continue;
+      if (!m.nid) { m.nid = NET.me + ':' + (++S.counter); S.idxLen = -1; }
+      const f = m.facing || { x: 1, y: 0 };
+      list.push([m.nid, m.type, Math.round(m.x), Math.round(m.y), r2(m.hp || 0), r2(m.maxHp || 0), typeof m.state === 'string' ? m.state : 'idle', r2(f.x || 0), r2(f.y || 0), m.moving ? 1 : 0, r2(m.hurtT || 0), m.dead ? 1 : 0, r2(m.attackT || 0), r2(m.stunT || 0)]);
+      if (list.length >= 400) break;
+    }
+    return list;
+  }
+
   // ---------- puppets: what a non-keeper shows ----------
   function makePuppet(nid, type, x, y) {
     const d = MONSTER_DEFS[type]; if (!d) return null;
@@ -176,6 +204,10 @@
     if (msg.n !== undefined && msg.n !== S.keeper) return;
     const idx = index(); let added = false;
     const n = Math.min(msg.list.length, 400);
+    // ?debug=tick (docs/ONLINE.md, Stage 2): the world's tick and how often its stream lands
+    DBG.k = num(msg.k); DBG.rows = n; DBG.times.push(time); while (DBG.times.length && DBG.times[0] < time - 1) DBG.times.shift();
+    const world = isWorld(S.keeper);
+    if (world) { const st = num(msg.standing); WORLD.standing = st !== null && st >= 0 ? Math.round(st) : null; }
     for (let i = 0; i < n; i++) {
       const e = msg.list[i];
       if (!Array.isArray(e) || e.length < 14) continue;
@@ -184,6 +216,7 @@
       const nid = e[0], type = e[1], x = num(e[2]), y = num(e[3]), hp = num(e[4]), maxHp = num(e[5]), state = e[6], fx = num(e[7]), fy = num(e[8]), moving = num(e[9]), hurt = num(e[10]), attackT = num(e[12]), stunT = num(e[13]);
       if (typeof nid !== 'string' || typeof type !== 'string' || !MONSTER_DEFS[type]) continue;
       if (x === null || y === null || hp === null || maxHp === null || fx === null || fy === null || moving === null || hurt === null || attackT === null || stunT === null) continue;
+      if (world) WORLD.rows.set(nid, { type, x, y, hp, maxHp, dead: !!e[11], fx, fy });
       let p = idx.get(nid);
       if (p && (!p.remote || p.type !== type)) { const k = monsters.indexOf(p); if (k >= 0) monsters.splice(k, 1); p = null; }
       let born = false;
@@ -194,12 +227,24 @@
       if (dead !== p.dead) p.deadT = 0;
       p.dead = dead; p.hp = hp; if (maxHp > 0) p.maxHp = maxHp; p.state = typeof state === 'string' ? state : 'idle';
       p.facing.x = fx; p.facing.y = fy; p.moving = !!moving; p.hurtT = hurt; p.attackT = attackT; p.stunT = stunT; p.respawnT = 1e9;
-      p.seen = time; p.gone = false;
+      p.seen = time; p.gone = false; p.seed = false;
+      // the world's optional columns [tgt, lock, phase, vx, vy, look] (docs/ONLINE.md, Stage 2): the one extra state a monster's
+      // look reads rides on the puppet (78-monsterlook reads phase, ally and emberT); a row without them clears them
+      if (e.length > 14) {
+        const ph = e[16], lk = e[19] && typeof e[19] === 'object' ? e[19] : null;
+        p.tgt = typeof e[14] === 'string' ? e[14] : null;
+        p.phase = typeof ph === 'string' && ph.length <= 24 ? ph : undefined;
+        p.ally = lk && typeof lk.ally === 'string' && lk.ally.length <= 24 ? lk.ally : undefined;
+        p.emberT = lk && num(lk.emberT) !== null ? lk.emberT : undefined;
+      } else if (p.tgt || p.phase !== undefined || p.ally !== undefined || p.emberT !== undefined) { p.tgt = null; p.phase = undefined; p.ally = undefined; p.emberT = undefined; }
       // the keeper's row turning dead is its word that this monster died: every screen shows the death on receipt, once
       // (deathSeen). One first seen already dead died before this knight could see it, so it plays nothing.
       if (!dead) p.deathSeen = false;
       else if (!p.deathSeen) { p.deathSeen = true; if (!born) monsterDied(p, 'row', S.keeper); else p.deadT = 9; }   // 9: past the core's fade too
     }
+    // the old keeper's own monsters held up over a keeper change (setKeeper): the new keeper's first list is the word now, so
+    // one it does not list is out of this knight's view there and goes
+    if (monsters.some(m => m.seed)) { monsters = monsters.filter(m => !m.seed); S.puppets = monsters; S.idxLen = -1; added = false; }
     if (added) { S.idxArr = monsters; S.idxLen = monsters.length; }
     S.lastMonAt = time;
   }
@@ -219,10 +264,34 @@
   function setKeeper(n) {
     const me = NET.me;
     if (n && n !== me) {
-      if (!S.puppets) { S.parked[S.map] = monsters; S.puppets = []; monsters = S.puppets; }
+      const fromWorld = !!S.puppets && worldLast();
+      if (!S.puppets) {
+        S.parked[S.map] = monsters;
+        // a game that kept this map hands it to the world's copy taking it over (docs/ONLINE.md Stage 2): the monsters on its
+        // own screen (within NEAR) stay standing as puppets, where they were, until the world's first mon (applyMon), so the
+        // screen never blinks empty for a round trip. Only the old keeper does this (a game arriving on a map knows nothing
+        // yet), and only for the world: a knight-to-knight change is exactly as it always was, so with every switch off
+        // nothing here differs from before Stage 2.
+        const seed = [];
+        if (S.keeper && S.keeper === me && typeof n === 'string' && n.indexOf('@world:') === 0) for (const m of monsters) {
+          if (!m.nid || m.dead || m.remote || m.phantom || dist(m.x, m.y, player.x, player.y) > NEAR) continue;
+          const p = makePuppet(m.nid, m.type, m.x, m.y); if (!p) continue;
+          p.seed = true;
+          p.hp = m.hp; p.maxHp = m.maxHp; p.state = typeof m.state === 'string' ? m.state : 'idle'; p.facing.x = m.facing ? m.facing.x : 1; p.facing.y = m.facing ? m.facing.y : 0;
+          if (m.home) p.home = { x: m.home.x, y: m.home.y };
+          seed.push(p);
+        }
+        S.puppets = seed; monsters = S.puppets; S.idxLen = -1;
+      }
+      // the world's map named to another knight while its puppets are up: what the world last showed is kept (WORLD.kept)
+      if (fromWorld && !isWorld(n)) { WORLD.kept = true; WORLD.standing = null; }
+      else if (n !== S.keeper) clearWorld();
       S.keeper = n;
     } else {
-      if (S.puppets) handoff();
+      // the world handing its map to this game (or a knight it named since): what the world last showed, not only the puppets
+      // still on screen
+      if (S.puppets) { if (worldLast()) keepWorld(); else handoff(); }
+      clearWorld();
       S.keeper = n;
     }
   }
@@ -242,7 +311,29 @@
     }
     monsters = real; S.puppets = null; delete S.parked[S.map]; S.idxLen = -1; S.snapAcc = SNAP_EVERY;
   }
+  // The world kept this map and now this game must (its socket dropped, or the world handed it back): handoff() makes the
+  // puppets on screen real, then every monster the world showed that is no longer on screen (out of view, or fallen and no
+  // longer listed) is put as the world last showed it: a fallen one stays fallen, a hurt one stays hurt, where it was.
+  function keepWorld() {
+    const rows = WORLD.rows, shown = new Set();
+    for (const p of S.puppets) if (!p.gone && p.nid) shown.add(p.nid);
+    handoff();
+    const byNid = new Map(); for (const m of monsters) if (m.nid) byNid.set(m.nid, m);
+    for (const [nid, r] of rows) {
+      if (shown.has(nid) || !MONSTER_DEFS[r.type]) continue;
+      let m = byNid.get(nid);
+      if (!m) { if (r.dead) continue; m = makeReal(r.type, r.x, r.y, nid, homeFor(nid, r.x, r.y)); monsters.push(m); byNid.set(nid, m); }
+      if (m.type !== r.type) continue;
+      m.x = r.x; m.y = r.y; if (r.maxHp > 0) m.maxHp = r.maxHp; m.facing = { x: r.fx, y: r.fy }; m.stunT = 0; m.lastHitBy = null; m.moving = false;
+      if (r.dead) {
+        if (!m.dead) { const d = MONSTER_DEFS[m.type]; m.dead = true; m.deadT = 9; m.hp = 0; m.respawnT = (d.respawn || 25) + Math.random() * 10; if (isCampMonster(m)) m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN); }
+      } else { m.dead = false; m.hp = r.hp; m.respawnT = 0; m.state = 'idle'; }
+    }
+    S.idxLen = -1;
+    clearWorld();
+  }
   function mapChanged(id) {
+    clearWorld();
     const old = S.map;
     S.map = id; S.keeper = null; S.puppets = null; S.snapAcc = 0; S.here = [];
     if (old !== 'over') delete S.parked[old];                 // an instance's monsters are rebuilt on every entry; nothing to keep
@@ -251,7 +342,9 @@
     S.idxLen = -1;
     tagInstance(id);
   }
-  function reset() { if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; S.restAt = {}; S.lootless = false; }
+  // the socket dropped (offline) or a new welcome: this game runs its map until told otherwise. A map the world kept goes on
+  // as the world last showed it (keepWorld); a knight's map gives back this game's own array, as it always did.
+  function reset() { if (S.puppets && worldLast()) keepWorld(); else if (S.puppets && S.parked[S.map]) monsters = S.parked[S.map]; clearWorld(); S.keeper = null; S.puppets = null; S.parked = {}; S.remotes = {}; S.here = []; S.snapAcc = 0; S.idxLen = -1; S.calls = {}; S.pending = null; S.sentAt = -1e9; S.restAt = {}; S.lootless = false; }
 
   // ---------- named bosses: waking one, here or on the keeper ----------
   const bossAlive = h => { try { return !!h.alive(); } catch (e) { return false; } };
@@ -309,9 +402,14 @@
     m.state = 'chase';
     const dx = t.x - m.x, dy = t.y - m.y, d = dp || 1, stop = m.r + KNIGHT_R + 4;
     let vx = 0, vy = 0;
-    if (dp > stop) { vx = dx / d; vy = dy / d; }
     m.facing = { x: dx / d, y: dy / d };
-    if (dp <= stop + 10 && m.attackCd <= 0) {
+    // a thrower (the sapper) keeps its distance and throws its sticky bomb, as the core loop does at its own knight. Only the
+    // world's copy steps throwers here (before() leaves them to the core in a browser); the bomb's blast is the copy's to hurt with
+    if (def.thrower && dp < 5 * TILE && dp > 1.5 * TILE) {
+      if (dp < 2.5 * TILE) { vx = -dx / d; vy = -dy / d; }
+      if (m.attackCd <= 0) { m.attackCd = 2.4; m.attackT = 0.2; const sp = 260; projectiles.push({ kind: 'sticky', x: m.x, y: m.y, vx: dx / d * sp, vy: dy / d * sp, t: 0, life: dp / sp, fuse: 1.3, owner: 'monster' }); }
+    } else if (dp > stop) { vx = dx / d; vy = dy / d; }
+    if (!(def.thrower && dp < 5 * TILE && dp > 1.5 * TILE) && dp <= stop + 10 && m.attackCd <= 0) {
       m.attackCd = def.mech ? 1.6 : 1.1; m.attackT = 0.2;
       const dmg = rollHit((def.att + 8) * 64, t.def, def.maxHit);
       NET.send({ t: 'hurt', to: t.n, dmg, x: Math.round(m.x), y: Math.round(m.y) });
@@ -341,7 +439,8 @@
     const frozen = [];
     for (const m of monsters) {
       if (m.dead || m.remote || m.phantom || (m.stunT || 0) > 0) continue;
-      const def = MONSTER_DEFS[m.type]; if (!def || def.thrower || def.harmless) continue;
+      // throwers aim only at the keeper's own knight in a browser; the world's copy (79-worldkeeper) steps them at every knight
+      const def = MONSTER_DEFS[m.type]; if (!def || (def.thrower && !window.WORLDKEEPER) || def.harmless) continue;
       let best = null, bd = player.dead ? Infinity : dist(m.x, m.y, player.x, player.y);
       for (const k of here) { if (k.dead) continue; const d = dist(m.x, m.y, k.x, k.y); if (d < bd) { bd = d; best = k; } }
       if (!best) continue;
@@ -473,6 +572,10 @@
     NET.on('keeper', msg => { if (!online() || typeof msg.map !== 'string' || msg.map !== S.map) return; setKeeper(typeof msg.n === 'string' ? msg.n : null); });
     NET.on('offline', () => reset());
     NET.on('mon', applyMon);
+    // the world taking over the map this game keeps asks once for every monster here (snapshotAll); a game that does not keep
+    // this map (any more) has nothing to say
+    if (Array.isArray(NET.caps) && !NET.caps.includes('snap')) NET.caps.push('snap');
+    NET.on('snap', msg => { if (!online() || typeof msg.map !== 'string' || msg.map !== S.map || !isKeeper()) return; NET.send({ t: 'mon', list: snapshotAll(), full: true }); });
     NET.on('p', msg => {
       if (typeof msg.n !== 'string' || msg.n === NET.me || typeof msg.map !== 'string') return;
       const x = num(msg.x), y = num(msg.y); if (x === null || y === null) return;
@@ -516,8 +619,64 @@
 
   window.COOP = { refill: refillIfCleared, call, CREDIT, phantomOf, bossCall: onBossCall, bossWait: onBossWait, mmss,
     isKeeper, keeper: () => S.keeper, map: () => S.map, remotes: () => Object.values(S.remotes), knightsHere, puppets: () => S.puppets,
-    get parked() { return S.parked[S.map] || null; }, snapshot: () => snapshot(knightsHere()), find, apply: applyMon, reset, state: S,
+    get parked() { return S.parked[S.map] || null; },
+    // how many monsters stand in this whole place while the world runs it (its mon's 'standing'; null otherwise): a puppet
+    // list holds only the ones within 24 tiles, so the place's plaque (16-instances) reads this instead
+    // ?debug=tick's numbers for the proofs (a function: the counters are not part of COOP.state): the last k, mon a second
+    tickStats: () => { while (DBG.times.length && DBG.times[0] < time - 1) DBG.times.shift(); return { k: DBG.k, rate: DBG.times.length, rows: DBG.rows }; },
+    placeStanding: () => online() && isWorld(S.keeper) && WORLD.standing !== null ? WORLD.standing : null,
+    snapshot: () => snapshot(knightsHere()), snapshotAll, find, apply: applyMon, reset, state: S, debugTick: () => DEBUG_TICK, debugBox: (L, w, h) => debugBox(L, w, h),
   };
+
+  // ?debug=tick (the two-browser proofs, docs/ONLINE.md "The shared world", Stage 2): who keeps this map, how often its stream
+  // lands, the world's tick, the rows in the last mon and the puppets. Nobody sees it without the address saying so.
+  const DEBUG_TICK = typeof location !== 'undefined' && !!location && /[?&]debug=tick\b/.test(String(location.search || ''));
+  // Where the box goes: never over the hearts and hit points (the crest), the minimap, the quest scroll, the belt, the stick,
+  // a seat, any other piece of the HUD or the knight. The bottom-left corner when it is free (a computer), else the first free
+  // spot down the left edge (an iPad, a phone held upright), else down the middle (a phone on its side). L is a HUD layout
+  // (59-hudkit HK.layoutFor or the live one), vw x vh the screen.
+  // (a narrow phone gets the small box: 10 px type instead of 12)
+  const DBG_GAP = 6, dbgSize = vw => vw < 420 ? { w: 222, h: 42, font: 10, line: 12 } : { w: 264, h: 54, font: 12, line: 15 };
+  function debugBox(L, vw, vh) {
+    const Z = dbgSize(vw), DBG_W = Z.w, DBG_H = Z.h;
+    const S0 = L.S || { t: 0, r: 0, b: 0, l: 0 };
+    const box = a => !a ? null : (a.k === 'c' || (a.w == null && a.r != null)) ? { x: a.x - (a.R || a.r), y: a.y - (a.R || a.r), w: 2 * (a.R || a.r), h: 2 * (a.R || a.r) } : a;
+    const avoid = [];
+    // (the notice lane is not kept clear: a notice is a line that comes and goes; every piece that stays is)
+    for (const it of L.items || []) if (it.id !== 'notice') avoid.push(box(it.stick && it.keep ? { k: 'c', x: it.x, y: it.y, r: it.keep } : it));
+    for (const a of [L.crest, L.scroll, L.belt, L.mm, L.stick && { k: 'c', x: L.stick.x, y: L.stick.y, r: L.stick.keep || L.stick.r }]) if (a) avoid.push(box(a));
+    const free = r => r.x >= S0.l && r.y >= S0.t && r.x + r.w <= vw - S0.r && r.y + r.h <= vh - S0.b &&
+      avoid.every(a => !a || r.x + r.w + DBG_GAP <= a.x || a.x + a.w + DBG_GAP <= r.x || r.y + r.h + DBG_GAP <= a.y || a.y + a.h + DBG_GAP <= r.y);
+    if (L.knight) avoid.push(L.knight);   // and never over the knight himself
+    const at = (x, y) => ({ x: Math.round(x), y: Math.round(y), w: DBG_W, h: DBG_H });
+    // the bottom-left corner, then down the left edge from the top, then down the middle from the top (4 px steps)
+    const tries = [at(S0.l + DBG_GAP, vh - S0.b - DBG_H - DBG_GAP)];
+    for (const x of [S0.l + DBG_GAP, vw / 2 - DBG_W / 2]) for (let y = S0.t + DBG_GAP; y + DBG_H <= vh - S0.b; y += 4) tries.push(at(x, y));
+    const f = tries.find(free);
+    return f ? Object.assign(f, { free: true }) : Object.assign(at(S0.l + DBG_GAP, vh - S0.b - DBG_H - DBG_GAP), { free: false });
+  }
+  if (DEBUG_TICK) HOOKS.hud.push(g => {
+    while (DBG.times.length && DBG.times[0] < time - 1) DBG.times.shift();   // a stream that stopped reads 0 a second
+    const k = S.keeper, world = typeof k === 'string' && k.indexOf('@world:') === 0;
+    const lines = ['keeper ' + (k || '-') + (world ? ' (the world)' : (k && typeof NET !== 'undefined' && k === NET.me ? ' (you)' : '')),
+      'mon ' + DBG.times.length + '/s   k ' + (DBG.k === null ? '-' : DBG.k) + '   rows ' + DBG.rows, 'puppets ' + (S.puppets ? S.puppets.length : 0) + '   map ' + S.map];
+    const Z = dbgSize(VW);
+    let r = { x: 6, y: 6, w: Z.w, h: Z.h }; try { if (typeof HK !== 'undefined' && HK.cur) r = debugBox(HK.cur(), VW, VH); } catch (e) { }
+    g.save(); g.font = Z.font + 'px monospace'; g.fillStyle = 'rgba(0,0,0,0.65)'; g.fillRect(r.x, r.y, r.w, r.h); g.fillStyle = '#e6edf3';
+    for (let i = 0; i < lines.length; i++) g.fillText(lines[i], r.x + 6, r.y + Z.font + 4 + i * Z.line);
+    g.restore();
+  });
+  // the box never covers the hearts and hit points, or any other piece of the HUD, at any of the HUD audit's screens
+  HOOKS.selfTest.push(check => {
+    if (typeof HK === 'undefined' || !HK.layoutFor) return;
+    const sizes = [[375, 667], [390, 844], [844, 390], [430, 932], [932, 430], [768, 1024], [1024, 768], [1024, 1366], [1366, 1024], [1280, 800]], bad = [];
+    for (const [w, h] of sizes) for (const touch of [true, false]) {
+      const L = HK.layoutFor(w, h, { touch, online: true, minimap: true }), r = debugBox(L, w, h), c = L.crest;
+      const onCrest = !(r.x + r.w <= c.x || c.x + c.w <= r.x || r.y + r.h <= c.y || c.y + c.h <= r.y), off = r.x < 0 || r.y < 0 || r.x + r.w > w || r.y + r.h > h;
+      if (onCrest || off || !r.free) bad.push(w + 'x' + h + (touch ? ' touch' : '') + ': ' + JSON.stringify(r));
+    }
+    check('coop: the ?debug=tick box never covers the hearts and hit points (the crest) or any other piece of the HUD, and stays on screen, on iPads, phones and computers', bad.length === 0, bad.slice(0, 6));
+  });
 
   // ---------- self-test ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -560,13 +719,44 @@
         const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length; paused = p0;
         check(P + 'a keeper with nobody near sends a heartbeat about once a second, and none while paused', beats >= 1 && beats <= 3 && whilePaused === 0, { beats, whilePaused });
         push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 }); }
+      // (a3) the world taking the map over asks for the full snapshot ('snap'): the keeper answers once with every monster it
+      // runs (far ones and fallen ones too), marked full; a snap for another map, or to a game that does not keep it, gets nothing
+      { const fell = real.find(m => !m.dead && m !== gob && !m.remote && m.nid), was = fell ? { dead: fell.dead, deadT: fell.deadT } : null;
+        if (fell) { fell.dead = true; fell.deadT = 30; }
+        sent.length = 0; push({ t: 'snap', map: 'over' });
+        const fulls = sentOf('mon').filter(m => m.full === true), l = fulls.length ? fulls[0].list : [];
+        if (fell) { fell.dead = was.dead; fell.deadT = was.deadT; }
+        const want = real.filter(m => !m.remote && !m.phantom && MONSTER_DEFS[m.type]).slice(0, 400), ids = new Set(l.map(e => e[0]));
+        const all = want.length === l.length && want.every(m => ids.has(m.nid)), far = want.some(m => !near(m.x, m.y) && ids.has(m.nid));
+        const fellRow = fell ? l.find(e => e[0] === fell.nid) : null;
+        sent.length = 0; push({ t: 'snap', map: 'deepholm' }); const other = sentOf('mon').length;
+        check(P + 'the world\'s snap: the keeper answers with one full snapshot of every monster it runs (far and fallen ones too); a snap for another map gets nothing; hello says snap', fulls.length === 1 && all && far && !!fellRow && fellRow[11] === 1 && other === 0 && NET.hello().caps.includes('snap'), { fulls: fulls.length, rows: l.length, want: want.length, far, fell: fellRow && fellRow[11], other, caps: NET.hello().caps }); }
       // (b) a non-keeper shows puppets that hold still while the stream is silent
+      const nearReal = real.filter(m => m.nid && !m.dead && !m.remote && dist(m.x, m.y, player.x, player.y) <= NEAR).map(m => m.nid).sort();
+      // (b-) handing the map to another knight is exactly as before Stage 2: no monster is held up on this screen; and the map
+      // coming back to this game hands back the very array it ran
       push({ t: 'keeper', map: 'over', n: 'Ann' });
+      const toKnight = (COOP.puppets() || []).length;
+      push({ t: 'keeper', map: 'over', n: 'Cohen' });
+      check(P + 'a keeper handing its map to another knight holds nothing up on its screen (as before the shared world), and gets its own monsters back', toKnight === 0 && COOP.isKeeper() && monsters === real, { toKnight, keeper: COOP.keeper(), same: monsters === real });
+      // (b0) handing the map to the world's copy: until the first mon from whoever keeps it next, this screen keeps showing the
+      // monsters it ran, where they stood
+      push({ t: 'keeper', map: 'over', n: '@world:over' });
       const parked = COOP.parked;
+      const seeded = (COOP.puppets() || []).filter(p => p.seed), gs = seeded.find(p => p.nid === gob.nid);
+      push({ t: 'keeper', map: 'over', n: 'Ann' });
       const ax = gob.home.x, ay = gob.home.y;
       const row = (nid, type, x, y, hp, mhp, state) => [nid, type, x, y, hp, mhp, state, 1, 0, 0, 0, 0, 0, 0];
+      // the next keeper's first mon decides: it names only the goblin, so the goblin stays (now its puppet) and the rest go
+      push({ t: 'mon', n: 'Ann', list: [row(gob.nid, gob.type, gob.x, gob.y, gob.hp, gob.maxHp, 'idle')] });
+      { const left = monsters.filter(m => m.seed).length, kept = COOP.find(gob.nid), listed = !!kept && !kept.seed && kept.remote;
+        check(P + 'a keeper handing its map to the world keeps showing the monsters on its screen (same nids, places and hp) until the next keeper\'s first mon, which then decides', seeded.length === nearReal.length && seeded.length > 0 && seeded.map(p => p.nid).sort().join() === nearReal.join() && !!gs && gs.x === gob.x && gs.y === gob.y && gs.hp === gob.hp && gs.remote && left === 0 && listed && monsters.length === 1, { seeded: seeded.length, near: nearReal.length, gob: gs && [gs.x - gob.x, gs.y - gob.y, gs.hp], left, listed, puppets: monsters.length });
+        const k = kept ? monsters.indexOf(kept) : -1; if (k >= 0) monsters.splice(k, 1); S.idxLen = -1; }
+      // (b) as it always read: puppets newly made from the keeper's first mon (nothing of the hand-over above is left on screen)
+      const fresh = !COOP.find('Ann:1') && !COOP.find(s0.nid) && monsters.length === 0;
       push({ t: 'mon', n: 'Ann', list: [row('Ann:1', 'goblin', ax, ay, 12, 12, 'idle'), row(s0.nid, s0.type, ax + 40, ay + 40, 5, s0.maxHp, 'chase')] });
       const p1 = COOP.find('Ann:1'), p2 = COOP.find(s0.nid);
+      const made = !!p1 && !!p2 && p1.seen === time && p2.seen === time && !p1.seed && !p2.seed && p2.hp === 5 && p2.state === 'chase';
       // (b2) moving (row 9) and hurt (row 10) land in the right fields: a walking monster walks and is not pink, a hurt one flashes
       { push({ t: 'mon', n: 'Ann', list: [['Ann:w', 'goblin', ax + 80, ay, 12, 12, 'chase', 1, 0, 1, 0, 0, 0, 0], ['Ann:h', 'goblin', ax + 120, ay, 9, 12, 'idle', 1, 0, 0, 0.18, 0, 0, 0]] });
         const pw = COOP.find('Ann:w'), ph = COOP.find('Ann:h');
@@ -576,8 +766,10 @@
       let drew = true; try { render(); } catch (e) { drew = false; }
       monsters.push(makeReal('goblin', ax, ay + 200, null, null));   // a boss file spawning locally on a non-keeper: dropped after the next update
       F.sim(60);
-      check(P + 'a non-keeper parks its monsters, shows puppets that render and hold still while the stream is silent, and keeps nothing else', parked === real && monsters !== real && !!p1 && !!p2 && p1.remote && p2.remote && drew && p1.x === ax && p1.y === ay && p2.x === ax + 40 && p2.y === ay + 40 && p2.hp === 5 && p1.stunT === 0 && p2.stunT === 0 && monsters.length === 2 && monsters.every(m => m.remote), { parked: parked === real, puppets: monsters.length, allRemote: monsters.every(m => m.remote), drew, p1: p1 && [p1.x - ax, p1.y - ay, p1.stunT], p2: p2 && [p2.x - ax - 40, p2.hp] });
+      check(P + 'a non-keeper parks its monsters, shows puppets that render and hold still while the stream is silent, and keeps nothing else', fresh && made && parked === real && monsters !== real && !!p1 && !!p2 && p1.remote && p2.remote && drew && p1.x === ax && p1.y === ay && p2.x === ax + 40 && p2.y === ay + 40 && p2.hp === 5 && p1.stunT === 0 && p2.stunT === 0 && monsters.length === 2 && monsters.every(m => m.remote), { fresh, made, parked: parked === real, puppets: monsters.length, allRemote: monsters.every(m => m.remote), drew, p1: p1 && [p1.x - ax, p1.y - ay, p1.stunT], p2: p2 && [p2.x - ax - 40, p2.hp] });
 
+      { sent.length = 0; push({ t: 'snap', map: 'over' });
+        check(P + 'a game that does not keep its map answers no snap', sentOf('mon').length === 0, { sent: sentOf('mon').length }); }
       // an instance excursion while someone else keeps the overworld: inside, the fresh spawns are ours and tagged;
       // back out, the real overworld array returns (the instance code hands back the puppet array it was given)
       const ids = typeof INSTANCES !== 'undefined' && INSTANCES.list ? INSTANCES.list() : [];
@@ -660,6 +852,46 @@
       h.peace(was.peace); player.x = was.px; player.y = was.py; player.hp = Math.max(1, was.hp); player.kills = was.kills; drops = drops.slice(0, was.drops);
       quest.stage = was.qstage; quest.kills = was.qkills; quest.graves = was.graves;
       dialog.queue.length = 0;
+    }
+  });
+
+  // ---------- self-test: the world's place named to a friend whose game never answers, then to this game ----------
+  // A wake names a knight keeper out loud, and that can be a friend whose iPad is still locked. This game, still showing the
+  // world's puppets (or none: they went when the stream stopped), must keep what the world last showed until it keeps the map
+  // itself: then a monster the world showed felled stays down and a hurt one stays hurt, never the array made at walking in.
+  HOOKS.selfTest.push((check, F, h) => {
+    if (typeof NET === 'undefined') return;
+    if (typeof INSTANCES !== 'undefined' && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
+    const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, peace: window.__peace };
+    const real = monsters;
+    const two = real.filter(m => m.nid && !m.dead && !m.remote && !isCampMonster(m) && MONSTER_DEFS[m.type] && m.maxHp > 4).slice(0, 2);
+    if (two.length < 2) return;
+    const keep = two.map(m => ({ m, x: m.x, y: m.y, hp: m.hp, dead: m.dead, deadT: m.deadT, respawnT: m.respawnT, state: m.state }));
+    let sock = null;
+    const push = msg => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(msg) }); };
+    const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
+    NET.enabled = true; NET.token = 'coop-kept'; NET.useFake(fake); NET.connect();
+    try {
+      h.peace(true);
+      const [a, b] = two, hurt = Math.max(1, Math.floor(a.maxHp / 2));
+      const row = (m, hp, dead) => [m.nid, m.type, Math.round(m.x), Math.round(m.y), hp, m.maxHp, 'idle', 1, 0, 0, 0, dead ? 1 : 0, 0, 0];
+      push({ t: 'keeper', map: 'over', n: '@world:over' });
+      push({ t: 'mon', n: '@world:over', list: [row(a, hurt, false), row(b, 0, true)] });
+      F.sim(9 * 60);   // the stream stops (every game on the place locked): the puppets go
+      push({ t: 'keeper', map: 'over', n: 'Ann' });   // the wake names Ann, whose game is still locked
+      const kept = COOP.keeper() === 'Ann';
+      push({ t: 'keeper', map: 'over', n: 'Cohen' });  // and then this game
+      const A = COOP.find(a.nid), B = COOP.find(b.nid);
+      check('coop: the world\'s place named to a friend whose game never answers, then to this game: the felled one stays down and the hurt one keeps its hp (what the world last showed, never the array made at walking in)',
+        kept && COOP.isKeeper() && monsters === real && !!A && !A.dead && A.hp === hurt && !!B && B.dead,
+        { kept, keeper: COOP.keeper(), same: monsters === real, a: A && [A.hp, A.dead], b: B && [B.hp, B.dead], hurt });
+    } finally {
+      NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null;
+      reset();
+      monsters = real;
+      for (const k of keep) { const m = k.m; m.x = k.x; m.y = k.y; m.hp = k.hp; m.dead = k.dead; m.deadT = k.deadT; m.respawnT = k.respawnT; m.state = k.state; }
+      S.idxLen = -1;
+      h.peace(was.peace);
     }
   });
 
