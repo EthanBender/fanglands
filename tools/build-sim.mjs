@@ -304,6 +304,7 @@ export const STRIP_READS = {
   'window.LIGHTS': { files: ['88-aerie', '91-royalmine'], why: 'the lighting: lights registered at load, and whether a lit scene owns the night canvas' },
   MONSTER_LOOK: { files: ['79-deaths'], why: '79-deaths asks the monsters\' new looks (78-monsterlook, stripped) how far a falling body reaches and how tall it stands, for the clips that split or crumble it, and for a person\'s own weapon to throw clear; all of it drawing, which a copy never does' },
   'window.MONSTER_LOOK': { files: ['79-deaths'], why: 'the same reads as MONSTER_LOOK, guarded by whether the look is loaded' },
+  'window.TEACHERSCREEN': { files: ['71-login'], why: 'the login card hands a teacher\'s answer to the teacher screen (79-teacherscreen, stripped); a copy never signs anyone in' },
   TOWNSFOLK: {
     files: ['91-cloudkingdom', '95-thistledown'],
     why: 'the townsfolk\'s new look (83-townsfolk, stripped): whether it draws a person, where the name goes over the new head and how big a statue stands, inside the two cities\' own drawing passes (people, Lark, the fliers, the fountain children, the statues\' sprites), which a copy never runs',
