@@ -102,7 +102,7 @@
     <div id="modlog"></div>
 
     <h2>Teachers</h2>
-    <p class="note">Each teacher gets their own name and password for the teacher view: they go to <code>fanglands.com/teacher</code> and sign in. A teacher sees who is on, where each knight is, what they are doing and the chat, and can mute a kid's chat, pause chat for everyone, and send a kid off until midnight. Nothing else: no accounts, no secret words, no saves, no invite code. Everything a teacher does is in "What admins did" with their name, and you can undo it here. Loaded when this page opens and when you press Refresh.</p>
+    <p class="note">Each teacher gets their own name and password for the teacher view: they go to <code>fanglands.com/teacher</code> and sign in. A teacher sees who is on, where each knight is, what they are doing and the chat, and can mute a kid's chat, pause chat for everyone, and send a kid off until midnight. Nothing else: no accounts, no secret words, no saves, no invite code. Everything a teacher does is in "What admins did" with their name, and you can undo it here. A big number under Wrong tries today means someone is guessing that teacher's password: New password stops it. Loaded when this page opens and when you press Refresh.</p>
     <div class="row">
       <input id="tname" placeholder="Name, like Mrs Smith" size="22" maxlength="40" autocomplete="off">
       <input id="tpass" placeholder="Password (10 or more letters)" size="28" maxlength="200" autocomplete="off">
@@ -110,7 +110,7 @@
       <button id="tadd" class="gold">Add teacher</button>
     </div>
     <p id="tsaid" class="note hidden"></p>
-    <div class="scroll"><table id="teachers"><thead><tr><th>Name</th><th>Added</th><th>Last signed in</th><th>Watching now</th><th>Actions today</th><th></th></tr></thead><tbody></tbody></table></div>
+    <div class="scroll"><table id="teachers"><thead><tr><th>Name</th><th>Added</th><th>Last signed in</th><th>Watching now</th><th>Actions today</th><th>Wrong tries today</th><th></th></tr></thead><tbody></tbody></table></div>
     <h3 class="sub">In force now</h3>
     <div id="tforce" class="note"></div>
     <div class="row"><span id="tnotice"></span><button id="tnoticebtn" class="hidden"></button></div>
@@ -361,16 +361,20 @@
   // a world without the teacher view (an older deploy) answers nothing useful here: the rest of the page goes on loading
   async function loadTeachers() { try { await loadTeachersNow(); } catch (e) { $('tforce').textContent = 'The teachers could not be read: ' + e.message; } }
   async function loadTeachersNow() {
-    let [list, acts, notice] = await Promise.all([api('GET', '/api/admin/teachers'), api('GET', '/api/admin/teacher-acts?today=1'), api('GET', '/api/admin/teachers/notice')]);
-    if (!Array.isArray(list)) list = []; if (!Array.isArray(acts)) acts = [];
+    // one call: {teachers, acts (today's), notice}
+    const all = await api('GET', '/api/admin/teachers');
+    const list = all && Array.isArray(all.teachers) ? all.teachers : [], acts = all && Array.isArray(all.acts) ? all.acts : [];
+    const notice = all && typeof all.notice === 'boolean' ? { on: all.notice } : null;
     const tb = $('teachers').querySelector('tbody'); tb.innerHTML = '';
-    if (!list.length) { const tr = document.createElement('tr'); cell(tr, 'No teachers yet. Add one above.').colSpan = 6; tb.appendChild(tr); }
+    if (!list.length) { const tr = document.createElement('tr'); cell(tr, 'No teachers yet. Add one above.').colSpan = 7; tb.appendChild(tr); }
     for (const t of list) {
       const tr = document.createElement('tr'); if (t.off) tr.className = 'banned';
       cell(tr, t.name + (t.off ? ' (turned off)' : ''));
       whenCell(tr, t.created); whenCell(tr, t.lastLogin, 'not yet');
       cell(tr, t.watching ? t.watching + (t.watching === 1 ? ' screen' : ' screens') : 'no');
       cell(tr, String(t.actsToday || 0));
+      // wrong passwords typed for this name today, from anywhere: a big number means someone is guessing (New password stops it)
+      cell(tr, String(t.wrongToday || 0));
       const td = document.createElement('td');
       td.appendChild(button('New password', async () => {
         const pass = makePassword();

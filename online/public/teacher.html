@@ -75,6 +75,10 @@
   .ln.ev { color: var(--dim); }
   .ln.ev.filter { border-left-color: var(--red); }
   .ln.div { color: var(--dim); font-size: 13px; text-align: center; padding: 8px; border-left: 0; }
+  .ln.tap { cursor: pointer; }
+  /* the selected knight's lines (and the filter's lines about him) stand out, so the teacher finds what he said */
+  .ln.sel { background: #24324a; }
+  .ln.sel .n { text-decoration: underline; }
   #newlines { position: absolute; left: 50%; transform: translateX(-50%); bottom: 8px; background: #2f4a73; border-color: #4f78b3; }
   .chatbox { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .controls { flex: none; border-top: 1px solid var(--line); padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; max-height: 50%; overflow-y: auto; }
@@ -101,7 +105,7 @@
   .fold { width: 100%; text-align: left; border-radius: 0; border-left: 0; border-right: 0; background: #1f232a; font-weight: 600; }
   .act { padding: 8px 10px; border-bottom: 1px solid #23262d; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .act .txt { flex: 1; min-width: 160px; }
-  #toast { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line); background: #22324a; min-height: 56px; }
+  #toast { flex: none; display: flex; z-index: 4; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line); background: #22324a; min-height: 56px; }
   .warn { color: var(--red); }
 
   /* under 900 px: the map first, then one panel at a time */
@@ -110,6 +114,11 @@
   @media (max-width: 1099px) {
     #grid { grid-template-columns: 270px 1fr 290px; gap: 0; padding: 0; }
     .panel { border-radius: 0; }
+    /* room for the chat: pausing moves to the bar's Pause chat button (its menu), and the mute row shows only once a
+       knight is picked (the banner says a pause and has its Turn chat back on) */
+    #pausebtn { display: inline-block; }
+    .controls .pausegroup { display: none; }
+    .controls.none { display: none; }
   }
   @media (max-width: 899px) {
     #bar .mid { order: 3; flex-basis: 100%; justify-content: flex-start; min-height: 44px; }
@@ -297,7 +306,7 @@
     const wh = el('header'); ui.whoHead = el('h2', '', 'Who is on (0)'); wh.appendChild(ui.whoHead);
     ui.whoScroll = el('div', 'scroll'); ui.whoList = el('div'); ui.whoScroll.appendChild(ui.whoList);
     ui.toast = el('div'); ui.toast.id = 'toast'; ui.toast.hidden = true;
-    who.append(wh, ui.whoScroll, ui.toast);
+    who.append(wh, ui.whoScroll, ui.toast); ui.who = who;
     // the two tabs under 900 px
     ui.tabs = el('nav'); ui.tabs.id = 'tabs2';
     ui.tChat = btn('Chat', () => { S.tab = 'chat'; S.unread = 0; renderTabs(); scrollChatEnd(); }); ui.tWho = btn('Who is on (0)', () => { S.tab = 'who'; renderTabs(); });
@@ -464,7 +473,11 @@
     m.appendChild(el('div', '', 'Pause chat for everyone:'));
     for (const [span, label] of [['5m', '5 minutes'], ['15m', '15 minutes'], ['1h', '1 hour']]) m.appendChild(btn(label, () => { S.pauseMenu = false; m.hidden = true; send({ t: 'w_pause', span }); }));
     m.appendChild(btn('Cancel', () => { S.pauseMenu = false; m.hidden = true; }));
-    m.style.top = '96px'; m.style.left = '8px';
+    m.appendChild(el('div', 'dim small', 'Admins can still talk while chat is paused.'));
+    // under the button that opened it
+    const r = ui.pauseBtn.getBoundingClientRect ? ui.pauseBtn.getBoundingClientRect() : null;
+    if (r && r.height) { m.style.top = Math.round(r.bottom + 4) + 'px'; m.style.left = Math.round(Math.max(8, Math.min(r.left, (W.innerWidth || 1200) - 200))) + 'px'; }
+    else { m.style.top = '96px'; m.style.left = '8px'; }
   }
   function chatOn() { send({ t: 'w_chaton' }); }
   function renderBanners() {
@@ -497,10 +510,12 @@
     if (l.kind === 'div') return el('div', 'ln div', l.text);
     const d = el('div', 'ln' + (l.kind === 'ev' ? ' ev' + (l.filter ? ' filter' : '') : '') + (l.kind === 'line' && l.masked ? ' masked' : ''));
     d.appendChild(el('span', 't', hm(l.at)));
+    if (l.n) { d._n = lc(l.n); if (S.selected && d._n === lc(S.selected)) d.className += ' sel'; }
+    // the whole line is the target (44 px tall): a tap selects the knight who said it, or the one the event is about
+    // ("The word filter warned Nora." is the line a teacher most wants to act on)
+    if (l.n) { d.className += ' tap'; d.setAttribute('role', 'button'); d.tabIndex = 0; d.addEventListener('click', () => select(l.n)); }
     if (l.kind === 'ev') { d.appendChild(el('span', '', l.text)); return d; }
-    // the whole line is the target (44 px tall): a tap selects the knight who said it
-    d.className += ' say'; d.setAttribute('role', 'button'); d.tabIndex = 0;
-    d.addEventListener('click', () => select(l.n));
+    d.className += ' say';
     d.appendChild(el('span', 'n' + (l.role === 'admin' ? ' admin' : ''), l.n));
     if (l.role === 'admin') d.appendChild(el('span', 'pill', 'ADMIN'));
     d.appendChild(el('span', '', ': ' + l.text));
@@ -539,6 +554,7 @@
     if (!k) mg.appendChild(el('div', 'dim', 'Tap a name in the chat, on the map or in the list.'));
     else mg.appendChild(muteLine(k, false));
     c.appendChild(mg);
+    c.className = 'controls' + (k ? '' : ' none');
   }
   // the selected knight's mute state and buttons (short: the who-list's action bar wording)
   function muteLine(k, short) {
@@ -564,7 +580,10 @@
     const k = S.knights.find(x => lc(x.n) === l);
     if (k) return k;
     const g = S.gone.find(x => lc(x.n) === l);
-    return g ? { n: g.n, role: 'player', gone: g.at, map: null, place: null, doing: null, muted: null, sentOff: 0 } : null;
+    if (!g) return null;
+    // a knight who left: sent off (the world's list says so) or not, so his bar offers Let back in rather than a second send-off
+    const so = S.sentOff.find(x => lc(x.n) === l);
+    return { n: g.n, role: 'player', gone: g.at, map: null, place: null, doing: null, muted: null, sentOff: so ? +so.until || 1 : 0 };
   }
   function mutedOf(k) {
     if (!k || !k.muted) return null;
@@ -584,6 +603,7 @@
     if (mu) l1.appendChild(el('span', 'tag', mu.until === Infinity ? 'Muted' : mu.today ? 'Muted today' : 'Muted ' + mins(mu.until - now()) + ' min'));
     const hid = S.hidden[lc(k.n)];
     if (hid) l1.appendChild(el('span', 'tag', 'Words hidden ' + hid));
+    if (k.sentOff) l1.appendChild(el('span', 'tag red', 'Sent off today'));
     r.appendChild(l1);
     if (k.gone) r.appendChild(el('div', 'l2', 'left ' + clock(k.gone)));
     else r.appendChild(el('div', 'l2', (k.place || 'Somewhere in the world') + ' · ' + (awayOf(k) ? 'Away from the game' : k.doing || 'Standing still') + ' · on for ' + onFor(k.since)));
@@ -595,14 +615,19 @@
     const top = el('div', 'btns'); if (!k.gone) top.appendChild(btn('Show on map', () => showOnMap(k.n)));
     a.appendChild(top);
     if (k.role === 'admin') { a.appendChild(el('div', '', k.n + ' is an admin. Only Ethan can do that.')); return a; }
-    a.appendChild(muteLine(k, true));
+    if (!k.sentOff) a.appendChild(muteLine(k, true));
     a.appendChild(offEl(k));
     return a;
   }
   // Send off for today: two taps; the question goes back by itself after 5 s
   function offEl(k) {
     const box = el('div', 'btns');
-    if (k.sentOff) { box.appendChild(el('div', 'warn', k.n + ' is sent off for today.')); return box; }
+    if (k.sentOff) {
+      box.appendChild(el('div', 'warn', k.n + ' is sent off for today.'));
+      const so = S.sentOff.find(x => lc(x.n) === lc(k.n));
+      if (so && so.act) box.appendChild(btn('Let ' + k.n + ' back in', () => send({ t: 'w_undo', act: so.act })));
+      return box;
+    }
     if (S.confirm && lc(S.confirm.n) === lc(k.n) && S.confirm.until > now()) {
       box.appendChild(el('div', '', 'Send ' + k.n + ' off Fanglands until midnight? ' + k.n + "'s knight is safe and saved."));
       box.append(btn('Yes, send ' + k.n + ' off', () => { S.confirm = null; send({ t: 'w_off', n: k.n }); renderWho(); renderSheet(); }, 'redfill'), btn('Cancel', () => { S.confirm = null; renderWho(); renderSheet(); }));
@@ -614,20 +639,19 @@
   function renderWho() {
     if (!ui.whoList) return;
     const st = ui.whoScroll.scrollTop;
-    clear(ui.whoList);
+    clear(ui.whoList); ui.selRow = null; ui.selActs = null;
     ui.whoHead.textContent = 'Who is on (' + S.knights.length + ')';
     const list = S.knights.slice().sort((a, b) => lc(a.n) < lc(b.n) ? -1 : 1);
     if (!list.length) ui.whoList.appendChild(el('div', 'act dim', 'Nobody is on right now.'));
-    for (const k of list) {
-      ui.whoList.appendChild(rowEl(k));
-      if (S.selected && lc(S.selected) === lc(k.n)) ui.whoList.appendChild(actionsEl(k));
-    }
+    const isSel = k => S.selected && lc(S.selected) === lc(k.n);
+    const put = k => { const r = ui.whoList.appendChild(rowEl(k)); if (isSel(k)) { ui.selRow = r; ui.selActs = ui.whoList.appendChild(actionsEl(k)); } };
+    for (const k of list) put(k);
     // left in the last 30 minutes
     const on = new Set(list.map(k => lc(k.n)));
     const gone = S.gone.filter(g => !on.has(lc(g.n)));
     if (gone.length) {
       ui.whoList.appendChild(btn((S.foldGone ? '▸ ' : '▾ ') + 'Left in the last 30 minutes (' + gone.length + ')', () => { S.foldGone = !S.foldGone; renderWho(); }, 'fold'));
-      if (!S.foldGone) for (const g of gone) { const k = knightOf(g.n); ui.whoList.appendChild(rowEl(k)); if (S.selected && lc(S.selected) === lc(g.n)) ui.whoList.appendChild(actionsEl(k)); }
+      if (!S.foldGone) for (const g of gone) put(knightOf(g.n));
     }
     // sent off for today
     if (S.sentOff.length) {
@@ -661,15 +685,23 @@
     if (a.act === 'pause') { const m = Math.round((a.until - a.at) / 60000); return a.teacher + ' paused chat for everyone for ' + (m === 60 ? '1 hour' : m + ' minutes'); }
     return a.teacher + ' ' + a.act + ' ' + (a.target || '');
   }
-  function toast(text, actId) {
+  function toast(text, actId, bad) {
     if (S.toast && S.toast.timer) clearTimeout(S.toast.timer);
-    S.toast = { text, act: actId, timer: setTimeout(() => { S.toast = null; renderToast(); }, TOAST_MS) };
+    S.toast = { text, act: actId, bad: !!bad, timer: setTimeout(() => { S.toast = null; renderToast(); }, TOAST_MS) };
     renderToast();
   }
-  function say(text, bad) { toast(text, null); if (bad && ui.toast) ui.toast.style.background = '#4a2222'; }
+  function say(text, bad) { toast(text, null, bad); }
+  // Where the answer to a tap shows: at the bottom of Who is on on a wide screen; under 900 px a strip of the page itself,
+  // just above the knight's sheet (or at the bottom under the tabs), so it shows whichever tab or sheet is up
+  function placeToast() {
+    const t = ui.toast; if (!t || !ui.app) return;
+    if (narrow()) { if (t.parentNode !== ui.app || t.nextSibling !== ui.sheet) ui.app.insertBefore(t, ui.sheet); }
+    else if (t.parentNode !== ui.who) ui.who.appendChild(t);
+  }
   function renderToast() {
     const t = ui.toast; if (!t) return;
-    clear(t); t.style.background = '';
+    placeToast();
+    clear(t); t.style.background = S.toast && S.toast.bad ? '#4a2222' : '';
     if (!S.toast) { t.hidden = true; return; }
     t.hidden = false;
     t.appendChild(el('span', 'txt', S.toast.text));
@@ -678,7 +710,21 @@
   function select(n, fromList) {
     S.selected = S.selected && lc(S.selected) === lc(n) && fromList ? null : n;
     S.confirm = null; S.pick = null; if (ui.pick) ui.pick.hidden = true;
-    renderWho(); renderControls(); renderSheet(); drawMap();
+    // picked in the chat, on the map or from a chip: a knight who left is in the folded group, so it opens
+    if (S.selected && !fromList && !S.knights.some(k => lc(k.n) === lc(n)) && S.gone.some(g => lc(g.n) === lc(n))) S.foldGone = false;
+    renderWho(); renderControls(); renderSheet(); drawMap(); markChat();
+    if (S.selected && !fromList && !narrow()) revealSel();
+  }
+  // the selected knight's lines in the chat (no re-render: the scroll stays where the teacher left it)
+  function markChat() { if (!ui.chatList) return; const want = S.selected ? lc(S.selected) : null; for (const c of ui.chatList.children) if (c._n) c.classList.toggle('sel', c._n === want); }
+  // scroll Who is on (inside itself) so the selected row and its buttons, Send off included, are on screen
+  function revealSel() {
+    const r = ui.selRow, sc = ui.whoScroll; if (!r || !sc || !r.getBoundingClientRect || !sc.getBoundingClientRect) return;
+    const box = sc.getBoundingClientRect(), top = r.getBoundingClientRect().top, bottom = (ui.selActs || r).getBoundingClientRect().bottom;
+    let d = 0;
+    if (bottom > box.bottom) d = bottom - box.bottom;
+    if (top - d < box.top) d = top - box.top;
+    if (d) sc.scrollTop += d;
   }
   // the bottom sheet under 900 px
   function renderSheet() {
@@ -692,7 +738,8 @@
     if (k.role === 'admin') s.appendChild(el('div', '', k.n + ' is an admin. Only Ethan can do that.'));
     else {
       const mu = mutedOf(k);
-      if (mu) s.appendChild(muteLine(k, true));
+      if (k.sentOff) { /* Let back in only (offEl) */ }
+      else if (mu) s.appendChild(muteLine(k, true));
       else { const b = el('div', 'btns'); b.append(btn('Mute 10 min', () => mute(k.n, '10m')), btn('Mute 1 hour', () => mute(k.n, '1h')), btn('Rest of today', () => mute(k.n, 'today'))); s.appendChild(b); }
       s.appendChild(offEl(k));
     }
@@ -873,7 +920,7 @@
     // leaving the page signs out (a shared computer is never left signed in)
     W.addEventListener('pagehide', () => { if (!S.token) return; try { W.navigator.sendBeacon('/api/teacher/logout', JSON.stringify({ token: S.token })); } catch (e) { } S.token = null; store.del(); });
     W.addEventListener('pageshow', ev => { if (ev && ev.persisted && !store.get()) showSignin(BYE[4010]); });
-    W.addEventListener('resize', () => { renderSheet(); renderTabs(); drawMap(); });
+    W.addEventListener('resize', () => { renderSheet(); renderTabs(); renderToast(); drawMap(); });
     // the ping: the runtime answers it without waking the world (exactly this text)
     setInterval(() => { if (S.ws && S.ws.readyState === 1) { try { S.ws.send('{"t":"ping"}'); } catch (e) { } } }, PING_MS);
     setInterval(tick, 1000);

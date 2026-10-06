@@ -60,7 +60,8 @@ function kid(k, p) {
   });
 }
 async function teacher(name, pass) {
-  const list = (await admin('GET', '/api/admin/teachers')).data || [];
+  const all = (await admin('GET', '/api/admin/teachers')).data || {};
+  const list = Array.isArray(all.teachers) ? all.teachers : [];
   const t = list.find(x => x.name.toLowerCase() === name.toLowerCase());
   if (!t) { const r = await admin('POST', '/api/admin/teachers', { name, pass }); if (r.status !== 200) throw new Error(JSON.stringify(r.data)); return r.data.id; }
   await admin('POST', t.off ? '/api/admin/teachers/on' : '/api/admin/teachers/pass', { id: t.id, pass });
@@ -109,19 +110,23 @@ async function signIn(page, name, pass) {
 
 async function checks() {
   const browser = await chromium.launch(EXE ? { executablePath: EXE } : {});
-  const tName = 'Mrs Smith', tPass = 'maple-river-lantern-42';
+  // a teacher of this run's own (a teacher has 10 knight actions in any 10 minutes; a run takes 4, so runs back to back need their own)
+  const tName = 'Mrs Smith ' + String.fromCharCode(65 + Math.floor(Math.random() * 26)) + String.fromCharCode(97 + Math.floor(Math.random() * 26)), tPass = 'maple-river-lantern-42';
   await teacher(tName, tPass);
   // 25 knights: nine on one tile, the rest about the world, two inside places
   const names = []; for (let i = 0; i < 25; i++) names.push('Kid ' + String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + i % 26));
   const ks = []; for (const n of names) ks.push(await knight(n));
   const spots = [[150, 92], [120, 60], [60, 120], [200, 50], [30, 30], [100, 150], [220, 160], [170, 110], [80, 80], [40, 160], [240, 20], [140, 40], [110, 100], [190, 140]];
+  const zz = await knight('Kid ZZ');   // the one the 768 x 1024 run sends off and lets back in from the sheet
   const kids = [];
   for (let i = 0; i < ks.length; i++) {
     const p = i < 9 ? { x: 125 * 48 + 20, y: 77 * 48 + 20 } : i === 23 ? { map: 'spider_den', x: 300, y: 200 } : i === 24 ? { map: 'house', x: 300, y: 300 } : { x: spots[i - 9][0] * 48, y: spots[i - 9][1] * 48 };
     kids.push(await kid(ks[i], p));
   }
+  kids.push(await kid(zz, { x: 30 * 48, y: 150 * 48 }));
   const alive = setInterval(() => { for (const k of kids) k.say(); }, 1000);
   kids[1].chat('anyone want to fight goblins'); await wait(1600); kids[2].chat('you are so dumb lol'); await wait(1600); kids[3].chat('lets go to the spider den');
+  await wait(1600); kids[22].chat('meet me at the dock'); await wait(1600); kids[kids.length - 1].chat('ok see you there');   // Kid AW: near the end of Who is on
   try {
     for (const [w, h] of SIZES) {
       const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: w < 1100, isMobile: false });
@@ -147,6 +152,47 @@ async function checks() {
       const sel = await page.evaluate(() => ({ sel: window.__teacher.selected, sheet: !!document.querySelector('#sheet.up'), bar: !!document.querySelector('#who .actions') && getComputedStyle(document.querySelector('#who .actions')).display !== 'none' }));
       line(tag + ': a tap on a dot selects that knight and opens ' + (w < 900 ? 'the bottom sheet' : 'his bar'), one && sel.sel === one.names[0] && (w < 900 ? sel.sheet : sel.bar), { one, sel });
       if (w < 900) { const m2 = await page.evaluate(MEASURE); line(tag + ': with the sheet up, still every target 44 x 44 and 8 px apart', m2.problems.length === 0, m2.problems.slice(0, 8)); }
+      // a tap on a line in the chat by a knight far down the list: his row and its Send off are scrolled into view
+      if (w >= 900) {
+        await page.click('#chatlist .ln.say:has-text("Kid AW")'); await wait(300);
+        const r = await page.evaluate(() => {
+          const sc = document.querySelector('#who .scroll').getBoundingClientRect(), row = document.querySelector('#who .row.sel'), off = Array.from(document.querySelectorAll('#who .actions button')).find(b => b.textContent === 'Send off for today');
+          const inV = e => { if (!e) return false; const b = e.getBoundingClientRect(); return b.top >= sc.top - 1 && b.bottom <= sc.bottom + 1; };
+          return { sel: window.__teacher.selected, row: inV(row), off: inV(off), marked: Array.from(document.querySelectorAll('#chatlist .ln.sel')).map(e => e.textContent) };
+        });
+        line(tag + ': a tap on Kid AW\'s chat line scrolls Who is on to his row and its Send off, and marks his lines in the chat', r.sel === 'Kid AW' && r.row && r.off && r.marked.length >= 1 && r.marked.every(t => t.includes('Kid AW: meet me at the dock')), r);
+      }
+      // the chat's room on an iPad held sideways: with nobody picked, the pause and mute controls take no room (the bar's Pause chat does it)
+      if (w >= 900 && w < 1100) {
+        const ctx2 = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true });
+        const p2 = await ctx2.newPage(); await signIn(p2, tName, tPass); await wait(700);
+        const room = await p2.evaluate(() => { const chat = document.getElementById('chat').getBoundingClientRect(), head = document.querySelector('#chat > header').getBoundingClientRect(), sc = document.querySelector('#chat .scroll').getBoundingClientRect(), c = document.querySelector('#chat .controls'); return { chat: Math.round(chat.height), head: Math.round(head.height), scroll: Math.round(sc.height), lines44: Math.floor(sc.height / 44), controls: c ? Math.round(c.getBoundingClientRect().height) : 0, pauseBtn: getComputedStyle(document.getElementById('pausebtn')).display !== 'none' }; });
+        line(tag + ': with nobody picked the chat lines get the whole panel under its header (' + room.scroll + ' px, room for ' + room.lines44 + ' lines; controls ' + room.controls + ' px), and Pause chat is in the bar', room.controls === 0 && room.scroll + room.head >= room.chat - 3 && room.pauseBtn, room);
+        await ctx2.close();
+      }
+      // under 900 px the answers show above the sheet: a refused mute, a send-off with its Undo, and Let back in on the sheet
+      if (w === 768) {
+        await page.click('#sheet button:has-text("Close")');
+        await page.click('#tabs2 button:has-text("Chat")');
+        await page.click('#chatlist .ln.say:has-text("Kid AW")'); await wait(300);
+        await page.click('#sheet button:has-text("Mute 1 hour")'); await wait(900);
+        const toastNow = () => page.evaluate(() => { const t = document.getElementById('toast'); const r = t.getBoundingClientRect(); return { text: t.textContent, shown: !t.hidden && getComputedStyle(t).display !== 'none' && r.height > 0 && r.top >= 0 && r.bottom <= innerHeight }; });
+        const t1 = await toastNow();
+        line(tag + ': the answer to a tap in the sheet shows on screen, above the sheet ("' + t1.text + '")', t1.shown && /Kid AW/.test(t1.text) && /Undo/.test(t1.text), t1);
+        await page.click('#toast button:has-text("Undo")'); await wait(900);
+        const t1b = await toastNow();
+        line(tag + ': Undo from that toast gives Kid AW his chat back ("' + t1b.text + '")', t1b.shown && kids[22].got.some(m => m.t === 'unmuted' && m.by === 'teacher'), t1b);
+        await page.click('#sheet button:has-text("Close")');
+        // Kid ZZ: send off from the sheet, the Undo toast shows, and the sheet then offers Let back in
+        await page.click('#tabs2 button:has-text("Chat")');
+        await page.click('#chatlist .ln.say:has-text("Kid ZZ")'); await wait(300);
+        await page.click('#sheet button:has-text("Send off for today")'); await page.click('#sheet button:has-text("Yes, send Kid ZZ off")'); await wait(2500);
+        const t2 = await page.evaluate(() => { const t = document.getElementById('toast'), s = document.getElementById('sheet'); const r = t.getBoundingClientRect(); return { toast: t.textContent, shown: !t.hidden && r.height > 0 && r.bottom <= innerHeight, sheet: s.textContent }; });
+        line(tag + ': after Yes, send Kid ZZ off the toast with Undo shows, and the sheet says he is sent off with Let back in (no second send-off)', t2.shown && /Kid ZZ was sent off/.test(t2.toast) && /Undo/.test(t2.toast) && t2.sheet.includes('Kid ZZ is sent off for today.') && t2.sheet.includes('Let Kid ZZ back in') && !t2.sheet.includes('Send off for today'), t2);
+        await page.screenshot({ path: path.join(OUT, 'sheet-after-sendoff-768x1024.png') });
+        await page.click('#sheet button:has-text("Let Kid ZZ back in")'); await wait(1000);
+        line(tag + ': Let Kid ZZ back in from the sheet: he can log in again', (await api('POST', '/api/login', { name: 'Kid ZZ', pass: 'sword' }, { 'cf-connecting-ip': '10.78.0.1' })).status === 200);
+      }
       line(tag + ': no page errors', errors.length === 0, errors);
       if ([1280, 1024, 768].includes(w)) { fs.mkdirSync(OUT, { recursive: true }); await page.screenshot({ path: path.join(OUT, 'watch-' + tag + '.png') }); }
       await ctx.close();

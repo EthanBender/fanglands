@@ -21,6 +21,8 @@ class El {
   get classList() { const self = this; const set = () => new Set(self.className.split(/\s+/).filter(Boolean)); return { add: (...c) => { const s = set(); c.forEach(x => s.add(x)); self.className = [...s].join(' '); }, remove: (...c) => { const s = set(); c.forEach(x => s.delete(x)); self.className = [...s].join(' '); }, contains: c => set().has(c), toggle: (c, on) => { const s = set(); if (on ?? !s.has(c)) s.add(c); else s.delete(c); self.className = [...s].join(' '); } }; }
   appendChild(c) { if (c.parentNode) c.parentNode.removeChild(c); c.parentNode = this; this.children.push(c); return c; }
   append(...cs) { for (const c of cs) this.appendChild(typeof c === 'string' ? Object.assign(new El('#text', this.doc), { _text: c }) : c); }
+  insertBefore(c, ref) { if (!ref) return this.appendChild(c); if (c.parentNode) c.parentNode.removeChild(c); c.parentNode = this; const i = this.children.indexOf(ref); this.children.splice(i < 0 ? this.children.length : i, 0, c); return c; }
+  get nextSibling() { const p = this.parentNode; if (!p) return null; return p.children[p.children.indexOf(this) + 1] || null; }
   removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); c.parentNode = null; return c; }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   setAttribute(k, v) { this.attrs[k] = String(v); }
@@ -233,4 +235,79 @@ test('41-42. Send off needs two taps and the question goes back after 5 s; the e
   all(C.doc.body).find(e => e.id === 'tname').value = 'Mrs Smith'; all(C.doc.body).find(e => e.id === 'tpass').value = 'wrong-one-here';
   all(C.doc.body).find(e => e.tagName === 'FORM').fire('submit'); await C.settle();
   assert.ok(C.find("That name and password don't match."));
+});
+
+const byId = (P, id) => P.els().find(e => e.id === id);
+const inside = (e, anc) => { for (let x = e; x; x = x.parentNode) if (x === anc) return true; return false; };
+
+test('under 900 px the answer to a tap shows above the knight\'s sheet (never inside the hidden Who is on), refusals and the Undo toast alike', async () => {
+  const P = page({ width: 768 });
+  await P.live();
+  // Who is on is behind the Chat tab under 900 px: select Ivy from a chat line
+  P.ws().recv({ t: 'w_chat', at: P.clock.t, n: 'Ivy', text: 'hi', role: 'player', masked: false }); await P.settle();
+  P.click(P.findAll(/^\d+:\d\dIvy: hi$/).pop()); await P.settle();
+  assert.equal(P.S.selected, 'Ivy');
+  const sheet = byId(P, 'sheet'), toast = byId(P, 'toast'), who = byId(P, 'who');
+  assert.equal(sheet.className, 'up');
+  P.click(P.find('Mute 10 min', 'BUTTON')); const req = P.sent('w_mute').pop().req;
+  P.ws().recv({ t: 'w_no', req, code: 'slow', text: "That's a lot at once. Wait a few minutes, or ask Ethan." }); await P.settle();
+  assert.ok(!inside(toast, who), 'the toast is inside Who is on, which is hidden under 900 px');
+  assert.equal(toast.nextSibling, sheet); assert.equal(toast.hidden, false);
+  assert.equal(toast.textContent, "That's a lot at once. Wait a few minutes, or ask Ethan.");
+  // a mute that goes through: the Undo toast, in the same place
+  P.click(P.find('Mute 1 hour', 'BUTTON')); const r2 = P.sent('w_mute').pop().req;
+  P.ws().recv({ t: 'w_acts', acts: [{ id: 7, at: P.clock.t, teacher: 'Mrs Smith', act: 'mute', target: 'Ivy', until: P.clock.t + 3600000, inForce: true, undoneAt: 0 }], sentOff: [], chatPause: null });
+  P.ws().recv({ t: 'w_ok', req: r2, text: 'Ivy is muted for 1 hour.' }); await P.settle();
+  assert.equal(toast.hidden, false); assert.ok(!inside(toast, who));
+  assert.equal(toast.textContent, 'Ivy is muted for 1 hour.Undo');
+  // on a wide screen it goes back to the bottom of Who is on
+  P.win.innerWidth = 1280; P.fireWin('resize'); await P.settle();
+  assert.ok(inside(toast, who));
+});
+
+test('a knight sent off and gone: his bar and sheet say so and offer Let him back in, never a second send-off', async () => {
+  for (const width of [1024, 768]) {
+    const P = page({ width });
+    await P.live();
+    const until = P.clock.t + 3600000 * 9;
+    P.ws().recv({ t: 'w_k', at: P.clock.t, knights: KNIGHTS.filter(k => k.n !== 'Leo'), inside: [], gone: [{ n: 'Leo', at: P.clock.t }] });
+    P.ws().recv({ t: 'w_acts', acts: [{ id: 9, at: P.clock.t, teacher: 'Mrs Smith', act: 'sendoff', target: 'Leo', until, inForce: true, undoneAt: 0 }], sentOff: [{ n: 'Leo', until, by: 'Mrs Smith', act: 9 }], chatPause: null });
+    P.ws().recv({ t: 'w_chat', at: P.clock.t, n: 'Leo', text: 'bye', role: 'player', masked: false }); await P.settle();
+    P.click(P.findAll(/^\d+:\d\dLeo: bye$/).pop()); await P.settle();
+    assert.equal(P.S.selected, 'Leo');
+    assert.ok(P.find('Leo is sent off for today.'), width);
+    assert.ok(!P.findAll(/^Send off for today$/).some(e => e.tagName === 'BUTTON' && (width < 900 ? inside(e, byId(P, 'sheet')) : true)), 'a second send-off is offered at ' + width);
+    const back = P.findAll(/^Let Leo back in$/).find(e => e.tagName === 'BUTTON' && (width < 900 ? inside(e, byId(P, 'sheet')) : !inside(e, byId(P, 'sheet'))));
+    assert.ok(back, 'no Let Leo back in at ' + width);
+    P.click(back); assert.deepEqual(P.sent('w_undo').map(m => m.act), [9]);
+  }
+});
+
+test('the word filter\'s lines can be tapped: "The word filter warned Nora." selects Nora; the selected knight\'s lines are marked in the chat', async () => {
+  const P = page();
+  await P.live(KNIGHTS.concat([row('Nora')]));
+  P.ws().recv({ t: 'w_chat', at: P.clock.t, n: 'Nora', text: 'what the ****', role: 'player', masked: true });
+  P.ws().recv({ t: 'w_event', at: P.clock.t, kind: 'strike', n: 'Nora', text: 'The word filter warned Nora.' });
+  P.ws().recv({ t: 'w_chat', at: P.clock.t, n: 'Ada', text: 'hi', role: 'player', masked: false }); await P.settle();
+  const ev = P.findAll(/^\d+:\d\dThe word filter warned Nora\.$/).pop();
+  assert.equal(ev.getAttribute('role'), 'button');
+  P.click(ev); await P.settle();
+  assert.equal(P.S.selected, 'Nora');
+  const lines = P.els().filter(e => / ln /.test(' ' + e.className + ' ') || e.className.startsWith('ln '));
+  const sel = lines.filter(e => e.classList.contains('sel')).map(e => e.textContent);
+  assert.equal(sel.length, 2, JSON.stringify(sel));
+  assert.ok(sel.every(t => t.includes('Nora')));
+  assert.ok(P.find('Nora') && P.find('10 minutes', 'BUTTON'));
+});
+
+test('the pause menu (the bar\'s Pause chat under 1100 px) says admins can still talk', async () => {
+  for (const width of [1024, 768, 390]) {
+    const P = page({ width });
+    await P.live();
+    P.click(P.find('Pause chat', 'BUTTON')); await P.settle();
+    const menu = byId(P, 'pausemenu');
+    assert.equal(menu.hidden, false);
+    assert.ok(menu.textContent.includes('Admins can still talk while chat is paused.'), width);
+    for (const t of ['5 minutes', '15 minutes', '1 hour', 'Cancel']) assert.ok(P.find(t, 'BUTTON'), t);
+  }
 });
