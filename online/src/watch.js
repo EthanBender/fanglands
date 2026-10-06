@@ -90,7 +90,11 @@ export class Watch {
   has(sock) { return this.screens.has(sock); }
   countFor(id) { let n = 0; for (const s of this.screens.values()) if (s.w === id) n++; return n; }
   send(sock, obj) { try { sock.send(JSON.stringify(obj)); } catch (e) { } }
-  toAll(obj) { const s = JSON.stringify(obj); for (const sc of this.screens.values()) { try { sc.sock.send(s); } catch (e) { } } }
+  // every open screen; one whose session has run out (10 hours, or midnight) is closed here instead, with no read and no timer
+  toAll(obj) {
+    const s = JSON.stringify(obj), now = this.now();
+    for (const sc of Array.from(this.screens.values())) { if (sc.exp <= now) { this.bye(sc.sock, 4011); continue; } try { sc.sock.send(s); } catch (e) { } }
+  }
   // the lock: the session row is there, the teacher is on, the time is not up. {L} or {code: 4011 | 4012}
   check(sh) {
     const L = this.book.lock(sh), now = this.now();
@@ -110,7 +114,7 @@ export class Watch {
     if (!c.L) return this.bye(sock, c.code);
     if (this.screens.size >= SCREENS_MAX || this.countFor(c.L.id) >= SCREENS_PER_TEACHER) return this.bye(sock, 4014);
     const now = this.now();
-    this.screens.set(sock, { sock, w: c.L.id, sh: att.sh, since: att.since || now, name: c.L.name, b: { tokens: SOCK_BURST, at: now }, over: 0 });
+    this.screens.set(sock, { sock, w: c.L.id, sh: att.sh, since: att.since || now, name: c.L.name, exp: c.L.expires, b: { tokens: SOCK_BURST, at: now }, over: 0 });
     this.send(sock, { t: 'w_hello', me: c.L.name, expires: c.L.expires, now, tz: TEACHER_TZ, notice: this.notice });
     this.send(sock, this.allFrame(now));
     if (this.screens.size === 1 && this.notice) this.tellKnights({ t: 'watching', on: true });
@@ -121,7 +125,7 @@ export class Watch {
     const c = this.check(att.sh);
     if (!c.L || c.L.id !== att.w) return this.bye(sock, c.code || 4011);
     const now = this.now();
-    this.screens.set(sock, { sock, w: c.L.id, sh: att.sh, since: att.since || now, name: c.L.name, b: { tokens: SOCK_BURST, at: now }, over: 0 });
+    this.screens.set(sock, { sock, w: c.L.id, sh: att.sh, since: att.since || now, name: c.L.name, exp: c.L.expires, b: { tokens: SOCK_BURST, at: now }, over: 0 });
   }
   leave(sock) {
     if (!this.screens.delete(sock)) return;

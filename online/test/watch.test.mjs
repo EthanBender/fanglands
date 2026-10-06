@@ -432,4 +432,13 @@ test('the owner\'s Undo lifts a teacher\'s action from /admin; teacher-acts list
   assert.ok(scr.all('w_event').some(e => e.text === "Ethan turned Leo's chat back on."));
 });
 
+test('a screen whose session ran out is closed 4011 the next time the world has something to tell it (no timer)', async () => {
+  const W = await world(['Sam']);
+  const scr = await K.screen(W.w, W.token);
+  const sam = await K.online(W.w, W.tok.Sam);
+  clock.t = W.db.prepare('SELECT expires FROM teacher_sessions').get().expires + 1;
+  K.say(W.w, sam, { t: 'p', map: 'over', x: 6100, y: 3700 });
+  assert.equal(scr.closed.code, 4011); assert.equal(scr.last('w_bye').code, 4011);
+});
+
 test('a second db stays independent (the kit makes a fresh world each time)', () => { assert.ok(new DatabaseSync(':memory:')); });

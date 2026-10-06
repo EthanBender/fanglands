@@ -2389,7 +2389,9 @@ words and two digits, like `maple-river-lantern-42`) and the page shows it once.
 **The lock, on every teacher call and every teacher socket message:** one read, `SELECT t.id, t.name, t.off, s.expires FROM
 teacher_sessions s JOIN teachers t ON t.id = s.teacher_id WHERE s.hash = ?`. The row must be there, `off = 0`, `expires > now`;
 otherwise the action is refused (`w_no` `auth`), `w_bye` goes out and the socket is closed 4011 (time up) or 4012 (turned off).
-Every wake runs the same check on each teacher socket (`Watch.restore`) and closes the dead ones. Each action then reads the
+Every wake runs the same check on each teacher socket (`Watch.restore`) and closes the dead ones. A screen whose session has run out
+(10 hours, or midnight) is closed 4011 the next time the world has anything to send it, with no read and no timer; the page
+also signs itself out at that moment. Each action then reads the
 knight's account and role again from the store. The page's buttons are never the lock.
 
 **Why a teacher can never be a knight or reach an admin call** (each is a test in `teachers.test.mjs` / `watch.test.mjs`):
