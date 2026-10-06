@@ -97,5 +97,6 @@
 "tools/sim-freeze.mjs",
 "tools/sim-load.mjs",
 "15-music.js",
-"tools/jiggle.mjs"
+"tools/jiggle.mjs",
+"tools/spread-old-end.mjs"
 ]

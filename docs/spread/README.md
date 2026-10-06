@@ -51,6 +51,16 @@ node tools/fingerprint.mjs index.html --diff docs/spread/baseline-fingerprint.js
 git diff --exit-code online/src/atlas.json                                           # byte-identical
 ```
 
+## The old world's end-of-story save (Stage 3, spec §10 proof 2)
+
+`node tools/spread-old-end.mjs [index.html] [--out FILE] [--tries N]` boots the build headless (fingerprint.mjs's sandbox),
+starts a new game, runs 42-playthrough's bot (`PLAYTHROUGH.play()`, real movement, the main quest 0 to 16) to the end,
+saves, and writes the save exactly as the game wrote it to `tests/fixtures/spread-old-end.json`; a run that ends short of
+stage 16 or had to force a stage is tried again. The committed save (6 Oct 2026, this branch at 6ea7332, world 260x180,
+WORLD_V 1): stage 16 with nothing forced, 109947 steps (30.5 game minutes, 1 death), 36 map diffs (STUMP, TREE 5, ROCK 8,
+IRON 2, WRECK, PALISADE 4, DOZER_WRECK, BEAST_WRECK, FLOOR 7, DIRT 3, CAVE 3). Stage 4c migrates it on the new build and
+asserts that every quest-made tile kind is at its frame-mapped cell.
+
 ## The jiggle (Stage 3, spec §9.5): the spread rehearsed
 
 `node tools/jiggle.mjs [--jobs=4] [--only=pond,camp] [--plan] [--anchors-only | --world-only]` makes scratch builds in
