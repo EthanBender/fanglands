@@ -51,10 +51,11 @@
   const REPAIRABLE = new Set([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.STUMP, BERRY, JUNGLE, FERN, DEADTREE]);
   const BL = window.BLEND = { stats: {} };
   // a band of OLD world rows [lo, hi] about a pinned seam, at new column x: [[y, oy], ...] (y new, oy old); colsOf the same on x
-  const rowsOf = (pin, lo, hi, x) => { const off = W.pin(pin, 0, x), out = []; for (let y = Math.round(W.y(lo) + off); y <= Math.round(W.y(hi) + off); y++) out.push([y, W.iy(y - off)]); return out; };
+  // (through the pin both ways: near its port a seam's band moves with the port's place, W.unpin turns a band row back)
+  const rowsOf = (pin, lo, hi, x) => { const out = []; for (let y = Math.round(W.pin(pin, W.y(lo), x)); y <= Math.round(W.pin(pin, W.y(hi), x)); y++) out.push([y, W.iy(W.unpin(pin, y, x))]); return out; };
   // the rim's last column: the one west of the jungle's wall at the wall's top row (W.line: the one read 92 and 93 make)
   const rimX1 = () => W.line('jungle_west', W.ty(96)) - 1;
-  const colsOf = (pin, lo, hi, y) => { const off = W.pin(pin, 0, y), out = []; for (let x = Math.round(W.x(lo) + off); x <= Math.round(W.x(hi) + off); x++) out.push([x, W.ix(x - off)]); return out; };
+  const colsOf = (pin, lo, hi, y) => { const out = []; for (let x = Math.round(W.pin(pin, W.x(lo), y)); x <= Math.round(W.pin(pin, W.x(hi), y)); x++) out.push([x, W.ix(W.unpin(pin, x, y))]); return out; };
 
   // ---------- smooth value noise: two octaves, bilinear on a lattice (6 tiles by default), 0..1 ----------
   const makeNoise = (seed, cell = 6) => {
@@ -149,7 +150,7 @@
     const seaMade = new Set(), seaX0 = W.ix(SEA.x0);
     for (let y = W.ty(1); y <= W.ty(94); y++) for (let x = W.tx(150); x <= W.tx(175); x++) {
       if (!free(x, y)) continue;
-      const pinX = W.pin('sea', 0, y), sx = SEA.x0 + Math.round(pinX), ox = W.ix(x - pinX), oy = W.iy(y);   // sx: the sea's straight start on this row (26-boats', pinned the same way)
+      const sx = Math.round(W.pin('sea', SEA.x0, y)), ox = W.ix(W.unpin('sea', x, y)), oy = W.iy(y);   // sx: the sea's straight start on this row (26-boats', pinned the same way)
       let v = (ox - seaX0) + (cn(ox, oy) * 2 - 1) * 8;
       for (const [cx, cy, r, sg] of COVES) { const d = dist(ox, oy, cx, cy); if (d < r + 1.5) v += sg * (r + 1.5 - d) * 2.5; }
       const t = at(x, y);
@@ -370,6 +371,24 @@
       r = reach();
     }
     S.reach = r;
+    // the Far Shore's shore walk: between the strait's edge (1b) and Grubmarket's west wall (33's, old x 212, rows 40..79)
+    // the land is 2 to 8 tiles wide and all 33's scatter, and it is the only walk from Harl's far landing to the south of the
+    // Far Shore and the Redcut. Where the dice closed it, the fewest trees and rocks that reopen it give way, in the far_shore
+    // frame (the walk moves with the shore); on the old map's dice it is open and nothing moves.
+    if (FAR) { const NK = FS.box([204, 26, 211, 80]), L = ATLAS.port('far_shore.landing'), DIG = new Set([T.TREE, T.OAK, T.ROCK]);
+      const inNK = (x, y) => x >= NK[0] && x <= NK[2] && y >= NK[1] && y <= NK[3], open = t => !SOLID.has(t) || PUSH_THROUGH.has(t);
+      const cost = new Int32Array(MAP_W * MAP_H).fill(-1), prev = new Int32Array(MAP_W * MAP_H).fill(-1), dq = [idx(L[0], L[1])];
+      cost[dq[0]] = 0; let head = 0, end = -1;
+      while (head < dq.length) {   // 0-1 search: an open tile costs nothing, a tree or rock one; the cheapest way to the south row
+        let bi = head; for (let k = head + 1; k < dq.length; k++) if (cost[dq[k]] < cost[dq[bi]]) bi = k;
+        const c = dq[bi]; dq[bi] = dq[head]; dq[head++] = c;
+        const x = c % MAP_W, y = (c / MAP_W) | 0; if (y === NK[3]) { end = c; break; }
+        for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inNK(nx, ny)) continue; const t = at(nx, ny), n = idx(nx, ny);
+          const w = open(t) ? 0 : DIG.has(t) && !buildingAt(nx, ny) ? 1 : -1; if (w < 0) continue;
+          if (cost[n] < 0 || cost[c] + w < cost[n]) { if (cost[n] < 0) dq.push(n); cost[n] = cost[c] + w; prev[n] = c; } }
+      }
+      const dug = []; if (end >= 0 && cost[end] > 0) for (let k = end; k >= 0; k = prev[k]) if (!open(map[k])) { dug.push([k % MAP_W, (k / MAP_W) | 0]); set(k % MAP_W, (k / MAP_W) | 0, T.GRASS); }
+      Object.defineProperty(S, 'farWalk', { value: { open: end >= 0, dug }, enumerable: false, configurable: true }); }
     S.buildingsSame = sumBuildings() === b0; S.villageSame = sumVillage() === v0;
     { const xs = new Set(); for (let y = W.ty(5); y <= W.ty(90); y++) for (let x = W.tx(150); x <= W.tx(199); x++) if (at(x, y) === T.WATER) { xs.add(x); break; } S.shoreX = xs.size; }
   });
