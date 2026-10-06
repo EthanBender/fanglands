@@ -292,12 +292,27 @@
   // Old boxes overlap in seven places (quarry/thistledown, dock/gull_isle, dock/camp, thistledown/hollowford,
   // graveyard/deepholm_rock, wren/deepholm_rock, warden/stone_circle). "Smallest box wins" can split one thing between two
   // places that move apart at the spread, so a point inside more than one box has an owner only when one is DECIDED:
-  // a rect here (each with the reason), or a port at that exact point. Every other overlap point is refused by
-  // tools/anchor-of.mjs and tools/frame-codemod.mjs until a human decides (docs/spread/README.md lists the open ones).
+  // a rect here (each with the reason), or a port at that exact point. Every overlap tile is decided (Stage 3); a new
+  // overlap point is refused by tools/anchor-of.mjs and tools/frame-codemod.mjs until a human decides
+  // (docs/spread/README.md lists them).
   const OWNERS = [
     { box: [72, 14, 80, 21], id: 'thistledown', why: 'the cow pen 72..80 x 14..21: section 2 lists it under thistledown, not quarry' },
     { box: [128, 59, 140, 61], id: 'thistledown', why: "the south pond and its sandy shore (centre 134,60, 02-world's second pond, drawn in Thistledown's frame): the spec author's decision; section 2 had listed it under both" },
     { box: [170, 12, 171, 14], id: 'gull_isle', why: "Gull Isle's mooring (26-boats LOC.gull: the boat 170,13, the lantern 171,12, the planks 171..172 x 12..14) moves as one with the isle: the spec author's decision" },
+    // decided at Stage 3 by the built structure each tile is part of (docs/spread/README.md lists them)
+    { box: [156, 17, 159, 20], id: 'camp', why: "the palisade's north wall (PALISADE 156..158,20, drawn in the camp's frame by 02-world and 65-palisade) and the camp's corner inside its line" },
+    { box: [160, 17, 161, 20], id: 'dock', why: "the shore east of where the palisade ends, inside the dock's keep-clear (92's DOCKF.box([158, 9, 170, 19])): the dock's beach and water" },
+    { box: [168, 8, 169, 20], id: 'dock', why: "the water off the dock's end, where the dock's own boat lies (dock.boat 167,14): the dock's side of the channel to Gull Isle" },
+    { box: [170, 8, 171, 20], id: 'gull_isle', why: "the water in the mooring's columns north and south of it (the mooring 170..171 x 12..14 is gull_isle's): the isle's side of the channel" },
+    { box: [54, 90, 66, 91], id: 'stone_circle', why: "the circle's south stones (STONECIRCLE 58,90 and 62,90, drawn in its frame by 02-world) and the clear ground round it (39 and 92 keep CIRCLE.box([55, 83, 65, 91]))" },
+    { box: [54, 92, 66, 92], id: 'warden', why: "the open row above the warden's tree line and notch (rows 93..95): its approach from the north, inside its keep-clear (92's WARD.box([53, 90, 68, 106])); nothing of the circle's is built there" },
+    { box: [6, 72, 19, 72], id: 'graveyard', why: "the graveyard's south row, its gate's row (the port graveyard.gate 13,72), inside its keep-clear (GRAVE.box([8, 65, 17, 72]))" },
+    { box: [6, 73, 19, 73], id: 'deepholm_rock', why: "the first row of the reclaimed Deepholm wood (58-underground's rectangle x 2..26, y 72..94, south of the graveyard's keep-clear)" },
+    { box: [25, 73, 26, 83], id: 'deepholm_rock', why: "the east edge of the reclaimed Deepholm wood (58-underground's rectangle to x 26), open wood west of Old Wren's hut (28..29) and its yard" },
+    { box: [70, 12, 72, 13], id: 'thistledown', why: "open grass north of the cow pen (thistledown's, 72..80 x 14..21): the quarry's rock (48..60) and its dozer spawn (70,8) lie north of row 12" },
+    { box: [70, 14, 71, 16], id: 'thistledown', why: "open grass west of the cow pen's fence (72,14..21): the pen's side, nothing of the quarry's built there" },
+    { box: [120, 59, 127, 61], id: 'thistledown', why: "the river and the scarp's foot west of the south pond (thistledown's 128..140), on the town's side of the river; Hollowford's ruins start at row 69" },
+    { box: [141, 59, 141, 61], id: 'thistledown', why: "the grass east of the south pond's shore (thistledown's 128..140), the river's turn past the town's corner (thistledown.river_se 146,57)" },
   ];
 
   // ---------- the ports (~100): doors, gates, road ends and named spots ----------
@@ -598,16 +613,21 @@
     check(PF + "a frame answers in every shape the conversions use (p, pt, pts, rect, box, inOld) and keeps a rect's other fields; an unknown place throws", shapes && threw, { shapes, threw });
     // helpers
     const sp = port('thistledown.square'), reserved = port('old_bridge.span'), hfBox = box('hollowford'), g = guards().find(q => q.id === 'hollowford');
-    const smallest = anchorOf(158, 18), ow = oldToNew(140, 80), none = oldToNew(60, 70), nw = oldToNewWorld(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
-    check(PF + 'port, box, guards, anchorOf (the smallest box wins), oldToNew (null on open land) and every track resolve; a reserved place has no box or port before 4a',
+    const smallest = anchorOf(160, 18), ow = oldToNew(140, 80), none = oldToNew(60, 70), nw = oldToNewWorld(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
+    check(PF + 'port, box, guards, anchorOf (an overlap tile goes to its owner: the dock / camp corner 160,18 to the dock), oldToNew (null on open land) and every track resolve; a reserved place has no box or port before 4a',
       JSON.stringify(sp) === '[112,33]' && reserved === null && box('old_bridge') === null && JSON.stringify(hfBox) === '[120,59,160,96]' && g && g.x0 === hfBox[0] - ANCHORS.hollowford.guard && g.y1 === hfBox[3] + ANCHORS.hollowford.guard &&
       smallest && smallest.id === 'dock' && smallest.holders.includes('camp') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(nw) === '[60,70]' && trackOk,
       { sp, reserved, hfBox, g, smallest, ow, none, trackOk });
-    // an overlap point is flagged until a human decides it; an OWNERS rect or a port at that exact point decides it
-    const pen = anchorOf(72, 14), gate = anchorOf(13, 72), open = anchorOf(158, 18), alone = anchorOf(140, 80), pond = anchorOf(134, 60), moor = anchorOf(170, 13);
-    check(PF + 'a point inside two old boxes is an overlap a human decides (the dock / camp corner 158,18), unless an OWNERS rect (the cow pen 72,14 and the south pond 134,60: thistledown, not the smaller quarry or hollowford; the Gull Isle mooring 170,13: gull_isle, not the smaller dock) or a port at that point (graveyard.gate 13,72) decides it',
-      open.overlap === true && pen.id === 'thistledown' && pen.decided === 'owner' && !pen.overlap && pond.id === 'thistledown' && pond.decided === 'owner' && moor.id === 'gull_isle' && moor.decided === 'owner' && gate.id === 'graveyard' && gate.decided === 'port' && !gate.overlap && alone.overlap === false && alone.decided === null,
-      { open, pen, gate, alone, pond, moor });
+    // an overlap point is flagged until a human decides it (an OWNERS rect, or a port at that exact point); since Stage 3
+    // every one is decided, so no tile inside two old boxes is left open
+    const pen = anchorOf(72, 14), gate = anchorOf(13, 72), pal = anchorOf(157, 20), stone = anchorOf(58, 90), alone = anchorOf(140, 80), pond = anchorOf(134, 60), moor = anchorOf(170, 13);
+    const undecided = [];
+    for (const id in ANCHORS) { const b = ANCHORS[id].box; if (!b) continue;
+      for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) { const a = anchorOf(x, y); if (a && a.overlap && undecided.length < 8) undecided.push(x + ',' + y); } }
+    check(PF + 'every point inside two old boxes has its owner decided (OWNERS, or a port at that point), none left for a human: the cow pen 72,14 and the south pond 134,60 are thistledown, not the smaller quarry or hollowford; the Gull Isle mooring 170,13 gull_isle, not the smaller dock; the palisade 157,20 the camp, not the smaller dock; the south stones 58,90 the stone circle; the gate 13,72 the graveyard',
+      undecided.length === 0 && pen.id === 'thistledown' && pen.decided === 'owner' && !pen.overlap && pond.id === 'thistledown' && pond.decided === 'owner' && moor.id === 'gull_isle' && moor.decided === 'owner' &&
+      pal.id === 'camp' && !pal.overlap && stone.id === 'stone_circle' && !stone.overlap && gate.id === 'graveyard' && !gate.overlap && alone.overlap === false && alone.decided === null,
+      { undecided, pen, gate, pal, stone, alone, pond, moor });
     // TRACKS hold today's values: the cave road ends where 02-world lays it, and the river is 39's 18 points
     const cave = track('road_cave'), riv = track('river');
     check(PF + "TRACKS hold today's values (the cave road from the cave mouth by the signpost to the lane outside the west gate; 18 river points from the pond to the sea)",
