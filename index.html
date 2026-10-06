@@ -39287,7 +39287,8 @@ window.RETALIATE = RETALIATE;
         remote('Ann', 'tinker_lab', tc(spot.x + 3), tc(spot.y));
         const elsewhere = ask('Ann', 'test_boss');
         const fang = HOOKS.bossCall.the_fang;
-        const fangRule = !!fang && fang.map === 'over' && JSON.stringify(fang.near) === '[18,117,4]';
+        const circle = ATLAS.port('fang_lair.circle');   // the Fang's call reaches 4 tiles round the summoning circle (28-thefang)
+        const fangRule = !!fang && fang.map === 'over' && JSON.stringify(fang.near) === JSON.stringify([circle[0], circle[1], 4]);
         delete HOOKS.bossCall.test_boss; delete HOOKS.bossCall.test_lab;
         check(P + 'boss_call: the keeper honours a registered id only on its own map, from a knight on that map, in range (the Fang within 4 tiles of the circle), with no live boss and after the 3 s cooldown',
           absent.length === 0 && far.length === 0 && near.join() === 'Ann' && cooling.length === 0 && alive.length === 0 && again.join() === 'Ann' && wrongMap.length === 0 && unknown.length === 0 && proto.length === 0 && elsewhere.length === 0 && fangRule,
