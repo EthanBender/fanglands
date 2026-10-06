@@ -28,11 +28,14 @@
 //   node tools/literals.mjs --gate           the build's gate, REPO-WIDE: every file of src/ and tools/ must have 0
 //                                            literals outside docs/spread/literals-allow.json, bar a file an open peer
 //                                            branch holds (docs/spread/held.json); exit 1 otherwise
-// literals-allow.json: [{ file, literal?, line?, decl?, reason }] — an entry with no literal, line or decl (the whole
-// file) is refused by the gate since Stage 3; `decl` alone allows everything inside that named declaration (01-atlas's own ANCHORS table);
-// `literal` matches the source text (spaces ignored) and MUST be pinned by `decl` (the declaration it sits in: the
-// sturdy pin, it survives edits above it) or `line`, so one exemption never covers a new position written elsewhere in
-// the same file. An unpinned `literal` entry matches nothing, and the gate names it.
+// literals-allow.json: [{ file, literal?, decl?, context?, line?, reason }] — an entry with no literal (the whole file, or
+// a whole line) is refused by the gate, bar `decl` alone, which allows everything inside that ONE named declaration
+// (01-atlas's own ANCHORS table): the gate refuses a decl-only pin whose name has more than one declaration in the file
+// (shorthand properties { ANCHORS } are not declarations). `literal` matches the source text (spaces ignored) and MUST be
+// pinned by `decl` (the declaration it sits in: the sturdy pin, it survives edits above it), `context` (text that must
+// stand on the literal's own line, spaces ignored: for a literal in an unnamed hook or test, it survives a peer's edits
+// above it too) or `line`, so one exemption never covers a new position written elsewhere in the same file. An unpinned
+// `literal` entry matches nothing, and the gate names it.
 // ============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -286,13 +289,26 @@ export function allowList() {
   return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : [];
 }
 const squash = s => String(s).replace(/\s+/g, '');
-// an entry with a `literal` but neither `decl` nor `line` is unpinned: it matches nothing (the gate names it)
-export const unpinned = a => a.literal !== undefined && a.decl === undefined && a.line === undefined;
+// an entry with a `literal` but no `decl`, `context` or `line` is unpinned: it matches nothing (the gate names it)
+export const unpinned = a => a.literal !== undefined && a.decl === undefined && a.line === undefined && a.context === undefined;
+// the declarations of a file by name: const NAME = ..., function NAME () {...}, or a property NAME: ... / NAME () {...}
+// (a shorthand property { NAME } declares nothing), each with the source range of its value
+export function declIndex(ast) {
+  const byName = new Map(), put = (k, r) => { if (!byName.has(k)) byName.set(k, []); byName.get(k).push(r); };
+  walk(ast, n => {
+    if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.init) put(n.id.name, [n.init.start, n.init.end]);
+    else if (n.type === 'FunctionDeclaration' && n.id) put(n.id.name, [n.start, n.end]);
+    else if ((n.type === 'Property' || n.type === 'MethodDefinition') && n.value && !n.shorthand) { const k = propName(n); if (k !== null && k !== undefined) put(k, [n.value.start, n.value.end]); }
+  });
+  return byName;
+}
 export function allowed(file, hit, src, allow, declRanges) {
+  let lines = null;
   for (const a of allow) {
     if (a.file !== file || unpinned(a)) continue;
     if (a.decl !== undefined) { const r = declRanges(a.decl); if (!r.some(([s, e]) => hit.start >= s && hit.end <= e)) continue; }
     if (a.line !== undefined && a.line !== hit.line) continue;
+    if (a.context !== undefined) { lines = lines || src.split('\n'); if (!squash(lines[hit.line - 1] || '').includes(squash(a.context))) continue; }
     if (a.literal !== undefined && squash(a.literal) !== squash(hit.literal)) continue;
     return a;
   }
@@ -302,24 +318,14 @@ export function scanFile(file, allow = allowList(), T = null) {
   const src = fs.readFileSync(fileOf(file), 'utf8');
   const tool = isTool(file), ast = parseFile(file, src);
   const hits = scanSource(src, { ast, tools: tool });
-  // a `decl` pin: a declaration by name (const NAME = ..., function NAME () {...}, or a property NAME: ... / NAME () {...}).
-  // Every named declaration's ranges are gathered in one walk, the first time a pin asks (one walk per file, not per pin).
+  // a `decl` pin: a declaration by name (declIndex). Every named declaration's ranges are gathered in one walk, the
+  // first time a pin asks (one walk per file, not per pin).
   let byName = null;
-  const declRanges = name => {
-    if (!byName) {
-      byName = new Map(); const put = (k, r) => { if (!byName.has(k)) byName.set(k, []); byName.get(k).push(r); };
-      walk(ast, n => {
-        if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.init) put(n.id.name, [n.init.start, n.init.end]);
-        else if (n.type === 'FunctionDeclaration' && n.id) put(n.id.name, [n.start, n.end]);
-        else if ((n.type === 'Property' || n.type === 'MethodDefinition') && n.value) { const k = propName(n); if (k !== null && k !== undefined) put(k, [n.value.start, n.value.end]); }
-      });
-    }
-    return byName.get(name) || [];
-  };
+  const declRanges = name => { if (!byName) byName = declIndex(ast); return byName.get(name) || []; };
   const bare = [], ok = [];
   for (const h of hits) { const a = allowed(file, h, src, allow, declRanges); (a ? ok : bare).push(a ? Object.assign({}, h, { allowedBy: a.reason }) : h); }
   if (T) for (const h of bare) h.guess = h.x !== null && h.x !== undefined && h.y !== null && h.y !== undefined ? anchorOf(T, h.x, h.y).id : null;
-  return { file, src, bare, allowed: ok };
+  return { file, src, bare, allowed: ok, declRanges };
 }
 
 // ---------- the command line ----------
@@ -337,8 +343,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const allow = allowList(), T = atlasTables(); let bad = 0, waiting = 0;
     // every exemption is pinned (Stage 3): an entry with no literal, decl or line would let the whole file through, so a
     // new position written anywhere in it would pass unseen; the gate refuses it
-    for (const a of allow) if (a.literal === undefined && a.decl === undefined && a.line === undefined) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry allows the whole file: pin each literal it means to its decl (or line)`); }
-    for (const a of allow) if (unpinned(a)) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for ${JSON.stringify(a.literal)} has no decl or line: pin it to the declaration (or line) it allows`); }
+    for (const a of allow) if (a.literal === undefined && a.decl === undefined && a.line === undefined && a.context === undefined) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry allows the whole file: pin each literal it means to its decl (or line)`); }
+    // and every exemption names what it lets through: a line or a context with no literal admits any position later
+    // written on that line, so it is refused too (give it the literal it means)
+    for (const a of allow) if (a.literal === undefined && a.decl === undefined && (a.line !== undefined || a.context !== undefined)) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for line ${a.line !== undefined ? a.line : JSON.stringify(a.context)} has no literal: name the literal it allows`); }
+    for (const a of allow) if (unpinned(a)) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for ${JSON.stringify(a.literal)} has no decl, context or line: pin it to the declaration (or line) it allows`); }
     for (const f of list) if (!fs.existsSync(fileOf(f))) { console.error(`literals gate: docs/spread/converted.json names ${f}, which is not in ${isTool(f) ? 'tools/' : 'src/'}`); bad++; }
     for (const [f, h] of held) {
       if (!fs.existsSync(fileOf(f))) { console.error(`literals gate: docs/spread/held.json names ${f}, which does not exist`); bad++; }
@@ -358,6 +367,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       const r = scanFile(f, allow, T), name = isTool(f) ? f : 'src/' + f;
       if (held.has(f)) { if (r.bare.length) { waiting += r.bare.length; console.log(`literals gate: ${name} waits for ${held.get(f).branch} (${r.bare.length} bare, docs/spread/held.json)`); } else console.log(`literals gate: ${name} is held (docs/spread/held.json) but has no bare coordinate left: it can leave held.json`); continue; }
       for (const h of r.bare) { bad++; console.error(`${name}:${h.line}:${h.col}: bare ${h.kind} ${h.literal} — wrap it: ATLAS.frame('${h.guess && h.guess !== 'world' ? h.guess : '<place>'}') or ATLAS.world`); }
+      // a decl-only pin allows everything inside its declaration, so it must name exactly one: a name declared twice in
+      // the file (a property of that name elsewhere, a second const in another scope) would let the second one through
+      for (const a of allow) if (a.file === f && a.literal === undefined && a.decl !== undefined) {
+        const n = r.declRanges(a.decl).length;
+        if (n !== 1) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for decl ${JSON.stringify(a.decl)} with no literal names ${n ? n + ' declarations' : 'no declaration'} in ${name}: give it its literals (or rename the declaration it means)`); }
+      }
     }
     if (bad) { console.error(`literals gate: ${bad} bare map coordinate${bad > 1 ? 's' : ''} or list fault${bad > 1 ? 's' : ''} in src/ and tools/. Wrap each in its place's frame, or add it to docs/spread/literals-allow.json with a reason.`); process.exit(1); }
     console.log(`literals gate (repo-wide): ${all.length} files of src/ and tools/ (${list.length} in converted.json), 0 bare coordinates${held.size ? `; ${held.size} held for a peer branch (${waiting} bare, docs/spread/held.json)` : ''}`);
