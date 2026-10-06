@@ -192,7 +192,7 @@ async function main() {
   {
     const into = A.INSTANCES.enter('spider_den'); tick(20);
     const out = A.INSTANCES.leave(); tick(20);
-    const spot = openSpot(A, ...A.ATLAS.frame('signpost').p(64, 30));   // by the signpost A.FANGLANDS.tp(spot.x, spot.y); B.FANGLANDS.tp(spot.x + 3, spot.y); tick(20);
+    const spot = openSpot(A, ...A.ATLAS.frame('signpost').p(64, 30)); A.FANGLANDS.tp(spot.x, spot.y); B.FANGLANDS.tp(spot.x + 3, spot.y); tick(20);   // by the signpost
     const samKeeps = B.COOP.isKeeper() && A.COOP.keeper() === 'Sam' && !A.COOP.isKeeper();
     const asked = A.ADMIN.spawn('wolf', 2); tick(12);
     const inSam = B.FANGLANDS.monsters.filter(m => isSpawn(m) && m.type === 'wolf' && !m.remote && !m.dead);
