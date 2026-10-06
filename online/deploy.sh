@@ -17,6 +17,8 @@ node --test online/test/
 [ -f tools/dom-keys.js ] && node tools/dom-keys.js index.html
 [ -f tools/mmo-sim-admin.js ] && node tools/mmo-sim-admin.js
 [ -f tools/mmo-sim-party.js ] && node tools/mmo-sim-party.js
+# the teacher view (docs/ONLINE.md, "The teacher view"): two games and a teacher's watch screen against the real Room
+[ -f tools/mmo-sim-teacher.js ] && node tools/mmo-sim-teacher.js
 # the shared world (docs/ONLINE.md, "The shared world"): each gate runs once its stage has built it; a red one never deploys
 [ -f tools/sim-suite.mjs ] && node tools/sim-suite.mjs
 grep -q -- "'--sim'" tools/mmo-sim.js && node tools/mmo-sim.js --sim

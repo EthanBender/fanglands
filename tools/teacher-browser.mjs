@@ -239,8 +239,10 @@ async function proof() {
     await shot(tp, '7-cut-new-password');
     const newPass = (await owner.textContent('#tsaid')).match(/[a-z]+-[a-z]+-[a-z]+-\d\d/)[0];
     await signIn(tp, tName, newPass);
-    await row.locator('button:has-text("Turn off")').click(); await wait(1500);
+    await tp.waitForFunction(() => window.__teacher.knights.length >= 1, null, { timeout: 15000 }); await wait(500);
+    await row.locator('button:has-text("Turn off")').click(); await wait(2000);
     const off = await tp.evaluate(() => document.querySelector('#signin .said').textContent);
+    if (off !== 'Ethan turned this sign-in off.') console.log('      page state: ' + JSON.stringify(await tp.evaluate(() => ({ st: window.__teacher.status, tok: !!window.__teacher.token, card: !document.getElementById('signin').hidden }))));
     line('Turn off cuts it too: "' + off + '", and signing in says it was turned off', off === 'Ethan turned this sign-in off.');
     await tp.fill('#tname', tName); await tp.fill('#tpass', newPass); await tp.click('button.go'); await wait(1500);
     const offErr = await tp.textContent('#signin .err');
