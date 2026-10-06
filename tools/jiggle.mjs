@@ -36,11 +36,18 @@
 //      of overlapping boxes at its largest member's shift): the suite, mmo-sim and dom-keys green, every place's own
 //      facts transported by its shift, and the seam pins hold: the rim gate is open (the warden's post reaches the
 //      Ashfields through the gate), the giants' gap is open (Hollowford's south exit reaches the jungle side) and the
-//      steps meet the scarp (the graveyard's steps are cut in the scarp's rock, open ground above and below).
+//      steps meet the scarp (SCARP_STEPS stands at the port graveyard.steps, open ground above and below; a plain cliff
+//      there is a scarp with no steps).
+//   4. THE REAL SPREAD (--spread-only alone; --no-spread leaves it out; counted in the exit code only with --spread-gate,
+//      since Stage 4a still has its own work there): every anchor at its section-2 `to`, MAP 400x280,
+//      WORLD per section 3, so every place moves by its own shift (the pairs steps 2 and 3 move as one, thistledown and
+//      hollowford, camp, dock and gull_isle, warden and stone_circle, far_shore and redcut, come apart). Against a base
+//      at 400x280 with nothing moved and two controls: the suites, every place's facts by its own shift, each place's
+//      plate, and the same seam pins.
 // A red result names a literal the conversion missed or framed wrongly: fix it in the source, prove the fix at identity
 // (the fingerprint), and run the jiggle again.
 //
-//   node tools/jiggle.mjs [--only=pond,camp] [--jobs=3] [--no-suites] [--no-dom] [--anchors-only | --world-only] [--plan]
+//   node tools/jiggle.mjs [--only=pond,camp] [--jobs=3] [--no-suites] [--no-dom] [--anchors-only | --world-only | --spread-only] [--no-spread] [--spread-gate] [--plan]
 //   node tools/jiggle.mjs --selfcheck                         the scratch builder makes the repo's index.html byte for byte
 //   node tools/jiggle.mjs --facts <index.html> <out.json>     (internal: one build's positional facts, as JSON)
 // Writes WORK/report.json and prints the per-anchor table. Exit 1 on any red.
@@ -75,7 +82,7 @@ if (flag('--facts')) {
   const g = boot(html);
   const extra = JSON.parse(vm.runInContext(`(() => { newGame(); const P = {}; for (const id in ATLAS.PORTS) { if (ATLAS.PORTS[id][0] === 'new') continue; P[id] = ATLAS.port(id); }
     const S = window.WORLDSHAPE && WORLDSHAPE.seams, seam = f => S && S[f] ? Array.from({ length: MAP_W }, (_, x) => S[f](x)) : null;
-    const gs = REGIONS.find(r => r.name === 'The Grey Sea'), seaX = gs ? Array.from({ length: MAP_H }, (_, y) => gs.x0 + Math.round(ATLAS.world.pin('sea', 0, y))) : null;
+    const gs = REGIONS.find(r => r.name === 'The Grey Sea'), seaX = gs ? Array.from({ length: MAP_H }, (_, y) => Math.round(ATLAS.world.pin('sea', gs.x0, y))) : null;
     return JSON.stringify({ T: Object.assign({}, T), ports: P, problems: ATLAS.frameProblems(), W: MAP_W, H: MAP_H, river: ATLAS.track('river'),
       seams: { sGW: seam('sGW'), sWJ: seam('sWJ'), footWA: seam('footWA'), seaX } }); })()`, g));
   const keep = ['map', 'core', 'regions', 'buildings', 'npcs', 'spawns', 'instances', 'map_targets', 'map_hooks', 'night_lights', 'boss_calls'];
@@ -317,13 +324,13 @@ function pins(f) {
   r.rim_gate = { from: post, to: [gate[0], gate[1] + 2], steps: bfs(post, [gate[0], gate[1] + 2], 12) };
   // the giants' gap: from three rows north of Hollowford's south exit, through it, to four rows south (the jungle side)
   r.giants_gap = { from: [south[0], south[1] - 3], to: [south[0], south[1] + 4], steps: bfs([south[0], south[1] - 3], [south[0], south[1] + 4], 24) };
-  // the steps meet the scarp: walkable ground above (the Goblin Fields) and below (the Wolfwood) the Agility steps,
-  // joined through the steps themselves (an Agility climb counts as walkable here)
-  // (the steps are cut in the scarp's own CLIFF, which Agility 18 climbs: the port's tile is the scarp, open ground on each side)
+  // the steps meet the scarp: the Agility steps (SCARP_STEPS, 92-worldshape) stand AT the port graveyard.steps, with
+  // walkable ground above (the Goblin Fields) and below (the Wolfwood); a plain CLIFF there is a scarp with no steps
   const st = map[steps[1] * W + steps[0]];
   const up = [steps[0], steps[1] - 1], down = [steps[0], steps[1] + 1];
   const open = p => p[0] >= 0 && p[1] >= 0 && p[0] < W && p[1] < H && walk(map[p[1] * W + p[0]]);
-  r.steps_scarp = { at: steps, tile: Object.keys(T).find(n => T[n] === st), climb: st === T.CLIFF, above: open(up), below: open(down) };
+  const everywhere = []; if ('SCARP_STEPS' in T) map.forEach((t, i) => { if (t === T.SCARP_STEPS) everywhere.push([i % W, (i / W) | 0]); });
+  r.steps_scarp = { at: steps, tile: Object.keys(T).find(n => T[n] === st), climb: 'SCARP_STEPS' in T && st === T.SCARP_STEPS, above: open(up), below: open(down), stepsOnMap: everywhere };
   r.ok = r.rim_gate.steps >= 0 && r.giants_gap.steps >= 0 && r.steps_scarp.climb && r.steps_scarp.above && r.steps_scarp.below;
   return r;
 }
@@ -368,7 +375,8 @@ if (flag('--selfcheck')) {
   const d = build('selfcheck', { W: 260, H: 180, at: {} }), same = fs.readFileSync(path.join(d, 'index.html'), 'utf8') === fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   console.log(`jiggle --selfcheck: the scratch builder ${same ? 'makes' : 'does NOT make'} the repo's index.html byte for byte (run ./build.sh first)`); process.exit(same ? 0 : 1);
 }
-const report = { made: new Date().toISOString(), map: [BASE_W, BASE_H], scatter: SCATTER, rim: RIM, base: null, variants: [], world: null };
+const report = { made: new Date().toISOString(), map: [BASE_W, BASE_H], scatter: SCATTER, rim: RIM, base: null, variants: [], world: null, spread: null };
+const RUN_SPREAD = flag('--spread-only') || (!flag('--anchors-only') && !flag('--world-only') && !flag('--no-spread') && !opt('--only', null));
 // each anchor in turn (one build per distinct moved group)
 const only = opt('--only', null), leads = PLACES.filter(id => id !== 'cave' && (!only || only.split(',').includes(id)));
 const variants = [];
@@ -385,7 +393,8 @@ const srcHash = crypto.createHash('sha256').update(Object.keys(snap()).sort().ma
 const baseCache = path.join(WORK, 'base', 'base-cache.json');
 let baseDir = path.join(WORK, 'base'), baseFacts, baseSuites, controls;
 const cached = fs.existsSync(baseCache) ? JSON.parse(fs.readFileSync(baseCache, 'utf8')) : null;
-if (cached && cached.srcHash === srcHash && Array.isArray(cached.controls)) ({ baseFacts, baseSuites, controls } = cached);
+if (flag('--spread-only')) controls = [];   // the real spread alone: its own 400x280 base, below
+else if (cached && cached.srcHash === srcHash && Array.isArray(cached.controls)) ({ baseFacts, baseSuites, controls } = cached);
 else {
   // the base, and eight controls that move nothing and re-roll the world's shared dice (1..8 draws skipped): the first
   // four run the suites too, the rest give facts and tiles only
@@ -400,24 +409,30 @@ else {
   fs.writeFileSync(baseCache, JSON.stringify({ srcHash, baseFacts, baseSuites, controls }));
 }
 // what the re-rolled dice move on their own: facts, tiles and checks
-const NOISE = { facts: new Set(), tiles: new Set(), kinds: {} };
-{ const B = new Map(points(baseFacts).map(p => [p[0], p.slice(1, 3).join()]));
+function noiseOf(baseFacts, controls) {
+  const N = { facts: new Set(), tiles: new Set(), kinds: {} };
+  const B = new Map(points(baseFacts).map(p => [p[0], p.slice(1, 3).join()]));
   for (const c of controls) {
     const C = new Map(points(c.facts).map(p => [p[0], p.slice(1, 3).join()]));
-    for (const k of new Set([...B.keys(), ...C.keys()])) if (B.get(k) !== C.get(k)) NOISE.facts.add(k);
-    c.facts.map.forEach((t, i) => { if (t !== baseFacts.map[i]) NOISE.tiles.add(i); });
+    for (const k of new Set([...B.keys(), ...C.keys()])) if (B.get(k) !== C.get(k)) N.facts.add(k);
+    c.facts.map.forEach((t, i) => { if (t !== baseFacts.map[i]) N.tiles.add(i); });
   }
   // and, per place, the tile kinds the re-rolled dice change inside its box (its own random dressing from the shared dice:
   // the lair's bones, Hollowford's rubble, the ash's mottling): a move re-rolls them too, so they are not the plate's
-  for (const id of PLACES) { const b = boxOf(id), k = NOISE.kinds[id] = new Set();
-    for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) { const i = y * baseFacts.W + x; if (!NOISE.tiles.has(i)) continue; k.add(baseFacts.map[i]); for (const c of controls) k.add(c.facts.map[i]); } } }
+  for (const id of PLACES) { const b = boxOf(id), k = N.kinds[id] = new Set();
+    for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) { const i = y * baseFacts.W + x; if (!N.tiles.has(i)) continue; k.add(baseFacts.map[i]); for (const c of controls) k.add(c.facts.map[i]); } }
+  return N;
+}
+const NOISE = baseFacts ? noiseOf(baseFacts, controls) : null;
 const BASES = [baseSuites, ...controls.map(c => c.suites).filter(Boolean)];
+if (baseFacts) {
 report.base = { problems: baseFacts.problems, strict: baseFacts.strict.length, suites: baseSuites, controls: controls.map(c => c.suites), noise: { facts: NOISE.facts.size, tiles: NOISE.tiles.size } };
 console.log(`base ${BASE_W}x${BASE_H}: ${baseSuites ? `headless ${baseSuites.headless.summary}${baseSuites.headless.fails.length ? ' (fails: ' + baseSuites.headless.fails.join(' | ').slice(0, 400) + ')' : ''}; mmo-sim ${baseSuites.mmo.summary}${baseSuites.dom ? '; dom-keys ' + baseSuites.dom.summary : ''}` : 'suites not run'}; atlas problems ${baseFacts.problems.length}`);
 for (const [k, c] of controls.entries()) if (c.suites) console.log(`control ${k + 1} (the dice re-rolled by ${k + 1}): ${c.suites ? `headless ${c.suites.headless.summary}, mmo-sim ${c.suites.mmo.summary}${c.suites.dom ? ', dom-keys ' + c.suites.dom.summary.replace('dom-keys: ', '') : ''}` : 'suites not run'}`);
 console.log(`noise: ${NOISE.facts.size} facts and ${NOISE.tiles.size} tiles move when only the dice are re-rolled (not counted against a move)`);
+}
 
-if (!flag('--world-only')) {
+if (!flag('--world-only') && !flag('--spread-only')) {
   report.variants = await pool(variants, jobs, async v => {
     const name = 'move-' + v.group.join('+');
     if (v.error) { console.log(`${v.leads.join(', ')}: RED: ${v.error}`); return Object.assign({ name, ok: false }, v); }
@@ -454,7 +469,7 @@ if (!flag('--world-only')) {
 }
 
 // every anchor together, WORLD x1.1
-if (!flag('--anchors-only') && !only) {
+if (!flag('--anchors-only') && !only && !flag('--spread-only')) {
   const W2 = Math.round((BASE_W - 6) * SCALE), H2 = Math.round((BASE_H - 6) * SCALE);   // 286 x 198: the old 260 x 180, scaled
   const world = { xs: [[0, 0], [259, 259 * SCALE]], ys: [[0, 0], [179, 179 * SCALE]] };
   const at = {}, moves = {}, done = new Set();
@@ -493,6 +508,56 @@ if (!flag('--anchors-only') && !only) {
   if (s && gr.held && gr.held.length) for (const l of gr.held.slice(0, 10)) console.log('    held (a file docs/spread/held.json keeps for its peer branch): ' + l.slice(0, 200));
 }
 
+// THE REAL SPREAD: every anchor at its section-2 `to`, MAP 400x280, WORLD per section 3. The per-anchor pass moves
+// an overlapping pair as one (thistledown/hollowford, camp/dock/gull_isle, stone_circle/warden, far_shore/redcut) and the
+// x1.1 world gives a group one shift, so a literal framed in the wrong member of a pair never shows there; here every
+// place has its own shift. Against a base at 400x280 with nothing moved and two controls that only re-roll the dice
+// (cached like the small base): the suites (a check is red when it fails here, passes on that base and both controls,
+// and holds over 2 of 3 re-rolls of the spread), every place's facts transported by its own shift, each place's plate,
+// and the seam pins. (--spread-only runs this pass alone; --no-spread leaves it out.)
+if (RUN_SPREAD) {
+  const SW = 400, SH = 280, world = { xs: [[0, 0], [162, 262], [200, 318], [259, 399]], ys: [[0, 0], [179, 279]] };
+  const at = {}, moves = {};
+  for (const id of PLACES) { const a = AT.ANCHORS[id], b = a.box; at[id] = a.to.slice(); moves[id] = [a.to[0] - b[0], a.to[1] - b[1]]; }
+  const sCache = path.join(WORK, 'spread-base', 'base-cache.json');
+  let sb = fs.existsSync(sCache) ? JSON.parse(fs.readFileSync(sCache, 'utf8')) : null;
+  if (!sb || sb.srcHash !== srcHash) {
+    const made = await pool([0, 1, 2], jobs, async k => { const dir = build(k ? 'spread-control-' + k : 'spread-base', { W: SW, H: SH, at: {}, reroll: k }); return { f: await facts(dir), s: await suites(dir) }; });
+    sb = { srcHash, facts: made[0].f, suites: made[0].s, controls: made.slice(1).map(m => ({ facts: m.f, suites: m.s })) };
+    { const { boot } = await import('./fingerprint.mjs'); const g = boot(path.join(WORK, 'spread-base', 'index.html')); sb.facts.solid = JSON.parse(vm.runInContext('JSON.stringify([...SOLID])', g)); }
+    fs.writeFileSync(sCache, JSON.stringify(sb));
+  }
+  const SNOISE = noiseOf(sb.facts, sb.controls), SBASES = [sb.suites, ...sb.controls.map(c => c.suites).filter(Boolean)];
+  console.log(`spread base ${SW}x${SH} (nothing moved): ${sb.suites ? `headless ${sb.suites.headless.summary}, mmo-sim ${sb.suites.mmo.summary}` : 'suites not run'}; its controls: ${sb.controls.map(c => c.suites ? c.suites.headless.summary : '-').join(', ')}`);
+  const dir = build('spread', { W: SW, H: SH, at, world });
+  const f = await facts(dir);
+  const s = await suites(dir), gr = green(s, SBASES), pn = pins(Object.assign(f, { solid: sb.facts.solid }));
+  if (s) { gr.area = gr.newFails.filter(n => AREA.some(([r]) => r.test(n))).map(n => n + ' (' + AREA.find(([r]) => r.test(n))[1] + ')'); gr.newFails = gr.newFails.filter(n => !AREA.some(([r]) => r.test(n)));
+    gr.ok = !gr.newFails.length && !gr.mmoNew.length && !gr.domNew.length && !gr.strictBad && /^(ALL|\d+ FAILED)/.test(s.headless.summary); }
+  if (s && !gr.ok && (gr.newFails.length || gr.mmoNew.length || gr.domNew.length)) {
+    const re = [];
+    for (const k of [1, 2, 3]) { const d = build('spread-r' + k, { W: SW, H: SH, at, world, reroll: k }); re.push(await suites(d, { mmo: gr.mmoNew.length > 0, dom: gr.domNew.length > 0 })); }
+    const heldOver = (list, pick) => list.filter(n => re.filter(r => pick(r).some(x => norm(x).slice(0, 80) === norm(n).slice(0, 80))).length >= 2);
+    const all = [...gr.newFails, ...gr.mmoNew, ...gr.domNew];
+    gr.newFails = heldOver(gr.newFails, r => r.headless.fails); gr.mmoNew = heldOver(gr.mmoNew, r => r.mmo.fails); gr.domNew = heldOver(gr.domNew, r => r.dom ? r.dom.fails : []);
+    gr.luck = all.filter(n => ![...gr.newFails, ...gr.mmoNew, ...gr.domNew].includes(n));
+    gr.ok = !gr.newFails.length && !gr.mmoNew.length && !gr.domNew.length && !gr.strictBad && /^(ALL|\d+ FAILED)/.test(s.headless.summary);
+  }
+  const tr = transport(sb.facts, f, moves, SNOISE.facts, true); tr.red = tr.red.filter(l => !/belongs to world/.test(l)); tr.relative = tr.relative.filter(l => !/\(world/.test(l));
+  // each place's plate by its own shift (the base is the same size, so a tile index carries over)
+  const pl = { checked: 0, bad: 0, first: [], seams: {}, seamSame: 0, reroll: 0, world: 0 };
+  for (const id of PLACES) { const q = plate(sb.facts, f, [id], ...moves[id], SNOISE.tiles, SNOISE.kinds);
+    pl.checked += q.checked; pl.bad += q.bad; pl.first.push(...q.first); pl.seamSame += q.seamSame; pl.reroll += q.reroll; pl.world += q.world; for (const k in q.seams) pl.seams[k] = (pl.seams[k] || 0) + q.seams[k]; }
+  const ok = gr.ok && pn.ok && !f.problems.length && !tr.red.length && !pl.bad;
+  report.spread = { map: [SW, SH], world, moves, problems: f.problems, pins: pn, transport: tr, plate: pl, suites: s, green: gr, ok, base: { suites: sb.suites, controls: sb.controls.map(c => c.suites) } };
+  console.log(`THE SPREAD (every anchor at its \`to\`, ${SW}x${SH}): ${ok ? 'green' : 'RED'} — pins: rim gate ${pn.rim_gate.steps >= 0 ? 'open (' + pn.rim_gate.steps + ' steps)' : 'SHUT'}, giants' gap ${pn.giants_gap.steps >= 0 ? 'open (' + pn.giants_gap.steps + ' steps)' : 'SHUT'}, steps ${pn.steps_scarp.climb && pn.steps_scarp.above && pn.steps_scarp.below ? 'at the port in the scarp' : 'NOT at the port in the scarp ' + JSON.stringify(pn.steps_scarp)}; transport ${tr.moved} moved, ${tr.relative.length} relative, ${tr.red.length} red; plate ${pl.checked - pl.bad}/${pl.checked} (${pl.reroll} re-rolled, ${Object.entries(pl.seams).map(([k, v]) => v + ' ' + k).join(', ') || 'no seam'}); ${s ? `suite ${s.headless.summary} (${gr.newFails.length} not on the 400x280 base or a control), mmo-sim ${s.mmo.summary}${s.dom ? ', dom-keys ' + s.dom.summary.replace('dom-keys: ', '') : ''}` : 'suites not run'}${f.problems.length ? '; atlas: ' + f.problems.join('; ') : ''}`);
+  for (const l of tr.red.slice(0, 20)) console.log('    transport: ' + l);
+  for (const l of pl.first.slice(0, 20)) console.log('    plate: ' + l);
+  if (s) for (const l of [...gr.newFails, ...gr.mmoNew, ...gr.domNew].slice(0, 40)) console.log('    suite: ' + l.slice(0, 220));
+  if (s && gr.luck) for (const l of gr.luck.slice(0, 20)) console.log('    luck (failed in fewer than 2 of 3 re-rolls of the spread): ' + l.slice(0, 200));
+  if (s && gr.area && gr.area.length) for (const l of gr.area) console.log('    area-proportional (spec §12: re-baselined in 4b): ' + l.slice(0, 260));
+}
+
 // the per-anchor table: each anchor's own run (the group it moved in; a group shared with a neighbour is one build)
 { const rows = [['anchor', 'moved with', 'offset', 'transport (moved/kept/relative/red)', 'plate (equal/checked)', 'suite (not on base or a control)', 'mmo-sim', 'dom-keys', '']];
   for (const v of report.variants) for (const id of v.leads || []) {
@@ -502,11 +567,16 @@ if (!flag('--anchors-only') && !only) {
       v.plate ? `${v.plate.checked - v.plate.bad}/${v.plate.checked}` : '-',
       s ? `${(gr.newFails || []).length} (${s.headless.summary})` : '-', s ? (gr.mmoNew && gr.mmoNew.length ? gr.mmoNew.length + ' new' : 'green') : '-', s && s.dom ? (gr.domNew && gr.domNew.length ? gr.domNew.length + ' new' : 'green') : '-', v.ok ? 'green' : 'RED']);
   }
+  if (report.spread) { const w = report.spread, gr = w.green || {}; rows.push(['THE SPREAD 400x280', 'every place', 'its own', `${w.transport.moved}/${w.transport.kept}/${w.transport.relative.length}/${w.transport.red.length}`, `${w.plate.checked - w.plate.bad}/${w.plate.checked}, pins ${w.pins.ok ? 'hold' : 'BROKEN'}`, w.suites ? `${(gr.newFails || []).length} (${w.suites.headless.summary})` : '-', w.suites ? (gr.mmoNew && gr.mmoNew.length ? gr.mmoNew.length + ' new' : 'green') : '-', w.suites && w.suites.dom ? (gr.domNew && gr.domNew.length ? gr.domNew.length + ' new' : 'green') : '-', w.ok ? 'green' : 'RED']); }
   if (report.world) { const w = report.world, gr = w.green || {}; rows.push(['ALL + WORLD x' + SCALE, 'every place', 'x' + SCALE, `${w.transport.moved}/${w.transport.kept}/${w.transport.relative.length}/${w.transport.red.length}`, `pins ${w.pins.ok ? 'hold' : 'BROKEN'}`, w.suites ? `${(gr.newFails || []).length} (${w.suites.headless.summary})` : '-', w.suites ? (gr.mmoNew && gr.mmoNew.length ? gr.mmoNew.length + ' new' : 'green') : '-', w.suites && w.suites.dom ? (gr.domNew && gr.domNew.length ? gr.domNew.length + ' new' : 'green') : '-', w.ok ? 'green' : 'RED']); }
   const wd = rows[0].map((_, i) => Math.max(...rows.map(r => String(r[i]).length)));
   console.log('\n' + rows.map(r => r.map((c, i) => String(c).padEnd(wd[i])).join('  ')).join('\n'));
   report.table = rows; }
 fs.writeFileSync(path.join(WORK, 'report.json'), JSON.stringify(report, null, 1));
-const reds = report.variants.filter(v => !v.ok).length + (report.world && !report.world.ok ? 1 : 0);
-console.log(`jiggle: ${report.variants.length} moved group${report.variants.length === 1 ? '' : 's'}${report.world ? ' + the x' + SCALE + ' world' : ''}, ${reds ? reds + ' RED' : 'all green'} (${Math.round((Date.now() - t0) / 1000)} s); ${path.join(WORK, 'report.json')}`);
+// the real spread rehearses Stage 4a, which still has work of its own to do there (the river laid anew, the checks whose
+// numbers grow with the stretch, the dressing a place draws from its own dice after reading the land round it): it is
+// printed and kept in report.json, and counted in the exit code only with --spread-gate
+const reds = report.variants.filter(v => !v.ok).length + (report.world && !report.world.ok ? 1 : 0) + (flag('--spread-gate') && report.spread && !report.spread.ok ? 1 : 0);
+if (report.spread && !flag('--spread-gate')) console.log(`the real spread: ${report.spread.ok ? 'green' : 'RED'} (a rehearsal of Stage 4a, not counted below; --spread-gate counts it)`);
+console.log(`jiggle: ${report.variants.length} moved group${report.variants.length === 1 ? '' : 's'}${report.world ? ' + the x' + SCALE + ' world' : ''}${report.spread ? ' + the real spread' : ''}, ${reds ? reds + ' RED' : 'all green'} (${Math.round((Date.now() - t0) / 1000)} s); ${path.join(WORK, 'report.json')}`);
 process.exit(reds ? 1 : 0);
