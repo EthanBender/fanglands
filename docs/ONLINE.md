@@ -2471,7 +2471,9 @@ scrolls inside itself.
   out (logout, `sessionStorage` cleared). `pagehide` sends the logout beacon. A session ends at the latest after 10 hours or
   at midnight Toronto time (owner decision D5).
 - **Reconnecting**: 1, 2, 4, 8 ... s, at most 300 s; nothing while `document.hidden`, one try on becoming visible; after 30
-  failed tries it stops and shows "Not connected" **Try again**; never after `w_bye` or a close 4010 to 4014 or 4008. Each
+  failed tries it stops and shows "Not connected" **Try again**; never after `w_bye` or a close 4010 to 4014 or 4008. A `w_bye` sends
+  the page back to the card at once, without waiting for the close that follows (under `wrangler dev` on 6 Oct 2026 the close
+  after Turn off did not reach the browser within 1.5 s; the screen was already out of `Watch.screens` and its session gone). Each
   reconnect is a ticket (1 request) and an upgrade (1 request). The page sends exactly `{"t":"ping"}` every 25 s, which the
   runtime answers without waking the World.
 

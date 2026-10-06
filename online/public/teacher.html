@@ -404,7 +404,8 @@
         break;
       }
       case 'w_no': { delete S.pending[m.req]; say(m.text || 'That did not go through.', true); break; }
-      case 'w_bye': S.bye = m.code; break;
+      // the world is done with this screen: back to the card at once (the close that follows is not waited for)
+      case 'w_bye': S.bye = m.code; ended(m.code); break;
       default: break;
     }
   }
