@@ -89,5 +89,6 @@
 "tools/dom-keys.js",
 "tools/mmo-sim-admin.js",
 "tools/mmo-sim-party.js",
-"tools/balance.js"
+"tools/balance.js",
+"75-coop.js"
 ]

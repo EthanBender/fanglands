@@ -916,7 +916,7 @@
     NET.enabled = true; NET.token = 'coop-boss-test'; NET.useFake(fake); NET.connect();
     try {
       h.peace(true);
-      const spot = h.openSpot(70, 60); F.tp(spot.x, spot.y);
+      const spot = h.openSpot(...ATLAS.frame('thistledown').p(70, 60)); F.tp(spot.x, spot.y);
       const make = (type, nid) => { const m = makeReal(type, player.x + 3 * TILE, player.y, nid, null); m.stunT = 0; monsters.push(m); tempTypes.add(nid); S.idxLen = -1; return m; };
       // (C1) a remote with 3 hits on a named boss gets a kill when the keeper lands the last one; one with 2 hits gets none
       { remote('Ann', 'over', player.x + 2 * TILE, player.y); remote('Bo', 'over', player.x + 2 * TILE, player.y + TILE);

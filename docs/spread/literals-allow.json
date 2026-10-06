@@ -728,5 +728,15 @@
   {"file": "tools/dom-keys.js", "literal": "FANGLANDS.tp(14, 8)", "line": 73, "reason": "instance-local (war_shed): the knight stands before the boiler valve at 14,7 in the War Shed's own coordinates"},
   {"file": "tools/dom-keys.js", "literal": "FANGLANDS.face(14, 7)", "line": 73, "reason": "instance-local (war_shed): the knight stands before the boiler valve at 14,7 in the War Shed's own coordinates"},
   {"file": "tools/mmo-sim-admin.js", "literal": "p.x - 40", "decl": "standBy", "reason": "pixels: Sam stands 40 px west of the goblin's puppet (a distance)"},
-  {"file": "tools/balance.js", "decl": "feats", "reason": "not a place: the feature gathers' rows [name, level, xp, seconds] (jungle 15/60, mithril 20/80, obsidian 28/120)"}
+  {"file": "tools/balance.js", "decl": "feats", "reason": "not a place: the feature gathers' rows [name, level, xp, seconds] (jungle 15/60, mithril 20/80, obsidian 28/120)"},
+  {"file": "75-coop.js", "literal": "24 * TILE", "decl": "NEAR", "reason": "NEAR: the snapshot radius round every knight (24 tiles), not a position"},
+  {"file": "75-coop.js", "literal": "14 * TILE", "decl": "stepRemote", "reason": "a puppet's leash: it turns home past 14 tiles from its home (a distance), not a position"},
+  {"file": "75-coop.js", "literal": "5 * TILE", "decl": "stepRemote", "reason": "a thrower's range band (5 tiles) round its target: a distance, not a position"},
+  {"file": "75-coop.js", "literal": "2.5 * TILE", "decl": "stepRemote", "reason": "a thrower backs off inside 2.5 tiles of its target: a distance, not a position"},
+  {"file": "75-coop.js", "literal": "{ x: 6, y: 6, w: Z.w, h: Z.h }", "line": 664, "reason": "screen pixels: the debug box's fallback corner, 6 px from the screen's top-left"},
+  {"file": "75-coop.js", "literal": "2 * TILE", "line": 701, "reason": "the test stands Ann 2 tiles west of the goblin's home: an offset, not a position"},
+  {"file": "75-coop.js", "literal": "10 * TILE", "line": 827, "reason": "the test wants its open spot at least 10 tiles from the goblin: a distance, not a position"},
+  {"file": "75-coop.js", "literal": "8 * TILE", "line": 833, "reason": "the check asks that the keeper stands more than 8 tiles from the goblin's home: a distance"},
+  {"file": "75-coop.js", "literal": "3 * TILE", "line": 920, "reason": "the boss test makes its boss 3 tiles east of the knight: an offset, not a position"},
+  {"file": "75-coop.js", "literal": "2 * TILE", "line": 922, "reason": "the boss test stands Ann and Bo 2 tiles east of the knight: an offset, not a position"}
 ]
