@@ -749,5 +749,6 @@
   {"file": "tools/mmo-sim.js", "literal": "B.FANGLANDS.face(14, 7)", "line": 1362, "reason": "instance-local (war_shed): the boiler valve at 14,7 in the War Shed's own coordinates"},
   {"file": "tools/mmo-sim.js", "literal": "B.FANGLANDS.tp(14, 8)", "line": 1388, "reason": "instance-local (war_shed): Ben stands before the boiler valve at 14,7 in the War Shed's own coordinates"},
   {"file": "tools/mmo-sim.js", "literal": "B.FANGLANDS.face(14, 7)", "line": 1388, "reason": "instance-local (war_shed): the boiler valve at 14,7 in the War Shed's own coordinates"},
-  {"file": "tools/mmo-sim.js", "literal": "m.home.x - 30", "line": 1451, "reason": "instance-local (deepholm), pixels: Ann stands 30 px west of the dwarf guard's home in Deepholm: an offset"}
+  {"file": "tools/mmo-sim.js", "literal": "m.home.x - 30", "line": 1451, "reason": "instance-local (deepholm), pixels: Ann stands 30 px west of the dwarf guard's home in Deepholm: an offset"},
+  {"file": "tools/mmo-sim-world.js", "literal": "18 * TILE", "decl": "nearD", "reason": "a radius: what Dee's screen shows within 18 tiles of her (in Deepholm and the Aerie), not a position"}
 ]

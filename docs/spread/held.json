@@ -1,6 +1,5 @@
 [
   {"file": "79-worldkeeper.js", "branch": "master 3b6d6b4 (shared-world Stage 2, merged here)", "reason": "changed by shared-world Stage 2 (3b6d6b4); converted in the next commits (2 bare)"},
-  {"file": "tools/mmo-sim-world.js", "branch": "master 3b6d6b4 (shared-world Stage 2, merged here)", "reason": "new on master at 3b6d6b4; converted in the next commits (1 bare)"},
   {"file": "tools/sim-freeze.mjs", "branch": "master 3b6d6b4 (shared-world Stage 2, merged here)", "reason": "new on master at 3b6d6b4; converted in the next commits (2 bare)"},
   {"file": "tools/sim-load.mjs", "branch": "master 3b6d6b4 (shared-world Stage 2, merged here)", "reason": "new on master at 3b6d6b4; converted in the next commits (1 bare)"}
 ]
