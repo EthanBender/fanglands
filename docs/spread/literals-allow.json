@@ -738,5 +738,16 @@
   {"file": "75-coop.js", "literal": "10 * TILE", "line": 827, "reason": "the test wants its open spot at least 10 tiles from the goblin: a distance, not a position"},
   {"file": "75-coop.js", "literal": "8 * TILE", "line": 833, "reason": "the check asks that the keeper stands more than 8 tiles from the goblin's home: a distance"},
   {"file": "75-coop.js", "literal": "3 * TILE", "line": 920, "reason": "the boss test makes its boss 3 tiles east of the knight: an offset, not a position"},
-  {"file": "75-coop.js", "literal": "2 * TILE", "line": 922, "reason": "the boss test stands Ann and Bo 2 tiles east of the knight: an offset, not a position"}
+  {"file": "75-coop.js", "literal": "2 * TILE", "line": 922, "reason": "the boss test stands Ann and Bo 2 tiles east of the knight: an offset, not a position"},
+  {"file": "tools/mmo-sim.js", "decl": "CAPS", "reason": "not a place: the contract's rate caps, [rate per second, burst] per message (p [8, 16], hit [20, 40], claim [10, 50] ...)"},
+  {"file": "tools/mmo-sim.js", "literal": "p.x - 40", "decl": "standByPuppet", "reason": "pixels: Ben stands 40 px (one fist-reach) west of the goblin's puppet, wherever it is: an offset"},
+  {"file": "tools/mmo-sim.js", "literal": "p.x - 40", "decl": "standBy", "reason": "pixels: Ben stands 40 px (one fist-reach) west of the spawned goblin's puppet, wherever it is: an offset"},
+  {"file": "tools/mmo-sim.js", "literal": "PARTY.pickSpots(50, 10)", "line": 987, "reason": "not a place: the drop party asks for 50 cracker spots within 10 tiles of the knight (a count and a radius)"},
+  {"file": "tools/mmo-sim.js", "literal": "B.FANGLANDS.tp(21, 14)", "line": 1288, "reason": "instance-local (tinker_lab): Ben stands at the Arena lever in the Tinker Lab's own coordinates"},
+  {"file": "tools/mmo-sim.js", "literal": "B.FANGLANDS.face(21, 15)", "line": 1288, "reason": "instance-local (tinker_lab): the Arena lever, in the Tinker Lab's own coordinates"},
+  {"file": "tools/mmo-sim.js", "literal": "B.FANGLANDS.tp(14, 8)", "line": 1362, "reason": "instance-local (war_shed): Ben stands before the boiler valve at 14,7 in the War Shed's own coordinates"},
+  {"file": "tools/mmo-sim.js", "literal": "B.FANGLANDS.face(14, 7)", "line": 1362, "reason": "instance-local (war_shed): the boiler valve at 14,7 in the War Shed's own coordinates"},
+  {"file": "tools/mmo-sim.js", "literal": "B.FANGLANDS.tp(14, 8)", "line": 1388, "reason": "instance-local (war_shed): Ben stands before the boiler valve at 14,7 in the War Shed's own coordinates"},
+  {"file": "tools/mmo-sim.js", "literal": "B.FANGLANDS.face(14, 7)", "line": 1388, "reason": "instance-local (war_shed): the boiler valve at 14,7 in the War Shed's own coordinates"},
+  {"file": "tools/mmo-sim.js", "literal": "m.home.x - 30", "line": 1451, "reason": "instance-local (deepholm), pixels: Ann stands 30 px west of the dwarf guard's home in Deepholm: an offset"}
 ]

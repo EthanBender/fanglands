@@ -90,5 +90,6 @@
 "tools/mmo-sim-admin.js",
 "tools/mmo-sim-party.js",
 "tools/balance.js",
-"75-coop.js"
+"75-coop.js",
+"tools/mmo-sim.js"
 ]
