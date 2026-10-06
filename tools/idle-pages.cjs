@@ -6,8 +6,11 @@
 // Scenarios: solo-|duo-, over|inst, then each knight's state: playing (standing still), paused, hidden (document.hidden and rAF
 // parked; timers NOT throttled, so an upper bound for a desktop background tab), ipad-over-playing (hide, drop the socket,
 // come back, repeated). --restart appends a comment to online/src/worker.js so wrangler reloads the object (a deploy's restart),
-// and takes it out again at the end. It prints, per hour: alarms (the World's game requests minus the pages' own), the pages'
-// HTTP, socket messages in, and the billed total; and appends the line to <tmpdir>/idle-pages.jsonl.
+// and takes it out again at the end. It prints, per hour: alarms (counted by a meter with the alarm column; on an older meter,
+// the World's game requests minus the pages' own and minus this harness's own /api/status calls), the pages' calls (each
+// /api call and each socket opening, /ws, which Cloudflare bills as a request too; the browser reports a socket opening as a
+// websocket, not as a request), socket messages in, and the billed total; and appends the line to <tmpdir>/idle-pages.jsonl.
+// t0 and t1 (epoch ms) bound the window, so alarms logged by an instrumented World can be counted against it.
 // NEVER point BASE at the live world: it signs knights up.
 // Idle-cost harness: real headless pages against a local wrangler dev World (port 8811).
 // node idle.cjs <scenario> <secs> [--restart N]  (restart: touch online/src/worker.js after N s, wrangler reloads the object)
@@ -77,6 +80,7 @@ const SC = {
   const [scn, secsArg] = process.argv.slice(2); const secs = +secsArg || 120;
   const ri = process.argv.indexOf('--restart'); const restartAt = ri > 0 ? +process.argv[ri + 1] : null;
   const [map, states] = SC[scn]; const lines = []; const log = s => { lines.push(s); console.log(s); };
+  let own = 0;   // this harness's own game calls inside the window (an /api/status fetch): the World counts them, no page made them
   const browser = await chromium.launch({ executablePath: EXE });
   const ks = [];
   for (let i = 0; i < states.length; i++) ks.push(await knight(browser, String.fromCharCode(65 + i), log));
@@ -101,7 +105,7 @@ const SC = {
     while (Date.now() - t0 < secs * 1000 - 25000) {
       await set(K, 'window.__setHidden(true)'); await wait(500);
       await K.cdp.send('Page.setWebLifecycleState', { state: 'frozen' });
-      await fetch(BASE + '/api/status').catch(() => {});   // nothing: the drop is the OS's; we close from the page side below
+      own++; await fetch(BASE + '/api/status').catch(() => {});   // nothing: the drop is the OS's; we close from the page side below
       await K.cdp.send('Page.setWebLifecycleState', { state: 'active' });
       await set(K, 'try { const s = NET.sock; NET.sock = null; NET.status = "off"; s.onclose = null; s.close(); } catch (e) {}');
       await K.cdp.send('Page.setWebLifecycleState', { state: 'frozen' });
@@ -116,11 +120,13 @@ const SC = {
     if (restartAt != null && !restarted && Date.now() - t0 >= restartAt * 1000) { restarted = true; const f = WT + '/online/src/worker.js'; fs.appendFileSync(f, '// idle-restart ' + Date.now() + '\n'); log('restart at ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s'); }
   }
   let m1 = null; for (let i = 0; i < 20 && !m1; i++) { try { m1 = await meter(); } catch (e) { await wait(1000); } }
-  const dt = (Date.now() - t0) / 1000;
+  const t1 = Date.now(), dt = (t1 - t0) / 1000;
   const gameHttp = (m1.http - m1.admin) - (m0.http - m0.admin), wsIn = m1.wsIn - m0.wsIn;
   let pageHttp = 0, pageWs = 0; const per = [];
   ks.forEach((K, i) => {
-    const h = K.http.slice(c0[i].h), w = K.wsOut.slice(c0[i].w); pageHttp += h.length; pageWs += w.length;
+    // every /api call, and every socket opening (a /ws request in K.http, if a browser ever reports one, is not counted twice)
+    const h = K.http.slice(c0[i].h), w = K.wsOut.slice(c0[i].w), opens = K.opens - c0[i].o;
+    pageHttp += h.filter(x => x.p !== '/ws').length + Math.max(opens, h.filter(x => x.p === '/ws').length); pageWs += w.length;
     const byT = {}; for (const x of w) byT[x.t] = (byT[x.t] || 0) + 1;
     const byP = {}; for (const x of h) byP[x.m + ' ' + x.p] = (byP[x.m + ' ' + x.p] || 0) + 1;
     per.push({ k: K.name, state: states[i], http: byP, ws: byT, opens: K.opens - c0[i].o });
@@ -129,10 +135,11 @@ const SC = {
   // the alarms: counted apart by a meter that has the column (req_meter_alarm), else the World's game calls minus the pages'
   // own (a meter from before 4 Oct 2026 also lost requests while the World napped, so that can read low, never below 0 here)
   const counted = m1.alarms != null && m0.alarms != null;
-  const alarms = counted ? m1.alarms - m0.alarms : Math.max(0, gameHttp - pageHttp);
-  // billed: every call the pages made (counted at the page, so a nap cannot hide one), every alarm, a request per 20 messages
+  const alarms = counted ? m1.alarms - m0.alarms : Math.max(0, gameHttp - pageHttp - own);
+  // billed: every call the pages made (counted at the page, so a nap cannot hide one; socket openings included), every alarm,
+  // a request per 20 messages (this harness's own calls are not the pages' and are left out)
   const billed = pageHttp + alarms + wsIn / 20;
-  const out = { scn, secs: +dt.toFixed(1), restart: restartAt, server: { gameHttp, wsIn, alarms, alarmsCounted: counted }, pages: { http: pageHttp, ws: pageWs }, perHour: { alarms: Math.round(alarms * 3600 / dt), http_page: Math.round(pageHttp * 3600 / dt), wsIn: Math.round(wsIn * 3600 / dt), billed: Math.round(billed * 3600 / dt) }, per, kept };
+  const out = { scn, secs: +dt.toFixed(1), t0, t1, restart: restartAt, server: { gameHttp, wsIn, alarms, alarmsCounted: counted, harnessCalls: own }, pages: { http: pageHttp, ws: pageWs }, perHour: { alarms: Math.round(alarms * 3600 / dt), http_page: Math.round(pageHttp * 3600 / dt), wsIn: Math.round(wsIn * 3600 / dt), billed: Math.round(billed * 3600 / dt) }, per, kept };
   log(JSON.stringify(out));
   fs.appendFileSync(require('os').tmpdir() + '/idle-pages.jsonl', JSON.stringify(out) + '\n');
   await browser.close();

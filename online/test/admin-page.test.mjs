@@ -98,11 +98,23 @@ test('the admin page: the pages\' calls, the world\'s alarms and this page\'s ca
   assert.match(line, /This page and the backups made 30 calls on top, so about 960 in all/);
   assert.match(line, /Alarms are counted on their own only since 14:05 UTC today; any before that are inside the pages' calls\./);
   const rows = P.els.get('meterdays').children.map(tr => tr.children.map(td => String(td.textContent)));
-  assert.deepEqual(rows, [['2026-10-05', '7,186', '210', '360', '930', '0.93%', '30', '0.96%'], ['2026-10-04', '29,118', '17,266 (alarms inside)', 'not counted apart', '18,722', '18.7%', '4', '18.7%']]);
+  assert.deepEqual(rows, [['2026-10-05', '7,186', '210 (alarms before 14:05 UTC inside)', '360 (since 14:05 UTC)', '930', '0.93%', '30', '0.96%'], ['2026-10-04', '29,118', '17,266 (alarms inside)', 'not counted apart', '18,722', '18.7%', '4', '18.7%']]);
   // the next day the line has no "only since" note
   const P2 = page({ sim: { meter: Object.assign({}, meter, { alarmsFrom: from - 86400000 }) } });
   await P2.settle();
   assert.doesNotMatch(String(P2.els.get('meter').textContent), /only since/);
+  // days later the row of the day the column began still says its alarms are only those since then (the ones before are in
+  // its pages' calls), and the days after it read plainly
+  const later = { today: { day: '2026-10-08', wsIn: 10, http: 6, admin: 0, gameHttp: 6, alarms: 1, pageHttp: 5, est: 7, gameEst: 7 },
+    days: [{ day: '2026-10-08', wsIn: 10, http: 6, admin: 0, gameHttp: 6, alarms: 1, pageHttp: 5, est: 7, gameEst: 7 },
+      { day: '2026-10-07', wsIn: 0, http: 1015, admin: 0, gameHttp: 1015, alarms: 10, pageHttp: 1005, est: 1015, gameEst: 1015 },
+      { day: '2026-10-06', wsIn: 0, http: 1000, admin: 0, gameHttp: 1000, alarms: null, pageHttp: null, est: 1000, gameEst: 1000 }],
+    freeLimit: 100000, waiting: 0, alarmsFrom: Date.parse('2026-10-07T15:00:00Z') };
+  const P4 = page({ sim: { meter: later } });
+  await P4.settle();
+  assert.doesNotMatch(String(P4.els.get('meter').textContent), /only since/);
+  assert.deepEqual(P4.els.get('meterdays').children.map(tr => tr.children.slice(2, 4).map(td => String(td.textContent))),
+    [['5', '1'], ['1,005 (alarms before 15:00 UTC inside)', '10 (since 15:00 UTC)'], ['1,000 (alarms inside)', 'not counted apart']]);
   // a world from before the alarm column: the old sentence, and it says the alarms are inside
   const P3 = page({ sim: { meter: { today: meter.days[1], days: [meter.days[1]], freeLimit: 100000, waiting: 0 } } });
   await P3.settle();
