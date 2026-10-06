@@ -8,10 +8,15 @@
 //
 // Writing a row per message would cost more than it measures, so the counts wait in memory and go out as one upsert
 // per day touched: when WRITE_AT counts are waiting, when the last write was WRITE_EVERY ms ago (checked on every count),
-// and whenever the World calls flush() (every socket close, every alarm). An HTTP request is written at once, and so is the
-// first count after a wake: a World that naps between requests (a paused page's save every 15 s, a status poll) is a new
-// object for each one, and a count left waiting there is lost with the nap (measured 4 Oct 2026 under wrangler dev: a whole
-// idle page's saves and polls never reached the table). A nap can lose only socket messages of its last 10 seconds.
+// and on every socket close (flush()). The first count after a wake is written at once: a World that naps between requests
+// (a paused page's save every 15 s, a status poll) is a new object for each one, and a count left waiting there is lost with
+// the nap (measured 4 Oct 2026 under wrangler dev: a whole idle page's saves and polls never reached the table). After that an
+// HTTP request or an alarm is written at once unless the meter wrote in the last WRITE_SOON ms (soon()): each write is an
+// upsert of up to three rows (req_meter, and req_meter_admin and req_meter_alarm when admin calls or alarms wait), rows written
+// are a free-plan limit of their own (100,000 a day; a miss stops every save), and a write per call would cost the admin page's
+// 4-call refresh 8 rows every 10 s. So the meter writes at most once per WRITE_SOON for requests and alarms (720 writes an hour,
+// at most 2,160 rows) plus once per WRITE_AT socket messages and once per socket close. A nap can lose only the requests and
+// alarms of the WRITE_SOON before it and the socket messages of the WRITE_EVERY before it.
 // The admin page polls the World too, and it should not be read as the game's traffic: every /api/admin/* call is also
 // counted in req_meter_admin (a second table, so the schema only ever gains CREATE TABLE IF NOT EXISTS). req_meter.http
 // stays every call (what Cloudflare bills); the game's calls are http - admin, and the cost gate reads the game's share.
@@ -31,6 +36,7 @@ export const WS_PER_REQUEST = 20;        // incoming WebSocket messages billed a
 export const FREE_REQUESTS = 100000;     // Durable Object requests a day on the free plan
 export const WRITE_AT = 200;             // counts waiting that force a write
 export const WRITE_EVERY = 10000;        // ms: the longest counts wait while the World is busy
+export const WRITE_SOON = 5000;          // ms: a request or an alarm is written at once unless the meter wrote this recently
 export const KEEP_DAYS = 400;            // rows older than this are deleted on the first write of a new day
 
 // '2026-10-03': the UTC day a time (ms) falls on
@@ -54,9 +60,11 @@ export class Meter {
   }
   ws() { this.add('ws'); }
   // one HTTP request; admin: it was an /api/admin/* call (the admin page, a backup), counted in its own column as well
-  http(admin = false) { this.add('http', !!admin); this.flush(); }
+  http(admin = false) { this.add('http', !!admin); this.soon(); }
   // one alarm the World ran: billed as a request, the game's, and counted apart in req_meter_alarm as well
-  alarm() { this.add('http', false, true); this.flush(); }
+  alarm() { this.add('http', false, true); this.soon(); }
+  // what waits goes out now unless the meter wrote in the last WRITE_SOON ms (then the next count, close or write takes it)
+  soon() { if (this.count && this.now() - this.lastWrite >= WRITE_SOON) this.flush(); }
   add(kind, admin = false, alarm = false) {
     const now = this.now(), day = dayOf(now);
     let w = this.waiting.get(day);
