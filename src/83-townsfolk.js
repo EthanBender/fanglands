@@ -492,8 +492,8 @@ const TOWNSFOLK = (() => {
         F.tp(...TD.p(112, 36)); F.sim(2, []); render();
         F.tp(...HF.p(139, 80)); F.sim(2, []); render();
         quest.guild = Object.assign({}, quest.guild || {}, { founded: true, rank: 4 }); F.tp(...HF.p(153, 69)); F.sim(2, []); render();
-        F.tp(...GI.p(170, 14)); render();   // Harl's mooring (Gull Isle's, OWNERS)
-        F.tp(...GI.p(181, 15)); render();
+        F.tp(...ATLAS.port('dock.planks')); render();   // Harl, who waits on the dock's planks (26-boats LOC.dock.harl, the dock's frame)
+        F.tp(...GI.p(181, 15)); render();               // Pete on Gull Isle
         for (const p of taps()) look(p.x, p.y);
         // the followers: each in turn, following and on the machine; Sera in the cage before she is freed
         for (const id of ['sera', 'garrick']) { player.companion = { id, hp: 50, mode: 'follow', x: player.x - 30, y: player.y, freed: { sera: true }, downT: 0 }; F.sim(2, []); render(); }
