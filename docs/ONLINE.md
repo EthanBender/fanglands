@@ -2571,7 +2571,7 @@ His own presence (he never receives it) goes by `hooks.presence` (`k.last`, with
 |---|---|
 | `VIEW_FORWARD` (his screen) | `p`, `left`, `mon`, `keeper`, `chat`, `crackers`, `boom`, `party_end`, `announce` |
 | `VIEW_STATUS` (the header only) | `muted`, `unmuted`, `chat_pause`, `strike` |
-| `VIEW_DROP` (never) | `welcome`, `who`, `role`, `sim`, `snap`, `hit`, `kill`, `hurt`, `gift`, `gift_ok`, `gift_back`, `prize`, `trade_ask`, `trade_asked`, `trade_ask_off`, `trade_no`, `trade_open`, `trade_state`, `trade_note`, `trade_end`, `trade_done`, `mod`, `modlist`, `spawn`, `spawn_clear`, `light_no`, `party_no`, `boss_call`, `boss_wait`, `watching`, `error`, `pong`, `view` |
+| `VIEW_DROP` (never) | `welcome`, `who`, `role`, `sim`, `snap`, `hit`, `kill`, `hurt`, `gift`, `gift_ok`, `gift_back`, `prize`, `trade_ask`, `trade_asked`, `trade_ask_off`, `trade_no`, `trade_open`, `trade_state`, `trade_note`, `trade_end`, `trade_done`, `mod`, `modlist`, `spawn`, `spawn_clear`, `light_no`, `party_no`, `boss_call`, `boss_wait`, `hand`, `watching`, `error`, `pong`, `view` |
 
 `watch.test.mjs` fails on any type the contract, `room.js`, `sim/worlds.js` or `watch.js` sends a game that is in none of the
 three lists, or in two. An `error` to the kid of `kicked`, `words`, `elsewhere`, `banned` or `renamed` ends the view (`w_vend`).
