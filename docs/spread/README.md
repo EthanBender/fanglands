@@ -732,6 +732,71 @@ with the inn a stop). The wiki has the place's page (its three people and Mother
 `~/.fanglands/work/spread/s5c/shots/` (junction, inn inside, back room, yard; laptop 1280x800 and iPad 1024x768); full
 map `s5c/fullmap-5c.png`. The fingerprint baseline is this build's (f1e530104ef79574), for 5d's diff.
 
+## Stage 5d: BEACON HILLS AND THE HUNTERS' LODGE (feat/spread5, 7 Oct 2026)
+
+`src/86-wildplaces.js`. Spec §4 "New places". Points in `ATLAS.planFrame('beacon_hills')` (offsets from 112,4) and
+`ATLAS.planFrame('hunters_lodge')` (offsets from 100,104); the towers at the Beacon Path's ports.
+
+| Place | What is there | People | Creatures |
+| --- | --- | --- | --- |
+| Beacon Hills 112..142 x 4..24 | a horseshoe ridge whose rim is all rock face (CLIFF); the only way up is a switchback of three legs at its foot (its top at 119,14); three stone beacon towers on the crest, each three wide and two deep with its door over its port (the Low Beacon 116,12, the High Beacon 128,8, the Far Beacon 139,15), a dirt path tower to tower; a woodpile; a rail at the foot (114,21) | Ansel the beacon keeper (his story a line at a time) | crows 122,9 and 137,10 on the crest (lv 2); snakes 128,14 and 132,16 (lv 4) and an adder 126,16 (lv 6) in the bay between the ridge's arms |
+| The Hunters' Lodge 100..112 x 104..114 | the lodge 'hlodge' (7 x 5: hearth, shelves, Hilde's counter, table, bed, bearskin rug; its door to the path), two skin racks and a woodpile (DECO), a range of three straw targets (108,104 110,104 112,104) with a worn line to stand on, a rail (101,110); the Lodge's signpost (Stage 4's) stays | Hilde the trapper (inside), Corvin the hunter (by the range) | none in the box |
+| the bear den 100..109 x 119..128 | a rock hollow in the wood past the Wolfwood Road, open on its far side, bones on its floor | | a bear 104,123 (new 'bear', lv 14) |
+
+- **Climbing a tower.** E at a tower's door (from its port): every map marker within 60 tiles is marked seen
+  (`quest.markers.seen`; 11, 13 and 16 markers lie within reach of the three), the first climb of each tower trains
+  Agility (25 xp), a little banner then flies on that tower, and the Voice says how many new places went on the map.
+  `quest.wild.climbed` holds which (ids, no positions). With all three climbed Ansel gives 40 coins, once.
+- **Lit at night.** Each tower's fire basket roars at night and smoulders by day; the light is `HOOKS.nightLights`
+  (35-night's overworld dark: the fire and a door lantern per tower). 89-lighting's `LIGHTS.add` paints only inside an
+  instance's scene (its `activeScene()` is null on the overworld), so it is not used here.
+- **The switchback.** The rim has no gap but the switchback: with its top shut, no tower is reached from the cave mouth
+  (tested). The network's track `r1b_beacon` (01-atlas) still runs straight between the ports: TRACKS lay the dirt at world
+  start and every earlier pass reads them, so the path on the ground is the place's own. Only main roads are linted for
+  solids; the crest path is walked by the self-test.
+- **The services.** Hilde's Furs: buys wolf and bear pelts, snakeskin, boar tusks and wool at full price (sells raw and
+  cooked beef); `shop.buysWords` (10-hud, new) says "Hilde only buys pelts and skins." where every shop said Fennick's
+  words (Nan Gully's now says fish). Corvin: the first word gives a goblin trap and how to set it (`quest.wild.trapGift`),
+  then Corvin's Traps (goblin trap 50, shortbow 50, stone arrows 1). The range: an arrow that strikes a target is caught
+  a step ahead of the core's solid-tile stop; it rolls as the dummy does (Ranged xp = the hit) and the arrow lands at the
+  target's foot.
+- **The bear**: 'bear' lv 14, 55 hp, att 15, max hit 9, def 11, attacks at sight 4, roam 2 (07-update's `def.roam`),
+  respawn 90 s, always a bear pelt (new item, 60), beef or coins; kill xp 360 (42-playthrough's row via HOOKS.xpSource).
+  9.2 tiles off the Wolfwood Road's centre line (more than roam + sight + 1.5). The look (87-critterart, measured as 5a's:
+  box [-34, -26, 34, 24 / -45, -26, 45, 24], sheet `~/.fanglands/work/spread/s5d/bearsheet.png`), the bear pelt's icon,
+  the book's page.
+- **The solid things** (towers and targets) stand on 95-thistledown's TD_PROP tile with 86's side table (as 84's well);
+  a tower's six cells share one record and it is drawn once, sorted at its foot. Racks, woodpiles and bones are DECO.
+- **Aprons.** The first build failed 92-worldshape's walled-off check (48 tiles, 11 rocks and an iron ore shut in: a
+  boulder or face hard by a tree line, and the lodge closing the bank under the scarp). Every rock face, boulder and the
+  lodge's walls now clear the trees and rocks on the open ground beside them.
+- **The goblin** 02-world stood at 129,12 (now the ridge's bay) moves to the meadow below the ridge, 129,27 (inside the
+  footprint ring); Beacon Hills holds only its crows and snakes.
+- **People's looks**: 83-townsart's 'wildplaces' family (ansel, hilde_trapper, corvin_hunter; two new held props, a wolf
+  pelt and a jaw trap). The game already has a Hilde (Deepholm) and a Guildmaster Corvin (the Cloud Kingdom): the ids
+  carry the trade, as `tamsin_miller` did. 83-townsfolk counts 90.
+- **Other files**: 00-core (WORLD_REV 4), 01-atlas (the REVS comment), 10-hud (`buysWords`), 85-riverside (Nan Gully's
+  words), 93-spread (a name ending in s: "This is Beacon Hills' ground."), 44-wiki (the two shops' place), literals-allow
+  (the bear's sight, the tower's cull reach).
+
+**The footprint: WORLD_REV 4.** `ATLAS.REVS[4]` is each box plus its 6-tile ring (106..148 x -2..30, 94..118 x 98..120)
+and the den (100..109 x 119..128). `node tools/spread-footprint.mjs <spread5-84-crossroads index.html>`: 495 tiles changed
+(map and variants), 0 outside; 2 region lines changed (their sub), 1 building and 3 people added, 6 spawns added and the
+goblin moved, all inside.
+
+**The migration with the sweep.** `--rev-base` (the 5c build, rev 3): fixture + matrix 27/27 (3 footprint planks back to
+the knight, the far one kept). The real saves (the 7 Oct pre-spread-live export, locally) 94/94 straight (world 1 to
+rev 4) and 94/94 through rev 3; 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget: node 1,103 ms, Chromium 4x
+1,981 ms); headless ALL 1444; `--play` ALL 1445, the Fang dead; online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys
+16; mmo-sim-admin 8; mmo-sim-party 18; mmo-sim-teacher 9; mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`;
+atlas-drift (hash db56616d3a595996); the footprint; the migration as above. The beat gaps hold (R1 19, R2 23, R3 29, R5
+14, R6 44). The wiki has both places' pages (Beacon Hills: Ansel, its crows, snakes and adder; the Lodge: Hilde's Furs and
+Corvin's Traps) and the bear's. Shots: `~/.fanglands/work/spread/s5d/shots/` (the switchback, the crest by day and by
+night, the Far Beacon, the lodge, inside it, the range, the den; laptop 1280x800 and iPad 1024x768); full map
+`s5d/fullmap-5d.png`. The fingerprint baseline is this build's (c3b66a6060ec1272), for 5e's diff.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```

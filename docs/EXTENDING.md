@@ -81,7 +81,13 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   row with `inn: { flag, keeper }` holds the spirit once `player[flag]` is set (06-systems' bed; the Barrel & Boar keeps
   Dorran's `innRested`). Solid things (a well, a trough, a notice board) cannot be DECO or PROP (both walkable): 84 stands
   them on 95-thistledown's TD_PROP tile (solid; outside the town's plan it has no kind of the town's) with a side table of
-  its own, drawn and read in its own hooks.
+  its own, drawn and read in its own hooks. A thing bigger than a tile (`src/86-wildplaces.js`' beacon towers: six cells,
+  one record) gives every cell the same record and draws once, sorted at its foot. New rock faces (CLIFF), boulders and
+  walls must not shut in ground a knight could reach before (92-worldshape's walled-off check counts every pocket, ore
+  and rock): 86 clears the trees and rocks on the open ground round each face, boulder and its lodge's walls (an apron).
+  A shop says what it buys with `buysWords` (10-hud; Fennick's words are the default). A rock face that makes a switchback
+  leaves the network's track straight between its ports (01-atlas TRACKS lay the dirt at world start, and every earlier
+  pass reads them): the path on the ground is the place's own, and its self-test walks it.
   **DECO** (`src/83-deco.js`, Stage 5's one tile): open ground drawn as a kind from a side table (`DECO.kind(name,
   { draw, use, ground, flat, bridge })`, `DECO.put(api, x, y, kind)` in a `HOOKS.built` pass, `DECO.at`, `DECO.cells`):
   the Old Bridge's stone deck (`bridge: true`, counted as a crossing by the scarp-seal and river checks), reeds, wheat,
