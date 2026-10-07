@@ -689,15 +689,29 @@
   // (the Hunters' Lodge since the review of bcb559f: the Old Bridge's post named only the graveyard, the Wolfwood Road's far
   // end, and not the Lodge, its next stop)
   const PAST_MARKS = ['signpost', 'old_bridge', 'crossroads_inn', 'goblin_road', 'hunters_lodge'];
+  // the places an arm may name as the next stop (Stage 6): every place with words, but the Wolfwood arch (a landmark on the
+  // way, not a stop)
+  const STOP_PLACES = new Set(Object.keys(PLACE_WORDS).filter(k => k !== 'wolfwood'));
+  // the walk time of a leg, in words a ten-year-old reads ("40 seconds on foot", "1 minute on foot", "2 and a half minutes
+  // on foot"); legSecs(roadId, k0, k1) is set by 93-roads once the roads are laid (null before: no time is said)
+  const walkWords = secs => {
+    if (!(secs >= 0)) return null;
+    if (secs < 50) return Math.max(5, Math.round(secs / 5) * 5) + ' seconds on foot';
+    const m = Math.round(secs / 30) / 2, whole = Math.floor(m);
+    return (m === whole ? whole + (whole === 1 ? ' minute' : ' minutes') : whole + ' and a half minutes') + ' on foot';
+  };
   const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
   // the words for a leg's far end: a port names its place (a reserved one says the builders are at work); a junction
   // names the road it meets
   const placeWords = pre => { const name = PLACE_WORDS[pre] || pre; return ANCHORS[pre] && ANCHORS[pre].kind === 'reserved' && !BUILT.has(pre) ? name + ' (builders at work)' : name; };
-  function endWords(q, tid) {
+  function endWords(q, tid, here) {
     if (q[0] === 'port') return placeWords(q[1].split('.')[0]);
-    if (q[0] !== 'n' && q[0] !== 'w' && PLACE_WORDS[q[0]]) return placeWords(q[0]);   // a place's own point: that place
     const at = pointOf(q);
+    // a place's own point: the road it meets there (Dunstan's farm path ends on the Ash Road), else that place, or the
+    // road's own words when the sign stands in that place (the farm path's far end is Dunstan's door)
+    const own = q[0] !== 'n' && q[0] !== 'w' && PLACE_WORDS[q[0]];
     for (const id of ROAD_IDS) if (id !== tid && track(id).some(p => Math.hypot(p[0] - at[0], p[1] - at[1]) < 1)) return ROAD_WORDS[id] || id;
+    if (own && q[0] !== here) return placeWords(q[0]);
     return ROAD_WORDS[tid] || tid;
   }
   // a point `d` tiles along the polyline from index k toward index k + dir
@@ -714,37 +728,53 @@
       const pts = TRACKS[id], pl = track(id);
       let best = -1, bd = 2.5; pl.forEach((p, k) => { const d = Math.hypot(p[0] - nx, p[1] - ny); if (d < bd) { bd = d; best = k; } });
       if (best < 0 && place) for (const k of [0, pl.length - 1]) { const q = pts[k]; if (q[0] === 'port' && q[1].split('.')[0] === place && Math.hypot(pl[k][0] - nx, pl[k][1] - ny) <= 20) best = k; }
-      if (best < 0) continue;
-      for (const dir of [-1, 1]) { const end = dir < 0 ? 0 : pl.length - 1; if (best === end) continue;
-        const [ax, ay] = Math.hypot(pl[best][0] - nx, pl[best][1] - ny) > 2.5 ? pl[best] : along(pl, best, dir, 8), a = Math.atan2(ay - ny, ax - nx), word = COMPASS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
+      // (Stage 6: a node on a road's line between two of its points, a T: the road runs both ways from it, the Glasshouse
+      // spur's fork on the Long Road)
+      let seg = -1, segT = 0;
+      if (best < 0) { let sd = 2.5; for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k], dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((nx - ax) * dx + (ny - ay) * dy) / l2)), d = Math.hypot(nx - ax - t * dx, ny - ay - t * dy); if (d < sd) { sd = d; seg = k; segT = t; } } }
+      if (best < 0 && seg < 0) continue;
+      for (const dir of [-1, 1]) { const end = dir < 0 ? 0 : pl.length - 1;
+        // b: the point the walk starts from (the next one looked at is b + dir); kf: where the node lies, in track points
+        const b = best >= 0 ? best : dir < 0 ? seg : seg - 1, kf = best >= 0 ? best : seg - 1 + segT;
+        if (b === end) continue;
+        const aim = pl[best >= 0 ? b : b + dir], [ax, ay] = Math.hypot(aim[0] - nx, aim[1] - ny) > 2.5 ? aim : along(pl, best >= 0 ? b : b + dir, dir, 8), a = Math.atan2(ay - ny, ax - nx), word = COMPASS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
         // a landmark the road passes on the way (the old signpost on the Cave Road, chapter 4's): the first one past this node
-        let past = null; for (let k = best + dir; k !== end && !past; k += dir) { const q = pts[k], pl0 = q[0] === 'port' ? q[1].split('.')[0] : null;
+        let past = null; for (let k = b + dir; k !== end + dir && !past; k += dir) { if (k === end) break; const q = pts[k], pl0 = q[0] === 'port' ? q[1].split('.')[0] : null;
           if (PAST_MARKS.includes(pl0) && pl0 !== place && Math.hypot(pl[k][0] - nx, pl[k][1] - ny) > 2.5) past = PLACE_WORDS[pl0]; }
-        legs.push({ road: id, to: endWords(pts[end], id), dir: word, past }); }
+        // the NEXT stop along it (Stage 6): the first place the road reaches past this node (a port of a place but this one),
+        // else the road's far end; `kf` and `stopK` are its track points, for the walk time (ATLAS.legSecs, 93-roads)
+        let stopK = end; for (let k = b + dir; k !== end; k += dir) { const q = pts[k], pl0 = q[0] === 'port' ? q[1].split('.')[0] : null;
+          if (pl0 && STOP_PLACES.has(pl0) && pl0 !== place && Math.hypot(pl[k][0] - nx, pl[k][1] - ny) > 2.5) { stopK = k; break; } }
+        const to = endWords(pts[end], id, place), next = stopK === end ? to : placeWords(pts[stopK][1].split('.')[0]);
+        legs.push({ road: id, to, dir: word, past, next, k: kf, stopK }); }
     }
     return legs;
   }
   // the node a signpost at (tx, ty) stands by (within 7 tiles), and the place it is a port of, if any
+  // (a node on a place's own point is that place's too: the Warden's farm turn; `here` names a node's own ground in words
+  // its place's would not: Dunstan's farm, inside the Warden's)
   function signNode(tx, ty) {
-    let node = null, nd = 7.5, place = null;
-    for (const q of SIGNPOSTS) { const p = pointOf(q.at); const d = Math.hypot(p[0] - tx, p[1] - ty); if (d < nd) { nd = d; node = p; place = q.at[0] === 'port' ? q.at[1].split('.')[0] : null; } }
-    return node ? { node, place } : null;
+    let node = null, nd = 7.5, place = null, here = null;
+    for (const q of SIGNPOSTS) { const p = pointOf(q.at); const d = Math.hypot(p[0] - tx, p[1] - ty); if (d < nd) { nd = d; node = p; place = q.at[0] === 'port' ? q.at[1].split('.')[0] : q.at[0] !== 'n' && q.at[0] !== 'w' && PLACE_WORDS[q.at[0]] ? q.at[0] : null; here = q.here || null; } }
+    return node ? { node, place, here } : null;
   }
   // its arms, [{ road, to, dir }], each named once (the place it stands at is not an arm of its own)
   function signArms(tx, ty) {
     const at = signNode(tx, ty); if (!at) return [];
     const seen = new Set(), out = [];
-    for (const l of signLegs(at.node[0], at.node[1], at.place)) { const k = l.to + '|' + l.dir; if (seen.has(k) || (at.place && l.to === placeWords(at.place))) continue; seen.add(k); out.push(l); }
+    for (const l of signLegs(at.node[0], at.node[1], at.place)) { const k = (l.next || l.to) + '|' + l.dir; if (seen.has(k) || (at.place && (l.next || l.to) === placeWords(at.place)) || (at.here && (l.next || l.to) === at.here)) continue; seen.add(k); out.push(l); }
     return out;
   }
   // the text of the signpost at (tx, ty): the node it stands by (within 7 tiles), each arm on its own; null if none
   function signText(tx, ty) {
     const at = signNode(tx, ty); if (!at) return null;
     const { node, place } = at, arms = [], cap = w => w.charAt(0).toUpperCase() + w.slice(1);
-    for (const l of signArms(tx, ty)) arms.push('→ ' + cap(l.to) + ', ' + l.dir + (l.past ? ', past ' + l.past : '') + '.');
+    // each arm: the next stop, its way, the walk (once the roads are laid), and the road's far end if that is further on
+    for (const l of signArms(tx, ty)) { const secs = A.legSecs && l.k !== undefined ? A.legSecs(l.road, l.k, l.stopK) : null, w = walkWords(secs);
+      arms.push('→ ' + cap(l.next || l.to) + ', ' + l.dir + (w ? ', ' + w : '') + (l.next && l.next !== l.to ? ', then ' + l.to : l.past ? ', past ' + l.past : '') + '.'); }
     // a post at a place's own gate or door says where it stands (Thistledown's west gate: the town is through it)
     if (place && PLACE_WORDS[place]) { const b = box(place), here = b && (tx < b[0] || tx > b[2] || ty < b[1] || ty > b[3]) ? null : 'here';
-      if (here) arms.unshift('Here: ' + cap(placeWords(place)) + '.'); else if (b) { const a = Math.atan2((b[1] + b[3]) / 2 - ty, (b[0] + b[2]) / 2 - tx); arms.unshift('→ ' + cap(placeWords(place)) + ', ' + COMPASS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8] + '.'); } }
+      if (here) arms.unshift('Here: ' + cap(at.here || placeWords(place)) + '.'); else if (b) { const a = Math.atan2((b[1] + b[3]) / 2 - ty, (b[0] + b[2]) / 2 - tx); arms.unshift('→ ' + cap(placeWords(place)) + ', ' + COMPASS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8] + '.'); } }
     return arms.length ? arms.join('   ') : null;
   }
   function guards() {
@@ -811,7 +841,7 @@
   Object.assign(A, {
     ANCHORS, PORTS, PORT_REL, TRACKS, WORLD, PINS, NESTED, OWNERS, REVS, PLAN: { W: PLAN_W, H: PLAN_H },
     frame, world: W, port, box, track, guards, anchorOf, oldToNew, oldToNewWorld,
-    MAIN_ROADS, ROAD_IDS, SIGNPOSTS, GROUNDS, pointOf, reserved, reservedAt, onMainRoad, signText, signLegs, signArms, BUILT, markBuilt, isBuilt, builtAt, planFrame,
+    MAIN_ROADS, ROAD_IDS, SIGNPOSTS, GROUNDS, pointOf, reserved, reservedAt, onMainRoad, signText, signLegs, signArms, walkWords, signWords: id => placeWords(id), legSecs: null, BUILT, markBuilt, isBuilt, builtAt, planFrame,
     frameProblems: () => problems.slice(), strict: () => [...STRICT.values()].map(e => e.slice()),
   });
 

@@ -63,6 +63,8 @@ export const STRIP_FILES = [
   '87-critterart',
   // the bandits' look (the Great Spread, Stage 5f: drawHuman through MONSTER_LOOK.addType, book words): pictures only, no rules
   '86-banditart',
+  // the roads' look (the Great Spread, Stage 6: the named beasts through MONSTER_LOOK.addType, the book's words): pictures only, no rules
+  '93-roadart',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };

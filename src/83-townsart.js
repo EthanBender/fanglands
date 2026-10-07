@@ -4442,6 +4442,51 @@ const TOWNSFOLK_ART = (() => {
     },
   });
 
+  // ---------- the roads (the Great Spread, Stage 6: 93-roads): the three roadside traders, each doing one thing ----------
+  addPeople('roads', {
+    // ---------- Ivo the ore-picker: a stooped grey-bearded miner in a dusty brown tunic and a leather cap, his pick ----------
+    // over his shoulder, coal dust on his cheeks
+    ivo: {
+      build: 'adult', size: 0.98, geo: { w: 8.6 }, skin: SKIN.ruddy,
+      face: { eye: '#2a2a2a', brow: '#8a8478', browW: 1.3, lines: true, nose: 'big', noseC: '#b9826a', mouth: 'frown', age: 'elder' },
+      hair: { style: 'short', c: '#8a847a' },
+      beard: { style: 'full', c: '#8f897e' },
+      hat: { kind: 'cap', c: '#4a3a2a' },
+      body: { kind: 'tunic', c: '#5a5a4a', under: '#bfb59a', rolled: '#bfb59a', sleeve: '#4e4e40', belt: '#2e2218', buckle: '#8f96a3', pouch: '#4a3a2a' },
+      legs: { c: '#4a4238', boot: '#2a2018', cuff: '#5a5046', patch: '#3e382e' },
+      held: { kind: 'tool', tool: 'pick', c: '#7d8087' },
+      head: (g, C) => { if (C.back) return; g.fillStyle = 'rgba(40,36,34,0.45)'; for (const [x, y] of [[-3.2, 2.2], [2.6, 2.8]]) { ell(g, x, C.B.hy + y, 1.2, 0.7, 0.2); g.fill(); } },
+    },
+    // ---------- Rusty Kett the beachcomber: a lanky young man, rust-red hair under a knitted sea-green cap, a faded teal ----------
+    // coat over a striped shirt, rolled trousers, a basket of things the tide brought in
+    kett: {
+      build: 'adult', size: 1.04, geo: { w: 7.8 }, skin: SKIN.light,
+      face: { eye: '#3a6a6a', brow: '#a8502a', freckles: true, mouth: 'grin', nose: 'button', blush: 'rgba(230,140,120,0.4)' },
+      hair: { style: 'messy', c: '#b4582a' },
+      hat: { kind: 'wool', c: '#4a8a7a' },
+      body: { kind: 'coat', c: '#3f6a72', under: '#e8e2d2', sleeve: '#375e66', button: '#c9b48a', belt: '#4a3a2a', buckle: '#a8a090', pouch: false },
+      legs: { c: '#b8a888', boot: '#6a5a44', cuff: '#d8ccb0', patch: '#a89878' },
+      held: { kind: 'basket', c: '#a07a4a', fill: rd_finds },
+    },
+    // ---------- Cinder Meg the charcoal-burner: an old woman in a sooty red-brown dress and a grey hood, her white hair ----------
+    // wisping out, smudges of soot, a leather apron, her clamp's long rake
+    meg: {
+      build: 'adult', skin: SKIN.tan,
+      face: { eye: '#2a1a10', lash: '#2a1a10', brow: '#c9c0b0', lines: true, mouth: 'smile', lip: '#a05050', age: 'elder' },
+      hair: { style: 'bun', c: '#e2dccf' },
+      hat: { kind: 'hood', c: '#6a6460' },
+      body: { kind: 'dress', c: '#5a3a33', under: '#cfc2a8', rolled: '#cfc2a8', sleeve: '#4e322c', belt: '#2e2218' },
+      over: [{ kind: 'leather', c: '#6a4a2e' }],
+      legs: { boot: '#2e2218' },
+      held: { kind: 'tool', tool: 'hoe', c: '#4a4a50' },
+      torso: (g, C) => { g.fillStyle = 'rgba(30,26,24,0.4)'; for (const [x, y, r] of [[-2.8, C.B.waist + 1.4, 1.2], [3, C.B.sh + 2.2, 1], [0.6, C.B.hem - 1.6, 1.1]]) { ell(g, x, y, r, r * 0.7, 0.3); g.fill(); } },
+    },
+  });
+
+  // Rusty Kett's basket of finds: a white pearl-shell, a cork float and a blue-grey bottle neck
+  function rd_finds(g) {
+    for (const [x, y, r, c] of [[-2.2, 2.6, 1.5, '#e6edf3'], [0.4, 2.2, 1.3, '#d9a96a'], [2.4, 2.8, 1.2, '#7a9aa8']]) { ell(g, x, y, r, r * 0.8, 0.2); g.fillStyle = c; g.fill(); outline(g, 0.3); }
+  }
   // ---------- pieces only one person uses ----------
   // Fennick's wide felt hat: a dented crown, a red band, a blue feather swept back
   function td_feltHat(g, C, c, band, feather) {

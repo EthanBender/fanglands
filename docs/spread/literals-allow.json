@@ -915,5 +915,7 @@
   {"file": "86-outposts.js", "literal": "TILE * 3", "decl": "LOOKOUT_REACH", "reason": "LOOKOUT_REACH: how far a goblin lookout's drawing reaches past its base, in pixels (the cull), not a position"},
   {"file": "86-bandits.js", "literal": "5 * TILE", "decl": "sight", "reason": "the bandit's and the bandit chief's sight (5 tiles): a range, not a position"},
   {"file": "86-bandits.js", "literal": "6 * TILE", "decl": "sight", "reason": "the bandit archer's sight (6 tiles): a range, not a position"},
-  {"file": "86-bandits.js", "literal": "TILE * 2", "decl": "THING_REACH", "reason": "THING_REACH: how far a bandit tent's or booth's drawing reaches past its tile, in pixels (the cull), not a position"}
+  {"file": "86-bandits.js", "literal": "TILE * 2", "decl": "THING_REACH", "reason": "THING_REACH: how far a bandit tent's or booth's drawing reaches past its tile, in pixels (the cull), not a position"},
+  {"file": "93-roads.js", "literal": "3 * TILE", "decl": "sight", "reason": "the named beasts' sight (3 tiles, roads2's): a range, not a position"},
+  {"file": "93-roads.js", "literal": "9 * TILE", "decl": "GREEN_RANGE", "reason": "GREEN_RANGE: how near a beast must be for the Green Path blessing to calm it (9 tiles), a range, not a position"}
 ]

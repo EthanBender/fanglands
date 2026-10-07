@@ -109,5 +109,7 @@
 "tools/teacher-browser.mjs",
 "86-outposts.js",
 "86-bandits.js",
-"86-banditart.js"
+"86-banditart.js",
+"93-roads.js",
+"93-roadart.js"
 ]
