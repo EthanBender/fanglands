@@ -37269,12 +37269,12 @@ window.RETALIATE = RETALIATE;
       NET.setToken(null); if (L) L.playing = true; save(); const noToken = CLOUD.pending === null && CLOUD.timer === null;
       check(P + 'without a session there is nothing to push to', noToken, { noToken });
       // the world holds a knight from a newer world (409 stale_world): the page stops writing and says so, once
-      NET.setToken('tok-test'); CLOUD.reset(); stale = true; notice = null; player.kills++; save(); CLOUD.flush();
+      NET.setToken('tok-test'); CLOUD.reset(); const putsBefore = puts.length; stale = true; notice = null; player.kills++; save(); CLOUD.flush();
       const before = lsGet(title.slotKey(title.slot)), locked = SAVE_LOCK === true && saveLockSay === STALE_PAGE && CLOUD.pending === null && CLOUD.timer === null && CLOUD.fails === 0;
       const said = !!notice && notice.text === 'This page is older than the world. Reload.';
       player.kills++; save(); const pushedAgain = CLOUD.flush() || CLOUD.push(true) || CLOUD.pending !== null;
       check(P + 'a push the world refuses as stale_world (409) locks the page: nothing more is written here or to the cloud, and it says "This page is older than the world. Reload."',
-        locked && said && !pushedAgain && lsGet(title.slotKey(title.slot)) === before && puts.length === 3, { locked, said, pushedAgain, lock: SAVE_LOCK, say: saveLockSay, notice: notice && notice.text, puts: puts.length });
+        locked && said && !pushedAgain && lsGet(title.slotKey(title.slot)) === before && puts.length === putsBefore, { locked, said, pushedAgain, lock: SAVE_LOCK, say: saveLockSay, notice: notice && notice.text, puts: puts.length });
     } finally {
       SAVE_LOCK = false; saveLockSay = NEWER_WORLD;
       CLOUD.reset(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.setToken(was.token); NET.status = 'off'; NET.me = null;

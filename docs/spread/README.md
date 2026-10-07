@@ -396,6 +396,104 @@ spread-migrate-check 25 of 25 and the real saves 94 of 94. Fingerprint: only the
 `window.SPREAD` and the NEW WORLD panel scene), the map's tables identical; the baseline is regenerated from this build
 (0219e531c2f1d5f6).
 
+## Stage 4d: THE SERVER (feat/spread)
+
+Built on 4c (85491d1) and master 5bdc8b3 (fix/idle-requests, merged in), 7 Oct 2026. Not deployed, not pushed. The
+contract is docs/ONLINE.md, "The Great Spread on the server".
+
+**What changed.**
+- `online/src/world.js`: `PUT /api/save` answers `409 {error: 'stale_world', code: 'stale_world'}` when the knight's newest
+  save is from world 2 or later and the incoming one is from a lower world (none is world 1), and stores nothing. The
+  parent page's rollback and an admin's pin and restore bypass it on purpose. `GET`/`POST /api/admin/spread-parties` lists
+  and ends the overworld's live drop parties for the deploy step.
+- `online/src/room.js` (`mapKey`, `STALE`): a page whose hello names another Atlas (or none) is keyed `<map>@stale` on every
+  map, so it never shares presence, keepers, monsters, crackers or trades with the new world; `online/src/move.js`
+  `wireMap` names the map to the game as it knows it. Re-keyed after a nap by the world's Atlas.
+- `src/72-cloudsave.js`: a push refused as `stale_world` locks the page (`SAVE_LOCK`) and says "This page is older than the
+  world. Reload." (self-test in the file).
+- `tools/spread-deploy-step.mjs`: the drop-party step (dry run unless `--yes`; stops unless the world runs this tree's Atlas).
+  Run only inside the owner-approved deploy.
+- `tools/spread-two-pages.cjs`: the two-browser proof against a LOCAL `wrangler dev`.
+- `online/test/atlas.test.mjs`, `move.test.mjs`: the size, anchors and ports read from atlas.json; no 260, 180, 250 or 170.
+- atlas.json: already regenerated at 4a (400 x 280, `v` 2, `anchors`, `ports`; hash bd8d810602a3fcac, 47.1 KB); 4d and the
+  master merge do not change it (atlas-drift matches).
+
+**The workerd boot.** `node tools/sim-bench.mjs` (a local `wrangler dev --local`, never a live Worker), then
+`node tools/boot-budget.mjs --workerd <bench.json>`: the overworld copy boots in 2,865, 2,895 and 3,017 ms inside workerd
+(budget 3,500), the isolate holds 24.5 MB with the overworld (budget 45), node's generateWorld 1,498 ms (budget 2,000). All
+inside, so no `online/src/world-<hash>.bin` snapshot (spec §7 writes one only when over). The margin is about 0.5 s.
+
+**The proofs** (logs in `~/.fanglands/work/spread/s4d/`).
+- The two-browser proof (`two-pages-final.txt`, screenshots in `shots/`): on a local `wrangler dev` (port 8812, `--var`
+  keys, its own persist folder), the OLD page is the build live today (`git show master:index.html`, world 1, Atlas
+  ea36148040c3f60c) and the NEW page this tree's (Atlas bd8d810602a3fcac). All 15 checks pass: Ann (old) and Ben (new) never
+  hear each other while Dot (old) hears Ann and Eve (new) hears Ben; each side keeps its own monsters; the parent page sees
+  `old` and `same`; the old page shows the NEW WORLD plaque; Ann's old page saves (200, world 1); the new page moves her
+  knight and pushes it (world 2, kills kept); the old page's next push gets 409 `stale_world` and the world keeps world 2;
+  the old page reloads into the new build with her knight moved once, not twice; then Ben hears her.
+- The deploy step (`deploy-step-proof.txt`): on the same local world, a party on the overworld (one cracker lit) and one in
+  the Spider Den. The dry run lists the overworld one (4 unlit, 1 lit); `--yes` ends it, writes one `mod_log` row, and a
+  second run finds nothing; the Spider Den party is kept; the lit cracker's prize comes with Sam's next welcome. Against a
+  world on another Atlas it stops with exit 2 and changes nothing.
+- Tests: `online/test/room.test.mjs` (the stale keying, a nap, a world with no Atlas), `accounts.test.mjs` (the 409 guard with
+  the rollback and the pin; the spread-parties endpoint and its key), `party.test.mjs` (the step in the Room), and
+  72-cloudsave's self-test (a 409 locks the page and says so).
+- The real saves again on the merged build: `node tools/spread-migrate-check.mjs --export
+  ~/.fanglands/work/spread/saves-export.json` (local only): 94 of 94 pass, 0 stage changes, 0 lost machines, items or coins.
+
+**Gates on the 4d build** (`gates/summary.txt`): `./build.sh` (literals gate 148 files, 0 bare; changetile 211 in 40 files);
+`node tools/headless.js` ALL 1372 PASS; `--play` ALL 1373 PASS (chapters 1-14, the Fang dead); `node --test online/test/`
+317 pass; mmo-sim ALL 43, `--room` ALL 43, `--sim` ALL 47; dom-keys ALL 16; mmo-sim-admin ALL 8; mmo-sim-party ALL 18;
+sim-suite ALL 28; mmo-sim-world ALL 16; build-sim `--strip --reads` 0 not on the list; atlas-drift matches (bd8d810602a3fcac,
+unchanged); fingerprint identical to the 4c baseline (0219e531c2f1d5f6: master's merge and 4d change no table);
+spread-migrate-check 25 of 25.
+
+### The owner's test on the test world (when the hold is lifted and he says go)
+
+Before: the deploy script takes a backup (`~/.fanglands/backups/<time>-pre-spread-s4-test/`: the export and a bookmark).
+Then `~/.fanglands/tools/deploy-test.sh ~/fanglands-wt/spread` (it runs every gate first; it refuses while
+`~/.fanglands/test-world.hold` exists).
+
+1. Before the deploy, on the iPad and on the laptop, open https://test.fanglands.com/?online and log in with a test knight
+   that has played a bit (has a house item placed, a horse, or a machine if possible). Leave the iPad page open.
+2. Deploy (Claude does this after the owner says go).
+3. On the iPad (the old page, not reloaded): a plaque "NEW WORLD - A newer world is ready" shows. The knight still walks;
+   other knights on new pages do not appear.
+4. On the laptop, reload. The Voice says the land grew while he slept, and where he wakes (Thistledown's square, or the
+   cave for a very new knight). The NEW WORLD page lists what came back to the bank, where the mare is tied, where the
+   machines are parked. Check the bank.
+5. Back on the iPad (still the old page): walk a few steps and wait 20 seconds. Nothing he does there is kept. After three
+   tries it says "Could not reach the world"; that is expected on a page from before the spread.
+6. Tap the NEW WORLD plaque on the iPad (or reload). The knight is the same as on the laptop: same place, same bank. The
+   iPad never undoes the move.
+7. Two knights at once: one on a new page, one on an old page in another browser. They do not see each other, and each
+   has his own monsters. After the old one reloads, they see each other.
+8. Look at the map (M) on the iPad and the laptop: labels readable, the new places staked ("Builders' stakes").
+9. Tell Claude what looked wrong. Nothing on the live world changes from this test.
+
+### The live release checklist (only with the owner's go, nobody online)
+
+1. Backup: `GET /api/admin/export` and `GET /api/admin/bookmark` to `~/.fanglands/backups/<time>-pre-spread-live/`
+   (export.json, bookmark.json). Check the export opens and counts the accounts and saves.
+2. Nobody online: `GET /api/status` says `online: 0` (or the owner has told the kids to stop). A quiet hour (not school
+   time, not work hours).
+3. The export check: `node tools/spread-migrate-check.mjs --export <that export.json>` on this build. Every save must pass,
+   with 0 stage changes and 0 lost machines, items or coins. Any fail stops the release.
+4. Merge master into feat/spread (keep `pattern = "fanglands.com"` and the `HANDOVER` line in online/wrangler.toml; keep
+   any other line master has there), `./build.sh`, every gate green (the list in the 4c and 4d gates above), the
+   fingerprint baseline regenerated, atlas-drift matching.
+5. Merge feat/spread into master (`git merge --no-ff feat/spread`), tag it `spread-r1`, and tag the master before it
+   `pre-spread` (the rollback point). Deploy with `./online/deploy.sh` (it refuses a tree without fanglands.com and runs
+   every gate). Both addresses must answer.
+6. The parties step, at once: `node tools/spread-deploy-step.mjs --base https://fanglands.com --secrets
+   ~/.fanglands/online-secrets.env` (dry run: check the Atlas is the new one), then the same with `--yes`.
+7. Watch: `GET /api/admin/sim` (every knight `same` once they reload), the parent page's saves for the first knights in
+   (each newest save `worldV` 2), the mod log (the party row).
+8. Rollback if anything is wrong: check out the `pre-spread` tag and deploy it (client and server). Its Stage-0 guard
+   refuses a world-2 save and never writes over one. Then fix and roll forward (preferred), or restore a knight's kept
+   pre-spread version from the parent page (Saves, rollback: it is moved again on the next roll-forward), or, for the
+   whole world, `POST /api/admin/restore` with the bookmark from step 1.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```
