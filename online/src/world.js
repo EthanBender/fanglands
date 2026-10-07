@@ -13,6 +13,8 @@
 //           words (kept out for bad words, 403, with until = ms when they may come back: login, every /api call and /ws;
 //           PUT /api/save alone still goes through, so the last push before the kick is never lost)
 //   admins  admin (only an admin may, 403)  nopin (no pinned backup, 404)
+//   owner   the Teachers section of an owner knight's Admin panel (/api/owner/teachers*): admin (a player, 403), owner (an
+//           admin not named in OWNER_KNIGHTS, 403), then /admin's own Teachers answers (name, pass, taken, nope)
 // Finished trades are rows of the trades table (store.js), listed for the parent page at GET /api/admin/trades.
 //   accounts (an admin's game, docs/ONLINE.md "Accounts")  unknown (no such knight, 404)  self (your own secret word:
 //           the parent page does that, 403)  isadmin (another admin's, 403)  pass (under 4 or over 200, 400)
@@ -42,7 +44,7 @@ import { SimBook } from './sim/book.js';
 import { SimHost, WORLDGEN_FREE } from './sim/host.js';
 import { cleanSwitches, WORLD_MAPS, WORLD_READY, WORLD_EMPTY, MODES } from './sim/worlds.js';
 import ATLAS_JSON from './atlas.json' with { type: 'json' };
-import { migrateTeachers, TeacherBook, teacherCall, teacherAdminCall, teacherLogin } from './teachers.js';
+import { migrateTeachers, TeacherBook, teacherCall, teacherAdminCall, teacherLogin, ownerTag } from './teachers.js';
 import { Watch } from './watch.js';
 
 // the Atlas the world judges by (docs/ONLINE.md, "The shared world", Stage 1): made by tools/atlas.mjs from the game it ships with
@@ -222,6 +224,8 @@ export class World {
     if (path === '/api/accounts/reset' && method === 'POST') return await this.resetForAdmin(req);
     if (path === '/api/accounts/strikes' && method === 'POST') return await this.clearStrikesForAdmin(req);
     if (path === '/api/accounts/rename' && method === 'POST') return await this.renameForAdmin(req);
+    // the Teachers section of an OWNER knight's Admin panel: the same calls as /admin's Teachers (teachers.js)
+    if (path === '/api/owner/teachers' || path.startsWith('/api/owner/teachers/')) return await this.ownerTeachers(req, url, path.slice('/api/owner/'.length), method);
     throw oops(404, 'no such call', 'nope');
   }
 
@@ -466,6 +470,24 @@ export class World {
     const ver = this.storeSave(s.name_lc, pin.json);
     this.sql.exec('DELETE FROM save_pins WHERE name_lc = ?', s.name_lc);
     return json({ save: pin.json, at: ver.at, ver: ver.ver });
+  }
+
+  // ---------- Teachers from the game: an OWNER knight's Admin panel (docs/ONLINE.md, "The teacher view") ----------
+  // Owner (7 Oct 2026): "Can you not put them in my admin tab in game?" Not every admin: only a knight named in OWNER_KNIGHTS
+  // (online/wrangler.toml [vars], comma-separated, any case) whose role is 'admin' in the database, both checked on every call.
+  // A player gets the knight's 403 admin; another admin 403 owner; no session 401 auth. mod_log says "<knight> (in game)".
+  ownerKnights() { return String(this.env.OWNER_KNIGHTS || '').split(',').map(n => n.replace(/\s+/g, ' ').trim().toLowerCase()).filter(Boolean); }
+  isOwnerKnight(s) { return !!s && roleWord(s.role) === 'admin' && this.ownerKnights().includes(String(s.name_lc || '').toLowerCase()); }
+  ownerSession(req) {
+    const s = this.adminSession(req);
+    if (!this.isOwnerKnight(s)) throw oops(403, "only the owner's knight can do that", 'owner');
+    return s;
+  }
+  async ownerTeachers(req, url, call, method) {
+    const s = this.ownerSession(req);
+    const r = await teacherAdminCall(this, req, url, call, method, ownerTag(s.name));
+    if (!r) throw oops(404, 'no such call', 'nope');
+    return r;
   }
 
   // ---------- Accounts: every knight, on line or not, for an admin's game (docs/ONLINE.md, "Accounts") ----------

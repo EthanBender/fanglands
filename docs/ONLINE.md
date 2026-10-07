@@ -2701,6 +2701,57 @@ accounts and the chat log. **Teachers belong to one world.** The section says wh
 fanglands.com, also gorkscape.ca; the TEST world at test.fanglands.com), and the "Added" line tells the teacher THIS world's
 game address: the test world's page no longer sends a teacher to fanglands.com, where no such teacher exists.
 
+### Teachers in the game (an owner's knight, `/api/owner/teachers*`)
+
+Owner (7 Oct 2026): *"My understanding was that under my mud goal profile I could create the teacher in game in the settings.
+Is that not the case? Do you have the controls on a subdomain don't you? Can you not put them in my admin tab in game?"*
+
+The game's Admin panel has a **Teachers** tab (`src/79-ownerteachers.js`, after Accounts) that does everything /admin's
+Teachers section does: the list (name, added, last signed in, watching now, actions today, wrong tries today, a sign-in
+waiting), Add teacher (a name box, a password box, *Make one up*, *Add teacher*; Enter in either box adds), *New password*,
+*Turn off* / *Turn on*, *Lift the wait*, today's teacher actions still in force with *Undo*, and the "Tell players when a
+teacher is watching" switch. Same calls, same answers, same words: the refusals are /admin's ("Not added. The password needs
+at least 10 letters (spaces count); this one has 9. Type a longer one, or press Make one up."), in bold red; a new password is
+shown once in /admin's words ("Added Mrs Smith. The password is maple-river-lantern-42 (it is not shown again). Tell Mrs
+Smith: go to fanglands.com, type Mrs Smith in Knight's name and this password in Secret word, and press Play.") with a
+**Copy** button (it copies "Fanglands teacher sign-in. Go to fanglands.com, type Mrs Smith in Knight's name and
+maple-river-lantern-42 in Secret word, and press Play."). *New password* and *Turn off* take a second tap ("Tap again"), where
+/admin asks with a confirm box.
+
+**Who.** Not every admin: only an OWNER knight, an admin whose name is in `OWNER_KNIGHTS` (`online/wrangler.toml` `[vars]`,
+comma-separated, any case; `"MudGoll"`; the test world's copy names its own owner account, `"mudgoll"`, deploy-test.sh).
+`deploy.sh` refuses a tree without the line. The world checks, on **every** call, that the session's knight has role `admin`
+in the database **and** is named in `OWNER_KNIGHTS`; a missing or empty `OWNER_KNIGHTS` is nobody. The game asks
+`GET /api/owner/teachers` once when an admin opens the Admin panel: a list back = the tab is there; a refusal = no tab. The
+tab hiding itself is a convenience, never the lock.
+
+| Call (knight token: `Authorization: Bearer <token>`) | Same as | Refused |
+|---|---|---|
+| `GET /api/owner/teachers` | `GET /api/admin/teachers` | no token or a dead one 401 `auth`; a teacher's token 401 `auth`; a player 403 `admin` ("only an admin can do that"); an admin not in `OWNER_KNIGHTS` 403 `owner` ("only the owner's knight can do that") |
+| `POST /api/owner/teachers` `{name, pass}` | `POST /api/admin/teachers` | the same, then /admin's own: 400 `name` / `pass`, 409 `taken` |
+| `POST /api/owner/teachers/pass` `{id, pass}` | `.../teachers/pass` | the same, 404 `nope` |
+| `POST /api/owner/teachers/off` `{id}`, `/on` `{id, pass}`, `/lift` `{id}` | `.../off`, `/on`, `/lift` | the same |
+| `POST /api/owner/teachers/undo` `{act}` | `.../undo` | the same, 409 `changed` / `over` |
+| `POST /api/owner/teachers/notice` `{on}` | `.../notice` | the same |
+
+Only these: `teacher-acts`, and every other `/api/admin/*` call, have no `/api/owner/` twin (404). Each call writes the same
+`mod_log` row as /admin's, with `by: "<knight> (in game)"` ("MudGoll (in game) added the teacher Mrs Smith" in What admins
+did; an Undo is `unmute` / `letback` / `chat_on` by "MudGoll (in game)", detail `undo`); a teacher's screen still reads "Ethan
+turned Sam's chat back on." The meter counts these calls as the admin's (`isAdminPath`).
+
+**What never reaches a knight's page.** No password, hash or salt: the list carries none (`TeacherBook.list` reads neither),
+no answer echoes a password, and mod_log holds none. The one exception is the new password the owner's own page made (*Make
+one up*, *New password*, *Turn on*: `crypto.getRandomValues`, three of the 200 words and two digits), shown once in the tab:
+it lives only in that tab's memory while it is on screen (never localStorage, a cookie, a URL or a log), and leaving the tab,
+closing the panel, a lost line or a demotion forgets it and anything half typed in the boxes.
+
+**On the page.** The section is real page elements (two `<input>`s at 16 px so Safari does not zoom, buttons at least 44 px,
+one scrolling column) laid over the panel's page while the tab is drawn, built with `createElement` and `textContent` only
+(no HTML from anywhere); while a box or a button there has the keyboard, no key reaches the game (78-accounts' capture-phase
+guard), Enter in a box adds and Escape lets go. It fits the panel on a laptop (1280x800), an iPad sideways (1024x768) and
+upright (768x1024): `tools/teachers-in-game-browser.mjs` checks it in a real Chromium against a local world (the same switch
+as the teacher view: `TEACHER_BROWSER=1`), and `online/test/owner-teachers.test.mjs` checks the world's half.
+
 ### Signing in, the ticket, the socket
 
 | Call | Body | Answer | Notes |
