@@ -43,7 +43,9 @@ const REGIONS = [
   AT_WHOLE(AT_W.rect({ name: 'Goblin Fields', sub: 'The road east', x0: 21, y0: 0, x1: 159, y1: 61 })),
   { name: 'The Wilds', sub: 'Uncharted', x0: AT_W.tx(0), y0: AT_W.ty(0), x1: MAP_W - 1, y1: MAP_H - 1 },
 ];
-const regionAt = (tx, ty) => REGIONS.find(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1) || REGIONS[REGIONS.length - 1];
+// once 92-worldshape's outlines are on (after the world is built), ask them directly (the spread spec, section 12: no bisect
+// through REGIONS.find on every call); before that, and in any build without 92, the plain box test
+const regionAt = (tx, ty) => (window.WORLDSHAPE && WORLDSHAPE.on() ? WORLDSHAPE.regionAt(tx, ty) : REGIONS.find(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1) || REGIONS[REGIONS.length - 1]);
 
 // buildings: door on the bottom wall at x+door (or top wall at x+doorTop). f = furniture [tile, rx, ry] inside.
 const BUILDINGS = [
