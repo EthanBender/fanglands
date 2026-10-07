@@ -646,19 +646,25 @@ function drawMapPanel(g, narrow) {
   if (inside) { g.fillStyle = '#0b0f14'; g.fillRect(ix, iy, iw, ih); }
   g.imageSmoothingEnabled = false; g.drawImage(miniCanvas, 0, 0, view.w, view.h, ox, oy, view.w * sc, view.h * sc); g.imageSmoothingEnabled = true;
   const fs = Math.max(9, Math.min(15, sc * 2.4));
-  for (const r of REGIONS) {
+  const targets = mapTargets();
+  // out in the world the names come from one source, laid out so none sits on another or on a ring (src/61-maplabels.js,
+  // the spread spec's ADDENDUM B); inside, only a region a feature marked as this instance's own, and not the
+  // whole-instance one the title already names
+  if (!inside && window.MAP_LABELS) MAP_LABELS.drawWorld({ g, ox, oy, sc, ix, iy, iw, ih, narrow, targets });
+  else for (const r of REGIONS) {
     if (r.name === 'Goblin Fields' || r.name === 'The Wilds') continue;
-    // inside: only a region a feature marked as this instance's own, and not the whole-instance one the title already names
     if (inside ? r.instance !== view.id || (r.x0 <= 0 && r.y0 <= 0 && r.x1 >= view.w - 1 && r.y1 >= view.h - 1) : r.instance) continue;
     const cx = ox + (r.x0 + r.x1 + 1) / 2 * sc, cy = oy + (r.y0 + r.y1 + 1) / 2 * sc;
     HK.text(g, r.name.toUpperCase(), cx, cy, { font: HK.FC(800, fs), align: 'center', color: T.ink, halo: 3 });
   }
   if (player.home && !inside) HK.emblem(g, 'home', ox + player.home.x / TILE * sc, oy + player.home.y / TILE * sc, 13, T.home, { hole: null, relief: 'rgba(0,0,0,0.9)' });
-  for (const tg of mapTargets()) {
+  for (const tg of targets) {
     const tx = ox + (tg.x + 0.5) * sc, ty = oy + (tg.y + 0.5) * sc, isTracked = tg.id === quest.tracked;
     g.strokeStyle = isTracked ? T.goldHi : 'rgba(217,178,92,0.8)'; g.lineWidth = isTracked ? 2.5 : 1.5;
     g.beginPath(); g.arc(tx, ty, (isTracked ? 6 : 5) + Math.sin(time * 4) * 2, 0, 7); g.stroke();
-    if (tg.label) HK.text(g, tg.label, tx, ty - 10, { font: HK.FS(700, narrow ? 10 : 11.5), align: 'center', color: T.goldHi, halo: 3 });
+    // a ring's own words only inside an instance: out in the world a ring on a place lights the place's name, and a
+    // person or a thing is a marker, not a label (ADDENDUM B)
+    if (tg.label && inside) HK.text(g, tg.label, tx, ty - 10, { font: HK.FS(700, narrow ? 10 : 11.5), align: 'center', color: T.goldHi, halo: 3 });
   }
   // you: a white arrowhead pointing the way you face (its dark rim keeps it visible on Aerie's white cloud)
   {

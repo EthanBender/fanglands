@@ -897,5 +897,6 @@
   {"file": "83-townsart.js", "literal": "[0, 3]", "decl": "tankard", "reason": "townsfolk sprite drawing in sprite units, no map coordinates"},
   {"file": "83-townsart.js", "literal": "hy - 11", "decl": "dth_draw", "reason": "townsfolk sprite drawing in sprite units, no map coordinates"},
   {"file": "83-townsart.js", "literal": "{ x: 11, y: 5 }", "decl": "hand", "reason": "townsfolk sprite drawing in sprite units, no map coordinates"},
-  {"file": "83-townsart.js", "literal": "hy - 11", "decl": "td_feltHat", "reason": "townsfolk sprite drawing in sprite units, no map coordinates"}
+  {"file": "83-townsart.js", "literal": "hy - 11", "decl": "td_feltHat", "reason": "townsfolk sprite drawing in sprite units, no map coordinates"},
+  {"file": "61-maplabels.js", "literal": "50", "context": "const u = 50, item", "reason": "the label layout's own test: screen pixels in a 200 x 100 box (u = 50 px), not a place on the map"}
 ]

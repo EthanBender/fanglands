@@ -435,7 +435,7 @@
     rebuildWorld: buildAll,
     get: key => all().find(m => m.key === key) || null,
     at: (x, y) => all().find(m => m.x === x && m.y === y) || null,
-    hitAt, layout: legendLayout, MAX_ROWS, STRIP_SHARE,
+    hitAt, layout: legendLayout, MAX_ROWS, STRIP_SHARE, MAP_R,
     selected: () => selected && (known().find(m => m.key === selected) || null),
     hovered: () => hover && (known().find(m => m.key === hover) || null),
     get lastMini() { return lastMini; },
